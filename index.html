@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>ONYX Equity Fox</title>
+  <style>
+    body { font-family: Arial, sans-serif; max-width: 800px; margin: 40px auto; padding: 20px; background: #f8f9fa; }
+    h1 { text-align: center; color: #d97706; }
+    #chat { height: 60vh; overflow-y: scroll; border: 2px solid #d97706; padding: 20px; background: white; border-radius: 8px; margin-bottom: 15px; }
+    .message { margin: 15px 0; padding: 10px; border-radius: 8px; }
+    .user { background: #e0f2fe; text-align: right; }
+    .bot { background: #fef3c7; }
+    input { width: 70%; padding: 15px; font-size: 16px; border: 1px solid #ccc; border-radius: 8px; }
+    button { padding: 15px 30px; background: #d97706; color: white; border: none; border-radius: 8px; cursor: pointer; }
+  </style>
+</head>
+<body>
+  <h1>🦊 ONYX - Equity Fox</h1>
+  <p style="text-align:center; color:#666;">California Home Equity Advisor</p>
+  
+  <div id="chat"></div>
+  
+  <input id="input" placeholder="Ask me anything about HELOC, equity, flips..." onkeypress="if(event.key === 'Enter') sendMsg()">
+  <button onclick="sendMsg()">Send</button>
+
+  <script>
+    const chat = document.getElementById('chat');
+    const input = document.getElementById('input');
+
+    function addMsg(role, text) {
+      const div = document.createElement('div');
+      div.className = 'message ' + role;
+      div.innerHTML = `<strong>${role === 'user' ? 'You' : '🦊 ONYX'}:</strong> ${text}`;
+      chat.appendChild(div);
+      chat.scrollTop = chat.scrollHeight;
+    }
+
+    addMsg('bot', "Hi! I'm ONYX the Equity Fox. How can I help unlock your California home equity today?");
+
+    async function sendMsg() {
+      const msg = input.value.trim();
+      if (!msg) return;
+      addMsg('user', msg);
+      input.value = '';
+
+      try {
+        const res = await fetch('/api/chat', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({message: msg})
+        });
+        const data = await res.json();
+        addMsg('bot', data.reply || "Sorry, I had a glitch.");
+      } catch(e) {
+        addMsg('bot', "Connection issue. Make sure API key is set.");
+      }
+    }
+  </script>
+</body>
+</html>
