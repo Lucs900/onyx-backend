@@ -8,7 +8,7 @@ export async function POST(request) {
         "Authorization": `Bearer ${process.env.grok_api_key}`
       },
       body: JSON.stringify({
-        model: "grok-2-1212",
+        model: "grok-beta",
         messages: [
           { role: "system", content: "You are ONYX, a witty, empathetic mortgage fox advisor for California homeowners. Keep responses short. Ask one question at a time." },
           { role: "user", content: message }
