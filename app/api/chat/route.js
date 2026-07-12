@@ -1,6 +1,7 @@
 export async function POST(request) {
   try {
     const { message } = await request.json();
+    console.log("Key loaded:", !!process.env.grok_api_key); // Debug
     const response = await fetch("https://api.x.ai/v1/chat/completions", {
       method: "POST",
       headers: {
@@ -16,9 +17,15 @@ export async function POST(request) {
         temperature: 0.3,
       })
     });
+    if (!response.ok) {
+      const errorBody = await response.text();
+      console.error('xAI API Error:', response.status, errorBody);
+      return Response.json({ reply: "Sorry, API error." }, { status: 500 });
+    }
     const data = await response.json();
     return Response.json({ reply: data.choices[0].message.content });
   } catch (error) {
+    console.log("Error:", error.message); // Debug
     return Response.json({ reply: "Sorry, connection issue. Try again later." }, { status: 500 });
   }
 }
