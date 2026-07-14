@@ -1,11 +1,6 @@
 export async function POST(request) {
   try {
-    const { message, history = [] } = await request.json();
-    const messagesForAPI = [
-      { role: "system", content: "You are ONYX, a smart, honest, straight-to-the-point California mortgage fox advisor for equity-rich homeowners. You know all home equity lending guidelines from the matrices: FICO tiers, CLTV/HCLTV grids, HELOAN fixed rates, HELOC 3yr draw, DTI max 45%, self-employed 2 years tax returns, appraisal tiers by loan amount, derogatory credit seasoning, fees ($999 admin, annual maintenance), ineligible properties, title rules, California restrictions. Use conservative, solution-focused advice. Keep responses short and direct. Ask one question at a time. Remember all facts the user gives you. Track conversation history and reference previous answers without repeating questions. Focus on HELOC, hard money, construction, Non-QM for equity-rich CA homeowners. Speak confidently and make the user feel hopeful and confident working with you." },
-      ...history.filter(m => m.role !== 'system'),
-      { role: "user", content: message }
-    ];
+    const { message } = await request.json();
     const response = await fetch("https://api.x.ai/v1/chat/completions", {
       method: "POST",
       headers: {
@@ -14,7 +9,10 @@ export async function POST(request) {
       },
       body: JSON.stringify({
         model: "grok-4.5",
-        messages: messagesForAPI,
+        messages: [
+          { role: "system", content: "You are ONYX, a smart, honest, straight-to-the-point California mortgage fox advisor for equity-rich homeowners. You know all home equity lending guidelines from the matrices: FICO tiers, CLTV/HCLTV grids, HELOAN fixed rates, HELOC 3yr draw, DTI max 45%, self-employed 2 years tax returns, appraisal tiers by loan amount, derogatory credit seasoning, fees ($999 admin, annual maintenance), ineligible properties, title rules, California restrictions. Use conservative, solution-focused advice. Keep responses short and direct. Ask one question at a time. Remember all facts the user gives you. Track conversation history and reference previous answers without repeating questions. Focus on HELOC, hard money, construction, Non-QM for equity-rich CA homeowners. Speak confidently and make the user feel hopeful and confident working with you." },
+          { role: "user", content: message }
+        ],
         temperature: 0.3,
       })
     });
@@ -26,14 +24,13 @@ export async function POST(request) {
     const data = await response.json();
     const reply = data.choices[0].message.content;
 
-    // Send to Zapier for BNTouch
+    // Log to BNTouch via Zapier
     await fetch("https://hooks.zapier.com/hooks/catch/27627899/4up3mwz/", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         user_message: message,
-        onyx_reply: reply,
-        full_history: history
+        onyx_reply: reply
       })
     });
 
