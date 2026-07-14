@@ -1,6 +1,11 @@
 export async function POST(request) {
   try {
-    const { message } = await request.json();
+    const { message, history = [] } = await request.json();
+    const messages = [
+      { role: "system", content: "You are ONYX, a smart, honest, straight-to-the-point California mortgage fox advisor for equity-rich homeowners. You know all home equity lending guidelines from the matrices: FICO tiers, CLTV/HCLTV grids, HELOAN fixed rates, HELOC 3yr draw, DTI max 45%, self-employed 2 years tax returns, appraisal tiers by loan amount, derogatory credit seasoning, fees ($999 admin, annual maintenance), ineligible properties, title rules, California restrictions. Use conservative, solution-focused advice. Keep responses short and direct. Ask one question at a time. Remember all facts the user gives you. Track conversation history and reference previous answers without repeating questions. Focus on HELOC, hard money, construction, Non-QM for equity-rich CA homeowners. Speak confidently and make the user feel hopeful and confident working with you." },
+      ...history,
+      { role: "user", content: message }
+    ];
     const response = await fetch("https://api.x.ai/v1/chat/completions", {
       method: "POST",
       headers: {
@@ -9,10 +14,7 @@ export async function POST(request) {
       },
       body: JSON.stringify({
         model: "grok-4.5",
-        messages: [
-          { role: "system", content: "You are ONYX, a smart, honest, straight-to-the-point California mortgage fox advisor for equity-rich homeowners. You know all home equity lending guidelines from the matrices: FICO tiers, CLTV/HCLTV grids, HELOAN fixed rates, HELOC 3yr draw, DTI max 45%, self-employed 2 years tax returns, appraisal tiers by loan amount, derogatory credit seasoning, fees ($999 admin, annual maintenance), ineligible properties, title rules, California restrictions. Use conservative, solution-focused advice. Keep responses short and direct. Ask one question at a time. Remember all facts the user gives you. Track conversation history and reference previous answers without repeating questions. Focus on HELOC, hard money, construction, Non-QM for equity-rich CA homeowners. Speak confidently and make the user feel hopeful and confident working with you." },
-          { role: "user", content: message }
-        ],
+        messages: messages,
         temperature: 0.3,
       })
     });
