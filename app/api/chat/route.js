@@ -24,7 +24,20 @@ export async function POST(request) {
       return Response.json({ reply: "Sorry, API error." }, { status: 500 });
     }
     const data = await response.json();
-    return Response.json({ reply: data.choices[0].message.content });
+    const reply = data.choices[0].message.content;
+
+    // Send to Zapier for BNTouch
+    await fetch("https://hooks.zapier.com/hooks/catch/27627899/4up3mwz/", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        user_message: message,
+        onyx_reply: reply,
+        full_history: history
+      })
+    });
+
+    return Response.json({ reply });
   } catch (error) {
     console.log("Error:", error.message);
     return Response.json({ reply: "Sorry, connection issue. Try again later." }, { status: 500 });
