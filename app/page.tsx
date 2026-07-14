@@ -11,7 +11,8 @@ export default function EquityFox() {
   const sendMessage = async () => {
     if (!input.trim() || loading) return;
     const userMsg = input;
-    setMessages(prev => [...prev, { role: 'user', content: userMsg }]);
+    const newMessages = [...messages, { role: 'user', content: userMsg }];
+    setMessages(newMessages);
     setInput('');
     setLoading(true);
 
@@ -19,12 +20,12 @@ export default function EquityFox() {
       const res = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: userMsg, history: messages })
+        body: JSON.stringify({ message: userMsg, history: newMessages.slice(0, -1) }) // Send previous messages
       });
       const data = await res.json();
-      setMessages(prev => [...prev, { role: 'bot', content: data.reply || "Sorry, glitch." }]);
+      setMessages([...newMessages, { role: 'bot', content: data.reply || "Sorry, glitch." }]);
     } catch (error) {
-      setMessages(prev => [...prev, { role: 'bot', content: "Connection issue." }]);
+      setMessages([...newMessages, { role: 'bot', content: "Connection issue." }]);
     }
     setLoading(false);
   };
