@@ -1,6 +1,13 @@
+import postgres from 'postgres';
+
+const sql = postgres(process.env.POSTGRES_URL, { ssl: 'verify-full' });
+
 export async function POST(request) {
   try {
     const { message } = await request.json();
+    // Future: Query matrix from DB
+    // const matrix = await sql`SELECT * FROM matrices`;
+
     const response = await fetch("https://api.x.ai/v1/chat/completions", {
       method: "POST",
       headers: {
