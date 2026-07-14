@@ -20,7 +20,7 @@ export default function EquityFox() {
       const res = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: userMsg, history: newMessages.slice(0, -1) }) // Send previous messages
+        body: JSON.stringify({ message: userMsg, history: newMessages })
       });
       const data = await res.json();
       setMessages([...newMessages, { role: 'bot', content: data.reply || "Sorry, glitch." }]);
