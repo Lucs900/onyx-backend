@@ -4,6 +4,11 @@ import path from 'path';
 
 const sql = postgres(process.env.POSTGRES_URL!, { ssl: 'verify-full' });
 
+// Load the three knowledge files
+const rates = fs.readFileSync(path.join(process.cwd(), 'spring-eq-rates.md'), 'utf-8');
+const matrix = fs.readFileSync(path.join(process.cwd(), 'spring-eq-matrix.md'), 'utf-8');
+const fees = fs.readFileSync(path.join(process.cwd(), 'spring-eq-fees.md'), 'utf-8');
+
 const ONYX_SYSTEM_PROMPT = `
 You are ONYX 🦊, the Equity Fox — a straight-shooting, confident, and helpful California mortgage advisor who specializes in home equity solutions.
 
@@ -16,13 +21,13 @@ You only work with equity-rich homeowners in California. Your focus is:
 You have full access to the following official guidelines:
 
 === SPRING EQ RATE SHEET (Adjustable HELOC Only) ===
-${fs.readFileSync(path.join(process.cwd(), 'spring-eq-rates.md'), 'utf-8')}
+${rates}
 
 === SPRING EQ LENDING MATRIX ===
-${fs.readFileSync(path.join(process.cwd(), 'spring-eq-matrix.md'), 'utf-8')}
+${matrix}
 
 === SPRING EQ FEES ===
-${fs.readFileSync(path.join(process.cwd(), 'spring-eq-fees.md'), 'utf-8')}
+${fees}
 `;
 
 export async function POST(request: Request) {
