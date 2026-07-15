@@ -1,38 +1,81 @@
 import postgres from 'postgres';
+import fs from 'fs';
+import path from 'path';
 
-const sql = postgres(process.env.POSTGRES_URL, { ssl: 'verify-full' });
+const sql = postgres(process.env.POSTGRES_URL!, { ssl: 'verify-full' });
 
-export async function POST(request) {
+// Load the three knowledge files
+const rates = fs.readFileSync(path.join(process.cwd(), 'spring-eq-rates.md'), 'utf-8');
+const matrix = fs.readFileSync(path.join(process.cwd(), 'spring-eq-matrix.md'), 'utf-8');
+const fees = fs.readFileSync(path.join(process.cwd(), 'spring-eq-fees.md'), 'utf-8');
+
+const ONYX_SYSTEM_PROMPT = `
+You are ONYX 🦊, the Equity Fox — a straight-shooting, confident, and helpful California mortgage advisor who specializes in home equity solutions.
+
+You only work with equity-rich homeowners in California. Your focus is:
+- HELOCs (especially Adjustable Rate)
+- Hard money / private capital
+- Construction & renovation financing
+- Non-QM loans
+
+You have full access to the following official guidelines (use them as your source of truth):
+
+=== SPRING EQ RATE SHEET (Adjustable HELOC Only) ===
+${rates}
+
+=== SPRING EQ LENDING MATRIX ===
+${matrix}
+
+=== SPRING EQ FEES ===
+${fees}
+
+Rules you must follow:
+- Always be direct and solution-oriented. No fluff.
+- Never make up rates, max lines, or eligibility. Use the documents above.
+- When the user gives home value + mortgage balance, calculate equity = value - balance.
+- When they want real numbers (max line, payment, eligibility), you should eventually call a tool (we will add this next).
+- Ask only ONE question at a time.
+- Remember everything the user has already told you and reference it naturally.
+- Speak with confidence and make the user feel they are in good hands.
+- If you don't have enough information to give accurate advice, ask for what you need.
+`;
+
+export async function POST(request: Request) {
   try {
-    const { message } = await request.json();
-    // Query the matrix from DB
-    const matrix = await sql`SELECT data FROM matrices WHERE name = 'spring_eq_matrix' LIMIT 1`;
-    const matrixData = matrix[0] ? matrix[0].data : 'Matrix data loaded from DB';
+    const { message, history } = await request.json();
 
-    const response = await fetch("https://api.x.ai/v1/chat/completions", {
-      method: "POST",
+    const messages = [
+      { role: 'system', content: ONYX_SYSTEM_PROMPT },
+      ...(history || []),
+      { role: 'user', content: message }
+    ];
+
+    const response = await fetch('https://api.x.ai/v1/chat/completions', {
+      method: 'POST',
       headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${process.env.grok_api_key}`
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${process.env.grok_api_key}`,
       },
       body: JSON.stringify({
-        model: "grok-4.5",
-        messages: [
-          { role: "system", content: "You are ONYX, a smart, honest, straight-to-the-point California mortgage fox advisor for equity-rich homeowners. You know all home equity lending guidelines from the matrices: FICO tiers, CLTV/HCLTV grids, HELOAN fixed rates, HELOC 3yr draw, DTI max 45%, self-employed 2 years tax returns, appraisal tiers by loan amount, derogatory credit seasoning, fees ($999 admin, annual maintenance), ineligible properties, title rules, California restrictions. Use conservative, solution-focused advice. Keep responses short and direct. Ask ONE question at a time. Remember all facts the user gives you. Track conversation history and reference previous answers without repeating questions. Focus on HELOC, hard money, construction, Non-QM for equity-rich CA homeowners. Speak confidently and make the user feel hopeful and confident working with you. For calculator: With home value and balance, calculate equity = value - balance. Max HELOC ~80-90% CLTV depending on FICO. Estimate payments using rates." },
-          { role: "user", content: message }
-        ],
-        temperature: 0.3,
-      })
+        model: 'grok-3',           // Using grok-3 (more stable)
+        messages,
+        temperature: 0.4,
+        max_tokens: 800,
+      }),
     });
+
     if (!response.ok) {
-      const errorBody = await response.text();
-      console.error('xAI API Error:', response.status, errorBody);
-      return Response.json({ reply: "Sorry, API error." }, { status: 500 });
+      const errorText = await response.text();
+      console.error('xAI Error:', response.status, errorText);
+      return Response.json({ reply: "Sorry, I'm having trouble connecting right now." }, { status: 500 });
     }
+
     const data = await response.json();
-    return Response.json({ reply: data.choices[0].message.content });
-  } catch (error) {
-    console.log("Error:", error.message);
-    return Response.json({ reply: "Sorry, connection issue. Try again later." }, { status: 500 });
+    const reply = data.choices?.[0]?.message?.content || "Sorry, I couldn't generate a response.";
+
+    return Response.json({ reply });
+  } catch (error: any) {
+    console.error('Route Error:', error);
+    return Response.json({ reply: "Something went wrong. Please try again." }, { status: 500 });
   }
 }
