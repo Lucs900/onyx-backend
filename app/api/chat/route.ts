@@ -3,6 +3,19 @@ import { calculateHelocQuote } from '../../lib/calculateHelocQuote';
 
 const sql = postgres(process.env.POSTGRES_URL!, { ssl: 'verify-full' });
 
+function extractNumber(text: string): number {
+  const match = text.match(/(\d[\d,.]*)\s*(k|m|000|million|thousand)?/i);
+  if (!match) return 0;
+
+  let num = parseFloat(match[1].replace(/,/g, ''));
+
+  const unit = match[2]?.toLowerCase();
+  if (unit === 'k' || unit === 'thousand') num *= 1000;
+  if (unit === 'm' || unit === 'million') num *= 1000000;
+
+  return num;
+}
+
 export async function POST(request: Request) {
   try {
     const { message, history } = await request.json();
@@ -33,11 +46,9 @@ You only work with equity-rich homeowners in California.
 - Ask only **one question at a time**.
 - Confirm occupancy before giving a final quote when possible.
 - Never mention any specific lender name.
-
-When you have enough information (home value, current mortgage balance, FICO, and occupancy), I will calculate the accurate quote for you using the internal tool.
 `;
 
-    // Normalize roles (convert 'bot'/'ai' to 'assistant')
+    // Normalize roles
     const normalizedHistory = (history || []).map((msg: any) => ({
       role: msg.role === 'bot' || msg.role === 'ai' ? 'assistant' : msg.role,
       content: msg.content,
@@ -76,49 +87,46 @@ When you have enough information (home value, current mortgage balance, FICO, an
     let reply = data.choices?.[0]?.message?.content || "Sorry, I couldn't generate a response.";
 
     // ============================================
-    // INTERNAL TOOL LOGIC
-    // If user gave numbers, try to use the calculator tool
+    // INTERNAL TOOL - Improved Number Extraction
     // ============================================
-    const hasNumbers = /\d/.test(message);
-    const recentMessages = [...(history || []), { role: 'user', content: message }]
-      .slice(-4)
+    const combinedText = [...(history || []), { role: 'user', content: message }]
       .map(m => m.content)
       .join(' ');
 
-    if (hasNumbers) {
-      // Try to extract basic numbers (simple version)
-      const homeValueMatch = recentMessages.match(/(\d[\d,.]*)\s*(k|m|000|million)?/i);
-      const mortgageMatch = recentMessages.match(/(owe|balance|mortgage).*?(\d[\d,.]*)\s*(k|m|000|million)?/i);
-      const ficoMatch = recentMessages.match(/(\d{3})/);
+    const homeValue = extractNumber(
+      combinedText.match(/home.*value|value of.*home|home is worth/i)?.input || combinedText
+    );
 
-      if (homeValueMatch && mortgageMatch && ficoMatch) {
-        const homeValue = parseFloat(homeValueMatch[1].replace(/,/g, '')) * 
-          (homeValueMatch[2]?.toLowerCase().includes('m') || homeValueMatch[2]?.includes('million') ? 1000000 : 1);
+    const currentMortgage = extractNumber(
+      combinedText.match(/mortgage|owe|balance|lien/i)?.input || combinedText
+    );
 
-        const currentMortgage = parseFloat(mortgageMatch[2].replace(/,/g, '')) * 
-          (mortgageMatch[3]?.toLowerCase().includes('m') || mortgageMatch[3]?.includes('million') ? 1000000 : 1);
+    const ficoMatch = combinedText.match(/\b(6[0-9]{2}|7[0-9]{2}|8[0-9]{2})\b/);
+    const fico = ficoMatch ? parseInt(ficoMatch[1]) : 0;
 
-        const fico = parseInt(ficoMatch[1]);
+    const occupancy = combinedText.toLowerCase().includes('investment') 
+      ? 'Investment' 
+      : combinedText.toLowerCase().includes('second') 
+        ? 'Second' 
+        : 'Primary';
 
-        // Default to Primary if not mentioned
-        const occupancy = recentMessages.toLowerCase().includes('investment') ? 'Investment' : 'Primary';
+    // Only call the tool if we have the minimum required data
+    if (homeValue > 100000 && currentMortgage > 0 && fico >= 640) {
+      const quote = calculateHelocQuote({
+        homeValue,
+        currentMortgage,
+        fico,
+        occupancy,
+      });
 
-        const quote = calculateHelocQuote({
-          homeValue,
-          currentMortgage,
-          fico,
-          occupancy,
-        });
-
-        reply = `Based on what you've shared:\n\n` +
-          `- Home Value: $${homeValue.toLocaleString()}\n` +
-          `- Current Mortgage: $${currentMortgage.toLocaleString()}\n` +
-          `- FICO: ${fico}\n` +
-          `- Occupancy: ${occupancy}\n\n` +
-          `**Estimated Rate:** ${quote.finalRate}%\n` +
-          `**Max HELOC Line:** $${quote.maxLine.toLocaleString()}\n\n` +
-          `Would you like me to show payment options or adjust anything?`;
-      }
+      reply = `Based on the numbers you shared:\n\n` +
+        `- Home Value: $${homeValue.toLocaleString()}\n` +
+        `- Current Mortgage: $${currentMortgage.toLocaleString()}\n` +
+        `- FICO: ${fico}\n` +
+        `- Occupancy: ${occupancy}\n\n` +
+        `**Estimated Rate:** ${quote.finalRate}%\n` +
+        `**Max HELOC Line:** $${quote.maxLine.toLocaleString()}\n\n` +
+        `Would you like payment examples or to adjust anything?`;
     }
 
     return Response.json({ reply });
