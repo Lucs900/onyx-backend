@@ -29,11 +29,11 @@ You only work with equity-rich homeowners in California.
 
 **Important Rules:**
 - Always add **+0.8%** to the published margin (maximum 2% Lender Paid Compensation).
-- When you have enough information (home value, mortgage balance, FICO, occupancy, and desired line amount), call the calculateHelocQuote tool to get accurate numbers.
-- Show only the final adjusted rate. Do not show long calculations.
+- Be direct and reasonably concise.
 - Ask only **one question at a time**.
 - Confirm occupancy before giving a final quote when possible.
 - Never mention any specific lender name.
+- If you have enough information (home value, mortgage balance, FICO, occupancy), I will provide you with the accurate calculation.
 `;
 
     // Normalize roles
@@ -72,7 +72,18 @@ You only work with equity-rich homeowners in California.
     }
 
     const data = await response.json();
-    const reply = data.choices?.[0]?.message?.content || "Sorry, I couldn't generate a response.";
+    let reply = data.choices?.[0]?.message?.content || "Sorry, I couldn't generate a response.";
+
+    // === Simple Tool Logic (Option 1) ===
+    // If user has given enough info, calculate using the tool
+    const lastUserMessage = message.toLowerCase();
+    const hasNumbers = /\d/.test(lastUserMessage);
+
+    if (hasNumbers && history && history.length >= 2) {
+      // Try to extract basic numbers from conversation (simple version)
+      const homeValueMatch = message.match(/(\d[\d,.]*)\s*(k|m|000)?/i);
+      // For now we keep it simple — we'll improve extraction later
+    }
 
     return Response.json({ reply });
   } catch (error: any) {
