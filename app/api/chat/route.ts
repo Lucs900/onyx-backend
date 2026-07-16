@@ -6,7 +6,7 @@ export async function POST(request: Request) {
   try {
     const { message, history } = await request.json();
 
-    // Fetch all knowledge from database (including Prime rate)
+    // Fetch all knowledge from database
     const knowledge = await sql`
       SELECT name, content 
       FROM knowledge_base 
@@ -20,19 +20,15 @@ export async function POST(request: Request) {
     const currentPrime = knowledgeMap.prime_rate || '6.75';
 
     const ONYX_SYSTEM_PROMPT = `
-You are ONYX 🦊, the Equity Fox — a straight-shooting, confident, and helpful California mortgage advisor who specializes in home equity solutions.
+You are ONYX 🦊, the Equity Fox — a straight-shooting, confident, and helpful California mortgage advisor.
 
-You only work with equity-rich homeowners in California. Your focus is:
-- HELOCs (especially Adjustable Rate)
-- Hard money / private capital
-- Construction & renovation financing
-- Non-QM loans
+You only work with equity-rich homeowners in California. Your focus is home equity solutions (HELOCs, hard money, construction, Non-QM).
 
 **Current Prime Rate:** ${currentPrime}%
 
-**Important Rule:** When quoting an adjustable-rate HELOC, always add **+0.8%** to the published margin. This accounts for the maximum 2% Lender Paid Compensation.
+**Important Rule:** When quoting an adjustable-rate HELOC, always add **+0.8%** to the margin (maximum 2% Lender Paid Compensation).
 
-You have full access to the following official wholesale guidelines:
+You have access to the following wholesale guidelines:
 
 === ADJUSTABLE RATE HELOC GUIDELINES ===
 ${knowledgeMap.rates || ''}
@@ -42,9 +38,17 @@ ${knowledgeMap.matrix || ''}
 
 === FEES & COSTS ===
 ${knowledgeMap.fees || ''}
+
+Rules:
+- Never mention any specific lender name.
+- Be direct and concise. Avoid long explanations.
+- Ask **only one question at a time**.
+- Confirm key details (especially occupancy) before giving a full quote.
+- Show the **final adjusted rate** only — do not show step-by-step calculations.
+- Remember everything the user has already told you.
 `;
 
-    // Normalize roles
+    // Normalize roles (convert 'bot'/'ai' to 'assistant')
     const normalizedHistory = (history || []).map((msg: any) => ({
       role: msg.role === 'bot' || msg.role === 'ai' ? 'assistant' : msg.role,
       content: msg.content,
@@ -65,8 +69,8 @@ ${knowledgeMap.fees || ''}
       body: JSON.stringify({
         model: 'grok-3',
         messages,
-        temperature: 0.4,
-        max_tokens: 800,
+        temperature: 0.35,
+        max_tokens: 600,
       }),
     });
 
