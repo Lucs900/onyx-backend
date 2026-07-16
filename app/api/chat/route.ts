@@ -33,7 +33,6 @@ You only work with equity-rich homeowners in California.
 - Ask only **one question at a time**.
 - Confirm occupancy before giving a final quote when possible.
 - Never mention any specific lender name.
-- If you have enough information (home value, mortgage balance, FICO, occupancy), I will provide you with the accurate calculation.
 `;
 
     // Normalize roles
@@ -74,18 +73,23 @@ You only work with equity-rich homeowners in California.
     const data = await response.json();
     let reply = data.choices?.[0]?.message?.content || "Sorry, I couldn't generate a response.";
 
-    // === Simple Tool Logic (Option 1) ===
-    // If user has given enough info, calculate using the tool
-    const lastUserMessage = message.toLowerCase();
-    const hasNumbers = /\d/.test(lastUserMessage);
+    // ============================================
+    // SIMPLE TOOL LOGIC (Option 1)
+    // If user gave numbers, we can calculate here
+    // ============================================
+    const lowerMsg = message.toLowerCase();
 
-    if (hasNumbers && history && history.length >= 2) {
-      // Try to extract basic numbers from conversation (simple version)
-      const homeValueMatch = message.match(/(\d[\d,.]*)\s*(k|m|000)?/i);
-      // For now we keep it simple — we'll improve extraction later
+    // Very basic detection: if message contains numbers and we have some history
+    const hasNumbers = /\d/.test(message);
+
+    if (hasNumbers && history && history.length >= 1) {
+      // For now we keep it simple. 
+      // Later we can improve number extraction.
+      // You can test by giving clear numbers like: "home value 1 million, owe 400k, fico 780, primary"
     }
 
     return Response.json({ reply });
+
   } catch (error: any) {
     console.error('Route Error:', error);
     return Response.json(
