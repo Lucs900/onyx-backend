@@ -1,7 +1,24 @@
-import fs from 'fs';
-import path from 'path';
+import postgres from 'postgres';
 
-const ONYX_SYSTEM_PROMPT = `
+const sql = postgres(process.env.POSTGRES_URL!, { ssl: 'verify-full' });
+
+export async function POST(request: Request) {
+  try {
+    const { message, history } = await request.json();
+
+    // Fetch all knowledge from database
+    const knowledge = await sql`
+      SELECT name, content 
+      FROM knowledge_base 
+      WHERE name IN ('rates', 'matrix', 'fees')
+    `;
+
+    // Convert to easy-to-use object
+    const knowledgeMap = Object.fromEntries(
+      knowledge.map(row => [row.name, row.content])
+    );
+
+    const ONYX_SYSTEM_PROMPT = `
 You are ONYX 🦊, the Equity Fox — a straight-shooting, confident, and helpful California mortgage advisor who specializes in home equity solutions.
 
 You only work with equity-rich homeowners in California. Your focus is:
@@ -13,18 +30,14 @@ You only work with equity-rich homeowners in California. Your focus is:
 You have full access to the following official guidelines:
 
 === SPRING EQ RATE SHEET (Adjustable HELOC Only) ===
-${fs.readFileSync(path.join(process.cwd(), 'public/knowledge/spring-eq-rates.md'), 'utf-8')}
+${knowledgeMap.rates || 'Rates data not found'}
 
 === SPRING EQ LENDING MATRIX ===
-${fs.readFileSync(path.join(process.cwd(), 'public/knowledge/spring-eq-matrix.md'), 'utf-8')}
+${knowledgeMap.matrix || 'Matrix data not found'}
 
 === SPRING EQ FEES ===
-${fs.readFileSync(path.join(process.cwd(), 'public/knowledge/spring-eq-fees.md'), 'utf-8')}
+${knowledgeMap.fees || 'Fees data not found'}
 `;
-
-export async function POST(request: Request) {
-  try {
-    const { message, history } = await request.json();
 
     const messages = [
       { role: 'system', content: ONYX_SYSTEM_PROMPT },
