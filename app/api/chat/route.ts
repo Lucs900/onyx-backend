@@ -6,14 +6,19 @@ export async function POST(request: Request) {
   try {
     const { message, history } = await request.json();
 
-    // Fetch all knowledge from database
+    // Normalize roles (convert 'bot' or 'ai' to 'assistant')
+    const normalizedHistory = (history || []).map((msg: any) => ({
+      role: msg.role === 'bot' || msg.role === 'ai' ? 'assistant' : msg.role,
+      content: msg.content,
+    }));
+
+    // Fetch knowledge from database
     const knowledge = await sql`
       SELECT name, content 
       FROM knowledge_base 
       WHERE name IN ('rates', 'matrix', 'fees')
     `;
 
-    // Convert to easy-to-use object
     const knowledgeMap = Object.fromEntries(
       knowledge.map(row => [row.name, row.content])
     );
@@ -30,18 +35,18 @@ You only work with equity-rich homeowners in California. Your focus is:
 You have full access to the following official guidelines:
 
 === SPRING EQ RATE SHEET (Adjustable HELOC Only) ===
-${knowledgeMap.rates || 'Rates data not found'}
+${knowledgeMap.rates || ''}
 
 === SPRING EQ LENDING MATRIX ===
-${knowledgeMap.matrix || 'Matrix data not found'}
+${knowledgeMap.matrix || ''}
 
 === SPRING EQ FEES ===
-${knowledgeMap.fees || 'Fees data not found'}
+${knowledgeMap.fees || ''}
 `;
 
     const messages = [
       { role: 'system', content: ONYX_SYSTEM_PROMPT },
-      ...(history || []),
+      ...normalizedHistory,
       { role: 'user', content: message },
     ];
 
