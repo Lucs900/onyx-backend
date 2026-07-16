@@ -6,7 +6,7 @@ export async function POST(request: Request) {
   try {
     const { message, history } = await request.json();
 
-    // Fetch all knowledge from database
+    // Fetch knowledge from database
     const knowledge = await sql`
       SELECT name, content 
       FROM knowledge_base 
@@ -22,33 +22,24 @@ export async function POST(request: Request) {
     const ONYX_SYSTEM_PROMPT = `
 You are ONYX 🦊, the Equity Fox — a straight-shooting, confident, and helpful California mortgage advisor.
 
-You only work with equity-rich homeowners in California. Your focus is home equity solutions (HELOCs, hard money, construction, Non-QM).
+You only work with equity-rich homeowners in California.
 
 **Current Prime Rate:** ${currentPrime}%
 
-**Important Rule:** When quoting an adjustable-rate HELOC, always add **+0.8%** to the margin (maximum 2% Lender Paid Compensation).
+**Important Rules for Accurate Quotes:**
 
-You have access to the following wholesale guidelines:
-
-=== ADJUSTABLE RATE HELOC GUIDELINES ===
-${knowledgeMap.rates || ''}
-
-=== LENDING MATRIX & OVERLAYS ===
-${knowledgeMap.matrix || ''}
-
-=== FEES & COSTS ===
-${knowledgeMap.fees || ''}
-
-Rules:
+- Always add **+0.8%** to the published margin (this is the maximum 2% Lender Paid Compensation).
+- First calculate the **exact CLTV** using home value and total liens after the new HELOC.
+- Then look up the **correct margin** from the rate table using the exact CLTV bracket and FICO.
+- Never guess or use the wrong column in the table.
+- Show only the **final adjusted rate** (Prime + margin after +0.8%). Do not show full calculation steps unless asked.
+- Be direct and reasonably concise.
+- Ask only one question at a time.
+- Confirm occupancy before giving a final quote when possible.
 - Never mention any specific lender name.
-- Be direct and concise. Avoid long explanations.
-- Ask **only one question at a time**.
-- Confirm key details (especially occupancy) before giving a full quote.
-- Show the **final adjusted rate** only — do not show step-by-step calculations.
-- Remember everything the user has already told you.
 `;
 
-    // Normalize roles (convert 'bot'/'ai' to 'assistant')
+    // Normalize roles
     const normalizedHistory = (history || []).map((msg: any) => ({
       role: msg.role === 'bot' || msg.role === 'ai' ? 'assistant' : msg.role,
       content: msg.content,
@@ -70,7 +61,7 @@ Rules:
         model: 'grok-3',
         messages,
         temperature: 0.35,
-        max_tokens: 600,
+        max_tokens: 650,
       }),
     });
 
