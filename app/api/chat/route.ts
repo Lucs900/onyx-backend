@@ -33,9 +33,11 @@ You only work with equity-rich homeowners in California.
 - Ask only **one question at a time**.
 - Confirm occupancy before giving a final quote when possible.
 - Never mention any specific lender name.
+
+When you have enough information (home value, current mortgage balance, FICO, and occupancy), I will calculate the accurate quote for you using the internal tool.
 `;
 
-    // Normalize roles
+    // Normalize roles (convert 'bot'/'ai' to 'assistant')
     const normalizedHistory = (history || []).map((msg: any) => ({
       role: msg.role === 'bot' || msg.role === 'ai' ? 'assistant' : msg.role,
       content: msg.content,
@@ -74,18 +76,49 @@ You only work with equity-rich homeowners in California.
     let reply = data.choices?.[0]?.message?.content || "Sorry, I couldn't generate a response.";
 
     // ============================================
-    // SIMPLE TOOL LOGIC (Option 1)
-    // If user gave numbers, we can calculate here
+    // INTERNAL TOOL LOGIC
+    // If user gave numbers, try to use the calculator tool
     // ============================================
-    const lowerMsg = message.toLowerCase();
-
-    // Very basic detection: if message contains numbers and we have some history
     const hasNumbers = /\d/.test(message);
+    const recentMessages = [...(history || []), { role: 'user', content: message }]
+      .slice(-4)
+      .map(m => m.content)
+      .join(' ');
 
-    if (hasNumbers && history && history.length >= 1) {
-      // For now we keep it simple. 
-      // Later we can improve number extraction.
-      // You can test by giving clear numbers like: "home value 1 million, owe 400k, fico 780, primary"
+    if (hasNumbers) {
+      // Try to extract basic numbers (simple version)
+      const homeValueMatch = recentMessages.match(/(\d[\d,.]*)\s*(k|m|000|million)?/i);
+      const mortgageMatch = recentMessages.match(/(owe|balance|mortgage).*?(\d[\d,.]*)\s*(k|m|000|million)?/i);
+      const ficoMatch = recentMessages.match(/(\d{3})/);
+
+      if (homeValueMatch && mortgageMatch && ficoMatch) {
+        const homeValue = parseFloat(homeValueMatch[1].replace(/,/g, '')) * 
+          (homeValueMatch[2]?.toLowerCase().includes('m') || homeValueMatch[2]?.includes('million') ? 1000000 : 1);
+
+        const currentMortgage = parseFloat(mortgageMatch[2].replace(/,/g, '')) * 
+          (mortgageMatch[3]?.toLowerCase().includes('m') || mortgageMatch[3]?.includes('million') ? 1000000 : 1);
+
+        const fico = parseInt(ficoMatch[1]);
+
+        // Default to Primary if not mentioned
+        const occupancy = recentMessages.toLowerCase().includes('investment') ? 'Investment' : 'Primary';
+
+        const quote = calculateHelocQuote({
+          homeValue,
+          currentMortgage,
+          fico,
+          occupancy,
+        });
+
+        reply = `Based on what you've shared:\n\n` +
+          `- Home Value: $${homeValue.toLocaleString()}\n` +
+          `- Current Mortgage: $${currentMortgage.toLocaleString()}\n` +
+          `- FICO: ${fico}\n` +
+          `- Occupancy: ${occupancy}\n\n` +
+          `**Estimated Rate:** ${quote.finalRate}%\n` +
+          `**Max HELOC Line:** $${quote.maxLine.toLocaleString()}\n\n` +
+          `Would you like me to show payment options or adjust anything?`;
+      }
     }
 
     return Response.json({ reply });
