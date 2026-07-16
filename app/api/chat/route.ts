@@ -3,19 +3,6 @@ import { calculateHelocQuote } from '../../lib/calculateHelocQuote';
 
 const sql = postgres(process.env.POSTGRES_URL!, { ssl: 'verify-full' });
 
-function extractNumber(text: string): number {
-  const match = text.match(/(\d[\d,.]*)\s*(k|m|000|million|thousand)?/i);
-  if (!match) return 0;
-
-  let num = parseFloat(match[1].replace(/,/g, ''));
-
-  const unit = match[2]?.toLowerCase();
-  if (unit === 'k' || unit === 'thousand') num *= 1000;
-  if (unit === 'm' || unit === 'million') num *= 1000000;
-
-  return num;
-}
-
 export async function POST(request: Request) {
   try {
     const { message, history } = await request.json();
@@ -41,10 +28,16 @@ You only work with equity-rich homeowners in California.
 
 **Important Rules:**
 - Always add **+0.8%** to the published margin (maximum 2% Lender Paid Compensation).
-- Be direct and reasonably concise.
-- Ask only **one question at a time**.
+- Ask **only ONE question at a time**.
+- Follow this order when gathering information:
+  1. Occupancy (Primary, Second Home, or Investment)
+  2. Home value
+  3. Current total mortgage/lien balance
+  4. Desired HELOC amount (or equity access goal)
+  5. FICO score
+- Do NOT give rate or max line quotes until you have home value + current mortgage balance + FICO.
+- Be direct and concise. Avoid repeating information.
 - Never mention any specific lender name.
-- Assume the user is in California unless they say otherwise.
 `;
 
     const normalizedHistory = (history || []).map((msg: any) => ({
@@ -68,7 +61,7 @@ You only work with equity-rich homeowners in California.
         model: 'grok-3',
         messages,
         temperature: 0.35,
-        max_tokens: 650,
+        max_tokens: 600,
       }),
     });
 
@@ -82,52 +75,7 @@ You only work with equity-rich homeowners in California.
     }
 
     const data = await response.json();
-    let reply = data.choices?.[0]?.message?.content || "Sorry, I couldn't generate a response.";
-
-    // ============================================
-    // IMPROVED NUMBER EXTRACTION
-    // ============================================
-    const combinedText = [...(history || []), { role: 'user', content: message }]
-      .map(m => m.content.toLowerCase())
-      .join(' ');
-
-    // Extract Home Value (look for value/worth keywords)
-    let homeValue = 0;
-    const valueMatch = combinedText.match(/(value|worth|home is).*?(\d[\d,.]*)\s*(k|m|000|million)?/i);
-    if (valueMatch) homeValue = extractNumber(valueMatch[0]);
-
-    // Extract Mortgage Balance (look for owe/balance/mortgage keywords)
-    let currentMortgage = 0;
-    const mortgageMatch = combinedText.match(/(owe|balance|mortgage|lien).*?(\d[\d,.]*)\s*(k|m|000|million)?/i);
-    if (mortgageMatch) currentMortgage = extractNumber(mortgageMatch[0]);
-
-    // Extract FICO
-    const ficoMatch = combinedText.match(/\b(6[0-9]{2}|7[0-9]{2}|8[0-9]{2})\b/);
-    const fico = ficoMatch ? parseInt(ficoMatch[1]) : 0;
-
-    // Occupancy
-    const occupancy = combinedText.includes('investment') ? 'Investment' 
-      : combinedText.includes('second') ? 'Second' 
-      : 'Primary';
-
-    // Only call the tool if we have good data
-    if (homeValue > 100000 && currentMortgage > 0 && fico >= 640) {
-      const quote = calculateHelocQuote({
-        homeValue,
-        currentMortgage,
-        fico,
-        occupancy,
-      });
-
-      reply = `Based on the numbers you shared:\n\n` +
-        `- Home Value: $${homeValue.toLocaleString()}\n` +
-        `- Current Mortgage: $${currentMortgage.toLocaleString()}\n` +
-        `- FICO: ${fico}\n` +
-        `- Occupancy: ${occupancy}\n\n` +
-        `**Estimated Rate:** ${quote.finalRate}%\n` +
-        `**Max HELOC Line:** $${quote.maxLine.toLocaleString()}\n\n` +
-        `Would you like payment options or to adjust anything?`;
-    }
+    const reply = data.choices?.[0]?.message?.content || "Sorry, I couldn't generate a response.";
 
     return Response.json({ reply });
 
