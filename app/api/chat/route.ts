@@ -1,4 +1,5 @@
 import postgres from 'postgres';
+import { calculateHelocQuote } from '../../lib/calculateHelocQuote';
 
 const sql = postgres(process.env.POSTGRES_URL!, { ssl: 'verify-full' });
 
@@ -26,15 +27,11 @@ You only work with equity-rich homeowners in California.
 
 **Current Prime Rate:** ${currentPrime}%
 
-**Important Rules for Accurate Quotes:**
-
-- Always add **+0.8%** to the published margin (this is the maximum 2% Lender Paid Compensation).
-- First calculate the **exact CLTV** using home value and total liens after the new HELOC.
-- Then look up the **correct margin** from the rate table using the exact CLTV bracket and FICO.
-- Never guess or use the wrong column in the table.
-- Show only the **final adjusted rate** (Prime + margin after +0.8%). Do not show full calculation steps unless asked.
-- Be direct and reasonably concise.
-- Ask only one question at a time.
+**Important Rules:**
+- Always add **+0.8%** to the published margin (maximum 2% Lender Paid Compensation).
+- When you have enough information (home value, mortgage balance, FICO, occupancy, and desired line amount), call the calculateHelocQuote tool to get accurate numbers.
+- Show only the final adjusted rate. Do not show long calculations.
+- Ask only **one question at a time**.
 - Confirm occupancy before giving a final quote when possible.
 - Never mention any specific lender name.
 `;
