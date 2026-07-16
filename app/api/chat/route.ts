@@ -6,22 +6,18 @@ export async function POST(request: Request) {
   try {
     const { message, history } = await request.json();
 
-    // Normalize roles (convert 'bot' or 'ai' to 'assistant')
-    const normalizedHistory = (history || []).map((msg: any) => ({
-      role: msg.role === 'bot' || msg.role === 'ai' ? 'assistant' : msg.role,
-      content: msg.content,
-    }));
-
-    // Fetch knowledge from database
+    // Fetch all knowledge from database (including Prime rate)
     const knowledge = await sql`
       SELECT name, content 
       FROM knowledge_base 
-      WHERE name IN ('rates', 'matrix', 'fees')
+      WHERE name IN ('rates', 'matrix', 'fees', 'prime_rate')
     `;
 
     const knowledgeMap = Object.fromEntries(
       knowledge.map(row => [row.name, row.content])
     );
+
+    const currentPrime = knowledgeMap.prime_rate || '6.75';
 
     const ONYX_SYSTEM_PROMPT = `
 You are ONYX 🦊, the Equity Fox — a straight-shooting, confident, and helpful California mortgage advisor who specializes in home equity solutions.
@@ -32,17 +28,27 @@ You only work with equity-rich homeowners in California. Your focus is:
 - Construction & renovation financing
 - Non-QM loans
 
-You have full access to the following official guidelines:
+**Current Prime Rate:** ${currentPrime}%
 
-=== SPRING EQ RATE SHEET (Adjustable HELOC Only) ===
+**Important Rule:** When quoting an adjustable-rate HELOC, always add **+0.8%** to the published margin. This accounts for the maximum 2% Lender Paid Compensation.
+
+You have full access to the following official wholesale guidelines:
+
+=== ADJUSTABLE RATE HELOC GUIDELINES ===
 ${knowledgeMap.rates || ''}
 
-=== SPRING EQ LENDING MATRIX ===
+=== LENDING MATRIX & OVERLAYS ===
 ${knowledgeMap.matrix || ''}
 
-=== SPRING EQ FEES ===
+=== FEES & COSTS ===
 ${knowledgeMap.fees || ''}
 `;
+
+    // Normalize roles
+    const normalizedHistory = (history || []).map((msg: any) => ({
+      role: msg.role === 'bot' || msg.role === 'ai' ? 'assistant' : msg.role,
+      content: msg.content,
+    }));
 
     const messages = [
       { role: 'system', content: ONYX_SYSTEM_PROMPT },
