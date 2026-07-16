@@ -20,7 +20,6 @@ export async function POST(request: Request) {
   try {
     const { message, history } = await request.json();
 
-    // Fetch knowledge from database
     const knowledge = await sql`
       SELECT name, content 
       FROM knowledge_base 
@@ -44,11 +43,10 @@ You only work with equity-rich homeowners in California.
 - Always add **+0.8%** to the published margin (maximum 2% Lender Paid Compensation).
 - Be direct and reasonably concise.
 - Ask only **one question at a time**.
-- Confirm occupancy before giving a final quote when possible.
 - Never mention any specific lender name.
+- Assume the user is in California unless they say otherwise.
 `;
 
-    // Normalize roles
     const normalizedHistory = (history || []).map((msg: any) => ({
       role: msg.role === 'bot' || msg.role === 'ai' ? 'assistant' : msg.role,
       content: msg.content,
@@ -87,30 +85,32 @@ You only work with equity-rich homeowners in California.
     let reply = data.choices?.[0]?.message?.content || "Sorry, I couldn't generate a response.";
 
     // ============================================
-    // INTERNAL TOOL - Improved Number Extraction
+    // IMPROVED NUMBER EXTRACTION
     // ============================================
     const combinedText = [...(history || []), { role: 'user', content: message }]
-      .map(m => m.content)
+      .map(m => m.content.toLowerCase())
       .join(' ');
 
-    const homeValue = extractNumber(
-      combinedText.match(/home.*value|value of.*home|home is worth/i)?.input || combinedText
-    );
+    // Extract Home Value (look for value/worth keywords)
+    let homeValue = 0;
+    const valueMatch = combinedText.match(/(value|worth|home is).*?(\d[\d,.]*)\s*(k|m|000|million)?/i);
+    if (valueMatch) homeValue = extractNumber(valueMatch[0]);
 
-    const currentMortgage = extractNumber(
-      combinedText.match(/mortgage|owe|balance|lien/i)?.input || combinedText
-    );
+    // Extract Mortgage Balance (look for owe/balance/mortgage keywords)
+    let currentMortgage = 0;
+    const mortgageMatch = combinedText.match(/(owe|balance|mortgage|lien).*?(\d[\d,.]*)\s*(k|m|000|million)?/i);
+    if (mortgageMatch) currentMortgage = extractNumber(mortgageMatch[0]);
 
+    // Extract FICO
     const ficoMatch = combinedText.match(/\b(6[0-9]{2}|7[0-9]{2}|8[0-9]{2})\b/);
     const fico = ficoMatch ? parseInt(ficoMatch[1]) : 0;
 
-    const occupancy = combinedText.toLowerCase().includes('investment') 
-      ? 'Investment' 
-      : combinedText.toLowerCase().includes('second') 
-        ? 'Second' 
-        : 'Primary';
+    // Occupancy
+    const occupancy = combinedText.includes('investment') ? 'Investment' 
+      : combinedText.includes('second') ? 'Second' 
+      : 'Primary';
 
-    // Only call the tool if we have the minimum required data
+    // Only call the tool if we have good data
     if (homeValue > 100000 && currentMortgage > 0 && fico >= 640) {
       const quote = calculateHelocQuote({
         homeValue,
@@ -126,7 +126,7 @@ You only work with equity-rich homeowners in California.
         `- Occupancy: ${occupancy}\n\n` +
         `**Estimated Rate:** ${quote.finalRate}%\n` +
         `**Max HELOC Line:** $${quote.maxLine.toLocaleString()}\n\n` +
-        `Would you like payment examples or to adjust anything?`;
+        `Would you like payment options or to adjust anything?`;
     }
 
     return Response.json({ reply });
