@@ -17,7 +17,7 @@ export const calculateHelocQuoteTool = tool({
     const cltv = (totalLiens / homeValue) * 100;
 
     const publishedMargin = getMarginFromTable(fico, cltv, occupancy);
-    const adjustedMargin = publishedMargin + 0.8; // Max 2% Lender Paid Compensation
+    const adjustedMargin = publishedMargin + 0.8;
     const finalRate = 6.75 + adjustedMargin;
 
     const maxLine = Math.round(

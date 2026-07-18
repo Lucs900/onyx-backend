@@ -48,7 +48,7 @@ You only work with equity-rich homeowners in California.
 
     const result = await generateText({
       model: grok('grok-3'),
-      system: systemPrompt,           // ← System prompt moved here
+      system: systemPrompt,
       messages,
       tools: {
         calculateHelocQuote: calculateHelocQuoteTool,
