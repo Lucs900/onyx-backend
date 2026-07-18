@@ -1,26 +1,25 @@
 import { tool } from 'ai';
 import { z } from 'zod';
 
-// Define the tool that ONYX can call
 export const calculateHelocQuoteTool = tool({
-  description: `Calculate accurate HELOC quote including max line, margin, rate after compensation, and CLTV. 
-  Use this whenever the user has provided home value, current mortgage balance, FICO, and occupancy.`,
+  description: 'Calculate accurate HELOC quote including max line, margin, rate after compensation, and CLTV.',
   
   parameters: z.object({
     homeValue: z.number().describe('Current estimated home value in USD'),
     currentMortgage: z.number().describe('Current total mortgage/lien balance in USD'),
     desiredLine: z.number().optional().describe('Desired HELOC line amount (optional)'),
-    fico: z.number().describe('Borrower FICO score (lowest of all borrowers)'),
+    fico: z.number().describe('Borrower FICO score'),
     occupancy: z.enum(['Primary', 'Second', 'Investment']).describe('Property occupancy type'),
   }),
 
-  execute: async ({ homeValue, currentMortgage, desiredLine, fico, occupancy }) => {
-    const totalLiens = currentMortgage + (desiredLine || 0);
+  execute: async (params) => {
+    const { homeValue, currentMortgage, desiredLine = 0, fico, occupancy } = params;
+
+    const totalLiens = currentMortgage + desiredLine;
     const cltv = (totalLiens / homeValue) * 100;
 
-    // Get correct published margin
     const publishedMargin = getMarginFromTable(fico, cltv, occupancy);
-    const adjustedMargin = publishedMargin + 0.8; // Max 2% LPC
+    const adjustedMargin = publishedMargin + 0.8;
     const finalRate = 6.75 + adjustedMargin;
 
     const maxLine = Math.round(
@@ -38,7 +37,6 @@ export const calculateHelocQuoteTool = tool({
   },
 });
 
-// Accurate margin lookup based on your rate table
 function getMarginFromTable(fico: number, cltv: number, occupancy: string): number {
   if (occupancy === 'Investment') return 1.5;
 
