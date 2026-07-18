@@ -57,7 +57,7 @@ You only work with equity-rich homeowners in California.
         calculateHelocQuote: calculateHelocQuoteTool,
       },
       temperature: 0.4,
-      maxTokens: 800,
+      maxOutputTokens: 800,
     });
 
     return result.toDataStreamResponse();
