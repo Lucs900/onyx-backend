@@ -60,7 +60,7 @@ You only work with equity-rich homeowners in California.
       maxOutputTokens: 800,
     });
 
-    return result.toDataStreamResponse();
+    return result.toTextStreamResponse();
 
   } catch (error: any) {
     console.error('Route Error:', error);
