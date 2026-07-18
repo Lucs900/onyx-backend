@@ -1,106 +1,75 @@
-import { tool } from 'ai';
-import { z } from 'zod';
+import { generateText } from 'ai';
+import { createOpenAI } from '@ai-sdk/openai';
+import postgres from 'postgres';
+import { calculateHelocQuoteTool } from '../../lib/calculateHelocQuote';
 
-export const calculateHelocQuoteTool = tool({
-  description: 'Calculate an accurate HELOC quote including max line amount, published margin, adjusted margin after compensation, final rate, and CLTV.',
-  
-  inputSchema: z.object({
-    homeValue: z.number().describe('Current estimated home value in USD'),
-    currentMortgage: z.number().describe('Current total mortgage or lien balance in USD'),
-    desiredLine: z.number().optional().describe('Desired HELOC line amount the user wants (optional)'),
-    fico: z.number().describe('Borrower FICO score (lowest of all borrowers)'),
-    occupancy: z.enum(['Primary', 'Second', 'Investment']).describe('Property occupancy type'),
-  }),
+const sql = postgres(process.env.POSTGRES_URL!, { ssl: 'verify-full' });
 
-  execute: async ({ homeValue, currentMortgage, desiredLine = 0, fico, occupancy }) => {
-    const totalLiens = currentMortgage + desiredLine;
-    const cltv = (totalLiens / homeValue) * 100;
-
-    const publishedMargin = getMarginFromTable(fico, cltv, occupancy);
-    const adjustedMargin = publishedMargin + 0.8;
-    const finalRate = 6.75 + adjustedMargin;
-
-    const maxLine = Math.round(
-      homeValue * (occupancy === 'Investment' ? 0.75 : 0.85) - currentMortgage
-    );
-
-    return {
-      cltv: Math.round(cltv * 100) / 100,
-      maxLine: Math.max(0, maxLine),
-      publishedMargin: Math.round(publishedMargin * 1000) / 1000,
-      adjustedMargin: Math.round(adjustedMargin * 1000) / 1000,
-      finalRate: Math.round(finalRate * 100) / 100,
-      occupancy,
-    };
-  },
+const grok = createOpenAI({
+  baseURL: 'https://api.x.ai/v1',
+  apiKey: process.env.grok_api_key,
 });
 
-function getMarginFromTable(fico: number, cltv: number, occupancy: string): number {
-  if (occupancy === 'Investment') return 1.5;
+export async function POST(request: Request) {
+  try {
+    const { message, history } = await request.json();
 
-  if (fico >= 780) {
-    if (cltv <= 60) return 0.275;
-    if (cltv <= 65) return 0.275;
-    if (cltv <= 70) return 0.3;
-    if (cltv <= 75) return 0.4;
-    if (cltv <= 80) return 0.55;
-    return 0.85;
+    const knowledge = await sql`
+      SELECT name, content 
+      FROM knowledge_base 
+      WHERE name IN ('rates', 'matrix', 'fees', 'prime_rate')
+    `;
+
+    const knowledgeMap = Object.fromEntries(
+      knowledge.map(row => [row.name, row.content])
+    );
+
+    const currentPrime = knowledgeMap.prime_rate || '6.75';
+
+    const systemPrompt = `
+You are ONYX 🦊, the Equity Fox — a straight-shooting, confident, and helpful California mortgage advisor.
+
+You only work with equity-rich homeowners in California.
+
+**Current Prime Rate:** ${currentPrime}%
+
+**Important Rules:**
+- Always add **+0.8%** to the published margin (maximum 2% Lender Paid Compensation).
+- Be direct and reasonably concise.
+- Ask only **one question at a time**.
+- Never mention any specific lender name.
+- When you have enough information (home value, current mortgage balance, FICO, and occupancy), use the calculateHelocQuote tool.
+`;
+
+    // Normalize roles (convert 'bot' to 'assistant')
+    const normalizedHistory = (history || []).map((msg: any) => ({
+      role: msg.role === 'bot' || msg.role === 'ai' ? 'assistant' : msg.role,
+      content: msg.content,
+    }));
+
+    const messages = [
+      ...(normalizedHistory || []),
+      { role: 'user', content: message },
+    ];
+
+    const result = await generateText({
+      model: grok('grok-3'),
+      system: systemPrompt,
+      messages,
+      tools: {
+        calculateHelocQuote: calculateHelocQuoteTool,
+      },
+      temperature: 0.35,
+      maxOutputTokens: 700,
+    });
+
+    return Response.json({ reply: result.text });
+
+  } catch (error: any) {
+    console.error('Route Error:', error);
+    return Response.json(
+      { reply: "Sorry, I'm having trouble connecting right now." },
+      { status: 500 }
+    );
   }
-  if (fico >= 760) {
-    if (cltv <= 60) return 0.3;
-    if (cltv <= 65) return 0.3;
-    if (cltv <= 70) return 0.325;
-    if (cltv <= 75) return 0.425;
-    if (cltv <= 80) return 0.575;
-    return 0.875;
-  }
-  if (fico >= 740) {
-    if (cltv <= 60) return 0.325;
-    if (cltv <= 65) return 0.325;
-    if (cltv <= 70) return 0.35;
-    if (cltv <= 75) return 0.45;
-    if (cltv <= 80) return 0.6;
-    return 0.9;
-  }
-  if (fico >= 720) {
-    if (cltv <= 60) return 0.35;
-    if (cltv <= 65) return 0.35;
-    if (cltv <= 70) return 0.375;
-    if (cltv <= 75) return 0.475;
-    if (cltv <= 80) return 0.625;
-    return 0.925;
-  }
-  if (fico >= 700) {
-    if (cltv <= 60) return 0.4;
-    if (cltv <= 65) return 0.4;
-    if (cltv <= 70) return 0.425;
-    if (cltv <= 75) return 0.525;
-    if (cltv <= 80) return 0.675;
-    return 0.975;
-  }
-  if (fico >= 680) {
-    if (cltv <= 60) return 0.55;
-    if (cltv <= 65) return 0.55;
-    if (cltv <= 70) return 0.575;
-    if (cltv <= 75) return 0.675;
-    if (cltv <= 80) return 0.825;
-    return 1.125;
-  }
-  if (fico >= 660) {
-    if (cltv <= 60) return 0.85;
-    if (cltv <= 65) return 0.85;
-    if (cltv <= 70) return 0.875;
-    if (cltv <= 75) return 0.975;
-    if (cltv <= 80) return 1.125;
-    return 1.425;
-  }
-  if (fico >= 640) {
-    if (cltv <= 60) return 1.15;
-    if (cltv <= 65) return 1.15;
-    if (cltv <= 70) return 1.175;
-    if (cltv <= 75) return 1.275;
-    if (cltv <= 80) return 1.425;
-    return 1.725;
-  }
-  return 2.0;
 }
