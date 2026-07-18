@@ -1,47 +1,47 @@
-// lib/calculateHelocQuote.ts
+import { tool } from 'ai';
+import { z } from 'zod';
 
-export function calculateHelocQuote(params: {
-  homeValue: number;
-  currentMortgage: number;
-  desiredLine?: number;
-  fico: number;
-  occupancy: 'Primary' | 'Second' | 'Investment';
-}) {
-  const { homeValue, currentMortgage, desiredLine = 0, fico, occupancy } = params;
+// Define the tool that ONYX can call
+export const calculateHelocQuoteTool = tool({
+  description: `Calculate accurate HELOC quote including max line, margin, rate after compensation, and CLTV. 
+  Use this whenever the user has provided home value, current mortgage balance, FICO, and occupancy.`,
+  
+  parameters: z.object({
+    homeValue: z.number().describe('Current estimated home value in USD'),
+    currentMortgage: z.number().describe('Current total mortgage/lien balance in USD'),
+    desiredLine: z.number().optional().describe('Desired HELOC line amount (optional)'),
+    fico: z.number().describe('Borrower FICO score (lowest of all borrowers)'),
+    occupancy: z.enum(['Primary', 'Second', 'Investment']).describe('Property occupancy type'),
+  }),
 
-  const totalLiens = currentMortgage + desiredLine;
-  const cltv = (totalLiens / homeValue) * 100;
+  execute: async ({ homeValue, currentMortgage, desiredLine, fico, occupancy }) => {
+    const totalLiens = currentMortgage + (desiredLine || 0);
+    const cltv = (totalLiens / homeValue) * 100;
 
-  // Get the correct published margin from the rate table
-  const publishedMargin = getMarginFromTable(fico, cltv, occupancy);
+    // Get correct published margin
+    const publishedMargin = getMarginFromTable(fico, cltv, occupancy);
+    const adjustedMargin = publishedMargin + 0.8; // Max 2% LPC
+    const finalRate = 6.75 + adjustedMargin;
 
-  // Always add 0.8% for max 2% Lender Paid Compensation
-  const adjustedMargin = publishedMargin + 0.8;
+    const maxLine = Math.round(
+      homeValue * (occupancy === 'Investment' ? 0.75 : 0.85) - currentMortgage
+    );
 
-  const finalRate = 6.75 + adjustedMargin; // Current Prime
-
-  const maxLine = Math.round(
-    homeValue * (occupancy === 'Investment' ? 0.75 : 0.85) - currentMortgage
-  );
-
-  return {
-    cltv: Math.round(cltv * 100) / 100,
-    maxLine: Math.max(0, maxLine),
-    publishedMargin: Math.round(publishedMargin * 1000) / 1000,
-    adjustedMargin: Math.round(adjustedMargin * 1000) / 1000,
-    finalRate: Math.round(finalRate * 100) / 100,
-    occupancy,
-  };
-}
+    return {
+      cltv: Math.round(cltv * 100) / 100,
+      maxLine: Math.max(0, maxLine),
+      publishedMargin: Math.round(publishedMargin * 1000) / 1000,
+      adjustedMargin: Math.round(adjustedMargin * 1000) / 1000,
+      finalRate: Math.round(finalRate * 100) / 100,
+      occupancy,
+    };
+  },
+});
 
 // Accurate margin lookup based on your rate table
 function getMarginFromTable(fico: number, cltv: number, occupancy: string): number {
-  // Investment properties have different rules
-  if (occupancy === 'Investment') {
-    return 1.5; // Base adjustment for investment
-  }
+  if (occupancy === 'Investment') return 1.5;
 
-  // FICO 780+
   if (fico >= 780) {
     if (cltv <= 60) return 0.275;
     if (cltv <= 65) return 0.275;
@@ -50,8 +50,6 @@ function getMarginFromTable(fico: number, cltv: number, occupancy: string): numb
     if (cltv <= 80) return 0.55;
     return 0.85;
   }
-
-  // FICO 760-779
   if (fico >= 760) {
     if (cltv <= 60) return 0.3;
     if (cltv <= 65) return 0.3;
@@ -60,8 +58,6 @@ function getMarginFromTable(fico: number, cltv: number, occupancy: string): numb
     if (cltv <= 80) return 0.575;
     return 0.875;
   }
-
-  // FICO 740-759
   if (fico >= 740) {
     if (cltv <= 60) return 0.325;
     if (cltv <= 65) return 0.325;
@@ -70,8 +66,6 @@ function getMarginFromTable(fico: number, cltv: number, occupancy: string): numb
     if (cltv <= 80) return 0.6;
     return 0.9;
   }
-
-  // FICO 720-739
   if (fico >= 720) {
     if (cltv <= 60) return 0.35;
     if (cltv <= 65) return 0.35;
@@ -80,8 +74,6 @@ function getMarginFromTable(fico: number, cltv: number, occupancy: string): numb
     if (cltv <= 80) return 0.625;
     return 0.925;
   }
-
-  // FICO 700-719
   if (fico >= 700) {
     if (cltv <= 60) return 0.4;
     if (cltv <= 65) return 0.4;
@@ -90,8 +82,6 @@ function getMarginFromTable(fico: number, cltv: number, occupancy: string): numb
     if (cltv <= 80) return 0.675;
     return 0.975;
   }
-
-  // FICO 680-699
   if (fico >= 680) {
     if (cltv <= 60) return 0.55;
     if (cltv <= 65) return 0.55;
@@ -100,8 +90,6 @@ function getMarginFromTable(fico: number, cltv: number, occupancy: string): numb
     if (cltv <= 80) return 0.825;
     return 1.125;
   }
-
-  // FICO 660-679
   if (fico >= 660) {
     if (cltv <= 60) return 0.85;
     if (cltv <= 65) return 0.85;
@@ -110,8 +98,6 @@ function getMarginFromTable(fico: number, cltv: number, occupancy: string): numb
     if (cltv <= 80) return 1.125;
     return 1.425;
   }
-
-  // FICO 640-659
   if (fico >= 640) {
     if (cltv <= 60) return 1.15;
     if (cltv <= 65) return 1.15;
@@ -120,6 +106,5 @@ function getMarginFromTable(fico: number, cltv: number, occupancy: string): numb
     if (cltv <= 80) return 1.425;
     return 1.725;
   }
-
-  return 2.0; // Fallback
+  return 2.0;
 }
