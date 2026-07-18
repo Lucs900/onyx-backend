@@ -42,13 +42,13 @@ You only work with equity-rich homeowners in California.
 `;
 
     const messages = [
-      { role: 'system', content: systemPrompt },
       ...(history || []),
       { role: 'user', content: message },
     ];
 
     const result = await generateText({
       model: grok('grok-3'),
+      system: systemPrompt,           // ← System prompt moved here
       messages,
       tools: {
         calculateHelocQuote: calculateHelocQuoteTool,
