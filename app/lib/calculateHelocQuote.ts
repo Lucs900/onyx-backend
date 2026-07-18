@@ -1,24 +1,23 @@
+import { tool } from 'ai';
 import { z } from 'zod';
 
-export const calculateHelocQuoteTool = {
-  description: 'Calculate accurate HELOC quote including max line, margin, rate after compensation, and CLTV.',
+export const calculateHelocQuoteTool = tool({
+  description: 'Calculate an accurate HELOC quote including max line amount, published margin, adjusted margin after compensation, final rate, and CLTV.',
   
-  parameters: z.object({
+  inputSchema: z.object({
     homeValue: z.number().describe('Current estimated home value in USD'),
-    currentMortgage: z.number().describe('Current total mortgage/lien balance in USD'),
-    desiredLine: z.number().optional().describe('Desired HELOC line amount (optional)'),
-    fico: z.number().describe('Borrower FICO score'),
+    currentMortgage: z.number().describe('Current total mortgage or lien balance in USD'),
+    desiredLine: z.number().optional().describe('Desired HELOC line amount the user wants (optional)'),
+    fico: z.number().describe('Borrower FICO score (lowest of all borrowers)'),
     occupancy: z.enum(['Primary', 'Second', 'Investment']).describe('Property occupancy type'),
   }),
 
-  execute: async (params: any) => {
-    const { homeValue, currentMortgage, desiredLine = 0, fico, occupancy } = params;
-
+  execute: async ({ homeValue, currentMortgage, desiredLine = 0, fico, occupancy }) => {
     const totalLiens = currentMortgage + desiredLine;
     const cltv = (totalLiens / homeValue) * 100;
 
     const publishedMargin = getMarginFromTable(fico, cltv, occupancy);
-    const adjustedMargin = publishedMargin + 0.8;
+    const adjustedMargin = publishedMargin + 0.8; // Max 2% Lender Paid Compensation
     const finalRate = 6.75 + adjustedMargin;
 
     const maxLine = Math.round(
@@ -34,7 +33,7 @@ export const calculateHelocQuoteTool = {
       occupancy,
     };
   },
-};
+});
 
 function getMarginFromTable(fico: number, cltv: number, occupancy: string): number {
   if (occupancy === 'Investment') return 1.5;

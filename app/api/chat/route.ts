@@ -5,7 +5,6 @@ import { calculateHelocQuoteTool } from '../../lib/calculateHelocQuote';
 
 const sql = postgres(process.env.POSTGRES_URL!, { ssl: 'verify-full' });
 
-// Create Grok client
 const grok = createOpenAI({
   baseURL: 'https://api.x.ai/v1',
   apiKey: process.env.grok_api_key,
@@ -15,7 +14,6 @@ export async function POST(request: Request) {
   try {
     const { message, history } = await request.json();
 
-    // Fetch knowledge from database
     const knowledge = await sql`
       SELECT name, content 
       FROM knowledge_base 
@@ -40,10 +38,9 @@ You only work with equity-rich homeowners in California.
 - Be direct and reasonably concise.
 - Ask only **one question at a time**.
 - Never mention any specific lender name.
-- When the user has provided home value, current mortgage balance, FICO, and occupancy, use the calculateHelocQuote tool to give accurate numbers.
+- When you have enough information (home value, current mortgage balance, FICO, and occupancy), use the calculateHelocQuote tool.
 `;
 
-    // Convert history to the format the SDK expects
     const messages = [
       { role: 'system', content: systemPrompt },
       ...(history || []),
@@ -56,17 +53,17 @@ You only work with equity-rich homeowners in California.
       tools: {
         calculateHelocQuote: calculateHelocQuoteTool,
       },
-      temperature: 0.4,
-      maxOutputTokens: 800,
+      temperature: 0.35,
+      maxOutputTokens: 700,
     });
 
     return result.toTextStreamResponse();
 
   } catch (error: any) {
     console.error('Route Error:', error);
-    return new Response(
-      JSON.stringify({ error: 'Something went wrong. Please try again.' }),
-      { status: 500, headers: { 'Content-Type': 'application/json' } }
-    );
+    return new Response(JSON.stringify({ error: 'Something went wrong' }), {
+      status: 500,
+      headers: { 'Content-Type': 'application/json' },
+    });
   }
 }
