@@ -1,7 +1,7 @@
 import { generateText } from 'ai';
 import { createOpenAI } from '@ai-sdk/openai';
 import postgres from 'postgres';
-import { calculateHelocQuoteTool } from '../../lib/calculateHelocQuote';
+import { calculateHelocQuoteTool } from '../../../lib/calculateHelocQuote';
 
 const sql = postgres(process.env.POSTGRES_URL!, { ssl: 'verify-full' });
 
@@ -41,8 +41,14 @@ You only work with equity-rich homeowners in California.
 - When you have enough information (home value, current mortgage balance, FICO, and occupancy), use the calculateHelocQuote tool.
 `;
 
+    // Normalize roles (convert 'bot' to 'assistant')
+    const normalizedHistory = (history || []).map((msg: any) => ({
+      role: msg.role === 'bot' || msg.role === 'ai' ? 'assistant' : msg.role,
+      content: msg.content,
+    }));
+
     const messages = [
-      ...(history || []),
+      ...(normalizedHistory || []),
       { role: 'user', content: message },
     ];
 
