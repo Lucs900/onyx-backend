@@ -1,4 +1,4 @@
-import { streamText } from 'ai';
+import { generateText } from 'ai';
 import { createOpenAI } from '@ai-sdk/openai';
 import postgres from 'postgres';
 import { calculateHelocQuoteTool } from '../../lib/calculateHelocQuote';
@@ -47,7 +47,7 @@ You only work with equity-rich homeowners in California.
       { role: 'user', content: message },
     ];
 
-    const result = await streamText({
+    const result = await generateText({
       model: grok('grok-3'),
       messages,
       tools: {
@@ -57,13 +57,13 @@ You only work with equity-rich homeowners in California.
       maxOutputTokens: 700,
     });
 
-    return result.toTextStreamResponse();
+    return Response.json({ reply: result.text });
 
   } catch (error: any) {
     console.error('Route Error:', error);
-    return new Response(JSON.stringify({ error: 'Something went wrong' }), {
-      status: 500,
-      headers: { 'Content-Type': 'application/json' },
-    });
+    return Response.json(
+      { reply: "Sorry, I'm having trouble connecting right now." },
+      { status: 500 }
+    );
   }
 }
