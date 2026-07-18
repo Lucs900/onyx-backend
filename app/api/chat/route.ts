@@ -1,7 +1,6 @@
 import { generateText } from 'ai';
 import { createOpenAI } from '@ai-sdk/openai';
 import postgres from 'postgres';
-import { calculateHelocQuoteTool } from '../../lib/calculateHelocQuote';
 
 const sql = postgres(process.env.POSTGRES_URL!, { ssl: 'verify-full' });
 
@@ -38,10 +37,9 @@ You only work with equity-rich homeowners in California.
 - Be direct and reasonably concise.
 - Ask only **one question at a time**.
 - Never mention any specific lender name.
-- When you have enough information (home value, current mortgage balance, FICO, and occupancy), use the calculateHelocQuote tool.
 `;
 
-    // Normalize roles (convert 'bot' to 'assistant')
+    // Normalize roles
     const normalizedHistory = (history || []).map((msg: any) => ({
       role: msg.role === 'bot' || msg.role === 'ai' ? 'assistant' : msg.role,
       content: msg.content,
@@ -56,9 +54,6 @@ You only work with equity-rich homeowners in California.
       model: grok('grok-3'),
       system: systemPrompt,
       messages,
-      tools: {
-        calculateHelocQuote: calculateHelocQuoteTool,
-      },
       temperature: 0.35,
       maxOutputTokens: 700,
     });
