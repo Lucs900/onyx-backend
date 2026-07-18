@@ -1,7 +1,6 @@
-import { tool } from 'ai';
 import { z } from 'zod';
 
-export const calculateHelocQuoteTool = tool({
+export const calculateHelocQuoteTool = {
   description: 'Calculate accurate HELOC quote including max line, margin, rate after compensation, and CLTV.',
   
   parameters: z.object({
@@ -12,7 +11,7 @@ export const calculateHelocQuoteTool = tool({
     occupancy: z.enum(['Primary', 'Second', 'Investment']).describe('Property occupancy type'),
   }),
 
-  execute: async (params) => {
+  execute: async (params: any) => {
     const { homeValue, currentMortgage, desiredLine = 0, fico, occupancy } = params;
 
     const totalLiens = currentMortgage + desiredLine;
@@ -35,7 +34,7 @@ export const calculateHelocQuoteTool = tool({
       occupancy,
     };
   },
-});
+};
 
 function getMarginFromTable(fico: number, cltv: number, occupancy: string): number {
   if (occupancy === 'Investment') return 1.5;
