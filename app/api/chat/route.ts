@@ -1,3 +1,4 @@
+// Clean build attempt
 import { generateText } from 'ai';
 import { createOpenAI } from '@ai-sdk/openai';
 import postgres from 'postgres';
