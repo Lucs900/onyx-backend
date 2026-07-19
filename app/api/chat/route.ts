@@ -1,8 +1,7 @@
-// New deployment attempt
 import { generateText } from 'ai';
 import { createOpenAI } from '@ai-sdk/openai';
 import postgres from 'postgres';
-import { calculateHelocQuoteTool } from '../lib/calculateHelocQuote';
+import { calculateHelocQuoteTool } from '../../lib/calculateHelocQuote';
 
 const sql = postgres(process.env.POSTGRES_URL!, { ssl: 'verify-full' });
 
