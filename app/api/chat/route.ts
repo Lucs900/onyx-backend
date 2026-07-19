@@ -41,7 +41,6 @@ You only work with equity-rich homeowners in California.
 - When you have enough information (home value, current mortgage balance, FICO, and occupancy), use the calculateHelocQuote tool to give an accurate quote.
 `;
 
-    // Normalize roles (convert 'bot' to 'assistant')
     const normalizedHistory = (history || []).map((msg: any) => ({
       role: msg.role === 'bot' || msg.role === 'ai' ? 'assistant' : msg.role,
       content: msg.content,
