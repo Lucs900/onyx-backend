@@ -71,7 +71,7 @@ Keep the tone professional but friendly — like a knowledgeable advisor, not a 
       },
       temperature: 0.4,
       maxOutputTokens: 700,
-      maxSteps: 2,
+      maxToolRoundtrips: 2,
     });
 
     // Debug logging
