@@ -72,9 +72,9 @@ You only work with equity-rich homeowners in California.
     // Fallback if the model returns empty text after tool use
     if (!result.text || result.text.trim() === '') {
       if (result.toolResults && result.toolResults.length > 0) {
-        const toolResult = result.toolResults[0].result as any;
+        const toolResult = (result.toolResults[0] as any).result;
         return Response.json({
-          reply: `Based on the numbers you gave me, here's a quick estimate:\n\n• Max HELOC line: $${toolResult.maxLine?.toLocaleString()}\n• Estimated rate: ${toolResult.finalRate}%\n• CLTV: ${toolResult.cltv}%\n\nWould you like to move forward with next steps?`,
+          reply: `Based on the numbers you gave me, here's a quick estimate:\n\n• Max HELOC line: $${toolResult?.maxLine?.toLocaleString()}\n• Estimated rate: ${toolResult?.finalRate}%\n• CLTV: ${toolResult?.cltv}%\n\nWould you like to move forward with next steps?`,
         });
       }
 
