@@ -27,19 +27,29 @@ export async function POST(request: Request) {
     const currentPrime = knowledgeMap.prime_rate || '6.75';
 
     const systemPrompt = `
-You are ONYX 🦊, the Equity Fox — a straight-shooting, confident, and helpful California mortgage advisor.
+You are ONYX 🦊, the Equity Fox — a confident, straightforward California mortgage advisor who specializes in home equity solutions.
 
-You only work with equity-rich homeowners in California.
+You only work with equity-rich California homeowners.
 
 **Current Prime Rate:** ${currentPrime}%
 
-**Important Rules:**
-- Always add **+0.8%** to the published margin (maximum 2% Lender Paid Compensation).
-- Be direct and reasonably concise.
+**Core Rules:**
+- Always add **+0.8%** to the published margin (this is the maximum 2% Lender Paid Compensation).
 - Ask only **one question at a time**.
+- Be direct, clear, and conversational — not robotic.
 - Never mention any specific lender name.
-- When you have enough information (home value, current mortgage balance, FICO, and occupancy), use the calculateHelocQuote tool to give an accurate quote.
-- After using the tool, always give the user a clear, friendly summary of the max line, rate, and CLTV.
+
+**When you have enough information** (home value, current mortgage balance, FICO, and occupancy):
+1. Use the calculateHelocQuote tool.
+2. After receiving the tool result, respond naturally in plain English.
+3. Clearly state:
+   - The maximum available HELOC line
+   - The estimated starting rate
+   - The CLTV
+4. If the user asks for a specific line amount (for example $100k), calculate using that amount and tell them the rate and CLTV for that specific request.
+5. End by asking if they want to move forward or have any other questions.
+
+Keep the tone professional but friendly — like a knowledgeable advisor, not a calculator.
 `;
 
     const normalizedHistory = (history || []).map((msg: any) => ({
@@ -59,8 +69,9 @@ You only work with equity-rich homeowners in California.
       tools: {
         calculateHelocQuote: calculateHelocQuoteTool,
       },
-      temperature: 0.35,
+      temperature: 0.4,
       maxOutputTokens: 700,
+      maxSteps: 2,
     });
 
     // Debug logging
@@ -69,27 +80,20 @@ You only work with equity-rich homeowners in California.
     console.log('Tool calls:', JSON.stringify(result.toolCalls, null, 2));
     console.log('Tool results:', JSON.stringify(result.toolResults, null, 2));
 
-    // Fallback if the model returns empty text after tool use
+    // Fallback only if the model still returns empty text
     if (!result.text || result.text.trim() === '') {
       if (result.toolResults && result.toolResults.length > 0) {
         const toolResult = (result.toolResults[0] as any).output;
         return Response.json({
-          reply: `Based on the numbers you gave me, here's a quick estimate:\n\n• Max HELOC line: $${toolResult?.maxLine?.toLocaleString()}\n• Estimated rate: ${toolResult?.finalRate}%\n• CLTV: ${toolResult?.cltv}%\n\nWould you like to move forward with next steps?`,
+          reply: `Based on what you shared, you qualify for up to $${toolResult?.maxLine?.toLocaleString()} with an estimated rate of ${toolResult?.finalRate}% (CLTV ${toolResult?.cltv}%). Would you like to explore next steps?`,
         });
       }
 
       return Response.json({
-        reply: "I have the information I need, but had trouble generating the final quote. Can you confirm the numbers one more time?",
+        reply: "I have the numbers I need but ran into a small issue generating the final quote. Can you confirm the details one more time?",
       });
     }
 
     return Response.json({ reply: result.text });
 
-  } catch (error: any) {
-    console.error('Route Error:', error);
-    return Response.json(
-      { reply: "Sorry, I'm having trouble connecting right now." },
-      { status: 500 }
-    );
-  }
-}
+  } catch (
