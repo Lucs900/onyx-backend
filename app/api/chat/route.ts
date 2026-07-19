@@ -96,4 +96,11 @@ Keep the tone professional but friendly — like a knowledgeable advisor, not a 
 
     return Response.json({ reply: result.text });
 
-  } catch (
+  } catch (error: any) {
+    console.error('Route Error:', error);
+    return Response.json(
+      { reply: "Sorry, I'm having trouble connecting right now." },
+      { status: 500 }
+    );
+  }
+}
