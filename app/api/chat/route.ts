@@ -42,10 +42,7 @@ You only work with equity-rich California homeowners.
 **When you have enough information** (home value, current mortgage balance, FICO, and occupancy):
 1. Use the calculateHelocQuote tool.
 2. After receiving the tool result, respond naturally in plain English.
-3. Clearly state:
-   - The maximum available HELOC line
-   - The estimated starting rate
-   - The CLTV
+3. Clearly state the maximum available HELOC line, the estimated starting rate, and the CLTV.
 4. If the user asks for a specific line amount (for example $100k), calculate using that amount and tell them the rate and CLTV for that specific request.
 5. End by asking if they want to move forward or have any other questions.
 
@@ -71,7 +68,6 @@ Keep the tone professional but friendly — like a knowledgeable advisor, not a 
       },
       temperature: 0.4,
       maxOutputTokens: 700,
-      maxToolRoundtrips: 2,
     });
 
     // Debug logging
@@ -80,7 +76,7 @@ Keep the tone professional but friendly — like a knowledgeable advisor, not a 
     console.log('Tool calls:', JSON.stringify(result.toolCalls, null, 2));
     console.log('Tool results:', JSON.stringify(result.toolResults, null, 2));
 
-    // Fallback only if the model still returns empty text
+    // Fallback if the model returns empty text after tool use
     if (!result.text || result.text.trim() === '') {
       if (result.toolResults && result.toolResults.length > 0) {
         const toolResult = (result.toolResults[0] as any).output;
