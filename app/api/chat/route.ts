@@ -1,4 +1,3 @@
-// Clean build attempt
 import { generateText } from 'ai';
 import { createOpenAI } from '@ai-sdk/openai';
 import postgres from 'postgres';
@@ -40,6 +39,7 @@ You only work with equity-rich homeowners in California.
 - Ask only **one question at a time**.
 - Never mention any specific lender name.
 - When you have enough information (home value, current mortgage balance, FICO, and occupancy), use the calculateHelocQuote tool to give an accurate quote.
+- After using the tool, always give the user a clear, friendly summary of the max line, rate, and CLTV.
 `;
 
     const normalizedHistory = (history || []).map((msg: any) => ({
@@ -62,6 +62,26 @@ You only work with equity-rich homeowners in California.
       temperature: 0.35,
       maxOutputTokens: 700,
     });
+
+    // Debug logging
+    console.log('=== ONYX RESULT ===');
+    console.log('Text:', result.text);
+    console.log('Tool calls:', JSON.stringify(result.toolCalls, null, 2));
+    console.log('Tool results:', JSON.stringify(result.toolResults, null, 2));
+
+    // Fallback if the model returns empty text after tool use
+    if (!result.text || result.text.trim() === '') {
+      if (result.toolResults && result.toolResults.length > 0) {
+        const toolResult = result.toolResults[0].result as any;
+        return Response.json({
+          reply: `Based on the numbers you gave me, here's a quick estimate:\n\n• Max HELOC line: $${toolResult.maxLine?.toLocaleString()}\n• Estimated rate: ${toolResult.finalRate}%\n• CLTV: ${toolResult.cltv}%\n\nWould you like to move forward with next steps?`,
+        });
+      }
+
+      return Response.json({
+        reply: "I have the information I need, but had trouble generating the final quote. Can you confirm the numbers one more time?",
+      });
+    }
 
     return Response.json({ reply: result.text });
 
