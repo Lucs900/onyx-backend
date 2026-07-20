@@ -56,41 +56,86 @@ Keep the tone professional but friendly — like a knowledgeable advisor, not a 
 
     const messages = [
       ...(normalizedHistory || []),
-      { role: 'user', content: message },
+      { role: 'user' as const, content: message },
     ];
 
-    const result = await generateText({
+    // ---------- STEP 1: Let the model call the tool if needed ----------
+    const firstResult = await generateText({
       model: grok('grok-3'),
       system: systemPrompt,
       messages,
       tools: {
         calculateHelocQuote: calculateHelocQuoteTool,
       },
-      temperature: 0.4,
+      temperature: 0.35,
       maxOutputTokens: 700,
     });
 
-    // Debug logging
-    console.log('=== ONYX RESULT ===');
-    console.log('Text:', result.text);
-    console.log('Tool calls:', JSON.stringify(result.toolCalls, null, 2));
-    console.log('Tool results:', JSON.stringify(result.toolResults, null, 2));
+    console.log('=== STEP 1 RESULT ===');
+    console.log('Text:', firstResult.text);
+    console.log('Tool results:', JSON.stringify(firstResult.toolResults, null, 2));
 
-    // Fallback if the model returns empty text after tool use
-    if (!result.text || result.text.trim() === '') {
-      if (result.toolResults && result.toolResults.length > 0) {
-        const toolResult = (result.toolResults[0] as any).output;
-        return Response.json({
-          reply: `Based on what you shared, you qualify for up to $${toolResult?.maxLine?.toLocaleString()} with an estimated rate of ${toolResult?.finalRate}% (CLTV ${toolResult?.cltv}%). Would you like to explore next steps?`,
-        });
+    // If the model already gave a normal text reply (no tool needed), just return it
+    if (firstResult.text && firstResult.text.trim() !== '' && (!firstResult.toolResults || firstResult.toolResults.length === 0)) {
+      return Response.json({ reply: firstResult.text });
+    }
+
+    // ---------- STEP 2: If a tool was used, force a natural language response ----------
+    if (firstResult.toolResults && firstResult.toolResults.length > 0) {
+      const toolOutput = (firstResult.toolResults[0] as any).output;
+
+      const toolSummary = `
+Tool result from calculateHelocQuote:
+- Max HELOC line: $${toolOutput?.maxLine?.toLocaleString()}
+- Estimated rate: ${toolOutput?.finalRate}%
+- CLTV: ${toolOutput?.cltv}%
+- Published margin: ${toolOutput?.publishedMargin}
+- Adjusted margin (with +0.8% LPC): ${toolOutput?.adjustedMargin}
+- Occupancy: ${toolOutput?.occupancy}
+`;
+
+      const secondMessages = [
+        ...messages,
+        {
+          role: 'assistant' as const,
+          content: 'I have calculated the numbers using the tool.',
+        },
+        {
+          role: 'user' as const,
+          content: `${toolSummary}
+
+Please respond to the borrower naturally and conversationally using these exact numbers. 
+Clearly tell them the maximum available line, the estimated rate, and the CLTV. 
+If they asked for a specific amount, focus on that. 
+End by asking if they want to move forward.`,
+        },
+      ];
+
+      const secondResult = await generateText({
+        model: grok('grok-3'),
+        system: systemPrompt,
+        messages: secondMessages,
+        temperature: 0.45,
+        maxOutputTokens: 500,
+      });
+
+      console.log('=== STEP 2 RESULT ===');
+      console.log('Text:', secondResult.text);
+
+      if (secondResult.text && secondResult.text.trim() !== '') {
+        return Response.json({ reply: secondResult.text });
       }
 
+      // Final fallback if even the second call fails
       return Response.json({
-        reply: "I have the numbers I need but ran into a small issue generating the final quote. Can you confirm the details one more time?",
+        reply: `Based on what you shared, you qualify for up to $${toolOutput?.maxLine?.toLocaleString()} with an estimated rate of ${toolOutput?.finalRate}% (CLTV ${toolOutput?.cltv}%). Would you like to explore next steps?`,
       });
     }
 
-    return Response.json({ reply: result.text });
+    // Fallback if nothing useful was produced
+    return Response.json({
+      reply: "I have the information I need but ran into a small issue generating the final quote. Can you confirm the details one more time?",
+    });
 
   } catch (error: any) {
     console.error('Route Error:', error);
