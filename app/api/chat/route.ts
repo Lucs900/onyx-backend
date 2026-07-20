@@ -4,6 +4,7 @@ import postgres from 'postgres';
 import { calculateHelocQuoteTool } from '@/lib/calculateHelocQuote';
 import { getProductGuidelineTool } from '@/lib/getProductGuideline';
 import { calculateDtiTool } from '@/lib/calculateDti';
+import { calculatePaymentTool } from '@/lib/calculatePayment';
 
 const sql = postgres(process.env.POSTGRES_URL!, { ssl: 'verify-full' });
 
@@ -40,18 +41,21 @@ You only work with equity-rich California homeowners.
 - Ask only **one question at a time**.
 - Be direct, clear, and conversational.
 - Never mention any specific lender name.
-- **Never assume or invent a number the user has not explicitly given you.**
-- Only mention guideline rules that are relevant to the current borrower (e.g. do not mention the 740 FICO rule if the borrower already has a higher FICO).
-- Do not repeat the same question if the user has already answered it.
+- **Never assume or invent any number the user has not explicitly given you.**
+- Only mention guideline rules that are relevant to the current borrower.
+- Do not repeat questions the user has already answered.
+- When the user asks about a monthly payment, always use the calculatePayment tool. Never invent the payment.
+- When calculating DTI, always use the calculateDti tool.
 
-**Available Tools – use them:**
-1. calculateHelocQuote → when you have home value, mortgage balance, FICO, and occupancy and need a rate / max line.
-2. getProductGuideline → when the user asks about product rules (draw period, min/max line, DTI limits, etc.).
-3. calculateDti → when the user has provided income + debts and wants to know their actual DTI including the HELOC payment.
+**Available Tools:**
+1. calculateHelocQuote → Use when you have home value, mortgage balance, FICO, and occupancy and need rate + max line.
+2. getProductGuideline → Use when the user asks about product rules (draw period, min/max line, DTI limits, etc.).
+3. calculatePayment → Use whenever the user asks about monthly payment or payment amount.
+4. calculateDti → Use when the user has given income + debts and wants their DTI including the HELOC.
 
 **Conversation style:**
-- After giving a quote, ask a useful next question (how much they want to use, purpose of funds, timeline, etc.) instead of always saying “want to move forward?”.
-- When the user shows clear interest, start collecting contact or next-step information.
+- After giving a quote, ask a useful next question (how much they want to use, purpose, timeline, etc.).
+- When the user shows clear interest, begin collecting next-step information.
 `;
 
     const normalizedHistory = (history || []).map((msg: any) => ({
@@ -72,6 +76,7 @@ You only work with equity-rich California homeowners.
       tools: {
         calculateHelocQuote: calculateHelocQuoteTool,
         getProductGuideline: getProductGuidelineTool,
+        calculatePayment: calculatePaymentTool,
         calculateDti: calculateDtiTool,
       },
       temperature: 0.35,
@@ -87,7 +92,7 @@ You only work with equity-rich California homeowners.
       return Response.json({ reply: firstResult.text });
     }
 
-    // ---------- STEP 2: Natural response after tools ----------
+    // ---------- STEP 2 ----------
     if (firstResult.toolResults && firstResult.toolResults.length > 0) {
       const toolSummaries = firstResult.toolResults.map((tr: any) => {
         if (tr.toolName === 'calculateHelocQuote') {
@@ -103,13 +108,21 @@ You only work with equity-rich California homeowners.
           return `Guideline (${o?.topic}):
 ${o?.guideline}`;
         }
+        if (tr.toolName === 'calculatePayment') {
+          const o = tr.output;
+          return `Payment Calculation:
+- Amount: $${o?.amount?.toLocaleString()}
+- Rate: ${o?.rate}%
+- Payment type: ${o?.paymentType}
+- Monthly payment: $${o?.monthlyPayment}`;
+        }
         if (tr.toolName === 'calculateDti') {
           const o = tr.output;
           return `DTI Calculation:
 - Monthly income: $${o?.monthlyIncome?.toLocaleString()}
 - Current mortgage: $${o?.monthlyMortgage}
 - Other debts: $${o?.otherMonthlyDebts}
-- HELOC payment (interest-only): $${o?.helocPayment}
+- HELOC payment: $${o?.helocPayment}
 - Total monthly debts: $${o?.totalMonthlyDebts}
 - Estimated DTI: ${o?.dti}%
 - Qualifies under 50% max: ${o?.qualifies ? 'Yes' : 'No'}`;
