@@ -2,6 +2,7 @@ import { generateText } from 'ai';
 import { createOpenAI } from '@ai-sdk/openai';
 import postgres from 'postgres';
 import { calculateHelocQuoteTool } from '@/lib/calculateHelocQuote';
+import { getProductGuidelineTool } from '@/lib/getProductGuideline';
 
 const sql = postgres(process.env.POSTGRES_URL!, { ssl: 'verify-full' });
 
@@ -38,15 +39,18 @@ You only work with equity-rich California homeowners.
 - Ask only **one question at a time**.
 - Be direct, clear, and conversational — not robotic.
 - Never mention any specific lender name.
+- Never invent product rules. Always use the getProductGuideline tool when the user asks about draw period, repayment terms, minimum/maximum line amounts, DTI, credit requirements, additional draws, or any other guideline.
 
-**When you have enough information** (home value, current mortgage balance, FICO, and occupancy):
-1. Use the calculateHelocQuote tool.
-2. After receiving the tool result, respond naturally in plain English.
-3. Clearly state the maximum available HELOC line, the estimated starting rate, and the CLTV.
-4. If the user asks for a specific line amount (for example $100k), calculate using that amount and tell them the rate and CLTV for that specific request.
-5. End by asking if they want to move forward or have any other questions.
+**Available Tools:**
+1. calculateHelocQuote → Use this when you have enough information (home value, mortgage balance, FICO, occupancy) to give a rate and max line quote.
+2. getProductGuideline → Use this whenever the user asks about product rules, terms, or guidelines (draw period, min/max line, DTI, etc.).
 
-Keep the tone professional but friendly — like a knowledgeable advisor, not a calculator.
+**When giving a quote:**
+- Clearly state the maximum available HELOC line, the estimated starting rate, and the CLTV.
+- If the user asks for a specific line amount, calculate using that amount.
+- End by asking a useful next question (not always “want to move forward?”).
+
+Keep the tone professional but friendly — like a knowledgeable advisor.
 `;
 
     const normalizedHistory = (history || []).map((msg: any) => ({
@@ -59,13 +63,14 @@ Keep the tone professional but friendly — like a knowledgeable advisor, not a 
       { role: 'user' as const, content: message },
     ];
 
-    // ---------- STEP 1: Let the model call the tool if needed ----------
+    // ---------- STEP 1: Let the model use tools if needed ----------
     const firstResult = await generateText({
       model: grok('grok-3'),
       system: systemPrompt,
       messages,
       tools: {
         calculateHelocQuote: calculateHelocQuoteTool,
+        getProductGuideline: getProductGuidelineTool,
       },
       temperature: 0.35,
       maxOutputTokens: 700,
@@ -73,41 +78,46 @@ Keep the tone professional but friendly — like a knowledgeable advisor, not a 
 
     console.log('=== STEP 1 RESULT ===');
     console.log('Text:', firstResult.text);
+    console.log('Tool calls:', JSON.stringify(firstResult.toolCalls, null, 2));
     console.log('Tool results:', JSON.stringify(firstResult.toolResults, null, 2));
 
-    // If the model already gave a normal text reply (no tool needed), just return it
+    // If the model already gave a normal text reply with no tools, just return it
     if (firstResult.text && firstResult.text.trim() !== '' && (!firstResult.toolResults || firstResult.toolResults.length === 0)) {
       return Response.json({ reply: firstResult.text });
     }
 
-    // ---------- STEP 2: If a tool was used, force a natural language response ----------
+    // ---------- STEP 2: If any tool was used, generate a natural response ----------
     if (firstResult.toolResults && firstResult.toolResults.length > 0) {
-      const toolOutput = (firstResult.toolResults[0] as any).output;
-
-      const toolSummary = `
-Tool result from calculateHelocQuote:
-- Max HELOC line: $${toolOutput?.maxLine?.toLocaleString()}
-- Estimated rate: ${toolOutput?.finalRate}%
-- CLTV: ${toolOutput?.cltv}%
-- Published margin: ${toolOutput?.publishedMargin}
-- Adjusted margin (with +0.8% LPC): ${toolOutput?.adjustedMargin}
-- Occupancy: ${toolOutput?.occupancy}
-`;
+      const toolSummaries = firstResult.toolResults.map((tr: any) => {
+        if (tr.toolName === 'calculateHelocQuote') {
+          const o = tr.output;
+          return `HELOC Quote Result:
+- Max HELOC line: $${o?.maxLine?.toLocaleString()}
+- Estimated rate: ${o?.finalRate}%
+- CLTV: ${o?.cltv}%
+- Occupancy: ${o?.occupancy}`;
+        }
+        if (tr.toolName === 'getProductGuideline') {
+          const o = tr.output;
+          return `Guideline Result (${o?.topic}):
+${o?.guideline}`;
+        }
+        return JSON.stringify(tr.output);
+      }).join('\n\n');
 
       const secondMessages = [
         ...messages,
         {
           role: 'assistant' as const,
-          content: 'I have calculated the numbers using the tool.',
+          content: 'I looked up the information using the available tools.',
         },
         {
           role: 'user' as const,
-          content: `${toolSummary}
+          content: `${toolSummaries}
 
-Please respond to the borrower naturally and conversationally using these exact numbers. 
-Clearly tell them the maximum available line, the estimated rate, and the CLTV. 
-If they asked for a specific amount, focus on that. 
-End by asking if they want to move forward.`,
+Please respond to the borrower naturally and conversationally using the exact information above. 
+Do not invent any numbers or rules. 
+Be clear and helpful.`,
         },
       ];
 
@@ -125,16 +135,11 @@ End by asking if they want to move forward.`,
       if (secondResult.text && secondResult.text.trim() !== '') {
         return Response.json({ reply: secondResult.text });
       }
-
-      // Final fallback if even the second call fails
-      return Response.json({
-        reply: `Based on what you shared, you qualify for up to $${toolOutput?.maxLine?.toLocaleString()} with an estimated rate of ${toolOutput?.finalRate}% (CLTV ${toolOutput?.cltv}%). Would you like to explore next steps?`,
-      });
     }
 
-    // Fallback if nothing useful was produced
+    // Final fallback
     return Response.json({
-      reply: "I have the information I need but ran into a small issue generating the final quote. Can you confirm the details one more time?",
+      reply: "I have the information I need but ran into a small issue generating the response. Can you try asking again?",
     });
 
   } catch (error: any) {
