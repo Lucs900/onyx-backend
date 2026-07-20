@@ -30,32 +30,36 @@ export async function POST(request: Request) {
     const currentPrime = knowledgeMap.prime_rate || '6.75';
 
     const systemPrompt = `
-You are ONYX 🦊, the Equity Fox — a confident, straightforward California mortgage advisor who specializes in home equity solutions.
-
-You only work with equity-rich California homeowners.
+You are ONYX 🦊, the Equity Fox — a precise, no-nonsense California HELOC advisor.
 
 **Current Prime Rate:** ${currentPrime}%
 
-**Core Rules:**
-- Always add **+0.8%** to the published margin (maximum 2% Lender Paid Compensation).
-- Ask only **one question at a time**.
-- Be direct, clear, and conversational.
-- Never mention any specific lender name.
-- **Never assume or invent any number the user has not explicitly given you.**
-- Only mention guideline rules that are relevant to the current borrower.
-- Do not repeat questions the user has already answered.
-- When the user asks about a monthly payment, always use the calculatePayment tool. Never invent the payment.
-- When calculating DTI, always use the calculateDti tool.
+====================
+STRICT RULES (NEVER BREAK THESE)
+====================
+1. NEVER assume or invent any number the user has not explicitly given you.
+2. NEVER set mortgage balance equal to home value unless the user said so.
+3. When the user gives a specific line amount (e.g. "100k"), you MUST call calculateHelocQuote again with desiredLine set to that amount. Do not reuse an old rate.
+4. When the user asks for a monthly payment, you MUST call calculatePayment. Never invent the payment.
+5. When calculating DTI:
+   - You MUST call calculateDti.
+   - If other monthly debts have not been given, ASK for them. Never invent other debts.
+6. Only mention guideline rules that actually apply to this borrower.
+7. Ask only one question at a time.
+8. Do not repeat questions the user has already answered.
 
-**Available Tools:**
-1. calculateHelocQuote → Use when you have home value, mortgage balance, FICO, and occupancy and need rate + max line.
-2. getProductGuideline → Use when the user asks about product rules (draw period, min/max line, DTI limits, etc.).
-3. calculatePayment → Use whenever the user asks about monthly payment or payment amount.
-4. calculateDti → Use when the user has given income + debts and wants their DTI including the HELOC.
+====================
+TOOLS – USE THEM CORRECTLY
+====================
+- calculateHelocQuote → Use for any rate / max line / CLTV quote. Always pass the correct desiredLine when the user specifies an amount.
+- calculatePayment → Use whenever the user asks about monthly payment.
+- calculateDti → Use for any DTI question. Require income + mortgage + other debts.
+- getProductGuideline → Use for product rules (draw period, min/max line, etc.).
 
-**Conversation style:**
-- After giving a quote, ask a useful next question (how much they want to use, purpose, timeline, etc.).
-- When the user shows clear interest, begin collecting next-step information.
+====================
+STYLE
+====================
+Be direct, clear, and professional. After giving numbers, ask a useful next question.
 `;
 
     const normalizedHistory = (history || []).map((msg: any) => ({
@@ -79,7 +83,7 @@ You only work with equity-rich California homeowners.
         calculatePayment: calculatePaymentTool,
         calculateDti: calculateDtiTool,
       },
-      temperature: 0.35,
+      temperature: 0.3,
       maxOutputTokens: 700,
     });
 
@@ -97,7 +101,7 @@ You only work with equity-rich California homeowners.
       const toolSummaries = firstResult.toolResults.map((tr: any) => {
         if (tr.toolName === 'calculateHelocQuote') {
           const o = tr.output;
-          return `HELOC Quote:
+          return `HELOC Quote Result:
 - Max line: $${o?.maxLine?.toLocaleString()}
 - Rate: ${o?.finalRate}%
 - CLTV: ${o?.cltv}%
@@ -110,22 +114,21 @@ ${o?.guideline}`;
         }
         if (tr.toolName === 'calculatePayment') {
           const o = tr.output;
-          return `Payment Calculation:
+          return `Payment Result:
 - Amount: $${o?.amount?.toLocaleString()}
 - Rate: ${o?.rate}%
-- Payment type: ${o?.paymentType}
 - Monthly payment: $${o?.monthlyPayment}`;
         }
         if (tr.toolName === 'calculateDti') {
           const o = tr.output;
-          return `DTI Calculation:
-- Monthly income: $${o?.monthlyIncome?.toLocaleString()}
-- Current mortgage: $${o?.monthlyMortgage}
+          return `DTI Result:
+- Income: $${o?.monthlyIncome?.toLocaleString()}
+- Mortgage: $${o?.monthlyMortgage}
 - Other debts: $${o?.otherMonthlyDebts}
 - HELOC payment: $${o?.helocPayment}
-- Total monthly debts: $${o?.totalMonthlyDebts}
-- Estimated DTI: ${o?.dti}%
-- Qualifies under 50% max: ${o?.qualifies ? 'Yes' : 'No'}`;
+- Total debts: $${o?.totalMonthlyDebts}
+- DTI: ${o?.dti}%
+- Qualifies: ${o?.qualifies ? 'Yes' : 'No'}`;
         }
         return JSON.stringify(tr.output);
       }).join('\n\n');
@@ -134,16 +137,16 @@ ${o?.guideline}`;
         ...messages,
         {
           role: 'assistant' as const,
-          content: 'I looked up the information using the available tools.',
+          content: 'I used the tools to get accurate numbers.',
         },
         {
           role: 'user' as const,
           content: `${toolSummaries}
 
-Respond to the borrower naturally using only the exact information above. 
-Do not invent numbers. 
-Do not repeat questions they already answered. 
-Be clear and helpful.`,
+Respond naturally using ONLY the numbers above. 
+Do not invent any numbers. 
+Do not assume missing information. 
+If something required is missing, ask for it.`,
         },
       ];
 
@@ -151,7 +154,7 @@ Be clear and helpful.`,
         model: grok('grok-3'),
         system: systemPrompt,
         messages: secondMessages,
-        temperature: 0.45,
+        temperature: 0.4,
         maxOutputTokens: 500,
       });
 
@@ -164,7 +167,7 @@ Be clear and helpful.`,
     }
 
     return Response.json({
-      reply: "I have the information I need but ran into a small issue. Can you try asking again?",
+      reply: "I need a bit more information to give you an accurate answer. Can you clarify?",
     });
 
   } catch (error: any) {
