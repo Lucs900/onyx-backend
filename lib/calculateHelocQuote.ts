@@ -12,25 +12,30 @@ export const calculateHelocQuoteTool = tool({
     occupancy: z.enum(['Primary', 'Second', 'Investment']).describe('Property occupancy type'),
   }),
 
-  execute: async ({ homeValue, currentMortgage, desiredLine = 0, fico, occupancy }) => {
-    const totalLiens = currentMortgage + desiredLine;
+  execute: async ({ homeValue, currentMortgage, desiredLine, fico, occupancy }) => {
+    // Calculate maximum available line first
+    const maxLtv = occupancy === 'Investment' ? 0.75 : 0.85;
+    const maxLine = Math.max(0, Math.round(homeValue * maxLtv - currentMortgage));
+
+    // Decide which line amount to use for CLTV
+    // If user specified a desired line, use that. Otherwise use the max line being quoted.
+    const lineForCltv = desiredLine && desiredLine > 0 ? desiredLine : maxLine;
+
+    const totalLiens = currentMortgage + lineForCltv;
     const cltv = (totalLiens / homeValue) * 100;
 
     const publishedMargin = getMarginFromTable(fico, cltv, occupancy);
     const adjustedMargin = publishedMargin + 0.8;
     const finalRate = 6.75 + adjustedMargin;
 
-    const maxLine = Math.round(
-      homeValue * (occupancy === 'Investment' ? 0.75 : 0.85) - currentMortgage
-    );
-
     return {
       cltv: Math.round(cltv * 100) / 100,
-      maxLine: Math.max(0, maxLine),
+      maxLine,
       publishedMargin: Math.round(publishedMargin * 1000) / 1000,
       adjustedMargin: Math.round(adjustedMargin * 1000) / 1000,
       finalRate: Math.round(finalRate * 100) / 100,
       occupancy,
+      lineUsedForCltv: lineForCltv, // helpful for debugging
     };
   },
 });
