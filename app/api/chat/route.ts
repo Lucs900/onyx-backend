@@ -13,6 +13,8 @@ const grok = createOpenAI({
   apiKey: process.env.grok_api_key,
 });
 
+const FLOIFY_LINK = 'https://onyxdirect.floify.com/';
+
 export async function POST(request: Request) {
   try {
     const { message, history } = await request.json();
@@ -30,36 +32,35 @@ export async function POST(request: Request) {
     const currentPrime = knowledgeMap.prime_rate || '6.75';
 
     const systemPrompt = `
-You are ONYX 🦊, the Equity Fox — a precise, no-nonsense California HELOC advisor.
+You are ONYX 🦊, the Equity Fox — a precise, straightforward California HELOC advisor.
 
 **Current Prime Rate:** ${currentPrime}%
 
 ====================
-STRICT RULES (NEVER BREAK THESE)
+STRICT RULES
 ====================
 1. NEVER assume or invent any number the user has not explicitly given you.
 2. NEVER set mortgage balance equal to home value unless the user said so.
-3. When the user gives a specific line amount (e.g. "100k"), you MUST call calculateHelocQuote again with desiredLine set to that amount. Do not reuse an old rate.
-4. When the user asks for a monthly payment, you MUST call calculatePayment. Never invent the payment.
-5. When calculating DTI:
-   - You MUST call calculateDti.
-   - If other monthly debts have not been given, ASK for them. Never invent other debts.
-6. Only mention guideline rules that actually apply to this borrower.
+3. Once the borrower chooses a specific line amount (e.g. "100k"), stop mentioning the maximum available line unless they ask for it again.
+4. Only calculate or discuss DTI when the borrower explicitly asks if they qualify, what their DTI is, or if they can afford it. Do not run DTI automatically.
+5. When the borrower shows clear intent to move forward (says "yes", "I want to proceed", "let's do it", "send me the application", "I want the 100k", etc.):
+   → Reply with exactly this: "Great. To generate your application link I just need your email address."
+6. When the borrower provides an email address after you asked for it:
+   → Thank them and give them this exact link: ${FLOIFY_LINK}
+   → Tell them to use the same email when they start the application so we can match everything.
 7. Ask only one question at a time.
 8. Do not repeat questions the user has already answered.
+9. Never mention any specific lender name.
 
 ====================
-TOOLS – USE THEM CORRECTLY
+TOOLS
 ====================
-- calculateHelocQuote → Use for any rate / max line / CLTV quote. Always pass the correct desiredLine when the user specifies an amount.
+- calculateHelocQuote → Use for rate / max line / CLTV. Always pass desiredLine when the user specifies an amount.
 - calculatePayment → Use whenever the user asks about monthly payment.
-- calculateDti → Use for any DTI question. Require income + mortgage + other debts.
+- calculateDti → Use ONLY when the user explicitly asks about qualification or DTI.
 - getProductGuideline → Use for product rules (draw period, min/max line, etc.).
 
-====================
-STYLE
-====================
-Be direct, clear, and professional. After giving numbers, ask a useful next question.
+Be direct, clear, and professional.
 `;
 
     const normalizedHistory = (history || []).map((msg: any) => ({
@@ -92,11 +93,14 @@ Be direct, clear, and professional. After giving numbers, ask a useful next ques
     console.log('Tool calls:', JSON.stringify(firstResult.toolCalls, null, 2));
     console.log('Tool results:', JSON.stringify(firstResult.toolResults, null, 2));
 
+    // If no tools were used and we have text, return it
     if (firstResult.text && firstResult.text.trim() !== '' && (!firstResult.toolResults || firstResult.toolResults.length === 0)) {
+      // Check if this looks like an email handoff moment and save conversation
+      await maybeSaveConversation(message, normalizedHistory, firstResult.text);
       return Response.json({ reply: firstResult.text });
     }
 
-    // ---------- STEP 2 ----------
+    // ---------- STEP 2: Natural response after tools ----------
     if (firstResult.toolResults && firstResult.toolResults.length > 0) {
       const toolSummaries = firstResult.toolResults.map((tr: any) => {
         if (tr.toolName === 'calculateHelocQuote') {
@@ -145,8 +149,8 @@ ${o?.guideline}`;
 
 Respond naturally using ONLY the numbers above. 
 Do not invent any numbers. 
-Do not assume missing information. 
-If something required is missing, ask for it.`,
+Do not assume missing information.
+Follow the STRICT RULES in the system prompt exactly.`,
         },
       ];
 
@@ -154,7 +158,7 @@ If something required is missing, ask for it.`,
         model: grok('grok-3'),
         system: systemPrompt,
         messages: secondMessages,
-        temperature: 0.4,
+        temperature: 0.35,
         maxOutputTokens: 500,
       });
 
@@ -162,6 +166,7 @@ If something required is missing, ask for it.`,
       console.log('Text:', secondResult.text);
 
       if (secondResult.text && secondResult.text.trim() !== '') {
+        await maybeSaveConversation(message, normalizedHistory, secondResult.text);
         return Response.json({ reply: secondResult.text });
       }
     }
@@ -176,5 +181,58 @@ If something required is missing, ask for it.`,
       { reply: "Sorry, I'm having trouble connecting right now." },
       { status: 500 }
     );
+  }
+}
+
+// ---------- Helper: Save conversation when we have an email or strong intent ----------
+async function maybeSaveConversation(
+  latestMessage: string,
+  history: any[],
+  reply: string
+) {
+  try {
+    // Simple email detection
+    const emailRegex = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/;
+    const emailMatch = latestMessage.match(emailRegex) || reply.match(emailRegex);
+    const email = emailMatch ? emailMatch[0] : null;
+
+    // Only save if we have an email or the reply contains the Floify link
+    if (!email && !reply.includes('onyxdirect.floify.com')) {
+      return;
+    }
+
+    const fullTranscript = [
+      ...history.map(m => `${m.role.toUpperCase()}: ${m.content}`),
+      `USER: ${latestMessage}`,
+      `ASSISTANT: ${reply}`,
+    ].join('\n');
+
+    // Structured summary (basic version – we can make this smarter later)
+    const summary = {
+      email: email || 'not_provided',
+      floifyLinkSent: reply.includes('onyxdirect.floify.com'),
+      timestamp: new Date().toISOString(),
+      transcript: fullTranscript,
+    };
+
+    // Save to Postgres (creates table if needed)
+    await sql`
+      CREATE TABLE IF NOT EXISTS conversations (
+        id SERIAL PRIMARY KEY,
+        email TEXT,
+        summary JSONB,
+        transcript TEXT,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      )
+    `;
+
+    await sql`
+      INSERT INTO conversations (email, summary, transcript)
+      VALUES (${summary.email}, ${sql.json(summary)}, ${fullTranscript})
+    `;
+
+    console.log('Conversation saved for email:', summary.email);
+  } catch (err) {
+    console.error('Failed to save conversation:', err);
   }
 }
