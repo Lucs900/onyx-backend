@@ -43,14 +43,21 @@ STRICT RULES
 2. NEVER set mortgage balance equal to home value unless the user said so.
 3. Once the borrower chooses a specific line amount (e.g. "100k"), stop mentioning the maximum available line unless they ask for it again.
 4. Only calculate or discuss DTI when the borrower explicitly asks if they qualify, what their DTI is, or if they can afford it. Do not run DTI automatically.
-5. When the borrower shows clear intent to move forward (says "yes", "I want to proceed", "let's do it", "send me the application", "I want the 100k", etc.):
-   → Reply with exactly this: "Great. To generate your application link I just need your email address."
-6. When the borrower provides an email address after you asked for it:
-   → Thank them and give them this exact link: ${FLOIFY_LINK}
-   → Tell them to use the same email when they start the application so we can match everything.
+5. ONLY ask for the email address when BOTH of these are true:
+   - You have already given the borrower a specific HELOC quote (rate + line amount), AND
+   - The borrower then shows clear intent to move forward (e.g. "yes", "I want to proceed", "let's do the 100k", "send me the application", "I want to apply", etc.).
+   In that case reply with exactly:
+   "Great. To generate your application link I just need your email address."
+6. When the borrower provides an email address after you asked for it, reply with:
+   "Thank you.
+
+→ [Start Your Application](${FLOIFY_LINK})
+
+Please use the same email when you begin so we can match everything."
 7. Ask only one question at a time.
 8. Do not repeat questions the user has already answered.
 9. Never mention any specific lender name.
+10. A simple "yes" at the very beginning of the conversation only means the borrower is ready to start talking. It is NOT application intent.
 
 ====================
 TOOLS
@@ -93,14 +100,12 @@ Be direct, clear, and professional.
     console.log('Tool calls:', JSON.stringify(firstResult.toolCalls, null, 2));
     console.log('Tool results:', JSON.stringify(firstResult.toolResults, null, 2));
 
-    // If no tools were used and we have text, return it
     if (firstResult.text && firstResult.text.trim() !== '' && (!firstResult.toolResults || firstResult.toolResults.length === 0)) {
-      // Check if this looks like an email handoff moment and save conversation
       await maybeSaveConversation(message, normalizedHistory, firstResult.text);
       return Response.json({ reply: firstResult.text });
     }
 
-    // ---------- STEP 2: Natural response after tools ----------
+    // ---------- STEP 2 ----------
     if (firstResult.toolResults && firstResult.toolResults.length > 0) {
       const toolSummaries = firstResult.toolResults.map((tr: any) => {
         if (tr.toolName === 'calculateHelocQuote') {
@@ -184,19 +189,16 @@ Follow the STRICT RULES in the system prompt exactly.`,
   }
 }
 
-// ---------- Helper: Save conversation when we have an email or strong intent ----------
 async function maybeSaveConversation(
   latestMessage: string,
   history: any[],
   reply: string
 ) {
   try {
-    // Simple email detection
     const emailRegex = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/;
     const emailMatch = latestMessage.match(emailRegex) || reply.match(emailRegex);
     const email = emailMatch ? emailMatch[0] : null;
 
-    // Only save if we have an email or the reply contains the Floify link
     if (!email && !reply.includes('onyxdirect.floify.com')) {
       return;
     }
@@ -207,7 +209,6 @@ async function maybeSaveConversation(
       `ASSISTANT: ${reply}`,
     ].join('\n');
 
-    // Structured summary (basic version – we can make this smarter later)
     const summary = {
       email: email || 'not_provided',
       floifyLinkSent: reply.includes('onyxdirect.floify.com'),
@@ -215,7 +216,6 @@ async function maybeSaveConversation(
       transcript: fullTranscript,
     };
 
-    // Save to Postgres (creates table if needed)
     await sql`
       CREATE TABLE IF NOT EXISTS conversations (
         id SERIAL PRIMARY KEY,
