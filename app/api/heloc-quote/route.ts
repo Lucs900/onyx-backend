@@ -1,4 +1,4 @@
-import { generateText } from 'ai';
+ import { generateText } from 'ai';
 import { createOpenAI } from '@ai-sdk/openai';
 import { calculateHelocQuoteTool } from '@/lib/calculateHelocQuote';
 import { getProductGuidelineTool } from '@/lib/getProductGuideline';
@@ -8,6 +8,20 @@ const grok = createOpenAI({
   baseURL: 'https://api.x.ai/v1',
   apiKey: process.env.grok_api_key,
 });
+
+// CORS headers so the website can call this API
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type',
+};
+
+export async function OPTIONS() {
+  return new Response(null, {
+    status: 204,
+    headers: corsHeaders,
+  });
+}
 
 export async function POST(request: Request) {
   try {
@@ -22,11 +36,10 @@ export async function POST(request: Request) {
     if (homeValue < 100000 || !fico || !occupancy) {
       return Response.json(
         { error: 'Missing or invalid required fields' },
-        { status: 400 }
+        { status: 400, headers: corsHeaders }
       );
     }
 
-    // Force the model to use the real tools
     const systemPrompt = `
 You are a precise HELOC pricing engine.
 You must use the available tools to calculate everything.
@@ -59,7 +72,6 @@ If a desired line is provided, also use calculatePayment for the monthly interes
       maxOutputTokens: 800,
     });
 
-    // Extract clean data from tool results
     let quote: any = {
       maxLine: null,
       rate: null,
@@ -92,23 +104,25 @@ If a desired line is provided, also use calculatePayment for the monthly interes
       }
     }
 
-    // Safety fallback if tools didn't return maxLine
+    // Safety fallback if tools didn't return a maxLine
     if (!quote.maxLine && homeValue && mortgageBalance) {
       const cltvCap = occupancy === 'Investment' ? 0.75 : 0.85;
       quote.maxLine = Math.max(0, Math.round(homeValue * cltvCap - mortgageBalance));
     }
 
-    return Response.json({
-      success: true,
-      quote,
-      rawToolResults: result.toolResults || [],
-    });
+    return Response.json(
+      {
+        success: true,
+        quote,
+      },
+      { headers: corsHeaders }
+    );
 
   } catch (error: any) {
     console.error('heloc-quote error:', error);
     return Response.json(
       { success: false, error: 'Unable to generate quote' },
-      { status: 500 }
+      { status: 500, headers: corsHeaders }
     );
   }
 }
