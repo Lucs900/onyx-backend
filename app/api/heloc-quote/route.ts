@@ -1,4 +1,4 @@
- import { generateText } from 'ai';
+import { generateText } from 'ai';
 import { createOpenAI } from '@ai-sdk/openai';
 import { calculateHelocQuoteTool } from '@/lib/calculateHelocQuote';
 import { getProductGuidelineTool } from '@/lib/getProductGuideline';
@@ -9,12 +9,39 @@ const grok = createOpenAI({
   apiKey: process.env.grok_api_key,
 });
 
-// CORS headers so the website can call this API
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type',
 };
+
+// Simple in-memory rate limiting (resets on redeploy – good enough for now)
+const rateLimitMap = new Map<string, { count: number; lastReset: number }>();
+const RATE_LIMIT = 8; // max requests
+const RATE_WINDOW = 60 * 60 * 1000; // 1 hour
+
+function getClientIP(request: Request): string {
+  return request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 
+         request.headers.get('x-real-ip') || 
+         'unknown';
+}
+
+function checkRateLimit(ip: string): boolean {
+  const now = Date.now();
+  const record = rateLimitMap.get(ip);
+
+  if (!record || now - record.lastReset > RATE_WINDOW) {
+    rateLimitMap.set(ip, { count: 1, lastReset: now });
+    return true;
+  }
+
+  if (record.count >= RATE_LIMIT) {
+    return false;
+  }
+
+  record.count += 1;
+  return true;
+}
 
 export async function OPTIONS() {
   return new Response(null, {
@@ -25,6 +52,16 @@ export async function OPTIONS() {
 
 export async function POST(request: Request) {
   try {
+    const ip = getClientIP(request);
+
+    // Rate limiting
+    if (!checkRateLimit(ip)) {
+      return Response.json(
+        { success: false, error: 'Too many requests. Please try again later.' },
+        { status: 429, headers: corsHeaders }
+      );
+    }
+
     const body = await request.json();
 
     const homeValue = Number(body.homeValue) || 0;
@@ -32,10 +69,38 @@ export async function POST(request: Request) {
     const fico = Number(body.fico) || 0;
     const occupancy = body.occupancy || 'Primary';
     const desiredLine = body.desiredLine ? Number(body.desiredLine) : null;
+    const turnstileToken = body.turnstileToken;
+
+    // Verify Turnstile token
+    if (!turnstileToken) {
+      return Response.json(
+        { success: false, error: 'Captcha verification required' },
+        { status: 400, headers: corsHeaders }
+      );
+    }
+
+    const turnstileRes = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        secret: process.env.TURNSTILE_SECRET_KEY || '0x4AAAAAAEPIkcOlhM1MN57I1GiA2hVaq6g',
+        response: turnstileToken,
+        remoteip: ip,
+      }),
+    });
+
+    const turnstileData = await turnstileRes.json();
+
+    if (!turnstileData.success) {
+      return Response.json(
+        { success: false, error: 'Captcha verification failed' },
+        { status: 403, headers: corsHeaders }
+      );
+    }
 
     if (homeValue < 100000 || !fico || !occupancy) {
       return Response.json(
-        { error: 'Missing or invalid required fields' },
+        { success: false, error: 'Missing or invalid required fields' },
         { status: 400, headers: corsHeaders }
       );
     }
@@ -44,7 +109,6 @@ export async function POST(request: Request) {
 You are a precise HELOC pricing engine.
 You must use the available tools to calculate everything.
 Never invent numbers.
-Return only the tool results in a clean structured way.
 `;
 
     const userMessage = `
@@ -56,7 +120,7 @@ Calculate a California HELOC quote with these exact inputs:
 ${desiredLine ? `- Desired Line Amount: $${desiredLine}` : '- No specific line amount requested (give maximum available)'}
 
 Use calculateHelocQuote and getProductGuideline.
-If a desired line is provided, also use calculatePayment for the monthly interest-only payment.
+If a desired line is provided, also use calculatePayment.
 `;
 
     const result = await generateText({
@@ -89,32 +153,22 @@ If a desired line is provided, also use calculatePayment for the monthly interes
           quote.maxLine = o?.maxLine ?? null;
           quote.rate = o?.finalRate ?? o?.rate ?? null;
           quote.cltv = o?.cltv ?? null;
-          quote.occupancy = o?.occupancy ?? occupancy;
         }
         if (tr.toolName === 'calculatePayment') {
           const o = tr.output as any;
           quote.monthlyPayment = o?.monthlyPayment ?? null;
         }
-        if (tr.toolName === 'getProductGuideline') {
-          const o = tr.output as any;
-          if (o?.guideline?.toLowerCase().includes('draw')) {
-            quote.drawPeriod = '3 years';
-          }
-        }
       }
     }
 
-    // Safety fallback if tools didn't return a maxLine
+    // Safety fallback
     if (!quote.maxLine && homeValue && mortgageBalance) {
       const cltvCap = occupancy === 'Investment' ? 0.75 : 0.85;
       quote.maxLine = Math.max(0, Math.round(homeValue * cltvCap - mortgageBalance));
     }
 
     return Response.json(
-      {
-        success: true,
-        quote,
-      },
+      { success: true, quote },
       { headers: corsHeaders }
     );
 
