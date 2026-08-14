@@ -1,13 +1,4 @@
-import { generateText } from 'ai';
-import { createOpenAI } from '@ai-sdk/openai';
 import { calculateHelocQuoteTool } from '@/lib/calculateHelocQuote';
-import { getProductGuidelineTool } from '@/lib/getProductGuideline';
-import { calculatePaymentTool } from '@/lib/calculatePayment';
-
-const grok = createOpenAI({
-  baseURL: 'https://api.x.ai/v1',
-  apiKey: process.env.grok_api_key,
-});
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -110,72 +101,33 @@ export async function POST(request: Request) {
       );
     }
 
-    const systemPrompt = `
-You are a precise HELOC pricing engine.
-You must use the available tools to calculate everything.
-Never invent numbers.
-`;
-
-    const userMessage = `
-Calculate a California HELOC quote with these exact inputs:
-- Home Value: $${homeValue}
-- Current Mortgage Balance: $${mortgageBalance}
-- FICO: ${fico}
-- Occupancy: ${occupancy}
-${
-      desiredLine
-        ? `- Desired Line Amount: $${desiredLine}`
-        : '- No specific line amount requested (give maximum available)'
-    }
-
-Use calculateHelocQuote and getProductGuideline.
-If a desired line is provided, also use calculatePayment.
-`;
-
-    const result = await generateText({
-      model: grok('grok-3'),
-      system: systemPrompt,
-      messages: [{ role: 'user', content: userMessage }],
-      tools: {
-        calculateHelocQuote: calculateHelocQuoteTool,
-        getProductGuideline: getProductGuidelineTool,
-        calculatePayment: calculatePaymentTool,
+    // ---------- DIRECT CALCULATION (no Grok) ----------
+    const result = await calculateHelocQuoteTool.execute(
+      {
+        homeValue,
+        currentMortgage: mortgageBalance,
+        desiredLine: desiredLine || undefined,
+        fico,
+        occupancy: occupancy as 'Primary' | 'Second' | 'Investment',
       },
-      temperature: 0,
-      maxOutputTokens: 800,
-    });
+      {} as any
+    );
 
-    let quote: any = {
-      maxLine: null,
-      rate: null,
-      cltv: null,
-      occupancy: occupancy,
+    const quote = {
+      maxLine: result.maxLine,
+      rate: result.finalRate,
+      cltv: result.cltv,
+      occupancy: result.occupancy,
       drawPeriod: '3 years',
-      monthlyPayment: null,
+      monthlyPayment: null as number | null,
       desiredLine: desiredLine,
     };
 
-    if (result.toolResults && result.toolResults.length > 0) {
-      for (const tr of result.toolResults) {
-        if (tr.toolName === 'calculateHelocQuote') {
-          const o = tr.output as any;
-          quote.maxLine = o?.maxLine ?? null;
-          quote.rate = o?.finalRate ?? o?.rate ?? null;
-          quote.cltv = o?.cltv ?? null;
-        }
-        if (tr.toolName === 'calculatePayment') {
-          const o = tr.output as any;
-          quote.monthlyPayment = o?.monthlyPayment ?? null;
-        }
-      }
-    }
-
-    // Safety fallback
-    if (!quote.maxLine && homeValue && mortgageBalance) {
-      const cltvCap = occupancy === 'Investment' ? 0.75 : 0.85;
-      quote.maxLine = Math.max(
-        0,
-        Math.round(homeValue * cltvCap - mortgageBalance)
+    // Calculate interest-only payment if we have a line amount
+    const lineForPayment = desiredLine && desiredLine > 0 ? desiredLine : result.maxLine;
+    if (lineForPayment > 0 && result.finalRate) {
+      quote.monthlyPayment = Math.round(
+        (lineForPayment * (result.finalRate / 100)) / 12
       );
     }
 
