@@ -15,9 +15,9 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'Content-Type',
 };
 
-// Simple in-memory rate limiting
+// Rate limiting – 40 requests per hour per IP
 const rateLimitMap = new Map<string, { count: number; lastReset: number }>();
-const RATE_LIMIT = 12; // max requests per hour
+const RATE_LIMIT = 40;
 const RATE_WINDOW = 60 * 60 * 1000; // 1 hour
 
 function getClientIP(request: Request): string {
@@ -59,7 +59,10 @@ export async function POST(request: Request) {
     // Rate limiting
     if (!checkRateLimit(ip)) {
       return Response.json(
-        { success: false, error: 'Too many requests. Please try again later.' },
+        {
+          success: false,
+          error: "You're sending requests a bit too quickly. Please wait a minute and try again.",
+        },
         { status: 429, headers: corsHeaders }
       );
     }
@@ -73,7 +76,7 @@ export async function POST(request: Request) {
     const desiredLine = body.desiredLine ? Number(body.desiredLine) : null;
     const turnstileToken = body.turnstileToken;
 
-    // Verify Turnstile token ONLY if one was sent (required on first quote)
+    // Verify Turnstile token only if one was sent
     if (turnstileToken) {
       const turnstileRes = await fetch(
         'https://challenges.cloudflare.com/turnstile/v0/siteverify',
