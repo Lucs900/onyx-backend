@@ -63,8 +63,8 @@ export async function POST(request: Request) {
     const homeValue = Number(body.homeValue) || 0;
     const mortgageBalance = Number(body.mortgageBalance) || 0;
     const fico = Number(body.fico) || 0;
-    const occupancy = body.occupancy || 'Primary';
-    const desiredLine = body.desiredLine ? Number(body.desiredLine) : null;
+    const occupancy = (body.occupancy || 'Primary') as 'Primary' | 'Second' | 'Investment';
+    const desiredLine = body.desiredLine ? Number(body.desiredLine) : undefined;
     const turnstileToken = body.turnstileToken;
 
     // Verify Turnstile token only if one was sent
@@ -102,16 +102,26 @@ export async function POST(request: Request) {
     }
 
     // ---------- DIRECT CALCULATION (no Grok) ----------
-    const result = await calculateHelocQuoteTool.execute(
+    const rawResult = await (calculateHelocQuoteTool as any).execute(
       {
         homeValue,
         currentMortgage: mortgageBalance,
-        desiredLine: desiredLine || undefined,
+        desiredLine,
         fico,
-        occupancy: occupancy as 'Primary' | 'Second' | 'Investment',
+        occupancy,
       },
-      {} as any
+      {}
     );
+
+    const result = rawResult as {
+      maxLine: number;
+      finalRate: number;
+      cltv: number;
+      occupancy: string;
+      publishedMargin: number;
+      adjustedMargin: number;
+      lineUsedForCltv: number;
+    };
 
     const quote = {
       maxLine: result.maxLine,
@@ -120,10 +130,10 @@ export async function POST(request: Request) {
       occupancy: result.occupancy,
       drawPeriod: '3 years',
       monthlyPayment: null as number | null,
-      desiredLine: desiredLine,
+      desiredLine: desiredLine || null,
     };
 
-    // Calculate interest-only payment if we have a line amount
+    // Calculate interest-only payment
     const lineForPayment = desiredLine && desiredLine > 0 ? desiredLine : result.maxLine;
     if (lineForPayment > 0 && result.finalRate) {
       quote.monthlyPayment = Math.round(
