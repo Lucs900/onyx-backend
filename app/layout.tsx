@@ -8,6 +8,7 @@ const newsreader = Newsreader({
   display: "swap",
   variable: "--font-newsreader",
   weight: ["400", "500"],
+  adjustFontFallback: false,
 });
 
 export const metadata: Metadata = {

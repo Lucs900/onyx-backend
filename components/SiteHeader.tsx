@@ -106,7 +106,7 @@ export function SiteHeader() {
         aria-modal={menuOpen}
         aria-hidden={!menuOpen}
         aria-label="Menu"
-        {...(!menuOpen ? { inert: "" } : {})}
+        inert={!menuOpen}
       >
         <nav className="site-header__sheet-nav" aria-label="Mobile">
           {NAV_LINKS.map((link) => (
