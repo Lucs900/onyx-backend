@@ -45,6 +45,20 @@ Section below Advisor Spotlight. Static open cards. No accordion. No icons. No m
 - Body: `Live credit and rate data. Three desks. One relationship.`
 - Locked names: **The Rate Desk**, **The Credit Path**, **The Member Desk**
 
+## Slice 5 — Rate card + comparison
+
+Below the three desks.
+
+Rate card is the mortgage-without-ACR off-ramp:
+
+- Eyebrow `MORTGAGE ONLY`. No section H2.
+- APR / decision / amount / as-of remain **OPEN**. Preview uses `—` and `Sample · not live`. Do not invent a live rate.
+- Product line may show `Purchase · 30-year fixed` only as a labeled sample.
+- CTA `Find my rate` (56px) with `2 min · no hard credit check` switches Advisor Spotlight to **Loan** mode — same path as hero `Just need a mortgage`.
+- Exact line under the card: `A mortgage is available without ACR.`
+
+Comparison: Feature | ONYX ACR | Traditional lender | Loan only. ONYX column uses a 6px metal underline (allowed metal besides fox/pass). Member credits stay an em dash. Mobile uses stacked cards.
+
 ## File map
 
 ```
@@ -53,6 +67,7 @@ styles/globals.css                reset, layout, header, footer
 styles/hero.css                   Slice 2 hero + pass
 styles/spotlight.css              Slice 3 Advisor Spotlight
 styles/desks.css                  Slice 4 three desks
+styles/rates.css                  Slice 5 rate card + comparison
 components/AdvisorMark.tsx        2–3 shape geometric fox; size="sm" = 20px
 components/SiteHeader.tsx         locked sparse chrome
 components/SiteFooter.tsx         sparse footer, pending-approval placeholders
@@ -61,9 +76,11 @@ components/AcrPass.tsx            CSS membership pass
 components/AdvisorSpotlight.tsx   toggle, composer, chips, disclosure
 components/HomeExperience.tsx     homepage client wiring
 components/ValueBreakdown.tsx     three locked desks
+components/RateCard.tsx           mortgage-only off-ramp
+components/ComparisonTable.tsx    Feature / ACR / traditional / loan only
 app/layout.tsx                    fonts + tokens
 app/(marketing)/layout.tsx        header + footer + paper canvas
-app/(marketing)/page.tsx          hero + spotlight + desks
+app/(marketing)/page.tsx          hero through comparison
 app/(marketing)/{acr,rates,about,login,advisor}/page.tsx   stubs
 app/api/chat                      UNCHANGED
 app/api/heloc-quote               UNCHANGED
@@ -74,7 +91,7 @@ lib/*                             UNCHANGED
 
 Implemented as CSS variables in `styles/tokens.css`. Hex values must match the locked `:root` block exactly. Do not add a Tailwind palette or a second color system.
 
-Metal is scarce: fox highlight and ACR pass metal only.
+Metal is scarce: fox highlight, ACR pass, and the comparison ONYX underline only.
 
 ## Shell
 
@@ -90,7 +107,7 @@ npm install
 npm run dev
 ```
 
-Open `http://localhost:3000`. Confirm hero, Spotlight, then the three desks. Headline must show `$—+`, not a fake dollar amount. Desk names must be The Rate Desk, The Credit Path, The Member Desk.
+Open `http://localhost:3000`. After the desks, confirm the rate card shows `— APR` (not a live rate) and `A mortgage is available without ACR.` `Find my rate` should switch Spotlight to Loan. Comparison has four columns; on a narrow viewport it stacks as cards.
 
 ```bash
 npm run build
@@ -112,12 +129,12 @@ Current Preview (Ready, not Production):
 
 ## Still later — do not build yet
 
-Rate card, comparison, how-it-works, proof, closer, `/acr` product page, returning chat, mobile sticky bar (Slice 9), dashboard, Advisor sheet, Classic form widget.
+How-it-works, proof, closer, `/acr` product page, returning chat, mobile sticky bar (Slice 9), dashboard, Advisor sheet, Classic form widget.
 
 ## What later slices must not break
 
 - Locked CTAs, desk names, fox-mark rules, token hex values, Slice 2 hero copy, Slice 3 disclosure copy
-- `$X+` stays OPEN until a real figure is approved
+- `$X+`, APR, decision time, amount, and as-of date stay OPEN until approved
 - `app/api/chat`, `app/api/heloc-quote`, and `lib/*` unless a slice explicitly opens them
 - No dashboard or returning-chat UI until that slice
 - Mobile sticky bar is Slice 9, not earlier

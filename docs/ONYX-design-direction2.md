@@ -112,9 +112,17 @@ Static open cards. No icons. No metal.
 
 Headline: `Unlock $—+ in annual relationship value.` `$X+` is OPEN.
 
+## Rate card + comparison (Slice 5)
+
+Mortgage-without-ACR off-ramp. Exact line: `A mortgage is available without ACR.`
+
+APR, decision time, amount, and as-of date are **OPEN**. Use em dashes / `Sample · not live`. Do not invent a live rate or dollar amount. `Find my rate` switches Advisor Spotlight to Loan mode.
+
+Comparison columns: Feature | ONYX ACR | Traditional lender | Loan only. ONYX header may use a 6px metal underline. Member credits stay OPEN (em dash).
+
 ## Out of scope until a later slice
 
-Rate card, comparison table, how-it-works, proof, closer, `/acr` product page, returning chat, mobile sticky bar (Slice 9), dashboard, Advisor conversation UI / sheet.
+How-it-works, proof, closer, `/acr` product page, returning chat, mobile sticky bar (Slice 9), dashboard, Advisor conversation UI / sheet.
 
 ## OPEN
 

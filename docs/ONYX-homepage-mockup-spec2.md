@@ -110,12 +110,16 @@ Below Advisor Spotlight. Eyebrow `THE RELATIONSHIP`. H2 `Unlock $—+ in annual 
 
 Three equal static-open cards: paper-elevated, 1px `--line`, radius 12. No icons. No metal. Locked names: The Rate Desk, The Credit Path, The Member Desk.
 
+## Rate card + comparison (Slice 5)
+
+Below the desks. Rate card: eyebrow `MORTGAGE ONLY`, no H2, one card max 720, radius 16. APR is a labeled sample or em dash — never a live invented rate. Specs `DECISION` / `AMOUNT` / `CHECK` are OPEN placeholders. CTA `Find my rate` → Loan Spotlight. Exact offramp: `A mortgage is available without ACR.`
+
+Comparison: eyebrow `WHY A RELATIONSHIP`. H2 `A loan ends. The desk does not.` Columns Feature | ONYX ACR | Traditional lender | Loan only. ONYX header: ink + 6px metal underline. Checks 14px ink. Absence = em dash. Mobile: stacked cards.
+
 ## Homepage sections (later slices)
 
 Do not invent a second IA.
 
-- Rate card
-- Comparison table
 - How it works
 - Proof
 - Closer
