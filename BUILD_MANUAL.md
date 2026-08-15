@@ -52,11 +52,14 @@ npm start
 
 The GitHub repo is linked to the Vercel project **`onyx-backend`** on team **ONYX Direct**.
 
-- A pull request against `main` should create a **preview** deployment automatically.
-- Do **not** promote this branch to Production or point `onyxdirect.com` at it from this workstream.
+- A pull request against `main` creates a **preview** deployment automatically. Confirmed on this branch:
+  - Preview: https://onyx-backend-git-cursor-onyx-marketing-found-459205-onyx-direct.vercel.app
+  - Inspector: https://vercel.com/onyx-direct/onyx-backend/RsceZYzZjZENB1AxKjvsK4YGjZWR
+  - Preview is behind **Vercel Authentication** (SSO). Open it while logged into the ONYX Direct Vercel team. Do not disable protection to share it.
+- Production remains on `main`. This work did not promote the branch or change `onyxdirect.com`.
 - `vercel.json` is unchanged: Next.js framework, `npm run build`, `.next` output.
 
-If a preview URL does not appear on the PR, open the Vercel project → the git branch → Preview, or ask a project admin to confirm Git integration. Do not run a production deploy to “make a URL.”
+If a later commit does not get a preview, open the Vercel project → this git branch → Preview. Do not run a production deploy to “make a URL.”
 
 ## Architecture
 
@@ -177,7 +180,8 @@ Leave these alone unless there is an explicit, separate task:
 ## Git / backup
 
 - Work for this foundation lives on a **feature branch**, not `main`.
-- If you snapshot, **tag the feature branch**, never `main`, so production history stays untouched.
+- Feature-branch snapshot tag: `onyx-marketing-foundation-v0` (points at this branch, not `main`).
+- If you snapshot again, **tag the feature branch**, never `main`, so production history stays untouched.
 - This file is the living backup of intent, file map, and advisor wiring.
 
 ## Current branch intent
