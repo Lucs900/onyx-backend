@@ -120,9 +120,17 @@ APR, decision time, amount, and as-of date are **OPEN**. Use em dashes / `Sample
 
 Comparison columns: Feature | ONYX ACR | Traditional lender | Loan only. ONYX header may use a 6px metal underline. Member credits stay OPEN (em dash).
 
+## How it works + proof + closer (Slice 6)
+
+Path: Diagnose → Structure → Approve → Optimize → Stay in the desk. Emphasize 03–05. Caption under Approve: `Loan-only can stop here.`
+
+Proof stays honest: em dashes / `Sample · not live`, as-of placeholder. No invented volume, stars, quotes, or GSE logos. Trust marks: Equal Housing, NMLS Consumer Access, mortgage broker. No invented NMLS numbers.
+
+Closer H2 is the locked hero pair. Primary → `/acr`. Secondary → Loan Spotlight. `Talk to a licensed originator` + `NMLS ____`. Repeat the in-hero trust line. No sticky bar in this slice.
+
 ## Out of scope until a later slice
 
-How-it-works, proof, closer, `/acr` product page, returning chat, mobile sticky bar (Slice 9), dashboard, Advisor conversation UI / sheet.
+`/acr` product page, returning chat, mobile sticky bar (Slice 9), dashboard, Advisor conversation UI / sheet.
 
 ## OPEN
 

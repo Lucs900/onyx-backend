@@ -1,0 +1,240 @@
+/* Slice 6 — How it works, proof, closer. No invented proof. */
+
+.how-it-works,
+.proof,
+.closer {
+  padding-block: 72px;
+  background: var(--paper);
+}
+
+.how-it-works__intro {
+  max-width: var(--prose-max);
+  margin-bottom: 40px;
+}
+
+.how-it-works__intro .type-h2,
+.closer .type-h2 {
+  margin-top: 16px;
+}
+
+.how-it-works__intro .type-body,
+.closer .type-body {
+  margin-top: 16px;
+}
+
+.path-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  margin: 0;
+  padding: 0 0 0 20px;
+  list-style: none;
+  border-left: 1px solid var(--line);
+}
+
+.path-step {
+  position: relative;
+  padding: 0 0 32px;
+}
+
+.path-step:last-child {
+  padding-bottom: 0;
+}
+
+.path-step__num {
+  display: block;
+  font-family: var(--font-display);
+  font-size: 48px;
+  line-height: 48px;
+  font-weight: 400;
+  letter-spacing: var(--tracking-stat);
+  font-variant-numeric: tabular-nums;
+  color: #D4CFC6;
+}
+
+.path-step__title {
+  margin-top: 8px;
+  font-family: var(--font-ui);
+  font-size: 17px;
+  line-height: 24px;
+  font-weight: 500;
+  color: var(--ink-2);
+}
+
+.path-step.is-acr .path-step__title {
+  color: var(--ink);
+}
+
+.path-step__line {
+  margin-top: 8px;
+  font-family: var(--font-ui);
+  font-size: 16px;
+  line-height: 26px;
+  font-weight: 400;
+  color: var(--ink-2);
+}
+
+.path-step__caption {
+  margin-top: 8px;
+  font-family: var(--font-ui);
+  font-size: 12px;
+  line-height: 18px;
+  font-weight: 400;
+  color: var(--muted);
+}
+
+.proof-stats {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 28px 16px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.proof-stat__value {
+  font-family: var(--font-display);
+  font-size: 40px;
+  line-height: 40px;
+  font-weight: 400;
+  letter-spacing: var(--tracking-stat);
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+}
+
+.proof-stat__label {
+  margin-top: 8px;
+  font-family: var(--font-ui);
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 500;
+  letter-spacing: var(--tracking-eyebrow);
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.proof__note {
+  margin-top: 24px;
+  max-width: var(--prose-max);
+}
+
+.trust-marks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 24px;
+  margin: 28px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.trust-marks li,
+.trust-marks a {
+  font-family: var(--font-ui);
+  font-size: 12px;
+  line-height: 18px;
+  font-weight: 500;
+  color: var(--ink);
+  text-decoration: none;
+}
+
+.trust-marks a:hover {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.closer__inner {
+  max-width: 680px;
+  margin-inline: auto;
+  text-align: center;
+}
+
+.closer__actions {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 32px;
+}
+
+.closer__originator {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  margin-top: 24px;
+}
+
+.closer__trust {
+  margin-top: 20px;
+  font-family: var(--font-ui);
+  font-size: 12px;
+  line-height: 18px;
+  font-weight: 400;
+  color: var(--muted);
+}
+
+.closer__trust a {
+  color: var(--ink-2);
+  text-underline-offset: 2px;
+}
+
+@media (min-width: 768px) {
+  .how-it-works,
+  .proof,
+  .closer {
+    padding-block: 120px;
+  }
+
+  .path-steps {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 0;
+    padding: 0;
+    border-left: 0;
+  }
+
+  .path-step {
+    padding: 0 24px;
+  }
+
+  .path-step:first-child {
+    padding-left: 0;
+  }
+
+  .path-step:last-child {
+    padding-right: 0;
+  }
+
+  .path-step:not(:last-child)::after {
+    content: "";
+    position: absolute;
+    top: 8px;
+    right: 0;
+    bottom: 8px;
+    width: 1px;
+    background: var(--line);
+  }
+
+  .path-step__num {
+    font-size: 64px;
+    line-height: 64px;
+  }
+
+  .proof-stats {
+    grid-template-columns: repeat(4, 1fr);
+    gap: 24px;
+  }
+
+  .proof-stat__value {
+    font-size: 56px;
+    line-height: 56px;
+  }
+
+  .closer__actions {
+    flex-direction: row;
+    justify-content: center;
+  }
+
+  .closer__actions .btn {
+    width: auto;
+  }
+}

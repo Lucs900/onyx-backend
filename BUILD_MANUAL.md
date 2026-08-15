@@ -59,6 +59,14 @@ Rate card is the mortgage-without-ACR off-ramp:
 
 Comparison: Feature | ONYX ACR | Traditional lender | Loan only. ONYX column uses a 6px metal underline (allowed metal besides fox/pass). Member credits stay an em dash. Mobile uses stacked cards.
 
+## Slice 6 — How it works + proof + closer
+
+How it works: `THE PATH` / `Get approved. Then stay that way.` Five steps. Emphasize Approve → Optimize → Stay in the desk. Caption under 03: `Loan-only can stop here.`
+
+Proof: four OPEN placeholders (`—`), `Sample · not live`, `As of —`. No invented volume, stars, quotes, or GSE logos. Trust marks: Equal Housing, NMLS Consumer Access, Mortgage broker.
+
+Closer: locked H2 `Always approved. Always optimizing.` Primary → `/acr`. Secondary → Loan Spotlight. `Talk to a licensed originator` + `NMLS ____`. Repeat `NMLS [OPEN] · CA DRE [OPEN] · We are a mortgage broker.` Mobile sticky bar is Slice 9, not this slice.
+
 ## File map
 
 ```
@@ -68,6 +76,7 @@ styles/hero.css                   Slice 2 hero + pass
 styles/spotlight.css              Slice 3 Advisor Spotlight
 styles/desks.css                  Slice 4 three desks
 styles/rates.css                  Slice 5 rate card + comparison
+styles/close.css                  Slice 6 path, proof, closer
 components/AdvisorMark.tsx        2–3 shape geometric fox; size="sm" = 20px
 components/SiteHeader.tsx         locked sparse chrome
 components/SiteFooter.tsx         sparse footer, pending-approval placeholders
@@ -78,9 +87,12 @@ components/HomeExperience.tsx     homepage client wiring
 components/ValueBreakdown.tsx     three locked desks
 components/RateCard.tsx           mortgage-only off-ramp
 components/ComparisonTable.tsx    Feature / ACR / traditional / loan only
+components/HowItWorks.tsx         five-step path
+components/ProofStats.tsx         honest OPEN stats + trust marks
+components/Closer.tsx             locked closer CTAs
 app/layout.tsx                    fonts + tokens
 app/(marketing)/layout.tsx        header + footer + paper canvas
-app/(marketing)/page.tsx          hero through comparison
+app/(marketing)/page.tsx          full homepage through closer
 app/(marketing)/{acr,rates,about,login,advisor}/page.tsx   stubs
 app/api/chat                      UNCHANGED
 app/api/heloc-quote               UNCHANGED
@@ -107,7 +119,7 @@ npm install
 npm run dev
 ```
 
-Open `http://localhost:3000`. After the desks, confirm the rate card shows `— APR` (not a live rate) and `A mortgage is available without ACR.` `Find my rate` should switch Spotlight to Loan. Comparison has four columns; on a narrow viewport it stacks as cards.
+Open `http://localhost:3000`. After comparison, confirm five path steps, proof dashes (no fake volume), and the closer dual CTAs. Closer secondary should switch Spotlight to Loan. There is no sticky bar yet.
 
 ```bash
 npm run build
@@ -129,7 +141,7 @@ Current Preview (Ready, not Production):
 
 ## Still later — do not build yet
 
-How-it-works, proof, closer, `/acr` product page, returning chat, mobile sticky bar (Slice 9), dashboard, Advisor sheet, Classic form widget.
+`/acr` product page, returning chat, mobile sticky bar (Slice 9), dashboard, Advisor sheet, Classic form widget.
 
 ## What later slices must not break
 

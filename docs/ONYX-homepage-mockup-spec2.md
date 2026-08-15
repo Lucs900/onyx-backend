@@ -116,13 +116,18 @@ Below the desks. Rate card: eyebrow `MORTGAGE ONLY`, no H2, one card max 720, ra
 
 Comparison: eyebrow `WHY A RELATIONSHIP`. H2 `A loan ends. The desk does not.` Columns Feature | ONYX ACR | Traditional lender | Loan only. ONYX header: ink + 6px metal underline. Checks 14px ink. Absence = em dash. Mobile: stacked cards.
 
+## How it works + proof + closer (Slice 6)
+
+How it works: eyebrow `THE PATH`. H2 `Get approved. Then stay that way.` Five steps, horizontal desktop / vertical rail mobile. Watermark numerals `#D4CFC6`. No cards. Hairline gutters. Emphasize 03 → 04 → 05.
+
+Proof: four OPEN stats, as-of required (placeholder). No fake numbers, stars, volume, or GSE logos. Skip invented quotes.
+
+Closer: inner 680. Locked H2 `Always approved. Always optimizing.` Dual CTAs. Originator text + `NMLS ____`. Repeat in-hero trust line. No QR, app badges, waving fox, or mobile sticky bar.
+
 ## Homepage sections (later slices)
 
 Do not invent a second IA.
 
-- How it works
-- Proof
-- Closer
 - `/acr` product page
 - Returning chat
 - Mobile sticky bar (Slice 9)
