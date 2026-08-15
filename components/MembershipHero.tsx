@@ -1,7 +1,13 @@
+"use client";
+
 import Link from "next/link";
 import { AcrPass } from "./AcrPass";
 
-export function MembershipHero() {
+type MembershipHeroProps = {
+  onLoanOnly?: () => void;
+};
+
+export function MembershipHero({ onLoanOnly }: MembershipHeroProps) {
   return (
     <section className="membership-hero page-pad">
       <div className="page-inner membership-hero__inner">
@@ -23,7 +29,11 @@ export function MembershipHero() {
             <Link href="/acr" className="btn btn--primary btn--hero-primary">
               Start your relationship
             </Link>
-            <button type="button" className="btn btn--secondary btn--hero-secondary">
+            <button
+              type="button"
+              className="btn btn--secondary btn--hero-secondary"
+              onClick={onLoanOnly}
+            >
               Just need a mortgage
             </button>
           </div>

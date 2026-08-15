@@ -86,18 +86,29 @@ Use exactly. Do not rewrite. No italic. No gradient on the H1. No stock photo, r
 - H1: `Always approved.` / `Always optimizing.`
 - Support: `We keep your credit and rate working for you.`
 - Primary: `Start your relationship` → `/acr` (56px)
-- Secondary: `Just need a mortgage` — button, do not navigate this slice (48px desktop / 52px mobile)
+- Secondary: `Just need a mortgage` — switches Spotlight to Loan and scrolls to it (48px desktop / 52px mobile)
 - Trust: `NMLS [OPEN] · CA DRE [OPEN] · We are a mortgage broker.`
 - Link: `Here’s how we get paid.`
 - Optional OPEN microcopy `Live data · no hard credit check` — omit if it does not fit the locked layout
 - ACR pass: CSS only, 420×264 desktop rotate -6deg; mobile max 320 rotate -3deg. Member pass, not a Visa. No name, last-4, hologram, or facial fox.
+
+## Advisor Spotlight (Slice 3)
+
+Centered under the hero. Stack: mode toggle → composer → chips → disclosure. Section pad `80` / `64`. Max width `720`.
+
+- Toggle: `Relationship` | `Loan`. Height 36, pad 3, paper-elevated, 1px `--line`, radius 999. Default Relationship. Active ink fill, paper label. Thumb 200ms. Not Advisor vs Classic.
+- Composer: pill 56 / 52, paper-elevated, 1px `--line`, radius 999, pad `8 8 8 20`. `<AdvisorMark size="sm" />` 20px. Send 40×40 ink, disabled until text.
+- Placeholders: `Ask about your status, credit, or ACR.` / `Ask about buying, refinancing, or equity.`
+- Relationship chips: `What’s ACR?` · `How do you keep me approved?` · `What does optimizing mean?`
+- Loan chips: `Buy a home` · `Refinance` · `Use equity`
+- Disclosure as locked in the direction doc. Loan adds text link `Prefer a short form` (no-op this slice).
+- Default preview: Relationship, first chip selected, empty input. No fake transcript.
 
 ## Homepage sections (later slices)
 
 Do not invent a second IA.
 
 - Three desks: The Rate Desk, The Credit Path, The Member Desk
-- Advisor Spotlight
 - Membership math
 - Rate card
 - Comparison table

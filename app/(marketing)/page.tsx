@@ -1,5 +1,5 @@
-import { MembershipHero } from "@/components/MembershipHero";
+import { HomeExperience } from "@/components/HomeExperience";
 
 export default function HomePage() {
-  return <MembershipHero />;
+  return <HomeExperience />;
 }

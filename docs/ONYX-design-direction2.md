@@ -25,7 +25,7 @@ Do not revert these labels.
 | Role | Label | Destination | Notes |
 | --- | --- | --- | --- |
 | Primary | `Start your relationship` | `/acr` | Nav and hero. Under 1024, nav-only label may truncate to `Start` with `aria-label="Start your relationship"`. Never “Get my rate”. |
-| Secondary | `Just need a mortgage` | loan-only Advisor later | Hero: button, no navigation this slice. Mobile menu: text button. |
+| Secondary | `Just need a mortgage` | loan-only Advisor | Hero: switches Advisor Spotlight to Loan mode and scrolls to it. Mobile menu: text button to `/advisor` stub. |
 
 ## Mark
 
@@ -83,15 +83,26 @@ Use exactly. Do not rewrite.
 - Eyebrow: `Active Credit Relationship` (display uppercase)
 - H1: `Always approved.` / `Always optimizing.`
 - Support: `We keep your credit and rate working for you.`
-- Primary → `/acr`. Secondary is a no-op button until Advisor loan-only mode.
+- Primary → `/acr`. Secondary switches Advisor Spotlight to Loan mode.
 - Trust: `NMLS [OPEN] · CA DRE [OPEN] · We are a mortgage broker.`
 - Link: `Here’s how we get paid.`
 - No rate or “get pre-approved” in the hero.
 - “Always approved” is the relationship goal, not a credit decision.
 
+## Locked Advisor Spotlight (Slice 3)
+
+Centered under the hero. Toggle `Relationship` | `Loan` — not Advisor vs Classic. Default Relationship.
+
+Disclosure, exact:
+
+- Relationship: `ONYX Advisor · AI · I can’t approve a loan in this chat.`
+- Loan: `ONYX Advisor · AI · Loan-only. ACR is optional. I can’t approve a loan in this chat.`
+
+No live homepage transcript. No purple glow, floating orb, or cartoon. Full Advisor sheet and Classic form are later.
+
 ## Out of scope until a later slice
 
-Advisor Spotlight, membership math, rate card, comparison table, how-it-works, proof, closer, `/acr` product page, returning chat, mobile sticky bar (Slice 9), dashboard, Advisor conversation UI.
+Membership math, rate card, comparison table, how-it-works, proof, closer, `/acr` product page, returning chat, mobile sticky bar (Slice 9), dashboard, Advisor conversation UI / sheet.
 
 ## OPEN
 

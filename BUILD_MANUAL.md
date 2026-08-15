@@ -19,20 +19,21 @@ Tokens, navigation, footer, and layout foundation. Keep this chrome.
 
 Homepage first screen is ACR-first: locked eyebrow / H1 / support, dual CTAs, in-hero broker line, CSS membership pass.
 
-Locked copy — do not rewrite:
+Hero secondary `Just need a mortgage` now switches Slice 3 to Loan mode and scrolls to it.
 
-- Eyebrow: `Active Credit Relationship` (rendered uppercase)
-- H1: `Always approved.` / `Always optimizing.`
-- Support: `We keep your credit and rate working for you.`
-- Primary: `Start your relationship` → `/acr`
-- Secondary: `Just need a mortgage` — `<button>` no-op. Do not navigate. Advisor sheet is later.
-- Trust: `NMLS [OPEN] · CA DRE [OPEN] · We are a mortgage broker.`
-- Link: `Here’s how we get paid.` → `/how-we-get-paid`
-- Optional `Live data · no hard credit check` was omitted; it does not have a slot in the locked layout.
+## Slice 3 — Advisor Spotlight
 
-“Always approved” is the relationship goal, not a credit decision. No rate and no “get pre-approved” in the hero.
+Centered section under the hero. Stack: toggle → composer → chips → disclosure.
 
-Pass: CSS only (`AcrPass`). No Three.js. Desktop 420×264, −6deg, recessed ellipse, conic metal sheen on hover. Mobile max 320, −3deg. Honor `prefers-reduced-motion`.
+- Toggle: `Relationship` | `Loan`. Default **Relationship**. Not Advisor vs Classic.
+- Composer uses `<AdvisorMark size="sm" />` (20px). Send disabled until there is text. Submit is a quiet no-op — no homepage transcript, no `/api/chat` wiring.
+- Chips fill the composer. Default preview: Relationship, first chip selected, empty input.
+- Loan disclosure includes no-op `Prefer a short form`. Do not build the Classic form this slice.
+
+Disclosure, exact:
+
+- Relationship: `ONYX Advisor · AI · I can’t approve a loan in this chat.`
+- Loan: `ONYX Advisor · AI · Loan-only. ACR is optional. I can’t approve a loan in this chat.`
 
 ## File map
 
@@ -40,14 +41,17 @@ Pass: CSS only (`AcrPass`). No Three.js. Desktop 420×264, −6deg, recessed ell
 styles/tokens.css                 locked CSS variables + type ramp + buttons
 styles/globals.css                reset, layout, header, footer
 styles/hero.css                   Slice 2 hero + pass
-components/AdvisorMark.tsx        2–3 shape geometric fox, currentColor + metal
+styles/spotlight.css              Slice 3 Advisor Spotlight
+components/AdvisorMark.tsx        2–3 shape geometric fox; size="sm" = 20px
 components/SiteHeader.tsx         locked sparse chrome
 components/SiteFooter.tsx         sparse footer, pending-approval placeholders
-components/MembershipHero.tsx     locked hero
+components/MembershipHero.tsx     locked hero; secondary → Loan spotlight
 components/AcrPass.tsx            CSS membership pass
+components/AdvisorSpotlight.tsx   toggle, composer, chips, disclosure
+components/HomeExperience.tsx     homepage client wiring
 app/layout.tsx                    fonts + tokens
 app/(marketing)/layout.tsx        header + footer + paper canvas
-app/(marketing)/page.tsx          hero only (no other homepage sections)
+app/(marketing)/page.tsx          hero + spotlight only
 app/(marketing)/{acr,rates,about,login,advisor}/page.tsx   stubs
 app/api/chat                      UNCHANGED
 app/api/heloc-quote               UNCHANGED
@@ -74,7 +78,7 @@ npm install
 npm run dev
 ```
 
-Open `http://localhost:3000`. Confirm the hero + pass on desktop (two columns) and mobile (stack, pass between copy and CTAs). Secondary hero button must not navigate.
+Open `http://localhost:3000`. Confirm hero, then Spotlight below it. Default is Relationship. Click `Just need a mortgage` — Spotlight should switch to Loan and scroll. Chips fill the composer. Send stays disabled until text. Submit does not open a transcript.
 
 ```bash
 npm run build
@@ -96,11 +100,11 @@ Current Preview (Ready, not Production):
 
 ## Still later — do not build yet
 
-Advisor Spotlight, membership math / three desks, rate card, comparison, how-it-works, proof, closer, `/acr` product page, returning chat, mobile sticky bar (Slice 9), dashboard, Advisor sheet.
+Membership math / three desks, rate card, comparison, how-it-works, proof, closer, `/acr` product page, returning chat, mobile sticky bar (Slice 9), dashboard, Advisor sheet, Classic form widget.
 
 ## What later slices must not break
 
-- Locked CTAs, desk names, fox-mark rules, token hex values, and Slice 2 hero copy
+- Locked CTAs, desk names, fox-mark rules, token hex values, Slice 2 hero copy, Slice 3 disclosure copy
 - `app/api/chat`, `app/api/heloc-quote`, and `lib/*` unless a slice explicitly opens them
 - No dashboard or returning-chat UI until that slice
 - Mobile sticky bar is Slice 9, not earlier

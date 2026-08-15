@@ -1,17 +1,23 @@
 type AdvisorMarkProps = {
-  size?: number;
+  size?: number | "sm";
   className?: string;
 };
+
+const SIZE_ALIASES = {
+  sm: 20,
+} as const;
 
 /**
  * Geometric fox mark. Two shapes + one metal highlight.
  * No pupils, smile, wink, eyebrows, body, or expression.
  */
 export function AdvisorMark({ size = 24, className }: AdvisorMarkProps) {
+  const px = typeof size === "number" ? size : SIZE_ALIASES[size];
+
   return (
     <svg
-      width={size}
-      height={size}
+      width={px}
+      height={px}
       viewBox="0 0 24 24"
       fill="none"
       xmlns="http://www.w3.org/2000/svg"
