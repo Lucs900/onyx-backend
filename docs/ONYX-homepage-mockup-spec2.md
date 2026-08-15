@@ -78,13 +78,25 @@ Links: Privacy, Licensing, How we get paid, NMLS Consumer Access, Equal Housing.
 
 Do not invent NMLS/DRE numbers, rates, testimonials, or compliance claims. Mark placeholders pending approval (e.g. `NMLS ____`).
 
-## Homepage sections (later slices — do not build in Slice 1)
+## Homepage hero (Slice 2 — locked copy)
 
-Locked for later implementation. Do not invent a second IA.
+Use exactly. Do not rewrite. No italic. No gradient on the H1. No stock photo, rate widget, or chatbot.
 
-- Hero (CTAs locked above; remaining hero copy is **OPEN** if not supplied)
+- Eyebrow: `Active Credit Relationship` → `ACTIVE CREDIT RELATIONSHIP`
+- H1: `Always approved.` / `Always optimizing.`
+- Support: `We keep your credit and rate working for you.`
+- Primary: `Start your relationship` → `/acr` (56px)
+- Secondary: `Just need a mortgage` — button, do not navigate this slice (48px desktop / 52px mobile)
+- Trust: `NMLS [OPEN] · CA DRE [OPEN] · We are a mortgage broker.`
+- Link: `Here’s how we get paid.`
+- Optional OPEN microcopy `Live data · no hard credit check` — omit if it does not fit the locked layout
+- ACR pass: CSS only, 420×264 desktop rotate -6deg; mobile max 320 rotate -3deg. Member pass, not a Visa. No name, last-4, hologram, or facial fox.
+
+## Homepage sections (later slices)
+
+Do not invent a second IA.
+
 - Three desks: The Rate Desk, The Credit Path, The Member Desk
-- ACR pass
 - Advisor Spotlight
 - Membership math
 - Rate card

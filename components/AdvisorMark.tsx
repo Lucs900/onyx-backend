@@ -1,5 +1,5 @@
 type AdvisorMarkProps = {
-  size?: 16 | 24 | 32 | 64;
+  size?: number;
   className?: string;
 };
 

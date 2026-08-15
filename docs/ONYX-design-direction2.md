@@ -24,8 +24,8 @@ Do not revert these labels.
 
 | Role | Label | Destination | Notes |
 | --- | --- | --- | --- |
-| Primary | `Start your relationship` | `/acr` | Nav and later hero. Under 1024, nav-only label may truncate to `Start` with `aria-label="Start your relationship"`. Never “Get my rate”. |
-| Secondary | `Just need a mortgage` | loan-only Advisor | Mobile menu as a **text button only** in Slice 1. |
+| Primary | `Start your relationship` | `/acr` | Nav and hero. Under 1024, nav-only label may truncate to `Start` with `aria-label="Start your relationship"`. Never “Get my rate”. |
+| Secondary | `Just need a mortgage` | loan-only Advisor later | Hero: button, no navigation this slice. Mobile menu: text button. |
 
 ## Mark
 
@@ -76,9 +76,22 @@ Advisor / legal line allowed as placeholder:
 
 > ONYX can make mistakes. “Always approved” is the relationship goal, not a credit decision.
 
+## Locked homepage hero (Slice 2)
+
+Use exactly. Do not rewrite.
+
+- Eyebrow: `Active Credit Relationship` (display uppercase)
+- H1: `Always approved.` / `Always optimizing.`
+- Support: `We keep your credit and rate working for you.`
+- Primary → `/acr`. Secondary is a no-op button until Advisor loan-only mode.
+- Trust: `NMLS [OPEN] · CA DRE [OPEN] · We are a mortgage broker.`
+- Link: `Here’s how we get paid.`
+- No rate or “get pre-approved” in the hero.
+- “Always approved” is the relationship goal, not a credit decision.
+
 ## Out of scope until a later slice
 
-Hero, ACR pass, Advisor Spotlight, membership math, rate card, comparison table, how-it-works, proof, closer, `/acr` product page, returning chat, mobile sticky bar (Slice 9), dashboard, Advisor conversation UI.
+Advisor Spotlight, membership math, rate card, comparison table, how-it-works, proof, closer, `/acr` product page, returning chat, mobile sticky bar (Slice 9), dashboard, Advisor conversation UI.
 
 ## OPEN
 
