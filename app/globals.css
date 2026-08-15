@@ -1,0 +1,27 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  @apply bg-cream-50 text-ink antialiased;
+}
+
+::selection {
+  background: #c56a2d;
+  color: #fbf8f2;
+}
+
+.hero-grid {
+  background-image:
+    linear-gradient(rgba(244, 239, 230, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(244, 239, 230, 0.035) 1px, transparent 1px);
+  background-size: 48px 48px;
+}
