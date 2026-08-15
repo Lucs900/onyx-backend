@@ -35,6 +35,16 @@ Disclosure, exact:
 - Relationship: `ONYX Advisor · AI · I can’t approve a loan in this chat.`
 - Loan: `ONYX Advisor · AI · Loan-only. ACR is optional. I can’t approve a loan in this chat.`
 
+## Slice 4 — Membership math (The Three Desks)
+
+Section below Advisor Spotlight. Static open cards. No accordion. No icons. No metal.
+
+- Eyebrow: `THE RELATIONSHIP`
+- H2: `Unlock $—+ in annual relationship value.`
+- `$X+` is still **OPEN**. Do not invent a dollar amount. Preview uses `$—+` and `Sample · not live`.
+- Body: `Live credit and rate data. Three desks. One relationship.`
+- Locked names: **The Rate Desk**, **The Credit Path**, **The Member Desk**
+
 ## File map
 
 ```
@@ -42,6 +52,7 @@ styles/tokens.css                 locked CSS variables + type ramp + buttons
 styles/globals.css                reset, layout, header, footer
 styles/hero.css                   Slice 2 hero + pass
 styles/spotlight.css              Slice 3 Advisor Spotlight
+styles/desks.css                  Slice 4 three desks
 components/AdvisorMark.tsx        2–3 shape geometric fox; size="sm" = 20px
 components/SiteHeader.tsx         locked sparse chrome
 components/SiteFooter.tsx         sparse footer, pending-approval placeholders
@@ -49,9 +60,10 @@ components/MembershipHero.tsx     locked hero; secondary → Loan spotlight
 components/AcrPass.tsx            CSS membership pass
 components/AdvisorSpotlight.tsx   toggle, composer, chips, disclosure
 components/HomeExperience.tsx     homepage client wiring
+components/ValueBreakdown.tsx     three locked desks
 app/layout.tsx                    fonts + tokens
 app/(marketing)/layout.tsx        header + footer + paper canvas
-app/(marketing)/page.tsx          hero + spotlight only
+app/(marketing)/page.tsx          hero + spotlight + desks
 app/(marketing)/{acr,rates,about,login,advisor}/page.tsx   stubs
 app/api/chat                      UNCHANGED
 app/api/heloc-quote               UNCHANGED
@@ -78,7 +90,7 @@ npm install
 npm run dev
 ```
 
-Open `http://localhost:3000`. Confirm hero, then Spotlight below it. Default is Relationship. Click `Just need a mortgage` — Spotlight should switch to Loan and scroll. Chips fill the composer. Send stays disabled until text. Submit does not open a transcript.
+Open `http://localhost:3000`. Confirm hero, Spotlight, then the three desks. Headline must show `$—+`, not a fake dollar amount. Desk names must be The Rate Desk, The Credit Path, The Member Desk.
 
 ```bash
 npm run build
@@ -100,11 +112,12 @@ Current Preview (Ready, not Production):
 
 ## Still later — do not build yet
 
-Membership math / three desks, rate card, comparison, how-it-works, proof, closer, `/acr` product page, returning chat, mobile sticky bar (Slice 9), dashboard, Advisor sheet, Classic form widget.
+Rate card, comparison, how-it-works, proof, closer, `/acr` product page, returning chat, mobile sticky bar (Slice 9), dashboard, Advisor sheet, Classic form widget.
 
 ## What later slices must not break
 
 - Locked CTAs, desk names, fox-mark rules, token hex values, Slice 2 hero copy, Slice 3 disclosure copy
+- `$X+` stays OPEN until a real figure is approved
 - `app/api/chat`, `app/api/heloc-quote`, and `lib/*` unless a slice explicitly opens them
 - No dashboard or returning-chat UI until that slice
 - Mobile sticky bar is Slice 9, not earlier

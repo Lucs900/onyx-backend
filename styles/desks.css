@@ -1,0 +1,68 @@
+/* Slice 4 — Membership math / three desks. $X+ remains OPEN. */
+
+.value-breakdown {
+  padding-block: 72px;
+  background: var(--paper);
+}
+
+.value-breakdown__intro {
+  max-width: var(--prose-max);
+  margin-inline: auto;
+  margin-bottom: 40px;
+  text-align: center;
+}
+
+.value-breakdown__intro .type-h2 {
+  margin-top: 16px;
+}
+
+.value-breakdown__intro .type-body {
+  margin-top: 16px;
+}
+
+.value-breakdown__intro .type-legal {
+  margin-top: 12px;
+}
+
+.desks-grid {
+  display: grid;
+  gap: 16px;
+  max-width: var(--content-max);
+  margin-inline: auto;
+  padding: 0;
+  list-style: none;
+}
+
+.desk-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 28px 24px;
+  background: var(--paper-elevated);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+}
+
+.desk-card__index {
+  font-family: var(--font-ui);
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 500;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+@media (min-width: 768px) {
+  .value-breakdown {
+    padding-block: 120px;
+  }
+
+  .value-breakdown__intro {
+    margin-bottom: 48px;
+  }
+
+  .desks-grid {
+    grid-template-columns: repeat(3, 1fr);
+    gap: 24px;
+  }
+}

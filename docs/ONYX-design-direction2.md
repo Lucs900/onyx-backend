@@ -16,7 +16,7 @@ Desks (do not rename):
 2. The Credit Path
 3. The Member Desk
 
-Do not build the desk cards until that slice is opened.
+Desk cards are Slice 4. Do not rename. `$X+` annual value is still **OPEN** — render `$—+`, never a fake number.
 
 ## Locked homepage CTAs
 
@@ -100,9 +100,21 @@ Disclosure, exact:
 
 No live homepage transcript. No purple glow, floating orb, or cartoon. Full Advisor sheet and Classic form are later.
 
+## Locked desks (Slice 4)
+
+Static open cards. No icons. No metal.
+
+| # | Title | Outcome | Limit |
+| --- | --- | --- | --- |
+| 01 | The Rate Desk | Watch, lock alerts, refi window | Alerts are not a rate lock. |
+| 02 | The Credit Path | Live file. Approval health, not a one-time pull. | Not a credit-repair service. |
+| 03 | The Member Desk | Advisor with memory + a licensed human | Chat cannot approve a loan. |
+
+Headline: `Unlock $—+ in annual relationship value.` `$X+` is OPEN.
+
 ## Out of scope until a later slice
 
-Membership math, rate card, comparison table, how-it-works, proof, closer, `/acr` product page, returning chat, mobile sticky bar (Slice 9), dashboard, Advisor conversation UI / sheet.
+Rate card, comparison table, how-it-works, proof, closer, `/acr` product page, returning chat, mobile sticky bar (Slice 9), dashboard, Advisor conversation UI / sheet.
 
 ## OPEN
 

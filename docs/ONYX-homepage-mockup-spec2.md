@@ -104,12 +104,16 @@ Centered under the hero. Stack: mode toggle → composer → chips → disclosur
 - Disclosure as locked in the direction doc. Loan adds text link `Prefer a short form` (no-op this slice).
 - Default preview: Relationship, first chip selected, empty input. No fake transcript.
 
+## Membership math / three desks (Slice 4)
+
+Below Advisor Spotlight. Eyebrow `THE RELATIONSHIP`. H2 `Unlock $—+ in annual relationship value.` (`$X+` is OPEN — never invent a dollar amount). Body `Live credit and rate data. Three desks. One relationship.` Quiet `Sample · not live`.
+
+Three equal static-open cards: paper-elevated, 1px `--line`, radius 12. No icons. No metal. Locked names: The Rate Desk, The Credit Path, The Member Desk.
+
 ## Homepage sections (later slices)
 
 Do not invent a second IA.
 
-- Three desks: The Rate Desk, The Credit Path, The Member Desk
-- Membership math
 - Rate card
 - Comparison table
 - How it works
