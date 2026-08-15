@@ -67,6 +67,12 @@ Repo is linked to Vercel project `onyx-backend` on team ONYX Direct.
 - Do **not** promote the preview or assign `onyxdirect.com`.
 - Production stays on `main`.
 
+Current Preview (Ready, not Production):
+
+- https://onyx-backend-git-cursor-onyx-slice-1-shell-8e97-onyx-direct.vercel.app
+- Inspector: https://vercel.com/onyx-direct/onyx-backend/3PMYvFtPDsjo6QNV2iRbeDY7oRms
+- Preview may be behind Vercel Authentication. Open it signed into the ONYX Direct team.
+
 ## What later slices must not break
 
 - Locked CTAs, desk names, fox-mark rules, and token hex values
