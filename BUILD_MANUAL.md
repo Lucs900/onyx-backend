@@ -19,7 +19,7 @@ Tokens, navigation, footer, and layout foundation. Keep this chrome.
 
 Homepage first screen is ACR-first: locked eyebrow / H1 / support, dual CTAs, in-hero broker line, and the locked pictorial ACR card.
 
-The hero object is **`public/acr-card-face.png`**: late-day California warmth (not cool midday, not dusk-dark) → sun-warmed lawn → slim bright brass dock (~20%) with a secondary geometric fox. CSS overlays only quiet `ACTIVE CREDIT RELATIONSHIP` top-left of the scene. **Static object** — no traveling sheen, no sweep, no motion. Warmth lives in the bitmap, not a CSS filter.
+The hero object is the exact locked bitmap **`public/acr-card-face.png`**, shown as a clean `<img>`. Do not regenerate, restyle, or color-grade it. No CSS type overlay, sheen, sweep, or filters. Type/gold/fox live in the bitmap if present.
 
 **Locked — do not reopen** house, zoom, gold width, or composition. Not the old CSS membership pass (no MEMBER, last-4, chip, or ONYX wordmark on the object).
 
@@ -86,7 +86,7 @@ components/AdvisorMark.tsx        2–3 shape geometric fox; size="sm" = 20px
 components/SiteHeader.tsx         locked sparse chrome
 components/SiteFooter.tsx         sparse footer, pending-approval placeholders
 components/MembershipHero.tsx     locked hero; secondary → Loan spotlight
-components/AcrPass.tsx            locked pictorial ACR card + CSS type (static)
+components/AcrPass.tsx            exact locked ACR face image, no overlays
 components/AdvisorSpotlight.tsx   toggle, composer, chips, disclosure
 components/HomeExperience.tsx     homepage client wiring
 components/ValueBreakdown.tsx     three locked desks

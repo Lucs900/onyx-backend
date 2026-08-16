@@ -136,53 +136,22 @@
   }
 }
 
-/* Locked pictorial ACR card. Do not reopen house, zoom, gold width, or composition. */
+/* Locked pictorial ACR card. Exact bitmap. No overlays, filters, or sheen. */
 
 .acr-pass-stage {
-  position: relative;
   width: 100%;
   max-width: 400px;
-}
-
-.acr-pass {
-  position: relative;
-  overflow: hidden;
-  border-radius: 16px;
-  box-shadow: 0 8px 24px rgba(11, 11, 12, 0.08);
 }
 
 .acr-pass__face {
   width: 100%;
   height: auto;
-  filter: none;
-}
-
-.acr-pass__label {
-  position: absolute;
-  top: 14px;
-  left: 16px;
-  z-index: 2;
-  max-width: 68%;
-  margin: 0;
-  font-family: var(--font-ui);
-  font-size: 11px;
-  line-height: 14px;
-  font-weight: 500;
-  letter-spacing: 0.2em;
-  text-transform: uppercase;
-  color: rgba(61, 56, 51, 0.72);
-  pointer-events: none;
+  border-radius: 16px;
+  box-shadow: 0 8px 24px rgba(11, 11, 12, 0.08);
 }
 
 @media (min-width: 1024px) {
   .acr-pass-stage {
     max-width: 480px;
-  }
-
-  .acr-pass__label {
-    top: 18px;
-    left: 20px;
-    font-size: 12px;
-    line-height: 16px;
   }
 }
