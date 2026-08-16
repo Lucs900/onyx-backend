@@ -86,7 +86,7 @@ components/AdvisorMark.tsx        2–3 shape geometric fox; size="sm" = 20px
 components/SiteHeader.tsx         locked sparse chrome
 components/SiteFooter.tsx         sparse footer, pending-approval placeholders
 components/MembershipHero.tsx     locked hero; secondary → Loan spotlight
-components/AcrPass.tsx            locked pictorial ACR card + CSS type/sheen
+components/AcrPass.tsx            locked pictorial ACR card + CSS type (static)
 components/AdvisorSpotlight.tsx   toggle, composer, chips, disclosure
 components/HomeExperience.tsx     homepage client wiring
 components/ValueBreakdown.tsx     three locked desks
