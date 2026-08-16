@@ -15,9 +15,13 @@ Later slices must follow those decisions. Do not invent a second palette, IA, or
 
 Tokens, navigation, footer, and layout foundation. Keep this chrome.
 
-## Slice 2 — hero + ACR pass
+## Slice 2 — hero + locked ACR object
 
-Homepage first screen is ACR-first: locked eyebrow / H1 / support, dual CTAs, in-hero broker line, CSS membership pass.
+Homepage first screen is ACR-first: locked eyebrow / H1 / support, dual CTAs, in-hero broker line, and the locked pictorial ACR card.
+
+The hero object is **`public/acr-card-face.png`**: house → green lawn band → slim gold right dock (~20%) with a secondary geometric fox. CSS overlays only `ACTIVE CREDIT RELATIONSHIP` (top-left of the scene) and a soft-light sheen that starts on that type. `prefers-reduced-motion` parks the sheen.
+
+**Locked — do not reopen** house, zoom, gold width, or composition. Not the old CSS membership pass (no MEMBER, last-4, chip, or ONYX wordmark on the object).
 
 Hero secondary `Just need a mortgage` now switches Slice 3 to Loan mode and scrolls to it.
 
@@ -57,7 +61,7 @@ Rate card is the mortgage-without-ACR off-ramp:
 - CTA `Find my rate` (56px) with `2 min · no hard credit check` switches Advisor Spotlight to **Loan** mode — same path as hero `Just need a mortgage`.
 - Exact line under the card: `A mortgage is available without ACR.`
 
-Comparison: Feature | ONYX ACR | Traditional lender | Loan only. ONYX column uses a 6px metal underline (allowed metal besides fox/pass). Member credits stay an em dash. Mobile uses stacked cards.
+Comparison: Feature | ONYX ACR | Traditional lender | Loan only. ONYX column uses a 6px metal underline (allowed metal besides fox/card). Member credits stay an em dash. Mobile uses stacked cards.
 
 ## Slice 6 — How it works + proof + closer
 
@@ -72,7 +76,8 @@ Closer: locked H2 `Always approved. Always optimizing.` Primary → `/acr`. Seco
 ```
 styles/tokens.css                 locked CSS variables + type ramp + buttons
 styles/globals.css                reset, layout, header, footer
-styles/hero.css                   Slice 2 hero + pass
+styles/hero.css                   Slice 2 hero + pictorial ACR card
+public/acr-card-face.png          locked ACR card face (house + gold + fox)
 styles/spotlight.css              Slice 3 Advisor Spotlight
 styles/desks.css                  Slice 4 three desks
 styles/rates.css                  Slice 5 rate card + comparison
@@ -81,7 +86,7 @@ components/AdvisorMark.tsx        2–3 shape geometric fox; size="sm" = 20px
 components/SiteHeader.tsx         locked sparse chrome
 components/SiteFooter.tsx         sparse footer, pending-approval placeholders
 components/MembershipHero.tsx     locked hero; secondary → Loan spotlight
-components/AcrPass.tsx            CSS membership pass
+components/AcrPass.tsx            locked pictorial ACR card + CSS type/sheen
 components/AdvisorSpotlight.tsx   toggle, composer, chips, disclosure
 components/HomeExperience.tsx     homepage client wiring
 components/ValueBreakdown.tsx     three locked desks
@@ -103,7 +108,7 @@ lib/*                             UNCHANGED
 
 Implemented as CSS variables in `styles/tokens.css`. Hex values must match the locked `:root` block exactly. Do not add a Tailwind palette or a second color system.
 
-Metal is scarce: fox highlight, ACR pass, and the comparison ONYX underline only.
+Metal is scarce: fox highlight, the locked ACR card gold dock, and the comparison ONYX underline only.
 
 ## Shell
 
@@ -146,6 +151,7 @@ Current Preview (Ready, not Production):
 ## What later slices must not break
 
 - Locked CTAs, desk names, fox-mark rules, token hex values, Slice 2 hero copy, Slice 3 disclosure copy
+- Locked ACR object: do not reopen house, zoom, gold width, or composition
 - `$X+`, APR, decision time, amount, and as-of date stay OPEN until approved
 - `app/api/chat`, `app/api/heloc-quote`, and `lib/*` unless a slice explicitly opens them
 - No dashboard or returning-chat UI until that slice
