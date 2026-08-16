@@ -13,7 +13,8 @@
 }
 
 .advisor-spotlight {
-  padding-block: 64px;
+  padding-top: 8px;
+  padding-bottom: 64px;
   background: var(--paper);
 }
 
@@ -187,7 +188,8 @@
 
 @media (min-width: 768px) {
   .advisor-spotlight {
-    padding-block: 80px;
+    padding-top: 0;
+    padding-bottom: 80px;
   }
 
   .spotlight-composer {

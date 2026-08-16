@@ -24,6 +24,10 @@ function Check() {
 
 type Cell = ReactNode;
 
+function cellClass(cell: Cell, extra?: string) {
+  return [extra, cell === "—" ? "is-dash" : undefined].filter(Boolean).join(" ");
+}
+
 const ROWS: { feature: string; onyx: Cell; traditional: Cell; loan: Cell }[] = [
   {
     feature: "After close",
@@ -117,9 +121,9 @@ export function ComparisonTable() {
               {ROWS.map((row) => (
                 <tr key={row.feature}>
                   <th scope="row">{row.feature}</th>
-                  <td className="is-onyx">{row.onyx}</td>
-                  <td>{row.traditional}</td>
-                  <td>{row.loan}</td>
+                  <td className={cellClass(row.onyx, "is-onyx")}>{row.onyx}</td>
+                  <td className={cellClass(row.traditional)}>{row.traditional}</td>
+                  <td className={cellClass(row.loan)}>{row.loan}</td>
                 </tr>
               ))}
             </tbody>
@@ -133,15 +137,15 @@ export function ComparisonTable() {
               <dl>
                 <div>
                   <dt className="is-onyx">ONYX ACR</dt>
-                  <dd className="is-onyx">{row.onyx}</dd>
+                  <dd className={cellClass(row.onyx, "is-onyx")}>{row.onyx}</dd>
                 </div>
                 <div>
                   <dt>Traditional lender</dt>
-                  <dd>{row.traditional}</dd>
+                  <dd className={cellClass(row.traditional)}>{row.traditional}</dd>
                 </div>
                 <div>
                   <dt>Loan only</dt>
-                  <dd>{row.loan}</dd>
+                  <dd className={cellClass(row.loan)}>{row.loan}</dd>
                 </div>
               </dl>
             </li>

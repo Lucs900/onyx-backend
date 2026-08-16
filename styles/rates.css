@@ -3,6 +3,7 @@
 .rate-card-section {
   padding-block: 72px;
   background: var(--paper);
+  border-top: 1px solid var(--line);
 }
 
 .rate-card-section__inner {
@@ -138,7 +139,7 @@
 
 .comparison-table th,
 .comparison-table td {
-  padding: 16px 18px;
+  padding: 18px 20px;
   border-bottom: 1px solid var(--line);
   text-align: left;
   vertical-align: middle;
@@ -150,6 +151,7 @@
 }
 
 .comparison-table thead th {
+  background: var(--paper-elevated);
   font-size: 13px;
   line-height: 18px;
   font-weight: 500;
@@ -163,8 +165,15 @@
 
 .comparison-table .is-onyx,
 .comparison-card .is-onyx {
+  background: color-mix(in srgb, var(--metal) 8%, var(--paper-elevated));
   color: var(--ink);
   font-weight: 500;
+}
+
+.comparison-table .is-dash,
+.comparison-card .is-dash {
+  color: var(--muted);
+  font-weight: 400;
 }
 
 .comparison-table thead th.is-onyx {
@@ -202,7 +211,8 @@
   padding: 22px 20px;
   background: var(--paper-elevated);
   border: 1px solid var(--line);
-  border-radius: var(--radius-card);
+  border-radius: 12px;
+  box-shadow: none;
 }
 
 .comparison-card dl {

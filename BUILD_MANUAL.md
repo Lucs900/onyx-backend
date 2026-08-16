@@ -19,7 +19,7 @@ Tokens, navigation, footer, and layout foundation. Keep this chrome.
 
 Homepage first screen is ACR-first: locked eyebrow / H1 / support, dual CTAs, in-hero broker line, and the locked pictorial ACR card.
 
-The hero object is the exact locked bitmap **`public/acr-card-face.png`**, shown as a clean `<img>`. Do not regenerate, restyle, or color-grade it. No CSS type overlay, sheen, sweep, or filters. Type/gold/fox live in the bitmap if present.
+The hero object is the exact locked bitmap **`public/acr-card-face.png`**, shown as a clean `<img>`. Do not regenerate, restyle, or color-grade it. Keep it straight (0°). No CSS type overlay, sheen, sweep, filters, or tilt. Type/gold/fox live in the bitmap if present. Only this object may lift (soft shadow).
 
 **Locked — do not reopen** house, zoom, gold width, or composition. Not the old CSS membership pass (no MEMBER, last-4, chip, or ONYX wordmark on the object).
 
@@ -106,7 +106,11 @@ lib/*                             UNCHANGED
 
 ## Tokens
 
-Implemented as CSS variables in `styles/tokens.css`. Hex values must match the locked `:root` block exactly. Do not add a Tailwind palette or a second color system.
+Implemented as CSS variables in `styles/tokens.css`. Do not add a Tailwind palette or a second color system.
+
+`--paper` is `#F6EFE4` (cohesion pass). `--paper-elevated` stays `#FFFCF6`. Other token hex values stay locked.
+
+Cohesion (light visual only): hero + Spotlight share one paper opening; 1px `--line` seams between later major blocks (desks, rates/comparison, path, proof, closer); object radius 16 / UI card radius 12 with elevated paper + hairline and no shadow; ONYX comparison column is an 8% metal wash on elevated paper; path numerals are `color-mix` metal into paper (~28%); proof stats sit on one hairline row.
 
 Metal is scarce: fox highlight, the locked ACR card gold dock, and the comparison ONYX underline only.
 
@@ -150,7 +154,7 @@ Current Preview (Ready, not Production):
 
 ## What later slices must not break
 
-- Locked CTAs, desk names, fox-mark rules, token hex values, Slice 2 hero copy, Slice 3 disclosure copy
+- Locked CTAs, desk names, fox-mark rules, token hex values (except approved `--paper` `#F6EFE4`), Slice 2 hero copy, Slice 3 disclosure copy
 - Locked ACR object: do not reopen house, zoom, gold width, or composition
 - `$X+`, APR, decision time, amount, and as-of date stay OPEN until approved
 - `app/api/chat`, `app/api/heloc-quote`, and `lib/*` unless a slice explicitly opens them

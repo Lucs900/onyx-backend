@@ -5,6 +5,7 @@
 .closer {
   padding-block: 72px;
   background: var(--paper);
+  border-top: 1px solid var(--line);
 }
 
 .how-it-works__intro {
@@ -49,7 +50,7 @@
   font-weight: 400;
   letter-spacing: var(--tracking-stat);
   font-variant-numeric: tabular-nums;
-  color: #D4CFC6;
+  color: color-mix(in srgb, var(--metal) 28%, var(--paper));
 }
 
 .path-step__title {
@@ -88,8 +89,10 @@
   grid-template-columns: repeat(2, 1fr);
   gap: 28px 16px;
   margin: 0;
-  padding: 0;
+  padding: 24px 0;
   list-style: none;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
 }
 
 .proof-stat__value {
@@ -221,7 +224,19 @@
 
   .proof-stats {
     grid-template-columns: repeat(4, 1fr);
-    gap: 24px;
+    gap: 0;
+  }
+
+  .proof-stat {
+    padding-inline: 20px;
+  }
+
+  .proof-stat:first-child {
+    padding-left: 0;
+  }
+
+  .proof-stat:last-child {
+    padding-right: 0;
   }
 
   .proof-stat__value {
