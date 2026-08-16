@@ -71,6 +71,12 @@ Proof: four OPEN placeholders (`—`), `Sample · not live`, `As of —`. No inv
 
 Closer: locked H2 `Always approved. Always optimizing.` Primary → `/acr`. Secondary → Loan Spotlight. `Talk to a licensed originator` + `NMLS ____`. Repeat `NMLS [OPEN] · CA DRE [OPEN] · We are a mortgage broker.` Mobile sticky bar is Slice 9, not this slice.
 
+## Product Explorer (CA only)
+
+Route `/products`. California discovery only. No pricing, APR, dollar amounts, calculators, or apply flows. Thirteen cards in five groups (Core residential, Government, Equity, Expanded residential, Specialty). CTA is exactly `Explore this option` → `/products/[slug]` stub. Specialty is separated by space + hairline + eyebrow, not a gold or green band.
+
+Do not change the homepage ACR object or locked homepage copy. Nav labels stay `Rates` · `ACR` · `About`. `/rates` may link quietly to `/products`.
+
 ## File map
 
 ```
@@ -82,6 +88,12 @@ styles/spotlight.css              Slice 3 Advisor Spotlight
 styles/desks.css                  Slice 4 three desks
 styles/rates.css                  Slice 5 rate card + comparison
 styles/close.css                  Slice 6 path, proof, closer
+styles/products.css               Product Explorer
+components/products/catalog.ts    CA product groups + exact copy
+components/products/ProductExplorer.tsx  /products index
+components/products/ProductStub.tsx      /products/[slug] stub
+app/(marketing)/products/page.tsx Product Explorer
+app/(marketing)/products/[slug]/page.tsx product stubs
 components/AdvisorMark.tsx        2–3 shape geometric fox; size="sm" = 20px
 components/SiteHeader.tsx         locked sparse chrome
 components/SiteFooter.tsx         sparse footer, pending-approval placeholders
@@ -150,7 +162,7 @@ Current Preview (Ready, not Production):
 
 ## Still later — do not build yet
 
-`/acr` product page, returning chat, mobile sticky bar (Slice 9), dashboard, Advisor sheet, Classic form widget.
+`/acr` product page, product Explorer next-step (quote/apply), returning chat, mobile sticky bar (Slice 9), dashboard, Advisor sheet, Classic form widget.
 
 ## What later slices must not break
 

@@ -1,0 +1,150 @@
+/* Product Explorer — CA discovery. No pricing, no apply. */
+
+.product-explorer__intro {
+  padding-top: 48px;
+  padding-bottom: 48px;
+}
+
+.product-explorer__rule {
+  width: 24px;
+  height: 2px;
+  margin-bottom: 12px;
+  background: var(--metal);
+}
+
+.product-explorer__title {
+  margin-top: 20px;
+  max-width: var(--prose-max);
+}
+
+.product-explorer__support {
+  max-width: var(--prose-max);
+  margin-top: 16px;
+}
+
+.product-explorer__trust {
+  margin-top: 20px;
+  max-width: var(--prose-max);
+}
+
+.product-group {
+  padding-bottom: 48px;
+}
+
+.product-group__heading {
+  margin-bottom: 20px;
+}
+
+.product-group--specialty {
+  margin-top: 24px;
+  padding-top: 48px;
+  border-top: 1px solid var(--line);
+}
+
+.product-grid {
+  display: grid;
+  gap: 16px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.product-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 28px 24px;
+  background: var(--paper-elevated);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: none;
+}
+
+.product-card__best {
+  font-family: var(--font-ui);
+  font-size: 14px;
+  line-height: 22px;
+  font-weight: 400;
+  color: var(--ink-2);
+}
+
+.product-card__best-label {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 500;
+  letter-spacing: var(--tracking-eyebrow);
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.product-card__cta {
+  width: 100%;
+  margin-top: auto;
+}
+
+.product-stub {
+  padding-block: 48px 72px;
+}
+
+.product-stub__inner {
+  max-width: var(--prose-max);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.product-stub__title {
+  margin-top: 8px;
+}
+
+.product-stub__back {
+  margin-top: 8px;
+  align-self: flex-start;
+}
+
+.rates-stub__link {
+  display: inline-block;
+  margin-top: 20px;
+}
+
+@media (min-width: 768px) {
+  .product-explorer__intro {
+    padding-top: 72px;
+    padding-bottom: 64px;
+  }
+
+  .product-group {
+    padding-bottom: 64px;
+  }
+
+  .product-group--specialty {
+    margin-top: 40px;
+    padding-top: 72px;
+  }
+
+  .product-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 24px;
+  }
+
+  .product-card__cta {
+    width: auto;
+    align-self: flex-start;
+  }
+
+  .product-stub {
+    padding-block: 72px 120px;
+  }
+}
+
+@media (min-width: 1024px) {
+  .product-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+
+  .product-group--specialty .product-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
