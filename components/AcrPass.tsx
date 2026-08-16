@@ -10,7 +10,6 @@ export function AcrPass() {
           height={1024}
         />
         <p className="acr-pass__label">Active Credit Relationship</p>
-        <span className="acr-pass__sheen" />
       </div>
     </div>
   );

@@ -19,7 +19,7 @@ Tokens, navigation, footer, and layout foundation. Keep this chrome.
 
 Homepage first screen is ACR-first: locked eyebrow / H1 / support, dual CTAs, in-hero broker line, and the locked pictorial ACR card.
 
-The hero object is **`public/acr-card-face.png`**: house → green lawn band → slim gold right dock (~20%) with a secondary geometric fox. CSS overlays only `ACTIVE CREDIT RELATIONSHIP` (top-left of the scene) and a soft-light sheen that starts on that type. `prefers-reduced-motion` parks the sheen.
+The hero object is **`public/acr-card-face.png`**: bright modern California house → green lawn → slim gold right dock (~20%) with a secondary geometric fox. CSS overlays only quiet `ACTIVE CREDIT RELATIONSHIP` top-left of the scene. **Static object** — no traveling sheen, no sweep, no motion. Do not add dimming, dusk filters, or dirty gold texture.
 
 **Locked — do not reopen** house, zoom, gold width, or composition. Not the old CSS membership pass (no MEMBER, last-4, chip, or ONYX wordmark on the object).
 

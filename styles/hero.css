@@ -148,12 +148,13 @@
   position: relative;
   overflow: hidden;
   border-radius: 16px;
-  box-shadow: 0 20px 40px rgba(11, 11, 12, 0.1);
+  box-shadow: 0 8px 24px rgba(11, 11, 12, 0.08);
 }
 
 .acr-pass__face {
   width: 100%;
   height: auto;
+  filter: none;
 }
 
 .acr-pass__label {
@@ -169,45 +170,8 @@
   font-weight: 500;
   letter-spacing: 0.2em;
   text-transform: uppercase;
-  color: rgba(61, 56, 51, 0.78);
+  color: rgba(255, 252, 246, 0.92);
   pointer-events: none;
-}
-
-.acr-pass__sheen {
-  position: absolute;
-  inset: 0;
-  z-index: 3;
-  pointer-events: none;
-}
-
-.acr-pass__sheen::after {
-  content: "";
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 2%;
-  width: 18%;
-  background: linear-gradient(
-    90deg,
-    transparent 0%,
-    rgba(255, 252, 246, 0.22) 42%,
-    rgba(255, 255, 255, 0.48) 50%,
-    rgba(255, 252, 246, 0.22) 58%,
-    transparent 100%
-  );
-  mix-blend-mode: soft-light;
-  animation: acr-pass-sheen 13s ease-in-out infinite;
-}
-
-@keyframes acr-pass-sheen {
-  0%,
-  100% {
-    left: 2%;
-  }
-
-  50% {
-    left: 78%;
-  }
 }
 
 @media (min-width: 1024px) {
@@ -220,12 +184,5 @@
     left: 20px;
     font-size: 12px;
     line-height: 16px;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .acr-pass__sheen::after {
-    animation: none;
-    left: 8%;
   }
 }
