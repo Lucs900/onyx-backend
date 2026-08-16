@@ -16,7 +16,12 @@ export function ProductStub({ product }: { product: Product }) {
           {product.bestFor}
         </p>
         <p className="type-legal product-explorer__trust">{TRUST_LINE}</p>
-        <p className="type-legal">Next step in a later slice.</p>
+        <Link
+          href={`/products/scenario?product=${product.slug}`}
+          className="btn btn--secondary"
+        >
+          Explore this option
+        </Link>
         <Link href="/products" className="btn btn--text product-stub__back">
           Product Explorer
         </Link>

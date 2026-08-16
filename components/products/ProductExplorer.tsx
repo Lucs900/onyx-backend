@@ -49,7 +49,7 @@ export function ProductExplorer() {
                     {product.bestFor}
                   </p>
                   <Link
-                    href={`/products/${product.slug}`}
+                    href={`/products/scenario?product=${product.slug}`}
                     className="btn btn--secondary product-card__cta"
                   >
                     Explore this option

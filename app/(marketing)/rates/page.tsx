@@ -12,6 +12,9 @@ export default function RatesPage() {
         <Link href="/products" className="btn btn--text rates-stub__link">
           See what we offer in California
         </Link>
+        <Link href="/products/scenario" className="btn btn--text rates-stub__link">
+          Explore a California scenario
+        </Link>
       </div>
     </div>
   );

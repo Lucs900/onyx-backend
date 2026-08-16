@@ -73,9 +73,11 @@ Closer: locked H2 `Always approved. Always optimizing.` Primary → `/acr`. Seco
 
 ## Product Explorer (CA only)
 
-Route `/products`. California discovery only. No pricing, APR, dollar amounts, calculators, or apply flows. Thirteen cards in five groups (Core residential, Government, Equity, Expanded residential, Specialty). CTA is exactly `Explore this option` → `/products/[slug]` stub. Specialty is separated by space + hairline + eyebrow, not a gold or green band.
+Route `/products`. California discovery only. No live pricing, APR, LoanSifter, calculators, or apply flows. Thirteen cards in five groups (Core residential, Government, Equity, Expanded residential, Specialty). CTA is exactly `Explore this option` → `/products/scenario?product=<slug>`. Specialty is separated by space + hairline + eyebrow, not a gold or green band.
 
-Do not change the homepage ACR object or locked homepage copy. Nav labels stay `Rates` · `ACR` · `About`. `/rates` may link quietly to `/products`.
+Slice 2 — scenario inputs: `/products/scenario` (optional `?product=`). CA ZIP only (90001–96162). Persist JSON at `sessionStorage` key `onyx.productExplorer.scenario`. Valid submit → `/products/results` placeholder that echoes inputs. Estimates only, not a commitment to lend. No guaranteed-rate or approval language.
+
+Do not change the homepage ACR object or locked homepage copy. Nav labels stay `Rates` · `ACR` · `About`. `/rates` may link quietly to `/products` and `/products/scenario`.
 
 ## File map
 
@@ -92,7 +94,12 @@ styles/products.css               Product Explorer
 components/products/catalog.ts    CA product groups + exact copy
 components/products/ProductExplorer.tsx  /products index
 components/products/ProductStub.tsx      /products/[slug] stub
+components/products/scenario.ts          scenario types, CA ZIP, storage
+components/products/ScenarioForm.tsx     /products/scenario
+components/products/ScenarioResults.tsx  /products/results echo
 app/(marketing)/products/page.tsx Product Explorer
+app/(marketing)/products/scenario/page.tsx scenario inputs
+app/(marketing)/products/results/page.tsx results placeholder
 app/(marketing)/products/[slug]/page.tsx product stubs
 components/AdvisorMark.tsx        2–3 shape geometric fox; size="sm" = 20px
 components/SiteHeader.tsx         locked sparse chrome
