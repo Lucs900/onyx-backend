@@ -47,8 +47,7 @@ export function FoxLauncher() {
   return (
     <div className="fox-bar__desk">
       <span className="fox-bar__mark">
-        <AdvisorMark size="sm" />
-        <span className="fox-ask__catch" aria-hidden="true" />
+        <AdvisorMark size={20} />
       </span>
       <span className="fox-bar__prompt">Ask ONYX Fox</span>
     </div>
@@ -282,8 +281,7 @@ export function AlwaysOnFox() {
 
       <form className="fox-bar__desk" onSubmit={onSubmit}>
         <span className="fox-bar__mark">
-          <AdvisorMark size="sm" />
-          <span className="fox-ask__catch" aria-hidden="true" />
+          <AdvisorMark size={20} />
         </span>
         <label className="visually-hidden" htmlFor={fieldId}>
           Ask ONYX Fox
@@ -297,8 +295,21 @@ export function AlwaysOnFox() {
           placeholder="Ask ONYX Fox"
           autoComplete="off"
         />
-        <button type="submit" className="btn btn--primary fox-bar__send" disabled={!input.trim()}>
-          Send
+        <button
+          type="submit"
+          className="fox-bar__send"
+          disabled={!input.trim()}
+          aria-label="Send"
+        >
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+            <path
+              d="M3 8h9M8.5 3.5 13 8l-4.5 4.5"
+              stroke="currentColor"
+              strokeWidth="1.4"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
         </button>
       </form>
     </div>

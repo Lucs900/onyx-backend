@@ -81,7 +81,18 @@ Preview only. California only. Client stays in control; Fox prepares a draft. No
 
 Mounted on `/` (homepage), `/products`, `/products/scenario`, `/products/results`, and `/intake` — not `/about`, `/rates`, `/acr`, or other marketing stubs.
 
-Fox is the **central AI bar** — the operating surface, not a FAB, corner popup, or support widget. Collapsed: centered, content-width `Ask ONYX Fox` desk (mark + prompt + type). Bar is `--paper-elevated`, **1px sand-ink hairline**, full pill, no heavy shadow. `--sunset` on the Fox mark / tiny catchlight only — not a sunset outline, not Send, not the open panel. Send is solid ink (`btn--primary`). Mobile: full content-width anchored bar; expands **upward** into a short stack (question + bubbles + input; **max ~36vh**, no forced min-height). Desktop: the same centered desk plus a short thread. Pages stay visible above Fox.
+Fox is the **central AI bar** — the operating surface, not a FAB, corner popup, or support widget. Locked visual (Design Scout):
+
+- Fill: `--paper-elevated` `#FFFCF6` (collapsed and expanded)
+- Border: 1px `color-mix(ink 18%, line)` resting (14% washed on paper — locked one step darker), hover ink 20%, focus `1.5px solid var(--ink)`. **Never** `--sunset` as the ring
+- Shadow: `0 1px 0 rgba(255,252,246,0.9) inset, 0 8px 24px rgba(11,11,12,0.08)` — no colored halo
+- Radius: collapsed `999px`, expanded `16px`
+- Mark: 20px geometric fox in ink; `--sunset` on the **inner facet only**; no sunset disk/ring
+- Send: ink circle, paper-elevated arrow; empty 28% opacity; armed full ink; 36px desktop / 44px mobile. Never sunset
+- Desktop: pinned dock, composer max 720. Mobile: full-width, collapsed 56px, above home indicator
+- Bubbles: same paper-elevated + hairline + lift. Selected bubble: ink fill, not sunset
+
+Collapsed: `Ask ONYX Fox` desk. Expands upward (question + bubbles + input). No in-bar legal.
 
 Homepage and other pages start collapsed so the locked ACR hero stays clear. `/intake` starts expanded while Fox has an active question. First mention / header `ONYX Fox`; ongoing labels `Fox`.
 
@@ -171,7 +182,7 @@ lib/*                             UNCHANGED
 
 Implemented as CSS variables in `styles/tokens.css`. Do not add a Tailwind palette or a second color system.
 
-`--paper` is `#F6EFE4` (cohesion pass). `--paper-elevated` stays `#FFFCF6`. `--sunset` is `#E08A4F` — Fox mark / tiny catchlight only. Do not apply sunset to bar outlines, Send, page backgrounds, primary CTAs, open-panel fills, card fills, or ACR gold. Other token hex values stay locked.
+`--paper` is `#F6EFE4` (cohesion pass). `--paper-elevated` stays `#FFFCF6`. `--sunset` is `#E08A4F` — Fox mark inner facet only. Do not apply sunset to bar outlines, Send, page backgrounds, primary CTAs, open-panel fills, card fills, or ACR gold. Other token hex values stay locked.
 
 Cohesion (light visual only): hero + Spotlight share one paper opening; 1px `--line` seams between later major blocks (desks, rates/comparison, path, proof, closer); object radius 16 / UI card radius 12 with elevated paper + hairline and no shadow; ONYX comparison column is an 8% metal wash on elevated paper; path numerals are `color-mix` metal into paper (~28%); proof stats sit on one hairline row.
 

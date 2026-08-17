@@ -1,4 +1,4 @@
-/* Central ONYX Fox AI bar. Paper + ink hairline + pill. Sunset on the mark only. */
+/* Locked Fox bar: paper + ink hairline + lift. Sunset on the mark facet only. */
 
 .fox-shell {
   min-height: 100%;
@@ -6,15 +6,21 @@
 }
 
 .fox-bar {
+  --fox-hairline: color-mix(in srgb, var(--ink) 18%, var(--line));
+  --fox-hairline-hover: color-mix(in srgb, var(--ink) 20%, var(--line));
+  --fox-lift:
+    0 1px 0 rgba(255, 252, 246, 0.9) inset,
+    0 8px 24px rgba(11, 11, 12, 0.08);
   position: fixed;
-  left: 0;
-  right: 0;
-  bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+  left: 8px;
+  right: 8px;
+  bottom: calc(8px + env(safe-area-inset-bottom, 0px));
   z-index: 45;
   display: flex;
   flex-direction: column;
-  width: min(var(--content-max), calc(100% - 32px));
-  margin-inline: auto;
+  width: auto;
+  max-width: none;
+  margin-inline: 0;
 }
 
 .fox-bar__desk {
@@ -24,9 +30,21 @@
   min-height: 56px;
   padding: 6px 6px 6px 14px;
   background: var(--paper-elevated);
-  border: 1px solid color-mix(in srgb, var(--ink) 14%, var(--line));
-  border-radius: var(--radius-pill);
-  box-shadow: none;
+  border: 1px solid var(--fox-hairline);
+  border-radius: 999px;
+  box-shadow: var(--fox-lift);
+}
+
+.fox-bar__desk:hover {
+  border-color: var(--fox-hairline-hover);
+}
+
+.fox-bar__desk:focus-within {
+  border: 1.5px solid var(--ink);
+}
+
+.fox-bar.is-open .fox-bar__desk {
+  border-radius: 16px;
 }
 
 .fox-bar__mark {
@@ -34,19 +52,15 @@
   display: grid;
   place-items: center;
   flex: 0 0 auto;
-  width: 24px;
-  height: 24px;
+  width: 20px;
+  height: 20px;
   color: var(--ink);
+  background: transparent;
+  border: 0;
 }
 
-.fox-ask__catch {
-  position: absolute;
-  top: 1px;
-  right: 1px;
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  background: var(--sunset);
+.fox-bar__mark .advisor-mark__facet {
+  fill: var(--sunset);
 }
 
 .fox-bar__prompt,
@@ -80,13 +94,18 @@
 }
 
 .fox-bar__send {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   flex: 0 0 auto;
-  height: 40px;
-  padding: 0 18px;
+  width: 44px;
+  height: 44px;
+  padding: 0;
   border: 0;
-  border-radius: var(--radius-pill);
+  border-radius: 50%;
   background: var(--ink);
   color: var(--paper-elevated);
+  cursor: pointer;
 }
 
 .fox-bar__send:hover {
@@ -94,7 +113,7 @@
 }
 
 .fox-bar__send:disabled {
-  opacity: 0.35;
+  opacity: 0.28;
   background: var(--ink);
   color: var(--paper-elevated);
   cursor: default;
@@ -114,8 +133,9 @@
   margin-bottom: 6px;
   padding: 4px 10px 6px;
   background: var(--paper-elevated);
-  border: 1px solid var(--line);
+  border: 1px solid var(--fox-hairline);
   border-radius: 16px;
+  box-shadow: var(--fox-lift);
 }
 
 .fox-bar__head {
@@ -153,8 +173,10 @@
 .fox-bubble {
   max-width: 92%;
   padding: 8px 10px;
-  border: 1px solid var(--line);
-  border-radius: 10px;
+  background: var(--paper-elevated);
+  border: 1px solid var(--fox-hairline);
+  border-radius: 12px;
+  box-shadow: var(--fox-lift);
 }
 
 .fox-bubble p {
@@ -166,7 +188,7 @@
 }
 
 .fox-bubble--fox {
-  background: var(--paper);
+  background: var(--paper-elevated);
 }
 
 .fox-bubble--client {
@@ -185,6 +207,21 @@
   height: 32px;
   padding: 0 12px;
   font-size: 12px;
+  background: var(--paper-elevated);
+  border: 1px solid var(--fox-hairline);
+  border-radius: 999px;
+  box-shadow: var(--fox-lift);
+  color: var(--ink);
+}
+
+.fox-bubble__actions .fox-chip:hover,
+.fox-bubble__actions .fox-chip:focus-visible,
+.fox-bubble__actions .fox-chip:active,
+.fox-chip.is-selected {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--paper-elevated);
+  box-shadow: none;
 }
 
 .intake {
@@ -274,8 +311,11 @@
   }
 
   .fox-bar {
+    left: 0;
+    right: 0;
     bottom: 24px;
-    width: min(var(--content-max), calc(100% - 48px));
+    width: min(720px, calc(100% - 48px));
+    margin-inline: auto;
   }
 
   .fox-bar.is-open {
@@ -284,7 +324,12 @@
 
   .fox-bar__desk {
     min-height: 56px;
-    padding: 8px 10px 8px 12px;
+    padding: 6px 6px 6px 16px;
+  }
+
+  .fox-bar__send {
+    width: 36px;
+    height: 36px;
   }
 
   .fox-bar__workspace {

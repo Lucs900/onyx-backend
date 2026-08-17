@@ -28,7 +28,11 @@ export function AdvisorMark({ size = 24, className }: AdvisorMarkProps) {
         fill="currentColor"
         points="3,10 7.2,2.6 12,8.2 16.8,2.6 21,10 12,21.4"
       />
-      <polygon fill="var(--metal)" points="12,8.2 16.8,2.6 15.1,10.1" />
+      <polygon
+        className="advisor-mark__facet"
+        fill="var(--metal)"
+        points="12,8.2 16.8,2.6 15.1,10.1"
+      />
     </svg>
   );
 }
