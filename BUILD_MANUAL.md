@@ -75,7 +75,9 @@ Closer: locked H2 `Always approved. Always optimizing.` Primary → `/acr`. Seco
 
 Route `/products`. California discovery only. No live pricing, APR, LoanSifter, calculators, or apply flows. Thirteen cards in five groups (Core residential, Government, Equity, Expanded residential, Specialty). CTA is exactly `Explore this option` → `/products/scenario?product=<slug>`. Specialty is separated by space + hairline + eyebrow, not a gold or green band.
 
-Slice 2 — scenario inputs: `/products/scenario` (optional `?product=`). CA ZIP only (90001–96162). Persist JSON at `sessionStorage` key `onyx.productExplorer.scenario`. Valid submit → `/products/results` placeholder that echoes inputs. Estimates only, not a commitment to lend. No guaranteed-rate or approval language.
+Slice 2 — scenario inputs: `/products/scenario` (optional `?product=`). CA ZIP only (90001–96162). Persist JSON at `sessionStorage` key `onyx.productExplorer.scenario`. Valid submit → `/products/results`.
+
+Slice 3 — results placeholder on the same `/products/results` route. Header `Your scenario`. Echo inputs. `Possible directions` shows 2–3 catalog cards from purpose mapping (not underwriting). Empty slots for future rate/payment/tradeoff — no live numbers. Fox line: `ONYX Fox will help interpret your options here.` Next steps: Start application → `/advisor` (flow is next), originator, Edit scenario. Estimates only, not a commitment to lend. No guaranteed-rate or approval language.
 
 Do not change the homepage ACR object or locked homepage copy. Nav labels stay `Rates` · `ACR` · `About`. `/rates` may link quietly to `/products` and `/products/scenario`.
 
@@ -96,7 +98,8 @@ components/products/ProductExplorer.tsx  /products index
 components/products/ProductStub.tsx      /products/[slug] stub
 components/products/scenario.ts          scenario types, CA ZIP, storage
 components/products/ScenarioForm.tsx     /products/scenario
-components/products/ScenarioResults.tsx  /products/results echo
+components/products/directions.ts        purpose → placeholder directions
+components/products/ScenarioResults.tsx  /products/results placeholder
 app/(marketing)/products/page.tsx Product Explorer
 app/(marketing)/products/scenario/page.tsx scenario inputs
 app/(marketing)/products/results/page.tsx results placeholder

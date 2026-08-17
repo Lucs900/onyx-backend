@@ -3,8 +3,9 @@ import type { Metadata } from "next";
 import { Suspense } from "react";
 
 export const metadata: Metadata = {
-  title: "Scenario results — ONYX",
-  description: "Indicative results coming next. Estimates only, not a commitment to lend.",
+  title: "Your scenario — ONYX",
+  description:
+    "These are not final rates or an approval. Indicative options will appear here next.",
 };
 
 export default function ResultsPage() {

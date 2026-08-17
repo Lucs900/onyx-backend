@@ -239,6 +239,106 @@
   color: var(--ink);
 }
 
+.scenario-echo dd.is-quiet {
+  color: var(--muted);
+}
+
+.scenario--results .scenario__inner {
+  max-width: var(--content-max);
+}
+
+.scenario--results .scenario__lede {
+  max-width: var(--prose-max);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.scenario-summary__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.scenario-directions,
+.scenario-next,
+.fox-guidance {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+
+.direction-grid {
+  display: grid;
+  gap: 16px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.direction-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 28px 24px;
+  background: var(--paper-elevated);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: none;
+}
+
+.direction-card__slots {
+  display: grid;
+  gap: 12px;
+  margin: 4px 0 0;
+}
+
+.direction-card__slots dt {
+  font-family: var(--font-ui);
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 500;
+  letter-spacing: var(--tracking-eyebrow);
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.direction-card__slots dd {
+  margin: 4px 0 0;
+  font-family: var(--font-ui);
+  font-size: 16px;
+  line-height: 24px;
+  color: var(--muted);
+}
+
+.direction-card__cta {
+  width: 100%;
+  margin-top: auto;
+}
+
+.fox-guidance {
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 16px;
+  padding: 24px;
+  background: var(--paper-elevated);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: none;
+}
+
+.fox-guidance .type-body {
+  margin-top: 8px;
+}
+
+.fox-guidance .btn {
+  margin-top: 12px;
+}
+
 @media (min-width: 768px) {
   .product-explorer__intro {
     padding-top: 72px;
@@ -281,6 +381,16 @@
   .scenario-form__actions .btn {
     width: auto;
   }
+
+  .direction-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 24px;
+  }
+
+  .direction-card__cta {
+    width: auto;
+    align-self: flex-start;
+  }
 }
 
 @media (min-width: 1024px) {
@@ -290,5 +400,9 @@
 
   .product-group--specialty .product-grid {
     grid-template-columns: repeat(2, 1fr);
+  }
+
+  .direction-grid {
+    grid-template-columns: repeat(3, 1fr);
   }
 }
