@@ -110,8 +110,7 @@
 
 .acr-reward,
 .acr-unlock,
-.acr-desk,
-.acr-fees {
+.acr-desk {
   padding-block: 72px;
   background: var(--paper);
   border-top: 1px solid var(--line);
@@ -119,23 +118,20 @@
 
 .acr-reward__intro,
 .acr-unlock__intro,
-.acr-desk__intro,
-.acr-fees__intro {
+.acr-desk__intro {
   max-width: var(--prose-max);
   margin-bottom: 32px;
 }
 
 .acr-reward__intro .type-h2,
 .acr-unlock__intro .type-h2,
-.acr-desk__intro .type-h2,
-.acr-fees__intro .type-h2 {
+.acr-desk__intro .type-h2 {
   margin-top: 16px;
 }
 
 .acr-reward__intro .type-body,
 .acr-unlock__intro .type-body,
-.acr-desk__intro .type-body,
-.acr-fees__intro .type-body {
+.acr-desk__intro .type-body {
   margin-top: 16px;
 }
 
@@ -327,62 +323,31 @@
   margin-top: 12px;
 }
 
-.acr-fees__rows {
-  display: flex;
-  flex-direction: column;
-  max-width: 560px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.acr-fees__row {
-  display: flex;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 16px 0;
+.acr-fees {
+  padding-block: 28px;
+  background: var(--paper);
   border-top: 1px solid var(--line);
 }
 
-.acr-fees__row:last-child {
-  border-bottom: 1px solid var(--line);
+.acr-fees .type-legal + .type-legal {
+  margin-top: 8px;
 }
 
-.acr-fees__row dt,
-.acr-fees__row dd {
-  margin: 0;
-  font-family: var(--font-ui);
-  font-size: 15px;
-  line-height: 22px;
-}
-
-.acr-fees__row dt {
-  font-weight: 400;
-  color: var(--ink-2);
-}
-
-.acr-fees__row dd {
-  font-weight: 500;
+.acr-fees a {
   color: var(--ink);
-}
-
-.acr-fees__note {
-  margin-top: 20px;
-  max-width: var(--prose-max);
+  text-underline-offset: 2px;
 }
 
 @media (min-width: 768px) {
   .acr-reward,
   .acr-unlock,
-  .acr-desk,
-  .acr-fees {
+  .acr-desk {
     padding-block: 120px;
   }
 
   .acr-reward__intro,
   .acr-unlock__intro,
-  .acr-desk__intro,
-  .acr-fees__intro {
+  .acr-desk__intro {
     margin-bottom: 40px;
   }
 }

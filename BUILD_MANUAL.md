@@ -52,7 +52,7 @@ Rate card is the mortgage-without-ACR off-ramp:
 - CTA `Find my rate` (56px) with `2 min · no hard credit check` → `/products/scenario?path=loan` — same loan only start as hero `Just need a mortgage`.
 - Exact line under the card: `A mortgage is available without ACR.`
 
-Comparison: Feature | ONYX ACR | Traditional lender | Loan only. ONYX column uses a 6px metal underline (allowed metal besides fox/card). Member credits ONYX cell: `Calculated membership reward`. Mobile uses stacked cards.
+Comparison: Feature | ONYX ACR | Loan only. Five rows only: After close (Desk stays open / File closes), Optimization (Ongoing / None), Approval letter (From your file / Standard process), Membership reward (Calculated / None), Opportunities (Scouted from your profile / None). No Traditional lender column. No Fees or How we get paid rows. No checkmark theater. ONYX column keeps the 6px metal underline. Compensation is a quiet footer / trust link only, not a product benefit. Mobile uses stacked cards with the same two columns.
 
 ## Slice 6 — How it works + proof + closer
 
@@ -179,7 +179,7 @@ components/MembershipHero.tsx     locked hero; CTAs start ACR / loan only paths
 components/AcrPass.tsx            exact locked ACR face image, no overlays
 components/ValueBreakdown.tsx     three locked desks
 components/RateCard.tsx           mortgage-only off-ramp
-components/ComparisonTable.tsx    Feature / ACR / traditional / loan only
+components/ComparisonTable.tsx    Feature / ACR / loan only (five rows)
 components/HowItWorks.tsx         five-step path
 components/ProofStats.tsx         honest OPEN stats + trust marks
 components/Closer.tsx             locked closer CTAs
@@ -264,8 +264,8 @@ Page stack, in order:
 3. **Three-line unlock path** — three quiet lines. Not the homepage 5-step path.
 4. **Three desks** — reuse `ValueBreakdown`. Headline `A relationship that keeps working after close.` Same names and limits: The Rate Desk, The Credit Path, The Member Desk.
 5. **On the desk** — two sample goals (max three rows), one property card, and a small Opportunities Scout mention. Goals: name, current state, direction as a word or small **ink** track, one sentence, optional next. No gauges, traffic lights, or sunset. States like Watching / Monitoring. Direction words like Down / Hold. Property title `Your home`. One sentence that equity posture and HELOC/refi room will live here. Scout title `Opportunities Scout`: uses profile and equity posture to project possible next moves; quiet example labels only (Equity available, Purchase power, Portfolio move); a financing path is attached. Quiet `Ask Fox` opens the existing Fox bar. No MLS, listings, addresses, valuations, dollars, returns, or fake wallet. All marked `Sample, not live`. No invented $ or scores. Quiet context, not a cockpit.
-6. **Comparison** — reuse homepage `ComparisonTable`. Do not invent rates.
-7. **Fees / trust** — payment count, dollars, fees, and NMLS stay **OPEN / placeholder**. No invented numbers.
+6. **Comparison** — reuse homepage `ComparisonTable`. Feature | ONYX ACR | Loan only. Five rows only (After close, Optimization, Approval letter, Membership reward, Opportunities). No Traditional lender, Fees, or How we get paid rows. Do not invent rates.
+7. **Trust** — quiet NMLS / DRE OPEN line and a small How we get paid link. Not a featured fee table or compensation benefit. No invented numbers.
 8. **Fox** — same central ONYX Fox AI bar (`FoxShell` / `AlwaysOnFox`), `acr` stage. Collapsed `Ask ONYX Fox`. No second Fox card. No in-panel legal. Locked bar visual. Fox cannot approve, lock, or commit to lend (footer / site legal, not in the bar).
 9. **Closer** — homepage closer energy: Start your relationship / Just need a mortgage. `/acr` uses a page-local closer with the same start hrefs.
 

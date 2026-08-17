@@ -170,33 +170,8 @@
   font-weight: 500;
 }
 
-.comparison-table .is-dash,
-.comparison-card .is-dash {
-  color: var(--muted);
-  font-weight: 400;
-}
-
 .comparison-table thead th.is-onyx {
   box-shadow: inset 0 -6px 0 var(--metal);
-}
-
-.comparison-check {
-  display: inline-block;
-  color: var(--ink);
-  vertical-align: middle;
-}
-
-.comparison-table td.is-onyx,
-.comparison-card dd.is-onyx {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.comparison-table a,
-.comparison-card a {
-  color: var(--ink);
-  text-underline-offset: 2px;
 }
 
 .comparison-cards {
