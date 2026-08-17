@@ -353,14 +353,14 @@ export function ScenarioForm() {
             <button type="submit" className="btn btn--primary">
               See my options
             </button>
-            <Link href="/advisor" className="btn btn--secondary">
-              Talk to a licensed originator
-            </Link>
           </div>
         </form>
 
         <p className="type-legal">{ESTIMATE_NOTE}</p>
         <p className="type-legal">{TRUST_LINE}</p>
+        <p className="type-legal">
+          <Link href="/advisor">Need a licensed originator?</Link>
+        </p>
       </div>
     </div>
   );

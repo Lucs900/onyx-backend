@@ -89,7 +89,9 @@ Preview only. California only. Client stays in control; Fox prepares a draft. No
 
 Mounted on `/products`, `/products/scenario`, `/products/results`, and `/intake` only — not the homepage hero. Client component `AlwaysOnFox` via `FoxShell` on those route layouts. Mobile: quiet `Ask Fox` control. Desktop: 380px slide-over. Geometric `<AdvisorMark />` only. No mascot animation. Not “Foxxy”.
 
-Scripted + session-aware. Does not call `app/api/chat`. Reads `onyx.productExplorer.scenario` and selected product. Can explain products (no rates), next steps, and start intake (`Let’s prepare a draft`). Always offers `Talk to a licensed originator`.
+Scripted + session-aware. Does not call `app/api/chat`. Reads `onyx.productExplorer.scenario` and selected product. Can explain products (no rates), next steps, and start intake (`Let’s prepare a draft`).
+
+**Fox is primary.** Licensed originator is on-request only: a quiet text link `Need a licensed originator?` → `/advisor`. Do not put a primary or secondary originator button beside Fox actions. Do not open a live LO chat.
 
 Disclosure, exact: `Fox can assist and prepare. Fox cannot approve, lock, or commit to lend.`
 
@@ -103,11 +105,12 @@ One page, stages in place: context carry-in → chat-led contact → document dr
 - Extraction: do not invent income, SSN, or account numbers. Client-entered + scenario only.
 - Each draft section: Confirm | Edit. Audit fields: `{ field, source: client | scenario | extracted-unconfirmed, confirmed, confirmedAt? }`
 - After all key sections confirmed: `Application draft confirmed — pending licensed review`
+- Confirmation language: `A licensed originator will review this.` Do not force a live LO chat or a large originator button on that screen.
 - Draft ≠ commitment to lend. No live pricing.
 
 ### LO review queue
 
-`/lo/review` — not in public nav. Discreet footer + intake “Preview: open review queue”. Label: `Internal preview — licensed review`. Same draft store. LO marks: `needs items` | `in review` | `contacting client`. No auth wall this slice.
+`/lo/review` — internal/back-office only. Not in public nav. Not promoted on the client intake path. Discreet footer link for this preview. Label: `Internal preview — licensed review`. Same draft store. LO marks: `needs items` | `in review` | `contacting client`. No auth wall this slice.
 
 ### Do not
 

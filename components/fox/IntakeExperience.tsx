@@ -38,6 +38,8 @@ import {
   DRAFT_NOTE,
   ESTIMATE_NOTE,
   FOX_DISCLOSURE,
+  ORIGINATOR_REQUEST,
+  ORIGINATOR_REVIEW,
   TRUST_LINE,
   type DocSlot,
   type FoxIntakeDraft,
@@ -78,7 +80,7 @@ function checklist(draft: FoxIntakeDraft) {
   }
   let next = "Answer Fox’s next question — name, email, then phone.";
   if (draft.phase === "confirmed") {
-    next = "A licensed originator will review this draft.";
+    next = ORIGINATOR_REVIEW;
   } else if (contactComplete(draft) && !draft.documents.length && !draft.documentsSkipped) {
     next = "Drop documents, or skip if you don’t have them yet.";
   } else if (contactComplete(draft)) {
@@ -140,13 +142,10 @@ export function IntakeExperience() {
             <h2 id="intake-status-title" className="type-card-title">
               {draft.status}
             </h2>
-            <p className="type-body">
-              A licensed originator will review. You can return to this page for
-              status and the checklist.
+            <p className="type-body">{ORIGINATOR_REVIEW}</p>
+            <p className="type-legal">
+              You can return to this page for status and the checklist.
             </p>
-            {draft.loStatus ? (
-              <p className="type-legal">Review mark: {draft.loStatus}.</p>
-            ) : null}
           </section>
         ) : null}
 
@@ -232,14 +231,9 @@ export function IntakeExperience() {
         <p className="type-legal">{ESTIMATE_NOTE}</p>
         <p className="type-legal">California only.</p>
         <p className="type-legal">{TRUST_LINE}</p>
-        <div className="intake-links">
-          <Link href="/advisor" className="btn btn--secondary">
-            Talk to a licensed originator
-          </Link>
-          <Link href="/lo/review" className="btn btn--text">
-            Preview: open review queue
-          </Link>
-        </div>
+        <p className="type-legal">
+          <Link href="/advisor">{ORIGINATOR_REQUEST}</Link>
+        </p>
       </div>
     </div>
   );

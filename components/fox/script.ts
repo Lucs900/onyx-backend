@@ -50,7 +50,6 @@ export function greeting(
       text: "I'm Fox. This explorer is California only. Ask about a product, or start a scenario. I can't quote a rate or approve a loan.",
       actions: [
         { id: "scenario", label: "Start a scenario", href: "/products/scenario" },
-        { id: "originator", label: "Talk to a licensed originator", href: "/advisor" },
       ],
     };
   }
@@ -60,9 +59,6 @@ export function greeting(
       text: known
         ? `I still have ${known}. Confirm or change anything, then see your options. Nothing here is a quote.`
         : "Enter a California ZIP, purpose, value, amount, credit range, and occupancy. I'll carry that forward. This is not a quote.",
-      actions: [
-        { id: "originator", label: "Talk to a licensed originator", href: "/advisor" },
-      ],
     };
   }
 
@@ -70,26 +66,17 @@ export function greeting(
     return {
       text: known
         ? `I have ${known}. These directions are placeholders — not a quote. I can prepare an application draft when you're ready.`
-        : "I don't have a scenario yet. Enter one first, or talk with a licensed originator.",
+        : "I don't have a scenario yet. Enter one first so I can prepare a draft.",
       actions: known
-        ? [
-            { id: "draft", label: "Let's prepare a draft", event: "prepare-draft" },
-            { id: "originator", label: "Talk to a licensed originator", href: "/advisor" },
-          ]
-        : [
-            { id: "scenario", label: "Enter a scenario", href: "/products/scenario" },
-            { id: "originator", label: "Talk to a licensed originator", href: "/advisor" },
-          ],
+        ? [{ id: "draft", label: "Let's prepare a draft", event: "prepare-draft" }]
+        : [{ id: "scenario", label: "Enter a scenario", href: "/products/scenario" }],
     };
   }
 
   const prompt = currentPrompt(draft);
   if (prompt === "done") {
     return {
-      text: "Your draft is confirmed and pending licensed review. You can come back here to see status. I still can't approve or lock a loan.",
-      actions: [
-        { id: "originator", label: "Talk to a licensed originator", href: "/advisor" },
-      ],
+      text: "Your draft is confirmed. A licensed originator will review this. You can come back here to see status. I still can't approve or lock a loan.",
     };
   }
 
@@ -97,9 +84,6 @@ export function greeting(
     text: known
       ? `I already have ${known}. This is California only. I'll ask only for what's missing — starting with how to reach you.`
       : "Let's prepare a draft. This explorer is California only. I'll ask a few short questions. I can't approve or lock a loan.",
-    actions: [
-      { id: "originator", label: "Talk to a licensed originator", href: "/advisor" },
-    ],
   };
 }
 
@@ -108,7 +92,7 @@ export function promptCopy(prompt: FoxPrompt): { text: string; actions?: FoxActi
     return { text: "What full name should we use on this draft?" };
   }
   if (prompt === "email") {
-    return { text: "What's the best email for a licensed originator to reach you?" };
+    return { text: "What's the best email for this draft?" };
   }
   if (prompt === "phone") {
     return { text: "And a phone number?" };
@@ -134,7 +118,7 @@ export function promptCopy(prompt: FoxPrompt): { text: string; actions?: FoxActi
     };
   }
   return {
-    text: "A licensed originator will review this draft. You can return to this page for status.",
+    text: "A licensed originator will review this. You can return to this page for status.",
   };
 }
 
@@ -153,10 +137,7 @@ export function replyToMessage(
 
   if (/(licensed originator|talk to (a )?human|speak (to|with)|call me)/i.test(lower)) {
     return {
-      text: "A licensed originator can pick this up. I can only prepare — I can't approve, lock, or commit to lend.",
-      actions: [
-        { id: "originator", label: "Talk to a licensed originator", href: "/advisor" },
-      ],
+      text: "We'll have a licensed originator reach you. I can keep preparing the draft — I can't approve, lock, or commit to lend.",
     };
   }
 
@@ -183,7 +164,6 @@ export function replyToMessage(
           label: "Explore this option",
           href: `/products/scenario?product=${product.slug}`,
         },
-        { id: "originator", label: "Talk to a licensed originator", href: "/advisor" },
       ],
     };
   }
@@ -195,9 +175,6 @@ export function replyToMessage(
   if (/(rate|apr|payment|quote|how much)/i.test(lower)) {
     return {
       text: "I don't have live rates, APRs, or payments. What you see in Product Explorer is discovery only — estimates later, never a commitment to lend.",
-      actions: [
-        { id: "originator", label: "Talk to a licensed originator", href: "/advisor" },
-      ],
     };
   }
 
@@ -219,7 +196,7 @@ function captureForPrompt(
     const value = raw.replace(/^(my name is|i am|i'm)\s+/i, "").trim();
     if (value.length < 2) return { text: "I need a full name for the draft." };
     return {
-      text: `Thanks, ${value}. What's the best email for a licensed originator to reach you?`,
+      text: `Thanks, ${value}. What's the best email for this draft?`,
       capture: { field: "fullName", value },
     };
   }
@@ -282,32 +259,22 @@ function nextSteps(
       text: "Pick a product, or start a California scenario. I can explain options in plain English. I can't quote or approve.",
       actions: [
         { id: "scenario", label: "Start a scenario", href: "/products/scenario" },
-        { id: "originator", label: "Talk to a licensed originator", href: "/advisor" },
       ],
     };
   }
   if (stage === "scenario") {
     return {
       text: "Finish the scenario, then see possible directions. After that I can prepare a draft.",
-      actions: [
-        { id: "originator", label: "Talk to a licensed originator", href: "/advisor" },
-      ],
     };
   }
   if (stage === "results") {
     return {
       text: scenario
-        ? "Next: I can prepare a draft from this scenario, or you can talk with a licensed originator."
+        ? "Next: I can prepare a draft from this scenario."
         : "Enter a scenario first so I have something to carry into a draft.",
       actions: scenario
-        ? [
-            { id: "draft", label: "Let's prepare a draft", event: "prepare-draft" },
-            { id: "originator", label: "Talk to a licensed originator", href: "/advisor" },
-          ]
-        : [
-            { id: "scenario", label: "Enter a scenario", href: "/products/scenario" },
-            { id: "originator", label: "Talk to a licensed originator", href: "/advisor" },
-          ],
+        ? [{ id: "draft", label: "Let's prepare a draft", event: "prepare-draft" }]
+        : [{ id: "scenario", label: "Enter a scenario", href: "/products/scenario" }],
     };
   }
   if (!contactComplete(draft)) {

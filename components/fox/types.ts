@@ -11,6 +11,8 @@ export const DRAFT_NOTE = "A draft is not a commitment to lend.";
 export const ESTIMATE_NOTE = "Estimates only, not a commitment to lend.";
 export const CONFIRMED_STATUS =
   "Application draft confirmed — pending licensed review";
+export const ORIGINATOR_REQUEST = "Need a licensed originator?";
+export const ORIGINATOR_REVIEW = "A licensed originator will review this.";
 
 export type FieldSource = "client" | "scenario" | "extracted-unconfirmed";
 

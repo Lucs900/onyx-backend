@@ -196,9 +196,9 @@ export function ScenarioResults() {
               Ask about tradeoffs after indicative options land. This is not a
               credit decision.
             </p>
-            <Link href="/advisor" className="btn btn--text">
-              Talk through this
-            </Link>
+            <p className="type-legal">
+              <Link href="/advisor">Need a licensed originator?</Link>
+            </p>
           </div>
         </section>
 
@@ -209,9 +209,6 @@ export function ScenarioResults() {
           <div className="scenario-form__actions">
             <Link href={intakeHref} className="btn btn--primary">
               Start application
-            </Link>
-            <Link href="/advisor" className="btn btn--secondary">
-              Talk to a licensed originator
             </Link>
             <Link href={editHref} className="btn btn--text">
               Edit scenario

@@ -35,6 +35,7 @@ import {
 import {
   FOX_DISCLOSURE,
   FOX_PANEL_KEY,
+  ORIGINATOR_REQUEST,
   TRUST_LINE,
   type FoxAction,
   type FoxMessage,
@@ -271,9 +272,9 @@ export function AlwaysOnFox() {
 
         <p className="type-legal fox-panel__disclosure">{FOX_DISCLOSURE}</p>
         <p className="type-legal fox-panel__disclosure">{TRUST_LINE}</p>
-        <Link href="/advisor" className="btn btn--text fox-panel__human">
-          Talk to a licensed originator
-        </Link>
+        <p className="type-legal fox-panel__human">
+          <Link href="/advisor">{ORIGINATOR_REQUEST}</Link>
+        </p>
       </div>
     </>
   );
