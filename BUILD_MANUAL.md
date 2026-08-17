@@ -23,17 +23,15 @@ The hero object is the exact locked bitmap **`public/acr-card-face.png`**, shown
 
 **Locked — do not reopen** house, zoom, gold width, or composition. Not the old CSS membership pass (no MEMBER, last-4, chip, or ONYX wordmark on the object).
 
-Hero secondary `Just need a mortgage` now switches Slice 3 to Loan mode and scrolls to it.
+Hero secondary `Just need a mortgage` starts the loan only path (`/products/scenario?path=loan`). Primary starts ACR (`/products/scenario?path=acr`). The hero CTAs are the homepage path choice.
 
-## Slice 3 — Homepage mode toggle
+## Slice 3 — no homepage mode toggle
 
-Centered section under the hero is **page mode only**: `Relationship` | `Loan`. Default **Relationship**. Not a second Fox composer. No centered ask bar, chips-as-chat, or “Ask ONYX Fox” form on the page.
-
-Hero `Just need a mortgage` and rate-card `Find my rate` still switch this toggle to Loan and scroll to it. Fox lives in the central AI bar only.
+Do **not** put a Relationship / Loan control under the hero. That toggle was leftover from Advisor Spotlight after Fox moved to the central bar. It did not change any section content. Path choice is the locked hero CTAs. No second Fox composer, no centered ask bar, no chips-as-chat, no “Ask ONYX Fox” form on the page. Fox lives in the central AI bar only.
 
 ## Slice 4 — Membership math (The Three Desks)
 
-Section below Advisor Spotlight. Static open cards. No accordion. No icons. No metal.
+Section below the hero. Static open cards. No accordion. No icons. No metal.
 
 - Eyebrow: `THE RELATIONSHIP`
 - H2: `A relationship that keeps working after close.`
@@ -51,7 +49,7 @@ Rate card is the mortgage-without-ACR off-ramp:
 - Eyebrow `MORTGAGE ONLY`. No section H2.
 - APR / decision / amount / as-of remain **OPEN**. Preview uses `—` and `Sample · not live`. Do not invent a live rate.
 - Product line may show `Purchase · 30-year fixed` only as a labeled sample.
-- CTA `Find my rate` (56px) with `2 min · no hard credit check` switches Advisor Spotlight to **Loan** mode — same path as hero `Just need a mortgage`.
+- CTA `Find my rate` (56px) with `2 min · no hard credit check` → `/products/scenario?path=loan` — same loan only start as hero `Just need a mortgage`.
 - Exact line under the card: `A mortgage is available without ACR.`
 
 Comparison: Feature | ONYX ACR | Traditional lender | Loan only. ONYX column uses a 6px metal underline (allowed metal besides fox/card). Member credits ONYX cell: `Calculated membership reward`. Mobile uses stacked cards.
@@ -62,7 +60,7 @@ How it works: `THE PATH` / `Get approved. Then stay that way.` Five steps. Empha
 
 Proof: four OPEN placeholders (`—`), `Sample · not live`, `As of —`. No invented volume, stars, quotes, or GSE logos. Trust marks: Equal Housing, NMLS Consumer Access, Mortgage broker.
 
-Closer: locked H2 `Always approved. Always optimizing.` Primary → `/acr`. Secondary → Loan Spotlight. `Talk to a licensed originator` + `NMLS ____`. Repeat `NMLS [OPEN] · CA DRE [OPEN] · We are a mortgage broker.` Mobile sticky bar is Slice 9, not this slice.
+Closer: locked H2 `Always approved. Always optimizing.` Primary → `/products/scenario?path=acr`. Secondary → `/products/scenario?path=loan`. `Talk to a licensed originator` → `/advisor` + `NMLS ____`. Repeat `NMLS [OPEN] · CA DRE [OPEN] · We are a mortgage broker.` Mobile sticky bar is Slice 9, not this slice.
 
 ## Product Explorer (CA only)
 
@@ -147,7 +145,7 @@ styles/tokens.css                 locked CSS variables + type ramp + buttons
 styles/globals.css                reset, layout, header, footer
 styles/hero.css                   Slice 2 hero + pictorial ACR card
 public/acr-card-face.png          locked ACR card face (house + gold + fox)
-styles/spotlight.css              Slice 3 homepage Fox composer
+styles/spotlight.css              removed — leftover Relationship / Loan toggle
 styles/desks.css                  Slice 4 three desks
 styles/rates.css                  Slice 5 rate card + comparison
 styles/close.css                  Slice 6 path, proof, closer
@@ -175,10 +173,8 @@ app/(marketing)/lo/review/page.tsx licensed review queue (preview)
 components/AdvisorMark.tsx        2–3 shape geometric fox; size="sm" = 20px
 components/SiteHeader.tsx         locked sparse chrome
 components/SiteFooter.tsx         sparse footer, pending-approval placeholders
-components/MembershipHero.tsx     locked hero; secondary → Loan spotlight
+components/MembershipHero.tsx     locked hero; CTAs start ACR / loan only paths
 components/AcrPass.tsx            exact locked ACR face image, no overlays
-components/AdvisorSpotlight.tsx   homepage Relationship / Loan page-mode toggle
-components/HomeExperience.tsx     homepage client wiring
 components/ValueBreakdown.tsx     three locked desks
 components/RateCard.tsx           mortgage-only off-ramp
 components/ComparisonTable.tsx    Feature / ACR / traditional / loan only
@@ -206,7 +202,7 @@ Implemented as CSS variables in `styles/tokens.css`. Do not add a Tailwind palet
 
 `--paper` is `#F6EFE4` (cohesion pass). `--paper-elevated` stays `#FFFCF6`. `--sunset` is `#E08A4F` — Ask ONYX Fox **bar mark fill only**. Do not apply sunset to the ONYX wordmark, “Ask ONYX Fox” label, Send, bar outlines, page backgrounds, primary CTAs, open-panel fills, card fills, or ACR gold. Other token hex values stay locked.
 
-Cohesion (light visual only): hero + Spotlight share one paper opening; 1px `--line` seams between later major blocks (desks, rates/comparison, path, proof, closer); object radius 16 / UI card radius 12 with elevated paper + hairline and no shadow; ONYX comparison column is an 8% metal wash on elevated paper; path numerals are `color-mix` metal into paper (~28%); proof stats sit on one hairline row.
+Cohesion (light visual only): one paper opening from the hero; 1px `--line` seams between later major blocks (desks, rates/comparison, path, proof, closer); object radius 16 / UI card radius 12 with elevated paper + hairline and no shadow; ONYX comparison column is an 8% metal wash on elevated paper; path numerals are `color-mix` metal into paper (~28%); proof stats sit on one hairline row.
 
 Metal is scarce: fox highlight, the locked ACR card gold dock, the comparison ONYX underline, and the public `/acr` reward folio’s 2px `--metal` tick.
 
@@ -219,7 +215,7 @@ Metal is scarce: fox highlight, the locked ACR card gold dock, the comparison ON
 
 ## Public start paths
 
-Both homepage CTAs begin a path that reaches scenario → results → intake. Intent is stored as `acr` | `loan-only` in `sessionStorage` / `localStorage` key `onyx.startPath` and carried as `path=acr` or `path=loan` on explorer, scenario, results, and intake URLs.
+Both homepage CTAs begin a path that reaches scenario → results → intake. There is no Relationship / Loan toggle on the homepage. Intent is stored as `acr` | `loan-only` in `sessionStorage` / `localStorage` key `onyx.startPath` and carried as `path=acr` or `path=loan` on explorer, scenario, results, and intake URLs.
 
 - ACR start: `/products/scenario?path=acr`
 - Loan only start: `/products/scenario?path=loan`
@@ -269,7 +265,7 @@ Page stack, in order:
 6. **Comparison** — reuse homepage `ComparisonTable`. Do not invent rates.
 7. **Fees / trust** — payment count, dollars, fees, and NMLS stay **OPEN / placeholder**. No invented numbers.
 8. **Fox** — same central ONYX Fox AI bar (`FoxShell` / `AlwaysOnFox`), `acr` stage. Collapsed `Ask ONYX Fox`. No second Fox card. No in-panel legal. Locked bar visual. Fox cannot approve, lock, or commit to lend (footer / site legal, not in the bar).
-9. **Closer** — homepage closer energy: Start your relationship / Just need a mortgage. Page-local closer (do not reuse `Closer.tsx` — it requires homepage `HomeExperience`).
+9. **Closer** — homepage closer energy: Start your relationship / Just need a mortgage. `/acr` uses a page-local closer with the same start hrefs.
 
 No calculator. No coupon treatment. Sunset only on the Fox bar mark, not on this page’s cards.
 
