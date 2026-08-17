@@ -81,11 +81,11 @@ Preview only. California only. Client stays in control; Fox prepares a draft. No
 
 Mounted on `/` (homepage), `/products`, `/products/scenario`, `/products/results`, and `/intake` — not `/about`, `/rates`, `/acr`, or other marketing stubs.
 
-Fox is the **central AI bar** — the operating surface, not a FAB, corner popup, or support widget. Collapsed: centered, content-width `Ask ONYX Fox` desk (mark + prompt + type). Sunset accent on that bar only (border, small mark fill, catchlight). Mobile: full content-width anchored bar; expands **upward** into a short stack (question + bubbles + input; **max ~36vh**, no forced min-height). Desktop: the same centered desk plus a short thread. Pages stay visible above Fox.
+Fox is the **central AI bar** — the operating surface, not a FAB, corner popup, or support widget. Collapsed: centered, content-width `Ask ONYX Fox` desk (mark + prompt + type). Bar is `--paper-elevated`, **1px sand-ink hairline**, full pill, no heavy shadow. `--sunset` on the Fox mark / tiny catchlight only — not a sunset outline, not Send, not the open panel. Send is solid ink (`btn--primary`). Mobile: full content-width anchored bar; expands **upward** into a short stack (question + bubbles + input; **max ~36vh**, no forced min-height). Desktop: the same centered desk plus a short thread. Pages stay visible above Fox.
 
 Homepage and other pages start collapsed so the locked ACR hero stays clear. `/intake` starts expanded while Fox has an active question. First mention / header `ONYX Fox`; ongoing labels `Fox`.
 
-Open Fox is question + bubbles + input only. Thin Close control. **No in-panel compliance** — no cannot-approve, California-only, NMLS/DRE, Legal link, or originator row. Site footer holds legal. Disclosure still exists for page footers, exact: `ONYX Fox can assist and prepare. It cannot approve, lock, or commit to lend.` `--sunset` (`#E08A4F`) is bar-only — not page backgrounds, primary CTAs, open-panel fill, or ACR gold.
+Open Fox is question + bubbles + input only. Thin Close control. **No in-panel compliance** — no cannot-approve, California-only, NMLS/DRE, Legal link, or originator row. Site footer holds legal. Disclosure still exists for page footers, exact: `ONYX Fox can assist and prepare. It cannot approve, lock, or commit to lend.` `--sunset` (`#E08A4F`) is Fox-mark only — not bar borders, Send, page backgrounds, primary CTAs, open-panel fill, or ACR gold.
 
 Scripted + session-aware. Does not call `app/api/chat`. Reads `onyx.productExplorer.scenario` and selected product. Structured questions use clickable bubbles (income, occupancy, timeline, docs, confirm). Free text remains available.
 
@@ -171,7 +171,7 @@ lib/*                             UNCHANGED
 
 Implemented as CSS variables in `styles/tokens.css`. Do not add a Tailwind palette or a second color system.
 
-`--paper` is `#F6EFE4` (cohesion pass). `--paper-elevated` stays `#FFFCF6`. `--sunset` is `#E08A4F` — Fox AI bar only (border/ring, small fill, catchlight). Do not apply sunset to page backgrounds, primary CTAs, open-panel fills, card fills, or ACR gold. Other token hex values stay locked.
+`--paper` is `#F6EFE4` (cohesion pass). `--paper-elevated` stays `#FFFCF6`. `--sunset` is `#E08A4F` — Fox mark / tiny catchlight only. Do not apply sunset to bar outlines, Send, page backgrounds, primary CTAs, open-panel fills, card fills, or ACR gold. Other token hex values stay locked.
 
 Cohesion (light visual only): hero + Spotlight share one paper opening; 1px `--line` seams between later major blocks (desks, rates/comparison, path, proof, closer); object radius 16 / UI card radius 12 with elevated paper + hairline and no shadow; ONYX comparison column is an 8% metal wash on elevated paper; path numerals are `color-mix` metal into paper (~28%); proof stats sit on one hairline row.
 

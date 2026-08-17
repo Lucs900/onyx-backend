@@ -1,4 +1,4 @@
-/* Central ONYX Fox AI bar. Sunset on the bar only. Not a FAB or corner widget. */
+/* Central ONYX Fox AI bar. Paper + ink hairline + pill. Sunset on the mark only. */
 
 .fox-shell {
   min-height: 100%;
@@ -22,11 +22,11 @@
   align-items: center;
   gap: 12px;
   min-height: 56px;
-  padding: 8px 8px 8px 10px;
+  padding: 6px 6px 6px 14px;
   background: var(--paper-elevated);
-  border: 2px solid var(--sunset);
-  border-radius: 16px;
-  box-shadow: 0 10px 28px rgb(11 11 12 / 0.1);
+  border: 1px solid color-mix(in srgb, var(--ink) 14%, var(--line));
+  border-radius: var(--radius-pill);
+  box-shadow: none;
 }
 
 .fox-bar__mark {
@@ -34,21 +34,19 @@
   display: grid;
   place-items: center;
   flex: 0 0 auto;
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  background: var(--sunset);
-  color: var(--paper-elevated);
+  width: 24px;
+  height: 24px;
+  color: var(--ink);
 }
 
 .fox-ask__catch {
   position: absolute;
-  top: 4px;
-  right: 5px;
+  top: 1px;
+  right: 1px;
   width: 5px;
   height: 5px;
   border-radius: 50%;
-  background: var(--paper-elevated);
+  background: var(--sunset);
 }
 
 .fox-bar__prompt,
@@ -84,11 +82,21 @@
 .fox-bar__send {
   flex: 0 0 auto;
   height: 40px;
-  padding: 0 16px;
+  padding: 0 18px;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: var(--ink);
+  color: var(--paper-elevated);
+}
+
+.fox-bar__send:hover {
+  background: var(--ink-hover);
 }
 
 .fox-bar__send:disabled {
-  opacity: 0.4;
+  opacity: 0.35;
+  background: var(--ink);
+  color: var(--paper-elevated);
   cursor: default;
 }
 
