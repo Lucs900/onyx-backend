@@ -87,7 +87,7 @@ Preview only. California only. Client stays in control; Fox prepares a draft. No
 
 ### Always-on Fox
 
-Mounted on `/products`, `/products/scenario`, `/products/results`, and `/intake` only — not the homepage hero. Persistent bottom dock (not a popup, FAB, or orb): collapsed `Ask ONYX Fox`; expands in place with conversation + current-task context + bubbles. First mention / dock header `ONYX Fox`; ongoing labels `Fox`. Geometric `<AdvisorMark />` only. Optional tiny `--sunset` catchlight on the dock — do not use sunset on CTAs, fills, or ACR gold.
+Mounted on `/products`, `/products/scenario`, `/products/results`, and `/intake` only — not the homepage hero. Persistent full-width bottom dock (not a popup, FAB, dialog, or orb): the `Ask ONYX Fox` bar is pinned to the bottom and renders immediately; conversation expands above that same bar. `/intake` starts expanded unless the session already collapsed it. First mention / dock header `ONYX Fox`; ongoing labels `Fox`. Geometric `<AdvisorMark />` only. Optional tiny `--sunset` catchlight on the dock — do not use sunset on CTAs, fills, or ACR gold.
 
 Scripted + session-aware. Does not call `app/api/chat`. Reads `onyx.productExplorer.scenario` and selected product. Structured questions use clickable bubbles (income, occupancy, timeline, docs, confirm). Free text remains available.
 

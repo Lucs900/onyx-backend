@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import {
   useEffect,
   useId,
@@ -47,32 +47,73 @@ export function requestFoxOpen() {
   window.dispatchEvent(new Event("onyx:fox-open"));
 }
 
+export function FoxDockBar({
+  open,
+  task,
+  onToggle,
+}: {
+  open: boolean;
+  task?: string;
+  onToggle?: () => void;
+}) {
+  const inner = (
+    <>
+      <AdvisorMark size="sm" />
+      <span className="fox-dock__label">{open ? "ONYX Fox" : "Ask ONYX Fox"}</span>
+      {open && task ? (
+        <span className="type-legal fox-dock__task">{task}</span>
+      ) : null}
+      <span className="fox-ask__catch" aria-hidden="true" />
+    </>
+  );
+
+  if (!onToggle) {
+    return <div className="fox-dock__bar">{inner}</div>;
+  }
+
+  return (
+    <button
+      type="button"
+      className="fox-dock__bar"
+      aria-expanded={open}
+      aria-controls="fox-panel"
+      onClick={onToggle}
+    >
+      {inner}
+    </button>
+  );
+}
+
 export function AlwaysOnFox() {
   const pathname = usePathname();
-  const searchParams = useSearchParams();
   const router = useRouter();
   const stage = foxStageFromPath(pathname);
-  const greetKey = `${pathname}?${searchParams.toString()}`;
   const draft = useSyncExternalStore(subscribeFoxDraft, getFoxDraft, getServerDraft);
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(() => stage === "intake");
   const [ready, setReady] = useState(false);
+  const [search, setSearch] = useState("");
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState<FoxMessage[]>([]);
   const greeted = useRef<string>("");
   const skipPromptSync = useRef(false);
   const listRef = useRef<HTMLDivElement>(null);
   const fieldId = useId();
+  const greetKey = `${pathname}${search}`;
 
   useEffect(() => {
-    if (pathname.startsWith("/intake") && searchParams.get("sample") === "loop") {
+    const query = window.location.search;
+    const sample = new URLSearchParams(query).get("sample");
+    if (pathname.startsWith("/intake") && sample === "loop") {
       seedPreviewSample("intake");
     } else {
       hydrateFoxDraft();
     }
     const stored = sessionStorage.getItem(FOX_PANEL_KEY);
-    setOpen(stored === "1");
+    if (stored === "1") setOpen(true);
+    else if (stored === "0") setOpen(false);
+    setSearch(query);
     setReady(true);
-  }, [pathname, searchParams]);
+  }, [pathname]);
 
   useEffect(() => {
     const onOpen = () => setOpen(true);
@@ -125,9 +166,12 @@ export function AlwaysOnFox() {
     listRef.current?.scrollTo({ top: listRef.current.scrollHeight });
   }, [messages, open]);
 
-  if (!stage || !ready) return null;
+  if (!stage) return null;
 
   const scenario = draft.scenario ?? readScenario();
+  const task = `${taskContext(stage, draft)}${
+    scenario?.productName ? ` · ${scenario.productName}` : ""
+  }`;
 
   const appendReply = (clientText: string, fox: { text: string; actions?: FoxAction[] }) => {
     setMessages((prev) => [
@@ -177,31 +221,9 @@ export function AlwaysOnFox() {
 
   return (
     <div className={open ? "fox-dock is-open" : "fox-dock"}>
-      <button
-        type="button"
-        className="fox-dock__bar"
-        aria-expanded={open}
-        aria-controls="fox-panel"
-        onClick={() => setOpen((value) => !value)}
-      >
-        <AdvisorMark size="sm" />
-        <span className="fox-dock__label">
-          {open ? "ONYX Fox" : "Ask ONYX Fox"}
-        </span>
-        {open ? (
-          <span className="type-legal fox-dock__task">
-            {taskContext(stage, draft)}
-            {scenario?.productName ? ` · ${scenario.productName}` : ""}
-          </span>
-        ) : null}
-        <span className="fox-ask__catch" aria-hidden="true" />
-      </button>
+      <FoxDockBar open={open} task={task} onToggle={() => setOpen((value) => !value)} />
 
-      <div
-        id="fox-panel"
-        className="fox-dock__body"
-        hidden={!open}
-      >
+      <div id="fox-panel" className="fox-dock__body" hidden={!open}>
         <div className="fox-panel__thread" ref={listRef} aria-live="polite">
           {messages.map((message) => (
             <article
