@@ -73,7 +73,7 @@
 }
 
 .fox-bar__prompt {
-  color: var(--muted);
+  color: var(--ink);
   font-weight: 500;
 }
 

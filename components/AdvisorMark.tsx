@@ -8,7 +8,7 @@ const SIZE_ALIASES = {
 } as const;
 
 /**
- * Geometric fox mark. Two shapes + one metal highlight.
+ * Geometric fox mark. Ink body + one small sunset catchlight on the inner facet.
  * No pupils, smile, wink, eyebrows, body, or expression.
  */
 export function AdvisorMark({ size = 24, className }: AdvisorMarkProps) {
@@ -30,7 +30,7 @@ export function AdvisorMark({ size = 24, className }: AdvisorMarkProps) {
       />
       <polygon
         className="advisor-mark__facet"
-        fill="var(--metal)"
+        fill="var(--sunset)"
         points="12,8.2 16.8,2.6 15.1,10.1"
       />
     </svg>

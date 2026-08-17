@@ -87,7 +87,7 @@ Fox is the **central AI bar** — the operating surface, not a FAB, corner popup
 - Border: 1px `color-mix(ink 18%, line)` resting (14% washed on paper — locked one step darker), hover ink 20%, focus `1.5px solid var(--ink)`. **Never** `--sunset` as the ring
 - Shadow: `0 1px 0 rgba(255,252,246,0.9) inset, 0 8px 24px rgba(11,11,12,0.08)` — no colored halo
 - Radius: collapsed `999px`, expanded `16px`
-- Mark: 20px geometric fox in ink; `--sunset` on the **inner facet only**; no sunset disk/ring
+- Mark: 20px geometric fox in **ink** (`currentColor`); small `--sunset` catchlight on the **inner facet only** (do not enlarge; do not fill the fox orange). No sunset disk or bar ring. ONYX wordmark and “Ask ONYX Fox” stay ink.
 - Send: ink circle, paper-elevated arrow; empty 28% opacity; armed full ink; 36px desktop / 44px mobile. Never sunset
 - Desktop: pinned dock, composer max 720. Mobile: full-width, collapsed 56px, above home indicator
 - Bubbles: same paper-elevated + hairline + lift. Selected bubble: ink fill, not sunset
