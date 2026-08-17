@@ -34,14 +34,14 @@ function scenarioFromClientLocation() {
 
 export function ScenarioResults() {
   const searchParams = useSearchParams();
-  const [ready, setReady] = useState(false);
-  const [scenario, setScenario] = useState<ExplorerScenario | null>(null);
+  const fromQuery = scenarioFromQuery(searchParams);
+  const [ready, setReady] = useState(Boolean(fromQuery));
+  const [scenario, setScenario] = useState<ExplorerScenario | null>(fromQuery);
 
   useEffect(() => {
-    const fromQuery = scenarioFromQuery(searchParams) ?? scenarioFromClientLocation();
-    const resolved = fromQuery ?? readScenario();
-    if (fromQuery) writeScenario(fromQuery);
-    setScenario(resolved);
+    const query = scenarioFromQuery(searchParams) ?? scenarioFromClientLocation();
+    if (query) writeScenario(query);
+    setScenario(query ?? readScenario());
     setReady(true);
   }, [searchParams]);
 
