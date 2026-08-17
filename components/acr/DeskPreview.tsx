@@ -1,3 +1,6 @@
+import { AskFoxButton } from "./AskFoxButton";
+import { PUBLIC_SCOUT_EXAMPLES } from "./acrHome";
+
 const GOALS = [
   {
     name: "Rate window",
@@ -61,6 +64,28 @@ export function DeskPreview() {
               Equity posture and HELOC or refinance room will live here.
             </p>
             <p className="type-legal">Sample, not live</p>
+          </article>
+
+          <article className="acr-property acr-scout">
+            <h3 className="type-card-title">Opportunities Scout</h3>
+            <p className="type-body">
+              Uses your profile and equity posture to project possible next
+              moves.
+            </p>
+            <ul className="acr-scout__examples">
+              {PUBLIC_SCOUT_EXAMPLES.map((example) => (
+                <li key={example.kind}>
+                  <span className="acr-scout__label">{example.title}</span>
+                  {" — "}
+                  {example.sentence}
+                </li>
+              ))}
+            </ul>
+            <p className="type-body">
+              A financing path is attached to the opportunity.
+            </p>
+            <p className="type-legal">Sample, not live</p>
+            <AskFoxButton ask="Opportunities Scout" />
           </article>
         </div>
       </div>

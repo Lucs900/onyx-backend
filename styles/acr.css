@@ -300,6 +300,33 @@
   margin-top: 12px;
 }
 
+.acr-scout__examples {
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.acr-scout__examples li {
+  font-family: var(--font-ui);
+  font-size: 15px;
+  line-height: 22px;
+  font-weight: 400;
+  color: var(--ink-2);
+}
+
+.acr-scout__examples li + li {
+  margin-top: 8px;
+}
+
+.acr-scout__label {
+  font-weight: 500;
+  color: var(--ink);
+}
+
+.acr-scout .btn--text {
+  margin-top: 12px;
+}
+
 .acr-fees__rows {
   display: flex;
   flex-direction: column;

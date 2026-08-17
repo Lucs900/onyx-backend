@@ -153,6 +153,8 @@ styles/products.css               Product Explorer
 styles/fox.css                    Always-on Fox + intake + LO review
 styles/acr.css                    Public /acr product page
 components/acr/*                  ACR hero, reward folio, unlock path, desk preview, fees, closer
+components/acr/acrHome.ts         reserved later ACR home IA + reward-balance rules
+components/acr/AskFoxButton.tsx   quiet Ask Fox → existing Fox bar
 components/products/catalog.ts    CA product groups + exact copy
 components/products/rewardEstimate.ts  PRIVATE reward range helper (never show method or %)
 components/products/PathChoice.tsx     results loan only vs ACR comparison
@@ -253,7 +255,7 @@ Current Preview (Ready, not Production):
 
 ## Public ACR product page (`/acr`)
 
-Public `/acr` is the product page. Reward is the reason. Goals and property are quiet desk previews, not a cockpit. Do not restyle the homepage ACR hero.
+Public `/acr` is the product page. Reward is the reason. Goals, property, and a small Opportunities Scout mention are quiet desk previews, not a cockpit. Do not restyle the homepage ACR hero.
 
 Page stack, in order:
 
@@ -261,13 +263,41 @@ Page stack, in order:
 2. **Reward instrument (primary)** — one folio, radius **16**, `--paper-elevated`, hairline, **2px metal tick** (`--metal`). **Not a gold card.** Do not restyle or reuse the ACR card PNG as the reward. Public copy, no numbers: `A reward calculated for your relationship.` / `Unlocks after on time payments.` / `Your amount is prepared when you join.` Unlock is **quiet unlabeled ticks only** (no “6 payments”, no %). No public %, payment count, or invented dollar amount. Mark `Sample, not live`. Near the reward: `Explore a scenario to see an estimated reward range.` → `/products/scenario`.
 3. **Three-line unlock path** — three quiet lines. Not the homepage 5-step path.
 4. **Three desks** — reuse `ValueBreakdown`. Headline `A relationship that keeps working after close.` Same names and limits: The Rate Desk, The Credit Path, The Member Desk.
-5. **On the desk** — two sample goals (max three rows) and one property card. Goals: name, current state, direction as a word or small **ink** track, one sentence, optional next. No gauges, traffic lights, or sunset. States like Watching / Monitoring. Direction words like Down / Hold. Property title `Your home`. One sentence that equity posture and HELOC/refi room will live here. No map, listings, or estimated value. Both marked `Sample, not live`. No invented $ or scores. Quiet context, not a cockpit.
+5. **On the desk** — two sample goals (max three rows), one property card, and a small Opportunities Scout mention. Goals: name, current state, direction as a word or small **ink** track, one sentence, optional next. No gauges, traffic lights, or sunset. States like Watching / Monitoring. Direction words like Down / Hold. Property title `Your home`. One sentence that equity posture and HELOC/refi room will live here. Scout title `Opportunities Scout`: uses profile and equity posture to project possible next moves; quiet example labels only (Equity available, Purchase power, Portfolio move); a financing path is attached. Quiet `Ask Fox` opens the existing Fox bar. No MLS, listings, addresses, valuations, dollars, returns, or fake wallet. All marked `Sample, not live`. No invented $ or scores. Quiet context, not a cockpit.
 6. **Comparison** — reuse homepage `ComparisonTable`. Do not invent rates.
 7. **Fees / trust** — payment count, dollars, fees, and NMLS stay **OPEN / placeholder**. No invented numbers.
 8. **Fox** — same central ONYX Fox AI bar (`FoxShell` / `AlwaysOnFox`), `acr` stage. Collapsed `Ask ONYX Fox`. No second Fox card. No in-panel legal. Locked bar visual. Fox cannot approve, lock, or commit to lend (footer / site legal, not in the bar).
 9. **Closer** — homepage closer energy: Start your relationship / Just need a mortgage. `/acr` uses a page-local closer with the same start hrefs.
 
 No calculator. No coupon treatment. Sunset only on the Fox bar mark, not on this page’s cards.
+
+## Later logged-in ACR home (reserved — do not fully build)
+
+Logged-in ACR home is not live. Do not ship a fake dashboard or a fake rewards wallet on any public page. Types and order live in `components/acr/acrHome.ts`.
+
+Later home order:
+
+1. Reward status / balance
+2. Goals
+3. Property / equity
+4. Opportunities Scout
+
+Reward balance rules (locked):
+
+- Before unlock: progress only
+- After unlock: current rewards balance
+- Public pages: no fake balance
+- This pass: do not invent a live rewards wallet
+
+Later Opportunities Scout cards, max 3:
+
+- Equity available
+- Purchase power
+- Portfolio move
+
+Each later card: title, one sentence, possible financing path, Ask Fox. No MLS search, invented listings, addresses, valuations, dollar amounts, or return promises. Fox is the operator for opportunity follow-up — open the existing Fox bar, do not add a second chat widget.
+
+Public `/acr` may show those three titles as quiet sample labels only.
 
 ## Still later — do not build yet
 

@@ -529,6 +529,11 @@ function acrReply(lower: string): ReturnType<typeof replyToMessage> | null {
       text: "Three desks stay with the relationship: Rate, Credit, and Member.",
     };
   }
+  if (/(opportunit|scout|equity available|purchase power|portfolio move)/i.test(lower)) {
+    return {
+      text: "Opportunities Scout uses your profile and equity posture to project possible next moves. A financing path is attached. Sample, not live. I don't list properties or post values.",
+    };
+  }
   if (/(just need a mortgage|loan only|mortgage only|only (a )?loan)/i.test(lower)) {
     return {
       text: "A mortgage is available without ACR.",
