@@ -5,6 +5,8 @@ import { useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { requestFoxOpen } from "@/components/fox/AlwaysOnFox";
 import { directionsForScenario } from "./directions";
+import { PathChoice } from "./PathChoice";
+import { estimateRewardRange } from "./rewardEstimate";
 import {
   CREDIT_OPTIONS,
   OCCUPANCY_OPTIONS,
@@ -186,14 +188,17 @@ export function ScenarioResults() {
           </ul>
         </section>
 
+        <PathChoice
+          range={estimateRewardRange(scenario)}
+          acrHref="/acr"
+          loanHref={intakeHref}
+        />
+
         <section className="scenario-next" aria-labelledby="scenario-next-title">
           <h2 id="scenario-next-title" className="type-card-title">
             Next steps
           </h2>
           <div className="scenario-form__actions">
-            <Link href={intakeHref} className="btn btn--primary">
-              Start application
-            </Link>
             <Link href={editHref} className="btn btn--text">
               Edit scenario
             </Link>

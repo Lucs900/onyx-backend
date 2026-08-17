@@ -29,7 +29,7 @@ export function FeesTrust() {
         </dl>
 
         <p className="type-legal acr-fees__note">
-          Sample · not live. ONYX Fox can assist and prepare. It cannot approve,
+          Sample, not live. ONYX Fox can assist and prepare. It cannot approve,
           lock, or commit to lend. NMLS [OPEN] · CA DRE [OPEN] · We are a
           mortgage broker.
         </p>

@@ -72,7 +72,7 @@ const ROWS: { feature: string; onyx: Cell; traditional: Cell; loan: Cell }[] = [
   },
   {
     feature: "Member credits",
-    onyx: "—",
+    onyx: "Calculated membership reward",
     traditional: "Points / junk",
     loan: "—",
   },

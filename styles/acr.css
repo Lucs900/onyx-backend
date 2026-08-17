@@ -139,6 +139,16 @@
   margin-top: 16px;
 }
 
+.acr-reward__explore {
+  max-width: var(--prose-max);
+  margin-top: 20px;
+}
+
+.acr-reward__explore a {
+  color: var(--ink);
+  text-underline-offset: 2px;
+}
+
 .acr-desk__intro .type-legal {
   margin-top: 12px;
 }

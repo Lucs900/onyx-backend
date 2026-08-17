@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 export function RewardFolio() {
   return (
     <section className="acr-reward page-pad" aria-labelledby="acr-reward-title">
@@ -11,12 +13,10 @@ export function RewardFolio() {
 
         <article className="reward-folio">
           <span className="reward-folio__tick" aria-hidden="true" />
-          <p className="type-legal">Sample · not live</p>
+          <p className="type-legal">Sample, not live</p>
           <p className="type-body">A reward calculated for your relationship.</p>
-          <p className="type-body">Unlocks after on-time payments.</p>
-          <p className="type-body">
-            Your amount is prepared when you join — not a public rate.
-          </p>
+          <p className="type-body">Unlocks after on time payments.</p>
+          <p className="type-body">Your amount is prepared when you join.</p>
           <div className="reward-folio__ticks" aria-hidden="true">
             <span />
             <span />
@@ -25,6 +25,12 @@ export function RewardFolio() {
             <span />
           </div>
         </article>
+
+        <p className="acr-reward__explore type-body">
+          <Link href="/products/scenario">
+            Explore a scenario to see an estimated reward range.
+          </Link>
+        </p>
       </div>
     </section>
   );

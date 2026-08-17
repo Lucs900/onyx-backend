@@ -26,9 +26,9 @@ export function DeskPreview() {
             Goals and property, kept quiet
           </h2>
           <p className="type-body">
-            A preview of what lives on the desk — not a cockpit, and not live.
+            A preview of what lives on the desk, not a cockpit, and not live.
           </p>
-          <p className="type-legal">Sample · not live</p>
+          <p className="type-legal">Sample, not live</p>
         </div>
 
         <div className="acr-desk__stack">
@@ -60,7 +60,7 @@ export function DeskPreview() {
             <p className="type-body">
               Equity posture and HELOC or refinance room will live here.
             </p>
-            <p className="type-legal">Sample · not live</p>
+            <p className="type-legal">Sample, not live</p>
           </article>
         </div>
       </div>

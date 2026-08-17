@@ -36,9 +36,10 @@ Hero `Just need a mortgage` and rate-card `Find my rate` still switch this toggl
 Section below Advisor Spotlight. Static open cards. No accordion. No icons. No metal.
 
 - Eyebrow: `THE RELATIONSHIP`
-- H2: `Unlock $—+ in annual relationship value.`
-- `$X+` is still **OPEN**. Do not invent a dollar amount. Preview uses `$—+` and `Sample · not live`.
+- H2: `A relationship that keeps working after close.`
+- Do not bring back the `$—+` value-theater headline. Do not invent a dollar amount.
 - Body: `Live credit and rate data. Three desks. One relationship.`
+- Quiet mark: `Sample, not live`
 - Locked names: **The Rate Desk**, **The Credit Path**, **The Member Desk**
 
 ## Slice 5 — Rate card + comparison
@@ -53,7 +54,7 @@ Rate card is the mortgage-without-ACR off-ramp:
 - CTA `Find my rate` (56px) with `2 min · no hard credit check` switches Advisor Spotlight to **Loan** mode — same path as hero `Just need a mortgage`.
 - Exact line under the card: `A mortgage is available without ACR.`
 
-Comparison: Feature | ONYX ACR | Traditional lender | Loan only. ONYX column uses a 6px metal underline (allowed metal besides fox/card). Member credits stay an em dash. Mobile uses stacked cards.
+Comparison: Feature | ONYX ACR | Traditional lender | Loan only. ONYX column uses a 6px metal underline (allowed metal besides fox/card). Member credits ONYX cell: `Calculated membership reward`. Mobile uses stacked cards.
 
 ## Slice 6 — How it works + proof + closer
 
@@ -69,9 +70,19 @@ Route `/products`. California discovery only. No live pricing, APR, LoanSifter, 
 
 Slice 2 — scenario inputs: `/products/scenario` (optional `?product=`). CA ZIP only (90001–96162). Persist JSON at `sessionStorage` key `onyx.productExplorer.scenario`. Valid submit → `/products/results`.
 
-Slice 3 — results placeholder on the same `/products/results` route. Header `Your scenario`. Echo inputs. `Possible directions` shows 2–3 catalog cards from purpose mapping (not underwriting). Empty slots for future rate/payment/tradeoff — no live numbers. No inline Fox card — questions stay in the central Fox bar. Next steps: Start application → `/intake` (carry scenario query + session), quiet originator link, Edit scenario. Estimates only, not a commitment to lend. No guaranteed-rate or approval language.
+Slice 3 — results on `/products/results`. Header `Your scenario`. Echo inputs. `Possible directions` shows 2–3 catalog cards from purpose mapping (not underwriting). Empty slots for future rate/payment/tradeoff — no live numbers.
 
-Do not change the homepage ACR object or locked homepage copy. Nav labels stay `Rates` · `ACR` · `About`. `/rates` may link quietly to `/products` and `/products/scenario`.
+After directions, show a clear **loan only vs ACR** choice. Do not hide the incentive. ACR may show an estimated membership reward as `$X to $Y` from the private helper in `components/products/rewardEstimate.ts`. Never show the formula, the base rate, or any public percent. Never guarantee a payout. Note under the ACR estimate: `Final amount is confirmed when you join and close.` Mark `Sample, not live`. If loan amount (or property value − down payment) or a starter factor is missing, show the comparison without a dollar range and keep the short note — do not invent a loan amount.
+
+CTAs: `Start with ACR` → `/acr`. `Continue loan only` → `/intake` with the scenario query. Fox stays primary (collapsed bar; results greeting offers the same two paths). No large LO CTA. No invented rates/APR/payments. California only stays site-level, not inside every card.
+
+No inline Fox card — questions stay in the central Fox bar. Quiet originator link and Edit scenario remain. Estimates only, not a commitment to lend. No guaranteed-rate or approval language.
+
+Do not change the homepage ACR object or locked homepage hero copy. Nav labels stay `Rates` · `ACR` · `About`. `/rates` may link quietly to `/products` and `/products/scenario`.
+
+### Private reward estimate
+
+The v1 membership reward range lives only in `components/products/rewardEstimate.ts` (code comments + helper). Never show the method, the base rate, product/credit factors, or any percent in the UI, Fox, or public copy. Display only a rounded dollar range (`$4,080 to $5,520`) or omit dollars when the helper returns null. Filled preview: `/products/results?product=conventional-purchase&zip=94129&purpose=purchase&propertyValue=1200000&amountMode=loan&loanAmount=960000&downPayment=240000&creditRange=760-plus&occupancy=primary&timeline=30-90`.
 
 ## Fox Intake + Always-on Fox
 
@@ -126,7 +137,7 @@ One page: document drop → stub extract → draft summary → confirm. Question
 
 ### Do not
 
-Change homepage ACR / `public/acr-card-face.png`. Redesign Slice 1 cards, Slice 2 fields, or Slice 3 results structure (Start application → intake is allowed). Touch `app/api/chat`, `app/api/heloc-quote`, or `lib/*`. Invent rates, APR, payments, income, or NMLS/DRE numbers.
+Change homepage ACR / `public/acr-card-face.png`. Redesign Slice 1 cards or Slice 2 fields. Touch `app/api/chat`, `app/api/heloc-quote`, or `lib/*`. Invent rates, APR, payments, income, or NMLS/DRE numbers. Do not publish the private reward method or any reward percent.
 
 ## File map
 
@@ -144,6 +155,8 @@ styles/fox.css                    Always-on Fox + intake + LO review
 styles/acr.css                    Public /acr product page
 components/acr/*                  ACR hero, reward folio, unlock path, desk preview, fees, closer
 components/products/catalog.ts    CA product groups + exact copy
+components/products/rewardEstimate.ts  PRIVATE reward range helper (never show method or %)
+components/products/PathChoice.tsx     results loan only vs ACR comparison
 components/products/ProductExplorer.tsx  /products index
 components/products/ProductStub.tsx      /products/[slug] stub
 components/products/scenario.ts          scenario types, CA ZIP, storage
@@ -233,10 +246,10 @@ Public `/acr` is the product page. Reward is the reason. Goals and property are 
 Page stack, in order:
 
 1. **Hero** — locked ACR object via `AcrPass` / `public/acr-card-face.png` (same file, no restyle, no overlay type, no regeneration). Headline `The desk that stays open`. Eyebrow `Active Credit Relationship`. Support: ACR as an ongoing relationship. Primary `Start your relationship` → `/intake` (join/start; no invented form). Secondary quiet `Just need a mortgage` → `/products`. California only as **page** legal, not in Fox.
-2. **Reward instrument (primary)** — one folio, radius **16**, `--paper-elevated`, hairline, **2px metal tick** (`--metal`). **Not a gold card.** Do not restyle or reuse the ACR card PNG as the reward. Public copy, no numbers: `A reward calculated for your relationship.` / `Unlocks after on-time payments.` / `Your amount is prepared when you join — not a public rate.` Unlock is **quiet unlabeled ticks only** (no “6 payments”, no %). No public %, payment count, or invented dollar amount. Mark `Sample · not live`.
+2. **Reward instrument (primary)** — one folio, radius **16**, `--paper-elevated`, hairline, **2px metal tick** (`--metal`). **Not a gold card.** Do not restyle or reuse the ACR card PNG as the reward. Public copy, no numbers: `A reward calculated for your relationship.` / `Unlocks after on time payments.` / `Your amount is prepared when you join.` Unlock is **quiet unlabeled ticks only** (no “6 payments”, no %). No public %, payment count, or invented dollar amount. Mark `Sample, not live`. Near the reward: `Explore a scenario to see an estimated reward range.` → `/products/scenario`.
 3. **Three-line unlock path** — three quiet lines. Not the homepage 5-step path.
-4. **Three desks** — reuse `ValueBreakdown`. Same names and limits: The Rate Desk, The Credit Path, The Member Desk.
-5. **On the desk** — two sample goals (max three rows) and one property card. Goals: name, current state, direction as a word or small **ink** track, one sentence, optional next. No gauges, traffic lights, or sunset. States like Watching / Monitoring. Direction words like Down / Hold. Property title `Your home`. One sentence that equity posture and HELOC/refi room will live here. No map, listings, or estimated value. Both marked `Sample · not live`. No invented $ or scores.
+4. **Three desks** — reuse `ValueBreakdown`. Headline `A relationship that keeps working after close.` Same names and limits: The Rate Desk, The Credit Path, The Member Desk.
+5. **On the desk** — two sample goals (max three rows) and one property card. Goals: name, current state, direction as a word or small **ink** track, one sentence, optional next. No gauges, traffic lights, or sunset. States like Watching / Monitoring. Direction words like Down / Hold. Property title `Your home`. One sentence that equity posture and HELOC/refi room will live here. No map, listings, or estimated value. Both marked `Sample, not live`. No invented $ or scores. Quiet context, not a cockpit.
 6. **Comparison** — reuse homepage `ComparisonTable`. Do not invent rates.
 7. **Fees / trust** — payment count, dollars, fees, and NMLS stay **OPEN / placeholder**. No invented numbers.
 8. **Fox** — same central ONYX Fox AI bar (`FoxShell` / `AlwaysOnFox`), `acr` stage. Collapsed `Ask ONYX Fox`. No second Fox card. No in-panel legal. Locked bar visual. Fox cannot approve, lock, or commit to lend (footer / site legal, not in the bar).
@@ -252,7 +265,7 @@ Live pricing, bank/ADP, underwriting, ACR billing, returning-client login, mobil
 
 - Locked CTAs, desk names, fox-mark rules, token hex values (except approved `--paper` `#F6EFE4`), Slice 2 hero copy, Slice 3 disclosure copy
 - Locked ACR object: do not reopen house, zoom, gold width, or composition
-- `$X+`, APR, decision time, amount, and as-of date stay OPEN until approved
+- APR, decision time, amount, and as-of date stay OPEN until approved. Do not revive the `$—+` desks teaser. Reward dollars on results come only from `rewardEstimate.ts` and must never include a public percent or formula.
 - `app/api/chat`, `app/api/heloc-quote`, and `lib/*` unless a slice explicitly opens them
 - No dashboard or returning-chat UI until that slice
 - Mobile sticky bar is Slice 9, not earlier

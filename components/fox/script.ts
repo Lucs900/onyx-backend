@@ -128,9 +128,12 @@ export function greeting(
 
   if (stage === "results") {
     return {
-      text: known ? "Ready to prepare a draft?" : "Enter a scenario first.",
+      text: known ? "Loan only, or start with ACR?" : "Enter a scenario first.",
       actions: known
-        ? [{ id: "draft", label: "Let's prepare a draft", event: "prepare-draft" }]
+        ? [
+            { id: "acr", label: "Start with ACR", href: "/acr" },
+            { id: "loan", label: "Continue loan only", event: "prepare-draft" },
+          ]
         : [{ id: "scenario", label: "Enter a scenario", href: "/products/scenario" }],
     };
   }
@@ -254,6 +257,11 @@ export function replyToMessage(
   if (stage === "acr") {
     const acr = acrReply(lower);
     if (acr) return acr;
+  }
+
+  if (stage === "results") {
+    const results = resultsReply(lower);
+    if (results) return results;
   }
 
   if (/(licensed originator|talk to (a )?human|speak (to|with)|call me)/i.test(lower)) {
@@ -405,6 +413,31 @@ function captureForPrompt(
   return null;
 }
 
+function resultsReply(lower: string): ReturnType<typeof replyToMessage> | null {
+  if (/(reward|membership|unlock|how much|amount)/i.test(lower)) {
+    return {
+      text: "The estimated range is on the page. Final amount is confirmed when you join and close.",
+      actions: [{ id: "acr", label: "Start with ACR", href: "/acr" }],
+    };
+  }
+  if (/(acr|relationship)/i.test(lower)) {
+    return {
+      text: "ACR keeps the desk open after close. Start there, or continue loan only.",
+      actions: [
+        { id: "acr", label: "Start with ACR", href: "/acr" },
+        { id: "loan", label: "Continue loan only", event: "prepare-draft" },
+      ],
+    };
+  }
+  if (/(loan only|just the (loan|mortgage)|mortgage only)/i.test(lower)) {
+    return {
+      text: "I can prepare a loan draft from this scenario.",
+      actions: [{ id: "loan", label: "Continue loan only", event: "prepare-draft" }],
+    };
+  }
+  return null;
+}
+
 function acrReply(lower: string): ReturnType<typeof replyToMessage> | null {
   if (/(reward|unlock|how much|amount|percent|%|payment count)/i.test(lower)) {
     return {
@@ -505,10 +538,13 @@ function nextSteps(
   if (stage === "results") {
     return {
       text: scenario
-        ? "Next: I can prepare a draft from this scenario."
+        ? "Loan only, or start with ACR?"
         : "Enter a scenario first so I have something to carry into a draft.",
       actions: scenario
-        ? [{ id: "draft", label: "Let's prepare a draft", event: "prepare-draft" }]
+        ? [
+            { id: "acr", label: "Start with ACR", href: "/acr" },
+            { id: "loan", label: "Continue loan only", event: "prepare-draft" },
+          ]
         : [{ id: "scenario", label: "Enter a scenario", href: "/products/scenario" }],
     };
   }

@@ -268,12 +268,54 @@
 }
 
 .scenario-directions,
-.scenario-next {
+.scenario-next,
+.path-choice {
   display: flex;
   flex-direction: column;
   gap: 16px;
   padding-top: 16px;
   border-top: 1px solid var(--line);
+}
+
+.path-choice__grid {
+  display: grid;
+  gap: 16px;
+}
+
+.path-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 28px 24px;
+  background: var(--paper-elevated);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: none;
+}
+
+.path-card--acr .type-card-title {
+  box-shadow: inset 0 -6px 0 var(--metal);
+  width: fit-content;
+}
+
+.path-card__points {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.path-card__points li {
+  padding: 4px 0;
+  font-family: var(--font-ui);
+  font-size: 16px;
+  line-height: 26px;
+  font-weight: 400;
+  color: var(--ink-2);
+}
+
+.path-card__cta {
+  width: 100%;
+  margin-top: auto;
 }
 
 .direction-grid {
@@ -367,9 +409,15 @@
     width: auto;
   }
 
-  .direction-grid {
+  .direction-grid,
+  .path-choice__grid {
     grid-template-columns: repeat(2, 1fr);
     gap: 24px;
+  }
+
+  .path-card__cta {
+    width: auto;
+    align-self: flex-start;
   }
 
   .direction-card__cta {

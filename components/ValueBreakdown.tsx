@@ -26,12 +26,12 @@ export function ValueBreakdown() {
         <div className="value-breakdown__intro">
           <p className="type-eyebrow">The Relationship</p>
           <h2 id="value-breakdown-title" className="type-h2">
-            Unlock $—+ in annual relationship value.
+            A relationship that keeps working after close.
           </h2>
           <p className="type-body">
             Live credit and rate data. Three desks. One relationship.
           </p>
-          <p className="type-legal">Sample · not live</p>
+          <p className="type-legal">Sample, not live</p>
         </div>
 
         <ul className="desks-grid">

@@ -1,11 +1,11 @@
 const LINES = [
   {
     title: "Join the relationship",
-    line: "Start ACR. Your amount is prepared then — not posted here.",
+    line: "Start ACR. Your amount is prepared then, not posted here.",
   },
   {
     title: "Stay on time",
-    line: "On-time payments keep the desk open.",
+    line: "On time payments keep the desk open.",
   },
   {
     title: "Unlock on the desk",
