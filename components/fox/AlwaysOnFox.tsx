@@ -70,8 +70,7 @@ export function AlwaysOnFox() {
       hydrateFoxDraft();
     }
     const stored = sessionStorage.getItem(FOX_PANEL_KEY);
-    const shouldOpen = stored === "1" || pathname.startsWith("/intake");
-    setOpen(shouldOpen);
+    setOpen(stored === "1");
     setReady(true);
   }, [pathname, searchParams]);
 
@@ -177,47 +176,32 @@ export function AlwaysOnFox() {
   };
 
   return (
-    <div className="fox-dock">
+    <div className={open ? "fox-dock is-open" : "fox-dock"}>
       <button
         type="button"
-        className="fox-ask"
+        className="fox-dock__bar"
         aria-expanded={open}
         aria-controls="fox-panel"
         onClick={() => setOpen((value) => !value)}
       >
         <AdvisorMark size="sm" />
-        <span>{open ? "Close Fox" : "Ask ONYX Fox"}</span>
+        <span className="fox-dock__label">
+          {open ? "ONYX Fox" : "Ask ONYX Fox"}
+        </span>
+        {open ? (
+          <span className="type-legal fox-dock__task">
+            {taskContext(stage, draft)}
+            {scenario?.productName ? ` · ${scenario.productName}` : ""}
+          </span>
+        ) : null}
         <span className="fox-ask__catch" aria-hidden="true" />
       </button>
 
       <div
         id="fox-panel"
-        className={open ? "fox-panel is-open" : "fox-panel"}
-        role="dialog"
-        aria-modal="false"
-        aria-labelledby="fox-panel-title"
+        className="fox-dock__body"
         hidden={!open}
       >
-        <header className="fox-panel__head">
-          <AdvisorMark size="sm" />
-          <div>
-            <h2 id="fox-panel-title" className="type-card-title">
-              ONYX Fox
-            </h2>
-            <p className="type-legal">
-              {taskContext(stage, draft)}
-              {scenario?.productName ? ` · ${scenario.productName}` : ""}
-            </p>
-          </div>
-          <button
-            type="button"
-            className="btn btn--text fox-panel__close"
-            onClick={() => setOpen(false)}
-          >
-            Close
-          </button>
-        </header>
-
         <div className="fox-panel__thread" ref={listRef} aria-live="polite">
           {messages.map((message) => (
             <article

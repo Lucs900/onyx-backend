@@ -87,7 +87,7 @@ Preview only. California only. Client stays in control; Fox prepares a draft. No
 
 ### Always-on Fox
 
-Mounted on `/products`, `/products/scenario`, `/products/results`, and `/intake` only — not the homepage hero. Persistent dock (not FAB/orb-only): collapsed `Ask ONYX Fox`; expanded conversation + current-task context. First mention / panel header `ONYX Fox`; ongoing labels `Fox`. Geometric `<AdvisorMark />` only. Optional tiny `--sunset` catchlight on the dock — do not use sunset on CTAs, fills, or ACR gold.
+Mounted on `/products`, `/products/scenario`, `/products/results`, and `/intake` only — not the homepage hero. Persistent bottom dock (not a popup, FAB, or orb): collapsed `Ask ONYX Fox`; expands in place with conversation + current-task context + bubbles. First mention / dock header `ONYX Fox`; ongoing labels `Fox`. Geometric `<AdvisorMark />` only. Optional tiny `--sunset` catchlight on the dock — do not use sunset on CTAs, fills, or ACR gold.
 
 Scripted + session-aware. Does not call `app/api/chat`. Reads `onyx.productExplorer.scenario` and selected product. Structured questions use clickable bubbles (income, occupancy, timeline, docs, confirm). Free text remains available.
 
@@ -104,11 +104,11 @@ One page: bubbles → document drop → stub extract → draft summary → confi
 - Documents: metadata only (name, type, size, slot, status, receivedAt). Status: `received` → `reading` → `extracted` | `needs better copy` / `failed`. No file bytes in git, no upload, no public URL.
 - Extraction is stubbed. Do not invent income, SSN, account, rate, or payment numbers. Empty fields stay empty and labeled.
 - Audit fields: `{ field, source: client | scenario | extracted-unconfirmed, confirmed }`
-- Confirm bubbles: `Looks right` / `Needs a correction`
+- Client confirm is a short card only: name, email, phone, purpose/product, value, loan amount, occupancy, income type, documents received or skipped, plus `Looks right` / `Needs a correction`. No source labels, empty extract fields, checklist, or queue UI on the client view. `/lo/review` keeps the full worksheet.
 - After confirm: `Draft confirmed — pending licensed review`
 - Next step: `A licensed originator will review this.`
 - Draft ≠ commitment to lend. No live pricing.
-- Document drop and draft summary stay visible on `/intake` (empty fields as —).
+- Document drop stays on `/intake`. Client draft card hides empty fields. `/lo/review` still shows empty extracts as —.
 - Preview sample: `/intake?sample=loop` resets and seeds Alex Rivera + ZIP 94129 Conventional Purchase (Sample · not live). First Fox question is income bubbles. `/lo/review?sample=loop` seeds the same draft as already confirmed.
 
 ### LO review queue
