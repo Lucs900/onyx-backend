@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { requestFoxOpen } from "@/components/fox/AlwaysOnFox";
+import { intakeHref } from "@/components/fox/script";
 import { directionsForScenario } from "./directions";
 import { PathChoice } from "./PathChoice";
 import { estimateRewardRange } from "./rewardEstimate";
@@ -16,7 +17,6 @@ import {
   labelFor,
   readScenario,
   scenarioFromQuery,
-  scenarioToQuery,
   writeScenario,
   type ExplorerScenario,
 } from "./scenario";
@@ -52,7 +52,8 @@ export function ScenarioResults({
   const editHref = scenario?.productSlug
     ? `/products/scenario?product=${scenario.productSlug}`
     : "/products/scenario";
-  const intakeHref = scenario ? `/intake?${scenarioToQuery(scenario)}` : "/intake";
+  const acrHref = intakeHref(scenario, "acr");
+  const loanHref = intakeHref(scenario, "loan-only");
 
   if (!ready) {
     return (
@@ -194,8 +195,8 @@ export function ScenarioResults({
 
         <PathChoice
           range={estimateRewardRange(scenario)}
-          acrHref="/acr"
-          loanHref={intakeHref}
+          acrHref={acrHref}
+          loanHref={loanHref}
         />
 
         <section className="scenario-next" aria-labelledby="scenario-next-title">

@@ -100,6 +100,12 @@ export function LoReview() {
               <h2 className="type-card-title">Scenario</h2>
               {draft.scenario ? (
                 <dl className="scenario-echo">
+                  {draft.path ? (
+                    <FragmentRow
+                      label="Path"
+                      value={draft.path === "acr" ? "ACR" : "Loan only"}
+                    />
+                  ) : null}
                   {scenarioLines(draft.scenario).map(([label, value]) => (
                     <FragmentRow key={label} label={label} value={value} />
                   ))}

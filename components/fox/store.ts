@@ -12,6 +12,7 @@ import {
   type DraftField,
   type FoxIntakeDraft,
   type FoxPrompt,
+  type IntakePath,
   type LoMark,
   type ReceivedDoc,
   type SectionId,
@@ -70,6 +71,7 @@ function normalize(value: unknown): FoxIntakeDraft {
     timelineAsked: Boolean(raw.timelineAsked),
     preferredAsked: Boolean(raw.preferredAsked),
     correcting: raw.correcting ?? null,
+    path: raw.path === "acr" || raw.path === "loan-only" ? raw.path : undefined,
     previewSample: Boolean(raw.previewSample),
     documents: (raw.documents ?? []).map((doc) => ({
       ...doc,
@@ -160,6 +162,12 @@ function withScenario(draft: FoxIntakeDraft, scenario: ExplorerScenario): FoxInt
 export function setDraftScenario(scenario: ExplorerScenario | null) {
   if (!scenario) return current;
   return commit(withScenario(current, scenario));
+}
+
+export function setDraftPath(path: IntakePath | null) {
+  if (!path) return current;
+  if (current.path === path) return current;
+  return commit({ ...current, path });
 }
 
 function clientField(field: string, value: string): DraftField {

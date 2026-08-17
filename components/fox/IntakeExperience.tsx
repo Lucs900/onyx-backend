@@ -15,7 +15,13 @@ import {
   scenarioFromQuery,
   writeScenario,
 } from "@/components/products/scenario";
-import { incomeLabel, occupancyLabel, scenarioLines } from "./script";
+import {
+  incomeLabel,
+  occupancyLabel,
+  pathFromQuery,
+  pathLabel,
+  scenarioLines,
+} from "./script";
 import { SamplePathCard } from "./SamplePathCard";
 import {
   applyCapture,
@@ -27,6 +33,7 @@ import {
   receiveDocument,
   seedPreviewSample,
   setDocumentStatus,
+  setDraftPath,
   setDraftScenario,
   subscribeFoxDraft,
 } from "./store";
@@ -102,6 +109,8 @@ export function IntakeExperience() {
     const scenario = fromQuery ?? readScenario();
     if (fromQuery) writeScenario(fromQuery);
     if (scenario) setDraftScenario(scenario);
+    const path = pathFromQuery(searchParams.get("path"));
+    if (path) setDraftPath(path);
     setReady(true);
   }, [searchParams]);
 
@@ -247,6 +256,7 @@ function DraftSummary({ draft }: { draft: FoxIntakeDraft }) {
     ["Name", draft.contact.fullName.value],
     ["Email", draft.contact.email.value],
     ["Phone", draft.contact.phone.value],
+    ["Path", pathLabel(draft.path)],
     ["Purpose", purpose],
     [
       "Property value",
@@ -273,7 +283,7 @@ function DraftSummary({ draft }: { draft: FoxIntakeDraft }) {
         matches your situation.
       </p>
       {draft.previewSample ? (
-        <p className="type-legal">Sample · not live</p>
+        <p className="type-legal">Sample, not live</p>
       ) : null}
       {rows.length ? (
         <dl className="scenario-echo">

@@ -74,7 +74,7 @@ Slice 3 — results on `/products/results`. Header `Your scenario`. Echo inputs.
 
 After directions, show a clear **loan only vs ACR** choice. Do not hide the incentive. ACR may show an estimated membership reward as `$X to $Y` from the private helper in `components/products/rewardEstimate.ts`. Never show the formula, the base rate, or any public percent. Never guarantee a payout. Note under the ACR estimate: `Final amount is confirmed when you join and close.` Mark `Sample, not live`. If loan amount (or property value − down payment) or a starter factor is missing, show the comparison without a dollar range and keep the short note — do not invent a loan amount.
 
-CTAs: `Start with ACR` → `/acr`. `Continue loan only` → `/intake` with the scenario query. Fox stays primary (collapsed bar; results greeting offers the same two paths). No large LO CTA. No invented rates/APR/payments. California only stays site-level, not inside every card.
+CTAs both go to intake with the scenario query plus a path token. `Start with ACR` → `/intake?…&path=acr`. `Continue loan only` → `/intake?…&path=loan`. Do not send Start with ACR to `/acr` — `/acr` stays the public product page. Fox results bubbles use the same intake URLs. Fox stays primary. No large LO CTA. No invented rates/APR/payments. California only stays site-level, not inside every card.
 
 No inline Fox card — questions stay in the central Fox bar. Quiet originator link and Edit scenario remain. Estimates only, not a commitment to lend. No guaranteed-rate or approval language.
 
@@ -121,6 +121,7 @@ One page: document drop → stub extract → draft summary → confirm. Question
 
 - Storage: `sessionStorage` + `localStorage` key `onyx.foxIntake.draft`
 - Scenario key unchanged: `onyx.productExplorer.scenario`
+- Path: query `path=acr` | `path=loan` (also accepts `loan-only`). Stored on the draft as `acr` | `loan-only` so it survives refresh. Fox continues from the existing scenario. ACR path may mention the estimated reward range as context (`estimateRewardRange` / `formatRewardRange` only — never the formula or a percent) and that the final amount is confirmed when they join and close. Loan only is a mortgage draft only — no membership reward language. Confirm card may show Path quietly (`ACR` / `Loan only`). Do not expand intake questions beyond this path-aware context.
 - Documents: metadata only (name, type, size, slot, status, receivedAt). Status: `received` → `reading` → `extracted` | `needs better copy` / `failed`. No file bytes in git, no upload, no public URL.
 - Extraction is stubbed. Do not invent income, SSN, account, rate, or payment numbers. Empty fields stay empty and labeled.
 - Audit fields: `{ field, source: client | scenario | extracted-unconfirmed, confirmed }`

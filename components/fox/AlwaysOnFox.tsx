@@ -11,12 +11,14 @@ import {
   type FormEvent,
 } from "react";
 import { AdvisorMark } from "@/components/AdvisorMark";
-import { readScenario } from "@/components/products/scenario";
+import { readScenario, scenarioFromQuery } from "@/components/products/scenario";
 import {
   currentPrompt,
   foxStageFromPath,
   greeting,
   intakeHref,
+  intakePathContext,
+  pathFromQuery,
   promptCopy,
   replyToMessage,
 } from "./script";
@@ -26,6 +28,7 @@ import {
   getServerDraft,
   hydrateFoxDraft,
   seedPreviewSample,
+  setDraftPath,
   setDraftScenario,
   subscribeFoxDraft,
 } from "./store";
@@ -78,6 +81,13 @@ export function AlwaysOnFox() {
       seedPreviewSample("intake");
     } else {
       hydrateFoxDraft();
+    }
+    if (pathname.startsWith("/intake") && sample !== "loop") {
+      const params = new URLSearchParams(query);
+      const fromQuery = scenarioFromQuery(params);
+      if (fromQuery) setDraftScenario(fromQuery);
+      const path = pathFromQuery(params.get("path"));
+      if (path) setDraftPath(path);
     }
     const stored = sessionStorage.getItem(FOX_PANEL_KEY);
     const live = getFoxDraft();
@@ -140,9 +150,16 @@ export function AlwaysOnFox() {
       stage === "intake" && live.phase !== "confirmed"
         ? promptCopy(currentPrompt(live), live)
         : greeting(stage, scenario, live);
-    const lines: FoxMessage[] = [
-      { id: newId(), role: "fox", text: ask.text, actions: ask.actions },
-    ];
+    const context =
+      stage === "intake" && live.phase !== "confirmed"
+        ? intakePathContext(live, scenario)
+        : null;
+    const lines: FoxMessage[] = context
+      ? [
+          { id: newId(), role: "fox", text: context },
+          { id: newId(), role: "fox", text: ask.text, actions: ask.actions },
+        ]
+      : [{ id: newId(), role: "fox", text: ask.text, actions: ask.actions }];
     const queued = pendingAsk.current;
     pendingAsk.current = null;
     if (queued) {

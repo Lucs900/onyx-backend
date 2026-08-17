@@ -57,6 +57,8 @@ export type LoMark = "needs items" | "in review" | "contacting client";
 
 export type IncomeType = "w2" | "self-employed" | "both" | "other";
 
+export type IntakePath = "acr" | "loan-only";
+
 export type FoxIntakeDraft = {
   version: 1;
   phase: IntakePhase;
@@ -74,6 +76,7 @@ export type FoxIntakeDraft = {
   preferredAsked: boolean;
   correcting: FoxPrompt | null;
   scenario: ExplorerScenario | null;
+  path?: IntakePath;
   notes: string[];
   documents: ReceivedDoc[];
   documentsSkipped: boolean;

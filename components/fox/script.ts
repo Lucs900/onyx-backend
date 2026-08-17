@@ -1,5 +1,9 @@
 import { PRODUCTS } from "@/components/products/catalog";
 import {
+  estimateRewardRange,
+  formatRewardRange,
+} from "@/components/products/rewardEstimate";
+import {
   CREDIT_OPTIONS,
   OCCUPANCY_OPTIONS,
   PURPOSE_OPTIONS,
@@ -19,6 +23,7 @@ import {
   type FoxIntakeDraft,
   type FoxPrompt,
   type FoxStage,
+  type IntakePath,
 } from "./types";
 
 export function foxStageFromPath(pathname: string): FoxStage | null {
@@ -31,8 +36,64 @@ export function foxStageFromPath(pathname: string): FoxStage | null {
   return null;
 }
 
-export function intakeHref(scenario: ExplorerScenario | null) {
-  return scenario ? `/intake?${scenarioToQuery(scenario)}` : "/intake";
+export function pathFromQuery(raw: string | null | undefined): IntakePath | null {
+  if (!raw) return null;
+  const token = raw.trim().toLowerCase();
+  if (token === "acr") return "acr";
+  if (token === "loan" || token === "loan-only" || token === "loanonly") {
+    return "loan-only";
+  }
+  return null;
+}
+
+export function pathLabel(path?: IntakePath) {
+  if (path === "acr") return "ACR";
+  if (path === "loan-only") return "Loan only";
+  return "";
+}
+
+export function intakeHref(
+  scenario: ExplorerScenario | null,
+  path?: IntakePath | "loan",
+) {
+  const query = scenario ? scenarioToQuery(scenario) : "";
+  const token = path === "acr" ? "acr" : path ? "loan" : "";
+  if (query && token) return `/intake?${query}&path=${token}`;
+  if (query) return `/intake?${query}`;
+  if (token) return `/intake?path=${token}`;
+  return "/intake";
+}
+
+export function resultsPathActions(scenario: ExplorerScenario): FoxAction[] {
+  return [
+    { id: "acr", label: "Start with ACR", href: intakeHref(scenario, "acr") },
+    {
+      id: "loan",
+      label: "Continue loan only",
+      href: intakeHref(scenario, "loan-only"),
+    },
+  ];
+}
+
+export function intakePathContext(
+  draft: FoxIntakeDraft,
+  scenario: ExplorerScenario | null,
+): string | null {
+  if (draft.path === "acr") {
+    const range = scenario ? estimateRewardRange(scenario) : null;
+    if (range) {
+      return `I have your scenario. ACR estimated membership reward is ${formatRewardRange(range)}. Sample, not live. Final amount is confirmed when you join and close.`;
+    }
+    return scenario
+      ? "I have your scenario. This draft is on the ACR path. Final amount is confirmed when you join and close."
+      : "This draft is on the ACR path.";
+  }
+  if (draft.path === "loan-only") {
+    return scenario
+      ? "I have your scenario. This is a mortgage draft only."
+      : "This is a mortgage draft only.";
+  }
+  return null;
 }
 
 export function currentPrompt(draft: FoxIntakeDraft): FoxPrompt {
@@ -128,12 +189,9 @@ export function greeting(
 
   if (stage === "results") {
     return {
-      text: known ? "Loan only, or start with ACR?" : "Enter a scenario first.",
-      actions: known
-        ? [
-            { id: "acr", label: "Start with ACR", href: "/acr" },
-            { id: "loan", label: "Continue loan only", event: "prepare-draft" },
-          ]
+      text: scenario ? "Loan only, or start with ACR?" : "Enter a scenario first.",
+      actions: scenario
+        ? resultsPathActions(scenario)
         : [{ id: "scenario", label: "Enter a scenario", href: "/products/scenario" }],
     };
   }
@@ -260,8 +318,13 @@ export function replyToMessage(
   }
 
   if (stage === "results") {
-    const results = resultsReply(lower);
+    const results = resultsReply(lower, scenario);
     if (results) return results;
+  }
+
+  if (stage === "intake") {
+    const intake = intakeReply(lower, draft, scenario);
+    if (intake) return intake;
   }
 
   if (/(licensed originator|talk to (a )?human|speak (to|with)|call me)/i.test(lower)) {
@@ -413,26 +476,49 @@ function captureForPrompt(
   return null;
 }
 
-function resultsReply(lower: string): ReturnType<typeof replyToMessage> | null {
+function intakeReply(
+  lower: string,
+  draft: FoxIntakeDraft,
+  scenario: ExplorerScenario | null,
+): ReturnType<typeof replyToMessage> | null {
+  if (!/(reward|membership|unlock|how much|amount)/i.test(lower)) return null;
+  if (draft.path === "loan-only") {
+    return {
+      text: "This draft is loan only. It does not include a membership reward.",
+    };
+  }
+  if (draft.path === "acr") {
+    const range = scenario ? estimateRewardRange(scenario) : null;
+    return {
+      text: range
+        ? `ACR estimated membership reward is ${formatRewardRange(range)}. Sample, not live. Final amount is confirmed when you join and close.`
+        : "The reward is prepared when you join. Final amount is confirmed when you join and close.",
+    };
+  }
+  return null;
+}
+
+function resultsReply(
+  lower: string,
+  scenario: ExplorerScenario | null,
+): ReturnType<typeof replyToMessage> | null {
+  const actions = scenario ? resultsPathActions(scenario) : undefined;
   if (/(reward|membership|unlock|how much|amount)/i.test(lower)) {
     return {
       text: "The estimated range is on the page. Final amount is confirmed when you join and close.",
-      actions: [{ id: "acr", label: "Start with ACR", href: "/acr" }],
+      actions: actions?.filter((action) => action.id === "acr"),
     };
   }
   if (/(acr|relationship)/i.test(lower)) {
     return {
       text: "ACR keeps the desk open after close. Start there, or continue loan only.",
-      actions: [
-        { id: "acr", label: "Start with ACR", href: "/acr" },
-        { id: "loan", label: "Continue loan only", event: "prepare-draft" },
-      ],
+      actions,
     };
   }
   if (/(loan only|just the (loan|mortgage)|mortgage only)/i.test(lower)) {
     return {
       text: "I can prepare a loan draft from this scenario.",
-      actions: [{ id: "loan", label: "Continue loan only", event: "prepare-draft" }],
+      actions: actions?.filter((action) => action.id === "loan"),
     };
   }
   return null;
@@ -541,10 +627,7 @@ function nextSteps(
         ? "Loan only, or start with ACR?"
         : "Enter a scenario first so I have something to carry into a draft.",
       actions: scenario
-        ? [
-            { id: "acr", label: "Start with ACR", href: "/acr" },
-            { id: "loan", label: "Continue loan only", event: "prepare-draft" },
-          ]
+        ? resultsPathActions(scenario)
         : [{ id: "scenario", label: "Enter a scenario", href: "/products/scenario" }],
     };
   }
