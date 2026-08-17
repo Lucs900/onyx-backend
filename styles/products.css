@@ -27,6 +27,11 @@
   max-width: var(--prose-max);
 }
 
+.product-explorer__sample {
+  margin-top: 28px;
+  max-width: var(--prose-max);
+}
+
 .product-group {
   padding-bottom: 48px;
 }

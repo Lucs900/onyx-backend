@@ -80,6 +80,7 @@ export type FoxIntakeDraft = {
   confirmedAt?: string;
   status?: typeof CONFIRMED_STATUS;
   loStatus?: LoMark;
+  previewSample?: boolean;
   updatedAt: string;
 };
 

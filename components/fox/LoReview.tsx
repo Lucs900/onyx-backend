@@ -1,12 +1,14 @@
 "use client";
 
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { incomeLabel, occupancyLabel, scenarioLines, timelineLabel } from "./script";
 import {
   getFoxDraft,
   getServerDraft,
   hydrateFoxDraft,
+  seedPreviewSample,
   setLoStatus,
   subscribeFoxDraft,
 } from "./store";
@@ -15,13 +17,19 @@ import { FOX_DISCLOSURE, TRUST_LINE, type LoMark } from "./types";
 const MARKS: LoMark[] = ["needs items", "in review", "contacting client"];
 
 export function LoReview() {
+  const searchParams = useSearchParams();
   const draft = useSyncExternalStore(subscribeFoxDraft, getFoxDraft, getServerDraft);
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
+    if (searchParams.get("sample") === "loop") {
+      seedPreviewSample("confirmed");
+      setReady(true);
+      return;
+    }
     hydrateFoxDraft();
     setReady(true);
-  }, []);
+  }, [searchParams]);
 
   if (!ready) {
     return (
@@ -48,6 +56,12 @@ export function LoReview() {
           Same device draft as intake. No login on this preview. This is not a
           production pipeline.
         </p>
+        {draft.previewSample ? (
+          <p className="type-legal">
+            Sample · not live. Alex Rivera is a preview identity, not a real
+            client.
+          </p>
+        ) : null}
 
         {!hasDraft ? (
           <section className="intake-card">

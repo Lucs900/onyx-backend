@@ -25,8 +25,10 @@ import {
   sourceLabel,
   timelineLabel,
 } from "./script";
+import { SamplePathCard } from "./SamplePathCard";
 import {
   applyCapture,
+  canConfirmDraft,
   contactComplete,
   documentForSlot,
   getFoxDraft,
@@ -34,6 +36,7 @@ import {
   hydrateFoxDraft,
   questionsComplete,
   receiveDocument,
+  seedPreviewSample,
   setContactField,
   setDocumentStatus,
   setDraftScenario,
@@ -142,6 +145,11 @@ export function IntakeExperience() {
   useDocumentReads(draft);
 
   useEffect(() => {
+    if (searchParams.get("sample") === "loop") {
+      seedPreviewSample("intake");
+      setReady(true);
+      return;
+    }
     hydrateFoxDraft();
     const fromQuery = scenarioFromQuery(searchParams);
     const scenario = fromQuery ?? readScenario();
@@ -164,13 +172,7 @@ export function IntakeExperience() {
   const items = checklist(draft);
   const prompt = currentPrompt(draft);
   const ask = promptCopy(prompt, draft);
-  const showDocs = questionsComplete(draft) || draft.phase === "documents" || draft.documents.length > 0;
-  const showDraft =
-    draft.phase === "draft" ||
-    draft.phase === "confirmed" ||
-    prompt === "review" ||
-    prompt === "correct" ||
-    prompt === "done";
+  const isSample = searchParams.get("sample") === "loop" || draft.previewSample;
 
   return (
     <div className="intake page-pad">
@@ -186,6 +188,14 @@ export function IntakeExperience() {
           Returning ACR members will sign in here later. This preview keeps the
           draft on this device.
         </p>
+        {isSample ? (
+          <p className="type-legal">
+            Sample · not live. Alex Rivera is a preview identity, not a real
+            client. Scenario numbers are sample inputs, not a quote.
+          </p>
+        ) : (
+          <SamplePathCard />
+        )}
 
         {draft.phase === "confirmed" ? (
           <section className="intake-status" aria-labelledby="intake-status-title">
@@ -196,6 +206,12 @@ export function IntakeExperience() {
             <p className="type-legal">
               You can return to this page for status and the checklist.
             </p>
+            <Link
+              href={draft.previewSample ? "/lo/review?sample=loop" : "/lo/review"}
+              className="btn btn--text"
+            >
+              Open review queue
+            </Link>
           </section>
         ) : null}
 
@@ -204,7 +220,10 @@ export function IntakeExperience() {
             <h2 id="known-title" className="type-card-title">
               What Fox already knows
             </h2>
-            <p className="type-legal">{sourceLabel("scenario")}</p>
+            <p className="type-legal">
+              {draft.previewSample ? "Sample · not live · " : ""}
+              {sourceLabel("scenario")}
+            </p>
             <dl className="scenario-echo">
               {scenarioLines(draft.scenario).map(([label, value]) => (
                 <Fragment key={label}>
@@ -265,8 +284,8 @@ export function IntakeExperience() {
           </section>
         ) : null}
 
-        {showDocs ? <DocumentDrop draft={draft} /> : null}
-        {showDraft ? <DraftSummary draft={draft} /> : null}
+        <DocumentDrop draft={draft} />
+        <DraftSummary draft={draft} />
 
         <p className="type-legal">{FOX_DISCLOSURE}</p>
         <p className="type-legal">{DRAFT_NOTE}</p>
@@ -541,7 +560,9 @@ function DraftSummary({ draft }: { draft: FoxIntakeDraft }) {
         </article>
       ) : null}
 
-      {draft.phase !== "confirmed" ? (
+      {draft.phase === "confirmed" ? (
+        <p className="type-legal">Confirmed by client.</p>
+      ) : canConfirmDraft(draft) ? (
         <div className="fox-bubble__actions">
           <button
             type="button"
@@ -559,7 +580,10 @@ function DraftSummary({ draft }: { draft: FoxIntakeDraft }) {
           </button>
         </div>
       ) : (
-        <p className="type-legal">Confirmed by client.</p>
+        <p className="type-legal">
+          Confirm appears after income, occupancy, timeline, and documents
+          (or skip).
+        </p>
       )}
     </section>
   );

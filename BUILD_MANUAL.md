@@ -108,6 +108,8 @@ One page: bubbles → document drop → stub extract → draft summary → confi
 - After confirm: `Draft confirmed — pending licensed review`
 - Next step: `A licensed originator will review this.`
 - Draft ≠ commitment to lend. No live pricing.
+- Document drop and draft summary stay visible on `/intake` (empty fields as —).
+- Preview sample: `/intake?sample=loop` resets and seeds Alex Rivera + ZIP 94129 Conventional Purchase (Sample · not live). First Fox question is income bubbles. `/lo/review?sample=loop` seeds the same draft as already confirmed.
 
 ### LO review queue
 

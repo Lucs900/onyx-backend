@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   useEffect,
   useId,
@@ -26,6 +26,7 @@ import {
   getFoxDraft,
   getServerDraft,
   hydrateFoxDraft,
+  seedPreviewSample,
   setDraftScenario,
   subscribeFoxDraft,
 } from "./store";
@@ -48,8 +49,10 @@ export function requestFoxOpen() {
 
 export function AlwaysOnFox() {
   const pathname = usePathname();
+  const searchParams = useSearchParams();
   const router = useRouter();
   const stage = foxStageFromPath(pathname);
+  const greetKey = `${pathname}?${searchParams.toString()}`;
   const draft = useSyncExternalStore(subscribeFoxDraft, getFoxDraft, getServerDraft);
   const [open, setOpen] = useState(false);
   const [ready, setReady] = useState(false);
@@ -61,12 +64,16 @@ export function AlwaysOnFox() {
   const fieldId = useId();
 
   useEffect(() => {
-    hydrateFoxDraft();
+    if (pathname.startsWith("/intake") && searchParams.get("sample") === "loop") {
+      seedPreviewSample("intake");
+    } else {
+      hydrateFoxDraft();
+    }
     const stored = sessionStorage.getItem(FOX_PANEL_KEY);
     const shouldOpen = stored === "1" || pathname.startsWith("/intake");
     setOpen(shouldOpen);
     setReady(true);
-  }, [pathname]);
+  }, [pathname, searchParams]);
 
   useEffect(() => {
     const onOpen = () => setOpen(true);
@@ -84,8 +91,8 @@ export function AlwaysOnFox() {
     const live = getFoxDraft();
     const scenario = live.scenario ?? readScenario();
     if (scenario && !live.scenario) setDraftScenario(scenario);
-    if (greeted.current === pathname) return;
-    greeted.current = pathname;
+    if (greeted.current === greetKey) return;
+    greeted.current = greetKey;
     const hello = greeting(stage, scenario, live);
     const lines: FoxMessage[] = [
       { id: newId(), role: "fox", text: hello.text, actions: hello.actions },
@@ -98,7 +105,7 @@ export function AlwaysOnFox() {
     }
     skipPromptSync.current = true;
     setMessages(lines);
-  }, [pathname, ready, stage]);
+  }, [greetKey, pathname, ready, stage]);
 
   useEffect(() => {
     if (!ready || stage !== "intake") return;

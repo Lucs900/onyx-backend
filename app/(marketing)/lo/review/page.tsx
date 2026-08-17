@@ -1,5 +1,6 @@
 import { LoReview } from "@/components/fox/LoReview";
 import type { Metadata } from "next";
+import { Suspense } from "react";
 
 export const metadata: Metadata = {
   title: "Licensed review — ONYX",
@@ -8,5 +9,17 @@ export const metadata: Metadata = {
 };
 
 export default function LoReviewPage() {
-  return <LoReview />;
+  return (
+    <Suspense
+      fallback={
+        <div className="intake page-pad">
+          <div className="page-inner intake__inner">
+            <p className="type-legal">Loading review…</p>
+          </div>
+        </div>
+      }
+    >
+      <LoReview />
+    </Suspense>
+  );
 }

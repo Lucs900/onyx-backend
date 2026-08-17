@@ -1,3 +1,4 @@
+import { SamplePathCard } from "@/components/fox/SamplePathCard";
 import Link from "next/link";
 import { PRODUCT_GROUPS } from "./catalog";
 
@@ -19,6 +20,9 @@ export function ProductExplorer() {
             residential and specialty financing.
           </p>
           <p className="type-legal product-explorer__trust">{TRUST_LINE}</p>
+          <div className="product-explorer__sample">
+            <SamplePathCard />
+          </div>
         </div>
       </section>
 
