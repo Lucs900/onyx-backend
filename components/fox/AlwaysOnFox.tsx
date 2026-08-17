@@ -51,31 +51,15 @@ export function requestFoxAsk(text: string) {
   window.dispatchEvent(new CustomEvent("onyx:fox-ask", { detail: { text } }));
 }
 
-export function FoxLauncher({ onToggle }: { onToggle?: () => void }) {
-  const inner = (
-    <>
-      <span className="fox-dock__mark">
+export function FoxLauncher() {
+  return (
+    <div className="fox-bar__desk">
+      <span className="fox-bar__mark">
         <AdvisorMark size="sm" />
         <span className="fox-ask__catch" aria-hidden="true" />
       </span>
-      <span className="fox-dock__label">Ask ONYX Fox</span>
-    </>
-  );
-
-  if (!onToggle) {
-    return <div className="fox-dock__launch">{inner}</div>;
-  }
-
-  return (
-    <button
-      type="button"
-      className="fox-dock__launch"
-      aria-expanded={false}
-      aria-controls="fox-panel"
-      onClick={onToggle}
-    >
-      {inner}
-    </button>
+      <span className="fox-bar__prompt">Ask ONYX Fox</span>
+    </div>
   );
 }
 
@@ -254,6 +238,7 @@ export function AlwaysOnFox() {
     event.preventDefault();
     const text = input.trim();
     if (!text) return;
+    setOpen(true);
     setInput("");
     const reply = replyToMessage(text, stage, draft, scenario);
     if (reply.capture) applyCapture(reply.capture);
@@ -270,101 +255,100 @@ export function AlwaysOnFox() {
     });
   };
 
-  if (!open) {
-    return (
-      <div className="fox-dock">
-        <FoxLauncher onToggle={() => setOpen(true)} />
-      </div>
-    );
-  }
-
   return (
-    <div className="fox-dock is-open">
-      <div className="fox-dock__head">
-        <AdvisorMark size="sm" />
-        <span className="fox-dock__label">ONYX Fox</span>
-        <span className="type-legal fox-dock__task">{task}</span>
-        <button
-          type="button"
-          className="fox-dock__info"
-          aria-expanded={legal}
-          aria-controls="fox-legal"
-          onClick={toggleLegal}
-        >
-          Legal
-        </button>
-        <button
-          type="button"
-          className="fox-dock__close"
-          aria-expanded={true}
-          aria-controls="fox-panel"
-          onClick={() => setOpen(false)}
-        >
-          Close
-        </button>
-      </div>
-
-      <div id="fox-panel" className="fox-dock__body">
-        {legal ? (
-          <p id="fox-legal" className="type-legal fox-dock__legal">
-            {FOX_DISCLOSURE}
-          </p>
-        ) : null}
-
-        <div className="fox-panel__thread" ref={listRef} aria-live="polite">
-          {messages.map((message) => (
-            <article
-              key={message.id}
-              className={
-                message.role === "fox" ? "fox-bubble fox-bubble--fox" : "fox-bubble fox-bubble--client"
-              }
+    <div className={open ? "fox-bar is-open" : "fox-bar"}>
+      {open ? (
+        <div id="fox-panel" className="fox-bar__workspace">
+          <div className="fox-bar__head">
+            <AdvisorMark size="sm" />
+            <span className="fox-bar__title">ONYX Fox</span>
+            <span className="type-legal fox-bar__task">{task}</span>
+            <button
+              type="button"
+              className="fox-bar__info"
+              aria-expanded={legal}
+              aria-controls="fox-legal"
+              onClick={toggleLegal}
             >
-              <p>{message.text}</p>
-              {message.actions?.length ? (
-                <div className="fox-bubble__actions">
-                  {message.actions.map((action) =>
-                    action.href ? (
-                      <Link key={action.id} href={action.href} className="btn btn--secondary fox-chip">
-                        {action.label}
-                      </Link>
-                    ) : (
-                      <button
-                        key={action.id}
-                        type="button"
-                        className="btn btn--secondary fox-chip"
-                        onClick={() => runAction(action)}
-                      >
-                        {action.label}
-                      </button>
-                    ),
-                  )}
-                </div>
-              ) : null}
-            </article>
-          ))}
+              Legal
+            </button>
+            <button
+              type="button"
+              className="fox-bar__close"
+              aria-expanded={true}
+              aria-controls="fox-panel"
+              onClick={() => setOpen(false)}
+            >
+              Close
+            </button>
+          </div>
+
+          {legal ? (
+            <p id="fox-legal" className="type-legal fox-bar__legal">
+              {FOX_DISCLOSURE}
+            </p>
+          ) : null}
+
+          <div className="fox-panel__thread" ref={listRef} aria-live="polite">
+            {messages.map((message) => (
+              <article
+                key={message.id}
+                className={
+                  message.role === "fox" ? "fox-bubble fox-bubble--fox" : "fox-bubble fox-bubble--client"
+                }
+              >
+                <p>{message.text}</p>
+                {message.actions?.length ? (
+                  <div className="fox-bubble__actions">
+                    {message.actions.map((action) =>
+                      action.href ? (
+                        <Link key={action.id} href={action.href} className="btn btn--secondary fox-chip">
+                          {action.label}
+                        </Link>
+                      ) : (
+                        <button
+                          key={action.id}
+                          type="button"
+                          className="btn btn--secondary fox-chip"
+                          onClick={() => runAction(action)}
+                        >
+                          {action.label}
+                        </button>
+                      ),
+                    )}
+                  </div>
+                ) : null}
+              </article>
+            ))}
+          </div>
+
+          <p className="type-legal fox-bar__human">
+            <Link href="/advisor">{ORIGINATOR_REQUEST}</Link>
+          </p>
         </div>
+      ) : null}
 
-        <form className="fox-panel__composer" onSubmit={onSubmit}>
-          <label className="visually-hidden" htmlFor={fieldId}>
-            Message Fox
-          </label>
-          <input
-            id={fieldId}
-            className="fox-panel__input"
-            value={input}
-            onChange={(event) => setInput(event.target.value)}
-            placeholder="Message Fox"
-            autoComplete="off"
-          />
-          <button type="submit" className="btn btn--primary fox-panel__send" disabled={!input.trim()}>
-            Send
-          </button>
-        </form>
-
-        <p className="type-legal fox-dock__human">
-          <Link href="/advisor">{ORIGINATOR_REQUEST}</Link>
-        </p>
-      </div>
+      <form className="fox-bar__desk" onSubmit={onSubmit}>
+        <span className="fox-bar__mark">
+          <AdvisorMark size="sm" />
+          <span className="fox-ask__catch" aria-hidden="true" />
+        </span>
+        <label className="visually-hidden" htmlFor={fieldId}>
+          Ask ONYX Fox
+        </label>
+        <input
+          id={fieldId}
+          className="fox-bar__input"
+          value={input}
+          onChange={(event) => setInput(event.target.value)}
+          onFocus={() => setOpen(true)}
+          placeholder="Ask ONYX Fox"
+          autoComplete="off"
+        />
+        <button type="submit" className="btn btn--primary fox-bar__send" disabled={!input.trim()}>
+          Send
+        </button>
+      </form>
     </div>
   );
 }

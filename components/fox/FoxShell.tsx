@@ -6,7 +6,7 @@ import { AlwaysOnFox, FoxLauncher } from "./AlwaysOnFox";
 
 function DockFallback() {
   return (
-    <div className="fox-dock" aria-hidden="true">
+    <div className="fox-bar" aria-hidden="true">
       <FoxLauncher />
     </div>
   );

@@ -29,7 +29,7 @@ Hero secondary `Just need a mortgage` now switches Slice 3 to Loan mode and scro
 
 Centered section under the hero is **page mode only**: `Relationship` | `Loan`. Default **Relationship**. Not a second Fox composer. No centered ask bar, chips-as-chat, or “Ask ONYX Fox” form on the page.
 
-Hero `Just need a mortgage` and rate-card `Find my rate` still switch this toggle to Loan and scroll to it. Fox lives only in the persistent launcher.
+Hero `Just need a mortgage` and rate-card `Find my rate` still switch this toggle to Loan and scroll to it. Fox lives in the central AI bar only.
 
 ## Slice 4 — Membership math (The Three Desks)
 
@@ -69,7 +69,7 @@ Route `/products`. California discovery only. No live pricing, APR, LoanSifter, 
 
 Slice 2 — scenario inputs: `/products/scenario` (optional `?product=`). CA ZIP only (90001–96162). Persist JSON at `sessionStorage` key `onyx.productExplorer.scenario`. Valid submit → `/products/results`.
 
-Slice 3 — results placeholder on the same `/products/results` route. Header `Your scenario`. Echo inputs. `Possible directions` shows 2–3 catalog cards from purpose mapping (not underwriting). Empty slots for future rate/payment/tradeoff — no live numbers. No inline Fox card — questions stay in the persistent dock. Next steps: Start application → `/intake` (carry scenario query + session), quiet originator link, Edit scenario. Estimates only, not a commitment to lend. No guaranteed-rate or approval language.
+Slice 3 — results placeholder on the same `/products/results` route. Header `Your scenario`. Echo inputs. `Possible directions` shows 2–3 catalog cards from purpose mapping (not underwriting). Empty slots for future rate/payment/tradeoff — no live numbers. No inline Fox card — questions stay in the central Fox bar. Next steps: Start application → `/intake` (carry scenario query + session), quiet originator link, Edit scenario. Estimates only, not a commitment to lend. No guaranteed-rate or approval language.
 
 Do not change the homepage ACR object or locked homepage copy. Nav labels stay `Rates` · `ACR` · `About`. `/rates` may link quietly to `/products` and `/products/scenario`.
 
@@ -79,9 +79,13 @@ Preview only. California only. Client stays in control; Fox prepares a draft. No
 
 ### Always-on Fox
 
-Mounted on `/` (homepage), `/products`, `/products/scenario`, `/products/results`, and `/intake` — not `/about`, `/rates`, `/acr`, or other marketing stubs. One launcher only: collapsed `Ask ONYX Fox` + geometric `<AdvisorMark />` + sunset accent (border/ring, small mark fill, catchlight). Not a pale full-width strip. Mobile opens as a bottom sheet (~1/3–1/2 screen). Desktop opens the same system as a corner panel. Page stays visible. Homepage and other pages start collapsed; `/intake` starts expanded while Fox has an active question. First mention / header `ONYX Fox`; ongoing labels `Fox`.
+Mounted on `/` (homepage), `/products`, `/products/scenario`, `/products/results`, and `/intake` — not `/about`, `/rates`, `/acr`, or other marketing stubs.
 
-Open chat is clean: messages, answer bubbles, type + send, header (ONYX Fox + task + close). Disclosure once, lightly, or behind `Legal`: `ONYX Fox can assist and prepare. It cannot approve, lock, or commit to lend.` No stacked NMLS/DRE in the chat. Footer stays the durable trust place. `--sunset` (`#E08A4F`) is launcher-only — not page backgrounds, primary CTAs, chat panel takeover, or ACR gold.
+Fox is the **central AI bar** — the operating surface, not a FAB, corner popup, or support widget. Collapsed: centered, content-width `Ask ONYX Fox` desk (mark + prompt + type). Sunset accent on that bar only (border, small mark fill, catchlight). Mobile: full content-width anchored bar; expands **upward** into the workspace. Desktop: the same centered desk, not a bottom-right chip. Pages provide context around Fox.
+
+Homepage and other pages start collapsed so the locked ACR hero stays clear. `/intake` starts expanded while Fox has an active question. First mention / header `ONYX Fox`; ongoing labels `Fox`.
+
+Open workspace is clean: messages, answer bubbles, type + send, header (ONYX Fox + task + close). Disclosure once, lightly, or behind `Legal`: `ONYX Fox can assist and prepare. It cannot approve, lock, or commit to lend.` No stacked NMLS/DRE in the chat. Footer stays the durable trust place. `--sunset` (`#E08A4F`) is bar-only — not page backgrounds, primary CTAs, open-panel fill, or ACR gold.
 
 Scripted + session-aware. Does not call `app/api/chat`. Reads `onyx.productExplorer.scenario` and selected product. Structured questions use clickable bubbles (income, occupancy, timeline, docs, confirm). Free text remains available.
 
@@ -91,7 +95,7 @@ Disclosure, exact: `ONYX Fox can assist and prepare. It cannot approve, lock, or
 
 ### Intake (`/intake`)
 
-One page: document drop → stub extract → draft summary → confirm. Questions, bubbles, and typing live in the persistent dock only — not a second conversation card on the page.
+One page: document drop → stub extract → draft summary → confirm. Questions, bubbles, and typing live in the central Fox bar only — not a second conversation card on the page.
 
 - Storage: `sessionStorage` + `localStorage` key `onyx.foxIntake.draft`
 - Scenario key unchanged: `onyx.productExplorer.scenario`
@@ -167,7 +171,7 @@ lib/*                             UNCHANGED
 
 Implemented as CSS variables in `styles/tokens.css`. Do not add a Tailwind palette or a second color system.
 
-`--paper` is `#F6EFE4` (cohesion pass). `--paper-elevated` stays `#FFFCF6`. `--sunset` is `#E08A4F` — Fox launcher only (border/ring, small fill, catchlight). Do not apply sunset to page backgrounds, primary CTAs, chat panel fills, card fills, or ACR gold. Other token hex values stay locked.
+`--paper` is `#F6EFE4` (cohesion pass). `--paper-elevated` stays `#FFFCF6`. `--sunset` is `#E08A4F` — Fox AI bar only (border/ring, small fill, catchlight). Do not apply sunset to page backgrounds, primary CTAs, open-panel fills, card fills, or ACR gold. Other token hex values stay locked.
 
 Cohesion (light visual only): hero + Spotlight share one paper opening; 1px `--line` seams between later major blocks (desks, rates/comparison, path, proof, closer); object radius 16 / UI card radius 12 with elevated paper + hairline and no shadow; ONYX comparison column is an 8% metal wash on elevated paper; path numerals are `color-mix` metal into paper (~28%); proof stats sit on one hairline row.
 
