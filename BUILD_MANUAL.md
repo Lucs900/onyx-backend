@@ -81,11 +81,11 @@ Preview only. California only. Client stays in control; Fox prepares a draft. No
 
 Mounted on `/` (homepage), `/products`, `/products/scenario`, `/products/results`, and `/intake` — not `/about`, `/rates`, `/acr`, or other marketing stubs.
 
-Fox is the **central AI bar** — the operating surface, not a FAB, corner popup, or support widget. Collapsed: centered, content-width `Ask ONYX Fox` desk (mark + prompt + type). Sunset accent on that bar only (border, small mark fill, catchlight). Mobile: full content-width anchored bar; expands **upward** into the workspace. Desktop: the same centered desk, not a bottom-right chip. Pages provide context around Fox.
+Fox is the **central AI bar** — the operating surface, not a FAB, corner popup, or support widget. Collapsed: centered, content-width `Ask ONYX Fox` desk (mark + prompt + type). Sunset accent on that bar only (border, small mark fill, catchlight). Mobile: full content-width anchored bar; expands **upward** into a compact workspace (**max ~45vh**, typically 35–45%). Desktop: the same centered desk plus a short thread (**~280–360px**, not half the page). Pages stay visible above Fox.
 
 Homepage and other pages start collapsed so the locked ACR hero stays clear. `/intake` starts expanded while Fox has an active question. First mention / header `ONYX Fox`; ongoing labels `Fox`.
 
-Open workspace is clean: messages, answer bubbles, type + send, header (ONYX Fox + task + close). Disclosure once, lightly, or behind `Legal`: `ONYX Fox can assist and prepare. It cannot approve, lock, or commit to lend.` No stacked NMLS/DRE in the chat. Footer stays the durable trust place. `--sunset` (`#E08A4F`) is bar-only — not page backgrounds, primary CTAs, open-panel fill, or ACR gold.
+Open workspace is clean and compact: short messages, answer bubbles, type + send, one thin header row (ONYX Fox + task + tiny Legal / originator / Close). Disclosure once, lightly, or behind `Legal`: `ONYX Fox can assist and prepare. It cannot approve, lock, or commit to lend.` No stacked NMLS/DRE in the chat. Footer stays the durable trust place. `--sunset` (`#E08A4F`) is bar-only — not page backgrounds, primary CTAs, open-panel fill, or ACR gold.
 
 Scripted + session-aware. Does not call `app/api/chat`. Reads `onyx.productExplorer.scenario` and selected product. Structured questions use clickable bubbles (income, occupancy, timeline, docs, confirm). Free text remains available.
 

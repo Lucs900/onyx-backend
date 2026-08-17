@@ -263,6 +263,9 @@ export function AlwaysOnFox() {
             <AdvisorMark size="sm" />
             <span className="fox-bar__title">ONYX Fox</span>
             <span className="type-legal fox-bar__task">{task}</span>
+            <p className="type-legal fox-bar__human">
+              <Link href="/advisor">{ORIGINATOR_REQUEST}</Link>
+            </p>
             <button
               type="button"
               className="fox-bar__info"
@@ -321,10 +324,6 @@ export function AlwaysOnFox() {
               </article>
             ))}
           </div>
-
-          <p className="type-legal fox-bar__human">
-            <Link href="/advisor">{ORIGINATOR_REQUEST}</Link>
-          </p>
         </div>
       ) : null}
 

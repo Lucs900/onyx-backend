@@ -92,15 +92,19 @@
   cursor: default;
 }
 
+.fox-bar.is-open {
+  max-height: 45vh;
+}
+
 .fox-bar__workspace {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  height: 38vh;
-  min-height: 28vh;
-  max-height: 46vh;
+  gap: 6px;
+  height: auto;
+  min-height: 0;
+  max-height: calc(45vh - 72px);
   margin-bottom: 8px;
-  padding: 8px 16px 12px;
+  padding: 6px 12px 8px;
   background: var(--paper-elevated);
   border: 1px solid var(--line);
   border-radius: 16px;
@@ -111,7 +115,7 @@
   align-items: center;
   flex-shrink: 0;
   gap: 8px;
-  min-height: 40px;
+  min-height: 28px;
   color: var(--ink);
 }
 
@@ -141,27 +145,42 @@
   margin: 0;
 }
 
+.fox-bar__human {
+  flex: 0 0 auto;
+  max-width: 42%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fox-bar__legal {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
 .fox-panel__thread {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 6px;
   min-height: 0;
-  flex: 1 1 auto;
+  max-height: 100%;
   overflow: auto;
 }
 
 .fox-bubble {
   max-width: 92%;
-  padding: 12px 14px;
+  padding: 8px 10px;
   border: 1px solid var(--line);
-  border-radius: 12px;
+  border-radius: 10px;
 }
 
 .fox-bubble p {
   margin: 0;
   font-family: var(--font-ui);
-  font-size: 15px;
-  line-height: 22px;
+  font-size: 14px;
+  line-height: 20px;
   color: var(--ink-2);
 }
 
@@ -177,14 +196,14 @@
 .fox-bubble__actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 10px;
+  gap: 6px;
+  margin-top: 6px;
 }
 
 .fox-chip {
-  height: 36px;
-  padding: 0 14px;
-  font-size: 13px;
+  height: 32px;
+  padding: 0 12px;
+  font-size: 12px;
 }
 
 .intake {
@@ -278,21 +297,24 @@
     width: min(var(--content-max), calc(100% - 48px));
   }
 
+  .fox-bar.is-open {
+    max-height: none;
+  }
+
   .fox-bar__desk {
-    min-height: 64px;
+    min-height: 56px;
     padding: 8px 10px 8px 12px;
   }
 
   .fox-bar__workspace {
-    height: 48vh;
-    min-height: 36vh;
-    max-height: 56vh;
-    padding: 10px 20px 16px;
+    height: auto;
+    min-height: 0;
+    max-height: 320px;
+    padding: 8px 14px 10px;
   }
 
   .fox-panel__thread {
-    max-height: none;
-    flex: 1;
+    max-height: 220px;
   }
 
   .intake {
