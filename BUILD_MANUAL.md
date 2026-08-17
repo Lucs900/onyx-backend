@@ -190,7 +190,11 @@ app/(marketing)/layout.tsx        header + footer + paper canvas
 app/(marketing)/page.tsx          full homepage through closer
 app/(marketing)/acr/page.tsx      public ACR product page
 app/(marketing)/acr/layout.tsx    mounts Always-on Fox
-app/(marketing)/{rates,about,login,advisor}/page.tsx   stubs
+app/(marketing)/rates/page.tsx    temporary rates (no live board)
+app/(marketing)/about/page.tsx    short about
+app/(marketing)/how-we-get-paid/page.tsx  broker compensation
+app/(marketing)/{licensing,privacy,equal-housing,login,advisor}/page.tsx  short real pages
+components/products/startPath.ts  ACR / loan only start intent (`path=acr` | `path=loan`)
 app/api/chat                      UNCHANGED
 app/api/heloc-quote               UNCHANGED
 lib/*                             UNCHANGED
@@ -208,10 +212,21 @@ Metal is scarce: fox highlight, the locked ACR card gold dock, the comparison ON
 
 ## Shell
 
-- Primary CTA: `Start your relationship` → `/acr`
+- Primary CTA: `Start your relationship` → `/products/scenario?path=acr` (ACR start). Header and closer use the same href. Nav ACR still goes to `/acr`.
 - Nav-only truncate under 1024: `Start` + `aria-label="Start your relationship"`
-- Mobile menu secondary: `Just need a mortgage` text button → `/advisor` stub
+- Secondary / mobile `Just need a mortgage` → `/products/scenario?path=loan`
 - Never “Get my rate”
+
+## Public start paths
+
+Both homepage CTAs begin a path that reaches scenario → results → intake. Intent is stored as `acr` | `loan-only` in `sessionStorage` / `localStorage` key `onyx.startPath` and carried as `path=acr` or `path=loan` on explorer, scenario, results, and intake URLs.
+
+- ACR start: `/products/scenario?path=acr`
+- Loan only start: `/products/scenario?path=loan`
+- `/acr` remains the public product page. Its primary CTA starts the ACR scenario path. Secondary starts loan only.
+- Results still lets the client choose ACR vs loan only; those CTAs go to intake with scenario + path.
+- Rates is a temporary page: no live board. Pricing is based on scenario. CTAs to `/products` and `/products/scenario`.
+- About, How we get paid, licensing, equal housing, and privacy are short real pages. No invented bios, awards, volume, fees, or license numbers. NMLS / DRE stay OPEN.
 
 ## How to run
 
@@ -220,7 +235,7 @@ npm install
 npm run dev
 ```
 
-Open `http://localhost:3000`. After comparison, confirm five path steps, proof dashes (no fake volume), and the closer dual CTAs. Closer secondary should switch Spotlight to Loan. There is no sticky bar yet.
+Open `http://localhost:3000`. Homepage primary and secondary CTAs start ACR and loan only at `/products/scenario`. Closer uses the same hrefs. There is no sticky bar yet.
 
 ```bash
 npm run build
@@ -246,7 +261,7 @@ Public `/acr` is the product page. Reward is the reason. Goals and property are 
 
 Page stack, in order:
 
-1. **Hero** — locked ACR object via `AcrPass` / `public/acr-card-face.png` (same file, no restyle, no overlay type, no regeneration). Headline `The desk that stays open`. Eyebrow `Active Credit Relationship`. Support: ACR as an ongoing relationship. Primary `Start your relationship` → `/intake` (join/start; no invented form). Secondary quiet `Just need a mortgage` → `/products`. California only as **page** legal, not in Fox.
+1. **Hero** — locked ACR object via `AcrPass` / `public/acr-card-face.png` (same file, no restyle, no overlay type, no regeneration). Headline `The desk that stays open`. Eyebrow `Active Credit Relationship`. Support: ACR as an ongoing relationship. Primary `Start your relationship` → `/products/scenario?path=acr`. Secondary quiet `Just need a mortgage` → `/products/scenario?path=loan`. California only as **page** legal, not in Fox.
 2. **Reward instrument (primary)** — one folio, radius **16**, `--paper-elevated`, hairline, **2px metal tick** (`--metal`). **Not a gold card.** Do not restyle or reuse the ACR card PNG as the reward. Public copy, no numbers: `A reward calculated for your relationship.` / `Unlocks after on time payments.` / `Your amount is prepared when you join.` Unlock is **quiet unlabeled ticks only** (no “6 payments”, no %). No public %, payment count, or invented dollar amount. Mark `Sample, not live`. Near the reward: `Explore a scenario to see an estimated reward range.` → `/products/scenario`.
 3. **Three-line unlock path** — three quiet lines. Not the homepage 5-step path.
 4. **Three desks** — reuse `ValueBreakdown`. Headline `A relationship that keeps working after close.` Same names and limits: The Rate Desk, The Credit Path, The Member Desk.

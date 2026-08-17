@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { AcrPass } from "@/components/AcrPass";
+import { ACR_START_HREF, LOAN_START_HREF } from "@/components/products/startPath";
 
 export function AcrHero() {
   return (
@@ -17,10 +18,10 @@ export function AcrHero() {
           </div>
 
           <div className="acr-hero__actions">
-            <Link href="/intake" className="btn btn--primary btn--hero-primary">
+            <Link href={ACR_START_HREF} className="btn btn--primary btn--hero-primary">
               Start your relationship
             </Link>
-            <Link href="/products" className="btn btn--secondary btn--hero-secondary">
+            <Link href={LOAN_START_HREF} className="btn btn--secondary btn--hero-secondary">
               Just need a mortgage
             </Link>
           </div>

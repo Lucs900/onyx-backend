@@ -13,6 +13,7 @@ import {
   scenarioToQuery,
   type ExplorerScenario,
 } from "@/components/products/scenario";
+import { pathFromQuery } from "@/components/products/startPath";
 import { questionsComplete } from "./store";
 import {
   INCOME_BUBBLES,
@@ -36,15 +37,7 @@ export function foxStageFromPath(pathname: string): FoxStage | null {
   return null;
 }
 
-export function pathFromQuery(raw: string | null | undefined): IntakePath | null {
-  if (!raw) return null;
-  const token = raw.trim().toLowerCase();
-  if (token === "acr") return "acr";
-  if (token === "loan" || token === "loan-only" || token === "loanonly") {
-    return "loan-only";
-  }
-  return null;
-}
+export { pathFromQuery };
 
 export function pathLabel(path?: IntakePath) {
   if (path === "acr") return "ACR";
@@ -166,8 +159,8 @@ export function greeting(
     return {
       text: "ACR is a relationship that stays open after close.",
       actions: [
-        { id: "start", label: "Start your relationship", href: "/intake" },
-        { id: "loan", label: "Just need a mortgage", href: "/products" },
+        { id: "start", label: "Start your relationship", href: "/products/scenario?path=acr" },
+        { id: "loan", label: "Just need a mortgage", href: "/products/scenario?path=loan" },
       ],
     };
   }
@@ -528,7 +521,7 @@ function acrReply(lower: string): ReturnType<typeof replyToMessage> | null {
   if (/(reward|unlock|how much|amount|percent|%|payment count)/i.test(lower)) {
     return {
       text: "The reward is prepared when you join. I don't post a public amount.",
-      actions: [{ id: "start", label: "Start your relationship", href: "/intake" }],
+      actions: [{ id: "start", label: "Start your relationship", href: "/products/scenario?path=acr" }],
     };
   }
   if (/(desk|rate desk|credit path|member desk)/i.test(lower)) {
@@ -546,8 +539,8 @@ function acrReply(lower: string): ReturnType<typeof replyToMessage> | null {
     return {
       text: "Start the relationship, or take a loan on its own.",
       actions: [
-        { id: "start", label: "Start your relationship", href: "/intake" },
-        { id: "loan", label: "Just need a mortgage", href: "/products" },
+        { id: "start", label: "Start your relationship", href: "/products/scenario?path=acr" },
+        { id: "loan", label: "Just need a mortgage", href: "/products/scenario?path=loan" },
       ],
     };
   }
@@ -603,8 +596,8 @@ function nextSteps(
     return {
       text: "Start the relationship, or take a loan on its own.",
       actions: [
-        { id: "start", label: "Start your relationship", href: "/intake" },
-        { id: "loan", label: "Just need a mortgage", href: "/products" },
+        { id: "start", label: "Start your relationship", href: "/products/scenario?path=acr" },
+        { id: "loan", label: "Just need a mortgage", href: "/products/scenario?path=loan" },
       ],
     };
   }

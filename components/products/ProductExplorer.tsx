@@ -1,5 +1,7 @@
+"use client";
+
 import { SamplePathCard } from "@/components/fox/SamplePathCard";
-import Link from "next/link";
+import { RememberStartPath, StartPathLink } from "./StartPathLink";
 import { PRODUCT_GROUPS } from "./catalog";
 
 const TRUST_LINE =
@@ -8,6 +10,7 @@ const TRUST_LINE =
 export function ProductExplorer() {
   return (
     <div className="product-explorer">
+      <RememberStartPath />
       <section className="product-explorer__intro page-pad">
         <div className="page-inner">
           <div className="product-explorer__rule" aria-hidden="true" />
@@ -52,12 +55,12 @@ export function ProductExplorer() {
                     <span className="product-card__best-label">Best for</span>
                     {product.bestFor}
                   </p>
-                  <Link
+                  <StartPathLink
                     href={`/products/scenario?product=${product.slug}`}
                     className="btn btn--secondary product-card__cta"
                   >
                     Explore this option
-                  </Link>
+                  </StartPathLink>
                 </li>
               ))}
             </ul>

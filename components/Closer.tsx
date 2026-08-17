@@ -1,11 +1,7 @@
-"use client";
-
 import Link from "next/link";
-import { useLoanSpotlight } from "./HomeExperience";
+import { ACR_START_HREF, LOAN_START_HREF } from "./products/startPath";
 
 export function Closer() {
-  const { chooseLoan } = useLoanSpotlight();
-
   return (
     <section className="closer page-pad" aria-labelledby="closer-title">
       <div className="closer__inner">
@@ -17,21 +13,17 @@ export function Closer() {
           with a next step.
         </p>
         <div className="closer__actions">
-          <Link href="/acr" className="btn btn--primary btn--hero-primary">
+          <Link href={ACR_START_HREF} className="btn btn--primary btn--hero-primary">
             Start your relationship
           </Link>
-          <button
-            type="button"
-            className="btn btn--secondary btn--hero-secondary"
-            onClick={chooseLoan}
-          >
+          <Link href={LOAN_START_HREF} className="btn btn--secondary btn--hero-secondary">
             Just need a mortgage
-          </button>
+          </Link>
         </div>
         <p className="closer__originator">
-          <button type="button" className="btn btn--text">
+          <Link href="/advisor" className="btn btn--text">
             Talk to a licensed originator
-          </button>
+          </Link>
           <span className="type-legal">NMLS ____</span>
         </p>
         <p className="closer__trust">

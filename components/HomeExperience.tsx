@@ -35,7 +35,7 @@ export function HomeExperience({ children }: { children?: ReactNode }) {
 
   return (
     <LoanSpotlightContext.Provider value={{ chooseLoan }}>
-      <MembershipHero onLoanOnly={chooseLoan} />
+      <MembershipHero />
       <AdvisorSpotlight mode={mode} onModeChange={setMode} />
       {children}
     </LoanSpotlightContext.Provider>

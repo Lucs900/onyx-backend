@@ -1,5 +1,6 @@
 import { ProductExplorer } from "@/components/products/ProductExplorer";
 import type { Metadata } from "next";
+import { Suspense } from "react";
 
 export const metadata: Metadata = {
   title: "Product Explorer — ONYX",
@@ -7,5 +8,15 @@ export const metadata: Metadata = {
 };
 
 export default function ProductsPage() {
-  return <ProductExplorer />;
+  return (
+    <Suspense
+      fallback={
+        <div className="product-explorer page-pad">
+          <p className="type-legal">Loading products…</p>
+        </div>
+      }
+    >
+      <ProductExplorer />
+    </Suspense>
+  );
 }

@@ -1,10 +1,7 @@
-"use client";
-
-import { useLoanSpotlight } from "./HomeExperience";
+import Link from "next/link";
+import { LOAN_START_HREF } from "./products/startPath";
 
 export function RateCard() {
-  const { chooseLoan } = useLoanSpotlight();
-
   return (
     <section className="rate-card-section page-pad" aria-label="Mortgage only">
       <div className="page-inner rate-card-section__inner">
@@ -16,7 +13,7 @@ export function RateCard() {
             <span className="rate-card__apr-num">—</span>
             <span className="rate-card__apr-unit">APR</span>
           </p>
-          <p className="type-legal">Sample · not live</p>
+          <p className="type-legal">Sample, not live</p>
 
           <dl className="rate-card__specs">
             <div>
@@ -33,13 +30,12 @@ export function RateCard() {
             </div>
           </dl>
 
-          <button
-            type="button"
+          <Link
+            href={LOAN_START_HREF}
             className="btn btn--primary btn--hero-primary rate-card__cta"
-            onClick={chooseLoan}
           >
             Find my rate
-          </button>
+          </Link>
           <p className="type-legal">2 min · no hard credit check</p>
         </div>
         <p className="rate-card-section__offramp">

@@ -2,6 +2,9 @@ import Link from "next/link";
 import { AdvisorMark } from "./AdvisorMark";
 
 const FOOTER_LINKS = [
+  { href: "/about", label: "About" },
+  { href: "/rates", label: "Rates" },
+  { href: "/acr", label: "ACR" },
   { href: "/privacy", label: "Privacy" },
   { href: "/licensing", label: "Licensing" },
   { href: "/how-we-get-paid", label: "How we get paid" },

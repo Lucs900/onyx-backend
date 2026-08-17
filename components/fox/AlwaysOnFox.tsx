@@ -12,6 +12,7 @@ import {
 } from "react";
 import { AdvisorMark } from "@/components/AdvisorMark";
 import { readScenario, scenarioFromQuery } from "@/components/products/scenario";
+import { readStartPath } from "@/components/products/startPath";
 import {
   currentPrompt,
   foxStageFromPath,
@@ -86,7 +87,7 @@ export function AlwaysOnFox() {
       const params = new URLSearchParams(query);
       const fromQuery = scenarioFromQuery(params);
       if (fromQuery) setDraftScenario(fromQuery);
-      const path = pathFromQuery(params.get("path"));
+      const path = pathFromQuery(params.get("path")) ?? readStartPath();
       if (path) setDraftPath(path);
     }
     const stored = sessionStorage.getItem(FOX_PANEL_KEY);

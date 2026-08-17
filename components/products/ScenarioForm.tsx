@@ -24,6 +24,7 @@ import {
   type Occupancy,
   type Timeline,
 } from "./scenario";
+import { rememberStartPath, withStartPath } from "./startPath";
 
 const TRUST_LINE =
   "NMLS [OPEN] · CA DRE [OPEN] · We are a mortgage broker.";
@@ -52,6 +53,7 @@ export function ScenarioForm() {
   const [error, setError] = useState("");
 
   useEffect(() => {
+    rememberStartPath(searchParams.get("path"));
     const existing = readScenario();
     if (!existing) return;
     if (productSlug && existing.productSlug && existing.productSlug !== productSlug) {
@@ -67,7 +69,7 @@ export function ScenarioForm() {
     setOccupancy(existing.occupancy);
     setTimeline(existing.timeline ?? "");
     setStoredName(existing.productName);
-  }, [productSlug]);
+  }, [productSlug, searchParams]);
 
   const valueNumber = parseDollars(propertyValue);
   const loanNumber = parseDollars(loanAmount);
@@ -159,7 +161,8 @@ export function ScenarioForm() {
     };
 
     writeScenario(scenario);
-    router.push(`/products/results?${scenarioToQuery(scenario)}`);
+    const path = rememberStartPath(searchParams.get("path"));
+    router.push(withStartPath(`/products/results?${scenarioToQuery(scenario)}`, path));
   };
 
   return (

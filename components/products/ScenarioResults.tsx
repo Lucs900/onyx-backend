@@ -4,7 +4,8 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { requestFoxOpen } from "@/components/fox/AlwaysOnFox";
-import { intakeHref } from "@/components/fox/script";
+import { intakeHref, pathFromQuery } from "@/components/fox/script";
+import { rememberStartPath, withStartPath } from "./startPath";
 import { directionsForScenario } from "./directions";
 import { PathChoice } from "./PathChoice";
 import { estimateRewardRange } from "./rewardEstimate";
@@ -45,13 +46,18 @@ export function ScenarioResults({
   useEffect(() => {
     const query = scenarioFromQuery(searchParams) ?? scenarioFromClientLocation();
     if (query) writeScenario(query);
+    rememberStartPath(searchParams.get("path"));
     setScenario(query ?? readScenario());
     setReady(true);
   }, [searchParams]);
 
-  const editHref = scenario?.productSlug
-    ? `/products/scenario?product=${scenario.productSlug}`
-    : "/products/scenario";
+  const startPath = pathFromQuery(searchParams.get("path"));
+  const editHref = withStartPath(
+    scenario?.productSlug
+      ? `/products/scenario?product=${scenario.productSlug}`
+      : "/products/scenario",
+    startPath,
+  );
   const acrHref = intakeHref(scenario, "acr");
   const loanHref = intakeHref(scenario, "loan-only");
 
@@ -75,7 +81,7 @@ export function ScenarioResults({
           <p className="type-body">
             Enter a California scenario to see possible directions here.
           </p>
-          <Link href="/products/scenario" className="btn btn--primary">
+          <Link href={editHref} className="btn btn--primary">
             Enter a scenario
           </Link>
         </div>

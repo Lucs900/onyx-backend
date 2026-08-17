@@ -15,6 +15,7 @@ import {
   scenarioFromQuery,
   writeScenario,
 } from "@/components/products/scenario";
+import { readStartPath } from "@/components/products/startPath";
 import {
   incomeLabel,
   occupancyLabel,
@@ -109,7 +110,7 @@ export function IntakeExperience() {
     const scenario = fromQuery ?? readScenario();
     if (fromQuery) writeScenario(fromQuery);
     if (scenario) setDraftScenario(scenario);
-    const path = pathFromQuery(searchParams.get("path"));
+    const path = pathFromQuery(searchParams.get("path")) ?? readStartPath();
     if (path) setDraftPath(path);
     setReady(true);
   }, [searchParams]);

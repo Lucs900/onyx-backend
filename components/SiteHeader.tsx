@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { AdvisorMark } from "./AdvisorMark";
+import { ACR_START_HREF, LOAN_START_HREF } from "./products/startPath";
 
 const NAV_LINKS = [
   { href: "/rates", label: "Rates" },
@@ -72,7 +73,7 @@ export function SiteHeader() {
                 Log in
               </Link>
               <Link
-                href="/acr"
+                href={ACR_START_HREF}
                 className="btn btn--primary btn--nav"
                 aria-label="Start your relationship"
               >
@@ -122,14 +123,14 @@ export function SiteHeader() {
         </nav>
         <div className="site-header__sheet-actions">
           <Link
-            href="/acr"
+            href={ACR_START_HREF}
             className="btn btn--primary btn--block"
             onClick={() => setMenuOpen(false)}
           >
             Start your relationship
           </Link>
           <Link
-            href="/advisor"
+            href={LOAN_START_HREF}
             className="btn btn--text"
             onClick={() => setMenuOpen(false)}
           >

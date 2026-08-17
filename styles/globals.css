@@ -389,6 +389,35 @@ p {
   padding-block: var(--section-pad);
 }
 
+.prose-page {
+  padding-block: 48px 72px;
+  background: var(--paper);
+}
+
+.prose-page__inner {
+  max-width: var(--prose-max);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.prose-page__actions {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.prose-page__actions .btn {
+  width: fit-content;
+}
+
+@media (min-width: 768px) {
+  .prose-page {
+    padding-block: 72px 120px;
+  }
+}
+
 .placeholder-page p {
   max-width: var(--prose-max);
 }

@@ -1,5 +1,6 @@
 import Link from "next/link";
 import type { Product } from "./catalog";
+import { StartPathLink } from "./StartPathLink";
 
 const TRUST_LINE =
   "NMLS [OPEN] · CA DRE [OPEN] · We are a mortgage broker.";
@@ -16,12 +17,12 @@ export function ProductStub({ product }: { product: Product }) {
           {product.bestFor}
         </p>
         <p className="type-legal product-explorer__trust">{TRUST_LINE}</p>
-        <Link
+        <StartPathLink
           href={`/products/scenario?product=${product.slug}`}
           className="btn btn--secondary"
         >
           Explore this option
-        </Link>
+        </StartPathLink>
         <Link href="/products" className="btn btn--text product-stub__back">
           Product Explorer
         </Link>
