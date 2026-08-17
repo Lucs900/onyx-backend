@@ -91,7 +91,7 @@ export function greeting(
 
   if (stage === "home") {
     return {
-      text: "I'm ONYX Fox. This is California only. I can explain the Active Credit Relationship, or help you explore a loan without ACR. I can't approve, lock, or commit to lend.",
+      text: "What do you want to do?",
       actions: [
         { id: "acr", label: "Learn about ACR", href: "/acr" },
         { id: "products", label: "Explore products", href: "/products" },
@@ -101,7 +101,7 @@ export function greeting(
 
   if (stage === "explore") {
     return {
-      text: "I'm ONYX Fox. This explorer is California only. Ask about a product, or start a scenario. I can't quote a rate or approve a loan.",
+      text: "Ask about a product, or start a scenario.",
       actions: [
         { id: "scenario", label: "Start a scenario", href: "/products/scenario" },
       ],
@@ -110,17 +110,13 @@ export function greeting(
 
   if (stage === "scenario") {
     return {
-      text: known
-        ? `I still have ${known}. Confirm or change anything, then see your options. Nothing here is a quote.`
-        : "Enter a California ZIP, purpose, value, amount, credit range, and occupancy. I'll carry that forward. This is not a quote.",
+      text: known ? `I still have ${known}. Change anything?` : "Enter your scenario.",
     };
   }
 
   if (stage === "results") {
     return {
-      text: known
-        ? `I have ${known}. These directions are placeholders — not a quote. I can prepare an application draft when you're ready.`
-        : "I don't have a scenario yet. Enter one first so I can prepare a draft.",
+      text: known ? "Ready to prepare a draft?" : "Enter a scenario first.",
       actions: known
         ? [{ id: "draft", label: "Let's prepare a draft", event: "prepare-draft" }]
         : [{ id: "scenario", label: "Enter a scenario", href: "/products/scenario" }],
@@ -129,14 +125,12 @@ export function greeting(
 
   if (currentPrompt(draft) === "done") {
     return {
-      text: "Your draft is confirmed. A licensed originator will review this. You can come back here to see status. I still can't approve or lock a loan.",
+      text: "Draft confirmed. A licensed originator will review this.",
     };
   }
 
   return {
-    text: known
-      ? `I already have ${known}. This is California only. I'll ask only for what's missing — tap a bubble or type.`
-      : "Let's prepare a draft. This explorer is California only. I'll ask a few short questions. I can't approve or lock a loan.",
+    text: known ? "A few questions to finish the draft." : "A few questions to start the draft.",
   };
 }
 
@@ -191,7 +185,7 @@ export function promptCopy(prompt: FoxPrompt, draft?: FoxIntakeDraft): { text: s
   }
   if (prompt === "documents") {
     return {
-      text: "You can drop paystubs, a W-2, bank statements, or ID. Files stay in this preview session only — not a vault. Fox will not invent dollar amounts from the files.",
+      text: "Drop documents, or skip for now.",
       actions: [
         { id: "open-docs", label: "Upload now", event: "open-docs", capture: { field: "open-docs" } },
         { id: "skip-docs", label: "Skip for now", event: "bubble", capture: { field: "skip-docs" } },
@@ -200,7 +194,7 @@ export function promptCopy(prompt: FoxPrompt, draft?: FoxIntakeDraft): { text: s
   }
   if (prompt === "review") {
     return {
-      text: "I've prepared a draft from what you and the scenario already gave me. Nothing is final until you confirm. Dollar amounts were not extracted.",
+      text: "Does this look right?",
       actions: [
         { id: "looks-right", label: "Looks right", event: "bubble", capture: { field: "confirm-draft" } },
         { id: "needs-fix", label: "Needs a correction", event: "bubble", capture: { field: "needs-correction" } },
@@ -247,7 +241,7 @@ export function replyToMessage(
 
   if (/(licensed originator|talk to (a )?human|speak (to|with)|call me)/i.test(lower)) {
     return {
-      text: "We'll have a licensed originator reach you. I can keep preparing the draft — I can't approve, lock, or commit to lend.",
+      text: "A licensed originator can reach you from here.",
     };
   }
 
@@ -267,7 +261,7 @@ export function replyToMessage(
   const product = matchProduct(lower);
   if (product) {
     return {
-      text: `${product.name}: ${product.description} Best for: ${product.bestFor} I can't quote a rate or say you're approved.`,
+      text: `${product.name}: ${product.description} Best for: ${product.bestFor}`,
       actions: [
         {
           id: "explore",
@@ -284,7 +278,7 @@ export function replyToMessage(
 
   if (/(rate|apr|payment|quote|how much)/i.test(lower)) {
     return {
-      text: "I don't have live rates, APRs, or payments. What you see in Product Explorer is discovery only — estimates later, never a commitment to lend.",
+      text: "I don't have live rates here.",
     };
   }
 
@@ -397,25 +391,25 @@ function captureForPrompt(
 function homeReply(lower: string): ReturnType<typeof replyToMessage> | null {
   if (/(what('s| is) acr|active credit relationship)/i.test(lower)) {
     return {
-      text: "ACR is the Active Credit Relationship — stay approved and keep optimizing over time. A loan without ACR is also available. I can't approve, lock, or commit to lend.",
+      text: "ACR is the Active Credit Relationship — stay approved and keep optimizing.",
       actions: [{ id: "acr", label: "Learn about ACR", href: "/acr" }],
     };
   }
   if (/(keep me approved|stay approved|always approved)/i.test(lower)) {
     return {
-      text: "In the relationship, we keep watching credit and rate conditions after approval. That's ACR — not a one-time close. I can't approve a loan here.",
+      text: "We keep watching credit and rate conditions after approval.",
       actions: [{ id: "acr", label: "Learn about ACR", href: "/acr" }],
     };
   }
   if (/optimiz/i.test(lower)) {
     return {
-      text: "Optimizing means reviewing your situation over time so credit and rate can keep working for you. I can't quote a rate or lock a loan.",
+      text: "Optimizing means reviewing your situation over time.",
       actions: [{ id: "acr", label: "Learn about ACR", href: "/acr" }],
     };
   }
   if (/(buy a home|purchase|refinance|use equity|heloc|equity)/i.test(lower)) {
     return {
-      text: "Product Explorer can show California directions for buying, refinancing, or equity. That's discovery — not a quote or an approval.",
+      text: "Explore buying, refinancing, or equity in Product Explorer.",
       actions: [
         { id: "products", label: "Explore products", href: "/products" },
         { id: "scenario", label: "Start a scenario", href: "/products/scenario" },
@@ -432,7 +426,7 @@ function nextSteps(
 ): ReturnType<typeof replyToMessage> {
   if (stage === "home") {
     return {
-      text: "I can explain ACR, or help you explore a California loan without it. I can't approve, lock, or commit to lend.",
+      text: "ACR, or a loan without it?",
       actions: [
         { id: "acr", label: "Learn about ACR", href: "/acr" },
         { id: "products", label: "Explore products", href: "/products" },
@@ -441,7 +435,7 @@ function nextSteps(
   }
   if (stage === "explore") {
     return {
-      text: "Pick a product, or start a California scenario. I can explain options in plain English. I can't quote or approve.",
+      text: "Pick a product, or start a scenario.",
       actions: [
         { id: "scenario", label: "Start a scenario", href: "/products/scenario" },
       ],

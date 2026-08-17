@@ -19,7 +19,6 @@ import {
   intakeHref,
   promptCopy,
   replyToMessage,
-  taskContext,
 } from "./script";
 import {
   applyCapture,
@@ -30,14 +29,7 @@ import {
   setDraftScenario,
   subscribeFoxDraft,
 } from "./store";
-import {
-  FOX_DISCLOSURE,
-  FOX_LEGAL_KEY,
-  FOX_PANEL_KEY,
-  ORIGINATOR_REQUEST,
-  type FoxAction,
-  type FoxMessage,
-} from "./types";
+import { FOX_PANEL_KEY, type FoxAction, type FoxMessage } from "./types";
 
 function newId() {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -72,7 +64,6 @@ export function AlwaysOnFox() {
   const [ready, setReady] = useState(false);
   const [search, setSearch] = useState("");
   const [input, setInput] = useState("");
-  const [legal, setLegal] = useState(false);
   const [messages, setMessages] = useState<FoxMessage[]>([]);
   const greeted = useRef<string>("");
   const pendingAsk = useRef<string | null>(null);
@@ -140,27 +131,19 @@ export function AlwaysOnFox() {
   }, [open, ready, stage]);
 
   useEffect(() => {
-    if (!open || !ready) return;
-    if (sessionStorage.getItem(FOX_LEGAL_KEY) !== "1") setLegal(true);
-  }, [open, ready]);
-
-  useEffect(() => {
     if (!ready || !stage) return;
     const live = getFoxDraft();
     const scenario = live.scenario ?? readScenario();
     if (scenario && !live.scenario) setDraftScenario(scenario);
     if (greeted.current === greetKey) return;
     greeted.current = greetKey;
-    const hello = greeting(stage, scenario, live);
+    const ask =
+      stage === "intake" && live.phase !== "confirmed"
+        ? promptCopy(currentPrompt(live), live)
+        : greeting(stage, scenario, live);
     const lines: FoxMessage[] = [
-      { id: newId(), role: "fox", text: hello.text, actions: hello.actions },
+      { id: newId(), role: "fox", text: ask.text, actions: ask.actions },
     ];
-    if (stage === "intake" && live.phase !== "confirmed") {
-      const ask = promptCopy(currentPrompt(live), live);
-      if (ask.text !== hello.text) {
-        lines.push({ id: newId(), role: "fox", text: ask.text, actions: ask.actions });
-      }
-    }
     const queued = pendingAsk.current;
     pendingAsk.current = null;
     if (queued) {
@@ -197,9 +180,6 @@ export function AlwaysOnFox() {
   if (!stage) return null;
 
   const scenario = draft.scenario ?? readScenario();
-  const task = `${taskContext(stage, draft)}${
-    scenario?.productName ? ` · ${scenario.productName}` : ""
-  }`;
 
   const appendReply = (clientText: string, fox: { text: string; actions?: FoxAction[] }) => {
     setMessages((prev) => [
@@ -222,7 +202,7 @@ export function AlwaysOnFox() {
       applyCapture({ field: "open-docs" });
       document.getElementById("fox-documents")?.scrollIntoView({ behavior: "smooth" });
       appendReply(action.label, {
-        text: "Add a file in the document slots. Fox will mark received, then reading. Dollar amounts will not be invented.",
+        text: "Add a file in the slots below.",
       });
       return;
     }
@@ -248,33 +228,12 @@ export function AlwaysOnFox() {
     appendReply(text, reply);
   };
 
-  const toggleLegal = () => {
-    setLegal((value) => {
-      if (value) sessionStorage.setItem(FOX_LEGAL_KEY, "1");
-      return !value;
-    });
-  };
-
   return (
     <div className={open ? "fox-bar is-open" : "fox-bar"}>
       {open ? (
         <div id="fox-panel" className="fox-bar__workspace">
           <div className="fox-bar__head">
-            <AdvisorMark size="sm" />
             <span className="fox-bar__title">ONYX Fox</span>
-            <span className="type-legal fox-bar__task">{task}</span>
-            <p className="type-legal fox-bar__human">
-              <Link href="/advisor">{ORIGINATOR_REQUEST}</Link>
-            </p>
-            <button
-              type="button"
-              className="fox-bar__info"
-              aria-expanded={legal}
-              aria-controls="fox-legal"
-              onClick={toggleLegal}
-            >
-              Legal
-            </button>
             <button
               type="button"
               className="fox-bar__close"
@@ -285,12 +244,6 @@ export function AlwaysOnFox() {
               Close
             </button>
           </div>
-
-          {legal ? (
-            <p id="fox-legal" className="type-legal fox-bar__legal">
-              {FOX_DISCLOSURE}
-            </p>
-          ) : null}
 
           <div className="fox-panel__thread" ref={listRef} aria-live="polite">
             {messages.map((message) => (

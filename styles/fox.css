@@ -93,18 +93,18 @@
 }
 
 .fox-bar.is-open {
-  max-height: 45vh;
+  max-height: 36vh;
 }
 
 .fox-bar__workspace {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 4px;
   height: auto;
   min-height: 0;
-  max-height: calc(45vh - 72px);
-  margin-bottom: 8px;
-  padding: 6px 12px 8px;
+  max-height: calc(36vh - 64px);
+  margin-bottom: 6px;
+  padding: 4px 10px 6px;
   background: var(--paper-elevated);
   border: 1px solid var(--line);
   border-radius: 16px;
@@ -113,23 +113,16 @@
 .fox-bar__head {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   flex-shrink: 0;
   gap: 8px;
-  min-height: 28px;
+  min-height: 24px;
   color: var(--ink);
 }
 
-.fox-bar__task {
-  flex: 1 1 auto;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.fox-bar__info,
 .fox-bar__close {
   flex: 0 0 auto;
+  margin-left: auto;
   padding: 0;
   border: 0;
   background: transparent;
@@ -138,26 +131,6 @@
   font-size: 12px;
   font-weight: 500;
   cursor: pointer;
-}
-
-.fox-bar__legal,
-.fox-bar__human {
-  margin: 0;
-}
-
-.fox-bar__human {
-  flex: 0 0 auto;
-  max-width: 42%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.fox-bar__legal {
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
 }
 
 .fox-panel__thread {
@@ -309,12 +282,12 @@
   .fox-bar__workspace {
     height: auto;
     min-height: 0;
-    max-height: 320px;
-    padding: 8px 14px 10px;
+    max-height: 240px;
+    padding: 6px 12px 8px;
   }
 
   .fox-panel__thread {
-    max-height: 220px;
+    max-height: 160px;
   }
 
   .intake {
