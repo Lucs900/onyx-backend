@@ -3,17 +3,22 @@ import {
   CREDIT_OPTIONS,
   OCCUPANCY_OPTIONS,
   PURPOSE_OPTIONS,
+  TIMELINE_OPTIONS,
   formatDollars,
   labelFor,
   scenarioToQuery,
   type ExplorerScenario,
 } from "@/components/products/scenario";
-import { contactComplete } from "./store";
-import type {
-  FoxAction,
-  FoxIntakeDraft,
-  FoxPrompt,
-  FoxStage,
+import { questionsComplete } from "./store";
+import {
+  INCOME_BUBBLES,
+  OCCUPANCY_BUBBLES,
+  TIMELINE_BUBBLES,
+  type Capture,
+  type FoxAction,
+  type FoxIntakeDraft,
+  type FoxPrompt,
+  type FoxStage,
 } from "./types";
 
 export function foxStageFromPath(pathname: string): FoxStage | null {
@@ -29,13 +34,50 @@ export function intakeHref(scenario: ExplorerScenario | null) {
 }
 
 export function currentPrompt(draft: FoxIntakeDraft): FoxPrompt {
+  if (draft.phase === "confirmed" && !draft.correcting) return "done";
+  if (draft.correcting && draft.correcting !== "correct") return draft.correcting;
+  if (draft.correcting === "correct") return "correct";
   if (!draft.contact.fullName.value) return "name";
   if (!draft.contact.email.value) return "email";
   if (!draft.contact.phone.value) return "phone";
   if (!draft.preferredAsked) return "preferred";
+  if (!draft.incomeType.value) return "income";
+  if (!draft.occupancyAsked) return "occupancy";
+  if (!draft.timelineAsked) return "timeline";
   if (!draft.documents.length && !draft.documentsSkipped) return "documents";
-  if (draft.phase !== "confirmed") return "review";
-  return "done";
+  return "review";
+}
+
+export function taskContext(stage: FoxStage, draft: FoxIntakeDraft) {
+  if (stage === "explore") return "Explore";
+  if (stage === "scenario") return "Scenario";
+  if (stage === "results") return "Results";
+  const labels: Record<FoxPrompt, string> = {
+    name: "Asking: name",
+    email: "Asking: email",
+    phone: "Asking: phone",
+    preferred: "Asking: preferred contact",
+    income: "Asking: income type",
+    occupancy: "Asking: occupancy",
+    timeline: "Asking: timeline",
+    documents: "Documents",
+    review: "Confirm draft",
+    correct: "Correction",
+    done: "Draft confirmed",
+  };
+  return labels[currentPrompt(draft)];
+}
+
+function bubbles(
+  items: { value: string; label: string }[],
+  field: Capture["field"],
+): FoxAction[] {
+  return items.map((item) => ({
+    id: `${field}-${item.value}`,
+    label: item.label,
+    event: "bubble" as const,
+    capture: { field, value: item.value } as Capture,
+  }));
 }
 
 export function greeting(
@@ -47,7 +89,7 @@ export function greeting(
 
   if (stage === "explore") {
     return {
-      text: "I'm Fox. This explorer is California only. Ask about a product, or start a scenario. I can't quote a rate or approve a loan.",
+      text: "I'm ONYX Fox. This explorer is California only. Ask about a product, or start a scenario. I can't quote a rate or approve a loan.",
       actions: [
         { id: "scenario", label: "Start a scenario", href: "/products/scenario" },
       ],
@@ -73,8 +115,7 @@ export function greeting(
     };
   }
 
-  const prompt = currentPrompt(draft);
-  if (prompt === "done") {
+  if (currentPrompt(draft) === "done") {
     return {
       text: "Your draft is confirmed. A licensed originator will review this. You can come back here to see status. I still can't approve or lock a loan.",
     };
@@ -82,12 +123,12 @@ export function greeting(
 
   return {
     text: known
-      ? `I already have ${known}. This is California only. I'll ask only for what's missing — starting with how to reach you.`
+      ? `I already have ${known}. This is California only. I'll ask only for what's missing — tap a bubble or type.`
       : "Let's prepare a draft. This explorer is California only. I'll ask a few short questions. I can't approve or lock a loan.",
   };
 }
 
-export function promptCopy(prompt: FoxPrompt): { text: string; actions?: FoxAction[] } {
+export function promptCopy(prompt: FoxPrompt, draft?: FoxIntakeDraft): { text: string; actions?: FoxAction[] } {
   if (prompt === "name") {
     return { text: "What full name should we use on this draft?" };
   }
@@ -99,22 +140,74 @@ export function promptCopy(prompt: FoxPrompt): { text: string; actions?: FoxActi
   }
   if (prompt === "preferred") {
     return {
-      text: "Preferred contact — email, phone, or either? You can skip this.",
-      actions: [{ id: "skip-pref", label: "Skip", event: "skip-preferred" }],
+      text: "Preferred contact?",
+      actions: [
+        ...bubbles(
+          [
+            { value: "email", label: "Email" },
+            { value: "phone", label: "Phone" },
+            { value: "either", label: "Either" },
+          ],
+          "preferred-asked",
+        ),
+        { id: "skip-pref", label: "Skip", event: "bubble", capture: { field: "preferred-asked", value: "" } },
+      ],
+    };
+  }
+  if (prompt === "income") {
+    return {
+      text: "How is income earned?",
+      actions: bubbles(INCOME_BUBBLES, "incomeType"),
+    };
+  }
+  if (prompt === "occupancy") {
+    const prior = draft?.occupancyChoice.value
+      ? OCCUPANCY_BUBBLES.find((item) => item.value === draft.occupancyChoice.value)?.label
+      : "";
+    return {
+      text: prior
+        ? `Occupancy in the scenario is ${prior}. Still right?`
+        : "How will the property be used?",
+      actions: bubbles([...OCCUPANCY_BUBBLES], "occupancy"),
+    };
+  }
+  if (prompt === "timeline") {
+    return {
+      text: "What's the timeline?",
+      actions: bubbles([...TIMELINE_BUBBLES], "timeline"),
     };
   }
   if (prompt === "documents") {
     return {
-      text: "You can drop paystubs, a W-2, bank statements, or ID on the page. Or skip if you don't have them yet. Files stay in this preview session only — not a vault.",
+      text: "You can drop paystubs, a W-2, bank statements, or ID. Files stay in this preview session only — not a vault. Fox will not invent dollar amounts from the files.",
       actions: [
-        { id: "skip-docs", label: "I don't have these yet", event: "skip-docs" },
-        { id: "open-docs", label: "Go to document drop", event: "open-docs" },
+        { id: "open-docs", label: "Upload now", event: "open-docs", capture: { field: "open-docs" } },
+        { id: "skip-docs", label: "Skip for now", event: "bubble", capture: { field: "skip-docs" } },
       ],
     };
   }
   if (prompt === "review") {
     return {
-      text: "I've prepared a draft from what you and the scenario already gave me. Confirm or edit each section on the page. Nothing is final until you confirm.",
+      text: "I've prepared a draft from what you and the scenario already gave me. Nothing is final until you confirm. Dollar amounts were not extracted.",
+      actions: [
+        { id: "looks-right", label: "Looks right", event: "bubble", capture: { field: "confirm-draft" } },
+        { id: "needs-fix", label: "Needs a correction", event: "bubble", capture: { field: "needs-correction" } },
+      ],
+    };
+  }
+  if (prompt === "correct") {
+    return {
+      text: "Which part should Fox fix?",
+      actions: bubbles(
+        [
+          { value: "name", label: "Contact" },
+          { value: "income", label: "Income" },
+          { value: "occupancy", label: "Occupancy" },
+          { value: "timeline", label: "Timeline" },
+          { value: "documents", label: "Documents" },
+        ],
+        "correct",
+      ),
     };
   }
   return {
@@ -130,7 +223,7 @@ export function replyToMessage(
 ): {
   text: string;
   actions?: FoxAction[];
-  capture?: { field: keyof FoxIntakeDraft["contact"] | "note" | "skip-docs" | "preferred-asked"; value: string };
+  capture?: Capture;
 } {
   const q = text.trim();
   const lower = q.toLowerCase();
@@ -150,7 +243,7 @@ export function replyToMessage(
 
   if (stage === "intake") {
     const prompt = currentPrompt(draft);
-    const captured = captureForPrompt(prompt, q);
+    const captured = captureForPrompt(prompt, q, draft);
     if (captured) return captured;
   }
 
@@ -180,7 +273,7 @@ export function replyToMessage(
 
   if (stage === "intake" && q.length > 12) {
     return {
-      text: "I'll keep that with the draft as something you typed. Confirm it on the page when you review.",
+      text: "I'll keep that with the draft as something you typed. Confirm it when you review.",
       capture: { field: "note", value: q },
     };
   }
@@ -191,6 +284,7 @@ export function replyToMessage(
 function captureForPrompt(
   prompt: FoxPrompt,
   raw: string,
+  draft: FoxIntakeDraft,
 ): ReturnType<typeof replyToMessage> | null {
   if (prompt === "name") {
     const value = raw.replace(/^(my name is|i am|i'm)\s+/i, "").trim();
@@ -212,39 +306,73 @@ function captureForPrompt(
     const value = extractPhone(raw);
     if (!value) return { text: "I need a phone number with at least 10 digits." };
     return {
-      text: "Preferred contact — email, phone, or either? You can skip this.",
+      ...promptCopy("preferred"),
       capture: { field: "phone", value },
     };
   }
   if (prompt === "preferred") {
-    if (/skip|later|either|no preference/i.test(raw)) {
+    if (/skip|later|no preference/i.test(raw)) {
+      return { ...promptCopy("income"), capture: { field: "preferred-asked", value: "" } };
+    }
+    const value = /email/i.test(raw) ? "email" : /phone/i.test(raw) ? "phone" : /either/i.test(raw) ? "either" : "";
+    if (!value) return { text: "Tap Email, Phone, Either, or Skip." };
+    return { ...promptCopy("income"), capture: { field: "preferred-asked", value } };
+  }
+  if (prompt === "income") {
+    const match = INCOME_BUBBLES.find(
+      (item) => item.label.toLowerCase() === raw.toLowerCase() || item.value === raw.toLowerCase(),
+    );
+    if (!match) return { text: "Tap W-2, Self-employed, Both, or Other." };
+    return { ...promptCopy("occupancy", { ...draft, incomeType: { ...draft.incomeType, value: match.value } }), capture: { field: "incomeType", value: match.value } };
+  }
+  if (prompt === "occupancy") {
+    const match = OCCUPANCY_BUBBLES.find(
+      (item) => item.label.toLowerCase() === raw.toLowerCase() || item.value === raw.toLowerCase(),
+    );
+    if (!match) return { text: "Tap Primary, Second home, or Investment." };
+    return { ...promptCopy("timeline"), capture: { field: "occupancy", value: match.value } };
+  }
+  if (prompt === "timeline") {
+    const match = TIMELINE_BUBBLES.find(
+      (item) =>
+        item.label.toLowerCase() === raw.toLowerCase() ||
+        item.value === raw ||
+        (raw.toLowerCase().includes("explor") && item.value === "exploring") ||
+        (raw.toLowerCase().includes("ready") && item.value === "ready-now"),
+    );
+    if (!match) return { text: "Tap Ready now, 30–90 days, or Just exploring." };
+    return { ...promptCopy("documents"), capture: { field: "timeline", value: match.value } };
+  }
+  if (prompt === "documents") {
+    if (/(skip|later|not yet|don'?t have)/i.test(raw)) {
       return {
-        text: "You can drop documents on the page, or skip if you don't have them yet.",
-        capture: { field: "preferred-asked", value: /either/i.test(raw) ? "either" : "" },
-        actions: [
-          { id: "skip-docs", label: "I don't have these yet", event: "skip-docs" },
-          { id: "open-docs", label: "Go to document drop", event: "open-docs" },
-        ],
+        ...promptCopy("review"),
+        capture: { field: "skip-docs" },
       };
     }
-    const value = /email/i.test(raw) ? "email" : /phone/i.test(raw) ? "phone" : "";
-    if (!value) {
-      return { text: "Say email, phone, either, or skip." };
+    if (/(upload|drop|now|add)/i.test(raw)) {
+      return { ...promptCopy("documents"), capture: { field: "open-docs" } };
     }
-    return {
-      text: "You can drop documents on the page, or skip if you don't have them yet.",
-      capture: { field: "preferredContact", value },
-      actions: [
-        { id: "skip-docs", label: "I don't have these yet", event: "skip-docs" },
-        { id: "open-docs", label: "Go to document drop", event: "open-docs" },
-      ],
-    };
   }
-  if (prompt === "documents" && /(don'?t have|skip|later|not yet)/i.test(raw)) {
-    return {
-      text: "That's fine. I'll mark documents as not in yet and prepare the draft for you to confirm.",
-      capture: { field: "skip-docs", value: "1" },
-    };
+  if (prompt === "review") {
+    if (/(looks right|confirm|yes|correct|good)/i.test(raw)) {
+      return { ...promptCopy("done"), capture: { field: "confirm-draft" } };
+    }
+    if (/(correction|fix|wrong|no|edit)/i.test(raw)) {
+      return { ...promptCopy("correct"), capture: { field: "needs-correction" } };
+    }
+  }
+  if (prompt === "correct") {
+    const map: { test: RegExp; value: string }[] = [
+      { test: /contact|name|email|phone/, value: "name" },
+      { test: /income/, value: "income" },
+      { test: /occupan/, value: "occupancy" },
+      { test: /time/, value: "timeline" },
+      { test: /doc/, value: "documents" },
+    ];
+    const hit = map.find((item) => item.test.test(raw.toLowerCase()));
+    if (!hit) return { text: "Tap Contact, Income, Occupancy, Timeline, or Documents." };
+    return { ...promptCopy(hit.value as FoxPrompt, draft), capture: { field: "correct", value: hit.value } };
   }
   return null;
 }
@@ -277,14 +405,11 @@ function nextSteps(
         : [{ id: "scenario", label: "Enter a scenario", href: "/products/scenario" }],
     };
   }
-  if (!contactComplete(draft)) {
-    return { text: promptCopy(currentPrompt(draft)).text };
-  }
-  if (!draft.documents.length && !draft.documentsSkipped) {
-    return promptCopy("documents");
+  if (!questionsComplete(draft) || (!draft.documents.length && !draft.documentsSkipped)) {
+    return promptCopy(currentPrompt(draft), draft);
   }
   if (draft.phase !== "confirmed") {
-    return promptCopy("review");
+    return promptCopy("review", draft);
   }
   return promptCopy("done");
 }
@@ -328,10 +453,31 @@ export function scenarioLines(scenario: ExplorerScenario) {
     ["Credit range", labelFor(CREDIT_OPTIONS, scenario.creditRange)],
     ["Occupancy", labelFor(OCCUPANCY_OPTIONS, scenario.occupancy)],
     scenario.timeline
-      ? ["Timeline", scenario.timeline === "ready-now" ? "Ready now" : scenario.timeline === "30-90" ? "30–90 days" : "Exploring"]
+      ? ["Timeline", labelFor(TIMELINE_OPTIONS, scenario.timeline)]
       : null,
     scenario.productName ? ["Product", scenario.productName] : null,
   ].filter((row): row is [string, string] => Boolean(row));
+}
+
+export function incomeLabel(value: string) {
+  return INCOME_BUBBLES.find((item) => item.value === value)?.label ?? value;
+}
+
+export function occupancyLabel(value: string) {
+  return OCCUPANCY_BUBBLES.find((item) => item.value === value)?.label ?? value;
+}
+
+export function timelineLabel(value: string) {
+  return TIMELINE_BUBBLES.find((item) => item.value === value)?.label ?? value;
+}
+
+export function sourceLabel(
+  source: "client" | "scenario" | "extracted-unconfirmed",
+  confirmed?: boolean,
+) {
+  if (source === "scenario") return "From scenario";
+  if (source === "extracted-unconfirmed") return "Extracted by Fox — unconfirmed";
+  return confirmed ? "Confirmed by client" : "Entered by you";
 }
 
 function extractEmail(raw: string) {

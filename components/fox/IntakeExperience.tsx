@@ -5,9 +5,9 @@ import { useSearchParams } from "next/navigation";
 import {
   Fragment,
   useEffect,
+  useRef,
   useState,
   useSyncExternalStore,
-  type ReactNode,
 } from "react";
 import {
   formatDollars,
@@ -16,21 +16,27 @@ import {
   writeScenario,
 } from "@/components/products/scenario";
 import { requestFoxOpen } from "./AlwaysOnFox";
-import { currentPrompt, promptCopy, scenarioLines } from "./script";
 import {
-  addDocument,
-  advancePhase,
-  confirmSection,
+  currentPrompt,
+  incomeLabel,
+  occupancyLabel,
+  promptCopy,
+  scenarioLines,
+  sourceLabel,
+  timelineLabel,
+} from "./script";
+import {
+  applyCapture,
   contactComplete,
   documentForSlot,
-  editSection,
   getFoxDraft,
   getServerDraft,
   hydrateFoxDraft,
-  markPreferredAsked,
+  questionsComplete,
+  receiveDocument,
   setContactField,
+  setDocumentStatus,
   setDraftScenario,
-  skipDocuments,
   subscribeFoxDraft,
 } from "./store";
 import {
@@ -42,14 +48,42 @@ import {
   ORIGINATOR_REVIEW,
   TRUST_LINE,
   type DocSlot,
+  type FoxAction,
   type FoxIntakeDraft,
-  type SectionId,
 } from "./types";
 
-function sourceLabel(source: "client" | "scenario" | "extracted-unconfirmed") {
-  if (source === "scenario") return "From scenario";
-  if (source === "extracted-unconfirmed") return "Suggested by Fox — unconfirmed";
-  return "Entered by you";
+function useDocumentReads(draft: FoxIntakeDraft) {
+  const seen = useRef(new Set<string>());
+
+  useEffect(() => {
+    draft.documents.forEach((doc) => {
+      const key = `${doc.slot}:${doc.receivedAt}`;
+      if (doc.status !== "received" || seen.current.has(key)) return;
+      seen.current.add(key);
+      window.setTimeout(() => {
+        const live = getFoxDraft().documents.find((item) => item.slot === doc.slot);
+        if (!live || live.receivedAt !== doc.receivedAt) return;
+        setDocumentStatus(doc.slot, "reading");
+        window.setTimeout(() => {
+          const again = getFoxDraft().documents.find((item) => item.slot === doc.slot);
+          if (!again || again.receivedAt !== doc.receivedAt) return;
+          if (again.size < 32) {
+            setDocumentStatus(
+              doc.slot,
+              "needs better copy",
+              "Fox could not read this file. Type a note or skip. No dollar amounts were invented.",
+            );
+            return;
+          }
+          setDocumentStatus(
+            doc.slot,
+            "extracted",
+            "File recorded. Dollar amounts were not extracted in this preview.",
+          );
+        }, 1100);
+      }, 400);
+    });
+  }, [draft.documents]);
 }
 
 function checklist(draft: FoxIntakeDraft) {
@@ -63,29 +97,40 @@ function checklist(draft: FoxIntakeDraft) {
   else need.push("Email");
   if (draft.contact.phone.value) have.push("Phone");
   else need.push("Phone");
+  if (draft.incomeType.value) have.push(`Income type: ${incomeLabel(draft.incomeType.value)}`);
+  else need.push("Income type");
+  if (draft.occupancyAsked && draft.occupancyChoice.value) {
+    have.push(`Occupancy: ${occupancyLabel(draft.occupancyChoice.value)}`);
+  } else {
+    need.push("Occupancy");
+  }
+  if (draft.timelineAsked && draft.timelineChoice.value) {
+    have.push(`Timeline: ${timelineLabel(draft.timelineChoice.value)}`);
+  } else {
+    need.push("Timeline");
+  }
   if (draft.documents.length) {
     have.push(
-      `${draft.documents.length} document${draft.documents.length === 1 ? "" : "s"} received`,
+      draft.documents
+        .map((doc) => `${doc.name} (${doc.status})`)
+        .join(", "),
     );
   } else if (draft.documentsSkipped) {
     have.push("Documents skipped for now");
   } else {
     need.push("Documents, or skip for now");
   }
-  const unconfirmed = (Object.keys(draft.sections) as SectionId[]).filter(
-    (key) => !draft.sections[key],
-  );
-  if (unconfirmed.length && contactComplete(draft)) {
-    need.push("Confirm each draft section");
+  if (draft.phase !== "confirmed" && questionsComplete(draft) && (draft.documents.length || draft.documentsSkipped)) {
+    need.push("Confirm the draft");
   }
-  let next = "Answer Fox’s next question — name, email, then phone.";
-  if (draft.phase === "confirmed") {
-    next = ORIGINATOR_REVIEW;
-  } else if (contactComplete(draft) && !draft.documents.length && !draft.documentsSkipped) {
-    next = "Drop documents, or skip if you don’t have them yet.";
-  } else if (contactComplete(draft)) {
-    next = "Confirm or edit the draft sections. Nothing is final until you confirm.";
-  }
+  let next = "Answer Fox — tap a bubble or type.";
+  if (draft.phase === "confirmed") next = ORIGINATOR_REVIEW;
+  else if (!contactComplete(draft)) next = "Name, email, then phone.";
+  else if (!draft.incomeType.value) next = "Tap an income type.";
+  else if (!draft.occupancyAsked) next = "Confirm occupancy.";
+  else if (!draft.timelineAsked) next = "Confirm timeline.";
+  else if (!draft.documents.length && !draft.documentsSkipped) next = "Upload now, or skip for now.";
+  else next = "Looks right, or needs a correction.";
   return { have, need, next };
 }
 
@@ -93,7 +138,8 @@ export function IntakeExperience() {
   const searchParams = useSearchParams();
   const draft = useSyncExternalStore(subscribeFoxDraft, getFoxDraft, getServerDraft);
   const [ready, setReady] = useState(false);
-  const [editing, setEditing] = useState<SectionId | null>(null);
+
+  useDocumentReads(draft);
 
   useEffect(() => {
     hydrateFoxDraft();
@@ -101,7 +147,6 @@ export function IntakeExperience() {
     const scenario = fromQuery ?? readScenario();
     if (fromQuery) writeScenario(fromQuery);
     if (scenario) setDraftScenario(scenario);
-    advancePhase();
     setReady(true);
   }, [searchParams]);
 
@@ -118,9 +163,14 @@ export function IntakeExperience() {
 
   const items = checklist(draft);
   const prompt = currentPrompt(draft);
-  const ask = promptCopy(prompt);
-  const showDocs = contactComplete(draft) || draft.phase !== "context";
-  const showDraft = draft.phase === "draft" || draft.phase === "confirmed";
+  const ask = promptCopy(prompt, draft);
+  const showDocs = questionsComplete(draft) || draft.phase === "documents" || draft.documents.length > 0;
+  const showDraft =
+    draft.phase === "draft" ||
+    draft.phase === "confirmed" ||
+    prompt === "review" ||
+    prompt === "correct" ||
+    prompt === "done";
 
   return (
     <div className="intake page-pad">
@@ -129,8 +179,8 @@ export function IntakeExperience() {
         <p className="type-eyebrow">California only</p>
         <h1 className="type-h2">Prepare a draft</h1>
         <p className="type-body">
-          Fox already uses your scenario. You confirm the draft. A licensed
-          originator reviews it. This is not an approval.
+          Answer Fox, drop documents if you have them, then confirm. A licensed
+          originator reviews the draft. This is not an approval.
         </p>
         <p className="type-legal">
           Returning ACR members will sign in here later. This preview keeps the
@@ -168,7 +218,7 @@ export function IntakeExperience() {
           <section className="intake-card">
             <h2 className="type-card-title">No scenario yet</h2>
             <p className="type-body">
-              Fox can still take your name and documents. A scenario helps the
+              Fox can still take answers and documents. A scenario helps the
               draft.
             </p>
             <Link href="/products/scenario" className="btn btn--secondary">
@@ -201,12 +251,13 @@ export function IntakeExperience() {
           </div>
         </section>
 
-        {!contactComplete(draft) ? (
+        {draft.phase !== "confirmed" ? (
           <section className="intake-card" aria-labelledby="ask-title">
             <h2 id="ask-title" className="type-card-title">
               Fox is asking
             </h2>
             <p className="type-body">{ask.text}</p>
+            <BubbleRow actions={ask.actions} />
             <ContactFields prompt={prompt} draft={draft} />
             <button type="button" className="btn btn--text" onClick={() => requestFoxOpen()}>
               Or answer in Fox
@@ -214,17 +265,8 @@ export function IntakeExperience() {
           </section>
         ) : null}
 
-        {showDocs ? (
-          <DocumentDrop draft={draft} />
-        ) : null}
-
-        {showDraft ? (
-          <DraftSections
-            draft={draft}
-            editing={editing}
-            setEditing={setEditing}
-          />
-        ) : null}
+        {showDocs ? <DocumentDrop draft={draft} /> : null}
+        {showDraft ? <DraftSummary draft={draft} /> : null}
 
         <p className="type-legal">{FOX_DISCLOSURE}</p>
         <p className="type-legal">{DRAFT_NOTE}</p>
@@ -235,6 +277,35 @@ export function IntakeExperience() {
           <Link href="/advisor">{ORIGINATOR_REQUEST}</Link>
         </p>
       </div>
+    </div>
+  );
+}
+
+function BubbleRow({ actions }: { actions?: FoxAction[] }) {
+  if (!actions?.length) return null;
+  return (
+    <div className="fox-bubble__actions">
+      {actions.map((action) =>
+        action.href ? (
+          <Link key={action.id} href={action.href} className="btn btn--secondary fox-chip">
+            {action.label}
+          </Link>
+        ) : (
+          <button
+            key={action.id}
+            type="button"
+            className="btn btn--secondary fox-chip"
+            onClick={() => {
+              if (action.capture) applyCapture(action.capture);
+              if (action.capture?.field === "open-docs") {
+                document.getElementById("fox-documents")?.scrollIntoView({ behavior: "smooth" });
+              }
+            }}
+          >
+            {action.label}
+          </button>
+        ),
+      )}
     </div>
   );
 }
@@ -252,21 +323,7 @@ function ContactFields({
     setValue("");
   }, [prompt]);
 
-  const onSave = () => {
-    const trimmed = value.trim();
-    if (!trimmed) return;
-    if (prompt === "name") setContactField("fullName", trimmed);
-    if (prompt === "email") setContactField("email", trimmed);
-    if (prompt === "phone") setContactField("phone", trimmed);
-    if (prompt === "preferred") {
-      setContactField("preferredContact", trimmed);
-      markPreferredAsked();
-    }
-    advancePhase();
-    setValue("");
-  };
-
-  if (prompt !== "name" && prompt !== "email" && prompt !== "phone" && prompt !== "preferred") {
+  if (prompt !== "name" && prompt !== "email" && prompt !== "phone") {
     return null;
   }
 
@@ -274,21 +331,13 @@ function ContactFields({
     <div className="intake-inline">
       <label className="scenario-field">
         <span className="scenario-field__label">
-          {prompt === "name"
-            ? "Full name"
-            : prompt === "email"
-              ? "Email"
-              : prompt === "phone"
-                ? "Phone"
-                : "Preferred contact"}
+          {prompt === "name" ? "Full name" : prompt === "email" ? "Email" : "Phone"}
         </span>
         <input
           className="scenario-field__input"
           value={value}
           onChange={(event) => setValue(event.target.value)}
-          autoComplete={
-            prompt === "email" ? "email" : prompt === "phone" ? "tel" : "name"
-          }
+          autoComplete={prompt === "email" ? "email" : prompt === "phone" ? "tel" : "name"}
           placeholder={
             draft.contact.fullName.value && prompt === "name"
               ? draft.contact.fullName.value
@@ -296,21 +345,20 @@ function ContactFields({
           }
         />
       </label>
-      <button type="button" className="btn btn--primary" onClick={onSave}>
-        Save
+      <button
+        type="button"
+        className="btn btn--primary"
+        onClick={() => {
+          const trimmed = value.trim();
+          if (!trimmed) return;
+          if (prompt === "name") setContactField("fullName", trimmed);
+          if (prompt === "email") setContactField("email", trimmed);
+          if (prompt === "phone") setContactField("phone", trimmed);
+          setValue("");
+        }}
+      >
+        Continue
       </button>
-      {prompt === "preferred" ? (
-        <button
-          type="button"
-          className="btn btn--text"
-          onClick={() => {
-            markPreferredAsked();
-            advancePhase();
-          }}
-        >
-          Skip
-        </button>
-      ) : null}
     </div>
   );
 }
@@ -318,14 +366,13 @@ function ContactFields({
 function DocumentDrop({ draft }: { draft: FoxIntakeDraft }) {
   const onFile = (slot: DocSlot, file: File | undefined) => {
     if (!file) return;
-    addDocument({
+    receiveDocument({
       slot,
       name: file.name,
       type: file.type || "application/octet-stream",
       size: file.size,
       receivedAt: new Date().toISOString(),
     });
-    advancePhase();
   };
 
   return (
@@ -335,7 +382,8 @@ function DocumentDrop({ draft }: { draft: FoxIntakeDraft }) {
       </h2>
       <p className="type-legal">
         Documents stay with this preview session. They are not uploaded, not
-        stored in a vault, and have no public URL. Only the filename is kept.
+        stored in a vault, and have no public URL. Only the filename and status
+        are kept.
       </p>
       <ul className="intake-docs">
         {DOC_SLOTS.map((slot) => {
@@ -346,9 +394,10 @@ function DocumentDrop({ draft }: { draft: FoxIntakeDraft }) {
                 <p className="type-card-title">{slot.label}</p>
                 <p className="type-legal">
                   {received
-                    ? `Received · ${received.name} · ${Math.max(1, Math.round(received.size / 1024))} KB`
+                    ? `${received.status} · ${received.name} · ${Math.max(1, Math.round(received.size / 1024))} KB`
                     : "Waiting"}
                 </p>
+                {received?.note ? <p className="type-legal">{received.note}</p> : null}
               </div>
               <label className="btn btn--secondary fox-chip">
                 {received ? "Replace" : "Add"}
@@ -365,252 +414,153 @@ function DocumentDrop({ draft }: { draft: FoxIntakeDraft }) {
           );
         })}
       </ul>
-      {!draft.documents.length ? (
-        <button
-          type="button"
-          className="btn btn--text"
-          onClick={() => {
-            skipDocuments();
-            advancePhase();
-          }}
-        >
-          I don’t have these yet
-        </button>
-      ) : null}
     </section>
   );
 }
 
-function DraftSections({
-  draft,
-  editing,
-  setEditing,
-}: {
-  draft: FoxIntakeDraft;
-  editing: SectionId | null;
-  setEditing: (id: SectionId | null) => void;
-}) {
+function DraftSummary({ draft }: { draft: FoxIntakeDraft }) {
+  const occupancy =
+    occupancyLabel(draft.occupancyChoice.value) ||
+    (draft.scenario
+      ? scenarioLines(draft.scenario).find((row) => row[0] === "Occupancy")?.[1]
+      : "");
+
   return (
     <section className="intake-card" aria-labelledby="draft-title">
       <h2 id="draft-title" className="type-card-title">
         Application draft
       </h2>
       <p className="type-legal">
-        Fox did not invent income, SSN, or account numbers. Empty fields stay
-        empty until you enter them.
+        Extracted by Fox stays unconfirmed until you tap Looks right. Fox did
+        not invent income, SSN, or account numbers.
       </p>
 
-      <DraftBlock
-        id="contact"
-        title="Contact"
-        confirmed={draft.sections.contact}
-        editing={editing === "contact"}
-        onEdit={() => {
-          editSection("contact");
-          setEditing("contact");
-        }}
-        onConfirm={() => {
-          if (!contactComplete(draft)) return;
-          confirmSection("contact");
-          setEditing(null);
-        }}
-      >
-        {editing === "contact" ? (
-          <div className="intake-edit-grid">
-            <FieldEdit
-              label="Full name"
-              value={draft.contact.fullName.value}
-              onChange={(value) => setContactField("fullName", value)}
-            />
-            <FieldEdit
-              label="Email"
-              value={draft.contact.email.value}
-              onChange={(value) => setContactField("email", value)}
-            />
-            <FieldEdit
-              label="Phone"
-              value={draft.contact.phone.value}
-              onChange={(value) => setContactField("phone", value)}
-            />
-            <FieldEdit
-              label="Preferred contact"
-              value={draft.contact.preferredContact.value}
-              onChange={(value) => setContactField("preferredContact", value)}
-            />
-          </div>
-        ) : (
-          <dl className="scenario-echo">
-            <dt>Name</dt>
-            <dd>{draft.contact.fullName.value || "—"}</dd>
-            <dt>Email</dt>
-            <dd>{draft.contact.email.value || "—"}</dd>
-            <dt>Phone</dt>
-            <dd>{draft.contact.phone.value || "—"}</dd>
-            <dt>Preferred</dt>
-            <dd>{draft.contact.preferredContact.value || "—"}</dd>
-            <dt>Source</dt>
-            <dd className="is-quiet">{sourceLabel("client")}</dd>
-          </dl>
-        )}
-      </DraftBlock>
+      <article className="intake-section">
+        <h3 className="type-card-title">Contact</h3>
+        <dl className="scenario-echo">
+          <dt>Name</dt>
+          <dd>{draft.contact.fullName.value || "—"}</dd>
+          <dt>Email</dt>
+          <dd>{draft.contact.email.value || "—"}</dd>
+          <dt>Phone</dt>
+          <dd>{draft.contact.phone.value || "—"}</dd>
+          <dt>Preferred</dt>
+          <dd>{draft.contact.preferredContact.value || "—"}</dd>
+          <dt>Source</dt>
+          <dd className="is-quiet">
+            {sourceLabel("client", draft.contact.fullName.confirmed)}
+          </dd>
+        </dl>
+      </article>
 
-      <DraftBlock
-        id="scenario"
-        title="Scenario / loan intent"
-        confirmed={draft.sections.scenario}
-        editing={false}
-        onEdit={() => editSection("scenario")}
-        onConfirm={() => draft.scenario && confirmSection("scenario")}
-        confirmDisabled={!draft.scenario}
-      >
+      <article className="intake-section">
+        <h3 className="type-card-title">Scenario / product</h3>
         {draft.scenario ? (
           <dl className="scenario-echo">
             <dt>Purpose</dt>
             <dd>{scenarioLines(draft.scenario).find((row) => row[0] === "Purpose")?.[1]}</dd>
             <dt>Value</dt>
             <dd>${formatDollars(draft.scenario.propertyValue)}</dd>
+            <dt>Product</dt>
+            <dd>{draft.scenario.productName || "—"}</dd>
             <dt>Source</dt>
             <dd className="is-quiet">{sourceLabel("scenario")}</dd>
           </dl>
         ) : (
           <p className="type-body">No scenario on this draft yet.</p>
         )}
-        <Link href="/products/scenario" className="btn btn--text">
-          Edit scenario
-        </Link>
-      </DraftBlock>
+      </article>
 
-      <DraftBlock
-        id="occupancy"
-        title="Occupancy / property"
-        confirmed={draft.sections.occupancy}
-        editing={false}
-        onEdit={() => editSection("occupancy")}
-        onConfirm={() => draft.scenario && confirmSection("occupancy")}
-        confirmDisabled={!draft.scenario}
-      >
-        {draft.scenario ? (
-          <dl className="scenario-echo">
-            <dt>ZIP</dt>
-            <dd>{draft.scenario.zip}</dd>
-            <dt>Occupancy</dt>
-            <dd>
-              {scenarioLines(draft.scenario).find((row) => row[0] === "Occupancy")?.[1]}
-            </dd>
-            <dt>Source</dt>
-            <dd className="is-quiet">{sourceLabel("scenario")}</dd>
-          </dl>
-        ) : (
-          <p className="type-body">Occupancy comes from the scenario.</p>
-        )}
-      </DraftBlock>
+      <article className="intake-section">
+        <h3 className="type-card-title">Income type</h3>
+        <dl className="scenario-echo">
+          <dt>Type</dt>
+          <dd>{draft.incomeType.value ? incomeLabel(draft.incomeType.value) : "—"}</dd>
+          <dt>Amount</dt>
+          <dd>—</dd>
+          <dt>Source</dt>
+          <dd className="is-quiet">
+            {draft.incomeType.value
+              ? sourceLabel("client", draft.incomeType.confirmed)
+              : "Empty — not extracted"}
+          </dd>
+        </dl>
+        <p className="type-legal">
+          Income dollars stay blank unless you type them. Fox will not invent a
+          number.
+        </p>
+      </article>
 
-      <DraftBlock
-        id="documents"
-        title="Documents received"
-        confirmed={draft.sections.documents}
-        editing={false}
-        onEdit={() => editSection("documents")}
-        onConfirm={() => confirmSection("documents")}
-      >
+      <article className="intake-section">
+        <h3 className="type-card-title">Occupancy / timeline</h3>
+        <dl className="scenario-echo">
+          <dt>Occupancy</dt>
+          <dd>{occupancy || "—"}</dd>
+          <dt>Timeline</dt>
+          <dd>
+            {draft.timelineChoice.value
+              ? timelineLabel(draft.timelineChoice.value)
+              : "—"}
+          </dd>
+          <dt>Source</dt>
+          <dd className="is-quiet">
+            {sourceLabel(
+              draft.occupancyChoice.source,
+              draft.occupancyChoice.confirmed,
+            )}
+          </dd>
+        </dl>
+      </article>
+
+      <article className="intake-section">
+        <h3 className="type-card-title">Documents</h3>
         {draft.documents.length ? (
           <ul className="intake-note-list">
             {draft.documents.map((doc) => (
               <li key={doc.slot}>
-                {doc.slot}: {doc.name}
+                {doc.slot}: {doc.name} — {doc.status}
+                {doc.note ? ` · ${doc.note}` : ""}
               </li>
             ))}
           </ul>
         ) : (
           <p className="type-body">
-            {draft.documentsSkipped
-              ? "Client skipped documents for now."
-              : "No documents received."}
+            {draft.documentsSkipped ? "Skipped for now." : "None received."}
           </p>
         )}
-        <p className="type-legal">{sourceLabel("client")}</p>
-      </DraftBlock>
+      </article>
 
-      <DraftBlock
-        id="notes"
-        title="Anything you typed"
-        confirmed={draft.sections.notes}
-        editing={false}
-        onEdit={() => editSection("notes")}
-        onConfirm={() => confirmSection("notes")}
-      >
-        {draft.notes.length ? (
+      {draft.notes.length ? (
+        <article className="intake-section">
+          <h3 className="type-card-title">Anything you typed</h3>
           <ul className="intake-note-list">
             {draft.notes.map((note) => (
               <li key={note}>{note}</li>
             ))}
           </ul>
-        ) : (
-          <p className="type-body">Nothing extra yet.</p>
-        )}
-        <p className="type-legal">{sourceLabel("client")}</p>
-      </DraftBlock>
+        </article>
+      ) : null}
+
+      {draft.phase !== "confirmed" ? (
+        <div className="fox-bubble__actions">
+          <button
+            type="button"
+            className="btn btn--primary fox-chip"
+            onClick={() => applyCapture({ field: "confirm-draft" })}
+          >
+            Looks right
+          </button>
+          <button
+            type="button"
+            className="btn btn--secondary fox-chip"
+            onClick={() => applyCapture({ field: "needs-correction" })}
+          >
+            Needs a correction
+          </button>
+        </div>
+      ) : (
+        <p className="type-legal">Confirmed by client.</p>
+      )}
     </section>
-  );
-}
-
-function DraftBlock({
-  id,
-  title,
-  confirmed,
-  editing,
-  onEdit,
-  onConfirm,
-  confirmDisabled,
-  children,
-}: {
-  id: SectionId;
-  title: string;
-  confirmed: boolean;
-  editing: boolean;
-  onEdit: () => void;
-  onConfirm: () => void;
-  confirmDisabled?: boolean;
-  children: ReactNode;
-}) {
-  return (
-    <article className="intake-section" aria-labelledby={`section-${id}`}>
-      <div className="intake-section__head">
-        <h3 id={`section-${id}`} className="type-card-title">
-          {title}
-        </h3>
-        <p className="type-legal">{confirmed ? "Confirmed" : editing ? "Editing" : "Needs confirmation"}</p>
-      </div>
-      {children}
-      <div className="intake-section__actions">
-        <button type="button" className="btn btn--primary" onClick={onConfirm} disabled={confirmDisabled}>
-          Confirm
-        </button>
-        <button type="button" className="btn btn--secondary" onClick={onEdit}>
-          Edit
-        </button>
-      </div>
-    </article>
-  );
-}
-
-function FieldEdit({
-  label,
-  value,
-  onChange,
-}: {
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-}) {
-  return (
-    <label className="scenario-field">
-      <span className="scenario-field__label">{label}</span>
-      <input
-        className="scenario-field__input"
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-      />
-    </label>
   );
 }

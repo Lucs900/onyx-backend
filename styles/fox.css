@@ -4,15 +4,23 @@
   min-height: 100%;
 }
 
-.fox-ask {
+.fox-dock {
   position: fixed;
   right: 16px;
   bottom: 16px;
   z-index: 45;
+  display: flex;
+  flex-direction: column-reverse;
+  align-items: flex-end;
+  gap: 10px;
+  width: min(380px, calc(100vw - 32px));
+}
+
+.fox-ask {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  height: 44px;
+  height: 48px;
   padding: 0 16px;
   border: 1px solid var(--line);
   border-radius: var(--radius-pill);
@@ -24,20 +32,23 @@
   cursor: pointer;
 }
 
+.fox-ask__catch {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--sunset);
+}
+
 .fox-panel {
-  position: fixed;
-  z-index: 46;
   display: flex;
   flex-direction: column;
   gap: 12px;
+  width: 100%;
+  max-height: 72vh;
+  padding: 16px 16px 20px;
   background: var(--paper-elevated);
   border: 1px solid var(--line);
-  border-radius: 12px 12px 0 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  max-height: 78vh;
-  padding: 16px 16px 20px;
+  border-radius: 12px;
 }
 
 .fox-panel[hidden] {
@@ -215,18 +226,13 @@
 }
 
 @media (min-width: 768px) {
-  .fox-ask {
+  .fox-dock {
     right: 24px;
     bottom: 24px;
   }
 
   .fox-panel {
-    left: auto;
-    right: 24px;
-    bottom: 80px;
-    width: 380px;
     max-height: calc(100vh - var(--nav-height) - 104px);
-    border-radius: 12px;
   }
 
   .fox-panel__thread {

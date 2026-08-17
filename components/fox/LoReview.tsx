@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState, useSyncExternalStore } from "react";
-import { scenarioLines } from "./script";
+import { incomeLabel, occupancyLabel, scenarioLines, timelineLabel } from "./script";
 import {
   getFoxDraft,
   getServerDraft,
@@ -52,12 +52,22 @@ export function LoReview() {
         {!hasDraft ? (
           <section className="intake-card">
             <p className="type-body">No draft on this device yet.</p>
-            <Link href="/intake" className="btn btn--secondary">
+            <Link href="/intake" className="btn btn--text">
               Open intake
             </Link>
           </section>
         ) : (
           <>
+            <section className="intake-card">
+              <h2 className="type-card-title">Status</h2>
+              <p className="type-body">
+                {draft.status ?? "Not yet confirmed by the client."}
+              </p>
+              {draft.loStatus ? (
+                <p className="type-legal">Queue mark: {draft.loStatus}.</p>
+              ) : null}
+            </section>
+
             <section className="intake-card">
               <h2 className="type-card-title">Client</h2>
               <dl className="scenario-echo">
@@ -86,14 +96,33 @@ export function LoReview() {
             </section>
 
             <section className="intake-card">
-              <h2 className="type-card-title">Confirmed draft</h2>
-              <p className="type-body">{draft.status ?? "Not yet confirmed by the client."}</p>
+              <h2 className="type-card-title">Confirmed draft summary</h2>
+              <dl className="scenario-echo">
+                <dt>Income type</dt>
+                <dd>
+                  {draft.incomeType.value ? incomeLabel(draft.incomeType.value) : "—"}
+                </dd>
+                <dt>Income amount</dt>
+                <dd>—</dd>
+                <dt>Occupancy</dt>
+                <dd>
+                  {draft.occupancyChoice.value
+                    ? occupancyLabel(draft.occupancyChoice.value)
+                    : "—"}
+                </dd>
+                <dt>Timeline</dt>
+                <dd>
+                  {draft.timelineChoice.value
+                    ? timelineLabel(draft.timelineChoice.value)
+                    : "—"}
+                </dd>
+              </dl>
               <ul className="intake-note-list">
                 <li>Contact: {draft.sections.contact ? "confirmed" : "open"}</li>
                 <li>Scenario: {draft.sections.scenario ? "confirmed" : "open"}</li>
                 <li>Occupancy: {draft.sections.occupancy ? "confirmed" : "open"}</li>
+                <li>Income: {draft.sections.income ? "confirmed" : "open"}</li>
                 <li>Documents: {draft.sections.documents ? "confirmed" : "open"}</li>
-                <li>Notes: {draft.sections.notes ? "confirmed" : "open"}</li>
               </ul>
               {draft.notes.length ? (
                 <p className="type-legal">Client notes: {draft.notes.join(" · ")}</p>
@@ -106,7 +135,7 @@ export function LoReview() {
                 <ul className="intake-note-list">
                   {draft.documents.map((doc) => (
                     <li key={doc.slot}>
-                      {doc.slot}: {doc.name}
+                      {doc.slot}: {doc.name} — {doc.status}
                     </li>
                   ))}
                 </ul>
@@ -125,9 +154,7 @@ export function LoReview() {
                     key={mark}
                     type="button"
                     className={
-                      draft.loStatus === mark
-                        ? "btn btn--primary"
-                        : "btn btn--secondary"
+                      draft.loStatus === mark ? "btn btn--primary" : "btn btn--secondary"
                     }
                     onClick={() => setLoStatus(mark)}
                   >
@@ -135,9 +162,6 @@ export function LoReview() {
                   </button>
                 ))}
               </div>
-              {draft.loStatus ? (
-                <p className="type-legal">Current mark: {draft.loStatus}.</p>
-              ) : null}
             </section>
           </>
         )}

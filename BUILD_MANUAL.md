@@ -81,31 +81,32 @@ Slice 3 — results placeholder on the same `/products/results` route. Header `Y
 
 Do not change the homepage ACR object or locked homepage copy. Nav labels stay `Rates` · `ACR` · `About`. `/rates` may link quietly to `/products` and `/products/scenario`.
 
-## Fox Intake v1 + Always-on Fox
+## Fox Intake + Always-on Fox
 
 Preview only. California only. Client stays in control; Fox prepares a draft. Not a multi-page 1003.
 
 ### Always-on Fox
 
-Mounted on `/products`, `/products/scenario`, `/products/results`, and `/intake` only — not the homepage hero. Client component `AlwaysOnFox` via `FoxShell` on those route layouts. Mobile: quiet `Ask Fox` control. Desktop: 380px slide-over. Geometric `<AdvisorMark />` only. No mascot animation. Not “Foxxy”.
+Mounted on `/products`, `/products/scenario`, `/products/results`, and `/intake` only — not the homepage hero. Persistent dock (not FAB/orb-only): collapsed `Ask ONYX Fox`; expanded conversation + current-task context. First mention / panel header `ONYX Fox`; ongoing labels `Fox`. Geometric `<AdvisorMark />` only. Optional tiny `--sunset` catchlight on the dock — do not use sunset on CTAs, fills, or ACR gold.
 
-Scripted + session-aware. Does not call `app/api/chat`. Reads `onyx.productExplorer.scenario` and selected product. Can explain products (no rates), next steps, and start intake (`Let’s prepare a draft`).
+Scripted + session-aware. Does not call `app/api/chat`. Reads `onyx.productExplorer.scenario` and selected product. Structured questions use clickable bubbles (income, occupancy, timeline, docs, confirm). Free text remains available.
 
 **Fox is primary.** Licensed originator is on-request only: a quiet text link `Need a licensed originator?` → `/advisor`. Do not put a primary or secondary originator button beside Fox actions. Do not open a live LO chat.
 
-Disclosure, exact: `Fox can assist and prepare. Fox cannot approve, lock, or commit to lend.`
+Disclosure, exact: `ONYX Fox can assist and prepare. It cannot approve, lock, or commit to lend.`
 
 ### Intake (`/intake`)
 
-One page, stages in place: context carry-in → chat-led contact → document drop → draft summary → confirmation.
+One page: bubbles → document drop → stub extract → draft summary → confirm.
 
 - Storage: `sessionStorage` + `localStorage` key `onyx.foxIntake.draft`
 - Scenario key unchanged: `onyx.productExplorer.scenario`
-- Documents: metadata only (name, type, size, slot, receivedAt). No file bytes in git, no upload, no public URL.
-- Extraction: do not invent income, SSN, or account numbers. Client-entered + scenario only.
-- Each draft section: Confirm | Edit. Audit fields: `{ field, source: client | scenario | extracted-unconfirmed, confirmed, confirmedAt? }`
-- After all key sections confirmed: `Application draft confirmed — pending licensed review`
-- Confirmation language: `A licensed originator will review this.` Do not force a live LO chat or a large originator button on that screen.
+- Documents: metadata only (name, type, size, slot, status, receivedAt). Status: `received` → `reading` → `extracted` | `needs better copy` / `failed`. No file bytes in git, no upload, no public URL.
+- Extraction is stubbed. Do not invent income, SSN, account, rate, or payment numbers. Empty fields stay empty and labeled.
+- Audit fields: `{ field, source: client | scenario | extracted-unconfirmed, confirmed }`
+- Confirm bubbles: `Looks right` / `Needs a correction`
+- After confirm: `Draft confirmed — pending licensed review`
+- Next step: `A licensed originator will review this.`
 - Draft ≠ commitment to lend. No live pricing.
 
 ### LO review queue
@@ -170,7 +171,7 @@ lib/*                             UNCHANGED
 
 Implemented as CSS variables in `styles/tokens.css`. Do not add a Tailwind palette or a second color system.
 
-`--paper` is `#F6EFE4` (cohesion pass). `--paper-elevated` stays `#FFFCF6`. Other token hex values stay locked.
+`--paper` is `#F6EFE4` (cohesion pass). `--paper-elevated` stays `#FFFCF6`. `--sunset` is `#E08A4F` — rare detail only (optional dock catchlight). Do not apply sunset to CTAs, backgrounds, card fills, or ACR gold. Other token hex values stay locked.
 
 Cohesion (light visual only): hero + Spotlight share one paper opening; 1px `--line` seams between later major blocks (desks, rates/comparison, path, proof, closer); object radius 16 / UI card radius 12 with elevated paper + hairline and no shadow; ONYX comparison column is an 8% metal wash on elevated paper; path numerals are `color-mix` metal into paper (~28%); proof stats sit on one hairline row.
 

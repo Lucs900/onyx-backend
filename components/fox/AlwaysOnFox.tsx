@@ -19,17 +19,14 @@ import {
   intakeHref,
   promptCopy,
   replyToMessage,
+  taskContext,
 } from "./script";
 import {
-  addNote,
-  advancePhase,
+  applyCapture,
   getFoxDraft,
   getServerDraft,
   hydrateFoxDraft,
-  markPreferredAsked,
-  setContactField,
   setDraftScenario,
-  skipDocuments,
   subscribeFoxDraft,
 } from "./store";
 import {
@@ -59,6 +56,7 @@ export function AlwaysOnFox() {
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState<FoxMessage[]>([]);
   const greeted = useRef<string>("");
+  const skipPromptSync = useRef(false);
   const listRef = useRef<HTMLDivElement>(null);
   const fieldId = useId();
 
@@ -93,13 +91,29 @@ export function AlwaysOnFox() {
       { id: newId(), role: "fox", text: hello.text, actions: hello.actions },
     ];
     if (stage === "intake" && live.phase !== "confirmed") {
-      const ask = promptCopy(currentPrompt(live));
+      const ask = promptCopy(currentPrompt(live), live);
       if (ask.text !== hello.text) {
         lines.push({ id: newId(), role: "fox", text: ask.text, actions: ask.actions });
       }
     }
+    skipPromptSync.current = true;
     setMessages(lines);
   }, [pathname, ready, stage]);
+
+  useEffect(() => {
+    if (!ready || stage !== "intake") return;
+    if (skipPromptSync.current) {
+      skipPromptSync.current = false;
+      return;
+    }
+    const live = getFoxDraft();
+    const ask = promptCopy(currentPrompt(live), live);
+    setMessages((prev) => {
+      const last = prev[prev.length - 1];
+      if (last?.role === "fox" && last.text === ask.text) return prev;
+      return [...prev, { id: newId(), role: "fox", text: ask.text, actions: ask.actions }];
+    });
+  }, [draft.updatedAt, ready, stage]);
 
   useEffect(() => {
     listRef.current?.scrollTo({ top: listRef.current.scrollHeight });
@@ -108,6 +122,14 @@ export function AlwaysOnFox() {
   if (!stage || !ready) return null;
 
   const scenario = draft.scenario ?? readScenario();
+
+  const appendReply = (clientText: string, fox: { text: string; actions?: FoxAction[] }) => {
+    setMessages((prev) => [
+      ...prev,
+      { id: newId(), role: "client", text: clientText },
+      { id: newId(), role: "fox", text: fox.text, actions: fox.actions },
+    ]);
+  };
 
   const runAction = (action: FoxAction) => {
     if (action.href) {
@@ -118,31 +140,19 @@ export function AlwaysOnFox() {
       router.push(intakeHref(scenario));
       return;
     }
-    if (action.event === "skip-docs") {
-      skipDocuments();
-      advancePhase();
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: newId(),
-          role: "fox",
-          text: "That's fine. Confirm each section on the page. Nothing is final until you do.",
-        },
-      ]);
-      return;
-    }
-    if (action.event === "open-docs") {
+    if (action.capture?.field === "open-docs" || action.event === "open-docs") {
+      applyCapture({ field: "open-docs" });
       document.getElementById("fox-documents")?.scrollIntoView({ behavior: "smooth" });
+      appendReply(action.label, {
+        text: "Add a file in the document slots. Fox will mark received, then reading. Dollar amounts will not be invented.",
+      });
       return;
     }
-    if (action.event === "skip-preferred") {
-      markPreferredAsked();
-      advancePhase();
-      const ask = promptCopy("documents");
-      setMessages((prev) => [
-        ...prev,
-        { id: newId(), role: "fox", text: ask.text, actions: ask.actions },
-      ]);
+    if (action.capture) {
+      applyCapture(action.capture);
+      const live = getFoxDraft();
+      const next = promptCopy(currentPrompt(live), live);
+      appendReply(action.label, next);
     }
   };
 
@@ -152,29 +162,15 @@ export function AlwaysOnFox() {
     if (!text) return;
     setInput("");
     const reply = replyToMessage(text, stage, draft, scenario);
-    if (reply.capture?.field === "fullName" || reply.capture?.field === "email" || reply.capture?.field === "phone" || reply.capture?.field === "preferredContact") {
-      setContactField(reply.capture.field, reply.capture.value);
-      if (reply.capture.field === "preferredContact") markPreferredAsked();
-      advancePhase();
-    } else if (reply.capture?.field === "preferred-asked") {
-      if (reply.capture.value) setContactField("preferredContact", reply.capture.value);
-      markPreferredAsked();
-      advancePhase();
-    } else if (reply.capture?.field === "skip-docs") {
-      skipDocuments();
-      advancePhase();
-    } else if (reply.capture?.field === "note") {
-      addNote(reply.capture.value);
+    if (reply.capture) applyCapture(reply.capture);
+    if (reply.capture?.field === "open-docs") {
+      document.getElementById("fox-documents")?.scrollIntoView({ behavior: "smooth" });
     }
-    setMessages((prev) => [
-      ...prev,
-      { id: newId(), role: "client", text },
-      { id: newId(), role: "fox", text: reply.text, actions: reply.actions },
-    ]);
+    appendReply(text, reply);
   };
 
   return (
-    <>
+    <div className="fox-dock">
       <button
         type="button"
         className="fox-ask"
@@ -183,7 +179,8 @@ export function AlwaysOnFox() {
         onClick={() => setOpen((value) => !value)}
       >
         <AdvisorMark size="sm" />
-        <span>{open ? "Close Fox" : "Ask Fox"}</span>
+        <span>{open ? "Close Fox" : "Ask ONYX Fox"}</span>
+        <span className="fox-ask__catch" aria-hidden="true" />
       </button>
 
       <div
@@ -201,13 +198,7 @@ export function AlwaysOnFox() {
               ONYX Fox
             </h2>
             <p className="type-legal">
-              {stage === "explore"
-                ? "Explore"
-                : stage === "scenario"
-                  ? "Scenario"
-                  : stage === "results"
-                    ? "Results"
-                    : "Intake"}
+              {taskContext(stage, draft)}
               {scenario?.productName ? ` · ${scenario.productName}` : ""}
             </p>
           </div>
@@ -262,7 +253,7 @@ export function AlwaysOnFox() {
             className="fox-panel__input"
             value={input}
             onChange={(event) => setInput(event.target.value)}
-            placeholder="Ask Fox"
+            placeholder="Or type to Fox"
             autoComplete="off"
           />
           <button type="submit" className="btn btn--primary fox-panel__send" disabled={!input.trim()}>
@@ -276,6 +267,6 @@ export function AlwaysOnFox() {
           <Link href="/advisor">{ORIGINATOR_REQUEST}</Link>
         </p>
       </div>
-    </>
+    </div>
   );
 }
