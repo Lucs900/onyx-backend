@@ -1,42 +1,86 @@
-/* Fox Intake v1 + Always-on Fox. Tokens only. No second palette. */
+/* Fox Intake v1 + Always-on Fox. Tokens only. Sunset on the launcher only. */
 
 .fox-shell {
   min-height: 100%;
-  padding-bottom: 56px;
+  padding-bottom: 88px;
 }
 
 .fox-dock {
   position: fixed;
-  left: 0;
-  right: 0;
-  bottom: 0;
+  right: 16px;
+  bottom: calc(16px + env(safe-area-inset-bottom, 0px));
   z-index: 45;
   display: flex;
-  flex-direction: column-reverse;
-  background: var(--paper-elevated);
-  border-top: 1px solid var(--line);
+  flex-direction: column;
 }
 
-.fox-dock__bar {
+.fox-dock__launch {
   display: flex;
   align-items: center;
-  flex-shrink: 0;
   gap: 10px;
-  width: 100%;
-  min-height: 56px;
-  padding: 0 16px env(safe-area-inset-bottom, 0);
-  border: 0;
-  background: transparent;
+  min-height: 52px;
+  padding: 0 16px 0 8px;
+  border: 2px solid var(--sunset);
+  border-radius: 999px;
+  background: var(--paper-elevated);
+  box-shadow: 0 8px 24px rgb(11 11 12 / 0.12);
   color: var(--ink);
   font-family: var(--font-ui);
   font-size: 14px;
-  font-weight: 500;
+  font-weight: 600;
   cursor: pointer;
   text-align: left;
 }
 
+.fox-dock__mark {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--sunset);
+  color: var(--paper-elevated);
+}
+
+.fox-ask__catch {
+  position: absolute;
+  top: 4px;
+  right: 5px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--paper-elevated);
+}
+
+.fox-dock.is-open {
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 42vh;
+  min-height: 33vh;
+  max-height: 50vh;
+  background: var(--paper-elevated);
+  border-top: 1px solid var(--line);
+  box-shadow: 0 -8px 24px rgb(11 11 12 / 0.06);
+}
+
+.fox-dock__head {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  gap: 8px;
+  min-height: 48px;
+  padding: 0 12px 0 16px;
+  border-bottom: 1px solid var(--line);
+  color: var(--ink);
+}
+
 .fox-dock__label {
   flex: 0 0 auto;
+  font-family: var(--font-ui);
+  font-size: 14px;
+  font-weight: 600;
 }
 
 .fox-dock__task {
@@ -47,34 +91,43 @@
   white-space: nowrap;
 }
 
-.fox-ask__catch {
-  width: 5px;
-  height: 5px;
-  margin-left: auto;
-  border-radius: 50%;
-  background: var(--sunset);
+.fox-dock__info,
+.fox-dock__close {
+  flex: 0 0 auto;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-family: var(--font-ui);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
 }
 
 .fox-dock__body {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  width: 100%;
-  max-height: min(56vh, 480px);
-  padding: 16px 16px 12px;
-  border-bottom: 1px solid var(--line);
+  gap: 10px;
+  min-height: 0;
+  flex: 1 1 auto;
+  padding: 12px 16px calc(12px + env(safe-area-inset-bottom, 0px));
 }
 
-.fox-dock__body[hidden] {
-  display: none;
+.fox-dock__legal,
+.fox-dock__human {
+  margin: 0;
+}
+
+.fox-dock__human {
+  text-align: left;
 }
 
 .fox-panel__thread {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  min-height: 160px;
-  max-height: 42vh;
+  min-height: 0;
+  flex: 1 1 auto;
   overflow: auto;
 }
 
@@ -140,11 +193,6 @@
 .fox-panel__send:disabled {
   opacity: 0.4;
   cursor: default;
-}
-
-.fox-panel__disclosure,
-.fox-panel__human {
-  margin: 0;
 }
 
 .intake {
@@ -229,13 +277,24 @@
 }
 
 @media (min-width: 768px) {
-  .fox-dock__bar {
-    padding: 0 24px env(safe-area-inset-bottom, 0);
+  .fox-dock {
+    right: 24px;
+    bottom: 24px;
+  }
+
+  .fox-dock.is-open {
+    left: auto;
+    width: min(400px, calc(100vw - 48px));
+    height: min(52vh, 560px);
+    min-height: 320px;
+    max-height: min(52vh, 560px);
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    box-shadow: 0 12px 32px rgb(11 11 12 / 0.1);
   }
 
   .fox-dock__body {
-    padding: 20px 24px 12px;
-    max-height: min(52vh, 520px);
+    padding: 12px 16px 16px;
   }
 
   .fox-panel__thread {

@@ -32,9 +32,9 @@ import {
 } from "./store";
 import {
   FOX_DISCLOSURE,
+  FOX_LEGAL_KEY,
   FOX_PANEL_KEY,
   ORIGINATOR_REQUEST,
-  TRUST_LINE,
   type FoxAction,
   type FoxMessage,
 } from "./types";
@@ -51,35 +51,26 @@ export function requestFoxAsk(text: string) {
   window.dispatchEvent(new CustomEvent("onyx:fox-ask", { detail: { text } }));
 }
 
-export function FoxDockBar({
-  open,
-  task,
-  onToggle,
-}: {
-  open: boolean;
-  task?: string;
-  onToggle?: () => void;
-}) {
+export function FoxLauncher({ onToggle }: { onToggle?: () => void }) {
   const inner = (
     <>
-      <AdvisorMark size="sm" />
-      <span className="fox-dock__label">{open ? "ONYX Fox" : "Ask ONYX Fox"}</span>
-      {open && task ? (
-        <span className="type-legal fox-dock__task">{task}</span>
-      ) : null}
-      <span className="fox-ask__catch" aria-hidden="true" />
+      <span className="fox-dock__mark">
+        <AdvisorMark size="sm" />
+        <span className="fox-ask__catch" aria-hidden="true" />
+      </span>
+      <span className="fox-dock__label">Ask ONYX Fox</span>
     </>
   );
 
   if (!onToggle) {
-    return <div className="fox-dock__bar">{inner}</div>;
+    return <div className="fox-dock__launch">{inner}</div>;
   }
 
   return (
     <button
       type="button"
-      className="fox-dock__bar"
-      aria-expanded={open}
+      className="fox-dock__launch"
+      aria-expanded={false}
       aria-controls="fox-panel"
       onClick={onToggle}
     >
@@ -97,6 +88,7 @@ export function AlwaysOnFox() {
   const [ready, setReady] = useState(false);
   const [search, setSearch] = useState("");
   const [input, setInput] = useState("");
+  const [legal, setLegal] = useState(false);
   const [messages, setMessages] = useState<FoxMessage[]>([]);
   const greeted = useRef<string>("");
   const pendingAsk = useRef<string | null>(null);
@@ -114,8 +106,12 @@ export function AlwaysOnFox() {
       hydrateFoxDraft();
     }
     const stored = sessionStorage.getItem(FOX_PANEL_KEY);
+    const live = getFoxDraft();
+    const asking = stage === "intake" && live.phase !== "confirmed";
     if (stage === "home") {
       setOpen(false);
+    } else if (asking && stored !== "0") {
+      setOpen(true);
     } else if (stored === "1") {
       setOpen(true);
     } else if (stored === "0") {
@@ -158,6 +154,11 @@ export function AlwaysOnFox() {
     if (!ready || !stage) return;
     sessionStorage.setItem(FOX_PANEL_KEY, open ? "1" : "0");
   }, [open, ready, stage]);
+
+  useEffect(() => {
+    if (!open || !ready) return;
+    if (sessionStorage.getItem(FOX_LEGAL_KEY) !== "1") setLegal(true);
+  }, [open, ready]);
 
   useEffect(() => {
     if (!ready || !stage) return;
@@ -262,11 +263,54 @@ export function AlwaysOnFox() {
     appendReply(text, reply);
   };
 
-  return (
-    <div className={open ? "fox-dock is-open" : "fox-dock"}>
-      <FoxDockBar open={open} task={task} onToggle={() => setOpen((value) => !value)} />
+  const toggleLegal = () => {
+    setLegal((value) => {
+      if (value) sessionStorage.setItem(FOX_LEGAL_KEY, "1");
+      return !value;
+    });
+  };
 
-      <div id="fox-panel" className="fox-dock__body" hidden={!open}>
+  if (!open) {
+    return (
+      <div className="fox-dock">
+        <FoxLauncher onToggle={() => setOpen(true)} />
+      </div>
+    );
+  }
+
+  return (
+    <div className="fox-dock is-open">
+      <div className="fox-dock__head">
+        <AdvisorMark size="sm" />
+        <span className="fox-dock__label">ONYX Fox</span>
+        <span className="type-legal fox-dock__task">{task}</span>
+        <button
+          type="button"
+          className="fox-dock__info"
+          aria-expanded={legal}
+          aria-controls="fox-legal"
+          onClick={toggleLegal}
+        >
+          Legal
+        </button>
+        <button
+          type="button"
+          className="fox-dock__close"
+          aria-expanded={true}
+          aria-controls="fox-panel"
+          onClick={() => setOpen(false)}
+        >
+          Close
+        </button>
+      </div>
+
+      <div id="fox-panel" className="fox-dock__body">
+        {legal ? (
+          <p id="fox-legal" className="type-legal fox-dock__legal">
+            {FOX_DISCLOSURE}
+          </p>
+        ) : null}
+
         <div className="fox-panel__thread" ref={listRef} aria-live="polite">
           {messages.map((message) => (
             <article
@@ -309,7 +353,7 @@ export function AlwaysOnFox() {
             className="fox-panel__input"
             value={input}
             onChange={(event) => setInput(event.target.value)}
-            placeholder="Or type to Fox"
+            placeholder="Message Fox"
             autoComplete="off"
           />
           <button type="submit" className="btn btn--primary fox-panel__send" disabled={!input.trim()}>
@@ -317,9 +361,7 @@ export function AlwaysOnFox() {
           </button>
         </form>
 
-        <p className="type-legal fox-panel__disclosure">{FOX_DISCLOSURE}</p>
-        <p className="type-legal fox-panel__disclosure">{TRUST_LINE}</p>
-        <p className="type-legal fox-panel__human">
+        <p className="type-legal fox-dock__human">
           <Link href="/advisor">{ORIGINATOR_REQUEST}</Link>
         </p>
       </div>

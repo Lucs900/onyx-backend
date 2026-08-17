@@ -25,16 +25,11 @@ The hero object is the exact locked bitmap **`public/acr-card-face.png`**, shown
 
 Hero secondary `Just need a mortgage` now switches Slice 3 to Loan mode and scrolls to it.
 
-## Slice 3 — Homepage composer (ONYX Fox)
+## Slice 3 — Homepage mode toggle
 
-Centered section under the hero. Stack: toggle → composer → chips → disclosure. Assistant name is **ONYX Fox** (short: Fox). Not ONYX Advisor.
+Centered section under the hero is **page mode only**: `Relationship` | `Loan`. Default **Relationship**. Not a second Fox composer. No centered ask bar, chips-as-chat, or “Ask ONYX Fox” form on the page.
 
-- Toggle: `Relationship` | `Loan`. Default **Relationship**.
-- Composer uses `<AdvisorMark size="sm" />` (20px). Send disabled until there is text. Submit and chips open the persistent Fox dock and send that text — not a second chat thread, not `/api/chat`.
-- Default preview: Relationship, first chip selected, empty input.
-- Loan mode keeps no-op `Prefer a short form`. Do not build the Classic form this slice.
-
-Disclosure, exact: `ONYX Fox can assist and prepare. It cannot approve, lock, or commit to lend.`
+Hero `Just need a mortgage` and rate-card `Find my rate` still switch this toggle to Loan and scroll to it. Fox lives only in the persistent launcher.
 
 ## Slice 4 — Membership math (The Three Desks)
 
@@ -84,7 +79,9 @@ Preview only. California only. Client stays in control; Fox prepares a draft. No
 
 ### Always-on Fox
 
-Mounted on `/` (homepage), `/products`, `/products/scenario`, `/products/results`, and `/intake` — not `/about`, `/rates`, `/acr`, or other marketing stubs. Persistent full-width bottom dock (not a popup, FAB, dialog, or orb): the `Ask ONYX Fox` bar is pinned to the bottom and renders immediately; conversation expands above that same bar. Homepage starts collapsed so the locked ACR hero stays clear. `/intake` starts expanded unless the session already collapsed it. First mention / dock header `ONYX Fox`; ongoing labels `Fox`. Geometric `<AdvisorMark />` only. Optional tiny `--sunset` catchlight on the dock — do not use sunset on CTAs, fills, or ACR gold.
+Mounted on `/` (homepage), `/products`, `/products/scenario`, `/products/results`, and `/intake` — not `/about`, `/rates`, `/acr`, or other marketing stubs. One launcher only: collapsed `Ask ONYX Fox` + geometric `<AdvisorMark />` + sunset accent (border/ring, small mark fill, catchlight). Not a pale full-width strip. Mobile opens as a bottom sheet (~1/3–1/2 screen). Desktop opens the same system as a corner panel. Page stays visible. Homepage and other pages start collapsed; `/intake` starts expanded while Fox has an active question. First mention / header `ONYX Fox`; ongoing labels `Fox`.
+
+Open chat is clean: messages, answer bubbles, type + send, header (ONYX Fox + task + close). Disclosure once, lightly, or behind `Legal`: `ONYX Fox can assist and prepare. It cannot approve, lock, or commit to lend.` No stacked NMLS/DRE in the chat. Footer stays the durable trust place. `--sunset` (`#E08A4F`) is launcher-only — not page backgrounds, primary CTAs, chat panel takeover, or ACR gold.
 
 Scripted + session-aware. Does not call `app/api/chat`. Reads `onyx.productExplorer.scenario` and selected product. Structured questions use clickable bubbles (income, occupancy, timeline, docs, confirm). Free text remains available.
 
@@ -149,7 +146,7 @@ components/SiteHeader.tsx         locked sparse chrome
 components/SiteFooter.tsx         sparse footer, pending-approval placeholders
 components/MembershipHero.tsx     locked hero; secondary → Loan spotlight
 components/AcrPass.tsx            exact locked ACR face image, no overlays
-components/AdvisorSpotlight.tsx   toggle, composer, chips, disclosure
+components/AdvisorSpotlight.tsx   homepage Relationship / Loan page-mode toggle
 components/HomeExperience.tsx     homepage client wiring
 components/ValueBreakdown.tsx     three locked desks
 components/RateCard.tsx           mortgage-only off-ramp
@@ -170,7 +167,7 @@ lib/*                             UNCHANGED
 
 Implemented as CSS variables in `styles/tokens.css`. Do not add a Tailwind palette or a second color system.
 
-`--paper` is `#F6EFE4` (cohesion pass). `--paper-elevated` stays `#FFFCF6`. `--sunset` is `#E08A4F` — rare detail only (optional dock catchlight). Do not apply sunset to CTAs, backgrounds, card fills, or ACR gold. Other token hex values stay locked.
+`--paper` is `#F6EFE4` (cohesion pass). `--paper-elevated` stays `#FFFCF6`. `--sunset` is `#E08A4F` — Fox launcher only (border/ring, small fill, catchlight). Do not apply sunset to page backgrounds, primary CTAs, chat panel fills, card fills, or ACR gold. Other token hex values stay locked.
 
 Cohesion (light visual only): hero + Spotlight share one paper opening; 1px `--line` seams between later major blocks (desks, rates/comparison, path, proof, closer); object radius 16 / UI card radius 12 with elevated paper + hairline and no shadow; ONYX comparison column is an 8% metal wash on elevated paper; path numerals are `color-mix` metal into paper (~28%); proof stats sit on one hairline row.
 

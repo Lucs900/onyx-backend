@@ -9,7 +9,7 @@
   --line: #E6E1D8;
   --metal: #C4A574;
   --fox: #8B3A2A;
-  /* Rare detail only. Do not use on CTAs, fills, or ACR gold. */
+  /* Fox launcher only: border/ring, small fill, catchlight. Not page fills, primary CTAs, or ACR gold. */
   --sunset: #E08A4F;
   --ok: #2F5D50;
   --danger: #8F2D2D;

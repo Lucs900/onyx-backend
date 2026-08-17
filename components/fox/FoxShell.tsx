@@ -2,12 +2,12 @@
 
 import type { ReactNode } from "react";
 import { Suspense } from "react";
-import { AlwaysOnFox, FoxDockBar } from "./AlwaysOnFox";
+import { AlwaysOnFox, FoxLauncher } from "./AlwaysOnFox";
 
 function DockFallback() {
   return (
     <div className="fox-dock" aria-hidden="true">
-      <FoxDockBar open={false} />
+      <FoxLauncher />
     </div>
   );
 }
