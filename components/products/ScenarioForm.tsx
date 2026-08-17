@@ -159,7 +159,7 @@ export function ScenarioForm() {
     };
 
     writeScenario(scenario);
-    router.push(`/products/results?${scenarioToQuery(scenario).toString()}`);
+    router.push(`/products/results?${scenarioToQuery(scenario)}`);
   };
 
   return (

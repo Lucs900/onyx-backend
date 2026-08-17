@@ -128,63 +128,134 @@ export function scenarioFromProduct(slug?: string): Partial<ExplorerScenario> {
 }
 
 export function writeScenario(scenario: ExplorerScenario) {
-  sessionStorage.setItem(SCENARIO_STORAGE_KEY, JSON.stringify(scenario));
+  try {
+    sessionStorage.setItem(SCENARIO_STORAGE_KEY, JSON.stringify(scenario));
+  } catch {
+    // Private mode / quota — the encoded query string still carries the scenario.
+  }
+}
+
+function isStoredScenario(value: unknown): value is ExplorerScenario {
+  if (!value || typeof value !== "object") return false;
+  const s = value as ExplorerScenario;
+  if (!isCaliforniaZip(s.zip)) return false;
+  if (!PURPOSE_OPTIONS.some((option) => option.value === s.purpose)) return false;
+  if (!Number.isFinite(s.propertyValue) || s.propertyValue <= 0) return false;
+  if (s.amountMode !== "loan" && s.amountMode !== "down") return false;
+  if (!CREDIT_OPTIONS.some((option) => option.value === s.creditRange)) return false;
+  if (!OCCUPANCY_OPTIONS.some((option) => option.value === s.occupancy)) return false;
+  return true;
 }
 
 export function readScenario(): ExplorerScenario | null {
   try {
     const raw = sessionStorage.getItem(SCENARIO_STORAGE_KEY);
     if (!raw) return null;
-    return JSON.parse(raw) as ExplorerScenario;
+    const parsed = JSON.parse(raw) as unknown;
+    return isStoredScenario(parsed) ? parsed : null;
   } catch {
     return null;
   }
 }
 
-export function scenarioToQuery(scenario: ExplorerScenario) {
-  const params = new URLSearchParams();
-  if (scenario.productSlug) params.set("product", scenario.productSlug);
-  params.set("zip", scenario.zip);
-  params.set("purpose", scenario.purpose);
-  params.set("propertyValue", String(scenario.propertyValue));
-  params.set("amountMode", scenario.amountMode);
-  if (scenario.loanAmount != null) params.set("loanAmount", String(scenario.loanAmount));
-  if (scenario.downPayment != null) params.set("downPayment", String(scenario.downPayment));
-  params.set("creditRange", scenario.creditRange);
-  params.set("occupancy", scenario.occupancy);
-  if (scenario.timeline) params.set("timeline", scenario.timeline);
-  return params;
+/** Query token for the 760+ band. A raw `+` is treated as a space by URL parsers. */
+const CREDIT_760_PLUS_TOKEN = "760-plus";
+
+function creditRangeToQuery(range: CreditRange): string {
+  return range === "760+" ? CREDIT_760_PLUS_TOKEN : range;
 }
 
-export function scenarioFromQuery(
-  params: URLSearchParams,
-): ExplorerScenario | null {
+function creditRangeFromQuery(raw: string | null): CreditRange | null {
+  if (!raw) return null;
+  const token = raw.trim().replace(/\s+/g, "");
+  if (token === CREDIT_760_PLUS_TOKEN || token === "760+" || token === "760") {
+    return "760+";
+  }
+  return CREDIT_OPTIONS.some((option) => option.value === token)
+    ? (token as CreditRange)
+    : null;
+}
+
+function appendEncoded(pairs: string[], key: string, value: string) {
+  pairs.push(`${encodeURIComponent(key)}=${encodeURIComponent(value)}`);
+}
+
+export function scenarioToQuery(scenario: ExplorerScenario): string {
+  const pairs: string[] = [];
+  if (scenario.productSlug) appendEncoded(pairs, "product", scenario.productSlug);
+  appendEncoded(pairs, "zip", scenario.zip);
+  appendEncoded(pairs, "purpose", scenario.purpose);
+  appendEncoded(pairs, "propertyValue", String(scenario.propertyValue));
+  appendEncoded(pairs, "amountMode", scenario.amountMode);
+  if (scenario.loanAmount != null) {
+    appendEncoded(pairs, "loanAmount", String(scenario.loanAmount));
+  }
+  if (scenario.downPayment != null) {
+    appendEncoded(pairs, "downPayment", String(scenario.downPayment));
+  }
+  appendEncoded(pairs, "creditRange", creditRangeToQuery(scenario.creditRange));
+  appendEncoded(pairs, "occupancy", scenario.occupancy);
+  if (scenario.timeline) appendEncoded(pairs, "timeline", scenario.timeline);
+  return pairs.join("&");
+}
+
+type QueryLike = { get: (name: string) => string | null };
+
+export function scenarioFromQuery(params: QueryLike): ExplorerScenario | null {
   const zip = params.get("zip") ?? "";
-  const purpose = params.get("purpose") as LoanPurpose | null;
+  const purpose = params.get("purpose");
   const propertyValue = Number(params.get("propertyValue"));
-  const amountMode = params.get("amountMode") as AmountMode | null;
-  const creditRange = params.get("creditRange") as CreditRange | null;
-  const occupancy = params.get("occupancy") as Occupancy | null;
-  if (!zip || !purpose || !amountMode || !creditRange || !occupancy) return null;
+  const amountMode = params.get("amountMode");
+  const creditRange = creditRangeFromQuery(params.get("creditRange"));
+  const occupancy = params.get("occupancy");
+
+  const purposeValue = PURPOSE_OPTIONS.find((option) => option.value === purpose)?.value;
+  const occupancyValue = OCCUPANCY_OPTIONS.find(
+    (option) => option.value === occupancy,
+  )?.value;
+
+  if (!isCaliforniaZip(zip)) return null;
+  if (!purposeValue) return null;
   if (!Number.isFinite(propertyValue) || propertyValue <= 0) return null;
+  if (amountMode !== "loan" && amountMode !== "down") return null;
+  if (!creditRange) return null;
+  if (!occupancyValue) return null;
 
   const productSlug = params.get("product") || undefined;
   const product = productSlug ? getProduct(productSlug) : undefined;
   const loanAmount = params.get("loanAmount");
   const downPayment = params.get("downPayment");
-  const timeline = (params.get("timeline") as Timeline | null) || undefined;
+  const timelineRaw = params.get("timeline");
+  const timeline = TIMELINE_OPTIONS.some((option) => option.value === timelineRaw)
+    ? (timelineRaw as Timeline)
+    : undefined;
 
   return {
     productSlug: product?.slug,
     productName: product?.name,
     zip,
-    purpose,
+    purpose: purposeValue,
     propertyValue,
     amountMode,
     loanAmount: loanAmount ? Number(loanAmount) : undefined,
     downPayment: downPayment ? Number(downPayment) : undefined,
     creditRange,
-    occupancy,
+    occupancy: occupancyValue,
     timeline,
   };
 }
+
+/** Shareable filled-results query for preview / QA. Not a live quote. */
+export const FILLED_RESULTS_PREVIEW_QUERY = scenarioToQuery({
+  zip: "94129",
+  purpose: "purchase",
+  propertyValue: 1_200_000,
+  amountMode: "loan",
+  loanAmount: 960_000,
+  downPayment: 240_000,
+  creditRange: "760+",
+  occupancy: "primary",
+  timeline: "30-90",
+  productSlug: "conventional-purchase",
+  productName: "Conventional Purchase",
+});

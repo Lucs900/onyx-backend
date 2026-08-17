@@ -14,6 +14,8 @@ import {
   labelFor,
   readScenario,
   scenarioFromQuery,
+  writeScenario,
+  type ExplorerScenario,
 } from "./scenario";
 
 const TRUST_LINE =
@@ -22,17 +24,38 @@ const ESTIMATE_NOTE = "Estimates only, not a commitment to lend.";
 const SUBTEXT =
   "These are not final rates or an approval. Indicative options will appear here next.";
 
+function scenarioFromClientLocation() {
+  if (typeof window === "undefined") return null;
+  return scenarioFromQuery(new URLSearchParams(window.location.search));
+}
+
 export function ScenarioResults() {
   const searchParams = useSearchParams();
-  const [scenario, setScenario] = useState(() => scenarioFromQuery(searchParams));
+  const [ready, setReady] = useState(false);
+  const [scenario, setScenario] = useState<ExplorerScenario | null>(null);
 
   useEffect(() => {
-    setScenario(scenarioFromQuery(searchParams) ?? readScenario());
+    const fromQuery = scenarioFromQuery(searchParams) ?? scenarioFromClientLocation();
+    const resolved = fromQuery ?? readScenario();
+    if (fromQuery) writeScenario(fromQuery);
+    setScenario(resolved);
+    setReady(true);
   }, [searchParams]);
 
   const editHref = scenario?.productSlug
     ? `/products/scenario?product=${scenario.productSlug}`
     : "/products/scenario";
+
+  if (!ready) {
+    return (
+      <div className="scenario page-pad" aria-busy="true" aria-live="polite">
+        <div className="page-inner scenario__inner">
+          <p className="type-eyebrow">California only</p>
+          <p className="type-body">Loading your scenario…</p>
+        </div>
+      </div>
+    );
+  }
 
   if (!scenario) {
     return (
