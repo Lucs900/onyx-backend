@@ -87,7 +87,7 @@ Fox is the **central AI bar** — the operating surface, not a FAB, corner popup
 - Border: 1px `color-mix(ink 18%, line)` resting (14% washed on paper — locked one step darker), hover ink 20%, focus `1.5px solid var(--ink)`. **Never** `--sunset` as the ring
 - Shadow: `0 1px 0 rgba(255,252,246,0.9) inset, 0 8px 24px rgba(11,11,12,0.08)` — no colored halo
 - Radius: collapsed `999px`, expanded `16px`
-- Mark: 20px geometric fox in **ink** (`currentColor`); small `--sunset` catchlight on the **inner facet only** (do not enlarge; do not fill the fox orange). No sunset disk or bar ring. ONYX wordmark and “Ask ONYX Fox” stay ink.
+- Mark **in the Ask ONYX Fox bar only**: 20px geometric fox filled `--sunset` (`#E08A4F`) so it reads at a glance. Scoped via `.fox-bar__mark` — header/other marks stay ink. Label “Ask ONYX Fox”, Send, bar fill, and bar ring stay ink/paper. **Never** a sunset ring around the bar.
 - Send: ink circle, paper-elevated arrow; empty 28% opacity; armed full ink; 36px desktop / 44px mobile. Never sunset
 - Desktop: pinned dock, composer max 720. Mobile: full-width, collapsed 56px, above home indicator
 - Bubbles: same paper-elevated + hairline + lift. Selected bubble: ink fill, not sunset
@@ -182,7 +182,7 @@ lib/*                             UNCHANGED
 
 Implemented as CSS variables in `styles/tokens.css`. Do not add a Tailwind palette or a second color system.
 
-`--paper` is `#F6EFE4` (cohesion pass). `--paper-elevated` stays `#FFFCF6`. `--sunset` is `#E08A4F` — Fox mark inner facet only. Do not apply sunset to bar outlines, Send, page backgrounds, primary CTAs, open-panel fills, card fills, or ACR gold. Other token hex values stay locked.
+`--paper` is `#F6EFE4` (cohesion pass). `--paper-elevated` stays `#FFFCF6`. `--sunset` is `#E08A4F` — Ask ONYX Fox **bar mark fill only**. Do not apply sunset to the ONYX wordmark, “Ask ONYX Fox” label, Send, bar outlines, page backgrounds, primary CTAs, open-panel fills, card fills, or ACR gold. Other token hex values stay locked.
 
 Cohesion (light visual only): hero + Spotlight share one paper opening; 1px `--line` seams between later major blocks (desks, rates/comparison, path, proof, closer); object radius 16 / UI card radius 12 with elevated paper + hairline and no shadow; ONYX comparison column is an 8% metal wash on elevated paper; path numerals are `color-mix` metal into paper (~28%); proof stats sit on one hairline row.
 
