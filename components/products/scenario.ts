@@ -201,6 +201,17 @@ export function scenarioToQuery(scenario: ExplorerScenario): string {
 
 type QueryLike = { get: (name: string) => string | null };
 
+export function scenarioFromSearchRecord(
+  searchParams: Record<string, string | string[] | undefined>,
+): ExplorerScenario | null {
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(searchParams)) {
+    const single = Array.isArray(value) ? value[0] : value;
+    if (single) params.set(key, single);
+  }
+  return scenarioFromQuery(params);
+}
+
 export function scenarioFromQuery(params: QueryLike): ExplorerScenario | null {
   const zip = params.get("zip") ?? "";
   const purpose = params.get("purpose");

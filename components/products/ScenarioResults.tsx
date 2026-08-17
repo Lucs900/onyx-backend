@@ -32,9 +32,13 @@ function scenarioFromClientLocation() {
   return scenarioFromQuery(new URLSearchParams(window.location.search));
 }
 
-export function ScenarioResults() {
+export function ScenarioResults({
+  initialScenario = null,
+}: {
+  initialScenario?: ExplorerScenario | null;
+}) {
   const searchParams = useSearchParams();
-  const fromQuery = scenarioFromQuery(searchParams);
+  const fromQuery = scenarioFromQuery(searchParams) ?? initialScenario;
   const [ready, setReady] = useState(Boolean(fromQuery));
   const [scenario, setScenario] = useState<ExplorerScenario | null>(fromQuery);
 

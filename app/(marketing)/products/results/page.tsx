@@ -1,4 +1,5 @@
 import { ScenarioResults } from "@/components/products/ScenarioResults";
+import { scenarioFromSearchRecord } from "@/components/products/scenario";
 import type { Metadata } from "next";
 import { Suspense } from "react";
 
@@ -8,7 +9,15 @@ export const metadata: Metadata = {
     "These are not final rates or an approval. Indicative options will appear here next.",
 };
 
-export default function ResultsPage() {
+export const dynamic = "force-dynamic";
+
+export default function ResultsPage({
+  searchParams,
+}: {
+  searchParams: Record<string, string | string[] | undefined>;
+}) {
+  const initialScenario = scenarioFromSearchRecord(searchParams);
+
   return (
     <Suspense
       fallback={
@@ -19,7 +28,7 @@ export default function ResultsPage() {
         </div>
       }
     >
-      <ScenarioResults />
+      <ScenarioResults initialScenario={initialScenario} />
     </Suspense>
   );
 }
