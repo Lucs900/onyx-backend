@@ -77,7 +77,7 @@ Route `/products`. California discovery only. No live pricing, APR, LoanSifter, 
 
 Slice 2 — scenario inputs: `/products/scenario` (optional `?product=`). CA ZIP only (90001–96162). Persist JSON at `sessionStorage` key `onyx.productExplorer.scenario`. Valid submit → `/products/results`.
 
-Slice 3 — results placeholder on the same `/products/results` route. Header `Your scenario`. Echo inputs. `Possible directions` shows 2–3 catalog cards from purpose mapping (not underwriting). Empty slots for future rate/payment/tradeoff — no live numbers. Fox line: `ONYX Fox will help interpret your options here.` Next steps: Start application → `/intake` (carry scenario query + session), originator, Edit scenario. Estimates only, not a commitment to lend. No guaranteed-rate or approval language.
+Slice 3 — results placeholder on the same `/products/results` route. Header `Your scenario`. Echo inputs. `Possible directions` shows 2–3 catalog cards from purpose mapping (not underwriting). Empty slots for future rate/payment/tradeoff — no live numbers. No inline Fox card — questions stay in the persistent dock. Next steps: Start application → `/intake` (carry scenario query + session), quiet originator link, Edit scenario. Estimates only, not a commitment to lend. No guaranteed-rate or approval language.
 
 Do not change the homepage ACR object or locked homepage copy. Nav labels stay `Rates` · `ACR` · `About`. `/rates` may link quietly to `/products` and `/products/scenario`.
 
@@ -97,7 +97,7 @@ Disclosure, exact: `ONYX Fox can assist and prepare. It cannot approve, lock, or
 
 ### Intake (`/intake`)
 
-One page: bubbles → document drop → stub extract → draft summary → confirm.
+One page: document drop → stub extract → draft summary → confirm. Questions, bubbles, and typing live in the persistent dock only — not a second conversation card on the page.
 
 - Storage: `sessionStorage` + `localStorage` key `onyx.foxIntake.draft`
 - Scenario key unchanged: `onyx.productExplorer.scenario`

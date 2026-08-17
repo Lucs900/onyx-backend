@@ -15,13 +15,7 @@ import {
   scenarioFromQuery,
   writeScenario,
 } from "@/components/products/scenario";
-import {
-  currentPrompt,
-  incomeLabel,
-  occupancyLabel,
-  promptCopy,
-  scenarioLines,
-} from "./script";
+import { incomeLabel, occupancyLabel, scenarioLines } from "./script";
 import { SamplePathCard } from "./SamplePathCard";
 import {
   applyCapture,
@@ -32,7 +26,6 @@ import {
   hydrateFoxDraft,
   receiveDocument,
   seedPreviewSample,
-  setContactField,
   setDocumentStatus,
   setDraftScenario,
   subscribeFoxDraft,
@@ -46,7 +39,6 @@ import {
   ORIGINATOR_REVIEW,
   TRUST_LINE,
   type DocSlot,
-  type FoxAction,
   type FoxIntakeDraft,
 } from "./types";
 
@@ -124,8 +116,6 @@ export function IntakeExperience() {
     );
   }
 
-  const prompt = currentPrompt(draft);
-  const ask = promptCopy(prompt, draft);
   const isSample = searchParams.get("sample") === "loop" || draft.previewSample;
 
   return (
@@ -173,17 +163,6 @@ export function IntakeExperience() {
           </section>
         ) : null}
 
-        {draft.phase !== "confirmed" ? (
-          <section className="intake-card" aria-labelledby="ask-title">
-            <h2 id="ask-title" className="type-card-title">
-              Fox is asking
-            </h2>
-            <p className="type-body">{ask.text}</p>
-            <BubbleRow actions={ask.actions} />
-            <ContactFields prompt={prompt} draft={draft} />
-          </section>
-        ) : null}
-
         <DocumentDrop draft={draft} />
         <DraftSummary draft={draft} />
 
@@ -196,88 +175,6 @@ export function IntakeExperience() {
           <Link href="/advisor">{ORIGINATOR_REQUEST}</Link>
         </p>
       </div>
-    </div>
-  );
-}
-
-function BubbleRow({ actions }: { actions?: FoxAction[] }) {
-  if (!actions?.length) return null;
-  return (
-    <div className="fox-bubble__actions">
-      {actions.map((action) =>
-        action.href ? (
-          <Link key={action.id} href={action.href} className="btn btn--secondary fox-chip">
-            {action.label}
-          </Link>
-        ) : (
-          <button
-            key={action.id}
-            type="button"
-            className="btn btn--secondary fox-chip"
-            onClick={() => {
-              if (action.capture) applyCapture(action.capture);
-              if (action.capture?.field === "open-docs") {
-                document.getElementById("fox-documents")?.scrollIntoView({ behavior: "smooth" });
-              }
-            }}
-          >
-            {action.label}
-          </button>
-        ),
-      )}
-    </div>
-  );
-}
-
-function ContactFields({
-  prompt,
-  draft,
-}: {
-  prompt: ReturnType<typeof currentPrompt>;
-  draft: FoxIntakeDraft;
-}) {
-  const [value, setValue] = useState("");
-
-  useEffect(() => {
-    setValue("");
-  }, [prompt]);
-
-  if (prompt !== "name" && prompt !== "email" && prompt !== "phone") {
-    return null;
-  }
-
-  return (
-    <div className="intake-inline">
-      <label className="scenario-field">
-        <span className="scenario-field__label">
-          {prompt === "name" ? "Full name" : prompt === "email" ? "Email" : "Phone"}
-        </span>
-        <input
-          className="scenario-field__input"
-          value={value}
-          onChange={(event) => setValue(event.target.value)}
-          autoComplete={prompt === "email" ? "email" : prompt === "phone" ? "tel" : "name"}
-          placeholder={
-            draft.contact.fullName.value && prompt === "name"
-              ? draft.contact.fullName.value
-              : undefined
-          }
-        />
-      </label>
-      <button
-        type="button"
-        className="btn btn--primary"
-        onClick={() => {
-          const trimmed = value.trim();
-          if (!trimmed) return;
-          if (prompt === "name") setContactField("fullName", trimmed);
-          if (prompt === "email") setContactField("email", trimmed);
-          if (prompt === "phone") setContactField("phone", trimmed);
-          setValue("");
-        }}
-      >
-        Continue
-      </button>
     </div>
   );
 }

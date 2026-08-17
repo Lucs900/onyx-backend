@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
-import { AdvisorMark } from "../AdvisorMark";
+import { requestFoxOpen } from "@/components/fox/AlwaysOnFox";
 import { directionsForScenario } from "./directions";
 import {
   CREDIT_OPTIONS,
@@ -186,22 +186,6 @@ export function ScenarioResults() {
           </ul>
         </section>
 
-        <section className="fox-guidance" aria-labelledby="fox-guidance-title">
-          <AdvisorMark size="sm" />
-          <div>
-            <h2 id="fox-guidance-title" className="type-card-title">
-              ONYX Fox will help interpret your options here.
-            </h2>
-            <p className="type-body">
-              Ask about tradeoffs after indicative options land. This is not a
-              credit decision.
-            </p>
-            <p className="type-legal">
-              <Link href="/advisor">Need a licensed originator?</Link>
-            </p>
-          </div>
-        </section>
-
         <section className="scenario-next" aria-labelledby="scenario-next-title">
           <h2 id="scenario-next-title" className="type-card-title">
             Next steps
@@ -214,7 +198,14 @@ export function ScenarioResults() {
               Edit scenario
             </Link>
           </div>
-          <p className="type-legal">Fox prepares a draft. A licensed originator reviews it.</p>
+          <p className="type-legal">
+            <button type="button" className="btn btn--text" onClick={() => requestFoxOpen()}>
+              Ask about these directions
+            </button>
+          </p>
+          <p className="type-legal">
+            <Link href="/advisor">Need a licensed originator?</Link>
+          </p>
         </section>
 
         <p className="type-legal">{ESTIMATE_NOTE}</p>

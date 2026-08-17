@@ -268,8 +268,7 @@
 }
 
 .scenario-directions,
-.scenario-next,
-.fox-guidance {
+.scenario-next {
   display: flex;
   flex-direction: column;
   gap: 16px;
@@ -323,25 +322,6 @@
 .direction-card__cta {
   width: 100%;
   margin-top: auto;
-}
-
-.fox-guidance {
-  flex-direction: row;
-  align-items: flex-start;
-  gap: 16px;
-  padding: 24px;
-  background: var(--paper-elevated);
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  box-shadow: none;
-}
-
-.fox-guidance .type-body {
-  margin-top: 8px;
-}
-
-.fox-guidance .btn {
-  margin-top: 12px;
 }
 
 @media (min-width: 768px) {
