@@ -1,6 +1,8 @@
 "use client";
 
 import { FormEvent, useEffect, useState } from "react";
+import { requestFoxAsk } from "@/components/fox/AlwaysOnFox";
+import { FOX_DISCLOSURE } from "@/components/fox/types";
 import { AdvisorMark } from "./AdvisorMark";
 
 export type AdvisorMode = "relationship" | "loan";
@@ -20,8 +22,8 @@ const PLACEHOLDER = {
 } as const;
 
 const DISCLOSURE = {
-  relationship: "ONYX Advisor · AI · I can’t approve a loan in this chat.",
-  loan: "ONYX Advisor · AI · Loan-only. ACR is optional. I can’t approve a loan in this chat.",
+  relationship: FOX_DISCLOSURE,
+  loan: FOX_DISCLOSURE,
 } as const;
 
 type AdvisorSpotlightProps = {
@@ -52,27 +54,35 @@ export function AdvisorSpotlight({
     onModeChange?.(next);
   };
 
+  const askFox = (text: string) => {
+    const q = text.trim();
+    if (!q) return;
+    requestFoxAsk(q);
+    setDraft("");
+  };
+
   const fillChip = (chip: string) => {
     setSelectedChip(chip);
-    setDraft(chip);
+    askFox(chip);
   };
 
   const onSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    askFox(draft);
   };
 
   return (
     <section
       id="advisor-spotlight"
       className="advisor-spotlight page-pad"
-      aria-label="ONYX Advisor"
+      aria-label="ONYX Fox"
     >
       <div className="advisor-spotlight__inner">
         <div
           className="spotlight-toggle"
           data-mode={mode}
           role="group"
-          aria-label="Advisor mode"
+          aria-label="What to ask Fox"
         >
           <span className="spotlight-toggle__thumb" aria-hidden="true" />
           <button
@@ -98,7 +108,7 @@ export function AdvisorSpotlight({
             <AdvisorMark size="sm" />
           </span>
           <label className="visually-hidden" htmlFor="advisor-composer">
-            Ask ONYX Advisor
+            Ask ONYX Fox
           </label>
           <input
             id="advisor-composer"

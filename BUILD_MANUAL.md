@@ -25,19 +25,16 @@ The hero object is the exact locked bitmap **`public/acr-card-face.png`**, shown
 
 Hero secondary `Just need a mortgage` now switches Slice 3 to Loan mode and scrolls to it.
 
-## Slice 3 — Advisor Spotlight
+## Slice 3 — Homepage composer (ONYX Fox)
 
-Centered section under the hero. Stack: toggle → composer → chips → disclosure.
+Centered section under the hero. Stack: toggle → composer → chips → disclosure. Assistant name is **ONYX Fox** (short: Fox). Not ONYX Advisor.
 
-- Toggle: `Relationship` | `Loan`. Default **Relationship**. Not Advisor vs Classic.
-- Composer uses `<AdvisorMark size="sm" />` (20px). Send disabled until there is text. Submit is a quiet no-op — no homepage transcript, no `/api/chat` wiring.
-- Chips fill the composer. Default preview: Relationship, first chip selected, empty input.
-- Loan disclosure includes no-op `Prefer a short form`. Do not build the Classic form this slice.
+- Toggle: `Relationship` | `Loan`. Default **Relationship**.
+- Composer uses `<AdvisorMark size="sm" />` (20px). Send disabled until there is text. Submit and chips open the persistent Fox dock and send that text — not a second chat thread, not `/api/chat`.
+- Default preview: Relationship, first chip selected, empty input.
+- Loan mode keeps no-op `Prefer a short form`. Do not build the Classic form this slice.
 
-Disclosure, exact:
-
-- Relationship: `ONYX Advisor · AI · I can’t approve a loan in this chat.`
-- Loan: `ONYX Advisor · AI · Loan-only. ACR is optional. I can’t approve a loan in this chat.`
+Disclosure, exact: `ONYX Fox can assist and prepare. It cannot approve, lock, or commit to lend.`
 
 ## Slice 4 — Membership math (The Three Desks)
 
@@ -87,7 +84,7 @@ Preview only. California only. Client stays in control; Fox prepares a draft. No
 
 ### Always-on Fox
 
-Mounted on `/products`, `/products/scenario`, `/products/results`, and `/intake` only — not the homepage hero. Persistent full-width bottom dock (not a popup, FAB, dialog, or orb): the `Ask ONYX Fox` bar is pinned to the bottom and renders immediately; conversation expands above that same bar. `/intake` starts expanded unless the session already collapsed it. First mention / dock header `ONYX Fox`; ongoing labels `Fox`. Geometric `<AdvisorMark />` only. Optional tiny `--sunset` catchlight on the dock — do not use sunset on CTAs, fills, or ACR gold.
+Mounted on `/` (homepage), `/products`, `/products/scenario`, `/products/results`, and `/intake` — not `/about`, `/rates`, `/acr`, or other marketing stubs. Persistent full-width bottom dock (not a popup, FAB, dialog, or orb): the `Ask ONYX Fox` bar is pinned to the bottom and renders immediately; conversation expands above that same bar. Homepage starts collapsed so the locked ACR hero stays clear. `/intake` starts expanded unless the session already collapsed it. First mention / dock header `ONYX Fox`; ongoing labels `Fox`. Geometric `<AdvisorMark />` only. Optional tiny `--sunset` catchlight on the dock — do not use sunset on CTAs, fills, or ACR gold.
 
 Scripted + session-aware. Does not call `app/api/chat`. Reads `onyx.productExplorer.scenario` and selected product. Structured questions use clickable bubbles (income, occupancy, timeline, docs, confirm). Free text remains available.
 
@@ -126,7 +123,7 @@ styles/tokens.css                 locked CSS variables + type ramp + buttons
 styles/globals.css                reset, layout, header, footer
 styles/hero.css                   Slice 2 hero + pictorial ACR card
 public/acr-card-face.png          locked ACR card face (house + gold + fox)
-styles/spotlight.css              Slice 3 Advisor Spotlight
+styles/spotlight.css              Slice 3 homepage Fox composer
 styles/desks.css                  Slice 4 three desks
 styles/rates.css                  Slice 5 rate card + comparison
 styles/close.css                  Slice 6 path, proof, closer

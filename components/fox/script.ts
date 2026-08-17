@@ -22,6 +22,7 @@ import {
 } from "./types";
 
 export function foxStageFromPath(pathname: string): FoxStage | null {
+  if (pathname === "/") return "home";
   if (pathname === "/products") return "explore";
   if (pathname === "/products/scenario") return "scenario";
   if (pathname === "/products/results") return "results";
@@ -49,6 +50,7 @@ export function currentPrompt(draft: FoxIntakeDraft): FoxPrompt {
 }
 
 export function taskContext(stage: FoxStage, draft: FoxIntakeDraft) {
+  if (stage === "home") return "Home";
   if (stage === "explore") return "Explore";
   if (stage === "scenario") return "Scenario";
   if (stage === "results") return "Results";
@@ -86,6 +88,16 @@ export function greeting(
   draft: FoxIntakeDraft,
 ): { text: string; actions?: FoxAction[] } {
   const known = scenarioSummary(scenario);
+
+  if (stage === "home") {
+    return {
+      text: "I'm ONYX Fox. This is California only. I can explain the Active Credit Relationship, or help you explore a loan without ACR. I can't approve, lock, or commit to lend.",
+      actions: [
+        { id: "acr", label: "Learn about ACR", href: "/acr" },
+        { id: "products", label: "Explore products", href: "/products" },
+      ],
+    };
+  }
 
   if (stage === "explore") {
     return {
@@ -227,6 +239,11 @@ export function replyToMessage(
 } {
   const q = text.trim();
   const lower = q.toLowerCase();
+
+  if (stage === "home") {
+    const home = homeReply(lower);
+    if (home) return home;
+  }
 
   if (/(licensed originator|talk to (a )?human|speak (to|with)|call me)/i.test(lower)) {
     return {
@@ -377,11 +394,51 @@ function captureForPrompt(
   return null;
 }
 
+function homeReply(lower: string): ReturnType<typeof replyToMessage> | null {
+  if (/(what('s| is) acr|active credit relationship)/i.test(lower)) {
+    return {
+      text: "ACR is the Active Credit Relationship — stay approved and keep optimizing over time. A loan without ACR is also available. I can't approve, lock, or commit to lend.",
+      actions: [{ id: "acr", label: "Learn about ACR", href: "/acr" }],
+    };
+  }
+  if (/(keep me approved|stay approved|always approved)/i.test(lower)) {
+    return {
+      text: "In the relationship, we keep watching credit and rate conditions after approval. That's ACR — not a one-time close. I can't approve a loan here.",
+      actions: [{ id: "acr", label: "Learn about ACR", href: "/acr" }],
+    };
+  }
+  if (/optimiz/i.test(lower)) {
+    return {
+      text: "Optimizing means reviewing your situation over time so credit and rate can keep working for you. I can't quote a rate or lock a loan.",
+      actions: [{ id: "acr", label: "Learn about ACR", href: "/acr" }],
+    };
+  }
+  if (/(buy a home|purchase|refinance|use equity|heloc|equity)/i.test(lower)) {
+    return {
+      text: "Product Explorer can show California directions for buying, refinancing, or equity. That's discovery — not a quote or an approval.",
+      actions: [
+        { id: "products", label: "Explore products", href: "/products" },
+        { id: "scenario", label: "Start a scenario", href: "/products/scenario" },
+      ],
+    };
+  }
+  return null;
+}
+
 function nextSteps(
   stage: FoxStage,
   scenario: ExplorerScenario | null,
   draft: FoxIntakeDraft,
 ): ReturnType<typeof replyToMessage> {
+  if (stage === "home") {
+    return {
+      text: "I can explain ACR, or help you explore a California loan without it. I can't approve, lock, or commit to lend.",
+      actions: [
+        { id: "acr", label: "Learn about ACR", href: "/acr" },
+        { id: "products", label: "Explore products", href: "/products" },
+      ],
+    };
+  }
   if (stage === "explore") {
     return {
       text: "Pick a product, or start a California scenario. I can explain options in plain English. I can't quote or approve.",

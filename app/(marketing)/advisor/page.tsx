@@ -4,7 +4,7 @@ export default function AdvisorPage() {
   return (
     <PlaceholderPage
       title="Just need a mortgage"
-      note="Loan-only Advisor is not in this slice. This route exists so the mobile text button does not 404."
+      note="Loan-only path is not in this slice. This route exists so the mobile text button does not 404."
     />
   );
 }

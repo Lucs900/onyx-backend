@@ -47,6 +47,10 @@ export function requestFoxOpen() {
   window.dispatchEvent(new Event("onyx:fox-open"));
 }
 
+export function requestFoxAsk(text: string) {
+  window.dispatchEvent(new CustomEvent("onyx:fox-ask", { detail: { text } }));
+}
+
 export function FoxDockBar({
   open,
   task,
@@ -95,6 +99,7 @@ export function AlwaysOnFox() {
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState<FoxMessage[]>([]);
   const greeted = useRef<string>("");
+  const pendingAsk = useRef<string | null>(null);
   const skipPromptSync = useRef(false);
   const listRef = useRef<HTMLDivElement>(null);
   const fieldId = useId();
@@ -109,17 +114,45 @@ export function AlwaysOnFox() {
       hydrateFoxDraft();
     }
     const stored = sessionStorage.getItem(FOX_PANEL_KEY);
-    if (stored === "1") setOpen(true);
-    else if (stored === "0") setOpen(false);
+    if (stage === "home") {
+      setOpen(false);
+    } else if (stored === "1") {
+      setOpen(true);
+    } else if (stored === "0") {
+      setOpen(false);
+    }
     setSearch(query);
     setReady(true);
-  }, [pathname]);
+  }, [pathname, stage]);
 
   useEffect(() => {
     const onOpen = () => setOpen(true);
+    const onAsk = (event: Event) => {
+      const text = String((event as CustomEvent<{ text?: string }>).detail?.text ?? "").trim();
+      setOpen(true);
+      if (!text) return;
+      if (!ready || greeted.current !== `${pathname}${search}`) {
+        pendingAsk.current = text;
+        return;
+      }
+      const live = getFoxDraft();
+      const scenario = live.scenario ?? readScenario();
+      if (!stage) return;
+      const reply = replyToMessage(text, stage, live, scenario);
+      if (reply.capture) applyCapture(reply.capture);
+      setMessages((prev) => [
+        ...prev,
+        { id: newId(), role: "client", text },
+        { id: newId(), role: "fox", text: reply.text, actions: reply.actions },
+      ]);
+    };
     window.addEventListener("onyx:fox-open", onOpen);
-    return () => window.removeEventListener("onyx:fox-open", onOpen);
-  }, []);
+    window.addEventListener("onyx:fox-ask", onAsk);
+    return () => {
+      window.removeEventListener("onyx:fox-open", onOpen);
+      window.removeEventListener("onyx:fox-ask", onAsk);
+    };
+  }, [pathname, ready, search, stage]);
 
   useEffect(() => {
     if (!ready || !stage) return;
@@ -142,6 +175,16 @@ export function AlwaysOnFox() {
       if (ask.text !== hello.text) {
         lines.push({ id: newId(), role: "fox", text: ask.text, actions: ask.actions });
       }
+    }
+    const queued = pendingAsk.current;
+    pendingAsk.current = null;
+    if (queued) {
+      const reply = replyToMessage(queued, stage, live, scenario);
+      if (reply.capture) applyCapture(reply.capture);
+      lines.push(
+        { id: newId(), role: "client", text: queued },
+        { id: newId(), role: "fox", text: reply.text, actions: reply.actions },
+      );
     }
     skipPromptSync.current = true;
     setMessages(lines);
