@@ -85,7 +85,7 @@ export type FoxIntakeDraft = {
   updatedAt: string;
 };
 
-export type FoxStage = "home" | "explore" | "scenario" | "results" | "intake";
+export type FoxStage = "home" | "acr" | "explore" | "scenario" | "results" | "intake";
 
 export type FoxPrompt =
   | "name"

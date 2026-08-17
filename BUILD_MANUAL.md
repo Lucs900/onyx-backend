@@ -79,7 +79,7 @@ Preview only. California only. Client stays in control; Fox prepares a draft. No
 
 ### Always-on Fox
 
-Mounted on `/` (homepage), `/products`, `/products/scenario`, `/products/results`, and `/intake` — not `/about`, `/rates`, `/acr`, or other marketing stubs.
+Mounted on `/` (homepage), `/acr`, `/products`, `/products/scenario`, `/products/results`, and `/intake` — not `/about`, `/rates`, or other marketing stubs.
 
 Fox is the **central AI bar** — the operating surface, not a FAB, corner popup, or support widget. Locked visual (Design Scout):
 
@@ -96,7 +96,7 @@ Collapsed: `Ask ONYX Fox` desk. Expands upward (question + bubbles + input). No 
 
 Homepage and other pages start collapsed so the locked ACR hero stays clear. `/intake` starts expanded while Fox has an active question. First mention / header `ONYX Fox`; ongoing labels `Fox`.
 
-Open Fox is question + bubbles + input only. Thin Close control. **No in-panel compliance** — no cannot-approve, California-only, NMLS/DRE, Legal link, or originator row. Site footer holds legal. Disclosure still exists for page footers, exact: `ONYX Fox can assist and prepare. It cannot approve, lock, or commit to lend.` `--sunset` (`#E08A4F`) is Fox-mark only — not bar borders, Send, page backgrounds, primary CTAs, open-panel fill, or ACR gold.
+Open Fox is question + bubbles + input only. Thin Close control. **No in-panel compliance** — no cannot-approve, California-only, NMLS/DRE, Legal link, or originator row. Site footer holds legal. Disclosure still exists for page footers, exact: `ONYX Fox can assist and prepare. It cannot approve, lock, or commit to lend.` `--sunset` (`#E08A4F`) fills the Fox **bar mark only** — not the wordmark, label, Send, bar borders, page backgrounds, primary CTAs, open-panel fill, or ACR gold.
 
 Scripted + session-aware. Does not call `app/api/chat`. Reads `onyx.productExplorer.scenario` and selected product. Structured questions use clickable bubbles (income, occupancy, timeline, docs, confirm). Free text remains available.
 
@@ -141,6 +141,8 @@ styles/rates.css                  Slice 5 rate card + comparison
 styles/close.css                  Slice 6 path, proof, closer
 styles/products.css               Product Explorer
 styles/fox.css                    Always-on Fox + intake + LO review
+styles/acr.css                    Public /acr product page
+components/acr/*                  ACR hero, reward folio, unlock path, desk preview, fees, closer
 components/products/catalog.ts    CA product groups + exact copy
 components/products/ProductExplorer.tsx  /products index
 components/products/ProductStub.tsx      /products/[slug] stub
@@ -172,7 +174,9 @@ components/Closer.tsx             locked closer CTAs
 app/layout.tsx                    fonts + tokens
 app/(marketing)/layout.tsx        header + footer + paper canvas
 app/(marketing)/page.tsx          full homepage through closer
-app/(marketing)/{acr,rates,about,login,advisor}/page.tsx   stubs
+app/(marketing)/acr/page.tsx      public ACR product page
+app/(marketing)/acr/layout.tsx    mounts Always-on Fox
+app/(marketing)/{rates,about,login,advisor}/page.tsx   stubs
 app/api/chat                      UNCHANGED
 app/api/heloc-quote               UNCHANGED
 lib/*                             UNCHANGED
@@ -186,7 +190,7 @@ Implemented as CSS variables in `styles/tokens.css`. Do not add a Tailwind palet
 
 Cohesion (light visual only): hero + Spotlight share one paper opening; 1px `--line` seams between later major blocks (desks, rates/comparison, path, proof, closer); object radius 16 / UI card radius 12 with elevated paper + hairline and no shadow; ONYX comparison column is an 8% metal wash on elevated paper; path numerals are `color-mix` metal into paper (~28%); proof stats sit on one hairline row.
 
-Metal is scarce: fox highlight, the locked ACR card gold dock, and the comparison ONYX underline only.
+Metal is scarce: fox highlight, the locked ACR card gold dock, the comparison ONYX underline, and the public `/acr` reward folio’s 2px `--metal` tick.
 
 ## Shell
 
@@ -222,9 +226,27 @@ Current Preview (Ready, not Production):
 - https://onyx-backend-git-cursor-onyx-slice-1-shell-8e97-onyx-direct.vercel.app
 - Preview may be behind Vercel Authentication. Open it signed into the ONYX Direct team.
 
+## Public ACR product page (`/acr`)
+
+Public `/acr` is the product page. Reward is the reason. Goals and property are quiet desk previews, not a cockpit. Do not restyle the homepage ACR hero.
+
+Page stack, in order:
+
+1. **Hero** — locked ACR object via `AcrPass` / `public/acr-card-face.png` (same file, no restyle, no overlay type, no regeneration). Headline `The desk that stays open`. Eyebrow `Active Credit Relationship`. Support: ACR as an ongoing relationship. Primary `Start your relationship` → `/intake` (join/start; no invented form). Secondary quiet `Just need a mortgage` → `/products`. California only as **page** legal, not in Fox.
+2. **Reward instrument (primary)** — one folio, radius **16**, `--paper-elevated`, hairline, **2px metal tick** (`--metal`). **Not a gold card.** Do not restyle or reuse the ACR card PNG as the reward. Public copy, no numbers: `A reward calculated for your relationship.` / `Unlocks after on-time payments.` / `Your amount is prepared when you join — not a public rate.` Unlock is **quiet unlabeled ticks only** (no “6 payments”, no %). No public %, payment count, or invented dollar amount. Mark `Sample · not live`.
+3. **Three-line unlock path** — three quiet lines. Not the homepage 5-step path.
+4. **Three desks** — reuse `ValueBreakdown`. Same names and limits: The Rate Desk, The Credit Path, The Member Desk.
+5. **On the desk** — two sample goals (max three rows) and one property card. Goals: name, current state, direction as a word or small **ink** track, one sentence, optional next. No gauges, traffic lights, or sunset. States like Watching / Monitoring. Direction words like Down / Hold. Property title `Your home`. One sentence that equity posture and HELOC/refi room will live here. No map, listings, or estimated value. Both marked `Sample · not live`. No invented $ or scores.
+6. **Comparison** — reuse homepage `ComparisonTable`. Do not invent rates.
+7. **Fees / trust** — payment count, dollars, fees, and NMLS stay **OPEN / placeholder**. No invented numbers.
+8. **Fox** — same central ONYX Fox AI bar (`FoxShell` / `AlwaysOnFox`), `acr` stage. Collapsed `Ask ONYX Fox`. No second Fox card. No in-panel legal. Locked bar visual. Fox cannot approve, lock, or commit to lend (footer / site legal, not in the bar).
+9. **Closer** — homepage closer energy: Start your relationship / Just need a mortgage. Page-local closer (do not reuse `Closer.tsx` — it requires homepage `HomeExperience`).
+
+No calculator. No coupon treatment. Sunset only on the Fox bar mark, not on this page’s cards.
+
 ## Still later — do not build yet
 
-`/acr` product page, live pricing, bank/ADP, underwriting, ACR billing, returning-client login, mobile sticky bar (Slice 9), dashboard, Advisor sheet, Classic form widget.
+Live pricing, bank/ADP, underwriting, ACR billing, returning-client login, mobile sticky bar (Slice 9), dashboard, Advisor sheet, Classic form widget.
 
 ## What later slices must not break
 

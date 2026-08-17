@@ -82,7 +82,7 @@ export function AlwaysOnFox() {
     const stored = sessionStorage.getItem(FOX_PANEL_KEY);
     const live = getFoxDraft();
     const asking = stage === "intake" && live.phase !== "confirmed";
-    if (stage === "home") {
+    if (stage === "home" || stage === "acr") {
       setOpen(false);
     } else if (asking && stored !== "0") {
       setOpen(true);

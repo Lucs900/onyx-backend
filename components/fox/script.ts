@@ -23,6 +23,7 @@ import {
 
 export function foxStageFromPath(pathname: string): FoxStage | null {
   if (pathname === "/") return "home";
+  if (pathname === "/acr") return "acr";
   if (pathname === "/products") return "explore";
   if (pathname === "/products/scenario") return "scenario";
   if (pathname === "/products/results") return "results";
@@ -51,6 +52,7 @@ export function currentPrompt(draft: FoxIntakeDraft): FoxPrompt {
 
 export function taskContext(stage: FoxStage, draft: FoxIntakeDraft) {
   if (stage === "home") return "Home";
+  if (stage === "acr") return "ACR";
   if (stage === "explore") return "Explore";
   if (stage === "scenario") return "Scenario";
   if (stage === "results") return "Results";
@@ -95,6 +97,16 @@ export function greeting(
       actions: [
         { id: "acr", label: "Learn about ACR", href: "/acr" },
         { id: "products", label: "Explore products", href: "/products" },
+      ],
+    };
+  }
+
+  if (stage === "acr") {
+    return {
+      text: "ACR is a relationship that stays open after close.",
+      actions: [
+        { id: "start", label: "Start your relationship", href: "/intake" },
+        { id: "loan", label: "Just need a mortgage", href: "/products" },
       ],
     };
   }
@@ -237,6 +249,11 @@ export function replyToMessage(
   if (stage === "home") {
     const home = homeReply(lower);
     if (home) return home;
+  }
+
+  if (stage === "acr") {
+    const acr = acrReply(lower);
+    if (acr) return acr;
   }
 
   if (/(licensed originator|talk to (a )?human|speak (to|with)|call me)/i.test(lower)) {
@@ -388,6 +405,36 @@ function captureForPrompt(
   return null;
 }
 
+function acrReply(lower: string): ReturnType<typeof replyToMessage> | null {
+  if (/(reward|unlock|how much|amount|percent|%|payment count)/i.test(lower)) {
+    return {
+      text: "The reward is prepared when you join. I don't post a public amount.",
+      actions: [{ id: "start", label: "Start your relationship", href: "/intake" }],
+    };
+  }
+  if (/(desk|rate desk|credit path|member desk)/i.test(lower)) {
+    return {
+      text: "Three desks stay with the relationship: Rate, Credit, and Member.",
+    };
+  }
+  if (/(just need a mortgage|loan only|mortgage only|only (a )?loan)/i.test(lower)) {
+    return {
+      text: "A mortgage is available without ACR.",
+      actions: [{ id: "loan", label: "Just need a mortgage", href: "/products" }],
+    };
+  }
+  if (/(start|join|relationship|how do i)/i.test(lower)) {
+    return {
+      text: "Start the relationship, or take a loan on its own.",
+      actions: [
+        { id: "start", label: "Start your relationship", href: "/intake" },
+        { id: "loan", label: "Just need a mortgage", href: "/products" },
+      ],
+    };
+  }
+  return null;
+}
+
 function homeReply(lower: string): ReturnType<typeof replyToMessage> | null {
   if (/(what('s| is) acr|active credit relationship)/i.test(lower)) {
     return {
@@ -430,6 +477,15 @@ function nextSteps(
       actions: [
         { id: "acr", label: "Learn about ACR", href: "/acr" },
         { id: "products", label: "Explore products", href: "/products" },
+      ],
+    };
+  }
+  if (stage === "acr") {
+    return {
+      text: "Start the relationship, or take a loan on its own.",
+      actions: [
+        { id: "start", label: "Start your relationship", href: "/intake" },
+        { id: "loan", label: "Just need a mortgage", href: "/products" },
       ],
     };
   }

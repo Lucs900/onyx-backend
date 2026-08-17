@@ -1,10 +1,30 @@
-import { PlaceholderPage } from "@/components/PlaceholderPage";
+import { AcrCloser } from "@/components/acr/AcrCloser";
+import { AcrHero } from "@/components/acr/AcrHero";
+import { DeskPreview } from "@/components/acr/DeskPreview";
+import { FeesTrust } from "@/components/acr/FeesTrust";
+import { RewardFolio } from "@/components/acr/RewardFolio";
+import { UnlockPath } from "@/components/acr/UnlockPath";
+import { ComparisonTable } from "@/components/ComparisonTable";
+import { ValueBreakdown } from "@/components/ValueBreakdown";
+import type { Metadata } from "next";
+
+export const metadata: Metadata = {
+  title: "Active Credit Relationship — ONYX",
+  description:
+    "The desk that stays open. ACR is an ongoing relationship — not a one-time loan.",
+};
 
 export default function AcrPage() {
   return (
-    <PlaceholderPage
-      title="ACR"
-      note="Product page is not in this slice. This route exists so navigation does not 404."
-    />
+    <>
+      <AcrHero />
+      <RewardFolio />
+      <UnlockPath />
+      <ValueBreakdown />
+      <DeskPreview />
+      <ComparisonTable />
+      <FeesTrust />
+      <AcrCloser />
+    </>
   );
 }
