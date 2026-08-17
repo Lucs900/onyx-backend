@@ -1,0 +1,262 @@
+/* Fox Intake v1 + Always-on Fox. Tokens only. No second palette. */
+
+.fox-shell {
+  min-height: 100%;
+}
+
+.fox-ask {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 45;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 44px;
+  padding: 0 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill);
+  background: var(--paper-elevated);
+  color: var(--ink);
+  font-family: var(--font-ui);
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.fox-panel {
+  position: fixed;
+  z-index: 46;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  background: var(--paper-elevated);
+  border: 1px solid var(--line);
+  border-radius: 12px 12px 0 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  max-height: 78vh;
+  padding: 16px 16px 20px;
+}
+
+.fox-panel[hidden] {
+  display: none;
+}
+
+.fox-panel__head {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 12px;
+  align-items: start;
+}
+
+.fox-panel__close {
+  justify-self: end;
+}
+
+.fox-panel__thread {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 160px;
+  max-height: 42vh;
+  overflow: auto;
+}
+
+.fox-bubble {
+  max-width: 92%;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+
+.fox-bubble p {
+  margin: 0;
+  font-family: var(--font-ui);
+  font-size: 15px;
+  line-height: 22px;
+  color: var(--ink-2);
+}
+
+.fox-bubble--fox {
+  background: var(--paper);
+}
+
+.fox-bubble--client {
+  align-self: flex-end;
+  background: var(--paper-elevated);
+}
+
+.fox-bubble__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.fox-chip {
+  height: 36px;
+  padding: 0 14px;
+  font-size: 13px;
+}
+
+.fox-panel__composer {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+}
+
+.fox-panel__input {
+  width: 100%;
+  height: 48px;
+  padding: 0 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-ui);
+  font-size: 16px;
+}
+
+.fox-panel__send {
+  height: 48px;
+}
+
+.fox-panel__send:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.fox-panel__disclosure,
+.fox-panel__human {
+  margin: 0;
+}
+
+.intake {
+  padding-block: 48px 96px;
+}
+
+.intake__inner {
+  max-width: var(--prose-max);
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.intake-card,
+.intake-status,
+.intake-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 24px;
+  background: var(--paper-elevated);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+
+.intake-status {
+  border-color: var(--ink);
+}
+
+.intake-check {
+  display: grid;
+  gap: 16px;
+}
+
+.intake-check ul,
+.intake-note-list {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  color: var(--ink-2);
+  font-family: var(--font-ui);
+  font-size: 15px;
+  line-height: 24px;
+}
+
+.intake-inline,
+.intake-edit-grid,
+.intake-links,
+.intake-section__actions {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.intake-docs {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.intake-doc {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.intake-doc:last-child {
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
+.intake-section__head {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+@media (min-width: 768px) {
+  .fox-ask {
+    right: 24px;
+    bottom: 24px;
+  }
+
+  .fox-panel {
+    left: auto;
+    right: 24px;
+    bottom: 80px;
+    width: 380px;
+    max-height: calc(100vh - var(--nav-height) - 104px);
+    border-radius: 12px;
+  }
+
+  .fox-panel__thread {
+    max-height: none;
+    flex: 1;
+  }
+
+  .intake {
+    padding-block: 72px 120px;
+  }
+
+  .intake-check {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .intake-check > :last-child {
+    grid-column: 1 / -1;
+  }
+
+  .intake-inline,
+  .intake-links,
+  .intake-section__actions {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+
+  .intake-inline .btn,
+  .intake-links .btn,
+  .intake-section__actions .btn {
+    width: auto;
+  }
+}

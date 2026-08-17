@@ -14,6 +14,7 @@ import {
   labelFor,
   readScenario,
   scenarioFromQuery,
+  scenarioToQuery,
   writeScenario,
   type ExplorerScenario,
 } from "./scenario";
@@ -45,6 +46,7 @@ export function ScenarioResults() {
   const editHref = scenario?.productSlug
     ? `/products/scenario?product=${scenario.productSlug}`
     : "/products/scenario";
+  const intakeHref = scenario ? `/intake?${scenarioToQuery(scenario)}` : "/intake";
 
   if (!ready) {
     return (
@@ -205,7 +207,7 @@ export function ScenarioResults() {
             Next steps
           </h2>
           <div className="scenario-form__actions">
-            <Link href="/advisor" className="btn btn--primary">
+            <Link href={intakeHref} className="btn btn--primary">
               Start application
             </Link>
             <Link href="/advisor" className="btn btn--secondary">
@@ -215,7 +217,7 @@ export function ScenarioResults() {
               Edit scenario
             </Link>
           </div>
-          <p className="type-legal">The application flow is next.</p>
+          <p className="type-legal">Fox prepares a draft. A licensed originator reviews it.</p>
         </section>
 
         <p className="type-legal">{ESTIMATE_NOTE}</p>

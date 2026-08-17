@@ -77,9 +77,41 @@ Route `/products`. California discovery only. No live pricing, APR, LoanSifter, 
 
 Slice 2 — scenario inputs: `/products/scenario` (optional `?product=`). CA ZIP only (90001–96162). Persist JSON at `sessionStorage` key `onyx.productExplorer.scenario`. Valid submit → `/products/results`.
 
-Slice 3 — results placeholder on the same `/products/results` route. Header `Your scenario`. Echo inputs. `Possible directions` shows 2–3 catalog cards from purpose mapping (not underwriting). Empty slots for future rate/payment/tradeoff — no live numbers. Fox line: `ONYX Fox will help interpret your options here.` Next steps: Start application → `/advisor` (flow is next), originator, Edit scenario. Estimates only, not a commitment to lend. No guaranteed-rate or approval language.
+Slice 3 — results placeholder on the same `/products/results` route. Header `Your scenario`. Echo inputs. `Possible directions` shows 2–3 catalog cards from purpose mapping (not underwriting). Empty slots for future rate/payment/tradeoff — no live numbers. Fox line: `ONYX Fox will help interpret your options here.` Next steps: Start application → `/intake` (carry scenario query + session), originator, Edit scenario. Estimates only, not a commitment to lend. No guaranteed-rate or approval language.
 
 Do not change the homepage ACR object or locked homepage copy. Nav labels stay `Rates` · `ACR` · `About`. `/rates` may link quietly to `/products` and `/products/scenario`.
+
+## Fox Intake v1 + Always-on Fox
+
+Preview only. California only. Client stays in control; Fox prepares a draft. Not a multi-page 1003.
+
+### Always-on Fox
+
+Mounted on `/products`, `/products/scenario`, `/products/results`, and `/intake` only — not the homepage hero. Client component `AlwaysOnFox` via `FoxShell` on those route layouts. Mobile: quiet `Ask Fox` control. Desktop: 380px slide-over. Geometric `<AdvisorMark />` only. No mascot animation. Not “Foxxy”.
+
+Scripted + session-aware. Does not call `app/api/chat`. Reads `onyx.productExplorer.scenario` and selected product. Can explain products (no rates), next steps, and start intake (`Let’s prepare a draft`). Always offers `Talk to a licensed originator`.
+
+Disclosure, exact: `Fox can assist and prepare. Fox cannot approve, lock, or commit to lend.`
+
+### Intake (`/intake`)
+
+One page, stages in place: context carry-in → chat-led contact → document drop → draft summary → confirmation.
+
+- Storage: `sessionStorage` + `localStorage` key `onyx.foxIntake.draft`
+- Scenario key unchanged: `onyx.productExplorer.scenario`
+- Documents: metadata only (name, type, size, slot, receivedAt). No file bytes in git, no upload, no public URL.
+- Extraction: do not invent income, SSN, or account numbers. Client-entered + scenario only.
+- Each draft section: Confirm | Edit. Audit fields: `{ field, source: client | scenario | extracted-unconfirmed, confirmed, confirmedAt? }`
+- After all key sections confirmed: `Application draft confirmed — pending licensed review`
+- Draft ≠ commitment to lend. No live pricing.
+
+### LO review queue
+
+`/lo/review` — not in public nav. Discreet footer + intake “Preview: open review queue”. Label: `Internal preview — licensed review`. Same draft store. LO marks: `needs items` | `in review` | `contacting client`. No auth wall this slice.
+
+### Do not
+
+Change homepage ACR / `public/acr-card-face.png`. Redesign Slice 1 cards, Slice 2 fields, or Slice 3 results structure (Start application → intake is allowed). Touch `app/api/chat`, `app/api/heloc-quote`, or `lib/*`. Invent rates, APR, payments, income, or NMLS/DRE numbers.
 
 ## File map
 
@@ -93,6 +125,7 @@ styles/desks.css                  Slice 4 three desks
 styles/rates.css                  Slice 5 rate card + comparison
 styles/close.css                  Slice 6 path, proof, closer
 styles/products.css               Product Explorer
+styles/fox.css                    Always-on Fox + intake + LO review
 components/products/catalog.ts    CA product groups + exact copy
 components/products/ProductExplorer.tsx  /products index
 components/products/ProductStub.tsx      /products/[slug] stub
@@ -100,10 +133,14 @@ components/products/scenario.ts          scenario types, CA ZIP, storage
 components/products/ScenarioForm.tsx     /products/scenario
 components/products/directions.ts        purpose → placeholder directions
 components/products/ScenarioResults.tsx  /products/results placeholder
+components/fox/*                  Always-on Fox, intake draft, LO review
 app/(marketing)/products/page.tsx Product Explorer
+app/(marketing)/products/layout.tsx mounts Always-on Fox
 app/(marketing)/products/scenario/page.tsx scenario inputs
 app/(marketing)/products/results/page.tsx results placeholder
 app/(marketing)/products/[slug]/page.tsx product stubs
+app/(marketing)/intake/page.tsx   Fox Intake v1
+app/(marketing)/lo/review/page.tsx licensed review queue (preview)
 components/AdvisorMark.tsx        2–3 shape geometric fox; size="sm" = 20px
 components/SiteHeader.tsx         locked sparse chrome
 components/SiteFooter.tsx         sparse footer, pending-approval placeholders
@@ -172,7 +209,7 @@ Current Preview (Ready, not Production):
 
 ## Still later — do not build yet
 
-`/acr` product page, product Explorer next-step (quote/apply), returning chat, mobile sticky bar (Slice 9), dashboard, Advisor sheet, Classic form widget.
+`/acr` product page, live pricing, bank/ADP, underwriting, ACR billing, returning-client login, mobile sticky bar (Slice 9), dashboard, Advisor sheet, Classic form widget.
 
 ## What later slices must not break
 

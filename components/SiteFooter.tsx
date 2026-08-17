@@ -46,6 +46,9 @@ export function SiteFooter() {
               NMLS ____ — placeholder, pending approval. No license numbers,
               rates, or compliance claims on this page have been approved.
             </p>
+            <p className="type-legal">
+              <Link href="/lo/review">Preview: licensed review queue</Link>
+            </p>
           </div>
         </div>
       </div>
