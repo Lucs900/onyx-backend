@@ -20,23 +20,23 @@ export function MembershipHero() {
             </p>
           </div>
 
-          <div className="membership-hero__actions">
-            <Link href={ACR_START_HREF} className="btn btn--primary btn--hero-primary">
-              Start your relationship
-            </Link>
-            <Link href={LOAN_START_HREF} className="btn btn--secondary btn--hero-secondary">
-              Just need a mortgage
-            </Link>
-          </div>
-
           <p className="membership-hero__trust">
             NMLS [OPEN] · CA DRE [OPEN] · We are a mortgage broker.{" "}
             <Link href="/how-we-get-paid">Here’s how we get paid.</Link>
           </p>
+
+          <p className="membership-hero__echoes">
+            <Link href={ACR_START_HREF}>Start your relationship</Link>
+            <Link href={LOAN_START_HREF}>Just need a mortgage</Link>
+          </p>
         </div>
 
-        <div className="membership-hero__pass">
-          <AcrPass />
+        <div className="membership-hero__primary">
+          <div id="fox-home-stage" className="membership-hero__fox" />
+
+          <div className="membership-hero__pass">
+            <AcrPass />
+          </div>
         </div>
       </div>
     </section>

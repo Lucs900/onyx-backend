@@ -17,17 +17,34 @@ Tokens, navigation, footer, and layout foundation. Keep this chrome.
 
 ## Slice 2 — hero + locked ACR object
 
-Homepage first screen is ACR-first: locked eyebrow / H1 / support, dual CTAs, in-hero broker line, and the locked pictorial ACR card.
+Homepage first screen is **Fox-first** (18 Aug 2026). Locked brand claim stays exact. Fox is the primary start. The ACR object remains, quieter — not the operator.
 
-The hero object is the exact locked bitmap **`public/acr-card-face.png`**, shown as a clean `<img>`. Do not regenerate, restyle, or color-grade it. Keep it straight (0°). No CSS type overlay, sheen, sweep, filters, or tilt. Type/gold/fox live in the bitmap if present. Only this object may lift (soft shadow).
+Locked claim (do not rewrite):
+
+- Eyebrow: `Active Credit Relationship`
+- H1: `Always approved.` / `Always optimizing.`
+- Support: `We keep your credit and rate working for you.`
+- Legal: `NMLS [OPEN] · CA DRE [OPEN] · We are a mortgage broker.` + How we get paid link
+
+The hero object is the exact locked bitmap **`public/acr-card-face.png`**, shown as a clean `<img>`. Do not regenerate, restyle, or color-grade it. Keep it straight (0°). No CSS type overlay, sheen, sweep, filters, or tilt. Type/gold/fox live in the bitmap if present. Only this object may lift (soft shadow). Smaller / lower on the homepage only. `/acr` keeps the larger object.
 
 **Locked — do not reopen** house, zoom, gold width, or composition. Not the old CSS membership pass (no MEMBER, last-4, chip, or ONYX wordmark on the object).
 
-Hero secondary `Just need a mortgage` starts the loan only path (`/products/scenario?path=loan`). Primary starts ACR (`/products/scenario?path=acr`). The hero CTAs are the homepage path choice.
+Do **not** treat “Always approved” as a credit decision.
 
-## Slice 3 — no homepage mode toggle
+## Slice 3 — Fox-first homepage (`/` only)
 
-Do **not** put a Relationship / Loan control under the hero. That toggle was leftover from Advisor Spotlight after Fox moved to the central bar. It did not change any section content. Path choice is the locked hero CTAs. No second Fox composer, no centered ask bar, no chips-as-chat, no “Ask ONYX Fox” form on the page. Fox lives in the central AI bar only.
+Fox is the homepage operator. One Fox only: the existing `AlwaysOnFox` dock. The expanded homepage stage is the same assistant, portaled into `#fox-home-stage`. No second chatbot, orb, FAB, or orange ring.
+
+- Desktop: claim left; expanded Fox stage right; ACR object quieter below the stage.
+- Mobile: claim, then full-width Fox stage as the main action; ACR below the fold; dock stays the primary control.
+- Opening Fox on `/` starts Idle. Starter: `I can prepare a file for a purchase, refinance, or equity. You can start a relationship or just get the loan.`
+- Bubbles: `Start your relationship` → `ACR_START_HREF` (`path=acr`); `Just need a mortgage` → `LOAN_START_HREF` (`path=loan`). Optional product chips Buy / Refinance / Use equity continue into the existing scenario route with `path=acr` + product.
+- No competing hero button row. Quiet text echoes of the two path labels are allowed.
+- Disclosure under the homepage Fox thread header: `ONYX Fox can assist and prepare. It cannot approve, lock, or commit to lend.`
+- Do **not** rebuild Fox intake stages in this slice. Do not implement later logged-in ACR home.
+
+Do **not** put a Relationship / Loan mode toggle under the hero. Path choice is the Fox bubbles (and quiet echoes / header / closer).
 
 ## Slice 4 — Membership math (The Three Desks)
 
@@ -175,7 +192,8 @@ app/(marketing)/lo/review/page.tsx licensed review queue (preview)
 components/AdvisorMark.tsx        2–3 shape geometric fox; size="sm" = 20px
 components/SiteHeader.tsx         locked sparse chrome
 components/SiteFooter.tsx         sparse footer, pending-approval placeholders
-components/MembershipHero.tsx     locked hero; CTAs start ACR / loan only paths
+components/MembershipHero.tsx     Fox-first homepage claim + stage slot; locked copy
+components/fox/homeIdle.ts        homepage Idle starter + path / product bubbles
 components/AcrPass.tsx            exact locked ACR face image, no overlays
 components/ValueBreakdown.tsx     three locked desks
 components/RateCard.tsx           mortgage-only off-ramp
@@ -217,7 +235,7 @@ Metal is scarce: fox highlight, the locked ACR card gold dock, the comparison ON
 
 ## Public start paths
 
-Both homepage CTAs begin a path that reaches scenario → results → intake. There is no Relationship / Loan toggle on the homepage. Intent is stored as `acr` | `loan-only` in `sessionStorage` / `localStorage` key `onyx.startPath` and carried as `path=acr` or `path=loan` on explorer, scenario, results, and intake URLs.
+Homepage path choice is the Fox Idle bubbles (plus quiet text echoes, header, and closer). There is no Relationship / Loan toggle and no competing hero button row. Intent is stored as `acr` | `loan-only` in `sessionStorage` / `localStorage` key `onyx.startPath` and carried as `path=acr` or `path=loan` on explorer, scenario, results, and intake URLs.
 
 - ACR start: `/products/scenario?path=acr`
 - Loan only start: `/products/scenario?path=loan`
@@ -301,7 +319,7 @@ Public `/acr` may show those three titles as quiet sample labels only.
 
 ## Still later — do not build yet
 
-Live pricing, bank/ADP, underwriting, ACR billing, returning-client login, mobile sticky bar (Slice 9), dashboard, Advisor sheet, Classic form widget.
+Full Fox intake stages from `ONYX-fox-first-experience.md` (this slice is homepage Idle only). Live pricing, bank/ADP, underwriting, ACR billing, returning-client login, mobile sticky bar (Slice 9), dashboard, Advisor sheet, Classic form widget.
 
 ## What later slices must not break
 

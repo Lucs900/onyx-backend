@@ -14,6 +14,7 @@ import {
   type ExplorerScenario,
 } from "@/components/products/scenario";
 import { pathFromQuery } from "@/components/products/startPath";
+import { HOME_IDLE_TEXT, homeIdleActions } from "./homeIdle";
 import { questionsComplete } from "./store";
 import {
   INCOME_BUBBLES,
@@ -147,11 +148,8 @@ export function greeting(
 
   if (stage === "home") {
     return {
-      text: "What do you want to do?",
-      actions: [
-        { id: "acr", label: "Learn about ACR", href: "/acr" },
-        { id: "products", label: "Explore products", href: "/products" },
-      ],
+      text: HOME_IDLE_TEXT,
+      actions: homeIdleActions(),
     };
   }
 
@@ -553,31 +551,40 @@ function acrReply(lower: string): ReturnType<typeof replyToMessage> | null {
 }
 
 function homeReply(lower: string): ReturnType<typeof replyToMessage> | null {
+  if (/(just need a mortgage|loan only|mortgage only|only (a )?loan)/i.test(lower)) {
+    return {
+      text: "A mortgage is available without ACR.",
+      actions: homeIdleActions().filter((action) => action.id === "loan"),
+    };
+  }
+  if (/(start your relationship|start a relationship|join)/i.test(lower)) {
+    return {
+      text: HOME_IDLE_TEXT,
+      actions: homeIdleActions(),
+    };
+  }
   if (/(what('s| is) acr|active credit relationship)/i.test(lower)) {
     return {
       text: "ACR is the Active Credit Relationship — stay approved and keep optimizing.",
-      actions: [{ id: "acr", label: "Learn about ACR", href: "/acr" }],
+      actions: homeIdleActions(),
     };
   }
   if (/(keep me approved|stay approved|always approved)/i.test(lower)) {
     return {
-      text: "We keep watching credit and rate conditions after approval.",
-      actions: [{ id: "acr", label: "Learn about ACR", href: "/acr" }],
+      text: "We keep watching credit and rate conditions after approval. That is the relationship goal, not a credit decision.",
+      actions: homeIdleActions(),
     };
   }
   if (/optimiz/i.test(lower)) {
     return {
       text: "Optimizing means reviewing your situation over time.",
-      actions: [{ id: "acr", label: "Learn about ACR", href: "/acr" }],
+      actions: homeIdleActions(),
     };
   }
   if (/(buy a home|purchase|refinance|use equity|heloc|equity)/i.test(lower)) {
     return {
-      text: "Explore buying, refinancing, or equity in Product Explorer.",
-      actions: [
-        { id: "products", label: "Explore products", href: "/products" },
-        { id: "scenario", label: "Start a scenario", href: "/products/scenario" },
-      ],
+      text: HOME_IDLE_TEXT,
+      actions: homeIdleActions(),
     };
   }
   return null;
@@ -590,11 +597,8 @@ function nextSteps(
 ): ReturnType<typeof replyToMessage> {
   if (stage === "home") {
     return {
-      text: "ACR, or a loan without it?",
-      actions: [
-        { id: "acr", label: "Learn about ACR", href: "/acr" },
-        { id: "products", label: "Explore products", href: "/products" },
-      ],
+      text: HOME_IDLE_TEXT,
+      actions: homeIdleActions(),
     };
   }
   if (stage === "acr") {

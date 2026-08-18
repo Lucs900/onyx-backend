@@ -5,21 +5,23 @@ import { usePathname, useRouter } from "next/navigation";
 import {
   useEffect,
   useId,
+  useLayoutEffect,
   useRef,
   useState,
   useSyncExternalStore,
   type FormEvent,
+  type ReactNode,
 } from "react";
+import { createPortal } from "react-dom";
 import { AdvisorMark } from "@/components/AdvisorMark";
 import { readScenario, scenarioFromQuery } from "@/components/products/scenario";
-import { readStartPath } from "@/components/products/startPath";
+import { pathFromQuery, readStartPath, writeStartPath } from "@/components/products/startPath";
 import {
   currentPrompt,
   foxStageFromPath,
   greeting,
   intakeHref,
   intakePathContext,
-  pathFromQuery,
   promptCopy,
   replyToMessage,
 } from "./script";
@@ -33,7 +35,7 @@ import {
   setDraftScenario,
   subscribeFoxDraft,
 } from "./store";
-import { FOX_PANEL_KEY, type FoxAction, type FoxMessage } from "./types";
+import { FOX_DISCLOSURE, FOX_PANEL_KEY, type FoxAction, type FoxMessage } from "./types";
 
 function newId() {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -47,6 +49,17 @@ export function requestFoxAsk(text: string) {
   window.dispatchEvent(new CustomEvent("onyx:fox-ask", { detail: { text } }));
 }
 
+function persistPathFromHref(href: string) {
+  try {
+    const path = pathFromQuery(new URL(href, window.location.origin).searchParams.get("path"));
+    if (!path) return;
+    writeStartPath(path);
+    setDraftPath(path);
+  } catch {
+    // Ignore malformed hrefs; navigation still proceeds.
+  }
+}
+
 export function FoxLauncher() {
   return (
     <div className="fox-bar__desk">
@@ -58,22 +71,126 @@ export function FoxLauncher() {
   );
 }
 
+function FoxThread({
+  messages,
+  listRef,
+  onAction,
+}: {
+  messages: FoxMessage[];
+  listRef: { current: HTMLDivElement | null };
+  onAction: (action: FoxAction) => void;
+}) {
+  return (
+    <div className="fox-panel__thread" ref={listRef} aria-live="polite">
+      {messages.map((message) => (
+        <article
+          key={message.id}
+          className={
+            message.role === "fox" ? "fox-bubble fox-bubble--fox" : "fox-bubble fox-bubble--client"
+          }
+        >
+          <p>{message.text}</p>
+          {message.actions?.length ? (
+            <div className="fox-bubble__actions">
+              {message.actions.map((action) =>
+                action.href ? (
+                  <Link
+                    key={action.id}
+                    href={action.href}
+                    className="btn btn--secondary fox-chip"
+                    onClick={() => persistPathFromHref(action.href as string)}
+                  >
+                    {action.label}
+                  </Link>
+                ) : (
+                  <button
+                    key={action.id}
+                    type="button"
+                    className="btn btn--secondary fox-chip"
+                    onClick={() => onAction(action)}
+                  >
+                    {action.label}
+                  </button>
+                ),
+              )}
+            </div>
+          ) : null}
+        </article>
+      ))}
+    </div>
+  );
+}
+
+function FoxWorkspace({
+  className,
+  showDisclosure,
+  messages,
+  listRef,
+  onClose,
+  onAction,
+}: {
+  className: string;
+  showDisclosure: boolean;
+  messages: FoxMessage[];
+  listRef: { current: HTMLDivElement | null };
+  onClose: () => void;
+  onAction: (action: FoxAction) => void;
+}) {
+  return (
+    <div id="fox-panel" className={className}>
+      <div className="fox-bar__head">
+        <span className="fox-bar__title">ONYX Fox</span>
+        <button
+          type="button"
+          className="fox-bar__close"
+          aria-expanded={true}
+          aria-controls="fox-panel"
+          onClick={onClose}
+        >
+          Close
+        </button>
+      </div>
+      {showDisclosure ? (
+        <p className="fox-stage__disclosure type-legal">{FOX_DISCLOSURE}</p>
+      ) : null}
+      <FoxThread messages={messages} listRef={listRef} onAction={onAction} />
+    </div>
+  );
+}
+
+function HomeStageReopen({ onOpen }: { onOpen: () => void }) {
+  return (
+    <button type="button" className="fox-stage__reopen" onClick={onOpen}>
+      <span className="fox-bar__mark">
+        <AdvisorMark size={20} />
+      </span>
+      Ask ONYX Fox
+    </button>
+  );
+}
+
 export function AlwaysOnFox() {
   const pathname = usePathname();
   const router = useRouter();
   const stage = foxStageFromPath(pathname);
   const draft = useSyncExternalStore(subscribeFoxDraft, getFoxDraft, getServerDraft);
-  const [open, setOpen] = useState(() => stage === "intake");
+  const [open, setOpen] = useState(() => stage === "intake" || stage === "home");
   const [ready, setReady] = useState(false);
   const [search, setSearch] = useState("");
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState<FoxMessage[]>([]);
+  const [homeStage, setHomeStage] = useState<HTMLElement | null>(null);
   const greeted = useRef<string>("");
   const pendingAsk = useRef<string | null>(null);
   const skipPromptSync = useRef(false);
   const listRef = useRef<HTMLDivElement>(null);
   const fieldId = useId();
   const greetKey = `${pathname}${search}`;
+  const isHome = stage === "home";
+
+  useLayoutEffect(() => {
+    setHomeStage(isHome ? document.getElementById("fox-home-stage") : null);
+  }, [isHome, open]);
 
   useEffect(() => {
     const query = window.location.search;
@@ -93,7 +210,9 @@ export function AlwaysOnFox() {
     const stored = sessionStorage.getItem(FOX_PANEL_KEY);
     const live = getFoxDraft();
     const asking = stage === "intake" && live.phase !== "confirmed";
-    if (stage === "home" || stage === "acr") {
+    if (stage === "home") {
+      setOpen(stored !== "0");
+    } else if (stage === "acr") {
       setOpen(false);
     } else if (asking && stored !== "0") {
       setOpen(true);
@@ -208,6 +327,7 @@ export function AlwaysOnFox() {
 
   const runAction = (action: FoxAction) => {
     if (action.href) {
+      persistPathFromHref(action.href);
       router.push(action.href);
       return;
     }
@@ -245,58 +365,29 @@ export function AlwaysOnFox() {
     appendReply(text, reply);
   };
 
+  const workspace = open ? (
+    <FoxWorkspace
+      className={isHome && homeStage ? "fox-stage" : "fox-bar__workspace"}
+      showDisclosure={isHome}
+      messages={messages}
+      listRef={listRef}
+      onClose={() => setOpen(false)}
+      onAction={runAction}
+    />
+  ) : null;
+
+  let stageNode: ReactNode = null;
+  if (isHome && homeStage) {
+    stageNode = createPortal(
+      open ? workspace : <HomeStageReopen onOpen={() => setOpen(true)} />,
+      homeStage,
+    );
+  }
+
   return (
     <div className={open ? "fox-bar is-open" : "fox-bar"}>
-      {open ? (
-        <div id="fox-panel" className="fox-bar__workspace">
-          <div className="fox-bar__head">
-            <span className="fox-bar__title">ONYX Fox</span>
-            <button
-              type="button"
-              className="fox-bar__close"
-              aria-expanded={true}
-              aria-controls="fox-panel"
-              onClick={() => setOpen(false)}
-            >
-              Close
-            </button>
-          </div>
-
-          <div className="fox-panel__thread" ref={listRef} aria-live="polite">
-            {messages.map((message) => (
-              <article
-                key={message.id}
-                className={
-                  message.role === "fox" ? "fox-bubble fox-bubble--fox" : "fox-bubble fox-bubble--client"
-                }
-              >
-                <p>{message.text}</p>
-                {message.actions?.length ? (
-                  <div className="fox-bubble__actions">
-                    {message.actions.map((action) =>
-                      action.href ? (
-                        <Link key={action.id} href={action.href} className="btn btn--secondary fox-chip">
-                          {action.label}
-                        </Link>
-                      ) : (
-                        <button
-                          key={action.id}
-                          type="button"
-                          className="btn btn--secondary fox-chip"
-                          onClick={() => runAction(action)}
-                        >
-                          {action.label}
-                        </button>
-                      ),
-                    )}
-                  </div>
-                ) : null}
-              </article>
-            ))}
-          </div>
-        </div>
-      ) : null}
-
+      {stageNode}
+      {!isHome && workspace}
       <form className="fox-bar__desk" onSubmit={onSubmit}>
         <span className="fox-bar__mark">
           <AdvisorMark size={20} />
