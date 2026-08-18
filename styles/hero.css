@@ -62,8 +62,7 @@
   color: var(--ink);
 }
 
-.membership-hero__fox,
-.fox-stage {
+.membership-hero__fox-wrap {
   order: 4;
 }
 
@@ -148,6 +147,7 @@
     margin-top: 20px;
   }
 
+  .membership-hero__fox-wrap,
   .membership-hero__fox {
     margin-top: 0;
     min-height: 320px;

@@ -170,16 +170,18 @@
   overflow: auto;
 }
 
+.membership-hero__fox-wrap,
 .membership-hero__fox {
   min-height: 280px;
   margin-top: 28px;
 }
 
 .membership-hero__fox:empty {
-  background: var(--paper-elevated);
-  border: 1px solid var(--fox-hairline);
-  border-radius: 16px;
-  box-shadow: var(--fox-lift);
+  display: none;
+}
+
+.membership-hero__fox-wrap:has(#fox-home-stage > *) .membership-hero__fox-fallback {
+  display: none;
 }
 
 .fox-stage {

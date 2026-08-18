@@ -1,5 +1,7 @@
 import Link from "next/link";
 import { AcrPass } from "./AcrPass";
+import { HOME_IDLE_TEXT, homeIdleActions } from "./fox/homeIdle";
+import { FOX_DISCLOSURE } from "./fox/types";
 import { ACR_START_HREF, LOAN_START_HREF } from "./products/startPath";
 
 export function MembershipHero() {
@@ -32,7 +34,33 @@ export function MembershipHero() {
         </div>
 
         <div className="membership-hero__primary">
-          <div id="fox-home-stage" className="membership-hero__fox" />
+          <div className="membership-hero__fox-wrap">
+            <div className="fox-stage membership-hero__fox-fallback">
+              <div className="fox-bar__head">
+                <span className="fox-bar__title">ONYX Fox</span>
+              </div>
+              <p className="fox-stage__disclosure type-legal">{FOX_DISCLOSURE}</p>
+              <div className="fox-panel__thread">
+                <article className="fox-bubble fox-bubble--fox">
+                  <p>{HOME_IDLE_TEXT}</p>
+                  <div className="fox-bubble__actions">
+                    {homeIdleActions().map((action) =>
+                      action.href ? (
+                        <Link
+                          key={action.id}
+                          href={action.href}
+                          className="btn btn--secondary fox-chip"
+                        >
+                          {action.label}
+                        </Link>
+                      ) : null,
+                    )}
+                  </div>
+                </article>
+              </div>
+            </div>
+            <div id="fox-home-stage" className="membership-hero__fox" />
+          </div>
 
           <div className="membership-hero__pass">
             <AcrPass />
