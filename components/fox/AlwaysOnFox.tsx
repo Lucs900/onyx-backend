@@ -35,7 +35,12 @@ import {
   setDraftScenario,
   subscribeFoxDraft,
 } from "./store";
-import { FOX_DISCLOSURE, FOX_PANEL_KEY, type FoxAction, type FoxMessage } from "./types";
+import {
+  HOME_PRODUCT_TEXT,
+  homeProductActions,
+  pathFromHomeChoice,
+} from "./homeIdle";
+import { FOX_PANEL_KEY, type FoxAction, type FoxMessage } from "./types";
 
 function newId() {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -123,14 +128,12 @@ function FoxThread({
 
 function FoxWorkspace({
   className,
-  showDisclosure,
   messages,
   listRef,
   onClose,
   onAction,
 }: {
   className: string;
-  showDisclosure: boolean;
   messages: FoxMessage[];
   listRef: { current: HTMLDivElement | null };
   onClose: () => void;
@@ -150,9 +153,6 @@ function FoxWorkspace({
           Close
         </button>
       </div>
-      {showDisclosure ? (
-        <p className="fox-stage__disclosure type-legal">{FOX_DISCLOSURE}</p>
-      ) : null}
       <FoxThread messages={messages} listRef={listRef} onAction={onAction} />
     </div>
   );
@@ -239,6 +239,13 @@ export function AlwaysOnFox() {
       const scenario = live.scenario ?? readScenario();
       if (!stage) return;
       const reply = replyToMessage(text, stage, live, scenario);
+      if (stage === "home") {
+        const path = pathFromHomeChoice(text);
+        if (path) {
+          writeStartPath(path);
+          setDraftPath(path);
+        }
+      }
       if (reply.capture) applyCapture(reply.capture);
       setMessages((prev) => [
         ...prev,
@@ -325,7 +332,22 @@ export function AlwaysOnFox() {
     ]);
   };
 
+  const chooseHomePath = (label: string, path: ReturnType<typeof pathFromHomeChoice>) => {
+    if (!path) return false;
+    writeStartPath(path);
+    setDraftPath(path);
+    appendReply(label, {
+      text: HOME_PRODUCT_TEXT,
+      actions: homeProductActions(path),
+    });
+    return true;
+  };
+
   const runAction = (action: FoxAction) => {
+    if (isHome && !action.href) {
+      const path = pathFromHomeChoice(action.id) ?? pathFromHomeChoice(action.label);
+      if (chooseHomePath(action.label, path)) return;
+    }
     if (action.href) {
       persistPathFromHref(action.href);
       router.push(action.href);
@@ -358,6 +380,13 @@ export function AlwaysOnFox() {
     setOpen(true);
     setInput("");
     const reply = replyToMessage(text, stage, draft, scenario);
+    if (isHome) {
+      const path = pathFromHomeChoice(text);
+      if (path) {
+        writeStartPath(path);
+        setDraftPath(path);
+      }
+    }
     if (reply.capture) applyCapture(reply.capture);
     if (reply.capture?.field === "open-docs") {
       document.getElementById("fox-documents")?.scrollIntoView({ behavior: "smooth" });
@@ -368,7 +397,6 @@ export function AlwaysOnFox() {
   const workspace = open ? (
     <FoxWorkspace
       className={isHome && homeStage ? "fox-stage" : "fox-bar__workspace"}
-      showDisclosure={isHome}
       messages={messages}
       listRef={listRef}
       onClose={() => setOpen(false)}

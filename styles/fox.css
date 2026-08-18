@@ -200,10 +200,6 @@
   max-height: none;
 }
 
-.fox-stage__disclosure {
-  margin: 0;
-}
-
 .fox-stage__reopen {
   display: flex;
   align-items: center;

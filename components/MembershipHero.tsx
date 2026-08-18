@@ -1,8 +1,12 @@
 import Link from "next/link";
 import { AcrPass } from "./AcrPass";
-import { HOME_IDLE_TEXT, homeIdleActions } from "./fox/homeIdle";
-import { FOX_DISCLOSURE } from "./fox/types";
+import { HOME_IDLE_TEXT, homePathActions } from "./fox/homeIdle";
 import { ACR_START_HREF, LOAN_START_HREF } from "./products/startPath";
+
+const FALLBACK_HREFS: Record<string, string> = {
+  start: ACR_START_HREF,
+  loan: LOAN_START_HREF,
+};
 
 export function MembershipHero() {
   return (
@@ -26,11 +30,6 @@ export function MembershipHero() {
             NMLS [OPEN] · CA DRE [OPEN] · We are a mortgage broker.{" "}
             <Link href="/how-we-get-paid">Here’s how we get paid.</Link>
           </p>
-
-          <p className="membership-hero__echoes">
-            <Link href={ACR_START_HREF}>Start your relationship</Link>
-            <Link href={LOAN_START_HREF}>Just need a mortgage</Link>
-          </p>
         </div>
 
         <div className="membership-hero__primary">
@@ -39,22 +38,19 @@ export function MembershipHero() {
               <div className="fox-bar__head">
                 <span className="fox-bar__title">ONYX Fox</span>
               </div>
-              <p className="fox-stage__disclosure type-legal">{FOX_DISCLOSURE}</p>
               <div className="fox-panel__thread">
                 <article className="fox-bubble fox-bubble--fox">
                   <p>{HOME_IDLE_TEXT}</p>
                   <div className="fox-bubble__actions">
-                    {homeIdleActions().map((action) =>
-                      action.href ? (
-                        <Link
-                          key={action.id}
-                          href={action.href}
-                          className="btn btn--secondary fox-chip"
-                        >
-                          {action.label}
-                        </Link>
-                      ) : null,
-                    )}
+                    {homePathActions().map((action) => (
+                      <Link
+                        key={action.id}
+                        href={FALLBACK_HREFS[action.id] ?? ACR_START_HREF}
+                        className="btn btn--secondary fox-chip"
+                      >
+                        {action.label}
+                      </Link>
+                    ))}
                   </div>
                 </article>
               </div>

@@ -39,12 +39,12 @@ Fox is the homepage operator. One Fox only: the existing `AlwaysOnFox` dock. The
 - Desktop: claim left; expanded Fox stage right; ACR object quieter below the stage.
 - Mobile: claim, then full-width Fox stage as the main action; ACR below the fold; dock stays the primary control.
 - Opening Fox on `/` starts Idle. Starter: `I can prepare a file for a purchase, refinance, or equity. You can start a relationship or just get the loan.`
-- Bubbles: `Start your relationship` → `ACR_START_HREF` (`path=acr`); `Just need a mortgage` → `LOAN_START_HREF` (`path=loan`). Optional product chips Buy / Refinance / Use equity continue into the existing scenario route with `path=acr` + product.
-- No competing hero button row. Quiet text echoes of the two path labels are allowed.
-- Disclosure under the homepage Fox thread header: `ONYX Fox can assist and prepare. It cannot approve, lock, or commit to lend.`
+- First bubbles only: `Start your relationship` (sets `path=acr`) and `Just need a mortgage` (sets `path=loan`). After a path is chosen, product chips: Buy / Refinance / Use equity → existing scenario routes with that path + product.
+- No competing hero button row. No quiet text echoes under the claim. Header and closer still carry the two path labels.
+- **No in-panel Fox disclosure.** Legal stays in page footer / hero chrome / how-we-get-paid only.
 - Do **not** rebuild Fox intake stages in this slice. Do not implement later logged-in ACR home.
 
-Do **not** put a Relationship / Loan mode toggle under the hero. Path choice is the Fox bubbles (and quiet echoes / header / closer).
+Do **not** put a Relationship / Loan mode toggle under the hero. Path choice is the Fox bubbles (header / closer remain available).
 
 ## Slice 4 — Membership math (The Three Desks)
 
@@ -235,7 +235,7 @@ Metal is scarce: fox highlight, the locked ACR card gold dock, the comparison ON
 
 ## Public start paths
 
-Homepage path choice is the Fox Idle bubbles (plus quiet text echoes, header, and closer). There is no Relationship / Loan toggle and no competing hero button row. Intent is stored as `acr` | `loan-only` in `sessionStorage` / `localStorage` key `onyx.startPath` and carried as `path=acr` or `path=loan` on explorer, scenario, results, and intake URLs.
+Homepage path choice is the Fox Idle bubbles (header and closer remain). First paint is the two path labels only; product chips appear after a path is stored. There is no Relationship / Loan toggle and no competing hero button row. Intent is stored as `acr` | `loan-only` in `sessionStorage` / `localStorage` key `onyx.startPath` and carried as `path=acr` or `path=loan` on explorer, scenario, results, and intake URLs.
 
 - ACR start: `/products/scenario?path=acr`
 - Loan only start: `/products/scenario?path=loan`

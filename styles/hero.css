@@ -44,24 +44,6 @@
   color: var(--ink);
 }
 
-.membership-hero__echoes {
-  display: none;
-}
-
-.membership-hero__echoes a {
-  font-family: var(--font-ui);
-  font-size: 15px;
-  line-height: 20px;
-  font-weight: 500;
-  color: var(--ink-2);
-  text-decoration: underline;
-  text-underline-offset: 3px;
-}
-
-.membership-hero__echoes a:hover {
-  color: var(--ink);
-}
-
 .membership-hero__fox-wrap {
   order: 4;
 }
@@ -127,7 +109,6 @@
 
   .membership-hero__intro,
   .membership-hero__trust,
-  .membership-hero__echoes,
   .membership-hero__pass {
     order: 0;
   }
@@ -138,13 +119,6 @@
 
   .membership-hero__trust {
     margin-top: 28px;
-  }
-
-  .membership-hero__echoes {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    margin-top: 20px;
   }
 
   .membership-hero__fox-wrap,
