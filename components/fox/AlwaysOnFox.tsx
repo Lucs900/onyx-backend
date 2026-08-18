@@ -132,12 +132,14 @@ function FoxWorkspace({
   listRef,
   onClose,
   onAction,
+  composer,
 }: {
   className: string;
   messages: FoxMessage[];
   listRef: { current: HTMLDivElement | null };
   onClose: () => void;
   onAction: (action: FoxAction) => void;
+  composer?: ReactNode;
 }) {
   return (
     <div id="fox-panel" className={className}>
@@ -154,18 +156,8 @@ function FoxWorkspace({
         </button>
       </div>
       <FoxThread messages={messages} listRef={listRef} onAction={onAction} />
+      {composer}
     </div>
-  );
-}
-
-function HomeStageReopen({ onOpen }: { onOpen: () => void }) {
-  return (
-    <button type="button" className="fox-stage__reopen" onClick={onOpen}>
-      <span className="fox-bar__mark">
-        <AdvisorMark size={20} />
-      </span>
-      Ask ONYX Fox
-    </button>
   );
 }
 
@@ -394,61 +386,72 @@ export function AlwaysOnFox() {
     appendReply(text, reply);
   };
 
+  const hideDock = isHome && open;
+
+  const desk = (
+    <form className="fox-bar__desk" onSubmit={onSubmit}>
+      <span className="fox-bar__mark">
+        <AdvisorMark size={20} />
+      </span>
+      <label className="visually-hidden" htmlFor={fieldId}>
+        Ask ONYX Fox
+      </label>
+      <input
+        id={fieldId}
+        className="fox-bar__input"
+        value={input}
+        onChange={(event) => setInput(event.target.value)}
+        onFocus={() => setOpen(true)}
+        placeholder="Ask ONYX Fox"
+        autoComplete="off"
+      />
+      <button
+        type="submit"
+        className="fox-bar__send"
+        disabled={!input.trim()}
+        aria-label="Send"
+      >
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+          <path
+            d="M3 8h9M8.5 3.5 13 8l-4.5 4.5"
+            stroke="currentColor"
+            strokeWidth="1.4"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
+      </button>
+    </form>
+  );
+
   const workspace = open ? (
     <FoxWorkspace
-      className={isHome && homeStage ? "fox-stage" : "fox-bar__workspace"}
+      className={isHome ? "fox-stage" : "fox-bar__workspace"}
       messages={messages}
       listRef={listRef}
       onClose={() => setOpen(false)}
       onAction={runAction}
+      composer={isHome ? desk : undefined}
     />
   ) : null;
 
   let stageNode: ReactNode = null;
   if (isHome && homeStage) {
     stageNode = createPortal(
-      open ? workspace : <HomeStageReopen onOpen={() => setOpen(true)} />,
+      open ? workspace : <span className="visually-hidden" data-fox-collapsed="true" />,
       homeStage,
     );
   }
 
   return (
-    <div className={open ? "fox-bar is-open" : "fox-bar"}>
+    <>
       {stageNode}
-      {!isHome && workspace}
-      <form className="fox-bar__desk" onSubmit={onSubmit}>
-        <span className="fox-bar__mark">
-          <AdvisorMark size={20} />
-        </span>
-        <label className="visually-hidden" htmlFor={fieldId}>
-          Ask ONYX Fox
-        </label>
-        <input
-          id={fieldId}
-          className="fox-bar__input"
-          value={input}
-          onChange={(event) => setInput(event.target.value)}
-          onFocus={() => setOpen(true)}
-          placeholder="Ask ONYX Fox"
-          autoComplete="off"
-        />
-        <button
-          type="submit"
-          className="fox-bar__send"
-          disabled={!input.trim()}
-          aria-label="Send"
-        >
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-            <path
-              d="M3 8h9M8.5 3.5 13 8l-4.5 4.5"
-              stroke="currentColor"
-              strokeWidth="1.4"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
-        </button>
-      </form>
-    </div>
+      {hideDock ? null : (
+        <div className={open ? "fox-bar is-open" : "fox-bar"}>
+          {!isHome && workspace}
+          {desk}
+        </div>
+      )}
+    </>
   );
 }

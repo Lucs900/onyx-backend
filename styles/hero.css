@@ -46,6 +46,7 @@
 
 .membership-hero__fox-wrap {
   order: 4;
+  width: 100%;
 }
 
 .membership-hero__pass {
@@ -94,7 +95,7 @@
 @media (min-width: 1024px) {
   .membership-hero__inner {
     display: grid;
-    grid-template-columns: 0.92fr 1.08fr;
+    grid-template-columns: 0.82fr 1.18fr;
     column-gap: 64px;
     align-items: start;
     min-height: min(780px, calc(100vh - 72px));

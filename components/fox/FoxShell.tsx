@@ -1,5 +1,6 @@
 "use client";
 
+import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
 import { Suspense } from "react";
 import { AlwaysOnFox, FoxLauncher } from "./AlwaysOnFox";
@@ -13,10 +14,13 @@ function DockFallback() {
 }
 
 export function FoxShell({ children }: { children: ReactNode }) {
+  const pathname = usePathname();
+  const home = pathname === "/";
+
   return (
-    <div className="fox-shell">
+    <div className={home ? "fox-shell fox-shell--home" : "fox-shell"}>
       {children}
-      <Suspense fallback={<DockFallback />}>
+      <Suspense fallback={home ? null : <DockFallback />}>
         <AlwaysOnFox />
       </Suspense>
     </div>

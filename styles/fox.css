@@ -10,6 +10,14 @@
   padding-bottom: 104px;
 }
 
+.fox-shell--home {
+  padding-bottom: 24px;
+}
+
+.fox-shell--home:has(.fox-bar) {
+  padding-bottom: 104px;
+}
+
 .fox-bar {
   position: fixed;
   left: 8px;
@@ -187,9 +195,9 @@
 .fox-stage {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  min-height: 280px;
-  padding: 16px 16px 18px;
+  gap: 12px;
+  min-height: min(52vh, 420px);
+  padding: 18px 16px 16px;
   background: var(--paper-elevated);
   border: 1px solid var(--fox-hairline);
   border-radius: 16px;
@@ -197,30 +205,14 @@
 }
 
 .fox-stage .fox-panel__thread {
+  flex: 1 1 auto;
   max-height: none;
 }
 
-.fox-stage__reopen {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  width: 100%;
-  min-height: 56px;
-  padding: 6px 16px;
-  background: var(--paper-elevated);
-  border: 1px solid var(--fox-hairline);
-  border-radius: 999px;
-  box-shadow: var(--fox-lift);
-  color: var(--ink);
-  font-family: var(--font-ui);
-  font-size: 14px;
-  font-weight: 500;
-  cursor: pointer;
+.fox-stage .fox-bar__desk {
+  margin-top: 8px;
 }
 
-.fox-stage__reopen:hover {
-  border-color: var(--fox-hairline-hover);
-}
 
 .fox-bubble {
   max-width: 92%;
@@ -362,6 +354,14 @@
     padding-bottom: 120px;
   }
 
+  .fox-shell--home {
+    padding-bottom: 32px;
+  }
+
+  .fox-shell--home:has(.fox-bar) {
+    padding-bottom: 120px;
+  }
+
   .fox-bar {
     left: 0;
     right: 0;
@@ -392,8 +392,12 @@
   }
 
   .fox-stage {
-    min-height: 320px;
+    min-height: 380px;
     padding: 20px 20px 22px;
+  }
+
+  .fox-stage .fox-panel__thread {
+    max-height: none;
   }
 
   .fox-panel__thread {

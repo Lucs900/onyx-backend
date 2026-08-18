@@ -34,10 +34,12 @@ Do **not** treat “Always approved” as a credit decision.
 
 ## Slice 3 — Fox-first homepage (`/` only)
 
-Fox is the homepage operator. One Fox only: the existing `AlwaysOnFox` dock. The expanded homepage stage is the same assistant, portaled into `#fox-home-stage`. No second chatbot, orb, FAB, or orange ring.
+Fox is the homepage operator. One Fox assistant, one visible interface. The expanded homepage stage is the same `AlwaysOnFox` instance, portaled into `#fox-home-stage`. No second chatbot, orb, FAB, or orange ring.
 
-- Desktop: claim left; expanded Fox stage right; ACR object quieter below the stage.
-- Mobile: claim, then full-width Fox stage as the main action; ACR below the fold; dock stays the primary control.
+- **First paint on `/`:** only the expanded Fox stage. Do not mount the bottom Ask ONYX Fox dock while the homepage stage is open. `FoxShell` skips the dock fallback on `/`.
+- Desktop: claim left; expanded Fox stage primary on the right; ACR object quieter below the stage.
+- Mobile: claim, then full-width Fox stage as the main action; path bubbles first; ACR below Fox.
+- Bottom dock may return only after Fox is collapsed on `/`, or on non-homepage routes.
 - Opening Fox on `/` starts Idle. Starter: `I can prepare a file for a purchase, refinance, or equity. You can start a relationship or just get the loan.`
 - First bubbles only: `Start your relationship` (sets `path=acr`) and `Just need a mortgage` (sets `path=loan`). After a path is chosen, product chips: Buy / Refinance / Use equity → existing scenario routes with that path + product.
 - No competing hero button row. No quiet text echoes under the claim. Header and closer still carry the two path labels.
