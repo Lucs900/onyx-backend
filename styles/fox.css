@@ -68,6 +68,29 @@
   border-radius: 16px;
 }
 
+/* Workspace composer: unboxed from first paint. Beats the default pill. */
+.fox-stage.fox-stage--workspace .fox-bar__desk,
+.fox-stage.fox-stage--workspace .fox-bar__desk:hover,
+.fox-stage.fox-stage--workspace .fox-bar__desk:focus-within,
+.fox-bar.is-open .fox-stage.fox-stage--workspace .fox-bar__desk,
+.fox-stage--workspace .fox-bar__desk,
+.fox-stage--workspace .fox-bar__desk:hover,
+.fox-stage--workspace .fox-bar__desk:focus-within,
+.fox-bar.is-open .fox-stage--workspace .fox-bar__desk,
+.fox-bar__desk--plain,
+.fox-bar__desk--plain:hover,
+.fox-bar__desk--plain:focus-within {
+  margin-top: 10px;
+  min-height: 44px;
+  padding: 8px 0 0;
+  background: transparent !important;
+  background-color: transparent !important;
+  border: 0 !important;
+  border-top: 0 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+}
+
 .fox-bar__mark {
   position: relative;
   display: grid;
@@ -437,6 +460,19 @@
   .fox-bar__desk {
     min-height: 56px;
     padding: 6px 6px 6px 16px;
+  }
+
+  .fox-stage.fox-stage--workspace .fox-bar__desk,
+  .fox-stage--workspace .fox-bar__desk,
+  .fox-bar__desk--plain {
+    min-height: 44px;
+    padding: 8px 0 0;
+    background: transparent !important;
+    background-color: transparent !important;
+    border: 0 !important;
+    border-top: 0 !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
   }
 
   .fox-bar__send {

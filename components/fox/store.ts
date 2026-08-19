@@ -452,14 +452,27 @@ export function applyCapture(capture: Capture) {
     return advancePhase();
   }
   if (capture.field === "incomeType") {
+    const knownDocs =
+      capture.value === "w2" ||
+      capture.value === "self-employed" ||
+      capture.value === "both";
+    const skipDocs = current.workspaceFlow && capture.value === "other";
     commit({
       ...current,
       incomeType: clientField("incomeType", capture.value),
+      documentsSkipped: skipDocs
+        ? true
+        : current.workspaceFlow && knownDocs && !current.documents.length
+          ? false
+          : current.documentsSkipped,
       correcting: null,
       sections: { ...current.sections, income: false },
       status: undefined,
       confirmedAt: undefined,
     });
+    if (current.workspaceFlow) {
+      return skipDocs ? prepareWorkspaceDraft() : current;
+    }
     return advancePhase();
   }
   if (capture.field === "occupancy") {

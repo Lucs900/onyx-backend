@@ -55,7 +55,7 @@ export function StartWorkspace() {
       <div className="page-inner start-workspace__inner">
         <FilePreview />
         <div className="start-workspace__fox-wrap">
-          <AlwaysOnFox startPath={startPath} startIntent={startIntent} />
+          <AlwaysOnFox startPath={startPath} startIntent={startIntent} inWorkspace />
         </div>
       </div>
     </section>

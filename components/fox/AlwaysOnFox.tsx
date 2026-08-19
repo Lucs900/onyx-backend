@@ -302,37 +302,43 @@ function FoxWorkspace({
 export function AlwaysOnFox({
   startPath = null,
   startIntent = null,
+  inWorkspace = false,
 }: {
   startPath?: IntakePath | null;
   startIntent?: ProductIntent | null;
+  inWorkspace?: boolean;
 } = {}) {
   const pathname = usePathname();
   const router = useRouter();
   const stage = foxStageFromPath(pathname);
+  const isStart =
+    inWorkspace ||
+    stage === "start" ||
+    pathname === "/start" ||
+    pathname.startsWith("/start/");
   const draft = useSyncExternalStore(subscribeFoxDraft, getFoxDraft, getServerDraft);
-  const [open, setOpen] = useState(() => stage === "intake" || stage === "start");
-  const [ready, setReady] = useState(() => stage === "start");
+  const [open, setOpen] = useState(() => isStart || stage === "intake");
+  const [ready, setReady] = useState(() => isStart);
   const [search, setSearch] = useState(() =>
-    stage === "start" ? startSearchFromProps(startPath, startIntent) : "",
+    isStart ? startSearchFromProps(startPath, startIntent) : "",
   );
   const [input, setInput] = useState("");
-  const startSeeded = useRef(stage === "start");
+  const startSeeded = useRef(isStart);
   const [messages, setMessages] = useState<FoxMessage[]>(() =>
-    stage === "start" ? seedStartMessages(startPath, startIntent) : [],
+    isStart ? seedStartMessages(startPath, startIntent) : [],
   );
   const [homeStage, setHomeStage] = useState<HTMLElement | null>(null);
   const greeted = useRef<string>(
-    stage === "start" ? `${pathname}${startSearchFromProps(startPath, startIntent)}` : "",
+    isStart ? `${pathname}${startSearchFromProps(startPath, startIntent)}` : "",
   );
   const pendingAsk = useRef<string | null>(null);
-  const skipPromptSync = useRef(stage === "start");
+  const skipPromptSync = useRef(isStart);
   const listRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const caretRef = useRef<number | null>(null);
   const fieldId = useId();
   const greetKey = `${pathname}${search}`;
   const isHome = stage === "home";
-  const isStart = stage === "start";
   const useHomeStage = Boolean(homeStage);
 
   useLayoutEffect(() => {
@@ -364,7 +370,7 @@ export function AlwaysOnFox({
       const path = pathFromQuery(params.get("path")) ?? readStartPath();
       if (path) setDraftPath(path);
     }
-    if (stage === "start") {
+    if (isStart) {
       const params = new URLSearchParams(query);
       applyWorkspaceEntry(
         startPath ?? pathFromQuery(params.get("path")) ?? readStartPath(),
@@ -376,7 +382,7 @@ export function AlwaysOnFox({
     const stored = sessionStorage.getItem(FOX_PANEL_KEY);
     const live = getFoxDraft();
     const asking = stage === "intake" && live.phase !== "confirmed";
-    if (stage === "start") {
+    if (isStart) {
       setOpen(true);
     } else if (stage === "home") {
       setOpen(visibleHomeStage() ? stored !== "0" : stored === "1");
@@ -391,7 +397,7 @@ export function AlwaysOnFox({
     }
     setSearch(query);
     setReady(true);
-  }, [pathname, stage]);
+  }, [isStart, pathname, stage, startIntent, startPath]);
 
   useEffect(() => {
     if (!ready || stage !== "home") return;
@@ -430,7 +436,7 @@ export function AlwaysOnFox({
           id: newId(),
           role: "client",
           text: clientMoneyText(text, reply.capture),
-          edit: stage === "start" ? editPromptFromCapture(reply.capture) : undefined,
+          edit: isStart ? editPromptFromCapture(reply.capture) : undefined,
         },
         foxAskMessage(reply),
       ]);
@@ -441,7 +447,7 @@ export function AlwaysOnFox({
       window.removeEventListener("onyx:fox-open", onOpen);
       window.removeEventListener("onyx:fox-ask", onAsk);
     };
-  }, [pathname, ready, search, stage]);
+  }, [isStart, pathname, ready, search, stage]);
 
   useEffect(() => {
     if (!ready || !stage) return;
@@ -450,7 +456,7 @@ export function AlwaysOnFox({
 
   useLayoutEffect(() => {
     if (!ready || !stage) return;
-    if (stage === "start" && startSeeded.current && messages.length > 0) {
+    if (isStart && startSeeded.current && messages.length > 0) {
       greeted.current = greetKey;
       skipPromptSync.current = true;
       return;
@@ -486,17 +492,17 @@ export function AlwaysOnFox({
     }
     skipPromptSync.current = true;
     setMessages(lines);
-  }, [greetKey, pathname, ready, stage]);
+  }, [greetKey, isStart, pathname, ready, stage]);
 
   useEffect(() => {
-    if (!ready || (stage !== "intake" && stage !== "start")) return;
+    if (!ready || (stage !== "intake" && !isStart)) return;
     if (skipPromptSync.current) {
       skipPromptSync.current = false;
       return;
     }
     const live = getFoxDraft();
     const ask =
-      stage === "start"
+      isStart
         ? workspacePromptCopy(workspacePrompt(live), live)
         : promptCopy(currentPrompt(live), live);
     setMessages((prev) => {
@@ -504,7 +510,7 @@ export function AlwaysOnFox({
       if (last?.role === "fox" && sameFoxAsk(last, ask)) return prev;
       return [...prev, foxAskMessage(ask)];
     });
-  }, [draft.updatedAt, ready, stage]);
+  }, [draft.updatedAt, isStart, ready, stage]);
 
   useEffect(() => {
     listRef.current?.scrollTo({ top: listRef.current.scrollHeight });
@@ -537,7 +543,7 @@ export function AlwaysOnFox({
     setInput("");
   }, [startAsk]);
 
-  if (!stage) return null;
+  if (!stage && !isStart) return null;
 
   const scenario = draft.scenario ?? readScenario();
 
@@ -615,7 +621,7 @@ export function AlwaysOnFox({
         return;
       }
       const next =
-        stage === "start"
+        isStart
           ? workspacePromptCopy(workspacePrompt(live), live)
           : promptCopy(currentPrompt(live), live);
       appendReply(
@@ -629,7 +635,7 @@ export function AlwaysOnFox({
   const onSubmit = (event: FormEvent) => {
     event.preventDefault();
     const text = input.trim();
-    if (!text) return;
+    if (!text || !stage) return;
     setOpen(true);
     setInput("");
     const reply = replyToMessage(text, stage, draft, scenario);
@@ -696,7 +702,10 @@ export function AlwaysOnFox({
   };
 
   const desk = (
-    <form className="fox-bar__desk" onSubmit={onSubmit}>
+    <form
+      className={isStart ? "fox-bar__desk fox-bar__desk--plain" : "fox-bar__desk"}
+      onSubmit={onSubmit}
+    >
       <span className="fox-bar__mark">
         <AdvisorMark size={20} />
       </span>

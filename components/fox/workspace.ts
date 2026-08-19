@@ -14,6 +14,7 @@ import { pathFromHomeChoice } from "./homeIdle";
 import {
   AMOUNT_HELPER_BUBBLES,
   CREDIT_WORKSPACE_BUBBLES,
+  INCOME_BUBBLES,
   OCCUPANCY_BUBBLES,
   PRODUCT_INTENT_BUBBLES,
   TERM_BUBBLES,
@@ -108,6 +109,54 @@ function bubbles(
   }));
 }
 
+function knownDocsIncome(value?: string | null): value is "w2" | "self-employed" | "both" {
+  return value === "w2" || value === "self-employed" || value === "both";
+}
+
+function incomeFromText(text: string) {
+  const lower = text.trim().toLowerCase();
+  return (
+    INCOME_BUBBLES.find(
+      (item) => item.label.toLowerCase() === lower || item.value === lower,
+    ) ??
+    (/\bboth\b/.test(lower)
+      ? INCOME_BUBBLES.find((item) => item.value === "both")
+      : /\bself/.test(lower) || /\b1099\b/.test(lower)
+        ? INCOME_BUBBLES.find((item) => item.value === "self-employed")
+        : /\bw-?2\b/.test(lower) || /\bwages?\b/.test(lower)
+          ? INCOME_BUBBLES.find((item) => item.value === "w2")
+          : /\bother\b/.test(lower)
+            ? INCOME_BUBBLES.find((item) => item.value === "other")
+            : undefined)
+  );
+}
+
+function documentsAskText(draft: FoxIntakeDraft): string {
+  const income = draft.incomeType.value;
+  if (income === "w2") return "Upload paystubs and W-2s if you have them. Skip is fine.";
+  if (income === "self-employed") {
+    return "Upload tax returns and business docs if you have them. Skip is fine.";
+  }
+  if (income === "both") {
+    return "Upload paystubs, W-2s, tax returns, and business docs if you have them. Skip is fine.";
+  }
+  return "Drop what you have. Skip is fine. I’ll work with what’s here.";
+}
+
+function withIncomeType(draft: FoxIntakeDraft, value: string): FoxIntakeDraft {
+  const next = {
+    ...draft,
+    incomeType: { ...draft.incomeType, value },
+  };
+  if (value === "other") {
+    return { ...next, documentsSkipped: true };
+  }
+  if (knownDocsIncome(value) && !draft.documents.length) {
+    return { ...next, documentsSkipped: false };
+  }
+  return next;
+}
+
 function amountHelperActions(field: "skip-amount" | "skip-value"): FoxAction[] {
   return AMOUNT_HELPER_BUBBLES.map((item) => ({
     id: `${field}-${item.id}`,
@@ -143,16 +192,28 @@ export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
   if (!draft.termAsked && draft.termYears == null) return "term";
   if (draft.phase === "confirmed" || draft.workspaceDraftStatus === "with-originator") {
     if (draft.correcting === "correct") return "correct";
+    if (draft.correcting === "documents" && !knownDocsIncome(draft.incomeType.value)) {
+      return draft.incomeType.value ? "review" : "income";
+    }
     if (draft.correcting) return draft.correcting;
     return "done";
   }
   if (draft.correcting === "correct") return "correct";
+  if (draft.correcting === "documents" && !knownDocsIncome(draft.incomeType.value)) {
+    return draft.incomeType.value ? "preparing" : "income";
+  }
   if (draft.correcting) return draft.correcting;
-  if (!draft.documents.length && !draft.documentsSkipped) return "documents";
+  if (!draft.incomeType.value) return "income";
+  if (
+    knownDocsIncome(draft.incomeType.value) &&
+    !draft.documents.length &&
+    !draft.documentsSkipped
+  ) {
+    return "documents";
+  }
   if (draft.workspaceDraftStatus === "preparing") return "preparing";
   if (draft.workspaceDraftStatus === "ready") return "review";
-  if (draft.documents.length || draft.documentsSkipped) return "preparing";
-  return "documents";
+  return "preparing";
 }
 
 export function workspacePromptCopy(
@@ -230,9 +291,18 @@ export function workspacePromptCopy(
       ],
     };
   }
-  if (prompt === "documents") {
+  if (prompt === "income") {
     return {
-      text: "Drop what you have. Skip is fine. I’ll work with what’s here.",
+      text: "How is income earned?",
+      actions: bubbles([...INCOME_BUBBLES], "incomeType"),
+    };
+  }
+  if (prompt === "documents") {
+    if (!knownDocsIncome(draft.incomeType.value)) {
+      return workspacePromptCopy(draft.incomeType.value ? "preparing" : "income", draft);
+    }
+    return {
+      text: documentsAskText(draft),
       actions: [
         { id: "open-docs", label: "Upload now", event: "open-docs", capture: { field: "open-docs" } },
         { id: "skip-docs", label: "Skip for now", event: "bubble", capture: { field: "skip-docs" } },
@@ -262,6 +332,7 @@ export function workspacePromptCopy(
           { value: "occupancy", label: "Occupancy" },
           { value: "timeline", label: "Timeline" },
           { value: "amount", label: "Amount" },
+          { value: "income", label: "Income" },
           { value: "documents", label: "Documents" },
         ],
         "correct",
@@ -464,6 +535,7 @@ export function editPromptFromCapture(capture?: Capture): FoxPrompt | undefined 
   if (capture.field === "propertyValue" || capture.field === "skip-value") return "value";
   if (capture.field === "creditRange") return "credit";
   if (capture.field === "termYears" || capture.field === "skip-term") return "term";
+  if (capture.field === "incomeType") return "income";
   if (capture.field === "skip-docs" || capture.field === "open-docs") return "documents";
   return undefined;
 }
@@ -506,6 +578,10 @@ export function workspaceUpdateCopy(capture: Capture, draft: FoxIntakeDraft) {
   if (capture.field === "skip-amount") return "Updated. Loan amount left blank.";
   if (capture.field === "skip-value") return "Updated. Property value left blank.";
   if (capture.field === "skip-term") return "Updated. Term left blank.";
+  if (capture.field === "incomeType") {
+    const label = INCOME_BUBBLES.find((item) => item.value === capture.value)?.label;
+    return label ? `Updated income to ${label}.` : "Updated income.";
+  }
   return "Updated the file.";
 }
 
@@ -617,6 +693,17 @@ export function parseWorkspaceEdit(
     return { correct: "amount", confirm: "What’s a rough loan amount?" };
   }
 
+  if (/\bincome\b/.test(lower)) {
+    const match = incomeFromText(q);
+    if (match) {
+      return {
+        capture: { field: "incomeType", value: match.value },
+        confirm: `Updated income to ${match.label}.`,
+      };
+    }
+    return { correct: "income", confirm: "How is income earned?" };
+  }
+
   if (/\bdoc/.test(lower)) {
     return { correct: "documents", confirm: "Drop what you have. Skip is fine. I’ll work with what’s here." };
   }
@@ -650,6 +737,7 @@ function draftAfterCapture(draft: FoxIntakeDraft, capture: Capture): FoxIntakeDr
   if (capture.field === "skip-amount") return { ...next, amountAsked: true, loanAmountValue: undefined };
   if (capture.field === "skip-value") return { ...next, valueAsked: true, propertyValueAmount: undefined };
   if (capture.field === "skip-term") return { ...next, termAsked: true, termYears: undefined };
+  if (capture.field === "incomeType") return withIncomeType(next, capture.value);
   return next;
 }
 
@@ -701,9 +789,15 @@ export function workspaceReply(
     };
   }
   if (edit?.correct && draft.path) {
+    const nextPrompt =
+      edit.correct === "documents" && !knownDocsIncome(draft.incomeType.value)
+        ? draft.incomeType.value
+          ? "preparing"
+          : "income"
+        : edit.correct;
     return {
-      ...workspacePromptCopy(edit.correct, draft),
-      capture: { field: "correct", value: edit.correct },
+      ...workspacePromptCopy(nextPrompt, draft),
+      capture: { field: "correct", value: nextPrompt },
     };
   }
 
@@ -815,15 +909,24 @@ export function workspaceReply(
   if (prompt === "term") {
     const term = parseTermYears(q);
     if (term == null) return { text: "Tap 30 year, 15 year, or Skip." };
-    if (term === "skip") {
-      return {
-        ...workspacePromptCopy("documents", { ...draft, termAsked: true }),
-        capture: { field: "skip-term" },
-      };
-    }
+    const nextDraft =
+      term === "skip"
+        ? { ...draft, termAsked: true, termYears: undefined }
+        : { ...draft, termAsked: true, termYears: term };
     return {
-      ...workspacePromptCopy("documents", { ...draft, termAsked: true }),
-      capture: { field: "termYears", value: String(term) },
+      ...workspacePromptCopy(workspacePrompt(nextDraft), nextDraft),
+      capture:
+        term === "skip" ? { field: "skip-term" } : { field: "termYears", value: String(term) },
+    };
+  }
+
+  if (prompt === "income") {
+    const match = incomeFromText(q);
+    if (!match) return { text: "Tap W-2, Self-employed, Both, or Other." };
+    const nextDraft = withIncomeType(draft, match.value);
+    return {
+      ...workspacePromptCopy(workspacePrompt(nextDraft), nextDraft),
+      capture: { field: "incomeType", value: match.value },
     };
   }
 
@@ -867,10 +970,11 @@ export function workspaceReply(
       { test: /occupan/, value: "occupancy" },
       { test: /time/, value: "timeline" },
       { test: /amount|value|loan/, value: "amount" },
+      { test: /income/, value: "income" },
       { test: /doc/, value: "documents" },
     ];
     const hit = map.find((item) => item.test.test(lower));
-    if (!hit) return { text: "Tap Product, Occupancy, Timeline, Amount, or Documents." };
+    if (!hit) return { text: "Tap Product, Occupancy, Timeline, Amount, Income, or Documents." };
     return {
       ...workspacePromptCopy(hit.value as FoxPrompt, draft),
       capture: { field: "correct", value: hit.value },
@@ -1018,6 +1122,11 @@ export function previewFacts(draft: FoxIntakeDraft): PreviewFact[] {
     });
   }
 
+  const incomeLabel = INCOME_BUBBLES.find((item) => item.value === draft.incomeType.value)?.label;
+  if (incomeLabel) {
+    facts.push({ id: "income", label: "Income", value: incomeLabel });
+  }
+
   const range = draft.path === "acr" ? estimateFromDraft(draft) : null;
   if (range) {
     facts.push({
@@ -1036,7 +1145,7 @@ export function previewFacts(draft: FoxIntakeDraft): PreviewFact[] {
     });
   } else if (draft.documentsSkipped) {
     facts.push({ id: "docs", label: "Docs", value: "Skipped for now" });
-  } else if (draft.termAsked || draft.workspaceDraftStatus) {
+  } else if (knownDocsIncome(draft.incomeType.value)) {
     facts.push({ id: "docs", label: "Docs", value: "Waiting" });
   }
 
@@ -1061,6 +1170,7 @@ const CHAT_SUMMARY_IDS = new Set([
   "amount",
   "value",
   "term",
+  "income",
   "reward",
   "docs",
 ]);
