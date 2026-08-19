@@ -52,6 +52,7 @@ import {
   confirmedMoneyText,
   formatLiveMoneyInput,
   editPromptFromCapture,
+  structureFixPrompt,
   workspaceGreeting,
   workspacePrompt,
   workspacePromptCopy,
@@ -153,6 +154,10 @@ export function requestFoxOpen() {
 
 export function requestFoxAsk(text: string) {
   window.dispatchEvent(new CustomEvent("onyx:fox-ask", { detail: { text } }));
+}
+
+export function requestFoxFix(field: string) {
+  window.dispatchEvent(new CustomEvent("onyx:fox-fix", { detail: { field } }));
 }
 
 function clientMoneyText(text: string, capture?: { field: string }) {
@@ -450,11 +455,25 @@ export function AlwaysOnFox({
         foxAskMessage(reply),
       ]);
     };
+    const onFix = (event: Event) => {
+      const field = String((event as CustomEvent<{ field?: string }>).detail?.field ?? "").trim();
+      if (!field || !isStart) return;
+      setOpen(true);
+      const prompt = structureFixPrompt(field);
+      if (!prompt) return;
+      applyCapture({ field: "correct", value: prompt });
+      skipPromptSync.current = true;
+      const live = getFoxDraft();
+      const ask = workspacePromptCopy(prompt, live);
+      setMessages((prev) => [...prev, foxAskMessage(ask)]);
+    };
     window.addEventListener("onyx:fox-open", onOpen);
     window.addEventListener("onyx:fox-ask", onAsk);
+    window.addEventListener("onyx:fox-fix", onFix);
     return () => {
       window.removeEventListener("onyx:fox-open", onOpen);
       window.removeEventListener("onyx:fox-ask", onAsk);
+      window.removeEventListener("onyx:fox-fix", onFix);
     };
   }, [isStart, pathname, ready, search, stage]);
 
@@ -618,7 +637,7 @@ export function AlwaysOnFox({
       applyCapture({ field: "open-docs" });
       document.getElementById("fox-documents")?.scrollIntoView({ behavior: "smooth" });
       appendReply(action.label, {
-        text: isStart ? "Add a file in the preview, or skip." : "Add a file in the slots below.",
+        text: isStart ? "Add a file on the structure, or skip." : "Add a file in the slots below.",
       });
       return;
     }
@@ -675,12 +694,31 @@ export function AlwaysOnFox({
     if (reply.capture?.field === "path") {
       writeStartPath(reply.capture.value);
     }
+    const editing = Boolean(
+      isStart && draft.correcting && reply.capture && reply.capture.field !== "correct",
+    );
     if (reply.capture) {
       applyCapture(reply.capture);
       skipPromptSync.current = true;
     }
     if (reply.capture?.field === "open-docs") {
       document.getElementById("fox-documents")?.scrollIntoView({ behavior: "smooth" });
+    }
+    if (editing && reply.capture) {
+      const live = getFoxDraft();
+      const next = workspacePromptCopy(workspacePrompt(live), live);
+      const confirm = workspaceUpdateCopy(reply.capture, live);
+      appendReply(
+        clientMoneyText(text, reply.capture),
+        {
+          text: confirm,
+          followUp: next.followUp ?? (next.text !== confirm ? next.text : undefined),
+          facts: next.facts,
+          actions: next.actions,
+        },
+        editPromptFromCapture(reply.capture),
+      );
+      return;
     }
     appendReply(
       clientMoneyText(text, reply.capture),

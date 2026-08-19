@@ -12,8 +12,8 @@ export default function StartPage() {
     <Suspense
       fallback={
         <section className="start-workspace page-pad">
-          <div className="page-inner start-workspace__inner">
-            <p className="type-legal">Opening your file…</p>
+          <div className="page-inner start-workspace__inner start-workspace__inner--solo">
+            <div className="start-workspace__fox-wrap" />
           </div>
         </section>
       }

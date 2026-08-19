@@ -8,12 +8,7 @@ export function RateCard() {
         <p className="type-eyebrow">Mortgage only</p>
         <div className="rate-card">
           <p className="rate-card__product">Purchase · 30-year fixed</p>
-          <p className="type-legal">As low as</p>
-          <p className="rate-card__apr">
-            <span className="rate-card__apr-num">—</span>
-            <span className="rate-card__apr-unit">APR</span>
-          </p>
-          <p className="type-legal">Sample, not live</p>
+          <p className="type-legal">Sample · not live</p>
 
           <dl className="rate-card__specs">
             <div>

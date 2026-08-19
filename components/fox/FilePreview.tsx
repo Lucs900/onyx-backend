@@ -2,22 +2,46 @@
 
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { DocumentDrop } from "./DocumentDrop";
+import { requestFoxFix } from "./AlwaysOnFox";
 import { getFoxDraft, getServerDraft, subscribeFoxDraft } from "./store";
-import { previewFacts, workspacePrompt } from "./workspace";
+import { previewFacts, structureFixPrompt, workspacePrompt } from "./workspace";
 
-function PreviewRows({ facts }: { facts: ReturnType<typeof previewFacts> }) {
+function StructureRows({
+  facts,
+}: {
+  facts: ReturnType<typeof previewFacts>;
+}) {
   return (
-    <dl className="file-preview__rows">
-      {facts.map((fact) => (
-        <div key={fact.id} className="file-preview__row">
-          <dt>{fact.label}</dt>
-          <dd>
-            <span>{fact.value}</span>
-            {fact.note ? <small>{fact.note}</small> : null}
-          </dd>
-        </div>
-      ))}
-    </dl>
+    <div className="file-preview__rows">
+      {facts.map((fact) => {
+        const canFix = Boolean(structureFixPrompt(fact.id));
+        if (!canFix) {
+          return (
+            <div key={fact.id} className="file-preview__row">
+              <span className="file-preview__label">{fact.label}</span>
+              <span className="file-preview__value">
+                <span>{fact.value}</span>
+                {fact.note ? <small>{fact.note}</small> : null}
+              </span>
+            </div>
+          );
+        }
+        return (
+          <button
+            key={fact.id}
+            type="button"
+            className="file-preview__row file-preview__row--tap"
+            onClick={() => requestFoxFix(fact.id)}
+          >
+            <span className="file-preview__label">{fact.label}</span>
+            <span className="file-preview__value">
+              <span>{fact.value}</span>
+              {fact.note ? <small>{fact.note}</small> : null}
+            </span>
+          </button>
+        );
+      })}
+    </div>
   );
 }
 
@@ -34,20 +58,18 @@ export function FilePreview() {
   }, [showDocs]);
 
   if (!facts.length) {
-    return <aside className="file-preview file-preview--empty" aria-hidden="true" />;
+    return null;
   }
 
-  const summary = facts
-    .filter((fact) => fact.id === "path" || fact.id === "product")
-    .map((fact) => fact.value)
-    .join(" · ");
+  const newest = facts[facts.length - 1];
+  const peek = newest ? `${newest.label} · ${newest.value}` : "";
 
   return (
     <aside className={open ? "file-preview is-open" : "file-preview"}>
       <div className="file-preview__desktop">
-        <p className="type-eyebrow">File</p>
-        <h2 className="type-card-title">Preview</h2>
-        <PreviewRows facts={facts} />
+        <p className="type-eyebrow">Structure</p>
+        <h2 className="type-card-title">Live file</h2>
+        <StructureRows facts={facts} />
       </div>
       <div className="file-preview__mobile">
         <button
@@ -56,12 +78,12 @@ export function FilePreview() {
           aria-expanded={open}
           onClick={() => setOpen((value) => !value)}
         >
-          <span>File{summary ? ` · ${summary}` : " / Preview"}</span>
+          <span>Structure{peek ? ` · ${peek}` : ""}</span>
           <span className="file-preview__toggle-mark">{open ? "Hide" : "Show"}</span>
         </button>
         {open ? (
           <div className="file-preview__sheet">
-            <PreviewRows facts={facts} />
+            <StructureRows facts={facts} />
           </div>
         ) : null}
       </div>

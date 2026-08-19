@@ -14,6 +14,7 @@ import { pathFromHomeChoice } from "./homeIdle";
 import {
   AMOUNT_HELPER_BUBBLES,
   CREDIT_WORKSPACE_BUBBLES,
+  FOX_DISCLOSURE,
   INCOME_BUBBLES,
   OCCUPANCY_BUBBLES,
   PRODUCT_INTENT_BUBBLES,
@@ -28,9 +29,9 @@ import {
 } from "./types";
 
 export const START_ACR_TEXT =
-  "I can prepare your relationship file. Let’s get the basics.";
+  "I can prepare your relationship file. We’ll keep this desk open after close.";
 export const START_LOAN_TEXT =
-  "Loan-only. ACR is optional. Let’s get the basics.";
+  "This is the loan. ACR is optional if you want the desk later.";
 
 export function starterText(path?: IntakePath | null) {
   if (path === "loan-only") return START_LOAN_TEXT;
@@ -40,31 +41,57 @@ export function starterText(path?: IntakePath | null) {
 export function productIntentLabel(intent?: ProductIntent | null) {
   if (intent === "buy") return "Buy";
   if (intent === "refinance") return "Refinance";
-  if (intent === "use-equity") return "Use equity";
+  if (intent === "heloc") return "HELOC";
+  if (intent === "jumbo") return "Jumbo";
+  if (intent === "other") return "Other";
   return "";
 }
 
 export function purposeForIntent(intent: ProductIntent): LoanPurpose {
   if (intent === "refinance") return "rate-term-refi";
-  if (intent === "use-equity") return "heloc-heloan";
+  if (intent === "heloc") return "heloc-heloan";
   return "purchase";
 }
 
 export function slugForIntent(intent: ProductIntent) {
   if (intent === "refinance") return "conventional-rate-term-refinance";
-  if (intent === "use-equity") return "heloc-heloan";
+  if (intent === "heloc") return "heloc-heloan";
+  if (intent === "jumbo") return "jumbo";
+  if (intent === "other") return "other";
   return "conventional-purchase";
+}
+
+export function normalizeProductIntent(
+  intent?: string | null,
+): ProductIntent | undefined {
+  if (intent === "use-equity" || intent === "heloc") return "heloc";
+  if (
+    intent === "buy" ||
+    intent === "refinance" ||
+    intent === "jumbo" ||
+    intent === "other"
+  ) {
+    return intent;
+  }
+  return undefined;
 }
 
 export function productIntentFromSlug(slug?: string | null): ProductIntent | null {
   if (!slug) return null;
-  if (slug === "heloc-heloan" || slug.includes("heloc") || slug.includes("heloan")) {
-    return "use-equity";
+  if (
+    slug === "heloc-heloan" ||
+    slug === "use-equity" ||
+    slug.includes("heloc") ||
+    slug.includes("heloan")
+  ) {
+    return "heloc";
   }
+  if (slug === "jumbo" || slug.includes("jumbo")) return "jumbo";
+  if (slug === "other") return "other";
   if (slug.includes("refinance") || slug.includes("refi") || slug.includes("cash-out")) {
     return "refinance";
   }
-  if (slug.includes("purchase") || slug === "jumbo" || slug === "fha" || slug === "va") {
+  if (slug.includes("purchase") || slug === "fha" || slug === "va") {
     return "buy";
   }
   return null;
@@ -78,8 +105,10 @@ export function productIntentFromQuery(
   if (token === "buy" || token === "purchase") return "buy";
   if (token === "refinance" || token === "refi") return "refinance";
   if (token === "equity" || token === "use-equity" || token === "use_equity" || token === "heloc") {
-    return "use-equity";
+    return "heloc";
   }
+  if (token === "jumbo") return "jumbo";
+  if (token === "other") return "other";
   return productIntentFromSlug(token);
 }
 
@@ -89,12 +118,22 @@ export function productIntentFromText(text: string): ProductIntent | null {
   if (fromQuery) return fromQuery;
   if (/\bbuy\b|purchase|buying/.test(lower)) return "buy";
   if (/refinanc|rate.?term|cash.?out/.test(lower)) return "refinance";
+  if (/\bjumbo\b/.test(lower)) return "jumbo";
   if (/use equity|heloc|heloan|home equity|equity line/.test(lower)) {
-    return "use-equity";
+    return "heloc";
   }
+  if (/\bother\b/.test(lower)) return "other";
   return PRODUCT_INTENT_BUBBLES.find(
     (item) => item.label.toLowerCase() === lower || item.value === lower,
   )?.value ?? null;
+}
+
+export function usesPurchasePrice(intent?: ProductIntent | null) {
+  return intent === "buy" || intent === "jumbo";
+}
+
+export function sampleRateApplies(intent?: ProductIntent | null) {
+  return intent === "buy" || intent === "refinance";
 }
 
 function bubbles(
@@ -131,16 +170,22 @@ function incomeFromText(text: string) {
   );
 }
 
-function documentsAskText(draft: FoxIntakeDraft): string {
-  const income = draft.incomeType.value;
-  if (income === "w2") return "Upload paystubs and W-2s if you have them. Skip is fine.";
-  if (income === "self-employed") {
-    return "Upload tax returns and business docs if you have them. Skip is fine.";
-  }
-  if (income === "both") {
-    return "Upload paystubs, W-2s, tax returns, and business docs if you have them. Skip is fine.";
-  }
+function documentsAskText(_draft: FoxIntakeDraft): string {
   return "Drop what you have. Skip is fine. I’ll work with what’s here.";
+}
+
+function docsSettled(draft: FoxIntakeDraft) {
+  return draft.documents.length > 0 || draft.documentsSkipped;
+}
+
+function sketchNumberReady(draft: FoxIntakeDraft) {
+  if (usesPurchasePrice(draft.productIntent)) {
+    return (
+      Boolean(draft.valueAsked) ||
+      draft.propertyValueAmount != null
+    );
+  }
+  return Boolean(draft.amountAsked) || draft.loanAmountValue != null;
 }
 
 function withIncomeType(draft: FoxIntakeDraft, value: string): FoxIntakeDraft {
@@ -195,73 +240,33 @@ export function formatSamplePayment(loanAmount?: number | null): string {
   return `$${Math.round(payment).toLocaleString("en-US")}/mo`;
 }
 
-function needsPropertyValue(draft: FoxIntakeDraft): boolean {
-  return draft.productIntent === "buy";
-}
-
-function hasPropertyValue(draft: FoxIntakeDraft): boolean {
-  return (
-    draft.valueAsked ||
-    draft.propertyValueAmount != null ||
-    draft.scenario?.propertyValue != null
-  );
-}
-
 export function sampleReady(draft: FoxIntakeDraft): boolean {
   if (!draft.path || !draft.productIntent) return false;
   if (!draft.occupancyAsked && !draft.occupancyChoice.value) return false;
   if (!draft.timelineAsked && !draft.timelineChoice.value) return false;
-  if (
-    !draft.amountAsked &&
-    draft.loanAmountValue == null &&
-    draft.scenario?.loanAmount == null
-  ) {
-    return false;
-  }
-  if (needsPropertyValue(draft) && !hasPropertyValue(draft)) return false;
-  return true;
+  return sketchNumberReady(draft);
 }
 
 /** Single /start conversation engine. Desktop and mobile share this order, copy, and path rules. */
 export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
   if (!draft.path) return "intent";
+  if (draft.correcting === "path-switch") return "path-switch";
+  if (draft.correcting === "correct") return "correct";
+  if (draft.correcting === "credit" || draft.correcting === "term" || draft.correcting === "income") {
+    return draft.sampleAccepted ? "done" : docsSettled(draft) ? "review" : "documents";
+  }
+  if (draft.correcting) return draft.correcting;
   if (!draft.productIntent) return "product";
   if (!draft.occupancyAsked && !draft.occupancyChoice.value) return "occupancy";
   if (!draft.timelineAsked && !draft.timelineChoice.value) return "timeline";
-  if (
-    !draft.amountAsked &&
-    draft.loanAmountValue == null &&
-    draft.scenario?.loanAmount == null
-  ) {
-    return "amount";
-  }
-  if (needsPropertyValue(draft) && !hasPropertyValue(draft)) {
-    return "value";
-  }
-  if (draft.sampleAccepted && (draft.phase === "documents" || draft.correcting === "documents")) {
-    return "documents";
+  if (!sketchNumberReady(draft)) {
+    return usesPurchasePrice(draft.productIntent) ? "value" : "amount";
   }
   if (draft.phase === "confirmed" || draft.workspaceDraftStatus === "with-originator") {
-    if (draft.correcting === "correct") return "correct";
-    if (draft.correcting === "documents" && !knownDocsIncome(draft.incomeType.value)) {
-      return "done";
-    }
-    if (draft.correcting) return draft.correcting;
     return "done";
   }
-  if (draft.correcting === "correct") return "correct";
-  if (draft.correcting === "documents" && !knownDocsIncome(draft.incomeType.value)) {
-    return "done";
-  }
-  if (draft.correcting) return draft.correcting;
+  if (!docsSettled(draft) && !draft.sampleAccepted) return "documents";
   if (!draft.sampleAccepted) return "review";
-  if (
-    knownDocsIncome(draft.incomeType.value) &&
-    !draft.documents.length &&
-    !draft.documentsSkipped
-  ) {
-    return "documents";
-  }
   return "done";
 }
 
@@ -309,18 +314,20 @@ export function workspacePromptCopy(
   if (prompt === "amount") {
     return {
       text:
-        draft.productIntent === "use-equity"
+        draft.productIntent === "heloc"
           ? "What rough line or cash amount are you thinking about?"
-          : "What’s a rough loan amount?",
+          : draft.productIntent === "other"
+            ? "What’s a rough amount?"
+            : "What’s a rough payoff or cash amount?",
       actions: amountHelperActions("skip-amount"),
     };
   }
   if (prompt === "value") {
     return {
       text:
-        draft.productIntent === "use-equity"
-          ? "What’s a rough home value?"
-          : "And a rough property value?",
+        draft.productIntent === "jumbo"
+          ? "What’s a rough purchase price?"
+          : "What’s a rough purchase price?",
       actions: amountHelperActions("skip-value"),
     };
   }
@@ -347,9 +354,6 @@ export function workspacePromptCopy(
     };
   }
   if (prompt === "documents") {
-    if (!knownDocsIncome(draft.incomeType.value)) {
-      return workspacePromptCopy("done", draft);
-    }
     return {
       text: documentsAskText(draft),
       actions: [
@@ -373,32 +377,45 @@ export function workspacePromptCopy(
     };
   }
   if (prompt === "correct") {
-    const fields = draft.sampleAccepted
-      ? [
-          { value: "product", label: "Product" },
-          { value: "occupancy", label: "Occupancy" },
-          { value: "timeline", label: "Timeline" },
-          { value: "amount", label: "Amount" },
-          { value: "income", label: "Income" },
-          { value: "documents", label: "Documents" },
-        ]
-      : [
-          { value: "product", label: "Product" },
-          { value: "occupancy", label: "Occupancy" },
-          { value: "timeline", label: "Timeline" },
-          { value: "amount", label: "Amount" },
-        ];
     return {
-      text: "Which part should Fox fix?",
-      actions: bubbles(fields, "correct"),
+      text: "Tap any line on the structure.",
+    };
+  }
+  if (prompt === "path-switch") {
+    if (draft.path === "loan-only") {
+      return {
+        text: "Switch to the desk?",
+        actions: [
+          { id: "switch-acr", label: "Switch to the desk", event: "bubble", capture: { field: "path", value: "acr" } },
+          { id: "keep-path", label: "Keep this path", event: "bubble", capture: { field: "keep-path" } },
+        ],
+      };
+    }
+    return {
+      text: "Switch to loan only?",
+      actions: [
+        { id: "switch-loan", label: "Switch to loan only", event: "bubble", capture: { field: "path", value: "loan-only" } },
+        { id: "keep-path", label: "Keep this path", event: "bubble", capture: { field: "keep-path" } },
+      ],
     };
   }
   if (prompt === "done") {
+    if (draft.path === "loan-only") {
+      return {
+        text: "This is the loan. ACR is optional if you want the desk later. A licensed originator will review. Fox stays.",
+        followUp: FOX_DISCLOSURE,
+        actions: [
+          { id: "open-docs", label: "Upload docs", event: "open-docs", capture: { field: "open-docs" } },
+          { id: "what-acr", label: "What is ACR?", event: "bubble", capture: { field: "what-acr" } },
+          { id: "talk-lo", label: "Talk to a licensed originator", href: "/advisor" },
+        ],
+      };
+    }
     return {
-      text: "A licensed originator will review the file. I cannot approve, lock, or commit to lend.",
+      text: "We’ll keep this desk open after close. Letter is originator-issued, not Fox. Scout and reward stay on the desk. A licensed originator will review. Fox stays.",
+      followUp: FOX_DISCLOSURE,
       actions: [
         { id: "open-docs", label: "Upload docs", event: "open-docs", capture: { field: "open-docs" } },
-        { id: "edit-something", label: "Edit something", event: "bubble", capture: { field: "needs-correction" } },
         { id: "talk-lo", label: "Talk to a licensed originator", href: "/advisor" },
       ],
     };
@@ -416,10 +433,16 @@ export function workspaceGreeting(draft: FoxIntakeDraft): {
 } {
   const prompt = workspacePrompt(draft);
   if (prompt === "product") {
-    return workspacePromptCopy("product", draft);
+    return {
+      ...workspacePromptCopy("product", draft),
+      followUp: FOX_DISCLOSURE,
+    };
   }
   if (prompt === "intent") {
-    return workspacePromptCopy("intent", draft);
+    return {
+      ...workspacePromptCopy("intent", draft),
+      followUp: FOX_DISCLOSURE,
+    };
   }
   const next = workspacePromptCopy(prompt, draft);
   if (
@@ -428,12 +451,14 @@ export function workspaceGreeting(draft: FoxIntakeDraft): {
     prompt === "preparing" ||
     prompt === "review" ||
     prompt === "correct" ||
+    prompt === "path-switch" ||
     prompt === "done"
   ) {
-    return next;
+    return next.followUp ? next : { ...next, followUp: FOX_DISCLOSURE };
   }
   return {
     text: `${starterText(draft.path)} ${next.text}`,
+    followUp: FOX_DISCLOSURE,
     actions: next.actions,
   };
 }
@@ -586,7 +611,7 @@ function timelineFromText(text: string) {
 
 export function editPromptFromCapture(capture?: Capture): FoxPrompt | undefined {
   if (!capture) return undefined;
-  if (capture.field === "path") return "intent";
+  if (capture.field === "path") return "path-switch";
   if (capture.field === "productIntent") return "product";
   if (capture.field === "occupancy") return "occupancy";
   if (capture.field === "timeline") return "timeline";
@@ -601,7 +626,15 @@ export function editPromptFromCapture(capture?: Capture): FoxPrompt | undefined 
 
 export function workspaceUpdateCopy(capture: Capture, draft: FoxIntakeDraft) {
   if (capture.field === "path") {
-    return capture.value === "loan-only" ? "Updated path to Loan only." : "Updated path to ACR.";
+    return capture.value === "loan-only"
+      ? "Updated path to loan only."
+      : "Updated path to the desk.";
+  }
+  if (capture.field === "keep-path") {
+    return "Kept this path.";
+  }
+  if (capture.field === "what-acr") {
+    return "ACR is the desk that stays open after close — letter, scout, and reward. This file is still the loan.";
   }
   if (capture.field === "productIntent") {
     return `Updated product to ${productIntentLabel(capture.value)}.`;
@@ -658,16 +691,10 @@ export function parseWorkspaceEdit(
 
   const wantsPath = /\b(path|relationship|acr|loan only|loan-only)\b/.test(lower);
   if (wantsPath && !/\b(amount|value|occupan|timeline|credit|fico|term|product|buy|refi)\b/.test(lower)) {
-    if (/\bloan only|loan-only|just the loan|just a mortgage\b/.test(lower)) {
-      return { capture: { field: "path", value: "loan-only" }, confirm: "Updated path to Loan only." };
-    }
-    if (/\bacr|relationship\b/.test(lower)) {
-      return { capture: { field: "path", value: "acr" }, confirm: "Updated path to ACR." };
-    }
-    return { correct: "intent", confirm: "Which path should I use?" };
+    return { correct: "path-switch", confirm: "Tap Path on the structure to switch." };
   }
 
-  if (/\b(product|buy|refinance|refi|use equity|heloc)\b/.test(lower) && /\b(change|edit|update|set|switch)\b/.test(lower)) {
+  if (/\b(product|buy|refinance|refi|heloc|jumbo|other)\b/.test(lower) && /\b(change|edit|update|set|switch)\b/.test(lower)) {
     const intent = productIntentFromText(q);
     if (intent) {
       return {
@@ -705,12 +732,7 @@ export function parseWorkspaceEdit(
   }
 
   if (/\b(fico|credit)\b/.test(lower)) {
-    const range = parseCreditRange(q);
-    if (range) {
-      const label = CREDIT_WORKSPACE_BUBBLES.find((item) => item.value === range)?.label ?? range;
-      return { capture: { field: "creditRange", value: range }, confirm: `Updated credit range to ${label}.` };
-    }
-    return { correct: "credit", confirm: "What credit range should I use?" };
+    return { confirm: "Credit is not on this sketch. A licensed originator will review that with the file." };
   }
 
   if (/\bterm\b/.test(lower)) {
@@ -847,16 +869,23 @@ export function workspaceReply(
       capture: edit.capture,
     };
   }
+  if (edit && !edit.capture && !edit.correct) {
+    return { text: edit.confirm };
+  }
   if (edit?.correct && draft.path) {
-    const nextPrompt =
-      edit.correct === "documents" && !knownDocsIncome(draft.incomeType.value)
-        ? draft.incomeType.value
-          ? "preparing"
-          : "income"
-        : edit.correct;
     return {
-      ...workspacePromptCopy(nextPrompt, draft),
-      capture: { field: "correct", value: nextPrompt },
+      ...workspacePromptCopy(edit.correct, draft),
+      capture: { field: "correct", value: edit.correct },
+    };
+  }
+
+  if (/(what is acr|what.?s acr|active credit relationship)/i.test(lower)) {
+    return {
+      text:
+        draft.path === "loan-only"
+          ? "ACR is the desk that stays open after close — letter, scout, and reward. This file is still the loan."
+          : "ACR is the desk that stays open after close. Letter is originator-issued, not Fox. Scout and reward stay on the desk.",
+      capture: { field: "what-acr" },
     };
   }
 
@@ -867,14 +896,37 @@ export function workspaceReply(
     }
     return {
       ...workspacePromptCopy("product", { ...draft, path }),
+      followUp: FOX_DISCLOSURE,
       capture: { field: "path", value: path },
     };
+  }
+
+  if (prompt === "path-switch") {
+    if (/keep|stay|no|cancel/.test(lower) && !/switch/.test(lower)) {
+      return {
+        ...withCurrentPrompt("Kept this path.", { ...draft, correcting: null }),
+        capture: { field: "keep-path" },
+      };
+    }
+    if (draft.path === "acr" && /loan|mortgage/.test(lower)) {
+      return {
+        ...withCurrentPrompt("Updated path to loan only.", { ...draft, path: "loan-only", correcting: null }),
+        capture: { field: "path", value: "loan-only" },
+      };
+    }
+    if (draft.path === "loan-only" && /desk|acr|relationship/.test(lower)) {
+      return {
+        ...withCurrentPrompt("Updated path to the desk.", { ...draft, path: "acr", correcting: null }),
+        capture: { field: "path", value: "acr" },
+      };
+    }
+    return workspacePromptCopy("path-switch", draft);
   }
 
   if (prompt === "product") {
     const intent = productIntentFromText(q);
     if (!intent) {
-      return { text: "Tap Buy, Refinance, or Use equity." };
+      return { text: "Tap Buy, Refinance, HELOC, Jumbo, or Other." };
     }
     return {
       ...workspacePromptCopy("occupancy", { ...draft, productIntent: intent }),
@@ -991,14 +1043,15 @@ export function workspaceReply(
 
   if (prompt === "documents") {
     if (/(skip|later|not yet|don'?t have|fine)/i.test(lower)) {
+      const nextDraft = { ...draft, documentsSkipped: true };
       return {
-        ...workspacePromptCopy("done", draft),
+        ...workspacePromptCopy(workspacePrompt(nextDraft), nextDraft),
         capture: { field: "skip-docs" },
       };
     }
     if (/(upload|drop|now|add)/i.test(lower)) {
       return {
-        text: "Add a file in the preview, or skip.",
+        text: "Add a file on the structure, or skip.",
         actions: workspacePromptCopy("documents", draft).actions,
         capture: { field: "open-docs" },
       };
@@ -1034,31 +1087,12 @@ export function workspaceReply(
   }
 
   if (prompt === "correct") {
-    const map: { test: RegExp; value: string }[] = [
-      { test: /product|buy|refi|equity/, value: "product" },
-      { test: /occupan/, value: "occupancy" },
-      { test: /time/, value: "timeline" },
-      { test: /amount|value|loan/, value: "amount" },
-      { test: /income/, value: "income" },
-      { test: /doc/, value: "documents" },
-    ];
-    const hit = map.find((item) => item.test.test(lower));
-    if (!hit) {
-      return {
-        text: draft.sampleAccepted
-          ? "Tap Product, Occupancy, Timeline, Amount, Income, or Documents."
-          : "Tap Product, Occupancy, Timeline, or Amount.",
-      };
-    }
-    return {
-      ...workspacePromptCopy(hit.value as FoxPrompt, draft),
-      capture: { field: "correct", value: hit.value },
-    };
+    return workspacePromptCopy("correct", draft);
   }
 
   if (/(reward|membership)/i.test(lower)) {
     if (draft.path === "loan-only") {
-      return { text: "This file is loan only. It does not include a membership reward." };
+      return { text: "This file is the loan. ACR is optional if you want the desk later." };
     }
     const range = estimateFromDraft(draft);
     return {
@@ -1132,6 +1166,13 @@ export type PreviewFact = {
   note?: string;
 };
 
+function amountLineLabel(intent?: ProductIntent | null) {
+  if (intent === "heloc") return "Line / cash";
+  if (intent === "other") return "Amount";
+  if (intent === "refinance") return "Payoff / cash";
+  return "Loan amount";
+}
+
 export function previewFacts(draft: FoxIntakeDraft): PreviewFact[] {
   const facts: PreviewFact[] = [];
   if (draft.path === "acr") {
@@ -1149,75 +1190,58 @@ export function previewFacts(draft: FoxIntakeDraft): PreviewFact[] {
     });
   }
 
-  const occupancy =
-    draft.occupancyChoice.value || draft.scenario?.occupancy || "";
+  const occupancy = draft.occupancyChoice.value || "";
   const occupancyLabel = OCCUPANCY_BUBBLES.find((item) => item.value === occupancy)?.label;
   if (occupancyLabel) {
     facts.push({ id: "occupancy", label: "Occupancy", value: occupancyLabel });
   }
 
-  const timeline =
-    draft.timelineChoice.value || draft.scenario?.timeline || "";
+  const timeline = draft.timelineChoice.value || "";
   const timelineLabel = TIMELINE_BUBBLES.find((item) => item.value === timeline)?.label;
   if (timelineLabel) {
     facts.push({ id: "timeline", label: "Timeline", value: timelineLabel });
   }
 
-  const loan =
-    draft.loanAmountValue ??
-    (!draft.amountAsked ? draft.scenario?.loanAmount : undefined);
+  const loan = draft.loanAmountValue;
   if (loan != null && loan > 0) {
     facts.push({
       id: "amount",
-      label: intent === "use-equity" ? "Line / cash" : "Loan amount",
+      label: amountLineLabel(intent),
       value: formatMoney(loan),
-      note: SAMPLE_NOTE,
     });
   }
 
-  const value =
-    draft.propertyValueAmount ??
-    (!draft.valueAsked ? draft.scenario?.propertyValue : undefined);
+  const value = draft.propertyValueAmount;
   if (value != null && value > 0) {
     facts.push({
       id: "value",
-      label: "Property value",
+      label: usesPurchasePrice(intent) ? "Purchase price" : "Property value",
       value: formatMoney(value),
-      note: SAMPLE_NOTE,
     });
   }
 
-  if (sampleReady(draft)) {
-    facts.push({
-      id: "structure",
-      label: "Structure",
-      value: SAMPLE_STRUCTURE,
-      note: SAMPLE_NOTE,
-    });
-    facts.push({
-      id: "rate",
-      label: "Sample rate",
-      value: SAMPLE_RATE_LABEL,
-      note: SAMPLE_NOTE,
-    });
-    facts.push({
-      id: "payment",
-      label: "Estimated payment",
-      value: formatSamplePayment(loan),
-      note: SAMPLE_NOTE,
-    });
-  }
-
-  const incomeLabel = INCOME_BUBBLES.find((item) => item.value === draft.incomeType.value)?.label;
-  if (incomeLabel) {
-    facts.push({ id: "income", label: "Income", value: incomeLabel });
+  if (intent && (sampleReady(draft) || !sampleRateApplies(intent))) {
+    if (sampleRateApplies(intent) && sampleReady(draft)) {
+      facts.push({
+        id: "rate",
+        label: "Rate",
+        value: `${SAMPLE_STRUCTURE} ${SAMPLE_RATE_LABEL}`,
+        note: SAMPLE_NOTE,
+      });
+    } else if (!sampleRateApplies(intent)) {
+      facts.push({
+        id: "rate",
+        label: "Rate",
+        value: "Pricing when the file is ready",
+      });
+    }
   }
 
   const range = draft.path === "acr" && sampleReady(draft) ? estimateFromDraft(draft) : null;
   if (range) {
     facts.push({
       id: "reward",
-      label: "Estimated ACR reward",
+      label: "Reward",
       value: formatRewardRange(range),
       note: SAMPLE_NOTE,
     });
@@ -1230,22 +1254,31 @@ export function previewFacts(draft: FoxIntakeDraft): PreviewFact[] {
       value: `${draft.documents.length} received`,
     });
   } else if (draft.documentsSkipped) {
-    facts.push({ id: "docs", label: "Docs", value: "Skipped for now" });
-  } else if (knownDocsIncome(draft.incomeType.value)) {
-    facts.push({ id: "docs", label: "Docs", value: "Waiting" });
+    facts.push({ id: "docs", label: "Docs", value: "Skipped" });
   }
 
   if (draft.workspaceDraftStatus === "preparing") {
-    facts.push({ id: "draft", label: "Draft", value: "Preparing" });
+    facts.push({ id: "status", label: "Status", value: "Preparing" });
   } else if (draft.workspaceDraftStatus === "ready") {
-    facts.push({ id: "draft", label: "Draft", value: "Ready for you" });
+    facts.push({ id: "status", label: "Status", value: "Ready for review" });
   } else if (draft.workspaceDraftStatus === "with-originator") {
-    facts.push({ id: "draft", label: "Draft", value: "With originator" });
+    facts.push({ id: "status", label: "Status", value: "Originator reviews" });
   } else if (draft.status) {
-    facts.push({ id: "draft", label: "Draft", value: draft.status });
+    facts.push({ id: "status", label: "Status", value: draft.status });
   }
 
   return facts;
+}
+
+export function structureFixPrompt(id: string): FoxPrompt | null {
+  if (id === "path") return "path-switch";
+  if (id === "product") return "product";
+  if (id === "occupancy") return "occupancy";
+  if (id === "timeline") return "timeline";
+  if (id === "amount") return "amount";
+  if (id === "value") return "value";
+  if (id === "docs") return "documents";
+  return null;
 }
 
 const CHAT_SUMMARY_IDS = new Set([
@@ -1255,10 +1288,7 @@ const CHAT_SUMMARY_IDS = new Set([
   "timeline",
   "amount",
   "value",
-  "structure",
   "rate",
-  "payment",
-  "income",
   "reward",
   "docs",
 ]);

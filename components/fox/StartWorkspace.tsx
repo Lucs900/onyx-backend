@@ -44,13 +44,29 @@ export function StartWorkspace() {
     }
   }, [draft.workspaceDraftStatus, draft.workspaceFlow]);
 
+  const factsExist =
+    Boolean(draft.path) ||
+    Boolean(draft.productIntent) ||
+    Boolean(draft.occupancyChoice.value) ||
+    Boolean(draft.timelineChoice.value) ||
+    draft.loanAmountValue != null ||
+    draft.propertyValueAmount != null ||
+    draft.documents.length > 0 ||
+    draft.documentsSkipped;
+
   return (
     <section className="start-workspace page-pad">
-      <div className="page-inner start-workspace__inner">
-        <FilePreview />
+      <div
+        className={
+          factsExist
+            ? "page-inner start-workspace__inner"
+            : "page-inner start-workspace__inner start-workspace__inner--solo"
+        }
+      >
         <div className="start-workspace__fox-wrap">
           <AlwaysOnFox startPath={startPath} startIntent={startIntent} inWorkspace />
         </div>
+        <FilePreview />
       </div>
     </section>
   );

@@ -19,7 +19,13 @@ import {
   type ReceivedDoc,
   type SectionId,
 } from "./types";
-import { purposeForIntent, slugForIntent, workspacePrompt } from "./workspace";
+import {
+  normalizeProductIntent,
+  productIntentLabel,
+  purposeForIntent,
+  slugForIntent,
+  workspacePrompt,
+} from "./workspace";
 
 function numberOrUndefined(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : undefined;
@@ -79,12 +85,7 @@ function normalize(value: unknown): FoxIntakeDraft {
     preferredAsked: Boolean(raw.preferredAsked),
     correcting: raw.correcting ?? null,
     path: raw.path === "acr" || raw.path === "loan-only" ? raw.path : undefined,
-    productIntent:
-      raw.productIntent === "buy" ||
-      raw.productIntent === "refinance" ||
-      raw.productIntent === "use-equity"
-        ? raw.productIntent
-        : undefined,
+    productIntent: normalizeProductIntent(raw.productIntent),
     loanAmountValue: numberOrUndefined(raw.loanAmountValue),
     propertyValueAmount: numberOrUndefined(raw.propertyValueAmount),
     amountAsked: Boolean(raw.amountAsked),
@@ -249,8 +250,7 @@ function withProductIntent(draft: FoxIntakeDraft, intent: ProductIntent): FoxInt
         ...draft.scenario,
         purpose: purposeForIntent(intent),
         productSlug: slugForIntent(intent),
-        productName:
-          intent === "buy" ? "Buy" : intent === "refinance" ? "Refinance" : "Use equity",
+        productName: productIntentLabel(intent),
       }
     : draft.scenario;
   return { ...draft, productIntent: intent, scenario };
@@ -553,6 +553,12 @@ export function applyCapture(capture: Capture) {
       confirmedAt: undefined,
     });
   }
+  if (capture.field === "keep-path") {
+    return commit({ ...current, correcting: null });
+  }
+  if (capture.field === "what-acr") {
+    return current;
+  }
   if (capture.field === "correct") {
     return commit({
       ...current,
@@ -564,7 +570,7 @@ export function applyCapture(capture: Capture) {
     return addNote(capture.value);
   }
   if (capture.field === "path") {
-    return commit({ ...current, path: capture.value });
+    return commit({ ...current, path: capture.value, correcting: null });
   }
   if (capture.field === "productIntent") {
     return commit(

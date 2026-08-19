@@ -3,9 +3,9 @@ import type { IntakePath } from "./types";
 import type { FoxAction } from "./types";
 
 export const HOME_IDLE_TEXT =
-  "I can prepare a file for a purchase, refinance, or equity. You can start a relationship or just get the loan.";
+  "I can prepare a file. Start a relationship, or just get the loan.";
 
-export const HOME_PRODUCT_TEXT = "Buy, refinance, or use equity.";
+export const HOME_PRODUCT_TEXT = "Buy, refinance, HELOC, jumbo, or other.";
 
 export function homePathActions(): FoxAction[] {
   return [
@@ -28,9 +28,19 @@ export function homeProductActions(path: IntakePath): FoxAction[] {
       href: `/start?path=${token}&intent=refinance`,
     },
     {
-      id: "equity",
-      label: "Use equity",
-      href: `/start?path=${token}&intent=equity`,
+      id: "heloc",
+      label: "HELOC",
+      href: `/start?path=${token}&intent=heloc`,
+    },
+    {
+      id: "jumbo",
+      label: "Jumbo",
+      href: `/start?path=${token}&intent=jumbo`,
+    },
+    {
+      id: "other",
+      label: "Other",
+      href: `/start?path=${token}&intent=other`,
     },
   ];
 }

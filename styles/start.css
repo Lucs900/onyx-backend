@@ -68,6 +68,17 @@
   height: 36px;
 }
 
+.fox-stage--workspace {
+  padding-bottom: env(keyboard-inset-height, 0px);
+}
+
+.fox-stage--workspace .fox-bar__desk--plain {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  background: var(--paper) !important;
+}
+
 .fox-stage--workspace .fox-bubble--fox.is-prior {
   max-width: 92%;
   background: transparent;
@@ -143,6 +154,16 @@
   border: 0;
 }
 
+.start-workspace__inner--solo {
+  display: flex;
+  justify-content: center;
+}
+
+.start-workspace__inner--solo .start-workspace__fox-wrap {
+  width: 100%;
+  max-width: 720px;
+}
+
 .file-preview__desktop {
   display: none;
   flex-direction: column;
@@ -193,9 +214,25 @@
   grid-template-columns: minmax(96px, 38%) 1fr;
   gap: 12px;
   align-items: start;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  text-align: left;
 }
 
-.file-preview__row dt {
+.file-preview__row--tap {
+  cursor: pointer;
+  border-radius: 8px;
+}
+
+.file-preview__row--tap:hover,
+.file-preview__row--tap:focus-visible {
+  outline: 1px solid var(--line);
+  outline-offset: 4px;
+}
+
+.file-preview__label {
   margin: 0;
   font-family: var(--font-ui);
   font-size: 12px;
@@ -204,7 +241,7 @@
   color: var(--muted);
 }
 
-.file-preview__row dd {
+.file-preview__value {
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -215,7 +252,8 @@
   color: var(--ink);
 }
 
-.file-preview__row small {
+.file-preview__row small,
+.file-preview__value small {
   font-size: 12px;
   line-height: 16px;
   color: var(--muted);
@@ -268,9 +306,14 @@
 
   .start-workspace__inner {
     display: grid;
-    grid-template-columns: minmax(280px, 0.85fr) minmax(360px, 1.15fr);
+    grid-template-columns: minmax(360px, 1.2fr) minmax(260px, 0.8fr);
     align-items: stretch;
     gap: 24px;
+  }
+
+  .start-workspace__inner--solo {
+    display: flex;
+    justify-content: center;
   }
 
   .file-preview {
@@ -278,8 +321,7 @@
   }
 
   .file-preview--empty {
-    display: block;
-    min-height: 0;
+    display: none;
   }
 
   .file-preview__desktop {

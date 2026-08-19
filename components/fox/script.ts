@@ -139,6 +139,7 @@ export function taskContext(stage: FoxStage, draft: FoxIntakeDraft) {
     documents: "Documents",
     review: "Confirm draft",
     correct: "Correction",
+    "path-switch": "Confirm path",
     done: "Draft confirmed",
   };
   return labels[currentPrompt(draft)];
@@ -206,7 +207,7 @@ export function greeting(
 
   if (stage === "results") {
     return {
-      text: scenario ? "Loan only, or start with ACR?" : "Enter a scenario first.",
+      text: scenario ? "Start a relationship, or just the loan?" : "Enter a scenario first.",
       actions: scenario
         ? resultsPathActions(scenario)
         : [{ id: "scenario", label: "Enter a scenario", href: "/products/scenario" }],
@@ -293,7 +294,7 @@ export function promptCopy(prompt: FoxPrompt, draft?: FoxIntakeDraft): { text: s
   }
   if (prompt === "correct") {
     return {
-      text: "Which part should Fox fix?",
+      text: "Tap any line on the structure.",
       actions: bubbles(
         [
           { value: "name", label: "Contact" },
@@ -618,7 +619,7 @@ function homeReply(
       actions: homePathActions(),
     };
   }
-  if (/(buy a home|purchase|refinance|use equity|heloc|equity)/i.test(lower)) {
+  if (/(buy a home|purchase|refinance|heloc|jumbo|other)/i.test(lower)) {
     return chosen
       ? { text: HOME_PRODUCT_TEXT, actions: homeProductActions(chosen) }
       : { text: HOME_IDLE_TEXT, actions: homePathActions() };
@@ -664,7 +665,7 @@ function nextSteps(
   if (stage === "results") {
     return {
       text: scenario
-        ? "Loan only, or start with ACR?"
+        ? "Start a relationship, or just the loan?"
         : "Enter a scenario first so I have something to carry into a draft.",
       actions: scenario
         ? resultsPathActions(scenario)

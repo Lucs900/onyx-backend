@@ -61,7 +61,7 @@ export type IncomeType = "w2" | "self-employed" | "both" | "other";
 
 export type IntakePath = "acr" | "loan-only";
 
-export type ProductIntent = "buy" | "refinance" | "use-equity";
+export type ProductIntent = "buy" | "refinance" | "heloc" | "jumbo" | "other";
 
 export type FoxIntakeDraft = {
   version: 1;
@@ -131,6 +131,7 @@ export type FoxPrompt =
   | "documents"
   | "review"
   | "correct"
+  | "path-switch"
   | "done";
 
 export type Capture =
@@ -152,6 +153,8 @@ export type Capture =
   | { field: "open-docs" }
   | { field: "confirm-draft" }
   | { field: "needs-correction" }
+  | { field: "keep-path" }
+  | { field: "what-acr" }
   | { field: "correct"; value: string }
   | { field: "note"; value: string };
 
@@ -209,7 +212,9 @@ export const TIMELINE_BUBBLES = [
 export const PRODUCT_INTENT_BUBBLES = [
   { value: "buy", label: "Buy" },
   { value: "refinance", label: "Refinance" },
-  { value: "use-equity", label: "Use equity" },
+  { value: "heloc", label: "HELOC" },
+  { value: "jumbo", label: "Jumbo" },
+  { value: "other", label: "Other" },
 ] as const;
 
 export const CREDIT_WORKSPACE_BUBBLES = [
