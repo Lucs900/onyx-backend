@@ -38,7 +38,7 @@ Fox is the homepage operator. One Fox assistant, one visible interface. The expa
 
 - **First paint on `/`:** only the expanded Fox stage. Do not mount the bottom Ask ONYX Fox dock while the homepage stage is open. `FoxShell` skips the dock fallback on `/`.
 - Desktop: claim left; expanded Fox stage primary on the right; ACR object quieter below the stage.
-- Mobile homepage order: nav → locked claim + legal → ACR hero art → Fox stage (message, path bubbles, composer in-stage). Hero art sits above chat. Fox remains the main action surface. No extra homepage dock under the stage.
+- Mobile homepage: two-up row of locked claim (left) + smaller ACR object (right), then full-width Fox stage underneath (message, path bubbles, composer in-stage). Hero is compact and aligned with the claim — not a full-bleed stack. Fox is the main action surface. No extra homepage dock under the stage.
 - Bottom dock may return only after Fox is collapsed on `/`, or on non-homepage routes.
 - Opening Fox on `/` starts Idle. Starter: `I can prepare a file for a purchase, refinance, or equity. You can start a relationship or just get the loan.`
 - First bubbles only: `Start your relationship` (sets `path=acr`) and `Just need a mortgage` (sets `path=loan`). After a path is chosen, product chips: Buy / Refinance / Use equity → existing scenario routes with that path + product.
