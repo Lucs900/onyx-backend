@@ -195,6 +195,18 @@ export function formatSamplePayment(loanAmount?: number | null): string {
   return `$${Math.round(payment).toLocaleString("en-US")}/mo`;
 }
 
+function needsPropertyValue(draft: FoxIntakeDraft): boolean {
+  return draft.productIntent === "buy";
+}
+
+function hasPropertyValue(draft: FoxIntakeDraft): boolean {
+  return (
+    draft.valueAsked ||
+    draft.propertyValueAmount != null ||
+    draft.scenario?.propertyValue != null
+  );
+}
+
 export function sampleReady(draft: FoxIntakeDraft): boolean {
   if (!draft.path || !draft.productIntent) return false;
   if (!draft.occupancyAsked && !draft.occupancyChoice.value) return false;
@@ -206,13 +218,7 @@ export function sampleReady(draft: FoxIntakeDraft): boolean {
   ) {
     return false;
   }
-  if (
-    !draft.valueAsked &&
-    draft.propertyValueAmount == null &&
-    draft.scenario?.propertyValue == null
-  ) {
-    return false;
-  }
+  if (needsPropertyValue(draft) && !hasPropertyValue(draft)) return false;
   return true;
 }
 
@@ -229,28 +235,23 @@ export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
   ) {
     return "amount";
   }
-  if (
-    !draft.valueAsked &&
-    draft.propertyValueAmount == null &&
-    draft.scenario?.propertyValue == null
-  ) {
+  if (needsPropertyValue(draft) && !hasPropertyValue(draft)) {
     return "value";
   }
   if (draft.phase === "confirmed" || draft.workspaceDraftStatus === "with-originator") {
     if (draft.correcting === "correct") return "correct";
     if (draft.correcting === "documents" && !knownDocsIncome(draft.incomeType.value)) {
-      return draft.incomeType.value ? "done" : "income";
+      return "done";
     }
     if (draft.correcting) return draft.correcting;
     return "done";
   }
   if (draft.correcting === "correct") return "correct";
   if (draft.correcting === "documents" && !knownDocsIncome(draft.incomeType.value)) {
-    return draft.incomeType.value ? "done" : "income";
+    return "done";
   }
   if (draft.correcting) return draft.correcting;
   if (!draft.sampleAccepted) return "review";
-  if (!draft.incomeType.value) return "income";
   if (
     knownDocsIncome(draft.incomeType.value) &&
     !draft.documents.length &&
@@ -344,7 +345,7 @@ export function workspacePromptCopy(
   }
   if (prompt === "documents") {
     if (!knownDocsIncome(draft.incomeType.value)) {
-      return workspacePromptCopy(draft.incomeType.value ? "done" : "income", draft);
+      return workspacePromptCopy("done", draft);
     }
     return {
       text: documentsAskText(draft),
@@ -1012,8 +1013,9 @@ export function workspaceReply(
         workspaceDraftStatus:
           draft.workspaceDraftStatus === "with-originator" ? draft.workspaceDraftStatus : "ready",
       } as FoxIntakeDraft;
+      const nextPrompt = workspacePrompt(nextDraft);
       return {
-        ...workspacePromptCopy(workspacePrompt(nextDraft), nextDraft),
+        ...workspacePromptCopy(nextPrompt === "review" ? "done" : nextPrompt, nextDraft),
         capture: { field: "confirm-draft" },
       };
     }

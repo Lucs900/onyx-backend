@@ -129,6 +129,15 @@ function sameFoxAsk(
   return left === right;
 }
 
+function hasReviewAsk(messages: FoxMessage[]) {
+  return messages.some(
+    (message) =>
+      message.role === "fox" &&
+      (message.followUp === "Does this look right?" ||
+        message.text.includes("Here’s a sample structure.")),
+  );
+}
+
 export function requestFoxOpen() {
   window.dispatchEvent(new Event("onyx:fox-open"));
 }
@@ -496,21 +505,40 @@ export function AlwaysOnFox({
 
   useEffect(() => {
     if (!ready || (stage !== "intake" && !isStart)) return;
+    const live = getFoxDraft();
+    const prompt = isStart ? workspacePrompt(live) : currentPrompt(live);
+    const ask = isStart
+      ? workspacePromptCopy(prompt, live)
+      : promptCopy(prompt, live);
+    const mustShowReview = isStart && prompt === "review";
     if (skipPromptSync.current) {
       skipPromptSync.current = false;
-      return;
+      if (!mustShowReview) return;
     }
-    const live = getFoxDraft();
-    const ask =
-      isStart
-        ? workspacePromptCopy(workspacePrompt(live), live)
-        : promptCopy(currentPrompt(live), live);
     setMessages((prev) => {
+      if (mustShowReview && hasReviewAsk(prev)) return prev;
       const last = prev[prev.length - 1];
       if (last?.role === "fox" && sameFoxAsk(last, ask)) return prev;
       return [...prev, foxAskMessage(ask)];
     });
   }, [draft.updatedAt, isStart, ready, stage]);
+
+  useEffect(() => {
+    if (!ready || !isStart) return;
+    const live = getFoxDraft();
+    if (workspacePrompt(live) !== "review") return;
+    const ask = workspacePromptCopy("review", live);
+    setMessages((prev) => (hasReviewAsk(prev) ? prev : [...prev, foxAskMessage(ask)]));
+  }, [
+    draft.amountAsked,
+    draft.loanAmountValue,
+    draft.productIntent,
+    draft.propertyValueAmount,
+    draft.updatedAt,
+    draft.valueAsked,
+    isStart,
+    ready,
+  ]);
 
   useEffect(() => {
     listRef.current?.scrollTo({ top: listRef.current.scrollHeight });
@@ -635,10 +663,11 @@ export function AlwaysOnFox({
   const onSubmit = (event: FormEvent) => {
     event.preventDefault();
     const text = input.trim();
-    if (!text || !stage) return;
+    const replyStage = stage ?? (isStart ? "start" : null);
+    if (!text || !replyStage) return;
     setOpen(true);
     setInput("");
-    const reply = replyToMessage(text, stage, draft, scenario);
+    const reply = replyToMessage(text, replyStage, draft, scenario);
     if (isHome) {
       const path = pathFromHomeChoice(text);
       if (path) {
