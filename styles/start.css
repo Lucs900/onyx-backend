@@ -37,33 +37,93 @@
   overflow: auto;
 }
 
-.fox-stage--workspace .fox-bar__desk {
-  margin-top: 8px;
-}
-
-.fox-stage--workspace .fox-bubble.is-prior {
-  opacity: 0.55;
+.fox-stage--workspace .fox-bar__desk,
+.fox-stage--workspace .fox-bar__desk:hover,
+.fox-stage--workspace .fox-bar__desk:focus-within {
+  margin-top: 10px;
+  min-height: 44px;
+  padding: 8px 0 0;
+  background: transparent;
+  border: 0;
+  border-top: 1px solid var(--line);
+  border-radius: 0;
   box-shadow: none;
 }
 
-.fox-stage--workspace .fox-bubble.is-prior p,
-.fox-stage--workspace .fox-bubble.is-prior .fox-bubble__fact-label,
-.fox-stage--workspace .fox-bubble.is-prior .fox-bubble__facts li {
+.fox-stage--workspace .fox-bar__desk:focus-within {
+  border-top-color: var(--ink);
+}
+
+.fox-stage--workspace .fox-bar__input {
+  height: 36px;
+}
+
+.fox-stage--workspace .fox-bar__send {
+  width: 36px;
+  height: 36px;
+}
+
+.fox-stage--workspace .fox-bubble--fox.is-prior {
+  max-width: 92%;
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+  opacity: 1;
+}
+
+.fox-stage--workspace .fox-bubble--fox.is-prior p,
+.fox-stage--workspace .fox-bubble--fox.is-prior .fox-bubble__fact-label,
+.fox-stage--workspace .fox-bubble--fox.is-prior .fox-bubble__facts li {
   color: var(--muted);
 }
 
-.fox-stage--workspace .fox-bubble.is-current {
+.fox-stage--workspace .fox-bubble--fox.is-current {
   max-width: 100%;
   padding: 12px 14px;
+  background: var(--paper-elevated);
   border-color: color-mix(in srgb, var(--ink) 26%, var(--fox-hairline));
 }
 
-.fox-stage--workspace .fox-bubble.is-current > p {
+.fox-stage--workspace .fox-bubble--fox.is-current > p {
   color: var(--ink);
+  font-size: 16px;
+  line-height: 22px;
+  font-weight: 600;
 }
 
-.fox-stage--workspace .fox-bubble.is-current > p:last-of-type {
+.fox-stage--workspace .fox-bubble--fox.is-current > p:last-of-type {
+  font-weight: 600;
+}
+
+.fox-stage--workspace .fox-bubble--client {
+  align-self: flex-end;
+  max-width: 80%;
+  background: color-mix(in srgb, var(--ink) 7%, var(--paper-elevated));
+  border-color: color-mix(in srgb, var(--ink) 14%, var(--line));
+  box-shadow: none;
+  opacity: 1;
+}
+
+.fox-stage--workspace .fox-bubble--client p {
+  color: var(--ink);
   font-weight: 500;
+}
+
+.fox-stage--workspace .fox-bubble__edit {
+  margin-top: 6px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-family: var(--font-ui);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.fox-stage--workspace .fox-bubble__edit:hover,
+.fox-stage--workspace .fox-bubble__edit:focus-visible {
+  color: var(--ink);
 }
 
 .file-preview {

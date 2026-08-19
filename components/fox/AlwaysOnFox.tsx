@@ -46,9 +46,11 @@ import {
   formatLiveMoneyInput,
   productIntentFromQuery,
   productIntentFromSlug,
+  editPromptFromCapture,
   workspaceGreeting,
   workspacePrompt,
   workspacePromptCopy,
+  workspaceUpdateCopy,
 } from "./workspace";
 import {
   HOME_PRODUCT_TEXT,
@@ -194,7 +196,7 @@ function FoxThread({
             className={
               message.role === "fox"
                 ? `fox-bubble fox-bubble--fox${tone}`
-                : `fox-bubble fox-bubble--client${tone}`
+                : "fox-bubble fox-bubble--client"
             }
             aria-current={current ? "step" : undefined}
           >
@@ -210,6 +212,22 @@ function FoxThread({
               </ul>
             ) : null}
             {message.followUp ? <p>{message.followUp}</p> : null}
+            {message.role === "client" && message.edit ? (
+              <button
+                type="button"
+                className="fox-bubble__edit"
+                onClick={() =>
+                  onAction({
+                    id: `edit-${message.id}`,
+                    label: "Edit",
+                    event: "bubble",
+                    capture: { field: "correct", value: message.edit as string },
+                  })
+                }
+              >
+                Edit
+              </button>
+            ) : null}
             {current && message.actions?.length ? (
               <div className="fox-bubble__actions">
                 {message.actions.map((action) =>
@@ -408,7 +426,12 @@ export function AlwaysOnFox({
       if (reply.capture) applyCapture(reply.capture);
       setMessages((prev) => [
         ...prev,
-        { id: newId(), role: "client", text: clientMoneyText(text, reply.capture) },
+        {
+          id: newId(),
+          role: "client",
+          text: clientMoneyText(text, reply.capture),
+          edit: stage === "start" ? editPromptFromCapture(reply.capture) : undefined,
+        },
         foxAskMessage(reply),
       ]);
     };
@@ -526,10 +549,11 @@ export function AlwaysOnFox({
       facts?: FoxMessage["facts"];
       actions?: FoxAction[];
     },
+    edit?: FoxMessage["edit"],
   ) => {
     setMessages((prev) => [
       ...prev,
-      { id: newId(), role: "client", text: clientText },
+      { id: newId(), role: "client", text: clientText, edit },
       foxAskMessage(fox),
     ]);
   };
@@ -571,13 +595,34 @@ export function AlwaysOnFox({
       if (action.capture.field === "path") {
         writeStartPath(action.capture.value);
       }
+      const editing = Boolean(isStart && draft.correcting && action.capture.field !== "correct");
       applyCapture(action.capture);
+      skipPromptSync.current = true;
       const live = getFoxDraft();
+      if (editing) {
+        const next = workspacePromptCopy(workspacePrompt(live), live);
+        const confirm = workspaceUpdateCopy(action.capture, live);
+        appendReply(
+          action.label,
+          {
+            text: confirm,
+            followUp: next.followUp ?? (next.text !== confirm ? next.text : undefined),
+            facts: next.facts,
+            actions: next.actions,
+          },
+          editPromptFromCapture(action.capture),
+        );
+        return;
+      }
       const next =
         stage === "start"
           ? workspacePromptCopy(workspacePrompt(live), live)
           : promptCopy(currentPrompt(live), live);
-      appendReply(action.label, next);
+      appendReply(
+        action.label,
+        next,
+        action.capture.field === "correct" ? undefined : editPromptFromCapture(action.capture),
+      );
     }
   };
 
@@ -598,11 +643,18 @@ export function AlwaysOnFox({
     if (reply.capture?.field === "path") {
       writeStartPath(reply.capture.value);
     }
-    if (reply.capture) applyCapture(reply.capture);
+    if (reply.capture) {
+      applyCapture(reply.capture);
+      skipPromptSync.current = true;
+    }
     if (reply.capture?.field === "open-docs") {
       document.getElementById("fox-documents")?.scrollIntoView({ behavior: "smooth" });
     }
-    appendReply(clientMoneyText(text, reply.capture), reply);
+    appendReply(
+      clientMoneyText(text, reply.capture),
+      reply,
+      isStart ? editPromptFromCapture(reply.capture) : undefined,
+    );
   };
 
   const hideDock = isHome && (useHomeStage ? open : true);

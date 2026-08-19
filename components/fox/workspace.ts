@@ -454,6 +454,224 @@ function timelineFromText(text: string) {
   );
 }
 
+export function editPromptFromCapture(capture?: Capture): FoxPrompt | undefined {
+  if (!capture) return undefined;
+  if (capture.field === "path") return "intent";
+  if (capture.field === "productIntent") return "product";
+  if (capture.field === "occupancy") return "occupancy";
+  if (capture.field === "timeline") return "timeline";
+  if (capture.field === "loanAmount" || capture.field === "skip-amount") return "amount";
+  if (capture.field === "propertyValue" || capture.field === "skip-value") return "value";
+  if (capture.field === "creditRange") return "credit";
+  if (capture.field === "termYears" || capture.field === "skip-term") return "term";
+  if (capture.field === "skip-docs" || capture.field === "open-docs") return "documents";
+  return undefined;
+}
+
+export function workspaceUpdateCopy(capture: Capture, draft: FoxIntakeDraft) {
+  if (capture.field === "path") {
+    return capture.value === "loan-only" ? "Updated path to Loan only." : "Updated path to ACR.";
+  }
+  if (capture.field === "productIntent") {
+    return `Updated product to ${productIntentLabel(capture.value)}.`;
+  }
+  if (capture.field === "occupancy") {
+    const label = OCCUPANCY_BUBBLES.find((item) => item.value === capture.value)?.label;
+    return label ? `Updated occupancy to ${label}.` : "Updated occupancy.";
+  }
+  if (capture.field === "timeline") {
+    const label = TIMELINE_BUBBLES.find((item) => item.value === capture.value)?.label;
+    return label ? `Updated timeline to ${label}.` : "Updated timeline.";
+  }
+  if (capture.field === "loanAmount") {
+    const n = Number(capture.value.split(":")[0].replace(/,/g, ""));
+    return Number.isFinite(n) && n > 0
+      ? `Updated loan amount to ${formatMoney(n)}.`
+      : "Updated loan amount.";
+  }
+  if (capture.field === "propertyValue") {
+    const n = Number(capture.value.replace(/,/g, ""));
+    return Number.isFinite(n) && n > 0
+      ? `Updated property value to ${formatMoney(n)}.`
+      : "Updated property value.";
+  }
+  if (capture.field === "creditRange") {
+    const label =
+      CREDIT_WORKSPACE_BUBBLES.find((item) => item.value === capture.value)?.label ?? capture.value;
+    return `Updated credit range to ${label}.`;
+  }
+  if (capture.field === "termYears") {
+    return `Updated term to ${capture.value} year.`;
+  }
+  if (capture.field === "skip-amount") return "Updated. Loan amount left blank.";
+  if (capture.field === "skip-value") return "Updated. Property value left blank.";
+  if (capture.field === "skip-term") return "Updated. Term left blank.";
+  return "Updated the file.";
+}
+
+export function parseWorkspaceEdit(
+  text: string,
+): {
+  capture?: Capture;
+  correct?: FoxPrompt;
+  confirm: string;
+} | null {
+  const q = text.trim();
+  const lower = q.toLowerCase();
+  if (!/\b(change|edit|update|set|switch)\b/.test(lower)) return null;
+  if (/^(needs a correction|looks right)$/i.test(lower)) return null;
+
+  const wantsPath = /\b(path|relationship|acr|loan only|loan-only)\b/.test(lower);
+  if (wantsPath && !/\b(amount|value|occupan|timeline|credit|fico|term|product|buy|refi)\b/.test(lower)) {
+    if (/\bloan only|loan-only|just the loan|just a mortgage\b/.test(lower)) {
+      return { capture: { field: "path", value: "loan-only" }, confirm: "Updated path to Loan only." };
+    }
+    if (/\bacr|relationship\b/.test(lower)) {
+      return { capture: { field: "path", value: "acr" }, confirm: "Updated path to ACR." };
+    }
+    return { correct: "intent", confirm: "Which path should I use?" };
+  }
+
+  if (/\b(product|buy|refinance|refi|use equity|heloc)\b/.test(lower) && /\b(change|edit|update|set|switch)\b/.test(lower)) {
+    const intent = productIntentFromText(q);
+    if (intent) {
+      return {
+        capture: { field: "productIntent", value: intent },
+        confirm: `Updated product to ${productIntentLabel(intent)}.`,
+      };
+    }
+    if (/\bproduct\b/.test(lower)) {
+      return { correct: "product", confirm: "Which product should I use?" };
+    }
+  }
+
+  if (/\boccupan/.test(lower)) {
+    const match = occupancyFromText(q);
+    if (match) {
+      return {
+        capture: { field: "occupancy", value: match.value },
+        confirm: `Updated occupancy to ${match.label}.`,
+      };
+    }
+    return { correct: "occupancy", confirm: "How will the property be used?" };
+  }
+
+  if (/\b(timeline|ready now|exploring|30)/.test(lower) && /\b(change|edit|update|set|timeline)\b/.test(lower)) {
+    const match = timelineFromText(q);
+    if (match) {
+      return {
+        capture: { field: "timeline", value: match.value },
+        confirm: `Updated timeline to ${match.label}.`,
+      };
+    }
+    if (/\btimeline\b/.test(lower)) {
+      return { correct: "timeline", confirm: "What’s the timeline?" };
+    }
+  }
+
+  if (/\b(fico|credit)\b/.test(lower)) {
+    const range = parseCreditRange(q);
+    if (range) {
+      const label = CREDIT_WORKSPACE_BUBBLES.find((item) => item.value === range)?.label ?? range;
+      return { capture: { field: "creditRange", value: range }, confirm: `Updated credit range to ${label}.` };
+    }
+    return { correct: "credit", confirm: "What credit range should I use?" };
+  }
+
+  if (/\bterm\b/.test(lower)) {
+    const term = parseTermYears(q);
+    if (term === "skip") {
+      return { capture: { field: "skip-term" }, confirm: "Updated. Term left blank." };
+    }
+    if (term != null) {
+      return { capture: { field: "termYears", value: String(term) }, confirm: `Updated term to ${term} year.` };
+    }
+    return { correct: "term", confirm: "Any term in mind?" };
+  }
+
+  if (/\b(property value|home value|house value|worth)\b/.test(lower) || (/\bvalue\b/.test(lower) && !/\bloan\b/.test(lower))) {
+    if (isUnknownAmount(q)) {
+      return { capture: { field: "skip-value" }, confirm: "Updated. Property value left blank." };
+    }
+    const amount = parseAmountPair(q).value ?? parseLooseAmount(q);
+    if (amount != null) {
+      return {
+        capture: { field: "propertyValue", value: String(amount) },
+        confirm: `Updated property value to ${formatMoney(amount)}.`,
+      };
+    }
+    return { correct: "value", confirm: "What’s a rough property value?" };
+  }
+
+  if (/\b(loan amount|loan|amount|line|cash)\b/.test(lower)) {
+    if (isUnknownAmount(q)) {
+      return { capture: { field: "skip-amount" }, confirm: "Updated. Loan amount left blank." };
+    }
+    const amount = parseAmountPair(q).loan ?? parseLooseAmount(q);
+    if (amount != null) {
+      return {
+        capture: { field: "loanAmount", value: String(amount) },
+        confirm: `Updated loan amount to ${formatMoney(amount)}.`,
+      };
+    }
+    return { correct: "amount", confirm: "What’s a rough loan amount?" };
+  }
+
+  if (/\bdoc/.test(lower)) {
+    return { correct: "documents", confirm: "Drop what you have. Skip is fine. I’ll work with what’s here." };
+  }
+
+  return null;
+}
+
+function draftAfterCapture(draft: FoxIntakeDraft, capture: Capture): FoxIntakeDraft {
+  const next = { ...draft, correcting: null };
+  if (capture.field === "path") return { ...next, path: capture.value };
+  if (capture.field === "productIntent") return { ...next, productIntent: capture.value };
+  if (capture.field === "occupancy") {
+    return { ...next, occupancyChoice: { ...draft.occupancyChoice, value: capture.value }, occupancyAsked: true };
+  }
+  if (capture.field === "timeline") {
+    return { ...next, timelineChoice: { ...draft.timelineChoice, value: capture.value }, timelineAsked: true };
+  }
+  if (capture.field === "loanAmount") {
+    const n = Number(capture.value.split(":")[0].replace(/,/g, ""));
+    return { ...next, amountAsked: true, loanAmountValue: Number.isFinite(n) && n > 0 ? n : draft.loanAmountValue };
+  }
+  if (capture.field === "propertyValue") {
+    const n = Number(capture.value.replace(/,/g, ""));
+    return { ...next, valueAsked: true, propertyValueAmount: Number.isFinite(n) && n > 0 ? n : draft.propertyValueAmount };
+  }
+  if (capture.field === "creditRange") return { ...next, creditBand: capture.value as FoxIntakeDraft["creditBand"] };
+  if (capture.field === "termYears") {
+    const n = Number(capture.value);
+    return { ...next, termAsked: true, termYears: Number.isFinite(n) && n > 0 ? n : draft.termYears };
+  }
+  if (capture.field === "skip-amount") return { ...next, amountAsked: true, loanAmountValue: undefined };
+  if (capture.field === "skip-value") return { ...next, valueAsked: true, propertyValueAmount: undefined };
+  if (capture.field === "skip-term") return { ...next, termAsked: true, termYears: undefined };
+  return next;
+}
+
+function withCurrentPrompt(
+  confirm: string,
+  draft: FoxIntakeDraft,
+): {
+  text: string;
+  followUp?: string;
+  facts?: PreviewFact[];
+  actions?: FoxAction[];
+} {
+  const next = workspacePromptCopy(workspacePrompt({ ...draft, correcting: null }), draft);
+  if (next.text === confirm) return next;
+  return {
+    text: confirm,
+    followUp: next.followUp ?? next.text,
+    facts: next.facts,
+    actions: next.actions,
+  };
+}
+
 export function workspaceReply(
   text: string,
   draft: FoxIntakeDraft,
@@ -471,6 +689,21 @@ export function workspaceReply(
   if (/(approv|lock|commit to lend|am i approved)/i.test(lower)) {
     return {
       text: "I can prepare a file. I cannot approve, lock, or commit to lend.",
+    };
+  }
+
+  const edit = parseWorkspaceEdit(q);
+  if (edit?.capture && draft.path) {
+    const nextDraft = draftAfterCapture(draft, edit.capture);
+    return {
+      ...withCurrentPrompt(edit.confirm, nextDraft),
+      capture: edit.capture,
+    };
+  }
+  if (edit?.correct && draft.path) {
+    return {
+      ...workspacePromptCopy(edit.correct, draft),
+      capture: { field: "correct", value: edit.correct },
     };
   }
 

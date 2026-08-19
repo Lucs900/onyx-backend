@@ -175,6 +175,7 @@ export type FoxMessage = {
   followUp?: string;
   facts?: FoxMessageFact[];
   actions?: FoxAction[];
+  edit?: FoxPrompt;
 };
 
 export const DOC_SLOTS: { id: DocSlot; label: string }[] = [
