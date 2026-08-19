@@ -187,12 +187,14 @@
 .fox-workspace-dock__row {
   display: flex;
   align-items: center;
+  width: 100%;
   gap: 8px;
 }
 
 .fox-workspace-dock__row .fox-bar__desk {
   flex: 1 1 auto;
   min-width: 0;
+  width: 100%;
 }
 
 .fox-structure-peek,
@@ -456,37 +458,42 @@
     display: none !important;
   }
 
-  .fox-structure-peek,
   .fox-structure-chip {
     display: block;
+    align-self: flex-start;
+    flex: 0 0 auto;
+    max-width: 100%;
+    height: 36px;
+    padding: 0 12px;
     border: 1px solid var(--fox-hairline);
+    border-radius: 999px;
     background: var(--paper-elevated);
     color: var(--ink);
     font-family: var(--font-ui);
+    font-size: 12px;
+    line-height: 36px;
     font-weight: 500;
     text-align: left;
-    cursor: pointer;
-  }
-
-  .fox-structure-peek {
-    width: 100%;
-    min-height: 36px;
-    padding: 8px 12px;
-    border-radius: 12px;
-    font-size: 13px;
-    line-height: 18px;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+    cursor: pointer;
   }
 
-  .fox-structure-chip {
-    flex: 0 0 auto;
-    height: 36px;
-    padding: 0 12px;
-    border-radius: 999px;
-    font-size: 12px;
-    line-height: 36px;
+  .file-sheet__heading {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+  }
+
+  .file-sheet__path {
+    margin: 0;
+    font-family: var(--font-ui);
+    font-size: 13px;
+    line-height: 18px;
+    font-weight: 500;
+    color: var(--muted);
   }
 
   .file-sheet {

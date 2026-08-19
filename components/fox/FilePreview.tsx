@@ -90,6 +90,7 @@ export function WorkspaceFileDock({ children }: { children: ReactNode }) {
   const peek = newest ? `${newest.label} · ${newest.value}` : "";
   const chip =
     facts.length > 1 ? `Structure · ${facts.length} facts` : peek || "Structure";
+  const pathFact = facts.find((fact) => fact.id === "path");
 
   useEffect(() => {
     setMounted(true);
@@ -117,7 +118,14 @@ export function WorkspaceFileDock({ children }: { children: ReactNode }) {
             />
             <div className="file-sheet__panel">
               <div className="file-sheet__head">
-                <p className="type-eyebrow">File</p>
+                <div className="file-sheet__heading">
+                  <p className="type-eyebrow">File</p>
+                  {pathFact ? (
+                    <p className="file-sheet__path">
+                      {pathFact.label} · {pathFact.value}
+                    </p>
+                  ) : null}
+                </div>
                 <button
                   type="button"
                   className="file-sheet__close"
@@ -135,25 +143,16 @@ export function WorkspaceFileDock({ children }: { children: ReactNode }) {
 
   return (
     <div className="fox-workspace-dock">
-      {facts.length && newest ? (
+      {facts.length ? (
         <button
           type="button"
-          className="fox-structure-peek"
+          className="fox-structure-chip"
           onClick={() => setSheetOpen(true)}
         >
-          {peek}
+          {chip}
         </button>
       ) : null}
       <div className="fox-workspace-dock__row">
-        {facts.length ? (
-          <button
-            type="button"
-            className="fox-structure-chip"
-            onClick={() => setSheetOpen(true)}
-          >
-            {chip}
-          </button>
-        ) : null}
         {children}
       </div>
       {sheet}
