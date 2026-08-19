@@ -44,17 +44,17 @@
   color: var(--ink);
 }
 
+.membership-hero__pass {
+  order: 3;
+  display: flex;
+  justify-content: center;
+  margin-top: 28px;
+  margin-bottom: 8px;
+}
+
 .membership-hero__fox-wrap {
   order: 4;
   width: 100%;
-}
-
-.membership-hero__pass {
-  order: 5;
-  display: flex;
-  justify-content: center;
-  margin-top: 48px;
-  margin-bottom: 8px;
 }
 
 .membership-hero__rule {
@@ -110,6 +110,7 @@
 
   .membership-hero__intro,
   .membership-hero__trust,
+  .membership-hero__fox-wrap,
   .membership-hero__pass {
     order: 0;
   }
