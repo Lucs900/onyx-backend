@@ -204,6 +204,7 @@ export function AlwaysOnFox() {
   const pendingAsk = useRef<string | null>(null);
   const skipPromptSync = useRef(false);
   const listRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
   const fieldId = useId();
   const greetKey = `${pathname}${search}`;
   const isHome = stage === "home";
@@ -380,6 +381,15 @@ export function AlwaysOnFox() {
     listRef.current?.scrollTo({ top: listRef.current.scrollHeight });
   }, [messages, open]);
 
+  const startAsk = isStart ? workspacePrompt(draft) : null;
+  const moneyAsk = startAsk === "amount" || startAsk === "value";
+  const numberAsk = moneyAsk || startAsk === "term";
+
+  useEffect(() => {
+    if (!isStart || !open || !numberAsk) return;
+    inputRef.current?.focus();
+  }, [isStart, open, startAsk, numberAsk, ready]);
+
   if (!stage) return null;
 
   const scenario = draft.scenario ?? readScenario();
@@ -464,13 +474,7 @@ export function AlwaysOnFox() {
   };
 
   const hideDock = isStart || (isHome && (useHomeStage ? open : true));
-  const startAsk = isStart ? workspacePrompt(draft) : null;
-  const composerMode =
-    startAsk === "amount" || startAsk === "value"
-      ? "decimal"
-      : startAsk === "term"
-        ? "numeric"
-        : "text";
+  const composerMode = moneyAsk ? "decimal" : startAsk === "term" ? "numeric" : "text";
 
   const desk = (
     <form className="fox-bar__desk" onSubmit={onSubmit}>
@@ -482,13 +486,16 @@ export function AlwaysOnFox() {
       </label>
       <input
         key={composerMode}
+        ref={inputRef}
         id={fieldId}
         className="fox-bar__input"
+        type="text"
         value={input}
         onChange={(event) => setInput(event.target.value)}
         onFocus={() => setOpen(true)}
-        placeholder="Ask ONYX Fox"
+        placeholder={moneyAsk ? "Enter amount or say not sure" : "Ask ONYX Fox"}
         inputMode={composerMode}
+        autoFocus={numberAsk}
         autoComplete="off"
       />
       <button

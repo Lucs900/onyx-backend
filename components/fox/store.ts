@@ -87,6 +87,8 @@ function normalize(value: unknown): FoxIntakeDraft {
         : undefined,
     loanAmountValue: numberOrUndefined(raw.loanAmountValue),
     propertyValueAmount: numberOrUndefined(raw.propertyValueAmount),
+    amountAsked: Boolean(raw.amountAsked),
+    valueAsked: Boolean(raw.valueAsked),
     creditBand: raw.creditBand,
     termYears: numberOrUndefined(raw.termYears),
     termAsked: Boolean(raw.termAsked),
@@ -447,14 +449,15 @@ export function applyCapture(capture: Capture) {
     const [loanRaw, valueRaw] = capture.value.split(":");
     const loan = Number(loanRaw.replace(/,/g, ""));
     const value = valueRaw ? Number(valueRaw.replace(/,/g, "")) : undefined;
+    const hasLoan = Number.isFinite(loan) && loan > 0;
+    const hasValue = value != null && Number.isFinite(value) && value > 0;
     return commit(
       withWorkspaceScenario({
         ...current,
-        loanAmountValue: Number.isFinite(loan) && loan > 0 ? loan : current.loanAmountValue,
-        propertyValueAmount:
-          value != null && Number.isFinite(value) && value > 0
-            ? value
-            : current.propertyValueAmount,
+        amountAsked: true,
+        valueAsked: hasValue ? true : current.valueAsked,
+        loanAmountValue: hasLoan ? loan : current.loanAmountValue,
+        propertyValueAmount: hasValue ? value : current.propertyValueAmount,
       }),
     );
   }
@@ -463,10 +466,28 @@ export function applyCapture(capture: Capture) {
     return commit(
       withWorkspaceScenario({
         ...current,
+        valueAsked: true,
         propertyValueAmount:
           Number.isFinite(value) && value > 0 ? value : current.propertyValueAmount,
       }),
     );
+  }
+  if (capture.field === "skip-amount") {
+    return commit({
+      ...current,
+      amountAsked: true,
+      loanAmountValue: undefined,
+      scenario: current.scenario
+        ? { ...current.scenario, loanAmount: undefined }
+        : current.scenario,
+    });
+  }
+  if (capture.field === "skip-value") {
+    return commit({
+      ...current,
+      valueAsked: true,
+      propertyValueAmount: undefined,
+    });
   }
   if (capture.field === "creditRange") {
     return commit(

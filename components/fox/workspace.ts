@@ -12,6 +12,7 @@ import {
 } from "@/components/products/scenario";
 import { pathFromHomeChoice } from "./homeIdle";
 import {
+  AMOUNT_HELPER_BUBBLES,
   CREDIT_WORKSPACE_BUBBLES,
   OCCUPANCY_BUBBLES,
   PRODUCT_INTENT_BUBBLES,
@@ -107,15 +108,32 @@ function bubbles(
   }));
 }
 
+function amountHelperActions(field: "skip-amount" | "skip-value"): FoxAction[] {
+  return AMOUNT_HELPER_BUBBLES.map((item) => ({
+    id: `${field}-${item.id}`,
+    label: item.label,
+    event: "bubble" as const,
+    capture: { field },
+  }));
+}
+
 export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
   if (!draft.path) return "intent";
   if (!draft.productIntent) return "product";
   if (!draft.occupancyAsked && !draft.occupancyChoice.value) return "occupancy";
   if (!draft.timelineAsked && !draft.timelineChoice.value) return "timeline";
-  if (draft.loanAmountValue == null && draft.scenario?.loanAmount == null) {
+  if (
+    !draft.amountAsked &&
+    draft.loanAmountValue == null &&
+    draft.scenario?.loanAmount == null
+  ) {
     return "amount";
   }
-  if (draft.propertyValueAmount == null && draft.scenario?.propertyValue == null) {
+  if (
+    !draft.valueAsked &&
+    draft.propertyValueAmount == null &&
+    draft.scenario?.propertyValue == null
+  ) {
     return "value";
   }
   if (draft.path === "acr" && !draft.creditBand && !draft.scenario?.creditRange) {
@@ -167,6 +185,7 @@ export function workspacePromptCopy(
         draft.productIntent === "use-equity"
           ? "What rough line or cash amount are you thinking about?"
           : "What’s a rough loan amount?",
+      actions: amountHelperActions("skip-amount"),
     };
   }
   if (prompt === "value") {
@@ -175,6 +194,7 @@ export function workspacePromptCopy(
         draft.productIntent === "use-equity"
           ? "What’s a rough home value?"
           : "And a rough property value?",
+      actions: amountHelperActions("skip-value"),
     };
   }
   if (prompt === "credit") {
@@ -186,7 +206,11 @@ export function workspacePromptCopy(
   if (prompt === "term") {
     return {
       text: "Any term in mind?",
-      actions: bubbles([...TERM_BUBBLES], "termYears"),
+      actions: [
+        ...bubbles(TERM_BUBBLES.filter((item) => item.value), "termYears"),
+        { id: "term-not-sure", label: "Not sure", event: "bubble", capture: { field: "skip-term" } },
+        { id: "term-skip", label: "Skip for now", event: "bubble", capture: { field: "skip-term" } },
+      ],
     };
   }
   return {
@@ -258,6 +282,14 @@ export function parseAmountPair(text: string): { loan?: number; value?: number }
     return { loan: amounts[0] };
   }
   return {};
+}
+
+export function isUnknownAmount(text: string) {
+  if (parseLooseAmount(text) != null) return false;
+  const lower = text.trim().toLowerCase().replace(/['’]/g, "");
+  return /dont know|do not know|not sure|unsure|unknown|no idea|\bidk\b|dunno|skip( for now)?|\blater\b|n\/a|\bnone\b/.test(
+    lower,
+  );
 }
 
 function amountFromParts(raw: string, unit?: string): number | null {
@@ -388,19 +420,25 @@ export function workspaceReply(
   }
 
   if (prompt === "amount") {
+    if (isUnknownAmount(q)) {
+      const nextDraft = { ...draft, amountAsked: true };
+      return {
+        ...workspacePromptCopy(workspacePrompt(nextDraft), nextDraft),
+        capture: { field: "skip-amount" },
+      };
+    }
     const pair = parseAmountPair(q);
     const amount = pair.loan ?? parseLooseAmount(q);
     if (amount == null) {
       return {
-        text:
-          draft.productIntent === "use-equity"
-            ? "Give me a rough dollar amount for the line or cash."
-            : "Give me a rough dollar amount for the loan.",
+        text: "A rough number works, or tap Not sure.",
+        actions: amountHelperActions("skip-amount"),
       };
     }
-    const nextDraft = { ...draft, loanAmountValue: amount };
+    const nextDraft = { ...draft, loanAmountValue: amount, amountAsked: true };
     if (pair.value && pair.value !== amount) {
       nextDraft.propertyValueAmount = pair.value;
+      nextDraft.valueAsked = true;
     }
     const next = workspacePromptCopy(workspacePrompt(nextDraft), nextDraft);
     return {
@@ -413,11 +451,21 @@ export function workspaceReply(
   }
 
   if (prompt === "value") {
+    if (isUnknownAmount(q)) {
+      const nextDraft = { ...draft, valueAsked: true };
+      return {
+        ...workspacePromptCopy(workspacePrompt(nextDraft), nextDraft),
+        capture: { field: "skip-value" },
+      };
+    }
     const amount = parseAmountPair(q).value ?? parseLooseAmount(q);
     if (amount == null) {
-      return { text: "Give me a rough property value in dollars." };
+      return {
+        text: "A rough number works, or tap Not sure.",
+        actions: amountHelperActions("skip-value"),
+      };
     }
-    const nextDraft = { ...draft, propertyValueAmount: amount };
+    const nextDraft = { ...draft, propertyValueAmount: amount, valueAsked: true };
     const next = workspacePromptCopy(workspacePrompt(nextDraft), nextDraft);
     return {
       ...next,
@@ -542,7 +590,9 @@ export function previewFacts(draft: FoxIntakeDraft): PreviewFact[] {
     facts.push({ id: "occupancy", label: "Occupancy", value: occupancyLabel });
   }
 
-  const loan = draft.loanAmountValue ?? draft.scenario?.loanAmount;
+  const loan =
+    draft.loanAmountValue ??
+    (!draft.amountAsked ? draft.scenario?.loanAmount : undefined);
   if (loan != null && loan > 0) {
     facts.push({
       id: "amount",
@@ -552,7 +602,9 @@ export function previewFacts(draft: FoxIntakeDraft): PreviewFact[] {
     });
   }
 
-  const value = draft.propertyValueAmount ?? draft.scenario?.propertyValue;
+  const value =
+    draft.propertyValueAmount ??
+    (!draft.valueAsked ? draft.scenario?.propertyValue : undefined);
   if (value != null && value > 0) {
     facts.push({
       id: "value",
