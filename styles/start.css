@@ -21,20 +21,13 @@
   display: flex;
   flex-direction: column;
   flex: 1 1 auto;
-  min-height: 0;
-}
-
-.start-workspace__fox:empty {
-  display: none;
-}
-
-.start-workspace__fox-wrap:has(#fox-start-stage > *) .start-workspace__fox-fallback {
-  display: none;
+  min-height: 280px;
 }
 
 .fox-stage--workspace {
   flex: 1 1 auto;
   min-height: 280px;
+  height: 100%;
 }
 
 .fox-stage--workspace .fox-panel__thread {
@@ -235,7 +228,10 @@
     padding: 0 24px 24px;
   }
 
+  .start-workspace__fox-wrap,
+  .start-workspace__fox,
   .fox-stage--workspace {
     min-height: 520px;
+    height: 100%;
   }
 }

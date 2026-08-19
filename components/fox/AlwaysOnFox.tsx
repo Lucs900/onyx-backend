@@ -255,7 +255,6 @@ export function AlwaysOnFox() {
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState<FoxMessage[]>([]);
   const [homeStage, setHomeStage] = useState<HTMLElement | null>(null);
-  const [startStage, setStartStage] = useState<HTMLElement | null>(null);
   const greeted = useRef<string>("");
   const pendingAsk = useRef<string | null>(null);
   const skipPromptSync = useRef(false);
@@ -267,12 +266,10 @@ export function AlwaysOnFox() {
   const isHome = stage === "home";
   const isStart = stage === "start";
   const useHomeStage = Boolean(homeStage);
-  const useStartStage = Boolean(startStage);
 
   useLayoutEffect(() => {
     const syncStage = () => {
       setHomeStage(isHome ? visibleHomeStage() : null);
-      setStartStage(isStart ? document.getElementById("fox-start-stage") : null);
     };
     syncStage();
     const media = window.matchMedia("(min-width: 1024px)");
@@ -282,7 +279,7 @@ export function AlwaysOnFox() {
       media.removeEventListener("change", syncStage);
       window.removeEventListener("resize", syncStage);
     };
-  }, [isHome, isStart, open]);
+  }, [isHome, open]);
 
   useEffect(() => {
     const query = window.location.search;
@@ -382,7 +379,7 @@ export function AlwaysOnFox() {
     sessionStorage.setItem(FOX_PANEL_KEY, open ? "1" : "0");
   }, [open, ready, stage]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!ready || !stage) return;
     const live = getFoxDraft();
     const scenario = live.scenario ?? readScenario();
@@ -557,7 +554,7 @@ export function AlwaysOnFox() {
     appendReply(clientMoneyText(text, reply.capture), reply);
   };
 
-  const hideDock = isStart || (isHome && (useHomeStage ? open : true));
+  const hideDock = isHome && (useHomeStage ? open : true);
   const composerMode = moneyAsk ? "decimal" : startAsk === "term" ? "numeric" : "text";
 
   const onComposerChange = (event: ChangeEvent<HTMLInputElement>) => {
@@ -637,10 +634,14 @@ export function AlwaysOnFox() {
     </form>
   );
 
-  const workspace = open ? (
+  const workspace = open || isStart ? (
     <FoxWorkspace
       className={
-        isStart ? "fox-stage fox-stage--workspace" : isHome ? "fox-stage" : "fox-bar__workspace"
+        isStart
+          ? "fox-stage fox-stage--workspace start-workspace__fox"
+          : isHome
+            ? "fox-stage"
+            : "fox-bar__workspace"
       }
       messages={messages}
       listRef={listRef}
@@ -651,10 +652,12 @@ export function AlwaysOnFox() {
     />
   ) : null;
 
+  if (isStart) {
+    return workspace;
+  }
+
   let stageNode: ReactNode = null;
-  if (useStartStage && startStage) {
-    stageNode = createPortal(workspace, startStage);
-  } else if (useHomeStage && homeStage) {
+  if (useHomeStage && homeStage) {
     stageNode = createPortal(
       open ? workspace : <span className="visually-hidden" data-fox-collapsed="true" />,
       homeStage,

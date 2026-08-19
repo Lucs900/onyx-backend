@@ -26,9 +26,11 @@ export function FoxShell({ children }: { children: ReactNode }) {
       }
     >
       {children}
-      <Suspense fallback={hideDock ? null : <DockFallback />}>
-        <AlwaysOnFox />
-      </Suspense>
+      {start ? null : (
+        <Suspense fallback={hideDock ? null : <DockFallback />}>
+          <AlwaysOnFox />
+        </Suspense>
+      )}
     </div>
   );
 }

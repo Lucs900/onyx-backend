@@ -3,6 +3,7 @@
 import { useSearchParams } from "next/navigation";
 import { useEffect, useSyncExternalStore } from "react";
 import { rememberStartPath } from "@/components/products/startPath";
+import { AlwaysOnFox } from "./AlwaysOnFox";
 import { useDocumentReads } from "./DocumentDrop";
 import { FilePreview } from "./FilePreview";
 import {
@@ -56,15 +57,8 @@ export function StartWorkspace() {
       <div className="page-inner start-workspace__inner">
         <FilePreview />
         <div className="start-workspace__fox-wrap">
-          <div
-            className="fox-stage fox-stage--workspace start-workspace__fox-fallback"
-            aria-hidden="true"
-          >
-            <div className="fox-bar__head">
-              <span className="fox-bar__title">ONYX Fox</span>
-            </div>
-          </div>
-          <div id="fox-start-stage" className="start-workspace__fox" />
+          {/* Live engine — same AlwaysOnFox as every other Fox surface. Not a fallback shell. */}
+          <AlwaysOnFox />
         </div>
       </div>
     </section>

@@ -87,7 +87,7 @@ Primary post-click experience after the homepage. Fox talks and the file preview
 
 - Routes: `/start?path=acr` and `/start?path=loan`. Persist `path` on the query and `onyx.startPath`.
 - Homepage hero markup/copy/layout stays the cleaned marketing hero. Only the pill destinations change (`ACR_START_HREF` / `LOAN_START_HREF` in `startPath.ts`).
-- One Fox only. The same `AlwaysOnFox` instance portals into `#fox-start-stage`. No orb, FAB, second chatbot, or homepage overlay.
+- One Fox only. `StartWorkspace` renders the live `AlwaysOnFox` panel as a real child (preview left / Fox right on desktop; chat-first on mobile). `FoxShell` does not mount a second Fox on `/start`. No portal hole, no dead fallback chrome. No orb, FAB, second chatbot, or homepage overlay.
 - **Desktop:** live preview left (when at least one useful fact exists), Fox chat right. Composer stays in the Fox stage. No dock.
 - **Mobile:** Fox chat is primary. When preview data exists, a compact File / Preview card can expand and collapse. Do not force a permanent side-by-side.
 - Preview is a calm file card, not a dashboard. Show only real/available facts: path (ACR or Loan only), product (Buy / Refinance / Use equity), occupancy, rough loan amount or value, term, docs status, draft status. Estimated rate / APR / payment only if truly available — do not invent them. Estimated ACR reward range only on the ACR path when `estimateRewardRange` returns a range. Label sample / indicative / estimated. Never show the private formula or a public %.
@@ -105,7 +105,7 @@ Continue the `/start` workspace after basics. Reuse the existing intake document
 - Fox then writes the file in chat (`Here’s what I prepared:`) using only facts that exist: path, product, occupancy, timeline, loan amount / property value, term, estimated ACR reward range on ACR when `estimateRewardRange` has data, and docs status. Money uses existing formatting (`$600,000`). No fake rates. Then Fox asks (exact): `Does this look right?` Bubbles: `Looks right` / `Needs a correction`. Confirm is not preview-only — the written summary lives in the thread on both layouts.
 - **Looks right:** draft status becomes **With originator**. Fox says a licensed originator will review the file and that Fox cannot approve, lock, or commit to lend. Fox stays for process questions. Do not swap to a human-chat skin.
 - **Needs a correction** stays in Fox (`Which part should Fox fix?`). Product, occupancy, timeline, amount, and documents can be corrected without leaving the workspace. After a fix, Fox restates the file and asks again.
-- **One conversation engine.** `workspace.ts` + `AlwaysOnFox` own question order, bubbles, and path rules for desktop and mobile. Layout is the only difference (preview left / Fox right on desktop; chat-first + File / Preview card on mobile). Do not keep a second script or fallback chip thread.
+- **One conversation engine.** `workspace.ts` + `AlwaysOnFox` own question order, bubbles, and path rules for desktop and mobile. Layout is the only difference (preview left / Fox right on desktop; chat-first + File / Preview card on mobile). Do not keep a second script, fallback chip thread, or dead `start-workspace__fox-fallback` shell. Desktop mount is the same live engine as mobile — never a one-shot portal into an empty `#fox-start-stage`.
 - **Active question.** The latest Fox turn is visually current (`is-current`). Prior turns are softer. Action chips render only on the current Fox question.
 - ACR and loan only stay distinct through this flow (path-specific starters and reward-panel rules). Reward estimate only on ACR when `estimateRewardRange` has enough data. No public %. No fake rates. No disclosures in every bubble.
 - Desktop stays preview left / Fox right. Mobile stays chat-first with the preview card/sheet.
@@ -245,7 +245,7 @@ components/products/startPath.ts  ACR / loan only start intent (`/start?path=acr
 components/fox/workspace.ts       workspace prompts, amount parse, live preview facts
 components/fox/DocumentDrop.tsx   shared document slots + stub extract (intake + /start)
 components/fox/FilePreview.tsx    calm file card / mobile File sheet
-components/fox/StartWorkspace.tsx `/start` layout: preview + Fox stage
+components/fox/StartWorkspace.tsx `/start` layout: preview + live AlwaysOnFox child (no fallback shell)
 styles/start.css                  workspace layout
 app/(marketing)/start/page.tsx    Fox workspace route
 app/(marketing)/start/layout.tsx  mounts Always-on Fox for /start
