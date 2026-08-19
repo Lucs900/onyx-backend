@@ -35,35 +35,33 @@ export function MembershipHero() {
           </p>
         </div>
 
-        <div className="membership-hero__primary">
-          <div className="membership-hero__pass">
-            <AcrPass />
-          </div>
+        <div className="membership-hero__pass">
+          <AcrPass />
+        </div>
 
-          <div className="membership-hero__fox-wrap">
-            <div className="fox-stage membership-hero__fox-fallback">
-              <div className="fox-bar__head">
-                <span className="fox-bar__title">ONYX Fox</span>
-              </div>
-              <div className="fox-panel__thread">
-                <article className="fox-bubble fox-bubble--fox">
-                  <p>{HOME_IDLE_TEXT}</p>
-                  <div className="fox-bubble__actions">
-                    {homePathActions().map((action) => (
-                      <Link
-                        key={action.id}
-                        href={FALLBACK_HREFS[action.id] ?? ACR_START_HREF}
-                        className="btn btn--secondary fox-chip"
-                      >
-                        {action.label}
-                      </Link>
-                    ))}
-                  </div>
-                </article>
-              </div>
+        <div className="membership-hero__fox-wrap">
+          <div className="fox-stage membership-hero__fox-fallback">
+            <div className="fox-bar__head">
+              <span className="fox-bar__title">ONYX Fox</span>
             </div>
-            <div id="fox-home-stage" className="membership-hero__fox" />
+            <div className="fox-panel__thread">
+              <article className="fox-bubble fox-bubble--fox">
+                <p>{HOME_IDLE_TEXT}</p>
+                <div className="fox-bubble__actions">
+                  {homePathActions().map((action) => (
+                    <Link
+                      key={action.id}
+                      href={FALLBACK_HREFS[action.id] ?? ACR_START_HREF}
+                      className="btn btn--secondary fox-chip"
+                    >
+                      {action.label}
+                    </Link>
+                  ))}
+                </div>
+              </article>
+            </div>
           </div>
+          <div id="fox-home-stage" className="membership-hero__fox" />
         </div>
       </div>
     </section>

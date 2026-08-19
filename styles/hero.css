@@ -1,4 +1,4 @@
-/* Homepage hero. Desktop brand hero and mobile Fox-first are different layouts. */
+/* Homepage hero. Desktop matches the locked brand-hero screenshot. Mobile is Fox-first. */
 
 .membership-hero {
   background: var(--paper);
@@ -64,7 +64,7 @@
   height: 52px;
 }
 
-/* Mobile: balanced claim + smaller ACR on one row, Fox full width below. */
+/* Mobile: claim + smaller ACR on one row, Fox full width below. */
 
 @media (max-width: 1023px) {
   .membership-hero__inner {
@@ -77,8 +77,7 @@
     padding-bottom: 16px;
   }
 
-  .membership-hero__type,
-  .membership-hero__primary {
+  .membership-hero__type {
     display: contents;
   }
 
@@ -137,7 +136,7 @@
   }
 }
 
-/* Desktop: clean brand hero. Claim + buttons + legal | large ACR. No Fox card. */
+/* Desktop: locked brand hero from the screenshot. ACR only on the right. No Fox card. */
 
 @media (min-width: 1024px) {
   .membership-hero__inner {
@@ -152,23 +151,17 @@
   .membership-hero__type {
     display: flex;
     flex-direction: column;
-    padding-top: 24px;
-  }
-
-  .membership-hero__primary {
-    display: flex;
-    align-items: center;
-    justify-content: flex-end;
-  }
-
-  .membership-hero__fox-wrap {
-    display: none;
   }
 
   .membership-hero__pass {
     display: flex;
     justify-content: flex-end;
     margin: 0;
+  }
+
+  .membership-hero__fox-wrap,
+  .membership-hero .membership-hero__fox-wrap {
+    display: none;
   }
 
   .membership-hero__actions {
@@ -181,18 +174,6 @@
     margin-top: 20px;
   }
 
-  .membership-hero__title {
-    margin-top: 20px;
-    font-size: 64px;
-    line-height: 72px;
-  }
-
-  .membership-hero__support {
-    margin-top: 24px;
-    font-size: 18px;
-    line-height: 28px;
-  }
-
   .btn.btn--hero-primary,
   .btn.btn--hero-secondary {
     width: auto;
@@ -203,6 +184,7 @@
   }
 
   .membership-hero .acr-pass-stage {
+    width: 100%;
     max-width: 480px;
   }
 }
@@ -222,7 +204,7 @@
   transform: none;
 }
 
-@media (min-width: 768px) {
+@media (min-width: 1024px) {
   .acr-pass-stage {
     max-width: 480px;
   }

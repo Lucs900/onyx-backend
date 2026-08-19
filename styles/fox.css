@@ -196,6 +196,13 @@
   margin-top: 28px;
 }
 
+@media (min-width: 1024px) {
+  .membership-hero__fox-wrap,
+  .membership-hero .membership-hero__fox-wrap {
+    display: none;
+  }
+}
+
 .membership-hero__fox:empty {
   display: none;
 }

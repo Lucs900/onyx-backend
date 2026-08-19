@@ -66,6 +66,7 @@ function persistPathFromHref(href: string) {
 }
 
 function visibleHomeStage() {
+  if (window.matchMedia("(min-width: 1024px)").matches) return null;
   const el = document.getElementById("fox-home-stage");
   const wrap = el?.closest(".membership-hero__fox-wrap");
   if (!el || !(wrap instanceof HTMLElement)) return null;
