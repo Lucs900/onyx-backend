@@ -587,6 +587,8 @@ export function AlwaysOnFox({
     draft.valueAsked,
     draft.creditAsked,
     draft.creditBand,
+    draft.incomeAsked,
+    draft.incomeType,
     isStart,
     ready,
   ]);
@@ -689,8 +691,11 @@ export function AlwaysOnFox({
     if (action.capture?.field === "open-docs" || action.event === "open-docs") {
       applyCapture({ field: "open-docs" });
       document.getElementById("fox-documents")?.scrollIntoView({ behavior: "smooth" });
+      const live = getFoxDraft();
+      const docsAsk = workspacePromptCopy("documents", live);
       appendReply(action.label, {
-        text: isStart ? "Drop a file on the thread or the structure, or skip." : "Drop a file here, or skip.",
+        text: docsAsk.text,
+        actions: (docsAsk.actions ?? []).filter((item) => item.capture?.field === "skip-docs"),
       });
       return;
     }
@@ -863,8 +868,8 @@ export function AlwaysOnFox({
       hideClose={isStart}
       stickyDisclosure={isStart}
       docsDrop={
-        isStart && (startAsk === "documents" || draft.phase === "documents")
-          ? <DocumentDrop compact />
+        isStart && (startAsk === "documents" || draft.docsOpen || draft.phase === "documents")
+          ? <DocumentDrop draft={draft} compact />
           : null
       }
     />

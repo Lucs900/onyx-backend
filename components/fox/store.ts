@@ -92,6 +92,8 @@ function normalize(value: unknown): FoxIntakeDraft {
     valueAsked: Boolean(raw.valueAsked),
     creditBand: raw.creditBand,
     creditAsked: Boolean(raw.creditAsked || raw.creditBand),
+    incomeAsked: Boolean(raw.incomeAsked || raw.incomeType?.value),
+    docsOpen: Boolean(raw.docsOpen),
     originatorRequested: Boolean(raw.originatorRequested),
     termYears: numberOrUndefined(raw.termYears),
     termAsked: Boolean(raw.termAsked),
@@ -354,12 +356,19 @@ export function addNote(text: string) {
 
 export function receiveDocument(input: Omit<ReceivedDoc, "status" | "note">) {
   const documents = [...current.documents, { ...input, status: "received" as const }];
+  const keepPhase =
+    current.workspaceFlow &&
+    (current.sampleAccepted || current.phase === "confirmed" || current.workspaceDraftStatus === "with-originator");
   const next = commit({
     ...current,
     documents,
     documentsSkipped: false,
     correcting: current.workspaceFlow ? null : current.correcting,
-    phase: current.phase === "context" ? "documents" : current.phase,
+    phase: keepPhase
+      ? current.phase
+      : current.phase === "context"
+        ? "documents"
+        : current.phase,
     sections: { ...current.sections, documents: false },
   });
   if (
@@ -389,10 +398,18 @@ export function setDocumentStatus(
 }
 
 export function skipDocuments() {
+  const prepared =
+    current.sampleAccepted ||
+    current.phase === "confirmed" ||
+    current.workspaceDraftStatus === "with-originator";
   return commit({
     ...current,
     documentsSkipped: true,
-    phase: "draft",
+    docsOpen: false,
+    phase: prepared && current.phase === "confirmed" ? "confirmed" : prepared ? current.phase : "draft",
+    workspaceDraftStatus: prepared
+      ? current.workspaceDraftStatus ?? "with-originator"
+      : current.workspaceDraftStatus,
     correcting: null,
     sections: { ...current.sections, documents: false },
   });
@@ -483,29 +500,16 @@ export function applyCapture(capture: Capture) {
     return advancePhase();
   }
   if (capture.field === "incomeType") {
-    const knownDocs =
-      capture.value === "w2" ||
-      capture.value === "self-employed" ||
-      capture.value === "both";
-    const skipDocs = current.workspaceFlow && capture.value === "other";
     commit({
       ...current,
       incomeType: clientField("incomeType", capture.value),
-      documentsSkipped: skipDocs
-        ? true
-        : current.workspaceFlow && knownDocs && !current.documents.length
-          ? false
-          : current.documentsSkipped,
+      incomeAsked: true,
       correcting: null,
       sections: { ...current.sections, income: false },
       status: undefined,
       confirmedAt: undefined,
     });
-    if (current.workspaceFlow) {
-      if (skipDocs && current.sampleAccepted) return confirmDraft();
-      return current;
-    }
-    return advancePhase();
+    return current.workspaceFlow ? current : advancePhase();
   }
   if (capture.field === "occupancy") {
     commit(
@@ -534,11 +538,17 @@ export function applyCapture(capture: Capture) {
   }
   if (capture.field === "skip-docs") {
     skipDocuments();
-    if (current.workspaceFlow && current.sampleAccepted) return confirmDraft();
     if (current.workspaceFlow) return current;
     return advancePhase();
   }
   if (capture.field === "open-docs") {
+    if (current.workspaceFlow) {
+      return commit({
+        ...current,
+        docsOpen: true,
+        correcting: null,
+      });
+    }
     return commit({ ...current, phase: "documents" });
   }
   if (capture.field === "confirm-draft") {

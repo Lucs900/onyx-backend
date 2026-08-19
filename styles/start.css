@@ -265,6 +265,14 @@
   padding: 8px 0 0;
 }
 
+.structure-drop__hint {
+  margin: 0;
+  font-family: var(--font-ui);
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--muted);
+}
+
 .structure-drop__zone {
   display: flex;
   align-items: center;

@@ -136,6 +136,7 @@ export function slotFromFilename(name: string): import("./types").DocSlot {
   const lower = name.toLowerCase();
   if (/w-?2/.test(lower)) return "w2";
   if (/pay.?stub|payslip/.test(lower)) return "paystubs";
+  if (/tax|1099|k-?1|schedule.?c|profit|business/.test(lower)) return "other";
   if (/bank|statement/.test(lower)) return "bank";
   if (/\bid\b|license|passport|driver/.test(lower)) return "id";
   return "other";
@@ -157,8 +158,36 @@ function bubbles(
   }));
 }
 
-function knownDocsIncome(value?: string | null): value is "w2" | "self-employed" | "both" {
-  return value === "w2" || value === "self-employed" || value === "both";
+export function incomeSettled(draft: FoxIntakeDraft) {
+  return Boolean(draft.incomeAsked || draft.incomeType.value);
+}
+
+export function docsRequestForIncome(income?: string | null): {
+  text: string;
+  labels: string[];
+} {
+  if (income === "w2") {
+    return {
+      labels: ["Paystubs", "W-2"],
+      text: "Paystubs or a W-2 help. Drop what you have. Skip is fine.",
+    };
+  }
+  if (income === "self-employed") {
+    return {
+      labels: ["Tax returns", "Business docs"],
+      text: "Tax returns or business docs help. Drop what you have. Skip is fine.",
+    };
+  }
+  if (income === "both") {
+    return {
+      labels: ["Paystubs", "W-2", "Tax returns", "Business docs"],
+      text: "Paystubs or a W-2, plus tax returns or business docs. Drop what you have. Skip is fine.",
+    };
+  }
+  return {
+    labels: [],
+    text: "Drop what you have. Skip is fine. I’ll work with what’s here.",
+  };
 }
 
 function incomeFromText(text: string) {
@@ -179,8 +208,8 @@ function incomeFromText(text: string) {
   );
 }
 
-function documentsAskText(_draft: FoxIntakeDraft): string {
-  return "Drop what you have. Skip is fine. I’ll work with what’s here.";
+function documentsAskText(draft: FoxIntakeDraft): string {
+  return docsRequestForIncome(draft.incomeType.value).text;
 }
 
 function docsSettled(draft: FoxIntakeDraft) {
@@ -198,17 +227,11 @@ function sketchNumberReady(draft: FoxIntakeDraft) {
 }
 
 function withIncomeType(draft: FoxIntakeDraft, value: string): FoxIntakeDraft {
-  const next = {
+  return {
     ...draft,
     incomeType: { ...draft.incomeType, value },
+    incomeAsked: true,
   };
-  if (value === "other") {
-    return { ...next, documentsSkipped: true };
-  }
-  if (knownDocsIncome(value) && !draft.documents.length) {
-    return { ...next, documentsSkipped: false };
-  }
-  return next;
 }
 
 function amountHelperActions(field: "skip-amount" | "skip-value"): FoxAction[] {
@@ -258,7 +281,8 @@ export function sampleReady(draft: FoxIntakeDraft): boolean {
   if (!draft.occupancyAsked && !draft.occupancyChoice.value) return false;
   if (!draft.timelineAsked && !draft.timelineChoice.value) return false;
   if (!sketchNumberReady(draft)) return false;
-  return creditSettled(draft);
+  if (!creditSettled(draft)) return false;
+  return incomeSettled(draft);
 }
 
 /** Single /start conversation engine. Desktop and mobile share this order, copy, and path rules. */
@@ -281,6 +305,7 @@ export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
     return usesPurchasePrice(draft.productIntent) ? "value" : "amount";
   }
   if (!creditSettled(draft)) return "credit";
+  if (!incomeSettled(draft)) return "income";
   if (!draft.sampleAccepted) return "review";
   return "done";
 }
@@ -701,6 +726,7 @@ export function workspaceUpdateCopy(capture: Capture, draft: FoxIntakeDraft) {
     const label = INCOME_BUBBLES.find((item) => item.value === capture.value)?.label;
     return label ? `Updated income to ${label}.` : "Updated income.";
   }
+  if (capture.field === "skip-docs") return "Updated. Docs skipped.";
   return "Updated the file.";
 }
 
@@ -1092,7 +1118,7 @@ export function workspaceReply(
 
   if (prompt === "documents") {
     if (/(skip|later|not yet|don'?t have|fine)/i.test(lower)) {
-      const nextDraft = { ...draft, documentsSkipped: true };
+      const nextDraft = { ...draft, documentsSkipped: true, correcting: null, docsOpen: false };
       return {
         ...workspacePromptCopy(workspacePrompt(nextDraft), nextDraft),
         capture: { field: "skip-docs" },
@@ -1164,6 +1190,13 @@ export function workspaceReply(
         return {
           ...workspacePromptCopy("done", draft),
           text: "I can prepare a file. I cannot approve, lock, or commit to lend.",
+        };
+      }
+      if (/(skip|later|not yet|don'?t have)/i.test(lower) && /doc/.test(lower)) {
+        const nextDraft = { ...draft, documentsSkipped: true, docsOpen: false, correcting: null };
+        return {
+          ...workspacePromptCopy("done", nextDraft),
+          capture: { field: "skip-docs" },
         };
       }
       return workspacePromptCopy("done", draft);
@@ -1321,6 +1354,12 @@ export function previewFacts(draft: FoxIntakeDraft): PreviewFact[] {
     facts.push({ id: "credit", label: "Credit", value: creditLabel });
   }
 
+  if (incomeSettled(draft)) {
+    const incomeLabel =
+      INCOME_BUBBLES.find((item) => item.value === draft.incomeType.value)?.label ?? "Other";
+    facts.push({ id: "income", label: "Income", value: incomeLabel });
+  }
+
   if (sampleRateApplies(intent) && sampleReady(draft)) {
     facts.push({
       id: "rate",
@@ -1405,6 +1444,7 @@ export function structureFixPrompt(
   if (id === "amount") return "amount";
   if (id === "value") return "value";
   if (id === "credit") return "credit";
+  if (id === "income") return "income";
   if (id === "docs") return "documents";
   return null;
 }
@@ -1459,6 +1499,7 @@ const CHAT_SUMMARY_IDS = new Set([
   "timeline",
   "numbers",
   "credit",
+  "income",
   "rate",
   "reward",
   "docs",

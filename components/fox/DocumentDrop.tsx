@@ -3,7 +3,7 @@
 import { useEffect, useRef } from "react";
 import { getFoxDraft, receiveDocument, setDocumentStatus } from "./store";
 import type { FoxIntakeDraft } from "./types";
-import { slotFromFilename } from "./workspace";
+import { docsRequestForIncome, slotFromFilename } from "./workspace";
 
 export { slotFromFilename };
 
@@ -48,11 +48,14 @@ export function useDocumentReads(draft: FoxIntakeDraft) {
 }
 
 export function DocumentDrop({
+  draft,
   compact,
 }: {
   draft?: FoxIntakeDraft;
   compact?: boolean;
 }) {
+  const live = draft ?? getFoxDraft();
+  const request = docsRequestForIncome(live.incomeType.value);
   const onFiles = (files: FileList | null) => {
     if (!files?.length) return;
     Array.from(files).forEach((file) => {
@@ -75,6 +78,11 @@ export function DocumentDrop({
       <h2 id="docs-drop-title" className="type-eyebrow">
         Documents
       </h2>
+      {request.labels.length ? (
+        <p className="structure-drop__hint">{request.labels.join(" · ")}</p>
+      ) : (
+        <p className="structure-drop__hint">Any file you have</p>
+      )}
       <label className="structure-drop__zone">
         <span>Drop a file here, or browse</span>
         <input

@@ -88,6 +88,8 @@ export type FoxIntakeDraft = {
   valueAsked?: boolean;
   creditBand?: CreditRange;
   creditAsked?: boolean;
+  incomeAsked?: boolean;
+  docsOpen?: boolean;
   originatorRequested?: boolean;
   termYears?: number;
   termAsked?: boolean;
