@@ -224,12 +224,27 @@
 }
 
 .fox-stage .fox-panel__thread {
-  flex: 1 1 auto;
+  flex: 0 0 auto;
   max-height: none;
 }
 
 .fox-stage .fox-bar__desk {
-  margin-top: 8px;
+  margin-top: 4px;
+}
+
+@media (max-width: 1023px) {
+  .membership-hero .fox-stage,
+  .membership-hero .fox-stage.fox-stage {
+    min-height: 0;
+    height: auto;
+    gap: 8px;
+    padding: 12px;
+  }
+
+  .membership-hero .fox-stage .fox-panel__thread {
+    flex: 0 0 auto;
+    max-height: none;
+  }
 }
 
 
