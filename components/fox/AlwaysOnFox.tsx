@@ -18,9 +18,7 @@ import { createPortal } from "react-dom";
 import { AdvisorMark } from "@/components/AdvisorMark";
 import { readScenario } from "@/components/products/scenario";
 import {
-  ACR_START_HREF,
   DESK_START_HREF,
-  LOAN_START_HREF,
   deskHrefFromLeftover,
   isLeftoverConversionHref,
   pathFromQuery,
@@ -36,15 +34,18 @@ import {
 } from "./script";
 import {
   applyCapture,
-  beginWorkspaceFromHero,
+  continueWorkspaceFromEntry,
   emptyDraft,
+  ensureWorkspaceDraft,
   getFoxDraft,
+  getFoxMessages,
   getServerDraft,
   hydrateFoxDraft,
-  resetWorkspaceForEntry,
   setDraftPath,
   setDraftScenario,
+  setFoxMessages,
   subscribeFoxDraft,
+  workspaceSessionStarted,
 } from "./store";
 import {
   caretAfterMoneyFormat,
@@ -71,9 +72,10 @@ import {
   type ProductIntent,
 } from "./types";
 
-function seedStartMessages(
+function seedWorkspaceMessages(
   path?: IntakePath | null,
   intent?: ProductIntent | null,
+  surface: "home" | "start" = "start",
 ): FoxMessage[] {
   if (typeof window === "undefined") {
     return [
@@ -87,18 +89,33 @@ function seedStartMessages(
       ),
     ];
   }
+  hydrateFoxDraft();
+  const stored = getFoxMessages();
   const live = getFoxDraft();
-  const closed =
-    live.sampleAccepted ||
-    live.phase === "confirmed" ||
-    live.workspaceDraftStatus === "with-originator";
-  const draft =
-    live.workspaceFlow && live.path === (path ?? live.path) && !closed
-      ? intent && live.productIntent !== intent
-        ? { ...live, productIntent: intent }
-        : live
-      : resetWorkspaceForEntry(path ?? null, intent ?? null);
-  return [foxAskMessage(workspaceGreeting(draft))];
+  if (workspaceSessionStarted(live, stored) && stored.length) {
+    return stored;
+  }
+  if (surface === "home") {
+    const draft = ensureWorkspaceDraft();
+    const existing = getFoxMessages();
+    if (existing.length) return existing;
+    const greet = [foxAskMessage(workspaceGreeting(draft))];
+    setFoxMessages(greet);
+    return greet;
+  }
+  const draft = continueWorkspaceFromEntry(path ?? null, intent ?? null);
+  const greet = [foxAskMessage(workspaceGreeting(draft))];
+  setFoxMessages(greet);
+  return greet;
+}
+
+function deskHrefFromSession(
+  path?: IntakePath | null,
+  intent?: ProductIntent | null,
+) {
+  if (!path) return intent ? `/start?intent=${intent}` : "/start";
+  const token = path === "loan-only" ? "loan" : "acr";
+  return intent ? `/start?path=${token}&intent=${intent}` : `/start?path=${token}`;
 }
 
 function startSearchFromProps(
@@ -189,7 +206,6 @@ function persistPathFromHref(href: string) {
 }
 
 function visibleHomeStage() {
-  if (window.matchMedia("(min-width: 1024px)").matches) return null;
   const el = document.getElementById("fox-home-stage");
   const wrap = el?.closest(".membership-hero__fox-wrap");
   if (!el || !(wrap instanceof HTMLElement)) return null;
@@ -367,30 +383,56 @@ export function AlwaysOnFox({
     stage === "start" ||
     pathname === "/start" ||
     pathname.startsWith("/start/");
+  const isHome = stage === "home" || pathname === "/";
+  const workspaceSurface = isStart || isHome;
   const draft = useSyncExternalStore(subscribeFoxDraft, getFoxDraft, getServerDraft);
-  const [open, setOpen] = useState(() => isStart || stage === "intake");
-  const [ready, setReady] = useState(() => isStart);
+  const [open, setOpen] = useState(() => isStart || isHome || stage === "intake");
+  const [ready, setReady] = useState(() => workspaceSurface);
   const [search, setSearch] = useState(() =>
     isStart ? startSearchFromProps(startPath, startIntent) : "",
   );
   const [input, setInput] = useState("");
-  const startSeeded = useRef(isStart);
+  const startSeeded = useRef(workspaceSurface);
   const [messages, setMessages] = useState<FoxMessage[]>(() =>
-    isStart ? seedStartMessages(startPath, startIntent) : [],
+    workspaceSurface ? seedWorkspaceMessages(startPath, startIntent, isStart ? "start" : "home") : [],
   );
   const [homeStage, setHomeStage] = useState<HTMLElement | null>(null);
   const greeted = useRef<string>(
-    isStart ? `${pathname}${startSearchFromProps(startPath, startIntent)}` : "",
+    workspaceSurface
+      ? `${pathname}${isStart ? startSearchFromProps(startPath, startIntent) : ""}`
+      : "",
   );
   const pendingAsk = useRef<string | null>(null);
-  const skipPromptSync = useRef(isStart);
+  const skipPromptSync = useRef(workspaceSurface);
   const listRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const caretRef = useRef<number | null>(null);
   const fieldId = useId();
   const greetKey = `${pathname}${search}`;
-  const isHome = stage === "home";
   const useHomeStage = Boolean(homeStage);
+
+  const persistThread = (
+    prev: FoxMessage[],
+    next: FoxMessage[] | ((prev: FoxMessage[]) => FoxMessage[]),
+  ) => {
+    const resolved = typeof next === "function" ? next(prev) : next;
+    setFoxMessages(resolved);
+    return resolved;
+  };
+
+  const commitMessages = (
+    next: FoxMessage[] | ((prev: FoxMessage[]) => FoxMessage[]),
+  ) => {
+    setMessages((prev) => persistThread(prev, next));
+  };
+
+  const commitMessagesNow = (
+    next: FoxMessage[] | ((prev: FoxMessage[]) => FoxMessage[]),
+  ) => {
+    const resolved = persistThread(messages, next);
+    setMessages(resolved);
+    return resolved;
+  };
 
   useLayoutEffect(() => {
     const syncStage = () => {
@@ -414,10 +456,8 @@ export function AlwaysOnFox({
     const stored = sessionStorage.getItem(FOX_PANEL_KEY);
     const live = getFoxDraft();
     const asking = stage === "intake" && live.phase !== "confirmed";
-    if (isStart) {
+    if (isStart || stage === "home") {
       setOpen(true);
-    } else if (stage === "home") {
-      setOpen(visibleHomeStage() ? stored !== "0" : stored === "1");
     } else if (stage === "acr") {
       setOpen(false);
     } else if (asking && stored !== "0") {
@@ -433,8 +473,7 @@ export function AlwaysOnFox({
 
   useEffect(() => {
     if (!ready || stage !== "home") return;
-    const stored = sessionStorage.getItem(FOX_PANEL_KEY);
-    setOpen(homeStage ? stored !== "0" : stored === "1");
+    setOpen(true);
   }, [homeStage, ready, stage]);
 
   useEffect(() => {
@@ -462,16 +501,20 @@ export function AlwaysOnFox({
         writeStartPath(reply.capture.value);
       }
       if (reply.capture) applyCapture(reply.capture);
-      setMessages((prev) => [
+      commitMessagesNow((prev) => [
         ...prev,
         {
           id: newId(),
           role: "client",
           text: clientMoneyText(text, reply.capture),
-          edit: isStart ? editPromptFromCapture(reply.capture) : undefined,
+          edit: workspaceSurface ? editPromptFromCapture(reply.capture) : undefined,
         },
         foxAskMessage(reply),
       ]);
+      if (stage === "home") {
+        const after = getFoxDraft();
+        router.push(deskHrefFromSession(after.path ?? null, after.productIntent ?? null));
+      }
     };
     const onFix = (event: Event) => {
       const field = String((event as CustomEvent<{ field?: string }>).detail?.field ?? "").trim();
@@ -483,7 +526,7 @@ export function AlwaysOnFox({
       skipPromptSync.current = true;
       const live = getFoxDraft();
       const ask = workspacePromptCopy(prompt, live);
-      setMessages((prev) => [...prev, foxAskMessage(ask)]);
+      commitMessages((prev) => [...prev, foxAskMessage(ask)]);
     };
     const onExplain = (event: Event) => {
       const field = String((event as CustomEvent<{ field?: string }>).detail?.field ?? "").trim();
@@ -493,7 +536,7 @@ export function AlwaysOnFox({
       const explain = structureExplainCopy(field, live);
       if (!explain) return;
       skipPromptSync.current = true;
-      setMessages((prev) => [...prev, foxAskMessage(explain)]);
+      commitMessages((prev) => [...prev, foxAskMessage(explain)]);
     };
     window.addEventListener("onyx:fox-open", onOpen);
     window.addEventListener("onyx:fox-ask", onAsk);
@@ -505,7 +548,7 @@ export function AlwaysOnFox({
       window.removeEventListener("onyx:fox-fix", onFix);
       window.removeEventListener("onyx:fox-explain", onExplain);
     };
-  }, [isStart, pathname, ready, search, stage]);
+  }, [isStart, pathname, ready, search, stage, workspaceSurface]);
 
   useEffect(() => {
     if (!ready || !stage) return;
@@ -514,7 +557,7 @@ export function AlwaysOnFox({
 
   useLayoutEffect(() => {
     if (!ready || !stage) return;
-    if (isStart && startSeeded.current && messages.length > 0) {
+    if (workspaceSurface && startSeeded.current && messages.length > 0) {
       greeted.current = greetKey;
       skipPromptSync.current = true;
       return;
@@ -549,8 +592,8 @@ export function AlwaysOnFox({
       );
     }
     skipPromptSync.current = true;
-    setMessages(lines);
-  }, [greetKey, isStart, pathname, ready, stage]);
+    commitMessages(lines);
+  }, [greetKey, isStart, pathname, ready, stage, workspaceSurface]);
 
   useEffect(() => {
     if (!ready || (stage !== "intake" && !isStart)) return;
@@ -564,7 +607,7 @@ export function AlwaysOnFox({
       skipPromptSync.current = false;
       if (!mustShowReview) return;
     }
-    setMessages((prev) => {
+    commitMessages((prev) => {
       if (mustShowReview && hasReviewAsk(prev)) return prev;
       const last = prev[prev.length - 1];
       if (last?.role === "fox" && sameFoxAsk(last, ask)) return prev;
@@ -577,7 +620,7 @@ export function AlwaysOnFox({
     const live = getFoxDraft();
     if (workspacePrompt(live) !== "review") return;
     const ask = workspacePromptCopy("review", live);
-    setMessages((prev) => (hasReviewAsk(prev) ? prev : [...prev, foxAskMessage(ask)]));
+    commitMessages((prev) => (hasReviewAsk(prev) ? prev : [...prev, foxAskMessage(ask)]));
   }, [
     draft.amountAsked,
     draft.loanAmountValue,
@@ -638,7 +681,7 @@ export function AlwaysOnFox({
     },
     edit?: FoxMessage["edit"],
   ) => {
-    setMessages((prev) => [
+    commitMessagesNow((prev) => [
       ...prev,
       { id: newId(), role: "client", text: clientText, edit },
       foxAskMessage(fox),
@@ -648,7 +691,7 @@ export function AlwaysOnFox({
   const appendStructureFix = (clientText: string, capture: Capture) => {
     const live = getFoxDraft();
     const next = workspacePromptCopy(workspacePrompt(live), live);
-    setMessages((prev) => [
+    commitMessagesNow((prev) => [
       ...prev,
       {
         id: newId(),
@@ -661,19 +704,13 @@ export function AlwaysOnFox({
     ]);
   };
 
-  const chooseHomePath = (label: string, path: ReturnType<typeof pathFromHomeChoice>) => {
-    if (!path) return false;
-    writeStartPath(path);
-    beginWorkspaceFromHero(path);
-    router.push(path === "acr" ? ACR_START_HREF : LOAN_START_HREF);
-    return true;
+  const continueHomeToDesk = () => {
+    if (!isHome) return;
+    const live = getFoxDraft();
+    router.push(deskHrefFromSession(live.path ?? null, live.productIntent ?? null));
   };
 
   const runAction = (action: FoxAction) => {
-    if (isHome && !action.href) {
-      const path = pathFromHomeChoice(action.id) ?? pathFromHomeChoice(action.label);
-      if (chooseHomePath(action.label, path)) return;
-    }
     if (action.href) {
       if (isLeftoverConversionHref(action.href)) {
         persistPathFromHref(action.href);
@@ -712,7 +749,7 @@ export function AlwaysOnFox({
         return;
       }
       const next =
-        isStart
+        workspaceSurface
           ? workspacePromptCopy(workspacePrompt(live), live)
           : promptCopy(currentPrompt(live), live);
       appendReply(
@@ -720,6 +757,7 @@ export function AlwaysOnFox({
         next,
         action.capture.field === "correct" ? undefined : editPromptFromCapture(action.capture),
       );
+      continueHomeToDesk();
     }
   };
 
@@ -758,8 +796,9 @@ export function AlwaysOnFox({
     appendReply(
       clientMoneyText(text, reply.capture),
       reply,
-      isStart ? editPromptFromCapture(reply.capture) : undefined,
+      workspaceSurface ? editPromptFromCapture(reply.capture) : undefined,
     );
+    continueHomeToDesk();
   };
 
   const hideDock = isHome && (useHomeStage ? open : true);
@@ -865,7 +904,7 @@ export function AlwaysOnFox({
           desk
         ) : undefined
       }
-      hideClose={isStart}
+      hideClose={isStart || isHome}
       stickyDisclosure={isStart}
       docsDrop={
         isStart && (startAsk === "documents" || draft.docsOpen || draft.phase === "documents")

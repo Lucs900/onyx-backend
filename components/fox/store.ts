@@ -6,12 +6,14 @@ import {
 } from "@/components/products/scenario";
 import {
   CONFIRMED_STATUS,
+  FOX_MESSAGES_KEY,
   INTAKE_STORAGE_KEY,
   type Capture,
   type DocSlot,
   type DocStatus,
   type DraftField,
   type FoxIntakeDraft,
+  type FoxMessage,
   type FoxPrompt,
   type IntakePath,
   type LoMark,
@@ -140,6 +142,8 @@ function persist(draft: FoxIntakeDraft) {
 
 let current = emptyDraft();
 let hydrated = false;
+let foxMessages: FoxMessage[] = [];
+let messagesHydrated = false;
 const listeners = new Set<() => void>();
 
 function emit() {
@@ -152,12 +156,88 @@ function workspaceEntryToken(path?: IntakePath | null) {
   return path ?? "";
 }
 
+function isClosedDraft(draft: FoxIntakeDraft) {
+  return (
+    Boolean(draft.sampleAccepted) ||
+    draft.phase === "confirmed" ||
+    draft.workspaceDraftStatus === "with-originator"
+  );
+}
+
+function readStoredMessages(): FoxMessage[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw =
+      window.sessionStorage.getItem(FOX_MESSAGES_KEY) ||
+      window.localStorage.getItem(FOX_MESSAGES_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((item): item is FoxMessage => {
+      if (!item || typeof item !== "object") return false;
+      const role = (item as FoxMessage).role;
+      return role === "fox" || role === "client" || role === "system";
+    });
+  } catch {
+    return [];
+  }
+}
+
+function persistMessages(messages: FoxMessage[]) {
+  if (typeof window === "undefined") return;
+  const raw = JSON.stringify(messages);
+  try {
+    window.sessionStorage.setItem(FOX_MESSAGES_KEY, raw);
+    window.localStorage.setItem(FOX_MESSAGES_KEY, raw);
+  } catch {
+    // Preview storage can be blocked; keep the in-memory copy.
+  }
+}
+
+function hydrateFoxMessages() {
+  if (messagesHydrated || typeof window === "undefined") return foxMessages;
+  foxMessages = readStoredMessages();
+  messagesHydrated = true;
+  return foxMessages;
+}
+
+export function getFoxMessages() {
+  hydrateFoxMessages();
+  return foxMessages;
+}
+
+export function setFoxMessages(messages: FoxMessage[]) {
+  foxMessages = messages;
+  messagesHydrated = true;
+  persistMessages(foxMessages);
+  return foxMessages;
+}
+
+export function clearFoxMessages() {
+  return setFoxMessages([]);
+}
+
+/** Client already talked, or product/intent is already on the draft. */
+export function workspaceSessionStarted(
+  draft: FoxIntakeDraft = current,
+  messages: FoxMessage[] = getFoxMessages(),
+) {
+  if (isClosedDraft(draft)) return false;
+  if (draft.productIntent) return true;
+  return messages.some((message) => message.role === "client");
+}
+
+function markWorkspaceEntry(path?: IntakePath | null) {
+  workspaceEntryKey = workspaceEntryToken(path);
+  hydrated = true;
+}
+
 /** Wipe the prior file. Keep the new path and honor intent without a second reset. */
 export function resetWorkspaceForEntry(
   path: IntakePath | null,
   intent: ProductIntent | null = null,
 ) {
-  workspaceEntryKey = workspaceEntryToken(path);
+  markWorkspaceEntry(path);
   current = {
     ...emptyDraft(),
     path: path ?? undefined,
@@ -165,14 +245,48 @@ export function resetWorkspaceForEntry(
     workspaceFlow: true,
     updatedAt: new Date().toISOString(),
   };
-  hydrated = true;
+  clearFoxMessages();
   persist(current);
   emit();
   return current;
 }
 
+/** Keep a live homepage thread. Fresh start only when nothing has been said. */
+export function continueWorkspaceFromEntry(
+  path: IntakePath | null,
+  intent: ProductIntent | null = null,
+) {
+  if (!hydrated) hydrateFoxDraft();
+  hydrateFoxMessages();
+  if (workspaceSessionStarted()) {
+    markWorkspaceEntry(current.path ?? path);
+    if (!current.workspaceFlow) {
+      commit({ ...current, workspaceFlow: true });
+    }
+    if (path && !current.path) setDraftPath(path);
+    if (intent && !current.productIntent) setDraftProductIntent(intent);
+    return current;
+  }
+  return resetWorkspaceForEntry(path, intent);
+}
+
+export function ensureWorkspaceDraft() {
+  if (!hydrated) hydrateFoxDraft();
+  hydrateFoxMessages();
+  if (isClosedDraft(current)) {
+    return resetWorkspaceForEntry(null);
+  }
+  if (!current.workspaceFlow) {
+    commit({ ...current, workspaceFlow: true });
+  }
+  markWorkspaceEntry(current.path);
+  return current;
+}
+
 export function hydrateFoxDraft() {
-  if (hydrated || typeof window === "undefined") return current;
+  if (typeof window === "undefined") return current;
+  hydrateFoxMessages();
+  if (hydrated) return current;
   if (workspaceEntryKey != null) {
     hydrated = true;
     return current;
@@ -247,8 +361,16 @@ export function applyWorkspaceEntry(
   return resetWorkspaceForEntry(path, intent);
 }
 
-/** Desktop / mobile CTA: new conversation, path only. */
+/** Desktop / mobile CTA: new conversation unless the client already started. */
 export function beginWorkspaceFromHero(path: IntakePath) {
+  if (!hydrated) hydrateFoxDraft();
+  hydrateFoxMessages();
+  if (workspaceSessionStarted()) {
+    if (!current.workspaceFlow) {
+      commit({ ...current, workspaceFlow: true });
+    }
+    return setDraftPath(path);
+  }
   return resetWorkspaceForEntry(path);
 }
 

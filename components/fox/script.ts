@@ -15,13 +15,6 @@ import {
 } from "@/components/products/scenario";
 import { ACR_START_HREF, LOAN_START_HREF, pathFromQuery } from "@/components/products/startPath";
 import { workspaceGreeting, workspacePrompt, workspacePromptCopy, workspaceReply } from "./workspace";
-import {
-  HOME_IDLE_TEXT,
-  HOME_PRODUCT_TEXT,
-  homePathActions,
-  homeProductActions,
-  pathFromHomeChoice,
-} from "./homeIdle";
 import { questionsComplete } from "./store";
 import {
   INCOME_BUBBLES,
@@ -161,14 +154,7 @@ export function greeting(
 } {
   const known = scenarioSummary(scenario);
 
-  if (stage === "home") {
-    return {
-      text: HOME_IDLE_TEXT,
-      actions: homePathActions(),
-    };
-  }
-
-  if (stage === "start") {
+  if (stage === "home" || stage === "start") {
     return workspaceGreeting(draft);
   }
 
@@ -309,12 +295,7 @@ export function replyToMessage(
   const q = text.trim();
   const lower = q.toLowerCase();
 
-  if (stage === "home") {
-    const home = homeReply(lower, draft);
-    if (home) return home;
-  }
-
-  if (stage === "start") {
+  if (stage === "home" || stage === "start") {
     return (
       workspaceReply(q, draft) ?? workspacePromptCopy(workspacePrompt(draft), draft)
     );
@@ -567,60 +548,12 @@ function acrReply(lower: string): ReturnType<typeof replyToMessage> | null {
   return null;
 }
 
-function homeReply(
-  lower: string,
-  draft: FoxIntakeDraft,
-): ReturnType<typeof replyToMessage> | null {
-  const chosen = pathFromHomeChoice(lower) ?? draft.path ?? null;
-  if (/(just need a mortgage|loan only|mortgage only|only (a )?loan)/i.test(lower)) {
-    return {
-      text: HOME_PRODUCT_TEXT,
-      actions: homeProductActions("loan-only"),
-    };
-  }
-  if (/(start your relationship|start a relationship|join)/i.test(lower)) {
-    return {
-      text: HOME_PRODUCT_TEXT,
-      actions: homeProductActions("acr"),
-    };
-  }
-  if (/(what('s| is) acr|active credit relationship)/i.test(lower)) {
-    return {
-      text: "ACR is the Active Credit Relationship — stay approved and keep optimizing.",
-      actions: homePathActions(),
-    };
-  }
-  if (/(keep me approved|stay approved|always approved)/i.test(lower)) {
-    return {
-      text: "We keep watching credit and rate conditions after approval. That is the relationship goal, not a credit decision.",
-      actions: homePathActions(),
-    };
-  }
-  if (/optimiz/i.test(lower)) {
-    return {
-      text: "Optimizing means reviewing your situation over time.",
-      actions: homePathActions(),
-    };
-  }
-  if (/(buy a home|purchase|refinance|heloc|jumbo|other)/i.test(lower)) {
-    return chosen
-      ? { text: HOME_PRODUCT_TEXT, actions: homeProductActions(chosen) }
-      : { text: HOME_IDLE_TEXT, actions: homePathActions() };
-  }
-  return null;
-}
-
 function nextSteps(
   stage: FoxStage,
   scenario: ExplorerScenario | null,
   draft: FoxIntakeDraft,
 ): ReturnType<typeof replyToMessage> {
-  if (stage === "home") {
-    return draft.path
-      ? { text: HOME_PRODUCT_TEXT, actions: homeProductActions(draft.path) }
-      : { text: HOME_IDLE_TEXT, actions: homePathActions() };
-  }
-  if (stage === "start") {
+  if (stage === "home" || stage === "start") {
     return workspacePromptCopy(workspacePrompt(draft), draft);
   }
   if (stage === "acr") {

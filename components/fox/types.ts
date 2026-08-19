@@ -3,6 +3,7 @@ import type { CreditRange, ExplorerScenario } from "@/components/products/scenar
 export const INTAKE_STORAGE_KEY = "onyx.foxIntake.draft";
 export const FOX_PANEL_KEY = "onyx.fox.panelOpen";
 export const FOX_LEGAL_KEY = "onyx.fox.sawLegal";
+export const FOX_MESSAGES_KEY = "onyx.fox.messages";
 
 export const FOX_DISCLOSURE =
   "ONYX Fox can assist and prepare. It cannot approve, lock, or commit to lend.";

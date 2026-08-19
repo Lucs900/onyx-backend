@@ -35,18 +35,19 @@ Do **not** treat “Always approved” as a credit decision.
 
 ## Slice 3 — homepage start (`/` only)
 
-One Fox assistant, one visible interface. No second chatbot, orb, FAB, or orange ring. Desktop and mobile are different layouts.
+One Fox assistant, one conversation engine, one visible interface. No second chatbot, orb, FAB, or orange ring. Desktop and mobile are different layouts. Homepage Fox **is** the start of `/start`.
 
-- **Desktop brand hero:** paper field. Left: gold rule, `ACTIVE CREDIT RELATIONSHIP`, two-line serif H1, support line, side-by-side pills (`Start your relationship` solid / `Just need a mortgage` outlined). Right: large locked ACR object only. No legal line in the hero. No expanded Fox card, dock, thread, bubbles, or composer over the desktop hero. Desktop CTAs navigate to `/start?path=acr` / `/start?path=loan` so Fox becomes the workspace, not an overlay on the hero.
-- **Mobile Fox-first two-up:** compact locked claim (left) + smaller ACR object (right), tightly aligned. No legal line in the hero. Full-width Fox stage below (message, path bubbles, composer in-stage) with no excess empty card height. The stage is the same `AlwaysOnFox` instance, portaled into `#fox-home-stage`. No extra homepage dock while that stage is open. `FoxShell` skips the dock fallback on `/` so mobile first paint is not a second Fox.
-- Desktop homepage has no Fox dock. The dock may return on mobile after Fox is collapsed, or on non-homepage routes.
-- Opening Fox on `/` starts Idle. Starter: `I can prepare a file. Start a relationship, or just get the loan.`
-- First bubbles only: `Start your relationship` (sets `path=acr`) and `Just need a mortgage` (sets `path=loan`). After a path is chosen, product chips: Buy / Refinance / HELOC / Jumbo / Other → `/start` with that path + `intent`. Never use `Use equity` as the HELOC door.
+- **Desktop brand hero:** paper field. Left: gold rule, `ACTIVE CREDIT RELATIONSHIP`, two-line serif H1, support line, side-by-side pills (`Start your relationship` solid / `Just need a mortgage` outlined). Right: large locked ACR object. Live Fox start below (same `workspacePrompt` / `workspaceReply` / `AlwaysOnFox` thread + dual-path bubbles + composer). Claim stays; Fox is the start. Not a static-only hero and not a popup overlay. No legal line in the hero.
+- **Mobile Fox-first two-up:** compact locked claim (left) + smaller ACR object (right), tightly aligned. No legal line in the hero. Full-width Fox stage below (message, path bubbles, composer in-stage) with no excess empty card height. That Fox is the same session as `/start`, not a marketing greeting that later restarts. The stage is the same `AlwaysOnFox` instance, portaled into `#fox-home-stage`. No extra homepage dock while that stage is open. `FoxShell` skips the dock fallback on `/` so mobile first paint is not a second Fox.
+- Desktop homepage has no Fox dock. One house on both layouts.
+- Homepage first Fox turn is the same as `/start` with no path: `Start a relationship, or just the loan?` Dual-path bubbles: `Start your relationship` / `Just need a mortgage`. Then product chips: Buy / Refinance / HELOC / Jumbo / Other. Never use `Use equity` as the HELOC door. Do not stuff the desk disclosure into the first homepage bubble.
+- Typed homepage turns stay on the draft. `I want to buy` captures `productIntent=buy` (path still unset unless they also picked a path). `/start` hydrates the live draft + messages — it does **not** call `resetWorkspaceForEntry` when the client already started talking or a product/intent is captured.
+- Cold CTA (hero / header / closer, no prior turns): still `resetWorkspaceForEntry` + `/start?path=acr|loan` and the first question immediately. No `Opening your file…` interstitial.
 - Header and closer still carry the two path labels. No quiet text echoes under the claim.
-- **No in-panel Fox disclosure.** Legal stays in the page footer / how-we-get-paid only. Not in the hero.
+- **No in-panel Fox disclosure on the homepage.** Sticky disclosure stays under the Fox header on the `/start` desk only.
 - Do **not** rebuild Fox intake stages in this slice. Do not implement later logged-in ACR home.
 
-Do **not** put a Relationship / Loan mode toggle under the hero. Path choice is the desktop hero buttons or the mobile Fox bubbles (header / closer remain available).
+Do **not** put a Relationship / Loan mode toggle under the hero. Path choice is the desktop hero buttons, the Fox bubbles, or header / closer.
 
 ## Slice 4 — Membership math (The Three Desks)
 
@@ -86,9 +87,9 @@ Closer: locked H2 `Always approved. Always optimizing.` Primary → `/start?path
 Primary post-click experience after the homepage. Fox talks and the Structure updates at the same time. `/products`, `/products/scenario`, `/products/results`, `/intake`, and `/advisor` are leftover routes: redirect them into `/start`. They are not a second product. Conversion never leaves the desk.
 
 - Routes: `/start?path=acr` and `/start?path=loan`. Persist `path` on the query and `onyx.startPath`.
-- **Desktop entry:** hero `Start your relationship` writes `acr` then opens `/start?path=acr` (`draft.path = acr`). Hero `Just need a mortgage` writes `loan-only` then opens `/start?path=loan` (`draft.path = loan-only`). Every CTA / `/start?path=` entry calls `resetWorkspaceForEntry` so the prior file (amounts, docs, `sampleAccepted`, handoff) is cleared. First paint seeds the product question and bubbles. `rememberStartPath` keeps only the path token. No homepage overlay.
-- Homepage hero markup/copy/layout stays the cleaned marketing hero. Only the pill destinations change (`ACR_START_HREF` / `LOAN_START_HREF` in `startPath.ts`).
-- One Fox only. `StartWorkspace` renders the live `AlwaysOnFox` panel as a real child (preview left / Fox right on desktop; chat-first on mobile). `FoxShell` does not mount a second Fox on `/start`. No portal hole, no dead fallback chrome. No orb, FAB, second chatbot, or homepage overlay.
+- **Desktop entry:** hero `Start your relationship` writes `acr` then opens `/start?path=acr` (`draft.path = acr`). Hero `Just need a mortgage` writes `loan-only` then opens `/start?path=loan` (`draft.path = loan-only`). Cold CTA / `/start?path=` entry (no prior turns) calls `resetWorkspaceForEntry` so a prior closed file (amounts, docs, `sampleAccepted`, handoff) is cleared. If the homepage thread already has a client turn or a captured product/intent, `continueWorkspaceFromEntry` hydrates that session instead. First paint of a fresh path seeds the product question and bubbles. `rememberStartPath` keeps only the path token when the URL has one. No homepage overlay pretending to be chat.
+- Homepage claim + ACR object stay. Fox start on `/` is the same engine as `/start`. Pill destinations stay `ACR_START_HREF` / `LOAN_START_HREF` in `startPath.ts`.
+- One Fox only. `StartWorkspace` renders the live `AlwaysOnFox` panel as a real child (preview left / Fox right on desktop; chat-first on mobile). `FoxShell` does not mount a second Fox on `/start`. No second composer. No portal hole, no dead fallback chrome. No orb, FAB, second chatbot, or homepage overlay.
 - **Desktop:** Fox chat left (`1.2fr`), live Structure right (`0.8fr`) when at least one useful line exists. Zero lines: hide Structure and center Fox at `720px`. Composer stays in the Fox stage. No dock.
 - **Mobile:** Fox chat is primary. Structure is a File sheet from the dock chip (`Structure · {n} facts` or the newest fact), a true overlay over the thread. Same `StructureRows` + `previewFacts` as desktop. Keyboard pushes the dock. Do not stack an inline Structure card under the thread. Do not nest a 500px desktop chat inside mobile.
 - Structure is a tappable term sheet, not a dashboard and not a File/Preview recap. Render only lines that exist: Path (`Relationship desk` / `Loan only`), Product, Occupancy, Timeline, Numbers (as given, never invented), Credit, Income, Rate, Reward (ACR after the sketch is ready), Letter / Scout (ACR after Looks right), Originator (after Looks right: `Licensed originator assigned` — do not invent a name or NMLS), Docs, Status. Paper / paper-elevated / ink / metal. Radius 16, hairline (`1px solid var(--fox-hairline)`). No gold fill. Tap Path/Product/Occupancy/Timeline/Numbers/Credit/Income/Docs to fix. Rate, Reward, Letter, Scout, Originator, and Status are tap-to-explain or desk-state notes — never borrower-editable into a live rate. Do not show a “Which part should Fox fix?” menu. Needs a correction → `Tap any line on the structure.`
@@ -242,8 +243,8 @@ app/(marketing)/lo/review/page.tsx licensed review queue (preview)
 components/AdvisorMark.tsx        2–3 shape geometric fox; size="sm" = 20px
 components/SiteHeader.tsx         locked sparse chrome
 components/SiteFooter.tsx         sparse footer, pending-approval placeholders
-components/MembershipHero.tsx     Fox-first homepage claim + stage slot; locked copy
-components/fox/homeIdle.ts        homepage Idle starter + path / product bubbles
+components/MembershipHero.tsx     homepage claim + live Fox stage slot; locked copy
+components/fox/homeIdle.ts        dual-path / product chip labels (same engine as /start)
 components/AcrPass.tsx            exact locked ACR face image, no overlays
 components/ValueBreakdown.tsx     three locked desks
 components/RateCard.tsx           mortgage-only off-ramp
@@ -293,7 +294,7 @@ Metal is scarce: fox highlight, the locked ACR card gold dock, the comparison ON
 
 ## Public start paths
 
-Homepage path choice is the desktop hero buttons or the mobile Fox Idle bubbles (header and closer remain). Product chips appear after a path is stored. There is no Relationship / Loan toggle. Intent is stored as `acr` | `loan-only` in `sessionStorage` / `localStorage` key `onyx.startPath` and carried as `path=acr` or `path=loan` on workspace, explorer, scenario, results, and intake URLs.
+Homepage path choice is the desktop hero buttons, the live Fox start on `/` (desktop and mobile), or header / closer. Product chips appear after a path is stored. There is no Relationship / Loan toggle. Intent is stored as `acr` | `loan-only` in `sessionStorage` / `localStorage` key `onyx.startPath` and carried as `path=acr` or `path=loan` on workspace, explorer, scenario, results, and intake URLs. A typed homepage turn is stored on the same draft/message list and continues on `/start`.
 
 - ACR start: `/start?path=acr`
 - Loan only start: `/start?path=loan`
@@ -311,6 +312,12 @@ npm run dev
 ```
 
 Open `http://localhost:3000`. Homepage primary and secondary CTAs start ACR and loan only at `/start`. Closer uses the same hrefs. There is no sticky bar yet.
+
+```bash
+npx tsx scripts/smoke-desk.ts
+```
+
+Covers the `/start` A–D + Skip lock and the homepage → `/start` session: one engine, typed `I want to buy` keeps the turn, cold CTA still starts fresh.
 
 ```bash
 npm run build

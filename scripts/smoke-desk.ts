@@ -1,10 +1,15 @@
 import assert from "node:assert/strict";
-import { promptCopy } from "../components/fox/script";
+import { greeting, promptCopy } from "../components/fox/script";
 import {
   applyCapture,
+  beginWorkspaceFromHero,
+  continueWorkspaceFromEntry,
   emptyDraft,
   getFoxDraft,
+  getFoxMessages,
   resetWorkspaceForEntry,
+  setFoxMessages,
+  workspaceSessionStarted,
 } from "../components/fox/store";
 import {
   CREDIT_WORKSPACE_BUBBLES,
@@ -60,6 +65,32 @@ assert.deepEqual(
   ["Start your relationship", "Just need a mortgage"],
 );
 assert.ok(!HOME_IDLE_TEXT.toLowerCase().includes("equity"));
+
+const homeStart = workspaceGreeting(draft());
+assert.equal(homeStart.text, workspacePromptCopy("intent", draft()).text);
+assert.deepEqual(
+  (homeStart.actions ?? []).map((item) => item.label),
+  ["Start your relationship", "Just need a mortgage"],
+);
+assert.ok(!/opening your file/i.test(homeStart.text));
+assert.equal(greeting("home", null, draft()).text, homeStart.text);
+assert.equal(greeting("start", null, draft()).text, homeStart.text);
+
+const typedBuy = workspaceReply("I want to buy", draft());
+assert.equal(typedBuy?.capture?.field, "productIntent");
+assert.equal(typedBuy?.capture && "value" in typedBuy.capture ? typedBuy.capture.value : "", "buy");
+assert.ok(!/i can prepare a file/i.test(typedBuy?.text ?? ""));
+assert.equal(workspacePrompt(draft({ productIntent: "buy" })), "intent");
+assert.deepEqual(
+  (typedBuy?.actions ?? []).map((item) => item.label),
+  ["Start your relationship", "Just need a mortgage"],
+);
+
+const buyThenPath = workspaceReply("Start your relationship", draft({ productIntent: "buy" }));
+assert.equal(buyThenPath?.capture?.field, "path");
+assert.equal(buyThenPath?.capture && "value" in buyThenPath.capture ? buyThenPath.capture.value : "", "acr");
+assert.ok(/how will the property be used/i.test(buyThenPath?.text ?? ""));
+assert.ok(!/opening your file/i.test(buyThenPath?.text ?? ""));
 assert.deepEqual(
   homeProductActions("acr").map((item) => item.label),
   ["Buy", "Refinance", "HELOC", "Jumbo", "Other"],
@@ -397,5 +428,27 @@ applyCapture({ field: "creditRange", value: "760+" });
 applyCapture({ field: "incomeType", value: "other" });
 assert.equal(getFoxDraft().documentsSkipped, false);
 assert.equal(workspacePrompt(getFoxDraft()), "review");
+
+resetWorkspaceForEntry(null);
+setFoxMessages([
+  { id: "fox-home", role: "fox", text: homeStart.text, actions: homeStart.actions },
+  { id: "client-buy", role: "client", text: "I want to buy" },
+]);
+applyCapture({ field: "productIntent", value: "buy" });
+assert.equal(workspaceSessionStarted(), true);
+const keptHome = continueWorkspaceFromEntry("acr", null);
+assert.equal(keptHome.productIntent, "buy");
+assert.equal(keptHome.path, "acr");
+assert.ok(getFoxMessages().some((message) => message.text === "I want to buy"));
+assert.ok(getFoxMessages().some((message) => message.role === "client"));
+
+resetWorkspaceForEntry(null);
+setFoxMessages([{ id: "fox-only", role: "fox", text: homeStart.text, actions: homeStart.actions }]);
+assert.equal(workspaceSessionStarted(), false);
+beginWorkspaceFromHero("loan-only");
+assert.equal(getFoxDraft().path, "loan-only");
+assert.equal(getFoxDraft().productIntent, undefined);
+assert.equal(getFoxMessages().length, 0);
+assert.equal(workspacePrompt(getFoxDraft()), "product");
 
 console.log("desk smoke ok");
