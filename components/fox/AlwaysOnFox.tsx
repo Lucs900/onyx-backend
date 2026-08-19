@@ -9,6 +9,8 @@ import {
   useRef,
   useState,
   useSyncExternalStore,
+  type ChangeEvent,
+  type FocusEvent,
   type FormEvent,
   type ReactNode,
 } from "react";
@@ -37,7 +39,9 @@ import {
   subscribeFoxDraft,
 } from "./store";
 import {
+  caretAfterMoneyFormat,
   confirmedMoneyText,
+  formatLiveMoneyInput,
   productIntentFromQuery,
   productIntentFromSlug,
   workspacePrompt,
@@ -205,6 +209,7 @@ export function AlwaysOnFox() {
   const skipPromptSync = useRef(false);
   const listRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const caretRef = useRef<number | null>(null);
   const fieldId = useId();
   const greetKey = `${pathname}${search}`;
   const isHome = stage === "home";
@@ -383,12 +388,30 @@ export function AlwaysOnFox() {
 
   const startAsk = isStart ? workspacePrompt(draft) : null;
   const moneyAsk = startAsk === "amount" || startAsk === "value";
-  const numberAsk = moneyAsk || startAsk === "term";
+  const needsTyping = moneyAsk || startAsk === "term";
+
+  const focusComposer = () => {
+    const node = inputRef.current;
+    if (!node || !needsTyping) return;
+    node.focus({ preventScroll: true });
+  };
+
+  useLayoutEffect(() => {
+    if (!isStart || !open || !needsTyping || !ready) return;
+    focusComposer();
+    const frame = window.requestAnimationFrame(() => focusComposer());
+    return () => window.cancelAnimationFrame(frame);
+  }, [isStart, open, startAsk, needsTyping, ready, messages.length]);
+
+  useLayoutEffect(() => {
+    if (caretRef.current == null || !inputRef.current) return;
+    inputRef.current.setSelectionRange(caretRef.current, caretRef.current);
+    caretRef.current = null;
+  }, [input]);
 
   useEffect(() => {
-    if (!isStart || !open || !numberAsk) return;
-    inputRef.current?.focus();
-  }, [isStart, open, startAsk, numberAsk, ready]);
+    setInput("");
+  }, [startAsk]);
 
   if (!stage) return null;
 
@@ -476,6 +499,41 @@ export function AlwaysOnFox() {
   const hideDock = isStart || (isHome && (useHomeStage ? open : true));
   const composerMode = moneyAsk ? "decimal" : startAsk === "term" ? "numeric" : "text";
 
+  const onComposerChange = (event: ChangeEvent<HTMLInputElement>) => {
+    const raw = event.target.value;
+    if (!moneyAsk) {
+      setInput(raw);
+      return;
+    }
+    const formatted = formatLiveMoneyInput(raw);
+    if (formatted == null) {
+      caretRef.current = null;
+      setInput(raw);
+      return;
+    }
+    caretRef.current = caretAfterMoneyFormat(
+      raw,
+      event.target.selectionStart ?? raw.length,
+      formatted,
+    );
+    setInput(formatted);
+  };
+
+  const onComposerBlur = (event: FocusEvent<HTMLInputElement>) => {
+    if (!needsTyping) return;
+    const next = event.relatedTarget;
+    if (next instanceof HTMLElement && next.closest("button, a, .fox-chip, .fox-bar__send")) {
+      return;
+    }
+    window.setTimeout(() => {
+      if (!needsTyping || !inputRef.current) return;
+      const active = document.activeElement;
+      if (active === inputRef.current) return;
+      if (active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement) return;
+      focusComposer();
+    }, 0);
+  };
+
   const desk = (
     <form className="fox-bar__desk" onSubmit={onSubmit}>
       <span className="fox-bar__mark">
@@ -491,11 +549,12 @@ export function AlwaysOnFox() {
         className="fox-bar__input"
         type="text"
         value={input}
-        onChange={(event) => setInput(event.target.value)}
+        onChange={onComposerChange}
         onFocus={() => setOpen(true)}
+        onBlur={onComposerBlur}
         placeholder={moneyAsk ? "Enter amount or say not sure" : "Ask ONYX Fox"}
         inputMode={composerMode}
-        autoFocus={numberAsk}
+        autoFocus={needsTyping}
         autoComplete="off"
       />
       <button

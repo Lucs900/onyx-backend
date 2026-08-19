@@ -241,6 +241,28 @@ export function formatMoney(value: number) {
   return `$${formatDollars(value)}`;
 }
 
+/** Live composer commas. Returns null when the text is not a pure money number. */
+export function formatLiveMoneyInput(raw: string): string | null {
+  if (/[a-zA-Z]/.test(raw)) return null;
+  const digits = raw.replace(/\D/g, "");
+  if (!digits) return "";
+  if (digits.length > 12) return null;
+  return Number(digits).toLocaleString("en-US");
+}
+
+export function caretAfterMoneyFormat(raw: string, caret: number, formatted: string) {
+  const digitsBefore = raw.slice(0, Math.max(0, caret)).replace(/\D/g, "").length;
+  if (digitsBefore === 0) return 0;
+  let seen = 0;
+  for (let i = 0; i < formatted.length; i += 1) {
+    if (/\d/.test(formatted[i])) {
+      seen += 1;
+      if (seen === digitsBefore) return i + 1;
+    }
+  }
+  return formatted.length;
+}
+
 export function confirmedMoneyText(raw: string): string | null {
   const pair = parseAmountPair(raw);
   if (pair.loan != null && pair.value != null && pair.value !== pair.loan) {
