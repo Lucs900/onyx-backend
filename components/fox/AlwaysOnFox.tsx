@@ -59,6 +59,37 @@ function newId() {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
+function foxAskMessage(ask: {
+  text: string;
+  followUp?: string;
+  facts?: FoxMessage["facts"];
+  actions?: FoxAction[];
+}): FoxMessage {
+  return {
+    id: newId(),
+    role: "fox",
+    text: ask.text,
+    followUp: ask.followUp,
+    facts: ask.facts,
+    actions: ask.actions,
+  };
+}
+
+function sameFoxAsk(
+  last: FoxMessage,
+  ask: {
+    text: string;
+    followUp?: string;
+    facts?: FoxMessage["facts"];
+  },
+) {
+  if (last.text !== ask.text) return false;
+  if ((last.followUp ?? "") !== (ask.followUp ?? "")) return false;
+  const left = (last.facts ?? []).map((fact) => `${fact.id}:${fact.value}`).join("\n");
+  const right = (ask.facts ?? []).map((fact) => `${fact.id}:${fact.value}`).join("\n");
+  return left === right;
+}
+
 export function requestFoxOpen() {
   window.dispatchEvent(new Event("onyx:fox-open"));
 }
@@ -113,43 +144,63 @@ function FoxThread({
   listRef: { current: HTMLDivElement | null };
   onAction: (action: FoxAction) => void;
 }) {
+  const currentFox = messages.reduce((index, message, i) => (message.role === "fox" ? i : index), -1);
+
   return (
     <div className="fox-panel__thread" ref={listRef} aria-live="polite">
-      {messages.map((message) => (
-        <article
-          key={message.id}
-          className={
-            message.role === "fox" ? "fox-bubble fox-bubble--fox" : "fox-bubble fox-bubble--client"
-          }
-        >
-          <p>{message.text}</p>
-          {message.actions?.length ? (
-            <div className="fox-bubble__actions">
-              {message.actions.map((action) =>
-                action.href ? (
-                  <Link
-                    key={action.id}
-                    href={action.href}
-                    className="btn btn--secondary fox-chip"
-                    onClick={() => persistPathFromHref(action.href as string)}
-                  >
-                    {action.label}
-                  </Link>
-                ) : (
-                  <button
-                    key={action.id}
-                    type="button"
-                    className="btn btn--secondary fox-chip"
-                    onClick={() => onAction(action)}
-                  >
-                    {action.label}
-                  </button>
-                ),
-              )}
-            </div>
-          ) : null}
-        </article>
-      ))}
+      {messages.map((message, index) => {
+        const current = message.role === "fox" && index === currentFox;
+        const tone = current ? " is-current" : " is-prior";
+        return (
+          <article
+            key={message.id}
+            className={
+              message.role === "fox"
+                ? `fox-bubble fox-bubble--fox${tone}`
+                : `fox-bubble fox-bubble--client${tone}`
+            }
+            aria-current={current ? "step" : undefined}
+          >
+            <p>{message.text}</p>
+            {message.facts?.length ? (
+              <ul className="fox-bubble__facts">
+                {message.facts.map((fact) => (
+                  <li key={fact.id}>
+                    <span className="fox-bubble__fact-label">{fact.label}</span>
+                    <span>{fact.value}</span>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+            {message.followUp ? <p>{message.followUp}</p> : null}
+            {current && message.actions?.length ? (
+              <div className="fox-bubble__actions">
+                {message.actions.map((action) =>
+                  action.href ? (
+                    <Link
+                      key={action.id}
+                      href={action.href}
+                      className="btn btn--secondary fox-chip"
+                      onClick={() => persistPathFromHref(action.href as string)}
+                    >
+                      {action.label}
+                    </Link>
+                  ) : (
+                    <button
+                      key={action.id}
+                      type="button"
+                      className="btn btn--secondary fox-chip"
+                      onClick={() => onAction(action)}
+                    >
+                      {action.label}
+                    </button>
+                  ),
+                )}
+              </div>
+            ) : null}
+          </article>
+        );
+      })}
     </div>
   );
 }
@@ -315,7 +366,7 @@ export function AlwaysOnFox() {
       setMessages((prev) => [
         ...prev,
         { id: newId(), role: "client", text: clientMoneyText(text, reply.capture) },
-        { id: newId(), role: "fox", text: reply.text, actions: reply.actions },
+        foxAskMessage(reply),
       ]);
     };
     window.addEventListener("onyx:fox-open", onOpen);
@@ -349,9 +400,9 @@ export function AlwaysOnFox() {
     const lines: FoxMessage[] = context
       ? [
           { id: newId(), role: "fox", text: context },
-          { id: newId(), role: "fox", text: ask.text, actions: ask.actions },
+          foxAskMessage(ask),
         ]
-      : [{ id: newId(), role: "fox", text: ask.text, actions: ask.actions }];
+      : [foxAskMessage(ask)];
     const queued = pendingAsk.current;
     pendingAsk.current = null;
     if (queued) {
@@ -359,7 +410,7 @@ export function AlwaysOnFox() {
       if (reply.capture) applyCapture(reply.capture);
       lines.push(
         { id: newId(), role: "client", text: clientMoneyText(queued, reply.capture) },
-        { id: newId(), role: "fox", text: reply.text, actions: reply.actions },
+        foxAskMessage(reply),
       );
     }
     skipPromptSync.current = true;
@@ -379,8 +430,8 @@ export function AlwaysOnFox() {
         : promptCopy(currentPrompt(live), live);
     setMessages((prev) => {
       const last = prev[prev.length - 1];
-      if (last?.role === "fox" && last.text === ask.text) return prev;
-      return [...prev, { id: newId(), role: "fox", text: ask.text, actions: ask.actions }];
+      if (last?.role === "fox" && sameFoxAsk(last, ask)) return prev;
+      return [...prev, foxAskMessage(ask)];
     });
   }, [draft.updatedAt, ready, stage]);
 
@@ -419,11 +470,19 @@ export function AlwaysOnFox() {
 
   const scenario = draft.scenario ?? readScenario();
 
-  const appendReply = (clientText: string, fox: { text: string; actions?: FoxAction[] }) => {
+  const appendReply = (
+    clientText: string,
+    fox: {
+      text: string;
+      followUp?: string;
+      facts?: FoxMessage["facts"];
+      actions?: FoxAction[];
+    },
+  ) => {
     setMessages((prev) => [
       ...prev,
       { id: newId(), role: "client", text: clientText },
-      { id: newId(), role: "fox", text: fox.text, actions: fox.actions },
+      foxAskMessage(fox),
     ]);
   };
 

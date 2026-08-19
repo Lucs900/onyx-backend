@@ -162,10 +162,18 @@ export type FoxAction = {
   capture?: Capture;
 };
 
+export type FoxMessageFact = {
+  id: string;
+  label: string;
+  value: string;
+};
+
 export type FoxMessage = {
   id: string;
   role: "fox" | "client";
   text: string;
+  followUp?: string;
+  facts?: FoxMessageFact[];
   actions?: FoxAction[];
 };
 

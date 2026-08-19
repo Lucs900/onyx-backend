@@ -117,6 +117,7 @@ function amountHelperActions(field: "skip-amount" | "skip-value"): FoxAction[] {
   }));
 }
 
+/** Single /start conversation engine. Desktop and mobile share this order, copy, and path rules. */
 export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
   if (!draft.path) return "intent";
   if (!draft.productIntent) return "product";
@@ -157,7 +158,12 @@ export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
 export function workspacePromptCopy(
   prompt: FoxPrompt,
   draft: FoxIntakeDraft,
-): { text: string; actions?: FoxAction[] } {
+): {
+  text: string;
+  followUp?: string;
+  facts?: PreviewFact[];
+  actions?: FoxAction[];
+} {
   if (prompt === "intent") {
     return {
       text: "Start a relationship, or just the loan?",
@@ -238,7 +244,9 @@ export function workspacePromptCopy(
   }
   if (prompt === "review") {
     return {
-      text: "Does this look right?",
+      text: "Here’s what I prepared:",
+      facts: fileSummaryFacts(draft),
+      followUp: "Does this look right?",
       actions: [
         { id: "looks-right", label: "Looks right", event: "bubble", capture: { field: "confirm-draft" } },
         { id: "needs-fix", label: "Needs a correction", event: "bubble", capture: { field: "needs-correction" } },
@@ -272,6 +280,8 @@ export function workspacePromptCopy(
 
 export function workspaceGreeting(draft: FoxIntakeDraft): {
   text: string;
+  followUp?: string;
+  facts?: PreviewFact[];
   actions?: FoxAction[];
 } {
   const prompt = workspacePrompt(draft);
@@ -449,6 +459,8 @@ export function workspaceReply(
   draft: FoxIntakeDraft,
 ): {
   text: string;
+  followUp?: string;
+  facts?: PreviewFact[];
   actions?: FoxAction[];
   capture?: Capture;
 } | null {
@@ -806,4 +818,20 @@ export function previewFacts(draft: FoxIntakeDraft): PreviewFact[] {
   }
 
   return facts;
+}
+
+const CHAT_SUMMARY_IDS = new Set([
+  "path",
+  "product",
+  "occupancy",
+  "timeline",
+  "amount",
+  "value",
+  "term",
+  "reward",
+  "docs",
+]);
+
+export function fileSummaryFacts(draft: FoxIntakeDraft): PreviewFact[] {
+  return previewFacts(draft).filter((fact) => CHAT_SUMMARY_IDS.has(fact.id));
 }

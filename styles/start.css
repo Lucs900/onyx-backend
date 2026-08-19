@@ -46,6 +46,31 @@
   margin-top: 8px;
 }
 
+.fox-stage--workspace .fox-bubble.is-prior {
+  opacity: 0.55;
+  box-shadow: none;
+}
+
+.fox-stage--workspace .fox-bubble.is-prior p,
+.fox-stage--workspace .fox-bubble.is-prior .fox-bubble__fact-label,
+.fox-stage--workspace .fox-bubble.is-prior .fox-bubble__facts li {
+  color: var(--muted);
+}
+
+.fox-stage--workspace .fox-bubble.is-current {
+  max-width: 100%;
+  padding: 12px 14px;
+  border-color: color-mix(in srgb, var(--ink) 26%, var(--fox-hairline));
+}
+
+.fox-stage--workspace .fox-bubble.is-current > p {
+  color: var(--ink);
+}
+
+.fox-stage--workspace .fox-bubble.is-current > p:last-of-type {
+  font-weight: 500;
+}
+
 .file-preview {
   background: var(--paper-elevated);
   border: 1px solid var(--line);

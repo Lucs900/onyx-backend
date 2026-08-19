@@ -102,9 +102,11 @@ Continue the `/start` workspace after basics. Reuse the existing intake document
 - After core scenario facts, Fox offers docs with this exact line: `Drop what you have. Skip is fine. I’ll work with what’s here.` Bubbles: `Upload now` / `Skip for now`.
 - Upload uses the compact `DocumentDrop` in the live preview (desktop always visible on the File card; mobile in the File / Preview sheet). Skip does not block a draft.
 - Fox prepares the file from known facts + any docs. Preview draft status moves **Preparing → Ready for you**. Preview also shows path, product, occupancy, amounts, timeline, and docs status.
-- Fox then asks (exact): `Does this look right?` Bubbles: `Looks right` / `Needs a correction`.
+- Fox then writes the file in chat (`Here’s what I prepared:`) using only facts that exist: path, product, occupancy, timeline, loan amount / property value, term, estimated ACR reward range on ACR when `estimateRewardRange` has data, and docs status. Money uses existing formatting (`$600,000`). No fake rates. Then Fox asks (exact): `Does this look right?` Bubbles: `Looks right` / `Needs a correction`. Confirm is not preview-only — the written summary lives in the thread on both layouts.
 - **Looks right:** draft status becomes **With originator**. Fox says a licensed originator will review the file and that Fox cannot approve, lock, or commit to lend. Fox stays for process questions. Do not swap to a human-chat skin.
-- **Needs a correction** stays in Fox (`Which part should Fox fix?`). Product, occupancy, timeline, amount, and documents can be corrected without leaving the workspace.
+- **Needs a correction** stays in Fox (`Which part should Fox fix?`). Product, occupancy, timeline, amount, and documents can be corrected without leaving the workspace. After a fix, Fox restates the file and asks again.
+- **One conversation engine.** `workspace.ts` + `AlwaysOnFox` own question order, bubbles, and path rules for desktop and mobile. Layout is the only difference (preview left / Fox right on desktop; chat-first + File / Preview card on mobile). Do not keep a second script or fallback chip thread.
+- **Active question.** The latest Fox turn is visually current (`is-current`). Prior turns are softer. Action chips render only on the current Fox question.
 - ACR and loan only stay distinct through this flow (path-specific starters and reward-panel rules). Reward estimate only on ACR when `estimateRewardRange` has enough data. No public %. No fake rates. No disclosures in every bubble.
 - Desktop stays preview left / Fox right. Mobile stays chat-first with the preview card/sheet.
 

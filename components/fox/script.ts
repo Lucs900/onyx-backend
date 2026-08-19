@@ -160,7 +160,12 @@ export function greeting(
   stage: FoxStage,
   scenario: ExplorerScenario | null,
   draft: FoxIntakeDraft,
-): { text: string; actions?: FoxAction[] } {
+): {
+  text: string;
+  followUp?: string;
+  facts?: { id: string; label: string; value: string }[];
+  actions?: FoxAction[];
+} {
   const known = scenarioSummary(scenario);
 
   if (stage === "home") {
@@ -313,6 +318,8 @@ export function replyToMessage(
   scenario: ExplorerScenario | null,
 ): {
   text: string;
+  followUp?: string;
+  facts?: { id: string; label: string; value: string }[];
   actions?: FoxAction[];
   capture?: Capture;
 } {

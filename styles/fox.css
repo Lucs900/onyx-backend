@@ -276,6 +276,30 @@
   background: var(--paper-elevated);
 }
 
+.fox-bubble__facts {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.fox-bubble__facts li {
+  display: grid;
+  grid-template-columns: minmax(92px, 38%) 1fr;
+  gap: 8px;
+  font-family: var(--font-ui);
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--ink);
+}
+
+.fox-bubble__fact-label {
+  color: var(--muted);
+  font-weight: 500;
+}
+
 .fox-bubble__actions {
   display: flex;
   flex-wrap: wrap;
