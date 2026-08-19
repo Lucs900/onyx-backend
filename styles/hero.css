@@ -1,33 +1,10 @@
-/* Homepage hero: locked claim + Fox-first stage. ACR object is quieter. */
+/* Homepage hero. Mobile and desktop are different layouts. */
 
 .membership-hero {
   background: var(--paper);
 }
 
-.membership-hero__inner {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  column-gap: 16px;
-  row-gap: 20px;
-  align-items: start;
-  padding-top: 24px;
-  padding-bottom: 16px;
-}
-
-.membership-hero__type {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  grid-column: 1;
-  grid-row: 1;
-}
-
-.membership-hero__primary {
-  display: contents;
-}
-
 .membership-hero__trust {
-  margin-top: 12px;
   max-width: 480px;
   font-family: var(--font-ui);
   font-size: 12px;
@@ -46,42 +23,24 @@
   color: var(--ink);
 }
 
-.membership-hero__pass {
-  grid-column: 2;
-  grid-row: 1;
-  display: flex;
-  align-items: flex-start;
-  justify-content: flex-end;
-  margin: 0;
-}
-
-.membership-hero .membership-hero .membership-hero__fox-wrap {
-  grid-column: 1 / -1;
-  grid-row: 2;
-  width: 100%;
-  margin-top: 0;
-}
-
 .membership-hero__rule {
   width: 24px;
   height: 2px;
-  margin-bottom: 10px;
+  margin-bottom: 12px;
   background: var(--metal);
 }
 
 .membership-hero__title {
-  margin-top: 10px;
-  font-size: 28px;
-  line-height: 32px;
+  margin-top: 20px;
   font-style: normal;
 }
 
 .membership-hero__support {
   max-width: 440px;
-  margin-top: 12px;
+  margin-top: 24px;
   font-family: var(--font-ui);
-  font-size: 16px;
-  line-height: 24px;
+  font-size: 18px;
+  line-height: 28px;
   font-weight: 400;
   color: var(--ink-2);
 }
@@ -99,6 +58,74 @@
   height: 52px;
 }
 
+/* Mobile: compact claim + smaller ACR on one row, Fox full width below. */
+
+@media (max-width: 1023px) {
+  .membership-hero__inner {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    column-gap: 16px;
+    row-gap: 20px;
+    align-items: start;
+    padding-top: 24px;
+    padding-bottom: 16px;
+  }
+
+  .membership-hero__type {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .membership-hero__primary {
+    display: contents;
+  }
+
+  .membership-hero__pass {
+    grid-column: 2;
+    grid-row: 1;
+    display: flex;
+    align-items: flex-start;
+    justify-content: flex-end;
+    margin: 0;
+  }
+
+  .membership-hero .membership-hero__fox-wrap {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    width: 100%;
+    margin-top: 0;
+  }
+
+  .membership-hero__rule {
+    margin-bottom: 10px;
+  }
+
+  .membership-hero__title {
+    margin-top: 10px;
+    font-size: 28px;
+    line-height: 32px;
+  }
+
+  .membership-hero__support {
+    margin-top: 12px;
+    font-size: 16px;
+    line-height: 24px;
+  }
+
+  .membership-hero__trust {
+    margin-top: 12px;
+  }
+
+  .membership-hero .acr-pass-stage {
+    max-width: 128px;
+  }
+}
+
+/* Desktop: full claim left; ACR above Fox on the right. */
+
 @media (min-width: 1024px) {
   .membership-hero__inner {
     display: grid;
@@ -107,15 +134,6 @@
     align-items: start;
     min-height: min(780px, calc(100vh - 72px));
     padding-block: 48px 32px;
-  }
-
-  .membership-hero__type,
-  .membership-hero__primary,
-  .membership-hero__pass,
-  .membership-hero__fox-wrap,
-  .membership-hero .membership-hero__fox-wrap {
-    grid-column: auto;
-    grid-row: auto;
   }
 
   .membership-hero__type,
@@ -132,28 +150,22 @@
     margin-top: 28px;
   }
 
-  .membership-hero__title {
-    margin-top: 20px;
-    font-size: inherit;
-    line-height: inherit;
+  .membership-hero__pass {
+    order: 1;
+    display: flex;
+    justify-content: flex-end;
+    margin: 0 0 28px;
   }
 
-  .membership-hero__support {
-    margin-top: 24px;
-    font-size: 18px;
-    line-height: 28px;
-  }
-
-  .membership-hero__fox-wrap,
-  .membership-hero__fox {
+  .membership-hero .membership-hero__fox-wrap {
+    order: 2;
+    width: 100%;
     margin-top: 0;
     min-height: 320px;
   }
 
-  .membership-hero__pass {
-    justify-content: flex-end;
-    margin-top: 28px;
-    margin-bottom: 0;
+  .membership-hero__fox {
+    min-height: 320px;
   }
 
   .btn.btn--hero-primary,
@@ -181,16 +193,14 @@
   transform: none;
 }
 
-.membership-hero .acr-pass-stage {
-  max-width: 128px;
-}
-
-@media (min-width: 1024px) {
+@media (min-width: 768px) {
   .acr-pass-stage {
     max-width: 480px;
   }
+}
 
+@media (min-width: 1024px) {
   .membership-hero .acr-pass-stage {
-    max-width: 280px;
+    max-width: 360px;
   }
 }
