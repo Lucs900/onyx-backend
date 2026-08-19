@@ -32,7 +32,9 @@
 
 .fox-stage--workspace .fox-panel__thread {
   flex: 1 1 auto;
-  max-height: none;
+  min-height: 240px;
+  max-height: none !important;
+  overflow: auto;
 }
 
 .fox-stage--workspace .fox-bar__desk {
@@ -233,5 +235,13 @@
   .fox-stage--workspace {
     min-height: 520px;
     height: 100%;
+  }
+
+  .fox-stage--workspace .fox-panel__thread {
+    display: flex;
+    flex: 1 1 auto;
+    min-height: 240px;
+    max-height: none !important;
+    overflow: auto;
   }
 }

@@ -86,6 +86,7 @@ Closer: locked H2 `Always approved. Always optimizing.` Primary → `/start?path
 Primary post-click experience after the homepage. Fox talks and the file preview updates at the same time. Explorer, scenario, results, and intake remain as fallbacks — do not rebuild them as the start path.
 
 - Routes: `/start?path=acr` and `/start?path=loan`. Persist `path` on the query and `onyx.startPath`.
+- **Desktop entry:** hero `Start your relationship` writes `acr` then opens `/start?path=acr` (`draft.path = acr`). Hero `Just need a mortgage` writes `loan-only` then opens `/start?path=loan` (`draft.path = loan-only`). First paint of `/start` seeds Fox from the URL (`applyWorkspaceEntry` + `workspaceGreeting`) so the product question and bubbles are already in the thread. No homepage overlay.
 - Homepage hero markup/copy/layout stays the cleaned marketing hero. Only the pill destinations change (`ACR_START_HREF` / `LOAN_START_HREF` in `startPath.ts`).
 - One Fox only. `StartWorkspace` renders the live `AlwaysOnFox` panel as a real child (preview left / Fox right on desktop; chat-first on mobile). `FoxShell` does not mount a second Fox on `/start`. No portal hole, no dead fallback chrome. No orb, FAB, second chatbot, or homepage overlay.
 - **Desktop:** live preview left (when at least one useful fact exists), Fox chat right. Composer stays in the Fox stage. No dock.
@@ -245,7 +246,8 @@ components/products/startPath.ts  ACR / loan only start intent (`/start?path=acr
 components/fox/workspace.ts       workspace prompts, amount parse, live preview facts
 components/fox/DocumentDrop.tsx   shared document slots + stub extract (intake + /start)
 components/fox/FilePreview.tsx    calm file card / mobile File sheet
-components/fox/StartWorkspace.tsx `/start` layout: preview + live AlwaysOnFox child (no fallback shell)
+components/fox/HeroStartLink.tsx  desktop hero pills: write path + /start
+components/fox/StartWorkspace.tsx `/start` layout: URL seed + live AlwaysOnFox child
 styles/start.css                  workspace layout
 app/(marketing)/start/page.tsx    Fox workspace route
 app/(marketing)/start/layout.tsx  mounts Always-on Fox for /start

@@ -197,6 +197,33 @@ export function setDraftPath(path: IntakePath | null) {
   return commit({ ...current, path });
 }
 
+/** Overlay URL path/intent on the live draft. Safe to call during /start first paint. */
+export function applyWorkspaceEntry(
+  path: IntakePath | null,
+  intent: ProductIntent | null,
+) {
+  hydrateFoxDraft();
+  setWorkspaceFlow(true);
+  if (path) setDraftPath(path);
+  if (intent) setDraftProductIntent(intent);
+  return current;
+}
+
+/** Desktop hero CTA: lock the path and start at the product question. */
+export function beginWorkspaceFromHero(path: IntakePath) {
+  hydrateFoxDraft();
+  const next: FoxIntakeDraft = {
+    ...emptyDraft(),
+    path,
+    workspaceFlow: true,
+  };
+  current = { ...next, updatedAt: new Date().toISOString() };
+  hydrated = true;
+  persist(current);
+  emit();
+  return current;
+}
+
 function withProductIntent(draft: FoxIntakeDraft, intent: ProductIntent): FoxIntakeDraft {
   const scenario = draft.scenario
     ? {

@@ -2,38 +2,36 @@
 
 import { useSearchParams } from "next/navigation";
 import { useEffect, useSyncExternalStore } from "react";
-import { rememberStartPath } from "@/components/products/startPath";
+import { pathFromQuery, rememberStartPath } from "@/components/products/startPath";
 import { AlwaysOnFox } from "./AlwaysOnFox";
 import { useDocumentReads } from "./DocumentDrop";
 import { FilePreview } from "./FilePreview";
 import {
+  applyWorkspaceEntry,
   getFoxDraft,
   getServerDraft,
-  hydrateFoxDraft,
   prepareWorkspaceDraft,
-  setDraftPath,
-  setDraftProductIntent,
-  setWorkspaceFlow,
   subscribeFoxDraft,
 } from "./store";
 import { productIntentFromQuery, productIntentFromSlug } from "./workspace";
 
 export function StartWorkspace() {
   const searchParams = useSearchParams();
+  const startPath = rememberStartPath(searchParams.get("path")) ?? pathFromQuery(searchParams.get("path"));
+  const startIntent =
+    productIntentFromQuery(searchParams.get("intent")) ??
+    productIntentFromSlug(searchParams.get("product"));
   const draft = useSyncExternalStore(subscribeFoxDraft, getFoxDraft, getServerDraft);
+
+  if (typeof window !== "undefined") {
+    applyWorkspaceEntry(startPath, startIntent);
+  }
 
   useDocumentReads(draft);
 
   useEffect(() => {
-    hydrateFoxDraft();
-    setWorkspaceFlow(true);
-    const path = rememberStartPath(searchParams.get("path"));
-    if (path) setDraftPath(path);
-    const intent =
-      productIntentFromQuery(searchParams.get("intent")) ??
-      productIntentFromSlug(searchParams.get("product"));
-    if (intent) setDraftProductIntent(intent);
-  }, [searchParams]);
+    applyWorkspaceEntry(startPath, startIntent);
+  }, [startPath, startIntent]);
 
   useEffect(() => {
     if (!draft.workspaceFlow) return;
@@ -57,8 +55,7 @@ export function StartWorkspace() {
       <div className="page-inner start-workspace__inner">
         <FilePreview />
         <div className="start-workspace__fox-wrap">
-          {/* Live engine — same AlwaysOnFox as every other Fox surface. Not a fallback shell. */}
-          <AlwaysOnFox />
+          <AlwaysOnFox startPath={startPath} startIntent={startIntent} />
         </div>
       </div>
     </section>

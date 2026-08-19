@@ -29,6 +29,8 @@ import {
 } from "./script";
 import {
   applyCapture,
+  applyWorkspaceEntry,
+  emptyDraft,
   getFoxDraft,
   getServerDraft,
   hydrateFoxDraft,
@@ -36,7 +38,6 @@ import {
   setDraftPath,
   setDraftProductIntent,
   setDraftScenario,
-  setWorkspaceFlow,
   subscribeFoxDraft,
 } from "./store";
 import {
@@ -45,6 +46,7 @@ import {
   formatLiveMoneyInput,
   productIntentFromQuery,
   productIntentFromSlug,
+  workspaceGreeting,
   workspacePrompt,
   workspacePromptCopy,
 } from "./workspace";
@@ -53,7 +55,42 @@ import {
   homeProductActions,
   pathFromHomeChoice,
 } from "./homeIdle";
-import { FOX_PANEL_KEY, type FoxAction, type FoxMessage } from "./types";
+import {
+  FOX_PANEL_KEY,
+  type FoxAction,
+  type FoxMessage,
+  type IntakePath,
+  type ProductIntent,
+} from "./types";
+
+function seedStartMessages(
+  path?: IntakePath | null,
+  intent?: ProductIntent | null,
+): FoxMessage[] {
+  if (typeof window === "undefined") {
+    return [
+      foxAskMessage(
+        workspaceGreeting({
+          ...emptyDraft(),
+          workspaceFlow: true,
+          path: path ?? undefined,
+          productIntent: intent ?? undefined,
+        }),
+      ),
+    ];
+  }
+  const live = applyWorkspaceEntry(path ?? null, intent ?? null);
+  return [foxAskMessage(workspaceGreeting(live))];
+}
+
+function startSearchFromProps(
+  path?: IntakePath | null,
+  intent?: ProductIntent | null,
+) {
+  if (!path) return "";
+  const token = path === "loan-only" ? "loan" : "acr";
+  return intent ? `?path=${token}&intent=${intent}` : `?path=${token}`;
+}
 
 function newId() {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -244,20 +281,33 @@ function FoxWorkspace({
   );
 }
 
-export function AlwaysOnFox() {
+export function AlwaysOnFox({
+  startPath = null,
+  startIntent = null,
+}: {
+  startPath?: IntakePath | null;
+  startIntent?: ProductIntent | null;
+} = {}) {
   const pathname = usePathname();
   const router = useRouter();
   const stage = foxStageFromPath(pathname);
   const draft = useSyncExternalStore(subscribeFoxDraft, getFoxDraft, getServerDraft);
   const [open, setOpen] = useState(() => stage === "intake" || stage === "start");
-  const [ready, setReady] = useState(false);
-  const [search, setSearch] = useState("");
+  const [ready, setReady] = useState(() => stage === "start");
+  const [search, setSearch] = useState(() =>
+    stage === "start" ? startSearchFromProps(startPath, startIntent) : "",
+  );
   const [input, setInput] = useState("");
-  const [messages, setMessages] = useState<FoxMessage[]>([]);
+  const startSeeded = useRef(stage === "start");
+  const [messages, setMessages] = useState<FoxMessage[]>(() =>
+    stage === "start" ? seedStartMessages(startPath, startIntent) : [],
+  );
   const [homeStage, setHomeStage] = useState<HTMLElement | null>(null);
-  const greeted = useRef<string>("");
+  const greeted = useRef<string>(
+    stage === "start" ? `${pathname}${startSearchFromProps(startPath, startIntent)}` : "",
+  );
   const pendingAsk = useRef<string | null>(null);
-  const skipPromptSync = useRef(false);
+  const skipPromptSync = useRef(stage === "start");
   const listRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const caretRef = useRef<number | null>(null);
@@ -297,17 +347,13 @@ export function AlwaysOnFox() {
       if (path) setDraftPath(path);
     }
     if (stage === "start") {
-      setWorkspaceFlow(true);
       const params = new URLSearchParams(query);
-      const path = pathFromQuery(params.get("path")) ?? readStartPath();
-      if (path) {
-        writeStartPath(path);
-        setDraftPath(path);
-      }
-      const intent =
-        productIntentFromQuery(params.get("intent")) ??
-        productIntentFromSlug(params.get("product"));
-      if (intent) setDraftProductIntent(intent);
+      applyWorkspaceEntry(
+        startPath ?? pathFromQuery(params.get("path")) ?? readStartPath(),
+        startIntent ??
+          productIntentFromQuery(params.get("intent")) ??
+          productIntentFromSlug(params.get("product")),
+      );
     }
     const stored = sessionStorage.getItem(FOX_PANEL_KEY);
     const live = getFoxDraft();
@@ -381,6 +427,11 @@ export function AlwaysOnFox() {
 
   useLayoutEffect(() => {
     if (!ready || !stage) return;
+    if (stage === "start" && startSeeded.current && messages.length > 0) {
+      greeted.current = greetKey;
+      skipPromptSync.current = true;
+      return;
+    }
     const live = getFoxDraft();
     const scenario = live.scenario ?? readScenario();
     if (scenario && !live.scenario) setDraftScenario(scenario);
