@@ -23,7 +23,8 @@ export function HeroStartLink({
     <Link
       href={href}
       className={className}
-      onClick={() => {
+      onClick={(event) => {
+        event.preventDefault();
         writeStartPath(path);
         beginWorkspaceFromHero(path);
         router.push(href);

@@ -19,7 +19,7 @@ import {
   type ReceivedDoc,
   type SectionId,
 } from "./types";
-import { purposeForIntent, slugForIntent } from "./workspace";
+import { purposeForIntent, slugForIntent, workspacePrompt } from "./workspace";
 
 function numberOrUndefined(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : undefined;
@@ -93,6 +93,7 @@ function normalize(value: unknown): FoxIntakeDraft {
     termYears: numberOrUndefined(raw.termYears),
     termAsked: Boolean(raw.termAsked),
     workspaceFlow: Boolean(raw.workspaceFlow),
+    sampleAccepted: Boolean(raw.sampleAccepted),
     workspaceDraftStatus:
       raw.workspaceDraftStatus === "preparing" ||
       raw.workspaceDraftStatus === "ready" ||
@@ -340,10 +341,10 @@ export function receiveDocument(input: Omit<ReceivedDoc, "status" | "note">) {
   });
   if (
     next.workspaceFlow &&
-    next.workspaceDraftStatus !== "ready" &&
+    next.sampleAccepted &&
     next.workspaceDraftStatus !== "with-originator"
   ) {
-    return prepareWorkspaceDraft();
+    return confirmDraft();
   }
   return next;
 }
@@ -471,7 +472,8 @@ export function applyCapture(capture: Capture) {
       confirmedAt: undefined,
     });
     if (current.workspaceFlow) {
-      return skipDocs ? prepareWorkspaceDraft() : current;
+      if (skipDocs && current.sampleAccepted) return confirmDraft();
+      return current;
     }
     return advancePhase();
   }
@@ -502,13 +504,25 @@ export function applyCapture(capture: Capture) {
   }
   if (capture.field === "skip-docs") {
     skipDocuments();
-    if (current.workspaceFlow) return prepareWorkspaceDraft();
+    if (current.workspaceFlow && current.sampleAccepted) return confirmDraft();
+    if (current.workspaceFlow) return current;
     return advancePhase();
   }
   if (capture.field === "open-docs") {
     return commit({ ...current, phase: "documents" });
   }
   if (capture.field === "confirm-draft") {
+    if (current.workspaceFlow && !current.sampleAccepted) {
+      commit({
+        ...current,
+        sampleAccepted: true,
+        workspaceDraftStatus:
+          current.workspaceDraftStatus === "with-originator" ? "with-originator" : "ready",
+        correcting: null,
+      });
+      if (workspacePrompt(current) === "done") return confirmDraft();
+      return current;
+    }
     return confirmDraft();
   }
   if (capture.field === "needs-correction") {

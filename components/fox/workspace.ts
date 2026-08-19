@@ -166,6 +166,56 @@ function amountHelperActions(field: "skip-amount" | "skip-value"): FoxAction[] {
   }));
 }
 
+export const SAMPLE_NOTE = "Sample · indicative · not live";
+export const SAMPLE_RATE = 0.0675;
+export const SAMPLE_RATE_LABEL = "6.750%";
+export const SAMPLE_TERM_MONTHS = 360;
+export const SAMPLE_STRUCTURE = "Conventional 30-year";
+const SAMPLE_SAFE_CREDIT: CreditRange = "680-719";
+
+export function loanAmountFromDraft(draft: FoxIntakeDraft): number | undefined {
+  return (
+    draft.loanAmountValue ??
+    (!draft.amountAsked ? draft.scenario?.loanAmount : undefined)
+  );
+}
+
+export function sampleMonthlyPayment(loanAmount?: number | null): number | null {
+  if (loanAmount == null || loanAmount <= 0) return null;
+  const monthlyRate = SAMPLE_RATE / 12;
+  const growth = (1 + monthlyRate) ** SAMPLE_TERM_MONTHS;
+  const payment = (loanAmount * monthlyRate * growth) / (growth - 1);
+  if (!Number.isFinite(payment) || payment <= 0) return null;
+  return payment;
+}
+
+export function formatSamplePayment(loanAmount?: number | null): string {
+  const payment = sampleMonthlyPayment(loanAmount);
+  if (payment == null) return "Loan amount not set";
+  return `$${Math.round(payment).toLocaleString("en-US")}/mo`;
+}
+
+export function sampleReady(draft: FoxIntakeDraft): boolean {
+  if (!draft.path || !draft.productIntent) return false;
+  if (!draft.occupancyAsked && !draft.occupancyChoice.value) return false;
+  if (!draft.timelineAsked && !draft.timelineChoice.value) return false;
+  if (
+    !draft.amountAsked &&
+    draft.loanAmountValue == null &&
+    draft.scenario?.loanAmount == null
+  ) {
+    return false;
+  }
+  if (
+    !draft.valueAsked &&
+    draft.propertyValueAmount == null &&
+    draft.scenario?.propertyValue == null
+  ) {
+    return false;
+  }
+  return true;
+}
+
 /** Single /start conversation engine. Desktop and mobile share this order, copy, and path rules. */
 export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
   if (!draft.path) return "intent";
@@ -186,23 +236,20 @@ export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
   ) {
     return "value";
   }
-  if (draft.path === "acr" && !draft.creditBand && !draft.scenario?.creditRange) {
-    return "credit";
-  }
-  if (!draft.termAsked && draft.termYears == null) return "term";
   if (draft.phase === "confirmed" || draft.workspaceDraftStatus === "with-originator") {
     if (draft.correcting === "correct") return "correct";
     if (draft.correcting === "documents" && !knownDocsIncome(draft.incomeType.value)) {
-      return draft.incomeType.value ? "review" : "income";
+      return draft.incomeType.value ? "done" : "income";
     }
     if (draft.correcting) return draft.correcting;
     return "done";
   }
   if (draft.correcting === "correct") return "correct";
   if (draft.correcting === "documents" && !knownDocsIncome(draft.incomeType.value)) {
-    return draft.incomeType.value ? "preparing" : "income";
+    return draft.incomeType.value ? "done" : "income";
   }
   if (draft.correcting) return draft.correcting;
+  if (!draft.sampleAccepted) return "review";
   if (!draft.incomeType.value) return "income";
   if (
     knownDocsIncome(draft.incomeType.value) &&
@@ -211,9 +258,7 @@ export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
   ) {
     return "documents";
   }
-  if (draft.workspaceDraftStatus === "preparing") return "preparing";
-  if (draft.workspaceDraftStatus === "ready") return "review";
-  return "preparing";
+  return "done";
 }
 
 export function workspacePromptCopy(
@@ -299,7 +344,7 @@ export function workspacePromptCopy(
   }
   if (prompt === "documents") {
     if (!knownDocsIncome(draft.incomeType.value)) {
-      return workspacePromptCopy(draft.incomeType.value ? "preparing" : "income", draft);
+      return workspacePromptCopy(draft.incomeType.value ? "done" : "income", draft);
     }
     return {
       text: documentsAskText(draft),
@@ -314,7 +359,7 @@ export function workspacePromptCopy(
   }
   if (prompt === "review") {
     return {
-      text: "Here’s what I prepared:",
+      text: "Here’s a sample structure.",
       facts: fileSummaryFacts(draft),
       followUp: "Does this look right?",
       actions: [
@@ -324,19 +369,24 @@ export function workspacePromptCopy(
     };
   }
   if (prompt === "correct") {
-    return {
-      text: "Which part should Fox fix?",
-      actions: bubbles(
-        [
+    const fields = draft.sampleAccepted
+      ? [
           { value: "product", label: "Product" },
           { value: "occupancy", label: "Occupancy" },
           { value: "timeline", label: "Timeline" },
           { value: "amount", label: "Amount" },
           { value: "income", label: "Income" },
           { value: "documents", label: "Documents" },
-        ],
-        "correct",
-      ),
+        ]
+      : [
+          { value: "product", label: "Product" },
+          { value: "occupancy", label: "Occupancy" },
+          { value: "timeline", label: "Timeline" },
+          { value: "amount", label: "Amount" },
+        ];
+    return {
+      text: "Which part should Fox fix?",
+      actions: bubbles(fields, "correct"),
     };
   }
   if (prompt === "done") {
@@ -933,7 +983,7 @@ export function workspaceReply(
   if (prompt === "documents") {
     if (/(skip|later|not yet|don'?t have|fine)/i.test(lower)) {
       return {
-        ...workspacePromptCopy("preparing", draft),
+        ...workspacePromptCopy("done", draft),
         capture: { field: "skip-docs" },
       };
     }
@@ -956,7 +1006,16 @@ export function workspaceReply(
 
   if (prompt === "review") {
     if (/(looks right|confirm|yes|correct|good)/i.test(lower)) {
-      return { ...workspacePromptCopy("done", draft), capture: { field: "confirm-draft" } };
+      const nextDraft = {
+        ...draft,
+        sampleAccepted: true,
+        workspaceDraftStatus:
+          draft.workspaceDraftStatus === "with-originator" ? draft.workspaceDraftStatus : "ready",
+      } as FoxIntakeDraft;
+      return {
+        ...workspacePromptCopy(workspacePrompt(nextDraft), nextDraft),
+        capture: { field: "confirm-draft" },
+      };
     }
     if (/(correction|fix|wrong|no|edit)/i.test(lower)) {
       return { ...workspacePromptCopy("correct", draft), capture: { field: "needs-correction" } };
@@ -974,7 +1033,13 @@ export function workspaceReply(
       { test: /doc/, value: "documents" },
     ];
     const hit = map.find((item) => item.test.test(lower));
-    if (!hit) return { text: "Tap Product, Occupancy, Timeline, Amount, Income, or Documents." };
+    if (!hit) {
+      return {
+        text: draft.sampleAccepted
+          ? "Tap Product, Occupancy, Timeline, Amount, Income, or Documents."
+          : "Tap Product, Occupancy, Timeline, or Amount.",
+      };
+    }
     return {
       ...workspacePromptCopy(hit.value as FoxPrompt, draft),
       capture: { field: "correct", value: hit.value },
@@ -1031,10 +1096,10 @@ export function scenarioForEstimate(
   const intent = draft.productIntent ?? productIntentFromSlug(draft.scenario?.productSlug);
   const occupancy = (draft.occupancyChoice.value ||
     draft.scenario?.occupancy) as Occupancy | undefined;
-  const credit = draft.creditBand ?? draft.scenario?.creditRange;
+  const credit = draft.creditBand ?? draft.scenario?.creditRange ?? SAMPLE_SAFE_CREDIT;
   const loanAmount = draft.loanAmountValue ?? draft.scenario?.loanAmount;
   const propertyValue = draft.propertyValueAmount ?? draft.scenario?.propertyValue;
-  if (!intent || !occupancy || !credit) return null;
+  if (!intent || !occupancy) return null;
   if (loanAmount == null && propertyValue == null) return null;
 
   return {
@@ -1098,7 +1163,7 @@ export function previewFacts(draft: FoxIntakeDraft): PreviewFact[] {
       id: "amount",
       label: intent === "use-equity" ? "Line / cash" : "Loan amount",
       value: formatMoney(loan),
-      note: "Rough · estimated",
+      note: SAMPLE_NOTE,
     });
   }
 
@@ -1110,15 +1175,28 @@ export function previewFacts(draft: FoxIntakeDraft): PreviewFact[] {
       id: "value",
       label: "Property value",
       value: formatMoney(value),
-      note: "Rough · estimated",
+      note: SAMPLE_NOTE,
     });
   }
 
-  if (draft.termYears) {
+  if (sampleReady(draft)) {
     facts.push({
-      id: "term",
-      label: "Term",
-      value: `${draft.termYears} year`,
+      id: "structure",
+      label: "Structure",
+      value: SAMPLE_STRUCTURE,
+      note: SAMPLE_NOTE,
+    });
+    facts.push({
+      id: "rate",
+      label: "Sample rate",
+      value: SAMPLE_RATE_LABEL,
+      note: SAMPLE_NOTE,
+    });
+    facts.push({
+      id: "payment",
+      label: "Estimated payment",
+      value: formatSamplePayment(loan),
+      note: SAMPLE_NOTE,
     });
   }
 
@@ -1127,13 +1205,13 @@ export function previewFacts(draft: FoxIntakeDraft): PreviewFact[] {
     facts.push({ id: "income", label: "Income", value: incomeLabel });
   }
 
-  const range = draft.path === "acr" ? estimateFromDraft(draft) : null;
+  const range = draft.path === "acr" && sampleReady(draft) ? estimateFromDraft(draft) : null;
   if (range) {
     facts.push({
       id: "reward",
       label: "Estimated ACR reward",
       value: formatRewardRange(range),
-      note: "Sample · indicative · not live",
+      note: SAMPLE_NOTE,
     });
   }
 
@@ -1169,7 +1247,9 @@ const CHAT_SUMMARY_IDS = new Set([
   "timeline",
   "amount",
   "value",
-  "term",
+  "structure",
+  "rate",
+  "payment",
   "income",
   "reward",
   "docs",

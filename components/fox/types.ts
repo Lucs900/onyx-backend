@@ -91,6 +91,7 @@ export type FoxIntakeDraft = {
   termAsked?: boolean;
   workspaceFlow?: boolean;
   workspaceDraftStatus?: WorkspaceDraftStatus;
+  sampleAccepted?: boolean;
   notes: string[];
   documents: ReceivedDoc[];
   documentsSkipped: boolean;

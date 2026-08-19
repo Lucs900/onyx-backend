@@ -37,18 +37,8 @@ export function StartWorkspace() {
     if (!draft.workspaceFlow) return;
     if (draft.workspaceDraftStatus === "preparing") {
       prepareWorkspaceDraft();
-      return;
     }
-    if (draft.workspaceDraftStatus) return;
-    if (draft.documents.length > 0 || draft.documentsSkipped) {
-      prepareWorkspaceDraft();
-    }
-  }, [
-    draft.documents.length,
-    draft.documentsSkipped,
-    draft.workspaceDraftStatus,
-    draft.workspaceFlow,
-  ]);
+  }, [draft.workspaceDraftStatus, draft.workspaceFlow]);
 
   return (
     <section className="start-workspace page-pad">
