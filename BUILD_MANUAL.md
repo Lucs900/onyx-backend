@@ -76,7 +76,7 @@ Comparison: Feature | ONYX ACR | Loan only. Five rows only: After close (Desk st
 
 ## Slice 6 — How it works + proof + closer
 
-How it works: `THE PATH` / `Get approved. Then stay that way.` Four steps: Diagnose, Structure, Optimize, Stay in the desk. Do **not** include an Approve step. Caption under Structure: `Loan-only can stop here.` Approval is not a Fox or site step.
+How it works: `THE PATH` / `We keep your credit and rate working for you.` Four steps: Diagnose, Structure, Optimize, Stay in the desk. Do **not** include an Approve step. Caption under Structure: `Loan-only can stop here.` Approval is not a Fox or site step. Do **not** use “Get approved” or imply a credit decision.
 
 Proof: four OPEN placeholders (`—`), `Sample · not live`, `As of —`. No invented volume, stars, quotes, or GSE logos. Trust marks: Equal Housing, NMLS Consumer Access, Mortgage broker.
 

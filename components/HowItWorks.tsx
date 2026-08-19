@@ -33,7 +33,7 @@ export function HowItWorks() {
         <div className="how-it-works__intro">
           <p className="type-eyebrow">The Path</p>
           <h2 id="path-title" className="type-h2">
-            Get approved. Then stay that way.
+            We keep your credit and rate working for you.
           </h2>
           <p className="type-body">
             A mortgage can stop at funding. ACR does not.

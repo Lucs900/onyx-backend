@@ -118,7 +118,7 @@ Comparison: eyebrow `WHY A RELATIONSHIP`. H2 `A loan ends. The desk does not.` C
 
 ## How it works + proof + closer (Slice 6)
 
-How it works: eyebrow `THE PATH`. H2 `Get approved. Then stay that way.` Five steps, horizontal desktop / vertical rail mobile. Watermark numerals `#D4CFC6`. No cards. Hairline gutters. Emphasize 03 → 04 → 05.
+How it works: eyebrow `THE PATH`. H2 `We keep your credit and rate working for you.` Five steps, horizontal desktop / vertical rail mobile. Watermark numerals `#D4CFC6`. No cards. Hairline gutters. Emphasize 03 → 04 → 05. Do not imply a credit decision or live approval.
 
 Proof: four OPEN stats, as-of required (placeholder). No fake numbers, stars, volume, or GSE logos. Skip invented quotes.
 
