@@ -213,19 +213,23 @@ export function workspaceGreeting(draft: FoxIntakeDraft): {
   };
 }
 
+function collectAmounts(text: string): number[] {
+  const pattern = /(\d+(?:\.\d+)?)\s*(m|mm|million|k|thousand)?/gi;
+  const amounts: number[] = [];
+  let match: RegExpExecArray | null;
+  while ((match = pattern.exec(text))) {
+    const value = amountFromParts(match[1], match[2]);
+    if (value != null) amounts.push(value);
+  }
+  return amounts;
+}
+
 export function parseLooseAmount(text: string): number | null {
-  const matches = [...text.matchAll(/(\d+(?:\.\d+)?)\s*(m|mm|million|k|thousand)?/gi)];
-  const amounts = matches
-    .map((match) => amountFromParts(match[1], match[2]))
-    .filter((value): value is number => value != null);
-  return amounts[0] ?? null;
+  return collectAmounts(text)[0] ?? null;
 }
 
 export function parseAmountPair(text: string): { loan?: number; value?: number } {
-  const matches = [...text.matchAll(/(\d+(?:\.\d+)?)\s*(m|mm|million|k|thousand)?/gi)];
-  const amounts = matches
-    .map((match) => amountFromParts(match[1], match[2]))
-    .filter((value): value is number => value != null);
+  const amounts = collectAmounts(text);
   if (amounts.length >= 2) {
     const [first, second] = amounts;
     const loan = Math.min(first, second);

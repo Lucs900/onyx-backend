@@ -185,7 +185,7 @@ export function AlwaysOnFox() {
   const router = useRouter();
   const stage = foxStageFromPath(pathname);
   const draft = useSyncExternalStore(subscribeFoxDraft, getFoxDraft, getServerDraft);
-  const [open, setOpen] = useState(() => stage === "intake");
+  const [open, setOpen] = useState(() => stage === "intake" || stage === "start");
   const [ready, setReady] = useState(false);
   const [search, setSearch] = useState("");
   const [input, setInput] = useState("");
