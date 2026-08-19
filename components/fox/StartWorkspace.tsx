@@ -7,25 +7,32 @@ import { AlwaysOnFox } from "./AlwaysOnFox";
 import { useDocumentReads } from "./DocumentDrop";
 import { FilePreview } from "./FilePreview";
 import {
+  continueWorkspaceFromEntry,
   getFoxDraft,
   getServerDraft,
+  hydrateFoxDraft,
   prepareWorkspaceDraft,
   resetWorkspaceForEntry,
+  setDraftPath,
   setDraftProductIntent,
   subscribeFoxDraft,
+  workspaceSessionStarted,
 } from "./store";
 import { productIntentFromQuery, productIntentFromSlug } from "./workspace";
 
 export function StartWorkspace() {
   const searchParams = useSearchParams();
-  const startPath = rememberStartPath(searchParams.get("path")) ?? pathFromQuery(searchParams.get("path"));
+  const queryPath = pathFromQuery(searchParams.get("path"));
+  if (typeof window !== "undefined") hydrateFoxDraft();
+  if (queryPath) rememberStartPath(queryPath);
+  const startPath = queryPath ?? (workspaceSessionStarted() ? getFoxDraft().path ?? null : rememberStartPath(null));
   const startIntent =
     productIntentFromQuery(searchParams.get("intent")) ??
     productIntentFromSlug(searchParams.get("product"));
   const booted = useRef(false);
   if (typeof window !== "undefined" && !booted.current) {
     booted.current = true;
-    resetWorkspaceForEntry(startPath, startIntent);
+    continueWorkspaceFromEntry(startPath, startIntent);
   }
   const draft = useSyncExternalStore(subscribeFoxDraft, getFoxDraft, getServerDraft);
 
@@ -35,6 +42,10 @@ export function StartWorkspace() {
   useEffect(() => {
     if (lastPath.current !== startPath) {
       lastPath.current = startPath;
+      if (workspaceSessionStarted()) {
+        if (startPath && !getFoxDraft().path) setDraftPath(startPath);
+        return;
+      }
       resetWorkspaceForEntry(startPath, startIntent);
       return;
     }

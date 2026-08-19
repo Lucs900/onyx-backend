@@ -966,13 +966,21 @@ export function workspaceReply(
 
   if (prompt === "intent") {
     const path = pathFromHomeChoice(lower);
-    if (!path) {
-      return { text: "Tap Start your relationship or Just need a mortgage." };
+    if (path) {
+      const nextDraft = { ...draft, path };
+      return {
+        ...workspacePromptCopy(workspacePrompt(nextDraft), nextDraft),
+        capture: { field: "path", value: path },
+      };
     }
-    return {
-      ...workspacePromptCopy("product", { ...draft, path }),
-      capture: { field: "path", value: path },
-    };
+    const intent = productIntentFromText(q);
+    if (intent) {
+      return {
+        ...workspacePromptCopy("intent", { ...draft, productIntent: intent }),
+        capture: { field: "productIntent", value: intent },
+      };
+    }
+    return { text: "Tap Start your relationship or Just need a mortgage." };
   }
 
   if (prompt === "path-switch") {

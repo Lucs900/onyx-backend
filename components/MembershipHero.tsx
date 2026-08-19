@@ -1,11 +1,15 @@
 import { AcrPass } from "./AcrPass";
 import { HeroStartLink } from "./fox/HeroStartLink";
-import { HOME_IDLE_TEXT, homePathActions } from "./fox/homeIdle";
+import { homePathActions } from "./fox/homeIdle";
+import { emptyDraft } from "./fox/store";
+import { workspacePromptCopy } from "./fox/workspace";
 
 const FALLBACK_PATH: Record<string, "acr" | "loan-only"> = {
   start: "acr",
   loan: "loan-only",
 };
+
+const HOME_START_ASK = workspacePromptCopy("intent", emptyDraft());
 
 export function MembershipHero() {
   return (
@@ -46,7 +50,7 @@ export function MembershipHero() {
             </div>
             <div className="fox-panel__thread">
               <article className="fox-bubble fox-bubble--fox">
-                <p>{HOME_IDLE_TEXT}</p>
+                <p>{HOME_START_ASK.text}</p>
                 <div className="fox-bubble__actions">
                   {homePathActions().map((action) => (
                     <HeroStartLink
