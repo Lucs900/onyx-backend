@@ -96,6 +96,7 @@
     grid-column: 2;
     grid-row: 1;
     display: flex;
+    align-self: center;
     align-items: center;
     justify-content: flex-end;
     margin: 0;
@@ -120,19 +121,19 @@
 
   .membership-hero__title {
     margin-top: 8px;
-    font-size: 30px;
-    line-height: 34px;
+    font-size: 28px;
+    line-height: 32px;
   }
 
   .membership-hero__support {
-    margin-top: 10px;
-    font-size: 15px;
-    line-height: 22px;
+    margin-top: 8px;
+    font-size: 14px;
+    line-height: 20px;
   }
 
   .membership-hero .acr-pass-stage {
-    width: 168px;
-    max-width: 42vw;
+    width: min(184px, 46vw);
+    max-width: 184px;
   }
 }
 
