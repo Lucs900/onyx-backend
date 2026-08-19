@@ -95,6 +95,19 @@ Primary post-click experience after the homepage. Fox talks and the file preview
 - Starters (exact): ACR `I can prepare your relationship file. Let’s get the basics.` Loan-only `Loan-only. ACR is optional. Let’s get the basics.`
 - No disclosures stuffed into Fox bubbles. Fox cannot approve, lock, or commit to lend. California only stays site-level.
 
+## Slice 3 — Fox docs → draft → confirm → handoff
+
+Continue the `/start` workspace after basics. Reuse the existing intake document drop, draft store, confirm captures, and `/lo/review` queue. Do not rebuild `/intake` as a long standalone form. One Fox only. Homepage hero stays the cleaned marketing frame.
+
+- After core scenario facts, Fox offers docs with this exact line: `Drop what you have. Skip is fine. I’ll work with what’s here.` Bubbles: `Upload now` / `Skip for now`.
+- Upload uses the compact `DocumentDrop` in the live preview (desktop always visible on the File card; mobile in the File / Preview sheet). Skip does not block a draft.
+- Fox prepares the file from known facts + any docs. Preview draft status moves **Preparing → Ready for you**. Preview also shows path, product, occupancy, amounts, timeline, and docs status.
+- Fox then asks (exact): `Does this look right?` Bubbles: `Looks right` / `Needs a correction`.
+- **Looks right:** draft status becomes **With originator**. Fox says a licensed originator will review the file and that Fox cannot approve, lock, or commit to lend. Fox stays for process questions. Do not swap to a human-chat skin.
+- **Needs a correction** stays in Fox (`Which part should Fox fix?`). Product, occupancy, timeline, amount, and documents can be corrected without leaving the workspace.
+- ACR and loan only stay distinct through this flow (path-specific starters and reward-panel rules). Reward estimate only on ACR when `estimateRewardRange` has enough data. No public %. No fake rates. No disclosures in every bubble.
+- Desktop stays preview left / Fox right. Mobile stays chat-first with the preview card/sheet.
+
 ## Product Explorer (CA only)
 
 Route `/products`. California discovery only. No live pricing, APR, LoanSifter, calculators, or apply flows. Thirteen cards in five groups (Core residential, Government, Equity, Expanded residential, Specialty). CTA is exactly `Explore this option` → `/products/scenario?product=<slug>`. Specialty is separated by space + hairline + eyebrow, not a gold or green band.
@@ -228,6 +241,7 @@ app/(marketing)/how-we-get-paid/page.tsx  broker compensation
 app/(marketing)/{licensing,privacy,equal-housing,login,advisor}/page.tsx  short real pages
 components/products/startPath.ts  ACR / loan only start intent (`/start?path=acr` | `/start?path=loan`)
 components/fox/workspace.ts       workspace prompts, amount parse, live preview facts
+components/fox/DocumentDrop.tsx   shared document slots + stub extract (intake + /start)
 components/fox/FilePreview.tsx    calm file card / mobile File sheet
 components/fox/StartWorkspace.tsx `/start` layout: preview + Fox stage
 styles/start.css                  workspace layout

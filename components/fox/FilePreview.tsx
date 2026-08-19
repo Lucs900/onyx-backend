@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, useSyncExternalStore } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
+import { DocumentDrop } from "./DocumentDrop";
 import { getFoxDraft, getServerDraft, subscribeFoxDraft } from "./store";
-import { previewFacts } from "./workspace";
+import { previewFacts, workspacePrompt } from "./workspace";
 
 function PreviewRows({ facts }: { facts: ReturnType<typeof previewFacts> }) {
   return (
@@ -24,6 +25,13 @@ export function FilePreview() {
   const draft = useSyncExternalStore(subscribeFoxDraft, getFoxDraft, getServerDraft);
   const facts = previewFacts(draft);
   const [open, setOpen] = useState(false);
+  const ask = workspacePrompt(draft);
+  const showDocs =
+    ask === "documents" || (draft.phase === "documents" && !draft.workspaceFlow);
+
+  useEffect(() => {
+    if (showDocs) setOpen(true);
+  }, [showDocs]);
 
   if (!facts.length) {
     return <aside className="file-preview file-preview--empty" aria-hidden="true" />;
@@ -57,6 +65,7 @@ export function FilePreview() {
           </div>
         ) : null}
       </div>
+      {showDocs ? <DocumentDrop draft={draft} compact /> : null}
     </aside>
   );
 }

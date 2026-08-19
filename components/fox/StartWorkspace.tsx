@@ -1,18 +1,32 @@
 "use client";
 
 import { useSearchParams } from "next/navigation";
-import { useEffect } from "react";
+import { useEffect, useSyncExternalStore } from "react";
 import { pathFromQuery, rememberStartPath } from "@/components/products/startPath";
+import { useDocumentReads } from "./DocumentDrop";
 import { FilePreview } from "./FilePreview";
-import { hydrateFoxDraft, setDraftPath, setDraftProductIntent } from "./store";
+import {
+  getFoxDraft,
+  getServerDraft,
+  hydrateFoxDraft,
+  prepareWorkspaceDraft,
+  setDraftPath,
+  setDraftProductIntent,
+  setWorkspaceFlow,
+  subscribeFoxDraft,
+} from "./store";
 import { starterText, productIntentFromQuery, productIntentFromSlug } from "./workspace";
 import { PRODUCT_INTENT_BUBBLES } from "./types";
 
 export function StartWorkspace() {
   const searchParams = useSearchParams();
+  const draft = useSyncExternalStore(subscribeFoxDraft, getFoxDraft, getServerDraft);
+
+  useDocumentReads(draft);
 
   useEffect(() => {
     hydrateFoxDraft();
+    setWorkspaceFlow(true);
     const path = rememberStartPath(searchParams.get("path"));
     if (path) setDraftPath(path);
     const intent =
@@ -20,6 +34,23 @@ export function StartWorkspace() {
       productIntentFromSlug(searchParams.get("product"));
     if (intent) setDraftProductIntent(intent);
   }, [searchParams]);
+
+  useEffect(() => {
+    if (!draft.workspaceFlow) return;
+    if (draft.workspaceDraftStatus === "preparing") {
+      prepareWorkspaceDraft();
+      return;
+    }
+    if (draft.workspaceDraftStatus) return;
+    if (draft.documents.length > 0 || draft.documentsSkipped) {
+      prepareWorkspaceDraft();
+    }
+  }, [
+    draft.documents.length,
+    draft.documentsSkipped,
+    draft.workspaceDraftStatus,
+    draft.workspaceFlow,
+  ]);
 
   const path = pathFromQuery(searchParams.get("path"));
 

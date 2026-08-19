@@ -92,6 +92,13 @@ function normalize(value: unknown): FoxIntakeDraft {
     creditBand: raw.creditBand,
     termYears: numberOrUndefined(raw.termYears),
     termAsked: Boolean(raw.termAsked),
+    workspaceFlow: Boolean(raw.workspaceFlow),
+    workspaceDraftStatus:
+      raw.workspaceDraftStatus === "preparing" ||
+      raw.workspaceDraftStatus === "ready" ||
+      raw.workspaceDraftStatus === "with-originator"
+        ? raw.workspaceDraftStatus
+        : undefined,
     previewSample: Boolean(raw.previewSample),
     documents: (raw.documents ?? []).map((doc) => ({
       ...doc,
@@ -203,6 +210,39 @@ function withProductIntent(draft: FoxIntakeDraft, intent: ProductIntent): FoxInt
   return { ...draft, productIntent: intent, scenario };
 }
 
+export function setWorkspaceFlow(on = true) {
+  if (current.workspaceFlow === on) return current;
+  if (on && !current.workspaceDraftStatus && !current.documents.length) {
+    return commit({ ...current, workspaceFlow: true, documentsSkipped: false });
+  }
+  return commit({ ...current, workspaceFlow: on });
+}
+
+let prepareTimer: number | undefined;
+
+export function prepareWorkspaceDraft() {
+  if (current.workspaceDraftStatus === "ready" || current.workspaceDraftStatus === "with-originator") {
+    return current;
+  }
+  if (current.workspaceDraftStatus !== "preparing") {
+    commit({
+      ...current,
+      phase: current.phase === "confirmed" ? current.phase : "draft",
+      workspaceDraftStatus: "preparing",
+      correcting: null,
+    });
+  }
+  if (typeof window === "undefined") {
+    return commit({ ...current, workspaceDraftStatus: "ready" });
+  }
+  window.clearTimeout(prepareTimer);
+  prepareTimer = window.setTimeout(() => {
+    if (current.workspaceDraftStatus !== "preparing") return;
+    commit({ ...current, workspaceDraftStatus: "ready" });
+  }, 700);
+  return current;
+}
+
 export function setDraftProductIntent(intent: ProductIntent | null) {
   if (!intent) return current;
   if (current.productIntent === intent) return current;
@@ -263,13 +303,22 @@ export function addNote(text: string) {
 export function receiveDocument(input: Omit<ReceivedDoc, "status" | "note">) {
   const documents = current.documents.filter((item) => item.slot !== input.slot);
   documents.push({ ...input, status: "received" });
-  return commit({
+  const next = commit({
     ...current,
     documents,
     documentsSkipped: false,
+    correcting: current.workspaceFlow ? null : current.correcting,
     phase: current.phase === "context" ? "documents" : current.phase,
     sections: { ...current.sections, documents: false },
   });
+  if (
+    next.workspaceFlow &&
+    next.workspaceDraftStatus !== "ready" &&
+    next.workspaceDraftStatus !== "with-originator"
+  ) {
+    return prepareWorkspaceDraft();
+  }
+  return next;
 }
 
 export function setDocumentStatus(slot: DocSlot, status: DocStatus, note?: string) {
@@ -323,6 +372,7 @@ export function confirmDraft() {
     ...current,
     phase: "confirmed",
     status: CONFIRMED_STATUS,
+    workspaceDraftStatus: current.workspaceFlow ? "with-originator" : current.workspaceDraftStatus,
     confirmedAt: now,
     loStatus: current.loStatus ?? "in review",
     correcting: null,
@@ -397,7 +447,7 @@ export function applyCapture(capture: Capture) {
         confirmedAt: undefined,
       }),
     );
-    return advancePhase();
+    return current.workspaceFlow ? current : advancePhase();
   }
   if (capture.field === "timeline") {
     commit(
@@ -408,10 +458,11 @@ export function applyCapture(capture: Capture) {
         correcting: null,
       }),
     );
-    return advancePhase();
+    return current.workspaceFlow ? current : advancePhase();
   }
   if (capture.field === "skip-docs") {
     skipDocuments();
+    if (current.workspaceFlow) return prepareWorkspaceDraft();
     return advancePhase();
   }
   if (capture.field === "open-docs") {
@@ -425,6 +476,7 @@ export function applyCapture(capture: Capture) {
       ...current,
       phase: "draft",
       correcting: "correct",
+      workspaceDraftStatus: current.workspaceFlow ? "ready" : current.workspaceDraftStatus,
       status: undefined,
       confirmedAt: undefined,
     });
@@ -443,7 +495,9 @@ export function applyCapture(capture: Capture) {
     return commit({ ...current, path: capture.value });
   }
   if (capture.field === "productIntent") {
-    return commit(withWorkspaceScenario(withProductIntent(current, capture.value)));
+    return commit(
+    withWorkspaceScenario(withProductIntent({ ...current, correcting: null }, capture.value)),
+  );
   }
   if (capture.field === "loanAmount") {
     const [loanRaw, valueRaw] = capture.value.split(":");
@@ -455,6 +509,7 @@ export function applyCapture(capture: Capture) {
       withWorkspaceScenario({
         ...current,
         amountAsked: true,
+        correcting: null,
         valueAsked: hasValue ? true : current.valueAsked,
         loanAmountValue: hasLoan ? loan : current.loanAmountValue,
         propertyValueAmount: hasValue ? value : current.propertyValueAmount,
@@ -467,6 +522,7 @@ export function applyCapture(capture: Capture) {
       withWorkspaceScenario({
         ...current,
         valueAsked: true,
+        correcting: null,
         propertyValueAmount:
           Number.isFinite(value) && value > 0 ? value : current.propertyValueAmount,
       }),
@@ -476,6 +532,7 @@ export function applyCapture(capture: Capture) {
     return commit({
       ...current,
       amountAsked: true,
+      correcting: null,
       loanAmountValue: undefined,
       scenario: current.scenario
         ? { ...current.scenario, loanAmount: undefined }
@@ -486,6 +543,7 @@ export function applyCapture(capture: Capture) {
     return commit({
       ...current,
       valueAsked: true,
+      correcting: null,
       propertyValueAmount: undefined,
     });
   }
@@ -503,10 +561,11 @@ export function applyCapture(capture: Capture) {
       ...current,
       termYears: Number.isFinite(years) && years > 0 ? years : undefined,
       termAsked: true,
+      correcting: null,
     });
   }
   if (capture.field === "skip-term") {
-    return commit({ ...current, termAsked: true, termYears: undefined });
+    return commit({ ...current, termAsked: true, termYears: undefined, correcting: null });
   }
   return current;
 }

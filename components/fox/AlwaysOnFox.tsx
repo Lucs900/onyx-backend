@@ -36,6 +36,7 @@ import {
   setDraftPath,
   setDraftProductIntent,
   setDraftScenario,
+  setWorkspaceFlow,
   subscribeFoxDraft,
 } from "./store";
 import {
@@ -248,6 +249,7 @@ export function AlwaysOnFox() {
       if (path) setDraftPath(path);
     }
     if (stage === "start") {
+      setWorkspaceFlow(true);
       const params = new URLSearchParams(query);
       const path = pathFromQuery(params.get("path")) ?? readStartPath();
       if (path) {
@@ -454,7 +456,7 @@ export function AlwaysOnFox() {
       applyCapture({ field: "open-docs" });
       document.getElementById("fox-documents")?.scrollIntoView({ behavior: "smooth" });
       appendReply(action.label, {
-        text: "Add a file in the slots below.",
+        text: isStart ? "Add a file in the preview, or skip." : "Add a file in the slots below.",
       });
       return;
     }

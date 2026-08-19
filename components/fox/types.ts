@@ -45,6 +45,8 @@ export type ReceivedDoc = {
 
 export type IntakePhase = "context" | "documents" | "draft" | "confirmed";
 
+export type WorkspaceDraftStatus = "preparing" | "ready" | "with-originator";
+
 export type SectionId =
   | "contact"
   | "scenario"
@@ -87,6 +89,8 @@ export type FoxIntakeDraft = {
   creditBand?: CreditRange;
   termYears?: number;
   termAsked?: boolean;
+  workspaceFlow?: boolean;
+  workspaceDraftStatus?: WorkspaceDraftStatus;
   notes: string[];
   documents: ReceivedDoc[];
   documentsSkipped: boolean;
@@ -114,6 +118,7 @@ export type FoxPrompt =
   | "value"
   | "credit"
   | "term"
+  | "preparing"
   | "basics-done"
   | "name"
   | "email"

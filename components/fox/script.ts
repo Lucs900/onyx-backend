@@ -127,6 +127,7 @@ export function taskContext(stage: FoxStage, draft: FoxIntakeDraft) {
     value: "Asking: value",
     credit: "Asking: credit",
     term: "Asking: term",
+    preparing: "Preparing file",
     "basics-done": "Basics in file",
     name: "Asking: name",
     email: "Asking: email",

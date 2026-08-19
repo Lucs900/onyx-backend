@@ -140,7 +140,18 @@ export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
     return "credit";
   }
   if (!draft.termAsked && draft.termYears == null) return "term";
-  return "basics-done";
+  if (draft.phase === "confirmed" || draft.workspaceDraftStatus === "with-originator") {
+    if (draft.correcting === "correct") return "correct";
+    if (draft.correcting) return draft.correcting;
+    return "done";
+  }
+  if (draft.correcting === "correct") return "correct";
+  if (draft.correcting) return draft.correcting;
+  if (!draft.documents.length && !draft.documentsSkipped) return "documents";
+  if (draft.workspaceDraftStatus === "preparing") return "preparing";
+  if (draft.workspaceDraftStatus === "ready") return "review";
+  if (draft.documents.length || draft.documentsSkipped) return "preparing";
+  return "documents";
 }
 
 export function workspacePromptCopy(
@@ -213,6 +224,47 @@ export function workspacePromptCopy(
       ],
     };
   }
+  if (prompt === "documents") {
+    return {
+      text: "Drop what you have. Skip is fine. I’ll work with what’s here.",
+      actions: [
+        { id: "open-docs", label: "Upload now", event: "open-docs", capture: { field: "open-docs" } },
+        { id: "skip-docs", label: "Skip for now", event: "bubble", capture: { field: "skip-docs" } },
+      ],
+    };
+  }
+  if (prompt === "preparing") {
+    return { text: "I’m preparing your file." };
+  }
+  if (prompt === "review") {
+    return {
+      text: "Does this look right?",
+      actions: [
+        { id: "looks-right", label: "Looks right", event: "bubble", capture: { field: "confirm-draft" } },
+        { id: "needs-fix", label: "Needs a correction", event: "bubble", capture: { field: "needs-correction" } },
+      ],
+    };
+  }
+  if (prompt === "correct") {
+    return {
+      text: "Which part should Fox fix?",
+      actions: bubbles(
+        [
+          { value: "product", label: "Product" },
+          { value: "occupancy", label: "Occupancy" },
+          { value: "timeline", label: "Timeline" },
+          { value: "amount", label: "Amount" },
+          { value: "documents", label: "Documents" },
+        ],
+        "correct",
+      ),
+    };
+  }
+  if (prompt === "done") {
+    return {
+      text: "A licensed originator will review the file. I cannot approve, lock, or commit to lend.",
+    };
+  }
   return {
     text: "I have the basics. I’ll keep this file current as we go.",
   };
@@ -230,7 +282,16 @@ export function workspaceGreeting(draft: FoxIntakeDraft): {
     return workspacePromptCopy("intent", draft);
   }
   const next = workspacePromptCopy(prompt, draft);
-  if (prompt === "basics-done") return next;
+  if (
+    prompt === "basics-done" ||
+    prompt === "documents" ||
+    prompt === "preparing" ||
+    prompt === "review" ||
+    prompt === "correct" ||
+    prompt === "done"
+  ) {
+    return next;
+  }
   return {
     text: `${starterText(draft.path)} ${next.text}`,
     actions: next.actions,
@@ -511,13 +572,63 @@ export function workspaceReply(
     if (term == null) return { text: "Tap 30 year, 15 year, or Skip." };
     if (term === "skip") {
       return {
-        ...workspacePromptCopy("basics-done", draft),
+        ...workspacePromptCopy("documents", { ...draft, termAsked: true }),
         capture: { field: "skip-term" },
       };
     }
     return {
-      ...workspacePromptCopy("basics-done", draft),
+      ...workspacePromptCopy("documents", { ...draft, termAsked: true }),
       capture: { field: "termYears", value: String(term) },
+    };
+  }
+
+  if (prompt === "documents") {
+    if (/(skip|later|not yet|don'?t have|fine)/i.test(lower)) {
+      return {
+        ...workspacePromptCopy("preparing", draft),
+        capture: { field: "skip-docs" },
+      };
+    }
+    if (/(upload|drop|now|add)/i.test(lower)) {
+      return {
+        text: "Add a file in the preview, or skip.",
+        actions: workspacePromptCopy("documents", draft).actions,
+        capture: { field: "open-docs" },
+      };
+    }
+    return {
+      text: "Tap Upload now, or Skip for now.",
+      actions: workspacePromptCopy("documents", draft).actions,
+    };
+  }
+
+  if (prompt === "preparing") {
+    return { text: "I’m preparing your file." };
+  }
+
+  if (prompt === "review") {
+    if (/(looks right|confirm|yes|correct|good)/i.test(lower)) {
+      return { ...workspacePromptCopy("done", draft), capture: { field: "confirm-draft" } };
+    }
+    if (/(correction|fix|wrong|no|edit)/i.test(lower)) {
+      return { ...workspacePromptCopy("correct", draft), capture: { field: "needs-correction" } };
+    }
+    return workspacePromptCopy("review", draft);
+  }
+
+  if (prompt === "correct") {
+    const map: { test: RegExp; value: string }[] = [
+      { test: /product|buy|refi|equity/, value: "product" },
+      { test: /occupan/, value: "occupancy" },
+      { test: /time/, value: "timeline" },
+      { test: /amount|value|loan/, value: "amount" },
+      { test: /doc/, value: "documents" },
+    ];
+    const hit = map.find((item) => item.test.test(lower));
+    if (!hit) return { text: "Tap Product, Occupancy, Timeline, Amount, or Documents." };
+    return {
+      ...workspacePromptCopy(hit.value as FoxPrompt, draft),
+      capture: { field: "correct", value: hit.value },
     };
   }
 
@@ -533,12 +644,23 @@ export function workspaceReply(
     };
   }
 
-  if (prompt === "basics-done") {
+  if (prompt === "basics-done" || prompt === "done") {
     const intent = productIntentFromText(q);
-    if (intent) {
+    if (intent && prompt === "basics-done") {
       return {
         text: `Updated to ${productIntentLabel(intent)}.`,
         capture: { field: "productIntent", value: intent },
+      };
+    }
+    if (prompt === "done") {
+      if (/(approv|lock|commit to lend)/i.test(lower)) {
+        return { text: "I can prepare a file. I cannot approve, lock, or commit to lend." };
+      }
+      if (/(next|what now|status|originator|review|who)/i.test(lower)) {
+        return { text: "A licensed originator will review the file." };
+      }
+      return {
+        text: "A licensed originator will review the file. Ask if you have a process question.",
       };
     }
     return {
@@ -612,6 +734,13 @@ export function previewFacts(draft: FoxIntakeDraft): PreviewFact[] {
     facts.push({ id: "occupancy", label: "Occupancy", value: occupancyLabel });
   }
 
+  const timeline =
+    draft.timelineChoice.value || draft.scenario?.timeline || "";
+  const timelineLabel = TIMELINE_BUBBLES.find((item) => item.value === timeline)?.label;
+  if (timelineLabel) {
+    facts.push({ id: "timeline", label: "Timeline", value: timelineLabel });
+  }
+
   const loan =
     draft.loanAmountValue ??
     (!draft.amountAsked ? draft.scenario?.loanAmount : undefined);
@@ -662,12 +791,18 @@ export function previewFacts(draft: FoxIntakeDraft): PreviewFact[] {
     });
   } else if (draft.documentsSkipped) {
     facts.push({ id: "docs", label: "Docs", value: "Skipped for now" });
+  } else if (draft.termAsked || draft.workspaceDraftStatus) {
+    facts.push({ id: "docs", label: "Docs", value: "Waiting" });
   }
 
-  if (draft.status) {
+  if (draft.workspaceDraftStatus === "preparing") {
+    facts.push({ id: "draft", label: "Draft", value: "Preparing" });
+  } else if (draft.workspaceDraftStatus === "ready") {
+    facts.push({ id: "draft", label: "Draft", value: "Ready for you" });
+  } else if (draft.workspaceDraftStatus === "with-originator") {
+    facts.push({ id: "draft", label: "Draft", value: "With originator" });
+  } else if (draft.status) {
     facts.push({ id: "draft", label: "Draft", value: draft.status });
-  } else if (workspacePrompt(draft) === "basics-done") {
-    facts.push({ id: "draft", label: "Draft", value: "Basics in file" });
   }
 
   return facts;
