@@ -1,4 +1,4 @@
-import type { ExplorerScenario } from "@/components/products/scenario";
+import type { CreditRange, ExplorerScenario } from "@/components/products/scenario";
 
 export const INTAKE_STORAGE_KEY = "onyx.foxIntake.draft";
 export const FOX_PANEL_KEY = "onyx.fox.panelOpen";
@@ -59,6 +59,8 @@ export type IncomeType = "w2" | "self-employed" | "both" | "other";
 
 export type IntakePath = "acr" | "loan-only";
 
+export type ProductIntent = "buy" | "refinance" | "use-equity";
+
 export type FoxIntakeDraft = {
   version: 1;
   phase: IntakePhase;
@@ -77,6 +79,12 @@ export type FoxIntakeDraft = {
   correcting: FoxPrompt | null;
   scenario: ExplorerScenario | null;
   path?: IntakePath;
+  productIntent?: ProductIntent;
+  loanAmountValue?: number;
+  propertyValueAmount?: number;
+  creditBand?: CreditRange;
+  termYears?: number;
+  termAsked?: boolean;
   notes: string[];
   documents: ReceivedDoc[];
   documentsSkipped: boolean;
@@ -88,9 +96,23 @@ export type FoxIntakeDraft = {
   updatedAt: string;
 };
 
-export type FoxStage = "home" | "acr" | "explore" | "scenario" | "results" | "intake";
+export type FoxStage =
+  | "home"
+  | "acr"
+  | "explore"
+  | "scenario"
+  | "results"
+  | "intake"
+  | "start";
 
 export type FoxPrompt =
+  | "intent"
+  | "product"
+  | "amount"
+  | "value"
+  | "credit"
+  | "term"
+  | "basics-done"
   | "name"
   | "email"
   | "phone"
@@ -109,6 +131,13 @@ export type Capture =
   | { field: "incomeType"; value: string }
   | { field: "occupancy"; value: string }
   | { field: "timeline"; value: string }
+  | { field: "path"; value: IntakePath }
+  | { field: "productIntent"; value: ProductIntent }
+  | { field: "loanAmount"; value: string }
+  | { field: "propertyValue"; value: string }
+  | { field: "creditRange"; value: string }
+  | { field: "termYears"; value: string }
+  | { field: "skip-term" }
   | { field: "skip-docs" }
   | { field: "open-docs" }
   | { field: "confirm-draft" }
@@ -156,4 +185,23 @@ export const TIMELINE_BUBBLES = [
   { value: "ready-now", label: "Ready now" },
   { value: "30-90", label: "30–90 days" },
   { value: "exploring", label: "Just exploring" },
+] as const;
+
+export const PRODUCT_INTENT_BUBBLES = [
+  { value: "buy", label: "Buy" },
+  { value: "refinance", label: "Refinance" },
+  { value: "use-equity", label: "Use equity" },
+] as const;
+
+export const CREDIT_WORKSPACE_BUBBLES = [
+  { value: "760+", label: "760+" },
+  { value: "720-759", label: "720–759" },
+  { value: "680-719", label: "680–719" },
+  { value: "not-sure", label: "Not sure" },
+] as const;
+
+export const TERM_BUBBLES = [
+  { value: "30", label: "30 year" },
+  { value: "15", label: "15 year" },
+  { value: "", label: "Skip" },
 ] as const;

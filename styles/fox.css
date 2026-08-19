@@ -10,7 +10,8 @@
   padding-bottom: 104px;
 }
 
-.fox-shell--home {
+.fox-shell--home,
+.fox-shell--start {
   padding-bottom: 24px;
 }
 

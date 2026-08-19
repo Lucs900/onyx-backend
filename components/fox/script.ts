@@ -13,7 +13,8 @@ import {
   scenarioToQuery,
   type ExplorerScenario,
 } from "@/components/products/scenario";
-import { pathFromQuery } from "@/components/products/startPath";
+import { ACR_START_HREF, LOAN_START_HREF, pathFromQuery } from "@/components/products/startPath";
+import { workspaceGreeting, workspacePrompt, workspacePromptCopy, workspaceReply } from "./workspace";
 import {
   HOME_IDLE_TEXT,
   HOME_PRODUCT_TEXT,
@@ -36,6 +37,7 @@ import {
 
 export function foxStageFromPath(pathname: string): FoxStage | null {
   if (pathname === "/") return "home";
+  if (pathname === "/start" || pathname.startsWith("/start/")) return "start";
   if (pathname === "/acr") return "acr";
   if (pathname === "/products") return "explore";
   if (pathname === "/products/scenario") return "scenario";
@@ -113,11 +115,19 @@ export function currentPrompt(draft: FoxIntakeDraft): FoxPrompt {
 
 export function taskContext(stage: FoxStage, draft: FoxIntakeDraft) {
   if (stage === "home") return "Home";
+  if (stage === "start") return "Workspace";
   if (stage === "acr") return "ACR";
   if (stage === "explore") return "Explore";
   if (stage === "scenario") return "Scenario";
   if (stage === "results") return "Results";
   const labels: Record<FoxPrompt, string> = {
+    intent: "Asking: path",
+    product: "Asking: product",
+    amount: "Asking: amount",
+    value: "Asking: value",
+    credit: "Asking: credit",
+    term: "Asking: term",
+    "basics-done": "Basics in file",
     name: "Asking: name",
     email: "Asking: email",
     phone: "Asking: phone",
@@ -159,12 +169,16 @@ export function greeting(
     };
   }
 
+  if (stage === "start") {
+    return workspaceGreeting(draft);
+  }
+
   if (stage === "acr") {
     return {
       text: "ACR is a relationship that stays open after close.",
       actions: [
-        { id: "start", label: "Start your relationship", href: "/products/scenario?path=acr" },
-        { id: "loan", label: "Just need a mortgage", href: "/products/scenario?path=loan" },
+        { id: "start", label: "Start your relationship", href: ACR_START_HREF },
+        { id: "loan", label: "Just need a mortgage", href: LOAN_START_HREF },
       ],
     };
   }
@@ -307,6 +321,11 @@ export function replyToMessage(
   if (stage === "home") {
     const home = homeReply(lower, draft);
     if (home) return home;
+  }
+
+  if (stage === "start") {
+    const workspace = workspaceReply(q, draft);
+    if (workspace) return workspace;
   }
 
   if (stage === "acr") {
@@ -525,7 +544,7 @@ function acrReply(lower: string): ReturnType<typeof replyToMessage> | null {
   if (/(reward|unlock|how much|amount|percent|%|payment count)/i.test(lower)) {
     return {
       text: "The reward is prepared when you join. I don't post a public amount.",
-      actions: [{ id: "start", label: "Start your relationship", href: "/products/scenario?path=acr" }],
+      actions: [{ id: "start", label: "Start your relationship", href: ACR_START_HREF }],
     };
   }
   if (/(desk|rate desk|credit path|member desk)/i.test(lower)) {
@@ -548,8 +567,8 @@ function acrReply(lower: string): ReturnType<typeof replyToMessage> | null {
     return {
       text: "Start the relationship, or take a loan on its own.",
       actions: [
-        { id: "start", label: "Start your relationship", href: "/products/scenario?path=acr" },
-        { id: "loan", label: "Just need a mortgage", href: "/products/scenario?path=loan" },
+        { id: "start", label: "Start your relationship", href: ACR_START_HREF },
+        { id: "loan", label: "Just need a mortgage", href: LOAN_START_HREF },
       ],
     };
   }
@@ -609,12 +628,15 @@ function nextSteps(
       ? { text: HOME_PRODUCT_TEXT, actions: homeProductActions(draft.path) }
       : { text: HOME_IDLE_TEXT, actions: homePathActions() };
   }
+  if (stage === "start") {
+    return workspacePromptCopy(workspacePrompt(draft), draft);
+  }
   if (stage === "acr") {
     return {
       text: "Start the relationship, or take a loan on its own.",
       actions: [
-        { id: "start", label: "Start your relationship", href: "/products/scenario?path=acr" },
-        { id: "loan", label: "Just need a mortgage", href: "/products/scenario?path=loan" },
+        { id: "start", label: "Start your relationship", href: ACR_START_HREF },
+        { id: "loan", label: "Just need a mortgage", href: LOAN_START_HREF },
       ],
     };
   }

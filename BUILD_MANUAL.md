@@ -37,11 +37,11 @@ Do **not** treat “Always approved” as a credit decision.
 
 One Fox assistant, one visible interface. No second chatbot, orb, FAB, or orange ring. Desktop and mobile are different layouts.
 
-- **Desktop brand hero:** paper field. Left: gold rule, `ACTIVE CREDIT RELATIONSHIP`, two-line serif H1, support line, side-by-side pills (`Start your relationship` solid / `Just need a mortgage` outlined). Right: large locked ACR object only. No legal line in the hero. No expanded Fox card, dock, thread, bubbles, or composer over the desktop hero. Desktop CTAs navigate to the existing start/scenario routes with `path=acr` / `path=loan` so Fox opens as a stage on that route, not as an overlay on the hero.
+- **Desktop brand hero:** paper field. Left: gold rule, `ACTIVE CREDIT RELATIONSHIP`, two-line serif H1, support line, side-by-side pills (`Start your relationship` solid / `Just need a mortgage` outlined). Right: large locked ACR object only. No legal line in the hero. No expanded Fox card, dock, thread, bubbles, or composer over the desktop hero. Desktop CTAs navigate to `/start?path=acr` / `/start?path=loan` so Fox becomes the workspace, not an overlay on the hero.
 - **Mobile Fox-first two-up:** compact locked claim (left) + smaller ACR object (right), tightly aligned. No legal line in the hero. Full-width Fox stage below (message, path bubbles, composer in-stage) with no excess empty card height. The stage is the same `AlwaysOnFox` instance, portaled into `#fox-home-stage`. No extra homepage dock while that stage is open. `FoxShell` skips the dock fallback on `/` so mobile first paint is not a second Fox.
 - Desktop homepage has no Fox dock. The dock may return on mobile after Fox is collapsed, or on non-homepage routes.
 - Opening Fox on `/` starts Idle. Starter: `I can prepare a file for a purchase, refinance, or equity. You can start a relationship or just get the loan.`
-- First bubbles only: `Start your relationship` (sets `path=acr`) and `Just need a mortgage` (sets `path=loan`). After a path is chosen, product chips: Buy / Refinance / Use equity → existing scenario routes with that path + product.
+- First bubbles only: `Start your relationship` (sets `path=acr`) and `Just need a mortgage` (sets `path=loan`). After a path is chosen, product chips: Buy / Refinance / Use equity → `/start` with that path + `intent`.
 - Header and closer still carry the two path labels. No quiet text echoes under the claim.
 - **No in-panel Fox disclosure.** Legal stays in the page footer / how-we-get-paid only. Not in the hero.
 - Do **not** rebuild Fox intake stages in this slice. Do not implement later logged-in ACR home.
@@ -68,7 +68,7 @@ Rate card is the mortgage-without-ACR off-ramp:
 - Eyebrow `MORTGAGE ONLY`. No section H2.
 - APR / decision / amount / as-of remain **OPEN**. Preview uses `—` and `Sample · not live`. Do not invent a live rate.
 - Product line may show `Purchase · 30-year fixed` only as a labeled sample.
-- CTA `Find my rate` (56px) with `2 min · no hard credit check` → `/products/scenario?path=loan` — same loan only start as hero `Just need a mortgage`.
+- CTA `Find my rate` (56px) with `2 min · no hard credit check` → `/start?path=loan` — same loan only start as hero `Just need a mortgage`.
 - Exact line under the card: `A mortgage is available without ACR.`
 
 Comparison: Feature | ONYX ACR | Loan only. Five rows only: After close (Desk stays open / File closes), Optimization (Ongoing / None), Approval letter (From your file / Standard process), Membership reward (Calculated / None), Opportunities (Scouted from your profile / None). No Traditional lender column. No Fees or How we get paid rows. No checkmark theater. ONYX column keeps the 6px metal underline. Compensation is a quiet footer / trust link only, not a product benefit. Mobile uses stacked cards with the same two columns.
@@ -79,7 +79,21 @@ How it works: `THE PATH` / `Get approved. Then stay that way.` Five steps. Empha
 
 Proof: four OPEN placeholders (`—`), `Sample · not live`, `As of —`. No invented volume, stars, quotes, or GSE logos. Trust marks: Equal Housing, NMLS Consumer Access, Mortgage broker.
 
-Closer: locked H2 `Always approved. Always optimizing.` Primary → `/products/scenario?path=acr`. Secondary → `/products/scenario?path=loan`. `Talk to a licensed originator` → `/advisor` + `NMLS ____`. Repeat `NMLS [OPEN] · CA DRE [OPEN] · We are a mortgage broker.` Mobile sticky bar is Slice 9, not this slice.
+Closer: locked H2 `Always approved. Always optimizing.` Primary → `/start?path=acr`. Secondary → `/start?path=loan`. `Talk to a licensed originator` → `/advisor` + `NMLS ____`. Repeat `NMLS [OPEN] · CA DRE [OPEN] · We are a mortgage broker.` Mobile sticky bar is Slice 9, not this slice.
+
+## Slice 2 — Fox workspace (`/start`)
+
+Primary post-click experience after the homepage. Fox talks and the file preview updates at the same time. Explorer, scenario, results, and intake remain as fallbacks — do not rebuild them as the start path.
+
+- Routes: `/start?path=acr` and `/start?path=loan`. Persist `path` on the query and `onyx.startPath`.
+- Homepage hero markup/copy/layout stays the cleaned marketing hero. Only the pill destinations change (`ACR_START_HREF` / `LOAN_START_HREF` in `startPath.ts`).
+- One Fox only. The same `AlwaysOnFox` instance portals into `#fox-start-stage`. No orb, FAB, second chatbot, or homepage overlay.
+- **Desktop:** live preview left (when at least one useful fact exists), Fox chat right. Composer stays in the Fox stage. No dock.
+- **Mobile:** Fox chat is primary. When preview data exists, a compact File / Preview card can expand and collapse. Do not force a permanent side-by-side.
+- Preview is a calm file card, not a dashboard. Show only real/available facts: path (ACR or Loan only), product (Buy / Refinance / Use equity), occupancy, rough loan amount or value, term, docs status, draft status. Estimated rate / APR / payment only if truly available — do not invent them. Estimated ACR reward range only on the ACR path when `estimateRewardRange` returns a range. Label sample / indicative / estimated. Never show the private formula or a public %.
+- Fox flow: intent if needed → product → occupancy → timeline → rough numbers. Use equity is a real HELOC/equity path (`heloc-heloan`). Docs / full draft wait unless existing intake pieces already apply. One question at a time, bubbles for structured answers, free text and composer always available.
+- Starters (exact): ACR `I can prepare your relationship file. Let’s get the basics.` Loan-only `Loan-only. ACR is optional. Let’s get the basics.`
+- No disclosures stuffed into Fox bubbles. Fox cannot approve, lock, or commit to lend. California only stays site-level.
 
 ## Product Explorer (CA only)
 
@@ -107,7 +121,7 @@ Preview only. California only. Client stays in control; Fox prepares a draft. No
 
 ### Always-on Fox
 
-Mounted on `/` (homepage), `/acr`, `/products`, `/products/scenario`, `/products/results`, and `/intake` — not `/about`, `/rates`, or other marketing stubs.
+Mounted on `/` (homepage), `/start`, `/acr`, `/products`, `/products/scenario`, `/products/results`, and `/intake` — not `/about`, `/rates`, or other marketing stubs. `/start` is the Fox workspace: in-stage, always open, no dock.
 
 Fox is the **central AI bar** — the operating surface, not a FAB, corner popup, or support widget. Locked visual (Design Scout):
 
@@ -212,7 +226,13 @@ app/(marketing)/rates/page.tsx    temporary rates (no live board)
 app/(marketing)/about/page.tsx    short about
 app/(marketing)/how-we-get-paid/page.tsx  broker compensation
 app/(marketing)/{licensing,privacy,equal-housing,login,advisor}/page.tsx  short real pages
-components/products/startPath.ts  ACR / loan only start intent (`path=acr` | `path=loan`)
+components/products/startPath.ts  ACR / loan only start intent (`/start?path=acr` | `/start?path=loan`)
+components/fox/workspace.ts       workspace prompts, amount parse, live preview facts
+components/fox/FilePreview.tsx    calm file card / mobile File sheet
+components/fox/StartWorkspace.tsx `/start` layout: preview + Fox stage
+styles/start.css                  workspace layout
+app/(marketing)/start/page.tsx    Fox workspace route
+app/(marketing)/start/layout.tsx  mounts Always-on Fox for /start
 app/api/chat                      UNCHANGED
 app/api/heloc-quote               UNCHANGED
 lib/*                             UNCHANGED
@@ -230,17 +250,18 @@ Metal is scarce: fox highlight, the locked ACR card gold dock, the comparison ON
 
 ## Shell
 
-- Primary CTA: `Start your relationship` → `/products/scenario?path=acr` (ACR start). Header and closer use the same href. Nav ACR still goes to `/acr`.
+- Primary CTA: `Start your relationship` → `/start?path=acr` (ACR start). Header and closer use the same href. Nav ACR still goes to `/acr`.
 - Nav-only truncate under 1024: `Start` + `aria-label="Start your relationship"`
-- Secondary / mobile `Just need a mortgage` → `/products/scenario?path=loan`
+- Secondary / mobile `Just need a mortgage` → `/start?path=loan`
 - Never “Get my rate”
 
 ## Public start paths
 
-Homepage path choice is the desktop hero buttons or the mobile Fox Idle bubbles (header and closer remain). Product chips appear after a path is stored. There is no Relationship / Loan toggle. Intent is stored as `acr` | `loan-only` in `sessionStorage` / `localStorage` key `onyx.startPath` and carried as `path=acr` or `path=loan` on explorer, scenario, results, and intake URLs.
+Homepage path choice is the desktop hero buttons or the mobile Fox Idle bubbles (header and closer remain). Product chips appear after a path is stored. There is no Relationship / Loan toggle. Intent is stored as `acr` | `loan-only` in `sessionStorage` / `localStorage` key `onyx.startPath` and carried as `path=acr` or `path=loan` on workspace, explorer, scenario, results, and intake URLs.
 
-- ACR start: `/products/scenario?path=acr`
-- Loan only start: `/products/scenario?path=loan`
+- ACR start: `/start?path=acr`
+- Loan only start: `/start?path=loan`
+- Workspace is the primary post-click surface. `/products/scenario`, `/products/results`, and `/intake` remain as fallbacks.
 - `/acr` remains the public product page. Its primary CTA starts the ACR scenario path. Secondary starts loan only.
 - Results still lets the client choose ACR vs loan only; those CTAs go to intake with scenario + path.
 - Rates is a temporary page: no live board. Pricing is based on scenario. CTAs to `/products` and `/products/scenario`.
@@ -253,7 +274,7 @@ npm install
 npm run dev
 ```
 
-Open `http://localhost:3000`. Homepage primary and secondary CTAs start ACR and loan only at `/products/scenario`. Closer uses the same hrefs. There is no sticky bar yet.
+Open `http://localhost:3000`. Homepage primary and secondary CTAs start ACR and loan only at `/start`. Closer uses the same hrefs. There is no sticky bar yet.
 
 ```bash
 npm run build
@@ -279,7 +300,7 @@ Public `/acr` is the product page. Reward is the reason. Goals, property, and a 
 
 Page stack, in order:
 
-1. **Hero** — locked ACR object via `AcrPass` / `public/acr-card-face.png` (same file, no restyle, no overlay type, no regeneration). Headline `The desk that stays open`. Eyebrow `Active Credit Relationship`. Support: ACR as an ongoing relationship. Primary `Start your relationship` → `/products/scenario?path=acr`. Secondary quiet `Just need a mortgage` → `/products/scenario?path=loan`. California only as **page** legal, not in Fox.
+1. **Hero** — locked ACR object via `AcrPass` / `public/acr-card-face.png` (same file, no restyle, no overlay type, no regeneration). Headline `The desk that stays open`. Eyebrow `Active Credit Relationship`. Support: ACR as an ongoing relationship. Primary `Start your relationship` → `/start?path=acr`. Secondary quiet `Just need a mortgage` → `/start?path=loan`. California only as **page** legal, not in Fox.
 2. **Reward instrument (primary)** — one folio, radius **16**, `--paper-elevated`, hairline, **2px metal tick** (`--metal`). **Not a gold card.** Do not restyle or reuse the ACR card PNG as the reward. Public copy, no numbers: `A reward calculated for your relationship.` / `Unlocks after on time payments.` / `Your amount is prepared when you join.` Unlock is **quiet unlabeled ticks only** (no “6 payments”, no %). No public %, payment count, or invented dollar amount. Mark `Sample, not live`. Near the reward: `Explore a scenario to see an estimated reward range.` → `/products/scenario`.
 3. **Three-line unlock path** — three quiet lines. Not the homepage 5-step path.
 4. **Three desks** — reuse `ValueBreakdown`. Headline `A relationship that keeps working after close.` Same names and limits: The Rate Desk, The Credit Path, The Member Desk.

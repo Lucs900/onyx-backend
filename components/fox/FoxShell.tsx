@@ -16,11 +16,17 @@ function DockFallback() {
 export function FoxShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const home = pathname === "/";
+  const start = pathname === "/start" || pathname.startsWith("/start/");
+  const hideDock = home || start;
 
   return (
-    <div className={home ? "fox-shell fox-shell--home" : "fox-shell"}>
+    <div
+      className={
+        home ? "fox-shell fox-shell--home" : start ? "fox-shell fox-shell--start" : "fox-shell"
+      }
+    >
       {children}
-      <Suspense fallback={home ? null : <DockFallback />}>
+      <Suspense fallback={hideDock ? null : <DockFallback />}>
         <AlwaysOnFox />
       </Suspense>
     </div>

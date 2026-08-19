@@ -32,9 +32,16 @@ import {
   hydrateFoxDraft,
   seedPreviewSample,
   setDraftPath,
+  setDraftProductIntent,
   setDraftScenario,
   subscribeFoxDraft,
 } from "./store";
+import {
+  productIntentFromQuery,
+  productIntentFromSlug,
+  workspacePrompt,
+  workspacePromptCopy,
+} from "./workspace";
 import {
   HOME_PRODUCT_TEXT,
   homeProductActions,
@@ -141,6 +148,7 @@ function FoxWorkspace({
   onClose,
   onAction,
   composer,
+  hideClose,
 }: {
   className: string;
   messages: FoxMessage[];
@@ -148,20 +156,23 @@ function FoxWorkspace({
   onClose: () => void;
   onAction: (action: FoxAction) => void;
   composer?: ReactNode;
+  hideClose?: boolean;
 }) {
   return (
     <div id="fox-panel" className={className}>
       <div className="fox-bar__head">
         <span className="fox-bar__title">ONYX Fox</span>
-        <button
-          type="button"
-          className="fox-bar__close"
-          aria-expanded={true}
-          aria-controls="fox-panel"
-          onClick={onClose}
-        >
-          Close
-        </button>
+        {hideClose ? null : (
+          <button
+            type="button"
+            className="fox-bar__close"
+            aria-expanded={true}
+            aria-controls="fox-panel"
+            onClick={onClose}
+          >
+            Close
+          </button>
+        )}
       </div>
       <FoxThread messages={messages} listRef={listRef} onAction={onAction} />
       {composer}
@@ -180,6 +191,7 @@ export function AlwaysOnFox() {
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState<FoxMessage[]>([]);
   const [homeStage, setHomeStage] = useState<HTMLElement | null>(null);
+  const [startStage, setStartStage] = useState<HTMLElement | null>(null);
   const greeted = useRef<string>("");
   const pendingAsk = useRef<string | null>(null);
   const skipPromptSync = useRef(false);
@@ -187,10 +199,15 @@ export function AlwaysOnFox() {
   const fieldId = useId();
   const greetKey = `${pathname}${search}`;
   const isHome = stage === "home";
+  const isStart = stage === "start";
   const useHomeStage = Boolean(homeStage);
+  const useStartStage = Boolean(startStage);
 
   useLayoutEffect(() => {
-    const syncStage = () => setHomeStage(isHome ? visibleHomeStage() : null);
+    const syncStage = () => {
+      setHomeStage(isHome ? visibleHomeStage() : null);
+      setStartStage(isStart ? document.getElementById("fox-start-stage") : null);
+    };
     syncStage();
     const media = window.matchMedia("(min-width: 1024px)");
     media.addEventListener("change", syncStage);
@@ -199,7 +216,7 @@ export function AlwaysOnFox() {
       media.removeEventListener("change", syncStage);
       window.removeEventListener("resize", syncStage);
     };
-  }, [isHome, open]);
+  }, [isHome, isStart, open]);
 
   useEffect(() => {
     const query = window.location.search;
@@ -216,10 +233,24 @@ export function AlwaysOnFox() {
       const path = pathFromQuery(params.get("path")) ?? readStartPath();
       if (path) setDraftPath(path);
     }
+    if (stage === "start") {
+      const params = new URLSearchParams(query);
+      const path = pathFromQuery(params.get("path")) ?? readStartPath();
+      if (path) {
+        writeStartPath(path);
+        setDraftPath(path);
+      }
+      const intent =
+        productIntentFromQuery(params.get("intent")) ??
+        productIntentFromSlug(params.get("product"));
+      if (intent) setDraftProductIntent(intent);
+    }
     const stored = sessionStorage.getItem(FOX_PANEL_KEY);
     const live = getFoxDraft();
     const asking = stage === "intake" && live.phase !== "confirmed";
-    if (stage === "home") {
+    if (stage === "start") {
+      setOpen(true);
+    } else if (stage === "home") {
       setOpen(visibleHomeStage() ? stored !== "0" : stored === "1");
     } else if (stage === "acr") {
       setOpen(false);
@@ -260,6 +291,9 @@ export function AlwaysOnFox() {
           writeStartPath(path);
           setDraftPath(path);
         }
+      }
+      if (reply.capture?.field === "path") {
+        writeStartPath(reply.capture.value);
       }
       if (reply.capture) applyCapture(reply.capture);
       setMessages((prev) => [
@@ -317,13 +351,16 @@ export function AlwaysOnFox() {
   }, [greetKey, pathname, ready, stage]);
 
   useEffect(() => {
-    if (!ready || stage !== "intake") return;
+    if (!ready || (stage !== "intake" && stage !== "start")) return;
     if (skipPromptSync.current) {
       skipPromptSync.current = false;
       return;
     }
     const live = getFoxDraft();
-    const ask = promptCopy(currentPrompt(live), live);
+    const ask =
+      stage === "start"
+        ? workspacePromptCopy(workspacePrompt(live), live)
+        : promptCopy(currentPrompt(live), live);
     setMessages((prev) => {
       const last = prev[prev.length - 1];
       if (last?.role === "fox" && last.text === ask.text) return prev;
@@ -381,9 +418,15 @@ export function AlwaysOnFox() {
       return;
     }
     if (action.capture) {
+      if (action.capture.field === "path") {
+        writeStartPath(action.capture.value);
+      }
       applyCapture(action.capture);
       const live = getFoxDraft();
-      const next = promptCopy(currentPrompt(live), live);
+      const next =
+        stage === "start"
+          ? workspacePromptCopy(workspacePrompt(live), live)
+          : promptCopy(currentPrompt(live), live);
       appendReply(action.label, next);
     }
   };
@@ -402,6 +445,9 @@ export function AlwaysOnFox() {
         setDraftPath(path);
       }
     }
+    if (reply.capture?.field === "path") {
+      writeStartPath(reply.capture.value);
+    }
     if (reply.capture) applyCapture(reply.capture);
     if (reply.capture?.field === "open-docs") {
       document.getElementById("fox-documents")?.scrollIntoView({ behavior: "smooth" });
@@ -409,7 +455,7 @@ export function AlwaysOnFox() {
     appendReply(text, reply);
   };
 
-  const hideDock = isHome && (useHomeStage ? open : true);
+  const hideDock = isStart || (isHome && (useHomeStage ? open : true));
 
   const desk = (
     <form className="fox-bar__desk" onSubmit={onSubmit}>
@@ -449,17 +495,22 @@ export function AlwaysOnFox() {
 
   const workspace = open ? (
     <FoxWorkspace
-      className={isHome ? "fox-stage" : "fox-bar__workspace"}
+      className={
+        isStart ? "fox-stage fox-stage--workspace" : isHome ? "fox-stage" : "fox-bar__workspace"
+      }
       messages={messages}
       listRef={listRef}
       onClose={() => setOpen(false)}
       onAction={runAction}
-      composer={useHomeStage ? desk : undefined}
+      composer={useHomeStage || isStart ? desk : undefined}
+      hideClose={isStart}
     />
   ) : null;
 
   let stageNode: ReactNode = null;
-  if (useHomeStage && homeStage) {
+  if (useStartStage && startStage) {
+    stageNode = createPortal(workspace, startStage);
+  } else if (useHomeStage && homeStage) {
     stageNode = createPortal(
       open ? workspace : <span className="visually-hidden" data-fox-collapsed="true" />,
       homeStage,

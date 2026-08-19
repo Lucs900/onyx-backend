@@ -11,8 +11,8 @@ export function pathFromQuery(raw: string | null | undefined): IntakePath | null
 }
 
 export const START_PATH_KEY = "onyx.startPath";
-export const ACR_START_HREF = "/products/scenario?path=acr";
-export const LOAN_START_HREF = "/products/scenario?path=loan";
+export const ACR_START_HREF = "/start?path=acr";
+export const LOAN_START_HREF = "/start?path=loan";
 
 export function startPathToken(path: IntakePath) {
   return path === "acr" ? "acr" : "loan";

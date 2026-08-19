@@ -20,17 +20,17 @@ export function homeProductActions(path: IntakePath): FoxAction[] {
     {
       id: "buy",
       label: "Buy",
-      href: `/products/scenario?path=${token}&product=conventional-purchase`,
+      href: `/start?path=${token}&intent=buy`,
     },
     {
       id: "refi",
       label: "Refinance",
-      href: `/products/scenario?path=${token}&product=conventional-rate-term-refinance`,
+      href: `/start?path=${token}&intent=refinance`,
     },
     {
       id: "equity",
       label: "Use equity",
-      href: `/products/scenario?path=${token}&product=heloc-heloan`,
+      href: `/start?path=${token}&intent=equity`,
     },
   ];
 }

@@ -1,6 +1,7 @@
 import {
   readScenario,
   writeScenario,
+  type CreditRange,
   type ExplorerScenario,
 } from "@/components/products/scenario";
 import {
@@ -14,9 +15,15 @@ import {
   type FoxPrompt,
   type IntakePath,
   type LoMark,
+  type ProductIntent,
   type ReceivedDoc,
   type SectionId,
 } from "./types";
+import { purposeForIntent, slugForIntent } from "./workspace";
+
+function numberOrUndefined(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : undefined;
+}
 
 function emptyField(field: string, value = "", source: DraftField["source"] = "client"): DraftField {
   return { field, value, source, confirmed: false };
@@ -72,6 +79,17 @@ function normalize(value: unknown): FoxIntakeDraft {
     preferredAsked: Boolean(raw.preferredAsked),
     correcting: raw.correcting ?? null,
     path: raw.path === "acr" || raw.path === "loan-only" ? raw.path : undefined,
+    productIntent:
+      raw.productIntent === "buy" ||
+      raw.productIntent === "refinance" ||
+      raw.productIntent === "use-equity"
+        ? raw.productIntent
+        : undefined,
+    loanAmountValue: numberOrUndefined(raw.loanAmountValue),
+    propertyValueAmount: numberOrUndefined(raw.propertyValueAmount),
+    creditBand: raw.creditBand,
+    termYears: numberOrUndefined(raw.termYears),
+    termAsked: Boolean(raw.termAsked),
     previewSample: Boolean(raw.previewSample),
     documents: (raw.documents ?? []).map((doc) => ({
       ...doc,
@@ -168,6 +186,44 @@ export function setDraftPath(path: IntakePath | null) {
   if (!path) return current;
   if (current.path === path) return current;
   return commit({ ...current, path });
+}
+
+function withProductIntent(draft: FoxIntakeDraft, intent: ProductIntent): FoxIntakeDraft {
+  const scenario = draft.scenario
+    ? {
+        ...draft.scenario,
+        purpose: purposeForIntent(intent),
+        productSlug: slugForIntent(intent),
+        productName:
+          intent === "buy" ? "Buy" : intent === "refinance" ? "Refinance" : "Use equity",
+      }
+    : draft.scenario;
+  return { ...draft, productIntent: intent, scenario };
+}
+
+export function setDraftProductIntent(intent: ProductIntent | null) {
+  if (!intent) return current;
+  if (current.productIntent === intent) return current;
+  return commit(withProductIntent(current, intent));
+}
+
+function withWorkspaceScenario(draft: FoxIntakeDraft): FoxIntakeDraft {
+  const scenario = draft.scenario;
+  if (!scenario) return draft;
+  const next: ExplorerScenario = {
+    ...scenario,
+    purpose: draft.productIntent ? purposeForIntent(draft.productIntent) : scenario.purpose,
+    productSlug: draft.productIntent ? slugForIntent(draft.productIntent) : scenario.productSlug,
+    occupancy:
+      (draft.occupancyChoice.value as ExplorerScenario["occupancy"]) || scenario.occupancy,
+    timeline:
+      (draft.timelineChoice.value as ExplorerScenario["timeline"]) || scenario.timeline,
+    loanAmount: draft.loanAmountValue ?? scenario.loanAmount,
+    propertyValue: draft.propertyValueAmount ?? scenario.propertyValue,
+    creditRange: draft.creditBand ?? scenario.creditRange,
+  };
+  writeScenario(next);
+  return { ...draft, scenario: next };
 }
 
 function clientField(field: string, value: string): DraftField {
@@ -328,24 +384,28 @@ export function applyCapture(capture: Capture) {
     return advancePhase();
   }
   if (capture.field === "occupancy") {
-    commit({
-      ...current,
-      occupancyChoice: clientField("occupancy", capture.value),
-      occupancyAsked: true,
-      correcting: null,
-      sections: { ...current.sections, occupancy: false },
-      status: undefined,
-      confirmedAt: undefined,
-    });
+    commit(
+      withWorkspaceScenario({
+        ...current,
+        occupancyChoice: clientField("occupancy", capture.value),
+        occupancyAsked: true,
+        correcting: null,
+        sections: { ...current.sections, occupancy: false },
+        status: undefined,
+        confirmedAt: undefined,
+      }),
+    );
     return advancePhase();
   }
   if (capture.field === "timeline") {
-    commit({
-      ...current,
-      timelineChoice: clientField("timeline", capture.value),
-      timelineAsked: true,
-      correcting: null,
-    });
+    commit(
+      withWorkspaceScenario({
+        ...current,
+        timelineChoice: clientField("timeline", capture.value),
+        timelineAsked: true,
+        correcting: null,
+      }),
+    );
     return advancePhase();
   }
   if (capture.field === "skip-docs") {
@@ -376,6 +436,56 @@ export function applyCapture(capture: Capture) {
   }
   if (capture.field === "note") {
     return addNote(capture.value);
+  }
+  if (capture.field === "path") {
+    return commit({ ...current, path: capture.value });
+  }
+  if (capture.field === "productIntent") {
+    return commit(withWorkspaceScenario(withProductIntent(current, capture.value)));
+  }
+  if (capture.field === "loanAmount") {
+    const [loanRaw, valueRaw] = capture.value.split(":");
+    const loan = Number(loanRaw);
+    const value = valueRaw ? Number(valueRaw) : undefined;
+    return commit(
+      withWorkspaceScenario({
+        ...current,
+        loanAmountValue: Number.isFinite(loan) && loan > 0 ? loan : current.loanAmountValue,
+        propertyValueAmount:
+          value != null && Number.isFinite(value) && value > 0
+            ? value
+            : current.propertyValueAmount,
+      }),
+    );
+  }
+  if (capture.field === "propertyValue") {
+    const value = Number(capture.value);
+    return commit(
+      withWorkspaceScenario({
+        ...current,
+        propertyValueAmount:
+          Number.isFinite(value) && value > 0 ? value : current.propertyValueAmount,
+      }),
+    );
+  }
+  if (capture.field === "creditRange") {
+    return commit(
+      withWorkspaceScenario({
+        ...current,
+        creditBand: capture.value as CreditRange,
+      }),
+    );
+  }
+  if (capture.field === "termYears") {
+    const years = Number(capture.value);
+    return commit({
+      ...current,
+      termYears: Number.isFinite(years) && years > 0 ? years : undefined,
+      termAsked: true,
+    });
+  }
+  if (capture.field === "skip-term") {
+    return commit({ ...current, termAsked: true, termYears: undefined });
   }
   return current;
 }
