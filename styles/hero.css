@@ -1,4 +1,4 @@
-/* Homepage hero. Mobile and desktop are different layouts. */
+/* Homepage hero. Desktop brand hero and mobile Fox-first are different layouts. */
 
 .membership-hero {
   background: var(--paper);
@@ -45,6 +45,12 @@
   color: var(--ink-2);
 }
 
+.membership-hero__actions {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
 .btn.btn--hero-primary,
 .btn.btn--hero-secondary {
   width: 100%;
@@ -58,114 +64,131 @@
   height: 52px;
 }
 
-/* Mobile: compact claim + smaller ACR on one row, Fox full width below. */
+/* Mobile: balanced claim + smaller ACR on one row, Fox full width below. */
 
 @media (max-width: 1023px) {
   .membership-hero__inner {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    column-gap: 16px;
-    row-gap: 20px;
-    align-items: start;
+    grid-template-columns: minmax(0, 1fr) minmax(140px, 34%);
+    column-gap: 14px;
+    row-gap: 16px;
+    align-items: center;
     padding-top: 24px;
     padding-bottom: 16px;
   }
 
-  .membership-hero__type {
-    display: flex;
-    flex-direction: column;
-    min-width: 0;
-    grid-column: 1;
-    grid-row: 1;
-  }
-
+  .membership-hero__type,
   .membership-hero__primary {
     display: contents;
+  }
+
+  .membership-hero__intro {
+    grid-column: 1;
+    grid-row: 1;
+    min-width: 0;
+  }
+
+  .membership-hero__actions {
+    display: none;
   }
 
   .membership-hero__pass {
     grid-column: 2;
     grid-row: 1;
     display: flex;
-    align-items: flex-start;
+    align-items: center;
     justify-content: flex-end;
     margin: 0;
   }
 
-  .membership-hero .membership-hero__fox-wrap {
+  .membership-hero__trust {
     grid-column: 1 / -1;
     grid-row: 2;
+    margin-top: 0;
+  }
+
+  .membership-hero .membership-hero__fox-wrap {
+    grid-column: 1 / -1;
+    grid-row: 3;
     width: 100%;
     margin-top: 0;
   }
 
   .membership-hero__rule {
-    margin-bottom: 10px;
+    margin-bottom: 8px;
   }
 
   .membership-hero__title {
-    margin-top: 10px;
-    font-size: 28px;
-    line-height: 32px;
+    margin-top: 8px;
+    font-size: 30px;
+    line-height: 34px;
   }
 
   .membership-hero__support {
-    margin-top: 12px;
-    font-size: 16px;
-    line-height: 24px;
-  }
-
-  .membership-hero__trust {
-    margin-top: 12px;
+    margin-top: 10px;
+    font-size: 15px;
+    line-height: 22px;
   }
 
   .membership-hero .acr-pass-stage {
-    max-width: 128px;
+    max-width: 156px;
   }
 }
 
-/* Desktop: full claim left; ACR above Fox on the right. */
+/* Desktop: clean brand hero. Claim + buttons + legal | large ACR. No Fox card. */
 
 @media (min-width: 1024px) {
   .membership-hero__inner {
     display: grid;
-    grid-template-columns: 0.82fr 1.18fr;
-    column-gap: 64px;
-    align-items: start;
-    min-height: min(780px, calc(100vh - 72px));
-    padding-block: 48px 32px;
-  }
-
-  .membership-hero__type,
-  .membership-hero__primary {
-    display: flex;
-    flex-direction: column;
+    grid-template-columns: 1.1fr 0.9fr;
+    column-gap: 80px;
+    align-items: center;
+    min-height: min(860px, calc(100vh - 72px));
+    padding-block: 0;
   }
 
   .membership-hero__type {
+    display: flex;
+    flex-direction: column;
     padding-top: 24px;
   }
 
-  .membership-hero__trust {
-    margin-top: 28px;
+  .membership-hero__primary {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+  }
+
+  .membership-hero__fox-wrap {
+    display: none;
   }
 
   .membership-hero__pass {
-    order: 1;
     display: flex;
     justify-content: flex-end;
-    margin: 0 0 28px;
+    margin: 0;
   }
 
-  .membership-hero .membership-hero__fox-wrap {
-    order: 2;
-    width: 100%;
-    margin-top: 0;
-    min-height: 320px;
+  .membership-hero__actions {
+    flex-direction: row;
+    align-items: center;
+    margin-top: 32px;
   }
 
-  .membership-hero__fox {
-    min-height: 320px;
+  .membership-hero__trust {
+    margin-top: 20px;
+  }
+
+  .membership-hero__title {
+    margin-top: 20px;
+    font-size: 64px;
+    line-height: 72px;
+  }
+
+  .membership-hero__support {
+    margin-top: 24px;
+    font-size: 18px;
+    line-height: 28px;
   }
 
   .btn.btn--hero-primary,
@@ -175,6 +198,10 @@
 
   .btn.btn--hero-secondary {
     height: 48px;
+  }
+
+  .membership-hero .acr-pass-stage {
+    max-width: 480px;
   }
 }
 
@@ -196,11 +223,5 @@
 @media (min-width: 768px) {
   .acr-pass-stage {
     max-width: 480px;
-  }
-}
-
-@media (min-width: 1024px) {
-  .membership-hero .acr-pass-stage {
-    max-width: 360px;
   }
 }

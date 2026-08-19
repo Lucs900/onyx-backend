@@ -17,7 +17,7 @@ Tokens, navigation, footer, and layout foundation. Keep this chrome.
 
 ## Slice 2 — hero + locked ACR object
 
-Homepage first screen is **Fox-first** (18 Aug 2026). Locked brand claim stays exact. Fox is the primary start. The ACR object remains, quieter — not the operator.
+Desktop homepage is the **clean brand hero**. Mobile homepage is Fox-first. Locked brand claim stays exact.
 
 Locked claim (do not rewrite):
 
@@ -26,28 +26,26 @@ Locked claim (do not rewrite):
 - Support: `We keep your credit and rate working for you.`
 - Legal: `NMLS [OPEN] · CA DRE [OPEN] · We are a mortgage broker.` + How we get paid link
 
-The hero object is the exact locked bitmap **`public/acr-card-face.png`**, shown as a clean `<img>`. Do not regenerate, restyle, or color-grade it. Keep it straight (0°). No CSS type overlay, sheen, sweep, filters, or tilt. Type/gold/fox live in the bitmap if present. Only this object may lift (soft shadow). Smaller / lower on the homepage only. `/acr` keeps the larger object.
+The hero object is the exact locked bitmap **`public/acr-card-face.png`**, shown as a clean `<img>`. Do not regenerate, restyle, or color-grade it. Keep it straight (0°). No CSS type overlay, sheen, sweep, filters, or tilt. Type/gold/fox live in the bitmap if present. Only this object may lift (soft shadow). Desktop homepage uses the large object. Mobile homepage uses a smaller object beside the claim. `/acr` keeps the larger object.
 
 **Locked — do not reopen** house, zoom, gold width, or composition. Not the old CSS membership pass (no MEMBER, last-4, chip, or ONYX wordmark on the object).
 
 Do **not** treat “Always approved” as a credit decision.
 
-## Slice 3 — Fox-first homepage (`/` only)
+## Slice 3 — homepage start (`/` only)
 
-Fox is the homepage operator. One Fox assistant, one visible interface. The expanded homepage stage is the same `AlwaysOnFox` instance, portaled into `#fox-home-stage`. No second chatbot, orb, FAB, or orange ring.
+One Fox assistant, one visible interface. No second chatbot, orb, FAB, or orange ring. Desktop and mobile are different layouts.
 
-- **First paint on `/`:** only the expanded Fox stage. Do not mount the bottom Ask ONYX Fox dock while the homepage stage is open. `FoxShell` skips the dock fallback on `/`.
-- Desktop and mobile are different layouts. Do not share one grid/order for both.
-- Desktop: full locked claim on the left (do not shrink the display type). Right column is ACR hero object on top, then Fox stage as the primary start (message, path bubbles, composer in-stage). Do not put the ACR object below Fox.
-- Mobile: two-up row of locked claim (left) + smaller ACR object (right), then full-width Fox stage underneath (message, path bubbles, composer in-stage). Hero is compact and aligned with the claim. Fox is the main action surface. No extra homepage dock under the stage.
-- Bottom dock may return only after Fox is collapsed on `/`, or on non-homepage routes.
+- **Desktop brand hero:** full locked claim (do not shrink the display type), `Start your relationship` + `Just need a mortgage`, then the legal line. Large ACR object on the right. Do **not** place an expanded Fox card in the desktop hero. Fox opens from a desktop CTA or the bottom dock. Desktop CTAs set `path=acr` / `path=loan` and open the dock Fox (then product chips / existing scenario routes). If a CTA cannot open the dock without putting Fox back in the hero, navigate to the existing start path instead.
+- **Mobile Fox-first two-up:** compact locked claim (left) + smaller ACR object (right), aligned and proportioned as one row. Legal line under that row. Full-width Fox stage below (message, path bubbles, composer in-stage). The stage is the same `AlwaysOnFox` instance, portaled into `#fox-home-stage`. No extra homepage dock while that stage is open. `FoxShell` skips the dock fallback on `/` so mobile first paint is not a second Fox.
+- Bottom dock is the desktop homepage Fox, and it may return on mobile after Fox is collapsed, or on non-homepage routes.
 - Opening Fox on `/` starts Idle. Starter: `I can prepare a file for a purchase, refinance, or equity. You can start a relationship or just get the loan.`
 - First bubbles only: `Start your relationship` (sets `path=acr`) and `Just need a mortgage` (sets `path=loan`). After a path is chosen, product chips: Buy / Refinance / Use equity → existing scenario routes with that path + product.
-- No competing hero button row. No quiet text echoes under the claim. Header and closer still carry the two path labels.
+- Header and closer still carry the two path labels. No quiet text echoes under the claim.
 - **No in-panel Fox disclosure.** Legal stays in page footer / hero chrome / how-we-get-paid only.
 - Do **not** rebuild Fox intake stages in this slice. Do not implement later logged-in ACR home.
 
-Do **not** put a Relationship / Loan mode toggle under the hero. Path choice is the Fox bubbles (header / closer remain available).
+Do **not** put a Relationship / Loan mode toggle under the hero. Path choice is the desktop hero buttons or the mobile Fox bubbles (header / closer remain available).
 
 ## Slice 4 — Membership math (The Three Desks)
 
@@ -238,7 +236,7 @@ Metal is scarce: fox highlight, the locked ACR card gold dock, the comparison ON
 
 ## Public start paths
 
-Homepage path choice is the Fox Idle bubbles (header and closer remain). First paint is the two path labels only; product chips appear after a path is stored. There is no Relationship / Loan toggle and no competing hero button row. Intent is stored as `acr` | `loan-only` in `sessionStorage` / `localStorage` key `onyx.startPath` and carried as `path=acr` or `path=loan` on explorer, scenario, results, and intake URLs.
+Homepage path choice is the desktop hero buttons or the mobile Fox Idle bubbles (header and closer remain). Product chips appear after a path is stored. There is no Relationship / Loan toggle. Intent is stored as `acr` | `loan-only` in `sessionStorage` / `localStorage` key `onyx.startPath` and carried as `path=acr` or `path=loan` on explorer, scenario, results, and intake URLs.
 
 - ACR start: `/products/scenario?path=acr`
 - Loan only start: `/products/scenario?path=loan`

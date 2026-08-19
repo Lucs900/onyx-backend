@@ -54,6 +54,8 @@ export function requestFoxAsk(text: string) {
   window.dispatchEvent(new CustomEvent("onyx:fox-ask", { detail: { text } }));
 }
 
+const DESKTOP_HERO = "(min-width: 1024px)";
+
 function persistPathFromHref(href: string) {
   try {
     const path = pathFromQuery(new URL(href, window.location.origin).searchParams.get("path"));
@@ -63,6 +65,16 @@ function persistPathFromHref(href: string) {
   } catch {
     // Ignore malformed hrefs; navigation still proceeds.
   }
+}
+
+function subscribeDesktopHero(onStoreChange: () => void) {
+  const media = window.matchMedia(DESKTOP_HERO);
+  media.addEventListener("change", onStoreChange);
+  return () => media.removeEventListener("change", onStoreChange);
+}
+
+function desktopHeroMatches() {
+  return window.matchMedia(DESKTOP_HERO).matches;
 }
 
 export function FoxLauncher() {
@@ -166,7 +178,7 @@ export function AlwaysOnFox() {
   const router = useRouter();
   const stage = foxStageFromPath(pathname);
   const draft = useSyncExternalStore(subscribeFoxDraft, getFoxDraft, getServerDraft);
-  const [open, setOpen] = useState(() => stage === "intake" || stage === "home");
+  const [open, setOpen] = useState(() => stage === "intake");
   const [ready, setReady] = useState(false);
   const [search, setSearch] = useState("");
   const [input, setInput] = useState("");
@@ -179,10 +191,12 @@ export function AlwaysOnFox() {
   const fieldId = useId();
   const greetKey = `${pathname}${search}`;
   const isHome = stage === "home";
+  const isDesktopHero = useSyncExternalStore(subscribeDesktopHero, desktopHeroMatches, () => true);
+  const useHomeStage = isHome && !isDesktopHero;
 
   useLayoutEffect(() => {
-    setHomeStage(isHome ? document.getElementById("fox-home-stage") : null);
-  }, [isHome, open]);
+    setHomeStage(useHomeStage ? document.getElementById("fox-home-stage") : null);
+  }, [useHomeStage, open]);
 
   useEffect(() => {
     const query = window.location.search;
@@ -203,7 +217,8 @@ export function AlwaysOnFox() {
     const live = getFoxDraft();
     const asking = stage === "intake" && live.phase !== "confirmed";
     if (stage === "home") {
-      setOpen(stored !== "0");
+      const desktop = window.matchMedia(DESKTOP_HERO).matches;
+      setOpen(desktop ? stored === "1" : stored !== "0");
     } else if (stage === "acr") {
       setOpen(false);
     } else if (asking && stored !== "0") {
@@ -216,6 +231,12 @@ export function AlwaysOnFox() {
     setSearch(query);
     setReady(true);
   }, [pathname, stage]);
+
+  useEffect(() => {
+    if (!ready || stage !== "home") return;
+    const stored = sessionStorage.getItem(FOX_PANEL_KEY);
+    setOpen(isDesktopHero ? stored === "1" : stored !== "0");
+  }, [isDesktopHero, ready, stage]);
 
   useEffect(() => {
     const onOpen = () => setOpen(true);
@@ -386,7 +407,7 @@ export function AlwaysOnFox() {
     appendReply(text, reply);
   };
 
-  const hideDock = isHome && open;
+  const hideDock = useHomeStage && Boolean(homeStage) && open;
 
   const desk = (
     <form className="fox-bar__desk" onSubmit={onSubmit}>
@@ -431,12 +452,12 @@ export function AlwaysOnFox() {
       listRef={listRef}
       onClose={() => setOpen(false)}
       onAction={runAction}
-      composer={isHome ? desk : undefined}
+      composer={useHomeStage ? desk : undefined}
     />
   ) : null;
 
   let stageNode: ReactNode = null;
-  if (isHome && homeStage) {
+  if (useHomeStage && homeStage) {
     stageNode = createPortal(
       open ? workspace : <span className="visually-hidden" data-fox-collapsed="true" />,
       homeStage,
@@ -448,7 +469,7 @@ export function AlwaysOnFox() {
       {stageNode}
       {hideDock ? null : (
         <div className={open ? "fox-bar is-open" : "fox-bar"}>
-          {!isHome && workspace}
+          {!useHomeStage && workspace}
           {desk}
         </div>
       )}
