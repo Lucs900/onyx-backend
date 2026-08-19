@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { getFoxDraft, receiveDocument, setDocumentStatus } from "./store";
+import { applyCapture, getFoxDraft, receiveDocument, setDocumentStatus } from "./store";
 import type { FoxIntakeDraft } from "./types";
 import { docsRequestForIncome, slotFromFilename } from "./workspace";
 
@@ -83,18 +83,27 @@ export function DocumentDrop({
       ) : (
         <p className="structure-drop__hint">Any file you have</p>
       )}
-      <label className="structure-drop__zone">
-        <span>Drop a file here, or browse</span>
-        <input
-          className="visually-hidden"
-          type="file"
-          multiple
-          onChange={(event) => {
-            onFiles(event.target.files);
-            event.target.value = "";
-          }}
-        />
-      </label>
+      <div className="structure-drop__row">
+        <label className="structure-drop__zone">
+          <span>Drop a file here, or browse</span>
+          <input
+            className="visually-hidden"
+            type="file"
+            multiple
+            onChange={(event) => {
+              onFiles(event.target.files);
+              event.target.value = "";
+            }}
+          />
+        </label>
+        <button
+          type="button"
+          className="structure-drop__skip"
+          onClick={() => applyCapture({ field: "skip-docs" })}
+        >
+          Skip
+        </button>
+      </div>
     </section>
   );
 }

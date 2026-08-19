@@ -304,6 +304,7 @@ const w2Docs = workspacePromptCopy("documents", afterIncome);
 assert.match(w2Docs.text, /paystubs? or a w-2/i);
 assert.doesNotMatch(w2Docs.text, /tax returns|business docs/i);
 assert.ok((w2Docs.actions ?? []).some((item) => item.capture?.field === "skip-docs"));
+assert.ok((w2Docs.actions ?? []).some((item) => /skip/i.test(item.label)));
 const w2Request = docsRequestForIncome("w2");
 assert.deepEqual(w2Request.labels, ["Paystubs", "W-2"]);
 assert.ok(!w2Request.labels.includes("Bank statements"));
@@ -312,6 +313,7 @@ assert.ok(!w2Request.labels.includes("ID"));
 const selfDocs = workspacePromptCopy("documents", withIncome(afterCredit, "self-employed"));
 assert.match(selfDocs.text, /tax returns or business docs/i);
 assert.doesNotMatch(selfDocs.text, /paystub|w-2/i);
+assert.ok((selfDocs.actions ?? []).some((item) => item.capture?.field === "skip-docs"));
 const selfRequest = docsRequestForIncome("self-employed");
 assert.deepEqual(selfRequest.labels, ["Tax returns", "Business docs"]);
 assert.ok(!selfRequest.labels.includes("Paystubs"));
@@ -325,6 +327,16 @@ const otherRequest = docsRequestForIncome("other");
 assert.deepEqual(otherRequest.labels, []);
 assert.match(otherRequest.text, /drop what you have/i);
 assert.doesNotMatch(otherRequest.text, /paystub|w-2|tax return|bank statements/i);
+const otherDocs = workspacePromptCopy("documents", withIncome(afterCredit, "other"));
+assert.ok((otherDocs.actions ?? []).some((item) => item.capture?.field === "skip-docs"));
+
+const dropAfterLooks = workspacePromptCopy("documents", {
+  ...afterLooks,
+  docsOpen: true,
+  correcting: "documents",
+});
+assert.ok((dropAfterLooks.actions ?? []).some((item) => item.capture?.field === "skip-docs"));
+assert.ok((dropAfterLooks.actions ?? []).some((item) => /skip/i.test(item.label)));
 
 const skippedLooks = draft({ ...afterLooks, documentsSkipped: true, docsOpen: false, correcting: null });
 assert.equal(workspacePrompt(skippedLooks), "done");
