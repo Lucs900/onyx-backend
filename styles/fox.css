@@ -18,6 +18,18 @@
   padding-bottom: 104px;
 }
 
+@media (max-width: 1023px) {
+  .fox-shell--home:has(#fox-home-stage:empty),
+  .fox-shell--home:has(#fox-home-stage > .fox-stage) {
+    padding-bottom: 24px;
+  }
+
+  .fox-shell--home:has(#fox-home-stage:empty) .fox-bar,
+  .fox-shell--home:has(#fox-home-stage > .fox-stage) .fox-bar {
+    display: none;
+  }
+}
+
 .fox-bar {
   position: fixed;
   left: 8px;

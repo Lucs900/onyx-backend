@@ -69,8 +69,8 @@
 @media (max-width: 1023px) {
   .membership-hero__inner {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(140px, 34%);
-    column-gap: 14px;
+    grid-template-columns: minmax(0, 1fr) auto;
+    column-gap: 16px;
     row-gap: 16px;
     align-items: center;
     padding-top: 24px;
@@ -131,7 +131,8 @@
   }
 
   .membership-hero .acr-pass-stage {
-    max-width: 156px;
+    width: 168px;
+    max-width: 42vw;
   }
 }
 

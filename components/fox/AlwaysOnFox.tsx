@@ -54,8 +54,6 @@ export function requestFoxAsk(text: string) {
   window.dispatchEvent(new CustomEvent("onyx:fox-ask", { detail: { text } }));
 }
 
-const DESKTOP_HERO = "(min-width: 1024px)";
-
 function persistPathFromHref(href: string) {
   try {
     const path = pathFromQuery(new URL(href, window.location.origin).searchParams.get("path"));
@@ -67,14 +65,11 @@ function persistPathFromHref(href: string) {
   }
 }
 
-function subscribeDesktopHero(onStoreChange: () => void) {
-  const media = window.matchMedia(DESKTOP_HERO);
-  media.addEventListener("change", onStoreChange);
-  return () => media.removeEventListener("change", onStoreChange);
-}
-
-function desktopHeroMatches() {
-  return window.matchMedia(DESKTOP_HERO).matches;
+function visibleHomeStage() {
+  const el = document.getElementById("fox-home-stage");
+  const wrap = el?.closest(".membership-hero__fox-wrap");
+  if (!el || !(wrap instanceof HTMLElement)) return null;
+  return window.getComputedStyle(wrap).display === "none" ? null : el;
 }
 
 export function FoxLauncher() {
@@ -191,12 +186,19 @@ export function AlwaysOnFox() {
   const fieldId = useId();
   const greetKey = `${pathname}${search}`;
   const isHome = stage === "home";
-  const isDesktopHero = useSyncExternalStore(subscribeDesktopHero, desktopHeroMatches, () => true);
-  const useHomeStage = isHome && !isDesktopHero;
+  const useHomeStage = Boolean(homeStage);
 
   useLayoutEffect(() => {
-    setHomeStage(useHomeStage ? document.getElementById("fox-home-stage") : null);
-  }, [useHomeStage, open]);
+    const syncStage = () => setHomeStage(isHome ? visibleHomeStage() : null);
+    syncStage();
+    const media = window.matchMedia("(min-width: 1024px)");
+    media.addEventListener("change", syncStage);
+    window.addEventListener("resize", syncStage);
+    return () => {
+      media.removeEventListener("change", syncStage);
+      window.removeEventListener("resize", syncStage);
+    };
+  }, [isHome, open]);
 
   useEffect(() => {
     const query = window.location.search;
@@ -217,8 +219,7 @@ export function AlwaysOnFox() {
     const live = getFoxDraft();
     const asking = stage === "intake" && live.phase !== "confirmed";
     if (stage === "home") {
-      const desktop = window.matchMedia(DESKTOP_HERO).matches;
-      setOpen(desktop ? stored === "1" : stored !== "0");
+      setOpen(visibleHomeStage() ? stored !== "0" : stored === "1");
     } else if (stage === "acr") {
       setOpen(false);
     } else if (asking && stored !== "0") {
@@ -235,8 +236,8 @@ export function AlwaysOnFox() {
   useEffect(() => {
     if (!ready || stage !== "home") return;
     const stored = sessionStorage.getItem(FOX_PANEL_KEY);
-    setOpen(isDesktopHero ? stored === "1" : stored !== "0");
-  }, [isDesktopHero, ready, stage]);
+    setOpen(homeStage ? stored !== "0" : stored === "1");
+  }, [homeStage, ready, stage]);
 
   useEffect(() => {
     const onOpen = () => setOpen(true);
@@ -407,7 +408,7 @@ export function AlwaysOnFox() {
     appendReply(text, reply);
   };
 
-  const hideDock = useHomeStage && Boolean(homeStage) && open;
+  const hideDock = useHomeStage && open;
 
   const desk = (
     <form className="fox-bar__desk" onSubmit={onSubmit}>
