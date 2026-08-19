@@ -19,8 +19,8 @@ export default function LoginPage() {
         <Link href={ACR_START_HREF} className="btn btn--primary">
           Start your relationship
         </Link>
-        <Link href="/products" className="btn btn--text">
-          See what we offer in California
+        <Link href="/start?path=loan" className="btn btn--text">
+          Just need a mortgage
         </Link>
       </div>
     </MarketingArticle>

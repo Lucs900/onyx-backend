@@ -155,6 +155,7 @@ export type Capture =
   | { field: "needs-correction" }
   | { field: "keep-path" }
   | { field: "what-acr" }
+  | { field: "talk-originator" }
   | { field: "correct"; value: string }
   | { field: "note"; value: string };
 

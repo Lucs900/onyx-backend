@@ -185,12 +185,29 @@
 
 .fox-bar__head {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   flex-shrink: 0;
   gap: 8px;
   min-height: 24px;
   color: var(--ink);
+}
+
+.fox-bar__head-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.fox-bar__disclosure {
+  margin: 0;
+  max-width: 42ch;
+  font-family: var(--font-ui);
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 500;
+  color: var(--muted);
 }
 
 .fox-bar__close {

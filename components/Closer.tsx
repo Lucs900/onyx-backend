@@ -21,7 +21,7 @@ export function Closer() {
           </Link>
         </div>
         <p className="closer__originator">
-          <Link href="/advisor" className="btn btn--text">
+          <Link href="/start" className="btn btn--text">
             Talk to a licensed originator
           </Link>
           <span className="type-legal">NMLS ____</span>

@@ -1,25 +1,13 @@
-import { IntakeExperience } from "@/components/fox/IntakeExperience";
-import type { Metadata } from "next";
-import { Suspense } from "react";
+import { pathFromQuery } from "@/components/products/startPath";
+import { redirect } from "next/navigation";
 
-export const metadata: Metadata = {
-  title: "Prepare a draft — ONYX",
-  description:
-    "Fox prepares an application draft. A licensed originator reviews it. Not an approval.",
-};
-
-export default function IntakePage() {
-  return (
-    <Suspense
-      fallback={
-        <div className="intake page-pad">
-          <div className="page-inner intake__inner">
-            <p className="type-legal">Loading draft…</p>
-          </div>
-        </div>
-      }
-    >
-      <IntakeExperience />
-    </Suspense>
-  );
+export default function IntakePage({
+  searchParams,
+}: {
+  searchParams?: { path?: string };
+}) {
+  const path = pathFromQuery(searchParams?.path ?? null);
+  if (path === "loan-only") redirect("/start?path=loan");
+  if (path === "acr") redirect("/start?path=acr");
+  redirect("/start");
 }

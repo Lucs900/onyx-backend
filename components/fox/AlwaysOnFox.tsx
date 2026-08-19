@@ -16,19 +16,20 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { AdvisorMark } from "@/components/AdvisorMark";
-import { readScenario, scenarioFromQuery } from "@/components/products/scenario";
+import { readScenario } from "@/components/products/scenario";
 import {
   ACR_START_HREF,
+  DESK_START_HREF,
   LOAN_START_HREF,
+  deskHrefFromLeftover,
+  isLeftoverConversionHref,
   pathFromQuery,
-  readStartPath,
   writeStartPath,
 } from "@/components/products/startPath";
 import {
   currentPrompt,
   foxStageFromPath,
   greeting,
-  intakeHref,
   intakePathContext,
   promptCopy,
   replyToMessage,
@@ -41,9 +42,7 @@ import {
   getServerDraft,
   hydrateFoxDraft,
   resetWorkspaceForEntry,
-  seedPreviewSample,
   setDraftPath,
-  setDraftProductIntent,
   setDraftScenario,
   subscribeFoxDraft,
 } from "./store";
@@ -52,14 +51,17 @@ import {
   confirmedMoneyText,
   formatLiveMoneyInput,
   editPromptFromCapture,
+  structureExplainCopy,
   structureFixPrompt,
   workspaceGreeting,
   workspacePrompt,
   workspacePromptCopy,
   workspaceUpdateCopy,
 } from "./workspace";
+import { DocumentDrop } from "./DocumentDrop";
 import { pathFromHomeChoice } from "./homeIdle";
 import {
+  FOX_DISCLOSURE,
   FOX_PANEL_KEY,
   type FoxAction,
   type FoxMessage,
@@ -158,6 +160,10 @@ export function requestFoxAsk(text: string) {
 
 export function requestFoxFix(field: string) {
   window.dispatchEvent(new CustomEvent("onyx:fox-fix", { detail: { field } }));
+}
+
+export function requestFoxExplain(field: string) {
+  window.dispatchEvent(new CustomEvent("onyx:fox-explain", { detail: { field } }));
 }
 
 function clientMoneyText(text: string, capture?: { field: string }) {
@@ -291,6 +297,8 @@ function FoxWorkspace({
   onAction,
   composer,
   hideClose,
+  stickyDisclosure,
+  docsDrop,
 }: {
   className: string;
   messages: FoxMessage[];
@@ -299,11 +307,16 @@ function FoxWorkspace({
   onAction: (action: FoxAction) => void;
   composer?: ReactNode;
   hideClose?: boolean;
+  stickyDisclosure?: boolean;
+  docsDrop?: ReactNode;
 }) {
   return (
     <div id="fox-panel" className={className}>
       <div className="fox-bar__head">
-        <span className="fox-bar__title">ONYX Fox</span>
+        <div className="fox-bar__head-copy">
+          <span className="fox-bar__title">ONYX Fox</span>
+          {stickyDisclosure ? <p className="fox-bar__disclosure">{FOX_DISCLOSURE}</p> : null}
+        </div>
         {hideClose ? null : (
           <button
             type="button"
@@ -317,6 +330,7 @@ function FoxWorkspace({
         )}
       </div>
       <FoxThread messages={messages} listRef={listRef} onAction={onAction} />
+      {docsDrop}
       {composer}
     </div>
   );
@@ -380,18 +394,8 @@ export function AlwaysOnFox({
 
   useEffect(() => {
     const query = window.location.search;
-    const sample = new URLSearchParams(query).get("sample");
-    if (pathname.startsWith("/intake") && sample === "loop") {
-      seedPreviewSample("intake");
-    } else if (!isStart) {
+    if (!isStart) {
       hydrateFoxDraft();
-    }
-    if (pathname.startsWith("/intake") && sample !== "loop") {
-      const params = new URLSearchParams(query);
-      const fromQuery = scenarioFromQuery(params);
-      if (fromQuery) setDraftScenario(fromQuery);
-      const path = pathFromQuery(params.get("path")) ?? readStartPath();
-      if (path) setDraftPath(path);
     }
     const stored = sessionStorage.getItem(FOX_PANEL_KEY);
     const live = getFoxDraft();
@@ -467,13 +471,25 @@ export function AlwaysOnFox({
       const ask = workspacePromptCopy(prompt, live);
       setMessages((prev) => [...prev, foxAskMessage(ask)]);
     };
+    const onExplain = (event: Event) => {
+      const field = String((event as CustomEvent<{ field?: string }>).detail?.field ?? "").trim();
+      if (!field || !isStart) return;
+      setOpen(true);
+      const live = getFoxDraft();
+      const explain = structureExplainCopy(field, live);
+      if (!explain) return;
+      skipPromptSync.current = true;
+      setMessages((prev) => [...prev, foxAskMessage(explain)]);
+    };
     window.addEventListener("onyx:fox-open", onOpen);
     window.addEventListener("onyx:fox-ask", onAsk);
     window.addEventListener("onyx:fox-fix", onFix);
+    window.addEventListener("onyx:fox-explain", onExplain);
     return () => {
       window.removeEventListener("onyx:fox-open", onOpen);
       window.removeEventListener("onyx:fox-ask", onAsk);
       window.removeEventListener("onyx:fox-fix", onFix);
+      window.removeEventListener("onyx:fox-explain", onExplain);
     };
   }, [isStart, pathname, ready, search, stage]);
 
@@ -625,19 +641,24 @@ export function AlwaysOnFox({
       if (chooseHomePath(action.label, path)) return;
     }
     if (action.href) {
+      if (isLeftoverConversionHref(action.href)) {
+        persistPathFromHref(action.href);
+        router.push(deskHrefFromLeftover(action.href));
+        return;
+      }
       persistPathFromHref(action.href);
       router.push(action.href);
       return;
     }
     if (action.event === "prepare-draft") {
-      router.push(intakeHref(scenario));
+      router.push(DESK_START_HREF);
       return;
     }
     if (action.capture?.field === "open-docs" || action.event === "open-docs") {
       applyCapture({ field: "open-docs" });
       document.getElementById("fox-documents")?.scrollIntoView({ behavior: "smooth" });
       appendReply(action.label, {
-        text: isStart ? "Add a file on the structure, or skip." : "Add a file in the slots below.",
+        text: isStart ? "Drop a file on the thread or the structure, or skip." : "Drop a file here, or skip.",
       });
       return;
     }
@@ -825,6 +846,8 @@ export function AlwaysOnFox({
       onAction={runAction}
       composer={useHomeStage || isStart ? desk : undefined}
       hideClose={isStart}
+      stickyDisclosure={isStart}
+      docsDrop={isStart && startAsk === "documents" ? <DocumentDrop compact /> : null}
     />
   ) : null;
 

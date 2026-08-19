@@ -13,6 +13,35 @@ export function pathFromQuery(raw: string | null | undefined): IntakePath | null
 export const START_PATH_KEY = "onyx.startPath";
 export const ACR_START_HREF = "/start?path=acr";
 export const LOAN_START_HREF = "/start?path=loan";
+export const DESK_START_HREF = "/start";
+
+export function isLeftoverConversionHref(href?: string | null) {
+  if (!href) return false;
+  try {
+    const path = new URL(href, "https://onyx.local").pathname;
+    return (
+      path === "/advisor" ||
+      path === "/intake" ||
+      path.startsWith("/intake/") ||
+      path === "/products" ||
+      path.startsWith("/products/")
+    );
+  } catch {
+    return false;
+  }
+}
+
+export function deskHrefFromLeftover(href: string) {
+  try {
+    const url = new URL(href, "https://onyx.local");
+    const path = pathFromQuery(url.searchParams.get("path"));
+    if (path === "loan-only") return LOAN_START_HREF;
+    if (path === "acr") return ACR_START_HREF;
+  } catch {
+    // Fall through to the bare desk.
+  }
+  return DESK_START_HREF;
+}
 
 export function startPathToken(path: IntakePath) {
   return path === "acr" ? "acr" : "loan";

@@ -2,43 +2,62 @@
 
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { DocumentDrop } from "./DocumentDrop";
-import { requestFoxFix } from "./AlwaysOnFox";
+import { requestFoxExplain, requestFoxFix } from "./AlwaysOnFox";
 import { getFoxDraft, getServerDraft, subscribeFoxDraft } from "./store";
-import { previewFacts, structureFixPrompt, workspacePrompt } from "./workspace";
+import { previewFacts, structureExplainCopy, structureFixPrompt, workspacePrompt } from "./workspace";
 
 function StructureRows({
   facts,
+  draft,
 }: {
   facts: ReturnType<typeof previewFacts>;
+  draft: ReturnType<typeof getFoxDraft>;
 }) {
   return (
     <div className="file-preview__rows">
       {facts.map((fact) => {
         const canFix = Boolean(structureFixPrompt(fact.id));
-        if (!canFix) {
+        const canExplain = Boolean(structureExplainCopy(fact.id, draft));
+        if (canFix) {
           return (
-            <div key={fact.id} className="file-preview__row">
+            <button
+              key={fact.id}
+              type="button"
+              className="file-preview__row file-preview__row--tap"
+              onClick={() => requestFoxFix(fact.id)}
+            >
               <span className="file-preview__label">{fact.label}</span>
               <span className="file-preview__value">
                 <span>{fact.value}</span>
                 {fact.note ? <small>{fact.note}</small> : null}
               </span>
-            </div>
+            </button>
+          );
+        }
+        if (canExplain) {
+          return (
+            <button
+              key={fact.id}
+              type="button"
+              className="file-preview__row file-preview__row--explain"
+              onClick={() => requestFoxExplain(fact.id)}
+            >
+              <span className="file-preview__label">{fact.label}</span>
+              <span className="file-preview__value">
+                <span>{fact.value}</span>
+                {fact.note ? <small>{fact.note}</small> : null}
+              </span>
+            </button>
           );
         }
         return (
-          <button
-            key={fact.id}
-            type="button"
-            className="file-preview__row file-preview__row--tap"
-            onClick={() => requestFoxFix(fact.id)}
-          >
+          <div key={fact.id} className="file-preview__row">
             <span className="file-preview__label">{fact.label}</span>
             <span className="file-preview__value">
               <span>{fact.value}</span>
               {fact.note ? <small>{fact.note}</small> : null}
             </span>
-          </button>
+          </div>
         );
       })}
     </div>
@@ -69,7 +88,7 @@ export function FilePreview() {
       <div className="file-preview__desktop">
         <p className="type-eyebrow">Structure</p>
         <h2 className="type-card-title">Live file</h2>
-        <StructureRows facts={facts} />
+        <StructureRows facts={facts} draft={draft} />
       </div>
       <div className="file-preview__mobile">
         <button
@@ -83,7 +102,7 @@ export function FilePreview() {
         </button>
         {open ? (
           <div className="file-preview__sheet">
-            <StructureRows facts={facts} />
+            <StructureRows facts={facts} draft={draft} />
           </div>
         ) : null}
       </div>

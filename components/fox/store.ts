@@ -347,8 +347,7 @@ export function addNote(text: string) {
 }
 
 export function receiveDocument(input: Omit<ReceivedDoc, "status" | "note">) {
-  const documents = current.documents.filter((item) => item.slot !== input.slot);
-  documents.push({ ...input, status: "received" });
+  const documents = [...current.documents, { ...input, status: "received" as const }];
   const next = commit({
     ...current,
     documents,
@@ -367,11 +366,18 @@ export function receiveDocument(input: Omit<ReceivedDoc, "status" | "note">) {
   return next;
 }
 
-export function setDocumentStatus(slot: DocSlot, status: DocStatus, note?: string) {
+export function setDocumentStatus(
+  slot: DocSlot,
+  status: DocStatus,
+  note?: string,
+  receivedAt?: string,
+) {
   return commit({
     ...current,
     documents: current.documents.map((doc) =>
-      doc.slot === slot ? { ...doc, status, note } : doc,
+      (receivedAt ? doc.receivedAt === receivedAt : doc.slot === slot)
+        ? { ...doc, status, note }
+        : doc,
     ),
   });
 }
@@ -559,6 +565,9 @@ export function applyCapture(capture: Capture) {
   if (capture.field === "what-acr") {
     return current;
   }
+  if (capture.field === "talk-originator") {
+    return current;
+  }
   if (capture.field === "correct") {
     return commit({
       ...current,
@@ -711,89 +720,3 @@ export function canConfirmDraft(draft: FoxIntakeDraft) {
   );
 }
 
-export const SAMPLE_SCENARIO: ExplorerScenario = {
-  zip: "94129",
-  purpose: "purchase",
-  propertyValue: 1_200_000,
-  amountMode: "loan",
-  loanAmount: 960_000,
-  downPayment: 240_000,
-  creditRange: "760+",
-  occupancy: "primary",
-  timeline: "30-90",
-  productSlug: "conventional-purchase",
-  productName: "Conventional Purchase",
-};
-
-export function seedPreviewSample(mode: "intake" | "confirmed") {
-  const now = new Date().toISOString();
-  const contact = {
-    fullName: emptyField("fullName", "Alex Rivera"),
-    email: emptyField("email", "alex@example.com"),
-    phone: emptyField("phone", "415-555-0100"),
-    preferredContact: emptyField("preferredContact", "email"),
-  };
-  const base: FoxIntakeDraft = {
-    ...emptyDraft(),
-    previewSample: true,
-    preferredAsked: true,
-    scenario: SAMPLE_SCENARIO,
-    contact,
-    occupancyChoice: emptyField("occupancy", "primary", "scenario"),
-    timelineChoice: emptyField("timeline", "30-90", "scenario"),
-  };
-
-  const next: FoxIntakeDraft =
-    mode === "confirmed"
-      ? {
-          ...base,
-          phase: "confirmed",
-          status: CONFIRMED_STATUS,
-          confirmedAt: now,
-          loStatus: "in review",
-          occupancyAsked: true,
-          timelineAsked: true,
-          documentsSkipped: true,
-          incomeType: {
-            ...emptyField("incomeType", "w2"),
-            confirmed: true,
-            confirmedAt: now,
-          },
-          occupancyChoice: {
-            ...emptyField("occupancy", "primary", "scenario"),
-            confirmed: true,
-            confirmedAt: now,
-          },
-          timelineChoice: {
-            ...emptyField("timeline", "30-90", "scenario"),
-            confirmed: true,
-            confirmedAt: now,
-          },
-          contact: {
-            fullName: { ...contact.fullName, confirmed: true, confirmedAt: now },
-            email: { ...contact.email, confirmed: true, confirmedAt: now },
-            phone: { ...contact.phone, confirmed: true, confirmedAt: now },
-            preferredContact: {
-              ...contact.preferredContact,
-              confirmed: true,
-              confirmedAt: now,
-            },
-          },
-          sections: {
-            contact: true,
-            scenario: true,
-            occupancy: true,
-            income: true,
-            documents: true,
-            notes: true,
-          },
-        }
-      : { ...base, phase: "context" };
-
-  current = { ...next, updatedAt: now };
-  hydrated = true;
-  persist(current);
-  writeScenario(SAMPLE_SCENARIO);
-  emit();
-  return current;
-}

@@ -402,21 +402,19 @@ export function workspacePromptCopy(
   if (prompt === "done") {
     if (draft.path === "loan-only") {
       return {
-        text: "This is the loan. ACR is optional if you want the desk later. A licensed originator will review. Fox stays.",
-        followUp: FOX_DISCLOSURE,
+        text: "I’m preparing this loan. A licensed originator will review it on this desk. Fox stays.",
         actions: [
           { id: "open-docs", label: "Upload docs", event: "open-docs", capture: { field: "open-docs" } },
+          { id: "talk-lo", label: "Talk to a licensed originator", event: "bubble", capture: { field: "talk-originator" } },
           { id: "what-acr", label: "What is ACR?", event: "bubble", capture: { field: "what-acr" } },
-          { id: "talk-lo", label: "Talk to a licensed originator", href: "/advisor" },
         ],
       };
     }
     return {
-      text: "We’ll keep this desk open after close. Letter is originator-issued, not Fox. Scout and reward stay on the desk. A licensed originator will review. Fox stays.",
-      followUp: FOX_DISCLOSURE,
+      text: "I’m preparing this desk. A licensed originator will review. Fox stays.",
       actions: [
         { id: "open-docs", label: "Upload docs", event: "open-docs", capture: { field: "open-docs" } },
-        { id: "talk-lo", label: "Talk to a licensed originator", href: "/advisor" },
+        { id: "talk-lo", label: "Talk to a licensed originator", event: "bubble", capture: { field: "talk-originator" } },
       ],
     };
   }
@@ -635,6 +633,9 @@ export function workspaceUpdateCopy(capture: Capture, draft: FoxIntakeDraft) {
   }
   if (capture.field === "what-acr") {
     return "ACR is the desk that stays open after close — letter, scout, and reward. This file is still the loan.";
+  }
+  if (capture.field === "talk-originator") {
+    return "A licensed originator will review this file on this desk. Fox stays. I cannot approve, lock, or commit to lend.";
   }
   if (capture.field === "productIntent") {
     return `Updated product to ${productIntentLabel(capture.value)}.`;
@@ -886,6 +887,13 @@ export function workspaceReply(
           ? "ACR is the desk that stays open after close — letter, scout, and reward. This file is still the loan."
           : "ACR is the desk that stays open after close. Letter is originator-issued, not Fox. Scout and reward stay on the desk.",
       capture: { field: "what-acr" },
+    };
+  }
+
+  if (/(talk to (a )?licensed originator|need (a )?licensed originator|talk to (an )?originator|speak to (an? )?(lo|originator|human))/i.test(lower)) {
+    return {
+      text: "A licensed originator will review this file on this desk. Fox stays. I cannot approve, lock, or commit to lend.",
+      capture: { field: "talk-originator" },
     };
   }
 
@@ -1237,12 +1245,28 @@ export function previewFacts(draft: FoxIntakeDraft): PreviewFact[] {
     }
   }
 
-  const range = draft.path === "acr" && sampleReady(draft) ? estimateFromDraft(draft) : null;
-  if (range) {
+  const deskOpen =
+    draft.path === "acr" &&
+    (Boolean(draft.sampleAccepted) ||
+      draft.workspaceDraftStatus === "with-originator" ||
+      draft.phase === "confirmed");
+  if (deskOpen) {
+    facts.push({
+      id: "letter",
+      label: "Letter",
+      value: "Not issued yet",
+      note: "Originator-issued, not Fox",
+    });
+    facts.push({
+      id: "scout",
+      label: "Scout",
+      value: "Do nothing for now.",
+    });
+    const range = sampleReady(draft) ? estimateFromDraft(draft) : null;
     facts.push({
       id: "reward",
       label: "Reward",
-      value: formatRewardRange(range),
+      value: range ? formatRewardRange(range) : "Prepared when you join",
       note: SAMPLE_NOTE,
     });
   }
@@ -1278,6 +1302,44 @@ export function structureFixPrompt(id: string): FoxPrompt | null {
   if (id === "amount") return "amount";
   if (id === "value") return "value";
   if (id === "docs") return "documents";
+  return null;
+}
+
+export function structureExplainCopy(
+  id: string,
+  draft: FoxIntakeDraft,
+): { text: string } | null {
+  if (id === "rate") {
+    const intent = draft.productIntent ?? productIntentFromSlug(draft.scenario?.productSlug);
+    if (sampleRateApplies(intent) && sampleReady(draft)) {
+      return {
+        text: `${SAMPLE_STRUCTURE} ${SAMPLE_RATE_LABEL}. ${SAMPLE_NOTE}. I cannot set, lock, or invent a live rate.`,
+      };
+    }
+    return {
+      text: "Pricing when the file is ready. I cannot set, lock, or invent a live rate.",
+    };
+  }
+  if (id === "reward") {
+    return {
+      text: "Reward is calculated for the relationship. Sample · indicative · not live. A licensed originator confirms it. I cannot edit it into a live amount.",
+    };
+  }
+  if (id === "letter") {
+    return {
+      text: "The letter is originator-issued, not Fox. I cannot approve, lock, or commit to lend.",
+    };
+  }
+  if (id === "scout") {
+    return {
+      text: "Scout watches after close. Do nothing for now.",
+    };
+  }
+  if (id === "status") {
+    return {
+      text: "A licensed originator reviews this file on this desk. I cannot approve, lock, or commit to lend.",
+    };
+  }
   return null;
 }
 

@@ -21,11 +21,11 @@ export default function RatesPage() {
       </p>
       <p className="type-legal">Sample, not live. NMLS [OPEN] · CA DRE [OPEN]</p>
       <div className="prose-page__actions">
-        <Link href="/products" className="btn btn--primary">
-          See what we offer in California
+        <Link href="/start?path=loan" className="btn btn--primary">
+          Just need a mortgage
         </Link>
-        <Link href="/products/scenario" className="btn btn--secondary">
-          Explore a California scenario
+        <Link href="/start?path=acr" className="btn btn--secondary">
+          Start your relationship
         </Link>
       </div>
     </MarketingArticle>

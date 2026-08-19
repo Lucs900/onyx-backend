@@ -11,6 +11,7 @@ import {
   SAMPLE_NOTE,
   SAMPLE_RATE_LABEL,
   starterText,
+  structureExplainCopy,
   structureFixPrompt,
   workspacePrompt,
   workspacePromptCopy,
@@ -129,18 +130,39 @@ assert.equal(correct.text, "Tap any line on the structure.");
 assert.ok(!correct.actions?.length);
 
 const acrDone = workspacePromptCopy("done", draft({ path: "acr", sampleAccepted: true }));
-assert.ok(acrDone.text.includes("We’ll keep this desk open after close"));
-assert.ok(acrDone.text.includes("Letter is originator-issued"));
-assert.equal(acrDone.followUp, FOX_DISCLOSURE);
-assert.ok(!(acrDone.actions ?? []).some((item) => /app link|email/i.test(item.label)));
+assert.ok(acrDone.text.includes("I’m preparing this desk"));
+assert.ok(!/^ACR/i.test(acrDone.text));
+assert.ok(!(acrDone.actions ?? []).some((item) => item.href === "/advisor"));
+assert.ok((acrDone.actions ?? []).some((item) => item.capture?.field === "talk-originator"));
+
+const acrDesk = draft({
+  path: "acr",
+  productIntent: "buy",
+  sampleAccepted: true,
+  occupancyAsked: true,
+  occupancyChoice: { ...emptyDraft().occupancyChoice, value: "primary" },
+  timelineAsked: true,
+  timelineChoice: { ...emptyDraft().timelineChoice, value: "ready-now" },
+  valueAsked: true,
+  propertyValueAmount: 600000,
+  documentsSkipped: true,
+});
+const acrFacts = previewFacts(acrDesk);
+assert.ok(acrFacts.some((fact) => fact.id === "letter" && /originator-issued/i.test(fact.note ?? "")));
+assert.ok(acrFacts.some((fact) => fact.id === "scout" && fact.value === "Do nothing for now."));
+assert.ok(acrFacts.some((fact) => fact.id === "reward"));
 
 const loanDone = workspacePromptCopy("done", draft({ path: "loan-only", sampleAccepted: true }));
-assert.ok(loanDone.text.includes("This is the loan"));
+assert.ok(loanDone.text.includes("I’m preparing this loan"));
+assert.ok(!loanDone.text.startsWith("ACR"));
 assert.ok((loanDone.actions ?? []).some((item) => item.label === "What is ACR?"));
+assert.ok(!(loanDone.actions ?? []).some((item) => item.href === "/advisor"));
 
 assert.equal(structureFixPrompt("path"), "path-switch");
 assert.equal(structureFixPrompt("occupancy"), "occupancy");
 assert.equal(structureFixPrompt("rate"), null);
+assert.ok(structureExplainCopy("rate", afterSkip)?.text.includes("cannot set"));
+assert.ok(FOX_DISCLOSURE.includes("cannot approve"));
 
 const noPathReply = workspaceReply("hello", draft());
 assert.ok(noPathReply?.text.includes("Start your relationship"));

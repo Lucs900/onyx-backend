@@ -8,7 +8,6 @@ import {
   getFoxDraft,
   getServerDraft,
   hydrateFoxDraft,
-  seedPreviewSample,
   setLoStatus,
   subscribeFoxDraft,
 } from "./store";
@@ -22,11 +21,6 @@ export function LoReview() {
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
-    if (searchParams.get("sample") === "loop") {
-      seedPreviewSample("confirmed");
-      setReady(true);
-      return;
-    }
     hydrateFoxDraft();
     setReady(true);
   }, [searchParams]);
@@ -56,18 +50,11 @@ export function LoReview() {
           Same device draft as intake. No login on this preview. This is not a
           production pipeline.
         </p>
-        {draft.previewSample ? (
-          <p className="type-legal">
-            Sample · not live. Alex Rivera is a preview identity, not a real
-            client.
-          </p>
-        ) : null}
-
         {!hasDraft ? (
           <section className="intake-card">
             <p className="type-body">No draft on this device yet.</p>
-            <Link href="/intake" className="btn btn--text">
-              Open intake
+            <Link href="/start" className="btn btn--text">
+              Open the desk
             </Link>
           </section>
         ) : (
@@ -188,8 +175,8 @@ export function LoReview() {
 
         <p className="type-legal">{FOX_DISCLOSURE}</p>
         <p className="type-legal">{TRUST_LINE}</p>
-        <Link href="/intake" className="btn btn--text">
-          Back to intake
+        <Link href="/start" className="btn btn--text">
+          Back to the desk
         </Link>
       </div>
     </div>

@@ -55,15 +55,12 @@ export function pathLabel(path?: IntakePath) {
 }
 
 export function intakeHref(
-  scenario: ExplorerScenario | null,
+  _scenario: ExplorerScenario | null,
   path?: IntakePath | "loan",
 ) {
-  const query = scenario ? scenarioToQuery(scenario) : "";
   const token = path === "acr" ? "acr" : path ? "loan" : "";
-  if (query && token) return `/intake?${query}&path=${token}`;
-  if (query) return `/intake?${query}`;
-  if (token) return `/intake?path=${token}`;
-  return "/intake";
+  if (token) return `/start?path=${token}`;
+  return "/start";
 }
 
 export function resultsPathActions(scenario: ExplorerScenario): FoxAction[] {
@@ -102,11 +99,6 @@ export function currentPrompt(draft: FoxIntakeDraft): FoxPrompt {
   if (draft.phase === "confirmed" && !draft.correcting) return "done";
   if (draft.correcting && draft.correcting !== "correct") return draft.correcting;
   if (draft.correcting === "correct") return "correct";
-  if (!draft.contact.fullName.value) return "name";
-  if (!draft.contact.email.value) return "email";
-  if (!draft.contact.phone.value) return "phone";
-  if (!draft.preferredAsked) return "preferred";
-  if (!draft.incomeType.value) return "income";
   if (!draft.occupancyAsked) return "occupancy";
   if (!draft.timelineAsked) return "timeline";
   if (!draft.documents.length && !draft.documentsSkipped) return "documents";
@@ -194,7 +186,7 @@ export function greeting(
     return {
       text: "Ask about a product, or start a scenario.",
       actions: [
-        { id: "scenario", label: "Start a scenario", href: "/products/scenario" },
+        { id: "scenario", label: "Start a scenario", href: "/start" },
       ],
     };
   }
@@ -210,7 +202,7 @@ export function greeting(
       text: scenario ? "Start a relationship, or just the loan?" : "Enter a scenario first.",
       actions: scenario
         ? resultsPathActions(scenario)
-        : [{ id: "scenario", label: "Enter a scenario", href: "/products/scenario" }],
+        : [{ id: "scenario", label: "Enter a scenario", href: "/start" }],
     };
   }
 
@@ -379,7 +371,7 @@ export function replyToMessage(
         {
           id: "explore",
           label: "Explore this option",
-          href: `/products/scenario?product=${product.slug}`,
+          href: `/start`,
         },
       ],
     };
@@ -569,7 +561,7 @@ function acrReply(lower: string): ReturnType<typeof replyToMessage> | null {
   if (/(just need a mortgage|loan only|mortgage only|only (a )?loan)/i.test(lower)) {
     return {
       text: "A mortgage is available without ACR.",
-      actions: [{ id: "loan", label: "Just need a mortgage", href: "/products" }],
+      actions: [{ id: "loan", label: "Just need a mortgage", href: LOAN_START_HREF }],
     };
   }
   if (/(start|join|relationship|how do i)/i.test(lower)) {
@@ -653,7 +645,7 @@ function nextSteps(
     return {
       text: "Pick a product, or start a scenario.",
       actions: [
-        { id: "scenario", label: "Start a scenario", href: "/products/scenario" },
+        { id: "scenario", label: "Start a scenario", href: "/start" },
       ],
     };
   }
@@ -669,7 +661,7 @@ function nextSteps(
         : "Enter a scenario first so I have something to carry into a draft.",
       actions: scenario
         ? resultsPathActions(scenario)
-        : [{ id: "scenario", label: "Enter a scenario", href: "/products/scenario" }],
+        : [{ id: "scenario", label: "Enter a scenario", href: "/start" }],
     };
   }
   if (!questionsComplete(draft) || (!draft.documents.length && !draft.documentsSkipped)) {
