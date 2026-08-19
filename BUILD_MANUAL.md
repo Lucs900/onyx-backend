@@ -24,7 +24,8 @@ Locked claim (do not rewrite):
 - Eyebrow: `Active Credit Relationship`
 - H1: `Always approved.` / `Always optimizing.`
 - Support: `We keep your credit and rate working for you.`
-- Legal: `NMLS [OPEN] · CA DRE [OPEN] · We are a mortgage broker.` + How we get paid link
+
+Do **not** put the NMLS / CA DRE / mortgage broker / how-we-get-paid line in the hero. That line lives in the footer only. Do not put disclosures inside Fox.
 
 The hero object is the exact locked bitmap **`public/acr-card-face.png`**, shown as a clean `<img>`. Do not regenerate, restyle, or color-grade it. Keep it straight (0°). No CSS type overlay, sheen, sweep, filters, or tilt. Type/gold/fox live in the bitmap if present. Only this object may lift (soft shadow). Desktop homepage uses the large object. Mobile homepage uses a smaller object beside the claim. `/acr` keeps the larger object.
 
@@ -36,13 +37,13 @@ Do **not** treat “Always approved” as a credit decision.
 
 One Fox assistant, one visible interface. No second chatbot, orb, FAB, or orange ring. Desktop and mobile are different layouts.
 
-- **Desktop brand hero (screenshot source of truth):** paper field, generous space. Left: gold rule, `ACTIVE CREDIT RELATIONSHIP`, two-line serif H1, support line, side-by-side pills (`Start your relationship` solid / `Just need a mortgage` outlined), legal line. Right: large locked ACR object only. Do **not** place an expanded Fox card, thread, bubbles, or composer in the desktop hero. Do not invent a new desktop. Fox opens from those CTAs or the dock. Desktop CTAs set `path=acr` / `path=loan` and open the dock Fox (then product chips / existing scenario routes). If a CTA cannot open the dock without putting Fox back in the hero, navigate to the existing start path instead.
-- **Mobile Fox-first two-up:** compact locked claim (left) + smaller ACR object (right), aligned and proportioned as one row. Legal line under that row. Full-width Fox stage below (message, path bubbles, composer in-stage). The stage is the same `AlwaysOnFox` instance, portaled into `#fox-home-stage`. No extra homepage dock while that stage is open. `FoxShell` skips the dock fallback on `/` so mobile first paint is not a second Fox.
-- Bottom dock is the desktop homepage Fox, and it may return on mobile after Fox is collapsed, or on non-homepage routes.
+- **Desktop brand hero:** paper field. Left: gold rule, `ACTIVE CREDIT RELATIONSHIP`, two-line serif H1, support line, side-by-side pills (`Start your relationship` solid / `Just need a mortgage` outlined). Right: large locked ACR object only. No legal line in the hero. No expanded Fox card, dock, thread, bubbles, or composer over the desktop hero. Desktop CTAs navigate to the existing start/scenario routes with `path=acr` / `path=loan` so Fox opens as a stage on that route, not as an overlay on the hero.
+- **Mobile Fox-first two-up:** compact locked claim (left) + smaller ACR object (right), tightly aligned. No legal line in the hero. Full-width Fox stage below (message, path bubbles, composer in-stage) with no excess empty card height. The stage is the same `AlwaysOnFox` instance, portaled into `#fox-home-stage`. No extra homepage dock while that stage is open. `FoxShell` skips the dock fallback on `/` so mobile first paint is not a second Fox.
+- Desktop homepage has no Fox dock. The dock may return on mobile after Fox is collapsed, or on non-homepage routes.
 - Opening Fox on `/` starts Idle. Starter: `I can prepare a file for a purchase, refinance, or equity. You can start a relationship or just get the loan.`
 - First bubbles only: `Start your relationship` (sets `path=acr`) and `Just need a mortgage` (sets `path=loan`). After a path is chosen, product chips: Buy / Refinance / Use equity → existing scenario routes with that path + product.
 - Header and closer still carry the two path labels. No quiet text echoes under the claim.
-- **No in-panel Fox disclosure.** Legal stays in page footer / hero chrome / how-we-get-paid only.
+- **No in-panel Fox disclosure.** Legal stays in the page footer / how-we-get-paid only. Not in the hero.
 - Do **not** rebuild Fox intake stages in this slice. Do not implement later logged-in ACR home.
 
 Do **not** put a Relationship / Loan mode toggle under the hero. Path choice is the desktop hero buttons or the mobile Fox bubbles (header / closer remain available).

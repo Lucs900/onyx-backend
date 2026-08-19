@@ -409,7 +409,7 @@ export function AlwaysOnFox() {
     appendReply(text, reply);
   };
 
-  const hideDock = useHomeStage && open;
+  const hideDock = isHome && (useHomeStage ? open : true);
 
   const desk = (
     <form className="fox-bar__desk" onSubmit={onSubmit}>

@@ -1,5 +1,4 @@
 import Link from "next/link";
-import { HeroStartButtons } from "./HeroStartButtons";
 import { AcrPass } from "./AcrPass";
 import { HOME_IDLE_TEXT, homePathActions } from "./fox/homeIdle";
 import { ACR_START_HREF, LOAN_START_HREF } from "./products/startPath";
@@ -27,12 +26,14 @@ export function MembershipHero() {
             </p>
           </div>
 
-          <HeroStartButtons />
-
-          <p className="membership-hero__trust">
-            NMLS [OPEN] · CA DRE [OPEN] · We are a mortgage broker.{" "}
-            <Link href="/how-we-get-paid">Here’s how we get paid.</Link>
-          </p>
+          <div className="membership-hero__actions">
+            <Link href={ACR_START_HREF} className="btn btn--primary btn--hero-primary">
+              Start your relationship
+            </Link>
+            <Link href={LOAN_START_HREF} className="btn btn--secondary btn--hero-secondary">
+              Just need a mortgage
+            </Link>
+          </div>
         </div>
 
         <div className="membership-hero__pass">

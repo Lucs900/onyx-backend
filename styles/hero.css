@@ -1,26 +1,7 @@
-/* Homepage hero. Desktop matches the locked brand-hero screenshot. Mobile is Fox-first. */
+/* Homepage hero. Desktop is a clean marketing frame. Mobile is Fox-first. */
 
 .membership-hero {
   background: var(--paper);
-}
-
-.membership-hero__trust {
-  max-width: 480px;
-  font-family: var(--font-ui);
-  font-size: 12px;
-  line-height: 18px;
-  font-weight: 400;
-  color: var(--muted);
-}
-
-.membership-hero__trust a {
-  color: var(--ink-2);
-  text-decoration: underline;
-  text-underline-offset: 2px;
-}
-
-.membership-hero__trust a:hover {
-  color: var(--ink);
 }
 
 .membership-hero__rule {
@@ -64,17 +45,17 @@
   height: 52px;
 }
 
-/* Mobile: claim + smaller ACR on one row, Fox full width below. */
+/* Mobile: tighter claim + smaller ACR on one row, Fox full width below. */
 
 @media (max-width: 1023px) {
   .membership-hero__inner {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
-    column-gap: 16px;
-    row-gap: 16px;
-    align-items: center;
-    padding-top: 24px;
-    padding-bottom: 16px;
+    column-gap: 12px;
+    row-gap: 14px;
+    align-items: start;
+    padding-top: 20px;
+    padding-bottom: 12px;
   }
 
   .membership-hero__type {
@@ -95,33 +76,28 @@
     grid-column: 2;
     grid-row: 1;
     display: flex;
-    align-self: center;
-    align-items: center;
+    align-items: flex-start;
     justify-content: flex-end;
     margin: 0;
-  }
-
-  .membership-hero__trust {
-    grid-column: 1 / -1;
-    grid-row: 2;
-    margin-top: 0;
+    padding-top: 26px;
   }
 
   .membership-hero .membership-hero__fox-wrap {
     grid-column: 1 / -1;
-    grid-row: 3;
+    grid-row: 2;
     width: 100%;
+    min-height: 0;
     margin-top: 0;
   }
 
   .membership-hero__rule {
-    margin-bottom: 8px;
+    margin-bottom: 6px;
   }
 
   .membership-hero__title {
-    margin-top: 8px;
-    font-size: 28px;
-    line-height: 32px;
+    margin-top: 6px;
+    font-size: 26px;
+    line-height: 30px;
   }
 
   .membership-hero__support {
@@ -131,12 +107,12 @@
   }
 
   .membership-hero .acr-pass-stage {
-    width: min(184px, 46vw);
-    max-width: 184px;
+    width: min(160px, 42vw);
+    max-width: 160px;
   }
 }
 
-/* Desktop: locked brand hero from the screenshot. ACR only on the right. No Fox card. */
+/* Desktop: claim + two pills | large ACR. No Fox overlay. No legal line. */
 
 @media (min-width: 1024px) {
   .membership-hero__inner {
@@ -168,10 +144,6 @@
     flex-direction: row;
     align-items: center;
     margin-top: 32px;
-  }
-
-  .membership-hero__trust {
-    margin-top: 20px;
   }
 
   .btn.btn--hero-primary,
