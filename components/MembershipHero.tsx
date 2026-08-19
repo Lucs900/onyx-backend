@@ -1,12 +1,10 @@
-import Link from "next/link";
 import { AcrPass } from "./AcrPass";
 import { HeroStartLink } from "./fox/HeroStartLink";
 import { HOME_IDLE_TEXT, homePathActions } from "./fox/homeIdle";
-import { ACR_START_HREF, LOAN_START_HREF } from "./products/startPath";
 
-const FALLBACK_HREFS: Record<string, string> = {
-  start: ACR_START_HREF,
-  loan: LOAN_START_HREF,
+const FALLBACK_PATH: Record<string, "acr" | "loan-only"> = {
+  start: "acr",
+  loan: "loan-only",
 };
 
 export function MembershipHero() {
@@ -51,13 +49,13 @@ export function MembershipHero() {
                 <p>{HOME_IDLE_TEXT}</p>
                 <div className="fox-bubble__actions">
                   {homePathActions().map((action) => (
-                    <Link
+                    <HeroStartLink
                       key={action.id}
-                      href={FALLBACK_HREFS[action.id] ?? ACR_START_HREF}
+                      path={FALLBACK_PATH[action.id] ?? "acr"}
                       className="btn btn--secondary fox-chip"
                     >
                       {action.label}
-                    </Link>
+                    </HeroStartLink>
                   ))}
                 </div>
               </article>

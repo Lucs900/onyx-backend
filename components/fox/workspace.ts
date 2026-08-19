@@ -238,6 +238,9 @@ export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
   if (needsPropertyValue(draft) && !hasPropertyValue(draft)) {
     return "value";
   }
+  if (draft.sampleAccepted && (draft.phase === "documents" || draft.correcting === "documents")) {
+    return "documents";
+  }
   if (draft.phase === "confirmed" || draft.workspaceDraftStatus === "with-originator") {
     if (draft.correcting === "correct") return "correct";
     if (draft.correcting === "documents" && !knownDocsIncome(draft.incomeType.value)) {
@@ -393,6 +396,11 @@ export function workspacePromptCopy(
   if (prompt === "done") {
     return {
       text: "A licensed originator will review the file. I cannot approve, lock, or commit to lend.",
+      actions: [
+        { id: "open-docs", label: "Upload docs", event: "open-docs", capture: { field: "open-docs" } },
+        { id: "edit-something", label: "Edit something", event: "bubble", capture: { field: "needs-correction" } },
+        { id: "talk-lo", label: "Talk to a licensed originator", href: "/advisor" },
+      ],
     };
   }
   return {
@@ -1070,14 +1078,12 @@ export function workspaceReply(
     }
     if (prompt === "done") {
       if (/(approv|lock|commit to lend)/i.test(lower)) {
-        return { text: "I can prepare a file. I cannot approve, lock, or commit to lend." };
+        return {
+          ...workspacePromptCopy("done", draft),
+          text: "I can prepare a file. I cannot approve, lock, or commit to lend.",
+        };
       }
-      if (/(next|what now|status|originator|review|who)/i.test(lower)) {
-        return { text: "A licensed originator will review the file." };
-      }
-      return {
-        text: "A licensed originator will review the file. Ask if you have a process question.",
-      };
+      return workspacePromptCopy("done", draft);
     }
     return {
       text: "The file has the basics. Ask if you want to change anything.",

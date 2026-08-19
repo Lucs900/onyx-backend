@@ -1,16 +1,16 @@
 "use client";
 
 import { useSearchParams } from "next/navigation";
-import { useEffect, useSyncExternalStore } from "react";
+import { useEffect, useRef, useSyncExternalStore } from "react";
 import { pathFromQuery, rememberStartPath } from "@/components/products/startPath";
 import { AlwaysOnFox } from "./AlwaysOnFox";
 import { useDocumentReads } from "./DocumentDrop";
 import { FilePreview } from "./FilePreview";
 import {
-  applyWorkspaceEntry,
   getFoxDraft,
   getServerDraft,
   prepareWorkspaceDraft,
+  resetWorkspaceForEntry,
   subscribeFoxDraft,
 } from "./store";
 import { productIntentFromQuery, productIntentFromSlug } from "./workspace";
@@ -21,17 +21,21 @@ export function StartWorkspace() {
   const startIntent =
     productIntentFromQuery(searchParams.get("intent")) ??
     productIntentFromSlug(searchParams.get("product"));
-  const draft = useSyncExternalStore(subscribeFoxDraft, getFoxDraft, getServerDraft);
-
-  if (typeof window !== "undefined") {
-    applyWorkspaceEntry(startPath, startIntent);
+  const booted = useRef(false);
+  if (typeof window !== "undefined" && !booted.current) {
+    booted.current = true;
+    resetWorkspaceForEntry(startPath);
   }
+  const draft = useSyncExternalStore(subscribeFoxDraft, getFoxDraft, getServerDraft);
 
   useDocumentReads(draft);
 
+  const lastPath = useRef(startPath);
   useEffect(() => {
-    applyWorkspaceEntry(startPath, startIntent);
-  }, [startPath, startIntent]);
+    if (lastPath.current === startPath) return;
+    lastPath.current = startPath;
+    resetWorkspaceForEntry(startPath);
+  }, [startPath]);
 
   useEffect(() => {
     if (!draft.workspaceFlow) return;

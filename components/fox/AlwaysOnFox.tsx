@@ -17,7 +17,13 @@ import {
 import { createPortal } from "react-dom";
 import { AdvisorMark } from "@/components/AdvisorMark";
 import { readScenario, scenarioFromQuery } from "@/components/products/scenario";
-import { pathFromQuery, readStartPath, writeStartPath } from "@/components/products/startPath";
+import {
+  ACR_START_HREF,
+  LOAN_START_HREF,
+  pathFromQuery,
+  readStartPath,
+  writeStartPath,
+} from "@/components/products/startPath";
 import {
   currentPrompt,
   foxStageFromPath,
@@ -29,11 +35,12 @@ import {
 } from "./script";
 import {
   applyCapture,
-  applyWorkspaceEntry,
+  beginWorkspaceFromHero,
   emptyDraft,
   getFoxDraft,
   getServerDraft,
   hydrateFoxDraft,
+  resetWorkspaceForEntry,
   seedPreviewSample,
   setDraftPath,
   setDraftProductIntent,
@@ -44,19 +51,13 @@ import {
   caretAfterMoneyFormat,
   confirmedMoneyText,
   formatLiveMoneyInput,
-  productIntentFromQuery,
-  productIntentFromSlug,
   editPromptFromCapture,
   workspaceGreeting,
   workspacePrompt,
   workspacePromptCopy,
   workspaceUpdateCopy,
 } from "./workspace";
-import {
-  HOME_PRODUCT_TEXT,
-  homeProductActions,
-  pathFromHomeChoice,
-} from "./homeIdle";
+import { pathFromHomeChoice } from "./homeIdle";
 import {
   FOX_PANEL_KEY,
   type FoxAction,
@@ -81,8 +82,16 @@ function seedStartMessages(
       ),
     ];
   }
-  const live = applyWorkspaceEntry(path ?? null, intent ?? null);
-  return [foxAskMessage(workspaceGreeting(live))];
+  const live = getFoxDraft();
+  const closed =
+    live.sampleAccepted ||
+    live.phase === "confirmed" ||
+    live.workspaceDraftStatus === "with-originator";
+  const draft =
+    live.workspaceFlow && live.path === (path ?? live.path) && !closed
+      ? live
+      : resetWorkspaceForEntry(path ?? null);
+  return [foxAskMessage(workspaceGreeting(draft))];
 }
 
 function startSearchFromProps(
@@ -369,7 +378,7 @@ export function AlwaysOnFox({
     const sample = new URLSearchParams(query).get("sample");
     if (pathname.startsWith("/intake") && sample === "loop") {
       seedPreviewSample("intake");
-    } else {
+    } else if (!isStart) {
       hydrateFoxDraft();
     }
     if (pathname.startsWith("/intake") && sample !== "loop") {
@@ -378,15 +387,6 @@ export function AlwaysOnFox({
       if (fromQuery) setDraftScenario(fromQuery);
       const path = pathFromQuery(params.get("path")) ?? readStartPath();
       if (path) setDraftPath(path);
-    }
-    if (isStart) {
-      const params = new URLSearchParams(query);
-      applyWorkspaceEntry(
-        startPath ?? pathFromQuery(params.get("path")) ?? readStartPath(),
-        startIntent ??
-          productIntentFromQuery(params.get("intent")) ??
-          productIntentFromSlug(params.get("product")),
-      );
     }
     const stored = sessionStorage.getItem(FOX_PANEL_KEY);
     const live = getFoxDraft();
@@ -595,11 +595,8 @@ export function AlwaysOnFox({
   const chooseHomePath = (label: string, path: ReturnType<typeof pathFromHomeChoice>) => {
     if (!path) return false;
     writeStartPath(path);
-    setDraftPath(path);
-    appendReply(label, {
-      text: HOME_PRODUCT_TEXT,
-      actions: homeProductActions(path),
-    });
+    beginWorkspaceFromHero(path);
+    router.push(path === "acr" ? ACR_START_HREF : LOAN_START_HREF);
     return true;
   };
 

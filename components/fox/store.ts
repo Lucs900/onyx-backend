@@ -141,8 +141,36 @@ function emit() {
   listeners.forEach((listener) => listener());
 }
 
+let workspaceEntryKey: string | null = null;
+
+function workspaceEntryToken(path?: IntakePath | null) {
+  return path ?? "";
+}
+
+/** Wipe the prior file. Keep only the new path. Blocks hydrate from reloading the old draft. */
+export function resetWorkspaceForEntry(
+  path: IntakePath | null,
+  _intent: ProductIntent | null = null,
+) {
+  workspaceEntryKey = workspaceEntryToken(path);
+  current = {
+    ...emptyDraft(),
+    path: path ?? undefined,
+    workspaceFlow: true,
+    updatedAt: new Date().toISOString(),
+  };
+  hydrated = true;
+  persist(current);
+  emit();
+  return current;
+}
+
 export function hydrateFoxDraft() {
   if (hydrated || typeof window === "undefined") return current;
+  if (workspaceEntryKey != null) {
+    hydrated = true;
+    return current;
+  }
   current = readStored();
   if (!current.scenario) {
     const scenario = readScenario();
@@ -198,31 +226,21 @@ export function setDraftPath(path: IntakePath | null) {
   return commit({ ...current, path });
 }
 
-/** Overlay URL path/intent on the live draft. Safe to call during /start first paint. */
+/** Start or keep a fresh /start file. Never resume a closed or foreign draft. */
 export function applyWorkspaceEntry(
   path: IntakePath | null,
-  intent: ProductIntent | null,
+  _intent: ProductIntent | null = null,
 ) {
-  hydrateFoxDraft();
-  setWorkspaceFlow(true);
-  if (path) setDraftPath(path);
-  if (intent) setDraftProductIntent(intent);
-  return current;
+  const key = workspaceEntryToken(path);
+  if (hydrated && workspaceEntryKey === key && current.workspaceFlow) {
+    return current;
+  }
+  return resetWorkspaceForEntry(path);
 }
 
-/** Desktop hero CTA: lock the path and start at the product question. */
+/** Desktop / mobile CTA: new conversation, path only. */
 export function beginWorkspaceFromHero(path: IntakePath) {
-  hydrateFoxDraft();
-  const next: FoxIntakeDraft = {
-    ...emptyDraft(),
-    path,
-    workspaceFlow: true,
-  };
-  current = { ...next, updatedAt: new Date().toISOString() };
-  hydrated = true;
-  persist(current);
-  emit();
-  return current;
+  return resetWorkspaceForEntry(path);
 }
 
 function withProductIntent(draft: FoxIntakeDraft, intent: ProductIntent): FoxIntakeDraft {
