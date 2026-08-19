@@ -3,6 +3,9 @@
 import { useEffect, useRef } from "react";
 import { getFoxDraft, receiveDocument, setDocumentStatus } from "./store";
 import type { FoxIntakeDraft } from "./types";
+import { slotFromFilename } from "./workspace";
+
+export { slotFromFilename };
 
 export function useDocumentReads(draft: FoxIntakeDraft) {
   const seen = useRef(new Set<string>());
@@ -54,7 +57,7 @@ export function DocumentDrop({
     if (!files?.length) return;
     Array.from(files).forEach((file) => {
       receiveDocument({
-        slot: "other",
+        slot: slotFromFilename(file.name),
         name: file.name,
         type: file.type || "application/octet-stream",
         size: file.size,

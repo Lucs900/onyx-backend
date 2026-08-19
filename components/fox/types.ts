@@ -87,6 +87,8 @@ export type FoxIntakeDraft = {
   amountAsked?: boolean;
   valueAsked?: boolean;
   creditBand?: CreditRange;
+  creditAsked?: boolean;
+  originatorRequested?: boolean;
   termYears?: number;
   termAsked?: boolean;
   workspaceFlow?: boolean;
@@ -171,11 +173,12 @@ export type FoxMessageFact = {
   id: string;
   label: string;
   value: string;
+  note?: string;
 };
 
 export type FoxMessage = {
   id: string;
-  role: "fox" | "client";
+  role: "fox" | "client" | "system";
   text: string;
   followUp?: string;
   facts?: FoxMessageFact[];

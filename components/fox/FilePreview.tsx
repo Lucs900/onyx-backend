@@ -1,12 +1,23 @@
 "use client";
 
-import { useEffect, useState, useSyncExternalStore } from "react";
+import {
+  useEffect,
+  useState,
+  useSyncExternalStore,
+  type ReactNode,
+} from "react";
+import { createPortal } from "react-dom";
 import { DocumentDrop } from "./DocumentDrop";
 import { requestFoxExplain, requestFoxFix } from "./AlwaysOnFox";
 import { getFoxDraft, getServerDraft, subscribeFoxDraft } from "./store";
-import { previewFacts, structureExplainCopy, structureFixPrompt, workspacePrompt } from "./workspace";
+import {
+  previewFacts,
+  structureExplainCopy,
+  structureFixPrompt,
+  workspacePrompt,
+} from "./workspace";
 
-function StructureRows({
+export function StructureRows({
   facts,
   draft,
 }: {
@@ -16,8 +27,9 @@ function StructureRows({
   return (
     <div className="file-preview__rows">
       {facts.map((fact) => {
-        const canFix = Boolean(structureFixPrompt(fact.id));
+        const canFix = Boolean(structureFixPrompt(fact.id, draft));
         const canExplain = Boolean(structureExplainCopy(fact.id, draft));
+        const deskState = fact.id === "status";
         if (canFix) {
           return (
             <button
@@ -34,12 +46,16 @@ function StructureRows({
             </button>
           );
         }
-        if (canExplain) {
+        if (deskState || canExplain) {
           return (
             <button
               key={fact.id}
               type="button"
-              className="file-preview__row file-preview__row--explain"
+              className={
+                deskState
+                  ? "file-preview__row file-preview__row--tap"
+                  : "file-preview__row file-preview__row--explain"
+              }
               onClick={() => requestFoxExplain(fact.id)}
             >
               <span className="file-preview__label">{fact.label}</span>
@@ -64,47 +80,105 @@ function StructureRows({
   );
 }
 
+export function WorkspaceFileDock({ children }: { children: ReactNode }) {
+  const draft = useSyncExternalStore(subscribeFoxDraft, getFoxDraft, getServerDraft);
+  const facts = previewFacts(draft);
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const [mounted, setMounted] = useState(false);
+  const newest =
+    [...facts].reverse().find((fact) => fact.id !== "status") ?? facts[facts.length - 1];
+  const peek = newest ? `${newest.label} · ${newest.value}` : "";
+  const chip =
+    facts.length > 1 ? `Structure · ${facts.length} facts` : peek || "Structure";
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  useEffect(() => {
+    const close = () => setSheetOpen(false);
+    window.addEventListener("onyx:fox-fix", close);
+    window.addEventListener("onyx:fox-explain", close);
+    return () => {
+      window.removeEventListener("onyx:fox-fix", close);
+      window.removeEventListener("onyx:fox-explain", close);
+    };
+  }, []);
+
+  const sheet =
+    mounted && sheetOpen && facts.length
+      ? createPortal(
+          <div className="file-sheet" role="dialog" aria-label="File">
+            <button
+              type="button"
+              className="file-sheet__backdrop"
+              aria-label="Close file"
+              onClick={() => setSheetOpen(false)}
+            />
+            <div className="file-sheet__panel">
+              <div className="file-sheet__head">
+                <p className="type-eyebrow">File</p>
+                <button
+                  type="button"
+                  className="file-sheet__close"
+                  onClick={() => setSheetOpen(false)}
+                >
+                  Hide
+                </button>
+              </div>
+              <StructureRows facts={facts} draft={draft} />
+            </div>
+          </div>,
+          document.body,
+        )
+      : null;
+
+  return (
+    <div className="fox-workspace-dock">
+      {facts.length && newest ? (
+        <button
+          type="button"
+          className="fox-structure-peek"
+          onClick={() => setSheetOpen(true)}
+        >
+          {peek}
+        </button>
+      ) : null}
+      <div className="fox-workspace-dock__row">
+        {facts.length ? (
+          <button
+            type="button"
+            className="fox-structure-chip"
+            onClick={() => setSheetOpen(true)}
+          >
+            {chip}
+          </button>
+        ) : null}
+        {children}
+      </div>
+      {sheet}
+    </div>
+  );
+}
+
 export function FilePreview() {
   const draft = useSyncExternalStore(subscribeFoxDraft, getFoxDraft, getServerDraft);
   const facts = previewFacts(draft);
-  const [open, setOpen] = useState(false);
   const ask = workspacePrompt(draft);
   const showDocs =
-    ask === "documents" || (draft.phase === "documents" && !draft.workspaceFlow);
-
-  useEffect(() => {
-    if (showDocs) setOpen(true);
-  }, [showDocs]);
+    !draft.workspaceFlow &&
+    (ask === "documents" || draft.phase === "documents");
 
   if (!facts.length) {
     return null;
   }
 
-  const newest = facts[facts.length - 1];
-  const peek = newest ? `${newest.label} · ${newest.value}` : "";
-
   return (
-    <aside className={open ? "file-preview is-open" : "file-preview"}>
+    <aside className="file-preview">
       <div className="file-preview__desktop">
         <p className="type-eyebrow">Structure</p>
         <h2 className="type-card-title">Live file</h2>
         <StructureRows facts={facts} draft={draft} />
-      </div>
-      <div className="file-preview__mobile">
-        <button
-          type="button"
-          className="file-preview__toggle"
-          aria-expanded={open}
-          onClick={() => setOpen((value) => !value)}
-        >
-          <span>Structure{peek ? ` · ${peek}` : ""}</span>
-          <span className="file-preview__toggle-mark">{open ? "Hide" : "Show"}</span>
-        </button>
-        {open ? (
-          <div className="file-preview__sheet">
-            <StructureRows facts={facts} draft={draft} />
-          </div>
-        ) : null}
       </div>
       {showDocs ? <DocumentDrop draft={draft} compact /> : null}
     </aside>

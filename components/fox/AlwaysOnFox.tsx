@@ -59,10 +59,12 @@ import {
   workspaceUpdateCopy,
 } from "./workspace";
 import { DocumentDrop } from "./DocumentDrop";
+import { WorkspaceFileDock } from "./FilePreview";
 import { pathFromHomeChoice } from "./homeIdle";
 import {
   FOX_DISCLOSURE,
   FOX_PANEL_KEY,
+  type Capture,
   type FoxAction,
   type FoxMessage,
   type IntakePath,
@@ -92,8 +94,10 @@ function seedStartMessages(
     live.workspaceDraftStatus === "with-originator";
   const draft =
     live.workspaceFlow && live.path === (path ?? live.path) && !closed
-      ? live
-      : resetWorkspaceForEntry(path ?? null);
+      ? intent && live.productIntent !== intent
+        ? { ...live, productIntent: intent }
+        : live
+      : resetWorkspaceForEntry(path ?? null, intent ?? null);
   return [foxAskMessage(workspaceGreeting(draft))];
 }
 
@@ -217,6 +221,13 @@ function FoxThread({
   return (
     <div className="fox-panel__thread" ref={listRef} aria-live="polite">
       {messages.map((message, index) => {
+        if (message.role === "system") {
+          return (
+            <p key={message.id} className="fox-bubble fox-bubble--system">
+              {message.text}
+            </p>
+          );
+        }
         const current = message.role === "fox" && index === currentFox;
         const tone = current ? " is-current" : " is-prior";
         return (
@@ -235,7 +246,10 @@ function FoxThread({
                 {message.facts.map((fact) => (
                   <li key={fact.id}>
                     <span className="fox-bubble__fact-label">{fact.label}</span>
-                    <span>{fact.value}</span>
+                    <span>
+                      {fact.value}
+                      {fact.note ? <small> · {fact.note}</small> : null}
+                    </span>
                   </li>
                 ))}
               </ul>
@@ -463,7 +477,7 @@ export function AlwaysOnFox({
       const field = String((event as CustomEvent<{ field?: string }>).detail?.field ?? "").trim();
       if (!field || !isStart) return;
       setOpen(true);
-      const prompt = structureFixPrompt(field);
+      const prompt = structureFixPrompt(field, getFoxDraft());
       if (!prompt) return;
       applyCapture({ field: "correct", value: prompt });
       skipPromptSync.current = true;
@@ -571,6 +585,8 @@ export function AlwaysOnFox({
     draft.propertyValueAmount,
     draft.updatedAt,
     draft.valueAsked,
+    draft.creditAsked,
+    draft.creditBand,
     isStart,
     ready,
   ]);
@@ -627,6 +643,22 @@ export function AlwaysOnFox({
     ]);
   };
 
+  const appendStructureFix = (clientText: string, capture: Capture) => {
+    const live = getFoxDraft();
+    const next = workspacePromptCopy(workspacePrompt(live), live);
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: newId(),
+        role: "client",
+        text: clientText,
+        edit: editPromptFromCapture(capture),
+      },
+      { id: newId(), role: "system", text: workspaceUpdateCopy(capture, live) },
+      foxAskMessage(next),
+    ]);
+  };
+
   const chooseHomePath = (label: string, path: ReturnType<typeof pathFromHomeChoice>) => {
     if (!path) return false;
     writeStartPath(path);
@@ -671,18 +703,7 @@ export function AlwaysOnFox({
       skipPromptSync.current = true;
       const live = getFoxDraft();
       if (editing) {
-        const next = workspacePromptCopy(workspacePrompt(live), live);
-        const confirm = workspaceUpdateCopy(action.capture, live);
-        appendReply(
-          action.label,
-          {
-            text: confirm,
-            followUp: next.followUp ?? (next.text !== confirm ? next.text : undefined),
-            facts: next.facts,
-            actions: next.actions,
-          },
-          editPromptFromCapture(action.capture),
-        );
+        appendStructureFix(action.label, action.capture);
         return;
       }
       const next =
@@ -726,19 +747,7 @@ export function AlwaysOnFox({
       document.getElementById("fox-documents")?.scrollIntoView({ behavior: "smooth" });
     }
     if (editing && reply.capture) {
-      const live = getFoxDraft();
-      const next = workspacePromptCopy(workspacePrompt(live), live);
-      const confirm = workspaceUpdateCopy(reply.capture, live);
-      appendReply(
-        clientMoneyText(text, reply.capture),
-        {
-          text: confirm,
-          followUp: next.followUp ?? (next.text !== confirm ? next.text : undefined),
-          facts: next.facts,
-          actions: next.actions,
-        },
-        editPromptFromCapture(reply.capture),
-      );
+      appendStructureFix(clientMoneyText(text, reply.capture), reply.capture);
       return;
     }
     appendReply(
@@ -844,10 +853,20 @@ export function AlwaysOnFox({
       listRef={listRef}
       onClose={() => setOpen(false)}
       onAction={runAction}
-      composer={useHomeStage || isStart ? desk : undefined}
+      composer={
+        isStart ? (
+          <WorkspaceFileDock>{desk}</WorkspaceFileDock>
+        ) : useHomeStage ? (
+          desk
+        ) : undefined
+      }
       hideClose={isStart}
       stickyDisclosure={isStart}
-      docsDrop={isStart && startAsk === "documents" ? <DocumentDrop compact /> : null}
+      docsDrop={
+        isStart && (startAsk === "documents" || draft.phase === "documents")
+          ? <DocumentDrop compact />
+          : null
+      }
     />
   ) : null;
 

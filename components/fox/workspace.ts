@@ -14,7 +14,7 @@ import { pathFromHomeChoice } from "./homeIdle";
 import {
   AMOUNT_HELPER_BUBBLES,
   CREDIT_WORKSPACE_BUBBLES,
-  FOX_DISCLOSURE,
+  DOC_SLOTS,
   INCOME_BUBBLES,
   OCCUPANCY_BUBBLES,
   PRODUCT_INTENT_BUBBLES,
@@ -132,6 +132,15 @@ export function usesPurchasePrice(intent?: ProductIntent | null) {
   return intent === "buy" || intent === "jumbo";
 }
 
+export function slotFromFilename(name: string): import("./types").DocSlot {
+  const lower = name.toLowerCase();
+  if (/w-?2/.test(lower)) return "w2";
+  if (/pay.?stub|payslip/.test(lower)) return "paystubs";
+  if (/bank|statement/.test(lower)) return "bank";
+  if (/\bid\b|license|passport|driver/.test(lower)) return "id";
+  return "other";
+}
+
 export function sampleRateApplies(intent?: ProductIntent | null) {
   return intent === "buy" || intent === "refinance";
 }
@@ -240,11 +249,16 @@ export function formatSamplePayment(loanAmount?: number | null): string {
   return `$${Math.round(payment).toLocaleString("en-US")}/mo`;
 }
 
+function creditSettled(draft: FoxIntakeDraft) {
+  return Boolean(draft.creditAsked || draft.creditBand);
+}
+
 export function sampleReady(draft: FoxIntakeDraft): boolean {
   if (!draft.path || !draft.productIntent) return false;
   if (!draft.occupancyAsked && !draft.occupancyChoice.value) return false;
   if (!draft.timelineAsked && !draft.timelineChoice.value) return false;
-  return sketchNumberReady(draft);
+  if (!sketchNumberReady(draft)) return false;
+  return creditSettled(draft);
 }
 
 /** Single /start conversation engine. Desktop and mobile share this order, copy, and path rules. */
@@ -252,8 +266,12 @@ export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
   if (!draft.path) return "intent";
   if (draft.correcting === "path-switch") return "path-switch";
   if (draft.correcting === "correct") return "correct";
-  if (draft.correcting === "credit" || draft.correcting === "term" || draft.correcting === "income") {
-    return draft.sampleAccepted ? "done" : docsSettled(draft) ? "review" : "documents";
+  if (draft.correcting === "credit") return "credit";
+  if (draft.correcting === "term" && (draft.termAsked || draft.termYears != null)) {
+    return "term";
+  }
+  if (draft.correcting === "income" && draft.incomeType.value) {
+    return "income";
   }
   if (draft.correcting) return draft.correcting;
   if (!draft.productIntent) return "product";
@@ -262,10 +280,7 @@ export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
   if (!sketchNumberReady(draft)) {
     return usesPurchasePrice(draft.productIntent) ? "value" : "amount";
   }
-  if (draft.phase === "confirmed" || draft.workspaceDraftStatus === "with-originator") {
-    return "done";
-  }
-  if (!docsSettled(draft) && !draft.sampleAccepted) return "documents";
+  if (!creditSettled(draft)) return "credit";
   if (!draft.sampleAccepted) return "review";
   return "done";
 }
@@ -400,22 +415,37 @@ export function workspacePromptCopy(
     };
   }
   if (prompt === "done") {
+    const fileActions: FoxAction[] = [
+      { id: "open-docs", label: "Upload docs", event: "open-docs", capture: { field: "open-docs" } },
+    ];
+    if (!draft.originatorRequested) {
+      fileActions.push({
+        id: "request-human",
+        label: "Request human",
+        event: "bubble",
+        capture: { field: "talk-originator" },
+      });
+    }
     if (draft.path === "loan-only") {
+      fileActions.push({
+        id: "what-acr",
+        label: "What is ACR?",
+        event: "bubble",
+        capture: { field: "what-acr" },
+      });
+    }
+    if (draft.originatorRequested) {
       return {
-        text: "I’m preparing this loan. A licensed originator will review it on this desk. Fox stays.",
-        actions: [
-          { id: "open-docs", label: "Upload docs", event: "open-docs", capture: { field: "open-docs" } },
-          { id: "talk-lo", label: "Talk to a licensed originator", event: "bubble", capture: { field: "talk-originator" } },
-          { id: "what-acr", label: "What is ACR?", event: "bubble", capture: { field: "what-acr" } },
-        ],
+        text: "I’m still on this desk. Upload a doc, tap a Structure line, or ask about the file.",
+        actions: fileActions,
       };
     }
     return {
-      text: "I’m preparing this desk. A licensed originator will review. Fox stays.",
-      actions: [
-        { id: "open-docs", label: "Upload docs", event: "open-docs", capture: { field: "open-docs" } },
-        { id: "talk-lo", label: "Talk to a licensed originator", event: "bubble", capture: { field: "talk-originator" } },
-      ],
+      text:
+        draft.path === "loan-only"
+          ? "This loan file is prepared. A licensed originator is assigned. Fox stays."
+          : "This desk file is prepared. A licensed originator is assigned. Fox stays.",
+      actions: fileActions,
     };
   }
   return {
@@ -430,17 +460,8 @@ export function workspaceGreeting(draft: FoxIntakeDraft): {
   actions?: FoxAction[];
 } {
   const prompt = workspacePrompt(draft);
-  if (prompt === "product") {
-    return {
-      ...workspacePromptCopy("product", draft),
-      followUp: FOX_DISCLOSURE,
-    };
-  }
-  if (prompt === "intent") {
-    return {
-      ...workspacePromptCopy("intent", draft),
-      followUp: FOX_DISCLOSURE,
-    };
+  if (prompt === "product" || prompt === "intent") {
+    return workspacePromptCopy(prompt, draft);
   }
   const next = workspacePromptCopy(prompt, draft);
   if (
@@ -452,11 +473,12 @@ export function workspaceGreeting(draft: FoxIntakeDraft): {
     prompt === "path-switch" ||
     prompt === "done"
   ) {
-    return next.followUp ? next : { ...next, followUp: FOX_DISCLOSURE };
+    return next;
   }
   return {
     text: `${starterText(draft.path)} ${next.text}`,
-    followUp: FOX_DISCLOSURE,
+    followUp: next.followUp,
+    facts: next.facts,
     actions: next.actions,
   };
 }
@@ -561,7 +583,7 @@ export function parseCreditRange(text: string): CreditRange | null {
   if (/760|excellent/.test(lower)) return "760+";
   if (/720|740/.test(lower)) return "720-759";
   if (/680|700/.test(lower)) return "680-719";
-  if (/not sure|unsure|unknown/.test(lower)) return "not-sure";
+  if (/not sure|unsure|unknown|skip( for now)?/.test(lower)) return "not-sure";
   return null;
 }
 
@@ -577,6 +599,10 @@ export function parseTermYears(text: string): number | null | "skip" {
     return Number.isFinite(n) && n > 0 ? n : null;
   }
   return null;
+}
+
+function occupancySpokenLabel(value?: string | null) {
+  return OCCUPANCY_BUBBLES.find((item) => item.value === value)?.label ?? "";
 }
 
 function occupancyFromText(text: string) {
@@ -635,13 +661,13 @@ export function workspaceUpdateCopy(capture: Capture, draft: FoxIntakeDraft) {
     return "ACR is the desk that stays open after close — letter, scout, and reward. This file is still the loan.";
   }
   if (capture.field === "talk-originator") {
-    return "A licensed originator will review this file on this desk. Fox stays. I cannot approve, lock, or commit to lend.";
+    return "A licensed originator is already assigned to this file. Fox stays. Upload a doc, tap a line to edit, or ask about the desk.";
   }
   if (capture.field === "productIntent") {
     return `Updated product to ${productIntentLabel(capture.value)}.`;
   }
   if (capture.field === "occupancy") {
-    const label = OCCUPANCY_BUBBLES.find((item) => item.value === capture.value)?.label;
+    const label = occupancySpokenLabel(capture.value);
     return label ? `Updated occupancy to ${label}.` : "Updated occupancy.";
   }
   if (capture.field === "timeline") {
@@ -713,7 +739,7 @@ export function parseWorkspaceEdit(
     if (match) {
       return {
         capture: { field: "occupancy", value: match.value },
-        confirm: `Updated occupancy to ${match.label}.`,
+        confirm: `Updated occupancy to ${occupancySpokenLabel(match.value)}.`,
       };
     }
     return { correct: "occupancy", confirm: "How will the property be used?" };
@@ -733,7 +759,16 @@ export function parseWorkspaceEdit(
   }
 
   if (/\b(fico|credit)\b/.test(lower)) {
-    return { confirm: "Credit is not on this sketch. A licensed originator will review that with the file." };
+    const range = parseCreditRange(q);
+    if (range) {
+      const label =
+        CREDIT_WORKSPACE_BUBBLES.find((item) => item.value === range)?.label ?? range;
+      return {
+        capture: { field: "creditRange", value: range },
+        confirm: `Updated credit range to ${label}.`,
+      };
+    }
+    return { correct: "credit", confirm: "What credit range should I use for the estimate?" };
   }
 
   if (/\bterm\b/.test(lower)) {
@@ -811,7 +846,13 @@ function draftAfterCapture(draft: FoxIntakeDraft, capture: Capture): FoxIntakeDr
     const n = Number(capture.value.replace(/,/g, ""));
     return { ...next, valueAsked: true, propertyValueAmount: Number.isFinite(n) && n > 0 ? n : draft.propertyValueAmount };
   }
-  if (capture.field === "creditRange") return { ...next, creditBand: capture.value as FoxIntakeDraft["creditBand"] };
+  if (capture.field === "creditRange") {
+    return {
+      ...next,
+      creditBand: capture.value as FoxIntakeDraft["creditBand"],
+      creditAsked: true,
+    };
+  }
   if (capture.field === "termYears") {
     const n = Number(capture.value);
     return { ...next, termAsked: true, termYears: Number.isFinite(n) && n > 0 ? n : draft.termYears };
@@ -890,9 +931,9 @@ export function workspaceReply(
     };
   }
 
-  if (/(talk to (a )?licensed originator|need (a )?licensed originator|talk to (an )?originator|speak to (an? )?(lo|originator|human))/i.test(lower)) {
+  if (/(talk to (a )?licensed originator|need (a )?licensed originator|request (a )?human|talk to (an )?originator|speak to (an? )?(lo|originator|human))/i.test(lower)) {
     return {
-      text: "A licensed originator will review this file on this desk. Fox stays. I cannot approve, lock, or commit to lend.",
+      text: "A licensed originator is already assigned to this file. Fox stays. Upload a doc, tap a line to edit, or ask about the desk.",
       capture: { field: "talk-originator" },
     };
   }
@@ -904,7 +945,6 @@ export function workspaceReply(
     }
     return {
       ...workspacePromptCopy("product", { ...draft, path }),
-      followUp: FOX_DISCLOSURE,
       capture: { field: "path", value: path },
     };
   }
@@ -954,8 +994,9 @@ export function workspaceReply(
   if (prompt === "timeline") {
     const match = timelineFromText(q);
     if (!match) return { text: "Tap Ready now, 30–90 days, or Just exploring." };
+    const nextAsk = usesPurchasePrice(draft.productIntent) ? "value" : "amount";
     return {
-      ...workspacePromptCopy("amount", draft),
+      ...workspacePromptCopy(nextAsk, draft),
       capture: { field: "timeline", value: match.value },
     };
   }
@@ -1017,7 +1058,7 @@ export function workspaceReply(
   if (prompt === "credit") {
     const range = parseCreditRange(q);
     if (!range) return { text: "Tap a credit range, or Not sure." };
-    const nextDraft = { ...draft, creditBand: range };
+    const nextDraft = { ...draft, creditBand: range, creditAsked: true, correcting: null };
     const next = workspacePromptCopy(workspacePrompt(nextDraft), nextDraft);
     return {
       ...next,
@@ -1181,10 +1222,70 @@ function amountLineLabel(intent?: ProductIntent | null) {
   return "Loan amount";
 }
 
+function numbersFact(draft: FoxIntakeDraft): PreviewFact | null {
+  const intent = draft.productIntent ?? productIntentFromSlug(draft.scenario?.productSlug);
+  const loan = draft.loanAmountValue;
+  const value = draft.propertyValueAmount;
+  const hasLoan = loan != null && loan > 0;
+  const hasValue = value != null && value > 0;
+  if (!hasLoan && !hasValue) return null;
+  if (hasLoan && hasValue) {
+    return {
+      id: "numbers",
+      label: usesPurchasePrice(intent) ? "Price / loan" : amountLineLabel(intent),
+      value: `${formatMoney(loan)} on ${formatMoney(value)}`,
+    };
+  }
+  if (hasLoan) {
+    return {
+      id: "numbers",
+      label: amountLineLabel(intent),
+      value: formatMoney(loan),
+    };
+  }
+  return {
+    id: "numbers",
+    label: usesPurchasePrice(intent) ? "Purchase price" : "Property value",
+    value: formatMoney(value as number),
+  };
+}
+
+function docsFact(draft: FoxIntakeDraft): PreviewFact | null {
+  if (draft.documents.length) {
+    const slots = Array.from(new Set(draft.documents.map((doc) => doc.slot)));
+    return {
+      id: "docs",
+      label: "Docs",
+      value: slots
+        .map((slot) => {
+          const label = DOC_SLOTS.find((item) => item.id === slot)?.label ?? "Other";
+          return `${label} in`;
+        })
+        .join(" · "),
+    };
+  }
+  if (draft.documentsSkipped) {
+    return { id: "docs", label: "Docs", value: "Skipped" };
+  }
+  return null;
+}
+
+export function statusCopy(draft: FoxIntakeDraft) {
+  if (
+    draft.sampleAccepted ||
+    draft.workspaceDraftStatus === "with-originator" ||
+    draft.phase === "confirmed"
+  ) {
+    return "Assigned / reviewing";
+  }
+  if (draft.workspaceDraftStatus === "ready") return "Ready for you";
+  return "Preparing";
+}
+
 export function previewFacts(draft: FoxIntakeDraft): PreviewFact[] {
   const facts: PreviewFact[] = [];
   if (draft.path === "acr") {
-    facts.push({ id: "path", label: "Path", value: "ACR" });
+    facts.push({ id: "path", label: "Path", value: "Relationship desk" });
   } else if (draft.path === "loan-only") {
     facts.push({ id: "path", label: "Path", value: "Loan only" });
   }
@@ -1210,39 +1311,39 @@ export function previewFacts(draft: FoxIntakeDraft): PreviewFact[] {
     facts.push({ id: "timeline", label: "Timeline", value: timelineLabel });
   }
 
-  const loan = draft.loanAmountValue;
-  if (loan != null && loan > 0) {
+  const numbers = numbersFact(draft);
+  if (numbers) facts.push(numbers);
+
+  if (draft.creditAsked || draft.creditBand) {
+    const creditLabel =
+      CREDIT_WORKSPACE_BUBBLES.find((item) => item.value === draft.creditBand)?.label ??
+      "Not sure";
+    facts.push({ id: "credit", label: "Credit", value: creditLabel });
+  }
+
+  if (sampleRateApplies(intent) && sampleReady(draft)) {
     facts.push({
-      id: "amount",
-      label: amountLineLabel(intent),
-      value: formatMoney(loan),
+      id: "rate",
+      label: "Rate",
+      value: `${SAMPLE_STRUCTURE} ${SAMPLE_RATE_LABEL}`,
+      note: SAMPLE_NOTE,
+    });
+  } else if (intent && !sampleRateApplies(intent) && sampleReady(draft)) {
+    facts.push({
+      id: "rate",
+      label: "Rate",
+      value: "Pricing when the file is ready",
     });
   }
 
-  const value = draft.propertyValueAmount;
-  if (value != null && value > 0) {
+  if (draft.path === "acr" && sampleReady(draft)) {
+    const range = estimateFromDraft(draft);
     facts.push({
-      id: "value",
-      label: usesPurchasePrice(intent) ? "Purchase price" : "Property value",
-      value: formatMoney(value),
+      id: "reward",
+      label: "Reward",
+      value: range ? formatRewardRange(range) : "Prepared when you join",
+      note: SAMPLE_NOTE,
     });
-  }
-
-  if (intent && (sampleReady(draft) || !sampleRateApplies(intent))) {
-    if (sampleRateApplies(intent) && sampleReady(draft)) {
-      facts.push({
-        id: "rate",
-        label: "Rate",
-        value: `${SAMPLE_STRUCTURE} ${SAMPLE_RATE_LABEL}`,
-        note: SAMPLE_NOTE,
-      });
-    } else if (!sampleRateApplies(intent)) {
-      facts.push({
-        id: "rate",
-        label: "Rate",
-        value: "Pricing when the file is ready",
-      });
-    }
   }
 
   const deskOpen =
@@ -1262,45 +1363,48 @@ export function previewFacts(draft: FoxIntakeDraft): PreviewFact[] {
       label: "Scout",
       value: "Do nothing for now.",
     });
-    const range = sampleReady(draft) ? estimateFromDraft(draft) : null;
+  }
+
+  if (
+    draft.sampleAccepted ||
+    draft.workspaceDraftStatus === "with-originator" ||
+    draft.phase === "confirmed"
+  ) {
     facts.push({
-      id: "reward",
-      label: "Reward",
-      value: range ? formatRewardRange(range) : "Prepared when you join",
-      note: SAMPLE_NOTE,
+      id: "originator",
+      label: "Originator",
+      value: "Licensed originator assigned",
     });
   }
 
-  if (draft.documents.length) {
-    facts.push({
-      id: "docs",
-      label: "Docs",
-      value: `${draft.documents.length} received`,
-    });
-  } else if (draft.documentsSkipped) {
-    facts.push({ id: "docs", label: "Docs", value: "Skipped" });
-  }
+  const docs = docsFact(draft);
+  if (docs) facts.push(docs);
 
-  if (draft.workspaceDraftStatus === "preparing") {
-    facts.push({ id: "status", label: "Status", value: "Preparing" });
-  } else if (draft.workspaceDraftStatus === "ready") {
-    facts.push({ id: "status", label: "Status", value: "Ready for review" });
-  } else if (draft.workspaceDraftStatus === "with-originator") {
-    facts.push({ id: "status", label: "Status", value: "Originator reviews" });
-  } else if (draft.status) {
-    facts.push({ id: "status", label: "Status", value: draft.status });
+  if (facts.length) {
+    facts.push({
+      id: "status",
+      label: "Status",
+      value: statusCopy(draft),
+    });
   }
 
   return facts;
 }
 
-export function structureFixPrompt(id: string): FoxPrompt | null {
+export function structureFixPrompt(
+  id: string,
+  draft?: FoxIntakeDraft,
+): FoxPrompt | null {
   if (id === "path") return "path-switch";
   if (id === "product") return "product";
   if (id === "occupancy") return "occupancy";
   if (id === "timeline") return "timeline";
+  if (id === "numbers") {
+    return usesPurchasePrice(draft?.productIntent) ? "value" : "amount";
+  }
   if (id === "amount") return "amount";
   if (id === "value") return "value";
+  if (id === "credit") return "credit";
   if (id === "docs") return "documents";
   return null;
 }
@@ -1337,7 +1441,12 @@ export function structureExplainCopy(
   }
   if (id === "status") {
     return {
-      text: "A licensed originator reviews this file on this desk. I cannot approve, lock, or commit to lend.",
+      text: "This is desk state. I cannot approve, lock, or commit to lend.",
+    };
+  }
+  if (id === "originator") {
+    return {
+      text: "A licensed originator is assigned to this file. I cannot approve, lock, or commit to lend.",
     };
   }
   return null;
@@ -1348,13 +1457,19 @@ const CHAT_SUMMARY_IDS = new Set([
   "product",
   "occupancy",
   "timeline",
-  "amount",
-  "value",
+  "numbers",
+  "credit",
   "rate",
   "reward",
   "docs",
 ]);
 
 export function fileSummaryFacts(draft: FoxIntakeDraft): PreviewFact[] {
-  return previewFacts(draft).filter((fact) => CHAT_SUMMARY_IDS.has(fact.id));
+  return previewFacts(draft)
+    .filter((fact) => CHAT_SUMMARY_IDS.has(fact.id))
+    .map((fact) =>
+      fact.id === "rate" && fact.note && !fact.value.includes(fact.note)
+        ? { ...fact, value: `${fact.value} · ${fact.note}`, note: undefined }
+        : fact,
+    );
 }

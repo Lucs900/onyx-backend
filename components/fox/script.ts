@@ -287,16 +287,6 @@ export function promptCopy(prompt: FoxPrompt, draft?: FoxIntakeDraft): { text: s
   if (prompt === "correct") {
     return {
       text: "Tap any line on the structure.",
-      actions: bubbles(
-        [
-          { value: "name", label: "Contact" },
-          { value: "income", label: "Income" },
-          { value: "occupancy", label: "Occupancy" },
-          { value: "timeline", label: "Timeline" },
-          { value: "documents", label: "Documents" },
-        ],
-        "correct",
-      ),
     };
   }
   return {
@@ -325,8 +315,9 @@ export function replyToMessage(
   }
 
   if (stage === "start") {
-    const workspace = workspaceReply(q, draft);
-    if (workspace) return workspace;
+    return (
+      workspaceReply(q, draft) ?? workspacePromptCopy(workspacePrompt(draft), draft)
+    );
   }
 
   if (stage === "acr") {
@@ -487,7 +478,7 @@ function captureForPrompt(
       { test: /doc/, value: "documents" },
     ];
     const hit = map.find((item) => item.test.test(raw.toLowerCase()));
-    if (!hit) return { text: "Tap Contact, Income, Occupancy, Timeline, or Documents." };
+    if (!hit) return { text: "Tap any line on the structure." };
     return { ...promptCopy(hit.value as FoxPrompt, draft), capture: { field: "correct", value: hit.value } };
   }
   return null;

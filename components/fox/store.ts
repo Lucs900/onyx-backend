@@ -91,6 +91,8 @@ function normalize(value: unknown): FoxIntakeDraft {
     amountAsked: Boolean(raw.amountAsked),
     valueAsked: Boolean(raw.valueAsked),
     creditBand: raw.creditBand,
+    creditAsked: Boolean(raw.creditAsked || raw.creditBand),
+    originatorRequested: Boolean(raw.originatorRequested),
     termYears: numberOrUndefined(raw.termYears),
     termAsked: Boolean(raw.termAsked),
     workspaceFlow: Boolean(raw.workspaceFlow),
@@ -148,15 +150,16 @@ function workspaceEntryToken(path?: IntakePath | null) {
   return path ?? "";
 }
 
-/** Wipe the prior file. Keep only the new path. Blocks hydrate from reloading the old draft. */
+/** Wipe the prior file. Keep the new path and honor intent without a second reset. */
 export function resetWorkspaceForEntry(
   path: IntakePath | null,
-  _intent: ProductIntent | null = null,
+  intent: ProductIntent | null = null,
 ) {
   workspaceEntryKey = workspaceEntryToken(path);
   current = {
     ...emptyDraft(),
     path: path ?? undefined,
+    productIntent: intent ?? undefined,
     workspaceFlow: true,
     updatedAt: new Date().toISOString(),
   };
@@ -230,13 +233,16 @@ export function setDraftPath(path: IntakePath | null) {
 /** Start or keep a fresh /start file. Never resume a closed or foreign draft. */
 export function applyWorkspaceEntry(
   path: IntakePath | null,
-  _intent: ProductIntent | null = null,
+  intent: ProductIntent | null = null,
 ) {
   const key = workspaceEntryToken(path);
   if (hydrated && workspaceEntryKey === key && current.workspaceFlow) {
+    if (intent && current.productIntent !== intent) {
+      return setDraftProductIntent(intent);
+    }
     return current;
   }
-  return resetWorkspaceForEntry(path);
+  return resetWorkspaceForEntry(path, intent);
 }
 
 /** Desktop / mobile CTA: new conversation, path only. */
@@ -540,8 +546,7 @@ export function applyCapture(capture: Capture) {
       commit({
         ...current,
         sampleAccepted: true,
-        workspaceDraftStatus:
-          current.workspaceDraftStatus === "with-originator" ? "with-originator" : "ready",
+        workspaceDraftStatus: "with-originator",
         correcting: null,
       });
       if (workspacePrompt(current) === "done") return confirmDraft();
@@ -566,7 +571,13 @@ export function applyCapture(capture: Capture) {
     return current;
   }
   if (capture.field === "talk-originator") {
-    return current;
+    return commit({
+      ...current,
+      originatorRequested: true,
+      workspaceDraftStatus: "with-originator",
+      loStatus: current.loStatus ?? "in review",
+      correcting: null,
+    });
   }
   if (capture.field === "correct") {
     return commit({
@@ -639,6 +650,8 @@ export function applyCapture(capture: Capture) {
       withWorkspaceScenario({
         ...current,
         creditBand: capture.value as CreditRange,
+        creditAsked: true,
+        correcting: null,
       }),
     );
   }

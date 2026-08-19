@@ -340,6 +340,13 @@
   font-weight: 500;
 }
 
+.fox-bubble__facts small {
+  display: inline;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 16px;
+}
+
 .fox-bubble__actions {
   display: flex;
   flex-wrap: wrap;

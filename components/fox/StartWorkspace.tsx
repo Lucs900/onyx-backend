@@ -11,6 +11,7 @@ import {
   getServerDraft,
   prepareWorkspaceDraft,
   resetWorkspaceForEntry,
+  setDraftProductIntent,
   subscribeFoxDraft,
 } from "./store";
 import { productIntentFromQuery, productIntentFromSlug } from "./workspace";
@@ -24,7 +25,7 @@ export function StartWorkspace() {
   const booted = useRef(false);
   if (typeof window !== "undefined" && !booted.current) {
     booted.current = true;
-    resetWorkspaceForEntry(startPath);
+    resetWorkspaceForEntry(startPath, startIntent);
   }
   const draft = useSyncExternalStore(subscribeFoxDraft, getFoxDraft, getServerDraft);
 
@@ -32,10 +33,13 @@ export function StartWorkspace() {
 
   const lastPath = useRef(startPath);
   useEffect(() => {
-    if (lastPath.current === startPath) return;
-    lastPath.current = startPath;
-    resetWorkspaceForEntry(startPath);
-  }, [startPath]);
+    if (lastPath.current !== startPath) {
+      lastPath.current = startPath;
+      resetWorkspaceForEntry(startPath, startIntent);
+      return;
+    }
+    if (startIntent) setDraftProductIntent(startIntent);
+  }, [startIntent, startPath]);
 
   useEffect(() => {
     if (!draft.workspaceFlow) return;
