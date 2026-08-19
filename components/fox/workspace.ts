@@ -213,8 +213,22 @@ export function workspaceGreeting(draft: FoxIntakeDraft): {
   };
 }
 
+export function formatMoney(value: number) {
+  return `$${formatDollars(value)}`;
+}
+
+export function confirmedMoneyText(raw: string): string | null {
+  const pair = parseAmountPair(raw);
+  if (pair.loan != null && pair.value != null && pair.value !== pair.loan) {
+    return `${formatMoney(pair.loan)} on ${formatMoney(pair.value)}`;
+  }
+  const amount = pair.loan ?? pair.value ?? parseLooseAmount(raw);
+  return amount != null ? formatMoney(amount) : null;
+}
+
 function collectAmounts(text: string): number[] {
-  const pattern = /(\d+(?:\.\d+)?)\s*(m|mm|million|k|thousand)?/gi;
+  const pattern =
+    /\$?\s*(\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?)\s*(m|mm|million|k|thousand)?/gi;
   const amounts: number[] = [];
   let match: RegExpExecArray | null;
   while ((match = pattern.exec(text))) {
@@ -247,7 +261,7 @@ export function parseAmountPair(text: string): { loan?: number; value?: number }
 }
 
 function amountFromParts(raw: string, unit?: string): number | null {
-  const n = Number(raw);
+  const n = Number(raw.replace(/,/g, ""));
   if (!Number.isFinite(n) || n <= 0) return null;
   const suffix = (unit ?? "").toLowerCase();
   if (suffix === "m" || suffix === "mm" || suffix === "million") {
@@ -533,7 +547,7 @@ export function previewFacts(draft: FoxIntakeDraft): PreviewFact[] {
     facts.push({
       id: "amount",
       label: intent === "use-equity" ? "Line / cash" : "Loan amount",
-      value: `$${formatDollars(loan)}`,
+      value: formatMoney(loan),
       note: "Rough · estimated",
     });
   }
@@ -543,7 +557,7 @@ export function previewFacts(draft: FoxIntakeDraft): PreviewFact[] {
     facts.push({
       id: "value",
       label: "Property value",
-      value: `$${formatDollars(value)}`,
+      value: formatMoney(value),
       note: "Rough · estimated",
     });
   }

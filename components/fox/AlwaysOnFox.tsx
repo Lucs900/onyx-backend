@@ -37,6 +37,7 @@ import {
   subscribeFoxDraft,
 } from "./store";
 import {
+  confirmedMoneyText,
   productIntentFromQuery,
   productIntentFromSlug,
   workspacePrompt,
@@ -59,6 +60,13 @@ export function requestFoxOpen() {
 
 export function requestFoxAsk(text: string) {
   window.dispatchEvent(new CustomEvent("onyx:fox-ask", { detail: { text } }));
+}
+
+function clientMoneyText(text: string, capture?: { field: string }) {
+  if (capture?.field !== "loanAmount" && capture?.field !== "propertyValue") {
+    return text;
+  }
+  return confirmedMoneyText(text) ?? text;
 }
 
 function persistPathFromHref(href: string) {
@@ -298,7 +306,7 @@ export function AlwaysOnFox() {
       if (reply.capture) applyCapture(reply.capture);
       setMessages((prev) => [
         ...prev,
-        { id: newId(), role: "client", text },
+        { id: newId(), role: "client", text: clientMoneyText(text, reply.capture) },
         { id: newId(), role: "fox", text: reply.text, actions: reply.actions },
       ]);
     };
@@ -342,7 +350,7 @@ export function AlwaysOnFox() {
       const reply = replyToMessage(queued, stage, live, scenario);
       if (reply.capture) applyCapture(reply.capture);
       lines.push(
-        { id: newId(), role: "client", text: queued },
+        { id: newId(), role: "client", text: clientMoneyText(queued, reply.capture) },
         { id: newId(), role: "fox", text: reply.text, actions: reply.actions },
       );
     }
@@ -452,10 +460,17 @@ export function AlwaysOnFox() {
     if (reply.capture?.field === "open-docs") {
       document.getElementById("fox-documents")?.scrollIntoView({ behavior: "smooth" });
     }
-    appendReply(text, reply);
+    appendReply(clientMoneyText(text, reply.capture), reply);
   };
 
   const hideDock = isStart || (isHome && (useHomeStage ? open : true));
+  const startAsk = isStart ? workspacePrompt(draft) : null;
+  const composerMode =
+    startAsk === "amount" || startAsk === "value"
+      ? "decimal"
+      : startAsk === "term"
+        ? "numeric"
+        : "text";
 
   const desk = (
     <form className="fox-bar__desk" onSubmit={onSubmit}>
@@ -466,12 +481,14 @@ export function AlwaysOnFox() {
         Ask ONYX Fox
       </label>
       <input
+        key={composerMode}
         id={fieldId}
         className="fox-bar__input"
         value={input}
         onChange={(event) => setInput(event.target.value)}
         onFocus={() => setOpen(true)}
         placeholder="Ask ONYX Fox"
+        inputMode={composerMode}
         autoComplete="off"
       />
       <button

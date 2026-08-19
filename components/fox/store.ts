@@ -445,8 +445,8 @@ export function applyCapture(capture: Capture) {
   }
   if (capture.field === "loanAmount") {
     const [loanRaw, valueRaw] = capture.value.split(":");
-    const loan = Number(loanRaw);
-    const value = valueRaw ? Number(valueRaw) : undefined;
+    const loan = Number(loanRaw.replace(/,/g, ""));
+    const value = valueRaw ? Number(valueRaw.replace(/,/g, "")) : undefined;
     return commit(
       withWorkspaceScenario({
         ...current,
@@ -459,7 +459,7 @@ export function applyCapture(capture: Capture) {
     );
   }
   if (capture.field === "propertyValue") {
-    const value = Number(capture.value);
+    const value = Number(capture.value.replace(/,/g, ""));
     return commit(
       withWorkspaceScenario({
         ...current,
