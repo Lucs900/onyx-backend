@@ -13,6 +13,8 @@ import {
   type DocSlot,
   type DocStatus,
   type DraftField,
+  type ExtractClass,
+  type FactConflict,
   type FoxIntakeDraft,
   type FoxMessage,
   type FoxPrompt,
@@ -22,6 +24,13 @@ import {
   type ReceivedDoc,
   type SectionId,
 } from "./types";
+import {
+  applyExtractedFields,
+  resolveFactConflict,
+  skipRemainingClasses,
+  slotForExtractClass,
+  type ExtractApplyInput,
+} from "./fileWrite";
 import {
   migrateRestoredFoxMessages,
   normalizeProductIntent,
@@ -60,6 +69,10 @@ export function emptyDraft(): FoxIntakeDraft {
     notes: [],
     documents: [],
     documentsSkipped: false,
+    facts: {},
+    pendingConflict: null,
+    skippedClasses: [],
+    missingAskKey: "",
     sections: {
       contact: false,
       scenario: false,
@@ -121,8 +134,45 @@ function normalize(value: unknown): FoxIntakeDraft {
     documents: (raw.documents ?? []).map((doc) => ({
       ...doc,
       status: doc.status ?? "received",
+      bytesRef: typeof doc.bytesRef === "string" ? doc.bytesRef : undefined,
+      extractClass: doc.extractClass,
     })),
+    facts: normalizeFacts(raw.facts),
+    pendingConflict: normalizeConflict(raw.pendingConflict),
+    skippedClasses: Array.isArray(raw.skippedClasses)
+      ? raw.skippedClasses.filter((item): item is ExtractClass => typeof item === "string")
+      : [],
+    missingAskKey: typeof raw.missingAskKey === "string" ? raw.missingAskKey : "",
     sections: { ...base.sections, ...raw.sections },
+  };
+}
+
+function normalizeFacts(value: FoxIntakeDraft["facts"]): Record<string, DraftField> {
+  if (!value || typeof value !== "object") return {};
+  const next: Record<string, DraftField> = {};
+  for (const [key, field] of Object.entries(value)) {
+    if (!field || typeof field !== "object" || typeof field.value !== "string") continue;
+    next[key] = {
+      field: field.field || key,
+      value: field.value,
+      source: field.source === "document" || field.source === "scenario" || field.source === "extracted-unconfirmed"
+        ? field.source
+        : "client",
+      confirmed: Boolean(field.confirmed),
+      confirmedAt: field.confirmedAt,
+    };
+  }
+  return next;
+}
+
+function normalizeConflict(value: FoxIntakeDraft["pendingConflict"]): FactConflict | null {
+  if (!value || typeof value !== "object") return null;
+  if (!value.field || !value.fileValue || !value.documentValue) return null;
+  return {
+    field: value.field,
+    fileValue: value.fileValue,
+    documentValue: value.documentValue,
+    label: value.label || value.field,
   };
 }
 
@@ -488,8 +538,11 @@ export function addNote(text: string) {
   });
 }
 
-export function receiveDocument(input: Omit<ReceivedDoc, "status" | "note">) {
-  const documents = [...current.documents, { ...input, status: "received" as const }];
+export function receiveDocument(input: Omit<ReceivedDoc, "status" | "note"> & { status?: DocStatus; note?: string }) {
+  const documents = [
+    ...current.documents,
+    { ...input, status: input.status ?? "received", note: input.note },
+  ];
   const keepPhase =
     current.workspaceFlow &&
     (current.sampleAccepted || current.phase === "confirmed" || current.workspaceDraftStatus === "with-originator");
@@ -521,14 +574,59 @@ export function setDocumentStatus(
   note?: string,
   receivedAt?: string,
 ) {
+  return patchReceivedDoc(
+    (doc) => (receivedAt ? doc.receivedAt === receivedAt : doc.slot === slot),
+    { status, note },
+  );
+}
+
+export function patchReceivedDoc(
+  match: (doc: ReceivedDoc) => boolean,
+  patch: Partial<ReceivedDoc>,
+) {
   return commit({
     ...current,
-    documents: current.documents.map((doc) =>
-      (receivedAt ? doc.receivedAt === receivedAt : doc.slot === slot)
-        ? { ...doc, status, note }
-        : doc,
-    ),
+    documents: current.documents.map((doc) => (match(doc) ? { ...doc, ...patch } : doc)),
   });
+}
+
+export function applyExtractWrite(
+  receivedAt: string,
+  name: string,
+  input: ExtractApplyInput,
+  note?: string,
+  failed?: boolean,
+) {
+  const match = current.documents.some((doc) => doc.receivedAt === receivedAt && doc.name === name);
+  if (!match) {
+    return { draft: current, writes: [], conflict: null, quietLines: [] };
+  }
+  const applied = failed
+    ? { draft: current, writes: [], conflict: null as const, quietLines: [] }
+    : applyExtractedFields(current, input);
+  const slot = slotForExtractClass(input.extractClass);
+  const nextDocs = applied.draft.documents.map((doc) =>
+    doc.receivedAt === receivedAt && doc.name === name
+      ? {
+          ...doc,
+          slot,
+          extractClass: input.extractClass,
+          status: (failed ? "failed" : "extracted") as DocStatus,
+          note,
+        }
+      : doc,
+  );
+  commit({
+    ...applied.draft,
+    documents: nextDocs,
+    documentsSkipped: false,
+    sections: { ...applied.draft.sections, documents: false },
+  });
+  return { ...applied, draft: current };
+}
+
+export function markMissingAsked(key: string) {
+  return commit({ ...current, missingAskKey: key });
 }
 
 export function skipDocuments() {
@@ -536,15 +634,13 @@ export function skipDocuments() {
     current.sampleAccepted ||
     current.phase === "confirmed" ||
     current.workspaceDraftStatus === "with-originator";
+  const skipped = skipRemainingClasses(current);
   return commit({
-    ...current,
-    documentsSkipped: true,
-    docsOpen: false,
+    ...skipped,
     phase: prepared && current.phase === "confirmed" ? "confirmed" : prepared ? current.phase : "draft",
     workspaceDraftStatus: prepared
       ? current.workspaceDraftStatus ?? "with-originator"
       : current.workspaceDraftStatus,
-    correcting: null,
     sections: { ...current.sections, documents: false },
   });
 }
@@ -674,6 +770,12 @@ export function applyCapture(capture: Capture) {
     skipDocuments();
     if (current.workspaceFlow) return current;
     return advancePhase();
+  }
+  if (capture.field === "keep-file-fact") {
+    return commit(resolveFactConflict(current, "file"));
+  }
+  if (capture.field === "use-document-fact") {
+    return commit(resolveFactConflict(current, "document"));
   }
   if (capture.field === "open-docs") {
     if (current.workspaceFlow) {

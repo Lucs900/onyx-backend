@@ -29,6 +29,7 @@ import {
   type IntakePath,
   type ProductIntent,
 } from "./types";
+import { displayFactValue, factValue } from "./fileWrite";
 
 export const START_ACR_TEXT =
   "I can prepare your relationship file. We’ll keep this desk open after close.";
@@ -738,6 +739,8 @@ export function workspaceUpdateCopy(capture: Capture, draft: FoxIntakeDraft) {
     return label ? `Updated income to ${label}.` : "Updated income.";
   }
   if (capture.field === "skip-docs") return "Updated. Docs skipped.";
+  if (capture.field === "keep-file-fact") return "Kept the file value.";
+  if (capture.field === "use-document-fact") return "Updated from the document.";
   return "Updated the file.";
 }
 
@@ -933,6 +936,21 @@ export function workspaceReply(
   const q = text.trim();
   const lower = q.toLowerCase();
   const prompt = workspacePrompt(draft);
+
+  if (draft.pendingConflict) {
+    if (/(keep (the )?file|file value|keep mine)/i.test(lower)) {
+      return {
+        text: "Kept the file value.",
+        capture: { field: "keep-file-fact" },
+      };
+    }
+    if (/(use (the )?document|document value|use (the )?paystub|use (the )?w-?2)/i.test(lower)) {
+      return {
+        text: "Updated from the document.",
+        capture: { field: "use-document-fact" },
+      };
+    }
+  }
 
   if (/(approv|lock|commit to lend|am i approved)/i.test(lower)) {
     return {
@@ -1377,6 +1395,24 @@ export function previewFacts(draft: FoxIntakeDraft): PreviewFact[] {
     const incomeLabel =
       INCOME_BUBBLES.find((item) => item.value === draft.incomeType.value)?.label ?? "Other";
     facts.push({ id: "income", label: "Income", value: incomeLabel });
+  }
+
+  const employer = factValue(draft, "employer_name");
+  if (employer) {
+    facts.push({ id: "employer", label: "Employer", value: employer });
+  }
+  const periodPay = factValue(draft, "gross_period");
+  const ytdPay = factValue(draft, "ytd_gross");
+  const wages = factValue(draft, "wages");
+  const agi = factValue(draft, "agi");
+  const payBits = [
+    periodPay ? `Period ${displayFactValue("gross_period", periodPay)}` : "",
+    ytdPay ? `YTD ${displayFactValue("ytd_gross", ytdPay)}` : "",
+    !periodPay && !ytdPay && wages ? `Wages ${displayFactValue("wages", wages)}` : "",
+    !periodPay && !ytdPay && !wages && agi ? `AGI ${displayFactValue("agi", agi)}` : "",
+  ].filter(Boolean);
+  if (payBits.length) {
+    facts.push({ id: "pay", label: "Pay", value: payBits.join(" · ") });
   }
 
   if (sampleRateApplies(intent) && sampleReady(draft)) {

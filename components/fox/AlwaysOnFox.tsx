@@ -40,6 +40,7 @@ import {
   getFoxMessages,
   getServerDraft,
   hydrateFoxDraft,
+  markMissingAsked,
   setDraftPath,
   setDraftScenario,
   setFoxMessages,
@@ -60,6 +61,16 @@ import {
 } from "./workspace";
 import { DocumentDrop } from "./DocumentDrop";
 import { WorkspaceFileDock } from "./FilePreview";
+import {
+  DOC_INTAKE_EVENT,
+  conflictActions,
+  conflictAskCopy,
+  missingAskActions,
+  missingAskCopy,
+  missingAskKey,
+  missingExtractClasses,
+  type DocIntakeDetail,
+} from "./fileWrite";
 import { pathFromHomeChoice } from "./homeIdle";
 import {
   FOX_DISCLOSURE,
@@ -559,15 +570,47 @@ export function AlwaysOnFox({
       skipPromptSync.current = true;
       commitMessages((prev) => [...prev, foxAskMessage(explain)]);
     };
+    const onIntake = (event: Event) => {
+      if (!isStart) return;
+      const detail = (event as CustomEvent<DocIntakeDetail>).detail ?? {};
+      skipPromptSync.current = true;
+      commitMessages((prev) => {
+        const next = [...prev];
+        if (detail.reject) {
+          next.push({ id: newId(), role: "system", text: detail.reject });
+        }
+        for (const line of detail.quietLines ?? []) {
+          next.push({ id: newId(), role: "system", text: line });
+        }
+        if (detail.conflict) {
+          next.push(
+            foxAskMessage({
+              text: conflictAskCopy(detail.conflict),
+              actions: conflictActions(),
+            }),
+          );
+        } else if (detail.missing?.length) {
+          next.push(
+            foxAskMessage({
+              text: missingAskCopy(detail.missing),
+              actions: missingAskActions(),
+            }),
+          );
+        }
+        return next;
+      });
+    };
     window.addEventListener("onyx:fox-open", onOpen);
     window.addEventListener("onyx:fox-ask", onAsk);
     window.addEventListener("onyx:fox-fix", onFix);
     window.addEventListener("onyx:fox-explain", onExplain);
+    window.addEventListener(DOC_INTAKE_EVENT, onIntake);
     return () => {
       window.removeEventListener("onyx:fox-open", onOpen);
       window.removeEventListener("onyx:fox-ask", onAsk);
       window.removeEventListener("onyx:fox-fix", onFix);
       window.removeEventListener("onyx:fox-explain", onExplain);
+      window.removeEventListener(DOC_INTAKE_EVENT, onIntake);
     };
   }, [isHome, isStart, pathname, ready, search, stage, workspaceSurface]);
 
@@ -760,6 +803,32 @@ export function AlwaysOnFox({
         text: docsAsk.text,
         actions: (docsAsk.actions ?? []).filter((item) => item.capture?.field === "skip-docs"),
       });
+      return;
+    }
+    if (action.capture?.field === "keep-file-fact" || action.capture?.field === "use-document-fact") {
+      applyCapture(action.capture);
+      skipPromptSync.current = true;
+      const live = getFoxDraft();
+      const missing = missingExtractClasses(live);
+      const key = missingAskKey(missing);
+      const lines: FoxMessage[] = [
+        {
+          id: newId(),
+          role: "client",
+          text: action.label,
+        },
+        { id: newId(), role: "system", text: workspaceUpdateCopy(action.capture, live) },
+      ];
+      if (missing.length && live.missingAskKey !== key) {
+        markMissingAsked(key);
+        lines.push(
+          foxAskMessage({
+            text: missingAskCopy(missing),
+            actions: missingAskActions(),
+          }),
+        );
+      }
+      commitMessagesNow((prev) => [...prev, ...lines]);
       return;
     }
     if (action.capture) {

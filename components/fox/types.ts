@@ -16,7 +16,7 @@ export const CONFIRMED_STATUS = "Draft confirmed — pending licensed review";
 export const ORIGINATOR_REQUEST = "Need a licensed originator?";
 export const ORIGINATOR_REVIEW = "A licensed originator will review this.";
 
-export type FieldSource = "client" | "scenario" | "extracted-unconfirmed";
+export type FieldSource = "client" | "scenario" | "extracted-unconfirmed" | "document";
 
 export type DraftField = {
   field: string;
@@ -27,6 +27,16 @@ export type DraftField = {
 };
 
 export type DocSlot = "paystubs" | "w2" | "bank" | "id" | "other";
+
+export type ExtractClass =
+  | "government_id"
+  | "paystub"
+  | "w2"
+  | "tax_return"
+  | "bank_statement"
+  | "purchase_contract"
+  | "mortgage_statement"
+  | "other";
 
 export type DocStatus =
   | "received"
@@ -43,6 +53,15 @@ export type ReceivedDoc = {
   receivedAt: string;
   status: DocStatus;
   note?: string;
+  bytesRef?: string;
+  extractClass?: ExtractClass;
+};
+
+export type FactConflict = {
+  field: string;
+  fileValue: string;
+  documentValue: string;
+  label: string;
 };
 
 export type IntakePhase = "context" | "documents" | "draft" | "confirmed";
@@ -101,6 +120,10 @@ export type FoxIntakeDraft = {
   notes: string[];
   documents: ReceivedDoc[];
   documentsSkipped: boolean;
+  facts?: Record<string, DraftField>;
+  pendingConflict?: FactConflict | null;
+  skippedClasses?: ExtractClass[];
+  missingAskKey?: string;
   sections: Record<SectionId, boolean>;
   confirmedAt?: string;
   status?: typeof CONFIRMED_STATUS;
@@ -157,6 +180,8 @@ export type Capture =
   | { field: "skip-term" }
   | { field: "skip-docs" }
   | { field: "open-docs" }
+  | { field: "keep-file-fact" }
+  | { field: "use-document-fact" }
   | { field: "confirm-draft" }
   | { field: "needs-correction" }
   | { field: "keep-path" }

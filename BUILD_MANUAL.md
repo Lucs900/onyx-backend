@@ -130,6 +130,67 @@ Income type is a structure-changing question on the shared spine, after credit a
 - ACR and loan only stay distinct through this flow (path-specific starters and reward-panel rules). Reward estimate only on ACR via private `estimateFromDraft`. Temporary sample rate is 6.750% Conventional 30-year on Buy/Refinance only, labeled `Sample · indicative · not live` wherever that number appears. HELOC / Jumbo / Other stay `Pricing when the file is ready`. No live rate. No public %. Disclosure under the Fox header only, not in the first bubble.
 - Desktop stays Fox left / Structure right. Mobile stays chat-first with the Structure File sheet from the dock chip.
 
+## BUILD 1 — real document intake (preview only)
+
+Replaces the fake `useDocumentReads` timer. After Looks right, `Upload docs` still opens one Fox-thread drop. No second drop on Structure or the mobile File sheet. Spine stays A–D. Fox stays. Assigned originator stays. Zero docs still reaches assigned originator.
+
+### Storage (as shipped)
+
+- Bytes persist **server-side on Vercel Blob, private**. No public URL is written into the browser draft.
+- Browser draft (`onyx.foxIntake.draft` v2) keeps metadata only: `{ slot, name, type, size, receivedAt, status, note, bytesRef, extractClass }`. `bytesRef` is the private Blob **pathname**.
+- Upload path: browser → `@vercel/blob/client` `upload(..., { access: "private", handleUploadUrl: "/api/docs/upload" })` so 15 MB files do not go through the function body.
+- Extract path: `POST /api/docs/extract` with `{ bytesRef }` → server `get(pathname, { access: "private" })` → classify/extract. Signed/OIDC read on the server only. Fox never receives raw PDF bytes.
+- Caps: 15 MB each, 10 files. Accept PDF, JPEG, PNG, HEIC, WebP. Other types: one line, `Use a PDF, JPEG, PNG, HEIC, or WebP under 15 MB.`
+- Client upload **requires** `BLOB_READ_WRITE_TOKEN` (`handleUpload` cannot mint tokens from OIDC alone). On Vercel, a **private** Blob store linked to `onyx-backend` (Preview) is the provision step. If that token/store is missing, routes return `503 STORAGE_BLOCKED` and do not invent a public blob URL.
+- Dedicated routes only: `/api/docs/upload`, `/api/docs/extract`. Do **not** call `/api/chat` or `/api/heloc-quote`.
+
+### Extract schema as shipped
+
+One adapter (`lib/docs/extract.ts`) calls the existing Grok key (`grok_api_key`) through `@ai-sdk/openai` + `https://api.x.ai/v1`, model `grok-2-vision-1212`. No new paid OCR vendor.
+
+`classify(bytes) → { class, confidence }` then `extract(bytes, class) → fields + warnings`.
+
+Classes and keys (V1 only):
+
+- `government_id`: full_name, date_of_birth, id_last4, state, expiration
+- `paystub`: employer_name, pay_period_end, gross_period, ytd_gross, net_period
+- `w2`: tax_year, employer_name, wages, federal_withheld
+- `tax_return`: tax_year, filing_status, agi
+- `bank_statement`: institution, period_end, ending_balance
+- `purchase_contract`: property_address, purchase_price, close_date
+- `mortgage_statement`: servicer, unpaid_principal, current_pi, property_address
+
+Slot map: government_id→id, paystub→paystubs, w2→w2, tax_return→other, bank_statement→bank, purchase_contract→other, mortgage_statement→other.
+
+Write extracted facts onto the same draft `/lo/review` already reads (`facts` + existing contact/value fields). Source starts as `extracted-unconfirmed` and is confirmed on empty write or after a conflict tap. Empty Structure/fact → write. Same value → keep, no question. Credit range stays typed. Docs never write FICO. Full SSN and full account numbers are dropped; ID may store last4 only.
+
+Low-confidence / `other`: keep bytes, do not invent numbers, Structure/docs note `Document received`. Failed read: keep bytes, status `failed`, exact copy `Fox could not read this file. Type a note or skip. No dollar amounts were invented.`
+
+Quiet system line on write, not a loud Fox bubble: e.g. `Updated income from paystub.`
+
+### Missing-item ask (one short group)
+
+Always after confirm: **government ID**.
+
+- W-2: paystub + W-2
+- Self-employed / 1099 / other: tax return
+- Optional if useful: buy (and no purchase price on Structure) → purchase contract; refi/HELOC → mortgage statement
+
+Do not ask a class that is received, ready, or skipped. Do not re-ask path, occupancy, credit, or a fact already on Structure. Skip writes `documentsSkipped` and remaining requested classes into `skippedClasses`. File stays with-originator. Later upload still works.
+
+### Conflict behavior
+
+If a typed/File value differs from the document, Fox does **not** overwrite. It asks once: file vs document. Borrower tap wins (`Keep file` / `Use document`). Example: typed income ≠ paystub period pay.
+
+### Walk (this build)
+
+1. After Looks right, upload a paystub (or labeled sample). Structure gains employer/pay facts. Spine is not replayed.
+2. Typed income ≠ paystub → Fox asks once, does not overwrite.
+3. Missing group names only what’s still open. Skip still works.
+4. Unreadable file: received + failed, no invented numbers.
+5. Desktop and mobile same engine.
+6. Zero docs still reaches assigned originator.
+
 ## Product Explorer (CA only)
 
 Route `/products`. California discovery only. No live pricing, APR, LoanSifter, calculators, or apply flows. Thirteen cards in five groups (Core residential, Government, Equity, Expanded residential, Specialty). CTA is exactly `Explore this option` → `/products/scenario?product=<slug>`. Specialty is separated by space + hairline + eyebrow, not a gold or green band.
@@ -188,8 +249,8 @@ One page: document drop → stub extract → draft summary → confirm. Question
 - Storage: `sessionStorage` + `localStorage` key `onyx.foxIntake.draft`
 - Scenario key unchanged: `onyx.productExplorer.scenario`
 - Path: query `path=acr` | `path=loan` (also accepts `loan-only`). Stored on the draft as `acr` | `loan-only` so it survives refresh. Fox continues from the existing scenario. ACR path may mention the estimated reward range as context (`estimateRewardRange` / `formatRewardRange` only — never the formula or a percent) and that the final amount is confirmed when they join and close. Loan only is a mortgage draft only — no membership reward language. Confirm card may show Path quietly (`ACR` / `Loan only`). Do not expand intake questions beyond this path-aware context.
-- Documents: metadata only (name, type, size, slot, status, receivedAt). Status: `received` → `reading` → `extracted` | `needs better copy` / `failed`. No file bytes in git, no upload, no public URL.
-- Extraction is stubbed. Do not invent income, SSN, account, rate, or payment numbers. Empty fields stay empty and labeled.
+- Documents: metadata only in the browser draft (name, type, size, slot, status, receivedAt, bytesRef, extractClass). Status: `received` → `reading` → `extracted` | `needs better copy` / `failed`. Bytes live in private Vercel Blob. No public URL. No file bytes in git.
+- Extraction is real BUILD 1 (Grok vision adapter). Do not invent income, SSN, account, rate, or payment numbers. Empty fields stay empty. See BUILD 1 above.
 - Audit fields: `{ field, source: client | scenario | extracted-unconfirmed, confirmed }`
 - Client confirm is a short card only: name, email, phone, purpose/product, value, loan amount, occupancy, income type, documents received or skipped, plus `Looks right` / `Needs a correction`. No source labels, empty extract fields, checklist, or queue UI on the client view. `/lo/review` keeps the full worksheet.
 - After confirm: `Draft confirmed — pending licensed review`
@@ -263,16 +324,23 @@ app/(marketing)/how-we-get-paid/page.tsx  broker compensation
 app/(marketing)/{licensing,privacy,equal-housing,login,advisor}/page.tsx  short real pages
 components/products/startPath.ts  ACR / loan only start intent (`/start?path=acr` | `/start?path=loan`)
 components/fox/workspace.ts       workspace prompts, amount parse, live preview facts
-components/fox/DocumentDrop.tsx   shared document slots + stub extract (intake + /start)
+components/fox/DocumentDrop.tsx   Fox-thread drop + real upload/extract (intake + /start)
+components/fox/fileWrite.ts       write / conflict / missing-ask rules
 components/fox/FilePreview.tsx    calm file card / mobile File sheet
+lib/docs/accept.ts                file caps + accepted types
+lib/docs/storage.ts               private Vercel Blob helpers
+lib/docs/extract.ts               Grok classify + extract adapter
+app/api/docs/upload               Blob handleUpload (private)
+app/api/docs/extract              classify + extract (fields only)
 components/fox/HeroStartLink.tsx  desktop hero pills: write path + /start
 components/fox/StartWorkspace.tsx `/start` layout: URL seed + live AlwaysOnFox child
 styles/start.css                  workspace layout
 app/(marketing)/start/page.tsx    Fox workspace route
 app/(marketing)/start/layout.tsx  mounts Always-on Fox for /start
-app/api/chat                      UNCHANGED
-app/api/heloc-quote               UNCHANGED
-lib/*                             UNCHANGED
+app/api/chat                      UNCHANGED (do not call)
+app/api/heloc-quote               UNCHANGED (do not call)
+lib/calculate*                    UNCHANGED
+lib/getProductGuideline.ts        UNCHANGED
 ```
 
 ## Tokens

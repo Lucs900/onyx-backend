@@ -5,15 +5,25 @@ import { fileURLToPath } from "node:url";
 import { greeting, promptCopy } from "../components/fox/script";
 import {
   applyCapture,
+  applyExtractWrite,
   beginWorkspaceFromHero,
   continueWorkspaceFromEntry,
   emptyDraft,
   getFoxDraft,
   getFoxMessages,
+  receiveDocument,
   resetWorkspaceForEntry,
   setFoxMessages,
   workspaceSessionStarted,
 } from "../components/fox/store";
+import {
+  applyExtractedFields,
+  missingAskCopy,
+  missingExtractClasses,
+  resolveFactConflict,
+  sanitizeExtractedFields,
+  skipRemainingClasses,
+} from "../components/fox/fileWrite";
 import {
   CREDIT_WORKSPACE_BUBBLES,
   FOX_DISCLOSURE,
@@ -482,6 +492,10 @@ assert.equal(afterSkip.workspaceDraftStatus, "with-originator");
 assert.equal(workspacePrompt(afterSkip), "done");
 assert.equal(statusCopy(afterSkip), "Assigned / reviewing");
 assert.ok(previewFacts(afterSkip).some((fact) => fact.id === "docs" && fact.value === "Skipped"));
+assert.ok((afterSkip.skippedClasses ?? []).includes("government_id"));
+assert.ok((afterSkip.skippedClasses ?? []).includes("paystub"));
+assert.ok((afterSkip.skippedClasses ?? []).includes("w2"));
+assert.ok(!(afterSkip.skippedClasses ?? []).includes("purchase_contract"));
 
 resetWorkspaceForEntry("acr", "buy");
 applyCapture({ field: "occupancy", value: "primary" });
@@ -556,6 +570,174 @@ assert.equal(getFoxMessages().length, 0);
 assert.equal(workspacePrompt(getFoxDraft()), "product");
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+const paystubWrite = applyExtractedFields(afterLooks, {
+  extractClass: "paystub",
+  confidence: 0.92,
+  fields: {
+    employer_name: "Harbor Steel",
+    pay_period_end: "2026-07-31",
+    gross_period: "7200",
+    ytd_gross: "50400",
+    net_period: "5100",
+    ssn: "123-45-6789",
+    account_number: "000123456789",
+  },
+});
+assert.equal(paystubWrite.conflict, null);
+assert.equal(paystubWrite.quietLines[0], "Updated income from paystub.");
+assert.equal(paystubWrite.draft.facts?.employer_name?.value, "Harbor Steel");
+assert.equal(paystubWrite.draft.facts?.gross_period?.value, "7200");
+assert.equal(paystubWrite.draft.facts?.employer_name?.source, "extracted-unconfirmed");
+assert.equal(paystubWrite.draft.facts?.employer_name?.confirmed, true);
+assert.equal(paystubWrite.draft.facts?.ssn, undefined);
+assert.equal(workspacePrompt(paystubWrite.draft), "done");
+assert.ok(previewFacts(paystubWrite.draft).some((fact) => fact.id === "employer" && fact.value === "Harbor Steel"));
+assert.ok(previewFacts(paystubWrite.draft).some((fact) => fact.id === "pay" && /7,200/.test(fact.value)));
+assert.equal(structureFixPrompt("employer"), null);
+assert.equal(structureFixPrompt("pay"), null);
+
+const typedIncome = draft({
+  ...afterLooks,
+  facts: {
+    income: { field: "income", value: "6000", source: "client", confirmed: true },
+  },
+});
+const incomeConflict = applyExtractedFields(typedIncome, {
+  extractClass: "paystub",
+  confidence: 0.9,
+  fields: { employer_name: "Harbor Steel", gross_period: "7200" },
+});
+assert.ok(incomeConflict.conflict);
+assert.equal(incomeConflict.conflict?.field, "income");
+assert.equal(incomeConflict.draft.facts?.income?.value, "6000");
+assert.notEqual(incomeConflict.draft.facts?.gross_period?.value, "7200");
+assert.equal(incomeConflict.draft.facts?.employer_name?.value, "Harbor Steel");
+const keptFile = resolveFactConflict(incomeConflict.draft, "file");
+assert.equal(keptFile.facts?.income?.value, "6000");
+assert.equal(keptFile.pendingConflict, null);
+const usedDoc = resolveFactConflict(incomeConflict.draft, "document");
+assert.equal(usedDoc.facts?.income?.value, "7200");
+assert.equal(usedDoc.facts?.income?.source, "document");
+
+const sameValue = applyExtractedFields(paystubWrite.draft, {
+  extractClass: "paystub",
+  confidence: 0.9,
+  fields: { employer_name: "Harbor Steel", gross_period: "$7,200" },
+});
+assert.equal(sameValue.conflict, null);
+assert.deepEqual(sameValue.writes, []);
+
+const lowConf = applyExtractedFields(afterLooks, {
+  extractClass: "paystub",
+  confidence: 0.2,
+  fields: { gross_period: "999999", employer_name: "Invented Co" },
+});
+assert.equal(lowConf.draft.facts?.gross_period, undefined);
+assert.equal(lowConf.draft.facts?.employer_name, undefined);
+assert.deepEqual(lowConf.writes, []);
+
+const otherClass = applyExtractedFields(afterLooks, {
+  extractClass: "other",
+  confidence: 0.9,
+  fields: { purchase_price: "800000" },
+});
+assert.equal(otherClass.draft.propertyValueAmount, afterLooks.propertyValueAmount);
+assert.deepEqual(otherClass.writes, []);
+
+const stripped = sanitizeExtractedFields("government_id", {
+  full_name: "Jordan Lee",
+  id_last4: "987654321",
+  ssn: "123-45-6789",
+  state: "CA",
+});
+assert.equal(stripped.full_name, "Jordan Lee");
+assert.equal(stripped.id_last4, "4321");
+assert.equal(stripped.ssn, undefined);
+
+const afterPaystubDoc = draft({
+  ...afterLooks,
+  documents: [
+    {
+      slot: "paystubs",
+      name: "paystub.pdf",
+      type: "application/pdf",
+      size: 12000,
+      receivedAt: "2026-08-20T00:00:00.000Z",
+      status: "extracted",
+      extractClass: "paystub",
+      bytesRef: "fox-intake/paystub.pdf",
+    },
+  ],
+});
+const missingAfterPaystub = missingExtractClasses(afterPaystubDoc);
+assert.deepEqual(missingAfterPaystub, ["government_id", "w2"]);
+assert.match(missingAskCopy(missingAfterPaystub), /government ID and W-2/i);
+assert.ok(!missingAfterPaystub.includes("paystub"));
+assert.ok(!missingAfterPaystub.includes("purchase_contract"));
+
+const selfMissing = missingExtractClasses(
+  draft({
+    ...afterLooks,
+    productIntent: "refinance",
+    incomeType: { ...emptyDraft().incomeType, value: "self-employed" },
+    propertyValueAmount: undefined,
+  }),
+);
+assert.ok(selfMissing.includes("government_id"));
+assert.ok(selfMissing.includes("tax_return"));
+assert.ok(selfMissing.includes("mortgage_statement"));
+assert.ok(!selfMissing.includes("paystub"));
+
+const skippedRemaining = skipRemainingClasses(afterPaystubDoc);
+assert.equal(skippedRemaining.documentsSkipped, true);
+assert.ok(skippedRemaining.skippedClasses?.includes("government_id"));
+assert.ok(skippedRemaining.skippedClasses?.includes("w2"));
+assert.ok(!skippedRemaining.skippedClasses?.includes("paystub"));
+assert.equal(workspacePrompt(skippedRemaining), "done");
+
+resetWorkspaceForEntry("acr", "buy");
+applyCapture({ field: "occupancy", value: "primary" });
+applyCapture({ field: "timeline", value: "ready-now" });
+applyCapture({ field: "propertyValue", value: "1200000" });
+applyCapture({ field: "creditRange", value: "760+" });
+applyCapture({ field: "incomeType", value: "w2" });
+applyCapture({ field: "confirm-draft" });
+applyExtractWrite(
+  "2026-08-20T00:00:00.000Z",
+  "paystub.pdf",
+  { extractClass: "paystub", confidence: 0.9, fields: { employer_name: "Harbor Steel", gross_period: "7200" } },
+);
+const noDocYet = getFoxDraft();
+assert.equal(noDocYet.facts?.employer_name, undefined);
+receiveDocument({
+  slot: "paystubs",
+  name: "paystub.pdf",
+  type: "application/pdf",
+  size: 12000,
+  receivedAt: "2026-08-20T00:00:00.000Z",
+  bytesRef: "fox-intake/paystub.pdf",
+});
+const wrote = applyExtractWrite(
+  "2026-08-20T00:00:00.000Z",
+  "paystub.pdf",
+  { extractClass: "paystub", confidence: 0.9, fields: { employer_name: "Harbor Steel", gross_period: "7200" } },
+);
+assert.equal(wrote.draft.facts?.employer_name?.value, "Harbor Steel");
+assert.equal(workspacePrompt(wrote.draft), "done");
+assert.equal(statusCopy(wrote.draft), "Assigned / reviewing");
+assert.equal(wrote.draft.workspaceDraftStatus, "with-originator");
+const failedWrite = applyExtractWrite(
+  "2026-08-20T00:00:00.000Z",
+  "paystub.pdf",
+  { extractClass: "paystub", confidence: 0.9, fields: { gross_period: "1" } },
+  "Fox could not read this file. Type a note or skip. No dollar amounts were invented.",
+  true,
+);
+assert.equal(failedWrite.draft.facts?.gross_period?.value, "7200");
+
+applyCapture({ field: "keep-file-fact" });
+applyCapture({ field: "use-document-fact" });
+
 const homepageFiles = [
   "app/(marketing)/page.tsx",
   "components/MembershipHero.tsx",
@@ -574,6 +756,18 @@ assert.ok(!homepageSource.includes("RateCard"));
 assert.ok(!/talk to a licensed originator/i.test(homepageSource));
 assert.ok(!/next step/i.test(homepageSource));
 assert.ok(readFileSync(join(root, "components/MembershipHero.tsx"), "utf8").includes("HOME_IDLE_TEXT"));
+
+const startWorkspace = readFileSync(join(root, "components/fox/StartWorkspace.tsx"), "utf8");
+assert.ok(!startWorkspace.includes("useDocumentReads"));
+const dropSource = readFileSync(join(root, "components/fox/DocumentDrop.tsx"), "utf8");
+assert.ok(dropSource.includes("/api/docs/upload"));
+assert.ok(dropSource.includes("/api/docs/extract"));
+assert.ok(!dropSource.includes("/api/chat"));
+assert.ok(!dropSource.includes("/api/heloc-quote"));
+assert.ok(!dropSource.includes("setTimeout"));
+const filePreview = readFileSync(join(root, "components/fox/FilePreview.tsx"), "utf8");
+assert.ok(filePreview.includes("!draft.workspaceFlow"));
+assert.ok(!filePreview.includes("docsOpen"));
 
 const acrHero = readFileSync(join(root, "components/acr/AcrHero.tsx"), "utf8");
 assert.ok(!/next right move/.test(acrHero));

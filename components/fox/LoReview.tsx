@@ -110,7 +110,15 @@ export function LoReview() {
                   {draft.incomeType.value ? incomeLabel(draft.incomeType.value) : "—"}
                 </dd>
                 <dt>Income amount</dt>
-                <dd>—</dd>
+                <dd>
+                  {draft.facts?.ytd_gross?.value ||
+                    draft.facts?.gross_period?.value ||
+                    draft.facts?.wages?.value ||
+                    draft.facts?.agi?.value ||
+                    "—"}
+                </dd>
+                <dt>Employer</dt>
+                <dd>{draft.facts?.employer_name?.value || "—"}</dd>
                 <dt>Occupancy</dt>
                 <dd>
                   {draft.occupancyChoice.value
@@ -134,6 +142,17 @@ export function LoReview() {
               {draft.notes.length ? (
                 <p className="type-legal">Client notes: {draft.notes.join(" · ")}</p>
               ) : null}
+              {draft.facts && Object.keys(draft.facts).length ? (
+                <dl className="scenario-echo">
+                  {Object.values(draft.facts).map((field) => (
+                    <FragmentRow
+                      key={field.field}
+                      label={field.field}
+                      value={`${field.value}${field.confirmed ? "" : " (unconfirmed)"}`}
+                    />
+                  ))}
+                </dl>
+              ) : null}
             </section>
 
             <section className="intake-card">
@@ -141,8 +160,10 @@ export function LoReview() {
               {draft.documents.length ? (
                 <ul className="intake-note-list">
                   {draft.documents.map((doc) => (
-                    <li key={doc.slot}>
+                    <li key={`${doc.receivedAt}:${doc.name}`}>
                       {doc.slot}: {doc.name} — {doc.status}
+                      {doc.extractClass ? ` · ${doc.extractClass}` : ""}
+                      {doc.bytesRef ? " · stored" : ""}
                     </li>
                   ))}
                 </ul>

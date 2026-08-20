@@ -4,7 +4,6 @@ import { useSearchParams } from "next/navigation";
 import { useEffect, useRef, useSyncExternalStore } from "react";
 import { pathFromQuery, rememberStartPath } from "@/components/products/startPath";
 import { AlwaysOnFox } from "./AlwaysOnFox";
-import { useDocumentReads } from "./DocumentDrop";
 import { FilePreview } from "./FilePreview";
 import {
   continueWorkspaceFromEntry,
@@ -35,8 +34,6 @@ export function StartWorkspace() {
     continueWorkspaceFromEntry(startPath, startIntent);
   }
   const draft = useSyncExternalStore(subscribeFoxDraft, getFoxDraft, getServerDraft);
-
-  useDocumentReads(draft);
 
   const lastPath = useRef(startPath);
   useEffect(() => {

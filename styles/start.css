@@ -319,6 +319,23 @@
   border-color: var(--ink);
 }
 
+.structure-drop__reject,
+.structure-drop__files {
+  margin: 0;
+  font-family: var(--font-ui);
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--muted);
+}
+
+.structure-drop__files {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 0;
+  list-style: none;
+}
+
 .file-preview__label {
   margin: 0;
   font-family: var(--font-ui);
