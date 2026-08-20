@@ -527,7 +527,7 @@ function acrReply(lower: string): ReturnType<typeof replyToMessage> | null {
   }
   if (/(opportunit|scout|equity available|purchase power|portfolio move)/i.test(lower)) {
     return {
-      text: "Opportunities Scout uses your profile and equity posture to project possible next moves. A financing path is attached. Sample, not live. I don't list properties or post values.",
+      text: "When the timing is wrong, Fox waits. Scout names a move only when the numbers are strong. I don't list properties or post values.",
     };
   }
   if (/(just need a mortgage|loan only|mortgage only|only (a )?loan)/i.test(lower)) {

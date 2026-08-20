@@ -8,10 +8,6 @@ export function AcrCloser() {
         <h2 id="acr-closer-title" className="type-h2">
           Always approved. Always optimizing.
         </h2>
-        <p className="type-body">
-          Start the relationship, or just get the loan. Either way, you leave
-          with a next step.
-        </p>
         <div className="closer__actions">
           <Link href={ACR_START_HREF} className="btn btn--primary btn--hero-primary">
             Start your relationship

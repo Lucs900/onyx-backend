@@ -16,12 +16,6 @@ export function Closer() {
             Just need a mortgage
           </Link>
         </div>
-        <p className="closer__originator">
-          <Link href="/start" className="btn btn--text">
-            Talk to a licensed originator
-          </Link>
-          <span className="type-legal">NMLS ____</span>
-        </p>
         <p className="closer__trust">
           NMLS [OPEN] · CA DRE [OPEN] · We are a mortgage broker.{" "}
           <Link href="/how-we-get-paid">Here’s how we get paid.</Link>

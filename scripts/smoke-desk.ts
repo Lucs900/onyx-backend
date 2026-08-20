@@ -23,7 +23,7 @@ import {
   previewFacts,
   productIntentFromQuery,
   sampleRateApplies,
-  SAMPLE_NOTE,
+  PREVIEW_RATE_NOTE,
   SAMPLE_RATE_LABEL,
   slotFromFilename,
   starterText,
@@ -201,14 +201,14 @@ assert.ok(creditFacts.some((fact) => fact.id === "path" && fact.value === "Relat
 assert.ok(creditFacts.some((fact) => fact.id === "credit" && fact.value === "760+"));
 assert.ok(creditFacts.some((fact) => fact.id === "income" && fact.value === "W-2"));
 assert.ok(creditFacts.some((fact) => fact.id === "rate" && fact.value.includes(SAMPLE_RATE_LABEL)));
-assert.ok(creditFacts.some((fact) => fact.id === "rate" && fact.note === SAMPLE_NOTE));
+assert.ok(creditFacts.some((fact) => fact.id === "rate" && fact.note === PREVIEW_RATE_NOTE));
 assert.equal(structureFixPrompt("credit"), "credit");
 assert.equal(structureFixPrompt("income"), "income");
 
 const recap = fileSummaryFacts(afterIncome);
 const recapRate = recap.find((fact) => fact.id === "rate");
 assert.ok(recapRate?.value.includes(SAMPLE_RATE_LABEL));
-assert.ok(recapRate?.value.includes(SAMPLE_NOTE));
+assert.ok(recapRate?.value.includes(PREVIEW_RATE_NOTE));
 assert.ok(recap.some((fact) => fact.id === "income" && fact.value === "W-2"));
 
 const occupancyCopy = workspaceUpdateCopy(
@@ -239,7 +239,7 @@ const review = workspacePromptCopy("review", afterIncome);
 assert.equal(review.followUp, "Does this look right?");
 assert.ok((review.facts ?? []).some((fact) => fact.id === "credit"));
 assert.ok((review.facts ?? []).some((fact) => fact.id === "income"));
-assert.ok((review.facts ?? []).some((fact) => fact.value.includes(SAMPLE_NOTE)));
+assert.ok((review.facts ?? []).some((fact) => fact.value.includes(PREVIEW_RATE_NOTE)));
 
 const helocReady = withIncome(
   draft({
@@ -281,6 +281,11 @@ const assignedFacts = previewFacts(afterLooks);
 assert.ok(assignedFacts.some((fact) => fact.id === "originator" && fact.value === "Licensed originator assigned"));
 assert.ok(assignedFacts.some((fact) => fact.id === "letter"));
 assert.ok(assignedFacts.some((fact) => fact.id === "reward"));
+assert.ok(
+  assignedFacts.some(
+    (fact) => fact.id === "scout" && fact.value === "When the timing is wrong, Fox waits.",
+  ),
+);
 
 const done = workspacePromptCopy("done", afterLooks);
 assert.ok(/file is prepared/i.test(done.text));

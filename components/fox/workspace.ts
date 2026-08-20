@@ -244,6 +244,7 @@ function amountHelperActions(field: "skip-amount" | "skip-value"): FoxAction[] {
 }
 
 export const SAMPLE_NOTE = "Sample · indicative · not live";
+export const PREVIEW_RATE_NOTE = "Preview rate · not live";
 export const SAMPLE_RATE = 0.0675;
 export const SAMPLE_RATE_LABEL = "6.750%";
 export const SAMPLE_TERM_MONTHS = 360;
@@ -1373,7 +1374,7 @@ export function previewFacts(draft: FoxIntakeDraft): PreviewFact[] {
       id: "rate",
       label: "Rate",
       value: `${SAMPLE_STRUCTURE} ${SAMPLE_RATE_LABEL}`,
-      note: SAMPLE_NOTE,
+      note: PREVIEW_RATE_NOTE,
     });
   } else if (intent && !sampleRateApplies(intent) && sampleReady(draft)) {
     facts.push({
@@ -1408,7 +1409,7 @@ export function previewFacts(draft: FoxIntakeDraft): PreviewFact[] {
     facts.push({
       id: "scout",
       label: "Scout",
-      value: "Do nothing for now.",
+      value: "When the timing is wrong, Fox waits.",
     });
   }
 
@@ -1465,7 +1466,7 @@ export function structureExplainCopy(
     const intent = draft.productIntent ?? productIntentFromSlug(draft.scenario?.productSlug);
     if (sampleRateApplies(intent) && sampleReady(draft)) {
       return {
-        text: `${SAMPLE_STRUCTURE} ${SAMPLE_RATE_LABEL}. ${SAMPLE_NOTE}. I cannot set, lock, or invent a live rate.`,
+        text: `${SAMPLE_STRUCTURE} ${SAMPLE_RATE_LABEL}. ${PREVIEW_RATE_NOTE}. I cannot set, lock, or invent a live rate.`,
       };
     }
     return {
@@ -1484,7 +1485,7 @@ export function structureExplainCopy(
   }
   if (id === "scout") {
     return {
-      text: "Scout watches after close. Do nothing for now.",
+      text: "When the timing is wrong, Fox waits.",
     };
   }
   if (id === "status") {
