@@ -28,7 +28,7 @@ export async function POST(request: Request) {
           throw new Error("Invalid upload path");
         }
         return {
-          allowedContentTypes: [...ACCEPTED_MEDIA],
+          allowedContentTypes: Array.from(ACCEPTED_MEDIA),
           maximumSizeInBytes: MAX_DOC_BYTES,
           addRandomSuffix: true,
           tokenPayload: JSON.stringify({ kind: "fox-intake" }),

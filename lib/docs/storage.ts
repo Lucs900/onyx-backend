@@ -54,7 +54,7 @@ export async function readPrivateBytes(bytesRef: string) {
 
 export async function putPrivateBytes(
   pathname: string,
-  body: Buffer | Uint8Array | Blob,
+  body: Buffer | Blob,
   contentType: string,
 ) {
   if (!clientUploadReady() && !serverBlobReady()) {

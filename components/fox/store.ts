@@ -602,7 +602,7 @@ export function applyExtractWrite(
     return { draft: current, writes: [], conflict: null, quietLines: [] };
   }
   const applied = failed
-    ? { draft: current, writes: [], conflict: null as const, quietLines: [] }
+    ? { draft: current, writes: [], conflict: null, quietLines: [] }
     : applyExtractedFields(current, input);
   const slot = slotForExtractClass(input.extractClass);
   const nextDocs = applied.draft.documents.map((doc) =>

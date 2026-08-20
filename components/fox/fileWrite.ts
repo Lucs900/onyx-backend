@@ -125,11 +125,14 @@ export function sanitizeExtractedFields(
     if (key === "fico" || key === "credit" || key === "credit_score") continue;
     let value = String(rawValue ?? "").trim();
     if (!value) continue;
-    if (SSN_RE.test(value)) continue;
     if (key === "id_last4") {
       value = last4Only(value);
       if (!value) continue;
-    } else if (LONG_ACCOUNT_RE.test(value.replace(/[\s-]/g, "")) && !MONEY_KEYS.has(key)) {
+      next[key] = value;
+      continue;
+    }
+    if (SSN_RE.test(value)) continue;
+    if (LONG_ACCOUNT_RE.test(value.replace(/[\s-]/g, "")) && !MONEY_KEYS.has(key)) {
       continue;
     }
     next[key] = value;
