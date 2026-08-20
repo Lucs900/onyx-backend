@@ -19,8 +19,10 @@ import {
 import {
   docsRequestForIncome,
   fileSummaryFacts,
+  migrateRestoredFoxMessages,
   parseWorkspaceEdit,
   previewFacts,
+  REWARD_PREPARED_COPY,
   productIntentFromQuery,
   sampleRateApplies,
   PREVIEW_RATE_NOTE,
@@ -481,6 +483,47 @@ applyCapture({ field: "creditRange", value: "760+" });
 applyCapture({ field: "incomeType", value: "other" });
 assert.equal(getFoxDraft().documentsSkipped, false);
 assert.equal(workspacePrompt(getFoxDraft()), "review");
+
+const plantedReward = {
+  id: "stale-review",
+  role: "fox" as const,
+  text: "Here’s a sample structure.",
+  facts: [
+    { id: "rate", label: "Rate", value: "Pricing when the file is ready" },
+    {
+      id: "reward",
+      label: "Reward",
+      value: "$446 to $604",
+      note: "Sample · indicative · not live",
+    },
+  ],
+};
+const plantedAsk = {
+  id: "stale-ask",
+  role: "fox" as const,
+  text: "Estimated ACR reward is $446 to $604. Sample, not live.",
+};
+const migratedThread = migrateRestoredFoxMessages([plantedReward, plantedAsk]);
+const migratedReward = migratedThread[0]?.facts?.find((fact) => fact.id === "reward");
+assert.equal(migratedReward?.value, REWARD_PREPARED_COPY);
+assert.equal(migratedReward?.note, undefined);
+assert.ok(!/\$[\d,]/.test(migratedReward?.value ?? ""));
+assert.ok(!/446|604/.test(JSON.stringify(migratedThread)));
+assert.ok(
+  migratedThread[0]?.facts?.some(
+    (fact) => fact.id === "rate" && fact.value === "Pricing when the file is ready",
+  ),
+);
+assert.match(migratedThread[1]?.text ?? "", /prepared when you join/i);
+
+resetWorkspaceForEntry(null);
+setFoxMessages([plantedReward, plantedAsk]);
+const hydratedThread = getFoxMessages();
+const hydratedReward = hydratedThread.find((message) => message.id === "stale-review")?.facts?.find(
+  (fact) => fact.id === "reward",
+);
+assert.equal(hydratedReward?.value, REWARD_PREPARED_COPY);
+assert.ok(!/446|604/.test(JSON.stringify(hydratedThread)));
 
 resetWorkspaceForEntry(null);
 setFoxMessages([

@@ -1,6 +1,7 @@
 import type { CreditRange, ExplorerScenario } from "@/components/products/scenario";
 
 export const INTAKE_STORAGE_KEY = "onyx.foxIntake.draft";
+export const INTAKE_DRAFT_VERSION = 2;
 export const FOX_PANEL_KEY = "onyx.fox.panelOpen";
 export const FOX_LEGAL_KEY = "onyx.fox.sawLegal";
 export const FOX_MESSAGES_KEY = "onyx.fox.messages";
@@ -65,7 +66,7 @@ export type IntakePath = "acr" | "loan-only";
 export type ProductIntent = "buy" | "refinance" | "heloc" | "jumbo" | "other";
 
 export type FoxIntakeDraft = {
-  version: 1;
+  version: number;
   phase: IntakePhase;
   contact: {
     fullName: DraftField;

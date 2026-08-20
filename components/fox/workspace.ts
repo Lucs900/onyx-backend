@@ -23,6 +23,8 @@ import {
   type Capture,
   type FoxAction,
   type FoxIntakeDraft,
+  type FoxMessage,
+  type FoxMessageFact,
   type FoxPrompt,
   type IntakePath,
   type ProductIntent,
@@ -245,6 +247,9 @@ function amountHelperActions(field: "skip-amount" | "skip-value"): FoxAction[] {
 
 export const SAMPLE_NOTE = "Sample · indicative · not live";
 export const PREVIEW_RATE_NOTE = "Preview rate · not live";
+export const REWARD_PREPARED_COPY = "Prepared when you join";
+const INVENTED_REWARD_RANGE = /\$[\d,]+(?:\.\d+)?\s+(?:to|–|-|—)\s+\$[\d,]+/;
+const SAMPLE_INDICATIVE = /sample\s*·\s*indicative/i;
 export const SAMPLE_RATE = 0.0675;
 export const SAMPLE_RATE_LABEL = "6.750%";
 export const SAMPLE_TERM_MONTHS = 360;
@@ -1388,7 +1393,7 @@ export function previewFacts(draft: FoxIntakeDraft): PreviewFact[] {
     facts.push({
       id: "reward",
       label: "Reward",
-      value: "Prepared when you join",
+      value: REWARD_PREPARED_COPY,
     });
   }
 
@@ -1520,4 +1525,47 @@ export function fileSummaryFacts(draft: FoxIntakeDraft): PreviewFact[] {
         ? { ...fact, value: `${fact.value} · ${fact.note}`, note: undefined }
         : fact,
     );
+}
+
+export function looksLikeInventedRewardMoney(value: string): boolean {
+  return INVENTED_REWARD_RANGE.test(value) || (SAMPLE_INDICATIVE.test(value) && /\$[\d,]/.test(value));
+}
+
+function isRewardFact(fact: Pick<FoxMessageFact, "id" | "label">) {
+  return fact.id === "reward" || /^reward$/i.test(fact.label);
+}
+
+function preparedRewardFact(fact: FoxMessageFact): FoxMessageFact {
+  return { id: "reward", label: fact.label || "Reward", value: REWARD_PREPARED_COPY };
+}
+
+export function sanitizeRewardFact(fact: FoxMessageFact): FoxMessageFact {
+  if (!isRewardFact(fact)) return fact;
+  const blob = `${fact.value} ${fact.note ?? ""}`;
+  if (!looksLikeInventedRewardMoney(blob) && !/\$[\d,]/.test(fact.value)) return fact;
+  return preparedRewardFact(fact);
+}
+
+function sanitizeRestoredFoxText(text: string): string {
+  if (!looksLikeInventedRewardMoney(text) && !INVENTED_REWARD_RANGE.test(text)) return text;
+  if (!/(reward|membership)/i.test(text) && !SAMPLE_INDICATIVE.test(text)) return text;
+  if (/estimated.*reward/i.test(text) || /reward is \$/i.test(text) || /membership reward/i.test(text)) {
+    return `The reward is ${REWARD_PREPARED_COPY.toLowerCase()}.`;
+  }
+  return text.replace(
+    /\$[\d,]+(?:\.\d+)?\s+(?:to|–|-|—)\s+\$[\d,]+(?:\s*·\s*Sample\s*·\s*indicative\s*·\s*not live)?/g,
+    REWARD_PREPARED_COPY,
+  );
+}
+
+export function migrateRestoredFoxMessages(messages: FoxMessage[]): FoxMessage[] {
+  return messages.map((message) => {
+    const text = sanitizeRestoredFoxText(message.text);
+    const facts = message.facts?.map(sanitizeRewardFact);
+    const factsChanged = Boolean(
+      facts && message.facts?.some((fact, index) => fact !== facts[index]),
+    );
+    if (text === message.text && !factsChanged) return message;
+    return { ...message, text, facts };
+  });
 }

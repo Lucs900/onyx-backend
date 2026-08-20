@@ -7,6 +7,7 @@ import {
 import {
   CONFIRMED_STATUS,
   FOX_MESSAGES_KEY,
+  INTAKE_DRAFT_VERSION,
   INTAKE_STORAGE_KEY,
   type Capture,
   type DocSlot,
@@ -22,6 +23,7 @@ import {
   type SectionId,
 } from "./types";
 import {
+  migrateRestoredFoxMessages,
   normalizeProductIntent,
   productIntentLabel,
   purposeForIntent,
@@ -39,7 +41,7 @@ function emptyField(field: string, value = "", source: DraftField["source"] = "c
 
 export function emptyDraft(): FoxIntakeDraft {
   return {
-    version: 1,
+    version: INTAKE_DRAFT_VERSION,
     phase: "context",
     contact: {
       fullName: emptyField("fullName"),
@@ -74,10 +76,18 @@ function normalize(value: unknown): FoxIntakeDraft {
   const base = emptyDraft();
   if (!value || typeof value !== "object") return base;
   const raw = value as Partial<FoxIntakeDraft>;
-  if (raw.version !== 1 || !raw.contact) return base;
+  if (
+    typeof raw.version !== "number" ||
+    raw.version < 1 ||
+    raw.version > INTAKE_DRAFT_VERSION ||
+    !raw.contact
+  ) {
+    return base;
+  }
   return {
     ...base,
     ...raw,
+    version: INTAKE_DRAFT_VERSION,
     contact: { ...base.contact, ...raw.contact },
     incomeType: raw.incomeType ?? base.incomeType,
     occupancyChoice: raw.occupancyChoice ?? base.occupancyChoice,
@@ -194,11 +204,16 @@ function persistMessages(messages: FoxMessage[]) {
   }
 }
 
+function persistMigratedMessages(messages: FoxMessage[]) {
+  foxMessages = migrateRestoredFoxMessages(messages);
+  messagesHydrated = true;
+  persistMessages(foxMessages);
+  return foxMessages;
+}
+
 function hydrateFoxMessages() {
   if (messagesHydrated || typeof window === "undefined") return foxMessages;
-  foxMessages = readStoredMessages();
-  messagesHydrated = true;
-  return foxMessages;
+  return persistMigratedMessages(readStoredMessages());
 }
 
 export function getFoxMessages() {
@@ -207,10 +222,7 @@ export function getFoxMessages() {
 }
 
 export function setFoxMessages(messages: FoxMessage[]) {
-  foxMessages = messages;
-  messagesHydrated = true;
-  persistMessages(foxMessages);
-  return foxMessages;
+  return persistMigratedMessages(messages);
 }
 
 export function clearFoxMessages() {
