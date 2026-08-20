@@ -58,12 +58,26 @@ export function slotForExtractClass(extractClass: ExtractClass): DocSlot {
   return "other";
 }
 
+export function slotFromFilename(name: string): DocSlot {
+  const lower = name.toLowerCase();
+  if (/w-?2/.test(lower)) return "w2";
+  if (/pay.?stub|payslip/.test(lower)) return "paystubs";
+  if (/tax|1099|k-?1|schedule.?c|profit|business/.test(lower)) return "other";
+  if (/bank|statement/.test(lower)) return "bank";
+  if (/\bid\b|license|passport|driver/.test(lower)) return "id";
+  return "other";
+}
+
 export function extractClassFromSlot(slot: DocSlot): ExtractClass | null {
   if (slot === "paystubs") return "paystub";
   if (slot === "w2") return "w2";
   if (slot === "id") return "government_id";
   if (slot === "bank") return "bank_statement";
   return null;
+}
+
+export function extractClassFromFilename(name: string): ExtractClass | null {
+  return extractClassFromSlot(slotFromFilename(name));
 }
 
 export function extractClassLabel(extractClass: ExtractClass) {
@@ -307,9 +321,12 @@ export function resolveFactConflict(
   return { ...withValue, facts, pendingConflict: null };
 }
 
+const COUNTED_DOC_STATUSES = new Set<ReceivedDoc["status"]>(["received", "reading", "extracted"]);
+
 export function receivedExtractClasses(draft: FoxIntakeDraft): Set<ExtractClass> {
   const set = new Set<ExtractClass>(draft.skippedClasses ?? []);
   for (const doc of draft.documents) {
+    if (!COUNTED_DOC_STATUSES.has(doc.status)) continue;
     if (doc.extractClass && doc.extractClass !== "other") {
       set.add(doc.extractClass);
       continue;

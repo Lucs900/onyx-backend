@@ -26,6 +26,7 @@ import {
 } from "./types";
 import {
   applyExtractedFields,
+  extractClassFromSlot,
   resolveFactConflict,
   skipRemainingClasses,
   slotForExtractClass,
@@ -602,20 +603,23 @@ export function applyExtractWrite(
     return { draft: current, writes: [], conflict: null, quietLines: [] };
   }
   const applied = failed
-    ? { draft: current, writes: [], conflict: null, quietLines: [] }
+    ? { draft: current, writes: [], conflict: null, quietLines: note ? [note] : [] }
     : applyExtractedFields(current, input);
-  const slot = slotForExtractClass(input.extractClass);
-  const nextDocs = applied.draft.documents.map((doc) =>
-    doc.receivedAt === receivedAt && doc.name === name
-      ? {
-          ...doc,
-          slot,
-          extractClass: input.extractClass,
-          status: (failed ? "failed" : "extracted") as DocStatus,
-          note,
-        }
-      : doc,
-  );
+  const nextDocs = applied.draft.documents.map((doc) => {
+    if (doc.receivedAt !== receivedAt || doc.name !== name) return doc;
+    const keepFilenameSlot = failed && input.extractClass === "other";
+    const slot = keepFilenameSlot ? doc.slot : slotForExtractClass(input.extractClass);
+    const extractClass = keepFilenameSlot
+      ? extractClassFromSlot(doc.slot) ?? input.extractClass
+      : input.extractClass;
+    return {
+      ...doc,
+      slot,
+      extractClass,
+      status: (failed ? "failed" : "extracted") as DocStatus,
+      note,
+    };
+  });
   commit({
     ...applied.draft,
     documents: nextDocs,

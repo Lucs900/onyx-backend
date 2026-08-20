@@ -210,6 +210,12 @@ function hasReviewAsk(messages: FoxMessage[]) {
   );
 }
 
+function hasPreparedAsk(messages: FoxMessage[]) {
+  return messages.some(
+    (message) => message.role === "fox" && /file is prepared/i.test(message.text),
+  );
+}
+
 export function requestFoxOpen() {
   window.dispatchEvent(new Event("onyx:fox-open"));
 }
@@ -678,6 +684,7 @@ export function AlwaysOnFox({
     }
     commitMessages((prev) => {
       if (mustShowReview && hasReviewAsk(prev)) return prev;
+      if (isStart && prompt === "done" && hasPreparedAsk(prev)) return prev;
       const last = prev[prev.length - 1];
       if (last?.role === "fox" && sameFoxAsk(last, ask)) return prev;
       return [...prev, foxAskMessage(ask)];

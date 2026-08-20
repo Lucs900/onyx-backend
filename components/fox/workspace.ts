@@ -29,7 +29,9 @@ import {
   type IntakePath,
   type ProductIntent,
 } from "./types";
-import { displayFactValue, factValue } from "./fileWrite";
+import { displayFactValue, factValue, slotFromFilename } from "./fileWrite";
+
+export { slotFromFilename };
 
 export const START_ACR_TEXT =
   "I can prepare your relationship file. We’ll keep this desk open after close.";
@@ -138,16 +140,6 @@ export function productIntentFromText(text: string): ProductIntent | null {
 
 export function usesPurchasePrice(intent?: ProductIntent | null) {
   return intent === "buy" || intent === "jumbo";
-}
-
-export function slotFromFilename(name: string): import("./types").DocSlot {
-  const lower = name.toLowerCase();
-  if (/w-?2/.test(lower)) return "w2";
-  if (/pay.?stub|payslip/.test(lower)) return "paystubs";
-  if (/tax|1099|k-?1|schedule.?c|profit|business/.test(lower)) return "other";
-  if (/bank|statement/.test(lower)) return "bank";
-  if (/\bid\b|license|passport|driver/.test(lower)) return "id";
-  return "other";
 }
 
 export function sampleRateApplies(intent?: ProductIntent | null) {

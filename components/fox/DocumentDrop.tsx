@@ -22,6 +22,18 @@ import {
 
 export { slotFromFilename };
 
+function emitFailedRead() {
+  const after = getFoxDraft();
+  const missing = missingExtractClasses(after);
+  const key = missingAskKey(missing);
+  const askMissing = missing.length > 0 && after.missingAskKey !== key;
+  if (askMissing) markMissingAsked(key);
+  emitDocIntake({
+    quietLines: [FAILED_READ_NOTE],
+    missing: askMissing ? missing : [],
+  });
+}
+
 async function storeBytes(file: File) {
   const blob = await upload(`fox-intake/${file.name}`, file, {
     access: "private",
@@ -72,7 +84,7 @@ export function DocumentDrop({
           (doc) => doc.receivedAt === receivedAt && doc.name === file.name,
           { status: "needs better copy", note: FAILED_READ_NOTE },
         );
-        emitDocIntake({ quietLines: [] });
+        emitFailedRead();
         continue;
       }
 
@@ -113,7 +125,7 @@ export function DocumentDrop({
               note: data.code === "STORAGE_BLOCKED" ? data.error : FAILED_READ_NOTE,
             },
           );
-          emitDocIntake({ quietLines: [] });
+          emitFailedRead();
           continue;
         }
         const applied = applyExtractWrite(
@@ -133,7 +145,11 @@ export function DocumentDrop({
         const askMissing = !applied.conflict && missing.length > 0 && after.missingAskKey !== key;
         if (askMissing) markMissingAsked(key);
         emitDocIntake({
-          quietLines: applied.quietLines,
+          quietLines: applied.quietLines.length
+            ? applied.quietLines
+            : data.failed
+              ? [FAILED_READ_NOTE]
+              : [],
           conflict: applied.conflict,
           missing: askMissing ? missing : [],
         });
@@ -142,7 +158,7 @@ export function DocumentDrop({
           (doc) => doc.receivedAt === receivedAt && doc.name === file.name,
           { status: "failed", note: FAILED_READ_NOTE },
         );
-        emitDocIntake({ quietLines: [] });
+        emitFailedRead();
       }
     }
     setBusy(false);

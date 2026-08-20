@@ -18,12 +18,16 @@ import {
 } from "../components/fox/store";
 import {
   applyExtractedFields,
+  extractClassFromFilename,
   missingAskCopy,
   missingExtractClasses,
   resolveFactConflict,
   sanitizeExtractedFields,
   skipRemainingClasses,
+  slotFromFilename as slotFromName,
 } from "../components/fox/fileWrite";
+import { FAILED_READ_NOTE } from "../lib/docs/accept";
+import { classifyAndExtract, imageDataUrl, visionChatBody } from "../lib/docs/extract";
 import {
   CREDIT_WORKSPACE_BUBBLES,
   FOX_DISCLOSURE,
@@ -734,6 +738,82 @@ const failedWrite = applyExtractWrite(
   true,
 );
 assert.equal(failedWrite.draft.facts?.gross_period?.value, "7200");
+assert.equal(failedWrite.quietLines[0], FAILED_READ_NOTE);
+
+resetWorkspaceForEntry("acr", "buy");
+applyCapture({ field: "occupancy", value: "primary" });
+applyCapture({ field: "timeline", value: "ready-now" });
+applyCapture({ field: "propertyValue", value: "1200000" });
+applyCapture({ field: "creditRange", value: "760+" });
+applyCapture({ field: "incomeType", value: "w2" });
+applyCapture({ field: "confirm-draft" });
+receiveDocument({
+  slot: slotFromName("paystub-acme.png"),
+  name: "paystub-acme.png",
+  type: "image/png",
+  size: 24000,
+  receivedAt: "2026-08-20T01:00:00.000Z",
+  bytesRef: "fox-intake/paystub-acme.png",
+});
+const failedOther = applyExtractWrite(
+  "2026-08-20T01:00:00.000Z",
+  "paystub-acme.png",
+  { extractClass: "other", confidence: 0, fields: {} },
+  FAILED_READ_NOTE,
+  true,
+);
+assert.equal(failedOther.draft.documents[0]?.slot, "paystubs");
+assert.equal(failedOther.draft.documents[0]?.extractClass, "paystub");
+assert.equal(failedOther.draft.documents[0]?.status, "failed");
+assert.equal(failedOther.draft.facts?.employer_name, undefined);
+assert.equal(failedOther.quietLines[0], FAILED_READ_NOTE);
+assert.ok(previewFacts(failedOther.draft).some((fact) => fact.id === "docs" && /Paystubs in/.test(fact.value)));
+assert.ok(previewFacts(failedOther.draft).every((fact) => fact.id !== "docs" || !/Other in/.test(fact.value)));
+assert.ok(missingExtractClasses(failedOther.draft).includes("paystub"));
+assert.ok(missingExtractClasses(failedOther.draft).includes("government_id"));
+assert.ok(missingExtractClasses(failedOther.draft).includes("w2"));
+
+const readyPaystub = draft({
+  ...afterLooks,
+  documents: [
+    {
+      slot: "paystubs",
+      name: "paystub-acme.png",
+      type: "image/png",
+      size: 24000,
+      receivedAt: "2026-08-20T01:00:00.000Z",
+      status: "extracted",
+      extractClass: "paystub",
+    },
+  ],
+});
+assert.ok(!missingExtractClasses(readyPaystub).includes("paystub"));
+const receivedPaystub = draft({
+  ...afterLooks,
+  documents: [
+    {
+      slot: "paystubs",
+      name: "paystub-acme.png",
+      type: "image/png",
+      size: 24000,
+      receivedAt: "2026-08-20T01:00:00.000Z",
+      status: "received",
+    },
+  ],
+});
+assert.ok(!missingExtractClasses(receivedPaystub).includes("paystub"));
+
+const pngBytes = readFileSync(join(root, "scripts/fixtures/paystub-acme.png"));
+const dataUrl = imageDataUrl(pngBytes, "image/png");
+assert.ok(dataUrl.startsWith("data:image/png;base64,"));
+const chatBody = visionChatBody("grok-2-vision-1212", "classify", dataUrl);
+const imagePart = chatBody.messages[1]?.content[1] as {
+  type: string;
+  image_url?: { url?: string };
+};
+assert.equal(imagePart.type, "image_url");
+assert.equal(imagePart.image_url?.url, dataUrl);
+assert.equal(extractClassFromFilename("paystub-acme.png"), "paystub");
 
 applyCapture({ field: "keep-file-fact" });
 applyCapture({ field: "use-document-fact" });
@@ -762,9 +842,13 @@ assert.ok(!startWorkspace.includes("useDocumentReads"));
 const dropSource = readFileSync(join(root, "components/fox/DocumentDrop.tsx"), "utf8");
 assert.ok(dropSource.includes("/api/docs/upload"));
 assert.ok(dropSource.includes("/api/docs/extract"));
+assert.ok(dropSource.includes("quietLines: [FAILED_READ_NOTE]"));
 assert.ok(!dropSource.includes("/api/chat"));
 assert.ok(!dropSource.includes("/api/heloc-quote"));
 assert.ok(!dropSource.includes("setTimeout"));
+const alwaysOn = readFileSync(join(root, "components/fox/AlwaysOnFox.tsx"), "utf8");
+assert.ok(alwaysOn.includes("file is prepared"));
+assert.ok(alwaysOn.includes('prompt === "done"'));
 const filePreview = readFileSync(join(root, "components/fox/FilePreview.tsx"), "utf8");
 assert.ok(filePreview.includes("!draft.workspaceFlow"));
 assert.ok(!filePreview.includes("docsOpen"));
@@ -782,4 +866,49 @@ assert.ok(!scout.includes("Equity available"));
 const scoutCopy = readFileSync(join(root, "components/acr/acrHome.ts"), "utf8");
 assert.ok(scoutCopy.includes("When the timing is wrong, Fox waits."));
 
-console.log("desk smoke ok");
+async function extractAdapterSmoke() {
+  const thrown = await classifyAndExtract(new Uint8Array([1, 2, 3, 4]), "image/png", {
+    async classify() {
+      throw new Error("xAI 400: image part must be a data URL");
+    },
+    async extract() {
+      throw new Error("should not extract");
+    },
+  });
+  assert.equal(thrown.failed, true);
+  assert.equal(thrown.extractClass, "other");
+  assert.deepEqual(thrown.fields, {});
+  assert.ok(thrown.warnings.includes("failed"));
+
+  const afterClassifyThrow = await classifyAndExtract(new Uint8Array([1, 2, 3, 4]), "image/png", {
+    async classify() {
+      return { class: "paystub" as const, confidence: 0.91, readable: true };
+    },
+    async extract() {
+      throw new Error("xAI 503 model down");
+    },
+  });
+  assert.equal(afterClassifyThrow.failed, true);
+  assert.equal(afterClassifyThrow.extractClass, "paystub");
+  assert.deepEqual(afterClassifyThrow.fields, {});
+
+  const blank = await classifyAndExtract(new Uint8Array(80), "image/png", {
+    async classify() {
+      return { class: "other" as const, confidence: 0.05, readable: false };
+    },
+    async extract() {
+      throw new Error("should not invent");
+    },
+  });
+  assert.equal(blank.failed, true);
+  assert.deepEqual(blank.fields, {});
+}
+
+extractAdapterSmoke()
+  .then(() => {
+    console.log("desk smoke ok");
+  })
+  .catch((error) => {
+    console.error(error);
+    process.exitCode = 1;
+  });

@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
+import { extractClassFromFilename, slotForExtractClass } from "@/components/fox/fileWrite";
 import { FAILED_READ_NOTE, RECEIVED_NOTE, mediaTypeOf } from "@/lib/docs/accept";
 import { classifyAndExtract } from "@/lib/docs/extract";
 import { readPrivateBytes, storageStatus, STORAGE_BLOCKED } from "@/lib/docs/storage";
-import { slotForExtractClass } from "@/components/fox/fileWrite";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -27,17 +27,21 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Missing bytesRef" }, { status: 400 });
   }
 
+  const hinted = extractClassFromFilename(body.name ?? "");
+
   try {
     const stored = await readPrivateBytes(bytesRef);
     const mediaType = mediaTypeOf(body.name ?? stored.pathname, body.type ?? stored.contentType);
     const extracted = await classifyAndExtract(stored.bytes, mediaType);
-    const failed = extracted.warnings.includes("failed");
+    const failed = Boolean(extracted.failed || extracted.warnings.includes("failed"));
+    const extractClass =
+      failed && extracted.extractClass === "other" && hinted ? hinted : extracted.extractClass;
     return NextResponse.json({
-      class: extracted.extractClass,
+      class: extractClass,
       confidence: extracted.confidence,
       fields: extracted.fields,
       warnings: extracted.warnings,
-      slot: slotForExtractClass(extracted.extractClass),
+      slot: slotForExtractClass(extractClass),
       note: failed
         ? FAILED_READ_NOTE
         : extracted.extractClass === "other" || !Object.keys(extracted.fields).length
@@ -47,18 +51,19 @@ export async function POST(request: Request) {
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Extract failed";
-    if (/not found|token|blob|store/i.test(message)) {
+    console.error("[docs/extract] route failed:", message, error);
+    if (/not found|token|blob|store/i.test(message) && !/xAI|grok|vision|model/i.test(message)) {
       return NextResponse.json(
         { error: STORAGE_BLOCKED, code: "STORAGE_BLOCKED" },
         { status: 503 },
       );
     }
     return NextResponse.json({
-      class: "other",
+      class: hinted ?? "other",
       confidence: 0,
       fields: {},
       warnings: ["failed"],
-      slot: "other",
+      slot: slotForExtractClass(hinted ?? "other"),
       note: FAILED_READ_NOTE,
       failed: true,
     });
