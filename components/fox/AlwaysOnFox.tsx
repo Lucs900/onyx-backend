@@ -510,7 +510,7 @@ export function AlwaysOnFox({
       const text = String((event as CustomEvent<{ text?: string }>).detail?.text ?? "").trim();
       setOpen(true);
       if (!text) return;
-      if (isHome || stage === "home") {
+      if (isHome) {
         router.push(persistHomeComposerTurn(text));
         return;
       }
@@ -937,7 +937,7 @@ export function AlwaysOnFox({
           : null
       }
     />
-  ) : null;
+  );
 
   if (isStart) {
     return workspace;
