@@ -1385,12 +1385,10 @@ export function previewFacts(draft: FoxIntakeDraft): PreviewFact[] {
   }
 
   if (draft.path === "acr" && sampleReady(draft)) {
-    const range = estimateFromDraft(draft);
     facts.push({
       id: "reward",
       label: "Reward",
-      value: range ? formatRewardRange(range) : "Prepared when you join",
-      note: SAMPLE_NOTE,
+      value: "Prepared when you join",
     });
   }
 

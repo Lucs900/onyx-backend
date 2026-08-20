@@ -202,6 +202,10 @@ assert.ok(creditFacts.some((fact) => fact.id === "credit" && fact.value === "760
 assert.ok(creditFacts.some((fact) => fact.id === "income" && fact.value === "W-2"));
 assert.ok(creditFacts.some((fact) => fact.id === "rate" && fact.value.includes(SAMPLE_RATE_LABEL)));
 assert.ok(creditFacts.some((fact) => fact.id === "rate" && fact.note === PREVIEW_RATE_NOTE));
+const convReward = creditFacts.find((fact) => fact.id === "reward");
+assert.equal(convReward?.value, "Prepared when you join");
+assert.ok(!/\$[\d,]/.test(convReward?.value ?? ""));
+assert.ok(!/446|604/.test(convReward?.value ?? ""));
 assert.equal(structureFixPrompt("credit"), "credit");
 assert.equal(structureFixPrompt("income"), "income");
 
@@ -262,6 +266,48 @@ assert.ok(helocFacts.some((fact) => fact.id === "rate" && fact.value === "Pricin
 assert.ok(!helocFacts.some((fact) => fact.id === "reward"));
 assert.ok(helocFacts.some((fact) => fact.id === "status"));
 
+const helocAcrReady = withIncome(
+  draft({
+    path: "acr",
+    productIntent: "heloc",
+    occupancyAsked: true,
+    occupancyChoice: { ...emptyDraft().occupancyChoice, value: "primary" },
+    timelineAsked: true,
+    timelineChoice: { ...emptyDraft().timelineChoice, value: "ready-now" },
+    amountAsked: true,
+    loanAmountValue: 150000,
+    creditAsked: true,
+    creditBand: "760+",
+  }),
+);
+const helocAcrFacts = previewFacts(helocAcrReady);
+assert.ok(helocAcrFacts.some((fact) => fact.id === "path" && fact.value === "Relationship desk"));
+assert.ok(helocAcrFacts.some((fact) => fact.id === "rate" && fact.value === "Pricing when the file is ready"));
+const helocReward = helocAcrFacts.find((fact) => fact.id === "reward");
+assert.equal(helocReward?.value, "Prepared when you join");
+assert.ok(!/\$[\d,]/.test(helocReward?.value ?? ""));
+assert.ok(!/446|604/.test(helocReward?.value ?? ""));
+
+const jumboAcrReady = withIncome(
+  draft({
+    path: "acr",
+    productIntent: "jumbo",
+    occupancyAsked: true,
+    occupancyChoice: { ...emptyDraft().occupancyChoice, value: "primary" },
+    timelineAsked: true,
+    timelineChoice: { ...emptyDraft().timelineChoice, value: "ready-now" },
+    valueAsked: true,
+    propertyValueAmount: 1500000,
+    creditAsked: true,
+    creditBand: "760+",
+  }),
+);
+const jumboFacts = previewFacts(jumboAcrReady);
+assert.ok(jumboFacts.some((fact) => fact.id === "rate" && fact.value === "Pricing when the file is ready"));
+const jumboReward = jumboFacts.find((fact) => fact.id === "reward");
+assert.equal(jumboReward?.value, "Prepared when you join");
+assert.ok(!/\$[\d,]/.test(jumboReward?.value ?? ""));
+
 const correct = workspacePromptCopy("correct", afterIncome);
 assert.equal(correct.text, "Tap any line on the structure.");
 assert.ok(!correct.actions?.length);
@@ -280,7 +326,9 @@ assert.equal(statusCopy(afterLooks), "Assigned / reviewing");
 const assignedFacts = previewFacts(afterLooks);
 assert.ok(assignedFacts.some((fact) => fact.id === "originator" && fact.value === "Licensed originator assigned"));
 assert.ok(assignedFacts.some((fact) => fact.id === "letter"));
-assert.ok(assignedFacts.some((fact) => fact.id === "reward"));
+const assignedReward = assignedFacts.find((fact) => fact.id === "reward");
+assert.equal(assignedReward?.value, "Prepared when you join");
+assert.ok(!/\$[\d,]/.test(assignedReward?.value ?? ""));
 assert.ok(
   assignedFacts.some(
     (fact) => fact.id === "scout" && fact.value === "When the timing is wrong, Fox waits.",
