@@ -12,8 +12,9 @@ import {
   receiveDocument,
 } from "./store";
 import type { ExtractClass, FoxIntakeDraft } from "./types";
-import { docsRequestForIncome, slotFromFilename } from "./workspace";
+import { slotFromFilename } from "./workspace";
 import {
+  askClassLabel,
   emitDocIntake,
   missingAskKey,
   missingExtractClasses,
@@ -50,7 +51,8 @@ export function DocumentDrop({
   compact?: boolean;
 }) {
   const live = draft ?? getFoxDraft();
-  const request = docsRequestForIncome(live.incomeType.value);
+  const missing = missingExtractClasses(live);
+  const hint = missing.map(askClassLabel).join(" · ");
   const [reject, setReject] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -175,11 +177,7 @@ export function DocumentDrop({
       <h2 id="docs-drop-title" className="type-eyebrow">
         Documents
       </h2>
-      {request.labels.length ? (
-        <p className="structure-drop__hint">{request.labels.join(" · ")}</p>
-      ) : (
-        <p className="structure-drop__hint">Any file you have</p>
-      )}
+      {hint ? <p className="structure-drop__hint">{hint}</p> : null}
       {reject ? <p className="structure-drop__reject">{reject}</p> : null}
       <div className="structure-drop__row">
         <label className="structure-drop__zone">

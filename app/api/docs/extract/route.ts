@@ -1,5 +1,9 @@
 import { NextResponse } from "next/server";
-import { extractClassFromFilename, slotForExtractClass } from "@/components/fox/fileWrite";
+import {
+  extractClassFromFilename,
+  preferFilenameClass,
+  slotForExtractClass,
+} from "@/components/fox/fileWrite";
 import { FAILED_READ_NOTE, RECEIVED_NOTE, mediaTypeOf } from "@/lib/docs/accept";
 import { classifyAndExtract } from "@/lib/docs/extract";
 import { readPrivateBytes, storageStatus, STORAGE_BLOCKED } from "@/lib/docs/storage";
@@ -34,8 +38,7 @@ export async function POST(request: Request) {
     const mediaType = mediaTypeOf(body.name ?? stored.pathname, body.type ?? stored.contentType);
     const extracted = await classifyAndExtract(stored.bytes, mediaType);
     const failed = Boolean(extracted.failed || extracted.warnings.includes("failed"));
-    const extractClass =
-      failed && extracted.extractClass === "other" && hinted ? hinted : extracted.extractClass;
+    const extractClass = preferFilenameClass(extracted.extractClass, body.name);
     return NextResponse.json({
       class: extractClass,
       confidence: extracted.confidence,

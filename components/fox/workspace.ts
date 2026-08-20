@@ -13,8 +13,8 @@ import {
 import { pathFromHomeChoice } from "./homeIdle";
 import {
   AMOUNT_HELPER_BUBBLES,
+  AMOUNT_PURPOSE_BUBBLES,
   CREDIT_WORKSPACE_BUBBLES,
-  DOC_SLOTS,
   INCOME_BUBBLES,
   OCCUPANCY_BUBBLES,
   PRODUCT_INTENT_BUBBLES,
@@ -29,7 +29,15 @@ import {
   type IntakePath,
   type ProductIntent,
 } from "./types";
-import { displayFactValue, factValue, slotFromFilename } from "./fileWrite";
+import {
+  displayFactValue,
+  docsDisplayLabel,
+  factValue,
+  incomeRequestedClasses,
+  missingExtractClasses,
+  missingListCopy,
+  slotFromFilename,
+} from "./fileWrite";
 
 export { slotFromFilename };
 
@@ -124,22 +132,87 @@ export function productIntentFromQuery(
 
 export function productIntentFromText(text: string): ProductIntent | null {
   const lower = text.trim().toLowerCase();
-  const fromQuery = productIntentFromQuery(lower);
-  if (fromQuery) return fromQuery;
   if (/\bbuy\b|purchase|buying/.test(lower)) return "buy";
   if (/refinanc|rate.?term|cash.?out/.test(lower)) return "refinance";
   if (/\bjumbo\b/.test(lower)) return "jumbo";
   if (/use equity|heloc|heloan|home equity|equity line/.test(lower)) {
     return "heloc";
   }
-  if (/\bother\b/.test(lower)) return "other";
+  const fromQuery = productIntentFromQuery(lower);
+  if (fromQuery && fromQuery !== "other") return fromQuery;
+  if (lower === "other") return "other";
   return PRODUCT_INTENT_BUBBLES.find(
     (item) => item.label.toLowerCase() === lower || item.value === lower,
   )?.value ?? null;
 }
 
-export function usesPurchasePrice(intent?: ProductIntent | null) {
-  return intent === "buy" || intent === "jumbo";
+export function usesPurchasePrice(
+  intent?: ProductIntent | null,
+  purposeLabel?: string | null,
+) {
+  if (intent === "buy" || intent === "jumbo") return true;
+  if (intent === "other" && purposeLabel) {
+    return /purchase price/i.test(purposeLabel);
+  }
+  return false;
+}
+
+function draftUsesPurchasePrice(draft?: FoxIntakeDraft | null) {
+  return usesPurchasePrice(draft?.productIntent, draft?.amountPurposeLabel);
+}
+
+export function structureAmountLabel(draft?: FoxIntakeDraft | null) {
+  const intent = draft?.productIntent;
+  if (intent === "buy" || intent === "jumbo") return "Purchase price";
+  if (intent === "refinance") return "Loan amount";
+  if (intent === "heloc") return "HELOC line";
+  if (intent === "other") {
+    const named = (draft?.amountPurposeLabel ?? "").trim();
+    if (named && !/^(amount|numbers|rough amount)$/i.test(named)) return named;
+    return "";
+  }
+  return draftUsesPurchasePrice(draft) ? "Purchase price" : "Loan amount";
+}
+
+export function amountAskText(draft: FoxIntakeDraft) {
+  const intent = draft.productIntent;
+  if (intent === "buy" || intent === "jumbo") return "What’s the purchase price?";
+  if (intent === "refinance") return "What’s the approximate loan or payoff amount?";
+  if (intent === "heloc") return "What line or cash do you need?";
+  if (intent === "other") {
+    const named = structureAmountLabel(draft);
+    if (!named) return "What is that number for?";
+    return `What’s the ${named.charAt(0).toLowerCase()}${named.slice(1)}?`;
+  }
+  return draftUsesPurchasePrice(draft)
+    ? "What’s the purchase price?"
+    : "What’s the loan amount?";
+}
+
+export function parseAmountPurpose(text: string): string | null {
+  const lower = text.trim().toLowerCase().replace(/['’]/g, "");
+  if (!lower || /^(amount|numbers|rough amount)$/i.test(lower)) return null;
+  if (/purchase|price/.test(lower)) return "Purchase price";
+  if (/heloc|line|cash needed|cash out/.test(lower) && !/loan amount|payoff/.test(lower)) {
+    return "HELOC line";
+  }
+  if (/loan|payoff/.test(lower)) return "Loan amount";
+  const match = AMOUNT_PURPOSE_BUBBLES.find(
+    (item) => item.label.toLowerCase() === lower || item.value.toLowerCase() === lower,
+  );
+  if (match) return match.value;
+  if (parseLooseAmount(text) != null && !/[a-z]/i.test(text.replace(/[\d$,.\s]/g, ""))) {
+    return null;
+  }
+  if (/dont know|do not know|not sure|unsure|skip( for now)?|\blater\b/.test(lower)) {
+    return null;
+  }
+  const cleaned = text.trim().replace(/\s+/g, " ");
+  if (!cleaned || /^\$?\d/.test(cleaned)) return null;
+  return cleaned
+    .split(" ")
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join(" ");
 }
 
 export function sampleRateApplies(intent?: ProductIntent | null) {
@@ -166,27 +239,16 @@ export function docsRequestForIncome(income?: string | null): {
   text: string;
   labels: string[];
 } {
-  if (income === "w2") {
-    return {
-      labels: ["Paystubs", "W-2"],
-      text: "Paystubs or a W-2 help. Drop what you have. Skip is fine.",
-    };
-  }
-  if (income === "self-employed") {
-    return {
-      labels: ["Tax returns", "Business docs"],
-      text: "Tax returns or business docs help. Drop what you have. Skip is fine.",
-    };
-  }
-  if (income === "both") {
-    return {
-      labels: ["Paystubs", "W-2", "Tax returns", "Business docs"],
-      text: "Paystubs or a W-2, plus tax returns or business docs. Drop what you have. Skip is fine.",
-    };
-  }
+  const classes = incomeRequestedClasses(income);
   return {
-    labels: [],
-    text: "Drop what you have. Skip is fine. I’ll work with what’s here.",
+    labels: classes.map((item) => {
+      if (item === "government_id") return "government ID";
+      if (item === "paystub") return "latest paystub";
+      if (item === "w2") return "W-2";
+      if (item === "tax_return") return "tax return";
+      return item;
+    }),
+    text: missingListCopy(classes),
   };
 }
 
@@ -209,7 +271,13 @@ function incomeFromText(text: string) {
 }
 
 function documentsAskText(draft: FoxIntakeDraft): string {
+  const missing = missingExtractClasses(draft);
+  if (missing.length) return missingListCopy(missing);
   return docsRequestForIncome(draft.incomeType.value).text;
+}
+
+export function documentsMissingAsk(draft: FoxIntakeDraft) {
+  return missingListCopy(missingExtractClasses(draft));
 }
 
 function docsSettled(draft: FoxIntakeDraft) {
@@ -217,7 +285,10 @@ function docsSettled(draft: FoxIntakeDraft) {
 }
 
 function sketchNumberReady(draft: FoxIntakeDraft) {
-  if (usesPurchasePrice(draft.productIntent)) {
+  if (draft.productIntent === "other" && !draft.amountPurposeLabel) {
+    return Boolean(draft.amountAsked);
+  }
+  if (draftUsesPurchasePrice(draft)) {
     return (
       Boolean(draft.valueAsked) ||
       draft.propertyValueAmount != null
@@ -306,7 +377,7 @@ export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
   if (!draft.occupancyAsked && !draft.occupancyChoice.value) return "occupancy";
   if (!draft.timelineAsked && !draft.timelineChoice.value) return "timeline";
   if (!sketchNumberReady(draft)) {
-    return usesPurchasePrice(draft.productIntent) ? "value" : "amount";
+    return draftUsesPurchasePrice(draft) ? "value" : "amount";
   }
   if (!creditSettled(draft)) return "credit";
   if (!incomeSettled(draft)) return "income";
@@ -356,22 +427,21 @@ export function workspacePromptCopy(
     };
   }
   if (prompt === "amount") {
+    const askingPurpose =
+      draft.productIntent === "other" && !draft.amountPurposeLabel;
     return {
-      text:
-        draft.productIntent === "heloc"
-          ? "What rough line or cash amount are you thinking about?"
-          : draft.productIntent === "other"
-            ? "What’s a rough amount?"
-            : "What’s a rough payoff or cash amount?",
-      actions: amountHelperActions("skip-amount"),
+      text: amountAskText(draft),
+      actions: askingPurpose
+        ? [
+            ...bubbles([...AMOUNT_PURPOSE_BUBBLES], "amountPurpose"),
+            ...amountHelperActions("skip-amount"),
+          ]
+        : amountHelperActions("skip-amount"),
     };
   }
   if (prompt === "value") {
     return {
-      text:
-        draft.productIntent === "jumbo"
-          ? "What’s a rough purchase price?"
-          : "What’s a rough purchase price?",
+      text: amountAskText({ ...draft, productIntent: draft.productIntent ?? "buy" }),
       actions: amountHelperActions("skip-value"),
     };
   }
@@ -398,10 +468,13 @@ export function workspacePromptCopy(
     };
   }
   if (prompt === "documents") {
+    const missing = missingExtractClasses(draft);
     return {
       text: documentsAskText(draft),
       actions: [
-        { id: "open-docs", label: "Upload now", event: "open-docs", capture: { field: "open-docs" } },
+        ...(missing.length
+          ? [{ id: "open-docs", label: "Upload now", event: "open-docs" as const, capture: { field: "open-docs" as const } }]
+          : []),
         { id: "skip-docs", label: "Skip for now", event: "bubble", capture: { field: "skip-docs" } },
       ],
     };
@@ -444,9 +517,19 @@ export function workspacePromptCopy(
     };
   }
   if (prompt === "done") {
+    const missing = missingExtractClasses(draft);
+    const list = missingListCopy(missing);
     const fileActions: FoxAction[] = [
       { id: "open-docs", label: "Upload docs", event: "open-docs", capture: { field: "open-docs" } },
     ];
+    if (missing.length && !draft.documentsSkipped) {
+      fileActions.push({
+        id: "skip-docs",
+        label: "Skip for now",
+        event: "bubble",
+        capture: { field: "skip-docs" },
+      });
+    }
     if (!draft.originatorRequested) {
       fileActions.push({
         id: "request-human",
@@ -466,6 +549,7 @@ export function workspacePromptCopy(
     if (draft.originatorRequested) {
       return {
         text: "I’m still on this desk. Upload a doc, tap a Structure line, or ask about the file.",
+        followUp: list || undefined,
         actions: fileActions,
       };
     }
@@ -474,6 +558,7 @@ export function workspacePromptCopy(
         draft.path === "loan-only"
           ? "This loan file is prepared. A licensed originator is assigned. Fox stays."
           : "This desk file is prepared. A licensed originator is assigned. Fox stays.",
+      followUp: list || undefined,
       actions: fileActions,
     };
   }
@@ -668,7 +753,9 @@ export function editPromptFromCapture(capture?: Capture): FoxPrompt | undefined 
   if (capture.field === "productIntent") return "product";
   if (capture.field === "occupancy") return "occupancy";
   if (capture.field === "timeline") return "timeline";
-  if (capture.field === "loanAmount" || capture.field === "skip-amount") return "amount";
+  if (capture.field === "loanAmount" || capture.field === "skip-amount" || capture.field === "amountPurpose") {
+    return "amount";
+  }
   if (capture.field === "propertyValue" || capture.field === "skip-value") return "value";
   if (capture.field === "creditRange") return "credit";
   if (capture.field === "termYears" || capture.field === "skip-term") return "term";
@@ -705,15 +792,19 @@ export function workspaceUpdateCopy(capture: Capture, draft: FoxIntakeDraft) {
   }
   if (capture.field === "loanAmount") {
     const n = Number(capture.value.split(":")[0].replace(/,/g, ""));
+    const label = structureAmountLabel(draft) || "Loan amount";
     return Number.isFinite(n) && n > 0
-      ? `Updated loan amount to ${formatMoney(n)}.`
-      : "Updated loan amount.";
+      ? `Updated ${label.toLowerCase()} to ${formatMoney(n)}.`
+      : `Updated ${label.toLowerCase()}.`;
   }
   if (capture.field === "propertyValue") {
     const n = Number(capture.value.replace(/,/g, ""));
     return Number.isFinite(n) && n > 0
-      ? `Updated property value to ${formatMoney(n)}.`
-      : "Updated property value.";
+      ? `Updated purchase price to ${formatMoney(n)}.`
+      : "Updated purchase price.";
+  }
+  if (capture.field === "amountPurpose") {
+    return `Updated to ${capture.value}.`;
   }
   if (capture.field === "creditRange") {
     const label =
@@ -723,8 +814,11 @@ export function workspaceUpdateCopy(capture: Capture, draft: FoxIntakeDraft) {
   if (capture.field === "termYears") {
     return `Updated term to ${capture.value} year.`;
   }
-  if (capture.field === "skip-amount") return "Updated. Loan amount left blank.";
-  if (capture.field === "skip-value") return "Updated. Property value left blank.";
+  if (capture.field === "skip-amount") {
+    const label = structureAmountLabel(draft) || "Loan amount";
+    return `Updated. ${label} left blank.`;
+  }
+  if (capture.field === "skip-value") return "Updated. Purchase price left blank.";
   if (capture.field === "skip-term") return "Updated. Term left blank.";
   if (capture.field === "incomeType") {
     const label = INCOME_BUBBLES.find((item) => item.value === capture.value)?.label;
@@ -825,10 +919,10 @@ export function parseWorkspaceEdit(
         confirm: `Updated property value to ${formatMoney(amount)}.`,
       };
     }
-    return { correct: "value", confirm: "What’s a rough property value?" };
+    return { correct: "value", confirm: "What’s the purchase price?" };
   }
 
-  if (/\b(loan amount|loan|amount|line|cash)\b/.test(lower)) {
+  if (/\b(loan amount|purchase price|heloc line|loan|line|cash|payoff)\b/.test(lower)) {
     if (isUnknownAmount(q)) {
       return { capture: { field: "skip-amount" }, confirm: "Updated. Loan amount left blank." };
     }
@@ -839,7 +933,7 @@ export function parseWorkspaceEdit(
         confirm: `Updated loan amount to ${formatMoney(amount)}.`,
       };
     }
-    return { correct: "amount", confirm: "What’s a rough loan amount?" };
+    return { correct: "amount", confirm: "What’s the loan amount?" };
   }
 
   if (/\bincome\b/.test(lower)) {
@@ -854,7 +948,7 @@ export function parseWorkspaceEdit(
   }
 
   if (/\bdoc/.test(lower)) {
-    return { correct: "documents", confirm: "Drop what you have. Skip is fine. I’ll work with what’s here." };
+    return { correct: "documents", confirm: "Government ID, latest paystub, and W-2." };
   }
 
   return null;
@@ -869,6 +963,9 @@ function draftAfterCapture(draft: FoxIntakeDraft, capture: Capture): FoxIntakeDr
   }
   if (capture.field === "timeline") {
     return { ...next, timelineChoice: { ...draft.timelineChoice, value: capture.value }, timelineAsked: true };
+  }
+  if (capture.field === "amountPurpose") {
+    return { ...next, amountPurposeLabel: capture.value };
   }
   if (capture.field === "loanAmount") {
     const n = Number(capture.value.split(":")[0].replace(/,/g, ""));
@@ -1049,7 +1146,7 @@ export function workspaceReply(
   if (prompt === "timeline") {
     const match = timelineFromText(q);
     if (!match) return { text: "Tap Ready now, 30–90 days, or Just exploring." };
-    const nextAsk = usesPurchasePrice(draft.productIntent) ? "value" : "amount";
+    const nextAsk = draftUsesPurchasePrice(draft) ? "value" : "amount";
     return {
       ...workspacePromptCopy(nextAsk, draft),
       capture: { field: "timeline", value: match.value },
@@ -1057,6 +1154,30 @@ export function workspaceReply(
   }
 
   if (prompt === "amount") {
+    if (draft.productIntent === "other" && !draft.amountPurposeLabel) {
+      if (isUnknownAmount(q)) {
+        const nextDraft = { ...draft, amountAsked: true };
+        return {
+          ...workspacePromptCopy(workspacePrompt(nextDraft), nextDraft),
+          capture: { field: "skip-amount" },
+        };
+      }
+      const purpose = parseAmountPurpose(q);
+      if (!purpose) {
+        return {
+          text: "What is that number for?",
+          actions: [
+            ...bubbles([...AMOUNT_PURPOSE_BUBBLES], "amountPurpose"),
+            ...amountHelperActions("skip-amount"),
+          ],
+        };
+      }
+      const purposeDraft = { ...draft, amountPurposeLabel: purpose };
+      return {
+        ...workspacePromptCopy("amount", purposeDraft),
+        capture: { field: "amountPurpose", value: purpose },
+      };
+    }
     if (isUnknownAmount(q)) {
       const nextDraft = { ...draft, amountAsked: true };
       return {
@@ -1068,7 +1189,7 @@ export function workspaceReply(
     const amount = pair.loan ?? parseLooseAmount(q);
     if (amount == null) {
       return {
-        text: "A rough number works, or tap Not sure.",
+        text: `${amountAskText(draft)} A number works, or tap Not sure.`,
         actions: amountHelperActions("skip-amount"),
       };
     }
@@ -1098,7 +1219,7 @@ export function workspaceReply(
     const amount = parseAmountPair(q).value ?? parseLooseAmount(q);
     if (amount == null) {
       return {
-        text: "A rough number works, or tap Not sure.",
+        text: `${amountAskText(draft)} A number works, or tap Not sure.`,
         actions: amountHelperActions("skip-value"),
       };
     }
@@ -1277,53 +1398,44 @@ export type PreviewFact = {
   note?: string;
 };
 
-function amountLineLabel(intent?: ProductIntent | null) {
-  if (intent === "heloc") return "Line / cash";
-  if (intent === "other") return "Amount";
-  if (intent === "refinance") return "Payoff / cash";
-  return "Loan amount";
-}
-
 function numbersFact(draft: FoxIntakeDraft): PreviewFact | null {
-  const intent = draft.productIntent ?? productIntentFromSlug(draft.scenario?.productSlug);
   const loan = draft.loanAmountValue;
   const value = draft.propertyValueAmount;
   const hasLoan = loan != null && loan > 0;
   const hasValue = value != null && value > 0;
   if (!hasLoan && !hasValue) return null;
+  const label = structureAmountLabel(draft);
+  if (!label) return null;
   if (hasLoan && hasValue) {
     return {
       id: "numbers",
-      label: usesPurchasePrice(intent) ? "Price / loan" : amountLineLabel(intent),
+      label,
       value: `${formatMoney(loan)} on ${formatMoney(value)}`,
     };
   }
   if (hasLoan) {
     return {
       id: "numbers",
-      label: amountLineLabel(intent),
+      label,
       value: formatMoney(loan),
     };
   }
   return {
     id: "numbers",
-    label: usesPurchasePrice(intent) ? "Purchase price" : "Property value",
+    label,
     value: formatMoney(value as number),
   };
 }
 
 function docsFact(draft: FoxIntakeDraft): PreviewFact | null {
   if (draft.documents.length) {
-    const slots = Array.from(new Set(draft.documents.map((doc) => doc.slot)));
+    const labels = Array.from(
+      new Set(draft.documents.map((doc) => docsDisplayLabel(doc))),
+    );
     return {
       id: "docs",
       label: "Docs",
-      value: slots
-        .map((slot) => {
-          const label = DOC_SLOTS.find((item) => item.id === slot)?.label ?? "Other";
-          return `${label} in`;
-        })
-        .join(" · "),
+      value: labels.map((item) => `${item} in`).join(" · "),
     };
   }
   if (draft.documentsSkipped) {
@@ -1352,7 +1464,12 @@ export function previewFacts(draft: FoxIntakeDraft): PreviewFact[] {
     facts.push({ id: "path", label: "Path", value: "Loan only" });
   }
 
-  const intent = draft.productIntent ?? productIntentFromSlug(draft.scenario?.productSlug);
+  const intent =
+    draft.productIntent ??
+    (() => {
+      const fromSlug = productIntentFromSlug(draft.scenario?.productSlug);
+      return fromSlug === "other" ? null : fromSlug;
+    })();
   if (intent) {
     facts.push({
       id: "product",
@@ -1484,7 +1601,7 @@ export function structureFixPrompt(
   if (id === "occupancy") return "occupancy";
   if (id === "timeline") return "timeline";
   if (id === "numbers") {
-    return usesPurchasePrice(draft?.productIntent) ? "value" : "amount";
+    return draftUsesPurchasePrice(draft) ? "value" : "amount";
   }
   if (id === "amount") return "amount";
   if (id === "value") return "value";

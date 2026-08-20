@@ -52,6 +52,7 @@ import {
   confirmedMoneyText,
   formatLiveMoneyInput,
   editPromptFromCapture,
+  structureAmountLabel,
   structureExplainCopy,
   structureFixPrompt,
   workspaceGreeting,
@@ -717,8 +718,10 @@ export function AlwaysOnFox({
   }, [messages, open]);
 
   const startAsk = isStart ? workspacePrompt(draft) : null;
-  const moneyAsk = startAsk === "amount" || startAsk === "value";
-  const needsTyping = moneyAsk || startAsk === "term";
+  const askingAmountPurpose =
+    startAsk === "amount" && draft.productIntent === "other" && !draft.amountPurposeLabel;
+  const moneyAsk = (startAsk === "amount" && !askingAmountPurpose) || startAsk === "value";
+  const needsTyping = moneyAsk || startAsk === "term" || askingAmountPurpose;
 
   const focusComposer = () => {
     const node = inputRef.current;
@@ -961,7 +964,13 @@ export function AlwaysOnFox({
         onChange={onComposerChange}
         onFocus={() => setOpen(true)}
         onBlur={onComposerBlur}
-        placeholder={moneyAsk ? "Enter amount or say not sure" : "Ask ONYX Fox"}
+        placeholder={
+          moneyAsk
+            ? `Enter ${ (structureAmountLabel(draft) || "the number").toLowerCase() } or say not sure`
+            : askingAmountPurpose
+              ? "Purchase price, loan amount, or HELOC line"
+              : "Ask ONYX Fox"
+        }
         inputMode={composerMode}
         autoFocus={needsTyping}
         autoComplete="off"

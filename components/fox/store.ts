@@ -26,10 +26,10 @@ import {
 } from "./types";
 import {
   applyExtractedFields,
-  extractClassFromSlot,
+  preferFilenameClass,
   resolveFactConflict,
+  resolveReceivedSlot,
   skipRemainingClasses,
-  slotForExtractClass,
   type ExtractApplyInput,
 } from "./fileWrite";
 import {
@@ -116,6 +116,10 @@ function normalize(value: unknown): FoxIntakeDraft {
     propertyValueAmount: numberOrUndefined(raw.propertyValueAmount),
     amountAsked: Boolean(raw.amountAsked),
     valueAsked: Boolean(raw.valueAsked),
+    amountPurposeLabel:
+      typeof raw.amountPurposeLabel === "string" && raw.amountPurposeLabel.trim()
+        ? raw.amountPurposeLabel.trim()
+        : undefined,
     creditBand: raw.creditBand,
     creditAsked: Boolean(raw.creditAsked || raw.creditBand),
     incomeAsked: Boolean(raw.incomeAsked || raw.incomeType?.value),
@@ -607,11 +611,8 @@ export function applyExtractWrite(
     : applyExtractedFields(current, input);
   const nextDocs = applied.draft.documents.map((doc) => {
     if (doc.receivedAt !== receivedAt || doc.name !== name) return doc;
-    const keepFilenameSlot = failed && input.extractClass === "other";
-    const slot = keepFilenameSlot ? doc.slot : slotForExtractClass(input.extractClass);
-    const extractClass = keepFilenameSlot
-      ? extractClassFromSlot(doc.slot) ?? input.extractClass
-      : input.extractClass;
+    const extractClass = preferFilenameClass(input.extractClass, name, doc.slot);
+    const slot = resolveReceivedSlot(doc.slot, name, extractClass);
     return {
       ...doc,
       slot,
@@ -797,6 +798,7 @@ export function applyCapture(capture: Capture) {
         ...current,
         sampleAccepted: true,
         workspaceDraftStatus: "with-originator",
+        docsOpen: true,
         correcting: null,
       });
       if (workspacePrompt(current) === "done") return confirmDraft();
@@ -844,8 +846,27 @@ export function applyCapture(capture: Capture) {
   }
   if (capture.field === "productIntent") {
     return commit(
-    withWorkspaceScenario(withProductIntent({ ...current, correcting: null }, capture.value)),
-  );
+      withWorkspaceScenario(
+        withProductIntent(
+          {
+            ...current,
+            correcting: null,
+            amountPurposeLabel:
+              capture.value === "other" ? current.amountPurposeLabel : undefined,
+          },
+          capture.value,
+        ),
+      ),
+    );
+  }
+  if (capture.field === "amountPurpose") {
+    const named = capture.value.trim();
+    if (!named || /^(amount|numbers|rough amount)$/i.test(named)) return current;
+    return commit({
+      ...current,
+      amountPurposeLabel: named,
+      correcting: null,
+    });
   }
   if (capture.field === "loanAmount") {
     const [loanRaw, valueRaw] = capture.value.split(":");

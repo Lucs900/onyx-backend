@@ -92,10 +92,10 @@ Primary post-click experience after the homepage. Fox talks and the Structure up
 - One Fox only. `StartWorkspace` renders the live `AlwaysOnFox` panel as a real child (preview left / Fox right on desktop; chat-first on mobile). `FoxShell` does not mount a second Fox on `/start`. No second composer. No portal hole, no dead fallback chrome. No orb, FAB, second chatbot, or homepage overlay.
 - **Desktop:** Fox chat left (`1.2fr`), live Structure right (`0.8fr`) when at least one useful line exists. Zero lines: hide Structure and center Fox at `720px`. Composer stays in the Fox stage. No dock.
 - **Mobile:** Fox chat is primary. Structure is a File sheet from the dock chip (`Structure · {n} facts` or the newest fact), a true overlay over the thread. Same `StructureRows` + `previewFacts` as desktop. Keyboard pushes the dock. Do not stack an inline Structure card under the thread. Do not nest a 500px desktop chat inside mobile.
-- Structure is a tappable term sheet, not a dashboard and not a File/Preview recap. Render only lines that exist: Path (`Relationship desk` / `Loan only`), Product, Occupancy, Timeline, Numbers (as given, never invented), Credit, Income, Rate, Reward (ACR after the sketch is ready), Letter / Scout (ACR after Looks right), Originator (after Looks right: `Licensed originator assigned` — do not invent a name or NMLS), Docs, Status. Paper / paper-elevated / ink / metal. Radius 16, hairline (`1px solid var(--fox-hairline)`). No gold fill. Tap Path/Product/Occupancy/Timeline/Numbers/Credit/Income/Docs to fix. Rate, Reward, Letter, Scout, Originator, and Status are tap-to-explain or desk-state notes — never borrower-editable into a live rate. Do not show a “Which part should Fox fix?” menu. Needs a correction → `Tap any line on the structure.`
+- Structure is a tappable term sheet, not a dashboard and not a File/Preview recap. Render only lines that exist: Path (`Relationship desk` / `Loan only`), Product, Occupancy, Timeline, the named dollar line (`Purchase price` / `Loan amount` / `HELOC line` — never `Amount` or `Numbers`), Credit, Income, Rate, Reward (ACR after the sketch is ready), Letter / Scout (ACR after Looks right), Originator (after Looks right: `Licensed originator assigned` — do not invent a name or NMLS), Docs, Status. Paper / paper-elevated / ink / metal. Radius 16, hairline (`1px solid var(--fox-hairline)`). No gold fill. Tap Path/Product/Occupancy/Timeline/the named dollar line/Credit/Income/Docs to fix. Rate, Reward, Letter, Scout, Originator, and Status are tap-to-explain or desk-state notes — never borrower-editable into a live rate. Do not show a “Which part should Fox fix?” menu. Needs a correction → `Tap any line on the structure.`
 - Rate honesty: Sample `6.750%` only on Conventional 30-year purchase/refi (`Buy` or `Refinance`). Label always adjacent, including the in-thread `Here’s a sample structure` recap: `Sample · indicative · not live`. HELOC / Jumbo / Other rate line is exactly `Pricing when the file is ready`. Never fake `6.750` on those. Never show `6.750%` naked. No estimated payment next to the sample. No live-looking HELOC APR, IO payment, or “move forward” quote. No FICO-first theater. No “send the app link” destination.
 - Estimated ACR reward range only on the ACR path via private `estimateFromDraft` after the sketch is ready. Never invent a live rate. Never show the private formula or a public %. Never imply approval, lock, or a commitment to lend.
-- Fox flow (same on desktop and mobile): path once (from homepage CTA or Idle bubbles) → product (Buy / Refinance / HELOC / Jumbo / Other) → occupancy → timeline → **one** number (Buy/Jumbo: purchase price; Refinance/HELOC/Other: rough payoff or cash) → **credit range** (`760+` / `720–759` / `680–719` / `Not sure`) → **income type** (`W-2` / `Self-employed` / `Both` / `Other`) → sample structure **in the chat thread** + `Does this look right?` → Looks right → file prepared, licensed originator assigned, Fox stays. Docs are after confirm, filtered by that income type (upload on request). If path is set, never ask again. Changing path only via the Path line + confirm once (`Switch to loan only?` / `Switch to the desk?`). Term, name, email, and phone are not on the pre-confirm spine. Income is on the spine only as far as needed to filter docs — not a 1003. One question at a time, bubbles for structured answers, free text and composer always available. Money questions autofocus a text composer with a visible caret (`inputMode=decimal`, never `type=number`) and restore focus if it is lost. Not sure / Skip for now remain. Pure numbers gain commas while typing (`6000` → `6,000`); `600000`, `600,000`, and `600k` confirm as `$600,000`. Free text is not force-formatted.
+- Fox flow (same on desktop and mobile): path once (from homepage CTA or Idle bubbles) → product (Buy / Refinance / HELOC / Jumbo / Other) → occupancy → timeline → **one named number** (Buy/Jumbo: purchase price; Refinance: approximate loan / payoff; HELOC: requested line or cash; Other only if they tapped Other: what the number is for, then that label) → **credit range** (`760+` / `720–759` / `680–719` / `Not sure`) → **income type** (`W-2` / `Self-employed` / `Both` / `Other`) → sample structure **in the chat thread** + `Does this look right?` → Looks right → file prepared, licensed originator assigned, Fox stays. Docs are after confirm: Fox asks the short missing list for that income type, then Skip. If path is set, never ask again. Changing path only via the Path line + confirm once (`Switch to loan only?` / `Switch to the desk?`). Term, name, email, and phone are not on the pre-confirm spine. Income is on the spine only as far as needed to filter docs — not a 1003. One question at a time, bubbles for structured answers, free text and composer always available. Money questions autofocus a text composer with a visible caret (`inputMode=decimal`, never `type=number`) and restore focus if it is lost. Not sure / Skip for now remain. Pure numbers gain commas while typing (`6000` → `6,000`); `600000`, `600,000`, and `600k` confirm as `$600,000`. Free text is not force-formatted. Never ask a naked amount. Product is Other only when they tap Other — not from a typed buy/refi/HELOC/jumbo sentence, and not from a docs `other` slot.
 - Starters (exact): ACR `I can prepare your relationship file. We’ll keep this desk open after close.` Loan-only `This is the loan. ACR is optional if you want the desk later.`
 - Sticky disclosure under the Fox header on every `/start` turn: `ONYX Fox can assist and prepare. It cannot approve, lock, or commit to lend.` Do **not** repeat that string in the first Fox bubble. Header stays `ONYX Fox`. Fox cannot approve, lock, or commit to lend. California only stays site-level. Do not inherit the public Equity Fox chat.
 
@@ -114,11 +114,12 @@ Income type is a structure-changing question on the shared spine, after credit a
 
 - Ask `How is income earned?` with `W-2` / `Self-employed` / `Both` / `Other`. Other settles the question. Structure writes an Income line, tappable like the other facts.
 - `workspacePrompt` after credit + income returns `review`, never `documents`. Documents are not a pre-confirm spine step. Opening upload from `done` is a side action (`docsOpen`); it does not replay a blocking docs prompt or change Assigned / reviewing.
-- After Looks right, `Upload docs` offers only what that income type implies. One dropzone. Skip remains. Copy (not a vault of five slots):
-  - W-2: paystubs / W-2
-  - Self-employed: tax returns / business docs
-  - Both: the combined set
-  - Other / unknown: generic drop or skip. Do not present a fake full vault.
+- After Looks right, Fox asks the short missing list, then Skip. One dropzone. Do not lead with `Drop what you have. Skip is fine.` Copy:
+  - W-2: government ID, latest paystub, W-2
+  - Self-employed: government ID, tax return
+  - Both: the union of those
+  - Other income: government ID + tax return (same as self-employed until product matrix)
+  After a successful upload, refresh the list. Do not re-ask received / ready / skipped. Filename-classified paystub / W-2 / ID stay `Paystubs in` / `W-2 in` / `ID in` — never `Other in`.
 - Skip writes `Docs: Skipped`. File stays prepared. Fox stays. Occupancy tap-edit still does not re-ask docs.
 - **Looks right on ACR:** file prepared. Status `Assigned / reviewing`. Originator row `Licensed originator assigned`. Letter / scout / reward on the desk. Fox stays.
 - **Looks right on loan:** file prepared. Same assigned originator accountability. Honest. No membership pitch except one later `What is ACR?` chip. Fox stays.
@@ -170,19 +171,27 @@ Quiet system line on write, not a loud Fox bubble: e.g. `Updated income from pay
 
 ### Missing-item ask (one short group)
 
-Always after confirm: **government ID**.
+Always after Looks right, from income type only (no product-matrix extras):
 
-- W-2: paystub + W-2
-- Self-employed / 1099 / other: tax return
-- Optional if useful: buy (and no purchase price on Structure) → purchase contract; refi/HELOC → mortgage statement
+- W-2: government ID, latest paystub, W-2
+- Self-employed: government ID, tax return
+- Both: union of those
+- Other income: government ID + tax return
 
-Do not ask a class that is received, ready, or skipped. Do not re-ask path, occupancy, credit, or a fact already on Structure. Skip writes `documentsSkipped` and remaining requested classes into `skippedClasses`. File stays with-originator. Later upload still works.
+Do not ask a class that is received, ready, or skipped. Do not re-ask path, occupancy, credit, or a fact already on Structure. Skip writes `documentsSkipped` and remaining requested classes into `skippedClasses`. File stays with-originator. Later upload still works. Extract class `other` must not change Product or remap a filename-classified paystub / W-2 / ID into `Other in`.
 
 ### Conflict behavior
 
 If a typed/File value differs from the document, Fox does **not** overwrite. It asks once: file vs document. Borrower tap wins (`Keep file` / `Use document`). Example: typed income ≠ paystub period pay.
 
 ### Walk (this build)
+
+A. Buy spine asks purchase price; Structure says `Purchase price`.
+B. Refi spine asks approximate loan / payoff; Structure says `Loan amount`.
+C. HELOC spine asks line or cash needed; Structure says `HELOC line`.
+D. Tapping Buy / Refi / HELOC / Jumbo never lands Product Other.
+E. After Looks right on W-2, Fox lists government ID, latest paystub, W-2 (not a generic drop line). Skip works.
+F. Paystub extract still writes Employer / Pay; Docs is `Paystubs in`, not `Other in`.
 
 1. After Looks right, upload a paystub (or labeled sample). Structure gains employer/pay facts. Spine is not replayed.
 2. Typed income ≠ paystub → Fox asks once, does not overwrite.

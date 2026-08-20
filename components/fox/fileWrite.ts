@@ -80,6 +80,49 @@ export function extractClassFromFilename(name: string): ExtractClass | null {
   return extractClassFromSlot(slotFromFilename(name));
 }
 
+/** Filename paystub / W-2 / ID / bank wins when extract returns `other`. */
+export function preferFilenameClass(
+  extractClass: ExtractClass,
+  name?: string,
+  slot?: DocSlot,
+): ExtractClass {
+  if (extractClass !== "other") return extractClass;
+  return (
+    extractClassFromSlot(slot ?? "other") ??
+    extractClassFromFilename(name ?? "") ??
+    extractClass
+  );
+}
+
+export function resolveReceivedSlot(
+  filenameSlot: DocSlot,
+  name: string,
+  extractClass: ExtractClass,
+): DocSlot {
+  const classSlot = slotForExtractClass(extractClass);
+  if (classSlot !== "other") return classSlot;
+  if (filenameSlot !== "other") return filenameSlot;
+  return slotFromFilename(name);
+}
+
+export function docsDisplayLabel(doc: {
+  slot: DocSlot;
+  name: string;
+  extractClass?: ExtractClass;
+}): string {
+  const extractClass = preferFilenameClass(doc.extractClass ?? "other", doc.name, doc.slot);
+  if (extractClass === "paystub") return "Paystubs";
+  if (extractClass === "w2") return "W-2";
+  if (extractClass === "government_id") return "ID";
+  if (extractClass === "bank_statement") return "Bank statements";
+  const slot = resolveReceivedSlot(doc.slot, doc.name, extractClass);
+  if (slot === "paystubs") return "Paystubs";
+  if (slot === "w2") return "W-2";
+  if (slot === "id") return "ID";
+  if (slot === "bank") return "Bank statements";
+  return "Other";
+}
+
 export function extractClassLabel(extractClass: ExtractClass) {
   if (extractClass === "government_id") return "government ID";
   if (extractClass === "paystub") return "paystub";
@@ -89,6 +132,22 @@ export function extractClassLabel(extractClass: ExtractClass) {
   if (extractClass === "purchase_contract") return "purchase contract";
   if (extractClass === "mortgage_statement") return "mortgage statement";
   return "document";
+}
+
+export function askClassLabel(extractClass: ExtractClass) {
+  if (extractClass === "paystub") return "latest paystub";
+  return extractClassLabel(extractClass);
+}
+
+export function incomeRequestedClasses(income?: string | null): ExtractClass[] {
+  const out: ExtractClass[] = ["government_id"];
+  if (income === "w2" || income === "both") {
+    out.push("paystub", "w2");
+  }
+  if (income === "self-employed" || income === "other" || income === "both" || !income) {
+    if (income !== "w2") out.push("tax_return");
+  }
+  return out;
 }
 
 export function factLabel(field: string) {
@@ -338,25 +397,7 @@ export function receivedExtractClasses(draft: FoxIntakeDraft): Set<ExtractClass>
 }
 
 export function requestedExtractClasses(draft: FoxIntakeDraft): ExtractClass[] {
-  const out: ExtractClass[] = ["government_id"];
-  const income = draft.incomeType.value;
-  if (income === "w2" || income === "both") {
-    out.push("paystub", "w2");
-  }
-  if (income === "self-employed" || income === "other" || income === "both" || !income) {
-    if (income !== "w2") out.push("tax_return");
-  }
-  if (
-    (draft.productIntent === "buy" || draft.productIntent === "jumbo") &&
-    draft.propertyValueAmount == null &&
-    !draft.facts?.purchase_price?.value
-  ) {
-    out.push("purchase_contract");
-  }
-  if (draft.productIntent === "refinance" || draft.productIntent === "heloc") {
-    out.push("mortgage_statement");
-  }
-  return out.filter((item, index) => out.indexOf(item) === index);
+  return incomeRequestedClasses(draft.incomeType.value);
 }
 
 export function missingExtractClasses(draft: FoxIntakeDraft): ExtractClass[] {
@@ -364,12 +405,17 @@ export function missingExtractClasses(draft: FoxIntakeDraft): ExtractClass[] {
   return requestedExtractClasses(draft).filter((item) => !have.has(item));
 }
 
-export function missingAskCopy(classes: ExtractClass[]) {
-  const labels = classes.map(extractClassLabel);
+export function missingListCopy(classes: ExtractClass[]) {
+  const labels = classes.map(askClassLabel);
   if (!labels.length) return "";
-  if (labels.length === 1) return `${labels[0]} still helps. Skip is fine.`;
-  if (labels.length === 2) return `${labels[0]} and ${labels[1]} still help. Skip is fine.`;
-  return `${labels.slice(0, -1).join(", ")}, and ${labels[labels.length - 1]} still help. Skip is fine.`;
+  const head = labels[0].charAt(0).toUpperCase() + labels[0].slice(1);
+  if (labels.length === 1) return `${head}.`;
+  if (labels.length === 2) return `${head} and ${labels[1]}.`;
+  return `${head}, ${labels.slice(1, -1).join(", ")}, and ${labels[labels.length - 1]}.`;
+}
+
+export function missingAskCopy(classes: ExtractClass[]) {
+  return missingListCopy(classes);
 }
 
 export function missingAskKey(classes: ExtractClass[]) {

@@ -107,6 +107,7 @@ export type FoxIntakeDraft = {
   propertyValueAmount?: number;
   amountAsked?: boolean;
   valueAsked?: boolean;
+  amountPurposeLabel?: string;
   creditBand?: CreditRange;
   creditAsked?: boolean;
   incomeAsked?: boolean;
@@ -173,6 +174,7 @@ export type Capture =
   | { field: "productIntent"; value: ProductIntent }
   | { field: "loanAmount"; value: string }
   | { field: "propertyValue"; value: string }
+  | { field: "amountPurpose"; value: string }
   | { field: "creditRange"; value: string }
   | { field: "termYears"; value: string }
   | { field: "skip-amount" }
@@ -266,4 +268,10 @@ export const TERM_BUBBLES = [
 export const AMOUNT_HELPER_BUBBLES = [
   { id: "not-sure", label: "Not sure" },
   { id: "skip", label: "Skip for now" },
+] as const;
+
+export const AMOUNT_PURPOSE_BUBBLES = [
+  { value: "Purchase price", label: "Purchase price" },
+  { value: "Loan amount", label: "Loan amount" },
+  { value: "HELOC line", label: "HELOC line" },
 ] as const;

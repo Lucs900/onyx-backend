@@ -34,15 +34,18 @@ import {
   PRODUCT_INTENT_BUBBLES,
 } from "../components/fox/types";
 import {
+  amountAskText,
   docsRequestForIncome,
   fileSummaryFacts,
   migrateRestoredFoxMessages,
   parseWorkspaceEdit,
   PATH_ASK_TEXT,
   previewFacts,
+  productIntentFromText,
   REWARD_PREPARED_COPY,
   productIntentFromQuery,
   sampleRateApplies,
+  structureAmountLabel,
   PREVIEW_RATE_NOTE,
   SAMPLE_RATE_LABEL,
   slotFromFilename,
@@ -144,6 +147,26 @@ assert.deepEqual(
 const afterProduct = draft({ path: "acr", productIntent: "buy" });
 assert.equal(workspacePrompt(afterProduct), "occupancy");
 
+for (const value of ["buy", "refinance", "heloc", "jumbo"] as const) {
+  const tapped = workspaceReply(value === "heloc" ? "HELOC" : value[0].toUpperCase() + value.slice(1), draft({ path: "acr" }));
+  const tappedValue = tapped?.capture && "value" in tapped.capture ? tapped.capture.value : "";
+  assert.equal(tapped?.capture?.field, "productIntent");
+  assert.equal(tappedValue, value);
+  assert.notEqual(tappedValue, "other");
+  const painted = previewFacts(draft({ path: "acr", productIntent: value }));
+  assert.ok(painted.some((fact) => fact.id === "product" && fact.value !== "Other"));
+  assert.equal(painted.find((fact) => fact.id === "product")?.value, value === "heloc" ? "HELOC" : value[0].toUpperCase() + value.slice(1));
+}
+
+assert.equal(productIntentFromText("I want to buy"), "buy");
+assert.equal(productIntentFromText("looking to refinance"), "refinance");
+assert.equal(productIntentFromText("need a HELOC"), "heloc");
+assert.equal(productIntentFromText("this is jumbo"), "jumbo");
+assert.equal(productIntentFromText("I have other questions about buying"), "buy");
+assert.equal(productIntentFromText("I have other plans"), null);
+assert.equal(productIntentFromText("other"), "other");
+assert.equal(workspaceReply("I have other plans", draft({ path: "acr" }))?.capture, undefined);
+
 const afterOcc = draft({
   path: "acr",
   productIntent: "buy",
@@ -164,7 +187,32 @@ assert.equal(workspacePrompt(afterTime), "amount");
 
 const buyAfterTime = workspaceReply("Ready now", afterOcc);
 assert.equal(buyAfterTime?.capture?.field, "timeline");
-assert.ok(/purchase price/i.test(buyAfterTime?.text ?? ""));
+assert.equal(buyAfterTime?.text, "What’s the purchase price?");
+assert.doesNotMatch(buyAfterTime?.text ?? "", /rough amount|^what’s a rough amount/i);
+
+const refiAfterTime = draft({
+  path: "acr",
+  productIntent: "refinance",
+  occupancyAsked: true,
+  occupancyChoice: { ...emptyDraft().occupancyChoice, value: "primary" },
+  timelineAsked: true,
+  timelineChoice: { ...emptyDraft().timelineChoice, value: "ready-now" },
+});
+assert.equal(workspacePrompt(refiAfterTime), "amount");
+assert.equal(amountAskText(refiAfterTime), "What’s the approximate loan or payoff amount?");
+assert.doesNotMatch(amountAskText(refiAfterTime), /rough amount|What’s a rough|^\s*What’s an amount/i);
+
+const helocAfterTime = draft({
+  path: "loan-only",
+  productIntent: "heloc",
+  occupancyAsked: true,
+  occupancyChoice: { ...emptyDraft().occupancyChoice, value: "primary" },
+  timelineAsked: true,
+  timelineChoice: { ...emptyDraft().timelineChoice, value: "ready-now" },
+});
+assert.equal(workspacePrompt(helocAfterTime), "amount");
+assert.equal(amountAskText(helocAfterTime), "What line or cash do you need?");
+assert.doesNotMatch(amountAskText(helocAfterTime), /rough amount|^\s*what’s a rough/i);
 
 const afterPrice = draft({
   path: "acr",
@@ -212,6 +260,11 @@ assert.deepEqual(
 const afterIncome = withIncome(afterCredit, "w2");
 assert.equal(workspacePrompt(afterIncome), "review");
 assert.notEqual(workspacePrompt(afterIncome), "documents");
+const looksRight = workspaceReply("Looks right", afterIncome);
+assert.equal(looksRight?.capture?.field, "confirm-draft");
+assert.match(looksRight?.followUp ?? "", /government ID, latest paystub, and W-2/i);
+assert.doesNotMatch(`${looksRight?.text ?? ""} ${looksRight?.followUp ?? ""}`, /drop what you have/i);
+assert.ok((looksRight?.actions ?? []).some((item) => /skip/i.test(item.label)));
 
 const notSure = withIncome(draft({ ...afterPrice, creditAsked: true, creditBand: "not-sure" }));
 assert.equal(workspacePrompt(notSure), "review");
@@ -222,6 +275,9 @@ assert.notEqual(workspacePrompt(otherIncome), "documents");
 
 const creditFacts = previewFacts(afterIncome);
 assert.ok(creditFacts.some((fact) => fact.id === "path" && fact.value === "Relationship desk"));
+assert.ok(creditFacts.some((fact) => fact.id === "numbers" && fact.label === "Purchase price"));
+assert.ok(creditFacts.every((fact) => fact.label !== "Amount" && fact.label !== "Numbers"));
+assert.equal(structureAmountLabel(afterIncome), "Purchase price");
 assert.ok(creditFacts.some((fact) => fact.id === "credit" && fact.value === "760+"));
 assert.ok(creditFacts.some((fact) => fact.id === "income" && fact.value === "W-2"));
 assert.ok(creditFacts.some((fact) => fact.id === "rate" && fact.value.includes(SAMPLE_RATE_LABEL)));
@@ -285,6 +341,8 @@ const helocReady = withIncome(
 );
 const helocFacts = previewFacts(helocReady);
 assert.ok(helocFacts.some((fact) => fact.id === "path" && fact.value === "Loan only"));
+assert.ok(helocFacts.some((fact) => fact.id === "numbers" && fact.label === "HELOC line"));
+assert.ok(helocFacts.every((fact) => fact.label !== "Amount" && fact.label !== "Numbers"));
 assert.ok(helocFacts.some((fact) => fact.id === "credit" && fact.value === "720–759"));
 assert.ok(helocFacts.some((fact) => fact.id === "rate" && fact.value === "Pricing when the file is ready"));
 assert.ok(!helocFacts.some((fact) => fact.id === "reward"));
@@ -304,8 +362,29 @@ const helocAcrReady = withIncome(
     creditBand: "760+",
   }),
 );
+const refiReady = withIncome(
+  draft({
+    path: "acr",
+    productIntent: "refinance",
+    occupancyAsked: true,
+    occupancyChoice: { ...emptyDraft().occupancyChoice, value: "primary" },
+    timelineAsked: true,
+    timelineChoice: { ...emptyDraft().timelineChoice, value: "ready-now" },
+    amountAsked: true,
+    loanAmountValue: 640000,
+    creditAsked: true,
+    creditBand: "760+",
+  }),
+);
+const refiFacts = previewFacts(refiReady);
+assert.ok(refiFacts.some((fact) => fact.id === "numbers" && fact.label === "Loan amount"));
+assert.ok(refiFacts.every((fact) => fact.label !== "Amount" && fact.label !== "Numbers"));
+assert.equal(structureAmountLabel(refiReady), "Loan amount");
+assert.equal(amountAskText(refiAfterTime), "What’s the approximate loan or payoff amount?");
+
 const helocAcrFacts = previewFacts(helocAcrReady);
 assert.ok(helocAcrFacts.some((fact) => fact.id === "path" && fact.value === "Relationship desk"));
+assert.ok(helocAcrFacts.some((fact) => fact.id === "numbers" && fact.label === "HELOC line"));
 assert.ok(helocAcrFacts.some((fact) => fact.id === "rate" && fact.value === "Pricing when the file is ready"));
 const helocReward = helocAcrFacts.find((fact) => fact.id === "reward");
 assert.equal(helocReward?.value, "Prepared when you join");
@@ -327,6 +406,8 @@ const jumboAcrReady = withIncome(
   }),
 );
 const jumboFacts = previewFacts(jumboAcrReady);
+assert.ok(jumboFacts.some((fact) => fact.id === "numbers" && fact.label === "Purchase price"));
+assert.ok(jumboFacts.every((fact) => fact.label !== "Amount" && fact.label !== "Numbers"));
 assert.ok(jumboFacts.some((fact) => fact.id === "rate" && fact.value === "Pricing when the file is ready"));
 const jumboReward = jumboFacts.find((fact) => fact.id === "reward");
 assert.equal(jumboReward?.value, "Prepared when you join");
@@ -364,7 +445,13 @@ assert.ok(/file is prepared/i.test(done.text));
 assert.ok(/licensed originator is assigned/i.test(done.text));
 assert.ok(!/I’m preparing this desk/i.test(done.text));
 assert.ok(!/we’ll be in touch|will contact you/i.test(done.text));
+assert.match(done.followUp ?? "", /government ID/i);
+assert.match(done.followUp ?? "", /latest paystub/i);
+assert.match(done.followUp ?? "", /W-2/);
+assert.doesNotMatch(done.text, /drop what you have|skip is fine/i);
+assert.doesNotMatch(done.followUp ?? "", /drop what you have|skip is fine/i);
 assert.ok((done.actions ?? []).some((item) => item.label === "Upload docs"));
+assert.ok((done.actions ?? []).some((item) => /skip/i.test(item.label)));
 assert.ok((done.actions ?? []).some((item) => item.label === "Request human"));
 assert.ok(!(done.actions ?? []).some((item) => item.href === "/advisor"));
 assert.ok(!(done.actions ?? []).some((item) => /talk to a licensed originator/i.test(item.label)));
@@ -409,32 +496,35 @@ assert.equal(pathSetReply?.capture?.field, "path");
 assert.ok(!(pathSetReply?.followUp ?? "").includes(FOX_DISCLOSURE));
 
 const w2Docs = workspacePromptCopy("documents", afterIncome);
-assert.match(w2Docs.text, /paystubs? or a w-2/i);
-assert.doesNotMatch(w2Docs.text, /tax returns|business docs/i);
+assert.match(w2Docs.text, /government ID/i);
+assert.match(w2Docs.text, /latest paystub/i);
+assert.match(w2Docs.text, /W-2/);
+assert.doesNotMatch(w2Docs.text, /drop what you have|skip is fine|tax return/i);
 assert.ok((w2Docs.actions ?? []).some((item) => item.capture?.field === "skip-docs"));
 assert.ok((w2Docs.actions ?? []).some((item) => /skip/i.test(item.label)));
 const w2Request = docsRequestForIncome("w2");
-assert.deepEqual(w2Request.labels, ["Paystubs", "W-2"]);
+assert.deepEqual(w2Request.labels, ["government ID", "latest paystub", "W-2"]);
 assert.ok(!w2Request.labels.includes("Bank statements"));
-assert.ok(!w2Request.labels.includes("ID"));
 
 const selfDocs = workspacePromptCopy("documents", withIncome(afterCredit, "self-employed"));
-assert.match(selfDocs.text, /tax returns or business docs/i);
-assert.doesNotMatch(selfDocs.text, /paystub|w-2/i);
+assert.match(selfDocs.text, /government ID and tax return/i);
+assert.doesNotMatch(selfDocs.text, /paystub|w-2|drop what you have/i);
 assert.ok((selfDocs.actions ?? []).some((item) => item.capture?.field === "skip-docs"));
 const selfRequest = docsRequestForIncome("self-employed");
-assert.deepEqual(selfRequest.labels, ["Tax returns", "Business docs"]);
+assert.deepEqual(selfRequest.labels, ["government ID", "tax return"]);
 assert.ok(!selfRequest.labels.includes("Paystubs"));
 assert.ok(!selfRequest.labels.includes("W-2"));
 
 const bothRequest = docsRequestForIncome("both");
-assert.ok(bothRequest.labels.includes("Paystubs"));
-assert.ok(bothRequest.labels.includes("Tax returns"));
+assert.ok(bothRequest.labels.includes("latest paystub"));
+assert.ok(bothRequest.labels.includes("tax return"));
+assert.ok(bothRequest.labels.includes("government ID"));
+assert.ok(bothRequest.labels.includes("W-2"));
 
 const otherRequest = docsRequestForIncome("other");
-assert.deepEqual(otherRequest.labels, []);
-assert.match(otherRequest.text, /drop what you have/i);
-assert.doesNotMatch(otherRequest.text, /paystub|w-2|tax return|bank statements/i);
+assert.deepEqual(otherRequest.labels, ["government ID", "tax return"]);
+assert.match(otherRequest.text, /government ID and tax return/i);
+assert.doesNotMatch(otherRequest.text, /drop what you have|latest paystub/i);
 const otherDocs = workspacePromptCopy("documents", withIncome(afterCredit, "other"));
 assert.ok((otherDocs.actions ?? []).some((item) => item.capture?.field === "skip-docs"));
 
@@ -595,8 +685,10 @@ assert.equal(paystubWrite.draft.facts?.employer_name?.source, "extracted-unconfi
 assert.equal(paystubWrite.draft.facts?.employer_name?.confirmed, true);
 assert.equal(paystubWrite.draft.facts?.ssn, undefined);
 assert.equal(workspacePrompt(paystubWrite.draft), "done");
+assert.equal(paystubWrite.draft.productIntent, afterLooks.productIntent);
 assert.ok(previewFacts(paystubWrite.draft).some((fact) => fact.id === "employer" && fact.value === "Harbor Steel"));
 assert.ok(previewFacts(paystubWrite.draft).some((fact) => fact.id === "pay" && /7,200/.test(fact.value)));
+assert.ok(previewFacts(paystubWrite.draft).every((fact) => fact.id !== "product" || fact.value !== "Other"));
 assert.equal(structureFixPrompt("employer"), null);
 assert.equal(structureFixPrompt("pay"), null);
 
@@ -689,7 +781,8 @@ const selfMissing = missingExtractClasses(
 );
 assert.ok(selfMissing.includes("government_id"));
 assert.ok(selfMissing.includes("tax_return"));
-assert.ok(selfMissing.includes("mortgage_statement"));
+assert.ok(!selfMissing.includes("mortgage_statement"));
+assert.ok(!selfMissing.includes("purchase_contract"));
 assert.ok(!selfMissing.includes("paystub"));
 
 const skippedRemaining = skipRemainingClasses(afterPaystubDoc);
@@ -727,9 +820,15 @@ const wrote = applyExtractWrite(
   { extractClass: "paystub", confidence: 0.9, fields: { employer_name: "Harbor Steel", gross_period: "7200" } },
 );
 assert.equal(wrote.draft.facts?.employer_name?.value, "Harbor Steel");
+assert.equal(wrote.draft.productIntent, "buy");
 assert.equal(workspacePrompt(wrote.draft), "done");
 assert.equal(statusCopy(wrote.draft), "Assigned / reviewing");
 assert.equal(wrote.draft.workspaceDraftStatus, "with-originator");
+assert.ok(previewFacts(wrote.draft).some((fact) => fact.id === "employer" && fact.value === "Harbor Steel"));
+assert.ok(previewFacts(wrote.draft).some((fact) => fact.id === "pay" && /7,200/.test(fact.value)));
+assert.ok(previewFacts(wrote.draft).some((fact) => fact.id === "docs" && /Paystubs in/.test(fact.value)));
+assert.ok(previewFacts(wrote.draft).every((fact) => fact.id !== "docs" || !/Other in/.test(fact.value)));
+assert.ok(previewFacts(wrote.draft).every((fact) => fact.id !== "product" || fact.value === "Buy"));
 const failedWrite = applyExtractWrite(
   "2026-08-20T00:00:00.000Z",
   "paystub.pdf",
@@ -769,6 +868,7 @@ assert.equal(failedOther.draft.facts?.employer_name, undefined);
 assert.equal(failedOther.quietLines[0], FAILED_READ_NOTE);
 assert.ok(previewFacts(failedOther.draft).some((fact) => fact.id === "docs" && /Paystubs in/.test(fact.value)));
 assert.ok(previewFacts(failedOther.draft).every((fact) => fact.id !== "docs" || !/Other in/.test(fact.value)));
+assert.equal(failedOther.draft.productIntent, "buy");
 assert.ok(missingExtractClasses(failedOther.draft).includes("paystub"));
 assert.ok(missingExtractClasses(failedOther.draft).includes("government_id"));
 assert.ok(missingExtractClasses(failedOther.draft).includes("w2"));
@@ -802,6 +902,79 @@ const receivedPaystub = draft({
   ],
 });
 assert.ok(!missingExtractClasses(receivedPaystub).includes("paystub"));
+
+resetWorkspaceForEntry("acr", "buy");
+applyCapture({ field: "occupancy", value: "primary" });
+applyCapture({ field: "timeline", value: "ready-now" });
+applyCapture({ field: "propertyValue", value: "1200000" });
+applyCapture({ field: "creditRange", value: "760+" });
+applyCapture({ field: "incomeType", value: "w2" });
+applyCapture({ field: "confirm-draft" });
+receiveDocument({
+  slot: slotFromName("jordan-paystub.pdf"),
+  name: "jordan-paystub.pdf",
+  type: "application/pdf",
+  size: 18000,
+  receivedAt: "2026-08-20T02:00:00.000Z",
+  bytesRef: "fox-intake/jordan-paystub.pdf",
+});
+const leakedOther = applyExtractWrite(
+  "2026-08-20T02:00:00.000Z",
+  "jordan-paystub.pdf",
+  { extractClass: "other", confidence: 0.31, fields: { employer_name: "Should Not Write" } },
+  "Document received",
+  false,
+);
+assert.equal(leakedOther.draft.documents[0]?.slot, "paystubs");
+assert.equal(leakedOther.draft.documents[0]?.extractClass, "paystub");
+assert.equal(leakedOther.draft.facts?.employer_name, undefined);
+assert.equal(leakedOther.draft.productIntent, "buy");
+assert.ok(previewFacts(leakedOther.draft).some((fact) => fact.id === "docs" && /Paystubs in/.test(fact.value)));
+assert.ok(previewFacts(leakedOther.draft).every((fact) => fact.id !== "docs" || !/Other in/.test(fact.value)));
+assert.ok(previewFacts(leakedOther.draft).every((fact) => fact.id !== "product" || fact.value === "Buy"));
+
+receiveDocument({
+  slot: "id",
+  name: "license-id.png",
+  type: "image/png",
+  size: 8000,
+  receivedAt: "2026-08-20T02:10:00.000Z",
+});
+const idOther = applyExtractWrite(
+  "2026-08-20T02:10:00.000Z",
+  "license-id.png",
+  { extractClass: "other", confidence: 0.4, fields: {} },
+  "Document received",
+  false,
+);
+assert.ok(previewFacts(idOther.draft).some((fact) => fact.id === "docs" && /ID in/.test(fact.value)));
+assert.ok(previewFacts(idOther.draft).every((fact) => fact.id !== "docs" || !/Other in/.test(fact.value)));
+
+const otherAmountDraft = draft({
+  path: "acr",
+  productIntent: "other",
+  occupancyAsked: true,
+  occupancyChoice: { ...emptyDraft().occupancyChoice, value: "primary" },
+  timelineAsked: true,
+  timelineChoice: { ...emptyDraft().timelineChoice, value: "ready-now" },
+});
+assert.equal(workspacePrompt(otherAmountDraft), "amount");
+const otherPurpose = workspacePromptCopy("amount", otherAmountDraft);
+assert.equal(otherPurpose.text, "What is that number for?");
+assert.doesNotMatch(otherPurpose.text, /rough amount|What’s a rough amount/i);
+assert.deepEqual(
+  (otherPurpose.actions ?? []).filter((item) => item.capture?.field === "amountPurpose").map((item) => item.label),
+  ["Purchase price", "Loan amount", "HELOC line"],
+);
+const namedOther = workspaceReply("Purchase price", otherAmountDraft);
+assert.equal(namedOther?.capture?.field, "amountPurpose");
+assert.match(namedOther?.text ?? "", /purchase price/i);
+
+const workspaceSrc = readFileSync(join(root, "components/fox/workspace.ts"), "utf8");
+assert.ok(!workspaceSrc.includes("What’s a rough amount?"));
+assert.ok(!workspaceSrc.includes('label: "Amount"'));
+assert.ok(!workspaceSrc.includes('label: "Numbers"'));
+assert.ok(!/Drop what you have\. Skip is fine/.test(workspaceSrc));
 
 const pngBytes = readFileSync(join(root, "scripts/fixtures/paystub-acme.png"));
 const dataUrl = imageDataUrl(pngBytes, "image/png");
