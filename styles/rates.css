@@ -1,0 +1,251 @@
+/* Slice 5 — Rate card + comparison. APR / amount / decision remain OPEN. */
+
+.rate-card-section {
+  padding-block: 72px;
+  background: var(--paper);
+  border-top: 1px solid var(--line);
+}
+
+.rate-card-section__inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  max-width: 720px;
+}
+
+.rate-card-section .type-eyebrow {
+  margin-bottom: 20px;
+}
+
+.rate-card {
+  width: 100%;
+  padding: 28px;
+  background: var(--paper-elevated);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+}
+
+.rate-card__product {
+  margin-bottom: 20px;
+  font-family: var(--font-ui);
+  font-size: 15px;
+  line-height: 20px;
+  font-weight: 500;
+  color: var(--ink-2);
+}
+
+.rate-card__apr {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin: 8px 0 8px;
+}
+
+.rate-card__apr-num {
+  font-family: var(--font-display);
+  font-size: 56px;
+  line-height: 56px;
+  font-weight: 400;
+  color: var(--ink);
+  letter-spacing: var(--tracking-stat);
+  font-variant-numeric: tabular-nums;
+}
+
+.rate-card__apr-unit {
+  font-family: var(--font-ui);
+  font-size: 16px;
+  line-height: 24px;
+  font-weight: 400;
+  color: var(--muted);
+}
+
+.rate-card__specs {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+  margin: 28px 0 0;
+}
+
+.rate-card__specs dt {
+  font-family: var(--font-ui);
+  font-size: 11px;
+  line-height: 16px;
+  font-weight: 500;
+  letter-spacing: var(--tracking-eyebrow);
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.rate-card__specs dd {
+  margin: 6px 0 0;
+  font-family: var(--font-ui);
+  font-size: 15px;
+  line-height: 22px;
+  font-weight: 500;
+  color: var(--ink);
+}
+
+.rate-card__cta {
+  width: 100%;
+  margin-top: 28px;
+}
+
+.rate-card .type-legal {
+  margin-top: 10px;
+}
+
+.rate-card-section__offramp {
+  margin-top: 20px;
+  font-family: var(--font-ui);
+  font-size: 16px;
+  line-height: 26px;
+  font-weight: 400;
+  color: var(--ink-2);
+  text-align: center;
+}
+
+.rate-card-section__asof {
+  margin-top: 8px;
+  text-align: center;
+}
+
+.comparison {
+  padding-block: 72px;
+  background: var(--paper);
+}
+
+.comparison__intro {
+  max-width: var(--prose-max);
+  margin-inline: auto 0;
+  margin-bottom: 40px;
+}
+
+.comparison__intro .type-h2 {
+  margin-top: 16px;
+}
+
+.comparison__intro .type-body {
+  margin-top: 16px;
+}
+
+.comparison-table-wrap {
+  display: none;
+}
+
+.comparison-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.comparison-table th,
+.comparison-table td {
+  padding: 18px 20px;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  vertical-align: middle;
+  font-family: var(--font-ui);
+  font-size: 15px;
+  line-height: 22px;
+  font-weight: 400;
+  color: var(--ink-2);
+}
+
+.comparison-table thead th {
+  background: var(--paper-elevated);
+  font-size: 13px;
+  line-height: 18px;
+  font-weight: 500;
+  color: var(--ink);
+}
+
+.comparison-table tbody th {
+  font-weight: 500;
+  color: var(--ink);
+}
+
+.comparison-table .is-onyx,
+.comparison-card .is-onyx {
+  background: color-mix(in srgb, var(--metal) 8%, var(--paper-elevated));
+  color: var(--ink);
+  font-weight: 500;
+}
+
+.comparison-table thead th.is-onyx {
+  box-shadow: inset 0 -6px 0 var(--metal);
+}
+
+.comparison-cards {
+  display: grid;
+  gap: 16px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.comparison-card {
+  padding: 22px 20px;
+  background: var(--paper-elevated);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: none;
+}
+
+.comparison-card dl {
+  display: grid;
+  gap: 14px;
+  margin: 16px 0 0;
+}
+
+.comparison-card dt {
+  font-family: var(--font-ui);
+  font-size: 11px;
+  line-height: 16px;
+  font-weight: 500;
+  letter-spacing: var(--tracking-eyebrow);
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.comparison-card dt.is-onyx {
+  color: var(--ink);
+  box-shadow: inset 0 -6px 0 var(--metal);
+  width: fit-content;
+  padding-bottom: 4px;
+}
+
+.comparison-card dd {
+  margin: 6px 0 0;
+  font-family: var(--font-ui);
+  font-size: 15px;
+  line-height: 22px;
+  color: var(--ink-2);
+}
+
+@media (min-width: 768px) {
+  .rate-card-section,
+  .comparison {
+    padding-block: 120px;
+  }
+
+  .rate-card {
+    padding: 40px;
+  }
+
+  .rate-card__apr-num {
+    font-size: 72px;
+    line-height: 72px;
+  }
+
+  .rate-card__cta {
+    width: auto;
+  }
+
+  .comparison-table-wrap {
+    display: block;
+    overflow-x: auto;
+  }
+
+  .comparison-cards {
+    display: none;
+  }
+}

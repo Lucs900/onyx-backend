@@ -1,0 +1,243 @@
+/* Locked 15 Aug 2026. Do not invent a second palette. */
+
+:root {
+  --paper: #F6EFE4;
+  --paper-elevated: #FFFCF6;
+  --ink: #0B0B0C;
+  --ink-2: #3D3833;
+  --muted: #6B6560;
+  --line: #E6E1D8;
+  --metal: #C4A574;
+  --fox: #8B3A2A;
+  /* Ask ONYX Fox bar mark fill only. Not wordmark, label, Send, bar ring, or ACR gold. */
+  --sunset: #E08A4F;
+  --ok: #2F5D50;
+  --danger: #8F2D2D;
+
+  --ink-hover: #1c1a18;
+  --secondary-hover: rgba(11, 11, 12, 0.04);
+
+  --font-display: var(--font-newsreader), "Iowan Old Style", Georgia, serif;
+  --font-ui: var(--font-geist-sans), Inter, system-ui, sans-serif;
+
+  --tracking-serif: -0.02em;
+  --tracking-stat: -0.03em;
+  --tracking-eyebrow: 0.12em;
+  --tracking-wordmark: 0.08em;
+  --tracking-button: 0.01em;
+
+  --page-pad: 24px;
+  --nav-height: 64px;
+  --section-pad: 72px;
+  --content-max: 1120px;
+  --prose-max: 680px;
+  --radius-card: 12px;
+  --radius-pill: 999px;
+  --focus-width: 2px;
+  --focus-offset: 2px;
+  --duration: 200ms;
+  --header-blur: 12px;
+}
+
+@media (min-width: 768px) {
+  :root {
+    --page-pad: 48px;
+    --nav-height: 72px;
+    --section-pad: 120px;
+  }
+}
+
+/* Type ramp */
+
+.type-eyebrow {
+  font-family: var(--font-ui);
+  font-size: 11px;
+  line-height: 16px;
+  font-weight: 500;
+  color: var(--muted);
+  letter-spacing: var(--tracking-eyebrow);
+  text-transform: uppercase;
+}
+
+.type-display {
+  font-family: var(--font-display);
+  font-size: 38px;
+  line-height: 44px;
+  font-weight: 400;
+  color: var(--ink);
+  letter-spacing: var(--tracking-serif);
+}
+
+.type-h2 {
+  font-family: var(--font-display);
+  font-size: 28px;
+  line-height: 34px;
+  font-weight: 400;
+  color: var(--ink);
+  letter-spacing: var(--tracking-serif);
+}
+
+.type-card-title {
+  font-family: var(--font-ui);
+  font-size: 17px;
+  line-height: 24px;
+  font-weight: 500;
+  color: var(--ink);
+}
+
+.type-body {
+  font-family: var(--font-ui);
+  font-size: 16px;
+  line-height: 26px;
+  font-weight: 400;
+  color: var(--ink-2);
+}
+
+.type-legal {
+  font-family: var(--font-ui);
+  font-size: 12px;
+  line-height: 18px;
+  font-weight: 400;
+  color: var(--muted);
+}
+
+.type-stat {
+  font-family: var(--font-display);
+  font-size: 40px;
+  line-height: 40px;
+  font-weight: 400;
+  color: var(--ink);
+  letter-spacing: var(--tracking-stat);
+  font-variant-numeric: tabular-nums;
+}
+
+.type-button {
+  font-family: var(--font-ui);
+  font-size: 15px;
+  line-height: 20px;
+  font-weight: 500;
+  letter-spacing: var(--tracking-button);
+}
+
+@media (min-width: 768px) {
+  .type-eyebrow {
+    font-size: 12px;
+    line-height: 16px;
+  }
+
+  .type-display {
+    font-size: 64px;
+    line-height: 72px;
+  }
+
+  .type-h2 {
+    font-size: 40px;
+    line-height: 48px;
+  }
+
+  .type-card-title {
+    font-size: 18px;
+    line-height: 26px;
+  }
+
+  .type-stat {
+    font-size: 56px;
+    line-height: 56px;
+  }
+}
+
+/* Buttons — pills. Page height 52 mobile / 48 desktop. */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  height: 52px;
+  padding: 0 24px;
+  border-radius: var(--radius-pill);
+  border: 1px solid transparent;
+  font-family: var(--font-ui);
+  font-size: 15px;
+  line-height: 20px;
+  font-weight: 500;
+  letter-spacing: var(--tracking-button);
+  text-decoration: none;
+  cursor: pointer;
+  transition: background-color var(--duration) ease, color var(--duration) ease,
+    border-color var(--duration) ease;
+}
+
+.btn--block {
+  display: flex;
+  width: 100%;
+}
+
+.btn--primary {
+  background: var(--ink);
+  color: var(--paper-elevated);
+}
+
+.btn--primary:hover {
+  background: var(--ink-hover);
+}
+
+.btn--secondary {
+  background: transparent;
+  border-color: var(--ink);
+  color: var(--ink);
+}
+
+.btn--secondary:hover {
+  background: var(--secondary-hover);
+}
+
+.btn--text {
+  height: auto;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--ink-2);
+  font-size: 15px;
+  line-height: 20px;
+  font-weight: 500;
+}
+
+.btn--text:hover {
+  color: var(--ink);
+}
+
+.btn--nav {
+  height: 40px;
+  font-size: 14px;
+  line-height: 20px;
+}
+
+@media (min-width: 768px) {
+  .btn:not(.btn--nav):not(.btn--text):not(.btn--hero-primary):not(.btn--hero-secondary) {
+    height: 48px;
+  }
+}
+
+/* Focus ring: 2px ink, 2px offset */
+
+:focus {
+  outline: none;
+}
+
+:focus-visible {
+  outline: var(--focus-width) solid var(--ink);
+  outline-offset: var(--focus-offset);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

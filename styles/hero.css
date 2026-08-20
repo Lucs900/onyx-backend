@@ -1,0 +1,187 @@
+/* Homepage hero. Desktop is a clean marketing frame. Mobile is Fox-first. */
+
+.membership-hero {
+  background: var(--paper);
+}
+
+.membership-hero__rule {
+  width: 24px;
+  height: 2px;
+  margin-bottom: 12px;
+  background: var(--metal);
+}
+
+.membership-hero__title {
+  margin-top: 20px;
+  font-style: normal;
+}
+
+.membership-hero__support {
+  max-width: 440px;
+  margin-top: 24px;
+  font-family: var(--font-ui);
+  font-size: 18px;
+  line-height: 28px;
+  font-weight: 400;
+  color: var(--ink-2);
+}
+
+.membership-hero__actions {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.btn.btn--hero-primary,
+.btn.btn--hero-secondary {
+  width: 100%;
+}
+
+.btn.btn--hero-primary {
+  height: 56px;
+}
+
+.btn.btn--hero-secondary {
+  height: 52px;
+}
+
+/* Mobile: tighter claim + smaller ACR on one row, Fox full width below. */
+
+@media (max-width: 1023px) {
+  .membership-hero__inner {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    column-gap: 12px;
+    row-gap: 12px;
+    align-items: start;
+    padding-top: 20px;
+    padding-bottom: 8px;
+  }
+
+  .membership-hero__type {
+    display: contents;
+  }
+
+  .membership-hero__intro {
+    grid-column: 1;
+    grid-row: 1;
+    min-width: 0;
+  }
+
+  .membership-hero__actions {
+    display: none;
+  }
+
+  .membership-hero__pass {
+    grid-column: 2;
+    grid-row: 1;
+    display: flex;
+    align-items: flex-start;
+    justify-content: flex-end;
+    margin: 0;
+    padding-top: 22px;
+  }
+
+  .membership-hero .membership-hero__fox-wrap {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    width: 100%;
+    min-height: 0;
+    margin-top: 0;
+  }
+
+  .membership-hero__rule {
+    margin-bottom: 6px;
+  }
+
+  .membership-hero__title {
+    margin-top: 6px;
+    font-size: 26px;
+    line-height: 30px;
+  }
+
+  .membership-hero__support {
+    margin-top: 8px;
+    font-size: 14px;
+    line-height: 20px;
+  }
+
+  .membership-hero .acr-pass-stage {
+    width: min(160px, 42vw);
+    max-width: 160px;
+  }
+}
+
+/* Desktop: claim + pills | large ACR. Fox start below. No legal line. */
+
+@media (min-width: 1024px) {
+  .membership-hero__inner {
+    display: grid;
+    grid-template-columns: 1.1fr 0.9fr;
+    column-gap: 80px;
+    align-items: center;
+    min-height: 0;
+    padding-block: 56px 40px;
+  }
+
+  .membership-hero__type {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .membership-hero__pass {
+    display: flex;
+    justify-content: flex-end;
+    margin: 0;
+  }
+
+  .membership-hero__fox-wrap,
+  .membership-hero .membership-hero__fox-wrap {
+    display: block;
+    grid-column: 1 / -1;
+    width: 100%;
+    max-width: 720px;
+    margin-top: 8px;
+  }
+
+  .membership-hero__actions {
+    flex-direction: row;
+    align-items: center;
+    margin-top: 32px;
+  }
+
+  .btn.btn--hero-primary,
+  .btn.btn--hero-secondary {
+    width: auto;
+  }
+
+  .btn.btn--hero-secondary {
+    height: 48px;
+  }
+
+  .membership-hero .acr-pass-stage {
+    width: 100%;
+    max-width: 480px;
+  }
+}
+
+/* Locked pictorial ACR card. Exact bitmap. No overlays, filters, or sheen. */
+
+.acr-pass-stage {
+  width: 100%;
+  max-width: 400px;
+}
+
+.acr-pass__face {
+  width: 100%;
+  height: auto;
+  border-radius: 16px;
+  box-shadow: 0 8px 24px rgba(11, 11, 12, 0.08);
+  transform: none;
+}
+
+@media (min-width: 1024px) {
+  .acr-pass-stage {
+    max-width: 480px;
+  }
+}
