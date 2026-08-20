@@ -13,7 +13,7 @@ export function AcrHero() {
             <h1 className="type-display acr-hero__title">The desk that stays open</h1>
             <p className="acr-hero__support">
               ACR is an ongoing relationship. After close, the desk stays with
-              you — watching credit, rate, and the next right move.
+              you.
             </p>
           </div>
 

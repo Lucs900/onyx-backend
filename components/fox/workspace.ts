@@ -34,6 +34,11 @@ export const START_ACR_TEXT =
   "I can prepare your relationship file. We’ll keep this desk open after close.";
 export const START_LOAN_TEXT =
   "This is the loan. ACR is optional if you want the desk later.";
+export const PATH_ASK_TEXT = "Start a relationship, or just the loan?";
+
+export function isPathAskMessage(message: Pick<FoxMessage, "role" | "text">) {
+  return message.role === "fox" && message.text === PATH_ASK_TEXT;
+}
 
 export function starterText(path?: IntakePath | null) {
   if (path === "loan-only") return START_LOAN_TEXT;
@@ -327,7 +332,7 @@ export function workspacePromptCopy(
 } {
   if (prompt === "intent") {
     return {
-      text: "Start a relationship, or just the loan?",
+      text: PATH_ASK_TEXT,
       actions: [
         { id: "start", label: "Start your relationship", event: "bubble", capture: { field: "path", value: "acr" } },
         { id: "loan", label: "Just need a mortgage", event: "bubble", capture: { field: "path", value: "loan-only" } },

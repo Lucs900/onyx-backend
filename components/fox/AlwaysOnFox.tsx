@@ -36,7 +36,6 @@ import {
   applyCapture,
   continueWorkspaceFromEntry,
   emptyDraft,
-  ensureWorkspaceDraft,
   getFoxDraft,
   getFoxMessages,
   getServerDraft,
@@ -77,6 +76,9 @@ function seedWorkspaceMessages(
   intent?: ProductIntent | null,
   surface: "home" | "start" = "start",
 ): FoxMessage[] {
+  if (surface === "home") {
+    return [];
+  }
   if (typeof window === "undefined") {
     return [
       foxAskMessage(
@@ -93,15 +95,14 @@ function seedWorkspaceMessages(
   const stored = getFoxMessages();
   const live = getFoxDraft();
   if (workspaceSessionStarted(live, stored) && stored.length) {
+    const last = stored[stored.length - 1];
+    if (last?.role === "client") {
+      const ask = foxAskMessage(workspacePromptCopy(workspacePrompt(live), live));
+      const next = [...stored, ask];
+      setFoxMessages(next);
+      return next;
+    }
     return stored;
-  }
-  if (surface === "home") {
-    const draft = ensureWorkspaceDraft();
-    const existing = getFoxMessages();
-    if (existing.length) return existing;
-    const greet = [foxAskMessage(workspaceGreeting(draft))];
-    setFoxMessages(greet);
-    return greet;
   }
   const draft = continueWorkspaceFromEntry(path ?? null, intent ?? null);
   const greet = [foxAskMessage(workspaceGreeting(draft))];
@@ -116,6 +117,33 @@ function deskHrefFromSession(
   if (!path) return intent ? `/start?intent=${intent}` : "/start";
   const token = path === "loan-only" ? "loan" : "acr";
   return intent ? `/start?path=${token}&intent=${intent}` : `/start?path=${token}`;
+}
+
+function persistHomeComposerTurn(text: string) {
+  const path = pathFromHomeChoice(text);
+  if (path) {
+    writeStartPath(path);
+    setDraftPath(path);
+  }
+  const live = getFoxDraft();
+  const scenario = live.scenario ?? readScenario();
+  const reply = replyToMessage(text, "start", live, scenario);
+  if (reply.capture?.field === "path") {
+    writeStartPath(reply.capture.value);
+  }
+  if (reply.capture) applyCapture(reply.capture);
+  const stored = getFoxMessages();
+  setFoxMessages([
+    ...stored,
+    {
+      id: newId(),
+      role: "client",
+      text: clientMoneyText(text, reply.capture),
+      edit: editPromptFromCapture(reply.capture),
+    },
+  ]);
+  const after = getFoxDraft();
+  return deskHrefFromSession(after.path ?? null, after.productIntent ?? null);
 }
 
 function startSearchFromProps(
@@ -482,6 +510,10 @@ export function AlwaysOnFox({
       const text = String((event as CustomEvent<{ text?: string }>).detail?.text ?? "").trim();
       setOpen(true);
       if (!text) return;
+      if (isHome || stage === "home") {
+        router.push(persistHomeComposerTurn(text));
+        return;
+      }
       if (!ready || greeted.current !== `${pathname}${search}`) {
         pendingAsk.current = text;
         return;
@@ -490,13 +522,6 @@ export function AlwaysOnFox({
       const scenario = live.scenario ?? readScenario();
       if (!stage) return;
       const reply = replyToMessage(text, stage, live, scenario);
-      if (stage === "home") {
-        const path = pathFromHomeChoice(text);
-        if (path) {
-          writeStartPath(path);
-          setDraftPath(path);
-        }
-      }
       if (reply.capture?.field === "path") {
         writeStartPath(reply.capture.value);
       }
@@ -511,10 +536,6 @@ export function AlwaysOnFox({
         },
         foxAskMessage(reply),
       ]);
-      if (stage === "home") {
-        const after = getFoxDraft();
-        router.push(deskHrefFromSession(after.path ?? null, after.productIntent ?? null));
-      }
     };
     const onFix = (event: Event) => {
       const field = String((event as CustomEvent<{ field?: string }>).detail?.field ?? "").trim();
@@ -548,7 +569,7 @@ export function AlwaysOnFox({
       window.removeEventListener("onyx:fox-fix", onFix);
       window.removeEventListener("onyx:fox-explain", onExplain);
     };
-  }, [isStart, pathname, ready, search, stage, workspaceSurface]);
+  }, [isHome, isStart, pathname, ready, search, stage, workspaceSurface]);
 
   useEffect(() => {
     if (!ready || !stage) return;
@@ -557,6 +578,11 @@ export function AlwaysOnFox({
 
   useLayoutEffect(() => {
     if (!ready || !stage) return;
+    if (isHome) {
+      greeted.current = greetKey;
+      skipPromptSync.current = true;
+      return;
+    }
     if (workspaceSurface && startSeeded.current && messages.length > 0) {
       greeted.current = greetKey;
       skipPromptSync.current = true;
@@ -593,7 +619,7 @@ export function AlwaysOnFox({
     }
     skipPromptSync.current = true;
     commitMessages(lines);
-  }, [greetKey, isStart, pathname, ready, stage, workspaceSurface]);
+  }, [greetKey, isHome, isStart, pathname, ready, stage, workspaceSurface]);
 
   useEffect(() => {
     if (!ready || (stage !== "intake" && !isStart)) return;
@@ -764,18 +790,17 @@ export function AlwaysOnFox({
   const onSubmit = (event: FormEvent) => {
     event.preventDefault();
     const text = input.trim();
+    if (isHome) {
+      if (!text) return;
+      setInput("");
+      router.push(persistHomeComposerTurn(text));
+      return;
+    }
     const replyStage = stage ?? (isStart ? "start" : null);
     if (!text || !replyStage) return;
     setOpen(true);
     setInput("");
     const reply = replyToMessage(text, replyStage, draft, scenario);
-    if (isHome) {
-      const path = pathFromHomeChoice(text);
-      if (path) {
-        writeStartPath(path);
-        setDraftPath(path);
-      }
-    }
     if (reply.capture?.field === "path") {
       writeStartPath(reply.capture.value);
     }
@@ -884,7 +909,7 @@ export function AlwaysOnFox({
     </form>
   );
 
-  const workspace = open || isStart ? (
+  const workspace = isHome || !(open || isStart) ? null : (
     <FoxWorkspace
       className={
         isStart
@@ -920,10 +945,7 @@ export function AlwaysOnFox({
 
   let stageNode: ReactNode = null;
   if (useHomeStage && homeStage) {
-    stageNode = createPortal(
-      open ? workspace : <span className="visually-hidden" data-fox-collapsed="true" />,
-      homeStage,
-    );
+    stageNode = createPortal(desk, homeStage);
   }
 
   return (
@@ -931,7 +953,7 @@ export function AlwaysOnFox({
       {stageNode}
       {hideDock ? null : (
         <div className={open ? "fox-bar is-open" : "fox-bar"}>
-          {!useHomeStage && workspace}
+          {!useHomeStage && !isHome && workspace}
           {desk}
         </div>
       )}

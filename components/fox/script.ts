@@ -14,6 +14,7 @@ import {
   type ExplorerScenario,
 } from "@/components/products/scenario";
 import { ACR_START_HREF, LOAN_START_HREF, pathFromQuery } from "@/components/products/startPath";
+import { HOME_IDLE_TEXT } from "./homeIdle";
 import { workspaceGreeting, workspacePrompt, workspacePromptCopy, workspaceReply } from "./workspace";
 import { questionsComplete } from "./store";
 import {
@@ -154,7 +155,11 @@ export function greeting(
 } {
   const known = scenarioSummary(scenario);
 
-  if (stage === "home" || stage === "start") {
+  if (stage === "home") {
+    return { text: HOME_IDLE_TEXT };
+  }
+
+  if (stage === "start") {
     return workspaceGreeting(draft);
   }
 

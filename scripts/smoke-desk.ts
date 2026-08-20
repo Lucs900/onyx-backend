@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { greeting, promptCopy } from "../components/fox/script";
 import {
   applyCapture,
@@ -21,6 +24,7 @@ import {
   fileSummaryFacts,
   migrateRestoredFoxMessages,
   parseWorkspaceEdit,
+  PATH_ASK_TEXT,
   previewFacts,
   REWARD_PREPARED_COPY,
   productIntentFromQuery,
@@ -67,16 +71,20 @@ assert.deepEqual(
   ["Start your relationship", "Just need a mortgage"],
 );
 assert.ok(!HOME_IDLE_TEXT.toLowerCase().includes("equity"));
+assert.equal(HOME_IDLE_TEXT, "Ask ONYX Fox");
 
 const homeStart = workspaceGreeting(draft());
-assert.equal(homeStart.text, workspacePromptCopy("intent", draft()).text);
+assert.equal(homeStart.text, PATH_ASK_TEXT);
 assert.deepEqual(
   (homeStart.actions ?? []).map((item) => item.label),
   ["Start your relationship", "Just need a mortgage"],
 );
 assert.ok(!/opening your file/i.test(homeStart.text));
-assert.equal(greeting("home", null, draft()).text, homeStart.text);
-assert.equal(greeting("start", null, draft()).text, homeStart.text);
+const homeGreet = greeting("home", null, draft());
+assert.equal(homeGreet.text, HOME_IDLE_TEXT);
+assert.deepEqual(homeGreet.actions ?? [], []);
+assert.ok(!/start a relationship, or just the loan/i.test(homeGreet.text));
+assert.equal(greeting("start", null, draft()).text, PATH_ASK_TEXT);
 
 const typedBuy = workspaceReply("I want to buy", draft());
 assert.equal(typedBuy?.capture?.field, "productIntent");
@@ -546,5 +554,38 @@ assert.equal(getFoxDraft().path, "loan-only");
 assert.equal(getFoxDraft().productIntent, undefined);
 assert.equal(getFoxMessages().length, 0);
 assert.equal(workspacePrompt(getFoxDraft()), "product");
+
+const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+const homepageFiles = [
+  "app/(marketing)/page.tsx",
+  "components/MembershipHero.tsx",
+  "components/AcrBlock.tsx",
+  "components/Closer.tsx",
+  "components/fox/FoxShell.tsx",
+].map((file) => readFileSync(join(root, file), "utf8"));
+const homepageSource = homepageFiles.join("\n");
+assert.ok(!homepageSource.includes(PATH_ASK_TEXT));
+assert.ok(!/Does this look right\?/.test(homepageSource));
+assert.ok(!/Here’s a sample structure/.test(homepageSource));
+assert.ok(!homepageSource.includes("HowItWorks"));
+assert.ok(!homepageSource.includes("ComparisonTable"));
+assert.ok(!homepageSource.includes("ProofStats"));
+assert.ok(!homepageSource.includes("RateCard"));
+assert.ok(!/talk to a licensed originator/i.test(homepageSource));
+assert.ok(!/next step/i.test(homepageSource));
+assert.ok(readFileSync(join(root, "components/MembershipHero.tsx"), "utf8").includes("HOME_IDLE_TEXT"));
+
+const acrHero = readFileSync(join(root, "components/acr/AcrHero.tsx"), "utf8");
+assert.ok(!/next right move/.test(acrHero));
+const unlock = readFileSync(join(root, "components/acr/UnlockPath.tsx"), "utf8");
+assert.ok(!/Unlock on the desk/.test(unlock));
+assert.ok(unlock.includes("When the timing is wrong, Fox waits."));
+const reward = readFileSync(join(root, "components/acr/RewardFolio.tsx"), "utf8");
+assert.ok(!/Explore a scenario to see an estimated reward range/.test(reward));
+const scout = readFileSync(join(root, "components/acr/DeskPreview.tsx"), "utf8");
+assert.ok(scout.includes("PUBLIC_SCOUT_WAIT"));
+assert.ok(!scout.includes("Equity available"));
+const scoutCopy = readFileSync(join(root, "components/acr/acrHome.ts"), "utf8");
+assert.ok(scoutCopy.includes("When the timing is wrong, Fox waits."));
 
 console.log("desk smoke ok");
