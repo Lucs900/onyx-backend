@@ -1,5 +1,25 @@
 /* Slice 4 — Membership math / three desks. $X+ remains OPEN. */
 
+.acr-block {
+  padding-block: 72px;
+  background: var(--paper);
+  border-top: 1px solid var(--line);
+}
+
+.acr-block__copy {
+  max-width: var(--prose-max);
+}
+
+.acr-block__copy .type-body {
+  margin-top: 16px;
+}
+
+@media (min-width: 768px) {
+  .acr-block {
+    padding-block: 120px;
+  }
+}
+
 .value-breakdown {
   padding-block: 72px;
   background: var(--paper);
