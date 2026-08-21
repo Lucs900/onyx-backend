@@ -44,6 +44,7 @@ import {
   missingExtractClasses,
   missingListCopy,
   slotFromFilename,
+  stillUsefulAskCopy,
 } from "./fileWrite";
 import {
   SUGGESTED_NOTE,
@@ -639,13 +640,13 @@ function incomeFromText(text: string) {
 }
 
 function documentsAskText(draft: FoxIntakeDraft): string {
-  const missing = missingExtractClasses(draft);
-  if (missing.length) return missingListCopy(missing);
+  const useful = stillUsefulAskCopy(draft);
+  if (useful) return useful;
   return docsRequestForIncome(draft.incomeType.value).text;
 }
 
 export function documentsMissingAsk(draft: FoxIntakeDraft) {
-  return missingListCopy(missingExtractClasses(draft));
+  return stillUsefulAskCopy(draft);
 }
 
 function docsSettled(draft: FoxIntakeDraft) {

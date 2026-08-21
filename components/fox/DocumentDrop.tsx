@@ -14,24 +14,25 @@ import {
 import type { ExtractClass, FoxIntakeDraft } from "./types";
 import { slotFromFilename } from "./workspace";
 import {
-  askClassLabel,
   emitDocIntake,
-  missingAskKey,
   missingExtractClasses,
   rejectIncomingFile,
+  stillUsefulAskKey,
+  stillUsefulLabels,
 } from "./fileWrite";
+import { fileExists } from "./motion";
 
 export { slotFromFilename };
 
 function emitFailedRead() {
   const after = getFoxDraft();
-  const missing = missingExtractClasses(after);
-  const key = missingAskKey(missing);
-  const askMissing = missing.length > 0 && after.missingAskKey !== key;
+  const key = stillUsefulAskKey(after);
+  const askMissing = Boolean(key) && after.missingAskKey !== key;
   if (askMissing) markMissingAsked(key);
   emitDocIntake({
     quietLines: [FAILED_READ_NOTE],
-    missing: askMissing ? missing : [],
+    missing: askMissing && !fileExists(after) ? missingExtractClasses(after) : [],
+    refreshStillUseful: askMissing && fileExists(after),
   });
 }
 
@@ -51,8 +52,7 @@ export function DocumentDrop({
   compact?: boolean;
 }) {
   const live = draft ?? getFoxDraft();
-  const missing = missingExtractClasses(live);
-  const hint = missing.map(askClassLabel).join(" · ");
+  const hint = stillUsefulLabels(live).join(" · ");
   const [reject, setReject] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -142,14 +142,10 @@ export function DocumentDrop({
           Boolean(data.failed),
         );
         const after = applied.draft;
-        const missing = missingExtractClasses(after);
-        const key = missingAskKey(missing);
-        const askMissing =
-          !applied.conflict &&
-          !after.pendingProposal &&
-          missing.length > 0 &&
-          after.missingAskKey !== key;
-        if (askMissing) markMissingAsked(key);
+        const key = stillUsefulAskKey(after);
+        const askStillUseful =
+          !applied.conflict && Boolean(key) && after.missingAskKey !== key;
+        if (askStillUseful) markMissingAsked(key);
         emitDocIntake({
           quietLines: applied.quietLines.length
             ? applied.quietLines
@@ -157,7 +153,12 @@ export function DocumentDrop({
               ? [FAILED_READ_NOTE]
               : [],
           conflict: applied.conflict,
-          missing: askMissing ? missing : [],
+          missing:
+            askStillUseful && !after.pendingProposal && !fileExists(after)
+              ? missingExtractClasses(after)
+              : [],
+          refreshStillUseful:
+            askStillUseful && (fileExists(after) || Boolean(after.pendingProposal)),
         });
       } catch {
         patchReceivedDoc(

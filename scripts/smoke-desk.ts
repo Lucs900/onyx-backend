@@ -56,7 +56,10 @@ import {
   fileStillUsefulNote,
   missingAskCopy,
   missingExtractClasses,
+  receivedClassOf,
+  stillUsefulAskCopy,
   stillUsefulLabels,
+  taxReturnFilename,
   resolveFactConflict,
   sanitizeExtractedFields,
   skipRemainingClasses,
@@ -1340,6 +1343,114 @@ assert.ok(
   ),
 );
 assert.ok(stillUsefulLabels(seReturn.draft).includes("prior-year return"));
+assert.equal(slotFromName("return-2024.png"), "other");
+assert.ok(taxReturnFilename("return-2024.png"));
+assert.ok(taxReturnFilename("return-2025.pdf"));
+assert.ok(!taxReturnFilename("license.png"));
+assert.equal(
+  receivedClassOf({
+    slot: "other",
+    name: "return-2024.png",
+    type: "image/png",
+    size: 8000,
+    receivedAt: "2026-08-20T00:00:00.000Z",
+    status: "extracted",
+  }),
+  "tax_return",
+);
+assert.equal(extractClassFromFilename("return-2024.png"), null);
+
+const sePendingReturn = draft({
+  ...afterLooks,
+  incomeType: { ...emptyDraft().incomeType, value: "self-employed" },
+  documents: [
+    {
+      slot: "other",
+      name: "return-2024.png",
+      type: "image/png",
+      size: 8000,
+      receivedAt: "2026-08-20T00:00:00.000Z",
+      status: "reading",
+    },
+  ],
+});
+assert.ok(missingExtractClasses(sePendingReturn).includes("tax_return"));
+assert.ok(!stillUsefulLabels(sePendingReturn).includes("prior-year return"));
+
+const seWalk = applyExtractedFields(sePendingReturn, {
+  extractClass: "tax_return",
+  confidence: 0.93,
+  fields: {
+    tax_year: "2024",
+    filing_status: "single",
+    agi: "110000",
+    return_kind: "schedule_c",
+    schedule_c_net_profit: "96000",
+    depreciation: "12000",
+    depletion: "",
+    business_use_of_home: "0",
+    nonrecurring_other_income: "",
+  },
+});
+assert.equal(seWalk.draft.documents[0]?.extractClass, "tax_return");
+assert.equal(seWalk.draft.pendingProposal?.value, "9000");
+assert.ok(!missingExtractClasses(seWalk.draft).includes("tax_return"));
+assert.ok(missingExtractClasses(seWalk.draft).includes("government_id"));
+assert.ok(stillUsefulLabels(seWalk.draft).includes("prior-year return"));
+assert.ok(stillUsefulLabels(seWalk.draft).includes("government ID"));
+assert.ok(!stillUsefulLabels(seWalk.draft).includes("tax return"));
+assert.match(stillUsefulAskCopy(seWalk.draft), /government ID and prior-year return/i);
+assert.doesNotMatch(stillUsefulAskCopy(seWalk.draft), /government ID and tax return/i);
+assert.match(gatheringCopy(seWalk.draft), /government ID and prior-year return/i);
+assert.match(gatheringCopy(seWalk.draft), /skip is fine/i);
+assert.doesNotMatch(gatheringCopy(seWalk.draft), /government ID and tax return/i);
+assert.match(fileStillUsefulNote(seWalk.draft) ?? "", /still useful: ID · prior-year return/i);
+assert.doesNotMatch(fileStillUsefulNote(seWalk.draft) ?? "", /tax return/i);
+assert.match(workspacePromptCopy("documents", seWalk.draft).text, /government ID and prior-year return/i);
+assert.doesNotMatch(workspacePromptCopy("documents", seWalk.draft).text, /government ID and tax return/i);
+assert.equal(fileCompleteness(seWalk.draft)?.state, "sketch");
+assert.ok(!/agency_partial|agency_ready/.test(fileCompleteness(seWalk.draft)?.copy ?? ""));
+assert.doesNotMatch(
+  `${gatheringCopy(seWalk.draft)} ${stillUsefulAskCopy(seWalk.draft)} ${fileStillUsefulNote(seWalk.draft) ?? ""}`,
+  /1084|\bDU\b|approved|eligible|you qualify|agency_ready/i,
+);
+
+resetWorkspaceForEntry("acr", "buy");
+applyCapture({ field: "occupancy", value: "primary" });
+applyCapture({ field: "timeline", value: "ready-now" });
+capturePurchaseFunds("1200000", "960000");
+applyCapture({ field: "creditRange", value: "760+" });
+applyCapture({ field: "incomeType", value: "self-employed" });
+applyCapture({ field: "confirm-draft" });
+receiveDocument({
+  slot: slotFromName("return-2024.png"),
+  name: "return-2024.png",
+  type: "image/png",
+  size: 8000,
+  receivedAt: "2026-08-20T03:00:00.000Z",
+  bytesRef: "fox-intake/return-2024.png",
+});
+const seWalkWrite = applyExtractWrite("2026-08-20T03:00:00.000Z", "return-2024.png", {
+  extractClass: "tax_return",
+  confidence: 0.93,
+  fields: {
+    tax_year: "2024",
+    return_kind: "schedule_c",
+    schedule_c_net_profit: "96000",
+    depreciation: "12000",
+  },
+});
+assert.equal(seWalkWrite.draft.documents[0]?.extractClass, "tax_return");
+assert.equal(seWalkWrite.draft.documents[0]?.slot, "other");
+assert.equal(seWalkWrite.draft.pendingProposal?.value, "9000");
+assert.ok(!missingExtractClasses(seWalkWrite.draft).includes("tax_return"));
+assert.ok(stillUsefulLabels(seWalkWrite.draft).includes("prior-year return"));
+assert.ok(!stillUsefulLabels(seWalkWrite.draft).includes("tax return"));
+assert.match(gatheringCopy(seWalkWrite.draft), /prior-year return/i);
+assert.doesNotMatch(gatheringCopy(seWalkWrite.draft), /government ID and tax return/i);
+assert.match(fileStillUsefulNote(seWalkWrite.draft) ?? "", /prior-year return/i);
+assert.equal(fileCompleteness(seWalkWrite.draft)?.state, "sketch");
+
 const seAccepted = resolveProposal(seReturn.draft, "accept");
 assert.equal(seAccepted.facts?.qualifying_income?.value, "9000");
 assert.equal(seAccepted.facts?.qualifying_income?.source, "suggested");

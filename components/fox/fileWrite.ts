@@ -122,6 +122,22 @@ export function extractClassFromFilename(name: string): ExtractClass | null {
   return extractClassFromSlot(slotFromFilename(name));
 }
 
+/** return-2024.png / tax / 1099 / K-1 / Schedule C. Does not need "schedule-c" in the name. */
+const TAX_RETURN_FILENAME = /\breturn\b|tax|1099|k-?1|schedule.?c/;
+
+export function taxReturnFilename(name: string) {
+  return TAX_RETURN_FILENAME.test(name.toLowerCase());
+}
+
+export function receivedClassOf(doc: ReceivedDoc): ExtractClass | null {
+  if (doc.extractClass && doc.extractClass !== "other") return doc.extractClass;
+  const fromSlot = extractClassFromSlot(doc.slot);
+  if (fromSlot) return fromSlot;
+  if (doc.extractClass === "other") return null;
+  if (doc.status === "extracted" && taxReturnFilename(doc.name)) return "tax_return";
+  return null;
+}
+
 /** Filename paystub / W-2 / ID / bank wins when extract returns `other`. */
 export function preferFilenameClass(
   extractClass: ExtractClass,
@@ -459,12 +475,44 @@ export function applyExtractedFields(
     computed,
   );
   conflict = next.pendingConflict ?? conflict;
+  next = attachExtractClass(next, input.extractClass);
   const quiet = writes.length ? quietLineForClass(input.extractClass) : null;
   return {
     draft: next,
     writes,
     conflict,
     quietLines: quiet ? [quiet] : [],
+  };
+}
+
+function attachExtractClass(draft: FoxIntakeDraft, extractClass: ExtractClass): FoxIntakeDraft {
+  if (extractClass === "other") return draft;
+  const unmatched = draft.documents
+    .map((doc, index) => ({ doc, index }))
+    .filter(
+      ({ doc }) =>
+        COUNTED_DOC_STATUSES.has(doc.status) && (!doc.extractClass || doc.extractClass === "other"),
+    );
+  if (!unmatched.length) return draft;
+  const preferred =
+    unmatched.find(({ doc }) =>
+      extractClass === "tax_return"
+        ? taxReturnFilename(doc.name)
+        : preferFilenameClass("other", doc.name, doc.slot) === extractClass,
+    ) ?? (unmatched.length === 1 ? unmatched[0] : undefined);
+  if (!preferred) return draft;
+  return {
+    ...draft,
+    documents: draft.documents.map((doc, index) =>
+      index === preferred.index
+        ? {
+            ...doc,
+            extractClass,
+            slot: resolveReceivedSlot(doc.slot, doc.name, extractClass),
+            status: "extracted" as const,
+          }
+        : doc,
+    ),
   };
 }
 
@@ -502,12 +550,8 @@ export function receivedExtractClasses(draft: FoxIntakeDraft): Set<ExtractClass>
   const set = new Set<ExtractClass>(draft.skippedClasses ?? []);
   for (const doc of draft.documents) {
     if (!COUNTED_DOC_STATUSES.has(doc.status)) continue;
-    if (doc.extractClass && doc.extractClass !== "other") {
-      set.add(doc.extractClass);
-      continue;
-    }
-    const fromSlot = extractClassFromSlot(doc.slot);
-    if (fromSlot) set.add(fromSlot);
+    const received = receivedClassOf(doc);
+    if (received) set.add(received);
   }
   return set;
 }
@@ -525,11 +569,7 @@ export function receivedClassCount(draft: FoxIntakeDraft, extractClass: ExtractC
   let count = 0;
   for (const doc of draft.documents) {
     if (!COUNTED_DOC_STATUSES.has(doc.status)) continue;
-    const received =
-      doc.extractClass && doc.extractClass !== "other"
-        ? doc.extractClass
-        : extractClassFromSlot(doc.slot);
-    if (received === extractClass) count += 1;
+    if (receivedClassOf(doc) === extractClass) count += 1;
   }
   return count;
 }
@@ -577,13 +617,24 @@ export function fileStillUsefulNote(draft: FoxIntakeDraft): string | undefined {
   return `still useful: ${labels.join(" · ")}`;
 }
 
-export function missingListCopy(classes: ExtractClass[]) {
-  const labels = classes.map(askClassLabel);
+export function labelListCopy(labels: string[]) {
   if (!labels.length) return "";
   const head = labels[0].charAt(0).toUpperCase() + labels[0].slice(1);
   if (labels.length === 1) return `${head}.`;
   if (labels.length === 2) return `${head} and ${labels[1]}.`;
   return `${head}, ${labels.slice(1, -1).join(", ")}, and ${labels[labels.length - 1]}.`;
+}
+
+export function missingListCopy(classes: ExtractClass[]) {
+  return labelListCopy(classes.map(askClassLabel));
+}
+
+export function stillUsefulAskCopy(draft: FoxIntakeDraft) {
+  return labelListCopy(stillUsefulLabels(draft));
+}
+
+export function stillUsefulAskKey(draft: FoxIntakeDraft) {
+  return stillUsefulLabels(draft).join("|");
 }
 
 export function missingAskCopy(classes: ExtractClass[]) {
@@ -650,6 +701,7 @@ export type DocIntakeDetail = {
   quietLines?: string[];
   conflict?: FactConflict | null;
   missing?: ExtractClass[];
+  refreshStillUseful?: boolean;
 };
 
 export function emitDocIntake(detail: DocIntakeDetail) {

@@ -71,8 +71,8 @@ import {
   conflictAskCopy,
   missingAskActions,
   missingAskCopy,
-  missingAskKey,
-  missingExtractClasses,
+  stillUsefulAskCopy,
+  stillUsefulAskKey,
   type DocIntakeDetail,
 } from "./fileWrite";
 import { fileExists, finishLineActions, motionAskText, reviewIsSitting } from "./motion";
@@ -82,6 +82,7 @@ import {
   FOX_PANEL_KEY,
   type Capture,
   type FoxAction,
+  type FoxIntakeDraft,
   type FoxMessage,
   type IntakePath,
   type ProductIntent,
@@ -229,6 +230,21 @@ function hasPreparedAsk(messages: FoxMessage[]) {
       (/still useful:|this file can move|onyx has this for review|holding\. i.?ll keep|licensed originator is on this exception|i need .+ from you|what.?s a good email|file is prepared/i.test(
         message.text,
       )),
+  );
+}
+
+function withUpdatedStillUsefulAsk(messages: FoxMessage[], live: FoxIntakeDraft): FoxMessage[] {
+  const ask = foxAskMessage({
+    text: motionAskText(live),
+    actions: finishLineActions(live),
+  });
+  const index = [...messages]
+    .reverse()
+    .findIndex((message) => message.role === "fox" && /still useful:/i.test(message.text));
+  if (index < 0) return [...messages, ask];
+  const at = messages.length - 1 - index;
+  return messages.map((message, idx) =>
+    idx === at ? { ...message, text: ask.text, actions: ask.actions } : message,
   );
 }
 
@@ -637,6 +653,11 @@ export function AlwaysOnFox({
           );
         } else if (getFoxDraft().pendingProposal) {
           next.push(foxAskMessage(workspacePromptCopy("confirm-proposal", getFoxDraft())));
+          if (detail.refreshStillUseful) {
+            return withUpdatedStillUsefulAsk(next, getFoxDraft());
+          }
+        } else if (detail.refreshStillUseful) {
+          return withUpdatedStillUsefulAsk(next, getFoxDraft());
         } else if (detail.missing?.length) {
           const live = getFoxDraft();
           next.push(
@@ -934,8 +955,7 @@ export function AlwaysOnFox({
       applyCapture(action.capture);
       skipPromptSync.current = true;
       const live = getFoxDraft();
-      const missing = missingExtractClasses(live);
-      const key = missingAskKey(missing);
+      const key = stillUsefulAskKey(live);
       const lines: FoxMessage[] = [
         {
           id: newId(),
@@ -944,13 +964,18 @@ export function AlwaysOnFox({
         },
         { id: newId(), role: "system", text: workspaceUpdateCopy(action.capture, live) },
       ];
-      if (missing.length && live.missingAskKey !== key) {
+      if (key && live.missingAskKey !== key) {
         markMissingAsked(key);
         lines.push(
-          foxAskMessage({
-            text: missingAskCopy(missing),
-            actions: missingAskActions(),
-          }),
+          fileExists(live)
+            ? foxAskMessage({
+                text: motionAskText(live),
+                actions: finishLineActions(live),
+              })
+            : foxAskMessage({
+                text: stillUsefulAskCopy(live),
+                actions: missingAskActions(),
+              }),
         );
       }
       commitMessagesNow((prev) => [...prev, ...lines]);
