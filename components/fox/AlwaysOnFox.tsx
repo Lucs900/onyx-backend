@@ -63,7 +63,6 @@ import {
   workspacePromptCopy,
   workspaceUpdateCopy,
 } from "./workspace";
-import { DocumentDrop } from "./DocumentDrop";
 import { WorkspaceFileDock } from "./FilePreview";
 import {
   DOC_INTAKE_EVENT,
@@ -75,6 +74,7 @@ import {
   stillUsefulRefreshKey,
   type DocIntakeDetail,
 } from "./fileWrite";
+import { DECLINING_INCOME_CAUTION } from "./qualifyingIncome";
 import { fileExists, finishLineActions, motionAskText, reviewIsSitting } from "./motion";
 import { pathFromHomeChoice } from "./homeIdle";
 import {
@@ -426,7 +426,6 @@ function FoxWorkspace({
   composer,
   hideClose,
   stickyDisclosure,
-  docsDrop,
 }: {
   className: string;
   messages: FoxMessage[];
@@ -436,7 +435,6 @@ function FoxWorkspace({
   composer?: ReactNode;
   hideClose?: boolean;
   stickyDisclosure?: boolean;
-  docsDrop?: ReactNode;
 }) {
   return (
     <div id="fox-panel" className={className}>
@@ -458,7 +456,6 @@ function FoxWorkspace({
         )}
       </div>
       <FoxThread messages={messages} listRef={listRef} onAction={onAction} />
-      {docsDrop}
       {composer}
     </div>
   );
@@ -660,6 +657,7 @@ export function AlwaysOnFox({
           next.push({ id: newId(), role: "system", text: detail.reject });
         }
         for (const line of detail.quietLines ?? []) {
+          if (line === DECLINING_INCOME_CAUTION) continue;
           next.push({ id: newId(), role: "system", text: line });
         }
         if (detail.conflict) {
@@ -981,16 +979,13 @@ export function AlwaysOnFox({
       action.event === "open-docs"
     ) {
       applyCapture(action.capture ?? { field: "open-docs" });
-      document.getElementById("fox-documents")?.scrollIntoView({ behavior: "smooth" });
-      const live = getFoxDraft();
-      if (fileExists(live)) {
-        appendReply(action.label, workspacePromptCopy("done", live));
-        return;
-      }
-      const docsAsk = workspacePromptCopy("documents", live);
-      appendReply(action.label, {
-        text: docsAsk.text,
-        actions: (docsAsk.actions ?? []).filter((item) => item.capture?.field === "skip-docs"),
+      skipPromptSync.current = true;
+      appendReply(action.label, { text: "Drop a file here." });
+      window.requestAnimationFrame(() => {
+        document.getElementById("fox-documents")?.scrollIntoView({
+          block: "nearest",
+          inline: "nearest",
+        });
       });
       return;
     }
@@ -1060,6 +1055,20 @@ export function AlwaysOnFox({
     }
     const replyStage = stage ?? (isStart ? "start" : null);
     if (!text || !replyStage) return;
+    const moneyDigits = text.replace(/[$,\s]/g, "").replace(/%$/, "");
+    if (
+      isStart &&
+      startAsk === "amount" &&
+      draft.propertyValueAmount != null &&
+      Number(moneyDigits) === draft.propertyValueAmount
+    ) {
+      setOpen(true);
+      setInput("");
+      appendReply(text, {
+        text: "Purchase price is in the file. What’s the down payment or loan amount?",
+      }, "amount");
+      return;
+    }
     setOpen(true);
     setInput("");
     const reply = replyToMessage(text, replyStage, draft, scenario);
@@ -1073,8 +1082,13 @@ export function AlwaysOnFox({
       applyCapture(reply.capture);
       skipPromptSync.current = true;
     }
-    if (reply.capture?.field === "open-docs") {
-      document.getElementById("fox-documents")?.scrollIntoView({ behavior: "smooth" });
+    if (reply.capture?.field === "open-docs" || reply.capture?.field === "upload-more") {
+      window.requestAnimationFrame(() => {
+        document.getElementById("fox-documents")?.scrollIntoView({
+          block: "nearest",
+          inline: "nearest",
+        });
+      });
     }
     if (reply.capture?.field === "ask-fox") {
       window.requestAnimationFrame(() => focusComposer(true));
@@ -1205,11 +1219,6 @@ export function AlwaysOnFox({
       }
       hideClose={isStart || isHome}
       stickyDisclosure={isStart}
-      docsDrop={
-        isStart && (startAsk === "documents" || draft.docsOpen || draft.phase === "documents")
-          ? <DocumentDrop draft={draft} compact />
-          : null
-      }
     />
   );
 

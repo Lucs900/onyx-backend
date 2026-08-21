@@ -463,6 +463,19 @@ if (edit200k?.capture) applyCapture(edit200k.capture);
 assert.equal(getFoxDraft().downPaymentAmount, 200000);
 assert.equal(getFoxDraft().occupancyChoice.value, fileBeforeEdit.occupancy);
 assert.equal(getFoxDraft().incomeType.value, fileBeforeEdit.income);
+const replayPrice = workspaceReply("850000", getFoxDraft());
+assert.notEqual(replayPrice?.capture?.field, "downPayment");
+assert.notEqual(replayPrice?.capture?.field, "propose-funds");
+assert.match(replayPrice?.text ?? "", /purchase price is in the file/i);
+const keptAfterEdit = { ...getFoxDraft() };
+continueWorkspaceFromEntry("acr", "buy");
+assert.equal(getFoxDraft().downPaymentAmount, keptAfterEdit.downPaymentAmount);
+assert.equal(getFoxDraft().propertyValueAmount, keptAfterEdit.propertyValueAmount);
+assert.equal(getFoxDraft().occupancyChoice.value, keptAfterEdit.occupancyChoice.value);
+assert.equal(getFoxDraft().productIntent, keptAfterEdit.productIntent);
+const occupancyTwenty = workspaceReply("20", draft({ path: "acr", productIntent: "buy" }));
+assert.notEqual(occupancyTwenty?.capture?.field, "occupancy");
+assert.notEqual(occupancyTwenty?.capture?.field, "propose-funds");
 const afterFunds = withPurchaseFunds(afterPrice);
 assert.equal(workspacePrompt(afterFunds), "credit");
 assert.notEqual(workspacePrompt(afterFunds), "review");
@@ -1917,6 +1930,11 @@ assert.equal(seDecliningYearTwo.draft.pendingProposal?.value, "6000");
 assert.notEqual(seDecliningYearTwo.draft.pendingProposal?.value, "6667");
 assert.ok(laterYearIncomeLower(seDecliningYearTwo.draft));
 assert.equal(guidelineCaution(seDecliningYearTwo.draft), DECLINING_INCOME_CAUTION);
+assert.ok(seDecliningYearTwo.quietLines.includes(DECLINING_INCOME_CAUTION));
+const decliningCard = workspacePromptCopy("confirm-proposal", seDecliningYearTwo.draft);
+assert.equal(decliningCard.text, DECLINING_INCOME_CAUTION);
+assert.match(decliningCard.followUp ?? "", /\$6,000/);
+assert.match(decliningCard.followUp ?? "", /Suggested qualifying income · not underwritten/);
 assert.ok(
   previewFacts(seDecliningYearTwo.draft).some(
     (fact) => fact.id === "caution" && fact.value === DECLINING_INCOME_CAUTION,
@@ -2702,6 +2720,8 @@ assert.ok(alwaysOn.includes('prompt === "done"'));
 assert.ok(alwaysOn.includes("FOX_THREAD_LINE_EVENT"));
 assert.ok(alwaysOn.includes("shouldResumeWorkspaceEntry"));
 assert.ok(alwaysOn.includes("fileExists(live)"));
+assert.ok(alwaysOn.includes("Drop a file here."));
+assert.ok(alwaysOn.includes("DECLINING_INCOME_CAUTION"));
 assert.ok(alwaysOn.includes("suggest ?? \"\"") || alwaysOn.includes('suggest ?? ""'));
 const storeSource = readFileSync(join(root, "components/fox/store.ts"), "utf8");
 assert.ok(storeSource.includes("function shouldResumeWorkspaceEntry") || storeSource.includes("export function shouldResumeWorkspaceEntry"));
@@ -2720,7 +2740,8 @@ assert.ok(foxSource.includes('line: field'));
 
 const filePreview = readFileSync(join(root, "components/fox/FilePreview.tsx"), "utf8");
 assert.ok(filePreview.includes("!draft.workspaceFlow"));
-assert.ok(!filePreview.includes("docsOpen"));
+assert.ok(filePreview.includes("draft.docsOpen"));
+assert.ok(filePreview.includes("DocumentDrop"));
 assert.ok(filePreview.includes('fact.id === "next"'));
 assert.ok(filePreview.includes('fact.id === "file"') || filePreview.includes('id === "file"'));
 

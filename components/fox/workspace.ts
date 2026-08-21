@@ -77,7 +77,7 @@ import {
   sketchAmountsReady,
   withComputedCompanion,
 } from "./completeness";
-import { qualifyingIncomeDisplay } from "./qualifyingIncome";
+import { decliningIncomeCaution, qualifyingIncomeDisplay } from "./qualifyingIncome";
 import {
   applyEmailThenFinish,
   applyLooksRightMotion,
@@ -937,8 +937,11 @@ export function workspacePromptCopy(
     if (!proposal) {
       return { text: missingAmountAsk(draft) || "I can keep this file current." };
     }
+    const caution =
+      proposal.field === "qualifying_income" ? decliningIncomeCaution(draft) : undefined;
     return {
-      text: proposalAskCopy(proposal),
+      text: caution ?? proposalAskCopy(proposal),
+      followUp: caution ? proposalAskCopy(proposal) : undefined,
       actions: proposalActions(proposal.kind),
     };
   }
@@ -1142,9 +1145,14 @@ function replyToFundsAsk(
   }
   const price = draft.propertyValueAmount;
   const parsed = parseFundsAmount(q, price);
-  if (parsed == null || (price != null && parsed.dollars >= price && !parsed.asPercent)) {
+  if (parsed == null || (price != null && parsed.dollars > price && !parsed.asPercent)) {
     return {
       text: "What’s the down payment or loan amount? A number under the purchase price works.",
+    };
+  }
+  if (price != null && parsed.dollars === price && !parsed.asPercent) {
+    return {
+      text: "Purchase price is in the file. What’s the down payment or loan amount?",
     };
   }
   const role =
@@ -1274,7 +1282,11 @@ function occupancySpokenLabel(value?: string | null) {
 }
 
 function occupancyFromText(text: string) {
-  const lower = text.trim().toLowerCase();
+  const trimmed = text.trim();
+  if (/^\$?\d[\d,]*(?:\.\d+)?%?$/.test(trimmed) || /^\d{1,3}\s*(%|percent)$/i.test(trimmed)) {
+    return undefined;
+  }
+  const lower = trimmed.toLowerCase();
   return (
     OCCUPANCY_BUBBLES.find(
       (item) => item.label.toLowerCase() === lower || item.value === lower,

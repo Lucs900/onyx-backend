@@ -15,6 +15,7 @@ import type {
 } from "./types";
 import {
   applyQualifyingIncomeFromExtract,
+  decliningIncomeCaution,
   hasScheduleCCashflow,
   k1OrdinaryMissingDistributions,
   monthlyQualifyingFromExtract,
@@ -527,11 +528,12 @@ export function applyExtractedFields(
   conflict = next.pendingConflict ?? conflict;
   next = attachExtractClass(next, extractClass);
   const quiet = writes.length ? quietLineForClass(extractClass) : null;
+  const caution = decliningIncomeCaution(next);
   return {
     draft: next,
     writes,
     conflict,
-    quietLines: quiet ? [quiet] : [],
+    quietLines: [quiet, caution].filter((line): line is string => Boolean(line)),
   };
 }
 

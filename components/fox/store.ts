@@ -413,6 +413,11 @@ export function workspaceSessionStarted(
 ) {
   if (isClosedDraft(draft)) return false;
   if (draft.productIntent) return true;
+  if (draft.occupancyChoice.value || draft.timelineChoice.value) return true;
+  if (draft.propertyValueAmount != null || draft.downPaymentAmount != null || draft.loanAmountValue != null) {
+    return true;
+  }
+  if (draft.pendingProposal || draft.documents.length > 0) return true;
   return messages.some((message) => message.role === "client");
 }
 
