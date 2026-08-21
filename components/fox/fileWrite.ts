@@ -13,6 +13,10 @@ import type {
   FoxIntakeDraft,
   ReceivedDoc,
 } from "./types";
+import {
+  applyQualifyingIncomeFromExtract,
+  monthlyQualifyingFromExtract,
+} from "./qualifyingIncome";
 
 export { REJECT_LINE, LIMIT_LINE };
 
@@ -20,9 +24,20 @@ export const LOW_EXTRACT_CONFIDENCE = 0.55;
 
 export const EXTRACT_SCHEMA_KEYS: Record<ExtractClass, readonly string[]> = {
   government_id: ["full_name", "date_of_birth", "id_last4", "state", "expiration"],
-  paystub: ["employer_name", "pay_period_end", "gross_period", "ytd_gross", "net_period"],
+  paystub: ["employer_name", "pay_period_end", "gross_period", "ytd_gross", "net_period", "pay_frequency"],
   w2: ["tax_year", "employer_name", "wages", "federal_withheld"],
-  tax_return: ["tax_year", "filing_status", "agi"],
+  tax_return: [
+    "tax_year",
+    "filing_status",
+    "agi",
+    "return_kind",
+    "schedule_c_net_profit",
+    "depreciation",
+    "depletion",
+    "business_use_of_home",
+    "nonrecurring_other_income",
+    "k1_ordinary_income",
+  ],
   bank_statement: ["institution", "period_end", "ending_balance"],
   purchase_contract: ["property_address", "purchase_price", "close_date"],
   mortgage_statement: ["servicer", "unpaid_principal", "current_pi", "property_address"],
@@ -41,6 +56,13 @@ const MONEY_KEYS = new Set([
   "unpaid_principal",
   "current_pi",
   "income",
+  "qualifying_income",
+  "schedule_c_net_profit",
+  "depreciation",
+  "depletion",
+  "business_use_of_home",
+  "nonrecurring_other_income",
+  "k1_ordinary_income",
 ]);
 
 const INCOME_MONEY_KEYS = new Set(["gross_period", "ytd_gross", "wages", "agi", "income", "net_period"]);
@@ -164,8 +186,17 @@ export function factLabel(field: string) {
   if (field === "tax_year") return "tax year";
   if (field === "wages") return "wages";
   if (field === "federal_withheld") return "federal withheld";
+  if (field === "pay_frequency") return "pay frequency";
   if (field === "filing_status") return "filing status";
   if (field === "agi") return "AGI";
+  if (field === "return_kind") return "return kind";
+  if (field === "schedule_c_net_profit") return "net profit";
+  if (field === "depreciation") return "depreciation";
+  if (field === "depletion") return "depletion";
+  if (field === "business_use_of_home") return "business use of home";
+  if (field === "nonrecurring_other_income") return "nonrecurring other income";
+  if (field === "k1_ordinary_income") return "K-1 ordinary income";
+  if (field === "qualifying_income") return "qualifying income";
   if (field === "institution") return "institution";
   if (field === "period_end") return "period end";
   if (field === "ending_balance") return "ending balance";
@@ -253,6 +284,12 @@ function existingFact(draft: FoxIntakeDraft, field: string): { value: string; vi
   }
   const direct = draft.facts?.[field]?.value;
   if (direct) return { value: direct, via: field };
+  if (field === "qualifying_income" && draft.facts?.qualifying_income?.value) {
+    return { value: draft.facts.qualifying_income.value, via: "qualifying_income" };
+  }
+  if (INCOME_MONEY_KEYS.has(field) && draft.facts?.qualifying_income?.value) {
+    return { value: draft.facts.qualifying_income.value, via: "qualifying_income" };
+  }
   if (INCOME_MONEY_KEYS.has(field) && draft.facts?.income?.value) {
     return { value: draft.facts.income.value, via: "income" };
   }
@@ -346,6 +383,7 @@ export function applyExtractedFields(
     return { draft, writes, conflict: null, quietLines: [] };
   }
   const fields = sanitizeExtractedFields(input.extractClass, input.fields);
+  const computed = monthlyQualifyingFromExtract(draft, input.extractClass, fields);
   const now = new Date().toISOString();
   let next = draft;
   let conflict: FactConflict | null = draft.pendingConflict ?? null;
@@ -358,21 +396,48 @@ export function applyExtractedFields(
       writes.push({ field, value });
       continue;
     }
+    if (existing.via === "income" || existing.via === "qualifying_income") {
+      const compare = computed != null ? String(computed.monthly) : value;
+      if (valuesMatch(existing.value, compare)) {
+        if (field !== existing.via) {
+          next = writeField(next, field, value, now);
+          writes.push({ field, value });
+        }
+        continue;
+      }
+      if (!conflict) {
+        const askField = existing.via;
+        conflict = {
+          field: askField,
+          fileValue: existing.value,
+          documentValue: compare,
+          label: factLabel(askField),
+          kind: "document",
+        };
+      }
+      continue;
+    }
     if (valuesMatch(existing.value, value)) continue;
     if (!conflict) {
-      const askField = existing.via === "income" ? "income" : field;
       conflict = {
-        field: askField,
+        field,
         fileValue: existing.value,
         documentValue: value,
-        label: factLabel(askField),
+        label: factLabel(field),
         kind: "document",
       };
     }
   }
+  next = applyQualifyingIncomeFromExtract(
+    { ...next, pendingConflict: conflict },
+    input.extractClass,
+    fields,
+    computed,
+  );
+  conflict = next.pendingConflict ?? conflict;
   const quiet = writes.length ? quietLineForClass(input.extractClass) : null;
   return {
-    draft: { ...next, pendingConflict: conflict },
+    draft: next,
     writes,
     conflict,
     quietLines: quiet ? [quiet] : [],

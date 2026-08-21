@@ -239,6 +239,18 @@ async function grokJson(
   }
 }
 
+function extractFieldsPrompt(extractClass: ExtractClass, keys: readonly string[]) {
+  let extra = "";
+  if (extractClass === "tax_return") {
+    extra =
+      " return_kind is schedule_c, k1, 1065, 1120s, or empty. schedule_c_net_profit is Schedule C net profit (line 31). k1_ordinary_income is ordinary income when a K-1 / 1065 / 1120S is visible. Empty string when a line is not clearly printed.";
+  }
+  if (extractClass === "paystub") {
+    extra = " pay_frequency is weekly, biweekly, semimonthly, monthly, or empty.";
+  }
+  return `Extract only these keys if clearly visible: ${keys.join(", ")}. JSON object with those keys as strings. Empty string if not clearly printed. Never invent purchase price, income, or balance. Never output SSN or full account numbers. For government_id, id_last4 is the last four of the ID number only.${extra}`;
+}
+
 function asClass(value: unknown): ExtractClass {
   return CLASSES.includes(value as ExtractClass) ? (value as ExtractClass) : "other";
 }
@@ -280,7 +292,7 @@ export const grokExtractAdapter: DocumentExtractAdapter = {
     const parsed = await grokJson(
       bytes,
       mediaType,
-      `Extract only these keys if clearly visible: ${keys.join(", ")}. JSON object with those keys as strings. Empty string if not clearly printed. Never invent purchase price, income, or balance. Never output SSN or full account numbers. For government_id, id_last4 is the last four of the ID number only.`,
+      extractFieldsPrompt(extractClass, keys),
     );
     const raw: Record<string, string> = {};
     for (const key of keys) {

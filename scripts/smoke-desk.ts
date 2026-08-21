@@ -24,14 +24,22 @@ import {
 } from "../components/fox/store";
 import {
   SUGGESTED_NOTE,
+  SUGGESTED_INCOME_NOTE,
   HIGH_LTV_CAUTION,
   PRICING_WAITS,
   canLooksRight,
   fileCompleteness,
   guidelineCaution,
   loanExceedsPurchasePrice,
+  proposalAskCopy,
+  resolveProposal,
   showsAgencyCompleteness,
 } from "../components/fox/completeness";
+import {
+  QUALIFYING_INCOME_FIELD,
+  monthlyQualifyingFromExtract,
+  stableOrDecliningAnnual,
+} from "../components/fox/qualifyingIncome";
 import {
   MOTION_COPY,
   applyLooksRightMotion,
@@ -42,6 +50,7 @@ import {
   reviewIsSitting,
 } from "../components/fox/motion";
 import {
+  EXTRACT_SCHEMA_KEYS,
   applyExtractedFields,
   extractClassFromFilename,
   fileStillUsefulNote,
@@ -1089,10 +1098,22 @@ assert.equal(paystubWrite.draft.facts?.gross_period?.value, "7200");
 assert.equal(paystubWrite.draft.facts?.employer_name?.source, "extracted-unconfirmed");
 assert.equal(paystubWrite.draft.facts?.employer_name?.confirmed, true);
 assert.equal(paystubWrite.draft.facts?.ssn, undefined);
-assert.equal(workspacePrompt(paystubWrite.draft), "done");
+assert.equal(workspacePrompt(paystubWrite.draft), "confirm-proposal");
+assert.equal(paystubWrite.draft.pendingProposal?.field, QUALIFYING_INCOME_FIELD);
+assert.equal(paystubWrite.draft.pendingProposal?.value, "7200");
+assert.equal(paystubWrite.draft.pendingProposal?.note, SUGGESTED_INCOME_NOTE);
+assert.equal(paystubWrite.draft.facts?.qualifying_income, undefined);
 assert.equal(paystubWrite.draft.productIntent, afterLooks.productIntent);
 assert.ok(previewFacts(paystubWrite.draft).some((fact) => fact.id === "employer" && fact.value === "Harbor Steel"));
 assert.ok(previewFacts(paystubWrite.draft).some((fact) => fact.id === "pay" && /7,200/.test(fact.value)));
+assert.ok(
+  previewFacts(paystubWrite.draft).some(
+    (fact) =>
+      fact.id === "qualifying" &&
+      /7,200/.test(fact.value) &&
+      fact.note === SUGGESTED_INCOME_NOTE,
+  ),
+);
 assert.ok(previewFacts(paystubWrite.draft).every((fact) => fact.id !== "product" || fact.value !== "Other"));
 assert.equal(structureFixPrompt("employer"), null);
 assert.equal(structureFixPrompt("pay"), null);
@@ -1242,6 +1263,148 @@ const seAfterLooks = draft({
 assert.ok(stillUsefulLabels(seAfterLooks).includes("prior-year return"));
 assert.ok(stillUsefulLabels(seAfterLooks).includes("government ID"));
 assert.match(gatheringCopy(seAfterLooks), /prior-year return/i);
+
+assert.ok(EXTRACT_SCHEMA_KEYS.tax_return.includes("schedule_c_net_profit"));
+assert.ok(EXTRACT_SCHEMA_KEYS.tax_return.includes("return_kind"));
+assert.ok(EXTRACT_SCHEMA_KEYS.paystub.includes("pay_frequency"));
+assert.equal(stableOrDecliningAnnual(120000, 96000), 96000);
+assert.equal(stableOrDecliningAnnual(96000, 120000), 108000);
+
+const seReturn = applyExtractedFields(seAfterLooks, {
+  extractClass: "tax_return",
+  confidence: 0.93,
+  fields: {
+    tax_year: "2024",
+    filing_status: "single",
+    agi: "110000",
+    return_kind: "schedule_c",
+    schedule_c_net_profit: "96000",
+    depreciation: "12000",
+    depletion: "",
+    business_use_of_home: "0",
+    nonrecurring_other_income: "",
+  },
+});
+assert.equal(seReturn.draft.facts?.schedule_c_net_profit?.value, "96000");
+assert.equal(seReturn.draft.facts?.qualifying_income, undefined);
+assert.equal(seReturn.draft.pendingProposal?.field, QUALIFYING_INCOME_FIELD);
+assert.equal(seReturn.draft.pendingProposal?.value, "9000");
+assert.equal(seReturn.draft.pendingProposal?.note, SUGGESTED_INCOME_NOTE);
+assert.equal(workspacePrompt(seReturn.draft), "confirm-proposal");
+const seAsk = proposalAskCopy(seReturn.draft.pendingProposal!);
+assert.match(seAsk, /Suggested qualifying income · not underwritten/);
+assert.match(seAsk, /9,000/);
+assert.doesNotMatch(seAsk, /1084|\bDU\b|approved|eligible|you qualify|don’t qualify|agency_ready/i);
+assert.ok(
+  previewFacts(seReturn.draft).some(
+    (fact) =>
+      fact.id === "qualifying" &&
+      /9,000/.test(fact.value) &&
+      fact.note === SUGGESTED_INCOME_NOTE,
+  ),
+);
+assert.ok(stillUsefulLabels(seReturn.draft).includes("prior-year return"));
+const seAccepted = resolveProposal(seReturn.draft, "accept");
+assert.equal(seAccepted.facts?.qualifying_income?.value, "9000");
+assert.equal(seAccepted.facts?.qualifying_income?.source, "suggested");
+assert.ok(
+  previewFacts(seAccepted).some(
+    (fact) => fact.id === "qualifying" && fact.note === SUGGESTED_INCOME_NOTE,
+  ),
+);
+assert.equal(seAccepted.pendingProposal, null);
+assert.doesNotMatch(
+  `${proposalAskCopy(seReturn.draft.pendingProposal!)} ${previewFacts(seAccepted).map((fact) => `${fact.value} ${fact.note ?? ""}`).join(" ")}`,
+  /1084|\bDU\b|approved|eligible|you qualify|don’t qualify|agency_ready/i,
+);
+
+const seYearTwo = applyExtractedFields(seReturn.draft, {
+  extractClass: "tax_return",
+  confidence: 0.93,
+  fields: {
+    tax_year: "2025",
+    return_kind: "schedule_c",
+    schedule_c_net_profit: "72000",
+    depreciation: "12000",
+  },
+});
+assert.equal(seYearTwo.draft.pendingProposal?.value, "7000");
+assert.equal(
+  monthlyQualifyingFromExtract(seReturn.draft, "tax_return", {
+    tax_year: "2025",
+    return_kind: "schedule_c",
+    schedule_c_net_profit: "72000",
+    depreciation: "12000",
+  })?.monthly,
+  7000,
+);
+
+const seRising = applyExtractedFields(seAfterLooks, {
+  extractClass: "tax_return",
+  confidence: 0.9,
+  fields: { tax_year: "2024", return_kind: "schedule_c", schedule_c_net_profit: "72000" },
+});
+const seRisingTwo = applyExtractedFields(seRising.draft, {
+  extractClass: "tax_return",
+  confidence: 0.9,
+  fields: { tax_year: "2025", return_kind: "schedule_c", schedule_c_net_profit: "96000" },
+});
+assert.equal(seRisingTwo.draft.pendingProposal?.value, "7000");
+
+const k1Return = applyExtractedFields(seAfterLooks, {
+  extractClass: "tax_return",
+  confidence: 0.91,
+  fields: {
+    tax_year: "2024",
+    return_kind: "k1",
+    k1_ordinary_income: "180000",
+    schedule_c_net_profit: "",
+  },
+});
+assert.equal(k1Return.draft.facts?.k1_ordinary_income?.value, "180000");
+assert.equal(k1Return.draft.pendingProposal?.field, QUALIFYING_INCOME_FIELD);
+assert.equal(k1Return.draft.pendingProposal?.value, "15000");
+assert.equal(k1Return.draft.pendingProposal?.note, SUGGESTED_INCOME_NOTE);
+assert.equal(k1Return.draft.facts?.qualifying_income, undefined);
+const k1Accepted = resolveProposal(k1Return.draft, "accept");
+assert.equal(k1Accepted.facts?.qualifying_income?.source, "suggested");
+assert.equal(fileCompleteness(k1Accepted)?.groups.income.documented, false);
+assert.ok(
+  previewFacts(k1Accepted).some(
+    (fact) => fact.id === "qualifying" && fact.note === SUGGESTED_INCOME_NOTE,
+  ),
+);
+
+const w2Extract = applyExtractedFields(afterLooks, {
+  extractClass: "w2",
+  confidence: 0.94,
+  fields: { tax_year: "2025", employer_name: "Harbor Steel", wages: "84000" },
+});
+assert.equal(w2Extract.draft.facts?.wages?.value, "84000");
+assert.equal(w2Extract.draft.pendingProposal?.value, "7000");
+assert.equal(w2Extract.draft.pendingProposal?.note, SUGGESTED_INCOME_NOTE);
+assert.equal(w2Extract.draft.facts?.qualifying_income, undefined);
+assert.equal(workspacePrompt(w2Extract.draft), "confirm-proposal");
+
+const w2Conflict = applyExtractedFields(typedIncome, {
+  extractClass: "w2",
+  confidence: 0.94,
+  fields: { tax_year: "2025", employer_name: "Harbor Steel", wages: "84000" },
+});
+assert.ok(w2Conflict.conflict);
+assert.equal(w2Conflict.conflict?.field, "income");
+assert.equal(w2Conflict.conflict?.fileValue, "6000");
+assert.equal(w2Conflict.conflict?.documentValue, "7000");
+assert.equal(w2Conflict.draft.facts?.wages, undefined);
+assert.equal(w2Conflict.draft.pendingProposal, null);
+
+const paystubFreq = applyExtractedFields(afterLooks, {
+  extractClass: "paystub",
+  confidence: 0.9,
+  fields: { employer_name: "Harbor Steel", gross_period: "3500", pay_frequency: "biweekly" },
+});
+assert.equal(paystubFreq.draft.pendingProposal?.value, "7583");
+assert.equal(paystubFreq.draft.pendingProposal?.note, SUGGESTED_INCOME_NOTE);
 
 const highLtvBuy = withIncome(
   withPurchaseFunds(

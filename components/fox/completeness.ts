@@ -15,9 +15,11 @@ import {
   factValue,
   valuesMatch,
 } from "./fileWrite";
+import { QUALIFYING_INCOME_FIELD, SUGGESTED_INCOME_NOTE } from "./qualifyingIncome";
 
 export const SUGGESTED_NOTE = "Suggested · not verified";
 export const PROPOSED_NOTE = "Proposed · confirm";
+export { SUGGESTED_INCOME_NOTE, QUALIFYING_INCOME_FIELD };
 export const MISSING_LINE = "—";
 
 export const COMPLETENESS_GROUPS: CompletenessGroup[] = [
@@ -346,11 +348,15 @@ export function structureFieldForProposal(field: string) {
   if (field === "employer_name") return "employer";
   if (field === "full_name") return "name";
   if (field === "property_address") return "address";
+  if (field === QUALIFYING_INCOME_FIELD) return "qualifying";
   return field;
 }
 
 export function proposalAskCopy(proposal: FactProposal) {
   const shown = displayFactValue(proposal.field, proposal.value);
+  if (proposal.field === QUALIFYING_INCOME_FIELD) {
+    return `${SUGGESTED_INCOME_NOTE}. ${shown}. Use this?`;
+  }
   if (proposal.kind === "public") {
     return `I have ${proposal.label} ${shown}. ${SUGGESTED_NOTE}. Is that you?`;
   }
@@ -426,7 +432,7 @@ function writeConfirmedFact(
   if ((field === "purchase_price" || field === "propertyValue") && amount != null) {
     next = { ...next, propertyValueAmount: amount, valueAsked: true };
   }
-  if (field === "employer_name") {
+  if (field === "employer_name" || field === QUALIFYING_INCOME_FIELD) {
     next = { ...next, facts };
   }
   if (field === "full_name" && !draft.contact.fullName.value) {
@@ -509,7 +515,12 @@ export function resolveProposal(
   if (winner === "decline") {
     return { ...draft, pendingProposal: null };
   }
-  const source = proposal.kind === "public" ? "suggested" : proposal.kind === "computed" ? "computed" : "document";
+  const source =
+    proposal.field === QUALIFYING_INCOME_FIELD || proposal.kind === "public"
+      ? "suggested"
+      : proposal.kind === "computed"
+        ? "computed"
+        : "document";
   return { ...writeConfirmedFact(draft, proposal.field, proposal.value, source), pendingProposal: null };
 }
 

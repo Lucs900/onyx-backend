@@ -635,6 +635,8 @@ export function AlwaysOnFox({
               actions: conflictActions(),
             }),
           );
+        } else if (getFoxDraft().pendingProposal) {
+          next.push(foxAskMessage(workspacePromptCopy("confirm-proposal", getFoxDraft())));
         } else if (detail.missing?.length) {
           const live = getFoxDraft();
           next.push(

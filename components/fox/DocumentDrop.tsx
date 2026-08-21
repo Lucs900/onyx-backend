@@ -144,7 +144,11 @@ export function DocumentDrop({
         const after = applied.draft;
         const missing = missingExtractClasses(after);
         const key = missingAskKey(missing);
-        const askMissing = !applied.conflict && missing.length > 0 && after.missingAskKey !== key;
+        const askMissing =
+          !applied.conflict &&
+          !after.pendingProposal &&
+          missing.length > 0 &&
+          after.missingAskKey !== key;
         if (askMissing) markMissingAsked(key);
         emitDocIntake({
           quietLines: applied.quietLines.length

@@ -72,6 +72,7 @@ import {
   sketchAmountsReady,
   withComputedCompanion,
 } from "./completeness";
+import { qualifyingIncomeDisplay } from "./qualifyingIncome";
 import {
   applyEmailThenFinish,
   applyLooksRightMotion,
@@ -2444,6 +2445,15 @@ export function previewFacts(draft: FoxIntakeDraft): PreviewFact[] {
           : employerProposal.note ?? SUGGESTED_NOTE,
     });
   }
+  const qualifying = qualifyingIncomeDisplay(draft);
+  if (qualifying) {
+    facts.push({
+      id: "qualifying",
+      label: "Qualifying income",
+      value: qualifying.value,
+      note: qualifying.note,
+    });
+  }
   const periodPay = factValue(draft, "gross_period");
   const ytdPay = factValue(draft, "ytd_gross");
   const wages = factValue(draft, "wages");
@@ -2570,6 +2580,7 @@ export function structureFixPrompt(
   if (id === "income") return "income";
   if (id === "docs") return "documents";
   if (id === "employer" && draft?.pendingProposal?.field === "employer_name") return "confirm-proposal";
+  if (id === "qualifying" && draft?.pendingProposal?.field === "qualifying_income") return "confirm-proposal";
   return null;
 }
 
@@ -2627,6 +2638,11 @@ export function structureExplainCopy(
       ? { text: caution }
       : null;
   }
+  if (id === "qualifying") {
+    return {
+      text: "Suggested qualifying income · not underwritten. I cannot approve, lock, or commit to lend.",
+    };
+  }
   if (id === "originator") {
     return {
       text: "A licensed originator is assigned to this file. I cannot approve, lock, or commit to lend.",
@@ -2648,6 +2664,7 @@ const CHAT_SUMMARY_IDS = new Set([
   "line",
   "credit",
   "income",
+  "qualifying",
   "rate",
   "reward",
   "docs",
