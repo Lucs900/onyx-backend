@@ -1146,6 +1146,40 @@ assert.equal(getFoxDraft().facts?.employer_name?.value, "Listed employer");
 assert.equal(getFoxDraft().facts?.employer_name?.source, "suggested");
 assert.ok(previewFacts(getFoxDraft()).some((fact) => fact.id === "employer" && fact.note === SUGGESTED_NOTE));
 
+resetWorkspaceForEntry("acr");
+applyPreviewMotionControls({});
+assert.equal(getFoxDraft().pendingProposal, null);
+assert.equal(getFoxDraft().facts?.employer_name, undefined);
+const fromUrl = applyPreviewMotionControls({ suggest: "employer" });
+assert.equal(fromUrl.pendingProposal?.kind, "public");
+assert.equal(fromUrl.pendingProposal?.note, SUGGESTED_NOTE);
+assert.equal(fromUrl.facts?.employer_name, undefined);
+assert.ok(
+  previewFacts(fromUrl).some(
+    (fact) =>
+      fact.id === "employer" &&
+      fact.value === "Listed employer" &&
+      fact.note === SUGGESTED_NOTE,
+  ),
+);
+assert.ok(
+  previewFacts({
+    ...fromUrl,
+    pendingProposal: { ...fromUrl.pendingProposal!, note: undefined },
+  }).some((fact) => fact.id === "employer" && fact.note === SUGGESTED_NOTE),
+);
+resetWorkspaceForEntry("acr", "buy");
+applyPreviewMotionControls({ suggest: "employer" });
+assert.equal(workspacePrompt(getFoxDraft()), "confirm-proposal");
+const urlAsk = workspacePromptCopy("confirm-proposal", getFoxDraft());
+assert.match(urlAsk.text, /Suggested · not verified/);
+assert.ok(urlAsk.actions?.some((action) => action.label === "Yes that’s me"));
+assert.ok(urlAsk.actions?.some((action) => action.label === "Keep file"));
+assert.equal(workspaceReply("Keep file", getFoxDraft())?.capture?.field, "decline-proposal");
+applyCapture({ field: "decline-proposal" });
+assert.equal(getFoxDraft().facts?.employer_name, undefined);
+assert.equal(getFoxDraft().pendingProposal, null);
+
 const sameValue = applyExtractedFields(paystubWrite.draft, {
   extractClass: "paystub",
   confidence: 0.9,
@@ -1656,6 +1690,8 @@ const startWorkspace = readFileSync(join(root, "components/fox/StartWorkspace.ts
 assert.ok(!startWorkspace.includes("useDocumentReads"));
 assert.ok(startWorkspace.includes("shouldResumeWorkspaceEntry"));
 assert.ok(startWorkspace.includes("continueWorkspaceFromEntry"));
+assert.ok(startWorkspace.includes("applyPreviewMotionControls"));
+assert.ok(startWorkspace.includes('searchParams.get("suggest")'));
 const dropSource = readFileSync(join(root, "components/fox/DocumentDrop.tsx"), "utf8");
 assert.ok(dropSource.includes("/api/docs/upload"));
 assert.ok(dropSource.includes("/api/docs/extract"));
@@ -1669,6 +1705,7 @@ assert.ok(alwaysOn.includes('prompt === "done"'));
 assert.ok(alwaysOn.includes("FOX_THREAD_LINE_EVENT"));
 assert.ok(alwaysOn.includes("shouldResumeWorkspaceEntry"));
 assert.ok(alwaysOn.includes("fileExists(live)"));
+assert.ok(alwaysOn.includes("suggest ?? \"\"") || alwaysOn.includes('suggest ?? ""'));
 const storeSource = readFileSync(join(root, "components/fox/store.ts"), "utf8");
 assert.ok(storeSource.includes("function shouldResumeWorkspaceEntry") || storeSource.includes("export function shouldResumeWorkspaceEntry"));
 assert.ok(storeSource.includes("fileExists(draft)"));

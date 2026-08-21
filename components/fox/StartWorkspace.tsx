@@ -6,6 +6,7 @@ import { pathFromQuery, rememberStartPath } from "@/components/products/startPat
 import { AlwaysOnFox } from "./AlwaysOnFox";
 import { FilePreview } from "./FilePreview";
 import {
+  applyPreviewMotionControls,
   continueWorkspaceFromEntry,
   getFoxDraft,
   getServerDraft,
@@ -38,18 +39,26 @@ export function StartWorkspace() {
   const draft = useSyncExternalStore(subscribeFoxDraft, getFoxDraft, getServerDraft);
 
   const lastPath = useRef(startPath);
+  const previewSuggestKey = useRef("");
   useEffect(() => {
     if (lastPath.current !== startPath) {
       lastPath.current = startPath;
       if (shouldResumeWorkspaceEntry()) {
         if (startPath && !getFoxDraft().path) setDraftPath(startPath);
-        return;
+      } else {
+        resetWorkspaceForEntry(startPath, startIntent);
+        previewSuggestKey.current = "";
       }
-      resetWorkspaceForEntry(startPath, startIntent);
-      return;
+    } else if (startIntent) {
+      setDraftProductIntent(startIntent);
     }
-    if (startIntent) setDraftProductIntent(startIntent);
-  }, [startIntent, startPath]);
+    const suggest = searchParams.get("suggest");
+    const key = suggest ?? "";
+    if (previewSuggestKey.current !== key) {
+      previewSuggestKey.current = key;
+      applyPreviewMotionControls({ suggest });
+    }
+  }, [searchParams, startIntent, startPath]);
 
   useEffect(() => {
     if (!draft.workspaceFlow) return;
@@ -61,6 +70,7 @@ export function StartWorkspace() {
   const factsExist =
     Boolean(draft.path) ||
     Boolean(draft.productIntent) ||
+    Boolean(draft.pendingProposal) ||
     Boolean(draft.occupancyChoice.value) ||
     Boolean(draft.timelineChoice.value) ||
     draft.loanAmountValue != null ||

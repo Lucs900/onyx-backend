@@ -549,7 +549,7 @@ export function requiredLineValue(
   if (proposal && proposalId === line.id) {
     return {
       value: displayFactValue(proposal.field, proposal.value),
-      note: proposal.note,
+      note: proposal.note ?? proposalNote(proposal.kind),
       filled: false,
     };
   }

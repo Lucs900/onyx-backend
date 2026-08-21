@@ -2418,7 +2418,10 @@ export function previewFacts(draft: FoxIntakeDraft): PreviewFact[] {
       id: "employer",
       label: "Employer",
       value: employerProposal.value,
-      note: employerProposal.note ?? SUGGESTED_NOTE,
+      note:
+        employerProposal.kind === "public"
+          ? SUGGESTED_NOTE
+          : employerProposal.note ?? SUGGESTED_NOTE,
     });
   }
   const periodPay = factValue(draft, "gross_period");

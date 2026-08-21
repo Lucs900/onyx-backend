@@ -457,9 +457,10 @@ export function AlwaysOnFox({
   const draft = useSyncExternalStore(subscribeFoxDraft, getFoxDraft, getServerDraft);
   const [open, setOpen] = useState(() => isStart || isHome || stage === "intake");
   const [ready, setReady] = useState(() => workspaceSurface);
-  const [search, setSearch] = useState(() =>
-    isStart ? startSearchFromProps(startPath, startIntent) : "",
-  );
+  const [search, setSearch] = useState(() => {
+    if (typeof window !== "undefined") return window.location.search;
+    return isStart ? startSearchFromProps(startPath, startIntent) : "";
+  });
   const [input, setInput] = useState("");
   const startSeeded = useRef(workspaceSurface);
   const [messages, setMessages] = useState<FoxMessage[]>(() =>
@@ -781,14 +782,19 @@ export function AlwaysOnFox({
 
   useEffect(() => {
     if (!ready || !isStart) return;
-    const params = new URLSearchParams(search || window.location.search);
-    const key = `${params.get("nudge") ?? ""}|${params.get("sla") ?? ""}`;
+    const params = new URLSearchParams(
+      (typeof window !== "undefined" && window.location.search) || search,
+    );
+    const nudge = params.get("nudge");
+    const sla = params.get("sla");
+    const suggest = params.get("suggest");
+    const key = `${nudge ?? ""}|${sla ?? ""}|${suggest ?? ""}`;
     if (previewControlKey.current !== key) {
       previewControlKey.current = key;
       applyPreviewMotionControls({
-        nudge: params.get("nudge"),
-        sla: params.get("sla"),
-        suggest: params.get("suggest"),
+        nudge,
+        sla,
+        suggest,
       });
     }
     const tick = () => {
