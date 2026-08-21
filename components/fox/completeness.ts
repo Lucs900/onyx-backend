@@ -262,6 +262,16 @@ export type CompletenessMap = {
   copy: string;
 };
 
+/** Identity + income facts confirmed from documents. Looks right / sampleAccepted is not enough. */
+function identityAndIncomeConfirmedFromDocs(draft: FoxIntakeDraft) {
+  return identityDocumented(draft) && incomeDocumented(draft);
+}
+
+function completenessDisplayCopy(state: CompletenessState, filled: number) {
+  if (state === "documented") return "documented";
+  return `sketch · ${filled} of ${COMPLETENESS_GROUPS.length}`;
+}
+
 export function fileCompleteness(draft: FoxIntakeDraft): CompletenessMap | null {
   if (!showsAgencyCompleteness(draft)) return null;
   const groups = {} as CompletenessMap["groups"];
@@ -275,15 +285,20 @@ export function fileCompleteness(draft: FoxIntakeDraft): CompletenessMap | null 
     if (documented) documentedCount += 1;
   }
   const minimums = agencyMinimumsMet(draft);
+  const fromDocs = identityAndIncomeConfirmedFromDocs(draft);
   let state: CompletenessState = "sketch";
-  if (minimums && documentedCount === COMPLETENESS_GROUPS.length) {
+  if (minimums && documentedCount === COMPLETENESS_GROUPS.length && fromDocs) {
     state = "documented";
-  } else if (minimums && documentedCount > 0) {
+  } else if (minimums && fromDocs) {
     state = "agency_partial";
   }
-  const copy =
-    state === "documented" ? "documented" : `${state} · ${filled} of ${COMPLETENESS_GROUPS.length}`;
-  return { state, filled, total: COMPLETENESS_GROUPS.length, groups, copy };
+  return {
+    state,
+    filled,
+    total: COMPLETENESS_GROUPS.length,
+    groups,
+    copy: completenessDisplayCopy(state, filled),
+  };
 }
 
 export function completenessCopy(draft: FoxIntakeDraft) {

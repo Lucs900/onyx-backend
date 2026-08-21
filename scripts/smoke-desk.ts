@@ -805,7 +805,40 @@ const assignedFacts = previewFacts(afterLooks);
 assert.ok(assignedFacts.some((fact) => fact.id === "status" && fact.value === "gathering"));
 assert.ok(assignedFacts.some((fact) => fact.id === "next" && fact.value === "You"));
 assert.ok(assignedFacts.some((fact) => fact.id === "file"));
-assert.ok(!/agency_ready/.test(fileCompleteness(afterLooks)?.copy ?? ""));
+assert.equal(fileCompleteness(afterLooks)?.state, "sketch");
+assert.match(fileCompleteness(afterLooks)?.copy ?? "", /sketch · \d of 5/);
+assert.ok(!/agency_partial|agency_ready/.test(fileCompleteness(afterLooks)?.copy ?? ""));
+assert.ok(
+  assignedFacts.some(
+    (fact) => fact.id === "file" && /sketch · \d of 5/.test(fact.value) && !/agency_partial|agency_ready/.test(fact.value),
+  ),
+);
+assert.match(fileStillUsefulNote(afterLooks) ?? "", /still useful: ID/i);
+const confirmedFromDocs = {
+  full_name: {
+    field: "full_name",
+    value: "Ada Borrower",
+    source: "document" as const,
+    confirmed: true,
+    confirmedAt: "2026-08-20T00:00:00.000Z",
+  },
+  employer_name: {
+    field: "employer_name",
+    value: "Harbor Steel",
+    source: "document" as const,
+    confirmed: true,
+    confirmedAt: "2026-08-20T00:00:00.000Z",
+  },
+};
+const docsBeforeLooks = draft({ ...afterIncome, facts: confirmedFromDocs });
+assert.equal(fileCompleteness(docsBeforeLooks)?.state, "agency_partial");
+assert.match(fileCompleteness(docsBeforeLooks)?.copy ?? "", /sketch · \d of 5/);
+assert.ok(!/agency_partial|agency_ready/.test(fileCompleteness(docsBeforeLooks)?.copy ?? ""));
+assert.ok(
+  previewFacts(docsBeforeLooks).some(
+    (fact) => fact.id === "file" && /sketch · \d of 5/.test(fact.value) && !/agency_partial/.test(fact.value),
+  ),
+);
 assert.ok(assignedFacts.some((fact) => fact.id === "originator" && fact.value === "Licensed originator assigned"));
 assert.ok(assignedFacts.some((fact) => fact.id === "letter"));
 const assignedReward = assignedFacts.find((fact) => fact.id === "reward");
@@ -1244,7 +1277,9 @@ assert.ok(
     (fact) => fact.id === "file" && /still useful: ID/i.test(fact.note ?? ""),
   ),
 );
-assert.ok(!/agency_ready/.test(fileCompleteness(w2AfterLooks)?.copy ?? ""));
+assert.equal(fileCompleteness(w2AfterLooks)?.state, "sketch");
+assert.match(fileCompleteness(w2AfterLooks)?.copy ?? "", /sketch · \d of 5/);
+assert.ok(!/agency_partial|agency_ready/.test(fileCompleteness(w2AfterLooks)?.copy ?? ""));
 
 const seAfterLooks = draft({
   ...afterLooks,
@@ -1790,7 +1825,7 @@ assert.ok(previewFacts(queued).some((fact) => fact.id === "originator"));
 assert.ok(previewFacts(queued).some((fact) => fact.id === "next" && fact.value === "ONYX"));
 assert.ok(previewFacts(queued).some((fact) => fact.id === "file"));
 assert.ok(previewFacts(queued).some((fact) => fact.id === "status" && fact.value === "in_queue"));
-assert.ok(!/agency_ready/.test(fileCompleteness(queued)?.copy ?? ""));
+assert.ok(!/agency_partial|agency_ready/.test(fileCompleteness(queued)?.copy ?? ""));
 const reviewItem = openReviewWorkItem(queued);
 assert.equal(reviewItem?.kind, "review");
 assert.ok(reviewItem?.state === "open" || reviewItem?.state === "nudged");
