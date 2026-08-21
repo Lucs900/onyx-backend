@@ -2897,14 +2897,51 @@ function sanitizeRestoredFoxText(text: string): string {
   );
 }
 
+function isQualifyingIncomeConfirm(message: FoxMessage) {
+  if (message.role !== "fox") return false;
+  const blob = `${message.text}\n${message.followUp ?? ""}`;
+  if (/Suggested qualifying income/i.test(blob)) return true;
+  return (message.actions ?? []).some((action) => action.capture?.field === "accept-proposal")
+    && /qualifying income/i.test(blob);
+}
+
+function dropProposalActions(message: FoxMessage): FoxMessage {
+  const actions = (message.actions ?? []).filter(
+    (action) =>
+      action.capture?.field !== "accept-proposal" && action.capture?.field !== "decline-proposal",
+  );
+  const text = message.text.replace(/\s*Use this\??\s*$/i, "").trim();
+  const followUp = message.followUp?.replace(/\s*Use this\??\s*$/i, "").trim();
+  return {
+    ...message,
+    text,
+    followUp: followUp || undefined,
+    actions: actions.length ? actions : undefined,
+  };
+}
+
+/** Older qualifying-income Use this / Leave blank cards go inert when a newer one lands. */
+export function inertSupersededIncomeConfirms(messages: FoxMessage[]): FoxMessage[] {
+  let latest = -1;
+  for (let i = 0; i < messages.length; i += 1) {
+    if (isQualifyingIncomeConfirm(messages[i])) latest = i;
+  }
+  if (latest < 0) return messages;
+  return messages.map((message, index) =>
+    index === latest || !isQualifyingIncomeConfirm(message) ? message : dropProposalActions(message),
+  );
+}
+
 export function migrateRestoredFoxMessages(messages: FoxMessage[]): FoxMessage[] {
-  return messages.map((message) => {
-    const text = sanitizeRestoredFoxText(message.text);
-    const facts = message.facts?.map(sanitizeRewardFact);
-    const factsChanged = Boolean(
-      facts && message.facts?.some((fact, index) => fact !== facts[index]),
-    );
-    if (text === message.text && !factsChanged) return message;
-    return { ...message, text, facts };
-  });
+  return inertSupersededIncomeConfirms(
+    messages.map((message) => {
+      const text = sanitizeRestoredFoxText(message.text);
+      const facts = message.facts?.map(sanitizeRewardFact);
+      const factsChanged = Boolean(
+        facts && message.facts?.some((fact, index) => fact !== facts[index]),
+      );
+      if (text === message.text && !factsChanged) return message;
+      return { ...message, text, facts };
+    }),
+  );
 }

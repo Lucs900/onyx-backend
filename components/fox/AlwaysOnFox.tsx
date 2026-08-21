@@ -56,6 +56,7 @@ import {
   confirmedMoneyText,
   formatLiveMoneyInput,
   editPromptFromCapture,
+  inertSupersededIncomeConfirms,
   structureExplainCopy,
   structureFixPrompt,
   workspaceGreeting,
@@ -512,11 +513,13 @@ export function AlwaysOnFox({
     prev: FoxMessage[],
     next: FoxMessage[] | ((prev: FoxMessage[]) => FoxMessage[]),
   ) => {
-    const resolved = typeof next === "function" ? next(prev) : next;
+    const resolved = inertSupersededIncomeConfirms(
+      typeof next === "function" ? next(prev) : next,
+    );
     const live = getFoxDraft();
     const stored = getFoxMessages();
     if (fileExists(live) && stored.length > resolved.length) {
-      return stored;
+      return inertSupersededIncomeConfirms(stored);
     }
     setFoxMessages(resolved);
     return resolved;

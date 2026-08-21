@@ -95,6 +95,7 @@ import {
   JUMBO_PURPOSE_ASK,
   loanLooksAboveCeiling,
   migrateRestoredFoxMessages,
+  inertSupersededIncomeConfirms,
   namedOutOfState,
   parseFundsAmount,
   parseWorkspaceEdit,
@@ -1935,6 +1936,31 @@ const decliningCard = workspacePromptCopy("confirm-proposal", seDecliningYearTwo
 assert.equal(decliningCard.text, DECLINING_INCOME_CAUTION);
 assert.match(decliningCard.followUp ?? "", /\$6,000/);
 assert.match(decliningCard.followUp ?? "", /Suggested qualifying income · not underwritten/);
+const yearOneAsk = workspacePromptCopy("confirm-proposal", seDecliningYearOne.draft);
+const supersededThread = inertSupersededIncomeConfirms([
+  {
+    id: "income-2023",
+    role: "fox" as const,
+    text: yearOneAsk.text,
+    followUp: yearOneAsk.followUp,
+    actions: yearOneAsk.actions,
+  },
+  {
+    id: "income-2024",
+    role: "fox" as const,
+    text: decliningCard.text,
+    followUp: decliningCard.followUp,
+    actions: decliningCard.actions,
+  },
+]);
+assert.ok(!(supersededThread[0]?.actions ?? []).some((item) => item.capture?.field === "accept-proposal"));
+assert.ok(!(supersededThread[0]?.actions ?? []).some((item) => item.label === "Use this"));
+assert.doesNotMatch(supersededThread[0]?.text ?? "", /Use this/);
+assert.ok((supersededThread[1]?.actions ?? []).some((item) => item.label === "Use this"));
+assert.match(supersededThread[1]?.followUp ?? "", /\$6,000/);
+const restoredIncome = migrateRestoredFoxMessages(supersededThread);
+assert.ok(!(restoredIncome[0]?.actions ?? []).some((item) => item.label === "Use this"));
+assert.ok((restoredIncome[1]?.actions ?? []).some((item) => item.label === "Use this"));
 assert.ok(
   previewFacts(seDecliningYearTwo.draft).some(
     (fact) => fact.id === "caution" && fact.value === DECLINING_INCOME_CAUTION,
@@ -2722,6 +2748,7 @@ assert.ok(alwaysOn.includes("shouldResumeWorkspaceEntry"));
 assert.ok(alwaysOn.includes("fileExists(live)"));
 assert.ok(alwaysOn.includes("Drop a file here."));
 assert.ok(alwaysOn.includes("DECLINING_INCOME_CAUTION"));
+assert.ok(alwaysOn.includes("inertSupersededIncomeConfirms"));
 assert.ok(alwaysOn.includes("suggest ?? \"\"") || alwaysOn.includes('suggest ?? ""'));
 const storeSource = readFileSync(join(root, "components/fox/store.ts"), "utf8");
 assert.ok(storeSource.includes("function shouldResumeWorkspaceEntry") || storeSource.includes("export function shouldResumeWorkspaceEntry"));
