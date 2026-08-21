@@ -49,6 +49,7 @@ import {
 import {
   applyExtractedFields,
   preferFilenameClass,
+  promoteExtractClass,
   resolveFactConflict,
   resolveReceivedSlot,
   skipRemainingClasses,
@@ -732,12 +733,15 @@ export function applyExtractWrite(
   if (!match) {
     return { draft: current, writes: [], conflict: null, quietLines: [] };
   }
+  const extractClass = preferFilenameClass(
+    promoteExtractClass(input.extractClass, input.fields),
+    name,
+  );
   const applied = failed
     ? { draft: current, writes: [], conflict: null, quietLines: note ? [note] : [] }
-    : applyExtractedFields(current, input);
+    : applyExtractedFields(current, { ...input, extractClass });
   const nextDocs = applied.draft.documents.map((doc) => {
     if (doc.receivedAt !== receivedAt || doc.name !== name) return doc;
-    const extractClass = preferFilenameClass(input.extractClass, name, doc.slot);
     const slot = resolveReceivedSlot(doc.slot, name, extractClass);
     return {
       ...doc,

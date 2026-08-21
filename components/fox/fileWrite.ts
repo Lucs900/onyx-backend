@@ -18,6 +18,7 @@ import {
   hasScheduleCCashflow,
   k1OrdinaryMissingDistributions,
   monthlyQualifyingFromExtract,
+  normalizeReturnKind,
   parseExtractMoney,
   readTaxCashflows,
 } from "./qualifyingIncome";
@@ -149,12 +150,31 @@ export function receivedClassOf(doc: ReceivedDoc): ExtractClass | null {
   if (doc.extractClass && doc.extractClass !== "other") return doc.extractClass;
   const fromSlot = extractClassFromSlot(doc.slot);
   if (fromSlot) return fromSlot;
-  if (doc.extractClass === "other") return null;
   if (doc.status === "extracted" && taxReturnFilename(doc.name)) return "tax_return";
+  if (doc.extractClass === "other") return null;
   return null;
 }
 
-/** Filename paystub / W-2 / ID / bank wins when extract returns `other`. */
+export function looksLikeTaxReturnFields(
+  fields?: Record<string, string | null | undefined> | null,
+): boolean {
+  if (!fields) return false;
+  const kind = normalizeReturnKind(String(fields.return_kind ?? ""));
+  if (kind === "k1" || kind === "1065" || kind === "1120s" || kind === "schedule_c") return true;
+  if (String(fields.k1_ordinary_income ?? "").trim()) return true;
+  if (String(fields.schedule_c_net_profit ?? "").trim()) return true;
+  return false;
+}
+
+export function promoteExtractClass(
+  extractClass: ExtractClass,
+  fields?: Record<string, string | null | undefined> | null,
+): ExtractClass {
+  if (extractClass !== "other") return extractClass;
+  return looksLikeTaxReturnFields(fields) ? "tax_return" : extractClass;
+}
+
+/** Filename paystub / W-2 / ID / bank / tax-return names win when extract returns `other`. */
 export function preferFilenameClass(
   extractClass: ExtractClass,
   name?: string,
@@ -164,6 +184,7 @@ export function preferFilenameClass(
   return (
     extractClassFromSlot(slot ?? "other") ??
     extractClassFromFilename(name ?? "") ??
+    (taxReturnFilename(name ?? "") ? "tax_return" : null) ??
     extractClass
   );
 }
@@ -189,6 +210,7 @@ export function docsDisplayLabel(doc: {
   if (extractClass === "w2") return "W-2";
   if (extractClass === "government_id") return "ID";
   if (extractClass === "bank_statement") return "Bank statements";
+  if (extractClass === "tax_return") return "Tax return";
   const slot = resolveReceivedSlot(doc.slot, doc.name, extractClass);
   if (slot === "paystubs") return "Paystubs";
   if (slot === "w2") return "W-2";
@@ -439,19 +461,23 @@ export function applyExtractedFields(
   input: ExtractApplyInput,
 ): ExtractApplyResult {
   const writes: { field: string; value: string }[] = [];
-  if (input.extractClass === "other" || input.confidence < LOW_EXTRACT_CONFIDENCE) {
+  const extractClass = promoteExtractClass(input.extractClass, input.fields);
+  if (
+    extractClass === "other" ||
+    (input.confidence < LOW_EXTRACT_CONFIDENCE && !looksLikeTaxReturnFields(input.fields))
+  ) {
     return { draft, writes, conflict: null, quietLines: [] };
   }
-  const fields = sanitizeExtractedFields(input.extractClass, input.fields);
-  const computed = monthlyQualifyingFromExtract(draft, input.extractClass, fields);
+  const fields = sanitizeExtractedFields(extractClass, input.fields);
+  const computed = monthlyQualifyingFromExtract(draft, extractClass, fields);
   const now = new Date().toISOString();
   let next = draft;
   let conflict: FactConflict | null = draft.pendingConflict ?? null;
-  for (const field of EXTRACT_SCHEMA_KEYS[input.extractClass]) {
+  for (const field of EXTRACT_SCHEMA_KEYS[extractClass]) {
     const value = fields[field];
     if (!value) continue;
     const existing = existingFact(next, field);
-    if (!existing || (input.extractClass === "tax_return" && YEARLY_TAX_KEYS.has(field))) {
+    if (!existing || (extractClass === "tax_return" && YEARLY_TAX_KEYS.has(field))) {
       next = writeField(next, field, value, now);
       writes.push({ field, value });
       continue;
@@ -490,13 +516,13 @@ export function applyExtractedFields(
   }
   next = applyQualifyingIncomeFromExtract(
     { ...next, pendingConflict: conflict },
-    input.extractClass,
+    extractClass,
     fields,
     computed,
   );
   conflict = next.pendingConflict ?? conflict;
-  next = attachExtractClass(next, input.extractClass);
-  const quiet = writes.length ? quietLineForClass(input.extractClass) : null;
+  next = attachExtractClass(next, extractClass);
+  const quiet = writes.length ? quietLineForClass(extractClass) : null;
   return {
     draft: next,
     writes,

@@ -5,7 +5,7 @@ import {
   slotForExtractClass,
 } from "@/components/fox/fileWrite";
 import { FAILED_READ_NOTE, RECEIVED_NOTE, mediaTypeOf } from "@/lib/docs/accept";
-import { classifyAndExtract } from "@/lib/docs/extract";
+import { classifyAndExtract, grokExtractAdapter } from "@/lib/docs/extract";
 import { readPrivateBytes, storageStatus, STORAGE_BLOCKED } from "@/lib/docs/storage";
 
 export const runtime = "nodejs";
@@ -31,12 +31,18 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Missing bytesRef" }, { status: 400 });
   }
 
-  const hinted = extractClassFromFilename(body.name ?? "");
+  const filenameClass = preferFilenameClass("other", body.name ?? "");
+  const hinted = filenameClass !== "other" ? filenameClass : extractClassFromFilename(body.name ?? "");
 
   try {
     const stored = await readPrivateBytes(bytesRef);
     const mediaType = mediaTypeOf(body.name ?? stored.pathname, body.type ?? stored.contentType);
-    const extracted = await classifyAndExtract(stored.bytes, mediaType);
+    const extracted = await classifyAndExtract(
+      stored.bytes,
+      mediaType,
+      grokExtractAdapter,
+      hinted,
+    );
     const failed = Boolean(extracted.failed || extracted.warnings.includes("failed"));
     const extractClass = preferFilenameClass(extracted.extractClass, body.name);
     return NextResponse.json({

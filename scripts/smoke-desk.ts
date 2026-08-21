@@ -60,6 +60,7 @@ import {
   fileStillUsefulNote,
   missingAskCopy,
   missingExtractClasses,
+  preferFilenameClass,
   receivedClassOf,
   receivedTaxReturnCount,
   stillUsefulAskCopy,
@@ -1852,6 +1853,69 @@ assert.doesNotMatch(
   /1084|\bDU\b|approved|eligible|you qualify|don’t qualify|agency_ready/i,
 );
 
+assert.equal(preferFilenameClass("other", "entity-ordinary-2024.png"), "tax_return");
+assert.equal(preferFilenameClass("other", "return-2024.png"), "tax_return");
+assert.equal(
+  receivedClassOf({
+    slot: "other",
+    name: "entity-ordinary-2024.png",
+    type: "image/png",
+    size: 8000,
+    receivedAt: "2026-08-21T01:00:00.000Z",
+    status: "extracted",
+    extractClass: "other",
+  }),
+  "tax_return",
+);
+assert.ok(previewFacts(entityOrdinary.draft).some((fact) => fact.id === "docs" && /Tax return in/.test(fact.value)));
+assert.ok(previewFacts(entityOrdinary.draft).every((fact) => fact.id !== "docs" || !/Other in/.test(fact.value)));
+
+resetWorkspaceForEntry("acr", "buy");
+applyCapture({ field: "occupancy", value: "primary" });
+applyCapture({ field: "timeline", value: "ready-now" });
+capturePurchaseFunds("850000", "680000");
+applyCapture({ field: "creditRange", value: "760+" });
+applyCapture({ field: "incomeType", value: "self-employed" });
+applyCapture({ field: "confirm-draft" });
+receiveDocument({
+  slot: slotFromName("entity-ordinary-2024.png"),
+  name: "entity-ordinary-2024.png",
+  type: "image/png",
+  size: 8000,
+  receivedAt: "2026-08-21T02:00:00.000Z",
+  bytesRef: "fox-intake/entity-ordinary-2024.png",
+});
+const entityWalkWrite = applyExtractWrite("2026-08-21T02:00:00.000Z", "entity-ordinary-2024.png", {
+  extractClass: "other",
+  confidence: 0.4,
+  fields: {
+    tax_year: "2024",
+    return_kind: "1120s",
+    k1_ordinary_income: "40000",
+    k1_distributions: "",
+  },
+});
+assert.equal(entityWalkWrite.draft.documents[0]?.extractClass, "tax_return");
+assert.equal(entityWalkWrite.draft.documents[0]?.slot, "other");
+assert.equal(entityWalkWrite.draft.pendingProposal?.field, QUALIFYING_INCOME_FIELD);
+assert.equal(entityWalkWrite.draft.pendingProposal?.value, "3333");
+assert.equal(entityWalkWrite.draft.pendingProposal?.note, SUGGESTED_INCOME_NOTE);
+assert.equal(entityWalkWrite.draft.facts?.qualifying_income, undefined);
+assert.equal(entityWalkWrite.draft.facts?.k1_ordinary_income?.value, "40000");
+assert.ok(!missingExtractClasses(entityWalkWrite.draft).includes("tax_return"));
+assert.ok(stillUsefulLabels(entityWalkWrite.draft).includes("K-1 distributions"));
+assert.ok(stillUsefulLabels(entityWalkWrite.draft).includes("government ID"));
+assert.ok(!stillUsefulLabels(entityWalkWrite.draft).includes("tax return"));
+assert.match(stillUsefulAskCopy(entityWalkWrite.draft), /government ID and K-1 distributions/i);
+assert.doesNotMatch(stillUsefulAskCopy(entityWalkWrite.draft), /government ID and tax return/i);
+assert.ok(previewFacts(entityWalkWrite.draft).some((fact) => fact.id === "docs" && /Tax return in/.test(fact.value)));
+assert.ok(previewFacts(entityWalkWrite.draft).every((fact) => fact.id !== "docs" || !/Other in/.test(fact.value)));
+assert.equal(fileCompleteness(entityWalkWrite.draft)?.groups.income.documented, false);
+assert.doesNotMatch(
+  `${proposalAskCopy(entityWalkWrite.draft.pendingProposal!)} ${stillUsefulAskCopy(entityWalkWrite.draft)}`,
+  /1084|\bDU\b|approved|eligible|you qualify|don’t qualify|agency_ready|liquidity|partnership/i,
+);
+
 const schCWins = applyExtractedFields(seDecliningYearTwo.draft, {
   extractClass: "tax_return",
   confidence: 0.9,
@@ -2556,6 +2620,31 @@ async function extractAdapterSmoke() {
   });
   assert.equal(blank.failed, true);
   assert.deepEqual(blank.fields, {});
+
+  const hintedK1 = await classifyAndExtract(
+    new Uint8Array([1, 2, 3, 4]),
+    "image/png",
+    {
+      async classify() {
+        return { class: "other" as const, confidence: 0.35, readable: true };
+      },
+      async extract(_bytes, _media, extractClass) {
+        assert.equal(extractClass, "tax_return");
+        return {
+          fields: {
+            tax_year: "2024",
+            return_kind: "k1",
+            k1_ordinary_income: "40000",
+          },
+          warnings: [],
+        };
+      },
+    },
+    "tax_return",
+  );
+  assert.equal(hintedK1.failed, undefined);
+  assert.equal(hintedK1.extractClass, "tax_return");
+  assert.equal(hintedK1.fields.k1_ordinary_income, "40000");
 }
 
 extractAdapterSmoke()

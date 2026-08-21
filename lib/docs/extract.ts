@@ -3,6 +3,7 @@ import { createOpenAI } from "@ai-sdk/openai";
 import {
   EXTRACT_SCHEMA_KEYS,
   LOW_EXTRACT_CONFIDENCE,
+  promoteExtractClass,
   sanitizeExtractedFields,
   type ExtractApplyInput,
 } from "@/components/fox/fileWrite";
@@ -243,7 +244,7 @@ function extractFieldsPrompt(extractClass: ExtractClass, keys: readonly string[]
   let extra = "";
   if (extractClass === "tax_return") {
     extra =
-      " return_kind is schedule_c, k1, 1065, 1120s, or empty. schedule_c_net_profit is Schedule C net profit or loss (line 31); use a leading minus when the return shows a loss. k1_ordinary_income is ordinary income when a K-1 / 1065 / 1120S is visible. k1_distributions is cash distributions when printed; empty if not shown. amortization, casualty_loss, and mileage_depreciation only when clearly printed on the same return. Empty string when a line is not clearly printed. Never invent add-backs.";
+      " return_kind is schedule_c, k1, 1065, 1120s, or empty. schedule_c_net_profit is Schedule C net profit or loss (line 31); use a leading minus when the return shows a loss. k1_ordinary_income is ordinary business income when a K-1 / 1065 / 1120S is visible — including 1120S line 1 ordinary income. k1_distributions is cash distributions when printed; empty if not shown. amortization, casualty_loss, and mileage_depreciation only when clearly printed on the same return. Empty string when a line is not clearly printed. Never invent add-backs.";
   }
   if (extractClass === "paystub") {
     extra = " pay_frequency is weekly, biweekly, semimonthly, monthly, or empty.";
@@ -273,7 +274,7 @@ export const grokExtractAdapter: DocumentExtractAdapter = {
     const parsed = await grokJson(
       bytes,
       mediaType,
-      `Classify this file as one of: ${CLASSES.join(", ")}. JSON: {"class":"...","confidence":0-1,"readable":true|false}. readable is false when the file is blank, tiny, or has no readable printed text. If it is not clearly one of those classes, use class "other" and a low confidence. Never invent a class from the filename.`,
+      `Classify this file as one of: ${CLASSES.join(", ")}. tax_return includes Form 1040, Schedule C, K-1, Form 1065, and Form 1120S. Ordinary business income on a K-1 or 1120S is tax_return, not other. JSON: {"class":"...","confidence":0-1,"readable":true|false}. readable is false when the file is blank, tiny, or has no readable printed text. If it is not clearly one of those classes, use class "other" and a low confidence. Never invent a class from the filename.`,
     );
     const extractClass = asClass(parsed.class);
     const confidence = asConfidence(parsed.confidence);
@@ -310,6 +311,7 @@ export async function classifyAndExtract(
   bytes: Uint8Array,
   mediaType: string,
   adapter: DocumentExtractAdapter = grokExtractAdapter,
+  hint?: ExtractClass | null,
 ): Promise<ClassifyExtractResult> {
   let classified: ClassifyResult | null = null;
   try {
@@ -323,7 +325,11 @@ export async function classifyAndExtract(
         failed: true,
       };
     }
-    if (classified.class === "other" || classified.confidence < LOW_EXTRACT_CONFIDENCE) {
+    const hinted = hint && hint !== "other" ? hint : undefined;
+    const confident =
+      classified.class !== "other" && classified.confidence >= LOW_EXTRACT_CONFIDENCE;
+    const extractAs = confident ? classified.class : hinted;
+    if (!extractAs || extractAs === "other") {
       return {
         extractClass: classified.class,
         confidence: classified.confidence,
@@ -331,9 +337,9 @@ export async function classifyAndExtract(
         warnings: ["Low confidence. Document kept. No numbers invented."],
       };
     }
-    const extracted = await adapter.extract(bytes, mediaType, classified.class);
+    const extracted = await adapter.extract(bytes, mediaType, extractAs);
     return {
-      extractClass: classified.class,
+      extractClass: promoteExtractClass(extractAs, extracted.fields),
       confidence: classified.confidence,
       fields: extracted.fields,
       warnings: extracted.warnings,
