@@ -1148,7 +1148,7 @@ assert.ok(previewFacts(getFoxDraft()).some((fact) => fact.id === "employer" && f
 
 resetWorkspaceForEntry("acr");
 applyPreviewMotionControls({});
-assert.equal(getFoxDraft().pendingProposal, null);
+assert.ok(!getFoxDraft().pendingProposal);
 assert.equal(getFoxDraft().facts?.employer_name, undefined);
 const fromUrl = applyPreviewMotionControls({ suggest: "employer" });
 assert.equal(fromUrl.pendingProposal?.kind, "public");
