@@ -9,7 +9,7 @@ const CONTAMINATION =
   /presidio|\bp37\b|candle|\bwax\b|label[- ]pack|label\s*5|this\s+is\s+it/i;
 
 const MORTGAGE_SAMPLE =
-  /paystub|w-?2|\bid\b|license|tax[-_ ]?return|bank[-_ ]?statement|purchase[-_ ]?contract|mortgage[-_ ]?statement/i;
+  /paystub|w-?2|\bid\b|license|\breturn\b|\bentity\b|tax[-_ ]?return|bank[-_ ]?statement|purchase[-_ ]?contract|mortgage[-_ ]?statement/i;
 
 const DOC_EXT = /\.(png|jpe?g|webp|heic|pdf|gif|tiff?)$/i;
 
@@ -69,6 +69,15 @@ export function assertOnyxFixtures() {
   }
 
   assert.ok(paths.some((path) => /paystub-acme\.png$/.test(path)), "expected scripts/fixtures/paystub-acme.png");
+  assert.ok(paths.some((path) => /return-2023\.png$/.test(path)), "expected scripts/fixtures/return-2023.png");
+  assert.ok(
+    paths.some((path) => /return-declining-2024\.png$/.test(path)),
+    "expected scripts/fixtures/return-declining-2024.png",
+  );
+  assert.ok(
+    paths.some((path) => /entity-ordinary-2024\.png$/.test(path)),
+    "expected scripts/fixtures/entity-ordinary-2024.png",
+  );
 }
 
 const invokedDirectly =

@@ -37,7 +37,11 @@ import {
 } from "../components/fox/completeness";
 import {
   QUALIFYING_INCOME_FIELD,
+  monthlyFromAnnual,
   monthlyQualifyingFromExtract,
+  parseExtractMoney,
+  readTaxCashflows,
+  scheduleCAnnual,
   stableOrDecliningAnnual,
 } from "../components/fox/qualifyingIncome";
 import {
@@ -1306,9 +1310,19 @@ assert.match(gatheringCopy(seAfterLooks), /prior-year return/i);
 
 assert.ok(EXTRACT_SCHEMA_KEYS.tax_return.includes("schedule_c_net_profit"));
 assert.ok(EXTRACT_SCHEMA_KEYS.tax_return.includes("return_kind"));
+assert.ok(EXTRACT_SCHEMA_KEYS.tax_return.includes("k1_ordinary_income"));
+assert.ok(EXTRACT_SCHEMA_KEYS.tax_return.includes("k1_distributions"));
+assert.ok(EXTRACT_SCHEMA_KEYS.tax_return.includes("amortization"));
 assert.ok(EXTRACT_SCHEMA_KEYS.paystub.includes("pay_frequency"));
 assert.equal(stableOrDecliningAnnual(120000, 96000), 96000);
 assert.equal(stableOrDecliningAnnual(96000, 120000), 108000);
+assert.equal(parseExtractMoney("(12,000)"), -12000);
+assert.equal(parseExtractMoney("-$8,000"), -8000);
+assert.equal(scheduleCAnnual({ netProfit: -24000, depreciation: 0 }), -24000);
+assert.equal(monthlyFromAnnual(-24000), -2000);
+assert.equal(scheduleCAnnual({ netProfit: 80000, depreciation: 8000 }), 88000);
+assert.equal(monthlyFromAnnual(72000), 6000);
+assert.equal(monthlyFromAnnual(40000), 3333);
 
 const seReturn = applyExtractedFields(seAfterLooks, {
   extractClass: "tax_return",
@@ -1347,7 +1361,11 @@ assert.ok(stillUsefulLabels(seReturn.draft).includes("prior-year return"));
 assert.equal(slotFromName("return-2024.png"), "other");
 assert.ok(taxReturnFilename("return-2024.png"));
 assert.ok(taxReturnFilename("return-2025.pdf"));
+assert.ok(taxReturnFilename("return-declining-2024.png"));
+assert.ok(taxReturnFilename("entity-ordinary-2024.png"));
 assert.ok(!taxReturnFilename("license.png"));
+assert.equal(slotFromName("entity-ordinary-2024.png"), "other");
+assert.equal(extractClassFromFilename("entity-ordinary-2024.png"), null);
 assert.equal(
   receivedClassOf({
     slot: "other",
@@ -1355,6 +1373,17 @@ assert.equal(
     type: "image/png",
     size: 8000,
     receivedAt: "2026-08-20T00:00:00.000Z",
+    status: "extracted",
+  }),
+  "tax_return",
+);
+assert.equal(
+  receivedClassOf({
+    slot: "other",
+    name: "entity-ordinary-2024.png",
+    type: "image/png",
+    size: 8000,
+    receivedAt: "2026-08-21T01:00:00.000Z",
     status: "extracted",
   }),
   "tax_return",
@@ -1641,6 +1670,200 @@ assert.ok(
     (fact) => fact.id === "qualifying" && fact.note === SUGGESTED_INCOME_NOTE,
   ),
 );
+assert.ok(stillUsefulLabels(k1Return.draft).includes("K-1 distributions"));
+assert.ok(!stillUsefulLabels(k1Return.draft).includes("prior-year return"));
+assert.match(stillUsefulAskCopy(k1Return.draft), /K-1 distributions/i);
+assert.doesNotMatch(
+  `${proposalAskCopy(k1Return.draft.pendingProposal!)} ${stillUsefulAskCopy(k1Return.draft)}`,
+  /1084|\bDU\b|approved|eligible|you qualify|don’t qualify|agency_ready/i,
+);
+
+const seLoss = applyExtractedFields(seAfterLooks, {
+  extractClass: "tax_return",
+  confidence: 0.92,
+  fields: {
+    tax_year: "2024",
+    return_kind: "schedule_c",
+    schedule_c_net_profit: "(24000)",
+    depreciation: "0",
+  },
+});
+assert.equal(seLoss.draft.pendingProposal?.field, QUALIFYING_INCOME_FIELD);
+assert.equal(seLoss.draft.pendingProposal?.value, "-2000");
+assert.equal(seLoss.draft.pendingProposal?.note, SUGGESTED_INCOME_NOTE);
+assert.match(proposalAskCopy(seLoss.draft.pendingProposal!), /-\$2,000/);
+assert.equal(seLoss.draft.facts?.qualifying_income, undefined);
+
+const seZero = applyExtractedFields(seAfterLooks, {
+  extractClass: "tax_return",
+  confidence: 0.92,
+  fields: {
+    tax_year: "2024",
+    return_kind: "schedule_c",
+    schedule_c_net_profit: "0",
+    depreciation: "0",
+  },
+});
+assert.equal(seZero.draft.pendingProposal?.value, "0");
+assert.equal(seZero.draft.pendingProposal?.note, SUGGESTED_INCOME_NOTE);
+
+const seAmort = applyExtractedFields(seAfterLooks, {
+  extractClass: "tax_return",
+  confidence: 0.9,
+  fields: {
+    tax_year: "2024",
+    return_kind: "schedule_c",
+    schedule_c_net_profit: "96000",
+    depreciation: "12000",
+    amortization: "2400",
+  },
+});
+assert.equal(seAmort.draft.pendingProposal?.value, "9200");
+assert.equal(readTaxCashflows(seAmort.draft)[0]?.amortization, "2400");
+
+const seDecliningYearOne = applyExtractedFields(
+  draft({
+    ...afterLooks,
+    incomeType: { ...emptyDraft().incomeType, value: "self-employed" },
+    documents: [
+      {
+        slot: "other",
+        name: "return-2023.png",
+        type: "image/png",
+        size: 8000,
+        receivedAt: "2026-08-21T00:00:00.000Z",
+        status: "reading",
+      },
+    ],
+  }),
+  {
+    extractClass: "tax_return",
+    confidence: 0.93,
+    fields: {
+      tax_year: "2023",
+      return_kind: "schedule_c",
+      schedule_c_net_profit: "80000",
+      depreciation: "8000",
+      depletion: "0",
+      business_use_of_home: "0",
+      nonrecurring_other_income: "0",
+    },
+  },
+);
+assert.equal(seDecliningYearOne.draft.pendingProposal?.value, "7333");
+assert.equal(readTaxCashflows(seDecliningYearOne.draft)[0]?.schedule_c_net_profit, "80000");
+assert.ok(stillUsefulLabels(seDecliningYearOne.draft).includes("prior-year return"));
+
+const seDecliningYearTwo = applyExtractedFields(
+  {
+    ...seDecliningYearOne.draft,
+    documents: [
+      ...seDecliningYearOne.draft.documents,
+      {
+        slot: "other",
+        name: "return-declining-2024.png",
+        type: "image/png",
+        size: 8000,
+        receivedAt: "2026-08-21T00:10:00.000Z",
+        status: "reading",
+      },
+    ],
+  },
+  {
+    extractClass: "tax_return",
+    confidence: 0.93,
+    fields: {
+      tax_year: "2024",
+      return_kind: "schedule_c",
+      schedule_c_net_profit: "66000",
+      depreciation: "6000",
+    },
+  },
+);
+assert.equal(seDecliningYearTwo.draft.pendingProposal?.value, "6000");
+assert.notEqual(seDecliningYearTwo.draft.pendingProposal?.value, "6667");
+assert.equal(receivedTaxReturnCount(seDecliningYearTwo.draft), 2);
+const decliningYears = readTaxCashflows(seDecliningYearTwo.draft);
+assert.equal(decliningYears.length, 2);
+assert.equal(decliningYears[0]?.tax_year, "2023");
+assert.equal(decliningYears[0]?.schedule_c_net_profit, "80000");
+assert.equal(decliningYears[0]?.depreciation, "8000");
+assert.equal(decliningYears[1]?.tax_year, "2024");
+assert.equal(decliningYears[1]?.schedule_c_net_profit, "66000");
+assert.equal(decliningYears[1]?.depreciation, "6000");
+assert.deepEqual(stillUsefulLabels(seDecliningYearTwo.draft), ["government ID"]);
+assert.equal(seDecliningYearTwo.draft.facts?.qualifying_income, undefined);
+assert.match(proposalAskCopy(seDecliningYearTwo.draft.pendingProposal!), /6,000/);
+assert.match(proposalAskCopy(seDecliningYearTwo.draft.pendingProposal!), /Suggested qualifying income · not underwritten/);
+assert.doesNotMatch(
+  `${proposalAskCopy(seDecliningYearTwo.draft.pendingProposal!)} ${stillUsefulAskCopy(seDecliningYearTwo.draft)}`,
+  /1084|\bDU\b|approved|eligible|you qualify|don’t qualify|agency_ready/i,
+);
+
+const entityOrdinary = applyExtractedFields(
+  draft({
+    ...afterLooks,
+    incomeType: { ...emptyDraft().incomeType, value: "self-employed" },
+    documents: [
+      {
+        slot: "other",
+        name: "entity-ordinary-2024.png",
+        type: "image/png",
+        size: 8000,
+        receivedAt: "2026-08-21T01:00:00.000Z",
+        status: "reading",
+      },
+    ],
+  }),
+  {
+    extractClass: "tax_return",
+    confidence: 0.91,
+    fields: {
+      tax_year: "2024",
+      return_kind: "k1",
+      k1_ordinary_income: "40000",
+      k1_distributions: "",
+    },
+  },
+);
+assert.equal(entityOrdinary.draft.documents[0]?.extractClass, "tax_return");
+assert.equal(entityOrdinary.draft.pendingProposal?.field, QUALIFYING_INCOME_FIELD);
+assert.equal(entityOrdinary.draft.pendingProposal?.value, "3333");
+assert.equal(entityOrdinary.draft.pendingProposal?.note, SUGGESTED_INCOME_NOTE);
+assert.equal(entityOrdinary.draft.facts?.qualifying_income, undefined);
+assert.equal(workspacePrompt(entityOrdinary.draft), "confirm-proposal");
+const entityAsk = workspacePromptCopy("confirm-proposal", entityOrdinary.draft);
+assert.ok((entityAsk.actions ?? []).some((action) => action.label === "Use this"));
+assert.ok((entityAsk.actions ?? []).some((action) => action.label === "Leave blank"));
+assert.match(proposalAskCopy(entityOrdinary.draft.pendingProposal!), /3,333/);
+assert.match(proposalAskCopy(entityOrdinary.draft.pendingProposal!), /Suggested qualifying income · not underwritten/);
+assert.ok(stillUsefulLabels(entityOrdinary.draft).includes("K-1 distributions"));
+assert.ok(stillUsefulLabels(entityOrdinary.draft).includes("government ID"));
+assert.ok(!stillUsefulLabels(entityOrdinary.draft).includes("prior-year return"));
+assert.match(stillUsefulAskCopy(entityOrdinary.draft), /government ID and K-1 distributions/i);
+assert.equal(fileCompleteness(entityOrdinary.draft)?.state, "sketch");
+assert.equal(fileCompleteness(entityOrdinary.draft)?.groups.income.documented, false);
+const entityAccepted = resolveProposal(entityOrdinary.draft, "accept");
+assert.equal(entityAccepted.facts?.qualifying_income?.value, "3333");
+assert.equal(entityAccepted.facts?.qualifying_income?.source, "suggested");
+assert.equal(fileCompleteness(entityAccepted)?.groups.income.documented, false);
+assert.doesNotMatch(
+  `${proposalAskCopy(entityOrdinary.draft.pendingProposal!)} ${stillUsefulAskCopy(entityOrdinary.draft)}`,
+  /1084|\bDU\b|approved|eligible|you qualify|don’t qualify|agency_ready/i,
+);
+
+const schCWins = applyExtractedFields(seDecliningYearTwo.draft, {
+  extractClass: "tax_return",
+  confidence: 0.9,
+  fields: {
+    tax_year: "2024",
+    return_kind: "schedule_c",
+    schedule_c_net_profit: "66000",
+    depreciation: "6000",
+    k1_ordinary_income: "40000",
+  },
+});
+assert.equal(schCWins.draft.pendingProposal?.value, "6000");
 
 const w2Extract = applyExtractedFields(afterLooks, {
   extractClass: "w2",
@@ -2008,6 +2231,9 @@ assert.ok(!/Drop what you have\. Skip is fine/.test(workspaceSrc));
 assert.ok(!/832,?750/.test(workspaceSrc));
 assert.ok(workspaceSrc.includes("1_249_125") || workspaceSrc.includes("1249125"));
 
+assert.ok(readFileSync(join(root, "scripts/fixtures/return-2023.png")).length > 0);
+assert.ok(readFileSync(join(root, "scripts/fixtures/return-declining-2024.png")).length > 0);
+assert.ok(readFileSync(join(root, "scripts/fixtures/entity-ordinary-2024.png")).length > 0);
 const pngBytes = readFileSync(join(root, "scripts/fixtures/paystub-acme.png"));
 const dataUrl = imageDataUrl(pngBytes, "image/png");
 assert.ok(dataUrl.startsWith("data:image/png;base64,"));

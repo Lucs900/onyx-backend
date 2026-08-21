@@ -15,7 +15,10 @@ import type {
 } from "./types";
 import {
   applyQualifyingIncomeFromExtract,
+  hasScheduleCCashflow,
+  k1OrdinaryMissingDistributions,
   monthlyQualifyingFromExtract,
+  parseExtractMoney,
   readTaxCashflows,
 } from "./qualifyingIncome";
 
@@ -37,7 +40,11 @@ export const EXTRACT_SCHEMA_KEYS: Record<ExtractClass, readonly string[]> = {
     "depletion",
     "business_use_of_home",
     "nonrecurring_other_income",
+    "amortization",
+    "casualty_loss",
+    "mileage_depreciation",
     "k1_ordinary_income",
+    "k1_distributions",
   ],
   bank_statement: ["institution", "period_end", "ending_balance"],
   purchase_contract: ["property_address", "purchase_price", "close_date"],
@@ -63,7 +70,11 @@ const MONEY_KEYS = new Set([
   "depletion",
   "business_use_of_home",
   "nonrecurring_other_income",
+  "amortization",
+  "casualty_loss",
+  "mileage_depreciation",
   "k1_ordinary_income",
+  "k1_distributions",
 ]);
 
 const INCOME_MONEY_KEYS = new Set(["gross_period", "ytd_gross", "wages", "agi", "income", "net_period"]);
@@ -77,7 +88,11 @@ const YEARLY_TAX_KEYS = new Set([
   "depletion",
   "business_use_of_home",
   "nonrecurring_other_income",
+  "amortization",
+  "casualty_loss",
+  "mileage_depreciation",
   "k1_ordinary_income",
+  "k1_distributions",
 ]);
 
 const DROP_FIELD_KEYS =
@@ -105,7 +120,7 @@ export function slotFromFilename(name: string): DocSlot {
   const lower = name.toLowerCase();
   if (/w-?2/.test(lower)) return "w2";
   if (/pay.?stub|payslip/.test(lower)) return "paystubs";
-  if (/tax|1099|k-?1|schedule.?c|profit|business/.test(lower)) return "other";
+  if (/tax|1099|k-?1|schedule.?c|profit|business|\bentity\b|\breturn\b/.test(lower)) return "other";
   if (/bank|statement/.test(lower)) return "bank";
   if (/\bid\b|license|passport|driver/.test(lower)) return "id";
   return "other";
@@ -123,8 +138,8 @@ export function extractClassFromFilename(name: string): ExtractClass | null {
   return extractClassFromSlot(slotFromFilename(name));
 }
 
-/** return-2024.png / tax / 1099 / K-1 / Schedule C. Does not need "schedule-c" in the name. */
-const TAX_RETURN_FILENAME = /\breturn\b|tax|1099|k-?1|schedule.?c/;
+/** return-2024.png / entity-ordinary-2024.png / tax / 1099 / K-1 / Schedule C. Does not need "schedule-c" in the name. */
+const TAX_RETURN_FILENAME = /\breturn\b|\bentity\b|tax|1099|k-?1|schedule.?c/;
 
 export function taxReturnFilename(name: string) {
   return TAX_RETURN_FILENAME.test(name.toLowerCase());
@@ -232,7 +247,11 @@ export function factLabel(field: string) {
   if (field === "depletion") return "depletion";
   if (field === "business_use_of_home") return "business use of home";
   if (field === "nonrecurring_other_income") return "nonrecurring other income";
+  if (field === "amortization") return "amortization";
+  if (field === "casualty_loss") return "casualty loss";
+  if (field === "mileage_depreciation") return "mileage depreciation";
   if (field === "k1_ordinary_income") return "K-1 ordinary income";
+  if (field === "k1_distributions") return "K-1 distributions";
   if (field === "qualifying_income") return "qualifying income";
   if (field === "institution") return "institution";
   if (field === "period_end") return "period end";
@@ -286,10 +305,7 @@ export function sanitizeExtractedFields(
 }
 
 function moneyNumber(value: string): number | null {
-  const cleaned = value.replace(/[$,]/g, "").replace(/\s/g, "");
-  if (!cleaned || /[a-z]/i.test(cleaned)) return null;
-  const n = Number(cleaned);
-  return Number.isFinite(n) ? n : null;
+  return parseExtractMoney(value);
 }
 
 export function valuesMatch(left: string, right: string) {
@@ -305,7 +321,10 @@ export function valuesMatch(left: string, right: string) {
 export function displayFactValue(field: string, value: string) {
   if (MONEY_KEYS.has(field)) {
     const n = moneyNumber(value);
-    if (n != null) return `$${Math.round(n).toLocaleString("en-US")}`;
+    if (n != null) {
+      const shown = `$${Math.round(Math.abs(n)).toLocaleString("en-US")}`;
+      return n < 0 ? `-${shown}` : shown;
+    }
   }
   return value;
 }
@@ -601,7 +620,8 @@ export function deepenStillUseful(draft: FoxIntakeDraft) {
 export type StillUsefulLabel =
   | ReturnType<typeof askClassLabel>
   | "second-year W-2"
-  | "prior-year return";
+  | "prior-year return"
+  | "K-1 distributions";
 
 export function stillUsefulLabels(draft: FoxIntakeDraft): StillUsefulLabel[] {
   const taxReturns = receivedTaxReturnCount(draft);
@@ -617,10 +637,17 @@ export function stillUsefulLabels(draft: FoxIntakeDraft): StillUsefulLabel[] {
     (income === "self-employed" || income === "both" || income === "other") &&
     taxReturns === 1
   ) {
-    labels.push("prior-year return");
+    labels.push(
+      k1OrdinaryMissingDistributions(draft) && !hasScheduleCCashflow(draft)
+        ? "K-1 distributions"
+        : "prior-year return",
+    );
   }
   return taxReturns >= 2
-    ? labels.filter((label) => label !== "tax return" && label !== "prior-year return")
+    ? labels.filter(
+        (label) =>
+          label !== "tax return" && label !== "prior-year return" && label !== "K-1 distributions",
+      )
     : labels;
 }
 

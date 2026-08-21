@@ -243,7 +243,7 @@ function extractFieldsPrompt(extractClass: ExtractClass, keys: readonly string[]
   let extra = "";
   if (extractClass === "tax_return") {
     extra =
-      " return_kind is schedule_c, k1, 1065, 1120s, or empty. schedule_c_net_profit is Schedule C net profit (line 31). k1_ordinary_income is ordinary income when a K-1 / 1065 / 1120S is visible. Empty string when a line is not clearly printed.";
+      " return_kind is schedule_c, k1, 1065, 1120s, or empty. schedule_c_net_profit is Schedule C net profit or loss (line 31); use a leading minus when the return shows a loss. k1_ordinary_income is ordinary income when a K-1 / 1065 / 1120S is visible. k1_distributions is cash distributions when printed; empty if not shown. amortization, casualty_loss, and mileage_depreciation only when clearly printed on the same return. Empty string when a line is not clearly printed. Never invent add-backs.";
   }
   if (extractClass === "paystub") {
     extra = " pay_frequency is weekly, biweekly, semimonthly, monthly, or empty.";

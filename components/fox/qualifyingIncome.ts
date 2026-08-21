@@ -15,7 +15,11 @@ export type TaxYearCashflow = {
   depletion: string;
   business_use_of_home: string;
   nonrecurring_other_income: string;
+  amortization: string;
+  casualty_loss: string;
+  mileage_depreciation: string;
   k1_ordinary_income: string;
+  k1_distributions: string;
 };
 
 export type QualifyingIncomeResult = {
@@ -41,7 +45,9 @@ function valuesMatch(left: string, right: string) {
 
 function displayMoney(value: string) {
   const n = parseExtractMoney(value);
-  return n != null ? `$${Math.round(n).toLocaleString("en-US")}` : value;
+  if (n == null) return value;
+  const shown = `$${Math.round(Math.abs(n)).toLocaleString("en-US")}`;
+  return n < 0 ? `-${shown}` : shown;
 }
 
 function incomeFactLabel(field: string) {
@@ -51,8 +57,13 @@ function incomeFactLabel(field: string) {
 }
 
 export function parseExtractMoney(value?: string | null): number | null {
-  const cleaned = String(value ?? "").replace(/[$,]/g, "").replace(/\s/g, "");
+  let cleaned = String(value ?? "")
+    .replace(/[$,]/g, "")
+    .replace(/\s/g, "")
+    .replace(/[–—−]/g, "-");
   if (!cleaned || /[a-z]/i.test(cleaned)) return null;
+  const paren = cleaned.match(/^\((.+)\)$/);
+  if (paren) cleaned = `-${paren[1]}`;
   const n = Number(cleaned);
   return Number.isFinite(n) ? n : null;
 }
@@ -110,13 +121,19 @@ export function scheduleCAnnual(input: {
   depletion?: number | null;
   businessUseOfHome?: number | null;
   nonrecurringOtherIncome?: number | null;
+  amortization?: number | null;
+  casualtyLoss?: number | null;
+  mileageDepreciation?: number | null;
 }): number | null {
   if (input.netProfit == null) return null;
   return (
     input.netProfit +
     (input.depreciation ?? 0) +
     (input.depletion ?? 0) +
-    (input.businessUseOfHome ?? 0) -
+    (input.businessUseOfHome ?? 0) +
+    (input.amortization ?? 0) +
+    (input.casualtyLoss ?? 0) +
+    (input.mileageDepreciation ?? 0) -
     (input.nonrecurringOtherIncome ?? 0)
   );
 }
@@ -163,7 +180,11 @@ export function readTaxCashflows(draft: FoxIntakeDraft): TaxYearCashflow[] {
           depletion: String(row.depletion ?? ""),
           business_use_of_home: String(row.business_use_of_home ?? ""),
           nonrecurring_other_income: String(row.nonrecurring_other_income ?? ""),
+          amortization: String(row.amortization ?? ""),
+          casualty_loss: String(row.casualty_loss ?? ""),
+          mileage_depreciation: String(row.mileage_depreciation ?? ""),
           k1_ordinary_income: String(row.k1_ordinary_income ?? ""),
+          k1_distributions: String(row.k1_distributions ?? ""),
         },
       ];
     });
@@ -186,7 +207,11 @@ export function cashflowFromExtract(fields: Record<string, string>): TaxYearCash
     depletion: String(fields.depletion ?? "").trim(),
     business_use_of_home: String(fields.business_use_of_home ?? "").trim(),
     nonrecurring_other_income: String(fields.nonrecurring_other_income ?? "").trim(),
+    amortization: String(fields.amortization ?? "").trim(),
+    casualty_loss: String(fields.casualty_loss ?? "").trim(),
+    mileage_depreciation: String(fields.mileage_depreciation ?? "").trim(),
     k1_ordinary_income,
+    k1_distributions: String(fields.k1_distributions ?? "").trim(),
   };
 }
 
@@ -215,6 +240,9 @@ function annualFromCashflow(row: TaxYearCashflow): number | null {
     depletion: parseExtractMoney(row.depletion),
     businessUseOfHome: parseExtractMoney(row.business_use_of_home),
     nonrecurringOtherIncome: parseExtractMoney(row.nonrecurring_other_income),
+    amortization: parseExtractMoney(row.amortization),
+    casualtyLoss: parseExtractMoney(row.casualty_loss),
+    mileageDepreciation: parseExtractMoney(row.mileage_depreciation),
   });
 }
 
@@ -247,8 +275,18 @@ function k1Monthly(years: TaxYearCashflow[]): number | null {
     .sort((a, b) => a.year - b.year);
   if (!usable.length) return null;
   const latest = usable[usable.length - 1];
-  if (latest.ordinary == null || latest.ordinary === 0) return null;
+  if (latest.ordinary == null) return null;
   return monthlyFromAnnual(latest.ordinary);
+}
+
+export function k1OrdinaryMissingDistributions(draft: FoxIntakeDraft): boolean {
+  return readTaxCashflows(draft).some(
+    (row) => String(row.k1_ordinary_income ?? "").trim() && !String(row.k1_distributions ?? "").trim(),
+  );
+}
+
+export function hasScheduleCCashflow(draft: FoxIntakeDraft): boolean {
+  return readTaxCashflows(draft).some((row) => String(row.schedule_c_net_profit ?? "").trim());
 }
 
 export function wageMonthly(fields: Record<string, string>): number | null {
@@ -281,9 +319,9 @@ export function monthlyQualifyingFromExtract(
   const incoming = cashflowFromExtract(fields);
   const years = mergeTaxCashflows(readTaxCashflows(draft), incoming);
   const scheduleC = scheduleCMonthly(years);
-  if (scheduleC != null && scheduleC !== 0) return { monthly: scheduleC, basis: "schedule_c" };
+  if (scheduleC != null) return { monthly: scheduleC, basis: "schedule_c" };
   const entity = k1Monthly(years);
-  if (entity != null && entity !== 0) return { monthly: entity, basis: "k1" };
+  if (entity != null) return { monthly: entity, basis: "k1" };
   return null;
 }
 
@@ -327,7 +365,7 @@ export function withQualifyingIncomeProposal(
   draft: FoxIntakeDraft,
   computed: QualifyingIncomeResult | null,
 ): FoxIntakeDraft {
-  if (!computed || computed.monthly === 0) return draft;
+  if (!computed) return draft;
   const monthly = String(computed.monthly);
   const existing = existingMonthlyIncome(draft);
   if (existing && valuesMatch(existing.value, monthly)) return draft;
