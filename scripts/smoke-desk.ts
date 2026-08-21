@@ -1311,6 +1311,27 @@ assert.equal(reviewItem?.kind, "review");
 assert.ok(reviewItem?.state === "open" || reviewItem?.state === "nudged");
 assert.equal(workspacePromptCopy("done", queued).text, MOTION_COPY.in_queue);
 assert.doesNotMatch(workspacePromptCopy("done", queued).text, /will contact you|we’ll be in touch|your lo has the file/i);
+const queuedActions = workspacePromptCopy("done", queued).actions ?? [];
+const queuedLabels = queuedActions.map((item) => item.label);
+assert.ok(queuedLabels.includes("What happens next?"));
+assert.ok(queuedLabels.includes("Upload more"));
+assert.ok(queuedLabels.includes("Ask Fox"));
+assert.ok(queuedLabels.includes("Request human"));
+assert.notEqual(queuedLabels[0], "Request human");
+assert.ok(queuedLabels.indexOf("What happens next?") < queuedLabels.indexOf("Request human"));
+assert.ok(queuedLabels.indexOf("Upload more") < queuedLabels.indexOf("Request human"));
+assert.ok(queuedLabels.indexOf("Ask Fox") < queuedLabels.indexOf("Request human"));
+assert.equal(queuedActions.find((item) => item.label === "Request human")?.quiet, true);
+const whatNext = workspaceReply("What happens next?", queued);
+assert.equal(whatNext?.text, MOTION_COPY.whatHappensNext);
+assert.doesNotMatch(whatNext?.text ?? "", /will contact you|we’ll be in touch|your lo has the file/i);
+assert.ok((whatNext?.actions ?? []).some((item) => item.label === "Upload more"));
+assert.ok((whatNext?.actions ?? []).some((item) => item.label === "Ask Fox"));
+assert.notEqual((whatNext?.actions ?? [])[0]?.label, "Request human");
+const askFox = workspaceReply("Ask Fox", queued);
+assert.equal(askFox?.text, MOTION_COPY.askFox);
+assert.doesNotMatch(askFox?.text ?? "", /will contact you|we’ll be in touch|your lo has the file/i);
+assert.ok((askFox?.actions ?? []).some((item) => item.label === "What happens next?"));
 assert.ok((queued.previewOutbox ?? []).some((item) => item.to === "borrower@example.com"));
 assert.ok((queued.events ?? []).some((event) => event.kind === "proceed"));
 
@@ -1410,6 +1431,52 @@ applyCapture({ field: "talk-originator" });
 assert.equal(motionOf(getFoxDraft()), "escalated");
 assert.equal(nextActorOf(getFoxDraft()), "Outside");
 assert.equal(workspacePromptCopy("done", getFoxDraft()).text, MOTION_COPY.escalated);
+
+resetWorkspaceForEntry("acr", "buy");
+applyCapture({ field: "occupancy", value: "primary" });
+applyCapture({ field: "timeline", value: "ready-now" });
+applyCapture({ field: "propertyValue", value: "850000" });
+applyCapture({ field: "creditRange", value: "760+" });
+applyCapture({ field: "incomeType", value: "w2" });
+applyCapture({ field: "confirm-draft" });
+applyCapture({ field: "email", value: "queue-more@onyx.test" });
+applyCapture({ field: "proceed" });
+const queueForMore = getFoxDraft();
+assert.equal(motionOf(queueForMore), "in_queue");
+assert.ok(openReviewWorkItem(queueForMore));
+const missingOnQueue = missingExtractClasses(queueForMore);
+applyCapture({ field: "upload-more" });
+const moreFromQueue = getFoxDraft();
+assert.equal(moreFromQueue.docsOpen, true);
+assert.equal(motionOf(moreFromQueue), "in_queue");
+assert.ok(openReviewWorkItem(moreFromQueue));
+assert.deepEqual(missingExtractClasses(moreFromQueue), missingOnQueue);
+const moreFromQueueAsk = workspacePromptCopy("done", moreFromQueue);
+assert.match(moreFromQueueAsk.text, /still useful|government ID/i);
+assert.ok((moreFromQueueAsk.actions ?? []).some((item) => item.label === "What happens next?"));
+assert.ok((moreFromQueueAsk.actions ?? []).some((item) => item.label === "Ask Fox"));
+assert.notEqual((moreFromQueueAsk.actions ?? [])[0]?.label, "Request human");
+receiveDocument({
+  slot: "id",
+  name: "id.pdf",
+  type: "application/pdf",
+  size: 8000,
+  receivedAt: "2026-08-21T00:00:00.000Z",
+});
+const afterQueueUpload = getFoxDraft();
+assert.ok(openReviewWorkItem(afterQueueUpload));
+assert.equal(afterQueueUpload.workItems?.filter((item) => item.kind === "review").length, 1);
+assert.ok(motionOf(afterQueueUpload) === "gathering" || motionOf(afterQueueUpload) === "in_queue");
+const afterQueueUploadAsk = workspacePromptCopy("done", afterQueueUpload);
+assert.ok((afterQueueUploadAsk.actions ?? []).some((item) => item.label === "What happens next?"));
+assert.ok((afterQueueUploadAsk.actions ?? []).some((item) => item.label === "Upload more"));
+assert.ok((afterQueueUploadAsk.actions ?? []).some((item) => item.label === "Ask Fox"));
+assert.ok((afterQueueUploadAsk.actions ?? []).some((item) => item.label === "Request human"));
+assert.notEqual((afterQueueUploadAsk.actions ?? [])[0]?.label, "Request human");
+applyCapture({ field: "talk-originator" });
+assert.equal(motionOf(getFoxDraft()), "escalated");
+assert.equal(nextActorOf(getFoxDraft()), "Outside");
+assert.ok(openReviewWorkItem(getFoxDraft()));
 
 const homepageFiles = [
   "app/(marketing)/page.tsx",

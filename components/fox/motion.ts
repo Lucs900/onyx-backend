@@ -24,6 +24,9 @@ export const MOTION_COPY = {
   ready: "This file can move. Proceed, upload more, or not yet.",
   in_queue:
     "ONYX has this for review. I’m on it — I’ll nudge if it sits and I’ll bring the result back here.",
+  whatHappensNext:
+    "This is the wait. ONYX has the file for review. I stay in this thread — I’ll nudge if it sits and I’ll bring the result back here.",
+  askFox: "I’m here. Type below — I stay on this file while ONYX reviews.",
   on_hold: "Holding. I’ll keep the file. Say when to proceed.",
   escalated:
     "A licensed originator is on this exception. I stay here. I’ll put their result in this thread.",
@@ -74,13 +77,12 @@ export function inferMotionAfterLooks(draft: FoxIntakeDraft): FileMotion {
 
 export function restripeGatheringOrReady(draft: FoxIntakeDraft): FoxIntakeDraft {
   if (!fileExists(draft)) return draft;
-  if (
-    draft.motion === "in_queue" ||
-    draft.motion === "on_hold" ||
-    draft.motion === "escalated" ||
-    draft.motion === "needs_you"
-  ) {
+  if (draft.motion === "on_hold" || draft.motion === "escalated" || draft.motion === "needs_you") {
     return draft;
+  }
+  if (draft.motion === "in_queue") {
+    if (inferMotionAfterLooks(draft) !== "gathering") return draft;
+    return { ...draft, motion: "gathering", nextActor: nextForMotion("gathering") };
   }
   const motion = inferMotionAfterLooks(draft);
   return { ...draft, motion, nextActor: nextForMotion(motion) };
@@ -184,10 +186,22 @@ export function gatheringCopy(draft: FoxIntakeDraft) {
     : MOTION_COPY.ready;
 }
 
+export function inQueueEnding(draft: FoxIntakeDraft) {
+  const motion = motionOf(draft);
+  if (motion === "escalated" || motion === "needs_you" || motion === "on_hold") return false;
+  if (motion === "in_queue") return true;
+  return Boolean(openReviewWorkItem(draft));
+}
+
 export function motionAskText(draft: FoxIntakeDraft) {
   if (draft.pendingFinish && emailMissing(draft)) return MOTION_COPY.emailAsk;
   const motion = motionOf(draft);
-  if (motion === "in_queue") return MOTION_COPY.in_queue;
+  if (inQueueEnding(draft)) {
+    if ((draft.docsOpen || motion === "gathering") && missingExtractClasses(draft).length) {
+      return gatheringCopy(draft);
+    }
+    return MOTION_COPY.in_queue;
+  }
   if (motion === "on_hold") return MOTION_COPY.on_hold;
   if (motion === "escalated") return MOTION_COPY.escalated;
   if (motion === "needs_you") return needsYouCopy(draft);
@@ -204,6 +218,7 @@ function sideDoorActions(draft: FoxIntakeDraft): FoxAction[] {
       label: "Request human",
       event: "bubble",
       capture: { field: "talk-originator" },
+      quiet: true,
     });
   }
   if (draft.path === "loan-only") {
@@ -212,15 +227,40 @@ function sideDoorActions(draft: FoxIntakeDraft): FoxAction[] {
       label: "What is ACR?",
       event: "bubble",
       capture: { field: "what-acr" },
+      quiet: true,
     });
   }
   return actions;
 }
 
+function inQueueActions(draft: FoxIntakeDraft): FoxAction[] {
+  return [
+    {
+      id: "what-happens-next",
+      label: "What happens next?",
+      event: "bubble",
+      capture: { field: "what-happens-next" },
+    },
+    {
+      id: "upload-more",
+      label: "Upload more",
+      event: "open-docs",
+      capture: { field: "upload-more" },
+    },
+    {
+      id: "ask-fox",
+      label: "Ask Fox",
+      event: "bubble",
+      capture: { field: "ask-fox" },
+    },
+    ...sideDoorActions(draft),
+  ];
+}
+
 export function finishLineActions(draft: FoxIntakeDraft): FoxAction[] {
   if (draft.pendingFinish && emailMissing(draft)) return [];
   const motion = motionOf(draft);
-  if (motion === "in_queue") return sideDoorActions(draft);
+  if (inQueueEnding(draft)) return inQueueActions(draft);
   if (motion === "escalated") {
     return [
       {
@@ -306,7 +346,7 @@ export function applyProceedMotion(draft: FoxIntakeDraft, now = new Date()): Fox
       correcting: null,
     };
   }
-  const item = openReviewItem(draft, now);
+  const item = openReviewWorkItem(draft) ?? openReviewItem(draft, now);
   const withItem = appendFileEvent(
     {
       ...draft,

@@ -50,6 +50,7 @@ import {
   emailMissing,
   finishCaptureFromText,
   finishLineActions,
+  inQueueEnding,
   latestOutbox,
   looksLikeEmail,
   MOTION_COPY,
@@ -1105,6 +1106,12 @@ export function workspaceUpdateCopy(capture: Capture, draft: FoxIntakeDraft) {
   if (capture.field === "what-acr") {
     return "ACR is the desk that stays open after close — letter, scout, and reward. This file is still the loan.";
   }
+  if (capture.field === "what-happens-next") {
+    return MOTION_COPY.whatHappensNext;
+  }
+  if (capture.field === "ask-fox") {
+    return MOTION_COPY.askFox;
+  }
   if (capture.field === "talk-originator") {
     return MOTION_COPY.escalated;
   }
@@ -1588,6 +1595,22 @@ export function workspaceReply(
     return {
       text: MOTION_COPY.escalated,
       capture: { field: "talk-originator" },
+    };
+  }
+
+  if (inQueueEnding(draft) && /what happens next/.test(lower)) {
+    return {
+      text: MOTION_COPY.whatHappensNext,
+      actions: finishLineActions(draft),
+      capture: { field: "what-happens-next" },
+    };
+  }
+
+  if (inQueueEnding(draft) && /^ask fox$/.test(lower)) {
+    return {
+      text: MOTION_COPY.askFox,
+      actions: finishLineActions(draft),
+      capture: { field: "ask-fox" },
     };
   }
 

@@ -241,6 +241,8 @@ Stored on the same draft: `motion`, `nextActor`, `workItems[]`, `events[]`, `pre
 5. Skip → docs skipped, not a WorkItem. File can still Proceed.
 6. Request human → `escalated` (side door). Fox stays.
 
+After Proceed, do not leave Request human as the only action. Fox stays the interface while ONYX reviews. Primary chips: **What happens next? · Upload more · Ask Fox**. Request human is a quiet side door. What happens next? explains the wait in Fox — no “LO will contact you.” Upload more stays gathering-capable on the same File (missing list + dropzone); the review WorkItem can stay. Status may restripe gathering if they upload.
+
 ### Sit / nudge
 
 Default SLA is 4 hours. If a review WorkItem sits, Fox nudges it and says so in the borrower thread.

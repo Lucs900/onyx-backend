@@ -355,7 +355,11 @@ function FoxThread({
                     <Link
                       key={action.id}
                       href={action.href}
-                      className="btn btn--secondary fox-chip"
+                      className={
+                        action.quiet
+                          ? "btn btn--secondary fox-chip is-quiet"
+                          : "btn btn--secondary fox-chip"
+                      }
                       onClick={() => persistPathFromHref(action.href as string)}
                     >
                       {action.label}
@@ -364,7 +368,11 @@ function FoxThread({
                     <button
                       key={action.id}
                       type="button"
-                      className="btn btn--secondary fox-chip"
+                      className={
+                        action.quiet
+                          ? "btn btn--secondary fox-chip is-quiet"
+                          : "btn btn--secondary fox-chip"
+                      }
                       onClick={() => onAction(action)}
                     >
                       {action.label}
@@ -799,9 +807,9 @@ export function AlwaysOnFox({
   const moneyAsk = (startAsk === "amount" && !askingAmountPurpose) || startAsk === "value";
   const needsTyping = moneyAsk || startAsk === "term" || askingAmountPurpose;
 
-  const focusComposer = () => {
+  const focusComposer = (force = false) => {
     const node = inputRef.current;
-    if (!node || !needsTyping) return;
+    if (!node || (!force && !needsTyping)) return;
     node.focus({ preventScroll: true });
   };
 
@@ -878,6 +886,19 @@ export function AlwaysOnFox({
     }
     if (action.event === "prepare-draft") {
       router.push(DESK_START_HREF);
+      return;
+    }
+    if (action.capture?.field === "what-happens-next" || action.capture?.field === "ask-fox") {
+      applyCapture(action.capture);
+      skipPromptSync.current = true;
+      const live = getFoxDraft();
+      appendReply(action.label, {
+        text: workspaceUpdateCopy(action.capture, live),
+        actions: finishLineActions(live),
+      });
+      if (action.capture.field === "ask-fox") {
+        window.requestAnimationFrame(() => focusComposer(true));
+      }
       return;
     }
     if (
@@ -976,6 +997,9 @@ export function AlwaysOnFox({
     }
     if (reply.capture?.field === "open-docs") {
       document.getElementById("fox-documents")?.scrollIntoView({ behavior: "smooth" });
+    }
+    if (reply.capture?.field === "ask-fox") {
+      window.requestAnimationFrame(() => focusComposer(true));
     }
     if (editing && reply.capture) {
       appendStructureFix(clientMoneyText(text, reply.capture), reply.capture);

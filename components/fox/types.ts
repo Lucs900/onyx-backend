@@ -279,6 +279,8 @@ export type Capture =
   | { field: "needs-correction" }
   | { field: "keep-path" }
   | { field: "what-acr" }
+  | { field: "what-happens-next" }
+  | { field: "ask-fox" }
   | { field: "talk-originator" }
   | { field: "proceed" }
   | { field: "not-yet" }
@@ -292,6 +294,7 @@ export type FoxAction = {
   href?: string;
   event?: "prepare-draft" | "open-docs" | "bubble";
   capture?: Capture;
+  quiet?: boolean;
 };
 
 export type FoxMessageFact = {
