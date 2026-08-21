@@ -453,7 +453,7 @@ export function deepenStillUseful(draft: FoxIntakeDraft) {
 }
 
 export function stillUsefulLabels(draft: FoxIntakeDraft): string[] {
-  const labels = missingExtractClasses(draft).map(askClassLabel);
+  const labels: string[] = missingExtractClasses(draft).map(askClassLabel);
   if (!deepenStillUseful(draft)) return labels;
   const income = draft.incomeType.value;
   if ((income === "w2" || income === "both") && receivedClassCount(draft, "w2") === 1) {
