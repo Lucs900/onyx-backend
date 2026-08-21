@@ -208,7 +208,8 @@
   color: var(--muted);
 }
 
-.fox-bar__close {
+.fox-bar__close,
+.fox-bar__start-over {
   flex: 0 0 auto;
   margin-left: auto;
   padding: 0;
@@ -219,6 +220,11 @@
   font-size: 12px;
   font-weight: 500;
   cursor: pointer;
+}
+
+.fox-bar__start-over {
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
 
 .fox-panel__thread {

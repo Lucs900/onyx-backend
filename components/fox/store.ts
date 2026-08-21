@@ -57,6 +57,7 @@ import {
 } from "./fileWrite";
 import {
   applyProductChange,
+  applyStarterSketch,
   migrateRestoredFoxMessages,
   normalizeProductIntent,
   productIntentLabel,
@@ -65,6 +66,7 @@ import {
   withMatrixAfterAmount,
   workspacePrompt,
 } from "./workspace";
+import { START_PATH_KEY } from "@/components/products/startPath";
 import {
   applyStubEmployerSuggestion,
   canLooksRight,
@@ -442,6 +444,31 @@ function resumeWorkspaceEntry(path?: IntakePath | null, intent: ProductIntent | 
 function markWorkspaceEntry(path?: IntakePath | null) {
   workspaceEntryKey = workspaceEntryToken(path);
   hydrated = true;
+}
+
+const PREVIEW_STORAGE_KEYS = [INTAKE_STORAGE_KEY, FOX_MESSAGES_KEY, START_PATH_KEY];
+
+export function clearPreviewWorkspaceStorage() {
+  if (typeof window === "undefined") return;
+  for (const key of PREVIEW_STORAGE_KEYS) {
+    try {
+      window.localStorage.removeItem(key);
+      window.sessionStorage.removeItem(key);
+    } catch {
+      // Private mode / quota.
+    }
+  }
+}
+
+/** Explicit Start over. Same wipe as homepage CTA, plus the three preview storage keys. */
+export function startOverWorkspace(path: IntakePath | null = null) {
+  clearPreviewWorkspaceStorage();
+  foxMessages = [];
+  messagesHydrated = true;
+  hydrated = false;
+  workspaceEntryKey = null;
+  current = emptyDraft();
+  return resetWorkspaceForEntry(path, null);
 }
 
 /** Wipe the prior file. Keep the new path and honor intent without a second reset. */
@@ -1106,6 +1133,14 @@ export function applyCapture(capture: Capture) {
   }
   if (capture.field === "productIntent") {
     return commit(withWorkspaceScenario(applyProductChange(current, capture.value)));
+  }
+  if (capture.field === "starter") {
+    const price = capture.price ? Number(capture.price.replace(/,/g, "")) : null;
+    return commit(
+      withWorkspaceScenario(
+        applyStarterSketch(current, capture.value, Number.isFinite(price) ? price : null),
+      ),
+    );
   }
   if (capture.field === "jumboPurpose") {
     return commit(

@@ -16,6 +16,7 @@ import {
   nudgeReview,
   receiveDocument,
   resetWorkspaceForEntry,
+  startOverWorkspace,
   returnToFox,
   setFoxMessages,
   shouldResumeWorkspaceEntry,
@@ -248,6 +249,31 @@ assert.deepEqual(
 
 const afterProduct = draft({ path: "acr", productIntent: "buy" });
 assert.equal(workspacePrompt(afterProduct), "occupancy");
+const typedBuyAcr = workspaceReply("I want to buy", withPath);
+assert.equal(typedBuyAcr?.capture?.field, "productIntent");
+assert.equal(typedBuyAcr?.capture && "value" in typedBuyAcr.capture ? typedBuyAcr.capture.value : "", "buy");
+assert.match(typedBuyAcr?.text ?? "", /how will the property be used/i);
+assert.notEqual(typedBuyAcr?.capture?.field, undefined);
+const typedHouse = workspaceReply("Buy a house", withPath);
+assert.equal(typedHouse?.capture?.field, "productIntent");
+const typedDownOnPrice = workspaceReply("20% down on 850k", withPath);
+assert.equal(typedDownOnPrice?.capture?.field, "starter");
+assert.equal(
+  typedDownOnPrice?.capture && "value" in typedDownOnPrice.capture ? typedDownOnPrice.capture.value : "",
+  "buy",
+);
+assert.equal(
+  typedDownOnPrice?.capture && "price" in typedDownOnPrice.capture ? typedDownOnPrice.capture.price : "",
+  "850000",
+);
+assert.match(typedDownOnPrice?.text ?? "", /how will the property be used|purchase price|down payment/i);
+const typedRefi = workspaceReply("refinance", withPath);
+assert.equal(typedRefi?.capture?.field, "productIntent");
+assert.equal(typedRefi?.capture && "value" in typedRefi.capture ? typedRefi.capture.value : "", "refinance");
+const unclearProduct = workspaceReply("not sure yet", withPath);
+assert.equal(unclearProduct?.capture, undefined);
+assert.match(unclearProduct?.text ?? "", /what are you looking to do/i);
+assert.ok((unclearProduct?.actions ?? []).some((item) => item.label === "Buy"));
 
 for (const value of ["buy", "refinance", "heloc", "jumbo"] as const) {
   const tapped = workspaceReply(value === "heloc" ? "HELOC" : value[0].toUpperCase() + value.slice(1), draft({ path: "acr" }));
@@ -261,6 +287,8 @@ for (const value of ["buy", "refinance", "heloc", "jumbo"] as const) {
 }
 
 assert.equal(productIntentFromText("I want to buy"), "buy");
+assert.equal(productIntentFromText("Buy a house"), "buy");
+assert.equal(productIntentFromText("20% down on 850k"), "buy");
 assert.equal(productIntentFromText("looking to refinance"), "refinance");
 assert.equal(productIntentFromText("need a HELOC"), "heloc");
 assert.equal(productIntentFromText("this is jumbo"), "jumbo");
@@ -1072,6 +1100,20 @@ assert.ok(FOX_DISCLOSURE.includes("cannot approve"));
 
 assert.equal(slotFromFilename("w2-2024.pdf"), "w2");
 assert.equal(resetWorkspaceForEntry("acr", "buy").productIntent, "buy");
+applyCapture({ field: "occupancy", value: "primary" });
+applyCapture({ field: "timeline", value: "ready-now" });
+applyCapture({ field: "starter", value: "buy", price: "850000" });
+assert.equal(getFoxDraft().productIntent, "buy");
+assert.equal(getFoxDraft().propertyValueAmount, 850000);
+setFoxMessages([{ id: "keep", role: "client", text: "20" }]);
+const wiped = startOverWorkspace("acr");
+assert.equal(wiped.productIntent, undefined);
+assert.equal(wiped.propertyValueAmount, undefined);
+assert.equal(wiped.occupancyChoice.value, "");
+assert.equal(wiped.path, "acr");
+assert.equal(workspacePrompt(wiped), "product");
+assert.equal(getFoxMessages().length, 0);
+assert.ok((workspacePromptCopy("product", wiped).actions ?? []).some((item) => item.label === "Buy"));
 
 const pathSetReply = workspaceReply("Start your relationship", draft());
 assert.equal(pathSetReply?.capture?.field, "path");
@@ -2749,8 +2791,14 @@ assert.ok(alwaysOn.includes("fileExists(live)"));
 assert.ok(alwaysOn.includes("Drop a file here."));
 assert.ok(alwaysOn.includes("DECLINING_INCOME_CAUTION"));
 assert.ok(alwaysOn.includes("inertSupersededIncomeConfirms"));
-assert.ok(alwaysOn.includes("suggest ?? \"\"") || alwaysOn.includes('suggest ?? ""'));
+assert.ok(alwaysOn.includes("Start over"));
+assert.ok(alwaysOn.includes("startOverWorkspace"));
 const storeSource = readFileSync(join(root, "components/fox/store.ts"), "utf8");
+assert.ok(storeSource.includes("onyx.foxIntake.draft") || storeSource.includes("INTAKE_STORAGE_KEY"));
+assert.ok(storeSource.includes("START_PATH_KEY"));
+assert.ok(storeSource.includes("localStorage.removeItem"));
+assert.ok(storeSource.includes("sessionStorage.removeItem"));
+assert.ok(alwaysOn.includes("suggest ?? \"\"") || alwaysOn.includes('suggest ?? ""'));
 assert.ok(storeSource.includes("function shouldResumeWorkspaceEntry") || storeSource.includes("export function shouldResumeWorkspaceEntry"));
 assert.ok(storeSource.includes("fileExists(draft)"));
 const loReviewSource = readFileSync(join(root, "components/fox/LoReview.tsx"), "utf8");

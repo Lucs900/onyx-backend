@@ -48,6 +48,7 @@ import {
   setDraftScenario,
   setFoxMessages,
   shouldResumeWorkspaceEntry,
+  startOverWorkspace,
   subscribeFoxDraft,
 } from "./store";
 import {
@@ -427,6 +428,7 @@ function FoxWorkspace({
   composer,
   hideClose,
   stickyDisclosure,
+  onStartOver,
 }: {
   className: string;
   messages: FoxMessage[];
@@ -436,6 +438,7 @@ function FoxWorkspace({
   composer?: ReactNode;
   hideClose?: boolean;
   stickyDisclosure?: boolean;
+  onStartOver?: () => void;
 }) {
   return (
     <div id="fox-panel" className={className}>
@@ -444,7 +447,11 @@ function FoxWorkspace({
           <span className="fox-bar__title">ONYX Fox</span>
           {stickyDisclosure ? <p className="fox-bar__disclosure">{FOX_DISCLOSURE}</p> : null}
         </div>
-        {hideClose ? null : (
+        {onStartOver ? (
+          <button type="button" className="fox-bar__start-over" onClick={onStartOver}>
+            Start over
+          </button>
+        ) : hideClose ? null : (
           <button
             type="button"
             className="fox-bar__close"
@@ -1222,6 +1229,19 @@ export function AlwaysOnFox({
       }
       hideClose={isStart || isHome}
       stickyDisclosure={isStart}
+      onStartOver={
+        isStart
+          ? () => {
+              const path = startPath ?? getFoxDraft().path ?? "acr";
+              const fresh = startOverWorkspace(path);
+              skipPromptSync.current = true;
+              setInput("");
+              const greet = [foxAskMessage(workspaceGreeting(fresh))];
+              setFoxMessages(greet);
+              setMessages(greet);
+            }
+          : undefined
+      }
     />
   );
 

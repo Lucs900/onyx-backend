@@ -199,6 +199,14 @@ export function productIntentFromText(text: string): ProductIntent | null {
   if (/use equity|heloc|heloan|home equity|equity line/.test(lower)) {
     return "heloc";
   }
+  if (
+    !/refinanc|heloc|jumbo/.test(lower) &&
+    /\b(down(\s+payment)?|percent down|% down|purchase price|a house|a home|the house|the home)\b/.test(
+      lower,
+    )
+  ) {
+    return "buy";
+  }
   const fromQuery = productIntentFromQuery(lower);
   if (fromQuery && fromQuery !== "other") return fromQuery;
   if (lower === "other") return "other";
@@ -501,6 +509,22 @@ export function applyProductChange(
     };
   }
   return remapAmountForIntent(next);
+}
+
+export function applyStarterSketch(
+  draft: FoxIntakeDraft,
+  intent: ProductIntent,
+  price?: number | null,
+): FoxIntakeDraft {
+  let next = applyProductChange(draft, intent);
+  if (price != null && price > 0) {
+    next = withMatrixAfterAmount({
+      ...next,
+      propertyValueAmount: price,
+      valueAsked: true,
+    });
+  }
+  return next;
 }
 
 function requestHumanAction(): FoxAction {
@@ -1316,7 +1340,7 @@ function timelineFromText(text: string) {
 export function editPromptFromCapture(capture?: Capture): FoxPrompt | undefined {
   if (!capture) return undefined;
   if (capture.field === "path") return "path-switch";
-  if (capture.field === "productIntent") return "product";
+  if (capture.field === "productIntent" || capture.field === "starter") return "product";
   if (capture.field === "jumboPurpose") return "jumbo-purpose";
   if (
     capture.field === "accept-jumbo" ||
@@ -1383,7 +1407,7 @@ export function workspaceUpdateCopy(capture: Capture, draft: FoxIntakeDraft) {
   if (capture.field === "upload-more") {
     return motionAskText({ ...draft, docsOpen: true });
   }
-  if (capture.field === "productIntent") {
+  if (capture.field === "productIntent" || capture.field === "starter") {
     return `Updated product to ${productIntentLabel(capture.value)}.`;
   }
   if (capture.field === "jumboPurpose") {
@@ -1610,6 +1634,10 @@ function draftAfterCapture(draft: FoxIntakeDraft, capture: Capture): FoxIntakeDr
   const next = { ...draft, correcting: null, correctingLine: null };
   if (capture.field === "path") return { ...next, path: capture.value };
   if (capture.field === "productIntent") return applyProductChange(next, capture.value);
+  if (capture.field === "starter") {
+    const price = capture.price ? Number(capture.price) : null;
+    return applyStarterSketch(next, capture.value, price);
+  }
   if (capture.field === "jumboPurpose") {
     return { ...next, jumboPurpose: capture.value };
   }
@@ -2027,13 +2055,20 @@ export function workspaceReply(
   if (prompt === "product") {
     const intent = productIntentFromText(q);
     if (!intent) {
-      return { text: "Tap Buy, Refinance, HELOC, Jumbo, or Other." };
+      return {
+        text: "What are you looking to do? Buy, refinance, HELOC, Jumbo, or something else.",
+        actions: bubbles([...PRODUCT_INTENT_BUBBLES], "productIntent"),
+      };
     }
-    const nextDraft = applyProductChange(draft, intent);
+    const price = parseLooseAmount(q);
+    const nextDraft = applyStarterSketch(draft, intent, price);
     const nextPrompt = workspacePrompt(nextDraft);
     return {
       ...workspacePromptCopy(nextPrompt === "product" ? "occupancy" : nextPrompt, nextDraft),
-      capture: { field: "productIntent", value: intent },
+      capture:
+        price != null && price > 0
+          ? { field: "starter", value: intent, price: String(price) }
+          : { field: "productIntent", value: intent },
     };
   }
 

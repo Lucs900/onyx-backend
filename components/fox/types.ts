@@ -279,6 +279,7 @@ export type Capture =
   | { field: "timeline"; value: string }
   | { field: "path"; value: IntakePath }
   | { field: "productIntent"; value: ProductIntent }
+  | { field: "starter"; value: ProductIntent; price?: string }
   | { field: "jumboPurpose"; value: JumboPurpose }
   | { field: "accept-jumbo" }
   | { field: "decline-jumbo" }
