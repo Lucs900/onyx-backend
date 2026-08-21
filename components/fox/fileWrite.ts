@@ -66,11 +66,31 @@ const MONEY_KEYS = new Set([
 ]);
 
 const INCOME_MONEY_KEYS = new Set(["gross_period", "ytd_gross", "wages", "agi", "income", "net_period"]);
+const YEARLY_TAX_KEYS = new Set([
+  "tax_year",
+  "filing_status",
+  "agi",
+  "return_kind",
+  "schedule_c_net_profit",
+  "depreciation",
+  "depletion",
+  "business_use_of_home",
+  "nonrecurring_other_income",
+  "k1_ordinary_income",
+]);
 
 const DROP_FIELD_KEYS =
   /^(ssn|social|social_security|account|account_number|routing|routing_number|card|cin|dl_number|license_number|full_ssn|full_account)$/i;
 const SSN_RE = /\b\d{3}[-\s]?\d{2}[-\s]?\d{4}\b/;
 const LONG_ACCOUNT_RE = /\b\d{8,17}\b/;
+const DATE_KEYS = new Set([
+  "date_of_birth",
+  "expiration",
+  "pay_period_end",
+  "period_end",
+  "close_date",
+  "tax_year",
+]);
 
 export function slotForExtractClass(extractClass: ExtractClass): DocSlot {
   if (extractClass === "government_id") return "id";
@@ -236,7 +256,11 @@ export function sanitizeExtractedFields(
       continue;
     }
     if (SSN_RE.test(value)) continue;
-    if (LONG_ACCOUNT_RE.test(value.replace(/[\s-]/g, "")) && !MONEY_KEYS.has(key)) {
+    if (
+      LONG_ACCOUNT_RE.test(value.replace(/[\s-]/g, "")) &&
+      !MONEY_KEYS.has(key) &&
+      !DATE_KEYS.has(key)
+    ) {
       continue;
     }
     next[key] = value;
@@ -391,7 +415,7 @@ export function applyExtractedFields(
     const value = fields[field];
     if (!value) continue;
     const existing = existingFact(next, field);
-    if (!existing) {
+    if (!existing || (input.extractClass === "tax_return" && YEARLY_TAX_KEYS.has(field))) {
       next = writeField(next, field, value, now);
       writes.push({ field, value });
       continue;

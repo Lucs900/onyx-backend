@@ -1095,6 +1095,7 @@ assert.equal(paystubWrite.conflict, null);
 assert.equal(paystubWrite.quietLines[0], "Updated income from paystub.");
 assert.equal(paystubWrite.draft.facts?.employer_name?.value, "Harbor Steel");
 assert.equal(paystubWrite.draft.facts?.gross_period?.value, "7200");
+assert.equal(paystubWrite.draft.facts?.pay_period_end?.value, "2026-07-31");
 assert.equal(paystubWrite.draft.facts?.employer_name?.source, "extracted-unconfirmed");
 assert.equal(paystubWrite.draft.facts?.employer_name?.confirmed, true);
 assert.equal(paystubWrite.draft.facts?.ssn, undefined);
@@ -1396,7 +1397,7 @@ assert.equal(w2Conflict.conflict?.field, "income");
 assert.equal(w2Conflict.conflict?.fileValue, "6000");
 assert.equal(w2Conflict.conflict?.documentValue, "7000");
 assert.equal(w2Conflict.draft.facts?.wages, undefined);
-assert.equal(w2Conflict.draft.pendingProposal, null);
+assert.ok(!w2Conflict.draft.pendingProposal);
 
 const paystubFreq = applyExtractedFields(afterLooks, {
   extractClass: "paystub",
