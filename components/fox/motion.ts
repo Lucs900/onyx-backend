@@ -66,7 +66,7 @@ export function fileExists(draft: FoxIntakeDraft) {
 
 export function nextForMotion(motion: FileMotion | null | undefined): FileNext {
   if (motion === "in_queue") return "ONYX";
-  if (motion === "escalated") return "Outside";
+  if (motion === "escalated") return "ONYX";
   if (motion === "confirmed") return "Fox";
   return "You";
 }
@@ -415,7 +415,7 @@ export function applyEscalateMotion(draft: FoxIntakeDraft): FoxIntakeDraft {
       ...draft,
       originatorRequested: true,
       motion: "escalated",
-      nextActor: "Outside",
+      nextActor: nextForMotion("escalated"),
       pendingFinish: undefined,
       correcting: null,
     },

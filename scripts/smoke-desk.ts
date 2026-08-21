@@ -717,7 +717,7 @@ const afterHuman = workspacePromptCopy("done", {
   ...afterLooks,
   originatorRequested: true,
   motion: "escalated",
-  nextActor: "Outside",
+  nextActor: "ONYX",
 });
 assert.equal(afterHuman.text, MOTION_COPY.escalated);
 assert.ok(!(afterHuman.actions ?? []).some((item) => item.label === "Request human"));
@@ -1429,7 +1429,7 @@ assert.notEqual(motionOf(more), "in_queue");
 
 applyCapture({ field: "talk-originator" });
 assert.equal(motionOf(getFoxDraft()), "escalated");
-assert.equal(nextActorOf(getFoxDraft()), "Outside");
+assert.equal(nextActorOf(getFoxDraft()), "ONYX");
 assert.equal(workspacePromptCopy("done", getFoxDraft()).text, MOTION_COPY.escalated);
 
 resetWorkspaceForEntry("acr", "buy");
@@ -1475,7 +1475,7 @@ assert.ok((afterQueueUploadAsk.actions ?? []).some((item) => item.label === "Req
 assert.notEqual((afterQueueUploadAsk.actions ?? [])[0]?.label, "Request human");
 applyCapture({ field: "talk-originator" });
 assert.equal(motionOf(getFoxDraft()), "escalated");
-assert.equal(nextActorOf(getFoxDraft()), "Outside");
+assert.equal(nextActorOf(getFoxDraft()), "ONYX");
 assert.ok(openReviewWorkItem(getFoxDraft()));
 
 const homepageFiles = [

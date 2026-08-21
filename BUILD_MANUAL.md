@@ -239,7 +239,7 @@ Stored on the same draft: `motion`, `nextActor`, `workItems[]`, `events[]`, `pre
 3. Upload more → stay gathering. Same missing list. Drop stays in the Fox thread.
 4. Not yet → `on_hold`. Same File. Missing memory intact.
 5. Skip → docs skipped, not a WorkItem. File can still Proceed.
-6. Request human → `escalated` (side door). Fox stays.
+6. Request human → `escalated` (side door). Next = ONYX. Fox stays.
 
 After Proceed, do not leave Request human as the only action. Fox stays the interface while ONYX reviews. Primary chips: **What happens next? · Upload more · Ask Fox**. Request human is a quiet side door. What happens next? explains the wait in Fox — no “LO will contact you.” Upload more stays gathering-capable on the same File (missing list + dropzone); the review WorkItem can stay. Status may restripe gathering if they upload.
 
