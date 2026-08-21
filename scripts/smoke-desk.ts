@@ -48,12 +48,21 @@ import {
 import {
   amountAskText,
   docsRequestForIncome,
+  FHFA_HIGH_COST_CEILING_2026,
   fileScenarioRows,
   fileSummaryFacts,
+  GEO_STOP_COPY,
+  HELOC_OFFER_COPY,
+  JUMBO_OFFER_COPY,
+  JUMBO_PURPOSE_ASK,
+  loanLooksAboveCeiling,
   migrateRestoredFoxMessages,
+  namedOutOfState,
   parseWorkspaceEdit,
   PATH_ASK_TEXT,
   previewFacts,
+  previewRateApplies,
+  PRICING_WHEN_READY,
   productIntentFromText,
   REWARD_PREPARED_COPY,
   productIntentFromQuery,
@@ -434,6 +443,223 @@ assert.ok(jumboFacts.some((fact) => fact.id === "rate" && fact.value === "Pricin
 const jumboReward = jumboFacts.find((fact) => fact.id === "reward");
 assert.equal(jumboReward?.value, "Prepared when you join");
 assert.ok(!/\$[\d,]/.test(jumboReward?.value ?? ""));
+
+assert.equal(FHFA_HIGH_COST_CEILING_2026, 1_249_125);
+assert.ok(!loanLooksAboveCeiling(afterIncome));
+assert.ok(previewRateApplies(afterIncome));
+assert.ok(previewRateApplies(refiReady));
+assert.ok(!previewRateApplies(helocReady));
+assert.ok(!previewRateApplies(jumboAcrReady));
+
+const jumboTap = workspaceReply("Jumbo", draft({ path: "acr" }));
+assert.equal(jumboTap?.capture?.field, "productIntent");
+assert.equal(jumboTap?.capture && "value" in jumboTap.capture ? jumboTap.capture.value : "", "jumbo");
+assert.equal(jumboTap?.text, JUMBO_PURPOSE_ASK);
+assert.deepEqual(
+  (jumboTap?.actions ?? []).map((item) => item.label),
+  ["Buy", "Refinance"],
+);
+assert.equal(workspacePrompt(draft({ path: "acr", productIntent: "jumbo" })), "jumbo-purpose");
+
+const jumboBuyPurpose = workspaceReply(
+  "Buy",
+  draft({ path: "acr", productIntent: "jumbo" }),
+);
+assert.equal(jumboBuyPurpose?.capture?.field, "jumboPurpose");
+assert.equal(
+  jumboBuyPurpose?.capture && "value" in jumboBuyPurpose.capture ? jumboBuyPurpose.capture.value : "",
+  "buy",
+);
+assert.match(jumboBuyPurpose?.text ?? "", /how will the property be used/i);
+
+const jumboRefiAfterTime = draft({
+  path: "acr",
+  productIntent: "jumbo",
+  jumboPurpose: "refinance",
+  occupancyAsked: true,
+  occupancyChoice: { ...emptyDraft().occupancyChoice, value: "primary" },
+  timelineAsked: true,
+  timelineChoice: { ...emptyDraft().timelineChoice, value: "ready-now" },
+});
+assert.equal(workspacePrompt(jumboRefiAfterTime), "amount");
+assert.equal(amountAskText(jumboRefiAfterTime), "What’s the approximate loan or payoff amount?");
+assert.equal(structureAmountLabel(jumboRefiAfterTime), "Loan amount");
+
+const jumboRefiReady = withIncome(
+  draft({
+    ...jumboRefiAfterTime,
+    amountAsked: true,
+    loanAmountValue: 1_600_000,
+    creditAsked: true,
+    creditBand: "760+",
+  }),
+);
+const jumboRefiFacts = previewFacts(jumboRefiReady);
+assert.ok(jumboRefiFacts.some((fact) => fact.id === "product" && fact.value === "Jumbo"));
+assert.ok(jumboRefiFacts.some((fact) => fact.id === "numbers" && fact.label === "Loan amount"));
+assert.ok(jumboRefiFacts.every((fact) => fact.label !== "Amount" && fact.label !== "Numbers"));
+assert.ok(jumboRefiFacts.some((fact) => fact.id === "rate" && fact.value === PRICING_WHEN_READY));
+assert.ok(!jumboRefiFacts.some((fact) => fact.value.includes(SAMPLE_RATE_LABEL)));
+const jumboRefiReward = jumboRefiFacts.find((fact) => fact.id === "reward");
+assert.equal(jumboRefiReward?.value, REWARD_PREPARED_COPY);
+assert.ok(!/\$[\d,]/.test(jumboRefiReward?.value ?? ""));
+
+const investBuy = withIncome(
+  draft({
+    path: "acr",
+    productIntent: "buy",
+    occupancyAsked: true,
+    occupancyChoice: { ...emptyDraft().occupancyChoice, value: "investment" },
+    timelineAsked: true,
+    timelineChoice: { ...emptyDraft().timelineChoice, value: "ready-now" },
+    valueAsked: true,
+    propertyValueAmount: 850000,
+    creditAsked: true,
+    creditBand: "760+",
+  }),
+);
+assert.ok(!previewRateApplies(investBuy));
+const investFacts = previewFacts(investBuy);
+assert.ok(investFacts.some((fact) => fact.id === "numbers" && fact.label === "Purchase price"));
+assert.ok(investFacts.some((fact) => fact.id === "rate" && fact.value === PRICING_WHEN_READY));
+assert.ok(!investFacts.some((fact) => fact.value.includes(SAMPLE_RATE_LABEL)));
+assert.equal(investFacts.find((fact) => fact.id === "reward")?.value, REWARD_PREPARED_COPY);
+
+const highBuyAfterTime = draft({
+  path: "acr",
+  productIntent: "buy",
+  occupancyAsked: true,
+  occupancyChoice: { ...emptyDraft().occupancyChoice, value: "primary" },
+  timelineAsked: true,
+  timelineChoice: { ...emptyDraft().timelineChoice, value: "ready-now" },
+});
+const highBuyAsk = workspaceReply("1500000", highBuyAfterTime);
+assert.equal(highBuyAsk?.capture?.field, "propertyValue");
+assert.equal(highBuyAsk?.text, JUMBO_OFFER_COPY);
+assert.deepEqual(
+  (highBuyAsk?.actions ?? []).map((item) => item.label),
+  ["Stay", "Use Jumbo"],
+);
+assert.ok(!/832,?750/.test(highBuyAsk?.text ?? ""));
+
+const highBuyHeld = withIncome(
+  draft({
+    ...highBuyAfterTime,
+    valueAsked: true,
+    propertyValueAmount: 1_500_000,
+    jumboOffered: true,
+    creditAsked: true,
+    creditBand: "760+",
+  }),
+);
+assert.ok(loanLooksAboveCeiling(highBuyHeld));
+assert.ok(!previewRateApplies(highBuyHeld));
+const highBuyFacts = previewFacts(highBuyHeld);
+assert.ok(highBuyFacts.some((fact) => fact.id === "product" && fact.value === "Buy"));
+assert.ok(highBuyFacts.some((fact) => fact.id === "rate" && fact.value === PRICING_WHEN_READY));
+assert.ok(!highBuyFacts.some((fact) => fact.value.includes(SAMPLE_RATE_LABEL)));
+
+const acceptJumbo = workspaceReply(
+  "Use Jumbo",
+  draft({
+    ...highBuyAfterTime,
+    valueAsked: true,
+    propertyValueAmount: 1_500_000,
+    pendingOffer: "jumbo",
+  }),
+);
+assert.equal(acceptJumbo?.capture?.field, "accept-jumbo");
+assert.match(acceptJumbo?.text ?? "", /jumbo/i);
+const afterAcceptJumbo = draft({
+  ...highBuyAfterTime,
+  productIntent: "jumbo",
+  jumboPurpose: "buy",
+  jumboOffered: true,
+  valueAsked: true,
+  propertyValueAmount: 1_500_000,
+});
+assert.equal(previewFacts(afterAcceptJumbo).find((fact) => fact.id === "product")?.value, "Jumbo");
+assert.equal(structureAmountLabel(afterAcceptJumbo), "Purchase price");
+
+const buyOnRefi = workspaceReply("I'm buying", refiAfterTime);
+assert.equal(buyOnRefi?.capture?.field, "productIntent");
+assert.equal(buyOnRefi?.capture && "value" in buyOnRefi.capture ? buyOnRefi.capture.value : "", "buy");
+assert.notEqual(buyOnRefi?.text, PATH_ASK_TEXT);
+assert.ok(
+  /purchase price|how will the property be used|timeline/i.test(
+    `${buyOnRefi?.text ?? ""} ${buyOnRefi?.followUp ?? ""}`,
+  ),
+);
+
+const cashKeepFirst = workspaceReply("I want cash and keep the first mortgage", refiAfterTime);
+assert.equal(cashKeepFirst?.capture?.field, "pending-offer");
+assert.equal(cashKeepFirst?.text, HELOC_OFFER_COPY);
+assert.deepEqual(
+  (cashKeepFirst?.actions ?? []).map((item) => item.label),
+  ["Stay", "Use HELOC"],
+);
+
+const helocButBuy = workspaceReply("I'm buying", helocAfterTime);
+assert.equal(helocButBuy?.capture?.field, "productIntent");
+assert.equal(
+  helocButBuy?.capture && "value" in helocButBuy.capture ? helocButBuy.capture.value : "",
+  "buy",
+);
+
+const helocReplace = workspaceReply("Replace the first", helocAfterTime);
+assert.equal(helocReplace?.capture?.field, "productIntent");
+assert.equal(
+  helocReplace?.capture && "value" in helocReplace.capture ? helocReplace.capture.value : "",
+  "refinance",
+);
+
+assert.ok(namedOutOfState("I live in Texas"));
+assert.ok(!namedOutOfState("I live in California"));
+const geoStop = workspaceReply("The property is in Texas", afterIncome);
+assert.equal(geoStop?.capture?.field, "out-of-state");
+assert.equal(geoStop?.text, GEO_STOP_COPY);
+assert.doesNotMatch(geoStop?.text ?? "", /will contact you|we’ll be in touch|your lo has the file/i);
+assert.ok((geoStop?.actions ?? []).some((item) => item.label === "Request human"));
+assert.equal(workspacePrompt(draft({ ...afterIncome, outOfState: true })), "geo-stop");
+
+const fhaNamed = workspaceReply("This is FHA", afterIncome);
+assert.equal(fhaNamed?.capture?.field, "govProgram");
+assert.match(fhaNamed?.text ?? "", /FHA/);
+assert.match(fhaNamed?.text ?? "", /cannot show a preview rate/i);
+assert.ok((fhaNamed?.actions ?? []).some((item) => item.label === "Request human"));
+const fhaReady = draft({ ...afterIncome, govProgram: "fha" });
+assert.ok(!previewRateApplies(fhaReady));
+assert.ok(previewFacts(fhaReady).some((fact) => fact.id === "rate" && fact.value === PRICING_WHEN_READY));
+assert.ok(previewFacts(fhaReady).some((fact) => fact.id === "product" && fact.value === "Buy"));
+
+const bkNamed = workspaceReply("I have an active bankruptcy", afterIncome);
+assert.equal(bkNamed?.capture?.field, "creditEvent");
+assert.match(bkNamed?.text ?? "", /still Proceed/);
+assert.doesNotMatch(bkNamed?.text ?? "", /will contact you/i);
+const bkReady = draft({
+  ...afterIncome,
+  sampleAccepted: true,
+  workspaceDraftStatus: "with-originator",
+  phase: "confirmed",
+  creditEvent: "bankruptcy",
+});
+assert.ok(!previewRateApplies(bkReady));
+assert.equal(workspacePrompt(bkReady), "done");
+const bkDone = workspacePromptCopy("done", bkReady);
+assert.ok((bkDone.actions ?? []).some((item) => item.label === "Proceed"));
+assert.ok((bkDone.actions ?? []).some((item) => item.label === "Request human"));
+assert.ok(!/will contact you|we’ll be in touch|your lo has the file/i.test(bkDone.text));
+
+const matrixLooksRight = workspaceReply("Looks right", investBuy);
+assert.equal(matrixLooksRight?.capture?.field, "confirm-draft");
+assert.match(matrixLooksRight?.text ?? "", /government ID, latest paystub, and W-2/i);
+assert.ok((matrixLooksRight?.actions ?? []).some((item) => item.label === "Proceed"));
+assert.ok((matrixLooksRight?.actions ?? []).some((item) => item.label === "Upload more"));
+assert.ok((matrixLooksRight?.actions ?? []).some((item) => item.label === "Not yet"));
+assert.doesNotMatch(
+  `${matrixLooksRight?.text ?? ""} ${matrixLooksRight?.followUp ?? ""}`,
+  /will contact you|we’ll be in touch|your lo has the file/i,
+);
 
 const correct = workspacePromptCopy("correct", afterIncome);
 assert.equal(correct.text, "Tap any line on the structure.");
@@ -1031,6 +1257,8 @@ assert.ok(!workspaceSrc.includes("What’s a rough amount?"));
 assert.ok(!workspaceSrc.includes('label: "Amount"'));
 assert.ok(!workspaceSrc.includes('label: "Numbers"'));
 assert.ok(!/Drop what you have\. Skip is fine/.test(workspaceSrc));
+assert.ok(!/832,?750/.test(workspaceSrc));
+assert.ok(workspaceSrc.includes("1_249_125") || workspaceSrc.includes("1249125"));
 
 const pngBytes = readFileSync(join(root, "scripts/fixtures/paystub-acme.png"));
 const dataUrl = imageDataUrl(pngBytes, "image/png");

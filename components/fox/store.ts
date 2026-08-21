@@ -22,6 +22,7 @@ import {
   type IntakePath,
   type LoMark,
   type PreviewOutboxItem,
+  type JumboPurpose,
   type ProductIntent,
   type ReceivedDoc,
   type SectionId,
@@ -53,11 +54,13 @@ import {
   type ExtractApplyInput,
 } from "./fileWrite";
 import {
+  applyProductChange,
   migrateRestoredFoxMessages,
   normalizeProductIntent,
   productIntentLabel,
   purposeForIntent,
   slugForIntent,
+  withMatrixAfterAmount,
   workspacePrompt,
 } from "./workspace";
 
@@ -132,6 +135,23 @@ function normalize(value: unknown): FoxIntakeDraft {
     correcting: raw.correcting ?? null,
     path: raw.path === "acr" || raw.path === "loan-only" ? raw.path : undefined,
     productIntent: normalizeProductIntent(raw.productIntent),
+    jumboPurpose: raw.jumboPurpose === "buy" || raw.jumboPurpose === "refinance"
+      ? raw.jumboPurpose
+      : undefined,
+    jumboOffered: Boolean(raw.jumboOffered),
+    helocOffered: Boolean(raw.helocOffered),
+    pendingOffer: raw.pendingOffer === "jumbo" || raw.pendingOffer === "heloc"
+      ? raw.pendingOffer
+      : undefined,
+    outOfState: Boolean(raw.outOfState),
+    govProgram:
+      raw.govProgram === "fha" || raw.govProgram === "va" || raw.govProgram === "usda"
+        ? raw.govProgram
+        : undefined,
+    creditEvent:
+      raw.creditEvent === "bankruptcy" || raw.creditEvent === "foreclosure"
+        ? raw.creditEvent
+        : undefined,
     loanAmountValue: numberOrUndefined(raw.loanAmountValue),
     propertyValueAmount: numberOrUndefined(raw.propertyValueAmount),
     amountAsked: Boolean(raw.amountAsked),
@@ -517,7 +537,7 @@ function withProductIntent(draft: FoxIntakeDraft, intent: ProductIntent): FoxInt
   const scenario = draft.scenario
     ? {
         ...draft.scenario,
-        purpose: purposeForIntent(intent),
+        purpose: purposeForIntent(intent, draft.jumboPurpose),
         productSlug: slugForIntent(intent),
         productName: productIntentLabel(intent),
       }
@@ -569,7 +589,9 @@ function withWorkspaceScenario(draft: FoxIntakeDraft): FoxIntakeDraft {
   if (!scenario) return draft;
   const next: ExplorerScenario = {
     ...scenario,
-    purpose: draft.productIntent ? purposeForIntent(draft.productIntent) : scenario.purpose,
+    purpose: draft.productIntent
+      ? purposeForIntent(draft.productIntent, draft.jumboPurpose)
+      : scenario.purpose,
     productSlug: draft.productIntent ? slugForIntent(draft.productIntent) : scenario.productSlug,
     occupancy:
       (draft.occupancyChoice.value as ExplorerScenario["occupancy"]) || scenario.occupancy,
@@ -995,19 +1017,86 @@ export function applyCapture(capture: Capture) {
     return commit({ ...current, path: capture.value, correcting: null });
   }
   if (capture.field === "productIntent") {
+    return commit(withWorkspaceScenario(applyProductChange(current, capture.value)));
+  }
+  if (capture.field === "jumboPurpose") {
+    return commit(
+      withWorkspaceScenario({
+        ...current,
+        jumboPurpose: capture.value,
+        correcting: null,
+      }),
+    );
+  }
+  if (capture.field === "accept-jumbo") {
+    const purpose: JumboPurpose =
+      current.productIntent === "refinance" || current.jumboPurpose === "refinance"
+        ? "refinance"
+        : "buy";
     return commit(
       withWorkspaceScenario(
-        withProductIntent(
+        applyProductChange(
           {
             ...current,
+            jumboPurpose: purpose,
+            jumboOffered: true,
+            pendingOffer: undefined,
             correcting: null,
-            amountPurposeLabel:
-              capture.value === "other" ? current.amountPurposeLabel : undefined,
           },
-          capture.value,
+          "jumbo",
         ),
       ),
     );
+  }
+  if (capture.field === "decline-jumbo") {
+    return commit({
+      ...current,
+      jumboOffered: true,
+      pendingOffer: undefined,
+      correcting: null,
+    });
+  }
+  if (capture.field === "accept-heloc") {
+    return commit(
+      withWorkspaceScenario(
+        applyProductChange(
+          {
+            ...current,
+            helocOffered: true,
+            pendingOffer: undefined,
+            correcting: null,
+          },
+          "heloc",
+        ),
+      ),
+    );
+  }
+  if (capture.field === "decline-heloc") {
+    return commit({
+      ...current,
+      helocOffered: true,
+      pendingOffer: undefined,
+      correcting: null,
+    });
+  }
+  if (capture.field === "pending-offer") {
+    return commit({
+      ...current,
+      pendingOffer: capture.value,
+      correcting: null,
+    });
+  }
+  if (capture.field === "out-of-state") {
+    return commit({ ...current, outOfState: true, correcting: null });
+  }
+  if (capture.field === "in-state") {
+    return commit({ ...current, outOfState: false, correcting: null });
+  }
+  if (capture.field === "govProgram") {
+    return commit({ ...current, govProgram: capture.value, correcting: null });
+  }
+  if (capture.field === "creditEvent") {
+    return commit({ ...current, creditEvent: capture.value, correcting: null });
   }
   if (capture.field === "amountPurpose") {
     const named = capture.value.trim();
@@ -1025,26 +1114,30 @@ export function applyCapture(capture: Capture) {
     const hasLoan = Number.isFinite(loan) && loan > 0;
     const hasValue = value != null && Number.isFinite(value) && value > 0;
     return commit(
-      withWorkspaceScenario({
-        ...current,
-        amountAsked: true,
-        correcting: null,
-        valueAsked: hasValue ? true : current.valueAsked,
-        loanAmountValue: hasLoan ? loan : current.loanAmountValue,
-        propertyValueAmount: hasValue ? value : current.propertyValueAmount,
-      }),
+      withWorkspaceScenario(
+        withMatrixAfterAmount({
+          ...current,
+          amountAsked: true,
+          correcting: null,
+          valueAsked: hasValue ? true : current.valueAsked,
+          loanAmountValue: hasLoan ? loan : current.loanAmountValue,
+          propertyValueAmount: hasValue ? value : current.propertyValueAmount,
+        }),
+      ),
     );
   }
   if (capture.field === "propertyValue") {
     const value = Number(capture.value.replace(/,/g, ""));
     return commit(
-      withWorkspaceScenario({
-        ...current,
-        valueAsked: true,
-        correcting: null,
-        propertyValueAmount:
-          Number.isFinite(value) && value > 0 ? value : current.propertyValueAmount,
-      }),
+      withWorkspaceScenario(
+        withMatrixAfterAmount({
+          ...current,
+          valueAsked: true,
+          correcting: null,
+          propertyValueAmount:
+            Number.isFinite(value) && value > 0 ? value : current.propertyValueAmount,
+        }),
+      ),
     );
   }
   if (capture.field === "skip-amount") {

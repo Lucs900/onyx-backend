@@ -138,6 +138,14 @@ export type IntakePath = "acr" | "loan-only";
 
 export type ProductIntent = "buy" | "refinance" | "heloc" | "jumbo" | "other";
 
+export type JumboPurpose = "buy" | "refinance";
+
+export type GovProgram = "fha" | "va" | "usda";
+
+export type NamedCreditEvent = "bankruptcy" | "foreclosure";
+
+export type ProductOffer = "jumbo" | "heloc";
+
 export type FoxIntakeDraft = {
   version: number;
   phase: IntakePhase;
@@ -157,6 +165,13 @@ export type FoxIntakeDraft = {
   scenario: ExplorerScenario | null;
   path?: IntakePath;
   productIntent?: ProductIntent;
+  jumboPurpose?: JumboPurpose;
+  jumboOffered?: boolean;
+  helocOffered?: boolean;
+  pendingOffer?: ProductOffer;
+  outOfState?: boolean;
+  govProgram?: GovProgram;
+  creditEvent?: NamedCreditEvent;
   loanAmountValue?: number;
   propertyValueAmount?: number;
   amountAsked?: boolean;
@@ -224,6 +239,10 @@ export type FoxPrompt =
   | "review"
   | "correct"
   | "path-switch"
+  | "jumbo-purpose"
+  | "offer-jumbo"
+  | "offer-heloc"
+  | "geo-stop"
   | "done";
 
 export type Capture =
@@ -234,6 +253,16 @@ export type Capture =
   | { field: "timeline"; value: string }
   | { field: "path"; value: IntakePath }
   | { field: "productIntent"; value: ProductIntent }
+  | { field: "jumboPurpose"; value: JumboPurpose }
+  | { field: "accept-jumbo" }
+  | { field: "decline-jumbo" }
+  | { field: "accept-heloc" }
+  | { field: "decline-heloc" }
+  | { field: "pending-offer"; value: ProductOffer }
+  | { field: "out-of-state" }
+  | { field: "in-state" }
+  | { field: "govProgram"; value: GovProgram }
+  | { field: "creditEvent"; value: NamedCreditEvent }
   | { field: "loanAmount"; value: string }
   | { field: "propertyValue"; value: string }
   | { field: "amountPurpose"; value: string }
@@ -339,4 +368,9 @@ export const AMOUNT_PURPOSE_BUBBLES = [
   { value: "Purchase price", label: "Purchase price" },
   { value: "Loan amount", label: "Loan amount" },
   { value: "HELOC line", label: "HELOC line" },
+] as const;
+
+export const JUMBO_PURPOSE_BUBBLES = [
+  { value: "buy", label: "Buy" },
+  { value: "refinance", label: "Refinance" },
 ] as const;

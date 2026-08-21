@@ -126,6 +126,10 @@ export function taskContext(stage: FoxStage, draft: FoxIntakeDraft) {
     review: "Confirm draft",
     correct: "Correction",
     "path-switch": "Confirm path",
+    "jumbo-purpose": "Asking: jumbo purpose",
+    "offer-jumbo": "Offer Jumbo",
+    "offer-heloc": "Offer HELOC",
+    "geo-stop": "California only",
     done: "Draft confirmed",
   };
   return labels[currentPrompt(draft)];

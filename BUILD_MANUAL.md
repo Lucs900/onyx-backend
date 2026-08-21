@@ -272,6 +272,46 @@ Shared preview URLs (same device File):
 - `/start`
 - `/lo/review`
 
+## Product matrix v1 — wire branching only (preview)
+
+Same branch / PR. Do not merge `main`. No production. No public launch. No new products. No guideline bible. Existing chips only: Buy / Refinance / HELOC / Jumbo. Other only if they tap Other. Do not silently flip Product.
+
+Spine A–D, BUILD 2 finish line, Fox-as-interface, assigned originator accountability, BUILD 1 extract / Skip / conflict / fixture guard, homepage locks, and the header disclosure stay intact.
+
+### Amount (already locked)
+
+- Buy: ask purchase price. Structure: `Purchase price`
+- Refinance: ask loan / payoff. Structure: `Loan amount`
+- HELOC: ask line or cash. Structure: `HELOC line`
+- Jumbo: if they tap Jumbo first, ask buy vs refi, then the matching amount. Never a naked `Amount`.
+
+### Preview rate (one slot)
+
+Conv 30 `Preview rate · not live` (`6.750%`) only when Product is Buy or Refinance, occupancy is primary or second, and the treated loan is not above the **2026 FHFA high-cost ceiling `$1,249,125`**. Do **not** use `$832,750`.
+
+- HELOC, Jumbo, Investment occupancy, FHA/VA/USDA they name, or a loan that looks above the ceiling: `Pricing when the file is ready`. Never invent `6.750%` there.
+- If Purchase / Refi looks above `$1,249,125`, **offer Jumbo once**. Do not silently flip the Product line.
+- Reward is still not invented dollars. If the rate is pricing-when-ready, Reward is `Prepared when you join` (ACR) or hidden (loan only).
+
+### Branch / do not deny
+
+- Not CA → `I can only prepare California files. I cannot prepare this file.` Honest stop. Fox stays. No “LO will contact you.”
+- FHA / VA / USDA named → no preview rate, Request human available, Fox stays. Product chip does not become a new government product.
+- Active bankruptcy / foreclosure they name → no preview rate, can still Proceed, may escalate. Fox stays.
+- Buy typed on a Refinance path → switch to Buy, no restart.
+- Cash + keep first on a Refinance path → offer HELOC once.
+- HELOC but they are buying → Buy.
+- HELOC but replace first → Refinance.
+- Status + Next stay. Skip ≠ Proceed.
+
+### Walk
+
+1. Buy: purchase price, preview rate on primary, investment → pricing when ready.
+2. Refi: loan amount, preview rate on primary.
+3. HELOC: HELOC line, no `6.750%`.
+4. Jumbo: pricing when ready; purpose then matching amount.
+5. Looks right → missing list → Proceed still works.
+
 ## Product Explorer (CA only)
 
 Route `/products`. California discovery only. No live pricing, APR, LoanSifter, calculators, or apply flows. Thirteen cards in five groups (Core residential, Government, Equity, Expanded residential, Specialty). CTA is exactly `Explore this option` → `/products/scenario?product=<slug>`. Specialty is separated by space + hairline + eyebrow, not a gold or green band.
