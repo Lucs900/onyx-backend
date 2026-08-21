@@ -1790,7 +1790,7 @@ assert.equal(receivedTaxReturnCount(seBothYears.draft), 2);
 assert.ok(!missingExtractClasses(seBothYears.draft).includes("tax_return"));
 assert.deepEqual(stillUsefulLabels(seBothYears.draft), ["government ID"]);
 assert.match(stillUsefulAskCopy(seBothYears.draft), /^Government ID\.$/);
-assert.match(gatheringCopy(seBothYears.draft), /Still useful: Government ID\. Skip is fine\./);
+assert.match(gatheringCopy(seBothYears.draft), /These docs help next: Government ID\. Upload docs, proceed, or say not yet\./);
 assert.doesNotMatch(gatheringCopy(seBothYears.draft), /tax return|prior-year return/i);
 assert.match(fileStillUsefulNote(seBothYears.draft) ?? "", /^still useful: ID$/);
 assert.doesNotMatch(fileStillUsefulNote(seBothYears.draft) ?? "", /tax return|prior-year return|return/i);
@@ -1840,7 +1840,7 @@ assert.equal(seSecondWrite.draft.documents[0]?.extractClass, "tax_return");
 assert.equal(seSecondWrite.draft.documents[1]?.extractClass, "tax_return");
 assert.equal(receivedTaxReturnCount(seSecondWrite.draft), 2);
 assert.deepEqual(stillUsefulLabels(seSecondWrite.draft), ["government ID"]);
-assert.match(gatheringCopy(seSecondWrite.draft), /Still useful: Government ID\. Skip is fine\./);
+assert.match(gatheringCopy(seSecondWrite.draft), /These docs help next: Government ID\. Upload docs, proceed, or say not yet\./);
 assert.doesNotMatch(gatheringCopy(seSecondWrite.draft), /tax return|prior-year return/i);
 assert.match(fileStillUsefulNote(seSecondWrite.draft) ?? "", /^still useful: ID$/);
 
@@ -1872,7 +1872,7 @@ assert.equal(seYearTwo.draft.pendingProposal?.value, "7000");
 assert.equal(receivedTaxReturnCount(seYearTwo.draft), 2);
 assert.ok(!stillUsefulLabels(seYearTwo.draft).includes("prior-year return"));
 assert.ok(!stillUsefulLabels(seYearTwo.draft).includes("tax return"));
-assert.match(gatheringCopy(seYearTwo.draft), /Still useful: Government ID\. Skip is fine\./);
+assert.match(gatheringCopy(seYearTwo.draft), /These docs help next: Government ID\. Upload docs, proceed, or say not yet\./);
 assert.equal(
   monthlyQualifyingFromExtract(seReturn.draft, "tax_return", {
     tax_year: "2025",
