@@ -452,8 +452,14 @@ export function deepenStillUseful(draft: FoxIntakeDraft) {
   return draft.productIntent === "buy" || draft.productIntent === "refinance";
 }
 
-export function stillUsefulLabels(draft: FoxIntakeDraft): string[] {
-  const labels: string[] = missingExtractClasses(draft).map(askClassLabel);
+/** Ask-copy labels plus deepen items the still-useful list may name after Looks right. */
+export type StillUsefulLabel =
+  | ReturnType<typeof askClassLabel>
+  | "second-year W-2"
+  | "prior-year return";
+
+export function stillUsefulLabels(draft: FoxIntakeDraft): StillUsefulLabel[] {
+  const labels: StillUsefulLabel[] = missingExtractClasses(draft).map(askClassLabel);
   if (!deepenStillUseful(draft)) return labels;
   const income = draft.incomeType.value;
   if ((income === "w2" || income === "both") && receivedClassCount(draft, "w2") === 1) {
