@@ -73,6 +73,9 @@ import {
   workspaceUpdateCopy,
 } from "../components/fox/workspace";
 import { HOME_IDLE_TEXT, homePathActions, homeProductActions } from "../components/fox/homeIdle";
+import { assertOnyxFixtures } from "./assert-onyx-fixtures";
+
+assertOnyxFixtures();
 
 function draft(partial: Record<string, unknown> = {}) {
   return { ...emptyDraft(), workspaceFlow: true, ...partial };

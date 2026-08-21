@@ -464,10 +464,13 @@ npm run dev
 Open `http://localhost:3000`. Homepage primary and secondary CTAs start ACR and loan only at `/start`. Closer uses the same hrefs. There is no sticky bar yet.
 
 ```bash
+npx tsx scripts/assert-onyx-fixtures.ts
 npx tsx scripts/smoke-desk.ts
 ```
 
 Covers the `/start` A–D + Skip lock and the homepage → `/start` session: one engine, typed `I want to buy` keeps the turn, cold CTA still starts fresh.
+
+ONYX test fixtures / seed uploads must be mortgage samples (paystub, W-2, ID, tax return, bank statement, purchase contract, mortgage statement). Presidio content is contamination — a leftover borrower filename belongs in the browser draft (`onyx.foxIntake.draft` `documents[].name`) or Vercel Blob, not git. The assert fails if a fixture path contains `presidio`, `p37`, `candle`, `wax`, `label-pack`, `label 5`, or `THIS IS IT`.
 
 ```bash
 npm run build

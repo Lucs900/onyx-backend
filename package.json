@@ -5,7 +5,9 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start"
+    "start": "next start",
+    "test": "npx --yes tsx scripts/assert-onyx-fixtures.ts && npx --yes tsx scripts/smoke-desk.ts",
+    "smoke": "npx --yes tsx scripts/assert-onyx-fixtures.ts && npx --yes tsx scripts/smoke-desk.ts"
   },
   "dependencies": {
     "@ai-sdk/openai": "^4.0.16",
