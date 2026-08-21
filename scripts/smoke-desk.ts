@@ -57,6 +57,7 @@ import {
   missingAskCopy,
   missingExtractClasses,
   receivedClassOf,
+  receivedTaxReturnCount,
   stillUsefulAskCopy,
   stillUsefulLabels,
   taxReturnFilename,
@@ -1451,6 +1452,121 @@ assert.doesNotMatch(gatheringCopy(seWalkWrite.draft), /government ID and tax ret
 assert.match(fileStillUsefulNote(seWalkWrite.draft) ?? "", /prior-year return/i);
 assert.equal(fileCompleteness(seWalkWrite.draft)?.state, "sketch");
 
+const seYearOne88k = applyExtractedFields(
+  draft({
+    ...afterLooks,
+    incomeType: { ...emptyDraft().incomeType, value: "self-employed" },
+    documents: [
+      {
+        slot: "other",
+        name: "return-2023.png",
+        type: "image/png",
+        size: 8000,
+        receivedAt: "2026-08-20T04:00:00.000Z",
+        status: "reading",
+      },
+    ],
+  }),
+  {
+    extractClass: "tax_return",
+    confidence: 0.93,
+    fields: {
+      tax_year: "2023",
+      return_kind: "schedule_c",
+      schedule_c_net_profit: "88000",
+    },
+  },
+);
+assert.equal(seYearOne88k.draft.pendingProposal?.value, "7333");
+assert.equal(receivedTaxReturnCount(seYearOne88k.draft), 1);
+assert.ok(stillUsefulLabels(seYearOne88k.draft).includes("prior-year return"));
+assert.ok(!stillUsefulLabels(seYearOne88k.draft).includes("tax return"));
+assert.match(gatheringCopy(seYearOne88k.draft), /government ID and prior-year return/i);
+
+const seBothYears = applyExtractedFields(
+  {
+    ...seYearOne88k.draft,
+    documents: [
+      ...seYearOne88k.draft.documents,
+      {
+        slot: "other",
+        name: "return-2024.png",
+        type: "image/png",
+        size: 8000,
+        receivedAt: "2026-08-20T04:10:00.000Z",
+        status: "reading",
+      },
+    ],
+  },
+  {
+    extractClass: "tax_return",
+    confidence: 0.93,
+    fields: {
+      tax_year: "2024",
+      return_kind: "schedule_c",
+      schedule_c_net_profit: "108000",
+    },
+  },
+);
+assert.equal(seBothYears.draft.pendingProposal?.value, "8167");
+assert.equal(receivedTaxReturnCount(seBothYears.draft), 2);
+assert.ok(!missingExtractClasses(seBothYears.draft).includes("tax_return"));
+assert.deepEqual(stillUsefulLabels(seBothYears.draft), ["government ID"]);
+assert.match(stillUsefulAskCopy(seBothYears.draft), /^Government ID\.$/);
+assert.match(gatheringCopy(seBothYears.draft), /Still useful: Government ID\. Skip is fine\./);
+assert.doesNotMatch(gatheringCopy(seBothYears.draft), /tax return|prior-year return/i);
+assert.match(fileStillUsefulNote(seBothYears.draft) ?? "", /^still useful: ID$/);
+assert.doesNotMatch(fileStillUsefulNote(seBothYears.draft) ?? "", /tax return|prior-year return|return/i);
+assert.match(workspacePromptCopy("documents", seBothYears.draft).text, /^Government ID\.$/);
+assert.doesNotMatch(workspacePromptCopy("documents", seBothYears.draft).text, /tax return|prior-year/i);
+assert.equal(fileCompleteness(seBothYears.draft)?.state, "sketch");
+assert.ok(!/agency_partial|agency_ready/.test(fileCompleteness(seBothYears.draft)?.copy ?? ""));
+
+resetWorkspaceForEntry("acr", "buy");
+applyCapture({ field: "occupancy", value: "primary" });
+applyCapture({ field: "timeline", value: "ready-now" });
+capturePurchaseFunds("1200000", "960000");
+applyCapture({ field: "creditRange", value: "760+" });
+applyCapture({ field: "incomeType", value: "self-employed" });
+applyCapture({ field: "confirm-draft" });
+receiveDocument({
+  slot: slotFromName("return-2023.png"),
+  name: "return-2023.png",
+  type: "image/png",
+  size: 8000,
+  receivedAt: "2026-08-20T05:00:00.000Z",
+  bytesRef: "fox-intake/return-2023.png",
+});
+const seFirstWrite = applyExtractWrite("2026-08-20T05:00:00.000Z", "return-2023.png", {
+  extractClass: "tax_return",
+  confidence: 0.93,
+  fields: { tax_year: "2023", return_kind: "schedule_c", schedule_c_net_profit: "88000" },
+});
+assert.equal(seFirstWrite.draft.pendingProposal?.value, "7333");
+assert.ok(stillUsefulLabels(seFirstWrite.draft).includes("prior-year return"));
+receiveDocument({
+  slot: slotFromName("return-2024.png"),
+  name: "return-2024.png",
+  type: "image/png",
+  size: 8000,
+  receivedAt: "2026-08-20T05:10:00.000Z",
+  bytesRef: "fox-intake/return-2024.png",
+});
+const seSecondWrite = applyExtractWrite("2026-08-20T05:10:00.000Z", "return-2024.png", {
+  extractClass: "tax_return",
+  confidence: 0.93,
+  fields: { tax_year: "2024", return_kind: "schedule_c", schedule_c_net_profit: "108000" },
+});
+assert.equal(seSecondWrite.draft.pendingProposal?.value, "8167");
+assert.equal(seSecondWrite.draft.documents.length, 2);
+assert.equal(seSecondWrite.draft.documents[0]?.extractClass, "tax_return");
+assert.equal(seSecondWrite.draft.documents[1]?.extractClass, "tax_return");
+assert.equal(receivedTaxReturnCount(seSecondWrite.draft), 2);
+assert.deepEqual(stillUsefulLabels(seSecondWrite.draft), ["government ID"]);
+assert.match(gatheringCopy(seSecondWrite.draft), /Still useful: Government ID\. Skip is fine\./);
+assert.doesNotMatch(gatheringCopy(seSecondWrite.draft), /tax return|prior-year return/i);
+assert.match(fileStillUsefulNote(seSecondWrite.draft) ?? "", /^still useful: ID$/);
+
 const seAccepted = resolveProposal(seReturn.draft, "accept");
 assert.equal(seAccepted.facts?.qualifying_income?.value, "9000");
 assert.equal(seAccepted.facts?.qualifying_income?.source, "suggested");
@@ -1476,6 +1592,10 @@ const seYearTwo = applyExtractedFields(seReturn.draft, {
   },
 });
 assert.equal(seYearTwo.draft.pendingProposal?.value, "7000");
+assert.equal(receivedTaxReturnCount(seYearTwo.draft), 2);
+assert.ok(!stillUsefulLabels(seYearTwo.draft).includes("prior-year return"));
+assert.ok(!stillUsefulLabels(seYearTwo.draft).includes("tax return"));
+assert.match(gatheringCopy(seYearTwo.draft), /Still useful: Government ID\. Skip is fine\./);
 assert.equal(
   monthlyQualifyingFromExtract(seReturn.draft, "tax_return", {
     tax_year: "2025",

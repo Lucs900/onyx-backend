@@ -17,7 +17,7 @@ import {
   emitDocIntake,
   missingExtractClasses,
   rejectIncomingFile,
-  stillUsefulAskKey,
+  stillUsefulRefreshKey,
   stillUsefulLabels,
 } from "./fileWrite";
 import { fileExists } from "./motion";
@@ -26,8 +26,8 @@ export { slotFromFilename };
 
 function emitFailedRead() {
   const after = getFoxDraft();
-  const key = stillUsefulAskKey(after);
-  const askMissing = Boolean(key) && after.missingAskKey !== key;
+  const key = stillUsefulRefreshKey(after);
+  const askMissing = after.missingAskKey !== key;
   if (askMissing) markMissingAsked(key);
   emitDocIntake({
     quietLines: [FAILED_READ_NOTE],
@@ -142,9 +142,8 @@ export function DocumentDrop({
           Boolean(data.failed),
         );
         const after = applied.draft;
-        const key = stillUsefulAskKey(after);
-        const askStillUseful =
-          !applied.conflict && Boolean(key) && after.missingAskKey !== key;
+        const key = stillUsefulRefreshKey(after);
+        const askStillUseful = !applied.conflict && after.missingAskKey !== key;
         if (askStillUseful) markMissingAsked(key);
         emitDocIntake({
           quietLines: applied.quietLines.length

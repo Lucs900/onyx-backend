@@ -72,7 +72,7 @@ import {
   missingAskActions,
   missingAskCopy,
   stillUsefulAskCopy,
-  stillUsefulAskKey,
+  stillUsefulRefreshKey,
   type DocIntakeDetail,
 } from "./fileWrite";
 import { fileExists, finishLineActions, motionAskText, reviewIsSitting } from "./motion";
@@ -955,7 +955,7 @@ export function AlwaysOnFox({
       applyCapture(action.capture);
       skipPromptSync.current = true;
       const live = getFoxDraft();
-      const key = stillUsefulAskKey(live);
+      const key = stillUsefulRefreshKey(live);
       const lines: FoxMessage[] = [
         {
           id: newId(),

@@ -16,6 +16,7 @@ import type {
 import {
   applyQualifyingIncomeFromExtract,
   monthlyQualifyingFromExtract,
+  readTaxCashflows,
 } from "./qualifyingIncome";
 
 export { REJECT_LINE, LIMIT_LINE };
@@ -546,6 +547,20 @@ export function resolveFactConflict(
 
 const COUNTED_DOC_STATUSES = new Set<ReceivedDoc["status"]>(["received", "reading", "extracted"]);
 
+export function receivedTaxReturnCount(draft: FoxIntakeDraft): number {
+  let fromDocs = 0;
+  for (const doc of draft.documents) {
+    if (!COUNTED_DOC_STATUSES.has(doc.status)) continue;
+    if (receivedClassOf(doc) === "tax_return") fromDocs += 1;
+  }
+  const years = new Set<string>();
+  for (const row of readTaxCashflows(draft)) {
+    const year = row.tax_year.trim();
+    if (year) years.add(year);
+  }
+  return Math.max(fromDocs, years.size);
+}
+
 export function receivedExtractClasses(draft: FoxIntakeDraft): Set<ExtractClass> {
   const set = new Set<ExtractClass>(draft.skippedClasses ?? []);
   for (const doc of draft.documents) {
@@ -553,6 +568,7 @@ export function receivedExtractClasses(draft: FoxIntakeDraft): Set<ExtractClass>
     const received = receivedClassOf(doc);
     if (received) set.add(received);
   }
+  if (receivedTaxReturnCount(draft) >= 1) set.add("tax_return");
   return set;
 }
 
@@ -588,7 +604,10 @@ export type StillUsefulLabel =
   | "prior-year return";
 
 export function stillUsefulLabels(draft: FoxIntakeDraft): StillUsefulLabel[] {
-  const labels: StillUsefulLabel[] = missingExtractClasses(draft).map(askClassLabel);
+  const taxReturns = receivedTaxReturnCount(draft);
+  const labels: StillUsefulLabel[] = missingExtractClasses(draft)
+    .filter((item) => item !== "tax_return" || taxReturns < 1)
+    .map(askClassLabel);
   if (!deepenStillUseful(draft)) return labels;
   const income = draft.incomeType.value;
   if ((income === "w2" || income === "both") && receivedClassCount(draft, "w2") === 1) {
@@ -596,11 +615,13 @@ export function stillUsefulLabels(draft: FoxIntakeDraft): StillUsefulLabel[] {
   }
   if (
     (income === "self-employed" || income === "both" || income === "other") &&
-    receivedClassCount(draft, "tax_return") === 1
+    taxReturns === 1
   ) {
     labels.push("prior-year return");
   }
-  return labels;
+  return taxReturns >= 2
+    ? labels.filter((label) => label !== "tax return" && label !== "prior-year return")
+    : labels;
 }
 
 export function shortStillUsefulLabel(label: string) {
@@ -635,6 +656,11 @@ export function stillUsefulAskCopy(draft: FoxIntakeDraft) {
 
 export function stillUsefulAskKey(draft: FoxIntakeDraft) {
   return stillUsefulLabels(draft).join("|");
+}
+
+/** Key used to decide whether Fox should refresh the still-useful ask after extract. */
+export function stillUsefulRefreshKey(draft: FoxIntakeDraft) {
+  return stillUsefulAskKey(draft) || "ready";
 }
 
 export function missingAskCopy(classes: ExtractClass[]) {
