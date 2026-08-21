@@ -432,6 +432,56 @@ export function missingExtractClasses(draft: FoxIntakeDraft): ExtractClass[] {
   return requestedExtractClasses(draft).filter((item) => !have.has(item));
 }
 
+export function receivedClassCount(draft: FoxIntakeDraft, extractClass: ExtractClass): number {
+  let count = 0;
+  for (const doc of draft.documents) {
+    if (!COUNTED_DOC_STATUSES.has(doc.status)) continue;
+    const received =
+      doc.extractClass && doc.extractClass !== "other"
+        ? doc.extractClass
+        : extractClassFromSlot(doc.slot);
+    if (received === extractClass) count += 1;
+  }
+  return count;
+}
+
+/** After Looks right, conventional W-2 / SE can deepen past the minimum three. HELOC / Jumbo stay thin. */
+export function deepenStillUseful(draft: FoxIntakeDraft) {
+  if (!draft.sampleAccepted) return false;
+  if (draft.productIntent === "heloc" || draft.productIntent === "jumbo") return false;
+  return draft.productIntent === "buy" || draft.productIntent === "refinance";
+}
+
+export function stillUsefulLabels(draft: FoxIntakeDraft): string[] {
+  const labels = missingExtractClasses(draft).map(askClassLabel);
+  if (!deepenStillUseful(draft)) return labels;
+  const income = draft.incomeType.value;
+  if ((income === "w2" || income === "both") && receivedClassCount(draft, "w2") === 1) {
+    labels.push("second-year W-2");
+  }
+  if (
+    (income === "self-employed" || income === "both" || income === "other") &&
+    receivedClassCount(draft, "tax_return") === 1
+  ) {
+    labels.push("prior-year return");
+  }
+  return labels;
+}
+
+export function shortStillUsefulLabel(label: string) {
+  if (/government ID/i.test(label)) return "ID";
+  if (/latest paystub/i.test(label)) return "paystub";
+  if (/^tax return$/i.test(label)) return "return";
+  return label;
+}
+
+export function fileStillUsefulNote(draft: FoxIntakeDraft): string | undefined {
+  if (!deepenStillUseful(draft) && !draft.sampleAccepted) return undefined;
+  const labels = stillUsefulLabels(draft).map(shortStillUsefulLabel);
+  if (!labels.length) return undefined;
+  return `still useful: ${labels.join(" · ")}`;
+}
+
 export function missingListCopy(classes: ExtractClass[]) {
   const labels = classes.map(askClassLabel);
   if (!labels.length) return "";

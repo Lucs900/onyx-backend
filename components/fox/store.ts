@@ -160,6 +160,7 @@ function normalize(value: unknown): FoxIntakeDraft {
       raw.creditEvent === "bankruptcy" || raw.creditEvent === "foreclosure"
         ? raw.creditEvent
         : undefined,
+    cashOut: Boolean(raw.cashOut),
     loanAmountValue: numberOrUndefined(raw.loanAmountValue),
     propertyValueAmount: numberOrUndefined(raw.propertyValueAmount),
     downPaymentAmount: numberOrUndefined(raw.downPaymentAmount),
@@ -1150,6 +1151,9 @@ export function applyCapture(capture: Capture) {
   }
   if (capture.field === "creditEvent") {
     return commit({ ...current, creditEvent: capture.value, correcting: null });
+  }
+  if (capture.field === "cashOut") {
+    return commit({ ...current, cashOut: true, correcting: null });
   }
   if (capture.field === "amountPurpose") {
     const named = capture.value.trim();

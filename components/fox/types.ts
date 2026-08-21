@@ -187,6 +187,7 @@ export type FoxIntakeDraft = {
   outOfState?: boolean;
   govProgram?: GovProgram;
   creditEvent?: NamedCreditEvent;
+  cashOut?: boolean;
   loanAmountValue?: number;
   propertyValueAmount?: number;
   downPaymentAmount?: number;
@@ -282,6 +283,7 @@ export type Capture =
   | { field: "in-state" }
   | { field: "govProgram"; value: GovProgram }
   | { field: "creditEvent"; value: NamedCreditEvent }
+  | { field: "cashOut" }
   | { field: "loanAmount"; value: string }
   | { field: "propertyValue"; value: string }
   | { field: "downPayment"; value: string }

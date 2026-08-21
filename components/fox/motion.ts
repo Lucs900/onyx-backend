@@ -2,8 +2,9 @@ import {
   askClassLabel,
   missingExtractClasses,
   missingListCopy,
+  stillUsefulLabels,
 } from "./fileWrite";
-import { canLooksRight } from "./completeness";
+import { canLooksRight, loanExceedsPurchasePrice } from "./completeness";
 import type {
   Capture,
   FileEvent,
@@ -156,7 +157,12 @@ function replaceReviewItem(draft: FoxIntakeDraft, next: WorkItem): FoxIntakeDraf
 }
 
 export function gatheringList(draft: FoxIntakeDraft) {
-  return missingListCopy(missingExtractClasses(draft)).replace(/\.$/, "");
+  const labels = stillUsefulLabels(draft);
+  if (!labels.length) return missingListCopy(missingExtractClasses(draft)).replace(/\.$/, "");
+  const head = labels[0].charAt(0).toUpperCase() + labels[0].slice(1);
+  if (labels.length === 1) return head;
+  if (labels.length === 2) return `${head} and ${labels[1]}`;
+  return `${head}, ${labels.slice(1, -1).join(", ")}, and ${labels[labels.length - 1]}`;
 }
 
 export function returnedReviewNote(draft: FoxIntakeDraft) {
@@ -298,6 +304,23 @@ export function finishLineActions(draft: FoxIntakeDraft): FoxAction[] {
 
 export function applyLooksRightMotion(draft: FoxIntakeDraft): FoxIntakeDraft {
   if (!canLooksRight(draft) && !draft.sampleAccepted) return draft;
+  if (loanExceedsPurchasePrice(draft)) {
+    return applyEscalateMotion(
+      appendFileEvent(
+        {
+          ...draft,
+          sampleAccepted: true,
+          docsOpen: false,
+          pendingFinish: undefined,
+          workspaceDraftStatus: draft.workspaceDraftStatus === "with-originator"
+            ? draft.workspaceDraftStatus
+            : "ready",
+        },
+        "looks-right",
+        "Looks right — file confirmed. Originator assigned.",
+      ),
+    );
+  }
   const motion = inferMotionAfterLooks(draft);
   return appendFileEvent(
     {

@@ -24,12 +24,18 @@ import {
 } from "../components/fox/store";
 import {
   SUGGESTED_NOTE,
+  HIGH_LTV_CAUTION,
+  PRICING_WAITS,
   canLooksRight,
   fileCompleteness,
+  guidelineCaution,
+  loanExceedsPurchasePrice,
   showsAgencyCompleteness,
 } from "../components/fox/completeness";
 import {
   MOTION_COPY,
+  applyLooksRightMotion,
+  gatheringCopy,
   motionOf,
   nextActorOf,
   openReviewWorkItem,
@@ -38,8 +44,10 @@ import {
 import {
   applyExtractedFields,
   extractClassFromFilename,
+  fileStillUsefulNote,
   missingAskCopy,
   missingExtractClasses,
+  stillUsefulLabels,
   resolveFactConflict,
   sanitizeExtractedFields,
   skipRemainingClasses,
@@ -619,8 +627,14 @@ assert.ok(!previewRateApplies(investBuy));
 const investFacts = previewFacts(investBuy);
 assert.ok(investFacts.some((fact) => fact.id === "price" && fact.label === "Purchase price"));
 assert.ok(investFacts.some((fact) => fact.id === "rate" && fact.value === PRICING_WHEN_READY));
+assert.ok(investFacts.some((fact) => fact.id === "caution" && fact.value === PRICING_WAITS));
 assert.ok(!investFacts.some((fact) => fact.value.includes(SAMPLE_RATE_LABEL)));
+assert.ok(!investFacts.some((fact) => fact.value.includes("6.750%")));
 assert.equal(investFacts.find((fact) => fact.id === "reward")?.value, REWARD_PREPARED_COPY);
+assert.doesNotMatch(
+  `${guidelineCaution(investBuy) ?? ""} ${investFacts.map((fact) => fact.value).join(" ")}`,
+  /approv|eligible|ineligible|\bDU\b|\bAUS\b|you qualify|you don’t qualify|will contact you/i,
+);
 
 const highBuyAfterTime = draft({
   path: "acr",
@@ -1179,6 +1193,126 @@ assert.equal(workspaceReply("Keep file", getFoxDraft())?.capture?.field, "declin
 applyCapture({ field: "decline-proposal" });
 assert.equal(getFoxDraft().facts?.employer_name, undefined);
 assert.equal(getFoxDraft().pendingProposal, null);
+
+const w2AfterLooks = draft({
+  ...afterLooks,
+  documents: [
+    {
+      slot: "w2",
+      name: "w2-2025.pdf",
+      type: "application/pdf",
+      size: 8000,
+      receivedAt: "2026-08-20T00:00:00.000Z",
+      status: "extracted",
+      extractClass: "w2",
+    },
+  ],
+});
+const w2Useful = stillUsefulLabels(w2AfterLooks);
+assert.ok(w2Useful.includes("second-year W-2"));
+assert.ok(w2Useful.includes("government ID"));
+assert.ok(w2Useful.includes("latest paystub"));
+assert.ok(!missingExtractClasses(w2AfterLooks).includes("w2"));
+assert.ok(w2Useful.length > missingExtractClasses(w2AfterLooks).length);
+assert.match(fileStillUsefulNote(w2AfterLooks) ?? "", /still useful: ID/i);
+assert.match(fileStillUsefulNote(w2AfterLooks) ?? "", /second-year W-2/i);
+assert.match(gatheringCopy(w2AfterLooks), /second-year W-2/i);
+assert.ok(
+  previewFacts(w2AfterLooks).some(
+    (fact) => fact.id === "file" && /still useful: ID/i.test(fact.note ?? ""),
+  ),
+);
+assert.ok(!/agency_ready/.test(fileCompleteness(w2AfterLooks)?.copy ?? ""));
+
+const seAfterLooks = draft({
+  ...afterLooks,
+  incomeType: { ...emptyDraft().incomeType, value: "self-employed" },
+  documents: [
+    {
+      slot: "other",
+      name: "return-2025.pdf",
+      type: "application/pdf",
+      size: 9000,
+      receivedAt: "2026-08-20T00:00:00.000Z",
+      status: "extracted",
+      extractClass: "tax_return",
+    },
+  ],
+});
+assert.ok(stillUsefulLabels(seAfterLooks).includes("prior-year return"));
+assert.ok(stillUsefulLabels(seAfterLooks).includes("government ID"));
+assert.match(gatheringCopy(seAfterLooks), /prior-year return/i);
+
+const highLtvBuy = withIncome(
+  withPurchaseFunds(
+    draft({
+      path: "acr",
+      productIntent: "buy",
+      occupancyAsked: true,
+      occupancyChoice: { ...emptyDraft().occupancyChoice, value: "primary" },
+      timelineAsked: true,
+      timelineChoice: { ...emptyDraft().timelineChoice, value: "ready-now" },
+      creditAsked: true,
+      creditBand: "760+",
+    }),
+    850000,
+    20000,
+    830000,
+  ),
+);
+assert.ok(canLooksRight(highLtvBuy));
+assert.equal(guidelineCaution(highLtvBuy), HIGH_LTV_CAUTION);
+assert.ok(previewFacts(highLtvBuy).some((fact) => fact.id === "caution" && fact.value === HIGH_LTV_CAUTION));
+assert.doesNotMatch(HIGH_LTV_CAUTION, /approv|eligible|ineligible|\bDU\b|\bAUS\b|you qualify|will contact you/i);
+const highLtvLooks = workspaceReply("Looks right", highLtvBuy);
+assert.equal(highLtvLooks?.capture?.field, "confirm-draft");
+assert.ok((highLtvLooks?.actions ?? []).some((item) => item.label === "Proceed"));
+assert.notEqual(motionOf(applyLooksRightMotion(highLtvBuy)), "escalated");
+
+const nonsenseBuy = withIncome(
+  withPurchaseFunds(
+    draft({
+      path: "acr",
+      productIntent: "buy",
+      occupancyAsked: true,
+      occupancyChoice: { ...emptyDraft().occupancyChoice, value: "primary" },
+      timelineAsked: true,
+      timelineChoice: { ...emptyDraft().timelineChoice, value: "ready-now" },
+      creditAsked: true,
+      creditBand: "760+",
+    }),
+    850000,
+    0,
+    860000,
+  ),
+);
+assert.ok(loanExceedsPurchasePrice(nonsenseBuy));
+assert.ok(canLooksRight(nonsenseBuy));
+const nonsenseLooks = applyLooksRightMotion(nonsenseBuy);
+assert.equal(motionOf(nonsenseLooks), "escalated");
+assert.equal(nextActorOf(nonsenseLooks), "ONYX");
+assert.ok(canLooksRight(nonsenseBuy));
+assert.doesNotMatch(
+  `${MOTION_COPY.escalated} ${guidelineCaution(nonsenseBuy) ?? ""}`,
+  /approv|eligible|ineligible|\bDU\b|\bAUS\b|you qualify|you don’t qualify|will contact you/i,
+);
+
+const lowCredit = draft({ ...afterIncome, creditBand: "680-719" });
+assert.ok(!previewRateApplies(lowCredit));
+assert.ok(previewFacts(lowCredit).every((fact) => !/620/.test(`${fact.value} ${fact.note ?? ""}`)));
+assert.ok(previewFacts(lowCredit).some((fact) => fact.id === "rate" && fact.value === PRICING_WHEN_READY));
+
+const cashOutNamed = workspaceReply("This is a cash-out refinance", refiReady);
+assert.equal(cashOutNamed?.capture?.field, "cashOut");
+assert.match(cashOutNamed?.text ?? "", /cannot show a preview rate/i);
+assert.ok(!previewRateApplies(draft({ ...refiReady, cashOut: true })));
+assert.ok(previewFacts(draft({ ...refiReady, cashOut: true })).some((fact) => fact.id === "rate" && fact.value === PRICING_WHEN_READY));
+
+assert.ok(
+  previewFacts(fromUrl).some(
+    (fact) => fact.id === "employer" && fact.note === SUGGESTED_NOTE,
+  ),
+);
 
 const sameValue = applyExtractedFields(paystubWrite.draft, {
   extractClass: "paystub",

@@ -341,9 +341,27 @@ Extract or suggest → proposed on Structure → Keep file / Use document / Yes 
 
 Computed purchase companion (price + down ⇒ loan, or price + loan ⇒ down) is proposed and confirmed — not a public suggestion.
 
+### Quiet flags + more-complete asks
+
+After Looks right / agency-shaped minimums, conventional files can deepen still-useful past the minimum three. HELOC and Jumbo stay thin. Never `agency_ready`.
+
+- **W-2:** if a W-2 is already in, still useful may include `second-year W-2`.
+- **Self-employed:** if a return is already in, still useful may include `prior-year return`.
+- Quiet **File** line may add `still useful: ID` (and the rest of the short list).
+
+One quiet Fox or File line — never a verdict. Do not compute DTI. Do not print a 620 cutoff. Banned: approved, eligible, ineligible, DU, AUS, you qualify, you don’t qualify, LO will contact you.
+
+- Investment → `Pricing waits` (no `6.750%`).
+- Sketched purchase LTV (loan/price) **> 97%** and ≤ 100% → `This loan is a large share of the price. I’ll keep gathering.` Looks right still possible. No denial.
+- Named cash-out refinance → no preview rate.
+- Named FHA / VA / USDA → no preview rate. Request human available.
+- Named bankruptcy / foreclosure → no preview rate. Can still Proceed.
+- Lowest credit band (`680–719`) → no preview rate.
+- Loan **> purchase price** → escalate (nonsensical). Build 2 escalate rules otherwise unchanged. Request human stays a side door. Next = ONYX.
+
 ### Keep
 
-Named amounts, `$1,249,125` ceiling, preview-rate rules, missing-doc list, no SSN/full account in facts, no LO-will-contact. Fox stays. Assigned originator is a fact. Proceed → `in_queue` → Return to Fox; in_queue chips What happens next? / Upload more / Ask Fox; Request human side door; Next = ONYX on escalate.
+Named amounts, `$1,249,125` ceiling, preview-rate rules, missing-doc list, no SSN/full account in facts, no LO-will-contact. Fox stays. Assigned originator is a fact. Proceed → `in_queue` → Return to Fox; in_queue chips What happens next? / Upload more / Ask Fox; Request human side door; Next = ONYX on escalate. Completeness-first three purchase money lines and confirm-before-write stay.
 
 ## Product Explorer (CA only)
 

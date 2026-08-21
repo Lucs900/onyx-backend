@@ -288,6 +288,46 @@ export function completenessCopy(draft: FoxIntakeDraft) {
   return fileCompleteness(draft)?.copy ?? "";
 }
 
+export const HIGH_LTV_CAUTION = "This loan is a large share of the price. I’ll keep gathering.";
+export const PRICING_WAITS = "Pricing waits";
+export const HIGH_PURCHASE_LTV = 0.97;
+
+export function sketchedPurchaseLtv(draft?: FoxIntakeDraft | null): number | null {
+  if (!draft || draft.productIntent !== "buy") return null;
+  const price = draft.propertyValueAmount;
+  const loan =
+    draft.loanAmountValue != null && draft.loanAmountValue > 0
+      ? draft.loanAmountValue
+      : price != null && draft.downPaymentAmount != null
+        ? Math.round(price - draft.downPaymentAmount)
+        : null;
+  if (price == null || price <= 0 || loan == null || loan <= 0) return null;
+  return loan / price;
+}
+
+export function loanExceedsPurchasePrice(draft?: FoxIntakeDraft | null) {
+  const ltv = sketchedPurchaseLtv(draft);
+  return ltv != null && ltv > 1;
+}
+
+export function highPurchaseLtv(draft?: FoxIntakeDraft | null) {
+  const ltv = sketchedPurchaseLtv(draft);
+  return ltv != null && ltv > HIGH_PURCHASE_LTV && ltv <= 1;
+}
+
+export function lowestCreditBand(draft?: FoxIntakeDraft | null) {
+  return draft?.creditBand === "680-719" || draft?.scenario?.creditRange === "680-719";
+}
+
+/** One quiet File / Fox line. Never a verdict. */
+export function guidelineCaution(draft: FoxIntakeDraft): string | undefined {
+  if (draft.productIntent === "heloc" || draft.productIntent === "jumbo") return undefined;
+  if (highPurchaseLtv(draft)) return HIGH_LTV_CAUTION;
+  const occupancy = draft.occupancyChoice.value || draft.scenario?.occupancy || "";
+  if (occupancy === "investment") return PRICING_WAITS;
+  return undefined;
+}
+
 export function proposalNote(kind: ProposalKind) {
   return kind === "public" ? SUGGESTED_NOTE : kind === "computed" ? PROPOSED_NOTE : undefined;
 }

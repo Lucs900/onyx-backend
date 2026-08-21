@@ -39,6 +39,7 @@ import {
   displayFactValue,
   docsDisplayLabel,
   factValue,
+  fileStillUsefulNote,
   incomeRequestedClasses,
   missingExtractClasses,
   missingListCopy,
@@ -49,6 +50,8 @@ import {
   canLooksRight,
   completenessExplainCopy,
   fileCompleteness,
+  guidelineCaution,
+  lowestCreditBand,
   fundsAskNeeded,
   hasHelocLine,
   hasLoanAmount,
@@ -394,7 +397,8 @@ export function previewRateApplies(draft: FoxIntakeDraft): boolean {
       return fromSlug === "other" ? null : fromSlug;
     })();
   if (!sampleRateApplies(intent)) return false;
-  if (draft.outOfState || draft.govProgram || draft.creditEvent) return false;
+  if (draft.outOfState || draft.govProgram || draft.creditEvent || draft.cashOut) return false;
+  if (lowestCreditBand(draft)) return false;
   const occupancy = draft.occupancyChoice.value || draft.scenario?.occupancy || "";
   if (occupancy === "investment") return false;
   if (occupancy && occupancy !== "primary" && occupancy !== "second-home") return false;
@@ -552,6 +556,16 @@ export function wantsCashKeepFirst(text: string) {
     /\bkeep(ing)?\b.{0,28}\b(first|mortgage|loan)\b/.test(lower) ||
     /\b(first|current) (mortgage|loan)\b.{0,20}\b(stay|stays|keep)/.test(lower);
   return cash && keep;
+}
+
+export function namedCashOut(text: string) {
+  const lower = text.trim().toLowerCase();
+  if (wantsCashKeepFirst(text)) return false;
+  return /\bcash[-\s]?out\b/.test(lower);
+}
+
+function cashOutCopy() {
+  return "Noted. I cannot show a preview rate.";
 }
 
 export function wantsReplaceFirst(text: string) {
@@ -1444,6 +1458,7 @@ function draftAfterCapture(draft: FoxIntakeDraft, capture: Capture): FoxIntakeDr
   if (capture.field === "in-state") return { ...next, outOfState: false };
   if (capture.field === "govProgram") return { ...next, govProgram: capture.value };
   if (capture.field === "creditEvent") return { ...next, creditEvent: capture.value };
+  if (capture.field === "cashOut") return { ...next, cashOut: true };
   if (capture.field === "occupancy") {
     return { ...next, occupancyChoice: { ...draft.occupancyChoice, value: capture.value }, occupancyAsked: true };
   }
@@ -1584,6 +1599,11 @@ function matrixReply(
       field: "creditEvent",
       value: event,
     }, draft.originatorRequested ? undefined : [requestHumanAction()]);
+  }
+
+  if (namedCashOut(text) && !draft.cashOut && isRefiLike(draft)) {
+    const nextDraft = { ...draft, cashOut: true };
+    return continueAfterFlag(cashOutCopy(), nextDraft, { field: "cashOut" });
   }
 
   if (
@@ -2514,6 +2534,15 @@ export function previewFacts(draft: FoxIntakeDraft): PreviewFact[] {
         id: "file",
         label: "File",
         value: completeness.copy,
+        note: fileStillUsefulNote(draft),
+      });
+    }
+    const caution = guidelineCaution(draft);
+    if (caution) {
+      facts.push({
+        id: "caution",
+        label: "Note",
+        value: caution,
       });
     }
   }
@@ -2587,9 +2616,16 @@ export function structureExplainCopy(
     };
   }
   if (id === "file") {
+    const useful = fileStillUsefulNote(draft);
     return {
-      text: completenessExplainCopy(draft),
+      text: useful ? `${completenessExplainCopy(draft)} ${useful}.` : completenessExplainCopy(draft),
     };
+  }
+  if (id === "caution") {
+    const caution = guidelineCaution(draft);
+    return caution
+      ? { text: caution }
+      : null;
   }
   if (id === "originator") {
     return {
