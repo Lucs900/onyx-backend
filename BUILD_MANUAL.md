@@ -314,6 +314,37 @@ Conv 30 `Preview rate · not live` (`6.750%`) only when Product is Buy or Refina
 4. Jumbo: pricing when ready; purpose then matching amount.
 5. Looks right → missing list → Proceed still works.
 
+## Guideline v1 — completeness wiring (preview)
+
+Same branch / PR. Do not merge `main`. No production. No public launch. No denial engine. No DU / AUS / “you qualify.” Borrower never sees a 1003. Build 2 finish line stays **after** the sketch is actually complete.
+
+### Required fields before Looks right
+
+Defined per product. Empty required Structure lines stay visible as quiet `—`. Do not hide them.
+
+- **Conventional purchase:** occupancy, timeline, purchase price, **down payment and loan amount** (show both; one given implies the other as proposed — confirm before write). Credit range. Income type. Looks right is blocked until price + (down **or** loan) exist. Fox asks the missing funds line after price.
+- **Conventional refinance:** occupancy, timeline, loan amount (payoff), property value, credit range, income type. Looks right blocked until loan amount + property value exist.
+- **HELOC (thin):** occupancy, timeline, HELOC line, credit, income. No agency completeness score. Looks right allowed with those.
+- **Jumbo:** buy uses purchase minimums; refi uses refi minimums. Still no preview rate. No agency completeness score.
+
+### Quiet File map
+
+Conventional purchase / refinance only. Sit **File** next to Status + Next on Structure (desktop aside + mobile File sheet). Same `previewFacts` engine.
+
+States: `sketch` | `documented` | `agency_partial`. Never `agency_ready` in v1. Copy like `sketch · 3 of 5` or `documented`. No progress-bar theater. No “approved.”
+
+Groups: Identity (name / ID extract), Property (occupancy, address if known), Loan (purpose + required amounts), Income (type + confirmed extract), Credit (range only). Do not mark documented / agency_partial / ready if agency-shaped minimums are missing.
+
+### Confirm-before-write
+
+Extract or suggest → proposed on Structure → Keep file / Use document / Yes that’s me → then write. High-confidence doc extract may still fill empty lines. Changing an existing fact asks once and does not overwrite. Public/web suggestions are `Suggested · not verified` and never a hard UW fact. Preview stub: `/start?suggest=employer`. Do not scrape LinkedIn in this slice.
+
+Computed purchase companion (price + down ⇒ loan, or price + loan ⇒ down) is proposed and confirmed — not a public suggestion.
+
+### Keep
+
+Named amounts, `$1,249,125` ceiling, preview-rate rules, missing-doc list, no SSN/full account in facts, no LO-will-contact. Fox stays. Assigned originator is a fact. Proceed → `in_queue` → Return to Fox; in_queue chips What happens next? / Upload more / Ask Fox; Request human side door; Next = ONYX on escalate.
+
 ## Product Explorer (CA only)
 
 Route `/products`. California discovery only. No live pricing, APR, LoanSifter, calculators, or apply flows. Thirteen cards in five groups (Core residential, Government, Equity, Expanded residential, Specialty). CTA is exactly `Explore this option` → `/products/scenario?product=<slug>`. Specialty is separated by space + hairline + eyebrow, not a gold or green band.
@@ -447,6 +478,7 @@ app/(marketing)/how-we-get-paid/page.tsx  broker compensation
 app/(marketing)/{licensing,privacy,equal-housing,login,advisor}/page.tsx  short real pages
 components/products/startPath.ts  ACR / loan only start intent (`/start?path=acr` | `/start?path=loan`)
 components/fox/workspace.ts       workspace prompts, amount parse, live preview facts
+components/fox/completeness.ts    required fields, quiet File map, confirm-before-write proposals
 components/fox/motion.ts          file motion, WorkItem, sit/nudge, finish-line copy
 components/fox/DocumentDrop.tsx   Fox-thread drop + real upload/extract (intake + /start)
 components/fox/fileWrite.ts       write / conflict / missing-ask rules

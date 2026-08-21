@@ -16,7 +16,7 @@ export const CONFIRMED_STATUS = "Draft confirmed — pending licensed review";
 export const ORIGINATOR_REQUEST = "Need a licensed originator?";
 export const ORIGINATOR_REVIEW = "A licensed originator will review this.";
 
-export type FieldSource = "client" | "scenario" | "extracted-unconfirmed" | "document";
+export type FieldSource = "client" | "scenario" | "extracted-unconfirmed" | "document" | "suggested" | "computed";
 
 export type DraftField = {
   field: string;
@@ -57,11 +57,26 @@ export type ReceivedDoc = {
   extractClass?: ExtractClass;
 };
 
+export type ProposalKind = "document" | "public" | "computed";
+
+export type CompletenessState = "sketch" | "documented" | "agency_partial";
+
+export type CompletenessGroup = "identity" | "property" | "loan" | "income" | "credit";
+
 export type FactConflict = {
   field: string;
   fileValue: string;
   documentValue: string;
   label: string;
+  kind?: ProposalKind;
+};
+
+export type FactProposal = {
+  field: string;
+  value: string;
+  label: string;
+  kind: ProposalKind;
+  note?: string;
 };
 
 export type IntakePhase = "context" | "documents" | "draft" | "confirmed";
@@ -174,8 +189,10 @@ export type FoxIntakeDraft = {
   creditEvent?: NamedCreditEvent;
   loanAmountValue?: number;
   propertyValueAmount?: number;
+  downPaymentAmount?: number;
   amountAsked?: boolean;
   valueAsked?: boolean;
+  downAsked?: boolean;
   amountPurposeLabel?: string;
   creditBand?: CreditRange;
   creditAsked?: boolean;
@@ -200,6 +217,7 @@ export type FoxIntakeDraft = {
   documentsSkipped: boolean;
   facts?: Record<string, DraftField>;
   pendingConflict?: FactConflict | null;
+  pendingProposal?: FactProposal | null;
   skippedClasses?: ExtractClass[];
   missingAskKey?: string;
   sections: Record<SectionId, boolean>;
@@ -243,6 +261,7 @@ export type FoxPrompt =
   | "offer-jumbo"
   | "offer-heloc"
   | "geo-stop"
+  | "confirm-proposal"
   | "done";
 
 export type Capture =
@@ -265,12 +284,16 @@ export type Capture =
   | { field: "creditEvent"; value: NamedCreditEvent }
   | { field: "loanAmount"; value: string }
   | { field: "propertyValue"; value: string }
+  | { field: "downPayment"; value: string }
   | { field: "amountPurpose"; value: string }
   | { field: "creditRange"; value: string }
   | { field: "termYears"; value: string }
   | { field: "skip-amount" }
   | { field: "skip-value" }
+  | { field: "skip-down" }
   | { field: "skip-term" }
+  | { field: "accept-proposal" }
+  | { field: "decline-proposal" }
   | { field: "skip-docs" }
   | { field: "open-docs" }
   | { field: "keep-file-fact" }
