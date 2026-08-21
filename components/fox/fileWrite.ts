@@ -245,6 +245,12 @@ function existingFact(draft: FoxIntakeDraft, field: string): { value: string; vi
   if (field === "purchase_price" && draft.propertyValueAmount != null) {
     return { value: String(draft.propertyValueAmount), via: "structure" };
   }
+  if (field === "unpaid_principal" && draft.loanAmountValue != null) {
+    return { value: String(draft.loanAmountValue), via: "structure" };
+  }
+  if (field === "employer_name" && draft.facts?.employer_name?.value) {
+    return { value: draft.facts.employer_name.value, via: "employer_name" };
+  }
   const direct = draft.facts?.[field]?.value;
   if (direct) return { value: direct, via: field };
   if (INCOME_MONEY_KEYS.has(field) && draft.facts?.income?.value) {
@@ -271,6 +277,8 @@ function writeField(
   let contact = draft.contact;
   let propertyValueAmount = draft.propertyValueAmount;
   let valueAsked = draft.valueAsked;
+  let loanAmountValue = draft.loanAmountValue;
+  let amountAsked = draft.amountAsked;
   if (field === "full_name" && !draft.contact.fullName.value) {
     contact = {
       ...draft.contact,
@@ -284,7 +292,25 @@ function writeField(
       valueAsked = true;
     }
   }
-  return { ...draft, facts, contact, propertyValueAmount, valueAsked };
+  if (field === "unpaid_principal" && draft.loanAmountValue == null) {
+    const n = moneyNumber(value);
+    if (n != null && n > 0) {
+      loanAmountValue = n;
+      amountAsked = true;
+    }
+  }
+  const pendingProposal =
+    draft.pendingProposal && draft.pendingProposal.field === field ? null : draft.pendingProposal;
+  return {
+    ...draft,
+    facts,
+    contact,
+    propertyValueAmount,
+    valueAsked,
+    loanAmountValue,
+    amountAsked,
+    pendingProposal,
+  };
 }
 
 export function quietLineForClass(extractClass: ExtractClass) {
@@ -340,6 +366,7 @@ export function applyExtractedFields(
         fileValue: existing.value,
         documentValue: value,
         label: factLabel(askField),
+        kind: "document",
       };
     }
   }

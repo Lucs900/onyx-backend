@@ -15,6 +15,7 @@ import {
   type DraftField,
   type ExtractClass,
   type FactConflict,
+  type FactProposal,
   type FileEvent,
   type FoxIntakeDraft,
   type FoxMessage,
@@ -63,6 +64,13 @@ import {
   withMatrixAfterAmount,
   workspacePrompt,
 } from "./workspace";
+import {
+  applyStubEmployerSuggestion,
+  canLooksRight,
+  proposePublicSuggestion,
+  resolveProposal,
+  withComputedCompanion,
+} from "./completeness";
 
 function numberOrUndefined(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : undefined;
@@ -154,8 +162,10 @@ function normalize(value: unknown): FoxIntakeDraft {
         : undefined,
     loanAmountValue: numberOrUndefined(raw.loanAmountValue),
     propertyValueAmount: numberOrUndefined(raw.propertyValueAmount),
+    downPaymentAmount: numberOrUndefined(raw.downPaymentAmount),
     amountAsked: Boolean(raw.amountAsked),
     valueAsked: Boolean(raw.valueAsked),
+    downAsked: Boolean(raw.downAsked),
     amountPurposeLabel:
       typeof raw.amountPurposeLabel === "string" && raw.amountPurposeLabel.trim()
         ? raw.amountPurposeLabel.trim()
@@ -195,6 +205,7 @@ function normalize(value: unknown): FoxIntakeDraft {
     })),
     facts: normalizeFacts(raw.facts),
     pendingConflict: normalizeConflict(raw.pendingConflict),
+    pendingProposal: normalizeProposal(raw.pendingProposal),
     skippedClasses: Array.isArray(raw.skippedClasses)
       ? raw.skippedClasses.filter((item): item is ExtractClass => typeof item === "string")
       : [],
@@ -211,9 +222,14 @@ function normalizeFacts(value: FoxIntakeDraft["facts"]): Record<string, DraftFie
     next[key] = {
       field: field.field || key,
       value: field.value,
-      source: field.source === "document" || field.source === "scenario" || field.source === "extracted-unconfirmed"
-        ? field.source
-        : "client",
+      source:
+        field.source === "document" ||
+        field.source === "scenario" ||
+        field.source === "extracted-unconfirmed" ||
+        field.source === "suggested" ||
+        field.source === "computed"
+          ? field.source
+          : "client",
       confirmed: Boolean(field.confirmed),
       confirmedAt: field.confirmedAt,
     };
@@ -253,6 +269,22 @@ function normalizeConflict(value: FoxIntakeDraft["pendingConflict"]): FactConfli
     fileValue: value.fileValue,
     documentValue: value.documentValue,
     label: value.label || value.field,
+    kind: value.kind === "public" || value.kind === "computed" || value.kind === "document"
+      ? value.kind
+      : "document",
+  };
+}
+
+function normalizeProposal(value: FoxIntakeDraft["pendingProposal"]): FactProposal | null {
+  if (!value || typeof value !== "object") return null;
+  if (!value.field || !value.value) return null;
+  if (value.kind !== "public" && value.kind !== "computed" && value.kind !== "document") return null;
+  return {
+    field: value.field,
+    value: value.value,
+    label: value.label || value.field,
+    kind: value.kind,
+    note: typeof value.note === "string" ? value.note : undefined,
   };
 }
 
@@ -599,6 +631,7 @@ function withWorkspaceScenario(draft: FoxIntakeDraft): FoxIntakeDraft {
       (draft.timelineChoice.value as ExplorerScenario["timeline"]) || scenario.timeline,
     loanAmount: draft.loanAmountValue ?? scenario.loanAmount,
     propertyValue: draft.propertyValueAmount ?? scenario.propertyValue,
+    downPayment: draft.downPaymentAmount ?? scenario.downPayment,
     creditRange: draft.creditBand ?? scenario.creditRange,
   };
   writeScenario(next);
@@ -858,13 +891,24 @@ export function sitExpireReview(now = new Date()) {
   return commit(expireOpenReview(current, now));
 }
 
+export function applyPublicSuggestion(field = "employer_name", value?: string) {
+  const applied = value
+    ? proposePublicSuggestion(current, field, value)
+    : applyStubEmployerSuggestion(current);
+  return commit(applied.draft);
+}
+
 export function applyPreviewMotionControls(input: {
   nudge?: string | null;
   sla?: string | null;
+  suggest?: string | null;
 }) {
   const sla = parsePreviewSla(input.sla);
   if (sla && current.reviewSlaMs !== sla) {
     commit({ ...current, reviewSlaMs: sla });
+  }
+  if (input.suggest === "employer" && !current.pendingProposal && !current.facts?.employer_name?.value) {
+    applyPublicSuggestion("employer_name");
   }
   if (input.nudge === "now") {
     if (!openReviewOnFile(current)) return current;
@@ -951,6 +995,12 @@ export function applyCapture(capture: Capture) {
   if (capture.field === "use-document-fact") {
     return commit(resolveFactConflict(current, "document"));
   }
+  if (capture.field === "accept-proposal") {
+    return commit(resolveProposal(current, "accept"));
+  }
+  if (capture.field === "decline-proposal") {
+    return commit(resolveProposal(current, "decline"));
+  }
   if (capture.field === "open-docs") {
     if (current.workspaceFlow) {
       return commit({
@@ -971,6 +1021,9 @@ export function applyCapture(capture: Capture) {
     return commit(applyNotYetMotion(current));
   }
   if (capture.field === "confirm-draft") {
+    if (current.workspaceFlow && !canLooksRight(current) && !current.sampleAccepted) {
+      return current;
+    }
     if (current.workspaceFlow && !current.sampleAccepted) {
       commit({
         ...applyLooksRightMotion(current),
@@ -1115,14 +1168,16 @@ export function applyCapture(capture: Capture) {
     const hasValue = value != null && Number.isFinite(value) && value > 0;
     return commit(
       withWorkspaceScenario(
-        withMatrixAfterAmount({
-          ...current,
-          amountAsked: true,
-          correcting: null,
-          valueAsked: hasValue ? true : current.valueAsked,
-          loanAmountValue: hasLoan ? loan : current.loanAmountValue,
-          propertyValueAmount: hasValue ? value : current.propertyValueAmount,
-        }),
+        withComputedCompanion(
+          withMatrixAfterAmount({
+            ...current,
+            amountAsked: true,
+            correcting: null,
+            valueAsked: hasValue ? true : current.valueAsked,
+            loanAmountValue: hasLoan ? loan : current.loanAmountValue,
+            propertyValueAmount: hasValue ? value : current.propertyValueAmount,
+          }),
+        ),
       ),
     );
   }
@@ -1130,15 +1185,34 @@ export function applyCapture(capture: Capture) {
     const value = Number(capture.value.replace(/,/g, ""));
     return commit(
       withWorkspaceScenario(
-        withMatrixAfterAmount({
+        withComputedCompanion(
+          withMatrixAfterAmount({
+            ...current,
+            valueAsked: true,
+            correcting: null,
+            propertyValueAmount:
+              Number.isFinite(value) && value > 0 ? value : current.propertyValueAmount,
+          }),
+        ),
+      ),
+    );
+  }
+  if (capture.field === "downPayment") {
+    const value = Number(capture.value.replace(/,/g, ""));
+    return commit(
+      withWorkspaceScenario(
+        withComputedCompanion({
           ...current,
-          valueAsked: true,
+          downAsked: true,
           correcting: null,
-          propertyValueAmount:
-            Number.isFinite(value) && value > 0 ? value : current.propertyValueAmount,
+          downPaymentAmount:
+            Number.isFinite(value) && value > 0 ? value : current.downPaymentAmount,
         }),
       ),
     );
+  }
+  if (capture.field === "skip-down") {
+    return commit({ ...current, downAsked: true, correcting: null });
   }
   if (capture.field === "skip-amount") {
     return commit({

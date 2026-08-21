@@ -768,6 +768,7 @@ export function AlwaysOnFox({
     draft.loanAmountValue,
     draft.productIntent,
     draft.propertyValueAmount,
+    draft.downPaymentAmount,
     draft.updatedAt,
     draft.valueAsked,
     draft.creditAsked,
@@ -787,6 +788,7 @@ export function AlwaysOnFox({
       applyPreviewMotionControls({
         nudge: params.get("nudge"),
         sla: params.get("sla"),
+        suggest: params.get("suggest"),
       });
     }
     const tick = () => {

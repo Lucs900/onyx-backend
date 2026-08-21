@@ -65,6 +65,7 @@ export function StartWorkspace() {
     Boolean(draft.timelineChoice.value) ||
     draft.loanAmountValue != null ||
     draft.propertyValueAmount != null ||
+    draft.downPaymentAmount != null ||
     draft.documents.length > 0 ||
     draft.documentsSkipped;
 

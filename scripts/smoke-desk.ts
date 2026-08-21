@@ -6,6 +6,7 @@ import { greeting, promptCopy } from "../components/fox/script";
 import {
   applyCapture,
   applyExtractWrite,
+  applyPublicSuggestion,
   beginWorkspaceFromHero,
   applyPreviewMotionControls,
   continueWorkspaceFromEntry,
@@ -21,6 +22,12 @@ import {
   sitExpireReview,
   workspaceSessionStarted,
 } from "../components/fox/store";
+import {
+  SUGGESTED_NOTE,
+  canLooksRight,
+  fileCompleteness,
+  showsAgencyCompleteness,
+} from "../components/fox/completeness";
 import {
   MOTION_COPY,
   motionOf,
@@ -99,6 +106,43 @@ function withIncome(
     incomeAsked: true,
     incomeType: { ...emptyDraft().incomeType, value },
   });
+}
+
+function withPurchaseFunds(
+  base: ReturnType<typeof draft>,
+  price = 1_200_000,
+  down = 240_000,
+  loan = 960_000,
+) {
+  return draft({
+    ...base,
+    valueAsked: true,
+    propertyValueAmount: price,
+    downAsked: true,
+    downPaymentAmount: down,
+    amountAsked: true,
+    loanAmountValue: loan,
+  });
+}
+
+function withRefiFunds(
+  base: ReturnType<typeof draft>,
+  loan = 640_000,
+  value = 900_000,
+) {
+  return draft({
+    ...base,
+    amountAsked: true,
+    loanAmountValue: loan,
+    valueAsked: true,
+    propertyValueAmount: value,
+  });
+}
+
+function capturePurchaseFunds(price = "1200000", loan = "960000") {
+  applyCapture({ field: "propertyValue", value: price });
+  applyCapture({ field: "loanAmount", value: loan });
+  if (getFoxDraft().pendingProposal) applyCapture({ field: "accept-proposal" });
 }
 
 const chips = PRODUCT_INTENT_BUBBLES.map((item) => item.value);
@@ -249,9 +293,22 @@ const afterPrice = draft({
   valueAsked: true,
   propertyValueAmount: 1200000,
 });
-assert.equal(workspacePrompt(afterPrice), "credit");
+assert.equal(workspacePrompt(afterPrice), "amount");
+assert.equal(amountAskText(afterPrice), "What’s the down payment or loan amount?");
+assert.notEqual(workspacePrompt(afterPrice), "credit");
 assert.notEqual(workspacePrompt(afterPrice), "review");
-assert.notEqual(workspacePrompt(afterPrice), "documents");
+assert.ok(!canLooksRight(afterPrice));
+const looksRightTooSoon = workspaceReply("Looks right", afterPrice);
+assert.notEqual(looksRightTooSoon?.capture?.field, "confirm-draft");
+assert.match(looksRightTooSoon?.text ?? "", /down payment or loan amount/i);
+const fundsReply = workspaceReply("240000 down", afterPrice);
+assert.equal(fundsReply?.capture?.field, "downPayment");
+assert.match(fundsReply?.text ?? "", /loan amount would be/i);
+assert.ok((fundsReply?.actions ?? []).some((item) => item.label === "Use this"));
+const afterFunds = withPurchaseFunds(afterPrice);
+assert.equal(workspacePrompt(afterFunds), "credit");
+assert.notEqual(workspacePrompt(afterFunds), "review");
+assert.notEqual(workspacePrompt(afterFunds), "documents");
 
 const creditAsk = workspacePromptCopy("credit", afterPrice);
 assert.deepEqual(
@@ -264,7 +321,7 @@ assert.deepEqual(
 );
 
 const afterCredit = draft({
-  ...afterPrice,
+  ...afterFunds,
   creditAsked: true,
   creditBand: "760+",
 });
@@ -272,7 +329,7 @@ assert.equal(workspacePrompt(afterCredit), "income");
 assert.notEqual(workspacePrompt(afterCredit), "review");
 assert.notEqual(workspacePrompt(afterCredit), "documents");
 
-const creditReply = workspaceReply("760+", afterPrice);
+const creditReply = workspaceReply("760+", afterFunds);
 assert.equal(creditReply?.capture?.field, "creditRange");
 assert.ok(/income earned/i.test(creditReply?.text ?? ""));
 
@@ -297,7 +354,7 @@ assert.ok((looksRight?.actions ?? []).some((item) => item.label === "Not yet"));
 assert.ok((looksRight?.actions ?? []).some((item) => /skip/i.test(item.label)));
 assert.ok((looksRight?.actions ?? []).some((item) => item.label === "Request human"));
 
-const notSure = withIncome(draft({ ...afterPrice, creditAsked: true, creditBand: "not-sure" }));
+const notSure = withIncome(draft({ ...afterFunds, creditAsked: true, creditBand: "not-sure" }));
 assert.equal(workspacePrompt(notSure), "review");
 
 const otherIncome = withIncome(afterCredit, "other");
@@ -306,9 +363,14 @@ assert.notEqual(workspacePrompt(otherIncome), "documents");
 
 const creditFacts = previewFacts(afterIncome);
 assert.ok(creditFacts.some((fact) => fact.id === "path" && fact.value === "Relationship desk"));
-assert.ok(creditFacts.some((fact) => fact.id === "numbers" && fact.label === "Purchase price"));
+assert.ok(creditFacts.some((fact) => fact.id === "price" && fact.label === "Purchase price" && fact.value === "$1,200,000"));
+assert.ok(creditFacts.some((fact) => fact.id === "down" && fact.label === "Down payment" && fact.value === "$240,000"));
+assert.ok(creditFacts.some((fact) => fact.id === "loan" && fact.label === "Loan amount" && fact.value === "$960,000"));
 assert.ok(creditFacts.every((fact) => fact.label !== "Amount" && fact.label !== "Numbers"));
 assert.equal(structureAmountLabel(afterIncome), "Purchase price");
+assert.ok(canLooksRight(afterIncome));
+assert.equal(fileCompleteness(afterIncome)?.state, "sketch");
+assert.ok(creditFacts.some((fact) => fact.id === "file" && /sketch/.test(fact.value)));
 assert.ok(creditFacts.some((fact) => fact.id === "credit" && fact.value === "760+"));
 assert.ok(creditFacts.some((fact) => fact.id === "income" && fact.value === "W-2"));
 assert.ok(creditFacts.some((fact) => fact.id === "rate" && fact.value.includes(SAMPLE_RATE_LABEL)));
@@ -372,8 +434,12 @@ const helocReady = withIncome(
 );
 const helocFacts = previewFacts(helocReady);
 assert.ok(helocFacts.some((fact) => fact.id === "path" && fact.value === "Loan only"));
-assert.ok(helocFacts.some((fact) => fact.id === "numbers" && fact.label === "HELOC line"));
+assert.ok(helocFacts.some((fact) => fact.id === "line" && fact.label === "HELOC line"));
 assert.ok(helocFacts.every((fact) => fact.label !== "Amount" && fact.label !== "Numbers"));
+assert.ok(!showsAgencyCompleteness(helocReady));
+assert.equal(fileCompleteness(helocReady), null);
+assert.ok(helocFacts.every((fact) => fact.id !== "file"));
+assert.ok(canLooksRight(helocReady));
 assert.ok(helocFacts.some((fact) => fact.id === "credit" && fact.value === "720–759"));
 assert.ok(helocFacts.some((fact) => fact.id === "rate" && fact.value === "Pricing when the file is ready"));
 assert.ok(!helocFacts.some((fact) => fact.id === "reward"));
@@ -393,29 +459,46 @@ const helocAcrReady = withIncome(
     creditBand: "760+",
   }),
 );
+const refiAfterLoan = draft({
+  path: "acr",
+  productIntent: "refinance",
+  occupancyAsked: true,
+  occupancyChoice: { ...emptyDraft().occupancyChoice, value: "primary" },
+  timelineAsked: true,
+  timelineChoice: { ...emptyDraft().timelineChoice, value: "ready-now" },
+  amountAsked: true,
+  loanAmountValue: 640000,
+});
+assert.equal(workspacePrompt(refiAfterLoan), "value");
+assert.equal(amountAskText(refiAfterLoan), "What’s the property value?");
+assert.ok(!canLooksRight(withIncome({ ...refiAfterLoan, creditAsked: true, creditBand: "760+" })));
 const refiReady = withIncome(
-  draft({
-    path: "acr",
-    productIntent: "refinance",
-    occupancyAsked: true,
-    occupancyChoice: { ...emptyDraft().occupancyChoice, value: "primary" },
-    timelineAsked: true,
-    timelineChoice: { ...emptyDraft().timelineChoice, value: "ready-now" },
-    amountAsked: true,
-    loanAmountValue: 640000,
-    creditAsked: true,
-    creditBand: "760+",
-  }),
+  withRefiFunds(
+    draft({
+      path: "acr",
+      productIntent: "refinance",
+      occupancyAsked: true,
+      occupancyChoice: { ...emptyDraft().occupancyChoice, value: "primary" },
+      timelineAsked: true,
+      timelineChoice: { ...emptyDraft().timelineChoice, value: "ready-now" },
+      creditAsked: true,
+      creditBand: "760+",
+    }),
+  ),
 );
 const refiFacts = previewFacts(refiReady);
-assert.ok(refiFacts.some((fact) => fact.id === "numbers" && fact.label === "Loan amount"));
+assert.ok(refiFacts.some((fact) => fact.id === "loan" && fact.label === "Loan amount"));
+assert.ok(refiFacts.some((fact) => fact.id === "home" && fact.label === "Property value"));
 assert.ok(refiFacts.every((fact) => fact.label !== "Amount" && fact.label !== "Numbers"));
 assert.equal(structureAmountLabel(refiReady), "Loan amount");
+assert.ok(canLooksRight(refiReady));
+assert.ok(refiFacts.some((fact) => fact.id === "file"));
 assert.equal(amountAskText(refiAfterTime), "What’s the approximate loan or payoff amount?");
 
 const helocAcrFacts = previewFacts(helocAcrReady);
 assert.ok(helocAcrFacts.some((fact) => fact.id === "path" && fact.value === "Relationship desk"));
-assert.ok(helocAcrFacts.some((fact) => fact.id === "numbers" && fact.label === "HELOC line"));
+assert.ok(helocAcrFacts.some((fact) => fact.id === "line" && fact.label === "HELOC line"));
+assert.ok(helocAcrFacts.every((fact) => fact.id !== "file"));
 assert.ok(helocAcrFacts.some((fact) => fact.id === "rate" && fact.value === "Pricing when the file is ready"));
 const helocReward = helocAcrFacts.find((fact) => fact.id === "reward");
 assert.equal(helocReward?.value, "Prepared when you join");
@@ -423,21 +506,28 @@ assert.ok(!/\$[\d,]/.test(helocReward?.value ?? ""));
 assert.ok(!/446|604/.test(helocReward?.value ?? ""));
 
 const jumboAcrReady = withIncome(
-  draft({
-    path: "acr",
-    productIntent: "jumbo",
-    occupancyAsked: true,
-    occupancyChoice: { ...emptyDraft().occupancyChoice, value: "primary" },
-    timelineAsked: true,
-    timelineChoice: { ...emptyDraft().timelineChoice, value: "ready-now" },
-    valueAsked: true,
-    propertyValueAmount: 1500000,
-    creditAsked: true,
-    creditBand: "760+",
-  }),
+  withPurchaseFunds(
+    draft({
+      path: "acr",
+      productIntent: "jumbo",
+      occupancyAsked: true,
+      occupancyChoice: { ...emptyDraft().occupancyChoice, value: "primary" },
+      timelineAsked: true,
+      timelineChoice: { ...emptyDraft().timelineChoice, value: "ready-now" },
+      creditAsked: true,
+      creditBand: "760+",
+    }),
+    1_500_000,
+    300_000,
+    1_200_000,
+  ),
 );
 const jumboFacts = previewFacts(jumboAcrReady);
-assert.ok(jumboFacts.some((fact) => fact.id === "numbers" && fact.label === "Purchase price"));
+assert.ok(jumboFacts.some((fact) => fact.id === "price" && fact.label === "Purchase price"));
+assert.ok(jumboFacts.some((fact) => fact.id === "down" && fact.label === "Down payment"));
+assert.ok(jumboFacts.some((fact) => fact.id === "loan" && fact.label === "Loan amount"));
+assert.ok(!showsAgencyCompleteness(jumboAcrReady));
+assert.ok(jumboFacts.every((fact) => fact.id !== "file"));
 assert.ok(jumboFacts.every((fact) => fact.label !== "Amount" && fact.label !== "Numbers"));
 assert.ok(jumboFacts.some((fact) => fact.id === "rate" && fact.value === "Pricing when the file is ready"));
 const jumboReward = jumboFacts.find((fact) => fact.id === "reward");
@@ -486,17 +576,21 @@ assert.equal(amountAskText(jumboRefiAfterTime), "What’s the approximate loan o
 assert.equal(structureAmountLabel(jumboRefiAfterTime), "Loan amount");
 
 const jumboRefiReady = withIncome(
-  draft({
-    ...jumboRefiAfterTime,
-    amountAsked: true,
-    loanAmountValue: 1_600_000,
-    creditAsked: true,
-    creditBand: "760+",
-  }),
+  withRefiFunds(
+    draft({
+      ...jumboRefiAfterTime,
+      creditAsked: true,
+      creditBand: "760+",
+    }),
+    1_600_000,
+    2_100_000,
+  ),
 );
 const jumboRefiFacts = previewFacts(jumboRefiReady);
 assert.ok(jumboRefiFacts.some((fact) => fact.id === "product" && fact.value === "Jumbo"));
-assert.ok(jumboRefiFacts.some((fact) => fact.id === "numbers" && fact.label === "Loan amount"));
+assert.ok(jumboRefiFacts.some((fact) => fact.id === "loan" && fact.label === "Loan amount"));
+assert.ok(jumboRefiFacts.some((fact) => fact.id === "home" && fact.label === "Property value"));
+assert.ok(jumboRefiFacts.every((fact) => fact.id !== "file"));
 assert.ok(jumboRefiFacts.every((fact) => fact.label !== "Amount" && fact.label !== "Numbers"));
 assert.ok(jumboRefiFacts.some((fact) => fact.id === "rate" && fact.value === PRICING_WHEN_READY));
 assert.ok(!jumboRefiFacts.some((fact) => fact.value.includes(SAMPLE_RATE_LABEL)));
@@ -505,22 +599,25 @@ assert.equal(jumboRefiReward?.value, REWARD_PREPARED_COPY);
 assert.ok(!/\$[\d,]/.test(jumboRefiReward?.value ?? ""));
 
 const investBuy = withIncome(
-  draft({
-    path: "acr",
-    productIntent: "buy",
-    occupancyAsked: true,
-    occupancyChoice: { ...emptyDraft().occupancyChoice, value: "investment" },
-    timelineAsked: true,
-    timelineChoice: { ...emptyDraft().timelineChoice, value: "ready-now" },
-    valueAsked: true,
-    propertyValueAmount: 850000,
-    creditAsked: true,
-    creditBand: "760+",
-  }),
+  withPurchaseFunds(
+    draft({
+      path: "acr",
+      productIntent: "buy",
+      occupancyAsked: true,
+      occupancyChoice: { ...emptyDraft().occupancyChoice, value: "investment" },
+      timelineAsked: true,
+      timelineChoice: { ...emptyDraft().timelineChoice, value: "ready-now" },
+      creditAsked: true,
+      creditBand: "760+",
+    }),
+    850000,
+    170000,
+    680000,
+  ),
 );
 assert.ok(!previewRateApplies(investBuy));
 const investFacts = previewFacts(investBuy);
-assert.ok(investFacts.some((fact) => fact.id === "numbers" && fact.label === "Purchase price"));
+assert.ok(investFacts.some((fact) => fact.id === "price" && fact.label === "Purchase price"));
 assert.ok(investFacts.some((fact) => fact.id === "rate" && fact.value === PRICING_WHEN_READY));
 assert.ok(!investFacts.some((fact) => fact.value.includes(SAMPLE_RATE_LABEL)));
 assert.equal(investFacts.find((fact) => fact.id === "reward")?.value, REWARD_PREPARED_COPY);
@@ -543,14 +640,17 @@ assert.deepEqual(
 assert.ok(!/832,?750/.test(highBuyAsk?.text ?? ""));
 
 const highBuyHeld = withIncome(
-  draft({
-    ...highBuyAfterTime,
-    valueAsked: true,
-    propertyValueAmount: 1_500_000,
-    jumboOffered: true,
-    creditAsked: true,
-    creditBand: "760+",
-  }),
+  withPurchaseFunds(
+    draft({
+      ...highBuyAfterTime,
+      jumboOffered: true,
+      creditAsked: true,
+      creditBand: "760+",
+    }),
+    1_500_000,
+    200_000,
+    1_300_000,
+  ),
 );
 assert.ok(loanLooksAboveCeiling(highBuyHeld));
 assert.ok(!previewRateApplies(highBuyHeld));
@@ -681,6 +781,8 @@ assert.notEqual(statusCopy(afterLooks), "Assigned / reviewing");
 const assignedFacts = previewFacts(afterLooks);
 assert.ok(assignedFacts.some((fact) => fact.id === "status" && fact.value === "gathering"));
 assert.ok(assignedFacts.some((fact) => fact.id === "next" && fact.value === "You"));
+assert.ok(assignedFacts.some((fact) => fact.id === "file"));
+assert.ok(!/agency_ready/.test(fileCompleteness(afterLooks)?.copy ?? ""));
 assert.ok(assignedFacts.some((fact) => fact.id === "originator" && fact.value === "Licensed originator assigned"));
 assert.ok(assignedFacts.some((fact) => fact.id === "letter"));
 const assignedReward = assignedFacts.find((fact) => fact.id === "reward");
@@ -742,8 +844,11 @@ assert.ok((loanDone.actions ?? []).some((item) => item.label === "Proceed"));
 
 assert.equal(structureFixPrompt("path"), "path-switch");
 assert.equal(structureFixPrompt("occupancy"), "occupancy");
-assert.equal(structureFixPrompt("numbers", afterPrice), "value");
-assert.equal(structureFixPrompt("numbers", helocReady), "amount");
+assert.equal(structureFixPrompt("price", afterPrice), "value");
+assert.equal(structureFixPrompt("down", afterPrice), "amount");
+assert.equal(structureFixPrompt("loan", afterPrice), "amount");
+assert.equal(structureFixPrompt("line", helocReady), "amount");
+assert.equal(structureFixPrompt("file"), null);
 assert.equal(structureFixPrompt("rate"), null);
 assert.equal(structureFixPrompt("reward"), null);
 assert.equal(structureFixPrompt("letter"), null);
@@ -837,6 +942,11 @@ resetWorkspaceForEntry("acr", "buy");
 applyCapture({ field: "occupancy", value: "primary" });
 applyCapture({ field: "timeline", value: "ready-now" });
 applyCapture({ field: "propertyValue", value: "1200000" });
+assert.equal(workspacePrompt(getFoxDraft()), "amount");
+assert.ok(!canLooksRight(getFoxDraft()));
+applyCapture({ field: "confirm-draft" });
+assert.equal(getFoxDraft().sampleAccepted, undefined);
+capturePurchaseFunds("1200000", "960000");
 applyCapture({ field: "creditRange", value: "760+" });
 assert.equal(workspacePrompt(getFoxDraft()), "income");
 applyCapture({ field: "incomeType", value: "w2" });
@@ -875,7 +985,7 @@ assert.ok(!(afterSkip.skippedClasses ?? []).includes("purchase_contract"));
 resetWorkspaceForEntry("acr", "buy");
 applyCapture({ field: "occupancy", value: "primary" });
 applyCapture({ field: "timeline", value: "ready-now" });
-applyCapture({ field: "propertyValue", value: "1200000" });
+capturePurchaseFunds("1200000", "960000");
 applyCapture({ field: "creditRange", value: "760+" });
 applyCapture({ field: "incomeType", value: "other" });
 assert.equal(getFoxDraft().documentsSkipped, false);
@@ -996,6 +1106,46 @@ const usedDoc = resolveFactConflict(incomeConflict.draft, "document");
 assert.equal(usedDoc.facts?.income?.value, "7200");
 assert.equal(usedDoc.facts?.income?.source, "document");
 
+const writtenEmployer = draft({
+  ...afterLooks,
+  facts: {
+    employer_name: { field: "employer_name", value: "Typed Shop", source: "client", confirmed: true },
+  },
+});
+const employerConflict = applyExtractedFields(writtenEmployer, {
+  extractClass: "paystub",
+  confidence: 0.9,
+  fields: { employer_name: "Harbor Steel", gross_period: "7200" },
+});
+assert.ok(employerConflict.conflict);
+assert.equal(employerConflict.draft.facts?.employer_name?.value, "Typed Shop");
+assert.notEqual(employerConflict.draft.facts?.employer_name?.value, "Harbor Steel");
+assert.equal(resolveFactConflict(employerConflict.draft, "file").facts?.employer_name?.value, "Typed Shop");
+
+resetWorkspaceForEntry("acr", "buy");
+applyCapture({ field: "occupancy", value: "primary" });
+applyCapture({ field: "timeline", value: "ready-now" });
+capturePurchaseFunds("1200000", "960000");
+applyCapture({ field: "creditRange", value: "760+" });
+applyCapture({ field: "incomeType", value: "w2" });
+const stubbed = applyPublicSuggestion();
+assert.equal(stubbed.pendingProposal?.kind, "public");
+assert.equal(stubbed.pendingProposal?.note, SUGGESTED_NOTE);
+assert.ok(previewFacts(stubbed).some((fact) => fact.id === "employer" && fact.note === SUGGESTED_NOTE));
+assert.ok(!canLooksRight(stubbed));
+const keepStub = workspaceReply("Keep file", stubbed);
+assert.equal(keepStub?.capture?.field, "decline-proposal");
+applyCapture({ field: "decline-proposal" });
+assert.equal(getFoxDraft().facts?.employer_name, undefined);
+assert.equal(getFoxDraft().pendingProposal, null);
+applyPublicSuggestion();
+const yesStub = workspaceReply("Yes that’s me", getFoxDraft());
+assert.equal(yesStub?.capture?.field, "accept-proposal");
+applyCapture({ field: "accept-proposal" });
+assert.equal(getFoxDraft().facts?.employer_name?.value, "Listed employer");
+assert.equal(getFoxDraft().facts?.employer_name?.source, "suggested");
+assert.ok(previewFacts(getFoxDraft()).some((fact) => fact.id === "employer" && fact.note === SUGGESTED_NOTE));
+
 const sameValue = applyExtractedFields(paystubWrite.draft, {
   extractClass: "paystub",
   confidence: 0.9,
@@ -1076,7 +1226,7 @@ assert.equal(workspacePrompt(skippedRemaining), "done");
 resetWorkspaceForEntry("acr", "buy");
 applyCapture({ field: "occupancy", value: "primary" });
 applyCapture({ field: "timeline", value: "ready-now" });
-applyCapture({ field: "propertyValue", value: "1200000" });
+capturePurchaseFunds("1200000", "960000");
 applyCapture({ field: "creditRange", value: "760+" });
 applyCapture({ field: "incomeType", value: "w2" });
 applyCapture({ field: "confirm-draft" });
@@ -1124,7 +1274,7 @@ assert.equal(failedWrite.quietLines[0], FAILED_READ_NOTE);
 resetWorkspaceForEntry("acr", "buy");
 applyCapture({ field: "occupancy", value: "primary" });
 applyCapture({ field: "timeline", value: "ready-now" });
-applyCapture({ field: "propertyValue", value: "1200000" });
+capturePurchaseFunds("1200000", "960000");
 applyCapture({ field: "creditRange", value: "760+" });
 applyCapture({ field: "incomeType", value: "w2" });
 applyCapture({ field: "confirm-draft" });
@@ -1188,7 +1338,7 @@ assert.ok(!missingExtractClasses(receivedPaystub).includes("paystub"));
 resetWorkspaceForEntry("acr", "buy");
 applyCapture({ field: "occupancy", value: "primary" });
 applyCapture({ field: "timeline", value: "ready-now" });
-applyCapture({ field: "propertyValue", value: "1200000" });
+capturePurchaseFunds("1200000", "960000");
 applyCapture({ field: "creditRange", value: "760+" });
 applyCapture({ field: "incomeType", value: "w2" });
 applyCapture({ field: "confirm-draft" });
@@ -1278,7 +1428,7 @@ applyCapture({ field: "use-document-fact" });
 resetWorkspaceForEntry("acr", "buy");
 applyCapture({ field: "occupancy", value: "primary" });
 applyCapture({ field: "timeline", value: "ready-now" });
-applyCapture({ field: "propertyValue", value: "1200000" });
+capturePurchaseFunds("1200000", "960000");
 applyCapture({ field: "creditRange", value: "760+" });
 applyCapture({ field: "incomeType", value: "w2" });
 applyCapture({ field: "confirm-draft" });
@@ -1306,6 +1456,9 @@ assert.equal(statusCopy(queued), "in_queue");
 assert.equal(nextActorOf(queued), "ONYX");
 assert.ok(previewFacts(queued).some((fact) => fact.id === "originator"));
 assert.ok(previewFacts(queued).some((fact) => fact.id === "next" && fact.value === "ONYX"));
+assert.ok(previewFacts(queued).some((fact) => fact.id === "file"));
+assert.ok(previewFacts(queued).some((fact) => fact.id === "status" && fact.value === "in_queue"));
+assert.ok(!/agency_ready/.test(fileCompleteness(queued)?.copy ?? ""));
 const reviewItem = openReviewWorkItem(queued);
 assert.equal(reviewItem?.kind, "review");
 assert.ok(reviewItem?.state === "open" || reviewItem?.state === "nudged");
@@ -1370,7 +1523,7 @@ assert.ok(getFoxMessages().some((message) => message.text === "Need the latest W
 resetWorkspaceForEntry("acr", "buy");
 applyCapture({ field: "occupancy", value: "primary" });
 applyCapture({ field: "timeline", value: "ready-now" });
-applyCapture({ field: "propertyValue", value: "850000" });
+capturePurchaseFunds("850000", "680000");
 applyCapture({ field: "creditRange", value: "760+" });
 applyCapture({ field: "incomeType", value: "w2" });
 applyCapture({ field: "confirm-draft" });
@@ -1382,6 +1535,8 @@ assert.equal(walkQueued.scenario, null);
 const walkRows = fileScenarioRows(walkQueued);
 assert.ok(walkRows.some(([label, value]) => label === "Product" && value === "Buy"));
 assert.ok(walkRows.some(([label, value]) => label === "Purchase price" && value === "$850,000"));
+assert.ok(walkRows.some(([label, value]) => label === "Loan amount" && value === "$680,000"));
+assert.ok(walkRows.some(([label, value]) => label === "Down payment"));
 assert.equal(shouldResumeWorkspaceEntry(walkQueued), true);
 const stillQueued = continueWorkspaceFromEntry("acr");
 assert.equal(motionOf(stillQueued), "in_queue");
@@ -1407,7 +1562,7 @@ assert.ok(getFoxMessages().every((message) => !/i need government id from you/i.
 resetWorkspaceForEntry("acr", "buy");
 applyCapture({ field: "occupancy", value: "primary" });
 applyCapture({ field: "timeline", value: "ready-now" });
-applyCapture({ field: "propertyValue", value: "1200000" });
+capturePurchaseFunds("1200000", "960000");
 applyCapture({ field: "creditRange", value: "760+" });
 applyCapture({ field: "incomeType", value: "w2" });
 applyCapture({ field: "confirm-draft" });
@@ -1435,7 +1590,7 @@ assert.equal(workspacePromptCopy("done", getFoxDraft()).text, MOTION_COPY.escala
 resetWorkspaceForEntry("acr", "buy");
 applyCapture({ field: "occupancy", value: "primary" });
 applyCapture({ field: "timeline", value: "ready-now" });
-applyCapture({ field: "propertyValue", value: "850000" });
+capturePurchaseFunds("850000", "680000");
 applyCapture({ field: "creditRange", value: "760+" });
 applyCapture({ field: "incomeType", value: "w2" });
 applyCapture({ field: "confirm-draft" });
@@ -1523,6 +1678,7 @@ const filePreview = readFileSync(join(root, "components/fox/FilePreview.tsx"), "
 assert.ok(filePreview.includes("!draft.workspaceFlow"));
 assert.ok(!filePreview.includes("docsOpen"));
 assert.ok(filePreview.includes('fact.id === "next"'));
+assert.ok(filePreview.includes('fact.id === "file"') || filePreview.includes('id === "file"'));
 
 const acrHero = readFileSync(join(root, "components/acr/AcrHero.tsx"), "utf8");
 assert.ok(!/next right move/.test(acrHero));

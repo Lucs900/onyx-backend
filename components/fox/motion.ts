@@ -3,6 +3,7 @@ import {
   missingExtractClasses,
   missingListCopy,
 } from "./fileWrite";
+import { canLooksRight } from "./completeness";
 import type {
   Capture,
   FileEvent,
@@ -296,6 +297,7 @@ export function finishLineActions(draft: FoxIntakeDraft): FoxAction[] {
 }
 
 export function applyLooksRightMotion(draft: FoxIntakeDraft): FoxIntakeDraft {
+  if (!canLooksRight(draft) && !draft.sampleAccepted) return draft;
   const motion = inferMotionAfterLooks(draft);
   return appendFileEvent(
     {
