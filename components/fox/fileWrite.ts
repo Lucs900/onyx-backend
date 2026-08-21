@@ -76,6 +76,10 @@ const MONEY_KEYS = new Set([
   "mileage_depreciation",
   "k1_ordinary_income",
   "k1_distributions",
+  "downPayment",
+  "down_payment",
+  "loanAmount",
+  "loan_amount",
 ]);
 
 const INCOME_MONEY_KEYS = new Set(["gross_period", "ytd_gross", "wages", "agi", "income", "net_period"]);

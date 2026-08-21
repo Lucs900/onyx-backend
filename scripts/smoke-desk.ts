@@ -36,7 +36,9 @@ import {
   showsAgencyCompleteness,
 } from "../components/fox/completeness";
 import {
+  DECLINING_INCOME_CAUTION,
   QUALIFYING_INCOME_FIELD,
+  laterYearIncomeLower,
   monthlyFromAnnual,
   monthlyQualifyingFromExtract,
   parseExtractMoney,
@@ -80,7 +82,10 @@ import {
 } from "../components/fox/types";
 import {
   amountAskText,
+  composerAmountHint,
   docsRequestForIncome,
+  editPromptFromCapture,
+  formatLiveMoneyInput,
   FHFA_HIGH_COST_CEILING_2026,
   fileScenarioRows,
   fileSummaryFacts,
@@ -91,6 +96,7 @@ import {
   loanLooksAboveCeiling,
   migrateRestoredFoxMessages,
   namedOutOfState,
+  parseFundsAmount,
   parseWorkspaceEdit,
   PATH_ASK_TEXT,
   previewFacts,
@@ -330,7 +336,133 @@ assert.match(looksRightTooSoon?.text ?? "", /down payment or loan amount/i);
 const fundsReply = workspaceReply("240000 down", afterPrice);
 assert.equal(fundsReply?.capture?.field, "downPayment");
 assert.match(fundsReply?.text ?? "", /loan amount would be/i);
+assert.match(fundsReply?.text ?? "", /\$960,000/);
+assert.doesNotMatch(fundsReply?.text ?? "", /would be 960000 /);
 assert.ok((fundsReply?.actions ?? []).some((item) => item.label === "Use this"));
+assert.equal(composerAmountHint(afterPrice), "down payment, percent, or loan amount");
+assert.doesNotMatch(composerAmountHint(afterPrice), /purchase price/i);
+assert.equal(editPromptFromCapture({ field: "propose-funds", value: "170000:680000" }), "amount");
+assert.equal(formatLiveMoneyInput("$20"), "$20");
+assert.equal(formatLiveMoneyInput("20%"), "20%");
+assert.equal(formatLiveMoneyInput("170000"), "170,000");
+assert.equal(parseFundsAmount("20", 850000)?.asPercent, true);
+assert.equal(parseFundsAmount("20", 850000)?.dollars, 170000);
+assert.equal(parseFundsAmount("20%", 850000)?.dollars, 170000);
+assert.equal(parseFundsAmount("20 percent", 850000)?.dollars, 170000);
+assert.equal(parseFundsAmount("170000", 850000)?.asPercent, false);
+assert.equal(parseFundsAmount("170k", 850000)?.dollars, 170000);
+assert.equal(parseFundsAmount("$20", 850000)?.dollars, 20);
+assert.equal(parseFundsAmount("$20", 850000)?.explicitDollars, true);
+assert.equal(parseFundsAmount("20 dollars", 850000)?.dollars, 20);
+assert.notEqual(parseFundsAmount("20", 850000)?.dollars, 20);
+
+const priced850 = draft({ ...afterPrice, propertyValueAmount: 850000 });
+const percent20 = workspaceReply("20", priced850);
+assert.equal(percent20?.capture?.field, "propose-funds");
+assert.equal(percent20?.capture && "value" in percent20.capture ? percent20.capture.value : "", "170000:680000");
+assert.match(percent20?.text ?? "", /\$170,000 down · \$680,000 loan/i);
+assert.ok((percent20?.actions ?? []).some((item) => item.label === "Use this"));
+assert.ok((percent20?.actions ?? []).some((item) => item.label === "Leave blank"));
+assert.equal(priced850.downPaymentAmount, undefined);
+assert.equal(priced850.loanAmountValue, undefined);
+const percent20pct = workspaceReply("20%", priced850);
+assert.equal(percent20pct?.capture?.field, "propose-funds");
+assert.match(percent20pct?.text ?? "", /\$170,000 down · \$680,000 loan/i);
+const percent20word = workspaceReply("20 percent", priced850);
+assert.equal(percent20word?.capture?.field, "propose-funds");
+const dollars170 = workspaceReply("170000", priced850);
+assert.equal(dollars170?.capture?.field, "downPayment");
+assert.equal(dollars170?.capture && "value" in dollars170.capture ? dollars170.capture.value : "", "170000");
+const dollars170k = workspaceReply("170k", priced850);
+assert.equal(dollars170k?.capture?.field, "downPayment");
+assert.match(dollars170k?.text ?? "", /\$680,000/);
+const tiny20 = workspaceReply("$20", priced850);
+assert.equal(tiny20?.capture?.field, "propose-funds");
+assert.match(tiny20?.text ?? "", /\$20 down/i);
+assert.doesNotMatch(tiny20?.text ?? "", /\$170,000 down/);
+const tiny20words = workspaceReply("20 dollars", priced850);
+assert.equal(tiny20words?.capture?.field, "propose-funds");
+assert.match(tiny20words?.text ?? "", /\$20 down/i);
+
+resetWorkspaceForEntry("acr", "buy");
+applyCapture({ field: "occupancy", value: "primary" });
+applyCapture({ field: "timeline", value: "ready-now" });
+applyCapture({ field: "propertyValue", value: "850000" });
+const beforePercent = {
+  productIntent: getFoxDraft().productIntent,
+  occupancy: getFoxDraft().occupancyChoice.value,
+  timeline: getFoxDraft().timelineChoice.value,
+  price: getFoxDraft().propertyValueAmount,
+};
+const typed20 = workspaceReply("20", getFoxDraft());
+assert.equal(typed20?.capture?.field, "propose-funds");
+if (typed20?.capture) applyCapture(typed20.capture);
+assert.equal(getFoxDraft().downPaymentAmount, undefined);
+assert.equal(getFoxDraft().loanAmountValue, undefined);
+assert.match(proposalAskCopy(getFoxDraft().pendingProposal!), /\$170,000 down · \$680,000 loan/);
+applyCapture({ field: "accept-proposal" });
+assert.equal(getFoxDraft().downPaymentAmount, 170000);
+assert.equal(getFoxDraft().loanAmountValue, 680000);
+applyCapture({ field: "correct", value: "amount" });
+assert.equal(getFoxDraft().correcting, "amount");
+assert.doesNotMatch(composerAmountHint(getFoxDraft()), /purchase price/i);
+assert.doesNotMatch(amountAskText(getFoxDraft()), /purchase price/i);
+assert.match(amountAskText(getFoxDraft()), /down payment or loan amount/i);
+assert.equal(getFoxDraft().productIntent, beforePercent.productIntent);
+assert.equal(getFoxDraft().occupancyChoice.value, beforePercent.occupancy);
+const editFrom20Bubble = workspaceReply("25%", getFoxDraft());
+assert.equal(editFrom20Bubble?.capture?.field, "propose-funds");
+assert.match(editFrom20Bubble?.text ?? "", /\$212,500 down · \$637,500 loan/i);
+if (editFrom20Bubble?.capture) applyCapture(editFrom20Bubble.capture);
+applyCapture({ field: "decline-proposal" });
+assert.equal(getFoxDraft().downPaymentAmount, 170000);
+assert.equal(getFoxDraft().loanAmountValue, 680000);
+applyCapture({ field: "correct", value: "amount" });
+const retype20 = workspaceReply("20", getFoxDraft());
+assert.equal(retype20?.capture?.field, "propose-funds");
+assert.match(retype20?.text ?? "", /\$170,000 down · \$680,000 loan/i);
+if (retype20?.capture) applyCapture(retype20.capture);
+applyCapture({ field: "accept-proposal" });
+assert.equal(getFoxDraft().downPaymentAmount, 170000);
+assert.equal(getFoxDraft().loanAmountValue, 680000);
+assert.equal(getFoxDraft().productIntent, beforePercent.productIntent);
+assert.equal(getFoxDraft().occupancyChoice.value, beforePercent.occupancy);
+assert.equal(getFoxDraft().timelineChoice.value, beforePercent.timeline);
+assert.equal(getFoxDraft().propertyValueAmount, beforePercent.price);
+applyCapture({ field: "creditRange", value: "760+" });
+applyCapture({ field: "incomeType", value: "w2" });
+const fileBeforeEdit = {
+  product: getFoxDraft().productIntent,
+  occupancy: getFoxDraft().occupancyChoice.value,
+  timeline: getFoxDraft().timelineChoice.value,
+  credit: getFoxDraft().creditBand,
+  income: getFoxDraft().incomeType.value,
+  price: getFoxDraft().propertyValueAmount,
+  motion: getFoxDraft().motion,
+};
+applyCapture({ field: "correct", value: "amount", line: "down" });
+assert.equal(getFoxDraft().correctingLine, "down");
+assert.match(composerAmountHint(getFoxDraft()), /down payment/i);
+assert.doesNotMatch(composerAmountHint(getFoxDraft()), /purchase price/i);
+const edit25 = workspaceReply("25%", getFoxDraft());
+assert.equal(edit25?.capture?.field, "propose-funds");
+if (edit25?.capture) applyCapture(edit25.capture);
+assert.equal(getFoxDraft().productIntent, fileBeforeEdit.product);
+assert.equal(getFoxDraft().occupancyChoice.value, fileBeforeEdit.occupancy);
+assert.equal(getFoxDraft().timelineChoice.value, fileBeforeEdit.timeline);
+assert.equal(getFoxDraft().creditBand, fileBeforeEdit.credit);
+assert.equal(getFoxDraft().incomeType.value, fileBeforeEdit.income);
+assert.equal(getFoxDraft().motion, fileBeforeEdit.motion);
+applyCapture({ field: "accept-proposal" });
+assert.equal(getFoxDraft().downPaymentAmount, 212500);
+assert.equal(getFoxDraft().loanAmountValue, 637500);
+applyCapture({ field: "correct", value: "amount", line: "down" });
+const edit200k = workspaceReply("200k", getFoxDraft());
+assert.equal(edit200k?.capture?.field, "downPayment");
+if (edit200k?.capture) applyCapture(edit200k.capture);
+assert.equal(getFoxDraft().downPaymentAmount, 200000);
+assert.equal(getFoxDraft().occupancyChoice.value, fileBeforeEdit.occupancy);
+assert.equal(getFoxDraft().incomeType.value, fileBeforeEdit.income);
 const afterFunds = withPurchaseFunds(afterPrice);
 assert.equal(workspacePrompt(afterFunds), "credit");
 assert.notEqual(workspacePrompt(afterFunds), "review");
@@ -1783,6 +1915,17 @@ const seDecliningYearTwo = applyExtractedFields(
 );
 assert.equal(seDecliningYearTwo.draft.pendingProposal?.value, "6000");
 assert.notEqual(seDecliningYearTwo.draft.pendingProposal?.value, "6667");
+assert.ok(laterYearIncomeLower(seDecliningYearTwo.draft));
+assert.equal(guidelineCaution(seDecliningYearTwo.draft), DECLINING_INCOME_CAUTION);
+assert.ok(
+  previewFacts(seDecliningYearTwo.draft).some(
+    (fact) => fact.id === "caution" && fact.value === DECLINING_INCOME_CAUTION,
+  ),
+);
+assert.ok(
+  previewFacts(seDecliningYearTwo.draft).filter((fact) => fact.id === "caution").length <= 1,
+);
+assert.doesNotMatch(DECLINING_INCOME_CAUTION, /approv|eligible|ineligible|denied|1084|agency_ready|liquidity/i);
 assert.equal(receivedTaxReturnCount(seDecliningYearTwo.draft), 2);
 const decliningYears = readTaxCashflows(seDecliningYearTwo.draft);
 assert.equal(decliningYears.length, 2);
@@ -2565,6 +2708,14 @@ assert.ok(storeSource.includes("function shouldResumeWorkspaceEntry") || storeSo
 assert.ok(storeSource.includes("fileExists(draft)"));
 const loReviewSource = readFileSync(join(root, "components/fox/LoReview.tsx"), "utf8");
 assert.ok(loReviewSource.includes("fileScenarioRows"));
+const startCss = readFileSync(join(root, "styles/start.css"), "utf8");
+assert.ok(startCss.includes("scroll-padding-bottom"));
+assert.ok(startCss.includes("scroll-margin-bottom"));
+const foxSource = readFileSync(join(root, "components/fox/AlwaysOnFox.tsx"), "utf8");
+assert.ok(foxSource.includes("composerAmountHint"));
+assert.ok(foxSource.includes("scrollIntoView"));
+assert.ok(foxSource.includes('line: field'));
+
 const filePreview = readFileSync(join(root, "components/fox/FilePreview.tsx"), "utf8");
 assert.ok(filePreview.includes("!draft.workspaceFlow"));
 assert.ok(!filePreview.includes("docsOpen"));

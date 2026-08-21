@@ -54,9 +54,12 @@ import {
   guidelineCaution,
   lowestCreditBand,
   fundsAskNeeded,
+  hasDownPayment,
   hasHelocLine,
   hasLoanAmount,
   hasPropertyValue,
+  impliedDownPayment,
+  impliedLoanAmount,
   isHelocFile,
   isPurchaseLike,
   isRefiLike,
@@ -64,6 +67,7 @@ import {
   parseFundsRole,
   proposalActions,
   proposalAskCopy,
+  proposeFundsPair,
   purchasePriceAskNeeded,
   propertyValueAskNeeded,
   refiLoanAskNeeded,
@@ -254,8 +258,36 @@ export function structureAmountLabel(draft?: FoxIntakeDraft | null) {
   return draftUsesPurchasePrice(draft) ? "Purchase price" : "Loan amount";
 }
 
+export function composerAmountHint(draft?: FoxIntakeDraft | null) {
+  if (!draft) return "the number";
+  if (draft.correctingLine === "loan") return "loan amount";
+  if (draft.correctingLine === "down") return "down payment or percent";
+  if (fundsAskNeeded(draft)) return "down payment, percent, or loan amount";
+  if (draft.correcting === "amount" && isPurchaseLike(draft) && hasPropertyValue(draft)) {
+    return "down payment, percent, or loan amount";
+  }
+  return structureAmountLabel(draft) || "the number";
+}
+
 export function amountAskText(draft: FoxIntakeDraft) {
-  if (fundsAskNeeded(draft)) return "What’s the down payment or loan amount?";
+  if (draft.correctingLine === "down") {
+    const n = draft.downPaymentAmount;
+    return n != null && n > 0
+      ? `Down payment in the file is ${formatMoney(n)}. What’s the down payment?`
+      : "What’s the down payment?";
+  }
+  if (draft.correctingLine === "loan") {
+    const n = draft.loanAmountValue;
+    return n != null && n > 0
+      ? `Loan amount in the file is ${formatMoney(n)}. What’s the loan amount?`
+      : "What’s the loan amount?";
+  }
+  if (
+    fundsAskNeeded(draft) ||
+    (draft.correcting === "amount" && isPurchaseLike(draft) && hasPropertyValue(draft))
+  ) {
+    return "What’s the down payment or loan amount?";
+  }
   if (propertyValueAskNeeded(draft)) return "What’s the property value?";
   if (purchasePriceAskNeeded(draft)) return "What’s the purchase price?";
   const intent = draft.productIntent;
@@ -721,6 +753,7 @@ export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
   if (!draft.path) return "intent";
   if (draft.pendingOffer === "jumbo") return "offer-jumbo";
   if (draft.pendingOffer === "heloc") return "offer-heloc";
+  if (draft.pendingProposal) return "confirm-proposal";
   if (draft.correcting === "path-switch") return "path-switch";
   if (draft.correcting === "correct") return "correct";
   if (draft.correcting === "credit") return "credit";
@@ -733,7 +766,6 @@ export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
   if (draft.correcting) return draft.correcting;
   if (!draft.productIntent) return "product";
   if (needsJumboPurpose(draft)) return "jumbo-purpose";
-  if (draft.pendingProposal) return "confirm-proposal";
   if (!draft.occupancyAsked && !draft.occupancyChoice.value) return "occupancy";
   if (!draft.timelineAsked && !draft.timelineChoice.value) return "timeline";
   if (purchasePriceAskNeeded(draft)) return "value";
@@ -994,15 +1026,23 @@ export function formatMoney(value: number) {
 /** Live composer commas. Returns null when the text is not a pure money number. */
 export function formatLiveMoneyInput(raw: string): string | null {
   if (/[a-zA-Z]/.test(raw)) return null;
+  const hasDollar = raw.includes("$");
+  const hasPercent = raw.includes("%");
+  if (hasPercent) {
+    const digits = raw.replace(/[^\d.]/g, "");
+    return digits ? `${digits}%` : "%";
+  }
   const digits = raw.replace(/\D/g, "");
-  if (!digits) return "";
+  if (!digits) return hasDollar ? "$" : "";
   if (digits.length > 12) return null;
-  return Number(digits).toLocaleString("en-US");
+  const formatted = Number(digits).toLocaleString("en-US");
+  return hasDollar ? `$${formatted}` : formatted;
 }
 
 export function caretAfterMoneyFormat(raw: string, caret: number, formatted: string) {
+  const prefix = formatted.startsWith("$") ? 1 : 0;
   const digitsBefore = raw.slice(0, Math.max(0, caret)).replace(/\D/g, "").length;
-  if (digitsBefore === 0) return 0;
+  if (digitsBefore === 0) return prefix;
   let seen = 0;
   for (let i = 0; i < formatted.length; i += 1) {
     if (/\d/.test(formatted[i])) {
@@ -1036,6 +1076,130 @@ function collectAmounts(text: string): number[] {
 
 export function parseLooseAmount(text: string): number | null {
   return collectAmounts(text)[0] ?? null;
+}
+
+export type FundsParse = {
+  dollars: number;
+  percent?: number;
+  asPercent: boolean;
+  explicitDollars: boolean;
+};
+
+const FUNDS_ROLE_WORDS = /\b(down(\s+payment)?|earnest|deposit|loan(\s+amount)?|payoff)\b/gi;
+
+export function parseFundsAmount(text: string, price?: number | null): FundsParse | null {
+  const trimmed = text.trim();
+  if (!trimmed) return null;
+  const lower = trimmed.toLowerCase();
+  const explicitDollars = /\$/.test(trimmed) || /\b(dollars?|bucks)\b/.test(lower);
+  const percentMatch = trimmed.match(/(\d+(?:\.\d+)?)\s*(%|percent\b|pct\b)/i);
+  if (percentMatch && !explicitDollars) {
+    const percent = Number(percentMatch[1]);
+    if (!Number.isFinite(percent) || percent <= 0 || percent > 100) return null;
+    if (price == null || price <= 0) return null;
+    const down = Math.round((price * percent) / 100);
+    if (down <= 0) return null;
+    return { dollars: down, percent, asPercent: true, explicitDollars: false };
+  }
+  if (explicitDollars) {
+    const fromLoose = parseLooseAmount(trimmed);
+    if (fromLoose != null) return { dollars: fromLoose, asPercent: false, explicitDollars: true };
+    const small = trimmed.replace(/,/g, "").match(/\$?\s*(\d+(?:\.\d+)?)/);
+    if (small) {
+      const n = Number(small[1]);
+      if (Number.isFinite(n) && n > 0) {
+        return { dollars: Math.round(n), asPercent: false, explicitDollars: true };
+      }
+    }
+    return null;
+  }
+  const stripped = trimmed.replace(FUNDS_ROLE_WORDS, "").replace(/\s+/g, " ").trim();
+  const bare = stripped.match(/^(\d{1,2}(?:\.\d+)?|100(?:\.0+)?)$/);
+  if (bare && price != null && price > 0) {
+    const percent = Number(bare[1]);
+    if (percent >= 1 && percent <= 100) {
+      const down = Math.round((price * percent) / 100);
+      if (down > 0) return { dollars: down, percent, asPercent: true, explicitDollars: false };
+    }
+  }
+  const amount = parseLooseAmount(stripped || trimmed);
+  if (amount != null) return { dollars: amount, asPercent: false, explicitDollars: false };
+  return null;
+}
+
+function replyToFundsAsk(
+  q: string,
+  draft: FoxIntakeDraft,
+): {
+  text: string;
+  followUp?: string;
+  facts?: PreviewFact[];
+  actions?: FoxAction[];
+  capture?: Capture;
+} {
+  if (isUnknownAmount(q)) {
+    return { text: "What’s the down payment or loan amount? A number works." };
+  }
+  const price = draft.propertyValueAmount;
+  const parsed = parseFundsAmount(q, price);
+  if (parsed == null || (price != null && parsed.dollars >= price && !parsed.asPercent)) {
+    return {
+      text: "What’s the down payment or loan amount? A number under the purchase price works.",
+    };
+  }
+  const role =
+    draft.correctingLine === "down"
+      ? "down"
+      : draft.correctingLine === "loan" && !parsed.asPercent
+        ? "loan"
+        : parsed.asPercent
+          ? "down"
+          : parseFundsRole(q, price) ?? (parsed.dollars < (price ?? 0) * 0.5 ? "down" : "loan");
+  const cleared = { ...draft, correcting: null, correctingLine: null, pendingProposal: null as null };
+  const pairConfirm =
+    price != null &&
+    price > 0 &&
+    (parsed.asPercent || (parsed.explicitDollars && parsed.dollars < 1000));
+  if (pairConfirm) {
+    const pair =
+      role === "loan"
+        ? (() => {
+            const down = impliedDownPayment(price, parsed.dollars);
+            return down != null ? { down, loan: parsed.dollars } : null;
+          })()
+        : (() => {
+            const loan = impliedLoanAmount(price, parsed.dollars);
+            return loan != null ? { down: parsed.dollars, loan } : null;
+          })();
+    if (!pair) {
+      return {
+        text: "What’s the down payment or loan amount? A number under the purchase price works.",
+      };
+    }
+    const nextDraft = proposeFundsPair(cleared, pair.down, pair.loan);
+    return {
+      ...workspacePromptCopy("confirm-proposal", nextDraft),
+      capture: { field: "propose-funds", value: `${pair.down}:${pair.loan}` },
+    };
+  }
+  if (role === "down") {
+    const nextDraft = withComputedCompanion(
+      { ...cleared, downPaymentAmount: parsed.dollars, downAsked: true },
+      hasLoanAmount(draft) ? "down" : undefined,
+    );
+    return {
+      ...workspacePromptCopy(workspacePrompt(nextDraft), nextDraft),
+      capture: { field: "downPayment", value: String(parsed.dollars) },
+    };
+  }
+  const nextDraft = withComputedCompanion(
+    { ...cleared, loanAmountValue: parsed.dollars, amountAsked: true },
+    hasDownPayment(draft) ? "loan" : undefined,
+  );
+  return {
+    ...workspacePromptCopy(workspacePrompt(nextDraft), nextDraft),
+    capture: { field: "loanAmount", value: String(parsed.dollars) },
+  };
 }
 
 export function parseAmountPair(text: string): { loan?: number; value?: number } {
@@ -1159,7 +1323,8 @@ export function editPromptFromCapture(capture?: Capture): FoxPrompt | undefined 
     capture.field === "skip-amount" ||
     capture.field === "amountPurpose" ||
     capture.field === "downPayment" ||
-    capture.field === "skip-down"
+    capture.field === "skip-down" ||
+    capture.field === "propose-funds"
   ) {
     return "amount";
   }
@@ -1250,6 +1415,10 @@ export function workspaceUpdateCopy(capture: Capture, draft: FoxIntakeDraft) {
       ? `Updated down payment to ${formatMoney(n)}.`
       : "Updated down payment.";
   }
+  if (capture.field === "propose-funds") {
+    const proposal = draft.pendingProposal;
+    return proposal ? proposalAskCopy(proposal) : "Use this down payment and loan amount?";
+  }
   if (capture.field === "accept-proposal") {
     return draft.pendingProposal?.kind === "public"
       ? "Updated from the suggestion."
@@ -1291,6 +1460,7 @@ export function parseWorkspaceEdit(
 ): {
   capture?: Capture;
   correct?: FoxPrompt;
+  line?: string;
   confirm: string;
 } | null {
   const q = text.trim();
@@ -1375,7 +1545,7 @@ export function parseWorkspaceEdit(
         confirm: `Updated down payment to ${formatMoney(amount)}.`,
       };
     }
-    return { correct: "amount", confirm: "What’s the down payment or loan amount?" };
+    return { correct: "amount", line: "down", confirm: "What’s the down payment?" };
   }
 
   if (/\b(property value|home value|house value|worth)\b/.test(lower) || (/\bvalue\b/.test(lower) && !/\bloan\b/.test(lower))) {
@@ -1403,7 +1573,7 @@ export function parseWorkspaceEdit(
         confirm: `Updated loan amount to ${formatMoney(amount)}.`,
       };
     }
-    return { correct: "amount", confirm: "What’s the loan amount?" };
+    return { correct: "amount", line: "loan", confirm: "What’s the loan amount?" };
   }
 
   if (/\bincome\b/.test(lower)) {
@@ -1425,7 +1595,7 @@ export function parseWorkspaceEdit(
 }
 
 function draftAfterCapture(draft: FoxIntakeDraft, capture: Capture): FoxIntakeDraft {
-  const next = { ...draft, correcting: null };
+  const next = { ...draft, correcting: null, correctingLine: null };
   if (capture.field === "path") return { ...next, path: capture.value };
   if (capture.field === "productIntent") return applyProductChange(next, capture.value);
   if (capture.field === "jumboPurpose") {
@@ -1478,6 +1648,7 @@ function draftAfterCapture(draft: FoxIntakeDraft, capture: Capture): FoxIntakeDr
         amountAsked: true,
         loanAmountValue: Number.isFinite(n) && n > 0 ? n : draft.loanAmountValue,
       }),
+      hasDownPayment(draft) ? "loan" : undefined,
     );
   }
   if (capture.field === "propertyValue") {
@@ -1492,11 +1663,21 @@ function draftAfterCapture(draft: FoxIntakeDraft, capture: Capture): FoxIntakeDr
   }
   if (capture.field === "downPayment") {
     const n = Number(capture.value.replace(/,/g, ""));
-    return withComputedCompanion({
-      ...next,
-      downAsked: true,
-      downPaymentAmount: Number.isFinite(n) && n > 0 ? n : draft.downPaymentAmount,
-    });
+    return withComputedCompanion(
+      {
+        ...next,
+        downAsked: true,
+        downPaymentAmount: Number.isFinite(n) && n > 0 ? n : draft.downPaymentAmount,
+      },
+      hasLoanAmount(draft) ? "down" : undefined,
+    );
+  }
+  if (capture.field === "propose-funds") {
+    const [downRaw, loanRaw] = capture.value.split(":");
+    const down = Number(downRaw);
+    const loan = Number(loanRaw);
+    if (!Number.isFinite(down) || !Number.isFinite(loan) || down <= 0 || loan <= 0) return next;
+    return proposeFundsPair(next, down, loan);
   }
   if (capture.field === "accept-proposal") return resolveProposal(next, "accept");
   if (capture.field === "decline-proposal") return resolveProposal(next, "decline");
@@ -1715,6 +1896,16 @@ export function workspaceReply(
         capture: { field: "decline-proposal" },
       };
     }
+    if (
+      draft.pendingProposal &&
+      isPurchaseLike(draft) &&
+      hasPropertyValue(draft) &&
+      draft.pendingProposal.kind === "computed" &&
+      (draft.pendingProposal.field === "downPayment" || draft.pendingProposal.field === "loanAmount") &&
+      parseFundsAmount(q, draft.propertyValueAmount)
+    ) {
+      return replyToFundsAsk(q, { ...draft, pendingProposal: null });
+    }
     if (draft.pendingProposal) {
       return workspacePromptCopy("confirm-proposal", draft);
     }
@@ -1742,8 +1933,8 @@ export function workspaceReply(
   }
   if (edit?.correct && draft.path) {
     return {
-      ...workspacePromptCopy(edit.correct, draft),
-      capture: { field: "correct", value: edit.correct },
+      ...workspacePromptCopy(edit.correct, { ...draft, correctingLine: edit.line ?? draft.correctingLine }),
+      capture: { field: "correct", value: edit.correct, line: edit.line },
     };
   }
 
@@ -1918,31 +2109,13 @@ export function workspaceReply(
   }
 
   if (prompt === "amount") {
-    if (fundsAskNeeded(draft)) {
-      if (isUnknownAmount(q)) {
-        return {
-          text: "What’s the down payment or loan amount? A number works.",
-        };
-      }
-      const amount = parseAmountPair(q).loan ?? parseLooseAmount(q);
-      if (amount == null || (draft.propertyValueAmount != null && amount >= draft.propertyValueAmount)) {
-        return {
-          text: "What’s the down payment or loan amount? A number under the purchase price works.",
-        };
-      }
-      const role = parseFundsRole(q, draft.propertyValueAmount) ?? (amount < (draft.propertyValueAmount ?? 0) * 0.5 ? "down" : "loan");
-      const nextDraft = withComputedCompanion(
-        role === "down"
-          ? { ...draft, downPaymentAmount: amount, downAsked: true }
-          : { ...draft, loanAmountValue: amount, amountAsked: true },
-      );
-      return {
-        ...workspacePromptCopy(workspacePrompt(nextDraft), nextDraft),
-        capture:
-          role === "down"
-            ? { field: "downPayment", value: String(amount) }
-            : { field: "loanAmount", value: String(amount) },
-      };
+    const editingFunds = draft.correctingLine === "down" || draft.correctingLine === "loan";
+    const purchaseFunds =
+      isPurchaseLike(draft) &&
+      hasPropertyValue(draft) &&
+      (fundsAskNeeded(draft) || editingFunds || draft.correcting === "amount");
+    if (purchaseFunds) {
+      return replyToFundsAsk(q, draft);
     }
     if (draft.productIntent === "other" && !draft.amountPurposeLabel) {
       if (isUnknownAmount(q)) {

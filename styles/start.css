@@ -35,6 +35,8 @@
   min-height: 240px;
   max-height: none !important;
   overflow: auto;
+  padding-bottom: 120px;
+  scroll-padding-bottom: 120px;
 }
 
 .fox-stage.fox-stage--workspace .fox-bar__desk,
@@ -96,6 +98,7 @@
   padding: 12px 14px;
   background: var(--paper-elevated);
   border-color: color-mix(in srgb, var(--ink) 26%, var(--fox-hairline));
+  scroll-margin-bottom: 128px;
 }
 
 .fox-stage--workspace .fox-bubble--fox.is-current > p {

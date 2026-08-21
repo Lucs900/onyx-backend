@@ -69,6 +69,7 @@ import {
   applyStubEmployerSuggestion,
   canLooksRight,
   proposePublicSuggestion,
+  proposeFundsPair,
   resolveProposal,
   withComputedCompanion,
 } from "./completeness";
@@ -98,6 +99,7 @@ export function emptyDraft(): FoxIntakeDraft {
     timelineAsked: false,
     preferredAsked: false,
     correcting: null,
+    correctingLine: null,
     scenario: null,
     notes: [],
     documents: [],
@@ -142,6 +144,9 @@ function normalize(value: unknown): FoxIntakeDraft {
     timelineAsked: Boolean(raw.timelineAsked),
     preferredAsked: Boolean(raw.preferredAsked),
     correcting: raw.correcting ?? null,
+    correctingLine: typeof raw.correctingLine === "string" && raw.correctingLine
+      ? raw.correctingLine
+      : null,
     path: raw.path === "acr" || raw.path === "loan-only" ? raw.path : undefined,
     productIntent: normalizeProductIntent(raw.productIntent),
     jumboPurpose: raw.jumboPurpose === "buy" || raw.jumboPurpose === "refinance"
@@ -287,6 +292,14 @@ function normalizeProposal(value: FoxIntakeDraft["pendingProposal"]): FactPropos
     label: value.label || value.field,
     kind: value.kind,
     note: typeof value.note === "string" ? value.note : undefined,
+    companion:
+      value.companion && value.companion.field && value.companion.value
+        ? {
+            field: value.companion.field,
+            value: value.companion.value,
+            label: value.companion.label || value.companion.field,
+          }
+        : undefined,
   };
 }
 
@@ -1065,7 +1078,19 @@ export function applyCapture(capture: Capture) {
     return commit({
       ...current,
       correcting: capture.value as FoxPrompt,
+      correctingLine: capture.line ?? null,
       sections: unsetForPrompt(current.sections, capture.value),
+    });
+  }
+  if (capture.field === "propose-funds") {
+    const [downRaw, loanRaw] = capture.value.split(":");
+    const down = Number(downRaw);
+    const loan = Number(loanRaw);
+    if (!Number.isFinite(down) || !Number.isFinite(loan) || down <= 0 || loan <= 0) return current;
+    return commit({
+      ...proposeFundsPair(current, down, loan),
+      correcting: null,
+      correctingLine: null,
     });
   }
   if (capture.field === "note") {
@@ -1181,10 +1206,12 @@ export function applyCapture(capture: Capture) {
             ...current,
             amountAsked: true,
             correcting: null,
+            correctingLine: null,
             valueAsked: hasValue ? true : current.valueAsked,
             loanAmountValue: hasLoan ? loan : current.loanAmountValue,
             propertyValueAmount: hasValue ? value : current.propertyValueAmount,
           }),
+          current.downPaymentAmount != null && current.downPaymentAmount > 0 ? "loan" : undefined,
         ),
       ),
     );
@@ -1198,6 +1225,7 @@ export function applyCapture(capture: Capture) {
             ...current,
             valueAsked: true,
             correcting: null,
+            correctingLine: null,
             propertyValueAmount:
               Number.isFinite(value) && value > 0 ? value : current.propertyValueAmount,
           }),
@@ -1209,18 +1237,22 @@ export function applyCapture(capture: Capture) {
     const value = Number(capture.value.replace(/,/g, ""));
     return commit(
       withWorkspaceScenario(
-        withComputedCompanion({
-          ...current,
-          downAsked: true,
-          correcting: null,
-          downPaymentAmount:
-            Number.isFinite(value) && value > 0 ? value : current.downPaymentAmount,
-        }),
+        withComputedCompanion(
+          {
+            ...current,
+            downAsked: true,
+            correcting: null,
+            correctingLine: null,
+            downPaymentAmount:
+              Number.isFinite(value) && value > 0 ? value : current.downPaymentAmount,
+          },
+          current.loanAmountValue != null && current.loanAmountValue > 0 ? "down" : undefined,
+        ),
       ),
     );
   }
   if (capture.field === "skip-down") {
-    return commit({ ...current, downAsked: true, correcting: null });
+    return commit({ ...current, downAsked: true, correcting: null, correctingLine: null });
   }
   if (capture.field === "skip-amount") {
     return commit({

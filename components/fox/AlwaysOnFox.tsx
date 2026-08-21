@@ -52,10 +52,10 @@ import {
 } from "./store";
 import {
   caretAfterMoneyFormat,
+  composerAmountHint,
   confirmedMoneyText,
   formatLiveMoneyInput,
   editPromptFromCapture,
-  structureAmountLabel,
   structureExplainCopy,
   structureFixPrompt,
   workspaceGreeting,
@@ -265,10 +265,23 @@ export function requestFoxExplain(field: string) {
 }
 
 function clientMoneyText(text: string, capture?: { field: string }) {
+  if (capture?.field === "propose-funds" || capture?.field === "downPayment") {
+    return text;
+  }
   if (capture?.field !== "loanAmount" && capture?.field !== "propertyValue") {
     return text;
   }
   return confirmedMoneyText(text) ?? text;
+}
+
+function structureWriteCapture(field?: string) {
+  return (
+    field != null &&
+    field !== "correct" &&
+    field !== "propose-funds" &&
+    field !== "accept-proposal" &&
+    field !== "decline-proposal"
+  );
 }
 
 function persistPathFromHref(href: string) {
@@ -605,7 +618,12 @@ export function AlwaysOnFox({
           id: newId(),
           role: "client",
           text: clientMoneyText(text, reply.capture),
-          edit: workspaceSurface ? editPromptFromCapture(reply.capture) : undefined,
+          edit: workspaceSurface
+            ? editPromptFromCapture(reply.capture) ??
+              (workspacePrompt(live) === "amount" || workspacePrompt(live) === "value"
+                ? workspacePrompt(live)
+                : undefined)
+            : undefined,
         },
         foxAskMessage(reply),
       ]);
@@ -616,7 +634,7 @@ export function AlwaysOnFox({
       setOpen(true);
       const prompt = structureFixPrompt(field, getFoxDraft());
       if (!prompt) return;
-      applyCapture({ field: "correct", value: prompt });
+      applyCapture({ field: "correct", value: prompt, line: field });
       skipPromptSync.current = true;
       const live = getFoxDraft();
       const ask = workspacePromptCopy(prompt, live);
@@ -829,7 +847,14 @@ export function AlwaysOnFox({
   }, [draft.motion, draft.reviewSlaMs, draft.updatedAt, isStart, ready, search]);
 
   useEffect(() => {
-    listRef.current?.scrollTo({ top: listRef.current.scrollHeight });
+    const thread = listRef.current;
+    if (!thread) return;
+    const current = thread.querySelector("[aria-current='step']");
+    if (current instanceof HTMLElement) {
+      current.scrollIntoView({ block: "end", inline: "nearest" });
+      return;
+    }
+    thread.scrollTo({ top: thread.scrollHeight });
   }, [messages, open]);
 
   const startAsk = isStart ? workspacePrompt(draft) : null;
@@ -985,7 +1010,7 @@ export function AlwaysOnFox({
       if (action.capture.field === "path") {
         writeStartPath(action.capture.value);
       }
-      const editing = Boolean(isStart && draft.correcting && action.capture.field !== "correct");
+      const editing = Boolean(isStart && draft.correcting && structureWriteCapture(action.capture.field));
       applyCapture(action.capture);
       skipPromptSync.current = true;
       const live = getFoxDraft();
@@ -1024,7 +1049,7 @@ export function AlwaysOnFox({
       writeStartPath(reply.capture.value);
     }
     const editing = Boolean(
-      isStart && draft.correcting && reply.capture && reply.capture.field !== "correct",
+      isStart && draft.correcting && reply.capture && structureWriteCapture(reply.capture.field),
     );
     if (reply.capture) {
       applyCapture(reply.capture);
@@ -1043,7 +1068,10 @@ export function AlwaysOnFox({
     appendReply(
       clientMoneyText(text, reply.capture),
       reply,
-      workspaceSurface ? editPromptFromCapture(reply.capture) : undefined,
+      workspaceSurface
+        ? editPromptFromCapture(reply.capture) ??
+          (startAsk === "amount" || startAsk === "value" ? startAsk : undefined)
+        : undefined,
     );
     continueHomeToDesk();
   };
@@ -1109,7 +1137,7 @@ export function AlwaysOnFox({
         onBlur={onComposerBlur}
         placeholder={
           moneyAsk
-            ? `Enter ${ (structureAmountLabel(draft) || "the number").toLowerCase() } or say not sure`
+            ? `Enter ${composerAmountHint(draft)}`
             : askingAmountPurpose
               ? "Purchase price, loan amount, or HELOC line"
               : "Ask ONYX Fox"

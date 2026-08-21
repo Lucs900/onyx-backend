@@ -15,7 +15,11 @@ import {
   factValue,
   valuesMatch,
 } from "./fileWrite";
-import { QUALIFYING_INCOME_FIELD, SUGGESTED_INCOME_NOTE } from "./qualifyingIncome";
+import {
+  QUALIFYING_INCOME_FIELD,
+  SUGGESTED_INCOME_NOTE,
+  decliningIncomeCaution,
+} from "./qualifyingIncome";
 
 export const SUGGESTED_NOTE = "Suggested · not verified";
 export const PROPOSED_NOTE = "Proposed · confirm";
@@ -339,7 +343,11 @@ export function lowestCreditBand(draft?: FoxIntakeDraft | null) {
 /** One quiet File / Fox line. Never a verdict. */
 export function guidelineCaution(draft: FoxIntakeDraft): string | undefined {
   if (draft.productIntent === "heloc" || draft.productIntent === "jumbo") return undefined;
+  const incomeCaution = decliningIncomeCaution(draft);
+  const justUploadedIncome = draft.pendingProposal?.field === QUALIFYING_INCOME_FIELD;
+  if (incomeCaution && (justUploadedIncome || !highPurchaseLtv(draft))) return incomeCaution;
   if (highPurchaseLtv(draft)) return HIGH_LTV_CAUTION;
+  if (incomeCaution) return incomeCaution;
   const occupancy = draft.occupancyChoice.value || draft.scenario?.occupancy || "";
   if (occupancy === "investment") return PRICING_WAITS;
   return undefined;
@@ -367,6 +375,13 @@ export function structureFieldForProposal(field: string) {
   return field;
 }
 
+function fundsMoneyShown(field: string, value: string) {
+  const shown = displayFactValue(field, value);
+  if (/^-?\$/.test(shown)) return shown;
+  const n = Number(String(value).replace(/[$,]/g, ""));
+  return Number.isFinite(n) ? `$${Math.round(n).toLocaleString("en-US")}` : value;
+}
+
 export function proposalAskCopy(proposal: FactProposal) {
   const shown = displayFactValue(proposal.field, proposal.value);
   if (proposal.field === QUALIFYING_INCOME_FIELD) {
@@ -376,6 +391,13 @@ export function proposalAskCopy(proposal: FactProposal) {
     return `I have ${proposal.label} ${shown}. ${SUGGESTED_NOTE}. Is that you?`;
   }
   if (proposal.kind === "computed") {
+    if (proposal.companion && (proposal.field === "downPayment" || proposal.field === "loanAmount")) {
+      const down =
+        proposal.field === "downPayment" ? proposal.value : proposal.companion.value;
+      const loan =
+        proposal.field === "loanAmount" ? proposal.value : proposal.companion.value;
+      return `${fundsMoneyShown("downPayment", down)} down · ${fundsMoneyShown("loanAmount", loan)} loan. Use this?`;
+    }
     if (proposal.field === "loanAmount") {
       return `Loan amount would be ${shown} from the purchase price and down payment. Use this?`;
     }
@@ -418,6 +440,28 @@ export function makeProposal(
     label,
     kind,
     note: proposalNote(kind),
+  };
+}
+
+export function makeFundsPairProposal(down: number, loan: number): FactProposal {
+  return {
+    field: "downPayment",
+    value: String(down),
+    label: "down payment",
+    kind: "computed",
+    note: PROPOSED_NOTE,
+    companion: {
+      field: "loanAmount",
+      value: String(loan),
+      label: "loan amount",
+    },
+  };
+}
+
+export function proposeFundsPair(draft: FoxIntakeDraft, down: number, loan: number): FoxIntakeDraft {
+  return {
+    ...draft,
+    pendingProposal: makeFundsPairProposal(down, loan),
   };
 }
 
@@ -498,21 +542,28 @@ export function proposePublicSuggestion(
   return proposeIfEmpty(draft, field, value, "public");
 }
 
-export function withComputedCompanion(draft: FoxIntakeDraft): FoxIntakeDraft {
+export function withComputedCompanion(
+  draft: FoxIntakeDraft,
+  force?: "down" | "loan",
+): FoxIntakeDraft {
   if (!isPurchaseLike(draft) || draft.pendingProposal || draft.pendingConflict) return draft;
   const price = draft.propertyValueAmount;
   if (price == null || price <= 0) return draft;
-  if (hasDownPayment(draft) && !hasLoanAmount(draft)) {
+  const proposeLoan = hasDownPayment(draft) && (!hasLoanAmount(draft) || force === "down");
+  if (proposeLoan) {
     const loan = impliedLoanAmount(price, draft.downPaymentAmount);
     if (loan == null) return draft;
+    if (draft.loanAmountValue === loan) return draft;
     return {
       ...draft,
       pendingProposal: makeProposal("loanAmount", String(loan), "computed", "loan amount"),
     };
   }
-  if (hasLoanAmount(draft) && !hasDownPayment(draft)) {
+  const proposeDown = hasLoanAmount(draft) && (!hasDownPayment(draft) || force === "loan");
+  if (proposeDown) {
     const down = impliedDownPayment(price, draft.loanAmountValue);
     if (down == null) return draft;
+    if (draft.downPaymentAmount === down) return draft;
     return {
       ...draft,
       pendingProposal: makeProposal("downPayment", String(down), "computed", "down payment"),
@@ -536,7 +587,11 @@ export function resolveProposal(
       : proposal.kind === "computed"
         ? "computed"
         : "document";
-  return { ...writeConfirmedFact(draft, proposal.field, proposal.value, source), pendingProposal: null };
+  let next = writeConfirmedFact(draft, proposal.field, proposal.value, source);
+  if (proposal.companion) {
+    next = writeConfirmedFact(next, proposal.companion.field, proposal.companion.value, source);
+  }
+  return { ...next, pendingProposal: null };
 }
 
 export function acceptComputedAmounts(draft: FoxIntakeDraft): FoxIntakeDraft {
@@ -612,9 +667,19 @@ export function requiredLineValue(
 ): { value: string; note?: string; filled: boolean } {
   const proposal = draft.pendingProposal;
   const proposalId = proposal ? structureFieldForProposal(proposal.field) : "";
+  const companionId = proposal?.companion
+    ? structureFieldForProposal(proposal.companion.field)
+    : "";
   if (proposal && proposalId === line.id) {
     return {
       value: displayFactValue(proposal.field, proposal.value),
+      note: proposal.note ?? proposalNote(proposal.kind),
+      filled: false,
+    };
+  }
+  if (proposal?.companion && companionId === line.id) {
+    return {
+      value: displayFactValue(proposal.companion.field, proposal.companion.value),
       note: proposal.note ?? proposalNote(proposal.kind),
       filled: false,
     };

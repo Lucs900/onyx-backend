@@ -77,6 +77,11 @@ export type FactProposal = {
   label: string;
   kind: ProposalKind;
   note?: string;
+  companion?: {
+    field: string;
+    value: string;
+    label: string;
+  };
 };
 
 export type IntakePhase = "context" | "documents" | "draft" | "confirmed";
@@ -177,6 +182,7 @@ export type FoxIntakeDraft = {
   timelineAsked: boolean;
   preferredAsked: boolean;
   correcting: FoxPrompt | null;
+  correctingLine?: string | null;
   scenario: ExplorerScenario | null;
   path?: IntakePath;
   productIntent?: ProductIntent;
@@ -296,6 +302,7 @@ export type Capture =
   | { field: "skip-term" }
   | { field: "accept-proposal" }
   | { field: "decline-proposal" }
+  | { field: "propose-funds"; value: string }
   | { field: "skip-docs" }
   | { field: "open-docs" }
   | { field: "keep-file-fact" }
@@ -310,7 +317,7 @@ export type Capture =
   | { field: "proceed" }
   | { field: "not-yet" }
   | { field: "upload-more" }
-  | { field: "correct"; value: string }
+  | { field: "correct"; value: string; line?: string }
   | { field: "note"; value: string };
 
 export type FoxAction = {

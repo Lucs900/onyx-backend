@@ -143,6 +143,37 @@ export function stableOrDecliningAnnual(earlier: number, later: number): number 
   return later < earlier ? later : (earlier + later) / 2;
 }
 
+export const DECLINING_YEAR_RATIO = 0.9;
+export const DECLINING_INCOME_CAUTION = "Income is lower this year. I’m using the later year.";
+
+function scheduleCUsableYears(years: TaxYearCashflow[]) {
+  return years
+    .map((row) => ({
+      year: yearNumber(row.tax_year) ?? 0,
+      kind:
+        row.return_kind === "schedule_c" || (!row.return_kind && row.schedule_c_net_profit)
+          ? "schedule_c"
+          : row.return_kind,
+      annual: annualFromCashflow(row),
+    }))
+    .filter((row) => row.kind === "schedule_c" && row.annual != null)
+    .sort((a, b) => a.year - b.year) as { year: number; kind: "schedule_c"; annual: number }[];
+}
+
+/** Later Sch C year is at least 10% below the earlier year. Quiet caution only — not a denial. */
+export function laterYearIncomeLower(draft: FoxIntakeDraft): boolean {
+  const usable = scheduleCUsableYears(readTaxCashflows(draft));
+  if (usable.length < 2) return false;
+  const earlier = usable[usable.length - 2];
+  const later = usable[usable.length - 1];
+  if (earlier.annual <= 0) return false;
+  return later.annual / earlier.annual <= DECLINING_YEAR_RATIO;
+}
+
+export function decliningIncomeCaution(draft: FoxIntakeDraft): string | undefined {
+  return laterYearIncomeLower(draft) ? DECLINING_INCOME_CAUTION : undefined;
+}
+
 export function monthlyFromAnnual(annual: number): number {
   return Math.round(annual / 12);
 }
@@ -247,16 +278,7 @@ function annualFromCashflow(row: TaxYearCashflow): number | null {
 }
 
 function scheduleCMonthly(years: TaxYearCashflow[]): number | null {
-  const usable = years
-    .map((row) => ({
-      year: yearNumber(row.tax_year) ?? 0,
-      kind: row.return_kind === "schedule_c" || (!row.return_kind && row.schedule_c_net_profit)
-        ? "schedule_c"
-        : row.return_kind,
-      annual: annualFromCashflow(row),
-    }))
-    .filter((row) => row.kind === "schedule_c" && row.annual != null)
-    .sort((a, b) => a.year - b.year) as { year: number; kind: "schedule_c"; annual: number }[];
+  const usable = scheduleCUsableYears(years);
   if (!usable.length) return null;
   if (usable.length === 1) return monthlyFromAnnual(usable[0].annual);
   const earlier = usable[usable.length - 2];
