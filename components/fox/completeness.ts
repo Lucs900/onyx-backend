@@ -1,13 +1,14 @@
-import type {
-  CompletenessGroup,
-  CompletenessState,
-  FactProposal,
-  FoxAction,
-  FoxIntakeDraft,
-  FoxPrompt,
-  JumboPurpose,
-  ProductIntent,
-  ProposalKind,
+import {
+  CREDIT_STATED_NOTE,
+  type CompletenessGroup,
+  type CompletenessState,
+  type FactProposal,
+  type FoxAction,
+  type FoxIntakeDraft,
+  type FoxPrompt,
+  type JumboPurpose,
+  type ProductIntent,
+  type ProposalKind,
 } from "./types";
 import {
   displayFactValue,
@@ -718,7 +719,11 @@ export function requiredLineValue(
             : band === "not-sure"
               ? "Not sure"
               : "";
-    return { value: label || MISSING_LINE, filled: Boolean(label) };
+    return {
+      value: label || MISSING_LINE,
+      note: label ? CREDIT_STATED_NOTE : undefined,
+      filled: Boolean(label),
+    };
   }
   if (line.id === "income") {
     const raw = draft.incomeType.value;

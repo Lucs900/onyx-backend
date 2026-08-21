@@ -382,6 +382,8 @@ export const PRODUCT_INTENT_BUBBLES = [
   { value: "other", label: "Other" },
 ] as const;
 
+export const CREDIT_STATED_NOTE = "Stated · not a pull";
+
 export const CREDIT_WORKSPACE_BUBBLES = [
   { value: "760+", label: "760+" },
   { value: "720-759", label: "720–759" },

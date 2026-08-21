@@ -50,6 +50,7 @@ import {
 import {
   MOTION_COPY,
   applyLooksRightMotion,
+  creditPullPermitted,
   gatheringCopy,
   motionOf,
   nextActorOf,
@@ -100,6 +101,9 @@ import {
   namedOutOfState,
   parseFundsAmount,
   parseWorkspaceEdit,
+  CREDIT_RANGE_ASK,
+  CREDIT_RANGE_FOLLOW,
+  CREDIT_STATED_NOTE,
   PATH_ASK_TEXT,
   previewFacts,
   previewRateApplies,
@@ -515,6 +519,9 @@ assert.notEqual(workspacePrompt(afterFunds), "review");
 assert.notEqual(workspacePrompt(afterFunds), "documents");
 
 const creditAsk = workspacePromptCopy("credit", afterPrice);
+assert.equal(creditAsk.text, CREDIT_RANGE_ASK);
+assert.equal(creditAsk.followUp, CREDIT_RANGE_FOLLOW);
+assert.doesNotMatch(`${creditAsk.text} ${creditAsk.followUp ?? ""}`, /fico|we pulled|pulled your credit|live score/i);
 assert.deepEqual(
   (creditAsk.actions ?? []).map((item) => item.label),
   ["760+", "720–759", "680–719", "Not sure"],
@@ -523,6 +530,8 @@ assert.deepEqual(
   CREDIT_WORKSPACE_BUBBLES.map((item) => item.label),
   ["760+", "720–759", "680–719", "Not sure"],
 );
+assert.equal(creditPullPermitted(afterFunds), false);
+assert.equal(creditPullPermitted(draft()), false);
 
 const afterCredit = draft({
   ...afterFunds,
@@ -552,6 +561,7 @@ const afterIncome = withIncome(afterCredit, "w2");
 assert.equal(workspacePrompt(afterIncome), "review");
 assert.notEqual(workspacePrompt(afterIncome), "documents");
 const looksRight = workspaceReply("Looks right", afterIncome);
+assert.equal(creditPullPermitted(applyLooksRightMotion(afterIncome)), false);
 assert.equal(looksRight?.capture?.field, "confirm-draft");
 assert.match(looksRight?.text ?? "", /these docs help next/i);
 assert.match(looksRight?.text ?? "", /government ID, latest paystub, and W-2/i);
@@ -583,7 +593,20 @@ assert.equal(structureAmountLabel(afterIncome), "Purchase price");
 assert.ok(canLooksRight(afterIncome));
 assert.equal(fileCompleteness(afterIncome)?.state, "sketch");
 assert.ok(creditFacts.some((fact) => fact.id === "file" && /sketch/.test(fact.value)));
-assert.ok(creditFacts.some((fact) => fact.id === "credit" && fact.value === "760+"));
+assert.ok(
+  creditFacts.some(
+    (fact) => fact.id === "credit" && fact.value === "760+" && fact.note === CREDIT_STATED_NOTE,
+  ),
+);
+assert.ok(
+  creditFacts
+    .filter((fact) => fact.id === "credit")
+    .every((fact) => CREDIT_WORKSPACE_BUBBLES.some((item) => item.label === fact.value)),
+);
+assert.equal(creditPullPermitted(afterIncome), false);
+assert.equal(creditPullPermitted({ ...afterIncome, sampleAccepted: true, motion: "gathering" }), false);
+assert.match(structureExplainCopy("credit", afterIncome)?.text ?? "", /stated range/i);
+assert.doesNotMatch(structureExplainCopy("credit", afterIncome)?.text ?? "", /we pulled|fico \d/i);
 assert.ok(creditFacts.some((fact) => fact.id === "income" && fact.value === "W-2"));
 assert.ok(creditFacts.some((fact) => fact.id === "rate" && fact.value.includes(SAMPLE_RATE_LABEL)));
 assert.ok(creditFacts.some((fact) => fact.id === "rate" && fact.note === PREVIEW_RATE_NOTE));
@@ -2348,11 +2371,15 @@ const stripped = sanitizeExtractedFields("government_id", {
   full_name: "Jordan Lee",
   id_last4: "987654321",
   ssn: "123-45-6789",
+  fico: "742",
+  credit_score: "741",
   state: "CA",
 });
 assert.equal(stripped.full_name, "Jordan Lee");
 assert.equal(stripped.id_last4, "4321");
 assert.equal(stripped.ssn, undefined);
+assert.equal(stripped.fico, undefined);
+assert.equal(stripped.credit_score, undefined);
 
 const afterPaystubDoc = draft({
   ...afterLooks,
@@ -2639,7 +2666,10 @@ const reviewItem = openReviewWorkItem(queued);
 assert.equal(reviewItem?.kind, "review");
 assert.ok(reviewItem?.state === "open" || reviewItem?.state === "nudged");
 assert.equal(workspacePromptCopy("done", queued).text, MOTION_COPY.in_queue);
-assert.doesNotMatch(workspacePromptCopy("done", queued).text, /will contact you|we’ll be in touch|your lo has the file/i);
+assert.doesNotMatch(workspacePromptCopy("done", queued).text, /will contact you|we’ll be in touch|your lo has the file|we pulled|pulled your credit|fico/i);
+assert.equal(creditPullPermitted(queued), true);
+assert.equal(creditPullPermitted({ ...queued, motion: "escalated" }), true);
+assert.doesNotMatch(MOTION_COPY.in_queue, /we pulled|pulled your credit|your score is/i);
 const queuedActions = workspacePromptCopy("done", queued).actions ?? [];
 const queuedLabels = queuedActions.map((item) => item.label);
 assert.ok(queuedLabels.includes("What happens next?"));
@@ -2882,6 +2912,15 @@ assert.ok(storeSource.includes("fileExists(draft)"));
 assert.ok(storeSource.includes("markHomepageFreshStart"));
 assert.ok(storeSource.includes("startOverWorkspace(path)"));
 assert.ok(!storeSource.includes("if (workspaceSessionStarted())"));
+const motionSource = readFileSync(join(root, "components/fox/motion.ts"), "utf8");
+assert.ok(motionSource.includes("function creditPullPermitted") || motionSource.includes("export function creditPullPermitted"));
+assert.ok(motionSource.includes('motion === "in_queue"'));
+assert.doesNotMatch(motionSource, /we pulled your credit|experian|equifax|transunion/i);
+assert.ok(workspaceSrc.includes("CREDIT_STATED_NOTE") || workspaceSrc.includes("Stated · not a pull"));
+assert.ok(workspaceSrc.includes("CREDIT_RANGE_ASK") || workspaceSrc.includes("What credit range should I use for the estimate?"));
+assert.doesNotMatch(workspaceSrc, /we pulled your credit/i);
+assert.ok(!homepageSource.includes("we pulled your credit"));
+assert.ok(homepageSource.includes("HeroStartLink") || readFileSync(join(root, "components/MembershipHero.tsx"), "utf8").includes("HeroStartLink"));
 const loReviewSource = readFileSync(join(root, "components/fox/LoReview.tsx"), "utf8");
 assert.ok(loReviewSource.includes("fileScenarioRows"));
 const startCss = readFileSync(join(root, "styles/start.css"), "utf8");

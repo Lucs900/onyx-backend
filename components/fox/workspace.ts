@@ -15,6 +15,7 @@ import { pathFromHomeChoice } from "./homeIdle";
 import {
   AMOUNT_HELPER_BUBBLES,
   AMOUNT_PURPOSE_BUBBLES,
+  CREDIT_STATED_NOTE,
   CREDIT_WORKSPACE_BUBBLES,
   INCOME_BUBBLES,
   JUMBO_PURPOSE_BUBBLES,
@@ -732,6 +733,9 @@ function amountHelperActions(field: "skip-amount" | "skip-value"): FoxAction[] {
 
 export const SAMPLE_NOTE = "Sample · indicative · not live";
 export const PREVIEW_RATE_NOTE = "Preview rate · not live";
+export { CREDIT_STATED_NOTE };
+export const CREDIT_RANGE_ASK = "What credit range should I use for the estimate?";
+export const CREDIT_RANGE_FOLLOW = "Stated range — not a pull.";
 export const REWARD_PREPARED_COPY = "Prepared when you join";
 const INVENTED_REWARD_RANGE = /\$[\d,]+(?:\.\d+)?\s+(?:to|–|-|—)\s+\$[\d,]+/;
 const SAMPLE_INDICATIVE = /sample\s*·\s*indicative/i;
@@ -898,7 +902,8 @@ export function workspacePromptCopy(
   }
   if (prompt === "credit") {
     return {
-      text: "What credit range should I use for the estimate?",
+      text: CREDIT_RANGE_ASK,
+      followUp: CREDIT_RANGE_FOLLOW,
       actions: bubbles([...CREDIT_WORKSPACE_BUBBLES], "creditRange"),
     };
   }
@@ -1651,7 +1656,7 @@ export function parseWorkspaceEdit(
         confirm: `Updated credit range to ${label}.`,
       };
     }
-    return { correct: "credit", confirm: "What credit range should I use for the estimate?" };
+    return { correct: "credit", confirm: CREDIT_RANGE_ASK };
   }
 
   if (/\bterm\b/.test(lower)) {
@@ -2758,7 +2763,12 @@ export function previewFacts(draft: FoxIntakeDraft): PreviewFact[] {
     const creditLabel =
       CREDIT_WORKSPACE_BUBBLES.find((item) => item.value === draft.creditBand)?.label ??
       "Not sure";
-    facts.push({ id: "credit", label: "Credit", value: creditLabel });
+    facts.push({
+      id: "credit",
+      label: "Credit",
+      value: creditLabel,
+      note: CREDIT_STATED_NOTE,
+    });
   }
 
   if (!requiredIds.has("income") && incomeSettled(draft)) {
@@ -2936,6 +2946,11 @@ export function structureExplainCopy(
   id: string,
   draft: FoxIntakeDraft,
 ): { text: string } | null {
+  if (id === "credit") {
+    return {
+      text: "That’s a stated range for the estimate. Not a FICO and not a credit pull.",
+    };
+  }
   if (id === "rate") {
     if (previewRateApplies(draft) && sampleReady(draft)) {
       return {

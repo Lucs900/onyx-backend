@@ -193,6 +193,12 @@ export function gatheringCopy(draft: FoxIntakeDraft) {
     : MOTION_COPY.ready;
 }
 
+/** Bureau pull is allowed only after Proceed into licensed review. Never on browse, sketch, Looks right, or docs. */
+export function creditPullPermitted(draft: FoxIntakeDraft) {
+  const motion = motionOf(draft);
+  return motion === "in_queue" || motion === "escalated";
+}
+
 export function inQueueEnding(draft: FoxIntakeDraft) {
   const motion = motionOf(draft);
   if (motion === "escalated" || motion === "needs_you" || motion === "on_hold") return false;
