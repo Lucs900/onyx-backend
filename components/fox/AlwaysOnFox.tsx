@@ -34,13 +34,16 @@ import {
 } from "./script";
 import {
   applyCapture,
+  applyPreviewMotionControls,
   continueWorkspaceFromEntry,
   emptyDraft,
+  FOX_THREAD_LINE_EVENT,
   getFoxDraft,
   getFoxMessages,
   getServerDraft,
   hydrateFoxDraft,
   markMissingAsked,
+  nudgeReview,
   setDraftPath,
   setDraftScenario,
   setFoxMessages,
@@ -72,6 +75,7 @@ import {
   missingExtractClasses,
   type DocIntakeDetail,
 } from "./fileWrite";
+import { fileExists, finishLineActions, motionAskText, reviewIsSitting } from "./motion";
 import { pathFromHomeChoice } from "./homeIdle";
 import {
   FOX_DISCLOSURE,
@@ -213,7 +217,11 @@ function hasReviewAsk(messages: FoxMessage[]) {
 
 function hasPreparedAsk(messages: FoxMessage[]) {
   return messages.some(
-    (message) => message.role === "fox" && /file is prepared/i.test(message.text),
+    (message) =>
+      message.role === "fox" &&
+      (/still useful:|this file can move|onyx has this for review|holding\. i.?ll keep|licensed originator is on this exception|i need .+ from you|what.?s a good email|file is prepared/i.test(
+        message.text,
+      )),
   );
 }
 
@@ -450,6 +458,7 @@ export function AlwaysOnFox({
   );
   const pendingAsk = useRef<string | null>(null);
   const skipPromptSync = useRef(workspaceSurface);
+  const previewControls = useRef(false);
   const listRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const caretRef = useRef<number | null>(null);
@@ -597,27 +606,51 @@ export function AlwaysOnFox({
             }),
           );
         } else if (detail.missing?.length) {
+          const live = getFoxDraft();
+          next.push(
+            fileExists(live)
+              ? foxAskMessage({
+                  text: motionAskText(live),
+                  actions: finishLineActions(live),
+                })
+              : foxAskMessage({
+                  text: missingAskCopy(detail.missing),
+                  actions: missingAskActions(),
+                }),
+          );
+        } else if (fileExists(getFoxDraft())) {
+          const live = getFoxDraft();
           next.push(
             foxAskMessage({
-              text: missingAskCopy(detail.missing),
-              actions: missingAskActions(),
+              text: motionAskText(live),
+              actions: finishLineActions(live),
             }),
           );
         }
         return next;
       });
     };
+    const onThreadLine = (event: Event) => {
+      const message = (event as CustomEvent<FoxMessage>).detail;
+      if (!message?.text) return;
+      skipPromptSync.current = true;
+      commitMessages((prev) =>
+        prev.some((item) => item.id === message.id) ? prev : [...prev, message],
+      );
+    };
     window.addEventListener("onyx:fox-open", onOpen);
     window.addEventListener("onyx:fox-ask", onAsk);
     window.addEventListener("onyx:fox-fix", onFix);
     window.addEventListener("onyx:fox-explain", onExplain);
     window.addEventListener(DOC_INTAKE_EVENT, onIntake);
+    window.addEventListener(FOX_THREAD_LINE_EVENT, onThreadLine);
     return () => {
       window.removeEventListener("onyx:fox-open", onOpen);
       window.removeEventListener("onyx:fox-ask", onAsk);
       window.removeEventListener("onyx:fox-fix", onFix);
       window.removeEventListener("onyx:fox-explain", onExplain);
       window.removeEventListener(DOC_INTAKE_EVENT, onIntake);
+      window.removeEventListener(FOX_THREAD_LINE_EVENT, onThreadLine);
     };
   }, [isHome, isStart, pathname, ready, search, stage, workspaceSurface]);
 
@@ -714,6 +747,24 @@ export function AlwaysOnFox({
   ]);
 
   useEffect(() => {
+    if (!ready || !isStart) return;
+    if (!previewControls.current) {
+      previewControls.current = true;
+      const params = new URLSearchParams(window.location.search);
+      applyPreviewMotionControls({
+        nudge: params.get("nudge"),
+        sla: params.get("sla"),
+      });
+    }
+    const tick = () => {
+      if (reviewIsSitting(getFoxDraft())) nudgeReview();
+    };
+    tick();
+    const id = window.setInterval(tick, 4000);
+    return () => window.clearInterval(id);
+  }, [draft.motion, draft.reviewSlaMs, draft.updatedAt, isStart, ready]);
+
+  useEffect(() => {
     listRef.current?.scrollTo({ top: listRef.current.scrollHeight });
   }, [messages, open]);
 
@@ -804,10 +855,18 @@ export function AlwaysOnFox({
       router.push(DESK_START_HREF);
       return;
     }
-    if (action.capture?.field === "open-docs" || action.event === "open-docs") {
-      applyCapture({ field: "open-docs" });
+    if (
+      action.capture?.field === "open-docs" ||
+      action.capture?.field === "upload-more" ||
+      action.event === "open-docs"
+    ) {
+      applyCapture(action.capture ?? { field: "open-docs" });
       document.getElementById("fox-documents")?.scrollIntoView({ behavior: "smooth" });
       const live = getFoxDraft();
+      if (fileExists(live)) {
+        appendReply(action.label, workspacePromptCopy("done", live));
+        return;
+      }
       const docsAsk = workspacePromptCopy("documents", live);
       appendReply(action.label, {
         text: docsAsk.text,

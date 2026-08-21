@@ -11,11 +11,21 @@ import {
   emptyDraft,
   getFoxDraft,
   getFoxMessages,
+  nudgeReview,
   receiveDocument,
   resetWorkspaceForEntry,
+  returnToFox,
   setFoxMessages,
+  sitExpireReview,
   workspaceSessionStarted,
 } from "../components/fox/store";
+import {
+  MOTION_COPY,
+  motionOf,
+  nextActorOf,
+  openReviewWorkItem,
+  reviewIsSitting,
+} from "../components/fox/motion";
 import {
   applyExtractedFields,
   extractClassFromFilename,
@@ -262,9 +272,15 @@ assert.equal(workspacePrompt(afterIncome), "review");
 assert.notEqual(workspacePrompt(afterIncome), "documents");
 const looksRight = workspaceReply("Looks right", afterIncome);
 assert.equal(looksRight?.capture?.field, "confirm-draft");
-assert.match(looksRight?.followUp ?? "", /government ID, latest paystub, and W-2/i);
-assert.doesNotMatch(`${looksRight?.text ?? ""} ${looksRight?.followUp ?? ""}`, /drop what you have/i);
+assert.match(looksRight?.text ?? "", /still useful/i);
+assert.match(looksRight?.text ?? "", /government ID, latest paystub, and W-2/i);
+assert.match(looksRight?.text ?? "", /skip is fine/i);
+assert.doesNotMatch(`${looksRight?.text ?? ""} ${looksRight?.followUp ?? ""}`, /drop what you have|will contact you|we’ll be in touch|your lo has the file/i);
+assert.ok((looksRight?.actions ?? []).some((item) => item.label === "Proceed"));
+assert.ok((looksRight?.actions ?? []).some((item) => item.label === "Upload more"));
+assert.ok((looksRight?.actions ?? []).some((item) => item.label === "Not yet"));
 assert.ok((looksRight?.actions ?? []).some((item) => /skip/i.test(item.label)));
+assert.ok((looksRight?.actions ?? []).some((item) => item.label === "Request human"));
 
 const notSure = withIncome(draft({ ...afterPrice, creditAsked: true, creditBand: "not-sure" }));
 assert.equal(workspacePrompt(notSure), "review");
@@ -427,8 +443,12 @@ const afterLooks = draft({
   phase: "confirmed",
 });
 assert.equal(workspacePrompt(afterLooks), "done");
-assert.equal(statusCopy(afterLooks), "Assigned / reviewing");
+assert.equal(statusCopy(afterLooks), "gathering");
+assert.equal(nextActorOf(afterLooks), "You");
+assert.notEqual(statusCopy(afterLooks), "Assigned / reviewing");
 const assignedFacts = previewFacts(afterLooks);
+assert.ok(assignedFacts.some((fact) => fact.id === "status" && fact.value === "gathering"));
+assert.ok(assignedFacts.some((fact) => fact.id === "next" && fact.value === "You"));
 assert.ok(assignedFacts.some((fact) => fact.id === "originator" && fact.value === "Licensed originator assigned"));
 assert.ok(assignedFacts.some((fact) => fact.id === "letter"));
 const assignedReward = assignedFacts.find((fact) => fact.id === "reward");
@@ -441,16 +461,14 @@ assert.ok(
 );
 
 const done = workspacePromptCopy("done", afterLooks);
-assert.ok(/file is prepared/i.test(done.text));
-assert.ok(/licensed originator is assigned/i.test(done.text));
+assert.match(done.text, /still useful/i);
+assert.match(done.text, /government ID/i);
+assert.match(done.text, /skip is fine/i);
 assert.ok(!/I’m preparing this desk/i.test(done.text));
-assert.ok(!/we’ll be in touch|will contact you/i.test(done.text));
-assert.match(done.followUp ?? "", /government ID/i);
-assert.match(done.followUp ?? "", /latest paystub/i);
-assert.match(done.followUp ?? "", /W-2/);
-assert.doesNotMatch(done.text, /drop what you have|skip is fine/i);
-assert.doesNotMatch(done.followUp ?? "", /drop what you have|skip is fine/i);
-assert.ok((done.actions ?? []).some((item) => item.label === "Upload docs"));
+assert.ok(!/we’ll be in touch|will contact you|your lo has the file/i.test(done.text));
+assert.ok((done.actions ?? []).some((item) => item.label === "Proceed"));
+assert.ok((done.actions ?? []).some((item) => item.label === "Upload more"));
+assert.ok((done.actions ?? []).some((item) => item.label === "Not yet"));
 assert.ok((done.actions ?? []).some((item) => /skip/i.test(item.label)));
 assert.ok((done.actions ?? []).some((item) => item.label === "Request human"));
 assert.ok(!(done.actions ?? []).some((item) => item.href === "/advisor"));
@@ -458,22 +476,37 @@ assert.ok(!(done.actions ?? []).some((item) => /talk to a licensed originator/i.
 
 const human = workspaceReply("Request human", afterLooks);
 assert.ok(human);
-assert.notEqual(human.text, done.text);
+assert.equal(human.text, MOTION_COPY.escalated);
 assert.ok(!/I’m preparing this desk/i.test(human.text ?? ""));
 assert.ok(!/we’ll be in touch|will contact you/i.test(human.text ?? ""));
 assert.equal(human.capture?.field, "talk-originator");
 
-const afterHuman = workspacePromptCopy("done", { ...afterLooks, originatorRequested: true });
-assert.ok(/still on this desk/i.test(afterHuman.text));
+const afterHuman = workspacePromptCopy("done", {
+  ...afterLooks,
+  originatorRequested: true,
+  motion: "escalated",
+  nextActor: "Outside",
+});
+assert.equal(afterHuman.text, MOTION_COPY.escalated);
 assert.ok(!(afterHuman.actions ?? []).some((item) => item.label === "Request human"));
-assert.ok(!/I’m preparing this desk/i.test(afterHuman.text));
+assert.ok(!/I’m preparing this desk|will contact you/i.test(afterHuman.text));
 
 const loanDone = workspacePromptCopy(
   "done",
-  draft({ path: "loan-only", sampleAccepted: true, workspaceDraftStatus: "with-originator" }),
+  draft({
+    path: "loan-only",
+    sampleAccepted: true,
+    motion: "ready",
+    nextActor: "You",
+    incomeAsked: true,
+    incomeType: { ...emptyDraft().incomeType, value: "w2" },
+    documentsSkipped: true,
+    skippedClasses: ["government_id", "paystub", "w2"],
+  }),
 );
-assert.ok(/loan file is prepared/i.test(loanDone.text));
+assert.equal(loanDone.text, MOTION_COPY.ready);
 assert.ok((loanDone.actions ?? []).some((item) => item.label === "What is ACR?"));
+assert.ok((loanDone.actions ?? []).some((item) => item.label === "Proceed"));
 
 assert.equal(structureFixPrompt("path"), "path-switch");
 assert.equal(structureFixPrompt("occupancy"), "occupancy");
@@ -484,6 +517,7 @@ assert.equal(structureFixPrompt("reward"), null);
 assert.equal(structureFixPrompt("letter"), null);
 assert.equal(structureFixPrompt("scout"), null);
 assert.equal(structureFixPrompt("status"), null);
+assert.equal(structureFixPrompt("next"), null);
 assert.equal(structureFixPrompt("originator"), null);
 assert.ok(structureExplainCopy("rate", afterIncome)?.text.includes("cannot set"));
 assert.ok(FOX_DISCLOSURE.includes("cannot approve"));
@@ -536,11 +570,21 @@ const dropAfterLooks = workspacePromptCopy("documents", {
 assert.ok((dropAfterLooks.actions ?? []).some((item) => item.capture?.field === "skip-docs"));
 assert.ok((dropAfterLooks.actions ?? []).some((item) => /skip/i.test(item.label)));
 
-const skippedLooks = draft({ ...afterLooks, documentsSkipped: true, docsOpen: false, correcting: null });
+const skippedLooks = draft({
+  ...afterLooks,
+  documentsSkipped: true,
+  docsOpen: false,
+  correcting: null,
+  skippedClasses: ["government_id", "paystub", "w2"],
+  motion: "ready",
+  nextActor: "You",
+});
 assert.equal(workspacePrompt(skippedLooks), "done");
-assert.equal(statusCopy(skippedLooks), "Assigned / reviewing");
+assert.equal(statusCopy(skippedLooks), "ready");
+assert.equal(nextActorOf(skippedLooks), "You");
 assert.ok(previewFacts(skippedLooks).some((fact) => fact.id === "docs" && fact.value === "Skipped"));
 assert.ok(previewFacts(skippedLooks).some((fact) => fact.id === "originator"));
+assert.ok(previewFacts(skippedLooks).some((fact) => fact.id === "next" && fact.value === "You"));
 
 const skipReply = workspaceReply("Skip for now", { ...afterLooks, correcting: "documents", docsOpen: true });
 assert.equal(skipReply?.capture?.field, "skip-docs");
@@ -569,23 +613,28 @@ assert.equal(workspacePrompt(getFoxDraft()), "review");
 applyCapture({ field: "confirm-draft" });
 const confirmed = getFoxDraft();
 assert.equal(workspacePrompt(confirmed), "done");
-assert.equal(statusCopy(confirmed), "Assigned / reviewing");
+assert.equal(statusCopy(confirmed), "gathering");
+assert.equal(nextActorOf(confirmed), "You");
 assert.equal(confirmed.phase, "confirmed");
+assert.ok(confirmed.sampleAccepted);
+assert.notEqual(motionOf(confirmed), "in_queue");
 applyCapture({ field: "open-docs" });
 const opened = getFoxDraft();
 assert.equal(opened.docsOpen, true);
 assert.equal(opened.phase, "confirmed");
 assert.equal(workspacePrompt(opened), "done");
-assert.equal(statusCopy(opened), "Assigned / reviewing");
+assert.equal(statusCopy(opened), "gathering");
 applyCapture({ field: "skip-docs" });
 const afterSkip = getFoxDraft();
 assert.equal(afterSkip.documentsSkipped, true);
 assert.equal(afterSkip.docsOpen, false);
 assert.equal(afterSkip.phase, "confirmed");
-assert.equal(afterSkip.workspaceDraftStatus, "with-originator");
+assert.notEqual(motionOf(afterSkip), "in_queue");
+assert.equal(statusCopy(afterSkip), "ready");
 assert.equal(workspacePrompt(afterSkip), "done");
-assert.equal(statusCopy(afterSkip), "Assigned / reviewing");
 assert.ok(previewFacts(afterSkip).some((fact) => fact.id === "docs" && fact.value === "Skipped"));
+assert.ok(previewFacts(afterSkip).some((fact) => fact.id === "originator"));
+assert.ok(!(afterSkip.workItems ?? []).some((item) => item.kind === "review" && item.state === "open"));
 assert.ok((afterSkip.skippedClasses ?? []).includes("government_id"));
 assert.ok((afterSkip.skippedClasses ?? []).includes("paystub"));
 assert.ok((afterSkip.skippedClasses ?? []).includes("w2"));
@@ -822,8 +871,9 @@ const wrote = applyExtractWrite(
 assert.equal(wrote.draft.facts?.employer_name?.value, "Harbor Steel");
 assert.equal(wrote.draft.productIntent, "buy");
 assert.equal(workspacePrompt(wrote.draft), "done");
-assert.equal(statusCopy(wrote.draft), "Assigned / reviewing");
-assert.equal(wrote.draft.workspaceDraftStatus, "with-originator");
+assert.equal(statusCopy(wrote.draft), "gathering");
+assert.ok(previewFacts(wrote.draft).some((fact) => fact.id === "originator"));
+assert.ok(previewFacts(wrote.draft).some((fact) => fact.id === "next"));
 assert.ok(previewFacts(wrote.draft).some((fact) => fact.id === "employer" && fact.value === "Harbor Steel"));
 assert.ok(previewFacts(wrote.draft).some((fact) => fact.id === "pay" && /7,200/.test(fact.value)));
 assert.ok(previewFacts(wrote.draft).some((fact) => fact.id === "docs" && /Paystubs in/.test(fact.value)));
@@ -991,6 +1041,91 @@ assert.equal(extractClassFromFilename("paystub-acme.png"), "paystub");
 applyCapture({ field: "keep-file-fact" });
 applyCapture({ field: "use-document-fact" });
 
+resetWorkspaceForEntry("acr", "buy");
+applyCapture({ field: "occupancy", value: "primary" });
+applyCapture({ field: "timeline", value: "ready-now" });
+applyCapture({ field: "propertyValue", value: "1200000" });
+applyCapture({ field: "creditRange", value: "760+" });
+applyCapture({ field: "incomeType", value: "w2" });
+applyCapture({ field: "confirm-draft" });
+const beforeProceed = getFoxDraft();
+assert.equal(statusCopy(beforeProceed), "gathering");
+assert.equal(nextActorOf(beforeProceed), "You");
+assert.ok(previewFacts(beforeProceed).some((fact) => fact.id === "originator"));
+const skipThen = workspaceReply("Skip for now", beforeProceed);
+assert.equal(skipThen?.capture?.field, "skip-docs");
+assert.notEqual(skipThen?.capture?.field, "proceed");
+applyCapture({ field: "skip-docs" });
+const skippedNotQueued = getFoxDraft();
+assert.equal(motionOf(skippedNotQueued), "ready");
+assert.equal(statusCopy(skippedNotQueued), "ready");
+assert.ok(!openReviewWorkItem(skippedNotQueued));
+applyCapture({ field: "proceed" });
+const emailGate = getFoxDraft();
+assert.equal(emailGate.pendingFinish, "proceed");
+assert.notEqual(motionOf(emailGate), "in_queue");
+assert.equal(workspacePromptCopy("done", emailGate).text, MOTION_COPY.emailAsk);
+applyCapture({ field: "email", value: "borrower@example.com" });
+const queued = getFoxDraft();
+assert.equal(motionOf(queued), "in_queue");
+assert.equal(statusCopy(queued), "in_queue");
+assert.equal(nextActorOf(queued), "ONYX");
+assert.ok(previewFacts(queued).some((fact) => fact.id === "originator"));
+assert.ok(previewFacts(queued).some((fact) => fact.id === "next" && fact.value === "ONYX"));
+const reviewItem = openReviewWorkItem(queued);
+assert.equal(reviewItem?.kind, "review");
+assert.ok(reviewItem?.state === "open" || reviewItem?.state === "nudged");
+assert.equal(workspacePromptCopy("done", queued).text, MOTION_COPY.in_queue);
+assert.doesNotMatch(workspacePromptCopy("done", queued).text, /will contact you|we’ll be in touch|your lo has the file/i);
+assert.ok((queued.previewOutbox ?? []).some((item) => item.to === "borrower@example.com"));
+assert.ok((queued.events ?? []).some((event) => event.kind === "proceed"));
+
+sitExpireReview();
+assert.equal(reviewIsSitting(getFoxDraft()), true);
+const nudged = nudgeReview();
+assert.equal(nudged.threadLine, MOTION_COPY.nudge);
+assert.equal(openReviewWorkItem(getFoxDraft())?.state, "nudged");
+assert.equal(motionOf(getFoxDraft()), "in_queue");
+assert.ok(getFoxMessages().some((message) => message.text === MOTION_COPY.nudge));
+
+const returned = returnToFox({ note: "Need the latest W-2.", needsDoc: true });
+assert.match(returned.threadLine, /i need/i);
+assert.equal(motionOf(getFoxDraft()), "needs_you");
+assert.equal(nextActorOf(getFoxDraft()), "You");
+assert.equal(statusCopy(getFoxDraft()), "needs_you");
+assert.ok((getFoxDraft().events ?? []).some((event) => event.kind === "return-to-fox"));
+assert.ok(previewFacts(getFoxDraft()).some((fact) => fact.id === "status" && fact.value === "needs_you"));
+assert.ok(previewFacts(getFoxDraft()).some((fact) => fact.id === "next" && fact.value === "You"));
+assert.ok(getFoxMessages().some((message) => /i need/i.test(message.text)));
+
+resetWorkspaceForEntry("acr", "buy");
+applyCapture({ field: "occupancy", value: "primary" });
+applyCapture({ field: "timeline", value: "ready-now" });
+applyCapture({ field: "propertyValue", value: "1200000" });
+applyCapture({ field: "creditRange", value: "760+" });
+applyCapture({ field: "incomeType", value: "w2" });
+applyCapture({ field: "confirm-draft" });
+applyCapture({ field: "email", value: "hold@example.com" });
+const missingBeforeHold = missingExtractClasses(getFoxDraft());
+applyCapture({ field: "not-yet" });
+const held = getFoxDraft();
+assert.equal(motionOf(held), "on_hold");
+assert.equal(statusCopy(held), "on_hold");
+assert.equal(nextActorOf(held), "You");
+assert.equal(workspacePromptCopy("done", held).text, MOTION_COPY.on_hold);
+assert.deepEqual(missingExtractClasses(held), missingBeforeHold);
+assert.ok(!openReviewWorkItem(held));
+applyCapture({ field: "upload-more" });
+const more = getFoxDraft();
+assert.equal(more.docsOpen, true);
+assert.ok(motionOf(more) === "gathering" || motionOf(more) === "ready");
+assert.notEqual(motionOf(more), "in_queue");
+
+applyCapture({ field: "talk-originator" });
+assert.equal(motionOf(getFoxDraft()), "escalated");
+assert.equal(nextActorOf(getFoxDraft()), "Outside");
+assert.equal(workspacePromptCopy("done", getFoxDraft()).text, MOTION_COPY.escalated);
+
 const homepageFiles = [
   "app/(marketing)/page.tsx",
   "components/MembershipHero.tsx",
@@ -1020,11 +1155,13 @@ assert.ok(!dropSource.includes("/api/chat"));
 assert.ok(!dropSource.includes("/api/heloc-quote"));
 assert.ok(!dropSource.includes("setTimeout"));
 const alwaysOn = readFileSync(join(root, "components/fox/AlwaysOnFox.tsx"), "utf8");
-assert.ok(alwaysOn.includes("file is prepared"));
+assert.ok(alwaysOn.includes("file is prepared") || alwaysOn.includes("still useful") || alwaysOn.includes("this file can move"));
 assert.ok(alwaysOn.includes('prompt === "done"'));
+assert.ok(alwaysOn.includes("FOX_THREAD_LINE_EVENT"));
 const filePreview = readFileSync(join(root, "components/fox/FilePreview.tsx"), "utf8");
 assert.ok(filePreview.includes("!draft.workspaceFlow"));
 assert.ok(!filePreview.includes("docsOpen"));
+assert.ok(filePreview.includes('fact.id === "next"'));
 
 const acrHero = readFileSync(join(root, "components/acr/AcrHero.tsx"), "utf8");
 assert.ok(!/next right move/.test(acrHero));

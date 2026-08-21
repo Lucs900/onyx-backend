@@ -29,7 +29,7 @@ export function StructureRows({
       {facts.map((fact) => {
         const canFix = Boolean(structureFixPrompt(fact.id, draft));
         const canExplain = Boolean(structureExplainCopy(fact.id, draft));
-        const deskState = fact.id === "status";
+        const deskState = fact.id === "status" || fact.id === "next";
         if (canFix) {
           return (
             <button

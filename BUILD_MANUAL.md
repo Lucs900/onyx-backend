@@ -113,7 +113,7 @@ Continue the `/start` workspace after basics. Reuse the draft store, confirm cap
 Income type is a structure-changing question on the shared spine, after credit and before Looks right. It exists only to filter the post-confirm drop. Do not add a 1003.
 
 - Ask `How is income earned?` with `W-2` / `Self-employed` / `Both` / `Other`. Other settles the question. Structure writes an Income line, tappable like the other facts.
-- `workspacePrompt` after credit + income returns `review`, never `documents`. Documents are not a pre-confirm spine step. Opening upload from `done` is a side action (`docsOpen`); it does not replay a blocking docs prompt or change Assigned / reviewing.
+- `workspacePrompt` after credit + income returns `review`, never `documents`. Documents are not a pre-confirm spine step. Opening upload from `done` is a side action (`docsOpen`); it does not replay a blocking docs prompt or change file motion.
 - After Looks right, Fox asks the short missing list, then Skip. One dropzone. Do not lead with `Drop what you have. Skip is fine.` Copy:
   - W-2: government ID, latest paystub, W-2
   - Self-employed: government ID, tax return
@@ -121,7 +121,7 @@ Income type is a structure-changing question on the shared spine, after credit a
   - Other income: government ID + tax return (same as self-employed until product matrix)
   After a successful upload, refresh the list. Do not re-ask received / ready / skipped. Filename-classified paystub / W-2 / ID stay `Paystubs in` / `W-2 in` / `ID in` — never `Other in`.
 - Skip writes `Docs: Skipped`. File stays prepared. Fox stays. Occupancy tap-edit still does not re-ask docs.
-- **Looks right on ACR:** file prepared. Status `Assigned / reviewing`. Originator row `Licensed originator assigned`. Letter / scout / reward on the desk. Fox stays.
+- **Looks right on ACR:** file prepared. Originator row `Licensed originator assigned` (accountability, not the borrower-facing status). Status is file motion (`gathering` / `ready`, then finish-line). Letter / scout / reward on the desk. Fox stays.
 - **Looks right on loan:** file prepared. Same assigned originator accountability. Honest. No membership pitch except one later `What is ACR?` chip. Fox stays.
 - **Needs a correction** → `Tap any line on the structure.` No field-chip menu. Changing product restripes the rate if the sample no longer applies; do not clear path or docs. Occupancy tap-edit does not re-ask docs.
 - **One conversation engine.** `workspace.ts` + `AlwaysOnFox` own question order, bubbles, and path rules for desktop and mobile. Layout is the only difference (preview left / Fox right on desktop; chat-first + File / Preview card on mobile). Do not keep a second script, fallback chip thread, or dead `start-workspace__fox-fallback` shell. Desktop mount is the same live engine as mobile — never a one-shot portal into an empty `#fox-start-stage`.
@@ -200,6 +200,74 @@ F. Paystub extract still writes Employer / Pay; Docs is `Paystubs in`, not `Othe
 5. Desktop and mobile same engine.
 6. Zero docs still reaches assigned originator.
 
+## BUILD 2 — file motion (preview only)
+
+Same branch / PR. Do not merge `main`. No production. No public cutover. Sit on the existing File: `FoxIntakeDraft` in `onyx.foxIntake.draft`. `/start` and `/lo/review` read and write that same draft. No second database.
+
+### Locked operating model
+
+- Finish line after Looks right: **Proceed · Upload more · Not yet**. Request human stays a side door.
+- Fox owns file motion, including the ONYX queue nudge.
+- Assigned originator is accountability (Structure fact). It is not the borrower-facing status.
+- No “LO will contact you” / “we’ll be in touch” / “your LO has the file”.
+- Skip is not Proceed. Skip + Proceed is allowed.
+- Structure always shows **Status** + **Next** (`You` | `Fox` | `ONYX` | `Outside`) once facts exist.
+- Return to Fox from `/lo/review` lands in the borrower thread.
+- One File.
+
+### Motion
+
+`confirmed | gathering | ready | in_queue | needs_you | on_hold | escalated`
+
+`waiting_out` is not faked (no UW / appraisal theater).
+
+Copy:
+
+- gathering: `Still useful: {list}. Skip is fine.`
+- ready: `This file can move. Proceed, upload more, or not yet.`
+- in_queue: `ONYX has this for review. I’m on it — I’ll nudge if it sits and I’ll bring the result back here.`
+- needs_you: `I need {one thing} from you.`
+- on_hold: `Holding. I’ll keep the file. Say when to proceed.`
+- escalated: `A licensed originator is on this exception. I stay here. I’ll put their result in this thread.`
+
+Stored on the same draft: `motion`, `nextActor`, `workItems[]`, `events[]`, `previewOutbox[]`, `pendingFinish`, `reviewSlaMs`.
+
+### Finish line
+
+1. Looks right → missing list + chips Proceed · Upload more · Not yet. Originator fact appears. Status is `gathering` or `ready`. Next = You.
+2. Proceed → WorkItem `kind=review` on this File, motion `in_queue`, Next = ONYX. If email is missing, one field (`What’s a good email? I’ll remind you.`) — not an account wall. Preview outbox may show in-thread (`I’ll remind you`). No SMS.
+3. Upload more → stay gathering. Same missing list. Drop stays in the Fox thread.
+4. Not yet → `on_hold`. Same File. Missing memory intact.
+5. Skip → docs skipped, not a WorkItem. File can still Proceed.
+6. Request human → `escalated` (side door). Fox stays.
+
+### Sit / nudge
+
+Default SLA is 4 hours. If a review WorkItem sits, Fox nudges it and says so in the borrower thread.
+
+Preview walk (do not wait 4 hours):
+
+- `/start?sla=30` or `/lo/review?sla=30` — 30-second clock
+- `/start?nudge=now` or `/lo/review?nudge=now` — force a nudge
+- `/lo/review` **Sit expired** / **Nudge now** chips
+
+### Return to Fox
+
+`/lo/review` writes a result note + optional **needs a doc** onto the same File (event + WorkItem `returned`). Borrower thread gets one line. Structure restripes (`needs_you` when a doc is needed). Next = You.
+
+### Walk
+
+1. Looks right → missing list → Proceed / Upload more / Not yet. No LO-will-contact copy.
+2. Proceed → Status `in_queue`, Next = ONYX, originator still assigned.
+3. Return to Fox from `/lo/review` → one thread line + Structure restripe.
+4. Skip ≠ Proceed. Not yet holds. Status + Next always visible.
+5. Sit/nudge walkable in preview (short SLA or a test control).
+
+Shared preview URLs (same device File):
+
+- `/start`
+- `/lo/review`
+
 ## Product Explorer (CA only)
 
 Route `/products`. California discovery only. No live pricing, APR, LoanSifter, calculators, or apply flows. Thirteen cards in five groups (Core residential, Government, Equity, Expanded residential, Specialty). CTA is exactly `Explore this option` → `/products/scenario?product=<slug>`. Specialty is separated by space + hairline + eyebrow, not a gold or green band.
@@ -270,7 +338,7 @@ One page: document drop → stub extract → draft summary → confirm. Question
 
 ### LO review queue
 
-`/lo/review` — internal/back-office only. Not in public nav. Not promoted on the client intake path. Discreet footer link for this preview. Label: `Internal preview — licensed review`. Same draft store. LO marks: `needs items` | `in review` | `contacting client`. No auth wall this slice.
+`/lo/review` — internal/back-office only. Not in public nav. Not promoted on the client intake path. Discreet footer link for this preview. Label: `Internal preview — licensed review`. Same File as `/start`. Shows Status / Next / WorkItem. **Return to Fox** writes an event and one borrower-thread line. Preview sit/nudge controls live here. LO marks: `needs items` | `in review` | `contacting client`. No auth wall this slice.
 
 ### Do not
 
@@ -333,6 +401,7 @@ app/(marketing)/how-we-get-paid/page.tsx  broker compensation
 app/(marketing)/{licensing,privacy,equal-housing,login,advisor}/page.tsx  short real pages
 components/products/startPath.ts  ACR / loan only start intent (`/start?path=acr` | `/start?path=loan`)
 components/fox/workspace.ts       workspace prompts, amount parse, live preview facts
+components/fox/motion.ts          file motion, WorkItem, sit/nudge, finish-line copy
 components/fox/DocumentDrop.tsx   Fox-thread drop + real upload/extract (intake + /start)
 components/fox/fileWrite.ts       write / conflict / missing-ask rules
 components/fox/FilePreview.tsx    calm file card / mobile File sheet

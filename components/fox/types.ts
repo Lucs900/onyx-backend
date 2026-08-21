@@ -68,6 +68,60 @@ export type IntakePhase = "context" | "documents" | "draft" | "confirmed";
 
 export type WorkspaceDraftStatus = "preparing" | "ready" | "with-originator";
 
+/** Borrower-facing file motion. Originator assigned is a Structure fact, not this status. */
+export type FileMotion =
+  | "confirmed"
+  | "gathering"
+  | "ready"
+  | "in_queue"
+  | "needs_you"
+  | "on_hold"
+  | "escalated";
+
+export type FileNext = "You" | "Fox" | "ONYX" | "Outside";
+
+export type WorkItemKind = "review";
+
+export type WorkItemState = "open" | "nudged" | "returned" | "closed";
+
+export type WorkItem = {
+  id: string;
+  kind: WorkItemKind;
+  state: WorkItemState;
+  openedAt: string;
+  nudgedAt?: string;
+  returnedAt?: string;
+  note?: string;
+  needsDoc?: boolean;
+};
+
+export type FileEventKind =
+  | "looks-right"
+  | "proceed"
+  | "not-yet"
+  | "upload-more"
+  | "skip-docs"
+  | "request-human"
+  | "nudge"
+  | "return-to-fox"
+  | "email";
+
+export type FileEvent = {
+  id: string;
+  at: string;
+  kind: FileEventKind;
+  text: string;
+};
+
+export type PreviewOutboxItem = {
+  to: string;
+  subject: string;
+  body: string;
+  createdAt: string;
+};
+
+export type PendingFinish = "proceed" | "not-yet";
+
 export type SectionId =
   | "contact"
   | "scenario"
@@ -113,6 +167,14 @@ export type FoxIntakeDraft = {
   incomeAsked?: boolean;
   docsOpen?: boolean;
   originatorRequested?: boolean;
+  motion?: FileMotion;
+  nextActor?: FileNext;
+  workItems?: WorkItem[];
+  events?: FileEvent[];
+  previewOutbox?: PreviewOutboxItem[];
+  pendingFinish?: PendingFinish;
+  emailCaptureAsked?: boolean;
+  reviewSlaMs?: number;
   termYears?: number;
   termAsked?: boolean;
   workspaceFlow?: boolean;
@@ -189,6 +251,9 @@ export type Capture =
   | { field: "keep-path" }
   | { field: "what-acr" }
   | { field: "talk-originator" }
+  | { field: "proceed" }
+  | { field: "not-yet" }
+  | { field: "upload-more" }
   | { field: "correct"; value: string }
   | { field: "note"; value: string };
 

@@ -15,15 +15,34 @@ import {
   type DraftField,
   type ExtractClass,
   type FactConflict,
+  type FileEvent,
   type FoxIntakeDraft,
   type FoxMessage,
   type FoxPrompt,
   type IntakePath,
   type LoMark,
+  type PreviewOutboxItem,
   type ProductIntent,
   type ReceivedDoc,
   type SectionId,
+  type WorkItem,
 } from "./types";
+import {
+  applyEmailThenFinish,
+  applyEscalateMotion,
+  applyLooksRightMotion,
+  applyNotYetMotion,
+  applyNudgeMotion,
+  applyProceedMotion,
+  applyReturnToFoxMotion,
+  applyUploadMoreMotion,
+  expireOpenReview,
+  isFileMotion,
+  isFileNext,
+  looksLikeEmail,
+  parsePreviewSla,
+  restripeGatheringOrReady,
+} from "./motion";
 import {
   applyExtractedFields,
   preferFilenameClass,
@@ -125,6 +144,17 @@ function normalize(value: unknown): FoxIntakeDraft {
     incomeAsked: Boolean(raw.incomeAsked || raw.incomeType?.value),
     docsOpen: Boolean(raw.docsOpen),
     originatorRequested: Boolean(raw.originatorRequested),
+    motion: isFileMotion(raw.motion) ? raw.motion : undefined,
+    nextActor: isFileNext(raw.nextActor) ? raw.nextActor : undefined,
+    workItems: normalizeWorkItems(raw.workItems),
+    events: normalizeEvents(raw.events),
+    previewOutbox: normalizeOutbox(raw.previewOutbox),
+    pendingFinish: raw.pendingFinish === "proceed" || raw.pendingFinish === "not-yet"
+      ? raw.pendingFinish
+      : undefined,
+    emailCaptureAsked: Boolean(raw.emailCaptureAsked),
+    reviewSlaMs:
+      typeof raw.reviewSlaMs === "number" && raw.reviewSlaMs > 0 ? raw.reviewSlaMs : undefined,
     termYears: numberOrUndefined(raw.termYears),
     termAsked: Boolean(raw.termAsked),
     workspaceFlow: Boolean(raw.workspaceFlow),
@@ -168,6 +198,30 @@ function normalizeFacts(value: FoxIntakeDraft["facts"]): Record<string, DraftFie
     };
   }
   return next;
+}
+
+function normalizeWorkItems(value: FoxIntakeDraft["workItems"]): WorkItem[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((item): item is WorkItem => {
+    if (!item || typeof item !== "object") return false;
+    return item.kind === "review" && typeof item.id === "string" && typeof item.openedAt === "string";
+  });
+}
+
+function normalizeEvents(value: FoxIntakeDraft["events"]): FileEvent[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((item): item is FileEvent => {
+    if (!item || typeof item !== "object") return false;
+    return typeof item.id === "string" && typeof item.kind === "string" && typeof item.text === "string";
+  });
+}
+
+function normalizeOutbox(value: FoxIntakeDraft["previewOutbox"]): PreviewOutboxItem[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((item): item is PreviewOutboxItem => {
+    if (!item || typeof item !== "object") return false;
+    return typeof item.to === "string" && typeof item.body === "string";
+  });
 }
 
 function normalizeConflict(value: FoxIntakeDraft["pendingConflict"]): FactConflict | null {
@@ -550,24 +604,22 @@ export function receiveDocument(input: Omit<ReceivedDoc, "status" | "note"> & { 
   ];
   const keepPhase =
     current.workspaceFlow &&
-    (current.sampleAccepted || current.phase === "confirmed" || current.workspaceDraftStatus === "with-originator");
-  const next = commit({
-    ...current,
-    documents,
-    documentsSkipped: false,
-    correcting: current.workspaceFlow ? null : current.correcting,
-    phase: keepPhase
-      ? current.phase
-      : current.phase === "context"
-        ? "documents"
-        : current.phase,
-    sections: { ...current.sections, documents: false },
-  });
-  if (
-    next.workspaceFlow &&
-    next.sampleAccepted &&
-    next.workspaceDraftStatus !== "with-originator"
-  ) {
+    (current.sampleAccepted || current.phase === "confirmed" || Boolean(current.motion));
+  const next = commit(
+    restripeGatheringOrReady({
+      ...current,
+      documents,
+      documentsSkipped: false,
+      correcting: current.workspaceFlow ? null : current.correcting,
+      phase: keepPhase
+        ? current.phase
+        : current.phase === "context"
+          ? "documents"
+          : current.phase,
+      sections: { ...current.sections, documents: false },
+    }),
+  );
+  if (next.workspaceFlow && next.sampleAccepted && next.phase !== "confirmed") {
     return confirmDraft();
   }
   return next;
@@ -638,16 +690,18 @@ export function skipDocuments() {
   const prepared =
     current.sampleAccepted ||
     current.phase === "confirmed" ||
-    current.workspaceDraftStatus === "with-originator";
+    Boolean(current.motion);
   const skipped = skipRemainingClasses(current);
-  return commit({
-    ...skipped,
-    phase: prepared && current.phase === "confirmed" ? "confirmed" : prepared ? current.phase : "draft",
-    workspaceDraftStatus: prepared
-      ? current.workspaceDraftStatus ?? "with-originator"
-      : current.workspaceDraftStatus,
-    sections: { ...current.sections, documents: false },
-  });
+  return commit(
+    restripeGatheringOrReady({
+      ...skipped,
+      phase: prepared && current.phase === "confirmed" ? "confirmed" : prepared ? current.phase : "draft",
+      workspaceDraftStatus: prepared
+        ? current.workspaceDraftStatus ?? "ready"
+        : current.workspaceDraftStatus,
+      sections: { ...current.sections, documents: false },
+    }),
+  );
 }
 
 export function advancePhase() {
@@ -682,7 +736,9 @@ export function confirmDraft() {
     ...current,
     phase: "confirmed",
     status: CONFIRMED_STATUS,
-    workspaceDraftStatus: current.workspaceFlow ? "with-originator" : current.workspaceDraftStatus,
+    workspaceDraftStatus: current.workspaceFlow
+      ? current.workspaceDraftStatus ?? "ready"
+      : current.workspaceDraftStatus,
     confirmedAt: now,
     loStatus: current.loStatus ?? "in review",
     correcting: null,
@@ -723,8 +779,81 @@ export function setLoStatus(loStatus: LoMark) {
   return commit({ ...current, loStatus });
 }
 
+export const FOX_THREAD_LINE_EVENT = "onyx:fox-thread-line";
+
+export function appendFoxThreadLine(
+  text: string,
+  extras: Partial<Pick<FoxMessage, "followUp" | "actions" | "facts">> = {},
+) {
+  const message: FoxMessage = {
+    id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    role: "fox",
+    text,
+    ...extras,
+  };
+  persistMigratedMessages([...getFoxMessages(), message]);
+  emit();
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent(FOX_THREAD_LINE_EVENT, { detail: message }));
+  }
+  return message;
+}
+
+export function returnToFox(input: { note: string; needsDoc?: boolean }) {
+  const applied = applyReturnToFoxMotion(current, input);
+  commit(applied.draft);
+  appendFoxThreadLine(applied.threadLine);
+  return { draft: current, threadLine: applied.threadLine };
+}
+
+export function nudgeReview(input: { force?: boolean; now?: Date } = {}) {
+  const applied = applyNudgeMotion(current, input);
+  if (!applied.threadLine) return { draft: current, threadLine: null as string | null };
+  commit(applied.draft);
+  appendFoxThreadLine(applied.threadLine);
+  return { draft: current, threadLine: applied.threadLine };
+}
+
+export function sitExpireReview(now = new Date()) {
+  return commit(expireOpenReview(current, now));
+}
+
+export function applyPreviewMotionControls(input: {
+  nudge?: string | null;
+  sla?: string | null;
+}) {
+  const sla = parsePreviewSla(input.sla);
+  if (sla && current.reviewSlaMs !== sla) {
+    commit({ ...current, reviewSlaMs: sla });
+  }
+  if (input.nudge === "now") {
+    if (!openReviewOnFile(current)) return current;
+    return nudgeReview({ force: true }).draft;
+  }
+  if (input.nudge === "expire") {
+    sitExpireReview();
+    return nudgeReview({ force: false }).draft;
+  }
+  return current;
+}
+
+function openReviewOnFile(draft: FoxIntakeDraft) {
+  return (draft.workItems ?? []).some(
+    (item) => item.kind === "review" && (item.state === "open" || item.state === "nudged"),
+  );
+}
+
 export function applyCapture(capture: Capture) {
   if (capture.field === "fullName" || capture.field === "email" || capture.field === "phone" || capture.field === "preferredContact") {
+    if (capture.field === "email" && current.workspaceFlow && (current.pendingFinish || current.sampleAccepted)) {
+      if (current.pendingFinish && looksLikeEmail(capture.value)) {
+        return commit(applyEmailThenFinish(current, capture.value));
+      }
+      return commit({
+        ...current,
+        contact: { ...current.contact, email: clientField("email", capture.value) },
+      });
+    }
     setContactField(capture.field, capture.value);
     if (capture.field === "preferredContact") markPreferredAsked();
     return advancePhase();
@@ -792,13 +921,19 @@ export function applyCapture(capture: Capture) {
     }
     return commit({ ...current, phase: "documents" });
   }
+  if (capture.field === "upload-more") {
+    return commit(applyUploadMoreMotion(current));
+  }
+  if (capture.field === "proceed") {
+    return commit(applyProceedMotion(current));
+  }
+  if (capture.field === "not-yet") {
+    return commit(applyNotYetMotion(current));
+  }
   if (capture.field === "confirm-draft") {
     if (current.workspaceFlow && !current.sampleAccepted) {
       commit({
-        ...current,
-        sampleAccepted: true,
-        workspaceDraftStatus: "with-originator",
-        docsOpen: true,
+        ...applyLooksRightMotion(current),
         correcting: null,
       });
       if (workspacePrompt(current) === "done") return confirmDraft();
@@ -824,11 +959,8 @@ export function applyCapture(capture: Capture) {
   }
   if (capture.field === "talk-originator") {
     return commit({
-      ...current,
-      originatorRequested: true,
-      workspaceDraftStatus: "with-originator",
+      ...applyEscalateMotion(current),
       loStatus: current.loStatus ?? "in review",
-      correcting: null,
     });
   }
   if (capture.field === "correct") {

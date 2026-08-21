@@ -38,6 +38,21 @@ import {
   missingListCopy,
   slotFromFilename,
 } from "./fileWrite";
+import {
+  applyEmailThenFinish,
+  applyLooksRightMotion,
+  emailMissing,
+  finishCaptureFromText,
+  finishLineActions,
+  latestOutbox,
+  looksLikeEmail,
+  MOTION_COPY,
+  motionAskText,
+  motionOf,
+  motionStatusCopy,
+  nextActorOf,
+  remindLine,
+} from "./motion";
 
 export { slotFromFilename };
 
@@ -517,49 +532,22 @@ export function workspacePromptCopy(
     };
   }
   if (prompt === "done") {
-    const missing = missingExtractClasses(draft);
-    const list = missingListCopy(missing);
-    const fileActions: FoxAction[] = [
-      { id: "open-docs", label: "Upload docs", event: "open-docs", capture: { field: "open-docs" } },
-    ];
-    if (missing.length && !draft.documentsSkipped) {
-      fileActions.push({
-        id: "skip-docs",
-        label: "Skip for now",
-        event: "bubble",
-        capture: { field: "skip-docs" },
-      });
-    }
-    if (!draft.originatorRequested) {
-      fileActions.push({
-        id: "request-human",
-        label: "Request human",
-        event: "bubble",
-        capture: { field: "talk-originator" },
-      });
-    }
-    if (draft.path === "loan-only") {
-      fileActions.push({
-        id: "what-acr",
-        label: "What is ACR?",
-        event: "bubble",
-        capture: { field: "what-acr" },
-      });
-    }
-    if (draft.originatorRequested) {
-      return {
-        text: "I’m still on this desk. Upload a doc, tap a Structure line, or ask about the file.",
-        followUp: list || undefined,
-        actions: fileActions,
-      };
-    }
+    const outbox = latestOutbox(draft);
+    const remind = remindLine(draft);
     return {
-      text:
-        draft.path === "loan-only"
-          ? "This loan file is prepared. A licensed originator is assigned. Fox stays."
-          : "This desk file is prepared. A licensed originator is assigned. Fox stays.",
-      followUp: list || undefined,
-      actions: fileActions,
+      text: motionAskText(draft),
+      followUp: remind || undefined,
+      facts: outbox
+        ? [
+            {
+              id: "outbox",
+              label: "Preview outbox",
+              value: outbox.to,
+              note: outbox.body,
+            },
+          ]
+        : undefined,
+      actions: finishLineActions(draft),
     };
   }
   return {
@@ -760,7 +748,9 @@ export function editPromptFromCapture(capture?: Capture): FoxPrompt | undefined 
   if (capture.field === "creditRange") return "credit";
   if (capture.field === "termYears" || capture.field === "skip-term") return "term";
   if (capture.field === "incomeType") return "income";
-  if (capture.field === "skip-docs" || capture.field === "open-docs") return "documents";
+  if (capture.field === "skip-docs" || capture.field === "open-docs" || capture.field === "upload-more") {
+    return "documents";
+  }
   return undefined;
 }
 
@@ -777,7 +767,16 @@ export function workspaceUpdateCopy(capture: Capture, draft: FoxIntakeDraft) {
     return "ACR is the desk that stays open after close — letter, scout, and reward. This file is still the loan.";
   }
   if (capture.field === "talk-originator") {
-    return "A licensed originator is already assigned to this file. Fox stays. Upload a doc, tap a line to edit, or ask about the desk.";
+    return MOTION_COPY.escalated;
+  }
+  if (capture.field === "proceed") {
+    return emailMissing(draft) ? MOTION_COPY.emailAsk : MOTION_COPY.in_queue;
+  }
+  if (capture.field === "not-yet") {
+    return emailMissing(draft) ? MOTION_COPY.emailAsk : MOTION_COPY.on_hold;
+  }
+  if (capture.field === "upload-more") {
+    return motionAskText({ ...draft, docsOpen: true });
   }
   if (capture.field === "productIntent") {
     return `Updated product to ${productIntentLabel(capture.value)}.`;
@@ -1077,7 +1076,7 @@ export function workspaceReply(
 
   if (/(talk to (a )?licensed originator|need (a )?licensed originator|request (a )?human|talk to (an )?originator|speak to (an? )?(lo|originator|human))/i.test(lower)) {
     return {
-      text: "A licensed originator is already assigned to this file. Fox stays. Upload a doc, tap a line to edit, or ask about the desk.",
+      text: MOTION_COPY.escalated,
       capture: { field: "talk-originator" },
     };
   }
@@ -1293,12 +1292,7 @@ export function workspaceReply(
 
   if (prompt === "review") {
     if (/(looks right|confirm|yes|correct|good)/i.test(lower)) {
-      const nextDraft = {
-        ...draft,
-        sampleAccepted: true,
-        workspaceDraftStatus:
-          draft.workspaceDraftStatus === "with-originator" ? draft.workspaceDraftStatus : "ready",
-      } as FoxIntakeDraft;
+      const nextDraft = applyLooksRightMotion(draft);
       const nextPrompt = workspacePrompt(nextDraft);
       return {
         ...workspacePromptCopy(nextPrompt === "review" ? "done" : nextPrompt, nextDraft),
@@ -1342,7 +1336,37 @@ export function workspaceReply(
           text: "I can prepare a file. I cannot approve, lock, or commit to lend.",
         };
       }
-      if (/(skip|later|not yet|don'?t have)/i.test(lower) && /doc/.test(lower)) {
+      if (draft.pendingFinish && looksLikeEmail(q)) {
+        const nextDraft = applyEmailThenFinish(draft, q);
+        return {
+          ...workspacePromptCopy("done", nextDraft),
+          capture: { field: "email", value: q.trim() },
+        };
+      }
+      const finish = finishCaptureFromText(q);
+      if (finish) {
+        const nextDraft =
+          finish.field === "proceed"
+            ? { ...draft, pendingFinish: emailMissing(draft) ? "proceed" : draft.pendingFinish }
+            : finish.field === "not-yet"
+              ? { ...draft, pendingFinish: emailMissing(draft) ? "not-yet" : draft.pendingFinish }
+              : { ...draft, docsOpen: true };
+        return {
+          ...workspacePromptCopy("done", nextDraft),
+          text:
+            finish.field === "proceed"
+              ? emailMissing(draft)
+                ? MOTION_COPY.emailAsk
+                : MOTION_COPY.in_queue
+              : finish.field === "not-yet"
+                ? emailMissing(draft)
+                  ? MOTION_COPY.emailAsk
+                  : MOTION_COPY.on_hold
+                : motionAskText({ ...draft, docsOpen: true }),
+          capture: finish,
+        };
+      }
+      if (/^skip\b/.test(lower) || (/(skip|later|don'?t have)/i.test(lower) && /doc/.test(lower))) {
         const nextDraft = { ...draft, documentsSkipped: true, docsOpen: false, correcting: null };
         return {
           ...workspacePromptCopy("done", nextDraft),
@@ -1445,15 +1469,7 @@ function docsFact(draft: FoxIntakeDraft): PreviewFact | null {
 }
 
 export function statusCopy(draft: FoxIntakeDraft) {
-  if (
-    draft.sampleAccepted ||
-    draft.workspaceDraftStatus === "with-originator" ||
-    draft.phase === "confirmed"
-  ) {
-    return "Assigned / reviewing";
-  }
-  if (draft.workspaceDraftStatus === "ready") return "Ready for you";
-  return "Preparing";
+  return motionStatusCopy(draft);
 }
 
 export function previewFacts(draft: FoxIntakeDraft): PreviewFact[] {
@@ -1587,6 +1603,11 @@ export function previewFacts(draft: FoxIntakeDraft): PreviewFact[] {
       label: "Status",
       value: statusCopy(draft),
     });
+    facts.push({
+      id: "next",
+      label: "Next",
+      value: nextActorOf(draft),
+    });
   }
 
   return facts;
@@ -1642,8 +1663,16 @@ export function structureExplainCopy(
     };
   }
   if (id === "status") {
+    const motion = motionOf(draft);
     return {
-      text: "This is desk state. I cannot approve, lock, or commit to lend.",
+      text: motion
+        ? `Status is ${motion}. I cannot approve, lock, or commit to lend.`
+        : "This is desk state. I cannot approve, lock, or commit to lend.",
+    };
+  }
+  if (id === "next") {
+    return {
+      text: `Next is ${nextActorOf(draft)}. Fox owns file motion. I cannot approve, lock, or commit to lend.`,
     };
   }
   if (id === "originator") {
