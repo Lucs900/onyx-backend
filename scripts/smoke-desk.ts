@@ -190,6 +190,8 @@ assert.deepEqual(
   idle.map((item) => item.label),
   ["Start your relationship", "Just need a mortgage"],
 );
+assert.ok(idle[0]?.href?.includes("path=acr") && idle[0]?.href?.includes("fresh=1"));
+assert.ok(idle[1]?.href?.includes("path=loan") && idle[1]?.href?.includes("fresh=1"));
 assert.ok(!HOME_IDLE_TEXT.toLowerCase().includes("equity"));
 assert.equal(HOME_IDLE_TEXT, "Ask ONYX Fox");
 
@@ -252,6 +254,7 @@ assert.equal(workspacePrompt(afterProduct), "occupancy");
 const typedBuyAcr = workspaceReply("I want to buy", withPath);
 assert.equal(typedBuyAcr?.capture?.field, "productIntent");
 assert.equal(typedBuyAcr?.capture && "value" in typedBuyAcr.capture ? typedBuyAcr.capture.value : "", "buy");
+assert.match(typedBuyAcr?.text ?? "", /^Buy\./);
 assert.match(typedBuyAcr?.text ?? "", /how will the property be used/i);
 assert.notEqual(typedBuyAcr?.capture?.field, undefined);
 const typedHouse = workspaceReply("Buy a house", withPath);
@@ -317,7 +320,8 @@ assert.equal(workspacePrompt(afterTime), "amount");
 
 const buyAfterTime = workspaceReply("Ready now", afterOcc);
 assert.equal(buyAfterTime?.capture?.field, "timeline");
-assert.equal(buyAfterTime?.text, "What’s the purchase price?");
+assert.match(buyAfterTime?.text ?? "", /Ready now/);
+assert.match(buyAfterTime?.text ?? "", /What’s the purchase price\?/);
 assert.doesNotMatch(buyAfterTime?.text ?? "", /rough amount|^what’s a rough amount/i);
 
 const refiAfterTime = draft({
@@ -531,7 +535,12 @@ assert.notEqual(workspacePrompt(afterCredit), "documents");
 
 const creditReply = workspaceReply("760+", afterFunds);
 assert.equal(creditReply?.capture?.field, "creditRange");
+assert.match(creditReply?.text ?? "", /Credit 760\+/);
 assert.ok(/income earned/i.test(creditReply?.text ?? ""));
+const incomeReply = workspaceReply("W-2", afterCredit);
+assert.equal(incomeReply?.capture?.field, "incomeType");
+assert.match(incomeReply?.text ?? "", /W-2/);
+assert.match(incomeReply?.text ?? "", /sample structure|look right/i);
 
 const incomeAsk = workspacePromptCopy("income", afterCredit);
 assert.deepEqual(
@@ -544,15 +553,18 @@ assert.equal(workspacePrompt(afterIncome), "review");
 assert.notEqual(workspacePrompt(afterIncome), "documents");
 const looksRight = workspaceReply("Looks right", afterIncome);
 assert.equal(looksRight?.capture?.field, "confirm-draft");
-assert.match(looksRight?.text ?? "", /still useful/i);
+assert.match(looksRight?.text ?? "", /these docs help next/i);
 assert.match(looksRight?.text ?? "", /government ID, latest paystub, and W-2/i);
-assert.match(looksRight?.text ?? "", /skip is fine/i);
+assert.match(looksRight?.text ?? "", /upload docs, proceed, or say not yet/i);
 assert.doesNotMatch(`${looksRight?.text ?? ""} ${looksRight?.followUp ?? ""}`, /drop what you have|will contact you|we’ll be in touch|your lo has the file/i);
+assert.ok((looksRight?.actions ?? []).some((item) => item.label === "Upload docs"));
 assert.ok((looksRight?.actions ?? []).some((item) => item.label === "Proceed"));
-assert.ok((looksRight?.actions ?? []).some((item) => item.label === "Upload more"));
 assert.ok((looksRight?.actions ?? []).some((item) => item.label === "Not yet"));
 assert.ok((looksRight?.actions ?? []).some((item) => /skip/i.test(item.label)));
 assert.ok((looksRight?.actions ?? []).some((item) => item.label === "Request human"));
+const looksRightLabels = (looksRight?.actions ?? []).map((item) => item.label);
+assert.ok(looksRightLabels.indexOf("Upload docs") < looksRightLabels.indexOf("Proceed"));
+assert.ok(looksRightLabels.indexOf("Proceed") < looksRightLabels.indexOf("Not yet"));
 
 const notSure = withIncome(draft({ ...afterFunds, creditAsked: true, creditBand: "not-sure" }));
 assert.equal(workspacePrompt(notSure), "review");
@@ -958,9 +970,10 @@ assert.ok(!/will contact you|we’ll be in touch|your lo has the file/i.test(bkD
 
 const matrixLooksRight = workspaceReply("Looks right", investBuy);
 assert.equal(matrixLooksRight?.capture?.field, "confirm-draft");
+assert.match(matrixLooksRight?.text ?? "", /these docs help next/i);
 assert.match(matrixLooksRight?.text ?? "", /government ID, latest paystub, and W-2/i);
 assert.ok((matrixLooksRight?.actions ?? []).some((item) => item.label === "Proceed"));
-assert.ok((matrixLooksRight?.actions ?? []).some((item) => item.label === "Upload more"));
+assert.ok((matrixLooksRight?.actions ?? []).some((item) => item.label === "Upload docs"));
 assert.ok((matrixLooksRight?.actions ?? []).some((item) => item.label === "Not yet"));
 assert.doesNotMatch(
   `${matrixLooksRight?.text ?? ""} ${matrixLooksRight?.followUp ?? ""}`,
@@ -1034,13 +1047,13 @@ assert.ok(
 );
 
 const done = workspacePromptCopy("done", afterLooks);
-assert.match(done.text, /still useful/i);
+assert.match(done.text, /these docs help next/i);
 assert.match(done.text, /government ID/i);
-assert.match(done.text, /skip is fine/i);
+assert.match(done.text, /upload docs, proceed, or say not yet/i);
 assert.ok(!/I’m preparing this desk/i.test(done.text));
 assert.ok(!/we’ll be in touch|will contact you|your lo has the file/i.test(done.text));
+assert.ok((done.actions ?? []).some((item) => item.label === "Upload docs"));
 assert.ok((done.actions ?? []).some((item) => item.label === "Proceed"));
-assert.ok((done.actions ?? []).some((item) => item.label === "Upload more"));
 assert.ok((done.actions ?? []).some((item) => item.label === "Not yet"));
 assert.ok((done.actions ?? []).some((item) => /skip/i.test(item.label)));
 assert.ok((done.actions ?? []).some((item) => item.label === "Request human"));
@@ -1130,6 +1143,14 @@ const w2Request = docsRequestForIncome("w2");
 assert.deepEqual(w2Request.labels, ["government ID", "latest paystub", "W-2"]);
 assert.ok(!w2Request.labels.includes("Bank statements"));
 
+const selfLooks = workspaceReply("Looks right", withIncome(afterCredit, "self-employed"));
+assert.equal(selfLooks?.capture?.field, "confirm-draft");
+assert.match(selfLooks?.text ?? "", /these docs help next/i);
+assert.match(selfLooks?.text ?? "", /government ID and tax return/i);
+assert.match(selfLooks?.text ?? "", /upload docs, proceed, or say not yet/i);
+assert.ok((selfLooks?.actions ?? []).some((item) => item.label === "Upload docs"));
+assert.ok((selfLooks?.actions ?? []).some((item) => item.label === "Proceed"));
+assert.ok((selfLooks?.actions ?? []).some((item) => item.label === "Not yet"));
 const selfDocs = workspacePromptCopy("documents", withIncome(afterCredit, "self-employed"));
 assert.match(selfDocs.text, /government ID and tax return/i);
 assert.doesNotMatch(selfDocs.text, /paystub|w-2|drop what you have/i);
@@ -1306,6 +1327,44 @@ assert.equal(getFoxDraft().path, "loan-only");
 assert.equal(getFoxDraft().productIntent, undefined);
 assert.equal(getFoxMessages().length, 0);
 assert.equal(workspacePrompt(getFoxDraft()), "product");
+
+resetWorkspaceForEntry("acr", "buy");
+applyCapture({ field: "occupancy", value: "primary" });
+applyCapture({ field: "timeline", value: "ready-now" });
+applyCapture({ field: "starter", value: "buy", price: "850000" });
+setFoxMessages([{ id: "mid-file", role: "client", text: "I want to buy" }]);
+assert.equal(workspaceSessionStarted(), true);
+assert.equal(getFoxDraft().productIntent, "buy");
+beginWorkspaceFromHero("acr");
+assert.equal(getFoxDraft().path, "acr");
+assert.equal(getFoxDraft().productIntent, undefined);
+assert.equal(getFoxDraft().propertyValueAmount, undefined);
+assert.equal(getFoxMessages().length, 0);
+assert.equal(workspacePrompt(getFoxDraft()), "product");
+const heroLoanWipe = beginWorkspaceFromHero("loan-only");
+assert.equal(heroLoanWipe.path, "loan-only");
+assert.equal(heroLoanWipe.productIntent, undefined);
+assert.equal(workspacePrompt(heroLoanWipe), "product");
+
+resetWorkspaceForEntry("acr", "buy");
+applyCapture({ field: "occupancy", value: "primary" });
+applyCapture({ field: "timeline", value: "ready-now" });
+capturePurchaseFunds("850000", "680000");
+applyCapture({ field: "creditRange", value: "760+" });
+applyCapture({ field: "incomeType", value: "w2" });
+applyCapture({ field: "confirm-draft" });
+setFoxMessages([{ id: "keep-return", role: "fox", text: "These docs help next: government ID." }]);
+assert.equal(shouldResumeWorkspaceEntry(), true);
+assert.ok(getFoxDraft().sampleAccepted);
+const resumedLooks = continueWorkspaceFromEntry("acr");
+assert.ok(resumedLooks.sampleAccepted);
+assert.equal(resumedLooks.productIntent, "buy");
+assert.ok(getFoxMessages().some((message) => message.id === "keep-return"));
+const freshLooks = continueWorkspaceFromEntry("acr", null, { fresh: true });
+assert.equal(freshLooks.productIntent, undefined);
+assert.ok(!freshLooks.sampleAccepted);
+assert.equal(getFoxMessages().length, 0);
+assert.equal(workspacePrompt(freshLooks), "product");
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const paystubWrite = applyExtractedFields(afterLooks, {
@@ -1621,7 +1680,7 @@ assert.ok(!stillUsefulLabels(seWalk.draft).includes("tax return"));
 assert.match(stillUsefulAskCopy(seWalk.draft), /government ID and prior-year return/i);
 assert.doesNotMatch(stillUsefulAskCopy(seWalk.draft), /government ID and tax return/i);
 assert.match(gatheringCopy(seWalk.draft), /government ID and prior-year return/i);
-assert.match(gatheringCopy(seWalk.draft), /skip is fine/i);
+assert.match(gatheringCopy(seWalk.draft), /upload docs, proceed, or say not yet/i);
 assert.doesNotMatch(gatheringCopy(seWalk.draft), /government ID and tax return/i);
 assert.match(fileStillUsefulNote(seWalk.draft) ?? "", /still useful: ID · prior-year return/i);
 assert.doesNotMatch(fileStillUsefulNote(seWalk.draft) ?? "", /tax return/i);
@@ -2768,6 +2827,18 @@ assert.ok(!homepageSource.includes("RateCard"));
 assert.ok(!/talk to a licensed originator/i.test(homepageSource));
 assert.ok(!/next step/i.test(homepageSource));
 assert.ok(readFileSync(join(root, "components/MembershipHero.tsx"), "utf8").includes("HOME_IDLE_TEXT"));
+assert.ok(!homepageSource.includes("Start over"));
+assert.ok(!readFileSync(join(root, "components/Closer.tsx"), "utf8").includes("Start over"));
+const startPathSource = readFileSync(join(root, "components/products/startPath.ts"), "utf8");
+assert.ok(startPathSource.includes('"/start?path=acr&fresh=1"') || startPathSource.includes("/start?path=acr&fresh=1"));
+assert.ok(startPathSource.includes('"/start?path=loan&fresh=1"') || startPathSource.includes("/start?path=loan&fresh=1"));
+assert.ok(startPathSource.includes("HOMEPAGE_FRESH_KEY"));
+const homeIdleSource = readFileSync(join(root, "components/fox/homeIdle.ts"), "utf8");
+assert.ok(homeIdleSource.includes("&intent=buy"));
+assert.doesNotMatch(homeIdleSource, /intent=buy.*fresh=1|fresh=1.*intent=buy/);
+const loReviewNav = readFileSync(join(root, "components/fox/LoReview.tsx"), "utf8");
+assert.ok(loReviewNav.includes("/start?nudge=now"));
+assert.doesNotMatch(loReviewNav, /\/start\?nudge=now.*fresh|fresh=1.*nudge=now/);
 
 const startWorkspace = readFileSync(join(root, "components/fox/StartWorkspace.tsx"), "utf8");
 assert.ok(!startWorkspace.includes("useDocumentReads"));
@@ -2775,6 +2846,8 @@ assert.ok(startWorkspace.includes("shouldResumeWorkspaceEntry"));
 assert.ok(startWorkspace.includes("continueWorkspaceFromEntry"));
 assert.ok(startWorkspace.includes("applyPreviewMotionControls"));
 assert.ok(startWorkspace.includes('searchParams.get("suggest")'));
+assert.ok(startWorkspace.includes('searchParams.get("fresh")'));
+assert.ok(startWorkspace.includes("fresh: homepageFresh") || startWorkspace.includes("{ fresh: homepageFresh }"));
 const dropSource = readFileSync(join(root, "components/fox/DocumentDrop.tsx"), "utf8");
 assert.ok(dropSource.includes("/api/docs/upload"));
 assert.ok(dropSource.includes("/api/docs/extract"));
@@ -2783,7 +2856,12 @@ assert.ok(!dropSource.includes("/api/chat"));
 assert.ok(!dropSource.includes("/api/heloc-quote"));
 assert.ok(!dropSource.includes("setTimeout"));
 const alwaysOn = readFileSync(join(root, "components/fox/AlwaysOnFox.tsx"), "utf8");
-assert.ok(alwaysOn.includes("file is prepared") || alwaysOn.includes("still useful") || alwaysOn.includes("this file can move"));
+assert.ok(
+  alwaysOn.includes("file is prepared") ||
+    alwaysOn.includes("still useful") ||
+    alwaysOn.includes("this file can move") ||
+    alwaysOn.includes("docs help next"),
+);
 assert.ok(alwaysOn.includes('prompt === "done"'));
 assert.ok(alwaysOn.includes("FOX_THREAD_LINE_EVENT"));
 assert.ok(alwaysOn.includes("shouldResumeWorkspaceEntry"));
@@ -2801,6 +2879,9 @@ assert.ok(storeSource.includes("sessionStorage.removeItem"));
 assert.ok(alwaysOn.includes("suggest ?? \"\"") || alwaysOn.includes('suggest ?? ""'));
 assert.ok(storeSource.includes("function shouldResumeWorkspaceEntry") || storeSource.includes("export function shouldResumeWorkspaceEntry"));
 assert.ok(storeSource.includes("fileExists(draft)"));
+assert.ok(storeSource.includes("markHomepageFreshStart"));
+assert.ok(storeSource.includes("startOverWorkspace(path)"));
+assert.ok(!storeSource.includes("if (workspaceSessionStarted())"));
 const loReviewSource = readFileSync(join(root, "components/fox/LoReview.tsx"), "utf8");
 assert.ok(loReviewSource.includes("fileScenarioRows"));
 const startCss = readFileSync(join(root, "styles/start.css"), "utf8");

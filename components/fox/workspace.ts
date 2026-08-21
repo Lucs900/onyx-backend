@@ -1219,19 +1219,25 @@ function replyToFundsAsk(
       { ...cleared, downPaymentAmount: parsed.dollars, downAsked: true },
       hasLoanAmount(draft) ? "down" : undefined,
     );
-    return {
-      ...workspacePromptCopy(workspacePrompt(nextDraft), nextDraft),
-      capture: { field: "downPayment", value: String(parsed.dollars) },
-    };
+    return withWorkspaceGuide(
+      {
+        ...workspacePromptCopy(workspacePrompt(nextDraft), nextDraft),
+        capture: { field: "downPayment", value: String(parsed.dollars) },
+      },
+      nextDraft,
+    );
   }
   const nextDraft = withComputedCompanion(
     { ...cleared, loanAmountValue: parsed.dollars, amountAsked: true },
     hasDownPayment(draft) ? "loan" : undefined,
   );
-  return {
-    ...workspacePromptCopy(workspacePrompt(nextDraft), nextDraft),
-    capture: { field: "loanAmount", value: String(parsed.dollars) },
-  };
+  return withWorkspaceGuide(
+    {
+      ...workspacePromptCopy(workspacePrompt(nextDraft), nextDraft),
+      capture: { field: "loanAmount", value: String(parsed.dollars) },
+    },
+    nextDraft,
+  );
 }
 
 export function parseAmountPair(text: string): { loan?: number; value?: number } {
@@ -1375,6 +1381,95 @@ export function editPromptFromCapture(capture?: Capture): FoxPrompt | undefined 
     return "documents";
   }
   return undefined;
+}
+
+const GUIDE_CAPTURE_FIELDS = new Set<Capture["field"]>([
+  "productIntent",
+  "starter",
+  "occupancy",
+  "timeline",
+  "propertyValue",
+  "downPayment",
+  "loanAmount",
+  "propose-funds",
+  "creditRange",
+  "incomeType",
+]);
+
+const SKIP_GUIDE_PROMPTS = new Set<FoxPrompt>([
+  "offer-jumbo",
+  "offer-heloc",
+  "geo-stop",
+  "jumbo-purpose",
+  "confirm-proposal",
+  "path-switch",
+  "intent",
+]);
+
+function spokenCaptureLine(capture: Capture, draft: FoxIntakeDraft) {
+  if (capture.field === "productIntent" || capture.field === "starter") {
+    const label = productIntentLabel(capture.value);
+    return label ? `${label}.` : "";
+  }
+  if (capture.field === "occupancy") {
+    const label = occupancySpokenLabel(capture.value);
+    return label ? `${label}.` : "";
+  }
+  if (capture.field === "timeline") {
+    const label = TIMELINE_BUBBLES.find((item) => item.value === capture.value)?.label;
+    return label ? `${label}.` : "";
+  }
+  if (capture.field === "propertyValue") {
+    const n = Number(String(capture.value).replace(/,/g, ""));
+    return Number.isFinite(n) && n > 0 ? `Purchase is ${formatMoney(n)}.` : "";
+  }
+  if (capture.field === "downPayment") {
+    const n = Number(String(capture.value).replace(/,/g, ""));
+    return Number.isFinite(n) && n > 0 ? `Down payment is ${formatMoney(n)}.` : "";
+  }
+  if (capture.field === "loanAmount") {
+    const n = Number(String(capture.value).split(":")[0].replace(/,/g, ""));
+    const label = structureAmountLabel(draft) || "Loan amount";
+    return Number.isFinite(n) && n > 0 ? `${label} is ${formatMoney(n)}.` : "";
+  }
+  if (capture.field === "propose-funds") {
+    const [down, loan] = String(capture.value).split(":");
+    const downN = Number(down);
+    const loanN = Number(loan);
+    if (Number.isFinite(downN) && Number.isFinite(loanN) && downN > 0 && loanN > 0) {
+      return `That’s ${formatMoney(downN)} down · ${formatMoney(loanN)} loan.`;
+    }
+    return "";
+  }
+  if (capture.field === "creditRange") {
+    return capture.value === "not-sure" ? "Credit left open." : `Credit ${capture.value}.`;
+  }
+  if (capture.field === "incomeType") {
+    const label = INCOME_BUBBLES.find((item) => item.value === capture.value)?.label;
+    return label ? `${label}.` : "";
+  }
+  return "";
+}
+
+/** One short line: what was captured + the next tap or type. Guide, don’t lecture. */
+export function withWorkspaceGuide<
+  T extends {
+    text: string;
+    followUp?: string;
+    facts?: PreviewFact[];
+    actions?: FoxAction[];
+    capture?: Capture;
+  },
+>(reply: T, nextDraft: FoxIntakeDraft): T {
+  const capture = reply.capture;
+  if (!capture || !GUIDE_CAPTURE_FIELDS.has(capture.field)) return reply;
+  const prompt = workspacePrompt({ ...nextDraft, correcting: null });
+  if (SKIP_GUIDE_PROMPTS.has(prompt)) return reply;
+  const spoken = spokenCaptureLine(capture, nextDraft);
+  if (!spoken) return reply;
+  const stem = spoken.replace(/\.$/, "");
+  if (reply.text.toLowerCase().includes(stem.toLowerCase())) return reply;
+  return { ...reply, text: `${spoken} ${reply.text}` };
 }
 
 export function workspaceUpdateCopy(capture: Capture, draft: FoxIntakeDraft) {
@@ -2063,13 +2158,17 @@ export function workspaceReply(
     const price = parseLooseAmount(q);
     const nextDraft = applyStarterSketch(draft, intent, price);
     const nextPrompt = workspacePrompt(nextDraft);
-    return {
-      ...workspacePromptCopy(nextPrompt === "product" ? "occupancy" : nextPrompt, nextDraft),
-      capture:
-        price != null && price > 0
-          ? { field: "starter", value: intent, price: String(price) }
-          : { field: "productIntent", value: intent },
-    };
+    const capture =
+      price != null && price > 0
+        ? { field: "starter" as const, value: intent, price: String(price) }
+        : { field: "productIntent" as const, value: intent };
+    return withWorkspaceGuide(
+      {
+        ...workspacePromptCopy(nextPrompt === "product" ? "occupancy" : nextPrompt, nextDraft),
+        capture,
+      },
+      nextDraft,
+    );
   }
 
   if (prompt === "jumbo-purpose") {
@@ -2139,20 +2238,36 @@ export function workspaceReply(
   if (prompt === "occupancy") {
     const match = occupancyFromText(q);
     if (!match) return { text: "Tap Primary, Second home, or Investment." };
-    return {
-      ...workspacePromptCopy("timeline", draft),
-      capture: { field: "occupancy", value: match.value },
+    const nextDraft = {
+      ...draft,
+      occupancyChoice: { ...draft.occupancyChoice, value: match.value },
+      occupancyAsked: true,
     };
+    return withWorkspaceGuide(
+      {
+        ...workspacePromptCopy("timeline", nextDraft),
+        capture: { field: "occupancy", value: match.value },
+      },
+      nextDraft,
+    );
   }
 
   if (prompt === "timeline") {
     const match = timelineFromText(q);
     if (!match) return { text: "Tap Ready now, 30–90 days, or Just exploring." };
-    const nextAsk = draftUsesPurchasePrice(draft) ? "value" : "amount";
-    return {
-      ...workspacePromptCopy(nextAsk, draft),
-      capture: { field: "timeline", value: match.value },
+    const nextDraft = {
+      ...draft,
+      timelineChoice: { ...draft.timelineChoice, value: match.value },
+      timelineAsked: true,
     };
+    const nextAsk = draftUsesPurchasePrice(nextDraft) ? "value" : "amount";
+    return withWorkspaceGuide(
+      {
+        ...workspacePromptCopy(nextAsk, nextDraft),
+        capture: { field: "timeline", value: match.value },
+      },
+      nextDraft,
+    );
   }
 
   if (prompt === "amount") {
@@ -2227,13 +2342,16 @@ export function workspaceReply(
       nextDraft = { ...nextDraft, pendingOffer: "heloc" };
     }
     const next = workspacePromptCopy(workspacePrompt(nextDraft), nextDraft);
-    return {
-      ...next,
-      capture: {
-        field: "loanAmount",
-        value: pair.value && pair.value !== amount ? `${amount}:${pair.value}` : String(amount),
+    return withWorkspaceGuide(
+      {
+        ...next,
+        capture: {
+          field: "loanAmount",
+          value: pair.value && pair.value !== amount ? `${amount}:${pair.value}` : String(amount),
+        },
       },
-    };
+      nextDraft,
+    );
   }
 
   if (prompt === "value") {
@@ -2263,10 +2381,13 @@ export function workspaceReply(
       }),
     );
     const next = workspacePromptCopy(workspacePrompt(nextDraft), nextDraft);
-    return {
-      ...next,
-      capture: { field: "propertyValue", value: String(amount) },
-    };
+    return withWorkspaceGuide(
+      {
+        ...next,
+        capture: { field: "propertyValue", value: String(amount) },
+      },
+      nextDraft,
+    );
   }
 
   if (prompt === "credit") {
@@ -2274,10 +2395,13 @@ export function workspaceReply(
     if (!range) return { text: "Tap a credit range, or Not sure." };
     const nextDraft = { ...draft, creditBand: range, creditAsked: true, correcting: null };
     const next = workspacePromptCopy(workspacePrompt(nextDraft), nextDraft);
-    return {
-      ...next,
-      capture: { field: "creditRange", value: range },
-    };
+    return withWorkspaceGuide(
+      {
+        ...next,
+        capture: { field: "creditRange", value: range },
+      },
+      nextDraft,
+    );
   }
 
   if (prompt === "term") {
@@ -2298,10 +2422,13 @@ export function workspaceReply(
     const match = incomeFromText(q);
     if (!match) return { text: "Tap W-2, Self-employed, Both, or Other." };
     const nextDraft = withIncomeType(draft, match.value);
-    return {
-      ...workspacePromptCopy(workspacePrompt(nextDraft), nextDraft),
-      capture: { field: "incomeType", value: match.value },
-    };
+    return withWorkspaceGuide(
+      {
+        ...workspacePromptCopy(workspacePrompt(nextDraft), nextDraft),
+        capture: { field: "incomeType", value: match.value },
+      },
+      nextDraft,
+    );
   }
 
   if (prompt === "documents") {

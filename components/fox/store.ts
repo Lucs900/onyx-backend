@@ -66,7 +66,13 @@ import {
   withMatrixAfterAmount,
   workspacePrompt,
 } from "./workspace";
-import { START_PATH_KEY } from "@/components/products/startPath";
+import {
+  START_PATH_KEY,
+  consumeHomepageFreshStart,
+  homepageFreshEntryPending,
+  markHomepageFreshStart,
+  writeStartPath,
+} from "@/components/products/startPath";
 import {
   applyStubEmployerSuggestion,
   canLooksRight,
@@ -468,7 +474,9 @@ export function startOverWorkspace(path: IntakePath | null = null) {
   hydrated = false;
   workspaceEntryKey = null;
   current = emptyDraft();
-  return resetWorkspaceForEntry(path, null);
+  const next = resetWorkspaceForEntry(path, null);
+  if (path) writeStartPath(path);
+  return next;
 }
 
 /** Wipe the prior file. Keep the new path and honor intent without a second reset. */
@@ -494,9 +502,16 @@ export function resetWorkspaceForEntry(
 export function continueWorkspaceFromEntry(
   path: IntakePath | null,
   intent: ProductIntent | null = null,
+  entry?: { fresh?: boolean },
 ) {
   if (!hydrated) hydrateFoxDraft();
   hydrateFoxMessages();
+  const fresh = Boolean(entry?.fresh) || homepageFreshEntryPending();
+  if (fresh) {
+    consumeHomepageFreshStart();
+    const next = startOverWorkspace(path);
+    return intent ? setDraftProductIntent(intent) : next;
+  }
   if (shouldResumeWorkspaceEntry()) {
     return resumeWorkspaceEntry(path, intent);
   }
@@ -599,17 +614,10 @@ export function applyWorkspaceEntry(
   return resetWorkspaceForEntry(path, intent);
 }
 
-/** Desktop / mobile CTA: new conversation unless the client already started. */
+/** Homepage CTA: always a new file. Return to Fox / refresh must not call this. */
 export function beginWorkspaceFromHero(path: IntakePath) {
-  if (!hydrated) hydrateFoxDraft();
-  hydrateFoxMessages();
-  if (workspaceSessionStarted()) {
-    if (!current.workspaceFlow) {
-      commit({ ...current, workspaceFlow: true });
-    }
-    return setDraftPath(path);
-  }
-  return resetWorkspaceForEntry(path);
+  markHomepageFreshStart();
+  return startOverWorkspace(path);
 }
 
 function withProductIntent(draft: FoxIntakeDraft, intent: ProductIntent): FoxIntakeDraft {

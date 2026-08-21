@@ -1,6 +1,6 @@
 "use client";
 
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useSyncExternalStore } from "react";
 import { pathFromQuery, rememberStartPath } from "@/components/products/startPath";
 import { AlwaysOnFox } from "./AlwaysOnFox";
@@ -21,25 +21,38 @@ import {
 import { productIntentFromQuery, productIntentFromSlug } from "./workspace";
 
 export function StartWorkspace() {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const queryPath = pathFromQuery(searchParams.get("path"));
+  const homepageFresh = searchParams.get("fresh") === "1";
   if (typeof window !== "undefined") hydrateFoxDraft();
   if (queryPath) rememberStartPath(queryPath);
   const startPath =
     queryPath ??
-    (shouldResumeWorkspaceEntry() ? getFoxDraft().path ?? rememberStartPath(null) : rememberStartPath(null));
+    (homepageFresh
+      ? rememberStartPath(null)
+      : shouldResumeWorkspaceEntry()
+        ? getFoxDraft().path ?? rememberStartPath(null)
+        : rememberStartPath(null));
   const startIntent =
     productIntentFromQuery(searchParams.get("intent")) ??
     productIntentFromSlug(searchParams.get("product"));
   const booted = useRef(false);
   if (typeof window !== "undefined" && !booted.current) {
     booted.current = true;
-    continueWorkspaceFromEntry(startPath, startIntent);
+    continueWorkspaceFromEntry(startPath, startIntent, { fresh: homepageFresh });
   }
   const draft = useSyncExternalStore(subscribeFoxDraft, getFoxDraft, getServerDraft);
 
   const lastPath = useRef(startPath);
   const previewSuggestKey = useRef("");
+  useEffect(() => {
+    if (!homepageFresh) return;
+    const next = new URLSearchParams(searchParams.toString());
+    next.delete("fresh");
+    const qs = next.toString();
+    router.replace(qs ? `/start?${qs}` : "/start", { scroll: false });
+  }, [homepageFresh, router, searchParams]);
   useEffect(() => {
     if (lastPath.current !== startPath) {
       lastPath.current = startPath;

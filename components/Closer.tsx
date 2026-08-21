@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ACR_START_HREF, LOAN_START_HREF } from "./products/startPath";
+import { HeroStartLink } from "./fox/HeroStartLink";
 
 export function Closer() {
   return (
@@ -9,12 +9,12 @@ export function Closer() {
           Always approved. Always optimizing.
         </h2>
         <div className="closer__actions">
-          <Link href={ACR_START_HREF} className="btn btn--primary btn--hero-primary">
+          <HeroStartLink path="acr" className="btn btn--primary btn--hero-primary">
             Start your relationship
-          </Link>
-          <Link href={LOAN_START_HREF} className="btn btn--secondary btn--hero-secondary">
+          </HeroStartLink>
+          <HeroStartLink path="loan-only" className="btn btn--secondary btn--hero-secondary">
             Just need a mortgage
-          </Link>
+          </HeroStartLink>
         </div>
         <p className="closer__trust">
           NMLS [OPEN] · CA DRE [OPEN] · We are a mortgage broker.{" "}

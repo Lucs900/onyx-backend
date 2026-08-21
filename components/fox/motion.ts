@@ -21,9 +21,9 @@ export const REVIEW_SLA_MS = 4 * 60 * 60 * 1000;
 export const PREVIEW_SLA_MS = 30 * 1000;
 
 export const MOTION_COPY = {
-  gatheringPrefix: "Still useful:",
-  gatheringSuffix: "Skip is fine.",
-  ready: "This file can move. Proceed, upload more, or not yet.",
+  gatheringPrefix: "These docs help next:",
+  gatheringSuffix: "Upload docs, proceed, or say not yet.",
+  ready: "This file can move. Upload docs, proceed, or say not yet.",
   in_queue:
     "ONYX has this for review. I’m on it — I’ll nudge if it sits and I’ll bring the result back here.",
   whatHappensNext:
@@ -281,13 +281,13 @@ export function finishLineActions(draft: FoxIntakeDraft): FoxAction[] {
   }
   const missing = missingExtractClasses(draft);
   const actions: FoxAction[] = [
-    { id: "proceed", label: "Proceed", event: "bubble", capture: { field: "proceed" } },
     {
       id: "upload-more",
-      label: "Upload more",
+      label: "Upload docs",
       event: "open-docs",
       capture: { field: "upload-more" },
     },
+    { id: "proceed", label: "Proceed", event: "bubble", capture: { field: "proceed" } },
     { id: "not-yet", label: "Not yet", event: "bubble", capture: { field: "not-yet" } },
   ];
   if (missing.length && !draft.documentsSkipped && motion !== "on_hold") {
@@ -600,7 +600,7 @@ export function finishCaptureFromText(text: string): Capture | null {
   if (/^not yet\b/.test(lower) || lower === "hold" || lower === "hold this") {
     return { field: "not-yet" };
   }
-  if (/^upload more\b/.test(lower) || lower === "upload") {
+  if (/^upload more\b/.test(lower) || /^upload docs\b/.test(lower) || lower === "upload") {
     return { field: "upload-more" };
   }
   return null;

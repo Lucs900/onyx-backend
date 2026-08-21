@@ -18,8 +18,11 @@ import { createPortal } from "react-dom";
 import { AdvisorMark } from "@/components/AdvisorMark";
 import { readScenario } from "@/components/products/scenario";
 import {
+  ACR_START_HREF,
   DESK_START_HREF,
+  LOAN_START_HREF,
   deskHrefFromLeftover,
+  isHomepageFreshQuery,
   isLeftoverConversionHref,
   pathFromQuery,
   writeStartPath,
@@ -35,6 +38,7 @@ import {
 import {
   applyCapture,
   applyPreviewMotionControls,
+  beginWorkspaceFromHero,
   continueWorkspaceFromEntry,
   emptyDraft,
   FOX_THREAD_LINE_EVENT,
@@ -60,6 +64,7 @@ import {
   inertSupersededIncomeConfirms,
   structureExplainCopy,
   structureFixPrompt,
+  withWorkspaceGuide,
   workspaceGreeting,
   workspacePrompt,
   workspacePromptCopy,
@@ -130,7 +135,9 @@ function seedWorkspaceMessages(
       return ask;
     }
   }
-  const draft = continueWorkspaceFromEntry(path ?? null, intent ?? null);
+  const draft = continueWorkspaceFromEntry(path ?? null, intent ?? null, {
+    fresh: typeof window !== "undefined" && isHomepageFreshQuery(window.location.search),
+  });
   const greet = [foxAskMessage(workspaceGreeting(draft))];
   setFoxMessages(greet);
   return greet;
@@ -148,8 +155,9 @@ function deskHrefFromSession(
 function persistHomeComposerTurn(text: string) {
   const path = pathFromHomeChoice(text);
   if (path) {
+    beginWorkspaceFromHero(path);
     writeStartPath(path);
-    setDraftPath(path);
+    return path === "loan-only" ? LOAN_START_HREF : ACR_START_HREF;
   }
   const live = getFoxDraft();
   const scenario = live.scenario ?? readScenario();
@@ -229,7 +237,7 @@ function hasPreparedAsk(messages: FoxMessage[]) {
   return messages.some(
     (message) =>
       message.role === "fox" &&
-      (/still useful:|this file can move|onyx has this for review|holding\. i.?ll keep|licensed originator is on this exception|i need .+ from you|what.?s a good email|file is prepared/i.test(
+      (/these docs help next|still useful:|this file can move|onyx has this for review|holding\. i.?ll keep|licensed originator is on this exception|i need .+ from you|what.?s a good email|file is prepared/i.test(
         message.text,
       )),
   );
@@ -242,7 +250,10 @@ function withUpdatedStillUsefulAsk(messages: FoxMessage[], live: FoxIntakeDraft)
   });
   const index = [...messages]
     .reverse()
-    .findIndex((message) => message.role === "fox" && /still useful:/i.test(message.text));
+    .findIndex(
+      (message) =>
+        message.role === "fox" && /these docs help next|still useful:/i.test(message.text),
+    );
   if (index < 0) return [...messages, ask];
   const at = messages.length - 1 - index;
   return messages.map((message, idx) =>
@@ -962,7 +973,15 @@ export function AlwaysOnFox({
         router.push(deskHrefFromLeftover(action.href));
         return;
       }
-      persistPathFromHref(action.href);
+      const hrefPath = pathFromQuery(
+        new URL(action.href, window.location.origin).searchParams.get("path"),
+      );
+      if (isHomepageFreshQuery(action.href) && hrefPath) {
+        beginWorkspaceFromHero(hrefPath);
+        writeStartPath(hrefPath);
+      } else {
+        persistPathFromHref(action.href);
+      }
       router.push(action.href);
       return;
     }
@@ -1043,7 +1062,10 @@ export function AlwaysOnFox({
       }
       const next =
         workspaceSurface
-          ? workspacePromptCopy(workspacePrompt(live), live)
+          ? withWorkspaceGuide(
+              { ...workspacePromptCopy(workspacePrompt(live), live), capture: action.capture },
+              live,
+            )
           : promptCopy(currentPrompt(live), live);
       appendReply(
         action.label,
