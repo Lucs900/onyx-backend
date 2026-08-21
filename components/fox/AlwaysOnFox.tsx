@@ -846,15 +846,33 @@ export function AlwaysOnFox({
     return () => window.clearInterval(id);
   }, [draft.motion, draft.reviewSlaMs, draft.updatedAt, isStart, ready, search]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const thread = listRef.current;
-    if (!thread) return;
-    const current = thread.querySelector("[aria-current='step']");
-    if (current instanceof HTMLElement) {
+    if (!thread || !open) return;
+    const reveal = () => {
+      const current = thread.querySelector("[aria-current='step']");
+      if (!(current instanceof HTMLElement)) {
+        thread.scrollTo({ top: thread.scrollHeight });
+        return;
+      }
+      const dock = document.querySelector(".fox-workspace-dock");
+      const dockTop =
+        dock instanceof HTMLElement ? dock.getBoundingClientRect().top : window.innerHeight;
+      const reserve = Math.max(96, window.innerHeight - dockTop + 16);
+      current.style.scrollMarginBottom = `${reserve}px`;
       current.scrollIntoView({ block: "end", inline: "nearest" });
-      return;
-    }
-    thread.scrollTo({ top: thread.scrollHeight });
+      const box = current.getBoundingClientRect();
+      const hidden = box.bottom - (window.innerHeight - reserve);
+      if (hidden > 8) {
+        window.scrollBy({ top: hidden, left: 0 });
+      }
+    };
+    reveal();
+    const frame = window.requestAnimationFrame(() => {
+      reveal();
+      window.requestAnimationFrame(reveal);
+    });
+    return () => window.cancelAnimationFrame(frame);
   }, [messages, open]);
 
   const startAsk = isStart ? workspacePrompt(draft) : null;

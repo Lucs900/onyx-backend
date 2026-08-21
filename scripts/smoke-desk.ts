@@ -2714,6 +2714,8 @@ assert.ok(startCss.includes("scroll-margin-bottom"));
 const foxSource = readFileSync(join(root, "components/fox/AlwaysOnFox.tsx"), "utf8");
 assert.ok(foxSource.includes("composerAmountHint"));
 assert.ok(foxSource.includes("scrollIntoView"));
+assert.ok(foxSource.includes("fox-workspace-dock"));
+assert.ok(foxSource.includes("scrollMarginBottom"));
 assert.ok(foxSource.includes('line: field'));
 
 const filePreview = readFileSync(join(root, "components/fox/FilePreview.tsx"), "utf8");
