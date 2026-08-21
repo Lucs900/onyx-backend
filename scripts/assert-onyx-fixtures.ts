@@ -61,7 +61,7 @@ export function assertOnyxFixtures() {
 
   for (const file of NAME_SCAN_FILES) {
     const src = readFileSync(join(root, file), "utf8");
-    const names = [...src.matchAll(/\bname:\s*"([^"]+)"/g)].map((match) => match[1]);
+    const names = Array.from(src.matchAll(/\bname:\s*"([^"]+)"/g), (match) => match[1]);
     const badNames = names.filter((name) => CONTAMINATION.test(name));
     if (badNames.length) {
       fail(badNames.map((name) => `${file}: ${name}`), "Test document names are contamination:");
