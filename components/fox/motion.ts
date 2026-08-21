@@ -156,17 +156,24 @@ export function gatheringList(draft: FoxIntakeDraft) {
   return missingListCopy(missingExtractClasses(draft)).replace(/\.$/, "");
 }
 
-export function needsYouThing(draft: FoxIntakeDraft) {
+export function returnedReviewNote(draft: FoxIntakeDraft) {
   const returned = [...(draft.workItems ?? [])]
     .reverse()
-    .find((item) => item.kind === "review" && item.state === "returned" && item.needsDoc);
+    .find((item) => item.kind === "review" && item.state === "returned" && item.note?.trim());
+  return returned?.note?.trim() || "";
+}
+
+export function needsYouThing(draft: FoxIntakeDraft) {
+  const note = returnedReviewNote(draft);
+  if (note) return note;
   const missing = missingExtractClasses(draft);
   if (missing[0]) return askClassLabel(missing[0]);
-  if (returned?.note?.trim()) return returned.note.trim();
   return "a document";
 }
 
 export function needsYouCopy(draft: FoxIntakeDraft) {
+  const note = returnedReviewNote(draft);
+  if (note) return note;
   return `I need ${needsYouThing(draft)} from you.`;
 }
 
@@ -433,25 +440,19 @@ export function applyReturnToFoxMotion(
   const motion: FileMotion = input.needsDoc
     ? "needs_you"
     : inferMotionAfterLooks(draft);
-  const next = replaceReviewItem(
-    appendFileEvent(
-      {
-        ...draft,
-        motion,
-        nextActor: nextForMotion(motion),
-        pendingFinish: undefined,
-        docsOpen: Boolean(input.needsDoc),
-        correcting: null,
-      },
-      "return-to-fox",
-      note || (input.needsDoc ? needsYouCopy(draft) : "Returned to Fox."),
-      now.toISOString(),
-    ),
-    returned,
-  );
-  const threadLine = input.needsDoc
-    ? needsYouCopy(next)
-    : note || "ONYX returned this file. I stay here.";
+  const striped: FoxIntakeDraft = {
+    ...draft,
+    motion,
+    nextActor: nextForMotion(motion),
+    pendingFinish: undefined,
+    docsOpen: Boolean(input.needsDoc),
+    correcting: null,
+  };
+  const withItem = replaceReviewItem(striped, returned);
+  const threadLine =
+    note ||
+    (input.needsDoc ? needsYouCopy(withItem) : "ONYX returned this file. I stay here.");
+  const next = appendFileEvent(withItem, "return-to-fox", threadLine, now.toISOString());
   return { draft: next, threadLine };
 }
 

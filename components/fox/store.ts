@@ -37,6 +37,7 @@ import {
   applyReturnToFoxMotion,
   applyUploadMoreMotion,
   expireOpenReview,
+  fileExists,
   isFileMotion,
   isFileNext,
   looksLikeEmail,
@@ -348,6 +349,24 @@ export function workspaceSessionStarted(
   return messages.some((message) => message.role === "client");
 }
 
+/** Same File is already past Looks right / finish-line. URL path is not a fresh start. */
+export function shouldResumeWorkspaceEntry(
+  draft: FoxIntakeDraft = current,
+  messages: FoxMessage[] = getFoxMessages(),
+) {
+  return fileExists(draft) || workspaceSessionStarted(draft, messages);
+}
+
+function resumeWorkspaceEntry(path?: IntakePath | null, intent: ProductIntent | null = null) {
+  markWorkspaceEntry(current.path ?? path);
+  if (!current.workspaceFlow) {
+    commit({ ...current, workspaceFlow: true });
+  }
+  if (path && !current.path) setDraftPath(path);
+  if (intent && !current.productIntent) setDraftProductIntent(intent);
+  return current;
+}
+
 function markWorkspaceEntry(path?: IntakePath | null) {
   workspaceEntryKey = workspaceEntryToken(path);
   hydrated = true;
@@ -372,21 +391,15 @@ export function resetWorkspaceForEntry(
   return current;
 }
 
-/** Keep a live homepage thread. Fresh start only when nothing has been said. */
+/** Keep a live homepage thread or an in-motion File. Fresh start is homepage CTA only. */
 export function continueWorkspaceFromEntry(
   path: IntakePath | null,
   intent: ProductIntent | null = null,
 ) {
   if (!hydrated) hydrateFoxDraft();
   hydrateFoxMessages();
-  if (workspaceSessionStarted()) {
-    markWorkspaceEntry(current.path ?? path);
-    if (!current.workspaceFlow) {
-      commit({ ...current, workspaceFlow: true });
-    }
-    if (path && !current.path) setDraftPath(path);
-    if (intent && !current.productIntent) setDraftProductIntent(intent);
-    return current;
+  if (shouldResumeWorkspaceEntry()) {
+    return resumeWorkspaceEntry(path, intent);
   }
   return resetWorkspaceForEntry(path, intent);
 }
@@ -394,8 +407,8 @@ export function continueWorkspaceFromEntry(
 export function ensureWorkspaceDraft() {
   if (!hydrated) hydrateFoxDraft();
   hydrateFoxMessages();
-  if (isClosedDraft(current)) {
-    return resetWorkspaceForEntry(null);
+  if (shouldResumeWorkspaceEntry()) {
+    return resumeWorkspaceEntry(current.path);
   }
   if (!current.workspaceFlow) {
     commit({ ...current, workspaceFlow: true });
@@ -467,11 +480,16 @@ export function setDraftPath(path: IntakePath | null) {
   return commit({ ...current, path });
 }
 
-/** Start or keep a fresh /start file. Never resume a closed or foreign draft. */
+/** /start URL seed. Resume an operating File; do not treat path=acr|loan as a fresh CTA. */
 export function applyWorkspaceEntry(
   path: IntakePath | null,
   intent: ProductIntent | null = null,
 ) {
+  if (!hydrated) hydrateFoxDraft();
+  hydrateFoxMessages();
+  if (shouldResumeWorkspaceEntry()) {
+    return resumeWorkspaceEntry(path, intent);
+  }
   const key = workspaceEntryToken(path);
   if (hydrated && workspaceEntryKey === key && current.workspaceFlow) {
     if (intent && current.productIntent !== intent) {

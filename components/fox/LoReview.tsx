@@ -11,7 +11,7 @@ import {
   reviewIsSitting,
   reviewSlaMsOf,
 } from "./motion";
-import { incomeLabel, occupancyLabel, scenarioLines, timelineLabel } from "./script";
+import { incomeLabel, occupancyLabel, timelineLabel } from "./script";
 import {
   applyPreviewMotionControls,
   getFoxDraft,
@@ -24,6 +24,7 @@ import {
   subscribeFoxDraft,
 } from "./store";
 import { FOX_DISCLOSURE, TRUST_LINE, type LoMark } from "./types";
+import { fileScenarioRows } from "./workspace";
 
 const MARKS: LoMark[] = ["needs items", "in review", "contacting client"];
 
@@ -59,7 +60,12 @@ export function LoReview() {
     Boolean(draft.contact.fullName.value) ||
     draft.documents.length > 0 ||
     draft.phase === "confirmed" ||
-    Boolean(draft.motion);
+    Boolean(draft.motion) ||
+    Boolean(draft.sampleAccepted) ||
+    Boolean(draft.productIntent) ||
+    draft.loanAmountValue != null ||
+    draft.propertyValueAmount != null;
+  const scenarioRows = fileScenarioRows(draft);
   const motion = motionOf(draft);
   const next = nextActorOf(draft);
   const review = openReviewWorkItem(draft);
@@ -208,15 +214,9 @@ export function LoReview() {
 
             <section className="intake-card">
               <h2 className="type-card-title">Scenario</h2>
-              {draft.scenario ? (
+              {scenarioRows.length ? (
                 <dl className="scenario-echo">
-                  {draft.path ? (
-                    <FragmentRow
-                      label="Path"
-                      value={draft.path === "acr" ? "ACR" : "Loan only"}
-                    />
-                  ) : null}
-                  {scenarioLines(draft.scenario).map(([label, value]) => (
+                  {scenarioRows.map(([label, value]) => (
                     <FragmentRow key={label} label={label} value={value} />
                   ))}
                 </dl>

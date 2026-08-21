@@ -1472,6 +1472,55 @@ export function statusCopy(draft: FoxIntakeDraft) {
   return motionStatusCopy(draft);
 }
 
+/** Same File facts /lo/review must show even when no explorer scenario bag exists. */
+export function fileScenarioRows(draft: FoxIntakeDraft): [string, string][] {
+  const rows: [string, string][] = [];
+  if (draft.path) {
+    rows.push(["Path", draft.path === "acr" ? "ACR" : "Loan only"]);
+  }
+  const product =
+    productIntentLabel(draft.productIntent) || draft.scenario?.productName || "";
+  if (product) rows.push(["Product", product]);
+
+  const named = structureAmountLabel(draft);
+  const value = draft.propertyValueAmount;
+  const loan = draft.loanAmountValue;
+  if (named && draftUsesPurchasePrice(draft) && value != null) {
+    rows.push([named, formatMoney(value)]);
+    if (loan != null && loan !== value) rows.push(["Loan amount", formatMoney(loan)]);
+  } else if (named && loan != null) {
+    rows.push([named, formatMoney(loan)]);
+    if (value != null && value !== loan) rows.push(["Property value", formatMoney(value)]);
+  } else if (value != null) {
+    rows.push(["Purchase price", formatMoney(value)]);
+  } else if (loan != null) {
+    rows.push(["Loan amount", formatMoney(loan)]);
+  }
+
+  const occupancy = occupancySpokenLabel(draft.occupancyChoice.value);
+  if (occupancy) rows.push(["Occupancy", occupancy]);
+  const timeline = TIMELINE_BUBBLES.find((item) => item.value === draft.timelineChoice.value)?.label;
+  if (timeline) rows.push(["Timeline", timeline]);
+
+  if (draft.scenario) {
+    const extras: [string, string][] = [];
+    if (draft.scenario.zip) extras.push(["ZIP", draft.scenario.zip]);
+    if (draft.scenario.productName && draft.scenario.productName !== product) {
+      extras.push(["Product", draft.scenario.productName]);
+    }
+    if (draft.scenario.propertyValue && value == null) {
+      extras.push(["Property value", formatMoney(draft.scenario.propertyValue)]);
+    }
+    if (draft.scenario.loanAmount != null && loan == null) {
+      extras.push(["Loan amount", formatMoney(draft.scenario.loanAmount)]);
+    }
+    for (const row of extras) {
+      if (!rows.some((item) => item[0] === row[0])) rows.push(row);
+    }
+  }
+  return rows;
+}
+
 export function previewFacts(draft: FoxIntakeDraft): PreviewFact[] {
   const facts: PreviewFact[] = [];
   if (draft.path === "acr") {

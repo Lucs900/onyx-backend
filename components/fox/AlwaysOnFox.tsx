@@ -47,8 +47,8 @@ import {
   setDraftPath,
   setDraftScenario,
   setFoxMessages,
+  shouldResumeWorkspaceEntry,
   subscribeFoxDraft,
-  workspaceSessionStarted,
 } from "./store";
 import {
   caretAfterMoneyFormat,
@@ -110,15 +110,22 @@ function seedWorkspaceMessages(
   hydrateFoxDraft();
   const stored = getFoxMessages();
   const live = getFoxDraft();
-  if (workspaceSessionStarted(live, stored) && stored.length) {
-    const last = stored[stored.length - 1];
-    if (last?.role === "client") {
-      const ask = foxAskMessage(workspacePromptCopy(workspacePrompt(live), live));
-      const next = [...stored, ask];
-      setFoxMessages(next);
-      return next;
+  if (shouldResumeWorkspaceEntry(live, stored)) {
+    if (stored.length) {
+      const last = stored[stored.length - 1];
+      if (last?.role === "client") {
+        const ask = foxAskMessage(workspacePromptCopy(workspacePrompt(live), live));
+        const next = [...stored, ask];
+        setFoxMessages(next);
+        return next;
+      }
+      return stored;
     }
-    return stored;
+    if (fileExists(live)) {
+      const ask = [foxAskMessage(workspacePromptCopy(workspacePrompt(live), live))];
+      setFoxMessages(ask);
+      return ask;
+    }
   }
   const draft = continueWorkspaceFromEntry(path ?? null, intent ?? null);
   const greet = [foxAskMessage(workspaceGreeting(draft))];
@@ -458,7 +465,7 @@ export function AlwaysOnFox({
   );
   const pendingAsk = useRef<string | null>(null);
   const skipPromptSync = useRef(workspaceSurface);
-  const previewControls = useRef(false);
+  const previewControlKey = useRef("");
   const listRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const caretRef = useRef<number | null>(null);
@@ -471,6 +478,11 @@ export function AlwaysOnFox({
     next: FoxMessage[] | ((prev: FoxMessage[]) => FoxMessage[]),
   ) => {
     const resolved = typeof next === "function" ? next(prev) : next;
+    const live = getFoxDraft();
+    const stored = getFoxMessages();
+    if (fileExists(live) && stored.length > resolved.length) {
+      return stored;
+    }
     setFoxMessages(resolved);
     return resolved;
   };
@@ -488,6 +500,15 @@ export function AlwaysOnFox({
     setMessages(resolved);
     return resolved;
   };
+
+  useLayoutEffect(() => {
+    if (!isStart) return;
+    hydrateFoxDraft();
+    const stored = getFoxMessages();
+    const live = getFoxDraft();
+    if (!shouldResumeWorkspaceEntry(live, stored) || !stored.length) return;
+    setMessages(stored);
+  }, [isStart, draft.motion, draft.updatedAt]);
 
   useLayoutEffect(() => {
     const syncStage = () => {
@@ -718,7 +739,10 @@ export function AlwaysOnFox({
     }
     commitMessages((prev) => {
       if (mustShowReview && hasReviewAsk(prev)) return prev;
-      if (isStart && prompt === "done" && hasPreparedAsk(prev)) return prev;
+      if (isStart && prompt === "done") {
+        if (hasPreparedAsk(prev)) return prev;
+        if (fileExists(getFoxDraft()) && prev[prev.length - 1]?.role === "fox") return prev;
+      }
       const last = prev[prev.length - 1];
       if (last?.role === "fox" && sameFoxAsk(last, ask)) return prev;
       return [...prev, foxAskMessage(ask)];
@@ -748,9 +772,10 @@ export function AlwaysOnFox({
 
   useEffect(() => {
     if (!ready || !isStart) return;
-    if (!previewControls.current) {
-      previewControls.current = true;
-      const params = new URLSearchParams(window.location.search);
+    const params = new URLSearchParams(search || window.location.search);
+    const key = `${params.get("nudge") ?? ""}|${params.get("sla") ?? ""}`;
+    if (previewControlKey.current !== key) {
+      previewControlKey.current = key;
       applyPreviewMotionControls({
         nudge: params.get("nudge"),
         sla: params.get("sla"),
@@ -762,7 +787,7 @@ export function AlwaysOnFox({
     tick();
     const id = window.setInterval(tick, 4000);
     return () => window.clearInterval(id);
-  }, [draft.motion, draft.reviewSlaMs, draft.updatedAt, isStart, ready]);
+  }, [draft.motion, draft.reviewSlaMs, draft.updatedAt, isStart, ready, search]);
 
   useEffect(() => {
     listRef.current?.scrollTo({ top: listRef.current.scrollHeight });

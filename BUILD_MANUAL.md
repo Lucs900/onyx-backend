@@ -253,7 +253,11 @@ Preview walk (do not wait 4 hours):
 
 ### Return to Fox
 
-`/lo/review` writes a result note + optional **needs a doc** onto the same File (event + WorkItem `returned`). Borrower thread gets one line. Structure restripes (`needs_you` when a doc is needed). Next = You.
+`/lo/review` writes a result note + optional **needs a doc** onto the same File (event + WorkItem `returned`). The typed note is the borrower thread line. Do not fall back to a canned missing-class ask (`I need government ID from you`) unless that is what they wrote. If **needs a doc**, restripe `needs_you` with that note. Next = You.
+
+`/start` **resumes** that same File after Looks right / Proceed / hold / gathering / ready / `in_queue` / `needs_you` / escalated. `path=acr` or `path=loan` on the URL is not a fresh start while the File is in motion. `?nudge=now` on `/start` must not wipe the draft. Fresh start stays the homepage CTA only (`HeroStartLink` / `beginWorkspaceFromHero` / `resetWorkspaceForEntry` from homepage). `seedWorkspaceMessages` must not re-seed an empty spine over a restored in-motion thread.
+
+`/lo/review` reads the same File facts (`productIntent`, named amount, occupancy). Do not hide Buy / `$850,000` behind “No scenario attached” when those values live on the draft.
 
 ### Walk
 

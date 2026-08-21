@@ -7,6 +7,7 @@ import {
   applyCapture,
   applyExtractWrite,
   beginWorkspaceFromHero,
+  applyPreviewMotionControls,
   continueWorkspaceFromEntry,
   emptyDraft,
   getFoxDraft,
@@ -16,6 +17,7 @@ import {
   resetWorkspaceForEntry,
   returnToFox,
   setFoxMessages,
+  shouldResumeWorkspaceEntry,
   sitExpireReview,
   workspaceSessionStarted,
 } from "../components/fox/store";
@@ -46,6 +48,7 @@ import {
 import {
   amountAskText,
   docsRequestForIncome,
+  fileScenarioRows,
   fileSummaryFacts,
   migrateRestoredFoxMessages,
   parseWorkspaceEdit,
@@ -1089,14 +1092,65 @@ assert.equal(motionOf(getFoxDraft()), "in_queue");
 assert.ok(getFoxMessages().some((message) => message.text === MOTION_COPY.nudge));
 
 const returned = returnToFox({ note: "Need the latest W-2.", needsDoc: true });
-assert.match(returned.threadLine, /i need/i);
+assert.equal(returned.threadLine, "Need the latest W-2.");
+assert.doesNotMatch(returned.threadLine, /government id/i);
 assert.equal(motionOf(getFoxDraft()), "needs_you");
 assert.equal(nextActorOf(getFoxDraft()), "You");
 assert.equal(statusCopy(getFoxDraft()), "needs_you");
-assert.ok((getFoxDraft().events ?? []).some((event) => event.kind === "return-to-fox"));
+assert.ok((getFoxDraft().events ?? []).some((event) => event.kind === "return-to-fox" && event.text === "Need the latest W-2."));
 assert.ok(previewFacts(getFoxDraft()).some((fact) => fact.id === "status" && fact.value === "needs_you"));
 assert.ok(previewFacts(getFoxDraft()).some((fact) => fact.id === "next" && fact.value === "You"));
-assert.ok(getFoxMessages().some((message) => /i need/i.test(message.text)));
+assert.ok(getFoxMessages().some((message) => message.text === "Need the latest W-2."));
+
+const queuedDocs = queued.documents;
+const queuedEmail = queued.contact.email.value;
+assert.equal(shouldResumeWorkspaceEntry(), true);
+const resumedQueue = continueWorkspaceFromEntry("acr");
+assert.equal(motionOf(resumedQueue), "needs_you");
+assert.equal(resumedQueue.productIntent, "buy");
+assert.equal(resumedQueue.propertyValueAmount, 1_200_000);
+assert.equal(resumedQueue.contact.email.value, queuedEmail);
+assert.equal(resumedQueue.documents.length, queuedDocs.length);
+assert.ok(resumedQueue.sampleAccepted);
+assert.ok(previewFacts(resumedQueue).some((fact) => fact.id === "originator"));
+assert.ok(getFoxMessages().some((message) => message.text === "Need the latest W-2."));
+
+resetWorkspaceForEntry("acr", "buy");
+applyCapture({ field: "occupancy", value: "primary" });
+applyCapture({ field: "timeline", value: "ready-now" });
+applyCapture({ field: "propertyValue", value: "850000" });
+applyCapture({ field: "creditRange", value: "760+" });
+applyCapture({ field: "incomeType", value: "w2" });
+applyCapture({ field: "confirm-draft" });
+applyCapture({ field: "email", value: "walk@onyx.test" });
+applyCapture({ field: "proceed" });
+const walkQueued = getFoxDraft();
+assert.equal(motionOf(walkQueued), "in_queue");
+assert.equal(walkQueued.scenario, null);
+const walkRows = fileScenarioRows(walkQueued);
+assert.ok(walkRows.some(([label, value]) => label === "Product" && value === "Buy"));
+assert.ok(walkRows.some(([label, value]) => label === "Purchase price" && value === "$850,000"));
+assert.equal(shouldResumeWorkspaceEntry(walkQueued), true);
+const stillQueued = continueWorkspaceFromEntry("acr");
+assert.equal(motionOf(stillQueued), "in_queue");
+assert.equal(stillQueued.propertyValueAmount, 850000);
+assert.equal(stillQueued.contact.email.value, "walk@onyx.test");
+assert.ok(stillQueued.workItems?.some((item) => item.kind === "review"));
+applyPreviewMotionControls({ nudge: "now" });
+assert.equal(motionOf(getFoxDraft()), "in_queue");
+assert.equal(getFoxDraft().propertyValueAmount, 850000);
+assert.ok(getFoxMessages().some((message) => message.text === MOTION_COPY.nudge));
+const paystubReturn = returnToFox({ note: "Need a clearer paystub.", needsDoc: true });
+assert.equal(paystubReturn.threadLine, "Need a clearer paystub.");
+assert.doesNotMatch(paystubReturn.threadLine, /government id/i);
+assert.equal(motionOf(getFoxDraft()), "needs_you");
+const afterReturnNav = continueWorkspaceFromEntry("acr");
+assert.equal(motionOf(afterReturnNav), "needs_you");
+assert.equal(afterReturnNav.propertyValueAmount, 850000);
+assert.equal(afterReturnNav.productIntent, "buy");
+assert.ok(afterReturnNav.sampleAccepted);
+assert.ok(getFoxMessages().some((message) => message.text === "Need a clearer paystub."));
+assert.ok(getFoxMessages().every((message) => !/i need government id from you/i.test(message.text)));
 
 resetWorkspaceForEntry("acr", "buy");
 applyCapture({ field: "occupancy", value: "primary" });
@@ -1147,6 +1201,8 @@ assert.ok(readFileSync(join(root, "components/MembershipHero.tsx"), "utf8").incl
 
 const startWorkspace = readFileSync(join(root, "components/fox/StartWorkspace.tsx"), "utf8");
 assert.ok(!startWorkspace.includes("useDocumentReads"));
+assert.ok(startWorkspace.includes("shouldResumeWorkspaceEntry"));
+assert.ok(startWorkspace.includes("continueWorkspaceFromEntry"));
 const dropSource = readFileSync(join(root, "components/fox/DocumentDrop.tsx"), "utf8");
 assert.ok(dropSource.includes("/api/docs/upload"));
 assert.ok(dropSource.includes("/api/docs/extract"));
@@ -1158,6 +1214,13 @@ const alwaysOn = readFileSync(join(root, "components/fox/AlwaysOnFox.tsx"), "utf
 assert.ok(alwaysOn.includes("file is prepared") || alwaysOn.includes("still useful") || alwaysOn.includes("this file can move"));
 assert.ok(alwaysOn.includes('prompt === "done"'));
 assert.ok(alwaysOn.includes("FOX_THREAD_LINE_EVENT"));
+assert.ok(alwaysOn.includes("shouldResumeWorkspaceEntry"));
+assert.ok(alwaysOn.includes("fileExists(live)"));
+const storeSource = readFileSync(join(root, "components/fox/store.ts"), "utf8");
+assert.ok(storeSource.includes("function shouldResumeWorkspaceEntry") || storeSource.includes("export function shouldResumeWorkspaceEntry"));
+assert.ok(storeSource.includes("fileExists(draft)"));
+const loReviewSource = readFileSync(join(root, "components/fox/LoReview.tsx"), "utf8");
+assert.ok(loReviewSource.includes("fileScenarioRows"));
 const filePreview = readFileSync(join(root, "components/fox/FilePreview.tsx"), "utf8");
 assert.ok(filePreview.includes("!draft.workspaceFlow"));
 assert.ok(!filePreview.includes("docsOpen"));
