@@ -88,6 +88,7 @@ import {
   composerAmountHint,
   composerPlaceholder,
   docsRequestForIncome,
+  editLineFromCapture,
   editPromptFromCapture,
   formatLiveMoneyInput,
   FHFA_HIGH_COST_CEILING_2026,
@@ -412,6 +413,8 @@ assert.ok((fundsReply?.actions ?? []).some((item) => item.label === "Use this"))
 assert.equal(composerAmountHint(afterPrice), "down payment, percent, or loan amount");
 assert.doesNotMatch(composerAmountHint(afterPrice), /purchase price/i);
 assert.equal(editPromptFromCapture({ field: "propose-funds", value: "170000:680000" }), "amount");
+assert.equal(editLineFromCapture({ field: "propose-funds", value: "170000:680000" }), "down");
+assert.equal(editLineFromCapture({ field: "downPayment", value: "170000" }), "down");
 assert.equal(formatLiveMoneyInput("$20"), "$20");
 assert.equal(formatLiveMoneyInput("20%"), "20%");
 assert.equal(formatLiveMoneyInput("170000"), "170,000");
@@ -477,24 +480,16 @@ applyCapture({ field: "correct", value: "amount" });
 assert.equal(getFoxDraft().correcting, "amount");
 assert.doesNotMatch(composerAmountHint(getFoxDraft()), /purchase price/i);
 assert.doesNotMatch(amountAskText(getFoxDraft()), /purchase price/i);
-assert.match(amountAskText(getFoxDraft()), /down payment or loan amount/i);
-assert.equal(getFoxDraft().productIntent, beforePercent.productIntent);
-assert.equal(getFoxDraft().occupancyChoice.value, beforePercent.occupancy);
-const editFrom20Bubble = workspaceReply("25%", getFoxDraft());
-assert.equal(editFrom20Bubble?.capture?.field, "propose-funds");
-assert.match(editFrom20Bubble?.text ?? "", /\$212,500 down · \$637,500 loan/i);
-if (editFrom20Bubble?.capture) applyCapture(editFrom20Bubble.capture);
-applyCapture({ field: "decline-proposal" });
+assert.match(amountAskText(getFoxDraft()), /still right/i);
+assert.doesNotMatch(amountAskText(getFoxDraft()), /down payment or loan amount/i);
+const downEditAsk = workspacePromptCopy("amount", getFoxDraft());
+assert.ok((downEditAsk.actions ?? []).some((item) => item.label === "Keep this"));
+assert.ok(!(downEditAsk.actions ?? []).some((item) => item.label === "Use this"));
+assert.equal(workspaceReply("Keep this", getFoxDraft())?.capture?.field, "keep-line");
+applyCapture({ field: "keep-line" });
 assert.equal(getFoxDraft().downPaymentAmount, 170000);
 assert.equal(getFoxDraft().loanAmountValue, 680000);
-applyCapture({ field: "correct", value: "amount" });
-const retype20 = workspaceReply("20", getFoxDraft());
-assert.equal(retype20?.capture?.field, "propose-funds");
-assert.match(retype20?.text ?? "", /\$170,000 down · \$680,000 loan/i);
-if (retype20?.capture) applyCapture(retype20.capture);
-applyCapture({ field: "accept-proposal" });
-assert.equal(getFoxDraft().downPaymentAmount, 170000);
-assert.equal(getFoxDraft().loanAmountValue, 680000);
+assert.equal(getFoxDraft().correcting, null);
 assert.equal(getFoxDraft().productIntent, beforePercent.productIntent);
 assert.equal(getFoxDraft().occupancyChoice.value, beforePercent.occupancy);
 assert.equal(getFoxDraft().timelineChoice.value, beforePercent.timeline);
@@ -512,10 +507,13 @@ const fileBeforeEdit = {
 };
 applyCapture({ field: "correct", value: "amount", line: "down" });
 assert.equal(getFoxDraft().correctingLine, "down");
+assert.match(amountAskText(getFoxDraft()), /still right/i);
+assert.doesNotMatch(amountAskText(getFoxDraft()), /down payment or loan amount/i);
 assert.match(composerAmountHint(getFoxDraft()), /down payment/i);
 assert.doesNotMatch(composerAmountHint(getFoxDraft()), /purchase price/i);
 const edit25 = workspaceReply("25%", getFoxDraft());
-assert.equal(edit25?.capture?.field, "propose-funds");
+assert.equal(edit25?.capture?.field, "downPayment");
+assert.doesNotMatch(edit25?.text ?? "", /use this/i);
 if (edit25?.capture) applyCapture(edit25.capture);
 assert.equal(getFoxDraft().productIntent, fileBeforeEdit.product);
 assert.equal(getFoxDraft().occupancyChoice.value, fileBeforeEdit.occupancy);
@@ -523,7 +521,6 @@ assert.equal(getFoxDraft().timelineChoice.value, fileBeforeEdit.timeline);
 assert.equal(getFoxDraft().creditBand, fileBeforeEdit.credit);
 assert.equal(getFoxDraft().incomeType.value, fileBeforeEdit.income);
 assert.equal(getFoxDraft().motion, fileBeforeEdit.motion);
-applyCapture({ field: "accept-proposal" });
 assert.equal(getFoxDraft().downPaymentAmount, 212500);
 assert.equal(getFoxDraft().loanAmountValue, 637500);
 applyCapture({ field: "correct", value: "amount", line: "down" });
@@ -533,6 +530,7 @@ if (edit200k?.capture) applyCapture(edit200k.capture);
 assert.equal(getFoxDraft().downPaymentAmount, 200000);
 assert.equal(getFoxDraft().occupancyChoice.value, fileBeforeEdit.occupancy);
 assert.equal(getFoxDraft().incomeType.value, fileBeforeEdit.income);
+applyCapture({ field: "correct", value: "amount", line: "down" });
 const replayPrice = workspaceReply("850000", getFoxDraft());
 assert.notEqual(replayPrice?.capture?.field, "downPayment");
 assert.notEqual(replayPrice?.capture?.field, "propose-funds");
@@ -3136,6 +3134,8 @@ const foxSource = readFileSync(join(root, "components/fox/AlwaysOnFox.tsx"), "ut
 assert.ok(foxSource.includes("composerPlaceholder"));
 assert.ok(foxSource.includes("lastFoxTurn"));
 assert.ok(foxSource.includes("requestFoxPickFile"));
+assert.ok(foxSource.includes("editLine"));
+assert.ok(foxSource.includes("keep-line") || workspaceSrc.includes("keep-line"));
 assert.ok(foxSource.includes("scrollIntoView"));
 assert.ok(foxSource.includes("fox-workspace-dock"));
 assert.ok(foxSource.includes("scrollMarginBottom"));
@@ -3157,6 +3157,9 @@ assert.ok(workspaceSrc.includes("Here’s the file. Does this look right?"));
 assert.ok(workspaceSrc.includes("nextDocInvite"));
 assert.ok(workspaceSrc.includes('label: "Upload this"'));
 assert.ok(!workspaceSrc.includes("Government ID. Most recent tax return. Prior-year return if available."));
+assert.ok(workspaceSrc.includes("editingConfirmedDown") || workspaceSrc.includes("Still right?"));
+assert.ok(workspaceSrc.includes('label: "Keep this"'));
+assert.ok(workspaceSrc.includes("keep-line"));
 
 const acrHero = readFileSync(join(root, "components/acr/AcrHero.tsx"), "utf8");
 assert.ok(!/next right move/.test(acrHero));

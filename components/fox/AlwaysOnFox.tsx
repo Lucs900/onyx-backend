@@ -60,6 +60,7 @@ import {
   composerPlaceholder,
   confirmedMoneyText,
   formatLiveMoneyInput,
+  editLineFromCapture,
   editPromptFromCapture,
   inertSupersededIncomeConfirms,
   lastFoxTurn,
@@ -176,6 +177,7 @@ function persistHomeComposerTurn(text: string) {
       role: "client",
       text: clientMoneyText(text, reply.capture),
       edit: editPromptFromCapture(reply.capture),
+      editLine: editLineFromCapture(reply.capture),
     },
   ]);
   const after = getFoxDraft();
@@ -387,7 +389,11 @@ function FoxThread({
                     id: `edit-${message.id}`,
                     label: "Edit",
                     event: "bubble",
-                    capture: { field: "correct", value: message.edit as string },
+                    capture: {
+                      field: "correct",
+                      value: message.edit as string,
+                      line: message.editLine,
+                    },
                   })
                 }
               >
@@ -648,6 +654,7 @@ export function AlwaysOnFox({
                 ? workspacePrompt(live)
                 : undefined)
             : undefined,
+          editLine: workspaceSurface ? editLineFromCapture(reply.capture) : undefined,
         },
         foxAskMessage(reply),
       ]);
@@ -959,11 +966,12 @@ export function AlwaysOnFox({
       actions?: FoxAction[];
     },
     edit?: FoxMessage["edit"],
+    editLine?: string,
   ) => {
     commitMessagesNow((prev) => {
       const next: FoxMessage[] = [
         ...prev,
-        { id: newId(), role: "client", text: clientText, edit },
+        { id: newId(), role: "client", text: clientText, edit, editLine },
       ];
       if (!fox.text.trim() && !(fox.followUp ?? "").trim()) return next;
       return [...next, foxAskMessage(fox)];
@@ -980,6 +988,7 @@ export function AlwaysOnFox({
         role: "client",
         text: clientText,
         edit: editPromptFromCapture(capture),
+        editLine: editLineFromCapture(capture),
       },
       { id: newId(), role: "system", text: workspaceUpdateCopy(capture, live) },
       foxAskMessage(next),
@@ -1105,6 +1114,7 @@ export function AlwaysOnFox({
         action.label,
         next,
         action.capture.field === "correct" ? undefined : editPromptFromCapture(action.capture),
+        action.capture.field === "correct" ? undefined : editLineFromCapture(action.capture),
       );
       continueHomeToDesk();
     }
@@ -1173,6 +1183,7 @@ export function AlwaysOnFox({
         ? editPromptFromCapture(reply.capture) ??
           (startAsk === "amount" || startAsk === "value" ? startAsk : undefined)
         : undefined,
+      workspaceSurface ? editLineFromCapture(reply.capture) : undefined,
     );
     continueHomeToDesk();
   };

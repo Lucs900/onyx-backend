@@ -312,6 +312,7 @@ export type Capture =
   | { field: "confirm-draft" }
   | { field: "needs-correction" }
   | { field: "keep-path" }
+  | { field: "keep-line" }
   | { field: "what-acr" }
   | { field: "what-happens-next" }
   | { field: "ask-fox" }
@@ -346,6 +347,7 @@ export type FoxMessage = {
   facts?: FoxMessageFact[];
   actions?: FoxAction[];
   edit?: FoxPrompt;
+  editLine?: string;
 };
 
 export const DOC_SLOTS: { id: DocSlot; label: string }[] = [

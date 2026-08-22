@@ -556,6 +556,9 @@ export function withComputedCompanion(
     const loan = impliedLoanAmount(price, draft.downPaymentAmount);
     if (loan == null) return draft;
     if (draft.loanAmountValue === loan) return draft;
+    if (force === "down" && hasLoanAmount(draft)) {
+      return { ...draft, loanAmountValue: loan, amountAsked: true };
+    }
     return {
       ...draft,
       pendingProposal: makeProposal("loanAmount", String(loan), "computed", "loan amount"),

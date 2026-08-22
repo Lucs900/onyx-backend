@@ -1112,6 +1112,9 @@ export function applyCapture(capture: Capture) {
   if (capture.field === "keep-path") {
     return commit({ ...current, correcting: null });
   }
+  if (capture.field === "keep-line") {
+    return commit({ ...current, correcting: null, correctingLine: null });
+  }
   if (capture.field === "what-acr" || capture.field === "what-happens-next" || capture.field === "ask-fox") {
     return current;
   }

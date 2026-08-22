@@ -272,10 +272,18 @@ export function structureAmountLabel(draft?: FoxIntakeDraft | null) {
   return draftUsesPurchasePrice(draft) ? "Purchase price" : "Loan amount";
 }
 
+function editingConfirmedDown(draft?: FoxIntakeDraft | null) {
+  if (!draft || !isPurchaseLike(draft) || !hasDownPayment(draft)) return false;
+  if (draft.correctingLine === "down") return true;
+  return draft.correcting === "amount" && !draft.correctingLine;
+}
+
 export function composerAmountHint(draft?: FoxIntakeDraft | null) {
   if (!draft) return "the number";
   if (draft.correctingLine === "loan") return "loan amount";
-  if (draft.correctingLine === "down") return "down payment or percent";
+  if (editingConfirmedDown(draft) || draft.correctingLine === "down") {
+    return "down payment or percent";
+  }
   if (fundsAskNeeded(draft)) return "down payment, percent, or loan amount";
   if (draft.correcting === "amount" && isPurchaseLike(draft) && hasPropertyValue(draft)) {
     return "down payment, percent, or loan amount";
@@ -304,6 +312,10 @@ export function composerPlaceholder(
 }
 
 export function amountAskText(draft: FoxIntakeDraft) {
+  if (editingConfirmedDown(draft)) {
+    const n = draft.downPaymentAmount;
+    return `Down payment in the file is ${formatMoney(n ?? 0)}. Still right?`;
+  }
   if (draft.correctingLine === "down") {
     const n = draft.downPaymentAmount;
     return n != null && n > 0
@@ -959,6 +971,14 @@ function workspaceAskCopy(
     };
   }
   if (prompt === "amount") {
+    if (editingConfirmedDown(draft)) {
+      return {
+        text: amountAskText(draft),
+        actions: [
+          { id: "keep-line", label: "Keep this", event: "bubble", capture: { field: "keep-line" } },
+        ],
+      };
+    }
     const askingPurpose =
       draft.productIntent === "other" && !draft.amountPurposeLabel;
     const requiredAmount =
@@ -1280,6 +1300,25 @@ function replyToFundsAsk(
     price != null &&
     price > 0 &&
     (parsed.asPercent || (parsed.explicitDollars && parsed.dollars < 1000));
+  if (pairConfirm && editingConfirmedDown(draft)) {
+    const loan = impliedLoanAmount(price, parsed.dollars);
+    if (loan == null) {
+      return {
+        text: "What’s the down payment? A number under the purchase price works.",
+      };
+    }
+    const nextDraft = withComputedCompanion(
+      { ...cleared, downPaymentAmount: parsed.dollars, downAsked: true },
+      "down",
+    );
+    return withWorkspaceGuide(
+      {
+        ...workspacePromptCopy(workspacePrompt(nextDraft), nextDraft),
+        capture: { field: "downPayment", value: String(parsed.dollars) },
+      },
+      nextDraft,
+    );
+  }
   if (pairConfirm) {
     const pair =
       role === "loan"
@@ -1431,6 +1470,19 @@ function timelineFromText(text: string) {
   );
 }
 
+export function editLineFromCapture(capture?: Capture): string | undefined {
+  if (!capture) return undefined;
+  if (
+    capture.field === "downPayment" ||
+    capture.field === "propose-funds" ||
+    capture.field === "skip-down"
+  ) {
+    return "down";
+  }
+  if (capture.field === "loanAmount" || capture.field === "skip-amount") return "loan";
+  return undefined;
+}
+
 export function editPromptFromCapture(capture?: Capture): FoxPrompt | undefined {
   if (!capture) return undefined;
   if (capture.field === "path") return "path-switch";
@@ -1492,6 +1544,9 @@ export function workspaceUpdateCopy(capture: Capture, draft: FoxIntakeDraft) {
   }
   if (capture.field === "keep-path") {
     return "Kept this path.";
+  }
+  if (capture.field === "keep-line") {
+    return "Kept the down payment.";
   }
   if (capture.field === "what-acr") {
     return "ACR is the desk that stays open after close — letter, scout, and reward. This file is still the loan.";
@@ -1740,6 +1795,7 @@ export function parseWorkspaceEdit(
 function draftAfterCapture(draft: FoxIntakeDraft, capture: Capture): FoxIntakeDraft {
   const next = { ...draft, correcting: null, correctingLine: null };
   if (capture.field === "path") return { ...next, path: capture.value };
+  if (capture.field === "keep-line") return next;
   if (capture.field === "productIntent") return applyProductChange(next, capture.value);
   if (capture.field === "starter") {
     const price = capture.price ? Number(capture.price) : null;
@@ -2285,6 +2341,16 @@ export function workspaceReply(
   }
 
   if (prompt === "amount") {
+    if (
+      editingConfirmedDown(draft) &&
+      /^(keep( this)?|still right|yes|ok|okay|never mind|back)$/i.test(lower)
+    ) {
+      const nextDraft = { ...draft, correcting: null, correctingLine: null };
+      return {
+        ...workspacePromptCopy(workspacePrompt(nextDraft), nextDraft),
+        capture: { field: "keep-line" },
+      };
+    }
     const editingFunds = draft.correctingLine === "down" || draft.correctingLine === "loan";
     const purchaseFunds =
       isPurchaseLike(draft) &&
