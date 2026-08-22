@@ -1205,13 +1205,13 @@ assert.match(selfLooks?.text ?? "", /skip is fine/i);
 assert.ok((selfLooks?.actions ?? []).some((item) => item.label === "Upload docs"));
 assert.ok((selfLooks?.actions ?? []).some((item) => item.label === "Proceed"));
 assert.ok((selfLooks?.actions ?? []).some((item) => item.label === "Not yet"));
-const seAfterLooks = applyLooksRightMotion(withIncome(afterCredit, "self-employed"));
-const uploadDocsReply = workspaceReply("Upload docs", seAfterLooks);
+const seCoachLooks = applyLooksRightMotion(withIncome(afterCredit, "self-employed"));
+const uploadDocsReply = workspaceReply("Upload docs", seCoachLooks);
 assert.equal(uploadDocsReply?.capture?.field, "upload-more");
 assert.equal((uploadDocsReply?.text ?? "").trim(), "");
 assert.doesNotMatch(uploadDocsReply?.text ?? "", /government ID|most recent tax return|prior-year return|upload docs/i);
 assert.doesNotMatch(
-  workspaceUpdateCopy({ field: "upload-more" }, seAfterLooks),
+  workspaceUpdateCopy({ field: "upload-more" }, seCoachLooks),
   /government ID|most recent tax return|prior-year return/i,
 );
 const seIncomeReply = workspaceReply("Self-employed", afterCredit);
