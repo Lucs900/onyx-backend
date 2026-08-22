@@ -273,6 +273,8 @@ export type FoxPrompt =
   | "offer-heloc"
   | "geo-stop"
   | "confirm-proposal"
+  | "qualifying"
+  | "years-in-business"
   | "done";
 
 export type Capture =
@@ -309,6 +311,7 @@ export type Capture =
   | { field: "decline-proposal" }
   | { field: "yearsInBusiness"; value: string }
   | { field: "skip-years-in-business" }
+  | { field: "qualifyingIncome"; value: string }
   | { field: "propose-funds"; value: string }
   | { field: "skip-docs" }
   | { field: "start-docs" }

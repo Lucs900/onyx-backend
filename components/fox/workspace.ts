@@ -84,11 +84,13 @@ import {
   requiredLineValue,
   requiredStructureLines,
   QUALIFYING_INCOME_FIELD,
+  lockedDownShare,
   resolveProposal,
   shouldAskYearsInBusiness,
   skipYearsInBusiness,
   sketchAmountsReady,
   withComputedCompanion,
+  writeQualifyingIncome,
   writeYearsInBusiness,
   YEARS_IN_BUSINESS_ASK,
 } from "./completeness";
@@ -296,6 +298,9 @@ function editingConfirmedDown(draft?: FoxIntakeDraft | null) {
 
 export function composerAmountHint(draft?: FoxIntakeDraft | null) {
   if (!draft) return "the number";
+  if (draft.correctingLine === "price" || draft.correctingLine === "home") {
+    return draft.correctingLine === "home" ? "property value" : "purchase price";
+  }
   if (draft.correctingLine === "loan") return "loan amount";
   if (editingConfirmedDown(draft) || draft.correctingLine === "down") {
     return "down payment or percent";
@@ -327,7 +332,56 @@ export function composerPlaceholder(
   return "Ask ONYX Fox";
 }
 
+function keepThisActions(): FoxAction[] {
+  return [
+    { id: "keep-line", label: "Keep this", event: "bubble", capture: { field: "keep-line" } },
+  ];
+}
+
+function keepThisReply(draft: FoxIntakeDraft) {
+  const nextDraft = { ...draft, correcting: null, correctingLine: null };
+  return {
+    ...nextFoxAsk(nextDraft),
+    capture: { field: "keep-line" as const },
+  };
+}
+
+function isKeepThisText(text: string) {
+  return /^(keep( this)?|still right|yes|ok|okay|never mind|back)$/i.test(text.trim());
+}
+
+function proposePriceLockedPair(draft: FoxIntakeDraft, price: number): FoxIntakeDraft | null {
+  const share = lockedDownShare(draft);
+  if (share == null || price <= 0) return null;
+  const down = Math.round(price * share);
+  const loan = impliedLoanAmount(price, down);
+  if (loan == null) return null;
+  return proposeFundsPair(
+    {
+      ...draft,
+      propertyValueAmount: price,
+      valueAsked: true,
+      correcting: null,
+      correctingLine: null,
+    },
+    down,
+    loan,
+  );
+}
+
 export function amountAskText(draft: FoxIntakeDraft) {
+  if (
+    (draft.correctingLine === "price" || draft.correcting === "value") &&
+    hasPropertyValue(draft) &&
+    draft.correctingLine !== "home"
+  ) {
+    const n = draft.propertyValueAmount;
+    return `Purchase price in the file is ${formatMoney(n ?? 0)}. Still right?`;
+  }
+  if (draft.correctingLine === "home" && hasPropertyValue(draft)) {
+    const n = draft.propertyValueAmount;
+    return `Property value in the file is ${formatMoney(n ?? 0)}. Still right?`;
+  }
   if (editingConfirmedDown(draft)) {
     const n = draft.downPaymentAmount;
     return `Down payment in the file is ${formatMoney(n ?? 0)}. Still right?`;
@@ -776,7 +830,11 @@ export function parseYearsInBusiness(text: string, nowYear = 2026): string | nul
   const labeled = t.match(/(\d+(?:\.\d+)?)\s*(?:years?|yrs?)\b/i);
   if (labeled) return String(Number(labeled[1]));
   if (/^(a|one)\s+year\b/i.test(t)) return "1";
-  if (/^\d+(?:\.\d+)?$/.test(t)) return String(Number(t));
+  if (/^\d+(?:\.\d+)?$/.test(t)) {
+    const n = Number(t);
+    if (!Number.isFinite(n) || n > 80) return null;
+    return String(n);
+  }
   return null;
 }
 
@@ -1138,6 +1196,13 @@ function workspaceAskCopy(
     };
   }
   if (prompt === "product") {
+    const current = productIntentLabel(draft.productIntent);
+    if (current && draft.correcting === "product") {
+      return {
+        text: `Product in the file is ${current}. Still right?`,
+        actions: [...bubbles([...PRODUCT_INTENT_BUBBLES], "productIntent"), ...keepThisActions()],
+      };
+    }
     return {
       text: starterText(draft.path),
       actions: bubbles([...PRODUCT_INTENT_BUBBLES], "productIntent"),
@@ -1175,13 +1240,20 @@ function workspaceAskCopy(
       text: prior
         ? `Occupancy in the file is ${prior}. Still right?`
         : "How will the property be used?",
-      actions: bubbles([...OCCUPANCY_BUBBLES], "occupancy"),
+      actions: prior
+        ? [...bubbles([...OCCUPANCY_BUBBLES], "occupancy"), ...keepThisActions()]
+        : bubbles([...OCCUPANCY_BUBBLES], "occupancy"),
     };
   }
   if (prompt === "timeline") {
+    const prior = draft.timelineChoice.value
+      ? TIMELINE_BUBBLES.find((item) => item.value === draft.timelineChoice.value)?.label
+      : "";
     return {
-      text: "What’s the timeline?",
-      actions: bubbles([...TIMELINE_BUBBLES], "timeline"),
+      text: prior ? `Timeline in the file is ${prior}. Still right?` : "What’s the timeline?",
+      actions: prior
+        ? [...bubbles([...TIMELINE_BUBBLES], "timeline"), ...keepThisActions()]
+        : bubbles([...TIMELINE_BUBBLES], "timeline"),
     };
   }
   if (prompt === "amount") {
@@ -1213,16 +1285,27 @@ function workspaceAskCopy(
   }
   if (prompt === "value") {
     const requiredValue = purchasePriceAskNeeded(draft) || propertyValueAskNeeded(draft);
+    const editingPrice = Boolean(
+      draft.correcting === "value" && hasPropertyValue(draft),
+    );
     return {
       text: amountAskText({ ...draft, productIntent: draft.productIntent ?? "buy" }),
-      actions: requiredValue ? undefined : amountHelperActions("skip-value"),
+      actions: editingPrice
+        ? keepThisActions()
+        : requiredValue
+          ? undefined
+          : amountHelperActions("skip-value"),
     };
   }
   if (prompt === "credit") {
+    const prior =
+      CREDIT_WORKSPACE_BUBBLES.find((item) => item.value === draft.creditBand)?.label ?? "";
     return {
-      text: CREDIT_RANGE_ASK,
+      text: prior ? `Credit in the file is ${prior}. Still right?` : CREDIT_RANGE_ASK,
       followUp: CREDIT_RANGE_FOLLOW,
-      actions: bubbles([...CREDIT_WORKSPACE_BUBBLES], "creditRange"),
+      actions: prior
+        ? [...bubbles([...CREDIT_WORKSPACE_BUBBLES], "creditRange"), ...keepThisActions()]
+        : bubbles([...CREDIT_WORKSPACE_BUBBLES], "creditRange"),
     };
   }
   if (prompt === "term") {
@@ -1236,9 +1319,40 @@ function workspaceAskCopy(
     };
   }
   if (prompt === "income") {
+    const prior =
+      INCOME_BUBBLES.find((item) => item.value === draft.incomeType.value)?.label ?? "";
     return {
-      text: "How is income earned?",
-      actions: bubbles([...INCOME_BUBBLES], "incomeType"),
+      text: prior ? `Income in the file is ${prior}. Still right?` : "How is income earned?",
+      actions: prior
+        ? [...bubbles([...INCOME_BUBBLES], "incomeType"), ...keepThisActions()]
+        : bubbles([...INCOME_BUBBLES], "incomeType"),
+    };
+  }
+  if (prompt === "qualifying") {
+    const shown =
+      qualifyingIncomeDisplay(draft)?.value ||
+      (draft.facts?.qualifying_income?.value
+        ? displayFactValue(QUALIFYING_INCOME_FIELD, draft.facts.qualifying_income.value)
+        : "");
+    return {
+      text: shown
+        ? `Qualifying income in the file is ${shown} a month. Still right?`
+        : "What’s the monthly qualifying income?",
+      actions: shown ? keepThisActions() : undefined,
+    };
+  }
+  if (prompt === "years-in-business") {
+    const years = draft.facts?.years_in_business?.value;
+    const shown = years
+      ? /year/i.test(years)
+        ? years
+        : `${years} years`
+      : "";
+    return {
+      text: shown
+        ? `Years in business in the file is ${shown}. Still right?`
+        : YEARS_IN_BUSINESS_ASK,
+      actions: shown ? keepThisActions() : undefined,
     };
   }
   if (prompt === "documents") {
@@ -1767,7 +1881,10 @@ export function workspaceUpdateCopy(capture: Capture, draft: FoxIntakeDraft) {
     return "Kept this path.";
   }
   if (capture.field === "keep-line") {
-    return "Kept the down payment.";
+    if (editingConfirmedDown(draft) || draft.correctingLine === "down") {
+      return "Kept the down payment.";
+    }
+    return "Kept this.";
   }
   if (capture.field === "what-acr") {
     return "ACR is the desk that stays open after close — letter, scout, and reward. This file is still the loan.";
@@ -2110,6 +2227,7 @@ function draftAfterCapture(draft: FoxIntakeDraft, capture: Capture): FoxIntakeDr
   if (capture.field === "decline-proposal") return resolveProposal(next, "decline");
   if (capture.field === "yearsInBusiness") return writeYearsInBusiness(next, capture.value);
   if (capture.field === "skip-years-in-business") return skipYearsInBusiness(next);
+  if (capture.field === "qualifyingIncome") return writeQualifyingIncome(next, capture.value);
   if (capture.field === "skip-down") return { ...next, downAsked: true };
   if (capture.field === "creditRange") {
     return {
@@ -2283,7 +2401,7 @@ export function workspaceReply(
   const lower = q.toLowerCase();
   const prompt = workspacePrompt(draft);
 
-  if (draft.awaitingYearsInBusiness) {
+  if (draft.awaitingYearsInBusiness && draft.correcting !== "qualifying") {
     if (looksLikeQuestion(q)) {
       return { text: "How long you’ve been running it helps me read the return. Not a form — just the file." };
     }
@@ -2473,11 +2591,19 @@ export function workspaceReply(
   }
 
   if (prompt === "product") {
+    if (draft.productIntent && isKeepThisText(q)) return keepThisReply(draft);
     const intent = productIntentFromText(q);
     if (!intent) {
       return {
         text: "What are you looking to do? Buy, refinance, HELOC, Jumbo, or something else.",
         actions: bubbles([...PRODUCT_INTENT_BUBBLES], "productIntent"),
+      };
+    }
+    if (draft.correcting === "product") {
+      const nextDraft = applyProductChange({ ...draft, correcting: null, correctingLine: null }, intent);
+      return {
+        ...nextFoxAsk(nextDraft),
+        capture: { field: "productIntent", value: intent },
       };
     }
     const price = parseLooseAmount(q);
@@ -2561,13 +2687,22 @@ export function workspaceReply(
   }
 
   if (prompt === "occupancy") {
+    if (draft.occupancyChoice.value && isKeepThisText(q)) return keepThisReply(draft);
     const match = occupancyFromText(q);
     if (!match) return { text: "Tap Primary, Second home, or Investment." };
     const nextDraft = {
       ...draft,
       occupancyChoice: { ...draft.occupancyChoice, value: match.value },
       occupancyAsked: true,
+      correcting: null,
+      correctingLine: null,
     };
+    if (draft.correcting === "occupancy") {
+      return {
+        ...nextFoxAsk(nextDraft),
+        capture: { field: "occupancy", value: match.value },
+      };
+    }
     const nextAsk = workspacePrompt(nextDraft);
     return withWorkspaceGuide(
       {
@@ -2579,13 +2714,22 @@ export function workspaceReply(
   }
 
   if (prompt === "timeline") {
+    if (draft.timelineChoice.value && isKeepThisText(q)) return keepThisReply(draft);
     const match = timelineFromText(q);
     if (!match) return { text: "Tap Ready now, 30–90 days, or Just exploring." };
     const nextDraft = {
       ...draft,
       timelineChoice: { ...draft.timelineChoice, value: match.value },
       timelineAsked: true,
+      correcting: null,
+      correctingLine: null,
     };
+    if (draft.correcting === "timeline") {
+      return {
+        ...nextFoxAsk(nextDraft),
+        capture: { field: "timeline", value: match.value },
+      };
+    }
     const nextAsk = draftUsesPurchasePrice(nextDraft) ? "value" : "amount";
     return withWorkspaceGuide(
       {
@@ -2692,6 +2836,7 @@ export function workspaceReply(
 
   if (prompt === "value") {
     const requiredValue = purchasePriceAskNeeded(draft) || propertyValueAskNeeded(draft);
+    if (hasPropertyValue(draft) && isKeepThisText(q)) return keepThisReply(draft);
     if (isUnknownAmount(q)) {
       if (requiredValue) {
         return { text: `${amountAskText(draft)} A number works.` };
@@ -2709,11 +2854,20 @@ export function workspaceReply(
         actions: requiredValue ? undefined : amountHelperActions("skip-value"),
       };
     }
+    const lockedPair = proposePriceLockedPair(draft, amount);
+    if (lockedPair) {
+      return {
+        ...workspacePromptCopy("confirm-proposal", lockedPair),
+        capture: { field: "propertyValue", value: String(amount) },
+      };
+    }
     const nextDraft = withComputedCompanion(
       withMatrixAfterAmount({
         ...draft,
         propertyValueAmount: amount,
         valueAsked: true,
+        correcting: null,
+        correctingLine: null,
       }),
     );
     const next = workspacePromptCopy(workspacePrompt(nextDraft), nextDraft);
@@ -2727,9 +2881,16 @@ export function workspaceReply(
   }
 
   if (prompt === "credit") {
+    if (draft.creditBand && isKeepThisText(q)) return keepThisReply(draft);
     const range = parseCreditRange(q);
     if (!range) return { text: "Tap a credit range, or Not sure." };
-    const nextDraft = { ...draft, creditBand: range, creditAsked: true, correcting: null };
+    const nextDraft = { ...draft, creditBand: range, creditAsked: true, correcting: null, correctingLine: null };
+    if (draft.correcting === "credit") {
+      return {
+        ...nextFoxAsk(nextDraft),
+        capture: { field: "creditRange", value: range },
+      };
+    }
     const next = workspacePromptCopy(workspacePrompt(nextDraft), nextDraft);
     return withWorkspaceGuide(
       {
@@ -2755,9 +2916,20 @@ export function workspaceReply(
   }
 
   if (prompt === "income") {
+    if (draft.incomeType.value && isKeepThisText(q)) return keepThisReply(draft);
     const match = incomeFromText(q);
     if (!match) return { text: "Tap W-2, Self-employed, Both, or Other." };
-    const nextDraft = withIncomeType(draft, match.value);
+    const nextDraft = {
+      ...withIncomeType(draft, match.value),
+      correcting: null,
+      correctingLine: null,
+    };
+    if (draft.correcting === "income") {
+      return {
+        ...nextFoxAsk(nextDraft),
+        capture: { field: "incomeType", value: match.value },
+      };
+    }
     return withWorkspaceGuide(
       {
         ...workspacePromptCopy(workspacePrompt(nextDraft), nextDraft),
@@ -2765,6 +2937,38 @@ export function workspaceReply(
       },
       nextDraft,
     );
+  }
+
+  if (prompt === "qualifying") {
+    if (isKeepThisText(q)) return keepThisReply(draft);
+    const monthly = parseLooseAmount(q);
+    if (monthly == null) {
+      return {
+        text: "What’s the monthly qualifying income? A number works.",
+        actions: keepThisActions(),
+      };
+    }
+    const nextDraft = writeQualifyingIncome(draft, String(Math.round(monthly)));
+    return {
+      ...nextFoxAsk(nextDraft),
+      capture: { field: "qualifyingIncome", value: String(Math.round(monthly)) },
+    };
+  }
+
+  if (prompt === "years-in-business") {
+    if (isKeepThisText(q)) return keepThisReply(draft);
+    const years = parseYearsInBusiness(q);
+    if (!years) {
+      return {
+        text: YEARS_IN_BUSINESS_ASK,
+        actions: keepThisActions(),
+      };
+    }
+    const nextDraft = writeYearsInBusiness(draft, years);
+    return {
+      ...nextFoxAsk({ ...nextDraft, correcting: null, correctingLine: null }),
+      capture: { field: "yearsInBusiness", value: years },
+    };
   }
 
   if (prompt === "documents") {
@@ -3299,9 +3503,10 @@ export function structureFixPrompt(
   if (id === "value") return "value";
   if (id === "credit") return "credit";
   if (id === "income") return "income";
+  if (id === "qualifying") return "qualifying";
+  if (id === "years-in-business") return "years-in-business";
   if (id === "docs") return "documents";
   if (id === "employer" && draft?.pendingProposal?.field === "employer_name") return "confirm-proposal";
-  if (id === "qualifying" && draft?.pendingProposal?.field === "qualifying_income") return "confirm-proposal";
   return null;
 }
 

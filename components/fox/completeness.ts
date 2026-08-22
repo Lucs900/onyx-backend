@@ -106,6 +106,16 @@ export function hasHelocLine(draft?: FoxIntakeDraft | null) {
   return isHelocFile(draft) && hasLoanAmount(draft);
 }
 
+/** Confirmed down ÷ price. Used to re-propose the pair when price changes. */
+export function lockedDownShare(draft?: FoxIntakeDraft | null): number | null {
+  if (!draft || !isPurchaseLike(draft) || !hasPropertyValue(draft) || !hasDownPayment(draft)) {
+    return null;
+  }
+  const share = draft.downPaymentAmount! / draft.propertyValueAmount!;
+  if (!Number.isFinite(share) || share <= 0 || share >= 1) return null;
+  return share;
+}
+
 export function impliedLoanAmount(price?: number | null, down?: number | null) {
   if (price == null || down == null || price <= 0 || down <= 0) return null;
   const loan = Math.round(price - down);
@@ -644,6 +654,15 @@ export function writeYearsInBusiness(draft: FoxIntakeDraft, years: string): FoxI
 
 export function skipYearsInBusiness(draft: FoxIntakeDraft): FoxIntakeDraft {
   return { ...draft, awaitingYearsInBusiness: false, yearsInBusinessAsked: true };
+}
+
+export function writeQualifyingIncome(draft: FoxIntakeDraft, monthly: string): FoxIntakeDraft {
+  return {
+    ...writeConfirmedFact(draft, QUALIFYING_INCOME_FIELD, monthly, "suggested"),
+    pendingProposal: null,
+    correcting: null,
+    correctingLine: null,
+  };
 }
 
 export function acceptComputedAmounts(draft: FoxIntakeDraft): FoxIntakeDraft {

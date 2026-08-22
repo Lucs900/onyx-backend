@@ -602,6 +602,96 @@ assert.deepEqual(
 );
 
 const afterIncome = withIncome(afterCredit, "w2");
+assert.equal(structureFixPrompt("product"), "product");
+assert.equal(structureFixPrompt("timeline"), "timeline");
+assert.equal(structureFixPrompt("path"), "path-switch");
+assert.equal(structureFixPrompt("qualifying", afterIncome), "qualifying");
+assert.equal(structureFixPrompt("years-in-business", afterIncome), "years-in-business");
+assert.equal(structureFixPrompt("file"), null);
+assert.equal(structureFixPrompt("rate"), null);
+assert.equal(structureFixPrompt("reward"), null);
+assert.equal(structureFixPrompt("status"), null);
+assert.equal(structureFixPrompt("next"), null);
+assert.equal(structureFixPrompt("originator"), null);
+resetWorkspaceForEntry("acr", "buy");
+applyCapture({ field: "occupancy", value: "primary" });
+applyCapture({ field: "timeline", value: "ready-now" });
+applyCapture({ field: "propertyValue", value: "850000" });
+applyCapture({ field: "propose-funds", value: "170000:680000" });
+applyCapture({ field: "accept-proposal" });
+applyCapture({ field: "creditRange", value: "760+" });
+applyCapture({ field: "incomeType", value: "w2" });
+const midFile = {
+  product: getFoxDraft().productIntent,
+  occupancy: getFoxDraft().occupancyChoice.value,
+  timeline: getFoxDraft().timelineChoice.value,
+  credit: getFoxDraft().creditBand,
+  income: getFoxDraft().incomeType.value,
+  price: getFoxDraft().propertyValueAmount,
+  down: getFoxDraft().downPaymentAmount,
+  loan: getFoxDraft().loanAmountValue,
+};
+applyCapture({ field: "correct", value: "value", line: "price" });
+const priceEditAsk = workspacePromptCopy("value", getFoxDraft());
+assert.match(priceEditAsk.text, /still right/i);
+assert.ok((priceEditAsk.actions ?? []).some((item) => item.label === "Keep this"));
+applyCapture({ field: "keep-line" });
+assert.equal(getFoxDraft().propertyValueAmount, midFile.price);
+assert.equal(getFoxDraft().downPaymentAmount, midFile.down);
+assert.equal(getFoxDraft().occupancyChoice.value, midFile.occupancy);
+applyCapture({ field: "correct", value: "value", line: "price" });
+const priceRetype = workspaceReply("1200000", getFoxDraft());
+assert.equal(priceRetype?.capture?.field, "propertyValue");
+assert.match(priceRetype?.text ?? "", /\$240,000 down · \$960,000 loan/);
+assert.match(priceRetype?.text ?? "", /Use this/);
+if (priceRetype?.capture) applyCapture(priceRetype.capture);
+assert.equal(getFoxDraft().propertyValueAmount, 1200000);
+assert.equal(getFoxDraft().downPaymentAmount, midFile.down);
+assert.equal(getFoxDraft().loanAmountValue, midFile.loan);
+assert.equal(getFoxDraft().pendingProposal?.companion?.value, "960000");
+assert.equal(getFoxDraft().occupancyChoice.value, midFile.occupancy);
+assert.equal(getFoxDraft().incomeType.value, midFile.income);
+assert.equal(getFoxDraft().creditBand, midFile.credit);
+applyCapture({ field: "accept-proposal" });
+assert.equal(getFoxDraft().downPaymentAmount, 240000);
+assert.equal(getFoxDraft().loanAmountValue, 960000);
+assert.equal(getFoxDraft().productIntent, midFile.product);
+applyCapture({ field: "correct", value: "amount", line: "down" });
+assert.match(workspacePromptCopy("amount", getFoxDraft()).text, /still right/i);
+applyCapture({ field: "keep-line" });
+assert.equal(getFoxDraft().downPaymentAmount, 240000);
+applyCapture({ field: "correct", value: "credit", line: "credit" });
+const creditEditAsk = workspacePromptCopy("credit", getFoxDraft());
+assert.match(creditEditAsk.text, /still right/i);
+assert.ok((creditEditAsk.actions ?? []).some((item) => item.label === "Keep this"));
+const midCreditEdit = workspaceReply("720–759", getFoxDraft());
+assert.equal(midCreditEdit?.capture?.field, "creditRange");
+if (midCreditEdit?.capture) applyCapture(midCreditEdit.capture);
+assert.equal(getFoxDraft().creditBand, "720-759");
+assert.equal(getFoxDraft().propertyValueAmount, 1200000);
+assert.equal(getFoxDraft().incomeType.value, "w2");
+applyCapture({ field: "correct", value: "income", line: "income" });
+const incomeEditAsk = workspacePromptCopy("income", getFoxDraft());
+assert.match(incomeEditAsk.text, /still right/i);
+assert.ok((incomeEditAsk.actions ?? []).some((item) => item.label === "Keep this"));
+const incomeEdit = workspaceReply("Self-employed", getFoxDraft());
+assert.equal(incomeEdit?.capture?.field, "incomeType");
+if (incomeEdit?.capture) applyCapture(incomeEdit.capture);
+assert.equal(getFoxDraft().incomeType.value, "self-employed");
+assert.equal(getFoxDraft().propertyValueAmount, 1200000);
+assert.equal(getFoxDraft().downPaymentAmount, 240000);
+assert.equal(getFoxDraft().creditBand, "720-759");
+assert.equal(getFoxDraft().occupancyChoice.value, "primary");
+assert.ok(getFoxDraft().documents.length === 0 || getFoxDraft().productIntent === "buy");
+const fileBeforeStartOver = getFoxDraft();
+assert.ok(fileBeforeStartOver.propertyValueAmount);
+startOverWorkspace("acr");
+assert.equal(getFoxDraft().propertyValueAmount, undefined);
+assert.equal(getFoxDraft().incomeType.value, "");
+assert.equal(getFoxDraft().creditBand, undefined);
+assert.equal(getFoxDraft().downPaymentAmount, undefined);
+assert.equal(getFoxDraft().documents.length, 0);
+assert.equal(workspacePrompt(getFoxDraft()), "product");
 assert.equal(workspacePrompt(afterIncome), "documents");
 assert.match(workspacePromptCopy("documents", afterIncome).text, /sketch/i);
 assert.match(workspacePromptCopy("documents", afterIncome).followUp ?? "", /government ID/i);
@@ -2219,6 +2309,31 @@ assert.ok(
   ),
 );
 assert.ok(!yearsWritten.awaitingYearsInBusiness);
+assert.equal(structureFixPrompt("qualifying", seAccepted), "qualifying");
+assert.match(workspacePromptCopy("qualifying", seAccepted).text, /9,000/);
+assert.ok((workspacePromptCopy("qualifying", seAccepted).actions ?? []).some((item) => item.label === "Keep this"));
+const qualifyingEdit = workspaceReply("8500", {
+  ...seAccepted,
+  correcting: "qualifying",
+  correctingLine: "qualifying",
+});
+assert.equal(qualifyingEdit?.capture?.field, "qualifyingIncome");
+assert.equal(qualifyingEdit?.capture && "value" in qualifyingEdit.capture ? qualifyingEdit.capture.value : "", "8500");
+assert.equal(structureFixPrompt("years-in-business", yearsWritten), "years-in-business");
+assert.match(workspacePromptCopy("years-in-business", yearsWritten).text, /5 years/);
+const yearsKeep = workspaceReply("Keep this", {
+  ...yearsWritten,
+  correcting: "years-in-business",
+  correctingLine: "years-in-business",
+});
+assert.equal(yearsKeep?.capture?.field, "keep-line");
+const yearsEdit = workspaceReply("8 years", {
+  ...yearsWritten,
+  correcting: "years-in-business",
+  correctingLine: "years-in-business",
+});
+assert.equal(yearsEdit?.capture?.field, "yearsInBusiness");
+assert.equal(yearsEdit?.capture && "value" in yearsEdit.capture ? yearsEdit.capture.value : "", "8");
 assert.doesNotMatch(yearsReply?.text ?? "", /Years in business|field/i);
 const leftBlank = resolveProposal(seReturn.draft, "decline");
 assert.ok(!leftBlank.yearsInBusinessAsked);

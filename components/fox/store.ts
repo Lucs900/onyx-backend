@@ -78,11 +78,14 @@ import {
 import {
   applyStubEmployerSuggestion,
   canLooksRight,
+  impliedLoanAmount,
+  lockedDownShare,
   proposePublicSuggestion,
   proposeFundsPair,
   resolveProposal,
   skipYearsInBusiness,
   withComputedCompanion,
+  writeQualifyingIncome,
   writeYearsInBusiness,
 } from "./completeness";
 
@@ -1026,27 +1029,31 @@ export function applyCapture(capture: Capture) {
     return advancePhase();
   }
   if (capture.field === "incomeType") {
+    const midFile = Boolean(current.correcting);
     commit({
       ...current,
       incomeType: clientField("incomeType", capture.value),
       incomeAsked: true,
       correcting: null,
+      correctingLine: null,
       sections: { ...current.sections, income: false },
-      status: undefined,
-      confirmedAt: undefined,
+      status: midFile ? current.status : undefined,
+      confirmedAt: midFile ? current.confirmedAt : undefined,
     });
     return current.workspaceFlow ? current : advancePhase();
   }
   if (capture.field === "occupancy") {
+    const midFile = Boolean(current.correcting);
     commit(
       withWorkspaceScenario({
         ...current,
         occupancyChoice: clientField("occupancy", capture.value),
         occupancyAsked: true,
         correcting: null,
+        correctingLine: null,
         sections: { ...current.sections, occupancy: false },
-        status: undefined,
-        confirmedAt: undefined,
+        status: midFile ? current.status : undefined,
+        confirmedAt: midFile ? current.confirmedAt : undefined,
       }),
     );
     return current.workspaceFlow ? current : advancePhase();
@@ -1092,6 +1099,9 @@ export function applyCapture(capture: Capture) {
   }
   if (capture.field === "skip-years-in-business") {
     return commit(skipYearsInBusiness(current));
+  }
+  if (capture.field === "qualifyingIncome") {
+    return commit(writeQualifyingIncome(current, capture.value));
   }
   if (capture.field === "open-docs") {
     if (current.workspaceFlow) {
@@ -1303,19 +1313,29 @@ export function applyCapture(capture: Capture) {
   }
   if (capture.field === "propertyValue") {
     const value = Number(capture.value.replace(/,/g, ""));
+    const nextPrice = Number.isFinite(value) && value > 0 ? value : current.propertyValueAmount;
+    const share = lockedDownShare(current);
+    const next = {
+      ...current,
+      valueAsked: true,
+      correcting: null,
+      correctingLine: null,
+      propertyValueAmount: nextPrice,
+    };
+    if (
+      share != null &&
+      nextPrice != null &&
+      nextPrice > 0 &&
+      nextPrice !== current.propertyValueAmount
+    ) {
+      const down = Math.round(nextPrice * share);
+      const loan = impliedLoanAmount(nextPrice, down);
+      if (loan != null) {
+        return commit(withWorkspaceScenario(proposeFundsPair(next, down, loan)));
+      }
+    }
     return commit(
-      withWorkspaceScenario(
-        withComputedCompanion(
-          withMatrixAfterAmount({
-            ...current,
-            valueAsked: true,
-            correcting: null,
-            correctingLine: null,
-            propertyValueAmount:
-              Number.isFinite(value) && value > 0 ? value : current.propertyValueAmount,
-          }),
-        ),
-      ),
+      withWorkspaceScenario(withComputedCompanion(withMatrixAfterAmount(next))),
     );
   }
   if (capture.field === "downPayment") {
