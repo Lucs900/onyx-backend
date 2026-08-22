@@ -132,6 +132,7 @@ import {
   workspacePromptCopy,
   workspaceReply,
   docReactionAsk,
+  nextFoxAsk,
   parseYearsInBusiness,
   workspaceUpdateCopy,
   skipCurrentInvite,
@@ -2177,7 +2178,7 @@ const seAccepted = resolveProposal(seReturn.draft, "accept");
 assert.equal(seAccepted.facts?.qualifying_income?.value, "9000");
 assert.equal(seAccepted.facts?.qualifying_income?.source, "suggested");
 assert.equal(seAccepted.awaitingYearsInBusiness, true);
-assert.equal(workspacePrompt(seAccepted), "documents");
+assert.equal(nextFoxAsk(seAccepted).text, YEARS_IN_BUSINESS_ASK);
 assert.equal(workspacePromptCopy("documents", seAccepted).text, YEARS_IN_BUSINESS_ASK);
 assert.equal((workspacePromptCopy("documents", seAccepted).actions ?? []).length, 0);
 assert.equal(parseYearsInBusiness("5 years"), "5");

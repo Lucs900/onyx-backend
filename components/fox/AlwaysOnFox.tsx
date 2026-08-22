@@ -65,6 +65,7 @@ import {
   inertSupersededIncomeConfirms,
   lastFoxTurn,
   docReactionAsk,
+  nextFoxAsk,
   structureExplainCopy,
   structureFixPrompt,
   withWorkspaceGuide,
@@ -1079,7 +1080,7 @@ export function AlwaysOnFox({
       const next =
         workspaceSurface
           ? withWorkspaceGuide(
-              { ...workspacePromptCopy(workspacePrompt(live), live), capture: action.capture },
+              { ...nextFoxAsk(live), capture: action.capture },
               live,
             )
           : promptCopy(currentPrompt(live), live);

@@ -1050,6 +1050,18 @@ export function sampleReady(draft: FoxIntakeDraft): boolean {
 }
 
 /** Single /start conversation engine. Desktop and mobile share this order, copy, and path rules. */
+export function nextFoxAsk(draft: FoxIntakeDraft): {
+  text: string;
+  followUp?: string;
+  facts?: ReturnType<typeof workspacePromptCopy>["facts"];
+  actions?: FoxAction[];
+} {
+  if (draft.awaitingYearsInBusiness && !draft.pendingProposal && !draft.pendingConflict) {
+    return { text: YEARS_IN_BUSINESS_ASK };
+  }
+  return workspacePromptCopy(workspacePrompt(draft), draft);
+}
+
 export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
   if (draft.outOfState) return "geo-stop";
   if (!draft.path) return "intent";
@@ -2326,7 +2338,7 @@ export function workspaceReply(
     ) {
       const nextDraft = resolveProposal(draft, "accept");
       return {
-        ...workspacePromptCopy(workspacePrompt(nextDraft), nextDraft),
+        ...nextFoxAsk(nextDraft),
         capture: { field: "accept-proposal" },
       };
     }
