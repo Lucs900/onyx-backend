@@ -1408,75 +1408,7 @@ export function editPromptFromCapture(capture?: Capture): FoxPrompt | undefined 
   return undefined;
 }
 
-const GUIDE_CAPTURE_FIELDS = new Set<Capture["field"]>([
-  "productIntent",
-  "starter",
-  "occupancy",
-  "timeline",
-  "propertyValue",
-  "downPayment",
-  "loanAmount",
-  "propose-funds",
-  "creditRange",
-  "incomeType",
-]);
-
-const SKIP_GUIDE_PROMPTS = new Set<FoxPrompt>([
-  "offer-jumbo",
-  "offer-heloc",
-  "geo-stop",
-  "jumbo-purpose",
-  "confirm-proposal",
-  "path-switch",
-  "intent",
-]);
-
-function spokenCaptureLine(capture: Capture, draft: FoxIntakeDraft) {
-  if (capture.field === "productIntent" || capture.field === "starter") {
-    const label = productIntentLabel(capture.value);
-    return label ? `${label}.` : "";
-  }
-  if (capture.field === "occupancy") {
-    const label = occupancySpokenLabel(capture.value);
-    return label ? `${label}.` : "";
-  }
-  if (capture.field === "timeline") {
-    const label = TIMELINE_BUBBLES.find((item) => item.value === capture.value)?.label;
-    return label ? `${label}.` : "";
-  }
-  if (capture.field === "propertyValue") {
-    const n = Number(String(capture.value).replace(/,/g, ""));
-    return Number.isFinite(n) && n > 0 ? `Purchase is ${formatMoney(n)}.` : "";
-  }
-  if (capture.field === "downPayment") {
-    const n = Number(String(capture.value).replace(/,/g, ""));
-    return Number.isFinite(n) && n > 0 ? `Down payment is ${formatMoney(n)}.` : "";
-  }
-  if (capture.field === "loanAmount") {
-    const n = Number(String(capture.value).split(":")[0].replace(/,/g, ""));
-    const label = structureAmountLabel(draft) || "Loan amount";
-    return Number.isFinite(n) && n > 0 ? `${label} is ${formatMoney(n)}.` : "";
-  }
-  if (capture.field === "propose-funds") {
-    const [down, loan] = String(capture.value).split(":");
-    const downN = Number(down);
-    const loanN = Number(loan);
-    if (Number.isFinite(downN) && Number.isFinite(loanN) && downN > 0 && loanN > 0) {
-      return `That’s ${formatMoney(downN)} down · ${formatMoney(loanN)} loan.`;
-    }
-    return "";
-  }
-  if (capture.field === "creditRange") {
-    return capture.value === "not-sure" ? "Credit left open." : `Credit ${capture.value}.`;
-  }
-  if (capture.field === "incomeType") {
-    const label = INCOME_BUBBLES.find((item) => item.value === capture.value)?.label;
-    return label ? `${label}.` : "";
-  }
-  return "";
-}
-
-/** One short line: what was captured + the next tap or type. Guide, don’t lecture. */
+/** Chips already sit in the thread. Fox speaks only the next helpful line — never echo the last capture as a label. */
 export function withWorkspaceGuide<
   T extends {
     text: string;
@@ -1485,16 +1417,8 @@ export function withWorkspaceGuide<
     actions?: FoxAction[];
     capture?: Capture;
   },
->(reply: T, nextDraft: FoxIntakeDraft): T {
-  const capture = reply.capture;
-  if (!capture || !GUIDE_CAPTURE_FIELDS.has(capture.field)) return reply;
-  const prompt = workspacePrompt({ ...nextDraft, correcting: null });
-  if (SKIP_GUIDE_PROMPTS.has(prompt)) return reply;
-  const spoken = spokenCaptureLine(capture, nextDraft);
-  if (!spoken) return reply;
-  const stem = spoken.replace(/\.$/, "");
-  if (reply.text.toLowerCase().includes(stem.toLowerCase())) return reply;
-  return { ...reply, text: `${spoken} ${reply.text}` };
+>(reply: T, _nextDraft: FoxIntakeDraft): T {
+  return reply;
 }
 
 export function workspaceUpdateCopy(capture: Capture, draft: FoxIntakeDraft) {
@@ -1525,7 +1449,7 @@ export function workspaceUpdateCopy(capture: Capture, draft: FoxIntakeDraft) {
     return emailMissing(draft) ? MOTION_COPY.emailAsk : MOTION_COPY.on_hold;
   }
   if (capture.field === "upload-more") {
-    return motionAskText({ ...draft, docsOpen: true });
+    return "";
   }
   if (capture.field === "productIntent" || capture.field === "starter") {
     return `Updated product to ${productIntentLabel(capture.value)}.`;
@@ -2542,12 +2466,16 @@ export function workspaceReply(
       }
       const finish = finishCaptureFromText(q);
       if (finish) {
+        if (finish.field === "upload-more") {
+          return {
+            text: "",
+            capture: finish,
+          };
+        }
         const nextDraft =
           finish.field === "proceed"
             ? { ...draft, pendingFinish: emailMissing(draft) ? "proceed" : draft.pendingFinish }
-            : finish.field === "not-yet"
-              ? { ...draft, pendingFinish: emailMissing(draft) ? "not-yet" : draft.pendingFinish }
-              : { ...draft, docsOpen: true };
+            : { ...draft, pendingFinish: emailMissing(draft) ? "not-yet" : draft.pendingFinish };
         return {
           ...workspacePromptCopy("done", nextDraft),
           text:
@@ -2555,11 +2483,9 @@ export function workspaceReply(
               ? emailMissing(draft)
                 ? MOTION_COPY.emailAsk
                 : MOTION_COPY.in_queue
-              : finish.field === "not-yet"
-                ? emailMissing(draft)
-                  ? MOTION_COPY.emailAsk
-                  : MOTION_COPY.on_hold
-                : motionAskText({ ...draft, docsOpen: true }),
+              : emailMissing(draft)
+                ? MOTION_COPY.emailAsk
+                : MOTION_COPY.on_hold,
           capture: finish,
         };
       }

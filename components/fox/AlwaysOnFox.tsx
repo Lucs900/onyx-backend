@@ -940,11 +940,14 @@ export function AlwaysOnFox({
     },
     edit?: FoxMessage["edit"],
   ) => {
-    commitMessagesNow((prev) => [
-      ...prev,
-      { id: newId(), role: "client", text: clientText, edit },
-      foxAskMessage(fox),
-    ]);
+    commitMessagesNow((prev) => {
+      const next: FoxMessage[] = [
+        ...prev,
+        { id: newId(), role: "client", text: clientText, edit },
+      ];
+      if (!fox.text.trim() && !(fox.followUp ?? "").trim()) return next;
+      return [...next, foxAskMessage(fox)];
+    });
   };
 
   const appendStructureFix = (clientText: string, capture: Capture) => {
@@ -1012,11 +1015,7 @@ export function AlwaysOnFox({
     ) {
       applyCapture(action.capture ?? { field: "open-docs" });
       skipPromptSync.current = true;
-      const live = getFoxDraft();
-      appendReply(action.label, {
-        text: motionAskText({ ...live, docsOpen: true }),
-        actions: finishLineActions(live),
-      });
+      appendReply(action.label, { text: "" });
       window.requestAnimationFrame(() => {
         document.getElementById("fox-documents")?.scrollIntoView({
           block: "nearest",

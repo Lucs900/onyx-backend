@@ -258,7 +258,8 @@ assert.equal(workspacePrompt(afterProduct), "occupancy");
 const typedBuyAcr = workspaceReply("I want to buy", withPath);
 assert.equal(typedBuyAcr?.capture?.field, "productIntent");
 assert.equal(typedBuyAcr?.capture && "value" in typedBuyAcr.capture ? typedBuyAcr.capture.value : "", "buy");
-assert.match(typedBuyAcr?.text ?? "", /^Buy\./);
+assert.doesNotMatch(typedBuyAcr?.text ?? "", /^Buy\./);
+assert.doesNotMatch(typedBuyAcr?.text ?? "", /Buy\. How will the property be used/i);
 assert.match(typedBuyAcr?.text ?? "", /how will the property be used/i);
 assert.notEqual(typedBuyAcr?.capture?.field, undefined);
 const typedHouse = workspaceReply("Buy a house", withPath);
@@ -316,6 +317,7 @@ assert.equal(amountAskText(afterOcc), "What’s the purchase price?");
 const occThenPrice = workspaceReply("Primary", draft({ path: "acr", productIntent: "buy" }));
 assert.equal(occThenPrice?.capture?.field, "occupancy");
 assert.match(occThenPrice?.text ?? "", /purchase price/i);
+assert.doesNotMatch(occThenPrice?.text ?? "", /^Primary\.|Primary\. What’s the purchase price/i);
 assert.doesNotMatch(occThenPrice?.text ?? "", /timeline|ready now|30–90|just exploring/i);
 assert.ok((workspacePromptCopy("occupancy", draft({ path: "acr", productIntent: "buy" })).text ?? "").trim());
 assert.ok(
@@ -336,6 +338,7 @@ assert.equal(workspacePrompt(afterTime), "amount");
 const buyAfterOcc = workspaceReply("Primary", draft({ path: "acr", productIntent: "buy" }));
 assert.equal(buyAfterOcc?.capture?.field, "occupancy");
 assert.match(buyAfterOcc?.text ?? "", /What’s the purchase price\?/);
+assert.doesNotMatch(buyAfterOcc?.text ?? "", /^Primary\./);
 assert.doesNotMatch(buyAfterOcc?.text ?? "", /rough amount|^what’s a rough amount/i);
 
 const refiAfterTime = draft({
@@ -554,11 +557,11 @@ assert.notEqual(workspacePrompt(afterCredit), "documents");
 
 const creditReply = workspaceReply("760+", afterFunds);
 assert.equal(creditReply?.capture?.field, "creditRange");
-assert.match(creditReply?.text ?? "", /Credit 760\+/);
+assert.doesNotMatch(creditReply?.text ?? "", /Credit 760\+/);
 assert.ok(/income earned/i.test(creditReply?.text ?? ""));
 const incomeReply = workspaceReply("W-2", afterCredit);
 assert.equal(incomeReply?.capture?.field, "incomeType");
-assert.match(incomeReply?.text ?? "", /W-2/);
+assert.doesNotMatch(incomeReply?.text ?? "", /^W-2\.|W-2\. Here’s a sample structure/i);
 assert.match(incomeReply?.text ?? "", /sample structure|look right/i);
 
 const incomeAsk = workspacePromptCopy("income", afterCredit);
@@ -1202,6 +1205,18 @@ assert.match(selfLooks?.text ?? "", /skip is fine/i);
 assert.ok((selfLooks?.actions ?? []).some((item) => item.label === "Upload docs"));
 assert.ok((selfLooks?.actions ?? []).some((item) => item.label === "Proceed"));
 assert.ok((selfLooks?.actions ?? []).some((item) => item.label === "Not yet"));
+const seAfterLooks = applyLooksRightMotion(withIncome(afterCredit, "self-employed"));
+const uploadDocsReply = workspaceReply("Upload docs", seAfterLooks);
+assert.equal(uploadDocsReply?.capture?.field, "upload-more");
+assert.equal((uploadDocsReply?.text ?? "").trim(), "");
+assert.doesNotMatch(uploadDocsReply?.text ?? "", /government ID|most recent tax return|prior-year return|upload docs/i);
+assert.doesNotMatch(
+  workspaceUpdateCopy({ field: "upload-more" }, seAfterLooks),
+  /government ID|most recent tax return|prior-year return/i,
+);
+const seIncomeReply = workspaceReply("Self-employed", afterCredit);
+assert.doesNotMatch(seIncomeReply?.text ?? "", /^Self-employed\.|Self-employed\. Here’s a sample structure/i);
+assert.match(seIncomeReply?.text ?? "", /sample structure|look right/i);
 const selfDocs = workspacePromptCopy("documents", withIncome(afterCredit, "self-employed"));
 assert.match(selfDocs.text, /government ID and tax return/i);
 assert.doesNotMatch(selfDocs.text, /paystub|w-2|drop what you have/i);
@@ -2635,6 +2650,7 @@ const workspaceSrc = readFileSync(join(root, "components/fox/workspace.ts"), "ut
 assert.ok(!workspaceSrc.includes("What’s a rough amount?"));
 assert.ok(!workspaceSrc.includes('label: "Amount"'));
 assert.ok(!workspaceSrc.includes('label: "Numbers"'));
+assert.ok(!workspaceSrc.includes("${spoken} ${reply.text}"));
 assert.ok(!/Drop what you have\. Skip is fine/.test(workspaceSrc));
 assert.ok(!/832,?750/.test(workspaceSrc));
 assert.ok(workspaceSrc.includes("1_249_125") || workspaceSrc.includes("1249125"));
@@ -2929,6 +2945,7 @@ assert.ok(alwaysOn.includes("FOX_THREAD_LINE_EVENT"));
 assert.ok(alwaysOn.includes("shouldResumeWorkspaceEntry"));
 assert.ok(alwaysOn.includes("fileExists(live)"));
 assert.ok(!alwaysOn.includes('text: "Drop a file here."'));
+assert.ok(!alwaysOn.includes("motionAskText({ ...live, docsOpen: true })"));
 assert.ok(alwaysOn.includes("motionAskText"));
 assert.ok(alwaysOn.includes("DECLINING_INCOME_CAUTION"));
 assert.ok(alwaysOn.includes("inertSupersededIncomeConfirms"));
