@@ -580,11 +580,14 @@ assert.ok(/income earned/i.test(creditReply?.text ?? ""));
 const incomeReply = workspaceReply("W-2", afterCredit);
 assert.equal(incomeReply?.capture?.field, "incomeType");
 assert.doesNotMatch(incomeReply?.text ?? "", /^W-2\.|W-2\. Here’s a sample structure/i);
-assert.equal(incomeReply?.text ?? "", DOC_INVITE_COPY.government_id);
+assert.match(incomeReply?.text ?? "", /sketch/i);
+assert.match(incomeReply?.text ?? "", /notepad/i);
+assert.match(incomeReply?.followUp ?? "", /government ID/i);
 assert.deepEqual(
   (incomeReply?.actions ?? []).map((item) => item.label),
-  ["Upload this", "Skip"],
+  ["Start with ID", "Not yet"],
 );
+assert.ok(!(incomeReply?.actions ?? []).some((item) => item.label === "Upload this"));
 
 const incomeAsk = workspacePromptCopy("income", afterCredit);
 assert.deepEqual(
@@ -594,7 +597,24 @@ assert.deepEqual(
 
 const afterIncome = withIncome(afterCredit, "w2");
 assert.equal(workspacePrompt(afterIncome), "documents");
-assert.equal(workspacePromptCopy("documents", afterIncome).text, DOC_INVITE_COPY.government_id);
+assert.match(workspacePromptCopy("documents", afterIncome).text, /sketch/i);
+assert.match(workspacePromptCopy("documents", afterIncome).followUp ?? "", /government ID/i);
+assert.deepEqual(
+  (workspacePromptCopy("documents", afterIncome).actions ?? []).map((item) => item.label),
+  ["Start with ID", "Not yet"],
+);
+const afterStartId = draft({ ...afterIncome, docsStarted: true });
+assert.equal(workspacePromptCopy("documents", afterStartId).text, DOC_INVITE_COPY.government_id);
+assert.deepEqual(
+  (workspacePromptCopy("documents", afterStartId).actions ?? []).map((item) => item.label),
+  ["Upload this", "Skip"],
+);
+const startIdReply = workspaceReply("Start with ID", afterIncome);
+assert.equal(startIdReply?.capture?.field, "start-docs");
+assert.equal(startIdReply?.text, DOC_INVITE_COPY.government_id);
+const notYetDocs = workspaceReply("Not yet", afterIncome);
+assert.equal(notYetDocs?.capture?.field, "skip-docs");
+assert.equal(workspacePrompt({ ...afterIncome, ...skipRemainingClasses(afterIncome) }), "review");
 const afterIncomeReady = skipDocInvites(afterIncome);
 assert.equal(workspacePrompt(afterIncomeReady), "review");
 const noTimelineFile = withIncome(
@@ -634,7 +654,11 @@ assert.equal(workspacePrompt(skipDocInvites(notSure)), "review");
 
 const otherIncome = withIncome(afterCredit, "other");
 assert.equal(workspacePrompt(otherIncome), "documents");
-assert.equal(workspacePromptCopy("documents", otherIncome).text, DOC_INVITE_COPY.government_id);
+assert.match(workspacePromptCopy("documents", otherIncome).text, /sketch/i);
+assert.deepEqual(
+  (workspacePromptCopy("documents", otherIncome).actions ?? []).map((item) => item.label),
+  ["Start with ID", "Not yet"],
+);
 
 const creditFacts = previewFacts(afterIncome);
 assert.ok(creditFacts.some((fact) => fact.id === "path" && fact.value === "Relationship desk"));
@@ -702,11 +726,14 @@ assert.equal(creditAskEdit?.correct, "credit");
 assert.ok(!/not on this sketch/i.test(creditAskEdit?.confirm ?? ""));
 
 const review = workspacePromptCopy("review", afterIncomeReady);
-assert.match(review.text, /here.?s the file/i);
-assert.match(review.text, /does this look right/i);
-assert.ok((review.facts ?? []).some((fact) => fact.id === "credit"));
-assert.ok((review.facts ?? []).some((fact) => fact.id === "income"));
-assert.ok((review.facts ?? []).some((fact) => fact.value.includes(PREVIEW_RATE_NOTE)));
+assert.match(review.text, /notepad looks complete/i);
+assert.match(review.text, /does it look right/i);
+assert.doesNotMatch(review.text, /here.?s the file/i);
+assert.equal((review.facts ?? []).length, 0);
+assert.deepEqual(
+  (review.actions ?? []).map((item) => item.label),
+  ["Looks right", "Needs a correction"],
+);
 
 const helocReady = withIncome(
   draft({
@@ -1209,10 +1236,17 @@ assert.equal(pathSetReply?.capture?.field, "path");
 assert.ok(!(pathSetReply?.followUp ?? "").includes(FOX_DISCLOSURE));
 
 const w2Docs = workspacePromptCopy("documents", afterIncome);
-assert.equal(w2Docs.text, DOC_INVITE_COPY.government_id);
-assert.doesNotMatch(w2Docs.text, /drop what you have|skip is fine|tax return|latest paystub/i);
+assert.match(w2Docs.text, /sketch|notepad/i);
+assert.doesNotMatch(w2Docs.text, /drop what you have|skip is fine|latest paystub/i);
 assert.deepEqual(
   (w2Docs.actions ?? []).map((item) => item.label),
+  ["Start with ID", "Not yet"],
+);
+const w2Started = workspacePromptCopy("documents", { ...afterIncome, docsStarted: true });
+assert.equal(w2Started.text, DOC_INVITE_COPY.government_id);
+assert.doesNotMatch(w2Started.text, /drop what you have|skip is fine|tax return|latest paystub/i);
+assert.deepEqual(
+  (w2Started.actions ?? []).map((item) => item.label),
   ["Upload this", "Skip"],
 );
 const w2AfterId = skipCurrentInvite(afterIncome);
@@ -1243,10 +1277,12 @@ assert.doesNotMatch(
 );
 const seIncomeReply = workspaceReply("Self-employed", afterCredit);
 assert.doesNotMatch(seIncomeReply?.text ?? "", /^Self-employed\.|Self-employed\. Here’s a sample structure/i);
-assert.equal(seIncomeReply?.text ?? "", DOC_INVITE_COPY.government_id);
+assert.match(seIncomeReply?.text ?? "", /sketch/i);
+assert.match(seIncomeReply?.text ?? "", /self-employed/i);
+assert.match(seIncomeReply?.followUp ?? "", /government ID/i);
 assert.deepEqual(
   (seIncomeReply?.actions ?? []).map((item) => item.label),
-  ["Upload this", "Skip"],
+  ["Start with ID", "Not yet"],
 );
 const seAfterId = skipCurrentInvite(seIncome);
 assert.equal(workspacePromptCopy("documents", seAfterId).text, DOC_INVITE_COPY.tax_return);
@@ -1281,7 +1317,7 @@ const uploadThisThread = [
 assert.equal(lastFoxTurn(uploadThisThread)?.text, DOC_INVITE_COPY.government_id);
 assert.equal(
   lastFoxTurn(uploadThisThread)?.text,
-  workspacePromptCopy("documents", seIncome).text,
+  workspacePromptCopy("documents", { ...seIncome, docsStarted: true }).text,
 );
 const skipThenTax = [
   { role: "fox" as const, text: DOC_INVITE_COPY.government_id },
@@ -1327,8 +1363,12 @@ assert.notEqual(
   DOC_INVITE_COPY.prior_year_return,
 );
 const selfDocs = workspacePromptCopy("documents", seIncome);
-assert.equal(selfDocs.text, DOC_INVITE_COPY.government_id);
+assert.match(selfDocs.text, /sketch/i);
 assert.doesNotMatch(selfDocs.text, /paystub|w-2|drop what you have/i);
+assert.deepEqual(
+  (selfDocs.actions ?? []).map((item) => item.label),
+  ["Start with ID", "Not yet"],
+);
 assert.ok((selfDocs.actions ?? []).some((item) => item.capture?.field === "skip-docs"));
 const selfRequest = docsRequestForIncome("self-employed");
 assert.deepEqual(selfRequest.labels, ["government ID", "tax return"]);
@@ -1801,6 +1841,7 @@ assert.equal(workspacePrompt(conflictOnPrice), "confirm-proposal");
 assert.equal(composerPlaceholder(conflictOnPrice), "Ask ONYX Fox");
 assert.doesNotMatch(composerPlaceholder(conflictOnPrice), /purchase price/i);
 const seAsk = proposalAskCopy(seReturn.draft.pendingProposal!);
+assert.match(seAsk, /From the return I’m suggesting/);
 assert.match(seAsk, /Suggested qualifying income · not underwritten/);
 assert.match(seAsk, /9,000/);
 assert.doesNotMatch(seAsk, /1084|\bDU\b|approved|eligible|you qualify|don’t qualify|agency_ready/i);
@@ -3153,9 +3194,15 @@ const completenessSource = readFileSync(join(root, "components/fox/completeness.
 assert.ok(!completenessSource.includes("if (!draft.timelineChoice.value) return false;"));
 assert.ok(workspaceSrc.includes("function withFoxFirst") || workspaceSrc.includes("withFoxFirst"));
 assert.ok(!workspaceSrc.includes('if (!draft.timelineAsked && !draft.timelineChoice.value) return "timeline"'));
-assert.ok(workspaceSrc.includes("Here’s the file. Does this look right?"));
+assert.ok(workspaceSrc.includes("The notepad looks complete enough to move. Does it look right?"));
+assert.ok(!workspaceSrc.includes("Here’s the file. Does this look right?"));
 assert.ok(workspaceSrc.includes("nextDocInvite"));
 assert.ok(workspaceSrc.includes('label: "Upload this"'));
+assert.ok(workspaceSrc.includes('label: "Start with ID"'));
+assert.ok(workspaceSrc.includes("sketchAndStartDocsCopy") || workspaceSrc.includes("That’s the sketch."));
+assert.ok(foxSource.includes("notepad looks complete") || workspaceSrc.includes("notepad looks complete"));
+assert.ok(!foxSource.includes("fox-bubble__edit"));
+assert.ok(!foxSource.includes("fox-bubble__facts"));
 assert.ok(!workspaceSrc.includes("Government ID. Most recent tax return. Prior-year return if available."));
 assert.ok(workspaceSrc.includes("editingConfirmedDown") || workspaceSrc.includes("Still right?"));
 assert.ok(workspaceSrc.includes('label: "Keep this"'));

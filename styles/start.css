@@ -79,25 +79,23 @@
   background: var(--paper) !important;
 }
 
-.fox-stage--workspace .fox-bubble--fox.is-prior {
+.fox-stage--workspace .fox-bubble--fox,
+.fox-stage--workspace .fox-bubble--fox.is-prior,
+.fox-stage--workspace .fox-bubble--fox.is-current {
   max-width: 92%;
+  padding: 0;
   background: transparent;
+  border: 0;
   border-color: transparent;
   box-shadow: none;
   opacity: 1;
 }
 
-.fox-stage--workspace .fox-bubble--fox.is-prior p,
-.fox-stage--workspace .fox-bubble--fox.is-prior .fox-bubble__fact-label,
-.fox-stage--workspace .fox-bubble--fox.is-prior .fox-bubble__facts li {
+.fox-stage--workspace .fox-bubble--fox.is-prior p {
   color: var(--muted);
 }
 
 .fox-stage--workspace .fox-bubble--fox.is-current {
-  max-width: 100%;
-  padding: 12px 14px;
-  background: var(--paper-elevated);
-  border-color: color-mix(in srgb, var(--ink) 26%, var(--fox-hairline));
   scroll-margin-bottom: 168px;
 }
 
@@ -105,11 +103,7 @@
   color: var(--ink);
   font-size: 16px;
   line-height: 22px;
-  font-weight: 600;
-}
-
-.fox-stage--workspace .fox-bubble--fox.is-current > p:last-of-type {
-  font-weight: 600;
+  font-weight: 500;
 }
 
 .fox-stage--workspace .fox-bubble--client {

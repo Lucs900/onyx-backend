@@ -49,7 +49,9 @@ import {
   conflictAskCopy,
   DOC_INVITE_COPY,
   nextDocInvite,
+  offeringDocStart,
   skipCurrentInvite,
+  skipRemainingClasses,
 } from "./fileWrite";
 import {
   SUGGESTED_NOTE,
@@ -736,11 +738,46 @@ function incomeFromText(text: string) {
 }
 
 function documentsAskText(draft: FoxIntakeDraft): string {
+  if (offeringDocStart(draft)) return sketchAndStartDocsCopy(draft).text;
   const invite = nextDocInvite(draft);
   if (invite) return DOC_INVITE_COPY[invite];
   const useful = stillUsefulAskCopy(draft);
   if (useful) return useful;
   return docsRequestForIncome(draft.incomeType.value).text;
+}
+
+export function sketchAndStartDocsCopy(draft: FoxIntakeDraft): {
+  text: string;
+  followUp: string;
+} {
+  const bits: string[] = [];
+  const occupancy = OCCUPANCY_BUBBLES.find((item) => item.value === draft.occupancyChoice.value)?.label;
+  if (occupancy) bits.push(occupancy);
+  if (draft.propertyValueAmount != null && draft.propertyValueAmount > 0) {
+    bits.push(formatMoney(draft.propertyValueAmount));
+  }
+  if (draft.downPaymentAmount != null && draft.downPaymentAmount > 0) {
+    bits.push(`${formatMoney(draft.downPaymentAmount)} down`);
+  }
+  const credit = CREDIT_WORKSPACE_BUBBLES.find((item) => item.value === draft.creditBand)?.label;
+  if (credit && credit !== "Not sure") bits.push(`stated ${credit}`);
+  else if (draft.creditAsked) bits.push("stated credit");
+  const income = INCOME_BUBBLES.find((item) => item.value === draft.incomeType.value)?.label;
+  if (income) bits.push(income === "Self-employed" ? "self-employed" : income);
+  const sketch = bits.length
+    ? `That’s the sketch. ${bits.join(", ")}. It’s on the notepad.`
+    : "That’s the sketch. It’s on the notepad.";
+  return {
+    text: sketch,
+    followUp: "If you want, I can start documents. First is a government ID, so the file has a name.",
+  };
+}
+
+function startDocsActions(): FoxAction[] {
+  return [
+    { id: "start-docs", label: "Start with ID", event: "bubble", capture: { field: "start-docs" } },
+    { id: "not-yet-docs", label: "Not yet", event: "bubble", capture: { field: "skip-docs" } },
+  ];
 }
 
 function docInviteActions(): FoxAction[] {
@@ -1028,6 +1065,12 @@ function workspaceAskCopy(
     };
   }
   if (prompt === "documents") {
+    if (offeringDocStart(draft)) {
+      return {
+        ...sketchAndStartDocsCopy(draft),
+        actions: startDocsActions(),
+      };
+    }
     return {
       text: documentsAskText(draft),
       actions: nextDocInvite(draft) ? docInviteActions() : undefined,
@@ -1045,8 +1088,7 @@ function workspaceAskCopy(
       };
     }
     return {
-      text: "Here’s the file. Does this look right?",
-      facts: fileSummaryFacts(draft),
+      text: "The notepad looks complete enough to move. Does it look right?",
       actions: [
         { id: "looks-right", label: "Looks right", event: "bubble", capture: { field: "confirm-draft" } },
         { id: "needs-fix", label: "Needs a correction", event: "bubble", capture: { field: "needs-correction" } },
@@ -1517,7 +1559,12 @@ export function editPromptFromCapture(capture?: Capture): FoxPrompt | undefined 
   if (capture.field === "creditRange") return "credit";
   if (capture.field === "termYears" || capture.field === "skip-term") return "term";
   if (capture.field === "incomeType") return "income";
-  if (capture.field === "skip-docs" || capture.field === "open-docs" || capture.field === "upload-more") {
+  if (
+    capture.field === "skip-docs" ||
+    capture.field === "start-docs" ||
+    capture.field === "open-docs" ||
+    capture.field === "upload-more"
+  ) {
     return "documents";
   }
   return undefined;
@@ -1565,6 +1612,9 @@ export function workspaceUpdateCopy(capture: Capture, draft: FoxIntakeDraft) {
   }
   if (capture.field === "not-yet") {
     return emailMissing(draft) ? MOTION_COPY.emailAsk : MOTION_COPY.on_hold;
+  }
+  if (capture.field === "start-docs") {
+    return "";
   }
   if (capture.field === "upload-more") {
     return "";
@@ -2512,6 +2562,23 @@ export function workspaceReply(
   }
 
   if (prompt === "documents") {
+    if (offeringDocStart(draft)) {
+      if (/(not yet|skip|later|don'?t have|fine)/i.test(lower)) {
+        const nextDraft = skipRemainingClasses(draft);
+        return {
+          ...workspacePromptCopy(workspacePrompt(nextDraft), nextDraft),
+          capture: { field: "skip-docs" },
+        };
+      }
+      if (/(start|id|upload|drop|now|add|documents)/i.test(lower)) {
+        const nextDraft = { ...draft, docsStarted: true };
+        return {
+          ...workspacePromptCopy("documents", nextDraft),
+          capture: { field: "start-docs" },
+        };
+      }
+      return workspacePromptCopy("documents", draft);
+    }
     if (/(skip|later|not yet|don'?t have|fine)/i.test(lower)) {
       const nextDraft = skipCurrentInvite(draft);
       return {

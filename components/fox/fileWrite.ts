@@ -783,6 +783,15 @@ function inviteSatisfied(draft: FoxIntakeDraft, kind: DocInviteKind): boolean {
   return (draft.skippedClasses ?? []).includes(kind);
 }
 
+export function offeringDocStart(draft: FoxIntakeDraft) {
+  return (
+    !draft.docsStarted &&
+    !draft.sampleAccepted &&
+    draft.documents.length === 0 &&
+    nextDocInvite(draft) === "government_id"
+  );
+}
+
 export function nextDocInvite(draft: FoxIntakeDraft): DocInviteKind | null {
   if (draft.sampleAccepted) return null;
   if (!draft.incomeType.value && !draft.incomeAsked) return null;

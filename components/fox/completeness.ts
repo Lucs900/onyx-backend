@@ -387,7 +387,7 @@ function fundsMoneyShown(field: string, value: string) {
 export function proposalAskCopy(proposal: FactProposal) {
   const shown = displayFactValue(proposal.field, proposal.value);
   if (proposal.field === QUALIFYING_INCOME_FIELD) {
-    return `${SUGGESTED_INCOME_NOTE}. ${shown}. Use this?`;
+    return `From the return I’m suggesting ${shown} a month. ${SUGGESTED_INCOME_NOTE}. Use this?`;
   }
   if (proposal.kind === "public") {
     return `I have ${proposal.label} ${shown}. ${SUGGESTED_NOTE}. Is that you?`;

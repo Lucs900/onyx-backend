@@ -222,6 +222,7 @@ export type FoxIntakeDraft = {
   notes: string[];
   documents: ReceivedDoc[];
   documentsSkipped: boolean;
+  docsStarted?: boolean;
   priorYearSkipped?: boolean;
   facts?: Record<string, DraftField>;
   pendingConflict?: FactConflict | null;
@@ -306,6 +307,7 @@ export type Capture =
   | { field: "decline-proposal" }
   | { field: "propose-funds"; value: string }
   | { field: "skip-docs" }
+  | { field: "start-docs" }
   | { field: "open-docs" }
   | { field: "keep-file-fact" }
   | { field: "use-document-fact" }

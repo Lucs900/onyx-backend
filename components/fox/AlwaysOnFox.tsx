@@ -234,7 +234,9 @@ function hasReviewAsk(messages: FoxMessage[]) {
       message.role === "fox" &&
       (message.followUp === "Does this look right?" ||
         message.text.includes("Here’s a sample structure.") ||
-        /here.?s the file/i.test(message.text)),
+        /here.?s the file/i.test(message.text) ||
+        /notepad looks complete/i.test(message.text) ||
+        /does it look right/i.test(message.text)),
   );
 }
 
@@ -366,40 +368,7 @@ function FoxThread({
             aria-current={current ? "step" : undefined}
           >
             <p>{message.text}</p>
-            {message.facts?.length ? (
-              <ul className="fox-bubble__facts">
-                {message.facts.map((fact) => (
-                  <li key={fact.id}>
-                    <span className="fox-bubble__fact-label">{fact.label}</span>
-                    <span>
-                      {fact.value}
-                      {fact.note ? <small> · {fact.note}</small> : null}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            ) : null}
             {message.followUp ? <p>{message.followUp}</p> : null}
-            {message.role === "client" && message.edit ? (
-              <button
-                type="button"
-                className="fox-bubble__edit"
-                onClick={() =>
-                  onAction({
-                    id: `edit-${message.id}`,
-                    label: "Edit",
-                    event: "bubble",
-                    capture: {
-                      field: "correct",
-                      value: message.edit as string,
-                      line: message.editLine,
-                    },
-                  })
-                }
-              >
-                Edit
-              </button>
-            ) : null}
             {current &&
             message.actions?.length &&
             (message.text.trim() || (message.followUp ?? "").trim()) ? (
@@ -1046,7 +1015,6 @@ export function AlwaysOnFox({
         action.capture?.field === "open-docs" && !getFoxDraft().sampleAccepted;
       if (invitePick) {
         skipPromptSync.current = true;
-        appendReply(action.label, { text: "" });
         requestFoxPickFile();
         return;
       }
