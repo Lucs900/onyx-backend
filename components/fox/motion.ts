@@ -2,6 +2,7 @@ import {
   askClassLabel,
   missingExtractClasses,
   missingListCopy,
+  receivedTaxReturnCount,
   stillUsefulLabels,
 } from "./fileWrite";
 import { canLooksRight, loanExceedsPurchasePrice } from "./completeness";
@@ -187,10 +188,20 @@ export function needsYouCopy(draft: FoxIntakeDraft) {
 }
 
 export function gatheringCopy(draft: FoxIntakeDraft) {
+  return docsHandoffCopy(draft);
+}
+
+/** Fox-first docs coach after Looks right. Chips stay replies, not the form. */
+export function docsHandoffCopy(draft: FoxIntakeDraft) {
+  const income = draft.incomeType.value;
+  const seLike = income === "self-employed" || income === "other";
+  const taxReturns = receivedTaxReturnCount(draft);
+  if (seLike && taxReturns < 1) {
+    return "Government ID. Most recent tax return. Prior-year return if available. Upload what you have. Skip is fine.";
+  }
   const list = gatheringList(draft);
-  return list
-    ? `${MOTION_COPY.gatheringPrefix} ${list}. ${MOTION_COPY.gatheringSuffix}`
-    : MOTION_COPY.ready;
+  if (!list) return MOTION_COPY.ready;
+  return `${list}. Upload what you have. Skip is fine.`;
 }
 
 /** Bureau pull is allowed only after Proceed into licensed review. Never on browse, sketch, Looks right, or docs. */

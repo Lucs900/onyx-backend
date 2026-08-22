@@ -310,7 +310,18 @@ const afterOcc = draft({
   occupancyAsked: true,
   occupancyChoice: { ...emptyDraft().occupancyChoice, value: "primary" },
 });
-assert.equal(workspacePrompt(afterOcc), "timeline");
+assert.equal(workspacePrompt(afterOcc), "value");
+assert.notEqual(workspacePrompt(afterOcc), "timeline");
+assert.equal(amountAskText(afterOcc), "What’s the purchase price?");
+const occThenPrice = workspaceReply("Primary", draft({ path: "acr", productIntent: "buy" }));
+assert.equal(occThenPrice?.capture?.field, "occupancy");
+assert.match(occThenPrice?.text ?? "", /purchase price/i);
+assert.doesNotMatch(occThenPrice?.text ?? "", /timeline|ready now|30–90|just exploring/i);
+assert.ok((workspacePromptCopy("occupancy", draft({ path: "acr", productIntent: "buy" })).text ?? "").trim());
+assert.ok(
+  (workspacePromptCopy("product", draft({ path: "acr" })).actions ?? []).some((item) => item.label === "Buy"),
+);
+assert.ok((workspacePromptCopy("product", draft({ path: "acr" })).text ?? "").trim());
 
 const afterTime = draft({
   path: "loan-only",
@@ -322,11 +333,10 @@ const afterTime = draft({
 });
 assert.equal(workspacePrompt(afterTime), "amount");
 
-const buyAfterTime = workspaceReply("Ready now", afterOcc);
-assert.equal(buyAfterTime?.capture?.field, "timeline");
-assert.match(buyAfterTime?.text ?? "", /Ready now/);
-assert.match(buyAfterTime?.text ?? "", /What’s the purchase price\?/);
-assert.doesNotMatch(buyAfterTime?.text ?? "", /rough amount|^what’s a rough amount/i);
+const buyAfterOcc = workspaceReply("Primary", draft({ path: "acr", productIntent: "buy" }));
+assert.equal(buyAfterOcc?.capture?.field, "occupancy");
+assert.match(buyAfterOcc?.text ?? "", /What’s the purchase price\?/);
+assert.doesNotMatch(buyAfterOcc?.text ?? "", /rough amount|^what’s a rough amount/i);
 
 const refiAfterTime = draft({
   path: "acr",
@@ -560,12 +570,28 @@ assert.deepEqual(
 const afterIncome = withIncome(afterCredit, "w2");
 assert.equal(workspacePrompt(afterIncome), "review");
 assert.notEqual(workspacePrompt(afterIncome), "documents");
+const noTimelineFile = withIncome(
+  withPurchaseFunds(
+    draft({
+      path: "acr",
+      productIntent: "buy",
+      occupancyAsked: true,
+      occupancyChoice: { ...emptyDraft().occupancyChoice, value: "primary" },
+      creditAsked: true,
+      creditBand: "760+",
+    }),
+  ),
+);
+assert.equal(noTimelineFile.timelineChoice.value, "");
+assert.ok(canLooksRight(noTimelineFile));
+assert.equal(workspacePrompt(noTimelineFile), "review");
+assert.ok(previewFacts(noTimelineFile).some((fact) => fact.id === "timeline" && fact.value === "—"));
 const looksRight = workspaceReply("Looks right", afterIncome);
 assert.equal(creditPullPermitted(applyLooksRightMotion(afterIncome)), false);
 assert.equal(looksRight?.capture?.field, "confirm-draft");
-assert.match(looksRight?.text ?? "", /these docs help next/i);
 assert.match(looksRight?.text ?? "", /government ID, latest paystub, and W-2/i);
-assert.match(looksRight?.text ?? "", /upload docs, proceed, or say not yet/i);
+assert.match(looksRight?.text ?? "", /upload what you have/i);
+assert.match(looksRight?.text ?? "", /skip is fine/i);
 assert.doesNotMatch(`${looksRight?.text ?? ""} ${looksRight?.followUp ?? ""}`, /drop what you have|will contact you|we’ll be in touch|your lo has the file/i);
 assert.ok((looksRight?.actions ?? []).some((item) => item.label === "Upload docs"));
 assert.ok((looksRight?.actions ?? []).some((item) => item.label === "Proceed"));
@@ -993,8 +1019,8 @@ assert.ok(!/will contact you|we’ll be in touch|your lo has the file/i.test(bkD
 
 const matrixLooksRight = workspaceReply("Looks right", investBuy);
 assert.equal(matrixLooksRight?.capture?.field, "confirm-draft");
-assert.match(matrixLooksRight?.text ?? "", /these docs help next/i);
 assert.match(matrixLooksRight?.text ?? "", /government ID, latest paystub, and W-2/i);
+assert.match(matrixLooksRight?.text ?? "", /upload what you have/i);
 assert.ok((matrixLooksRight?.actions ?? []).some((item) => item.label === "Proceed"));
 assert.ok((matrixLooksRight?.actions ?? []).some((item) => item.label === "Upload docs"));
 assert.ok((matrixLooksRight?.actions ?? []).some((item) => item.label === "Not yet"));
@@ -1070,9 +1096,9 @@ assert.ok(
 );
 
 const done = workspacePromptCopy("done", afterLooks);
-assert.match(done.text, /these docs help next/i);
 assert.match(done.text, /government ID/i);
-assert.match(done.text, /upload docs, proceed, or say not yet/i);
+assert.match(done.text, /upload what you have/i);
+assert.match(done.text, /skip is fine/i);
 assert.ok(!/I’m preparing this desk/i.test(done.text));
 assert.ok(!/we’ll be in touch|will contact you|your lo has the file/i.test(done.text));
 assert.ok((done.actions ?? []).some((item) => item.label === "Upload docs"));
@@ -1168,9 +1194,11 @@ assert.ok(!w2Request.labels.includes("Bank statements"));
 
 const selfLooks = workspaceReply("Looks right", withIncome(afterCredit, "self-employed"));
 assert.equal(selfLooks?.capture?.field, "confirm-draft");
-assert.match(selfLooks?.text ?? "", /these docs help next/i);
-assert.match(selfLooks?.text ?? "", /government ID and tax return/i);
-assert.match(selfLooks?.text ?? "", /upload docs, proceed, or say not yet/i);
+assert.match(selfLooks?.text ?? "", /government ID/i);
+assert.match(selfLooks?.text ?? "", /most recent tax return/i);
+assert.match(selfLooks?.text ?? "", /prior-year return if available/i);
+assert.match(selfLooks?.text ?? "", /upload what you have/i);
+assert.match(selfLooks?.text ?? "", /skip is fine/i);
 assert.ok((selfLooks?.actions ?? []).some((item) => item.label === "Upload docs"));
 assert.ok((selfLooks?.actions ?? []).some((item) => item.label === "Proceed"));
 assert.ok((selfLooks?.actions ?? []).some((item) => item.label === "Not yet"));
@@ -1703,7 +1731,8 @@ assert.ok(!stillUsefulLabels(seWalk.draft).includes("tax return"));
 assert.match(stillUsefulAskCopy(seWalk.draft), /government ID and prior-year return/i);
 assert.doesNotMatch(stillUsefulAskCopy(seWalk.draft), /government ID and tax return/i);
 assert.match(gatheringCopy(seWalk.draft), /government ID and prior-year return/i);
-assert.match(gatheringCopy(seWalk.draft), /upload docs, proceed, or say not yet/i);
+assert.match(gatheringCopy(seWalk.draft), /upload what you have/i);
+assert.match(gatheringCopy(seWalk.draft), /skip is fine/i);
 assert.doesNotMatch(gatheringCopy(seWalk.draft), /government ID and tax return/i);
 assert.match(fileStillUsefulNote(seWalk.draft) ?? "", /still useful: ID · prior-year return/i);
 assert.doesNotMatch(fileStillUsefulNote(seWalk.draft) ?? "", /tax return/i);
@@ -1813,7 +1842,7 @@ assert.equal(receivedTaxReturnCount(seBothYears.draft), 2);
 assert.ok(!missingExtractClasses(seBothYears.draft).includes("tax_return"));
 assert.deepEqual(stillUsefulLabels(seBothYears.draft), ["government ID"]);
 assert.match(stillUsefulAskCopy(seBothYears.draft), /^Government ID\.$/);
-assert.match(gatheringCopy(seBothYears.draft), /These docs help next: Government ID\. Upload docs, proceed, or say not yet\./);
+assert.match(gatheringCopy(seBothYears.draft), /Government ID\. Upload what you have\. Skip is fine\./);
 assert.doesNotMatch(gatheringCopy(seBothYears.draft), /tax return|prior-year return/i);
 assert.match(fileStillUsefulNote(seBothYears.draft) ?? "", /^still useful: ID$/);
 assert.doesNotMatch(fileStillUsefulNote(seBothYears.draft) ?? "", /tax return|prior-year return|return/i);
@@ -1863,7 +1892,7 @@ assert.equal(seSecondWrite.draft.documents[0]?.extractClass, "tax_return");
 assert.equal(seSecondWrite.draft.documents[1]?.extractClass, "tax_return");
 assert.equal(receivedTaxReturnCount(seSecondWrite.draft), 2);
 assert.deepEqual(stillUsefulLabels(seSecondWrite.draft), ["government ID"]);
-assert.match(gatheringCopy(seSecondWrite.draft), /These docs help next: Government ID\. Upload docs, proceed, or say not yet\./);
+assert.match(gatheringCopy(seSecondWrite.draft), /Government ID\. Upload what you have\. Skip is fine\./);
 assert.doesNotMatch(gatheringCopy(seSecondWrite.draft), /tax return|prior-year return/i);
 assert.match(fileStillUsefulNote(seSecondWrite.draft) ?? "", /^still useful: ID$/);
 
@@ -1895,7 +1924,7 @@ assert.equal(seYearTwo.draft.pendingProposal?.value, "7000");
 assert.equal(receivedTaxReturnCount(seYearTwo.draft), 2);
 assert.ok(!stillUsefulLabels(seYearTwo.draft).includes("prior-year return"));
 assert.ok(!stillUsefulLabels(seYearTwo.draft).includes("tax return"));
-assert.match(gatheringCopy(seYearTwo.draft), /These docs help next: Government ID\. Upload docs, proceed, or say not yet\./);
+assert.match(gatheringCopy(seYearTwo.draft), /Government ID\. Upload what you have\. Skip is fine\./);
 assert.equal(
   monthlyQualifyingFromExtract(seReturn.draft, "tax_return", {
     tax_year: "2025",
@@ -2882,6 +2911,8 @@ const dropSource = readFileSync(join(root, "components/fox/DocumentDrop.tsx"), "
 assert.ok(dropSource.includes("/api/docs/upload"));
 assert.ok(dropSource.includes("/api/docs/extract"));
 assert.ok(dropSource.includes("quietLines: [FAILED_READ_NOTE]"));
+assert.ok(dropSource.includes('aria-label="Upload"'));
+assert.ok(!dropSource.includes(">Documents<"));
 assert.ok(!dropSource.includes("/api/chat"));
 assert.ok(!dropSource.includes("/api/heloc-quote"));
 assert.ok(!dropSource.includes("setTimeout"));
@@ -2890,13 +2921,15 @@ assert.ok(
   alwaysOn.includes("file is prepared") ||
     alwaysOn.includes("still useful") ||
     alwaysOn.includes("this file can move") ||
-    alwaysOn.includes("docs help next"),
+    alwaysOn.includes("docs help next") ||
+    alwaysOn.includes("upload what you have"),
 );
 assert.ok(alwaysOn.includes('prompt === "done"'));
 assert.ok(alwaysOn.includes("FOX_THREAD_LINE_EVENT"));
 assert.ok(alwaysOn.includes("shouldResumeWorkspaceEntry"));
 assert.ok(alwaysOn.includes("fileExists(live)"));
-assert.ok(alwaysOn.includes("Drop a file here."));
+assert.ok(!alwaysOn.includes('text: "Drop a file here."'));
+assert.ok(alwaysOn.includes("motionAskText"));
 assert.ok(alwaysOn.includes("DECLINING_INCOME_CAUTION"));
 assert.ok(alwaysOn.includes("inertSupersededIncomeConfirms"));
 assert.ok(alwaysOn.includes("Start over"));
@@ -2939,6 +2972,10 @@ assert.ok(filePreview.includes("draft.docsOpen"));
 assert.ok(filePreview.includes("DocumentDrop"));
 assert.ok(filePreview.includes('fact.id === "next"'));
 assert.ok(filePreview.includes('fact.id === "file"') || filePreview.includes('id === "file"'));
+const completenessSource = readFileSync(join(root, "components/fox/completeness.ts"), "utf8");
+assert.ok(!completenessSource.includes("if (!draft.timelineChoice.value) return false;"));
+assert.ok(workspaceSrc.includes("function withFoxFirst") || workspaceSrc.includes("withFoxFirst"));
+assert.ok(!workspaceSrc.includes('if (!draft.timelineAsked && !draft.timelineChoice.value) return "timeline"'));
 
 const acrHero = readFileSync(join(root, "components/acr/AcrHero.tsx"), "utf8");
 assert.ok(!/next right move/.test(acrHero));

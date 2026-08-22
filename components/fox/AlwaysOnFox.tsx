@@ -237,7 +237,7 @@ function hasPreparedAsk(messages: FoxMessage[]) {
   return messages.some(
     (message) =>
       message.role === "fox" &&
-      (/these docs help next|still useful:|this file can move|onyx has this for review|holding\. i.?ll keep|licensed originator is on this exception|i need .+ from you|what.?s a good email|file is prepared/i.test(
+      (/these docs help next|upload what you have|still useful:|this file can move|onyx has this for review|holding\. i.?ll keep|licensed originator is on this exception|i need .+ from you|what.?s a good email|file is prepared/i.test(
         message.text,
       )),
   );
@@ -252,7 +252,8 @@ function withUpdatedStillUsefulAsk(messages: FoxMessage[], live: FoxIntakeDraft)
     .reverse()
     .findIndex(
       (message) =>
-        message.role === "fox" && /these docs help next|still useful:/i.test(message.text),
+        message.role === "fox" &&
+        /these docs help next|upload what you have|government ID|still useful:/i.test(message.text),
     );
   if (index < 0) return [...messages, ask];
   const at = messages.length - 1 - index;
@@ -390,7 +391,9 @@ function FoxThread({
                 Edit
               </button>
             ) : null}
-            {current && message.actions?.length ? (
+            {current &&
+            message.actions?.length &&
+            (message.text.trim() || (message.followUp ?? "").trim()) ? (
               <div className="fox-bubble__actions">
                 {message.actions.map((action) =>
                   action.href ? (
@@ -1009,7 +1012,11 @@ export function AlwaysOnFox({
     ) {
       applyCapture(action.capture ?? { field: "open-docs" });
       skipPromptSync.current = true;
-      appendReply(action.label, { text: "Drop a file here." });
+      const live = getFoxDraft();
+      appendReply(action.label, {
+        text: motionAskText({ ...live, docsOpen: true }),
+        actions: finishLineActions(live),
+      });
       window.requestAnimationFrame(() => {
         document.getElementById("fox-documents")?.scrollIntoView({
           block: "nearest",

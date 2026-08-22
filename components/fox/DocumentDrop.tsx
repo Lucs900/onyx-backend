@@ -176,11 +176,8 @@ export function DocumentDrop({
     <section
       className={compact ? "structure-drop" : "structure-drop structure-drop--thread"}
       id="fox-documents"
-      aria-labelledby="docs-drop-title"
+      aria-label="Upload"
     >
-      <h2 id="docs-drop-title" className="type-eyebrow">
-        Documents
-      </h2>
       {hint ? <p className="structure-drop__hint">{hint}</p> : null}
       {reject ? <p className="structure-drop__reject">{reject}</p> : null}
       <div className="structure-drop__row">

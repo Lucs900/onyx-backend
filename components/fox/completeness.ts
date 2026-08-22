@@ -627,7 +627,6 @@ export function missingAmountAsk(draft: FoxIntakeDraft) {
 export function canLooksRight(draft: FoxIntakeDraft) {
   if (!draft.path || !draft.productIntent) return false;
   if (!draft.occupancyChoice.value) return false;
-  if (!draft.timelineChoice.value) return false;
   if (!sketchAmountsReady(draft)) return false;
   if (!draft.creditBand && !draft.creditAsked) return false;
   if (!draft.incomeType.value && !draft.incomeAsked) return false;
@@ -705,7 +704,10 @@ export function requiredLineValue(
           : draft.timelineChoice.value === "exploring"
             ? "Just exploring"
             : "";
-    return { value: label || MISSING_LINE, filled: Boolean(label) };
+    if (label) return { value: label, filled: true };
+    const close = factValue(draft, "close_date");
+    if (close) return { value: displayFactValue("close_date", close), filled: true };
+    return { value: MISSING_LINE, filled: false };
   }
   if (line.id === "credit") {
     const band = draft.creditBand;

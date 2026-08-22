@@ -795,7 +795,6 @@ export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
   if (!draft.productIntent) return "product";
   if (needsJumboPurpose(draft)) return "jumbo-purpose";
   if (!draft.occupancyAsked && !draft.occupancyChoice.value) return "occupancy";
-  if (!draft.timelineAsked && !draft.timelineChoice.value) return "timeline";
   if (purchasePriceAskNeeded(draft)) return "value";
   if (fundsAskNeeded(draft)) return "amount";
   if (refiLoanAskNeeded(draft) || (isHelocFile(draft) && !hasHelocLine(draft))) return "amount";
@@ -809,7 +808,28 @@ export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
   return "done";
 }
 
+function withFoxFirst<
+  T extends { text: string; followUp?: string; actions?: FoxAction[] },
+>(copy: T): T {
+  if ((copy.actions?.length ?? 0) > 0 && !copy.text.trim() && !(copy.followUp ?? "").trim()) {
+    return { ...copy, text: "I’m here. Type below, or tap a reply." };
+  }
+  return copy;
+}
+
 export function workspacePromptCopy(
+  prompt: FoxPrompt,
+  draft: FoxIntakeDraft,
+): {
+  text: string;
+  followUp?: string;
+  facts?: PreviewFact[];
+  actions?: FoxAction[];
+} {
+  return withFoxFirst(workspaceAskCopy(prompt, draft));
+}
+
+function workspaceAskCopy(
   prompt: FoxPrompt,
   draft: FoxIntakeDraft,
 ): {
@@ -2248,9 +2268,10 @@ export function workspaceReply(
       occupancyChoice: { ...draft.occupancyChoice, value: match.value },
       occupancyAsked: true,
     };
+    const nextAsk = workspacePrompt(nextDraft);
     return withWorkspaceGuide(
       {
-        ...workspacePromptCopy("timeline", nextDraft),
+        ...workspacePromptCopy(nextAsk === "occupancy" ? "value" : nextAsk, nextDraft),
         capture: { field: "occupancy", value: match.value },
       },
       nextDraft,

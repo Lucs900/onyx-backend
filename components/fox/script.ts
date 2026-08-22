@@ -94,7 +94,6 @@ export function currentPrompt(draft: FoxIntakeDraft): FoxPrompt {
   if (draft.correcting && draft.correcting !== "correct") return draft.correcting;
   if (draft.correcting === "correct") return "correct";
   if (!draft.occupancyAsked) return "occupancy";
-  if (!draft.timelineAsked) return "timeline";
   if (!draft.documents.length && !draft.documentsSkipped) return "documents";
   return "review";
 }
@@ -428,7 +427,15 @@ function captureForPrompt(
       (item) => item.label.toLowerCase() === raw.toLowerCase() || item.value === raw.toLowerCase(),
     );
     if (!match) return { text: "Tap Primary, Second home, or Investment." };
-    return { ...promptCopy("timeline"), capture: { field: "occupancy", value: match.value } };
+    const nextDraft = {
+      ...draft,
+      occupancyChoice: { ...draft.occupancyChoice, value: match.value },
+      occupancyAsked: true,
+    };
+    return {
+      ...workspacePromptCopy(workspacePrompt(nextDraft), nextDraft),
+      capture: { field: "occupancy", value: match.value },
+    };
   }
   if (prompt === "timeline") {
     const match = TIMELINE_BUBBLES.find(

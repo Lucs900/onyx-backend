@@ -839,7 +839,7 @@ export function advancePhase() {
   if (!hasRequiredContact(current)) {
     return commit({ ...current, phase: "context" });
   }
-  if (!current.incomeType.value || !current.occupancyAsked || !current.timelineAsked) {
+  if (!current.incomeType.value || !current.occupancyAsked) {
     return commit({ ...current, phase: "context" });
   }
   if (!current.documents.length && !current.documentsSkipped) {
@@ -1397,8 +1397,7 @@ export function questionsComplete(draft: FoxIntakeDraft) {
   return (
     hasRequiredContact(draft) &&
     Boolean(draft.incomeType.value) &&
-    draft.occupancyAsked &&
-    draft.timelineAsked
+    draft.occupancyAsked
   );
 }
 
