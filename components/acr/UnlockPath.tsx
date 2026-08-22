@@ -8,8 +8,8 @@ const LINES = [
     line: "On time payments keep the desk open.",
   },
   {
-    title: "Unlock on the desk",
-    line: "The reward appears on your desk when the path is complete.",
+    title: "When the timing is wrong, Fox waits.",
+    line: "A move only when the numbers are strong.",
   },
 ] as const;
 

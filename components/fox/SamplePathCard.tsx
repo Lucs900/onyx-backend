@@ -1,5 +1,4 @@
-import Link from "next/link";
-import { ACR_START_HREF, LOAN_START_HREF } from "@/components/products/startPath";
+import { HeroStartLink } from "./HeroStartLink";
 
 export function SamplePathCard() {
   return (
@@ -10,12 +9,12 @@ export function SamplePathCard() {
       </h2>
       <p className="type-body">Prepare a file on the desk. Fox stays.</p>
       <div className="intake-links">
-        <Link href={ACR_START_HREF} className="btn btn--primary">
+        <HeroStartLink path="acr" className="btn btn--primary">
           Start your relationship
-        </Link>
-        <Link href={LOAN_START_HREF} className="btn btn--text">
+        </HeroStartLink>
+        <HeroStartLink path="loan-only" className="btn btn--text">
           Just need a mortgage
-        </Link>
+        </HeroStartLink>
       </div>
     </aside>
   );

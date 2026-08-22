@@ -1,4 +1,5 @@
 import { MarketingArticle } from "@/components/MarketingArticle";
+import { ACR_START_HREF, LOAN_START_HREF } from "@/components/products/startPath";
 import type { Metadata } from "next";
 import Link from "next/link";
 
@@ -21,10 +22,10 @@ export default function RatesPage() {
       </p>
       <p className="type-legal">Sample, not live. NMLS [OPEN] · CA DRE [OPEN]</p>
       <div className="prose-page__actions">
-        <Link href="/start?path=loan" className="btn btn--primary">
+        <Link href={LOAN_START_HREF} className="btn btn--primary">
           Just need a mortgage
         </Link>
-        <Link href="/start?path=acr" className="btn btn--secondary">
+        <Link href={ACR_START_HREF} className="btn btn--secondary">
           Start your relationship
         </Link>
       </div>

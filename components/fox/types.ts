@@ -1,6 +1,7 @@
 import type { CreditRange, ExplorerScenario } from "@/components/products/scenario";
 
 export const INTAKE_STORAGE_KEY = "onyx.foxIntake.draft";
+export const INTAKE_DRAFT_VERSION = 2;
 export const FOX_PANEL_KEY = "onyx.fox.panelOpen";
 export const FOX_LEGAL_KEY = "onyx.fox.sawLegal";
 export const FOX_MESSAGES_KEY = "onyx.fox.messages";
@@ -15,7 +16,7 @@ export const CONFIRMED_STATUS = "Draft confirmed — pending licensed review";
 export const ORIGINATOR_REQUEST = "Need a licensed originator?";
 export const ORIGINATOR_REVIEW = "A licensed originator will review this.";
 
-export type FieldSource = "client" | "scenario" | "extracted-unconfirmed";
+export type FieldSource = "client" | "scenario" | "extracted-unconfirmed" | "document" | "suggested" | "computed";
 
 export type DraftField = {
   field: string;
@@ -26,6 +27,16 @@ export type DraftField = {
 };
 
 export type DocSlot = "paystubs" | "w2" | "bank" | "id" | "other";
+
+export type ExtractClass =
+  | "government_id"
+  | "paystub"
+  | "w2"
+  | "tax_return"
+  | "bank_statement"
+  | "purchase_contract"
+  | "mortgage_statement"
+  | "other";
 
 export type DocStatus =
   | "received"
@@ -42,11 +53,94 @@ export type ReceivedDoc = {
   receivedAt: string;
   status: DocStatus;
   note?: string;
+  bytesRef?: string;
+  extractClass?: ExtractClass;
+};
+
+export type ProposalKind = "document" | "public" | "computed";
+
+export type CompletenessState = "sketch" | "documented" | "agency_partial";
+
+export type CompletenessGroup = "identity" | "property" | "loan" | "income" | "credit";
+
+export type FactConflict = {
+  field: string;
+  fileValue: string;
+  documentValue: string;
+  label: string;
+  kind?: ProposalKind;
+};
+
+export type FactProposal = {
+  field: string;
+  value: string;
+  label: string;
+  kind: ProposalKind;
+  note?: string;
+  companion?: {
+    field: string;
+    value: string;
+    label: string;
+  };
 };
 
 export type IntakePhase = "context" | "documents" | "draft" | "confirmed";
 
 export type WorkspaceDraftStatus = "preparing" | "ready" | "with-originator";
+
+/** Borrower-facing file motion. Originator assigned is a Structure fact, not this status. */
+export type FileMotion =
+  | "confirmed"
+  | "gathering"
+  | "ready"
+  | "in_queue"
+  | "needs_you"
+  | "on_hold"
+  | "escalated";
+
+export type FileNext = "You" | "Fox" | "ONYX" | "Outside";
+
+export type WorkItemKind = "review";
+
+export type WorkItemState = "open" | "nudged" | "returned" | "closed";
+
+export type WorkItem = {
+  id: string;
+  kind: WorkItemKind;
+  state: WorkItemState;
+  openedAt: string;
+  nudgedAt?: string;
+  returnedAt?: string;
+  note?: string;
+  needsDoc?: boolean;
+};
+
+export type FileEventKind =
+  | "looks-right"
+  | "proceed"
+  | "not-yet"
+  | "upload-more"
+  | "skip-docs"
+  | "request-human"
+  | "nudge"
+  | "return-to-fox"
+  | "email";
+
+export type FileEvent = {
+  id: string;
+  at: string;
+  kind: FileEventKind;
+  text: string;
+};
+
+export type PreviewOutboxItem = {
+  to: string;
+  subject: string;
+  body: string;
+  createdAt: string;
+};
+
+export type PendingFinish = "proceed" | "not-yet";
 
 export type SectionId =
   | "contact"
@@ -64,8 +158,16 @@ export type IntakePath = "acr" | "loan-only";
 
 export type ProductIntent = "buy" | "refinance" | "heloc" | "jumbo" | "other";
 
+export type JumboPurpose = "buy" | "refinance";
+
+export type GovProgram = "fha" | "va" | "usda";
+
+export type NamedCreditEvent = "bankruptcy" | "foreclosure";
+
+export type ProductOffer = "jumbo" | "heloc";
+
 export type FoxIntakeDraft = {
-  version: 1;
+  version: number;
   phase: IntakePhase;
   contact: {
     fullName: DraftField;
@@ -80,18 +182,38 @@ export type FoxIntakeDraft = {
   timelineAsked: boolean;
   preferredAsked: boolean;
   correcting: FoxPrompt | null;
+  correctingLine?: string | null;
   scenario: ExplorerScenario | null;
   path?: IntakePath;
   productIntent?: ProductIntent;
+  jumboPurpose?: JumboPurpose;
+  jumboOffered?: boolean;
+  helocOffered?: boolean;
+  pendingOffer?: ProductOffer;
+  outOfState?: boolean;
+  govProgram?: GovProgram;
+  creditEvent?: NamedCreditEvent;
+  cashOut?: boolean;
   loanAmountValue?: number;
   propertyValueAmount?: number;
+  downPaymentAmount?: number;
   amountAsked?: boolean;
   valueAsked?: boolean;
+  downAsked?: boolean;
+  amountPurposeLabel?: string;
   creditBand?: CreditRange;
   creditAsked?: boolean;
   incomeAsked?: boolean;
   docsOpen?: boolean;
   originatorRequested?: boolean;
+  motion?: FileMotion;
+  nextActor?: FileNext;
+  workItems?: WorkItem[];
+  events?: FileEvent[];
+  previewOutbox?: PreviewOutboxItem[];
+  pendingFinish?: PendingFinish;
+  emailCaptureAsked?: boolean;
+  reviewSlaMs?: number;
   termYears?: number;
   termAsked?: boolean;
   workspaceFlow?: boolean;
@@ -100,6 +222,11 @@ export type FoxIntakeDraft = {
   notes: string[];
   documents: ReceivedDoc[];
   documentsSkipped: boolean;
+  facts?: Record<string, DraftField>;
+  pendingConflict?: FactConflict | null;
+  pendingProposal?: FactProposal | null;
+  skippedClasses?: ExtractClass[];
+  missingAskKey?: string;
   sections: Record<SectionId, boolean>;
   confirmedAt?: string;
   status?: typeof CONFIRMED_STATUS;
@@ -137,6 +264,11 @@ export type FoxPrompt =
   | "review"
   | "correct"
   | "path-switch"
+  | "jumbo-purpose"
+  | "offer-jumbo"
+  | "offer-heloc"
+  | "geo-stop"
+  | "confirm-proposal"
   | "done";
 
 export type Capture =
@@ -147,21 +279,46 @@ export type Capture =
   | { field: "timeline"; value: string }
   | { field: "path"; value: IntakePath }
   | { field: "productIntent"; value: ProductIntent }
+  | { field: "starter"; value: ProductIntent; price?: string }
+  | { field: "jumboPurpose"; value: JumboPurpose }
+  | { field: "accept-jumbo" }
+  | { field: "decline-jumbo" }
+  | { field: "accept-heloc" }
+  | { field: "decline-heloc" }
+  | { field: "pending-offer"; value: ProductOffer }
+  | { field: "out-of-state" }
+  | { field: "in-state" }
+  | { field: "govProgram"; value: GovProgram }
+  | { field: "creditEvent"; value: NamedCreditEvent }
+  | { field: "cashOut" }
   | { field: "loanAmount"; value: string }
   | { field: "propertyValue"; value: string }
+  | { field: "downPayment"; value: string }
+  | { field: "amountPurpose"; value: string }
   | { field: "creditRange"; value: string }
   | { field: "termYears"; value: string }
   | { field: "skip-amount" }
   | { field: "skip-value" }
+  | { field: "skip-down" }
   | { field: "skip-term" }
+  | { field: "accept-proposal" }
+  | { field: "decline-proposal" }
+  | { field: "propose-funds"; value: string }
   | { field: "skip-docs" }
   | { field: "open-docs" }
+  | { field: "keep-file-fact" }
+  | { field: "use-document-fact" }
   | { field: "confirm-draft" }
   | { field: "needs-correction" }
   | { field: "keep-path" }
   | { field: "what-acr" }
+  | { field: "what-happens-next" }
+  | { field: "ask-fox" }
   | { field: "talk-originator" }
-  | { field: "correct"; value: string }
+  | { field: "proceed" }
+  | { field: "not-yet" }
+  | { field: "upload-more" }
+  | { field: "correct"; value: string; line?: string }
   | { field: "note"; value: string };
 
 export type FoxAction = {
@@ -170,6 +327,7 @@ export type FoxAction = {
   href?: string;
   event?: "prepare-draft" | "open-docs" | "bubble";
   capture?: Capture;
+  quiet?: boolean;
 };
 
 export type FoxMessageFact = {
@@ -224,6 +382,8 @@ export const PRODUCT_INTENT_BUBBLES = [
   { value: "other", label: "Other" },
 ] as const;
 
+export const CREDIT_STATED_NOTE = "Stated · not a pull";
+
 export const CREDIT_WORKSPACE_BUBBLES = [
   { value: "760+", label: "760+" },
   { value: "720-759", label: "720–759" },
@@ -240,4 +400,15 @@ export const TERM_BUBBLES = [
 export const AMOUNT_HELPER_BUBBLES = [
   { id: "not-sure", label: "Not sure" },
   { id: "skip", label: "Skip for now" },
+] as const;
+
+export const AMOUNT_PURPOSE_BUBBLES = [
+  { value: "Purchase price", label: "Purchase price" },
+  { value: "Loan amount", label: "Loan amount" },
+  { value: "HELOC line", label: "HELOC line" },
+] as const;
+
+export const JUMBO_PURPOSE_BUBBLES = [
+  { value: "buy", label: "Buy" },
+  { value: "refinance", label: "Refinance" },
 ] as const;

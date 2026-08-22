@@ -4,6 +4,7 @@ import {
 } from "@/components/products/rewardEstimate";
 import {
   formatDollars,
+  isCaliforniaZip,
   type CreditRange,
   type ExplorerScenario,
   type LoanPurpose,
@@ -13,9 +14,11 @@ import {
 import { pathFromHomeChoice } from "./homeIdle";
 import {
   AMOUNT_HELPER_BUBBLES,
+  AMOUNT_PURPOSE_BUBBLES,
+  CREDIT_STATED_NOTE,
   CREDIT_WORKSPACE_BUBBLES,
-  DOC_SLOTS,
   INCOME_BUBBLES,
+  JUMBO_PURPOSE_BUBBLES,
   OCCUPANCY_BUBBLES,
   PRODUCT_INTENT_BUBBLES,
   TERM_BUBBLES,
@@ -23,15 +26,87 @@ import {
   type Capture,
   type FoxAction,
   type FoxIntakeDraft,
+  type FoxMessage,
+  type FoxMessageFact,
   type FoxPrompt,
+  type GovProgram,
   type IntakePath,
+  type JumboPurpose,
+  type NamedCreditEvent,
   type ProductIntent,
+  type ProductOffer,
 } from "./types";
+import {
+  displayFactValue,
+  docsDisplayLabel,
+  factValue,
+  fileStillUsefulNote,
+  incomeRequestedClasses,
+  missingExtractClasses,
+  missingListCopy,
+  slotFromFilename,
+  stillUsefulAskCopy,
+} from "./fileWrite";
+import {
+  SUGGESTED_NOTE,
+  canLooksRight,
+  completenessExplainCopy,
+  fileCompleteness,
+  guidelineCaution,
+  lowestCreditBand,
+  fundsAskNeeded,
+  hasDownPayment,
+  hasHelocLine,
+  hasLoanAmount,
+  hasPropertyValue,
+  impliedDownPayment,
+  impliedLoanAmount,
+  isHelocFile,
+  isPurchaseLike,
+  isRefiLike,
+  missingAmountAsk,
+  parseFundsRole,
+  proposalActions,
+  proposalAskCopy,
+  proposeFundsPair,
+  purchasePriceAskNeeded,
+  propertyValueAskNeeded,
+  refiLoanAskNeeded,
+  requiredLineValue,
+  requiredStructureLines,
+  resolveProposal,
+  sketchAmountsReady,
+  withComputedCompanion,
+} from "./completeness";
+import { decliningIncomeCaution, qualifyingIncomeDisplay } from "./qualifyingIncome";
+import {
+  applyEmailThenFinish,
+  applyLooksRightMotion,
+  emailMissing,
+  finishCaptureFromText,
+  finishLineActions,
+  inQueueEnding,
+  latestOutbox,
+  looksLikeEmail,
+  MOTION_COPY,
+  motionAskText,
+  motionOf,
+  motionStatusCopy,
+  nextActorOf,
+  remindLine,
+} from "./motion";
+
+export { slotFromFilename };
 
 export const START_ACR_TEXT =
   "I can prepare your relationship file. We’ll keep this desk open after close.";
 export const START_LOAN_TEXT =
   "This is the loan. ACR is optional if you want the desk later.";
+export const PATH_ASK_TEXT = "Start a relationship, or just the loan?";
+
+export function isPathAskMessage(message: Pick<FoxMessage, "role" | "text">) {
+  return message.role === "fox" && message.text === PATH_ASK_TEXT;
+}
 
 export function starterText(path?: IntakePath | null) {
   if (path === "loan-only") return START_LOAN_TEXT;
@@ -47,8 +122,13 @@ export function productIntentLabel(intent?: ProductIntent | null) {
   return "";
 }
 
-export function purposeForIntent(intent: ProductIntent): LoanPurpose {
-  if (intent === "refinance") return "rate-term-refi";
+export function purposeForIntent(
+  intent: ProductIntent,
+  jumboPurpose?: JumboPurpose | null,
+): LoanPurpose {
+  if (intent === "refinance" || (intent === "jumbo" && jumboPurpose === "refinance")) {
+    return "rate-term-refi";
+  }
   if (intent === "heloc") return "heloc-heloan";
   return "purchase";
 }
@@ -114,36 +194,455 @@ export function productIntentFromQuery(
 
 export function productIntentFromText(text: string): ProductIntent | null {
   const lower = text.trim().toLowerCase();
-  const fromQuery = productIntentFromQuery(lower);
-  if (fromQuery) return fromQuery;
   if (/\bbuy\b|purchase|buying/.test(lower)) return "buy";
   if (/refinanc|rate.?term|cash.?out/.test(lower)) return "refinance";
   if (/\bjumbo\b/.test(lower)) return "jumbo";
   if (/use equity|heloc|heloan|home equity|equity line/.test(lower)) {
     return "heloc";
   }
-  if (/\bother\b/.test(lower)) return "other";
+  if (
+    !/refinanc|heloc|jumbo/.test(lower) &&
+    /\b(down(\s+payment)?|percent down|% down|purchase price|a house|a home|the house|the home)\b/.test(
+      lower,
+    )
+  ) {
+    return "buy";
+  }
+  const fromQuery = productIntentFromQuery(lower);
+  if (fromQuery && fromQuery !== "other") return fromQuery;
+  if (lower === "other") return "other";
   return PRODUCT_INTENT_BUBBLES.find(
     (item) => item.label.toLowerCase() === lower || item.value === lower,
   )?.value ?? null;
 }
 
-export function usesPurchasePrice(intent?: ProductIntent | null) {
-  return intent === "buy" || intent === "jumbo";
+export function jumboPurposeOf(draft?: FoxIntakeDraft | null): JumboPurpose | undefined {
+  if (draft?.jumboPurpose === "buy" || draft?.jumboPurpose === "refinance") {
+    return draft.jumboPurpose;
+  }
+  if (draft?.productIntent !== "jumbo") return undefined;
+  if (draft.propertyValueAmount && !draft.loanAmountValue) return "buy";
+  if (draft.loanAmountValue && !draft.propertyValueAmount) return "refinance";
+  return undefined;
 }
 
-export function slotFromFilename(name: string): import("./types").DocSlot {
-  const lower = name.toLowerCase();
-  if (/w-?2/.test(lower)) return "w2";
-  if (/pay.?stub|payslip/.test(lower)) return "paystubs";
-  if (/tax|1099|k-?1|schedule.?c|profit|business/.test(lower)) return "other";
-  if (/bank|statement/.test(lower)) return "bank";
-  if (/\bid\b|license|passport|driver/.test(lower)) return "id";
-  return "other";
+export function needsJumboPurpose(draft?: FoxIntakeDraft | null) {
+  return draft?.productIntent === "jumbo" && !jumboPurposeOf(draft);
+}
+
+export function usesPurchasePrice(
+  intent?: ProductIntent | null,
+  purposeLabel?: string | null,
+  jumboPurpose?: JumboPurpose | null,
+) {
+  if (intent === "buy") return true;
+  if (intent === "jumbo") return jumboPurpose !== "refinance";
+  if (intent === "other" && purposeLabel) {
+    return /purchase price/i.test(purposeLabel);
+  }
+  return false;
+}
+
+function draftUsesPurchasePrice(draft?: FoxIntakeDraft | null) {
+  return usesPurchasePrice(
+    draft?.productIntent,
+    draft?.amountPurposeLabel,
+    jumboPurposeOf(draft),
+  );
+}
+
+export function structureAmountLabel(draft?: FoxIntakeDraft | null) {
+  const intent = draft?.productIntent;
+  if (intent === "buy") return "Purchase price";
+  if (intent === "jumbo") {
+    return jumboPurposeOf(draft) === "refinance" ? "Loan amount" : "Purchase price";
+  }
+  if (intent === "refinance") return "Loan amount";
+  if (intent === "heloc") return "HELOC line";
+  if (intent === "other") {
+    const named = (draft?.amountPurposeLabel ?? "").trim();
+    if (named && !/^(amount|numbers|rough amount)$/i.test(named)) return named;
+    return "";
+  }
+  return draftUsesPurchasePrice(draft) ? "Purchase price" : "Loan amount";
+}
+
+export function composerAmountHint(draft?: FoxIntakeDraft | null) {
+  if (!draft) return "the number";
+  if (draft.correctingLine === "loan") return "loan amount";
+  if (draft.correctingLine === "down") return "down payment or percent";
+  if (fundsAskNeeded(draft)) return "down payment, percent, or loan amount";
+  if (draft.correcting === "amount" && isPurchaseLike(draft) && hasPropertyValue(draft)) {
+    return "down payment, percent, or loan amount";
+  }
+  return structureAmountLabel(draft) || "the number";
+}
+
+export function amountAskText(draft: FoxIntakeDraft) {
+  if (draft.correctingLine === "down") {
+    const n = draft.downPaymentAmount;
+    return n != null && n > 0
+      ? `Down payment in the file is ${formatMoney(n)}. What’s the down payment?`
+      : "What’s the down payment?";
+  }
+  if (draft.correctingLine === "loan") {
+    const n = draft.loanAmountValue;
+    return n != null && n > 0
+      ? `Loan amount in the file is ${formatMoney(n)}. What’s the loan amount?`
+      : "What’s the loan amount?";
+  }
+  if (
+    fundsAskNeeded(draft) ||
+    (draft.correcting === "amount" && isPurchaseLike(draft) && hasPropertyValue(draft))
+  ) {
+    return "What’s the down payment or loan amount?";
+  }
+  if (propertyValueAskNeeded(draft)) return "What’s the property value?";
+  if (purchasePriceAskNeeded(draft)) return "What’s the purchase price?";
+  const intent = draft.productIntent;
+  if (intent === "buy" || (intent === "jumbo" && jumboPurposeOf(draft) !== "refinance")) {
+    return "What’s the purchase price?";
+  }
+  if (intent === "refinance" || (intent === "jumbo" && jumboPurposeOf(draft) === "refinance")) {
+    return hasLoanAmount(draft) && !hasPropertyValue(draft)
+      ? "What’s the property value?"
+      : "What’s the approximate loan or payoff amount?";
+  }
+  if (intent === "heloc") return "What line or cash do you need?";
+  if (intent === "other") {
+    const named = structureAmountLabel(draft);
+    if (!named) return "What is that number for?";
+    return `What’s the ${named.charAt(0).toLowerCase()}${named.slice(1)}?`;
+  }
+  return draftUsesPurchasePrice(draft)
+    ? "What’s the purchase price?"
+    : "What’s the loan amount?";
+}
+
+export function parseAmountPurpose(text: string): string | null {
+  const lower = text.trim().toLowerCase().replace(/['’]/g, "");
+  if (!lower || /^(amount|numbers|rough amount)$/i.test(lower)) return null;
+  if (/purchase|price/.test(lower)) return "Purchase price";
+  if (/heloc|line|cash needed|cash out/.test(lower) && !/loan amount|payoff/.test(lower)) {
+    return "HELOC line";
+  }
+  if (/loan|payoff/.test(lower)) return "Loan amount";
+  const match = AMOUNT_PURPOSE_BUBBLES.find(
+    (item) => item.label.toLowerCase() === lower || item.value.toLowerCase() === lower,
+  );
+  if (match) return match.value;
+  if (parseLooseAmount(text) != null && !/[a-z]/i.test(text.replace(/[\d$,.\s]/g, ""))) {
+    return null;
+  }
+  if (/dont know|do not know|not sure|unsure|skip( for now)?|\blater\b/.test(lower)) {
+    return null;
+  }
+  const cleaned = text.trim().replace(/\s+/g, " ");
+  if (!cleaned || /^\$?\d/.test(cleaned)) return null;
+  return cleaned
+    .split(" ")
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join(" ");
 }
 
 export function sampleRateApplies(intent?: ProductIntent | null) {
   return intent === "buy" || intent === "refinance";
+}
+
+/** 2026 FHFA high-cost ceiling. Not the standard conforming limit. */
+export const FHFA_HIGH_COST_CEILING_2026 = 1_249_125;
+export const PRICING_WHEN_READY = "Pricing when the file is ready";
+export const GEO_STOP_COPY =
+  "I can only prepare California files. I cannot prepare this file.";
+export const JUMBO_PURPOSE_ASK = "Are you buying or refinancing?";
+export const JUMBO_OFFER_COPY =
+  "That looks above the 2026 high-cost ceiling ($1,249,125). Stay on this product, or use Jumbo?";
+export const HELOC_OFFER_COPY =
+  "If you want cash and keep the first mortgage, HELOC may fit. Stay on Refinance, or use HELOC?";
+
+const NON_CA_STATES = [
+  "alabama",
+  "alaska",
+  "arizona",
+  "arkansas",
+  "colorado",
+  "connecticut",
+  "delaware",
+  "florida",
+  "georgia",
+  "hawaii",
+  "idaho",
+  "illinois",
+  "indiana",
+  "iowa",
+  "kansas",
+  "kentucky",
+  "louisiana",
+  "maine",
+  "maryland",
+  "massachusetts",
+  "michigan",
+  "minnesota",
+  "mississippi",
+  "missouri",
+  "montana",
+  "nebraska",
+  "nevada",
+  "new hampshire",
+  "new jersey",
+  "new mexico",
+  "new york",
+  "north carolina",
+  "north dakota",
+  "ohio",
+  "oklahoma",
+  "oregon",
+  "pennsylvania",
+  "rhode island",
+  "south carolina",
+  "south dakota",
+  "tennessee",
+  "texas",
+  "utah",
+  "vermont",
+  "virginia",
+  "washington",
+  "west virginia",
+  "wisconsin",
+  "wyoming",
+];
+
+export function treatedLoanAmount(draft?: FoxIntakeDraft | null): number | undefined {
+  if (!draft) return undefined;
+  if (draft.loanAmountValue != null && draft.loanAmountValue > 0) {
+    return draft.loanAmountValue;
+  }
+  if (isPurchaseLike(draft) && draft.propertyValueAmount != null && draft.downPaymentAmount != null) {
+    const implied = Math.round(draft.propertyValueAmount - draft.downPaymentAmount);
+    if (implied > 0) return implied;
+  }
+  if (draftUsesPurchasePrice(draft) && draft.propertyValueAmount != null && draft.propertyValueAmount > 0) {
+    return draft.propertyValueAmount;
+  }
+  return undefined;
+}
+
+export function loanLooksAboveCeiling(draft?: FoxIntakeDraft | null) {
+  const amount = treatedLoanAmount(draft);
+  return amount != null && amount > FHFA_HIGH_COST_CEILING_2026;
+}
+
+export function previewRateApplies(draft: FoxIntakeDraft): boolean {
+  const intent =
+    draft.productIntent ??
+    (() => {
+      const fromSlug = productIntentFromSlug(draft.scenario?.productSlug);
+      return fromSlug === "other" ? null : fromSlug;
+    })();
+  if (!sampleRateApplies(intent)) return false;
+  if (draft.outOfState || draft.govProgram || draft.creditEvent || draft.cashOut) return false;
+  if (lowestCreditBand(draft)) return false;
+  const occupancy = draft.occupancyChoice.value || draft.scenario?.occupancy || "";
+  if (occupancy === "investment") return false;
+  if (occupancy && occupancy !== "primary" && occupancy !== "second-home") return false;
+  if (loanLooksAboveCeiling(draft)) return false;
+  return true;
+}
+
+export function withMatrixAfterAmount(draft: FoxIntakeDraft): FoxIntakeDraft {
+  if (draft.outOfState || draft.pendingOffer) return draft;
+  if (
+    (draft.productIntent === "buy" || draft.productIntent === "refinance") &&
+    !draft.jumboOffered &&
+    loanLooksAboveCeiling(draft)
+  ) {
+    return { ...draft, pendingOffer: "jumbo" };
+  }
+  return draft;
+}
+
+export function remapAmountForIntent(draft: FoxIntakeDraft): FoxIntakeDraft {
+  if (
+    draft.productIntent === "buy" ||
+    draft.productIntent === "refinance" ||
+    draft.productIntent === "jumbo"
+  ) {
+    return draft;
+  }
+  if (draftUsesPurchasePrice(draft)) {
+    if (draft.propertyValueAmount == null && draft.loanAmountValue != null) {
+      return {
+        ...draft,
+        propertyValueAmount: draft.loanAmountValue,
+        valueAsked: Boolean(draft.amountAsked || draft.valueAsked),
+      };
+    }
+    return draft;
+  }
+  if (draft.loanAmountValue == null && draft.propertyValueAmount != null) {
+    return {
+      ...draft,
+      loanAmountValue: draft.propertyValueAmount,
+      amountAsked: Boolean(draft.valueAsked || draft.amountAsked),
+    };
+  }
+  return draft;
+}
+
+export function applyProductChange(
+  draft: FoxIntakeDraft,
+  nextIntent: ProductIntent,
+): FoxIntakeDraft {
+  const from = draft.productIntent;
+  let next: FoxIntakeDraft = {
+    ...draft,
+    productIntent: nextIntent,
+    pendingOffer: undefined,
+    jumboPurpose: nextIntent === "jumbo" ? draft.jumboPurpose : undefined,
+    amountPurposeLabel: nextIntent === "other" ? draft.amountPurposeLabel : undefined,
+    correcting: null,
+  };
+  if (from === "heloc" && nextIntent === "buy") {
+    next = {
+      ...next,
+      valueAsked: false,
+      propertyValueAmount: undefined,
+    };
+  }
+  return remapAmountForIntent(next);
+}
+
+export function applyStarterSketch(
+  draft: FoxIntakeDraft,
+  intent: ProductIntent,
+  price?: number | null,
+): FoxIntakeDraft {
+  let next = applyProductChange(draft, intent);
+  if (price != null && price > 0) {
+    next = withMatrixAfterAmount({
+      ...next,
+      propertyValueAmount: price,
+      valueAsked: true,
+    });
+  }
+  return next;
+}
+
+function requestHumanAction(): FoxAction {
+  return {
+    id: "request-human",
+    label: "Request human",
+    event: "bubble",
+    capture: { field: "talk-originator" },
+  };
+}
+
+function offerActions(kind: ProductOffer): FoxAction[] {
+  if (kind === "jumbo") {
+    return [
+      { id: "stay-product", label: "Stay", event: "bubble", capture: { field: "decline-jumbo" } },
+      { id: "use-jumbo", label: "Use Jumbo", event: "bubble", capture: { field: "accept-jumbo" } },
+    ];
+  }
+  return [
+    { id: "stay-refi", label: "Stay", event: "bubble", capture: { field: "decline-heloc" } },
+    { id: "use-heloc", label: "Use HELOC", event: "bubble", capture: { field: "accept-heloc" } },
+  ];
+}
+
+export function namedCalifornia(text: string) {
+  const lower = text.trim().toLowerCase();
+  if (/\bcalifornia\b|\bin ca\b/.test(lower)) return true;
+  const zip = lower.match(/\b(\d{5})\b/);
+  return Boolean(zip && isCaliforniaZip(zip[1]));
+}
+
+export function namedOutOfState(text: string) {
+  const lower = text.trim().toLowerCase();
+  if (namedCalifornia(text) && !/\b(not|outside|isn't|isnt)\b.{0,20}\bcalifornia\b/.test(lower)) {
+    return false;
+  }
+  if (/\b(not|outside|isn't|isnt)\b.{0,20}\bcalifornia\b/.test(lower)) return true;
+  if (/\bout of state\b/.test(lower)) return true;
+  if (NON_CA_STATES.some((state) => new RegExp(`\\b${state}\\b`).test(lower))) return true;
+  const zip = lower.match(/\b(\d{5})\b/);
+  if (zip && !isCaliforniaZip(zip[1])) return true;
+  return /\b(?:in|from|near)\s+(az|co|fl|ga|il|nc|nj|nv|ny|tn|tx|wa)\b/.test(lower);
+}
+
+export function namedGovProgram(text: string): GovProgram | null {
+  const lower = text.trim().toLowerCase();
+  if (/\bfha\b/.test(lower)) return "fha";
+  if (/\busda\b/.test(lower)) return "usda";
+  if (/\bvirginia\b/.test(lower)) return null;
+  if (/\b(in|from|near)\s+va\b/.test(lower)) return null;
+  if (/\b(va loan|va refinance|va purchase|va home|veterans?\s+(loan|affair)|gi bill)\b/.test(lower)) {
+    return "va";
+  }
+  if (/\bva\b/.test(lower)) return "va";
+  return null;
+}
+
+export function namedCreditEvent(text: string): NamedCreditEvent | null {
+  const lower = text.trim().toLowerCase();
+  if (/bankrupt/.test(lower)) return "bankruptcy";
+  if (/foreclos/.test(lower)) return "foreclosure";
+  return null;
+}
+
+export function jumboPurposeFromText(text: string): JumboPurpose | null {
+  const lower = text.trim().toLowerCase();
+  if (/^buy$|^purchase$|\bbuying\b/.test(lower)) return "buy";
+  if (/refinanc|\brefi\b|payoff/.test(lower)) return "refinance";
+  const intent = productIntentFromText(text);
+  if (intent === "buy") return "buy";
+  if (intent === "refinance") return "refinance";
+  return null;
+}
+
+export function looksLikePurchase(text: string) {
+  const lower = text.trim().toLowerCase();
+  if (/\b(not|don't|dont|isn't|isnt)\b.{0,12}\b(buy|buying|purchase)\b/.test(lower)) {
+    return false;
+  }
+  return productIntentFromText(text) === "buy" || /\b(buy|buying|purchase)\b/.test(lower);
+}
+
+export function wantsCashKeepFirst(text: string) {
+  const lower = text.trim().toLowerCase();
+  const cash = /\bcash(\s+out)?\b/.test(lower);
+  const keep =
+    /\bkeep(ing)?\b.{0,28}\b(first|mortgage|loan)\b/.test(lower) ||
+    /\b(first|current) (mortgage|loan)\b.{0,20}\b(stay|stays|keep)/.test(lower);
+  return cash && keep;
+}
+
+export function namedCashOut(text: string) {
+  const lower = text.trim().toLowerCase();
+  if (wantsCashKeepFirst(text)) return false;
+  return /\bcash[-\s]?out\b/.test(lower);
+}
+
+function cashOutCopy() {
+  return "Noted. I cannot show a preview rate.";
+}
+
+export function wantsReplaceFirst(text: string) {
+  const lower = text.trim().toLowerCase();
+  return (
+    /\breplace( the)? first\b/.test(lower) ||
+    /\bpay\s*off( the)? first\b/.test(lower) ||
+    /\brefinance( the)? first\b/.test(lower)
+  );
+}
+
+function govProgramCopy(program: GovProgram) {
+  const name = program.toUpperCase();
+  return `${name} is a government program. I cannot show a preview rate. I can still prepare this file. Request human is available.`;
+}
+
+function creditEventCopy() {
+  return "Noted. I cannot show a preview rate. You can still Proceed. Request human is available.";
 }
 
 function bubbles(
@@ -166,27 +665,16 @@ export function docsRequestForIncome(income?: string | null): {
   text: string;
   labels: string[];
 } {
-  if (income === "w2") {
-    return {
-      labels: ["Paystubs", "W-2"],
-      text: "Paystubs or a W-2 help. Drop what you have. Skip is fine.",
-    };
-  }
-  if (income === "self-employed") {
-    return {
-      labels: ["Tax returns", "Business docs"],
-      text: "Tax returns or business docs help. Drop what you have. Skip is fine.",
-    };
-  }
-  if (income === "both") {
-    return {
-      labels: ["Paystubs", "W-2", "Tax returns", "Business docs"],
-      text: "Paystubs or a W-2, plus tax returns or business docs. Drop what you have. Skip is fine.",
-    };
-  }
+  const classes = incomeRequestedClasses(income);
   return {
-    labels: [],
-    text: "Drop what you have. Skip is fine. I’ll work with what’s here.",
+    labels: classes.map((item) => {
+      if (item === "government_id") return "government ID";
+      if (item === "paystub") return "latest paystub";
+      if (item === "w2") return "W-2";
+      if (item === "tax_return") return "tax return";
+      return item;
+    }),
+    text: missingListCopy(classes),
   };
 }
 
@@ -209,7 +697,13 @@ function incomeFromText(text: string) {
 }
 
 function documentsAskText(draft: FoxIntakeDraft): string {
+  const useful = stillUsefulAskCopy(draft);
+  if (useful) return useful;
   return docsRequestForIncome(draft.incomeType.value).text;
+}
+
+export function documentsMissingAsk(draft: FoxIntakeDraft) {
+  return stillUsefulAskCopy(draft);
 }
 
 function docsSettled(draft: FoxIntakeDraft) {
@@ -217,13 +711,7 @@ function docsSettled(draft: FoxIntakeDraft) {
 }
 
 function sketchNumberReady(draft: FoxIntakeDraft) {
-  if (usesPurchasePrice(draft.productIntent)) {
-    return (
-      Boolean(draft.valueAsked) ||
-      draft.propertyValueAmount != null
-    );
-  }
-  return Boolean(draft.amountAsked) || draft.loanAmountValue != null;
+  return sketchAmountsReady(draft);
 }
 
 function withIncomeType(draft: FoxIntakeDraft, value: string): FoxIntakeDraft {
@@ -244,6 +732,13 @@ function amountHelperActions(field: "skip-amount" | "skip-value"): FoxAction[] {
 }
 
 export const SAMPLE_NOTE = "Sample · indicative · not live";
+export const PREVIEW_RATE_NOTE = "Preview rate · not live";
+export { CREDIT_STATED_NOTE };
+export const CREDIT_RANGE_ASK = "What credit range should I use for the estimate?";
+export const CREDIT_RANGE_FOLLOW = "Stated range — not a pull.";
+export const REWARD_PREPARED_COPY = "Prepared when you join";
+const INVENTED_REWARD_RANGE = /\$[\d,]+(?:\.\d+)?\s+(?:to|–|-|—)\s+\$[\d,]+/;
+const SAMPLE_INDICATIVE = /sample\s*·\s*indicative/i;
 export const SAMPLE_RATE = 0.0675;
 export const SAMPLE_RATE_LABEL = "6.750%";
 export const SAMPLE_TERM_MONTHS = 360;
@@ -277,17 +772,16 @@ function creditSettled(draft: FoxIntakeDraft) {
 }
 
 export function sampleReady(draft: FoxIntakeDraft): boolean {
-  if (!draft.path || !draft.productIntent) return false;
-  if (!draft.occupancyAsked && !draft.occupancyChoice.value) return false;
-  if (!draft.timelineAsked && !draft.timelineChoice.value) return false;
-  if (!sketchNumberReady(draft)) return false;
-  if (!creditSettled(draft)) return false;
-  return incomeSettled(draft);
+  return canLooksRight(draft);
 }
 
 /** Single /start conversation engine. Desktop and mobile share this order, copy, and path rules. */
 export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
+  if (draft.outOfState) return "geo-stop";
   if (!draft.path) return "intent";
+  if (draft.pendingOffer === "jumbo") return "offer-jumbo";
+  if (draft.pendingOffer === "heloc") return "offer-heloc";
+  if (draft.pendingProposal) return "confirm-proposal";
   if (draft.correcting === "path-switch") return "path-switch";
   if (draft.correcting === "correct") return "correct";
   if (draft.correcting === "credit") return "credit";
@@ -299,15 +793,28 @@ export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
   }
   if (draft.correcting) return draft.correcting;
   if (!draft.productIntent) return "product";
+  if (needsJumboPurpose(draft)) return "jumbo-purpose";
   if (!draft.occupancyAsked && !draft.occupancyChoice.value) return "occupancy";
-  if (!draft.timelineAsked && !draft.timelineChoice.value) return "timeline";
+  if (purchasePriceAskNeeded(draft)) return "value";
+  if (fundsAskNeeded(draft)) return "amount";
+  if (refiLoanAskNeeded(draft) || (isHelocFile(draft) && !hasHelocLine(draft))) return "amount";
+  if (propertyValueAskNeeded(draft)) return "value";
   if (!sketchNumberReady(draft)) {
-    return usesPurchasePrice(draft.productIntent) ? "value" : "amount";
+    return draftUsesPurchasePrice(draft) && !hasPropertyValue(draft) ? "value" : "amount";
   }
   if (!creditSettled(draft)) return "credit";
   if (!incomeSettled(draft)) return "income";
-  if (!draft.sampleAccepted) return "review";
+  if (!draft.sampleAccepted) return canLooksRight(draft) ? "review" : "amount";
   return "done";
+}
+
+function withFoxFirst<
+  T extends { text: string; followUp?: string; actions?: FoxAction[] },
+>(copy: T): T {
+  if ((copy.actions?.length ?? 0) > 0 && !copy.text.trim() && !(copy.followUp ?? "").trim()) {
+    return { ...copy, text: "I’m here. Type below, or tap a reply." };
+  }
+  return copy;
 }
 
 export function workspacePromptCopy(
@@ -319,9 +826,21 @@ export function workspacePromptCopy(
   facts?: PreviewFact[];
   actions?: FoxAction[];
 } {
+  return withFoxFirst(workspaceAskCopy(prompt, draft));
+}
+
+function workspaceAskCopy(
+  prompt: FoxPrompt,
+  draft: FoxIntakeDraft,
+): {
+  text: string;
+  followUp?: string;
+  facts?: PreviewFact[];
+  actions?: FoxAction[];
+} {
   if (prompt === "intent") {
     return {
-      text: "Start a relationship, or just the loan?",
+      text: PATH_ASK_TEXT,
       actions: [
         { id: "start", label: "Start your relationship", event: "bubble", capture: { field: "path", value: "acr" } },
         { id: "loan", label: "Just need a mortgage", event: "bubble", capture: { field: "path", value: "loan-only" } },
@@ -332,6 +851,30 @@ export function workspacePromptCopy(
     return {
       text: starterText(draft.path),
       actions: bubbles([...PRODUCT_INTENT_BUBBLES], "productIntent"),
+    };
+  }
+  if (prompt === "jumbo-purpose") {
+    return {
+      text: JUMBO_PURPOSE_ASK,
+      actions: bubbles([...JUMBO_PURPOSE_BUBBLES], "jumboPurpose"),
+    };
+  }
+  if (prompt === "offer-jumbo") {
+    return {
+      text: JUMBO_OFFER_COPY,
+      actions: offerActions("jumbo"),
+    };
+  }
+  if (prompt === "offer-heloc") {
+    return {
+      text: HELOC_OFFER_COPY,
+      actions: offerActions("heloc"),
+    };
+  }
+  if (prompt === "geo-stop") {
+    return {
+      text: GEO_STOP_COPY,
+      actions: draft.originatorRequested ? undefined : [requestHumanAction()],
     };
   }
   if (prompt === "occupancy") {
@@ -352,28 +895,35 @@ export function workspacePromptCopy(
     };
   }
   if (prompt === "amount") {
+    const askingPurpose =
+      draft.productIntent === "other" && !draft.amountPurposeLabel;
+    const requiredAmount =
+      fundsAskNeeded(draft) ||
+      refiLoanAskNeeded(draft) ||
+      (isHelocFile(draft) && !hasHelocLine(draft));
     return {
-      text:
-        draft.productIntent === "heloc"
-          ? "What rough line or cash amount are you thinking about?"
-          : draft.productIntent === "other"
-            ? "What’s a rough amount?"
-            : "What’s a rough payoff or cash amount?",
-      actions: amountHelperActions("skip-amount"),
+      text: amountAskText(draft),
+      actions: askingPurpose
+        ? [
+            ...bubbles([...AMOUNT_PURPOSE_BUBBLES], "amountPurpose"),
+            ...amountHelperActions("skip-amount"),
+          ]
+        : requiredAmount
+          ? undefined
+          : amountHelperActions("skip-amount"),
     };
   }
   if (prompt === "value") {
+    const requiredValue = purchasePriceAskNeeded(draft) || propertyValueAskNeeded(draft);
     return {
-      text:
-        draft.productIntent === "jumbo"
-          ? "What’s a rough purchase price?"
-          : "What’s a rough purchase price?",
-      actions: amountHelperActions("skip-value"),
+      text: amountAskText({ ...draft, productIntent: draft.productIntent ?? "buy" }),
+      actions: requiredValue ? undefined : amountHelperActions("skip-value"),
     };
   }
   if (prompt === "credit") {
     return {
-      text: "What credit range should I use for the estimate?",
+      text: CREDIT_RANGE_ASK,
+      followUp: CREDIT_RANGE_FOLLOW,
       actions: bubbles([...CREDIT_WORKSPACE_BUBBLES], "creditRange"),
     };
   }
@@ -394,10 +944,13 @@ export function workspacePromptCopy(
     };
   }
   if (prompt === "documents") {
+    const missing = missingExtractClasses(draft);
     return {
       text: documentsAskText(draft),
       actions: [
-        { id: "open-docs", label: "Upload now", event: "open-docs", capture: { field: "open-docs" } },
+        ...(missing.length
+          ? [{ id: "open-docs", label: "Upload now", event: "open-docs" as const, capture: { field: "open-docs" as const } }]
+          : []),
         { id: "skip-docs", label: "Skip for now", event: "bubble", capture: { field: "skip-docs" } },
       ],
     };
@@ -406,6 +959,13 @@ export function workspacePromptCopy(
     return { text: "I’m preparing your file." };
   }
   if (prompt === "review") {
+    if (!canLooksRight(draft)) {
+      const missing = missingAmountAsk(draft);
+      return {
+        text: missing || "I still need a required amount on this file.",
+        actions: undefined,
+      };
+    }
     return {
       text: "Here’s a sample structure.",
       facts: fileSummaryFacts(draft),
@@ -419,6 +979,19 @@ export function workspacePromptCopy(
   if (prompt === "correct") {
     return {
       text: "Tap any line on the structure.",
+    };
+  }
+  if (prompt === "confirm-proposal") {
+    const proposal = draft.pendingProposal;
+    if (!proposal) {
+      return { text: missingAmountAsk(draft) || "I can keep this file current." };
+    }
+    const caution =
+      proposal.field === "qualifying_income" ? decliningIncomeCaution(draft) : undefined;
+    return {
+      text: caution ?? proposalAskCopy(proposal),
+      followUp: caution ? proposalAskCopy(proposal) : undefined,
+      actions: proposalActions(proposal.kind),
     };
   }
   if (prompt === "path-switch") {
@@ -440,37 +1013,22 @@ export function workspacePromptCopy(
     };
   }
   if (prompt === "done") {
-    const fileActions: FoxAction[] = [
-      { id: "open-docs", label: "Upload docs", event: "open-docs", capture: { field: "open-docs" } },
-    ];
-    if (!draft.originatorRequested) {
-      fileActions.push({
-        id: "request-human",
-        label: "Request human",
-        event: "bubble",
-        capture: { field: "talk-originator" },
-      });
-    }
-    if (draft.path === "loan-only") {
-      fileActions.push({
-        id: "what-acr",
-        label: "What is ACR?",
-        event: "bubble",
-        capture: { field: "what-acr" },
-      });
-    }
-    if (draft.originatorRequested) {
-      return {
-        text: "I’m still on this desk. Upload a doc, tap a Structure line, or ask about the file.",
-        actions: fileActions,
-      };
-    }
+    const outbox = latestOutbox(draft);
+    const remind = remindLine(draft);
     return {
-      text:
-        draft.path === "loan-only"
-          ? "This loan file is prepared. A licensed originator is assigned. Fox stays."
-          : "This desk file is prepared. A licensed originator is assigned. Fox stays.",
-      actions: fileActions,
+      text: motionAskText(draft),
+      followUp: remind || undefined,
+      facts: outbox
+        ? [
+            {
+              id: "outbox",
+              label: "Preview outbox",
+              value: outbox.to,
+              note: outbox.body,
+            },
+          ]
+        : undefined,
+      actions: finishLineActions(draft),
     };
   }
   return {
@@ -496,6 +1054,11 @@ export function workspaceGreeting(draft: FoxIntakeDraft): {
     prompt === "review" ||
     prompt === "correct" ||
     prompt === "path-switch" ||
+    prompt === "jumbo-purpose" ||
+    prompt === "offer-jumbo" ||
+    prompt === "offer-heloc" ||
+    prompt === "geo-stop" ||
+    prompt === "confirm-proposal" ||
     prompt === "done"
   ) {
     return next;
@@ -515,15 +1078,23 @@ export function formatMoney(value: number) {
 /** Live composer commas. Returns null when the text is not a pure money number. */
 export function formatLiveMoneyInput(raw: string): string | null {
   if (/[a-zA-Z]/.test(raw)) return null;
+  const hasDollar = raw.includes("$");
+  const hasPercent = raw.includes("%");
+  if (hasPercent) {
+    const digits = raw.replace(/[^\d.]/g, "");
+    return digits ? `${digits}%` : "%";
+  }
   const digits = raw.replace(/\D/g, "");
-  if (!digits) return "";
+  if (!digits) return hasDollar ? "$" : "";
   if (digits.length > 12) return null;
-  return Number(digits).toLocaleString("en-US");
+  const formatted = Number(digits).toLocaleString("en-US");
+  return hasDollar ? `$${formatted}` : formatted;
 }
 
 export function caretAfterMoneyFormat(raw: string, caret: number, formatted: string) {
+  const prefix = formatted.startsWith("$") ? 1 : 0;
   const digitsBefore = raw.slice(0, Math.max(0, caret)).replace(/\D/g, "").length;
-  if (digitsBefore === 0) return 0;
+  if (digitsBefore === 0) return prefix;
   let seen = 0;
   for (let i = 0; i < formatted.length; i += 1) {
     if (/\d/.test(formatted[i])) {
@@ -557,6 +1128,141 @@ function collectAmounts(text: string): number[] {
 
 export function parseLooseAmount(text: string): number | null {
   return collectAmounts(text)[0] ?? null;
+}
+
+export type FundsParse = {
+  dollars: number;
+  percent?: number;
+  asPercent: boolean;
+  explicitDollars: boolean;
+};
+
+const FUNDS_ROLE_WORDS = /\b(down(\s+payment)?|earnest|deposit|loan(\s+amount)?|payoff)\b/gi;
+
+export function parseFundsAmount(text: string, price?: number | null): FundsParse | null {
+  const trimmed = text.trim();
+  if (!trimmed) return null;
+  const lower = trimmed.toLowerCase();
+  const explicitDollars = /\$/.test(trimmed) || /\b(dollars?|bucks)\b/.test(lower);
+  const percentMatch = trimmed.match(/(\d+(?:\.\d+)?)\s*(%|percent\b|pct\b)/i);
+  if (percentMatch && !explicitDollars) {
+    const percent = Number(percentMatch[1]);
+    if (!Number.isFinite(percent) || percent <= 0 || percent > 100) return null;
+    if (price == null || price <= 0) return null;
+    const down = Math.round((price * percent) / 100);
+    if (down <= 0) return null;
+    return { dollars: down, percent, asPercent: true, explicitDollars: false };
+  }
+  if (explicitDollars) {
+    const fromLoose = parseLooseAmount(trimmed);
+    if (fromLoose != null) return { dollars: fromLoose, asPercent: false, explicitDollars: true };
+    const small = trimmed.replace(/,/g, "").match(/\$?\s*(\d+(?:\.\d+)?)/);
+    if (small) {
+      const n = Number(small[1]);
+      if (Number.isFinite(n) && n > 0) {
+        return { dollars: Math.round(n), asPercent: false, explicitDollars: true };
+      }
+    }
+    return null;
+  }
+  const stripped = trimmed.replace(FUNDS_ROLE_WORDS, "").replace(/\s+/g, " ").trim();
+  const bare = stripped.match(/^(\d{1,2}(?:\.\d+)?|100(?:\.0+)?)$/);
+  if (bare && price != null && price > 0) {
+    const percent = Number(bare[1]);
+    if (percent >= 1 && percent <= 100) {
+      const down = Math.round((price * percent) / 100);
+      if (down > 0) return { dollars: down, percent, asPercent: true, explicitDollars: false };
+    }
+  }
+  const amount = parseLooseAmount(stripped || trimmed);
+  if (amount != null) return { dollars: amount, asPercent: false, explicitDollars: false };
+  return null;
+}
+
+function replyToFundsAsk(
+  q: string,
+  draft: FoxIntakeDraft,
+): {
+  text: string;
+  followUp?: string;
+  facts?: PreviewFact[];
+  actions?: FoxAction[];
+  capture?: Capture;
+} {
+  if (isUnknownAmount(q)) {
+    return { text: "What’s the down payment or loan amount? A number works." };
+  }
+  const price = draft.propertyValueAmount;
+  const parsed = parseFundsAmount(q, price);
+  if (parsed == null || (price != null && parsed.dollars > price && !parsed.asPercent)) {
+    return {
+      text: "What’s the down payment or loan amount? A number under the purchase price works.",
+    };
+  }
+  if (price != null && parsed.dollars === price && !parsed.asPercent) {
+    return {
+      text: "Purchase price is in the file. What’s the down payment or loan amount?",
+    };
+  }
+  const role =
+    draft.correctingLine === "down"
+      ? "down"
+      : draft.correctingLine === "loan" && !parsed.asPercent
+        ? "loan"
+        : parsed.asPercent
+          ? "down"
+          : parseFundsRole(q, price) ?? (parsed.dollars < (price ?? 0) * 0.5 ? "down" : "loan");
+  const cleared = { ...draft, correcting: null, correctingLine: null, pendingProposal: null as null };
+  const pairConfirm =
+    price != null &&
+    price > 0 &&
+    (parsed.asPercent || (parsed.explicitDollars && parsed.dollars < 1000));
+  if (pairConfirm) {
+    const pair =
+      role === "loan"
+        ? (() => {
+            const down = impliedDownPayment(price, parsed.dollars);
+            return down != null ? { down, loan: parsed.dollars } : null;
+          })()
+        : (() => {
+            const loan = impliedLoanAmount(price, parsed.dollars);
+            return loan != null ? { down: parsed.dollars, loan } : null;
+          })();
+    if (!pair) {
+      return {
+        text: "What’s the down payment or loan amount? A number under the purchase price works.",
+      };
+    }
+    const nextDraft = proposeFundsPair(cleared, pair.down, pair.loan);
+    return {
+      ...workspacePromptCopy("confirm-proposal", nextDraft),
+      capture: { field: "propose-funds", value: `${pair.down}:${pair.loan}` },
+    };
+  }
+  if (role === "down") {
+    const nextDraft = withComputedCompanion(
+      { ...cleared, downPaymentAmount: parsed.dollars, downAsked: true },
+      hasLoanAmount(draft) ? "down" : undefined,
+    );
+    return withWorkspaceGuide(
+      {
+        ...workspacePromptCopy(workspacePrompt(nextDraft), nextDraft),
+        capture: { field: "downPayment", value: String(parsed.dollars) },
+      },
+      nextDraft,
+    );
+  }
+  const nextDraft = withComputedCompanion(
+    { ...cleared, loanAmountValue: parsed.dollars, amountAsked: true },
+    hasDownPayment(draft) ? "loan" : undefined,
+  );
+  return withWorkspaceGuide(
+    {
+      ...workspacePromptCopy(workspacePrompt(nextDraft), nextDraft),
+      capture: { field: "loanAmount", value: String(parsed.dollars) },
+    },
+    nextDraft,
+  );
 }
 
 export function parseAmountPair(text: string): { loan?: number; value?: number } {
@@ -631,7 +1337,11 @@ function occupancySpokenLabel(value?: string | null) {
 }
 
 function occupancyFromText(text: string) {
-  const lower = text.trim().toLowerCase();
+  const trimmed = text.trim();
+  if (/^\$?\d[\d,]*(?:\.\d+)?%?$/.test(trimmed) || /^\d{1,3}\s*(%|percent)$/i.test(trimmed)) {
+    return undefined;
+  }
+  const lower = trimmed.toLowerCase();
   return (
     OCCUPANCY_BUBBLES.find(
       (item) => item.label.toLowerCase() === lower || item.value === lower,
@@ -661,16 +1371,54 @@ function timelineFromText(text: string) {
 export function editPromptFromCapture(capture?: Capture): FoxPrompt | undefined {
   if (!capture) return undefined;
   if (capture.field === "path") return "path-switch";
-  if (capture.field === "productIntent") return "product";
+  if (capture.field === "productIntent" || capture.field === "starter") return "product";
+  if (capture.field === "jumboPurpose") return "jumbo-purpose";
+  if (
+    capture.field === "accept-jumbo" ||
+    capture.field === "decline-jumbo" ||
+    capture.field === "pending-offer"
+  ) {
+    return "offer-jumbo";
+  }
+  if (capture.field === "accept-heloc" || capture.field === "decline-heloc") {
+    return "offer-heloc";
+  }
   if (capture.field === "occupancy") return "occupancy";
   if (capture.field === "timeline") return "timeline";
-  if (capture.field === "loanAmount" || capture.field === "skip-amount") return "amount";
+  if (
+    capture.field === "loanAmount" ||
+    capture.field === "skip-amount" ||
+    capture.field === "amountPurpose" ||
+    capture.field === "downPayment" ||
+    capture.field === "skip-down" ||
+    capture.field === "propose-funds"
+  ) {
+    return "amount";
+  }
   if (capture.field === "propertyValue" || capture.field === "skip-value") return "value";
+  if (capture.field === "accept-proposal" || capture.field === "decline-proposal") {
+    return "confirm-proposal";
+  }
   if (capture.field === "creditRange") return "credit";
   if (capture.field === "termYears" || capture.field === "skip-term") return "term";
   if (capture.field === "incomeType") return "income";
-  if (capture.field === "skip-docs" || capture.field === "open-docs") return "documents";
+  if (capture.field === "skip-docs" || capture.field === "open-docs" || capture.field === "upload-more") {
+    return "documents";
+  }
   return undefined;
+}
+
+/** Chips already sit in the thread. Fox speaks only the next helpful line — never echo the last capture as a label. */
+export function withWorkspaceGuide<
+  T extends {
+    text: string;
+    followUp?: string;
+    facts?: PreviewFact[];
+    actions?: FoxAction[];
+    capture?: Capture;
+  },
+>(reply: T, _nextDraft: FoxIntakeDraft): T {
+  return reply;
 }
 
 export function workspaceUpdateCopy(capture: Capture, draft: FoxIntakeDraft) {
@@ -685,12 +1433,40 @@ export function workspaceUpdateCopy(capture: Capture, draft: FoxIntakeDraft) {
   if (capture.field === "what-acr") {
     return "ACR is the desk that stays open after close — letter, scout, and reward. This file is still the loan.";
   }
-  if (capture.field === "talk-originator") {
-    return "A licensed originator is already assigned to this file. Fox stays. Upload a doc, tap a line to edit, or ask about the desk.";
+  if (capture.field === "what-happens-next") {
+    return MOTION_COPY.whatHappensNext;
   }
-  if (capture.field === "productIntent") {
+  if (capture.field === "ask-fox") {
+    return MOTION_COPY.askFox;
+  }
+  if (capture.field === "talk-originator") {
+    return MOTION_COPY.escalated;
+  }
+  if (capture.field === "proceed") {
+    return emailMissing(draft) ? MOTION_COPY.emailAsk : MOTION_COPY.in_queue;
+  }
+  if (capture.field === "not-yet") {
+    return emailMissing(draft) ? MOTION_COPY.emailAsk : MOTION_COPY.on_hold;
+  }
+  if (capture.field === "upload-more") {
+    return "";
+  }
+  if (capture.field === "productIntent" || capture.field === "starter") {
     return `Updated product to ${productIntentLabel(capture.value)}.`;
   }
+  if (capture.field === "jumboPurpose") {
+    return capture.value === "refinance"
+      ? "Updated. Jumbo refinance."
+      : "Updated. Jumbo purchase.";
+  }
+  if (capture.field === "accept-jumbo") return "Updated product to Jumbo.";
+  if (capture.field === "decline-jumbo") return "Kept this product.";
+  if (capture.field === "accept-heloc") return "Updated product to HELOC.";
+  if (capture.field === "decline-heloc") return "Kept Refinance.";
+  if (capture.field === "out-of-state") return GEO_STOP_COPY;
+  if (capture.field === "in-state") return "California — I can prepare this file.";
+  if (capture.field === "govProgram") return govProgramCopy(capture.value);
+  if (capture.field === "creditEvent") return creditEventCopy();
   if (capture.field === "occupancy") {
     const label = occupancySpokenLabel(capture.value);
     return label ? `Updated occupancy to ${label}.` : "Updated occupancy.";
@@ -701,15 +1477,38 @@ export function workspaceUpdateCopy(capture: Capture, draft: FoxIntakeDraft) {
   }
   if (capture.field === "loanAmount") {
     const n = Number(capture.value.split(":")[0].replace(/,/g, ""));
+    const label = structureAmountLabel(draft) || "Loan amount";
     return Number.isFinite(n) && n > 0
-      ? `Updated loan amount to ${formatMoney(n)}.`
-      : "Updated loan amount.";
+      ? `Updated ${label.toLowerCase()} to ${formatMoney(n)}.`
+      : `Updated ${label.toLowerCase()}.`;
   }
   if (capture.field === "propertyValue") {
     const n = Number(capture.value.replace(/,/g, ""));
+    const label = isRefiLike(draft) ? "property value" : "purchase price";
     return Number.isFinite(n) && n > 0
-      ? `Updated property value to ${formatMoney(n)}.`
-      : "Updated property value.";
+      ? `Updated ${label} to ${formatMoney(n)}.`
+      : `Updated ${label}.`;
+  }
+  if (capture.field === "downPayment") {
+    const n = Number(capture.value.replace(/,/g, ""));
+    return Number.isFinite(n) && n > 0
+      ? `Updated down payment to ${formatMoney(n)}.`
+      : "Updated down payment.";
+  }
+  if (capture.field === "propose-funds") {
+    const proposal = draft.pendingProposal;
+    return proposal ? proposalAskCopy(proposal) : "Use this down payment and loan amount?";
+  }
+  if (capture.field === "accept-proposal") {
+    return draft.pendingProposal?.kind === "public"
+      ? "Updated from the suggestion."
+      : "Updated from the proposed amount.";
+  }
+  if (capture.field === "decline-proposal") {
+    return draft.pendingProposal?.kind === "public" ? "Kept the file value." : "Left that line blank.";
+  }
+  if (capture.field === "amountPurpose") {
+    return `Updated to ${capture.value}.`;
   }
   if (capture.field === "creditRange") {
     const label =
@@ -719,14 +1518,20 @@ export function workspaceUpdateCopy(capture: Capture, draft: FoxIntakeDraft) {
   if (capture.field === "termYears") {
     return `Updated term to ${capture.value} year.`;
   }
-  if (capture.field === "skip-amount") return "Updated. Loan amount left blank.";
-  if (capture.field === "skip-value") return "Updated. Property value left blank.";
+  if (capture.field === "skip-amount") {
+    const label = structureAmountLabel(draft) || "Loan amount";
+    return `Updated. ${label} left blank.`;
+  }
+  if (capture.field === "skip-value") return "Updated. Purchase price left blank.";
   if (capture.field === "skip-term") return "Updated. Term left blank.";
   if (capture.field === "incomeType") {
     const label = INCOME_BUBBLES.find((item) => item.value === capture.value)?.label;
     return label ? `Updated income to ${label}.` : "Updated income.";
   }
   if (capture.field === "skip-docs") return "Updated. Docs skipped.";
+  if (capture.field === "skip-down") return "Updated. Down payment left blank.";
+  if (capture.field === "keep-file-fact") return "Kept the file value.";
+  if (capture.field === "use-document-fact") return "Updated from the document.";
   return "Updated the file.";
 }
 
@@ -735,6 +1540,7 @@ export function parseWorkspaceEdit(
 ): {
   capture?: Capture;
   correct?: FoxPrompt;
+  line?: string;
   confirm: string;
 } | null {
   const q = text.trim();
@@ -794,7 +1600,7 @@ export function parseWorkspaceEdit(
         confirm: `Updated credit range to ${label}.`,
       };
     }
-    return { correct: "credit", confirm: "What credit range should I use for the estimate?" };
+    return { correct: "credit", confirm: CREDIT_RANGE_ASK };
   }
 
   if (/\bterm\b/.test(lower)) {
@@ -808,6 +1614,20 @@ export function parseWorkspaceEdit(
     return { correct: "term", confirm: "Any term in mind?" };
   }
 
+  if (/\bdown(\s+payment)?\b/.test(lower)) {
+    if (isUnknownAmount(q)) {
+      return { capture: { field: "skip-down" }, confirm: "Updated. Down payment left blank." };
+    }
+    const amount = parseLooseAmount(q);
+    if (amount != null) {
+      return {
+        capture: { field: "downPayment", value: String(amount) },
+        confirm: `Updated down payment to ${formatMoney(amount)}.`,
+      };
+    }
+    return { correct: "amount", line: "down", confirm: "What’s the down payment?" };
+  }
+
   if (/\b(property value|home value|house value|worth)\b/.test(lower) || (/\bvalue\b/.test(lower) && !/\bloan\b/.test(lower))) {
     if (isUnknownAmount(q)) {
       return { capture: { field: "skip-value" }, confirm: "Updated. Property value left blank." };
@@ -819,10 +1639,10 @@ export function parseWorkspaceEdit(
         confirm: `Updated property value to ${formatMoney(amount)}.`,
       };
     }
-    return { correct: "value", confirm: "What’s a rough property value?" };
+    return { correct: "value", confirm: "What’s the purchase price?" };
   }
 
-  if (/\b(loan amount|loan|amount|line|cash)\b/.test(lower)) {
+  if (/\b(loan amount|purchase price|heloc line|loan|line|cash|payoff)\b/.test(lower)) {
     if (isUnknownAmount(q)) {
       return { capture: { field: "skip-amount" }, confirm: "Updated. Loan amount left blank." };
     }
@@ -833,7 +1653,7 @@ export function parseWorkspaceEdit(
         confirm: `Updated loan amount to ${formatMoney(amount)}.`,
       };
     }
-    return { correct: "amount", confirm: "What’s a rough loan amount?" };
+    return { correct: "amount", line: "loan", confirm: "What’s the loan amount?" };
   }
 
   if (/\bincome\b/.test(lower)) {
@@ -848,30 +1668,104 @@ export function parseWorkspaceEdit(
   }
 
   if (/\bdoc/.test(lower)) {
-    return { correct: "documents", confirm: "Drop what you have. Skip is fine. I’ll work with what’s here." };
+    return { correct: "documents", confirm: "Government ID, latest paystub, and W-2." };
   }
 
   return null;
 }
 
 function draftAfterCapture(draft: FoxIntakeDraft, capture: Capture): FoxIntakeDraft {
-  const next = { ...draft, correcting: null };
+  const next = { ...draft, correcting: null, correctingLine: null };
   if (capture.field === "path") return { ...next, path: capture.value };
-  if (capture.field === "productIntent") return { ...next, productIntent: capture.value };
+  if (capture.field === "productIntent") return applyProductChange(next, capture.value);
+  if (capture.field === "starter") {
+    const price = capture.price ? Number(capture.price) : null;
+    return applyStarterSketch(next, capture.value, price);
+  }
+  if (capture.field === "jumboPurpose") {
+    return { ...next, jumboPurpose: capture.value };
+  }
+  if (capture.field === "accept-jumbo") {
+    const purpose: JumboPurpose =
+      draft.productIntent === "refinance" || jumboPurposeOf(draft) === "refinance"
+        ? "refinance"
+        : "buy";
+    return applyProductChange(
+      { ...next, jumboPurpose: purpose, jumboOffered: true, pendingOffer: undefined },
+      "jumbo",
+    );
+  }
+  if (capture.field === "decline-jumbo") {
+    return { ...next, jumboOffered: true, pendingOffer: undefined };
+  }
+  if (capture.field === "accept-heloc") {
+    return applyProductChange(
+      { ...next, helocOffered: true, pendingOffer: undefined },
+      "heloc",
+    );
+  }
+  if (capture.field === "decline-heloc") {
+    return { ...next, helocOffered: true, pendingOffer: undefined };
+  }
+  if (capture.field === "pending-offer") {
+    return { ...next, pendingOffer: capture.value };
+  }
+  if (capture.field === "out-of-state") return { ...next, outOfState: true };
+  if (capture.field === "in-state") return { ...next, outOfState: false };
+  if (capture.field === "govProgram") return { ...next, govProgram: capture.value };
+  if (capture.field === "creditEvent") return { ...next, creditEvent: capture.value };
+  if (capture.field === "cashOut") return { ...next, cashOut: true };
   if (capture.field === "occupancy") {
     return { ...next, occupancyChoice: { ...draft.occupancyChoice, value: capture.value }, occupancyAsked: true };
   }
   if (capture.field === "timeline") {
     return { ...next, timelineChoice: { ...draft.timelineChoice, value: capture.value }, timelineAsked: true };
   }
+  if (capture.field === "amountPurpose") {
+    return { ...next, amountPurposeLabel: capture.value };
+  }
   if (capture.field === "loanAmount") {
     const n = Number(capture.value.split(":")[0].replace(/,/g, ""));
-    return { ...next, amountAsked: true, loanAmountValue: Number.isFinite(n) && n > 0 ? n : draft.loanAmountValue };
+    return withComputedCompanion(
+      withMatrixAfterAmount({
+        ...next,
+        amountAsked: true,
+        loanAmountValue: Number.isFinite(n) && n > 0 ? n : draft.loanAmountValue,
+      }),
+      hasDownPayment(draft) ? "loan" : undefined,
+    );
   }
   if (capture.field === "propertyValue") {
     const n = Number(capture.value.replace(/,/g, ""));
-    return { ...next, valueAsked: true, propertyValueAmount: Number.isFinite(n) && n > 0 ? n : draft.propertyValueAmount };
+    return withComputedCompanion(
+      withMatrixAfterAmount({
+        ...next,
+        valueAsked: true,
+        propertyValueAmount: Number.isFinite(n) && n > 0 ? n : draft.propertyValueAmount,
+      }),
+    );
   }
+  if (capture.field === "downPayment") {
+    const n = Number(capture.value.replace(/,/g, ""));
+    return withComputedCompanion(
+      {
+        ...next,
+        downAsked: true,
+        downPaymentAmount: Number.isFinite(n) && n > 0 ? n : draft.downPaymentAmount,
+      },
+      hasLoanAmount(draft) ? "down" : undefined,
+    );
+  }
+  if (capture.field === "propose-funds") {
+    const [downRaw, loanRaw] = capture.value.split(":");
+    const down = Number(downRaw);
+    const loan = Number(loanRaw);
+    if (!Number.isFinite(down) || !Number.isFinite(loan) || down <= 0 || loan <= 0) return next;
+    return proposeFundsPair(next, down, loan);
+  }
+  if (capture.field === "accept-proposal") return resolveProposal(next, "accept");
+  if (capture.field === "decline-proposal") return resolveProposal(next, "decline");
+  if (capture.field === "skip-down") return { ...next, downAsked: true };
   if (capture.field === "creditRange") {
     return {
       ...next,
@@ -909,6 +1803,126 @@ function withCurrentPrompt(
   };
 }
 
+function continueAfterFlag(
+  confirm: string,
+  nextDraft: FoxIntakeDraft,
+  capture: Capture,
+  extraActions?: FoxAction[],
+): {
+  text: string;
+  followUp?: string;
+  facts?: PreviewFact[];
+  actions?: FoxAction[];
+  capture?: Capture;
+} {
+  const next = withCurrentPrompt(confirm, nextDraft);
+  const actions = [
+    ...(next.actions ?? []),
+    ...(extraActions ?? []).filter(
+      (item) => !(next.actions ?? []).some((existing) => existing.id === item.id),
+    ),
+  ];
+  return {
+    ...next,
+    actions: actions.length ? actions : next.actions,
+    capture,
+  };
+}
+
+function matrixReply(
+  text: string,
+  draft: FoxIntakeDraft,
+  prompt: FoxPrompt,
+): ReturnType<typeof workspaceReply> {
+  if (namedCalifornia(text) && draft.outOfState) {
+    const nextDraft = { ...draft, outOfState: false };
+    return continueAfterFlag(
+      "California — I can prepare this file.",
+      nextDraft,
+      { field: "in-state" },
+    );
+  }
+  if (namedOutOfState(text)) {
+    return {
+      text: GEO_STOP_COPY,
+      actions: draft.originatorRequested ? undefined : [requestHumanAction()],
+      capture: { field: "out-of-state" },
+    };
+  }
+
+  const gov = namedGovProgram(text);
+  if (gov && draft.govProgram !== gov) {
+    const nextDraft = { ...draft, govProgram: gov };
+    return continueAfterFlag(govProgramCopy(gov), nextDraft, {
+      field: "govProgram",
+      value: gov,
+    }, draft.originatorRequested ? undefined : [requestHumanAction()]);
+  }
+
+  const event = namedCreditEvent(text);
+  if (event && draft.creditEvent !== event) {
+    const nextDraft = { ...draft, creditEvent: event };
+    return continueAfterFlag(creditEventCopy(), nextDraft, {
+      field: "creditEvent",
+      value: event,
+    }, draft.originatorRequested ? undefined : [requestHumanAction()]);
+  }
+
+  if (namedCashOut(text) && !draft.cashOut && isRefiLike(draft)) {
+    const nextDraft = { ...draft, cashOut: true };
+    return continueAfterFlag(cashOutCopy(), nextDraft, { field: "cashOut" });
+  }
+
+  if (
+    prompt === "product" ||
+    prompt === "jumbo-purpose" ||
+    prompt === "offer-jumbo" ||
+    prompt === "offer-heloc" ||
+    prompt === "geo-stop" ||
+    prompt === "intent"
+  ) {
+    return null;
+  }
+
+  if (draft.productIntent === "refinance" && looksLikePurchase(text)) {
+    const nextDraft = applyProductChange(draft, "buy");
+    return continueAfterFlag(
+      "Updated product to Buy.",
+      nextDraft,
+      { field: "productIntent", value: "buy" },
+    );
+  }
+  if (
+    draft.productIntent === "refinance" &&
+    !draft.helocOffered &&
+    !draft.pendingOffer &&
+    wantsCashKeepFirst(text)
+  ) {
+    const nextDraft = { ...draft, pendingOffer: "heloc" as const };
+    return {
+      ...workspacePromptCopy("offer-heloc", nextDraft),
+      capture: { field: "pending-offer", value: "heloc" },
+    };
+  }
+  if (draft.productIntent === "heloc" && looksLikePurchase(text)) {
+    const nextDraft = applyProductChange(draft, "buy");
+    return continueAfterFlag(
+      "Updated product to Buy.",
+      nextDraft,
+      { field: "productIntent", value: "buy" },
+    );
+  }
+  if (draft.productIntent === "heloc" && wantsReplaceFirst(text)) {
+    const nextDraft = applyProductChange(draft, "refinance");
+    return continueAfterFlag(
+      "Updated product to Refinance.",
+      nextDraft,
+      { field: "productIntent", value: "refinance" },
+    );
+  }
+  return null;
+}
+
 export function workspaceReply(
   text: string,
   draft: FoxIntakeDraft,
@@ -923,11 +1937,72 @@ export function workspaceReply(
   const lower = q.toLowerCase();
   const prompt = workspacePrompt(draft);
 
+  if (draft.pendingConflict) {
+    if (/(keep (the )?file|file value|keep mine)/i.test(lower)) {
+      return {
+        text: "Kept the file value.",
+        capture: { field: "keep-file-fact" },
+      };
+    }
+    if (/(use (the )?document|document value|use (the )?paystub|use (the )?w-?2)/i.test(lower)) {
+      return {
+        text: "Updated from the document.",
+        capture: { field: "use-document-fact" },
+      };
+    }
+  }
+
+  if (draft.pendingProposal || prompt === "confirm-proposal") {
+    if (
+      /^(yes|that.?s me|yes that.?s me|use this|use it|confirm|ok|okay)$/i.test(lower) ||
+      /yes that.?s me|use this/.test(lower)
+    ) {
+      const nextDraft = resolveProposal(draft, "accept");
+      return {
+        ...withCurrentPrompt(
+          draft.pendingProposal?.kind === "public"
+            ? "Updated from the suggestion."
+            : "Updated from the proposed amount.",
+          nextDraft,
+        ),
+        capture: { field: "accept-proposal" },
+      };
+    }
+    if (
+      /keep (the )?file|leave blank|no|not me|skip/.test(lower)
+    ) {
+      const nextDraft = resolveProposal(draft, "decline");
+      return {
+        ...withCurrentPrompt(
+          draft.pendingProposal?.kind === "public" ? "Kept the file value." : "Left that line blank.",
+          nextDraft,
+        ),
+        capture: { field: "decline-proposal" },
+      };
+    }
+    if (
+      draft.pendingProposal &&
+      isPurchaseLike(draft) &&
+      hasPropertyValue(draft) &&
+      draft.pendingProposal.kind === "computed" &&
+      (draft.pendingProposal.field === "downPayment" || draft.pendingProposal.field === "loanAmount") &&
+      parseFundsAmount(q, draft.propertyValueAmount)
+    ) {
+      return replyToFundsAsk(q, { ...draft, pendingProposal: null });
+    }
+    if (draft.pendingProposal) {
+      return workspacePromptCopy("confirm-proposal", draft);
+    }
+  }
+
   if (/(approv|lock|commit to lend|am i approved)/i.test(lower)) {
     return {
       text: "I can prepare a file. I cannot approve, lock, or commit to lend.",
     };
   }
+
+  const matrix = matrixReply(q, draft, prompt);
+  if (matrix) return matrix;
 
   const edit = parseWorkspaceEdit(q);
   if (edit?.capture && draft.path) {
@@ -942,8 +2017,8 @@ export function workspaceReply(
   }
   if (edit?.correct && draft.path) {
     return {
-      ...workspacePromptCopy(edit.correct, draft),
-      capture: { field: "correct", value: edit.correct },
+      ...workspacePromptCopy(edit.correct, { ...draft, correctingLine: edit.line ?? draft.correctingLine }),
+      capture: { field: "correct", value: edit.correct, line: edit.line },
     };
   }
 
@@ -959,8 +2034,24 @@ export function workspaceReply(
 
   if (/(talk to (a )?licensed originator|need (a )?licensed originator|request (a )?human|talk to (an )?originator|speak to (an? )?(lo|originator|human))/i.test(lower)) {
     return {
-      text: "A licensed originator is already assigned to this file. Fox stays. Upload a doc, tap a line to edit, or ask about the desk.",
+      text: MOTION_COPY.escalated,
       capture: { field: "talk-originator" },
+    };
+  }
+
+  if (inQueueEnding(draft) && /what happens next/.test(lower)) {
+    return {
+      text: MOTION_COPY.whatHappensNext,
+      actions: finishLineActions(draft),
+      capture: { field: "what-happens-next" },
+    };
+  }
+
+  if (inQueueEnding(draft) && /^ask fox$/.test(lower)) {
+    return {
+      text: MOTION_COPY.askFox,
+      actions: finishLineActions(draft),
+      capture: { field: "ask-fox" },
     };
   }
 
@@ -1008,35 +2099,164 @@ export function workspaceReply(
   if (prompt === "product") {
     const intent = productIntentFromText(q);
     if (!intent) {
-      return { text: "Tap Buy, Refinance, HELOC, Jumbo, or Other." };
+      return {
+        text: "What are you looking to do? Buy, refinance, HELOC, Jumbo, or something else.",
+        actions: bubbles([...PRODUCT_INTENT_BUBBLES], "productIntent"),
+      };
     }
+    const price = parseLooseAmount(q);
+    const nextDraft = applyStarterSketch(draft, intent, price);
+    const nextPrompt = workspacePrompt(nextDraft);
+    const capture =
+      price != null && price > 0
+        ? { field: "starter" as const, value: intent, price: String(price) }
+        : { field: "productIntent" as const, value: intent };
+    return withWorkspaceGuide(
+      {
+        ...workspacePromptCopy(nextPrompt === "product" ? "occupancy" : nextPrompt, nextDraft),
+        capture,
+      },
+      nextDraft,
+    );
+  }
+
+  if (prompt === "jumbo-purpose") {
+    const purpose = jumboPurposeFromText(q);
+    if (!purpose) {
+      return workspacePromptCopy("jumbo-purpose", draft);
+    }
+    const nextDraft = { ...draft, jumboPurpose: purpose, correcting: null };
     return {
-      ...workspacePromptCopy("occupancy", { ...draft, productIntent: intent }),
-      capture: { field: "productIntent", value: intent },
+      ...workspacePromptCopy(workspacePrompt(nextDraft), nextDraft),
+      capture: { field: "jumboPurpose", value: purpose },
     };
+  }
+
+  if (prompt === "offer-jumbo") {
+    if (/jumbo|switch|use/.test(lower) && !/stay|keep|no/.test(lower)) {
+      const purpose: JumboPurpose =
+        draft.productIntent === "refinance" || jumboPurposeOf(draft) === "refinance"
+          ? "refinance"
+          : "buy";
+      const nextDraft = applyProductChange(
+        { ...draft, jumboPurpose: purpose, jumboOffered: true, pendingOffer: undefined },
+        "jumbo",
+      );
+      return continueAfterFlag("Updated product to Jumbo.", nextDraft, { field: "accept-jumbo" });
+    }
+    if (/stay|keep|no|decline/.test(lower) || /this product/.test(lower)) {
+      const nextDraft = { ...draft, jumboOffered: true, pendingOffer: undefined, correcting: null };
+      return continueAfterFlag("Kept this product.", nextDraft, { field: "decline-jumbo" });
+    }
+    return workspacePromptCopy("offer-jumbo", draft);
+  }
+
+  if (prompt === "offer-heloc") {
+    if (/heloc|switch|use/.test(lower) && !/stay|keep|no/.test(lower)) {
+      const nextDraft = applyProductChange(
+        { ...draft, helocOffered: true, pendingOffer: undefined },
+        "heloc",
+      );
+      return continueAfterFlag("Updated product to HELOC.", nextDraft, { field: "accept-heloc" });
+    }
+    if (/stay|keep|no|decline|refi/.test(lower)) {
+      const nextDraft = { ...draft, helocOffered: true, pendingOffer: undefined, correcting: null };
+      return continueAfterFlag("Kept Refinance.", nextDraft, { field: "decline-heloc" });
+    }
+    return workspacePromptCopy("offer-heloc", draft);
+  }
+
+  if (prompt === "geo-stop") {
+    if (namedCalifornia(q)) {
+      const nextDraft = { ...draft, outOfState: false };
+      return continueAfterFlag(
+        "California — I can prepare this file.",
+        nextDraft,
+        { field: "in-state" },
+      );
+    }
+    if (/(talk to (a )?licensed originator|request (a )?human|speak to)/i.test(lower)) {
+      return {
+        text: MOTION_COPY.escalated,
+        capture: { field: "talk-originator" },
+      };
+    }
+    return workspacePromptCopy("geo-stop", draft);
   }
 
   if (prompt === "occupancy") {
     const match = occupancyFromText(q);
     if (!match) return { text: "Tap Primary, Second home, or Investment." };
-    return {
-      ...workspacePromptCopy("timeline", draft),
-      capture: { field: "occupancy", value: match.value },
+    const nextDraft = {
+      ...draft,
+      occupancyChoice: { ...draft.occupancyChoice, value: match.value },
+      occupancyAsked: true,
     };
+    const nextAsk = workspacePrompt(nextDraft);
+    return withWorkspaceGuide(
+      {
+        ...workspacePromptCopy(nextAsk === "occupancy" ? "value" : nextAsk, nextDraft),
+        capture: { field: "occupancy", value: match.value },
+      },
+      nextDraft,
+    );
   }
 
   if (prompt === "timeline") {
     const match = timelineFromText(q);
     if (!match) return { text: "Tap Ready now, 30–90 days, or Just exploring." };
-    const nextAsk = usesPurchasePrice(draft.productIntent) ? "value" : "amount";
-    return {
-      ...workspacePromptCopy(nextAsk, draft),
-      capture: { field: "timeline", value: match.value },
+    const nextDraft = {
+      ...draft,
+      timelineChoice: { ...draft.timelineChoice, value: match.value },
+      timelineAsked: true,
     };
+    const nextAsk = draftUsesPurchasePrice(nextDraft) ? "value" : "amount";
+    return withWorkspaceGuide(
+      {
+        ...workspacePromptCopy(nextAsk, nextDraft),
+        capture: { field: "timeline", value: match.value },
+      },
+      nextDraft,
+    );
   }
 
   if (prompt === "amount") {
+    const editingFunds = draft.correctingLine === "down" || draft.correctingLine === "loan";
+    const purchaseFunds =
+      isPurchaseLike(draft) &&
+      hasPropertyValue(draft) &&
+      (fundsAskNeeded(draft) || editingFunds || draft.correcting === "amount");
+    if (purchaseFunds) {
+      return replyToFundsAsk(q, draft);
+    }
+    if (draft.productIntent === "other" && !draft.amountPurposeLabel) {
+      if (isUnknownAmount(q)) {
+        const nextDraft = { ...draft, amountAsked: true };
+        return {
+          ...workspacePromptCopy(workspacePrompt(nextDraft), nextDraft),
+          capture: { field: "skip-amount" },
+        };
+      }
+      const purpose = parseAmountPurpose(q);
+      if (!purpose) {
+        return {
+          text: "What is that number for?",
+          actions: [
+            ...bubbles([...AMOUNT_PURPOSE_BUBBLES], "amountPurpose"),
+            ...amountHelperActions("skip-amount"),
+          ],
+        };
+      }
+      const purposeDraft = { ...draft, amountPurposeLabel: purpose };
+      return {
+        ...workspacePromptCopy("amount", purposeDraft),
+        capture: { field: "amountPurpose", value: purpose },
+      };
+    }
     if (isUnknownAmount(q)) {
+      if (refiLoanAskNeeded(draft) || (isHelocFile(draft) && !hasHelocLine(draft))) {
+        return { text: `${amountAskText(draft)} A number works.` };
+      }
       const nextDraft = { ...draft, amountAsked: true };
       return {
         ...workspacePromptCopy(workspacePrompt(nextDraft), nextDraft),
@@ -1047,27 +2267,49 @@ export function workspaceReply(
     const amount = pair.loan ?? parseLooseAmount(q);
     if (amount == null) {
       return {
-        text: "A rough number works, or tap Not sure.",
-        actions: amountHelperActions("skip-amount"),
+        text: `${amountAskText(draft)} A number works${refiLoanAskNeeded(draft) || isHelocFile(draft) ? "." : ", or tap Not sure."}`,
+        actions:
+          refiLoanAskNeeded(draft) || isHelocFile(draft)
+            ? undefined
+            : amountHelperActions("skip-amount"),
       };
     }
-    const nextDraft = { ...draft, loanAmountValue: amount, amountAsked: true };
+    let nextDraft = withMatrixAfterAmount({
+      ...draft,
+      loanAmountValue: amount,
+      amountAsked: true,
+    });
     if (pair.value && pair.value !== amount) {
       nextDraft.propertyValueAmount = pair.value;
       nextDraft.valueAsked = true;
     }
+    if (
+      draft.productIntent === "refinance" &&
+      !draft.helocOffered &&
+      !nextDraft.pendingOffer &&
+      wantsCashKeepFirst(q)
+    ) {
+      nextDraft = { ...nextDraft, pendingOffer: "heloc" };
+    }
     const next = workspacePromptCopy(workspacePrompt(nextDraft), nextDraft);
-    return {
-      ...next,
-      capture: {
-        field: "loanAmount",
-        value: pair.value && pair.value !== amount ? `${amount}:${pair.value}` : String(amount),
+    return withWorkspaceGuide(
+      {
+        ...next,
+        capture: {
+          field: "loanAmount",
+          value: pair.value && pair.value !== amount ? `${amount}:${pair.value}` : String(amount),
+        },
       },
-    };
+      nextDraft,
+    );
   }
 
   if (prompt === "value") {
+    const requiredValue = purchasePriceAskNeeded(draft) || propertyValueAskNeeded(draft);
     if (isUnknownAmount(q)) {
+      if (requiredValue) {
+        return { text: `${amountAskText(draft)} A number works.` };
+      }
       const nextDraft = { ...draft, valueAsked: true };
       return {
         ...workspacePromptCopy(workspacePrompt(nextDraft), nextDraft),
@@ -1077,16 +2319,25 @@ export function workspaceReply(
     const amount = parseAmountPair(q).value ?? parseLooseAmount(q);
     if (amount == null) {
       return {
-        text: "A rough number works, or tap Not sure.",
-        actions: amountHelperActions("skip-value"),
+        text: `${amountAskText(draft)} A number works${requiredValue ? "." : ", or tap Not sure."}`,
+        actions: requiredValue ? undefined : amountHelperActions("skip-value"),
       };
     }
-    const nextDraft = { ...draft, propertyValueAmount: amount, valueAsked: true };
+    const nextDraft = withComputedCompanion(
+      withMatrixAfterAmount({
+        ...draft,
+        propertyValueAmount: amount,
+        valueAsked: true,
+      }),
+    );
     const next = workspacePromptCopy(workspacePrompt(nextDraft), nextDraft);
-    return {
-      ...next,
-      capture: { field: "propertyValue", value: String(amount) },
-    };
+    return withWorkspaceGuide(
+      {
+        ...next,
+        capture: { field: "propertyValue", value: String(amount) },
+      },
+      nextDraft,
+    );
   }
 
   if (prompt === "credit") {
@@ -1094,10 +2345,13 @@ export function workspaceReply(
     if (!range) return { text: "Tap a credit range, or Not sure." };
     const nextDraft = { ...draft, creditBand: range, creditAsked: true, correcting: null };
     const next = workspacePromptCopy(workspacePrompt(nextDraft), nextDraft);
-    return {
-      ...next,
-      capture: { field: "creditRange", value: range },
-    };
+    return withWorkspaceGuide(
+      {
+        ...next,
+        capture: { field: "creditRange", value: range },
+      },
+      nextDraft,
+    );
   }
 
   if (prompt === "term") {
@@ -1118,10 +2372,13 @@ export function workspaceReply(
     const match = incomeFromText(q);
     if (!match) return { text: "Tap W-2, Self-employed, Both, or Other." };
     const nextDraft = withIncomeType(draft, match.value);
-    return {
-      ...workspacePromptCopy(workspacePrompt(nextDraft), nextDraft),
-      capture: { field: "incomeType", value: match.value },
-    };
+    return withWorkspaceGuide(
+      {
+        ...workspacePromptCopy(workspacePrompt(nextDraft), nextDraft),
+        capture: { field: "incomeType", value: match.value },
+      },
+      nextDraft,
+    );
   }
 
   if (prompt === "documents") {
@@ -1151,12 +2408,12 @@ export function workspaceReply(
 
   if (prompt === "review") {
     if (/(looks right|confirm|yes|correct|good)/i.test(lower)) {
-      const nextDraft = {
-        ...draft,
-        sampleAccepted: true,
-        workspaceDraftStatus:
-          draft.workspaceDraftStatus === "with-originator" ? draft.workspaceDraftStatus : "ready",
-      } as FoxIntakeDraft;
+      if (!canLooksRight(draft)) {
+        return {
+          text: missingAmountAsk(draft) || "I still need a required amount on this file.",
+        };
+      }
+      const nextDraft = applyLooksRightMotion(draft);
       const nextPrompt = workspacePrompt(nextDraft);
       return {
         ...workspacePromptCopy(nextPrompt === "review" ? "done" : nextPrompt, nextDraft),
@@ -1200,7 +2457,39 @@ export function workspaceReply(
           text: "I can prepare a file. I cannot approve, lock, or commit to lend.",
         };
       }
-      if (/(skip|later|not yet|don'?t have)/i.test(lower) && /doc/.test(lower)) {
+      if (draft.pendingFinish && looksLikeEmail(q)) {
+        const nextDraft = applyEmailThenFinish(draft, q);
+        return {
+          ...workspacePromptCopy("done", nextDraft),
+          capture: { field: "email", value: q.trim() },
+        };
+      }
+      const finish = finishCaptureFromText(q);
+      if (finish) {
+        if (finish.field === "upload-more") {
+          return {
+            text: "",
+            capture: finish,
+          };
+        }
+        const nextDraft =
+          finish.field === "proceed"
+            ? { ...draft, pendingFinish: emailMissing(draft) ? "proceed" : draft.pendingFinish }
+            : { ...draft, pendingFinish: emailMissing(draft) ? "not-yet" : draft.pendingFinish };
+        return {
+          ...workspacePromptCopy("done", nextDraft),
+          text:
+            finish.field === "proceed"
+              ? emailMissing(draft)
+                ? MOTION_COPY.emailAsk
+                : MOTION_COPY.in_queue
+              : emailMissing(draft)
+                ? MOTION_COPY.emailAsk
+                : MOTION_COPY.on_hold,
+          capture: finish,
+        };
+      }
+      if (/^skip\b/.test(lower) || (/(skip|later|don'?t have)/i.test(lower) && /doc/.test(lower))) {
         const nextDraft = { ...draft, documentsSkipped: true, docsOpen: false, correcting: null };
         return {
           ...workspacePromptCopy("done", nextDraft),
@@ -1236,7 +2525,7 @@ export function scenarioForEstimate(
 
   return {
     zip: draft.scenario?.zip ?? "90001",
-    purpose: purposeForIntent(intent),
+    purpose: purposeForIntent(intent, jumboPurposeOf(draft)),
     propertyValue: propertyValue ?? loanAmount ?? 0,
     amountMode: "loan",
     loanAmount,
@@ -1256,53 +2545,45 @@ export type PreviewFact = {
   note?: string;
 };
 
-function amountLineLabel(intent?: ProductIntent | null) {
-  if (intent === "heloc") return "Line / cash";
-  if (intent === "other") return "Amount";
-  if (intent === "refinance") return "Payoff / cash";
-  return "Loan amount";
-}
-
 function numbersFact(draft: FoxIntakeDraft): PreviewFact | null {
-  const intent = draft.productIntent ?? productIntentFromSlug(draft.scenario?.productSlug);
+  if (draft.productIntent && draft.productIntent !== "other") return null;
   const loan = draft.loanAmountValue;
   const value = draft.propertyValueAmount;
   const hasLoan = loan != null && loan > 0;
   const hasValue = value != null && value > 0;
   if (!hasLoan && !hasValue) return null;
+  const label = structureAmountLabel(draft);
+  if (!label) return null;
   if (hasLoan && hasValue) {
     return {
       id: "numbers",
-      label: usesPurchasePrice(intent) ? "Price / loan" : amountLineLabel(intent),
+      label,
       value: `${formatMoney(loan)} on ${formatMoney(value)}`,
     };
   }
   if (hasLoan) {
     return {
       id: "numbers",
-      label: amountLineLabel(intent),
+      label,
       value: formatMoney(loan),
     };
   }
   return {
     id: "numbers",
-    label: usesPurchasePrice(intent) ? "Purchase price" : "Property value",
+    label,
     value: formatMoney(value as number),
   };
 }
 
 function docsFact(draft: FoxIntakeDraft): PreviewFact | null {
   if (draft.documents.length) {
-    const slots = Array.from(new Set(draft.documents.map((doc) => doc.slot)));
+    const labels = Array.from(
+      new Set(draft.documents.map((doc) => docsDisplayLabel(doc))),
+    );
     return {
       id: "docs",
       label: "Docs",
-      value: slots
-        .map((slot) => {
-          const label = DOC_SLOTS.find((item) => item.id === slot)?.label ?? "Other";
-          return `${label} in`;
-        })
-        .join(" · "),
+      value: labels.map((item) => `${item} in`).join(" · "),
     };
   }
   if (draft.documentsSkipped) {
@@ -1312,15 +2593,64 @@ function docsFact(draft: FoxIntakeDraft): PreviewFact | null {
 }
 
 export function statusCopy(draft: FoxIntakeDraft) {
-  if (
-    draft.sampleAccepted ||
-    draft.workspaceDraftStatus === "with-originator" ||
-    draft.phase === "confirmed"
-  ) {
-    return "Assigned / reviewing";
+  return motionStatusCopy(draft);
+}
+
+/** Same File facts /lo/review must show even when no explorer scenario bag exists. */
+export function fileScenarioRows(draft: FoxIntakeDraft): [string, string][] {
+  const rows: [string, string][] = [];
+  if (draft.path) {
+    rows.push(["Path", draft.path === "acr" ? "ACR" : "Loan only"]);
   }
-  if (draft.workspaceDraftStatus === "ready") return "Ready for you";
-  return "Preparing";
+  const product =
+    productIntentLabel(draft.productIntent) || draft.scenario?.productName || "";
+  if (product) rows.push(["Product", product]);
+
+  const named = structureAmountLabel(draft);
+  const value = draft.propertyValueAmount;
+  const loan = draft.loanAmountValue;
+  const down = draft.downPaymentAmount;
+  if (isPurchaseLike(draft)) {
+    if (value != null) rows.push(["Purchase price", formatMoney(value)]);
+    if (down != null) rows.push(["Down payment", formatMoney(down)]);
+    if (loan != null) rows.push(["Loan amount", formatMoney(loan)]);
+  } else if (named && draftUsesPurchasePrice(draft) && value != null) {
+    rows.push([named, formatMoney(value)]);
+    if (loan != null && loan !== value) rows.push(["Loan amount", formatMoney(loan)]);
+  } else if (named && loan != null) {
+    rows.push([named, formatMoney(loan)]);
+    if (value != null && value !== loan) rows.push(["Property value", formatMoney(value)]);
+  } else if (value != null) {
+    rows.push(["Purchase price", formatMoney(value)]);
+  } else if (loan != null) {
+    rows.push(["Loan amount", formatMoney(loan)]);
+  }
+  if (isRefiLike(draft) && value != null && !rows.some((row) => row[0] === "Property value")) {
+    rows.push(["Property value", formatMoney(value)]);
+  }
+
+  const occupancy = occupancySpokenLabel(draft.occupancyChoice.value);
+  if (occupancy) rows.push(["Occupancy", occupancy]);
+  const timeline = TIMELINE_BUBBLES.find((item) => item.value === draft.timelineChoice.value)?.label;
+  if (timeline) rows.push(["Timeline", timeline]);
+
+  if (draft.scenario) {
+    const extras: [string, string][] = [];
+    if (draft.scenario.zip) extras.push(["ZIP", draft.scenario.zip]);
+    if (draft.scenario.productName && draft.scenario.productName !== product) {
+      extras.push(["Product", draft.scenario.productName]);
+    }
+    if (draft.scenario.propertyValue && value == null) {
+      extras.push(["Property value", formatMoney(draft.scenario.propertyValue)]);
+    }
+    if (draft.scenario.loanAmount != null && loan == null) {
+      extras.push(["Loan amount", formatMoney(draft.scenario.loanAmount)]);
+    }
+    for (const row of extras) {
+      if (!rows.some((item) => item[0] === row[0])) rows.push(row);
+    }
+  }
+  return rows;
 }
 
 export function previewFacts(draft: FoxIntakeDraft): PreviewFact[] {
@@ -1331,7 +2661,12 @@ export function previewFacts(draft: FoxIntakeDraft): PreviewFact[] {
     facts.push({ id: "path", label: "Path", value: "Loan only" });
   }
 
-  const intent = draft.productIntent ?? productIntentFromSlug(draft.scenario?.productSlug);
+  const intent =
+    draft.productIntent ??
+    (() => {
+      const fromSlug = productIntentFromSlug(draft.scenario?.productSlug);
+      return fromSlug === "other" ? null : fromSlug;
+    })();
   if (intent) {
     facts.push({
       id: "product",
@@ -1340,56 +2675,126 @@ export function previewFacts(draft: FoxIntakeDraft): PreviewFact[] {
     });
   }
 
-  const occupancy = draft.occupancyChoice.value || "";
-  const occupancyLabel = OCCUPANCY_BUBBLES.find((item) => item.value === occupancy)?.label;
-  if (occupancyLabel) {
-    facts.push({ id: "occupancy", label: "Occupancy", value: occupancyLabel });
+  const required = requiredStructureLines(draft);
+  const requiredIds = new Set(required.map((line) => line.id));
+  for (const line of required) {
+    const shown = requiredLineValue(draft, line);
+    facts.push({
+      id: line.id,
+      label: line.label,
+      value: shown.value,
+      note: shown.note,
+    });
   }
 
-  const timeline = draft.timelineChoice.value || "";
-  const timelineLabel = TIMELINE_BUBBLES.find((item) => item.value === timeline)?.label;
-  if (timelineLabel) {
-    facts.push({ id: "timeline", label: "Timeline", value: timelineLabel });
+  if (!requiredIds.has("occupancy")) {
+    const occupancy = draft.occupancyChoice.value || "";
+    const occupancyLabel = OCCUPANCY_BUBBLES.find((item) => item.value === occupancy)?.label;
+    if (occupancyLabel) {
+      facts.push({ id: "occupancy", label: "Occupancy", value: occupancyLabel });
+    }
+  }
+
+  if (!requiredIds.has("timeline")) {
+    const timeline = draft.timelineChoice.value || "";
+    const timelineLabel = TIMELINE_BUBBLES.find((item) => item.value === timeline)?.label;
+    if (timelineLabel) {
+      facts.push({ id: "timeline", label: "Timeline", value: timelineLabel });
+    }
   }
 
   const numbers = numbersFact(draft);
-  if (numbers) facts.push(numbers);
+  if (numbers && !requiredIds.has("numbers") && !requiredIds.has("line")) facts.push(numbers);
 
-  if (draft.creditAsked || draft.creditBand) {
+  if (!requiredIds.has("credit") && (draft.creditAsked || draft.creditBand)) {
     const creditLabel =
       CREDIT_WORKSPACE_BUBBLES.find((item) => item.value === draft.creditBand)?.label ??
       "Not sure";
-    facts.push({ id: "credit", label: "Credit", value: creditLabel });
+    facts.push({
+      id: "credit",
+      label: "Credit",
+      value: creditLabel,
+      note: CREDIT_STATED_NOTE,
+    });
   }
 
-  if (incomeSettled(draft)) {
+  if (!requiredIds.has("income") && incomeSettled(draft)) {
     const incomeLabel =
       INCOME_BUBBLES.find((item) => item.value === draft.incomeType.value)?.label ?? "Other";
     facts.push({ id: "income", label: "Income", value: incomeLabel });
   }
 
-  if (sampleRateApplies(intent) && sampleReady(draft)) {
+  const address = factValue(draft, "property_address");
+  if (address) {
+    facts.push({ id: "address", label: "Property", value: address });
+  }
+
+  const employer = factValue(draft, "employer_name");
+  const employerProposal =
+    draft.pendingProposal?.field === "employer_name" ? draft.pendingProposal : null;
+  if (employer) {
     facts.push({
-      id: "rate",
-      label: "Rate",
-      value: `${SAMPLE_STRUCTURE} ${SAMPLE_RATE_LABEL}`,
-      note: SAMPLE_NOTE,
+      id: "employer",
+      label: "Employer",
+      value: employer,
+      note: draft.facts?.employer_name?.source === "suggested" ? SUGGESTED_NOTE : undefined,
     });
-  } else if (intent && !sampleRateApplies(intent) && sampleReady(draft)) {
+  } else if (employerProposal) {
     facts.push({
-      id: "rate",
-      label: "Rate",
-      value: "Pricing when the file is ready",
+      id: "employer",
+      label: "Employer",
+      value: employerProposal.value,
+      note:
+        employerProposal.kind === "public"
+          ? SUGGESTED_NOTE
+          : employerProposal.note ?? SUGGESTED_NOTE,
     });
+  }
+  const qualifying = qualifyingIncomeDisplay(draft);
+  if (qualifying) {
+    facts.push({
+      id: "qualifying",
+      label: "Qualifying income",
+      value: qualifying.value,
+      note: qualifying.note,
+    });
+  }
+  const periodPay = factValue(draft, "gross_period");
+  const ytdPay = factValue(draft, "ytd_gross");
+  const wages = factValue(draft, "wages");
+  const agi = factValue(draft, "agi");
+  const payBits = [
+    periodPay ? `Period ${displayFactValue("gross_period", periodPay)}` : "",
+    ytdPay ? `YTD ${displayFactValue("ytd_gross", ytdPay)}` : "",
+    !periodPay && !ytdPay && wages ? `Wages ${displayFactValue("wages", wages)}` : "",
+    !periodPay && !ytdPay && !wages && agi ? `AGI ${displayFactValue("agi", agi)}` : "",
+  ].filter(Boolean);
+  if (payBits.length) {
+    facts.push({ id: "pay", label: "Pay", value: payBits.join(" · ") });
+  }
+
+  if (sampleReady(draft)) {
+    if (previewRateApplies(draft)) {
+      facts.push({
+        id: "rate",
+        label: "Rate",
+        value: `${SAMPLE_STRUCTURE} ${SAMPLE_RATE_LABEL}`,
+        note: PREVIEW_RATE_NOTE,
+      });
+    } else if (intent) {
+      facts.push({
+        id: "rate",
+        label: "Rate",
+        value: PRICING_WHEN_READY,
+      });
+    }
   }
 
   if (draft.path === "acr" && sampleReady(draft)) {
-    const range = estimateFromDraft(draft);
     facts.push({
       id: "reward",
       label: "Reward",
-      value: range ? formatRewardRange(range) : "Prepared when you join",
-      note: SAMPLE_NOTE,
+      value: REWARD_PREPARED_COPY,
     });
   }
 
@@ -1408,7 +2813,7 @@ export function previewFacts(draft: FoxIntakeDraft): PreviewFact[] {
     facts.push({
       id: "scout",
       label: "Scout",
-      value: "Do nothing for now.",
+      value: "When the timing is wrong, Fox waits.",
     });
   }
 
@@ -1433,6 +2838,28 @@ export function previewFacts(draft: FoxIntakeDraft): PreviewFact[] {
       label: "Status",
       value: statusCopy(draft),
     });
+    facts.push({
+      id: "next",
+      label: "Next",
+      value: nextActorOf(draft),
+    });
+    const completeness = fileCompleteness(draft);
+    if (completeness) {
+      facts.push({
+        id: "file",
+        label: "File",
+        value: completeness.copy,
+        note: fileStillUsefulNote(draft),
+      });
+    }
+    const caution = guidelineCaution(draft);
+    if (caution) {
+      facts.push({
+        id: "caution",
+        label: "Note",
+        value: caution,
+      });
+    }
   }
 
   return facts;
@@ -1446,14 +2873,19 @@ export function structureFixPrompt(
   if (id === "product") return "product";
   if (id === "occupancy") return "occupancy";
   if (id === "timeline") return "timeline";
-  if (id === "numbers") {
-    return usesPurchasePrice(draft?.productIntent) ? "value" : "amount";
+  if (id === "numbers" || id === "line") {
+    return isPurchaseLike(draft) && hasPropertyValue(draft) ? "amount" : draftUsesPurchasePrice(draft) ? "value" : "amount";
   }
+  if (id === "price") return "value";
+  if (id === "home") return "value";
+  if (id === "down" || id === "loan") return "amount";
   if (id === "amount") return "amount";
   if (id === "value") return "value";
   if (id === "credit") return "credit";
   if (id === "income") return "income";
   if (id === "docs") return "documents";
+  if (id === "employer" && draft?.pendingProposal?.field === "employer_name") return "confirm-proposal";
+  if (id === "qualifying" && draft?.pendingProposal?.field === "qualifying_income") return "confirm-proposal";
   return null;
 }
 
@@ -1461,15 +2893,19 @@ export function structureExplainCopy(
   id: string,
   draft: FoxIntakeDraft,
 ): { text: string } | null {
+  if (id === "credit") {
+    return {
+      text: "That’s a stated range for the estimate. Not a FICO and not a credit pull.",
+    };
+  }
   if (id === "rate") {
-    const intent = draft.productIntent ?? productIntentFromSlug(draft.scenario?.productSlug);
-    if (sampleRateApplies(intent) && sampleReady(draft)) {
+    if (previewRateApplies(draft) && sampleReady(draft)) {
       return {
-        text: `${SAMPLE_STRUCTURE} ${SAMPLE_RATE_LABEL}. ${SAMPLE_NOTE}. I cannot set, lock, or invent a live rate.`,
+        text: `${SAMPLE_STRUCTURE} ${SAMPLE_RATE_LABEL}. ${PREVIEW_RATE_NOTE}. I cannot set, lock, or invent a live rate.`,
       };
     }
     return {
-      text: "Pricing when the file is ready. I cannot set, lock, or invent a live rate.",
+      text: `${PRICING_WHEN_READY}. I cannot set, lock, or invent a live rate.`,
     };
   }
   if (id === "reward") {
@@ -1484,12 +2920,37 @@ export function structureExplainCopy(
   }
   if (id === "scout") {
     return {
-      text: "Scout watches after close. Do nothing for now.",
+      text: "When the timing is wrong, Fox waits.",
     };
   }
   if (id === "status") {
+    const motion = motionOf(draft);
     return {
-      text: "This is desk state. I cannot approve, lock, or commit to lend.",
+      text: motion
+        ? `Status is ${motion}. I cannot approve, lock, or commit to lend.`
+        : "This is desk state. I cannot approve, lock, or commit to lend.",
+    };
+  }
+  if (id === "next") {
+    return {
+      text: `Next is ${nextActorOf(draft)}. Fox owns file motion. I cannot approve, lock, or commit to lend.`,
+    };
+  }
+  if (id === "file") {
+    const useful = fileStillUsefulNote(draft);
+    return {
+      text: useful ? `${completenessExplainCopy(draft)} ${useful}.` : completenessExplainCopy(draft),
+    };
+  }
+  if (id === "caution") {
+    const caution = guidelineCaution(draft);
+    return caution
+      ? { text: caution }
+      : null;
+  }
+  if (id === "qualifying") {
+    return {
+      text: "Suggested qualifying income · not underwritten. I cannot approve, lock, or commit to lend.",
     };
   }
   if (id === "originator") {
@@ -1506,8 +2967,14 @@ const CHAT_SUMMARY_IDS = new Set([
   "occupancy",
   "timeline",
   "numbers",
+  "price",
+  "down",
+  "loan",
+  "home",
+  "line",
   "credit",
   "income",
+  "qualifying",
   "rate",
   "reward",
   "docs",
@@ -1521,4 +2988,84 @@ export function fileSummaryFacts(draft: FoxIntakeDraft): PreviewFact[] {
         ? { ...fact, value: `${fact.value} · ${fact.note}`, note: undefined }
         : fact,
     );
+}
+
+export function looksLikeInventedRewardMoney(value: string): boolean {
+  return INVENTED_REWARD_RANGE.test(value) || (SAMPLE_INDICATIVE.test(value) && /\$[\d,]/.test(value));
+}
+
+function isRewardFact(fact: Pick<FoxMessageFact, "id" | "label">) {
+  return fact.id === "reward" || /^reward$/i.test(fact.label);
+}
+
+function preparedRewardFact(fact: FoxMessageFact): FoxMessageFact {
+  return { id: "reward", label: fact.label || "Reward", value: REWARD_PREPARED_COPY };
+}
+
+export function sanitizeRewardFact(fact: FoxMessageFact): FoxMessageFact {
+  if (!isRewardFact(fact)) return fact;
+  const blob = `${fact.value} ${fact.note ?? ""}`;
+  if (!looksLikeInventedRewardMoney(blob) && !/\$[\d,]/.test(fact.value)) return fact;
+  return preparedRewardFact(fact);
+}
+
+function sanitizeRestoredFoxText(text: string): string {
+  if (!looksLikeInventedRewardMoney(text) && !INVENTED_REWARD_RANGE.test(text)) return text;
+  if (!/(reward|membership)/i.test(text) && !SAMPLE_INDICATIVE.test(text)) return text;
+  if (/estimated.*reward/i.test(text) || /reward is \$/i.test(text) || /membership reward/i.test(text)) {
+    return `The reward is ${REWARD_PREPARED_COPY.toLowerCase()}.`;
+  }
+  return text.replace(
+    /\$[\d,]+(?:\.\d+)?\s+(?:to|–|-|—)\s+\$[\d,]+(?:\s*·\s*Sample\s*·\s*indicative\s*·\s*not live)?/g,
+    REWARD_PREPARED_COPY,
+  );
+}
+
+function isQualifyingIncomeConfirm(message: FoxMessage) {
+  if (message.role !== "fox") return false;
+  const blob = `${message.text}\n${message.followUp ?? ""}`;
+  if (/Suggested qualifying income/i.test(blob)) return true;
+  return (message.actions ?? []).some((action) => action.capture?.field === "accept-proposal")
+    && /qualifying income/i.test(blob);
+}
+
+function dropProposalActions(message: FoxMessage): FoxMessage {
+  const actions = (message.actions ?? []).filter(
+    (action) =>
+      action.capture?.field !== "accept-proposal" && action.capture?.field !== "decline-proposal",
+  );
+  const text = message.text.replace(/\s*Use this\??\s*$/i, "").trim();
+  const followUp = message.followUp?.replace(/\s*Use this\??\s*$/i, "").trim();
+  return {
+    ...message,
+    text,
+    followUp: followUp || undefined,
+    actions: actions.length ? actions : undefined,
+  };
+}
+
+/** Older qualifying-income Use this / Leave blank cards go inert when a newer one lands. */
+export function inertSupersededIncomeConfirms(messages: FoxMessage[]): FoxMessage[] {
+  let latest = -1;
+  for (let i = 0; i < messages.length; i += 1) {
+    if (isQualifyingIncomeConfirm(messages[i])) latest = i;
+  }
+  if (latest < 0) return messages;
+  return messages.map((message, index) =>
+    index === latest || !isQualifyingIncomeConfirm(message) ? message : dropProposalActions(message),
+  );
+}
+
+export function migrateRestoredFoxMessages(messages: FoxMessage[]): FoxMessage[] {
+  return inertSupersededIncomeConfirms(
+    messages.map((message) => {
+      const text = sanitizeRestoredFoxText(message.text);
+      const facts = message.facts?.map(sanitizeRewardFact);
+      const factsChanged = Boolean(
+        facts && message.facts?.some((fact, index) => fact !== facts[index]),
+      );
+      if (text === message.text && !factsChanged) return message;
+      return { ...message, text, facts };
+    }),
+  );
 }

@@ -92,10 +92,10 @@ Primary post-click experience after the homepage. Fox talks and the Structure up
 - One Fox only. `StartWorkspace` renders the live `AlwaysOnFox` panel as a real child (preview left / Fox right on desktop; chat-first on mobile). `FoxShell` does not mount a second Fox on `/start`. No second composer. No portal hole, no dead fallback chrome. No orb, FAB, second chatbot, or homepage overlay.
 - **Desktop:** Fox chat left (`1.2fr`), live Structure right (`0.8fr`) when at least one useful line exists. Zero lines: hide Structure and center Fox at `720px`. Composer stays in the Fox stage. No dock.
 - **Mobile:** Fox chat is primary. Structure is a File sheet from the dock chip (`Structure · {n} facts` or the newest fact), a true overlay over the thread. Same `StructureRows` + `previewFacts` as desktop. Keyboard pushes the dock. Do not stack an inline Structure card under the thread. Do not nest a 500px desktop chat inside mobile.
-- Structure is a tappable term sheet, not a dashboard and not a File/Preview recap. Render only lines that exist: Path (`Relationship desk` / `Loan only`), Product, Occupancy, Timeline, Numbers (as given, never invented), Credit, Income, Rate, Reward (ACR after the sketch is ready), Letter / Scout (ACR after Looks right), Originator (after Looks right: `Licensed originator assigned` — do not invent a name or NMLS), Docs, Status. Paper / paper-elevated / ink / metal. Radius 16, hairline (`1px solid var(--fox-hairline)`). No gold fill. Tap Path/Product/Occupancy/Timeline/Numbers/Credit/Income/Docs to fix. Rate, Reward, Letter, Scout, Originator, and Status are tap-to-explain or desk-state notes — never borrower-editable into a live rate. Do not show a “Which part should Fox fix?” menu. Needs a correction → `Tap any line on the structure.`
+- Structure is a tappable term sheet, not a dashboard and not a File/Preview recap. Render only lines that exist: Path (`Relationship desk` / `Loan only`), Product, Occupancy, Timeline, the named dollar line (`Purchase price` / `Loan amount` / `HELOC line` — never `Amount` or `Numbers`), Credit, Income, Rate, Reward (ACR after the sketch is ready), Letter / Scout (ACR after Looks right), Originator (after Looks right: `Licensed originator assigned` — do not invent a name or NMLS), Docs, Status. Paper / paper-elevated / ink / metal. Radius 16, hairline (`1px solid var(--fox-hairline)`). No gold fill. Tap Path/Product/Occupancy/Timeline/the named dollar line/Credit/Income/Docs to fix. Rate, Reward, Letter, Scout, Originator, and Status are tap-to-explain or desk-state notes — never borrower-editable into a live rate. Do not show a “Which part should Fox fix?” menu. Needs a correction → `Tap any line on the structure.`
 - Rate honesty: Sample `6.750%` only on Conventional 30-year purchase/refi (`Buy` or `Refinance`). Label always adjacent, including the in-thread `Here’s a sample structure` recap: `Sample · indicative · not live`. HELOC / Jumbo / Other rate line is exactly `Pricing when the file is ready`. Never fake `6.750` on those. Never show `6.750%` naked. No estimated payment next to the sample. No live-looking HELOC APR, IO payment, or “move forward” quote. No FICO-first theater. No “send the app link” destination.
 - Estimated ACR reward range only on the ACR path via private `estimateFromDraft` after the sketch is ready. Never invent a live rate. Never show the private formula or a public %. Never imply approval, lock, or a commitment to lend.
-- Fox flow (same on desktop and mobile): path once (from homepage CTA or Idle bubbles) → product (Buy / Refinance / HELOC / Jumbo / Other) → occupancy → timeline → **one** number (Buy/Jumbo: purchase price; Refinance/HELOC/Other: rough payoff or cash) → **credit range** (`760+` / `720–759` / `680–719` / `Not sure`) → **income type** (`W-2` / `Self-employed` / `Both` / `Other`) → sample structure **in the chat thread** + `Does this look right?` → Looks right → file prepared, licensed originator assigned, Fox stays. Docs are after confirm, filtered by that income type (upload on request). If path is set, never ask again. Changing path only via the Path line + confirm once (`Switch to loan only?` / `Switch to the desk?`). Term, name, email, and phone are not on the pre-confirm spine. Income is on the spine only as far as needed to filter docs — not a 1003. One question at a time, bubbles for structured answers, free text and composer always available. Money questions autofocus a text composer with a visible caret (`inputMode=decimal`, never `type=number`) and restore focus if it is lost. Not sure / Skip for now remain. Pure numbers gain commas while typing (`6000` → `6,000`); `600000`, `600,000`, and `600k` confirm as `$600,000`. Free text is not force-formatted.
+- Fox flow (same on desktop and mobile): path once (from homepage CTA or Idle bubbles) → product (Buy / Refinance / HELOC / Jumbo / Other) → occupancy → timeline → **one named number** (Buy/Jumbo: purchase price; Refinance: approximate loan / payoff; HELOC: requested line or cash; Other only if they tapped Other: what the number is for, then that label) → **credit range** (`760+` / `720–759` / `680–719` / `Not sure`) → **income type** (`W-2` / `Self-employed` / `Both` / `Other`) → sample structure **in the chat thread** + `Does this look right?` → Looks right → file prepared, licensed originator assigned, Fox stays. Docs are after confirm: Fox asks the short missing list for that income type, then Skip. If path is set, never ask again. Changing path only via the Path line + confirm once (`Switch to loan only?` / `Switch to the desk?`). Term, name, email, and phone are not on the pre-confirm spine. Income is on the spine only as far as needed to filter docs — not a 1003. One question at a time, bubbles for structured answers, free text and composer always available. Money questions autofocus a text composer with a visible caret (`inputMode=decimal`, never `type=number`) and restore focus if it is lost. Not sure / Skip for now remain. Pure numbers gain commas while typing (`6000` → `6,000`); `600000`, `600,000`, and `600k` confirm as `$600,000`. Free text is not force-formatted. Never ask a naked amount. Product is Other only when they tap Other — not from a typed buy/refi/HELOC/jumbo sentence, and not from a docs `other` slot.
 - Starters (exact): ACR `I can prepare your relationship file. We’ll keep this desk open after close.` Loan-only `This is the loan. ACR is optional if you want the desk later.`
 - Sticky disclosure under the Fox header on every `/start` turn: `ONYX Fox can assist and prepare. It cannot approve, lock, or commit to lend.` Do **not** repeat that string in the first Fox bubble. Header stays `ONYX Fox`. Fox cannot approve, lock, or commit to lend. California only stays site-level. Do not inherit the public Equity Fox chat.
 
@@ -113,14 +113,15 @@ Continue the `/start` workspace after basics. Reuse the draft store, confirm cap
 Income type is a structure-changing question on the shared spine, after credit and before Looks right. It exists only to filter the post-confirm drop. Do not add a 1003.
 
 - Ask `How is income earned?` with `W-2` / `Self-employed` / `Both` / `Other`. Other settles the question. Structure writes an Income line, tappable like the other facts.
-- `workspacePrompt` after credit + income returns `review`, never `documents`. Documents are not a pre-confirm spine step. Opening upload from `done` is a side action (`docsOpen`); it does not replay a blocking docs prompt or change Assigned / reviewing.
-- After Looks right, `Upload docs` offers only what that income type implies. One dropzone. Skip remains. Copy (not a vault of five slots):
-  - W-2: paystubs / W-2
-  - Self-employed: tax returns / business docs
-  - Both: the combined set
-  - Other / unknown: generic drop or skip. Do not present a fake full vault.
+- `workspacePrompt` after credit + income returns `review`, never `documents`. Documents are not a pre-confirm spine step. Opening upload from `done` is a side action (`docsOpen`); it does not replay a blocking docs prompt or change file motion.
+- After Looks right, Fox asks the short missing list, then Skip. One dropzone. Do not lead with `Drop what you have. Skip is fine.` Copy:
+  - W-2: government ID, latest paystub, W-2
+  - Self-employed: government ID, tax return
+  - Both: the union of those
+  - Other income: government ID + tax return (same as self-employed until product matrix)
+  After a successful upload, refresh the list. Do not re-ask received / ready / skipped. Filename-classified paystub / W-2 / ID stay `Paystubs in` / `W-2 in` / `ID in` — never `Other in`.
 - Skip writes `Docs: Skipped`. File stays prepared. Fox stays. Occupancy tap-edit still does not re-ask docs.
-- **Looks right on ACR:** file prepared. Status `Assigned / reviewing`. Originator row `Licensed originator assigned`. Letter / scout / reward on the desk. Fox stays.
+- **Looks right on ACR:** file prepared. Originator row `Licensed originator assigned` (accountability, not the borrower-facing status). Status is file motion (`gathering` / `ready`, then finish-line). Letter / scout / reward on the desk. Fox stays.
 - **Looks right on loan:** file prepared. Same assigned originator accountability. Honest. No membership pitch except one later `What is ACR?` chip. Fox stays.
 - **Needs a correction** → `Tap any line on the structure.` No field-chip menu. Changing product restripes the rate if the sample no longer applies; do not clear path or docs. Occupancy tap-edit does not re-ask docs.
 - **One conversation engine.** `workspace.ts` + `AlwaysOnFox` own question order, bubbles, and path rules for desktop and mobile. Layout is the only difference (preview left / Fox right on desktop; chat-first + File / Preview card on mobile). Do not keep a second script, fallback chip thread, or dead `start-workspace__fox-fallback` shell. Desktop mount is the same live engine as mobile — never a one-shot portal into an empty `#fox-start-stage`.
@@ -129,6 +130,238 @@ Income type is a structure-changing question on the shared spine, after credit a
 - **Edits.** Tap a Structure line, or use a quiet Edit control on a prior answer. Natural language for occupancy/timeline/product/amount/value/credit/docs is parsed in `workspace.ts`. Path changes only via the Path line + confirm once. Credit is a first-class sketch fact. Updates go through `applyCapture`. Structure-fix completion appends a quiet system line (`Updated occupancy to Second home.`) then a separate Fox ask. No toasts. Works after handoff; Fox still cannot approve, lock, or commit to lend.
 - ACR and loan only stay distinct through this flow (path-specific starters and reward-panel rules). Reward estimate only on ACR via private `estimateFromDraft`. Temporary sample rate is 6.750% Conventional 30-year on Buy/Refinance only, labeled `Sample · indicative · not live` wherever that number appears. HELOC / Jumbo / Other stay `Pricing when the file is ready`. No live rate. No public %. Disclosure under the Fox header only, not in the first bubble.
 - Desktop stays Fox left / Structure right. Mobile stays chat-first with the Structure File sheet from the dock chip.
+
+## BUILD 1 — real document intake (preview only)
+
+Replaces the fake `useDocumentReads` timer. After Looks right, `Upload docs` still opens one Fox-thread drop. No second drop on Structure or the mobile File sheet. Spine stays A–D. Fox stays. Assigned originator stays. Zero docs still reaches assigned originator.
+
+### Storage (as shipped)
+
+- Bytes persist **server-side on Vercel Blob, private**. No public URL is written into the browser draft.
+- Browser draft (`onyx.foxIntake.draft` v2) keeps metadata only: `{ slot, name, type, size, receivedAt, status, note, bytesRef, extractClass }`. `bytesRef` is the private Blob **pathname**.
+- Upload path: browser → `@vercel/blob/client` `upload(..., { access: "private", handleUploadUrl: "/api/docs/upload" })` so 15 MB files do not go through the function body.
+- Extract path: `POST /api/docs/extract` with `{ bytesRef }` → server `get(pathname, { access: "private" })` → classify/extract. Signed/OIDC read on the server only. Fox never receives raw PDF bytes.
+- Caps: 15 MB each, 10 files. Accept PDF, JPEG, PNG, HEIC, WebP. Other types: one line, `Use a PDF, JPEG, PNG, HEIC, or WebP under 15 MB.`
+- Client upload **requires** `BLOB_READ_WRITE_TOKEN` (`handleUpload` cannot mint tokens from OIDC alone). On Vercel, a **private** Blob store linked to `onyx-backend` (Preview) is the provision step. If that token/store is missing, routes return `503 STORAGE_BLOCKED` and do not invent a public blob URL.
+- Dedicated routes only: `/api/docs/upload`, `/api/docs/extract`. Do **not** call `/api/chat` or `/api/heloc-quote`.
+
+### Extract schema as shipped
+
+One adapter (`lib/docs/extract.ts`) calls the existing Grok key (`grok_api_key`) through `@ai-sdk/openai` + `https://api.x.ai/v1`, model `grok-2-vision-1212`. No new paid OCR vendor.
+
+`classify(bytes) → { class, confidence }` then `extract(bytes, class) → fields + warnings`.
+
+Classes and keys (V1 only):
+
+- `government_id`: full_name, date_of_birth, id_last4, state, expiration
+- `paystub`: employer_name, pay_period_end, gross_period, ytd_gross, net_period
+- `w2`: tax_year, employer_name, wages, federal_withheld
+- `tax_return`: tax_year, filing_status, agi
+- `bank_statement`: institution, period_end, ending_balance
+- `purchase_contract`: property_address, purchase_price, close_date
+- `mortgage_statement`: servicer, unpaid_principal, current_pi, property_address
+
+Slot map: government_id→id, paystub→paystubs, w2→w2, tax_return→other, bank_statement→bank, purchase_contract→other, mortgage_statement→other.
+
+Write extracted facts onto the same draft `/lo/review` already reads (`facts` + existing contact/value fields). Source starts as `extracted-unconfirmed` and is confirmed on empty write or after a conflict tap. Empty Structure/fact → write. Same value → keep, no question. Credit range stays typed. Docs never write FICO. Full SSN and full account numbers are dropped; ID may store last4 only.
+
+Low-confidence / `other`: keep bytes, do not invent numbers, Structure/docs note `Document received`. Failed read: keep bytes, status `failed`, exact copy `Fox could not read this file. Type a note or skip. No dollar amounts were invented.`
+
+Quiet system line on write, not a loud Fox bubble: e.g. `Updated income from paystub.`
+
+### Missing-item ask (one short group)
+
+Always after Looks right, from income type only (no product-matrix extras):
+
+- W-2: government ID, latest paystub, W-2
+- Self-employed: government ID, tax return
+- Both: union of those
+- Other income: government ID + tax return
+
+Do not ask a class that is received, ready, or skipped. Do not re-ask path, occupancy, credit, or a fact already on Structure. Skip writes `documentsSkipped` and remaining requested classes into `skippedClasses`. File stays with-originator. Later upload still works. Extract class `other` must not change Product or remap a filename-classified paystub / W-2 / ID into `Other in`.
+
+### Conflict behavior
+
+If a typed/File value differs from the document, Fox does **not** overwrite. It asks once: file vs document. Borrower tap wins (`Keep file` / `Use document`). Example: typed income ≠ paystub period pay.
+
+### Walk (this build)
+
+A. Buy spine asks purchase price; Structure says `Purchase price`.
+B. Refi spine asks approximate loan / payoff; Structure says `Loan amount`.
+C. HELOC spine asks line or cash needed; Structure says `HELOC line`.
+D. Tapping Buy / Refi / HELOC / Jumbo never lands Product Other.
+E. After Looks right on W-2, Fox lists government ID, latest paystub, W-2 (not a generic drop line). Skip works.
+F. Paystub extract still writes Employer / Pay; Docs is `Paystubs in`, not `Other in`.
+
+1. After Looks right, upload a paystub (or labeled sample). Structure gains employer/pay facts. Spine is not replayed.
+2. Typed income ≠ paystub → Fox asks once, does not overwrite.
+3. Missing group names only what’s still open. Skip still works.
+4. Unreadable file: received + failed, no invented numbers.
+5. Desktop and mobile same engine.
+6. Zero docs still reaches assigned originator.
+
+## BUILD 2 — file motion (preview only)
+
+Same branch / PR. Do not merge `main`. No production. No public cutover. Sit on the existing File: `FoxIntakeDraft` in `onyx.foxIntake.draft`. `/start` and `/lo/review` read and write that same draft. No second database.
+
+### Locked operating model
+
+- Finish line after Looks right: **Proceed · Upload more · Not yet**. Request human stays a side door.
+- Fox owns file motion, including the ONYX queue nudge.
+- Assigned originator is accountability (Structure fact). It is not the borrower-facing status.
+- No “LO will contact you” / “we’ll be in touch” / “your LO has the file”.
+- Skip is not Proceed. Skip + Proceed is allowed.
+- Structure always shows **Status** + **Next** (`You` | `Fox` | `ONYX` | `Outside`) once facts exist.
+- Return to Fox from `/lo/review` lands in the borrower thread.
+- One File.
+
+### Motion
+
+`confirmed | gathering | ready | in_queue | needs_you | on_hold | escalated`
+
+`waiting_out` is not faked (no UW / appraisal theater).
+
+Copy:
+
+- gathering: `Still useful: {list}. Skip is fine.`
+- ready: `This file can move. Proceed, upload more, or not yet.`
+- in_queue: `ONYX has this for review. I’m on it — I’ll nudge if it sits and I’ll bring the result back here.`
+- needs_you: `I need {one thing} from you.`
+- on_hold: `Holding. I’ll keep the file. Say when to proceed.`
+- escalated: `A licensed originator is on this exception. I stay here. I’ll put their result in this thread.`
+
+Stored on the same draft: `motion`, `nextActor`, `workItems[]`, `events[]`, `previewOutbox[]`, `pendingFinish`, `reviewSlaMs`.
+
+### Finish line
+
+1. Looks right → missing list + chips Proceed · Upload more · Not yet. Originator fact appears. Status is `gathering` or `ready`. Next = You.
+2. Proceed → WorkItem `kind=review` on this File, motion `in_queue`, Next = ONYX. If email is missing, one field (`What’s a good email? I’ll remind you.`) — not an account wall. Preview outbox may show in-thread (`I’ll remind you`). No SMS.
+3. Upload more → stay gathering. Same missing list. Drop stays in the Fox thread.
+4. Not yet → `on_hold`. Same File. Missing memory intact.
+5. Skip → docs skipped, not a WorkItem. File can still Proceed.
+6. Request human → `escalated` (side door). Next = ONYX. Fox stays.
+
+After Proceed, do not leave Request human as the only action. Fox stays the interface while ONYX reviews. Primary chips: **What happens next? · Upload more · Ask Fox**. Request human is a quiet side door. What happens next? explains the wait in Fox — no “LO will contact you.” Upload more stays gathering-capable on the same File (missing list + dropzone); the review WorkItem can stay. Status may restripe gathering if they upload.
+
+### Sit / nudge
+
+Default SLA is 4 hours. If a review WorkItem sits, Fox nudges it and says so in the borrower thread.
+
+Preview walk (do not wait 4 hours):
+
+- `/start?sla=30` or `/lo/review?sla=30` — 30-second clock
+- `/start?nudge=now` or `/lo/review?nudge=now` — force a nudge
+- `/lo/review` **Sit expired** / **Nudge now** chips
+
+### Return to Fox
+
+`/lo/review` writes a result note + optional **needs a doc** onto the same File (event + WorkItem `returned`). The typed note is the borrower thread line. Do not fall back to a canned missing-class ask (`I need government ID from you`) unless that is what they wrote. If **needs a doc**, restripe `needs_you` with that note. Next = You.
+
+`/start` **resumes** that same File after Looks right / Proceed / hold / gathering / ready / `in_queue` / `needs_you` / escalated. `path=acr` or `path=loan` on the URL is not a fresh start while the File is in motion. `?nudge=now` on `/start` must not wipe the draft. Fresh start stays the homepage CTA only (`HeroStartLink` / `beginWorkspaceFromHero` / `resetWorkspaceForEntry` from homepage). `seedWorkspaceMessages` must not re-seed an empty spine over a restored in-motion thread.
+
+`/lo/review` reads the same File facts (`productIntent`, named amount, occupancy). Do not hide Buy / `$850,000` behind “No scenario attached” when those values live on the draft.
+
+### Walk
+
+1. Looks right → missing list → Proceed / Upload more / Not yet. No LO-will-contact copy.
+2. Proceed → Status `in_queue`, Next = ONYX, originator still assigned.
+3. Return to Fox from `/lo/review` → one thread line + Structure restripe.
+4. Skip ≠ Proceed. Not yet holds. Status + Next always visible.
+5. Sit/nudge walkable in preview (short SLA or a test control).
+
+Shared preview URLs (same device File):
+
+- `/start`
+- `/lo/review`
+
+## Product matrix v1 — wire branching only (preview)
+
+Same branch / PR. Do not merge `main`. No production. No public launch. No new products. No guideline bible. Existing chips only: Buy / Refinance / HELOC / Jumbo. Other only if they tap Other. Do not silently flip Product.
+
+Spine A–D, BUILD 2 finish line, Fox-as-interface, assigned originator accountability, BUILD 1 extract / Skip / conflict / fixture guard, homepage locks, and the header disclosure stay intact.
+
+### Amount (already locked)
+
+- Buy: ask purchase price. Structure: `Purchase price`
+- Refinance: ask loan / payoff. Structure: `Loan amount`
+- HELOC: ask line or cash. Structure: `HELOC line`
+- Jumbo: if they tap Jumbo first, ask buy vs refi, then the matching amount. Never a naked `Amount`.
+
+### Preview rate (one slot)
+
+Conv 30 `Preview rate · not live` (`6.750%`) only when Product is Buy or Refinance, occupancy is primary or second, and the treated loan is not above the **2026 FHFA high-cost ceiling `$1,249,125`**. Do **not** use `$832,750`.
+
+- HELOC, Jumbo, Investment occupancy, FHA/VA/USDA they name, or a loan that looks above the ceiling: `Pricing when the file is ready`. Never invent `6.750%` there.
+- If Purchase / Refi looks above `$1,249,125`, **offer Jumbo once**. Do not silently flip the Product line.
+- Reward is still not invented dollars. If the rate is pricing-when-ready, Reward is `Prepared when you join` (ACR) or hidden (loan only).
+
+### Branch / do not deny
+
+- Not CA → `I can only prepare California files. I cannot prepare this file.` Honest stop. Fox stays. No “LO will contact you.”
+- FHA / VA / USDA named → no preview rate, Request human available, Fox stays. Product chip does not become a new government product.
+- Active bankruptcy / foreclosure they name → no preview rate, can still Proceed, may escalate. Fox stays.
+- Buy typed on a Refinance path → switch to Buy, no restart.
+- Cash + keep first on a Refinance path → offer HELOC once.
+- HELOC but they are buying → Buy.
+- HELOC but replace first → Refinance.
+- Status + Next stay. Skip ≠ Proceed.
+
+### Walk
+
+1. Buy: purchase price, preview rate on primary, investment → pricing when ready.
+2. Refi: loan amount, preview rate on primary.
+3. HELOC: HELOC line, no `6.750%`.
+4. Jumbo: pricing when ready; purpose then matching amount.
+5. Looks right → missing list → Proceed still works.
+
+## Guideline v1 — completeness wiring (preview)
+
+Same branch / PR. Do not merge `main`. No production. No public launch. No denial engine. No DU / AUS / “you qualify.” Borrower never sees a 1003. Build 2 finish line stays **after** the sketch is actually complete.
+
+### Required fields before Looks right
+
+Defined per product. Empty required Structure lines stay visible as quiet `—`. Do not hide them.
+
+- **Conventional purchase:** occupancy, timeline, purchase price, **down payment and loan amount** (show both; one given implies the other as proposed — confirm before write). Credit range. Income type. Looks right is blocked until price + (down **or** loan) exist. Fox asks the missing funds line after price.
+- **Conventional refinance:** occupancy, timeline, loan amount (payoff), property value, credit range, income type. Looks right blocked until loan amount + property value exist.
+- **HELOC (thin):** occupancy, timeline, HELOC line, credit, income. No agency completeness score. Looks right allowed with those.
+- **Jumbo:** buy uses purchase minimums; refi uses refi minimums. Still no preview rate. No agency completeness score.
+
+### Quiet File map
+
+Conventional purchase / refinance only. Sit **File** next to Status + Next on Structure (desktop aside + mobile File sheet). Same `previewFacts` engine.
+
+States: `sketch` | `documented` | `agency_partial`. Never `agency_ready` in v1. Copy like `sketch · 3 of 5` or `documented`. No progress-bar theater. No “approved.”
+
+Groups: Identity (name / ID extract), Property (occupancy, address if known), Loan (purpose + required amounts), Income (type + confirmed extract), Credit (range only). Do not mark documented / agency_partial / ready if agency-shaped minimums are missing.
+
+### Confirm-before-write
+
+Extract or suggest → proposed on Structure → Keep file / Use document / Yes that’s me → then write. High-confidence doc extract may still fill empty lines. Changing an existing fact asks once and does not overwrite. Public/web suggestions are `Suggested · not verified` and never a hard UW fact. Preview stub: `/start?suggest=employer`. Do not scrape LinkedIn in this slice.
+
+Computed purchase companion (price + down ⇒ loan, or price + loan ⇒ down) is proposed and confirmed — not a public suggestion.
+
+### Quiet flags + more-complete asks
+
+After Looks right / agency-shaped minimums, conventional files can deepen still-useful past the minimum three. HELOC and Jumbo stay thin. Never `agency_ready`.
+
+- **W-2:** if a W-2 is already in, still useful may include `second-year W-2`.
+- **Self-employed:** if a return is already in, still useful may include `prior-year return`.
+- Quiet **File** line may add `still useful: ID` (and the rest of the short list).
+
+One quiet Fox or File line — never a verdict. Do not compute DTI. Do not print a 620 cutoff. Banned: approved, eligible, ineligible, DU, AUS, you qualify, you don’t qualify, LO will contact you.
+
+- Investment → `Pricing waits` (no `6.750%`).
+- Sketched purchase LTV (loan/price) **> 97%** and ≤ 100% → `This loan is a large share of the price. I’ll keep gathering.` Looks right still possible. No denial.
+- Named cash-out refinance → no preview rate.
+- Named FHA / VA / USDA → no preview rate. Request human available.
+- Named bankruptcy / foreclosure → no preview rate. Can still Proceed.
+- Lowest credit band (`680–719`) → no preview rate.
+- Loan **> purchase price** → escalate (nonsensical). Build 2 escalate rules otherwise unchanged. Request human stays a side door. Next = ONYX.
+
+### Keep
+
+Named amounts, `$1,249,125` ceiling, preview-rate rules, missing-doc list, no SSN/full account in facts, no LO-will-contact. Fox stays. Assigned originator is a fact. Proceed → `in_queue` → Return to Fox; in_queue chips What happens next? / Upload more / Ask Fox; Request human side door; Next = ONYX on escalate. Completeness-first three purchase money lines and confirm-before-write stay.
 
 ## Product Explorer (CA only)
 
@@ -188,8 +421,8 @@ One page: document drop → stub extract → draft summary → confirm. Question
 - Storage: `sessionStorage` + `localStorage` key `onyx.foxIntake.draft`
 - Scenario key unchanged: `onyx.productExplorer.scenario`
 - Path: query `path=acr` | `path=loan` (also accepts `loan-only`). Stored on the draft as `acr` | `loan-only` so it survives refresh. Fox continues from the existing scenario. ACR path may mention the estimated reward range as context (`estimateRewardRange` / `formatRewardRange` only — never the formula or a percent) and that the final amount is confirmed when they join and close. Loan only is a mortgage draft only — no membership reward language. Confirm card may show Path quietly (`ACR` / `Loan only`). Do not expand intake questions beyond this path-aware context.
-- Documents: metadata only (name, type, size, slot, status, receivedAt). Status: `received` → `reading` → `extracted` | `needs better copy` / `failed`. No file bytes in git, no upload, no public URL.
-- Extraction is stubbed. Do not invent income, SSN, account, rate, or payment numbers. Empty fields stay empty and labeled.
+- Documents: metadata only in the browser draft (name, type, size, slot, status, receivedAt, bytesRef, extractClass). Status: `received` → `reading` → `extracted` | `needs better copy` / `failed`. Bytes live in private Vercel Blob. No public URL. No file bytes in git.
+- Extraction is real BUILD 1 (Grok vision adapter). Do not invent income, SSN, account, rate, or payment numbers. Empty fields stay empty. See BUILD 1 above.
 - Audit fields: `{ field, source: client | scenario | extracted-unconfirmed, confirmed }`
 - Client confirm is a short card only: name, email, phone, purpose/product, value, loan amount, occupancy, income type, documents received or skipped, plus `Looks right` / `Needs a correction`. No source labels, empty extract fields, checklist, or queue UI on the client view. `/lo/review` keeps the full worksheet.
 - After confirm: `Draft confirmed — pending licensed review`
@@ -200,7 +433,7 @@ One page: document drop → stub extract → draft summary → confirm. Question
 
 ### LO review queue
 
-`/lo/review` — internal/back-office only. Not in public nav. Not promoted on the client intake path. Discreet footer link for this preview. Label: `Internal preview — licensed review`. Same draft store. LO marks: `needs items` | `in review` | `contacting client`. No auth wall this slice.
+`/lo/review` — internal/back-office only. Not in public nav. Not promoted on the client intake path. Discreet footer link for this preview. Label: `Internal preview — licensed review`. Same File as `/start`. Shows Status / Next / WorkItem. **Return to Fox** writes an event and one borrower-thread line. Preview sit/nudge controls live here. LO marks: `needs items` | `in review` | `contacting client`. No auth wall this slice.
 
 ### Do not
 
@@ -263,16 +496,25 @@ app/(marketing)/how-we-get-paid/page.tsx  broker compensation
 app/(marketing)/{licensing,privacy,equal-housing,login,advisor}/page.tsx  short real pages
 components/products/startPath.ts  ACR / loan only start intent (`/start?path=acr` | `/start?path=loan`)
 components/fox/workspace.ts       workspace prompts, amount parse, live preview facts
-components/fox/DocumentDrop.tsx   shared document slots + stub extract (intake + /start)
+components/fox/completeness.ts    required fields, quiet File map, confirm-before-write proposals
+components/fox/motion.ts          file motion, WorkItem, sit/nudge, finish-line copy
+components/fox/DocumentDrop.tsx   Fox-thread drop + real upload/extract (intake + /start)
+components/fox/fileWrite.ts       write / conflict / missing-ask rules
 components/fox/FilePreview.tsx    calm file card / mobile File sheet
+lib/docs/accept.ts                file caps + accepted types
+lib/docs/storage.ts               private Vercel Blob helpers
+lib/docs/extract.ts               Grok classify + extract adapter
+app/api/docs/upload               Blob handleUpload (private)
+app/api/docs/extract              classify + extract (fields only)
 components/fox/HeroStartLink.tsx  desktop hero pills: write path + /start
 components/fox/StartWorkspace.tsx `/start` layout: URL seed + live AlwaysOnFox child
 styles/start.css                  workspace layout
 app/(marketing)/start/page.tsx    Fox workspace route
 app/(marketing)/start/layout.tsx  mounts Always-on Fox for /start
-app/api/chat                      UNCHANGED
-app/api/heloc-quote               UNCHANGED
-lib/*                             UNCHANGED
+app/api/chat                      UNCHANGED (do not call)
+app/api/heloc-quote               UNCHANGED (do not call)
+lib/calculate*                    UNCHANGED
+lib/getProductGuideline.ts        UNCHANGED
 ```
 
 ## Tokens
@@ -314,10 +556,13 @@ npm run dev
 Open `http://localhost:3000`. Homepage primary and secondary CTAs start ACR and loan only at `/start`. Closer uses the same hrefs. There is no sticky bar yet.
 
 ```bash
+npx tsx scripts/assert-onyx-fixtures.ts
 npx tsx scripts/smoke-desk.ts
 ```
 
 Covers the `/start` A–D + Skip lock and the homepage → `/start` session: one engine, typed `I want to buy` keeps the turn, cold CTA still starts fresh.
+
+ONYX test fixtures / seed uploads must be mortgage samples (paystub, W-2, ID, tax return, bank statement, purchase contract, mortgage statement). Presidio content is contamination — a leftover borrower filename belongs in the browser draft (`onyx.foxIntake.draft` `documents[].name`) or Vercel Blob, not git. The assert fails if a fixture path contains `presidio`, `p37`, `candle`, `wax`, `label-pack`, `label 5`, or `THIS IS IT`.
 
 ```bash
 npm run build

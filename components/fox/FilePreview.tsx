@@ -29,7 +29,7 @@ export function StructureRows({
       {facts.map((fact) => {
         const canFix = Boolean(structureFixPrompt(fact.id, draft));
         const canExplain = Boolean(structureExplainCopy(fact.id, draft));
-        const deskState = fact.id === "status";
+        const deskState = fact.id === "status" || fact.id === "next" || fact.id === "file";
         if (canFix) {
           return (
             <button
@@ -141,8 +141,14 @@ export function WorkspaceFileDock({ children }: { children: ReactNode }) {
         )
       : null;
 
+  const showDrop =
+    draft.docsOpen ||
+    workspacePrompt(draft) === "documents" ||
+    draft.phase === "documents";
+
   return (
     <div className="fox-workspace-dock">
+      {showDrop ? <DocumentDrop draft={draft} compact /> : null}
       {facts.length ? (
         <button
           type="button"

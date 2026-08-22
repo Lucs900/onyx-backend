@@ -14,6 +14,7 @@ import {
   type ExplorerScenario,
 } from "@/components/products/scenario";
 import { ACR_START_HREF, LOAN_START_HREF, pathFromQuery } from "@/components/products/startPath";
+import { HOME_IDLE_TEXT } from "./homeIdle";
 import { workspaceGreeting, workspacePrompt, workspacePromptCopy, workspaceReply } from "./workspace";
 import { questionsComplete } from "./store";
 import {
@@ -93,7 +94,6 @@ export function currentPrompt(draft: FoxIntakeDraft): FoxPrompt {
   if (draft.correcting && draft.correcting !== "correct") return draft.correcting;
   if (draft.correcting === "correct") return "correct";
   if (!draft.occupancyAsked) return "occupancy";
-  if (!draft.timelineAsked) return "timeline";
   if (!draft.documents.length && !draft.documentsSkipped) return "documents";
   return "review";
 }
@@ -125,6 +125,11 @@ export function taskContext(stage: FoxStage, draft: FoxIntakeDraft) {
     review: "Confirm draft",
     correct: "Correction",
     "path-switch": "Confirm path",
+    "jumbo-purpose": "Asking: jumbo purpose",
+    "offer-jumbo": "Offer Jumbo",
+    "offer-heloc": "Offer HELOC",
+    "geo-stop": "California only",
+    "confirm-proposal": "Confirm suggestion",
     done: "Draft confirmed",
   };
   return labels[currentPrompt(draft)];
@@ -154,7 +159,11 @@ export function greeting(
 } {
   const known = scenarioSummary(scenario);
 
-  if (stage === "home" || stage === "start") {
+  if (stage === "home") {
+    return { text: HOME_IDLE_TEXT };
+  }
+
+  if (stage === "start") {
     return workspaceGreeting(draft);
   }
 
@@ -418,7 +427,15 @@ function captureForPrompt(
       (item) => item.label.toLowerCase() === raw.toLowerCase() || item.value === raw.toLowerCase(),
     );
     if (!match) return { text: "Tap Primary, Second home, or Investment." };
-    return { ...promptCopy("timeline"), capture: { field: "occupancy", value: match.value } };
+    const nextDraft = {
+      ...draft,
+      occupancyChoice: { ...draft.occupancyChoice, value: match.value },
+      occupancyAsked: true,
+    };
+    return {
+      ...workspacePromptCopy(workspacePrompt(nextDraft), nextDraft),
+      capture: { field: "occupancy", value: match.value },
+    };
   }
   if (prompt === "timeline") {
     const match = TIMELINE_BUBBLES.find(
@@ -527,7 +544,7 @@ function acrReply(lower: string): ReturnType<typeof replyToMessage> | null {
   }
   if (/(opportunit|scout|equity available|purchase power|portfolio move)/i.test(lower)) {
     return {
-      text: "Opportunities Scout uses your profile and equity posture to project possible next moves. A financing path is attached. Sample, not live. I don't list properties or post values.",
+      text: "When the timing is wrong, Fox waits. Scout names a move only when the numbers are strong. I don't list properties or post values.",
     };
   }
   if (/(just need a mortgage|loan only|mortgage only|only (a )?loan)/i.test(lower)) {

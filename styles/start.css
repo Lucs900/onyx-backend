@@ -35,6 +35,8 @@
   min-height: 240px;
   max-height: none !important;
   overflow: auto;
+  padding-bottom: 168px;
+  scroll-padding-bottom: 168px;
 }
 
 .fox-stage.fox-stage--workspace .fox-bar__desk,
@@ -96,6 +98,7 @@
   padding: 12px 14px;
   background: var(--paper-elevated);
   border-color: color-mix(in srgb, var(--ink) 26%, var(--fox-hairline));
+  scroll-margin-bottom: 168px;
 }
 
 .fox-stage--workspace .fox-bubble--fox.is-current > p {
@@ -182,6 +185,12 @@
   gap: 8px;
   padding-bottom: calc(env(keyboard-inset-height, 0px) + env(safe-area-inset-bottom, 0px));
   background: var(--paper);
+}
+
+.fox-workspace-dock .structure-drop {
+  padding: 8px 0 0;
+  max-height: min(36dvh, 220px);
+  overflow: auto;
 }
 
 .fox-workspace-dock__row {
@@ -317,6 +326,23 @@
 .structure-drop__skip:hover,
 .structure-drop__skip:focus-visible {
   border-color: var(--ink);
+}
+
+.structure-drop__reject,
+.structure-drop__files {
+  margin: 0;
+  font-family: var(--font-ui);
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--muted);
+}
+
+.structure-drop__files {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 0;
+  list-style: none;
 }
 
 .file-preview__label {

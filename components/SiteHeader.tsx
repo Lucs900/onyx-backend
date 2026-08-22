@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { AdvisorMark } from "./AdvisorMark";
-import { ACR_START_HREF, LOAN_START_HREF } from "./products/startPath";
+import { HeroStartLink } from "./fox/HeroStartLink";
 
 const NAV_LINKS = [
   { href: "/rates", label: "Rates" },
@@ -72,14 +72,14 @@ export function SiteHeader() {
               <Link href="/login" className="site-header__login">
                 Log in
               </Link>
-              <Link
-                href={ACR_START_HREF}
+              <HeroStartLink
+                path="acr"
                 className="btn btn--primary btn--nav"
                 aria-label="Start your relationship"
               >
                 <span className="site-header__cta-full">Start your relationship</span>
                 <span className="site-header__cta-short">Start</span>
-              </Link>
+              </HeroStartLink>
             </div>
 
             <button
@@ -122,20 +122,20 @@ export function SiteHeader() {
           ))}
         </nav>
         <div className="site-header__sheet-actions">
-          <Link
-            href={ACR_START_HREF}
+          <HeroStartLink
+            path="acr"
             className="btn btn--primary btn--block"
             onClick={() => setMenuOpen(false)}
           >
             Start your relationship
-          </Link>
-          <Link
-            href={LOAN_START_HREF}
+          </HeroStartLink>
+          <HeroStartLink
+            path="loan-only"
             className="btn btn--text"
             onClick={() => setMenuOpen(false)}
           >
             Just need a mortgage
-          </Link>
+          </HeroStartLink>
           <Link
             href="/login"
             className="btn btn--text"
