@@ -159,6 +159,7 @@ export function DocumentDrop({
         const askStillUseful = !applied.conflict && after.missingAskKey !== key;
         if (askStillUseful) markMissingAsked(key);
         emitDocIntake({
+          extractClass: applied.extractClass,
           quietLines: applied.quietLines.length
             ? applied.quietLines
             : data.failed

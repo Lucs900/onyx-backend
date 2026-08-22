@@ -81,7 +81,9 @@ import {
   proposePublicSuggestion,
   proposeFundsPair,
   resolveProposal,
+  skipYearsInBusiness,
   withComputedCompanion,
+  writeYearsInBusiness,
 } from "./completeness";
 
 function numberOrUndefined(value: unknown): number | undefined {
@@ -116,6 +118,8 @@ export function emptyDraft(): FoxIntakeDraft {
     documentsSkipped: false,
     docsStarted: false,
     priorYearSkipped: false,
+    yearsInBusinessAsked: false,
+    awaitingYearsInBusiness: false,
     facts: {},
     pendingConflict: null,
     skippedClasses: [],
@@ -230,6 +234,8 @@ function normalize(value: unknown): FoxIntakeDraft {
       ? raw.skippedClasses.filter((item): item is ExtractClass => typeof item === "string")
       : [],
     priorYearSkipped: Boolean(raw.priorYearSkipped),
+    yearsInBusinessAsked: Boolean(raw.yearsInBusinessAsked),
+    awaitingYearsInBusiness: Boolean(raw.awaitingYearsInBusiness),
     missingAskKey: typeof raw.missingAskKey === "string" ? raw.missingAskKey : "",
     sections: { ...base.sections, ...raw.sections },
   };
@@ -792,7 +798,7 @@ export function applyExtractWrite(
 ) {
   const match = current.documents.some((doc) => doc.receivedAt === receivedAt && doc.name === name);
   if (!match) {
-    return { draft: current, writes: [], conflict: null, quietLines: [] };
+    return { draft: current, writes: [], conflict: null, quietLines: [], extractClass: input.extractClass };
   }
   const extractClass = preferFilenameClass(
     promoteExtractClass(input.extractClass, input.fields),
@@ -818,7 +824,7 @@ export function applyExtractWrite(
     documentsSkipped: false,
     sections: { ...applied.draft.sections, documents: false },
   });
-  return { ...applied, draft: current };
+  return { ...applied, draft: current, extractClass };
 }
 
 export function markMissingAsked(key: string) {
@@ -1080,6 +1086,12 @@ export function applyCapture(capture: Capture) {
   }
   if (capture.field === "decline-proposal") {
     return commit(resolveProposal(current, "decline"));
+  }
+  if (capture.field === "yearsInBusiness") {
+    return commit(writeYearsInBusiness(current, capture.value));
+  }
+  if (capture.field === "skip-years-in-business") {
+    return commit(skipYearsInBusiness(current));
   }
   if (capture.field === "open-docs") {
     if (current.workspaceFlow) {

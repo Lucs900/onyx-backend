@@ -448,6 +448,36 @@ export function quietLineForClass(extractClass: ExtractClass) {
   return null;
 }
 
+export const DEAD_FILE_WRITE_LINES = [
+  "Updated income from paystub.",
+  "Updated income from W-2.",
+  "Updated income from tax return.",
+  "Updated identity from ID.",
+  "Updated deposits from bank statement.",
+  "Updated purchase from contract.",
+  "Updated loan from mortgage statement.",
+] as const;
+
+export function isDeadFileWriteLine(line: string) {
+  return (DEAD_FILE_WRITE_LINES as readonly string[]).includes(line);
+}
+
+export function firstNameFromDraft(draft: FoxIntakeDraft): string {
+  const full = (draft.contact.fullName.value || factValue(draft, "full_name")).trim();
+  if (!full) return "";
+  return (full.split(/\s+/)[0] ?? "").replace(/[.,]+$/g, "");
+}
+
+export function lastExtractedClass(draft: FoxIntakeDraft): ExtractClass | null {
+  for (let i = draft.documents.length - 1; i >= 0; i -= 1) {
+    const doc = draft.documents[i];
+    if (doc.status !== "extracted") continue;
+    const cls = receivedClassOf(doc);
+    if (cls && cls !== "other") return cls;
+  }
+  return null;
+}
+
 export type ExtractApplyInput = {
   extractClass: ExtractClass;
   confidence: number;
@@ -527,13 +557,12 @@ export function applyExtractedFields(
   );
   conflict = next.pendingConflict ?? conflict;
   next = attachExtractClass(next, extractClass);
-  const quiet = writes.length ? quietLineForClass(extractClass) : null;
   const caution = decliningIncomeCaution(next);
   return {
     draft: next,
     writes,
     conflict,
-    quietLines: [quiet, caution].filter((line): line is string => Boolean(line)),
+    quietLines: caution ? [caution] : [],
   };
 }
 
@@ -878,6 +907,7 @@ export type DocIntakeDetail = {
   conflict?: FactConflict | null;
   missing?: ExtractClass[];
   refreshStillUseful?: boolean;
+  extractClass?: ExtractClass;
 };
 
 export function emitDocIntake(detail: DocIntakeDetail) {

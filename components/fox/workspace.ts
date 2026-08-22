@@ -48,6 +48,8 @@ import {
   conflictActions,
   conflictAskCopy,
   DOC_INVITE_COPY,
+  firstNameFromDraft,
+  lastExtractedClass,
   nextDocInvite,
   offeringDocStart,
   skipCurrentInvite,
@@ -81,11 +83,22 @@ import {
   refiLoanAskNeeded,
   requiredLineValue,
   requiredStructureLines,
+  QUALIFYING_INCOME_FIELD,
   resolveProposal,
+  shouldAskYearsInBusiness,
+  skipYearsInBusiness,
   sketchAmountsReady,
   withComputedCompanion,
+  writeYearsInBusiness,
+  YEARS_IN_BUSINESS_ASK,
 } from "./completeness";
-import { decliningIncomeCaution, qualifyingIncomeDisplay } from "./qualifyingIncome";
+import {
+  decliningIncomeCaution,
+  formatIncomeMoney,
+  qualifyingIncomeDisplay,
+  scheduleCYearViews,
+  SUGGESTED_INCOME_NOTE,
+} from "./qualifyingIncome";
 import {
   applyEmailThenFinish,
   applyLooksRightMotion,
@@ -738,12 +751,161 @@ function incomeFromText(text: string) {
 }
 
 function documentsAskText(draft: FoxIntakeDraft): string {
+  if (draft.awaitingYearsInBusiness) return YEARS_IN_BUSINESS_ASK;
   if (offeringDocStart(draft)) return sketchAndStartDocsCopy(draft).text;
   const invite = nextDocInvite(draft);
   if (invite) return DOC_INVITE_COPY[invite];
   const useful = stillUsefulAskCopy(draft);
   if (useful) return useful;
   return docsRequestForIncome(draft.incomeType.value).text;
+}
+
+export const DESK_RELATIONSHIP_LINE =
+  "I’ll keep this file working — clearer picture, lower cost when it’s real, stronger equity when the numbers support it.";
+
+export function parseYearsInBusiness(text: string, nowYear = 2026): string | null {
+  const t = text.trim();
+  if (!t) return null;
+  const since = t.match(/since\s+(?:19|20)?(\d{2,4})/i);
+  if (since) {
+    let year = Number(since[1]);
+    if (year < 100) year += 2000;
+    if (year >= 1970 && year <= nowYear) return String(nowYear - year);
+  }
+  const labeled = t.match(/(\d+(?:\.\d+)?)\s*(?:years?|yrs?)\b/i);
+  if (labeled) return String(Number(labeled[1]));
+  if (/^(a|one)\s+year\b/i.test(t)) return "1";
+  if (/^\d+(?:\.\d+)?$/.test(t)) return String(Number(t));
+  return null;
+}
+
+function landedTaxYear(draft: FoxIntakeDraft): string {
+  const written = factValue(draft, "tax_year").replace(/\D/g, "").slice(-4);
+  if (written) return written;
+  const years = scheduleCYearViews(draft);
+  const last = years[years.length - 1];
+  return last ? String(last.year) : "";
+}
+
+function nextDocSpoken(invite: ReturnType<typeof nextDocInvite>): string {
+  if (invite === "tax_return") return "Next is your most recent tax return.";
+  if (invite === "paystub") return "Next is your latest paystub.";
+  if (invite === "w2") return "Next is your most recent W-2.";
+  if (invite === "prior_year_return") return DOC_INVITE_COPY.prior_year_return;
+  if (invite === "government_id") return "Next is a government ID, so the file has a name.";
+  return "";
+}
+
+function identityReactionAsk(draft: FoxIntakeDraft): {
+  text: string;
+  followUp?: string;
+  actions?: FoxAction[];
+} {
+  const name = firstNameFromDraft(draft);
+  const greet = name ? `Nice to meet you, ${name}.` : "Got your ID.";
+  const invite = nextDocInvite(draft);
+  const next = nextDocSpoken(invite);
+  return {
+    text: `${greet} ${DESK_RELATIONSHIP_LINE}${next ? ` ${next}` : ""}`.trim(),
+    actions: invite
+      ? docInviteActions()
+      : canLooksRight(draft)
+        ? [
+            { id: "looks-right", label: "Looks right", event: "bubble", capture: { field: "confirm-draft" } },
+            { id: "needs-fix", label: "Needs a correction", event: "bubble", capture: { field: "needs-correction" } },
+          ]
+        : undefined,
+  };
+}
+
+function incomeReactionAsk(draft: FoxIntakeDraft, proposal: NonNullable<FoxIntakeDraft["pendingProposal"]>): {
+  text: string;
+  followUp?: string;
+  actions?: FoxAction[];
+} {
+  const shown = displayFactValue(proposal.field, proposal.value);
+  const year = landedTaxYear(draft);
+  const years = scheduleCYearViews(draft);
+  const suggest = `I’m suggesting ${shown} a month. ${SUGGESTED_INCOME_NOTE}. Use this?`;
+  const ack = year ? `Got the ${year} return.` : "Got the return.";
+  if (years.length < 2) {
+    return {
+      text: `${ack} ${suggest}`,
+      actions: proposalActions(proposal.kind),
+    };
+  }
+  const earlier = years[years.length - 2];
+  const later = years[years.length - 1];
+  const caution = decliningIncomeCaution(draft);
+  const stance =
+    later.annual >= earlier.annual
+      ? "That’s stable — I’m averaging the two years."
+      : caution
+        ? "That’s declining."
+        : "Later year is lower, so I’m using that year.";
+  return {
+    text: `${ack} Two-year view: ${earlier.year} was ${formatIncomeMoney(earlier.annual)}, ${later.year} was ${formatIncomeMoney(later.annual)}. ${stance} ${suggest}`,
+    followUp: caution,
+    actions: proposalActions(proposal.kind),
+  };
+}
+
+function liveProposalAsk(
+  draft: FoxIntakeDraft,
+  proposal: NonNullable<FoxIntakeDraft["pendingProposal"]>,
+  extractClass?: ReturnType<typeof lastExtractedClass>,
+): {
+  text: string;
+  followUp?: string;
+  actions?: FoxAction[];
+} {
+  if (proposal.field === QUALIFYING_INCOME_FIELD) {
+    if (scheduleCYearViews(draft).length || factValue(draft, "tax_year")) {
+      return incomeReactionAsk(draft, proposal);
+    }
+    const cls = extractClass ?? lastExtractedClass(draft);
+    const shown = displayFactValue(proposal.field, proposal.value);
+    if (cls === "paystub" || cls === "w2") {
+      return {
+        text: `Got the ${cls === "w2" ? "W-2" : "paystub"}. I’m suggesting ${shown} a month. ${SUGGESTED_INCOME_NOTE}. Use this?`,
+        actions: proposalActions(proposal.kind),
+      };
+    }
+  }
+  const caution =
+    proposal.field === QUALIFYING_INCOME_FIELD ? decliningIncomeCaution(draft) : undefined;
+  return {
+    text: caution ?? proposalAskCopy(proposal),
+    followUp: caution ? proposalAskCopy(proposal) : undefined,
+    actions: proposalActions(proposal.kind),
+  };
+}
+
+export function docReactionAsk(
+  draft: FoxIntakeDraft,
+  extractClass?: ReturnType<typeof lastExtractedClass>,
+): {
+  text: string;
+  followUp?: string;
+  actions?: FoxAction[];
+} | null {
+  const cls = extractClass ?? lastExtractedClass(draft);
+  if (!cls) return null;
+  if (draft.pendingConflict) {
+    return {
+      text: conflictAskCopy(draft.pendingConflict),
+      actions: conflictActions(),
+    };
+  }
+  if (cls === "government_id") return identityReactionAsk(draft);
+  if (draft.pendingProposal) return liveProposalAsk(draft, draft.pendingProposal, cls);
+  return null;
+}
+
+function rememberedAskCopy(draft: FoxIntakeDraft): string | undefined {
+  if (!shouldAskYearsInBusiness(draft)) return undefined;
+  if (draft.motion === "in_queue" || draft.sampleAccepted) return YEARS_IN_BUSINESS_ASK;
+  return undefined;
 }
 
 export function sketchAndStartDocsCopy(draft: FoxIntakeDraft): {
@@ -916,6 +1078,7 @@ export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
   }
   if (!creditSettled(draft)) return "credit";
   if (!incomeSettled(draft)) return "income";
+  if (!draft.sampleAccepted && draft.awaitingYearsInBusiness) return "documents";
   if (nextDocInvite(draft)) return "documents";
   if (!draft.sampleAccepted) return canLooksRight(draft) ? "review" : "amount";
   return "done";
@@ -1065,6 +1228,9 @@ function workspaceAskCopy(
     };
   }
   if (prompt === "documents") {
+    if (draft.awaitingYearsInBusiness) {
+      return { text: YEARS_IN_BUSINESS_ASK };
+    }
     if (offeringDocStart(draft)) {
       return {
         ...sketchAndStartDocsCopy(draft),
@@ -1111,13 +1277,7 @@ function workspaceAskCopy(
     if (!proposal) {
       return { text: missingAmountAsk(draft) || "I can keep this file current." };
     }
-    const caution =
-      proposal.field === "qualifying_income" ? decliningIncomeCaution(draft) : undefined;
-    return {
-      text: caution ?? proposalAskCopy(proposal),
-      followUp: caution ? proposalAskCopy(proposal) : undefined,
-      actions: proposalActions(proposal.kind),
-    };
+    return liveProposalAsk(draft, proposal);
   }
   if (prompt === "path-switch") {
     if (draft.path === "loan-only") {
@@ -1142,7 +1302,7 @@ function workspaceAskCopy(
     const remind = remindLine(draft);
     return {
       text: motionAskText(draft),
-      followUp: remind || undefined,
+      followUp: rememberedAskCopy(draft) || remind || undefined,
       facts: outbox
         ? [
             {
@@ -1934,6 +2094,8 @@ function draftAfterCapture(draft: FoxIntakeDraft, capture: Capture): FoxIntakeDr
   }
   if (capture.field === "accept-proposal") return resolveProposal(next, "accept");
   if (capture.field === "decline-proposal") return resolveProposal(next, "decline");
+  if (capture.field === "yearsInBusiness") return writeYearsInBusiness(next, capture.value);
+  if (capture.field === "skip-years-in-business") return skipYearsInBusiness(next);
   if (capture.field === "skip-down") return { ...next, downAsked: true };
   if (capture.field === "creditRange") {
     return {
@@ -2107,6 +2269,41 @@ export function workspaceReply(
   const lower = q.toLowerCase();
   const prompt = workspacePrompt(draft);
 
+  if (draft.awaitingYearsInBusiness) {
+    if (looksLikeQuestion(q)) {
+      return { text: "How long you’ve been running it helps me read the return. Not a form — just the file." };
+    }
+    const years = parseYearsInBusiness(q);
+    if (years) {
+      const nextDraft = writeYearsInBusiness(draft, years);
+      return {
+        ...workspacePromptCopy(workspacePrompt(nextDraft), nextDraft),
+        capture: { field: "yearsInBusiness", value: years },
+      };
+    }
+    if (/^(skip|later|not sure|idk|pass)\b/i.test(lower)) {
+      const nextDraft = skipYearsInBusiness(draft);
+      return {
+        ...workspacePromptCopy(workspacePrompt(nextDraft), nextDraft),
+        capture: { field: "skip-years-in-business" },
+      };
+    }
+    return { text: YEARS_IN_BUSINESS_ASK };
+  }
+
+  if (
+    (prompt === "done" || draft.motion === "in_queue") &&
+    shouldAskYearsInBusiness(draft) &&
+    parseYearsInBusiness(q)
+  ) {
+    const years = parseYearsInBusiness(q)!;
+    return {
+      text: "I’ll keep that on the file.",
+      actions: finishLineActions(draft),
+      capture: { field: "yearsInBusiness", value: years },
+    };
+  }
+
   if (draft.pendingConflict) {
     if (/(keep (the )?file|file value|keep mine)/i.test(lower)) {
       return {
@@ -2129,12 +2326,7 @@ export function workspaceReply(
     ) {
       const nextDraft = resolveProposal(draft, "accept");
       return {
-        ...withCurrentPrompt(
-          draft.pendingProposal?.kind === "public"
-            ? "Updated from the suggestion."
-            : "Updated from the proposed amount.",
-          nextDraft,
-        ),
+        ...workspacePromptCopy(workspacePrompt(nextDraft), nextDraft),
         capture: { field: "accept-proposal" },
       };
     }
@@ -2959,6 +3151,14 @@ export function previewFacts(draft: FoxIntakeDraft): PreviewFact[] {
       label: "Qualifying income",
       value: qualifying.value,
       note: qualifying.note,
+    });
+  }
+  const yearsInBusiness = draft.facts?.years_in_business?.value;
+  if (yearsInBusiness) {
+    facts.push({
+      id: "years-in-business",
+      label: "Years in business",
+      value: /year/i.test(yearsInBusiness) ? yearsInBusiness : `${yearsInBusiness} years`,
     });
   }
   const periodPay = factValue(draft, "gross_period");

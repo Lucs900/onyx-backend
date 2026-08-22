@@ -28,6 +28,8 @@ import {
   SUGGESTED_INCOME_NOTE,
   HIGH_LTV_CAUTION,
   PRICING_WAITS,
+  YEARS_IN_BUSINESS_ASK,
+  writeYearsInBusiness,
   canLooksRight,
   fileCompleteness,
   guidelineCaution,
@@ -61,6 +63,7 @@ import {
 import {
   EXTRACT_SCHEMA_KEYS,
   applyExtractedFields,
+  isDeadFileWriteLine,
   extractClassFromFilename,
   fileStillUsefulNote,
   missingAskCopy,
@@ -128,6 +131,8 @@ import {
   workspacePrompt,
   workspacePromptCopy,
   workspaceReply,
+  docReactionAsk,
+  parseYearsInBusiness,
   workspaceUpdateCopy,
   skipCurrentInvite,
   DOC_INVITE_COPY,
@@ -1599,7 +1604,8 @@ const paystubWrite = applyExtractedFields(afterLooks, {
   },
 });
 assert.equal(paystubWrite.conflict, null);
-assert.equal(paystubWrite.quietLines[0], "Updated income from paystub.");
+assert.ok(!paystubWrite.quietLines.includes("Updated income from paystub."));
+assert.ok(paystubWrite.quietLines.every((line) => !isDeadFileWriteLine(line)));
 assert.equal(paystubWrite.draft.facts?.employer_name?.value, "Harbor Steel");
 assert.equal(paystubWrite.draft.facts?.gross_period?.value, "7200");
 assert.equal(paystubWrite.draft.facts?.pay_period_end?.value, "2026-07-31");
@@ -1792,6 +1798,71 @@ assert.equal(scheduleCAnnual({ netProfit: 80000, depreciation: 8000 }), 88000);
 assert.equal(monthlyFromAnnual(72000), 6000);
 assert.equal(monthlyFromAnnual(40000), 3333);
 
+const mayaId = applyExtractedFields(
+  draft({
+    ...seIncome,
+    docsStarted: true,
+    documents: [
+      {
+        slot: "id",
+        name: "license.png",
+        type: "image/png",
+        size: 4000,
+        receivedAt: "2026-08-22T00:00:00.000Z",
+        status: "reading",
+      },
+    ],
+  }),
+  {
+    extractClass: "government_id",
+    confidence: 0.94,
+    fields: {
+      full_name: "Maya Chen",
+      date_of_birth: "1990-04-12",
+      id_last4: "4421",
+    },
+  },
+);
+assert.ok(!mayaId.quietLines.includes("Updated identity from ID."));
+assert.ok(mayaId.quietLines.every((line) => !isDeadFileWriteLine(line)));
+assert.equal(mayaId.draft.contact.fullName.value, "Maya Chen");
+const mayaAsk = docReactionAsk(mayaId.draft, "government_id");
+assert.match(mayaAsk?.text ?? "", /Nice to meet you, Maya/);
+assert.match(mayaAsk?.text ?? "", /keep this file working|clearer picture|lower cost|stronger equity/);
+assert.match(mayaAsk?.text ?? "", /most recent tax return/);
+assert.doesNotMatch(
+  mayaAsk?.text ?? "",
+  /Updated identity from ID|approv|eligible|you qualify|sales/i,
+);
+assert.deepEqual(
+  (mayaAsk?.actions ?? []).map((item) => item.label),
+  ["Upload this", "Skip"],
+);
+const mayaThenReturn = applyExtractedFields(mayaId.draft, {
+  extractClass: "tax_return",
+  confidence: 0.93,
+  fields: {
+    tax_year: "2024",
+    return_kind: "schedule_c",
+    schedule_c_net_profit: "96000",
+    depreciation: "12000",
+  },
+});
+assert.ok(!mayaThenReturn.quietLines.includes("Updated income from tax return."));
+const mayaIncomeAsk = docReactionAsk(mayaThenReturn.draft, "tax_return");
+assert.match(mayaIncomeAsk?.text ?? "", /Got the 2024 return/);
+assert.match(mayaIncomeAsk?.text ?? "", /\$9,000/);
+assert.match(mayaIncomeAsk?.text ?? "", /Use this/);
+assert.doesNotMatch(mayaIncomeAsk?.text ?? "", /Updated income from tax return/);
+const mayaAccepted = resolveProposal(mayaThenReturn.draft, "accept");
+assert.equal(workspacePromptCopy("documents", mayaAccepted).text, YEARS_IN_BUSINESS_ASK);
+const mayaYears = workspaceReply("How long have you been running this?", mayaAccepted);
+assert.equal(mayaYears?.capture, undefined);
+const mayaYearsIn = workspaceReply("5 years", mayaAccepted);
+assert.equal(mayaYearsIn?.capture?.field, "yearsInBusiness");
+assert.match(mayaYearsIn?.text ?? "", /prior-year return|stable/i);
+assert.doesNotMatch(mayaYearsIn?.text ?? "", /Years in business|Updated income from tax return/);
+
 const seReturn = applyExtractedFields(seAfterLooks, {
   extractClass: "tax_return",
   confidence: 0.93,
@@ -1845,6 +1916,14 @@ assert.match(seAsk, /From the return I’m suggesting/);
 assert.match(seAsk, /Suggested qualifying income · not underwritten/);
 assert.match(seAsk, /9,000/);
 assert.doesNotMatch(seAsk, /1084|\bDU\b|approved|eligible|you qualify|don’t qualify|agency_ready/i);
+const seLiveAsk = workspacePromptCopy("confirm-proposal", seReturn.draft);
+assert.match(seLiveAsk.text, /Got the 2024 return/);
+assert.match(seLiveAsk.text, /\$9,000/);
+assert.match(seLiveAsk.text, /Suggested qualifying income · not underwritten/);
+assert.match(seLiveAsk.text, /Use this/);
+assert.doesNotMatch(seLiveAsk.text, /Updated income from tax return/);
+assert.ok((seLiveAsk.actions ?? []).some((item) => item.label === "Use this"));
+assert.ok((seLiveAsk.actions ?? []).some((item) => item.label === "Leave blank"));
 assert.ok(
   previewFacts(seReturn.draft).some(
     (fact) =>
@@ -2097,6 +2176,35 @@ assert.equal(gatheringCopy(seSecondWrite.draft), MOTION_COPY.ready);
 const seAccepted = resolveProposal(seReturn.draft, "accept");
 assert.equal(seAccepted.facts?.qualifying_income?.value, "9000");
 assert.equal(seAccepted.facts?.qualifying_income?.source, "suggested");
+assert.equal(seAccepted.awaitingYearsInBusiness, true);
+assert.equal(workspacePrompt(seAccepted), "documents");
+assert.equal(workspacePromptCopy("documents", seAccepted).text, YEARS_IN_BUSINESS_ASK);
+assert.equal((workspacePromptCopy("documents", seAccepted).actions ?? []).length, 0);
+assert.equal(parseYearsInBusiness("5 years"), "5");
+assert.equal(parseYearsInBusiness("since 2019"), "7");
+assert.equal(parseYearsInBusiness("5"), "5");
+const yearsReply = workspaceReply("5 years", seAccepted);
+assert.equal(yearsReply?.capture?.field, "yearsInBusiness");
+assert.equal(yearsReply?.capture && "value" in yearsReply.capture ? yearsReply.capture.value : "", "5");
+const yearsWritten = writeYearsInBusiness(seAccepted, "5");
+assert.equal(yearsWritten.facts?.years_in_business?.value, "5");
+assert.ok(
+  previewFacts(yearsWritten).some(
+    (fact) => fact.id === "years-in-business" && /5 years/.test(fact.value),
+  ),
+);
+assert.ok(!yearsWritten.awaitingYearsInBusiness);
+assert.doesNotMatch(yearsReply?.text ?? "", /Years in business|field/i);
+const leftBlank = resolveProposal(seReturn.draft, "decline");
+assert.ok(!leftBlank.yearsInBusinessAsked);
+assert.ok(!leftBlank.awaitingYearsInBusiness);
+const queuedBlank = {
+  ...leftBlank,
+  sampleAccepted: true,
+  motion: "in_queue" as const,
+};
+assert.equal(workspacePromptCopy("done", queuedBlank).text, MOTION_COPY.in_queue);
+assert.equal(workspacePromptCopy("done", queuedBlank).followUp, YEARS_IN_BUSINESS_ASK);
 assert.ok(
   previewFacts(seAccepted).some(
     (fact) => fact.id === "qualifying" && fact.note === SUGGESTED_INCOME_NOTE,
@@ -2284,11 +2392,17 @@ assert.notEqual(seDecliningYearTwo.draft.pendingProposal?.value, "6667");
 assert.ok(laterYearIncomeLower(seDecliningYearTwo.draft));
 assert.equal(guidelineCaution(seDecliningYearTwo.draft), DECLINING_INCOME_CAUTION);
 assert.ok(seDecliningYearTwo.quietLines.includes(DECLINING_INCOME_CAUTION));
+assert.ok(!seDecliningYearTwo.quietLines.includes("Updated income from tax return."));
 const decliningCard = workspacePromptCopy("confirm-proposal", seDecliningYearTwo.draft);
-assert.equal(decliningCard.text, DECLINING_INCOME_CAUTION);
-assert.match(decliningCard.followUp ?? "", /\$6,000/);
-assert.match(decliningCard.followUp ?? "", /Suggested qualifying income · not underwritten/);
+assert.match(decliningCard.text, /Got the 2024 return/);
+assert.match(decliningCard.text, /Two-year view/);
+assert.match(decliningCard.text, /declin/i);
+assert.match(decliningCard.text, /\$6,000/);
+assert.match(decliningCard.text, /Suggested qualifying income · not underwritten/);
+assert.equal(decliningCard.followUp, DECLINING_INCOME_CAUTION);
 const yearOneAsk = workspacePromptCopy("confirm-proposal", seDecliningYearOne.draft);
+assert.match(yearOneAsk.text, /Got the 2023 return/);
+assert.match(yearOneAsk.text, /7,333/);
 const supersededThread = inertSupersededIncomeConfirms([
   {
     id: "income-2023",
@@ -2309,7 +2423,7 @@ assert.ok(!(supersededThread[0]?.actions ?? []).some((item) => item.capture?.fie
 assert.ok(!(supersededThread[0]?.actions ?? []).some((item) => item.label === "Use this"));
 assert.doesNotMatch(supersededThread[0]?.text ?? "", /Use this/);
 assert.ok((supersededThread[1]?.actions ?? []).some((item) => item.label === "Use this"));
-assert.match(supersededThread[1]?.followUp ?? "", /\$6,000/);
+assert.match(`${supersededThread[1]?.text ?? ""} ${supersededThread[1]?.followUp ?? ""}`, /\$6,000/);
 const restoredIncome = migrateRestoredFoxMessages(supersededThread);
 assert.ok(!(restoredIncome[0]?.actions ?? []).some((item) => item.label === "Use this"));
 assert.ok((restoredIncome[1]?.actions ?? []).some((item) => item.label === "Use this"));
@@ -2373,6 +2487,8 @@ assert.equal(entityOrdinary.draft.pendingProposal?.note, SUGGESTED_INCOME_NOTE);
 assert.equal(entityOrdinary.draft.facts?.qualifying_income, undefined);
 assert.equal(workspacePrompt(entityOrdinary.draft), "confirm-proposal");
 const entityAsk = workspacePromptCopy("confirm-proposal", entityOrdinary.draft);
+assert.match(entityAsk.text, /Got the 2024 return/);
+assert.match(entityAsk.text, /3,333/);
 assert.ok((entityAsk.actions ?? []).some((action) => action.label === "Use this"));
 assert.ok((entityAsk.actions ?? []).some((action) => action.label === "Leave blank"));
 assert.match(proposalAskCopy(entityOrdinary.draft.pendingProposal!), /3,333/);
@@ -2386,6 +2502,8 @@ assert.equal(fileCompleteness(entityOrdinary.draft)?.groups.income.documented, f
 const entityAccepted = resolveProposal(entityOrdinary.draft, "accept");
 assert.equal(entityAccepted.facts?.qualifying_income?.value, "3333");
 assert.equal(entityAccepted.facts?.qualifying_income?.source, "suggested");
+assert.ok(!entityAccepted.awaitingYearsInBusiness);
+assert.notEqual(workspacePromptCopy("documents", entityAccepted).text, YEARS_IN_BUSINESS_ASK);
 assert.equal(fileCompleteness(entityAccepted)?.groups.income.documented, false);
 assert.doesNotMatch(
   `${proposalAskCopy(entityOrdinary.draft.pendingProposal!)} ${stillUsefulAskCopy(entityOrdinary.draft)}`,
@@ -3141,6 +3259,10 @@ assert.ok(!alwaysOn.includes('text: "Drop a file here."'));
 assert.ok(!alwaysOn.includes("motionAskText({ ...live, docsOpen: true })"));
 assert.ok(alwaysOn.includes("motionAskText"));
 assert.ok(alwaysOn.includes("DECLINING_INCOME_CAUTION"));
+assert.ok(alwaysOn.includes("isDeadFileWriteLine"));
+assert.ok(alwaysOn.includes("docReactionAsk"));
+assert.ok(!alwaysOn.includes("Updated identity from ID."));
+assert.ok(!alwaysOn.includes("Updated income from tax return."));
 assert.ok(alwaysOn.includes("inertSupersededIncomeConfirms"));
 assert.ok(alwaysOn.includes("Start over"));
 assert.ok(alwaysOn.includes("startOverWorkspace"));

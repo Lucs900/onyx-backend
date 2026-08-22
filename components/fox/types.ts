@@ -224,6 +224,8 @@ export type FoxIntakeDraft = {
   documentsSkipped: boolean;
   docsStarted?: boolean;
   priorYearSkipped?: boolean;
+  yearsInBusinessAsked?: boolean;
+  awaitingYearsInBusiness?: boolean;
   facts?: Record<string, DraftField>;
   pendingConflict?: FactConflict | null;
   pendingProposal?: FactProposal | null;
@@ -305,6 +307,8 @@ export type Capture =
   | { field: "skip-term" }
   | { field: "accept-proposal" }
   | { field: "decline-proposal" }
+  | { field: "yearsInBusiness"; value: string }
+  | { field: "skip-years-in-business" }
   | { field: "propose-funds"; value: string }
   | { field: "skip-docs" }
   | { field: "start-docs" }

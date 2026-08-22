@@ -21,11 +21,14 @@ import {
   QUALIFYING_INCOME_FIELD,
   SUGGESTED_INCOME_NOTE,
   decliningIncomeCaution,
+  hasScheduleCCashflow,
 } from "./qualifyingIncome";
 
 export const SUGGESTED_NOTE = "Suggested · not verified";
 export const PROPOSED_NOTE = "Proposed · confirm";
 export { SUGGESTED_INCOME_NOTE, QUALIFYING_INCOME_FIELD };
+export const YEARS_IN_BUSINESS_FIELD = "years_in_business";
+export const YEARS_IN_BUSINESS_ASK = "How long have you been running this?";
 export const MISSING_LINE = "—";
 
 export const COMPLETENESS_GROUPS: CompletenessGroup[] = [
@@ -596,7 +599,51 @@ export function resolveProposal(
   if (proposal.companion) {
     next = writeConfirmedFact(next, proposal.companion.field, proposal.companion.value, source);
   }
-  return { ...next, pendingProposal: null };
+  const cleared = { ...next, pendingProposal: null };
+  if (winner === "accept" && shouldAskYearsInBusiness(cleared)) {
+    return withYearsInBusinessAsk(cleared);
+  }
+  return cleared;
+}
+
+export function yearsInBusinessValue(draft: FoxIntakeDraft) {
+  return draft.facts?.[YEARS_IN_BUSINESS_FIELD]?.value ?? "";
+}
+
+export function shouldAskYearsInBusiness(draft: FoxIntakeDraft) {
+  return (
+    hasScheduleCCashflow(draft) &&
+    !yearsInBusinessValue(draft) &&
+    !draft.yearsInBusinessAsked &&
+    !draft.awaitingYearsInBusiness
+  );
+}
+
+export function withYearsInBusinessAsk(draft: FoxIntakeDraft): FoxIntakeDraft {
+  return { ...draft, yearsInBusinessAsked: true, awaitingYearsInBusiness: true };
+}
+
+export function writeYearsInBusiness(draft: FoxIntakeDraft, years: string): FoxIntakeDraft {
+  const now = new Date().toISOString();
+  return {
+    ...draft,
+    awaitingYearsInBusiness: false,
+    yearsInBusinessAsked: true,
+    facts: {
+      ...(draft.facts ?? {}),
+      [YEARS_IN_BUSINESS_FIELD]: {
+        field: YEARS_IN_BUSINESS_FIELD,
+        value: years,
+        source: "client",
+        confirmed: true,
+        confirmedAt: now,
+      },
+    },
+  };
+}
+
+export function skipYearsInBusiness(draft: FoxIntakeDraft): FoxIntakeDraft {
+  return { ...draft, awaitingYearsInBusiness: false, yearsInBusinessAsked: true };
 }
 
 export function acceptComputedAmounts(draft: FoxIntakeDraft): FoxIntakeDraft {

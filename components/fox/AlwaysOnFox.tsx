@@ -64,6 +64,7 @@ import {
   editPromptFromCapture,
   inertSupersededIncomeConfirms,
   lastFoxTurn,
+  docReactionAsk,
   structureExplainCopy,
   structureFixPrompt,
   withWorkspaceGuide,
@@ -80,6 +81,7 @@ import {
   conflictAskCopy,
   missingAskActions,
   missingAskCopy,
+  isDeadFileWriteLine,
   stillUsefulAskCopy,
   stillUsefulRefreshKey,
   type DocIntakeDetail,
@@ -661,6 +663,7 @@ export function AlwaysOnFox({
         }
         for (const line of detail.quietLines ?? []) {
           if (line === DECLINING_INCOME_CAUTION) continue;
+          if (isDeadFileWriteLine(line)) continue;
           next.push({ id: newId(), role: "system", text: line });
         }
         if (detail.conflict) {
@@ -672,12 +675,13 @@ export function AlwaysOnFox({
           );
         } else if (getFoxDraft().pendingProposal || getFoxDraft().pendingConflict) {
           const live = getFoxDraft();
+          const reaction = docReactionAsk(live, detail.extractClass);
           const ask = live.pendingConflict
             ? {
                 text: conflictAskCopy(live.pendingConflict),
                 actions: conflictActions(),
               }
-            : workspacePromptCopy("confirm-proposal", live);
+            : reaction ?? workspacePromptCopy("confirm-proposal", live);
           const lastFox = lastFoxTurn(next);
           if (!lastFox || !sameFoxAsk(lastFox, ask)) {
             next.push(foxAskMessage(ask));
@@ -687,7 +691,8 @@ export function AlwaysOnFox({
           }
         } else if (getFoxDraft().workspaceFlow && !getFoxDraft().sampleAccepted) {
           const live = getFoxDraft();
-          const ask = workspacePromptCopy(workspacePrompt(live), live);
+          const reaction = docReactionAsk(live, detail.extractClass);
+          const ask = reaction ?? workspacePromptCopy(workspacePrompt(live), live);
           const lastFox = lastFoxTurn(next);
           if (!lastFox || !sameFoxAsk(lastFox, ask)) {
             next.push(foxAskMessage(ask));

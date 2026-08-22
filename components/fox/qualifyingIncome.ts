@@ -178,6 +178,15 @@ export function monthlyFromAnnual(annual: number): number {
   return Math.round(annual / 12);
 }
 
+export function formatIncomeMoney(value: number): string {
+  const shown = `$${Math.round(Math.abs(value)).toLocaleString("en-US")}`;
+  return value < 0 ? `-${shown}` : shown;
+}
+
+export function scheduleCYearViews(draft: FoxIntakeDraft): { year: number; annual: number }[] {
+  return scheduleCUsableYears(readTaxCashflows(draft));
+}
+
 function yearNumber(raw: string): number | null {
   const digits = raw.replace(/\D/g, "");
   if (digits.length === 2) {
