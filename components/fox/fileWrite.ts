@@ -734,6 +734,79 @@ export function conflictAskCopy(conflict: FactConflict) {
   return `The file has ${conflict.label} ${displayFactValue(conflict.field, conflict.fileValue)}. The document has ${displayFactValue(conflict.field, conflict.documentValue)}. Which should I keep?`;
 }
 
+export type DocInviteKind =
+  | "government_id"
+  | "paystub"
+  | "w2"
+  | "tax_return"
+  | "prior_year_return";
+
+export const DOC_INVITE_COPY: Record<DocInviteKind, string> = {
+  government_id: "First I need a government ID, so this file has a name on it.",
+  paystub: "Next is your latest paystub. That’s current income on paper.",
+  w2: "Next is your most recent W-2.",
+  tax_return:
+    "Next is your most recent tax return. That’s how I estimate qualifying income. Suggested, not underwritten.",
+  prior_year_return: "A prior-year return helps me see if last year was stable. Have one?",
+};
+
+export function inviteSequence(draft: FoxIntakeDraft): DocInviteKind[] {
+  const income = draft.incomeType.value;
+  const steps: DocInviteKind[] = ["government_id"];
+  if (income === "w2" || income === "both") {
+    steps.push("paystub", "w2");
+  }
+  if (income === "self-employed" || income === "other" || income === "both") {
+    steps.push("tax_return", "prior_year_return");
+  }
+  return steps;
+}
+
+function inviteSatisfied(draft: FoxIntakeDraft, kind: DocInviteKind): boolean {
+  if (kind === "prior_year_return") {
+    if (draft.priorYearSkipped) return true;
+    const returns = receivedTaxReturnCount(draft);
+    if (returns >= 2) return true;
+    if (returns < 1) return true;
+    return false;
+  }
+  if (receivedExtractClasses(draft).has(kind)) return true;
+  return (draft.skippedClasses ?? []).includes(kind);
+}
+
+export function nextDocInvite(draft: FoxIntakeDraft): DocInviteKind | null {
+  if (draft.sampleAccepted) return null;
+  if (!draft.incomeType.value && !draft.incomeAsked) return null;
+  if (draft.pendingProposal || draft.pendingConflict) return null;
+  for (const kind of inviteSequence(draft)) {
+    if (!inviteSatisfied(draft, kind)) return kind;
+  }
+  return null;
+}
+
+export function skipCurrentInvite(draft: FoxIntakeDraft): FoxIntakeDraft {
+  const kind = nextDocInvite(draft);
+  if (!kind) {
+    return { ...draft, documentsSkipped: true, docsOpen: false, correcting: null };
+  }
+  if (kind === "prior_year_return") {
+    return {
+      ...draft,
+      priorYearSkipped: true,
+      docsOpen: false,
+      correcting: null,
+      documentsSkipped: draft.documents.length === 0,
+    };
+  }
+  const skipped = Array.from(new Set([...(draft.skippedClasses ?? []), kind]));
+  const next = { ...draft, skippedClasses: skipped, docsOpen: false, correcting: null };
+  const more = nextDocInvite(next);
+  return {
+    ...next,
+    documentsSkipped: more == null && draft.documents.length === 0,
+  };
+}
+
 export function skipRemainingClasses(draft: FoxIntakeDraft): FoxIntakeDraft {
   const remaining = missingExtractClasses(draft);
   const skipped = Array.from(new Set([...(draft.skippedClasses ?? []), ...remaining]));

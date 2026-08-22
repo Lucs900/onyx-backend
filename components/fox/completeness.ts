@@ -14,6 +14,7 @@ import {
   displayFactValue,
   factLabel,
   factValue,
+  nextDocInvite,
   valuesMatch,
 } from "./fileWrite";
 import {
@@ -624,7 +625,7 @@ export function missingAmountAsk(draft: FoxIntakeDraft) {
   return "";
 }
 
-export function canLooksRight(draft: FoxIntakeDraft) {
+export function sketchAssembled(draft: FoxIntakeDraft) {
   if (!draft.path || !draft.productIntent) return false;
   if (!draft.occupancyChoice.value) return false;
   if (!sketchAmountsReady(draft)) return false;
@@ -632,6 +633,10 @@ export function canLooksRight(draft: FoxIntakeDraft) {
   if (!draft.incomeType.value && !draft.incomeAsked) return false;
   if (draft.pendingProposal || draft.pendingConflict) return false;
   return true;
+}
+
+export function canLooksRight(draft: FoxIntakeDraft) {
+  return sketchAssembled(draft) && !nextDocInvite(draft);
 }
 
 export function parseFundsRole(

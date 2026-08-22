@@ -222,6 +222,7 @@ export type FoxIntakeDraft = {
   notes: string[];
   documents: ReceivedDoc[];
   documentsSkipped: boolean;
+  priorYearSkipped?: boolean;
   facts?: Record<string, DraftField>;
   pendingConflict?: FactConflict | null;
   pendingProposal?: FactProposal | null;

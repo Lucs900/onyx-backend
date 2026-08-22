@@ -141,10 +141,7 @@ export function WorkspaceFileDock({ children }: { children: ReactNode }) {
         )
       : null;
 
-  const showDrop =
-    draft.docsOpen ||
-    workspacePrompt(draft) === "documents" ||
-    draft.phase === "documents";
+  const showDrop = Boolean(draft.docsOpen);
 
   return (
     <div className="fox-workspace-dock">

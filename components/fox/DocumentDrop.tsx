@@ -18,7 +18,6 @@ import {
   missingExtractClasses,
   rejectIncomingFile,
   stillUsefulRefreshKey,
-  stillUsefulLabels,
 } from "./fileWrite";
 import { fileExists } from "./motion";
 
@@ -51,8 +50,6 @@ export function DocumentDrop({
   draft?: FoxIntakeDraft;
   compact?: boolean;
 }) {
-  const live = draft ?? getFoxDraft();
-  const hint = stillUsefulLabels(live).join(" · ");
   const [reject, setReject] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -178,7 +175,6 @@ export function DocumentDrop({
       id="fox-documents"
       aria-label="Upload"
     >
-      {hint ? <p className="structure-drop__hint">{hint}</p> : null}
       {reject ? <p className="structure-drop__reject">{reject}</p> : null}
       <div className="structure-drop__row">
         <label className="structure-drop__zone">

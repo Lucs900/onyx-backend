@@ -42,14 +42,17 @@ import {
   factValue,
   fileStillUsefulNote,
   incomeRequestedClasses,
-  missingExtractClasses,
   missingListCopy,
   slotFromFilename,
   stillUsefulAskCopy,
+  DOC_INVITE_COPY,
+  nextDocInvite,
+  skipCurrentInvite,
 } from "./fileWrite";
 import {
   SUGGESTED_NOTE,
   canLooksRight,
+  sketchAssembled,
   completenessExplainCopy,
   fileCompleteness,
   guidelineCaution,
@@ -661,6 +664,8 @@ export function incomeSettled(draft: FoxIntakeDraft) {
   return Boolean(draft.incomeAsked || draft.incomeType.value);
 }
 
+export { nextDocInvite, skipCurrentInvite, DOC_INVITE_COPY };
+
 export function docsRequestForIncome(income?: string | null): {
   text: string;
   labels: string[];
@@ -697,9 +702,45 @@ function incomeFromText(text: string) {
 }
 
 function documentsAskText(draft: FoxIntakeDraft): string {
+  const invite = nextDocInvite(draft);
+  if (invite) return DOC_INVITE_COPY[invite];
   const useful = stillUsefulAskCopy(draft);
   if (useful) return useful;
   return docsRequestForIncome(draft.incomeType.value).text;
+}
+
+function docInviteActions(): FoxAction[] {
+  return [
+    { id: "upload-this", label: "Upload this", event: "open-docs", capture: { field: "open-docs" } },
+    { id: "skip-docs", label: "Skip", event: "bubble", capture: { field: "skip-docs" } },
+  ];
+}
+
+function looksLikeQuestion(text: string) {
+  const trimmed = text.trim();
+  return /\?$/.test(trimmed) || /^(why|what|how|when|who|where|can you|could you)\b/i.test(trimmed);
+}
+
+function restoredAsk(answer: string, draft: FoxIntakeDraft) {
+  const ask = workspacePromptCopy(workspacePrompt(draft), draft);
+  return {
+    text: `${answer} ${ask.text}`.trim(),
+    followUp: ask.followUp,
+    facts: ask.facts,
+    actions: ask.actions,
+  };
+}
+
+function documentQuestionAnswer(draft: FoxIntakeDraft) {
+  const invite = nextDocInvite(draft);
+  if (invite === "government_id") return "A government ID puts a name on this file.";
+  if (invite === "tax_return") {
+    return "That’s how I estimate qualifying income. Suggested, not underwritten.";
+  }
+  if (invite === "prior_year_return") return "It helps me see if last year was stable.";
+  if (invite === "paystub") return "That’s current income on paper.";
+  if (invite === "w2") return "That’s last year’s wages on paper.";
+  return "I can keep this file current.";
 }
 
 export function documentsMissingAsk(draft: FoxIntakeDraft) {
@@ -772,7 +813,7 @@ function creditSettled(draft: FoxIntakeDraft) {
 }
 
 export function sampleReady(draft: FoxIntakeDraft): boolean {
-  return canLooksRight(draft);
+  return sketchAssembled(draft);
 }
 
 /** Single /start conversation engine. Desktop and mobile share this order, copy, and path rules. */
@@ -804,6 +845,7 @@ export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
   }
   if (!creditSettled(draft)) return "credit";
   if (!incomeSettled(draft)) return "income";
+  if (nextDocInvite(draft)) return "documents";
   if (!draft.sampleAccepted) return canLooksRight(draft) ? "review" : "amount";
   return "done";
 }
@@ -944,15 +986,9 @@ function workspaceAskCopy(
     };
   }
   if (prompt === "documents") {
-    const missing = missingExtractClasses(draft);
     return {
       text: documentsAskText(draft),
-      actions: [
-        ...(missing.length
-          ? [{ id: "open-docs", label: "Upload now", event: "open-docs" as const, capture: { field: "open-docs" as const } }]
-          : []),
-        { id: "skip-docs", label: "Skip for now", event: "bubble", capture: { field: "skip-docs" } },
-      ],
+      actions: nextDocInvite(draft) ? docInviteActions() : undefined,
     };
   }
   if (prompt === "preparing") {
@@ -967,9 +1003,8 @@ function workspaceAskCopy(
       };
     }
     return {
-      text: "Here’s a sample structure.",
+      text: "Here’s the file. Does this look right?",
       facts: fileSummaryFacts(draft),
-      followUp: "Does this look right?",
       actions: [
         { id: "looks-right", label: "Looks right", event: "bubble", capture: { field: "confirm-draft" } },
         { id: "needs-fix", label: "Needs a correction", event: "bubble", capture: { field: "needs-correction" } },
@@ -1781,6 +1816,7 @@ function draftAfterCapture(draft: FoxIntakeDraft, capture: Capture): FoxIntakeDr
   if (capture.field === "skip-value") return { ...next, valueAsked: true, propertyValueAmount: undefined };
   if (capture.field === "skip-term") return { ...next, termAsked: true, termYears: undefined };
   if (capture.field === "incomeType") return withIncomeType(next, capture.value);
+  if (capture.field === "skip-docs") return skipCurrentInvite(next);
   return next;
 }
 
@@ -2383,7 +2419,7 @@ export function workspaceReply(
 
   if (prompt === "documents") {
     if (/(skip|later|not yet|don'?t have|fine)/i.test(lower)) {
-      const nextDraft = { ...draft, documentsSkipped: true, correcting: null, docsOpen: false };
+      const nextDraft = skipCurrentInvite(draft);
       return {
         ...workspacePromptCopy(workspacePrompt(nextDraft), nextDraft),
         capture: { field: "skip-docs" },
@@ -2391,15 +2427,14 @@ export function workspaceReply(
     }
     if (/(upload|drop|now|add)/i.test(lower)) {
       return {
-        text: "Add a file on the structure, or skip.",
-        actions: workspacePromptCopy("documents", draft).actions,
+        text: "",
         capture: { field: "open-docs" },
       };
     }
-    return {
-      text: "Tap Upload now, or Skip for now.",
-      actions: workspacePromptCopy("documents", draft).actions,
-    };
+    if (looksLikeQuestion(q)) {
+      return restoredAsk(documentQuestionAnswer(draft), draft);
+    }
+    return workspacePromptCopy("documents", draft);
   }
 
   if (prompt === "preparing") {
@@ -2422,6 +2457,9 @@ export function workspaceReply(
     }
     if (/(correction|fix|wrong|no|edit)/i.test(lower)) {
       return { ...workspacePromptCopy("correct", draft), capture: { field: "needs-correction" } };
+    }
+    if (looksLikeQuestion(q)) {
+      return restoredAsk("This is the file as it stands. Confirm it, or say what to change.", draft);
     }
     return workspacePromptCopy("review", draft);
   }

@@ -52,6 +52,7 @@ import {
   promoteExtractClass,
   resolveFactConflict,
   resolveReceivedSlot,
+  skipCurrentInvite,
   skipRemainingClasses,
   type ExtractApplyInput,
 } from "./fileWrite";
@@ -112,6 +113,7 @@ export function emptyDraft(): FoxIntakeDraft {
     notes: [],
     documents: [],
     documentsSkipped: false,
+    priorYearSkipped: false,
     facts: {},
     pendingConflict: null,
     skippedClasses: [],
@@ -224,6 +226,7 @@ function normalize(value: unknown): FoxIntakeDraft {
     skippedClasses: Array.isArray(raw.skippedClasses)
       ? raw.skippedClasses.filter((item): item is ExtractClass => typeof item === "string")
       : [],
+    priorYearSkipped: Boolean(raw.priorYearSkipped),
     missingAskKey: typeof raw.missingAskKey === "string" ? raw.missingAskKey : "",
     sections: { ...base.sections, ...raw.sections },
   };
@@ -738,6 +741,7 @@ export function receiveDocument(input: Omit<ReceivedDoc, "status" | "note"> & { 
       ...current,
       documents,
       documentsSkipped: false,
+      docsOpen: false,
       correcting: current.workspaceFlow ? null : current.correcting,
       phase: keepPhase
         ? current.phase
@@ -818,6 +822,9 @@ export function markMissingAsked(key: string) {
 }
 
 export function skipDocuments() {
+  if (current.workspaceFlow && !current.sampleAccepted) {
+    return commit(skipCurrentInvite(current));
+  }
   const prepared =
     current.sampleAccepted ||
     current.phase === "confirmed" ||

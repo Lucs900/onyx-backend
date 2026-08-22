@@ -24,7 +24,7 @@ export const PREVIEW_SLA_MS = 30 * 1000;
 export const MOTION_COPY = {
   gatheringPrefix: "These docs help next:",
   gatheringSuffix: "Upload docs, proceed, or say not yet.",
-  ready: "This file can move. Upload docs, proceed, or say not yet.",
+  ready: "This file can move. Proceed, or say not yet.",
   in_queue:
     "ONYX has this for review. I’m on it — I’ll nudge if it sits and I’ll bring the result back here.",
   whatHappensNext:
@@ -191,17 +191,9 @@ export function gatheringCopy(draft: FoxIntakeDraft) {
   return docsHandoffCopy(draft);
 }
 
-/** Fox-first docs coach after Looks right. Chips stay replies, not the form. */
-export function docsHandoffCopy(draft: FoxIntakeDraft) {
-  const income = draft.incomeType.value;
-  const seLike = income === "self-employed" || income === "other";
-  const taxReturns = receivedTaxReturnCount(draft);
-  if (seLike && taxReturns < 1) {
-    return "Government ID. Most recent tax return. Prior-year return if available. Upload what you have. Skip is fine.";
-  }
-  const list = gatheringList(draft);
-  if (!list) return MOTION_COPY.ready;
-  return `${list}. Upload what you have. Skip is fine.`;
+/** After Looks right, Fox does not dump the vault. One-at-a-time invites happen before Looks right. */
+export function docsHandoffCopy(_draft: FoxIntakeDraft) {
+  return MOTION_COPY.ready;
 }
 
 /** Bureau pull is allowed only after Proceed into licensed review. Never on browse, sketch, Looks right, or docs. */
@@ -296,27 +288,11 @@ export function finishLineActions(draft: FoxIntakeDraft): FoxAction[] {
       ...sideDoorActions(draft),
     ];
   }
-  const missing = missingExtractClasses(draft);
-  const actions: FoxAction[] = [
-    {
-      id: "upload-more",
-      label: "Upload docs",
-      event: "open-docs",
-      capture: { field: "upload-more" },
-    },
+  return [
     { id: "proceed", label: "Proceed", event: "bubble", capture: { field: "proceed" } },
     { id: "not-yet", label: "Not yet", event: "bubble", capture: { field: "not-yet" } },
+    ...sideDoorActions(draft),
   ];
-  if (missing.length && !draft.documentsSkipped && motion !== "on_hold") {
-    actions.push({
-      id: "skip-docs",
-      label: "Skip for now",
-      event: "bubble",
-      capture: { field: "skip-docs" },
-    });
-  }
-  actions.push(...sideDoorActions(draft));
-  return actions;
 }
 
 export function applyLooksRightMotion(draft: FoxIntakeDraft): FoxIntakeDraft {

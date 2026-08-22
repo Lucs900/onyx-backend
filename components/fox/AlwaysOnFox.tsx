@@ -229,7 +229,8 @@ function hasReviewAsk(messages: FoxMessage[]) {
     (message) =>
       message.role === "fox" &&
       (message.followUp === "Does this look right?" ||
-        message.text.includes("Here’s a sample structure.")),
+        message.text.includes("Here’s a sample structure.") ||
+        /here.?s the file/i.test(message.text)),
   );
 }
 
@@ -693,9 +694,12 @@ export function AlwaysOnFox({
           );
         } else if (getFoxDraft().pendingProposal) {
           next.push(foxAskMessage(workspacePromptCopy("confirm-proposal", getFoxDraft())));
-          if (detail.refreshStillUseful) {
+          if (detail.refreshStillUseful && getFoxDraft().sampleAccepted) {
             return withUpdatedStillUsefulAsk(next, getFoxDraft());
           }
+        } else if (getFoxDraft().workspaceFlow && !getFoxDraft().sampleAccepted) {
+          const live = getFoxDraft();
+          next.push(foxAskMessage(workspacePromptCopy(workspacePrompt(live), live)));
         } else if (detail.refreshStillUseful) {
           return withUpdatedStillUsefulAsk(next, getFoxDraft());
         } else if (detail.missing?.length) {
