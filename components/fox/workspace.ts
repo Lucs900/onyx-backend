@@ -95,6 +95,7 @@ import {
 import {
   decliningIncomeCaution,
   formatIncomeMoney,
+  monthlyFromAnnual,
   qualifyingIncomeDisplay,
   scheduleCYearViews,
   SUGGESTED_INCOME_NOTE,
@@ -826,25 +827,26 @@ function incomeReactionAsk(draft: FoxIntakeDraft, proposal: NonNullable<FoxIntak
   const shown = displayFactValue(proposal.field, proposal.value);
   const year = landedTaxYear(draft);
   const years = scheduleCYearViews(draft);
-  const suggest = `I’m suggesting ${shown} a month. ${SUGGESTED_INCOME_NOTE}. Use this?`;
   const ack = year ? `Got the ${year} return.` : "Got the return.";
   if (years.length < 2) {
     return {
-      text: `${ack} ${suggest}`,
+      text: `${ack} I’m suggesting ${shown} a month. ${SUGGESTED_INCOME_NOTE}. Use this?`,
       actions: proposalActions(proposal.kind),
     };
   }
   const earlier = years[years.length - 2];
   const later = years[years.length - 1];
+  const earlierMonthly = monthlyFromAnnual(earlier.annual);
+  const laterMonthly = monthlyFromAnnual(later.annual);
   const caution = decliningIncomeCaution(draft);
   const stance =
     later.annual >= earlier.annual
-      ? "That’s stable — I’m averaging the two years."
+      ? "That’s stable-to-rising — I’m averaging the two years."
       : caution
         ? "That’s declining."
         : "Later year is lower, so I’m using that year.";
   return {
-    text: `${ack} Two-year view: ${earlier.year} was ${formatIncomeMoney(earlier.annual)}, ${later.year} was ${formatIncomeMoney(later.annual)}. ${stance} ${suggest}`,
+    text: `${ack} ${later.year} is ${formatIncomeMoney(laterMonthly)} a month. ${earlier.year} is ${formatIncomeMoney(earlierMonthly)} a month. ${stance} Two-year view is ${shown} a month. ${SUGGESTED_INCOME_NOTE}. Use this?`,
     followUp: caution,
     actions: proposalActions(proposal.kind),
   };
@@ -1871,7 +1873,7 @@ export function workspaceUpdateCopy(capture: Capture, draft: FoxIntakeDraft) {
   if (capture.field === "skip-docs") return "Updated. Docs skipped.";
   if (capture.field === "skip-down") return "Updated. Down payment left blank.";
   if (capture.field === "keep-file-fact") return "Kept the file value.";
-  if (capture.field === "use-document-fact") return "Updated from the document.";
+  if (capture.field === "use-document-fact") return "I’ll use that number.";
   return "Updated the file.";
 }
 
@@ -2325,7 +2327,7 @@ export function workspaceReply(
     }
     if (/(use (the )?document|document value|use (the )?paystub|use (the )?w-?2)/i.test(lower)) {
       return {
-        text: "Updated from the document.",
+        text: "I’ll use that number.",
         capture: { field: "use-document-fact" },
       };
     }

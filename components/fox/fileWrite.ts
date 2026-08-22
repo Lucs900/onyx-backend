@@ -465,7 +465,9 @@ export function isDeadFileWriteLine(line: string) {
 export function firstNameFromDraft(draft: FoxIntakeDraft): string {
   const full = (draft.contact.fullName.value || factValue(draft, "full_name")).trim();
   if (!full) return "";
-  return (full.split(/\s+/)[0] ?? "").replace(/[.,]+$/g, "");
+  const raw = (full.split(/\s+/)[0] ?? "").replace(/[.,]+$/g, "");
+  if (!raw) return "";
+  return raw.charAt(0).toUpperCase() + raw.slice(1).toLowerCase();
 }
 
 export function lastExtractedClass(draft: FoxIntakeDraft): ExtractClass | null {
@@ -518,6 +520,9 @@ export function applyExtractedFields(
       continue;
     }
     if (existing.via === "income" || existing.via === "qualifying_income") {
+      if (extractClass === "tax_return" && existing.via === "qualifying_income") {
+        continue;
+      }
       const compare = computed != null ? String(computed.monthly) : value;
       if (valuesMatch(existing.value, compare)) {
         if (field !== existing.via) {

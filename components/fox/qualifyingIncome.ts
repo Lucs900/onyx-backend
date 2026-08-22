@@ -395,11 +395,19 @@ function existingMonthlyIncome(draft: FoxIntakeDraft): { value: string; via: "qu
 export function withQualifyingIncomeProposal(
   draft: FoxIntakeDraft,
   computed: QualifyingIncomeResult | null,
+  extractClass?: ExtractClass,
 ): FoxIntakeDraft {
   if (!computed) return draft;
   const monthly = String(computed.monthly);
   const existing = existingMonthlyIncome(draft);
   if (existing && valuesMatch(existing.value, monthly)) return draft;
+  if (existing?.via === QUALIFYING_INCOME_FIELD && extractClass === "tax_return") {
+    return {
+      ...draft,
+      pendingConflict: null,
+      pendingProposal: qualifyingIncomeProposal(computed.monthly),
+    };
+  }
   if (existing && !draft.pendingConflict) {
     return {
       ...draft,
@@ -432,8 +440,10 @@ export function applyQualifyingIncomeFromExtract(
   if (extractClass === "tax_return") {
     next = writeTaxCashflows(next, mergeTaxCashflows(readTaxCashflows(next), cashflowFromExtract(fields)));
   }
-  if (draft.pendingConflict) return next;
-  return withQualifyingIncomeProposal(next, computed);
+  if (draft.pendingConflict && !(extractClass === "tax_return" && existingMonthlyIncome(draft)?.via === QUALIFYING_INCOME_FIELD)) {
+    return next;
+  }
+  return withQualifyingIncomeProposal(next, computed, extractClass);
 }
 
 export function qualifyingIncomeNote(draft: FoxIntakeDraft): string | undefined {

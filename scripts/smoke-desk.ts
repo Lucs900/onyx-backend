@@ -1839,6 +1839,30 @@ assert.deepEqual(
   (mayaAsk?.actions ?? []).map((item) => item.label),
   ["Upload this", "Skip"],
 );
+const jordanId = applyExtractedFields(
+  draft({
+    ...seIncome,
+    docsStarted: true,
+    documents: [
+      {
+        slot: "id",
+        name: "jordan-id.png",
+        type: "image/png",
+        size: 4000,
+        receivedAt: "2026-08-22T00:10:00.000Z",
+        status: "reading",
+      },
+    ],
+  }),
+  {
+    extractClass: "government_id",
+    confidence: 0.94,
+    fields: { full_name: "JORDAN HALE" },
+  },
+);
+const jordanAsk = docReactionAsk(jordanId.draft, "government_id");
+assert.match(jordanAsk?.text ?? "", /Nice to meet you, Jordan/);
+assert.doesNotMatch(jordanAsk?.text ?? "", /JORDAN/);
 const mayaThenReturn = applyExtractedFields(mayaId.draft, {
   extractClass: "tax_return",
   confidence: 0.93,
@@ -2212,6 +2236,49 @@ assert.ok(
   ),
 );
 assert.equal(seAccepted.pendingProposal, null);
+const seSecondAfterConfirm = applyExtractedFields(
+  {
+    ...seAccepted,
+    awaitingYearsInBusiness: false,
+    documents: [
+      ...(seAccepted.documents ?? []),
+      {
+        slot: "other",
+        name: "return-2023.png",
+        type: "image/png",
+        size: 8000,
+        receivedAt: "2026-08-22T12:00:00.000Z",
+        status: "reading",
+      },
+    ],
+  },
+  {
+    extractClass: "tax_return",
+    confidence: 0.93,
+    fields: {
+      tax_year: "2023",
+      return_kind: "schedule_c",
+      schedule_c_net_profit: "88000",
+    },
+  },
+);
+assert.equal(seSecondAfterConfirm.conflict, null);
+assert.equal(seSecondAfterConfirm.draft.pendingConflict, null);
+assert.equal(seSecondAfterConfirm.draft.pendingProposal?.value, "8167");
+assert.equal(seSecondAfterConfirm.draft.facts?.qualifying_income?.value, "9000");
+const seTwoYearAsk = workspacePromptCopy("confirm-proposal", seSecondAfterConfirm.draft);
+assert.match(seTwoYearAsk.text, /Got the 2023 return/);
+assert.match(seTwoYearAsk.text, /2024 is \$9,000 a month/);
+assert.match(seTwoYearAsk.text, /2023 is \$7,333 a month/);
+assert.match(seTwoYearAsk.text, /Two-year view is \$8,167 a month/);
+assert.match(seTwoYearAsk.text, /stable-to-rising|averag/i);
+assert.match(seTwoYearAsk.text, /Suggested qualifying income · not underwritten/);
+assert.doesNotMatch(
+  seTwoYearAsk.text,
+  /which should I keep|the document has|Keep file|Use document|Updated from the document/i,
+);
+assert.ok((seTwoYearAsk.actions ?? []).some((item) => item.label === "Use this"));
+assert.ok((seTwoYearAsk.actions ?? []).some((item) => item.label === "Leave blank"));
 assert.doesNotMatch(
   `${proposalAskCopy(seReturn.draft.pendingProposal!)} ${previewFacts(seAccepted).map((fact) => `${fact.value} ${fact.note ?? ""}`).join(" ")}`,
   /1084|\bDU\b|approved|eligible|you qualify|don’t qualify|agency_ready/i,
@@ -2396,9 +2463,11 @@ assert.ok(seDecliningYearTwo.quietLines.includes(DECLINING_INCOME_CAUTION));
 assert.ok(!seDecliningYearTwo.quietLines.includes("Updated income from tax return."));
 const decliningCard = workspacePromptCopy("confirm-proposal", seDecliningYearTwo.draft);
 assert.match(decliningCard.text, /Got the 2024 return/);
-assert.match(decliningCard.text, /Two-year view/);
+assert.match(decliningCard.text, /2024 is \$6,000 a month/);
+assert.match(decliningCard.text, /2023 is \$7,333 a month/);
+assert.match(decliningCard.text, /Two-year view is \$6,000 a month/);
 assert.match(decliningCard.text, /declin/i);
-assert.match(decliningCard.text, /\$6,000/);
+assert.doesNotMatch(decliningCard.text, /which should I keep|the document has|Updated from the document/i);
 assert.match(decliningCard.text, /Suggested qualifying income · not underwritten/);
 assert.equal(decliningCard.followUp, DECLINING_INCOME_CAUTION);
 const yearOneAsk = workspacePromptCopy("confirm-proposal", seDecliningYearOne.draft);
@@ -3264,6 +3333,8 @@ assert.ok(alwaysOn.includes("isDeadFileWriteLine"));
 assert.ok(alwaysOn.includes("docReactionAsk"));
 assert.ok(!alwaysOn.includes("Updated identity from ID."));
 assert.ok(!alwaysOn.includes("Updated income from tax return."));
+assert.ok(!alwaysOn.includes("Updated from the document."));
+assert.ok(!workspaceSrc.includes("Updated from the document."));
 assert.ok(alwaysOn.includes("inertSupersededIncomeConfirms"));
 assert.ok(alwaysOn.includes("Start over"));
 assert.ok(alwaysOn.includes("startOverWorkspace"));
