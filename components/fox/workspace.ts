@@ -45,6 +45,8 @@ import {
   missingListCopy,
   slotFromFilename,
   stillUsefulAskCopy,
+  conflictActions,
+  conflictAskCopy,
   DOC_INVITE_COPY,
   nextDocInvite,
   skipCurrentInvite,
@@ -279,6 +281,26 @@ export function composerAmountHint(draft?: FoxIntakeDraft | null) {
     return "down payment, percent, or loan amount";
   }
   return structureAmountLabel(draft) || "the number";
+}
+
+export function lastFoxTurn<T extends { role: string }>(messages: T[]): T | undefined {
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    if (messages[i].role === "fox") return messages[i];
+  }
+  return undefined;
+}
+
+export function composerPlaceholder(
+  draft: FoxIntakeDraft,
+  askingAmountPurpose = false,
+): string {
+  if (draft.pendingProposal || draft.pendingConflict) return "Ask ONYX Fox";
+  const ask = workspacePrompt(draft);
+  if ((ask === "amount" && !askingAmountPurpose) || ask === "value") {
+    return `Enter ${composerAmountHint(draft)}`;
+  }
+  if (askingAmountPurpose) return "Purchase price, loan amount, or HELOC line";
+  return "Ask ONYX Fox";
 }
 
 export function amountAskText(draft: FoxIntakeDraft) {
@@ -822,7 +844,7 @@ export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
   if (!draft.path) return "intent";
   if (draft.pendingOffer === "jumbo") return "offer-jumbo";
   if (draft.pendingOffer === "heloc") return "offer-heloc";
-  if (draft.pendingProposal) return "confirm-proposal";
+  if (draft.pendingConflict || draft.pendingProposal) return "confirm-proposal";
   if (draft.correcting === "path-switch") return "path-switch";
   if (draft.correcting === "correct") return "correct";
   if (draft.correcting === "credit") return "credit";
@@ -1017,6 +1039,12 @@ function workspaceAskCopy(
     };
   }
   if (prompt === "confirm-proposal") {
+    if (draft.pendingConflict) {
+      return {
+        text: conflictAskCopy(draft.pendingConflict),
+        actions: conflictActions(),
+      };
+    }
     const proposal = draft.pendingProposal;
     if (!proposal) {
       return { text: missingAmountAsk(draft) || "I can keep this file current." };
@@ -1478,7 +1506,7 @@ export function workspaceUpdateCopy(capture: Capture, draft: FoxIntakeDraft) {
     return MOTION_COPY.escalated;
   }
   if (capture.field === "proceed") {
-    return emailMissing(draft) ? MOTION_COPY.emailAsk : MOTION_COPY.in_queue;
+    return MOTION_COPY.in_queue;
   }
   if (capture.field === "not-yet") {
     return emailMissing(draft) ? MOTION_COPY.emailAsk : MOTION_COPY.on_hold;
@@ -2512,15 +2540,18 @@ export function workspaceReply(
         }
         const nextDraft =
           finish.field === "proceed"
-            ? { ...draft, pendingFinish: emailMissing(draft) ? "proceed" : draft.pendingFinish }
+            ? {
+                ...draft,
+                motion: "in_queue" as const,
+                nextActor: "ONYX" as const,
+                pendingFinish: emailMissing(draft) ? "proceed" : draft.pendingFinish,
+              }
             : { ...draft, pendingFinish: emailMissing(draft) ? "not-yet" : draft.pendingFinish };
         return {
           ...workspacePromptCopy("done", nextDraft),
           text:
             finish.field === "proceed"
-              ? emailMissing(draft)
-                ? MOTION_COPY.emailAsk
-                : MOTION_COPY.in_queue
+              ? MOTION_COPY.in_queue
               : emailMissing(draft)
                 ? MOTION_COPY.emailAsk
                 : MOTION_COPY.on_hold,

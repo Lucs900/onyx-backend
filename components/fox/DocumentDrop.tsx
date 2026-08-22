@@ -1,7 +1,7 @@
 "use client";
 
 import { upload } from "@vercel/blob/client";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ACCEPT_ATTR, FAILED_READ_NOTE, RECEIVED_NOTE, mediaTypeOf } from "@/lib/docs/accept";
 import {
   applyExtractWrite,
@@ -22,6 +22,13 @@ import {
 import { fileExists } from "./motion";
 
 export { slotFromFilename };
+
+export const FOX_PICK_FILE_EVENT = "onyx:fox-pick-file";
+
+export function requestFoxPickFile() {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new Event(FOX_PICK_FILE_EVENT));
+}
 
 function emitFailedRead() {
   const after = getFoxDraft();
@@ -46,12 +53,21 @@ async function storeBytes(file: File) {
 export function DocumentDrop({
   draft,
   compact,
+  visible = true,
 }: {
   draft?: FoxIntakeDraft;
   compact?: boolean;
+  visible?: boolean;
 }) {
   const [reject, setReject] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const onPick = () => inputRef.current?.click();
+    window.addEventListener(FOX_PICK_FILE_EVENT, onPick);
+    return () => window.removeEventListener(FOX_PICK_FILE_EVENT, onPick);
+  }, []);
 
   const onFiles = (files: FileList | null) => {
     if (!files?.length) return;
@@ -168,6 +184,24 @@ export function DocumentDrop({
   };
 
   const shown = (draft ?? getFoxDraft()).documents;
+  const fileInput = (
+    <input
+      ref={inputRef}
+      className="visually-hidden"
+      type="file"
+      multiple
+      accept={ACCEPT_ATTR}
+      disabled={busy}
+      onChange={(event) => {
+        onFiles(event.target.files);
+        event.target.value = "";
+      }}
+    />
+  );
+
+  if (!visible) {
+    return <div className="visually-hidden">{fileInput}</div>;
+  }
 
   return (
     <section
@@ -179,17 +213,7 @@ export function DocumentDrop({
       <div className="structure-drop__row">
         <label className="structure-drop__zone">
           <span>{busy ? "Reading…" : "Drop a file here, or browse"}</span>
-          <input
-            className="visually-hidden"
-            type="file"
-            multiple
-            accept={ACCEPT_ATTR}
-            disabled={busy}
-            onChange={(event) => {
-              onFiles(event.target.files);
-              event.target.value = "";
-            }}
-          />
+          {fileInput}
         </label>
         <button
           type="button"

@@ -210,7 +210,6 @@ export function inQueueEnding(draft: FoxIntakeDraft) {
 }
 
 export function motionAskText(draft: FoxIntakeDraft) {
-  if (draft.pendingFinish && emailMissing(draft)) return MOTION_COPY.emailAsk;
   const motion = motionOf(draft);
   if (inQueueEnding(draft)) {
     if ((draft.docsOpen || motion === "gathering") && missingExtractClasses(draft).length) {
@@ -218,6 +217,7 @@ export function motionAskText(draft: FoxIntakeDraft) {
     }
     return MOTION_COPY.in_queue;
   }
+  if (draft.pendingFinish && emailMissing(draft)) return MOTION_COPY.emailAsk;
   if (motion === "on_hold") return MOTION_COPY.on_hold;
   if (motion === "escalated") return MOTION_COPY.escalated;
   if (motion === "needs_you") return needsYouCopy(draft);
@@ -274,9 +274,9 @@ function inQueueActions(draft: FoxIntakeDraft): FoxAction[] {
 }
 
 export function finishLineActions(draft: FoxIntakeDraft): FoxAction[] {
-  if (draft.pendingFinish && emailMissing(draft)) return [];
   const motion = motionOf(draft);
   if (inQueueEnding(draft)) return inQueueActions(draft);
+  if (draft.pendingFinish && emailMissing(draft)) return [];
   if (motion === "escalated") {
     return [
       {
@@ -355,22 +355,15 @@ function withOutbox(
 }
 
 export function applyProceedMotion(draft: FoxIntakeDraft, now = new Date()): FoxIntakeDraft {
-  if (emailMissing(draft)) {
-    return {
-      ...draft,
-      pendingFinish: "proceed",
-      emailCaptureAsked: true,
-      docsOpen: false,
-      correcting: null,
-    };
-  }
   const item = openReviewWorkItem(draft) ?? openReviewItem(draft, now);
+  const missing = emailMissing(draft);
   const withItem = appendFileEvent(
     {
       ...draft,
       motion: "in_queue",
       nextActor: "ONYX",
-      pendingFinish: undefined,
+      pendingFinish: missing ? "proceed" : undefined,
+      emailCaptureAsked: missing ? true : draft.emailCaptureAsked,
       docsOpen: false,
       correcting: null,
       workItems: [...(draft.workItems ?? []).filter((row) => row.id !== item.id), item],

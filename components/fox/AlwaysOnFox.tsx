@@ -57,11 +57,12 @@ import {
 } from "./store";
 import {
   caretAfterMoneyFormat,
-  composerAmountHint,
+  composerPlaceholder,
   confirmedMoneyText,
   formatLiveMoneyInput,
   editPromptFromCapture,
   inertSupersededIncomeConfirms,
+  lastFoxTurn,
   structureExplainCopy,
   structureFixPrompt,
   withWorkspaceGuide,
@@ -70,6 +71,7 @@ import {
   workspacePromptCopy,
   workspaceUpdateCopy,
 } from "./workspace";
+import { requestFoxPickFile } from "./DocumentDrop";
 import { WorkspaceFileDock } from "./FilePreview";
 import {
   DOC_INTAKE_EVENT,
@@ -692,14 +694,28 @@ export function AlwaysOnFox({
               actions: conflictActions(),
             }),
           );
-        } else if (getFoxDraft().pendingProposal) {
-          next.push(foxAskMessage(workspacePromptCopy("confirm-proposal", getFoxDraft())));
-          if (detail.refreshStillUseful && getFoxDraft().sampleAccepted) {
+        } else if (getFoxDraft().pendingProposal || getFoxDraft().pendingConflict) {
+          const live = getFoxDraft();
+          const ask = live.pendingConflict
+            ? {
+                text: conflictAskCopy(live.pendingConflict),
+                actions: conflictActions(),
+              }
+            : workspacePromptCopy("confirm-proposal", live);
+          const lastFox = lastFoxTurn(next);
+          if (!lastFox || !sameFoxAsk(lastFox, ask)) {
+            next.push(foxAskMessage(ask));
+          }
+          if (detail.refreshStillUseful && live.sampleAccepted) {
             return withUpdatedStillUsefulAsk(next, getFoxDraft());
           }
         } else if (getFoxDraft().workspaceFlow && !getFoxDraft().sampleAccepted) {
           const live = getFoxDraft();
-          next.push(foxAskMessage(workspacePromptCopy(workspacePrompt(live), live)));
+          const ask = workspacePromptCopy(workspacePrompt(live), live);
+          const lastFox = lastFoxTurn(next);
+          if (!lastFox || !sameFoxAsk(lastFox, ask)) {
+            next.push(foxAskMessage(ask));
+          }
         } else if (detail.refreshStillUseful) {
           return withUpdatedStillUsefulAsk(next, getFoxDraft());
         } else if (detail.missing?.length) {
@@ -819,8 +835,8 @@ export function AlwaysOnFox({
         if (hasPreparedAsk(prev)) return prev;
         if (fileExists(getFoxDraft()) && prev[prev.length - 1]?.role === "fox") return prev;
       }
-      const last = prev[prev.length - 1];
-      if (last?.role === "fox" && sameFoxAsk(last, ask)) return prev;
+      const lastFox = lastFoxTurn(prev);
+      if (lastFox && sameFoxAsk(lastFox, ask)) return prev;
       return [...prev, foxAskMessage(ask)];
     });
   }, [draft.updatedAt, isStart, ready, stage]);
@@ -1017,6 +1033,14 @@ export function AlwaysOnFox({
       action.capture?.field === "upload-more" ||
       action.event === "open-docs"
     ) {
+      const invitePick =
+        action.capture?.field === "open-docs" && !getFoxDraft().sampleAccepted;
+      if (invitePick) {
+        skipPromptSync.current = true;
+        appendReply(action.label, { text: "" });
+        requestFoxPickFile();
+        return;
+      }
       applyCapture(action.capture ?? { field: "open-docs" });
       skipPromptSync.current = true;
       appendReply(action.label, { text: "" });
@@ -1121,10 +1145,13 @@ export function AlwaysOnFox({
       isStart && draft.correcting && reply.capture && structureWriteCapture(reply.capture.field),
     );
     if (reply.capture) {
-      applyCapture(reply.capture);
+      const invitePick = reply.capture.field === "open-docs" && !draft.sampleAccepted;
+      if (!invitePick) applyCapture(reply.capture);
       skipPromptSync.current = true;
     }
-    if (reply.capture?.field === "open-docs" || reply.capture?.field === "upload-more") {
+    if (reply.capture?.field === "open-docs" && !draft.sampleAccepted) {
+      requestFoxPickFile();
+    } else if (reply.capture?.field === "open-docs" || reply.capture?.field === "upload-more") {
       window.requestAnimationFrame(() => {
         document.getElementById("fox-documents")?.scrollIntoView({
           block: "nearest",
@@ -1209,13 +1236,7 @@ export function AlwaysOnFox({
         onChange={onComposerChange}
         onFocus={() => setOpen(true)}
         onBlur={onComposerBlur}
-        placeholder={
-          moneyAsk
-            ? `Enter ${composerAmountHint(draft)}`
-            : askingAmountPurpose
-              ? "Purchase price, loan amount, or HELOC line"
-              : "Ask ONYX Fox"
-        }
+        placeholder={composerPlaceholder(draft, askingAmountPurpose)}
         inputMode={composerMode}
         autoFocus={needsTyping}
         autoComplete="off"

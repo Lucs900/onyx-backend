@@ -141,11 +141,11 @@ export function WorkspaceFileDock({ children }: { children: ReactNode }) {
         )
       : null;
 
-  const showDrop = Boolean(draft.docsOpen);
+  const showVault = Boolean(draft.docsOpen) && Boolean(draft.sampleAccepted);
 
   return (
     <div className="fox-workspace-dock">
-      {showDrop ? <DocumentDrop draft={draft} compact /> : null}
+      <DocumentDrop draft={draft} compact visible={showVault} />
       {facts.length ? (
         <button
           type="button"

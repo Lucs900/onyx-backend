@@ -765,9 +765,18 @@ export function inviteSequence(draft: FoxIntakeDraft): DocInviteKind[] {
 function inviteSatisfied(draft: FoxIntakeDraft, kind: DocInviteKind): boolean {
   if (kind === "prior_year_return") {
     if (draft.priorYearSkipped) return true;
-    const returns = receivedTaxReturnCount(draft);
-    if (returns >= 2) return true;
-    if (returns < 1) return true;
+    let extracted = 0;
+    for (const doc of draft.documents) {
+      if (doc.status !== "extracted") continue;
+      if (receivedClassOf(doc) === "tax_return") extracted += 1;
+    }
+    const years = new Set<string>();
+    for (const row of readTaxCashflows(draft)) {
+      const year = row.tax_year.trim();
+      if (year) years.add(year);
+    }
+    if (Math.max(extracted, years.size) >= 2) return true;
+    if (receivedTaxReturnCount(draft) < 1) return true;
     return false;
   }
   if (receivedExtractClasses(draft).has(kind)) return true;

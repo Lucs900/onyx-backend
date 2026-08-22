@@ -86,6 +86,7 @@ import {
 import {
   amountAskText,
   composerAmountHint,
+  composerPlaceholder,
   docsRequestForIncome,
   editPromptFromCapture,
   formatLiveMoneyInput,
@@ -96,6 +97,7 @@ import {
   HELOC_OFFER_COPY,
   JUMBO_OFFER_COPY,
   JUMBO_PURPOSE_ASK,
+  lastFoxTurn,
   loanLooksAboveCeiling,
   migrateRestoredFoxMessages,
   inertSupersededIncomeConfirms,
@@ -1274,6 +1276,58 @@ const seWithReturn = draft({
   ],
 });
 assert.equal(workspacePromptCopy("documents", seWithReturn).text, DOC_INVITE_COPY.prior_year_return);
+const uploadThisThread = [
+  { role: "fox" as const, text: DOC_INVITE_COPY.government_id },
+  { role: "client" as const, text: "Upload this" },
+];
+assert.equal(lastFoxTurn(uploadThisThread)?.text, DOC_INVITE_COPY.government_id);
+assert.equal(
+  lastFoxTurn(uploadThisThread)?.text,
+  workspacePromptCopy("documents", seIncome).text,
+);
+const skipThenTax = [
+  { role: "fox" as const, text: DOC_INVITE_COPY.government_id },
+  { role: "client" as const, text: "Skip" },
+  { role: "fox" as const, text: workspacePromptCopy("documents", seAfterId).text },
+];
+assert.equal(lastFoxTurn(skipThenTax)?.text, DOC_INVITE_COPY.tax_return);
+assert.notEqual(lastFoxTurn(skipThenTax)?.text, DOC_INVITE_COPY.government_id);
+const priorYearThread = [
+  { role: "fox" as const, text: DOC_INVITE_COPY.prior_year_return },
+  { role: "client" as const, text: "Upload this" },
+];
+const priorYearInFlight = draft({
+  ...seWithReturn,
+  documents: [
+    ...seWithReturn.documents,
+    {
+      slot: "other",
+      name: "return-2023.pdf",
+      type: "application/pdf",
+      size: 4000,
+      receivedAt: "2026-08-21T00:00:00.000Z",
+      status: "reading",
+    },
+  ],
+});
+assert.equal(workspacePrompt(priorYearInFlight), "documents");
+assert.equal(workspacePromptCopy("documents", priorYearInFlight).text, DOC_INVITE_COPY.prior_year_return);
+assert.equal(lastFoxTurn(priorYearThread)?.text, workspacePromptCopy("documents", priorYearInFlight).text);
+const priorYearExtract = applyExtractedFields(priorYearInFlight, {
+  extractClass: "tax_return",
+  confidence: 0.93,
+  fields: {
+    tax_year: "2023",
+    return_kind: "schedule_c",
+    schedule_c_net_profit: "88000",
+  },
+});
+assert.ok(priorYearExtract.draft.pendingProposal || priorYearExtract.draft.pendingConflict);
+assert.notEqual(workspacePrompt(priorYearExtract.draft), "documents");
+assert.notEqual(
+  workspacePromptCopy(workspacePrompt(priorYearExtract.draft), priorYearExtract.draft).text,
+  DOC_INVITE_COPY.prior_year_return,
+);
 const selfDocs = workspacePromptCopy("documents", seIncome);
 assert.equal(selfDocs.text, DOC_INVITE_COPY.government_id);
 assert.doesNotMatch(selfDocs.text, /paystub|w-2|drop what you have/i);
@@ -1721,6 +1775,33 @@ assert.equal(seReturn.draft.pendingProposal?.field, QUALIFYING_INCOME_FIELD);
 assert.equal(seReturn.draft.pendingProposal?.value, "9000");
 assert.equal(seReturn.draft.pendingProposal?.note, SUGGESTED_INCOME_NOTE);
 assert.equal(workspacePrompt(seReturn.draft), "confirm-proposal");
+assert.equal(
+  composerPlaceholder({ ...seReturn.draft, correcting: "value" }),
+  "Ask ONYX Fox",
+);
+assert.doesNotMatch(
+  composerPlaceholder({ ...seReturn.draft, correcting: "value" }),
+  /purchase price/i,
+);
+assert.equal(
+  workspacePrompt({ ...seReturn.draft, correcting: "value" }),
+  "confirm-proposal",
+);
+const conflictOnPrice = draft({
+  ...seReturn.draft,
+  pendingProposal: null,
+  pendingConflict: {
+    field: "qualifying_income",
+    fileValue: "9000",
+    documentValue: "6000",
+    label: "Qualifying income",
+    kind: "document",
+  },
+  correcting: "value",
+});
+assert.equal(workspacePrompt(conflictOnPrice), "confirm-proposal");
+assert.equal(composerPlaceholder(conflictOnPrice), "Ask ONYX Fox");
+assert.doesNotMatch(composerPlaceholder(conflictOnPrice), /purchase price/i);
 const seAsk = proposalAskCopy(seReturn.draft.pendingProposal!);
 assert.match(seAsk, /Suggested qualifying income · not underwritten/);
 assert.match(seAsk, /9,000/);
@@ -2757,8 +2838,17 @@ assert.ok(!openReviewWorkItem(skippedNotQueued));
 applyCapture({ field: "proceed" });
 const emailGate = getFoxDraft();
 assert.equal(emailGate.pendingFinish, "proceed");
-assert.notEqual(motionOf(emailGate), "in_queue");
-assert.equal(workspacePromptCopy("done", emailGate).text, MOTION_COPY.emailAsk);
+assert.equal(motionOf(emailGate), "in_queue");
+assert.equal(statusCopy(emailGate), "in_queue");
+assert.equal(nextActorOf(emailGate), "ONYX");
+assert.equal(workspacePromptCopy("done", emailGate).text, MOTION_COPY.in_queue);
+assert.doesNotMatch(workspacePromptCopy("done", emailGate).text, /good email|remind you/i);
+assert.ok(
+  (workspacePromptCopy("done", emailGate).actions ?? []).some((item) => item.label === "What happens next?"),
+);
+assert.ok(openReviewWorkItem(emailGate));
+assert.equal(workspaceReply("Proceed", beforeProceed)?.text, MOTION_COPY.in_queue);
+assert.equal(workspaceUpdateCopy({ field: "proceed" }, beforeProceed), MOTION_COPY.in_queue);
 applyCapture({ field: "email", value: "borrower@example.com" });
 const queued = getFoxDraft();
 assert.equal(motionOf(queued), "in_queue");
@@ -2990,6 +3080,8 @@ assert.ok(dropSource.includes("/api/docs/upload"));
 assert.ok(dropSource.includes("/api/docs/extract"));
 assert.ok(dropSource.includes("quietLines: [FAILED_READ_NOTE]"));
 assert.ok(dropSource.includes('aria-label="Upload"'));
+assert.ok(dropSource.includes("onyx:fox-pick-file"));
+assert.ok(dropSource.includes("requestFoxPickFile"));
 assert.ok(!dropSource.includes(">Documents<"));
 assert.ok(!dropSource.includes("/api/chat"));
 assert.ok(!dropSource.includes("/api/heloc-quote"));
@@ -3041,7 +3133,9 @@ const startCss = readFileSync(join(root, "styles/start.css"), "utf8");
 assert.ok(startCss.includes("scroll-padding-bottom"));
 assert.ok(startCss.includes("scroll-margin-bottom"));
 const foxSource = readFileSync(join(root, "components/fox/AlwaysOnFox.tsx"), "utf8");
-assert.ok(foxSource.includes("composerAmountHint"));
+assert.ok(foxSource.includes("composerPlaceholder"));
+assert.ok(foxSource.includes("lastFoxTurn"));
+assert.ok(foxSource.includes("requestFoxPickFile"));
 assert.ok(foxSource.includes("scrollIntoView"));
 assert.ok(foxSource.includes("fox-workspace-dock"));
 assert.ok(foxSource.includes("scrollMarginBottom"));
@@ -3050,6 +3144,7 @@ assert.ok(foxSource.includes('line: field'));
 const filePreview = readFileSync(join(root, "components/fox/FilePreview.tsx"), "utf8");
 assert.ok(filePreview.includes("!draft.workspaceFlow"));
 assert.ok(filePreview.includes("draft.docsOpen"));
+assert.ok(filePreview.includes("sampleAccepted"));
 assert.ok(!filePreview.includes('workspacePrompt(draft) === "documents"'));
 assert.ok(filePreview.includes("DocumentDrop"));
 assert.ok(filePreview.includes('fact.id === "next"'));
