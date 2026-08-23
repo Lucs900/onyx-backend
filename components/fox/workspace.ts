@@ -239,6 +239,73 @@ export function productIntentFromText(text: string): ProductIntent | null {
   )?.value ?? null;
 }
 
+/** Chip label wins over a stale capture so first-paint Refinance cannot write Buy. */
+export function productIntentFromAction(
+  action: Pick<FoxAction, "label" | "href" | "capture">,
+): ProductIntent | null {
+  const labeled = productIntentFromText(action.label ?? "");
+  if (labeled) return labeled;
+  if (action.capture?.field === "productIntent" || action.capture?.field === "starter") {
+    return (
+      normalizeProductIntent(action.capture.value) ??
+      productIntentFromText(action.capture.value) ??
+      null
+    );
+  }
+  if (!action.href) return null;
+  try {
+    const url = new URL(action.href, "https://onyx.local");
+    return (
+      productIntentFromQuery(url.searchParams.get("intent")) ??
+      productIntentFromSlug(url.searchParams.get("product"))
+    );
+  } catch {
+    return null;
+  }
+}
+
+export function rebindProductChipActions(actions?: FoxAction[]): FoxAction[] | undefined {
+  if (!actions?.length) return actions;
+  let changed = false;
+  const next = actions.map((action) => {
+    const intent = productIntentFromAction(action);
+    if (!intent) return action;
+    if (action.capture?.field === "productIntent" && action.capture.value === intent) {
+      return action;
+    }
+    changed = true;
+    if (action.capture?.field === "starter") {
+      return { ...action, capture: { ...action.capture, value: intent } };
+    }
+    return { ...action, capture: { field: "productIntent" as const, value: intent } };
+  });
+  return changed ? next : actions;
+}
+
+export function isProductPickerAsk(
+  message?: Pick<FoxMessage, "role" | "text" | "actions"> | null,
+) {
+  if (!message || message.role !== "fox") return false;
+  return (message.actions ?? []).some((action) => {
+    if (action.capture?.field === "productIntent" || action.capture?.field === "starter") {
+      return true;
+    }
+    return /^(Buy|Refinance|HELOC|Jumbo|Other)$/i.test(action.label);
+  });
+}
+
+/** Opening product chips are still the live ask — leftover productIntent is idle, not chosen. */
+export function openingProductAskOpen(
+  _draft: FoxIntakeDraft,
+  messages: FoxMessage[],
+) {
+  const lastFox = lastFoxTurn(messages);
+  if (!isProductPickerAsk(lastFox)) return false;
+  return !messages.some(
+    (message) => message.role === "client" && Boolean(productIntentFromText(message.text)),
+  );
+}
+
 export function jumboPurposeOf(draft?: FoxIntakeDraft | null): JumboPurpose | undefined {
   if (draft?.jumboPurpose === "buy" || draft?.jumboPurpose === "refinance") {
     return draft.jumboPurpose;
@@ -3483,12 +3550,7 @@ export function previewFacts(draft: FoxIntakeDraft): PreviewFact[] {
     facts.push({ id: "path", label: "Path", value: "Loan only" });
   }
 
-  const intent =
-    draft.productIntent ??
-    (() => {
-      const fromSlug = productIntentFromSlug(draft.scenario?.productSlug);
-      return fromSlug === "other" ? null : fromSlug;
-    })();
+  const intent = draft.productIntent ?? null;
   if (intent) {
     facts.push({
       id: "product",
@@ -3895,8 +3957,10 @@ export function migrateRestoredFoxMessages(messages: FoxMessage[]): FoxMessage[]
       const factsChanged = Boolean(
         facts && message.facts?.some((fact, index) => fact !== facts[index]),
       );
-      if (text === message.text && !factsChanged) return message;
-      return { ...message, text, facts };
+      const actions = rebindProductChipActions(message.actions);
+      const actionsChanged = actions !== message.actions;
+      if (text === message.text && !factsChanged && !actionsChanged) return message;
+      return { ...message, text, facts, actions };
     }),
   );
 }

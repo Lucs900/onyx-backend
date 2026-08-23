@@ -66,6 +66,7 @@ import {
   docReactionAsk,
   nextFoxAsk,
   holdDocsAskFox,
+  productIntentFromAction,
   shouldDeferStillUsefulAsk,
   structureExplainCopy,
   structureFixPrompt,
@@ -986,6 +987,10 @@ export function AlwaysOnFox({
   };
 
   const runAction = (action: FoxAction) => {
+    const productIntent = productIntentFromAction(action);
+    const productCapture = productIntent
+      ? ({ field: "productIntent" as const, value: productIntent } satisfies Capture)
+      : undefined;
     if (action.href) {
       if (isLeftoverConversionHref(action.href)) {
         persistPathFromHref(action.href);
@@ -1000,6 +1005,10 @@ export function AlwaysOnFox({
         writeStartPath(hrefPath);
       } else {
         persistPathFromHref(action.href);
+        if (productCapture) {
+          applyCapture(productCapture);
+          skipPromptSync.current = true;
+        }
       }
       router.push(action.href);
       return;
@@ -1080,30 +1089,32 @@ export function AlwaysOnFox({
       commitMessagesNow((prev) => [...prev, ...lines]);
       return;
     }
-    if (action.capture) {
-      if (action.capture.field === "path") {
-        writeStartPath(action.capture.value);
+    if (action.capture || productCapture) {
+      const capture = productCapture ?? action.capture;
+      if (!capture) return;
+      if (capture.field === "path") {
+        writeStartPath(capture.value);
       }
-      const editing = Boolean(isStart && draft.correcting && structureWriteCapture(action.capture.field));
-      applyCapture(action.capture);
+      const editing = Boolean(isStart && draft.correcting && structureWriteCapture(capture.field));
+      applyCapture(capture);
       skipPromptSync.current = true;
       const live = getFoxDraft();
       if (editing) {
-        appendStructureFix(action.label, action.capture);
+        appendStructureFix(action.label, capture);
         return;
       }
       const next =
         workspaceSurface
           ? withWorkspaceGuide(
-              { ...nextFoxAsk(live), capture: action.capture },
+              { ...nextFoxAsk(live), capture },
               live,
             )
           : promptCopy(currentPrompt(live), live);
       appendReply(
         action.label,
         next,
-        action.capture.field === "correct" ? undefined : editPromptFromCapture(action.capture),
-        action.capture.field === "correct" ? undefined : editLineFromCapture(action.capture),
+        capture.field === "correct" ? undefined : editPromptFromCapture(capture),
+        capture.field === "correct" ? undefined : editLineFromCapture(capture),
       );
       continueHomeToDesk();
     }

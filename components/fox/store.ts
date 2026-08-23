@@ -61,6 +61,8 @@ import {
   applyStarterSketch,
   migrateRestoredFoxMessages,
   normalizeProductIntent,
+  openingProductAskOpen,
+  productIntentFromText,
   productIntentLabel,
   purposeForIntent,
   slugForIntent,
@@ -459,7 +461,15 @@ function resumeWorkspaceEntry(path?: IntakePath | null, intent: ProductIntent | 
     commit({ ...current, workspaceFlow: true });
   }
   if (path && !current.path) setDraftPath(path);
-  if (intent && !current.productIntent) setDraftProductIntent(intent);
+  if (intent) {
+    if (current.productIntent !== intent) {
+      commit(withWorkspaceScenario(applyProductChange(current, intent)));
+    }
+    return current;
+  }
+  if (openingProductAskOpen(current, getFoxMessages()) && current.productIntent) {
+    commit({ ...current, productIntent: undefined });
+  }
   return current;
 }
 
@@ -1195,7 +1205,10 @@ export function applyCapture(capture: Capture) {
     return commit({ ...current, path: capture.value, correcting: null });
   }
   if (capture.field === "productIntent") {
-    return commit(withWorkspaceScenario(applyProductChange(current, capture.value)));
+    const intent =
+      normalizeProductIntent(capture.value) ?? productIntentFromText(capture.value);
+    if (!intent) return current;
+    return commit(withWorkspaceScenario(applyProductChange(current, intent)));
   }
   if (capture.field === "starter") {
     const price = capture.price ? Number(capture.price.replace(/,/g, "")) : null;

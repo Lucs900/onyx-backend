@@ -120,6 +120,8 @@ import {
   previewRateApplies,
   PRICING_WHEN_READY,
   productIntentFromText,
+  productIntentFromAction,
+  openingProductAskOpen,
   REWARD_PREPARED_COPY,
   productIntentFromQuery,
   sampleRateApplies,
@@ -359,6 +361,106 @@ for (const value of ["buy", "refinance", "heloc", "jumbo"] as const) {
   const painted = previewFacts(draft({ path: "acr", productIntent: value }));
   assert.ok(painted.some((fact) => fact.id === "product" && fact.value !== "Other"));
   assert.equal(painted.find((fact) => fact.id === "product")?.value, value === "heloc" ? "HELOC" : value[0].toUpperCase() + value.slice(1));
+}
+
+const firstPaintAsk = workspacePromptCopy("product", draft({ path: "acr" }));
+assert.match(firstPaintAsk.text, /I can prepare your relationship file/);
+const firstPaintChips = firstPaintAsk.actions ?? [];
+assert.deepEqual(
+  firstPaintChips.map((item) => item.label),
+  ["Buy", "Refinance", "HELOC", "Jumbo", "Other"],
+);
+assert.deepEqual(
+  firstPaintChips.map((item) =>
+    item.capture && "value" in item.capture ? item.capture.value : "",
+  ),
+  ["buy", "refinance", "heloc", "jumbo", "other"],
+);
+assert.ok(firstPaintChips.every((item) => item.capture?.field === "productIntent"));
+assert.equal(productIntentFromAction({ label: "Refinance", capture: { field: "productIntent", value: "buy" } }), "refinance");
+assert.equal(productIntentFromAction({ label: "HELOC", capture: { field: "productIntent", value: "buy" } }), "heloc");
+assert.equal(productIntentFromAction({ label: "Jumbo", capture: { field: "productIntent", value: "buy" } }), "jumbo");
+assert.equal(productIntentFromAction({ label: "Buy", capture: { field: "productIntent", value: "buy" } }), "buy");
+assert.equal(
+  productIntentFromAction({ label: "Refinance", href: "/start?path=acr&intent=refinance" }),
+  "refinance",
+);
+const idlePurchaseFacts = previewFacts(
+  draft({
+    path: "acr",
+    scenario: { zip: "90001", purpose: "purchase", productSlug: "conventional-purchase", productName: "Conventional Purchase" },
+  }),
+);
+assert.ok(!idlePurchaseFacts.some((fact) => fact.id === "product"));
+resetWorkspaceForEntry("acr");
+assert.equal(getFoxDraft().productIntent, undefined);
+const staleBuyChips = firstPaintChips.map((item) => ({
+  ...item,
+  capture: { field: "productIntent" as const, value: "buy" as const },
+}));
+assert.ok(staleBuyChips.every((item) => item.capture?.value === "buy"));
+const rebound = migrateRestoredFoxMessages([
+  { id: "open", role: "fox", text: firstPaintAsk.text, actions: staleBuyChips },
+]);
+assert.deepEqual(
+  (rebound[0]?.actions ?? []).map((item) =>
+    item.capture && "value" in item.capture ? item.capture.value : "",
+  ),
+  ["buy", "refinance", "heloc", "jumbo", "other"],
+);
+assert.equal(
+  openingProductAskOpen(getFoxDraft(), [
+    { id: "open", role: "fox", text: firstPaintAsk.text, actions: firstPaintChips },
+  ]),
+  true,
+);
+applyCapture({ field: "productIntent", value: "buy" });
+assert.equal(getFoxDraft().productIntent, "buy");
+setFoxMessages([{ id: "open", role: "fox", text: firstPaintAsk.text, actions: staleBuyChips }]);
+const clearedIdle = continueWorkspaceFromEntry("acr", null);
+assert.equal(clearedIdle.productIntent, undefined);
+assert.equal(workspacePrompt(clearedIdle), "product");
+const refiChip = rebound[0]?.actions?.find((item) => item.label === "Refinance");
+assert.equal(refiChip?.capture && "value" in refiChip.capture ? refiChip.capture.value : "", "refinance");
+applyCapture({ field: "productIntent", value: "Refinance" as "refinance" });
+assert.equal(getFoxDraft().productIntent, "refinance");
+applyCapture({ field: "occupancy", value: "primary" });
+assert.equal(workspacePrompt(getFoxDraft()), "amount");
+assert.equal(amountAskText(getFoxDraft()), "What’s the approximate loan or payoff amount?");
+assert.doesNotMatch(amountAskText(getFoxDraft()), /purchase price|down payment or loan amount/i);
+resetWorkspaceForEntry("acr", "buy");
+applyCapture({ field: "occupancy", value: "primary" });
+setFoxMessages([{ id: "open", role: "fox", text: firstPaintAsk.text, actions: firstPaintChips }]);
+const urlRefi = continueWorkspaceFromEntry("acr", "refinance");
+assert.equal(urlRefi.productIntent, "refinance");
+assert.equal(workspacePrompt(urlRefi), "amount");
+assert.equal(amountAskText(urlRefi), "What’s the approximate loan or payoff amount?");
+resetWorkspaceForEntry("acr");
+for (const value of ["buy", "refinance", "heloc", "jumbo"] as const) {
+  const chip = firstPaintChips.find((item) =>
+    item.capture && "value" in item.capture ? item.capture.value === value : false,
+  );
+  assert.ok(chip, value);
+  resetWorkspaceForEntry("acr");
+  applyCapture({ field: "productIntent", value: value });
+  assert.equal(getFoxDraft().productIntent, value);
+  if (value === "buy") {
+    applyCapture({ field: "occupancy", value: "primary" });
+    assert.equal(workspacePrompt(getFoxDraft()), "value");
+    assert.match(nextFoxAsk(getFoxDraft()).text, /purchase price/);
+  }
+  if (value === "refinance") {
+    applyCapture({ field: "occupancy", value: "primary" });
+    assert.match(nextFoxAsk(getFoxDraft()).text, /loan or payoff/);
+    assert.doesNotMatch(nextFoxAsk(getFoxDraft()).text, /purchase price/);
+  }
+  if (value === "heloc") {
+    applyCapture({ field: "occupancy", value: "primary" });
+    assert.match(nextFoxAsk(getFoxDraft()).text, /line or cash/i);
+  }
+  if (value === "jumbo") {
+    assert.equal(workspacePrompt(getFoxDraft()), "jumbo-purpose");
+  }
 }
 
 assert.equal(productIntentFromText("I want to buy"), "buy");
@@ -3775,6 +3877,10 @@ const startCss = readFileSync(join(root, "styles/start.css"), "utf8");
 assert.ok(startCss.includes("scroll-padding-bottom"));
 assert.ok(startCss.includes("scroll-margin-bottom"));
 const foxSource = readFileSync(join(root, "components/fox/AlwaysOnFox.tsx"), "utf8");
+assert.ok(foxSource.includes("productIntentFromAction"));
+assert.ok(workspaceSrc.includes("function productIntentFromAction") || workspaceSrc.includes("export function productIntentFromAction"));
+assert.ok(workspaceSrc.includes("openingProductAskOpen"));
+assert.ok(storeSource.includes("openingProductAskOpen"));
 assert.ok(!foxSource.includes("composerPlaceholder("));
 assert.ok(foxSource.includes('placeholder=""') || foxSource.includes("placeholder={"));
 assert.ok(foxSource.includes("autoFocus={isStart") || foxSource.includes("autoFocus={isStart || needsTyping}"));
