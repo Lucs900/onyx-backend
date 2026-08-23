@@ -83,6 +83,7 @@ import {
 import {
   MOTION_COPY,
   applyLooksRightMotion,
+  persistAfterLoanWrite,
   creditPullPermitted,
   gatheringCopy,
   gatheringList,
@@ -4650,6 +4651,51 @@ assert.ok(previewFacts(draft({ ...refiReady, cashOut: true })).some((fact) => fa
 assert.ok(previewFacts(draft({ ...refiReady, cashOut: true })).some((fact) => fact.id === "rate" && fact.value === PRICING_WHEN_READY));
 assert.ok(previewFacts(draft({ ...refiReady, cashOut: true })).some((fact) => fact.id === "caution" && fact.value === CASH_OUT_CAUTION));
 assert.notEqual(motionOf(draft({ ...refiReady, cashOut: true })), "escalated");
+for (const phrase of [
+  "I want cash from the refinance",
+  "I want cash from the refi",
+  "take cash out",
+  "want cash",
+]) {
+  const spoken = workspaceReply(phrase, refiReady);
+  assert.equal(spoken?.capture?.field, "cashOut", phrase);
+  assert.ok((spoken?.text ?? "").includes(CASH_OUT_CAUTION), phrase);
+  assert.doesNotMatch(spoken?.text ?? "", /I can answer from this file/i);
+}
+assert.equal(
+  workspaceReply("I want cash and keep the first mortgage", refiAfterTime)?.capture?.field,
+  "pending-offer",
+);
+
+const overPriceBase = draft({
+  path: "acr",
+  productIntent: "buy",
+  occupancyAsked: true,
+  occupancyChoice: { ...emptyDraft().occupancyChoice, value: "primary" },
+  valueAsked: true,
+  propertyValueAmount: 500000,
+});
+assert.equal(workspacePrompt(overPriceBase), "amount");
+for (const typed of ["loan 600000", "600000", "600,000"]) {
+  const over = workspaceReply(typed, overPriceBase);
+  assert.equal(over?.capture?.field, "loanAmount", typed);
+  assert.equal(over?.capture && "value" in over.capture ? over.capture.value : "", "600000", typed);
+  assert.equal(over?.text, ESCALATE_LINE, typed);
+  assert.doesNotMatch(over?.text ?? "", /under the purchase price/i);
+}
+const downOverPrice = workspaceReply("down 600000", overPriceBase);
+assert.notEqual(downOverPrice?.capture?.field, "loanAmount");
+assert.match(downOverPrice?.text ?? "", /under the purchase price/i);
+const overWritten = persistAfterLoanWrite({
+  ...overPriceBase,
+  loanAmountValue: 600000,
+  amountAsked: true,
+});
+assert.equal(overWritten.loanAmountValue, 600000);
+assert.equal(overWritten.propertyValueAmount, 500000);
+assert.equal(motionOf(overWritten), "escalated");
+assert.ok(previewFacts(overWritten).some((fact) => fact.id === "price" && /\$500,000/.test(fact.value)));
+assert.ok(previewFacts(overWritten).some((fact) => fact.id === "loan" && /\$600,000/.test(fact.value)));
 
 assert.ok(
   previewFacts(fromUrl).some(

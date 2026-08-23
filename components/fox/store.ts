@@ -33,6 +33,7 @@ import {
   applyEmailThenFinish,
   applyEscalateMotion,
   applyLooksRightMotion,
+  persistAfterLoanWrite,
   applyNotYetMotion,
   applyNudgeMotion,
   applyProceedMotion,
@@ -1362,18 +1363,20 @@ export function applyCapture(capture: Capture) {
     const hasLoan = Number.isFinite(loan) && loan > 0;
     const hasValue = value != null && Number.isFinite(value) && value > 0;
     return commit(
-      withWorkspaceScenario(
-        withComputedCompanion(
-          withMatrixAfterAmount({
-            ...current,
-            amountAsked: true,
-            correcting: null,
-            correctingLine: null,
-            valueAsked: hasValue ? true : current.valueAsked,
-            loanAmountValue: hasLoan ? loan : current.loanAmountValue,
-            propertyValueAmount: hasValue ? value : current.propertyValueAmount,
-          }),
-          current.downPaymentAmount != null && current.downPaymentAmount > 0 ? "loan" : undefined,
+      persistAfterLoanWrite(
+        withWorkspaceScenario(
+          withComputedCompanion(
+            withMatrixAfterAmount({
+              ...current,
+              amountAsked: true,
+              correcting: null,
+              correctingLine: null,
+              valueAsked: hasValue ? true : current.valueAsked,
+              loanAmountValue: hasLoan ? loan : current.loanAmountValue,
+              propertyValueAmount: hasValue ? value : current.propertyValueAmount,
+            }),
+            current.downPaymentAmount != null && current.downPaymentAmount > 0 ? "loan" : undefined,
+          ),
         ),
       ),
     );

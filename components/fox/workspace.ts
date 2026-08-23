@@ -127,6 +127,7 @@ import {
 import {
   applyEmailThenFinish,
   applyLooksRightMotion,
+  persistAfterLoanWrite,
   emailMissing,
   finishCaptureFromText,
   finishLineActions,
@@ -798,7 +799,12 @@ export function wantsCashKeepFirst(text: string) {
 export function namedCashOut(text: string) {
   const lower = text.trim().toLowerCase();
   if (wantsCashKeepFirst(text)) return false;
-  return /\bcash[-\s]?out\b/.test(lower);
+  if (/\bcash[-\s]?out\b/.test(lower)) return true;
+  if (/\btake cash(\s+out)?\b/.test(lower)) return true;
+  if (/\bcash from (the )?(refi|refinance)\b/.test(lower)) return true;
+  if (/\b(want|need) cash\b/.test(lower) && /\b(refi|refinance)\b/.test(lower)) return true;
+  if (/\b(want|need) cash\b/.test(lower)) return true;
+  return false;
 }
 
 function cashOutCopy(draft: FoxIntakeDraft) {
@@ -2104,9 +2110,30 @@ function replyToFundsAsk(
   }
   const price = draft.propertyValueAmount;
   const parsed = parseFundsAmount(q, price);
-  if (parsed == null || (price != null && parsed.dollars > price && !parsed.asPercent)) {
+  if (parsed == null) {
     return {
       text: "What’s the down payment or loan amount? A number under the purchase price works.",
+    };
+  }
+  const namedDown = parseFundsRole(q, price) === "down";
+  if (price != null && parsed.dollars > price && !parsed.asPercent) {
+    if (namedDown) {
+      return {
+        text: "What’s the down payment or loan amount? A number under the purchase price works.",
+      };
+    }
+    const nextDraft = persistAfterLoanWrite({
+      ...draft,
+      correcting: null,
+      correctingLine: null,
+      pendingProposal: null,
+      loanAmountValue: parsed.dollars,
+      amountAsked: true,
+    });
+    return {
+      text: MOTION_COPY.escalated,
+      actions: finishLineActions(nextDraft),
+      capture: { field: "loanAmount", value: String(parsed.dollars) },
     };
   }
   if (price != null && parsed.dollars === price && !parsed.asPercent) {
@@ -2774,13 +2801,15 @@ function draftAfterCapture(draft: FoxIntakeDraft, capture: Capture): FoxIntakeDr
   }
   if (capture.field === "loanAmount") {
     const n = Number(capture.value.split(":")[0].replace(/,/g, ""));
-    return withComputedCompanion(
-      withMatrixAfterAmount({
-        ...next,
-        amountAsked: true,
-        loanAmountValue: Number.isFinite(n) && n > 0 ? n : draft.loanAmountValue,
-      }),
-      hasDownPayment(draft) ? "loan" : undefined,
+    return persistAfterLoanWrite(
+      withComputedCompanion(
+        withMatrixAfterAmount({
+          ...next,
+          amountAsked: true,
+          loanAmountValue: Number.isFinite(n) && n > 0 ? n : draft.loanAmountValue,
+        }),
+        hasDownPayment(draft) ? "loan" : undefined,
+      ),
     );
   }
   if (capture.field === "propertyValue") {

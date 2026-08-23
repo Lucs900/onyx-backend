@@ -5,7 +5,7 @@ import {
   receivedTaxReturnCount,
   stillUsefulLabels,
 } from "./fileWrite";
-import { canLooksRight, shouldEscalate } from "./completeness";
+import { canLooksRight, loanExceedsPurchasePrice, shouldEscalate } from "./completeness";
 import type {
   Capture,
   FileEvent,
@@ -433,6 +433,10 @@ export function applyEscalateMotion(draft: FoxIntakeDraft): FoxIntakeDraft {
     "request-human",
     "Request human — escalated. Fox stays.",
   );
+}
+
+export function persistAfterLoanWrite(draft: FoxIntakeDraft): FoxIntakeDraft {
+  return loanExceedsPurchasePrice(draft) ? applyEscalateMotion(draft) : draft;
 }
 
 export function applyEmailThenFinish(
