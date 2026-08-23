@@ -886,6 +886,26 @@ assert.equal(creditEdit?.capture && "value" in creditEdit.capture ? creditEdit.c
 const creditAskEdit = parseWorkspaceEdit("edit credit");
 assert.equal(creditAskEdit?.correct, "credit");
 assert.ok(!/not on this sketch/i.test(creditAskEdit?.confirm ?? ""));
+const occupancySpoken = parseWorkspaceEdit("occupancy is second home", afterIncome);
+assert.equal(occupancySpoken?.capture?.field, "occupancy");
+assert.equal(
+  occupancySpoken?.capture && "value" in occupancySpoken.capture ? occupancySpoken.capture.value : "",
+  "second-home",
+);
+const occupancySpokenReply = workspaceReply("occupancy is second home", afterIncome);
+assert.equal(occupancySpokenReply?.capture?.field, "occupancy");
+assert.equal(
+  occupancySpokenReply?.capture && "value" in occupancySpokenReply.capture
+    ? occupancySpokenReply.capture.value
+    : "",
+  "second-home",
+);
+assert.match(occupancySpokenReply?.text ?? "", /Second home/);
+const creditSpoken = parseWorkspaceEdit("credit is 760+", afterIncome);
+assert.equal(creditSpoken?.capture?.field, "creditRange");
+assert.equal(creditSpoken?.capture && "value" in creditSpoken.capture ? creditSpoken.capture.value : "", "760+");
+const creditSpokenReply = workspaceReply("credit is 760+", afterIncome);
+assert.equal(creditSpokenReply?.capture?.field, "creditRange");
 
 const review = workspacePromptCopy("review", afterIncomeReady);
 assert.match(review.text, /notepad looks complete/i);
@@ -3590,9 +3610,13 @@ assert.ok(filePreview.includes("draft.docsOpen"));
 assert.ok(filePreview.includes("sampleAccepted"));
 assert.ok(filePreview.includes("fox-structure-notepad"));
 assert.ok(filePreview.includes("requestFoxFix"));
+assert.ok(filePreview.includes("file-preview__edit"));
 assert.ok(filePreview.includes('Edit ${fact.label}') || filePreview.includes("Edit "));
 assert.ok(startCss.includes("fox-structure-notepad"));
+assert.ok(startCss.includes("file-preview__edit"));
 assert.ok(startCss.includes("text-decoration: underline"));
+assert.doesNotMatch(startCss, /\.file-preview__edit[^{]*\{[^}]*display:\s*none/);
+assert.doesNotMatch(startCss, /\.file-preview__row--tap[^{]*:hover[^{]*\.file-preview__edit/);
 assert.ok(!filePreview.includes('workspacePrompt(draft) === "documents"'));
 assert.ok(filePreview.includes("DocumentDrop"));
 assert.ok(filePreview.includes('fact.id === "next"'));

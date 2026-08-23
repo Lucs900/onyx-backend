@@ -2032,7 +2032,14 @@ export function parseWorkspaceEdit(
 } | null {
   const q = text.trim();
   const lower = q.toLowerCase();
-  if (!/\b(change|edit|update|set|switch|actually|should be|make it)\b/.test(lower)) return null;
+  const namedField =
+    /\boccupan|\b(credit|fico|income|timeline|product|purchase price|down(\s+payment)?|loan amount|path)\b/.test(
+      lower,
+    );
+  const spokenFix =
+    /\b(change|edit|update|set|switch|actually|should be|make it)\b/.test(lower) ||
+    (namedField && /\b(is|to|as|=)\b/.test(lower));
+  if (!spokenFix) return null;
   if (/^(needs a correction|looks right)$/i.test(lower)) return null;
 
   const wantsPath = /\b(path|relationship|acr|loan only|loan-only)\b/.test(lower);

@@ -37,6 +37,17 @@ export function StructureRows({
               <span className="file-preview__value">
                 <span>{fact.value}</span>
                 {fact.note ? <small>{fact.note}</small> : null}
+                <span className="file-preview__edit">
+                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+                    <path
+                      d="M8.2 1.7 10.3 3.8 4.1 10H2v-2.1l6.2-6.2Z"
+                      stroke="currentColor"
+                      strokeWidth="1.2"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
+                  Edit
+                </span>
               </span>
             </button>
           );

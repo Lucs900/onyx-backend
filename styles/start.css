@@ -254,6 +254,18 @@
   text-underline-offset: 3px;
 }
 
+.file-preview__edit {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 2px;
+  color: var(--muted);
+  font-family: var(--font-ui);
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 500;
+}
+
 .file-preview__row--tap:hover,
 .file-preview__row--tap:focus-visible,
 .file-preview__row--explain:hover,
