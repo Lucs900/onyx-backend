@@ -94,6 +94,48 @@ SAMPLES: dict[str, list[str]] = {
         "BOX 1 ORDINARY BUSINESS INCOME: $40,000",
         "DISTRIBUTIONS: NOT SHOWN",
     ],
+    "w2-ot-bonus-2025.png": [
+        "FORM W-2 WAGE AND TAX STATEMENT",
+        "TAX YEAR: 2025",
+        "MORTGAGE SAMPLE NOT A REAL W-2",
+        "EMPLOYER: HARBOR STEEL",
+        "WAGES: $84,000",
+        "OVERTIME: $6,000",
+        "BONUS: $0",
+    ],
+    "paystub-ot-bonus-2026.png": [
+        "PAYSTUB",
+        "EMPLOYER: HARBOR STEEL",
+        "PAY PERIOD END: 2026-07-31",
+        "MORTGAGE SAMPLE TWO-YEAR OT",
+        "GROSS PERIOD: $7,000",
+        "OVERTIME YTD: $12,000",
+        "BONUS YTD: $0",
+    ],
+    "w2-bonus-2025.png": [
+        "FORM W-2 WAGE AND TAX STATEMENT",
+        "TAX YEAR: 2025",
+        "MORTGAGE SAMPLE NOT A REAL W-2",
+        "EMPLOYER: HARBOR STEEL",
+        "WAGES: $84,000",
+        "BONUS: $12,000",
+    ],
+    "paystub-bonus-declining-2026.png": [
+        "PAYSTUB",
+        "EMPLOYER: HARBOR STEEL",
+        "PAY PERIOD END: 2026-07-31",
+        "MORTGAGE SAMPLE DECLINING BONUS",
+        "GROSS PERIOD: $7,000",
+        "BONUS YTD: $6,000",
+    ],
+    "paystub-second-job.png": [
+        "PAYSTUB",
+        "EMPLOYER: NIGHT SHIFT CO",
+        "PAY PERIOD END: 2026-07-31",
+        "MORTGAGE SAMPLE SECOND JOB",
+        "GROSS PERIOD: $1,200",
+        "YTD GROSS: $8,400",
+    ],
 }
 
 

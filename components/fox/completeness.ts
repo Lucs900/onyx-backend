@@ -20,6 +20,9 @@ import {
 import {
   QUALIFYING_INCOME_FIELD,
   SUGGESTED_INCOME_NOTE,
+  WAGE_MONTHLY_FIELD,
+  SE_MONTHLY_FIELD,
+  K1_MONTHLY_FIELD,
   decliningIncomeCaution,
   hasScheduleCCashflow,
   wageIncomeCaution,
@@ -613,6 +616,11 @@ export function resolveProposal(
   let next = writeConfirmedFact(draft, proposal.field, proposal.value, source);
   if (proposal.companion) {
     next = writeConfirmedFact(next, proposal.companion.field, proposal.companion.value, source);
+  }
+  if (proposal.field === QUALIFYING_INCOME_FIELD && proposal.parts) {
+    if (proposal.parts.wage) next = writeConfirmedFact(next, WAGE_MONTHLY_FIELD, proposal.parts.wage, source);
+    if (proposal.parts.scheduleC) next = writeConfirmedFact(next, SE_MONTHLY_FIELD, proposal.parts.scheduleC, source);
+    if (proposal.parts.k1) next = writeConfirmedFact(next, K1_MONTHLY_FIELD, proposal.parts.k1, source);
   }
   const cleared = { ...next, pendingProposal: null };
   if (winner === "accept" && shouldAskYearsInBusiness(cleared)) {

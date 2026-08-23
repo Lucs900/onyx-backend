@@ -972,7 +972,7 @@ function incomeReactionAsk(draft: FoxIntakeDraft, proposal: NonNullable<FoxIntak
   const ack = year ? `Got the ${year} return.` : "Got the return.";
   if (years.length < 2) {
     return {
-      text: `${ack} I’m suggesting ${shown} a month. ${SUGGESTED_INCOME_NOTE}. Use this?`,
+      text: `${ack} I’m suggesting ${shown} a month from Schedule C one-year. ${SUGGESTED_INCOME_NOTE}. Use this?`,
       actions: incomeConfirmActions(),
     };
   }
@@ -1019,12 +1019,35 @@ function wageReactionAsk(
 } {
   const cls = extractClass ?? lastExtractedClass(draft);
   const shown = displayFactValue(proposal.field, proposal.value);
-  const method = wageMethodNote(draft);
+  const method = proposal.methodNote ?? wageMethodNote(draft);
   const methodBit = method ? ` from ${method}` : "";
   const doc = cls === "w2" ? "W-2" : "paystub";
   return {
     text: `Got the ${doc}. I’m suggesting ${shown} a month${methodBit}. ${SUGGESTED_INCOME_NOTE}. Use this?`,
     followUp: wageIncomeCaution(draft),
+    actions: incomeConfirmActions(),
+  };
+}
+
+function combinedParts(proposal: NonNullable<FoxIntakeDraft["pendingProposal"]>) {
+  const parts = proposal.parts ?? {};
+  return [parts.wage, parts.scheduleC, parts.k1].filter(Boolean).length >= 2;
+}
+
+function combinedReactionAsk(
+  draft: FoxIntakeDraft,
+  proposal: NonNullable<FoxIntakeDraft["pendingProposal"]>,
+): {
+  text: string;
+  followUp?: string;
+  actions?: FoxAction[];
+} {
+  const shown = displayFactValue(proposal.field, proposal.value);
+  const method = proposal.methodNote ?? "combined wage + Schedule C";
+  const k1Note = proposal.parts?.k1 ? `${K1_ORDINARY_NOTE} ` : "";
+  return {
+    text: `I’m suggesting ${shown} a month from ${method}. ${k1Note}${SUGGESTED_INCOME_NOTE}. Use this?`,
+    followUp: wageIncomeCaution(draft) ?? decliningIncomeCaution(draft),
     actions: incomeConfirmActions(),
   };
 }
@@ -1054,6 +1077,9 @@ function liveProposalAsk(
   actions?: FoxAction[];
 } {
   if (proposal.field === QUALIFYING_INCOME_FIELD) {
+    if (combinedParts(proposal) || proposal.methodNote?.startsWith("combined ")) {
+      return combinedReactionAsk(draft, proposal);
+    }
     if (scheduleCYearViews(draft).length) return incomeReactionAsk(draft, proposal);
     if (hasK1Ordinary(draft)) return k1ReactionAsk(draft, proposal);
     const cls = extractClass ?? lastExtractedClass(draft);
@@ -2961,6 +2987,9 @@ export function workspaceReply(
   }
 
   if (draft.pendingProposal || prompt === "confirm-proposal") {
+    if (isQualifyingIncomeConfirmPending(draft) && asksApproval(q)) {
+      return answerThenRestore(q, draft);
+    }
     if (
       /^(yes|that.?s me|yes that.?s me|use this|use it|confirm|ok|okay)$/i.test(lower) ||
       /yes that.?s me|use this/.test(lower)

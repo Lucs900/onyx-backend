@@ -329,12 +329,21 @@ function normalizeProposal(value: FoxIntakeDraft["pendingProposal"]): FactPropos
     label: value.label || value.field,
     kind: value.kind,
     note: typeof value.note === "string" ? value.note : undefined,
+    methodNote: typeof value.methodNote === "string" ? value.methodNote : undefined,
     companion:
       value.companion && value.companion.field && value.companion.value
         ? {
             field: value.companion.field,
             value: value.companion.value,
             label: value.companion.label || value.companion.field,
+          }
+        : undefined,
+    parts:
+      value.parts && typeof value.parts === "object"
+        ? {
+            ...(typeof value.parts.wage === "string" ? { wage: value.parts.wage } : {}),
+            ...(typeof value.parts.scheduleC === "string" ? { scheduleC: value.parts.scheduleC } : {}),
+            ...(typeof value.parts.k1 === "string" ? { k1: value.parts.k1 } : {}),
           }
         : undefined,
   };

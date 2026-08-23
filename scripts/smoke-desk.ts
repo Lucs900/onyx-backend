@@ -53,6 +53,9 @@ import {
 import {
   inferPayFrequency,
   k1OrdinaryMonthly,
+  SECOND_JOB_SAME_STUB_NOTE,
+  SECOND_JOB_THIN_NOTE,
+  suggestCombinedIncome,
   suggestScheduleCIncome,
   suggestWageIncome,
 } from "../lib/income/suggest";
@@ -2360,6 +2363,17 @@ assert.ok((acmeAsk.actions ?? []).some((item) => item.label === "Use this"));
 assert.ok((acmeAsk.actions ?? []).some((item) => item.label === "Leave blank"));
 assert.equal(docReactionAsk(acmeWrite.draft, "paystub")?.actions?.some((item) => item.label === "Use this"), true);
 assertIncomeChipsHoldOverQueue(acmeWrite.draft, /9,167/);
+const acmeQualifyAsk = workspaceReply("will i qualify", acmeWrite.draft);
+assert.notEqual(acmeQualifyAsk?.capture?.field, "accept-proposal");
+assert.notEqual(acmeQualifyAsk?.capture?.field, "decline-proposal");
+assert.equal(acmeWrite.draft.facts?.qualifying_income, undefined);
+assertAnswerThenRestore(acmeQualifyAsk, /cannot approve, lock, or commit to lend/i, {
+  text: /9,167/,
+  labels: ["Use this", "Leave blank"],
+});
+assert.match(acmeQualifyAsk?.text ?? "", /biweekly period × 26 \/ 12/);
+assert.match(acmeQualifyAsk?.text ?? "", /I can prepare a file/);
+assert.doesNotMatch(acmeQualifyAsk?.text ?? "", /you qualify|you are approved|you don’t qualify/i);
 assert.equal(resolveProposal(acmeWrite.draft, "accept").facts?.qualifying_income?.value, "9167");
 assert.equal(resolveProposal(acmeWrite.draft, "decline").facts?.qualifying_income, undefined);
 
@@ -2936,6 +2950,8 @@ assert.ok(EXTRACT_SCHEMA_KEYS.paystub.includes("pay_frequency"));
 assert.ok(EXTRACT_SCHEMA_KEYS.paystub.includes("overtime"));
 assert.ok(EXTRACT_SCHEMA_KEYS.paystub.includes("bonus"));
 assert.ok(EXTRACT_SCHEMA_KEYS.paystub.includes("commission"));
+assert.ok(EXTRACT_SCHEMA_KEYS.paystub.includes("second_employer_name"));
+assert.ok(EXTRACT_SCHEMA_KEYS.w2.includes("second_employer_name"));
 assert.ok(EXTRACT_SCHEMA_KEYS.w2.includes("overtime"));
 assert.ok(EXTRACT_SCHEMA_KEYS.w2.includes("bonus"));
 assert.ok(EXTRACT_SCHEMA_KEYS.w2.includes("commission"));
@@ -3031,13 +3047,61 @@ assert.equal(moduleYtdVsW2?.caution, YTD_CONFLICT_CAUTION);
 const moduleSingleOt = suggestWageIncome({ w2Wages: 84000, overtime: 12000 });
 assert.equal(moduleSingleOt?.monthly, 7000);
 assert.equal(moduleSingleOt?.method, "w2-annual");
+assert.ok(moduleSingleOt?.partialNotes?.includes("Overtime history is thin."));
+assert.doesNotMatch(moduleSingleOt?.methodNote ?? "", /two-year OT average/);
 
 const moduleTwoYearOt = suggestWageIncome({
   w2Wages: 84000,
   overtime: 12000,
   priorYear: { taxYear: 2023, overtime: 6000 },
 });
-assert.equal(moduleTwoYearOt?.monthly, 7500);
+assert.equal(moduleTwoYearOt?.monthly, 7750);
+assert.match(moduleTwoYearOt?.methodNote ?? "", /two-year OT average/);
+assert.equal(moduleTwoYearOt?.partialNotes, undefined);
+
+const moduleDecliningBonus = suggestWageIncome({
+  w2Wages: 84000,
+  bonus: 6000,
+  priorYear: { taxYear: 2023, bonus: 12000 },
+});
+assert.equal(moduleDecliningBonus?.monthly, 7500);
+assert.match(moduleDecliningBonus?.methodNote ?? "", /later-year bonus/);
+assert.match(moduleDecliningBonus?.caution ?? "", /Bonus is lower this year/);
+
+const moduleSameStubSecond = suggestWageIncome({
+  w2Wages: 84000,
+  sameStubSecondEmployer: true,
+});
+assert.equal(moduleSameStubSecond?.monthly, 7000);
+assert.ok(moduleSameStubSecond?.partialNotes?.includes(SECOND_JOB_SAME_STUB_NOTE));
+
+const moduleSecondJobThin = suggestWageIncome({
+  w2Wages: 84000,
+  secondJob: { documentedSeparately: true, employerName: "Night Shift Co", w2Wages: 24000 },
+});
+assert.equal(moduleSecondJobThin?.monthly, 7000);
+assert.ok(moduleSecondJobThin?.partialNotes?.includes(SECOND_JOB_THIN_NOTE));
+
+const moduleSecondJobTwoYear = suggestWageIncome({
+  w2Wages: 84000,
+  secondJob: {
+    documentedSeparately: true,
+    employerName: "Night Shift Co",
+    w2Wages: 24000,
+    priorYear: { taxYear: 2023, wages: 24000 },
+  },
+});
+assert.equal(moduleSecondJobTwoYear?.monthly, 9000);
+
+const moduleCombined = suggestCombinedIncome({
+  wage: { monthly: 9167, method: "period-frequency", methodNote: "biweekly period × 26 / 12" },
+  scheduleC: { monthly: 9000, method: "one-year" },
+});
+assert.equal(moduleCombined?.monthly, 18167);
+assert.equal(moduleCombined?.method, "combined");
+assert.match(moduleCombined?.methodNote ?? "", /combined wage \+ Schedule C/);
+assert.match(moduleCombined?.methodNote ?? "", /biweekly period × 26 \/ 12/);
+assert.match(moduleCombined?.methodNote ?? "", /Schedule C one-year/);
 
 const acmeWage = suggestWageIncome({
   payPeriodEnd: "2026-08-07",
@@ -3086,7 +3150,9 @@ assert.equal(fannieW2.length, 1);
 assert.equal(freddieW2.length, 1);
 assert.equal(fannieW2[0]?.version, CONVENTIONAL_GUIDELINE_VERSION);
 assert.equal(freddieW2[0]?.rules?.ytdConflict, "flag-lower");
-assert.equal(freddieW2[0]?.rules?.variable, "extracted-two-year-only");
+assert.equal(freddieW2[0]?.rules?.variable, "extracted-two-year-average-or-later");
+assert.equal(freddieW2[0]?.rules?.secondJob, "two-documents-two-year");
+assert.equal(queryConventionalGuidelines({ topic: "income", key: "combined" })[0]?.rules?.basis, "confirmed-sum");
 assert.equal(queryConventionalGuidelines({ topic: "completeness", key: "purchase" }).length, 2);
 assert.equal(
   queryConventionalGuidelines({ topic: "completeness", key: "income-docs-w2" })[0]?.pattern,
@@ -3241,8 +3307,15 @@ assert.doesNotMatch(seAsk, /1084|\bDU\b|approved|eligible|you qualify|don’t qu
 const seLiveAsk = workspacePromptCopy("confirm-proposal", seReturn.draft);
 assert.match(seLiveAsk.text, /Got the 2024 return/);
 assert.match(seLiveAsk.text, /\$9,000/);
+assert.match(seLiveAsk.text, /Schedule C one-year/);
 assert.match(seLiveAsk.text, /Suggested qualifying income · not underwritten/);
 assert.match(seLiveAsk.text, /Use this/);
+const seQualifyAsk = workspaceReply("will i qualify", seReturn.draft);
+assert.notEqual(seQualifyAsk?.capture?.field, "accept-proposal");
+assertAnswerThenRestore(seQualifyAsk, /cannot approve, lock, or commit to lend/i, {
+  text: /\$9,000/,
+  labels: ["Use this", "Leave blank"],
+});
 assert.doesNotMatch(seLiveAsk.text, /Updated income from tax return/);
 assert.ok((seLiveAsk.actions ?? []).some((item) => item.label === "Use this"));
 assert.ok((seLiveAsk.actions ?? []).some((item) => item.label === "Leave blank"));
@@ -4065,6 +4138,130 @@ const singleOtWrite = applyExtractedFields(afterLooks, {
   fields: { tax_year: "2025", employer_name: "Harbor Steel", wages: "84000", overtime: "12000" },
 });
 assert.equal(singleOtWrite.draft.pendingProposal?.value, "7000");
+assert.match(nextFoxAsk(singleOtWrite.draft).followUp ?? "", /Overtime history is thin/);
+assert.doesNotMatch(nextFoxAsk(singleOtWrite.draft).text, /two-year OT average/);
+assert.ok((nextFoxAsk(singleOtWrite.draft).actions ?? []).some((item) => item.label === "Use this"));
+assert.ok((nextFoxAsk(singleOtWrite.draft).actions ?? []).some((item) => item.label === "Leave blank"));
+
+const otYearOne = applyExtractedFields(afterLooks, {
+  extractClass: "w2",
+  confidence: 0.94,
+  fields: { tax_year: "2025", employer_name: "Harbor Steel", wages: "84000", overtime: "6000" },
+});
+assert.equal(otYearOne.draft.pendingProposal?.value, "7000");
+const twoYearOtWrite = applyExtractedFields(otYearOne.draft, {
+  extractClass: "w2",
+  confidence: 0.94,
+  fields: { tax_year: "2026", employer_name: "Harbor Steel", wages: "84000", overtime: "12000" },
+});
+assert.equal(twoYearOtWrite.conflict, null);
+assert.equal(twoYearOtWrite.draft.pendingProposal?.value, "7750");
+assert.match(nextFoxAsk(twoYearOtWrite.draft).text, /two-year OT average/);
+assert.ok((nextFoxAsk(twoYearOtWrite.draft).actions ?? []).some((item) => item.label === "Use this"));
+assert.ok((nextFoxAsk(twoYearOtWrite.draft).actions ?? []).some((item) => item.label === "Leave blank"));
+
+const decliningBonusYearOne = applyExtractedFields(afterLooks, {
+  extractClass: "w2",
+  confidence: 0.94,
+  fields: { tax_year: "2025", employer_name: "Harbor Steel", wages: "84000", bonus: "12000" },
+});
+assert.equal(decliningBonusYearOne.draft.pendingProposal?.value, "7000");
+const decliningBonusYearTwo = applyExtractedFields(decliningBonusYearOne.draft, {
+  extractClass: "paystub",
+  confidence: 0.93,
+  fields: {
+    tax_year: "2026",
+    employer_name: "Harbor Steel",
+    wages: "84000",
+    bonus: "6000",
+  },
+});
+assert.equal(decliningBonusYearTwo.draft.pendingProposal?.value, "7500");
+assert.match(nextFoxAsk(decliningBonusYearTwo.draft).text, /later-year bonus/);
+assert.match(
+  `${nextFoxAsk(decliningBonusYearTwo.draft).text} ${nextFoxAsk(decliningBonusYearTwo.draft).followUp ?? ""}`,
+  /Bonus is lower this year/,
+);
+
+const sameStubSecond = applyExtractedFields(afterLooks, {
+  extractClass: "w2",
+  confidence: 0.92,
+  fields: {
+    tax_year: "2025",
+    employer_name: "Harbor Steel",
+    wages: "84000",
+    second_employer_name: "Night Shift Co",
+  },
+});
+assert.equal(sameStubSecond.draft.pendingProposal?.value, "7000");
+assert.match(
+  `${nextFoxAsk(sameStubSecond.draft).followUp ?? ""} ${sameStubSecond.quietLines.join(" ")}`,
+  /A second employer name on one stub is not enough/,
+);
+
+const firstJobWrite = applyExtractedFields(afterLooks, {
+  extractClass: "w2",
+  confidence: 0.94,
+  fields: { tax_year: "2025", employer_name: "Harbor Steel", wages: "84000" },
+});
+const firstJobAccepted = resolveProposal(firstJobWrite.draft, "accept");
+assert.equal(firstJobAccepted.facts?.qualifying_income?.value, "7000");
+const thinSecondJobWrite = applyExtractedFields(firstJobAccepted, {
+  extractClass: "paystub",
+  confidence: 0.92,
+  fields: {
+    employer_name: "Night Shift Co",
+    tax_year: "2026",
+    wages: "24000",
+  },
+});
+assert.equal(thinSecondJobWrite.conflict, null);
+assert.equal(thinSecondJobWrite.draft.facts?.qualifying_income?.value, "7000");
+assert.notEqual(thinSecondJobWrite.draft.pendingProposal?.value, "9000");
+assert.match(thinSecondJobWrite.quietLines.join(" "), /Second-job history is thin/);
+
+const wageAccepted = resolveProposal(acmeWrite.draft, "accept");
+assert.equal(wageAccepted.facts?.qualifying_income?.value, "9167");
+assert.equal(wageAccepted.facts?.wage_monthly?.value, "9167");
+const combinedWrite = applyExtractedFields(wageAccepted, {
+  extractClass: "tax_return",
+  confidence: 0.93,
+  fields: {
+    tax_year: "2024",
+    return_kind: "schedule_c",
+    schedule_c_net_profit: "96000",
+    depreciation: "12000",
+  },
+});
+assert.equal(combinedWrite.conflict, null);
+assert.equal(combinedWrite.draft.pendingProposal?.value, "18167");
+assert.equal(combinedWrite.draft.pendingProposal?.note, SUGGESTED_INCOME_NOTE);
+assert.match(combinedWrite.draft.pendingProposal?.methodNote ?? "", /combined wage \+ Schedule C/);
+const combinedAsk = nextFoxAsk(combinedWrite.draft);
+assert.match(combinedAsk.text, /18,167/);
+assert.match(combinedAsk.text, /combined wage \+ Schedule C/);
+assert.match(combinedAsk.text, /biweekly period × 26 \/ 12/);
+assert.match(combinedAsk.text, /Schedule C one-year/);
+assert.match(combinedAsk.text, /Suggested qualifying income · not underwritten/);
+assert.ok((combinedAsk.actions ?? []).some((item) => item.label === "Use this"));
+assert.ok((combinedAsk.actions ?? []).some((item) => item.label === "Leave blank"));
+assertIncomeChipsHoldOverQueue(combinedWrite.draft, /18,167/);
+const combinedQualify = workspaceReply("will i qualify", combinedWrite.draft);
+assert.notEqual(combinedQualify?.capture?.field, "accept-proposal");
+assertAnswerThenRestore(combinedQualify, /cannot approve, lock, or commit to lend/i, {
+  text: /18,167/,
+  labels: ["Use this", "Leave blank"],
+});
+const combinedAccepted = resolveProposal(combinedWrite.draft, "accept");
+assert.equal(combinedAccepted.facts?.qualifying_income?.value, "18167");
+assert.equal(combinedAccepted.facts?.wage_monthly?.value, "9167");
+assert.equal(combinedAccepted.facts?.se_monthly?.value, "9000");
+
+assert.equal(slotFromName("paystub-ot-bonus-2026.png"), "paystubs");
+assert.equal(slotFromName("paystub-bonus-declining-2026.png"), "paystubs");
+assert.equal(slotFromName("paystub-second-job.png"), "paystubs");
+assert.equal(slotFromName("w2-ot-bonus-2025.png"), "w2");
+assert.equal(slotFromName("w2-bonus-2025.png"), "w2");
 
 const highLtvBuy = withIncome(
   withPurchaseFunds(

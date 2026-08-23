@@ -42,8 +42,10 @@ export const EXTRACT_SCHEMA_KEYS: Record<ExtractClass, readonly string[]> = {
     "overtime",
     "bonus",
     "commission",
+    "second_employer_name",
+    "tax_year",
   ],
-  w2: ["tax_year", "employer_name", "wages", "federal_withheld", "overtime", "bonus", "commission"],
+  w2: ["tax_year", "employer_name", "wages", "federal_withheld", "overtime", "bonus", "commission", "second_employer_name"],
   tax_return: [
     "tax_year",
     "filing_status",
@@ -108,6 +110,18 @@ const INCOME_MONEY_KEYS = new Set([
   "overtime",
   "bonus",
   "commission",
+]);
+const VARIABLE_YEAR_KEYS = new Set([
+  "overtime",
+  "bonus",
+  "commission",
+  "tax_year",
+  "wages",
+  "gross_period",
+  "ytd_gross",
+  "pay_period_end",
+  "pay_frequency",
+  "second_employer_name",
 ]);
 const YEARLY_TAX_KEYS = new Set([
   "tax_year",
@@ -291,6 +305,7 @@ export function factLabel(field: string) {
   if (field === "wages") return "wages";
   if (field === "federal_withheld") return "federal withheld";
   if (field === "pay_frequency") return "pay frequency";
+  if (field === "second_employer_name") return "second employer";
   if (field === "filing_status") return "filing status";
   if (field === "agi") return "AGI";
   if (field === "return_kind") return "return kind";
@@ -544,8 +559,31 @@ export function applyExtractedFields(
       writes.push({ field, value });
       continue;
     }
+    if (
+      (extractClass === "w2" || extractClass === "paystub") &&
+      VARIABLE_YEAR_KEYS.has(field) &&
+      existing.via !== "income"
+    ) {
+      if (valuesMatch(existing.value, value)) continue;
+      next = writeField(next, field, value, now);
+      writes.push({ field, value });
+      continue;
+    }
+    if (
+      field === "employer_name" &&
+      (extractClass === "w2" || extractClass === "paystub") &&
+      existing.via === "employer_name" &&
+      !valuesMatch(existing.value, value) &&
+      next.facts?.employer_name?.source !== "client"
+    ) {
+      continue;
+    }
     if (existing.via === "income" || existing.via === "qualifying_income") {
-      if (extractClass === "tax_return" && existing.via === "qualifying_income") {
+      if (existing.via === "qualifying_income") {
+        if (field !== existing.via) {
+          next = writeField(next, field, value, now);
+          writes.push({ field, value });
+        }
         continue;
       }
       const compare = computed != null && !computed.needsFrequency ? String(computed.monthly) : value;

@@ -78,6 +78,20 @@ export function assertOnyxFixtures() {
     paths.some((path) => /entity-ordinary-2024\.png$/.test(path)),
     "expected scripts/fixtures/entity-ordinary-2024.png",
   );
+  assert.ok(paths.some((path) => /w2-ot-bonus-2025\.png$/.test(path)), "expected scripts/fixtures/w2-ot-bonus-2025.png");
+  assert.ok(
+    paths.some((path) => /paystub-ot-bonus-2026\.png$/.test(path)),
+    "expected scripts/fixtures/paystub-ot-bonus-2026.png",
+  );
+  assert.ok(paths.some((path) => /w2-bonus-2025\.png$/.test(path)), "expected scripts/fixtures/w2-bonus-2025.png");
+  assert.ok(
+    paths.some((path) => /paystub-bonus-declining-2026\.png$/.test(path)),
+    "expected scripts/fixtures/paystub-bonus-declining-2026.png",
+  );
+  assert.ok(
+    paths.some((path) => /paystub-second-job\.png$/.test(path)),
+    "expected scripts/fixtures/paystub-second-job.png",
+  );
 }
 
 const invokedDirectly =

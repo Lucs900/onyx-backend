@@ -72,11 +72,12 @@ const CONVENTIONAL_GUIDELINES: ConventionalGuideline[] = [
   ...bothAgencies(
     "income",
     "w2",
-    "period × frequency, or YTD / months; flag YTD vs run-rate or W-2 mismatch and use the lower — never blend. Variable overtime / bonus / commission only when extracted; two-year lower only; never invent.",
+    "period × frequency, or YTD / months; flag YTD vs run-rate or W-2 mismatch and use the lower — never blend. Variable overtime / bonus / commission only when extracted; two-year average when stable or rising, later year when declining; one-year is Partial. Second job only from a second document with two-year history. Never invent.",
     {
       base: "period-frequency-or-ytd-months",
       ytdConflict: "flag-lower",
-      variable: "extracted-two-year-only",
+      variable: "extracted-two-year-average-or-later",
+      secondJob: "two-documents-two-year",
       blend: "never",
     },
   ),
@@ -91,6 +92,12 @@ const CONVENTIONAL_GUIDELINES: ConventionalGuideline[] = [
     "k1",
     "ordinary / 12 suggested only — not confirmed cash flow",
     { basis: "ordinary-over-12" },
+  ),
+  ...bothAgencies(
+    "income",
+    "combined",
+    "confirmed wage monthly plus confirmed Schedule C or K-1 ordinary monthly; disclose both methods; confirm before write",
+    { basis: "confirmed-sum" },
   ),
   ...bothAgencies("docs", "government_id", "A government ID puts a name on this file."),
   ...bothAgencies("docs", "paystub", "That’s current income on paper."),

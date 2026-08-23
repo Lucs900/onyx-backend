@@ -71,17 +71,25 @@ export type FactConflict = {
   kind?: ProposalKind;
 };
 
+export type IncomeParts = {
+  wage?: string;
+  scheduleC?: string;
+  k1?: string;
+};
+
 export type FactProposal = {
   field: string;
   value: string;
   label: string;
   kind: ProposalKind;
   note?: string;
+  methodNote?: string;
   companion?: {
     field: string;
     value: string;
     label: string;
   };
+  parts?: IncomeParts;
 };
 
 export type IntakePhase = "context" | "documents" | "draft" | "confirmed";

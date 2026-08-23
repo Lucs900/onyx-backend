@@ -17,6 +17,10 @@ export const YTD_CONFLICT_CAUTION =
 export const YTD_CONFLICT_GAP = 50;
 export const K1_ORDINARY_NOTE = "Ordinary is not confirmed cash flow.";
 export const FREQUENCY_MATCH_SLACK = 0.55;
+export const VARIABLE_THIN_NOTE = "History is thin.";
+export const SECOND_JOB_THIN_NOTE = "Second-job history is thin.";
+export const SECOND_JOB_SAME_STUB_NOTE = "A second employer name on one stub is not enough.";
+export const VARIABLE_DECLINING_CAUTION = "Variable income is lower this year. I’m using the later year.";
 
 export type QualifyingMethod =
   | "one-year"
@@ -25,7 +29,8 @@ export type QualifyingMethod =
   | "period-frequency"
   | "ytd-months"
   | "w2-annual"
-  | "ytd-conflict-lower";
+  | "ytd-conflict-lower"
+  | "combined";
 
 /** Extracted Schedule C add-backs. Extra lines stay unused unless printed. */
 export type ScheduleCAddBacks = {
@@ -49,11 +54,27 @@ export type IncomeSuggestResult = {
   caution?: string;
   methodNote?: string;
   needsFrequency?: boolean;
+  partialNotes?: string[];
+  parts?: { wage?: number; scheduleC?: number; k1?: number };
 };
 
 export type WageYearInput = {
   taxYear?: number | string | null;
   wages?: number | null;
+  overtime?: number | null;
+  bonus?: number | null;
+  commission?: number | null;
+};
+
+export type SecondJobInput = {
+  documentedSeparately: boolean;
+  employerName?: string | null;
+  priorYear?: WageYearInput | null;
+  payPeriodEnd?: string | null;
+  grossPeriod?: number | null;
+  ytdGross?: number | null;
+  payFrequency?: string | null;
+  w2Wages?: number | null;
   overtime?: number | null;
   bonus?: number | null;
   commission?: number | null;
@@ -69,6 +90,8 @@ export type WageSuggestInput = {
   bonus?: number | null;
   commission?: number | null;
   priorYear?: WageYearInput | null;
+  sameStubSecondEmployer?: boolean;
+  secondJob?: SecondJobInput | null;
 };
 
 export function monthlyFromAnnual(annual: number): number {
@@ -327,20 +350,100 @@ function materialMonthlyDiff(left: number, right: number): boolean {
 
 const VARIABLE_KEYS = ["overtime", "bonus", "commission"] as const;
 
-/** Conservative conventional: add OT / bonus / commission only when two years are extracted; use the lower. */
-function conservativeVariableMonthly(input: WageSuggestInput): number {
+function variableLabel(key: (typeof VARIABLE_KEYS)[number]): string {
+  if (key === "overtime") return "Overtime";
+  if (key === "bonus") return "Bonus";
+  return "Commission";
+}
+
+function variableThinNote(key: (typeof VARIABLE_KEYS)[number]): string {
+  return `${variableLabel(key)} history is thin.`;
+}
+
+function variableDecliningCaution(key: (typeof VARIABLE_KEYS)[number]): string {
+  return `${variableLabel(key)} is lower this year. I’m using the later year.`;
+}
+
+type VariableExtra = {
+  monthly: number;
+  caution?: string;
+  partialNotes: string[];
+  methodNotes: string[];
+};
+
+function variableMethodLabel(key: (typeof VARIABLE_KEYS)[number]): string {
+  if (key === "overtime") return "OT";
+  if (key === "bonus") return "bonus";
+  return "commission";
+}
+
+/** OT / bonus / commission: two-year average when stable or rising; later year when declining; one-year is Partial. */
+function extractedVariableExtra(input: WageSuggestInput): VariableExtra {
   const rules = conventionalIncomeRules("w2");
-  if ((rules.variable ?? "extracted-two-year-only") !== "extracted-two-year-only") return 0;
+  const mode = rules.variable ?? "extracted-two-year-average-or-later";
+  if (mode === "never") return { monthly: 0, partialNotes: [], methodNotes: [] };
   const prior = input.priorYear;
-  if (!prior) return 0;
   let extra = 0;
+  let caution: string | undefined;
+  const partialNotes: string[] = [];
+  const methodNotes: string[] = [];
   for (const key of VARIABLE_KEYS) {
     const current = usableMonthly(input[key]);
-    const last = usableMonthly(prior[key]);
-    if (current == null || last == null) continue;
-    extra += monthlyFromAnnual(Math.min(current, last));
+    const last = prior ? usableMonthly(prior[key]) : null;
+    if (current == null && last == null) continue;
+    if (current == null) continue;
+    if (last == null) {
+      partialNotes.push(variableThinNote(key));
+      continue;
+    }
+    const named = variableMethodLabel(key);
+    if (current >= last) {
+      extra += monthlyFromAnnual((current + last) / 2);
+      methodNotes.push(`two-year ${named} average`);
+      continue;
+    }
+    extra += monthlyFromAnnual(current);
+    methodNotes.push(`later-year ${named}`);
+    caution = caution ?? variableDecliningCaution(key);
   }
-  return extra;
+  return { monthly: extra, caution, partialNotes, methodNotes };
+}
+
+function secondJobExtra(input: WageSuggestInput): VariableExtra {
+  const rules = conventionalIncomeRules("w2");
+  if ((rules.secondJob ?? "two-documents-two-year") === "never") {
+    return { monthly: 0, partialNotes: [], methodNotes: [] };
+  }
+  if (input.sameStubSecondEmployer) {
+    return { monthly: 0, partialNotes: [SECOND_JOB_SAME_STUB_NOTE], methodNotes: [] };
+  }
+  const job = input.secondJob;
+  if (!job) return { monthly: 0, partialNotes: [], methodNotes: [] };
+  if (!job.documentedSeparately) {
+    return { monthly: 0, partialNotes: [SECOND_JOB_SAME_STUB_NOTE], methodNotes: [] };
+  }
+  if (!job.priorYear) {
+    return { monthly: 0, partialNotes: [SECOND_JOB_THIN_NOTE], methodNotes: [] };
+  }
+  const nested: WageSuggestInput = {
+    payPeriodEnd: job.payPeriodEnd,
+    grossPeriod: job.grossPeriod,
+    ytdGross: job.ytdGross,
+    payFrequency: job.payFrequency,
+    w2Wages: job.w2Wages,
+    overtime: job.overtime,
+    bonus: job.bonus,
+    commission: job.commission,
+    priorYear: job.priorYear,
+  };
+  const wage = suggestWageIncome(nested);
+  if (!wage || wage.needsFrequency) return { monthly: 0, partialNotes: [SECOND_JOB_THIN_NOTE], methodNotes: [] };
+  return {
+    monthly: wage.monthly,
+    caution: wage.caution,
+    partialNotes: wage.partialNotes ?? [],
+    methodNotes: wage.methodNote ? [wage.methodNote] : ["second job"],
+  };
 }
 
 /**
@@ -411,10 +514,66 @@ export function suggestWageIncome(input: WageSuggestInput): IncomeSuggestResult 
     method = "w2-annual";
   }
 
+  const variable = extractedVariableExtra(input);
+  const second = secondJobExtra(input);
+  const partialNotes = [...variable.partialNotes, ...second.partialNotes];
+  const methodBits = [chosen.note, ...variable.methodNotes, ...second.methodNotes].filter(
+    (row): row is string => Boolean(row),
+  );
   return {
-    monthly: chosen.monthly + conservativeVariableMonthly(input),
+    monthly: chosen.monthly + variable.monthly + second.monthly,
     method,
+    caution: caution ?? variable.caution ?? second.caution,
+    methodNote: methodBits.join(" plus ") || chosen.note,
+    partialNotes: partialNotes.length ? partialNotes : undefined,
+  };
+}
+
+function scheduleCMethodNote(method: QualifyingMethod): string {
+  if (method === "one-year") return "Schedule C one-year";
+  if (method === "two-year-average") return "Schedule C two-year average";
+  if (method === "later-year-lower") return "Schedule C later year";
+  return "Schedule C";
+}
+
+/**
+ * Confirmed wage monthly + confirmed Schedule C or K-1 ordinary monthly.
+ * Disclose both methods. Never invent a blend of unconfirmed parts.
+ */
+export function suggestCombinedIncome(input: {
+  wage?: IncomeSuggestResult | null;
+  scheduleC?: IncomeSuggestResult | null;
+  k1Monthly?: number | null;
+}): IncomeSuggestResult | null {
+  const wage = input.wage && !input.wage.needsFrequency ? input.wage : null;
+  const scheduleC = input.scheduleC;
+  const k1 = input.k1Monthly != null && Number.isFinite(input.k1Monthly) ? input.k1Monthly : null;
+  const parts = {
+    ...(wage ? { wage: wage.monthly } : {}),
+    ...(scheduleC ? { scheduleC: scheduleC.monthly } : {}),
+    ...(k1 != null ? { k1 } : {}),
+  };
+  const filled = [parts.wage, parts.scheduleC, parts.k1].filter((n) => n != null).length;
+  if (filled < 2) return null;
+  const monthly = (parts.wage ?? 0) + (parts.scheduleC ?? 0) + (parts.k1 ?? 0);
+  const notes = [
+    wage?.methodNote ?? (wage ? "W-2" : null),
+    scheduleC ? scheduleCMethodNote(scheduleC.method) : null,
+    k1 != null ? "K-1 ordinary / 12" : null,
+  ].filter((row): row is string => Boolean(row));
+  const named =
+    parts.wage != null && parts.scheduleC != null
+      ? "combined wage + Schedule C"
+      : parts.wage != null && parts.k1 != null
+        ? "combined wage + K-1"
+        : "combined Schedule C + K-1";
+  const caution = wage?.caution ?? scheduleC?.caution ?? (k1 != null ? K1_ORDINARY_NOTE : undefined);
+  return {
+    monthly,
+    method: "combined",
+    methodNote: `${named} · ${notes.join(" plus ")}`,
     caution,
-    methodNote: chosen.note,
+    partialNotes: wage?.partialNotes,
+    parts,
   };
 }
