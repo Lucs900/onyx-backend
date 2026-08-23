@@ -31,6 +31,12 @@ import {
   wageIncomeCaution,
 } from "./qualifyingIncome";
 import {
+  STATED_MONTHLY_DEBTS_FIELD,
+  SUGGESTED_DEBTS_NOTE,
+  monthlyDebtsConfirmCopy,
+  skipMonthlyDebts,
+} from "./monthlyDebts";
+import {
   HIGH_LTV_CAUTION as STORE_HIGH_LTV_CAUTION,
   HIGH_PURCHASE_LTV as STORE_HIGH_PURCHASE_LTV,
   JUMBO_CEILING_LINE,
@@ -43,7 +49,7 @@ import {
 
 export const SUGGESTED_NOTE = "Suggested · not verified";
 export const PROPOSED_NOTE = "Proposed · confirm";
-export { SUGGESTED_INCOME_NOTE, QUALIFYING_INCOME_FIELD };
+export { SUGGESTED_INCOME_NOTE, QUALIFYING_INCOME_FIELD, SUGGESTED_DEBTS_NOTE, STATED_MONTHLY_DEBTS_FIELD };
 export const YEARS_IN_BUSINESS_FIELD = "years_in_business";
 export const YEARS_IN_BUSINESS_ASK = "How long have you been running this?";
 export const MISSING_LINE = "—";
@@ -450,6 +456,7 @@ export function factsFromDraft(draft: FoxIntakeDraft): CompletenessFile {
     if (implied > 0) loanAmount = implied;
   }
   const debts = namedDebtsFromDraft(draft);
+  const suggestedMonthlyIncome = moneyNumber(draft.facts?.[QUALIFYING_INCOME_FIELD]?.value ?? "");
   const base = completenessFileFromDraft(draft);
   const received = new Set(base.received ?? []);
   for (const id of inferredIncomeClasses(draft)) received.add(id);
@@ -476,6 +483,8 @@ export function factsFromDraft(draft: FoxIntakeDraft): CompletenessFile {
     commitmentRequired: Boolean(draft.overPriceConfirmed),
     unresolvedConflict: Boolean(draft.unresolvedConflict),
     ...(debts.length ? { debts } : {}),
+    ...(draft.statedMonthlyDebts != null ? { statedMonthlyDebts: draft.statedMonthlyDebts } : {}),
+    ...(suggestedMonthlyIncome != null ? { suggestedMonthlyIncome } : {}),
     docsSkipped: Boolean(
       draft.documentsSkipped || draft.docsHeld || (draft.skippedClasses?.length ?? 0) > 0,
     ),
@@ -522,6 +531,7 @@ export function structureFieldForProposal(field: string) {
   if (field === "full_name") return "name";
   if (field === "property_address") return "address";
   if (field === QUALIFYING_INCOME_FIELD) return "qualifying";
+  if (field === STATED_MONTHLY_DEBTS_FIELD) return "debts";
   return field;
 }
 
@@ -559,6 +569,9 @@ export function proposalAskCopy(proposal: FactProposal) {
   const shown = displayFactValue(proposal.field, proposal.value);
   if (proposal.field === QUALIFYING_INCOME_FIELD) {
     return `From the return I’m suggesting ${shown} a month. ${SUGGESTED_INCOME_NOTE}. Use this?`;
+  }
+  if (proposal.field === STATED_MONTHLY_DEBTS_FIELD) {
+    return monthlyDebtsConfirmCopy(Number(proposal.value) || 0);
   }
   if (proposal.kind === "public") {
     return `I have ${proposal.label} ${shown}. ${SUGGESTED_NOTE}. Is that you?`;
@@ -674,6 +687,15 @@ function writeConfirmedFact(
   if (field === "employer_name" || field === QUALIFYING_INCOME_FIELD) {
     next = { ...next, facts };
   }
+  if (field === STATED_MONTHLY_DEBTS_FIELD && amount != null) {
+    next = {
+      ...next,
+      statedMonthlyDebts: amount,
+      monthlyDebtsAsked: true,
+      pendingDebtMortgage: null,
+      facts,
+    };
+  }
   if (field === "full_name" && !draft.contact.fullName.value) {
     next = {
       ...next,
@@ -762,6 +784,9 @@ export function resolveProposal(
   const proposal = draft.pendingProposal;
   if (!proposal) return draft;
   if (winner === "decline") {
+    if (proposal.field === STATED_MONTHLY_DEBTS_FIELD) {
+      return skipMonthlyDebts({ ...draft, pendingProposal: null });
+    }
     return { ...draft, pendingProposal: null };
   }
   const source =

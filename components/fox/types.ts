@@ -250,6 +250,13 @@ export type FoxIntakeDraft = {
   creditBand?: CreditRange;
   creditAsked?: boolean;
   incomeAsked?: boolean;
+  statedMonthlyDebts?: number;
+  monthlyDebtsAsked?: boolean;
+  debtMortgageAsked?: boolean;
+  pendingDebtMortgage?: {
+    included: number;
+    mortgage: number;
+  } | null;
   docsOpen?: boolean;
   originatorRequested?: boolean;
   motion?: FileMotion;
@@ -314,6 +321,7 @@ export type FoxPrompt =
   | "phone"
   | "preferred"
   | "income"
+  | "debts"
   | "occupancy"
   | "timeline"
   | "documents"
@@ -335,6 +343,11 @@ export type Capture =
   | { field: "fullName" | "email" | "phone" | "preferredContact"; value: string }
   | { field: "preferred-asked"; value: string }
   | { field: "incomeType"; value: string }
+  | { field: "skip-monthly-debts" }
+  | { field: "propose-monthly-debts"; value: string }
+  | { field: "include-mortgage-debts"; value: string }
+  | { field: "subtract-mortgage" }
+  | { field: "statedMonthlyDebts"; value: string }
   | { field: "occupancy"; value: string }
   | { field: "timeline"; value: string }
   | { field: "path"; value: IntakePath }

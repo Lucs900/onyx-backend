@@ -34,6 +34,7 @@ import {
   type CompletenessFile,
   type DocumentedStillUsefulId,
 } from "@/lib/guidelines/conventional";
+import { debtsSettled } from "./monthlyDebts";
 
 export { REJECT_LINE, LIMIT_LINE };
 
@@ -114,6 +115,7 @@ const MONEY_KEYS = new Set([
   "down_payment",
   "loanAmount",
   "loan_amount",
+  "statedMonthlyDebts",
 ]);
 
 const INCOME_MONEY_KEYS = new Set([
@@ -1074,6 +1076,7 @@ export function completenessFileFromDraft(draft: FoxIntakeDraft): CompletenessFi
     fundsInPlay: Boolean(
       draft.cashOut || factValue(draft, "cash_to_close") || factValue(draft, "reserves"),
     ),
+    ...(draft.statedMonthlyDebts != null ? { statedMonthlyDebts: draft.statedMonthlyDebts } : {}),
   };
 }
 
@@ -1274,6 +1277,7 @@ export function offeringDocStart(draft: FoxIntakeDraft) {
 export function nextDocInvite(draft: FoxIntakeDraft): DocInviteKind | null {
   if (draft.sampleAccepted) return null;
   if (!draft.incomeType.value && !draft.incomeAsked) return null;
+  if (!debtsSettled(draft)) return null;
   if (draft.pendingProposal || draft.pendingConflict) return null;
   for (const kind of inviteSequence(draft)) {
     if (!inviteSatisfied(draft, kind)) return kind;

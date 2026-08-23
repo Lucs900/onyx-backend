@@ -95,6 +95,14 @@ import {
   writeYearsInBusiness,
 } from "./completeness";
 import { applyPayFrequencyAnswer } from "./qualifyingIncome";
+import {
+  applyMortgageSubtract,
+  parseMonthlyDebtAmount,
+  proposeStatedMonthlyDebts,
+  skipMonthlyDebts,
+  subjectMortgagePayment,
+  writeStatedMonthlyDebts,
+} from "./monthlyDebts";
 
 function numberOrUndefined(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : undefined;
@@ -210,6 +218,10 @@ function normalize(value: unknown): FoxIntakeDraft {
     creditBand: raw.creditBand,
     creditAsked: Boolean(raw.creditAsked || raw.creditBand),
     incomeAsked: Boolean(raw.incomeAsked || raw.incomeType?.value),
+    statedMonthlyDebts: numberOrUndefined(raw.statedMonthlyDebts),
+    monthlyDebtsAsked: Boolean(raw.monthlyDebtsAsked || raw.statedMonthlyDebts != null),
+    debtMortgageAsked: Boolean(raw.debtMortgageAsked),
+    pendingDebtMortgage: normalizePendingDebtMortgage(raw.pendingDebtMortgage),
     docsOpen: Boolean(raw.docsOpen),
     docsStarted: Boolean(raw.docsStarted),
     docsHeld: Boolean(raw.docsHeld),
@@ -340,6 +352,18 @@ function normalizeConflict(value: FoxIntakeDraft["pendingConflict"]): FactConfli
       ? value.kind
       : "document",
   };
+}
+
+function normalizePendingDebtMortgage(
+  value: FoxIntakeDraft["pendingDebtMortgage"],
+): FoxIntakeDraft["pendingDebtMortgage"] {
+  if (!value || typeof value !== "object") return null;
+  const included = Number(value.included);
+  const mortgage = Number(value.mortgage);
+  if (!Number.isFinite(included) || !Number.isFinite(mortgage) || included <= 0 || mortgage <= 0) {
+    return null;
+  }
+  return { included: Math.round(included), mortgage: Math.round(mortgage) };
 }
 
 function normalizeProposal(value: FoxIntakeDraft["pendingProposal"]): FactProposal | null {
@@ -1102,6 +1126,35 @@ export function applyCapture(capture: Capture) {
     if (capture.value) setContactField("preferredContact", capture.value);
     markPreferredAsked();
     return advancePhase();
+  }
+  if (capture.field === "skip-monthly-debts") {
+    return commit(skipMonthlyDebts(current));
+  }
+  if (capture.field === "propose-monthly-debts") {
+    const amount = parseMonthlyDebtAmount(capture.value);
+    if (amount == null) return current;
+    return commit(proposeStatedMonthlyDebts(current, amount));
+  }
+  if (capture.field === "include-mortgage-debts") {
+    const included = parseMonthlyDebtAmount(capture.value);
+    const mortgage = subjectMortgagePayment(current);
+    if (included == null) return current;
+    if (mortgage == null) {
+      return commit({ ...current, debtMortgageAsked: true, pendingDebtMortgage: null });
+    }
+    return commit({
+      ...current,
+      debtMortgageAsked: true,
+      pendingDebtMortgage: { included, mortgage },
+    });
+  }
+  if (capture.field === "subtract-mortgage") {
+    return commit(applyMortgageSubtract(current));
+  }
+  if (capture.field === "statedMonthlyDebts") {
+    const amount = parseMonthlyDebtAmount(capture.value);
+    if (amount == null) return current;
+    return commit(writeStatedMonthlyDebts(current, amount));
   }
   if (capture.field === "incomeType") {
     const midFile = Boolean(current.correcting);

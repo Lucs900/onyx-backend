@@ -341,6 +341,20 @@ Extract or suggest → proposed on Structure → Keep file / Use document / Yes 
 
 Computed purchase companion (price + down ⇒ loan, or price + loan ⇒ down) is proposed and confirmed — not a public suggestion.
 
+### Liabilities v1 — one stated monthly total
+
+After income type on a CA conventional sketch, Fox may ask once for stated monthly debts excluding the subject mortgage. Skip / Not yet is first-class and writes nothing. A number (800, $800, about 800, 800 a month) confirm-before-write:
+
+`That’s $800 a month in other debts, not counting this mortgage. Suggested · not underwritten. Use this?`
+
+Use this writes `statedMonthlyDebts`. Leave blank writes nothing and restores the next action. Structure shows `Stated monthly debts` with `Suggested · not underwritten` and stays editable mid-file. Start over is a full reset only.
+
+If the borrower includes the subject mortgage in the total, ask once and offer to subtract. Do not silent-write a blended number.
+
+No itemized liability maze. No cards / autos / student / HOA form. No bureau pull. No tradelines. No FNMA export. Still useful may list stated monthly debts as optional, never required. Looks right / Proceed still work with the field empty.
+
+Readiness: empty debts keep the locked thin / not-ready / strong / UW-review lines. A confirmed total may color not-ready or UW-review only when the payment is obviously large versus suggested income. Never print “stated DTI” or “your DTI is X%.” Strong still includes the final-underwriting sentence.
+
 ### Quiet flags + more-complete asks
 
 After Looks right / agency-shaped minimums, conventional files can deepen still-useful past the minimum three. HELOC and Jumbo stay thin. Never `agency_ready`.

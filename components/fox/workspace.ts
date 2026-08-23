@@ -117,6 +117,25 @@ import {
   wageMethodNote,
 } from "./qualifyingIncome";
 import {
+  applyMortgageSubtract,
+  debtsSettled,
+  isSkipMonthlyDebtsText,
+  isStatedDebtsConfirmPending,
+  mentionsSubjectMortgage,
+  monthlyDebtsAskCopy,
+  monthlyDebtsConfirmActions,
+  monthlyDebtsConfirmCopy,
+  mortgageIncludedAskWithoutPayment,
+  mortgageSubtractActions,
+  mortgageSubtractAsk,
+  parseMonthlyDebtAmount,
+  proposeStatedMonthlyDebts,
+  skipMonthlyDebts,
+  STATED_MONTHLY_DEBTS_FIELD,
+  SUGGESTED_DEBTS_NOTE,
+  subjectMortgagePayment,
+} from "./monthlyDebts";
+import {
   ACR_BENEFITS_LINE,
   COST_LINE,
   FHFA_HIGH_COST_CEILING_2026 as STORE_HIGH_COST_CEILING,
@@ -1094,6 +1113,13 @@ function liveProposalAsk(
   followUp?: string;
   actions?: FoxAction[];
 } {
+  if (proposal.field === STATED_MONTHLY_DEBTS_FIELD) {
+    const amount = Number(proposal.value);
+    return {
+      text: monthlyDebtsConfirmCopy(Number.isFinite(amount) ? amount : 0),
+      actions: monthlyDebtsConfirmActions(),
+    };
+  }
   if (proposal.field === QUALIFYING_INCOME_FIELD) {
     if (combinedParts(proposal) || proposal.methodNote?.startsWith("combined ")) {
       return combinedReactionAsk(draft, proposal);
@@ -1220,6 +1246,7 @@ const CORRECTION_CHIP_IDS = new Set([
   "income",
   "qualifying",
   "years-in-business",
+  "debts",
 ]);
 
 function yearsOnFile(draft: FoxIntakeDraft) {
@@ -1246,6 +1273,9 @@ function extraCorrectionLines(draft: FoxIntakeDraft): { id: string; label: strin
   }
   if (qualifyingIncomeDisplay(draft)) {
     extra.push({ id: "qualifying", label: "Qualifying income", prompt: "qualifying" });
+  }
+  if (draft.monthlyDebtsAsked || draft.statedMonthlyDebts != null) {
+    extra.push({ id: "debts", label: "Stated monthly debts", prompt: "debts" });
   }
   return extra;
 }
@@ -1607,6 +1637,7 @@ export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
   }
   if (!creditSettled(draft)) return "credit";
   if (!incomeSettled(draft)) return "income";
+  if (!debtsSettled(draft)) return "debts";
   if (!draft.sampleAccepted && draft.awaitingYearsInBusiness) return "documents";
   if (nextDocInvite(draft)) return "documents";
   if (!draft.sampleAccepted) return canLooksRight(draft) ? "review" : "amount";
@@ -1790,6 +1821,9 @@ function workspaceAskCopy(
         ? [...bubbles([...INCOME_BUBBLES], "incomeType"), ...keepThisActions()]
         : bubbles([...INCOME_BUBBLES], "incomeType"),
     };
+  }
+  if (prompt === "debts") {
+    return monthlyDebtsAskCopy(draft);
   }
   if (prompt === "qualifying") {
     const shown =
@@ -2384,6 +2418,15 @@ export function editPromptFromCapture(capture?: Capture): FoxPrompt | undefined 
   if (capture.field === "termYears" || capture.field === "skip-term") return "term";
   if (capture.field === "incomeType") return "income";
   if (
+    capture.field === "skip-monthly-debts" ||
+    capture.field === "propose-monthly-debts" ||
+    capture.field === "include-mortgage-debts" ||
+    capture.field === "subtract-mortgage" ||
+    capture.field === "statedMonthlyDebts"
+  ) {
+    return "debts";
+  }
+  if (
     capture.field === "skip-docs" ||
     capture.field === "hold-docs" ||
     capture.field === "start-docs" ||
@@ -2525,6 +2568,17 @@ export function workspaceUpdateCopy(capture: Capture, draft: FoxIntakeDraft) {
   if (capture.field === "incomeType") {
     const label = INCOME_BUBBLES.find((item) => item.value === capture.value)?.label;
     return label ? `Updated income to ${label}.` : "Updated income.";
+  }
+  if (capture.field === "skip-monthly-debts") return "Updated. Stated monthly debts left blank.";
+  if (capture.field === "propose-monthly-debts" || capture.field === "include-mortgage-debts") {
+    return "Updated.";
+  }
+  if (capture.field === "subtract-mortgage") return "Updated.";
+  if (capture.field === "statedMonthlyDebts") {
+    const n = Number(capture.value.replace(/,/g, ""));
+    return Number.isFinite(n) && n > 0
+      ? `Updated stated monthly debts to ${formatMoney(n)}.`
+      : "Updated stated monthly debts.";
   }
   if (capture.field === "skip-docs") return "Updated. Docs skipped.";
   if (capture.field === "hold-docs") return "Updated. Docs paused.";
@@ -3130,7 +3184,10 @@ export function workspaceReply(
   }
 
   if (draft.pendingProposal || prompt === "confirm-proposal") {
-    if (isQualifyingIncomeConfirmPending(draft) && asksWillIQualify(q)) {
+    if (
+      (isQualifyingIncomeConfirmPending(draft) || isStatedDebtsConfirmPending(draft)) &&
+      asksWillIQualify(q)
+    ) {
       return answerThenRestore(q, draft);
     }
     if (
@@ -3662,6 +3719,61 @@ export function workspaceReply(
     };
   }
 
+  if (prompt === "debts") {
+    if (draft.statedMonthlyDebts != null && isKeepThisText(q)) return keepThisReply(draft);
+    if (draft.pendingDebtMortgage) {
+      if (/^subtract\b/i.test(lower) || /subtract/.test(lower)) {
+        const nextDraft = applyMortgageSubtract(draft);
+        return {
+          ...nextFoxAsk(nextDraft),
+          capture: { field: "subtract-mortgage" },
+        };
+      }
+      if (isSkipMonthlyDebtsText(q) || /leave blank/.test(lower)) {
+        const nextDraft = skipMonthlyDebts(draft);
+        return {
+          ...workspacePromptCopy(workspacePrompt(nextDraft), nextDraft),
+          capture: { field: "skip-monthly-debts" },
+        };
+      }
+    }
+    if (isSkipMonthlyDebtsText(q)) {
+      const nextDraft = skipMonthlyDebts(draft);
+      return {
+        ...workspacePromptCopy(workspacePrompt(nextDraft), nextDraft),
+        capture: { field: "skip-monthly-debts" },
+      };
+    }
+    const amount = parseMonthlyDebtAmount(q);
+    if (amount == null) return answerThenRestore(q, draft);
+    if (mentionsSubjectMortgage(q) && !draft.debtMortgageAsked) {
+      const mortgage = subjectMortgagePayment(draft);
+      if (mortgage != null) {
+        const nextDraft = {
+          ...draft,
+          debtMortgageAsked: true,
+          pendingDebtMortgage: { included: amount, mortgage },
+        };
+        return {
+          text: mortgageSubtractAsk(amount, mortgage),
+          actions: mortgageSubtractActions(),
+          capture: { field: "include-mortgage-debts", value: String(amount) },
+        };
+      }
+      const nextDraft = { ...draft, debtMortgageAsked: true, pendingDebtMortgage: null };
+      return {
+        text: mortgageIncludedAskWithoutPayment(),
+        actions: monthlyDebtsAskCopy(nextDraft).actions,
+        capture: { field: "include-mortgage-debts", value: String(amount) },
+      };
+    }
+    const nextDraft = proposeStatedMonthlyDebts(draft, amount);
+    return {
+      ...workspacePromptCopy("confirm-proposal", nextDraft),
+      capture: { field: "propose-monthly-debts", value: String(amount) },
+    };
+  }
+
   if (prompt === "income") {
     if (draft.incomeType.value && isKeepThisText(q)) return keepThisReply(draft);
     const match = incomeFromText(q);
@@ -4112,6 +4224,24 @@ export function previewFacts(draft: FoxIntakeDraft): PreviewFact[] {
     facts.push({ id: "income", label: "Income", value: incomeLabel });
   }
 
+  if (draft.monthlyDebtsAsked || draft.statedMonthlyDebts != null || isStatedDebtsConfirmPending(draft)) {
+    const pendingAmount = isStatedDebtsConfirmPending(draft)
+      ? Number(draft.pendingProposal?.value)
+      : NaN;
+    const shown =
+      draft.statedMonthlyDebts != null && draft.statedMonthlyDebts > 0
+        ? formatMoney(draft.statedMonthlyDebts)
+        : Number.isFinite(pendingAmount) && pendingAmount > 0
+          ? formatMoney(pendingAmount)
+          : "—";
+    facts.push({
+      id: "debts",
+      label: "Stated monthly debts",
+      value: shown,
+      note: SUGGESTED_DEBTS_NOTE,
+    });
+  }
+
   const address = factValue(draft, "property_address");
   if (address) {
     facts.push({ id: "address", label: "Property", value: address });
@@ -4308,6 +4438,7 @@ export function structureFixPrompt(
   if (id === "value") return "value";
   if (id === "credit") return "credit";
   if (id === "income") return "income";
+  if (id === "debts") return "debts";
   if (id === "qualifying") return "qualifying";
   if (id === "years-in-business") return "years-in-business";
   if (id === "docs") return "documents";
@@ -4322,6 +4453,11 @@ export function structureExplainCopy(
   if (id === "credit") {
     return {
       text: "That’s a stated range for the estimate. Not a FICO and not a credit pull.",
+    };
+  }
+  if (id === "debts") {
+    return {
+      text: "Stated monthly debts. Suggested · not underwritten. Not a credit pull.",
     };
   }
   if (id === "rate") {

@@ -189,6 +189,8 @@ export type FileFacts = {
   unresolvedConflict?: boolean;
   askedWillIQualify?: boolean;
   debts?: NamedDebt[];
+  statedMonthlyDebts?: number;
+  suggestedMonthlyIncome?: number;
   docsSkipped?: boolean;
   obviousHighDti?: boolean;
 };
@@ -851,6 +853,7 @@ export function completeness(
   }
   if (!received.has("employer_business")) stillUseful.push("employer/business");
   if (wantsSeYears(file.incomeType) && !received.has("se_years")) stillUseful.push("SE years");
+  if (file.incomeType && file.statedMonthlyDebts == null) stillUseful.push("stated monthly debts");
 
   const hasSketch = Boolean(file.purchasePrice || file.loanAmount || file.propertyValue);
   const incomeReady = incomeDocsReceived(file.incomeType, received);
@@ -929,6 +932,14 @@ function californiaFile(file: FileFacts) {
 function namedDebtOnFile(file: FileFacts): string | undefined {
   const name = file.debts?.find((debt) => debt.name.trim())?.name.trim();
   return name || undefined;
+}
+
+/** Other monthly debts that are obviously large vs suggested income. Never a printed DTI. */
+export function obviouslyLargeStatedDebts(file: FileFacts) {
+  const debts = file.statedMonthlyDebts;
+  const income = file.suggestedMonthlyIncome;
+  if (debts == null || income == null || debts <= 0 || income <= 0) return false;
+  return debts >= income * 0.5;
 }
 
 function someIncomeDocsReceived(file: CompletenessFile) {
@@ -1127,6 +1138,25 @@ export function readinessFromFile(file: FileFacts): ReadinessRead {
       kind: "not_ready",
       line: notReadyLine("Debts on this file look high.", `Paying off ${debt} would likely help.`),
       reason: "high-dti",
+    };
+  }
+
+  if (obviouslyLargeStatedDebts(file)) {
+    const debt = namedDebtOnFile(file);
+    if (debt) {
+      return {
+        kind: "not_ready",
+        line: notReadyLine("Debts on this file look high.", `Paying off ${debt} would likely help.`),
+        reason: "high-stated-debts",
+      };
+    }
+    if (strongEligible(complete)) {
+      return { kind: "uw_review", line: READINESS_UW_REVIEW, reason: "high-stated-debts" };
+    }
+    return {
+      kind: "not_ready",
+      line: notReadyLine("Debts on this file look high.", readinessFix(file, "dti")),
+      reason: "high-stated-debts",
     };
   }
 

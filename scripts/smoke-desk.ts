@@ -26,6 +26,7 @@ import {
 import {
   SUGGESTED_NOTE,
   SUGGESTED_INCOME_NOTE,
+  SUGGESTED_DEBTS_NOTE,
   HIGH_LTV_CAUTION,
   PRICING_WAITS,
   YEARS_IN_BUSINESS_ASK,
@@ -138,6 +139,10 @@ import {
   slotFromFilename as slotFromName,
   nextDocInvite,
 } from "../components/fox/fileWrite";
+import {
+  MONTHLY_DEBTS_ASK,
+  parseMonthlyDebtAmount,
+} from "../components/fox/monthlyDebts";
 import { FAILED_READ_NOTE } from "../lib/docs/accept";
 import { classifyAndExtract, imageDataUrl, visionChatBody } from "../lib/docs/extract";
 import {
@@ -305,6 +310,9 @@ function afterProceed(
 }
 
 function confirmLooksRight() {
+  if (workspacePrompt(getFoxDraft()) === "debts") {
+    applyCapture({ field: "skip-monthly-debts" });
+  }
   for (let i = 0; i < 8; i += 1) {
     if (workspacePrompt(getFoxDraft()) !== "documents" && !nextDocInvite(getFoxDraft())) break;
     applyCapture({ field: "skip-docs" });
@@ -319,6 +327,7 @@ function withIncome(
   return draft({
     ...base,
     incomeAsked: true,
+    monthlyDebtsAsked: true,
     incomeType: { ...emptyDraft().incomeType, value },
   });
 }
@@ -865,19 +874,15 @@ assert.ok(/income earned/i.test(creditReply?.text ?? ""));
 const incomeReply = workspaceReply("W-2", afterCredit);
 assert.equal(incomeReply?.capture?.field, "incomeType");
 assert.doesNotMatch(incomeReply?.text ?? "", /^W-2\.|W-2\. Here’s a sample structure/i);
-assert.match(incomeReply?.text ?? "", /sketch/i);
-assert.match(incomeReply?.text ?? "", /notepad/i);
-assert.match(incomeReply?.followUp ?? "", /government ID/i);
-assert.match(incomeReply?.followUp ?? "", /income docs/i);
-assert.match(incomeReply?.followUp ?? "", /property address/i);
-assert.match(incomeReply?.followUp ?? "", /purchase contract/i);
-assert.match(incomeReply?.followUp ?? "", /bank statement/i);
-assert.doesNotMatch(incomeReply?.followUp ?? "", /employer|years in business|1003|ssn|hoa|reserve-months/i);
+assert.match(incomeReply?.text ?? "", /other monthly debts/i);
+assert.match(incomeReply?.text ?? "", /not counting this mortgage/i);
+assert.doesNotMatch(incomeReply?.text ?? "", /auto loan|student loan|credit card|HOA|tradeline/i);
 assert.deepEqual(
   (incomeReply?.actions ?? []).map((item) => item.label),
-  ["Start with ID", "Skip", "Not yet"],
+  ["Skip", "Not yet"],
 );
 assert.ok(!(incomeReply?.actions ?? []).some((item) => item.label === "Upload this"));
+assert.ok(!(incomeReply?.actions ?? []).some((item) => item.label === "Add another"));
 
 const incomeAsk = workspacePromptCopy("income", afterCredit);
 assert.deepEqual(
@@ -890,6 +895,7 @@ assert.equal(structureFixPrompt("product"), "product");
 assert.equal(structureFixPrompt("timeline"), "timeline");
 assert.equal(structureFixPrompt("path"), "path-switch");
 assert.equal(structureFixPrompt("qualifying", afterIncome), "qualifying");
+assert.equal(structureFixPrompt("debts", afterIncome), "debts");
 assert.equal(structureFixPrompt("years-in-business", afterIncome), "years-in-business");
 assert.equal(structureFixPrompt("file"), null);
 assert.equal(structureFixPrompt("rate"), null);
@@ -905,6 +911,7 @@ applyCapture({ field: "propose-funds", value: "170000:680000" });
 applyCapture({ field: "accept-proposal" });
 applyCapture({ field: "creditRange", value: "760+" });
 applyCapture({ field: "incomeType", value: "w2" });
+applyCapture({ field: "skip-monthly-debts" });
 const midFile = {
   product: getFoxDraft().productIntent,
   occupancy: getFoxDraft().occupancyChoice.value,
@@ -975,6 +982,8 @@ assert.equal(getFoxDraft().incomeType.value, "");
 assert.equal(getFoxDraft().creditBand, undefined);
 assert.equal(getFoxDraft().downPaymentAmount, undefined);
 assert.equal(getFoxDraft().documents.length, 0);
+assert.equal(getFoxDraft().statedMonthlyDebts, undefined);
+assert.equal(getFoxDraft().monthlyDebtsAsked, undefined);
 assert.equal(workspacePrompt(getFoxDraft()), "product");
 assert.equal(workspacePrompt(afterIncome), "documents");
 assert.match(workspacePromptCopy("documents", afterIncome).text, /sketch/i);
@@ -1836,6 +1845,7 @@ applyCapture({ field: "propose-funds", value: "240000:960000" });
 applyCapture({ field: "accept-proposal" });
 applyCapture({ field: "creditRange", value: "760+" });
 applyCapture({ field: "incomeType", value: "self-employed" });
+applyCapture({ field: "skip-monthly-debts" });
 assert.equal(workspacePrompt(getFoxDraft()), "documents");
 assert.ok(!getFoxDraft().facts?.years_in_business);
 const liveSketchFix = workspaceReply("Needs a correction", getFoxDraft());
@@ -2054,12 +2064,11 @@ assert.doesNotMatch(
 );
 const seIncomeReply = workspaceReply("Self-employed", afterCredit);
 assert.doesNotMatch(seIncomeReply?.text ?? "", /^Self-employed\.|Self-employed\. Here’s a sample structure/i);
-assert.match(seIncomeReply?.text ?? "", /sketch/i);
-assert.match(seIncomeReply?.text ?? "", /self-employed/i);
-assert.match(seIncomeReply?.followUp ?? "", /government ID/i);
+assert.match(seIncomeReply?.text ?? "", /other monthly debts/i);
+assert.match(seIncomeReply?.text ?? "", /not counting this mortgage/i);
 assert.deepEqual(
   (seIncomeReply?.actions ?? []).map((item) => item.label),
-  ["Start with ID", "Skip", "Not yet"],
+  ["Skip", "Not yet"],
 );
 const seAfterId = skipCurrentInvite(seIncome);
 assert.equal(workspacePromptCopy("documents", seAfterId).text, DOC_INVITE_COPY.tax_return);
@@ -2225,6 +2234,7 @@ capturePurchaseFunds("1200000", "960000");
 applyCapture({ field: "creditRange", value: "760+" });
 assert.equal(workspacePrompt(getFoxDraft()), "income");
 applyCapture({ field: "incomeType", value: "w2" });
+applyCapture({ field: "skip-monthly-debts" });
 assert.equal(getFoxDraft().documentsSkipped, false);
 assert.equal(workspacePrompt(getFoxDraft()), "documents");
 applyCapture({ field: "skip-docs" });
@@ -2267,6 +2277,7 @@ applyCapture({ field: "timeline", value: "ready-now" });
 capturePurchaseFunds("1200000", "960000");
 applyCapture({ field: "creditRange", value: "760+" });
 applyCapture({ field: "incomeType", value: "other" });
+applyCapture({ field: "skip-monthly-debts" });
 assert.equal(getFoxDraft().documentsSkipped, false);
 assert.equal(workspacePrompt(getFoxDraft()), "documents");
 
@@ -2889,6 +2900,7 @@ applyCapture({ field: "propose-funds", value: "240000:960000" });
 applyCapture({ field: "accept-proposal" });
 applyCapture({ field: "creditRange", value: "760+" });
 applyCapture({ field: "incomeType", value: "w2" });
+applyCapture({ field: "skip-monthly-debts" });
 applyCapture({ field: "skip-docs" });
 assert.ok((getFoxDraft().skippedClasses ?? []).includes("government_id"));
 assert.ok(stillUsefulSection(getFoxDraft())?.items.some((item) => item.label === "Government ID"));
@@ -5488,6 +5500,257 @@ assert.doesNotMatch(
   }).line,
   /Paying off/,
 );
+
+const afterIncomeType = draft({
+  ...afterCredit,
+  incomeAsked: true,
+  incomeType: { ...emptyDraft().incomeType, value: "w2" },
+});
+assert.equal(workspacePrompt(afterIncomeType), "debts");
+assert.equal(workspacePromptCopy("debts", afterIncomeType).text, MONTHLY_DEBTS_ASK);
+assert.deepEqual(
+  (workspacePromptCopy("debts", afterIncomeType).actions ?? []).map((item) => item.label),
+  ["Skip", "Not yet"],
+);
+assert.equal(parseMonthlyDebtAmount("800"), 800);
+assert.equal(parseMonthlyDebtAmount("$800"), 800);
+assert.equal(parseMonthlyDebtAmount("about 800"), 800);
+assert.equal(parseMonthlyDebtAmount("800 a month"), 800);
+assert.equal(parseMonthlyDebtAmount("1200 including the mortgage"), 1200);
+for (const spoken of ["800", "$800", "about 800", "800 a month"]) {
+  const proposed = workspaceReply(spoken, afterIncomeType);
+  assert.equal(proposed?.capture?.field, "propose-monthly-debts");
+  assert.equal(proposed?.text, "That’s $800 a month in other debts, not counting this mortgage. Suggested · not underwritten. Use this?");
+  assert.deepEqual(
+    (proposed?.actions ?? []).map((item) => item.label),
+    ["Use this", "Leave blank"],
+  );
+}
+const debtConfirmDraft = {
+  ...afterIncomeType,
+  pendingProposal: {
+    field: "statedMonthlyDebts",
+    value: "800",
+    label: "Stated monthly debts",
+    kind: "computed" as const,
+    note: SUGGESTED_DEBTS_NOTE,
+  },
+};
+const usedDebts = resolveProposal(debtConfirmDraft, "accept");
+assert.equal(usedDebts.statedMonthlyDebts, 800);
+assert.equal(usedDebts.monthlyDebtsAsked, true);
+assert.equal(usedDebts.pendingProposal, null);
+assert.ok(
+  previewFacts(usedDebts).some(
+    (fact) =>
+      fact.id === "debts" &&
+      fact.label === "Stated monthly debts" &&
+      fact.value === "$800" &&
+      fact.note === SUGGESTED_DEBTS_NOTE,
+  ),
+);
+const useDebts = workspaceReply("Use this", debtConfirmDraft);
+assert.equal(useDebts?.capture?.field, "accept-proposal");
+assert.match(useDebts?.text ?? "", /sketch|government ID|Start with ID/i);
+const leaveBlankDebts = workspaceReply("Leave blank", debtConfirmDraft);
+assert.equal(leaveBlankDebts?.capture?.field, "decline-proposal");
+assert.match(leaveBlankDebts?.text ?? "", /Left that line blank|sketch|government ID/i);
+assert.deepEqual(
+  (leaveBlankDebts?.actions ?? []).map((item) => item.label),
+  ["Start with ID", "Skip", "Not yet"],
+);
+assert.equal(resolveProposal(debtConfirmDraft, "decline").statedMonthlyDebts, undefined);
+const skipDebts = workspaceReply("Skip", afterIncomeType);
+assert.equal(skipDebts?.capture?.field, "skip-monthly-debts");
+assert.equal(skipDebts?.text?.includes("other monthly debts"), false);
+assert.match(skipDebts?.text ?? "", /sketch/i);
+assert.deepEqual(
+  (skipDebts?.actions ?? []).map((item) => item.label),
+  ["Start with ID", "Skip", "Not yet"],
+);
+const notYetDebts = workspaceReply("Not yet", afterIncomeType);
+assert.equal(notYetDebts?.capture?.field, "skip-monthly-debts");
+assert.ok(canLooksRight(skipDocInvites({ ...afterIncomeType, monthlyDebtsAsked: true })));
+const skippedDebtFile = draft({ ...afterIncomeType, monthlyDebtsAsked: true });
+assert.equal(skippedDebtFile.statedMonthlyDebts, undefined);
+assert.ok(
+  previewFacts(skippedDebtFile).some(
+    (fact) => fact.id === "debts" && fact.value === "—" && fact.note === SUGGESTED_DEBTS_NOTE,
+  ),
+);
+assert.ok(storeCompleteness("buy", { purposeHint: "purchase", incomeType: "w2_base" }).stillUseful.includes("stated monthly debts"));
+assert.ok(
+  !storeCompleteness("buy", {
+    purposeHint: "purchase",
+    incomeType: "w2_base",
+    statedMonthlyDebts: 800,
+  }).stillUseful.includes("stated monthly debts"),
+);
+const includeMortgage = workspaceReply("1200 including the mortgage", {
+  ...afterIncomeType,
+  facts: {
+    current_pi: { field: "current_pi", value: "400", source: "document", confirmed: true },
+  },
+});
+assert.equal(includeMortgage?.capture?.field, "include-mortgage-debts");
+assert.match(includeMortgage?.text ?? "", /includes this mortgage/i);
+assert.match(includeMortgage?.text ?? "", /\$400/);
+assert.match(includeMortgage?.text ?? "", /\$800/);
+assert.ok((includeMortgage?.actions ?? []).some((item) => item.label === "Subtract"));
+assert.doesNotMatch(includeMortgage?.text ?? "", /I’ll use \$1,200|wrote \$1,200/i);
+const subtractMortgage = workspaceReply("Subtract", {
+  ...afterIncomeType,
+  debtMortgageAsked: true,
+  pendingDebtMortgage: { included: 1200, mortgage: 400 },
+});
+assert.equal(subtractMortgage?.capture?.field, "subtract-mortgage");
+assert.match(subtractMortgage?.text ?? "", /That’s \$800 a month in other debts/);
+const debtsOnFile = draft({
+  ...afterIncomeType,
+  monthlyDebtsAsked: true,
+  statedMonthlyDebts: 800,
+  correcting: "debts",
+  correctingLine: "debts",
+});
+const debtsEditAsk = workspacePromptCopy("debts", debtsOnFile);
+assert.match(debtsEditAsk.text, /still right/i);
+const midDebtEdit = workspaceReply("900", debtsOnFile);
+assert.equal(midDebtEdit?.capture?.field, "propose-monthly-debts");
+assert.match(midDebtEdit?.text ?? "", /That’s \$900 a month in other debts/);
+assert.equal(emptyDraft().statedMonthlyDebts, undefined);
+assert.equal(emptyDraft().monthlyDebtsAsked, undefined);
+
+const emptyDebtsQualify = workspaceReply("will i qualify", afterIncome);
+assert.doesNotMatch(emptyDebtsQualify?.text ?? "", /\bDTI\b|stated DTI|your DTI is/i);
+const eightHundredFile = draft({
+  ...afterIncome,
+  statedMonthlyDebts: 800,
+  monthlyDebtsAsked: true,
+  facts: {
+    qualifying_income: {
+      field: "qualifying_income",
+      value: "9000",
+      source: "suggested",
+      confirmed: true,
+    },
+  },
+});
+const eightHundredQualify = workspaceReply("will i qualify", eightHundredFile);
+assert.doesNotMatch(eightHundredQualify?.text ?? "", /\bDTI\b|stated DTI|your DTI is|\d+\s*%/i);
+assert.doesNotMatch(
+  readinessFromFile({
+    product: "buy",
+    purposeHint: "purchase",
+    occupancy: "primary",
+    state: "CA",
+    purchasePrice: 850000,
+    downPayment: 170000,
+    loanAmount: 680000,
+    statedCreditBand: "760+",
+    incomeType: "w2_base",
+    received: ["paystub", "w2"],
+    statedMonthlyDebts: 800,
+    suggestedMonthlyIncome: 9000,
+  }).line,
+  /\bDTI\b|stated DTI|your DTI is|\d+\s*%/,
+);
+assert.equal(
+  readinessFromFile({
+    product: "buy",
+    purposeHint: "purchase",
+    occupancy: "primary",
+    state: "CA",
+    purchasePrice: 850000,
+    downPayment: 170000,
+    loanAmount: 680000,
+    statedCreditBand: "760+",
+    incomeType: "w2_base",
+    received: ["paystub", "w2"],
+    statedMonthlyDebts: 800,
+    suggestedMonthlyIncome: 9000,
+  }).kind,
+  "strong",
+);
+assert.match(
+  readinessFromFile({
+    product: "buy",
+    purposeHint: "purchase",
+    occupancy: "primary",
+    state: "CA",
+    purchasePrice: 850000,
+    downPayment: 170000,
+    loanAmount: 680000,
+    statedCreditBand: "760+",
+    incomeType: "w2_base",
+    received: ["paystub", "w2"],
+    statedMonthlyDebts: 800,
+    suggestedMonthlyIncome: 9000,
+  }).line,
+  /Final underwriting still decides/,
+);
+assert.equal(
+  readinessFromFile({
+    product: "buy",
+    purposeHint: "purchase",
+    occupancy: "primary",
+    state: "CA",
+    purchasePrice: 850000,
+    downPayment: 170000,
+    loanAmount: 680000,
+    statedCreditBand: "760+",
+    incomeType: "w2_base",
+    received: ["paystub", "w2"],
+    statedMonthlyDebts: 8000,
+    suggestedMonthlyIncome: 9000,
+  }).kind,
+  "uw_review",
+);
+assert.doesNotMatch(
+  readinessFromFile({
+    product: "buy",
+    purposeHint: "purchase",
+    occupancy: "primary",
+    state: "CA",
+    purchasePrice: 850000,
+    downPayment: 170000,
+    loanAmount: 680000,
+    statedCreditBand: "760+",
+    incomeType: "w2_base",
+    received: ["paystub", "w2"],
+    statedMonthlyDebts: 8000,
+    suggestedMonthlyIncome: 9000,
+  }).line,
+  /\bDTI\b|stated DTI|your DTI is|\d+\s*%/,
+);
+assert.equal(
+  readinessFromFile({
+    product: "buy",
+    purposeHint: "purchase",
+    occupancy: "primary",
+    state: "CA",
+    purchasePrice: 850000,
+    downPayment: 170000,
+    loanAmount: 680000,
+    statedCreditBand: "760+",
+    incomeType: "w2_base",
+    received: ["paystub"],
+    statedMonthlyDebts: 8000,
+    suggestedMonthlyIncome: 9000,
+  }).kind,
+  "not_ready",
+);
+
+const debtsSrc = [
+  readFileSync(join(root, "components/fox/workspace.ts"), "utf8"),
+  readFileSync(join(root, "components/fox/monthlyDebts.ts"), "utf8"),
+  readFileSync(join(root, "components/fox/types.ts"), "utf8"),
+  readFileSync(join(root, "components/fox/FilePreview.tsx"), "utf8"),
+].join("\n");
+assert.doesNotMatch(debtsSrc, /add another liability|liability form|itemized liabilit/i);
+assert.doesNotMatch(debtsSrc, /tradeline|bureau pull|soft pull|hard pull|pullCredit|credit-pull/i);
+assert.doesNotMatch(debtsSrc, /student loan card|auto loan card|HOA dues form/i);
+assert.match(guidelineStoreSrc, /statedMonthlyDebts/);
+assert.doesNotMatch(guidelineStoreSrc, /stated DTI|your DTI is/i);
 assert.equal(storeLookup("language.cost", {}).borrowerLine, COST_LINE);
 assert.equal(storeLookup("flags.govvie", { namedGovvie: true }).borrowerLine, GOVVIE_LINE);
 assert.equal(storeLookup("flags.govvie", { namedGovvie: true }).caution, GOVVIE_LINE);
