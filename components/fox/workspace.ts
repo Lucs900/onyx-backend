@@ -53,7 +53,7 @@ import {
   nextDocInvite,
   offeringDocStart,
   skipCurrentInvite,
-  skipRemainingClasses,
+  holdDocuments,
 } from "./fileWrite";
 import {
   SUGGESTED_NOTE,
@@ -320,16 +320,10 @@ export function lastFoxTurn<T extends { role: string }>(messages: T[]): T | unde
 }
 
 export function composerPlaceholder(
-  draft: FoxIntakeDraft,
-  askingAmountPurpose = false,
+  _draft?: FoxIntakeDraft,
+  _askingAmountPurpose = false,
 ): string {
-  if (draft.pendingProposal || draft.pendingConflict) return "Ask ONYX Fox";
-  const ask = workspacePrompt(draft);
-  if ((ask === "amount" && !askingAmountPurpose) || ask === "value") {
-    return `Enter ${composerAmountHint(draft)}`;
-  }
-  if (askingAmountPurpose) return "Purchase price, loan amount, or HELOC line";
-  return "Ask ONYX Fox";
+  return "";
 }
 
 function keepThisActions(): FoxAction[] {
@@ -807,6 +801,7 @@ function incomeFromText(text: string) {
 
 function documentsAskText(draft: FoxIntakeDraft): string {
   if (draft.awaitingYearsInBusiness) return YEARS_IN_BUSINESS_ASK;
+  if (offeringDocStart(draft) && draft.docsHeld) return HOLD_DOCS_COPY;
   if (offeringDocStart(draft)) return sketchAndStartDocsCopy(draft).text;
   const invite = nextDocInvite(draft);
   if (invite) return DOC_INVITE_COPY[invite];
@@ -998,8 +993,26 @@ export function sketchAndStartDocsCopy(draft: FoxIntakeDraft): {
 function startDocsActions(): FoxAction[] {
   return [
     { id: "start-docs", label: "Start with ID", event: "bubble", capture: { field: "start-docs" } },
-    { id: "not-yet-docs", label: "Not yet", event: "bubble", capture: { field: "skip-docs" } },
+    { id: "skip-docs", label: "Skip", event: "bubble", capture: { field: "skip-docs" } },
+    { id: "not-yet-docs", label: "Not yet", event: "bubble", capture: { field: "hold-docs" } },
   ];
+}
+
+export const HOLD_DOCS_COPY =
+  "Okay. I’ll hold documents. The sketch is on the notepad. Say when you want to start with ID, or ask me anything.";
+
+function holdDocsActions(): FoxAction[] {
+  return [
+    { id: "start-docs", label: "Start with ID", event: "bubble", capture: { field: "start-docs" } },
+    { id: "ask-fox", label: "Ask Fox", event: "bubble", capture: { field: "ask-fox" } },
+  ];
+}
+
+function holdDocsAsk() {
+  return {
+    text: HOLD_DOCS_COPY,
+    actions: holdDocsActions(),
+  };
 }
 
 function docInviteActions(): FoxAction[] {
@@ -1367,6 +1380,9 @@ function workspaceAskCopy(
   if (prompt === "documents") {
     if (draft.awaitingYearsInBusiness) {
       return { text: YEARS_IN_BUSINESS_ASK };
+    }
+    if (offeringDocStart(draft) && draft.docsHeld) {
+      return holdDocsAsk();
     }
     if (offeringDocStart(draft)) {
       return {
@@ -1858,6 +1874,7 @@ export function editPromptFromCapture(capture?: Capture): FoxPrompt | undefined 
   if (capture.field === "incomeType") return "income";
   if (
     capture.field === "skip-docs" ||
+    capture.field === "hold-docs" ||
     capture.field === "start-docs" ||
     capture.field === "open-docs" ||
     capture.field === "upload-more"
@@ -1997,6 +2014,7 @@ export function workspaceUpdateCopy(capture: Capture, draft: FoxIntakeDraft) {
     return label ? `Updated income to ${label}.` : "Updated income.";
   }
   if (capture.field === "skip-docs") return "Updated. Docs skipped.";
+  if (capture.field === "hold-docs") return "Updated. Docs paused.";
   if (capture.field === "skip-down") return "Updated. Down payment left blank.";
   if (capture.field === "keep-file-fact") return "Kept the file value.";
   if (capture.field === "use-document-fact") return "I’ll use that number.";
@@ -2005,6 +2023,7 @@ export function workspaceUpdateCopy(capture: Capture, draft: FoxIntakeDraft) {
 
 export function parseWorkspaceEdit(
   text: string,
+  draft?: FoxIntakeDraft,
 ): {
   capture?: Capture;
   correct?: FoxPrompt;
@@ -2013,7 +2032,7 @@ export function parseWorkspaceEdit(
 } | null {
   const q = text.trim();
   const lower = q.toLowerCase();
-  if (!/\b(change|edit|update|set|switch)\b/.test(lower)) return null;
+  if (!/\b(change|edit|update|set|switch|actually|should be|make it)\b/.test(lower)) return null;
   if (/^(needs a correction|looks right)$/i.test(lower)) return null;
 
   const wantsPath = /\b(path|relationship|acr|loan only|loan-only)\b/.test(lower);
@@ -2139,6 +2158,28 @@ export function parseWorkspaceEdit(
     return { correct: "documents", confirm: "Government ID, latest paystub, and W-2." };
   }
 
+  if (draft && /\bactually\b/.test(lower)) {
+    const amount = parseLooseAmount(q);
+    if (amount != null && isPurchaseLike(draft)) {
+      if (/\bdown\b/.test(lower)) {
+        return {
+          capture: { field: "downPayment", value: String(amount) },
+          confirm: `Updated down payment to ${formatMoney(amount)}.`,
+        };
+      }
+      if (/\bloan\b/.test(lower)) {
+        return {
+          capture: { field: "loanAmount", value: String(amount) },
+          confirm: `Updated loan amount to ${formatMoney(amount)}.`,
+        };
+      }
+      return {
+        capture: { field: "propertyValue", value: String(amount) },
+        confirm: `Updated purchase price to ${formatMoney(amount)}.`,
+      };
+    }
+  }
+
   return null;
 }
 
@@ -2253,7 +2294,9 @@ function draftAfterCapture(draft: FoxIntakeDraft, capture: Capture): FoxIntakeDr
   if (capture.field === "skip-value") return { ...next, valueAsked: true, propertyValueAmount: undefined };
   if (capture.field === "skip-term") return { ...next, termAsked: true, termYears: undefined };
   if (capture.field === "incomeType") return withIncomeType(next, capture.value);
-  if (capture.field === "skip-docs") return skipCurrentInvite(next);
+  if (capture.field === "skip-docs") return skipCurrentInvite({ ...next, docsHeld: false });
+  if (capture.field === "hold-docs") return holdDocuments(next);
+  if (capture.field === "start-docs") return { ...next, docsStarted: true, docsHeld: false };
   return next;
 }
 
@@ -2504,10 +2547,7 @@ export function workspaceReply(
     };
   }
 
-  const matrix = matrixReply(q, draft, prompt);
-  if (matrix) return matrix;
-
-  const edit = parseWorkspaceEdit(q);
+  const edit = parseWorkspaceEdit(q, draft);
   if (edit?.capture && draft.path) {
     const nextDraft = draftAfterCapture(draft, edit.capture);
     return {
@@ -2524,6 +2564,9 @@ export function workspaceReply(
       capture: { field: "correct", value: edit.correct, line: edit.line },
     };
   }
+
+  const matrix = matrixReply(q, draft, prompt);
+  if (matrix) return matrix;
 
   if (/(what is acr|what.?s acr|active credit relationship)/i.test(lower)) {
     return {
@@ -2981,24 +3024,45 @@ export function workspaceReply(
   }
 
   if (prompt === "documents") {
-    if (offeringDocStart(draft)) {
-      if (/(not yet|skip|later|don'?t have|fine)/i.test(lower)) {
-        const nextDraft = skipRemainingClasses(draft);
+    if (offeringDocStart(draft) || draft.docsHeld) {
+      if (/\bnot yet\b/.test(lower)) {
+        const nextDraft = holdDocuments(draft);
+        return {
+          ...holdDocsAsk(),
+          capture: { field: "hold-docs" },
+        };
+      }
+      if (/^skip\b/.test(lower)) {
+        const nextDraft = skipCurrentInvite({ ...draft, docsHeld: false });
         return {
           ...workspacePromptCopy(workspacePrompt(nextDraft), nextDraft),
           capture: { field: "skip-docs" },
         };
       }
+      if (/(ask fox|just ask)/i.test(lower)) {
+        return {
+          ...holdDocsAsk(),
+          capture: { field: "ask-fox" },
+        };
+      }
       if (/(start|id|upload|drop|now|add|documents)/i.test(lower)) {
-        const nextDraft = { ...draft, docsStarted: true };
+        const nextDraft = { ...draft, docsStarted: true, docsHeld: false };
         return {
           ...workspacePromptCopy("documents", nextDraft),
           capture: { field: "start-docs" },
         };
       }
+      if (draft.docsHeld) return holdDocsAsk();
       return workspacePromptCopy("documents", draft);
     }
-    if (/(skip|later|not yet|don'?t have|fine)/i.test(lower)) {
+    if (/\bnot yet\b/.test(lower)) {
+      const nextDraft = holdDocuments(draft);
+      return {
+        ...holdDocsAsk(),
+        capture: { field: "hold-docs" },
+      };
+    }
+    if (/^skip\b|later|don'?t have|fine/.test(lower)) {
       const nextDraft = skipCurrentInvite(draft);
       return {
         ...workspacePromptCopy(workspacePrompt(nextDraft), nextDraft),

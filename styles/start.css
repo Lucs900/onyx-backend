@@ -201,7 +201,8 @@
 }
 
 .fox-structure-peek,
-.fox-structure-chip {
+.fox-structure-chip,
+.fox-structure-notepad {
   display: none;
 }
 
@@ -245,6 +246,12 @@
 .file-preview__row--explain {
   cursor: pointer;
   border-radius: 8px;
+}
+
+.file-preview__row--tap .file-preview__value > span:first-child {
+  text-decoration: underline;
+  text-decoration-style: dotted;
+  text-underline-offset: 3px;
 }
 
 .file-preview__row--tap:hover,
@@ -438,6 +445,7 @@
   .file-preview__mobile,
   .fox-structure-peek,
   .fox-structure-chip,
+  .fox-structure-notepad,
   .file-sheet {
     display: none !important;
   }
@@ -479,25 +487,18 @@
   }
 
   .fox-structure-chip {
+    display: none;
+  }
+
+  .fox-structure-notepad {
     display: block;
-    align-self: flex-start;
-    flex: 0 0 auto;
-    max-width: 100%;
-    height: 36px;
-    padding: 0 12px;
-    border: 1px solid var(--fox-hairline);
-    border-radius: 999px;
-    background: var(--paper-elevated);
-    color: var(--ink);
-    font-family: var(--font-ui);
-    font-size: 12px;
-    line-height: 36px;
-    font-weight: 500;
-    text-align: left;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    cursor: pointer;
+    max-height: min(36dvh, 280px);
+    overflow: auto;
+    padding: 8px 4px 0;
+  }
+
+  .fox-structure-notepad .type-eyebrow {
+    margin: 0 0 8px;
   }
 
   .file-sheet__heading {

@@ -52,7 +52,6 @@ import {
   promoteExtractClass,
   resolveFactConflict,
   resolveReceivedSlot,
-  offeringDocStart,
   skipCurrentInvite,
   skipRemainingClasses,
   type ExtractApplyInput,
@@ -120,6 +119,7 @@ export function emptyDraft(): FoxIntakeDraft {
     documents: [],
     documentsSkipped: false,
     docsStarted: false,
+    docsHeld: false,
     priorYearSkipped: false,
     yearsInBusinessAsked: false,
     awaitingYearsInBusiness: false,
@@ -201,6 +201,7 @@ function normalize(value: unknown): FoxIntakeDraft {
     incomeAsked: Boolean(raw.incomeAsked || raw.incomeType?.value),
     docsOpen: Boolean(raw.docsOpen),
     docsStarted: Boolean(raw.docsStarted),
+    docsHeld: Boolean(raw.docsHeld),
     originatorRequested: Boolean(raw.originatorRequested),
     motion: isFileMotion(raw.motion) ? raw.motion : undefined,
     nextActor: isFileNext(raw.nextActor) ? raw.nextActor : undefined,
@@ -836,9 +837,6 @@ export function markMissingAsked(key: string) {
 
 export function skipDocuments() {
   if (current.workspaceFlow && !current.sampleAccepted) {
-    if (offeringDocStart(current)) {
-      return commit(skipRemainingClasses(current));
-    }
     return commit(skipCurrentInvite(current));
   }
   const prepared =
@@ -1074,10 +1072,19 @@ export function applyCapture(capture: Capture) {
     if (current.workspaceFlow) return current;
     return advancePhase();
   }
+  if (capture.field === "hold-docs") {
+    return commit({
+      ...current,
+      docsHeld: true,
+      docsOpen: false,
+      correcting: null,
+    });
+  }
   if (capture.field === "start-docs") {
     return commit({
       ...current,
       docsStarted: true,
+      docsHeld: false,
       docsOpen: false,
       correcting: null,
     });
@@ -1107,6 +1114,7 @@ export function applyCapture(capture: Capture) {
     if (current.workspaceFlow) {
       return commit({
         ...current,
+        docsStarted: true,
         docsOpen: true,
         correcting: null,
       });

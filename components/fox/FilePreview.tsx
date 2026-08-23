@@ -1,12 +1,6 @@
 "use client";
 
-import {
-  useEffect,
-  useState,
-  useSyncExternalStore,
-  type ReactNode,
-} from "react";
-import { createPortal } from "react-dom";
+import { useSyncExternalStore, type ReactNode } from "react";
 import { DocumentDrop } from "./DocumentDrop";
 import { requestFoxExplain, requestFoxFix } from "./AlwaysOnFox";
 import { getFoxDraft, getServerDraft, subscribeFoxDraft } from "./store";
@@ -36,6 +30,7 @@ export function StructureRows({
               key={fact.id}
               type="button"
               className="file-preview__row file-preview__row--tap"
+              aria-label={`Edit ${fact.label}`}
               onClick={() => requestFoxFix(fact.id)}
             >
               <span className="file-preview__label">{fact.label}</span>
@@ -51,11 +46,7 @@ export function StructureRows({
             <button
               key={fact.id}
               type="button"
-              className={
-                deskState
-                  ? "file-preview__row file-preview__row--tap"
-                  : "file-preview__row file-preview__row--explain"
-              }
+              className="file-preview__row file-preview__row--explain"
               onClick={() => requestFoxExplain(fact.id)}
             >
               <span className="file-preview__label">{fact.label}</span>
@@ -83,82 +74,18 @@ export function StructureRows({
 export function WorkspaceFileDock({ children }: { children: ReactNode }) {
   const draft = useSyncExternalStore(subscribeFoxDraft, getFoxDraft, getServerDraft);
   const facts = previewFacts(draft);
-  const [sheetOpen, setSheetOpen] = useState(false);
-  const [mounted, setMounted] = useState(false);
-  const newest =
-    [...facts].reverse().find((fact) => fact.id !== "status") ?? facts[facts.length - 1];
-  const peek = newest ? `${newest.label} · ${newest.value}` : "";
-  const chip =
-    facts.length > 1 ? `Structure · ${facts.length} facts` : peek || "Structure";
-  const pathFact = facts.find((fact) => fact.id === "path");
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
-
-  useEffect(() => {
-    const close = () => setSheetOpen(false);
-    window.addEventListener("onyx:fox-fix", close);
-    window.addEventListener("onyx:fox-explain", close);
-    return () => {
-      window.removeEventListener("onyx:fox-fix", close);
-      window.removeEventListener("onyx:fox-explain", close);
-    };
-  }, []);
-
-  const sheet =
-    mounted && sheetOpen && facts.length
-      ? createPortal(
-          <div className="file-sheet" role="dialog" aria-label="File">
-            <button
-              type="button"
-              className="file-sheet__backdrop"
-              aria-label="Close file"
-              onClick={() => setSheetOpen(false)}
-            />
-            <div className="file-sheet__panel">
-              <div className="file-sheet__head">
-                <div className="file-sheet__heading">
-                  <p className="type-eyebrow">File</p>
-                  {pathFact ? (
-                    <p className="file-sheet__path">
-                      {pathFact.label} · {pathFact.value}
-                    </p>
-                  ) : null}
-                </div>
-                <button
-                  type="button"
-                  className="file-sheet__close"
-                  onClick={() => setSheetOpen(false)}
-                >
-                  Hide
-                </button>
-              </div>
-              <StructureRows facts={facts} draft={draft} />
-            </div>
-          </div>,
-          document.body,
-        )
-      : null;
-
   const showVault = Boolean(draft.docsOpen) && Boolean(draft.sampleAccepted);
 
   return (
     <div className="fox-workspace-dock">
       <DocumentDrop draft={draft} compact visible={showVault} />
       {facts.length ? (
-        <button
-          type="button"
-          className="fox-structure-chip"
-          onClick={() => setSheetOpen(true)}
-        >
-          {chip}
-        </button>
+        <section className="fox-structure-notepad" aria-label="Structure">
+          <p className="type-eyebrow">Structure</p>
+          <StructureRows facts={facts} draft={draft} />
+        </section>
       ) : null}
-      <div className="fox-workspace-dock__row">
-        {children}
-      </div>
-      {sheet}
+      <div className="fox-workspace-dock__row">{children}</div>
     </div>
   );
 }

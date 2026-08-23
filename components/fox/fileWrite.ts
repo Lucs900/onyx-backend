@@ -810,7 +810,9 @@ function inviteSatisfied(draft: FoxIntakeDraft, kind: DocInviteKind): boolean {
       if (year) years.add(year);
     }
     if (Math.max(extracted, years.size) >= 2) return true;
-    if (receivedTaxReturnCount(draft) < 1) return true;
+    if (receivedTaxReturnCount(draft) < 1) {
+      return !(draft.skippedClasses ?? []).includes("tax_return");
+    }
     return false;
   }
   if (receivedExtractClasses(draft).has(kind)) return true;
@@ -857,6 +859,10 @@ export function skipCurrentInvite(draft: FoxIntakeDraft): FoxIntakeDraft {
     ...next,
     documentsSkipped: more == null && draft.documents.length === 0,
   };
+}
+
+export function holdDocuments(draft: FoxIntakeDraft): FoxIntakeDraft {
+  return { ...draft, docsHeld: true, docsOpen: false, correcting: null };
 }
 
 export function skipRemainingClasses(draft: FoxIntakeDraft): FoxIntakeDraft {

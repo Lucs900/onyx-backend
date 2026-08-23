@@ -223,6 +223,7 @@ export type FoxIntakeDraft = {
   documents: ReceivedDoc[];
   documentsSkipped: boolean;
   docsStarted?: boolean;
+  docsHeld?: boolean;
   priorYearSkipped?: boolean;
   yearsInBusinessAsked?: boolean;
   awaitingYearsInBusiness?: boolean;
@@ -314,6 +315,7 @@ export type Capture =
   | { field: "qualifyingIncome"; value: string }
   | { field: "propose-funds"; value: string }
   | { field: "skip-docs" }
+  | { field: "hold-docs" }
   | { field: "start-docs" }
   | { field: "open-docs" }
   | { field: "keep-file-fact" }

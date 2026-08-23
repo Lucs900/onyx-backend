@@ -57,7 +57,6 @@ import {
 } from "./store";
 import {
   caretAfterMoneyFormat,
-  composerPlaceholder,
   confirmedMoneyText,
   formatLiveMoneyInput,
   editLineFromCapture,
@@ -916,16 +915,16 @@ export function AlwaysOnFox({
 
   const focusComposer = (force = false) => {
     const node = inputRef.current;
-    if (!node || (!force && !needsTyping)) return;
+    if (!node || (!force && !isStart && !needsTyping)) return;
     node.focus({ preventScroll: true });
   };
 
   useLayoutEffect(() => {
-    if (!isStart || !open || !needsTyping || !ready) return;
-    focusComposer();
-    const frame = window.requestAnimationFrame(() => focusComposer());
+    if (!isStart || !open || !ready) return;
+    focusComposer(true);
+    const frame = window.requestAnimationFrame(() => focusComposer(true));
     return () => window.cancelAnimationFrame(frame);
-  }, [isStart, open, startAsk, needsTyping, ready, messages.length]);
+  }, [isStart, open, startAsk, ready, messages.length]);
 
   useLayoutEffect(() => {
     if (caretRef.current == null || !inputRef.current) return;
@@ -1012,6 +1011,11 @@ export function AlwaysOnFox({
       applyCapture(action.capture);
       skipPromptSync.current = true;
       const live = getFoxDraft();
+      if (action.capture.field === "ask-fox" && live.docsHeld && !live.sampleAccepted) {
+        appendReply(action.label, nextFoxAsk(live));
+        window.requestAnimationFrame(() => focusComposer(true));
+        return;
+      }
       appendReply(action.label, {
         text: workspaceUpdateCopy(action.capture, live),
         actions: finishLineActions(live),
@@ -1029,6 +1033,7 @@ export function AlwaysOnFox({
       const invitePick =
         action.capture?.field === "open-docs" && !getFoxDraft().sampleAccepted;
       if (invitePick) {
+        applyCapture({ field: "start-docs" });
         skipPromptSync.current = true;
         requestFoxPickFile();
         return;
@@ -1195,17 +1200,17 @@ export function AlwaysOnFox({
   };
 
   const onComposerBlur = (event: FocusEvent<HTMLInputElement>) => {
-    if (!needsTyping) return;
+    if (!isStart && !needsTyping) return;
     const next = event.relatedTarget;
     if (next instanceof HTMLElement && next.closest("button, a, .fox-chip, .fox-bar__send")) {
       return;
     }
     window.setTimeout(() => {
-      if (!needsTyping || !inputRef.current) return;
+      if ((!isStart && !needsTyping) || !inputRef.current) return;
       const active = document.activeElement;
       if (active === inputRef.current) return;
       if (active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement) return;
-      focusComposer();
+      focusComposer(true);
     }, 0);
   };
 
@@ -1218,7 +1223,7 @@ export function AlwaysOnFox({
         <AdvisorMark size={20} />
       </span>
       <label className="visually-hidden" htmlFor={fieldId}>
-        Ask ONYX Fox
+        Message Fox
       </label>
       <input
         key={composerMode}
@@ -1230,9 +1235,9 @@ export function AlwaysOnFox({
         onChange={onComposerChange}
         onFocus={() => setOpen(true)}
         onBlur={onComposerBlur}
-        placeholder={composerPlaceholder(draft, askingAmountPurpose)}
+        placeholder=""
         inputMode={composerMode}
-        autoFocus={needsTyping}
+        autoFocus={isStart || needsTyping}
         autoComplete="off"
       />
       <button
