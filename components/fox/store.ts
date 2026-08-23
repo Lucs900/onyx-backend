@@ -460,7 +460,12 @@ export function shouldResumeWorkspaceEntry(
   draft: FoxIntakeDraft = current,
   messages: FoxMessage[] = getFoxMessages(),
 ) {
-  return fileExists(draft) || workspaceSessionStarted(draft, messages);
+  if (fileExists(draft) || workspaceSessionStarted(draft, messages)) return true;
+  return Boolean(
+    (draft.skippedClasses && draft.skippedClasses.length > 0) ||
+      (draft.skippedStillUseful && draft.skippedStillUseful.length > 0) ||
+      draft.documentsSkipped,
+  );
 }
 
 function resumeWorkspaceEntry(path?: IntakePath | null, intent: ProductIntent | null = null) {

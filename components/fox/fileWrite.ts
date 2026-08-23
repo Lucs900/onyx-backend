@@ -725,7 +725,7 @@ export function shortStillUsefulLabel(label: string) {
 }
 
 export function fileStillUsefulNote(draft: FoxIntakeDraft): string | undefined {
-  if (layer2Open(draft)) return undefined;
+  if (stillUsefulVisible(draft)) return undefined;
   if (!deepenStillUseful(draft) && !draft.sampleAccepted) return undefined;
   const labels = stillUsefulLabels(draft).map(shortStillUsefulLabel);
   if (!labels.length) return undefined;
@@ -815,6 +815,21 @@ export function layer2Open(draft: FoxIntakeDraft) {
   );
 }
 
+function skippedOpeningDoc(draft: FoxIntakeDraft) {
+  return Boolean(
+    (draft.skippedClasses && draft.skippedClasses.length > 0) ||
+      draft.priorYearSkipped ||
+      draft.documentsSkipped,
+  );
+}
+
+/** Structure Still useful: after Proceed, or as soon as an opening doc was skipped. */
+export function stillUsefulVisible(draft: FoxIntakeDraft) {
+  if (layer2Open(draft)) return true;
+  if (!skippedOpeningDoc(draft)) return false;
+  return Boolean(draft.path && draft.productIntent && draft.incomeType.value);
+}
+
 export function layer2Plan(draft: FoxIntakeDraft): StillUsefulItem[] {
   const skipped = skippedStillUsefulSet(draft);
   const income = draft.incomeType.value;
@@ -898,7 +913,7 @@ export function stillUsefulSection(draft: FoxIntakeDraft): {
   items: StillUsefulItem[];
   empty: boolean;
 } | null {
-  if (!layer2Open(draft)) return null;
+  if (!stillUsefulVisible(draft)) return null;
   const items = layer2Plan(draft).slice(0, 3);
   return { items, empty: items.length === 0 };
 }
