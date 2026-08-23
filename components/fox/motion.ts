@@ -5,7 +5,7 @@ import {
   receivedTaxReturnCount,
   stillUsefulLabels,
 } from "./fileWrite";
-import { canLooksRight, loanExceedsPurchasePrice } from "./completeness";
+import { canLooksRight, shouldEscalate } from "./completeness";
 import type {
   Capture,
   FileEvent,
@@ -297,7 +297,7 @@ export function finishLineActions(draft: FoxIntakeDraft): FoxAction[] {
 
 export function applyLooksRightMotion(draft: FoxIntakeDraft): FoxIntakeDraft {
   if (!canLooksRight(draft) && !draft.sampleAccepted) return draft;
-  if (loanExceedsPurchasePrice(draft)) {
+  if (shouldEscalate(draft)) {
     return applyEscalateMotion(
       appendFileEvent(
         {

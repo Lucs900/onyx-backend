@@ -65,7 +65,19 @@ import {
 } from "../lib/income/suggest";
 import { printedSampleFromFilename } from "../lib/docs/printedSample";
 import {
+  CASH_OUT_CAUTION,
   CONVENTIONAL_GUIDELINE_VERSION,
+  DISTRESS_LINE,
+  ESCALATE_LINE,
+  GOVVIE_LINE,
+  INVESTMENT_CAUTION,
+  JUMBO_CEILING_LINE,
+  LTV_NOT_A_DECISION,
+  WILL_I_QUALIFY_LINE,
+  completeness as storeCompleteness,
+  escalate as storeEscalate,
+  flags as storeFlags,
+  lookup as storeLookup,
   queryConventionalGuidelines,
 } from "../lib/guidelines/conventional";
 import {
@@ -1501,7 +1513,21 @@ assert.ok(!previewRateApplies(investBuy));
 const investFacts = previewFacts(investBuy);
 assert.ok(investFacts.some((fact) => fact.id === "price" && fact.label === "Purchase price"));
 assert.ok(investFacts.some((fact) => fact.id === "rate" && fact.value === PRICING_WHEN_READY));
+assert.equal(guidelineCaution(investBuy), INVESTMENT_CAUTION);
+assert.ok(investFacts.some((fact) => fact.id === "caution" && fact.value === INVESTMENT_CAUTION));
 assert.ok(investFacts.some((fact) => fact.id === "caution" && fact.value === PRICING_WAITS));
+assert.equal(
+  storeEscalate({ occupancy: "investment", product: "buy", purposeHint: "purchase", state: "CA" }).action,
+  "stay",
+);
+assert.equal(
+  storeFlags({ occupancy: "investment", product: "buy", purposeHint: "purchase", state: "CA" }).caution,
+  INVESTMENT_CAUTION,
+);
+assert.equal(
+  storeFlags({ occupancy: "investment", product: "buy", purposeHint: "purchase", state: "CA" }).previewRateAllowed,
+  false,
+);
 assert.ok(!investFacts.some((fact) => fact.value.includes(SAMPLE_RATE_LABEL)));
 assert.ok(!investFacts.some((fact) => fact.value.includes("6.750%")));
 assert.equal(investFacts.find((fact) => fact.id === "reward")?.value, REWARD_PREPARED_COPY);
@@ -1520,6 +1546,7 @@ const highBuyAfterTime = draft({
 });
 const highBuyAsk = workspaceReply("1500000", highBuyAfterTime);
 assert.equal(highBuyAsk?.capture?.field, "propertyValue");
+assert.equal(JUMBO_OFFER_COPY, JUMBO_CEILING_LINE);
 assert.equal(highBuyAsk?.text, JUMBO_OFFER_COPY);
 assert.deepEqual(
   (highBuyAsk?.actions ?? []).map((item) => item.label),
@@ -1612,8 +1639,8 @@ assert.equal(workspacePrompt(draft({ ...afterIncome, outOfState: true })), "geo-
 
 const fhaNamed = workspaceReply("This is FHA", afterIncome);
 assert.equal(fhaNamed?.capture?.field, "govProgram");
-assert.match(fhaNamed?.text ?? "", /FHA/);
-assert.match(fhaNamed?.text ?? "", /cannot show a preview rate/i);
+assert.ok((fhaNamed?.text ?? "").includes(GOVVIE_LINE));
+assert.doesNotMatch(fhaNamed?.text ?? "", /MIP|UFMIP|FHA case|203\s*\(b\)|FHA guideline/i);
 assert.ok((fhaNamed?.actions ?? []).some((item) => item.label === "Request human"));
 const fhaReady = draft({ ...afterIncome, govProgram: "fha" });
 assert.ok(!previewRateApplies(fhaReady));
@@ -1622,7 +1649,7 @@ assert.ok(previewFacts(fhaReady).some((fact) => fact.id === "product" && fact.va
 
 const bkNamed = workspaceReply("I have an active bankruptcy", afterIncome);
 assert.equal(bkNamed?.capture?.field, "creditEvent");
-assert.match(bkNamed?.text ?? "", /still Proceed/);
+assert.ok((bkNamed?.text ?? "").includes(DISTRESS_LINE));
 assert.doesNotMatch(bkNamed?.text ?? "", /will contact you/i);
 const bkReady = draft({
   ...afterIncome,
@@ -2398,13 +2425,13 @@ const acmeQualifyAsk = workspaceReply("will i qualify", acmeWrite.draft);
 assert.notEqual(acmeQualifyAsk?.capture?.field, "accept-proposal");
 assert.notEqual(acmeQualifyAsk?.capture?.field, "decline-proposal");
 assert.equal(acmeWrite.draft.facts?.qualifying_income, undefined);
-assertAnswerThenRestore(acmeQualifyAsk, /cannot approve, lock, or commit to lend/i, {
+assertAnswerThenRestore(acmeQualifyAsk, /cannot approve or say you qualify/i, {
   text: /9,167/,
   labels: ["Use this", "Leave blank"],
 });
 assert.match(acmeQualifyAsk?.text ?? "", /biweekly period × 26 \/ 12/);
 assert.match(acmeQualifyAsk?.text ?? "", /I can prepare a file/);
-assert.doesNotMatch(acmeQualifyAsk?.text ?? "", /you qualify|you are approved|you don’t qualify/i);
+assert.doesNotMatch((acmeQualifyAsk?.text ?? "").replace(NO_APPROVE_COPY, ""), /you qualify|you are approved|you don’t qualify/i);
 assert.equal(resolveProposal(acmeWrite.draft, "accept").facts?.qualifying_income?.value, "9167");
 assert.equal(resolveProposal(acmeWrite.draft, "decline").facts?.qualifying_income, undefined);
 
@@ -2854,14 +2881,15 @@ function assertAnswerThenRestore(
   for (const label of restored.labels) {
     assert.ok((reply?.actions ?? []).some((item) => item.label === label), label);
   }
-  assert.doesNotMatch(reply?.text ?? "", /you qualify|you are approved|\bDTI\b|will contact you/i);
+  const spoken = (reply?.text ?? "").replace(NO_APPROVE_COPY, "");
+  assert.doesNotMatch(spoken, /you are approved|you don’t qualify|you will qualify|\bDTI\b|will contact you/i);
 }
 
 const atOccupancy = draft({ path: "acr", productIntent: "buy" });
 const occupancyChips = (workspacePromptCopy("occupancy", atOccupancy).actions ?? []).map(
   (item) => item.label,
 );
-assertAnswerThenRestore(workspaceReply("will i qualify", atOccupancy), /cannot approve, lock, or commit to lend/i, {
+assertAnswerThenRestore(workspaceReply("will i qualify", atOccupancy), /cannot approve or say you qualify/i, {
   labels: occupancyChips,
 });
 assertAnswerThenRestore(workspaceReply("hi", atOccupancy), /^Hi\./, { labels: occupancyChips });
@@ -2925,7 +2953,7 @@ assert.equal(workspaceReply("what will this cost me", fundsConfirm)?.text?.start
 assert.equal(workspaceReply("can I do this on my phone", fundsConfirm)?.text?.startsWith(PHONE_COPY), true);
 
 const creditChips = (workspacePromptCopy("credit", afterFunds).actions ?? []).map((item) => item.label);
-assertAnswerThenRestore(workspaceReply("will i qualify", afterFunds), /cannot approve, lock, or commit to lend/i, {
+assertAnswerThenRestore(workspaceReply("will i qualify", afterFunds), /cannot approve or say you qualify/i, {
   labels: creditChips,
 });
 assertAnswerThenRestore(
@@ -2949,7 +2977,7 @@ assertAnswerThenRestore(
 );
 
 const docsChips = ["Upload this", "Skip"];
-assertAnswerThenRestore(workspaceReply("will i qualify", afterStartId), /cannot approve, lock, or commit to lend/i, {
+assertAnswerThenRestore(workspaceReply("will i qualify", afterStartId), /cannot approve or say you qualify/i, {
   text: /government ID|name on this file/i,
   labels: docsChips,
 });
@@ -2961,7 +2989,7 @@ assertAnswerThenRestore(
 );
 
 const holdChips = ["Start with ID", "Ask Fox"];
-assertAnswerThenRestore(workspaceReply("will i qualify", heldDocs), /cannot approve, lock, or commit to lend/i, {
+assertAnswerThenRestore(workspaceReply("will i qualify", heldDocs), /cannot approve or say you qualify/i, {
   labels: holdChips,
 });
 assertAnswerThenRestore(workspaceReply("hi", heldDocs), /^Hi\./, { labels: holdChips });
@@ -2969,7 +2997,7 @@ assertAnswerThenRestore(workspaceReply("hi", heldDocs), /^Hi\./, { labels: holdC
 const looksChips = ["Looks right", "Needs a correction"];
 const qualifyAtReview = workspaceReply("will i qualify", afterIncomeReady);
 assert.notEqual(qualifyAtReview?.capture?.field, "confirm-draft");
-assertAnswerThenRestore(qualifyAtReview, /cannot approve, lock, or commit to lend/i, {
+assertAnswerThenRestore(qualifyAtReview, /cannot approve or say you qualify/i, {
   text: /does it look right/i,
   labels: looksChips,
 });
@@ -3007,7 +3035,7 @@ const atCorrect = { ...afterIncomeReady, correcting: "correct" as const };
 assert.equal(workspacePrompt(atCorrect), "correct");
 const correctChips = (workspacePromptCopy("correct", atCorrect).actions ?? []).map((item) => item.label);
 assert.ok(correctChips.includes("Occupancy"));
-assertAnswerThenRestore(workspaceReply("will i qualify", atCorrect), /cannot approve, lock, or commit to lend/i, {
+assertAnswerThenRestore(workspaceReply("will i qualify", atCorrect), /cannot approve or say you qualify/i, {
   labels: correctChips.filter((label) => label === "Occupancy" || label === "Credit" || label === "Income"),
 });
 assertAnswerThenRestore(workspaceReply("hi", atCorrect), /^Hi\./, {
@@ -3015,7 +3043,7 @@ assertAnswerThenRestore(workspaceReply("hi", atCorrect), /^Hi\./, {
 });
 
 const proceedChips = ["Proceed", "Not yet"];
-assertAnswerThenRestore(workspaceReply("will i qualify", afterLooks), /cannot approve, lock, or commit to lend/i, {
+assertAnswerThenRestore(workspaceReply("will i qualify", afterLooks), /cannot approve or say you qualify/i, {
   labels: proceedChips,
 });
 assertAnswerThenRestore(workspaceReply("hi", afterLooks), /^Hi\./, { labels: proceedChips });
@@ -3025,7 +3053,7 @@ assertAnswerThenRestore(
   { labels: proceedChips },
 );
 
-assertAnswerThenRestore(workspaceReply("will i qualify", buyProceed), /cannot approve, lock, or commit to lend/i, {
+assertAnswerThenRestore(workspaceReply("will i qualify", buyProceed), /cannot approve or say you qualify/i, {
   labels: ["Ask Fox"],
 });
 assertAnswerThenRestore(workspaceReply("hi", buyProceed), /^Hi\./, { labels: ["Ask Fox"] });
@@ -3409,7 +3437,7 @@ assert.match(seLiveAsk.text, /Suggested qualifying income · not underwritten/);
 assert.match(seLiveAsk.text, /Use this/);
 const seQualifyAsk = workspaceReply("will i qualify", seReturn.draft);
 assert.notEqual(seQualifyAsk?.capture?.field, "accept-proposal");
-assertAnswerThenRestore(seQualifyAsk, /cannot approve, lock, or commit to lend/i, {
+assertAnswerThenRestore(seQualifyAsk, /cannot approve or say you qualify/i, {
   text: /\$9,000/,
   labels: ["Use this", "Leave blank"],
 });
@@ -4347,7 +4375,7 @@ assert.ok((combinedAsk.actions ?? []).some((item) => item.label === "Leave blank
 assertIncomeChipsHoldOverQueue(combinedWrite.draft, /18,167/);
 const combinedQualify = workspaceReply("will i qualify", combinedWrite.draft);
 assert.notEqual(combinedQualify?.capture?.field, "accept-proposal");
-assertAnswerThenRestore(combinedQualify, /cannot approve, lock, or commit to lend/i, {
+assertAnswerThenRestore(combinedQualify, /cannot approve or say you qualify/i, {
   text: /18,167/,
   labels: ["Use this", "Leave blank"],
 });
@@ -4565,7 +4593,11 @@ const highLtvBuy = withIncome(
 );
 assert.ok(canLooksRight(skipDocInvites(highLtvBuy)));
 assert.equal(guidelineCaution(highLtvBuy), HIGH_LTV_CAUTION);
-assert.ok(previewFacts(highLtvBuy).some((fact) => fact.id === "caution" && fact.value === HIGH_LTV_CAUTION));
+assert.ok(
+  previewFacts(highLtvBuy).some(
+    (fact) => fact.id === "caution" && fact.value === HIGH_LTV_CAUTION && fact.note === LTV_NOT_A_DECISION,
+  ),
+);
 assert.doesNotMatch(HIGH_LTV_CAUTION, /approv|eligible|ineligible|\bDU\b|\bAUS\b|you qualify|will contact you/i);
 const highLtvLooks = workspaceReply("Looks right", skipDocInvites(highLtvBuy));
 assert.equal(highLtvLooks?.capture?.field, "confirm-draft");
@@ -4594,6 +4626,9 @@ assert.ok(canLooksRight(skipDocInvites(nonsenseBuy)));
 const nonsenseLooks = applyLooksRightMotion(skipDocInvites(nonsenseBuy));
 assert.equal(motionOf(nonsenseLooks), "escalated");
 assert.equal(nextActorOf(nonsenseLooks), "ONYX");
+assert.equal(MOTION_COPY.escalated, ESCALATE_LINE);
+assert.equal(storeEscalate({ product: "buy", purposeHint: "purchase", purchasePrice: 850000, loanAmount: 860000 }).action, "escalate");
+assert.equal(storeEscalate({ product: "buy", purposeHint: "purchase", purchasePrice: 850000, loanAmount: 860000 }).borrowerLine, ESCALATE_LINE);
 assert.ok(canLooksRight(skipDocInvites(nonsenseBuy)));
 assert.doesNotMatch(
   `${MOTION_COPY.escalated} ${guidelineCaution(nonsenseBuy) ?? ""}`,
@@ -4607,9 +4642,14 @@ assert.ok(previewFacts(lowCredit).some((fact) => fact.id === "rate" && fact.valu
 
 const cashOutNamed = workspaceReply("This is a cash-out refinance", refiReady);
 assert.equal(cashOutNamed?.capture?.field, "cashOut");
-assert.match(cashOutNamed?.text ?? "", /cannot show a preview rate/i);
+assert.ok((cashOutNamed?.text ?? "").includes(CASH_OUT_CAUTION));
+assert.doesNotMatch(cashOutNamed?.text ?? "", /80\s*%|cash-out LTV/i);
 assert.ok(!previewRateApplies(draft({ ...refiReady, cashOut: true })));
+assert.equal(guidelineCaution(draft({ ...refiReady, cashOut: true })), CASH_OUT_CAUTION);
+assert.ok(previewFacts(draft({ ...refiReady, cashOut: true })).some((fact) => fact.id === "product" && fact.value === "Refinance"));
 assert.ok(previewFacts(draft({ ...refiReady, cashOut: true })).some((fact) => fact.id === "rate" && fact.value === PRICING_WHEN_READY));
+assert.ok(previewFacts(draft({ ...refiReady, cashOut: true })).some((fact) => fact.id === "caution" && fact.value === CASH_OUT_CAUTION));
+assert.notEqual(motionOf(draft({ ...refiReady, cashOut: true })), "escalated");
 
 assert.ok(
   previewFacts(fromUrl).some(
@@ -4903,6 +4943,18 @@ assert.match(guidelineStoreSrc, /fannie/);
 assert.match(guidelineStoreSrc, /freddie/);
 assert.doesNotMatch(guidelineStoreSrc, /agency: "fha"|agency: "va"/);
 assert.equal(queryConventionalGuidelines().every((row) => row.agency === "fannie" || row.agency === "freddie"), true);
+assert.match(guidelineStoreSrc, /function lookup\(/);
+assert.match(guidelineStoreSrc, /function flags\(/);
+assert.match(guidelineStoreSrc, /function escalate\(/);
+assert.match(guidelineStoreSrc, /function completeness\(/);
+assert.equal(storeLookup("language.will_i_qualify", { askedWillIQualify: true }).borrowerLine, WILL_I_QUALIFY_LINE);
+assert.equal(storeLookup("flags.govvie", { namedGovvie: true }).borrowerLine, GOVVIE_LINE);
+assert.equal(storeLookup("flags.govvie", { namedGovvie: true }).caution, GOVVIE_LINE);
+assert.notEqual(storeCompleteness("buy", { purposeHint: "purchase" }).layer, "agency_ready");
+assert.ok(!storeCompleteness("buy", { purposeHint: "purchase" }).stillUseful.some((item) => /1003|SSN|HOA|reserve-months/i.test(item)));
+assert.equal(storeFlags({ namedGovvie: true, product: "buy", purposeHint: "purchase", state: "CA" }).previewRateAllowed, false);
+assert.equal(storeEscalate({ namedGovvie: true }).action, "escalate");
+assert.equal(storeEscalate({ requestedHuman: true }).borrowerLine, ESCALATE_LINE);
 
 const workspaceSrc = readFileSync(join(root, "components/fox/workspace.ts"), "utf8");
 assert.ok(!workspaceSrc.includes("I can keep this file current. Ask anything, or take the next step when you’re ready."));
@@ -4912,7 +4964,11 @@ assert.ok(!workspaceSrc.includes('label: "Numbers"'));
 assert.ok(!workspaceSrc.includes("${spoken} ${reply.text}"));
 assert.ok(!/Drop what you have\. Skip is fine/.test(workspaceSrc));
 assert.ok(!/832,?750/.test(workspaceSrc));
-assert.ok(workspaceSrc.includes("1_249_125") || workspaceSrc.includes("1249125"));
+assert.ok(
+  workspaceSrc.includes("1_249_125") ||
+    workspaceSrc.includes("1249125") ||
+    guidelineStoreSrc.includes("1_249_125"),
+);
 
 assert.ok(readFileSync(join(root, "scripts/fixtures/return-2023.png")).length > 0);
 assert.ok(readFileSync(join(root, "scripts/fixtures/return-declining-2024.png")).length > 0);

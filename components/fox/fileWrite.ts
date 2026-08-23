@@ -25,7 +25,7 @@ import {
   readTaxCashflows,
   wageIncomeCaution,
 } from "./qualifyingIncome";
-import { conventionalGuidelinePattern } from "@/lib/guidelines/conventional";
+import { completeness as storeCompleteness, conventionalGuidelinePattern } from "@/lib/guidelines/conventional";
 
 export { REJECT_LINE, LIMIT_LINE };
 
@@ -1025,6 +1025,31 @@ export function stillUsefulSection(draft: FoxIntakeDraft): {
 } | null {
   if (!stillUsefulVisible(draft)) return null;
   const items = layer2Plan(draft);
+  const received = (draft.documents ?? [])
+    .filter(
+      (doc) =>
+        (doc.status === "extracted" || doc.status === "received" || doc.status === "reading") &&
+        doc.extractClass,
+    )
+    .map((doc) => doc.extractClass as string);
+  if (factValue(draft, "property_address")) received.push("property_address");
+  if (factValue(draft, "employer_name")) received.push("employer_business");
+  if (draft.facts?.years_in_business?.value) received.push("se_years");
+  storeCompleteness(draft.productIntent ?? "", {
+    product: draft.productIntent,
+    purposeHint:
+      draft.productIntent === "buy"
+        ? "purchase"
+        : draft.cashOut
+          ? "cash_out"
+          : draft.productIntent === "refinance"
+            ? "lcor"
+            : undefined,
+    incomeType: draft.incomeType.value || undefined,
+    purchasePrice: draft.propertyValueAmount,
+    loanAmount: draft.loanAmountValue,
+    received,
+  });
   return { items, empty: items.length === 0 };
 }
 

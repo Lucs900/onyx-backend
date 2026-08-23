@@ -27,6 +27,16 @@ import {
   hasScheduleCCashflow,
   wageIncomeCaution,
 } from "./qualifyingIncome";
+import {
+  HIGH_LTV_CAUTION as STORE_HIGH_LTV_CAUTION,
+  HIGH_PURCHASE_LTV as STORE_HIGH_PURCHASE_LTV,
+  JUMBO_CEILING_LINE,
+  completeness as storeCompleteness,
+  escalate as storeEscalate,
+  flags as storeFlags,
+  type CompletenessFile,
+  type FileFacts,
+} from "@/lib/guidelines/conventional";
 
 export const SUGGESTED_NOTE = "Suggested · not verified";
 export const PROPOSED_NOTE = "Proposed · confirm";
@@ -328,9 +338,9 @@ export function completenessCopy(draft: FoxIntakeDraft) {
   return fileCompleteness(draft)?.copy ?? "";
 }
 
-export const HIGH_LTV_CAUTION = "This loan is a large share of the price. I’ll keep gathering.";
-export const PRICING_WAITS = "Pricing waits";
-export const HIGH_PURCHASE_LTV = 0.97;
+export const HIGH_LTV_CAUTION = STORE_HIGH_LTV_CAUTION;
+export const PRICING_WAITS = "Investment occupancy. Pricing waits.";
+export const HIGH_PURCHASE_LTV = STORE_HIGH_PURCHASE_LTV;
 
 export function sketchedPurchaseLtv(draft?: FoxIntakeDraft | null): number | null {
   if (!draft || draft.productIntent !== "buy") return null;
@@ -359,17 +369,84 @@ export function lowestCreditBand(draft?: FoxIntakeDraft | null) {
   return draft?.creditBand === "680-719" || draft?.scenario?.creditRange === "680-719";
 }
 
-/** One quiet File / Fox line. Never a verdict. */
+export function factsFromDraft(draft: FoxIntakeDraft): FileFacts {
+  const occupancyRaw = draft.occupancyChoice.value || draft.scenario?.occupancy || "";
+  const occupancy =
+    occupancyRaw === "second-home" ? "second" : occupancyRaw || undefined;
+  const purchase = isPurchaseLike(draft);
+  const refi = isRefiLike(draft);
+  const purposeHint = purchase ? "purchase" : draft.cashOut ? "cash_out" : refi ? "lcor" : undefined;
+  const income = draft.incomeType.value;
+  const incomeType =
+    income === "w2"
+      ? "w2_base"
+      : income === "self-employed"
+        ? "se_schedule_c"
+        : income === "both"
+          ? "w2_plus_se"
+          : income || undefined;
+  let loanAmount: number | undefined;
+  if (draft.loanAmountValue != null && draft.loanAmountValue > 0) {
+    loanAmount = draft.loanAmountValue;
+  } else if (purchase && draft.propertyValueAmount != null && draft.downPaymentAmount != null) {
+    const implied = Math.round(draft.propertyValueAmount - draft.downPaymentAmount);
+    if (implied > 0) loanAmount = implied;
+  } else if (purchase && draft.propertyValueAmount != null && draft.propertyValueAmount > 0) {
+    loanAmount = draft.propertyValueAmount;
+  }
+  return {
+    product: draft.productIntent || undefined,
+    occupancy,
+    purposeHint,
+    state: draft.outOfState ? "XX" : "CA",
+    purchasePrice: purchase && draft.propertyValueAmount ? draft.propertyValueAmount : undefined,
+    downPayment: draft.downPaymentAmount || undefined,
+    loanAmount,
+    propertyValue: draft.propertyValueAmount || undefined,
+    statedCreditBand: draft.creditBand || undefined,
+    incomeType,
+    namedGovvie: Boolean(draft.govProgram),
+    namedDistress: Boolean(draft.creditEvent),
+    wantsCreditDecision: false,
+    requestedHuman: Boolean(draft.originatorRequested),
+    commitmentRequired: false,
+    unresolvedConflict: false,
+  };
+}
+
+export function completenessFileFromDraft(draft: FoxIntakeDraft): CompletenessFile {
+  const received = new Set<string>();
+  for (const doc of draft.documents ?? []) {
+    if (
+      (doc.status === "extracted" || doc.status === "received" || doc.status === "reading") &&
+      doc.extractClass
+    ) {
+      received.add(doc.extractClass);
+    }
+  }
+  if (factValue(draft, "property_address")) received.add("property_address");
+  if (factValue(draft, "employer_name")) received.add("employer_business");
+  if (draft.facts?.years_in_business?.value) received.add("se_years");
+  return { ...factsFromDraft(draft), received: Array.from(received) };
+}
+
+export function fileStoreCompleteness(draft: FoxIntakeDraft) {
+  return storeCompleteness(draft.productIntent ?? "", completenessFileFromDraft(draft));
+}
+
+export function shouldEscalate(draft: FoxIntakeDraft) {
+  return storeEscalate(factsFromDraft(draft)).action === "escalate";
+}
+
+/** One quiet File / Fox line. Never a verdict. First store flag wins. Income decline is last. */
 export function guidelineCaution(draft: FoxIntakeDraft): string | undefined {
-  if (draft.productIntent === "heloc" || draft.productIntent === "jumbo") return undefined;
-  const incomeCaution = decliningIncomeCaution(draft) ?? wageIncomeCaution(draft);
-  const justUploadedIncome = draft.pendingProposal?.field === QUALIFYING_INCOME_FIELD;
-  if (incomeCaution && (justUploadedIncome || !highPurchaseLtv(draft))) return incomeCaution;
-  if (highPurchaseLtv(draft)) return HIGH_LTV_CAUTION;
-  if (incomeCaution) return incomeCaution;
-  const occupancy = draft.occupancyChoice.value || draft.scenario?.occupancy || "";
-  if (occupancy === "investment") return PRICING_WAITS;
-  return undefined;
+  if (draft.productIntent === "heloc") return undefined;
+  const flagged = storeFlags(factsFromDraft(draft)).caution;
+  if (flagged === JUMBO_CEILING_LINE && draft.productIntent === "jumbo") {
+    return decliningIncomeCaution(draft) ?? wageIncomeCaution(draft);
+  }
+  if (flagged) return flagged;
+  return decliningIncomeCaution(draft) ?? wageIncomeCaution(draft);
 }
 
 export function proposalNote(kind: ProposalKind) {

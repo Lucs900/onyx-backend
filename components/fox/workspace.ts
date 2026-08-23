@@ -66,8 +66,8 @@ import {
   sketchAssembled,
   completenessExplainCopy,
   fileCompleteness,
+  factsFromDraft,
   guidelineCaution,
-  lowestCreditBand,
   fundsAskNeeded,
   hasDownPayment,
   hasHelocLine,
@@ -114,7 +114,16 @@ import {
   wageIncomeCaution,
   wageMethodNote,
 } from "./qualifyingIncome";
-import { conventionalGuidelinePattern } from "@/lib/guidelines/conventional";
+import {
+  FHFA_HIGH_COST_CEILING_2026 as STORE_HIGH_COST_CEILING,
+  HIGH_LTV_CAUTION,
+  JUMBO_CEILING_LINE,
+  LTV_NOT_A_DECISION,
+  WILL_I_QUALIFY_LINE,
+  conventionalGuidelinePattern,
+  flags as storeFlags,
+  lookup as storeLookup,
+} from "@/lib/guidelines/conventional";
 import {
   applyEmailThenFinish,
   applyLooksRightMotion,
@@ -533,13 +542,12 @@ export function sampleRateApplies(intent?: ProductIntent | null) {
 }
 
 /** 2026 FHFA high-cost ceiling. Not the standard conforming limit. */
-export const FHFA_HIGH_COST_CEILING_2026 = 1_249_125;
+export const FHFA_HIGH_COST_CEILING_2026 = STORE_HIGH_COST_CEILING;
 export const PRICING_WHEN_READY = "Pricing when the file is ready";
 export const GEO_STOP_COPY =
   "I can only prepare California files. I cannot prepare this file.";
 export const JUMBO_PURPOSE_ASK = "Are you buying or refinancing?";
-export const JUMBO_OFFER_COPY =
-  "That looks above the 2026 high-cost ceiling ($1,249,125). Stay on this product, or use Jumbo?";
+export const JUMBO_OFFER_COPY = JUMBO_CEILING_LINE;
 export const HELOC_OFFER_COPY =
   "If you want cash and keep the first mortgage, HELOC may fit. Stay on Refinance, or use HELOC?";
 
@@ -616,20 +624,7 @@ export function loanLooksAboveCeiling(draft?: FoxIntakeDraft | null) {
 }
 
 export function previewRateApplies(draft: FoxIntakeDraft): boolean {
-  const intent =
-    draft.productIntent ??
-    (() => {
-      const fromSlug = productIntentFromSlug(draft.scenario?.productSlug);
-      return fromSlug === "other" ? null : fromSlug;
-    })();
-  if (!sampleRateApplies(intent)) return false;
-  if (draft.outOfState || draft.govProgram || draft.creditEvent || draft.cashOut) return false;
-  if (lowestCreditBand(draft)) return false;
-  const occupancy = draft.occupancyChoice.value || draft.scenario?.occupancy || "";
-  if (occupancy === "investment") return false;
-  if (occupancy && occupancy !== "primary" && occupancy !== "second-home") return false;
-  if (loanLooksAboveCeiling(draft)) return false;
-  return true;
+  return storeFlags(factsFromDraft(draft)).previewRateAllowed;
 }
 
 export function withMatrixAfterAmount(draft: FoxIntakeDraft): FoxIntakeDraft {
@@ -806,8 +801,8 @@ export function namedCashOut(text: string) {
   return /\bcash[-\s]?out\b/.test(lower);
 }
 
-function cashOutCopy() {
-  return "Noted. I cannot show a preview rate.";
+function cashOutCopy(draft: FoxIntakeDraft) {
+  return storeLookup("purpose.cash_out", factsFromDraft({ ...draft, cashOut: true })).borrowerLine;
 }
 
 export function wantsReplaceFirst(text: string) {
@@ -819,13 +814,12 @@ export function wantsReplaceFirst(text: string) {
   );
 }
 
-function govProgramCopy(program: GovProgram) {
-  const name = program.toUpperCase();
-  return `${name} is a government program. I cannot show a preview rate. I can still prepare this file. Request human is available.`;
+function govProgramCopy(draft: FoxIntakeDraft, program: GovProgram) {
+  return storeLookup("flags.govvie", factsFromDraft({ ...draft, govProgram: program })).borrowerLine;
 }
 
-function creditEventCopy() {
-  return "Noted. I cannot show a preview rate. You can still Proceed. Request human is available.";
+function creditEventCopy(draft: FoxIntakeDraft) {
+  return storeLookup("flags.distress", factsFromDraft({ ...draft, creditEvent: draft.creditEvent ?? "bankruptcy" })).borrowerLine;
 }
 
 function bubbles(
@@ -1314,7 +1308,7 @@ function looksLikeQuestion(text: string) {
   );
 }
 
-export const NO_APPROVE_COPY = "I can prepare a file. I cannot approve, lock, or commit to lend.";
+export const NO_APPROVE_COPY = WILL_I_QUALIFY_LINE;
 export const COST_COPY =
   "I don’t have a live fee quote. The preview rate is not live. I won’t invent a closing-cost number.";
 export const ACR_BENEFITS_COPY =
@@ -1404,7 +1398,12 @@ function isFreeTextAtGate(text: string) {
 }
 
 function freeTextAnswer(input: string, draft: FoxIntakeDraft) {
-  if (asksApproval(input)) return NO_APPROVE_COPY;
+  if (asksApproval(input)) {
+    return storeLookup("language.will_i_qualify", {
+      ...factsFromDraft(draft),
+      askedWillIQualify: true,
+    }).borrowerLine;
+  }
   if (isGreeting(input)) return HELLO_COPY;
   if (asksProceedAftermath(input)) return AFTER_PROCEED_COPY;
   return sideQuestionAnswer(input, draft);
@@ -2428,8 +2427,8 @@ export function workspaceUpdateCopy(capture: Capture, draft: FoxIntakeDraft) {
   if (capture.field === "decline-heloc") return "Kept Refinance.";
   if (capture.field === "out-of-state") return GEO_STOP_COPY;
   if (capture.field === "in-state") return "California — I can prepare this file.";
-  if (capture.field === "govProgram") return govProgramCopy(capture.value);
-  if (capture.field === "creditEvent") return creditEventCopy();
+  if (capture.field === "govProgram") return govProgramCopy(draft, capture.value);
+  if (capture.field === "creditEvent") return creditEventCopy({ ...draft, creditEvent: capture.value });
   if (capture.field === "occupancy") {
     const label = occupancySpokenLabel(capture.value);
     return label ? `Updated occupancy to ${label}.` : "Updated occupancy.";
@@ -2914,7 +2913,7 @@ function matrixReply(
   const gov = namedGovProgram(text);
   if (gov && draft.govProgram !== gov) {
     const nextDraft = { ...draft, govProgram: gov };
-    return continueAfterFlag(govProgramCopy(gov), nextDraft, {
+    return continueAfterFlag(govProgramCopy(nextDraft, gov), nextDraft, {
       field: "govProgram",
       value: gov,
     }, draft.originatorRequested ? undefined : [requestHumanAction()]);
@@ -2923,7 +2922,7 @@ function matrixReply(
   const event = namedCreditEvent(text);
   if (event && draft.creditEvent !== event) {
     const nextDraft = { ...draft, creditEvent: event };
-    return continueAfterFlag(creditEventCopy(), nextDraft, {
+    return continueAfterFlag(creditEventCopy(nextDraft), nextDraft, {
       field: "creditEvent",
       value: event,
     }, draft.originatorRequested ? undefined : [requestHumanAction()]);
@@ -2931,7 +2930,7 @@ function matrixReply(
 
   if (namedCashOut(text) && !draft.cashOut && isRefiLike(draft)) {
     const nextDraft = { ...draft, cashOut: true };
-    return continueAfterFlag(cashOutCopy(), nextDraft, { field: "cashOut" });
+    return continueAfterFlag(cashOutCopy(nextDraft), nextDraft, { field: "cashOut" });
   }
 
   if (
@@ -4163,6 +4162,7 @@ export function previewFacts(draft: FoxIntakeDraft): PreviewFact[] {
         id: "caution",
         label: "Note",
         value: caution,
+        note: caution === HIGH_LTV_CAUTION ? LTV_NOT_A_DECISION : undefined,
       });
     }
   }
