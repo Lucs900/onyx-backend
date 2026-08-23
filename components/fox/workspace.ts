@@ -54,6 +54,11 @@ import {
   offeringDocStart,
   skipCurrentInvite,
   holdDocuments,
+  layer2Open,
+  layer2AskCopy,
+  layer2AskActions,
+  skipCurrentStillUseful,
+  nextStillUsefulItem,
 } from "./fileWrite";
 import {
   SUGGESTED_NOTE,
@@ -1035,6 +1040,7 @@ export function docReactionAsk(
 }
 
 function rememberedAskCopy(draft: FoxIntakeDraft): string | undefined {
+  if (layer2Open(draft)) return layer2AskCopy(draft);
   if (!shouldAskYearsInBusiness(draft)) return undefined;
   if (draft.motion === "in_queue" || draft.sampleAccepted) return YEARS_IN_BUSINESS_ASK;
   return undefined;
@@ -2155,10 +2161,11 @@ export function workspaceUpdateCopy(capture: Capture, draft: FoxIntakeDraft) {
     return "ACR is the desk that stays open after close — letter, scout, and reward. This file is still the loan.";
   }
   if (capture.field === "what-happens-next") {
-    return MOTION_COPY.whatHappensNext;
+    return layer2Open(draft) ? layer2AskCopy(draft) : MOTION_COPY.whatHappensNext;
   }
   if (capture.field === "ask-fox") {
     if (draft.docsHeld && !draft.sampleAccepted) return HOLD_DOCS_ASK_FOX;
+    if (layer2Open(draft)) return layer2AskCopy(draft);
     return MOTION_COPY.askFox;
   }
   if (capture.field === "talk-originator") {
@@ -2862,6 +2869,35 @@ export function workspaceReply(
     return { ...workspacePromptCopy("correct", draft), capture: { field: "needs-correction" } };
   }
 
+  if (layer2Open(draft) && /^skip\b/.test(lower)) {
+    const nextDraft = skipCurrentStillUseful(draft);
+    return {
+      text: layer2AskCopy(nextDraft),
+      actions: layer2AskActions(nextDraft) ?? finishLineActions(nextDraft),
+      capture: { field: "skip-docs" },
+    };
+  }
+
+  if (layer2Open(draft) && /^not yet\b/.test(lower)) {
+    return {
+      text: layer2AskCopy(draft),
+      actions: layer2AskActions(draft) ?? finishLineActions(draft),
+      capture: { field: "hold-docs" },
+    };
+  }
+
+  if (layer2Open(draft) && nextStillUsefulItem(draft)?.id === "years-in-business") {
+    const years = parseYearsInBusiness(q);
+    if (years) {
+      const nextDraft = writeYearsInBusiness(draft, years);
+      return {
+        text: layer2AskCopy(nextDraft),
+        actions: layer2AskActions(nextDraft) ?? finishLineActions(nextDraft),
+        capture: { field: "yearsInBusiness", value: years },
+      };
+    }
+  }
+
   const edit = parseWorkspaceEdit(q, draft);
   if (edit?.capture && draft.path) {
     const nextDraft = draftAfterCapture(draft, edit.capture);
@@ -2904,16 +2940,16 @@ export function workspaceReply(
 
   if (inQueueEnding(draft) && /what happens next/.test(lower)) {
     return {
-      text: MOTION_COPY.whatHappensNext,
-      actions: finishLineActions(draft),
+      text: layer2Open(draft) ? layer2AskCopy(draft) : MOTION_COPY.whatHappensNext,
+      actions: layer2AskActions(draft) ?? finishLineActions(draft),
       capture: { field: "what-happens-next" },
     };
   }
 
   if (inQueueEnding(draft) && /^ask fox$/.test(lower)) {
     return {
-      text: MOTION_COPY.askFox,
-      actions: finishLineActions(draft),
+      text: layer2Open(draft) ? layer2AskCopy(draft) : MOTION_COPY.askFox,
+      actions: layer2AskActions(draft) ?? finishLineActions(draft),
       capture: { field: "ask-fox" },
     };
   }

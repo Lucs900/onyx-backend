@@ -55,6 +55,8 @@ import {
   nextDocInvite,
   skipCurrentInvite,
   skipRemainingClasses,
+  layer2Open,
+  skipCurrentStillUseful,
   type ExtractApplyInput,
 } from "./fileWrite";
 import {
@@ -130,6 +132,7 @@ export function emptyDraft(): FoxIntakeDraft {
     facts: {},
     pendingConflict: null,
     skippedClasses: [],
+    skippedStillUseful: [],
     missingAskKey: "",
     sections: {
       contact: false,
@@ -240,6 +243,9 @@ function normalize(value: unknown): FoxIntakeDraft {
     pendingProposal: normalizeProposal(raw.pendingProposal),
     skippedClasses: Array.isArray(raw.skippedClasses)
       ? raw.skippedClasses.filter((item): item is ExtractClass => typeof item === "string")
+      : [],
+    skippedStillUseful: Array.isArray(raw.skippedStillUseful)
+      ? raw.skippedStillUseful.filter((item): item is string => typeof item === "string" && item.length > 0)
       : [],
     priorYearSkipped: Boolean(raw.priorYearSkipped),
     yearsInBusinessAsked: Boolean(raw.yearsInBusinessAsked),
@@ -1080,6 +1086,9 @@ export function applyCapture(capture: Capture) {
     return current.workspaceFlow ? current : advancePhase();
   }
   if (capture.field === "skip-docs") {
+    if (layer2Open(current)) {
+      return commit(skipCurrentStillUseful(current));
+    }
     skipDocuments();
     if (current.workspaceFlow) return current;
     return advancePhase();

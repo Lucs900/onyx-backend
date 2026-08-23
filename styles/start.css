@@ -278,6 +278,23 @@
   cursor: help;
 }
 
+.fox-still-useful {
+  margin-top: 16px;
+}
+
+.fox-still-useful .type-eyebrow,
+.fox-still-useful__empty {
+  color: var(--muted);
+}
+
+.fox-still-useful__empty {
+  margin: 0;
+  font-family: var(--font-ui);
+  font-size: 13px;
+  line-height: 18px;
+  font-weight: 500;
+}
+
 .structure-drop {
   display: flex;
   flex-direction: column;

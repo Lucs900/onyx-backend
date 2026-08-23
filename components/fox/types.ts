@@ -231,6 +231,7 @@ export type FoxIntakeDraft = {
   pendingConflict?: FactConflict | null;
   pendingProposal?: FactProposal | null;
   skippedClasses?: ExtractClass[];
+  skippedStillUseful?: string[];
   missingAskKey?: string;
   sections: Record<SectionId, boolean>;
   confirmedAt?: string;

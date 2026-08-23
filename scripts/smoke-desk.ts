@@ -73,6 +73,12 @@ import {
   receivedTaxReturnCount,
   stillUsefulAskCopy,
   stillUsefulLabels,
+  stillUsefulSection,
+  layer2Plan,
+  layer2Open,
+  layer2AskCopy,
+  skipCurrentStillUseful,
+  NOTHING_URGENT,
   taxReturnFilename,
   resolveFactConflict,
   sanitizeExtractedFields,
@@ -196,6 +202,29 @@ function skipDocInvites(base: ReturnType<typeof draft>) {
     next = { ...next, ...skipCurrentInvite(next) };
   }
   return next;
+}
+
+function afterProceed(
+  base: ReturnType<typeof draft>,
+  extra: Record<string, unknown> = {},
+) {
+  return draft({
+    ...base,
+    sampleAccepted: true,
+    motion: "in_queue",
+    nextActor: "ONYX",
+    workspaceDraftStatus: "with-originator",
+    phase: "confirmed",
+    events: [
+      {
+        id: "proceed-1",
+        at: "2026-08-20T00:00:00.000Z",
+        kind: "proceed",
+        text: "Proceed — review work item opened. Next = ONYX.",
+      },
+    ],
+    ...extra,
+  });
 }
 
 function confirmLooksRight() {
@@ -1730,6 +1759,9 @@ assert.ok(
   ),
 );
 assert.match(fileStillUsefulNote(afterLooks) ?? "", /still useful: ID/i);
+assert.equal(layer2Open(afterLooks), false);
+assert.equal(stillUsefulSection(afterIncome), null);
+assert.equal(stillUsefulSection(afterLooks), null);
 const confirmedFromDocs = {
   full_name: {
     field: "full_name",
@@ -2402,6 +2434,146 @@ assert.ok(stillUsefulLabels(seAfterLooks).includes("government ID"));
 assert.match(gatheringList(seAfterLooks), /prior-year return/i);
 assert.equal(gatheringCopy(seAfterLooks), MOTION_COPY.ready);
 
+const buyProceed = afterProceed(afterIncome);
+assert.equal(layer2Open(buyProceed), true);
+assert.equal(workspacePrompt(buyProceed), "done");
+assert.equal(workspacePromptCopy("done", buyProceed).text, MOTION_COPY.in_queue);
+const buySection = stillUsefulSection(buyProceed);
+assert.ok(buySection);
+assert.equal(buySection.empty, false);
+assert.deepEqual(
+  buySection.items.map((item) => item.label),
+  ["Government ID", "Latest paystub", "W-2"],
+);
+assert.equal(layer2AskCopy(buyProceed), "A government ID still helps this file.");
+assert.equal(stillUsefulAskCopy(buyProceed), "A government ID still helps this file.");
+assert.equal(fileStillUsefulNote(buyProceed), undefined);
+assert.ok(!(previewFacts(buyProceed).find((fact) => fact.id === "file")?.note ?? "").includes("still useful:"));
+assert.doesNotMatch(
+  layer2Plan(buyProceed)
+    .map((item) => `${item.id} ${item.label} ${item.ask}`)
+    .join(" "),
+  /ssn|social security|account number|1003|declaration|two-year address|hoa|reserve-months|credit pull|we pulled|fico/i,
+);
+const skippedId = skipCurrentStillUseful(buyProceed);
+assert.equal(stillUsefulSection(skippedId)?.items[0]?.label, "Latest paystub");
+assert.ok(!stillUsefulSection(skippedId)?.items.some((item) => item.label === "Government ID"));
+const withId = afterProceed(afterIncome, {
+  documents: [
+    {
+      slot: "id",
+      name: "id.pdf",
+      type: "application/pdf",
+      size: 4000,
+      receivedAt: "2026-08-20T00:00:00.000Z",
+      status: "extracted",
+      extractClass: "government_id",
+    },
+  ],
+});
+assert.equal(stillUsefulSection(withId)?.items[0]?.label, "Latest paystub");
+assert.ok(!stillUsefulSection(withId)?.items.some((item) => item.label === "Government ID"));
+const buyDocsIn = afterProceed(afterIncome, {
+  documents: [
+    {
+      slot: "id",
+      name: "id.pdf",
+      type: "application/pdf",
+      size: 4000,
+      receivedAt: "2026-08-20T00:00:00.000Z",
+      status: "extracted",
+      extractClass: "government_id",
+    },
+    {
+      slot: "paystubs",
+      name: "paystub.pdf",
+      type: "application/pdf",
+      size: 4000,
+      receivedAt: "2026-08-20T00:00:00.000Z",
+      status: "extracted",
+      extractClass: "paystub",
+    },
+    {
+      slot: "w2",
+      name: "w2-2025.pdf",
+      type: "application/pdf",
+      size: 4000,
+      receivedAt: "2026-08-20T00:00:00.000Z",
+      status: "extracted",
+      extractClass: "w2",
+    },
+    {
+      slot: "w2",
+      name: "w2-2024.pdf",
+      type: "application/pdf",
+      size: 4000,
+      receivedAt: "2026-08-20T00:00:00.000Z",
+      status: "extracted",
+      extractClass: "w2",
+    },
+  ],
+  facts: {
+    employer_name: {
+      field: "employer_name",
+      value: "Harbor Steel",
+      source: "document",
+      confirmed: true,
+    },
+  },
+});
+assert.deepEqual(
+  stillUsefulSection(buyDocsIn)?.items.map((item) => item.label),
+  ["Property address", "Purchase contract", "Bank statement"],
+);
+const seProceed = afterProceed(withIncome(afterCredit, "self-employed"));
+assert.deepEqual(
+  stillUsefulSection(seProceed)?.items.map((item) => item.label),
+  ["Government ID", "Latest return", "Property address"],
+);
+assert.ok(layer2Plan(seProceed).some((item) => item.label === "Years in business"));
+assert.ok(!layer2Plan(seProceed).some((item) => item.label === "YTD P&L"));
+const seOneReturn = afterProceed(seAfterLooks);
+assert.ok(stillUsefulSection(seOneReturn)?.items.some((item) => item.label === "Prior-year return"));
+assert.ok(layer2Plan(seOneReturn).some((item) => item.label === "YTD P&L"));
+const refiProceed = afterProceed(
+  draft({
+    ...afterIncome,
+    productIntent: "refinance",
+    propertyValueAmount: 1_200_000,
+    loanAmountValue: 960_000,
+  }),
+);
+assert.ok(stillUsefulSection(refiProceed)?.items.some((item) => item.label === "Government ID"));
+assert.ok(layer2Plan(refiProceed).some((item) => item.label === "Mortgage statement"));
+assert.ok(layer2Plan(refiProceed).some((item) => item.label === "Property address"));
+assert.ok(!layer2Plan(refiProceed).some((item) => item.label === "Purchase contract"));
+assert.ok(!layer2Plan(refiProceed).some((item) => item.label === "Bank statement"));
+const refiCash = afterProceed(
+  draft({
+    ...afterIncome,
+    productIntent: "refinance",
+    cashOut: true,
+    propertyValueAmount: 1_200_000,
+    loanAmountValue: 960_000,
+  }),
+);
+assert.ok(layer2Plan(refiCash).some((item) => item.label === "Bank statement"));
+const emptied = skipCurrentStillUseful({
+  ...buyProceed,
+  skippedStillUseful: layer2Plan(buyProceed).map((item) => item.id),
+});
+assert.deepEqual(stillUsefulSection(emptied)?.items, []);
+assert.equal(stillUsefulSection(emptied)?.empty, true);
+assert.equal(layer2AskCopy(emptied), NOTHING_URGENT);
+const skipItem = workspaceReply("Skip", buyProceed);
+assert.equal(skipItem?.capture?.field, "skip-docs");
+assert.match(skipItem?.text ?? "", /paystub/i);
+assert.doesNotMatch(skipItem?.text ?? "", /government ID and/i);
+const holdItem = workspaceReply("Not yet", buyProceed);
+assert.equal(holdItem?.capture?.field, "hold-docs");
+assert.match(holdItem?.text ?? "", /government ID/i);
+assert.notEqual(holdItem?.capture?.field, "not-yet");
+
 assert.ok(EXTRACT_SCHEMA_KEYS.tax_return.includes("schedule_c_net_profit"));
 assert.ok(EXTRACT_SCHEMA_KEYS.tax_return.includes("return_kind"));
 assert.ok(EXTRACT_SCHEMA_KEYS.tax_return.includes("k1_ordinary_income"));
@@ -2875,7 +3047,9 @@ const queuedBlank = {
   motion: "in_queue" as const,
 };
 assert.equal(workspacePromptCopy("done", queuedBlank).text, MOTION_COPY.in_queue);
-assert.equal(workspacePromptCopy("done", queuedBlank).followUp, YEARS_IN_BUSINESS_ASK);
+assert.equal(workspacePromptCopy("done", queuedBlank).followUp, layer2AskCopy(queuedBlank));
+assert.match(workspacePromptCopy("done", queuedBlank).followUp ?? "", /government ID/i);
+assert.ok(layer2Plan(queuedBlank).some((item) => item.id === "years-in-business"));
 assert.ok(
   previewFacts(seAccepted).some(
     (fact) => fact.id === "qualifying" && fact.note === SUGGESTED_INCOME_NOTE,
@@ -3761,15 +3935,18 @@ assert.ok(queuedLabels.indexOf("Upload more") < queuedLabels.indexOf("Request hu
 assert.ok(queuedLabels.indexOf("Ask Fox") < queuedLabels.indexOf("Request human"));
 assert.equal(queuedActions.find((item) => item.label === "Request human")?.quiet, true);
 const whatNext = workspaceReply("What happens next?", queued);
-assert.equal(whatNext?.text, MOTION_COPY.whatHappensNext);
-assert.doesNotMatch(whatNext?.text ?? "", /will contact you|we’ll be in touch|your lo has the file/i);
-assert.ok((whatNext?.actions ?? []).some((item) => item.label === "Upload more"));
-assert.ok((whatNext?.actions ?? []).some((item) => item.label === "Ask Fox"));
+assert.match(whatNext?.text ?? "", /government ID/i);
+assert.doesNotMatch(whatNext?.text ?? "", /will contact you|we’ll be in touch|your lo has the file|ssn|we pulled|fico/i);
+assert.doesNotMatch(whatNext?.text ?? "", /government ID and/i);
+assert.ok((whatNext?.actions ?? []).some((item) => item.label === "Skip"));
+assert.ok((whatNext?.actions ?? []).some((item) => item.label === "Upload this"));
 assert.notEqual((whatNext?.actions ?? [])[0]?.label, "Request human");
 const askFox = workspaceReply("Ask Fox", queued);
-assert.equal(askFox?.text, MOTION_COPY.askFox);
-assert.doesNotMatch(askFox?.text ?? "", /will contact you|we’ll be in touch|your lo has the file/i);
-assert.ok((askFox?.actions ?? []).some((item) => item.label === "What happens next?"));
+assert.match(askFox?.text ?? "", /government ID/i);
+assert.doesNotMatch(askFox?.text ?? "", /will contact you|we’ll be in touch|your lo has the file|ssn|we pulled/i);
+assert.ok((askFox?.actions ?? []).some((item) => item.label === "Skip"));
+assert.match(workspacePromptCopy("done", queued).followUp ?? "", /government ID/i);
+assert.equal(workspacePromptCopy("done", queued).text, MOTION_COPY.in_queue);
 assert.ok((queued.previewOutbox ?? []).some((item) => item.to === "borrower@example.com"));
 assert.ok((queued.events ?? []).some((event) => event.kind === "proceed"));
 
@@ -4047,6 +4224,9 @@ assert.ok(filePreview.includes("!draft.workspaceFlow"));
 assert.ok(filePreview.includes("draft.docsOpen"));
 assert.ok(filePreview.includes("sampleAccepted"));
 assert.ok(filePreview.includes("fox-structure-notepad"));
+assert.ok(filePreview.includes("Still useful"));
+assert.ok(filePreview.includes("NOTHING_URGENT") || filePreview.includes("Nothing urgent missing."));
+assert.equal(NOTHING_URGENT, "Nothing urgent missing.");
 assert.ok(filePreview.includes("requestFoxFix"));
 assert.ok(filePreview.includes("file-preview__edit"));
 assert.ok(filePreview.includes('Edit ${fact.label}') || filePreview.includes("Edit "));

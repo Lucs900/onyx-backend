@@ -87,6 +87,7 @@ import {
   isDeadFileWriteLine,
   stillUsefulAskCopy,
   stillUsefulRefreshKey,
+  layer2AskActions,
   type DocIntakeDetail,
 } from "./fileWrite";
 import { DECLINING_INCOME_CAUTION } from "./qualifyingIncome";
@@ -1028,7 +1029,7 @@ export function AlwaysOnFox({
       }
       appendReply(action.label, {
         text: workspaceUpdateCopy(action.capture, live),
-        actions: finishLineActions(live),
+        actions: layer2AskActions(live) ?? finishLineActions(live),
       });
       if (action.capture.field === "ask-fox") {
         window.requestAnimationFrame(() => focusComposer(true));

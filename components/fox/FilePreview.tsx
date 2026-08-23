@@ -3,6 +3,7 @@
 import { useSyncExternalStore, type ReactNode } from "react";
 import { DocumentDrop } from "./DocumentDrop";
 import { requestFoxExplain, requestFoxFix } from "./AlwaysOnFox";
+import { NOTHING_URGENT, stillUsefulSection } from "./fileWrite";
 import { getFoxDraft, getServerDraft, subscribeFoxDraft } from "./store";
 import {
   previewFacts,
@@ -82,6 +83,34 @@ export function StructureRows({
   );
 }
 
+export function StillUsefulSection({
+  draft,
+}: {
+  draft: ReturnType<typeof getFoxDraft>;
+}) {
+  const section = stillUsefulSection(draft);
+  if (!section) return null;
+  return (
+    <section className="fox-still-useful" aria-label="Still useful">
+      <p className="type-eyebrow">Still useful</p>
+      {section.empty ? (
+        <p className="fox-still-useful__empty">{NOTHING_URGENT}</p>
+      ) : (
+        <div className="file-preview__rows">
+          {section.items.map((item) => (
+            <div key={item.id} className="file-preview__row">
+              <span className="file-preview__label">{item.label}</span>
+              <span className="file-preview__value">
+                <span>helps next</span>
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
 export function WorkspaceFileDock({ children }: { children: ReactNode }) {
   const draft = useSyncExternalStore(subscribeFoxDraft, getFoxDraft, getServerDraft);
   const facts = previewFacts(draft);
@@ -94,6 +123,7 @@ export function WorkspaceFileDock({ children }: { children: ReactNode }) {
         <section className="fox-structure-notepad" aria-label="Structure">
           <p className="type-eyebrow">Structure</p>
           <StructureRows facts={facts} draft={draft} />
+          <StillUsefulSection draft={draft} />
         </section>
       ) : null}
       <div className="fox-workspace-dock__row">{children}</div>
@@ -119,6 +149,7 @@ export function FilePreview() {
         <p className="type-eyebrow">Structure</p>
         <h2 className="type-card-title">Live file</h2>
         <StructureRows facts={facts} draft={draft} />
+        <StillUsefulSection draft={draft} />
       </div>
       {showDocs ? <DocumentDrop draft={draft} compact /> : null}
     </aside>
