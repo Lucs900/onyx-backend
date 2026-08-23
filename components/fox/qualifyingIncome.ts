@@ -3,29 +3,39 @@ import {
   DECLINING_INCOME_CAUTION,
   DECLINING_YEAR_RATIO,
   SUGGESTED_INCOME_NOTE,
+  YTD_CONFLICT_CAUTION,
   k1OrdinaryMonthly,
   laterYearIsMateriallyLower,
   monthlyFromAnnual,
+  monthsThroughPeriodEnd,
+  periodsPerYear,
   scheduleCAnnual,
   stableOrDecliningAnnual,
   suggestScheduleCIncome,
+  suggestWageIncome,
   yearNumber,
   type QualifyingMethod,
   type ScheduleCYearInput,
+  type WageSuggestInput,
+  type WageYearInput,
 } from "@/lib/income/suggest";
 
 export {
   DECLINING_INCOME_CAUTION,
   DECLINING_YEAR_RATIO,
   SUGGESTED_INCOME_NOTE,
+  YTD_CONFLICT_CAUTION,
   k1OrdinaryMonthly,
   monthlyFromAnnual,
+  monthsThroughPeriodEnd,
+  periodsPerYear,
   scheduleCAnnual,
   stableOrDecliningAnnual,
   suggestScheduleCIncome,
+  suggestWageIncome,
   yearNumber,
 };
-export type { QualifyingMethod, ScheduleCYearInput };
+export type { QualifyingMethod, ScheduleCYearInput, WageSuggestInput, WageYearInput };
 
 export const QUALIFYING_INCOME_FIELD = "qualifying_income";
 export const TAX_CASHFLOWS_FIELD = "tax_cashflows";
@@ -107,40 +117,6 @@ export function normalizeReturnKind(raw?: string | null): TaxReturnKind {
   if (v.includes("1065") || v.includes("partnership")) return "1065";
   if (v.includes("1120s") || v.includes("scorp")) return "1120s";
   return "";
-}
-
-export function periodsPerYear(raw?: string | null): number | null {
-  const v = String(raw ?? "")
-    .trim()
-    .toLowerCase()
-    .replace(/[\s_-]+/g, "");
-  if (!v) return null;
-  if (/(biweekly|every2weeks|fortnight)/.test(v)) return 26;
-  if (/(semimonth|twiceamonth)/.test(v)) return 24;
-  if (/weekly/.test(v)) return 52;
-  if (/month/.test(v)) return 12;
-  if (/quarter/.test(v)) return 4;
-  if (/(annual|yearly)/.test(v)) return 1;
-  return null;
-}
-
-export function monthsThroughPeriodEnd(raw?: string | null): number | null {
-  const text = String(raw ?? "").trim();
-  if (!text) return null;
-  const iso = text.match(/^(\d{4})-(\d{1,2})(?:-(\d{1,2}))?/);
-  if (iso) {
-    const month = Number(iso[2]);
-    return month >= 1 && month <= 12 ? month : null;
-  }
-  const us = text.match(/^(\d{1,2})[/\-](\d{1,2})[/\-](\d{2,4})/);
-  if (us) {
-    const month = Number(us[1]);
-    return month >= 1 && month <= 12 ? month : null;
-  }
-  const parsed = Date.parse(text);
-  if (!Number.isFinite(parsed)) return null;
-  const month = new Date(parsed).getUTCMonth() + 1;
-  return month >= 1 && month <= 12 ? month : null;
 }
 
 function cashflowToScheduleCYear(row: TaxYearCashflow): ScheduleCYearInput | null {
@@ -300,20 +276,59 @@ export function hasScheduleCCashflow(draft: FoxIntakeDraft): boolean {
   return readTaxCashflows(draft).some((row) => String(row.schedule_c_net_profit ?? "").trim());
 }
 
-export function wageMonthly(fields: Record<string, string>): number | null {
-  const ytd = parseExtractMoney(fields.ytd_gross);
-  const months = monthsThroughPeriodEnd(fields.pay_period_end);
-  if (ytd != null && ytd !== 0 && months != null && months > 0) {
-    return Math.round(ytd / months);
+function pickWageField(fields: Record<string, string>, draft: FoxIntakeDraft, key: string) {
+  return String(fields[key] ?? "").trim() || factValue(draft, key);
+}
+
+function yearFromWageField(raw: string): number | null {
+  const iso = raw.trim().match(/^(\d{4})\b/);
+  if (iso) {
+    const n = Number(iso[1]);
+    return Number.isFinite(n) ? n : null;
   }
-  const period = parseExtractMoney(fields.gross_period);
-  const freq = periodsPerYear(fields.pay_frequency);
-  if (period != null && period !== 0 && freq != null) {
-    return Math.round((period * freq) / 12);
-  }
-  const wages = parseExtractMoney(fields.wages);
-  if (wages != null && wages !== 0) return monthlyFromAnnual(wages);
-  return null;
+  return yearNumber(raw);
+}
+
+function wagePriorYear(draft: FoxIntakeDraft, extractYear: number | null): WageYearInput | null {
+  const draftYear = yearFromWageField(factValue(draft, "tax_year"));
+  if (draftYear == null || extractYear == null || draftYear === extractYear) return null;
+  const wages = parseExtractMoney(factValue(draft, "wages"));
+  const overtime = parseExtractMoney(factValue(draft, "overtime"));
+  const bonus = parseExtractMoney(factValue(draft, "bonus"));
+  const commission = parseExtractMoney(factValue(draft, "commission"));
+  if (wages == null && overtime == null && bonus == null && commission == null) return null;
+  return { taxYear: draftYear, wages, overtime, bonus, commission };
+}
+
+function wageSuggestInput(draft: FoxIntakeDraft, fields: Record<string, string>): WageSuggestInput {
+  const extractYear =
+    yearFromWageField(String(fields.tax_year ?? "").trim()) ??
+    yearFromWageField(String(fields.pay_period_end ?? factValue(draft, "pay_period_end") ?? "").trim());
+  const priorYear = wagePriorYear(draft, extractYear);
+  const currentOrDraft = (key: string) =>
+    parseExtractMoney(fields[key] || (priorYear ? "" : factValue(draft, key)));
+  return {
+    payPeriodEnd: pickWageField(fields, draft, "pay_period_end") || null,
+    grossPeriod: parseExtractMoney(pickWageField(fields, draft, "gross_period")),
+    ytdGross: parseExtractMoney(pickWageField(fields, draft, "ytd_gross")),
+    payFrequency: pickWageField(fields, draft, "pay_frequency") || null,
+    w2Wages: parseExtractMoney(fields.wages || factValue(draft, "wages")),
+    overtime: currentOrDraft("overtime"),
+    bonus: currentOrDraft("bonus"),
+    commission: currentOrDraft("commission"),
+    priorYear,
+  };
+}
+
+export function wageIncomeFromDraft(
+  draft: FoxIntakeDraft,
+  fields: Record<string, string> = {},
+) {
+  return suggestWageIncome(wageSuggestInput(draft, fields));
+}
+
+export function wageIncomeCaution(draft: FoxIntakeDraft): string | undefined {
+  return wageIncomeFromDraft(draft)?.caution;
 }
 
 export function monthlyQualifyingFromExtract(
@@ -322,9 +337,9 @@ export function monthlyQualifyingFromExtract(
   fields: Record<string, string>,
 ): QualifyingIncomeResult | null {
   if (extractClass === "paystub" || extractClass === "w2") {
-    const monthly = wageMonthly(fields);
-    if (monthly == null || monthly === 0) return null;
-    return { monthly, basis: "wage" };
+    const wage = suggestWageIncome(wageSuggestInput(draft, fields));
+    if (wage == null || wage.monthly === 0) return null;
+    return { monthly: wage.monthly, basis: "wage", method: wage.method, caution: wage.caution };
   }
   if (extractClass !== "tax_return") return null;
   const incoming = cashflowFromExtract(fields);

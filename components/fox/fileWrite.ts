@@ -22,7 +22,9 @@ import {
   normalizeReturnKind,
   parseExtractMoney,
   readTaxCashflows,
+  wageIncomeCaution,
 } from "./qualifyingIncome";
+import { conventionalGuidelinePattern } from "@/lib/guidelines/conventional";
 
 export { REJECT_LINE, LIMIT_LINE };
 
@@ -30,8 +32,18 @@ export const LOW_EXTRACT_CONFIDENCE = 0.55;
 
 export const EXTRACT_SCHEMA_KEYS: Record<ExtractClass, readonly string[]> = {
   government_id: ["full_name", "date_of_birth", "id_last4", "state", "expiration"],
-  paystub: ["employer_name", "pay_period_end", "gross_period", "ytd_gross", "net_period", "pay_frequency"],
-  w2: ["tax_year", "employer_name", "wages", "federal_withheld"],
+  paystub: [
+    "employer_name",
+    "pay_period_end",
+    "gross_period",
+    "ytd_gross",
+    "net_period",
+    "pay_frequency",
+    "overtime",
+    "bonus",
+    "commission",
+  ],
+  w2: ["tax_year", "employer_name", "wages", "federal_withheld", "overtime", "bonus", "commission"],
   tax_return: [
     "tax_year",
     "filing_status",
@@ -77,13 +89,26 @@ const MONEY_KEYS = new Set([
   "mileage_depreciation",
   "k1_ordinary_income",
   "k1_distributions",
+  "overtime",
+  "bonus",
+  "commission",
   "downPayment",
   "down_payment",
   "loanAmount",
   "loan_amount",
 ]);
 
-const INCOME_MONEY_KEYS = new Set(["gross_period", "ytd_gross", "wages", "agi", "income", "net_period"]);
+const INCOME_MONEY_KEYS = new Set([
+  "gross_period",
+  "ytd_gross",
+  "wages",
+  "agi",
+  "income",
+  "net_period",
+  "overtime",
+  "bonus",
+  "commission",
+]);
 const YEARLY_TAX_KEYS = new Set([
   "tax_year",
   "filing_status",
@@ -562,7 +587,7 @@ export function applyExtractedFields(
   );
   conflict = next.pendingConflict ?? conflict;
   next = attachExtractClass(next, extractClass);
-  const caution = decliningIncomeCaution(next);
+  const caution = decliningIncomeCaution(next) ?? wageIncomeCaution(next);
   return {
     draft: next,
     writes,
@@ -814,12 +839,28 @@ export function stillUsefulVisible(draft: FoxIntakeDraft) {
 
 function incomeDocsPhrase(draft: FoxIntakeDraft) {
   const income = draft.incomeType.value;
-  if (income === "w2") return "income docs (latest paystub and W-2)";
-  if (income === "both") return "income docs (latest paystub, W-2, latest return, and prior-year)";
-  if (income === "self-employed" || income === "other") {
-    return "income docs (latest return, prior-year, and a YTD P&L if you have it)";
+  if (income === "w2") {
+    return conventionalGuidelinePattern(
+      "completeness",
+      "income-docs-w2",
+      "income docs (latest paystub and W-2)",
+    );
   }
-  return "income docs";
+  if (income === "both") {
+    return conventionalGuidelinePattern(
+      "completeness",
+      "income-docs-both",
+      "income docs (latest paystub, W-2, latest return, and prior-year)",
+    );
+  }
+  if (income === "self-employed" || income === "other") {
+    return conventionalGuidelinePattern(
+      "completeness",
+      "income-docs-self-employed",
+      "income docs (latest return, prior-year, and a YTD P&L if you have it)",
+    );
+  }
+  return conventionalGuidelinePattern("completeness", "income-docs", "income docs");
 }
 
 /** What Fox names after the sketch — the short list, not a remainder. */

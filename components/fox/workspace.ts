@@ -107,7 +107,9 @@ import {
   qualifyingIncomeDisplay,
   scheduleCYearViews,
   SUGGESTED_INCOME_NOTE,
+  wageIncomeCaution,
 } from "./qualifyingIncome";
+import { conventionalGuidelinePattern } from "@/lib/guidelines/conventional";
 import {
   applyEmailThenFinish,
   applyLooksRightMotion,
@@ -1005,6 +1007,7 @@ function liveProposalAsk(
     if (cls === "paystub" || cls === "w2") {
       return {
         text: `Got the ${cls === "w2" ? "W-2" : "paystub"}. I’m suggesting ${shown} a month. ${SUGGESTED_INCOME_NOTE}. Use this?`,
+        followUp: wageIncomeCaution(draft),
         actions: proposalActions(proposal.kind),
       };
     }
@@ -1306,13 +1309,25 @@ function sideQuestionAnswer(input: string, draft: FoxIntakeDraft) {
 
 function documentQuestionAnswer(draft: FoxIntakeDraft) {
   const invite = nextDocInvite(draft);
-  if (invite === "government_id") return "A government ID puts a name on this file.";
-  if (invite === "tax_return") {
-    return "That’s how I estimate qualifying income. Suggested, not underwritten.";
+  if (invite === "government_id") {
+    return conventionalGuidelinePattern("docs", "government_id", "A government ID puts a name on this file.");
   }
-  if (invite === "prior_year_return") return "It helps me see if last year was stable.";
-  if (invite === "paystub") return "That’s current income on paper.";
-  if (invite === "w2") return "That’s last year’s wages on paper.";
+  if (invite === "tax_return") {
+    return conventionalGuidelinePattern(
+      "docs",
+      "tax_return",
+      "That’s how I estimate qualifying income. Suggested, not underwritten.",
+    );
+  }
+  if (invite === "prior_year_return") {
+    return conventionalGuidelinePattern("docs", "prior_year_return", "It helps me see if last year was stable.");
+  }
+  if (invite === "paystub") {
+    return conventionalGuidelinePattern("docs", "paystub", "That’s current income on paper.");
+  }
+  if (invite === "w2") {
+    return conventionalGuidelinePattern("docs", "w2", "That’s last year’s wages on paper.");
+  }
   return "I can keep this file current.";
 }
 

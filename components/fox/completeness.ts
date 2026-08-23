@@ -22,6 +22,7 @@ import {
   SUGGESTED_INCOME_NOTE,
   decliningIncomeCaution,
   hasScheduleCCashflow,
+  wageIncomeCaution,
 } from "./qualifyingIncome";
 
 export const SUGGESTED_NOTE = "Suggested · not verified";
@@ -358,7 +359,7 @@ export function lowestCreditBand(draft?: FoxIntakeDraft | null) {
 /** One quiet File / Fox line. Never a verdict. */
 export function guidelineCaution(draft: FoxIntakeDraft): string | undefined {
   if (draft.productIntent === "heloc" || draft.productIntent === "jumbo") return undefined;
-  const incomeCaution = decliningIncomeCaution(draft);
+  const incomeCaution = decliningIncomeCaution(draft) ?? wageIncomeCaution(draft);
   const justUploadedIncome = draft.pendingProposal?.field === QUALIFYING_INCOME_FIELD;
   if (incomeCaution && (justUploadedIncome || !highPurchaseLtv(draft))) return incomeCaution;
   if (highPurchaseLtv(draft)) return HIGH_LTV_CAUTION;

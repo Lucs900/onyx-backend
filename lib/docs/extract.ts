@@ -247,7 +247,12 @@ function extractFieldsPrompt(extractClass: ExtractClass, keys: readonly string[]
       " return_kind is schedule_c, k1, 1065, 1120s, or empty. schedule_c_net_profit is Schedule C net profit or loss (line 31); use a leading minus when the return shows a loss. k1_ordinary_income is ordinary business income when a K-1 / 1065 / 1120S is visible — including 1120S line 1 ordinary income. k1_distributions is cash distributions when printed; empty if not shown. amortization, casualty_loss, and mileage_depreciation only when clearly printed on the same return. Empty string when a line is not clearly printed. Never invent add-backs.";
   }
   if (extractClass === "paystub") {
-    extra = " pay_frequency is weekly, biweekly, semimonthly, monthly, or empty.";
+    extra =
+      " pay_frequency is weekly, biweekly, semimonthly, monthly, or empty. overtime, bonus, and commission only when clearly printed as their own amounts; empty otherwise; never invent.";
+  }
+  if (extractClass === "w2") {
+    extra =
+      " overtime, bonus, and commission only when clearly printed on the W-2; empty otherwise; never invent.";
   }
   return `Extract only these keys if clearly visible: ${keys.join(", ")}. JSON object with those keys as strings. Empty string if not clearly printed. Never invent purchase price, income, or balance. Never output SSN or full account numbers. For government_id, id_last4 is the last four of the ID number only.${extra}`;
 }

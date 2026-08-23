@@ -41,6 +41,7 @@ import {
 import {
   DECLINING_INCOME_CAUTION,
   QUALIFYING_INCOME_FIELD,
+  YTD_CONFLICT_CAUTION,
   laterYearIncomeLower,
   monthlyFromAnnual,
   monthlyQualifyingFromExtract,
@@ -52,7 +53,12 @@ import {
 import {
   k1OrdinaryMonthly,
   suggestScheduleCIncome,
+  suggestWageIncome,
 } from "../lib/income/suggest";
+import {
+  CONVENTIONAL_GUIDELINE_VERSION,
+  queryConventionalGuidelines,
+} from "../lib/guidelines/conventional";
 import {
   MOTION_COPY,
   applyLooksRightMotion,
@@ -2879,6 +2885,12 @@ assert.ok(EXTRACT_SCHEMA_KEYS.tax_return.includes("k1_ordinary_income"));
 assert.ok(EXTRACT_SCHEMA_KEYS.tax_return.includes("k1_distributions"));
 assert.ok(EXTRACT_SCHEMA_KEYS.tax_return.includes("amortization"));
 assert.ok(EXTRACT_SCHEMA_KEYS.paystub.includes("pay_frequency"));
+assert.ok(EXTRACT_SCHEMA_KEYS.paystub.includes("overtime"));
+assert.ok(EXTRACT_SCHEMA_KEYS.paystub.includes("bonus"));
+assert.ok(EXTRACT_SCHEMA_KEYS.paystub.includes("commission"));
+assert.ok(EXTRACT_SCHEMA_KEYS.w2.includes("overtime"));
+assert.ok(EXTRACT_SCHEMA_KEYS.w2.includes("bonus"));
+assert.ok(EXTRACT_SCHEMA_KEYS.w2.includes("commission"));
 assert.equal(stableOrDecliningAnnual(120000, 96000), 96000);
 assert.equal(stableOrDecliningAnnual(96000, 120000), 108000);
 assert.equal(parseExtractMoney("(12,000)"), -12000);
@@ -2913,6 +2925,85 @@ assert.equal(moduleDeclining?.monthly, 6000);
 assert.equal(moduleDeclining?.method, "later-year-lower");
 assert.equal(moduleDeclining?.caution, DECLINING_INCOME_CAUTION);
 assert.equal(moduleDeclining?.caution, "Income is lower this year. I’m using the later year.");
+
+const moduleWageYtd = suggestWageIncome({
+  payPeriodEnd: "2026-07-31",
+  ytdGross: 50400,
+  grossPeriod: 7200,
+});
+assert.equal(moduleWageYtd?.monthly, 7200);
+assert.equal(moduleWageYtd?.method, "ytd-months");
+assert.equal(moduleWageYtd?.caution, undefined);
+
+const moduleWageFreq = suggestWageIncome({
+  grossPeriod: 3500,
+  payFrequency: "biweekly",
+});
+assert.equal(moduleWageFreq?.monthly, 7583);
+assert.equal(moduleWageFreq?.method, "period-frequency");
+assert.equal(moduleWageFreq?.caution, undefined);
+
+const moduleWageW2 = suggestWageIncome({ w2Wages: 84000 });
+assert.equal(moduleWageW2?.monthly, 7000);
+assert.equal(moduleWageW2?.method, "w2-annual");
+assert.equal(moduleWageW2?.caution, undefined);
+
+const moduleWageAgree = suggestWageIncome({
+  payPeriodEnd: "2026-07-31",
+  ytdGross: 53081,
+  grossPeriod: 3500,
+  payFrequency: "biweekly",
+});
+assert.equal(moduleWageAgree?.monthly, 7583);
+assert.equal(moduleWageAgree?.method, "period-frequency");
+assert.equal(moduleWageAgree?.caution, undefined);
+
+const moduleYtdConflict = suggestWageIncome({
+  payPeriodEnd: "2026-07-31",
+  ytdGross: 50400,
+  grossPeriod: 4000,
+  payFrequency: "monthly",
+});
+assert.equal(moduleYtdConflict?.monthly, 4000);
+assert.equal(moduleYtdConflict?.method, "ytd-conflict-lower");
+assert.equal(moduleYtdConflict?.caution, YTD_CONFLICT_CAUTION);
+assert.notEqual(moduleYtdConflict?.monthly, Math.round((7200 + 4000) / 2));
+
+const moduleYtdVsW2 = suggestWageIncome({
+  payPeriodEnd: "2026-07-31",
+  ytdGross: 50400,
+  w2Wages: 84000,
+});
+assert.equal(moduleYtdVsW2?.monthly, 7000);
+assert.equal(moduleYtdVsW2?.method, "ytd-conflict-lower");
+assert.equal(moduleYtdVsW2?.caution, YTD_CONFLICT_CAUTION);
+
+const moduleSingleOt = suggestWageIncome({ w2Wages: 84000, overtime: 12000 });
+assert.equal(moduleSingleOt?.monthly, 7000);
+assert.equal(moduleSingleOt?.method, "w2-annual");
+
+const moduleTwoYearOt = suggestWageIncome({
+  w2Wages: 84000,
+  overtime: 12000,
+  priorYear: { taxYear: 2023, overtime: 6000 },
+});
+assert.equal(moduleTwoYearOt?.monthly, 7500);
+
+const fannieW2 = queryConventionalGuidelines({ agency: "fannie", topic: "income", key: "w2" });
+const freddieW2 = queryConventionalGuidelines({ agency: "freddie", topic: "income", key: "w2" });
+assert.equal(fannieW2.length, 1);
+assert.equal(freddieW2.length, 1);
+assert.equal(fannieW2[0]?.version, CONVENTIONAL_GUIDELINE_VERSION);
+assert.equal(freddieW2[0]?.rules?.ytdConflict, "flag-lower");
+assert.equal(freddieW2[0]?.rules?.variable, "extracted-two-year-only");
+assert.equal(queryConventionalGuidelines({ topic: "completeness", key: "purchase" }).length, 2);
+assert.equal(
+  queryConventionalGuidelines({ topic: "completeness", key: "income-docs-w2" })[0]?.pattern,
+  "income docs (latest paystub and W-2)",
+);
+assert.ok(queryConventionalGuidelines({ topic: "docs", key: "paystub" }).length >= 2);
+assert.equal(queryConventionalGuidelines({ topic: "income", key: "k1" })[0]?.rules?.basis, "ordinary-over-12");
+assert.equal(queryConventionalGuidelines({ agency: "fannie" }).every((row) => row.agency === "fannie"), true);
 
 const mayaId = applyExtractedFields(
   draft({
@@ -3850,6 +3941,35 @@ const paystubFreq = applyExtractedFields(afterLooks, {
 assert.equal(paystubFreq.draft.pendingProposal?.value, "7583");
 assert.equal(paystubFreq.draft.pendingProposal?.note, SUGGESTED_INCOME_NOTE);
 
+const ytdVsW2Draft = draft({
+  ...afterLooks,
+  facts: {
+    wages: { field: "wages", value: "84000", source: "extracted-unconfirmed", confirmed: true },
+    tax_year: { field: "tax_year", value: "2025", source: "extracted-unconfirmed", confirmed: true },
+  },
+});
+const ytdVsW2Write = applyExtractedFields(ytdVsW2Draft, {
+  extractClass: "paystub",
+  confidence: 0.92,
+  fields: {
+    employer_name: "Harbor Steel",
+    pay_period_end: "2026-07-31",
+    gross_period: "7200",
+    ytd_gross: "50400",
+  },
+});
+assert.equal(ytdVsW2Write.draft.pendingProposal?.value, "7000");
+assert.equal(ytdVsW2Write.draft.pendingProposal?.note, SUGGESTED_INCOME_NOTE);
+assert.ok(ytdVsW2Write.quietLines.includes(YTD_CONFLICT_CAUTION));
+assert.notEqual(ytdVsW2Write.draft.pendingProposal?.value, "7100");
+
+const singleOtWrite = applyExtractedFields(afterLooks, {
+  extractClass: "w2",
+  confidence: 0.94,
+  fields: { tax_year: "2025", employer_name: "Harbor Steel", wages: "84000", overtime: "12000" },
+});
+assert.equal(singleOtWrite.draft.pendingProposal?.value, "7000");
+
 const highLtvBuy = withIncome(
   withPurchaseFunds(
     draft({
@@ -4180,13 +4300,30 @@ assert.equal(namedOther?.capture?.field, "amountPurpose");
 assert.match(namedOther?.text ?? "", /purchase price/i);
 
 const incomeModuleSrc = readFileSync(join(root, "lib/income/suggest.ts"), "utf8");
-assert.match(incomeModuleSrc, /"one-year" \| "two-year-average" \| "later-year-lower"/);
+assert.match(incomeModuleSrc, /"one-year"/);
+assert.match(incomeModuleSrc, /"two-year-average"/);
+assert.match(incomeModuleSrc, /"later-year-lower"/);
+assert.match(incomeModuleSrc, /"period-frequency"/);
+assert.match(incomeModuleSrc, /"ytd-months"/);
+assert.match(incomeModuleSrc, /"w2-annual"/);
 assert.match(incomeModuleSrc, /suggestScheduleCIncome/);
+assert.match(incomeModuleSrc, /suggestWageIncome/);
 assert.match(incomeModuleSrc, /No 1084 UI/);
 assert.doesNotMatch(incomeModuleSrc, /1084 form|underwriting form|borrower form/i);
+assert.doesNotMatch(incomeModuleSrc, /export function wageMonthly/);
 const incomeAdapterSrc = readFileSync(join(root, "components/fox/qualifyingIncome.ts"), "utf8");
 assert.ok(incomeAdapterSrc.includes('from "@/lib/income/suggest"'));
 assert.ok(incomeAdapterSrc.includes("suggestScheduleCIncome"));
+assert.ok(incomeAdapterSrc.includes("suggestWageIncome"));
+assert.doesNotMatch(incomeAdapterSrc, /export function wageMonthly/);
+assert.doesNotMatch(incomeAdapterSrc, /function wageMonthly/);
+const guidelineStoreSrc = readFileSync(join(root, "lib/guidelines/conventional.ts"), "utf8");
+assert.match(guidelineStoreSrc, /CONVENTIONAL_GUIDELINE_VERSION/);
+assert.match(guidelineStoreSrc, /queryConventionalGuidelines/);
+assert.match(guidelineStoreSrc, /fannie/);
+assert.match(guidelineStoreSrc, /freddie/);
+assert.doesNotMatch(guidelineStoreSrc, /agency: "fha"|agency: "va"/);
+assert.equal(queryConventionalGuidelines().every((row) => row.agency === "fannie" || row.agency === "freddie"), true);
 
 const workspaceSrc = readFileSync(join(root, "components/fox/workspace.ts"), "utf8");
 assert.ok(!workspaceSrc.includes("What’s a rough amount?"));
