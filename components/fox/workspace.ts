@@ -1318,7 +1318,7 @@ export const NO_APPROVE_COPY = "I can prepare a file. I cannot approve, lock, or
 export const COST_COPY =
   "I don’t have a live fee quote. The preview rate is not live. I won’t invent a closing-cost number.";
 export const ACR_BENEFITS_COPY =
-  "The desk stays open after close. On-time payments earn a reward calculated for the relationship. When the numbers are strong, Fox can help lower cost, use equity, or expand. When the timing is wrong, Fox waits.";
+  "Fox keeps working after close. On-time payments earn a calculated reward. When the numbers are strong, Fox can help save more, use equity, or prepare another property. When the timing is wrong, Fox waits.";
 export const TIMELINE_COPY = "No close date yet. Sketch now, documents next, review after Proceed.";
 export const PHONE_COPY = "Yes. Same file on your phone — type below or tap a reply.";
 export const W2_TAX_RETURN_COPY = "No. This path needs a paystub and a W-2.";
@@ -1340,10 +1340,28 @@ function asksCost(text: string) {
 }
 
 function asksAcrBenefits(text: string) {
-  return (
-    /\b(acr benefits?|benefits? of acr|what('s| is) the reward|the reward|membership reward)\b/i.test(text) ||
-    (/\breward\b/i.test(text) && !/\b(prepared|sample|indicative)\b/i.test(text))
-  );
+  const t = text.trim();
+  if (
+    /\b(acr benefits?|benefits? of acr|what('s| is) the reward|the reward|membership reward|membership)\b/i.test(t) ||
+    (/\breward\b/i.test(t) && !/\b(prepared|sample|indicative)\b/i.test(t))
+  ) {
+    return true;
+  }
+  if (/\bwhat do i get\b/i.test(t)) return true;
+  if (/\bif i start (a |the )?(relationship|desk|acr)\b/i.test(t)) return true;
+  if (
+    /\bstart (a |the |your )?relationship\b/i.test(t) &&
+    (looksLikeQuestion(t) || /\b(get|benefit|worth|why)\b/i.test(t))
+  ) {
+    return true;
+  }
+  if (
+    /\brelationship\b/i.test(t) &&
+    /\b(what do i get|benefits?|reward|worth it|why (start|join)|what('s| is) in it)\b/i.test(t)
+  ) {
+    return true;
+  }
+  return false;
 }
 
 function asksTimeline(text: string) {

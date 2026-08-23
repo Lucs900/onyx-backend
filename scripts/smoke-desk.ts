@@ -35,6 +35,7 @@ import {
   guidelineCaution,
   loanExceedsPurchasePrice,
   proposalAskCopy,
+  proposeFundsPair,
   resolveProposal,
   showsAgencyCompleteness,
 } from "../components/fox/completeness";
@@ -2892,6 +2893,36 @@ assertAnswerThenRestore(workspaceReply("when do I close?", atOccupancy), new Reg
 assert.doesNotMatch(workspaceReply("ACR benefits", atOccupancy)?.text ?? "", /I can keep this file current\. Ask anything/);
 assert.doesNotMatch(workspaceReply("closing costs", atOccupancy)?.text ?? "", /%\s*reward|public percent|\$[\d,]+ to \$[\d,]+/i);
 assert.equal(workspaceReply("will i qualify", atOccupancy)?.text?.startsWith(NO_APPROVE_COPY), true);
+assert.equal(
+  workspaceReply("what do I get if I start a relationship", atOccupancy)?.text?.startsWith(ACR_BENEFITS_COPY),
+  true,
+);
+assert.doesNotMatch(
+  workspaceReply("what do I get if I start a relationship", atOccupancy)?.text ?? "",
+  /I can answer from this file/,
+);
+
+const fundsConfirm = proposeFundsPair(
+  draft({
+    ...priced850,
+    propertyValueAmount: 850000,
+    valueAsked: true,
+  }),
+  170000,
+  680000,
+);
+assert.equal(workspacePrompt(fundsConfirm), "confirm-proposal");
+const relationshipAtFunds = workspaceReply("what do I get if I start a relationship", fundsConfirm);
+assert.equal(relationshipAtFunds?.text?.startsWith(ACR_BENEFITS_COPY), true);
+assert.match(relationshipAtFunds?.text ?? "", /\$170,000 down · \$680,000 loan/);
+assert.doesNotMatch(relationshipAtFunds?.text ?? "", /I can answer from this file/);
+assert.doesNotMatch(relationshipAtFunds?.text ?? "", /%\s*reward|\$[\d,]+ to \$[\d,]+/i);
+assertAnswerThenRestore(relationshipAtFunds, new RegExp(ACR_BENEFITS_COPY.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")), {
+  labels: ["Use this", "Leave blank"],
+});
+assert.equal(workspaceReply("will i qualify", fundsConfirm)?.text?.startsWith(NO_APPROVE_COPY), true);
+assert.equal(workspaceReply("what will this cost me", fundsConfirm)?.text?.startsWith(COST_COPY), true);
+assert.equal(workspaceReply("can I do this on my phone", fundsConfirm)?.text?.startsWith(PHONE_COPY), true);
 
 const creditChips = (workspacePromptCopy("credit", afterFunds).actions ?? []).map((item) => item.label);
 assertAnswerThenRestore(workspaceReply("will i qualify", afterFunds), /cannot approve, lock, or commit to lend/i, {
