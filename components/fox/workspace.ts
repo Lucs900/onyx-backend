@@ -93,6 +93,7 @@ import {
   writeQualifyingIncome,
   writeYearsInBusiness,
   YEARS_IN_BUSINESS_ASK,
+  YEARS_IN_BUSINESS_FIELD,
 } from "./completeness";
 import {
   decliningIncomeCaution,
@@ -1118,15 +1119,25 @@ const CORRECTION_CHIP_IDS = new Set([
   "years-in-business",
 ]);
 
+function yearsOnFile(draft: FoxIntakeDraft) {
+  return Boolean(draft.facts?.[YEARS_IN_BUSINESS_FIELD]);
+}
+
+function selfEmployedIncome(draft: FoxIntakeDraft) {
+  const income = draft.incomeType.value;
+  return income === "self-employed" || income === "both";
+}
+
 function extraCorrectionLines(draft: FoxIntakeDraft): { id: string; label: string; prompt: FoxPrompt }[] {
   const extra: { id: string; label: string; prompt: FoxPrompt }[] = [];
   if (draft.productIntent) {
     extra.push({ id: "product", label: "Product", prompt: "product" });
   }
   if (
-    draft.facts?.years_in_business?.value ||
+    yearsOnFile(draft) ||
     draft.awaitingYearsInBusiness ||
-    shouldAskYearsInBusiness(draft)
+    shouldAskYearsInBusiness(draft) ||
+    selfEmployedIncome(draft)
   ) {
     extra.push({ id: "years-in-business", label: "Years in business", prompt: "years-in-business" });
   }
@@ -1159,6 +1170,41 @@ function correctionAsk(draft: FoxIntakeDraft) {
     text: CORRECT_ASK,
     actions: correctionFieldActions(draft),
   };
+}
+
+function wantsCorrectionMenu(text: string) {
+  const t = text.trim().toLowerCase().replace(/[?.!]+$/g, "").replace(/\s+/g, " ");
+  return (
+    /^(needs?|need)( a)? correction$/.test(t) ||
+    /^what should i change$/.test(t) ||
+    /^what do i (need to )?change$/.test(t) ||
+    /^what can i change$/.test(t)
+  );
+}
+
+function canOpenCorrectionMenu(draft: FoxIntakeDraft) {
+  return sketchAssembled(draft) || draft.correcting === "correct";
+}
+
+function dismissesCorrectionMenu(text: string) {
+  if (wantsCorrectionMenu(text)) return false;
+  return /^(looks right|looks good|still right|confirm|yes|ok|okay|good)$/i.test(text.trim());
+}
+
+function skipRemainingInvites(draft: FoxIntakeDraft): FoxIntakeDraft {
+  let next = draft;
+  for (let i = 0; i < 8 && nextDocInvite(next); i += 1) {
+    next = skipCurrentInvite(next);
+  }
+  return { ...next, correcting: null, correctingLine: null };
+}
+
+function draftAfterDismissCorrection(draft: FoxIntakeDraft): FoxIntakeDraft {
+  const next: FoxIntakeDraft = { ...draft, correcting: null, correctingLine: null };
+  if (!next.sampleAccepted && sketchAssembled(next) && nextDocInvite(next)) {
+    return skipRemainingInvites(next);
+  }
+  return next;
 }
 
 function docInviteActions(): FoxAction[] {
@@ -2234,7 +2280,7 @@ export function parseWorkspaceEdit(
     /\b(change|edit|update|set|switch|actually|should be|make it|correction)\b/.test(lower) ||
     (namedField && /\b(is|to|as|=)\b/.test(lower));
   if (!spokenFix) return parseRefiDocumentsBareValue(q, draft);
-  if (/^(needs a correction|looks right)$/i.test(lower)) return null;
+  if (/^(needs a correction|looks right)$/i.test(lower) || wantsCorrectionMenu(q)) return null;
   if (looksLikeQuestion(q) && !/\b(change|edit|update|set|switch|actually)\b/.test(lower)) {
     return null;
   }
@@ -2810,6 +2856,10 @@ export function workspaceReply(
     return {
       text: "I can prepare a file. I cannot approve, lock, or commit to lend.",
     };
+  }
+
+  if (canOpenCorrectionMenu(draft) && wantsCorrectionMenu(q)) {
+    return { ...workspacePromptCopy("correct", draft), capture: { field: "needs-correction" } };
   }
 
   const edit = parseWorkspaceEdit(q, draft);
@@ -3401,7 +3451,16 @@ export function workspaceReply(
   }
 
   if (prompt === "correct") {
-    if (looksLikeQuestion(q)) {
+    if (dismissesCorrectionMenu(q)) {
+      const nextDraft = draftAfterDismissCorrection(draft);
+      return {
+        ...(canLooksRight(nextDraft)
+          ? workspacePromptCopy("review", nextDraft)
+          : nextFoxAsk(nextDraft)),
+        capture: { field: "keep-line" },
+      };
+    }
+    if (looksLikeQuestion(q) && !wantsCorrectionMenu(q)) {
       return restoredAsk(sideQuestionAnswer(q, draft), draft);
     }
     const years = parseYearsInBusiness(q);

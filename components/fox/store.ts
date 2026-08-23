@@ -52,6 +52,7 @@ import {
   promoteExtractClass,
   resolveFactConflict,
   resolveReceivedSlot,
+  nextDocInvite,
   skipCurrentInvite,
   skipRemainingClasses,
   type ExtractApplyInput,
@@ -79,6 +80,7 @@ import {
 import {
   applyStubEmployerSuggestion,
   canLooksRight,
+  sketchAssembled,
   impliedLoanAmount,
   lockedDownShare,
   proposePublicSuggestion,
@@ -1168,7 +1170,18 @@ export function applyCapture(capture: Capture) {
     return commit({ ...current, correcting: null });
   }
   if (capture.field === "keep-line") {
-    return commit({ ...current, correcting: null, correctingLine: null });
+    let next: FoxIntakeDraft = { ...current, correcting: null, correctingLine: null };
+    if (
+      current.correcting === "correct" &&
+      !current.sampleAccepted &&
+      sketchAssembled(next) &&
+      nextDocInvite(next)
+    ) {
+      for (let i = 0; i < 8 && nextDocInvite(next); i += 1) {
+        next = { ...skipCurrentInvite(next), correcting: null, correctingLine: null };
+      }
+    }
+    return commit(next);
   }
   if (capture.field === "what-acr" || capture.field === "what-happens-next" || capture.field === "ask-fox") {
     return current;

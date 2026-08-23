@@ -1562,6 +1562,17 @@ assert.ok((correct.actions ?? []).some((item) => item.label === "Occupancy"));
 assert.ok((correct.actions ?? []).some((item) => item.label === "Purchase price" || item.label === "Down payment"));
 assert.ok((correct.actions ?? []).some((item) => item.label === "Credit"));
 assert.ok((correct.actions ?? []).some((item) => item.label === "Income"));
+assert.ok(!(correct.actions ?? []).some((item) => item.label === "Years in business"));
+const seNoYears = withIncome(afterCredit, "self-employed");
+assert.equal(workspacePrompt(seNoYears), "documents");
+assert.ok(!seNoYears.facts?.years_in_business);
+const seNoYearsChips = workspacePromptCopy("correct", seNoYears);
+assert.ok((seNoYearsChips.actions ?? []).some((item) => item.label === "Years in business"));
+assert.ok((seNoYearsChips.actions ?? []).some((item) => item.label === "Occupancy"));
+assert.ok((seNoYearsChips.actions ?? []).some((item) => item.label === "Purchase price"));
+assert.ok((seNoYearsChips.actions ?? []).some((item) => item.label === "Timeline"));
+const bothNoYearsChips = workspacePromptCopy("correct", withIncome(afterCredit, "both"));
+assert.ok((bothNoYearsChips.actions ?? []).some((item) => item.label === "Years in business"));
 const seYearsFile = writeYearsInBusiness(
   draft({
     ...skipDocInvites(afterIncome),
@@ -1601,10 +1612,48 @@ assert.equal(priceEdit?.capture?.field, "propertyValue");
 assert.equal(afterIncome.propertyValueAmount, 1_200_000);
 assert.equal(afterIncome.downPaymentAmount, 240_000);
 assert.notEqual(afterIncome.loanAmountValue, 875000);
+assert.equal(workspacePrompt(afterIncome), "documents");
+const sketchNeedsFix = workspaceReply("Needs a correction", afterIncome);
+assert.equal(sketchNeedsFix?.capture?.field, "needs-correction");
+assert.equal(sketchNeedsFix?.text, CORRECT_ASK);
+assert.ok((sketchNeedsFix?.actions ?? []).some((item) => item.label === "Occupancy"));
+assert.ok((sketchNeedsFix?.actions ?? []).some((item) => item.label === "Credit"));
+assert.ok((sketchNeedsFix?.actions ?? []).some((item) => item.label === "Income"));
+const sketchWhatChange = workspaceReply("what should I change?", afterIncome);
+assert.equal(sketchWhatChange?.capture?.field, "needs-correction");
+assert.equal(sketchWhatChange?.text, CORRECT_ASK);
+assert.ok((sketchWhatChange?.actions ?? []).some((item) => item.label === "Occupancy"));
+assert.ok((sketchWhatChange?.actions ?? []).some((item) => item.label === "Purchase price" || item.label === "Down payment"));
+assert.doesNotMatch(sketchWhatChange?.text ?? "", /government ID|Start with ID|stated credit/i);
+const seSketchWhat = workspaceReply("what should I change?", seNoYears);
+assert.equal(seSketchWhat?.text, CORRECT_ASK);
+assert.ok((seSketchWhat?.actions ?? []).some((item) => item.label === "Years in business"));
+const sketchLooksFromCorrect = workspaceReply("looks right", {
+  ...afterIncome,
+  correcting: "correct",
+});
+assert.equal(sketchLooksFromCorrect?.capture?.field, "keep-line");
+assert.notEqual(sketchLooksFromCorrect?.capture?.field, "confirm-draft");
+assert.notEqual(sketchLooksFromCorrect?.text, CORRECT_ASK);
+assert.match(sketchLooksFromCorrect?.text ?? "", /look right/i);
+assert.ok((sketchLooksFromCorrect?.actions ?? []).some((item) => item.label === "Looks right"));
+assert.ok((sketchLooksFromCorrect?.actions ?? []).some((item) => item.label === "Needs a correction"));
+assert.ok(!(sketchLooksFromCorrect?.actions ?? []).some((item) => item.label === "Proceed"));
 const needsFix = workspaceReply("Needs a correction", skipDocInvites(afterIncome));
 assert.equal(needsFix?.capture?.field, "needs-correction");
 assert.equal(needsFix?.text, CORRECT_ASK);
 assert.ok((needsFix?.actions ?? []).some((item) => item.label === "Occupancy"));
+const reviewLooksFromCorrect = workspaceReply("looks right", {
+  ...skipDocInvites(afterIncome),
+  correcting: "correct",
+});
+assert.equal(reviewLooksFromCorrect?.capture?.field, "keep-line");
+assert.notEqual(reviewLooksFromCorrect?.capture?.field, "confirm-draft");
+assert.notEqual(reviewLooksFromCorrect?.text, CORRECT_ASK);
+assert.match(reviewLooksFromCorrect?.text ?? "", /look right/i);
+assert.ok((reviewLooksFromCorrect?.actions ?? []).some((item) => item.label === "Looks right"));
+assert.ok((reviewLooksFromCorrect?.actions ?? []).some((item) => item.label === "Needs a correction"));
+assert.ok(!(reviewLooksFromCorrect?.actions ?? []).some((item) => item.label === "Proceed"));
 const fixOccupancy = workspaceReply("occupancy is second home", {
   ...skipDocInvites(afterIncome),
   correcting: "correct",
@@ -1632,6 +1681,31 @@ const correctWhy = workspaceReply("why do you need that?", {
 assert.match(correctWhy?.text ?? "", /keep this file current|government ID|I can keep/i);
 assert.match(correctWhy?.text ?? "", /What should I change\?/);
 assert.ok((correctWhy?.actions ?? []).some((item) => item.label === "Occupancy"));
+
+assert.equal(resetWorkspaceForEntry("acr", "buy").productIntent, "buy");
+applyCapture({ field: "occupancy", value: "primary" });
+applyCapture({ field: "timeline", value: "ready-now" });
+applyCapture({ field: "propertyValue", value: "1200000" });
+applyCapture({ field: "propose-funds", value: "240000:960000" });
+applyCapture({ field: "accept-proposal" });
+applyCapture({ field: "creditRange", value: "760+" });
+applyCapture({ field: "incomeType", value: "self-employed" });
+assert.equal(workspacePrompt(getFoxDraft()), "documents");
+assert.ok(!getFoxDraft().facts?.years_in_business);
+const liveSketchFix = workspaceReply("Needs a correction", getFoxDraft());
+assert.equal(liveSketchFix?.capture?.field, "needs-correction");
+assert.equal(liveSketchFix?.text, CORRECT_ASK);
+assert.ok((liveSketchFix?.actions ?? []).some((item) => item.label === "Years in business"));
+if (liveSketchFix?.capture) applyCapture(liveSketchFix.capture);
+assert.equal(workspacePrompt(getFoxDraft()), "correct");
+const liveLooks = workspaceReply("looks right", getFoxDraft());
+assert.equal(liveLooks?.capture?.field, "keep-line");
+assert.notEqual(liveLooks?.text, CORRECT_ASK);
+assert.match(liveLooks?.text ?? "", /look right/i);
+assert.ok((liveLooks?.actions ?? []).some((item) => item.label === "Looks right"));
+if (liveLooks?.capture) applyCapture(liveLooks.capture);
+assert.equal(workspacePrompt(getFoxDraft()), "review");
+assert.notEqual(getFoxDraft().motion, "in_queue");
 
 const afterLooks = draft({
   ...afterIncome,
