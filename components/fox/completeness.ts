@@ -11,6 +11,7 @@ import {
   type ProposalKind,
 } from "./types";
 import {
+  completenessFileFromDraft,
   displayFactValue,
   factLabel,
   factValue,
@@ -34,7 +35,6 @@ import {
   completeness as storeCompleteness,
   escalate as storeEscalate,
   flags as storeFlags,
-  type CompletenessFile,
   type FileFacts,
 } from "@/lib/guidelines/conventional";
 
@@ -410,25 +410,11 @@ export function factsFromDraft(draft: FoxIntakeDraft): FileFacts {
     wantsCreditDecision: false,
     requestedHuman: Boolean(draft.originatorRequested),
     commitmentRequired: Boolean(draft.overPriceConfirmed),
-    unresolvedConflict: false,
+    unresolvedConflict: Boolean(draft.unresolvedConflict),
   };
 }
 
-export function completenessFileFromDraft(draft: FoxIntakeDraft): CompletenessFile {
-  const received = new Set<string>();
-  for (const doc of draft.documents ?? []) {
-    if (
-      (doc.status === "extracted" || doc.status === "received" || doc.status === "reading") &&
-      doc.extractClass
-    ) {
-      received.add(doc.extractClass);
-    }
-  }
-  if (factValue(draft, "property_address")) received.add("property_address");
-  if (factValue(draft, "employer_name")) received.add("employer_business");
-  if (draft.facts?.years_in_business?.value) received.add("se_years");
-  return { ...factsFromDraft(draft), received: Array.from(received) };
-}
+export { completenessFileFromDraft };
 
 export function fileStoreCompleteness(draft: FoxIntakeDraft) {
   return storeCompleteness(draft.productIntent ?? "", completenessFileFromDraft(draft));

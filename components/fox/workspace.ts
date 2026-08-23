@@ -121,6 +121,7 @@ import {
   FHFA_HIGH_COST_CEILING_2026 as STORE_HIGH_COST_CEILING,
   HIGH_LTV_CAUTION,
   JUMBO_CEILING_LINE,
+  KEEP_BOTH_LINE,
   LTV_NOT_A_DECISION,
   PHONE_LINE,
   TIMELINE_LINE,
@@ -2527,6 +2528,9 @@ export function workspaceUpdateCopy(capture: Capture, draft: FoxIntakeDraft) {
   if (capture.field === "skip-down") return "Updated. Down payment left blank.";
   if (capture.field === "keep-file-fact") return "Kept the file value.";
   if (capture.field === "use-document-fact") return "I’ll use that number.";
+  if (capture.field === "keep-both-facts") {
+    return KEEP_BOTH_LINE;
+  }
   return "Updated the file.";
 }
 
@@ -3081,6 +3085,12 @@ export function workspaceReply(
   }
 
   if (draft.pendingConflict) {
+    if (/(keep both|both numbers|keep both numbers)/i.test(lower)) {
+      return {
+        text: KEEP_BOTH_LINE,
+        capture: { field: "keep-both-facts" },
+      };
+    }
     if (/(keep (the )?file|file value|keep mine)/i.test(lower)) {
       return {
         text: "Kept the file value.",

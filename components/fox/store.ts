@@ -252,6 +252,7 @@ function normalize(value: unknown): FoxIntakeDraft {
     })),
     facts: normalizeFacts(raw.facts),
     pendingConflict: normalizeConflict(raw.pendingConflict),
+    unresolvedConflict: Boolean(raw.unresolvedConflict),
     pendingProposal: normalizeProposal(raw.pendingProposal),
     skippedClasses: Array.isArray(raw.skippedClasses)
       ? raw.skippedClasses.filter((item): item is ExtractClass => typeof item === "string")
@@ -1163,6 +1164,9 @@ export function applyCapture(capture: Capture) {
   }
   if (capture.field === "use-document-fact") {
     return commit(resolveFactConflict(current, "document"));
+  }
+  if (capture.field === "keep-both-facts") {
+    return commit(applyEscalateMotion(resolveFactConflict(current, "both")));
   }
   if (capture.field === "payFrequency") {
     return commit(applyPayFrequencyAnswer(current, capture.value));

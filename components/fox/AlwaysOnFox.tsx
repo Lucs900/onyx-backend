@@ -1079,7 +1079,11 @@ export function AlwaysOnFox({
       });
       return;
     }
-    if (action.capture?.field === "keep-file-fact" || action.capture?.field === "use-document-fact") {
+    if (
+      action.capture?.field === "keep-file-fact" ||
+      action.capture?.field === "use-document-fact" ||
+      action.capture?.field === "keep-both-facts"
+    ) {
       applyCapture(action.capture);
       skipPromptSync.current = true;
       const live = getFoxDraft();

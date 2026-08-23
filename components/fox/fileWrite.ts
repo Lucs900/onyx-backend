@@ -25,7 +25,14 @@ import {
   readTaxCashflows,
   wageIncomeCaution,
 } from "./qualifyingIncome";
-import { completeness as storeCompleteness, conventionalGuidelinePattern } from "@/lib/guidelines/conventional";
+import {
+  completeness as storeCompleteness,
+  conventionalGuidelinePattern,
+  documentedStillUsefulIds,
+  EMPLOYER_MISMATCH_LINE,
+  type CompletenessFile,
+  type DocumentedStillUsefulId,
+} from "@/lib/guidelines/conventional";
 
 export { REJECT_LINE, LIMIT_LINE };
 
@@ -661,12 +668,37 @@ export function applyExtractedFields(
   conflict = next.pendingConflict ?? conflict;
   next = attachExtractClass(next, extractClass);
   const caution = decliningIncomeCaution(next) ?? wageIncomeCaution(next);
+  const quietLines = caution ? [caution] : [];
+  if (employerMismatchStay(draft, extractClass, fields) && !quietLines.includes(EMPLOYER_MISMATCH_LINE)) {
+    quietLines.push(EMPLOYER_MISMATCH_LINE);
+  }
   return {
     draft: next,
     writes,
     conflict,
-    quietLines: caution ? [caution] : [],
+    quietLines,
   };
+}
+
+function normalizeEmployerName(value?: string | null) {
+  return String(value ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function employerMismatchStay(
+  draft: FoxIntakeDraft,
+  extractClass: ExtractClass,
+  fields: Record<string, string>,
+) {
+  const incoming = normalizeEmployerName(fields.employer_name);
+  const existing = normalizeEmployerName(draft.facts?.employer_name?.value);
+  if (!incoming || !existing || incoming === existing) return false;
+  const fileHasW2 =
+    receivedClassCount(draft, "w2") > 0 || Boolean(String(draft.facts?.wages?.value ?? "").trim());
+  return (extractClass === "paystub" && fileHasW2) || (extractClass === "w2" && Boolean(existing));
 }
 
 function attachExtractClass(draft: FoxIntakeDraft, extractClass: ExtractClass): FoxIntakeDraft {
@@ -702,18 +734,38 @@ function attachExtractClass(draft: FoxIntakeDraft, extractClass: ExtractClass): 
 
 export function resolveFactConflict(
   draft: FoxIntakeDraft,
-  winner: "file" | "document",
+  winner: "file" | "document" | "both",
 ): FoxIntakeDraft {
   const conflict = draft.pendingConflict;
   if (!conflict) return draft;
   const now = new Date().toISOString();
+  if (winner === "both") {
+    const facts = { ...(draft.facts ?? {}) };
+    const current = facts[conflict.field];
+    if (current) {
+      facts[conflict.field] = { ...current, confirmed: true, confirmedAt: now };
+    }
+    facts[`${conflict.field}_document`] = {
+      field: `${conflict.field}_document`,
+      value: conflict.documentValue,
+      source: "document",
+      confirmed: true,
+      confirmedAt: now,
+    };
+    return {
+      ...draft,
+      facts,
+      pendingConflict: null,
+      unresolvedConflict: true,
+    };
+  }
   if (winner === "file") {
     const facts = { ...(draft.facts ?? {}) };
     const current = facts[conflict.field];
     if (current) {
       facts[conflict.field] = { ...current, confirmed: true, confirmedAt: now };
     }
-    return { ...draft, facts, pendingConflict: null };
+    return { ...draft, facts, pendingConflict: null, unresolvedConflict: false };
   }
   const withValue = writeField(draft, conflict.field, conflict.documentValue, now);
   const facts = { ...(withValue.facts ?? {}) };
@@ -725,7 +777,7 @@ export function resolveFactConflict(
       confirmedAt: now,
     };
   }
-  return { ...withValue, facts, pendingConflict: null };
+  return { ...withValue, facts, pendingConflict: null, unresolvedConflict: false };
 }
 
 const COUNTED_DOC_STATUSES = new Set<ReceivedDoc["status"]>(["received", "reading", "extracted"]);
@@ -885,17 +937,60 @@ function refiLikeFile(draft: FoxIntakeDraft) {
   );
 }
 
-function actuallyReceivedClass(draft: FoxIntakeDraft, extractClass: ExtractClass) {
-  if (extractClass === "tax_return") return receivedTaxReturnCount(draft) >= 1;
-  return receivedClassCount(draft, extractClass) > 0;
-}
-
 function hasPnlDocument(draft: FoxIntakeDraft) {
   return draft.documents.some((doc) => /p&l|pnl|profit and loss/i.test(doc.name));
 }
 
 function layer2Item(id: string, label: string, ask: string): StillUsefulItem {
   return { id, label, ask };
+}
+
+export function completenessFileFromDraft(draft: FoxIntakeDraft): CompletenessFile {
+  const received = new Set<string>();
+  for (const doc of draft.documents ?? []) {
+    if (
+      (doc.status === "extracted" || doc.status === "received" || doc.status === "reading") &&
+      doc.extractClass
+    ) {
+      received.add(doc.extractClass);
+    }
+  }
+  if (factValue(draft, "property_address")) received.add("property_address");
+  if (factValue(draft, "employer_name")) received.add("employer_business");
+  if (draft.facts?.years_in_business?.value) received.add("se_years");
+  if (hasPnlDocument(draft)) received.add("ytd_pnl");
+  const purchase = purchaseLikeFile(draft);
+  const income = draft.incomeType.value;
+  return {
+    product: draft.productIntent || undefined,
+    purposeHint: purchase ? "purchase" : draft.cashOut ? "cash_out" : refiLikeFile(draft) ? "lcor" : undefined,
+    incomeType:
+      income === "w2"
+        ? "w2_base"
+        : income === "self-employed"
+          ? "se_schedule_c"
+          : income === "both"
+            ? "w2_plus_se"
+            : income || undefined,
+    purchasePrice: purchase && draft.propertyValueAmount ? draft.propertyValueAmount : undefined,
+    loanAmount: draft.loanAmountValue || undefined,
+    propertyValue: draft.propertyValueAmount || undefined,
+    received: Array.from(received),
+    w2Count: receivedClassCount(draft, "w2"),
+    taxReturnCount: receivedTaxReturnCount(draft),
+    twoYearWageHistory: hasTwoYearWageHistory(draft),
+    variableExtracted: Boolean(
+      factValue(draft, "overtime") ||
+        factValue(draft, "bonus") ||
+        factValue(draft, "commission") ||
+        factValue(draft, "overtime_ytd") ||
+        factValue(draft, "bonus_ytd") ||
+        factValue(draft, "commission_ytd"),
+    ),
+    hasPnl: received.has("ytd_pnl"),
+    k1OrdinaryOnly: k1OrdinaryMissingDistributions(draft),
+    hasScheduleC: hasScheduleCCashflow(draft),
+  };
 }
 
 /** After Proceed. Session-one sketch skip does not clear these — only a received item drops. */
@@ -952,67 +1047,37 @@ export function shortListSpeak(draft: FoxIntakeDraft): string {
   return labelListCopy(labels);
 }
 
-export function layer2Plan(draft: FoxIntakeDraft): StillUsefulItem[] {
-  const income = draft.incomeType.value;
-  const w2 = income === "w2" || income === "both";
-  const se = income === "self-employed" || income === "both" || income === "other";
-  const taxReturns = receivedTaxReturnCount(draft);
-  const items: StillUsefulItem[] = [];
-  const push = (id: string, label: string, ask: string) => {
-    items.push(layer2Item(id, label, ask));
-  };
+const LAYER2_COPY: Record<DocumentedStillUsefulId, { label: string; ask: string }> = {
+  government_id: { label: "Government ID", ask: "A government ID still helps this file." },
+  paystub: { label: "Latest paystub", ask: "A latest paystub still helps this file." },
+  w2: { label: "W-2", ask: "A W-2 still helps this file." },
+  "second-year-w2": { label: "Second-year W-2", ask: "A second-year W-2 still helps this file." },
+  tax_return: { label: "Latest return", ask: "Your latest return still helps this file." },
+  "prior-year-return": { label: "Prior-year return", ask: "A prior-year return still helps this file." },
+  "k1-distributions": { label: "K-1 distributions", ask: "K-1 distributions still help this file." },
+  "ytd-pnl": { label: "YTD P&L", ask: "A YTD P&L helps if you have one." },
+  "property-address": {
+    label: "Property address",
+    ask: "The subject property address still helps this file.",
+  },
+  purchase_contract: {
+    label: "Purchase contract",
+    ask: "The purchase contract still helps this file.",
+  },
+  mortgage_statement: {
+    label: "Mortgage statement",
+    ask: "A current mortgage statement still helps this file.",
+  },
+  bank_statement: { label: "Bank statement", ask: "A recent bank statement still helps this file." },
+};
 
-  if (!actuallyReceivedClass(draft, "government_id")) {
-    push("government_id", "Government ID", "A government ID still helps this file.");
-  }
-  if (w2 && !actuallyReceivedClass(draft, "paystub")) {
-    push("paystub", "Latest paystub", "A latest paystub still helps this file.");
-  }
-  if (w2 && receivedClassCount(draft, "w2") < 1) {
-    push("w2", "W-2", "A W-2 still helps this file.");
-  }
-  if (w2 && receivedClassCount(draft, "w2") === 1 && !hasTwoYearWageHistory(draft)) {
-    push("second-year-w2", "Second-year W-2", "A second-year W-2 still helps this file.");
-  }
-  if (se && taxReturns < 1) {
-    push("tax_return", "Latest return", "Your latest return still helps this file.");
-  }
-  if (se && taxReturns === 1) {
-    if (k1OrdinaryMissingDistributions(draft) && !hasScheduleCCashflow(draft)) {
-      push("k1-distributions", "K-1 distributions", "K-1 distributions still help this file.");
-    } else {
-      push("prior-year-return", "Prior-year return", "A prior-year return still helps this file.");
-    }
-  }
-  if (se && taxReturns >= 1 && !hasPnlDocument(draft)) {
-    push("ytd-pnl", "YTD P&L", "A YTD P&L helps if you have one.");
-  }
-  if (purchaseLikeFile(draft) || refiLikeFile(draft)) {
-    if (!factValue(draft, "property_address")) {
-      push(
-        "property-address",
-        "Property address",
-        "The subject property address still helps this file.",
-      );
-    }
-  }
-  if (purchaseLikeFile(draft) && !actuallyReceivedClass(draft, "purchase_contract")) {
-    push("purchase_contract", "Purchase contract", "The purchase contract still helps this file.");
-  }
-  if (refiLikeFile(draft) && !actuallyReceivedClass(draft, "mortgage_statement")) {
-    push(
-      "mortgage_statement",
-      "Mortgage statement",
-      "A current mortgage statement still helps this file.",
-    );
-  }
-  if (
-    (purchaseLikeFile(draft) || (refiLikeFile(draft) && draft.cashOut)) &&
-    !actuallyReceivedClass(draft, "bank_statement")
-  ) {
-    push("bank_statement", "Bank statement", "A recent bank statement still helps this file.");
-  }
-  return items;
+export function layer2Plan(draft: FoxIntakeDraft): StillUsefulItem[] {
+  return documentedStillUsefulIds(draft.productIntent ?? "", completenessFileFromDraft(draft)).map(
+    (id) => {
+      const copy = LAYER2_COPY[id];
+      return layer2Item(id, copy.label, copy.ask);
+    },
+  );
 }
 
 export function nextStillUsefulItem(draft: FoxIntakeDraft): StillUsefulItem | undefined {
@@ -1028,31 +1093,7 @@ export function stillUsefulSection(draft: FoxIntakeDraft): {
     .filter((item) => item.waitingOn === "borrower" && item.status === "open" && item.stillUseful)
     .map((item) => layer2Item(item.id, item.title, item.foxLine));
   const items = [...conditionItems, ...layer2Plan(draft)];
-  const received = (draft.documents ?? [])
-    .filter(
-      (doc) =>
-        (doc.status === "extracted" || doc.status === "received" || doc.status === "reading") &&
-        doc.extractClass,
-    )
-    .map((doc) => doc.extractClass as string);
-  if (factValue(draft, "property_address")) received.push("property_address");
-  if (factValue(draft, "employer_name")) received.push("employer_business");
-  if (draft.facts?.years_in_business?.value) received.push("se_years");
-  storeCompleteness(draft.productIntent ?? "", {
-    product: draft.productIntent,
-    purposeHint:
-      draft.productIntent === "buy"
-        ? "purchase"
-        : draft.cashOut
-          ? "cash_out"
-          : draft.productIntent === "refinance"
-            ? "lcor"
-            : undefined,
-    incomeType: draft.incomeType.value || undefined,
-    purchasePrice: draft.propertyValueAmount,
-    loanAmount: draft.loanAmountValue,
-    received,
-  });
+  storeCompleteness(draft.productIntent ?? "", completenessFileFromDraft(draft));
   return { items, empty: items.length === 0 };
 }
 
@@ -1219,6 +1260,7 @@ export function conflictActions(): FoxAction[] {
   return [
     { id: "keep-file-fact", label: "Keep file", event: "bubble", capture: { field: "keep-file-fact" } },
     { id: "use-document-fact", label: "Use document", event: "bubble", capture: { field: "use-document-fact" } },
+    { id: "keep-both-facts", label: "Keep both", event: "bubble", capture: { field: "keep-both-facts" } },
   ];
 }
 

@@ -275,6 +275,7 @@ export type FoxIntakeDraft = {
   awaitingPayFrequency?: boolean;
   facts?: Record<string, DraftField>;
   pendingConflict?: FactConflict | null;
+  unresolvedConflict?: boolean;
   pendingProposal?: FactProposal | null;
   skippedClasses?: ExtractClass[];
   skippedStillUseful?: string[];
@@ -370,6 +371,7 @@ export type Capture =
   | { field: "open-docs" }
   | { field: "keep-file-fact" }
   | { field: "use-document-fact" }
+  | { field: "keep-both-facts" }
   | { field: "confirm-draft" }
   | { field: "needs-correction" }
   | { field: "keep-path" }

@@ -245,7 +245,7 @@ function extractFieldsPrompt(extractClass: ExtractClass, keys: readonly string[]
   let extra = "";
   if (extractClass === "tax_return") {
     extra =
-      " return_kind is schedule_c, k1, 1065, 1120s, or empty. schedule_c_net_profit is Schedule C net profit or loss (line 31); use a leading minus when the return shows a loss. k1_ordinary_income is ordinary business income when a K-1 / 1065 / 1120S is visible — including 1120S line 1 ordinary income. k1_distributions is cash distributions when printed; empty if not shown. amortization, casualty_loss, and mileage_depreciation only when clearly printed on the same return. Empty string when a line is not clearly printed. Never invent add-backs.";
+      " return_kind is schedule_c, k1, 1065, 1120s, or empty. schedule_c_net_profit is Schedule C net profit or loss (line 31); use a leading minus when the return shows a loss. depreciation is Schedule C line 13. depletion is Schedule C line 12. business_use_of_home is Schedule C line 30. nonrecurring_other_income is Schedule C line 6 other income when printed as nonrecurring. k1_ordinary_income is ordinary business income when a K-1 / 1065 / 1120S is visible — including 1120S line 1 ordinary income. k1_distributions is cash distributions when printed; empty if not shown. amortization, casualty_loss, and mileage_depreciation only when clearly printed on the same return. Empty string when a line is not clearly printed. Never invent add-backs.";
   }
   if (extractClass === "paystub") {
     extra =
@@ -259,7 +259,14 @@ function extractFieldsPrompt(extractClass: ExtractClass, keys: readonly string[]
 }
 
 function asClass(value: unknown): ExtractClass {
-  return CLASSES.includes(value as ExtractClass) ? (value as ExtractClass) : "other";
+  const raw = String(value ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/[\s-]+/g, "_");
+  if (raw === "k1" || raw === "k_1" || raw === "schedule_k1" || raw === "form_k1") {
+    return "tax_return";
+  }
+  return CLASSES.includes(raw as ExtractClass) ? (raw as ExtractClass) : "other";
 }
 
 function asConfidence(value: unknown) {
@@ -322,6 +329,13 @@ function printedResult(printed: NonNullable<ReturnType<typeof readPrintedSample>
   };
 }
 
+function normalizeClassifyResult(classified: ClassifyResult): ClassifyResult {
+  return {
+    ...classified,
+    class: asClass(classified.class),
+  };
+}
+
 export async function classifyAndExtract(
   bytes: Uint8Array,
   mediaType: string,
@@ -332,7 +346,7 @@ export async function classifyAndExtract(
   const printed = readPrintedSample(bytes, filename);
   let classified: ClassifyResult | null = null;
   try {
-    classified = await adapter.classify(bytes, mediaType);
+    classified = normalizeClassifyResult(await adapter.classify(bytes, mediaType));
     if (classified.readable === false) {
       if (printed) return printedResult(printed);
       return {

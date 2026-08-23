@@ -31,6 +31,7 @@ import {
   YEARS_IN_BUSINESS_ASK,
   writeYearsInBusiness,
   canLooksRight,
+  factsFromDraft,
   fileCompleteness,
   guidelineCaution,
   loanExceedsPurchasePrice,
@@ -63,18 +64,24 @@ import {
   suggestWageIncome,
   variableMonthlyAmount,
 } from "../lib/income/suggest";
-import { printedSampleFromFilename } from "../lib/docs/printedSample";
+import {
+  printedSampleFromBytes,
+  printedSampleFromFilename,
+} from "../lib/docs/printedSample";
 import {
   CASH_OUT_CAUTION,
   CONVENTIONAL_GUIDELINE_VERSION,
   DISTRESS_LINE,
+  EMPLOYER_MISMATCH_LINE,
   ESCALATE_LINE,
   GOVVIE_LINE,
+  KEEP_BOTH_LINE,
   INVESTMENT_CAUTION,
   JUMBO_CEILING_LINE,
   LTV_NOT_A_DECISION,
   WILL_I_QUALIFY_LINE,
   completeness as storeCompleteness,
+  documentedStillUsefulIds,
   escalate as storeEscalate,
   flags as storeFlags,
   lookup as storeLookup,
@@ -2481,6 +2488,22 @@ assert.equal(keptFile.pendingConflict, null);
 const usedDoc = resolveFactConflict(incomeConflict.draft, "document");
 assert.equal(usedDoc.facts?.income?.value, "7200");
 assert.equal(usedDoc.facts?.income?.source, "document");
+const keepBoth = resolveFactConflict(incomeConflict.draft, "both");
+assert.equal(keepBoth.facts?.income?.value, "6000");
+assert.equal(keepBoth.facts?.income_document?.value, "7200");
+assert.equal(keepBoth.unresolvedConflict, true);
+assert.equal(keepBoth.pendingConflict, null);
+assert.notEqual(keepBoth.facts?.income?.value, "6600");
+assert.equal(storeEscalate({ unresolvedConflict: true }).action, "escalate");
+assert.equal(storeEscalate({ unresolvedConflict: true }).reason, "unresolvedConflict");
+assert.match(KEEP_BOTH_LINE, /licensed originator is on this exception/);
+assert.doesNotMatch(KEEP_BOTH_LINE, /LO will contact you|you qualify|approved/i);
+const keepBothReply = workspaceReply("keep both", incomeConflict.draft);
+assert.equal(keepBothReply?.capture?.field, "keep-both-facts");
+assert.match(keepBothReply?.text ?? "", /licensed originator is on this exception/);
+assert.ok((nextFoxAsk(incomeConflict.draft).actions ?? []).some((item) => item.label === "Keep both"));
+assert.ok((nextFoxAsk(incomeConflict.draft).actions ?? []).some((item) => item.label === "Keep file"));
+assert.ok((nextFoxAsk(incomeConflict.draft).actions ?? []).some((item) => item.label === "Use document"));
 
 const writtenEmployer = draft({
   ...afterLooks,
@@ -3075,6 +3098,10 @@ assert.doesNotMatch(afterProceedAsk?.text ?? "", /will contact you|we’ll be in
 
 assert.ok(EXTRACT_SCHEMA_KEYS.tax_return.includes("schedule_c_net_profit"));
 assert.ok(EXTRACT_SCHEMA_KEYS.tax_return.includes("return_kind"));
+assert.ok(EXTRACT_SCHEMA_KEYS.tax_return.includes("depreciation"));
+assert.ok(EXTRACT_SCHEMA_KEYS.tax_return.includes("depletion"));
+assert.ok(EXTRACT_SCHEMA_KEYS.tax_return.includes("business_use_of_home"));
+assert.ok(EXTRACT_SCHEMA_KEYS.tax_return.includes("nonrecurring_other_income"));
 assert.ok(EXTRACT_SCHEMA_KEYS.tax_return.includes("k1_ordinary_income"));
 assert.ok(EXTRACT_SCHEMA_KEYS.tax_return.includes("k1_distributions"));
 assert.ok(EXTRACT_SCHEMA_KEYS.tax_return.includes("amortization"));
@@ -4353,6 +4380,8 @@ const thinSecondJobWrite = applyExtractedFields(firstJobAccepted, {
 assert.equal(thinSecondJobWrite.conflict, null);
 assert.equal(thinSecondJobWrite.draft.facts?.qualifying_income?.value, "7000");
 assert.equal(thinSecondJobWrite.draft.pendingProposal?.value, "9000");
+assert.ok(thinSecondJobWrite.quietLines.includes(EMPLOYER_MISMATCH_LINE));
+assert.equal(storeEscalate(factsFromDraft(thinSecondJobWrite.draft)).action, "stay");
 assert.match(nextFoxAsk(thinSecondJobWrite.draft).text, /Second-job history is thin/);
 assert.ok((nextFoxAsk(thinSecondJobWrite.draft).actions ?? []).some((item) => item.label === "Use this"));
 assert.ok((nextFoxAsk(thinSecondJobWrite.draft).actions ?? []).some((item) => item.label === "Leave blank"));
@@ -5066,6 +5095,45 @@ assert.equal(storeLookup("flags.govvie", { namedGovvie: true }).borrowerLine, GO
 assert.equal(storeLookup("flags.govvie", { namedGovvie: true }).caution, GOVVIE_LINE);
 assert.notEqual(storeCompleteness("buy", { purposeHint: "purchase" }).layer, "agency_ready");
 assert.ok(!storeCompleteness("buy", { purposeHint: "purchase" }).stillUseful.some((item) => /1003|SSN|HOA|reserve-months/i.test(item)));
+const purchaseLayer = storeCompleteness("buy", { purposeHint: "purchase", incomeType: "w2_base" });
+assert.ok(purchaseLayer.stillUseful.includes("ID"));
+assert.ok(purchaseLayer.stillUseful.includes("latest paystub"));
+assert.ok(purchaseLayer.stillUseful.includes("W-2"));
+assert.ok(purchaseLayer.stillUseful.includes("contract"));
+assert.ok(purchaseLayer.stillUseful.includes("bank statement"));
+assert.ok(!purchaseLayer.stillUseful.includes("income docs"));
+assert.deepEqual(
+  documentedStillUsefulIds("buy", {
+    purposeHint: "purchase",
+    incomeType: "w2_base",
+    received: ["government_id", "paystub", "w2"],
+    w2Count: 2,
+    twoYearWageHistory: true,
+  }),
+  ["property-address", "purchase_contract", "bank_statement"],
+);
+assert.deepEqual(
+  documentedStillUsefulIds("buy", {
+    purposeHint: "purchase",
+    incomeType: "se_schedule_c",
+    received: ["government_id", "tax_return"],
+    taxReturnCount: 2,
+    hasScheduleC: true,
+  }),
+  ["ytd-pnl", "property-address", "purchase_contract", "bank_statement"],
+);
+assert.ok(
+  documentedStillUsefulIds("refinance", {
+    purposeHint: "lcor",
+    incomeType: "w2_base",
+  }).includes("mortgage_statement"),
+);
+assert.ok(
+  !documentedStillUsefulIds("refinance", {
+    purposeHint: "lcor",
+    incomeType: "w2_base",
+  }).includes("bank_statement"),
+);
 assert.equal(storeFlags({ namedGovvie: true, product: "buy", purposeHint: "purchase", state: "CA" }).previewRateAllowed, false);
 assert.equal(storeEscalate({ namedGovvie: true }).action, "escalate");
 assert.equal(storeEscalate({ requestedHuman: true }).borrowerLine, ESCALATE_LINE);
@@ -5702,6 +5770,74 @@ async function extractAdapterSmoke() {
   assert.equal(recoveredHarbor.fields.employer_name, "HARBOR CAFE");
   assert.equal(recoveredHarbor.fields.gross_period, "400");
   assert.equal(recoveredHarbor.fields.ytd_gross, "6400");
+
+  const failingAdapter = {
+    async classify() {
+      throw new Error("adapter down — read the page");
+    },
+    async extract() {
+      throw new Error("adapter down — read the page");
+    },
+  };
+  const otFromPage = printedSampleFromBytes(readFileSync(join(root, "scripts/fixtures/w2-ot-bonus-2025.png")));
+  assert.equal(otFromPage?.extractClass, "w2");
+  assert.equal(otFromPage?.fields.overtime, "6000");
+  assert.equal(otFromPage?.fields.wages, "84000");
+  assert.equal(otFromPage?.fields.employer_name, "HARBOR STEEL");
+  const stubFromPage = printedSampleFromBytes(
+    readFileSync(join(root, "scripts/fixtures/paystub-ot-bonus-2026.png")),
+  );
+  assert.equal(stubFromPage?.extractClass, "paystub");
+  assert.equal(stubFromPage?.fields.overtime_ytd, "12000");
+  assert.equal(stubFromPage?.fields.gross_period, "7000");
+  const schCFromPage = printedSampleFromBytes(readFileSync(join(root, "scripts/fixtures/return-2023.png")));
+  assert.equal(schCFromPage?.extractClass, "tax_return");
+  assert.equal(schCFromPage?.fields.return_kind, "schedule_c");
+  assert.equal(schCFromPage?.fields.schedule_c_net_profit, "80000");
+  assert.equal(schCFromPage?.fields.depreciation, "8000");
+  assert.equal(schCFromPage?.fields.depletion, "0");
+  assert.equal(schCFromPage?.fields.business_use_of_home, "0");
+  const decliningFromPage = printedSampleFromBytes(
+    readFileSync(join(root, "scripts/fixtures/return-declining-2024.png")),
+  );
+  assert.equal(decliningFromPage?.fields.schedule_c_net_profit, "66000");
+  assert.equal(decliningFromPage?.fields.depreciation, "6000");
+  assert.equal(decliningFromPage?.fields.depletion, undefined);
+  const k1FromPage = printedSampleFromBytes(
+    readFileSync(join(root, "scripts/fixtures/entity-ordinary-2024.png")),
+  );
+  assert.equal(k1FromPage?.extractClass, "tax_return");
+  assert.equal(k1FromPage?.fields.return_kind, "k1");
+  assert.equal(k1FromPage?.fields.k1_ordinary_income, "40000");
+  assert.equal(k1FromPage?.fields.k1_distributions, undefined);
+
+  const pageOt = await classifyAndExtract(
+    readFileSync(join(root, "scripts/fixtures/w2-ot-bonus-2025.png")),
+    "image/png",
+    failingAdapter,
+  );
+  assert.equal(pageOt.extractClass, "w2");
+  assert.equal(pageOt.fields.overtime, "6000");
+  assert.equal(pageOt.fields.wages, "84000");
+  const pageSchC = await classifyAndExtract(
+    readFileSync(join(root, "scripts/fixtures/return-2023.png")),
+    "image/png",
+    failingAdapter,
+  );
+  assert.equal(pageSchC.extractClass, "tax_return");
+  assert.equal(pageSchC.fields.schedule_c_net_profit, "80000");
+  assert.equal(pageSchC.fields.depreciation, "8000");
+  const classifiedK1 = await classifyAndExtract(new Uint8Array([9, 8, 7]), "image/png", {
+    async classify() {
+      return { class: "k1" as never, confidence: 0.9, readable: true };
+    },
+    async extract(_bytes, _media, extractClass) {
+      assert.equal(extractClass, "tax_return");
+      return { fields: { tax_year: "2024", return_kind: "k1", k1_ordinary_income: "40000" }, warnings: [] };
+    },
+  });
+  assert.equal(classifiedK1.extractClass, "tax_return");
+  assert.equal(classifiedK1.fields.k1_ordinary_income, "40000");
 }
 
 extractAdapterSmoke()

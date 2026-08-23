@@ -187,6 +187,13 @@ export type FileFacts = {
 
 export type CompletenessFile = FileFacts & {
   received?: string[];
+  w2Count?: number;
+  taxReturnCount?: number;
+  twoYearWageHistory?: boolean;
+  variableExtracted?: boolean;
+  hasPnl?: boolean;
+  k1OrdinaryOnly?: boolean;
+  hasScheduleC?: boolean;
 };
 
 export const LANGUAGE_LOCK = [
@@ -247,6 +254,10 @@ export const ESCALATE_LINE =
 export const STAY_LINE = "I stay on this file.";
 export const NOTHING_URGENT_MISSING = "Nothing urgent missing.";
 export const LTV_NOT_A_DECISION = "Not a decision";
+export const EMPLOYER_MISMATCH_LINE =
+  "The stub employer and the W-2 employer don’t match. I didn’t invent a second job. Confirm if these are two jobs.";
+export const KEEP_BOTH_LINE =
+  "You want both conflicting numbers kept. A licensed originator is on this exception. I stay here.";
 
 const CITE_FNMA_OCCUPANCY: AgencyCite = {
   agency: "fnma",
@@ -720,6 +731,27 @@ export function lookup(
   };
 }
 
+function wageLike(incomeType?: string) {
+  return (
+    incomeType === "w2" ||
+    incomeType === "w2_base" ||
+    incomeType === "w2_variable" ||
+    incomeType === "w2_plus_se" ||
+    incomeType === "both"
+  );
+}
+
+function seLike(incomeType?: string) {
+  return (
+    incomeType === "se_schedule_c" ||
+    incomeType === "k1_ordinary" ||
+    incomeType === "self-employed" ||
+    incomeType === "w2_plus_se" ||
+    incomeType === "both" ||
+    incomeType === "other"
+  );
+}
+
 function incomeDocsReceived(incomeType: string | undefined, received: Set<string>) {
   if (incomeType === "se_schedule_c" || incomeType === "k1_ordinary" || incomeType === "self-employed") {
     return received.has("tax_return");
@@ -727,17 +759,54 @@ function incomeDocsReceived(incomeType: string | undefined, received: Set<string
   if (incomeType === "w2_plus_se" || incomeType === "both") {
     return received.has("paystub") && received.has("w2") && received.has("tax_return");
   }
+  if (incomeType === "other") return received.has("tax_return");
   return received.has("paystub") && received.has("w2");
 }
 
 function wantsSeYears(incomeType?: string) {
-  return (
-    incomeType === "se_schedule_c" ||
-    incomeType === "k1_ordinary" ||
-    incomeType === "w2_plus_se" ||
-    incomeType === "self-employed" ||
-    incomeType === "both"
-  );
+  return seLike(incomeType);
+}
+
+/** Documented-layer Still useful ids. Drop when that class is received. */
+export const DOCUMENTED_STILL_USEFUL = {
+  government_id: "ID",
+  paystub: "latest paystub",
+  w2: "W-2",
+  "second-year-w2": "second-year W-2",
+  tax_return: "latest return",
+  "prior-year-return": "prior-year return",
+  "k1-distributions": "K-1 distributions",
+  "ytd-pnl": "YTD P&L",
+  "property-address": "address",
+  purchase_contract: "contract",
+  mortgage_statement: "mortgage statement",
+  bank_statement: "bank statement",
+} as const;
+
+export type DocumentedStillUsefulId = keyof typeof DOCUMENTED_STILL_USEFUL;
+
+function documentedIncomeItems(file: CompletenessFile, received: Set<string>): DocumentedStillUsefulId[] {
+  const items: DocumentedStillUsefulId[] = [];
+  const w2 = wageLike(file.incomeType);
+  const se = seLike(file.incomeType);
+  const unknown = !file.incomeType;
+  const w2Count = file.w2Count ?? (received.has("w2") ? 1 : 0);
+  const taxReturns = file.taxReturnCount ?? (received.has("tax_return") ? 1 : 0);
+  const twoYear = Boolean(file.twoYearWageHistory);
+  if (w2 || unknown) {
+    if (!received.has("paystub")) items.push("paystub");
+    if (w2Count < 1) items.push("w2");
+    if (w2Count === 1 && !twoYear) items.push("second-year-w2");
+  }
+  if (se || (unknown && !w2)) {
+    if (taxReturns < 1) items.push("tax_return");
+    if (taxReturns === 1) {
+      if (file.k1OrdinaryOnly && !file.hasScheduleC) items.push("k1-distributions");
+      else items.push("prior-year-return");
+    }
+    if (taxReturns >= 1 && !file.hasPnl && !received.has("ytd_pnl")) items.push("ytd-pnl");
+  }
+  return items;
 }
 
 export function completeness(
@@ -749,13 +818,21 @@ export function completeness(
   const refi =
     product === "refinance" || file.purposeHint === "lcor" || file.purposeHint === "cash_out";
   const stillUseful: string[] = [];
-  if (!received.has("government_id")) stillUseful.push("ID");
-  if (!incomeDocsReceived(file.incomeType, received)) stillUseful.push("income docs");
-  if (!received.has("property_address")) stillUseful.push("address");
-  if (purchase && !received.has("purchase_contract")) stillUseful.push("contract");
-  if (refi && !received.has("mortgage_statement")) stillUseful.push("mortgage statement");
+  if (!received.has("government_id")) stillUseful.push(DOCUMENTED_STILL_USEFUL.government_id);
+  for (const id of documentedIncomeItems(file, received)) {
+    stillUseful.push(DOCUMENTED_STILL_USEFUL[id]);
+  }
+  if ((purchase || refi) && !received.has("property_address")) {
+    stillUseful.push(DOCUMENTED_STILL_USEFUL["property-address"]);
+  }
+  if (purchase && !received.has("purchase_contract")) {
+    stillUseful.push(DOCUMENTED_STILL_USEFUL.purchase_contract);
+  }
+  if (refi && !received.has("mortgage_statement")) {
+    stillUseful.push(DOCUMENTED_STILL_USEFUL.mortgage_statement);
+  }
   if ((purchase || file.purposeHint === "cash_out") && !received.has("bank_statement")) {
-    stillUseful.push("bank statement");
+    stillUseful.push(DOCUMENTED_STILL_USEFUL.bank_statement);
   }
   if (!received.has("employer_business")) stillUseful.push("employer/business");
   if (wantsSeYears(file.incomeType) && !received.has("se_years")) stillUseful.push("SE years");
@@ -771,4 +848,24 @@ export function completeness(
   }
 
   return { layer, stillUseful };
+}
+
+export function documentedStillUsefulIds(
+  product: string,
+  file: CompletenessFile,
+): DocumentedStillUsefulId[] {
+  const received = new Set(file.received ?? []);
+  const purchase = product === "buy" || product === "purchase" || file.purposeHint === "purchase";
+  const refi =
+    product === "refinance" || file.purposeHint === "lcor" || file.purposeHint === "cash_out";
+  const ids: DocumentedStillUsefulId[] = [];
+  if (!received.has("government_id")) ids.push("government_id");
+  ids.push(...documentedIncomeItems(file, received));
+  if ((purchase || refi) && !received.has("property_address")) ids.push("property-address");
+  if (purchase && !received.has("purchase_contract")) ids.push("purchase_contract");
+  if (refi && !received.has("mortgage_statement")) ids.push("mortgage_statement");
+  if ((purchase || file.purposeHint === "cash_out") && !received.has("bank_statement")) {
+    ids.push("bank_statement");
+  }
+  return ids;
 }

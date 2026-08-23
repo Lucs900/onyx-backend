@@ -100,10 +100,12 @@ def png_bytes(pixels: list[list[tuple[int, int, int]]]) -> bytes:
             + struct.pack(">I", zlib.crc32(tag + data) & 0xFFFFFFFF)
         )
 
+    printed = "Comment".encode("latin-1") + b"\0" + "\n".join(LINES).encode("latin-1")
     return b"".join(
         [
             b"\x89PNG\r\n\x1a\n",
             chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0)),
+            chunk(b"tEXt", printed),
             chunk(b"IDAT", zlib.compress(bytes(raw), 9)),
             chunk(b"IEND", b""),
         ]

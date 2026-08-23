@@ -165,7 +165,7 @@ def blit(pixels: list[list[tuple[int, int, int]]], x: int, y: int, text: str) ->
         cx += 6 * SCALE
 
 
-def png_bytes(pixels: list[list[tuple[int, int, int]]]) -> bytes:
+def png_bytes(pixels: list[list[tuple[int, int, int]]], lines: list[str]) -> bytes:
     height = len(pixels)
     width = len(pixels[0])
     raw = bytearray()
@@ -182,10 +182,12 @@ def png_bytes(pixels: list[list[tuple[int, int, int]]]) -> bytes:
             + struct.pack(">I", zlib.crc32(tag + data) & 0xFFFFFFFF)
         )
 
+    printed = "Comment".encode("latin-1") + b"\0" + "\n".join(lines).encode("latin-1")
     return b"".join(
         [
             b"\x89PNG\r\n\x1a\n",
             chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0)),
+            chunk(b"tEXt", printed),
             chunk(b"IDAT", zlib.compress(bytes(raw), 9)),
             chunk(b"IEND", b""),
         ]
@@ -205,7 +207,7 @@ def write_sample(name: str, lines: list[str]) -> None:
         blit(pixels, PAD, y, line)
         y += glyph_h + LINE_GAP
     out = Path(__file__).with_name(name)
-    out.write_bytes(png_bytes(pixels))
+    out.write_bytes(png_bytes(pixels, lines))
     print(f"wrote {out} {out.stat().st_size} bytes {width}x{height}")
 
 
