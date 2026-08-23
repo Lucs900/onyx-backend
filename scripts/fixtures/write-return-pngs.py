@@ -136,6 +136,15 @@ SAMPLES: dict[str, list[str]] = {
         "GROSS PERIOD: $1,200",
         "YTD GROSS: $8,400",
     ],
+    "paystub-harbor.png": [
+        "PAYSTUB",
+        "EMPLOYER: HARBOR CAFE",
+        "PAY PERIOD END: 2026-07-31",
+        "PAY FREQUENCY: MONTHLY",
+        "MORTGAGE SAMPLE SECOND EMPLOYER",
+        "GROSS PERIOD: $400",
+        "YTD GROSS: $6,400",
+    ],
 }
 
 

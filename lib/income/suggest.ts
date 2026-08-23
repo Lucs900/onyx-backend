@@ -64,6 +64,10 @@ export type WageYearInput = {
   overtime?: number | null;
   bonus?: number | null;
   commission?: number | null;
+  overtimeYtd?: number | null;
+  bonusYtd?: number | null;
+  commissionYtd?: number | null;
+  payPeriodEnd?: string | null;
 };
 
 export type SecondJobInput = {
@@ -78,6 +82,9 @@ export type SecondJobInput = {
   overtime?: number | null;
   bonus?: number | null;
   commission?: number | null;
+  overtimeYtd?: number | null;
+  bonusYtd?: number | null;
+  commissionYtd?: number | null;
 };
 
 export type WageSuggestInput = {
@@ -89,6 +96,9 @@ export type WageSuggestInput = {
   overtime?: number | null;
   bonus?: number | null;
   commission?: number | null;
+  overtimeYtd?: number | null;
+  bonusYtd?: number | null;
+  commissionYtd?: number | null;
   priorYear?: WageYearInput | null;
   sameStubSecondEmployer?: boolean;
   secondJob?: SecondJobInput | null;
@@ -377,6 +387,29 @@ function variableMethodLabel(key: (typeof VARIABLE_KEYS)[number]): string {
   return "commission";
 }
 
+function ytdKey(key: (typeof VARIABLE_KEYS)[number]): "overtimeYtd" | "bonusYtd" | "commissionYtd" {
+  if (key === "overtime") return "overtimeYtd";
+  if (key === "bonus") return "bonusYtd";
+  return "commissionYtd";
+}
+
+/** Annual / 12, or YTD / months through period-end. Never invent a year. */
+export function variableMonthlyAmount(
+  annual: number | null | undefined,
+  ytd: number | null | undefined,
+  periodEnd?: string | null,
+): number | null {
+  const ytdAmt = usableMonthly(ytd);
+  if (ytdAmt != null) {
+    const months = monthsThroughPeriodEnd(periodEnd);
+    if (months == null || months <= 0) return null;
+    return Math.round(ytdAmt / months);
+  }
+  const yearly = usableMonthly(annual);
+  if (yearly == null) return null;
+  return monthlyFromAnnual(yearly);
+}
+
 /** OT / bonus / commission: two-year average when stable or rising; later year when declining; one-year is Partial. */
 function extractedVariableExtra(input: WageSuggestInput): VariableExtra {
   const rules = conventionalIncomeRules("w2");
@@ -388,8 +421,10 @@ function extractedVariableExtra(input: WageSuggestInput): VariableExtra {
   const partialNotes: string[] = [];
   const methodNotes: string[] = [];
   for (const key of VARIABLE_KEYS) {
-    const current = usableMonthly(input[key]);
-    const last = prior ? usableMonthly(prior[key]) : null;
+    const current = variableMonthlyAmount(input[key], input[ytdKey(key)], input.payPeriodEnd);
+    const last = prior
+      ? variableMonthlyAmount(prior[key], prior[ytdKey(key)], prior.payPeriodEnd ?? input.payPeriodEnd)
+      : null;
     if (current == null && last == null) continue;
     if (current == null) continue;
     if (last == null) {
@@ -398,11 +433,11 @@ function extractedVariableExtra(input: WageSuggestInput): VariableExtra {
     }
     const named = variableMethodLabel(key);
     if (current >= last) {
-      extra += monthlyFromAnnual((current + last) / 2);
+      extra += Math.round((current + last) / 2);
       methodNotes.push(`two-year ${named} average`);
       continue;
     }
-    extra += monthlyFromAnnual(current);
+    extra += current;
     methodNotes.push(`later-year ${named}`);
     caution = caution ?? variableDecliningCaution(key);
   }
@@ -422,9 +457,6 @@ function secondJobExtra(input: WageSuggestInput): VariableExtra {
   if (!job.documentedSeparately) {
     return { monthly: 0, partialNotes: [SECOND_JOB_SAME_STUB_NOTE], methodNotes: [] };
   }
-  if (!job.priorYear) {
-    return { monthly: 0, partialNotes: [SECOND_JOB_THIN_NOTE], methodNotes: [] };
-  }
   const nested: WageSuggestInput = {
     payPeriodEnd: job.payPeriodEnd,
     grossPeriod: job.grossPeriod,
@@ -434,15 +466,19 @@ function secondJobExtra(input: WageSuggestInput): VariableExtra {
     overtime: job.overtime,
     bonus: job.bonus,
     commission: job.commission,
+    overtimeYtd: job.overtimeYtd,
+    bonusYtd: job.bonusYtd,
+    commissionYtd: job.commissionYtd,
     priorYear: job.priorYear,
   };
   const wage = suggestWageIncome(nested);
   if (!wage || wage.needsFrequency) return { monthly: 0, partialNotes: [SECOND_JOB_THIN_NOTE], methodNotes: [] };
+  const thin = !job.priorYear;
   return {
     monthly: wage.monthly,
-    caution: wage.caution,
-    partialNotes: wage.partialNotes ?? [],
-    methodNotes: wage.methodNote ? [wage.methodNote] : ["second job"],
+    caution: thin ? undefined : wage.caution,
+    partialNotes: thin ? [SECOND_JOB_THIN_NOTE, ...(wage.partialNotes ?? [])] : wage.partialNotes ?? [],
+    methodNotes: ["second job"],
   };
 }
 

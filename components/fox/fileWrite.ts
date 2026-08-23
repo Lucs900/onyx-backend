@@ -17,6 +17,7 @@ import {
   applyQualifyingIncomeFromExtract,
   decliningIncomeCaution,
   hasScheduleCCashflow,
+  hasTwoYearWageHistory,
   k1OrdinaryMissingDistributions,
   monthlyQualifyingFromExtract,
   normalizeReturnKind,
@@ -39,9 +40,13 @@ export const EXTRACT_SCHEMA_KEYS: Record<ExtractClass, readonly string[]> = {
     "ytd_gross",
     "net_period",
     "pay_frequency",
+    "wages",
     "overtime",
     "bonus",
     "commission",
+    "overtime_ytd",
+    "bonus_ytd",
+    "commission_ytd",
     "second_employer_name",
     "tax_year",
   ],
@@ -94,6 +99,9 @@ const MONEY_KEYS = new Set([
   "overtime",
   "bonus",
   "commission",
+  "overtime_ytd",
+  "bonus_ytd",
+  "commission_ytd",
   "downPayment",
   "down_payment",
   "loanAmount",
@@ -110,11 +118,17 @@ const INCOME_MONEY_KEYS = new Set([
   "overtime",
   "bonus",
   "commission",
+  "overtime_ytd",
+  "bonus_ytd",
+  "commission_ytd",
 ]);
 const VARIABLE_YEAR_KEYS = new Set([
   "overtime",
   "bonus",
   "commission",
+  "overtime_ytd",
+  "bonus_ytd",
+  "commission_ytd",
   "tax_year",
   "wages",
   "gross_period",
@@ -122,6 +136,14 @@ const VARIABLE_YEAR_KEYS = new Set([
   "pay_period_end",
   "pay_frequency",
   "second_employer_name",
+]);
+const PRIMARY_PAY_KEYS = new Set([
+  "employer_name",
+  "gross_period",
+  "ytd_gross",
+  "pay_period_end",
+  "pay_frequency",
+  "wages",
 ]);
 const YEARLY_TAX_KEYS = new Set([
   "tax_year",
@@ -550,9 +572,22 @@ export function applyExtractedFields(
   const now = new Date().toISOString();
   let next = draft;
   let conflict: FactConflict | null = draft.pendingConflict ?? null;
+  const incomingEmployer = String(fields.employer_name ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ");
+  const existingEmployer = String(draft.facts?.employer_name?.value ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ");
+  const keepPrimaryPay =
+    (extractClass === "paystub" || extractClass === "w2") &&
+    Boolean(incomingEmployer && existingEmployer && incomingEmployer !== existingEmployer) &&
+    draft.facts?.employer_name?.source !== "client";
   for (const field of EXTRACT_SCHEMA_KEYS[extractClass]) {
     const value = fields[field];
     if (!value) continue;
+    if (keepPrimaryPay && PRIMARY_PAY_KEYS.has(field)) continue;
     const existing = existingFact(next, field);
     if (!existing || (extractClass === "tax_return" && YEARLY_TAX_KEYS.has(field))) {
       next = writeField(next, field, value, now);
@@ -759,7 +794,11 @@ export function stillUsefulLabels(draft: FoxIntakeDraft): StillUsefulLabel[] {
     .map(askClassLabel);
   if (!deepenStillUseful(draft)) return labels;
   const income = draft.incomeType.value;
-  if ((income === "w2" || income === "both") && receivedClassCount(draft, "w2") === 1) {
+  if (
+    (income === "w2" || income === "both") &&
+    receivedClassCount(draft, "w2") === 1 &&
+    !hasTwoYearWageHistory(draft)
+  ) {
     labels.push("second-year W-2");
   }
   if (
@@ -932,7 +971,7 @@ export function layer2Plan(draft: FoxIntakeDraft): StillUsefulItem[] {
   if (w2 && receivedClassCount(draft, "w2") < 1) {
     push("w2", "W-2", "A W-2 still helps this file.");
   }
-  if (w2 && receivedClassCount(draft, "w2") === 1) {
+  if (w2 && receivedClassCount(draft, "w2") === 1 && !hasTwoYearWageHistory(draft)) {
     push("second-year-w2", "Second-year W-2", "A second-year W-2 still helps this file.");
   }
   if (se && taxReturns < 1) {

@@ -84,6 +84,8 @@ export type FactProposal = {
   kind: ProposalKind;
   note?: string;
   methodNote?: string;
+  caution?: string;
+  partialNotes?: string[];
   companion?: {
     field: string;
     value: string;

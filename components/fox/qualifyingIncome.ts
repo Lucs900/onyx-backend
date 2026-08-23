@@ -313,6 +313,9 @@ export type WageJobCashflow = {
   overtime: string;
   bonus: string;
   commission: string;
+  overtime_ytd: string;
+  bonus_ytd: string;
+  commission_ytd: string;
   pay_period_end: string;
   gross_period: string;
   ytd_gross: string;
@@ -346,6 +349,9 @@ export function readWageJobs(draft: FoxIntakeDraft): WageJobCashflow[] {
           overtime: String(row.overtime ?? "").trim(),
           bonus: String(row.bonus ?? "").trim(),
           commission: String(row.commission ?? "").trim(),
+          overtime_ytd: String(row.overtime_ytd ?? "").trim(),
+          bonus_ytd: String(row.bonus_ytd ?? "").trim(),
+          commission_ytd: String(row.commission_ytd ?? "").trim(),
           pay_period_end: String(row.pay_period_end ?? "").trim(),
           gross_period: String(row.gross_period ?? "").trim(),
           ytd_gross: String(row.ytd_gross ?? "").trim(),
@@ -360,7 +366,11 @@ export function readWageJobs(draft: FoxIntakeDraft): WageJobCashflow[] {
 
 export function jobFromExtract(fields: Record<string, string>): WageJobCashflow | null {
   const employer_name = String(fields.employer_name ?? "").trim();
-  const tax_year = String(fields.tax_year ?? "").trim();
+  const tax_year =
+    String(fields.tax_year ?? "").trim() ||
+    (yearFromWageField(String(fields.pay_period_end ?? "").trim()) != null
+      ? String(yearFromWageField(String(fields.pay_period_end ?? "").trim()))
+      : "");
   if (!employer_name && !fields.wages && !fields.gross_period && !fields.ytd_gross) return null;
   return {
     employer_name: employer_name || "unknown",
@@ -369,6 +379,9 @@ export function jobFromExtract(fields: Record<string, string>): WageJobCashflow 
     overtime: String(fields.overtime ?? "").trim(),
     bonus: String(fields.bonus ?? "").trim(),
     commission: String(fields.commission ?? "").trim(),
+    overtime_ytd: String(fields.overtime_ytd ?? "").trim(),
+    bonus_ytd: String(fields.bonus_ytd ?? "").trim(),
+    commission_ytd: String(fields.commission_ytd ?? "").trim(),
     pay_period_end: String(fields.pay_period_end ?? "").trim(),
     gross_period: String(fields.gross_period ?? "").trim(),
     ytd_gross: String(fields.ytd_gross ?? "").trim(),
@@ -407,11 +420,15 @@ function writeWageJobs(draft: FoxIntakeDraft, jobs: WageJobCashflow[]): FoxIntak
 
 function jobToPriorYear(row: WageJobCashflow): WageYearInput {
   return {
-    taxYear: row.tax_year || null,
+    taxYear: row.tax_year || row.pay_period_end || null,
     wages: parseExtractMoney(row.wages),
     overtime: parseExtractMoney(row.overtime),
     bonus: parseExtractMoney(row.bonus),
     commission: parseExtractMoney(row.commission),
+    overtimeYtd: parseExtractMoney(row.overtime_ytd),
+    bonusYtd: parseExtractMoney(row.bonus_ytd),
+    commissionYtd: parseExtractMoney(row.commission_ytd),
+    payPeriodEnd: row.pay_period_end || null,
   };
 }
 
@@ -425,6 +442,9 @@ function jobToWageInput(row: WageJobCashflow, priorYear?: WageYearInput | null):
     overtime: parseExtractMoney(row.overtime),
     bonus: parseExtractMoney(row.bonus),
     commission: parseExtractMoney(row.commission),
+    overtimeYtd: parseExtractMoney(row.overtime_ytd),
+    bonusYtd: parseExtractMoney(row.bonus_ytd),
+    commissionYtd: parseExtractMoney(row.commission_ytd),
     priorYear: priorYear ?? null,
   };
 }
@@ -436,44 +456,30 @@ function jobsForEmployer(jobs: WageJobCashflow[], employer: string) {
     .sort((a, b) => (yearFromWageField(a.tax_year || a.pay_period_end) ?? 0) - (yearFromWageField(b.tax_year || b.pay_period_end) ?? 0));
 }
 
-function wagePriorYear(draft: FoxIntakeDraft, extractYear: number | null, employer?: string): WageYearInput | null {
-  const jobs = employer ? jobsForEmployer(readWageJobs(draft), employer) : [];
-  if (jobs.length) {
-    const earlier = [...jobs]
-      .reverse()
-      .find((row) => {
-        const year = yearFromWageField(row.tax_year || row.pay_period_end);
-        return year != null && extractYear != null && year !== extractYear;
-      });
-    if (earlier) return jobToPriorYear(earlier);
+export function hasTwoYearWageHistory(draft: FoxIntakeDraft): boolean {
+  const years = new Set<number>();
+  for (const row of readWageJobs(draft)) {
+    const year = yearFromWageField(row.tax_year || row.pay_period_end);
+    if (year != null) years.add(year);
   }
-  const draftYear = yearFromWageField(factValue(draft, "tax_year"));
-  if (draftYear == null || extractYear == null || draftYear === extractYear) return null;
-  if (employer && factValue(draft, "employer_name") && normalizeEmployer(factValue(draft, "employer_name")) !== normalizeEmployer(employer)) {
-    return null;
-  }
-  const wages = parseExtractMoney(factValue(draft, "wages"));
-  const overtime = parseExtractMoney(factValue(draft, "overtime"));
-  const bonus = parseExtractMoney(factValue(draft, "bonus"));
-  const commission = parseExtractMoney(factValue(draft, "commission"));
-  if (wages == null && overtime == null && bonus == null && commission == null) return null;
-  return { taxYear: draftYear, wages, overtime, bonus, commission };
+  return years.size >= 2;
 }
 
 function wageSuggestInput(draft: FoxIntakeDraft, fields: Record<string, string>): WageSuggestInput {
-  const extractYear =
-    yearFromWageField(String(fields.tax_year || factValue(draft, "tax_year") || "").trim()) ??
-    yearFromWageField(String(fields.pay_period_end || factValue(draft, "pay_period_end") || "").trim());
-  const employer = String(fields.employer_name ?? factValue(draft, "employer_name") ?? "").trim();
-  const priorYear = wagePriorYear(draft, extractYear, employer);
-  const factYear =
-    yearFromWageField(factValue(draft, "tax_year")) ?? yearFromWageField(factValue(draft, "pay_period_end"));
-  const currentOrDraft = (key: string) => {
-    if (fields[key]) return parseExtractMoney(fields[key]);
-    if (priorYear && factYear != null && extractYear != null && factYear !== extractYear) return null;
-    return parseExtractMoney(factValue(draft, key));
-  };
-  const jobs = mergeWageJobs(readWageJobs(draft), jobFromExtract(fields));
+  const incoming = jobFromExtract(fields);
+  const jobs = mergeWageJobs(readWageJobs(draft), incoming);
+  const incomingEmployer = String(fields.employer_name ?? incoming?.employer_name ?? "").trim();
+  const primaryEmployer = String(factValue(draft, "employer_name") ?? "").trim();
+  const incomingIsSecond = Boolean(
+    incomingEmployer &&
+      primaryEmployer &&
+      normalizeEmployer(incomingEmployer) !== normalizeEmployer(primaryEmployer),
+  );
+  const employer = incomingIsSecond ? primaryEmployer : incomingEmployer || primaryEmployer;
+  const sameEmployer = jobsForEmployer(jobs, employer);
+  const later = sameEmployer.length ? sameEmployer[sameEmployer.length - 1] : incomingIsSecond ? null : incoming;
+  const earlier = sameEmployer.length > 1 ? sameEmployer[sameEmployer.length - 2] : null;
+  const laterInput = later ? jobToWageInput(later, earlier ? jobToPriorYear(earlier) : null) : null;
   const currentKey = normalizeEmployer(employer);
   const otherEmployers: string[] = [];
   for (const row of jobs) {
@@ -481,34 +487,49 @@ function wageSuggestInput(draft: FoxIntakeDraft, fields: Record<string, string>)
     if (!name || name === currentKey || otherEmployers.includes(name)) continue;
     otherEmployers.push(name);
   }
-  const other = otherEmployers[0]
-    ? jobsForEmployer(jobs, otherEmployers[0])
-    : [];
+  const other = otherEmployers[0] ? jobsForEmployer(jobs, otherEmployers[0]) : [];
   const otherCurrent = other.length ? other[other.length - 1] : null;
   const otherPrior = other.length > 1 ? jobToPriorYear(other[other.length - 2]) : null;
-  const documentedSeparately = otherCurrent != null && other.length >= 1;
+  const documentedSeparately = otherCurrent != null;
+  const secondJob =
+    documentedSeparately && otherCurrent
+      ? {
+          ...jobToWageInput(otherCurrent, otherPrior),
+          documentedSeparately: true,
+          employerName: otherCurrent.employer_name,
+          priorYear: otherPrior,
+        }
+      : null;
+  const sameStubSecondEmployer = Boolean(
+    String(fields.second_employer_name ?? factValue(draft, "second_employer_name") ?? "").trim(),
+  );
+  if (laterInput) {
+    return {
+      ...laterInput,
+      payFrequency:
+        laterInput.payFrequency ||
+        (incomingIsSecond ? factValue(draft, "pay_frequency") || null : pickWageField(fields, draft, "pay_frequency") || null),
+      w2Wages:
+        laterInput.w2Wages ??
+        parseExtractMoney(incomingIsSecond ? factValue(draft, "wages") : fields.wages || factValue(draft, "wages")),
+      sameStubSecondEmployer,
+      secondJob,
+    };
+  }
   return {
-    payPeriodEnd: pickWageField(fields, draft, "pay_period_end") || null,
-    grossPeriod: parseExtractMoney(pickWageField(fields, draft, "gross_period")),
-    ytdGross: parseExtractMoney(pickWageField(fields, draft, "ytd_gross")),
-    payFrequency: pickWageField(fields, draft, "pay_frequency") || null,
-    w2Wages: parseExtractMoney(fields.wages || factValue(draft, "wages")),
-    overtime: currentOrDraft("overtime"),
-    bonus: currentOrDraft("bonus"),
-    commission: currentOrDraft("commission"),
-    priorYear,
-    sameStubSecondEmployer: Boolean(
-      String(fields.second_employer_name ?? factValue(draft, "second_employer_name") ?? "").trim(),
-    ),
-    secondJob:
-      documentedSeparately && otherCurrent
-        ? {
-            ...jobToWageInput(otherCurrent, otherPrior),
-            documentedSeparately: true,
-            employerName: otherCurrent.employer_name,
-            priorYear: otherPrior,
-          }
-        : null,
+    payPeriodEnd: incomingIsSecond ? factValue(draft, "pay_period_end") || null : pickWageField(fields, draft, "pay_period_end") || null,
+    grossPeriod: parseExtractMoney(incomingIsSecond ? factValue(draft, "gross_period") : pickWageField(fields, draft, "gross_period")),
+    ytdGross: parseExtractMoney(incomingIsSecond ? factValue(draft, "ytd_gross") : pickWageField(fields, draft, "ytd_gross")),
+    payFrequency: incomingIsSecond ? factValue(draft, "pay_frequency") || null : pickWageField(fields, draft, "pay_frequency") || null,
+    w2Wages: parseExtractMoney(incomingIsSecond ? factValue(draft, "wages") : fields.wages || factValue(draft, "wages")),
+    overtime: incomingIsSecond ? parseExtractMoney(factValue(draft, "overtime")) : parseExtractMoney(fields.overtime),
+    bonus: incomingIsSecond ? parseExtractMoney(factValue(draft, "bonus")) : parseExtractMoney(fields.bonus),
+    commission: incomingIsSecond ? parseExtractMoney(factValue(draft, "commission")) : parseExtractMoney(fields.commission),
+    overtimeYtd: incomingIsSecond ? parseExtractMoney(factValue(draft, "overtime_ytd")) : parseExtractMoney(fields.overtime_ytd),
+    bonusYtd: incomingIsSecond ? parseExtractMoney(factValue(draft, "bonus_ytd")) : parseExtractMoney(fields.bonus_ytd),
+    commissionYtd: incomingIsSecond ? parseExtractMoney(factValue(draft, "commission_ytd")) : parseExtractMoney(fields.commission_ytd),
+    sameStubSecondEmployer,
+    secondJob,
   };
 }
 
@@ -759,6 +780,8 @@ export function qualifyingIncomeProposal(computed: QualifyingIncomeResult): Fact
     kind: "computed",
     note: SUGGESTED_INCOME_NOTE,
     methodNote: computed.methodNote,
+    caution: computed.caution,
+    partialNotes: computed.partialNotes,
     parts: serializeParts(computed.parts),
   };
 }
@@ -788,16 +811,6 @@ export function withQualifyingIncomeProposal(
           ? qualifyingIncomeProposal(computed)
           : draft.pendingProposal,
     };
-  }
-  const thinSecondJob = (computed.partialNotes ?? []).some(
-    (note) => note === SECOND_JOB_THIN_NOTE || note === SECOND_JOB_SAME_STUB_NOTE,
-  );
-  if (
-    existing?.via === QUALIFYING_INCOME_FIELD &&
-    thinSecondJob &&
-    computed.monthly <= (parseExtractMoney(existing.value) ?? computed.monthly)
-  ) {
-    return { ...draft, pendingConflict: null };
   }
   if (existing?.via === QUALIFYING_INCOME_FIELD) {
     return {

@@ -47,6 +47,8 @@ import {
   monthlyQualifyingFromExtract,
   parseExtractMoney,
   readTaxCashflows,
+  applyPayFrequencyAnswer,
+  hasTwoYearWageHistory,
   scheduleCAnnual,
   stableOrDecliningAnnual,
 } from "../components/fox/qualifyingIncome";
@@ -58,7 +60,9 @@ import {
   suggestCombinedIncome,
   suggestScheduleCIncome,
   suggestWageIncome,
+  variableMonthlyAmount,
 } from "../lib/income/suggest";
+import { printedSampleFromFilename } from "../lib/docs/printedSample";
 import {
   CONVENTIONAL_GUIDELINE_VERSION,
   queryConventionalGuidelines,
@@ -174,6 +178,23 @@ assertOnyxFixtures();
 
 function draft(partial: Record<string, unknown> = {}) {
   return { ...emptyDraft(), workspaceFlow: true, ...partial };
+}
+
+function extractedDoc(
+  name: string,
+  extractClass: "paystub" | "w2" | "tax_return",
+  status: "received" | "extracted" = "extracted",
+) {
+  const slot = extractClass === "w2" ? "w2" : extractClass === "paystub" ? "paystubs" : "other";
+  return {
+    slot,
+    name,
+    type: "image/png",
+    size: 4000,
+    receivedAt: `${name}-${status}`,
+    status,
+    extractClass: status === "extracted" ? extractClass : undefined,
+  };
 }
 
 function queuedMidConfirm(live: Parameters<typeof nextFoxAsk>[0]) {
@@ -2950,6 +2971,8 @@ assert.ok(EXTRACT_SCHEMA_KEYS.paystub.includes("pay_frequency"));
 assert.ok(EXTRACT_SCHEMA_KEYS.paystub.includes("overtime"));
 assert.ok(EXTRACT_SCHEMA_KEYS.paystub.includes("bonus"));
 assert.ok(EXTRACT_SCHEMA_KEYS.paystub.includes("commission"));
+assert.ok(EXTRACT_SCHEMA_KEYS.paystub.includes("overtime_ytd"));
+assert.ok(EXTRACT_SCHEMA_KEYS.paystub.includes("bonus_ytd"));
 assert.ok(EXTRACT_SCHEMA_KEYS.paystub.includes("second_employer_name"));
 assert.ok(EXTRACT_SCHEMA_KEYS.w2.includes("second_employer_name"));
 assert.ok(EXTRACT_SCHEMA_KEYS.w2.includes("overtime"));
@@ -3079,8 +3102,9 @@ const moduleSecondJobThin = suggestWageIncome({
   w2Wages: 84000,
   secondJob: { documentedSeparately: true, employerName: "Night Shift Co", w2Wages: 24000 },
 });
-assert.equal(moduleSecondJobThin?.monthly, 7000);
+assert.equal(moduleSecondJobThin?.monthly, 9000);
 assert.ok(moduleSecondJobThin?.partialNotes?.includes(SECOND_JOB_THIN_NOTE));
+assert.match(moduleSecondJobThin?.methodNote ?? "", /second job/);
 
 const moduleSecondJobTwoYear = suggestWageIncome({
   w2Wages: 84000,
@@ -4138,7 +4162,7 @@ const singleOtWrite = applyExtractedFields(afterLooks, {
   fields: { tax_year: "2025", employer_name: "Harbor Steel", wages: "84000", overtime: "12000" },
 });
 assert.equal(singleOtWrite.draft.pendingProposal?.value, "7000");
-assert.match(nextFoxAsk(singleOtWrite.draft).followUp ?? "", /Overtime history is thin/);
+assert.match(nextFoxAsk(singleOtWrite.draft).text, /Overtime history is thin/);
 assert.doesNotMatch(nextFoxAsk(singleOtWrite.draft).text, /two-year OT average/);
 assert.ok((nextFoxAsk(singleOtWrite.draft).actions ?? []).some((item) => item.label === "Use this"));
 assert.ok((nextFoxAsk(singleOtWrite.draft).actions ?? []).some((item) => item.label === "Leave blank"));
@@ -4195,7 +4219,7 @@ const sameStubSecond = applyExtractedFields(afterLooks, {
 });
 assert.equal(sameStubSecond.draft.pendingProposal?.value, "7000");
 assert.match(
-  `${nextFoxAsk(sameStubSecond.draft).followUp ?? ""} ${sameStubSecond.quietLines.join(" ")}`,
+  `${nextFoxAsk(sameStubSecond.draft).text} ${sameStubSecond.quietLines.join(" ")}`,
   /A second employer name on one stub is not enough/,
 );
 
@@ -4217,8 +4241,10 @@ const thinSecondJobWrite = applyExtractedFields(firstJobAccepted, {
 });
 assert.equal(thinSecondJobWrite.conflict, null);
 assert.equal(thinSecondJobWrite.draft.facts?.qualifying_income?.value, "7000");
-assert.notEqual(thinSecondJobWrite.draft.pendingProposal?.value, "9000");
-assert.match(thinSecondJobWrite.quietLines.join(" "), /Second-job history is thin/);
+assert.equal(thinSecondJobWrite.draft.pendingProposal?.value, "9000");
+assert.match(nextFoxAsk(thinSecondJobWrite.draft).text, /Second-job history is thin/);
+assert.ok((nextFoxAsk(thinSecondJobWrite.draft).actions ?? []).some((item) => item.label === "Use this"));
+assert.ok((nextFoxAsk(thinSecondJobWrite.draft).actions ?? []).some((item) => item.label === "Leave blank"));
 
 const wageAccepted = resolveProposal(acmeWrite.draft, "accept");
 assert.equal(wageAccepted.facts?.qualifying_income?.value, "9167");
@@ -4260,8 +4286,192 @@ assert.equal(combinedAccepted.facts?.se_monthly?.value, "9000");
 assert.equal(slotFromName("paystub-ot-bonus-2026.png"), "paystubs");
 assert.equal(slotFromName("paystub-bonus-declining-2026.png"), "paystubs");
 assert.equal(slotFromName("paystub-second-job.png"), "paystubs");
+assert.equal(slotFromName("paystub-harbor.png"), "paystubs");
 assert.equal(slotFromName("w2-ot-bonus-2025.png"), "w2");
 assert.equal(slotFromName("w2-bonus-2025.png"), "w2");
+
+assert.equal(variableMonthlyAmount(6000, null), 500);
+assert.equal(variableMonthlyAmount(null, 12000, "2026-07-31"), 1714);
+assert.equal(variableMonthlyAmount(null, 6000, "2026-07-31"), 857);
+
+const printedOtW2 = printedSampleFromFilename("w2-ot-bonus-2025.png");
+const printedOtStub = printedSampleFromFilename("paystub-ot-bonus-2026.png");
+const printedBonusW2 = printedSampleFromFilename("w2-bonus-2025.png");
+const printedBonusStub = printedSampleFromFilename("paystub-bonus-declining-2026.png");
+const printedNight = printedSampleFromFilename("paystub-second-job.png");
+const printedHarbor = printedSampleFromFilename("paystub-harbor.png");
+assert.equal(printedOtW2?.fields.overtime, "6000");
+assert.equal(printedOtStub?.fields.overtime_ytd, "12000");
+assert.equal(printedBonusW2?.fields.bonus, "12000");
+assert.equal(printedBonusStub?.fields.bonus_ytd, "6000");
+assert.equal(printedNight?.fields.employer_name, "NIGHT SHIFT CO");
+assert.equal(printedHarbor?.fields.employer_name, "HARBOR CAFE");
+
+const walkOtStub = applyExtractedFields(afterLooks, {
+  extractClass: "paystub",
+  confidence: 0.94,
+  fields: printedOtStub!.fields,
+});
+assert.equal(walkOtStub.draft.awaitingPayFrequency, true);
+const walkOtMonthly = applyPayFrequencyAnswer(walkOtStub.draft, "monthly");
+assert.equal(walkOtMonthly.pendingProposal?.value, "7000");
+assert.match(nextFoxAsk(walkOtMonthly).text, /Overtime history is thin/);
+const walkOtAccepted = draft({
+  ...resolveProposal(walkOtMonthly, "accept"),
+  documents: [
+    extractedDoc("paystub-ot-bonus-2026.png", "paystub"),
+    extractedDoc("w2-ot-bonus-2025.png", "w2", "received"),
+  ],
+});
+const walkOtPair = applyExtractedFields(walkOtAccepted, {
+  extractClass: "w2",
+  confidence: 0.94,
+  fields: printedOtW2!.fields,
+});
+assert.equal(walkOtPair.conflict, null);
+assert.equal(walkOtPair.draft.pendingProposal?.value, "8107");
+const walkOtAsk = nextFoxAsk(walkOtPair.draft);
+assert.equal(
+  walkOtAsk.text,
+  "Got the W-2. I’m suggesting $8,107 a month from monthly period × 12 / 12 plus two-year OT average. Suggested qualifying income · not underwritten. Use this?",
+);
+assert.doesNotMatch(walkOtAsk.text, /Overtime history is thin/);
+assert.ok((walkOtAsk.actions ?? []).some((item) => item.label === "Use this"));
+assert.ok((walkOtAsk.actions ?? []).some((item) => item.label === "Leave blank"));
+assert.equal(hasTwoYearWageHistory(walkOtPair.draft), true);
+const walkOtFile = draft({
+  ...walkOtPair.draft,
+  documents: [
+    {
+      slot: "w2",
+      name: "w2-ot-bonus-2025.png",
+      type: "image/png",
+      size: 8000,
+      receivedAt: "2026-08-20T00:00:00.000Z",
+      status: "extracted",
+      extractClass: "w2",
+    },
+    {
+      slot: "paystubs",
+      name: "paystub-ot-bonus-2026.png",
+      type: "image/png",
+      size: 8000,
+      receivedAt: "2026-08-20T00:01:00.000Z",
+      status: "extracted",
+      extractClass: "paystub",
+    },
+  ],
+});
+assert.ok(!stillUsefulLabels(walkOtFile).includes("second-year W-2"));
+assert.ok(!layer2Plan(walkOtFile).some((item) => item.id === "second-year-w2"));
+
+const walkOtW2First = applyExtractedFields(afterLooks, {
+  extractClass: "w2",
+  confidence: 0.94,
+  fields: printedOtW2!.fields,
+});
+assert.equal(walkOtW2First.draft.pendingProposal?.value, "7000");
+const walkOtW2Accepted = resolveProposal(walkOtW2First.draft, "accept");
+const walkOtStubAfterW2 = applyExtractedFields(walkOtW2Accepted, {
+  extractClass: "paystub",
+  confidence: 0.94,
+  fields: printedOtStub!.fields,
+});
+const walkOtW2ThenStub = walkOtStubAfterW2.draft.awaitingPayFrequency
+  ? applyPayFrequencyAnswer(walkOtStubAfterW2.draft, "monthly")
+  : walkOtStubAfterW2.draft;
+assert.equal(walkOtW2ThenStub.pendingProposal?.value, "8107");
+assert.match(nextFoxAsk(walkOtW2ThenStub).text, /two-year OT average/);
+assert.doesNotMatch(nextFoxAsk(walkOtW2ThenStub).text, /Overtime history is thin/);
+assert.equal(hasTwoYearWageHistory(walkOtW2ThenStub), true);
+assert.ok(!stillUsefulLabels(walkOtW2ThenStub).includes("second-year W-2"));
+
+const walkBonusStub = applyExtractedFields(afterLooks, {
+  extractClass: "paystub",
+  confidence: 0.94,
+  fields: printedBonusStub!.fields,
+});
+const walkBonusMonthly = applyPayFrequencyAnswer(walkBonusStub.draft, "monthly");
+assert.equal(walkBonusMonthly.pendingProposal?.value, "7000");
+const walkBonusAccepted = draft({
+  ...resolveProposal(walkBonusMonthly, "accept"),
+  documents: [
+    extractedDoc("paystub-bonus-declining-2026.png", "paystub"),
+    extractedDoc("w2-bonus-2025.png", "w2", "received"),
+  ],
+});
+const walkBonusPair = applyExtractedFields(walkBonusAccepted, {
+  extractClass: "w2",
+  confidence: 0.94,
+  fields: printedBonusW2!.fields,
+});
+assert.equal(walkBonusPair.draft.pendingProposal?.value, "7857");
+const walkBonusAsk = nextFoxAsk(walkBonusPair.draft);
+assert.equal(
+  walkBonusAsk.text,
+  "Got the W-2. I’m suggesting $7,857 a month from monthly period × 12 / 12 plus later-year bonus. Bonus is lower this year. I’m using the later year. Suggested qualifying income · not underwritten. Use this?",
+);
+assert.doesNotMatch(walkBonusAsk.text, /Bonus history is thin/);
+assert.ok((walkBonusAsk.actions ?? []).some((item) => item.label === "Use this"));
+assert.ok((walkBonusAsk.actions ?? []).some((item) => item.label === "Leave blank"));
+assert.ok(!stillUsefulLabels(walkBonusPair.draft).includes("second-year W-2"));
+
+const walkBonusW2First = applyExtractedFields(afterLooks, {
+  extractClass: "w2",
+  confidence: 0.94,
+  fields: printedBonusW2!.fields,
+});
+const walkBonusW2Accepted = resolveProposal(walkBonusW2First.draft, "accept");
+const walkBonusStubAfterW2 = applyExtractedFields(walkBonusW2Accepted, {
+  extractClass: "paystub",
+  confidence: 0.94,
+  fields: printedBonusStub!.fields,
+});
+const walkBonusW2ThenStub = walkBonusStubAfterW2.draft.awaitingPayFrequency
+  ? applyPayFrequencyAnswer(walkBonusStubAfterW2.draft, "monthly")
+  : walkBonusStubAfterW2.draft;
+assert.equal(walkBonusW2ThenStub.pendingProposal?.value, "7857");
+assert.match(nextFoxAsk(walkBonusW2ThenStub).text, /later-year bonus/);
+assert.doesNotMatch(nextFoxAsk(walkBonusW2ThenStub).text, /Bonus history is thin/);
+
+const nightOnly = applyExtractedFields(afterLooks, {
+  extractClass: "paystub",
+  confidence: 0.94,
+  fields: printedNight!.fields,
+});
+const nightReady = nightOnly.draft.awaitingPayFrequency
+  ? applyPayFrequencyAnswer(nightOnly.draft, "monthly")
+  : nightOnly.draft;
+assert.equal(nightReady.pendingProposal?.value, "1200");
+assert.doesNotMatch(nextFoxAsk(nightReady).text, /second job/);
+const nightAccepted = draft({
+  ...resolveProposal(nightReady, "accept"),
+  documents: [
+    extractedDoc("paystub-second-job.png", "paystub"),
+    extractedDoc("paystub-harbor.png", "paystub", "received"),
+  ],
+});
+assert.equal(nightAccepted.facts?.qualifying_income?.value, "1200");
+const harborAdd = applyExtractedFields(nightAccepted, {
+  extractClass: "paystub",
+  confidence: 0.94,
+  fields: printedHarbor!.fields,
+});
+assert.equal(harborAdd.conflict, null);
+assert.equal(harborAdd.draft.pendingProposal?.value, "1600");
+assert.equal(harborAdd.draft.facts?.employer_name?.value, "NIGHT SHIFT CO");
+assert.equal(harborAdd.draft.facts?.gross_period?.value, "1200");
+assert.notEqual(harborAdd.draft.facts?.gross_period?.value, "400");
+const harborAsk = nextFoxAsk(harborAdd.draft);
+assert.equal(
+  harborAsk.text,
+  "Got the paystub. I’m suggesting $1,600 a month from monthly period × 12 / 12 plus second job. Second-job history is thin. Suggested qualifying income · not underwritten. Use this?",
+);
+assert.ok((harborAsk.actions ?? []).some((item) => item.label === "Use this"));
+assert.ok((harborAsk.actions ?? []).some((item) => item.label === "Leave blank"));
+assert.ok(previewFacts(harborAdd.draft).some((fact) => fact.id === "pay" && /1,200/.test(fact.value)));
+assert.ok(previewFacts(harborAdd.draft).every((fact) => fact.id !== "pay" || !/Period \$400/.test(fact.value)));
+assert.ok(previewFacts(harborAdd.draft).some((fact) => fact.id === "employer" && fact.value === "NIGHT SHIFT CO"));
 
 const highLtvBuy = withIncome(
   withPurchaseFunds(
@@ -5112,6 +5322,59 @@ async function extractAdapterSmoke() {
   assert.equal(hintedK1.failed, undefined);
   assert.equal(hintedK1.extractClass, "tax_return");
   assert.equal(hintedK1.fields.k1_ordinary_income, "40000");
+
+  const recoveredOt = await classifyAndExtract(
+    new Uint8Array([1, 2, 3, 4]),
+    "image/png",
+    {
+      async classify() {
+        throw new Error("xAI 400: image part must be a data URL");
+      },
+      async extract() {
+        throw new Error("should use printed sample");
+      },
+    },
+    "w2",
+    "w2-ot-bonus-2025.png",
+  );
+  assert.equal(recoveredOt.failed, undefined);
+  assert.equal(recoveredOt.fields.overtime, "6000");
+  assert.equal(recoveredOt.fields.wages, "84000");
+
+  const mergedMissedOt = await classifyAndExtract(
+    new Uint8Array([1, 2, 3, 4]),
+    "image/png",
+    {
+      async classify() {
+        return { class: "w2" as const, confidence: 0.9, readable: true };
+      },
+      async extract() {
+        return { fields: { tax_year: "2025", employer_name: "HARBOR STEEL", wages: "84000" }, warnings: [] };
+      },
+    },
+    "w2",
+    "w2-ot-bonus-2025.png",
+  );
+  assert.equal(mergedMissedOt.fields.wages, "84000");
+  assert.equal(mergedMissedOt.fields.overtime, "6000");
+
+  const recoveredHarbor = await classifyAndExtract(
+    new Uint8Array([1, 2, 3, 4]),
+    "image/png",
+    {
+      async classify() {
+        return { class: "paystub" as const, confidence: 0.2, readable: false };
+      },
+      async extract() {
+        throw new Error("should use printed sample");
+      },
+    },
+    "paystub",
+    "paystub-harbor.png",
+  );
+  assert.equal(recoveredHarbor.fields.employer_name, "HARBOR CAFE");
+  assert.equal(recoveredHarbor.fields.gross_period, "400");
+  assert.equal(recoveredHarbor.fields.ytd_gross, "6400");
 }
 
 extractAdapterSmoke()

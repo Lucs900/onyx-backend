@@ -42,6 +42,7 @@ export async function POST(request: Request) {
       mediaType,
       grokExtractAdapter,
       hinted,
+      body.name,
     );
     const failed = Boolean(extracted.failed || extracted.warnings.includes("failed"));
     const extractClass = preferFilenameClass(extracted.extractClass, body.name);

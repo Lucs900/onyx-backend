@@ -92,6 +92,7 @@ export function assertOnyxFixtures() {
     paths.some((path) => /paystub-second-job\.png$/.test(path)),
     "expected scripts/fixtures/paystub-second-job.png",
   );
+  assert.ok(paths.some((path) => /paystub-harbor\.png$/.test(path)), "expected scripts/fixtures/paystub-harbor.png");
 }
 
 const invokedDirectly =

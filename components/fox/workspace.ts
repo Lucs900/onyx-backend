@@ -1022,9 +1022,13 @@ function wageReactionAsk(
   const method = proposal.methodNote ?? wageMethodNote(draft);
   const methodBit = method ? ` from ${method}` : "";
   const doc = cls === "w2" ? "W-2" : "paystub";
+  const partial = (proposal.partialNotes ?? []).join(" ");
+  const caution =
+    proposal.caution && !partial.includes(proposal.caution) ? proposal.caution : undefined;
+  const inLine = [partial, caution, SUGGESTED_INCOME_NOTE].filter(Boolean).join(" ");
   return {
-    text: `Got the ${doc}. I’m suggesting ${shown} a month${methodBit}. ${SUGGESTED_INCOME_NOTE}. Use this?`,
-    followUp: wageIncomeCaution(draft),
+    text: `Got the ${doc}. I’m suggesting ${shown} a month${methodBit}. ${inLine}. Use this?`,
+    followUp: partial || caution ? undefined : wageIncomeCaution(draft),
     actions: incomeConfirmActions(),
   };
 }
@@ -1045,9 +1049,10 @@ function combinedReactionAsk(
   const shown = displayFactValue(proposal.field, proposal.value);
   const method = proposal.methodNote ?? "combined wage + Schedule C";
   const k1Note = proposal.parts?.k1 ? `${K1_ORDINARY_NOTE} ` : "";
+  const partial = (proposal.partialNotes ?? []).join(" ");
   return {
-    text: `I’m suggesting ${shown} a month from ${method}. ${k1Note}${SUGGESTED_INCOME_NOTE}. Use this?`,
-    followUp: wageIncomeCaution(draft) ?? decliningIncomeCaution(draft),
+    text: `I’m suggesting ${shown} a month from ${method}. ${partial ? `${partial} ` : ""}${k1Note}${SUGGESTED_INCOME_NOTE}. Use this?`,
+    followUp: proposal.caution ?? wageIncomeCaution(draft) ?? decliningIncomeCaution(draft),
     actions: incomeConfirmActions(),
   };
 }

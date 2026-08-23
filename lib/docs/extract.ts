@@ -8,6 +8,7 @@ import {
   type ExtractApplyInput,
 } from "@/components/fox/fileWrite";
 import type { ExtractClass } from "@/components/fox/types";
+import { mergePrintedFields, readPrintedSample } from "@/lib/docs/printedSample";
 
 export type ClassifyResult = {
   class: ExtractClass;
@@ -248,7 +249,7 @@ function extractFieldsPrompt(extractClass: ExtractClass, keys: readonly string[]
   }
   if (extractClass === "paystub") {
     extra =
-      " pay_frequency is weekly, biweekly, semimonthly, monthly, or empty. overtime, bonus, and commission only when clearly printed as their own amounts; empty otherwise; never invent.";
+      " pay_frequency is weekly, biweekly, semimonthly, monthly, or empty. overtime, bonus, and commission only when clearly printed as their own period or annual amounts. overtime_ytd / bonus_ytd / commission_ytd when the stub prints YTD overtime, bonus, or commission. Empty otherwise; never invent.";
   }
   if (extractClass === "w2") {
     extra =
@@ -312,16 +313,28 @@ export const grokExtractAdapter: DocumentExtractAdapter = {
   },
 };
 
+function printedResult(printed: NonNullable<ReturnType<typeof readPrintedSample>>): ClassifyExtractResult {
+  return {
+    extractClass: printed.extractClass,
+    confidence: printed.confidence,
+    fields: printed.fields,
+    warnings: [],
+  };
+}
+
 export async function classifyAndExtract(
   bytes: Uint8Array,
   mediaType: string,
   adapter: DocumentExtractAdapter = grokExtractAdapter,
   hint?: ExtractClass | null,
+  filename?: string | null,
 ): Promise<ClassifyExtractResult> {
+  const printed = readPrintedSample(bytes, filename);
   let classified: ClassifyResult | null = null;
   try {
     classified = await adapter.classify(bytes, mediaType);
     if (classified.readable === false) {
+      if (printed) return printedResult(printed);
       return {
         extractClass: classified.class,
         confidence: classified.confidence,
@@ -333,8 +346,9 @@ export async function classifyAndExtract(
     const hinted = hint && hint !== "other" ? hint : undefined;
     const confident =
       classified.class !== "other" && classified.confidence >= LOW_EXTRACT_CONFIDENCE;
-    const extractAs = confident ? classified.class : hinted;
+    const extractAs = confident ? classified.class : hinted ?? printed?.extractClass;
     if (!extractAs || extractAs === "other") {
+      if (printed) return printedResult(printed);
       return {
         extractClass: classified.class,
         confidence: classified.confidence,
@@ -343,14 +357,19 @@ export async function classifyAndExtract(
       };
     }
     const extracted = await adapter.extract(bytes, mediaType, extractAs);
+    const fields = mergePrintedFields(extracted.fields, printed);
+    if (printed && !Object.keys(extracted.fields).length) {
+      return printedResult(printed);
+    }
     return {
-      extractClass: promoteExtractClass(extractAs, extracted.fields),
+      extractClass: promoteExtractClass(extractAs, fields),
       confidence: classified.confidence,
-      fields: extracted.fields,
+      fields,
       warnings: extracted.warnings,
     };
   } catch (error) {
     logVisionError("classifyAndExtract", error);
+    if (printed) return printedResult(printed);
     return {
       extractClass: classified?.class ?? "other",
       confidence: classified?.confidence ?? 0,

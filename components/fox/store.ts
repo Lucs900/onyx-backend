@@ -330,6 +330,10 @@ function normalizeProposal(value: FoxIntakeDraft["pendingProposal"]): FactPropos
     kind: value.kind,
     note: typeof value.note === "string" ? value.note : undefined,
     methodNote: typeof value.methodNote === "string" ? value.methodNote : undefined,
+    caution: typeof value.caution === "string" ? value.caution : undefined,
+    partialNotes: Array.isArray(value.partialNotes)
+      ? value.partialNotes.filter((note): note is string => typeof note === "string")
+      : undefined,
     companion:
       value.companion && value.companion.field && value.companion.value
         ? {
