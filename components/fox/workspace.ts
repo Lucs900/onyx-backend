@@ -116,15 +116,25 @@ import {
   wageMethodNote,
 } from "./qualifyingIncome";
 import {
+  ACR_BENEFITS_LINE,
+  COST_LINE,
   FHFA_HIGH_COST_CEILING_2026 as STORE_HIGH_COST_CEILING,
   HIGH_LTV_CAUTION,
   JUMBO_CEILING_LINE,
   LTV_NOT_A_DECISION,
+  PHONE_LINE,
+  TIMELINE_LINE,
   WILL_I_QUALIFY_LINE,
   conventionalGuidelinePattern,
   flags as storeFlags,
   lookup as storeLookup,
 } from "@/lib/guidelines/conventional";
+import {
+  answerFromFile,
+  asksWillIQualify,
+  foxAnswer,
+  interpretQuestion,
+} from "@/lib/guidelines/answer";
 import {
   applyEmailThenFinish,
   applyEscalateMotion,
@@ -1316,64 +1326,15 @@ function looksLikeQuestion(text: string) {
 }
 
 export const NO_APPROVE_COPY = WILL_I_QUALIFY_LINE;
-export const COST_COPY =
-  "I don’t have a live fee quote. The preview rate is not live. I won’t invent a closing-cost number.";
-export const ACR_BENEFITS_COPY =
-  "Fox keeps working after close. On-time payments earn a calculated reward. When the numbers are strong, Fox can help save more, use equity, or prepare another property. When the timing is wrong, Fox waits.";
-export const TIMELINE_COPY = "No close date yet. Sketch now, documents next, review after Proceed.";
-export const PHONE_COPY = "Yes. Same file on your phone — type below or tap a reply.";
+export const COST_COPY = COST_LINE;
+export const ACR_BENEFITS_COPY = ACR_BENEFITS_LINE;
+export const TIMELINE_COPY = TIMELINE_LINE;
+export const PHONE_COPY = PHONE_LINE;
 export const W2_TAX_RETURN_COPY = "No. This path needs a paystub and a W-2.";
 const HELLO_COPY = "Hi.";
 const AFTER_PROCEED_COPY =
   "After Proceed the file goes in queue. I stay the interface. A licensed originator reviews it — I’ll bring the result back here.";
 const FILE_ANSWER_COPY = "I can answer from this file. I won’t invent a number, a date, or an approval.";
-
-function asksApproval(text: string) {
-  const lower = text.toLowerCase();
-  if (/(approv|lock|commit to lend)/i.test(lower)) return true;
-  return /\b(will i|do i|can i|am i)\s+(qualif|approved)/i.test(lower);
-}
-
-function asksCost(text: string) {
-  return /\b(closing costs?|closing fees?|origination fee|lender fees?|fee quote|how much (will|does|do) (this|it|closing)|what (does|will) (this|it) cost|cost to close)\b/i.test(
-    text,
-  );
-}
-
-function asksAcrBenefits(text: string) {
-  const t = text.trim();
-  if (
-    /\b(acr benefits?|benefits? of acr|what('s| is) the reward|the reward|membership reward|membership)\b/i.test(t) ||
-    (/\breward\b/i.test(t) && !/\b(prepared|sample|indicative)\b/i.test(t))
-  ) {
-    return true;
-  }
-  if (/\bwhat do i get\b/i.test(t)) return true;
-  if (/\bif i start (a |the )?(relationship|desk|acr)\b/i.test(t)) return true;
-  if (
-    /\bstart (a |the |your )?relationship\b/i.test(t) &&
-    (looksLikeQuestion(t) || /\b(get|benefit|worth|why)\b/i.test(t))
-  ) {
-    return true;
-  }
-  if (
-    /\brelationship\b/i.test(t) &&
-    /\b(what do i get|benefits?|reward|worth it|why (start|join)|what('s| is) in it)\b/i.test(t)
-  ) {
-    return true;
-  }
-  return false;
-}
-
-function asksTimeline(text: string) {
-  return /\b(close date|closing date|when do (i|we) close|how long (does|will) this take|what('s| is) the timeline)\b/i.test(
-    text,
-  );
-}
-
-function asksPhone(text: string) {
-  return /\b(on my phone|on the phone|from my phone|mobile|iphone|android)\b/i.test(text);
-}
 
 function asksTaxReturnNeed(text: string) {
   return (
@@ -1383,7 +1344,7 @@ function asksTaxReturnNeed(text: string) {
 }
 
 function isTopicalSideAsk(text: string) {
-  return asksCost(text) || asksAcrBenefits(text) || asksTimeline(text) || asksPhone(text) || asksTaxReturnNeed(text);
+  return interpretQuestion(text) != null || asksTaxReturnNeed(text);
 }
 
 function isGreeting(text: string) {
@@ -1396,7 +1357,7 @@ function asksProceedAftermath(text: string) {
 
 function isFreeTextAtGate(text: string) {
   return (
-    asksApproval(text) ||
+    interpretQuestion(text) != null ||
     isGreeting(text) ||
     asksProceedAftermath(text) ||
     looksLikeQuestion(text) ||
@@ -1405,12 +1366,8 @@ function isFreeTextAtGate(text: string) {
 }
 
 function freeTextAnswer(input: string, draft: FoxIntakeDraft) {
-  if (asksApproval(input)) {
-    return storeLookup("language.will_i_qualify", {
-      ...factsFromDraft(draft),
-      askedWillIQualify: true,
-    }).borrowerLine;
-  }
+  const answered = foxAnswer(input, factsFromDraft(draft));
+  if (answered) return answered.text;
   if (isGreeting(input)) return HELLO_COPY;
   if (asksProceedAftermath(input)) return AFTER_PROCEED_COPY;
   return sideQuestionAnswer(input, draft);
@@ -1437,10 +1394,6 @@ function restoredAsk(answer: string, draft: FoxIntakeDraft) {
 }
 
 function sideQuestionAnswer(input: string, draft: FoxIntakeDraft) {
-  if (asksCost(input)) return COST_COPY;
-  if (asksAcrBenefits(input)) return ACR_BENEFITS_COPY;
-  if (asksTimeline(input)) return TIMELINE_COPY;
-  if (asksPhone(input)) return PHONE_COPY;
   if (asksTaxReturnNeed(input)) {
     if (draft.incomeType.value === "w2") return W2_TAX_RETURN_COPY;
     if (draft.incomeType.value === "both") {
@@ -2009,15 +1962,7 @@ export function needsOverPriceCheck(draft: FoxIntakeDraft) {
 }
 
 export function loanOverPriceCopy(draft: FoxIntakeDraft) {
-  const price =
-    draft.propertyValueAmount != null && draft.propertyValueAmount > 0
-      ? formatMoney(draft.propertyValueAmount)
-      : "the price";
-  const loan =
-    draft.loanAmountValue != null && draft.loanAmountValue > 0
-      ? formatMoney(draft.loanAmountValue)
-      : "the loan";
-  return `The loan is ${loan} on a ${price} price. That usually means the price or the loan amount is wrong. I can edit either one.`;
+  return answerFromFile("flags.loan_over_price", factsFromDraft(draft)).text;
 }
 
 export function loanOverPriceActions(): FoxAction[] {
@@ -3083,7 +3028,7 @@ export function workspaceReply(
     if (isFreeTextAtGate(q)) {
       if (
         looksLikeQuestion(q) &&
-        !asksApproval(q) &&
+        !asksWillIQualify(q) &&
         !asksProceedAftermath(q) &&
         /\b(years?|how long|business|self.?employ|why do you need)\b/i.test(q)
       ) {
@@ -3164,7 +3109,7 @@ export function workspaceReply(
   }
 
   if (draft.pendingProposal || prompt === "confirm-proposal") {
-    if (isQualifyingIncomeConfirmPending(draft) && asksApproval(q)) {
+    if (isQualifyingIncomeConfirmPending(draft) && asksWillIQualify(q)) {
       return answerThenRestore(q, draft);
     }
     if (
@@ -3261,7 +3206,7 @@ export function workspaceReply(
     ) {
       const nextDraft = applyEscalateMotion({ ...draft, overPriceConfirmed: true });
       return {
-        text: MOTION_COPY.escalated,
+        text: answerFromFile("flags.loan_over_price", factsFromDraft(nextDraft)).text,
         actions: finishLineActions(nextDraft),
         capture: { field: "over-price-confirm" },
       };
@@ -3276,6 +3221,13 @@ export function workspaceReply(
       return {
         ...workspacePromptCopy("amount", { ...draft, correcting: "amount", correctingLine: "loan" }),
         capture: { field: "correct", value: "amount", line: "loan" },
+      };
+    }
+    const answered = foxAnswer(q, factsFromDraft(draft));
+    if (answered) {
+      return {
+        ...restoredAsk(answered.text, draft),
+        actions: loanOverPriceActions(),
       };
     }
     return {
@@ -3761,7 +3713,7 @@ export function workspaceReply(
           capture: { field: "ask-fox" },
         };
       }
-      if (looksLikeQuestion(q) || asksApproval(q) || isGreeting(q)) {
+      if (looksLikeQuestion(q) || asksWillIQualify(q) || isGreeting(q)) {
         return answerThenRestore(q, draft);
       }
       if (/(start|id|upload|drop|now|add|documents)/i.test(lower)) {
@@ -3871,7 +3823,7 @@ export function workspaceReply(
       };
     }
     if (prompt === "done") {
-      if (asksApproval(q)) {
+      if (asksWillIQualify(q)) {
         return answerThenRestore(q, draft);
       }
       if (draft.pendingFinish && looksLikeEmail(q)) {

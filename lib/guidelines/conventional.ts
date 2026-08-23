@@ -234,6 +234,14 @@ export const DISTRESS_LINE = "I can keep preparing this file. Pricing waits.";
 export const LOW_CREDIT_CAUTION = "I’ll keep gathering. Pricing waits.";
 export const WILL_I_QUALIFY_LINE =
   "I can prepare a file. I cannot approve or say you qualify. Here’s what still helps, and what’s missing.";
+export const COST_LINE =
+  "I don’t have a live fee quote. The preview rate is not live. I won’t invent a closing-cost number.";
+export const ACR_BENEFITS_LINE =
+  "Fox keeps working after close. On-time payments earn a calculated reward. When the numbers are strong, Fox can help save more, use equity, or prepare another property. When the timing is wrong, Fox waits.";
+export const TIMELINE_LINE = "No close date yet. Sketch now, documents next, review after Proceed.";
+export const PHONE_LINE = "Yes. Same file on your phone — type below or tap a reply.";
+export const LOAN_OVER_PRICE_TEMPLATE =
+  "The loan is {loanAmount} on a {purchasePrice} price. That usually means the price or the loan amount is wrong. I can edit either one.";
 export const ESCALATE_LINE =
   "A licensed originator is on this exception. I stay here. I’ll put their result in this thread.";
 export const STAY_LINE = "I stay on this file.";
@@ -332,6 +340,7 @@ function topic(
   suggest: string,
   caution: string,
   borrowerLine: string,
+  extraNever: string[] = [],
 ): Topic {
   return {
     id,
@@ -343,7 +352,7 @@ function topic(
     stay: STAY_LINE,
     escalate: ESCALATE_LINE,
     borrowerLine,
-    neverSay: NEVER_SAY_LIST,
+    neverSay: extraNever.length ? [...NEVER_SAY_LIST, ...extraNever] : NEVER_SAY_LIST,
   };
 }
 
@@ -521,6 +530,52 @@ export const TOPICS: Record<string, Topic> = {
     "",
     WILL_I_QUALIFY_LINE,
   ),
+  "language.cost": topic(
+    "language.cost",
+    "unsupported",
+    [],
+    [],
+    "No invented fee, rate, or closing-cost number.",
+    "",
+    COST_LINE,
+  ),
+  "language.acr_benefits": topic(
+    "language.acr_benefits",
+    "unsupported",
+    [],
+    [],
+    "Relationship-start copy stays locked.",
+    "",
+    ACR_BENEFITS_LINE,
+  ),
+  "language.timeline": topic(
+    "language.timeline",
+    "unsupported",
+    [],
+    [],
+    "No invented close date.",
+    "",
+    TIMELINE_LINE,
+  ),
+  "language.phone": topic(
+    "language.phone",
+    "unsupported",
+    [],
+    [],
+    "Same file on the phone.",
+    "",
+    PHONE_LINE,
+  ),
+  "flags.loan_over_price": topic(
+    "flags.loan_over_price",
+    "partial",
+    [CITE_FNMA_PURCHASE],
+    ["purchase price", "loan amount"],
+    "Write both numbers. This usually means the price or the loan amount is wrong. Offer an edit. Escalate only if they confirm it is intentional.",
+    "",
+    LOAN_OVER_PRICE_TEMPLATE,
+    ["a number under the purchase price works"],
+  ),
 };
 
 export function topicById(topicId: string): Topic | undefined {
@@ -560,10 +615,22 @@ function loanAboveCeiling(file: FileFacts) {
   return loan != null && loan > FHFA_HIGH_COST_CEILING_2026;
 }
 
-function loanExceedsPrice(file: FileFacts) {
+export function loanExceedsPrice(file: FileFacts) {
   const purchase = file.purposeHint === "purchase" || file.product === "buy";
   if (!purchase || file.loanAmount == null || file.purchasePrice == null) return false;
   return file.loanAmount > file.purchasePrice;
+}
+
+export function formatStoreMoney(value?: number) {
+  if (value == null || !Number.isFinite(value) || value <= 0) return "";
+  return `$${Math.round(value).toLocaleString("en-US")}`;
+}
+
+/** Fill {loanAmount} / {purchasePrice} from File. Never invent a number the File does not have. */
+export function renderStoreLine(template: string, file: FileFacts) {
+  const loan = formatStoreMoney(file.loanAmount) || "the loan";
+  const price = formatStoreMoney(file.purchasePrice) || "the price";
+  return template.replaceAll("{loanAmount}", loan).replaceAll("{purchasePrice}", price);
 }
 
 export function flags(file: FileFacts): { caution?: string; previewRateAllowed: boolean } {
@@ -638,15 +705,16 @@ export function lookup(
   }
   const flagged = flags(file);
   const caution = found.caution || flagged.caution;
-  const borrowerLine =
-    topicId === "language.will_i_qualify"
-      ? WILL_I_QUALIFY_LINE
-      : decision.action === "escalate" && topicId !== "flags.govvie"
-        ? ESCALATE_LINE
-        : found.borrowerLine;
+  const rendered = renderStoreLine(found.borrowerLine, file);
+  const languageTopic = topicId.startsWith("language.");
+  const borrowerLine = languageTopic
+    ? rendered
+    : decision.action === "escalate" && topicId !== "flags.govvie"
+      ? ESCALATE_LINE
+      : rendered;
   return {
     topic: found,
-    action: decision.action,
+    action: languageTopic ? "stay" : decision.action,
     ...(caution ? { caution } : {}),
     borrowerLine,
   };

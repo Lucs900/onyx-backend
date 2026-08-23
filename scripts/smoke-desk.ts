@@ -79,7 +79,10 @@ import {
   flags as storeFlags,
   lookup as storeLookup,
   queryConventionalGuidelines,
+  COST_LINE,
+  LOAN_OVER_PRICE_TEMPLATE,
 } from "../lib/guidelines/conventional";
+import { answerFromFile, foxAnswer, interpretQuestion, topicFromFile } from "../lib/guidelines/answer";
 import {
   MOTION_COPY,
   applyLooksRightMotion,
@@ -4699,8 +4702,27 @@ const overPriceBase = draft({
   propertyValueAmount: 500000,
 });
 assert.equal(workspacePrompt(overPriceBase), "amount");
+const overPriceFile = {
+  product: "buy",
+  purposeHint: "purchase" as const,
+  purchasePrice: 500000,
+  loanAmount: 600000,
+};
 const overPriceLine =
   "The loan is $600,000 on a $500,000 price. That usually means the price or the loan amount is wrong. I can edit either one.";
+assert.equal(topicFromFile(overPriceFile), "flags.loan_over_price");
+assert.equal(interpretQuestion("600000"), null);
+assert.equal(answerFromFile("flags.loan_over_price", overPriceFile).text, overPriceLine);
+assert.equal(answerFromFile("flags.loan_over_price", overPriceFile).action, "stay");
+assert.doesNotMatch(answerFromFile("flags.loan_over_price", overPriceFile).text, /licensed originator is on this exception|under the purchase price/i);
+assert.equal(
+  answerFromFile("flags.loan_over_price", { ...overPriceFile, commitmentRequired: true }).text,
+  ESCALATE_LINE,
+);
+assert.equal(foxAnswer("will i qualify", overPriceFile)?.text, WILL_I_QUALIFY_LINE);
+assert.equal(foxAnswer("closing costs", overPriceFile)?.text, COST_LINE);
+assert.match(LOAN_OVER_PRICE_TEMPLATE, /\{loanAmount\}/);
+assert.match(LOAN_OVER_PRICE_TEMPLATE, /\{purchasePrice\}/);
 for (const typed of ["loan 600000", "600000", "600,000"]) {
   const over = workspaceReply(typed, overPriceBase);
   assert.equal(over?.capture?.field, "loanAmount", typed);
@@ -5028,7 +5050,15 @@ assert.match(guidelineStoreSrc, /function lookup\(/);
 assert.match(guidelineStoreSrc, /function flags\(/);
 assert.match(guidelineStoreSrc, /function escalate\(/);
 assert.match(guidelineStoreSrc, /function completeness\(/);
+assert.match(guidelineStoreSrc, /flags\.loan_over_price/);
+assert.match(guidelineStoreSrc, /\{loanAmount\}/);
+const answerPathSrc = readFileSync(join(root, "lib/guidelines/answer.ts"), "utf8");
+assert.match(answerPathSrc, /interpretQuestion/);
+assert.match(answerPathSrc, /applyHardRails/);
+assert.match(answerPathSrc, /topicFromFile/);
+assert.match(answerPathSrc, /answerFromFile/);
 assert.equal(storeLookup("language.will_i_qualify", { askedWillIQualify: true }).borrowerLine, WILL_I_QUALIFY_LINE);
+assert.equal(storeLookup("language.cost", {}).borrowerLine, COST_LINE);
 assert.equal(storeLookup("flags.govvie", { namedGovvie: true }).borrowerLine, GOVVIE_LINE);
 assert.equal(storeLookup("flags.govvie", { namedGovvie: true }).caution, GOVVIE_LINE);
 assert.notEqual(storeCompleteness("buy", { purposeHint: "purchase" }).layer, "agency_ready");
@@ -5038,6 +5068,9 @@ assert.equal(storeEscalate({ namedGovvie: true }).action, "escalate");
 assert.equal(storeEscalate({ requestedHuman: true }).borrowerLine, ESCALATE_LINE);
 
 const workspaceSrc = readFileSync(join(root, "components/fox/workspace.ts"), "utf8");
+assert.ok(workspaceSrc.includes('from "@/lib/guidelines/answer"'));
+assert.ok(workspaceSrc.includes("answerFromFile"));
+assert.doesNotMatch(workspaceSrc, /That usually means the price or the loan amount is wrong/);
 assert.ok(!workspaceSrc.includes("I can keep this file current. Ask anything, or take the next step when you’re ready."));
 assert.ok(!workspaceSrc.includes("What’s a rough amount?"));
 assert.ok(!workspaceSrc.includes('label: "Amount"'));
