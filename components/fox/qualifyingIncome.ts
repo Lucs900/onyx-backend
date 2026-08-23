@@ -1,8 +1,34 @@
 import type { ExtractClass, FactProposal, FoxIntakeDraft } from "./types";
+import {
+  DECLINING_INCOME_CAUTION,
+  DECLINING_YEAR_RATIO,
+  SUGGESTED_INCOME_NOTE,
+  k1OrdinaryMonthly,
+  laterYearIsMateriallyLower,
+  monthlyFromAnnual,
+  scheduleCAnnual,
+  stableOrDecliningAnnual,
+  suggestScheduleCIncome,
+  yearNumber,
+  type QualifyingMethod,
+  type ScheduleCYearInput,
+} from "@/lib/income/suggest";
+
+export {
+  DECLINING_INCOME_CAUTION,
+  DECLINING_YEAR_RATIO,
+  SUGGESTED_INCOME_NOTE,
+  k1OrdinaryMonthly,
+  monthlyFromAnnual,
+  scheduleCAnnual,
+  stableOrDecliningAnnual,
+  suggestScheduleCIncome,
+  yearNumber,
+};
+export type { QualifyingMethod, ScheduleCYearInput };
 
 export const QUALIFYING_INCOME_FIELD = "qualifying_income";
 export const TAX_CASHFLOWS_FIELD = "tax_cashflows";
-export const SUGGESTED_INCOME_NOTE = "Suggested qualifying income · not underwritten";
 
 export type TaxReturnKind = "schedule_c" | "k1" | "1065" | "1120s" | "";
 export type QualifyingBasis = "schedule_c" | "wage" | "k1";
@@ -25,6 +51,8 @@ export type TaxYearCashflow = {
 export type QualifyingIncomeResult = {
   monthly: number;
   basis: QualifyingBasis;
+  method?: QualifyingMethod;
+  caution?: string;
 };
 
 const ENTITY_KINDS = new Set<TaxReturnKind>(["k1", "1065", "1120s"]);
@@ -115,67 +143,54 @@ export function monthsThroughPeriodEnd(raw?: string | null): number | null {
   return month >= 1 && month <= 12 ? month : null;
 }
 
-export function scheduleCAnnual(input: {
-  netProfit: number | null;
-  depreciation?: number | null;
-  depletion?: number | null;
-  businessUseOfHome?: number | null;
-  nonrecurringOtherIncome?: number | null;
-  amortization?: number | null;
-  casualtyLoss?: number | null;
-  mileageDepreciation?: number | null;
-}): number | null {
-  if (input.netProfit == null) return null;
-  return (
-    input.netProfit +
-    (input.depreciation ?? 0) +
-    (input.depletion ?? 0) +
-    (input.businessUseOfHome ?? 0) +
-    (input.amortization ?? 0) +
-    (input.casualtyLoss ?? 0) +
-    (input.mileageDepreciation ?? 0) -
-    (input.nonrecurringOtherIncome ?? 0)
-  );
+function cashflowToScheduleCYear(row: TaxYearCashflow): ScheduleCYearInput | null {
+  const kind =
+    row.return_kind === "schedule_c" || (!row.return_kind && row.schedule_c_net_profit)
+      ? "schedule_c"
+      : row.return_kind;
+  if (kind !== "schedule_c") return null;
+  const netProfit = parseExtractMoney(row.schedule_c_net_profit);
+  if (netProfit == null && !row.schedule_c_net_profit) return null;
+  return {
+    taxYear: row.tax_year,
+    netProfit,
+    depreciation: parseExtractMoney(row.depreciation),
+    depletion: parseExtractMoney(row.depletion),
+    businessUseOfHome: parseExtractMoney(row.business_use_of_home),
+    nonrecurringOtherIncome: parseExtractMoney(row.nonrecurring_other_income),
+    amortization: parseExtractMoney(row.amortization),
+    casualtyLoss: parseExtractMoney(row.casualty_loss),
+    mileageDepreciation: parseExtractMoney(row.mileage_depreciation),
+  };
 }
 
-/** Two-year self-employed: average unless the later year is lower. */
-export function stableOrDecliningAnnual(earlier: number, later: number): number {
-  return later < earlier ? later : (earlier + later) / 2;
+function scheduleCYearsFromCashflows(years: TaxYearCashflow[]): ScheduleCYearInput[] {
+  return years.flatMap((row) => {
+    const mapped = cashflowToScheduleCYear(row);
+    return mapped ? [mapped] : [];
+  });
 }
-
-export const DECLINING_YEAR_RATIO = 0.9;
-export const DECLINING_INCOME_CAUTION = "Income is lower this year. I’m using the later year.";
 
 function scheduleCUsableYears(years: TaxYearCashflow[]) {
-  return years
+  return scheduleCYearsFromCashflows(years)
     .map((row) => ({
-      year: yearNumber(row.tax_year) ?? 0,
-      kind:
-        row.return_kind === "schedule_c" || (!row.return_kind && row.schedule_c_net_profit)
-          ? "schedule_c"
-          : row.return_kind,
-      annual: annualFromCashflow(row),
+      year: yearNumber(row.taxYear) ?? 0,
+      kind: "schedule_c" as const,
+      annual: scheduleCAnnual(row),
     }))
-    .filter((row) => row.kind === "schedule_c" && row.annual != null)
-    .sort((a, b) => a.year - b.year) as { year: number; kind: "schedule_c"; annual: number }[];
+    .filter((row): row is { year: number; kind: "schedule_c"; annual: number } => row.annual != null)
+    .sort((a, b) => a.year - b.year);
 }
 
 /** Later Sch C year is at least 10% below the earlier year. Quiet caution only — not a denial. */
 export function laterYearIncomeLower(draft: FoxIntakeDraft): boolean {
   const usable = scheduleCUsableYears(readTaxCashflows(draft));
   if (usable.length < 2) return false;
-  const earlier = usable[usable.length - 2];
-  const later = usable[usable.length - 1];
-  if (earlier.annual <= 0) return false;
-  return later.annual / earlier.annual <= DECLINING_YEAR_RATIO;
+  return laterYearIsMateriallyLower(usable[usable.length - 2].annual, usable[usable.length - 1].annual);
 }
 
 export function decliningIncomeCaution(draft: FoxIntakeDraft): string | undefined {
-  return laterYearIncomeLower(draft) ? DECLINING_INCOME_CAUTION : undefined;
-}
-
-export function monthlyFromAnnual(annual: number): number {
-  return Math.round(annual / 12);
+  return suggestScheduleCIncome(scheduleCYearsFromCashflows(readTaxCashflows(draft)))?.caution;
 }
 
 export function formatIncomeMoney(value: number): string {
@@ -185,19 +200,6 @@ export function formatIncomeMoney(value: number): string {
 
 export function scheduleCYearViews(draft: FoxIntakeDraft): { year: number; annual: number }[] {
   return scheduleCUsableYears(readTaxCashflows(draft));
-}
-
-function yearNumber(raw: string): number | null {
-  const digits = raw.replace(/\D/g, "");
-  if (digits.length === 2) {
-    const n = Number(digits);
-    return Number.isFinite(n) ? 2000 + n : null;
-  }
-  if (digits.length === 4) {
-    const n = Number(digits);
-    return Number.isFinite(n) ? n : null;
-  }
-  return null;
 }
 
 export function readTaxCashflows(draft: FoxIntakeDraft): TaxYearCashflow[] {
@@ -273,28 +275,6 @@ export function mergeTaxCashflows(existing: TaxYearCashflow[], incoming: TaxYear
   return next.sort((a, b) => (yearNumber(a.tax_year) ?? 0) - (yearNumber(b.tax_year) ?? 0));
 }
 
-function annualFromCashflow(row: TaxYearCashflow): number | null {
-  return scheduleCAnnual({
-    netProfit: parseExtractMoney(row.schedule_c_net_profit),
-    depreciation: parseExtractMoney(row.depreciation),
-    depletion: parseExtractMoney(row.depletion),
-    businessUseOfHome: parseExtractMoney(row.business_use_of_home),
-    nonrecurringOtherIncome: parseExtractMoney(row.nonrecurring_other_income),
-    amortization: parseExtractMoney(row.amortization),
-    casualtyLoss: parseExtractMoney(row.casualty_loss),
-    mileageDepreciation: parseExtractMoney(row.mileage_depreciation),
-  });
-}
-
-function scheduleCMonthly(years: TaxYearCashflow[]): number | null {
-  const usable = scheduleCUsableYears(years);
-  if (!usable.length) return null;
-  if (usable.length === 1) return monthlyFromAnnual(usable[0].annual);
-  const earlier = usable[usable.length - 2];
-  const later = usable[usable.length - 1];
-  return monthlyFromAnnual(stableOrDecliningAnnual(earlier.annual, later.annual));
-}
-
 function k1Monthly(years: TaxYearCashflow[]): number | null {
   const usable = years
     .map((row) => ({
@@ -307,7 +287,7 @@ function k1Monthly(years: TaxYearCashflow[]): number | null {
   if (!usable.length) return null;
   const latest = usable[usable.length - 1];
   if (latest.ordinary == null) return null;
-  return monthlyFromAnnual(latest.ordinary);
+  return k1OrdinaryMonthly(latest.ordinary);
 }
 
 export function k1OrdinaryMissingDistributions(draft: FoxIntakeDraft): boolean {
@@ -349,8 +329,15 @@ export function monthlyQualifyingFromExtract(
   if (extractClass !== "tax_return") return null;
   const incoming = cashflowFromExtract(fields);
   const years = mergeTaxCashflows(readTaxCashflows(draft), incoming);
-  const scheduleC = scheduleCMonthly(years);
-  if (scheduleC != null) return { monthly: scheduleC, basis: "schedule_c" };
+  const scheduleC = suggestScheduleCIncome(scheduleCYearsFromCashflows(years));
+  if (scheduleC != null) {
+    return {
+      monthly: scheduleC.monthly,
+      basis: "schedule_c",
+      method: scheduleC.method,
+      caution: scheduleC.caution,
+    };
+  }
   const entity = k1Monthly(years);
   if (entity != null) return { monthly: entity, basis: "k1" };
   return null;

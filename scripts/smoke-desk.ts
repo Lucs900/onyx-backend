@@ -50,6 +50,10 @@ import {
   stableOrDecliningAnnual,
 } from "../components/fox/qualifyingIncome";
 import {
+  k1OrdinaryMonthly,
+  suggestScheduleCIncome,
+} from "../lib/income/suggest";
+import {
   MOTION_COPY,
   applyLooksRightMotion,
   creditPullPermitted,
@@ -2884,6 +2888,31 @@ assert.equal(monthlyFromAnnual(-24000), -2000);
 assert.equal(scheduleCAnnual({ netProfit: 80000, depreciation: 8000 }), 88000);
 assert.equal(monthlyFromAnnual(72000), 6000);
 assert.equal(monthlyFromAnnual(40000), 3333);
+assert.equal(k1OrdinaryMonthly(40000), 3333);
+
+const moduleOneYear = suggestScheduleCIncome([
+  { taxYear: "2024", netProfit: 96000, depreciation: 12000 },
+]);
+assert.equal(moduleOneYear?.monthly, 9000);
+assert.equal(moduleOneYear?.method, "one-year");
+assert.equal(moduleOneYear?.caution, undefined);
+
+const moduleTwoYear = suggestScheduleCIncome([
+  { taxYear: "2023", netProfit: 88000 },
+  { taxYear: "2024", netProfit: 96000, depreciation: 12000 },
+]);
+assert.equal(moduleTwoYear?.monthly, 8167);
+assert.equal(moduleTwoYear?.method, "two-year-average");
+assert.equal(moduleTwoYear?.caution, undefined);
+
+const moduleDeclining = suggestScheduleCIncome([
+  { taxYear: "2023", netProfit: 80000, depreciation: 8000 },
+  { taxYear: "2024", netProfit: 66000, depreciation: 6000 },
+]);
+assert.equal(moduleDeclining?.monthly, 6000);
+assert.equal(moduleDeclining?.method, "later-year-lower");
+assert.equal(moduleDeclining?.caution, DECLINING_INCOME_CAUTION);
+assert.equal(moduleDeclining?.caution, "Income is lower this year. I’m using the later year.");
 
 const mayaId = applyExtractedFields(
   draft({
@@ -4149,6 +4178,15 @@ assert.deepEqual(
 const namedOther = workspaceReply("Purchase price", otherAmountDraft);
 assert.equal(namedOther?.capture?.field, "amountPurpose");
 assert.match(namedOther?.text ?? "", /purchase price/i);
+
+const incomeModuleSrc = readFileSync(join(root, "lib/income/suggest.ts"), "utf8");
+assert.match(incomeModuleSrc, /"one-year" \| "two-year-average" \| "later-year-lower"/);
+assert.match(incomeModuleSrc, /suggestScheduleCIncome/);
+assert.match(incomeModuleSrc, /No 1084 UI/);
+assert.doesNotMatch(incomeModuleSrc, /1084 form|underwriting form|borrower form/i);
+const incomeAdapterSrc = readFileSync(join(root, "components/fox/qualifyingIncome.ts"), "utf8");
+assert.ok(incomeAdapterSrc.includes('from "@/lib/income/suggest"'));
+assert.ok(incomeAdapterSrc.includes("suggestScheduleCIncome"));
 
 const workspaceSrc = readFileSync(join(root, "components/fox/workspace.ts"), "utf8");
 assert.ok(!workspaceSrc.includes("What’s a rough amount?"));
