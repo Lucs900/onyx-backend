@@ -1306,18 +1306,65 @@ function docInviteActions(): FoxAction[] {
 
 function looksLikeQuestion(text: string) {
   const trimmed = text.trim();
-  return /\?$/.test(trimmed) || /^(why|what|how|when|who|where|can you|could you)\b/i.test(trimmed);
+  return (
+    /\?$/.test(trimmed) ||
+    /^(why|what|how|when|who|where|can i|can you|could i|could you|do i|will i|am i|should i|is this|is there|are there)\b/i.test(
+      trimmed,
+    )
+  );
 }
 
-const NO_APPROVE_COPY = "I can prepare a file. I cannot approve, lock, or commit to lend.";
+export const NO_APPROVE_COPY = "I can prepare a file. I cannot approve, lock, or commit to lend.";
+export const COST_COPY =
+  "I don’t have a live fee quote. The preview rate is not live. I won’t invent a closing-cost number.";
+export const ACR_BENEFITS_COPY =
+  "The desk stays open after close. On-time payments earn a reward calculated for the relationship. When the numbers are strong, Fox can help lower cost, use equity, or expand. When the timing is wrong, Fox waits.";
+export const TIMELINE_COPY = "No close date yet. Sketch now, documents next, review after Proceed.";
+export const PHONE_COPY = "Yes. Same file on your phone — type below or tap a reply.";
+export const W2_TAX_RETURN_COPY = "No. This path needs a paystub and a W-2.";
 const HELLO_COPY = "Hi.";
 const AFTER_PROCEED_COPY =
   "After Proceed the file goes in queue. I stay the interface. A licensed originator reviews it — I’ll bring the result back here.";
+const FILE_ANSWER_COPY = "I can answer from this file. I won’t invent a number, a date, or an approval.";
 
 function asksApproval(text: string) {
   const lower = text.toLowerCase();
   if (/(approv|lock|commit to lend)/i.test(lower)) return true;
   return /\b(will i|do i|can i|am i)\s+(qualif|approved)/i.test(lower);
+}
+
+function asksCost(text: string) {
+  return /\b(closing costs?|closing fees?|origination fee|lender fees?|fee quote|how much (will|does|do) (this|it|closing)|what (does|will) (this|it) cost|cost to close)\b/i.test(
+    text,
+  );
+}
+
+function asksAcrBenefits(text: string) {
+  return (
+    /\b(acr benefits?|benefits? of acr|what('s| is) the reward|the reward|membership reward)\b/i.test(text) ||
+    (/\breward\b/i.test(text) && !/\b(prepared|sample|indicative)\b/i.test(text))
+  );
+}
+
+function asksTimeline(text: string) {
+  return /\b(close date|closing date|when do (i|we) close|how long (does|will) this take|what('s| is) the timeline)\b/i.test(
+    text,
+  );
+}
+
+function asksPhone(text: string) {
+  return /\b(on my phone|on the phone|from my phone|mobile|iphone|android)\b/i.test(text);
+}
+
+function asksTaxReturnNeed(text: string) {
+  return (
+    /\b(tax returns?|1040|schedule c)\b/i.test(text) &&
+    /\b(need|needed|require|required|have to|do i|must|necessary)\b/i.test(text)
+  );
+}
+
+function isTopicalSideAsk(text: string) {
+  return asksCost(text) || asksAcrBenefits(text) || asksTimeline(text) || asksPhone(text) || asksTaxReturnNeed(text);
 }
 
 function isGreeting(text: string) {
@@ -1333,7 +1380,8 @@ function isFreeTextAtGate(text: string) {
     asksApproval(text) ||
     isGreeting(text) ||
     asksProceedAftermath(text) ||
-    looksLikeQuestion(text)
+    looksLikeQuestion(text) ||
+    isTopicalSideAsk(text)
   );
 }
 
@@ -1365,6 +1413,21 @@ function restoredAsk(answer: string, draft: FoxIntakeDraft) {
 }
 
 function sideQuestionAnswer(input: string, draft: FoxIntakeDraft) {
+  if (asksCost(input)) return COST_COPY;
+  if (asksAcrBenefits(input)) return ACR_BENEFITS_COPY;
+  if (asksTimeline(input)) return TIMELINE_COPY;
+  if (asksPhone(input)) return PHONE_COPY;
+  if (asksTaxReturnNeed(input)) {
+    if (draft.incomeType.value === "w2") return W2_TAX_RETURN_COPY;
+    if (draft.incomeType.value === "both") {
+      return "This path needs a paystub, a W-2, and the return.";
+    }
+    return conventionalGuidelinePattern(
+      "docs",
+      "tax_return",
+      "That’s how I estimate qualifying income. Suggested, not underwritten.",
+    );
+  }
   if (/(what is acr|what.?s acr|active credit relationship)/i.test(input)) {
     return draft.path === "loan-only"
       ? "ACR is the desk that stays open after close — letter, scout, and reward. This file is still the loan."
@@ -1385,7 +1448,15 @@ function sideQuestionAnswer(input: string, draft: FoxIntakeDraft) {
   ) {
     return documentQuestionAnswer(draft);
   }
-  return "I can keep this file current. Ask anything, or take the next step when you’re ready.";
+  return unmatchedSideAnswer(draft);
+}
+
+function unmatchedSideAnswer(draft: FoxIntakeDraft) {
+  const prompt = workspacePrompt(draft);
+  if (prompt === "product") return "I can take Buy, Refinance, HELOC, Jumbo, or Other.";
+  if (prompt === "correct") return "That’s so I can fix one line on the sketch.";
+  if (prompt === "done" || draft.sampleAccepted) return TIMELINE_COPY;
+  return FILE_ANSWER_COPY;
 }
 
 function documentQuestionAnswer(draft: FoxIntakeDraft) {
@@ -1409,7 +1480,9 @@ function documentQuestionAnswer(draft: FoxIntakeDraft) {
   if (invite === "w2") {
     return conventionalGuidelinePattern("docs", "w2", "That’s last year’s wages on paper.");
   }
-  return "I can keep this file current.";
+  if (draft.correcting === "correct") return "That’s so I can fix one line on the sketch.";
+  if (draft.sampleAccepted) return TIMELINE_COPY;
+  return FILE_ANSWER_COPY;
 }
 
 export function documentsMissingAsk(draft: FoxIntakeDraft) {

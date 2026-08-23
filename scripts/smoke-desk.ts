@@ -142,6 +142,12 @@ import {
   CREDIT_RANGE_FOLLOW,
   CREDIT_STATED_NOTE,
   PATH_ASK_TEXT,
+  NO_APPROVE_COPY,
+  COST_COPY,
+  ACR_BENEFITS_COPY,
+  TIMELINE_COPY,
+  PHONE_COPY,
+  W2_TAX_RETURN_COPY,
   previewFacts,
   previewRateApplies,
   PRICING_WHEN_READY,
@@ -415,7 +421,8 @@ assert.equal(typedRefi?.capture?.field, "productIntent");
 assert.equal(typedRefi?.capture && "value" in typedRefi.capture ? typedRefi.capture.value : "", "refinance");
 const unclearProduct = workspaceReply("not sure yet", withPath);
 assert.equal(unclearProduct?.capture, undefined);
-assert.match(unclearProduct?.text ?? "", /I can keep this file current/i);
+assert.match(unclearProduct?.text ?? "", /I can take Buy, Refinance, HELOC, Jumbo, or Other/);
+assert.doesNotMatch(unclearProduct?.text ?? "", /I can keep this file current\. Ask anything/);
 assert.match(unclearProduct?.text ?? "", /prepare your relationship file|looking to do/i);
 assert.ok((unclearProduct?.actions ?? []).some((item) => item.label === "Buy"));
 
@@ -1088,7 +1095,8 @@ const doneWhy = workspaceReply("why do you need that?", {
   workspaceDraftStatus: "with-originator",
   phase: "confirmed",
 });
-assert.match(doneWhy?.text ?? "", /keep this file current|I can keep/i);
+assert.match(doneWhy?.text ?? "", /Sketch now, documents next, review after Proceed/);
+assert.doesNotMatch(doneWhy?.text ?? "", /I can keep this file current\. Ask anything/);
 assert.ok((doneWhy?.actions ?? []).some((item) => item.label === "Proceed" || item.label === "Ask Fox"));
 const refiHeld = { ...refiOffer, docsHeld: true };
 const refiActually = workspaceReply("actually 900k", refiHeld);
@@ -1764,7 +1772,8 @@ const correctWhy = workspaceReply("why do you need that?", {
   ...skipDocInvites(afterIncome),
   correcting: "correct",
 });
-assert.match(correctWhy?.text ?? "", /keep this file current|government ID|I can keep/i);
+assert.match(correctWhy?.text ?? "", /fix one line on the sketch/);
+assert.doesNotMatch(correctWhy?.text ?? "", /I can keep this file current\. Ask anything/);
 assert.match(correctWhy?.text ?? "", /What should I change\?/);
 assert.ok((correctWhy?.actions ?? []).some((item) => item.label === "Occupancy"));
 
@@ -2865,6 +2874,24 @@ assertAnswerThenRestore(
   /in queue|I stay the interface|licensed originator reviews/i,
   { labels: occupancyChips },
 );
+assertAnswerThenRestore(workspaceReply("ACR benefits", atOccupancy), new RegExp(ACR_BENEFITS_COPY.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")), {
+  labels: occupancyChips,
+});
+assert.equal(workspaceReply("ACR benefits", atOccupancy)?.text?.startsWith(ACR_BENEFITS_COPY), true);
+assertAnswerThenRestore(workspaceReply("closing costs", atOccupancy), new RegExp(COST_COPY.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")), {
+  labels: occupancyChips,
+});
+assert.equal(workspaceReply("closing costs", atOccupancy)?.text?.startsWith(COST_COPY), true);
+assertAnswerThenRestore(workspaceReply("can I do this on my phone", atOccupancy), new RegExp(PHONE_COPY.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")), {
+  labels: occupancyChips,
+});
+assert.equal(workspaceReply("can I do this on my phone", atOccupancy)?.text?.startsWith(PHONE_COPY), true);
+assertAnswerThenRestore(workspaceReply("when do I close?", atOccupancy), new RegExp(TIMELINE_COPY.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")), {
+  labels: occupancyChips,
+});
+assert.doesNotMatch(workspaceReply("ACR benefits", atOccupancy)?.text ?? "", /I can keep this file current\. Ask anything/);
+assert.doesNotMatch(workspaceReply("closing costs", atOccupancy)?.text ?? "", /%\s*reward|public percent|\$[\d,]+ to \$[\d,]+/i);
+assert.equal(workspaceReply("will i qualify", atOccupancy)?.text?.startsWith(NO_APPROVE_COPY), true);
 
 const creditChips = (workspacePromptCopy("credit", afterFunds).actions ?? []).map((item) => item.label);
 assertAnswerThenRestore(workspaceReply("will i qualify", afterFunds), /cannot approve, lock, or commit to lend/i, {
@@ -2915,6 +2942,21 @@ assertAnswerThenRestore(qualifyAtReview, /cannot approve, lock, or commit to len
   text: /does it look right/i,
   labels: looksChips,
 });
+const docsStartChips = ["Start with ID", "Skip", "Not yet"];
+assertAnswerThenRestore(workspaceReply("do I need my tax return", afterIncome), new RegExp(W2_TAX_RETURN_COPY.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")), {
+  labels: docsStartChips,
+});
+assert.equal(workspaceReply("do I need my tax return", afterIncome)?.text?.startsWith(W2_TAX_RETURN_COPY), true);
+assertAnswerThenRestore(workspaceReply("ACR benefits", afterIncome), new RegExp(ACR_BENEFITS_COPY.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")), {
+  labels: docsStartChips,
+});
+assertAnswerThenRestore(workspaceReply("closing costs", afterIncome), new RegExp(COST_COPY.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")), {
+  labels: docsStartChips,
+});
+assertAnswerThenRestore(workspaceReply("can I do this on my phone", afterIncome), new RegExp(PHONE_COPY.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")), {
+  labels: docsStartChips,
+});
+
 assertAnswerThenRestore(workspaceReply("hi", afterIncomeReady), /^Hi\./, {
   text: /does it look right/i,
   labels: looksChips,
@@ -4832,6 +4874,7 @@ assert.doesNotMatch(guidelineStoreSrc, /agency: "fha"|agency: "va"/);
 assert.equal(queryConventionalGuidelines().every((row) => row.agency === "fannie" || row.agency === "freddie"), true);
 
 const workspaceSrc = readFileSync(join(root, "components/fox/workspace.ts"), "utf8");
+assert.ok(!workspaceSrc.includes("I can keep this file current. Ask anything, or take the next step when you’re ready."));
 assert.ok(!workspaceSrc.includes("What’s a rough amount?"));
 assert.ok(!workspaceSrc.includes('label: "Amount"'));
 assert.ok(!workspaceSrc.includes('label: "Numbers"'));
