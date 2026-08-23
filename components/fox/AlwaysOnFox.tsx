@@ -811,7 +811,7 @@ export function AlwaysOnFox({
     const ask = isStart
       ? workspacePromptCopy(prompt, live)
       : promptCopy(prompt, live);
-    const mustShowReview = isStart && prompt === "review";
+    const mustShowReview = isStart && prompt === "review" && !live.docsHeld;
     if (skipPromptSync.current) {
       skipPromptSync.current = false;
       if (!mustShowReview) return;
@@ -834,7 +834,7 @@ export function AlwaysOnFox({
   useEffect(() => {
     if (!ready || !isStart) return;
     const live = getFoxDraft();
-    if (workspacePrompt(live) !== "review") return;
+    if (live.docsHeld || workspacePrompt(live) !== "review") return;
     const ask = workspacePromptCopy("review", live);
     commitMessages((prev) => (hasReviewAsk(prev) ? prev : [...prev, foxAskMessage(ask)]));
   }, [

@@ -801,7 +801,7 @@ function incomeFromText(text: string) {
 
 function documentsAskText(draft: FoxIntakeDraft): string {
   if (draft.awaitingYearsInBusiness) return YEARS_IN_BUSINESS_ASK;
-  if (offeringDocStart(draft) && draft.docsHeld) return HOLD_DOCS_COPY;
+  if (draft.docsHeld && !draft.docsStarted && !draft.sampleAccepted) return HOLD_DOCS_COPY;
   if (offeringDocStart(draft)) return sketchAndStartDocsCopy(draft).text;
   const invite = nextDocInvite(draft);
   if (invite) return DOC_INVITE_COPY[invite];
@@ -1015,6 +1015,37 @@ function holdDocsAsk() {
   };
 }
 
+export const CORRECT_ASK = "What should I change?";
+
+const CORRECTION_CHIP_IDS = new Set([
+  "occupancy",
+  "price",
+  "home",
+  "down",
+  "loan",
+  "line",
+  "credit",
+  "income",
+]);
+
+function correctionFieldActions(draft: FoxIntakeDraft): FoxAction[] {
+  return requiredStructureLines(draft)
+    .filter((line) => CORRECTION_CHIP_IDS.has(line.id))
+    .map((line) => ({
+      id: `fix-${line.id}`,
+      label: line.label,
+      event: "bubble" as const,
+      capture: { field: "correct" as const, value: line.prompt, line: line.id },
+    }));
+}
+
+function correctionAsk(draft: FoxIntakeDraft) {
+  return {
+    text: CORRECT_ASK,
+    actions: correctionFieldActions(draft),
+  };
+}
+
 function docInviteActions(): FoxAction[] {
   return [
     { id: "upload-this", label: "Upload this", event: "open-docs", capture: { field: "open-docs" } },
@@ -1160,6 +1191,7 @@ export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
     return "income";
   }
   if (draft.correcting) return draft.correcting;
+  if (draft.docsHeld && !draft.docsStarted && !draft.sampleAccepted) return "documents";
   if (!draft.productIntent) return "product";
   if (needsJumboPurpose(draft)) return "jumbo-purpose";
   if (!draft.occupancyAsked && !draft.occupancyChoice.value) return "occupancy";
@@ -1381,6 +1413,9 @@ function workspaceAskCopy(
     if (draft.awaitingYearsInBusiness) {
       return { text: YEARS_IN_BUSINESS_ASK };
     }
+    if (draft.docsHeld && !draft.docsStarted && !draft.sampleAccepted) {
+      return holdDocsAsk();
+    }
     if (offeringDocStart(draft) && draft.docsHeld) {
       return holdDocsAsk();
     }
@@ -1415,9 +1450,7 @@ function workspaceAskCopy(
     };
   }
   if (prompt === "correct") {
-    return {
-      text: "Tap any line on the structure.",
-    };
+    return correctionAsk(draft);
   }
   if (prompt === "confirm-proposal") {
     if (draft.pendingConflict) {
@@ -3093,7 +3126,10 @@ export function workspaceReply(
   }
 
   if (prompt === "review") {
-    if (/(looks right|confirm|yes|correct|good)/i.test(lower)) {
+    if (/(correction|fix|wrong|no|edit)/i.test(lower) && !/looks right/.test(lower)) {
+      return { ...workspacePromptCopy("correct", draft), capture: { field: "needs-correction" } };
+    }
+    if (/(looks right|confirm|yes|correct|good)/i.test(lower) && !/correction/.test(lower)) {
       if (!canLooksRight(draft)) {
         return {
           text: missingAmountAsk(draft) || "I still need a required amount on this file.",
@@ -3105,9 +3141,6 @@ export function workspaceReply(
         ...workspacePromptCopy(nextPrompt === "review" ? "done" : nextPrompt, nextDraft),
         capture: { field: "confirm-draft" },
       };
-    }
-    if (/(correction|fix|wrong|no|edit)/i.test(lower)) {
-      return { ...workspacePromptCopy("correct", draft), capture: { field: "needs-correction" } };
     }
     if (looksLikeQuestion(q)) {
       return restoredAsk("This is the file as it stands. Confirm it, or say what to change.", draft);

@@ -99,6 +99,7 @@ import {
   fileSummaryFacts,
   GEO_STOP_COPY,
   HOLD_DOCS_COPY,
+  CORRECT_ASK,
   HELOC_OFFER_COPY,
   JUMBO_OFFER_COPY,
   JUMBO_PURPOSE_ASK,
@@ -762,6 +763,33 @@ assert.deepEqual(
   (workspacePromptCopy("documents", heldDocs).actions ?? []).map((item) => item.label),
   ["Start with ID", "Ask Fox"],
 );
+const refiOffer = withIncome(
+  withRefiFunds(
+    draft({
+      path: "acr",
+      productIntent: "refinance",
+      occupancyAsked: true,
+      occupancyChoice: { ...emptyDraft().occupancyChoice, value: "second-home" },
+      creditAsked: true,
+      creditBand: "760+",
+    }),
+    500_000,
+    1_000_000,
+  ),
+  "w2",
+);
+assert.equal(workspacePrompt(refiOffer), "documents");
+const refiNotYet = workspaceReply("Not yet", refiOffer);
+assert.equal(refiNotYet?.capture?.field, "hold-docs");
+assert.equal(refiNotYet?.text, HOLD_DOCS_COPY);
+assert.deepEqual(
+  (refiNotYet?.actions ?? []).map((item) => item.label),
+  ["Start with ID", "Ask Fox"],
+);
+assert.ok(!(refiNotYet?.actions ?? []).some((item) => item.label === "Looks right"));
+assert.equal(workspacePrompt({ ...refiOffer, docsHeld: true }), "documents");
+assert.notEqual(workspacePrompt({ ...refiOffer, docsHeld: true }), "review");
+assert.equal(workspacePromptCopy("documents", { ...refiOffer, docsHeld: true }).text, HOLD_DOCS_COPY);
 const skipIdFromOffer = workspaceReply("Skip", afterIncome);
 assert.equal(skipIdFromOffer?.capture?.field, "skip-docs");
 assert.equal(skipIdFromOffer?.text, DOC_INVITE_COPY.paystub);
@@ -1268,11 +1296,28 @@ assert.doesNotMatch(
 );
 
 const correct = workspacePromptCopy("correct", afterIncome);
-assert.equal(correct.text, "Tap any line on the structure.");
-assert.ok(!correct.actions?.length);
+assert.equal(correct.text, CORRECT_ASK);
+assert.doesNotMatch(correct.text, /Tap any line on the structure/);
+assert.ok((correct.actions ?? []).some((item) => item.label === "Occupancy"));
+assert.ok((correct.actions ?? []).some((item) => item.label === "Purchase price" || item.label === "Down payment"));
+assert.ok((correct.actions ?? []).some((item) => item.label === "Credit"));
+assert.ok((correct.actions ?? []).some((item) => item.label === "Income"));
+const needsFix = workspaceReply("Needs a correction", skipDocInvites(afterIncome));
+assert.equal(needsFix?.capture?.field, "needs-correction");
+assert.equal(needsFix?.text, CORRECT_ASK);
+assert.ok((needsFix?.actions ?? []).some((item) => item.label === "Occupancy"));
+const fixOccupancy = workspaceReply("occupancy is second home", {
+  ...skipDocInvites(afterIncome),
+  correcting: "correct",
+});
+assert.equal(fixOccupancy?.capture?.field, "occupancy");
+assert.equal(
+  fixOccupancy?.capture && "value" in fixOccupancy.capture ? fixOccupancy.capture.value : "",
+  "second-home",
+);
 const leftoverCorrect = promptCopy("correct");
-assert.equal(leftoverCorrect.text, "Tap any line on the structure.");
-assert.ok(!leftoverCorrect.actions?.length);
+assert.equal(leftoverCorrect.text, CORRECT_ASK);
+assert.doesNotMatch(leftoverCorrect.text, /Tap any line on the structure/);
 
 const afterLooks = draft({
   ...afterIncome,
@@ -3626,6 +3671,9 @@ assert.ok(!completenessSource.includes("if (!draft.timelineChoice.value) return 
 assert.ok(workspaceSrc.includes("function withFoxFirst") || workspaceSrc.includes("withFoxFirst"));
 assert.ok(!workspaceSrc.includes('if (!draft.timelineAsked && !draft.timelineChoice.value) return "timeline"'));
 assert.ok(workspaceSrc.includes("The notepad looks complete enough to move. Does it look right?"));
+assert.ok(workspaceSrc.includes("What should I change?"));
+assert.ok(!workspaceSrc.includes("Tap any line on the structure."));
+assert.ok(foxSource.includes("docsHeld"));
 assert.ok(!workspaceSrc.includes("Here’s the file. Does this look right?"));
 assert.ok(workspaceSrc.includes("nextDocInvite"));
 assert.ok(workspaceSrc.includes('label: "Upload this"'));

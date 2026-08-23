@@ -283,7 +283,7 @@ export function promptCopy(prompt: FoxPrompt, draft?: FoxIntakeDraft): { text: s
   }
   if (prompt === "correct") {
     return {
-      text: "Tap any line on the structure.",
+      text: "What should I change?",
     };
   }
   return {
@@ -462,11 +462,11 @@ function captureForPrompt(
     }
   }
   if (prompt === "review") {
-    if (/(looks right|confirm|yes|correct|good)/i.test(raw)) {
-      return { ...promptCopy("done"), capture: { field: "confirm-draft" } };
-    }
-    if (/(correction|fix|wrong|no|edit)/i.test(raw)) {
+    if (/(correction|fix|wrong|no|edit)/i.test(raw) && !/looks right/.test(raw)) {
       return { ...promptCopy("correct"), capture: { field: "needs-correction" } };
+    }
+    if (/(looks right|confirm|yes|correct|good)/i.test(raw) && !/correction/.test(raw)) {
+      return { ...promptCopy("done"), capture: { field: "confirm-draft" } };
     }
   }
   if (prompt === "correct") {
@@ -478,7 +478,7 @@ function captureForPrompt(
       { test: /doc/, value: "documents" },
     ];
     const hit = map.find((item) => item.test.test(raw.toLowerCase()));
-    if (!hit) return { text: "Tap any line on the structure." };
+    if (!hit) return { text: "What should I change?" };
     return { ...promptCopy(hit.value as FoxPrompt, draft), capture: { field: "correct", value: hit.value } };
   }
   return null;
