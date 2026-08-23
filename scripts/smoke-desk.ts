@@ -83,7 +83,6 @@ import {
 import {
   MOTION_COPY,
   applyLooksRightMotion,
-  persistAfterLoanWrite,
   creditPullPermitted,
   gatheringCopy,
   gatheringList,
@@ -117,6 +116,7 @@ import {
   sanitizeExtractedFields,
   skipRemainingClasses,
   slotFromFilename as slotFromName,
+  nextDocInvite,
 } from "../components/fox/fileWrite";
 import { FAILED_READ_NOTE } from "../lib/docs/accept";
 import { classifyAndExtract, imageDataUrl, visionChatBody } from "../lib/docs/extract";
@@ -143,6 +143,7 @@ import {
   CORRECT_ASK,
   HELOC_OFFER_COPY,
   JUMBO_OFFER_COPY,
+  loanOverPriceCopy,
   JUMBO_PURPOSE_ASK,
   lastFoxTurn,
   loanLooksAboveCeiling,
@@ -254,7 +255,8 @@ function assertIncomeChipsHoldOverQueue(live: Parameters<typeof nextFoxAsk>[0], 
 
 function skipDocInvites(base: ReturnType<typeof draft>) {
   let next: ReturnType<typeof draft> = base;
-  for (let i = 0; i < 8 && workspacePrompt(next) === "documents"; i += 1) {
+  for (let i = 0; i < 8; i += 1) {
+    if (workspacePrompt(next) !== "documents" && !nextDocInvite(next)) break;
     next = { ...next, ...skipCurrentInvite(next) };
   }
   return next;
@@ -284,7 +286,8 @@ function afterProceed(
 }
 
 function confirmLooksRight() {
-  for (let i = 0; i < 8 && workspacePrompt(getFoxDraft()) === "documents"; i += 1) {
+  for (let i = 0; i < 8; i += 1) {
+    if (workspacePrompt(getFoxDraft()) !== "documents" && !nextDocInvite(getFoxDraft())) break;
     applyCapture({ field: "skip-docs" });
   }
   return applyCapture({ field: "confirm-draft" });
@@ -1055,7 +1058,7 @@ assert.equal(
 );
 assert.match(actuallyPrice?.text ?? "", /\$900,000/);
 assert.equal(afterIncome.occupancyChoice.value, "primary");
-assert.equal(workspacePrompt({ ...afterIncome, propertyValueAmount: 900000 }), "documents");
+assert.equal(workspacePrompt({ ...afterIncome, propertyValueAmount: 900000 }), "over-price");
 
 const heldWhy = workspaceReply("why do you need that?", heldDocs);
 assert.match(heldWhy?.text ?? "", /government ID|name on this file/i);
@@ -4625,11 +4628,31 @@ const nonsenseBuy = withIncome(
 assert.ok(loanExceedsPurchasePrice(nonsenseBuy));
 assert.ok(canLooksRight(skipDocInvites(nonsenseBuy)));
 const nonsenseLooks = applyLooksRightMotion(skipDocInvites(nonsenseBuy));
-assert.equal(motionOf(nonsenseLooks), "escalated");
-assert.equal(nextActorOf(nonsenseLooks), "ONYX");
+assert.notEqual(motionOf(nonsenseLooks), "escalated");
+assert.equal(workspacePrompt(skipDocInvites(nonsenseBuy)), "over-price");
+assert.equal(workspaceReply("Looks right", skipDocInvites(nonsenseBuy))?.text, loanOverPriceCopy(nonsenseBuy));
 assert.equal(MOTION_COPY.escalated, ESCALATE_LINE);
-assert.equal(storeEscalate({ product: "buy", purposeHint: "purchase", purchasePrice: 850000, loanAmount: 860000 }).action, "escalate");
-assert.equal(storeEscalate({ product: "buy", purposeHint: "purchase", purchasePrice: 850000, loanAmount: 860000 }).borrowerLine, ESCALATE_LINE);
+assert.equal(storeEscalate({ product: "buy", purposeHint: "purchase", purchasePrice: 850000, loanAmount: 860000 }).action, "stay");
+assert.equal(
+  storeEscalate({
+    product: "buy",
+    purposeHint: "purchase",
+    purchasePrice: 850000,
+    loanAmount: 860000,
+    commitmentRequired: true,
+  }).action,
+  "escalate",
+);
+assert.equal(
+  storeEscalate({
+    product: "buy",
+    purposeHint: "purchase",
+    purchasePrice: 850000,
+    loanAmount: 860000,
+    commitmentRequired: true,
+  }).borrowerLine,
+  ESCALATE_LINE,
+);
 assert.ok(canLooksRight(skipDocInvites(nonsenseBuy)));
 assert.doesNotMatch(
   `${MOTION_COPY.escalated} ${guidelineCaution(nonsenseBuy) ?? ""}`,
@@ -4676,26 +4699,38 @@ const overPriceBase = draft({
   propertyValueAmount: 500000,
 });
 assert.equal(workspacePrompt(overPriceBase), "amount");
+const overPriceLine =
+  "The loan is $600,000 on a $500,000 price. That usually means the price or the loan amount is wrong. I can edit either one.";
 for (const typed of ["loan 600000", "600000", "600,000"]) {
   const over = workspaceReply(typed, overPriceBase);
   assert.equal(over?.capture?.field, "loanAmount", typed);
   assert.equal(over?.capture && "value" in over.capture ? over.capture.value : "", "600000", typed);
-  assert.equal(over?.text, ESCALATE_LINE, typed);
-  assert.doesNotMatch(over?.text ?? "", /under the purchase price/i);
+  assert.equal(over?.text, overPriceLine, typed);
+  assert.deepEqual(
+    (over?.actions ?? []).map((item) => item.label),
+    ["Purchase price", "Loan amount", "That’s right"],
+  );
+  assert.doesNotMatch(over?.text ?? "", /under the purchase price|licensed originator is on this exception/i);
 }
 const downOverPrice = workspaceReply("down 600000", overPriceBase);
 assert.notEqual(downOverPrice?.capture?.field, "loanAmount");
 assert.match(downOverPrice?.text ?? "", /under the purchase price/i);
-const overWritten = persistAfterLoanWrite({
+const overWritten = draft({
   ...overPriceBase,
   loanAmountValue: 600000,
   amountAsked: true,
 });
 assert.equal(overWritten.loanAmountValue, 600000);
 assert.equal(overWritten.propertyValueAmount, 500000);
-assert.equal(motionOf(overWritten), "escalated");
+assert.equal(loanOverPriceCopy(overWritten), overPriceLine);
+assert.notEqual(motionOf(overWritten), "escalated");
+assert.equal(workspacePrompt(overWritten), "over-price");
 assert.ok(previewFacts(overWritten).some((fact) => fact.id === "price" && /\$500,000/.test(fact.value)));
 assert.ok(previewFacts(overWritten).some((fact) => fact.id === "loan" && /\$600,000/.test(fact.value)));
+const overConfirm = workspaceReply("That’s right", overWritten);
+assert.equal(overConfirm?.capture?.field, "over-price-confirm");
+assert.equal(overConfirm?.text, ESCALATE_LINE);
+assert.equal(motionOf({ ...overWritten, overPriceConfirmed: true, motion: "escalated" }), "escalated");
 
 assert.ok(
   previewFacts(fromUrl).some(

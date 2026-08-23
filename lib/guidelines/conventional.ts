@@ -609,7 +609,7 @@ export function escalate(
   if (file.unresolvedConflict) {
     return { action: "escalate", reason: "unresolvedConflict", borrowerLine: ESCALATE_LINE };
   }
-  if (loanExceedsPrice(file)) {
+  if (loanExceedsPrice(file) && file.commitmentRequired) {
     return { action: "escalate", reason: "loanExceedsPrice", borrowerLine: ESCALATE_LINE };
   }
   return { action: "stay", reason: "stay", borrowerLine: STAY_LINE };

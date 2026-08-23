@@ -409,7 +409,7 @@ export function factsFromDraft(draft: FoxIntakeDraft): FileFacts {
     namedDistress: Boolean(draft.creditEvent),
     wantsCreditDecision: false,
     requestedHuman: Boolean(draft.originatorRequested),
-    commitmentRequired: false,
+    commitmentRequired: Boolean(draft.overPriceConfirmed),
     unresolvedConflict: false,
   };
 }

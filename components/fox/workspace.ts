@@ -78,6 +78,7 @@ import {
   isHelocFile,
   isPurchaseLike,
   isRefiLike,
+  loanExceedsPurchasePrice,
   missingAmountAsk,
   parseFundsRole,
   incomeConfirmActions,
@@ -126,8 +127,8 @@ import {
 } from "@/lib/guidelines/conventional";
 import {
   applyEmailThenFinish,
+  applyEscalateMotion,
   applyLooksRightMotion,
-  persistAfterLoanWrite,
   emailMissing,
   finishCaptureFromText,
   finishLineActions,
@@ -1635,6 +1636,7 @@ export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
   if (fundsAskNeeded(draft)) return "amount";
   if (refiLoanAskNeeded(draft) || (isHelocFile(draft) && !hasHelocLine(draft))) return "amount";
   if (propertyValueAskNeeded(draft)) return "value";
+  if (needsOverPriceCheck(draft)) return "over-price";
   if (!sketchNumberReady(draft)) {
     return draftUsesPurchasePrice(draft) && !hasPropertyValue(draft) ? "value" : "amount";
   }
@@ -1720,6 +1722,12 @@ function workspaceAskCopy(
     return {
       text: GEO_STOP_COPY,
       actions: draft.originatorRequested ? undefined : [requestHumanAction()],
+    };
+  }
+  if (prompt === "over-price") {
+    return {
+      text: loanOverPriceCopy(draft),
+      actions: loanOverPriceActions(),
     };
   }
   if (prompt === "occupancy") {
@@ -1991,6 +1999,50 @@ export function formatMoney(value: number) {
   return `$${formatDollars(value)}`;
 }
 
+export function needsOverPriceCheck(draft: FoxIntakeDraft) {
+  return (
+    isPurchaseLike(draft) &&
+    loanExceedsPurchasePrice(draft) &&
+    !draft.overPriceConfirmed &&
+    draft.motion !== "escalated"
+  );
+}
+
+export function loanOverPriceCopy(draft: FoxIntakeDraft) {
+  const price =
+    draft.propertyValueAmount != null && draft.propertyValueAmount > 0
+      ? formatMoney(draft.propertyValueAmount)
+      : "the price";
+  const loan =
+    draft.loanAmountValue != null && draft.loanAmountValue > 0
+      ? formatMoney(draft.loanAmountValue)
+      : "the loan";
+  return `The loan is ${loan} on a ${price} price. That usually means the price or the loan amount is wrong. I can edit either one.`;
+}
+
+export function loanOverPriceActions(): FoxAction[] {
+  return [
+    {
+      id: "over-price-price",
+      label: "Purchase price",
+      event: "bubble",
+      capture: { field: "correct", value: "value", line: "price" },
+    },
+    {
+      id: "over-price-loan",
+      label: "Loan amount",
+      event: "bubble",
+      capture: { field: "correct", value: "amount", line: "loan" },
+    },
+    {
+      id: "over-price-confirm",
+      label: "That’s right",
+      event: "bubble",
+      capture: { field: "over-price-confirm" },
+    },
+  ];
+}
+
 /** Live composer commas. Returns null when the text is not a pure money number. */
 export function formatLiveMoneyInput(raw: string): string | null {
   if (/[a-zA-Z]/.test(raw)) return null;
@@ -2122,17 +2174,17 @@ function replyToFundsAsk(
         text: "What’s the down payment or loan amount? A number under the purchase price works.",
       };
     }
-    const nextDraft = persistAfterLoanWrite({
+    const nextDraft = {
       ...draft,
       correcting: null,
       correctingLine: null,
       pendingProposal: null,
       loanAmountValue: parsed.dollars,
       amountAsked: true,
-    });
+    };
     return {
-      text: MOTION_COPY.escalated,
-      actions: finishLineActions(nextDraft),
+      text: loanOverPriceCopy(nextDraft),
+      actions: loanOverPriceActions(),
       capture: { field: "loanAmount", value: String(parsed.dollars) },
     };
   }
@@ -2790,6 +2842,9 @@ function draftAfterCapture(draft: FoxIntakeDraft, capture: Capture): FoxIntakeDr
   if (capture.field === "govProgram") return { ...next, govProgram: capture.value };
   if (capture.field === "creditEvent") return { ...next, creditEvent: capture.value };
   if (capture.field === "cashOut") return { ...next, cashOut: true };
+  if (capture.field === "over-price-confirm") {
+    return applyEscalateMotion({ ...next, overPriceConfirmed: true });
+  }
   if (capture.field === "occupancy") {
     return { ...next, occupancyChoice: { ...draft.occupancyChoice, value: capture.value }, occupancyAsked: true };
   }
@@ -2801,15 +2856,13 @@ function draftAfterCapture(draft: FoxIntakeDraft, capture: Capture): FoxIntakeDr
   }
   if (capture.field === "loanAmount") {
     const n = Number(capture.value.split(":")[0].replace(/,/g, ""));
-    return persistAfterLoanWrite(
-      withComputedCompanion(
-        withMatrixAfterAmount({
-          ...next,
-          amountAsked: true,
-          loanAmountValue: Number.isFinite(n) && n > 0 ? n : draft.loanAmountValue,
-        }),
-        hasDownPayment(draft) ? "loan" : undefined,
-      ),
+    return withComputedCompanion(
+      withMatrixAfterAmount({
+        ...next,
+        amountAsked: true,
+        loanAmountValue: Number.isFinite(n) && n > 0 ? n : draft.loanAmountValue,
+      }),
+      hasDownPayment(draft) ? "loan" : undefined,
     );
   }
   if (capture.field === "propertyValue") {
@@ -3199,6 +3252,37 @@ export function workspaceReply(
 
   const matrix = matrixReply(q, draft, prompt);
   if (matrix) return matrix;
+
+  if (prompt === "over-price" || (needsOverPriceCheck(draft) && !draft.correcting)) {
+    if (
+      /that['’]?s right|intentional|keep (this|these|the loan)|this is (the loan|right)|keep these numbers/i.test(
+        lower,
+      )
+    ) {
+      const nextDraft = applyEscalateMotion({ ...draft, overPriceConfirmed: true });
+      return {
+        text: MOTION_COPY.escalated,
+        actions: finishLineActions(nextDraft),
+        capture: { field: "over-price-confirm" },
+      };
+    }
+    if (/purchase price|the price/.test(lower) && !/loan/.test(lower)) {
+      return {
+        ...workspacePromptCopy("value", { ...draft, correcting: "value", correctingLine: "price" }),
+        capture: { field: "correct", value: "value", line: "price" },
+      };
+    }
+    if (/loan amount|\bloan\b/.test(lower) && !/purchase price/.test(lower)) {
+      return {
+        ...workspacePromptCopy("amount", { ...draft, correcting: "amount", correctingLine: "loan" }),
+        capture: { field: "correct", value: "amount", line: "loan" },
+      };
+    }
+    return {
+      text: loanOverPriceCopy(draft),
+      actions: loanOverPriceActions(),
+    };
+  }
 
   if (/(what is acr|what.?s acr|active credit relationship)/i.test(lower)) {
     return {
@@ -3721,6 +3805,12 @@ export function workspaceReply(
       return { ...workspacePromptCopy("correct", draft), capture: { field: "needs-correction" } };
     }
     if (/(looks right|confirm|yes|correct|good)/i.test(lower) && !/correction/.test(lower)) {
+      if (needsOverPriceCheck(draft)) {
+        return {
+          text: loanOverPriceCopy(draft),
+          actions: loanOverPriceActions(),
+        };
+      }
       if (!canLooksRight(draft)) {
         return {
           text: missingAmountAsk(draft) || "I still need a required amount on this file.",

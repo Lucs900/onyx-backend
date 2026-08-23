@@ -204,6 +204,7 @@ export type FoxIntakeDraft = {
   govProgram?: GovProgram;
   creditEvent?: NamedCreditEvent;
   cashOut?: boolean;
+  overPriceConfirmed?: boolean;
   loanAmountValue?: number;
   propertyValueAmount?: number;
   downPaymentAmount?: number;
@@ -289,6 +290,7 @@ export type FoxPrompt =
   | "pay-frequency"
   | "qualifying"
   | "years-in-business"
+  | "over-price"
   | "done";
 
 export type Capture =
@@ -342,6 +344,7 @@ export type Capture =
   | { field: "what-happens-next" }
   | { field: "ask-fox" }
   | { field: "talk-originator" }
+  | { field: "over-price-confirm" }
   | { field: "proceed" }
   | { field: "not-yet" }
   | { field: "upload-more" }

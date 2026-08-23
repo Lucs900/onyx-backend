@@ -133,6 +133,7 @@ export function taskContext(stage: FoxStage, draft: FoxIntakeDraft) {
     "pay-frequency": "Asking: pay frequency",
     qualifying: "Asking: qualifying income",
     "years-in-business": "Asking: years in business",
+    "over-price": "Checking price and loan",
     done: "Draft confirmed",
   };
   return labels[currentPrompt(draft)];

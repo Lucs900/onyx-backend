@@ -33,7 +33,6 @@ import {
   applyEmailThenFinish,
   applyEscalateMotion,
   applyLooksRightMotion,
-  persistAfterLoanWrite,
   applyNotYetMotion,
   applyNudgeMotion,
   applyProceedMotion,
@@ -196,6 +195,7 @@ function normalize(value: unknown): FoxIntakeDraft {
         ? raw.creditEvent
         : undefined,
     cashOut: Boolean(raw.cashOut),
+    overPriceConfirmed: Boolean(raw.overPriceConfirmed),
     loanAmountValue: numberOrUndefined(raw.loanAmountValue),
     propertyValueAmount: numberOrUndefined(raw.propertyValueAmount),
     downPaymentAmount: numberOrUndefined(raw.downPaymentAmount),
@@ -1226,6 +1226,12 @@ export function applyCapture(capture: Capture) {
       loStatus: current.loStatus ?? "in review",
     });
   }
+  if (capture.field === "over-price-confirm") {
+    return commit({
+      ...applyEscalateMotion({ ...current, overPriceConfirmed: true }),
+      loStatus: current.loStatus ?? "in review",
+    });
+  }
   if (capture.field === "correct") {
     return commit({
       ...current,
@@ -1363,20 +1369,18 @@ export function applyCapture(capture: Capture) {
     const hasLoan = Number.isFinite(loan) && loan > 0;
     const hasValue = value != null && Number.isFinite(value) && value > 0;
     return commit(
-      persistAfterLoanWrite(
-        withWorkspaceScenario(
-          withComputedCompanion(
-            withMatrixAfterAmount({
-              ...current,
-              amountAsked: true,
-              correcting: null,
-              correctingLine: null,
-              valueAsked: hasValue ? true : current.valueAsked,
-              loanAmountValue: hasLoan ? loan : current.loanAmountValue,
-              propertyValueAmount: hasValue ? value : current.propertyValueAmount,
-            }),
-            current.downPaymentAmount != null && current.downPaymentAmount > 0 ? "loan" : undefined,
-          ),
+      withWorkspaceScenario(
+        withComputedCompanion(
+          withMatrixAfterAmount({
+            ...current,
+            amountAsked: true,
+            correcting: null,
+            correctingLine: null,
+            valueAsked: hasValue ? true : current.valueAsked,
+            loanAmountValue: hasLoan ? loan : current.loanAmountValue,
+            propertyValueAmount: hasValue ? value : current.propertyValueAmount,
+          }),
+          current.downPaymentAmount != null && current.downPaymentAmount > 0 ? "loan" : undefined,
         ),
       ),
     );
