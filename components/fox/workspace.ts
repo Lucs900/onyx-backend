@@ -57,8 +57,8 @@ import {
   layer2Open,
   layer2AskCopy,
   layer2AskActions,
-  skipCurrentStillUseful,
-  nextStillUsefulItem,
+  stillUsefulVisible,
+  shortListSpeak,
 } from "./fileWrite";
 import {
   SUGGESTED_NOTE,
@@ -1040,7 +1040,7 @@ export function docReactionAsk(
 }
 
 function rememberedAskCopy(draft: FoxIntakeDraft): string | undefined {
-  if (layer2Open(draft)) return layer2AskCopy(draft);
+  if (stillUsefulVisible(draft)) return layer2AskCopy(draft);
   if (!shouldAskYearsInBusiness(draft)) return undefined;
   if (draft.motion === "in_queue" || draft.sampleAccepted) return YEARS_IN_BUSINESS_ASK;
   return undefined;
@@ -1069,7 +1069,7 @@ export function sketchAndStartDocsCopy(draft: FoxIntakeDraft): {
     : "That’s the sketch. It’s on the notepad.";
   return {
     text: sketch,
-    followUp: "If you want, I can start documents. First is a government ID, so the file has a name.",
+    followUp: shortListSpeak(draft),
   };
 }
 
@@ -1223,6 +1223,45 @@ function docInviteActions(): FoxAction[] {
 function looksLikeQuestion(text: string) {
   const trimmed = text.trim();
   return /\?$/.test(trimmed) || /^(why|what|how|when|who|where|can you|could you)\b/i.test(trimmed);
+}
+
+const NO_APPROVE_COPY = "I can prepare a file. I cannot approve, lock, or commit to lend.";
+const HELLO_COPY = "Hi.";
+const AFTER_PROCEED_COPY =
+  "After Proceed the file goes in queue. I stay the interface. A licensed originator reviews it — I’ll bring the result back here.";
+
+function asksApproval(text: string) {
+  const lower = text.toLowerCase();
+  if (/(approv|lock|commit to lend)/i.test(lower)) return true;
+  return /\b(will i|do i|can i|am i)\s+(qualif|approved)/i.test(lower);
+}
+
+function isGreeting(text: string) {
+  return /^(hi|hello|hey)(?:\s+(?:there|fox))?[.!]?\s*$/i.test(text.trim());
+}
+
+function asksProceedAftermath(text: string) {
+  return /what happens after proceed|after (i )?proceed\b/i.test(text);
+}
+
+function isFreeTextAtGate(text: string) {
+  return (
+    asksApproval(text) ||
+    isGreeting(text) ||
+    asksProceedAftermath(text) ||
+    looksLikeQuestion(text)
+  );
+}
+
+function freeTextAnswer(input: string, draft: FoxIntakeDraft) {
+  if (asksApproval(input)) return NO_APPROVE_COPY;
+  if (isGreeting(input)) return HELLO_COPY;
+  if (asksProceedAftermath(input)) return AFTER_PROCEED_COPY;
+  return sideQuestionAnswer(input, draft);
+}
+
+function answerThenRestore(input: string, draft: FoxIntakeDraft) {
+  return restoredAsk(freeTextAnswer(input, draft), draft);
 }
 
 function restoredAsk(answer: string, draft: FoxIntakeDraft) {
@@ -2161,11 +2200,11 @@ export function workspaceUpdateCopy(capture: Capture, draft: FoxIntakeDraft) {
     return "ACR is the desk that stays open after close — letter, scout, and reward. This file is still the loan.";
   }
   if (capture.field === "what-happens-next") {
-    return layer2Open(draft) ? layer2AskCopy(draft) : MOTION_COPY.whatHappensNext;
+    return stillUsefulVisible(draft) ? layer2AskCopy(draft) : MOTION_COPY.whatHappensNext;
   }
   if (capture.field === "ask-fox") {
     if (draft.docsHeld && !draft.sampleAccepted) return HOLD_DOCS_ASK_FOX;
-    if (layer2Open(draft)) return layer2AskCopy(draft);
+    if (stillUsefulVisible(draft)) return layer2AskCopy(draft);
     return MOTION_COPY.askFox;
   }
   if (capture.field === "talk-originator") {
@@ -2767,13 +2806,21 @@ export function workspaceReply(
   const prompt = workspacePrompt(draft);
 
   if (draft.awaitingYearsInBusiness && draft.correcting !== "qualifying") {
-    if (looksLikeQuestion(q)) {
-      return restoredAsk(
-        /(what is acr|what.?s acr|active credit relationship)/i.test(q)
-          ? sideQuestionAnswer(q, draft)
-          : "How long you’ve been running it helps me read the return. Not a form — just the file.",
-        draft,
-      );
+    if (isFreeTextAtGate(q)) {
+      if (
+        looksLikeQuestion(q) &&
+        !asksApproval(q) &&
+        !asksProceedAftermath(q) &&
+        /\b(years?|how long|business|self.?employ|why do you need)\b/i.test(q)
+      ) {
+        return restoredAsk(
+          /(what is acr|what.?s acr|active credit relationship)/i.test(q)
+            ? sideQuestionAnswer(q, draft)
+            : "How long you’ve been running it helps me read the return. Not a form — just the file.",
+          draft,
+        );
+      }
+      return answerThenRestore(q, draft);
     }
     const years = parseYearsInBusiness(q);
     if (years) {
@@ -2790,7 +2837,7 @@ export function workspaceReply(
         capture: { field: "skip-years-in-business" },
       };
     }
-    return { text: YEARS_IN_BUSINESS_ASK };
+    return answerThenRestore(q, draft);
   }
 
   if (
@@ -2855,25 +2902,26 @@ export function workspaceReply(
       return replyToFundsAsk(q, { ...draft, pendingProposal: null });
     }
     if (draft.pendingProposal) {
-      return workspacePromptCopy("confirm-proposal", draft);
+      return answerThenRestore(q, draft);
     }
-  }
-
-  if (/(approv|lock|commit to lend|am i approved)/i.test(lower)) {
-    return {
-      text: "I can prepare a file. I cannot approve, lock, or commit to lend.",
-    };
   }
 
   if (canOpenCorrectionMenu(draft) && wantsCorrectionMenu(q)) {
     return { ...workspacePromptCopy("correct", draft), capture: { field: "needs-correction" } };
   }
 
+  if (
+    isFreeTextAtGate(q) &&
+    !wantsCorrectionMenu(q) &&
+    !(inQueueEnding(draft) && /what happens next/.test(lower))
+  ) {
+    return answerThenRestore(q, draft);
+  }
+
   if (layer2Open(draft) && /^skip\b/.test(lower)) {
-    const nextDraft = skipCurrentStillUseful(draft);
     return {
-      text: layer2AskCopy(nextDraft),
-      actions: layer2AskActions(nextDraft) ?? finishLineActions(nextDraft),
+      text: layer2AskCopy(draft),
+      actions: layer2AskActions(draft) ?? finishLineActions(draft),
       capture: { field: "skip-docs" },
     };
   }
@@ -2884,18 +2932,6 @@ export function workspaceReply(
       actions: layer2AskActions(draft) ?? finishLineActions(draft),
       capture: { field: "hold-docs" },
     };
-  }
-
-  if (layer2Open(draft) && nextStillUsefulItem(draft)?.id === "years-in-business") {
-    const years = parseYearsInBusiness(q);
-    if (years) {
-      const nextDraft = writeYearsInBusiness(draft, years);
-      return {
-        text: layer2AskCopy(nextDraft),
-        actions: layer2AskActions(nextDraft) ?? finishLineActions(nextDraft),
-        capture: { field: "yearsInBusiness", value: years },
-      };
-    }
   }
 
   const edit = parseWorkspaceEdit(q, draft);
@@ -2940,7 +2976,7 @@ export function workspaceReply(
 
   if (inQueueEnding(draft) && /what happens next/.test(lower)) {
     return {
-      text: layer2Open(draft) ? layer2AskCopy(draft) : MOTION_COPY.whatHappensNext,
+      text: stillUsefulVisible(draft) ? layer2AskCopy(draft) : MOTION_COPY.whatHappensNext,
       actions: layer2AskActions(draft) ?? finishLineActions(draft),
       capture: { field: "what-happens-next" },
     };
@@ -2970,7 +3006,7 @@ export function workspaceReply(
         capture: { field: "productIntent", value: intent },
       };
     }
-    return { text: "Tap Start your relationship or Just need a mortgage." };
+    return answerThenRestore(q, draft);
   }
 
   if (prompt === "path-switch") {
@@ -2992,7 +3028,7 @@ export function workspaceReply(
         capture: { field: "path", value: "acr" },
       };
     }
-    return workspacePromptCopy("path-switch", draft);
+    return answerThenRestore(q, draft);
   }
 
   if (prompt === "product") {
@@ -3012,10 +3048,7 @@ export function workspaceReply(
     }
     const intent = productIntentFromText(q);
     if (!intent) {
-      return {
-        text: "What are you looking to do? Buy, refinance, HELOC, Jumbo, or something else.",
-        actions: bubbles([...PRODUCT_INTENT_BUBBLES], "productIntent"),
-      };
+      return answerThenRestore(q, draft);
     }
     if (draft.correcting === "product") {
       const nextDraft = applyProductChange({ ...draft, correcting: null, correctingLine: null }, intent);
@@ -3043,7 +3076,7 @@ export function workspaceReply(
   if (prompt === "jumbo-purpose") {
     const purpose = jumboPurposeFromText(q);
     if (!purpose) {
-      return workspacePromptCopy("jumbo-purpose", draft);
+      return answerThenRestore(q, draft);
     }
     const nextDraft = { ...draft, jumboPurpose: purpose, correcting: null };
     return {
@@ -3068,7 +3101,7 @@ export function workspaceReply(
       const nextDraft = { ...draft, jumboOffered: true, pendingOffer: undefined, correcting: null };
       return continueAfterFlag("Kept this product.", nextDraft, { field: "decline-jumbo" });
     }
-    return workspacePromptCopy("offer-jumbo", draft);
+    return answerThenRestore(q, draft);
   }
 
   if (prompt === "offer-heloc") {
@@ -3083,7 +3116,7 @@ export function workspaceReply(
       const nextDraft = { ...draft, helocOffered: true, pendingOffer: undefined, correcting: null };
       return continueAfterFlag("Kept Refinance.", nextDraft, { field: "decline-heloc" });
     }
-    return workspacePromptCopy("offer-heloc", draft);
+    return answerThenRestore(q, draft);
   }
 
   if (prompt === "geo-stop") {
@@ -3101,13 +3134,13 @@ export function workspaceReply(
         capture: { field: "talk-originator" },
       };
     }
-    return workspacePromptCopy("geo-stop", draft);
+    return answerThenRestore(q, draft);
   }
 
   if (prompt === "occupancy") {
     if (draft.occupancyChoice.value && isKeepThisText(q)) return keepThisReply(draft);
     const match = occupancyFromText(q);
-    if (!match) return { text: "Tap Primary, Second home, or Investment." };
+    if (!match) return answerThenRestore(q, draft);
     const nextDraft = {
       ...draft,
       occupancyChoice: { ...draft.occupancyChoice, value: match.value },
@@ -3140,7 +3173,7 @@ export function workspaceReply(
   if (prompt === "timeline") {
     if (draft.timelineChoice.value && isKeepThisText(q)) return keepThisReply(draft);
     const match = timelineFromText(q);
-    if (!match) return { text: "Tap Ready now, 30–90 days, or Just exploring." };
+    if (!match) return answerThenRestore(q, draft);
     const nextDraft = {
       ...draft,
       timelineChoice: { ...draft.timelineChoice, value: match.value },
@@ -3193,13 +3226,7 @@ export function workspaceReply(
       }
       const purpose = parseAmountPurpose(q);
       if (!purpose) {
-        return {
-          text: "What is that number for?",
-          actions: [
-            ...bubbles([...AMOUNT_PURPOSE_BUBBLES], "amountPurpose"),
-            ...amountHelperActions("skip-amount"),
-          ],
-        };
+        return answerThenRestore(q, draft);
       }
       const purposeDraft = { ...draft, amountPurposeLabel: purpose };
       return {
@@ -3220,13 +3247,7 @@ export function workspaceReply(
     const pair = parseAmountPair(q);
     const amount = pair.loan ?? parseLooseAmount(q);
     if (amount == null) {
-      return {
-        text: `${amountAskText(draft)} A number works${refiLoanAskNeeded(draft) || isHelocFile(draft) ? "." : ", or tap Not sure."}`,
-        actions:
-          refiLoanAskNeeded(draft) || isHelocFile(draft)
-            ? undefined
-            : amountHelperActions("skip-amount"),
-      };
+      return answerThenRestore(q, draft);
     }
     let nextDraft = withMatrixAfterAmount({
       ...draft,
@@ -3273,10 +3294,7 @@ export function workspaceReply(
     }
     const amount = parseAmountPair(q).value ?? parseLooseAmount(q);
     if (amount == null) {
-      return {
-        text: `${amountAskText(draft)} A number works${requiredValue ? "." : ", or tap Not sure."}`,
-        actions: requiredValue ? undefined : amountHelperActions("skip-value"),
-      };
+      return answerThenRestore(q, draft);
     }
     const lockedPair = proposePriceLockedPair(draft, amount);
     if (lockedPair) {
@@ -3307,10 +3325,10 @@ export function workspaceReply(
   if (prompt === "credit") {
     if (draft.creditBand && isKeepThisText(q)) return keepThisReply(draft);
     if (looksLikeQuestion(q)) {
-      return restoredAsk(sideQuestionAnswer(q, draft), draft);
+      return answerThenRestore(q, draft);
     }
     const range = parseCreditRange(q);
-    if (!range) return { text: "Tap a credit range, or Not sure." };
+    if (!range) return answerThenRestore(q, draft);
     const nextDraft = { ...draft, creditBand: range, creditAsked: true, correcting: null, correctingLine: null };
     if (draft.correcting === "credit") {
       return {
@@ -3330,7 +3348,7 @@ export function workspaceReply(
 
   if (prompt === "term") {
     const term = parseTermYears(q);
-    if (term == null) return { text: "Tap 30 year, 15 year, or Skip." };
+    if (term == null) return answerThenRestore(q, draft);
     const nextDraft =
       term === "skip"
         ? { ...draft, termAsked: true, termYears: undefined }
@@ -3345,7 +3363,7 @@ export function workspaceReply(
   if (prompt === "income") {
     if (draft.incomeType.value && isKeepThisText(q)) return keepThisReply(draft);
     const match = incomeFromText(q);
-    if (!match) return { text: "Tap W-2, Self-employed, Both, or Other." };
+    if (!match) return answerThenRestore(q, draft);
     const nextDraft = {
       ...withIncomeType(draft, match.value),
       correcting: null,
@@ -3370,10 +3388,7 @@ export function workspaceReply(
     if (isKeepThisText(q)) return keepThisReply(draft);
     const monthly = parseLooseAmount(q);
     if (monthly == null) {
-      return {
-        text: "What’s the monthly qualifying income? A number works.",
-        actions: keepThisActions(),
-      };
+      return answerThenRestore(q, draft);
     }
     const nextDraft = writeQualifyingIncome(draft, String(Math.round(monthly)));
     return {
@@ -3386,10 +3401,7 @@ export function workspaceReply(
     if (isKeepThisText(q)) return keepThisReply(draft);
     const years = parseYearsInBusiness(q);
     if (!years) {
-      return {
-        text: YEARS_IN_BUSINESS_ASK,
-        actions: keepThisActions(),
-      };
+      return answerThenRestore(q, draft);
     }
     const nextDraft = writeYearsInBusiness(draft, years);
     return {
@@ -3420,8 +3432,8 @@ export function workspaceReply(
           capture: { field: "ask-fox" },
         };
       }
-      if (looksLikeQuestion(q)) {
-        return restoredAsk(sideQuestionAnswer(q, draft), draft);
+      if (looksLikeQuestion(q) || asksApproval(q) || isGreeting(q)) {
+        return answerThenRestore(q, draft);
       }
       if (/(start|id|upload|drop|now|add|documents)/i.test(lower)) {
         const nextDraft = { ...draft, docsStarted: true, docsHeld: false };
@@ -3430,8 +3442,7 @@ export function workspaceReply(
           capture: { field: "start-docs" },
         };
       }
-      if (draft.docsHeld) return holdDocsAsk();
-      return workspacePromptCopy("documents", draft);
+      return answerThenRestore(q, draft);
     }
     if (/\bnot yet\b/.test(lower)) {
       const nextDraft = holdDocuments(draft);
@@ -3453,10 +3464,7 @@ export function workspaceReply(
         capture: { field: "open-docs" },
       };
     }
-    if (looksLikeQuestion(q)) {
-      return restoredAsk(sideQuestionAnswer(q, draft), draft);
-    }
-    return workspacePromptCopy("documents", draft);
+    return answerThenRestore(q, draft);
   }
 
   if (prompt === "preparing") {
@@ -3480,10 +3488,7 @@ export function workspaceReply(
         capture: { field: "confirm-draft" },
       };
     }
-    if (looksLikeQuestion(q)) {
-      return restoredAsk("This is the file as it stands. Confirm it, or say what to change.", draft);
-    }
-    return workspacePromptCopy("review", draft);
+    return answerThenRestore(q, draft);
   }
 
   if (prompt === "correct") {
@@ -3497,7 +3502,7 @@ export function workspaceReply(
       };
     }
     if (looksLikeQuestion(q) && !wantsCorrectionMenu(q)) {
-      return restoredAsk(sideQuestionAnswer(q, draft), draft);
+      return answerThenRestore(q, draft);
     }
     const years = parseYearsInBusiness(q);
     if (years && /\b(year|business|running)\b/i.test(q)) {
@@ -3507,7 +3512,7 @@ export function workspaceReply(
         capture: { field: "yearsInBusiness", value: years },
       };
     }
-    return workspacePromptCopy("correct", draft);
+    return answerThenRestore(q, draft);
   }
 
   if (/(reward|membership)/i.test(lower)) {
@@ -3531,11 +3536,8 @@ export function workspaceReply(
       };
     }
     if (prompt === "done") {
-      if (/(approv|lock|commit to lend)/i.test(lower)) {
-        return {
-          ...workspacePromptCopy("done", draft),
-          text: "I can prepare a file. I cannot approve, lock, or commit to lend.",
-        };
+      if (asksApproval(q)) {
+        return answerThenRestore(q, draft);
       }
       if (draft.pendingFinish && looksLikeEmail(q)) {
         const nextDraft = applyEmailThenFinish(draft, q);
@@ -3579,21 +3581,14 @@ export function workspaceReply(
           capture: { field: "skip-docs" },
         };
       }
-      if (looksLikeQuestion(q)) {
-        return restoredAsk(sideQuestionAnswer(q, draft), draft);
-      }
-      return workspacePromptCopy("done", draft);
+      return answerThenRestore(q, draft);
     }
     return {
       text: "The file has the basics. Ask if you want to change anything.",
     };
   }
 
-  if (looksLikeQuestion(q)) {
-    return restoredAsk(sideQuestionAnswer(q, draft), draft);
-  }
-
-  return null;
+  return answerThenRestore(q, draft);
 }
 
 export function estimateFromDraft(draft: FoxIntakeDraft) {

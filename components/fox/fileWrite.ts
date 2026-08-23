@@ -745,12 +745,12 @@ export function missingListCopy(classes: ExtractClass[]) {
 }
 
 export function stillUsefulAskCopy(draft: FoxIntakeDraft) {
-  if (layer2Open(draft)) return layer2AskCopy(draft);
+  if (stillUsefulVisible(draft)) return layer2AskCopy(draft);
   return labelListCopy(stillUsefulLabels(draft));
 }
 
 export function stillUsefulAskKey(draft: FoxIntakeDraft) {
-  if (layer2Open(draft) || stillUsefulVisible(draft)) {
+  if (stillUsefulVisible(draft)) {
     return layer2Plan(draft).map((item) => item.id).join("|") || "ready";
   }
   return stillUsefulLabels(draft).join("|");
@@ -792,21 +792,11 @@ function hasPnlDocument(draft: FoxIntakeDraft) {
   return draft.documents.some((doc) => /p&l|pnl|profit and loss/i.test(doc.name));
 }
 
-function skippedStillUsefulSet(draft: FoxIntakeDraft) {
-  return new Set(draft.skippedStillUseful ?? []);
-}
-
-function layer2Item(
-  id: string,
-  label: string,
-  ask: string,
-  skipped: Set<string>,
-): StillUsefulItem | null {
-  if (skipped.has(id)) return null;
+function layer2Item(id: string, label: string, ask: string): StillUsefulItem {
   return { id, label, ask };
 }
 
-/** After Proceed. Session-one sketch skip does not clear these — only a received item or a Layer 2 Skip does. */
+/** After Proceed. Session-one sketch skip does not clear these — only a received item drops. */
 export function layer2Open(draft: FoxIntakeDraft) {
   return Boolean(
     draft.sampleAccepted &&
@@ -817,31 +807,41 @@ export function layer2Open(draft: FoxIntakeDraft) {
   );
 }
 
-function skippedOpeningDoc(draft: FoxIntakeDraft) {
-  return Boolean(
-    (draft.skippedClasses && draft.skippedClasses.length > 0) ||
-      draft.priorYearSkipped ||
-      draft.documentsSkipped,
-  );
-}
-
-/** Structure Still useful: after Proceed, or as soon as an opening doc was skipped. */
+/** Remainder board after the sketch exists. Skip does not hide an item; received does. */
 export function stillUsefulVisible(draft: FoxIntakeDraft) {
-  if (layer2Open(draft)) return true;
-  if (!skippedOpeningDoc(draft)) return false;
   return Boolean(draft.path && draft.productIntent && draft.incomeType.value);
 }
 
+function incomeDocsPhrase(draft: FoxIntakeDraft) {
+  const income = draft.incomeType.value;
+  if (income === "w2") return "income docs (latest paystub and W-2)";
+  if (income === "both") return "income docs (latest paystub, W-2, latest return, and prior-year)";
+  if (income === "self-employed" || income === "other") {
+    return "income docs (latest return, prior-year, and a YTD P&L if you have it)";
+  }
+  return "income docs";
+}
+
+/** What Fox names after the sketch — the short list, not a remainder. */
+export function shortListSpeak(draft: FoxIntakeDraft): string {
+  const labels = ["government ID", incomeDocsPhrase(draft), "property address"];
+  if (purchaseLikeFile(draft)) {
+    labels.push("purchase contract", "bank statement");
+  } else if (refiLikeFile(draft)) {
+    labels.push("mortgage statement");
+    if (draft.cashOut) labels.push("bank statement");
+  }
+  return labelListCopy(labels);
+}
+
 export function layer2Plan(draft: FoxIntakeDraft): StillUsefulItem[] {
-  const skipped = skippedStillUsefulSet(draft);
   const income = draft.incomeType.value;
   const w2 = income === "w2" || income === "both";
   const se = income === "self-employed" || income === "both" || income === "other";
   const taxReturns = receivedTaxReturnCount(draft);
   const items: StillUsefulItem[] = [];
   const push = (id: string, label: string, ask: string) => {
-    const item = layer2Item(id, label, ask, skipped);
-    if (item) items.push(item);
+    items.push(layer2Item(id, label, ask));
   };
 
   if (!actuallyReceivedClass(draft, "government_id")) {
@@ -894,16 +894,6 @@ export function layer2Plan(draft: FoxIntakeDraft): StillUsefulItem[] {
   ) {
     push("bank_statement", "Bank statement", "A recent bank statement still helps this file.");
   }
-  if (!factValue(draft, "employer_name")) {
-    if (se && income !== "both") {
-      push("business", "Business name", "The business name still helps this file.");
-    } else if (w2 || income === "both") {
-      push("employer", "Employer", "The employer name still helps this file.");
-    }
-  }
-  if (se && !factValue(draft, "years_in_business")) {
-    push("years-in-business", "Years in business", "Years in business still helps this file.");
-  }
   return items;
 }
 
@@ -935,13 +925,7 @@ export function layer2AskActions(draft: FoxIntakeDraft): FoxAction[] | undefined
 }
 
 export function skipCurrentStillUseful(draft: FoxIntakeDraft): FoxIntakeDraft {
-  const next = nextStillUsefulItem(draft);
-  if (!next) return { ...draft, docsHeld: false };
-  return {
-    ...draft,
-    docsHeld: false,
-    skippedStillUseful: Array.from(new Set([...(draft.skippedStillUseful ?? []), next.id])),
-  };
+  return { ...draft, docsHeld: false };
 }
 
 export function missingAskCopy(classes: ExtractClass[]) {
