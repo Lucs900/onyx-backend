@@ -100,9 +100,7 @@ export function StillUsefulSection({
           {section.items.map((item) => (
             <div key={item.id} className="file-preview__row">
               <span className="file-preview__label">{item.label}</span>
-              <span className="file-preview__value">
-                <span>helps next</span>
-              </span>
+              <span className="file-preview__value" />
             </div>
           ))}
         </div>

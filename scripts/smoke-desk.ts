@@ -2443,10 +2443,20 @@ assert.ok(buySection);
 assert.equal(buySection.empty, false);
 assert.deepEqual(
   buySection.items.map((item) => item.label),
-  ["Government ID", "Latest paystub", "W-2"],
+  [
+    "Government ID",
+    "Latest paystub",
+    "W-2",
+    "Property address",
+    "Purchase contract",
+    "Bank statement",
+    "Employer",
+  ],
 );
-assert.equal(layer2AskCopy(buyProceed), "A government ID still helps this file.");
-assert.equal(stillUsefulAskCopy(buyProceed), "A government ID still helps this file.");
+assert.match(layer2AskCopy(buyProceed), /Government ID/);
+assert.match(layer2AskCopy(buyProceed), /Purchase contract/);
+assert.match(stillUsefulAskCopy(buyProceed), /Government ID/);
+assert.match(stillUsefulAskCopy(buyProceed), /Bank statement/);
 assert.equal(fileStillUsefulNote(buyProceed), undefined);
 assert.ok(!(previewFacts(buyProceed).find((fact) => fact.id === "file")?.note ?? "").includes("still useful:"));
 assert.doesNotMatch(
@@ -2528,7 +2538,15 @@ assert.deepEqual(
 const seProceed = afterProceed(withIncome(afterCredit, "self-employed"));
 assert.deepEqual(
   stillUsefulSection(seProceed)?.items.map((item) => item.label),
-  ["Government ID", "Latest return", "Property address"],
+  [
+    "Government ID",
+    "Latest return",
+    "Property address",
+    "Purchase contract",
+    "Bank statement",
+    "Business name",
+    "Years in business",
+  ],
 );
 assert.ok(layer2Plan(seProceed).some((item) => item.label === "Years in business"));
 assert.ok(!layer2Plan(seProceed).some((item) => item.label === "YTD P&L"));
@@ -2570,6 +2588,12 @@ assert.ok((walkSkip.skippedClasses ?? []).includes("government_id"));
 assert.equal(workspacePrompt(walkSkip), "documents");
 assert.ok(stillUsefulSection(walkSkip)?.items.some((item) => item.label === "Government ID"));
 assert.ok(stillUsefulSection(walkSkip)?.items.some((item) => item.label === "Latest paystub"));
+assert.ok(stillUsefulSection(walkSkip)?.items.some((item) => item.label === "W-2"));
+assert.ok(stillUsefulSection(walkSkip)?.items.some((item) => item.label === "Property address"));
+assert.ok(stillUsefulSection(walkSkip)?.items.some((item) => item.label === "Purchase contract"));
+assert.ok(stillUsefulSection(walkSkip)?.items.some((item) => item.label === "Bank statement"));
+assert.ok(stillUsefulSection(walkSkip)?.items.some((item) => item.label === "Employer"));
+assert.ok((stillUsefulSection(walkSkip)?.items.length ?? 0) > 3);
 assert.equal(fileStillUsefulNote(walkSkip), undefined);
 assert.equal(resetWorkspaceForEntry("acr", "buy").productIntent, "buy");
 applyCapture({ field: "occupancy", value: "primary" });
@@ -2594,6 +2618,8 @@ receiveDocument({
 });
 assert.ok(!stillUsefulSection(getFoxDraft())?.items.some((item) => item.label === "Government ID"));
 assert.ok(stillUsefulSection(getFoxDraft())?.items.some((item) => item.label === "Latest paystub"));
+assert.ok(stillUsefulSection(getFoxDraft())?.items.some((item) => item.label === "Purchase contract"));
+assert.ok(stillUsefulSection(getFoxDraft())?.items.some((item) => item.label === "Bank statement"));
 assert.equal(shouldResumeWorkspaceEntry(), true);
 const remembered = continueWorkspaceFromEntry("acr", "buy");
 assert.equal(remembered.productIntent, "buy");
@@ -2601,6 +2627,8 @@ assert.ok((remembered.skippedClasses ?? []).includes("government_id"));
 assert.ok(remembered.documents.some((doc) => doc.extractClass === "government_id"));
 assert.ok(!stillUsefulSection(remembered)?.items.some((item) => item.label === "Government ID"));
 assert.ok(stillUsefulSection(remembered)?.items.some((item) => item.label === "Latest paystub"));
+assert.ok(stillUsefulSection(remembered)?.items.some((item) => item.label === "Purchase contract"));
+assert.ok(stillUsefulSection(remembered)?.items.some((item) => item.label === "Employer"));
 assert.notEqual(workspacePrompt(remembered), "intent");
 assert.notEqual(workspacePrompt(remembered), "product");
 assert.notEqual(workspacePrompt(remembered), "occupancy");
@@ -2608,7 +2636,7 @@ assert.notEqual(workspacePrompt(remembered), "occupancy");
 const skipItem = workspaceReply("Skip", buyProceed);
 assert.equal(skipItem?.capture?.field, "skip-docs");
 assert.match(skipItem?.text ?? "", /paystub/i);
-assert.doesNotMatch(skipItem?.text ?? "", /government ID and/i);
+assert.doesNotMatch(skipItem?.text ?? "", /Government ID/);
 const holdItem = workspaceReply("Not yet", buyProceed);
 assert.equal(holdItem?.capture?.field, "hold-docs");
 assert.match(holdItem?.text ?? "", /government ID/i);
@@ -3978,8 +4006,8 @@ assert.ok(queuedLabels.indexOf("Ask Fox") < queuedLabels.indexOf("Request human"
 assert.equal(queuedActions.find((item) => item.label === "Request human")?.quiet, true);
 const whatNext = workspaceReply("What happens next?", queued);
 assert.match(whatNext?.text ?? "", /government ID/i);
+assert.match(whatNext?.text ?? "", /Purchase contract|Bank statement|paystub/i);
 assert.doesNotMatch(whatNext?.text ?? "", /will contact you|we’ll be in touch|your lo has the file|ssn|we pulled|fico/i);
-assert.doesNotMatch(whatNext?.text ?? "", /government ID and/i);
 assert.ok((whatNext?.actions ?? []).some((item) => item.label === "Skip"));
 assert.ok((whatNext?.actions ?? []).some((item) => item.label === "Upload this"));
 assert.notEqual((whatNext?.actions ?? [])[0]?.label, "Request human");
@@ -4269,6 +4297,8 @@ assert.ok(filePreview.includes("fox-structure-notepad"));
 assert.ok(filePreview.includes("Still useful"));
 assert.ok(filePreview.includes("NOTHING_URGENT") || filePreview.includes("Nothing urgent missing."));
 assert.equal(NOTHING_URGENT, "Nothing urgent missing.");
+assert.ok(!filePreview.includes("helps next"));
+assert.ok(!readFileSync(join(root, "components/fox/fileWrite.ts"), "utf8").includes(".slice(0, 3)"));
 assert.ok(filePreview.includes("requestFoxFix"));
 assert.ok(filePreview.includes("file-preview__edit"));
 assert.ok(filePreview.includes('Edit ${fact.label}') || filePreview.includes("Edit "));

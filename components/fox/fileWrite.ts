@@ -750,7 +750,9 @@ export function stillUsefulAskCopy(draft: FoxIntakeDraft) {
 }
 
 export function stillUsefulAskKey(draft: FoxIntakeDraft) {
-  if (layer2Open(draft)) return nextStillUsefulItem(draft)?.id ?? "ready";
+  if (layer2Open(draft) || stillUsefulVisible(draft)) {
+    return layer2Plan(draft).map((item) => item.id).join("|") || "ready";
+  }
   return stillUsefulLabels(draft).join("|");
 }
 
@@ -914,12 +916,13 @@ export function stillUsefulSection(draft: FoxIntakeDraft): {
   empty: boolean;
 } | null {
   if (!stillUsefulVisible(draft)) return null;
-  const items = layer2Plan(draft).slice(0, 3);
+  const items = layer2Plan(draft);
   return { items, empty: items.length === 0 };
 }
 
 export function layer2AskCopy(draft: FoxIntakeDraft) {
-  return nextStillUsefulItem(draft)?.ask ?? NOTHING_URGENT;
+  const labels = layer2Plan(draft).map((item) => item.label);
+  return labels.length ? labelListCopy(labels) : NOTHING_URGENT;
 }
 
 export function layer2AskActions(draft: FoxIntakeDraft): FoxAction[] | undefined {
