@@ -990,9 +990,7 @@ function missingIncomeDocReason(file: CompletenessFile): string | undefined {
 }
 
 function productMismatchReason(file: FileFacts): string | undefined {
-  if (file.govProgram === "fha" || (file.namedGovvie && file.govProgram === "fha")) {
-    return "That’s an FHA path.";
-  }
+  if (file.govProgram === "fha") return "That’s an FHA path.";
   if (file.govProgram === "va") return "That’s a VA path.";
   if (file.govProgram === "usda") return "That’s a USDA path.";
   if (file.namedGovvie) return "That’s a government program.";
