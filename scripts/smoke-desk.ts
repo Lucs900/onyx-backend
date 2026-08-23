@@ -148,7 +148,7 @@ function draft(partial: Record<string, unknown> = {}) {
   return { ...emptyDraft(), workspaceFlow: true, ...partial };
 }
 
-function queuedMidConfirm(live: ReturnType<typeof draft>) {
+function queuedMidConfirm(live: Parameters<typeof nextFoxAsk>[0]) {
   return {
     ...live,
     sampleAccepted: true,
@@ -157,7 +157,7 @@ function queuedMidConfirm(live: ReturnType<typeof draft>) {
   };
 }
 
-function assertIncomeChipsHoldOverQueue(live: ReturnType<typeof draft>, amount: RegExp) {
+function assertIncomeChipsHoldOverQueue(live: Parameters<typeof nextFoxAsk>[0], amount: RegExp) {
   assert.equal(shouldDeferStillUsefulAsk(live), true);
   assert.equal(workspacePrompt(live), "confirm-proposal");
   const latest = nextFoxAsk(live);
