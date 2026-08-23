@@ -15,6 +15,8 @@ export const DECLINING_YEAR_RATIO = 0.9;
 export const YTD_CONFLICT_CAUTION =
   "YTD and the run-rate don’t match. I’m using the lower number — not a blend.";
 export const YTD_CONFLICT_GAP = 50;
+export const K1_ORDINARY_NOTE = "Ordinary is not confirmed cash flow.";
+export const FREQUENCY_MATCH_SLACK = 0.55;
 
 export type QualifyingMethod =
   | "one-year"
@@ -45,6 +47,8 @@ export type IncomeSuggestResult = {
   monthly: number;
   method: QualifyingMethod;
   caution?: string;
+  methodNote?: string;
+  needsFrequency?: boolean;
 };
 
 export type WageYearInput = {
@@ -192,11 +196,116 @@ function usableMonthly(value: number | null | undefined): number | null {
   return value;
 }
 
-function periodFrequencyMonthly(input: WageSuggestInput): number | null {
+export type ConventionalPayFrequency = {
+  periods: 12 | 24 | 26 | 52;
+  key: "monthly" | "semimonthly" | "biweekly" | "weekly";
+  label: string;
+};
+
+const CONVENTIONAL_FREQUENCIES: ConventionalPayFrequency[] = [
+  { periods: 26, key: "biweekly", label: "biweekly" },
+  { periods: 24, key: "semimonthly", label: "semi-monthly" },
+  { periods: 12, key: "monthly", label: "monthly" },
+  { periods: 52, key: "weekly", label: "weekly" },
+];
+
+export function frequencyMethodNote(periods: number, label?: string): string {
+  const named =
+    label ??
+    CONVENTIONAL_FREQUENCIES.find((row) => row.periods === periods)?.label ??
+    `${periods}-period`;
+  return `${named} period × ${periods} / 12`;
+}
+
+function parsePeriodEndDate(raw?: string | null): Date | null {
+  const text = String(raw ?? "").trim();
+  if (!text) return null;
+  const iso = text.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (iso) {
+    return new Date(Date.UTC(Number(iso[1]), Number(iso[2]) - 1, Number(iso[3])));
+  }
+  const us = text.match(/^(\d{1,2})[/\-](\d{1,2})[/\-](\d{2,4})/);
+  if (us) {
+    const year = Number(us[3].length === 2 ? `20${us[3]}` : us[3]);
+    return new Date(Date.UTC(year, Number(us[1]) - 1, Number(us[2])));
+  }
+  const parsed = Date.parse(text);
+  if (!Number.isFinite(parsed)) return null;
+  const date = new Date(parsed);
+  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+}
+
+function dayOfYearUtc(date: Date): number {
+  const start = Date.UTC(date.getUTCFullYear(), 0, 1);
+  return Math.floor((date.getTime() - start) / 86_400_000) + 1;
+}
+
+function expectedPeriodsThrough(freq: ConventionalPayFrequency, periodEnd: Date): number {
+  const month = periodEnd.getUTCMonth() + 1;
+  const day = periodEnd.getUTCDate();
+  const doy = dayOfYearUtc(periodEnd);
+  if (freq.periods === 26) return doy / 14;
+  if (freq.periods === 52) return doy / 7;
+  if (freq.periods === 24) return (month - 1) * 2 + (day >= 15 ? 2 : 1);
+  return day >= 25 ? month : Math.max(month - 1, 1);
+}
+
+function ytdPeriodCount(ytd: number, period: number): number | null {
+  if (period <= 0) return null;
+  const count = ytd / period;
+  if (!Number.isFinite(count) || count <= 0) return null;
+  return count;
+}
+
+function nearIntegerPeriodCount(count: number): number | null {
+  const rounded = Math.round(count);
+  if (rounded < 1) return null;
+  if (Math.abs(count - rounded) <= 0.02 || Math.abs(count - rounded) / count <= 0.01) return rounded;
+  return null;
+}
+
+/** Infer 26 / 24 / 12 / 52 from YTD ÷ period + pay-period-end. Never guess when two counts fit. */
+export function inferPayFrequency(
+  input: WageSuggestInput,
+): ConventionalPayFrequency | "ambiguous" | null {
   const period = usableMonthly(input.grossPeriod);
-  const freq = periodsPerYear(input.payFrequency);
-  if (period == null || freq == null) return null;
-  return Math.round((period * freq) / 12);
+  const ytd = usableMonthly(input.ytdGross);
+  const periodEnd = parsePeriodEndDate(input.payPeriodEnd);
+  if (period == null || ytd == null || !periodEnd) return null;
+  const observed = ytdPeriodCount(ytd, period);
+  if (observed == null) return null;
+  const matches = CONVENTIONAL_FREQUENCIES.filter((freq) => {
+    const expected = expectedPeriodsThrough(freq, periodEnd);
+    return Math.abs(observed - expected) <= FREQUENCY_MATCH_SLACK;
+  });
+  if (matches.length > 1) return "ambiguous";
+  if (matches.length === 1) return matches[0];
+  const whole = nearIntegerPeriodCount(observed);
+  if (whole == null) return null;
+  const wholeMatches = CONVENTIONAL_FREQUENCIES.filter((freq) => {
+    const expected = expectedPeriodsThrough(freq, periodEnd);
+    return Math.abs(whole - expected) <= FREQUENCY_MATCH_SLACK;
+  });
+  if (wholeMatches.length > 1) return "ambiguous";
+  return wholeMatches[0] ?? null;
+}
+
+function resolvePayFrequency(input: WageSuggestInput): {
+  freq: ConventionalPayFrequency | null;
+  ask: boolean;
+} {
+  const inferred = inferPayFrequency(input);
+  if (inferred && inferred !== "ambiguous") return { freq: inferred, ask: false };
+  if (inferred === "ambiguous") return { freq: null, ask: true };
+  const labeled = periodsPerYear(input.payFrequency);
+  const fromLabel = CONVENTIONAL_FREQUENCIES.find((row) => row.periods === labeled) ?? null;
+  if (fromLabel) return { freq: fromLabel, ask: false };
+  if (usableMonthly(input.grossPeriod) != null) return { freq: null, ask: true };
+  return { freq: null, ask: false };
+}
+
+function periodFrequencyMonthly(period: number, periods: number): number {
+  return Math.round((period * periods) / 12);
 }
 
 function ytdMonthsMonthly(input: WageSuggestInput): number | null {
@@ -235,20 +344,47 @@ function conservativeVariableMonthly(input: WageSuggestInput): number {
 }
 
 /**
- * W-2 / paystub path. Base is period × frequency, or YTD / months, or W-2 / 12.
- * When those disagree, flag the conflict and use the lower — never a blend.
- * Variable income only if extracted; two-year lower only.
+ * W-2 / paystub path. Base is period × frequency (inferred from YTD/period +
+ * period-end when that is a near-exact conventional count), or YTD / months,
+ * or W-2 / 12. Do not invent frequency. When two counts fit, ask once.
+ * YTD vs run-rate / W-2 mismatch is flagged — never blended.
  */
 export function suggestWageIncome(input: WageSuggestInput): IncomeSuggestResult | null {
   const rules = conventionalIncomeRules("w2");
-  const periodMonthly = periodFrequencyMonthly(input);
-  const ytdMonthly = ytdMonthsMonthly(input);
+  const resolved = resolvePayFrequency(input);
+  if (resolved.ask) {
+    return { monthly: 0, method: "period-frequency", needsFrequency: true };
+  }
+
+  const period = usableMonthly(input.grossPeriod);
+  const periodMonthly =
+    period != null && resolved.freq != null
+      ? periodFrequencyMonthly(period, resolved.freq.periods)
+      : null;
+  const periodEnd = parsePeriodEndDate(input.payPeriodEnd);
+  const ytdCount =
+    period != null && usableMonthly(input.ytdGross) != null
+      ? ytdPeriodCount(input.ytdGross as number, period)
+      : null;
+  const ytdConsistent =
+    resolved.freq != null &&
+    periodEnd != null &&
+    ytdCount != null &&
+    Math.abs(ytdCount - expectedPeriodsThrough(resolved.freq, periodEnd)) <= FREQUENCY_MATCH_SLACK;
+  const ytdMonthly =
+    periodMonthly == null || !ytdConsistent ? ytdMonthsMonthly(input) : null;
   const w2Monthly = w2AnnualMonthly(input);
 
-  const candidates: { monthly: number; method: QualifyingMethod }[] = [];
-  if (periodMonthly != null) candidates.push({ monthly: periodMonthly, method: "period-frequency" });
-  if (ytdMonthly != null) candidates.push({ monthly: ytdMonthly, method: "ytd-months" });
-  if (w2Monthly != null) candidates.push({ monthly: w2Monthly, method: "w2-annual" });
+  const candidates: { monthly: number; method: QualifyingMethod; note?: string }[] = [];
+  if (periodMonthly != null && resolved.freq) {
+    candidates.push({
+      monthly: periodMonthly,
+      method: "period-frequency",
+      note: frequencyMethodNote(resolved.freq.periods, resolved.freq.label),
+    });
+  }
+  if (ytdMonthly != null) candidates.push({ monthly: ytdMonthly, method: "ytd-months", note: "YTD / months" });
+  if (w2Monthly != null) candidates.push({ monthly: w2Monthly, method: "w2-annual", note: "W-2 / 12" });
   if (!candidates.length) return null;
 
   const conflict =
@@ -257,24 +393,28 @@ export function suggestWageIncome(input: WageSuggestInput): IncomeSuggestResult 
       candidates.slice(index + 1).some((other) => materialMonthlyDiff(row.monthly, other.monthly)),
     );
 
-  let monthly: number;
-  let method: QualifyingMethod;
+  let chosen = candidates[0];
+  let method: QualifyingMethod = chosen.method;
   let caution: string | undefined;
   if (conflict) {
-    monthly = Math.min(...candidates.map((row) => row.monthly));
+    const lower = Math.min(...candidates.map((row) => row.monthly));
+    chosen = candidates.find((row) => row.monthly === lower) ?? chosen;
     method = "ytd-conflict-lower";
     caution = YTD_CONFLICT_CAUTION;
   } else if (periodMonthly != null) {
-    monthly = periodMonthly;
+    chosen = candidates.find((row) => row.method === "period-frequency") ?? chosen;
     method = "period-frequency";
   } else if (ytdMonthly != null) {
-    monthly = ytdMonthly;
+    chosen = candidates.find((row) => row.method === "ytd-months") ?? chosen;
     method = "ytd-months";
   } else {
-    monthly = w2Monthly as number;
     method = "w2-annual";
   }
 
-  monthly += conservativeVariableMonthly(input);
-  return { monthly, method, caution };
+  return {
+    monthly: chosen.monthly + conservativeVariableMonthly(input),
+    method,
+    caution,
+    methodNote: chosen.note,
+  };
 }

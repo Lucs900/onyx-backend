@@ -548,7 +548,7 @@ export function applyExtractedFields(
       if (extractClass === "tax_return" && existing.via === "qualifying_income") {
         continue;
       }
-      const compare = computed != null ? String(computed.monthly) : value;
+      const compare = computed != null && !computed.needsFrequency ? String(computed.monthly) : value;
       if (valuesMatch(existing.value, compare)) {
         if (field !== existing.via) {
           next = writeField(next, field, value, now);

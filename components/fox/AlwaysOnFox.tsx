@@ -61,6 +61,7 @@ import {
   formatLiveMoneyInput,
   editLineFromCapture,
   editPromptFromCapture,
+  ensureIncomeConfirmChips,
   inertSupersededIncomeConfirms,
   lastFoxTurn,
   docReactionAsk,
@@ -219,19 +220,27 @@ function foxAskMessage(ask: {
   };
 }
 
+function actionKey(action: FoxAction) {
+  return `${action.id}:${action.label}:${action.capture?.field ?? ""}`;
+}
+
 function sameFoxAsk(
   last: FoxMessage,
   ask: {
     text: string;
     followUp?: string;
     facts?: FoxMessage["facts"];
+    actions?: FoxAction[];
   },
 ) {
   if (last.text !== ask.text) return false;
   if ((last.followUp ?? "") !== (ask.followUp ?? "")) return false;
   const left = (last.facts ?? []).map((fact) => `${fact.id}:${fact.value}`).join("\n");
   const right = (ask.facts ?? []).map((fact) => `${fact.id}:${fact.value}`).join("\n");
-  return left === right;
+  if (left !== right) return false;
+  const leftActions = (last.actions ?? []).map(actionKey).join("|");
+  const rightActions = (ask.actions ?? []).map(actionKey).join("|");
+  return leftActions === rightActions;
 }
 
 function hasReviewAsk(messages: FoxMessage[]) {
@@ -519,13 +528,14 @@ export function AlwaysOnFox({
     prev: FoxMessage[],
     next: FoxMessage[] | ((prev: FoxMessage[]) => FoxMessage[]),
   ) => {
-    const resolved = inertSupersededIncomeConfirms(
-      typeof next === "function" ? next(prev) : next,
+    const resolved = ensureIncomeConfirmChips(
+      inertSupersededIncomeConfirms(typeof next === "function" ? next(prev) : next),
+      getFoxDraft(),
     );
     const live = getFoxDraft();
     const stored = getFoxMessages();
     if (fileExists(live) && stored.length > resolved.length) {
-      return inertSupersededIncomeConfirms(stored);
+      return ensureIncomeConfirmChips(inertSupersededIncomeConfirms(stored), live);
     }
     setFoxMessages(resolved);
     return resolved;
@@ -678,7 +688,11 @@ export function AlwaysOnFox({
               actions: conflictActions(),
             }),
           );
-        } else if (getFoxDraft().pendingProposal || getFoxDraft().pendingConflict) {
+        } else if (
+          getFoxDraft().pendingProposal ||
+          getFoxDraft().pendingConflict ||
+          getFoxDraft().awaitingPayFrequency
+        ) {
           const live = getFoxDraft();
           const reaction = docReactionAsk(live, detail.extractClass);
           const ask = live.pendingConflict
@@ -821,7 +835,12 @@ export function AlwaysOnFox({
     }
     commitMessages((prev) => {
       if (mustShowReview && hasReviewAsk(prev)) return prev;
-      if (isStart && shouldDeferStillUsefulAsk(live) && prompt !== "confirm-proposal") {
+      if (
+        isStart &&
+        shouldDeferStillUsefulAsk(live) &&
+        prompt !== "confirm-proposal" &&
+        prompt !== "pay-frequency"
+      ) {
         return prev;
       }
       if (isStart && prompt === "done") {

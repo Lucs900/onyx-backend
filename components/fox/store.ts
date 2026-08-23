@@ -93,6 +93,7 @@ import {
   writeQualifyingIncome,
   writeYearsInBusiness,
 } from "./completeness";
+import { applyPayFrequencyAnswer } from "./qualifyingIncome";
 
 function numberOrUndefined(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : undefined;
@@ -129,6 +130,7 @@ export function emptyDraft(): FoxIntakeDraft {
     priorYearSkipped: false,
     yearsInBusinessAsked: false,
     awaitingYearsInBusiness: false,
+    awaitingPayFrequency: false,
     facts: {},
     pendingConflict: null,
     skippedClasses: [],
@@ -250,6 +252,7 @@ function normalize(value: unknown): FoxIntakeDraft {
     priorYearSkipped: Boolean(raw.priorYearSkipped),
     yearsInBusinessAsked: Boolean(raw.yearsInBusinessAsked),
     awaitingYearsInBusiness: Boolean(raw.awaitingYearsInBusiness),
+    awaitingPayFrequency: Boolean(raw.awaitingPayFrequency),
     missingAskKey: typeof raw.missingAskKey === "string" ? raw.missingAskKey : "",
     sections: { ...base.sections, ...raw.sections },
   };
@@ -1120,6 +1123,9 @@ export function applyCapture(capture: Capture) {
   }
   if (capture.field === "use-document-fact") {
     return commit(resolveFactConflict(current, "document"));
+  }
+  if (capture.field === "payFrequency") {
+    return commit(applyPayFrequencyAnswer(current, capture.value));
   }
   if (capture.field === "accept-proposal") {
     return commit(resolveProposal(current, "accept"));

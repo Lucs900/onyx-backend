@@ -80,6 +80,7 @@ import {
   isRefiLike,
   missingAmountAsk,
   parseFundsRole,
+  incomeConfirmActions,
   proposalActions,
   proposalAskCopy,
   proposeFundsPair,
@@ -101,13 +102,17 @@ import {
   YEARS_IN_BUSINESS_FIELD,
 } from "./completeness";
 import {
+  applyPayFrequencyAnswer,
   decliningIncomeCaution,
   formatIncomeMoney,
+  hasK1Ordinary,
+  K1_ORDINARY_NOTE,
   monthlyFromAnnual,
   qualifyingIncomeDisplay,
   scheduleCYearViews,
   SUGGESTED_INCOME_NOTE,
   wageIncomeCaution,
+  wageMethodNote,
 } from "./qualifyingIncome";
 import { conventionalGuidelinePattern } from "@/lib/guidelines/conventional";
 import {
@@ -968,7 +973,7 @@ function incomeReactionAsk(draft: FoxIntakeDraft, proposal: NonNullable<FoxIntak
   if (years.length < 2) {
     return {
       text: `${ack} I’m suggesting ${shown} a month. ${SUGGESTED_INCOME_NOTE}. Use this?`,
-      actions: proposalActions(proposal.kind),
+      actions: incomeConfirmActions(),
     };
   }
   const earlier = years[years.length - 2];
@@ -985,7 +990,57 @@ function incomeReactionAsk(draft: FoxIntakeDraft, proposal: NonNullable<FoxIntak
   return {
     text: `${ack} ${later.year} is ${formatIncomeMoney(laterMonthly)} a month. ${earlier.year} is ${formatIncomeMoney(earlierMonthly)} a month. ${stance} Two-year view is ${shown} a month. ${SUGGESTED_INCOME_NOTE}. Use this?`,
     followUp: caution,
-    actions: proposalActions(proposal.kind),
+    actions: incomeConfirmActions(),
+  };
+}
+
+function k1ReactionAsk(draft: FoxIntakeDraft, proposal: NonNullable<FoxIntakeDraft["pendingProposal"]>): {
+  text: string;
+  followUp?: string;
+  actions?: FoxAction[];
+} {
+  const shown = displayFactValue(proposal.field, proposal.value);
+  const year = landedTaxYear(draft);
+  const ack = year ? `Got the ${year} K-1.` : "Got the K-1.";
+  return {
+    text: `${ack} I’m suggesting ${shown} a month from ordinary / 12. ${K1_ORDINARY_NOTE} ${SUGGESTED_INCOME_NOTE}. Use this?`,
+    actions: incomeConfirmActions(),
+  };
+}
+
+function wageReactionAsk(
+  draft: FoxIntakeDraft,
+  proposal: NonNullable<FoxIntakeDraft["pendingProposal"]>,
+  extractClass?: ReturnType<typeof lastExtractedClass>,
+): {
+  text: string;
+  followUp?: string;
+  actions?: FoxAction[];
+} {
+  const cls = extractClass ?? lastExtractedClass(draft);
+  const shown = displayFactValue(proposal.field, proposal.value);
+  const method = wageMethodNote(draft);
+  const methodBit = method ? ` from ${method}` : "";
+  const doc = cls === "w2" ? "W-2" : "paystub";
+  return {
+    text: `Got the ${doc}. I’m suggesting ${shown} a month${methodBit}. ${SUGGESTED_INCOME_NOTE}. Use this?`,
+    followUp: wageIncomeCaution(draft),
+    actions: incomeConfirmActions(),
+  };
+}
+
+export function payFrequencyAsk(): {
+  text: string;
+  actions: FoxAction[];
+} {
+  return {
+    text: "How often is this paycheck? I need that before I suggest a monthly number.",
+    actions: [
+      { id: "freq-weekly", label: "Weekly", event: "bubble", capture: { field: "payFrequency", value: "weekly" } },
+      { id: "freq-biweekly", label: "Biweekly", event: "bubble", capture: { field: "payFrequency", value: "biweekly" } },
+      { id: "freq-semi", label: "Semi-monthly", event: "bubble", capture: { field: "payFrequency", value: "semimonthly" } },
+      { id: "freq-monthly", label: "Monthly", event: "bubble", capture: { field: "payFrequency", value: "monthly" } },
+    ],
   };
 }
 
@@ -999,17 +1054,11 @@ function liveProposalAsk(
   actions?: FoxAction[];
 } {
   if (proposal.field === QUALIFYING_INCOME_FIELD) {
-    if (scheduleCYearViews(draft).length || factValue(draft, "tax_year")) {
-      return incomeReactionAsk(draft, proposal);
-    }
+    if (scheduleCYearViews(draft).length) return incomeReactionAsk(draft, proposal);
+    if (hasK1Ordinary(draft)) return k1ReactionAsk(draft, proposal);
     const cls = extractClass ?? lastExtractedClass(draft);
-    const shown = displayFactValue(proposal.field, proposal.value);
-    if (cls === "paystub" || cls === "w2") {
-      return {
-        text: `Got the ${cls === "w2" ? "W-2" : "paystub"}. I’m suggesting ${shown} a month. ${SUGGESTED_INCOME_NOTE}. Use this?`,
-        followUp: wageIncomeCaution(draft),
-        actions: proposalActions(proposal.kind),
-      };
+    if (cls === "paystub" || cls === "w2" || factValue(draft, "gross_period") || factValue(draft, "wages")) {
+      return wageReactionAsk(draft, proposal, cls);
     }
   }
   const caution =
@@ -1017,7 +1066,7 @@ function liveProposalAsk(
   return {
     text: caution ?? proposalAskCopy(proposal),
     followUp: caution ? proposalAskCopy(proposal) : undefined,
-    actions: proposalActions(proposal.kind),
+    actions: proposal.field === QUALIFYING_INCOME_FIELD ? incomeConfirmActions() : proposalActions(proposal.kind),
   };
 }
 
@@ -1038,6 +1087,7 @@ export function docReactionAsk(
     };
   }
   if (cls === "government_id") return identityReactionAsk(draft);
+  if (draft.awaitingPayFrequency) return payFrequencyAsk();
   if (draft.pendingProposal) return liveProposalAsk(draft, draft.pendingProposal, cls);
   return null;
 }
@@ -1410,7 +1460,7 @@ export function isQualifyingIncomeConfirmPending(draft: FoxIntakeDraft): boolean
 
 /** Queue / Looks right waits until Use this / Leave blank on a live income suggest. */
 export function shouldDeferStillUsefulAsk(draft: FoxIntakeDraft): boolean {
-  return isQualifyingIncomeConfirmPending(draft);
+  return isQualifyingIncomeConfirmPending(draft) || Boolean(draft.awaitingPayFrequency);
 }
 
 /** Single /start conversation engine. Desktop and mobile share this order, copy, and path rules. */
@@ -1431,6 +1481,7 @@ export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
   if (!draft.path) return "intent";
   if (draft.pendingOffer === "jumbo") return "offer-jumbo";
   if (draft.pendingOffer === "heloc") return "offer-heloc";
+  if (draft.awaitingPayFrequency) return "pay-frequency";
   if (draft.pendingConflict || draft.pendingProposal) return "confirm-proposal";
   if (draft.correcting === "path-switch") return "path-switch";
   if (draft.correcting === "correct") return "correct";
@@ -1715,6 +1766,9 @@ function workspaceAskCopy(
   if (prompt === "correct") {
     return correctionAsk(draft);
   }
+  if (prompt === "pay-frequency") {
+    return payFrequencyAsk();
+  }
   if (prompt === "confirm-proposal") {
     if (draft.pendingConflict) {
       return {
@@ -1793,6 +1847,7 @@ export function workspaceGreeting(draft: FoxIntakeDraft): {
     prompt === "offer-heloc" ||
     prompt === "geo-stop" ||
     prompt === "confirm-proposal" ||
+    prompt === "pay-frequency" ||
     prompt === "done"
   ) {
     return next;
@@ -2640,6 +2695,7 @@ function draftAfterCapture(draft: FoxIntakeDraft, capture: Capture): FoxIntakeDr
     if (!Number.isFinite(down) || !Number.isFinite(loan) || down <= 0 || loan <= 0) return next;
     return proposeFundsPair(next, down, loan);
   }
+  if (capture.field === "payFrequency") return applyPayFrequencyAnswer(next, capture.value);
   if (capture.field === "accept-proposal") return resolveProposal(next, "accept");
   if (capture.field === "decline-proposal") return resolveProposal(next, "decline");
   if (capture.field === "yearsInBusiness") return writeYearsInBusiness(next, capture.value);
@@ -2881,6 +2937,27 @@ export function workspaceReply(
         capture: { field: "use-document-fact" },
       };
     }
+  }
+
+  if (prompt === "pay-frequency" || draft.awaitingPayFrequency) {
+    if (isFreeTextAtGate(q)) return answerThenRestore(q, draft);
+    if (/\bbi-?weekly\b/i.test(lower)) {
+      const nextDraft = applyPayFrequencyAnswer(draft, "biweekly");
+      return { ...nextFoxAsk(nextDraft), capture: { field: "payFrequency", value: "biweekly" } };
+    }
+    if (/\bsemi-?month/i.test(lower)) {
+      const nextDraft = applyPayFrequencyAnswer(draft, "semimonthly");
+      return { ...nextFoxAsk(nextDraft), capture: { field: "payFrequency", value: "semimonthly" } };
+    }
+    if (/\bweekly\b/i.test(lower)) {
+      const nextDraft = applyPayFrequencyAnswer(draft, "weekly");
+      return { ...nextFoxAsk(nextDraft), capture: { field: "payFrequency", value: "weekly" } };
+    }
+    if (/\bmonth/i.test(lower)) {
+      const nextDraft = applyPayFrequencyAnswer(draft, "monthly");
+      return { ...nextFoxAsk(nextDraft), capture: { field: "payFrequency", value: "monthly" } };
+    }
+    return { ...payFrequencyAsk() };
   }
 
   if (draft.pendingProposal || prompt === "confirm-proposal") {
@@ -4146,6 +4223,23 @@ function dropProposalActions(message: FoxMessage): FoxMessage {
     followUp: followUp || undefined,
     actions: actions.length ? actions : undefined,
   };
+}
+
+export function ensureIncomeConfirmChips(messages: FoxMessage[], draft: FoxIntakeDraft): FoxMessage[] {
+  if (!isQualifyingIncomeConfirmPending(draft)) return messages;
+  let latest = -1;
+  for (let i = 0; i < messages.length; i += 1) {
+    if (isQualifyingIncomeConfirm(messages[i])) latest = i;
+  }
+  if (latest < 0) return messages;
+  return messages.map((message, index) => {
+    if (index !== latest) return message;
+    const actions = message.actions ?? [];
+    const hasUse = actions.some((action) => action.capture?.field === "accept-proposal");
+    const hasLeave = actions.some((action) => action.capture?.field === "decline-proposal");
+    if (hasUse && hasLeave) return message;
+    return { ...message, actions: incomeConfirmActions() };
+  });
 }
 
 /** Older qualifying-income Use this / Leave blank cards go inert when a newer one lands. */

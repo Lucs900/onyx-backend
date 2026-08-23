@@ -130,6 +130,7 @@ export function taskContext(stage: FoxStage, draft: FoxIntakeDraft) {
     "offer-heloc": "Offer HELOC",
     "geo-stop": "California only",
     "confirm-proposal": "Confirm suggestion",
+    "pay-frequency": "Asking: pay frequency",
     qualifying: "Asking: qualifying income",
     "years-in-business": "Asking: years in business",
     done: "Draft confirmed",

@@ -4,6 +4,7 @@ import {
   DECLINING_YEAR_RATIO,
   SUGGESTED_INCOME_NOTE,
   YTD_CONFLICT_CAUTION,
+  K1_ORDINARY_NOTE,
   k1OrdinaryMonthly,
   laterYearIsMateriallyLower,
   monthlyFromAnnual,
@@ -25,6 +26,7 @@ export {
   DECLINING_YEAR_RATIO,
   SUGGESTED_INCOME_NOTE,
   YTD_CONFLICT_CAUTION,
+  K1_ORDINARY_NOTE,
   k1OrdinaryMonthly,
   monthlyFromAnnual,
   monthsThroughPeriodEnd,
@@ -63,6 +65,8 @@ export type QualifyingIncomeResult = {
   basis: QualifyingBasis;
   method?: QualifyingMethod;
   caution?: string;
+  methodNote?: string;
+  needsFrequency?: boolean;
 };
 
 const ENTITY_KINDS = new Set<TaxReturnKind>(["k1", "1065", "1120s"]);
@@ -328,7 +332,13 @@ export function wageIncomeFromDraft(
 }
 
 export function wageIncomeCaution(draft: FoxIntakeDraft): string | undefined {
-  return wageIncomeFromDraft(draft)?.caution;
+  const wage = wageIncomeFromDraft(draft);
+  return wage?.needsFrequency ? undefined : wage?.caution;
+}
+
+export function wageMethodNote(draft: FoxIntakeDraft): string | undefined {
+  const wage = wageIncomeFromDraft(draft);
+  return wage?.needsFrequency ? undefined : wage?.methodNote;
 }
 
 export function monthlyQualifyingFromExtract(
@@ -338,8 +348,18 @@ export function monthlyQualifyingFromExtract(
 ): QualifyingIncomeResult | null {
   if (extractClass === "paystub" || extractClass === "w2") {
     const wage = suggestWageIncome(wageSuggestInput(draft, fields));
-    if (wage == null || wage.monthly === 0) return null;
-    return { monthly: wage.monthly, basis: "wage", method: wage.method, caution: wage.caution };
+    if (wage == null) return null;
+    if (wage.needsFrequency) {
+      return { monthly: 0, basis: "wage", method: wage.method, needsFrequency: true };
+    }
+    if (wage.monthly === 0) return null;
+    return {
+      monthly: wage.monthly,
+      basis: "wage",
+      method: wage.method,
+      caution: wage.caution,
+      methodNote: wage.methodNote,
+    };
   }
   if (extractClass !== "tax_return") return null;
   const incoming = cashflowFromExtract(fields);
@@ -354,8 +374,43 @@ export function monthlyQualifyingFromExtract(
     };
   }
   const entity = k1Monthly(years);
-  if (entity != null) return { monthly: entity, basis: "k1" };
+  if (entity != null) return { monthly: entity, basis: "k1", methodNote: "ordinary / 12" };
   return null;
+}
+
+export function hasK1Ordinary(draft: FoxIntakeDraft): boolean {
+  return readTaxCashflows(draft).some((row) => String(row.k1_ordinary_income ?? "").trim());
+}
+
+export function applyPayFrequencyAnswer(draft: FoxIntakeDraft, raw: string): FoxIntakeDraft {
+  const value = String(raw ?? "").trim().toLowerCase();
+  const now = new Date().toISOString();
+  const next: FoxIntakeDraft = {
+    ...draft,
+    awaitingPayFrequency: false,
+    facts: {
+      ...(draft.facts ?? {}),
+      pay_frequency: {
+        field: "pay_frequency",
+        value,
+        source: "client",
+        confirmed: true,
+        confirmedAt: now,
+      },
+    },
+  };
+  const computed = monthlyQualifyingFromExtract(next, lastWageClass(next), {});
+  if (!computed || computed.needsFrequency || computed.monthly === 0) return next;
+  return withQualifyingIncomeProposal(next, computed, lastWageClass(next));
+}
+
+function lastWageClass(draft: FoxIntakeDraft): ExtractClass {
+  const docs = draft.documents;
+  for (let i = docs.length - 1; i >= 0; i -= 1) {
+    const cls = docs[i]?.extractClass;
+    if (cls === "paystub" || cls === "w2") return cls;
+  }
+  return "paystub";
 }
 
 function writeTaxCashflows(draft: FoxIntakeDraft, years: TaxYearCashflow[]): FoxIntakeDraft {
@@ -442,10 +497,18 @@ export function applyQualifyingIncomeFromExtract(
   if (extractClass === "tax_return") {
     next = writeTaxCashflows(next, mergeTaxCashflows(readTaxCashflows(next), cashflowFromExtract(fields)));
   }
+  if (computed?.needsFrequency) {
+    if (next.pendingConflict) return next;
+    return { ...next, awaitingPayFrequency: true, pendingProposal: null };
+  }
   if (draft.pendingConflict && !(extractClass === "tax_return" && existingMonthlyIncome(draft)?.via === QUALIFYING_INCOME_FIELD)) {
     return next;
   }
-  return withQualifyingIncomeProposal(next, computed, extractClass);
+  return withQualifyingIncomeProposal(
+    { ...next, awaitingPayFrequency: false },
+    computed,
+    extractClass,
+  );
 }
 
 export function qualifyingIncomeNote(draft: FoxIntakeDraft): string | undefined {

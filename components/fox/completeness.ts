@@ -425,6 +425,10 @@ export function proposalAskCopy(proposal: FactProposal) {
   return `The document has ${proposal.label} ${shown}. Use this?`;
 }
 
+export function incomeConfirmActions(): FoxAction[] {
+  return proposalActions("computed");
+}
+
 export function proposalActions(kind: ProposalKind): FoxAction[] {
   if (kind === "public") {
     return [

@@ -51,6 +51,7 @@ import {
   stableOrDecliningAnnual,
 } from "../components/fox/qualifyingIncome";
 import {
+  inferPayFrequency,
   k1OrdinaryMonthly,
   suggestScheduleCIncome,
   suggestWageIncome,
@@ -2328,6 +2329,53 @@ assert.ok(
 assert.ok(previewFacts(paystubWrite.draft).every((fact) => fact.id !== "product" || fact.value !== "Other"));
 assert.equal(structureFixPrompt("employer"), null);
 assert.equal(structureFixPrompt("pay"), null);
+const paystubAsk = nextFoxAsk(paystubWrite.draft);
+assert.match(paystubAsk.text, /Got the paystub/);
+assert.match(paystubAsk.text, /monthly period × 12 \/ 12/);
+assert.ok((paystubAsk.actions ?? []).some((item) => item.label === "Use this"));
+assert.ok((paystubAsk.actions ?? []).some((item) => item.label === "Leave blank"));
+assertIncomeChipsHoldOverQueue(paystubWrite.draft, /7,200/);
+assert.equal(resolveProposal(paystubWrite.draft, "accept").facts?.qualifying_income?.value, "7200");
+
+const acmeWrite = applyExtractedFields(afterLooks, {
+  extractClass: "paystub",
+  confidence: 0.94,
+  fields: {
+    employer_name: "Acme",
+    pay_period_end: "2026-08-07",
+    gross_period: "4230.77",
+    ytd_gross: "67692.32",
+  },
+});
+assert.equal(acmeWrite.draft.pendingProposal?.value, "9167");
+assert.equal(acmeWrite.draft.pendingProposal?.note, SUGGESTED_INCOME_NOTE);
+assert.equal(acmeWrite.draft.awaitingPayFrequency, false);
+assert.equal(acmeWrite.draft.facts?.qualifying_income, undefined);
+const acmeAsk = nextFoxAsk(acmeWrite.draft);
+assert.match(acmeAsk.text, /Got the paystub/);
+assert.match(acmeAsk.text, /9,167/);
+assert.match(acmeAsk.text, /biweekly period × 26 \/ 12/);
+assert.match(acmeAsk.text, /Suggested qualifying income · not underwritten/);
+assert.ok((acmeAsk.actions ?? []).some((item) => item.label === "Use this"));
+assert.ok((acmeAsk.actions ?? []).some((item) => item.label === "Leave blank"));
+assert.equal(docReactionAsk(acmeWrite.draft, "paystub")?.actions?.some((item) => item.label === "Use this"), true);
+assertIncomeChipsHoldOverQueue(acmeWrite.draft, /9,167/);
+assert.equal(resolveProposal(acmeWrite.draft, "accept").facts?.qualifying_income?.value, "9167");
+assert.equal(resolveProposal(acmeWrite.draft, "decline").facts?.qualifying_income, undefined);
+
+const acmeStaleWrite = applyExtractedFields(afterLooks, {
+  extractClass: "paystub",
+  confidence: 0.94,
+  fields: {
+    employer_name: "Acme",
+    pay_period_end: "2026-08-07",
+    gross_period: "4230.77",
+    ytd_gross: "67692.32",
+    pay_frequency: "semimonthly",
+  },
+});
+assert.equal(acmeStaleWrite.draft.pendingProposal?.value, "9167");
+assert.match(nextFoxAsk(acmeStaleWrite.draft).text, /biweekly period × 26 \/ 12/);
 
 const typedIncome = draft({
   ...afterLooks,
@@ -2932,8 +2980,10 @@ const moduleWageYtd = suggestWageIncome({
   grossPeriod: 7200,
 });
 assert.equal(moduleWageYtd?.monthly, 7200);
-assert.equal(moduleWageYtd?.method, "ytd-months");
+assert.equal(moduleWageYtd?.method, "period-frequency");
+assert.equal(moduleWageYtd?.methodNote, "monthly period × 12 / 12");
 assert.equal(moduleWageYtd?.caution, undefined);
+assert.equal(moduleWageYtd?.needsFrequency, undefined);
 
 const moduleWageFreq = suggestWageIncome({
   grossPeriod: 3500,
@@ -2988,6 +3038,47 @@ const moduleTwoYearOt = suggestWageIncome({
   priorYear: { taxYear: 2023, overtime: 6000 },
 });
 assert.equal(moduleTwoYearOt?.monthly, 7500);
+
+const acmeWage = suggestWageIncome({
+  payPeriodEnd: "2026-08-07",
+  grossPeriod: 4230.77,
+  ytdGross: 67692.32,
+});
+assert.equal(acmeWage?.monthly, 9167);
+assert.equal(acmeWage?.method, "period-frequency");
+assert.equal(acmeWage?.methodNote, "biweekly period × 26 / 12");
+assert.equal(acmeWage?.needsFrequency, undefined);
+assert.equal(acmeWage?.caution, undefined);
+assert.equal(inferPayFrequency({
+  payPeriodEnd: "2026-08-07",
+  grossPeriod: 4230.77,
+  ytdGross: 67692.32,
+})?.key, "biweekly");
+
+const acmeStaleSemi = suggestWageIncome({
+  payPeriodEnd: "2026-08-07",
+  grossPeriod: 4230.77,
+  ytdGross: 67692.32,
+  payFrequency: "semimonthly",
+});
+assert.equal(acmeStaleSemi?.monthly, 9167);
+assert.equal(acmeStaleSemi?.methodNote, "biweekly period × 26 / 12");
+assert.notEqual(acmeStaleSemi?.monthly, 8462);
+
+const ambiguousFreq = suggestWageIncome({
+  payPeriodEnd: "2026-08-15",
+  grossPeriod: 4230.77,
+  ytdGross: 67692.32,
+});
+assert.equal(ambiguousFreq?.needsFrequency, true);
+assert.equal(inferPayFrequency({
+  payPeriodEnd: "2026-08-15",
+  grossPeriod: 4230.77,
+  ytdGross: 67692.32,
+}), "ambiguous");
+
+const periodOnlyAsk = suggestWageIncome({ grossPeriod: 4230.77 });
+assert.equal(periodOnlyAsk?.needsFrequency, true);
 
 const fannieW2 = queryConventionalGuidelines({ agency: "fannie", topic: "income", key: "w2" });
 const freddieW2 = queryConventionalGuidelines({ agency: "freddie", topic: "income", key: "w2" });
@@ -3596,6 +3687,8 @@ assert.ok(
     (fact) => fact.id === "qualifying" && fact.note === SUGGESTED_INCOME_NOTE,
   ),
 );
+assert.match(nextFoxAsk(k1Return.draft).text, /Got the 2024 K-1/);
+assert.match(nextFoxAsk(k1Return.draft).text, /Ordinary is not confirmed cash flow/);
 assert.ok(stillUsefulLabels(k1Return.draft).includes("K-1 distributions"));
 assert.ok(!stillUsefulLabels(k1Return.draft).includes("prior-year return"));
 assert.match(stillUsefulAskCopy(k1Return.draft), /K-1 distributions/i);
@@ -3809,8 +3902,11 @@ assert.equal(entityOrdinary.draft.pendingProposal?.note, SUGGESTED_INCOME_NOTE);
 assert.equal(entityOrdinary.draft.facts?.qualifying_income, undefined);
 assert.equal(workspacePrompt(entityOrdinary.draft), "confirm-proposal");
 const entityAsk = workspacePromptCopy("confirm-proposal", entityOrdinary.draft);
-assert.match(entityAsk.text, /Got the 2024 return/);
+assert.match(entityAsk.text, /Got the 2024 K-1/);
+assert.doesNotMatch(entityAsk.text, /Got the 2024 return/);
 assert.match(entityAsk.text, /3,333/);
+assert.match(entityAsk.text, /ordinary \/ 12/);
+assert.match(entityAsk.text, /Ordinary is not confirmed cash flow/);
 assert.ok((entityAsk.actions ?? []).some((action) => action.label === "Use this"));
 assert.ok((entityAsk.actions ?? []).some((action) => action.label === "Leave blank"));
 assertIncomeChipsHoldOverQueue(entityOrdinary.draft, /3,333/);
@@ -4151,7 +4247,10 @@ const wrote = applyExtractWrite(
 );
 assert.equal(wrote.draft.facts?.employer_name?.value, "Harbor Steel");
 assert.equal(wrote.draft.productIntent, "buy");
-assert.equal(workspacePrompt(wrote.draft), "done");
+assert.equal(wrote.draft.awaitingPayFrequency, true);
+assert.equal(wrote.draft.pendingProposal, null);
+assert.equal(workspacePrompt(wrote.draft), "pay-frequency");
+assert.match(nextFoxAsk(wrote.draft).text, /How often is this paycheck/);
 assert.ok(statusCopy(wrote.draft) === "ready" || statusCopy(wrote.draft) === "gathering");
 assert.ok(previewFacts(wrote.draft).some((fact) => fact.id === "originator"));
 assert.ok(previewFacts(wrote.draft).some((fact) => fact.id === "next"));

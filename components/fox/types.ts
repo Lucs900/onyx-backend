@@ -227,6 +227,7 @@ export type FoxIntakeDraft = {
   priorYearSkipped?: boolean;
   yearsInBusinessAsked?: boolean;
   awaitingYearsInBusiness?: boolean;
+  awaitingPayFrequency?: boolean;
   facts?: Record<string, DraftField>;
   pendingConflict?: FactConflict | null;
   pendingProposal?: FactProposal | null;
@@ -275,6 +276,7 @@ export type FoxPrompt =
   | "offer-heloc"
   | "geo-stop"
   | "confirm-proposal"
+  | "pay-frequency"
   | "qualifying"
   | "years-in-business"
   | "done";
@@ -311,6 +313,7 @@ export type Capture =
   | { field: "skip-term" }
   | { field: "accept-proposal" }
   | { field: "decline-proposal" }
+  | { field: "payFrequency"; value: string }
   | { field: "yearsInBusiness"; value: string }
   | { field: "skip-years-in-business" }
   | { field: "qualifyingIncome"; value: string }
