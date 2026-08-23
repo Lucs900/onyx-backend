@@ -837,7 +837,7 @@ export function markMissingAsked(key: string) {
 
 export function skipDocuments() {
   if (current.workspaceFlow && !current.sampleAccepted) {
-    return commit(skipCurrentInvite(current));
+    return commit(skipCurrentInvite({ ...current, docsHeld: false }));
   }
   const prepared =
     current.sampleAccepted ||

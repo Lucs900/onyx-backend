@@ -65,6 +65,7 @@ import {
   lastFoxTurn,
   docReactionAsk,
   nextFoxAsk,
+  holdDocsAskFox,
   shouldDeferStillUsefulAsk,
   structureExplainCopy,
   structureFixPrompt,
@@ -1012,7 +1013,7 @@ export function AlwaysOnFox({
       skipPromptSync.current = true;
       const live = getFoxDraft();
       if (action.capture.field === "ask-fox" && live.docsHeld && !live.sampleAccepted) {
-        appendReply(action.label, nextFoxAsk(live));
+        appendReply(action.label, holdDocsAskFox());
         window.requestAnimationFrame(() => focusComposer(true));
         return;
       }

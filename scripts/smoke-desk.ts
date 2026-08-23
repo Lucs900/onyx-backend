@@ -99,6 +99,8 @@ import {
   fileSummaryFacts,
   GEO_STOP_COPY,
   HOLD_DOCS_COPY,
+  HOLD_DOCS_ASK_FOX,
+  holdDocsAskFox,
   CORRECT_ASK,
   HELOC_OFFER_COPY,
   JUMBO_OFFER_COPY,
@@ -763,6 +765,18 @@ assert.deepEqual(
   (workspacePromptCopy("documents", heldDocs).actions ?? []).map((item) => item.label),
   ["Start with ID", "Ask Fox"],
 );
+const askFoxHeld = workspaceReply("Ask Fox", heldDocs);
+assert.equal(askFoxHeld?.capture?.field, "ask-fox");
+assert.equal(askFoxHeld?.text, HOLD_DOCS_ASK_FOX);
+assert.notEqual(askFoxHeld?.text, HOLD_DOCS_COPY);
+assert.doesNotMatch(askFoxHeld?.text ?? "", /I’ll hold documents|Okay\. I’ll hold/);
+assert.deepEqual(
+  (askFoxHeld?.actions ?? []).map((item) => item.label),
+  ["Start with ID", "Ask Fox"],
+);
+assert.equal(holdDocsAskFox().text, HOLD_DOCS_ASK_FOX);
+assert.notEqual(HOLD_DOCS_ASK_FOX, HOLD_DOCS_COPY);
+assert.equal(workspaceUpdateCopy({ field: "ask-fox" }, heldDocs), HOLD_DOCS_ASK_FOX);
 const refiOffer = withIncome(
   withRefiFunds(
     draft({
@@ -1318,6 +1332,14 @@ assert.equal(
 const leftoverCorrect = promptCopy("correct");
 assert.equal(leftoverCorrect.text, CORRECT_ASK);
 assert.doesNotMatch(leftoverCorrect.text, /Tap any line on the structure/);
+const afterHoldLooks = skipDocInvites({ ...afterIncome, docsHeld: true });
+assert.equal(workspacePrompt(afterHoldLooks), "review");
+const afterHoldFix = workspaceReply("Needs a correction", afterHoldLooks);
+assert.equal(afterHoldFix?.capture?.field, "needs-correction");
+assert.equal(afterHoldFix?.text, CORRECT_ASK);
+assert.ok((afterHoldFix?.actions ?? []).some((item) => item.label === "Occupancy"));
+assert.ok((afterHoldFix?.actions ?? []).some((item) => item.label === "Credit"));
+assert.doesNotMatch(afterHoldFix?.text ?? "", /Tap any line on the structure/);
 
 const afterLooks = draft({
   ...afterIncome,
@@ -3599,6 +3621,7 @@ assert.ok(alwaysOn.includes("DECLINING_INCOME_CAUTION"));
 assert.ok(alwaysOn.includes("isDeadFileWriteLine"));
 assert.ok(alwaysOn.includes("docReactionAsk"));
 assert.ok(alwaysOn.includes("shouldDeferStillUsefulAsk"));
+assert.ok(alwaysOn.includes("holdDocsAskFox"));
 assert.ok(dropSource.includes("shouldDeferStillUsefulAsk"));
 assert.ok(!alwaysOn.includes("Updated identity from ID."));
 assert.ok(!alwaysOn.includes("Updated income from tax return."));

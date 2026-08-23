@@ -801,7 +801,14 @@ function incomeFromText(text: string) {
 
 function documentsAskText(draft: FoxIntakeDraft): string {
   if (draft.awaitingYearsInBusiness) return YEARS_IN_BUSINESS_ASK;
-  if (draft.docsHeld && !draft.docsStarted && !draft.sampleAccepted) return HOLD_DOCS_COPY;
+  if (
+    draft.docsHeld &&
+    !draft.docsStarted &&
+    !draft.sampleAccepted &&
+    nextDocInvite(draft)
+  ) {
+    return HOLD_DOCS_COPY;
+  }
   if (offeringDocStart(draft)) return sketchAndStartDocsCopy(draft).text;
   const invite = nextDocInvite(draft);
   if (invite) return DOC_INVITE_COPY[invite];
@@ -1001,6 +1008,9 @@ function startDocsActions(): FoxAction[] {
 export const HOLD_DOCS_COPY =
   "Okay. I’ll hold documents. The sketch is on the notepad. Say when you want to start with ID, or ask me anything.";
 
+export const HOLD_DOCS_ASK_FOX =
+  "I’m here. Ask anything about this file, or start with ID when you’re ready for documents.";
+
 function holdDocsActions(): FoxAction[] {
   return [
     { id: "start-docs", label: "Start with ID", event: "bubble", capture: { field: "start-docs" } },
@@ -1011,6 +1021,13 @@ function holdDocsActions(): FoxAction[] {
 function holdDocsAsk() {
   return {
     text: HOLD_DOCS_COPY,
+    actions: holdDocsActions(),
+  };
+}
+
+export function holdDocsAskFox() {
+  return {
+    text: HOLD_DOCS_ASK_FOX,
     actions: holdDocsActions(),
   };
 }
@@ -1191,7 +1208,14 @@ export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
     return "income";
   }
   if (draft.correcting) return draft.correcting;
-  if (draft.docsHeld && !draft.docsStarted && !draft.sampleAccepted) return "documents";
+  if (
+    draft.docsHeld &&
+    !draft.docsStarted &&
+    !draft.sampleAccepted &&
+    nextDocInvite(draft)
+  ) {
+    return "documents";
+  }
   if (!draft.productIntent) return "product";
   if (needsJumboPurpose(draft)) return "jumbo-purpose";
   if (!draft.occupancyAsked && !draft.occupancyChoice.value) return "occupancy";
@@ -1413,7 +1437,12 @@ function workspaceAskCopy(
     if (draft.awaitingYearsInBusiness) {
       return { text: YEARS_IN_BUSINESS_ASK };
     }
-    if (draft.docsHeld && !draft.docsStarted && !draft.sampleAccepted) {
+    if (
+      draft.docsHeld &&
+      !draft.docsStarted &&
+      !draft.sampleAccepted &&
+      nextDocInvite(draft)
+    ) {
       return holdDocsAsk();
     }
     if (offeringDocStart(draft) && draft.docsHeld) {
@@ -1952,6 +1981,7 @@ export function workspaceUpdateCopy(capture: Capture, draft: FoxIntakeDraft) {
     return MOTION_COPY.whatHappensNext;
   }
   if (capture.field === "ask-fox") {
+    if (draft.docsHeld && !draft.sampleAccepted) return HOLD_DOCS_ASK_FOX;
     return MOTION_COPY.askFox;
   }
   if (capture.field === "talk-originator") {
@@ -3081,7 +3111,7 @@ export function workspaceReply(
       }
       if (/(ask fox|just ask)/i.test(lower)) {
         return {
-          ...holdDocsAsk(),
+          ...holdDocsAskFox(),
           capture: { field: "ask-fox" },
         };
       }
