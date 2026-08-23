@@ -133,6 +133,7 @@ import {
   workspaceReply,
   docReactionAsk,
   nextFoxAsk,
+  shouldDeferStillUsefulAsk,
   parseYearsInBusiness,
   workspaceUpdateCopy,
   skipCurrentInvite,
@@ -145,6 +146,41 @@ assertOnyxFixtures();
 
 function draft(partial: Record<string, unknown> = {}) {
   return { ...emptyDraft(), workspaceFlow: true, ...partial };
+}
+
+function queuedMidConfirm(live: ReturnType<typeof draft>) {
+  return {
+    ...live,
+    sampleAccepted: true,
+    motion: "in_queue" as const,
+    pendingFinish: "proceed" as const,
+  };
+}
+
+function assertIncomeChipsHoldOverQueue(live: ReturnType<typeof draft>, amount: RegExp) {
+  assert.equal(shouldDeferStillUsefulAsk(live), true);
+  assert.equal(workspacePrompt(live), "confirm-proposal");
+  const latest = nextFoxAsk(live);
+  assert.match(latest.text, amount);
+  assert.ok((latest.actions ?? []).some((item) => item.label === "Use this"));
+  assert.ok((latest.actions ?? []).some((item) => item.label === "Leave blank"));
+  assert.notEqual(latest.text, MOTION_COPY.in_queue);
+  assert.doesNotMatch(latest.text, /ONYX has this for review/);
+  const queued = queuedMidConfirm(live);
+  assert.equal(shouldDeferStillUsefulAsk(queued), true);
+  assert.equal(workspacePrompt(queued), "confirm-proposal");
+  const queuedAsk = nextFoxAsk(queued);
+  assert.match(queuedAsk.text, amount);
+  assert.ok((queuedAsk.actions ?? []).some((item) => item.label === "Use this"));
+  assert.ok((queuedAsk.actions ?? []).some((item) => item.label === "Leave blank"));
+  assert.notEqual(queuedAsk.text, MOTION_COPY.in_queue);
+  assert.doesNotMatch(queuedAsk.text, /ONYX has this for review/);
+  const afterUse = resolveProposal(queued, "accept");
+  assert.equal(shouldDeferStillUsefulAsk(afterUse), false);
+  assert.equal(afterUse.pendingProposal, null);
+  const afterLeave = resolveProposal(queued, "decline");
+  assert.equal(shouldDeferStillUsefulAsk(afterLeave), false);
+  assert.equal(afterLeave.pendingProposal, null);
 }
 
 function skipDocInvites(base: ReturnType<typeof draft>) {
@@ -2039,6 +2075,8 @@ assert.match(seLiveAsk.text, /Use this/);
 assert.doesNotMatch(seLiveAsk.text, /Updated income from tax return/);
 assert.ok((seLiveAsk.actions ?? []).some((item) => item.label === "Use this"));
 assert.ok((seLiveAsk.actions ?? []).some((item) => item.label === "Leave blank"));
+assertIncomeChipsHoldOverQueue(seReturn.draft, /\$9,000/);
+assert.equal(nextFoxAsk(resolveProposal(queuedMidConfirm(seReturn.draft), "accept")).text, YEARS_IN_BUSINESS_ASK);
 assert.ok(
   previewFacts(seReturn.draft).some(
     (fact) =>
@@ -2394,6 +2432,13 @@ assert.doesNotMatch(
 );
 assert.ok((seTwoYearAsk.actions ?? []).some((item) => item.label === "Use this"));
 assert.ok((seTwoYearAsk.actions ?? []).some((item) => item.label === "Leave blank"));
+assertIncomeChipsHoldOverQueue(seSecondAfterConfirm.draft, /\$8,167/);
+{
+  const twoYearUsed = resolveProposal(queuedMidConfirm(seSecondAfterConfirm.draft), "accept");
+  if (workspacePrompt(twoYearUsed) === "done") {
+    assert.equal(nextFoxAsk(twoYearUsed).text, MOTION_COPY.in_queue);
+  }
+}
 assert.doesNotMatch(
   `${proposalAskCopy(seReturn.draft.pendingProposal!)} ${previewFacts(seAccepted).map((fact) => `${fact.value} ${fact.note ?? ""}`).join(" ")}`,
   /1084|\bDU\b|approved|eligible|you qualify|don’t qualify|agency_ready/i,
@@ -2585,6 +2630,7 @@ assert.match(decliningCard.text, /declin/i);
 assert.doesNotMatch(decliningCard.text, /which should I keep|the document has|Updated from the document/i);
 assert.match(decliningCard.text, /Suggested qualifying income · not underwritten/);
 assert.equal(decliningCard.followUp, DECLINING_INCOME_CAUTION);
+assertIncomeChipsHoldOverQueue(seDecliningYearTwo.draft, /\$6,000/);
 const yearOneAsk = workspacePromptCopy("confirm-proposal", seDecliningYearOne.draft);
 assert.match(yearOneAsk.text, /Got the 2023 return/);
 assert.match(yearOneAsk.text, /7,333/);
@@ -2676,6 +2722,7 @@ assert.match(entityAsk.text, /Got the 2024 return/);
 assert.match(entityAsk.text, /3,333/);
 assert.ok((entityAsk.actions ?? []).some((action) => action.label === "Use this"));
 assert.ok((entityAsk.actions ?? []).some((action) => action.label === "Leave blank"));
+assertIncomeChipsHoldOverQueue(entityOrdinary.draft, /3,333/);
 assert.match(proposalAskCopy(entityOrdinary.draft.pendingProposal!), /3,333/);
 assert.match(proposalAskCopy(entityOrdinary.draft.pendingProposal!), /Suggested qualifying income · not underwritten/);
 assert.ok(stillUsefulLabels(entityOrdinary.draft).includes("K-1 distributions"));
@@ -3446,6 +3493,8 @@ assert.ok(alwaysOn.includes("motionAskText"));
 assert.ok(alwaysOn.includes("DECLINING_INCOME_CAUTION"));
 assert.ok(alwaysOn.includes("isDeadFileWriteLine"));
 assert.ok(alwaysOn.includes("docReactionAsk"));
+assert.ok(alwaysOn.includes("shouldDeferStillUsefulAsk"));
+assert.ok(dropSource.includes("shouldDeferStillUsefulAsk"));
 assert.ok(!alwaysOn.includes("Updated identity from ID."));
 assert.ok(!alwaysOn.includes("Updated income from tax return."));
 assert.ok(!alwaysOn.includes("Updated from the document."));

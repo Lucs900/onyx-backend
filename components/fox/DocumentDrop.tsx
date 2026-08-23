@@ -12,7 +12,7 @@ import {
   receiveDocument,
 } from "./store";
 import type { ExtractClass, FoxIntakeDraft } from "./types";
-import { slotFromFilename } from "./workspace";
+import { shouldDeferStillUsefulAsk, slotFromFilename } from "./workspace";
 import {
   emitDocIntake,
   missingExtractClasses,
@@ -171,7 +171,9 @@ export function DocumentDrop({
               ? missingExtractClasses(after)
               : [],
           refreshStillUseful:
-            askStillUseful && (fileExists(after) || Boolean(after.pendingProposal)),
+            askStillUseful &&
+            (fileExists(after) || Boolean(after.pendingProposal)) &&
+            !shouldDeferStillUsefulAsk(after),
         });
       } catch {
         patchReceivedDoc(

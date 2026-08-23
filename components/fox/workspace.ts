@@ -1109,6 +1109,15 @@ export function sampleReady(draft: FoxIntakeDraft): boolean {
   return sketchAssembled(draft);
 }
 
+export function isQualifyingIncomeConfirmPending(draft: FoxIntakeDraft): boolean {
+  return draft.pendingProposal?.field === QUALIFYING_INCOME_FIELD;
+}
+
+/** Queue / Looks right waits until Use this / Leave blank on a live income suggest. */
+export function shouldDeferStillUsefulAsk(draft: FoxIntakeDraft): boolean {
+  return isQualifyingIncomeConfirmPending(draft);
+}
+
 /** Single /start conversation engine. Desktop and mobile share this order, copy, and path rules. */
 export function nextFoxAsk(draft: FoxIntakeDraft): {
   text: string;

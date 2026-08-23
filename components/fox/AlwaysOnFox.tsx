@@ -66,6 +66,7 @@ import {
   lastFoxTurn,
   docReactionAsk,
   nextFoxAsk,
+  shouldDeferStillUsefulAsk,
   structureExplainCopy,
   structureFixPrompt,
   withWorkspaceGuide,
@@ -254,6 +255,7 @@ function hasPreparedAsk(messages: FoxMessage[]) {
 }
 
 function withUpdatedStillUsefulAsk(messages: FoxMessage[], live: FoxIntakeDraft): FoxMessage[] {
+  if (shouldDeferStillUsefulAsk(live)) return messages;
   const ask = foxAskMessage({
     text: motionAskText(live),
     actions: finishLineActions(live),
@@ -687,7 +689,11 @@ export function AlwaysOnFox({
           if (!lastFox || !sameFoxAsk(lastFox, ask)) {
             next.push(foxAskMessage(ask));
           }
-          if (detail.refreshStillUseful && live.sampleAccepted) {
+          if (
+            detail.refreshStillUseful &&
+            live.sampleAccepted &&
+            !shouldDeferStillUsefulAsk(live)
+          ) {
             return withUpdatedStillUsefulAsk(next, getFoxDraft());
           }
         } else if (getFoxDraft().workspaceFlow && !getFoxDraft().sampleAccepted) {
@@ -813,6 +819,9 @@ export function AlwaysOnFox({
     }
     commitMessages((prev) => {
       if (mustShowReview && hasReviewAsk(prev)) return prev;
+      if (isStart && shouldDeferStillUsefulAsk(live) && prompt !== "confirm-proposal") {
+        return prev;
+      }
       if (isStart && prompt === "done") {
         if (hasPreparedAsk(prev)) return prev;
         if (fileExists(getFoxDraft()) && prev[prev.length - 1]?.role === "fox") return prev;
