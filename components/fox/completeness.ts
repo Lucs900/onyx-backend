@@ -37,7 +37,8 @@ import {
   completeness as storeCompleteness,
   escalate as storeEscalate,
   flags as storeFlags,
-  type FileFacts,
+  type CompletenessFile,
+  type NamedDebt,
 } from "@/lib/guidelines/conventional";
 
 export const SUGGESTED_NOTE = "Suggested · not verified";
@@ -371,7 +372,61 @@ export function lowestCreditBand(draft?: FoxIntakeDraft | null) {
   return draft?.creditBand === "680-719" || draft?.scenario?.creditRange === "680-719";
 }
 
-export function factsFromDraft(draft: FoxIntakeDraft): FileFacts {
+const DEBT_FACT_KEYS: Record<string, string> = {
+  auto_loan: "the auto loan",
+  car_loan: "the car loan",
+  car_payment: "the car payment",
+  student_loan: "the student loan",
+  credit_card: "the credit card",
+  alimony: "alimony",
+  child_support: "child support",
+  installment_debt: "the installment debt",
+  other_debt: "the other debt",
+  monthly_debt: "that debt",
+};
+
+function inferredIncomeClasses(draft: FoxIntakeDraft): string[] {
+  const extra: string[] = [];
+  if (
+    factValue(draft, "gross_period") ||
+    factValue(draft, "pay_period_end") ||
+    factValue(draft, "ytd_gross") ||
+    factValue(draft, "pay_frequency")
+  ) {
+    extra.push("paystub");
+  }
+  if (factValue(draft, "wages")) extra.push("w2");
+  if (
+    factValue(draft, "schedule_c_net_profit") ||
+    factValue(draft, "k1_ordinary_income") ||
+    factValue(draft, "return_kind") ||
+    factValue(draft, "agi")
+  ) {
+    extra.push("tax_return");
+  }
+  return extra;
+}
+
+function namedDebtsFromDraft(draft: FoxIntakeDraft): NamedDebt[] {
+  const facts = draft.facts ?? {};
+  const debts: NamedDebt[] = [];
+  const seen = new Set<string>();
+  for (const [key, label] of Object.entries(DEBT_FACT_KEYS)) {
+    const fact = facts[key];
+    if (!fact?.value || fact.value === "0") continue;
+    const named = /[a-z]/i.test(fact.value) && !/^\$?[\d,]+(?:\.\d+)?$/.test(fact.value.trim())
+      ? fact.value.trim()
+      : label;
+    if (seen.has(named)) continue;
+    seen.add(named);
+    debts.push({ name: named });
+  }
+  const named = facts.debt_name?.value?.trim();
+  if (named && !seen.has(named)) debts.push({ name: named });
+  return debts;
+}
+
+export function factsFromDraft(draft: FoxIntakeDraft): CompletenessFile {
   const occupancyRaw = draft.occupancyChoice.value || draft.scenario?.occupancy || "";
   const occupancy =
     occupancyRaw === "second-home" ? "second" : occupancyRaw || undefined;
@@ -393,10 +448,16 @@ export function factsFromDraft(draft: FoxIntakeDraft): FileFacts {
   } else if (purchase && draft.propertyValueAmount != null && draft.downPaymentAmount != null) {
     const implied = Math.round(draft.propertyValueAmount - draft.downPaymentAmount);
     if (implied > 0) loanAmount = implied;
-  } else if (purchase && draft.propertyValueAmount != null && draft.propertyValueAmount > 0) {
-    loanAmount = draft.propertyValueAmount;
   }
+  const debts = namedDebtsFromDraft(draft);
+  const base = completenessFileFromDraft(draft);
+  const received = new Set(base.received ?? []);
+  for (const id of inferredIncomeClasses(draft)) received.add(id);
   return {
+    ...base,
+    received: Array.from(received),
+    w2Count: Math.max(base.w2Count ?? 0, received.has("w2") ? 1 : 0),
+    taxReturnCount: Math.max(base.taxReturnCount ?? 0, received.has("tax_return") ? 1 : 0),
     product: draft.productIntent || undefined,
     occupancy,
     purposeHint,
@@ -409,10 +470,15 @@ export function factsFromDraft(draft: FoxIntakeDraft): FileFacts {
     incomeType,
     namedGovvie: Boolean(draft.govProgram),
     namedDistress: Boolean(draft.creditEvent),
+    govProgram: draft.govProgram,
     wantsCreditDecision: false,
     requestedHuman: Boolean(draft.originatorRequested),
     commitmentRequired: Boolean(draft.overPriceConfirmed),
     unresolvedConflict: Boolean(draft.unresolvedConflict),
+    ...(debts.length ? { debts } : {}),
+    docsSkipped: Boolean(
+      draft.documentsSkipped || draft.docsHeld || (draft.skippedClasses?.length ?? 0) > 0,
+    ),
   };
 }
 

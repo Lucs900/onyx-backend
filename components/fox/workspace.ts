@@ -126,7 +126,6 @@ import {
   LTV_NOT_A_DECISION,
   PHONE_LINE,
   TIMELINE_LINE,
-  WILL_I_QUALIFY_LINE,
   conventionalGuidelinePattern,
   flags as storeFlags,
   lookup as storeLookup,
@@ -1328,7 +1327,6 @@ function looksLikeQuestion(text: string) {
   );
 }
 
-export const NO_APPROVE_COPY = WILL_I_QUALIFY_LINE;
 export const COST_COPY = COST_LINE;
 export const ACR_BENEFITS_COPY = ACR_BENEFITS_LINE;
 export const TIMELINE_COPY = TIMELINE_LINE;

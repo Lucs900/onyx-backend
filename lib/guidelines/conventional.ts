@@ -165,6 +165,10 @@ export type Topic = {
   neverSay: string[];
 };
 
+export type NamedDebt = {
+  name: string;
+};
+
 export type FileFacts = {
   product?: string;
   occupancy?: string;
@@ -178,11 +182,15 @@ export type FileFacts = {
   incomeType?: string;
   namedGovvie?: boolean;
   namedDistress?: boolean;
+  govProgram?: "fha" | "va" | "usda";
   wantsCreditDecision?: boolean;
   requestedHuman?: boolean;
   commitmentRequired?: boolean;
   unresolvedConflict?: boolean;
   askedWillIQualify?: boolean;
+  debts?: NamedDebt[];
+  docsSkipped?: boolean;
+  obviousHighDti?: boolean;
 };
 
 export type CompletenessFile = FileFacts & {
@@ -240,8 +248,11 @@ export const GOVVIE_LINE =
   "That’s a government program. I can keep the sketch. A licensed originator can take that path.";
 export const DISTRESS_LINE = "I can keep preparing this file. Pricing waits.";
 export const LOW_CREDIT_CAUTION = "I’ll keep gathering. Pricing waits.";
-export const WILL_I_QUALIFY_LINE =
-  "I can prepare a file. I cannot approve or say you qualify. Here’s what still helps, and what’s missing.";
+export const READINESS_STRONG =
+  "Based on everything so far, this looks like it would qualify under conventional guidelines. Final underwriting still decides.";
+export const READINESS_UW_REVIEW = "I can run this past underwriting before we go further.";
+export const READINESS_THIN_PREFIX = "Not enough yet to tell. Still useful: ";
+export const READINESS_NOT_READY_PREFIX = "This does not look ready yet.";
 export const COST_LINE =
   "I don’t have a live fee quote. The preview rate is not live. I won’t invent a closing-cost number.";
 export const ACR_BENEFITS_LINE =
@@ -342,7 +353,7 @@ const CITE_FHFA_2026: AgencyCite = {
 };
 
 const INCOME_NUMBERS_STAY = "Income numbers stay in the income module. This store never recalculates income.";
-const PREPARE_ONLY = "I can prepare a file. I cannot say you qualify.";
+const READINESS_SUGGEST = "Readiness from the File. Final underwriting still decides.";
 
 function topic(
   id: string,
@@ -538,9 +549,9 @@ export const TOPICS: Record<string, Topic> = {
     "unsupported",
     [],
     LOCKED_REMAINDER.slice(),
-    PREPARE_ONLY,
+    READINESS_SUGGEST,
     "",
-    WILL_I_QUALIFY_LINE,
+    READINESS_UW_REVIEW,
   ),
   "language.cost": topic(
     "language.cost",
@@ -717,7 +728,10 @@ export function lookup(
   }
   const flagged = flags(file);
   const caution = found.caution || flagged.caution;
-  const rendered = renderStoreLine(found.borrowerLine, file);
+  const rendered =
+    topicId === "language.will_i_qualify"
+      ? readinessFromFile(file).line
+      : renderStoreLine(found.borrowerLine, file);
   const languageTopic = topicId.startsWith("language.");
   const borrowerLine = languageTopic
     ? rendered
@@ -869,4 +883,229 @@ export function documentedStillUsefulIds(
     ids.push("bank_statement");
   }
   return ids;
+}
+
+export type ReadinessKind = "strong" | "not_ready" | "thin" | "uw_review";
+
+export type ReadinessRead = {
+  kind: ReadinessKind;
+  line: string;
+  reason?: string;
+};
+
+function receivedSet(file: CompletenessFile) {
+  return new Set(file.received ?? []);
+}
+
+function taxReturnsOnFile(file: CompletenessFile) {
+  return file.taxReturnCount ?? (receivedSet(file).has("tax_return") ? 1 : 0);
+}
+
+function conventionalPurchaseOrLcor(file: FileFacts) {
+  if (file.product === "heloc" || file.product === "jumbo" || file.product === "other") return false;
+  if (file.purposeHint === "cash_out") return false;
+  if (file.product === "buy" || file.purposeHint === "purchase") return true;
+  if (file.product === "refinance" || file.purposeHint === "lcor") return true;
+  return false;
+}
+
+function layer1SketchPresent(file: CompletenessFile) {
+  const occupancy = Boolean(file.occupancy);
+  const income = Boolean(file.incomeType);
+  const credit = Boolean(file.statedCreditBand);
+  const purchase = file.purposeHint === "purchase" || file.product === "buy";
+  const lcor =
+    file.purposeHint === "lcor" || (file.product === "refinance" && file.purposeHint !== "cash_out");
+  const purchaseSketch =
+    purchase && Boolean(file.purchasePrice) && (Boolean(file.downPayment) || Boolean(file.loanAmount));
+  const lcorSketch = Boolean(lcor && file.loanAmount && file.propertyValue);
+  return occupancy && income && credit && (purchaseSketch || lcorSketch);
+}
+
+function californiaFile(file: FileFacts) {
+  return file.state === "CA";
+}
+
+function namedDebtOnFile(file: FileFacts): string | undefined {
+  const name = file.debts?.find((debt) => debt.name.trim())?.name.trim();
+  return name || undefined;
+}
+
+function someIncomeDocsReceived(file: CompletenessFile) {
+  const received = receivedSet(file);
+  return (
+    received.has("paystub") ||
+    received.has("w2") ||
+    received.has("tax_return") ||
+    (file.w2Count ?? 0) > 0 ||
+    taxReturnsOnFile(file) > 0
+  );
+}
+
+/** Path known and the required package for that path is on the File. Does not recalculate income. */
+export function incomeDocumentedEnough(file: CompletenessFile): boolean {
+  const received = receivedSet(file);
+  const returns = taxReturnsOnFile(file);
+  const both = file.incomeType === "w2_plus_se" || file.incomeType === "both";
+  const se =
+    file.incomeType === "se_schedule_c" ||
+    file.incomeType === "k1_ordinary" ||
+    file.incomeType === "self-employed";
+  const w2 =
+    file.incomeType === "w2" ||
+    file.incomeType === "w2_base" ||
+    file.incomeType === "w2_variable";
+  if (both) return received.has("paystub") && received.has("w2") && returns >= 1;
+  if (se) return returns >= 1;
+  if (w2) return received.has("paystub") && received.has("w2");
+  return false;
+}
+
+function missingIncomeDocReason(file: CompletenessFile): string | undefined {
+  if (!file.incomeType) return undefined;
+  const received = receivedSet(file);
+  const returns = taxReturnsOnFile(file);
+  const both = file.incomeType === "w2_plus_se" || file.incomeType === "both";
+  const se =
+    file.incomeType === "se_schedule_c" ||
+    file.incomeType === "k1_ordinary" ||
+    file.incomeType === "self-employed";
+  const w2 =
+    file.incomeType === "w2" ||
+    file.incomeType === "w2_base" ||
+    file.incomeType === "w2_variable";
+  const missing: string[] = [];
+  if (w2 || both) {
+    if (!received.has("paystub")) missing.push("a latest paystub");
+    if (!received.has("w2") && (file.w2Count ?? 0) < 1) missing.push("a W-2");
+  }
+  if (se || both) {
+    if (returns < 1) missing.push("a tax return");
+  }
+  if (file.incomeType === "other" && returns < 1) missing.push("a tax return");
+  if (!missing.length) return undefined;
+  if (missing.length === 1) return `This path still needs ${missing[0]}.`;
+  if (missing.length === 2) return `This path still needs ${missing[0]} and ${missing[1]}.`;
+  return `This path still needs ${missing.slice(0, -1).join(", ")}, and ${missing[missing.length - 1]}.`;
+}
+
+function productMismatchReason(file: FileFacts): string | undefined {
+  if (file.govProgram === "fha" || (file.namedGovvie && file.govProgram === "fha")) {
+    return "That’s an FHA path.";
+  }
+  if (file.govProgram === "va") return "That’s a VA path.";
+  if (file.govProgram === "usda") return "That’s a USDA path.";
+  if (file.namedGovvie) return "That’s a government program.";
+  if (file.product === "heloc") return "That’s a HELOC, not a conventional purchase or refinance.";
+  if (file.product === "jumbo") return "That’s a jumbo path.";
+  if (file.product === "other") return "That product is not a conventional purchase or refinance.";
+  return undefined;
+}
+
+function readinessFix(file: FileFacts, kind: "ltv" | "docs" | "product" | "dti"): string {
+  const debt = namedDebtOnFile(file);
+  if (debt) return `Paying off ${debt} would likely help.`;
+  if (kind === "ltv" || kind === "dti") return "More down payment would likely help.";
+  if (kind === "docs") return "Those income docs would likely help.";
+  return "A conventional file would likely help.";
+}
+
+function notReadyLine(reason: string, fix: string): string {
+  return `${READINESS_NOT_READY_PREFIX} ${reason} ${fix}`;
+}
+
+function thinLine(file: CompletenessFile): string {
+  const product = file.product ?? "";
+  const list = completeness(product, file).stillUseful;
+  const shown = (list.length ? list.join(" · ") : NOTHING_URGENT_MISSING).replace(/\.$/, "");
+  return `${READINESS_THIN_PREFIX}${shown}.`;
+}
+
+function outsideNormalPattern(file: CompletenessFile) {
+  if (file.occupancy === "investment") return true;
+  if (file.purposeHint === "cash_out") return true;
+  if (file.namedDistress) return true;
+  if (file.state && file.state !== "CA") return true;
+  if (lowestCreditBand(file.statedCreditBand)) return true;
+  if (loanAboveCeiling(file) && file.product !== "jumbo") return true;
+  if (file.incomeType === "other" && someIncomeDocsReceived(file)) return true;
+  return false;
+}
+
+function strongEligible(file: CompletenessFile) {
+  if (!californiaFile(file)) return false;
+  if (!conventionalPurchaseOrLcor(file)) return false;
+  if (!layer1SketchPresent(file)) return false;
+  if (!incomeDocumentedEnough(file)) return false;
+  if (file.occupancy === "investment") return false;
+  if (file.purposeHint === "cash_out") return false;
+  if (file.namedGovvie || file.govProgram) return false;
+  if (file.namedDistress) return false;
+  if (file.unresolvedConflict) return false;
+  if (loanExceedsPrice(file)) return false;
+  const ltv = sketchedPurchaseLtvFromFacts(file);
+  if (ltv != null && ltv > HIGH_PURCHASE_LTV) return false;
+  if (lowestCreditBand(file.statedCreditBand)) return false;
+  if (loanAboveCeiling(file)) return false;
+  return true;
+}
+
+/** File-based will-I-qualify / readiness pick. Never recalculates income. */
+export function readinessFromFile(file: FileFacts): ReadinessRead {
+  const complete: CompletenessFile = file;
+  if (file.unresolvedConflict) {
+    return { kind: "uw_review", line: READINESS_UW_REVIEW, reason: "unresolvedConflict" };
+  }
+  if (loanExceedsPrice(file)) {
+    return {
+      kind: "uw_review",
+      line: READINESS_UW_REVIEW,
+      reason: file.commitmentRequired ? "loanExceedsPrice-intentional" : "loanExceedsPrice",
+    };
+  }
+  if (outsideNormalPattern(complete)) {
+    return { kind: "uw_review", line: READINESS_UW_REVIEW, reason: "outside-pattern" };
+  }
+
+  const mismatch = productMismatchReason(file);
+  if (mismatch) {
+    return {
+      kind: "not_ready",
+      line: notReadyLine(mismatch, readinessFix(file, "product")),
+      reason: mismatch,
+    };
+  }
+
+  const ltv = sketchedPurchaseLtvFromFacts(file);
+  if (ltv != null && ltv > HIGH_PURCHASE_LTV && ltv <= 1) {
+    return {
+      kind: "not_ready",
+      line: notReadyLine("This loan is a large share of the price.", readinessFix(file, "ltv")),
+      reason: "high-ltv",
+    };
+  }
+
+  if (file.incomeType && someIncomeDocsReceived(complete) && !incomeDocumentedEnough(complete)) {
+    const reason = missingIncomeDocReason(complete) ?? "Income docs for this path are still missing.";
+    return {
+      kind: "not_ready",
+      line: notReadyLine(reason, readinessFix(file, "docs")),
+      reason,
+    };
+  }
+
+  if (file.obviousHighDti && namedDebtOnFile(file)) {
+    const debt = namedDebtOnFile(file)!;
+    return {
+      kind: "not_ready",
+      line: notReadyLine("Debts on this file look high.", `Paying off ${debt} would likely help.`),
+      reason: "high-dti",
+    };
+  }
+
+  if (strongEligible(complete)) {
+    return { kind: "strong", line: READINESS_STRONG };
+  }
+
+  return { kind: "thin", line: thinLine(complete), reason: "thin-file" };
 }

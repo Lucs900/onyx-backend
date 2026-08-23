@@ -7,6 +7,7 @@
 import {
   loanExceedsPrice,
   lookup,
+  readinessFromFile,
   type FileFacts,
   type GuidelineAction,
 } from "./conventional";
@@ -25,8 +26,11 @@ export type StoreAnswer = {
 
 export function asksWillIQualify(text: string) {
   const lower = text.toLowerCase();
+  if (/\b(qualifying income|suggested qualifying)\b/i.test(lower)) return false;
   if (/(approv|lock|commit to lend)/i.test(lower)) return true;
-  return /\b(will i|do i|can i|am i)\s+(qualif|approved)/i.test(lower);
+  if (/\b(readiness|look ready|ready yet)\b/i.test(lower)) return true;
+  if (/\b(will i|do i|can i|am i)\s+(qualif|approved|ready)\b/i.test(lower)) return true;
+  return /\b(will i|do i|can i|am i).{0,24}qualif/i.test(lower);
 }
 
 export function asksCost(text: string) {
@@ -96,7 +100,8 @@ function containsPhrase(haystack: string, phrase: string) {
   return haystack.toLowerCase().includes(phrase.toLowerCase());
 }
 
-/** Hard rails: no approve/lock/qualify, no invented fees/rates/matrix/county, no LO-will-contact. */
+/** Hard rails: no approve/lock/guaranteed, no invented fees/rates/matrix/county, no LO-will-contact.
+ * The locked strong readiness line may say “looks like it would qualify … Final underwriting still decides.” */
 export function applyHardRails(line: string, file: FileFacts, _neverSay: string[] = []): string {
   let out = line;
   if (loanExceedsPrice(file) && !file.commitmentRequired) {
@@ -107,13 +112,16 @@ export function applyHardRails(line: string, file: FileFacts, _neverSay: string[
       out = lookup("flags.loan_over_price", { ...file, commitmentRequired: false }).borrowerLine;
     }
   }
+  if (/\byou are approved\b/i.test(out) || /\bthis is locked\b/i.test(out) || /\bguaranteed\b/i.test(out)) {
+    return readinessFromFile({ ...file, askedWillIQualify: true }).line;
+  }
   const invented =
     /\bcounty limits?\b/i.test(out) ||
     /\bmatrix cells?\b/i.test(out) ||
     /\bLO will contact you\b/i.test(out) ||
     /\bwe’ll be in touch\b/i.test(out);
   if (invented) {
-    return lookup("language.will_i_qualify", { ...file, askedWillIQualify: true }).borrowerLine;
+    return readinessFromFile({ ...file, askedWillIQualify: true }).line;
   }
   return out;
 }
