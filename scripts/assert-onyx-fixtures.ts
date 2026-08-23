@@ -93,6 +93,22 @@ export function assertOnyxFixtures() {
     "expected scripts/fixtures/paystub-second-job.png",
   );
   assert.ok(paths.some((path) => /paystub-harbor\.png$/.test(path)), "expected scripts/fixtures/paystub-harbor.png");
+  assert.ok(
+    paths.some((path) => /bank-statement-first-national\.png$/.test(path)),
+    "expected scripts/fixtures/bank-statement-first-national.png",
+  );
+  assert.ok(
+    paths.some((path) => /purchase-contract-oak\.png$/.test(path)),
+    "expected scripts/fixtures/purchase-contract-oak.png",
+  );
+  assert.ok(
+    paths.some((path) => /mortgage-statement-oak\.png$/.test(path)),
+    "expected scripts/fixtures/mortgage-statement-oak.png",
+  );
+  assert.ok(
+    paths.some((path) => /bank-statement-sabotage\.png$/.test(path)),
+    "expected scripts/fixtures/bank-statement-sabotage.png",
+  );
 }
 
 const invokedDirectly =

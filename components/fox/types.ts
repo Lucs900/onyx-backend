@@ -77,6 +77,12 @@ export type IncomeParts = {
   k1?: string;
 };
 
+export type FactWrite = {
+  field: string;
+  value: string;
+  label: string;
+};
+
 export type FactProposal = {
   field: string;
   value: string;
@@ -86,11 +92,8 @@ export type FactProposal = {
   methodNote?: string;
   caution?: string;
   partialNotes?: string[];
-  companion?: {
-    field: string;
-    value: string;
-    label: string;
-  };
+  companion?: FactWrite;
+  extras?: FactWrite[];
   parts?: IncomeParts;
 };
 

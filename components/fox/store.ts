@@ -365,6 +365,15 @@ function normalizeProposal(value: FoxIntakeDraft["pendingProposal"]): FactPropos
             label: value.companion.label || value.companion.field,
           }
         : undefined,
+    extras: Array.isArray(value.extras)
+      ? value.extras
+          .filter((item) => item && item.field && item.value)
+          .map((item) => ({
+            field: item.field,
+            value: item.value,
+            label: item.label || item.field,
+          }))
+      : undefined,
     parts:
       value.parts && typeof value.parts === "object"
         ? {
@@ -866,20 +875,21 @@ export function applyExtractWrite(
   if (!match) {
     return { draft: current, writes: [], conflict: null, quietLines: [], extractClass: input.extractClass };
   }
-  const extractClass = preferFilenameClass(
-    promoteExtractClass(input.extractClass, input.fields),
-    name,
-  );
+  const extractedClass = promoteExtractClass(input.extractClass, input.fields);
+  const displayClass =
+    failed || extractedClass === "other"
+      ? preferFilenameClass(extractedClass, name)
+      : extractedClass;
   const applied = failed
     ? { draft: current, writes: [], conflict: null, quietLines: note ? [note] : [] }
-    : applyExtractedFields(current, { ...input, extractClass });
+    : applyExtractedFields(current, { ...input, extractClass: extractedClass });
   const nextDocs = applied.draft.documents.map((doc) => {
     if (doc.receivedAt !== receivedAt || doc.name !== name) return doc;
-    const slot = resolveReceivedSlot(doc.slot, name, extractClass);
+    const slot = resolveReceivedSlot(doc.slot, name, displayClass);
     return {
       ...doc,
       slot,
-      extractClass,
+      extractClass: displayClass,
       status: (failed ? "failed" : "extracted") as DocStatus,
       note,
     };
@@ -890,7 +900,7 @@ export function applyExtractWrite(
     documentsSkipped: false,
     sections: { ...applied.draft.sections, documents: false },
   });
-  return { ...applied, draft: current, extractClass };
+  return { ...applied, draft: current, extractClass: displayClass };
 }
 
 export function markMissingAsked(key: string) {

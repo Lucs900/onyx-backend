@@ -194,6 +194,7 @@ export type CompletenessFile = FileFacts & {
   hasPnl?: boolean;
   k1OrdinaryOnly?: boolean;
   hasScheduleC?: boolean;
+  fundsInPlay?: boolean;
 };
 
 export const LANGUAGE_LOCK = [
@@ -831,7 +832,7 @@ export function completeness(
   if (refi && !received.has("mortgage_statement")) {
     stillUseful.push(DOCUMENTED_STILL_USEFUL.mortgage_statement);
   }
-  if ((purchase || file.purposeHint === "cash_out") && !received.has("bank_statement")) {
+  if ((purchase || file.purposeHint === "cash_out" || file.fundsInPlay) && !received.has("bank_statement")) {
     stillUseful.push(DOCUMENTED_STILL_USEFUL.bank_statement);
   }
   if (!received.has("employer_business")) stillUseful.push("employer/business");
@@ -864,7 +865,7 @@ export function documentedStillUsefulIds(
   if ((purchase || refi) && !received.has("property_address")) ids.push("property-address");
   if (purchase && !received.has("purchase_contract")) ids.push("purchase_contract");
   if (refi && !received.has("mortgage_statement")) ids.push("mortgage_statement");
-  if ((purchase || file.purposeHint === "cash_out") && !received.has("bank_statement")) {
+  if ((purchase || file.purposeHint === "cash_out" || file.fundsInPlay) && !received.has("bank_statement")) {
     ids.push("bank_statement");
   }
   return ids;

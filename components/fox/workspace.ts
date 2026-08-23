@@ -40,6 +40,7 @@ import {
   displayFactValue,
   docsDisplayLabel,
   factValue,
+  isRemainderConfirmField,
   fileStillUsefulNote,
   incomeRequestedClasses,
   missingListCopy,
@@ -1548,9 +1549,13 @@ export function isQualifyingIncomeConfirmPending(draft: FoxIntakeDraft): boolean
   return draft.pendingProposal?.field === QUALIFYING_INCOME_FIELD;
 }
 
-/** Queue / Looks right waits until Use this / Leave blank on a live income suggest. */
+/** Queue / Looks right waits until Use this / Leave blank on a live income or remainder suggest. */
 export function shouldDeferStillUsefulAsk(draft: FoxIntakeDraft): boolean {
-  return isQualifyingIncomeConfirmPending(draft) || Boolean(draft.awaitingPayFrequency);
+  return (
+    isQualifyingIncomeConfirmPending(draft) ||
+    Boolean(draft.awaitingPayFrequency) ||
+    Boolean(draft.pendingProposal && isRemainderConfirmField(draft.pendingProposal.field))
+  );
 }
 
 /** Single /start conversation engine. Desktop and mobile share this order, copy, and path rules. */
@@ -4112,6 +4117,28 @@ export function previewFacts(draft: FoxIntakeDraft): PreviewFact[] {
   const address = factValue(draft, "property_address");
   if (address) {
     facts.push({ id: "address", label: "Property", value: address });
+  }
+  const institution = factValue(draft, "institution");
+  const endingBalance = factValue(draft, "ending_balance");
+  if (institution || endingBalance) {
+    facts.push({
+      id: "bank",
+      label: "Bank",
+      value: [institution, endingBalance ? displayFactValue("ending_balance", endingBalance) : ""]
+        .filter(Boolean)
+        .join(" · "),
+    });
+  }
+  const servicer = factValue(draft, "servicer");
+  const unpaid = factValue(draft, "unpaid_principal");
+  if (servicer || unpaid) {
+    facts.push({
+      id: "servicer",
+      label: "Servicer",
+      value: [servicer, unpaid ? displayFactValue("unpaid_principal", unpaid) : ""]
+        .filter(Boolean)
+        .join(" · "),
+    });
   }
 
   const employer = factValue(draft, "employer_name");

@@ -15,7 +15,9 @@ import {
   displayFactValue,
   factLabel,
   factValue,
+  isRemainderConfirmField,
   nextDocInvite,
+  remainderProposalWrites,
   valuesMatch,
 } from "./fileWrite";
 import {
@@ -464,7 +466,30 @@ function fundsMoneyShown(field: string, value: string) {
   return Number.isFinite(n) ? `$${Math.round(n).toLocaleString("en-US")}` : value;
 }
 
+export function remainderAskCopy(proposal: FactProposal) {
+  const writes = remainderProposalWrites(proposal);
+  const named = writes
+    .map((item) => `${item.label} ${displayFactValue(item.field, item.value)}`)
+    .join(", ");
+  if (writes.some((item) => item.field === "ending_balance" || item.field === "institution")) {
+    return `The bank statement has ${named}. Use this?`;
+  }
+  if (writes.some((item) => item.field === "purchase_price" || item.field === "close_date")) {
+    return `The purchase contract has ${named}. Use this?`;
+  }
+  if (writes.some((item) => item.field === "servicer" || item.field === "unpaid_principal")) {
+    return `The mortgage statement has ${named}. Use this?`;
+  }
+  if (writes.some((item) => item.field === "property_address") && writes.length === 1) {
+    return `The document has property ${displayFactValue("property_address", writes[0].value)}. Use this?`;
+  }
+  return `The document has ${named}. Use this?`;
+}
+
 export function proposalAskCopy(proposal: FactProposal) {
+  if (isRemainderConfirmField(proposal.field) || proposal.extras?.length) {
+    return remainderAskCopy(proposal);
+  }
   const shown = displayFactValue(proposal.field, proposal.value);
   if (proposal.field === QUALIFYING_INCOME_FIELD) {
     return `From the return I’m suggesting ${shown} a month. ${SUGGESTED_INCOME_NOTE}. Use this?`;
@@ -577,6 +602,9 @@ function writeConfirmedFact(
   if ((field === "purchase_price" || field === "propertyValue") && amount != null) {
     next = { ...next, propertyValueAmount: amount, valueAsked: true };
   }
+  if (field === "unpaid_principal" && amount != null) {
+    next = { ...next, loanAmountValue: amount, amountAsked: true };
+  }
   if (field === "employer_name" || field === QUALIFYING_INCOME_FIELD) {
     next = { ...next, facts };
   }
@@ -673,12 +701,17 @@ export function resolveProposal(
   const source =
     proposal.field === QUALIFYING_INCOME_FIELD || proposal.kind === "public"
       ? "suggested"
-      : proposal.kind === "computed"
-        ? "computed"
-        : "document";
+      : isRemainderConfirmField(proposal.field)
+        ? "document"
+        : proposal.kind === "computed"
+          ? "computed"
+          : "document";
   let next = writeConfirmedFact(draft, proposal.field, proposal.value, source);
   if (proposal.companion) {
     next = writeConfirmedFact(next, proposal.companion.field, proposal.companion.value, source);
+  }
+  for (const extra of proposal.extras ?? []) {
+    next = writeConfirmedFact(next, extra.field, extra.value, source);
   }
   if (proposal.field === QUALIFYING_INCOME_FIELD && proposal.parts) {
     if (proposal.parts.wage) next = writeConfirmedFact(next, WAGE_MONTHLY_FIELD, proposal.parts.wage, source);

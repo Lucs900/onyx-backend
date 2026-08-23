@@ -1,9 +1,10 @@
 /**
  * Printed ONYX mortgage-sample fields. Reads labeled fixture text from the
- * page (PNG tEXt Comment, then pixels). Filename map is fallback only —
- * never invents OT / bonus / commission / a second job.
+ * visible page pixels. PNG tEXt / comment / EXIF and filename maps are not
+ * extract sources.
  */
 
+import { inflateSync } from "node:zlib";
 import type { ExtractClass } from "@/components/fox/types";
 
 export type PrintedSample = {
@@ -20,6 +21,7 @@ function basename(name?: string | null) {
     ?.toLowerCase() ?? "";
 }
 
+/** Test helper only. Extract must not call this. */
 const BY_NAME: Record<string, PrintedSample> = {
   "w2-ot-bonus-2025.png": {
     extractClass: "w2",
@@ -86,6 +88,56 @@ const BY_NAME: Record<string, PrintedSample> = {
 
 const PNG_SIG = [137, 80, 78, 71, 13, 10, 26, 10];
 
+const GLYPHS: Record<string, readonly string[]> = {
+  " ": ["00000", "00000", "00000", "00000", "00000", "00000", "00000"],
+  A: ["01110", "10001", "10001", "11111", "10001", "10001", "10001"],
+  B: ["11110", "10001", "10001", "11110", "10001", "10001", "11110"],
+  C: ["01110", "10001", "10000", "10000", "10000", "10001", "01110"],
+  D: ["11110", "10001", "10001", "10001", "10001", "10001", "11110"],
+  E: ["11111", "10000", "10000", "11110", "10000", "10000", "11111"],
+  F: ["11111", "10000", "10000", "11110", "10000", "10000", "10000"],
+  G: ["01110", "10001", "10000", "10111", "10001", "10001", "01110"],
+  H: ["10001", "10001", "10001", "11111", "10001", "10001", "10001"],
+  I: ["11111", "00100", "00100", "00100", "00100", "00100", "11111"],
+  J: ["00111", "00010", "00010", "00010", "00010", "10010", "01100"],
+  K: ["10001", "10010", "10100", "11000", "10100", "10010", "10001"],
+  L: ["10000", "10000", "10000", "10000", "10000", "10000", "11111"],
+  M: ["10001", "11011", "10101", "10001", "10001", "10001", "10001"],
+  N: ["10001", "11001", "10101", "10011", "10001", "10001", "10001"],
+  O: ["01110", "10001", "10001", "10001", "10001", "10001", "01110"],
+  P: ["11110", "10001", "10001", "11110", "10000", "10000", "10000"],
+  Q: ["01110", "10001", "10001", "10001", "10101", "10010", "01101"],
+  R: ["11110", "10001", "10001", "11110", "10100", "10010", "10001"],
+  S: ["01111", "10000", "10000", "01110", "00001", "00001", "11110"],
+  T: ["11111", "00100", "00100", "00100", "00100", "00100", "00100"],
+  U: ["10001", "10001", "10001", "10001", "10001", "10001", "01110"],
+  V: ["10001", "10001", "10001", "10001", "10001", "01010", "00100"],
+  W: ["10001", "10001", "10001", "10101", "10101", "10101", "01010"],
+  X: ["10001", "10001", "01010", "00100", "01010", "10001", "10001"],
+  Y: ["10001", "10001", "01010", "00100", "00100", "00100", "00100"],
+  Z: ["11111", "00001", "00010", "00100", "01000", "10000", "11111"],
+  "0": ["01110", "10001", "10011", "10101", "11001", "10001", "01110"],
+  "1": ["00100", "01100", "00100", "00100", "00100", "00100", "01110"],
+  "2": ["01110", "10001", "00001", "00010", "00100", "01000", "11111"],
+  "3": ["01110", "10001", "00001", "00110", "00001", "10001", "01110"],
+  "4": ["00010", "00110", "01010", "10010", "11111", "00010", "00010"],
+  "5": ["11111", "10000", "11110", "00001", "00001", "10001", "01110"],
+  "6": ["01110", "10000", "11110", "10001", "10001", "10001", "01110"],
+  "7": ["11111", "00001", "00010", "00100", "01000", "01000", "01000"],
+  "8": ["01110", "10001", "10001", "01110", "10001", "10001", "01110"],
+  "9": ["01110", "10001", "10001", "01111", "00001", "00001", "01110"],
+  $: ["00100", "01111", "10100", "01110", "00101", "11110", "00100"],
+  ".": ["00000", "00000", "00000", "00000", "00000", "00100", "00100"],
+  ",": ["00000", "00000", "00000", "00000", "00100", "00100", "01000"],
+  ":": ["00000", "00100", "00100", "00000", "00100", "00100", "00000"],
+  "-": ["00000", "00000", "00000", "11111", "00000", "00000", "00000"],
+  "/": ["00001", "00001", "00010", "00100", "01000", "10000", "10000"],
+  "(": ["00100", "01000", "10000", "10000", "10000", "01000", "00100"],
+  ")": ["00100", "00010", "00001", "00001", "00001", "00010", "00100"],
+};
+
+const GLYPH_LIST = Object.entries(GLYPHS).filter(([ch]) => ch !== " ");
+
 function u32(bytes: Uint8Array, offset: number) {
   return (
     (bytes[offset] << 24) |
@@ -95,7 +147,192 @@ function u32(bytes: Uint8Array, offset: number) {
   ) >>> 0;
 }
 
-/** Read printed lines from a labeled fixture PNG tEXt Comment. */
+function paeth(a: number, b: number, c: number) {
+  const p = a + b - c;
+  const pa = Math.abs(p - a);
+  const pb = Math.abs(p - b);
+  const pc = Math.abs(p - c);
+  if (pa <= pb && pa <= pc) return a;
+  if (pb <= pc) return b;
+  return c;
+}
+
+function unfilter(filter: number, src: Uint8Array, dest: Uint8Array, prev: Uint8Array, bpp: number) {
+  for (let i = 0; i < dest.length; i += 1) {
+    const left = i >= bpp ? dest[i - bpp] : 0;
+    const up = prev[i] ?? 0;
+    const upLeft = i >= bpp ? prev[i - bpp] ?? 0 : 0;
+    if (filter === 1) dest[i] = (src[i] + left) & 255;
+    else if (filter === 2) dest[i] = (src[i] + up) & 255;
+    else if (filter === 3) dest[i] = (src[i] + Math.floor((left + up) / 2)) & 255;
+    else if (filter === 4) dest[i] = (src[i] + paeth(left, up, upLeft)) & 255;
+    else dest[i] = src[i];
+  }
+}
+
+export function decodePngRgb(bytes: Uint8Array): { width: number; height: number; pixels: Uint8Array } | null {
+  if (bytes.length < 16) return null;
+  for (let i = 0; i < PNG_SIG.length; i += 1) {
+    if (bytes[i] !== PNG_SIG[i]) return null;
+  }
+  let offset = 8;
+  let width = 0;
+  let height = 0;
+  let bitDepth = 0;
+  let colorType = -1;
+  const parts: Uint8Array[] = [];
+  while (offset + 12 <= bytes.length) {
+    const length = u32(bytes, offset);
+    const type = String.fromCharCode(
+      bytes[offset + 4],
+      bytes[offset + 5],
+      bytes[offset + 6],
+      bytes[offset + 7],
+    );
+    const start = offset + 8;
+    const end = start + length;
+    if (end + 4 > bytes.length) return null;
+    if (type === "IHDR") {
+      width = u32(bytes, start);
+      height = u32(bytes, start + 4);
+      bitDepth = bytes[start + 8] ?? 0;
+      colorType = bytes[start + 9] ?? -1;
+    } else if (type === "IDAT") {
+      parts.push(bytes.subarray(start, end));
+    } else if (type === "IEND") {
+      break;
+    }
+    offset = end + 4;
+  }
+  if (bitDepth !== 8 || colorType !== 2 || !width || !height || !parts.length) return null;
+  let raw: Buffer;
+  try {
+    raw = inflateSync(Buffer.concat(parts.map((part) => Buffer.from(part))));
+  } catch {
+    return null;
+  }
+  const stride = width * 3;
+  const expected = height * (1 + stride);
+  if (raw.length < expected) return null;
+  const pixels = new Uint8Array(width * height * 3);
+  const prev = new Uint8Array(stride);
+  for (let y = 0; y < height; y += 1) {
+    const rowStart = y * (1 + stride);
+    const filter = raw[rowStart] ?? 0;
+    const src = raw.subarray(rowStart + 1, rowStart + 1 + stride);
+    const dest = pixels.subarray(y * stride, (y + 1) * stride);
+    unfilter(filter, src, dest, prev, 3);
+    prev.set(dest);
+  }
+  return { width, height, pixels };
+}
+
+function isInk(pixels: Uint8Array, width: number, x: number, y: number) {
+  if (x < 0 || y < 0) return false;
+  const i = (y * width + x) * 3;
+  if (i + 2 >= pixels.length) return false;
+  return (pixels[i] ?? 255) + (pixels[i + 1] ?? 255) + (pixels[i + 2] ?? 255) < 120;
+}
+
+function rowHasInk(pixels: Uint8Array, width: number, y: number) {
+  for (let x = 0; x < width; x += 1) {
+    if (isInk(pixels, width, x, y)) return true;
+  }
+  return false;
+}
+
+function colHasInk(pixels: Uint8Array, width: number, x: number, y0: number, y1: number) {
+  for (let y = y0; y < y1; y += 1) {
+    if (isInk(pixels, width, x, y)) return true;
+  }
+  return false;
+}
+
+function matchGlyph(pixels: Uint8Array, width: number, x: number, y: number, scale: number) {
+  const bits: string[] = [];
+  let ink = 0;
+  for (let row = 0; row < 7; row += 1) {
+    let line = "";
+    for (let col = 0; col < 5; col += 1) {
+      let cell = 0;
+      for (let dy = 0; dy < scale; dy += 1) {
+        for (let dx = 0; dx < scale; dx += 1) {
+          if (isInk(pixels, width, x + col * scale + dx, y + row * scale + dy)) {
+            cell += 1;
+            ink += 1;
+          }
+        }
+      }
+      line += cell > (scale * scale) / 2 ? "1" : "0";
+    }
+    bits.push(line);
+  }
+  if (ink < scale) return " ";
+  let best = "";
+  let bestScore = -1;
+  for (const [ch, glyph] of GLYPH_LIST) {
+    let score = 0;
+    for (let row = 0; row < 7; row += 1) {
+      const got = bits[row] ?? "";
+      const want = glyph[row] ?? "";
+      for (let col = 0; col < 5; col += 1) {
+        if (got[col] === want[col]) score += 1;
+      }
+    }
+    if (score > bestScore) {
+      bestScore = score;
+      best = ch;
+    }
+  }
+  return bestScore >= 30 ? best : "?";
+}
+
+function ocrAtScale(pixels: Uint8Array, width: number, height: number, scale: number) {
+  const glyphH = 7 * scale;
+  const step = 6 * scale;
+  const lines: string[] = [];
+  let y = 0;
+  while (y < height) {
+    while (y < height && !rowHasInk(pixels, width, y)) y += 1;
+    if (y >= height) break;
+    const y0 = y;
+    while (y < height && rowHasInk(pixels, width, y)) y += 1;
+    const band = y - y0;
+    if (band < glyphH - scale || band > glyphH + scale * 2) continue;
+    const top = band >= glyphH ? y0 + Math.floor((band - glyphH) / 2) : y0;
+    let x = 0;
+    while (x < width && !colHasInk(pixels, width, x, top, top + glyphH)) x += 1;
+    if (x >= width) continue;
+    let text = "";
+    while (x + 5 * scale <= width) {
+      text += matchGlyph(pixels, width, x, top, scale);
+      x += step;
+    }
+    const trimmed = text.replace(/\?+$/g, "").replace(/[? ]+$/g, "").trim();
+    if (trimmed) lines.push(trimmed);
+  }
+  return lines;
+}
+
+/** Read printed lines from visible PNG pixels. Never reads tEXt / comment / EXIF. */
+export function readPngVisibleLines(bytes: Uint8Array): string[] | null {
+  const decoded = decodePngRgb(bytes);
+  if (!decoded) return null;
+  const { width, height, pixels } = decoded;
+  let best: string[] = [];
+  let bestScore = 0;
+  for (const scale of [5, 6]) {
+    const lines = ocrAtScale(pixels, width, height, scale);
+    const score = lines.join("").replace(/[^A-Z0-9]/g, "").length;
+    if (score > bestScore) {
+      bestScore = score;
+      best = lines;
+    }
+  }
+  return bestScore >= 8 ? best : null;
+}
+
+/** Read PNG tEXt Comment. Hidden metadata — not an extract source. */
 export function readPngPrintedLines(bytes: Uint8Array): string[] | null {
   if (bytes.length < 16) return null;
   for (let i = 0; i < PNG_SIG.length; i += 1) {
@@ -230,6 +467,28 @@ export function fieldsFromPrintedLines(
       const shown = emptyIfNotShown(distributions);
       if (shown) putMoney("k1_distributions", shown);
     }
+    const institution = valueAfter(line, /^INSTITUTION:\s*/i);
+    if (institution) put("institution", institution);
+    const bankPeriod = valueAfter(line, /^PERIOD END:\s*/i);
+    if (bankPeriod) put("period_end", bankPeriod);
+    const ending = valueAfter(line, /^ENDING BALANCE:\s*/i);
+    if (ending) putMoney("ending_balance", ending);
+    const address = valueAfter(line, /^(?:PROPERTY ADDRESS|ADDRESS):\s*/i);
+    if (address) put("property_address", address);
+    const price = valueAfter(line, /^PURCHASE PRICE:\s*/i);
+    if (price) putMoney("purchase_price", price);
+    const close = valueAfter(line, /^CLOSE DATE:\s*/i);
+    if (close) put("close_date", close);
+    const servicer = valueAfter(line, /^SERVICER:\s*/i);
+    if (servicer) put("servicer", servicer);
+    const unpaid = valueAfter(line, /^UNPAID PRINCIPAL:\s*/i);
+    if (unpaid) putMoney("unpaid_principal", unpaid);
+    const currentPi = valueAfter(line, /^CURRENT P(?:\s*AND\s*I|&I|I):\s*/i);
+    if (currentPi) putMoney("current_pi", currentPi);
+    const fullName = valueAfter(line, /^FULL NAME:\s*/i);
+    if (fullName) put("full_name", fullName);
+    const last4 = valueAfter(line, /^ID LAST 4:\s*/i);
+    if (last4) put("id_last4", last4);
   }
 
   if (extractClass === "tax_return") {
@@ -254,32 +513,22 @@ export function printedSampleFromLines(lines: string[]): PrintedSample | null {
   };
 }
 
+/** Filename map is not an extract source. Kept only for isolated income-walk helpers. */
 export function printedSampleFromFilename(name?: string | null): PrintedSample | null {
   const key = basename(name);
   return key ? BY_NAME[key] ?? null : null;
 }
 
 export function printedSampleFromBytes(bytes: Uint8Array): PrintedSample | null {
-  const lines = readPngPrintedLines(bytes);
+  const lines = readPngVisibleLines(bytes);
   if (!lines) return null;
   return printedSampleFromLines(lines);
 }
 
-export function mergePrintedFields(
-  fields: Record<string, string>,
-  printed?: PrintedSample | null,
-): Record<string, string> {
-  if (!printed) return fields;
-  const next = { ...fields };
-  for (const [key, value] of Object.entries(printed.fields)) {
-    if (!next[key] && value) next[key] = value;
-  }
-  return next;
-}
-
+/** Visible page only. Filename and tEXt are ignored. */
 export function readPrintedSample(
   bytes: Uint8Array,
-  filename?: string | null,
+  _filename?: string | null,
 ): PrintedSample | null {
-  return printedSampleFromBytes(bytes) ?? printedSampleFromFilename(filename);
+  return printedSampleFromBytes(bytes);
 }

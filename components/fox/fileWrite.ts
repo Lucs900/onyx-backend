@@ -9,6 +9,7 @@ import type {
   DraftField,
   ExtractClass,
   FactConflict,
+  FactProposal,
   FoxAction,
   FoxIntakeDraft,
   ReceivedDoc,
@@ -319,6 +320,49 @@ export function incomeRequestedClasses(income?: string | null): ExtractClass[] {
   return out;
 }
 
+export const REMAINDER_CONFIRM_FIELDS = new Set([
+  "property_address",
+  "purchase_price",
+  "close_date",
+  "institution",
+  "period_end",
+  "ending_balance",
+  "servicer",
+  "unpaid_principal",
+  "current_pi",
+]);
+
+export function isRemainderConfirmField(field: string) {
+  return REMAINDER_CONFIRM_FIELDS.has(field);
+}
+
+export function remainderProposalFromWrites(
+  _extractClass: ExtractClass,
+  writes: { field: string; value: string }[],
+): FactProposal | null {
+  const usable = writes.filter((item) => item.field && item.value);
+  if (!usable.length) return null;
+  const [first, ...rest] = usable;
+  return {
+    field: first.field,
+    value: first.value,
+    label: factLabel(first.field),
+    kind: "computed",
+    extras: rest.map((item) => ({
+      field: item.field,
+      value: item.value,
+      label: factLabel(item.field),
+    })),
+  };
+}
+
+export function remainderProposalWrites(proposal: FactProposal): { field: string; value: string; label: string }[] {
+  return [
+    { field: proposal.field, value: proposal.value, label: proposal.label || factLabel(proposal.field) },
+    ...(proposal.extras ?? []),
+  ];
+}
+
 export function factLabel(field: string) {
   if (field === "full_name") return "name";
   if (field === "date_of_birth") return "date of birth";
@@ -478,14 +522,14 @@ function writeField(
       fullName: { field: "fullName", value, source: "document", confirmed: true, confirmedAt: now },
     };
   }
-  if (field === "purchase_price" && draft.propertyValueAmount == null) {
+  if (field === "purchase_price") {
     const n = moneyNumber(value);
     if (n != null && n > 0) {
       propertyValueAmount = n;
       valueAsked = true;
     }
   }
-  if (field === "unpaid_principal" && draft.loanAmountValue == null) {
+  if (field === "unpaid_principal") {
     const n = moneyNumber(value);
     if (n != null && n > 0) {
       loanAmountValue = n;
@@ -579,6 +623,7 @@ export function applyExtractedFields(
   const now = new Date().toISOString();
   let next = draft;
   let conflict: FactConflict | null = draft.pendingConflict ?? null;
+  const remainderWrites: { field: string; value: string }[] = [];
   const incomingEmployer = String(fields.employer_name ?? "")
     .trim()
     .toLowerCase()
@@ -595,6 +640,24 @@ export function applyExtractedFields(
     const value = fields[field];
     if (!value) continue;
     if (keepPrimaryPay && PRIMARY_PAY_KEYS.has(field)) continue;
+    if (isRemainderConfirmField(field)) {
+      const existingRemainder = existingFact(next, field);
+      if (!existingRemainder) {
+        remainderWrites.push({ field, value });
+        continue;
+      }
+      if (valuesMatch(existingRemainder.value, value)) continue;
+      if (!conflict) {
+        conflict = {
+          field,
+          fileValue: existingRemainder.value,
+          documentValue: value,
+          label: factLabel(field),
+          kind: "document",
+        };
+      }
+      continue;
+    }
     const existing = existingFact(next, field);
     if (!existing || (extractClass === "tax_return" && YEARLY_TAX_KEYS.has(field))) {
       next = writeField(next, field, value, now);
@@ -666,6 +729,13 @@ export function applyExtractedFields(
     computed,
   );
   conflict = next.pendingConflict ?? conflict;
+  if (
+    remainderWrites.length &&
+    (!next.pendingProposal || isRemainderConfirmField(next.pendingProposal.field))
+  ) {
+    const remainder = remainderProposalFromWrites(extractClass, remainderWrites);
+    if (remainder) next = { ...next, pendingProposal: remainder };
+  }
   next = attachExtractClass(next, extractClass);
   const caution = decliningIncomeCaution(next) ?? wageIncomeCaution(next);
   const quietLines = caution ? [caution] : [];
@@ -955,7 +1025,18 @@ export function completenessFileFromDraft(draft: FoxIntakeDraft): CompletenessFi
       received.add(doc.extractClass);
     }
   }
-  if (factValue(draft, "property_address")) received.add("property_address");
+  if (draft.facts?.property_address?.confirmed && factValue(draft, "property_address")) {
+    received.add("property_address");
+  }
+  if (draft.facts?.institution?.confirmed || draft.facts?.ending_balance?.confirmed) {
+    received.add("bank_statement");
+  }
+  if (draft.facts?.purchase_price?.confirmed || draft.facts?.close_date?.confirmed) {
+    received.add("purchase_contract");
+  }
+  if (draft.facts?.servicer?.confirmed || draft.facts?.unpaid_principal?.confirmed) {
+    received.add("mortgage_statement");
+  }
   if (factValue(draft, "employer_name")) received.add("employer_business");
   if (draft.facts?.years_in_business?.value) received.add("se_years");
   if (hasPnlDocument(draft)) received.add("ytd_pnl");
@@ -990,6 +1071,9 @@ export function completenessFileFromDraft(draft: FoxIntakeDraft): CompletenessFi
     hasPnl: received.has("ytd_pnl"),
     k1OrdinaryOnly: k1OrdinaryMissingDistributions(draft),
     hasScheduleC: hasScheduleCCashflow(draft),
+    fundsInPlay: Boolean(
+      draft.cashOut || factValue(draft, "cash_to_close") || factValue(draft, "reserves"),
+    ),
   };
 }
 

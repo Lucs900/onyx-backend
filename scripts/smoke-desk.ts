@@ -36,6 +36,7 @@ import {
   guidelineCaution,
   loanExceedsPurchasePrice,
   proposalAskCopy,
+  remainderAskCopy,
   proposeFundsPair,
   resolveProposal,
   showsAgencyCompleteness,
@@ -67,6 +68,8 @@ import {
 import {
   printedSampleFromBytes,
   printedSampleFromFilename,
+  readPngPrintedLines,
+  readPngVisibleLines,
 } from "../lib/docs/printedSample";
 import {
   CASH_OUT_CAUTION,
@@ -105,9 +108,11 @@ import {
   waitingOnOf,
 } from "../components/fox/motion";
 import {
-  EXTRACT_SCHEMA_KEYS,
   applyExtractedFields,
+  EXTRACT_SCHEMA_KEYS,
+  conflictAskCopy,
   isDeadFileWriteLine,
+  isRemainderConfirmField,
   extractClassFromFilename,
   fileStillUsefulNote,
   missingAskCopy,
@@ -2765,6 +2770,18 @@ assert.ok(layer2Plan(refiProceed).some((item) => item.label === "Mortgage statem
 assert.ok(layer2Plan(refiProceed).some((item) => item.label === "Property address"));
 assert.ok(!layer2Plan(refiProceed).some((item) => item.label === "Purchase contract"));
 assert.ok(!layer2Plan(refiProceed).some((item) => item.label === "Bank statement"));
+const refiFunds = afterProceed(
+  draft({
+    ...afterIncome,
+    productIntent: "refinance",
+    propertyValueAmount: 1_200_000,
+    loanAmountValue: 960_000,
+    facts: {
+      reserves: { field: "reserves", value: "needed", source: "client", confirmed: true },
+    },
+  }),
+);
+assert.ok(layer2Plan(refiFunds).some((item) => item.label === "Bank statement"));
 const refiCash = afterProceed(
   draft({
     ...afterIncome,
@@ -4817,6 +4834,140 @@ const otherClass = applyExtractedFields(afterLooks, {
 assert.equal(otherClass.draft.propertyValueAmount, afterLooks.propertyValueAmount);
 assert.deepEqual(otherClass.writes, []);
 
+const bankExtract = applyExtractedFields(afterLooks, {
+  extractClass: "bank_statement",
+  confidence: 0.93,
+  fields: {
+    institution: "FIRST NATIONAL",
+    period_end: "2026-07-31",
+    ending_balance: "18400",
+  },
+});
+assert.equal(bankExtract.draft.facts?.institution, undefined);
+assert.equal(bankExtract.draft.facts?.ending_balance, undefined);
+assert.equal(bankExtract.draft.pendingProposal?.field, "institution");
+assert.ok(isRemainderConfirmField(bankExtract.draft.pendingProposal!.field));
+const bankAsk = nextFoxAsk(bankExtract.draft);
+assert.match(bankAsk.text, /FIRST NATIONAL/);
+assert.match(bankAsk.text, /18,400/);
+assert.match(bankAsk.text, /2026-07-31/);
+assert.match(bankAsk.text, /Use this/);
+assert.doesNotMatch(bankAsk.text, /enough|DTI|qualif|approv/i);
+assert.ok((bankAsk.actions ?? []).some((item) => item.label === "Use this"));
+assert.ok((bankAsk.actions ?? []).some((item) => item.label === "Leave blank"));
+assert.match(remainderAskCopy(bankExtract.draft.pendingProposal!), /bank statement/);
+const bankAccepted = resolveProposal(bankExtract.draft, "accept");
+assert.equal(bankAccepted.facts?.institution?.value, "FIRST NATIONAL");
+assert.equal(bankAccepted.facts?.ending_balance?.value, "18400");
+assert.equal(bankAccepted.facts?.period_end?.value, "2026-07-31");
+assert.equal(bankAccepted.pendingProposal, null);
+assert.ok(!layer2Plan(bankAccepted).some((item) => item.label === "Bank statement"));
+const bankLeft = resolveProposal(bankExtract.draft, "decline");
+assert.equal(bankLeft.facts?.institution, undefined);
+assert.equal(bankLeft.pendingProposal, null);
+assert.equal(workspacePrompt(bankLeft), workspacePrompt({ ...afterLooks, pendingProposal: null }));
+
+const contractSamePrice = applyExtractedFields(afterLooks, {
+  extractClass: "purchase_contract",
+  confidence: 0.93,
+  fields: {
+    property_address: "14 OAK STREET",
+    purchase_price: "1200000",
+    close_date: "2026-10-15",
+  },
+});
+assert.equal(contractSamePrice.conflict, null);
+assert.equal(contractSamePrice.draft.propertyValueAmount, afterLooks.propertyValueAmount);
+assert.equal(contractSamePrice.draft.facts?.purchase_price, undefined);
+assert.match(nextFoxAsk(contractSamePrice.draft).text, /14 OAK STREET/);
+assert.match(nextFoxAsk(contractSamePrice.draft).text, /2026-10-15/);
+const contractAccepted = resolveProposal(contractSamePrice.draft, "accept");
+assert.equal(contractAccepted.facts?.property_address?.value, "14 OAK STREET");
+assert.equal(contractAccepted.facts?.close_date?.value, "2026-10-15");
+assert.ok(!layer2Plan(contractAccepted).some((item) => item.label === "Property address"));
+assert.ok(!layer2Plan(contractAccepted).some((item) => item.label === "Purchase contract"));
+
+const contractConflict = applyExtractedFields(afterLooks, {
+  extractClass: "purchase_contract",
+  confidence: 0.93,
+  fields: {
+    property_address: "14 OAK STREET",
+    purchase_price: "1150000",
+    close_date: "2026-10-15",
+  },
+});
+assert.ok(contractConflict.conflict);
+assert.equal(contractConflict.conflict?.field, "purchase_price");
+assert.equal(contractConflict.conflict?.fileValue, "1200000");
+assert.equal(contractConflict.conflict?.documentValue, "1150000");
+assert.equal(contractConflict.draft.propertyValueAmount, 1_200_000);
+assert.match(conflictAskCopy(contractConflict.conflict!), /1,200,000/);
+assert.match(conflictAskCopy(contractConflict.conflict!), /1,150,000/);
+assert.ok((nextFoxAsk(contractConflict.draft).actions ?? []).some((item) => item.label === "Keep file"));
+assert.ok((nextFoxAsk(contractConflict.draft).actions ?? []).some((item) => item.label === "Use document"));
+assert.ok((nextFoxAsk(contractConflict.draft).actions ?? []).some((item) => item.label === "Keep both"));
+assert.doesNotMatch(nextFoxAsk(contractConflict.draft).text, /qualif|approv|LO will contact/i);
+
+const mortgageExtract = applyExtractedFields(
+  draft({
+    ...afterLooks,
+    productIntent: "refinance",
+    cashOut: false,
+    propertyValueAmount: 1_200_000,
+    loanAmountValue: 960_000,
+  }),
+  {
+    extractClass: "mortgage_statement",
+    confidence: 0.93,
+    fields: {
+      servicer: "OAK SERVICING",
+      unpaid_principal: "960000",
+      current_pi: "4800",
+      property_address: "14 OAK STREET",
+    },
+  },
+);
+assert.equal(mortgageExtract.conflict, null);
+assert.equal(mortgageExtract.draft.facts?.servicer, undefined);
+assert.equal(mortgageExtract.draft.loanAmountValue, 960_000);
+assert.match(nextFoxAsk(mortgageExtract.draft).text, /OAK SERVICING/);
+assert.match(nextFoxAsk(mortgageExtract.draft).text, /14 OAK STREET/);
+assert.doesNotMatch(nextFoxAsk(mortgageExtract.draft).text, /qualif|approv|enough/i);
+const mortgageAccepted = resolveProposal(mortgageExtract.draft, "accept");
+assert.equal(mortgageAccepted.facts?.servicer?.value, "OAK SERVICING");
+assert.equal(mortgageAccepted.loanAmountValue, 960_000);
+assert.ok(!layer2Plan(mortgageAccepted).some((item) => item.label === "Mortgage statement"));
+
+const mortgageConflict = applyExtractedFields(
+  draft({
+    ...afterLooks,
+    productIntent: "refinance",
+    loanAmountValue: 960_000,
+  }),
+  {
+    extractClass: "mortgage_statement",
+    confidence: 0.93,
+    fields: { servicer: "OAK SERVICING", unpaid_principal: "880000" },
+  },
+);
+assert.ok(mortgageConflict.conflict);
+assert.equal(mortgageConflict.conflict?.field, "unpaid_principal");
+assert.equal(mortgageConflict.draft.loanAmountValue, 960_000);
+
+const typedAddress = draft({
+  ...afterLooks,
+  facts: {
+    property_address: {
+      field: "property_address",
+      value: "14 OAK STREET",
+      source: "client",
+      confirmed: true,
+    },
+  },
+});
+assert.ok(!layer2Plan(typedAddress).some((item) => item.label === "Property address"));
+assert.ok(layer2Plan(typedAddress).some((item) => item.label === "Purchase contract"));
+
 const stripped = sanitizeExtractedFields("government_id", {
   full_name: "Jordan Lee",
   id_last4: "987654321",
@@ -5132,6 +5283,13 @@ assert.ok(
   !documentedStillUsefulIds("refinance", {
     purposeHint: "lcor",
     incomeType: "w2_base",
+  }).includes("bank_statement"),
+);
+assert.ok(
+  documentedStillUsefulIds("refinance", {
+    purposeHint: "lcor",
+    incomeType: "w2_base",
+    fundsInPlay: true,
   }).includes("bank_statement"),
 );
 assert.equal(storeFlags({ namedGovvie: true, product: "buy", purposeHint: "purchase", state: "CA" }).previewRateAllowed, false);
@@ -5718,7 +5876,7 @@ async function extractAdapterSmoke() {
   assert.equal(hintedK1.extractClass, "tax_return");
   assert.equal(hintedK1.fields.k1_ordinary_income, "40000");
 
-  const recoveredOt = await classifyAndExtract(
+  const filenameDoesNotInvent = await classifyAndExtract(
     new Uint8Array([1, 2, 3, 4]),
     "image/png",
     {
@@ -5726,17 +5884,17 @@ async function extractAdapterSmoke() {
         throw new Error("xAI 400: image part must be a data URL");
       },
       async extract() {
-        throw new Error("should use printed sample");
+        throw new Error("must not invent from filename");
       },
     },
     "w2",
     "w2-ot-bonus-2025.png",
   );
-  assert.equal(recoveredOt.failed, undefined);
-  assert.equal(recoveredOt.fields.overtime, "6000");
-  assert.equal(recoveredOt.fields.wages, "84000");
+  assert.equal(filenameDoesNotInvent.failed, true);
+  assert.deepEqual(filenameDoesNotInvent.fields, {});
+  assert.equal(filenameDoesNotInvent.fields.overtime, undefined);
 
-  const mergedMissedOt = await classifyAndExtract(
+  const adapterMissedOt = await classifyAndExtract(
     new Uint8Array([1, 2, 3, 4]),
     "image/png",
     {
@@ -5750,10 +5908,10 @@ async function extractAdapterSmoke() {
     "w2",
     "w2-ot-bonus-2025.png",
   );
-  assert.equal(mergedMissedOt.fields.wages, "84000");
-  assert.equal(mergedMissedOt.fields.overtime, "6000");
+  assert.equal(adapterMissedOt.fields.wages, "84000");
+  assert.equal(adapterMissedOt.fields.overtime, undefined);
 
-  const recoveredHarbor = await classifyAndExtract(
+  const unreadHarborFilename = await classifyAndExtract(
     new Uint8Array([1, 2, 3, 4]),
     "image/png",
     {
@@ -5761,15 +5919,14 @@ async function extractAdapterSmoke() {
         return { class: "paystub" as const, confidence: 0.2, readable: false };
       },
       async extract() {
-        throw new Error("should use printed sample");
+        throw new Error("must not invent from filename");
       },
     },
     "paystub",
     "paystub-harbor.png",
   );
-  assert.equal(recoveredHarbor.fields.employer_name, "HARBOR CAFE");
-  assert.equal(recoveredHarbor.fields.gross_period, "400");
-  assert.equal(recoveredHarbor.fields.ytd_gross, "6400");
+  assert.equal(unreadHarborFilename.failed, true);
+  assert.deepEqual(unreadHarborFilename.fields, {});
 
   const failingAdapter = {
     async classify() {
@@ -5827,6 +5984,86 @@ async function extractAdapterSmoke() {
   assert.equal(pageSchC.extractClass, "tax_return");
   assert.equal(pageSchC.fields.schedule_c_net_profit, "80000");
   assert.equal(pageSchC.fields.depreciation, "8000");
+
+  const sabotageBytes = readFileSync(join(root, "scripts/fixtures/bank-statement-sabotage.png"));
+  const sabotageComment = readPngPrintedLines(sabotageBytes);
+  const sabotageVisible = readPngVisibleLines(sabotageBytes);
+  assert.ok(sabotageComment?.some((line) => /HARBOR STEEL/.test(line)));
+  assert.ok(sabotageComment?.some((line) => /OVERTIME: \$6,000/.test(line)));
+  assert.ok(sabotageVisible?.some((line) => /FIRST NATIONAL/.test(line)));
+  assert.ok(!sabotageVisible?.some((line) => /HARBOR STEEL/.test(line)));
+  const sabotage = await classifyAndExtract(
+    sabotageBytes,
+    "image/png",
+    failingAdapter,
+    "w2",
+    "w2-ot-bonus-2025.png",
+  );
+  assert.equal(sabotage.extractClass, "bank_statement");
+  assert.equal(sabotage.fields.institution, "FIRST NATIONAL");
+  assert.equal(sabotage.fields.ending_balance, "18400");
+  assert.equal(sabotage.fields.period_end, "2026-07-31");
+  assert.equal(sabotage.fields.overtime, undefined);
+  assert.equal(sabotage.fields.employer_name, undefined);
+  assert.equal(sabotage.fields.wages, undefined);
+  const lyingAdapter = {
+    async classify() {
+      return { class: "w2" as const, confidence: 0.99, readable: true };
+    },
+    async extract() {
+      return {
+        fields: { tax_year: "2025", employer_name: "HARBOR STEEL", wages: "84000", overtime: "6000" },
+        warnings: [],
+      };
+    },
+  };
+  const sabotageOverLie = await classifyAndExtract(
+    sabotageBytes,
+    "image/png",
+    lyingAdapter,
+    "w2",
+    "w2-ot-bonus-2025.png",
+  );
+  assert.equal(sabotageOverLie.extractClass, "bank_statement");
+  assert.equal(sabotageOverLie.fields.institution, "FIRST NATIONAL");
+  assert.equal(sabotageOverLie.fields.ending_balance, "18400");
+  assert.equal(sabotageOverLie.fields.overtime, undefined);
+  assert.equal(sabotageOverLie.fields.wages, undefined);
+  assert.deepEqual(
+    EXTRACT_SCHEMA_KEYS.bank_statement.slice(),
+    ["institution", "period_end", "ending_balance"],
+  );
+  assert.deepEqual(
+    EXTRACT_SCHEMA_KEYS.purchase_contract.slice(),
+    ["property_address", "purchase_price", "close_date"],
+  );
+  assert.deepEqual(
+    EXTRACT_SCHEMA_KEYS.mortgage_statement.slice(),
+    ["servicer", "unpaid_principal", "current_pi", "property_address"],
+  );
+
+  const pageBank = printedSampleFromBytes(
+    readFileSync(join(root, "scripts/fixtures/bank-statement-first-national.png")),
+  );
+  assert.equal(pageBank?.extractClass, "bank_statement");
+  assert.equal(pageBank?.fields.institution, "FIRST NATIONAL");
+  assert.equal(pageBank?.fields.ending_balance, "18400");
+  const pageContract = printedSampleFromBytes(
+    readFileSync(join(root, "scripts/fixtures/purchase-contract-oak.png")),
+  );
+  assert.equal(pageContract?.extractClass, "purchase_contract");
+  assert.equal(pageContract?.fields.property_address, "14 OAK STREET");
+  assert.equal(pageContract?.fields.purchase_price, "1200000");
+  const pageMortgage = printedSampleFromBytes(
+    readFileSync(join(root, "scripts/fixtures/mortgage-statement-oak.png")),
+  );
+  assert.equal(pageMortgage?.extractClass, "mortgage_statement");
+  assert.equal(pageMortgage?.fields.servicer, "OAK SERVICING");
+  assert.equal(pageMortgage?.fields.unpaid_principal, "960000");
+
+  const extractSrc = readFileSync(join(root, "lib/docs/extract.ts"), "utf8");
+  assert.doesNotMatch(extractSrc, /printedSampleFromFilename|BY_NAME/);
+  assert.match(extractSrc, /readPrintedSample\(bytes\)/);
   const classifiedK1 = await classifyAndExtract(new Uint8Array([9, 8, 7]), "image/png", {
     async classify() {
       return { class: "k1" as never, confidence: 0.9, readable: true };

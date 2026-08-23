@@ -1,9 +1,5 @@
 import { NextResponse } from "next/server";
-import {
-  extractClassFromFilename,
-  preferFilenameClass,
-  slotForExtractClass,
-} from "@/components/fox/fileWrite";
+import { slotForExtractClass } from "@/components/fox/fileWrite";
 import { FAILED_READ_NOTE, RECEIVED_NOTE, mediaTypeOf } from "@/lib/docs/accept";
 import { classifyAndExtract, grokExtractAdapter } from "@/lib/docs/extract";
 import { readPrivateBytes, storageStatus, STORAGE_BLOCKED } from "@/lib/docs/storage";
@@ -31,9 +27,6 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Missing bytesRef" }, { status: 400 });
   }
 
-  const filenameClass = preferFilenameClass("other", body.name ?? "");
-  const hinted = filenameClass !== "other" ? filenameClass : extractClassFromFilename(body.name ?? "");
-
   try {
     const stored = await readPrivateBytes(bytesRef);
     const mediaType = mediaTypeOf(body.name ?? stored.pathname, body.type ?? stored.contentType);
@@ -41,11 +34,9 @@ export async function POST(request: Request) {
       stored.bytes,
       mediaType,
       grokExtractAdapter,
-      hinted,
-      body.name,
     );
     const failed = Boolean(extracted.failed || extracted.warnings.includes("failed"));
-    const extractClass = preferFilenameClass(extracted.extractClass, body.name);
+    const extractClass = extracted.extractClass;
     return NextResponse.json({
       class: extractClass,
       confidence: extracted.confidence,
@@ -69,11 +60,11 @@ export async function POST(request: Request) {
       );
     }
     return NextResponse.json({
-      class: hinted ?? "other",
+      class: "other",
       confidence: 0,
       fields: {},
       warnings: ["failed"],
-      slot: slotForExtractClass(hinted ?? "other"),
+      slot: slotForExtractClass("other"),
       note: FAILED_READ_NOTE,
       failed: true,
     });
