@@ -8,18 +8,34 @@ import {
 import { canLooksRight, shouldEscalate } from "./completeness";
 import type {
   Capture,
+  FileCondition,
   FileEvent,
+  FileEventActor,
   FileMotion,
   FileNext,
   FoxAction,
   FoxIntakeDraft,
   PendingFinish,
   PreviewOutboxItem,
+  WaitingOn,
   WorkItem,
+  WorkItemKind,
 } from "./types";
 
-export const REVIEW_SLA_MS = 4 * 60 * 60 * 1000;
+export const REVIEW_SLA_HOURS = 4;
+export const EXCEPTION_SLA_HOURS = 1;
+export const PROCESSING_SLA_HOURS = 8;
+export const REVIEW_SLA_MS = REVIEW_SLA_HOURS * 60 * 60 * 1000;
+export const EXCEPTION_SLA_MS = EXCEPTION_SLA_HOURS * 60 * 60 * 1000;
+export const PROCESSING_SLA_MS = PROCESSING_SLA_HOURS * 60 * 60 * 1000;
 export const PREVIEW_SLA_MS = 30 * 1000;
+export const IGNORED_NUDGE_LIMIT = 3;
+export const SILENT_RETURN_ERROR = "Return needs a foxLine the borrower can hear.";
+export const PAYSTUB_RETURN_LINE =
+  "ONYX reviewed. They need a clearer paystub. I’m asking you for that.";
+export const FILE_CAN_MOVE_LINE = "ONYX reviewed. File can move.";
+export const WAITING_OUT_LINE =
+  "Appraisal is ordered. That’s outside ONYX. I’ll update this thread.";
 
 export const MOTION_COPY = {
   gatheringPrefix: "These docs help next:",
@@ -31,9 +47,12 @@ export const MOTION_COPY = {
     "This is the wait. ONYX has the file for review. I stay in this thread — I’ll nudge if it sits and I’ll bring the result back here.",
   askFox: "I’m here. Type below — I stay on this file while ONYX reviews.",
   on_hold: "Holding. I’ll keep the file. Say when to proceed.",
+  waiting_out: "That’s outside ONYX. I’ll update this thread.",
   escalated:
     "A licensed originator is on this exception. I stay here. I’ll put their result in this thread.",
-  nudge: "I nudged this. ONYX still has it — I’ll bring the result back here.",
+  nudge: "I pushed this. ONYX still has it — I’ll bring the result back here.",
+  threeNudges:
+    "I pushed this three times. A licensed originator is on this exception. I stay here.",
   emailAsk: "What’s a good email? I’ll remind you.",
   remind: "I’ll remind you.",
 } as const;
@@ -44,9 +63,22 @@ const MOTIONS: FileMotion[] = [
   "ready",
   "in_queue",
   "needs_you",
+  "waiting_out",
   "on_hold",
   "escalated",
 ];
+
+const LEGAL_TRANSITIONS: Record<string, FileMotion[]> = {
+  preparing: ["confirmed", "gathering", "ready", "on_hold", "escalated"],
+  confirmed: ["gathering", "ready", "on_hold"],
+  gathering: ["ready", "on_hold", "in_queue", "escalated"],
+  ready: ["in_queue", "gathering", "on_hold", "escalated"],
+  in_queue: ["needs_you", "waiting_out", "escalated", "gathering", "ready"],
+  needs_you: ["gathering", "in_queue", "ready", "escalated"],
+  on_hold: ["gathering", "ready", "in_queue", "escalated"],
+  escalated: ["in_queue", "needs_you", "ready"],
+  waiting_out: ["in_queue", "needs_you", "escalated"],
+};
 
 const NEXT_ACTORS: FileNext[] = ["You", "Fox", "ONYX", "Outside"];
 
@@ -68,10 +100,46 @@ export function fileExists(draft: FoxIntakeDraft) {
 }
 
 export function nextForMotion(motion: FileMotion | null | undefined): FileNext {
-  if (motion === "in_queue") return "ONYX";
-  if (motion === "escalated") return "ONYX";
+  if (motion === "in_queue" || motion === "escalated") return "ONYX";
+  if (motion === "waiting_out") return "Outside";
   if (motion === "confirmed") return "Fox";
+  if (!motion) return "Fox";
   return "You";
+}
+
+export function waitingOnForMotion(motion: FileMotion | null | undefined): WaitingOn {
+  if (motion === "in_queue" || motion === "escalated") return "onyx";
+  if (motion === "waiting_out") return "outside";
+  if (motion === "confirmed" || !motion) return "fox";
+  return "borrower";
+}
+
+export function currentMotionKey(draft: FoxIntakeDraft): FileMotion | "preparing" {
+  return motionOf(draft) ?? "preparing";
+}
+
+export function canTransition(
+  from: FileMotion | "preparing" | null | undefined,
+  to: FileMotion,
+) {
+  if (!from || from === to) return true;
+  if (to === "escalated") return true;
+  return (LEGAL_TRANSITIONS[from] ?? []).includes(to);
+}
+
+export function slaHoursForKind(kind: WorkItemKind) {
+  if (kind === "exception") return EXCEPTION_SLA_HOURS;
+  if (kind === "processing") return PROCESSING_SLA_HOURS;
+  return REVIEW_SLA_HOURS;
+}
+
+export function slaMsForKind(kind: WorkItemKind) {
+  return slaHoursForKind(kind) * 60 * 60 * 1000;
+}
+
+export function waitingOnOf(draft: FoxIntakeDraft): WaitingOn {
+  if (draft.waitingOn) return draft.waitingOn;
+  return waitingOnForMotion(motionOf(draft));
 }
 
 export function inferMotionAfterLooks(draft: FoxIntakeDraft): FileMotion {
@@ -80,15 +148,30 @@ export function inferMotionAfterLooks(draft: FoxIntakeDraft): FileMotion {
 
 export function restripeGatheringOrReady(draft: FoxIntakeDraft): FoxIntakeDraft {
   if (!fileExists(draft)) return draft;
-  if (draft.motion === "on_hold" || draft.motion === "escalated" || draft.motion === "needs_you") {
+  if (
+    draft.motion === "on_hold" ||
+    draft.motion === "escalated" ||
+    draft.motion === "needs_you" ||
+    draft.motion === "waiting_out"
+  ) {
     return draft;
   }
   if (draft.motion === "in_queue") {
     if (inferMotionAfterLooks(draft) !== "gathering") return draft;
-    return { ...draft, motion: "gathering", nextActor: nextForMotion("gathering") };
+    return {
+      ...draft,
+      motion: "gathering",
+      nextActor: nextForMotion("gathering"),
+      waitingOn: waitingOnForMotion("gathering"),
+    };
   }
   const motion = inferMotionAfterLooks(draft);
-  return { ...draft, motion, nextActor: nextForMotion(motion) };
+  return {
+    ...draft,
+    motion,
+    nextActor: nextForMotion(motion),
+    waitingOn: waitingOnForMotion(motion),
+  };
 }
 
 export function motionOf(draft: FoxIntakeDraft): FileMotion | null {
@@ -105,8 +188,7 @@ export function nextActorOf(draft: FoxIntakeDraft): FileNext {
 export function motionStatusCopy(draft: FoxIntakeDraft) {
   const motion = motionOf(draft);
   if (motion) return motion;
-  if (draft.workspaceDraftStatus === "ready") return "Ready for you";
-  return "Preparing";
+  return "preparing";
 }
 
 export function contactEmail(draft: FoxIntakeDraft) {
@@ -130,8 +212,17 @@ export function appendFileEvent(
   kind: FileEvent["kind"],
   text: string,
   at = new Date().toISOString(),
+  extras: { actor?: FileEventActor; summary?: string; facts?: string[] } = {},
 ): FoxIntakeDraft {
-  const event: FileEvent = { id: newId("evt"), at, kind, text };
+  const event: FileEvent = {
+    id: newId("evt"),
+    at,
+    kind,
+    text,
+    actor: extras.actor ?? "fox",
+    summary: extras.summary ?? text,
+    facts: extras.facts,
+  };
   return { ...draft, events: [...(draft.events ?? []), event] };
 }
 
@@ -141,7 +232,31 @@ export function openReviewItem(draft: FoxIntakeDraft, now = new Date()): WorkIte
     kind: "review",
     state: "open",
     openedAt: now.toISOString(),
+    slaHours: REVIEW_SLA_HOURS,
+    nudgeCount: 0,
   };
+}
+
+export function openBorrowerCondition(
+  title: string,
+  foxLine: string,
+  needed: FileCondition["needed"] = "doc",
+): FileCondition {
+  return {
+    id: newId("cond"),
+    title,
+    foxLine,
+    waitingOn: "borrower",
+    needed,
+    status: "open",
+    stillUseful: true,
+  };
+}
+
+export function borrowerOpenConditions(draft: FoxIntakeDraft): FileCondition[] {
+  return (draft.conditions ?? []).filter(
+    (item) => item.waitingOn === "borrower" && item.status === "open" && item.stillUseful,
+  );
 }
 
 export function openReviewWorkItem(draft: FoxIntakeDraft, now = new Date()): WorkItem | undefined {
@@ -169,8 +284,12 @@ export function gatheringList(draft: FoxIntakeDraft) {
 export function returnedReviewNote(draft: FoxIntakeDraft) {
   const returned = [...(draft.workItems ?? [])]
     .reverse()
-    .find((item) => item.kind === "review" && item.state === "returned" && item.note?.trim());
-  return returned?.note?.trim() || "";
+    .find(
+      (item) =>
+        (item.state === "done" || item.state === "returned") &&
+        (item.result?.foxLine?.trim() || item.note?.trim()),
+    );
+  return returned?.result?.foxLine?.trim() || returned?.note?.trim() || "";
 }
 
 export function needsYouThing(draft: FoxIntakeDraft) {
@@ -205,7 +324,7 @@ export function creditPullPermitted(draft: FoxIntakeDraft) {
 export function inQueueEnding(draft: FoxIntakeDraft) {
   const motion = motionOf(draft);
   if (motion === "escalated" || motion === "needs_you" || motion === "on_hold") return false;
-  if (motion === "in_queue") return true;
+  if (motion === "in_queue" || motion === "waiting_out") return true;
   return Boolean(openReviewWorkItem(draft));
 }
 
@@ -219,6 +338,7 @@ export function motionAskText(draft: FoxIntakeDraft) {
   }
   if (draft.pendingFinish && emailMissing(draft)) return MOTION_COPY.emailAsk;
   if (motion === "on_hold") return MOTION_COPY.on_hold;
+  if (motion === "waiting_out") return returnedReviewNote(draft) || MOTION_COPY.waiting_out;
   if (motion === "escalated") return MOTION_COPY.escalated;
   if (motion === "needs_you") return needsYouCopy(draft);
   if (motion === "ready") return MOTION_COPY.ready;
@@ -305,9 +425,7 @@ export function applyLooksRightMotion(draft: FoxIntakeDraft): FoxIntakeDraft {
           sampleAccepted: true,
           docsOpen: false,
           pendingFinish: undefined,
-          workspaceDraftStatus: draft.workspaceDraftStatus === "with-originator"
-            ? draft.workspaceDraftStatus
-            : "ready",
+          workspaceDraftStatus: "ready",
         },
         "looks-right",
         "Looks right — file confirmed. Originator assigned.",
@@ -321,11 +439,10 @@ export function applyLooksRightMotion(draft: FoxIntakeDraft): FoxIntakeDraft {
       sampleAccepted: true,
       motion,
       nextActor: nextForMotion(motion),
+      waitingOn: waitingOnForMotion(motion),
       docsOpen: false,
       pendingFinish: undefined,
-      workspaceDraftStatus: draft.workspaceDraftStatus === "with-originator"
-        ? draft.workspaceDraftStatus
-        : "ready",
+      workspaceDraftStatus: "ready",
     },
     "looks-right",
     "Looks right — file confirmed. Originator assigned.",
@@ -355,6 +472,8 @@ function withOutbox(
 }
 
 export function applyProceedMotion(draft: FoxIntakeDraft, now = new Date()): FoxIntakeDraft {
+  const from = currentMotionKey(draft);
+  if (!canTransition(from, "in_queue")) return draft;
   const item = openReviewWorkItem(draft) ?? openReviewItem(draft, now);
   const missing = emailMissing(draft);
   const withItem = appendFileEvent(
@@ -362,16 +481,18 @@ export function applyProceedMotion(draft: FoxIntakeDraft, now = new Date()): Fox
       ...draft,
       motion: "in_queue",
       nextActor: "ONYX",
+      waitingOn: "onyx",
       pendingFinish: missing ? "proceed" : undefined,
       emailCaptureAsked: missing ? true : draft.emailCaptureAsked,
       docsOpen: false,
       correcting: null,
       workItems: [...(draft.workItems ?? []).filter((row) => row.id !== item.id), item],
-      reviewSlaMs: draft.reviewSlaMs ?? REVIEW_SLA_MS,
+      reviewSlaMs: draft.reviewSlaMs ?? slaMsForKind(item.kind),
     },
     "proceed",
     "Proceed — review work item opened. Next = ONYX.",
     now.toISOString(),
+    { actor: "borrower", summary: "Proceed — one review WorkItem open." },
   );
   return withOutbox(withItem, "proceed", contactEmail(withItem), now);
 }
@@ -391,6 +512,7 @@ export function applyNotYetMotion(draft: FoxIntakeDraft, now = new Date()): FoxI
       ...draft,
       motion: "on_hold",
       nextActor: "You",
+      waitingOn: "borrower",
       pendingFinish: undefined,
       docsOpen: false,
       correcting: null,
@@ -412,6 +534,7 @@ export function applyUploadMoreMotion(draft: FoxIntakeDraft): FoxIntakeDraft {
       ...draft,
       motion,
       nextActor: nextForMotion(motion),
+      waitingOn: waitingOnForMotion(motion),
       docsOpen: true,
       correcting: null,
     },
@@ -427,6 +550,7 @@ export function applyEscalateMotion(draft: FoxIntakeDraft): FoxIntakeDraft {
       originatorRequested: true,
       motion: "escalated",
       nextActor: nextForMotion("escalated"),
+      waitingOn: "onyx",
       pendingFinish: undefined,
       correcting: null,
     },
@@ -464,47 +588,109 @@ export function applyEmailThenFinish(
   return withEmail;
 }
 
+export type ReturnToFoxInput = {
+  foxLine?: string;
+  note?: string;
+  next?: FileMotion;
+  needsDoc?: boolean;
+  condition?: Partial<FileCondition> & { title?: string };
+};
+
+function conditionTitleFromLine(foxLine: string, needed: FileCondition["needed"]) {
+  if (/paystub/i.test(foxLine)) return "Clearer paystub";
+  if (/appraisal/i.test(foxLine)) return "Appraisal";
+  if (needed === "outside_event") return "Outside item";
+  return foxLine.slice(0, 48).trim() || "Needed from you";
+}
+
 export function applyReturnToFoxMotion(
   draft: FoxIntakeDraft,
-  input: { note: string; needsDoc?: boolean },
+  input: ReturnToFoxInput,
   now = new Date(),
-): { draft: FoxIntakeDraft; threadLine: string } {
-  const note = input.note.trim();
+): { draft: FoxIntakeDraft; threadLine: string; error?: string } {
+  const foxLine = (input.foxLine ?? input.note ?? "").trim();
+  if (!foxLine) {
+    return { draft, threadLine: "", error: SILENT_RETURN_ERROR };
+  }
+  const requestedNext: FileMotion =
+    input.next ??
+    (input.needsDoc || input.condition?.waitingOn === "borrower"
+      ? "needs_you"
+      : input.condition?.waitingOn === "outside"
+        ? "waiting_out"
+        : inferMotionAfterLooks(draft) === "gathering"
+          ? "ready"
+          : inferMotionAfterLooks(draft));
+  const missingDocsOutside =
+    requestedNext === "waiting_out" &&
+    (input.needsDoc ||
+      input.condition?.waitingOn === "borrower" ||
+      input.condition?.needed === "doc");
+  const nextMotion: FileMotion = missingDocsOutside ? "needs_you" : requestedNext;
+  if (!canTransition(currentMotionKey(draft), nextMotion)) {
+    return { draft, threadLine: "", error: SILENT_RETURN_ERROR };
+  }
   const open = openReviewWorkItem(draft);
-  const returned: WorkItem = open
+  const returned: WorkItem = {
+    ...(open ?? {
+      id: newId("review"),
+      kind: "review" as const,
+      state: "open" as const,
+      openedAt: now.toISOString(),
+      slaHours: REVIEW_SLA_HOURS,
+      nudgeCount: 0,
+    }),
+    state: "done",
+    returnedAt: now.toISOString(),
+    note: foxLine,
+    needsDoc: Boolean(input.needsDoc || nextMotion === "needs_you"),
+    result: {
+      summary: foxLine,
+      factsChanged: [],
+      next: nextMotion,
+      foxLine,
+    },
+  };
+  const needed = input.condition?.needed ?? (nextMotion === "waiting_out" ? "outside_event" : "doc");
+  const waitingOn = nextMotion === "waiting_out" ? "outside" : waitingOnForMotion(nextMotion);
+  const conditionWaiting: FileCondition["waitingOn"] =
+    waitingOn === "fox" ? "onyx" : waitingOn === "borrower" || waitingOn === "outside" || waitingOn === "onyx"
+      ? waitingOn
+      : "borrower";
+  const shouldWriteCondition =
+    nextMotion === "needs_you" ||
+    nextMotion === "waiting_out" ||
+    Boolean(input.condition?.title) ||
+    Boolean(input.needsDoc);
+  const condition: FileCondition | null = shouldWriteCondition
     ? {
-        ...open,
-        state: "returned",
-        returnedAt: now.toISOString(),
-        note: note || open.note,
-        needsDoc: Boolean(input.needsDoc),
+        id: input.condition?.id ?? newId("cond"),
+        title: input.condition?.title ?? conditionTitleFromLine(foxLine, needed),
+        foxLine: input.condition?.foxLine ?? foxLine,
+        waitingOn: input.condition?.waitingOn ?? (nextMotion === "waiting_out" ? "outside" : "borrower"),
+        needed,
+        status: input.condition?.status ?? "open",
+        stillUseful:
+          (input.condition?.waitingOn ?? conditionWaiting) === "borrower" &&
+          (input.condition?.status ?? "open") === "open",
       }
-    : {
-        id: newId("review"),
-        kind: "review",
-        state: "returned",
-        openedAt: now.toISOString(),
-        returnedAt: now.toISOString(),
-        note,
-        needsDoc: Boolean(input.needsDoc),
-      };
-  const motion: FileMotion = input.needsDoc
-    ? "needs_you"
-    : inferMotionAfterLooks(draft);
+    : null;
   const striped: FoxIntakeDraft = {
     ...draft,
-    motion,
-    nextActor: nextForMotion(motion),
+    motion: nextMotion,
+    nextActor: nextForMotion(nextMotion),
+    waitingOn: waitingOnForMotion(nextMotion),
     pendingFinish: undefined,
-    docsOpen: Boolean(input.needsDoc),
+    docsOpen: nextMotion === "needs_you",
     correcting: null,
+    conditions: condition ? [...(draft.conditions ?? []), condition] : draft.conditions,
   };
   const withItem = replaceReviewItem(striped, returned);
-  const threadLine =
-    note ||
-    (input.needsDoc ? needsYouCopy(withItem) : "ONYX returned this file. I stay here.");
-  const next = appendFileEvent(withItem, "return-to-fox", threadLine, now.toISOString());
-  return { draft: next, threadLine };
+  const next = appendFileEvent(withItem, "return-to-fox", foxLine, now.toISOString(), {
+    actor: "onyx",
+    summary: foxLine,
+  });
+  return { draft: next, threadLine: foxLine };
 }
 
 export function reviewSlaMsOf(draft: FoxIntakeDraft) {
@@ -532,10 +718,36 @@ export function applyNudgeMotion(
   const item = openReviewWorkItem(draft);
   if (!item) return { draft, threadLine: null };
   if (!input.force && !reviewIsSitting(draft, now)) return { draft, threadLine: null };
+  const nudgeCount = (item.nudgeCount ?? 0) + 1;
+  if (nudgeCount >= IGNORED_NUDGE_LIMIT) {
+    const escalated = replaceReviewItem(
+      appendFileEvent(
+        {
+          ...draft,
+          originatorRequested: true,
+          motion: "escalated",
+          nextActor: "ONYX",
+          waitingOn: "onyx",
+        },
+        "nudge",
+        MOTION_COPY.threeNudges,
+        now.toISOString(),
+        { actor: "fox", summary: MOTION_COPY.threeNudges },
+      ),
+      {
+        ...item,
+        state: "blocked",
+        nudgedAt: now.toISOString(),
+        nudgeCount,
+      },
+    );
+    return { draft: escalated, threadLine: MOTION_COPY.threeNudges };
+  }
   const nudged: WorkItem = {
     ...item,
     state: "nudged",
     nudgedAt: now.toISOString(),
+    nudgeCount,
   };
   const next = replaceReviewItem(
     appendFileEvent(
@@ -543,10 +755,12 @@ export function applyNudgeMotion(
         ...draft,
         motion: "in_queue",
         nextActor: "ONYX",
+        waitingOn: "onyx",
       },
       "nudge",
       MOTION_COPY.nudge,
       now.toISOString(),
+      { actor: "fox", summary: MOTION_COPY.nudge },
     ),
     nudged,
   );

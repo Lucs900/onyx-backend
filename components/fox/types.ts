@@ -105,14 +105,24 @@ export type FileMotion =
   | "ready"
   | "in_queue"
   | "needs_you"
+  | "waiting_out"
   | "on_hold"
   | "escalated";
 
 export type FileNext = "You" | "Fox" | "ONYX" | "Outside";
 
-export type WorkItemKind = "review";
+export type WaitingOn = "borrower" | "fox" | "onyx" | "outside";
 
-export type WorkItemState = "open" | "nudged" | "returned" | "closed";
+export type WorkItemKind = "review" | "exception" | "processing";
+
+export type WorkItemState = "open" | "nudged" | "done" | "blocked" | "returned" | "closed";
+
+export type WorkItemResult = {
+  summary: string;
+  factsChanged: string[];
+  next: FileMotion;
+  foxLine: string;
+};
 
 export type WorkItem = {
   id: string;
@@ -121,9 +131,28 @@ export type WorkItem = {
   openedAt: string;
   nudgedAt?: string;
   returnedAt?: string;
+  slaHours?: number;
+  nudgeCount?: number;
   note?: string;
   needsDoc?: boolean;
+  result?: WorkItemResult;
 };
+
+export type ConditionNeeded = "doc" | "fact" | "signature" | "decision" | "outside_event";
+
+export type FileConditionStatus = "open" | "satisfied" | "waived" | "stalled";
+
+export type FileCondition = {
+  id: string;
+  title: string;
+  foxLine: string;
+  waitingOn: Exclude<WaitingOn, "fox">;
+  needed: ConditionNeeded;
+  status: FileConditionStatus;
+  stillUseful: boolean;
+};
+
+export type FileEventActor = "fox" | "borrower" | "onyx";
 
 export type FileEventKind =
   | "looks-right"
@@ -141,6 +170,9 @@ export type FileEvent = {
   at: string;
   kind: FileEventKind;
   text: string;
+  actor?: FileEventActor;
+  summary?: string;
+  facts?: string[];
 };
 
 export type PreviewOutboxItem = {
@@ -219,6 +251,8 @@ export type FoxIntakeDraft = {
   originatorRequested?: boolean;
   motion?: FileMotion;
   nextActor?: FileNext;
+  waitingOn?: WaitingOn;
+  conditions?: FileCondition[];
   workItems?: WorkItem[];
   events?: FileEvent[];
   previewOutbox?: PreviewOutboxItem[];

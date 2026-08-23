@@ -85,6 +85,8 @@ import {
 import { answerFromFile, foxAnswer, interpretQuestion, topicFromFile } from "../lib/guidelines/answer";
 import {
   MOTION_COPY,
+  PAYSTUB_RETURN_LINE,
+  SILENT_RETURN_ERROR,
   applyLooksRightMotion,
   creditPullPermitted,
   gatheringCopy,
@@ -93,6 +95,7 @@ import {
   nextActorOf,
   openReviewWorkItem,
   reviewIsSitting,
+  waitingOnOf,
 } from "../components/fox/motion";
 import {
   EXTRACT_SCHEMA_KEYS,
@@ -5324,6 +5327,86 @@ applyCapture({ field: "talk-originator" });
 assert.equal(motionOf(getFoxDraft()), "escalated");
 assert.equal(nextActorOf(getFoxDraft()), "ONYX");
 assert.ok(openReviewWorkItem(getFoxDraft()));
+
+resetWorkspaceForEntry("acr", "buy");
+applyCapture({ field: "occupancy", value: "primary" });
+applyCapture({ field: "timeline", value: "ready-now" });
+capturePurchaseFunds("500000", "400000");
+applyCapture({ field: "creditRange", value: "760+" });
+applyCapture({ field: "incomeType", value: "w2" });
+confirmLooksRight();
+applyCapture({ field: "email", value: "mvs@onyx.test" });
+applyCapture({ field: "proceed" });
+const mvsQueued = getFoxDraft();
+assert.equal(motionOf(mvsQueued), "in_queue");
+assert.equal(statusCopy(mvsQueued), "in_queue");
+assert.equal(nextActorOf(mvsQueued), "ONYX");
+assert.equal(waitingOnOf(mvsQueued), "onyx");
+assert.ok(previewFacts(mvsQueued).some((fact) => fact.id === "status" && fact.value === "in_queue"));
+assert.ok(previewFacts(mvsQueued).some((fact) => fact.id === "next" && fact.value === "ONYX"));
+assert.ok(previewFacts(mvsQueued).some((fact) => fact.id === "waiting" && fact.value === "onyx"));
+assert.equal(openReviewWorkItem(mvsQueued)?.kind, "review");
+assert.ok(openReviewWorkItem(mvsQueued)?.state === "open" || openReviewWorkItem(mvsQueued)?.state === "nudged");
+assert.equal((mvsQueued.workItems ?? []).filter((item) => item.kind === "review" && (item.state === "open" || item.state === "nudged")).length, 1);
+assert.equal(workspacePromptCopy("done", mvsQueued).text, MOTION_COPY.in_queue);
+assert.doesNotMatch(
+  `${MOTION_COPY.in_queue} ${statusCopy(mvsQueued)} ${nextActorOf(mvsQueued)}`,
+  /LO will contact you|we’ll be in touch|waiting for your originator/i,
+);
+
+sitExpireReview();
+assert.equal(reviewIsSitting(getFoxDraft()), true);
+const mvsNudge = nudgeReview();
+assert.equal(mvsNudge.threadLine, MOTION_COPY.nudge);
+assert.match(mvsNudge.threadLine ?? "", /I pushed this/);
+assert.ok(getFoxMessages().some((message) => message.text === MOTION_COPY.nudge));
+assert.equal(motionOf(getFoxDraft()), "in_queue");
+
+const silentReturn = returnToFox({ foxLine: "   " });
+assert.equal(silentReturn.error, SILENT_RETURN_ERROR);
+assert.equal(silentReturn.threadLine, "");
+assert.equal(motionOf(getFoxDraft()), "in_queue");
+assert.ok(!getFoxMessages().some((message) => message.text === SILENT_RETURN_ERROR));
+
+const mvsReturn = returnToFox({
+  foxLine: PAYSTUB_RETURN_LINE,
+  next: "needs_you",
+  needsDoc: true,
+});
+assert.equal(mvsReturn.threadLine, PAYSTUB_RETURN_LINE);
+assert.equal(motionOf(getFoxDraft()), "needs_you");
+assert.equal(nextActorOf(getFoxDraft()), "You");
+assert.equal(waitingOnOf(getFoxDraft()), "borrower");
+assert.ok(getFoxMessages().some((message) => message.text === PAYSTUB_RETURN_LINE));
+assert.ok(
+  stillUsefulSection(getFoxDraft())?.items.some((item) => /paystub/i.test(item.label)),
+);
+assert.ok((getFoxDraft().conditions ?? []).some((item) => item.stillUseful && item.waitingOn === "borrower"));
+
+resetWorkspaceForEntry("acr", "buy");
+applyCapture({ field: "occupancy", value: "primary" });
+applyCapture({ field: "timeline", value: "ready-now" });
+capturePurchaseFunds("500000", "400000");
+applyCapture({ field: "creditRange", value: "760+" });
+applyCapture({ field: "incomeType", value: "w2" });
+confirmLooksRight();
+applyCapture({ field: "email", value: "mvs-ask@onyx.test" });
+applyCapture({ field: "proceed" });
+const mvsAsk = getFoxDraft();
+const queueChips = ["What happens next?", "Upload more", "Ask Fox"];
+assertAnswerThenRestore(workspaceReply("What happens next?", mvsAsk), /ONYX|government ID|paystub/i, {
+  labels: queueChips,
+});
+assertAnswerThenRestore(workspaceReply("will I qualify?", mvsAsk), /cannot approve or say you qualify/i, {
+  labels: queueChips,
+});
+assertAnswerThenRestore(workspaceReply("what will this cost me", mvsAsk), /fee quote|won.t invent/i, {
+  labels: queueChips,
+});
+assert.doesNotMatch(
+  (workspaceReply("will I qualify?", mvsAsk)?.text ?? "").replace(NO_APPROVE_COPY, ""),
+  /you are approved|you will qualify|lock this|LO will contact/i,
+);
 
 const homepageFiles = [
   "app/(marketing)/page.tsx",

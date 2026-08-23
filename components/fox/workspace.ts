@@ -151,6 +151,7 @@ import {
   motionStatusCopy,
   nextActorOf,
   remindLine,
+  waitingOnOf,
 } from "./motion";
 
 export { slotFromFilename };
@@ -1375,6 +1376,13 @@ function freeTextAnswer(input: string, draft: FoxIntakeDraft) {
 
 function answerThenRestore(input: string, draft: FoxIntakeDraft) {
   return restoredAsk(freeTextAnswer(input, draft), draft);
+}
+
+function restoreQueueActions(draft: FoxIntakeDraft) {
+  const extra = layer2AskActions(draft) ?? [];
+  const finish = finishLineActions(draft);
+  const seen = new Set(extra.map((item) => item.label));
+  return [...extra, ...finish.filter((item) => !seen.has(item.label))];
 }
 
 function restoredAsk(answer: string, draft: FoxIntakeDraft) {
@@ -3164,7 +3172,7 @@ export function workspaceReply(
   if (layer2Open(draft) && /^skip\b/.test(lower)) {
     return {
       text: layer2AskCopy(draft),
-      actions: layer2AskActions(draft) ?? finishLineActions(draft),
+      actions: restoreQueueActions(draft),
       capture: { field: "skip-docs" },
     };
   }
@@ -3172,7 +3180,7 @@ export function workspaceReply(
   if (layer2Open(draft) && /^not yet\b/.test(lower)) {
     return {
       text: layer2AskCopy(draft),
-      actions: layer2AskActions(draft) ?? finishLineActions(draft),
+      actions: restoreQueueActions(draft),
       capture: { field: "hold-docs" },
     };
   }
@@ -3258,7 +3266,7 @@ export function workspaceReply(
   if (inQueueEnding(draft) && /what happens next/.test(lower)) {
     return {
       text: stillUsefulVisible(draft) ? layer2AskCopy(draft) : MOTION_COPY.whatHappensNext,
-      actions: layer2AskActions(draft) ?? finishLineActions(draft),
+      actions: restoreQueueActions(draft),
       capture: { field: "what-happens-next" },
     };
   }
@@ -3266,7 +3274,7 @@ export function workspaceReply(
   if (inQueueEnding(draft) && /^ask fox$/.test(lower)) {
     return {
       text: layer2Open(draft) ? layer2AskCopy(draft) : MOTION_COPY.askFox,
-      actions: layer2AskActions(draft) ?? finishLineActions(draft),
+      actions: restoreQueueActions(draft),
       capture: { field: "ask-fox" },
     };
   }
@@ -4217,6 +4225,11 @@ export function previewFacts(draft: FoxIntakeDraft): PreviewFact[] {
       id: "next",
       label: "Next",
       value: nextActorOf(draft),
+    });
+    facts.push({
+      id: "waiting",
+      label: "Waiting on",
+      value: waitingOnOf(draft),
     });
     const completeness = fileCompleteness(draft);
     if (completeness) {

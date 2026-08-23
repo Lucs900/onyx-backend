@@ -7,10 +7,14 @@ import {
   motionOf,
   nextActorOf,
   openReviewWorkItem,
+  PAYSTUB_RETURN_LINE,
   REVIEW_SLA_MS,
   reviewIsSitting,
   reviewSlaMsOf,
+  SILENT_RETURN_ERROR,
+  waitingOnOf,
 } from "./motion";
+import type { FileMotion } from "./types";
 import { incomeLabel, occupancyLabel, timelineLabel } from "./script";
 import {
   applyPreviewMotionControls,
@@ -32,9 +36,10 @@ export function LoReview() {
   const searchParams = useSearchParams();
   const draft = useSyncExternalStore(subscribeFoxDraft, getFoxDraft, getServerDraft);
   const [ready, setReady] = useState(false);
-  const [note, setNote] = useState("");
-  const [needsDoc, setNeedsDoc] = useState(false);
+  const [foxLine, setFoxLine] = useState(PAYSTUB_RETURN_LINE);
+  const [nextMotion, setNextMotion] = useState<FileMotion>("needs_you");
   const [returnedLine, setReturnedLine] = useState("");
+  const [returnError, setReturnError] = useState("");
 
   useEffect(() => {
     hydrateFoxDraft();
@@ -68,8 +73,10 @@ export function LoReview() {
   const scenarioRows = fileScenarioRows(draft);
   const motion = motionOf(draft);
   const next = nextActorOf(draft);
+  const waiting = waitingOnOf(draft);
   const review = openReviewWorkItem(draft);
   const slaMs = reviewSlaMsOf(draft);
+  const conditions = draft.conditions ?? [];
 
   return (
     <div className="intake page-pad">
@@ -93,9 +100,16 @@ export function LoReview() {
               <h2 className="type-card-title">File motion</h2>
               <dl className="scenario-echo">
                 <dt>Status</dt>
-                <dd>{motion ?? "—"}</dd>
+                <dd>{motion ?? "preparing"}</dd>
                 <dt>Next</dt>
                 <dd>{next}</dd>
+                <dt>Waiting on</dt>
+                <dd>{waiting}</dd>
+                <dt>SLA</dt>
+                <dd>
+                  {review?.slaHours ?? 4}h
+                  {reviewIsSitting(draft) ? " · sitting" : ""}
+                </dd>
                 <dt>Originator</dt>
                 <dd>
                   {draft.sampleAccepted || draft.phase === "confirmed"
@@ -119,45 +133,78 @@ export function LoReview() {
             <section className="intake-card">
               <h2 className="type-card-title">Return to Fox</h2>
               <p className="type-body">
-                Writes an event on this File. The borrower thread gets one line.
-                Structure restripes.
+                Required: a foxLine the borrower can hear, plus the next motion.
+                Silent return is blocked.
               </p>
               <label className="intake-field">
-                <span className="type-legal">Result note</span>
+                <span className="type-legal">foxLine</span>
                 <textarea
                   className="intake-input"
                   rows={3}
-                  value={note}
-                  onChange={(event) => setNote(event.target.value)}
-                  placeholder="What should Fox put in the thread?"
+                  value={foxLine}
+                  onChange={(event) => setFoxLine(event.target.value)}
+                  placeholder={PAYSTUB_RETURN_LINE}
                 />
               </label>
-              <label className="intake-check-line">
-                <input
-                  type="checkbox"
-                  checked={needsDoc}
-                  onChange={(event) => setNeedsDoc(event.target.checked)}
-                />
-                needs a doc
+              <label className="intake-field">
+                <span className="type-legal">Next motion</span>
+                <select
+                  className="intake-input"
+                  value={nextMotion}
+                  onChange={(event) => setNextMotion(event.target.value as FileMotion)}
+                >
+                  <option value="needs_you">needs_you</option>
+                  <option value="ready">ready</option>
+                  <option value="in_queue">in_queue</option>
+                  <option value="waiting_out">waiting_out</option>
+                  <option value="gathering">gathering</option>
+                </select>
               </label>
               <div className="intake-section__actions">
                 <button
                   type="button"
                   className="btn btn--primary"
                   onClick={() => {
-                    const result = returnToFox({ note, needsDoc });
+                    const result = returnToFox({
+                      foxLine,
+                      next: nextMotion,
+                      needsDoc: nextMotion === "needs_you",
+                    });
+                    if (result.error || !result.threadLine) {
+                      setReturnError(result.error || SILENT_RETURN_ERROR);
+                      setReturnedLine("");
+                      return;
+                    }
+                    setReturnError("");
                     setReturnedLine(result.threadLine);
                   }}
                 >
                   Return to Fox
                 </button>
               </div>
+              {returnError ? <p className="type-legal">{returnError}</p> : null}
               {returnedLine ? (
                 <p className="type-legal">Wrote to the File: {returnedLine}</p>
               ) : null}
               <Link href="/start" className="btn btn--text">
                 Open borrower thread
               </Link>
+            </section>
+
+            <section className="intake-card">
+              <h2 className="type-card-title">Conditions</h2>
+              {conditions.length ? (
+                <ul className="intake-note-list">
+                  {conditions.map((item) => (
+                    <li key={item.id}>
+                      {item.title} · {item.waitingOn} · {item.status}
+                      {item.stillUseful ? " · still useful" : ""}
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="type-body">No conditions on this File.</p>
+              )}
             </section>
 
             <section className="intake-card">

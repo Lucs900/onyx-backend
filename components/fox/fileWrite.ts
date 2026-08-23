@@ -1024,7 +1024,10 @@ export function stillUsefulSection(draft: FoxIntakeDraft): {
   empty: boolean;
 } | null {
   if (!stillUsefulVisible(draft)) return null;
-  const items = layer2Plan(draft);
+  const conditionItems = (draft.conditions ?? [])
+    .filter((item) => item.waitingOn === "borrower" && item.status === "open" && item.stillUseful)
+    .map((item) => layer2Item(item.id, item.title, item.foxLine));
+  const items = [...conditionItems, ...layer2Plan(draft)];
   const received = (draft.documents ?? [])
     .filter(
       (doc) =>

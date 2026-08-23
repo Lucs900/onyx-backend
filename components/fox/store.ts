@@ -16,6 +16,7 @@ import {
   type ExtractClass,
   type FactConflict,
   type FactProposal,
+  type FileCondition,
   type FileEvent,
   type FoxIntakeDraft,
   type FoxMessage,
@@ -215,6 +216,14 @@ function normalize(value: unknown): FoxIntakeDraft {
     originatorRequested: Boolean(raw.originatorRequested),
     motion: isFileMotion(raw.motion) ? raw.motion : undefined,
     nextActor: isFileNext(raw.nextActor) ? raw.nextActor : undefined,
+    waitingOn:
+      raw.waitingOn === "borrower" ||
+      raw.waitingOn === "fox" ||
+      raw.waitingOn === "onyx" ||
+      raw.waitingOn === "outside"
+        ? raw.waitingOn
+        : undefined,
+    conditions: normalizeConditions(raw.conditions),
     workItems: normalizeWorkItems(raw.workItems),
     events: normalizeEvents(raw.events),
     previewOutbox: normalizeOutbox(raw.previewOutbox),
@@ -286,7 +295,19 @@ function normalizeWorkItems(value: FoxIntakeDraft["workItems"]): WorkItem[] {
   if (!Array.isArray(value)) return [];
   return value.filter((item): item is WorkItem => {
     if (!item || typeof item !== "object") return false;
-    return item.kind === "review" && typeof item.id === "string" && typeof item.openedAt === "string";
+    const kind = item.kind === "exception" || item.kind === "processing" ? item.kind : item.kind === "review" ? "review" : null;
+    if (!kind || typeof item.id !== "string" || typeof item.openedAt !== "string") return false;
+    item.kind = kind;
+    if (item.state === "returned" || item.state === "closed") item.state = "done";
+    return true;
+  });
+}
+
+function normalizeConditions(value: FoxIntakeDraft["conditions"]): FileCondition[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((item): item is FileCondition => {
+    if (!item || typeof item !== "object") return false;
+    return Boolean(item.id && item.title && item.foxLine && item.waitingOn && item.needed && item.status);
   });
 }
 
@@ -991,8 +1012,13 @@ export function appendFoxThreadLine(
   return message;
 }
 
-export function returnToFox(input: { note: string; needsDoc?: boolean }) {
+export function returnToFox(
+  input: Parameters<typeof applyReturnToFoxMotion>[1],
+) {
   const applied = applyReturnToFoxMotion(current, input);
+  if (applied.error || !applied.threadLine) {
+    return { draft: current, threadLine: "", error: applied.error ?? "foxLine required" };
+  }
   commit(applied.draft);
   appendFoxThreadLine(applied.threadLine);
   return { draft: current, threadLine: applied.threadLine };
