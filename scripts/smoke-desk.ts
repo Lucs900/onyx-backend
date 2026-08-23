@@ -2453,7 +2453,8 @@ assertAnswerThenRestore(acmeQualifyAsk, /This does not look ready yet\./, {
   labels: ["Use this", "Leave blank"],
 });
 assert.match(acmeQualifyAsk?.text ?? "", /biweekly period × 26 \/ 12/);
-assert.match(acmeQualifyAsk?.text ?? "", /W-2 is still missing|still needs a W-2/i);
+assert.match(acmeQualifyAsk?.text ?? "", /A W-2 is still missing/);
+assert.match(acmeQualifyAsk?.text ?? "", /A W-2 would likely help/);
 assert.doesNotMatch(stripReadinessAnswer(acmeQualifyAsk?.text ?? ""), /you qualify|you are approved|you don’t qualify/i);
 assert.equal(resolveProposal(acmeWrite.draft, "accept").facts?.qualifying_income?.value, "9167");
 assert.equal(resolveProposal(acmeWrite.draft, "decline").facts?.qualifying_income, undefined);
@@ -3043,10 +3044,22 @@ assertAnswerThenRestore(
 );
 
 const docsChips = ["Upload this", "Skip"];
-assertAnswerThenRestore(workspaceReply("will i qualify", afterStartId), /Not enough yet to tell\. Still useful:/, {
+assertAnswerThenRestore(workspaceReply("will i qualify", afterStartId), /This does not look ready yet\./, {
   text: /government ID|name on this file/i,
   labels: docsChips,
 });
+assert.match(workspaceReply("will i qualify", afterStartId)?.text ?? "", /paystub|W-2/);
+const afterSkipId = skipCurrentInvite(afterStartId);
+assert.match(workspacePromptCopy("documents", afterSkipId).text, /latest paystub/i);
+assertAnswerThenRestore(workspaceReply("will i qualify", afterSkipId), /This does not look ready yet\./, {
+  text: /latest paystub/i,
+  labels: docsChips,
+});
+assert.match(
+  workspaceReply("will i qualify", afterSkipId)?.text ?? "",
+  /A latest paystub and a W-2 are still missing\. A latest paystub and a W-2 would likely help\./,
+);
+assert.doesNotMatch(workspaceReply("will i qualify", afterSkipId)?.text ?? "", /Not enough yet to tell/);
 assertAnswerThenRestore(workspaceReply("hi", afterStartId), /^Hi\./, { labels: docsChips });
 assertAnswerThenRestore(
   workspaceReply("what does stated credit mean?", afterStartId),
@@ -3055,7 +3068,7 @@ assertAnswerThenRestore(
 );
 
 const holdChips = ["Start with ID", "Ask Fox"];
-assertAnswerThenRestore(workspaceReply("will i qualify", heldDocs), /Not enough yet to tell\. Still useful:/, {
+assertAnswerThenRestore(workspaceReply("will i qualify", heldDocs), /This does not look ready yet\./, {
   labels: holdChips,
 });
 assertAnswerThenRestore(workspaceReply("hi", heldDocs), /^Hi\./, { labels: holdChips });
@@ -3063,7 +3076,7 @@ assertAnswerThenRestore(workspaceReply("hi", heldDocs), /^Hi\./, { labels: holdC
 const looksChips = ["Looks right", "Needs a correction"];
 const qualifyAtReview = workspaceReply("will i qualify", afterIncomeReady);
 assert.notEqual(qualifyAtReview?.capture?.field, "confirm-draft");
-assertAnswerThenRestore(qualifyAtReview, /Not enough yet to tell\. Still useful:/, {
+assertAnswerThenRestore(qualifyAtReview, /This does not look ready yet\./, {
   text: /does it look right/i,
   labels: looksChips,
 });
@@ -3101,7 +3114,7 @@ const atCorrect = { ...afterIncomeReady, correcting: "correct" as const };
 assert.equal(workspacePrompt(atCorrect), "correct");
 const correctChips = (workspacePromptCopy("correct", atCorrect).actions ?? []).map((item) => item.label);
 assert.ok(correctChips.includes("Occupancy"));
-assertAnswerThenRestore(workspaceReply("will i qualify", atCorrect), /Not enough yet to tell\. Still useful:/, {
+assertAnswerThenRestore(workspaceReply("will i qualify", atCorrect), /This does not look ready yet\./, {
   labels: correctChips.filter((label) => label === "Occupancy" || label === "Credit" || label === "Income"),
 });
 assertAnswerThenRestore(workspaceReply("hi", atCorrect), /^Hi\./, {
@@ -3109,7 +3122,7 @@ assertAnswerThenRestore(workspaceReply("hi", atCorrect), /^Hi\./, {
 });
 
 const proceedChips = ["Proceed", "Not yet"];
-assertAnswerThenRestore(workspaceReply("will i qualify", afterLooks), /Not enough yet to tell\. Still useful:/, {
+assertAnswerThenRestore(workspaceReply("will i qualify", afterLooks), /This does not look ready yet\./, {
   labels: proceedChips,
 });
 assertAnswerThenRestore(workspaceReply("hi", afterLooks), /^Hi\./, { labels: proceedChips });
@@ -3119,7 +3132,7 @@ assertAnswerThenRestore(
   { labels: proceedChips },
 );
 
-assertAnswerThenRestore(workspaceReply("will i qualify", buyProceed), /Not enough yet to tell\. Still useful:/, {
+assertAnswerThenRestore(workspaceReply("will i qualify", buyProceed), /This does not look ready yet\./, {
   labels: ["Ask Fox"],
 });
 assertAnswerThenRestore(workspaceReply("hi", buyProceed), /^Hi\./, { labels: ["Ask Fox"] });
@@ -4452,7 +4465,7 @@ assertAnswerThenRestore(combinedQualify, /This does not look ready yet\./, {
   text: /18,167/,
   labels: ["Use this", "Leave blank"],
 });
-assert.match(combinedQualify?.text ?? "", /W-2 is still missing|still needs a W-2/i);
+assert.match(combinedQualify?.text ?? "", /A W-2 is still missing/);
 const combinedAccepted = resolveProposal(combinedWrite.draft, "accept");
 assert.equal(combinedAccepted.facts?.qualifying_income?.value, "18167");
 assert.equal(combinedAccepted.facts?.wage_monthly?.value, "9167");
@@ -5381,6 +5394,44 @@ assert.equal(
   }).kind,
   "not_ready",
 );
+const walkMissingStub = readinessFromFile({
+  product: "buy",
+  purposeHint: "purchase",
+  occupancy: "primary",
+  state: "CA",
+  purchasePrice: 500000,
+  downPayment: 20000,
+  loanAmount: 480000,
+  statedCreditBand: "760+",
+  incomeType: "w2_base",
+});
+assert.equal(walkMissingStub.kind, "not_ready");
+assert.match(
+  walkMissingStub.line,
+  /This does not look ready yet\. A latest paystub and a W-2 are still missing\. A latest paystub and a W-2 would likely help\./,
+);
+assert.doesNotMatch(walkMissingStub.line, /Not enough yet to tell|large share of the price|you don’t qualify/i);
+assert.equal(
+  readinessFromFile({
+    product: "buy",
+    purposeHint: "purchase",
+    incomeType: "w2_base",
+  }).kind,
+  "thin",
+);
+assert.equal(
+  readinessFromFile({
+    product: "buy",
+    purposeHint: "purchase",
+    occupancy: "primary",
+    state: "CA",
+    purchasePrice: 850000,
+    downPayment: 170000,
+    loanAmount: 680000,
+    incomeType: "w2_base",
+  }).kind,
+  "thin",
+);
 assert.equal(readinessFromFile({ unresolvedConflict: true }).line, READINESS_UW_REVIEW);
 assert.equal(
   readinessFromFile({
@@ -5819,7 +5870,7 @@ const queueChips = ["What happens next?", "Upload more", "Ask Fox"];
 assertAnswerThenRestore(workspaceReply("What happens next?", mvsAsk), /ONYX|government ID|paystub/i, {
   labels: queueChips,
 });
-assertAnswerThenRestore(workspaceReply("will I qualify?", mvsAsk), /Not enough yet to tell\. Still useful:/, {
+assertAnswerThenRestore(workspaceReply("will I qualify?", mvsAsk), /This does not look ready yet\./, {
   labels: queueChips,
 });
 assertAnswerThenRestore(workspaceReply("what will this cost me", mvsAsk), /fee quote|won.t invent/i, {

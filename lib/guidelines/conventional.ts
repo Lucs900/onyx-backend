@@ -961,8 +961,8 @@ export function incomeDocumentedEnough(file: CompletenessFile): boolean {
   return false;
 }
 
-function missingIncomeDocReason(file: CompletenessFile): string | undefined {
-  if (!file.incomeType) return undefined;
+function missingRequiredIncomeDocs(file: CompletenessFile): string[] {
+  if (!file.incomeType) return [];
   const received = receivedSet(file);
   const returns = taxReturnsOnFile(file);
   const both = file.incomeType === "w2_plus_se" || file.incomeType === "both";
@@ -983,10 +983,34 @@ function missingIncomeDocReason(file: CompletenessFile): string | undefined {
     if (returns < 1) missing.push("a tax return");
   }
   if (file.incomeType === "other" && returns < 1) missing.push("a tax return");
+  return missing;
+}
+
+function joinMissingDocs(items: string[]): string {
+  if (items.length === 1) return items[0];
+  if (items.length === 2) return `${items[0]} and ${items[1]}`;
+  return `${items.slice(0, -1).join(", ")}, and ${items[items.length - 1]}`;
+}
+
+function capitalizePhrase(phrase: string) {
+  return phrase ? phrase.charAt(0).toUpperCase() + phrase.slice(1) : phrase;
+}
+
+function missingIncomeDocReason(file: CompletenessFile): string | undefined {
+  const missing = missingRequiredIncomeDocs(file);
   if (!missing.length) return undefined;
-  if (missing.length === 1) return `This path still needs ${missing[0]}.`;
-  if (missing.length === 2) return `This path still needs ${missing[0]} and ${missing[1]}.`;
-  return `This path still needs ${missing.slice(0, -1).join(", ")}, and ${missing[missing.length - 1]}.`;
+  const named = joinMissingDocs(missing);
+  return missing.length === 1
+    ? `${capitalizePhrase(named)} is still missing.`
+    : `${capitalizePhrase(named)} are still missing.`;
+}
+
+function missingIncomeDocFix(file: CompletenessFile): string {
+  const debt = namedDebtOnFile(file);
+  if (debt) return `Paying off ${debt} would likely help.`;
+  const missing = missingRequiredIncomeDocs(file);
+  if (!missing.length) return "Those income docs would likely help.";
+  return `${capitalizePhrase(joinMissingDocs(missing))} would likely help.`;
 }
 
 function productMismatchReason(file: FileFacts): string | undefined {
@@ -1083,11 +1107,16 @@ export function readinessFromFile(file: FileFacts): ReadinessRead {
     };
   }
 
-  if (file.incomeType && someIncomeDocsReceived(complete) && !incomeDocumentedEnough(complete)) {
+  if (
+    file.incomeType &&
+    layer1SketchPresent(complete) &&
+    !incomeDocumentedEnough(complete) &&
+    missingRequiredIncomeDocs(complete).length
+  ) {
     const reason = missingIncomeDocReason(complete) ?? "Income docs for this path are still missing.";
     return {
       kind: "not_ready",
-      line: notReadyLine(reason, readinessFix(file, "docs")),
+      line: notReadyLine(reason, missingIncomeDocFix(complete)),
       reason,
     };
   }
