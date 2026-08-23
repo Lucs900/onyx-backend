@@ -1076,13 +1076,37 @@ function looksLikeQuestion(text: string) {
 }
 
 function restoredAsk(answer: string, draft: FoxIntakeDraft) {
-  const ask = workspacePromptCopy(workspacePrompt(draft), draft);
+  const ask = nextFoxAsk(draft);
+  if (ask.text === HOLD_DOCS_COPY) {
+    return {
+      text: answer,
+      actions: ask.actions,
+    };
+  }
   return {
     text: `${answer} ${ask.text}`.trim(),
     followUp: ask.followUp,
     facts: ask.facts,
     actions: ask.actions,
   };
+}
+
+function sideQuestionAnswer(input: string, draft: FoxIntakeDraft) {
+  if (/(what is acr|what.?s acr|active credit relationship)/i.test(input)) {
+    return draft.path === "loan-only"
+      ? "ACR is the desk that stays open after close — letter, scout, and reward. This file is still the loan."
+      : "ACR is the desk that stays open after close. Letter is originator-issued, not Fox. Scout and reward stay on the desk.";
+  }
+  if (draft.awaitingYearsInBusiness && /\b(years?|how long|business|self.?employ)/i.test(input)) {
+    return "How long you’ve been running it helps me read the return. Not a form — just the file.";
+  }
+  if (
+    /\b(id|document|return|upload|tax|paystub|w-?2)\b/i.test(input) ||
+    /why do you need/i.test(input)
+  ) {
+    return documentQuestionAnswer(draft);
+  }
+  return "I can keep this file current. Ask anything, or take the next step when you’re ready.";
 }
 
 function documentQuestionAnswer(draft: FoxIntakeDraft) {
@@ -2102,7 +2126,7 @@ export function parseWorkspaceEdit(
   const spokenFix =
     /\b(change|edit|update|set|switch|actually|should be|make it)\b/.test(lower) ||
     (namedField && /\b(is|to|as|=)\b/.test(lower));
-  if (!spokenFix) return null;
+  if (!spokenFix) return parseRefiDocumentsBareValue(q, draft);
   if (/^(needs a correction|looks right)$/i.test(lower)) return null;
 
   const wantsPath = /\b(path|relationship|acr|loan only|loan-only)\b/.test(lower);
@@ -2230,7 +2254,7 @@ export function parseWorkspaceEdit(
 
   if (draft && /\bactually\b/.test(lower)) {
     const amount = parseLooseAmount(q);
-    if (amount != null && isPurchaseLike(draft)) {
+    if (amount != null && (isPurchaseLike(draft) || isRefiLike(draft))) {
       if (/\bdown\b/.test(lower)) {
         return {
           capture: { field: "downPayment", value: String(amount) },
@@ -2245,12 +2269,35 @@ export function parseWorkspaceEdit(
       }
       return {
         capture: { field: "propertyValue", value: String(amount) },
-        confirm: `Updated purchase price to ${formatMoney(amount)}.`,
+        confirm: isPurchaseLike(draft)
+          ? `Updated purchase price to ${formatMoney(amount)}.`
+          : `Updated property value to ${formatMoney(amount)}.`,
       };
     }
   }
 
-  return null;
+  return parseRefiDocumentsBareValue(q, draft);
+}
+
+function parseRefiDocumentsBareValue(
+  text: string,
+  draft?: FoxIntakeDraft,
+): {
+  capture?: Capture;
+  correct?: FoxPrompt;
+  line?: string;
+  confirm: string;
+} | null {
+  if (!draft || !isRefiLike(draft)) return null;
+  if (draft.pendingProposal || draft.pendingConflict) return null;
+  if (workspacePrompt(draft) !== "documents") return null;
+  if (!/^[\s$0-9,kKmM.]+$/.test(text.trim())) return null;
+  const amount = parseLooseAmount(text);
+  if (amount == null || amount < 1000) return null;
+  return {
+    capture: { field: "propertyValue", value: String(amount) },
+    confirm: `Updated property value to ${formatMoney(amount)}.`,
+  };
 }
 
 function draftAfterCapture(draft: FoxIntakeDraft, capture: Capture): FoxIntakeDraft {
@@ -2525,7 +2572,12 @@ export function workspaceReply(
 
   if (draft.awaitingYearsInBusiness && draft.correcting !== "qualifying") {
     if (looksLikeQuestion(q)) {
-      return { text: "How long you’ve been running it helps me read the return. Not a form — just the file." };
+      return restoredAsk(
+        /(what is acr|what.?s acr|active credit relationship)/i.test(q)
+          ? sideQuestionAnswer(q, draft)
+          : "How long you’ve been running it helps me read the return. Not a form — just the file.",
+        draft,
+      );
     }
     const years = parseYearsInBusiness(q);
     if (years) {
@@ -2640,10 +2692,12 @@ export function workspaceReply(
 
   if (/(what is acr|what.?s acr|active credit relationship)/i.test(lower)) {
     return {
-      text:
+      ...restoredAsk(
         draft.path === "loan-only"
           ? "ACR is the desk that stays open after close — letter, scout, and reward. This file is still the loan."
           : "ACR is the desk that stays open after close. Letter is originator-issued, not Fox. Scout and reward stay on the desk.",
+        draft,
+      ),
       capture: { field: "what-acr" },
     };
   }
@@ -3115,6 +3169,9 @@ export function workspaceReply(
           capture: { field: "ask-fox" },
         };
       }
+      if (looksLikeQuestion(q)) {
+        return restoredAsk(documentQuestionAnswer(draft), draft);
+      }
       if (/(start|id|upload|drop|now|add|documents)/i.test(lower)) {
         const nextDraft = { ...draft, docsStarted: true, docsHeld: false };
         return {
@@ -3179,6 +3236,9 @@ export function workspaceReply(
   }
 
   if (prompt === "correct") {
+    if (looksLikeQuestion(q)) {
+      return restoredAsk(sideQuestionAnswer(q, draft), draft);
+    }
     return workspacePromptCopy("correct", draft);
   }
 
@@ -3251,11 +3311,18 @@ export function workspaceReply(
           capture: { field: "skip-docs" },
         };
       }
+      if (looksLikeQuestion(q)) {
+        return restoredAsk(sideQuestionAnswer(q, draft), draft);
+      }
       return workspacePromptCopy("done", draft);
     }
     return {
       text: "The file has the basics. Ask if you want to change anything.",
     };
+  }
+
+  if (looksLikeQuestion(q)) {
+    return restoredAsk(sideQuestionAnswer(q, draft), draft);
   }
 
   return null;

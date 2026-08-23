@@ -819,6 +819,116 @@ assert.equal(
 assert.match(actuallyPrice?.text ?? "", /\$900,000/);
 assert.equal(afterIncome.occupancyChoice.value, "primary");
 assert.equal(workspacePrompt({ ...afterIncome, propertyValueAmount: 900000 }), "documents");
+
+const heldWhy = workspaceReply("why do you need that?", heldDocs);
+assert.match(heldWhy?.text ?? "", /government ID|name on this file/i);
+assert.doesNotMatch(heldWhy?.text ?? "", /I’ll hold documents|Okay\. I’ll hold/);
+assert.deepEqual(
+  (heldWhy?.actions ?? []).map((item) => item.label),
+  ["Start with ID", "Ask Fox"],
+);
+const offerWhy = workspaceReply("why do you need that?", afterIncome);
+assert.match(offerWhy?.text ?? "", /government ID|name on this file/i);
+assert.ok((offerWhy?.actions ?? []).some((item) => item.label === "Start with ID"));
+assert.ok((offerWhy?.actions ?? []).some((item) => item.label === "Skip"));
+assert.ok((offerWhy?.actions ?? []).some((item) => item.label === "Not yet"));
+const inviteWhy = workspaceReply("why do you need that?", afterStartId);
+assert.match(inviteWhy?.text ?? "", /government ID|name on this file/i);
+assert.ok((inviteWhy?.actions ?? []).some((item) => item.label === "Upload this"));
+assert.ok((inviteWhy?.actions ?? []).some((item) => item.label === "Skip"));
+const heldAcr = workspaceReply("what is ACR?", heldDocs);
+assert.match(heldAcr?.text ?? "", /desk that stays open/i);
+assert.doesNotMatch(heldAcr?.text ?? "", /I’ll hold documents|Okay\. I’ll hold/);
+assert.deepEqual(
+  (heldAcr?.actions ?? []).map((item) => item.label),
+  ["Start with ID", "Ask Fox"],
+);
+const offerAcr = workspaceReply("what is ACR?", afterIncome);
+assert.match(offerAcr?.text ?? "", /desk that stays open/i);
+assert.ok((offerAcr?.actions ?? []).some((item) => item.label === "Start with ID"));
+const inviteAcr = workspaceReply("what is ACR?", afterStartId);
+assert.match(inviteAcr?.text ?? "", /desk that stays open/i);
+assert.ok((inviteAcr?.actions ?? []).some((item) => item.label === "Upload this"));
+const yearsAskDraft = draft({
+  ...afterIncome,
+  docsStarted: true,
+  awaitingYearsInBusiness: true,
+});
+const yearsWhy = workspaceReply("why do you need that?", yearsAskDraft);
+assert.match(yearsWhy?.text ?? "", /helps me read the return/i);
+assert.match(yearsWhy?.text ?? "", /How long have you been running this/);
+const yearsAcr = workspaceReply("what is ACR?", yearsAskDraft);
+assert.match(yearsAcr?.text ?? "", /desk that stays open/i);
+assert.match(yearsAcr?.text ?? "", /How long have you been running this/);
+const doneWhy = workspaceReply("why do you need that?", {
+  ...skipDocInvites(afterIncome),
+  sampleAccepted: true,
+  workspaceDraftStatus: "with-originator",
+  phase: "confirmed",
+});
+assert.match(doneWhy?.text ?? "", /keep this file current|I can keep/i);
+assert.ok((doneWhy?.actions ?? []).some((item) => item.label === "Proceed" || item.label === "Ask Fox"));
+const refiHeld = { ...refiOffer, docsHeld: true };
+const refiActually = workspaceReply("actually 900k", refiHeld);
+assert.equal(refiActually?.capture?.field, "propertyValue");
+assert.equal(
+  refiActually?.capture && "value" in refiActually.capture ? refiActually.capture.value : "",
+  "900000",
+);
+assert.match(refiActually?.text ?? "", /\$900,000/);
+const refiBareHeld = workspaceReply("1200000", refiHeld);
+assert.equal(refiBareHeld?.capture?.field, "propertyValue");
+assert.equal(
+  refiBareHeld?.capture && "value" in refiBareHeld.capture ? refiBareHeld.capture.value : "",
+  "1200000",
+);
+const refiBareInvite = workspaceReply("1200000", { ...refiOffer, docsStarted: true });
+assert.equal(refiBareInvite?.capture?.field, "propertyValue");
+assert.equal(
+  refiBareInvite?.capture && "value" in refiBareInvite.capture ? refiBareInvite.capture.value : "",
+  "1200000",
+);
+const purchaseBareDocs = workspaceReply("1200000", afterIncome);
+assert.notEqual(purchaseBareDocs?.capture?.field, "propertyValue");
+for (const product of [
+  withIncome(
+    draft({
+      path: "acr",
+      productIntent: "heloc",
+      occupancyAsked: true,
+      occupancyChoice: { ...emptyDraft().occupancyChoice, value: "primary" },
+      amountAsked: true,
+      loanAmountValue: 150000,
+      creditAsked: true,
+      creditBand: "760+",
+    }),
+  ),
+  withIncome(
+    withPurchaseFunds(
+      draft({
+        path: "acr",
+        productIntent: "jumbo",
+        jumboPurpose: "buy",
+        occupancyAsked: true,
+        occupancyChoice: { ...emptyDraft().occupancyChoice, value: "primary" },
+        creditAsked: true,
+        creditBand: "760+",
+      }),
+      1_500_000,
+      300_000,
+      1_200_000,
+    ),
+  ),
+] as const) {
+  assert.equal(workspacePrompt(product), "documents");
+  const held = workspaceReply("Not yet", product);
+  assert.equal(held?.capture?.field, "hold-docs");
+  assert.equal(held?.text, HOLD_DOCS_COPY);
+  assert.ok(!(held?.actions ?? []).some((item) => item.label === "Looks right"));
+  const why = workspaceReply("why do you need that?", { ...product, docsHeld: true });
+  assert.doesNotMatch(why?.text ?? "", /I’ll hold documents|Okay\. I’ll hold/);
+  assert.ok((why?.actions ?? []).some((item) => item.label === "Start with ID"));
+}
 const afterIncomeReady = skipDocInvites(afterIncome);
 assert.equal(workspacePrompt(afterIncomeReady), "review");
 const noTimelineFile = withIncome(
@@ -1340,6 +1450,13 @@ assert.equal(afterHoldFix?.text, CORRECT_ASK);
 assert.ok((afterHoldFix?.actions ?? []).some((item) => item.label === "Occupancy"));
 assert.ok((afterHoldFix?.actions ?? []).some((item) => item.label === "Credit"));
 assert.doesNotMatch(afterHoldFix?.text ?? "", /Tap any line on the structure/);
+const correctWhy = workspaceReply("why do you need that?", {
+  ...skipDocInvites(afterIncome),
+  correcting: "correct",
+});
+assert.match(correctWhy?.text ?? "", /keep this file current|government ID|I can keep/i);
+assert.match(correctWhy?.text ?? "", /What should I change\?/);
+assert.ok((correctWhy?.actions ?? []).some((item) => item.label === "Occupancy"));
 
 const afterLooks = draft({
   ...afterIncome,
