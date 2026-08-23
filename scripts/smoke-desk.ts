@@ -4954,6 +4954,59 @@ assert.ok(mortgageConflict.conflict);
 assert.equal(mortgageConflict.conflict?.field, "unpaid_principal");
 assert.equal(mortgageConflict.draft.loanAmountValue, 960_000);
 
+const westCoastConflict = applyExtractedFields(
+  draft({
+    ...afterLooks,
+    productIntent: "refinance",
+    loanAmountValue: 600_000,
+  }),
+  {
+    extractClass: "mortgage_statement",
+    confidence: 0.93,
+    fields: { servicer: "West Coast Servicing", unpaid_principal: "612000" },
+  },
+);
+assert.ok(westCoastConflict.conflict);
+assert.equal(westCoastConflict.conflict?.field, "unpaid_principal");
+assert.equal(westCoastConflict.conflict?.fileValue, "600000");
+assert.equal(westCoastConflict.conflict?.documentValue, "612000");
+assert.equal(westCoastConflict.draft.facts?.servicer, undefined);
+assert.equal(westCoastConflict.draft.facts?.unpaid_principal, undefined);
+assert.match(nextFoxAsk(westCoastConflict.draft).text, /600,000/);
+assert.match(nextFoxAsk(westCoastConflict.draft).text, /612,000/);
+const westCoastUsedDoc = resolveFactConflict(westCoastConflict.draft, "document");
+assert.equal(westCoastUsedDoc.facts?.unpaid_principal?.value, "612000");
+assert.equal(westCoastUsedDoc.loanAmountValue, 612_000);
+assert.equal(westCoastUsedDoc.facts?.servicer, undefined);
+assert.ok(
+  previewFacts(westCoastUsedDoc).every(
+    (fact) => fact.id !== "servicer" || !/612/.test(fact.value),
+  ),
+);
+assert.ok(
+  previewFacts(westCoastUsedDoc).some(
+    (fact) => fact.id === "unpaid_principal" && fact.label === "Unpaid principal" && /\$612,000/.test(fact.value),
+  ),
+);
+assert.match(nextFoxAsk(westCoastUsedDoc).text, /West Coast Servicing/);
+assert.match(nextFoxAsk(westCoastUsedDoc).text, /Use this/);
+const westCoastNamed = resolveProposal(westCoastUsedDoc, "accept");
+assert.equal(westCoastNamed.facts?.servicer?.value, "West Coast Servicing");
+assert.equal(westCoastNamed.facts?.unpaid_principal?.value, "612000");
+assert.ok(
+  previewFacts(westCoastNamed).some(
+    (fact) => fact.id === "servicer" && fact.label === "Servicer" && fact.value === "West Coast Servicing",
+  ),
+);
+assert.ok(
+  previewFacts(westCoastNamed).every((fact) => fact.id !== "servicer" || !/612/.test(fact.value)),
+);
+assert.ok(
+  previewFacts(westCoastNamed).some(
+    (fact) => fact.id === "unpaid_principal" && fact.label === "Unpaid principal" && /\$612,000/.test(fact.value),
+  ),
+);
+
 const typedAddress = draft({
   ...afterLooks,
   facts: {

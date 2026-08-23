@@ -4130,14 +4130,15 @@ export function previewFacts(draft: FoxIntakeDraft): PreviewFact[] {
     });
   }
   const servicer = factValue(draft, "servicer");
+  if (servicer) {
+    facts.push({ id: "servicer", label: "Servicer", value: servicer });
+  }
   const unpaid = factValue(draft, "unpaid_principal");
-  if (servicer || unpaid) {
+  if (unpaid) {
     facts.push({
-      id: "servicer",
-      label: "Servicer",
-      value: [servicer, unpaid ? displayFactValue("unpaid_principal", unpaid) : ""]
-        .filter(Boolean)
-        .join(" · "),
+      id: "unpaid_principal",
+      label: "Unpaid principal",
+      value: displayFactValue("unpaid_principal", unpaid),
     });
   }
 
