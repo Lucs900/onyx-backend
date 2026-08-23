@@ -216,7 +216,9 @@ export function productIntentFromQuery(
 }
 
 export function productIntentFromText(text: string): ProductIntent | null {
-  const lower = text.trim().toLowerCase();
+  const trimmed = text.trim();
+  if (!trimmed || /^[\s$0-9,kKmM.]+$/.test(trimmed)) return null;
+  const lower = trimmed.toLowerCase();
   if (/\bbuy\b|purchase|buying/.test(lower)) return "buy";
   if (/refinanc|rate.?term|cash.?out/.test(lower)) return "refinance";
   if (/\bjumbo\b/.test(lower)) return "jumbo";
@@ -1102,7 +1104,9 @@ export function holdDocsAskFox() {
 export const CORRECT_ASK = "What should I change?";
 
 const CORRECTION_CHIP_IDS = new Set([
+  "product",
   "occupancy",
+  "timeline",
   "price",
   "home",
   "down",
@@ -1110,17 +1114,44 @@ const CORRECTION_CHIP_IDS = new Set([
   "line",
   "credit",
   "income",
+  "qualifying",
+  "years-in-business",
 ]);
 
+function extraCorrectionLines(draft: FoxIntakeDraft): { id: string; label: string; prompt: FoxPrompt }[] {
+  const extra: { id: string; label: string; prompt: FoxPrompt }[] = [];
+  if (draft.productIntent) {
+    extra.push({ id: "product", label: "Product", prompt: "product" });
+  }
+  if (
+    draft.facts?.years_in_business?.value ||
+    draft.awaitingYearsInBusiness ||
+    shouldAskYearsInBusiness(draft)
+  ) {
+    extra.push({ id: "years-in-business", label: "Years in business", prompt: "years-in-business" });
+  }
+  if (qualifyingIncomeDisplay(draft)) {
+    extra.push({ id: "qualifying", label: "Qualifying income", prompt: "qualifying" });
+  }
+  return extra;
+}
+
 function correctionFieldActions(draft: FoxIntakeDraft): FoxAction[] {
-  return requiredStructureLines(draft)
-    .filter((line) => CORRECTION_CHIP_IDS.has(line.id))
-    .map((line) => ({
-      id: `fix-${line.id}`,
-      label: line.label,
-      event: "bubble" as const,
-      capture: { field: "correct" as const, value: line.prompt, line: line.id },
-    }));
+  const seen = new Set<string>();
+  const lines = [
+    ...requiredStructureLines(draft),
+    ...extraCorrectionLines(draft),
+  ].filter((line) => {
+    if (!CORRECTION_CHIP_IDS.has(line.id) || seen.has(line.id)) return false;
+    seen.add(line.id);
+    return true;
+  });
+  return lines.map((line) => ({
+    id: `fix-${line.id}`,
+    label: line.label,
+    event: "bubble" as const,
+    capture: { field: "correct" as const, value: line.prompt, line: line.id },
+  }));
 }
 
 function correctionAsk(draft: FoxIntakeDraft) {
@@ -1163,6 +1194,12 @@ function sideQuestionAnswer(input: string, draft: FoxIntakeDraft) {
     return draft.path === "loan-only"
       ? "ACR is the desk that stays open after close — letter, scout, and reward. This file is still the loan."
       : "ACR is the desk that stays open after close. Letter is originator-issued, not Fox. Scout and reward stay on the desk.";
+  }
+  if (/\b(stated credit|credit mean|what.{0,24}credit|fico)\b/i.test(input)) {
+    return (
+      structureExplainCopy("credit", draft)?.text ??
+      "That’s a stated range for the estimate. Not a FICO and not a credit pull."
+    );
   }
   if (draft.awaitingYearsInBusiness && /\b(years?|how long|business|self.?employ)/i.test(input)) {
     return "How long you’ve been running it helps me read the return. Not a form — just the file.";
@@ -1924,7 +1961,10 @@ export function parseCreditRange(text: string): CreditRange | null {
   if (/760|excellent/.test(lower)) return "760+";
   if (/720|740/.test(lower)) return "720-759";
   if (/680|700/.test(lower)) return "680-719";
-  if (/not sure|unsure|unknown|skip( for now)?/.test(lower)) return "not-sure";
+  if (/^(not sure|unsure|unknown|skip( for now)?)$/.test(lower)) return "not-sure";
+  if (/\b(credit|fico|score)\b/.test(lower) && /\b(not sure|unsure|unknown)\b/.test(lower)) {
+    return "not-sure";
+  }
   return null;
 }
 
@@ -2187,14 +2227,17 @@ export function parseWorkspaceEdit(
   const q = text.trim();
   const lower = q.toLowerCase();
   const namedField =
-    /\boccupan|\b(credit|fico|income|timeline|product|purchase price|down(\s+payment)?|loan amount|path)\b/.test(
+    /\boccupan|\b(credit|fico|income|timeline|product|purchase price|\bprice\b|down(\s+payment)?|loan amount|years? in business|path)\b/.test(
       lower,
     );
   const spokenFix =
-    /\b(change|edit|update|set|switch|actually|should be|make it)\b/.test(lower) ||
+    /\b(change|edit|update|set|switch|actually|should be|make it|correction)\b/.test(lower) ||
     (namedField && /\b(is|to|as|=)\b/.test(lower));
   if (!spokenFix) return parseRefiDocumentsBareValue(q, draft);
   if (/^(needs a correction|looks right)$/i.test(lower)) return null;
+  if (looksLikeQuestion(q) && !/\b(change|edit|update|set|switch|actually)\b/.test(lower)) {
+    return null;
+  }
 
   const wantsPath = /\b(path|relationship|acr|loan only|loan-only)\b/.test(lower);
   if (wantsPath && !/\b(amount|value|occupan|timeline|credit|fico|term|product|buy|refi)\b/.test(lower)) {
@@ -2276,7 +2319,24 @@ export function parseWorkspaceEdit(
     return { correct: "amount", line: "down", confirm: "What’s the down payment?" };
   }
 
-  if (/\b(property value|home value|house value|worth)\b/.test(lower) || (/\bvalue\b/.test(lower) && !/\bloan\b/.test(lower))) {
+  if (
+    /\bpurchase price\b/.test(lower) ||
+    (/\bprice\b/.test(lower) && !/\b(loan|heloc|line)\b/.test(lower) && (!draft || isPurchaseLike(draft)))
+  ) {
+    if (isUnknownAmount(q)) {
+      return { capture: { field: "skip-value" }, confirm: "Updated. Purchase price left blank." };
+    }
+    const amount = parseLooseAmount(q);
+    if (amount != null) {
+      return {
+        capture: { field: "propertyValue", value: String(amount) },
+        confirm: `Updated purchase price to ${formatMoney(amount)}.`,
+      };
+    }
+    return { correct: "value", confirm: "What’s the purchase price?" };
+  }
+
+  if (/\b(property value|home value|house value|worth)\b/.test(lower) || (/\bvalue\b/.test(lower) && !/\bloan\b/.test(lower) && !/\bpurchase price\b/.test(lower))) {
     if (isUnknownAmount(q)) {
       return { capture: { field: "skip-value" }, confirm: "Updated. Property value left blank." };
     }
@@ -2290,7 +2350,18 @@ export function parseWorkspaceEdit(
     return { correct: "value", confirm: "What’s the purchase price?" };
   }
 
-  if (/\b(loan amount|purchase price|heloc line|loan|line|cash|payoff)\b/.test(lower)) {
+  if (/\b(years? in business|been in business|running this)\b/.test(lower)) {
+    const years = parseYearsInBusiness(q);
+    if (years) {
+      return {
+        capture: { field: "yearsInBusiness", value: years },
+        confirm: `Updated years in business to ${years}.`,
+      };
+    }
+    return { correct: "years-in-business", confirm: YEARS_IN_BUSINESS_ASK };
+  }
+
+  if (/\b(loan amount|heloc line|loan|line|cash|payoff)\b/.test(lower) && !/\bpurchase price\b/.test(lower)) {
     if (isUnknownAmount(q)) {
       return { capture: { field: "skip-amount" }, confirm: "Updated. Loan amount left blank." };
     }
@@ -2431,11 +2502,16 @@ function draftAfterCapture(draft: FoxIntakeDraft, capture: Capture): FoxIntakeDr
   }
   if (capture.field === "propertyValue") {
     const n = Number(capture.value.replace(/,/g, ""));
+    const price = Number.isFinite(n) && n > 0 ? n : draft.propertyValueAmount;
+    if (price != null && price > 0 && price !== draft.propertyValueAmount) {
+      const locked = proposePriceLockedPair(draft, price);
+      if (locked) return locked;
+    }
     return withComputedCompanion(
       withMatrixAfterAmount({
         ...next,
         valueAsked: true,
-        propertyValueAmount: Number.isFinite(n) && n > 0 ? n : draft.propertyValueAmount,
+        propertyValueAmount: price,
       }),
     );
   }
@@ -2835,6 +2911,19 @@ export function workspaceReply(
 
   if (prompt === "product") {
     if (draft.productIntent && isKeepThisText(q)) return keepThisReply(draft);
+    if (draft.productIntent && /^[\s$0-9,kKmM.]+$/.test(q) && parseLooseAmount(q) != null) {
+      const amountDraft = { ...draft, correcting: null, correctingLine: null };
+      const nextPrompt = workspacePrompt(amountDraft);
+      if (nextPrompt === "value" || nextPrompt === "amount") {
+        return workspaceReply(q, amountDraft);
+      }
+      if (purchasePriceAskNeeded(amountDraft) || draftUsesPurchasePrice(amountDraft)) {
+        return workspaceReply(q, { ...amountDraft, correcting: "value" });
+      }
+      if (refiLoanAskNeeded(amountDraft) || isHelocFile(amountDraft)) {
+        return workspaceReply(q, { ...amountDraft, correcting: "amount" });
+      }
+    }
     const intent = productIntentFromText(q);
     if (!intent) {
       return {
@@ -2946,10 +3035,16 @@ export function workspaceReply(
         capture: { field: "occupancy", value: match.value },
       };
     }
-    const nextAsk = workspacePrompt(nextDraft);
+    const nextAsk = workspacePrompt({ ...nextDraft, correcting: null });
+    const askPrompt =
+      nextAsk === "occupancy" || nextAsk === "product"
+        ? purchasePriceAskNeeded(nextDraft) || propertyValueAskNeeded(nextDraft) || draftUsesPurchasePrice(nextDraft)
+          ? "value"
+          : "amount"
+        : nextAsk;
     return withWorkspaceGuide(
       {
-        ...workspacePromptCopy(nextAsk === "occupancy" ? "value" : nextAsk, nextDraft),
+        ...workspacePromptCopy(askPrompt, { ...nextDraft, correcting: null }),
         capture: { field: "occupancy", value: match.value },
       },
       nextDraft,
@@ -3125,6 +3220,9 @@ export function workspaceReply(
 
   if (prompt === "credit") {
     if (draft.creditBand && isKeepThisText(q)) return keepThisReply(draft);
+    if (looksLikeQuestion(q)) {
+      return restoredAsk(sideQuestionAnswer(q, draft), draft);
+    }
     const range = parseCreditRange(q);
     if (!range) return { text: "Tap a credit range, or Not sure." };
     const nextDraft = { ...draft, creditBand: range, creditAsked: true, correcting: null, correctingLine: null };
@@ -3237,7 +3335,7 @@ export function workspaceReply(
         };
       }
       if (looksLikeQuestion(q)) {
-        return restoredAsk(documentQuestionAnswer(draft), draft);
+        return restoredAsk(sideQuestionAnswer(q, draft), draft);
       }
       if (/(start|id|upload|drop|now|add|documents)/i.test(lower)) {
         const nextDraft = { ...draft, docsStarted: true, docsHeld: false };
@@ -3270,7 +3368,7 @@ export function workspaceReply(
       };
     }
     if (looksLikeQuestion(q)) {
-      return restoredAsk(documentQuestionAnswer(draft), draft);
+      return restoredAsk(sideQuestionAnswer(q, draft), draft);
     }
     return workspacePromptCopy("documents", draft);
   }
@@ -3305,6 +3403,14 @@ export function workspaceReply(
   if (prompt === "correct") {
     if (looksLikeQuestion(q)) {
       return restoredAsk(sideQuestionAnswer(q, draft), draft);
+    }
+    const years = parseYearsInBusiness(q);
+    if (years && /\b(year|business|running)\b/i.test(q)) {
+      const nextDraft = writeYearsInBusiness({ ...draft, correcting: null }, years);
+      return {
+        ...nextFoxAsk(nextDraft),
+        capture: { field: "yearsInBusiness", value: years },
+      };
     }
     return workspacePromptCopy("correct", draft);
   }

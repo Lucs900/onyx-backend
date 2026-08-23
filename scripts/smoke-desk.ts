@@ -112,6 +112,7 @@ import {
   namedOutOfState,
   parseFundsAmount,
   parseWorkspaceEdit,
+  parseCreditRange,
   CREDIT_RANGE_ASK,
   CREDIT_RANGE_FOLLOW,
   CREDIT_STATED_NOTE,
@@ -507,8 +508,35 @@ assert.equal(workspacePrompt(afterTime), "amount");
 const buyAfterOcc = workspaceReply("Primary", draft({ path: "acr", productIntent: "buy" }));
 assert.equal(buyAfterOcc?.capture?.field, "occupancy");
 assert.match(buyAfterOcc?.text ?? "", /What’s the purchase price\?/);
+assert.doesNotMatch(buyAfterOcc?.text ?? "", /Product in the file is Buy/);
 assert.doesNotMatch(buyAfterOcc?.text ?? "", /^Primary\./);
 assert.doesNotMatch(buyAfterOcc?.text ?? "", /rough amount|^what’s a rough amount/i);
+assert.ok(!(buyAfterOcc?.actions ?? []).some((item) => item.label === "Refinance"));
+const afterPrimaryBuy = draft({
+  path: "acr",
+  productIntent: "buy",
+  occupancyAsked: true,
+  occupancyChoice: { ...emptyDraft().occupancyChoice, value: "primary" },
+});
+assert.equal(workspacePrompt(afterPrimaryBuy), "value");
+assert.doesNotMatch(workspacePromptCopy("value", afterPrimaryBuy).text, /Product in the file/);
+assert.ok(!(workspacePromptCopy("value", afterPrimaryBuy).actions ?? []).some((item) => item.label === "Refinance"));
+const typedPriceStayBuy = workspaceReply("850000", afterPrimaryBuy);
+assert.equal(typedPriceStayBuy?.capture?.field, "propertyValue");
+assert.equal(
+  typedPriceStayBuy?.capture && "value" in typedPriceStayBuy.capture ? typedPriceStayBuy.capture.value : "",
+  "850000",
+);
+assert.notEqual(typedPriceStayBuy?.capture?.field, "productIntent");
+assert.notEqual(typedPriceStayBuy?.capture?.field, "loanAmount");
+const typedPriceOnProductAsk = workspaceReply("850000", {
+  ...afterPrimaryBuy,
+  correcting: "product",
+});
+assert.equal(typedPriceOnProductAsk?.capture?.field, "propertyValue");
+assert.notEqual(typedPriceOnProductAsk?.capture?.field, "productIntent");
+assert.equal(productIntentFromText("850000"), null);
+assert.equal(productIntentFromText("850,000"), null);
 
 const refiAfterTime = draft({
   path: "acr",
@@ -934,6 +962,12 @@ assert.match(offerWhy?.text ?? "", /government ID|name on this file/i);
 assert.ok((offerWhy?.actions ?? []).some((item) => item.label === "Start with ID"));
 assert.ok((offerWhy?.actions ?? []).some((item) => item.label === "Skip"));
 assert.ok((offerWhy?.actions ?? []).some((item) => item.label === "Not yet"));
+const statedCreditAsk = workspaceReply("what does stated credit mean?", afterIncome);
+assert.match(statedCreditAsk?.text ?? "", /stated range|not a (fico|pull)|not a credit pull/i);
+assert.doesNotMatch(statedCreditAsk?.text ?? "", /A government ID puts a name on this file/);
+assert.ok((statedCreditAsk?.actions ?? []).some((item) => item.label === "Start with ID"));
+const statedCreditEdit = parseWorkspaceEdit("what does stated credit mean?", afterIncome);
+assert.equal(statedCreditEdit, null);
 const inviteWhy = workspaceReply("why do you need that?", afterStartId);
 assert.match(inviteWhy?.text ?? "", /government ID|name on this file/i);
 assert.ok((inviteWhy?.actions ?? []).some((item) => item.label === "Upload this"));
@@ -1528,6 +1562,45 @@ assert.ok((correct.actions ?? []).some((item) => item.label === "Occupancy"));
 assert.ok((correct.actions ?? []).some((item) => item.label === "Purchase price" || item.label === "Down payment"));
 assert.ok((correct.actions ?? []).some((item) => item.label === "Credit"));
 assert.ok((correct.actions ?? []).some((item) => item.label === "Income"));
+const seYearsFile = writeYearsInBusiness(
+  draft({
+    ...skipDocInvites(afterIncome),
+    incomeType: { ...emptyDraft().incomeType, value: "self-employed" },
+  }),
+  "4",
+);
+const seYearsChips = workspacePromptCopy("correct", seYearsFile);
+assert.ok((seYearsChips.actions ?? []).some((item) => item.label === "Years in business"));
+assert.ok((seYearsChips.actions ?? []).some((item) => item.label === "Occupancy"));
+assert.ok((seYearsChips.actions ?? []).some((item) => item.label === "Purchase price"));
+assert.ok((seYearsChips.actions ?? []).some((item) => item.label === "Timeline"));
+const yearsCorrection = workspaceReply("correction: I’ve been in business 9 years", {
+  ...seYearsFile,
+  correcting: "correct",
+});
+assert.equal(yearsCorrection?.capture?.field, "yearsInBusiness");
+assert.equal(
+  yearsCorrection?.capture && "value" in yearsCorrection.capture ? yearsCorrection.capture.value : "",
+  "9",
+);
+assert.notEqual(yearsCorrection?.capture?.field, "creditRange");
+assert.notEqual(yearsCorrection?.capture?.field, "propertyValue");
+assert.equal(parseCreditRange("correction: I’ve been in business 9 years"), null);
+assert.equal(parseCreditRange("what does stated credit mean?"), null);
+const changePrice = workspaceReply("change the purchase price to 875,000", afterIncome);
+assert.equal(changePrice?.capture?.field, "propertyValue");
+assert.equal(
+  changePrice?.capture && "value" in changePrice.capture ? changePrice.capture.value : "",
+  "875000",
+);
+assert.notEqual(changePrice?.capture?.field, "loanAmount");
+assert.match(changePrice?.text ?? "", /\$875,000/);
+assert.doesNotMatch(changePrice?.text ?? "", /Updated loan amount/);
+const priceEdit = parseWorkspaceEdit("change the purchase price to 875,000", afterIncome);
+assert.equal(priceEdit?.capture?.field, "propertyValue");
+assert.equal(afterIncome.propertyValueAmount, 1_200_000);
+assert.equal(afterIncome.downPaymentAmount, 240_000);
+assert.notEqual(afterIncome.loanAmountValue, 875000);
 const needsFix = workspaceReply("Needs a correction", skipDocInvites(afterIncome));
 assert.equal(needsFix?.capture?.field, "needs-correction");
 assert.equal(needsFix?.text, CORRECT_ASK);
