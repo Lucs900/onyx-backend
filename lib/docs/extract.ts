@@ -249,7 +249,7 @@ function extractFieldsPrompt(extractClass: ExtractClass, keys: readonly string[]
   }
   if (extractClass === "paystub") {
     extra =
-      " pay_frequency is weekly, biweekly, semimonthly, monthly, or empty. overtime, bonus, and commission only when clearly printed as their own period or annual amounts. overtime_ytd / bonus_ytd / commission_ytd when the stub prints YTD overtime, bonus, or commission. Empty otherwise; never invent.";
+      " pay_frequency is weekly, biweekly, semimonthly, monthly, or empty. overtime, bonus, and commission only when clearly printed as their own period or annual amounts. overtime_ytd / bonus_ytd / commission_ytd when the stub prints YTD overtime, bonus, or commission. hire_date only when a hire date, start date, or date of hire is clearly printed on the page. Empty otherwise; never invent.";
   }
   if (extractClass === "w2") {
     extra =

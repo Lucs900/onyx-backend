@@ -395,6 +395,28 @@ Still useful may list property type as optional, never required. Property addres
 
 Readiness: empty type and house/SFR keep existing lines. Condo or 2–4 confirmed uses the UW-review line and never a strong line this gate. Do not name warrantability, HOA, or a county limit.
 
+### Employment / time-on-job v1 — one optional duration for W-2 / both
+
+After the property-type ask (or Skip), before the docs maze, when income is W-2 or both, Fox may ask once:
+
+`How long have you been at this job, or in this line of work? A number is enough. Skip is fine.`
+
+Skip / Not yet writes nothing. Self-employed only does not ask — years in business stays the existing field. Messy numbers (3, 3 years, 18 months, 6 months, since 2021, about 2 years) confirm-before-write:
+
+`That’s about 3 years at this job. Suggested · not underwritten. Use this?`
+
+Use this writes `statedTimeOnJob` in months. Leave blank writes nothing and restores the next action. Structure shows `Time on job` as `3 years` / `6 months` with `Suggested · not underwritten`. Editable mid-file. Start over is a full reset only.
+
+Paystub hire date — only if printed on the page — extract → suggest → confirm → write. Never silent-write. Never invent a start date:
+
+`The paystub shows a hire date of March 2023. That’s about 3 years. Suggested · not underwritten. Use this?`
+
+If a typed duration is already confirmed and the extract differs, ask once (Use document / Keep the typed one). After a confirmed hire-date extract, do not re-ask the typed question. If the page has no hire date, income confirm stays as today.
+
+Still useful may list time on job as optional, never required. Proceed still works with the field empty.
+
+Readiness: empty keeps existing thin / not-ready / strong / UW-review / funds-short / condo lines — no continuity problem invented. Confirmed ≥ 24 months does not claim seasoned; existing readiness stays. Confirmed < 24 months uses the UW-review line and never a strong line this gate. Condo already on UW-review stays one line. Two years is 24 months from the confirmed number, not an invented start date. Never: you don’t qualify; you need two years; invented VOE / start date / prior employer / gap.
+
 ### Quiet flags + more-complete asks
 
 After Looks right / agency-shaped minimums, conventional files can deepen still-useful past the minimum three. HELOC and Jumbo stay thin. Never `agency_ready`.

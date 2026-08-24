@@ -171,6 +171,21 @@ import {
   typedAddressConfirmCopy,
 } from "./propertyType";
 import {
+  STATED_TIME_ON_JOB_FIELD,
+  SUGGESTED_TIME_ON_JOB_NOTE,
+  TIME_ON_JOB_ASK,
+  displayTimeOnJob,
+  isSkipTimeOnJobText,
+  isTimeOnJobConfirmPending,
+  parseTimeOnJobMonths,
+  proposeStatedTimeOnJob,
+  skipTimeOnJob,
+  timeOnJobAskCopy,
+  timeOnJobConfirmActions,
+  timeOnJobConfirmCopy,
+  timeOnJobSettled,
+} from "./timeOnJob";
+import {
   ACR_BENEFITS_LINE,
   COST_LINE,
   FHFA_HIGH_COST_CEILING_2026 as STORE_HIGH_COST_CEILING,
@@ -1181,6 +1196,12 @@ function liveProposalAsk(
       actions: propertyTypeConfirmActions(),
     };
   }
+  if (proposal.field === STATED_TIME_ON_JOB_FIELD) {
+    return {
+      text: proposalAskCopy(proposal),
+      actions: timeOnJobConfirmActions(),
+    };
+  }
   if (proposal.field === QUALIFYING_INCOME_FIELD) {
     if (combinedParts(proposal) || proposal.methodNote?.startsWith("combined ")) {
       return combinedReactionAsk(draft, proposal);
@@ -1310,6 +1331,7 @@ const CORRECTION_CHIP_IDS = new Set([
   "debts",
   "assets",
   "property-type",
+  "time-on-job",
 ]);
 
 function yearsOnFile(draft: FoxIntakeDraft) {
@@ -1345,6 +1367,9 @@ function extraCorrectionLines(draft: FoxIntakeDraft): { id: string; label: strin
   }
   if (draft.propertyTypeAsked || draft.propertyType) {
     extra.push({ id: "property-type", label: "Property type", prompt: "property-type" });
+  }
+  if (draft.timeOnJobAsked || draft.statedTimeOnJob != null) {
+    extra.push({ id: "time-on-job", label: "Time on job", prompt: "time-on-job" });
   }
   return extra;
 }
@@ -1654,7 +1679,8 @@ export function shouldDeferStillUsefulAsk(draft: FoxIntakeDraft): boolean {
     Boolean(draft.pendingProposal && isRemainderConfirmField(draft.pendingProposal.field)) ||
     isStatedAssetsConfirmPending(draft) ||
     isPropertyTypeConfirmPending(draft) ||
-    isSubjectAddressConfirmPending(draft)
+    isSubjectAddressConfirmPending(draft) ||
+    isTimeOnJobConfirmPending(draft)
   );
 }
 
@@ -1712,6 +1738,7 @@ export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
   if (!debtsSettled(draft)) return "debts";
   if (!assetsSettled(draft)) return "assets";
   if (!propertyTypeSettled(draft)) return "property-type";
+  if (!timeOnJobSettled(draft)) return "time-on-job";
   if (!draft.sampleAccepted && draft.awaitingYearsInBusiness) return "documents";
   if (nextDocInvite(draft)) return "documents";
   if (!draft.sampleAccepted) return canLooksRight(draft) ? "review" : "amount";
@@ -1904,6 +1931,9 @@ function workspaceAskCopy(
   }
   if (prompt === "property-type") {
     return propertyTypeAskCopy(draft);
+  }
+  if (prompt === "time-on-job") {
+    return timeOnJobAskCopy(draft);
   }
   if (prompt === "qualifying") {
     const shown =
@@ -2520,6 +2550,13 @@ export function editPromptFromCapture(capture?: Capture): FoxPrompt | undefined 
   ) {
     return "property-type";
   }
+  if (
+    capture.field === "skip-time-on-job" ||
+    capture.field === "propose-time-on-job" ||
+    capture.field === "statedTimeOnJob"
+  ) {
+    return "time-on-job";
+  }
   if (capture.field === "propose-subject-address" || capture.field === "subjectAddress") {
     return "confirm-proposal";
   }
@@ -2691,6 +2728,14 @@ export function workspaceUpdateCopy(capture: Capture, draft: FoxIntakeDraft) {
       ? `Updated property address to ${capture.value.trim()}.`
       : "Updated property address.";
   }
+  if (capture.field === "skip-time-on-job") return "Updated. Time on job left blank.";
+  if (capture.field === "propose-time-on-job") return "Updated.";
+  if (capture.field === "statedTimeOnJob") {
+    const months = Number(capture.value);
+    return Number.isFinite(months) && months > 0
+      ? `Updated time on job to ${displayTimeOnJob(months)}.`
+      : "Updated time on job.";
+  }
   if (capture.field === "statedAvailableAssets") {
     const n = Number(capture.value.replace(/,/g, ""));
     return Number.isFinite(n) && n > 0
@@ -2720,7 +2765,7 @@ export function parseWorkspaceEdit(
   const q = text.trim();
   const lower = q.toLowerCase();
   const namedField =
-    /\boccupan|\b(credit|fico|income|timeline|product|purchase price|\bprice\b|down(\s+payment)?|loan amount|years? in business|path|property type|condo|house|sfr)\b/.test(
+    /\boccupan|\b(credit|fico|income|timeline|product|purchase price|\bprice\b|down(\s+payment)?|loan amount|years? in business|path|property type|condo|house|sfr|time on job)\b/.test(
       lower,
     );
   const spokenFix =
@@ -2761,6 +2806,17 @@ export function parseWorkspaceEdit(
     if (/\bproperty type\b/.test(lower)) {
       return { correct: "property-type", confirm: PROPERTY_TYPE_ASK };
     }
+  }
+
+  if (/\btime on job\b/.test(lower)) {
+    const months = parseTimeOnJobMonths(q);
+    if (months != null) {
+      return {
+        capture: { field: "propose-time-on-job", value: String(months) },
+        confirm: timeOnJobConfirmCopy(months),
+      };
+    }
+    return { correct: "time-on-job", confirm: TIME_ON_JOB_ASK };
   }
 
   if (/\boccupan/.test(lower)) {
@@ -3322,7 +3378,8 @@ export function workspaceReply(
         isStatedDebtsConfirmPending(draft) ||
         isStatedAssetsConfirmPending(draft) ||
         isPropertyTypeConfirmPending(draft) ||
-        isSubjectAddressConfirmPending(draft)) &&
+        isSubjectAddressConfirmPending(draft) ||
+        isTimeOnJobConfirmPending(draft)) &&
       asksWillIQualify(q)
     ) {
       return answerThenRestore(q, draft);
@@ -3966,6 +4023,32 @@ export function workspaceReply(
     };
   }
 
+  if (prompt === "time-on-job") {
+    if (draft.statedTimeOnJob != null && isKeepThisText(q)) return keepThisReply(draft);
+    if (isSkipTimeOnJobText(q)) {
+      const nextDraft = skipTimeOnJob(draft);
+      return {
+        ...workspacePromptCopy(workspacePrompt(nextDraft), nextDraft),
+        capture: { field: "skip-time-on-job" },
+      };
+    }
+    const volunteeredAtJob = parseVolunteeredAddress(q);
+    if (volunteeredAtJob && /address/i.test(q)) {
+      const nextDraft = proposeSubjectAddress(draft, volunteeredAtJob);
+      return {
+        ...workspacePromptCopy("confirm-proposal", nextDraft),
+        capture: { field: "propose-subject-address", value: volunteeredAtJob },
+      };
+    }
+    const months = parseTimeOnJobMonths(q);
+    if (months == null) return answerThenRestore(q, draft);
+    const nextDraft = proposeStatedTimeOnJob(draft, months);
+    return {
+      ...workspacePromptCopy("confirm-proposal", nextDraft),
+      capture: { field: "propose-time-on-job", value: String(months) },
+    };
+  }
+
   if (prompt === "income") {
     if (draft.incomeType.value && isKeepThisText(q)) return keepThisReply(draft);
     const match = incomeFromText(q);
@@ -4484,6 +4567,28 @@ export function previewFacts(draft: FoxIntakeDraft): PreviewFact[] {
     });
   }
 
+  if (
+    draft.timeOnJobAsked ||
+    draft.statedTimeOnJob != null ||
+    isTimeOnJobConfirmPending(draft)
+  ) {
+    const pendingMonths = isTimeOnJobConfirmPending(draft)
+      ? Number(draft.pendingProposal?.value)
+      : NaN;
+    const shown =
+      draft.statedTimeOnJob != null && draft.statedTimeOnJob > 0
+        ? displayTimeOnJob(draft.statedTimeOnJob)
+        : Number.isFinite(pendingMonths) && pendingMonths > 0
+          ? displayTimeOnJob(pendingMonths)
+          : "—";
+    facts.push({
+      id: "time-on-job",
+      label: "Time on job",
+      value: shown,
+      note: SUGGESTED_TIME_ON_JOB_NOTE,
+    });
+  }
+
   const address = draft.subjectAddress || factValue(draft, "property_address");
   if (address) {
     facts.push({
@@ -4688,6 +4793,7 @@ export function structureFixPrompt(
   if (id === "debts") return "debts";
   if (id === "assets") return "assets";
   if (id === "property-type") return "property-type";
+  if (id === "time-on-job") return "time-on-job";
   if (id === "qualifying") return "qualifying";
   if (id === "years-in-business") return "years-in-business";
   if (id === "docs") return "documents";
@@ -4717,6 +4823,11 @@ export function structureExplainCopy(
   if (id === "property-type") {
     return {
       text: "Property type. Suggested · not underwritten.",
+    };
+  }
+  if (id === "time-on-job") {
+    return {
+      text: "Time on job. Suggested · not underwritten.",
     };
   }
   if (id === "rate") {

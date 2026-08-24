@@ -83,7 +83,7 @@ def blit(pixels: list[list[tuple[int, int, int]]], x: int, y: int, text: str) ->
         cx += 6 * SCALE
 
 
-def png_bytes(pixels: list[list[tuple[int, int, int]]]) -> bytes:
+def png_bytes(pixels: list[list[tuple[int, int, int]]], lines: list[str]) -> bytes:
     height = len(pixels)
     width = len(pixels[0])
     raw = bytearray()
@@ -100,7 +100,7 @@ def png_bytes(pixels: list[list[tuple[int, int, int]]]) -> bytes:
             + struct.pack(">I", zlib.crc32(tag + data) & 0xFFFFFFFF)
         )
 
-    printed = "Comment".encode("latin-1") + b"\0" + "\n".join(LINES).encode("latin-1")
+    printed = "Comment".encode("latin-1") + b"\0" + "\n".join(lines).encode("latin-1")
     return b"".join(
         [
             b"\x89PNG\r\n\x1a\n",
@@ -112,21 +112,32 @@ def png_bytes(pixels: list[list[tuple[int, int, int]]]) -> bytes:
     )
 
 
-def main() -> None:
+def write_stub(name: str, lines: list[str]) -> None:
     glyph_h = 7 * SCALE
-    width = PAD * 2 + max(len(line) for line in LINES) * 6 * SCALE
-    height = PAD * 2 + len(LINES) * glyph_h + (len(LINES) - 1) * LINE_GAP + 24
+    width = PAD * 2 + max(len(line) for line in lines) * 6 * SCALE
+    height = PAD * 2 + len(lines) * glyph_h + (len(lines) - 1) * LINE_GAP + 24
     pixels = [[BG for _ in range(width)] for _ in range(height)]
     for x in range(PAD, width - PAD):
         for y in range(PAD - 8, PAD - 4):
             pixels[y][x] = RULE
     y = PAD
-    for line in LINES:
+    for line in lines:
         blit(pixels, PAD, y, line)
         y += glyph_h + LINE_GAP
-    out = Path(__file__).with_name("paystub-acme.png")
-    out.write_bytes(png_bytes(pixels))
+    out = Path(__file__).with_name(name)
+    out.write_bytes(png_bytes(pixels, lines))
     print(f"wrote {out} {out.stat().st_size} bytes {width}x{height}")
+
+
+def main() -> None:
+    write_stub("paystub-acme.png", LINES)
+    write_stub(
+        "paystub-hire-march-2023.png",
+        [
+            *LINES,
+            "HIRE DATE: MARCH 2023",
+        ],
+    )
 
 
 if __name__ == "__main__":

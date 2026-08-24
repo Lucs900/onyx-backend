@@ -422,6 +422,8 @@ export function fieldsFromPrintedLines(
   };
 
   for (const line of lines) {
+    const hireDate = valueAfter(line, /^(?:HIRE DATE|DATE OF HIRE|START DATE):\s*/i);
+    if (hireDate) put("hire_date", hireDate);
     const employer = valueAfter(line, /^EMPLOYER:\s*/i);
     if (employer) put("employer_name", employer);
     const periodEnd = valueAfter(line, /^PAY PERIOD END:\s*/i);

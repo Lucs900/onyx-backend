@@ -193,6 +193,7 @@ export type FileFacts = {
   statedAvailableAssets?: number;
   propertyType?: "sfr" | "condo" | "two_to_four";
   subjectAddress?: string;
+  statedTimeOnJob?: number;
   suggestedMonthlyIncome?: number;
   docsSkipped?: boolean;
   obviousHighDti?: boolean;
@@ -859,6 +860,16 @@ export function completeness(
   if (file.incomeType && file.statedMonthlyDebts == null) stillUseful.push("stated monthly debts");
   if (file.incomeType && file.statedAvailableAssets == null) stillUseful.push("stated available assets");
   if (file.incomeType && !file.propertyType) stillUseful.push("property type");
+  if (
+    (file.incomeType === "w2" ||
+      file.incomeType === "w2_base" ||
+      file.incomeType === "w2_variable" ||
+      file.incomeType === "both" ||
+      file.incomeType === "w2_plus_se") &&
+    file.statedTimeOnJob == null
+  ) {
+    stillUseful.push("time on job");
+  }
 
   const hasSketch = Boolean(file.purchasePrice || file.loanAmount || file.propertyValue);
   const incomeReady = incomeDocsReceived(file.incomeType, received);
@@ -1097,6 +1108,7 @@ function strongEligible(file: CompletenessFile) {
   if (!incomeDocumentedEnough(file)) return false;
   if (file.occupancy === "investment") return false;
   if (file.propertyType === "condo" || file.propertyType === "two_to_four") return false;
+  if (file.statedTimeOnJob != null && file.statedTimeOnJob < 24) return false;
   if (file.purposeHint === "cash_out") return false;
   if (file.namedGovvie || file.govProgram) return false;
   if (file.namedDistress) return false;
@@ -1151,6 +1163,10 @@ export function readinessFromFile(file: FileFacts): ReadinessRead {
 
   if (file.propertyType === "condo" || file.propertyType === "two_to_four") {
     return { kind: "uw_review", line: READINESS_UW_REVIEW, reason: "property-type" };
+  }
+
+  if (file.statedTimeOnJob != null && file.statedTimeOnJob < 24) {
+    return { kind: "uw_review", line: READINESS_UW_REVIEW, reason: "time-on-job" };
   }
 
   if (

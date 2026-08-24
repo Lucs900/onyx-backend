@@ -54,6 +54,15 @@ import {
   typedAddressConfirmCopy,
 } from "./propertyType";
 import {
+  STATED_TIME_ON_JOB_FIELD,
+  SUGGESTED_TIME_ON_JOB_NOTE,
+  hireDateConfirmCopy,
+  proposeExtractedTimeOnJob,
+  skipTimeOnJob,
+  timeOnJobConfirmCopy,
+  writeStatedTimeOnJob,
+} from "./timeOnJob";
+import {
   HIGH_LTV_CAUTION as STORE_HIGH_LTV_CAUTION,
   HIGH_PURCHASE_LTV as STORE_HIGH_PURCHASE_LTV,
   JUMBO_CEILING_LINE,
@@ -75,6 +84,8 @@ export {
   STATED_AVAILABLE_ASSETS_FIELD,
   SUGGESTED_PROPERTY_NOTE,
   PROPERTY_TYPE_FIELD,
+  SUGGESTED_TIME_ON_JOB_NOTE,
+  STATED_TIME_ON_JOB_FIELD,
 };
 export const YEARS_IN_BUSINESS_FIELD = "years_in_business";
 export const YEARS_IN_BUSINESS_ASK = "How long have you been running this?";
@@ -513,6 +524,7 @@ export function factsFromDraft(draft: FoxIntakeDraft): CompletenessFile {
     ...(draft.statedAvailableAssets != null ? { statedAvailableAssets: draft.statedAvailableAssets } : {}),
     ...(draft.propertyType ? { propertyType: draft.propertyType } : {}),
     ...(draft.subjectAddress ? { subjectAddress: draft.subjectAddress } : {}),
+    ...(draft.statedTimeOnJob != null ? { statedTimeOnJob: draft.statedTimeOnJob } : {}),
     ...(suggestedMonthlyIncome != null ? { suggestedMonthlyIncome } : {}),
     docsSkipped: Boolean(
       draft.documentsSkipped || draft.docsHeld || (draft.skippedClasses?.length ?? 0) > 0,
@@ -563,6 +575,7 @@ export function structureFieldForProposal(field: string) {
   if (field === STATED_MONTHLY_DEBTS_FIELD) return "debts";
   if (field === STATED_AVAILABLE_ASSETS_FIELD) return "assets";
   if (field === PROPERTY_TYPE_FIELD) return "property-type";
+  if (field === STATED_TIME_ON_JOB_FIELD) return "time-on-job";
   return field;
 }
 
@@ -596,6 +609,12 @@ export function remainderAskCopy(proposal: FactProposal) {
 export function proposalAskCopy(proposal: FactProposal) {
   if (proposal.field === PROPERTY_TYPE_FIELD && isPropertyTypeValue(proposal.value)) {
     return propertyTypeConfirmCopy(proposal.value);
+  }
+  if (proposal.field === STATED_TIME_ON_JOB_FIELD) {
+    const months = Number(proposal.value) || 0;
+    return proposal.hireLabel
+      ? hireDateConfirmCopy(proposal.hireLabel, months)
+      : timeOnJobConfirmCopy(months);
   }
   if (proposal.field === PROPERTY_ADDRESS_FACT || proposal.field === "subjectAddress") {
     return proposal.note === SUGGESTED_PROPERTY_NOTE && !proposal.extras?.length
@@ -757,6 +776,12 @@ function writeConfirmedFact(
       facts,
     };
   }
+  if (field === STATED_TIME_ON_JOB_FIELD) {
+    const months = Number(value);
+    if (Number.isFinite(months) && months > 0) {
+      next = writeStatedTimeOnJob(next, months);
+    }
+  }
   if (field === PROPERTY_ADDRESS_FACT || field === "subjectAddress") {
     facts[PROPERTY_ADDRESS_FACT] = {
       field: PROPERTY_ADDRESS_FACT,
@@ -864,12 +889,17 @@ export function resolveProposal(
     if (proposal.field === PROPERTY_TYPE_FIELD) {
       return skipPropertyType({ ...draft, pendingProposal: null });
     }
-    return { ...draft, pendingProposal: null };
+    if (proposal.field === STATED_TIME_ON_JOB_FIELD) {
+      return skipTimeOnJob({ ...draft, pendingProposal: null });
+    }
+    const declined = { ...draft, pendingProposal: null };
+    return flushPendingHireDate(declined);
   }
   const source =
     proposal.field === QUALIFYING_INCOME_FIELD ||
       proposal.field === STATED_AVAILABLE_ASSETS_FIELD ||
       proposal.field === PROPERTY_TYPE_FIELD ||
+      proposal.field === STATED_TIME_ON_JOB_FIELD ||
       proposal.kind === "public"
       ? "suggested"
       : isRemainderConfirmField(proposal.field)
@@ -890,10 +920,23 @@ export function resolveProposal(
     if (proposal.parts.k1) next = writeConfirmedFact(next, K1_MONTHLY_FIELD, proposal.parts.k1, source);
   }
   const cleared = { ...next, pendingProposal: null };
-  if (winner === "accept" && shouldAskYearsInBusiness(cleared)) {
-    return withYearsInBusinessAsk(cleared);
+  const flushed = flushPendingHireDate(cleared);
+  if (winner === "accept" && shouldAskYearsInBusiness(flushed)) {
+    return withYearsInBusinessAsk(flushed);
   }
-  return cleared;
+  return flushed;
+}
+
+function flushPendingHireDate(draft: FoxIntakeDraft): FoxIntakeDraft {
+  const pending = draft.pendingHireDate;
+  if (!pending || draft.statedTimeOnJob != null) {
+    return { ...draft, pendingHireDate: null };
+  }
+  return proposeExtractedTimeOnJob(
+    { ...draft, pendingHireDate: null },
+    pending.months,
+    pending.label,
+  );
 }
 
 export function yearsInBusinessValue(draft: FoxIntakeDraft) {

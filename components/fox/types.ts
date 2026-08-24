@@ -95,6 +95,7 @@ export type FactProposal = {
   companion?: FactWrite;
   extras?: FactWrite[];
   parts?: IncomeParts;
+  hireLabel?: string;
 };
 
 export type IntakePhase = "context" | "documents" | "draft" | "confirmed";
@@ -262,6 +263,9 @@ export type FoxIntakeDraft = {
   propertyType?: "sfr" | "condo" | "two_to_four";
   propertyTypeAsked?: boolean;
   subjectAddress?: string;
+  statedTimeOnJob?: number;
+  timeOnJobAsked?: boolean;
+  pendingHireDate?: { date: string; months: number; label: string } | null;
   docsOpen?: boolean;
   originatorRequested?: boolean;
   motion?: FileMotion;
@@ -329,6 +333,7 @@ export type FoxPrompt =
   | "debts"
   | "assets"
   | "property-type"
+  | "time-on-job"
   | "occupancy"
   | "timeline"
   | "documents"
@@ -363,6 +368,9 @@ export type Capture =
   | { field: "propertyType"; value: string }
   | { field: "propose-subject-address"; value: string }
   | { field: "subjectAddress"; value: string }
+  | { field: "skip-time-on-job" }
+  | { field: "propose-time-on-job"; value: string }
+  | { field: "statedTimeOnJob"; value: string }
   | { field: "occupancy"; value: string }
   | { field: "timeline"; value: string }
   | { field: "path"; value: IntakePath }

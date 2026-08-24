@@ -119,6 +119,11 @@ import {
   writePropertyType,
   writeSubjectAddress,
 } from "./propertyType";
+import {
+  proposeStatedTimeOnJob,
+  skipTimeOnJob,
+  writeStatedTimeOnJob,
+} from "./timeOnJob";
 
 function numberOrUndefined(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : undefined;
@@ -246,6 +251,9 @@ function normalize(value: unknown): FoxIntakeDraft {
       typeof raw.subjectAddress === "string" && raw.subjectAddress.trim()
         ? raw.subjectAddress.trim()
         : undefined,
+    statedTimeOnJob: numberOrUndefined(raw.statedTimeOnJob),
+    timeOnJobAsked: Boolean(raw.timeOnJobAsked || raw.statedTimeOnJob != null),
+    pendingHireDate: normalizePendingHireDate(raw.pendingHireDate),
     docsOpen: Boolean(raw.docsOpen),
     docsStarted: Boolean(raw.docsStarted),
     docsHeld: Boolean(raw.docsHeld),
@@ -390,6 +398,17 @@ function normalizePendingDebtMortgage(
   return { included: Math.round(included), mortgage: Math.round(mortgage) };
 }
 
+function normalizePendingHireDate(
+  value: FoxIntakeDraft["pendingHireDate"],
+): FoxIntakeDraft["pendingHireDate"] {
+  if (!value || typeof value !== "object") return null;
+  const date = typeof value.date === "string" ? value.date.trim() : "";
+  const label = typeof value.label === "string" ? value.label.trim() : "";
+  const months = Number(value.months);
+  if (!date || !label || !Number.isFinite(months) || months <= 0) return null;
+  return { date, months: Math.round(months), label };
+}
+
 function normalizeProposal(value: FoxIntakeDraft["pendingProposal"]): FactProposal | null {
   if (!value || typeof value !== "object") return null;
   if (!value.field || !value.value) return null;
@@ -430,6 +449,7 @@ function normalizeProposal(value: FoxIntakeDraft["pendingProposal"]): FactPropos
             ...(typeof value.parts.k1 === "string" ? { k1: value.parts.k1 } : {}),
           }
         : undefined,
+    hireLabel: typeof value.hireLabel === "string" && value.hireLabel.trim() ? value.hireLabel : undefined,
   };
 }
 
@@ -1215,6 +1235,19 @@ export function applyCapture(capture: Capture) {
     const address = parseVolunteeredAddress(capture.value) ?? capture.value.trim();
     if (!address) return current;
     return commit(writeSubjectAddress(current, address));
+  }
+  if (capture.field === "skip-time-on-job") {
+    return commit(skipTimeOnJob(current));
+  }
+  if (capture.field === "propose-time-on-job") {
+    const months = Number(capture.value);
+    if (!Number.isFinite(months) || months <= 0) return current;
+    return commit(proposeStatedTimeOnJob(current, months));
+  }
+  if (capture.field === "statedTimeOnJob") {
+    const months = Number(capture.value);
+    if (!Number.isFinite(months) || months <= 0) return current;
+    return commit(writeStatedTimeOnJob(current, months));
   }
   if (capture.field === "incomeType") {
     const midFile = Boolean(current.correcting);

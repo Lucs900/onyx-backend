@@ -29,6 +29,7 @@ import {
   SUGGESTED_DEBTS_NOTE,
   SUGGESTED_ASSETS_NOTE,
   SUGGESTED_PROPERTY_NOTE,
+  SUGGESTED_TIME_ON_JOB_NOTE,
   HIGH_LTV_CAUTION,
   PRICING_WAITS,
   YEARS_IN_BUSINESS_ASK,
@@ -154,6 +155,12 @@ import {
   PROPERTY_TYPE_ASK,
   parsePropertyType,
 } from "../components/fox/propertyType";
+import {
+  TIME_ON_JOB_ASK,
+  displayTimeOnJob,
+  parseHireDate,
+  parseTimeOnJobMonths,
+} from "../components/fox/timeOnJob";
 import { FAILED_READ_NOTE } from "../lib/docs/accept";
 import { classifyAndExtract, imageDataUrl, visionChatBody } from "../lib/docs/extract";
 import {
@@ -326,10 +333,12 @@ function confirmLooksRight() {
   }
   if (workspacePrompt(getFoxDraft()) === "assets") {
     applyCapture({ field: "skip-available-assets" });
-applyCapture({ field: "skip-property-type" });
   }
   if (workspacePrompt(getFoxDraft()) === "property-type") {
     applyCapture({ field: "skip-property-type" });
+  }
+  if (workspacePrompt(getFoxDraft()) === "time-on-job") {
+    applyCapture({ field: "skip-time-on-job" });
   }
   for (let i = 0; i < 8; i += 1) {
     if (workspacePrompt(getFoxDraft()) !== "documents" && !nextDocInvite(getFoxDraft())) break;
@@ -348,6 +357,7 @@ function withIncome(
     monthlyDebtsAsked: true,
     availableAssetsAsked: true,
     propertyTypeAsked: true,
+    timeOnJobAsked: value === "w2" || value === "both" ? true : undefined,
     incomeType: { ...emptyDraft().incomeType, value },
   });
 }
@@ -1013,6 +1023,8 @@ assert.equal(getFoxDraft().availableAssetsAsked, undefined);
 assert.equal(getFoxDraft().propertyType, undefined);
 assert.equal(getFoxDraft().propertyTypeAsked, undefined);
 assert.equal(getFoxDraft().subjectAddress, undefined);
+assert.equal(getFoxDraft().statedTimeOnJob, undefined);
+assert.equal(getFoxDraft().timeOnJobAsked, undefined);
 assert.equal(workspacePrompt(getFoxDraft()), "product");
 assert.equal(workspacePrompt(afterIncome), "documents");
 assert.match(workspacePromptCopy("documents", afterIncome).text, /sketch/i);
@@ -2268,6 +2280,7 @@ applyCapture({ field: "incomeType", value: "w2" });
 applyCapture({ field: "skip-monthly-debts" });
 applyCapture({ field: "skip-available-assets" });
 applyCapture({ field: "skip-property-type" });
+applyCapture({ field: "skip-time-on-job" });
 assert.equal(getFoxDraft().documentsSkipped, false);
 assert.equal(workspacePrompt(getFoxDraft()), "documents");
 applyCapture({ field: "skip-docs" });
@@ -2481,6 +2494,10 @@ assert.equal(acmeWrite.draft.pendingProposal?.value, "9167");
 assert.equal(acmeWrite.draft.pendingProposal?.note, SUGGESTED_INCOME_NOTE);
 assert.equal(acmeWrite.draft.awaitingPayFrequency, false);
 assert.equal(acmeWrite.draft.facts?.qualifying_income, undefined);
+assert.equal(acmeWrite.draft.pendingProposal?.field, QUALIFYING_INCOME_FIELD);
+assert.equal(acmeWrite.draft.statedTimeOnJob, undefined);
+assert.equal(acmeWrite.draft.pendingHireDate, undefined);
+assert.equal(acmeWrite.draft.facts?.hire_date, undefined);
 const acmeAsk = nextFoxAsk(acmeWrite.draft);
 assert.match(acmeAsk.text, /Got the paystub/);
 assert.match(acmeAsk.text, /9,167/);
@@ -2938,6 +2955,7 @@ applyCapture({ field: "incomeType", value: "w2" });
 applyCapture({ field: "skip-monthly-debts" });
 applyCapture({ field: "skip-available-assets" });
 applyCapture({ field: "skip-property-type" });
+applyCapture({ field: "skip-time-on-job" });
 applyCapture({ field: "skip-docs" });
 assert.ok((getFoxDraft().skippedClasses ?? []).includes("government_id"));
 assert.ok(stillUsefulSection(getFoxDraft())?.items.some((item) => item.label === "Government ID"));
@@ -3207,6 +3225,7 @@ assert.ok(EXTRACT_SCHEMA_KEYS.paystub.includes("commission"));
 assert.ok(EXTRACT_SCHEMA_KEYS.paystub.includes("overtime_ytd"));
 assert.ok(EXTRACT_SCHEMA_KEYS.paystub.includes("bonus_ytd"));
 assert.ok(EXTRACT_SCHEMA_KEYS.paystub.includes("second_employer_name"));
+assert.ok(EXTRACT_SCHEMA_KEYS.paystub.includes("hire_date"));
 assert.ok(EXTRACT_SCHEMA_KEYS.w2.includes("second_employer_name"));
 assert.ok(EXTRACT_SCHEMA_KEYS.w2.includes("overtime"));
 assert.ok(EXTRACT_SCHEMA_KEYS.w2.includes("bonus"));
@@ -5611,7 +5630,7 @@ const notYetDebts = workspaceReply("Not yet", afterIncomeType);
 assert.equal(notYetDebts?.capture?.field, "skip-monthly-debts");
 assert.ok(
   canLooksRight(
-    skipDocInvites({ ...afterIncomeType, monthlyDebtsAsked: true, availableAssetsAsked: true, propertyTypeAsked: true }),
+    skipDocInvites({ ...afterIncomeType, monthlyDebtsAsked: true, availableAssetsAsked: true, propertyTypeAsked: true, timeOnJobAsked: true }),
   ),
 );
 const skippedDebtFile = draft({
@@ -5619,6 +5638,7 @@ const skippedDebtFile = draft({
   monthlyDebtsAsked: true,
   availableAssetsAsked: true,
   propertyTypeAsked: true,
+  timeOnJobAsked: true,
 });
 assert.equal(skippedDebtFile.statedMonthlyDebts, undefined);
 assert.ok(
@@ -6094,17 +6114,17 @@ assert.ok(
 const leaveBlankType = workspaceReply("Leave blank", condoConfirmDraft);
 assert.equal(leaveBlankType?.capture?.field, "decline-proposal");
 assert.equal(resolveProposal(condoConfirmDraft, "decline").propertyType, undefined);
-assert.match(leaveBlankType?.text ?? "", /Left that line blank|sketch|government ID/i);
+assert.match(leaveBlankType?.text ?? "", /Left that line blank|How long have you been at this job/i);
 assert.deepEqual(
   (leaveBlankType?.actions ?? []).map((item) => item.label),
-  ["Start with ID", "Skip", "Not yet"],
+  ["Skip", "Not yet"],
 );
 const skipType = workspaceReply("Skip", afterAssetsAsk);
 assert.equal(skipType?.capture?.field, "skip-property-type");
-assert.match(skipType?.text ?? "", /sketch/i);
+assert.match(skipType?.text ?? "", /How long have you been at this job/);
 assert.deepEqual(
   (skipType?.actions ?? []).map((item) => item.label),
-  ["Start with ID", "Skip", "Not yet"],
+  ["Skip", "Not yet"],
 );
 const skippedTypeFile = draft({ ...afterAssetsAsk, propertyTypeAsked: true });
 assert.equal(skippedTypeFile.propertyType, undefined);
@@ -6270,6 +6290,293 @@ const propertySrc = [
 ].join("\n");
 assert.doesNotMatch(propertySrc, /condo questionnaire|warrantability engine|HOA dues line|PropertyRadar/i);
 assert.doesNotMatch(READINESS_UW_REVIEW, /warrantability|county limit|condos are not eligible/i);
+
+const afterTypeAsk = draft({
+  ...afterAssetsAsk,
+  propertyTypeAsked: true,
+  propertyType: "sfr",
+});
+assert.equal(workspacePrompt(afterTypeAsk), "time-on-job");
+assert.equal(workspacePromptCopy("time-on-job", afterTypeAsk).text, TIME_ON_JOB_ASK);
+assert.deepEqual(
+  (workspacePromptCopy("time-on-job", afterTypeAsk).actions ?? []).map((item) => item.label),
+  ["Skip", "Not yet"],
+);
+assert.equal(parseTimeOnJobMonths("3"), 36);
+assert.equal(parseTimeOnJobMonths("3 years"), 36);
+assert.equal(parseTimeOnJobMonths("18 months"), 18);
+assert.equal(parseTimeOnJobMonths("6 months"), 6);
+assert.ok((parseTimeOnJobMonths("since 2021") ?? 0) > 24);
+assert.equal(parseTimeOnJobMonths("about 2 years"), 24);
+assert.equal(displayTimeOnJob(36), "3 years");
+assert.equal(displayTimeOnJob(6), "6 months");
+assert.equal(parseHireDate("March 2023")?.label, "March 2023");
+const seAfterType = draft({
+  ...afterAssetsAsk,
+  incomeType: { ...emptyDraft().incomeType, value: "self-employed" },
+  propertyTypeAsked: true,
+});
+assert.equal(workspacePrompt(seAfterType), "documents");
+assert.doesNotMatch(workspacePromptCopy("documents", seAfterType).text, /How long have you been at this job/);
+for (const spoken of ["3", "3 years", "about 3 years"]) {
+  const proposed = workspaceReply(spoken, afterTypeAsk);
+  assert.equal(proposed?.capture?.field, "propose-time-on-job");
+  assert.equal(
+    proposed?.text,
+    "That’s about 3 years at this job. Suggested · not underwritten. Use this?",
+  );
+  assert.deepEqual(
+    (proposed?.actions ?? []).map((item) => item.label),
+    ["Use this", "Leave blank"],
+  );
+}
+const monthsProposed = workspaceReply("6 months", afterTypeAsk);
+assert.equal(
+  monthsProposed?.text,
+  "That’s about 6 months at this job. Suggested · not underwritten. Use this?",
+);
+const yearsConfirmDraft = {
+  ...afterTypeAsk,
+  pendingProposal: {
+    field: "statedTimeOnJob",
+    value: "36",
+    label: "Time on job",
+    kind: "computed" as const,
+    note: SUGGESTED_TIME_ON_JOB_NOTE,
+  },
+};
+const usedYears = resolveProposal(yearsConfirmDraft, "accept");
+assert.equal(usedYears.statedTimeOnJob, 36);
+assert.equal(usedYears.timeOnJobAsked, true);
+assert.ok(
+  previewFacts(usedYears).some(
+    (fact) =>
+      fact.id === "time-on-job" &&
+      fact.label === "Time on job" &&
+      fact.value === "3 years" &&
+      fact.note === SUGGESTED_TIME_ON_JOB_NOTE,
+  ),
+);
+const leaveBlankJob = workspaceReply("Leave blank", yearsConfirmDraft);
+assert.equal(leaveBlankJob?.capture?.field, "decline-proposal");
+assert.equal(resolveProposal(yearsConfirmDraft, "decline").statedTimeOnJob, undefined);
+assert.match(leaveBlankJob?.text ?? "", /Left that line blank|sketch|government ID/i);
+assert.deepEqual(
+  (leaveBlankJob?.actions ?? []).map((item) => item.label),
+  ["Start with ID", "Skip", "Not yet"],
+);
+const skipJob = workspaceReply("Skip", afterTypeAsk);
+assert.equal(skipJob?.capture?.field, "skip-time-on-job");
+assert.match(skipJob?.text ?? "", /sketch/i);
+assert.deepEqual(
+  (skipJob?.actions ?? []).map((item) => item.label),
+  ["Start with ID", "Skip", "Not yet"],
+);
+const skippedJobFile = draft({ ...afterTypeAsk, timeOnJobAsked: true });
+assert.equal(skippedJobFile.statedTimeOnJob, undefined);
+assert.ok(
+  previewFacts(skippedJobFile).some(
+    (fact) => fact.id === "time-on-job" && fact.value === "—" && fact.note === SUGGESTED_TIME_ON_JOB_NOTE,
+  ),
+);
+const skipJobQualify = workspaceReply("will i qualify", skippedJobFile);
+assert.doesNotMatch(
+  skipJobQualify?.text ?? "",
+  /you don.t qualify|you need two years|VOE|verification of employment|you are approved|\bDTI\b|start date/i,
+);
+assert.doesNotMatch(skipJobQualify?.text ?? "", /I can run this past underwriting before we go further/);
+assert.ok(storeCompleteness("buy", { purposeHint: "purchase", incomeType: "w2_base" }).stillUseful.includes("time on job"));
+assert.ok(
+  !storeCompleteness("buy", {
+    purposeHint: "purchase",
+    incomeType: "w2_base",
+    statedTimeOnJob: 36,
+  }).stillUseful.includes("time on job"),
+);
+assert.ok(
+  !storeCompleteness("buy", { purposeHint: "purchase", incomeType: "se_schedule_c" }).stillUseful.includes("time on job"),
+);
+assert.ok(
+  !documentedStillUsefulIds("buy", {
+    purposeHint: "purchase",
+    incomeType: "w2_base",
+  }).includes("time on job" as never),
+);
+
+const hireDateFacts = { ...(afterLooks.facts ?? {}) };
+delete hireDateFacts.qualifying_income;
+delete hireDateFacts.statedTimeOnJob;
+delete hireDateFacts.hire_date;
+const hireDateBase = draft({
+  ...afterLooks,
+  facts: hireDateFacts,
+  pendingProposal: null,
+  pendingConflict: null,
+  pendingHireDate: null,
+  statedTimeOnJob: undefined,
+  timeOnJobAsked: true,
+  awaitingPayFrequency: false,
+});
+const hireDateWrite = applyExtractedFields(hireDateBase, {
+  extractClass: "paystub",
+  confidence: 0.94,
+  fields: {
+    employer_name: "Acme",
+    pay_period_end: "2026-07-31",
+    pay_frequency: "biweekly",
+    gross_period: "4230.77",
+    ytd_gross: "67692.32",
+    hire_date: "March 2023",
+  },
+});
+assert.equal(hireDateWrite.draft.pendingProposal?.field, QUALIFYING_INCOME_FIELD);
+assert.equal(hireDateWrite.draft.statedTimeOnJob, undefined);
+assert.equal(hireDateWrite.draft.facts?.hire_date, undefined);
+assert.equal(hireDateWrite.draft.pendingHireDate?.label, "March 2023");
+assert.ok((hireDateWrite.draft.pendingHireDate?.months ?? 0) >= 36);
+const afterIncomeUse = resolveProposal(hireDateWrite.draft, "accept");
+assert.equal(afterIncomeUse.pendingProposal?.field, "statedTimeOnJob");
+assert.equal(afterIncomeUse.pendingProposal?.hireLabel, "March 2023");
+assert.equal(afterIncomeUse.statedTimeOnJob, undefined);
+assert.match(
+  proposalAskCopy(afterIncomeUse.pendingProposal!),
+  /The paystub shows a hire date of March 2023\. That’s about 3 years\. Suggested · not underwritten\. Use this\?/,
+);
+const hired = resolveProposal(afterIncomeUse, "accept");
+assert.equal(hired.statedTimeOnJob, hireDateWrite.draft.pendingHireDate?.months);
+assert.equal(hired.pendingProposal, null);
+const noHireOnPage = printedSampleFromBytes(readFileSync(join(root, "scripts/fixtures/paystub-acme.png")));
+assert.equal(noHireOnPage?.extractClass, "paystub");
+assert.equal(noHireOnPage?.fields.hire_date, undefined);
+const hireOnPage = printedSampleFromBytes(
+  readFileSync(join(root, "scripts/fixtures/paystub-hire-march-2023.png")),
+);
+assert.equal(hireOnPage?.extractClass, "paystub");
+assert.match(hireOnPage?.fields.hire_date ?? "", /MARCH 2023/i);
+
+const typedThenHire = applyExtractedFields(
+  draft({ ...afterTypeAsk, timeOnJobAsked: true, statedTimeOnJob: 36 }),
+  {
+    extractClass: "paystub",
+    confidence: 0.94,
+    fields: {
+      employer_name: "Acme",
+      hire_date: "March 2023",
+    },
+  },
+);
+assert.equal(typedThenHire.draft.statedTimeOnJob, 36);
+assert.equal(typedThenHire.draft.pendingConflict?.field, "statedTimeOnJob");
+assert.deepEqual(
+  (workspacePromptCopy("confirm-proposal", typedThenHire.draft).actions ?? []).map((item) => item.label),
+  ["Keep the typed one", "Use document"],
+);
+assert.equal(resolveFactConflict(typedThenHire.draft, "file").statedTimeOnJob, 36);
+assert.equal(
+  resolveFactConflict(typedThenHire.draft, "document").statedTimeOnJob,
+  Number(typedThenHire.draft.pendingConflict?.documentValue),
+);
+
+const sixMonthsFile = draft({
+  ...afterTypeAsk,
+  timeOnJobAsked: true,
+  statedTimeOnJob: 6,
+  propertyType: "sfr",
+});
+const sixQualify = workspaceReply("will i qualify", sixMonthsFile);
+assert.match(sixQualify?.text ?? "", /I can run this past underwriting before we go further\./);
+assert.doesNotMatch(
+  sixQualify?.text ?? "",
+  /you don.t qualify|you need two years|VOE|verification of employment|you are approved|\bDTI\b|you qualify\b/i,
+);
+assert.match(sixQualify?.text ?? "", /underwriting|Start with ID|Skip|How long have you been at this job/i);
+assert.equal(
+  readinessFromFile({
+    product: "buy",
+    purposeHint: "purchase",
+    occupancy: "primary",
+    state: "CA",
+    purchasePrice: 850000,
+    downPayment: 170000,
+    loanAmount: 680000,
+    statedCreditBand: "760+",
+    incomeType: "w2_base",
+    received: ["paystub", "w2"],
+    propertyType: "sfr",
+    statedTimeOnJob: 6,
+  }).kind,
+  "uw_review",
+);
+assert.equal(
+  readinessFromFile({
+    product: "buy",
+    purposeHint: "purchase",
+    occupancy: "primary",
+    state: "CA",
+    purchasePrice: 850000,
+    downPayment: 170000,
+    loanAmount: 680000,
+    statedCreditBand: "760+",
+    incomeType: "w2_base",
+    received: ["paystub", "w2"],
+    propertyType: "condo",
+    statedTimeOnJob: 6,
+  }).reason,
+  "property-type",
+);
+assert.equal(
+  readinessFromFile({
+    product: "buy",
+    purposeHint: "purchase",
+    occupancy: "primary",
+    state: "CA",
+    purchasePrice: 850000,
+    downPayment: 170000,
+    loanAmount: 680000,
+    statedCreditBand: "760+",
+    incomeType: "w2_base",
+    received: ["paystub", "w2"],
+    propertyType: "sfr",
+    statedTimeOnJob: 24,
+  }).kind,
+  "strong",
+);
+assert.doesNotMatch(
+  readinessFromFile({
+    product: "buy",
+    purposeHint: "purchase",
+    occupancy: "primary",
+    state: "CA",
+    purchasePrice: 850000,
+    downPayment: 170000,
+    loanAmount: 680000,
+    statedCreditBand: "760+",
+    incomeType: "w2_base",
+    propertyType: "sfr",
+    statedTimeOnJob: 36,
+  }).line,
+  /seasoned|two years of employment|verification of employment/i,
+);
+const midJobEdit = draft({
+  ...afterTypeAsk,
+  timeOnJobAsked: true,
+  statedTimeOnJob: 36,
+  correcting: "time-on-job",
+  correctingLine: "time-on-job",
+});
+assert.match(workspacePromptCopy("time-on-job", midJobEdit).text, /still right/i);
+const midSix = workspaceReply("6 months", midJobEdit);
+assert.equal(midSix?.capture?.field, "propose-time-on-job");
+assert.match(midSix?.text ?? "", /That’s about 6 months at this job/);
+assert.equal(emptyDraft().statedTimeOnJob, undefined);
+assert.equal(structureFixPrompt("time-on-job"), "time-on-job");
+
+const jobSrc = [
+  readFileSync(join(root, "components/fox/timeOnJob.ts"), "utf8"),
+  readFileSync(join(root, "components/fox/workspace.ts"), "utf8"),
+].join("\n");
+assert.doesNotMatch(jobSrc, /employment-history maze|prior-job form|add-another-job|gap quiz|verification of employment|\bVOE\b/i);
+assert.doesNotMatch(jobSrc, /you need two years|you don.t qualify/i);
 
 const debtsSrc = [
   readFileSync(join(root, "components/fox/workspace.ts"), "utf8"),

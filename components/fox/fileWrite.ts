@@ -49,6 +49,17 @@ import {
   propertyAddressConflictActions,
   propertyTypeSettled,
 } from "./propertyType";
+import {
+  HIRE_DATE_FIELD,
+  STATED_TIME_ON_JOB_FIELD,
+  SUGGESTED_TIME_ON_JOB_NOTE,
+  displayTimeOnJob,
+  monthsBetween,
+  parseHireDate,
+  proposeExtractedTimeOnJob,
+  timeOnJobConflictActions,
+  timeOnJobSettled,
+} from "./timeOnJob";
 
 export { REJECT_LINE, LIMIT_LINE };
 
@@ -72,6 +83,7 @@ export const EXTRACT_SCHEMA_KEYS: Record<ExtractClass, readonly string[]> = {
     "commission_ytd",
     "second_employer_name",
     "tax_year",
+    "hire_date",
   ],
   w2: ["tax_year", "employer_name", "wages", "federal_withheld", "overtime", "bonus", "commission", "second_employer_name"],
   tax_return: [
@@ -198,6 +210,7 @@ const DATE_KEYS = new Set([
   "period_end",
   "close_date",
   "tax_year",
+  "hire_date",
 ]);
 
 export function slotForExtractClass(extractClass: ExtractClass): DocSlot {
@@ -421,6 +434,8 @@ export function factLabel(field: string) {
   if (field === "current_pi") return "current P&I";
   if (field === "income") return "income";
   if (field === STATED_AVAILABLE_ASSETS_FIELD) return "Stated available assets";
+  if (field === STATED_TIME_ON_JOB_FIELD) return "Time on job";
+  if (field === HIRE_DATE_FIELD) return "hire date";
   return field.replace(/_/g, " ");
 }
 
@@ -477,6 +492,10 @@ export function valuesMatch(left: string, right: string) {
 }
 
 export function displayFactValue(field: string, value: string) {
+  if (field === STATED_TIME_ON_JOB_FIELD) {
+    const months = Number(value);
+    if (Number.isFinite(months) && months > 0) return displayTimeOnJob(months);
+  }
   if (MONEY_KEYS.has(field)) {
     const n = moneyNumber(value);
     if (n != null) {
@@ -502,6 +521,9 @@ function existingFact(draft: FoxIntakeDraft, field: string): { value: string; vi
   }
   if (field === STATED_AVAILABLE_ASSETS_FIELD && draft.statedAvailableAssets != null) {
     return { value: String(draft.statedAvailableAssets), via: "structure" };
+  }
+  if (field === STATED_TIME_ON_JOB_FIELD && draft.statedTimeOnJob != null) {
+    return { value: String(draft.statedTimeOnJob), via: "structure" };
   }
   if (isPropertyAddressField(field) && (draft.subjectAddress || draft.facts?.property_address?.value)) {
     return {
@@ -579,6 +601,9 @@ function writeField(
       ? { statedAvailableAssets: assetAmount, availableAssetsAsked: true }
       : {}),
     ...(isPropertyAddressField(field) ? { subjectAddress: value } : {}),
+    ...(field === STATED_TIME_ON_JOB_FIELD && Number.isFinite(Number(value)) && Number(value) > 0
+      ? { statedTimeOnJob: Math.round(Number(value)), timeOnJobAsked: true }
+      : {}),
   };
 }
 
@@ -672,6 +697,7 @@ export function applyExtractedFields(
     const value = fields[field];
     if (!value) continue;
     if (keepPrimaryPay && PRIMARY_PAY_KEYS.has(field)) continue;
+    if (field === HIRE_DATE_FIELD) continue;
     if (isRemainderConfirmField(field)) {
       const existingRemainder = existingFact(next, field);
       if (!existingRemainder) {
@@ -785,6 +811,30 @@ export function applyExtractedFields(
         })),
       );
       remainderWrites.length = 0;
+    }
+  }
+  const rawHire = extractClass === "paystub" ? String(fields.hire_date ?? "").trim() : "";
+  const hire = rawHire ? parseHireDate(rawHire) : null;
+  const hireMonths = hire ? monthsBetween(hire) : 0;
+  if (hire && hireMonths > 0) {
+    if (next.statedTimeOnJob != null) {
+      if (!valuesMatch(String(next.statedTimeOnJob), String(hireMonths)) && !conflict) {
+        conflict = {
+          field: STATED_TIME_ON_JOB_FIELD,
+          fileValue: String(next.statedTimeOnJob),
+          documentValue: String(hireMonths),
+          label: "Time on job",
+          kind: "document",
+        };
+        next = { ...next, pendingConflict: conflict };
+      }
+    } else if (next.pendingProposal && next.pendingProposal.field !== STATED_TIME_ON_JOB_FIELD) {
+      next = {
+        ...next,
+        pendingHireDate: { date: rawHire, months: hireMonths, label: hire.label },
+      };
+    } else if (!next.pendingConflict) {
+      next = proposeExtractedTimeOnJob(next, hireMonths, hire.label);
     }
   }
   if (
@@ -1136,6 +1186,7 @@ export function completenessFileFromDraft(draft: FoxIntakeDraft): CompletenessFi
     ...(draft.statedAvailableAssets != null ? { statedAvailableAssets: draft.statedAvailableAssets } : {}),
     ...(draft.propertyType ? { propertyType: draft.propertyType } : {}),
     ...(draft.subjectAddress ? { subjectAddress: draft.subjectAddress } : {}),
+    ...(draft.statedTimeOnJob != null ? { statedTimeOnJob: draft.statedTimeOnJob } : {}),
   };
 }
 
@@ -1276,6 +1327,9 @@ export function conflictAskCopy(conflict: FactConflict) {
   if (isPropertyAddressField(conflict.field)) {
     return `The contract shows ${conflict.documentValue}. The file has ${conflict.fileValue} typed. ${SUGGESTED_PROPERTY_NOTE}.`;
   }
+  if (conflict.field === STATED_TIME_ON_JOB_FIELD) {
+    return `The paystub hire date is about ${displayFactValue(conflict.field, conflict.documentValue)}. The file has ${displayFactValue(conflict.field, conflict.fileValue)} typed. ${SUGGESTED_TIME_ON_JOB_NOTE}.`;
+  }
   return `The file has ${conflict.label} ${displayFactValue(conflict.field, conflict.fileValue)}. The document has ${displayFactValue(conflict.field, conflict.documentValue)}. Which should I keep?`;
 }
 
@@ -1345,6 +1399,7 @@ export function nextDocInvite(draft: FoxIntakeDraft): DocInviteKind | null {
   if (!debtsSettled(draft)) return null;
   if (!assetsSettled(draft)) return null;
   if (!propertyTypeSettled(draft)) return null;
+  if (!timeOnJobSettled(draft)) return null;
   if (draft.pendingProposal || draft.pendingConflict) return null;
   for (const kind of inviteSequence(draft)) {
     if (!inviteSatisfied(draft, kind)) return kind;
@@ -1417,6 +1472,9 @@ export function conflictActions(conflict?: FactConflict | null): FoxAction[] {
   }
   if (conflict && isPropertyAddressField(conflict.field)) {
     return propertyAddressConflictActions();
+  }
+  if (conflict?.field === STATED_TIME_ON_JOB_FIELD) {
+    return timeOnJobConflictActions();
   }
   return [
     { id: "keep-file-fact", label: "Keep file", event: "bubble", capture: { field: "keep-file-fact" } },
