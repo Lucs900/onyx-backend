@@ -96,6 +96,8 @@ import {
   resolveProposal,
   shouldAskYearsInBusiness,
   skipYearsInBusiness,
+  yearsInBusinessSettled,
+  yearsInBusinessSkipActions,
   sketchAmountsReady,
   withComputedCompanion,
   writeQualifyingIncome,
@@ -1876,10 +1878,11 @@ export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
   }
   if (!creditSettled(draft)) return "credit";
   if (!incomeSettled(draft)) return "income";
+  if (!timeOnJobSettled(draft)) return "time-on-job";
+  if (!yearsInBusinessSettled(draft)) return "years-in-business";
   if (!debtsSettled(draft)) return "debts";
   if (!assetsSettled(draft)) return "assets";
   if (!propertyTypeSettled(draft)) return "property-type";
-  if (!timeOnJobSettled(draft)) return "time-on-job";
   if (!currentHousingSettled(draft)) return "current-housing";
   if (!declarationsSettled(draft)) return "declarations";
   if (!householdSettled(draft)) return "household";
@@ -2120,7 +2123,7 @@ function workspaceAskCopy(
       text: shown
         ? `Years in business in the file is ${shown}. Still right?`
         : YEARS_IN_BUSINESS_ASK,
-      actions: shown ? keepThisActions() : undefined,
+      actions: shown ? [...keepThisActions(), ...yearsInBusinessSkipActions()] : yearsInBusinessSkipActions(),
     };
   }
   if (prompt === "documents") {
@@ -4538,6 +4541,13 @@ export function workspaceReply(
 
   if (prompt === "years-in-business") {
     if (isKeepThisText(q)) return keepThisReply(draft);
+    if (/^(skip|later|not sure|idk|pass|not yet)\b/i.test(lower)) {
+      const nextDraft = skipYearsInBusiness(draft);
+      return {
+        ...workspacePromptCopy(workspacePrompt(nextDraft), nextDraft),
+        capture: { field: "skip-years-in-business" },
+      };
+    }
     const years = parseYearsInBusiness(q);
     if (!years) {
       return answerThenRestore(q, draft);

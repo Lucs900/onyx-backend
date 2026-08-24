@@ -343,7 +343,7 @@ Computed purchase companion (price + down ⇒ loan, or price + loan ⇒ down) is
 
 ### Liabilities v1 — one stated monthly total
 
-After income type on a CA conventional sketch, Fox may ask once for stated monthly debts excluding the subject mortgage. Skip / Not yet is first-class and writes nothing. A number (800, $800, about 800, 800 a month) confirm-before-write:
+After income is handled on a CA conventional sketch — qualifying income on the File, the next income ask (time-on-job for W-2, years in business for self-employed) Skip / Not yet, or the income-docs next action — Fox may ask once for stated monthly debts excluding the subject mortgage. Skip / Not yet is first-class and writes nothing. A number (800, $800, about 800, 800 a month) confirm-before-write:
 
 `That’s $800 a month in other debts, not counting this mortgage. Suggested · not underwritten. Use this?`
 
@@ -554,6 +554,14 @@ Borrower `/start` thread: no 1003, no export download. Free-text “did you send
 Never invent SSN, ITIN, DOB, citizenship, income, credit score, DTI, reserve months, or matrix cells. No citizenship quiz. No present-address maze. No SSN ask on the borrower sketch.
 
 Out of this gate: MISMO / ULAD, LOS vendor push, DU / AUS, secure SSN / DOB capture, borrower 1003.
+
+### UX repair v1 — income stay, entry band, mobile starts
+
+Same File. Same conversation. No new wizard. No Design system. Locked homepage ACR copy does not change.
+
+- After W-2 or Self-employed, stay on income until the income fact is settled (qualifying income on the File, time-on-job for W-2, years in business for SE, income-docs next action, or Skip / Not yet on that income ask). Then debts may fire. Assets and the rest of the optional spine stay after income is handled.
+- After a chip answer, keep the new Fox question in view. Desktop: question + chips + composer stay in one tight stack. Mobile (~390px): do not snap the viewport to the chat bar; do not require an upward scroll past Structure.
+- Desktop hero keeps the side-by-side dual CTA. Mobile shows the same two starts stacked, above the fold. Footer is not the loan CTA. No third CTA. No new ACR lines.
 
 ### Quiet flags + more-complete asks
 

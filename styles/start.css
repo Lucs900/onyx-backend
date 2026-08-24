@@ -13,7 +13,7 @@
   display: flex;
   flex-direction: column;
   gap: 16px;
-  min-height: calc(100dvh - var(--nav-height) - 48px);
+  min-height: 0;
 }
 
 .start-workspace__fox-wrap,
@@ -31,12 +31,12 @@
 }
 
 .fox-stage--workspace .fox-panel__thread {
-  flex: 1 1 auto;
-  min-height: 240px;
+  flex: 0 1 auto;
+  min-height: 0;
   max-height: none !important;
-  overflow: auto;
-  padding-bottom: 168px;
-  scroll-padding-bottom: 168px;
+  overflow: visible;
+  padding-bottom: 12px;
+  scroll-padding-bottom: 16px;
 }
 
 .fox-stage.fox-stage--workspace .fox-bar__desk,
@@ -96,7 +96,8 @@
 }
 
 .fox-stage--workspace .fox-bubble--fox.is-current {
-  scroll-margin-bottom: 168px;
+  scroll-margin-top: 12px;
+  scroll-margin-bottom: 16px;
 }
 
 .fox-stage--workspace .fox-bubble--fox.is-current > p {
@@ -497,16 +498,16 @@
   .start-workspace__fox-wrap,
   .start-workspace__fox,
   .fox-stage--workspace {
-    min-height: 520px;
-    height: 100%;
+    min-height: 0;
+    height: auto;
   }
 
   .fox-stage--workspace .fox-panel__thread {
     display: flex;
-    flex: 1 1 auto;
-    min-height: 240px;
+    flex: 0 1 auto;
+    min-height: 0;
     max-height: none !important;
-    overflow: auto;
+    overflow: visible;
   }
 }
 

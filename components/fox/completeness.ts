@@ -1069,6 +1069,34 @@ export function yearsInBusinessValue(draft: FoxIntakeDraft) {
   return draft.facts?.[YEARS_IN_BUSINESS_FIELD]?.value ?? "";
 }
 
+export function wantsYearsInBusinessAsk(draft: FoxIntakeDraft) {
+  const income = draft.incomeType.value;
+  return income === "self-employed" || income === "both";
+}
+
+export function yearsInBusinessSettled(draft: FoxIntakeDraft) {
+  if (draft.correcting === "years-in-business" || draft.awaitingYearsInBusiness) return false;
+  if (!wantsYearsInBusinessAsk(draft)) return true;
+  return Boolean(yearsInBusinessValue(draft) || draft.yearsInBusinessAsked);
+}
+
+export function yearsInBusinessSkipActions(): FoxAction[] {
+  return [
+    {
+      id: "skip-years-in-business",
+      label: "Skip",
+      event: "bubble",
+      capture: { field: "skip-years-in-business" },
+    },
+    {
+      id: "hold-years-in-business",
+      label: "Not yet",
+      event: "bubble",
+      capture: { field: "skip-years-in-business" },
+    },
+  ];
+}
+
 export function shouldAskYearsInBusiness(draft: FoxIntakeDraft) {
   return (
     hasScheduleCCashflow(draft) &&

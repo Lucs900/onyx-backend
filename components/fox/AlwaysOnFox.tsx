@@ -905,21 +905,10 @@ export function AlwaysOnFox({
     if (!thread || !open) return;
     const reveal = () => {
       const current = thread.querySelector("[aria-current='step']");
-      if (!(current instanceof HTMLElement)) {
-        thread.scrollTo({ top: thread.scrollHeight });
-        return;
-      }
-      const dock = document.querySelector(".fox-workspace-dock");
-      const dockTop =
-        dock instanceof HTMLElement ? dock.getBoundingClientRect().top : window.innerHeight;
-      const reserve = Math.max(96, window.innerHeight - dockTop + 16);
-      current.style.scrollMarginBottom = `${reserve}px`;
-      current.scrollIntoView({ block: "end", inline: "nearest" });
-      const box = current.getBoundingClientRect();
-      const hidden = box.bottom - (window.innerHeight - reserve);
-      if (hidden > 8) {
-        window.scrollBy({ top: hidden, left: 0 });
-      }
+      if (!(current instanceof HTMLElement)) return;
+      current.style.scrollMarginTop = "12px";
+      current.style.scrollMarginBottom = "16px";
+      current.scrollIntoView({ block: "nearest", inline: "nearest" });
     };
     reveal();
     const frame = window.requestAnimationFrame(() => {
