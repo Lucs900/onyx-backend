@@ -641,7 +641,7 @@ export function applyExtractedFields(
   const now = new Date().toISOString();
   let next = draft;
   let conflict: FactConflict | null = draft.pendingConflict ?? null;
-  const remainderWrites: { field: string; value: string }[] = [];
+  let remainderWrites: { field: string; value: string }[] = [];
   const incomingEmployer = String(fields.employer_name ?? "")
     .trim()
     .toLowerCase()

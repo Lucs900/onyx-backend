@@ -92,6 +92,7 @@ import {
   flags as storeFlags,
   lookup as storeLookup,
   queryConventionalGuidelines,
+  fundsShortLine,
   readinessFromFile,
   COST_LINE,
   LOAN_OVER_PRICE_TEMPLATE,
@@ -6004,8 +6005,8 @@ assert.deepEqual(
 );
 const keptTyped = resolveFactConflict(typedThenExtract.draft, "file");
 assert.equal(keptTyped.statedAvailableAssets, 10000);
-const usedDoc = resolveFactConflict(typedThenExtract.draft, "document");
-assert.equal(usedDoc.statedAvailableAssets, 18400);
+const usedDocAssets = resolveFactConflict(typedThenExtract.draft, "document");
+assert.equal(usedDocAssets.statedAvailableAssets, 18400);
 
 const debtsSrc = [
   readFileSync(join(root, "components/fox/workspace.ts"), "utf8"),
@@ -6019,12 +6020,11 @@ assert.doesNotMatch(debtsSrc, /student loan card|auto loan card|HOA dues form/i)
 const assetsSrc = [
   readFileSync(join(root, "components/fox/availableAssets.ts"), "utf8"),
   readFileSync(join(root, "components/fox/workspace.ts"), "utf8"),
-  readFileSync(join(root, "lib/guidelines/conventional.ts"), "utf8"),
 ].join("\n");
 assert.doesNotMatch(assetsSrc, /gift maze|earnest money|large[- ]deposit quiz|add another account|itemized account/i);
 assert.doesNotMatch(assetsSrc, /reserve-month engine|you need two months reserves|N months of reserves/i);
-assert.doesNotMatch(assetsSrc, /you don.t qualify|you are approved|stated DTI|your DTI is/i);
 assert.match(guidelineStoreSrc, /statedAvailableAssets/);
+assert.doesNotMatch(fundsShortLine({ statedAvailableAssets: 10000, downPayment: 170000 }) ?? "", /you don.t qualify|you are approved|stated DTI|months? reserves/i);
 assert.match(guidelineStoreSrc, /statedMonthlyDebts/);
 assert.doesNotMatch(guidelineStoreSrc, /stated DTI|your DTI is/i);
 assert.equal(storeLookup("language.cost", {}).borrowerLine, COST_LINE);

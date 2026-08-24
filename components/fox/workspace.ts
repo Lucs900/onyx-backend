@@ -3038,7 +3038,10 @@ function matrixReply(
   draft: FoxIntakeDraft,
   prompt: FoxPrompt,
 ): ReturnType<typeof workspaceReply> {
-  if (namedCalifornia(text) && draft.outOfState) {
+  const moneyAtAsk =
+    (prompt === "assets" && parseAvailableAssetsAmount(text) != null) ||
+    (prompt === "debts" && parseMonthlyDebtAmount(text) != null);
+  if (namedCalifornia(text) && draft.outOfState && !moneyAtAsk) {
     const nextDraft = { ...draft, outOfState: false };
     return continueAfterFlag(
       "California — I can prepare this file.",
@@ -3046,7 +3049,7 @@ function matrixReply(
       { field: "in-state" },
     );
   }
-  if (namedOutOfState(text)) {
+  if (!moneyAtAsk && namedOutOfState(text)) {
     return {
       text: GEO_STOP_COPY,
       actions: draft.originatorRequested ? undefined : [requestHumanAction()],
