@@ -176,6 +176,11 @@ import {
   SUGGESTED_HOUSEHOLD_NOTE,
   parseHousehold,
 } from "../components/fox/household";
+import {
+  BORROWER_NAME_ASK,
+  SUGGESTED_BORROWER_NOTE,
+  parseBorrowerName,
+} from "../components/fox/borrowerName";
 import { subjectMortgagePayment } from "../components/fox/monthlyDebts";
 import { FAILED_READ_NOTE } from "../lib/docs/accept";
 import { classifyAndExtract, imageDataUrl, visionChatBody } from "../lib/docs/extract";
@@ -365,6 +370,9 @@ function confirmLooksRight() {
   if (workspacePrompt(getFoxDraft()) === "household") {
     applyCapture({ field: "skip-household" });
   }
+  if (workspacePrompt(getFoxDraft()) === "borrower-name") {
+    applyCapture({ field: "skip-borrower-name" });
+  }
   for (let i = 0; i < 8; i += 1) {
     if (workspacePrompt(getFoxDraft()) !== "documents" && !nextDocInvite(getFoxDraft())) break;
     applyCapture({ field: "skip-docs" });
@@ -386,6 +394,7 @@ function withIncome(
     currentHousingAsked: true,
     declarationAsked: true,
     householdAsked: true,
+    borrowerNameAsked: true,
     incomeType: { ...emptyDraft().incomeType, value },
   });
 }
@@ -1059,6 +1068,8 @@ assert.equal(getFoxDraft().statedDeclaration, undefined);
 assert.equal(getFoxDraft().declarationAsked, undefined);
 assert.equal(getFoxDraft().statedHousehold, undefined);
 assert.equal(getFoxDraft().householdAsked, undefined);
+assert.equal(getFoxDraft().borrowerName, undefined);
+assert.equal(getFoxDraft().borrowerNameAsked, undefined);
 assert.equal(workspacePrompt(getFoxDraft()), "product");
 assert.equal(workspacePrompt(afterIncome), "documents");
 assert.match(workspacePromptCopy("documents", afterIncome).text, /sketch/i);
@@ -1933,6 +1944,7 @@ applyCapture({ field: "skip-property-type" });
 applyCapture({ field: "skip-current-housing" });
 applyCapture({ field: "skip-declarations" });
 applyCapture({ field: "skip-household" });
+applyCapture({ field: "skip-borrower-name" });
 assert.equal(workspacePrompt(getFoxDraft()), "documents");
 assert.ok(!getFoxDraft().facts?.years_in_business);
 const liveSketchFix = workspaceReply("Needs a correction", getFoxDraft());
@@ -2328,6 +2340,7 @@ applyCapture({ field: "skip-time-on-job" });
 applyCapture({ field: "skip-current-housing" });
 applyCapture({ field: "skip-declarations" });
 applyCapture({ field: "skip-household" });
+applyCapture({ field: "skip-borrower-name" });
 assert.equal(getFoxDraft().documentsSkipped, false);
 assert.equal(workspacePrompt(getFoxDraft()), "documents");
 applyCapture({ field: "skip-docs" });
@@ -2376,6 +2389,7 @@ applyCapture({ field: "skip-property-type" });
 applyCapture({ field: "skip-current-housing" });
 applyCapture({ field: "skip-declarations" });
 applyCapture({ field: "skip-household" });
+applyCapture({ field: "skip-borrower-name" });
 assert.equal(getFoxDraft().documentsSkipped, false);
 assert.equal(workspacePrompt(getFoxDraft()), "documents");
 
@@ -3009,6 +3023,7 @@ applyCapture({ field: "skip-time-on-job" });
 applyCapture({ field: "skip-current-housing" });
 applyCapture({ field: "skip-declarations" });
 applyCapture({ field: "skip-household" });
+applyCapture({ field: "skip-borrower-name" });
 applyCapture({ field: "skip-docs" });
 assert.ok((getFoxDraft().skippedClasses ?? []).includes("government_id"));
 assert.ok(stillUsefulSection(getFoxDraft())?.items.some((item) => item.label === "Government ID"));
@@ -3518,17 +3533,34 @@ const mayaId = applyExtractedFields(
 );
 assert.ok(!mayaId.quietLines.includes("Updated identity from ID."));
 assert.ok(mayaId.quietLines.every((line) => !isDeadFileWriteLine(line)));
-assert.equal(mayaId.draft.contact.fullName.value, "Maya Chen");
+assert.equal(mayaId.draft.contact.fullName.value, "");
+assert.equal(mayaId.draft.borrowerName, undefined);
+assert.equal(mayaId.draft.pendingProposal?.field, "borrowerName");
+assert.equal(mayaId.draft.pendingProposal?.value, "Maya Chen");
+assert.ok(mayaId.draft.pendingProposal?.extras?.some((item) => item.field === "date_of_birth"));
 const mayaAsk = docReactionAsk(mayaId.draft, "government_id");
-assert.match(mayaAsk?.text ?? "", /Nice to meet you, Maya/);
-assert.match(mayaAsk?.text ?? "", /keep this file working|clearer picture|lower cost|stronger equity/);
-assert.match(mayaAsk?.text ?? "", /most recent tax return/);
-assert.doesNotMatch(
-  mayaAsk?.text ?? "",
-  /Updated identity from ID|approv|eligible|you qualify|sales/i,
+assert.equal(
+  mayaAsk?.text,
+  "The ID shows Maya Chen. Suggested · not underwritten. Use this?",
 );
 assert.deepEqual(
   (mayaAsk?.actions ?? []).map((item) => item.label),
+  ["Use this", "Leave blank"],
+);
+const mayaNamed = resolveProposal(mayaId.draft, "accept");
+assert.equal(mayaNamed.borrowerName, "Maya Chen");
+assert.equal(mayaNamed.contact.fullName.value, "Maya Chen");
+assert.equal(mayaNamed.facts?.date_of_birth?.value, "1990-04-12");
+const mayaGreet = docReactionAsk(mayaNamed, "government_id");
+assert.match(mayaGreet?.text ?? "", /Nice to meet you, Maya/);
+assert.match(mayaGreet?.text ?? "", /keep this file working|clearer picture|lower cost|stronger equity/);
+assert.match(mayaGreet?.text ?? "", /most recent tax return/);
+assert.doesNotMatch(
+  mayaGreet?.text ?? "",
+  /Updated identity from ID|approv|eligible|you qualify|sales/i,
+);
+assert.deepEqual(
+  (mayaGreet?.actions ?? []).map((item) => item.label),
   ["Upload this", "Skip"],
 );
 const jordanId = applyExtractedFields(
@@ -3538,7 +3570,7 @@ const jordanId = applyExtractedFields(
     documents: [
       {
         slot: "id",
-        name: "jordan-id.png",
+        name: "doc-id.png",
         type: "image/png",
         size: 4000,
         receivedAt: "2026-08-22T00:10:00.000Z",
@@ -3549,13 +3581,30 @@ const jordanId = applyExtractedFields(
   {
     extractClass: "government_id",
     confidence: 0.94,
-    fields: { full_name: "JORDAN HALE" },
+    fields: { full_name: "JORDAN HALE", ssn: "123-45-6789", full_ssn: "123456789" },
   },
 );
+assert.equal(jordanId.draft.contact.fullName.value, "");
+assert.equal(jordanId.draft.borrowerName, undefined);
+assert.equal(jordanId.draft.pendingProposal?.field, "borrowerName");
+assert.equal(jordanId.draft.facts?.ssn, undefined);
+assert.equal(jordanId.draft.facts?.full_ssn, undefined);
+assert.doesNotMatch(JSON.stringify(jordanId.draft.facts ?? {}), /123-45-6789|123456789/);
 const jordanAsk = docReactionAsk(jordanId.draft, "government_id");
-assert.match(jordanAsk?.text ?? "", /Nice to meet you, Jordan/);
-assert.doesNotMatch(jordanAsk?.text ?? "", /JORDAN/);
-const mayaThenReturn = applyExtractedFields(mayaId.draft, {
+assert.equal(
+  jordanAsk?.text,
+  "The ID shows Jordan Hale. Suggested · not underwritten. Use this?",
+);
+assert.doesNotMatch(jordanAsk?.text ?? "", /JORDAN|date of birth|SSN|social security/);
+assert.ok(!(jordanId.draft.pendingProposal?.extras ?? []).some((item) => item.field === "date_of_birth"));
+const jordanUsed = resolveProposal(jordanId.draft, "accept");
+assert.equal(jordanUsed.borrowerName, "Jordan Hale");
+assert.equal(jordanUsed.facts?.date_of_birth, undefined);
+assert.equal(jordanUsed.facts?.ssn, undefined);
+const jordanGreet = docReactionAsk(jordanUsed, "government_id");
+assert.match(jordanGreet?.text ?? "", /Nice to meet you, Jordan/);
+assert.doesNotMatch(jordanGreet?.text ?? "", /JORDAN/);
+const mayaThenReturn = applyExtractedFields(mayaNamed, {
   extractClass: "tax_return",
   confidence: 0.93,
   fields: {
@@ -5689,7 +5738,7 @@ const notYetDebts = workspaceReply("Not yet", afterIncomeType);
 assert.equal(notYetDebts?.capture?.field, "skip-monthly-debts");
 assert.ok(
   canLooksRight(
-    skipDocInvites({ ...afterIncomeType, monthlyDebtsAsked: true, availableAssetsAsked: true, propertyTypeAsked: true, timeOnJobAsked: true, currentHousingAsked: true, declarationAsked: true, householdAsked: true }),
+    skipDocInvites({ ...afterIncomeType, monthlyDebtsAsked: true, availableAssetsAsked: true, propertyTypeAsked: true, timeOnJobAsked: true, currentHousingAsked: true, declarationAsked: true, householdAsked: true, borrowerNameAsked: true }),
   ),
 );
 const skippedDebtFile = draft({
@@ -5701,6 +5750,7 @@ const skippedDebtFile = draft({
   currentHousingAsked: true,
   declarationAsked: true,
   householdAsked: true,
+  borrowerNameAsked: true,
 });
 assert.equal(skippedDebtFile.statedMonthlyDebts, undefined);
 assert.ok(
@@ -7131,10 +7181,10 @@ assert.equal(parseHousehold("with my partner"), "with_someone");
 
 const skipHouseholdReply = workspaceReply("Skip", afterDeclarationsAsk);
 assert.equal(skipHouseholdReply?.capture?.field, "skip-household");
-assert.match(skipHouseholdReply?.text ?? "", /sketch|government ID|Start with ID/i);
+assert.match(skipHouseholdReply?.text ?? "", /name should I put|upload an ID/i);
 assert.deepEqual(
   (skipHouseholdReply?.actions ?? []).map((item) => item.label),
-  ["Start with ID", "Skip", "Not yet"],
+  ["Skip", "Not yet"],
 );
 const skippedHouseholdFile = draft({ ...afterDeclarationsAsk, householdAsked: true });
 assert.equal(skippedHouseholdFile.statedHousehold, undefined);
@@ -7228,10 +7278,10 @@ const withSomeoneConfirmDraft = {
 const leaveBlankHousehold = workspaceReply("Leave blank", withSomeoneConfirmDraft);
 assert.equal(leaveBlankHousehold?.capture?.field, "decline-proposal");
 assert.equal(resolveProposal(withSomeoneConfirmDraft, "decline").statedHousehold, undefined);
-assert.match(leaveBlankHousehold?.text ?? "", /Left that line blank|sketch|government ID/i);
+assert.match(leaveBlankHousehold?.text ?? "", /Left that line blank|name should I put|upload an ID/i);
 assert.deepEqual(
   (leaveBlankHousehold?.actions ?? []).map((item) => item.label),
-  ["Start with ID", "Skip", "Not yet"],
+  ["Skip", "Not yet"],
 );
 const usedWithSomeone = resolveProposal(withSomeoneConfirmDraft, "accept");
 assert.equal(usedWithSomeone.statedHousehold, "with_someone");
@@ -7329,6 +7379,190 @@ const householdSrc = [
 ].join("\n");
 assert.doesNotMatch(householdSrc, /marital-status form|title vesting|community-property lecture|non-occupant quiz|second income type/i);
 assert.doesNotMatch(householdSrc, /your spouse must be on the loan|you don.t qualify/i);
+
+const afterHouseholdAsk = draft({
+  ...afterDeclarationsAsk,
+  householdAsked: true,
+  statedHousehold: "alone",
+});
+assert.equal(workspacePrompt(afterHouseholdAsk), "borrower-name");
+assert.equal(workspacePromptCopy("borrower-name", afterHouseholdAsk).text, BORROWER_NAME_ASK);
+assert.deepEqual(
+  (workspacePromptCopy("borrower-name", afterHouseholdAsk).actions ?? []).map((item) => item.label),
+  ["Skip", "Not yet"],
+);
+assert.equal(parseBorrowerName("Jordan Hale"), "Jordan Hale");
+assert.equal(parseBorrowerName("it's Jordan"), "Jordan");
+assert.equal(parseBorrowerName("JORDAN HALE"), "Jordan Hale");
+
+const skipBorrowerReply = workspaceReply("Skip", afterHouseholdAsk);
+assert.equal(skipBorrowerReply?.capture?.field, "skip-borrower-name");
+assert.match(skipBorrowerReply?.text ?? "", /sketch|government ID|Start with ID/i);
+assert.deepEqual(
+  (skipBorrowerReply?.actions ?? []).map((item) => item.label),
+  ["Start with ID", "Skip", "Not yet"],
+);
+const skippedBorrowerFile = draft({ ...afterHouseholdAsk, borrowerNameAsked: true });
+assert.equal(skippedBorrowerFile.borrowerName, undefined);
+assert.ok(
+  previewFacts(skippedBorrowerFile).some(
+    (fact) => fact.id === "borrower" && fact.value === "—" && fact.note === SUGGESTED_BORROWER_NOTE,
+  ),
+);
+const skipBorrowerQualify = workspaceReply("will i qualify", skippedBorrowerFile);
+assert.doesNotMatch(
+  skipBorrowerQualify?.text ?? "",
+  /you don.t qualify|SSN|social security|identity is verified|KYC|you are approved/i,
+);
+assert.match(skipBorrowerQualify?.text ?? "", /paystub|W-2|notepad|Start with ID|Skip/i);
+assert.ok(storeCompleteness("buy", { purposeHint: "purchase", incomeType: "w2_base" }).stillUseful.includes("borrower"));
+assert.ok(
+  !storeCompleteness("buy", {
+    purposeHint: "purchase",
+    incomeType: "w2_base",
+    borrowerName: "Jordan Hale",
+  }).stillUseful.includes("borrower"),
+);
+assert.ok(
+  !documentedStillUsefulIds("buy", {
+    purposeHint: "purchase",
+    incomeType: "w2_base",
+  }).includes("borrower" as never),
+);
+
+const typedName = workspaceReply("Jordan Hale", afterHouseholdAsk);
+assert.equal(typedName?.capture?.field, "propose-borrower-name");
+assert.equal(
+  typedName?.text,
+  "I’ll use Jordan Hale on this file. Suggested · not underwritten. Use this?",
+);
+assert.deepEqual(
+  (typedName?.actions ?? []).map((item) => item.label),
+  ["Use this", "Leave blank"],
+);
+const nameConfirmDraft = {
+  ...afterHouseholdAsk,
+  pendingProposal: {
+    field: "borrowerName",
+    value: "Jordan Hale",
+    label: "Borrower",
+    kind: "computed" as const,
+    note: SUGGESTED_BORROWER_NOTE,
+  },
+};
+const usedName = resolveProposal(nameConfirmDraft, "accept");
+assert.equal(usedName.borrowerName, "Jordan Hale");
+assert.equal(usedName.contact.fullName.value, "Jordan Hale");
+assert.ok(
+  previewFacts(usedName).some(
+    (fact) =>
+      fact.id === "borrower" &&
+      fact.label === "Borrower" &&
+      fact.value === "Jordan Hale" &&
+      fact.note === SUGGESTED_BORROWER_NOTE,
+  ),
+);
+const leaveBlankName = workspaceReply("Leave blank", nameConfirmDraft);
+assert.equal(leaveBlankName?.capture?.field, "decline-proposal");
+assert.equal(resolveProposal(nameConfirmDraft, "decline").borrowerName, undefined);
+assert.match(leaveBlankName?.text ?? "", /Left that line blank|sketch|government ID/i);
+assert.deepEqual(
+  (leaveBlankName?.actions ?? []).map((item) => item.label),
+  ["Start with ID", "Skip", "Not yet"],
+);
+
+const namedQualify = workspaceReply("will i qualify", usedName);
+assert.doesNotMatch(
+  namedQualify?.text ?? "",
+  /you don.t qualify|SSN|identity is verified|KYC|you are approved|you qualify\b/i,
+);
+assert.match(namedQualify?.text ?? "", /paystub|W-2|notepad|Start with ID|Skip/i);
+assert.equal(
+  readinessFromFile({
+    product: "buy",
+    purposeHint: "purchase",
+    occupancy: "primary",
+    state: "CA",
+    purchasePrice: 850000,
+    downPayment: 170000,
+    loanAmount: 680000,
+    statedCreditBand: "760+",
+    incomeType: "w2_base",
+    received: ["paystub", "w2"],
+    propertyType: "sfr",
+    statedDeclaration: "none",
+    statedHousehold: "alone",
+    borrowerName: "Jordan Hale",
+  }).kind,
+  "strong",
+);
+assert.equal(
+  readinessFromFile({
+    product: "buy",
+    purposeHint: "purchase",
+    occupancy: "primary",
+    state: "CA",
+    purchasePrice: 850000,
+    downPayment: 170000,
+    loanAmount: 680000,
+    statedCreditBand: "760+",
+    incomeType: "w2_base",
+    propertyType: "sfr",
+    borrowerName: "Jordan Hale",
+  }).kind,
+  "not_ready",
+);
+
+const midBorrowerEdit = draft({
+  ...afterHouseholdAsk,
+  borrowerNameAsked: true,
+  borrowerName: "Jordan Hale",
+  contact: {
+    ...emptyDraft().contact,
+    fullName: { ...emptyDraft().contact.fullName, value: "Jordan Hale" },
+  },
+  correcting: "borrower-name",
+  correctingLine: "borrower-name",
+});
+assert.match(workspacePromptCopy("borrower-name", midBorrowerEdit).text, /still right/i);
+const midAda = workspaceReply("Ada Lovelace", midBorrowerEdit);
+assert.equal(midAda?.capture?.field, "propose-borrower-name");
+assert.match(midAda?.text ?? "", /I’ll use Ada Lovelace on this file/);
+const midAdaWritten = resolveProposal(
+  {
+    ...midBorrowerEdit,
+    pendingProposal: {
+      field: "borrowerName",
+      value: "Ada Lovelace",
+      label: "Borrower",
+      kind: "computed" as const,
+      note: SUGGESTED_BORROWER_NOTE,
+    },
+  },
+  "accept",
+);
+assert.equal(midAdaWritten.borrowerName, "Ada Lovelace");
+assert.equal(emptyDraft().borrowerName, undefined);
+assert.equal(structureFixPrompt("borrower"), "borrower-name");
+
+const typedThenId = applyExtractedFields(usedName, {
+  extractClass: "government_id",
+  confidence: 0.94,
+  fields: { full_name: "Maya Chen" },
+});
+assert.equal(typedThenId.draft.borrowerName, "Jordan Hale");
+assert.equal(typedThenId.conflict?.field, "borrowerName");
+assert.deepEqual(
+  (workspacePromptCopy("confirm-proposal", typedThenId.draft).actions ?? []).map((item) => item.label),
+  ["Use document", "Keep the typed name"],
+);
+
+const borrowerSrc = [
+  readFileSync(join(root, "components/fox/borrowerName.ts"), "utf8"),
+  readFileSync(join(root, "components/fox/workspace.ts"), "utf8"),
+].join("\n");
+assert.doesNotMatch(borrowerSrc, /KYC vendor|citizenship quiz|present-address form|second-borrower name maze/i);
+assert.doesNotMatch(borrowerSrc, /\bITIN\b|full SSN|ask for SSN|identity is verified/i);
 
 const debtsSrc = [
   readFileSync(join(root, "components/fox/workspace.ts"), "utf8"),

@@ -277,6 +277,8 @@ export type FoxIntakeDraft = {
   declarationNote?: string;
   statedHousehold?: "alone" | "with_someone";
   householdAsked?: boolean;
+  borrowerName?: string;
+  borrowerNameAsked?: boolean;
   docsOpen?: boolean;
   originatorRequested?: boolean;
   motion?: FileMotion;
@@ -348,6 +350,7 @@ export type FoxPrompt =
   | "current-housing"
   | "declarations"
   | "household"
+  | "borrower-name"
   | "occupancy"
   | "timeline"
   | "documents"
@@ -394,6 +397,9 @@ export type Capture =
   | { field: "skip-household" }
   | { field: "propose-household"; value: string }
   | { field: "statedHousehold"; value: string }
+  | { field: "skip-borrower-name" }
+  | { field: "propose-borrower-name"; value: string }
+  | { field: "borrowerName"; value: string }
   | { field: "occupancy"; value: string }
   | { field: "timeline"; value: string }
   | { field: "path"; value: IntakePath }

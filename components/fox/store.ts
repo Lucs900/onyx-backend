@@ -141,6 +141,12 @@ import {
   skipHousehold,
   writeStatedHousehold,
 } from "./household";
+import {
+  parseBorrowerName,
+  proposeBorrowerName,
+  skipBorrowerName,
+  writeBorrowerName,
+} from "./borrowerName";
 
 function numberOrUndefined(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : undefined;
@@ -288,6 +294,11 @@ function normalize(value: unknown): FoxIntakeDraft {
         ? raw.statedHousehold
         : undefined,
     householdAsked: Boolean(raw.householdAsked || raw.statedHousehold),
+    borrowerName:
+      typeof raw.borrowerName === "string" && raw.borrowerName.trim()
+        ? raw.borrowerName.trim()
+        : undefined,
+    borrowerNameAsked: Boolean(raw.borrowerNameAsked || raw.borrowerName || raw.contact?.fullName?.value),
     docsOpen: Boolean(raw.docsOpen),
     docsStarted: Boolean(raw.docsStarted),
     docsHeld: Boolean(raw.docsHeld),
@@ -1335,6 +1346,19 @@ export function applyCapture(capture: Capture) {
   if (capture.field === "statedHousehold") {
     if (!isStatedHousehold(capture.value)) return current;
     return commit(writeStatedHousehold(current, capture.value));
+  }
+  if (capture.field === "skip-borrower-name") {
+    return commit(skipBorrowerName(current));
+  }
+  if (capture.field === "propose-borrower-name") {
+    const name = parseBorrowerName(capture.value) ?? capture.value.trim();
+    if (!name) return current;
+    return commit(proposeBorrowerName(current, name));
+  }
+  if (capture.field === "borrowerName") {
+    const name = parseBorrowerName(capture.value) ?? capture.value.trim();
+    if (!name) return current;
+    return commit(writeBorrowerName(current, name));
   }
   if (capture.field === "incomeType") {
     const midFile = Boolean(current.correcting);

@@ -69,6 +69,16 @@ import {
 } from "./currentHousing";
 import { declarationsSettled } from "./declarations";
 import { householdSettled } from "./household";
+import {
+  BORROWER_NAME_FIELD,
+  borrowerNameConflictActions,
+  borrowerNameSettled,
+  displayBorrowerName,
+  isBorrowerNameField,
+  proposeExtractedBorrowerName,
+  SUGGESTED_BORROWER_NOTE,
+  writeBorrowerName,
+} from "./borrowerName";
 
 export { REJECT_LINE, LIMIT_LINE };
 
@@ -448,6 +458,7 @@ export function factLabel(field: string) {
   if (field === STATED_CURRENT_HOUSING_FIELD) return "Current housing";
   if (field === "statedDeclaration") return "Declarations";
   if (field === "statedHousehold") return "Household";
+  if (isBorrowerNameField(field)) return "Borrower";
   if (field === HIRE_DATE_FIELD) return "hire date";
   return field.replace(/_/g, " ");
 }
@@ -520,8 +531,8 @@ export function displayFactValue(field: string, value: string) {
 }
 
 function existingFact(draft: FoxIntakeDraft, field: string): { value: string; via: string } | null {
-  if (field === "full_name" && draft.contact.fullName.value) {
-    return { value: draft.contact.fullName.value, via: "structure" };
+  if (isBorrowerNameField(field) && (draft.borrowerName || draft.contact.fullName.value)) {
+    return { value: draft.borrowerName || draft.contact.fullName.value, via: "structure" };
   }
   if (field === "purchase_price" && draft.propertyValueAmount != null) {
     return { value: String(draft.propertyValueAmount), via: "structure" };
@@ -581,11 +592,11 @@ function writeField(
   let valueAsked = draft.valueAsked;
   let loanAmountValue = draft.loanAmountValue;
   let amountAsked = draft.amountAsked;
-  if (field === "full_name" && !draft.contact.fullName.value) {
-    contact = {
-      ...draft.contact,
-      fullName: { field: "fullName", value, source: "document", confirmed: true, confirmedAt: now },
-    };
+  if (isBorrowerNameField(field) && value.trim()) {
+    return writeBorrowerName(
+      { ...draft, pendingProposal: draft.pendingProposal?.field === field ? null : draft.pendingProposal },
+      value,
+    );
   }
   if (field === "purchase_price") {
     const n = moneyNumber(value);
@@ -652,7 +663,7 @@ export function isDeadFileWriteLine(line: string) {
 }
 
 export function firstNameFromDraft(draft: FoxIntakeDraft): string {
-  const full = (draft.contact.fullName.value || factValue(draft, "full_name")).trim();
+  const full = (draft.borrowerName || draft.contact.fullName.value || factValue(draft, "full_name")).trim();
   if (!full) return "";
   const raw = (full.split(/\s+/)[0] ?? "").replace(/[.,]+$/g, "");
   if (!raw) return "";
@@ -717,6 +728,7 @@ export function applyExtractedFields(
     if (!value) continue;
     if (keepPrimaryPay && PRIMARY_PAY_KEYS.has(field)) continue;
     if (field === HIRE_DATE_FIELD) continue;
+    if (extractClass === "government_id" && (field === "full_name" || field === "date_of_birth")) continue;
     if (isRemainderConfirmField(field)) {
       const existingRemainder = existingFact(next, field);
       if (!existingRemainder) {
@@ -884,6 +896,27 @@ export function applyExtractedFields(
     } else if (!next.pendingConflict) {
       next = proposeExtractedCurrentHousing(next, extractedHousing, housingExtras);
       remainderWrites.length = 0;
+    }
+  }
+  const extractedName =
+    extractClass === "government_id" ? String(fields.full_name ?? "").trim() : "";
+  if (extractedName) {
+    const shown = displayBorrowerName(extractedName);
+    const existingName = (next.borrowerName || next.contact.fullName.value || "").trim();
+    const extras = fields.date_of_birth
+      ? [{ field: "date_of_birth", value: String(fields.date_of_birth), label: "date of birth" }]
+      : [];
+    if (existingName && !valuesMatch(existingName, shown) && !conflict) {
+      conflict = {
+        field: BORROWER_NAME_FIELD,
+        fileValue: displayBorrowerName(existingName),
+        documentValue: shown,
+        label: "Borrower",
+        kind: "document",
+      };
+      next = { ...next, pendingConflict: conflict };
+    } else if (!existingName && !next.pendingConflict) {
+      next = proposeExtractedBorrowerName(next, shown, extras);
     }
   }
   if (
@@ -1239,6 +1272,7 @@ export function completenessFileFromDraft(draft: FoxIntakeDraft): CompletenessFi
     ...(draft.statedCurrentHousing != null ? { statedCurrentHousing: draft.statedCurrentHousing } : {}),
     ...(draft.statedDeclaration ? { statedDeclaration: draft.statedDeclaration } : {}),
     ...(draft.statedHousehold ? { statedHousehold: draft.statedHousehold } : {}),
+    ...(draft.borrowerName ? { borrowerName: draft.borrowerName } : {}),
   };
 }
 
@@ -1385,6 +1419,9 @@ export function conflictAskCopy(conflict: FactConflict) {
   if (conflict.field === STATED_CURRENT_HOUSING_FIELD) {
     return `The statement shows a current payment of about ${displayFactValue(conflict.field, conflict.documentValue)}. The file has ${displayFactValue(conflict.field, conflict.fileValue)} typed. ${SUGGESTED_HOUSING_NOTE}.`;
   }
+  if (isBorrowerNameField(conflict.field)) {
+    return `The ID shows ${conflict.documentValue}. The file has ${conflict.fileValue} typed. ${SUGGESTED_BORROWER_NOTE}.`;
+  }
   return `The file has ${conflict.label} ${displayFactValue(conflict.field, conflict.fileValue)}. The document has ${displayFactValue(conflict.field, conflict.documentValue)}. Which should I keep?`;
 }
 
@@ -1458,6 +1495,7 @@ export function nextDocInvite(draft: FoxIntakeDraft): DocInviteKind | null {
   if (!currentHousingSettled(draft)) return null;
   if (!declarationsSettled(draft)) return null;
   if (!householdSettled(draft)) return null;
+  if (!borrowerNameSettled(draft)) return null;
   if (draft.pendingProposal || draft.pendingConflict) return null;
   for (const kind of inviteSequence(draft)) {
     if (!inviteSatisfied(draft, kind)) return kind;
@@ -1536,6 +1574,9 @@ export function conflictActions(conflict?: FactConflict | null): FoxAction[] {
   }
   if (conflict?.field === STATED_CURRENT_HOUSING_FIELD) {
     return currentHousingConflictActions();
+  }
+  if (conflict && isBorrowerNameField(conflict.field)) {
+    return borrowerNameConflictActions();
   }
   return [
     { id: "keep-file-fact", label: "Keep file", event: "bubble", capture: { field: "keep-file-fact" } },

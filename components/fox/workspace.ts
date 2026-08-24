@@ -235,6 +235,23 @@ import {
   writeStatedHousehold,
 } from "./household";
 import {
+  BORROWER_NAME_ASK,
+  BORROWER_NAME_FIELD,
+  SUGGESTED_BORROWER_NOTE,
+  borrowerNameAskCopy,
+  borrowerNameConfirmActions,
+  borrowerNameConfirmCopy,
+  borrowerNameOnFile,
+  borrowerNameSettled,
+  isBorrowerNameConfirmPending,
+  isBorrowerNameField,
+  isSkipBorrowerNameText,
+  parseBorrowerName,
+  proposeBorrowerName,
+  skipBorrowerName,
+  writeBorrowerName,
+} from "./borrowerName";
+import {
   ACR_BENEFITS_LINE,
   COST_LINE,
   FHFA_HIGH_COST_CEILING_2026 as STORE_HIGH_COST_CEILING,
@@ -1269,6 +1286,12 @@ function liveProposalAsk(
       actions: householdConfirmActions(),
     };
   }
+  if (isBorrowerNameField(proposal.field)) {
+    return {
+      text: proposalAskCopy(proposal),
+      actions: borrowerNameConfirmActions(),
+    };
+  }
   if (proposal.field === QUALIFYING_INCOME_FIELD) {
     if (combinedParts(proposal) || proposal.methodNote?.startsWith("combined ")) {
       return combinedReactionAsk(draft, proposal);
@@ -1305,9 +1328,9 @@ export function docReactionAsk(
       actions: conflictActions(draft.pendingConflict),
     };
   }
+  if (draft.pendingProposal) return liveProposalAsk(draft, draft.pendingProposal, cls);
   if (cls === "government_id") return identityReactionAsk(draft);
   if (draft.awaitingPayFrequency) return payFrequencyAsk();
-  if (draft.pendingProposal) return liveProposalAsk(draft, draft.pendingProposal, cls);
   return null;
 }
 
@@ -1402,6 +1425,7 @@ const CORRECTION_CHIP_IDS = new Set([
   "current-housing",
   "declarations",
   "household",
+  "borrower-name",
 ]);
 
 function yearsOnFile(draft: FoxIntakeDraft) {
@@ -1449,6 +1473,9 @@ function extraCorrectionLines(draft: FoxIntakeDraft): { id: string; label: strin
   }
   if (draft.householdAsked || draft.statedHousehold) {
     extra.push({ id: "household", label: "Household", prompt: "household" });
+  }
+  if (draft.borrowerNameAsked || draft.borrowerName || draft.contact.fullName.value) {
+    extra.push({ id: "borrower-name", label: "Borrower", prompt: "borrower-name" });
   }
   return extra;
 }
@@ -1762,7 +1789,8 @@ export function shouldDeferStillUsefulAsk(draft: FoxIntakeDraft): boolean {
     isTimeOnJobConfirmPending(draft) ||
     isCurrentHousingConfirmPending(draft) ||
     isDeclarationsConfirmPending(draft) ||
-    isHouseholdConfirmPending(draft)
+    isHouseholdConfirmPending(draft) ||
+    isBorrowerNameConfirmPending(draft)
   );
 }
 
@@ -1824,6 +1852,7 @@ export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
   if (!currentHousingSettled(draft)) return "current-housing";
   if (!declarationsSettled(draft)) return "declarations";
   if (!householdSettled(draft)) return "household";
+  if (!borrowerNameSettled(draft)) return "borrower-name";
   if (!draft.sampleAccepted && draft.awaitingYearsInBusiness) return "documents";
   if (nextDocInvite(draft)) return "documents";
   if (!draft.sampleAccepted) return canLooksRight(draft) ? "review" : "amount";
@@ -2028,6 +2057,9 @@ function workspaceAskCopy(
   }
   if (prompt === "household") {
     return householdAskCopy(draft);
+  }
+  if (prompt === "borrower-name") {
+    return borrowerNameAskCopy(draft);
   }
   if (prompt === "qualifying") {
     const shown =
@@ -2672,6 +2704,13 @@ export function editPromptFromCapture(capture?: Capture): FoxPrompt | undefined 
   ) {
     return "household";
   }
+  if (
+    capture.field === "skip-borrower-name" ||
+    capture.field === "propose-borrower-name" ||
+    capture.field === "borrowerName"
+  ) {
+    return "borrower-name";
+  }
   if (capture.field === "propose-subject-address" || capture.field === "subjectAddress") {
     return "confirm-proposal";
   }
@@ -2873,6 +2912,13 @@ export function workspaceUpdateCopy(capture: Capture, draft: FoxIntakeDraft) {
       ? `Updated household to ${householdLabel(capture.value)}.`
       : "Updated household.";
   }
+  if (capture.field === "skip-borrower-name") return "Updated. Borrower left blank.";
+  if (capture.field === "propose-borrower-name") return "Updated.";
+  if (capture.field === "borrowerName") {
+    return capture.value.trim()
+      ? `Updated borrower to ${capture.value.trim()}.`
+      : "Updated borrower.";
+  }
   if (capture.field === "statedAvailableAssets") {
     const n = Number(capture.value.replace(/,/g, ""));
     return Number.isFinite(n) && n > 0
@@ -2902,7 +2948,7 @@ export function parseWorkspaceEdit(
   const q = text.trim();
   const lower = q.toLowerCase();
   const namedField =
-    /\boccupan|\b(credit|fico|income|timeline|product|purchase price|\bprice\b|down(\s+payment)?|loan amount|years? in business|path|property type|condo|house|sfr|time on job|current housing|declarations?|household)\b/.test(
+    /\boccupan|\b(credit|fico|income|timeline|product|purchase price|\bprice\b|down(\s+payment)?|loan amount|years? in business|path|property type|condo|house|sfr|time on job|current housing|declarations?|household|borrower|\bname\b)\b/.test(
       lower,
     );
   const spokenFix =
@@ -2987,6 +3033,17 @@ export function parseWorkspaceEdit(
       };
     }
     return { correct: "household", confirm: HOUSEHOLD_ASK };
+  }
+
+  if (/\b(borrower|\bname\b)\b/.test(lower)) {
+    const name = parseBorrowerName(q);
+    if (name) {
+      return {
+        capture: { field: "propose-borrower-name", value: name },
+        confirm: borrowerNameConfirmCopy(name),
+      };
+    }
+    return { correct: "borrower-name", confirm: BORROWER_NAME_ASK };
   }
 
   if (/\boccupan/.test(lower)) {
@@ -3224,6 +3281,15 @@ function draftAfterCapture(draft: FoxIntakeDraft, capture: Capture): FoxIntakeDr
   }
   if (capture.field === "statedHousehold" && isStatedHousehold(capture.value)) {
     return writeStatedHousehold(next, capture.value);
+  }
+  if (capture.field === "skip-borrower-name") return skipBorrowerName(next);
+  if (capture.field === "propose-borrower-name") {
+    const name = parseBorrowerName(capture.value) ?? capture.value.trim();
+    return name ? proposeBorrowerName(next, name) : next;
+  }
+  if (capture.field === "borrowerName") {
+    const name = parseBorrowerName(capture.value) ?? capture.value.trim();
+    return name ? writeBorrowerName(next, name) : next;
   }
   if (capture.field === "cashOut") return { ...next, cashOut: true };
   if (capture.field === "over-price-confirm") {
@@ -3586,7 +3652,8 @@ export function workspaceReply(
         isTimeOnJobConfirmPending(draft) ||
         isCurrentHousingConfirmPending(draft) ||
         isDeclarationsConfirmPending(draft) ||
-        isHouseholdConfirmPending(draft)) &&
+        isHouseholdConfirmPending(draft) ||
+        isBorrowerNameConfirmPending(draft)) &&
       asksWillIQualify(q)
     ) {
       return answerThenRestore(q, draft);
@@ -4311,6 +4378,24 @@ export function workspaceReply(
     };
   }
 
+  if (prompt === "borrower-name") {
+    if (borrowerNameOnFile(draft) && isKeepThisText(q)) return keepThisReply(draft);
+    if (isSkipBorrowerNameText(q)) {
+      const nextDraft = skipBorrowerName(draft);
+      return {
+        ...workspacePromptCopy(workspacePrompt(nextDraft), nextDraft),
+        capture: { field: "skip-borrower-name" },
+      };
+    }
+    const name = parseBorrowerName(q);
+    if (!name) return answerThenRestore(q, draft);
+    const nextDraft = proposeBorrowerName(draft, name);
+    return {
+      ...workspacePromptCopy("confirm-proposal", nextDraft),
+      capture: { field: "propose-borrower-name", value: name },
+    };
+  }
+
   if (prompt === "income") {
     if (draft.incomeType.value && isKeepThisText(q)) return keepThisReply(draft);
     const match = incomeFromText(q);
@@ -4915,6 +5000,24 @@ export function previewFacts(draft: FoxIntakeDraft): PreviewFact[] {
     });
   }
 
+  if (
+    draft.borrowerNameAsked ||
+    draft.borrowerName ||
+    draft.contact.fullName.value ||
+    isBorrowerNameConfirmPending(draft)
+  ) {
+    const pending = isBorrowerNameConfirmPending(draft)
+      ? draft.pendingProposal?.value
+      : undefined;
+    const shown = borrowerNameOnFile(draft) || pending || "—";
+    facts.push({
+      id: "borrower",
+      label: "Borrower",
+      value: shown,
+      note: SUGGESTED_BORROWER_NOTE,
+    });
+  }
+
   const address = draft.subjectAddress || factValue(draft, "property_address");
   if (address) {
     facts.push({
@@ -5123,6 +5226,7 @@ export function structureFixPrompt(
   if (id === "current-housing") return "current-housing";
   if (id === "declarations") return "declarations";
   if (id === "household") return "household";
+  if (id === "borrower" || id === "borrower-name") return "borrower-name";
   if (id === "qualifying") return "qualifying";
   if (id === "years-in-business") return "years-in-business";
   if (id === "docs") return "documents";
@@ -5172,6 +5276,11 @@ export function structureExplainCopy(
   if (id === "household") {
     return {
       text: "Household. Suggested · not underwritten.",
+    };
+  }
+  if (id === "borrower" || id === "borrower-name") {
+    return {
+      text: "Borrower. Suggested · not underwritten.",
     };
   }
   if (id === "rate") {

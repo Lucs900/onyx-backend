@@ -86,6 +86,14 @@ import {
   writeStatedHousehold,
 } from "./household";
 import {
+  BORROWER_NAME_FIELD,
+  borrowerNameConfirmCopy,
+  borrowerNameExtractCopy,
+  isBorrowerNameField,
+  skipBorrowerName,
+  writeBorrowerName,
+} from "./borrowerName";
+import {
   HIGH_LTV_CAUTION as STORE_HIGH_LTV_CAUTION,
   HIGH_PURCHASE_LTV as STORE_HIGH_PURCHASE_LTV,
   JUMBO_CEILING_LINE,
@@ -287,7 +295,8 @@ function occupancyPresent(draft: FoxIntakeDraft) {
 
 function identityPresent(draft: FoxIntakeDraft) {
   return Boolean(
-    draft.contact.fullName.value ||
+    draft.borrowerName ||
+      draft.contact.fullName.value ||
       factValue(draft, "full_name") ||
       draft.documents.some((doc) => doc.extractClass === "government_id" || doc.slot === "id"),
   );
@@ -553,6 +562,7 @@ export function factsFromDraft(draft: FoxIntakeDraft): CompletenessFile {
     ...(draft.statedCurrentHousing != null ? { statedCurrentHousing: draft.statedCurrentHousing } : {}),
     ...(draft.statedDeclaration ? { statedDeclaration: draft.statedDeclaration } : {}),
     ...(draft.statedHousehold ? { statedHousehold: draft.statedHousehold } : {}),
+    ...(draft.borrowerName ? { borrowerName: draft.borrowerName } : {}),
     ...(suggestedMonthlyIncome != null ? { suggestedMonthlyIncome } : {}),
     docsSkipped: Boolean(
       draft.documentsSkipped || draft.docsHeld || (draft.skippedClasses?.length ?? 0) > 0,
@@ -607,6 +617,7 @@ export function structureFieldForProposal(field: string) {
   if (field === STATED_CURRENT_HOUSING_FIELD) return "current-housing";
   if (field === STATED_DECLARATION_FIELD) return "declarations";
   if (field === STATED_HOUSEHOLD_FIELD) return "household";
+  if (isBorrowerNameField(field)) return "borrower";
   return field;
 }
 
@@ -658,6 +669,11 @@ export function proposalAskCopy(proposal: FactProposal) {
   }
   if (proposal.field === STATED_HOUSEHOLD_FIELD && isStatedHousehold(proposal.value)) {
     return householdConfirmCopy(proposal.value);
+  }
+  if (isBorrowerNameField(proposal.field)) {
+    return proposal.extras
+      ? borrowerNameExtractCopy(proposal.value)
+      : borrowerNameConfirmCopy(proposal.value);
   }
   if (proposal.field === PROPERTY_ADDRESS_FACT || proposal.field === "subjectAddress") {
     return proposal.note === SUGGESTED_PROPERTY_NOTE && !proposal.extras?.length
@@ -834,6 +850,9 @@ function writeConfirmedFact(
   if (field === STATED_HOUSEHOLD_FIELD && isStatedHousehold(value)) {
     next = writeStatedHousehold(next, value);
   }
+  if (isBorrowerNameField(field) && value.trim()) {
+    next = writeBorrowerName(next, value);
+  }
   if (field === PROPERTY_ADDRESS_FACT || field === "subjectAddress") {
     facts[PROPERTY_ADDRESS_FACT] = {
       field: PROPERTY_ADDRESS_FACT,
@@ -953,6 +972,9 @@ export function resolveProposal(
     if (proposal.field === STATED_HOUSEHOLD_FIELD) {
       return skipHousehold({ ...draft, pendingProposal: null });
     }
+    if (isBorrowerNameField(proposal.field)) {
+      return skipBorrowerName({ ...draft, pendingProposal: null });
+    }
     const declined = { ...draft, pendingProposal: null };
     return flushPendingCurrentHousing(flushPendingHireDate(declined));
   }
@@ -964,6 +986,7 @@ export function resolveProposal(
       proposal.field === STATED_CURRENT_HOUSING_FIELD ||
       proposal.field === STATED_DECLARATION_FIELD ||
       proposal.field === STATED_HOUSEHOLD_FIELD ||
+      isBorrowerNameField(proposal.field) ||
       proposal.kind === "public"
       ? "suggested"
       : isRemainderConfirmField(proposal.field)

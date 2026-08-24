@@ -483,6 +483,30 @@ Skip / Not yet leaves the field empty. Proceed still works. Still useful may lis
 
 Readiness is notepad only. Empty / alone / with someone keep existing thin / not-ready / strong / UW-review / funds-short / condo / time-on-job / declarations lines — no household problem invented. With someone does not fire UW-review by itself. A normal co-borrower is not an exception. Household alone never creates a strong line and never creates a not-ready line. Never: you don’t qualify; your spouse must be on the loan; invented CA community-property outcome; invented second income; you are approved; DTI percents.
 
+### Borrower identity / name v1 — one optional name
+
+After the household ask (or that Skip), before the docs maze, Fox may ask once:
+
+`What name should I put on this file? Skip is fine if you’ll upload an ID.`
+
+Chips: Skip / Not yet. A typed name (Jordan Hale, it’s Jordan) confirm-before-write. If an ID is already extracted and a name is on the page, do not re-ask — offer the extract instead.
+
+Typed confirm:
+
+`I’ll use Jordan Hale on this file. Suggested · not underwritten. Use this?`
+
+Use this writes `borrowerName`. Leave blank writes nothing and restores the next action. Structure shows `Borrower` with `Suggested · not underwritten`. Editable mid-file. Start over is a full reset only.
+
+Government ID extract — extract → suggest → confirm → write. Never silent-write. Never invent a name:
+
+`The ID shows Jordan Hale. Suggested · not underwritten. Use this?`
+
+If typed name and extract differ, ask once (Use document / Keep the typed name). If the page has no readable name, do not invent one. Never write a full SSN even if it is on the page. Never invent a DOB. A DOB may ride the same confirm card only if it is actually on the page. After a confirmed name, Fox may greet by that name when useful. Do not re-ask the typed question.
+
+Skip / Not yet leaves the field empty. Proceed still works. Government ID stays on still useful. Borrower may appear as optional, never required.
+
+Readiness is notepad only. Empty name does not invent a not-ready line; existing docs readiness stays. Name confirmed does not claim identity is verified and does not invent a credit pull. Name alone never creates a strong line and never creates a not-ready line. Never: you don’t qualify; SSN ask to continue; name as verified KYC; you are approved.
+
 ### Quiet flags + more-complete asks
 
 After Looks right / agency-shaped minimums, conventional files can deepen still-useful past the minimum three. HELOC and Jumbo stay thin. Never `agency_ready`.
