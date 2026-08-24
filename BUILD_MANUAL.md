@@ -417,6 +417,28 @@ Still useful may list time on job as optional, never required. Proceed still wor
 
 Readiness: empty keeps existing thin / not-ready / strong / UW-review / funds-short / condo lines — no continuity problem invented. Confirmed ≥ 24 months does not claim seasoned; existing readiness stays. Confirmed < 24 months uses the UW-review line and never a strong line this gate. Condo already on UW-review stays one line. Two years is 24 months from the confirmed number, not an invented start date. Never: you don’t qualify; you need two years; invented VOE / start date / prior employer / gap.
 
+### Current housing / present payment v1 — one optional housing number
+
+After the time-on-job ask (or that Skip), before the docs maze, on a purchase file Fox may ask once:
+
+`About how much do you pay now for housing? Rent or the current mortgage is enough. Skip is fine.`
+
+Skip / Not yet writes nothing. Refinance / LCOR of the subject does not get this ask. Messy numbers (2200, $2,200, about 2200) confirm-before-write:
+
+`That’s $2,200 a month for housing now. Suggested · not underwritten. Use this?`
+
+Use this writes `statedCurrentHousing`. Leave blank writes nothing and restores the next action. Structure shows `Current housing` with `Suggested · not underwritten`. Editable mid-file. Start over is a full reset only.
+
+Mortgage-statement extract — only if a current payment is printed — extract → suggest → confirm → write. Never silent-write. Never invent a payment:
+
+`The statement shows a current payment of about $3,400. Suggested · not underwritten. Use this?`
+
+Unpaid principal / servicer stay the existing mortgage map. Do not double-count the subject payment into stated monthly debts. If the page has no payment, income / remainder confirm stays as today.
+
+Still useful may list current housing as optional, never required. Proceed still works with the field empty.
+
+Readiness is notepad only. Empty keeps existing thin / not-ready / strong / UW-review / funds-short / condo / time-on-job lines — no housing problem invented. A present number does not claim the new payment is affordable and does not invent a shock percent. Current housing alone never creates a strong line and never creates a not-ready line. Never: you don’t qualify; payment shock is X%; current housing as underwritten PITI.
+
 ### Quiet flags + more-complete asks
 
 After Looks right / agency-shaped minimums, conventional files can deepen still-useful past the minimum three. HELOC and Jumbo stay thin. Never `agency_ready`.

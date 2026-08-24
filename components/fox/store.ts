@@ -124,6 +124,11 @@ import {
   skipTimeOnJob,
   writeStatedTimeOnJob,
 } from "./timeOnJob";
+import {
+  proposeStatedCurrentHousing,
+  skipCurrentHousing,
+  writeStatedCurrentHousing,
+} from "./currentHousing";
 
 function numberOrUndefined(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : undefined;
@@ -254,6 +259,9 @@ function normalize(value: unknown): FoxIntakeDraft {
     statedTimeOnJob: numberOrUndefined(raw.statedTimeOnJob),
     timeOnJobAsked: Boolean(raw.timeOnJobAsked || raw.statedTimeOnJob != null),
     pendingHireDate: normalizePendingHireDate(raw.pendingHireDate),
+    statedCurrentHousing: numberOrUndefined(raw.statedCurrentHousing),
+    currentHousingAsked: Boolean(raw.currentHousingAsked || raw.statedCurrentHousing != null),
+    pendingCurrentHousing: normalizePendingCurrentHousing(raw.pendingCurrentHousing),
     docsOpen: Boolean(raw.docsOpen),
     docsStarted: Boolean(raw.docsStarted),
     docsHeld: Boolean(raw.docsHeld),
@@ -407,6 +415,24 @@ function normalizePendingHireDate(
   const months = Number(value.months);
   if (!date || !label || !Number.isFinite(months) || months <= 0) return null;
   return { date, months: Math.round(months), label };
+}
+
+function normalizePendingCurrentHousing(
+  value: FoxIntakeDraft["pendingCurrentHousing"],
+): FoxIntakeDraft["pendingCurrentHousing"] {
+  if (!value || typeof value !== "object") return null;
+  const amount = Number(value.amount);
+  if (!Number.isFinite(amount) || amount <= 0) return null;
+  const extras = Array.isArray(value.extras)
+    ? value.extras
+        .filter((item) => item && item.field && item.value)
+        .map((item) => ({
+          field: item.field,
+          value: item.value,
+          label: item.label || item.field,
+        }))
+    : undefined;
+  return { amount: Math.round(amount), ...(extras?.length ? { extras } : {}) };
 }
 
 function normalizeProposal(value: FoxIntakeDraft["pendingProposal"]): FactProposal | null {
@@ -1248,6 +1274,19 @@ export function applyCapture(capture: Capture) {
     const months = Number(capture.value);
     if (!Number.isFinite(months) || months <= 0) return current;
     return commit(writeStatedTimeOnJob(current, months));
+  }
+  if (capture.field === "skip-current-housing") {
+    return commit(skipCurrentHousing(current));
+  }
+  if (capture.field === "propose-current-housing") {
+    const amount = Number(capture.value);
+    if (!Number.isFinite(amount) || amount <= 0) return current;
+    return commit(proposeStatedCurrentHousing(current, amount));
+  }
+  if (capture.field === "statedCurrentHousing") {
+    const amount = Number(capture.value);
+    if (!Number.isFinite(amount) || amount <= 0) return current;
+    return commit(writeStatedCurrentHousing(current, amount));
   }
   if (capture.field === "incomeType") {
     const midFile = Boolean(current.correcting);

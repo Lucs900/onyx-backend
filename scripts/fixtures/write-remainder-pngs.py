@@ -83,6 +83,13 @@ MORTGAGE_PAGE = [
     "PROPERTY ADDRESS: 14 OAK STREET",
 ]
 
+MORTGAGE_PAGE_NO_PI = [
+    "MORTGAGE STATEMENT",
+    "SERVICER: OAK SERVICING",
+    "UNPAID PRINCIPAL: $960,000",
+    "PROPERTY ADDRESS: 14 OAK STREET",
+]
+
 # Wrong hidden comment — extract must ignore this.
 SABOTAGE_COMMENT = [
     "FORM W-2 WAGE AND TAX STATEMENT",
@@ -160,6 +167,7 @@ def main() -> None:
     write_sample("bank-statement-first-national.png", BANK_PAGE)
     write_sample("purchase-contract-oak.png", CONTRACT_PAGE)
     write_sample("mortgage-statement-oak.png", MORTGAGE_PAGE)
+    write_sample("mortgage-statement-oak-no-pi.png", MORTGAGE_PAGE_NO_PI)
     write_sample("bank-statement-sabotage.png", BANK_PAGE, SABOTAGE_COMMENT)
 
 

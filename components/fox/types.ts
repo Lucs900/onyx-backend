@@ -266,6 +266,12 @@ export type FoxIntakeDraft = {
   statedTimeOnJob?: number;
   timeOnJobAsked?: boolean;
   pendingHireDate?: { date: string; months: number; label: string } | null;
+  statedCurrentHousing?: number;
+  currentHousingAsked?: boolean;
+  pendingCurrentHousing?: {
+    amount: number;
+    extras?: { field: string; value: string; label: string }[];
+  } | null;
   docsOpen?: boolean;
   originatorRequested?: boolean;
   motion?: FileMotion;
@@ -334,6 +340,7 @@ export type FoxPrompt =
   | "assets"
   | "property-type"
   | "time-on-job"
+  | "current-housing"
   | "occupancy"
   | "timeline"
   | "documents"
@@ -371,6 +378,9 @@ export type Capture =
   | { field: "skip-time-on-job" }
   | { field: "propose-time-on-job"; value: string }
   | { field: "statedTimeOnJob"; value: string }
+  | { field: "skip-current-housing" }
+  | { field: "propose-current-housing"; value: string }
+  | { field: "statedCurrentHousing"; value: string }
   | { field: "occupancy"; value: string }
   | { field: "timeline"; value: string }
   | { field: "path"; value: IntakePath }

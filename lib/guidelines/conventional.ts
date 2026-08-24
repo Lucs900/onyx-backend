@@ -194,6 +194,7 @@ export type FileFacts = {
   propertyType?: "sfr" | "condo" | "two_to_four";
   subjectAddress?: string;
   statedTimeOnJob?: number;
+  statedCurrentHousing?: number;
   suggestedMonthlyIncome?: number;
   docsSkipped?: boolean;
   obviousHighDti?: boolean;
@@ -870,6 +871,7 @@ export function completeness(
   ) {
     stillUseful.push("time on job");
   }
+  if (file.incomeType && file.statedCurrentHousing == null) stillUseful.push("current housing");
 
   const hasSketch = Boolean(file.purchasePrice || file.loanAmount || file.propertyValue);
   const incomeReady = incomeDocsReceived(file.incomeType, received);

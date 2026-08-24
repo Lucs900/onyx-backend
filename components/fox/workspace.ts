@@ -186,6 +186,20 @@ import {
   timeOnJobSettled,
 } from "./timeOnJob";
 import {
+  CURRENT_HOUSING_ASK,
+  STATED_CURRENT_HOUSING_FIELD,
+  SUGGESTED_HOUSING_NOTE,
+  currentHousingAskCopy,
+  currentHousingConfirmActions,
+  currentHousingConfirmCopy,
+  currentHousingSettled,
+  isCurrentHousingConfirmPending,
+  isSkipCurrentHousingText,
+  parseCurrentHousingAmount,
+  proposeStatedCurrentHousing,
+  skipCurrentHousing,
+} from "./currentHousing";
+import {
   ACR_BENEFITS_LINE,
   COST_LINE,
   FHFA_HIGH_COST_CEILING_2026 as STORE_HIGH_COST_CEILING,
@@ -1202,6 +1216,12 @@ function liveProposalAsk(
       actions: timeOnJobConfirmActions(),
     };
   }
+  if (proposal.field === STATED_CURRENT_HOUSING_FIELD) {
+    return {
+      text: proposalAskCopy(proposal),
+      actions: currentHousingConfirmActions(),
+    };
+  }
   if (proposal.field === QUALIFYING_INCOME_FIELD) {
     if (combinedParts(proposal) || proposal.methodNote?.startsWith("combined ")) {
       return combinedReactionAsk(draft, proposal);
@@ -1332,6 +1352,7 @@ const CORRECTION_CHIP_IDS = new Set([
   "assets",
   "property-type",
   "time-on-job",
+  "current-housing",
 ]);
 
 function yearsOnFile(draft: FoxIntakeDraft) {
@@ -1370,6 +1391,9 @@ function extraCorrectionLines(draft: FoxIntakeDraft): { id: string; label: strin
   }
   if (draft.timeOnJobAsked || draft.statedTimeOnJob != null) {
     extra.push({ id: "time-on-job", label: "Time on job", prompt: "time-on-job" });
+  }
+  if (draft.currentHousingAsked || draft.statedCurrentHousing != null) {
+    extra.push({ id: "current-housing", label: "Current housing", prompt: "current-housing" });
   }
   return extra;
 }
@@ -1680,7 +1704,8 @@ export function shouldDeferStillUsefulAsk(draft: FoxIntakeDraft): boolean {
     isStatedAssetsConfirmPending(draft) ||
     isPropertyTypeConfirmPending(draft) ||
     isSubjectAddressConfirmPending(draft) ||
-    isTimeOnJobConfirmPending(draft)
+    isTimeOnJobConfirmPending(draft) ||
+    isCurrentHousingConfirmPending(draft)
   );
 }
 
@@ -1739,6 +1764,7 @@ export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
   if (!assetsSettled(draft)) return "assets";
   if (!propertyTypeSettled(draft)) return "property-type";
   if (!timeOnJobSettled(draft)) return "time-on-job";
+  if (!currentHousingSettled(draft)) return "current-housing";
   if (!draft.sampleAccepted && draft.awaitingYearsInBusiness) return "documents";
   if (nextDocInvite(draft)) return "documents";
   if (!draft.sampleAccepted) return canLooksRight(draft) ? "review" : "amount";
@@ -1934,6 +1960,9 @@ function workspaceAskCopy(
   }
   if (prompt === "time-on-job") {
     return timeOnJobAskCopy(draft);
+  }
+  if (prompt === "current-housing") {
+    return currentHousingAskCopy(draft);
   }
   if (prompt === "qualifying") {
     const shown =
@@ -2557,6 +2586,13 @@ export function editPromptFromCapture(capture?: Capture): FoxPrompt | undefined 
   ) {
     return "time-on-job";
   }
+  if (
+    capture.field === "skip-current-housing" ||
+    capture.field === "propose-current-housing" ||
+    capture.field === "statedCurrentHousing"
+  ) {
+    return "current-housing";
+  }
   if (capture.field === "propose-subject-address" || capture.field === "subjectAddress") {
     return "confirm-proposal";
   }
@@ -2736,6 +2772,14 @@ export function workspaceUpdateCopy(capture: Capture, draft: FoxIntakeDraft) {
       ? `Updated time on job to ${displayTimeOnJob(months)}.`
       : "Updated time on job.";
   }
+  if (capture.field === "skip-current-housing") return "Updated. Current housing left blank.";
+  if (capture.field === "propose-current-housing") return "Updated.";
+  if (capture.field === "statedCurrentHousing") {
+    const n = Number(capture.value.replace(/,/g, ""));
+    return Number.isFinite(n) && n > 0
+      ? `Updated current housing to ${formatMoney(n)}.`
+      : "Updated current housing.";
+  }
   if (capture.field === "statedAvailableAssets") {
     const n = Number(capture.value.replace(/,/g, ""));
     return Number.isFinite(n) && n > 0
@@ -2765,7 +2809,7 @@ export function parseWorkspaceEdit(
   const q = text.trim();
   const lower = q.toLowerCase();
   const namedField =
-    /\boccupan|\b(credit|fico|income|timeline|product|purchase price|\bprice\b|down(\s+payment)?|loan amount|years? in business|path|property type|condo|house|sfr|time on job)\b/.test(
+    /\boccupan|\b(credit|fico|income|timeline|product|purchase price|\bprice\b|down(\s+payment)?|loan amount|years? in business|path|property type|condo|house|sfr|time on job|current housing)\b/.test(
       lower,
     );
   const spokenFix =
@@ -2817,6 +2861,17 @@ export function parseWorkspaceEdit(
       };
     }
     return { correct: "time-on-job", confirm: TIME_ON_JOB_ASK };
+  }
+
+  if (/\bcurrent housing\b/.test(lower)) {
+    const amount = parseCurrentHousingAmount(q);
+    if (amount != null) {
+      return {
+        capture: { field: "propose-current-housing", value: String(amount) },
+        confirm: currentHousingConfirmCopy(amount),
+      };
+    }
+    return { correct: "current-housing", confirm: CURRENT_HOUSING_ASK };
   }
 
   if (/\boccupan/.test(lower)) {
@@ -3379,7 +3434,8 @@ export function workspaceReply(
         isStatedAssetsConfirmPending(draft) ||
         isPropertyTypeConfirmPending(draft) ||
         isSubjectAddressConfirmPending(draft) ||
-        isTimeOnJobConfirmPending(draft)) &&
+        isTimeOnJobConfirmPending(draft) ||
+        isCurrentHousingConfirmPending(draft)) &&
       asksWillIQualify(q)
     ) {
       return answerThenRestore(q, draft);
@@ -4049,6 +4105,24 @@ export function workspaceReply(
     };
   }
 
+  if (prompt === "current-housing") {
+    if (draft.statedCurrentHousing != null && isKeepThisText(q)) return keepThisReply(draft);
+    if (isSkipCurrentHousingText(q)) {
+      const nextDraft = skipCurrentHousing(draft);
+      return {
+        ...workspacePromptCopy(workspacePrompt(nextDraft), nextDraft),
+        capture: { field: "skip-current-housing" },
+      };
+    }
+    const amount = parseCurrentHousingAmount(q);
+    if (amount == null) return answerThenRestore(q, draft);
+    const nextDraft = proposeStatedCurrentHousing(draft, amount);
+    return {
+      ...workspacePromptCopy("confirm-proposal", nextDraft),
+      capture: { field: "propose-current-housing", value: String(amount) },
+    };
+  }
+
   if (prompt === "income") {
     if (draft.incomeType.value && isKeepThisText(q)) return keepThisReply(draft);
     const match = incomeFromText(q);
@@ -4589,6 +4663,28 @@ export function previewFacts(draft: FoxIntakeDraft): PreviewFact[] {
     });
   }
 
+  if (
+    draft.currentHousingAsked ||
+    draft.statedCurrentHousing != null ||
+    isCurrentHousingConfirmPending(draft)
+  ) {
+    const pendingAmount = isCurrentHousingConfirmPending(draft)
+      ? Number(draft.pendingProposal?.value)
+      : NaN;
+    const shown =
+      draft.statedCurrentHousing != null && draft.statedCurrentHousing > 0
+        ? formatMoney(draft.statedCurrentHousing)
+        : Number.isFinite(pendingAmount) && pendingAmount > 0
+          ? formatMoney(pendingAmount)
+          : "—";
+    facts.push({
+      id: "current-housing",
+      label: "Current housing",
+      value: shown,
+      note: SUGGESTED_HOUSING_NOTE,
+    });
+  }
+
   const address = draft.subjectAddress || factValue(draft, "property_address");
   if (address) {
     facts.push({
@@ -4794,6 +4890,7 @@ export function structureFixPrompt(
   if (id === "assets") return "assets";
   if (id === "property-type") return "property-type";
   if (id === "time-on-job") return "time-on-job";
+  if (id === "current-housing") return "current-housing";
   if (id === "qualifying") return "qualifying";
   if (id === "years-in-business") return "years-in-business";
   if (id === "docs") return "documents";
@@ -4828,6 +4925,11 @@ export function structureExplainCopy(
   if (id === "time-on-job") {
     return {
       text: "Time on job. Suggested · not underwritten.",
+    };
+  }
+  if (id === "current-housing") {
+    return {
+      text: "Current housing. Suggested · not underwritten.",
     };
   }
   if (id === "rate") {

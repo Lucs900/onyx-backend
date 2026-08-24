@@ -60,6 +60,13 @@ import {
   timeOnJobConflictActions,
   timeOnJobSettled,
 } from "./timeOnJob";
+import {
+  STATED_CURRENT_HOUSING_FIELD,
+  SUGGESTED_HOUSING_NOTE,
+  currentHousingConflictActions,
+  currentHousingSettled,
+  proposeExtractedCurrentHousing,
+} from "./currentHousing";
 
 export { REJECT_LINE, LIMIT_LINE };
 
@@ -143,6 +150,7 @@ const MONEY_KEYS = new Set([
   "loan_amount",
   "statedMonthlyDebts",
   "statedAvailableAssets",
+  "statedCurrentHousing",
 ]);
 
 const INCOME_MONEY_KEYS = new Set([
@@ -435,6 +443,7 @@ export function factLabel(field: string) {
   if (field === "income") return "income";
   if (field === STATED_AVAILABLE_ASSETS_FIELD) return "Stated available assets";
   if (field === STATED_TIME_ON_JOB_FIELD) return "Time on job";
+  if (field === STATED_CURRENT_HOUSING_FIELD) return "Current housing";
   if (field === HIRE_DATE_FIELD) return "hire date";
   return field.replace(/_/g, " ");
 }
@@ -525,6 +534,9 @@ function existingFact(draft: FoxIntakeDraft, field: string): { value: string; vi
   if (field === STATED_TIME_ON_JOB_FIELD && draft.statedTimeOnJob != null) {
     return { value: String(draft.statedTimeOnJob), via: "structure" };
   }
+  if (field === STATED_CURRENT_HOUSING_FIELD && draft.statedCurrentHousing != null) {
+    return { value: String(draft.statedCurrentHousing), via: "structure" };
+  }
   if (isPropertyAddressField(field) && (draft.subjectAddress || draft.facts?.property_address?.value)) {
     return {
       value: draft.subjectAddress || draft.facts?.property_address?.value || "",
@@ -603,6 +615,9 @@ function writeField(
     ...(isPropertyAddressField(field) ? { subjectAddress: value } : {}),
     ...(field === STATED_TIME_ON_JOB_FIELD && Number.isFinite(Number(value)) && Number(value) > 0
       ? { statedTimeOnJob: Math.round(Number(value)), timeOnJobAsked: true }
+      : {}),
+    ...(field === STATED_CURRENT_HOUSING_FIELD && Number.isFinite(Number(value)) && Number(value) > 0
+      ? { statedCurrentHousing: Math.round(Number(value)), currentHousingAsked: true }
       : {}),
   };
 }
@@ -835,6 +850,36 @@ export function applyExtractedFields(
       };
     } else if (!next.pendingConflict) {
       next = proposeExtractedTimeOnJob(next, hireMonths, hire.label);
+    }
+  }
+  const extractedHousing =
+    extractClass === "mortgage_statement" ? moneyNumber(fields.current_pi ?? "") : null;
+  if (extractedHousing != null) {
+    const housingExtras = remainderWrites.map((item) => ({
+      field: item.field,
+      value: item.value,
+      label: factLabel(item.field),
+    }));
+    if (next.statedCurrentHousing != null) {
+      if (!valuesMatch(String(next.statedCurrentHousing), String(extractedHousing)) && !conflict) {
+        conflict = {
+          field: STATED_CURRENT_HOUSING_FIELD,
+          fileValue: String(next.statedCurrentHousing),
+          documentValue: String(extractedHousing),
+          label: "Current housing",
+          kind: "document",
+        };
+        next = { ...next, pendingConflict: conflict };
+      }
+    } else if (next.pendingProposal && next.pendingProposal.field !== STATED_CURRENT_HOUSING_FIELD) {
+      next = {
+        ...next,
+        pendingCurrentHousing: { amount: extractedHousing, extras: housingExtras },
+      };
+      remainderWrites.length = 0;
+    } else if (!next.pendingConflict) {
+      next = proposeExtractedCurrentHousing(next, extractedHousing, housingExtras);
+      remainderWrites.length = 0;
     }
   }
   if (
@@ -1187,6 +1232,7 @@ export function completenessFileFromDraft(draft: FoxIntakeDraft): CompletenessFi
     ...(draft.propertyType ? { propertyType: draft.propertyType } : {}),
     ...(draft.subjectAddress ? { subjectAddress: draft.subjectAddress } : {}),
     ...(draft.statedTimeOnJob != null ? { statedTimeOnJob: draft.statedTimeOnJob } : {}),
+    ...(draft.statedCurrentHousing != null ? { statedCurrentHousing: draft.statedCurrentHousing } : {}),
   };
 }
 
@@ -1330,6 +1376,9 @@ export function conflictAskCopy(conflict: FactConflict) {
   if (conflict.field === STATED_TIME_ON_JOB_FIELD) {
     return `The paystub hire date is about ${displayFactValue(conflict.field, conflict.documentValue)}. The file has ${displayFactValue(conflict.field, conflict.fileValue)} typed. ${SUGGESTED_TIME_ON_JOB_NOTE}.`;
   }
+  if (conflict.field === STATED_CURRENT_HOUSING_FIELD) {
+    return `The statement shows a current payment of about ${displayFactValue(conflict.field, conflict.documentValue)}. The file has ${displayFactValue(conflict.field, conflict.fileValue)} typed. ${SUGGESTED_HOUSING_NOTE}.`;
+  }
   return `The file has ${conflict.label} ${displayFactValue(conflict.field, conflict.fileValue)}. The document has ${displayFactValue(conflict.field, conflict.documentValue)}. Which should I keep?`;
 }
 
@@ -1400,6 +1449,7 @@ export function nextDocInvite(draft: FoxIntakeDraft): DocInviteKind | null {
   if (!assetsSettled(draft)) return null;
   if (!propertyTypeSettled(draft)) return null;
   if (!timeOnJobSettled(draft)) return null;
+  if (!currentHousingSettled(draft)) return null;
   if (draft.pendingProposal || draft.pendingConflict) return null;
   for (const kind of inviteSequence(draft)) {
     if (!inviteSatisfied(draft, kind)) return kind;
@@ -1475,6 +1525,9 @@ export function conflictActions(conflict?: FactConflict | null): FoxAction[] {
   }
   if (conflict?.field === STATED_TIME_ON_JOB_FIELD) {
     return timeOnJobConflictActions();
+  }
+  if (conflict?.field === STATED_CURRENT_HOUSING_FIELD) {
+    return currentHousingConflictActions();
   }
   return [
     { id: "keep-file-fact", label: "Keep file", event: "bubble", capture: { field: "keep-file-fact" } },
