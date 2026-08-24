@@ -520,9 +520,14 @@
     display: none;
   }
 
+  .fox-workspace-dock {
+    position: static;
+    z-index: 1;
+  }
+
   .fox-structure-notepad {
     display: block;
-    max-height: min(36dvh, 280px);
+    max-height: min(18dvh, 88px);
     overflow: auto;
     padding: 8px 4px 0;
   }

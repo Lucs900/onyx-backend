@@ -197,6 +197,7 @@ import {
   mappedJsonText,
   markExported,
 } from "../components/fox/staffExport";
+import { scrollDeltaToClearAsk } from "../components/fox/askReveal";
 import { subjectMortgagePayment } from "../components/fox/monthlyDebts";
 import { FAILED_READ_NOTE } from "../lib/docs/accept";
 import { classifyAndExtract, imageDataUrl, visionChatBody } from "../lib/docs/extract";
@@ -8583,9 +8584,13 @@ assert.ok(foxSource.includes("editLine"));
 assert.ok(foxSource.includes("keep-line") || workspaceSrc.includes("keep-line"));
 assert.ok(foxSource.includes("scrollIntoView"));
 assert.ok(foxSource.includes('block: "nearest"'));
-assert.ok(!foxSource.includes("window.scrollBy"));
+assert.ok(foxSource.includes("scrollDeltaToClearAsk"));
 assert.ok(foxSource.includes("WorkspaceFileDock"));
 assert.ok(foxSource.includes("scrollMarginTop") || foxSource.includes("scrollMarginBottom"));
+assert.match(startCss, /max-height: min\(18dvh, 88px\)/);
+assert.equal(scrollDeltaToClearAsk({ top: 514, bottom: 580 }, 514), 74);
+assert.equal(scrollDeltaToClearAsk({ top: 100, bottom: 160 }, 700), 0);
+assert.equal(scrollDeltaToClearAsk({ top: 4, bottom: 70 }, 700), -8);
 assert.ok(foxSource.includes('line: field'));
 
 const filePreview = readFileSync(join(root, "components/fox/FilePreview.tsx"), "utf8");

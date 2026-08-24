@@ -16,6 +16,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { AdvisorMark } from "@/components/AdvisorMark";
+import { scrollDeltaToClearAsk } from "./askReveal";
 import { readScenario } from "@/components/products/scenario";
 import {
   ACR_START_HREF,
@@ -906,9 +907,17 @@ export function AlwaysOnFox({
     const reveal = () => {
       const current = thread.querySelector("[aria-current='step']");
       if (!(current instanceof HTMLElement)) return;
+      const dock = document.querySelector(".fox-workspace-dock");
+      const dockTop =
+        dock instanceof HTMLElement ? dock.getBoundingClientRect().top : window.innerHeight;
       current.style.scrollMarginTop = "12px";
-      current.style.scrollMarginBottom = "16px";
+      current.style.scrollMarginBottom = `${Math.max(16, window.innerHeight - dockTop + 12)}px`;
       current.scrollIntoView({ block: "nearest", inline: "nearest" });
+      const box = current.getBoundingClientRect();
+      const nextDockTop =
+        dock instanceof HTMLElement ? dock.getBoundingClientRect().top : window.innerHeight;
+      const delta = scrollDeltaToClearAsk(box, nextDockTop);
+      if (delta !== 0) window.scrollBy({ top: delta, left: 0 });
     };
     reveal();
     const frame = window.requestAnimationFrame(() => {
