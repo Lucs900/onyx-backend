@@ -79,6 +79,13 @@ import {
   writeStatedDeclaration,
 } from "./declarations";
 import {
+  STATED_HOUSEHOLD_FIELD,
+  householdConfirmCopy,
+  isStatedHousehold,
+  skipHousehold,
+  writeStatedHousehold,
+} from "./household";
+import {
   HIGH_LTV_CAUTION as STORE_HIGH_LTV_CAUTION,
   HIGH_PURCHASE_LTV as STORE_HIGH_PURCHASE_LTV,
   JUMBO_CEILING_LINE,
@@ -545,6 +552,7 @@ export function factsFromDraft(draft: FoxIntakeDraft): CompletenessFile {
     ...(draft.statedTimeOnJob != null ? { statedTimeOnJob: draft.statedTimeOnJob } : {}),
     ...(draft.statedCurrentHousing != null ? { statedCurrentHousing: draft.statedCurrentHousing } : {}),
     ...(draft.statedDeclaration ? { statedDeclaration: draft.statedDeclaration } : {}),
+    ...(draft.statedHousehold ? { statedHousehold: draft.statedHousehold } : {}),
     ...(suggestedMonthlyIncome != null ? { suggestedMonthlyIncome } : {}),
     docsSkipped: Boolean(
       draft.documentsSkipped || draft.docsHeld || (draft.skippedClasses?.length ?? 0) > 0,
@@ -598,6 +606,7 @@ export function structureFieldForProposal(field: string) {
   if (field === STATED_TIME_ON_JOB_FIELD) return "time-on-job";
   if (field === STATED_CURRENT_HOUSING_FIELD) return "current-housing";
   if (field === STATED_DECLARATION_FIELD) return "declarations";
+  if (field === STATED_HOUSEHOLD_FIELD) return "household";
   return field;
 }
 
@@ -646,6 +655,9 @@ export function proposalAskCopy(proposal: FactProposal) {
   }
   if (proposal.field === STATED_DECLARATION_FIELD && isStatedDeclaration(proposal.value)) {
     return declarationsConfirmCopy(proposal.value);
+  }
+  if (proposal.field === STATED_HOUSEHOLD_FIELD && isStatedHousehold(proposal.value)) {
+    return householdConfirmCopy(proposal.value);
   }
   if (proposal.field === PROPERTY_ADDRESS_FACT || proposal.field === "subjectAddress") {
     return proposal.note === SUGGESTED_PROPERTY_NOTE && !proposal.extras?.length
@@ -819,6 +831,9 @@ function writeConfirmedFact(
   if (field === STATED_DECLARATION_FIELD && isStatedDeclaration(value)) {
     next = writeStatedDeclaration(next, value, draft.pendingProposal?.methodNote);
   }
+  if (field === STATED_HOUSEHOLD_FIELD && isStatedHousehold(value)) {
+    next = writeStatedHousehold(next, value);
+  }
   if (field === PROPERTY_ADDRESS_FACT || field === "subjectAddress") {
     facts[PROPERTY_ADDRESS_FACT] = {
       field: PROPERTY_ADDRESS_FACT,
@@ -935,6 +950,9 @@ export function resolveProposal(
     if (proposal.field === STATED_DECLARATION_FIELD) {
       return skipDeclarations({ ...draft, pendingProposal: null });
     }
+    if (proposal.field === STATED_HOUSEHOLD_FIELD) {
+      return skipHousehold({ ...draft, pendingProposal: null });
+    }
     const declined = { ...draft, pendingProposal: null };
     return flushPendingCurrentHousing(flushPendingHireDate(declined));
   }
@@ -945,6 +963,7 @@ export function resolveProposal(
       proposal.field === STATED_TIME_ON_JOB_FIELD ||
       proposal.field === STATED_CURRENT_HOUSING_FIELD ||
       proposal.field === STATED_DECLARATION_FIELD ||
+      proposal.field === STATED_HOUSEHOLD_FIELD ||
       proposal.kind === "public"
       ? "suggested"
       : isRemainderConfirmField(proposal.field)

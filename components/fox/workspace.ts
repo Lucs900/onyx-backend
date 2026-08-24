@@ -218,6 +218,23 @@ import {
   writeStatedDeclaration,
 } from "./declarations";
 import {
+  HOUSEHOLD_ASK,
+  STATED_HOUSEHOLD_FIELD,
+  SUGGESTED_HOUSEHOLD_NOTE,
+  householdAskCopy,
+  householdConfirmActions,
+  householdConfirmCopy,
+  householdLabel,
+  householdSettled,
+  isHouseholdConfirmPending,
+  isSkipHouseholdText,
+  isStatedHousehold,
+  parseHousehold,
+  proposeStatedHousehold,
+  skipHousehold,
+  writeStatedHousehold,
+} from "./household";
+import {
   ACR_BENEFITS_LINE,
   COST_LINE,
   FHFA_HIGH_COST_CEILING_2026 as STORE_HIGH_COST_CEILING,
@@ -1246,6 +1263,12 @@ function liveProposalAsk(
       actions: declarationsConfirmActions(),
     };
   }
+  if (proposal.field === STATED_HOUSEHOLD_FIELD) {
+    return {
+      text: proposalAskCopy(proposal),
+      actions: householdConfirmActions(),
+    };
+  }
   if (proposal.field === QUALIFYING_INCOME_FIELD) {
     if (combinedParts(proposal) || proposal.methodNote?.startsWith("combined ")) {
       return combinedReactionAsk(draft, proposal);
@@ -1378,6 +1401,7 @@ const CORRECTION_CHIP_IDS = new Set([
   "time-on-job",
   "current-housing",
   "declarations",
+  "household",
 ]);
 
 function yearsOnFile(draft: FoxIntakeDraft) {
@@ -1422,6 +1446,9 @@ function extraCorrectionLines(draft: FoxIntakeDraft): { id: string; label: strin
   }
   if (draft.declarationAsked || draft.statedDeclaration) {
     extra.push({ id: "declarations", label: "Declarations", prompt: "declarations" });
+  }
+  if (draft.householdAsked || draft.statedHousehold) {
+    extra.push({ id: "household", label: "Household", prompt: "household" });
   }
   return extra;
 }
@@ -1734,7 +1761,8 @@ export function shouldDeferStillUsefulAsk(draft: FoxIntakeDraft): boolean {
     isSubjectAddressConfirmPending(draft) ||
     isTimeOnJobConfirmPending(draft) ||
     isCurrentHousingConfirmPending(draft) ||
-    isDeclarationsConfirmPending(draft)
+    isDeclarationsConfirmPending(draft) ||
+    isHouseholdConfirmPending(draft)
   );
 }
 
@@ -1795,6 +1823,7 @@ export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
   if (!timeOnJobSettled(draft)) return "time-on-job";
   if (!currentHousingSettled(draft)) return "current-housing";
   if (!declarationsSettled(draft)) return "declarations";
+  if (!householdSettled(draft)) return "household";
   if (!draft.sampleAccepted && draft.awaitingYearsInBusiness) return "documents";
   if (nextDocInvite(draft)) return "documents";
   if (!draft.sampleAccepted) return canLooksRight(draft) ? "review" : "amount";
@@ -1996,6 +2025,9 @@ function workspaceAskCopy(
   }
   if (prompt === "declarations") {
     return declarationsAskCopy(draft);
+  }
+  if (prompt === "household") {
+    return householdAskCopy(draft);
   }
   if (prompt === "qualifying") {
     const shown =
@@ -2633,6 +2665,13 @@ export function editPromptFromCapture(capture?: Capture): FoxPrompt | undefined 
   ) {
     return "declarations";
   }
+  if (
+    capture.field === "skip-household" ||
+    capture.field === "propose-household" ||
+    capture.field === "statedHousehold"
+  ) {
+    return "household";
+  }
   if (capture.field === "propose-subject-address" || capture.field === "subjectAddress") {
     return "confirm-proposal";
   }
@@ -2827,6 +2866,13 @@ export function workspaceUpdateCopy(capture: Capture, draft: FoxIntakeDraft) {
       ? `Updated declarations to ${declarationsLabel(capture.value)}.`
       : "Updated declarations.";
   }
+  if (capture.field === "skip-household") return "Updated. Household left blank.";
+  if (capture.field === "propose-household") return "Updated.";
+  if (capture.field === "statedHousehold") {
+    return isStatedHousehold(capture.value)
+      ? `Updated household to ${householdLabel(capture.value)}.`
+      : "Updated household.";
+  }
   if (capture.field === "statedAvailableAssets") {
     const n = Number(capture.value.replace(/,/g, ""));
     return Number.isFinite(n) && n > 0
@@ -2856,7 +2902,7 @@ export function parseWorkspaceEdit(
   const q = text.trim();
   const lower = q.toLowerCase();
   const namedField =
-    /\boccupan|\b(credit|fico|income|timeline|product|purchase price|\bprice\b|down(\s+payment)?|loan amount|years? in business|path|property type|condo|house|sfr|time on job|current housing|declarations?)\b/.test(
+    /\boccupan|\b(credit|fico|income|timeline|product|purchase price|\bprice\b|down(\s+payment)?|loan amount|years? in business|path|property type|condo|house|sfr|time on job|current housing|declarations?|household)\b/.test(
       lower,
     );
   const spokenFix =
@@ -2930,6 +2976,17 @@ export function parseWorkspaceEdit(
       };
     }
     return { correct: "declarations", confirm: DECLARATIONS_ASK };
+  }
+
+  if (/\bhousehold\b/.test(lower)) {
+    const value = parseHousehold(q);
+    if (value) {
+      return {
+        capture: { field: "propose-household", value },
+        confirm: householdConfirmCopy(value),
+      };
+    }
+    return { correct: "household", confirm: HOUSEHOLD_ASK };
   }
 
   if (/\boccupan/.test(lower)) {
@@ -3161,6 +3218,13 @@ function draftAfterCapture(draft: FoxIntakeDraft, capture: Capture): FoxIntakeDr
   if (capture.field === "statedDeclaration" && isStatedDeclaration(capture.value)) {
     return writeStatedDeclaration(next, capture.value);
   }
+  if (capture.field === "skip-household") return skipHousehold(next);
+  if (capture.field === "propose-household" && isStatedHousehold(capture.value)) {
+    return proposeStatedHousehold(next, capture.value);
+  }
+  if (capture.field === "statedHousehold" && isStatedHousehold(capture.value)) {
+    return writeStatedHousehold(next, capture.value);
+  }
   if (capture.field === "cashOut") return { ...next, cashOut: true };
   if (capture.field === "over-price-confirm") {
     return applyEscalateMotion({ ...next, overPriceConfirmed: true });
@@ -3339,6 +3403,20 @@ function matrixReply(
     };
   }
 
+  const volunteeredHousehold = parseHousehold(text);
+  if (
+    volunteeredHousehold &&
+    !draft.pendingProposal &&
+    !draft.pendingConflict &&
+    draft.statedHousehold !== volunteeredHousehold
+  ) {
+    const nextDraft = proposeStatedHousehold(draft, volunteeredHousehold);
+    return {
+      ...workspacePromptCopy("confirm-proposal", nextDraft),
+      capture: { field: "propose-household", value: volunteeredHousehold },
+    };
+  }
+
   if (namedCashOut(text) && !draft.cashOut && isRefiLike(draft)) {
     const nextDraft = { ...draft, cashOut: true };
     return continueAfterFlag(cashOutCopy(nextDraft), nextDraft, { field: "cashOut" });
@@ -3507,7 +3585,8 @@ export function workspaceReply(
         isSubjectAddressConfirmPending(draft) ||
         isTimeOnJobConfirmPending(draft) ||
         isCurrentHousingConfirmPending(draft) ||
-        isDeclarationsConfirmPending(draft)) &&
+        isDeclarationsConfirmPending(draft) ||
+        isHouseholdConfirmPending(draft)) &&
       asksWillIQualify(q)
     ) {
       return answerThenRestore(q, draft);
@@ -4214,6 +4293,24 @@ export function workspaceReply(
     };
   }
 
+  if (prompt === "household") {
+    if (draft.statedHousehold && isKeepThisText(q)) return keepThisReply(draft);
+    if (isSkipHouseholdText(q)) {
+      const nextDraft = skipHousehold(draft);
+      return {
+        ...workspacePromptCopy(workspacePrompt(nextDraft), nextDraft),
+        capture: { field: "skip-household" },
+      };
+    }
+    const value = parseHousehold(q);
+    if (!value) return answerThenRestore(q, draft);
+    const nextDraft = proposeStatedHousehold(draft, value);
+    return {
+      ...workspacePromptCopy("confirm-proposal", nextDraft),
+      capture: { field: "propose-household", value },
+    };
+  }
+
   if (prompt === "income") {
     if (draft.incomeType.value && isKeepThisText(q)) return keepThisReply(draft);
     const match = incomeFromText(q);
@@ -4797,6 +4894,27 @@ export function previewFacts(draft: FoxIntakeDraft): PreviewFact[] {
     });
   }
 
+  if (
+    draft.householdAsked ||
+    draft.statedHousehold ||
+    isHouseholdConfirmPending(draft)
+  ) {
+    const pending = isHouseholdConfirmPending(draft)
+      ? draft.pendingProposal?.value
+      : undefined;
+    const shown = draft.statedHousehold
+      ? householdLabel(draft.statedHousehold)
+      : pending && isStatedHousehold(pending)
+        ? householdLabel(pending)
+        : "—";
+    facts.push({
+      id: "household",
+      label: "Household",
+      value: shown,
+      note: SUGGESTED_HOUSEHOLD_NOTE,
+    });
+  }
+
   const address = draft.subjectAddress || factValue(draft, "property_address");
   if (address) {
     facts.push({
@@ -5004,6 +5122,7 @@ export function structureFixPrompt(
   if (id === "time-on-job") return "time-on-job";
   if (id === "current-housing") return "current-housing";
   if (id === "declarations") return "declarations";
+  if (id === "household") return "household";
   if (id === "qualifying") return "qualifying";
   if (id === "years-in-business") return "years-in-business";
   if (id === "docs") return "documents";
@@ -5048,6 +5167,11 @@ export function structureExplainCopy(
   if (id === "declarations") {
     return {
       text: "Declarations. Suggested · not underwritten.",
+    };
+  }
+  if (id === "household") {
+    return {
+      text: "Household. Suggested · not underwritten.",
     };
   }
   if (id === "rate") {

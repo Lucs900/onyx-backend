@@ -275,6 +275,8 @@ export type FoxIntakeDraft = {
   statedDeclaration?: "none" | "event";
   declarationAsked?: boolean;
   declarationNote?: string;
+  statedHousehold?: "alone" | "with_someone";
+  householdAsked?: boolean;
   docsOpen?: boolean;
   originatorRequested?: boolean;
   motion?: FileMotion;
@@ -345,6 +347,7 @@ export type FoxPrompt =
   | "time-on-job"
   | "current-housing"
   | "declarations"
+  | "household"
   | "occupancy"
   | "timeline"
   | "documents"
@@ -388,6 +391,9 @@ export type Capture =
   | { field: "skip-declarations" }
   | { field: "propose-declarations"; value: string }
   | { field: "statedDeclaration"; value: string }
+  | { field: "skip-household" }
+  | { field: "propose-household"; value: string }
+  | { field: "statedHousehold"; value: string }
   | { field: "occupancy"; value: string }
   | { field: "timeline"; value: string }
   | { field: "path"; value: IntakePath }

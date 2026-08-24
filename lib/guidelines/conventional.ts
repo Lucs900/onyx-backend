@@ -196,6 +196,7 @@ export type FileFacts = {
   statedTimeOnJob?: number;
   statedCurrentHousing?: number;
   statedDeclaration?: "none" | "event";
+  statedHousehold?: "alone" | "with_someone";
   suggestedMonthlyIncome?: number;
   docsSkipped?: boolean;
   obviousHighDti?: boolean;
@@ -874,6 +875,8 @@ export function completeness(
   }
   if (file.incomeType && file.statedCurrentHousing == null) stillUseful.push("current housing");
   if (file.incomeType && !file.statedDeclaration) stillUseful.push("declarations");
+  if (file.incomeType && !file.statedHousehold) stillUseful.push("household");
+  if (file.statedHousehold === "with_someone") stillUseful.push("other borrower details");
 
   const hasSketch = Boolean(file.purchasePrice || file.loanAmount || file.propertyValue);
   const incomeReady = incomeDocsReceived(file.incomeType, received);

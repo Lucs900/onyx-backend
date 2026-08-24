@@ -461,6 +461,28 @@ Skip / Not yet leaves the field empty. Proceed still works. Still useful may lis
 
 Readiness: empty keeps existing thin / not-ready / strong / UW-review / funds-short / condo / time-on-job lines — no credit-event problem invented. None confirmed does not claim credit is clean and does not invent a bureau pull; existing readiness stays. Event confirmed uses the existing UW-review line (`I can run this past underwriting before we go further.`) and then restores the next action. One line. If condo or time-on-job already picked UW-review, still one line. Wire the confirmed event to the existing volunteered-distress store (`namedDistress`); do not invent a parallel denial engine. Declarations alone never create a strong line. An event never creates a strong line this gate. Never: you don’t qualify; you are ineligible for conventional; invented waiting periods; invented 7-year clocks; invented chapter; you are approved; DTI percents.
 
+### Household / buying-alone v1 — one optional household fact
+
+After the declarations ask (or that Skip), before the docs maze, Fox may ask once:
+
+`Are you buying this on your own, or with someone? Skip is fine.`
+
+Chips: On my own / With someone / Skip / Not yet. Messy typed answers (just me, me and my spouse, with my partner) confirm-before-write. Do not ask their name, income, or SSN this gate.
+
+Alone confirm:
+
+`This file is just you. Suggested · not underwritten. Use this?`
+
+With someone confirm:
+
+`I’ll note more than one borrower. Suggested · not underwritten. Use this?`
+
+Use this writes `statedHousehold` (`alone` | `with_someone`). Do not start a second borrower card. Do not invent their income. Leave blank writes nothing and restores the next action. Structure shows `Household` as On my own or With someone with `Suggested · not underwritten`. Editable mid-file. Start over is a full reset only.
+
+Skip / Not yet leaves the field empty. Proceed still works. Still useful may list household as optional, never required. After With someone is confirmed, still useful may later list `other borrower details` as optional — never a required maze this gate.
+
+Readiness is notepad only. Empty / alone / with someone keep existing thin / not-ready / strong / UW-review / funds-short / condo / time-on-job / declarations lines — no household problem invented. With someone does not fire UW-review by itself. A normal co-borrower is not an exception. Household alone never creates a strong line and never creates a not-ready line. Never: you don’t qualify; your spouse must be on the loan; invented CA community-property outcome; invented second income; you are approved; DTI percents.
+
 ### Quiet flags + more-complete asks
 
 After Looks right / agency-shaped minimums, conventional files can deepen still-useful past the minimum three. HELOC and Jumbo stay thin. Never `agency_ready`.

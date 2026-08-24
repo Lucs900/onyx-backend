@@ -135,6 +135,12 @@ import {
   skipDeclarations,
   writeStatedDeclaration,
 } from "./declarations";
+import {
+  isStatedHousehold,
+  proposeStatedHousehold,
+  skipHousehold,
+  writeStatedHousehold,
+} from "./household";
 
 function numberOrUndefined(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : undefined;
@@ -277,6 +283,11 @@ function normalize(value: unknown): FoxIntakeDraft {
       typeof raw.declarationNote === "string" && raw.declarationNote.trim()
         ? raw.declarationNote.trim()
         : undefined,
+    statedHousehold:
+      raw.statedHousehold === "alone" || raw.statedHousehold === "with_someone"
+        ? raw.statedHousehold
+        : undefined,
+    householdAsked: Boolean(raw.householdAsked || raw.statedHousehold),
     docsOpen: Boolean(raw.docsOpen),
     docsStarted: Boolean(raw.docsStarted),
     docsHeld: Boolean(raw.docsHeld),
@@ -1313,6 +1324,17 @@ export function applyCapture(capture: Capture) {
   if (capture.field === "statedDeclaration") {
     if (!isStatedDeclaration(capture.value)) return current;
     return commit(writeStatedDeclaration(current, capture.value));
+  }
+  if (capture.field === "skip-household") {
+    return commit(skipHousehold(current));
+  }
+  if (capture.field === "propose-household") {
+    if (!isStatedHousehold(capture.value)) return current;
+    return commit(proposeStatedHousehold(current, capture.value));
+  }
+  if (capture.field === "statedHousehold") {
+    if (!isStatedHousehold(capture.value)) return current;
+    return commit(writeStatedHousehold(current, capture.value));
   }
   if (capture.field === "incomeType") {
     const midFile = Boolean(current.correcting);

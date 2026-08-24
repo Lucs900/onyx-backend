@@ -68,6 +68,7 @@ import {
   proposeExtractedCurrentHousing,
 } from "./currentHousing";
 import { declarationsSettled } from "./declarations";
+import { householdSettled } from "./household";
 
 export { REJECT_LINE, LIMIT_LINE };
 
@@ -446,6 +447,7 @@ export function factLabel(field: string) {
   if (field === STATED_TIME_ON_JOB_FIELD) return "Time on job";
   if (field === STATED_CURRENT_HOUSING_FIELD) return "Current housing";
   if (field === "statedDeclaration") return "Declarations";
+  if (field === "statedHousehold") return "Household";
   if (field === HIRE_DATE_FIELD) return "hire date";
   return field.replace(/_/g, " ");
 }
@@ -1236,6 +1238,7 @@ export function completenessFileFromDraft(draft: FoxIntakeDraft): CompletenessFi
     ...(draft.statedTimeOnJob != null ? { statedTimeOnJob: draft.statedTimeOnJob } : {}),
     ...(draft.statedCurrentHousing != null ? { statedCurrentHousing: draft.statedCurrentHousing } : {}),
     ...(draft.statedDeclaration ? { statedDeclaration: draft.statedDeclaration } : {}),
+    ...(draft.statedHousehold ? { statedHousehold: draft.statedHousehold } : {}),
   };
 }
 
@@ -1454,6 +1457,7 @@ export function nextDocInvite(draft: FoxIntakeDraft): DocInviteKind | null {
   if (!timeOnJobSettled(draft)) return null;
   if (!currentHousingSettled(draft)) return null;
   if (!declarationsSettled(draft)) return null;
+  if (!householdSettled(draft)) return null;
   if (draft.pendingProposal || draft.pendingConflict) return null;
   for (const kind of inviteSequence(draft)) {
     if (!inviteSatisfied(draft, kind)) return kind;
