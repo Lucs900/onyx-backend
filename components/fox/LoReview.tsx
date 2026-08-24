@@ -21,6 +21,7 @@ import {
   getFoxDraft,
   getServerDraft,
   hydrateFoxDraft,
+  markFileExported,
   nudgeReview,
   returnToFox,
   setLoStatus,
@@ -29,6 +30,13 @@ import {
 } from "./store";
 import { FOX_DISCLOSURE, TRUST_LINE, type LoMark } from "./types";
 import { fileScenarioRows } from "./workspace";
+import {
+  exportSketchReady,
+  fileExportOf,
+  fnma32Text,
+  mappedJsonText,
+  type FileExportFormat,
+} from "./staffExport";
 
 const MARKS: LoMark[] = ["needs items", "in review", "contacting client"];
 
@@ -77,6 +85,24 @@ export function LoReview() {
   const review = openReviewWorkItem(draft);
   const slaMs = reviewSlaMsOf(draft);
   const conditions = draft.conditions ?? [];
+  const fileExport = fileExportOf(draft);
+  const canDownload = exportSketchReady(draft);
+
+  function downloadExport(format: FileExportFormat) {
+    if (!canDownload) return;
+    const text = format === "fnma_32" ? fnma32Text(draft) : mappedJsonText(draft);
+    const filename =
+      format === "fnma_32" ? "onyx-file-fnma-32.txt" : "onyx-file-mapped.json";
+    const type = format === "fnma_32" ? "text/plain" : "application/json";
+    const blob = new Blob([text], { type });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    link.click();
+    URL.revokeObjectURL(url);
+    markFileExported(format);
+  }
 
   return (
     <div className="intake page-pad">
@@ -128,6 +154,72 @@ export function LoReview() {
               {draft.loStatus ? (
                 <p className="type-legal">Queue mark: {draft.loStatus}.</p>
               ) : null}
+            </section>
+
+            <section className="intake-card">
+              <h2 className="type-card-title">Export</h2>
+              <p className="type-body">
+                Staff / LOS only. Same File. Not a DU submit. Not a borrower 1003.
+              </p>
+              <dl className="scenario-echo">
+                <dt>Status</dt>
+                <dd>{fileExport.status}</dd>
+                <dt>Format</dt>
+                <dd>{fileExport.format}</dd>
+              </dl>
+              {fileExport.status === "not_ready" ? (
+                <p className="type-body">
+                  Sketch is too thin to export. Need product, occupancy, and a money
+                  number. No complete download.
+                </p>
+              ) : (
+                <p className="type-legal">
+                  {fileExport.gaps.length
+                    ? "Downloadable and honest. Incomplete until secure SSN capture exists. Normal state this slice."
+                    : "Required agency keys are present."}
+                  {fileExport.downloadedAt ? ` Last download ${fileExport.downloadedAt}.` : ""}
+                </p>
+              )}
+              {fileExport.gaps.length ? (
+                <ul className="intake-note-list">
+                  {fileExport.gaps.map((gap) => (
+                    <li key={gap.key}>
+                      {gap.key} — {gap.why}
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+              {Object.keys(fileExport.mapped).length ? (
+                <dl className="scenario-echo">
+                  {Object.entries(fileExport.mapped).map(([key, fact]) => (
+                    <FragmentRow
+                      key={key}
+                      label={key}
+                      value={
+                        fact.note ? `${fact.value} · ${fact.note}` : String(fact.value)
+                      }
+                    />
+                  ))}
+                </dl>
+              ) : null}
+              <div className="intake-section__actions">
+                <button
+                  type="button"
+                  className="btn btn--secondary"
+                  disabled={!canDownload}
+                  onClick={() => downloadExport("mapped_json")}
+                >
+                  Download mapped_json
+                </button>
+                <button
+                  type="button"
+                  className="btn btn--secondary"
+                  disabled={!canDownload}
+                  onClick={() => downloadExport("fnma_32")}
+                >
+                  Download FNMA 3.2
+                </button>
+              </div>
             </section>
 
             <section className="intake-card">

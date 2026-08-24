@@ -351,7 +351,7 @@ Use this writes `statedMonthlyDebts`. Leave blank writes nothing and restores th
 
 If the borrower includes the subject mortgage in the total, ask once and offer to subtract. Do not silent-write a blended number.
 
-No itemized liability maze. No cards / autos / student / HOA form. No bureau pull. No tradelines. No FNMA export. Still useful may list stated monthly debts as optional, never required. Looks right / Proceed still work with the field empty.
+No itemized liability maze. No cards / autos / student / HOA form. No bureau pull. No tradelines. No borrower FNMA export. Still useful may list stated monthly debts as optional, never required. Looks right / Proceed still work with the field empty.
 
 Readiness: empty debts keep the locked thin / not-ready / strong / UW-review lines. A confirmed total may color not-ready or UW-review only when the payment is obviously large versus suggested income. Never print “stated DTI” or “your DTI is X%.” Strong still includes the final-underwriting sentence.
 
@@ -526,6 +526,34 @@ A refinance of the subject is not other REO. On a refi path, a mortgage statemen
 Skip / Not yet leaves the field empty. Proceed still works. Still useful may list other real estate as optional, never required. After Yes is confirmed, still useful may later list `other property details` as optional — never a required maze this gate.
 
 Readiness is notepad only. Owning other property is normal. Yes does not fire UW-review by itself. Empty / none / yes keep existing thin / not-ready / strong / UW-review / funds-short / condo / time-on-job / declarations rules — no REO problem invented. Do not invent reserve months or rental income. Other REO alone never creates a strong line and never creates a not-ready line. Never: you don’t qualify; you need two months reserves; you are approved; DTI percents.
+
+### Staff export v1 — same File, staff review only
+
+Staff / LOS package on the existing `/lo/review` pane. Same File. No new staff app. Never a borrower 1003.
+
+`File.export` is derived from known File facts:
+
+- **format** `mapped_json` | `fnma_32`
+- **status** `not_ready` | `gaps` | `ready` | `exported`
+- **gaps[]** `{ key, why }` — missing agency fields we refuse to invent. First list: SSN, citizenship, present/mailing address, DOB, employer name if not extracted, full account numbers.
+- **mapped** — known File facts only (price, loan, occupancy, name, income suggestion, debts, assets, property type, housing, declarations, household, other REO, extracted address / employer when present). Each suggested value keeps `Suggested · not underwritten`.
+
+Status:
+
+- **not_ready** — sketch too thin (no product + occupancy + a money number). No complete download.
+- **gaps** — downloadable and honest. Normal until secure SSN capture exists.
+- **ready** — required agency keys present. Rare this slice because SSN is never invented.
+- **exported** — staff marked a download. Not a DU submit.
+
+`fnma_32` is fail-closed DU 3.2 text of populated segments only. Omit empty SSN / DOB / citizenship rather than pad with zeros or fake ITIN. A file with gaps still downloads; it is labeled incomplete.
+
+Gaps do not auto-write Still useful. A gap becomes a borrower condition only when a human writes a `foxLine`.
+
+Borrower `/start` thread: no 1003, no export download. Free-text “did you send my file?” answers, then restores the next action. Never say “DU says,” “exported to Fannie,” or “the file is in underwriting” unless File.motion is actually waiting_out for UW.
+
+Never invent SSN, ITIN, DOB, citizenship, income, credit score, DTI, reserve months, or matrix cells. No citizenship quiz. No present-address maze. No SSN ask on the borrower sketch.
+
+Out of this gate: MISMO / ULAD, LOS vendor push, DU / AUS, secure SSN / DOB capture, borrower 1003.
 
 ### Quiet flags + more-complete asks
 

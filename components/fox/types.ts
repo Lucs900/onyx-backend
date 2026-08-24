@@ -167,7 +167,8 @@ export type FileEventKind =
   | "request-human"
   | "nudge"
   | "return-to-fox"
-  | "email";
+  | "email"
+  | "staff-export";
 
 export type FileEvent = {
   id: string;
@@ -211,6 +212,20 @@ export type GovProgram = "fha" | "va" | "usda";
 export type NamedCreditEvent = "bankruptcy" | "foreclosure";
 
 export type ProductOffer = "jumbo" | "heloc";
+
+export type FileExportFormat = "mapped_json" | "fnma_32";
+export type FileExportStatus = "not_ready" | "gaps" | "ready" | "exported";
+
+export type FileExportGap = {
+  key: string;
+  why: string;
+};
+
+export type FileExportMark = {
+  format: FileExportFormat;
+  status: "exported";
+  downloadedAt: string;
+};
 
 export type FoxIntakeDraft = {
   version: number;
@@ -282,6 +297,7 @@ export type FoxIntakeDraft = {
   statedOtherReo?: "none" | "yes";
   otherReoAsked?: boolean;
   pendingOtherReo?: boolean | null;
+  fileExport?: FileExportMark | null;
   docsOpen?: boolean;
   originatorRequested?: boolean;
   motion?: FileMotion;

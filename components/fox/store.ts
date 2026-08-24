@@ -153,6 +153,7 @@ import {
   skipOtherReo,
   writeStatedOtherReo,
 } from "./otherReo";
+import { markExported, type FileExportFormat } from "./staffExport";
 
 function numberOrUndefined(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : undefined;
@@ -308,6 +309,7 @@ function normalize(value: unknown): FoxIntakeDraft {
     statedOtherReo: raw.statedOtherReo === "none" || raw.statedOtherReo === "yes" ? raw.statedOtherReo : undefined,
     otherReoAsked: Boolean(raw.otherReoAsked || raw.statedOtherReo),
     pendingOtherReo: raw.pendingOtherReo ? true : null,
+    fileExport: normalizeFileExport(raw.fileExport),
     docsOpen: Boolean(raw.docsOpen),
     docsStarted: Boolean(raw.docsStarted),
     docsHeld: Boolean(raw.docsHeld),
@@ -450,6 +452,17 @@ function normalizePendingDebtMortgage(
     return null;
   }
   return { included: Math.round(included), mortgage: Math.round(mortgage) };
+}
+
+function normalizeFileExport(value: FoxIntakeDraft["fileExport"]): FoxIntakeDraft["fileExport"] {
+  if (!value || typeof value !== "object") return null;
+  if (value.format !== "mapped_json" && value.format !== "fnma_32") return null;
+  if (typeof value.downloadedAt !== "string" || !value.downloadedAt) return null;
+  return {
+    format: value.format,
+    status: "exported",
+    downloadedAt: value.downloadedAt,
+  };
 }
 
 function normalizePendingHireDate(
@@ -1141,6 +1154,10 @@ export function editSection(id: SectionId) {
 
 export function setLoStatus(loStatus: LoMark) {
   return commit({ ...current, loStatus });
+}
+
+export function markFileExported(format: FileExportFormat) {
+  return commit(markExported(current, format));
 }
 
 export const FOX_THREAD_LINE_EVENT = "onyx:fox-thread-line";

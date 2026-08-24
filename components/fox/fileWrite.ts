@@ -1399,7 +1399,13 @@ export function stillUsefulSection(draft: FoxIntakeDraft): {
 } | null {
   if (!stillUsefulVisible(draft)) return null;
   const conditionItems = (draft.conditions ?? [])
-    .filter((item) => item.waitingOn === "borrower" && item.status === "open" && item.stillUseful)
+    .filter(
+      (item) =>
+        item.waitingOn === "borrower" &&
+        item.status === "open" &&
+        item.stillUseful &&
+        Boolean(item.foxLine),
+    )
     .map((item) => layer2Item(item.id, item.title, item.foxLine));
   const items = [...conditionItems, ...layer2Plan(draft)];
   storeCompleteness(draft.productIntent ?? "", completenessFileFromDraft(draft));

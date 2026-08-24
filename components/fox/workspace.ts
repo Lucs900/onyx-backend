@@ -268,6 +268,7 @@ import {
   skipOtherReo,
   writeStatedOtherReo,
 } from "./otherReo";
+import { asksStaffExport, STAFF_EXPORT_BORROWER_COPY } from "./staffExport";
 import {
   ACR_BENEFITS_LINE,
   COST_LINE,
@@ -1602,7 +1603,7 @@ function asksTaxReturnNeed(text: string) {
 }
 
 function isTopicalSideAsk(text: string) {
-  return interpretQuestion(text) != null || asksTaxReturnNeed(text);
+  return interpretQuestion(text) != null || asksTaxReturnNeed(text) || asksStaffExport(text);
 }
 
 function isGreeting(text: string) {
@@ -1624,6 +1625,7 @@ function isFreeTextAtGate(text: string) {
 }
 
 function freeTextAnswer(input: string, draft: FoxIntakeDraft) {
+  if (asksStaffExport(input)) return STAFF_EXPORT_BORROWER_COPY;
   const answered = foxAnswer(input, factsFromDraft(draft));
   if (answered) return answered.text;
   if (isGreeting(input)) return HELLO_COPY;
@@ -1659,6 +1661,7 @@ function restoredAsk(answer: string, draft: FoxIntakeDraft) {
 }
 
 function sideQuestionAnswer(input: string, draft: FoxIntakeDraft) {
+  if (asksStaffExport(input)) return STAFF_EXPORT_BORROWER_COPY;
   if (asksTaxReturnNeed(input)) {
     if (draft.incomeType.value === "w2") return W2_TAX_RETURN_COPY;
     if (draft.incomeType.value === "both") {

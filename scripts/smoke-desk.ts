@@ -186,6 +186,17 @@ import {
   SUGGESTED_OTHER_REO_NOTE,
   parseOtherReo,
 } from "../components/fox/otherReo";
+import {
+  STAFF_EXPORT_BORROWER_COPY,
+  derivedExportStatus,
+  exportGaps,
+  exportSketchReady,
+  fileExportOf,
+  fnma32Text,
+  mappedFileFacts,
+  mappedJsonText,
+  markExported,
+} from "../components/fox/staffExport";
 import { subjectMortgagePayment } from "../components/fox/monthlyDebts";
 import { FAILED_READ_NOTE } from "../lib/docs/accept";
 import { classifyAndExtract, imageDataUrl, visionChatBody } from "../lib/docs/extract";
@@ -7859,6 +7870,162 @@ const otherReoSrc = [
 assert.doesNotMatch(otherReoSrc, /REO schedule|add another property|reserve-month engine|rental-income worksheet/i);
 assert.doesNotMatch(otherReoSrc, /you need two months reserves|you don.t qualify/i);
 
+const thinExport = draft({ path: "acr", productIntent: "buy" });
+assert.equal(exportSketchReady(thinExport), false);
+assert.equal(derivedExportStatus(thinExport), "not_ready");
+assert.equal(fileExportOf(thinExport).status, "not_ready");
+assert.equal(markExported(thinExport, "mapped_json").fileExport, undefined);
+assert.match(mappedJsonText(thinExport), /"status": "not_ready"/);
+assert.doesNotMatch(mappedJsonText(thinExport), /"status": "ready"|"status": "exported"/);
+assert.doesNotMatch(mappedJsonText(thinExport), /"ssn"\s*:|"citizenship"\s*:|"dateOfBirth"\s*:/);
+assert.match(fnma32Text(thinExport), /Label: not_ready/);
+assert.doesNotMatch(fnma32Text(thinExport), /01A\||02A\||03A\|SSN|03A\|Citizenship|ITIN|000-00-0000/);
+
+const fullExport = draft({
+  ...afterIncome,
+  borrowerName: "Jordan Hale",
+  statedMonthlyDebts: 800,
+  statedAvailableAssets: 240000,
+  propertyType: "sfr",
+  statedCurrentHousing: 3200,
+  statedDeclaration: "none",
+  statedHousehold: "alone",
+  statedOtherReo: "none",
+  facts: {
+    ...(afterIncome.facts ?? {}),
+    id_last4: { field: "id_last4", value: "1234", source: "document", confirmed: false },
+  },
+});
+const exportPack = fileExportOf(fullExport);
+assert.equal(exportSketchReady(fullExport), true);
+assert.equal(exportPack.status, "gaps");
+assert.equal(exportPack.mapped.purchasePrice?.value, 1200000);
+assert.equal(exportPack.mapped.downPayment?.value, 240000);
+assert.equal(exportPack.mapped.loanAmount?.value, 960000);
+assert.equal(exportPack.mapped.occupancy?.value, "Primary");
+assert.equal(exportPack.mapped.incomeType?.value, "W-2");
+assert.equal(exportPack.mapped.borrowerName?.value, "Jordan Hale");
+assert.equal(exportPack.mapped.borrowerName?.note, SUGGESTED_BORROWER_NOTE);
+assert.equal(exportPack.mapped.ssn, undefined);
+assert.ok(!("ssn" in exportPack.mapped));
+assert.ok(!("citizenship" in exportPack.mapped));
+assert.ok(exportPack.gaps.some((item) => item.key === "ssn"));
+assert.ok(exportPack.gaps.some((item) => item.key === "citizenship"));
+assert.ok(exportPack.gaps.some((item) => item.key === "present_mailing_address"));
+assert.ok(exportPack.gaps.some((item) => item.key === "dob"));
+assert.ok(exportPack.gaps.some((item) => item.key === "employer_name"));
+assert.ok(exportPack.gaps.some((item) => item.key === "full_account_numbers"));
+const mappedJson = mappedJsonText(fullExport);
+assert.match(mappedJson, /"status": "gaps"/);
+assert.match(mappedJson, /"purchasePrice"/);
+assert.match(mappedJson, /1200000/);
+assert.match(mappedJson, /Suggested · not underwritten/);
+assert.doesNotMatch(mappedJson, /"ssn"\s*:|"citizenship"\s*:|"dateOfBirth"\s*:/);
+assert.doesNotMatch(mappedJson, /000-00-0000|ITIN/);
+const fnma = fnma32Text(fullExport);
+assert.match(fnma, /Label: incomplete/);
+assert.match(fnma, /01A\|PurchasePrice\|1200000/);
+assert.match(fnma, /01A\|LoanAmount\|960000/);
+assert.match(fnma, /02A\|Occupancy\|Primary/);
+assert.match(fnma, /05A\|IncomeType\|W-2/);
+assert.doesNotMatch(fnma, /ITIN|US Citizen|000-00-0000/);
+assert.doesNotMatch(fnma, /03A\|SSN|03A\|Citizenship|03A\|TIN|03A\|DateOfBirth/);
+const employerFile = draft({
+  ...fullExport,
+  facts: {
+    ...fullExport.facts,
+    employer_name: { field: "employer_name", value: "ACME CORP", source: "document", confirmed: true },
+  },
+});
+assert.equal(mappedFileFacts(employerFile).employerName?.value, "ACME CORP");
+assert.ok(!exportGaps(employerFile).some((item) => item.key === "employer_name"));
+assert.ok(exportGaps(employerFile).some((item) => item.key === "ssn"));
+const exportedFile = markExported(fullExport, "fnma_32");
+assert.equal(exportedFile.fileExport?.status, "exported");
+assert.equal(fileExportOf(exportedFile).status, "exported");
+assert.equal(fileExportOf(exportedFile).format, "fnma_32");
+assert.ok((exportedFile.events ?? []).some((event) => event.kind === "staff-export"));
+assert.equal(emptyDraft().fileExport, undefined);
+
+const occupancyExportChips = (workspacePromptCopy("occupancy", atOccupancy).actions ?? []).map(
+  (item) => item.label,
+);
+assertAnswerThenRestore(
+  workspaceReply("did you send my file?", atOccupancy),
+  new RegExp(STAFF_EXPORT_BORROWER_COPY.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")),
+  { labels: occupancyExportChips },
+);
+assert.equal(
+  workspaceReply("did you send my file?", atOccupancy)?.text?.startsWith(STAFF_EXPORT_BORROWER_COPY),
+  true,
+);
+assertAnswerThenRestore(
+  workspaceReply("did you send my file", afterIncome),
+  new RegExp(STAFF_EXPORT_BORROWER_COPY.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")),
+  { labels: ["Start with ID", "Skip", "Not yet"] },
+);
+const sentFileReply = workspaceReply("did you send my file?", afterIncome);
+assert.doesNotMatch(sentFileReply?.text ?? "", /DU says|exported to Fannie|in underwriting/i);
+assert.doesNotMatch(STAFF_EXPORT_BORROWER_COPY, /DU says|exported to Fannie|the file is in underwriting/i);
+assert.doesNotMatch(workspaceReply("what about my 1003?", afterIncome)?.text ?? "", /download your application|Desktop Underwriter says/i);
+
+const exportGapsOnUseful = stillUsefulSection(afterLooks)?.items ?? [];
+assert.ok(!exportGapsOnUseful.some((item) => /ssn|citizenship|mailing address|date of birth|account number/i.test(item.label)));
+assert.ok(!exportGapsOnUseful.some((item) => /ssn|citizenship|mailing address|date of birth|account number/i.test(item.ask ?? "")));
+const usefulWithFoxLine = stillUsefulSection(
+  draft({
+    ...afterLooks,
+    conditions: [
+      {
+        id: "human-ssn",
+        title: "SSN",
+        foxLine: "A licensed originator asked for a government ID so we can capture SSN securely later.",
+        waitingOn: "borrower",
+        needed: "fact",
+        status: "open",
+        stillUseful: true,
+      },
+    ],
+  }),
+);
+assert.ok(usefulWithFoxLine?.items.some((item) => item.label === "SSN"));
+const usefulWithoutFoxLine = stillUsefulSection(
+  draft({
+    ...afterLooks,
+    conditions: [
+      {
+        id: "auto-ssn",
+        title: "SSN",
+        foxLine: "",
+        waitingOn: "borrower",
+        needed: "fact",
+        status: "open",
+        stillUseful: true,
+      },
+    ],
+  }),
+);
+assert.ok(!usefulWithoutFoxLine?.items.some((item) => item.label === "SSN"));
+
+const staffExportSrc = [
+  readFileSync(join(root, "components/fox/staffExport.ts"), "utf8"),
+  readFileSync(join(root, "components/fox/LoReview.tsx"), "utf8"),
+].join("\n");
+assert.match(staffExportSrc, /Download mapped_json/);
+assert.match(staffExportSrc, /Download FNMA 3.2/);
+assert.match(staffExportSrc, /Staff \/ LOS only/);
+assert.doesNotMatch(staffExportSrc, /citizenship: "US Citizen"|fake ITIN|000-00-0000|SSN: 000/);
+const startBorrowerSrc = [
+  readFileSync(join(root, "components/fox/StartWorkspace.tsx"), "utf8"),
+  readFileSync(join(root, "components/fox/AlwaysOnFox.tsx"), "utf8"),
+].join("\n");
+assert.doesNotMatch(startBorrowerSrc, /Download mapped_json|Download FNMA 3.2|onyx-file-mapped|onyx-file-fnma/);
+assert.doesNotMatch(startBorrowerSrc, /\b1003\b|download your application|sent to Desktop Underwriter/);
+assert.doesNotMatch(
+  readFileSync(join(root, "components/fox/workspace.ts"), "utf8"),
+  /Download mapped_json|Download FNMA 3.2|onyx-file-mapped/,
+);
+
 const debtsSrc = [
   readFileSync(join(root, "components/fox/workspace.ts"), "utf8"),
   readFileSync(join(root, "components/fox/monthlyDebts.ts"), "utf8"),
@@ -8373,6 +8540,11 @@ assert.ok(!homepageSource.includes("we pulled your credit"));
 assert.ok(homepageSource.includes("HeroStartLink") || readFileSync(join(root, "components/MembershipHero.tsx"), "utf8").includes("HeroStartLink"));
 const loReviewSource = readFileSync(join(root, "components/fox/LoReview.tsx"), "utf8");
 assert.ok(loReviewSource.includes("fileScenarioRows"));
+assert.ok(loReviewSource.includes("fileExportOf"));
+assert.ok(loReviewSource.includes("Download mapped_json"));
+assert.ok(loReviewSource.includes("Download FNMA 3.2"));
+assert.ok(loReviewSource.includes("markFileExported"));
+assert.ok(loReviewSource.includes("disabled={!canDownload}"));
 const startCss = readFileSync(join(root, "styles/start.css"), "utf8");
 assert.ok(startCss.includes("scroll-padding-bottom"));
 assert.ok(startCss.includes("scroll-margin-bottom"));
