@@ -202,24 +202,26 @@ export function LoReview() {
                   ))}
                 </dl>
               ) : null}
-              <div className="intake-section__actions">
-                <button
-                  type="button"
-                  className="btn btn--secondary"
-                  disabled={!canDownload}
-                  onClick={() => downloadExport("mapped_json")}
-                >
-                  Download mapped_json
-                </button>
-                <button
-                  type="button"
-                  className="btn btn--secondary"
-                  disabled={!canDownload}
-                  onClick={() => downloadExport("fnma_32")}
-                >
-                  Download FNMA 3.2
-                </button>
-              </div>
+              {canDownload ? (
+                <div className="intake-section__actions">
+                  <button
+                    type="button"
+                    className="btn btn--secondary"
+                    onClick={() => downloadExport("mapped_json")}
+                  >
+                    Download mapped_json
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn--secondary"
+                    onClick={() => downloadExport("fnma_32")}
+                  >
+                    Download FNMA 3.2
+                  </button>
+                </div>
+              ) : (
+                <p className="type-legal">Downloads stay off until the sketch has product, occupancy, and a money number.</p>
+              )}
             </section>
 
             <section className="intake-card">
