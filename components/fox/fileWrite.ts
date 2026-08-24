@@ -770,7 +770,7 @@ export function applyExtractedFields(
           label: factLabel(item.field),
         })),
       );
-      remainderWrites = [];
+      remainderWrites.length = 0;
     }
   }
   if (
