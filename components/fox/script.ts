@@ -124,6 +124,7 @@ export function taskContext(stage: FoxStage, draft: FoxIntakeDraft) {
     "property-type": "Asking: property type",
     "time-on-job": "Asking: time on job",
     "current-housing": "Asking: current housing",
+    declarations: "Asking: declarations",
     occupancy: "Asking: occupancy",
     timeline: "Asking: timeline",
     documents: "Documents",

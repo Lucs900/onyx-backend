@@ -195,6 +195,7 @@ export type FileFacts = {
   subjectAddress?: string;
   statedTimeOnJob?: number;
   statedCurrentHousing?: number;
+  statedDeclaration?: "none" | "event";
   suggestedMonthlyIncome?: number;
   docsSkipped?: boolean;
   obviousHighDti?: boolean;
@@ -872,6 +873,7 @@ export function completeness(
     stillUseful.push("time on job");
   }
   if (file.incomeType && file.statedCurrentHousing == null) stillUseful.push("current housing");
+  if (file.incomeType && !file.statedDeclaration) stillUseful.push("declarations");
 
   const hasSketch = Boolean(file.purchasePrice || file.loanAmount || file.propertyValue);
   const incomeReady = incomeDocsReceived(file.incomeType, received);
@@ -1095,7 +1097,7 @@ function thinLine(file: CompletenessFile): string {
 function outsideNormalPattern(file: CompletenessFile) {
   if (file.occupancy === "investment") return true;
   if (file.purposeHint === "cash_out") return true;
-  if (file.namedDistress) return true;
+  if (file.namedDistress || file.statedDeclaration === "event") return true;
   if (file.state && file.state !== "CA") return true;
   if (lowestCreditBand(file.statedCreditBand)) return true;
   if (loanAboveCeiling(file) && file.product !== "jumbo") return true;
@@ -1113,7 +1115,7 @@ function strongEligible(file: CompletenessFile) {
   if (file.statedTimeOnJob != null && file.statedTimeOnJob < 24) return false;
   if (file.purposeHint === "cash_out") return false;
   if (file.namedGovvie || file.govProgram) return false;
-  if (file.namedDistress) return false;
+  if (file.namedDistress || file.statedDeclaration === "event") return false;
   if (file.unresolvedConflict) return false;
   if (loanExceedsPrice(file)) return false;
   const ltv = sketchedPurchaseLtvFromFacts(file);

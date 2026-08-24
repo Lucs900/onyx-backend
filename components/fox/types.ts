@@ -272,6 +272,9 @@ export type FoxIntakeDraft = {
     amount: number;
     extras?: { field: string; value: string; label: string }[];
   } | null;
+  statedDeclaration?: "none" | "event";
+  declarationAsked?: boolean;
+  declarationNote?: string;
   docsOpen?: boolean;
   originatorRequested?: boolean;
   motion?: FileMotion;
@@ -341,6 +344,7 @@ export type FoxPrompt =
   | "property-type"
   | "time-on-job"
   | "current-housing"
+  | "declarations"
   | "occupancy"
   | "timeline"
   | "documents"
@@ -381,6 +385,9 @@ export type Capture =
   | { field: "skip-current-housing" }
   | { field: "propose-current-housing"; value: string }
   | { field: "statedCurrentHousing"; value: string }
+  | { field: "skip-declarations" }
+  | { field: "propose-declarations"; value: string }
+  | { field: "statedDeclaration"; value: string }
   | { field: "occupancy"; value: string }
   | { field: "timeline"; value: string }
   | { field: "path"; value: IntakePath }

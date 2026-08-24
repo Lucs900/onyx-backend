@@ -166,6 +166,11 @@ import {
   CURRENT_HOUSING_ASK,
   parseCurrentHousingAmount,
 } from "../components/fox/currentHousing";
+import {
+  DECLARATIONS_ASK,
+  SUGGESTED_DECLARATION_NOTE,
+  parseDeclarations,
+} from "../components/fox/declarations";
 import { subjectMortgagePayment } from "../components/fox/monthlyDebts";
 import { FAILED_READ_NOTE } from "../lib/docs/accept";
 import { classifyAndExtract, imageDataUrl, visionChatBody } from "../lib/docs/extract";
@@ -349,6 +354,9 @@ function confirmLooksRight() {
   if (workspacePrompt(getFoxDraft()) === "current-housing") {
     applyCapture({ field: "skip-current-housing" });
   }
+  if (workspacePrompt(getFoxDraft()) === "declarations") {
+    applyCapture({ field: "skip-declarations" });
+  }
   for (let i = 0; i < 8; i += 1) {
     if (workspacePrompt(getFoxDraft()) !== "documents" && !nextDocInvite(getFoxDraft())) break;
     applyCapture({ field: "skip-docs" });
@@ -368,6 +376,7 @@ function withIncome(
     propertyTypeAsked: true,
     timeOnJobAsked: value === "w2" || value === "both" ? true : undefined,
     currentHousingAsked: true,
+    declarationAsked: true,
     incomeType: { ...emptyDraft().incomeType, value },
   });
 }
@@ -1037,6 +1046,8 @@ assert.equal(getFoxDraft().statedTimeOnJob, undefined);
 assert.equal(getFoxDraft().timeOnJobAsked, undefined);
 assert.equal(getFoxDraft().statedCurrentHousing, undefined);
 assert.equal(getFoxDraft().currentHousingAsked, undefined);
+assert.equal(getFoxDraft().statedDeclaration, undefined);
+assert.equal(getFoxDraft().declarationAsked, undefined);
 assert.equal(workspacePrompt(getFoxDraft()), "product");
 assert.equal(workspacePrompt(afterIncome), "documents");
 assert.match(workspacePromptCopy("documents", afterIncome).text, /sketch/i);
@@ -1733,9 +1744,16 @@ assert.ok(previewFacts(fhaReady).some((fact) => fact.id === "rate" && fact.value
 assert.ok(previewFacts(fhaReady).some((fact) => fact.id === "product" && fact.value === "Buy"));
 
 const bkNamed = workspaceReply("I have an active bankruptcy", afterIncome);
-assert.equal(bkNamed?.capture?.field, "creditEvent");
-assert.ok((bkNamed?.text ?? "").includes(DISTRESS_LINE));
-assert.doesNotMatch(bkNamed?.text ?? "", /will contact you/i);
+assert.equal(bkNamed?.capture?.field, "propose-declarations");
+assert.match(bkNamed?.text ?? "", /I’ll note a credit event for underwriting/);
+assert.match(bkNamed?.text ?? "", /Suggested · not underwritten/);
+assert.equal(afterIncome.statedDeclaration, undefined);
+assert.equal(afterIncome.creditEvent, undefined);
+assert.doesNotMatch(bkNamed?.text ?? "", /will contact you|chapter|waiting period|7-year|you don.t qualify/i);
+assert.deepEqual(
+  (bkNamed?.actions ?? []).map((item) => item.label),
+  ["Use this", "Leave blank"],
+);
 const bkReady = draft({
   ...afterIncome,
   sampleAccepted: true,
@@ -1902,6 +1920,7 @@ applyCapture({ field: "skip-monthly-debts" });
 applyCapture({ field: "skip-available-assets" });
 applyCapture({ field: "skip-property-type" });
 applyCapture({ field: "skip-current-housing" });
+applyCapture({ field: "skip-declarations" });
 assert.equal(workspacePrompt(getFoxDraft()), "documents");
 assert.ok(!getFoxDraft().facts?.years_in_business);
 const liveSketchFix = workspaceReply("Needs a correction", getFoxDraft());
@@ -2295,6 +2314,7 @@ applyCapture({ field: "skip-available-assets" });
 applyCapture({ field: "skip-property-type" });
 applyCapture({ field: "skip-time-on-job" });
 applyCapture({ field: "skip-current-housing" });
+applyCapture({ field: "skip-declarations" });
 assert.equal(getFoxDraft().documentsSkipped, false);
 assert.equal(workspacePrompt(getFoxDraft()), "documents");
 applyCapture({ field: "skip-docs" });
@@ -2341,6 +2361,7 @@ applyCapture({ field: "skip-monthly-debts" });
 applyCapture({ field: "skip-available-assets" });
 applyCapture({ field: "skip-property-type" });
 applyCapture({ field: "skip-current-housing" });
+applyCapture({ field: "skip-declarations" });
 assert.equal(getFoxDraft().documentsSkipped, false);
 assert.equal(workspacePrompt(getFoxDraft()), "documents");
 
@@ -2972,6 +2993,7 @@ applyCapture({ field: "skip-available-assets" });
 applyCapture({ field: "skip-property-type" });
 applyCapture({ field: "skip-time-on-job" });
 applyCapture({ field: "skip-current-housing" });
+applyCapture({ field: "skip-declarations" });
 applyCapture({ field: "skip-docs" });
 assert.ok((getFoxDraft().skippedClasses ?? []).includes("government_id"));
 assert.ok(stillUsefulSection(getFoxDraft())?.items.some((item) => item.label === "Government ID"));
@@ -5652,7 +5674,7 @@ const notYetDebts = workspaceReply("Not yet", afterIncomeType);
 assert.equal(notYetDebts?.capture?.field, "skip-monthly-debts");
 assert.ok(
   canLooksRight(
-    skipDocInvites({ ...afterIncomeType, monthlyDebtsAsked: true, availableAssetsAsked: true, propertyTypeAsked: true, timeOnJobAsked: true, currentHousingAsked: true }),
+    skipDocInvites({ ...afterIncomeType, monthlyDebtsAsked: true, availableAssetsAsked: true, propertyTypeAsked: true, timeOnJobAsked: true, currentHousingAsked: true, declarationAsked: true }),
   ),
 );
 const skippedDebtFile = draft({
@@ -5662,6 +5684,7 @@ const skippedDebtFile = draft({
   propertyTypeAsked: true,
   timeOnJobAsked: true,
   currentHousingAsked: true,
+  declarationAsked: true,
 });
 assert.equal(skippedDebtFile.statedMonthlyDebts, undefined);
 assert.ok(
@@ -6619,7 +6642,7 @@ const refiAfterJob = draft({
   productIntent: "refinance",
   cashOut: false,
 });
-assert.equal(workspacePrompt(refiAfterJob), "documents");
+assert.equal(workspacePrompt(refiAfterJob), "declarations");
 assert.doesNotMatch(workspacePromptCopy("documents", refiAfterJob).text, /pay now for housing/);
 for (const spoken of ["2200", "$2,200", "about 2200"]) {
   const proposed = workspaceReply(spoken, afterJobAsk);
@@ -6658,17 +6681,17 @@ assert.ok(
 const leaveBlankHousing = workspaceReply("Leave blank", housingConfirmDraft);
 assert.equal(leaveBlankHousing?.capture?.field, "decline-proposal");
 assert.equal(resolveProposal(housingConfirmDraft, "decline").statedCurrentHousing, undefined);
-assert.match(leaveBlankHousing?.text ?? "", /Left that line blank|sketch|government ID/i);
+assert.match(leaveBlankHousing?.text ?? "", /Left that line blank|bankruptcy|foreclosure|short sale/i);
 assert.deepEqual(
   (leaveBlankHousing?.actions ?? []).map((item) => item.label),
-  ["Start with ID", "Skip", "Not yet"],
+  ["None", "Yes", "Skip", "Not yet"],
 );
 const skipHousing = workspaceReply("Skip", afterJobAsk);
 assert.equal(skipHousing?.capture?.field, "skip-current-housing");
-assert.match(skipHousing?.text ?? "", /sketch/i);
+assert.match(skipHousing?.text ?? "", /bankruptcy|foreclosure|short sale/i);
 assert.deepEqual(
   (skipHousing?.actions ?? []).map((item) => item.label),
-  ["Start with ID", "Skip", "Not yet"],
+  ["None", "Yes", "Skip", "Not yet"],
 );
 const skippedHousingFile = draft({ ...afterJobAsk, currentHousingAsked: true });
 assert.equal(skippedHousingFile.statedCurrentHousing, undefined);
@@ -6831,6 +6854,247 @@ const housingSrc = [
 ].join("\n");
 assert.doesNotMatch(housingSrc, /landlord maze|lease term|own-vs-rent form|HOA add-on|payment-shock worksheet/i);
 assert.doesNotMatch(housingSrc, /payment shock is|you don.t qualify/i);
+
+const afterHousingAsk = draft({
+  ...afterJobAsk,
+  currentHousingAsked: true,
+  propertyType: "sfr",
+  propertyTypeAsked: true,
+});
+assert.equal(workspacePrompt(afterHousingAsk), "declarations");
+assert.equal(workspacePromptCopy("declarations", afterHousingAsk).text, DECLARATIONS_ASK);
+assert.deepEqual(
+  (workspacePromptCopy("declarations", afterHousingAsk).actions ?? []).map((item) => item.label),
+  ["None", "Yes", "Skip", "Not yet"],
+);
+assert.equal(parseDeclarations("no"), "none");
+assert.equal(parseDeclarations("none"), "none");
+assert.equal(parseDeclarations("bk in 2018"), "event");
+assert.equal(parseDeclarations("I had a foreclosure"), "event");
+assert.equal(parseDeclarations("yes"), undefined);
+assert.equal(parseDeclarations("yes", { allowBareYes: true }), "event");
+
+const skipDeclarationsReply = workspaceReply("Skip", afterHousingAsk);
+assert.equal(skipDeclarationsReply?.capture?.field, "skip-declarations");
+assert.match(skipDeclarationsReply?.text ?? "", /sketch|government ID|Start with ID/i);
+assert.deepEqual(
+  (skipDeclarationsReply?.actions ?? []).map((item) => item.label),
+  ["Start with ID", "Skip", "Not yet"],
+);
+const skippedDeclarationsFile = draft({ ...afterHousingAsk, declarationAsked: true });
+assert.equal(skippedDeclarationsFile.statedDeclaration, undefined);
+assert.ok(
+  previewFacts(skippedDeclarationsFile).some(
+    (fact) => fact.id === "declarations" && fact.value === "—" && fact.note === SUGGESTED_DECLARATION_NOTE,
+  ),
+);
+const skipDeclarationsQualify = workspaceReply("will i qualify", skippedDeclarationsFile);
+assert.doesNotMatch(
+  skipDeclarationsQualify?.text ?? "",
+  /you don.t qualify|waiting period|7-year|ineligible for conventional|you are approved|\bDTI\b|I can run this past underwriting/i,
+);
+assert.match(skipDeclarationsQualify?.text ?? "", /paystub|W-2|notepad|Start with ID|Skip/i);
+assert.ok(storeCompleteness("buy", { purposeHint: "purchase", incomeType: "w2_base" }).stillUseful.includes("declarations"));
+assert.ok(
+  !storeCompleteness("buy", {
+    purposeHint: "purchase",
+    incomeType: "w2_base",
+    statedDeclaration: "none",
+  }).stillUseful.includes("declarations"),
+);
+assert.ok(
+  !documentedStillUsefulIds("buy", {
+    purposeHint: "purchase",
+    incomeType: "w2_base",
+  }).includes("declarations" as never),
+);
+
+const noneChip = workspaceReply("None", afterHousingAsk);
+assert.equal(noneChip?.capture?.field, "propose-declarations");
+assert.equal(
+  noneChip?.text,
+  "No bankruptcy, foreclosure, or short sale on the file. Suggested · not underwritten. Use this?",
+);
+assert.deepEqual(
+  (noneChip?.actions ?? []).map((item) => item.label),
+  ["Use this", "Leave blank"],
+);
+const noneConfirmDraft = {
+  ...afterHousingAsk,
+  pendingProposal: {
+    field: "statedDeclaration",
+    value: "none",
+    label: "Declarations",
+    kind: "computed" as const,
+    note: SUGGESTED_DECLARATION_NOTE,
+  },
+};
+const usedNone = resolveProposal(noneConfirmDraft, "accept");
+assert.equal(usedNone.statedDeclaration, "none");
+assert.equal(usedNone.declarationAsked, true);
+assert.equal(usedNone.creditEvent, undefined);
+assert.ok(
+  previewFacts(usedNone).some(
+    (fact) =>
+      fact.id === "declarations" &&
+      fact.label === "Declarations" &&
+      fact.value === "None" &&
+      fact.note === SUGGESTED_DECLARATION_NOTE,
+  ),
+);
+const noneQualify = workspaceReply("will i qualify", usedNone);
+assert.doesNotMatch(
+  noneQualify?.text ?? "",
+  /credit is clean|bureau pull|you don.t qualify|waiting period|you are approved/i,
+);
+assert.match(noneQualify?.text ?? "", /paystub|W-2|notepad|Start with ID|Skip/i);
+
+const yesChip = workspaceReply("Yes", afterHousingAsk);
+assert.equal(yesChip?.capture?.field, "propose-declarations");
+assert.equal(
+  yesChip?.text,
+  "I’ll note a credit event for underwriting. Suggested · not underwritten. Use this?",
+);
+assert.deepEqual(
+  (yesChip?.actions ?? []).map((item) => item.label),
+  ["Use this", "Leave blank"],
+);
+const eventConfirmDraft = {
+  ...afterHousingAsk,
+  pendingProposal: {
+    field: "statedDeclaration",
+    value: "event",
+    label: "Declarations",
+    kind: "computed" as const,
+    note: SUGGESTED_DECLARATION_NOTE,
+  },
+};
+const leaveBlankEvent = workspaceReply("Leave blank", eventConfirmDraft);
+assert.equal(leaveBlankEvent?.capture?.field, "decline-proposal");
+assert.equal(resolveProposal(eventConfirmDraft, "decline").statedDeclaration, undefined);
+assert.match(leaveBlankEvent?.text ?? "", /Left that line blank|sketch|government ID/i);
+assert.deepEqual(
+  (leaveBlankEvent?.actions ?? []).map((item) => item.label),
+  ["Start with ID", "Skip", "Not yet"],
+);
+const usedEvent = resolveProposal(eventConfirmDraft, "accept");
+assert.equal(usedEvent.statedDeclaration, "event");
+assert.equal(usedEvent.declarationAsked, true);
+assert.ok(
+  previewFacts(usedEvent).some(
+    (fact) =>
+      fact.id === "declarations" &&
+      fact.value === "Something to review" &&
+      fact.note === SUGGESTED_DECLARATION_NOTE,
+  ),
+);
+const eventQualify = workspaceReply("will i qualify", usedEvent);
+assert.match(eventQualify?.text ?? "", /I can run this past underwriting before we go further\./);
+assert.doesNotMatch(
+  eventQualify?.text ?? "",
+  /you don.t qualify|waiting period|7-year|ineligible for conventional|you are approved|\bDTI\b|you qualify\b/i,
+);
+assert.match(eventQualify?.text ?? "", /underwriting|Start with ID|Skip/i);
+assert.equal(
+  readinessFromFile({
+    product: "buy",
+    purposeHint: "purchase",
+    occupancy: "primary",
+    state: "CA",
+    purchasePrice: 850000,
+    downPayment: 170000,
+    loanAmount: 680000,
+    statedCreditBand: "760+",
+    incomeType: "w2_base",
+    received: ["paystub", "w2"],
+    propertyType: "sfr",
+    namedDistress: true,
+    statedDeclaration: "event",
+  }).kind,
+  "uw_review",
+);
+assert.equal(
+  readinessFromFile({
+    product: "buy",
+    purposeHint: "purchase",
+    occupancy: "primary",
+    state: "CA",
+    purchasePrice: 850000,
+    downPayment: 170000,
+    loanAmount: 680000,
+    statedCreditBand: "760+",
+    incomeType: "w2_base",
+    received: ["paystub", "w2"],
+    propertyType: "sfr",
+    statedDeclaration: "none",
+  }).kind,
+  "strong",
+);
+assert.doesNotMatch(
+  readinessFromFile({
+    product: "buy",
+    purposeHint: "purchase",
+    occupancy: "primary",
+    state: "CA",
+    purchasePrice: 850000,
+    downPayment: 170000,
+    loanAmount: 680000,
+    statedCreditBand: "760+",
+    incomeType: "w2_base",
+    received: ["paystub", "w2"],
+    propertyType: "sfr",
+    statedDeclaration: "event",
+    namedDistress: true,
+  }).line,
+  /waiting period|7-year|chapter|you don.t qualify|ineligible/,
+);
+
+const typedForeclosure = workspaceReply("I had a foreclosure", afterHousingAsk);
+assert.equal(typedForeclosure?.capture?.field, "propose-declarations");
+assert.equal(
+  typedForeclosure?.text,
+  "I’ll note a credit event for underwriting. Suggested · not underwritten. Use this?",
+);
+assert.doesNotMatch(typedForeclosure?.text ?? "", /chapter|discharged|dismissed|year|2018|form/i);
+assert.equal(afterHousingAsk.statedDeclaration, undefined);
+assert.equal(afterHousingAsk.creditEvent, undefined);
+
+const midDeclarationsEdit = draft({
+  ...afterHousingAsk,
+  declarationAsked: true,
+  statedDeclaration: "event",
+  creditEvent: "foreclosure",
+  correcting: "declarations",
+  correctingLine: "declarations",
+});
+assert.match(workspacePromptCopy("declarations", midDeclarationsEdit).text, /still right/i);
+const midNone = workspaceReply("None", midDeclarationsEdit);
+assert.equal(midNone?.capture?.field, "propose-declarations");
+assert.match(midNone?.text ?? "", /No bankruptcy, foreclosure, or short sale on the file/);
+const midNoneWritten = resolveProposal(
+  {
+    ...midDeclarationsEdit,
+    pendingProposal: {
+      field: "statedDeclaration",
+      value: "none",
+      label: "Declarations",
+      kind: "computed" as const,
+      note: SUGGESTED_DECLARATION_NOTE,
+    },
+  },
+  "accept",
+);
+assert.equal(midNoneWritten.statedDeclaration, "none");
+assert.equal(midNoneWritten.creditEvent, undefined);
+assert.equal(emptyDraft().statedDeclaration, undefined);
+assert.equal(structureFixPrompt("declarations"), "declarations");
+
+const declarationsSrc = [
+  readFileSync(join(root, "components/fox/declarations.ts"), "utf8"),
+  readFileSync(join(root, "components/fox/workspace.ts"), "utf8"),
+].join("\n");
+assert.doesNotMatch(declarationsSrc, /1003 declarations maze|citizenship quiz|lawsuit form|alimony form|child-support form|co-signer maze/i);
+assert.doesNotMatch(declarationsSrc, /waiting period|7-year clock|you are ineligible for conventional|you don.t qualify/i);
 
 const debtsSrc = [
   readFileSync(join(root, "components/fox/workspace.ts"), "utf8"),

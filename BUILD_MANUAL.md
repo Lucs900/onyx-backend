@@ -439,6 +439,28 @@ Still useful may list current housing as optional, never required. Proceed still
 
 Readiness is notepad only. Empty keeps existing thin / not-ready / strong / UW-review / funds-short / condo / time-on-job lines — no housing problem invented. A present number does not claim the new payment is affordable and does not invent a shock percent. Current housing alone never creates a strong line and never creates a not-ready line. Never: you don’t qualify; payment shock is X%; current housing as underwritten PITI.
 
+### Declarations v1 — one optional credit-event fact
+
+After the current-housing ask (or that Skip), before the docs maze, Fox may ask once:
+
+`Any bankruptcy, foreclosure, or short sale I should know about? Skip is fine if none.`
+
+Chips: None / Yes / Skip / Not yet. Messy typed answers (no, none, bk in 2018, I had a foreclosure) confirm-before-write. Do not interrogate year, chapter, or discharged-vs-dismissed.
+
+None confirm:
+
+`No bankruptcy, foreclosure, or short sale on the file. Suggested · not underwritten. Use this?`
+
+Yes / typed event confirm:
+
+`I’ll note a credit event for underwriting. Suggested · not underwritten. Use this?`
+
+Use this writes `statedDeclaration` (`none` | `event`). A volunteered phrase may be a note, not an underwritten finding. Leave blank writes nothing and restores the next action. Structure shows `Declarations` as None or Something to review with `Suggested · not underwritten`. Editable mid-file. Start over is a full reset only.
+
+Skip / Not yet leaves the field empty. Proceed still works. Still useful may list declarations as optional, never required. Free-text mid-file uses the same confirm card — no silent write.
+
+Readiness: empty keeps existing thin / not-ready / strong / UW-review / funds-short / condo / time-on-job lines — no credit-event problem invented. None confirmed does not claim credit is clean and does not invent a bureau pull; existing readiness stays. Event confirmed uses the existing UW-review line (`I can run this past underwriting before we go further.`) and then restores the next action. One line. If condo or time-on-job already picked UW-review, still one line. Wire the confirmed event to the existing volunteered-distress store (`namedDistress`); do not invent a parallel denial engine. Declarations alone never create a strong line. An event never creates a strong line this gate. Never: you don’t qualify; you are ineligible for conventional; invented waiting periods; invented 7-year clocks; invented chapter; you are approved; DTI percents.
+
 ### Quiet flags + more-complete asks
 
 After Looks right / agency-shaped minimums, conventional files can deepen still-useful past the minimum three. HELOC and Jumbo stay thin. Never `agency_ready`.

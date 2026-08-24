@@ -200,6 +200,24 @@ import {
   skipCurrentHousing,
 } from "./currentHousing";
 import {
+  DECLARATIONS_ASK,
+  STATED_DECLARATION_FIELD,
+  SUGGESTED_DECLARATION_NOTE,
+  declarationsAskCopy,
+  declarationsConfirmActions,
+  declarationsConfirmCopy,
+  declarationsLabel,
+  declarationsSettled,
+  isDeclarationsConfirmPending,
+  isSkipDeclarationsText,
+  isStatedDeclaration,
+  parseDeclarations,
+  proposeStatedDeclaration,
+  skipDeclarations,
+  volunteeredDeclarationNote,
+  writeStatedDeclaration,
+} from "./declarations";
+import {
   ACR_BENEFITS_LINE,
   COST_LINE,
   FHFA_HIGH_COST_CEILING_2026 as STORE_HIGH_COST_CEILING,
@@ -1222,6 +1240,12 @@ function liveProposalAsk(
       actions: currentHousingConfirmActions(),
     };
   }
+  if (proposal.field === STATED_DECLARATION_FIELD) {
+    return {
+      text: proposalAskCopy(proposal),
+      actions: declarationsConfirmActions(),
+    };
+  }
   if (proposal.field === QUALIFYING_INCOME_FIELD) {
     if (combinedParts(proposal) || proposal.methodNote?.startsWith("combined ")) {
       return combinedReactionAsk(draft, proposal);
@@ -1353,6 +1377,7 @@ const CORRECTION_CHIP_IDS = new Set([
   "property-type",
   "time-on-job",
   "current-housing",
+  "declarations",
 ]);
 
 function yearsOnFile(draft: FoxIntakeDraft) {
@@ -1394,6 +1419,9 @@ function extraCorrectionLines(draft: FoxIntakeDraft): { id: string; label: strin
   }
   if (draft.currentHousingAsked || draft.statedCurrentHousing != null) {
     extra.push({ id: "current-housing", label: "Current housing", prompt: "current-housing" });
+  }
+  if (draft.declarationAsked || draft.statedDeclaration) {
+    extra.push({ id: "declarations", label: "Declarations", prompt: "declarations" });
   }
   return extra;
 }
@@ -1705,7 +1733,8 @@ export function shouldDeferStillUsefulAsk(draft: FoxIntakeDraft): boolean {
     isPropertyTypeConfirmPending(draft) ||
     isSubjectAddressConfirmPending(draft) ||
     isTimeOnJobConfirmPending(draft) ||
-    isCurrentHousingConfirmPending(draft)
+    isCurrentHousingConfirmPending(draft) ||
+    isDeclarationsConfirmPending(draft)
   );
 }
 
@@ -1765,6 +1794,7 @@ export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
   if (!propertyTypeSettled(draft)) return "property-type";
   if (!timeOnJobSettled(draft)) return "time-on-job";
   if (!currentHousingSettled(draft)) return "current-housing";
+  if (!declarationsSettled(draft)) return "declarations";
   if (!draft.sampleAccepted && draft.awaitingYearsInBusiness) return "documents";
   if (nextDocInvite(draft)) return "documents";
   if (!draft.sampleAccepted) return canLooksRight(draft) ? "review" : "amount";
@@ -1963,6 +1993,9 @@ function workspaceAskCopy(
   }
   if (prompt === "current-housing") {
     return currentHousingAskCopy(draft);
+  }
+  if (prompt === "declarations") {
+    return declarationsAskCopy(draft);
   }
   if (prompt === "qualifying") {
     const shown =
@@ -2593,6 +2626,13 @@ export function editPromptFromCapture(capture?: Capture): FoxPrompt | undefined 
   ) {
     return "current-housing";
   }
+  if (
+    capture.field === "skip-declarations" ||
+    capture.field === "propose-declarations" ||
+    capture.field === "statedDeclaration"
+  ) {
+    return "declarations";
+  }
   if (capture.field === "propose-subject-address" || capture.field === "subjectAddress") {
     return "confirm-proposal";
   }
@@ -2780,6 +2820,13 @@ export function workspaceUpdateCopy(capture: Capture, draft: FoxIntakeDraft) {
       ? `Updated current housing to ${formatMoney(n)}.`
       : "Updated current housing.";
   }
+  if (capture.field === "skip-declarations") return "Updated. Declarations left blank.";
+  if (capture.field === "propose-declarations") return "Updated.";
+  if (capture.field === "statedDeclaration") {
+    return isStatedDeclaration(capture.value)
+      ? `Updated declarations to ${declarationsLabel(capture.value)}.`
+      : "Updated declarations.";
+  }
   if (capture.field === "statedAvailableAssets") {
     const n = Number(capture.value.replace(/,/g, ""));
     return Number.isFinite(n) && n > 0
@@ -2809,7 +2856,7 @@ export function parseWorkspaceEdit(
   const q = text.trim();
   const lower = q.toLowerCase();
   const namedField =
-    /\boccupan|\b(credit|fico|income|timeline|product|purchase price|\bprice\b|down(\s+payment)?|loan amount|years? in business|path|property type|condo|house|sfr|time on job|current housing)\b/.test(
+    /\boccupan|\b(credit|fico|income|timeline|product|purchase price|\bprice\b|down(\s+payment)?|loan amount|years? in business|path|property type|condo|house|sfr|time on job|current housing|declarations?)\b/.test(
       lower,
     );
   const spokenFix =
@@ -2872,6 +2919,17 @@ export function parseWorkspaceEdit(
       };
     }
     return { correct: "current-housing", confirm: CURRENT_HOUSING_ASK };
+  }
+
+  if (/\bdeclarations?\b/.test(lower)) {
+    const value = parseDeclarations(q, { allowBareYes: true });
+    if (value) {
+      return {
+        capture: { field: "propose-declarations", value },
+        confirm: declarationsConfirmCopy(value),
+      };
+    }
+    return { correct: "declarations", confirm: DECLARATIONS_ASK };
   }
 
   if (/\boccupan/.test(lower)) {
@@ -3096,6 +3154,13 @@ function draftAfterCapture(draft: FoxIntakeDraft, capture: Capture): FoxIntakeDr
   if (capture.field === "in-state") return { ...next, outOfState: false };
   if (capture.field === "govProgram") return { ...next, govProgram: capture.value };
   if (capture.field === "creditEvent") return { ...next, creditEvent: capture.value };
+  if (capture.field === "skip-declarations") return skipDeclarations(next);
+  if (capture.field === "propose-declarations" && isStatedDeclaration(capture.value)) {
+    return proposeStatedDeclaration(next, capture.value);
+  }
+  if (capture.field === "statedDeclaration" && isStatedDeclaration(capture.value)) {
+    return writeStatedDeclaration(next, capture.value);
+  }
   if (capture.field === "cashOut") return { ...next, cashOut: true };
   if (capture.field === "over-price-confirm") {
     return applyEscalateMotion({ ...next, overPriceConfirmed: true });
@@ -3259,13 +3324,19 @@ function matrixReply(
     }, draft.originatorRequested ? undefined : [requestHumanAction()]);
   }
 
-  const event = namedCreditEvent(text);
-  if (event && draft.creditEvent !== event) {
-    const nextDraft = { ...draft, creditEvent: event };
-    return continueAfterFlag(creditEventCopy(nextDraft), nextDraft, {
-      field: "creditEvent",
-      value: event,
-    }, draft.originatorRequested ? undefined : [requestHumanAction()]);
+  const volunteeredEvent = parseDeclarations(text);
+  if (
+    volunteeredEvent === "event" &&
+    !draft.pendingProposal &&
+    !draft.pendingConflict &&
+    draft.statedDeclaration !== "event"
+  ) {
+    const note = volunteeredDeclarationNote(text, "event");
+    const nextDraft = proposeStatedDeclaration(draft, "event", note);
+    return {
+      ...workspacePromptCopy("confirm-proposal", nextDraft),
+      capture: { field: "propose-declarations", value: "event" },
+    };
   }
 
   if (namedCashOut(text) && !draft.cashOut && isRefiLike(draft)) {
@@ -3435,7 +3506,8 @@ export function workspaceReply(
         isPropertyTypeConfirmPending(draft) ||
         isSubjectAddressConfirmPending(draft) ||
         isTimeOnJobConfirmPending(draft) ||
-        isCurrentHousingConfirmPending(draft)) &&
+        isCurrentHousingConfirmPending(draft) ||
+        isDeclarationsConfirmPending(draft)) &&
       asksWillIQualify(q)
     ) {
       return answerThenRestore(q, draft);
@@ -4123,6 +4195,25 @@ export function workspaceReply(
     };
   }
 
+  if (prompt === "declarations") {
+    if (draft.statedDeclaration && isKeepThisText(q)) return keepThisReply(draft);
+    if (isSkipDeclarationsText(q)) {
+      const nextDraft = skipDeclarations(draft);
+      return {
+        ...workspacePromptCopy(workspacePrompt(nextDraft), nextDraft),
+        capture: { field: "skip-declarations" },
+      };
+    }
+    const value = parseDeclarations(q, { allowBareYes: true });
+    if (!value) return answerThenRestore(q, draft);
+    const note = volunteeredDeclarationNote(q, value);
+    const nextDraft = proposeStatedDeclaration(draft, value, note);
+    return {
+      ...workspacePromptCopy("confirm-proposal", nextDraft),
+      capture: { field: "propose-declarations", value },
+    };
+  }
+
   if (prompt === "income") {
     if (draft.incomeType.value && isKeepThisText(q)) return keepThisReply(draft);
     const match = incomeFromText(q);
@@ -4685,6 +4776,27 @@ export function previewFacts(draft: FoxIntakeDraft): PreviewFact[] {
     });
   }
 
+  if (
+    draft.declarationAsked ||
+    draft.statedDeclaration ||
+    isDeclarationsConfirmPending(draft)
+  ) {
+    const pending = isDeclarationsConfirmPending(draft)
+      ? draft.pendingProposal?.value
+      : undefined;
+    const shown = draft.statedDeclaration
+      ? declarationsLabel(draft.statedDeclaration)
+      : pending && isStatedDeclaration(pending)
+        ? declarationsLabel(pending)
+        : "—";
+    facts.push({
+      id: "declarations",
+      label: "Declarations",
+      value: shown,
+      note: SUGGESTED_DECLARATION_NOTE,
+    });
+  }
+
   const address = draft.subjectAddress || factValue(draft, "property_address");
   if (address) {
     facts.push({
@@ -4891,6 +5003,7 @@ export function structureFixPrompt(
   if (id === "property-type") return "property-type";
   if (id === "time-on-job") return "time-on-job";
   if (id === "current-housing") return "current-housing";
+  if (id === "declarations") return "declarations";
   if (id === "qualifying") return "qualifying";
   if (id === "years-in-business") return "years-in-business";
   if (id === "docs") return "documents";
@@ -4930,6 +5043,11 @@ export function structureExplainCopy(
   if (id === "current-housing") {
     return {
       text: "Current housing. Suggested · not underwritten.",
+    };
+  }
+  if (id === "declarations") {
+    return {
+      text: "Declarations. Suggested · not underwritten.",
     };
   }
   if (id === "rate") {

@@ -129,6 +129,12 @@ import {
   skipCurrentHousing,
   writeStatedCurrentHousing,
 } from "./currentHousing";
+import {
+  isStatedDeclaration,
+  proposeStatedDeclaration,
+  skipDeclarations,
+  writeStatedDeclaration,
+} from "./declarations";
 
 function numberOrUndefined(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : undefined;
@@ -262,6 +268,15 @@ function normalize(value: unknown): FoxIntakeDraft {
     statedCurrentHousing: numberOrUndefined(raw.statedCurrentHousing),
     currentHousingAsked: Boolean(raw.currentHousingAsked || raw.statedCurrentHousing != null),
     pendingCurrentHousing: normalizePendingCurrentHousing(raw.pendingCurrentHousing),
+    statedDeclaration:
+      raw.statedDeclaration === "none" || raw.statedDeclaration === "event"
+        ? raw.statedDeclaration
+        : undefined,
+    declarationAsked: Boolean(raw.declarationAsked || raw.statedDeclaration),
+    declarationNote:
+      typeof raw.declarationNote === "string" && raw.declarationNote.trim()
+        ? raw.declarationNote.trim()
+        : undefined,
     docsOpen: Boolean(raw.docsOpen),
     docsStarted: Boolean(raw.docsStarted),
     docsHeld: Boolean(raw.docsHeld),
@@ -1287,6 +1302,17 @@ export function applyCapture(capture: Capture) {
     const amount = Number(capture.value);
     if (!Number.isFinite(amount) || amount <= 0) return current;
     return commit(writeStatedCurrentHousing(current, amount));
+  }
+  if (capture.field === "skip-declarations") {
+    return commit(skipDeclarations(current));
+  }
+  if (capture.field === "propose-declarations") {
+    if (!isStatedDeclaration(capture.value)) return current;
+    return commit(proposeStatedDeclaration(current, capture.value));
+  }
+  if (capture.field === "statedDeclaration") {
+    if (!isStatedDeclaration(capture.value)) return current;
+    return commit(writeStatedDeclaration(current, capture.value));
   }
   if (capture.field === "incomeType") {
     const midFile = Boolean(current.correcting);
