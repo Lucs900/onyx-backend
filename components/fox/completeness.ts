@@ -37,6 +37,13 @@ import {
   skipMonthlyDebts,
 } from "./monthlyDebts";
 import {
+  STATED_AVAILABLE_ASSETS_FIELD,
+  SUGGESTED_ASSETS_NOTE,
+  availableAssetsConfirmCopy,
+  availableAssetsExtractCopy,
+  skipAvailableAssets,
+} from "./availableAssets";
+import {
   HIGH_LTV_CAUTION as STORE_HIGH_LTV_CAUTION,
   HIGH_PURCHASE_LTV as STORE_HIGH_PURCHASE_LTV,
   JUMBO_CEILING_LINE,
@@ -49,7 +56,14 @@ import {
 
 export const SUGGESTED_NOTE = "Suggested · not verified";
 export const PROPOSED_NOTE = "Proposed · confirm";
-export { SUGGESTED_INCOME_NOTE, QUALIFYING_INCOME_FIELD, SUGGESTED_DEBTS_NOTE, STATED_MONTHLY_DEBTS_FIELD };
+export {
+  SUGGESTED_INCOME_NOTE,
+  QUALIFYING_INCOME_FIELD,
+  SUGGESTED_DEBTS_NOTE,
+  STATED_MONTHLY_DEBTS_FIELD,
+  SUGGESTED_ASSETS_NOTE,
+  STATED_AVAILABLE_ASSETS_FIELD,
+};
 export const YEARS_IN_BUSINESS_FIELD = "years_in_business";
 export const YEARS_IN_BUSINESS_ASK = "How long have you been running this?";
 export const MISSING_LINE = "—";
@@ -484,6 +498,7 @@ export function factsFromDraft(draft: FoxIntakeDraft): CompletenessFile {
     unresolvedConflict: Boolean(draft.unresolvedConflict),
     ...(debts.length ? { debts } : {}),
     ...(draft.statedMonthlyDebts != null ? { statedMonthlyDebts: draft.statedMonthlyDebts } : {}),
+    ...(draft.statedAvailableAssets != null ? { statedAvailableAssets: draft.statedAvailableAssets } : {}),
     ...(suggestedMonthlyIncome != null ? { suggestedMonthlyIncome } : {}),
     docsSkipped: Boolean(
       draft.documentsSkipped || draft.docsHeld || (draft.skippedClasses?.length ?? 0) > 0,
@@ -532,6 +547,7 @@ export function structureFieldForProposal(field: string) {
   if (field === "property_address") return "address";
   if (field === QUALIFYING_INCOME_FIELD) return "qualifying";
   if (field === STATED_MONTHLY_DEBTS_FIELD) return "debts";
+  if (field === STATED_AVAILABLE_ASSETS_FIELD) return "assets";
   return field;
 }
 
@@ -563,6 +579,12 @@ export function remainderAskCopy(proposal: FactProposal) {
 }
 
 export function proposalAskCopy(proposal: FactProposal) {
+  if (proposal.field === STATED_AVAILABLE_ASSETS_FIELD) {
+    const amount = Number(proposal.value) || 0;
+    return proposal.extras?.length
+      ? availableAssetsExtractCopy(amount)
+      : availableAssetsConfirmCopy(amount);
+  }
   if (isRemainderConfirmField(proposal.field) || proposal.extras?.length) {
     return remainderAskCopy(proposal);
   }
@@ -696,6 +718,14 @@ function writeConfirmedFact(
       facts,
     };
   }
+  if (field === STATED_AVAILABLE_ASSETS_FIELD && amount != null) {
+    next = {
+      ...next,
+      statedAvailableAssets: amount,
+      availableAssetsAsked: true,
+      facts,
+    };
+  }
   if (field === "full_name" && !draft.contact.fullName.value) {
     next = {
       ...next,
@@ -787,10 +817,15 @@ export function resolveProposal(
     if (proposal.field === STATED_MONTHLY_DEBTS_FIELD) {
       return skipMonthlyDebts({ ...draft, pendingProposal: null });
     }
+    if (proposal.field === STATED_AVAILABLE_ASSETS_FIELD) {
+      return skipAvailableAssets({ ...draft, pendingProposal: null });
+    }
     return { ...draft, pendingProposal: null };
   }
   const source =
-    proposal.field === QUALIFYING_INCOME_FIELD || proposal.kind === "public"
+    proposal.field === QUALIFYING_INCOME_FIELD ||
+      proposal.field === STATED_AVAILABLE_ASSETS_FIELD ||
+      proposal.kind === "public"
       ? "suggested"
       : isRemainderConfirmField(proposal.field)
         ? "document"

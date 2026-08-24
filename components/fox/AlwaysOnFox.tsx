@@ -685,7 +685,7 @@ export function AlwaysOnFox({
           next.push(
             foxAskMessage({
               text: conflictAskCopy(detail.conflict),
-              actions: conflictActions(),
+              actions: conflictActions(detail.conflict),
             }),
           );
         } else if (
@@ -698,7 +698,7 @@ export function AlwaysOnFox({
           const ask = live.pendingConflict
             ? {
                 text: conflictAskCopy(live.pendingConflict),
-                actions: conflictActions(),
+                actions: conflictActions(live.pendingConflict),
               }
             : reaction ?? workspacePromptCopy("confirm-proposal", live);
           const lastFox = lastFoxTurn(next);

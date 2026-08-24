@@ -103,6 +103,12 @@ import {
   subjectMortgagePayment,
   writeStatedMonthlyDebts,
 } from "./monthlyDebts";
+import {
+  parseAvailableAssetsAmount,
+  proposeStatedAvailableAssets,
+  skipAvailableAssets,
+  writeStatedAvailableAssets,
+} from "./availableAssets";
 
 function numberOrUndefined(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : undefined;
@@ -222,6 +228,8 @@ function normalize(value: unknown): FoxIntakeDraft {
     monthlyDebtsAsked: Boolean(raw.monthlyDebtsAsked || raw.statedMonthlyDebts != null),
     debtMortgageAsked: Boolean(raw.debtMortgageAsked),
     pendingDebtMortgage: normalizePendingDebtMortgage(raw.pendingDebtMortgage),
+    statedAvailableAssets: numberOrUndefined(raw.statedAvailableAssets),
+    availableAssetsAsked: Boolean(raw.availableAssetsAsked || raw.statedAvailableAssets != null),
     docsOpen: Boolean(raw.docsOpen),
     docsStarted: Boolean(raw.docsStarted),
     docsHeld: Boolean(raw.docsHeld),
@@ -1155,6 +1163,19 @@ export function applyCapture(capture: Capture) {
     const amount = parseMonthlyDebtAmount(capture.value);
     if (amount == null) return current;
     return commit(writeStatedMonthlyDebts(current, amount));
+  }
+  if (capture.field === "skip-available-assets") {
+    return commit(skipAvailableAssets(current));
+  }
+  if (capture.field === "propose-available-assets") {
+    const amount = parseAvailableAssetsAmount(capture.value);
+    if (amount == null) return current;
+    return commit(proposeStatedAvailableAssets(current, amount));
+  }
+  if (capture.field === "statedAvailableAssets") {
+    const amount = parseAvailableAssetsAmount(capture.value);
+    if (amount == null) return current;
+    return commit(writeStatedAvailableAssets(current, amount));
   }
   if (capture.field === "incomeType") {
     const midFile = Boolean(current.correcting);

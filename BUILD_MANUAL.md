@@ -355,6 +355,28 @@ No itemized liability maze. No cards / autos / student / HOA form. No bureau pul
 
 Readiness: empty debts keep the locked thin / not-ready / strong / UW-review lines. A confirmed total may color not-ready or UW-review only when the payment is obviously large versus suggested income. Never print “stated DTI” or “your DTI is X%.” Strong still includes the final-underwriting sentence.
 
+### Assets / reserves v1 — one stated available-funds picture
+
+After the debts ask (or debts Skip), before the docs maze, Fox may ask once for cash / available funds. Skip / Not yet writes nothing. A number (50000, $50,000, 50k, about 50k) confirm-before-write:
+
+`That’s $50,000 in available funds. Suggested · not underwritten. Use this?`
+
+Use this writes `statedAvailableAssets`. Leave blank writes nothing and restores the next action. Structure shows `Stated available assets` with `Suggested · not underwritten`. Editable mid-file. Start over is a full reset only.
+
+Bank statement extract → suggest → confirm → write. Never silent-write:
+
+`The statement shows about $18,400. Suggested · not underwritten as available assets. Use this?`
+
+If the typed field is empty, offer the extract instead of a second typed ask. If a typed number is already confirmed and the extract differs, ask once (Use document / Keep the typed number). After a confirmed extract, do not re-ask the typed question.
+
+Still useful may list stated available assets as optional, never required. Bank statement stays a useful document, not a gate.
+
+Readiness: empty assets keep existing lines. Confirmed assets obviously below purchase cash down:
+
+`This does not look ready yet. Available funds look short of the $170,000 down payment. More cash to close would likely help.`
+
+Do not invent closing costs, reserve-month counts, or a gift. Do not claim reserves are enough when assets meet the down. Funds-short fires only when a purchase down exists. Assets alone never create a strong line.
+
 ### Quiet flags + more-complete asks
 
 After Looks right / agency-shaped minimums, conventional files can deepen still-useful past the minimum three. HELOC and Jumbo stay thin. Never `agency_ready`.

@@ -136,6 +136,20 @@ import {
   subjectMortgagePayment,
 } from "./monthlyDebts";
 import {
+  STATED_AVAILABLE_ASSETS_FIELD,
+  SUGGESTED_ASSETS_NOTE,
+  assetsSettled,
+  availableAssetsAskCopy,
+  availableAssetsConfirmActions,
+  availableAssetsConfirmCopy,
+  availableAssetsExtractCopy,
+  isSkipAvailableAssetsText,
+  isStatedAssetsConfirmPending,
+  parseAvailableAssetsAmount,
+  proposeStatedAvailableAssets,
+  skipAvailableAssets,
+} from "./availableAssets";
+import {
   ACR_BENEFITS_LINE,
   COST_LINE,
   FHFA_HIGH_COST_CEILING_2026 as STORE_HIGH_COST_CEILING,
@@ -1120,6 +1134,16 @@ function liveProposalAsk(
       actions: monthlyDebtsConfirmActions(),
     };
   }
+  if (proposal.field === STATED_AVAILABLE_ASSETS_FIELD) {
+    const amount = Number(proposal.value);
+    const shown = Number.isFinite(amount) ? amount : 0;
+    return {
+      text: proposal.extras?.length
+        ? availableAssetsExtractCopy(shown)
+        : availableAssetsConfirmCopy(shown),
+      actions: availableAssetsConfirmActions(),
+    };
+  }
   if (proposal.field === QUALIFYING_INCOME_FIELD) {
     if (combinedParts(proposal) || proposal.methodNote?.startsWith("combined ")) {
       return combinedReactionAsk(draft, proposal);
@@ -1153,7 +1177,7 @@ export function docReactionAsk(
   if (draft.pendingConflict) {
     return {
       text: conflictAskCopy(draft.pendingConflict),
-      actions: conflictActions(),
+      actions: conflictActions(draft.pendingConflict),
     };
   }
   if (cls === "government_id") return identityReactionAsk(draft);
@@ -1247,6 +1271,7 @@ const CORRECTION_CHIP_IDS = new Set([
   "qualifying",
   "years-in-business",
   "debts",
+  "assets",
 ]);
 
 function yearsOnFile(draft: FoxIntakeDraft) {
@@ -1276,6 +1301,9 @@ function extraCorrectionLines(draft: FoxIntakeDraft): { id: string; label: strin
   }
   if (draft.monthlyDebtsAsked || draft.statedMonthlyDebts != null) {
     extra.push({ id: "debts", label: "Stated monthly debts", prompt: "debts" });
+  }
+  if (draft.availableAssetsAsked || draft.statedAvailableAssets != null) {
+    extra.push({ id: "assets", label: "Stated available assets", prompt: "assets" });
   }
   return extra;
 }
@@ -1582,7 +1610,8 @@ export function shouldDeferStillUsefulAsk(draft: FoxIntakeDraft): boolean {
   return (
     isQualifyingIncomeConfirmPending(draft) ||
     Boolean(draft.awaitingPayFrequency) ||
-    Boolean(draft.pendingProposal && isRemainderConfirmField(draft.pendingProposal.field))
+    Boolean(draft.pendingProposal && isRemainderConfirmField(draft.pendingProposal.field)) ||
+    isStatedAssetsConfirmPending(draft)
   );
 }
 
@@ -1638,6 +1667,7 @@ export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
   if (!creditSettled(draft)) return "credit";
   if (!incomeSettled(draft)) return "income";
   if (!debtsSettled(draft)) return "debts";
+  if (!assetsSettled(draft)) return "assets";
   if (!draft.sampleAccepted && draft.awaitingYearsInBusiness) return "documents";
   if (nextDocInvite(draft)) return "documents";
   if (!draft.sampleAccepted) return canLooksRight(draft) ? "review" : "amount";
@@ -1825,6 +1855,9 @@ function workspaceAskCopy(
   if (prompt === "debts") {
     return monthlyDebtsAskCopy(draft);
   }
+  if (prompt === "assets") {
+    return availableAssetsAskCopy(draft);
+  }
   if (prompt === "qualifying") {
     const shown =
       qualifyingIncomeDisplay(draft)?.value ||
@@ -1907,7 +1940,7 @@ function workspaceAskCopy(
     if (draft.pendingConflict) {
       return {
         text: conflictAskCopy(draft.pendingConflict),
-        actions: conflictActions(),
+        actions: conflictActions(draft.pendingConflict),
       };
     }
     const proposal = draft.pendingProposal;
@@ -2427,6 +2460,13 @@ export function editPromptFromCapture(capture?: Capture): FoxPrompt | undefined 
     return "debts";
   }
   if (
+    capture.field === "skip-available-assets" ||
+    capture.field === "propose-available-assets" ||
+    capture.field === "statedAvailableAssets"
+  ) {
+    return "assets";
+  }
+  if (
     capture.field === "skip-docs" ||
     capture.field === "hold-docs" ||
     capture.field === "start-docs" ||
@@ -2579,6 +2619,14 @@ export function workspaceUpdateCopy(capture: Capture, draft: FoxIntakeDraft) {
     return Number.isFinite(n) && n > 0
       ? `Updated stated monthly debts to ${formatMoney(n)}.`
       : "Updated stated monthly debts.";
+  }
+  if (capture.field === "skip-available-assets") return "Updated. Stated available assets left blank.";
+  if (capture.field === "propose-available-assets") return "Updated.";
+  if (capture.field === "statedAvailableAssets") {
+    const n = Number(capture.value.replace(/,/g, ""));
+    return Number.isFinite(n) && n > 0
+      ? `Updated stated available assets to ${formatMoney(n)}.`
+      : "Updated stated available assets.";
   }
   if (capture.field === "skip-docs") return "Updated. Docs skipped.";
   if (capture.field === "hold-docs") return "Updated. Docs paused.";
@@ -3148,7 +3196,7 @@ export function workspaceReply(
         capture: { field: "keep-both-facts" },
       };
     }
-    if (/(keep (the )?file|file value|keep mine)/i.test(lower)) {
+    if (/(keep (the )?file|file value|keep mine|keep the typed)/i.test(lower)) {
       return {
         text: "Kept the file value.",
         capture: { field: "keep-file-fact" },
@@ -3185,7 +3233,9 @@ export function workspaceReply(
 
   if (draft.pendingProposal || prompt === "confirm-proposal") {
     if (
-      (isQualifyingIncomeConfirmPending(draft) || isStatedDebtsConfirmPending(draft)) &&
+      (isQualifyingIncomeConfirmPending(draft) ||
+        isStatedDebtsConfirmPending(draft) ||
+        isStatedAssetsConfirmPending(draft)) &&
       asksWillIQualify(q)
     ) {
       return answerThenRestore(q, draft);
@@ -3774,6 +3824,24 @@ export function workspaceReply(
     };
   }
 
+  if (prompt === "assets") {
+    if (draft.statedAvailableAssets != null && isKeepThisText(q)) return keepThisReply(draft);
+    if (isSkipAvailableAssetsText(q)) {
+      const nextDraft = skipAvailableAssets(draft);
+      return {
+        ...workspacePromptCopy(workspacePrompt(nextDraft), nextDraft),
+        capture: { field: "skip-available-assets" },
+      };
+    }
+    const amount = parseAvailableAssetsAmount(q);
+    if (amount == null) return answerThenRestore(q, draft);
+    const nextDraft = proposeStatedAvailableAssets(draft, amount);
+    return {
+      ...workspacePromptCopy("confirm-proposal", nextDraft),
+      capture: { field: "propose-available-assets", value: String(amount) },
+    };
+  }
+
   if (prompt === "income") {
     if (draft.incomeType.value && isKeepThisText(q)) return keepThisReply(draft);
     const match = incomeFromText(q);
@@ -4242,6 +4310,28 @@ export function previewFacts(draft: FoxIntakeDraft): PreviewFact[] {
     });
   }
 
+  if (
+    draft.availableAssetsAsked ||
+    draft.statedAvailableAssets != null ||
+    isStatedAssetsConfirmPending(draft)
+  ) {
+    const pendingAmount = isStatedAssetsConfirmPending(draft)
+      ? Number(draft.pendingProposal?.value)
+      : NaN;
+    const shown =
+      draft.statedAvailableAssets != null && draft.statedAvailableAssets > 0
+        ? formatMoney(draft.statedAvailableAssets)
+        : Number.isFinite(pendingAmount) && pendingAmount > 0
+          ? formatMoney(pendingAmount)
+          : "—";
+    facts.push({
+      id: "assets",
+      label: "Stated available assets",
+      value: shown,
+      note: SUGGESTED_ASSETS_NOTE,
+    });
+  }
+
   const address = factValue(draft, "property_address");
   if (address) {
     facts.push({ id: "address", label: "Property", value: address });
@@ -4439,6 +4529,7 @@ export function structureFixPrompt(
   if (id === "credit") return "credit";
   if (id === "income") return "income";
   if (id === "debts") return "debts";
+  if (id === "assets") return "assets";
   if (id === "qualifying") return "qualifying";
   if (id === "years-in-business") return "years-in-business";
   if (id === "docs") return "documents";
@@ -4458,6 +4549,11 @@ export function structureExplainCopy(
   if (id === "debts") {
     return {
       text: "Stated monthly debts. Suggested · not underwritten. Not a credit pull.",
+    };
+  }
+  if (id === "assets") {
+    return {
+      text: "Stated available assets. Suggested · not underwritten. Not a credit pull.",
     };
   }
   if (id === "rate") {

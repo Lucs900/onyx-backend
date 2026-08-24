@@ -35,6 +35,13 @@ import {
   type DocumentedStillUsefulId,
 } from "@/lib/guidelines/conventional";
 import { debtsSettled } from "./monthlyDebts";
+import {
+  STATED_AVAILABLE_ASSETS_FIELD,
+  SUGGESTED_ASSETS_EXTRACT_NOTE,
+  assetsSettled,
+  availableAssetsConflictActions,
+  proposeExtractedAvailableAssets,
+} from "./availableAssets";
 
 export { REJECT_LINE, LIMIT_LINE };
 
@@ -116,6 +123,7 @@ const MONEY_KEYS = new Set([
   "loanAmount",
   "loan_amount",
   "statedMonthlyDebts",
+  "statedAvailableAssets",
 ]);
 
 const INCOME_MONEY_KEYS = new Set([
@@ -405,6 +413,7 @@ export function factLabel(field: string) {
   if (field === "unpaid_principal") return "unpaid principal";
   if (field === "current_pi") return "current P&I";
   if (field === "income") return "income";
+  if (field === STATED_AVAILABLE_ASSETS_FIELD) return "Stated available assets";
   return field.replace(/_/g, " ");
 }
 
@@ -484,6 +493,9 @@ function existingFact(draft: FoxIntakeDraft, field: string): { value: string; vi
   if (field === "employer_name" && draft.facts?.employer_name?.value) {
     return { value: draft.facts.employer_name.value, via: "employer_name" };
   }
+  if (field === STATED_AVAILABLE_ASSETS_FIELD && draft.statedAvailableAssets != null) {
+    return { value: String(draft.statedAvailableAssets), via: "structure" };
+  }
   const direct = draft.facts?.[field]?.value;
   if (direct) return { value: direct, via: field };
   if (field === "qualifying_income" && draft.facts?.qualifying_income?.value) {
@@ -540,6 +552,7 @@ function writeField(
   }
   const pendingProposal =
     draft.pendingProposal && draft.pendingProposal.field === field ? null : draft.pendingProposal;
+  const assetAmount = field === STATED_AVAILABLE_ASSETS_FIELD ? moneyNumber(value) : null;
   return {
     ...draft,
     facts,
@@ -549,6 +562,9 @@ function writeField(
     loanAmountValue,
     amountAsked,
     pendingProposal,
+    ...(assetAmount != null
+      ? { statedAvailableAssets: assetAmount, availableAssetsAsked: true }
+      : {}),
   };
 }
 
@@ -731,6 +747,32 @@ export function applyExtractedFields(
     computed,
   );
   conflict = next.pendingConflict ?? conflict;
+  const extractedAssets = extractClass === "bank_statement" ? moneyNumber(fields.ending_balance ?? "") : null;
+  if (extractedAssets != null) {
+    if (next.statedAvailableAssets != null) {
+      if (!valuesMatch(String(next.statedAvailableAssets), String(extractedAssets)) && !conflict) {
+        conflict = {
+          field: STATED_AVAILABLE_ASSETS_FIELD,
+          fileValue: String(next.statedAvailableAssets),
+          documentValue: String(extractedAssets),
+          label: "Stated available assets",
+          kind: "document",
+        };
+        next = { ...next, pendingConflict: conflict };
+      }
+    } else if (!next.pendingConflict) {
+      next = proposeExtractedAvailableAssets(
+        next,
+        extractedAssets,
+        remainderWrites.map((item) => ({
+          field: item.field,
+          value: item.value,
+          label: factLabel(item.field),
+        })),
+      );
+      remainderWrites = [];
+    }
+  }
   if (
     remainderWrites.length &&
     (!next.pendingProposal || isRemainderConfirmField(next.pendingProposal.field))
@@ -1077,6 +1119,7 @@ export function completenessFileFromDraft(draft: FoxIntakeDraft): CompletenessFi
       draft.cashOut || factValue(draft, "cash_to_close") || factValue(draft, "reserves"),
     ),
     ...(draft.statedMonthlyDebts != null ? { statedMonthlyDebts: draft.statedMonthlyDebts } : {}),
+    ...(draft.statedAvailableAssets != null ? { statedAvailableAssets: draft.statedAvailableAssets } : {}),
   };
 }
 
@@ -1211,6 +1254,9 @@ export function missingAskKey(classes: ExtractClass[]) {
 }
 
 export function conflictAskCopy(conflict: FactConflict) {
+  if (conflict.field === STATED_AVAILABLE_ASSETS_FIELD) {
+    return `The statement shows about ${displayFactValue(conflict.field, conflict.documentValue)}. The file has ${displayFactValue(conflict.field, conflict.fileValue)} typed. ${SUGGESTED_ASSETS_EXTRACT_NOTE}.`;
+  }
   return `The file has ${conflict.label} ${displayFactValue(conflict.field, conflict.fileValue)}. The document has ${displayFactValue(conflict.field, conflict.documentValue)}. Which should I keep?`;
 }
 
@@ -1278,6 +1324,7 @@ export function nextDocInvite(draft: FoxIntakeDraft): DocInviteKind | null {
   if (draft.sampleAccepted) return null;
   if (!draft.incomeType.value && !draft.incomeAsked) return null;
   if (!debtsSettled(draft)) return null;
+  if (!assetsSettled(draft)) return null;
   if (draft.pendingProposal || draft.pendingConflict) return null;
   for (const kind of inviteSequence(draft)) {
     if (!inviteSatisfied(draft, kind)) return kind;
@@ -1344,7 +1391,10 @@ export function documentStatusLine(doc: ReceivedDoc) {
   return `${doc.name} · ${doc.status}`;
 }
 
-export function conflictActions(): FoxAction[] {
+export function conflictActions(conflict?: FactConflict | null): FoxAction[] {
+  if (conflict?.field === STATED_AVAILABLE_ASSETS_FIELD) {
+    return availableAssetsConflictActions();
+  }
   return [
     { id: "keep-file-fact", label: "Keep file", event: "bubble", capture: { field: "keep-file-fact" } },
     { id: "use-document-fact", label: "Use document", event: "bubble", capture: { field: "use-document-fact" } },

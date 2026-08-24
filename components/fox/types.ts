@@ -257,6 +257,8 @@ export type FoxIntakeDraft = {
     included: number;
     mortgage: number;
   } | null;
+  statedAvailableAssets?: number;
+  availableAssetsAsked?: boolean;
   docsOpen?: boolean;
   originatorRequested?: boolean;
   motion?: FileMotion;
@@ -322,6 +324,7 @@ export type FoxPrompt =
   | "preferred"
   | "income"
   | "debts"
+  | "assets"
   | "occupancy"
   | "timeline"
   | "documents"
@@ -348,6 +351,9 @@ export type Capture =
   | { field: "include-mortgage-debts"; value: string }
   | { field: "subtract-mortgage" }
   | { field: "statedMonthlyDebts"; value: string }
+  | { field: "skip-available-assets" }
+  | { field: "propose-available-assets"; value: string }
+  | { field: "statedAvailableAssets"; value: string }
   | { field: "occupancy"; value: string }
   | { field: "timeline"; value: string }
   | { field: "path"; value: IntakePath }

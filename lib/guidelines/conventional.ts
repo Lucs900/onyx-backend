@@ -190,6 +190,7 @@ export type FileFacts = {
   askedWillIQualify?: boolean;
   debts?: NamedDebt[];
   statedMonthlyDebts?: number;
+  statedAvailableAssets?: number;
   suggestedMonthlyIncome?: number;
   docsSkipped?: boolean;
   obviousHighDti?: boolean;
@@ -854,6 +855,7 @@ export function completeness(
   if (!received.has("employer_business")) stillUseful.push("employer/business");
   if (wantsSeYears(file.incomeType) && !received.has("se_years")) stillUseful.push("SE years");
   if (file.incomeType && file.statedMonthlyDebts == null) stillUseful.push("stated monthly debts");
+  if (file.incomeType && file.statedAvailableAssets == null) stillUseful.push("stated available assets");
 
   const hasSketch = Boolean(file.purchasePrice || file.loanAmount || file.propertyValue);
   const incomeReady = incomeDocsReceived(file.incomeType, received);
@@ -940,6 +942,26 @@ export function obviouslyLargeStatedDebts(file: FileFacts) {
   const income = file.suggestedMonthlyIncome;
   if (debts == null || income == null || debts <= 0 || income <= 0) return false;
   return debts >= income * 0.5;
+}
+
+function moneyShown(value: number) {
+  return `$${Math.round(value).toLocaleString("en-US")}`;
+}
+
+/** Confirmed assets obviously below purchase cash down. Never invents closing costs or months. */
+export function fundsShortOfDown(file: FileFacts) {
+  const assets = file.statedAvailableAssets;
+  const down = file.downPayment;
+  if (assets == null || down == null || down <= 0) return false;
+  return assets < down;
+}
+
+export function fundsShortLine(file: FileFacts): string | undefined {
+  if (!fundsShortOfDown(file) || file.downPayment == null) return undefined;
+  return notReadyLine(
+    `Available funds look short of the ${moneyShown(file.downPayment)} down payment.`,
+    "More cash to close would likely help.",
+  );
 }
 
 function someIncomeDocsReceived(file: CompletenessFile) {
@@ -1116,6 +1138,11 @@ export function readinessFromFile(file: FileFacts): ReadinessRead {
       line: notReadyLine("This loan is a large share of the price.", readinessFix(file, "ltv")),
       reason: "high-ltv",
     };
+  }
+
+  const fundsShort = fundsShortLine(file);
+  if (fundsShort) {
+    return { kind: "not_ready", line: fundsShort, reason: "funds-short" };
   }
 
   if (

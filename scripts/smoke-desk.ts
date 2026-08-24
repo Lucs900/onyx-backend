@@ -27,6 +27,7 @@ import {
   SUGGESTED_NOTE,
   SUGGESTED_INCOME_NOTE,
   SUGGESTED_DEBTS_NOTE,
+  SUGGESTED_ASSETS_NOTE,
   HIGH_LTV_CAUTION,
   PRICING_WAITS,
   YEARS_IN_BUSINESS_ASK,
@@ -143,6 +144,10 @@ import {
   MONTHLY_DEBTS_ASK,
   parseMonthlyDebtAmount,
 } from "../components/fox/monthlyDebts";
+import {
+  AVAILABLE_ASSETS_ASK,
+  parseAvailableAssetsAmount,
+} from "../components/fox/availableAssets";
 import { FAILED_READ_NOTE } from "../lib/docs/accept";
 import { classifyAndExtract, imageDataUrl, visionChatBody } from "../lib/docs/extract";
 import {
@@ -312,6 +317,10 @@ function afterProceed(
 function confirmLooksRight() {
   if (workspacePrompt(getFoxDraft()) === "debts") {
     applyCapture({ field: "skip-monthly-debts" });
+applyCapture({ field: "skip-available-assets" });
+  }
+  if (workspacePrompt(getFoxDraft()) === "assets") {
+    applyCapture({ field: "skip-available-assets" });
   }
   for (let i = 0; i < 8; i += 1) {
     if (workspacePrompt(getFoxDraft()) !== "documents" && !nextDocInvite(getFoxDraft())) break;
@@ -328,6 +337,7 @@ function withIncome(
     ...base,
     incomeAsked: true,
     monthlyDebtsAsked: true,
+    availableAssetsAsked: true,
     incomeType: { ...emptyDraft().incomeType, value },
   });
 }
@@ -896,6 +906,7 @@ assert.equal(structureFixPrompt("timeline"), "timeline");
 assert.equal(structureFixPrompt("path"), "path-switch");
 assert.equal(structureFixPrompt("qualifying", afterIncome), "qualifying");
 assert.equal(structureFixPrompt("debts", afterIncome), "debts");
+assert.equal(structureFixPrompt("assets", afterIncome), "assets");
 assert.equal(structureFixPrompt("years-in-business", afterIncome), "years-in-business");
 assert.equal(structureFixPrompt("file"), null);
 assert.equal(structureFixPrompt("rate"), null);
@@ -912,6 +923,7 @@ applyCapture({ field: "accept-proposal" });
 applyCapture({ field: "creditRange", value: "760+" });
 applyCapture({ field: "incomeType", value: "w2" });
 applyCapture({ field: "skip-monthly-debts" });
+applyCapture({ field: "skip-available-assets" });
 const midFile = {
   product: getFoxDraft().productIntent,
   occupancy: getFoxDraft().occupancyChoice.value,
@@ -984,6 +996,8 @@ assert.equal(getFoxDraft().downPaymentAmount, undefined);
 assert.equal(getFoxDraft().documents.length, 0);
 assert.equal(getFoxDraft().statedMonthlyDebts, undefined);
 assert.equal(getFoxDraft().monthlyDebtsAsked, undefined);
+assert.equal(getFoxDraft().statedAvailableAssets, undefined);
+assert.equal(getFoxDraft().availableAssetsAsked, undefined);
 assert.equal(workspacePrompt(getFoxDraft()), "product");
 assert.equal(workspacePrompt(afterIncome), "documents");
 assert.match(workspacePromptCopy("documents", afterIncome).text, /sketch/i);
@@ -1846,6 +1860,7 @@ applyCapture({ field: "accept-proposal" });
 applyCapture({ field: "creditRange", value: "760+" });
 applyCapture({ field: "incomeType", value: "self-employed" });
 applyCapture({ field: "skip-monthly-debts" });
+applyCapture({ field: "skip-available-assets" });
 assert.equal(workspacePrompt(getFoxDraft()), "documents");
 assert.ok(!getFoxDraft().facts?.years_in_business);
 const liveSketchFix = workspaceReply("Needs a correction", getFoxDraft());
@@ -2235,6 +2250,7 @@ applyCapture({ field: "creditRange", value: "760+" });
 assert.equal(workspacePrompt(getFoxDraft()), "income");
 applyCapture({ field: "incomeType", value: "w2" });
 applyCapture({ field: "skip-monthly-debts" });
+applyCapture({ field: "skip-available-assets" });
 assert.equal(getFoxDraft().documentsSkipped, false);
 assert.equal(workspacePrompt(getFoxDraft()), "documents");
 applyCapture({ field: "skip-docs" });
@@ -2278,6 +2294,7 @@ capturePurchaseFunds("1200000", "960000");
 applyCapture({ field: "creditRange", value: "760+" });
 applyCapture({ field: "incomeType", value: "other" });
 applyCapture({ field: "skip-monthly-debts" });
+applyCapture({ field: "skip-available-assets" });
 assert.equal(getFoxDraft().documentsSkipped, false);
 assert.equal(workspacePrompt(getFoxDraft()), "documents");
 
@@ -2901,6 +2918,7 @@ applyCapture({ field: "accept-proposal" });
 applyCapture({ field: "creditRange", value: "760+" });
 applyCapture({ field: "incomeType", value: "w2" });
 applyCapture({ field: "skip-monthly-debts" });
+applyCapture({ field: "skip-available-assets" });
 applyCapture({ field: "skip-docs" });
 assert.ok((getFoxDraft().skippedClasses ?? []).includes("government_id"));
 assert.ok(stillUsefulSection(getFoxDraft())?.items.some((item) => item.label === "Government ID"));
@@ -4888,21 +4906,21 @@ const bankExtract = applyExtractedFields(afterLooks, {
 });
 assert.equal(bankExtract.draft.facts?.institution, undefined);
 assert.equal(bankExtract.draft.facts?.ending_balance, undefined);
-assert.equal(bankExtract.draft.pendingProposal?.field, "institution");
-assert.ok(isRemainderConfirmField(bankExtract.draft.pendingProposal!.field));
+assert.equal(bankExtract.draft.statedAvailableAssets, undefined);
+assert.equal(bankExtract.draft.pendingProposal?.field, "statedAvailableAssets");
+assert.equal(bankExtract.draft.pendingProposal?.value, "18400");
 const bankAsk = nextFoxAsk(bankExtract.draft);
-assert.match(bankAsk.text, /FIRST NATIONAL/);
-assert.match(bankAsk.text, /18,400/);
-assert.match(bankAsk.text, /2026-07-31/);
+assert.match(bankAsk.text, /The statement shows about \$18,400/);
+assert.match(bankAsk.text, /Suggested · not underwritten as available assets/);
 assert.match(bankAsk.text, /Use this/);
-assert.doesNotMatch(bankAsk.text, /enough|DTI|qualif|approv/i);
+assert.doesNotMatch(bankAsk.text, /enough|DTI|qualif|approv|months? reserves|you don.t qualify/i);
 assert.ok((bankAsk.actions ?? []).some((item) => item.label === "Use this"));
 assert.ok((bankAsk.actions ?? []).some((item) => item.label === "Leave blank"));
-assert.match(remainderAskCopy(bankExtract.draft.pendingProposal!), /bank statement/);
 const bankAccepted = resolveProposal(bankExtract.draft, "accept");
 assert.equal(bankAccepted.facts?.institution?.value, "FIRST NATIONAL");
 assert.equal(bankAccepted.facts?.ending_balance?.value, "18400");
 assert.equal(bankAccepted.facts?.period_end?.value, "2026-07-31");
+assert.equal(bankAccepted.statedAvailableAssets, 18400);
 assert.equal(bankAccepted.pendingProposal, null);
 assert.ok(!layer2Plan(bankAccepted).some((item) => item.label === "Bank statement"));
 const bankLeft = resolveProposal(bankExtract.draft, "decline");
@@ -5551,27 +5569,35 @@ assert.ok(
 );
 const useDebts = workspaceReply("Use this", debtConfirmDraft);
 assert.equal(useDebts?.capture?.field, "accept-proposal");
-assert.match(useDebts?.text ?? "", /sketch|government ID|Start with ID/i);
+assert.match(useDebts?.text ?? "", /available funds|Skip is fine/i);
 const leaveBlankDebts = workspaceReply("Leave blank", debtConfirmDraft);
 assert.equal(leaveBlankDebts?.capture?.field, "decline-proposal");
-assert.match(leaveBlankDebts?.text ?? "", /Left that line blank|sketch|government ID/i);
+assert.match(leaveBlankDebts?.text ?? "", /Left that line blank|available funds/i);
 assert.deepEqual(
   (leaveBlankDebts?.actions ?? []).map((item) => item.label),
-  ["Start with ID", "Skip", "Not yet"],
+  ["Skip", "Not yet"],
 );
 assert.equal(resolveProposal(debtConfirmDraft, "decline").statedMonthlyDebts, undefined);
 const skipDebts = workspaceReply("Skip", afterIncomeType);
 assert.equal(skipDebts?.capture?.field, "skip-monthly-debts");
 assert.equal(skipDebts?.text?.includes("other monthly debts"), false);
-assert.match(skipDebts?.text ?? "", /sketch/i);
+assert.match(skipDebts?.text ?? "", /available funds/i);
 assert.deepEqual(
   (skipDebts?.actions ?? []).map((item) => item.label),
-  ["Start with ID", "Skip", "Not yet"],
+  ["Skip", "Not yet"],
 );
 const notYetDebts = workspaceReply("Not yet", afterIncomeType);
 assert.equal(notYetDebts?.capture?.field, "skip-monthly-debts");
-assert.ok(canLooksRight(skipDocInvites({ ...afterIncomeType, monthlyDebtsAsked: true })));
-const skippedDebtFile = draft({ ...afterIncomeType, monthlyDebtsAsked: true });
+assert.ok(
+  canLooksRight(
+    skipDocInvites({ ...afterIncomeType, monthlyDebtsAsked: true, availableAssetsAsked: true }),
+  ),
+);
+const skippedDebtFile = draft({
+  ...afterIncomeType,
+  monthlyDebtsAsked: true,
+  availableAssetsAsked: true,
+});
 assert.equal(skippedDebtFile.statedMonthlyDebts, undefined);
 assert.ok(
   previewFacts(skippedDebtFile).some(
@@ -5740,6 +5766,247 @@ assert.equal(
   "not_ready",
 );
 
+const afterDebtsAsk = draft({
+  ...afterIncomeType,
+  monthlyDebtsAsked: true,
+});
+assert.equal(workspacePrompt(afterDebtsAsk), "assets");
+assert.equal(workspacePromptCopy("assets", afterDebtsAsk).text, AVAILABLE_ASSETS_ASK);
+assert.deepEqual(
+  (workspacePromptCopy("assets", afterDebtsAsk).actions ?? []).map((item) => item.label),
+  ["Skip", "Not yet"],
+);
+assert.equal(parseAvailableAssetsAmount("50000"), 50000);
+assert.equal(parseAvailableAssetsAmount("$50,000"), 50000);
+assert.equal(parseAvailableAssetsAmount("50k"), 50000);
+assert.equal(parseAvailableAssetsAmount("about 50k"), 50000);
+for (const spoken of ["50000", "$50,000", "50k", "about 50k"]) {
+  const proposed = workspaceReply(spoken, afterDebtsAsk);
+  assert.equal(proposed?.capture?.field, "propose-available-assets");
+  assert.equal(
+    proposed?.text,
+    "That’s $50,000 in available funds. Suggested · not underwritten. Use this?",
+  );
+  assert.deepEqual(
+    (proposed?.actions ?? []).map((item) => item.label),
+    ["Use this", "Leave blank"],
+  );
+}
+const assetConfirmDraft = {
+  ...afterDebtsAsk,
+  pendingProposal: {
+    field: "statedAvailableAssets",
+    value: "50000",
+    label: "Stated available assets",
+    kind: "computed" as const,
+    note: SUGGESTED_ASSETS_NOTE,
+  },
+};
+const usedAssets = resolveProposal(assetConfirmDraft, "accept");
+assert.equal(usedAssets.statedAvailableAssets, 50000);
+assert.equal(usedAssets.availableAssetsAsked, true);
+assert.ok(
+  previewFacts(usedAssets).some(
+    (fact) =>
+      fact.id === "assets" &&
+      fact.label === "Stated available assets" &&
+      fact.value === "$50,000" &&
+      fact.note === SUGGESTED_ASSETS_NOTE,
+  ),
+);
+const leaveBlankAssets = workspaceReply("Leave blank", assetConfirmDraft);
+assert.equal(leaveBlankAssets?.capture?.field, "decline-proposal");
+assert.equal(resolveProposal(assetConfirmDraft, "decline").statedAvailableAssets, undefined);
+assert.match(leaveBlankAssets?.text ?? "", /Left that line blank|sketch|government ID/i);
+assert.deepEqual(
+  (leaveBlankAssets?.actions ?? []).map((item) => item.label),
+  ["Start with ID", "Skip", "Not yet"],
+);
+const skipAssets = workspaceReply("Skip", afterDebtsAsk);
+assert.equal(skipAssets?.capture?.field, "skip-available-assets");
+assert.match(skipAssets?.text ?? "", /sketch/i);
+assert.deepEqual(
+  (skipAssets?.actions ?? []).map((item) => item.label),
+  ["Start with ID", "Skip", "Not yet"],
+);
+const skippedAssetsFile = draft({ ...afterDebtsAsk, availableAssetsAsked: true });
+assert.equal(skippedAssetsFile.statedAvailableAssets, undefined);
+assert.ok(
+  previewFacts(skippedAssetsFile).some(
+    (fact) => fact.id === "assets" && fact.value === "—" && fact.note === SUGGESTED_ASSETS_NOTE,
+  ),
+);
+const skipQualify = workspaceReply("will i qualify", skippedAssetsFile);
+assert.doesNotMatch(skipQualify?.text ?? "", /\bDTI\b|months? reserves|you don.t qualify|N months/i);
+assert.ok(storeCompleteness("buy", { purposeHint: "purchase", incomeType: "w2_base" }).stillUseful.includes("stated available assets"));
+assert.ok(
+  !storeCompleteness("buy", {
+    purposeHint: "purchase",
+    incomeType: "w2_base",
+    statedAvailableAssets: 50000,
+  }).stillUseful.includes("stated available assets"),
+);
+
+const tenKConfirm = {
+  ...afterDebtsAsk,
+  pendingProposal: {
+    field: "statedAvailableAssets",
+    value: "10000",
+    label: "Stated available assets",
+    kind: "computed" as const,
+    note: SUGGESTED_ASSETS_NOTE,
+  },
+};
+const tenKFile = resolveProposal(tenKConfirm, "accept");
+assert.equal(tenKFile.statedAvailableAssets, 10000);
+const fundsShortFile = draft({
+  ...tenKFile,
+  propertyValueAmount: 850000,
+  downPaymentAmount: 170000,
+  loanAmountValue: 680000,
+});
+const fundsShortAsk = workspaceReply("will i qualify", fundsShortFile);
+assert.match(
+  fundsShortAsk?.text ?? "",
+  /This does not look ready yet\. Available funds look short of the \$170,000 down payment\. More cash to close would likely help\./,
+);
+assert.doesNotMatch(fundsShortAsk?.text ?? "", /you don.t qualify|months? reserves|stated DTI|\d+\s*%|you are approved/i);
+assert.match(fundsShortAsk?.text ?? "", /available funds|Start with ID|Skip/i);
+assert.equal(
+  readinessFromFile({
+    product: "buy",
+    purposeHint: "purchase",
+    occupancy: "primary",
+    state: "CA",
+    purchasePrice: 850000,
+    downPayment: 170000,
+    loanAmount: 680000,
+    statedCreditBand: "760+",
+    incomeType: "w2_base",
+    received: ["paystub"],
+    statedAvailableAssets: 10000,
+  }).kind,
+  "not_ready",
+);
+assert.match(
+  readinessFromFile({
+    product: "buy",
+    purposeHint: "purchase",
+    occupancy: "primary",
+    state: "CA",
+    purchasePrice: 850000,
+    downPayment: 170000,
+    loanAmount: 680000,
+    statedCreditBand: "760+",
+    incomeType: "w2_base",
+    received: ["paystub"],
+    statedAvailableAssets: 10000,
+  }).line,
+  /Available funds look short of the \$170,000 down payment/,
+);
+assert.doesNotMatch(
+  readinessFromFile({
+    product: "buy",
+    purposeHint: "purchase",
+    occupancy: "primary",
+    state: "CA",
+    purchasePrice: 850000,
+    downPayment: 170000,
+    loanAmount: 680000,
+    statedCreditBand: "760+",
+    incomeType: "w2_base",
+    received: ["paystub"],
+    statedAvailableAssets: 10000,
+  }).line,
+  /paystub|months?|you don.t qualify/,
+);
+assert.equal(
+  readinessFromFile({
+    product: "buy",
+    purposeHint: "purchase",
+    occupancy: "primary",
+    state: "CA",
+    purchasePrice: 850000,
+    downPayment: 170000,
+    loanAmount: 680000,
+    statedCreditBand: "760+",
+    incomeType: "w2_base",
+    received: ["paystub", "w2"],
+    statedAvailableAssets: 170000,
+  }).kind,
+  "strong",
+);
+assert.match(
+  readinessFromFile({
+    product: "buy",
+    purposeHint: "purchase",
+    occupancy: "primary",
+    state: "CA",
+    purchasePrice: 850000,
+    downPayment: 170000,
+    loanAmount: 680000,
+    statedCreditBand: "760+",
+    incomeType: "w2_base",
+    received: ["paystub", "w2"],
+    statedAvailableAssets: 170000,
+  }).line,
+  /Final underwriting still decides/,
+);
+assert.doesNotMatch(
+  readinessFromFile({
+    product: "buy",
+    purposeHint: "purchase",
+    occupancy: "primary",
+    state: "CA",
+    purchasePrice: 850000,
+    downPayment: 170000,
+    loanAmount: 680000,
+    statedCreditBand: "760+",
+    incomeType: "w2_base",
+    received: ["paystub", "w2"],
+    statedAvailableAssets: 170000,
+  }).line,
+  /reserves are enough|N months|months? reserves/,
+);
+const assetsOnFile = draft({
+  ...afterDebtsAsk,
+  availableAssetsAsked: true,
+  statedAvailableAssets: 50000,
+  correcting: "assets",
+  correctingLine: "assets",
+});
+assert.match(workspacePromptCopy("assets", assetsOnFile).text, /still right/i);
+const midAssetEdit = workspaceReply("60000", assetsOnFile);
+assert.equal(midAssetEdit?.capture?.field, "propose-available-assets");
+assert.match(midAssetEdit?.text ?? "", /That’s \$60,000 in available funds/);
+assert.equal(structureFixPrompt("assets"), "assets");
+assert.equal(emptyDraft().statedAvailableAssets, undefined);
+
+const typedThenExtract = applyExtractedFields(
+  draft({ ...afterDebtsAsk, availableAssetsAsked: true, statedAvailableAssets: 10000 }),
+  {
+    extractClass: "bank_statement",
+    confidence: 0.93,
+    fields: {
+      institution: "FIRST NATIONAL",
+      period_end: "2026-07-31",
+      ending_balance: "18400",
+    },
+  },
+);
+assert.equal(typedThenExtract.draft.statedAvailableAssets, 10000);
+assert.equal(typedThenExtract.draft.pendingConflict?.field, "statedAvailableAssets");
+assert.match(conflictAskCopy(typedThenExtract.draft.pendingConflict!), /\$18,400/);
+assert.match(conflictAskCopy(typedThenExtract.draft.pendingConflict!), /\$10,000/);
+assert.deepEqual(
+  (workspacePromptCopy("confirm-proposal", typedThenExtract.draft).actions ?? []).map((item) => item.label),
+  ["Keep the typed number", "Use document"],
+);
+const keptTyped = resolveFactConflict(typedThenExtract.draft, "file");
+assert.equal(keptTyped.statedAvailableAssets, 10000);
+const usedDoc = resolveFactConflict(typedThenExtract.draft, "document");
+assert.equal(usedDoc.statedAvailableAssets, 18400);
+
 const debtsSrc = [
   readFileSync(join(root, "components/fox/workspace.ts"), "utf8"),
   readFileSync(join(root, "components/fox/monthlyDebts.ts"), "utf8"),
@@ -5749,6 +6016,15 @@ const debtsSrc = [
 assert.doesNotMatch(debtsSrc, /add another liability|liability form|itemized liabilit/i);
 assert.doesNotMatch(debtsSrc, /tradeline|bureau pull|soft pull|hard pull|pullCredit|credit-pull/i);
 assert.doesNotMatch(debtsSrc, /student loan card|auto loan card|HOA dues form/i);
+const assetsSrc = [
+  readFileSync(join(root, "components/fox/availableAssets.ts"), "utf8"),
+  readFileSync(join(root, "components/fox/workspace.ts"), "utf8"),
+  readFileSync(join(root, "lib/guidelines/conventional.ts"), "utf8"),
+].join("\n");
+assert.doesNotMatch(assetsSrc, /gift maze|earnest money|large[- ]deposit quiz|add another account|itemized account/i);
+assert.doesNotMatch(assetsSrc, /reserve-month engine|you need two months reserves|N months of reserves/i);
+assert.doesNotMatch(assetsSrc, /you don.t qualify|you are approved|stated DTI|your DTI is/i);
+assert.match(guidelineStoreSrc, /statedAvailableAssets/);
 assert.match(guidelineStoreSrc, /statedMonthlyDebts/);
 assert.doesNotMatch(guidelineStoreSrc, /stated DTI|your DTI is/i);
 assert.equal(storeLookup("language.cost", {}).borrowerLine, COST_LINE);
