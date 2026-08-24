@@ -279,6 +279,9 @@ export type FoxIntakeDraft = {
   householdAsked?: boolean;
   borrowerName?: string;
   borrowerNameAsked?: boolean;
+  statedOtherReo?: "none" | "yes";
+  otherReoAsked?: boolean;
+  pendingOtherReo?: boolean | null;
   docsOpen?: boolean;
   originatorRequested?: boolean;
   motion?: FileMotion;
@@ -351,6 +354,7 @@ export type FoxPrompt =
   | "declarations"
   | "household"
   | "borrower-name"
+  | "other-reo"
   | "occupancy"
   | "timeline"
   | "documents"
@@ -400,6 +404,9 @@ export type Capture =
   | { field: "skip-borrower-name" }
   | { field: "propose-borrower-name"; value: string }
   | { field: "borrowerName"; value: string }
+  | { field: "skip-other-reo" }
+  | { field: "propose-other-reo"; value: string }
+  | { field: "statedOtherReo"; value: string }
   | { field: "occupancy"; value: string }
   | { field: "timeline"; value: string }
   | { field: "path"; value: IntakePath }

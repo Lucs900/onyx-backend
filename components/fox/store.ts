@@ -147,6 +147,12 @@ import {
   skipBorrowerName,
   writeBorrowerName,
 } from "./borrowerName";
+import {
+  isStatedOtherReo,
+  proposeStatedOtherReo,
+  skipOtherReo,
+  writeStatedOtherReo,
+} from "./otherReo";
 
 function numberOrUndefined(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : undefined;
@@ -299,6 +305,9 @@ function normalize(value: unknown): FoxIntakeDraft {
         ? raw.borrowerName.trim()
         : undefined,
     borrowerNameAsked: Boolean(raw.borrowerNameAsked || raw.borrowerName || raw.contact?.fullName?.value),
+    statedOtherReo: raw.statedOtherReo === "none" || raw.statedOtherReo === "yes" ? raw.statedOtherReo : undefined,
+    otherReoAsked: Boolean(raw.otherReoAsked || raw.statedOtherReo),
+    pendingOtherReo: raw.pendingOtherReo ? true : null,
     docsOpen: Boolean(raw.docsOpen),
     docsStarted: Boolean(raw.docsStarted),
     docsHeld: Boolean(raw.docsHeld),
@@ -1359,6 +1368,17 @@ export function applyCapture(capture: Capture) {
     const name = parseBorrowerName(capture.value) ?? capture.value.trim();
     if (!name) return current;
     return commit(writeBorrowerName(current, name));
+  }
+  if (capture.field === "skip-other-reo") {
+    return commit(skipOtherReo(current));
+  }
+  if (capture.field === "propose-other-reo") {
+    if (!isStatedOtherReo(capture.value)) return current;
+    return commit(proposeStatedOtherReo(current, capture.value));
+  }
+  if (capture.field === "statedOtherReo") {
+    if (!isStatedOtherReo(capture.value)) return current;
+    return commit(writeStatedOtherReo(current, capture.value));
   }
   if (capture.field === "incomeType") {
     const midFile = Boolean(current.correcting);

@@ -94,6 +94,14 @@ import {
   writeBorrowerName,
 } from "./borrowerName";
 import {
+  STATED_OTHER_REO_FIELD,
+  isStatedOtherReo,
+  otherReoConfirmCopy,
+  proposeExtractedOtherReo,
+  skipOtherReo,
+  writeStatedOtherReo,
+} from "./otherReo";
+import {
   HIGH_LTV_CAUTION as STORE_HIGH_LTV_CAUTION,
   HIGH_PURCHASE_LTV as STORE_HIGH_PURCHASE_LTV,
   JUMBO_CEILING_LINE,
@@ -563,6 +571,7 @@ export function factsFromDraft(draft: FoxIntakeDraft): CompletenessFile {
     ...(draft.statedDeclaration ? { statedDeclaration: draft.statedDeclaration } : {}),
     ...(draft.statedHousehold ? { statedHousehold: draft.statedHousehold } : {}),
     ...(draft.borrowerName ? { borrowerName: draft.borrowerName } : {}),
+    ...(draft.statedOtherReo ? { statedOtherReo: draft.statedOtherReo } : {}),
     ...(suggestedMonthlyIncome != null ? { suggestedMonthlyIncome } : {}),
     docsSkipped: Boolean(
       draft.documentsSkipped || draft.docsHeld || (draft.skippedClasses?.length ?? 0) > 0,
@@ -618,6 +627,7 @@ export function structureFieldForProposal(field: string) {
   if (field === STATED_DECLARATION_FIELD) return "declarations";
   if (field === STATED_HOUSEHOLD_FIELD) return "household";
   if (isBorrowerNameField(field)) return "borrower";
+  if (field === STATED_OTHER_REO_FIELD) return "other-reo";
   return field;
 }
 
@@ -674,6 +684,9 @@ export function proposalAskCopy(proposal: FactProposal) {
     return proposal.extras
       ? borrowerNameExtractCopy(proposal.value)
       : borrowerNameConfirmCopy(proposal.value);
+  }
+  if (proposal.field === STATED_OTHER_REO_FIELD && isStatedOtherReo(proposal.value)) {
+    return otherReoConfirmCopy(proposal.value);
   }
   if (proposal.field === PROPERTY_ADDRESS_FACT || proposal.field === "subjectAddress") {
     return proposal.note === SUGGESTED_PROPERTY_NOTE && !proposal.extras?.length
@@ -853,6 +866,9 @@ function writeConfirmedFact(
   if (isBorrowerNameField(field) && value.trim()) {
     next = writeBorrowerName(next, value);
   }
+  if (field === STATED_OTHER_REO_FIELD && isStatedOtherReo(value)) {
+    next = writeStatedOtherReo(next, value);
+  }
   if (field === PROPERTY_ADDRESS_FACT || field === "subjectAddress") {
     facts[PROPERTY_ADDRESS_FACT] = {
       field: PROPERTY_ADDRESS_FACT,
@@ -975,8 +991,11 @@ export function resolveProposal(
     if (isBorrowerNameField(proposal.field)) {
       return skipBorrowerName({ ...draft, pendingProposal: null });
     }
+    if (proposal.field === STATED_OTHER_REO_FIELD) {
+      return skipOtherReo({ ...draft, pendingProposal: null });
+    }
     const declined = { ...draft, pendingProposal: null };
-    return flushPendingCurrentHousing(flushPendingHireDate(declined));
+    return flushPendingOtherReo(flushPendingCurrentHousing(flushPendingHireDate(declined)));
   }
   const source =
     proposal.field === QUALIFYING_INCOME_FIELD ||
@@ -987,6 +1006,7 @@ export function resolveProposal(
       proposal.field === STATED_DECLARATION_FIELD ||
       proposal.field === STATED_HOUSEHOLD_FIELD ||
       isBorrowerNameField(proposal.field) ||
+      proposal.field === STATED_OTHER_REO_FIELD ||
       proposal.kind === "public"
       ? "suggested"
       : isRemainderConfirmField(proposal.field)
@@ -1007,7 +1027,7 @@ export function resolveProposal(
     if (proposal.parts.k1) next = writeConfirmedFact(next, K1_MONTHLY_FIELD, proposal.parts.k1, source);
   }
   const cleared = { ...next, pendingProposal: null };
-  const flushed = flushPendingCurrentHousing(flushPendingHireDate(cleared));
+  const flushed = flushPendingOtherReo(flushPendingCurrentHousing(flushPendingHireDate(cleared)));
   if (winner === "accept" && shouldAskYearsInBusiness(flushed)) {
     return withYearsInBusinessAsk(flushed);
   }
@@ -1036,6 +1056,13 @@ function flushPendingCurrentHousing(draft: FoxIntakeDraft): FoxIntakeDraft {
     pending.amount,
     pending.extras ?? [],
   );
+}
+
+function flushPendingOtherReo(draft: FoxIntakeDraft): FoxIntakeDraft {
+  if (!draft.pendingOtherReo || draft.statedOtherReo) {
+    return { ...draft, pendingOtherReo: null };
+  }
+  return proposeExtractedOtherReo({ ...draft, pendingOtherReo: null });
 }
 
 export function yearsInBusinessValue(draft: FoxIntakeDraft) {

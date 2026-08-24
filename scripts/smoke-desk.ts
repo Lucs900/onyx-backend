@@ -181,6 +181,11 @@ import {
   SUGGESTED_BORROWER_NOTE,
   parseBorrowerName,
 } from "../components/fox/borrowerName";
+import {
+  OTHER_REO_ASK,
+  SUGGESTED_OTHER_REO_NOTE,
+  parseOtherReo,
+} from "../components/fox/otherReo";
 import { subjectMortgagePayment } from "../components/fox/monthlyDebts";
 import { FAILED_READ_NOTE } from "../lib/docs/accept";
 import { classifyAndExtract, imageDataUrl, visionChatBody } from "../lib/docs/extract";
@@ -373,6 +378,9 @@ function confirmLooksRight() {
   if (workspacePrompt(getFoxDraft()) === "borrower-name") {
     applyCapture({ field: "skip-borrower-name" });
   }
+  if (workspacePrompt(getFoxDraft()) === "other-reo") {
+    applyCapture({ field: "skip-other-reo" });
+  }
   for (let i = 0; i < 8; i += 1) {
     if (workspacePrompt(getFoxDraft()) !== "documents" && !nextDocInvite(getFoxDraft())) break;
     applyCapture({ field: "skip-docs" });
@@ -395,6 +403,7 @@ function withIncome(
     declarationAsked: true,
     householdAsked: true,
     borrowerNameAsked: true,
+    otherReoAsked: true,
     incomeType: { ...emptyDraft().incomeType, value },
   });
 }
@@ -1070,6 +1079,8 @@ assert.equal(getFoxDraft().statedHousehold, undefined);
 assert.equal(getFoxDraft().householdAsked, undefined);
 assert.equal(getFoxDraft().borrowerName, undefined);
 assert.equal(getFoxDraft().borrowerNameAsked, undefined);
+assert.equal(getFoxDraft().statedOtherReo, undefined);
+assert.equal(getFoxDraft().otherReoAsked, undefined);
 assert.equal(workspacePrompt(getFoxDraft()), "product");
 assert.equal(workspacePrompt(afterIncome), "documents");
 assert.match(workspacePromptCopy("documents", afterIncome).text, /sketch/i);
@@ -1945,6 +1956,7 @@ applyCapture({ field: "skip-current-housing" });
 applyCapture({ field: "skip-declarations" });
 applyCapture({ field: "skip-household" });
 applyCapture({ field: "skip-borrower-name" });
+applyCapture({ field: "skip-other-reo" });
 assert.equal(workspacePrompt(getFoxDraft()), "documents");
 assert.ok(!getFoxDraft().facts?.years_in_business);
 const liveSketchFix = workspaceReply("Needs a correction", getFoxDraft());
@@ -2341,6 +2353,7 @@ applyCapture({ field: "skip-current-housing" });
 applyCapture({ field: "skip-declarations" });
 applyCapture({ field: "skip-household" });
 applyCapture({ field: "skip-borrower-name" });
+applyCapture({ field: "skip-other-reo" });
 assert.equal(getFoxDraft().documentsSkipped, false);
 assert.equal(workspacePrompt(getFoxDraft()), "documents");
 applyCapture({ field: "skip-docs" });
@@ -2390,6 +2403,7 @@ applyCapture({ field: "skip-current-housing" });
 applyCapture({ field: "skip-declarations" });
 applyCapture({ field: "skip-household" });
 applyCapture({ field: "skip-borrower-name" });
+applyCapture({ field: "skip-other-reo" });
 assert.equal(getFoxDraft().documentsSkipped, false);
 assert.equal(workspacePrompt(getFoxDraft()), "documents");
 
@@ -3024,6 +3038,7 @@ applyCapture({ field: "skip-current-housing" });
 applyCapture({ field: "skip-declarations" });
 applyCapture({ field: "skip-household" });
 applyCapture({ field: "skip-borrower-name" });
+applyCapture({ field: "skip-other-reo" });
 applyCapture({ field: "skip-docs" });
 assert.ok((getFoxDraft().skippedClasses ?? []).includes("government_id"));
 assert.ok(stillUsefulSection(getFoxDraft())?.items.some((item) => item.label === "Government ID"));
@@ -5135,6 +5150,8 @@ assert.equal(mortgageExtract.draft.facts?.servicer, undefined);
 assert.equal(mortgageExtract.draft.facts?.current_pi, undefined);
 assert.equal(mortgageExtract.draft.statedCurrentHousing, undefined);
 assert.equal(mortgageExtract.draft.loanAmountValue, 960_000);
+assert.equal(mortgageExtract.draft.statedOtherReo, undefined);
+assert.ok(!mortgageExtract.draft.pendingOtherReo);
 assert.equal(mortgageExtract.draft.pendingProposal?.field, "statedCurrentHousing");
 assert.match(nextFoxAsk(mortgageExtract.draft).text, /current payment of about \$4,800/);
 assert.match(nextFoxAsk(mortgageExtract.draft).text, /Suggested · not underwritten/);
@@ -5738,7 +5755,7 @@ const notYetDebts = workspaceReply("Not yet", afterIncomeType);
 assert.equal(notYetDebts?.capture?.field, "skip-monthly-debts");
 assert.ok(
   canLooksRight(
-    skipDocInvites({ ...afterIncomeType, monthlyDebtsAsked: true, availableAssetsAsked: true, propertyTypeAsked: true, timeOnJobAsked: true, currentHousingAsked: true, declarationAsked: true, householdAsked: true, borrowerNameAsked: true }),
+    skipDocInvites({ ...afterIncomeType, monthlyDebtsAsked: true, availableAssetsAsked: true, propertyTypeAsked: true, timeOnJobAsked: true, currentHousingAsked: true, declarationAsked: true, householdAsked: true, borrowerNameAsked: true, otherReoAsked: true }),
   ),
 );
 const skippedDebtFile = draft({
@@ -5751,6 +5768,7 @@ const skippedDebtFile = draft({
   declarationAsked: true,
   householdAsked: true,
   borrowerNameAsked: true,
+  otherReoAsked: true,
 });
 assert.equal(skippedDebtFile.statedMonthlyDebts, undefined);
 assert.ok(
@@ -7397,10 +7415,10 @@ assert.equal(parseBorrowerName("JORDAN HALE"), "Jordan Hale");
 
 const skipBorrowerReply = workspaceReply("Skip", afterHouseholdAsk);
 assert.equal(skipBorrowerReply?.capture?.field, "skip-borrower-name");
-assert.match(skipBorrowerReply?.text ?? "", /sketch|government ID|Start with ID/i);
+assert.match(skipBorrowerReply?.text ?? "", /other real estate|Skip is fine/i);
 assert.deepEqual(
   (skipBorrowerReply?.actions ?? []).map((item) => item.label),
-  ["Start with ID", "Skip", "Not yet"],
+  ["None", "Yes", "Skip", "Not yet"],
 );
 const skippedBorrowerFile = draft({ ...afterHouseholdAsk, borrowerNameAsked: true });
 assert.equal(skippedBorrowerFile.borrowerName, undefined);
@@ -7465,10 +7483,10 @@ assert.ok(
 const leaveBlankName = workspaceReply("Leave blank", nameConfirmDraft);
 assert.equal(leaveBlankName?.capture?.field, "decline-proposal");
 assert.equal(resolveProposal(nameConfirmDraft, "decline").borrowerName, undefined);
-assert.match(leaveBlankName?.text ?? "", /Left that line blank|sketch|government ID/i);
+assert.match(leaveBlankName?.text ?? "", /Left that line blank|other real estate|Skip is fine/i);
 assert.deepEqual(
   (leaveBlankName?.actions ?? []).map((item) => item.label),
-  ["Start with ID", "Skip", "Not yet"],
+  ["None", "Yes", "Skip", "Not yet"],
 );
 
 const namedQualify = workspaceReply("will i qualify", usedName);
@@ -7563,6 +7581,283 @@ const borrowerSrc = [
 ].join("\n");
 assert.doesNotMatch(borrowerSrc, /KYC vendor|citizenship quiz|present-address form|second-borrower name maze/i);
 assert.doesNotMatch(borrowerSrc, /\bITIN\b|full SSN|ask for SSN|identity is verified/i);
+
+const afterNameAsk = draft({
+  ...afterHouseholdAsk,
+  borrowerNameAsked: true,
+  borrowerName: "Jordan Hale",
+});
+assert.equal(workspacePrompt(afterNameAsk), "other-reo");
+assert.equal(workspacePromptCopy("other-reo", afterNameAsk).text, OTHER_REO_ASK);
+assert.deepEqual(
+  (workspacePromptCopy("other-reo", afterNameAsk).actions ?? []).map((item) => item.label),
+  ["None", "Yes", "Skip", "Not yet"],
+);
+assert.equal(parseOtherReo("no", { allowBare: true }), "none");
+assert.equal(parseOtherReo("none", { allowBare: true }), "none");
+assert.equal(parseOtherReo("just this"), "none");
+assert.equal(parseOtherReo("I have a rental"), "yes");
+assert.equal(parseOtherReo("yes", { allowBare: true }), "yes");
+assert.equal(parseOtherReo("None"), undefined);
+
+const skipOtherReoReply = workspaceReply("Skip", afterNameAsk);
+assert.equal(skipOtherReoReply?.capture?.field, "skip-other-reo");
+assert.match(skipOtherReoReply?.text ?? "", /sketch|government ID|Start with ID/i);
+assert.deepEqual(
+  (skipOtherReoReply?.actions ?? []).map((item) => item.label),
+  ["Start with ID", "Skip", "Not yet"],
+);
+const skippedOtherReoFile = draft({ ...afterNameAsk, otherReoAsked: true });
+assert.equal(skippedOtherReoFile.statedOtherReo, undefined);
+assert.ok(
+  previewFacts(skippedOtherReoFile).some(
+    (fact) => fact.id === "other-reo" && fact.value === "—" && fact.note === SUGGESTED_OTHER_REO_NOTE,
+  ),
+);
+const skipOtherReoQualify = workspaceReply("will i qualify", skippedOtherReoFile);
+assert.doesNotMatch(
+  skipOtherReoQualify?.text ?? "",
+  /you don.t qualify|two months reserves|reserve-month|you are approved|rental income/i,
+);
+assert.match(skipOtherReoQualify?.text ?? "", /paystub|W-2|notepad|Start with ID|Skip/i);
+assert.ok(storeCompleteness("buy", { purposeHint: "purchase", incomeType: "w2_base" }).stillUseful.includes("other real estate"));
+assert.ok(
+  !storeCompleteness("buy", {
+    purposeHint: "purchase",
+    incomeType: "w2_base",
+    statedOtherReo: "none",
+  }).stillUseful.includes("other real estate"),
+);
+assert.ok(
+  storeCompleteness("buy", {
+    purposeHint: "purchase",
+    incomeType: "w2_base",
+    statedOtherReo: "yes",
+  }).stillUseful.includes("other property details"),
+);
+assert.ok(
+  !documentedStillUsefulIds("buy", {
+    purposeHint: "purchase",
+    incomeType: "w2_base",
+  }).includes("other-reo" as never),
+);
+
+const noneReoChip = workspaceReply("None", afterNameAsk);
+assert.equal(noneReoChip?.capture?.field, "propose-other-reo");
+assert.equal(
+  noneReoChip?.text,
+  "No other real estate on the file. Suggested · not underwritten. Use this?",
+);
+assert.deepEqual(
+  (noneReoChip?.actions ?? []).map((item) => item.label),
+  ["Use this", "Leave blank"],
+);
+const noneReoConfirmDraft = {
+  ...afterNameAsk,
+  pendingProposal: {
+    field: "statedOtherReo",
+    value: "none",
+    label: "Other real estate",
+    kind: "computed" as const,
+    note: SUGGESTED_OTHER_REO_NOTE,
+  },
+};
+assert.ok(
+  previewFacts(noneReoConfirmDraft).some(
+    (fact) => fact.id === "other-reo" && fact.value === "None" && fact.note === SUGGESTED_OTHER_REO_NOTE,
+  ),
+);
+const usedNoneReo = resolveProposal(noneReoConfirmDraft, "accept");
+assert.equal(usedNoneReo.statedOtherReo, "none");
+assert.equal(usedNoneReo.otherReoAsked, true);
+assert.ok(
+  previewFacts(usedNoneReo).some(
+    (fact) =>
+      fact.id === "other-reo" &&
+      fact.label === "Other real estate" &&
+      fact.value === "None" &&
+      fact.note === SUGGESTED_OTHER_REO_NOTE,
+  ),
+);
+const leaveBlankOtherReo = workspaceReply("Leave blank", noneReoConfirmDraft);
+assert.equal(leaveBlankOtherReo?.capture?.field, "decline-proposal");
+assert.equal(resolveProposal(noneReoConfirmDraft, "decline").statedOtherReo, undefined);
+assert.match(leaveBlankOtherReo?.text ?? "", /Left that line blank|sketch|government ID/i);
+assert.deepEqual(
+  (leaveBlankOtherReo?.actions ?? []).map((item) => item.label),
+  ["Start with ID", "Skip", "Not yet"],
+);
+assert.ok(
+  !previewFacts(resolveProposal(noneReoConfirmDraft, "decline")).some(
+    (fact) => fact.id === "other-reo" && fact.value === "None",
+  ),
+);
+
+const typedRental = workspaceReply("I have a rental", afterNameAsk);
+assert.equal(typedRental?.capture?.field, "propose-other-reo");
+assert.equal(
+  typedRental?.text,
+  "I’ll note other real estate. Suggested · not underwritten. Use this?",
+);
+assert.doesNotMatch(typedRental?.text ?? "", /address|HOA|rent|value|add another property/i);
+const yesConfirmDraft = {
+  ...afterNameAsk,
+  pendingProposal: {
+    field: "statedOtherReo",
+    value: "yes",
+    label: "Other real estate",
+    kind: "computed" as const,
+    note: SUGGESTED_OTHER_REO_NOTE,
+  },
+};
+const usedYes = resolveProposal(yesConfirmDraft, "accept");
+assert.equal(usedYes.statedOtherReo, "yes");
+assert.ok(
+  previewFacts(usedYes).some(
+    (fact) =>
+      fact.id === "other-reo" &&
+      fact.value === "Yes" &&
+      fact.note === SUGGESTED_OTHER_REO_NOTE,
+  ),
+);
+assert.doesNotMatch(
+  workspaceReply("will i qualify", usedYes)?.text ?? "",
+  /you don.t qualify|two months reserves|you are approved|I can run this past underwriting/i,
+);
+assert.equal(
+  readinessFromFile({
+    product: "buy",
+    purposeHint: "purchase",
+    occupancy: "primary",
+    state: "CA",
+    purchasePrice: 850000,
+    downPayment: 170000,
+    loanAmount: 680000,
+    statedCreditBand: "760+",
+    incomeType: "w2_base",
+    received: ["paystub", "w2"],
+    propertyType: "sfr",
+    statedDeclaration: "none",
+    statedHousehold: "alone",
+    borrowerName: "Jordan Hale",
+    statedOtherReo: "yes",
+  }).kind,
+  "strong",
+);
+assert.equal(
+  readinessFromFile({
+    product: "buy",
+    purposeHint: "purchase",
+    occupancy: "primary",
+    state: "CA",
+    purchasePrice: 850000,
+    downPayment: 170000,
+    loanAmount: 680000,
+    statedCreditBand: "760+",
+    incomeType: "w2_base",
+    propertyType: "sfr",
+    statedOtherReo: "yes",
+  }).kind,
+  "not_ready",
+);
+
+const midOtherReoEdit = draft({
+  ...afterNameAsk,
+  otherReoAsked: true,
+  statedOtherReo: "none",
+  correcting: "other-reo",
+  correctingLine: "other-reo",
+});
+assert.match(workspacePromptCopy("other-reo", midOtherReoEdit).text, /still right/i);
+const midYes = workspaceReply("Yes", midOtherReoEdit);
+assert.equal(midYes?.capture?.field, "propose-other-reo");
+assert.match(midYes?.text ?? "", /I’ll note other real estate/);
+const midYesWritten = resolveProposal(
+  {
+    ...midOtherReoEdit,
+    pendingProposal: {
+      field: "statedOtherReo",
+      value: "yes",
+      label: "Other real estate",
+      kind: "computed" as const,
+      note: SUGGESTED_OTHER_REO_NOTE,
+    },
+  },
+  "accept",
+);
+assert.equal(midYesWritten.statedOtherReo, "yes");
+assert.equal(emptyDraft().statedOtherReo, undefined);
+assert.equal(structureFixPrompt("other-reo"), "other-reo");
+
+const purchaseMortgageHint = applyExtractedFields(
+  draft({
+    ...afterLooks,
+    productIntent: "buy",
+    cashOut: false,
+    facts: {},
+    pendingProposal: null,
+    pendingConflict: null,
+    statedCurrentHousing: undefined,
+    statedOtherReo: undefined,
+    otherReoAsked: true,
+    pendingOtherReo: null,
+  }),
+  {
+    extractClass: "mortgage_statement",
+    confidence: 0.93,
+    fields: {
+      servicer: "OAK SERVICING",
+      unpaid_principal: "960000",
+      current_pi: "1800",
+    },
+  },
+);
+assert.equal(purchaseMortgageHint.draft.statedOtherReo, undefined);
+assert.equal(purchaseMortgageHint.draft.pendingProposal?.field, "statedCurrentHousing");
+assert.equal(purchaseMortgageHint.draft.pendingOtherReo, true);
+const afterHousingHint = resolveProposal(purchaseMortgageHint.draft, "accept");
+assert.equal(afterHousingHint.statedOtherReo, undefined);
+assert.equal(afterHousingHint.pendingProposal?.field, "statedOtherReo");
+assert.equal(afterHousingHint.pendingProposal?.value, "yes");
+assert.equal(
+  nextFoxAsk(afterHousingHint).text,
+  "I’ll note other real estate. Suggested · not underwritten. Use this?",
+);
+const usedHint = resolveProposal(afterHousingHint, "accept");
+assert.equal(usedHint.statedOtherReo, "yes");
+const declinedHint = resolveProposal(afterHousingHint, "decline");
+assert.equal(declinedHint.statedOtherReo, undefined);
+
+const refiMortgageNotOther = applyExtractedFields(
+  draft({
+    ...afterLooks,
+    productIntent: "refinance",
+    statedOtherReo: undefined,
+    pendingProposal: null,
+  }),
+  {
+    extractClass: "mortgage_statement",
+    confidence: 0.93,
+    fields: {
+      servicer: "OAK SERVICING",
+      unpaid_principal: "960000",
+      current_pi: "4800",
+    },
+  },
+);
+assert.equal(refiMortgageNotOther.draft.statedOtherReo, undefined);
+assert.notEqual(refiMortgageNotOther.draft.pendingProposal?.field, "statedOtherReo");
+assert.ok(!refiMortgageNotOther.draft.pendingOtherReo);
+const refiHousingAccepted = resolveProposal(refiMortgageNotOther.draft, "accept");
+assert.equal(refiHousingAccepted.statedOtherReo, undefined);
+assert.notEqual(refiHousingAccepted.pendingProposal?.field, "statedOtherReo");
+
+const otherReoSrc = [
+  readFileSync(join(root, "components/fox/otherReo.ts"), "utf8"),
+  readFileSync(join(root, "components/fox/workspace.ts"), "utf8"),
+].join("\n");
+assert.doesNotMatch(otherReoSrc, /REO schedule|add another property|reserve-month engine|rental-income worksheet/i);
+assert.doesNotMatch(otherReoSrc, /you need two months reserves|you don.t qualify/i);
 
 const debtsSrc = [
   readFileSync(join(root, "components/fox/workspace.ts"), "utf8"),

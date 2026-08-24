@@ -79,6 +79,11 @@ import {
   SUGGESTED_BORROWER_NOTE,
   writeBorrowerName,
 } from "./borrowerName";
+import {
+  STATED_OTHER_REO_FIELD,
+  otherReoSettled,
+  proposeExtractedOtherReo,
+} from "./otherReo";
 
 export { REJECT_LINE, LIMIT_LINE };
 
@@ -459,6 +464,7 @@ export function factLabel(field: string) {
   if (field === "statedDeclaration") return "Declarations";
   if (field === "statedHousehold") return "Household";
   if (isBorrowerNameField(field)) return "Borrower";
+  if (field === STATED_OTHER_REO_FIELD) return "Other real estate";
   if (field === HIRE_DATE_FIELD) return "hire date";
   return field.replace(/_/g, " ");
 }
@@ -919,6 +925,19 @@ export function applyExtractedFields(
       next = proposeExtractedBorrowerName(next, shown, extras);
     }
   }
+  if (extractClass === "mortgage_statement" && purchaseFileForOtherReo(next) && !next.statedOtherReo) {
+    const remainderWillAsk =
+      remainderWrites.length > 0 &&
+      (!next.pendingProposal || isRemainderConfirmField(next.pendingProposal.field));
+    if (
+      (next.pendingProposal && next.pendingProposal.field !== STATED_OTHER_REO_FIELD) ||
+      remainderWillAsk
+    ) {
+      next = { ...next, pendingOtherReo: true };
+    } else if (!next.pendingConflict) {
+      next = proposeExtractedOtherReo(next);
+    }
+  }
   if (
     remainderWrites.length &&
     (!next.pendingProposal || isRemainderConfirmField(next.pendingProposal.field))
@@ -938,6 +957,12 @@ export function applyExtractedFields(
     conflict,
     quietLines,
   };
+}
+
+function purchaseFileForOtherReo(draft: FoxIntakeDraft) {
+  if (draft.productIntent === "buy") return true;
+  if (draft.productIntent === "jumbo") return draft.jumboPurpose !== "refinance";
+  return false;
 }
 
 function normalizeEmployerName(value?: string | null) {
@@ -1273,6 +1298,7 @@ export function completenessFileFromDraft(draft: FoxIntakeDraft): CompletenessFi
     ...(draft.statedDeclaration ? { statedDeclaration: draft.statedDeclaration } : {}),
     ...(draft.statedHousehold ? { statedHousehold: draft.statedHousehold } : {}),
     ...(draft.borrowerName ? { borrowerName: draft.borrowerName } : {}),
+    ...(draft.statedOtherReo ? { statedOtherReo: draft.statedOtherReo } : {}),
   };
 }
 
@@ -1496,6 +1522,7 @@ export function nextDocInvite(draft: FoxIntakeDraft): DocInviteKind | null {
   if (!declarationsSettled(draft)) return null;
   if (!householdSettled(draft)) return null;
   if (!borrowerNameSettled(draft)) return null;
+  if (!otherReoSettled(draft)) return null;
   if (draft.pendingProposal || draft.pendingConflict) return null;
   for (const kind of inviteSequence(draft)) {
     if (!inviteSatisfied(draft, kind)) return kind;

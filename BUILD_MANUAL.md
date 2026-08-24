@@ -507,6 +507,26 @@ Skip / Not yet leaves the field empty. Proceed still works. Government ID stays 
 
 Readiness is notepad only. Empty name does not invent a not-ready line; existing docs readiness stays. Name confirmed does not claim identity is verified and does not invent a credit pull. Name alone never creates a strong line and never creates a not-ready line. Never: you don’t qualify; SSN ask to continue; name as verified KYC; you are approved.
 
+### Other REO v1 — one optional owned-property fact
+
+After the name ask (or that Skip), before the docs maze, Fox may ask once:
+
+`Do you own any other real estate besides this one? Skip is fine.`
+
+Chips: None / Yes / Skip / Not yet. Typed `no`, `just this`, `I have a rental` confirm-before-write. Do not ask address, value, rent, or HOA this gate.
+
+- **None** confirm: `No other real estate on the file. Suggested · not underwritten. Use this?`
+- **Yes** confirm: `I’ll note other real estate. Suggested · not underwritten. Use this?` Do not start an address card. Do not invent value or rent.
+- **Use this** writes `statedOtherReo` (`none` | `yes`).
+- **Leave blank** writes nothing and restores the next action. If Structure previewed a pending value, Leave blank clears it.
+- Structure shows `Other real estate` as None or Yes · `Suggested · not underwritten`. Editable mid-file. Start over is a full reset only.
+
+A refinance of the subject is not other REO. On a refi path, a mortgage statement on the subject is not proof of other real estate. On a purchase file, a mortgage statement may hint Yes on the existing confirm card — never silent-write.
+
+Skip / Not yet leaves the field empty. Proceed still works. Still useful may list other real estate as optional, never required. After Yes is confirmed, still useful may later list `other property details` as optional — never a required maze this gate.
+
+Readiness is notepad only. Owning other property is normal. Yes does not fire UW-review by itself. Empty / none / yes keep existing thin / not-ready / strong / UW-review / funds-short / condo / time-on-job / declarations rules — no REO problem invented. Do not invent reserve months or rental income. Other REO alone never creates a strong line and never creates a not-ready line. Never: you don’t qualify; you need two months reserves; you are approved; DTI percents.
+
 ### Quiet flags + more-complete asks
 
 After Looks right / agency-shaped minimums, conventional files can deepen still-useful past the minimum three. HELOC and Jumbo stay thin. Never `agency_ready`.

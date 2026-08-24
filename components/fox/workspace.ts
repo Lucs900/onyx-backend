@@ -252,6 +252,23 @@ import {
   writeBorrowerName,
 } from "./borrowerName";
 import {
+  OTHER_REO_ASK,
+  STATED_OTHER_REO_FIELD,
+  SUGGESTED_OTHER_REO_NOTE,
+  isOtherReoConfirmPending,
+  isSkipOtherReoText,
+  isStatedOtherReo,
+  otherReoAskCopy,
+  otherReoConfirmActions,
+  otherReoConfirmCopy,
+  otherReoLabel,
+  otherReoSettled,
+  parseOtherReo,
+  proposeStatedOtherReo,
+  skipOtherReo,
+  writeStatedOtherReo,
+} from "./otherReo";
+import {
   ACR_BENEFITS_LINE,
   COST_LINE,
   FHFA_HIGH_COST_CEILING_2026 as STORE_HIGH_COST_CEILING,
@@ -1292,6 +1309,12 @@ function liveProposalAsk(
       actions: borrowerNameConfirmActions(),
     };
   }
+  if (proposal.field === STATED_OTHER_REO_FIELD) {
+    return {
+      text: proposalAskCopy(proposal),
+      actions: otherReoConfirmActions(),
+    };
+  }
   if (proposal.field === QUALIFYING_INCOME_FIELD) {
     if (combinedParts(proposal) || proposal.methodNote?.startsWith("combined ")) {
       return combinedReactionAsk(draft, proposal);
@@ -1426,6 +1449,7 @@ const CORRECTION_CHIP_IDS = new Set([
   "declarations",
   "household",
   "borrower-name",
+  "other-reo",
 ]);
 
 function yearsOnFile(draft: FoxIntakeDraft) {
@@ -1476,6 +1500,9 @@ function extraCorrectionLines(draft: FoxIntakeDraft): { id: string; label: strin
   }
   if (draft.borrowerNameAsked || draft.borrowerName || draft.contact.fullName.value) {
     extra.push({ id: "borrower-name", label: "Borrower", prompt: "borrower-name" });
+  }
+  if (draft.otherReoAsked || draft.statedOtherReo) {
+    extra.push({ id: "other-reo", label: "Other real estate", prompt: "other-reo" });
   }
   return extra;
 }
@@ -1790,7 +1817,8 @@ export function shouldDeferStillUsefulAsk(draft: FoxIntakeDraft): boolean {
     isCurrentHousingConfirmPending(draft) ||
     isDeclarationsConfirmPending(draft) ||
     isHouseholdConfirmPending(draft) ||
-    isBorrowerNameConfirmPending(draft)
+    isBorrowerNameConfirmPending(draft) ||
+    isOtherReoConfirmPending(draft)
   );
 }
 
@@ -1853,6 +1881,7 @@ export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
   if (!declarationsSettled(draft)) return "declarations";
   if (!householdSettled(draft)) return "household";
   if (!borrowerNameSettled(draft)) return "borrower-name";
+  if (!otherReoSettled(draft)) return "other-reo";
   if (!draft.sampleAccepted && draft.awaitingYearsInBusiness) return "documents";
   if (nextDocInvite(draft)) return "documents";
   if (!draft.sampleAccepted) return canLooksRight(draft) ? "review" : "amount";
@@ -2060,6 +2089,9 @@ function workspaceAskCopy(
   }
   if (prompt === "borrower-name") {
     return borrowerNameAskCopy(draft);
+  }
+  if (prompt === "other-reo") {
+    return otherReoAskCopy(draft);
   }
   if (prompt === "qualifying") {
     const shown =
@@ -2711,6 +2743,13 @@ export function editPromptFromCapture(capture?: Capture): FoxPrompt | undefined 
   ) {
     return "borrower-name";
   }
+  if (
+    capture.field === "skip-other-reo" ||
+    capture.field === "propose-other-reo" ||
+    capture.field === "statedOtherReo"
+  ) {
+    return "other-reo";
+  }
   if (capture.field === "propose-subject-address" || capture.field === "subjectAddress") {
     return "confirm-proposal";
   }
@@ -2919,6 +2958,13 @@ export function workspaceUpdateCopy(capture: Capture, draft: FoxIntakeDraft) {
       ? `Updated borrower to ${capture.value.trim()}.`
       : "Updated borrower.";
   }
+  if (capture.field === "skip-other-reo") return "Updated. Other real estate left blank.";
+  if (capture.field === "propose-other-reo") return "Updated.";
+  if (capture.field === "statedOtherReo") {
+    return isStatedOtherReo(capture.value)
+      ? `Updated other real estate to ${otherReoLabel(capture.value)}.`
+      : "Updated other real estate.";
+  }
   if (capture.field === "statedAvailableAssets") {
     const n = Number(capture.value.replace(/,/g, ""));
     return Number.isFinite(n) && n > 0
@@ -2948,7 +2994,7 @@ export function parseWorkspaceEdit(
   const q = text.trim();
   const lower = q.toLowerCase();
   const namedField =
-    /\boccupan|\b(credit|fico|income|timeline|product|purchase price|\bprice\b|down(\s+payment)?|loan amount|years? in business|path|property type|condo|house|sfr|time on job|current housing|declarations?|household|borrower|\bname\b)\b/.test(
+    /\boccupan|\b(credit|fico|income|timeline|product|purchase price|\bprice\b|down(\s+payment)?|loan amount|years? in business|path|property type|condo|house|sfr|time on job|current housing|declarations?|household|borrower|\bname\b|other real estate|other property|\breo\b)\b/.test(
       lower,
     );
   const spokenFix =
@@ -3044,6 +3090,17 @@ export function parseWorkspaceEdit(
       };
     }
     return { correct: "borrower-name", confirm: BORROWER_NAME_ASK };
+  }
+
+  if (/\b(other real estate|other property|\breo\b)\b/.test(lower)) {
+    const value = parseOtherReo(q, { allowBare: true });
+    if (value) {
+      return {
+        capture: { field: "propose-other-reo", value },
+        confirm: otherReoConfirmCopy(value),
+      };
+    }
+    return { correct: "other-reo", confirm: OTHER_REO_ASK };
   }
 
   if (/\boccupan/.test(lower)) {
@@ -3291,6 +3348,13 @@ function draftAfterCapture(draft: FoxIntakeDraft, capture: Capture): FoxIntakeDr
     const name = parseBorrowerName(capture.value) ?? capture.value.trim();
     return name ? writeBorrowerName(next, name) : next;
   }
+  if (capture.field === "skip-other-reo") return skipOtherReo(next);
+  if (capture.field === "propose-other-reo" && isStatedOtherReo(capture.value)) {
+    return proposeStatedOtherReo(next, capture.value);
+  }
+  if (capture.field === "statedOtherReo" && isStatedOtherReo(capture.value)) {
+    return writeStatedOtherReo(next, capture.value);
+  }
   if (capture.field === "cashOut") return { ...next, cashOut: true };
   if (capture.field === "over-price-confirm") {
     return applyEscalateMotion({ ...next, overPriceConfirmed: true });
@@ -3483,6 +3547,20 @@ function matrixReply(
     };
   }
 
+  const volunteeredOtherReo = parseOtherReo(text);
+  if (
+    volunteeredOtherReo &&
+    !draft.pendingProposal &&
+    !draft.pendingConflict &&
+    draft.statedOtherReo !== volunteeredOtherReo
+  ) {
+    const nextDraft = proposeStatedOtherReo(draft, volunteeredOtherReo);
+    return {
+      ...workspacePromptCopy("confirm-proposal", nextDraft),
+      capture: { field: "propose-other-reo", value: volunteeredOtherReo },
+    };
+  }
+
   if (namedCashOut(text) && !draft.cashOut && isRefiLike(draft)) {
     const nextDraft = { ...draft, cashOut: true };
     return continueAfterFlag(cashOutCopy(nextDraft), nextDraft, { field: "cashOut" });
@@ -3653,7 +3731,8 @@ export function workspaceReply(
         isCurrentHousingConfirmPending(draft) ||
         isDeclarationsConfirmPending(draft) ||
         isHouseholdConfirmPending(draft) ||
-        isBorrowerNameConfirmPending(draft)) &&
+        isBorrowerNameConfirmPending(draft) ||
+        isOtherReoConfirmPending(draft)) &&
       asksWillIQualify(q)
     ) {
       return answerThenRestore(q, draft);
@@ -4396,6 +4475,27 @@ export function workspaceReply(
     };
   }
 
+  if (prompt === "other-reo") {
+    if (isSkipOtherReoText(q)) {
+      const nextDraft = skipOtherReo(draft);
+      return {
+        ...workspacePromptCopy(workspacePrompt(nextDraft), nextDraft),
+        capture: { field: "skip-other-reo" },
+      };
+    }
+    const value = parseOtherReo(q, { allowBare: true });
+    if (value) {
+      if (draft.statedOtherReo === value) return keepThisReply(draft);
+      const nextDraft = proposeStatedOtherReo(draft, value);
+      return {
+        ...workspacePromptCopy("confirm-proposal", nextDraft),
+        capture: { field: "propose-other-reo", value },
+      };
+    }
+    if (draft.statedOtherReo && isKeepThisText(q)) return keepThisReply(draft);
+    return answerThenRestore(q, draft);
+  }
+
   if (prompt === "income") {
     if (draft.incomeType.value && isKeepThisText(q)) return keepThisReply(draft);
     const match = incomeFromText(q);
@@ -5018,6 +5118,27 @@ export function previewFacts(draft: FoxIntakeDraft): PreviewFact[] {
     });
   }
 
+  if (
+    draft.otherReoAsked ||
+    draft.statedOtherReo ||
+    isOtherReoConfirmPending(draft)
+  ) {
+    const pending = isOtherReoConfirmPending(draft)
+      ? draft.pendingProposal?.value
+      : undefined;
+    const shown = draft.statedOtherReo
+      ? otherReoLabel(draft.statedOtherReo)
+      : pending && isStatedOtherReo(pending)
+        ? otherReoLabel(pending)
+        : "—";
+    facts.push({
+      id: "other-reo",
+      label: "Other real estate",
+      value: shown,
+      note: SUGGESTED_OTHER_REO_NOTE,
+    });
+  }
+
   const address = draft.subjectAddress || factValue(draft, "property_address");
   if (address) {
     facts.push({
@@ -5227,6 +5348,7 @@ export function structureFixPrompt(
   if (id === "declarations") return "declarations";
   if (id === "household") return "household";
   if (id === "borrower" || id === "borrower-name") return "borrower-name";
+  if (id === "other-reo" || id === "other-real-estate") return "other-reo";
   if (id === "qualifying") return "qualifying";
   if (id === "years-in-business") return "years-in-business";
   if (id === "docs") return "documents";
@@ -5281,6 +5403,11 @@ export function structureExplainCopy(
   if (id === "borrower" || id === "borrower-name") {
     return {
       text: "Borrower. Suggested · not underwritten.",
+    };
+  }
+  if (id === "other-reo" || id === "other-real-estate") {
+    return {
+      text: "Other real estate. Suggested · not underwritten.",
     };
   }
   if (id === "rate") {
