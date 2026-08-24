@@ -150,6 +150,27 @@ import {
   skipAvailableAssets,
 } from "./availableAssets";
 import {
+  PROPERTY_TYPE_ASK,
+  PROPERTY_TYPE_FIELD,
+  SUGGESTED_PROPERTY_NOTE,
+  contractAddressConfirmCopy,
+  isPropertyAddressField,
+  isPropertyTypeConfirmPending,
+  isSkipPropertyTypeText,
+  isSubjectAddressConfirmPending,
+  parsePropertyType,
+  parseVolunteeredAddress,
+  propertyTypeAskCopy,
+  propertyTypeConfirmActions,
+  propertyTypeConfirmCopy,
+  propertyTypeLabel,
+  propertyTypeSettled,
+  proposePropertyType,
+  proposeSubjectAddress,
+  skipPropertyType,
+  typedAddressConfirmCopy,
+} from "./propertyType";
+import {
   ACR_BENEFITS_LINE,
   COST_LINE,
   FHFA_HIGH_COST_CEILING_2026 as STORE_HIGH_COST_CEILING,
@@ -1144,6 +1165,22 @@ function liveProposalAsk(
       actions: availableAssetsConfirmActions(),
     };
   }
+  if (proposal.field === PROPERTY_TYPE_FIELD) {
+    const value = parsePropertyType(proposal.value);
+    return {
+      text: value ? propertyTypeConfirmCopy(value) : proposalAskCopy(proposal),
+      actions: propertyTypeConfirmActions(),
+    };
+  }
+  if (isPropertyAddressField(proposal.field)) {
+    return {
+      text:
+        proposal.note === SUGGESTED_PROPERTY_NOTE && !proposal.extras?.length
+          ? typedAddressConfirmCopy(proposal.value)
+          : contractAddressConfirmCopy(proposal.value),
+      actions: propertyTypeConfirmActions(),
+    };
+  }
   if (proposal.field === QUALIFYING_INCOME_FIELD) {
     if (combinedParts(proposal) || proposal.methodNote?.startsWith("combined ")) {
       return combinedReactionAsk(draft, proposal);
@@ -1272,6 +1309,7 @@ const CORRECTION_CHIP_IDS = new Set([
   "years-in-business",
   "debts",
   "assets",
+  "property-type",
 ]);
 
 function yearsOnFile(draft: FoxIntakeDraft) {
@@ -1304,6 +1342,9 @@ function extraCorrectionLines(draft: FoxIntakeDraft): { id: string; label: strin
   }
   if (draft.availableAssetsAsked || draft.statedAvailableAssets != null) {
     extra.push({ id: "assets", label: "Stated available assets", prompt: "assets" });
+  }
+  if (draft.propertyTypeAsked || draft.propertyType) {
+    extra.push({ id: "property-type", label: "Property type", prompt: "property-type" });
   }
   return extra;
 }
@@ -1611,7 +1652,9 @@ export function shouldDeferStillUsefulAsk(draft: FoxIntakeDraft): boolean {
     isQualifyingIncomeConfirmPending(draft) ||
     Boolean(draft.awaitingPayFrequency) ||
     Boolean(draft.pendingProposal && isRemainderConfirmField(draft.pendingProposal.field)) ||
-    isStatedAssetsConfirmPending(draft)
+    isStatedAssetsConfirmPending(draft) ||
+    isPropertyTypeConfirmPending(draft) ||
+    isSubjectAddressConfirmPending(draft)
   );
 }
 
@@ -1668,6 +1711,7 @@ export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
   if (!incomeSettled(draft)) return "income";
   if (!debtsSettled(draft)) return "debts";
   if (!assetsSettled(draft)) return "assets";
+  if (!propertyTypeSettled(draft)) return "property-type";
   if (!draft.sampleAccepted && draft.awaitingYearsInBusiness) return "documents";
   if (nextDocInvite(draft)) return "documents";
   if (!draft.sampleAccepted) return canLooksRight(draft) ? "review" : "amount";
@@ -1857,6 +1901,9 @@ function workspaceAskCopy(
   }
   if (prompt === "assets") {
     return availableAssetsAskCopy(draft);
+  }
+  if (prompt === "property-type") {
+    return propertyTypeAskCopy(draft);
   }
   if (prompt === "qualifying") {
     const shown =
@@ -2467,6 +2514,16 @@ export function editPromptFromCapture(capture?: Capture): FoxPrompt | undefined 
     return "assets";
   }
   if (
+    capture.field === "skip-property-type" ||
+    capture.field === "propose-property-type" ||
+    capture.field === "propertyType"
+  ) {
+    return "property-type";
+  }
+  if (capture.field === "propose-subject-address" || capture.field === "subjectAddress") {
+    return "confirm-proposal";
+  }
+  if (
     capture.field === "skip-docs" ||
     capture.field === "hold-docs" ||
     capture.field === "start-docs" ||
@@ -2622,6 +2679,18 @@ export function workspaceUpdateCopy(capture: Capture, draft: FoxIntakeDraft) {
   }
   if (capture.field === "skip-available-assets") return "Updated. Stated available assets left blank.";
   if (capture.field === "propose-available-assets") return "Updated.";
+  if (capture.field === "skip-property-type") return "Updated. Property type left blank.";
+  if (capture.field === "propose-property-type") return "Updated.";
+  if (capture.field === "propertyType") {
+    const value = parsePropertyType(capture.value);
+    return value ? `Updated property type to ${propertyTypeLabel(value)}.` : "Updated property type.";
+  }
+  if (capture.field === "propose-subject-address") return "Updated.";
+  if (capture.field === "subjectAddress") {
+    return capture.value.trim()
+      ? `Updated property address to ${capture.value.trim()}.`
+      : "Updated property address.";
+  }
   if (capture.field === "statedAvailableAssets") {
     const n = Number(capture.value.replace(/,/g, ""));
     return Number.isFinite(n) && n > 0
@@ -2651,7 +2720,7 @@ export function parseWorkspaceEdit(
   const q = text.trim();
   const lower = q.toLowerCase();
   const namedField =
-    /\boccupan|\b(credit|fico|income|timeline|product|purchase price|\bprice\b|down(\s+payment)?|loan amount|years? in business|path)\b/.test(
+    /\boccupan|\b(credit|fico|income|timeline|product|purchase price|\bprice\b|down(\s+payment)?|loan amount|years? in business|path|property type|condo|house|sfr)\b/.test(
       lower,
     );
   const spokenFix =
@@ -2678,6 +2747,19 @@ export function parseWorkspaceEdit(
     }
     if (/\bproduct\b/.test(lower)) {
       return { correct: "product", confirm: "Which product should I use?" };
+    }
+  }
+
+  if (/\b(property type|condo|fourplex|duplex|single[-\s]?family|\bsfr\b)\b/.test(lower) && !/\boccupan/.test(lower)) {
+    const match = parsePropertyType(q);
+    if (match) {
+      return {
+        capture: { field: "propose-property-type", value: match },
+        confirm: propertyTypeConfirmCopy(match),
+      };
+    }
+    if (/\bproperty type\b/.test(lower)) {
+      return { correct: "property-type", confirm: PROPERTY_TYPE_ASK };
     }
   }
 
@@ -3238,7 +3320,9 @@ export function workspaceReply(
     if (
       (isQualifyingIncomeConfirmPending(draft) ||
         isStatedDebtsConfirmPending(draft) ||
-        isStatedAssetsConfirmPending(draft)) &&
+        isStatedAssetsConfirmPending(draft) ||
+        isPropertyTypeConfirmPending(draft) ||
+        isSubjectAddressConfirmPending(draft)) &&
       asksWillIQualify(q)
     ) {
       return answerThenRestore(q, draft);
@@ -3328,6 +3412,17 @@ export function workspaceReply(
 
   const matrix = matrixReply(q, draft, prompt);
   if (matrix) return matrix;
+
+  if (/address/i.test(q) && !draft.pendingProposal && !draft.pendingConflict) {
+    const volunteeredEarly = parseVolunteeredAddress(q);
+    if (volunteeredEarly) {
+      const nextDraft = proposeSubjectAddress(draft, volunteeredEarly);
+      return {
+        ...workspacePromptCopy("confirm-proposal", nextDraft),
+        capture: { field: "propose-subject-address", value: volunteeredEarly },
+      };
+    }
+  }
 
   if (prompt === "over-price" || (needsOverPriceCheck(draft) && !draft.correcting)) {
     if (
@@ -3845,6 +3940,32 @@ export function workspaceReply(
     };
   }
 
+  if (prompt === "property-type") {
+    if (draft.propertyType && isKeepThisText(q)) return keepThisReply(draft);
+    if (isSkipPropertyTypeText(q)) {
+      const nextDraft = skipPropertyType(draft);
+      return {
+        ...workspacePromptCopy(workspacePrompt(nextDraft), nextDraft),
+        capture: { field: "skip-property-type" },
+      };
+    }
+    const volunteeredAtType = parseVolunteeredAddress(q);
+    if (volunteeredAtType && /address/i.test(q)) {
+      const nextDraft = proposeSubjectAddress(draft, volunteeredAtType);
+      return {
+        ...workspacePromptCopy("confirm-proposal", nextDraft),
+        capture: { field: "propose-subject-address", value: volunteeredAtType },
+      };
+    }
+    const value = parsePropertyType(q);
+    if (!value) return answerThenRestore(q, draft);
+    const nextDraft = proposePropertyType(draft, value);
+    return {
+      ...workspacePromptCopy("confirm-proposal", nextDraft),
+      capture: { field: "propose-property-type", value },
+    };
+  }
+
   if (prompt === "income") {
     if (draft.incomeType.value && isKeepThisText(q)) return keepThisReply(draft);
     const match = incomeFromText(q);
@@ -4076,6 +4197,15 @@ export function workspaceReply(
     }
     return {
       text: "The file has the basics. Ask if you want to change anything.",
+    };
+  }
+
+  const volunteered = parseVolunteeredAddress(q);
+  if (volunteered && /address/i.test(q)) {
+    const nextDraft = proposeSubjectAddress(draft, volunteered);
+    return {
+      ...workspacePromptCopy("confirm-proposal", nextDraft),
+      capture: { field: "propose-subject-address", value: volunteered },
     };
   }
 
@@ -4335,9 +4465,33 @@ export function previewFacts(draft: FoxIntakeDraft): PreviewFact[] {
     });
   }
 
-  const address = factValue(draft, "property_address");
+  if (
+    draft.propertyTypeAsked ||
+    draft.propertyType ||
+    isPropertyTypeConfirmPending(draft)
+  ) {
+    const pending = parsePropertyType(draft.pendingProposal?.value ?? "");
+    const shown = draft.propertyType
+      ? propertyTypeLabel(draft.propertyType)
+      : pending
+        ? propertyTypeLabel(pending)
+        : "—";
+    facts.push({
+      id: "property-type",
+      label: "Property type",
+      value: shown,
+      note: SUGGESTED_PROPERTY_NOTE,
+    });
+  }
+
+  const address = draft.subjectAddress || factValue(draft, "property_address");
   if (address) {
-    facts.push({ id: "address", label: "Property", value: address });
+    facts.push({
+      id: "address",
+      label: "Property",
+      value: address,
+      note: SUGGESTED_PROPERTY_NOTE,
+    });
   }
   const institution = factValue(draft, "institution");
   const endingBalance = factValue(draft, "ending_balance");
@@ -4533,6 +4687,7 @@ export function structureFixPrompt(
   if (id === "income") return "income";
   if (id === "debts") return "debts";
   if (id === "assets") return "assets";
+  if (id === "property-type") return "property-type";
   if (id === "qualifying") return "qualifying";
   if (id === "years-in-business") return "years-in-business";
   if (id === "docs") return "documents";
@@ -4557,6 +4712,11 @@ export function structureExplainCopy(
   if (id === "assets") {
     return {
       text: "Stated available assets. Suggested · not underwritten. Not a credit pull.",
+    };
+  }
+  if (id === "property-type") {
+    return {
+      text: "Property type. Suggested · not underwritten.",
     };
   }
   if (id === "rate") {

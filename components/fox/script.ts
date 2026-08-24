@@ -121,6 +121,7 @@ export function taskContext(stage: FoxStage, draft: FoxIntakeDraft) {
     income: "Asking: income type",
     debts: "Asking: monthly debts",
     assets: "Asking: available funds",
+    "property-type": "Asking: property type",
     occupancy: "Asking: occupancy",
     timeline: "Asking: timeline",
     documents: "Documents",

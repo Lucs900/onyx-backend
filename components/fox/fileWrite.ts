@@ -42,6 +42,13 @@ import {
   availableAssetsConflictActions,
   proposeExtractedAvailableAssets,
 } from "./availableAssets";
+import {
+  PROPERTY_ADDRESS_FACT,
+  SUGGESTED_PROPERTY_NOTE,
+  isPropertyAddressField,
+  propertyAddressConflictActions,
+  propertyTypeSettled,
+} from "./propertyType";
 
 export { REJECT_LINE, LIMIT_LINE };
 
@@ -406,7 +413,7 @@ export function factLabel(field: string) {
   if (field === "institution") return "institution";
   if (field === "period_end") return "period end";
   if (field === "ending_balance") return "ending balance";
-  if (field === "property_address") return "property";
+  if (field === "property_address" || field === "subjectAddress") return "property";
   if (field === "purchase_price") return "purchase price";
   if (field === "close_date") return "close date";
   if (field === "servicer") return "servicer";
@@ -496,6 +503,12 @@ function existingFact(draft: FoxIntakeDraft, field: string): { value: string; vi
   if (field === STATED_AVAILABLE_ASSETS_FIELD && draft.statedAvailableAssets != null) {
     return { value: String(draft.statedAvailableAssets), via: "structure" };
   }
+  if (isPropertyAddressField(field) && (draft.subjectAddress || draft.facts?.property_address?.value)) {
+    return {
+      value: draft.subjectAddress || draft.facts?.property_address?.value || "",
+      via: "structure",
+    };
+  }
   const direct = draft.facts?.[field]?.value;
   if (direct) return { value: direct, via: field };
   if (field === "qualifying_income" && draft.facts?.qualifying_income?.value) {
@@ -565,6 +578,7 @@ function writeField(
     ...(assetAmount != null
       ? { statedAvailableAssets: assetAmount, availableAssetsAsked: true }
       : {}),
+    ...(isPropertyAddressField(field) ? { subjectAddress: value } : {}),
   };
 }
 
@@ -1120,6 +1134,8 @@ export function completenessFileFromDraft(draft: FoxIntakeDraft): CompletenessFi
     ),
     ...(draft.statedMonthlyDebts != null ? { statedMonthlyDebts: draft.statedMonthlyDebts } : {}),
     ...(draft.statedAvailableAssets != null ? { statedAvailableAssets: draft.statedAvailableAssets } : {}),
+    ...(draft.propertyType ? { propertyType: draft.propertyType } : {}),
+    ...(draft.subjectAddress ? { subjectAddress: draft.subjectAddress } : {}),
   };
 }
 
@@ -1257,6 +1273,9 @@ export function conflictAskCopy(conflict: FactConflict) {
   if (conflict.field === STATED_AVAILABLE_ASSETS_FIELD) {
     return `The statement shows about ${displayFactValue(conflict.field, conflict.documentValue)}. The file has ${displayFactValue(conflict.field, conflict.fileValue)} typed. ${SUGGESTED_ASSETS_EXTRACT_NOTE}.`;
   }
+  if (isPropertyAddressField(conflict.field)) {
+    return `The contract shows ${conflict.documentValue}. The file has ${conflict.fileValue} typed. ${SUGGESTED_PROPERTY_NOTE}.`;
+  }
   return `The file has ${conflict.label} ${displayFactValue(conflict.field, conflict.fileValue)}. The document has ${displayFactValue(conflict.field, conflict.documentValue)}. Which should I keep?`;
 }
 
@@ -1325,6 +1344,7 @@ export function nextDocInvite(draft: FoxIntakeDraft): DocInviteKind | null {
   if (!draft.incomeType.value && !draft.incomeAsked) return null;
   if (!debtsSettled(draft)) return null;
   if (!assetsSettled(draft)) return null;
+  if (!propertyTypeSettled(draft)) return null;
   if (draft.pendingProposal || draft.pendingConflict) return null;
   for (const kind of inviteSequence(draft)) {
     if (!inviteSatisfied(draft, kind)) return kind;
@@ -1394,6 +1414,9 @@ export function documentStatusLine(doc: ReceivedDoc) {
 export function conflictActions(conflict?: FactConflict | null): FoxAction[] {
   if (conflict?.field === STATED_AVAILABLE_ASSETS_FIELD) {
     return availableAssetsConflictActions();
+  }
+  if (conflict && isPropertyAddressField(conflict.field)) {
+    return propertyAddressConflictActions();
   }
   return [
     { id: "keep-file-fact", label: "Keep file", event: "bubble", capture: { field: "keep-file-fact" } },

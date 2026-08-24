@@ -259,6 +259,9 @@ export type FoxIntakeDraft = {
   } | null;
   statedAvailableAssets?: number;
   availableAssetsAsked?: boolean;
+  propertyType?: "sfr" | "condo" | "two_to_four";
+  propertyTypeAsked?: boolean;
+  subjectAddress?: string;
   docsOpen?: boolean;
   originatorRequested?: boolean;
   motion?: FileMotion;
@@ -325,6 +328,7 @@ export type FoxPrompt =
   | "income"
   | "debts"
   | "assets"
+  | "property-type"
   | "occupancy"
   | "timeline"
   | "documents"
@@ -354,6 +358,11 @@ export type Capture =
   | { field: "skip-available-assets" }
   | { field: "propose-available-assets"; value: string }
   | { field: "statedAvailableAssets"; value: string }
+  | { field: "skip-property-type" }
+  | { field: "propose-property-type"; value: string }
+  | { field: "propertyType"; value: string }
+  | { field: "propose-subject-address"; value: string }
+  | { field: "subjectAddress"; value: string }
   | { field: "occupancy"; value: string }
   | { field: "timeline"; value: string }
   | { field: "path"; value: IntakePath }

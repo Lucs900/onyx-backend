@@ -377,6 +377,24 @@ Readiness: empty assets keep existing lines. Confirmed assets obviously below pu
 
 Do not invent closing costs, reserve-month counts, or a gift. Do not claim reserves are enough when assets meet the down. Funds-short fires only when a purchase down exists. Assets alone never create a strong line.
 
+### Property / subject v1 — one optional property type
+
+After the assets ask (or assets Skip), before the docs maze, Fox may ask once for house / condo / 2–4. Skip / Not yet writes nothing. Occupancy is not re-asked. A chip or synonym (single family, sfr, condo, duplex, 2 unit, fourplex) confirm-before-write:
+
+`That’s a condo. Suggested · not underwritten. Use this?`
+
+Use this writes `propertyType` (`sfr` | `condo` | `two_to_four`). Leave blank writes nothing and restores the next action. Structure shows `Property type` with `Suggested · not underwritten`. Editable mid-file. Start over is a full reset only.
+
+Purchase-contract extract still confirm-before-write for address. Never silent-write:
+
+`The contract shows 1840 Valencia St. Suggested · not underwritten. Use this?`
+
+Use this writes `subjectAddress` and the existing `property_address` fact (one address, not a fork). Street as extracted; city/state only if on the page. Never invent ZIP or county. No required typed-address ask. Free-text “the address is …” still confirm-before-write. If a typed address is already confirmed and the extract differs, ask once (Use document / Keep the typed one). Contract price vs sketch price stays the existing conflict-ask.
+
+Still useful may list property type as optional, never required. Property address remains a useful remainder until a contract confirm writes it.
+
+Readiness: empty type and house/SFR keep existing lines. Condo or 2–4 confirmed uses the UW-review line and never a strong line this gate. Do not name warrantability, HOA, or a county limit.
+
 ### Quiet flags + more-complete asks
 
 After Looks right / agency-shaped minimums, conventional files can deepen still-useful past the minimum three. HELOC and Jumbo stay thin. Never `agency_ready`.

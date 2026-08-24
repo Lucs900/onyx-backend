@@ -191,6 +191,8 @@ export type FileFacts = {
   debts?: NamedDebt[];
   statedMonthlyDebts?: number;
   statedAvailableAssets?: number;
+  propertyType?: "sfr" | "condo" | "two_to_four";
+  subjectAddress?: string;
   suggestedMonthlyIncome?: number;
   docsSkipped?: boolean;
   obviousHighDti?: boolean;
@@ -856,6 +858,7 @@ export function completeness(
   if (wantsSeYears(file.incomeType) && !received.has("se_years")) stillUseful.push("SE years");
   if (file.incomeType && file.statedMonthlyDebts == null) stillUseful.push("stated monthly debts");
   if (file.incomeType && file.statedAvailableAssets == null) stillUseful.push("stated available assets");
+  if (file.incomeType && !file.propertyType) stillUseful.push("property type");
 
   const hasSketch = Boolean(file.purchasePrice || file.loanAmount || file.propertyValue);
   const incomeReady = incomeDocsReceived(file.incomeType, received);
@@ -1093,6 +1096,7 @@ function strongEligible(file: CompletenessFile) {
   if (!layer1SketchPresent(file)) return false;
   if (!incomeDocumentedEnough(file)) return false;
   if (file.occupancy === "investment") return false;
+  if (file.propertyType === "condo" || file.propertyType === "two_to_four") return false;
   if (file.purposeHint === "cash_out") return false;
   if (file.namedGovvie || file.govProgram) return false;
   if (file.namedDistress) return false;
@@ -1143,6 +1147,10 @@ export function readinessFromFile(file: FileFacts): ReadinessRead {
   const fundsShort = fundsShortLine(file);
   if (fundsShort) {
     return { kind: "not_ready", line: fundsShort, reason: "funds-short" };
+  }
+
+  if (file.propertyType === "condo" || file.propertyType === "two_to_four") {
+    return { kind: "uw_review", line: READINESS_UW_REVIEW, reason: "property-type" };
   }
 
   if (

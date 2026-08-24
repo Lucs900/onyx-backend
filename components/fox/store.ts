@@ -109,6 +109,16 @@ import {
   skipAvailableAssets,
   writeStatedAvailableAssets,
 } from "./availableAssets";
+import {
+  isPropertyTypeValue,
+  parsePropertyType,
+  parseVolunteeredAddress,
+  proposePropertyType,
+  proposeSubjectAddress,
+  skipPropertyType,
+  writePropertyType,
+  writeSubjectAddress,
+} from "./propertyType";
 
 function numberOrUndefined(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : undefined;
@@ -230,6 +240,12 @@ function normalize(value: unknown): FoxIntakeDraft {
     pendingDebtMortgage: normalizePendingDebtMortgage(raw.pendingDebtMortgage),
     statedAvailableAssets: numberOrUndefined(raw.statedAvailableAssets),
     availableAssetsAsked: Boolean(raw.availableAssetsAsked || raw.statedAvailableAssets != null),
+    propertyType: isPropertyTypeValue(String(raw.propertyType ?? "")) ? raw.propertyType : undefined,
+    propertyTypeAsked: Boolean(raw.propertyTypeAsked || raw.propertyType),
+    subjectAddress:
+      typeof raw.subjectAddress === "string" && raw.subjectAddress.trim()
+        ? raw.subjectAddress.trim()
+        : undefined,
     docsOpen: Boolean(raw.docsOpen),
     docsStarted: Boolean(raw.docsStarted),
     docsHeld: Boolean(raw.docsHeld),
@@ -1176,6 +1192,29 @@ export function applyCapture(capture: Capture) {
     const amount = parseAvailableAssetsAmount(capture.value);
     if (amount == null) return current;
     return commit(writeStatedAvailableAssets(current, amount));
+  }
+  if (capture.field === "skip-property-type") {
+    return commit(skipPropertyType(current));
+  }
+  if (capture.field === "propose-property-type") {
+    const value = parsePropertyType(capture.value);
+    if (!value) return current;
+    return commit(proposePropertyType(current, value));
+  }
+  if (capture.field === "propertyType") {
+    const value = parsePropertyType(capture.value);
+    if (!value) return current;
+    return commit(writePropertyType(current, value));
+  }
+  if (capture.field === "propose-subject-address") {
+    const address = parseVolunteeredAddress(capture.value) ?? capture.value.trim();
+    if (!address) return current;
+    return commit(proposeSubjectAddress(current, address));
+  }
+  if (capture.field === "subjectAddress") {
+    const address = parseVolunteeredAddress(capture.value) ?? capture.value.trim();
+    if (!address) return current;
+    return commit(writeSubjectAddress(current, address));
   }
   if (capture.field === "incomeType") {
     const midFile = Boolean(current.correcting);

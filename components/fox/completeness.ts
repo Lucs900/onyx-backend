@@ -44,6 +44,16 @@ import {
   skipAvailableAssets,
 } from "./availableAssets";
 import {
+  PROPERTY_ADDRESS_FACT,
+  PROPERTY_TYPE_FIELD,
+  SUGGESTED_PROPERTY_NOTE,
+  contractAddressConfirmCopy,
+  isPropertyTypeValue,
+  propertyTypeConfirmCopy,
+  skipPropertyType,
+  typedAddressConfirmCopy,
+} from "./propertyType";
+import {
   HIGH_LTV_CAUTION as STORE_HIGH_LTV_CAUTION,
   HIGH_PURCHASE_LTV as STORE_HIGH_PURCHASE_LTV,
   JUMBO_CEILING_LINE,
@@ -63,6 +73,8 @@ export {
   STATED_MONTHLY_DEBTS_FIELD,
   SUGGESTED_ASSETS_NOTE,
   STATED_AVAILABLE_ASSETS_FIELD,
+  SUGGESTED_PROPERTY_NOTE,
+  PROPERTY_TYPE_FIELD,
 };
 export const YEARS_IN_BUSINESS_FIELD = "years_in_business";
 export const YEARS_IN_BUSINESS_ASK = "How long have you been running this?";
@@ -499,6 +511,8 @@ export function factsFromDraft(draft: FoxIntakeDraft): CompletenessFile {
     ...(debts.length ? { debts } : {}),
     ...(draft.statedMonthlyDebts != null ? { statedMonthlyDebts: draft.statedMonthlyDebts } : {}),
     ...(draft.statedAvailableAssets != null ? { statedAvailableAssets: draft.statedAvailableAssets } : {}),
+    ...(draft.propertyType ? { propertyType: draft.propertyType } : {}),
+    ...(draft.subjectAddress ? { subjectAddress: draft.subjectAddress } : {}),
     ...(suggestedMonthlyIncome != null ? { suggestedMonthlyIncome } : {}),
     docsSkipped: Boolean(
       draft.documentsSkipped || draft.docsHeld || (draft.skippedClasses?.length ?? 0) > 0,
@@ -548,6 +562,7 @@ export function structureFieldForProposal(field: string) {
   if (field === QUALIFYING_INCOME_FIELD) return "qualifying";
   if (field === STATED_MONTHLY_DEBTS_FIELD) return "debts";
   if (field === STATED_AVAILABLE_ASSETS_FIELD) return "assets";
+  if (field === PROPERTY_TYPE_FIELD) return "property-type";
   return field;
 }
 
@@ -579,6 +594,14 @@ export function remainderAskCopy(proposal: FactProposal) {
 }
 
 export function proposalAskCopy(proposal: FactProposal) {
+  if (proposal.field === PROPERTY_TYPE_FIELD && isPropertyTypeValue(proposal.value)) {
+    return propertyTypeConfirmCopy(proposal.value);
+  }
+  if (proposal.field === PROPERTY_ADDRESS_FACT || proposal.field === "subjectAddress") {
+    return proposal.note === SUGGESTED_PROPERTY_NOTE && !proposal.extras?.length
+      ? typedAddressConfirmCopy(proposal.value)
+      : contractAddressConfirmCopy(proposal.value);
+  }
   if (proposal.field === STATED_AVAILABLE_ASSETS_FIELD) {
     const amount = Number(proposal.value) || 0;
     return proposal.extras?.length
@@ -726,6 +749,24 @@ function writeConfirmedFact(
       facts,
     };
   }
+  if (field === PROPERTY_TYPE_FIELD && isPropertyTypeValue(value)) {
+    next = {
+      ...next,
+      propertyType: value,
+      propertyTypeAsked: true,
+      facts,
+    };
+  }
+  if (field === PROPERTY_ADDRESS_FACT || field === "subjectAddress") {
+    facts[PROPERTY_ADDRESS_FACT] = {
+      field: PROPERTY_ADDRESS_FACT,
+      value,
+      source,
+      confirmed: true,
+      confirmedAt: now,
+    };
+    next = { ...next, subjectAddress: value, facts };
+  }
   if (field === "full_name" && !draft.contact.fullName.value) {
     next = {
       ...next,
@@ -820,11 +861,15 @@ export function resolveProposal(
     if (proposal.field === STATED_AVAILABLE_ASSETS_FIELD) {
       return skipAvailableAssets({ ...draft, pendingProposal: null });
     }
+    if (proposal.field === PROPERTY_TYPE_FIELD) {
+      return skipPropertyType({ ...draft, pendingProposal: null });
+    }
     return { ...draft, pendingProposal: null };
   }
   const source =
     proposal.field === QUALIFYING_INCOME_FIELD ||
       proposal.field === STATED_AVAILABLE_ASSETS_FIELD ||
+      proposal.field === PROPERTY_TYPE_FIELD ||
       proposal.kind === "public"
       ? "suggested"
       : isRemainderConfirmField(proposal.field)
