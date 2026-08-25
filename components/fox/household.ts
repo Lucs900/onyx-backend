@@ -2,7 +2,7 @@ import type { FactProposal, FoxAction, FoxIntakeDraft } from "./types";
 
 export const STATED_HOUSEHOLD_FIELD = "statedHousehold";
 export const SUGGESTED_HOUSEHOLD_NOTE = "Suggested · not underwritten";
-export const HOUSEHOLD_ASK = "Are you buying this on your own, or with someone? Skip is fine.";
+export const HOUSEHOLD_ASK = "Is there another borrower on this file?";
 
 export type StatedHousehold = "alone" | "with_someone";
 
@@ -11,12 +11,30 @@ export function isStatedHousehold(value: string): value is StatedHousehold {
 }
 
 export function householdLabel(value: StatedHousehold) {
-  return value === "with_someone" ? "With someone" : "On my own";
+  return value === "with_someone" ? "Yes" : "None";
+}
+
+/** Primary sketch + docs path has started. Household waits until then. */
+export function primaryDocsInMotion(draft: FoxIntakeDraft) {
+  return Boolean(
+    draft.docsStarted ||
+      draft.documentsSkipped ||
+      draft.sampleAccepted ||
+      (draft.skippedClasses?.length ?? 0) > 0 ||
+      draft.documents.some(
+        (doc) =>
+          doc.status === "received" ||
+          doc.status === "reading" ||
+          doc.status === "extracted",
+      ),
+  );
 }
 
 export function householdSettled(draft: FoxIntakeDraft) {
   if (draft.correcting === "household") return false;
-  return Boolean(draft.householdAsked || draft.statedHousehold);
+  if (draft.householdAsked || draft.statedHousehold) return true;
+  if (!primaryDocsInMotion(draft)) return true;
+  return false;
 }
 
 export function isHouseholdConfirmPending(draft: FoxIntakeDraft) {
@@ -24,7 +42,10 @@ export function isHouseholdConfirmPending(draft: FoxIntakeDraft) {
 }
 
 /** just me / on my own / me and my spouse / with my partner. No name or income. */
-export function parseHousehold(text: string): StatedHousehold | undefined {
+export function parseHousehold(
+  text: string,
+  opts?: { allowBare?: boolean },
+): StatedHousehold | undefined {
   const trimmed = text.trim();
   if (!trimmed) return undefined;
   const lower = trimmed.toLowerCase().replace(/[?.!]+$/g, "");
@@ -38,10 +59,12 @@ export function parseHousehold(text: string): StatedHousehold | undefined {
     /with someone/.test(lower) ||
     /\bme and my (spouse|partner|wife|husband|fiancé|fiance)\b/.test(lower) ||
     /\bwith my (spouse|partner|wife|husband|fiancé|fiance)\b/.test(lower) ||
-    /\b(my spouse|my partner|co-?borrower|both of us)\b/.test(lower)
+    /\b(my spouse|my partner|co-?borrower|both of us|another borrower)\b/.test(lower)
   ) {
     return "with_someone";
   }
+  if (opts?.allowBare && /^(yes|yeah|yep|y)$/i.test(lower)) return "with_someone";
+  if (opts?.allowBare && /^(no|none|nope)$/i.test(lower)) return "alone";
   return undefined;
 }
 
@@ -74,6 +97,8 @@ export function writeStatedHousehold(draft: FoxIntakeDraft, value: StatedHouseho
     ...draft,
     statedHousehold: value,
     householdAsked: true,
+    coborrowerName: value === "with_someone" ? draft.coborrowerName : undefined,
+    coborrowerNameAsked: value === "with_someone" ? draft.coborrowerNameAsked : undefined,
     pendingProposal: null,
     pendingConflict: null,
     correcting: null,
@@ -136,16 +161,16 @@ export function householdSkipActions(): FoxAction[] {
 export function householdAskActions(): FoxAction[] {
   return [
     {
-      id: "household-alone",
-      label: "On my own",
-      event: "bubble",
-      capture: { field: "statedHousehold", value: "alone" },
-    },
-    {
       id: "household-with-someone",
-      label: "With someone",
+      label: "Yes",
       event: "bubble",
       capture: { field: "statedHousehold", value: "with_someone" },
+    },
+    {
+      id: "household-alone",
+      label: "None",
+      event: "bubble",
+      capture: { field: "statedHousehold", value: "alone" },
     },
     ...householdSkipActions(),
   ];

@@ -1,5 +1,7 @@
 import {
   CREDIT_STATED_NOTE,
+  isLowestStatedCredit,
+  statedCreditLabel,
   type CompletenessGroup,
   type CompletenessState,
   type FactProposal,
@@ -86,6 +88,12 @@ import {
   skipHousehold,
   writeStatedHousehold,
 } from "./household";
+import {
+  coborrowerNameConfirmCopy,
+  isCoborrowerNameField,
+  skipCoborrowerName,
+  writeCoborrowerName,
+} from "./coborrowerName";
 import {
   BORROWER_NAME_FIELD,
   borrowerNameConfirmCopy,
@@ -455,7 +463,12 @@ export function highPurchaseLtv(draft?: FoxIntakeDraft | null) {
 }
 
 export function lowestCreditBand(draft?: FoxIntakeDraft | null) {
-  return draft?.creditBand === "680-719" || draft?.scenario?.creditRange === "680-719";
+  return (
+    isLowestStatedCredit(draft?.creditBand) ||
+    draft?.scenario?.creditRange === "680-719" ||
+    draft?.scenario?.creditRange === "640-679" ||
+    draft?.scenario?.creditRange === "below-640"
+  );
 }
 
 const DEBT_FACT_KEYS: Record<string, string> = {
@@ -570,7 +583,9 @@ export function factsFromDraft(draft: FoxIntakeDraft): CompletenessFile {
     ...(draft.statedTimeOnJob != null ? { statedTimeOnJob: draft.statedTimeOnJob } : {}),
     ...(draft.statedCurrentHousing != null ? { statedCurrentHousing: draft.statedCurrentHousing } : {}),
     ...(draft.statedDeclaration ? { statedDeclaration: draft.statedDeclaration } : {}),
+    ...(draft.declarationTiming ? { declarationTiming: draft.declarationTiming } : {}),
     ...(draft.statedHousehold ? { statedHousehold: draft.statedHousehold } : {}),
+    ...(draft.coborrowerName ? { coborrowerName: draft.coborrowerName } : {}),
     ...(draft.borrowerName ? { borrowerName: draft.borrowerName } : {}),
     ...(draft.statedOtherReo ? { statedOtherReo: draft.statedOtherReo } : {}),
     ...(suggestedMonthlyIncome != null ? { suggestedMonthlyIncome } : {}),
@@ -685,6 +700,9 @@ export function proposalAskCopy(proposal: FactProposal) {
     return proposal.extras
       ? borrowerNameExtractCopy(proposal.value)
       : borrowerNameConfirmCopy(proposal.value);
+  }
+  if (isCoborrowerNameField(proposal.field)) {
+    return coborrowerNameConfirmCopy(proposal.value);
   }
   if (proposal.field === STATED_OTHER_REO_FIELD && isStatedOtherReo(proposal.value)) {
     return otherReoConfirmCopy(proposal.value);
@@ -867,6 +885,9 @@ function writeConfirmedFact(
   if (isBorrowerNameField(field) && value.trim()) {
     next = writeBorrowerName(next, value);
   }
+  if (isCoborrowerNameField(field) && value.trim()) {
+    next = writeCoborrowerName(next, value);
+  }
   if (field === STATED_OTHER_REO_FIELD && isStatedOtherReo(value)) {
     next = writeStatedOtherReo(next, value);
   }
@@ -992,6 +1013,9 @@ export function resolveProposal(
     if (isBorrowerNameField(proposal.field)) {
       return skipBorrowerName({ ...draft, pendingProposal: null });
     }
+    if (isCoborrowerNameField(proposal.field)) {
+      return skipCoborrowerName({ ...draft, pendingProposal: null });
+    }
     if (proposal.field === STATED_OTHER_REO_FIELD) {
       return skipOtherReo({ ...draft, pendingProposal: null });
     }
@@ -1007,6 +1031,7 @@ export function resolveProposal(
       proposal.field === STATED_DECLARATION_FIELD ||
       proposal.field === STATED_HOUSEHOLD_FIELD ||
       isBorrowerNameField(proposal.field) ||
+      isCoborrowerNameField(proposal.field) ||
       proposal.field === STATED_OTHER_REO_FIELD ||
       proposal.kind === "public"
       ? "suggested"
@@ -1262,17 +1287,7 @@ export function requiredLineValue(
     return { value: MISSING_LINE, filled: false };
   }
   if (line.id === "credit") {
-    const band = draft.creditBand;
-    const label =
-      band === "760+"
-        ? "760+"
-        : band === "720-759"
-          ? "720–759"
-          : band === "680-719"
-            ? "680–719"
-            : band === "not-sure"
-              ? "Not sure"
-              : "";
+    const label = statedCreditLabel(draft.creditBand);
     return {
       value: label || MISSING_LINE,
       note: label ? CREDIT_STATED_NOTE : undefined,

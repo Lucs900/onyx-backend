@@ -263,7 +263,8 @@ export type FoxIntakeDraft = {
   valueAsked?: boolean;
   downAsked?: boolean;
   amountPurposeLabel?: string;
-  creditBand?: CreditRange;
+  /** Stated chip band (760+ / 720–739) or typed 3-digit score. Stated only. */
+  creditBand?: string;
   creditAsked?: boolean;
   incomeAsked?: boolean;
   statedMonthlyDebts?: number;
@@ -292,8 +293,13 @@ export type FoxIntakeDraft = {
   statedDeclaration?: "none" | "event";
   declarationAsked?: boolean;
   declarationNote?: string;
+  /** Year/month or best given (2019, March 2021, about 4 years). */
+  declarationTiming?: string;
+  declarationTimingAsked?: boolean;
   statedHousehold?: "alone" | "with_someone";
   householdAsked?: boolean;
+  coborrowerName?: string;
+  coborrowerNameAsked?: boolean;
   borrowerName?: string;
   borrowerNameAsked?: boolean;
   statedOtherReo?: "none" | "yes";
@@ -370,7 +376,9 @@ export type FoxPrompt =
   | "time-on-job"
   | "current-housing"
   | "declarations"
+  | "declaration-timing"
   | "household"
+  | "coborrower-name"
   | "borrower-name"
   | "other-reo"
   | "occupancy"
@@ -416,9 +424,14 @@ export type Capture =
   | { field: "skip-declarations" }
   | { field: "propose-declarations"; value: string }
   | { field: "statedDeclaration"; value: string }
+  | { field: "skip-declaration-timing" }
+  | { field: "declarationTiming"; value: string }
   | { field: "skip-household" }
   | { field: "propose-household"; value: string }
   | { field: "statedHousehold"; value: string }
+  | { field: "skip-coborrower-name" }
+  | { field: "propose-coborrower-name"; value: string }
+  | { field: "coborrowerName"; value: string }
   | { field: "skip-borrower-name" }
   | { field: "propose-borrower-name"; value: string }
   | { field: "borrowerName"; value: string }
@@ -446,6 +459,7 @@ export type Capture =
   | { field: "downPayment"; value: string }
   | { field: "amountPurpose"; value: string }
   | { field: "creditRange"; value: string }
+  | { field: "skip-credit" }
   | { field: "termYears"; value: string }
   | { field: "skip-amount" }
   | { field: "skip-value" }
@@ -547,10 +561,60 @@ export const CREDIT_STATED_NOTE = "Stated · not a pull";
 
 export const CREDIT_WORKSPACE_BUBBLES = [
   { value: "760+", label: "760+" },
-  { value: "720-759", label: "720–759" },
-  { value: "680-719", label: "680–719" },
-  { value: "not-sure", label: "Not sure" },
+  { value: "740-759", label: "740–759" },
+  { value: "720-739", label: "720–739" },
+  { value: "700-719", label: "700–719" },
+  { value: "680-699", label: "680–699" },
+  { value: "660-679", label: "660–679" },
+  { value: "640-659", label: "640–659" },
+  { value: "620-639", label: "620–639" },
 ] as const;
+
+export function statedCreditLabel(value?: string | null) {
+  const raw = String(value ?? "").trim();
+  if (!raw || raw === "not-sure") return "";
+  const chip = CREDIT_WORKSPACE_BUBBLES.find((item) => item.value === raw);
+  if (chip) return chip.label;
+  if (/^\d{3}$/.test(raw)) return raw;
+  return raw.replace(/-/g, "–");
+}
+
+/** Explorer/marketing bands only. File still shows the stated chip or typed score. */
+export function explorerCreditFromStated(value?: string | null): CreditRange | undefined {
+  const raw = String(value ?? "").trim();
+  if (!raw || raw === "not-sure") return undefined;
+  if (raw === "760+") return "760+";
+  if (raw === "740-759" || raw === "720-739" || raw === "720-759") return "720-759";
+  if (raw === "700-719" || raw === "680-699" || raw === "680-719") return "680-719";
+  if (raw === "660-679" || raw === "640-659" || raw === "640-679") return "640-679";
+  if (raw === "620-639") return "below-640";
+  const score = Number(raw);
+  if (!Number.isFinite(score)) return undefined;
+  if (score >= 760) return "760+";
+  if (score >= 720) return "720-759";
+  if (score >= 680) return "680-719";
+  if (score >= 640) return "640-679";
+  return "below-640";
+}
+
+export function isLowestStatedCredit(value?: string | null) {
+  const raw = String(value ?? "").trim();
+  if (!raw) return false;
+  if (
+    raw === "700-719" ||
+    raw === "680-699" ||
+    raw === "680-719" ||
+    raw === "660-679" ||
+    raw === "640-659" ||
+    raw === "640-679" ||
+    raw === "620-639" ||
+    raw === "below-640"
+  ) {
+    return true;
+  }
+  const score = Number(raw);
+  return Number.isFinite(score) && score < 720;
+}
 
 export const TERM_BUBBLES = [
   { value: "30", label: "30 year" },

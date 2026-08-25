@@ -17,6 +17,8 @@ import {
   AMOUNT_PURPOSE_BUBBLES,
   CREDIT_STATED_NOTE,
   CREDIT_WORKSPACE_BUBBLES,
+  explorerCreditFromStated,
+  statedCreditLabel,
   INCOME_BUBBLES,
   JUMBO_PURPOSE_BUBBLES,
   OCCUPANCY_BUBBLES,
@@ -211,18 +213,24 @@ import {
   DECLARATIONS_ASK,
   STATED_DECLARATION_FIELD,
   SUGGESTED_DECLARATION_NOTE,
+  declarationTimingAskCopy,
   declarationsAskCopy,
   declarationsConfirmActions,
   declarationsConfirmCopy,
   declarationsLabel,
   declarationsSettled,
   isDeclarationsConfirmPending,
+  isSkipDeclarationTimingText,
   isSkipDeclarationsText,
   isStatedDeclaration,
+  needsDeclarationTiming,
+  parseDeclarationTiming,
   parseDeclarations,
   proposeStatedDeclaration,
+  skipDeclarationTiming,
   skipDeclarations,
   volunteeredDeclarationNote,
+  writeDeclarationTiming,
   writeStatedDeclaration,
 } from "./declarations";
 import {
@@ -242,6 +250,19 @@ import {
   skipHousehold,
   writeStatedHousehold,
 } from "./household";
+import {
+  SUGGESTED_COBORROWER_NOTE,
+  coborrowerNameAskCopy,
+  coborrowerNameOnFile,
+  coborrowerNameSettled,
+  isCoborrowerNameConfirmPending,
+  isCoborrowerNameField,
+  isSkipCoborrowerNameText,
+  parseCoborrowerName,
+  proposeCoborrowerName,
+  skipCoborrowerName,
+  writeCoborrowerName,
+} from "./coborrowerName";
 import {
   BORROWER_NAME_ASK,
   BORROWER_NAME_FIELD,
@@ -1386,8 +1407,8 @@ export function sketchAndStartDocsCopy(draft: FoxIntakeDraft): {
   if (draft.downPaymentAmount != null && draft.downPaymentAmount > 0) {
     bits.push(`${formatMoney(draft.downPaymentAmount)} down`);
   }
-  const credit = CREDIT_WORKSPACE_BUBBLES.find((item) => item.value === draft.creditBand)?.label;
-  if (credit && credit !== "Not sure") bits.push(`stated ${credit}`);
+  const credit = statedCreditLabel(draft.creditBand);
+  if (credit) bits.push(`stated ${credit}`);
   else if (draft.creditAsked) bits.push("stated credit");
   const income = INCOME_BUBBLES.find((item) => item.value === draft.incomeType.value)?.label;
   if (income) bits.push(income === "Self-employed" ? "self-employed" : income);
@@ -1507,8 +1528,14 @@ function extraCorrectionLines(draft: FoxIntakeDraft): { id: string; label: strin
   if (draft.declarationAsked || draft.statedDeclaration) {
     extra.push({ id: "declarations", label: "Declarations", prompt: "declarations" });
   }
+  if (draft.declarationTiming || draft.declarationTimingAsked) {
+    extra.push({ id: "declaration-timing", label: "Event timing", prompt: "declaration-timing" });
+  }
   if (draft.householdAsked || draft.statedHousehold) {
     extra.push({ id: "household", label: "Household", prompt: "household" });
+  }
+  if (draft.coborrowerNameAsked || draft.coborrowerName) {
+    extra.push({ id: "coborrower-name", label: "Other borrower", prompt: "coborrower-name" });
   }
   if (draft.borrowerNameAsked || draft.borrowerName || draft.contact.fullName.value) {
     extra.push({ id: "borrower-name", label: "Borrower", prompt: "borrower-name" });
@@ -1773,8 +1800,8 @@ function amountHelperActions(field: "skip-amount" | "skip-value"): FoxAction[] {
 export const SAMPLE_NOTE = "Sample · indicative · not live";
 export const PREVIEW_RATE_NOTE = "Preview rate · not live";
 export { CREDIT_STATED_NOTE };
-export const CREDIT_RANGE_ASK = "What credit range should I use for the estimate?";
-export const CREDIT_RANGE_FOLLOW = "Stated range — not a pull.";
+export const CREDIT_RANGE_ASK = "What is your estimated FICO?";
+export const CREDIT_RANGE_FOLLOW = CREDIT_STATED_NOTE;
 export const REWARD_PREPARED_COPY = "Prepared when you join";
 const INVENTED_REWARD_RANGE = /\$[\d,]+(?:\.\d+)?\s+(?:to|–|-|—)\s+\$[\d,]+/;
 const SAMPLE_INDICATIVE = /sample\s*·\s*indicative/i;
@@ -1893,10 +1920,13 @@ export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
   if (!assetsSettled(draft)) return "assets";
   if (!propertyTypeSettled(draft)) return "property-type";
   if (!currentHousingSettled(draft)) return "current-housing";
-  if (!declarationsSettled(draft)) return "declarations";
-  if (!householdSettled(draft)) return "household";
+  if (!declarationsSettled(draft)) {
+    return needsDeclarationTiming(draft) ? "declaration-timing" : "declarations";
+  }
   if (!borrowerNameSettled(draft)) return "borrower-name";
   if (!otherReoSettled(draft)) return "other-reo";
+  if (!householdSettled(draft)) return "household";
+  if (!coborrowerNameSettled(draft)) return "coborrower-name";
   if (!draft.sampleAccepted && draft.awaitingYearsInBusiness) return "documents";
   if (nextDocInvite(draft)) return "documents";
   if (!draft.sampleAccepted) return canLooksRight(draft) ? "review" : "amount";
@@ -2047,7 +2077,11 @@ function workspaceAskCopy(
     return {
       text: CREDIT_RANGE_ASK,
       followUp: CREDIT_RANGE_FOLLOW,
-      actions: bubbles([...CREDIT_WORKSPACE_BUBBLES], "creditRange"),
+      actions: [
+        ...bubbles([...CREDIT_WORKSPACE_BUBBLES], "creditRange"),
+        { id: "skip-credit", label: "Skip", event: "bubble", capture: { field: "skip-credit" } },
+        { id: "hold-credit", label: "Not yet", event: "bubble", capture: { field: "skip-credit" } },
+      ],
     };
   }
   if (prompt === "term") {
@@ -2084,8 +2118,14 @@ function workspaceAskCopy(
   if (prompt === "declarations") {
     return declarationsAskCopy(draft);
   }
+  if (prompt === "declaration-timing") {
+    return declarationTimingAskCopy();
+  }
   if (prompt === "household") {
     return householdAskCopy(draft);
+  }
+  if (prompt === "coborrower-name") {
+    return coborrowerNameAskCopy(draft);
   }
   if (prompt === "borrower-name") {
     return borrowerNameAskCopy(draft);
@@ -2564,18 +2604,36 @@ function amountFromParts(raw: string, unit?: string): number | null {
   return Math.round(n);
 }
 
-export function parseCreditRange(text: string): CreditRange | null {
-  const lower = text.trim().toLowerCase();
-  const match = CREDIT_WORKSPACE_BUBBLES.find(
-    (item) => item.label.toLowerCase() === lower || item.value === lower,
+export function isSkipCreditText(text: string) {
+  const lower = text.trim().toLowerCase().replace(/[?.!]+$/g, "");
+  return (
+    /^(skip|skip for now|not yet|later|not sure|unsure|unknown)$/i.test(lower) ||
+    (/^\b(credit|fico|score)\b/.test(lower) && /\b(not sure|unsure|unknown)\b/.test(lower))
   );
-  if (match) return match.value as CreditRange;
-  if (/760|excellent/.test(lower)) return "760+";
-  if (/720|740/.test(lower)) return "720-759";
-  if (/680|700/.test(lower)) return "680-719";
-  if (/^(not sure|unsure|unknown|skip( for now)?)$/.test(lower)) return "not-sure";
-  if (/\b(credit|fico|score)\b/.test(lower) && /\b(not sure|unsure|unknown)\b/.test(lower)) {
-    return "not-sure";
+}
+
+/** Chip band or typed 3-digit score. Does not invent a FICO from a band. */
+export function parseCreditRange(text: string): string | null {
+  const trimmed = text.trim();
+  if (!trimmed || isSkipCreditText(trimmed)) return null;
+  const lower = trimmed.toLowerCase().replace(/[–—]/g, "-");
+  const exact = CREDIT_WORKSPACE_BUBBLES.find(
+    (item) =>
+      item.label.toLowerCase().replace(/[–—]/g, "-") === lower || item.value === lower,
+  );
+  if (exact) return exact.value;
+  for (const item of CREDIT_WORKSPACE_BUBBLES) {
+    const token = item.value.toLowerCase();
+    const label = item.label.toLowerCase().replace(/[–—]/g, "-");
+    const escaped = token.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    if (new RegExp(`(?:^|\\s)${escaped}(?:\\s|$)`).test(lower) || lower.includes(label) && label.includes("-")) {
+      return item.value;
+    }
+  }
+  const scoreMatch = trimmed.match(/\b([3-8]\d{2})\b/);
+  if (scoreMatch) {
+    const score = Number(scoreMatch[1]);
+    if (score >= 300 && score <= 850) return String(score);
   }
   return null;
 }
@@ -2661,7 +2719,9 @@ export function promptForProposalField(field?: string | null): FoxPrompt | undef
   if (field === STATED_TIME_ON_JOB_FIELD) return "time-on-job";
   if (field === STATED_CURRENT_HOUSING_FIELD) return "current-housing";
   if (field === STATED_DECLARATION_FIELD) return "declarations";
+  if (field === "declarationTiming") return "declaration-timing";
   if (field === STATED_HOUSEHOLD_FIELD) return "household";
+  if (isCoborrowerNameField(field)) return "coborrower-name";
   if (isBorrowerNameField(field)) return "borrower-name";
   if (field === STATED_OTHER_REO_FIELD) return "other-reo";
   if (field === "property_address" || field === "subjectAddress") return "property-type";
@@ -2720,7 +2780,7 @@ export function editPromptFromCapture(capture?: Capture): FoxPrompt | undefined 
   ) {
     return "confirm-proposal";
   }
-  if (capture.field === "creditRange") return "credit";
+  if (capture.field === "creditRange" || capture.field === "skip-credit") return "credit";
   if (capture.field === "termYears" || capture.field === "skip-term") return "term";
   if (capture.field === "incomeType") return "income";
   if (
@@ -2767,12 +2827,22 @@ export function editPromptFromCapture(capture?: Capture): FoxPrompt | undefined 
   ) {
     return "declarations";
   }
+  if (capture.field === "skip-declaration-timing" || capture.field === "declarationTiming") {
+    return "declaration-timing";
+  }
   if (
     capture.field === "skip-household" ||
     capture.field === "propose-household" ||
     capture.field === "statedHousehold"
   ) {
     return "household";
+  }
+  if (
+    capture.field === "skip-coborrower-name" ||
+    capture.field === "propose-coborrower-name" ||
+    capture.field === "coborrowerName"
+  ) {
+    return "coborrower-name";
   }
   if (
     capture.field === "skip-borrower-name" ||
@@ -2916,10 +2986,10 @@ export function workspaceUpdateCopy(capture: Capture, draft: FoxIntakeDraft) {
   if (capture.field === "amountPurpose") {
     return `Updated to ${capture.value}.`;
   }
+  if (capture.field === "skip-credit") return "Updated. Stated credit left blank.";
   if (capture.field === "creditRange") {
-    const label =
-      CREDIT_WORKSPACE_BUBBLES.find((item) => item.value === capture.value)?.label ?? capture.value;
-    return `Updated credit range to ${label}.`;
+    const label = statedCreditLabel(capture.value) || capture.value;
+    return `Updated stated credit to ${label}.`;
   }
   if (capture.field === "termYears") {
     return `Updated term to ${capture.value} year.`;
@@ -2981,12 +3051,25 @@ export function workspaceUpdateCopy(capture: Capture, draft: FoxIntakeDraft) {
       ? `Updated declarations to ${declarationsLabel(capture.value)}.`
       : "Updated declarations.";
   }
+  if (capture.field === "skip-declaration-timing") return "Updated. Event timing left blank.";
+  if (capture.field === "declarationTiming") {
+    return capture.value.trim()
+      ? `Updated event timing to ${capture.value.trim()}.`
+      : "Updated event timing.";
+  }
   if (capture.field === "skip-household") return "Updated. Household left blank.";
   if (capture.field === "propose-household") return "Updated.";
   if (capture.field === "statedHousehold") {
     return isStatedHousehold(capture.value)
       ? `Updated household to ${householdLabel(capture.value)}.`
       : "Updated household.";
+  }
+  if (capture.field === "skip-coborrower-name") return "Updated. Other borrower left blank.";
+  if (capture.field === "propose-coborrower-name") return "Updated.";
+  if (capture.field === "coborrowerName") {
+    return capture.value.trim()
+      ? `Updated other borrower to ${capture.value.trim()}.`
+      : "Updated other borrower.";
   }
   if (capture.field === "skip-borrower-name") return "Updated. Borrower left blank.";
   if (capture.field === "propose-borrower-name") return "Updated.";
@@ -3168,11 +3251,10 @@ export function parseWorkspaceEdit(
   if (/\b(fico|credit)\b/.test(lower)) {
     const range = parseCreditRange(q);
     if (range) {
-      const label =
-        CREDIT_WORKSPACE_BUBBLES.find((item) => item.value === range)?.label ?? range;
+      const label = statedCreditLabel(range) || range;
       return {
         capture: { field: "creditRange", value: range },
-        confirm: `Updated credit range to ${label}.`,
+        confirm: `Updated stated credit to ${label}.`,
       };
     }
     return { correct: "credit", confirm: CREDIT_RANGE_ASK };
@@ -3370,12 +3452,26 @@ function draftAfterCapture(draft: FoxIntakeDraft, capture: Capture): FoxIntakeDr
   if (capture.field === "statedDeclaration" && isStatedDeclaration(capture.value)) {
     return writeStatedDeclaration(next, capture.value);
   }
+  if (capture.field === "skip-declaration-timing") return skipDeclarationTiming(next);
+  if (capture.field === "declarationTiming") {
+    const timing = parseDeclarationTiming(capture.value) ?? capture.value.trim();
+    return timing ? writeDeclarationTiming(next, timing) : next;
+  }
   if (capture.field === "skip-household") return skipHousehold(next);
   if (capture.field === "propose-household" && isStatedHousehold(capture.value)) {
     return proposeStatedHousehold(next, capture.value);
   }
   if (capture.field === "statedHousehold" && isStatedHousehold(capture.value)) {
     return writeStatedHousehold(next, capture.value);
+  }
+  if (capture.field === "skip-coborrower-name") return skipCoborrowerName(next);
+  if (capture.field === "propose-coborrower-name") {
+    const name = parseCoborrowerName(capture.value) ?? capture.value.trim();
+    return name ? proposeCoborrowerName(next, name) : next;
+  }
+  if (capture.field === "coborrowerName") {
+    const name = parseCoborrowerName(capture.value) ?? capture.value.trim();
+    return name ? writeCoborrowerName(next, name) : next;
   }
   if (capture.field === "skip-borrower-name") return skipBorrowerName(next);
   if (capture.field === "propose-borrower-name") {
@@ -3458,10 +3554,13 @@ function draftAfterCapture(draft: FoxIntakeDraft, capture: Capture): FoxIntakeDr
   if (capture.field === "skip-years-in-business") return skipYearsInBusiness(next);
   if (capture.field === "qualifyingIncome") return writeQualifyingIncome(next, capture.value);
   if (capture.field === "skip-down") return { ...next, downAsked: true };
+  if (capture.field === "skip-credit") {
+    return { ...next, creditBand: undefined, creditAsked: true };
+  }
   if (capture.field === "creditRange") {
     return {
       ...next,
-      creditBand: capture.value as FoxIntakeDraft["creditBand"],
+      creditBand: capture.value,
       creditAsked: true,
     };
   }
@@ -4314,6 +4413,13 @@ export function workspaceReply(
     if (looksLikeQuestion(q)) {
       return answerThenRestore(q, draft);
     }
+    if (isSkipCreditText(q)) {
+      const nextDraft = { ...draft, creditBand: undefined, creditAsked: true, correcting: null, correctingLine: null };
+      return {
+        ...nextFoxAsk(nextDraft),
+        capture: { field: "skip-credit" },
+      };
+    }
     const range = parseCreditRange(q);
     if (!range) return answerThenRestore(q, draft);
     const nextDraft = { ...draft, creditBand: range, creditAsked: true, correcting: null, correctingLine: null };
@@ -4510,6 +4616,24 @@ export function workspaceReply(
     };
   }
 
+  if (prompt === "declaration-timing") {
+    if (draft.declarationTiming && isKeepThisText(q)) return keepThisReply(draft);
+    if (isSkipDeclarationTimingText(q)) {
+      const nextDraft = skipDeclarationTiming(draft);
+      return {
+        ...workspacePromptCopy(workspacePrompt(nextDraft), nextDraft),
+        capture: { field: "skip-declaration-timing" },
+      };
+    }
+    const timing = parseDeclarationTiming(q);
+    if (!timing) return answerThenRestore(q, draft);
+    const nextDraft = writeDeclarationTiming(draft, timing);
+    return {
+      ...nextFoxAsk(nextDraft),
+      capture: { field: "declarationTiming", value: timing },
+    };
+  }
+
   if (prompt === "household") {
     if (draft.statedHousehold && isKeepThisText(q)) return keepThisReply(draft);
     if (isSkipHouseholdText(q)) {
@@ -4519,12 +4643,30 @@ export function workspaceReply(
         capture: { field: "skip-household" },
       };
     }
-    const value = parseHousehold(q);
+    const value = parseHousehold(q, { allowBare: true });
     if (!value) return answerThenRestore(q, draft);
     const nextDraft = writeStatedHousehold(draft, value);
     return {
       ...nextFoxAsk(nextDraft),
       capture: { field: "statedHousehold", value },
+    };
+  }
+
+  if (prompt === "coborrower-name") {
+    if (coborrowerNameOnFile(draft) && isKeepThisText(q)) return keepThisReply(draft);
+    if (isSkipCoborrowerNameText(q)) {
+      const nextDraft = skipCoborrowerName(draft);
+      return {
+        ...workspacePromptCopy(workspacePrompt(nextDraft), nextDraft),
+        capture: { field: "skip-coborrower-name" },
+      };
+    }
+    const name = parseCoborrowerName(q);
+    if (!name) return answerThenRestore(q, draft);
+    const nextDraft = writeCoborrowerName(draft, name);
+    return {
+      ...nextFoxAsk(nextDraft),
+      capture: { field: "coborrowerName", value: name },
     };
   }
 
@@ -4831,7 +4973,10 @@ export function scenarioForEstimate(
   const intent = draft.productIntent ?? productIntentFromSlug(draft.scenario?.productSlug);
   const occupancy = (draft.occupancyChoice.value ||
     draft.scenario?.occupancy) as Occupancy | undefined;
-  const credit = draft.creditBand ?? draft.scenario?.creditRange ?? SAMPLE_SAFE_CREDIT;
+  const credit =
+    explorerCreditFromStated(draft.creditBand) ??
+    draft.scenario?.creditRange ??
+    SAMPLE_SAFE_CREDIT;
   const loanAmount = draft.loanAmountValue ?? draft.scenario?.loanAmount;
   const propertyValue = draft.propertyValueAmount ?? draft.scenario?.propertyValue;
   if (!intent || !occupancy) return null;
@@ -5016,9 +5161,7 @@ export function previewFacts(draft: FoxIntakeDraft): PreviewFact[] {
   if (numbers && !requiredIds.has("numbers") && !requiredIds.has("line")) facts.push(numbers);
 
   if (!requiredIds.has("credit") && (draft.creditAsked || draft.creditBand)) {
-    const creditLabel =
-      CREDIT_WORKSPACE_BUBBLES.find((item) => item.value === draft.creditBand)?.label ??
-      "Not sure";
+    const creditLabel = statedCreditLabel(draft.creditBand) || "—";
     facts.push({
       id: "credit",
       label: "Credit",
@@ -5150,10 +5293,14 @@ export function previewFacts(draft: FoxIntakeDraft): PreviewFact[] {
       : pending && isStatedDeclaration(pending)
         ? declarationsLabel(pending)
         : "—";
+    const timing =
+      draft.statedDeclaration === "event" && draft.declarationTiming
+        ? draft.declarationTiming
+        : "";
     facts.push({
       id: "declarations",
       label: "Declarations",
-      value: shown,
+      value: timing ? `${shown} · ${timing}` : shown,
       note: SUGGESTED_DECLARATION_NOTE,
     });
   }
@@ -5176,6 +5323,23 @@ export function previewFacts(draft: FoxIntakeDraft): PreviewFact[] {
       label: "Household",
       value: shown,
       note: SUGGESTED_HOUSEHOLD_NOTE,
+    });
+  }
+
+  if (
+    draft.coborrowerNameAsked ||
+    draft.coborrowerName ||
+    isCoborrowerNameConfirmPending(draft)
+  ) {
+    const pendingName = isCoborrowerNameConfirmPending(draft)
+      ? draft.pendingProposal?.value
+      : undefined;
+    const shown = draft.coborrowerName || pendingName || "—";
+    facts.push({
+      id: "coborrower-name",
+      label: "Other borrower",
+      value: shown,
+      note: SUGGESTED_COBORROWER_NOTE,
     });
   }
 
@@ -5425,7 +5589,9 @@ export function structureFixPrompt(
   if (id === "time-on-job") return "time-on-job";
   if (id === "current-housing") return "current-housing";
   if (id === "declarations") return "declarations";
+  if (id === "declaration-timing") return "declaration-timing";
   if (id === "household") return "household";
+  if (id === "coborrower-name" || id === "other-borrower") return "coborrower-name";
   if (id === "borrower" || id === "borrower-name") return "borrower-name";
   if (id === "other-reo" || id === "other-real-estate") return "other-reo";
   if (id === "qualifying") return "qualifying";

@@ -4,6 +4,7 @@ import {
   INCOME_BUBBLES,
   OCCUPANCY_BUBBLES,
   PRODUCT_INTENT_BUBBLES,
+  statedCreditLabel,
 } from "./types";
 import { factValue } from "./fileWrite";
 import { QUALIFYING_INCOME_FIELD, SUGGESTED_INCOME_NOTE } from "./qualifyingIncome";
@@ -106,10 +107,11 @@ export function mappedFileFacts(draft: FoxIntakeDraft): Record<string, FileExpor
     mapped.statedCurrentHousing = mappedFact(draft.statedCurrentHousing, SUGGESTED_HOUSING_NOTE);
   }
   if (draft.statedDeclaration && isStatedDeclaration(draft.statedDeclaration)) {
-    mapped.statedDeclaration = mappedFact(
-      declarationsLabel(draft.statedDeclaration),
-      SUGGESTED_DECLARATION_NOTE,
-    );
+    const declarationValue =
+      draft.statedDeclaration === "event" && draft.declarationTiming
+        ? `${declarationsLabel(draft.statedDeclaration)} · ${draft.declarationTiming}`
+        : declarationsLabel(draft.statedDeclaration);
+    mapped.statedDeclaration = mappedFact(declarationValue, SUGGESTED_DECLARATION_NOTE);
   }
   if (draft.statedHousehold && isStatedHousehold(draft.statedHousehold)) {
     mapped.statedHousehold = mappedFact(householdLabel(draft.statedHousehold), SUGGESTED_HOUSEHOLD_NOTE);
@@ -128,7 +130,7 @@ export function mappedFileFacts(draft: FoxIntakeDraft): Record<string, FileExpor
     );
   }
   if (draft.creditBand) {
-    mapped.statedCreditBand = mappedFact(draft.creditBand, CREDIT_STATED_NOTE);
+    mapped.statedCreditBand = mappedFact(statedCreditLabel(draft.creditBand) || draft.creditBand, CREDIT_STATED_NOTE);
   }
   const dob = factValue(draft, "date_of_birth").trim();
   if (dob) mapped.dateOfBirth = mappedFact(dob, SUGGESTED_EXPORT_NOTE);

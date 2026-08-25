@@ -1,9 +1,9 @@
 import {
   readScenario,
   writeScenario,
-  type CreditRange,
   type ExplorerScenario,
 } from "@/components/products/scenario";
+import { explorerCreditFromStated } from "./types";
 import {
   CONFIRMED_STATUS,
   FOX_MESSAGES_KEY,
@@ -134,8 +134,11 @@ import {
 } from "./currentHousing";
 import {
   isStatedDeclaration,
+  parseDeclarationTiming,
   proposeStatedDeclaration,
+  skipDeclarationTiming,
   skipDeclarations,
+  writeDeclarationTiming,
   writeStatedDeclaration,
 } from "./declarations";
 import {
@@ -144,6 +147,12 @@ import {
   skipHousehold,
   writeStatedHousehold,
 } from "./household";
+import {
+  parseCoborrowerName,
+  proposeCoborrowerName,
+  skipCoborrowerName,
+  writeCoborrowerName,
+} from "./coborrowerName";
 import {
   parseBorrowerName,
   proposeBorrowerName,
@@ -269,7 +278,7 @@ function normalize(value: unknown): FoxIntakeDraft {
       typeof raw.amountPurposeLabel === "string" && raw.amountPurposeLabel.trim()
         ? raw.amountPurposeLabel.trim()
         : undefined,
-    creditBand: raw.creditBand,
+    creditBand: typeof raw.creditBand === "string" && raw.creditBand.trim() ? raw.creditBand.trim() : undefined,
     creditAsked: Boolean(raw.creditAsked || raw.creditBand),
     incomeAsked: Boolean(raw.incomeAsked || raw.incomeType?.value),
     statedMonthlyDebts: numberOrUndefined(raw.statedMonthlyDebts),
@@ -303,11 +312,21 @@ function normalize(value: unknown): FoxIntakeDraft {
       typeof raw.declarationNote === "string" && raw.declarationNote.trim()
         ? raw.declarationNote.trim()
         : undefined,
+    declarationTiming:
+      typeof raw.declarationTiming === "string" && raw.declarationTiming.trim()
+        ? raw.declarationTiming.trim()
+        : undefined,
+    declarationTimingAsked: Boolean(raw.declarationTimingAsked || raw.declarationTiming),
     statedHousehold:
       raw.statedHousehold === "alone" || raw.statedHousehold === "with_someone"
         ? raw.statedHousehold
         : undefined,
     householdAsked: Boolean(raw.householdAsked || raw.statedHousehold),
+    coborrowerName:
+      typeof raw.coborrowerName === "string" && raw.coborrowerName.trim()
+        ? raw.coborrowerName.trim()
+        : undefined,
+    coborrowerNameAsked: Boolean(raw.coborrowerNameAsked || raw.coborrowerName),
     borrowerName:
       typeof raw.borrowerName === "string" && raw.borrowerName.trim()
         ? raw.borrowerName.trim()
@@ -934,7 +953,7 @@ function withWorkspaceScenario(draft: FoxIntakeDraft): FoxIntakeDraft {
     loanAmount: draft.loanAmountValue ?? scenario.loanAmount,
     propertyValue: draft.propertyValueAmount ?? scenario.propertyValue,
     downPayment: draft.downPaymentAmount ?? scenario.downPayment,
-    creditRange: draft.creditBand ?? scenario.creditRange,
+    creditRange: explorerCreditFromStated(draft.creditBand) ?? scenario.creditRange,
   };
   writeScenario(next);
   return { ...draft, scenario: next };
@@ -1372,6 +1391,14 @@ export function applyCapture(capture: Capture) {
     if (!isStatedDeclaration(capture.value)) return current;
     return commit(writeStatedDeclaration(current, capture.value));
   }
+  if (capture.field === "skip-declaration-timing") {
+    return commit(skipDeclarationTiming(current));
+  }
+  if (capture.field === "declarationTiming") {
+    const timing = parseDeclarationTiming(capture.value) ?? capture.value.trim();
+    if (!timing) return current;
+    return commit(writeDeclarationTiming(current, timing));
+  }
   if (capture.field === "skip-household") {
     return commit(skipHousehold(current));
   }
@@ -1382,6 +1409,19 @@ export function applyCapture(capture: Capture) {
   if (capture.field === "statedHousehold") {
     if (!isStatedHousehold(capture.value)) return current;
     return commit(writeStatedHousehold(current, capture.value));
+  }
+  if (capture.field === "skip-coborrower-name") {
+    return commit(skipCoborrowerName(current));
+  }
+  if (capture.field === "propose-coborrower-name") {
+    const name = parseCoborrowerName(capture.value) ?? capture.value.trim();
+    if (!name) return current;
+    return commit(proposeCoborrowerName(current, name));
+  }
+  if (capture.field === "coborrowerName") {
+    const name = parseCoborrowerName(capture.value) ?? capture.value.trim();
+    if (!name) return current;
+    return commit(writeCoborrowerName(current, name));
   }
   if (capture.field === "skip-borrower-name") {
     return commit(skipBorrowerName(current));
@@ -1796,11 +1836,21 @@ export function applyCapture(capture: Capture) {
       propertyValueAmount: undefined,
     });
   }
+  if (capture.field === "skip-credit") {
+    return commit(
+      withWorkspaceScenario({
+        ...current,
+        creditBand: undefined,
+        creditAsked: true,
+        correcting: null,
+      }),
+    );
+  }
   if (capture.field === "creditRange") {
     return commit(
       withWorkspaceScenario({
         ...current,
-        creditBand: capture.value as CreditRange,
+        creditBand: capture.value,
         creditAsked: true,
         correcting: null,
       }),

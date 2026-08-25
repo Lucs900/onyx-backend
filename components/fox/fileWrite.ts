@@ -68,6 +68,7 @@ import {
   proposeExtractedCurrentHousing,
 } from "./currentHousing";
 import { declarationsSettled } from "./declarations";
+import { coborrowerNameSettled } from "./coborrowerName";
 import { householdSettled } from "./household";
 import {
   BORROWER_NAME_FIELD,
@@ -90,7 +91,7 @@ export { REJECT_LINE, LIMIT_LINE };
 export const LOW_EXTRACT_CONFIDENCE = 0.55;
 
 export const EXTRACT_SCHEMA_KEYS: Record<ExtractClass, readonly string[]> = {
-  government_id: ["full_name", "date_of_birth", "id_last4", "state", "expiration"],
+  government_id: ["full_name", "date_of_birth", "id_last4", "state", "expiration", "coborrower_name", "spouse_name"],
   paystub: [
     "employer_name",
     "pay_period_end",
@@ -462,7 +463,11 @@ export function factLabel(field: string) {
   if (field === STATED_TIME_ON_JOB_FIELD) return "Time on job";
   if (field === STATED_CURRENT_HOUSING_FIELD) return "Current housing";
   if (field === "statedDeclaration") return "Declarations";
+  if (field === "declarationTiming") return "Event timing";
   if (field === "statedHousehold") return "Household";
+  if (field === "coborrowerName" || field === "coborrower_name" || field === "spouse_name") {
+    return "Other borrower";
+  }
   if (isBorrowerNameField(field)) return "Borrower";
   if (field === STATED_OTHER_REO_FIELD) return "Other real estate";
   if (field === HIRE_DATE_FIELD) return "hire date";
@@ -1301,7 +1306,9 @@ export function completenessFileFromDraft(draft: FoxIntakeDraft): CompletenessFi
     ...(draft.statedTimeOnJob != null ? { statedTimeOnJob: draft.statedTimeOnJob } : {}),
     ...(draft.statedCurrentHousing != null ? { statedCurrentHousing: draft.statedCurrentHousing } : {}),
     ...(draft.statedDeclaration ? { statedDeclaration: draft.statedDeclaration } : {}),
+    ...(draft.declarationTiming ? { declarationTiming: draft.declarationTiming } : {}),
     ...(draft.statedHousehold ? { statedHousehold: draft.statedHousehold } : {}),
+    ...(draft.coborrowerName ? { coborrowerName: draft.coborrowerName } : {}),
     ...(draft.borrowerName ? { borrowerName: draft.borrowerName } : {}),
     ...(draft.statedOtherReo ? { statedOtherReo: draft.statedOtherReo } : {}),
   };
@@ -1350,13 +1357,22 @@ function incomeDocsPhrase(draft: FoxIntakeDraft) {
 }
 
 /** What Fox names after the sketch — the short list, not a remainder. */
+export const OTHER_REO_MORTGAGE_STATEMENTS = "Mortgage statements for all properties owned.";
+
+export function otherReoMortgageStatementsLabel(draft: FoxIntakeDraft) {
+  return draft.statedOtherReo === "yes" ? OTHER_REO_MORTGAGE_STATEMENTS : "Mortgage statement";
+}
+
 export function shortListSpeak(draft: FoxIntakeDraft): string {
   const labels = ["government ID", incomeDocsPhrase(draft), "property address"];
   if (purchaseLikeFile(draft)) {
     labels.push("purchase contract", "bank statement");
   } else if (refiLikeFile(draft)) {
-    labels.push("mortgage statement");
+    labels.push(draft.statedOtherReo === "yes" ? OTHER_REO_MORTGAGE_STATEMENTS.replace(/\.$/, "") : "mortgage statement");
     if (draft.cashOut) labels.push("bank statement");
+  }
+  if (draft.statedOtherReo === "yes" && purchaseLikeFile(draft)) {
+    labels.push(OTHER_REO_MORTGAGE_STATEMENTS.replace(/\.$/, ""));
   }
   return labelListCopy(labels);
 }
@@ -1388,6 +1404,9 @@ const LAYER2_COPY: Record<DocumentedStillUsefulId, { label: string; ask: string 
 export function layer2Plan(draft: FoxIntakeDraft): StillUsefulItem[] {
   return documentedStillUsefulIds(draft.productIntent ?? "", completenessFileFromDraft(draft)).map(
     (id) => {
+      if (id === "mortgage_statement" && draft.statedOtherReo === "yes") {
+        return layer2Item(id, OTHER_REO_MORTGAGE_STATEMENTS, OTHER_REO_MORTGAGE_STATEMENTS);
+      }
       const copy = LAYER2_COPY[id];
       return layer2Item(id, copy.label, copy.ask);
     },
@@ -1429,8 +1448,8 @@ function otherReoStillUsefulItems(draft: FoxIntakeDraft): StillUsefulItem[] {
     items.push(
       layer2Item(
         "other-reo-mortgage",
-        "Mortgage statement",
-        "A current mortgage statement still helps this file.",
+        OTHER_REO_MORTGAGE_STATEMENTS,
+        OTHER_REO_MORTGAGE_STATEMENTS,
       ),
     );
   }
@@ -1554,9 +1573,10 @@ export function nextDocInvite(draft: FoxIntakeDraft): DocInviteKind | null {
   if (!timeOnJobSettled(draft)) return null;
   if (!currentHousingSettled(draft)) return null;
   if (!declarationsSettled(draft)) return null;
-  if (!householdSettled(draft)) return null;
   if (!borrowerNameSettled(draft)) return null;
   if (!otherReoSettled(draft)) return null;
+  if (!householdSettled(draft)) return null;
+  if (!coborrowerNameSettled(draft)) return null;
   if (draft.pendingProposal || draft.pendingConflict) return null;
   for (const kind of inviteSequence(draft)) {
     if (!inviteSatisfied(draft, kind)) return kind;

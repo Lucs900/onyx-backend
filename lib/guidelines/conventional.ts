@@ -196,7 +196,9 @@ export type FileFacts = {
   statedTimeOnJob?: number;
   statedCurrentHousing?: number;
   statedDeclaration?: "none" | "event";
+  declarationTiming?: string;
   statedHousehold?: "alone" | "with_someone";
+  coborrowerName?: string;
   borrowerName?: string;
   statedOtherReo?: "none" | "yes";
   suggestedMonthlyIncome?: number;
@@ -635,7 +637,21 @@ export function sketchedPurchaseLtvFromFacts(file: FileFacts): number | null {
 }
 
 function lowestCreditBand(band?: string) {
-  return band === "680-719";
+  if (!band) return false;
+  if (
+    band === "700-719" ||
+    band === "680-699" ||
+    band === "680-719" ||
+    band === "660-679" ||
+    band === "640-659" ||
+    band === "640-679" ||
+    band === "620-639" ||
+    band === "below-640"
+  ) {
+    return true;
+  }
+  const score = Number(band);
+  return Number.isFinite(score) && score < 720;
 }
 
 function conventionalPurchaseOrRefi(file: FileFacts) {

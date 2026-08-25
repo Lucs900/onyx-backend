@@ -963,12 +963,12 @@ export function AlwaysOnFox({
     startAsk === "debts" ||
     startAsk === "assets" ||
     startAsk === "current-housing";
-  const needsTyping =
-    moneyAsk ||
+  const numberAsk =
+    startAsk === "credit" ||
     startAsk === "term" ||
-    askingAmountPurpose ||
     startAsk === "time-on-job" ||
     startAsk === "years-in-business";
+  const needsTyping = moneyAsk || numberAsk || askingAmountPurpose;
 
   const focusComposer = (force = false) => {
     const node = inputRef.current;
@@ -1269,7 +1269,7 @@ export function AlwaysOnFox({
   };
 
   const hideDock = isHome && (useHomeStage ? open : true);
-  const composerMode = moneyAsk ? "decimal" : startAsk === "term" ? "numeric" : "text";
+  const composerMode = moneyAsk ? "decimal" : numberAsk ? "numeric" : "text";
 
   const onComposerChange = (event: ChangeEvent<HTMLInputElement>) => {
     const raw = event.target.value;
