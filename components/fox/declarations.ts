@@ -178,13 +178,13 @@ export function declarationsAskActions(): FoxAction[] {
       id: "declarations-none",
       label: "None",
       event: "bubble",
-      capture: { field: "propose-declarations", value: "none" },
+      capture: { field: "statedDeclaration", value: "none" },
     },
     {
       id: "declarations-event",
       label: "Yes",
       event: "bubble",
-      capture: { field: "propose-declarations", value: "event" },
+      capture: { field: "statedDeclaration", value: "event" },
     },
     ...declarationsSkipActions(),
   ];

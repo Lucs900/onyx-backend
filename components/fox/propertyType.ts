@@ -214,19 +214,19 @@ export function propertyTypeAskActions(): FoxAction[] {
       id: "property-sfr",
       label: "House",
       event: "bubble",
-      capture: { field: "propose-property-type", value: "sfr" },
+      capture: { field: "propertyType", value: "sfr" },
     },
     {
       id: "property-condo",
       label: "Condo",
       event: "bubble",
-      capture: { field: "propose-property-type", value: "condo" },
+      capture: { field: "propertyType", value: "condo" },
     },
     {
       id: "property-two-to-four",
       label: "2–4",
       event: "bubble",
-      capture: { field: "propose-property-type", value: "two_to_four" },
+      capture: { field: "propertyType", value: "two_to_four" },
     },
     ...propertyTypeSkipActions(),
   ];

@@ -154,13 +154,13 @@ export function otherReoAskActions(): FoxAction[] {
       id: "other-reo-none",
       label: "None",
       event: "bubble",
-      capture: { field: "propose-other-reo", value: "none" },
+      capture: { field: "statedOtherReo", value: "none" },
     },
     {
       id: "other-reo-yes",
       label: "Yes",
       event: "bubble",
-      capture: { field: "propose-other-reo", value: "yes" },
+      capture: { field: "statedOtherReo", value: "yes" },
     },
     ...otherReoSkipActions(),
   ];

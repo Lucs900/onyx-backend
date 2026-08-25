@@ -197,7 +197,7 @@ import {
   mappedJsonText,
   markExported,
 } from "../components/fox/staffExport";
-import { scrollDeltaToClearAsk } from "../components/fox/askReveal";
+import { scrollDeltaToClearAsk, scrollDeltaToFollowLastLine } from "../components/fox/askReveal";
 import { subjectMortgagePayment } from "../components/fox/monthlyDebts";
 import { FAILED_READ_NOTE } from "../lib/docs/accept";
 import { classifyAndExtract, imageDataUrl, visionChatBody } from "../lib/docs/extract";
@@ -272,7 +272,7 @@ import {
   skipCurrentInvite,
   DOC_INVITE_COPY,
 } from "../components/fox/workspace";
-import { HOME_IDLE_TEXT, homePathActions, homeProductActions } from "../components/fox/homeIdle";
+import { HOME_FOX_LINE, HOME_IDLE_TEXT, homePathActions, homeProductActions } from "../components/fox/homeIdle";
 import { assertOnyxFixtures } from "./assert-onyx-fixtures";
 
 assertOnyxFixtures();
@@ -6209,26 +6209,15 @@ assert.equal(parsePropertyType("manufactured"), null);
 assert.equal(parsePropertyType("coop"), null);
 for (const spoken of ["Condo", "condo", "condominium"]) {
   const proposed = workspaceReply(spoken, afterAssetsAsk);
-  assert.equal(proposed?.capture?.field, "propose-property-type");
-  assert.equal(
-    proposed?.text,
-    "That’s a condo. Suggested · not underwritten. Use this?",
-  );
-  assert.deepEqual(
-    (proposed?.actions ?? []).map((item) => item.label),
-    ["Use this", "Leave blank"],
-  );
+  assert.equal(proposed?.capture?.field, "propertyType");
+  assert.equal(proposed?.text, CURRENT_HOUSING_ASK);
 }
 const houseProposed = workspaceReply("House", afterAssetsAsk);
-assert.equal(
-  houseProposed?.text,
-  "That’s a single-family house. Suggested · not underwritten. Use this?",
-);
+assert.equal(houseProposed?.capture?.field, "propertyType");
+assert.equal(houseProposed?.text, CURRENT_HOUSING_ASK);
 const twoFourProposed = workspaceReply("2–4", afterAssetsAsk);
-assert.equal(
-  twoFourProposed?.text,
-  "That’s a 2–4 unit. Suggested · not underwritten. Use this?",
-);
+assert.equal(twoFourProposed?.capture?.field, "propertyType");
+assert.equal(twoFourProposed?.text, CURRENT_HOUSING_ASK);
 const condoConfirmDraft = {
   ...afterAssetsAsk,
   pendingProposal: {
@@ -6419,8 +6408,8 @@ const midTypeEdit = draft({
 });
 assert.match(workspacePromptCopy("property-type", midTypeEdit).text, /still right/i);
 const midHouse = workspaceReply("House", midTypeEdit);
-assert.equal(midHouse?.capture?.field, "propose-property-type");
-assert.match(midHouse?.text ?? "", /That’s a single-family house/);
+assert.equal(midHouse?.capture?.field, "propertyType");
+assert.equal(midHouse?.text, CURRENT_HOUSING_ASK);
 assert.equal(emptyDraft().propertyType, undefined);
 assert.equal(structureFixPrompt("property-type"), "property-type");
 
@@ -7016,15 +7005,8 @@ assert.ok(
 );
 
 const noneChip = workspaceReply("None", afterHousingAsk);
-assert.equal(noneChip?.capture?.field, "propose-declarations");
-assert.equal(
-  noneChip?.text,
-  "No bankruptcy, foreclosure, or short sale on the file. Suggested · not underwritten. Use this?",
-);
-assert.deepEqual(
-  (noneChip?.actions ?? []).map((item) => item.label),
-  ["Use this", "Leave blank"],
-);
+assert.equal(noneChip?.capture?.field, "statedDeclaration");
+assert.equal(noneChip?.text, HOUSEHOLD_ASK);
 const noneConfirmDraft = {
   ...afterHousingAsk,
   pendingProposal: {
@@ -7056,15 +7038,8 @@ assert.doesNotMatch(
 assert.match(noneQualify?.text ?? "", /paystub|W-2|notepad|Start with ID|Skip/i);
 
 const yesChip = workspaceReply("Yes", afterHousingAsk);
-assert.equal(yesChip?.capture?.field, "propose-declarations");
-assert.equal(
-  yesChip?.text,
-  "I’ll note a credit event for underwriting. Suggested · not underwritten. Use this?",
-);
-assert.deepEqual(
-  (yesChip?.actions ?? []).map((item) => item.label),
-  ["Use this", "Leave blank"],
-);
+assert.equal(yesChip?.capture?.field, "statedDeclaration");
+assert.equal(yesChip?.text, HOUSEHOLD_ASK);
 const eventConfirmDraft = {
   ...afterHousingAsk,
   pendingProposal: {
@@ -7156,11 +7131,8 @@ assert.doesNotMatch(
 );
 
 const typedForeclosure = workspaceReply("I had a foreclosure", afterHousingAsk);
-assert.equal(typedForeclosure?.capture?.field, "propose-declarations");
-assert.equal(
-  typedForeclosure?.text,
-  "I’ll note a credit event for underwriting. Suggested · not underwritten. Use this?",
-);
+assert.equal(typedForeclosure?.capture?.field, "statedDeclaration");
+assert.equal(typedForeclosure?.text, HOUSEHOLD_ASK);
 assert.doesNotMatch(typedForeclosure?.text ?? "", /chapter|discharged|dismissed|year|2018|form/i);
 assert.equal(afterHousingAsk.statedDeclaration, undefined);
 assert.equal(afterHousingAsk.creditEvent, undefined);
@@ -7175,8 +7147,8 @@ const midDeclarationsEdit = draft({
 });
 assert.match(workspacePromptCopy("declarations", midDeclarationsEdit).text, /still right/i);
 const midNone = workspaceReply("None", midDeclarationsEdit);
-assert.equal(midNone?.capture?.field, "propose-declarations");
-assert.match(midNone?.text ?? "", /No bankruptcy, foreclosure, or short sale on the file/);
+assert.equal(midNone?.capture?.field, "statedDeclaration");
+assert.equal(midNone?.text, HOUSEHOLD_ASK);
 const midNoneWritten = resolveProposal(
   {
     ...midDeclarationsEdit,
@@ -7262,15 +7234,8 @@ assert.ok(
 );
 
 const aloneChip = workspaceReply("On my own", afterDeclarationsAsk);
-assert.equal(aloneChip?.capture?.field, "propose-household");
-assert.equal(
-  aloneChip?.text,
-  "This file is just you. Suggested · not underwritten. Use this?",
-);
-assert.deepEqual(
-  (aloneChip?.actions ?? []).map((item) => item.label),
-  ["Use this", "Leave blank"],
-);
+assert.equal(aloneChip?.capture?.field, "statedHousehold");
+assert.equal(aloneChip?.text, BORROWER_NAME_ASK);
 const aloneConfirmDraft = {
   ...afterDeclarationsAsk,
   pendingProposal: {
@@ -7295,16 +7260,9 @@ assert.ok(
 );
 
 const withSomeoneChip = workspaceReply("With someone", afterDeclarationsAsk);
-assert.equal(withSomeoneChip?.capture?.field, "propose-household");
-assert.equal(
-  withSomeoneChip?.text,
-  "I’ll note more than one borrower. Suggested · not underwritten. Use this?",
-);
-assert.doesNotMatch(withSomeoneChip?.text ?? "", /name|SSN|income type|second borrower card/i);
-assert.deepEqual(
-  (withSomeoneChip?.actions ?? []).map((item) => item.label),
-  ["Use this", "Leave blank"],
-);
+assert.equal(withSomeoneChip?.capture?.field, "statedHousehold");
+assert.equal(withSomeoneChip?.text, BORROWER_NAME_ASK);
+assert.doesNotMatch(withSomeoneChip?.text ?? "", /SSN|income type|second borrower card/i);
 const withSomeoneConfirmDraft = {
   ...afterDeclarationsAsk,
   pendingProposal: {
@@ -7377,11 +7335,8 @@ assert.equal(
 );
 
 const typedSpouse = workspaceReply("me and my spouse", afterDeclarationsAsk);
-assert.equal(typedSpouse?.capture?.field, "propose-household");
-assert.equal(
-  typedSpouse?.text,
-  "I’ll note more than one borrower. Suggested · not underwritten. Use this?",
-);
+assert.equal(typedSpouse?.capture?.field, "statedHousehold");
+assert.equal(typedSpouse?.text, BORROWER_NAME_ASK);
 assert.doesNotMatch(typedSpouse?.text ?? "", /what is their name|SSN|income type|second borrower/i);
 assert.equal(afterDeclarationsAsk.statedHousehold, undefined);
 
@@ -7394,8 +7349,8 @@ const midHouseholdEdit = draft({
 });
 assert.match(workspacePromptCopy("household", midHouseholdEdit).text, /still right/i);
 const midAlone = workspaceReply("On my own", midHouseholdEdit);
-assert.equal(midAlone?.capture?.field, "propose-household");
-assert.match(midAlone?.text ?? "", /This file is just you/);
+assert.equal(midAlone?.capture?.field, "statedHousehold");
+assert.equal(midAlone?.text, BORROWER_NAME_ASK);
 const midAloneWritten = resolveProposal(
   {
     ...midHouseholdEdit,
@@ -7663,17 +7618,37 @@ assert.ok(
     incomeType: "w2_base",
   }).includes("other-reo" as never),
 );
+assert.ok(
+  documentedStillUsefulIds("buy", {
+    purposeHint: "purchase",
+    incomeType: "w2_base",
+    statedOtherReo: "yes",
+  }).includes("mortgage_statement"),
+);
+assert.ok(
+  stillUsefulSection(
+    draft({
+      ...afterNameAsk,
+      statedOtherReo: "yes",
+      otherReoAsked: true,
+      occupancyChoice: { field: "occupancy", value: "investment", source: "client", confirmed: true },
+    }),
+  )?.items.some((item) => /lease/i.test(item.label)),
+);
+assert.ok(
+  !stillUsefulSection(
+    draft({
+      ...afterNameAsk,
+      statedOtherReo: "yes",
+      otherReoAsked: true,
+      occupancyChoice: { field: "occupancy", value: "primary", source: "client", confirmed: true },
+    }),
+  )?.items.some((item) => /lease/i.test(item.label)),
+);
 
 const noneReoChip = workspaceReply("None", afterNameAsk);
-assert.equal(noneReoChip?.capture?.field, "propose-other-reo");
-assert.equal(
-  noneReoChip?.text,
-  "No other real estate on the file. Suggested · not underwritten. Use this?",
-);
-assert.deepEqual(
-  (noneReoChip?.actions ?? []).map((item) => item.label),
-  ["Use this", "Leave blank"],
-);
+assert.equal(noneReoChip?.capture?.field, "statedOtherReo");
+assert.match(noneReoChip?.text ?? "", /paystub|W-2|ID|Skip/i);
 const noneReoConfirmDraft = {
   ...afterNameAsk,
   pendingProposal: {
@@ -7716,11 +7691,8 @@ assert.ok(
 );
 
 const typedRental = workspaceReply("I have a rental", afterNameAsk);
-assert.equal(typedRental?.capture?.field, "propose-other-reo");
-assert.equal(
-  typedRental?.text,
-  "I’ll note other real estate. Suggested · not underwritten. Use this?",
-);
+assert.equal(typedRental?.capture?.field, "statedOtherReo");
+assert.match(typedRental?.text ?? "", /paystub|W-2|ID|Skip/i);
 assert.doesNotMatch(typedRental?.text ?? "", /address|HOA|rent|value|add another property/i);
 const yesConfirmDraft = {
   ...afterNameAsk,
@@ -7792,8 +7764,8 @@ const midOtherReoEdit = draft({
 });
 assert.match(workspacePromptCopy("other-reo", midOtherReoEdit).text, /still right/i);
 const midYes = workspaceReply("Yes", midOtherReoEdit);
-assert.equal(midYes?.capture?.field, "propose-other-reo");
-assert.match(midYes?.text ?? "", /I’ll note other real estate/);
+assert.equal(midYes?.capture?.field, "statedOtherReo");
+assert.match(midYes?.text ?? "", /paystub|W-2|ID|Skip/i);
 const midYesWritten = resolveProposal(
   {
     ...midOtherReoEdit,
@@ -8457,7 +8429,9 @@ const homepageFiles = [
   "components/fox/FoxShell.tsx",
 ].map((file) => readFileSync(join(root, file), "utf8"));
 const homepageSource = homepageFiles.join("\n");
-assert.ok(!homepageSource.includes(PATH_ASK_TEXT));
+assert.equal(HOME_FOX_LINE, PATH_ASK_TEXT);
+assert.ok(homepageSource.includes("HOME_FOX_LINE"));
+assert.ok(readFileSync(join(root, "components/fox/homeIdle.ts"), "utf8").includes(PATH_ASK_TEXT));
 assert.ok(!/Does this look right\?/.test(homepageSource));
 assert.ok(!/Here’s a sample structure/.test(homepageSource));
 assert.ok(!homepageSource.includes("HowItWorks"));
@@ -8583,21 +8557,27 @@ assert.ok(foxSource.includes("requestFoxPickFile"));
 assert.ok(foxSource.includes("editLine"));
 assert.ok(foxSource.includes("keep-line") || workspaceSrc.includes("keep-line"));
 assert.ok(foxSource.includes("scrollIntoView"));
-assert.ok(foxSource.includes('block: "nearest"'));
-assert.ok(foxSource.includes("scrollDeltaToClearAsk"));
+assert.ok(foxSource.includes('block: "end"'));
+assert.ok(foxSource.includes("scrollDeltaToFollowLastLine"));
 assert.ok(foxSource.includes("WorkspaceFileDock"));
 assert.ok(foxSource.includes("scrollMarginTop") || foxSource.includes("scrollMarginBottom"));
-assert.match(startCss, /max-height: min\(18dvh, 88px\)/);
+assert.ok(startCss.includes("fox-file-chip"));
+assert.ok(startCss.includes("file-sheet"));
+assert.doesNotMatch(startCss, /max-height: min\(18dvh, 88px\)/);
 assert.equal(scrollDeltaToClearAsk({ top: 514, bottom: 580 }, 514), 74);
 assert.equal(scrollDeltaToClearAsk({ top: 100, bottom: 160 }, 700), 0);
 assert.equal(scrollDeltaToClearAsk({ top: 4, bottom: 70 }, 700), -8);
+assert.equal(scrollDeltaToFollowLastLine({ top: 514, bottom: 580 }, 514), 74);
+assert.equal(scrollDeltaToFollowLastLine({ top: 100, bottom: 160 }, 700), 88);
+assert.equal(scrollDeltaToFollowLastLine({ top: 4, bottom: 70 }, 700), -8);
 assert.ok(foxSource.includes('line: field'));
 
 const filePreview = readFileSync(join(root, "components/fox/FilePreview.tsx"), "utf8");
 assert.ok(filePreview.includes("!draft.workspaceFlow"));
 assert.ok(filePreview.includes("draft.docsOpen"));
 assert.ok(filePreview.includes("sampleAccepted"));
-assert.ok(filePreview.includes("fox-structure-notepad"));
+assert.ok(filePreview.includes("fox-file-chip"));
+assert.ok(filePreview.includes("file-sheet"));
 assert.ok(filePreview.includes("Still useful"));
 assert.ok(filePreview.includes("NOTHING_URGENT") || filePreview.includes("Nothing urgent missing."));
 assert.equal(NOTHING_URGENT, "Nothing urgent missing.");
@@ -8629,7 +8609,7 @@ assert.ok(workspaceSrc.includes('label: "Upload this"'));
 assert.ok(workspaceSrc.includes('label: "Start with ID"'));
 assert.ok(workspaceSrc.includes("sketchAndStartDocsCopy") || workspaceSrc.includes("That’s the sketch."));
 assert.ok(foxSource.includes("notepad looks complete") || workspaceSrc.includes("notepad looks complete"));
-assert.ok(!foxSource.includes("fox-bubble__edit"));
+assert.ok(foxSource.includes("fox-bubble__edit"));
 assert.ok(!foxSource.includes("fox-bubble__facts"));
 assert.ok(!workspaceSrc.includes("Government ID. Most recent tax return. Prior-year return if available."));
 assert.ok(workspaceSrc.includes("editingConfirmedDown") || workspaceSrc.includes("Still right?"));

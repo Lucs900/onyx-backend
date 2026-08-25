@@ -1,11 +1,13 @@
 import { AcrPass } from "./AcrPass";
 import { AdvisorMark } from "./AdvisorMark";
+import { HomeMobileCollapse } from "./HomeMobileCollapse";
 import { HeroStartLink } from "./fox/HeroStartLink";
-import { HOME_IDLE_TEXT } from "./fox/homeIdle";
+import { HOME_FOX_LINE, HOME_IDLE_TEXT } from "./fox/homeIdle";
 
 export function MembershipHero() {
   return (
     <section className="membership-hero page-pad">
+      <HomeMobileCollapse />
       <div className="page-inner membership-hero__inner">
         <div className="membership-hero__type">
           <div className="membership-hero__intro">
@@ -19,6 +21,7 @@ export function MembershipHero() {
             <p className="membership-hero__support">
               We keep your credit and rate working for you.
             </p>
+            <p className="membership-hero__fox-line">{HOME_FOX_LINE}</p>
           </div>
 
           <div className="membership-hero__actions">

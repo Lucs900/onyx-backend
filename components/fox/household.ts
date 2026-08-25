@@ -139,13 +139,13 @@ export function householdAskActions(): FoxAction[] {
       id: "household-alone",
       label: "On my own",
       event: "bubble",
-      capture: { field: "propose-household", value: "alone" },
+      capture: { field: "statedHousehold", value: "alone" },
     },
     {
       id: "household-with-someone",
       label: "With someone",
       event: "bubble",
-      capture: { field: "propose-household", value: "with_someone" },
+      capture: { field: "statedHousehold", value: "with_someone" },
     },
     ...householdSkipActions(),
   ];

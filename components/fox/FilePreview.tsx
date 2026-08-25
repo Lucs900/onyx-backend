@@ -1,8 +1,10 @@
 "use client";
 
-import { useSyncExternalStore, type ReactNode } from "react";
+import { useEffect, useState, useSyncExternalStore, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { DocumentDrop } from "./DocumentDrop";
 import { requestFoxExplain, requestFoxFix } from "./AlwaysOnFox";
+import { FOX_KEYBOARD_EVENT } from "./askReveal";
 import { NOTHING_URGENT, stillUsefulSection } from "./fileWrite";
 import { getFoxDraft, getServerDraft, subscribeFoxDraft } from "./store";
 import {
@@ -113,18 +115,63 @@ export function WorkspaceFileDock({ children }: { children: ReactNode }) {
   const draft = useSyncExternalStore(subscribeFoxDraft, getFoxDraft, getServerDraft);
   const facts = previewFacts(draft);
   const showVault = Boolean(draft.docsOpen) && Boolean(draft.sampleAccepted);
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => setMounted(true), []);
+  useEffect(() => {
+    const close = () => setSheetOpen(false);
+    window.addEventListener(FOX_KEYBOARD_EVENT, close);
+    return () => window.removeEventListener(FOX_KEYBOARD_EVENT, close);
+  }, []);
 
   return (
     <div className="fox-workspace-dock">
       <DocumentDrop draft={draft} compact visible={showVault} />
-      {facts.length ? (
-        <section className="fox-structure-notepad" aria-label="Structure">
-          <p className="type-eyebrow">Structure</p>
-          <StructureRows facts={facts} draft={draft} />
-          <StillUsefulSection draft={draft} />
-        </section>
-      ) : null}
-      <div className="fox-workspace-dock__row">{children}</div>
+      <div className="fox-workspace-dock__row">
+        {children}
+        {facts.length ? (
+          <button
+            type="button"
+            className="fox-file-chip"
+            aria-expanded={sheetOpen}
+            aria-controls="fox-file-sheet"
+            onClick={() => setSheetOpen(true)}
+          >
+            File
+          </button>
+        ) : null}
+      </div>
+      {mounted && sheetOpen
+        ? createPortal(
+            <div className="file-sheet" id="fox-file-sheet" role="dialog" aria-label="File">
+              <button
+                type="button"
+                className="file-sheet__backdrop"
+                aria-label="Close file"
+                onClick={() => setSheetOpen(false)}
+              />
+              <div className="file-sheet__panel">
+                <div className="file-sheet__head">
+                  <div className="file-sheet__heading">
+                    <p className="type-eyebrow">File</p>
+                    <p className="file-sheet__path">Structure</p>
+                  </div>
+                  <button
+                    type="button"
+                    className="file-sheet__close"
+                    onClick={() => setSheetOpen(false)}
+                  >
+                    Close
+                  </button>
+                </div>
+                <StructureRows facts={facts} draft={draft} />
+                <StillUsefulSection draft={draft} />
+              </div>
+            </div>,
+            document.body,
+          )
+        : null}
     </div>
   );
 }

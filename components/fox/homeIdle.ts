@@ -4,6 +4,8 @@ import type { FoxAction } from "./types";
 
 export const HOME_IDLE_TEXT = "Ask ONYX Fox";
 
+export const HOME_FOX_LINE = "Start a relationship, or just the loan?";
+
 export const HOME_PRODUCT_TEXT = "Buy, refinance, HELOC, jumbo, or other.";
 
 export function homePathActions(): FoxAction[] {

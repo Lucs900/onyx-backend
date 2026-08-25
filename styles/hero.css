@@ -26,6 +26,10 @@
   color: var(--ink-2);
 }
 
+.membership-hero__fox-line {
+  display: none;
+}
+
 .membership-hero__actions {
   display: flex;
   flex-direction: column;
@@ -57,7 +61,7 @@
 @media (max-width: 1023px) {
   .membership-hero__inner {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-columns: minmax(0, 1fr);
     column-gap: 12px;
     row-gap: 12px;
     align-items: start;
@@ -70,9 +74,20 @@
   }
 
   .membership-hero__intro {
-    grid-column: 1;
+    grid-column: 1 / -1;
     grid-row: 1;
     min-width: 0;
+  }
+
+  .membership-hero__fox-line {
+    display: block;
+    max-width: 440px;
+    margin-top: 12px;
+    font-family: var(--font-ui);
+    font-size: 16px;
+    line-height: 22px;
+    font-weight: 500;
+    color: var(--ink);
   }
 
   .membership-hero__actions {
@@ -85,13 +100,13 @@
   }
 
   .membership-hero__pass {
-    grid-column: 2;
-    grid-row: 1;
+    grid-column: 1 / -1;
+    grid-row: 4;
     display: flex;
     align-items: flex-start;
-    justify-content: flex-end;
-    margin: 0;
-    padding-top: 22px;
+    justify-content: center;
+    margin: 48px 0 0;
+    padding-top: 0;
   }
 
   .membership-hero .membership-hero__fox-wrap {
@@ -100,6 +115,31 @@
     width: 100%;
     min-height: 0;
     margin-top: 0;
+  }
+
+  html.home-scrolled .membership-hero__intro,
+  html.home-scrolled .membership-hero__actions,
+  html.home-scrolled .membership-hero__pass {
+    display: none;
+  }
+
+  html.home-scrolled .membership-hero {
+    padding-top: 0;
+    padding-bottom: 0;
+  }
+
+  html.home-scrolled .membership-hero__inner {
+    padding-top: 0;
+    padding-bottom: 0;
+    row-gap: 0;
+  }
+
+  html.home-scrolled .membership-hero__fox-wrap {
+    position: sticky;
+    bottom: 0;
+    z-index: 6;
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+    background: var(--paper);
   }
 
   .membership-hero__rule {

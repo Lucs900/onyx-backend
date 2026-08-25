@@ -16,7 +16,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { AdvisorMark } from "@/components/AdvisorMark";
-import { scrollDeltaToClearAsk } from "./askReveal";
+import { FOX_KEYBOARD_EVENT, scrollDeltaToFollowLastLine } from "./askReveal";
 import { readScenario } from "@/components/products/scenario";
 import {
   ACR_START_HREF,
@@ -62,6 +62,7 @@ import {
   formatLiveMoneyInput,
   editLineFromCapture,
   editPromptFromCapture,
+  editPromptFromPendingField,
   ensureIncomeConfirmChips,
   inertSupersededIncomeConfirms,
   lastFoxTurn,
@@ -355,10 +356,12 @@ function FoxThread({
   messages,
   listRef,
   onAction,
+  onEdit,
 }: {
   messages: FoxMessage[];
   listRef: { current: HTMLDivElement | null };
   onAction: (action: FoxAction) => void;
+  onEdit?: (message: FoxMessage) => void;
 }) {
   const currentFox = messages.reduce((index, message, i) => (message.role === "fox" ? i : index), -1);
 
@@ -386,6 +389,15 @@ function FoxThread({
           >
             <p>{message.text}</p>
             {message.followUp ? <p>{message.followUp}</p> : null}
+            {message.role === "client" && message.edit && onEdit ? (
+              <button
+                type="button"
+                className="fox-bubble__edit"
+                onClick={() => onEdit(message)}
+              >
+                Edit
+              </button>
+            ) : null}
             {current &&
             message.actions?.length &&
             (message.text.trim() || (message.followUp ?? "").trim()) ? (
@@ -434,6 +446,7 @@ function FoxWorkspace({
   listRef,
   onClose,
   onAction,
+  onEdit,
   composer,
   hideClose,
   stickyDisclosure,
@@ -444,6 +457,7 @@ function FoxWorkspace({
   listRef: { current: HTMLDivElement | null };
   onClose: () => void;
   onAction: (action: FoxAction) => void;
+  onEdit?: (message: FoxMessage) => void;
   composer?: ReactNode;
   hideClose?: boolean;
   stickyDisclosure?: boolean;
@@ -472,7 +486,7 @@ function FoxWorkspace({
           </button>
         )}
       </div>
-      <FoxThread messages={messages} listRef={listRef} onAction={onAction} />
+      <FoxThread messages={messages} listRef={listRef} onAction={onAction} onEdit={onEdit} />
       {composer}
     </div>
   );
@@ -908,15 +922,16 @@ export function AlwaysOnFox({
       const current = thread.querySelector("[aria-current='step']");
       if (!(current instanceof HTMLElement)) return;
       const dock = document.querySelector(".fox-workspace-dock");
+      const viewportBottom = window.visualViewport?.height ?? window.innerHeight;
       const dockTop =
-        dock instanceof HTMLElement ? dock.getBoundingClientRect().top : window.innerHeight;
+        dock instanceof HTMLElement ? dock.getBoundingClientRect().top : viewportBottom;
       current.style.scrollMarginTop = "12px";
-      current.style.scrollMarginBottom = `${Math.max(16, window.innerHeight - dockTop + 12)}px`;
-      current.scrollIntoView({ block: "nearest", inline: "nearest" });
+      current.style.scrollMarginBottom = `${Math.max(16, viewportBottom - dockTop + 12)}px`;
+      current.scrollIntoView({ block: "end", inline: "nearest" });
       const box = current.getBoundingClientRect();
       const nextDockTop =
-        dock instanceof HTMLElement ? dock.getBoundingClientRect().top : window.innerHeight;
-      const delta = scrollDeltaToClearAsk(box, nextDockTop);
+        dock instanceof HTMLElement ? dock.getBoundingClientRect().top : viewportBottom;
+      const delta = scrollDeltaToFollowLastLine(box, nextDockTop);
       if (delta !== 0) window.scrollBy({ top: delta, left: 0 });
     };
     reveal();
@@ -924,13 +939,29 @@ export function AlwaysOnFox({
       reveal();
       window.requestAnimationFrame(reveal);
     });
-    return () => window.cancelAnimationFrame(frame);
+    const vv = window.visualViewport;
+    const onViewport = () => {
+      if (window.innerHeight - (vv?.height ?? window.innerHeight) > 80) {
+        window.dispatchEvent(new Event(FOX_KEYBOARD_EVENT));
+      }
+      reveal();
+    };
+    vv?.addEventListener("resize", onViewport);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      vv?.removeEventListener("resize", onViewport);
+    };
   }, [messages, open]);
 
   const startAsk = isStart ? workspacePrompt(draft) : null;
   const askingAmountPurpose =
     startAsk === "amount" && draft.productIntent === "other" && !draft.amountPurposeLabel;
-  const moneyAsk = (startAsk === "amount" && !askingAmountPurpose) || startAsk === "value";
+  const moneyAsk =
+    (startAsk === "amount" && !askingAmountPurpose) ||
+    startAsk === "value" ||
+    startAsk === "debts" ||
+    startAsk === "assets" ||
+    startAsk === "current-housing";
   const needsTyping = moneyAsk || startAsk === "term" || askingAmountPurpose;
 
   const focusComposer = (force = false) => {
@@ -1002,6 +1033,18 @@ export function AlwaysOnFox({
     if (!isHome) return;
     const live = getFoxDraft();
     router.push(deskHrefFromSession(live.path ?? null, live.productIntent ?? null));
+  };
+
+  const editClientLine = (message: FoxMessage) => {
+    if (!isStart || !message.edit) return;
+    applyCapture({
+      field: "correct",
+      value: message.edit,
+      line: message.editLine ?? message.edit,
+    });
+    skipPromptSync.current = true;
+    const ask = workspacePromptCopy(message.edit, getFoxDraft());
+    commitMessages((prev) => [...prev, foxAskMessage(ask)]);
   };
 
   const runAction = (action: FoxAction) => {
@@ -1118,6 +1161,7 @@ export function AlwaysOnFox({
         writeStartPath(capture.value);
       }
       const editing = Boolean(isStart && draft.correcting && structureWriteCapture(capture.field));
+      const pendingEdit = editPromptFromPendingField(draft.pendingProposal?.field);
       applyCapture(capture);
       skipPromptSync.current = true;
       const live = getFoxDraft();
@@ -1132,10 +1176,16 @@ export function AlwaysOnFox({
               live,
             )
           : promptCopy(currentPrompt(live), live);
+      const edit =
+        capture.field === "correct"
+          ? undefined
+          : capture.field === "accept-proposal" || capture.field === "decline-proposal"
+            ? pendingEdit
+            : editPromptFromCapture(capture);
       appendReply(
         action.label,
         next,
-        capture.field === "correct" ? undefined : editPromptFromCapture(capture),
+        edit,
         capture.field === "correct" ? undefined : editLineFromCapture(capture),
       );
       continueHomeToDesk();
@@ -1267,7 +1317,10 @@ export function AlwaysOnFox({
         type="text"
         value={input}
         onChange={onComposerChange}
-        onFocus={() => setOpen(true)}
+        onFocus={() => {
+          setOpen(true);
+          window.dispatchEvent(new Event(FOX_KEYBOARD_EVENT));
+        }}
         onBlur={onComposerBlur}
         placeholder=""
         inputMode={composerMode}
@@ -1306,6 +1359,7 @@ export function AlwaysOnFox({
       listRef={listRef}
       onClose={() => setOpen(false)}
       onAction={runAction}
+      onEdit={editClientLine}
       composer={
         isStart ? (
           <WorkspaceFileDock>{desk}</WorkspaceFileDock>

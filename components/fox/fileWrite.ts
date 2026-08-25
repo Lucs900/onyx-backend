@@ -1268,6 +1268,7 @@ export function completenessFileFromDraft(draft: FoxIntakeDraft): CompletenessFi
           : income === "both"
             ? "w2_plus_se"
             : income || undefined,
+    occupancy: draft.occupancyChoice.value || undefined,
     purchasePrice: purchase && draft.propertyValueAmount ? draft.propertyValueAmount : undefined,
     loanAmount: draft.loanAmountValue || undefined,
     propertyValue: draft.propertyValueAmount || undefined,
@@ -1407,9 +1408,32 @@ export function stillUsefulSection(draft: FoxIntakeDraft): {
         Boolean(item.foxLine),
     )
     .map((item) => layer2Item(item.id, item.title, item.foxLine));
-  const items = [...conditionItems, ...layer2Plan(draft)];
+  const items = [...conditionItems, ...layer2Plan(draft), ...otherReoStillUsefulItems(draft)];
   storeCompleteness(draft.productIntent ?? "", completenessFileFromDraft(draft));
   return { items, empty: items.length === 0 };
+}
+
+function otherReoStillUsefulItems(draft: FoxIntakeDraft): StillUsefulItem[] {
+  if (draft.statedOtherReo !== "yes") return [];
+  const received = new Set(
+    (draft.documents ?? [])
+      .filter((doc) => doc.extractClass && (doc.status === "extracted" || doc.status === "received" || doc.status === "reading"))
+      .map((doc) => doc.extractClass as string),
+  );
+  const items: StillUsefulItem[] = [];
+  if (!received.has("mortgage_statement") && !layer2Plan(draft).some((item) => item.id === "mortgage_statement")) {
+    items.push(
+      layer2Item(
+        "other-reo-mortgage",
+        "Mortgage statement",
+        "A current mortgage statement still helps this file.",
+      ),
+    );
+  }
+  if (draft.occupancyChoice.value === "investment") {
+    items.push(layer2Item("other-reo-lease", "Lease", "A lease still helps this file."));
+  }
+  return items;
 }
 
 export function layer2AskCopy(draft: FoxIntakeDraft) {

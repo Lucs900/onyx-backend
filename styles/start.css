@@ -126,9 +126,10 @@
   padding: 0;
   border: 0;
   background: transparent;
-  color: var(--muted);
+  color: color-mix(in srgb, var(--ink) 40%, transparent);
   font-family: var(--font-ui);
   font-size: 12px;
+  line-height: 16px;
   font-weight: 500;
   cursor: pointer;
 }
@@ -193,6 +194,21 @@
   align-items: center;
   width: 100%;
   gap: 8px;
+}
+
+.fox-file-chip {
+  display: none;
+  flex: 0 0 auto;
+  height: 36px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--paper-elevated);
+  color: var(--ink);
+  font-family: var(--font-ui);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
 }
 
 .fox-workspace-dock__row .fox-bar__desk {
@@ -521,15 +537,20 @@
   }
 
   .fox-workspace-dock {
-    position: static;
-    z-index: 1;
+    position: sticky;
+    bottom: 0;
+    z-index: 3;
+    background: var(--paper);
   }
 
   .fox-structure-notepad {
-    display: block;
-    max-height: min(18dvh, 88px);
-    overflow: auto;
-    padding: 8px 4px 0;
+    display: none;
+  }
+
+  .fox-file-chip {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
   }
 
   .fox-structure-notepad .type-eyebrow {

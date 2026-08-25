@@ -171,6 +171,7 @@ import {
   proposeSubjectAddress,
   skipPropertyType,
   typedAddressConfirmCopy,
+  writePropertyType,
 } from "./propertyType";
 import {
   STATED_TIME_ON_JOB_FIELD,
@@ -2657,6 +2658,11 @@ export function editLineFromCapture(capture?: Capture): string | undefined {
   return undefined;
 }
 
+export function editPromptFromPendingField(field?: string | null): FoxPrompt | undefined {
+  if (!field) return undefined;
+  return editPromptFromCapture({ field, value: "" } as Capture);
+}
+
 export function editPromptFromCapture(capture?: Capture): FoxPrompt | undefined {
   if (!capture) return undefined;
   if (capture.field === "path") return "path-switch";
@@ -3527,6 +3533,7 @@ function matrixReply(
   const volunteeredEvent = parseDeclarations(text);
   if (
     volunteeredEvent === "event" &&
+    prompt !== "declarations" &&
     !draft.pendingProposal &&
     !draft.pendingConflict &&
     draft.statedDeclaration !== "event"
@@ -3542,6 +3549,7 @@ function matrixReply(
   const volunteeredHousehold = parseHousehold(text);
   if (
     volunteeredHousehold &&
+    prompt !== "household" &&
     !draft.pendingProposal &&
     !draft.pendingConflict &&
     draft.statedHousehold !== volunteeredHousehold
@@ -3556,6 +3564,7 @@ function matrixReply(
   const volunteeredOtherReo = parseOtherReo(text);
   if (
     volunteeredOtherReo &&
+    prompt !== "other-reo" &&
     !draft.pendingProposal &&
     !draft.pendingConflict &&
     draft.statedOtherReo !== volunteeredOtherReo
@@ -4375,10 +4384,10 @@ export function workspaceReply(
     }
     const value = parsePropertyType(q);
     if (!value) return answerThenRestore(q, draft);
-    const nextDraft = proposePropertyType(draft, value);
+    const nextDraft = writePropertyType(draft, value);
     return {
-      ...workspacePromptCopy("confirm-proposal", nextDraft),
-      capture: { field: "propose-property-type", value },
+      ...nextFoxAsk(nextDraft),
+      capture: { field: "propertyType", value },
     };
   }
 
@@ -4438,10 +4447,10 @@ export function workspaceReply(
     const value = parseDeclarations(q, { allowBareYes: true });
     if (!value) return answerThenRestore(q, draft);
     const note = volunteeredDeclarationNote(q, value);
-    const nextDraft = proposeStatedDeclaration(draft, value, note);
+    const nextDraft = writeStatedDeclaration(draft, value, note);
     return {
-      ...workspacePromptCopy("confirm-proposal", nextDraft),
-      capture: { field: "propose-declarations", value },
+      ...nextFoxAsk(nextDraft),
+      capture: { field: "statedDeclaration", value },
     };
   }
 
@@ -4456,10 +4465,10 @@ export function workspaceReply(
     }
     const value = parseHousehold(q);
     if (!value) return answerThenRestore(q, draft);
-    const nextDraft = proposeStatedHousehold(draft, value);
+    const nextDraft = writeStatedHousehold(draft, value);
     return {
-      ...workspacePromptCopy("confirm-proposal", nextDraft),
-      capture: { field: "propose-household", value },
+      ...nextFoxAsk(nextDraft),
+      capture: { field: "statedHousehold", value },
     };
   }
 
@@ -4492,10 +4501,10 @@ export function workspaceReply(
     const value = parseOtherReo(q, { allowBare: true });
     if (value) {
       if (draft.statedOtherReo === value) return keepThisReply(draft);
-      const nextDraft = proposeStatedOtherReo(draft, value);
+      const nextDraft = writeStatedOtherReo(draft, value);
       return {
-        ...workspacePromptCopy("confirm-proposal", nextDraft),
-        capture: { field: "propose-other-reo", value },
+        ...nextFoxAsk(nextDraft),
+        capture: { field: "statedOtherReo", value },
       };
     }
     if (draft.statedOtherReo && isKeepThisText(q)) return keepThisReply(draft);

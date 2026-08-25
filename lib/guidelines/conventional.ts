@@ -910,6 +910,9 @@ export function documentedStillUsefulIds(
   if ((purchase || refi) && !received.has("property_address")) ids.push("property-address");
   if (purchase && !received.has("purchase_contract")) ids.push("purchase_contract");
   if (refi && !received.has("mortgage_statement")) ids.push("mortgage_statement");
+  if (file.statedOtherReo === "yes" && !received.has("mortgage_statement") && !ids.includes("mortgage_statement")) {
+    ids.push("mortgage_statement");
+  }
   if ((purchase || file.purposeHint === "cash_out" || file.fundsInPlay) && !received.has("bank_statement")) {
     ids.push("bank_statement");
   }
