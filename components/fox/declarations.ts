@@ -151,7 +151,7 @@ export function declarationsConfirmCopy(value: StatedDeclaration) {
 export function declarationsConfirmActions(): FoxAction[] {
   return [
     { id: "accept-proposal", label: "Use this", event: "bubble", capture: { field: "accept-proposal" } },
-    { id: "decline-proposal", label: "Leave blank", event: "bubble", capture: { field: "decline-proposal" } },
+    { id: "change-proposal", label: "Change", event: "bubble", capture: { field: "change-proposal" } },
   ];
 }
 
@@ -194,16 +194,6 @@ export function declarationsAskCopy(draft: FoxIntakeDraft): {
   text: string;
   actions?: FoxAction[];
 } {
-  const prior = draft.statedDeclaration;
-  if (prior && draft.correcting === "declarations") {
-    return {
-      text: `Declarations in the file is ${declarationsLabel(prior)}. Still right?`,
-      actions: [
-        { id: "keep-line", label: "Keep this", event: "bubble", capture: { field: "keep-line" } },
-        ...declarationsAskActions(),
-      ],
-    };
-  }
   return {
     text: DECLARATIONS_ASK,
     actions: declarationsAskActions(),

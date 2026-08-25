@@ -187,7 +187,7 @@ export function typedAddressConfirmCopy(address: string) {
 export function propertyTypeConfirmActions(): FoxAction[] {
   return [
     { id: "accept-proposal", label: "Use this", event: "bubble", capture: { field: "accept-proposal" } },
-    { id: "decline-proposal", label: "Leave blank", event: "bubble", capture: { field: "decline-proposal" } },
+    { id: "change-proposal", label: "Change", event: "bubble", capture: { field: "change-proposal" } },
   ];
 }
 
@@ -236,16 +236,6 @@ export function propertyTypeAskCopy(draft: FoxIntakeDraft): {
   text: string;
   actions?: FoxAction[];
 } {
-  const prior = draft.propertyType;
-  if (prior && draft.correcting === "property-type") {
-    return {
-      text: `Property type in the file is ${propertyTypeLabel(prior)}. Still right?`,
-      actions: [
-        { id: "keep-line", label: "Keep this", event: "bubble", capture: { field: "keep-line" } },
-        ...propertyTypeAskActions(),
-      ],
-    };
-  }
   return {
     text: PROPERTY_TYPE_ASK,
     actions: propertyTypeAskActions(),

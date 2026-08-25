@@ -50,12 +50,11 @@
 .fox-bar__desk--plain:focus-within {
   margin-top: 10px;
   min-height: 44px;
-  padding: 8px 0 0;
-  background: transparent !important;
-  background-color: transparent !important;
-  border: 0 !important;
-  border-top: 0 !important;
-  border-radius: 0 !important;
+  padding: 6px 6px 6px 14px;
+  background: var(--paper-elevated) !important;
+  background-color: var(--paper-elevated) !important;
+  border: 1px solid var(--fox-hairline) !important;
+  border-radius: 999px !important;
   box-shadow: none !important;
 }
 
@@ -76,7 +75,14 @@
 
 .fox-stage--workspace .fox-bar__desk--plain {
   position: static;
-  background: var(--paper) !important;
+  background: var(--paper-elevated) !important;
+}
+
+.fox-stage--workspace .fox-bar__input:focus,
+.fox-stage--workspace .fox-bar__input:focus-visible,
+.fox-bar__desk--plain .fox-bar__input:focus,
+.fox-bar__desk--plain .fox-bar__input:focus-visible {
+  outline: none;
 }
 
 .fox-stage--workspace .fox-bubble--fox,

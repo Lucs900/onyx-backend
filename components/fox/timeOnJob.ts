@@ -108,14 +108,24 @@ export function parseTimeOnJobMonths(text: string): number | null {
     return Math.round(n);
   }
   const yearsMatch = trimmed.match(
-    /(?:about\s+)?\$?\s*(\d{1,3}(?:,\d{3})+|\d+)\s*(years?|yrs?\.?)?\b/i,
+    /(?:about\s+)?\$?\s*(\d{1,3}(?:,\d{3})+|\d+)\s*(years?|yrs?\.?)\b/i,
   );
-  if (!yearsMatch) return null;
-  const n = Number(yearsMatch[1].replace(/,/g, ""));
-  if (!Number.isFinite(n) || n <= 0 || n > 50) return null;
-  const suffix = (yearsMatch[2] ?? "").toLowerCase();
-  if (suffix.startsWith("month") || suffix.startsWith("mo")) return Math.round(n);
-  return Math.round(n * 12);
+  if (yearsMatch) {
+    const n = Number(yearsMatch[1].replace(/,/g, ""));
+    if (!Number.isFinite(n) || n <= 0 || n > 50) return null;
+    return Math.round(n * 12);
+  }
+  const bare = trimmed.match(/^(?:about\s+)?(\d{1,3}(?:,\d{3})+|\d+)$/i);
+  if (!bare) return null;
+  const n = Number(bare[1].replace(/,/g, ""));
+  if (!Number.isFinite(n) || n <= 0 || n > 600) return null;
+  return Math.round(n);
+}
+
+/** Keep the borrower's typed label. Do not invent "years". */
+export function timeOnJobLabelFromSpoken(text: string, months: number): string {
+  const trimmed = text.trim().replace(/[?.!]+$/g, "");
+  return trimmed || String(Math.round(months));
 }
 
 export function isSkipTimeOnJobText(text: string) {
@@ -132,6 +142,7 @@ export function skipTimeOnJob(draft: FoxIntakeDraft): FoxIntakeDraft {
   return {
     ...draft,
     statedTimeOnJob: undefined,
+    statedTimeOnJobLabel: undefined,
     timeOnJobAsked: true,
     pendingHireDate: null,
     pendingProposal:
@@ -142,12 +153,19 @@ export function skipTimeOnJob(draft: FoxIntakeDraft): FoxIntakeDraft {
   };
 }
 
-export function writeStatedTimeOnJob(draft: FoxIntakeDraft, months: number): FoxIntakeDraft {
+export function writeStatedTimeOnJob(
+  draft: FoxIntakeDraft,
+  months: number,
+  label?: string,
+): FoxIntakeDraft {
   const now = new Date().toISOString();
-  const value = String(Math.round(months));
+  const rounded = Math.round(months);
+  const spoken = (label ?? "").trim();
+  const value = spoken || String(rounded);
   return {
     ...draft,
-    statedTimeOnJob: Math.round(months),
+    statedTimeOnJob: rounded,
+    statedTimeOnJobLabel: spoken || undefined,
     timeOnJobAsked: true,
     pendingHireDate: null,
     pendingProposal: null,
@@ -210,7 +228,7 @@ export function hireDateConfirmCopy(hireLabel: string, months: number) {
 export function timeOnJobConfirmActions(): FoxAction[] {
   return [
     { id: "accept-proposal", label: "Use this", event: "bubble", capture: { field: "accept-proposal" } },
-    { id: "decline-proposal", label: "Leave blank", event: "bubble", capture: { field: "decline-proposal" } },
+    { id: "change-proposal", label: "Change", event: "bubble", capture: { field: "change-proposal" } },
   ];
 }
 
@@ -235,16 +253,6 @@ export function timeOnJobAskCopy(draft: FoxIntakeDraft): {
   text: string;
   actions?: FoxAction[];
 } {
-  const prior = draft.statedTimeOnJob;
-  if (prior != null && prior > 0 && draft.correcting === "time-on-job") {
-    return {
-      text: `Time on job in the file is ${displayTimeOnJob(prior)}. Still right?`,
-      actions: [
-        { id: "keep-line", label: "Keep this", event: "bubble", capture: { field: "keep-line" } },
-        ...timeOnJobSkipActions(),
-      ],
-    };
-  }
   return {
     text: TIME_ON_JOB_ASK,
     actions: timeOnJobSkipActions(),

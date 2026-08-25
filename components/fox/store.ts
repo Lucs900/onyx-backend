@@ -70,6 +70,7 @@ import {
   productIntentLabel,
   purposeForIntent,
   slugForIntent,
+  changePendingProposal,
   withMatrixAfterAmount,
   workspacePrompt,
 } from "./workspace";
@@ -120,8 +121,10 @@ import {
   writeSubjectAddress,
 } from "./propertyType";
 import {
+  parseTimeOnJobMonths,
   proposeStatedTimeOnJob,
   skipTimeOnJob,
+  timeOnJobLabelFromSpoken,
   writeStatedTimeOnJob,
 } from "./timeOnJob";
 import {
@@ -282,6 +285,10 @@ function normalize(value: unknown): FoxIntakeDraft {
         ? raw.subjectAddress.trim()
         : undefined,
     statedTimeOnJob: numberOrUndefined(raw.statedTimeOnJob),
+    statedTimeOnJobLabel:
+      typeof raw.statedTimeOnJobLabel === "string" && raw.statedTimeOnJobLabel.trim()
+        ? raw.statedTimeOnJobLabel.trim()
+        : undefined,
     timeOnJobAsked: Boolean(raw.timeOnJobAsked || raw.statedTimeOnJob != null),
     pendingHireDate: normalizePendingHireDate(raw.pendingHireDate),
     statedCurrentHousing: numberOrUndefined(raw.statedCurrentHousing),
@@ -1334,9 +1341,12 @@ export function applyCapture(capture: Capture) {
     return commit(proposeStatedTimeOnJob(current, months));
   }
   if (capture.field === "statedTimeOnJob") {
-    const months = Number(capture.value);
+    const months = parseTimeOnJobMonths(capture.value) ?? Number(capture.value);
     if (!Number.isFinite(months) || months <= 0) return current;
-    return commit(writeStatedTimeOnJob(current, months));
+    return commit(writeStatedTimeOnJob(current, months, timeOnJobLabelFromSpoken(capture.value, months)));
+  }
+  if (capture.field === "change-proposal") {
+    return commit(changePendingProposal(current));
   }
   if (capture.field === "skip-current-housing") {
     return commit(skipCurrentHousing(current));

@@ -129,7 +129,7 @@ export function monthlyDebtsConfirmCopy(amount: number) {
 export function monthlyDebtsConfirmActions(): FoxAction[] {
   return [
     { id: "accept-proposal", label: "Use this", event: "bubble", capture: { field: "accept-proposal" } },
-    { id: "decline-proposal", label: "Leave blank", event: "bubble", capture: { field: "decline-proposal" } },
+    { id: "change-proposal", label: "Change", event: "bubble", capture: { field: "change-proposal" } },
   ];
 }
 
@@ -151,7 +151,7 @@ export function mortgageSubtractAsk(included: number, mortgage: number) {
 export function mortgageSubtractActions(): FoxAction[] {
   return [
     { id: "subtract-mortgage", label: "Subtract", event: "bubble", capture: { field: "subtract-mortgage" } },
-    { id: "skip-monthly-debts", label: "Leave blank", event: "bubble", capture: { field: "skip-monthly-debts" } },
+    { id: "skip-monthly-debts", label: "Skip", event: "bubble", capture: { field: "skip-monthly-debts" } },
   ];
 }
 
@@ -164,7 +164,7 @@ export function applyMortgageSubtract(draft: FoxIntakeDraft): FoxIntakeDraft {
   if (!pending) return skipMonthlyDebts(draft);
   const other = Math.round(pending.included - pending.mortgage);
   if (other <= 0) return skipMonthlyDebts(draft);
-  return proposeStatedMonthlyDebts({ ...draft, debtMortgageAsked: true, pendingDebtMortgage: null }, other);
+  return writeStatedMonthlyDebts({ ...draft, debtMortgageAsked: true, pendingDebtMortgage: null }, other);
 }
 
 export function monthlyDebtsAskCopy(draft: FoxIntakeDraft): {
@@ -181,16 +181,6 @@ export function monthlyDebtsAskCopy(draft: FoxIntakeDraft): {
     return {
       text: mortgageIncludedAskWithoutPayment(),
       actions: monthlyDebtsSkipActions(),
-    };
-  }
-  const prior = draft.statedMonthlyDebts;
-  if (prior != null && prior > 0 && draft.correcting === "debts") {
-    return {
-      text: `Stated monthly debts in the file is ${money(prior)} a month. Still right?`,
-      actions: [
-        { id: "keep-line", label: "Keep this", event: "bubble", capture: { field: "keep-line" } },
-        ...monthlyDebtsSkipActions(),
-      ],
     };
   }
   return {

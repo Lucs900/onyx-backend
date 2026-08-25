@@ -635,7 +635,11 @@ function writeField(
       : {}),
     ...(isPropertyAddressField(field) ? { subjectAddress: value } : {}),
     ...(field === STATED_TIME_ON_JOB_FIELD && Number.isFinite(Number(value)) && Number(value) > 0
-      ? { statedTimeOnJob: Math.round(Number(value)), timeOnJobAsked: true }
+      ? {
+          statedTimeOnJob: Math.round(Number(value)),
+          statedTimeOnJobLabel: String(Math.round(Number(value))),
+          timeOnJobAsked: true,
+        }
       : {}),
     ...(field === STATED_CURRENT_HOUSING_FIELD && Number.isFinite(Number(value)) && Number(value) > 0
       ? { statedCurrentHousing: Math.round(Number(value)), currentHousingAsked: true }

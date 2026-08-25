@@ -56,6 +56,7 @@ import {
 import {
   STATED_TIME_ON_JOB_FIELD,
   SUGGESTED_TIME_ON_JOB_NOTE,
+  displayTimeOnJob,
   hireDateConfirmCopy,
   proposeExtractedTimeOnJob,
   skipTimeOnJob,
@@ -745,7 +746,7 @@ export function proposalActions(kind: ProposalKind): FoxAction[] {
   if (kind === "computed") {
     return [
       { id: "accept-proposal", label: "Use this", event: "bubble", capture: { field: "accept-proposal" } },
-      { id: "decline-proposal", label: "Leave blank", event: "bubble", capture: { field: "decline-proposal" } },
+      { id: "change-proposal", label: "Change", event: "bubble", capture: { field: "change-proposal" } },
     ];
   }
   return [
@@ -851,7 +852,7 @@ function writeConfirmedFact(
   if (field === STATED_TIME_ON_JOB_FIELD) {
     const months = Number(value);
     if (Number.isFinite(months) && months > 0) {
-      next = writeStatedTimeOnJob(next, months);
+      next = writeStatedTimeOnJob(next, months, displayTimeOnJob(months));
     }
   }
   if (field === STATED_CURRENT_HOUSING_FIELD && amount != null) {

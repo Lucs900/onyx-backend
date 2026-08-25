@@ -160,7 +160,7 @@ export function borrowerNameExtractCopy(name: string) {
 export function borrowerNameConfirmActions(): FoxAction[] {
   return [
     { id: "accept-proposal", label: "Use this", event: "bubble", capture: { field: "accept-proposal" } },
-    { id: "decline-proposal", label: "Leave blank", event: "bubble", capture: { field: "decline-proposal" } },
+    { id: "change-proposal", label: "Change", event: "bubble", capture: { field: "change-proposal" } },
   ];
 }
 
@@ -185,16 +185,6 @@ export function borrowerNameAskCopy(draft: FoxIntakeDraft): {
   text: string;
   actions?: FoxAction[];
 } {
-  const prior = borrowerNameOnFile(draft);
-  if (prior && draft.correcting === "borrower-name") {
-    return {
-      text: `Borrower in the file is ${prior}. Still right?`,
-      actions: [
-        { id: "keep-line", label: "Keep this", event: "bubble", capture: { field: "keep-line" } },
-        ...borrowerNameSkipActions(),
-      ],
-    };
-  }
   return {
     text: BORROWER_NAME_ASK,
     actions: borrowerNameSkipActions(),

@@ -130,7 +130,7 @@ export function currentHousingExtractCopy(amount: number) {
 export function currentHousingConfirmActions(): FoxAction[] {
   return [
     { id: "accept-proposal", label: "Use this", event: "bubble", capture: { field: "accept-proposal" } },
-    { id: "decline-proposal", label: "Leave blank", event: "bubble", capture: { field: "decline-proposal" } },
+    { id: "change-proposal", label: "Change", event: "bubble", capture: { field: "change-proposal" } },
   ];
 }
 
@@ -155,16 +155,6 @@ export function currentHousingAskCopy(draft: FoxIntakeDraft): {
   text: string;
   actions?: FoxAction[];
 } {
-  const prior = draft.statedCurrentHousing;
-  if (prior != null && prior > 0 && draft.correcting === "current-housing") {
-    return {
-      text: `Current housing in the file is ${money(prior)} a month. Still right?`,
-      actions: [
-        { id: "keep-line", label: "Keep this", event: "bubble", capture: { field: "keep-line" } },
-        ...currentHousingSkipActions(),
-      ],
-    };
-  }
   return {
     text: CURRENT_HOUSING_ASK,
     actions: currentHousingSkipActions(),

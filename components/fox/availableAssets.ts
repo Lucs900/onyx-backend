@@ -126,7 +126,7 @@ export function availableAssetsExtractCopy(amount: number) {
 export function availableAssetsConfirmActions(): FoxAction[] {
   return [
     { id: "accept-proposal", label: "Use this", event: "bubble", capture: { field: "accept-proposal" } },
-    { id: "decline-proposal", label: "Leave blank", event: "bubble", capture: { field: "decline-proposal" } },
+    { id: "change-proposal", label: "Change", event: "bubble", capture: { field: "change-proposal" } },
   ];
 }
 
@@ -151,16 +151,6 @@ export function availableAssetsAskCopy(draft: FoxIntakeDraft): {
   text: string;
   actions?: FoxAction[];
 } {
-  const prior = draft.statedAvailableAssets;
-  if (prior != null && prior > 0 && draft.correcting === "assets") {
-    return {
-      text: `Stated available assets in the file is ${money(prior)}. Still right?`,
-      actions: [
-        { id: "keep-line", label: "Keep this", event: "bubble", capture: { field: "keep-line" } },
-        ...availableAssetsSkipActions(),
-      ],
-    };
-  }
   return {
     text: AVAILABLE_ASSETS_ASK,
     actions: availableAssetsSkipActions(),

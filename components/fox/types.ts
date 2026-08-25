@@ -279,6 +279,8 @@ export type FoxIntakeDraft = {
   propertyTypeAsked?: boolean;
   subjectAddress?: string;
   statedTimeOnJob?: number;
+  /** Exact borrower-typed label. Do not invent "years" until guidelines own that. */
+  statedTimeOnJobLabel?: string;
   timeOnJobAsked?: boolean;
   pendingHireDate?: { date: string; months: number; label: string } | null;
   statedCurrentHousing?: number;
@@ -450,6 +452,7 @@ export type Capture =
   | { field: "skip-down" }
   | { field: "skip-term" }
   | { field: "accept-proposal" }
+  | { field: "change-proposal" }
   | { field: "decline-proposal" }
   | { field: "payFrequency"; value: string }
   | { field: "yearsInBusiness"; value: string }

@@ -319,6 +319,7 @@ function structureWriteCapture(field?: string) {
     field !== "correct" &&
     field !== "propose-funds" &&
     field !== "accept-proposal" &&
+    field !== "change-proposal" &&
     field !== "decline-proposal"
   );
 }
@@ -962,7 +963,12 @@ export function AlwaysOnFox({
     startAsk === "debts" ||
     startAsk === "assets" ||
     startAsk === "current-housing";
-  const needsTyping = moneyAsk || startAsk === "term" || askingAmountPurpose;
+  const needsTyping =
+    moneyAsk ||
+    startAsk === "term" ||
+    askingAmountPurpose ||
+    startAsk === "time-on-job" ||
+    startAsk === "years-in-business";
 
   const focusComposer = (force = false) => {
     const node = inputRef.current;
@@ -971,11 +977,11 @@ export function AlwaysOnFox({
   };
 
   useLayoutEffect(() => {
-    if (!isStart || !open || !ready) return;
+    if (!isStart || !open || !ready || !needsTyping) return;
     focusComposer(true);
     const frame = window.requestAnimationFrame(() => focusComposer(true));
     return () => window.cancelAnimationFrame(frame);
-  }, [isStart, open, startAsk, ready, messages.length]);
+  }, [isStart, open, startAsk, ready, messages.length, needsTyping]);
 
   useLayoutEffect(() => {
     if (caretRef.current == null || !inputRef.current) return;
@@ -1179,7 +1185,9 @@ export function AlwaysOnFox({
       const edit =
         capture.field === "correct"
           ? undefined
-          : capture.field === "accept-proposal" || capture.field === "decline-proposal"
+          : capture.field === "accept-proposal" ||
+              capture.field === "change-proposal" ||
+              capture.field === "decline-proposal"
             ? pendingEdit
             : editPromptFromCapture(capture);
       appendReply(
@@ -1284,13 +1292,13 @@ export function AlwaysOnFox({
   };
 
   const onComposerBlur = (event: FocusEvent<HTMLInputElement>) => {
-    if (!isStart && !needsTyping) return;
+    if (!needsTyping) return;
     const next = event.relatedTarget;
     if (next instanceof HTMLElement && next.closest("button, a, .fox-chip, .fox-bar__send")) {
       return;
     }
     window.setTimeout(() => {
-      if ((!isStart && !needsTyping) || !inputRef.current) return;
+      if (!needsTyping || !inputRef.current) return;
       const active = document.activeElement;
       if (active === inputRef.current) return;
       if (active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement) return;
@@ -1324,7 +1332,7 @@ export function AlwaysOnFox({
         onBlur={onComposerBlur}
         placeholder=""
         inputMode={composerMode}
-        autoFocus={isStart || needsTyping}
+        autoFocus={needsTyping}
         autoComplete="off"
       />
       <button

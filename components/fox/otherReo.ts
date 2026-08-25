@@ -127,7 +127,7 @@ export function otherReoConfirmCopy(value: StatedOtherReo) {
 export function otherReoConfirmActions(): FoxAction[] {
   return [
     { id: "accept-proposal", label: "Use this", event: "bubble", capture: { field: "accept-proposal" } },
-    { id: "decline-proposal", label: "Leave blank", event: "bubble", capture: { field: "decline-proposal" } },
+    { id: "change-proposal", label: "Change", event: "bubble", capture: { field: "change-proposal" } },
   ];
 }
 
@@ -170,16 +170,6 @@ export function otherReoAskCopy(draft: FoxIntakeDraft): {
   text: string;
   actions?: FoxAction[];
 } {
-  const prior = draft.statedOtherReo;
-  if (prior && draft.correcting === "other-reo") {
-    return {
-      text: `Other real estate in the file is ${otherReoLabel(prior)}. Still right?`,
-      actions: [
-        { id: "keep-line", label: "Keep this", event: "bubble", capture: { field: "keep-line" } },
-        ...otherReoAskActions(),
-      ],
-    };
-  }
   return {
     text: OTHER_REO_ASK,
     actions: otherReoAskActions(),

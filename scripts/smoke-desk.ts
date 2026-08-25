@@ -161,6 +161,7 @@ import {
   displayTimeOnJob,
   parseHireDate,
   parseTimeOnJobMonths,
+  writeStatedTimeOnJob,
 } from "../components/fox/timeOnJob";
 import {
   CURRENT_HOUSING_ASK,
@@ -313,7 +314,7 @@ function assertIncomeChipsHoldOverQueue(live: Parameters<typeof nextFoxAsk>[0], 
   const latest = nextFoxAsk(live);
   assert.match(latest.text, amount);
   assert.ok((latest.actions ?? []).some((item) => item.label === "Use this"));
-  assert.ok((latest.actions ?? []).some((item) => item.label === "Leave blank"));
+  assert.ok((latest.actions ?? []).some((item) => item.label === "Change"));
   assert.notEqual(latest.text, MOTION_COPY.in_queue);
   assert.doesNotMatch(latest.text, /ONYX has this for review/);
   const queued = queuedMidConfirm(live);
@@ -322,7 +323,7 @@ function assertIncomeChipsHoldOverQueue(live: Parameters<typeof nextFoxAsk>[0], 
   const queuedAsk = nextFoxAsk(queued);
   assert.match(queuedAsk.text, amount);
   assert.ok((queuedAsk.actions ?? []).some((item) => item.label === "Use this"));
-  assert.ok((queuedAsk.actions ?? []).some((item) => item.label === "Leave blank"));
+  assert.ok((queuedAsk.actions ?? []).some((item) => item.label === "Change"));
   assert.notEqual(queuedAsk.text, MOTION_COPY.in_queue);
   assert.doesNotMatch(queuedAsk.text, /ONYX has this for review/);
   const afterUse = resolveProposal(queued, "accept");
@@ -808,7 +809,7 @@ assert.equal(percent20?.capture?.field, "propose-funds");
 assert.equal(percent20?.capture && "value" in percent20.capture ? percent20.capture.value : "", "170000:680000");
 assert.match(percent20?.text ?? "", /\$170,000 down · \$680,000 loan/i);
 assert.ok((percent20?.actions ?? []).some((item) => item.label === "Use this"));
-assert.ok((percent20?.actions ?? []).some((item) => item.label === "Leave blank"));
+assert.ok((percent20?.actions ?? []).some((item) => item.label === "Change"));
 assert.equal(priced850.downPaymentAmount, undefined);
 assert.equal(priced850.loanAmountValue, undefined);
 const percent20pct = workspaceReply("20%", priced850);
@@ -1036,8 +1037,9 @@ applyCapture({ field: "keep-line" });
 assert.equal(getFoxDraft().downPaymentAmount, 240000);
 applyCapture({ field: "correct", value: "credit", line: "credit" });
 const creditEditAsk = workspacePromptCopy("credit", getFoxDraft());
-assert.match(creditEditAsk.text, /still right/i);
-assert.ok((creditEditAsk.actions ?? []).some((item) => item.label === "Keep this"));
+assert.equal(creditEditAsk.text, CREDIT_RANGE_ASK);
+assert.doesNotMatch(creditEditAsk.text, /Still right/i);
+assert.ok(!(creditEditAsk.actions ?? []).some((item) => item.label === "Keep this"));
 const midCreditEdit = workspaceReply("720–759", getFoxDraft());
 assert.equal(midCreditEdit?.capture?.field, "creditRange");
 if (midCreditEdit?.capture) applyCapture(midCreditEdit.capture);
@@ -1046,8 +1048,9 @@ assert.equal(getFoxDraft().propertyValueAmount, 1200000);
 assert.equal(getFoxDraft().incomeType.value, "w2");
 applyCapture({ field: "correct", value: "income", line: "income" });
 const incomeEditAsk = workspacePromptCopy("income", getFoxDraft());
-assert.match(incomeEditAsk.text, /still right/i);
-assert.ok((incomeEditAsk.actions ?? []).some((item) => item.label === "Keep this"));
+assert.equal(incomeEditAsk.text, "How is income earned?");
+assert.doesNotMatch(incomeEditAsk.text, /Still right/i);
+assert.ok(!(incomeEditAsk.actions ?? []).some((item) => item.label === "Keep this"));
 const incomeEdit = workspaceReply("Self-employed", getFoxDraft());
 assert.equal(incomeEdit?.capture?.field, "incomeType");
 if (incomeEdit?.capture) applyCapture(incomeEdit.capture);
@@ -1086,8 +1089,12 @@ assert.equal(getFoxDraft().statedOtherReo, undefined);
 assert.equal(getFoxDraft().otherReoAsked, undefined);
 assert.equal(workspacePrompt(getFoxDraft()), "product");
 assert.equal(workspacePrompt(afterIncome), "documents");
-assert.match(workspacePromptCopy("documents", afterIncome).text, /sketch/i);
-assert.equal(workspacePromptCopy("documents", afterIncome).followUp, shortListSpeak(afterIncome));
+assert.match(workspacePromptCopy("documents", afterIncome).text, /That’s the sketch/i);
+assert.doesNotMatch(workspacePromptCopy("documents", afterIncome).text, /government ID|income docs|purchase contract|bank statement/i);
+assert.match(
+  workspacePromptCopy("documents", afterIncome).followUp ?? "",
+  /Next I need a few documents to build the file/,
+);
 assert.match(workspacePromptCopy("documents", afterIncome).followUp ?? "", /government ID/i);
 assert.match(workspacePromptCopy("documents", afterIncome).followUp ?? "", /income docs/i);
 assert.match(workspacePromptCopy("documents", afterIncome).followUp ?? "", /property address/i);
@@ -1780,16 +1787,12 @@ assert.ok(previewFacts(fhaReady).some((fact) => fact.id === "rate" && fact.value
 assert.ok(previewFacts(fhaReady).some((fact) => fact.id === "product" && fact.value === "Buy"));
 
 const bkNamed = workspaceReply("I have an active bankruptcy", afterIncome);
-assert.equal(bkNamed?.capture?.field, "propose-declarations");
-assert.match(bkNamed?.text ?? "", /I’ll note a credit event for underwriting/);
-assert.match(bkNamed?.text ?? "", /Suggested · not underwritten/);
+assert.equal(bkNamed?.capture?.field, "statedDeclaration");
+assert.doesNotMatch(bkNamed?.text ?? "", /Use this|Still right|I’ll note a credit event for underwriting/i);
 assert.equal(afterIncome.statedDeclaration, undefined);
 assert.equal(afterIncome.creditEvent, undefined);
 assert.doesNotMatch(bkNamed?.text ?? "", /will contact you|chapter|waiting period|7-year|you don.t qualify/i);
-assert.deepEqual(
-  (bkNamed?.actions ?? []).map((item) => item.label),
-  ["Use this", "Leave blank"],
-);
+assert.ok(!(bkNamed?.actions ?? []).some((item) => item.label === "Use this" || item.label === "Change"));
 const bkReady = draft({
   ...afterIncome,
   sampleAccepted: true,
@@ -2558,7 +2561,7 @@ const paystubAsk = nextFoxAsk(paystubWrite.draft);
 assert.match(paystubAsk.text, /Got the paystub/);
 assert.match(paystubAsk.text, /monthly period × 12 \/ 12/);
 assert.ok((paystubAsk.actions ?? []).some((item) => item.label === "Use this"));
-assert.ok((paystubAsk.actions ?? []).some((item) => item.label === "Leave blank"));
+assert.ok((paystubAsk.actions ?? []).some((item) => item.label === "Change"));
 assertIncomeChipsHoldOverQueue(paystubWrite.draft, /7,200/);
 assert.equal(resolveProposal(paystubWrite.draft, "accept").facts?.qualifying_income?.value, "7200");
 
@@ -2586,7 +2589,7 @@ assert.match(acmeAsk.text, /9,167/);
 assert.match(acmeAsk.text, /biweekly period × 26 \/ 12/);
 assert.match(acmeAsk.text, /Suggested qualifying income · not underwritten/);
 assert.ok((acmeAsk.actions ?? []).some((item) => item.label === "Use this"));
-assert.ok((acmeAsk.actions ?? []).some((item) => item.label === "Leave blank"));
+assert.ok((acmeAsk.actions ?? []).some((item) => item.label === "Change"));
 assert.equal(docReactionAsk(acmeWrite.draft, "paystub")?.actions?.some((item) => item.label === "Use this"), true);
 assertIncomeChipsHoldOverQueue(acmeWrite.draft, /9,167/);
 const acmeQualifyAsk = workspaceReply("will i qualify", acmeWrite.draft);
@@ -2595,7 +2598,7 @@ assert.notEqual(acmeQualifyAsk?.capture?.field, "decline-proposal");
 assert.equal(acmeWrite.draft.facts?.qualifying_income, undefined);
 assertAnswerThenRestore(acmeQualifyAsk, /This does not look ready yet\./, {
   text: /9,167/,
-  labels: ["Use this", "Leave blank"],
+  labels: ["Use this", "Change"],
 });
 assert.match(acmeQualifyAsk?.text ?? "", /biweekly period × 26 \/ 12/);
 assert.match(acmeQualifyAsk?.text ?? "", /A W-2 is still missing/);
@@ -3167,7 +3170,7 @@ assert.match(relationshipAtFunds?.text ?? "", /\$170,000 down · \$680,000 loan/
 assert.doesNotMatch(relationshipAtFunds?.text ?? "", /I can answer from this file/);
 assert.doesNotMatch(relationshipAtFunds?.text ?? "", /%\s*reward|\$[\d,]+ to \$[\d,]+/i);
 assertAnswerThenRestore(relationshipAtFunds, new RegExp(ACR_BENEFITS_COPY.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")), {
-  labels: ["Use this", "Leave blank"],
+  labels: ["Use this", "Change"],
 });
 assert.equal(workspaceReply("will i qualify", fundsConfirm)?.text?.startsWith("Not enough yet to tell."), true);
 assert.equal(workspaceReply("what will this cost me", fundsConfirm)?.text?.startsWith(COST_COPY), true);
@@ -3564,7 +3567,7 @@ assert.equal(
 );
 assert.deepEqual(
   (mayaAsk?.actions ?? []).map((item) => item.label),
-  ["Use this", "Leave blank"],
+  ["Use this", "Change"],
 );
 const mayaNamed = resolveProposal(mayaId.draft, "accept");
 assert.equal(mayaNamed.borrowerName, "Maya Chen");
@@ -3711,12 +3714,12 @@ const seQualifyAsk = workspaceReply("will i qualify", seReturn.draft);
 assert.notEqual(seQualifyAsk?.capture?.field, "accept-proposal");
 assertAnswerThenRestore(seQualifyAsk, /looks like it would qualify under conventional guidelines\. Final underwriting still decides\./, {
   text: /\$9,000/,
-  labels: ["Use this", "Leave blank"],
+  labels: ["Use this", "Change"],
 });
 assert.equal(seQualifyAsk?.text?.startsWith(READINESS_STRONG), true);
 assert.doesNotMatch(seLiveAsk.text, /Updated income from tax return/);
 assert.ok((seLiveAsk.actions ?? []).some((item) => item.label === "Use this"));
-assert.ok((seLiveAsk.actions ?? []).some((item) => item.label === "Leave blank"));
+assert.ok((seLiveAsk.actions ?? []).some((item) => item.label === "Change"));
 assertIncomeChipsHoldOverQueue(seReturn.draft, /\$9,000/);
 assert.equal(nextFoxAsk(resolveProposal(queuedMidConfirm(seReturn.draft), "accept")).text, YEARS_IN_BUSINESS_ASK);
 assert.ok(
@@ -3993,7 +3996,7 @@ const yearsWritten = writeYearsInBusiness(seAccepted, "5");
 assert.equal(yearsWritten.facts?.years_in_business?.value, "5");
 assert.ok(
   previewFacts(yearsWritten).some(
-    (fact) => fact.id === "years-in-business" && /5 years/.test(fact.value),
+    (fact) => fact.id === "years-in-business" && fact.value === "5",
   ),
 );
 assert.ok(!yearsWritten.awaitingYearsInBusiness);
@@ -4008,7 +4011,7 @@ const qualifyingEdit = workspaceReply("8500", {
 assert.equal(qualifyingEdit?.capture?.field, "qualifyingIncome");
 assert.equal(qualifyingEdit?.capture && "value" in qualifyingEdit.capture ? qualifyingEdit.capture.value : "", "8500");
 assert.equal(structureFixPrompt("years-in-business", yearsWritten), "years-in-business");
-assert.match(workspacePromptCopy("years-in-business", yearsWritten).text, /5 years/);
+assert.equal(workspacePromptCopy("years-in-business", yearsWritten).text, YEARS_IN_BUSINESS_ASK);
 const yearsKeep = workspaceReply("Keep this", {
   ...yearsWritten,
   correcting: "years-in-business",
@@ -4084,7 +4087,7 @@ assert.doesNotMatch(
   /which should I keep|the document has|Keep file|Use document|Updated from the document/i,
 );
 assert.ok((seTwoYearAsk.actions ?? []).some((item) => item.label === "Use this"));
-assert.ok((seTwoYearAsk.actions ?? []).some((item) => item.label === "Leave blank"));
+assert.ok((seTwoYearAsk.actions ?? []).some((item) => item.label === "Change"));
 assertIncomeChipsHoldOverQueue(seSecondAfterConfirm.draft, /\$8,167/);
 {
   const twoYearUsed = resolveProposal(queuedMidConfirm(seSecondAfterConfirm.draft), "accept");
@@ -4379,7 +4382,7 @@ assert.match(entityAsk.text, /3,333/);
 assert.match(entityAsk.text, /ordinary \/ 12/);
 assert.match(entityAsk.text, /Ordinary is not confirmed cash flow/);
 assert.ok((entityAsk.actions ?? []).some((action) => action.label === "Use this"));
-assert.ok((entityAsk.actions ?? []).some((action) => action.label === "Leave blank"));
+assert.ok((entityAsk.actions ?? []).some((action) => action.label === "Change"));
 assertIncomeChipsHoldOverQueue(entityOrdinary.draft, /3,333/);
 assert.match(proposalAskCopy(entityOrdinary.draft.pendingProposal!), /3,333/);
 assert.match(proposalAskCopy(entityOrdinary.draft.pendingProposal!), /Suggested qualifying income · not underwritten/);
@@ -4539,7 +4542,7 @@ assert.equal(singleOtWrite.draft.pendingProposal?.value, "7000");
 assert.match(nextFoxAsk(singleOtWrite.draft).text, /Overtime history is thin/);
 assert.doesNotMatch(nextFoxAsk(singleOtWrite.draft).text, /two-year OT average/);
 assert.ok((nextFoxAsk(singleOtWrite.draft).actions ?? []).some((item) => item.label === "Use this"));
-assert.ok((nextFoxAsk(singleOtWrite.draft).actions ?? []).some((item) => item.label === "Leave blank"));
+assert.ok((nextFoxAsk(singleOtWrite.draft).actions ?? []).some((item) => item.label === "Change"));
 
 const otYearOne = applyExtractedFields(afterLooks, {
   extractClass: "w2",
@@ -4556,7 +4559,7 @@ assert.equal(twoYearOtWrite.conflict, null);
 assert.equal(twoYearOtWrite.draft.pendingProposal?.value, "7750");
 assert.match(nextFoxAsk(twoYearOtWrite.draft).text, /two-year OT average/);
 assert.ok((nextFoxAsk(twoYearOtWrite.draft).actions ?? []).some((item) => item.label === "Use this"));
-assert.ok((nextFoxAsk(twoYearOtWrite.draft).actions ?? []).some((item) => item.label === "Leave blank"));
+assert.ok((nextFoxAsk(twoYearOtWrite.draft).actions ?? []).some((item) => item.label === "Change"));
 
 const decliningBonusYearOne = applyExtractedFields(afterLooks, {
   extractClass: "w2",
@@ -4620,7 +4623,7 @@ assert.ok(thinSecondJobWrite.quietLines.includes(EMPLOYER_MISMATCH_LINE));
 assert.equal(storeEscalate(factsFromDraft(thinSecondJobWrite.draft)).action, "stay");
 assert.match(nextFoxAsk(thinSecondJobWrite.draft).text, /Second-job history is thin/);
 assert.ok((nextFoxAsk(thinSecondJobWrite.draft).actions ?? []).some((item) => item.label === "Use this"));
-assert.ok((nextFoxAsk(thinSecondJobWrite.draft).actions ?? []).some((item) => item.label === "Leave blank"));
+assert.ok((nextFoxAsk(thinSecondJobWrite.draft).actions ?? []).some((item) => item.label === "Change"));
 
 const wageAccepted = resolveProposal(acmeWrite.draft, "accept");
 assert.equal(wageAccepted.facts?.qualifying_income?.value, "9167");
@@ -4646,13 +4649,13 @@ assert.match(combinedAsk.text, /biweekly period × 26 \/ 12/);
 assert.match(combinedAsk.text, /Schedule C one-year/);
 assert.match(combinedAsk.text, /Suggested qualifying income · not underwritten/);
 assert.ok((combinedAsk.actions ?? []).some((item) => item.label === "Use this"));
-assert.ok((combinedAsk.actions ?? []).some((item) => item.label === "Leave blank"));
+assert.ok((combinedAsk.actions ?? []).some((item) => item.label === "Change"));
 assertIncomeChipsHoldOverQueue(combinedWrite.draft, /18,167/);
 const combinedQualify = workspaceReply("will i qualify", combinedWrite.draft);
 assert.notEqual(combinedQualify?.capture?.field, "accept-proposal");
 assertAnswerThenRestore(combinedQualify, /This does not look ready yet\./, {
   text: /18,167/,
-  labels: ["Use this", "Leave blank"],
+  labels: ["Use this", "Change"],
 });
 assert.match(combinedQualify?.text ?? "", /A W-2 is still missing/);
 const combinedAccepted = resolveProposal(combinedWrite.draft, "accept");
@@ -4714,7 +4717,7 @@ assert.equal(
 );
 assert.doesNotMatch(walkOtAsk.text, /Overtime history is thin/);
 assert.ok((walkOtAsk.actions ?? []).some((item) => item.label === "Use this"));
-assert.ok((walkOtAsk.actions ?? []).some((item) => item.label === "Leave blank"));
+assert.ok((walkOtAsk.actions ?? []).some((item) => item.label === "Change"));
 assert.equal(hasTwoYearWageHistory(walkOtPair.draft), true);
 const walkOtFile = draft({
   ...walkOtPair.draft,
@@ -4790,7 +4793,7 @@ assert.equal(
 );
 assert.doesNotMatch(walkBonusAsk.text, /Bonus history is thin/);
 assert.ok((walkBonusAsk.actions ?? []).some((item) => item.label === "Use this"));
-assert.ok((walkBonusAsk.actions ?? []).some((item) => item.label === "Leave blank"));
+assert.ok((walkBonusAsk.actions ?? []).some((item) => item.label === "Change"));
 assert.ok(!stillUsefulLabels(walkBonusPair.draft).includes("second-year W-2"));
 
 const walkBonusW2First = applyExtractedFields(afterLooks, {
@@ -4845,7 +4848,7 @@ assert.equal(
   "Got the paystub. I’m suggesting $1,600 a month from monthly period × 12 / 12 plus second job. Second-job history is thin. Suggested qualifying income · not underwritten. Use this?",
 );
 assert.ok((harborAsk.actions ?? []).some((item) => item.label === "Use this"));
-assert.ok((harborAsk.actions ?? []).some((item) => item.label === "Leave blank"));
+assert.ok((harborAsk.actions ?? []).some((item) => item.label === "Change"));
 assert.ok(previewFacts(harborAdd.draft).some((fact) => fact.id === "pay" && /1,200/.test(fact.value)));
 assert.ok(previewFacts(harborAdd.draft).every((fact) => fact.id !== "pay" || !/Period \$400/.test(fact.value)));
 assert.ok(previewFacts(harborAdd.draft).some((fact) => fact.id === "employer" && fact.value === "NIGHT SHIFT CO"));
@@ -5074,7 +5077,7 @@ assert.match(bankAsk.text, /Suggested · not underwritten as available assets/);
 assert.match(bankAsk.text, /Use this/);
 assert.doesNotMatch(bankAsk.text, /enough|DTI|qualif|approv|months? reserves|you don.t qualify/i);
 assert.ok((bankAsk.actions ?? []).some((item) => item.label === "Use this"));
-assert.ok((bankAsk.actions ?? []).some((item) => item.label === "Leave blank"));
+assert.ok((bankAsk.actions ?? []).some((item) => item.label === "Change"));
 const bankAccepted = resolveProposal(bankExtract.draft, "accept");
 assert.equal(bankAccepted.facts?.institution?.value, "FIRST NATIONAL");
 assert.equal(bankAccepted.facts?.ending_balance?.value, "18400");
@@ -5711,13 +5714,10 @@ assert.equal(parseMonthlyDebtAmount("about 800"), 800);
 assert.equal(parseMonthlyDebtAmount("800 a month"), 800);
 assert.equal(parseMonthlyDebtAmount("1200 including the mortgage"), 1200);
 for (const spoken of ["800", "$800", "about 800", "800 a month"]) {
-  const proposed = workspaceReply(spoken, afterTimeOnJobAsk);
-  assert.equal(proposed?.capture?.field, "propose-monthly-debts");
-  assert.equal(proposed?.text, "That’s $800 a month in other debts, not counting this mortgage. Suggested · not underwritten. Use this?");
-  assert.deepEqual(
-    (proposed?.actions ?? []).map((item) => item.label),
-    ["Use this", "Leave blank"],
-  );
+  const written = workspaceReply(spoken, afterTimeOnJobAsk);
+  assert.equal(written?.capture?.field, "statedMonthlyDebts");
+  assert.doesNotMatch(written?.text ?? "", /Use this|Still right/i);
+  assert.ok(!(written?.actions ?? []).some((item) => item.label === "Use this" || item.label === "Change"));
 }
 const debtConfirmDraft = {
   ...afterTimeOnJobAsk,
@@ -5812,7 +5812,8 @@ const subtractMortgage = workspaceReply("Subtract", {
   pendingDebtMortgage: { included: 1200, mortgage: 400 },
 });
 assert.equal(subtractMortgage?.capture?.field, "subtract-mortgage");
-assert.match(subtractMortgage?.text ?? "", /That’s \$800 a month in other debts/);
+assert.doesNotMatch(subtractMortgage?.text ?? "", /Use this|Still right/i);
+assert.match(subtractMortgage?.text ?? "", /available funds|kind of home/i);
 const debtsOnFile = draft({
   ...afterTimeOnJobAsk,
   monthlyDebtsAsked: true,
@@ -5821,10 +5822,11 @@ const debtsOnFile = draft({
   correctingLine: "debts",
 });
 const debtsEditAsk = workspacePromptCopy("debts", debtsOnFile);
-assert.match(debtsEditAsk.text, /still right/i);
+assert.equal(debtsEditAsk.text, MONTHLY_DEBTS_ASK);
+assert.doesNotMatch(debtsEditAsk.text, /Still right/i);
 const midDebtEdit = workspaceReply("900", debtsOnFile);
-assert.equal(midDebtEdit?.capture?.field, "propose-monthly-debts");
-assert.match(midDebtEdit?.text ?? "", /That’s \$900 a month in other debts/);
+assert.equal(midDebtEdit?.capture?.field, "statedMonthlyDebts");
+assert.doesNotMatch(midDebtEdit?.text ?? "", /Use this|Still right/i);
 assert.equal(emptyDraft().statedMonthlyDebts, undefined);
 assert.equal(emptyDraft().monthlyDebtsAsked, undefined);
 
@@ -5963,16 +5965,10 @@ assert.equal(parseAvailableAssetsAmount("$50,000"), 50000);
 assert.equal(parseAvailableAssetsAmount("50k"), 50000);
 assert.equal(parseAvailableAssetsAmount("about 50k"), 50000);
 for (const spoken of ["50000", "$50,000", "50k", "about 50k"]) {
-  const proposed = workspaceReply(spoken, afterDebtsAsk);
-  assert.equal(proposed?.capture?.field, "propose-available-assets");
-  assert.equal(
-    proposed?.text,
-    "That’s $50,000 in available funds. Suggested · not underwritten. Use this?",
-  );
-  assert.deepEqual(
-    (proposed?.actions ?? []).map((item) => item.label),
-    ["Use this", "Leave blank"],
-  );
+  const written = workspaceReply(spoken, afterDebtsAsk);
+  assert.equal(written?.capture?.field, "statedAvailableAssets");
+  assert.doesNotMatch(written?.text ?? "", /Use this|Still right/i);
+  assert.ok(!(written?.actions ?? []).some((item) => item.label === "Use this" || item.label === "Change"));
 }
 const assetConfirmDraft = {
   ...afterDebtsAsk,
@@ -6157,10 +6153,11 @@ const assetsOnFile = draft({
   correcting: "assets",
   correctingLine: "assets",
 });
-assert.match(workspacePromptCopy("assets", assetsOnFile).text, /still right/i);
+assert.equal(workspacePromptCopy("assets", assetsOnFile).text, AVAILABLE_ASSETS_ASK);
+assert.doesNotMatch(workspacePromptCopy("assets", assetsOnFile).text, /Still right/i);
 const midAssetEdit = workspaceReply("60000", assetsOnFile);
-assert.equal(midAssetEdit?.capture?.field, "propose-available-assets");
-assert.match(midAssetEdit?.text ?? "", /That’s \$60,000 in available funds/);
+assert.equal(midAssetEdit?.capture?.field, "statedAvailableAssets");
+assert.doesNotMatch(midAssetEdit?.text ?? "", /Use this|Still right/i);
 assert.equal(structureFixPrompt("assets"), "assets");
 assert.equal(emptyDraft().statedAvailableAssets, undefined);
 
@@ -6293,7 +6290,7 @@ assert.equal(
   "The contract shows 1840 Valencia St. Suggested · not underwritten. Use this?",
 );
 assert.ok((nextFoxAsk(valenciaExtract.draft).actions ?? []).some((item) => item.label === "Use this"));
-assert.ok((nextFoxAsk(valenciaExtract.draft).actions ?? []).some((item) => item.label === "Leave blank"));
+assert.ok((nextFoxAsk(valenciaExtract.draft).actions ?? []).some((item) => item.label === "Change"));
 assert.doesNotMatch(nextFoxAsk(valenciaExtract.draft).text, /questionnaire|warrantability|HOA|county limit/i);
 const valenciaAccepted = resolveProposal(valenciaExtract.draft, "accept");
 assert.equal(valenciaAccepted.subjectAddress, "1840 Valencia St");
@@ -6406,7 +6403,8 @@ const midTypeEdit = draft({
   correcting: "property-type",
   correctingLine: "property-type",
 });
-assert.match(workspacePromptCopy("property-type", midTypeEdit).text, /still right/i);
+assert.equal(workspacePromptCopy("property-type", midTypeEdit).text, PROPERTY_TYPE_ASK);
+assert.doesNotMatch(workspacePromptCopy("property-type", midTypeEdit).text, /Still right/i);
 const midHouse = workspaceReply("House", midTypeEdit);
 assert.equal(midHouse?.capture?.field, "propertyType");
 assert.equal(midHouse?.text, CURRENT_HOUSING_ASK);
@@ -6432,7 +6430,7 @@ assert.deepEqual(
   (workspacePromptCopy("time-on-job", afterIncomeType).actions ?? []).map((item) => item.label),
   ["Skip", "Not yet"],
 );
-assert.equal(parseTimeOnJobMonths("3"), 36);
+assert.equal(parseTimeOnJobMonths("3"), 3);
 assert.equal(parseTimeOnJobMonths("3 years"), 36);
 assert.equal(parseTimeOnJobMonths("18 months"), 18);
 assert.equal(parseTimeOnJobMonths("6 months"), 6);
@@ -6459,23 +6457,32 @@ const seAfterType = draft({
 });
 assert.equal(workspacePrompt(seAfterType), "current-housing");
 assert.doesNotMatch(workspacePromptCopy("current-housing", seAfterType).text, /How long have you been at this job/);
-for (const spoken of ["3", "3 years", "about 3 years"]) {
-  const proposed = workspaceReply(spoken, afterIncomeType);
-  assert.equal(proposed?.capture?.field, "propose-time-on-job");
-  assert.equal(
-    proposed?.text,
-    "That’s about 3 years at this job. Suggested · not underwritten. Use this?",
-  );
-  assert.deepEqual(
-    (proposed?.actions ?? []).map((item) => item.label),
-    ["Use this", "Leave blank"],
-  );
-}
-const monthsProposed = workspaceReply("6 months", afterIncomeType);
-assert.equal(
-  monthsProposed?.text,
-  "That’s about 6 months at this job. Suggested · not underwritten. Use this?",
+const typedThree = workspaceReply("3", afterIncomeType);
+assert.equal(typedThree?.capture?.field, "statedTimeOnJob");
+assert.doesNotMatch(typedThree?.text ?? "", /Use this|Still right|3 years/i);
+assert.ok(!(typedThree?.actions ?? []).some((item) => item.label === "Use this" || item.label === "Change"));
+const writtenThree = writeStatedTimeOnJob(afterIncomeType, 3, "3");
+assert.equal(writtenThree.statedTimeOnJob, 3);
+assert.equal(writtenThree.statedTimeOnJobLabel, "3");
+assert.ok(
+  previewFacts(writtenThree).some(
+    (fact) => fact.id === "time-on-job" && fact.value === "3",
+  ),
 );
+const typedThreeYears = workspaceReply("3 years", afterIncomeType);
+assert.equal(typedThreeYears?.capture?.field, "statedTimeOnJob");
+assert.doesNotMatch(typedThreeYears?.text ?? "", /Use this|Still right/i);
+const writtenThreeYears = writeStatedTimeOnJob(afterIncomeType, 36, "3 years");
+assert.equal(writtenThreeYears.statedTimeOnJob, 36);
+assert.equal(writtenThreeYears.statedTimeOnJobLabel, "3 years");
+assert.ok(
+  previewFacts(writtenThreeYears).some(
+    (fact) => fact.id === "time-on-job" && fact.value === "3 years",
+  ),
+);
+const monthsProposed = workspaceReply("6 months", afterIncomeType);
+assert.equal(monthsProposed?.capture?.field, "statedTimeOnJob");
+assert.doesNotMatch(monthsProposed?.text ?? "", /Use this|Still right/i);
 const yearsConfirmDraft = {
   ...afterIncomeType,
   pendingProposal: {
@@ -6705,10 +6712,11 @@ const midJobEdit = draft({
   correcting: "time-on-job",
   correctingLine: "time-on-job",
 });
-assert.match(workspacePromptCopy("time-on-job", midJobEdit).text, /still right/i);
+assert.equal(workspacePromptCopy("time-on-job", midJobEdit).text, TIME_ON_JOB_ASK);
+assert.doesNotMatch(workspacePromptCopy("time-on-job", midJobEdit).text, /Still right/i);
 const midSix = workspaceReply("6 months", midJobEdit);
-assert.equal(midSix?.capture?.field, "propose-time-on-job");
-assert.match(midSix?.text ?? "", /That’s about 6 months at this job/);
+assert.equal(midSix?.capture?.field, "statedTimeOnJob");
+assert.doesNotMatch(midSix?.text ?? "", /Use this|Still right/i);
 assert.equal(emptyDraft().statedTimeOnJob, undefined);
 assert.equal(structureFixPrompt("time-on-job"), "time-on-job");
 
@@ -6740,16 +6748,10 @@ const refiAfterJob = draft({
 assert.equal(workspacePrompt(refiAfterJob), "declarations");
 assert.doesNotMatch(workspacePromptCopy("documents", refiAfterJob).text, /pay now for housing/);
 for (const spoken of ["2200", "$2,200", "about 2200"]) {
-  const proposed = workspaceReply(spoken, afterJobAsk);
-  assert.equal(proposed?.capture?.field, "propose-current-housing");
-  assert.equal(
-    proposed?.text,
-    "That’s $2,200 a month for housing now. Suggested · not underwritten. Use this?",
-  );
-  assert.deepEqual(
-    (proposed?.actions ?? []).map((item) => item.label),
-    ["Use this", "Leave blank"],
-  );
+  const written = workspaceReply(spoken, afterJobAsk);
+  assert.equal(written?.capture?.field, "statedCurrentHousing");
+  assert.doesNotMatch(written?.text ?? "", /Use this|Still right/i);
+  assert.ok(!(written?.actions ?? []).some((item) => item.label === "Use this" || item.label === "Change"));
 }
 const housingConfirmDraft = {
   ...afterJobAsk,
@@ -6936,10 +6938,11 @@ const midHousingEdit = draft({
   correcting: "current-housing",
   correctingLine: "current-housing",
 });
-assert.match(workspacePromptCopy("current-housing", midHousingEdit).text, /still right/i);
+assert.equal(workspacePromptCopy("current-housing", midHousingEdit).text, CURRENT_HOUSING_ASK);
+assert.doesNotMatch(workspacePromptCopy("current-housing", midHousingEdit).text, /Still right/i);
 const midHousing = workspaceReply("2800", midHousingEdit);
-assert.equal(midHousing?.capture?.field, "propose-current-housing");
-assert.match(midHousing?.text ?? "", /That’s \$2,800 a month for housing now/);
+assert.equal(midHousing?.capture?.field, "statedCurrentHousing");
+assert.doesNotMatch(midHousing?.text ?? "", /Use this|Still right/i);
 assert.equal(emptyDraft().statedCurrentHousing, undefined);
 assert.equal(structureFixPrompt("current-housing"), "current-housing");
 
@@ -7145,7 +7148,8 @@ const midDeclarationsEdit = draft({
   correcting: "declarations",
   correctingLine: "declarations",
 });
-assert.match(workspacePromptCopy("declarations", midDeclarationsEdit).text, /still right/i);
+assert.equal(workspacePromptCopy("declarations", midDeclarationsEdit).text, DECLARATIONS_ASK);
+assert.doesNotMatch(workspacePromptCopy("declarations", midDeclarationsEdit).text, /Still right/i);
 const midNone = workspaceReply("None", midDeclarationsEdit);
 assert.equal(midNone?.capture?.field, "statedDeclaration");
 assert.equal(midNone?.text, HOUSEHOLD_ASK);
@@ -7347,7 +7351,8 @@ const midHouseholdEdit = draft({
   correcting: "household",
   correctingLine: "household",
 });
-assert.match(workspacePromptCopy("household", midHouseholdEdit).text, /still right/i);
+assert.equal(workspacePromptCopy("household", midHouseholdEdit).text, HOUSEHOLD_ASK);
+assert.doesNotMatch(workspacePromptCopy("household", midHouseholdEdit).text, /Still right/i);
 const midAlone = workspaceReply("On my own", midHouseholdEdit);
 assert.equal(midAlone?.capture?.field, "statedHousehold");
 assert.equal(midAlone?.text, BORROWER_NAME_ASK);
@@ -7426,15 +7431,9 @@ assert.ok(
 );
 
 const typedName = workspaceReply("Jordan Hale", afterHouseholdAsk);
-assert.equal(typedName?.capture?.field, "propose-borrower-name");
-assert.equal(
-  typedName?.text,
-  "I’ll use Jordan Hale on this file. Suggested · not underwritten. Use this?",
-);
-assert.deepEqual(
-  (typedName?.actions ?? []).map((item) => item.label),
-  ["Use this", "Leave blank"],
-);
+assert.equal(typedName?.capture?.field, "borrowerName");
+assert.doesNotMatch(typedName?.text ?? "", /Use this|Still right/i);
+assert.ok(!(typedName?.actions ?? []).some((item) => item.label === "Use this" || item.label === "Change"));
 const nameConfirmDraft = {
   ...afterHouseholdAsk,
   pendingProposal: {
@@ -7519,10 +7518,11 @@ const midBorrowerEdit = draft({
   correcting: "borrower-name",
   correctingLine: "borrower-name",
 });
-assert.match(workspacePromptCopy("borrower-name", midBorrowerEdit).text, /still right/i);
+assert.equal(workspacePromptCopy("borrower-name", midBorrowerEdit).text, BORROWER_NAME_ASK);
+assert.doesNotMatch(workspacePromptCopy("borrower-name", midBorrowerEdit).text, /Still right/i);
 const midAda = workspaceReply("Ada Lovelace", midBorrowerEdit);
-assert.equal(midAda?.capture?.field, "propose-borrower-name");
-assert.match(midAda?.text ?? "", /I’ll use Ada Lovelace on this file/);
+assert.equal(midAda?.capture?.field, "borrowerName");
+assert.doesNotMatch(midAda?.text ?? "", /Use this|Still right/i);
 const midAdaWritten = resolveProposal(
   {
     ...midBorrowerEdit,
@@ -7762,7 +7762,8 @@ const midOtherReoEdit = draft({
   correcting: "other-reo",
   correctingLine: "other-reo",
 });
-assert.match(workspacePromptCopy("other-reo", midOtherReoEdit).text, /still right/i);
+assert.equal(workspacePromptCopy("other-reo", midOtherReoEdit).text, OTHER_REO_ASK);
+assert.doesNotMatch(workspacePromptCopy("other-reo", midOtherReoEdit).text, /Still right/i);
 const midYes = workspaceReply("Yes", midOtherReoEdit);
 assert.equal(midYes?.capture?.field, "statedOtherReo");
 assert.match(midYes?.text ?? "", /paystub|W-2|ID|Skip/i);
@@ -8549,7 +8550,7 @@ assert.ok(workspaceSrc.includes("openingProductAskOpen"));
 assert.ok(storeSource.includes("openingProductAskOpen"));
 assert.ok(!foxSource.includes("composerPlaceholder("));
 assert.ok(foxSource.includes('placeholder=""') || foxSource.includes("placeholder={"));
-assert.ok(foxSource.includes("autoFocus={isStart") || foxSource.includes("autoFocus={isStart || needsTyping}"));
+assert.ok(foxSource.includes("autoFocus={needsTyping}") || foxSource.includes("autoFocus={isStart || needsTyping}"));
 assert.ok(workspaceSrc.includes("HOLD_DOCS_COPY") || workspaceSrc.includes("I’ll hold documents"));
 assert.doesNotMatch(composerPlaceholder(afterIncome), /Ask ONYX Fox|Enter /);
 assert.ok(foxSource.includes("lastFoxTurn"));

@@ -133,6 +133,7 @@ import {
   parseMonthlyDebtAmount,
   proposeStatedMonthlyDebts,
   skipMonthlyDebts,
+  writeStatedMonthlyDebts,
   STATED_MONTHLY_DEBTS_FIELD,
   SUGGESTED_DEBTS_NOTE,
   subjectMortgagePayment,
@@ -150,6 +151,7 @@ import {
   parseAvailableAssetsAmount,
   proposeStatedAvailableAssets,
   skipAvailableAssets,
+  writeStatedAvailableAssets,
 } from "./availableAssets";
 import {
   PROPERTY_TYPE_ASK,
@@ -183,6 +185,8 @@ import {
   parseTimeOnJobMonths,
   proposeStatedTimeOnJob,
   skipTimeOnJob,
+  timeOnJobLabelFromSpoken,
+  writeStatedTimeOnJob,
   timeOnJobAskCopy,
   timeOnJobConfirmActions,
   timeOnJobConfirmCopy,
@@ -201,6 +205,7 @@ import {
   parseCurrentHousingAmount,
   proposeStatedCurrentHousing,
   skipCurrentHousing,
+  writeStatedCurrentHousing,
 } from "./currentHousing";
 import {
   DECLARATIONS_ASK,
@@ -1387,11 +1392,14 @@ export function sketchAndStartDocsCopy(draft: FoxIntakeDraft): {
   const income = INCOME_BUBBLES.find((item) => item.value === draft.incomeType.value)?.label;
   if (income) bits.push(income === "Self-employed" ? "self-employed" : income);
   const sketch = bits.length
-    ? `That’s the sketch. ${bits.join(", ")}. It’s on the notepad.`
-    : "That’s the sketch. It’s on the notepad.";
+    ? `That’s the sketch. ${bits.join(", ")}.`
+    : "That’s the sketch.";
+  const missing = shortListSpeak(draft);
   return {
     text: sketch,
-    followUp: shortListSpeak(draft),
+    followUp: missing
+      ? `Next I need a few documents to build the file.\n\n${missing}`
+      : "Next I need a few documents to build the file.",
   };
 }
 
@@ -1810,7 +1818,7 @@ export function isQualifyingIncomeConfirmPending(draft: FoxIntakeDraft): boolean
   return draft.pendingProposal?.field === QUALIFYING_INCOME_FIELD;
 }
 
-/** Queue / Looks right waits until Use this / Leave blank on a live income or remainder suggest. */
+/** Queue / Looks right waits until Use this / Change on a live income or remainder suggest. */
 export function shouldDeferStillUsefulAsk(draft: FoxIntakeDraft): boolean {
   return (
     isQualifyingIncomeConfirmPending(draft) ||
@@ -1978,16 +1986,9 @@ function workspaceAskCopy(
     };
   }
   if (prompt === "occupancy") {
-    const prior = draft.occupancyChoice.value
-      ? OCCUPANCY_BUBBLES.find((item) => item.value === draft.occupancyChoice.value)?.label
-      : "";
     return {
-      text: prior
-        ? `Occupancy in the file is ${prior}. Still right?`
-        : "How will the property be used?",
-      actions: prior
-        ? [...bubbles([...OCCUPANCY_BUBBLES], "occupancy"), ...keepThisActions()]
-        : bubbles([...OCCUPANCY_BUBBLES], "occupancy"),
+      text: "How will the property be used?",
+      actions: bubbles([...OCCUPANCY_BUBBLES], "occupancy"),
     };
   }
   if (prompt === "timeline") {
@@ -2043,14 +2044,10 @@ function workspaceAskCopy(
     };
   }
   if (prompt === "credit") {
-    const prior =
-      CREDIT_WORKSPACE_BUBBLES.find((item) => item.value === draft.creditBand)?.label ?? "";
     return {
-      text: prior ? `Credit in the file is ${prior}. Still right?` : CREDIT_RANGE_ASK,
+      text: CREDIT_RANGE_ASK,
       followUp: CREDIT_RANGE_FOLLOW,
-      actions: prior
-        ? [...bubbles([...CREDIT_WORKSPACE_BUBBLES], "creditRange"), ...keepThisActions()]
-        : bubbles([...CREDIT_WORKSPACE_BUBBLES], "creditRange"),
+      actions: bubbles([...CREDIT_WORKSPACE_BUBBLES], "creditRange"),
     };
   }
   if (prompt === "term") {
@@ -2064,13 +2061,9 @@ function workspaceAskCopy(
     };
   }
   if (prompt === "income") {
-    const prior =
-      INCOME_BUBBLES.find((item) => item.value === draft.incomeType.value)?.label ?? "";
     return {
-      text: prior ? `Income in the file is ${prior}. Still right?` : "How is income earned?",
-      actions: prior
-        ? [...bubbles([...INCOME_BUBBLES], "incomeType"), ...keepThisActions()]
-        : bubbles([...INCOME_BUBBLES], "incomeType"),
+      text: "How is income earned?",
+      actions: bubbles([...INCOME_BUBBLES], "incomeType"),
     };
   }
   if (prompt === "debts") {
@@ -2114,17 +2107,9 @@ function workspaceAskCopy(
     };
   }
   if (prompt === "years-in-business") {
-    const years = draft.facts?.years_in_business?.value;
-    const shown = years
-      ? /year/i.test(years)
-        ? years
-        : `${years} years`
-      : "";
     return {
-      text: shown
-        ? `Years in business in the file is ${shown}. Still right?`
-        : YEARS_IN_BUSINESS_ASK,
-      actions: shown ? [...keepThisActions(), ...yearsInBusinessSkipActions()] : yearsInBusinessSkipActions(),
+      text: YEARS_IN_BUSINESS_ASK,
+      actions: yearsInBusinessSkipActions(),
     };
   }
   if (prompt === "documents") {
@@ -2663,6 +2648,43 @@ export function editPromptFromPendingField(field?: string | null): FoxPrompt | u
   return editPromptFromCapture({ field, value: "" } as Capture);
 }
 
+export function promptForProposalField(field?: string | null): FoxPrompt | undefined {
+  if (!field) return undefined;
+  if (field === "loanAmount" || field === "downPayment" || field === "down_payment" || field === "loan_amount") {
+    return "amount";
+  }
+  if (field === "purchase_price" || field === "propertyValue" || field === "property_value") return "value";
+  if (field === QUALIFYING_INCOME_FIELD) return "qualifying";
+  if (field === STATED_MONTHLY_DEBTS_FIELD) return "debts";
+  if (field === STATED_AVAILABLE_ASSETS_FIELD) return "assets";
+  if (field === PROPERTY_TYPE_FIELD) return "property-type";
+  if (field === STATED_TIME_ON_JOB_FIELD) return "time-on-job";
+  if (field === STATED_CURRENT_HOUSING_FIELD) return "current-housing";
+  if (field === STATED_DECLARATION_FIELD) return "declarations";
+  if (field === STATED_HOUSEHOLD_FIELD) return "household";
+  if (isBorrowerNameField(field)) return "borrower-name";
+  if (field === STATED_OTHER_REO_FIELD) return "other-reo";
+  if (field === "property_address" || field === "subjectAddress") return "property-type";
+  const fromCapture = editPromptFromPendingField(field);
+  return fromCapture === "confirm-proposal" ? undefined : fromCapture;
+}
+
+export function changePendingProposal(draft: FoxIntakeDraft): FoxIntakeDraft {
+  const field = draft.pendingProposal?.field;
+  const prompt = promptForProposalField(field);
+  return {
+    ...draft,
+    pendingProposal: null,
+    correcting: prompt ?? null,
+    correctingLine:
+      field === "downPayment" || field === "down_payment"
+        ? "down"
+        : field === "loanAmount" || field === "loan_amount"
+          ? "loan"
+          : draft.correctingLine,
+  };
+}
+
 export function editPromptFromCapture(capture?: Capture): FoxPrompt | undefined {
   if (!capture) return undefined;
   if (capture.field === "path") return "path-switch";
@@ -2691,7 +2713,11 @@ export function editPromptFromCapture(capture?: Capture): FoxPrompt | undefined 
     return "amount";
   }
   if (capture.field === "propertyValue" || capture.field === "skip-value") return "value";
-  if (capture.field === "accept-proposal" || capture.field === "decline-proposal") {
+  if (
+    capture.field === "accept-proposal" ||
+    capture.field === "change-proposal" ||
+    capture.field === "decline-proposal"
+  ) {
     return "confirm-proposal";
   }
   if (capture.field === "creditRange") return "credit";
@@ -2936,10 +2962,9 @@ export function workspaceUpdateCopy(capture: Capture, draft: FoxIntakeDraft) {
   if (capture.field === "skip-time-on-job") return "Updated. Time on job left blank.";
   if (capture.field === "propose-time-on-job") return "Updated.";
   if (capture.field === "statedTimeOnJob") {
-    const months = Number(capture.value);
-    return Number.isFinite(months) && months > 0
-      ? `Updated time on job to ${displayTimeOnJob(months)}.`
-      : "Updated time on job.";
+    const months = parseTimeOnJobMonths(capture.value) ?? Number(capture.value);
+    const label = timeOnJobLabelFromSpoken(capture.value, Number.isFinite(months) ? months : 0);
+    return label ? `Updated time on job to ${label}.` : "Updated time on job.";
   }
   if (capture.field === "skip-current-housing") return "Updated. Current housing left blank.";
   if (capture.field === "propose-current-housing") return "Updated.";
@@ -3040,8 +3065,8 @@ export function parseWorkspaceEdit(
     const match = parsePropertyType(q);
     if (match) {
       return {
-        capture: { field: "propose-property-type", value: match },
-        confirm: propertyTypeConfirmCopy(match),
+        capture: { field: "propertyType", value: match },
+        confirm: `Updated property type to ${propertyTypeLabel(match)}.`,
       };
     }
     if (/\bproperty type\b/.test(lower)) {
@@ -3052,9 +3077,10 @@ export function parseWorkspaceEdit(
   if (/\btime on job\b/.test(lower)) {
     const months = parseTimeOnJobMonths(q);
     if (months != null) {
+      const label = timeOnJobLabelFromSpoken(q, months);
       return {
-        capture: { field: "propose-time-on-job", value: String(months) },
-        confirm: timeOnJobConfirmCopy(months),
+        capture: { field: "statedTimeOnJob", value: q.trim() },
+        confirm: `Updated time on job to ${label}.`,
       };
     }
     return { correct: "time-on-job", confirm: TIME_ON_JOB_ASK };
@@ -3064,8 +3090,8 @@ export function parseWorkspaceEdit(
     const amount = parseCurrentHousingAmount(q);
     if (amount != null) {
       return {
-        capture: { field: "propose-current-housing", value: String(amount) },
-        confirm: currentHousingConfirmCopy(amount),
+        capture: { field: "statedCurrentHousing", value: String(amount) },
+        confirm: `Updated current housing to $${amount.toLocaleString("en-US")}.`,
       };
     }
     return { correct: "current-housing", confirm: CURRENT_HOUSING_ASK };
@@ -3075,8 +3101,8 @@ export function parseWorkspaceEdit(
     const value = parseDeclarations(q, { allowBareYes: true });
     if (value) {
       return {
-        capture: { field: "propose-declarations", value },
-        confirm: declarationsConfirmCopy(value),
+        capture: { field: "statedDeclaration", value },
+        confirm: `Updated declarations to ${declarationsLabel(value)}.`,
       };
     }
     return { correct: "declarations", confirm: DECLARATIONS_ASK };
@@ -3086,8 +3112,8 @@ export function parseWorkspaceEdit(
     const value = parseHousehold(q);
     if (value) {
       return {
-        capture: { field: "propose-household", value },
-        confirm: householdConfirmCopy(value),
+        capture: { field: "statedHousehold", value },
+        confirm: `Updated household to ${householdLabel(value)}.`,
       };
     }
     return { correct: "household", confirm: HOUSEHOLD_ASK };
@@ -3097,8 +3123,8 @@ export function parseWorkspaceEdit(
     const name = parseBorrowerName(q);
     if (name) {
       return {
-        capture: { field: "propose-borrower-name", value: name },
-        confirm: borrowerNameConfirmCopy(name),
+        capture: { field: "borrowerName", value: name },
+        confirm: `Updated borrower to ${name}.`,
       };
     }
     return { correct: "borrower-name", confirm: BORROWER_NAME_ASK };
@@ -3108,8 +3134,8 @@ export function parseWorkspaceEdit(
     const value = parseOtherReo(q, { allowBare: true });
     if (value) {
       return {
-        capture: { field: "propose-other-reo", value },
-        confirm: otherReoConfirmCopy(value),
+        capture: { field: "statedOtherReo", value },
+        confirm: `Updated other real estate to ${otherReoLabel(value)}.`,
       };
     }
     return { correct: "other-reo", confirm: OTHER_REO_ASK };
@@ -3426,6 +3452,7 @@ function draftAfterCapture(draft: FoxIntakeDraft, capture: Capture): FoxIntakeDr
   }
   if (capture.field === "payFrequency") return applyPayFrequencyAnswer(next, capture.value);
   if (capture.field === "accept-proposal") return resolveProposal(next, "accept");
+  if (capture.field === "change-proposal") return changePendingProposal(next);
   if (capture.field === "decline-proposal") return resolveProposal(next, "decline");
   if (capture.field === "yearsInBusiness") return writeYearsInBusiness(next, capture.value);
   if (capture.field === "skip-years-in-business") return skipYearsInBusiness(next);
@@ -3449,6 +3476,27 @@ function draftAfterCapture(draft: FoxIntakeDraft, capture: Capture): FoxIntakeDr
   if (capture.field === "skip-docs") return skipCurrentInvite({ ...next, docsHeld: false });
   if (capture.field === "hold-docs") return holdDocuments(next);
   if (capture.field === "start-docs") return { ...next, docsStarted: true, docsHeld: false };
+  if (capture.field === "statedMonthlyDebts") {
+    const amount = parseMonthlyDebtAmount(capture.value);
+    return amount != null ? writeStatedMonthlyDebts(next, amount) : next;
+  }
+  if (capture.field === "statedAvailableAssets") {
+    const amount = parseAvailableAssetsAmount(capture.value);
+    return amount != null ? writeStatedAvailableAssets(next, amount) : next;
+  }
+  if (capture.field === "propertyType") {
+    const value = parsePropertyType(capture.value);
+    return value ? writePropertyType(next, value) : next;
+  }
+  if (capture.field === "statedTimeOnJob") {
+    const months = parseTimeOnJobMonths(capture.value) ?? Number(capture.value);
+    if (!Number.isFinite(months) || months <= 0) return next;
+    return writeStatedTimeOnJob(next, months, timeOnJobLabelFromSpoken(capture.value, months));
+  }
+  if (capture.field === "statedCurrentHousing") {
+    const amount = parseCurrentHousingAmount(capture.value);
+    return amount != null ? writeStatedCurrentHousing(next, amount) : next;
+  }
   return next;
 }
 
@@ -3539,10 +3587,10 @@ function matrixReply(
     draft.statedDeclaration !== "event"
   ) {
     const note = volunteeredDeclarationNote(text, "event");
-    const nextDraft = proposeStatedDeclaration(draft, "event", note);
+    const nextDraft = writeStatedDeclaration(draft, "event", note);
     return {
-      ...workspacePromptCopy("confirm-proposal", nextDraft),
-      capture: { field: "propose-declarations", value: "event" },
+      ...nextFoxAsk(nextDraft),
+      capture: { field: "statedDeclaration", value: "event" },
     };
   }
 
@@ -3554,10 +3602,10 @@ function matrixReply(
     !draft.pendingConflict &&
     draft.statedHousehold !== volunteeredHousehold
   ) {
-    const nextDraft = proposeStatedHousehold(draft, volunteeredHousehold);
+    const nextDraft = writeStatedHousehold(draft, volunteeredHousehold);
     return {
-      ...workspacePromptCopy("confirm-proposal", nextDraft),
-      capture: { field: "propose-household", value: volunteeredHousehold },
+      ...nextFoxAsk(nextDraft),
+      capture: { field: "statedHousehold", value: volunteeredHousehold },
     };
   }
 
@@ -3569,10 +3617,10 @@ function matrixReply(
     !draft.pendingConflict &&
     draft.statedOtherReo !== volunteeredOtherReo
   ) {
-    const nextDraft = proposeStatedOtherReo(draft, volunteeredOtherReo);
+    const nextDraft = writeStatedOtherReo(draft, volunteeredOtherReo);
     return {
-      ...workspacePromptCopy("confirm-proposal", nextDraft),
-      capture: { field: "propose-other-reo", value: volunteeredOtherReo },
+      ...nextFoxAsk(nextDraft),
+      capture: { field: "statedOtherReo", value: volunteeredOtherReo },
     };
   }
 
@@ -3760,6 +3808,13 @@ export function workspaceReply(
       return {
         ...nextFoxAsk(nextDraft),
         capture: { field: "accept-proposal" },
+      };
+    }
+    if (/^change\b/.test(lower)) {
+      const nextDraft = changePendingProposal(draft);
+      return {
+        ...nextFoxAsk(nextDraft),
+        capture: { field: "change-proposal" },
       };
     }
     if (
@@ -4340,10 +4395,10 @@ export function workspaceReply(
         capture: { field: "include-mortgage-debts", value: String(amount) },
       };
     }
-    const nextDraft = proposeStatedMonthlyDebts(draft, amount);
+    const nextDraft = writeStatedMonthlyDebts(draft, amount);
     return {
-      ...workspacePromptCopy("confirm-proposal", nextDraft),
-      capture: { field: "propose-monthly-debts", value: String(amount) },
+      ...nextFoxAsk(nextDraft),
+      capture: { field: "statedMonthlyDebts", value: String(amount) },
     };
   }
 
@@ -4358,10 +4413,10 @@ export function workspaceReply(
     }
     const amount = parseAvailableAssetsAmount(q);
     if (amount == null) return answerThenRestore(q, draft);
-    const nextDraft = proposeStatedAvailableAssets(draft, amount);
+    const nextDraft = writeStatedAvailableAssets(draft, amount);
     return {
-      ...workspacePromptCopy("confirm-proposal", nextDraft),
-      capture: { field: "propose-available-assets", value: String(amount) },
+      ...nextFoxAsk(nextDraft),
+      capture: { field: "statedAvailableAssets", value: String(amount) },
     };
   }
 
@@ -4410,10 +4465,11 @@ export function workspaceReply(
     }
     const months = parseTimeOnJobMonths(q);
     if (months == null) return answerThenRestore(q, draft);
-    const nextDraft = proposeStatedTimeOnJob(draft, months);
+    const label = timeOnJobLabelFromSpoken(q, months);
+    const nextDraft = writeStatedTimeOnJob(draft, months, label);
     return {
-      ...workspacePromptCopy("confirm-proposal", nextDraft),
-      capture: { field: "propose-time-on-job", value: String(months) },
+      ...nextFoxAsk(nextDraft),
+      capture: { field: "statedTimeOnJob", value: q.trim() },
     };
   }
 
@@ -4428,10 +4484,10 @@ export function workspaceReply(
     }
     const amount = parseCurrentHousingAmount(q);
     if (amount == null) return answerThenRestore(q, draft);
-    const nextDraft = proposeStatedCurrentHousing(draft, amount);
+    const nextDraft = writeStatedCurrentHousing(draft, amount);
     return {
-      ...workspacePromptCopy("confirm-proposal", nextDraft),
-      capture: { field: "propose-current-housing", value: String(amount) },
+      ...nextFoxAsk(nextDraft),
+      capture: { field: "statedCurrentHousing", value: String(amount) },
     };
   }
 
@@ -4483,10 +4539,10 @@ export function workspaceReply(
     }
     const name = parseBorrowerName(q);
     if (!name) return answerThenRestore(q, draft);
-    const nextDraft = proposeBorrowerName(draft, name);
+    const nextDraft = writeBorrowerName(draft, name);
     return {
-      ...workspacePromptCopy("confirm-proposal", nextDraft),
-      capture: { field: "propose-borrower-name", value: name },
+      ...nextFoxAsk(nextDraft),
+      capture: { field: "borrowerName", value: name },
     };
   }
 
@@ -5045,11 +5101,12 @@ export function previewFacts(draft: FoxIntakeDraft): PreviewFact[] {
       ? Number(draft.pendingProposal?.value)
       : NaN;
     const shown =
-      draft.statedTimeOnJob != null && draft.statedTimeOnJob > 0
-        ? displayTimeOnJob(draft.statedTimeOnJob)
+      draft.statedTimeOnJobLabel ||
+      (draft.statedTimeOnJob != null && draft.statedTimeOnJob > 0
+        ? String(draft.statedTimeOnJob)
         : Number.isFinite(pendingMonths) && pendingMonths > 0
-          ? displayTimeOnJob(pendingMonths)
-          : "—";
+          ? String(pendingMonths)
+          : "—");
     facts.push({
       id: "time-on-job",
       label: "Time on job",
@@ -5229,7 +5286,7 @@ export function previewFacts(draft: FoxIntakeDraft): PreviewFact[] {
     facts.push({
       id: "years-in-business",
       label: "Years in business",
-      value: /year/i.test(yearsInBusiness) ? yearsInBusiness : `${yearsInBusiness} years`,
+      value: yearsInBusiness,
     });
   }
   const periodPay = factValue(draft, "gross_period");
@@ -5595,7 +5652,7 @@ export function ensureIncomeConfirmChips(messages: FoxMessage[], draft: FoxIntak
   });
 }
 
-/** Older qualifying-income Use this / Leave blank cards go inert when a newer one lands. */
+/** Older qualifying-income Use this / Change cards go inert when a newer one lands. */
 export function inertSupersededIncomeConfirms(messages: FoxMessage[]): FoxMessage[] {
   let latest = -1;
   for (let i = 0; i < messages.length; i += 1) {

@@ -15,7 +15,7 @@ import { SUGGESTED_DECLARATION_NOTE, declarationsLabel, isStatedDeclaration } fr
 import { SUGGESTED_HOUSEHOLD_NOTE, householdLabel, isStatedHousehold } from "./household";
 import { SUGGESTED_BORROWER_NOTE } from "./borrowerName";
 import { SUGGESTED_OTHER_REO_NOTE, otherReoLabel, isStatedOtherReo } from "./otherReo";
-import { SUGGESTED_TIME_ON_JOB_NOTE, displayTimeOnJob } from "./timeOnJob";
+import { SUGGESTED_TIME_ON_JOB_NOTE } from "./timeOnJob";
 import { appendFileEvent } from "./motion";
 
 export const SUGGESTED_EXPORT_NOTE = "Suggested · not underwritten";
@@ -122,7 +122,10 @@ export function mappedFileFacts(draft: FoxIntakeDraft): Record<string, FileExpor
   const employer = factValue(draft, "employer_name").trim();
   if (employer) mapped.employerName = mappedFact(employer, SUGGESTED_EXPORT_NOTE);
   if (draft.statedTimeOnJob != null) {
-    mapped.statedTimeOnJob = mappedFact(displayTimeOnJob(draft.statedTimeOnJob), SUGGESTED_TIME_ON_JOB_NOTE);
+    mapped.statedTimeOnJob = mappedFact(
+      draft.statedTimeOnJobLabel || String(draft.statedTimeOnJob),
+      SUGGESTED_TIME_ON_JOB_NOTE,
+    );
   }
   if (draft.creditBand) {
     mapped.statedCreditBand = mappedFact(draft.creditBand, CREDIT_STATED_NOTE);
