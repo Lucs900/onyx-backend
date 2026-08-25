@@ -1,6 +1,5 @@
 import type { FactProposal, FoxAction, FoxIntakeDraft } from "./types";
 import { displayBorrowerName, parseBorrowerName } from "./borrowerName";
-import { primaryDocsInMotion } from "./household";
 
 export const COBORROWER_NAME_FIELD = "coborrowerName";
 export const COBORROWER_NAME_FACT = "coborrower_name";
@@ -26,7 +25,6 @@ export function coborrowerNameOnFile(draft: FoxIntakeDraft) {
 export function coborrowerNameSettled(draft: FoxIntakeDraft) {
   if (draft.correcting === "coborrower-name") return false;
   if (draft.statedHousehold !== "with_someone" || !draft.householdAsked) return true;
-  if (!primaryDocsInMotion(draft)) return true;
   return Boolean(draft.coborrowerNameAsked || draft.coborrowerName);
 }
 

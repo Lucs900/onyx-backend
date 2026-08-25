@@ -68,8 +68,6 @@ import {
   proposeExtractedCurrentHousing,
 } from "./currentHousing";
 import { declarationsSettled } from "./declarations";
-import { coborrowerNameSettled } from "./coborrowerName";
-import { householdSettled } from "./household";
 import {
   BORROWER_NAME_FIELD,
   borrowerNameConflictActions,
@@ -1555,6 +1553,19 @@ function inviteSatisfied(draft: FoxIntakeDraft, kind: DocInviteKind): boolean {
   return (draft.skippedClasses ?? []).includes(kind);
 }
 
+/** Primary ID / income docs have all been uploaded, skipped, or the borrower left the pass. */
+export function primaryDocPassFinished(draft: FoxIntakeDraft) {
+  if (draft.sampleAccepted || draft.documentsSkipped) return true;
+  if (
+    draft.docsHeld &&
+    (draft.docsStarted || (draft.skippedClasses?.length ?? 0) > 0 || draft.documents.length > 0)
+  ) {
+    return true;
+  }
+  if (!draft.incomeType.value && !draft.incomeAsked) return false;
+  return inviteSequence(draft).every((kind) => inviteSatisfied(draft, kind));
+}
+
 export function offeringDocStart(draft: FoxIntakeDraft) {
   return (
     !draft.docsStarted &&
@@ -1575,8 +1586,6 @@ export function nextDocInvite(draft: FoxIntakeDraft): DocInviteKind | null {
   if (!declarationsSettled(draft)) return null;
   if (!borrowerNameSettled(draft)) return null;
   if (!otherReoSettled(draft)) return null;
-  if (!householdSettled(draft)) return null;
-  if (!coborrowerNameSettled(draft)) return null;
   if (draft.pendingProposal || draft.pendingConflict) return null;
   for (const kind of inviteSequence(draft)) {
     if (!inviteSatisfied(draft, kind)) return kind;
@@ -1584,26 +1593,37 @@ export function nextDocInvite(draft: FoxIntakeDraft): DocInviteKind | null {
   return null;
 }
 
+function hasRemainingPrimaryInvites(draft: FoxIntakeDraft) {
+  return inviteSequence(draft).some((kind) => !inviteSatisfied(draft, kind));
+}
+
 export function skipCurrentInvite(draft: FoxIntakeDraft): FoxIntakeDraft {
   const kind = nextDocInvite(draft);
   if (!kind) {
-    return { ...draft, documentsSkipped: true, docsOpen: false, correcting: null };
+    return {
+      ...draft,
+      documentsSkipped: !hasRemainingPrimaryInvites(draft),
+      docsOpen: false,
+      correcting: null,
+    };
   }
   if (kind === "prior_year_return") {
-    return {
+    const next = {
       ...draft,
       priorYearSkipped: true,
       docsOpen: false,
       correcting: null,
-      documentsSkipped: draft.documents.length === 0,
+    };
+    return {
+      ...next,
+      documentsSkipped: draft.documents.length === 0 && !hasRemainingPrimaryInvites(next),
     };
   }
   const skipped = Array.from(new Set([...(draft.skippedClasses ?? []), kind]));
   const next = { ...draft, skippedClasses: skipped, docsOpen: false, correcting: null };
-  const more = nextDocInvite(next);
   return {
     ...next,
-    documentsSkipped: more == null && draft.documents.length === 0,
+    documentsSkipped: draft.documents.length === 0 && !hasRemainingPrimaryInvites(next),
   };
 }
 

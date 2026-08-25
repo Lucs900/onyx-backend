@@ -55,6 +55,7 @@ import {
   lastExtractedClass,
   nextDocInvite,
   offeringDocStart,
+  primaryDocPassFinished,
   skipCurrentInvite,
   holdDocuments,
   layer2Open,
@@ -243,7 +244,6 @@ import {
   householdLabel,
   householdSettled,
   isHouseholdConfirmPending,
-  primaryDocsInMotion,
   isSkipHouseholdText,
   isStatedHousehold,
   parseHousehold,
@@ -1902,9 +1902,9 @@ export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
       // Stale resume — timing only after an explicit BK / FC / SS Yes.
     } else if (
       draft.resumeAfterEdit === "coborrower-name" &&
-      (draft.statedHousehold !== "with_someone" || !primaryDocsInMotion(draft))
+      (draft.statedHousehold !== "with_someone" || !primaryDocPassFinished(draft))
     ) {
-      // Stale resume — name only after docs started and another borrower.
+      // Stale resume — coborrower name only after the primary doc pass.
     } else {
       return draft.resumeAfterEdit;
     }
@@ -1941,8 +1941,9 @@ export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
   }
   if (!borrowerNameSettled(draft)) return "borrower-name";
   if (!otherReoSettled(draft)) return "other-reo";
-  if (!householdSettled(draft)) return "household";
-  if (!coborrowerNameSettled(draft)) return "coborrower-name";
+  if (nextDocInvite(draft) && !primaryDocPassFinished(draft)) return "documents";
+  if (primaryDocPassFinished(draft) && !householdSettled(draft)) return "household";
+  if (primaryDocPassFinished(draft) && !coborrowerNameSettled(draft)) return "coborrower-name";
   if (!draft.sampleAccepted && draft.awaitingYearsInBusiness) return "documents";
   if (nextDocInvite(draft)) return "documents";
   if (!draft.sampleAccepted) return canLooksRight(draft) ? "review" : "amount";

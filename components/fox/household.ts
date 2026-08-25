@@ -32,9 +32,7 @@ export function primaryDocsInMotion(draft: FoxIntakeDraft) {
 
 export function householdSettled(draft: FoxIntakeDraft) {
   if (draft.correcting === "household") return false;
-  if (draft.householdAsked || draft.statedHousehold) return true;
-  if (!primaryDocsInMotion(draft)) return true;
-  return false;
+  return Boolean(draft.householdAsked || draft.statedHousehold);
 }
 
 export function isHouseholdConfirmPending(draft: FoxIntakeDraft) {

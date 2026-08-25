@@ -21,9 +21,41 @@ export function borrowerNameOnFile(draft: FoxIntakeDraft) {
   return raw ? displayBorrowerName(raw) : "";
 }
 
+export function governmentIdExpected(draft: FoxIntakeDraft) {
+  return Boolean(draft.incomeType.value || draft.incomeAsked);
+}
+
+export function governmentIdSkipped(draft: FoxIntakeDraft) {
+  return (draft.skippedClasses ?? []).includes("government_id");
+}
+
+export function governmentIdExtractFailed(draft: FoxIntakeDraft) {
+  const idDocs = draft.documents.filter(
+    (doc) => doc.extractClass === "government_id" || doc.slot === "id",
+  );
+  if (!idDocs.length) return false;
+  const finished = idDocs.some(
+    (doc) =>
+      doc.status === "extracted" ||
+      doc.status === "failed" ||
+      doc.status === "needs better copy",
+  );
+  if (!finished) return false;
+  if (isBorrowerNameConfirmPending(draft)) return false;
+  if (draft.borrowerName || draft.contact.fullName.value || draft.facts?.full_name?.value) {
+    return false;
+  }
+  return true;
+}
+
 export function borrowerNameSettled(draft: FoxIntakeDraft) {
   if (draft.correcting === "borrower-name") return false;
-  return Boolean(draft.borrowerNameAsked || draft.borrowerName || draft.contact.fullName.value);
+  if (draft.borrowerNameAsked || draft.borrowerName || draft.contact.fullName.value) return true;
+  if (isBorrowerNameConfirmPending(draft)) return true;
+  if (governmentIdExpected(draft) && !governmentIdSkipped(draft) && !governmentIdExtractFailed(draft)) {
+    return true;
+  }
+  return false;
 }
 
 export function isBorrowerNameConfirmPending(draft: FoxIntakeDraft) {
@@ -154,7 +186,7 @@ export function borrowerNameConfirmCopy(name: string) {
 }
 
 export function borrowerNameExtractCopy(name: string) {
-  return `The ID shows ${displayBorrowerName(name)}. ${SUGGESTED_BORROWER_NOTE}. Use this?`;
+  return `I read ${displayBorrowerName(name)} on the ID. Use that?`;
 }
 
 export function borrowerNameConfirmActions(): FoxAction[] {
