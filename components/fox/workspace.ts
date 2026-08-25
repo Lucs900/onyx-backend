@@ -243,6 +243,7 @@ import {
   householdLabel,
   householdSettled,
   isHouseholdConfirmPending,
+  primaryDocsInMotion,
   isSkipHouseholdText,
   isStatedHousehold,
   parseHousehold,
@@ -1893,7 +1894,21 @@ export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
     return "income";
   }
   if (draft.correcting) return draft.correcting;
-  if (draft.resumeAfterEdit) return draft.resumeAfterEdit;
+  if (draft.resumeAfterEdit) {
+    if (
+      draft.resumeAfterEdit === "declaration-timing" &&
+      draft.statedDeclaration !== "event"
+    ) {
+      // Stale resume — timing only after an explicit BK / FC / SS Yes.
+    } else if (
+      draft.resumeAfterEdit === "coborrower-name" &&
+      (draft.statedHousehold !== "with_someone" || !primaryDocsInMotion(draft))
+    ) {
+      // Stale resume — name only after docs started and another borrower.
+    } else {
+      return draft.resumeAfterEdit;
+    }
+  }
   if (
     draft.docsHeld &&
     !draft.docsStarted &&
@@ -2967,10 +2982,10 @@ export function workspaceUpdateCopy(capture: Capture, draft: FoxIntakeDraft) {
   }
   if (capture.field === "loanAmount") {
     const n = Number(capture.value.split(":")[0].replace(/,/g, ""));
-    const label = structureAmountLabel(draft) || "Loan amount";
+    const label = draft.productIntent === "heloc" ? "HELOC line" : "loan amount";
     return Number.isFinite(n) && n > 0
-      ? `Updated ${label.toLowerCase()} to ${formatMoney(n)}.`
-      : `Updated ${label.toLowerCase()}.`;
+      ? `Updated ${label} to ${formatMoney(n)}.`
+      : `Updated ${label}.`;
   }
   if (capture.field === "propertyValue") {
     const n = Number(capture.value.replace(/,/g, ""));
@@ -3009,10 +3024,13 @@ export function workspaceUpdateCopy(capture: Capture, draft: FoxIntakeDraft) {
     return `Updated term to ${capture.value} year.`;
   }
   if (capture.field === "skip-amount") {
-    const label = structureAmountLabel(draft) || "Loan amount";
+    const label = draft.productIntent === "heloc" ? "HELOC line" : "Loan amount";
     return `Updated. ${label} left blank.`;
   }
-  if (capture.field === "skip-value") return "Updated. Purchase price left blank.";
+  if (capture.field === "skip-value") {
+    const label = isRefiLike(draft) ? "Property value" : "Purchase price";
+    return `Updated. ${label} left blank.`;
+  }
   if (capture.field === "skip-term") return "Updated. Term left blank.";
   if (capture.field === "incomeType") {
     const label = INCOME_BUBBLES.find((item) => item.value === capture.value)?.label;
@@ -3701,6 +3719,9 @@ function matrixReply(
   draft: FoxIntakeDraft,
   prompt: FoxPrompt,
 ): ReturnType<typeof workspaceReply> {
+  if (prompt === "credit" || prompt === "declaration-timing") {
+    return null;
+  }
   const moneyAtAsk =
     (prompt === "assets" && parseAvailableAssetsAmount(text) != null) ||
     (prompt === "debts" && parseMonthlyDebtAmount(text) != null);

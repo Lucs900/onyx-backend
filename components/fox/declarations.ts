@@ -22,9 +22,18 @@ export function needsDeclarationTiming(draft: FoxIntakeDraft) {
   if (draft.correcting === "declaration-timing") return true;
   return (
     draft.statedDeclaration === "event" &&
+    Boolean(draft.declarationAsked) &&
     !draft.declarationTimingAsked &&
     !draft.declarationTiming
   );
+}
+
+function looksLikeStatedCreditText(text: string) {
+  const trimmed = text.trim().replace(/[–—]/g, "-");
+  if (!trimmed) return false;
+  if (/^\d{3}\+$/.test(trimmed)) return true;
+  if (/^\d{3}-\d{3}$/.test(trimmed)) return true;
+  return /^\d{3}$/.test(trimmed) && Number(trimmed) >= 300 && Number(trimmed) <= 850;
 }
 
 export function declarationsSettled(draft: FoxIntakeDraft) {
@@ -46,6 +55,7 @@ export function parseDeclarations(
 ): StatedDeclaration | undefined {
   const trimmed = text.trim();
   if (!trimmed) return undefined;
+  if (looksLikeStatedCreditText(trimmed)) return undefined;
   const lower = trimmed.toLowerCase().replace(/[?.!]+$/g, "");
   if (
     /^(no|none|nope|n\/a|na|neither|nothing)$/i.test(lower) ||
@@ -97,6 +107,7 @@ export function isSkipDeclarationTimingText(text: string) {
 export function parseDeclarationTiming(text: string): string | undefined {
   const trimmed = text.trim().replace(/[?.!]+$/g, "");
   if (!trimmed) return undefined;
+  if (looksLikeStatedCreditText(trimmed)) return undefined;
   if (isSkipDeclarationTimingText(trimmed)) return undefined;
   if (/^(yes|yeah|yep|y|no|none|nope|n\/a|na)$/i.test(trimmed)) return undefined;
   if (/^(bankruptcy|foreclosure|short sale|shortsale|bk)$/i.test(trimmed)) return undefined;

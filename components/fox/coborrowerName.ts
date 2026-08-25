@@ -25,7 +25,7 @@ export function coborrowerNameOnFile(draft: FoxIntakeDraft) {
 
 export function coborrowerNameSettled(draft: FoxIntakeDraft) {
   if (draft.correcting === "coborrower-name") return false;
-  if (draft.statedHousehold !== "with_someone") return true;
+  if (draft.statedHousehold !== "with_someone" || !draft.householdAsked) return true;
   if (!primaryDocsInMotion(draft)) return true;
   return Boolean(draft.coborrowerNameAsked || draft.coborrowerName);
 }

@@ -9183,6 +9183,111 @@ applyCapture({ field: "start-docs" });
 assert.equal(getFoxDraft().resumeAfterEdit, undefined);
 assert.equal(workspacePrompt(getFoxDraft()), "household");
 
+const skipLoanStatus = workspaceUpdateCopy(
+  { field: "skip-amount" },
+  draft({
+    ...afterFunds,
+    correcting: "amount",
+    correctingLine: "loan",
+    propertyValueAmount: 850000,
+    loanAmountValue: 680000,
+  }),
+);
+assert.match(skipLoanStatus, /loan amount left blank/i);
+assert.doesNotMatch(skipLoanStatus, /purchase price/i);
+const writeLoanStatus = workspaceUpdateCopy(
+  { field: "loanAmount", value: "640000" },
+  draft({
+    ...afterFunds,
+    correcting: "amount",
+    correctingLine: "loan",
+    propertyValueAmount: 850000,
+  }),
+);
+assert.match(writeLoanStatus, /loan amount/i);
+assert.doesNotMatch(writeLoanStatus, /purchase price/i);
+
+function assertFicoStaysOnIncome(reply: ReturnType<typeof workspaceReply>) {
+  assert.equal(reply?.capture?.field, "creditRange");
+  assert.match(reply?.text ?? "", /income earned/i);
+  assert.doesNotMatch(reply?.text ?? "", /how long ago|their name|another borrower/i);
+}
+
+assertFicoStaysOnIncome(workspaceReply("720–739", afterFunds));
+assertFicoStaysOnIncome(workspaceReply("742", afterFunds));
+assert.equal(parseDeclarationTiming("742"), undefined);
+assert.equal(parseDeclarationTiming("720-739"), undefined);
+assert.equal(parseDeclarationTiming("720–739"), undefined);
+assert.equal(parseDeclarations("742"), undefined);
+assert.equal(parseDeclarations("720–739"), undefined);
+assert.equal(parseDeclarationTiming("March 2021"), "March 2021");
+assert.equal(parseDeclarations("I had a foreclosure"), "event");
+
+const ficoWithLeftover = workspaceReply(
+  "720–739",
+  draft({
+    ...afterFunds,
+    statedDeclaration: "event",
+    declarationAsked: true,
+    statedHousehold: "with_someone",
+    householdAsked: true,
+    docsStarted: true,
+    coborrowerName: "Alex",
+  }),
+);
+assertFicoStaysOnIncome(ficoWithLeftover);
+assert.equal(
+  workspacePrompt({
+    ...afterFunds,
+    creditAsked: true,
+    creditBand: "720-739",
+    statedDeclaration: "event",
+    declarationAsked: true,
+  }),
+  "income",
+);
+
+assert.notEqual(workspacePrompt(afterCredit), "declaration-timing");
+assert.notEqual(workspacePrompt(afterCredit), "coborrower-name");
+assert.notEqual(workspacePrompt(afterIncome), "coborrower-name");
+assert.notEqual(
+  workspacePrompt(draft({ ...afterIncome, docsStarted: true, householdAsked: false })),
+  "coborrower-name",
+);
+assert.equal(
+  workspacePrompt(
+    draft({
+      ...afterIncome,
+      docsStarted: true,
+      householdAsked: true,
+      statedHousehold: "with_someone",
+    }),
+  ),
+  "coborrower-name",
+);
+
+resetWorkspaceForEntry("acr", "buy");
+applyCapture({ field: "occupancy", value: "primary" });
+applyCapture({ field: "timeline", value: "ready-now" });
+applyCapture({ field: "propertyValue", value: "850000" });
+applyCapture({ field: "propose-funds", value: "170000:680000" });
+applyCapture({ field: "accept-proposal" });
+assert.equal(workspacePrompt(getFoxDraft()), "credit");
+applyCapture({ field: "creditRange", value: "720-739" });
+assert.equal(getFoxDraft().creditBand, "720-739");
+assert.equal(workspacePrompt(getFoxDraft()), "income");
+assert.notEqual(workspacePrompt(getFoxDraft()), "declaration-timing");
+assert.notEqual(workspacePrompt(getFoxDraft()), "coborrower-name");
+assert.notEqual(workspacePrompt(getFoxDraft()), "household");
+applyCapture({ field: "creditRange", value: "742" });
+assert.equal(getFoxDraft().creditBand, "742");
+assert.equal(workspacePrompt(getFoxDraft()), "income");
+applyCapture({ field: "correct", value: "amount", line: "loan" });
+applyCapture({ field: "skip-amount" });
+assert.match(workspaceUpdateCopy({ field: "skip-amount" }, getFoxDraft()), /loan amount left blank/i);
+assert.doesNotMatch(workspaceUpdateCopy({ field: "skip-amount" }, getFoxDraft()), /purchase price/i);
+assert.equal(getFoxDraft().propertyValueAmount, 850000);
+
 extractAdapterSmoke()
   .then(() => {
     console.log("desk smoke ok");
