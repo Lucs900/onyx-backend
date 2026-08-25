@@ -265,6 +265,7 @@ import {
   borrowerNameAskCopy,
   borrowerNameConfirmActions,
   borrowerNameConfirmCopy,
+  borrowerNameExtractCopy,
   borrowerNameOnFile,
   borrowerNameSettled,
   isBorrowerNameConfirmPending,
@@ -1072,6 +1073,9 @@ function incomeFromText(text: string) {
 }
 
 function documentsAskText(draft: FoxIntakeDraft): string {
+  if (isBorrowerNameConfirmPending(draft) && draft.pendingProposal?.value) {
+    return borrowerNameExtractCopy(draft.pendingProposal.value);
+  }
   if (draft.awaitingYearsInBusiness) return YEARS_IN_BUSINESS_ASK;
   if (
     draft.docsHeld &&
@@ -1134,9 +1138,12 @@ function identityReactionAsk(draft: FoxIntakeDraft): {
   followUp?: string;
   actions?: FoxAction[];
 } {
+  if (isBorrowerNameConfirmPending(draft) && draft.pendingProposal) {
+    return liveProposalAsk(draft, draft.pendingProposal, "government_id");
+  }
   const name = firstNameFromDraft(draft);
   const greet = name ? `Nice to meet you, ${name}.` : "Got your ID.";
-  const invite = nextDocInvite(draft);
+  const invite = name ? nextDocInvite(draft) : null;
   const next = nextDocSpoken(invite);
   return {
     text: `${greet} ${DESK_RELATIONSHIP_LINE}${next ? ` ${next}` : ""}`.trim(),

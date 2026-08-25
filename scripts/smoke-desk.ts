@@ -1147,6 +1147,23 @@ assert.deepEqual(
 const startIdReply = workspaceReply("Start with ID", afterIncome);
 assert.equal(startIdReply?.capture?.field, "start-docs");
 assert.equal(startIdReply?.text, DOC_INVITE_COPY.government_id);
+const idStillReading = draft({
+  ...afterStartId,
+  documents: [
+    {
+      slot: "id",
+      name: "license.png",
+      type: "image/png",
+      size: 4000,
+      receivedAt: "2026-08-25T00:00:00.000Z",
+      status: "reading",
+      extractClass: "government_id",
+    },
+  ],
+});
+assert.equal(workspacePrompt(idStillReading), "documents");
+assert.equal(workspacePromptCopy("documents", idStillReading).text, DOC_INVITE_COPY.government_id);
+assert.doesNotMatch(workspacePromptCopy("documents", idStillReading).text, /paystub|tax return/i);
 const notYetDocs = workspaceReply("Not yet", afterIncome);
 assert.equal(notYetDocs?.capture?.field, "hold-docs");
 assert.equal(notYetDocs?.text, HOLD_DOCS_COPY);
@@ -2026,11 +2043,11 @@ assert.ok(assignedFacts.some((fact) => fact.id === "status" && fact.value === "g
 assert.ok(assignedFacts.some((fact) => fact.id === "next" && fact.value === "You"));
 assert.ok(assignedFacts.some((fact) => fact.id === "file"));
 assert.equal(fileCompleteness(afterLooks)?.state, "sketch");
-assert.match(fileCompleteness(afterLooks)?.copy ?? "", /sketch · \d of 5/);
-assert.ok(!/agency_partial|agency_ready/.test(fileCompleteness(afterLooks)?.copy ?? ""));
+assert.equal(fileCompleteness(afterLooks)?.copy, "sketch");
+assert.ok(!/agency_partial|agency_ready|\d of \d/.test(fileCompleteness(afterLooks)?.copy ?? ""));
 assert.ok(
   assignedFacts.some(
-    (fact) => fact.id === "file" && /sketch · \d of 5/.test(fact.value) && !/agency_partial|agency_ready/.test(fact.value),
+    (fact) => fact.id === "file" && fact.value === "sketch" && !/agency_partial|agency_ready|\d of \d/.test(fact.value),
   ),
 );
 assert.equal(fileStillUsefulNote(afterLooks), undefined);
@@ -2048,6 +2065,7 @@ assert.deepEqual(
   ],
 );
 assert.ok(stillUsefulSection(afterLooks));
+assert.ok(!stillUsefulSection(afterLooks)?.items.some((item) => item.label === "Latest return"));
 assert.ok(!stillUsefulSection(afterLooks)?.items.some((item) => item.label === "Employer"));
 assert.ok(!stillUsefulSection(afterLooks)?.items.some((item) => /years in business/i.test(item.label)));
 const confirmedFromDocs = {
@@ -2068,11 +2086,11 @@ const confirmedFromDocs = {
 };
 const docsBeforeLooks = draft({ ...afterIncome, facts: confirmedFromDocs });
 assert.equal(fileCompleteness(docsBeforeLooks)?.state, "agency_partial");
-assert.match(fileCompleteness(docsBeforeLooks)?.copy ?? "", /sketch · \d of 5/);
-assert.ok(!/agency_partial|agency_ready/.test(fileCompleteness(docsBeforeLooks)?.copy ?? ""));
+assert.equal(fileCompleteness(docsBeforeLooks)?.copy, "sketch");
+assert.ok(!/agency_partial|agency_ready|\d of \d/.test(fileCompleteness(docsBeforeLooks)?.copy ?? ""));
 assert.ok(
   previewFacts(docsBeforeLooks).some(
-    (fact) => fact.id === "file" && /sketch · \d of 5/.test(fact.value) && !/agency_partial/.test(fact.value),
+    (fact) => fact.id === "file" && fact.value === "sketch" && !/agency_partial|\d of \d/.test(fact.value),
   ),
 );
 assert.ok(assignedFacts.some((fact) => fact.id === "originator" && fact.value === "Licensed originator assigned"));
@@ -2193,6 +2211,12 @@ const w2Request = docsRequestForIncome("w2");
 assert.deepEqual(w2Request.labels, ["government ID", "latest paystub", "W-2"]);
 assert.ok(!w2Request.labels.includes("Bank statements"));
 
+const seHandOff = workspacePromptCopy("documents", withIncome(afterCredit, "self-employed"));
+assert.match(seHandOff.followUp ?? "", /income docs \(latest return\)/);
+assert.doesNotMatch(seHandOff.followUp ?? "", /prior-year|P&L/i);
+const bothHandOff = workspacePromptCopy("documents", withIncome(afterCredit, "both"));
+assert.match(bothHandOff.followUp ?? "", /income docs \(latest paystub, W-2, and latest return\)/);
+assert.doesNotMatch(bothHandOff.followUp ?? "", /prior-year|P&L/i);
 const seIncome = withIncome(afterCredit, "self-employed");
 const selfLooks = workspaceReply("Looks right", skipDocInvites(seIncome));
 assert.equal(selfLooks?.capture?.field, "confirm-draft");
@@ -2800,7 +2824,7 @@ assert.ok(
   ),
 );
 assert.equal(fileCompleteness(w2AfterLooks)?.state, "sketch");
-assert.match(fileCompleteness(w2AfterLooks)?.copy ?? "", /sketch · \d of 5/);
+assert.equal(fileCompleteness(w2AfterLooks)?.copy, "sketch");
 assert.ok(!/agency_partial|agency_ready/.test(fileCompleteness(w2AfterLooks)?.copy ?? ""));
 
 const seAfterLooks = draft({
@@ -2922,7 +2946,7 @@ const buyDocsIn = afterProceed(afterIncome, {
 });
 assert.deepEqual(
   stillUsefulSection(buyDocsIn)?.items.map((item) => item.label),
-  ["Property address", "Purchase contract", "Bank statement"],
+  ["Latest return", "Property address", "Purchase contract", "Bank statement"],
 );
 const seProceed = afterProceed(withIncome(afterCredit, "self-employed"));
 assert.deepEqual(
@@ -3043,9 +3067,11 @@ const emptied = afterProceed(afterIncome, {
     },
   },
 });
-assert.deepEqual(stillUsefulSection(emptied)?.items, []);
-assert.equal(stillUsefulSection(emptied)?.empty, true);
-assert.equal(layer2AskCopy(emptied), NOTHING_URGENT);
+assert.deepEqual(stillUsefulSection(emptied)?.items, [
+  { id: "tax_return", label: "Latest return", hint: "Your latest return still helps this file." },
+]);
+assert.equal(stillUsefulSection(emptied)?.empty, false);
+assert.match(layer2AskCopy(emptied), /latest return/i);
 const walkSkip = skipCurrentInvite(afterIncome);
 assert.ok((walkSkip.skippedClasses ?? []).includes("government_id"));
 assert.equal(workspacePrompt(walkSkip), "documents");
@@ -3554,6 +3580,14 @@ assert.equal(
   queryConventionalGuidelines({ topic: "completeness", key: "income-docs-w2" })[0]?.pattern,
   "income docs (latest paystub and W-2)",
 );
+assert.equal(
+  queryConventionalGuidelines({ topic: "completeness", key: "income-docs-self-employed" })[0]?.pattern,
+  "income docs (latest return)",
+);
+assert.equal(
+  queryConventionalGuidelines({ topic: "completeness", key: "income-docs-both" })[0]?.pattern,
+  "income docs (latest paystub, W-2, and latest return)",
+);
 assert.ok(queryConventionalGuidelines({ topic: "docs", key: "paystub" }).length >= 2);
 assert.equal(queryConventionalGuidelines({ topic: "income", key: "k1" })[0]?.rules?.basis, "ordinary-over-12");
 assert.equal(queryConventionalGuidelines({ agency: "fannie" }).every((row) => row.agency === "fannie"), true);
@@ -3590,11 +3624,13 @@ assert.equal(mayaId.draft.borrowerName, undefined);
 assert.equal(mayaId.draft.pendingProposal?.field, "borrowerName");
 assert.equal(mayaId.draft.pendingProposal?.value, "Maya Chen");
 assert.ok(mayaId.draft.pendingProposal?.extras?.some((item) => item.field === "date_of_birth"));
+assert.equal(workspacePrompt(mayaId.draft), "confirm-proposal");
 const mayaAsk = docReactionAsk(mayaId.draft, "government_id");
 assert.equal(
   mayaAsk?.text,
   "I read Maya Chen on the ID. Use that?",
 );
+assert.doesNotMatch(mayaAsk?.text ?? "", /paystub|tax return|most recent/i);
 assert.deepEqual(
   (mayaAsk?.actions ?? []).map((item) => item.label),
   ["Use this", "Change"],
@@ -7290,6 +7326,7 @@ const afterPrimaryPass = draft({
   docsStarted: true,
   skippedClasses: ["government_id", "paystub", "w2"],
 });
+assert.ok(stillUsefulSection(afterPrimaryPass)?.items.some((item) => item.label === "Latest return"));
 assert.equal(workspacePrompt(afterPrimaryPass), "household");
 assert.equal(workspacePromptCopy("household", afterPrimaryPass).text, HOUSEHOLD_ASK);
 assert.match(HOUSEHOLD_ASK, /another borrower/i);
@@ -7315,7 +7352,7 @@ assert.doesNotMatch(
   /you don.t qualify|spouse must|community.property|you are approved|\bDTI\b|I can run this past underwriting/i,
 );
 assert.match(skipHouseholdQualify?.text ?? "", /paystub|W-2|notepad|Start with ID|Skip/i);
-assert.ok(storeCompleteness("buy", { purposeHint: "purchase", incomeType: "w2_base" }).stillUseful.includes("household"));
+assert.ok(!storeCompleteness("buy", { purposeHint: "purchase", incomeType: "w2_base" }).stillUseful.includes("household"));
 assert.ok(
   !storeCompleteness("buy", {
     purposeHint: "purchase",
@@ -7622,7 +7659,7 @@ assert.doesNotMatch(
   /you don.t qualify|SSN|social security|identity is verified|KYC|you are approved/i,
 );
 assert.match(skipBorrowerQualify?.text ?? "", /paystub|W-2|notepad|Start with ID|Skip/i);
-assert.ok(storeCompleteness("buy", { purposeHint: "purchase", incomeType: "w2_base" }).stillUseful.includes("borrower"));
+assert.ok(!storeCompleteness("buy", { purposeHint: "purchase", incomeType: "w2_base" }).stillUseful.includes("borrower"));
 assert.ok(
   !storeCompleteness("buy", {
     purposeHint: "purchase",

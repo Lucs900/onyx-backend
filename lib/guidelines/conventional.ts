@@ -61,12 +61,12 @@ const CONVENTIONAL_GUIDELINES: ConventionalGuideline[] = [
   ...bothAgencies(
     "completeness",
     "income-docs-both",
-    "income docs (latest paystub, W-2, latest return, and prior-year)",
+    "income docs (latest paystub, W-2, and latest return)",
   ),
   ...bothAgencies(
     "completeness",
     "income-docs-self-employed",
-    "income docs (latest return, prior-year, and a YTD P&L if you have it)",
+    "income docs (latest return)",
   ),
   ...bothAgencies("completeness", "income-docs", "income docs"),
   ...bothAgencies(
@@ -878,9 +878,12 @@ export function completeness(
   }
   if (!received.has("employer_business")) stillUseful.push("employer/business");
   if (wantsSeYears(file.incomeType) && !received.has("se_years")) stillUseful.push("SE years");
-  if (file.incomeType && !file.statedHousehold) stillUseful.push("household");
+  const taxReturns = file.taxReturnCount ?? (received.has("tax_return") ? 1 : 0);
+  if (wageLike(file.incomeType) && !seLike(file.incomeType) && taxReturns < 1) {
+    const primaryW2In = received.has("paystub") && (file.w2Count ?? 0) >= 1;
+    if (primaryW2In) stillUseful.push(DOCUMENTED_STILL_USEFUL.tax_return);
+  }
   if (file.statedHousehold === "with_someone") stillUseful.push("other borrower details");
-  if (file.incomeType && !file.borrowerName) stillUseful.push("borrower");
   if (file.incomeType && !file.statedOtherReo) stillUseful.push("other real estate");
   if (file.statedOtherReo === "yes") stillUseful.push("other property details");
 

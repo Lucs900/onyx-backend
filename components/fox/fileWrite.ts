@@ -1125,11 +1125,22 @@ export type StillUsefulLabel =
   | "prior-year return"
   | "K-1 distributions";
 
+function wantsW2RemainderReturn(draft: FoxIntakeDraft) {
+  const income = draft.incomeType.value;
+  if (income !== "w2") return false;
+  if (receivedTaxReturnCount(draft) >= 1) return false;
+  if ((draft.skippedClasses ?? []).includes("tax_return")) return false;
+  return primaryInviteSequence(draft).every((kind) => inviteSatisfied(draft, kind));
+}
+
 export function stillUsefulLabels(draft: FoxIntakeDraft): StillUsefulLabel[] {
   const taxReturns = receivedTaxReturnCount(draft);
   const labels: StillUsefulLabel[] = missingExtractClasses(draft)
     .filter((item) => item !== "tax_return" || taxReturns < 1)
     .map(askClassLabel);
+  if (wantsW2RemainderReturn(draft) && !labels.includes(askClassLabel("tax_return") as StillUsefulLabel)) {
+    labels.push(askClassLabel("tax_return") as StillUsefulLabel);
+  }
   if (!deepenStillUseful(draft)) return labels;
   const income = draft.incomeType.value;
   if (
@@ -1335,14 +1346,14 @@ function incomeDocsPhrase(draft: FoxIntakeDraft) {
     return conventionalGuidelinePattern(
       "completeness",
       "income-docs-both",
-      "income docs (latest paystub, W-2, latest return, and prior-year)",
+      "income docs (latest paystub, W-2, and latest return)",
     );
   }
   if (income === "self-employed" || income === "other") {
     return conventionalGuidelinePattern(
       "completeness",
       "income-docs-self-employed",
-      "income docs (latest return, prior-year, and a YTD P&L if you have it)",
+      "income docs (latest return)",
     );
   }
   return conventionalGuidelinePattern("completeness", "income-docs", "income docs");
@@ -1394,15 +1405,19 @@ const LAYER2_COPY: Record<DocumentedStillUsefulId, { label: string; ask: string 
 };
 
 export function layer2Plan(draft: FoxIntakeDraft): StillUsefulItem[] {
-  return documentedStillUsefulIds(draft.productIntent ?? "", completenessFileFromDraft(draft)).map(
-    (id) => {
-      if (id === "mortgage_statement" && draft.statedOtherReo === "yes") {
-        return layer2Item(id, OTHER_REO_MORTGAGE_STATEMENTS, OTHER_REO_MORTGAGE_STATEMENTS);
-      }
-      const copy = LAYER2_COPY[id];
-      return layer2Item(id, copy.label, copy.ask);
-    },
-  );
+  const ids = documentedStillUsefulIds(draft.productIntent ?? "", completenessFileFromDraft(draft));
+  if (wantsW2RemainderReturn(draft) && !ids.includes("tax_return")) {
+    const addressAt = ids.indexOf("property-address");
+    if (addressAt >= 0) ids.splice(addressAt, 0, "tax_return");
+    else ids.push("tax_return");
+  }
+  return ids.map((id) => {
+    if (id === "mortgage_statement" && draft.statedOtherReo === "yes") {
+      return layer2Item(id, OTHER_REO_MORTGAGE_STATEMENTS, OTHER_REO_MORTGAGE_STATEMENTS);
+    }
+    const copy = LAYER2_COPY[id];
+    return layer2Item(id, copy.label, copy.ask);
+  });
 }
 
 export function nextStillUsefulItem(draft: FoxIntakeDraft): StillUsefulItem | undefined {
@@ -1539,6 +1554,22 @@ export function inviteSequence(draft: FoxIntakeDraft): DocInviteKind[] {
 }
 
 function inviteSatisfied(draft: FoxIntakeDraft, kind: DocInviteKind): boolean {
+  if (kind === "government_id") {
+    if ((draft.skippedClasses ?? []).includes("government_id")) return true;
+    return draft.documents.some((doc) => {
+      const received = receivedClassOf(doc);
+      const isId =
+        received === "government_id" ||
+        doc.extractClass === "government_id" ||
+        doc.slot === "id";
+      if (!isId) return false;
+      return (
+        doc.status === "extracted" ||
+        doc.status === "failed" ||
+        doc.status === "needs better copy"
+      );
+    });
+  }
   if (kind === "prior_year_return") {
     if (draft.priorYearSkipped) return true;
     let extracted = 0;

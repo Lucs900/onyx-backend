@@ -397,9 +397,9 @@ function identityAndIncomeConfirmedFromDocs(draft: FoxIntakeDraft) {
   return identityDocumented(draft) && incomeDocumented(draft);
 }
 
-function completenessDisplayCopy(state: CompletenessState, filled: number) {
+function completenessDisplayCopy(state: CompletenessState) {
   if (state === "documented") return "documented";
-  return `sketch · ${filled} of ${COMPLETENESS_GROUPS.length}`;
+  return "sketch";
 }
 
 export function fileCompleteness(draft: FoxIntakeDraft): CompletenessMap | null {
@@ -427,7 +427,7 @@ export function fileCompleteness(draft: FoxIntakeDraft): CompletenessMap | null 
     filled,
     total: COMPLETENESS_GROUPS.length,
     groups,
-    copy: completenessDisplayCopy(state, filled),
+    copy: completenessDisplayCopy(state),
   };
 }
 
