@@ -3068,7 +3068,7 @@ const emptied = afterProceed(afterIncome, {
   },
 });
 assert.deepEqual(stillUsefulSection(emptied)?.items, [
-  { id: "tax_return", label: "Latest return", hint: "Your latest return still helps this file." },
+  { id: "tax_return", label: "Latest return", ask: "Your latest return still helps this file." },
 ]);
 assert.equal(stillUsefulSection(emptied)?.empty, false);
 assert.match(layer2AskCopy(emptied), /latest return/i);
