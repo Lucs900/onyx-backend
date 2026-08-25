@@ -244,6 +244,8 @@ export type FoxIntakeDraft = {
   preferredAsked: boolean;
   correcting: FoxPrompt | null;
   correctingLine?: string | null;
+  /** After a notepad Edit, return here once that one field is answered or skipped. */
+  resumeAfterEdit?: FoxPrompt;
   scenario: ExplorerScenario | null;
   path?: IntakePath;
   productIntent?: ProductIntent;

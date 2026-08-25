@@ -222,6 +222,14 @@ function foxAskMessage(ask: {
   };
 }
 
+function dropFoxActions(messages: FoxMessage[]) {
+  return messages.map((message) =>
+    message.role === "fox" && message.actions?.length
+      ? { ...message, actions: undefined }
+      : message,
+  );
+}
+
 function actionKey(action: FoxAction) {
   return `${action.id}:${action.label}:${action.capture?.field ?? ""}`;
 }
@@ -667,11 +675,11 @@ export function AlwaysOnFox({
       setOpen(true);
       const prompt = structureFixPrompt(field, getFoxDraft());
       if (!prompt) return;
-      applyCapture({ field: "correct", value: prompt, line: field });
       skipPromptSync.current = true;
+      applyCapture({ field: "correct", value: prompt, line: field });
       const live = getFoxDraft();
       const ask = workspacePromptCopy(prompt, live);
-      commitMessages((prev) => [...prev, foxAskMessage(ask)]);
+      commitMessages((prev) => [...dropFoxActions(prev), foxAskMessage(ask)]);
     };
     const onExplain = (event: Event) => {
       const field = String((event as CustomEvent<{ field?: string }>).detail?.field ?? "").trim();
@@ -1043,14 +1051,14 @@ export function AlwaysOnFox({
 
   const editClientLine = (message: FoxMessage) => {
     if (!isStart || !message.edit) return;
+    skipPromptSync.current = true;
     applyCapture({
       field: "correct",
       value: message.edit,
       line: message.editLine ?? message.edit,
     });
-    skipPromptSync.current = true;
     const ask = workspacePromptCopy(message.edit, getFoxDraft());
-    commitMessages((prev) => [...prev, foxAskMessage(ask)]);
+    commitMessages((prev) => [...dropFoxActions(prev), foxAskMessage(ask)]);
   };
 
   const runAction = (action: FoxAction) => {

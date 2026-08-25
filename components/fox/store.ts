@@ -70,7 +70,9 @@ import {
   productIntentLabel,
   purposeForIntent,
   slugForIntent,
+  beginFileEdit,
   changePendingProposal,
+  settleResumeAfterCapture,
   withMatrixAfterAmount,
   workspacePrompt,
 } from "./workspace";
@@ -247,6 +249,9 @@ function normalize(value: unknown): FoxIntakeDraft {
     correctingLine: typeof raw.correctingLine === "string" && raw.correctingLine
       ? raw.correctingLine
       : null,
+    resumeAfterEdit: typeof raw.resumeAfterEdit === "string"
+      ? (raw.resumeAfterEdit as FoxPrompt)
+      : undefined,
     path: raw.path === "acr" || raw.path === "loan-only" ? raw.path : undefined,
     productIntent: normalizeProductIntent(raw.productIntent),
     jumboPurpose: raw.jumboPurpose === "buy" || raw.jumboPurpose === "refinance"
@@ -1267,6 +1272,14 @@ function openReviewOnFile(draft: FoxIntakeDraft) {
 }
 
 export function applyCapture(capture: Capture) {
+  const before = current;
+  const result = applyCaptureBody(capture);
+  const settled = settleResumeAfterCapture(before, capture, result);
+  if (settled === result) return result;
+  return commit(settled);
+}
+
+function applyCaptureBody(capture: Capture) {
   if (capture.field === "fullName" || capture.field === "email" || capture.field === "phone" || capture.field === "preferredContact") {
     if (capture.field === "email" && current.workspaceFlow && (current.pendingFinish || current.sampleAccepted)) {
       if (current.pendingFinish && looksLikeEmail(capture.value)) {
@@ -1617,9 +1630,9 @@ export function applyCapture(capture: Capture) {
     });
   }
   if (capture.field === "correct") {
+    const field = capture.value as FoxPrompt;
     return commit({
-      ...current,
-      correcting: capture.value as FoxPrompt,
+      ...beginFileEdit(current, field),
       correctingLine: capture.line ?? null,
       sections: unsetForPrompt(current.sections, capture.value),
     });
@@ -1822,6 +1835,7 @@ export function applyCapture(capture: Capture) {
       ...current,
       amountAsked: true,
       correcting: null,
+      correctingLine: null,
       loanAmountValue: undefined,
       scenario: current.scenario
         ? { ...current.scenario, loanAmount: undefined }

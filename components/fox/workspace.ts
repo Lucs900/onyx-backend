@@ -1893,6 +1893,7 @@ export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
     return "income";
   }
   if (draft.correcting) return draft.correcting;
+  if (draft.resumeAfterEdit) return draft.resumeAfterEdit;
   if (
     draft.docsHeld &&
     !draft.docsStarted &&
@@ -2449,6 +2450,19 @@ function replyToFundsAsk(
   capture?: Capture;
 } {
   if (isUnknownAmount(q)) {
+    if (draft.correcting === "amount" || draft.resumeAfterEdit) {
+      const nextDraft = {
+        ...draft,
+        amountAsked: true,
+        loanAmountValue: undefined,
+        correcting: null,
+        correctingLine: null,
+      };
+      return {
+        ...workspacePromptCopy(workspacePrompt(nextDraft), nextDraft),
+        capture: { field: "skip-amount" as const },
+      };
+    }
     return { text: "What’s the down payment or loan amount? A number works." };
   }
   const price = draft.propertyValueAmount;
@@ -3404,7 +3418,45 @@ function parseRefiDocumentsBareValue(
   };
 }
 
+/** Snapshot the live step, then reopen only the edited field. */
+export function beginFileEdit(draft: FoxIntakeDraft, field: FoxPrompt): FoxIntakeDraft {
+  const prior =
+    draft.resumeAfterEdit ??
+    workspacePrompt({
+      ...draft,
+      correcting: null,
+      correctingLine: undefined,
+      resumeAfterEdit: undefined,
+    });
+  return {
+    ...draft,
+    correcting: field,
+    resumeAfterEdit: prior !== field ? prior : draft.resumeAfterEdit,
+  };
+}
+
+/** Clear the resume pointer only when the borrower continues that prior step. */
+export function settleResumeAfterCapture(
+  before: FoxIntakeDraft,
+  capture: Capture,
+  next: FoxIntakeDraft,
+): FoxIntakeDraft {
+  if (capture.field === "correct" || !next.resumeAfterEdit) return next;
+  if (capture.field === "confirm-draft") {
+    return { ...next, resumeAfterEdit: undefined };
+  }
+  const acted = editPromptFromCapture(capture);
+  if (acted === next.resumeAfterEdit && before.correcting !== acted) {
+    return { ...next, resumeAfterEdit: undefined };
+  }
+  return next;
+}
+
 function draftAfterCapture(draft: FoxIntakeDraft, capture: Capture): FoxIntakeDraft {
+  return settleResumeAfterCapture(draft, capture, draftAfterCaptureBody(draft, capture));
+}
+
+function draftAfterCaptureBody(draft: FoxIntakeDraft, capture: Capture): FoxIntakeDraft {
   const next = { ...draft, correcting: null, correctingLine: null };
   if (capture.field === "path") return { ...next, path: capture.value };
   if (capture.field === "keep-line") return next;
@@ -3680,6 +3732,7 @@ function matrixReply(
   const volunteeredEvent = parseDeclarations(text);
   if (
     volunteeredEvent === "event" &&
+    !draft.correcting &&
     prompt !== "declarations" &&
     !draft.pendingProposal &&
     !draft.pendingConflict &&
@@ -3696,6 +3749,7 @@ function matrixReply(
   const volunteeredHousehold = parseHousehold(text);
   if (
     volunteeredHousehold &&
+    !draft.correcting &&
     prompt !== "household" &&
     !draft.pendingProposal &&
     !draft.pendingConflict &&
@@ -3711,6 +3765,7 @@ function matrixReply(
   const volunteeredOtherReo = parseOtherReo(text);
   if (
     volunteeredOtherReo &&
+    !draft.correcting &&
     prompt !== "other-reo" &&
     !draft.pendingProposal &&
     !draft.pendingConflict &&

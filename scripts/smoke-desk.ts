@@ -275,6 +275,7 @@ import {
   workspaceUpdateCopy,
   skipCurrentInvite,
   DOC_INVITE_COPY,
+  beginFileEdit,
 } from "../components/fox/workspace";
 import { HOME_FOX_LINE, HOME_IDLE_TEXT, homePathActions, homeProductActions } from "../components/fox/homeIdle";
 import { assertOnyxFixtures } from "./assert-onyx-fixtures";
@@ -9027,6 +9028,160 @@ async function extractAdapterSmoke() {
   assert.equal(classifiedK1.extractClass, "tax_return");
   assert.equal(classifiedK1.fields.k1_ordinary_income, "40000");
 }
+
+function assertNoSketchReplay(text: string) {
+  assert.doesNotMatch(
+    text,
+    /primary residence|second home|investment|estimated FICO|income earned|How long have you been at this job|What’s your name|other real estate|another borrower/i,
+  );
+}
+
+assert.equal(workspacePrompt(afterIncome), "documents");
+const handOffAsk = workspacePromptCopy("documents", afterIncome);
+assert.match(handOffAsk.text, /That’s the sketch/i);
+const loanEditHandOff = beginFileEdit({ ...afterIncome, correctingLine: "loan" }, "amount");
+assert.equal(loanEditHandOff.correcting, "amount");
+assert.equal(loanEditHandOff.resumeAfterEdit, "documents");
+assert.equal(workspacePrompt(loanEditHandOff), "amount");
+const skipLoanHandOff = workspaceReply("Skip", loanEditHandOff);
+assert.equal(skipLoanHandOff?.capture?.field, "skip-amount");
+assert.match(skipLoanHandOff?.text ?? "", /That’s the sketch/i);
+assertNoSketchReplay(skipLoanHandOff?.text ?? "");
+assert.equal(
+  workspacePrompt({
+    ...loanEditHandOff,
+    amountAsked: true,
+    loanAmountValue: undefined,
+    correcting: null,
+    correctingLine: null,
+  }),
+  "documents",
+);
+const typedLoanHandOff = workspaceReply("960000", loanEditHandOff);
+assert.equal(typedLoanHandOff?.capture?.field, "loanAmount");
+assert.match(typedLoanHandOff?.text ?? "", /That’s the sketch/i);
+assertNoSketchReplay(typedLoanHandOff?.text ?? "");
+
+const seOnTaxReturn = skipCurrentInvite({ ...seIncome, docsStarted: true });
+assert.equal(workspacePrompt(seOnTaxReturn), "documents");
+assert.equal(workspacePromptCopy("documents", seOnTaxReturn).text, DOC_INVITE_COPY.tax_return);
+const loanEditMidDocs = beginFileEdit({ ...seOnTaxReturn, correctingLine: "loan" }, "amount");
+assert.equal(loanEditMidDocs.resumeAfterEdit, "documents");
+assert.equal(workspacePrompt(loanEditMidDocs), "amount");
+assert.notEqual(workspacePrompt(loanEditMidDocs), "documents");
+const skipLoanMidDocs = workspaceReply("Skip", loanEditMidDocs);
+assert.equal(skipLoanMidDocs?.capture?.field, "skip-amount");
+assert.equal(skipLoanMidDocs?.text, DOC_INVITE_COPY.tax_return);
+assertNoSketchReplay(skipLoanMidDocs?.text ?? "");
+const typedLoanMidDocs = workspaceReply("960000", loanEditMidDocs);
+assert.equal(typedLoanMidDocs?.capture?.field, "loanAmount");
+assert.equal(typedLoanMidDocs?.text, DOC_INVITE_COPY.tax_return);
+
+const occEditMidDocs = beginFileEdit(seOnTaxReturn, "occupancy");
+assert.equal(occEditMidDocs.resumeAfterEdit, "documents");
+const secondHomeEdit = workspaceReply("Second home", occEditMidDocs);
+assert.equal(secondHomeEdit?.capture?.field, "occupancy");
+assert.equal(secondHomeEdit?.capture && "value" in secondHomeEdit.capture ? secondHomeEdit.capture.value : "", "second-home");
+assert.equal(secondHomeEdit?.text, DOC_INVITE_COPY.tax_return);
+assertNoSketchReplay(secondHomeEdit?.text ?? "");
+const afterSecondHome = {
+  ...seOnTaxReturn,
+  occupancyChoice: { ...seOnTaxReturn.occupancyChoice, value: "second-home" },
+  occupancyAsked: true,
+};
+assert.equal(
+  fileSummaryFacts(afterSecondHome).find((fact) => fact.id === "occupancy")?.value,
+  "Second home",
+);
+assert.ok(
+  !fileSummaryFacts(afterSecondHome).some((fact) => fact.id === "occupancy" && fact.value === "Primary"),
+);
+
+const nameEditMidDocs = beginFileEdit(seOnTaxReturn, "borrower-name");
+assert.equal(nameEditMidDocs.resumeAfterEdit, "documents");
+const nameEditReply = workspaceReply("Ada Lovelace", nameEditMidDocs);
+assert.equal(nameEditReply?.capture?.field, "borrowerName");
+assert.equal(nameEditReply?.text, DOC_INVITE_COPY.tax_return);
+assertNoSketchReplay(nameEditReply?.text ?? "");
+
+const jobEditMidDocs = beginFileEdit(
+  { ...afterIncome, docsStarted: true, statedTimeOnJob: 36, statedTimeOnJobLabel: "3 years", timeOnJobAsked: true },
+  "time-on-job",
+);
+assert.equal(jobEditMidDocs.resumeAfterEdit, "documents");
+const jobEditReply = workspaceReply("18 months", jobEditMidDocs);
+assert.equal(jobEditReply?.capture?.field, "statedTimeOnJob");
+assert.equal(workspacePromptCopy("documents", { ...afterIncome, docsStarted: true }).text, DOC_INVITE_COPY.government_id);
+assert.match(jobEditReply?.text ?? "", /government ID|Start with ID/i);
+
+const handOffNoHousehold = draft({
+  ...afterIncome,
+  householdAsked: false,
+  statedHousehold: undefined,
+});
+assert.equal(workspacePrompt(handOffNoHousehold), "documents");
+const loanEditNoHousehold = beginFileEdit(handOffNoHousehold, "amount");
+assert.equal(loanEditNoHousehold.resumeAfterEdit, "documents");
+assert.equal(
+  workspacePrompt({
+    ...loanEditNoHousehold,
+    amountAsked: true,
+    loanAmountValue: undefined,
+    correcting: null,
+    correctingLine: null,
+  }),
+  "documents",
+);
+
+resetWorkspaceForEntry("acr", "buy");
+applyCapture({ field: "occupancy", value: "primary" });
+applyCapture({ field: "timeline", value: "ready-now" });
+applyCapture({ field: "propertyValue", value: "850000" });
+applyCapture({ field: "propose-funds", value: "170000:680000" });
+applyCapture({ field: "accept-proposal" });
+applyCapture({ field: "creditRange", value: "760+" });
+applyCapture({ field: "incomeType", value: "w2" });
+applyCapture({ field: "skip-time-on-job" });
+applyCapture({ field: "skip-monthly-debts" });
+applyCapture({ field: "skip-available-assets" });
+applyCapture({ field: "skip-property-type" });
+applyCapture({ field: "skip-current-housing" });
+applyCapture({ field: "skip-declarations" });
+applyCapture({ field: "skip-borrower-name" });
+applyCapture({ field: "skip-other-reo" });
+assert.equal(workspacePrompt(getFoxDraft()), "documents");
+assert.equal(getFoxDraft().householdAsked, undefined);
+const storeHandOff = workspacePromptCopy("documents", getFoxDraft()).text;
+applyCapture({ field: "correct", value: "amount", line: "loan" });
+assert.equal(getFoxDraft().correcting, "amount");
+assert.equal(getFoxDraft().resumeAfterEdit, "documents");
+assert.equal(workspacePrompt(getFoxDraft()), "amount");
+applyCapture({ field: "skip-amount" });
+assert.equal(getFoxDraft().correcting, null);
+assert.equal(getFoxDraft().resumeAfterEdit, "documents");
+assert.equal(workspacePrompt(getFoxDraft()), "documents");
+assert.equal(workspacePromptCopy("documents", getFoxDraft()).text, storeHandOff);
+assert.equal(getFoxDraft().occupancyChoice.value, "primary");
+assert.equal(getFoxDraft().creditBand, "760+");
+assert.equal(getFoxDraft().incomeType.value, "w2");
+assert.equal(getFoxDraft().borrowerNameAsked, true);
+assert.equal(getFoxDraft().otherReoAsked, true);
+assert.notEqual(workspacePrompt(getFoxDraft()), "occupancy");
+assert.notEqual(workspacePrompt(getFoxDraft()), "credit");
+assert.notEqual(workspacePrompt(getFoxDraft()), "income");
+assert.notEqual(workspacePrompt(getFoxDraft()), "household");
+applyCapture({ field: "correct", value: "occupancy", line: "occupancy" });
+assert.equal(getFoxDraft().resumeAfterEdit, "documents");
+applyCapture({ field: "occupancy", value: "second-home" });
+assert.equal(getFoxDraft().occupancyChoice.value, "second-home");
+assert.equal(workspacePrompt(getFoxDraft()), "documents");
+assert.equal(
+  fileSummaryFacts(getFoxDraft()).find((fact) => fact.id === "occupancy")?.value,
+  "Second home",
+);
+applyCapture({ field: "start-docs" });
+assert.equal(getFoxDraft().resumeAfterEdit, undefined);
+assert.equal(workspacePrompt(getFoxDraft()), "household");
 
 extractAdapterSmoke()
   .then(() => {
