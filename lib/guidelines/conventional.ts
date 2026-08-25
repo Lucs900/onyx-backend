@@ -878,21 +878,6 @@ export function completeness(
   }
   if (!received.has("employer_business")) stillUseful.push("employer/business");
   if (wantsSeYears(file.incomeType) && !received.has("se_years")) stillUseful.push("SE years");
-  if (file.incomeType && file.statedMonthlyDebts == null) stillUseful.push("stated monthly debts");
-  if (file.incomeType && file.statedAvailableAssets == null) stillUseful.push("stated available assets");
-  if (file.incomeType && !file.propertyType) stillUseful.push("property type");
-  if (
-    (file.incomeType === "w2" ||
-      file.incomeType === "w2_base" ||
-      file.incomeType === "w2_variable" ||
-      file.incomeType === "both" ||
-      file.incomeType === "w2_plus_se") &&
-    file.statedTimeOnJob == null
-  ) {
-    stillUseful.push("time on job");
-  }
-  if (file.incomeType && file.statedCurrentHousing == null) stillUseful.push("current housing");
-  if (file.incomeType && !file.statedDeclaration) stillUseful.push("declarations");
   if (file.incomeType && !file.statedHousehold) stillUseful.push("household");
   if (file.statedHousehold === "with_someone") stillUseful.push("other borrower details");
   if (file.incomeType && !file.borrowerName) stillUseful.push("borrower");

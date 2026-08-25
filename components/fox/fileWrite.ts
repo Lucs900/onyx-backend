@@ -34,11 +34,9 @@ import {
   type CompletenessFile,
   type DocumentedStillUsefulId,
 } from "@/lib/guidelines/conventional";
-import { debtsSettled } from "./monthlyDebts";
 import {
   STATED_AVAILABLE_ASSETS_FIELD,
   SUGGESTED_ASSETS_EXTRACT_NOTE,
-  assetsSettled,
   availableAssetsConflictActions,
   proposeExtractedAvailableAssets,
 } from "./availableAssets";
@@ -47,7 +45,6 @@ import {
   SUGGESTED_PROPERTY_NOTE,
   isPropertyAddressField,
   propertyAddressConflictActions,
-  propertyTypeSettled,
 } from "./propertyType";
 import {
   HIRE_DATE_FIELD,
@@ -58,16 +55,13 @@ import {
   parseHireDate,
   proposeExtractedTimeOnJob,
   timeOnJobConflictActions,
-  timeOnJobSettled,
 } from "./timeOnJob";
 import {
   STATED_CURRENT_HOUSING_FIELD,
   SUGGESTED_HOUSING_NOTE,
   currentHousingConflictActions,
-  currentHousingSettled,
   proposeExtractedCurrentHousing,
 } from "./currentHousing";
-import { declarationsSettled } from "./declarations";
 import {
   BORROWER_NAME_FIELD,
   borrowerNameConflictActions,
@@ -1518,16 +1512,30 @@ export const DOC_INVITE_COPY: Record<DocInviteKind, string> = {
   prior_year_return: "A prior-year return helps me see if last year was stable. Have one?",
 };
 
-export function inviteSequence(draft: FoxIntakeDraft): DocInviteKind[] {
+/** ID + this borrower’s income package. Prior-year / second-year sit on remainder. */
+export function primaryInviteSequence(draft: FoxIntakeDraft): DocInviteKind[] {
   const income = draft.incomeType.value;
   const steps: DocInviteKind[] = ["government_id"];
   if (income === "w2" || income === "both") {
     steps.push("paystub", "w2");
   }
   if (income === "self-employed" || income === "other" || income === "both") {
-    steps.push("tax_return", "prior_year_return");
+    steps.push("tax_return");
   }
   return steps;
+}
+
+export function remainderInviteSequence(draft: FoxIntakeDraft): DocInviteKind[] {
+  const income = draft.incomeType.value;
+  const steps: DocInviteKind[] = [];
+  if (income === "self-employed" || income === "other" || income === "both") {
+    steps.push("prior_year_return");
+  }
+  return steps;
+}
+
+export function inviteSequence(draft: FoxIntakeDraft): DocInviteKind[] {
+  return [...primaryInviteSequence(draft), ...remainderInviteSequence(draft)];
 }
 
 function inviteSatisfied(draft: FoxIntakeDraft, kind: DocInviteKind): boolean {
@@ -1563,7 +1571,7 @@ export function primaryDocPassFinished(draft: FoxIntakeDraft) {
     return true;
   }
   if (!draft.incomeType.value && !draft.incomeAsked) return false;
-  return inviteSequence(draft).every((kind) => inviteSatisfied(draft, kind));
+  return primaryInviteSequence(draft).every((kind) => inviteSatisfied(draft, kind));
 }
 
 export function offeringDocStart(draft: FoxIntakeDraft) {
@@ -1578,12 +1586,6 @@ export function offeringDocStart(draft: FoxIntakeDraft) {
 export function nextDocInvite(draft: FoxIntakeDraft): DocInviteKind | null {
   if (draft.sampleAccepted) return null;
   if (!draft.incomeType.value && !draft.incomeAsked) return null;
-  if (!debtsSettled(draft)) return null;
-  if (!assetsSettled(draft)) return null;
-  if (!propertyTypeSettled(draft)) return null;
-  if (!timeOnJobSettled(draft)) return null;
-  if (!currentHousingSettled(draft)) return null;
-  if (!declarationsSettled(draft)) return null;
   if (!borrowerNameSettled(draft)) return null;
   if (!otherReoSettled(draft)) return null;
   if (draft.pendingProposal || draft.pendingConflict) return null;
@@ -1594,7 +1596,7 @@ export function nextDocInvite(draft: FoxIntakeDraft): DocInviteKind | null {
 }
 
 function hasRemainingPrimaryInvites(draft: FoxIntakeDraft) {
-  return inviteSequence(draft).some((kind) => !inviteSatisfied(draft, kind));
+  return primaryInviteSequence(draft).some((kind) => !inviteSatisfied(draft, kind));
 }
 
 export function skipCurrentInvite(draft: FoxIntakeDraft): FoxIntakeDraft {

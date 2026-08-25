@@ -123,7 +123,6 @@ import {
 } from "./qualifyingIncome";
 import {
   applyMortgageSubtract,
-  debtsSettled,
   isSkipMonthlyDebtsText,
   isStatedDebtsConfirmPending,
   mentionsSubjectMortgage,
@@ -144,7 +143,6 @@ import {
 import {
   STATED_AVAILABLE_ASSETS_FIELD,
   SUGGESTED_ASSETS_NOTE,
-  assetsSettled,
   availableAssetsAskCopy,
   availableAssetsConfirmActions,
   availableAssetsConfirmCopy,
@@ -171,7 +169,6 @@ import {
   propertyTypeConfirmActions,
   propertyTypeConfirmCopy,
   propertyTypeLabel,
-  propertyTypeSettled,
   proposePropertyType,
   proposeSubjectAddress,
   skipPropertyType,
@@ -193,7 +190,6 @@ import {
   timeOnJobAskCopy,
   timeOnJobConfirmActions,
   timeOnJobConfirmCopy,
-  timeOnJobSettled,
 } from "./timeOnJob";
 import {
   CURRENT_HOUSING_ASK,
@@ -202,7 +198,6 @@ import {
   currentHousingAskCopy,
   currentHousingConfirmActions,
   currentHousingConfirmCopy,
-  currentHousingSettled,
   isCurrentHousingConfirmPending,
   isSkipCurrentHousingText,
   parseCurrentHousingAmount,
@@ -219,7 +214,6 @@ import {
   declarationsConfirmActions,
   declarationsConfirmCopy,
   declarationsLabel,
-  declarationsSettled,
   isDeclarationsConfirmPending,
   isSkipDeclarationTimingText,
   isSkipDeclarationsText,
@@ -1930,22 +1924,15 @@ export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
   }
   if (!creditSettled(draft)) return "credit";
   if (!incomeSettled(draft)) return "income";
-  if (!timeOnJobSettled(draft)) return "time-on-job";
-  if (!yearsInBusinessSettled(draft)) return "years-in-business";
-  if (!debtsSettled(draft)) return "debts";
-  if (!assetsSettled(draft)) return "assets";
-  if (!propertyTypeSettled(draft)) return "property-type";
-  if (!currentHousingSettled(draft)) return "current-housing";
-  if (!declarationsSettled(draft)) {
-    return needsDeclarationTiming(draft) ? "declaration-timing" : "declarations";
-  }
-  if (!borrowerNameSettled(draft)) return "borrower-name";
+  if (needsDeclarationTiming(draft)) return "declaration-timing";
   if (!otherReoSettled(draft)) return "other-reo";
+  if (!borrowerNameSettled(draft)) return "borrower-name";
   if (nextDocInvite(draft) && !primaryDocPassFinished(draft)) return "documents";
   if (primaryDocPassFinished(draft) && !householdSettled(draft)) return "household";
   if (primaryDocPassFinished(draft) && !coborrowerNameSettled(draft)) return "coborrower-name";
   if (!draft.sampleAccepted && draft.awaitingYearsInBusiness) return "documents";
   if (nextDocInvite(draft)) return "documents";
+  if (primaryDocPassFinished(draft) && !yearsInBusinessSettled(draft)) return "years-in-business";
   if (!draft.sampleAccepted) return canLooksRight(draft) ? "review" : "amount";
   return "done";
 }
