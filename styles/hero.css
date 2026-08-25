@@ -62,9 +62,11 @@
   .membership-hero__inner {
     display: grid;
     grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto auto auto minmax(24px, 1fr) auto;
     column-gap: 12px;
     row-gap: 12px;
     align-items: start;
+    min-height: calc(100dvh - var(--nav-height) + 140px);
     padding-top: 20px;
     padding-bottom: 8px;
   }
@@ -101,11 +103,11 @@
 
   .membership-hero__pass {
     grid-column: 1 / -1;
-    grid-row: 4;
+    grid-row: 5;
     display: flex;
     align-items: flex-start;
     justify-content: center;
-    margin: 48px 0 0;
+    margin: 24px 0 0;
     padding-top: 0;
   }
 
@@ -129,6 +131,7 @@
   }
 
   html.home-scrolled .membership-hero__inner {
+    min-height: 0;
     padding-top: 0;
     padding-bottom: 0;
     row-gap: 0;
