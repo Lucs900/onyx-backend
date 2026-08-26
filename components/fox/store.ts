@@ -73,6 +73,7 @@ import {
   beginFileEdit,
   changePendingProposal,
   settleResumeAfterCapture,
+  persistGuidelineNote,
   withMatrixAfterAmount,
   workspacePrompt,
 } from "./workspace";
@@ -1071,8 +1072,7 @@ export function addNote(text: string) {
   const trimmed = text.trim();
   if (!trimmed) return current;
   return commit({
-    ...current,
-    notes: [...current.notes, trimmed],
+    ...persistGuidelineNote(current, trimmed),
     sections: { ...current.sections, notes: false },
   });
 }

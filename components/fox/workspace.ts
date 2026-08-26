@@ -64,6 +64,7 @@ import {
   layer2AskActions,
   stillUsefulVisible,
   shortListSpeak,
+  persistCondoNeedsReview,
 } from "./fileWrite";
 import {
   SUGGESTED_NOTE,
@@ -1700,11 +1701,17 @@ function isFreeTextAtGate(text: string) {
   );
 }
 
-function persistGuidelineNote(draft: FoxIntakeDraft, text: string): FoxIntakeDraft {
+export function persistGuidelineNote(draft: FoxIntakeDraft, text: string): FoxIntakeDraft {
   const trimmed = text.trim();
   if (!trimmed) return draft;
-  if (draft.notes.some((note) => note === trimmed)) return draft;
-  return { ...draft, notes: [...draft.notes, trimmed] };
+  const withNote = draft.notes.some((note) => note === trimmed)
+    ? draft
+    : { ...draft, notes: [...draft.notes, trimmed] };
+  const intent = interpretQuestion(trimmed);
+  if (intent?.topicId === "condo.needs_review") {
+    return persistCondoNeedsReview(withNote);
+  }
+  return withNote;
 }
 
 function freeTextAnswer(input: string, draft: FoxIntakeDraft) {

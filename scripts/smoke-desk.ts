@@ -291,6 +291,7 @@ import {
   workspacePrompt,
   workspacePromptCopy,
   workspaceReply,
+  persistGuidelineNote,
   docReactionAsk,
   nextFoxAsk,
   shouldDeferStillUsefulAsk,
@@ -9911,14 +9912,36 @@ const newCondoAsk = workspaceReply("it's a new construction condo", investBuy);
 assert.match(newCondoAsk?.text ?? "", /HOA questionnaire or condo project docs/);
 assert.doesNotMatch(newCondoAsk?.text ?? "", /I can answer from this file/);
 assert.equal(guidelineCaution(investBuy), INVESTMENT_CAUTION);
-const newCondoFile = draft({
+assert.ok((newCondoAsk?.actions ?? []).some((item) => item.label === "Upload this" || item.label === "Skip" || item.label === "Start with ID"));
+const investBuySfr = draft({
   ...investBuy,
-  notes: [...investBuy.notes, "it's a new construction condo"],
+  propertyType: "sfr",
+  propertyTypeAsked: true,
 });
+assert.equal(guidelineCaution(investBuySfr), INVESTMENT_CAUTION);
 assert.ok(
-  stillUsefulSection(newCondoFile)?.items.some((item) => item.label === CONDO_HOA_WOULD_HELP || item.ask === CONDO_HOA_WOULD_HELP),
+  !stillUsefulSection(investBuySfr)?.items.some(
+    (item) => item.label === CONDO_HOA_WOULD_HELP || item.ask === CONDO_HOA_WOULD_HELP,
+  ),
 );
-assert.equal(guidelineCaution(newCondoFile), INVESTMENT_CAUTION);
+const newCondoAskSfr = workspaceReply("it's a new construction condo", investBuySfr);
+assert.match(newCondoAskSfr?.text ?? "", /HOA questionnaire or condo project docs/);
+assert.doesNotMatch(newCondoAskSfr?.text ?? "", /I can answer from this file/);
+assert.equal(newCondoAskSfr?.capture?.field, "note");
+assert.ok((newCondoAskSfr?.actions ?? []).some((item) => item.label === "Upload this" || item.label === "Skip" || item.label === "Start with ID"));
+const afterNewCondo = persistGuidelineNote(investBuySfr, "it's a new construction condo");
+assert.equal(afterNewCondo.facts?.condo_needs_review?.value, "needs_review");
+assert.equal(afterNewCondo.propertyType, "sfr");
+assert.ok(
+  stillUsefulSection(afterNewCondo)?.items.some((item) => item.label === CONDO_HOA_WOULD_HELP || item.ask === CONDO_HOA_WOULD_HELP),
+);
+assert.equal(guidelineCaution(afterNewCondo), INVESTMENT_CAUTION);
+assert.equal(
+  previewFacts(afterNewCondo).filter((fact) => fact.id === "caution").length,
+  previewFacts(investBuySfr).filter((fact) => fact.id === "caution").length,
+);
+assert.ok(previewFacts(afterNewCondo).some((fact) => fact.id === "caution" && fact.value === INVESTMENT_CAUTION));
+assert.ok(!previewFacts(afterNewCondo).some((fact) => fact.id === "caution" && fact.value === CONDO_HOA_WOULD_HELP));
 
 extractAdapterSmoke()
   .then(() => {
