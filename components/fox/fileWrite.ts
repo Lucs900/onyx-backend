@@ -97,6 +97,7 @@ import {
   isFileNetConfirmPending,
   isOtherPropertyMortgageExtract,
   maybeProposeOtherReoFileNet,
+  otherReoFileNetNeedsStatement,
   otherReoSettled,
   proposeExtractedOtherPropertyPayment,
   proposeExtractedOtherReo,
@@ -1540,7 +1541,7 @@ function fileGuidelineSignals(draft: FoxIntakeDraft): Partial<CompletenessFile> 
     hasScheduleE: draftHasScheduleE(draft),
     hasLease: draftHasLease(draft),
     unsupportedRental: draftHasUnsupportedRental(draft),
-    rentalNeedsStatement: draftNeedsReoStatement(draft),
+    rentalNeedsStatement: draftNeedsReoStatement(draft) || otherReoFileNetNeedsStatement(draft),
   };
 }
 
@@ -1688,7 +1689,14 @@ function otherReoStillUsefulItems(draft: FoxIntakeDraft): StillUsefulItem[] {
       .map((doc) => doc.extractClass as string),
   );
   const items: StillUsefulItem[] = [];
-  if (!received.has("mortgage_statement") && !layer2Plan(draft).some((item) => item.id === "mortgage_statement")) {
+  const alreadyAsking = layer2Plan(draft).some(
+    (item) => item.label === OTHER_REO_MORTGAGE_STATEMENTS || item.id === "mortgage_statement",
+  );
+  if (
+    !alreadyAsking &&
+    ((!received.has("mortgage_statement") && !layer2Plan(draft).some((item) => item.id === "mortgage_statement")) ||
+      otherReoFileNetNeedsStatement(draft))
+  ) {
     items.push(
       layer2Item(
         "other-reo-mortgage",

@@ -113,6 +113,7 @@ import {
   isFileNetField,
   isStatedOtherReo,
   maybeProposeOtherReoFileNet,
+  otherReoFileNetNeedsStatement,
   otherPropertyPaymentConfirmCopy,
   otherReoConfirmCopy,
   proposeExtractedOtherReo,
@@ -638,7 +639,9 @@ export function factsFromDraft(draft: FoxIntakeDraft): CompletenessFile {
     ...(draft.statedOtherReo ? { statedOtherReo: draft.statedOtherReo } : {}),
     ...(draft.suggestedNetRental != null ? { suggestedNetRental: draft.suggestedNetRental } : {}),
     ...(draft.rentalNetRole ? { rentalNetRole: draft.rentalNetRole } : {}),
-    ...(draftNeedsReoStatement(draft) ? { rentalNeedsStatement: true } : {}),
+    ...((draftNeedsReoStatement(draft) || otherReoFileNetNeedsStatement(draft))
+      ? { rentalNeedsStatement: true }
+      : {}),
     ...(suggestedMonthlyIncome != null ? { suggestedMonthlyIncome } : {}),
     docsSkipped: Boolean(
       draft.documentsSkipped || draft.docsHeld || (draft.skippedClasses?.length ?? 0) > 0,
@@ -797,7 +800,8 @@ export function proposalAskCopy(proposal: FactProposal) {
     return otherPropertyPaymentConfirmCopy(Number(proposal.value) || 0);
   }
   if (isFileNetField(proposal.field)) {
-    return fileNetConfirmCopy(Number(proposal.value)) ?? "";
+    const complete = Number(proposal.extras?.find((item) => item.field === "file_net_complete_count")?.value ?? 1);
+    return fileNetConfirmCopy({ net: Number(proposal.value), completeCount: complete }) ?? "";
   }
   if (proposal.field === STATED_OTHER_REO_FIELD && isStatedOtherReo(proposal.value)) {
     return otherReoConfirmCopy(proposal.value);

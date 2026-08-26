@@ -1430,8 +1430,9 @@ function liveProposalAsk(
     };
   }
   if (isFileNetField(proposal.field)) {
+    const complete = Number(proposal.extras?.find((item) => item.field === "file_net_complete_count")?.value ?? 1);
     return {
-      text: fileNetConfirmCopy(Number(proposal.value)) ?? "",
+      text: fileNetConfirmCopy({ net: Number(proposal.value), completeCount: complete }) ?? "",
       actions: otherReoConfirmActions(),
     };
   }

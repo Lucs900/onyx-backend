@@ -255,12 +255,17 @@ export function netOtherPropertyFile(rows: OtherPropertyFileRowInput[]): OtherPr
   };
 }
 
-export function fileNetConfirmCopy(net: number): string | null {
-  if (!Number.isFinite(net)) return null;
-  const shown = rentalMoneyShown(net);
+export function fileNetConfirmCopy(opts: { net: number; completeCount: number }): string | null {
+  if (!Number.isFinite(opts.net)) return null;
+  const shown = rentalMoneyShown(opts.net);
   if (!shown.includes("$")) return null;
-  const liability = net < 0 ? " That would count as a monthly liability." : "";
-  return `Suggested File net is ${shown} · not underwritten.${liability} I’m using ${FILE_NET_METHOD}. Use this?`;
+  if (opts.completeCount >= 2) {
+    return `Suggested net rental is ${shown} · not underwritten. I’m using the other properties I can net. Use this?`;
+  }
+  if (opts.net < 0) {
+    return `Suggested net rental is ${shown} · not underwritten. That would count as a monthly liability. I’m using 75% of the lease minus this property’s PITI. Use this?`;
+  }
+  return `Suggested net rental is ${shown} · not underwritten. I’m using 75% of the lease minus this property’s PITI. Use this?`;
 }
 
 /** NOO only. net_i = grossMonthly_i - pitia_i. Aggregate complete properties only. */

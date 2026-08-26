@@ -303,8 +303,13 @@ export function appendOtherReoRow(
   return { ...draft, otherProperties: [...existing, incoming] };
 }
 
-export function otherReoFileNetProposal(net: number): FactProposal | null {
-  const copy = fileNetConfirmCopy(net);
+export function otherReoFileNetNeedsStatement(draft: FoxIntakeDraft) {
+  if (draft.statedOtherReo !== "yes") return false;
+  return draftOtherPropertyFileNet(draft).rows.some((row) => row.rent != null && row.piti == null);
+}
+
+export function otherReoFileNetProposal(net: number, completeCount: number): FactProposal | null {
+  const copy = fileNetConfirmCopy({ net, completeCount });
   if (!copy) return null;
   const role = rentalNetRoleOf(net);
   return {
@@ -313,7 +318,10 @@ export function otherReoFileNetProposal(net: number): FactProposal | null {
     label: "File net",
     kind: "computed",
     note: SUGGESTED_FILE_NET_NOTE,
-    extras: [{ field: FILE_NET_ROLE_FIELD, value: role, label: "File net role" }],
+    extras: [
+      { field: FILE_NET_ROLE_FIELD, value: role, label: "File net role" },
+      { field: "file_net_complete_count", value: String(completeCount), label: "Netted other properties" },
+    ],
   };
 }
 
@@ -352,7 +360,7 @@ export function maybeProposeOtherReoFileNet(draft: FoxIntakeDraft): FoxIntakeDra
   if (isFileNetConfirmPending(draft) && Number(draft.pendingProposal?.value) === result.fileNet) {
     return draft;
   }
-  const proposal = otherReoFileNetProposal(result.fileNet);
+  const proposal = otherReoFileNetProposal(result.fileNet, result.completeCount);
   if (!proposal) return draft;
   return { ...draft, pendingProposal: proposal, fileNetAsked: undefined };
 }
