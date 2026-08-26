@@ -26,13 +26,24 @@ export function storageStatus(): { storage: "ready" | "blocked"; reason?: string
   return { storage: "blocked", reason: STORAGE_BLOCKED };
 }
 
-export async function readPrivateBytes(bytesRef: string) {
-  const result = await get(bytesRef, { access: "private" });
-  if (!result || result.statusCode !== 200 || !result.stream) {
-    throw new Error("Blob not found");
+function blobRefsToTry(bytesRef: string): string[] {
+  const trimmed = bytesRef.trim();
+  if (!trimmed) return [];
+  const refs = [trimmed];
+  try {
+    if (/^https?:\/\//i.test(trimmed)) {
+      const path = new URL(trimmed).pathname.replace(/^\//, "");
+      if (path && path !== trimmed) refs.push(path);
+    }
+  } catch {
+    // pathname only
   }
+  return refs;
+}
+
+async function bufferBlobStream(stream: ReadableStream<Uint8Array>) {
   const chunks: Uint8Array[] = [];
-  const reader = result.stream.getReader();
+  const reader = stream.getReader();
   for (;;) {
     const { done, value } = await reader.read();
     if (done) break;
@@ -45,11 +56,35 @@ export async function readPrivateBytes(bytesRef: string) {
     bytes.set(chunk, offset);
     offset += chunk.length;
   }
-  return {
-    bytes,
-    contentType: result.blob.contentType || "application/octet-stream",
-    pathname: result.blob.pathname || bytesRef,
-  };
+  return bytes;
+}
+
+export async function readPrivateBytes(bytesRef: string) {
+  const refs = blobRefsToTry(bytesRef);
+  let lastError: Error | null = null;
+  for (const ref of refs) {
+    try {
+      const result = await get(ref, { access: "private", useCache: false });
+      if (!result || result.statusCode !== 200 || !result.stream) {
+        lastError = new Error("Blob not found");
+        continue;
+      }
+      const bytes = await bufferBlobStream(result.stream);
+      if (!bytes.length) {
+        lastError = new Error("Blob empty");
+        continue;
+      }
+      return {
+        bytes,
+        contentType: result.blob.contentType || "application/octet-stream",
+        pathname: result.blob.pathname || ref,
+        url: result.blob.url || (/^https?:\/\//i.test(ref) ? ref : undefined),
+      };
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error(String(error));
+    }
+  }
+  throw lastError ?? new Error("Blob not found");
 }
 
 export async function putPrivateBytes(

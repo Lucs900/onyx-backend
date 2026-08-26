@@ -22,63 +22,127 @@ function decodeInlineBytes(raw?: string): Uint8Array | null {
   }
 }
 
-export async function POST(request: Request) {
-  let body: { bytesRef?: string; name?: string; type?: string; bytes?: string };
-  try {
-    body = (await request.json()) as { bytesRef?: string; name?: string; type?: string; bytes?: string };
-  } catch {
-    return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
-  }
+function isBlobRef(value: string) {
+  if (!value || value.includes("..")) return false;
+  if (/^https?:\/\//i.test(value)) return /\.blob\.vercel-storage\.com\b/i.test(value);
+  return !value.startsWith("http");
+}
 
+async function bytesFromMultipart(request: Request): Promise<{
+  bytes: Uint8Array;
+  name: string;
+  type: string;
+  source: "file" | "blob";
+} | null> {
+  const form = await request.formData();
+  const uploaded = form.get("file");
+  const name = String(form.get("name") ?? (uploaded instanceof File ? uploaded.name : "")).trim();
+  const type = String(form.get("type") ?? (uploaded instanceof File ? uploaded.type : "")).trim();
+  const bytesRef = String(form.get("bytesRef") ?? "").trim();
+  if (uploaded instanceof Blob && uploaded.size > 0) {
+    return {
+      bytes: new Uint8Array(await uploaded.arrayBuffer()),
+      name,
+      type,
+      source: "file",
+    };
+  }
+  if (isBlobRef(bytesRef)) {
+    const stored = await readPrivateBytes(bytesRef);
+    return {
+      bytes: stored.bytes,
+      name: name || stored.pathname,
+      type: type || stored.contentType,
+      source: "blob",
+    };
+  }
+  return null;
+}
+
+async function bytesFromJson(body: {
+  bytesRef?: string;
+  name?: string;
+  type?: string;
+  bytes?: string;
+}): Promise<{
+  bytes: Uint8Array;
+  name: string;
+  type: string;
+  source: "file" | "inline" | "blob";
+} | null> {
   const inline = decodeInlineBytes(body.bytes);
-  const bytesRef = typeof body.bytesRef === "string" ? body.bytesRef.trim() : "";
-  if (!inline) {
-    if (storageStatus().storage === "blocked" && !process.env.BLOB_READ_WRITE_TOKEN && !process.env.BLOB_STORE_ID) {
-      return NextResponse.json(
-        { error: STORAGE_BLOCKED, code: "STORAGE_BLOCKED" },
-        { status: 503 },
-      );
-    }
-    if (!bytesRef || bytesRef.includes("..") || bytesRef.startsWith("http")) {
-      return NextResponse.json({ error: "Missing bytesRef" }, { status: 400 });
-    }
+  const name = typeof body.name === "string" ? body.name : "";
+  const type = typeof body.type === "string" ? body.type : "";
+  if (inline) {
+    return { bytes: inline, name, type, source: "inline" };
   }
+  const bytesRef = typeof body.bytesRef === "string" ? body.bytesRef.trim() : "";
+  if (!isBlobRef(bytesRef)) return null;
+  const stored = await readPrivateBytes(bytesRef);
+  return {
+    bytes: stored.bytes,
+    name: name || stored.pathname,
+    type: type || stored.contentType,
+    source: "blob",
+  };
+}
 
+function extractJson(
+  extracted: Awaited<ReturnType<typeof classifyAndExtract>>,
+  source: "file" | "inline" | "blob",
+) {
+  const failed = Boolean(extracted.failed || extracted.warnings.includes("failed"));
+  const extractClass = extracted.extractClass;
+  return {
+    class: extractClass,
+    confidence: extracted.confidence,
+    fields: extracted.fields,
+    warnings: extracted.warnings,
+    slot: slotForExtractClass(extractClass),
+    source,
+    note: failed
+      ? FAILED_READ_NOTE
+      : extracted.extractClass === "other" || !Object.keys(extracted.fields).length
+        ? RECEIVED_NOTE
+        : undefined,
+    failed,
+  };
+}
+
+export async function POST(request: Request) {
+  const contentType = request.headers.get("content-type") || "";
   try {
-    const stored = inline
-      ? null
-      : await readPrivateBytes(bytesRef);
-    const bytes = inline ?? stored?.bytes;
-    if (!bytes) {
-      return NextResponse.json({ error: "Missing bytesRef" }, { status: 400 });
+    let loaded: { bytes: Uint8Array; name: string; type: string; source: "file" | "inline" | "blob" } | null =
+      null;
+    if (contentType.includes("multipart/form-data")) {
+      loaded = await bytesFromMultipart(request);
+    } else {
+      let body: { bytesRef?: string; name?: string; type?: string; bytes?: string };
+      try {
+        body = (await request.json()) as { bytesRef?: string; name?: string; type?: string; bytes?: string };
+      } catch {
+        return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
+      }
+      loaded = await bytesFromJson(body);
     }
-    const mediaType = mediaTypeOf(body.name ?? stored?.pathname ?? "", body.type ?? stored?.contentType);
-    const extracted = await classifyAndExtract(
-      bytes,
-      mediaType,
-      grokExtractAdapter,
-    );
-    const failed = Boolean(extracted.failed || extracted.warnings.includes("failed"));
-    const extractClass = extracted.extractClass;
-    return NextResponse.json({
-      class: extractClass,
-      confidence: extracted.confidence,
-      fields: extracted.fields,
-      warnings: extracted.warnings,
-      slot: slotForExtractClass(extractClass),
-      note: failed
-        ? FAILED_READ_NOTE
-        : extracted.extractClass === "other" || !Object.keys(extracted.fields).length
-          ? RECEIVED_NOTE
-          : undefined,
-      failed,
-    });
+    if (!loaded) {
+      if (storageStatus().storage === "blocked" && !process.env.BLOB_READ_WRITE_TOKEN && !process.env.BLOB_STORE_ID) {
+        return NextResponse.json(
+          { error: STORAGE_BLOCKED, code: "STORAGE_BLOCKED" },
+          { status: 503 },
+        );
+      }
+      return NextResponse.json({ error: "Missing file" }, { status: 400 });
+    }
+    const mediaType = mediaTypeOf(loaded.name, loaded.type);
+    const extracted = await classifyAndExtract(loaded.bytes, mediaType, grokExtractAdapter);
+    return NextResponse.json(extractJson(extracted, loaded.source));
   } catch (error) {
     const message = error instanceof Error ? error.message : "Extract failed";
     console.error("[docs/extract] route failed:", message, error);
-    if (/not found|token|blob|store/i.test(message) && !/xAI|grok|vision|model/i.test(message)) {
+    if (/not found|token|blob|store|empty/i.test(message) && !/xAI|grok|vision|model/i.test(message)) {
       return NextResponse.json(
-        { error: STORAGE_BLOCKED, code: "STORAGE_BLOCKED" },
+        { error: STORAGE_BLOCKED, code: "STORAGE_BLOCKED", source: "blob" },
         { status: 503 },
       );
     }
@@ -88,6 +152,7 @@ export async function POST(request: Request) {
       fields: {},
       warnings: ["failed"],
       slot: slotForExtractClass("other"),
+      source: "failed",
       note: FAILED_READ_NOTE,
       failed: true,
     });

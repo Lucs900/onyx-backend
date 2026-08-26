@@ -9218,6 +9218,13 @@ assert.ok(startWorkspace.includes("fresh: homepageFresh") || startWorkspace.incl
 const dropSource = readFileSync(join(root, "components/fox/DocumentDrop.tsx"), "utf8");
 assert.ok(dropSource.includes("/api/docs/upload"));
 assert.ok(dropSource.includes("/api/docs/extract"));
+assert.ok(dropSource.includes("FormData"));
+assert.ok(dropSource.includes('form.append("file"'));
+assert.ok(dropSource.includes("docs-handoff"));
+assert.ok(dropSource.includes("await file.arrayBuffer()"));
+assert.ok(dropSource.indexOf("await fetch(\"/api/docs/extract\"") < dropSource.indexOf("void storeBytes"));
+assert.ok(!dropSource.includes("await storeBytes"));
+assert.ok(!dropSource.includes("fileToBase64"));
 assert.ok(dropSource.includes("quietLines: [FAILED_READ_NOTE]"));
 assert.ok(dropSource.includes('aria-label="Upload"'));
 assert.ok(dropSource.includes("onyx:fox-pick-file"));
@@ -9717,6 +9724,38 @@ async function extractAdapterSmoke() {
   });
   assert.equal(classifiedK1.extractClass, "tax_return");
   assert.equal(classifiedK1.fields.k1_ordinary_income, "40000");
+
+  const { POST: extractRoutePost } = await import("../app/api/docs/extract/route");
+  const pineBytes = readFileSync(join(root, "scripts/fixtures/mortgage-statement-pine.png"));
+  const form = new FormData();
+  form.append(
+    "file",
+    new File([pineBytes], "doc-mortgage.png", { type: "image/png" }),
+    "doc-mortgage.png",
+  );
+  form.append("name", "doc-mortgage.png");
+  form.append("type", "image/png");
+  form.append("bytesRef", "https://example.blob.vercel-storage.com/missing-should-not-be-read");
+  const handedOff = await extractRoutePost(
+    new Request("http://local/api/docs/extract", { method: "POST", body: form }),
+  );
+  const handed = (await handedOff.json()) as {
+    class?: string;
+    fields?: Record<string, string>;
+    failed?: boolean;
+    source?: string;
+  };
+  assert.equal(handedOff.status, 200);
+  assert.equal(handed.source, "file");
+  assert.equal(handed.failed, false);
+  assert.equal(handed.class, "mortgage_statement");
+  assert.equal(handed.fields?.current_pi, "3850");
+  const extractRouteSrc = readFileSync(join(root, "app/api/docs/extract/route.ts"), "utf8");
+  assert.match(extractRouteSrc, /source: "file"/);
+  assert.match(extractRouteSrc, /readPrivateBytes/);
+  const storageSrc = readFileSync(join(root, "lib/docs/storage.ts"), "utf8");
+  assert.match(storageSrc, /useCache: false/);
+  assert.match(storageSrc, /blob\.vercel-storage\.com|blobRefsToTry/);
 }
 
 function assertNoSketchReplay(text: string) {

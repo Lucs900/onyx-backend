@@ -42,27 +42,12 @@ function emitFailedRead() {
   });
 }
 
-const INLINE_EXTRACT_MAX = 1_500_000;
-
 async function storeBytes(file: File) {
   const blob = await upload(`fox-intake/${file.name}`, file, {
     access: "private",
     handleUploadUrl: "/api/docs/upload",
   });
-  return blob.pathname;
-}
-
-async function fileToBase64(file: File): Promise<string> {
-  const bytes = new Uint8Array(await file.arrayBuffer());
-  const chunk = 0x8000;
-  let binary = "";
-  for (let i = 0; i < bytes.length; i += chunk) {
-    const slice = bytes.subarray(i, i + chunk);
-    let piece = "";
-    for (let j = 0; j < slice.length; j += 1) piece += String.fromCharCode(slice[j] ?? 0);
-    binary += piece;
-  }
-  return btoa(binary);
+  return blob.url || blob.pathname;
 }
 
 export function DocumentDrop({
@@ -125,36 +110,20 @@ export function DocumentDrop({
         size: file.size,
         receivedAt,
       });
+      patchReceivedDoc(
+        (doc) => doc.receivedAt === receivedAt && doc.name === file.name,
+        { status: "reading" },
+      );
 
       try {
-        let bytesRef = "";
-        try {
-          bytesRef = await storeBytes(file);
-        } catch {
-          bytesRef = "";
-        }
-        patchReceivedDoc(
-          (doc) => doc.receivedAt === receivedAt && doc.name === file.name,
-          { ...(bytesRef ? { bytesRef } : {}), status: "reading" },
-        );
-        const inlineBytes = file.size <= INLINE_EXTRACT_MAX ? await fileToBase64(file) : undefined;
-        if (!bytesRef && !inlineBytes) {
-          patchReceivedDoc(
-            (doc) => doc.receivedAt === receivedAt && doc.name === file.name,
-            { status: "failed", note: FAILED_READ_NOTE },
-          );
-          emitFailedRead();
-          continue;
-        }
+        const snapshot = new Blob([await file.arrayBuffer()], { type: file.type || type });
+        const form = new FormData();
+        form.append("file", snapshot, file.name);
+        form.append("name", file.name);
+        form.append("type", type);
         const response = await fetch("/api/docs/extract", {
           method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({
-            ...(bytesRef ? { bytesRef } : {}),
-            name: file.name,
-            type,
-            bytes: inlineBytes,
-          }),
+          body: form,
         });
         const data = (await response.json()) as {
           class?: string;
@@ -164,13 +133,21 @@ export function DocumentDrop({
           failed?: boolean;
           code?: string;
           error?: string;
+          source?: string;
         };
+        void storeBytes(new File([snapshot], file.name, { type: file.type || type }))
+          .then((bytesRef) => {
+            patchReceivedDoc(
+              (doc) => doc.receivedAt === receivedAt && doc.name === file.name,
+              { bytesRef },
+            );
+          })
+          .catch(() => undefined);
         if (!response.ok) {
           patchReceivedDoc(
             (doc) => doc.receivedAt === receivedAt && doc.name === file.name,
             {
               status: "failed",
-              bytesRef,
               note: data.code === "STORAGE_BLOCKED" ? data.error : FAILED_READ_NOTE,
             },
           );
@@ -224,6 +201,8 @@ export function DocumentDrop({
   const fileInput = (
     <input
       ref={inputRef}
+      id="docs-handoff"
+      data-docs-handoff="true"
       className="visually-hidden"
       type="file"
       multiple
