@@ -229,26 +229,24 @@ export function syncCalculatorDraft(draft: FoxIntakeDraft): FoxIntakeDraft {
 
 export function writeEstimatedHousing(draft: FoxIntakeDraft, total: number): FoxIntakeDraft {
   const now = new Date().toISOString();
-  return persistStatedDti(
-    persistLtvCltv({
-      ...draft,
-      estimatedHousing: Math.round(total),
-      housingAsked: true,
-      pendingProposal: null,
-      correcting: null,
-      correctingLine: null,
-      facts: {
-        ...(draft.facts ?? {}),
-        [ESTIMATED_HOUSING_FIELD]: {
-          field: ESTIMATED_HOUSING_FIELD,
-          value: String(Math.round(total)),
-          source: "computed",
-          confirmed: true,
-          confirmedAt: now,
-        },
+  return syncCalculatorDraft({
+    ...draft,
+    estimatedHousing: Math.round(total),
+    housingAsked: true,
+    pendingProposal: null,
+    correcting: null,
+    correctingLine: null,
+    facts: {
+      ...(draft.facts ?? {}),
+      [ESTIMATED_HOUSING_FIELD]: {
+        field: ESTIMATED_HOUSING_FIELD,
+        value: String(Math.round(total)),
+        source: "computed",
+        confirmed: true,
+        confirmedAt: now,
       },
-    }),
-  );
+    },
+  });
 }
 
 export function skipEstimatedHousing(draft: FoxIntakeDraft): FoxIntakeDraft {

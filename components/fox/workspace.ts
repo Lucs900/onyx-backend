@@ -114,9 +114,11 @@ import { conventionalFileFacts } from "./conventionalFile";
 import {
   calculatorStructureFacts,
   draftHousingEstimate,
+  ESTIMATED_NOT_FINAL,
   housingAskCopy,
   housingConfirmNeeded,
   skipEstimatedHousing,
+  STATED_NOT_FROM_CREDIT,
   statedDtiAskNeeded,
   syncCalculatorDraft,
   writeEstimatedHousing,
@@ -1561,7 +1563,7 @@ function extraCorrectionLines(draft: FoxIntakeDraft): { id: string; label: strin
     extra.push({ id: "qualifying", label: "Qualifying income", prompt: "qualifying" });
   }
   if (draft.monthlyDebtsAsked || draft.statedMonthlyDebts != null) {
-    extra.push({ id: "debts", label: "Stated monthly debts", prompt: "debts" });
+    extra.push({ id: "debts", label: "Monthly debts", prompt: "debts" });
   }
   if (draft.housingAsked || draft.estimatedHousing != null) {
     extra.push({ id: "housing", label: "Housing payment", prompt: "housing" });
@@ -2039,8 +2041,9 @@ export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
   if (nextDocInvite(draft)) return "documents";
   if (primaryDocPassFinished(draft) && !yearsInBusinessSettled(draft)) return "years-in-business";
   if (!draft.sampleAccepted) return canLooksRight(draft) ? "review" : "amount";
-  if (housingConfirmNeeded(draft)) return "housing";
-  if (statedDtiAskNeeded(draft)) return "debts";
+  const holdCalculatorAsk = draft.motion === "in_queue" || draft.motion === "escalated";
+  if (!holdCalculatorAsk && housingConfirmNeeded(draft)) return "housing";
+  if (!holdCalculatorAsk && statedDtiAskNeeded(draft)) return "debts";
   return "done";
 }
 
@@ -3151,7 +3154,7 @@ export function workspaceUpdateCopy(capture: Capture, draft: FoxIntakeDraft) {
     const label = INCOME_BUBBLES.find((item) => item.value === capture.value)?.label;
     return label ? `Updated income to ${label}.` : "Updated income.";
   }
-  if (capture.field === "skip-monthly-debts") return "Updated. Stated monthly debts left blank.";
+  if (capture.field === "skip-monthly-debts") return "Updated. Monthly debts left blank.";
   if (capture.field === "propose-monthly-debts" || capture.field === "include-mortgage-debts") {
     return "Updated.";
   }
@@ -3159,8 +3162,8 @@ export function workspaceUpdateCopy(capture: Capture, draft: FoxIntakeDraft) {
   if (capture.field === "statedMonthlyDebts") {
     const n = Number(capture.value.replace(/,/g, ""));
     return Number.isFinite(n) && n > 0
-      ? `Updated stated monthly debts to ${formatMoney(n)}.`
-      : "Updated stated monthly debts.";
+      ? `Updated monthly debts to ${formatMoney(n)}.`
+      : "Updated monthly debts.";
   }
   if (capture.field === "skip-available-assets") return "Updated. Stated available assets left blank.";
   if (capture.field === "propose-available-assets") return "Updated.";
@@ -3975,6 +3978,27 @@ function matrixReply(
   return null;
 }
 
+function finishLineTakesCalculatorPrompt(
+  text: string,
+  prompt: FoxPrompt,
+  draft: FoxIntakeDraft,
+) {
+  if (!draft.sampleAccepted) return false;
+  const finish = finishCaptureFromText(text);
+  const lower = text.trim().toLowerCase();
+  if (prompt === "housing") {
+    return (
+      Boolean(finish) ||
+      /^skip\b/.test(lower) ||
+      (/(skip|later|don'?t have)/i.test(lower) && /doc/.test(lower))
+    );
+  }
+  if (prompt === "debts") {
+    return finish?.field === "proceed" || finish?.field === "upload-more";
+  }
+  return false;
+}
+
 export function workspaceReply(
   text: string,
   draft: FoxIntakeDraft,
@@ -4656,7 +4680,7 @@ export function workspaceReply(
     };
   }
 
-  if (prompt === "housing") {
+  if (prompt === "housing" && !finishLineTakesCalculatorPrompt(q, prompt, draft)) {
     const estimate = draftHousingEstimate(draft);
     if (isSkipMonthlyDebtsText(q) || /^change\b/i.test(q.trim())) {
       const nextDraft = skipEstimatedHousing(draft);
@@ -4675,7 +4699,7 @@ export function workspaceReply(
     return answerThenRestore(q, draft);
   }
 
-  if (prompt === "debts") {
+  if (prompt === "debts" && !finishLineTakesCalculatorPrompt(q, prompt, draft)) {
     if (draft.statedMonthlyDebts != null && isKeepThisText(q)) return keepThisReply(draft);
     if (draft.pendingDebtMortgage) {
       if (/^subtract\b/i.test(lower) || /subtract/.test(lower)) {
@@ -5067,8 +5091,12 @@ export function workspaceReply(
       }
       const nextDraft = applyLooksRightMotion(draft);
       const nextPrompt = workspacePrompt(nextDraft);
+      const shown =
+        nextPrompt === "review" || nextPrompt === "housing" || nextPrompt === "debts"
+          ? "done"
+          : nextPrompt;
       return {
-        ...workspacePromptCopy(nextPrompt === "review" ? "done" : nextPrompt, nextDraft),
+        ...workspacePromptCopy(shown, nextDraft),
         capture: { field: "confirm-draft" },
       };
     }
@@ -5111,7 +5139,11 @@ export function workspaceReply(
     };
   }
 
-  if (prompt === "basics-done" || prompt === "done") {
+  if (
+    prompt === "basics-done" ||
+    prompt === "done" ||
+    (draft.sampleAccepted && (prompt === "housing" || prompt === "debts"))
+  ) {
     const intent = productIntentFromText(q);
     if (intent && prompt === "basics-done") {
       return {
@@ -5119,7 +5151,7 @@ export function workspaceReply(
         capture: { field: "productIntent", value: intent },
       };
     }
-    if (prompt === "done") {
+    if (prompt === "done" || prompt === "housing" || prompt === "debts") {
       if (asksWillIQualify(q)) {
         return answerThenRestore(q, draft);
       }
@@ -5410,9 +5442,9 @@ export function previewFacts(draft: FoxIntakeDraft): PreviewFact[] {
           : "—";
     facts.push({
       id: "debts",
-      label: "Stated monthly debts",
+      label: "Monthly debts",
       value: shown,
-      note: SUGGESTED_DEBTS_NOTE,
+      note: STATED_NOT_FROM_CREDIT,
     });
   }
 
@@ -5839,9 +5871,14 @@ export function structureExplainCopy(
       text: "That’s a stated range for the estimate. Not a FICO and not a credit pull.",
     };
   }
-  if (id === "debts") {
+  if (id === "debts" || id === "stated-dti") {
     return {
-      text: "Stated monthly debts. Suggested · not underwritten. Not a credit pull.",
+      text: `Monthly debts. ${STATED_NOT_FROM_CREDIT}. Not a credit pull.`,
+    };
+  }
+  if (id === "ltv" || id === "cltv" || id === "housing" || id === "pi" || id === "taxes" || id === "hoi") {
+    return {
+      text: `${ESTIMATED_NOT_FINAL}. Sample payment is indicative · not live.`,
     };
   }
   if (id === "assets") {

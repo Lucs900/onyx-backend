@@ -139,6 +139,7 @@ import {
   qualifyingIncomeConfirmCopy,
   skipEstimatedHousing,
 } from "./calculators";
+import { statedDti } from "@/lib/calculators/conventional";
 
 export const SUGGESTED_NOTE = "Suggested · not verified";
 export const PROPOSED_NOTE = "Proposed · confirm";
@@ -567,6 +568,9 @@ export function factsFromDraft(draft: FoxIntakeDraft): CompletenessFile {
   }
   const debts = namedDebtsFromDraft(draft);
   const suggestedMonthlyIncome = moneyNumber(draft.facts?.[QUALIFYING_INCOME_FIELD]?.value ?? "");
+  const computedDti =
+    draft.statedDti ??
+    statedDti(draft.estimatedHousing, draft.statedMonthlyDebts, suggestedMonthlyIncome);
   const base = completenessFileFromDraft(draft);
   const received = new Set(base.received ?? []);
   for (const id of inferredIncomeClasses(draft)) received.add(id);
@@ -595,7 +599,7 @@ export function factsFromDraft(draft: FoxIntakeDraft): CompletenessFile {
     ...(debts.length ? { debts } : {}),
     ...(draft.statedMonthlyDebts != null ? { statedMonthlyDebts: draft.statedMonthlyDebts } : {}),
     ...(draft.estimatedHousing != null ? { estimatedHousing: draft.estimatedHousing } : {}),
-    ...(draft.statedDti != null ? { statedDti: draft.statedDti } : {}),
+    ...(computedDti != null ? { statedDti: computedDti } : {}),
     ...(draft.subordinateBalance != null ? { subordinateBalance: draft.subordinateBalance } : {}),
     ...(draft.hoaMonthly != null ? { hoaMonthly: draft.hoaMonthly } : {}),
     ...(draft.miApplies != null ? { miApplies: draft.miApplies } : {}),

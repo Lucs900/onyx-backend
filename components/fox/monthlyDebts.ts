@@ -115,7 +115,7 @@ export function proposeStatedMonthlyDebts(draft: FoxIntakeDraft, amount: number)
   const proposal: FactProposal = {
     field: STATED_MONTHLY_DEBTS_FIELD,
     value,
-    label: "Stated monthly debts",
+    label: "Monthly debts",
     kind: "computed",
     note: SUGGESTED_DEBTS_NOTE,
   };

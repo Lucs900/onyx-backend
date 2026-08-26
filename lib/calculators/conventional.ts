@@ -98,7 +98,9 @@ export type AssetNotes = {
 };
 
 export function moneyShown(value: number) {
-  return `$${Math.round(value).toLocaleString("en-US")}`;
+  const rounded = Math.round(value);
+  const abs = Math.abs(rounded).toLocaleString("en-US");
+  return rounded < 0 ? `-$${abs}` : `$${abs}`;
 }
 
 export function formatRatioPercent(ratio: number) {

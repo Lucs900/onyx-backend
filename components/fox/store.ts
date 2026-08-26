@@ -1693,7 +1693,10 @@ function applyCaptureBody(capture: Capture) {
         ...applyLooksRightMotion(current),
         correcting: null,
       });
-      if (workspacePrompt(current) === "done") return confirmDraft();
+      const nextPrompt = workspacePrompt(current);
+      if (nextPrompt === "done" || nextPrompt === "housing" || nextPrompt === "debts") {
+        return confirmDraft();
+      }
       return current;
     }
     return confirmDraft();
