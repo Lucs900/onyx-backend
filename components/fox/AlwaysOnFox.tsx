@@ -94,7 +94,7 @@ import {
   type DocIntakeDetail,
 } from "./fileWrite";
 import { DECLINING_INCOME_CAUTION } from "./qualifyingIncome";
-import { fileExists, finishLineActions, motionAskText, reviewIsSitting } from "./motion";
+import { fileExists, finishLineActions, reviewIsSitting } from "./motion";
 import { pathFromHomeChoice } from "./homeIdle";
 import {
   FOX_DISCLOSURE,
@@ -277,10 +277,7 @@ function hasPreparedAsk(messages: FoxMessage[]) {
 
 function withUpdatedStillUsefulAsk(messages: FoxMessage[], live: FoxIntakeDraft): FoxMessage[] {
   if (shouldDeferStillUsefulAsk(live)) return messages;
-  const ask = foxAskMessage({
-    text: motionAskText(live),
-    actions: finishLineActions(live),
-  });
+  const ask = foxAskMessage(workspacePromptCopy("done", live));
   const index = [...messages]
     .reverse()
     .findIndex(
@@ -750,10 +747,7 @@ export function AlwaysOnFox({
           const live = getFoxDraft();
           next.push(
             fileExists(live)
-              ? foxAskMessage({
-                  text: motionAskText(live),
-                  actions: finishLineActions(live),
-                })
+              ? foxAskMessage(workspacePromptCopy("done", live))
               : foxAskMessage({
                   text: missingAskCopy(detail.missing),
                   actions: missingAskActions(),
@@ -762,10 +756,7 @@ export function AlwaysOnFox({
         } else if (fileExists(getFoxDraft())) {
           const live = getFoxDraft();
           next.push(
-            foxAskMessage({
-              text: motionAskText(live),
-              actions: finishLineActions(live),
-            }),
+            foxAskMessage(workspacePromptCopy("done", live)),
           );
         }
         return next;
@@ -1155,10 +1146,7 @@ export function AlwaysOnFox({
         markMissingAsked(key);
         lines.push(
           fileExists(live)
-            ? foxAskMessage({
-                text: motionAskText(live),
-                actions: finishLineActions(live),
-              })
+            ? foxAskMessage(workspacePromptCopy("done", live))
             : foxAskMessage({
                 text: stillUsefulAskCopy(live),
                 actions: missingAskActions(),

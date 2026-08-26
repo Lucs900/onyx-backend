@@ -10615,9 +10615,10 @@ const file32W2None = draft({
   statedOtherReo: "none",
   otherReoAsked: true,
 });
-assert.equal(workspacePrompt(file32W2None), "citizenship");
-assert.equal(workspacePromptCopy("citizenship", file32W2None).text, CITIZENSHIP_ASK);
-assert.ok((workspacePromptCopy("citizenship", file32W2None).actions ?? []).some((item) => item.label === "Skip"));
+assert.equal(workspacePrompt(file32W2None), "done");
+assert.equal(workspacePromptCopy("done", file32W2None).followUp, CITIZENSHIP_ASK);
+assert.ok((workspacePromptCopy("done", file32W2None).actions ?? []).some((item) => item.label === "Skip"));
+assert.ok((workspacePromptCopy("done", file32W2None).actions ?? []).some((item) => item.label === "Proceed"));
 assert.ok(!requiredStructureLines(file32W2None).some((line) => /citizen/i.test(line.label)));
 assert.equal(assetsMatter(file32W2None), false);
 assert.notEqual(workspacePrompt(file32W2None), "assets");
@@ -10645,7 +10646,7 @@ assert.ok(file32W2Slots.empty.includes("history.employmentHistory"));
 
 const addressStillOpen = draft({
   ...file32W2Skipped,
-  skippedStillUseful: ["second-year-w2"],
+  skippedStillUseful: ["second-year-w2", "tax_return"],
   documents: [
     {
       slot: "id",
@@ -10697,7 +10698,8 @@ const file32Se = draft({
     },
   },
 });
-assert.equal(workspacePrompt(file32Se), "citizenship");
+assert.equal(workspacePrompt(file32Se), "done");
+assert.equal(workspacePromptCopy("done", file32Se).followUp, CITIZENSHIP_ASK);
 assert.notEqual(workspacePrompt(file32Se), "assets");
 assert.equal(otherReoRows(file32Se).length, 0);
 const file32SeSkipped = skipCitizenship(file32Se);
@@ -10718,7 +10720,8 @@ const file32Invest = draft({
   propertyTypeAsked: true,
 });
 assert.equal(assetsMatter(file32Invest), true);
-assert.equal(workspacePrompt(file32Invest), "citizenship");
+assert.equal(workspacePrompt(file32Invest), "done");
+assert.equal(workspacePromptCopy("done", file32Invest).followUp, CITIZENSHIP_ASK);
 assert.notEqual(workspacePrompt(file32Invest), "assets");
 assert.equal(otherReoRows(file32Invest).length, 0);
 assert.equal(file32Invest.suggestedNetRental, -3293);
@@ -10800,8 +10803,8 @@ const shortTenure = draft({
   timeOnJobAsked: true,
   formerHistoryAsked: false,
 });
-assert.equal(workspacePrompt(shortTenure), "former-history");
-assert.equal(workspacePromptCopy("former-history", shortTenure).text, FORMER_HISTORY_ASK);
+assert.equal(workspacePrompt(shortTenure), "done");
+assert.equal(workspacePromptCopy("done", shortTenure).followUp, FORMER_HISTORY_ASK);
 const formerSkipped = skipFormerHistory(shortTenure);
 assert.equal((formerSkipped.addressHistory ?? []).length, 0);
 assert.equal(workspacePrompt(formerSkipped), "done");

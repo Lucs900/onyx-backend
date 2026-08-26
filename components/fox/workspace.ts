@@ -2075,9 +2075,26 @@ export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
   if (!holdCalculatorAsk && housingConfirmNeeded(draft)) return "housing";
   if (!holdCalculatorAsk && statedDtiAskNeeded(draft)) return "debts";
   if (!holdCalculatorAsk && !propertyTypeSettled(draft)) return "property-type";
-  if (!holdCalculatorAsk && citizenshipNeeded(draft)) return "citizenship";
-  if (!holdCalculatorAsk && formerHistoryNeeded(draft)) return "former-history";
   return "done";
+}
+
+function lateFileRemainder(draft: FoxIntakeDraft): { text?: string; actions?: FoxAction[] } {
+  if (draft.motion === "in_queue" || draft.motion === "escalated") return {};
+  if (citizenshipNeeded(draft)) {
+    const ask = citizenshipAskCopy();
+    return {
+      text: ask.text,
+      actions: (ask.actions ?? []).filter((item) => item.id !== "hold-citizenship"),
+    };
+  }
+  if (formerHistoryNeeded(draft)) {
+    const ask = formerHistoryAskCopy();
+    return {
+      text: ask.text,
+      actions: (ask.actions ?? []).filter((item) => item.id !== "hold-former-history"),
+    };
+  }
+  return {};
 }
 
 function withFoxFirst<
@@ -2401,9 +2418,10 @@ function workspaceAskCopy(
   if (prompt === "done") {
     const outbox = latestOutbox(draft);
     const remind = remindLine(draft);
+    const late = lateFileRemainder(draft);
     return {
       text: motionAskText(draft),
-      followUp: rememberedAskCopy(draft) || remind || undefined,
+      followUp: late.text || rememberedAskCopy(draft) || remind || undefined,
       facts: outbox
         ? [
             {
@@ -2414,7 +2432,7 @@ function workspaceAskCopy(
             },
           ]
         : undefined,
-      actions: finishLineActions(draft),
+      actions: [...(late.actions ?? []), ...finishLineActions(draft)],
     };
   }
   return {
@@ -5276,6 +5294,39 @@ export function workspaceReply(
       };
     }
     if (prompt === "done" || prompt === "housing" || prompt === "debts") {
+      if (prompt === "done" && citizenshipNeeded(draft)) {
+        if (isSkipCitizenshipText(q) && !/^not yet$/i.test(q.trim())) {
+          const nextDraft = skipCitizenship(draft);
+          return {
+            ...workspacePromptCopy("done", nextDraft),
+            capture: { field: "skip-citizenship" },
+          };
+        }
+        const citizenship = parseCitizenship(q);
+        if (citizenship) {
+          const nextDraft = writeCitizenship(draft, citizenship);
+          return {
+            ...workspacePromptCopy("done", nextDraft),
+            capture: { field: "citizenship", value: citizenship },
+          };
+        }
+      }
+      if (prompt === "done" && formerHistoryNeeded(draft)) {
+        if (isSkipFormerHistoryText(q) && !/^not yet$/i.test(q.trim())) {
+          const nextDraft = skipFormerHistory(draft);
+          return {
+            ...workspacePromptCopy("done", nextDraft),
+            capture: { field: "skip-former-history" },
+          };
+        }
+        if (q.trim() && !finishCaptureFromText(q)) {
+          const nextDraft = writeFormerHistoryNote(draft, q);
+          return {
+            ...workspacePromptCopy("done", nextDraft),
+            capture: { field: "formerHistory", value: q.trim() },
+          };
+        }
+      }
       if (asksWillIQualify(q)) {
         return answerThenRestore(q, draft);
       }
