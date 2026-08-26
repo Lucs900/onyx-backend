@@ -110,7 +110,7 @@ import {
   MANUFACTURED_CAUTION,
   CONDO_NON_WARRANTABLE_CAUTION,
   RENTAL_UNSUPPORTED_CAUTION,
-  CONDO_HOA_WOULD_HELP,
+  CONDO_NEW_CONSTRUCTION_ACK,
   RENTAL_DOCS_WOULD_HELP,
   condoFlag,
   sketchedLtvFromFacts,
@@ -5646,6 +5646,11 @@ assert.doesNotMatch(guidelineStoreSrc, /I can prepare a file\. I cannot approve 
 assert.doesNotMatch(guidelineStoreSrc, /I can prepare a file\. I cannot say you qualify/);
 assert.match(guidelineStoreSrc, /flags\.loan_over_price/);
 assert.match(guidelineStoreSrc, /The loan is larger than the purchase price/);
+assert.doesNotMatch(guidelineStoreSrc, /HOA questionnaire|condo project docs|Form 1076/);
+assert.doesNotMatch(
+  readFileSync(join(root, "components/fox/fileWrite.ts"), "utf8"),
+  /HOA questionnaire|condo project docs|condo-hoa|Form 1076/,
+);
 const answerPathSrc = readFileSync(join(root, "lib/guidelines/answer.ts"), "utf8");
 assert.match(answerPathSrc, /interpretQuestion/);
 assert.match(answerPathSrc, /applyHardRails/);
@@ -6469,7 +6474,11 @@ assert.doesNotMatch(
   condoQualify?.text ?? "",
   /you don.t qualify|warrantability|county limit|condos are not eligible|you are approved|\bDTI\b|you qualify\b/i,
 );
-assert.match(condoQualify?.text ?? "", /thin|Start with ID|Skip|kind of home|HOA questionnaire/i);
+assert.match(condoQualify?.text ?? "", /thin|Start with ID|Skip|kind of home/i);
+assert.doesNotMatch(
+  condoQualify?.text ?? "",
+  /HOA questionnaire|condo project docs|Form 1076|\bCPM\b|\bPERS\b/i,
+);
 assert.equal(
   readinessFromFile({
     product: "buy",
@@ -9863,7 +9872,23 @@ assert.equal(
   }).kind,
   "strong",
 );
-assert.match(
+assert.equal(
+  readinessFromFile({
+    product: "buy",
+    purposeHint: "purchase",
+    occupancy: "primary",
+    state: "CA",
+    purchasePrice: 850000,
+    downPayment: 170000,
+    loanAmount: 680000,
+    statedCreditBand: "760+",
+    incomeType: "w2_base",
+    received: ["paystub", "w2"],
+    propertyType: "condo",
+  }).kind,
+  "thin",
+);
+assert.doesNotMatch(
   readinessFromFile({
     product: "buy",
     purposeHint: "purchase",
@@ -9877,7 +9902,15 @@ assert.match(
     received: ["paystub", "w2"],
     propertyType: "condo",
   }).line,
-  new RegExp(CONDO_HOA_WOULD_HELP.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")),
+  /HOA questionnaire|condo project docs|Form 1076|\bCPM\b|\bPERS\b/i,
+);
+assert.ok(
+  !storeCompleteness("buy", {
+    purposeHint: "purchase",
+    occupancy: "primary",
+    propertyType: "condo",
+    condoNewOrConverted: true,
+  }).stillUseful.some((item) => /HOA questionnaire|condo project docs|Form 1076|\bCPM\b|\bPERS\b/i.test(item)),
 );
 assert.ok(
   storeCompleteness("buy", {
@@ -9909,8 +9942,11 @@ assert.doesNotMatch(condotelAsk?.text ?? "", /I can answer from this file/);
 assert.equal(guidelineCaution(investBuy), INVESTMENT_CAUTION);
 assert.ok((condotelAsk?.actions ?? []).some((item) => item.label === "Upload this" || item.label === "Skip" || item.label === "Start with ID"));
 const newCondoAsk = workspaceReply("it's a new construction condo", investBuy);
-assert.match(newCondoAsk?.text ?? "", /HOA questionnaire or condo project docs/);
+assert.match(newCondoAsk?.text ?? "", /Noted\. This is a new-construction condo\./);
+assert.doesNotMatch(newCondoAsk?.text ?? "", /HOA questionnaire|condo project docs|Form 1076|\bCPM\b|\bPERS\b/i);
 assert.doesNotMatch(newCondoAsk?.text ?? "", /I can answer from this file/);
+assert.equal(foxAnswer("it's a new construction condo", factsFromDraft(investBuy))?.text, CONDO_NEW_CONSTRUCTION_ACK);
+assert.deepEqual(foxAnswer("it's a new construction condo", factsFromDraft(investBuy))?.collect, []);
 assert.equal(guidelineCaution(investBuy), INVESTMENT_CAUTION);
 assert.ok((newCondoAsk?.actions ?? []).some((item) => item.label === "Upload this" || item.label === "Skip" || item.label === "Start with ID"));
 const investBuySfr = draft({
@@ -9919,21 +9955,22 @@ const investBuySfr = draft({
   propertyTypeAsked: true,
 });
 assert.equal(guidelineCaution(investBuySfr), INVESTMENT_CAUTION);
-assert.ok(
-  !stillUsefulSection(investBuySfr)?.items.some(
-    (item) => item.label === CONDO_HOA_WOULD_HELP || item.ask === CONDO_HOA_WOULD_HELP,
-  ),
-);
+const usefulBefore = stillUsefulSection(investBuySfr)?.items.map((item) => item.label) ?? [];
+assert.ok(!usefulBefore.some((label) => /HOA questionnaire|condo project docs|Form 1076|\bCPM\b|\bPERS\b/i.test(label)));
 const newCondoAskSfr = workspaceReply("it's a new construction condo", investBuySfr);
-assert.match(newCondoAskSfr?.text ?? "", /HOA questionnaire or condo project docs/);
+assert.match(newCondoAskSfr?.text ?? "", /Noted\. This is a new-construction condo\./);
+assert.doesNotMatch(newCondoAskSfr?.text ?? "", /HOA questionnaire|condo project docs|Form 1076|\bCPM\b|\bPERS\b/i);
 assert.doesNotMatch(newCondoAskSfr?.text ?? "", /I can answer from this file/);
 assert.equal(newCondoAskSfr?.capture?.field, "note");
 assert.ok((newCondoAskSfr?.actions ?? []).some((item) => item.label === "Upload this" || item.label === "Skip" || item.label === "Start with ID"));
 const afterNewCondo = persistGuidelineNote(investBuySfr, "it's a new construction condo");
 assert.equal(afterNewCondo.facts?.condo_needs_review?.value, "needs_review");
 assert.equal(afterNewCondo.propertyType, "sfr");
-assert.ok(
-  stillUsefulSection(afterNewCondo)?.items.some((item) => item.label === CONDO_HOA_WOULD_HELP || item.ask === CONDO_HOA_WOULD_HELP),
+const usefulAfter = stillUsefulSection(afterNewCondo)?.items ?? [];
+assert.ok(!usefulAfter.some((item) => /HOA questionnaire|condo project docs|Form 1076|\bCPM\b|\bPERS\b/i.test(`${item.label} ${item.ask}`)));
+assert.deepEqual(
+  usefulAfter.map((item) => item.label),
+  usefulBefore,
 );
 assert.equal(guidelineCaution(afterNewCondo), INVESTMENT_CAUTION);
 assert.equal(
@@ -9941,7 +9978,6 @@ assert.equal(
   previewFacts(investBuySfr).filter((fact) => fact.id === "caution").length,
 );
 assert.ok(previewFacts(afterNewCondo).some((fact) => fact.id === "caution" && fact.value === INVESTMENT_CAUTION));
-assert.ok(!previewFacts(afterNewCondo).some((fact) => fact.id === "caution" && fact.value === CONDO_HOA_WOULD_HELP));
 
 extractAdapterSmoke()
   .then(() => {

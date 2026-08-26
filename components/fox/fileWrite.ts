@@ -34,9 +34,7 @@ import {
   draftRentalNamed,
 } from "./rentalIncome";
 import {
-  CONDO_HOA_WOULD_HELP,
   RENTAL_DOCS_WOULD_HELP,
-  condoFlag,
   namedCondoIneligible,
   namedCondoLanguage,
   namedNewOrConvertedCondo,
@@ -1550,7 +1548,7 @@ export function condoNeedsReviewPersisted(draft: FoxIntakeDraft): boolean {
   return draft.facts?.[CONDO_NEEDS_REVIEW_FACT]?.value === "needs_review";
 }
 
-/** Durable File signal for Still useful. Does not write a Structure Note. */
+/** Internal File flag for licensed review. Not a borrower Still useful item. */
 export function persistCondoNeedsReview(draft: FoxIntakeDraft): FoxIntakeDraft {
   if (condoNeedsReviewPersisted(draft)) return draft;
   return {
@@ -1572,9 +1570,6 @@ function guidelineStillUsefulItems(draft: FoxIntakeDraft): StillUsefulItem[] {
   const items: StillUsefulItem[] = [];
   if ((file.rentalNamed || file.occupancy === "investment") && !file.hasScheduleE && !file.hasLease) {
     items.push(layer2Item("rental-docs", RENTAL_DOCS_WOULD_HELP, RENTAL_DOCS_WOULD_HELP));
-  }
-  if (condoFlag(file) === "needs_review" || condoNeedsReviewPersisted(draft)) {
-    items.push(layer2Item("condo-hoa", CONDO_HOA_WOULD_HELP, CONDO_HOA_WOULD_HELP));
   }
   return items;
 }

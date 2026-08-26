@@ -293,7 +293,7 @@ export const LOAN_OVER_PRICE_LINE =
 export const BANK_STATEMENT_WOULD_HELP = "A recent bank statement would help.";
 export const LAST_YEAR_RETURN_WOULD_HELP = "Last year’s tax return would help.";
 export const RENTAL_DOCS_WOULD_HELP = "A Schedule E or a current lease would help.";
-export const CONDO_HOA_WOULD_HELP = "HOA questionnaire or condo project docs.";
+export const CONDO_NEW_CONSTRUCTION_ACK = "Noted. This is a new-construction condo.";
 export const CONFLICT_NOT_READY = "The File has a conflict on this number.";
 export const COST_LINE =
   "I don’t have a live fee quote. The preview rate is not live. I won’t invent a closing-cost number.";
@@ -744,10 +744,10 @@ export const TOPICS: Record<string, Topic> = {
     "condo.needs_review",
     "empty-as-thin",
     [CITE_FNMA_CONDO],
-    ["HOA questionnaire", "condo project docs"],
-    "Stay. Still useful: HOA questionnaire or condo project docs.",
+    [],
+    "Internal only. Project review is processor-side, not a borrower collect.",
     "",
-    CONDO_HOA_WOULD_HELP,
+    CONDO_NEW_CONSTRUCTION_ACK,
   ),
   "condo.non_warrantable": topic(
     "condo.non_warrantable",
@@ -1208,9 +1208,6 @@ export function completeness(
   if ((file.rentalNamed || file.occupancy === "investment") && !file.hasScheduleE && !file.hasLease) {
     stillUseful.push(RENTAL_DOCS_WOULD_HELP);
   }
-  if (condoFlag(file) === "needs_review") {
-    stillUseful.push(CONDO_HOA_WOULD_HELP);
-  }
 
   const hasSketch = Boolean(file.purchasePrice || file.loanAmount || file.propertyValue);
   const incomeReady = incomeDocsReceived(file.incomeType, received);
@@ -1401,10 +1398,6 @@ function notReadyLine(reason: string): string {
 }
 
 function oneStillUseful(file: CompletenessFile): string {
-  const condo = condoFlag(file);
-  if (condo === "needs_review" && layer1SketchPresent(file) && incomeDocumentedEnough(file)) {
-    return CONDO_HOA_WOULD_HELP;
-  }
   const list = completeness(file.product ?? "", file).stillUseful;
   if (!list.length) return NOTHING_URGENT_MISSING;
   const first = list[0];
