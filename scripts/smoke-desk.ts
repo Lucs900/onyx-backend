@@ -259,6 +259,7 @@ import {
   otherPropertyPaymentConfirmCopy,
   otherReoRows,
   parseOtherReo,
+  writeStatedOtherReo,
 } from "../components/fox/otherReo";
 import { CITIZENSHIP_ASK, skipCitizenship } from "../components/fox/citizenship";
 import { FORMER_HISTORY_ASK, skipFormerHistory } from "../components/fox/fileHistory";
@@ -11114,7 +11115,7 @@ assert.equal(
   }).draft.pendingProposal?.field !== SUGGESTED_FILE_NET_FIELD,
   true,
 );
-assert.equal(otherReoRows(applyExtractedFields(noneFileNet, {
+const noneExtract = applyExtractedFields(noneFileNet, {
   extractClass: "mortgage_statement",
   confidence: 0.93,
   fields: {
@@ -11125,7 +11126,12 @@ assert.equal(otherReoRows(applyExtractedFields(noneFileNet, {
     occupancy: "investment",
     gross_monthly_rent: "3000",
   },
-}).draft).length, 0);
+});
+assert.equal(otherReoRows(noneExtract.draft).length, 0);
+assert.equal(draftOtherPropertyFileNet(noneExtract.draft).fileNet, null);
+assert.equal(noneExtract.draft.suggestedFileNet, undefined);
+assert.notEqual(noneExtract.draft.pendingProposal?.value, "0");
+assert.doesNotMatch(nextFoxAsk(noneExtract.draft).text, /Suggested net rental is \$0/);
 
 const oneOtherRental = applyExtractedFields(file32OtherReoYes, {
   extractClass: "mortgage_statement",
@@ -11145,13 +11151,20 @@ assert.equal(otherReoRows(oneOtherRental.draft)[0]?.payment, "1450");
 assert.equal(oneOtherRental.draft.pendingProposal?.field, SUGGESTED_FILE_NET_FIELD);
 assert.equal(oneOtherRental.draft.pendingProposal?.value, "800");
 assert.equal(oneOtherRental.draft.pendingProposal?.note, SUGGESTED_FILE_NET_NOTE);
-assert.match(nextFoxAsk(oneOtherRental.draft).text, /Suggested net rental is \$800/);
-assert.match(nextFoxAsk(oneOtherRental.draft).text, /75% of the lease minus this property’s PITI/);
+assert.equal(
+  nextFoxAsk(oneOtherRental.draft).text,
+  "Suggested net rental is $800 · not underwritten. I’m using 75% of the lease minus this property’s PITI. Use this?",
+);
+assert.match(nextFoxAsk(oneOtherRental.draft).text, /\$800/);
 assert.doesNotMatch(nextFoxAsk(oneOtherRental.draft).text, /housing now/);
 assert.ok((nextFoxAsk(oneOtherRental.draft).actions ?? []).some((item) => item.label === "Use this"));
 assert.equal(oneOtherRental.draft.facts?.[SUGGESTED_FILE_NET_FIELD], undefined);
 assert.equal(oneOtherRental.draft.suggestedFileNet, undefined);
 assert.equal(oneOtherRental.draft.statedCurrentHousing, undefined);
+assert.equal(oneOtherRental.draft.statedMonthlyDebts, file32OtherReoYes.statedMonthlyDebts);
+assert.equal(oneOtherRental.draft.facts?.current_pi, file32OtherReoYes.facts?.current_pi);
+assert.equal(subjectMortgagePayment(oneOtherRental.draft), subjectMortgagePayment(file32OtherReoYes));
+assert.equal(otherReoRows(oneOtherRental.draft)[0]?.pitia, undefined);
 const oneUsed = resolveProposal(oneOtherRental.draft, "accept");
 assert.equal(oneUsed.suggestedFileNet, 800);
 assert.notEqual(oneUsed.suggestedFileNet, 2250);
@@ -11179,9 +11192,10 @@ const rentNoPiti = applyExtractedFields(file32OtherReoYes, {
 assert.equal(otherReoRows(rentNoPiti.draft)[0]?.leaseGross, "3000");
 assert.equal(draftOtherPropertyFileNet(rentNoPiti.draft).fileNet, null);
 assert.notEqual(rentNoPiti.draft.pendingProposal?.field, SUGGESTED_FILE_NET_FIELD);
+assert.equal(OTHER_REO_MORTGAGE_STATEMENTS, "Mortgage statements for all properties owned.");
 assert.ok(
   (stillUsefulSection(rentNoPiti.draft)?.items ?? []).some(
-    (item) => item.label === OTHER_REO_MORTGAGE_STATEMENTS,
+    (item) => item.label === "Mortgage statements for all properties owned.",
   ),
 );
 
@@ -11201,8 +11215,15 @@ assert.equal(otherReoRows(twoOtherRentals.draft).length, 2);
 assert.equal(draftOtherPropertyFileNet(twoOtherRentals.draft).fileNet, 500);
 assert.equal(twoOtherRentals.draft.pendingProposal?.field, SUGGESTED_FILE_NET_FIELD);
 assert.equal(twoOtherRentals.draft.pendingProposal?.value, "500");
-assert.match(nextFoxAsk(twoOtherRentals.draft).text, /Suggested net rental is \$500/);
-assert.match(nextFoxAsk(twoOtherRentals.draft).text, /I’m using the other properties I can net/);
+assert.equal(
+  nextFoxAsk(twoOtherRentals.draft).text,
+  "Suggested net rental is $500 · not underwritten. I’m using the other properties I can net. Use this?",
+);
+assert.match(nextFoxAsk(twoOtherRentals.draft).text, /\$500/);
+assert.equal(
+  (nextFoxAsk(twoOtherRentals.draft).actions ?? []).filter((item) => item.label === "Use this").length,
+  1,
+);
 const twoUsed = resolveProposal(twoOtherRentals.draft, "accept");
 assert.equal(twoUsed.suggestedFileNet, 500);
 assert.notEqual(twoUsed.suggestedFileNet, 2250);
@@ -11231,6 +11252,52 @@ assert.ok(
   ),
 );
 assert.equal(mixedThin.draft.suggestedFileNet, 800);
+
+const noneAfterUse = writeStatedOtherReo(oneUsed, "none");
+assert.equal(noneAfterUse.suggestedFileNet, undefined);
+assert.equal(draftOtherPropertyFileNet(noneAfterUse).fileNet, null);
+assert.equal(otherReoRows(noneAfterUse).length, 0);
+assert.notEqual(noneAfterUse.pendingProposal?.field, SUGGESTED_FILE_NET_FIELD);
+
+const oneNegative = applyExtractedFields(file32OtherReoYes, {
+  extractClass: "mortgage_statement",
+  confidence: 0.93,
+  fields: {
+    servicer: "BIRCH SERVICING",
+    unpaid_principal: "160000",
+    current_pi: "1800",
+    property_address: "9 BIRCH WAY",
+    occupancy: "investment",
+    gross_monthly_rent: "2000",
+  },
+});
+assert.equal(oneNegative.draft.pendingProposal?.value, "-300");
+assert.equal(
+  nextFoxAsk(oneNegative.draft).text,
+  "Suggested net rental is −$300 · not underwritten. That would count as a monthly liability. I’m using 75% of the lease minus this property’s PITI. Use this?",
+);
+
+const noInventedPiti = applyExtractedFields(file32OtherReoYes, {
+  extractClass: "mortgage_statement",
+  confidence: 0.93,
+  fields: {
+    servicer: "RIVER SERVICING",
+    unpaid_principal: "220000",
+    current_pi: "1450",
+    property_address: "77 WILLOW LANE",
+    occupancy: "investment",
+    gross_monthly_rent: "3000",
+    annual_taxes: "8400",
+    hoa_monthly: "200",
+  },
+});
+assert.equal(draftOtherPropertyFileNet(noInventedPiti.draft).fileNet, 800);
+assert.equal(otherReoRows(noInventedPiti.draft)[0]?.pitia, undefined);
+assert.equal(otherReoRows(noInventedPiti.draft)[0]?.payment, "1450");
+assert.equal(noInventedPiti.draft.facts?.annual_taxes, file32OtherReoYes.facts?.annual_taxes);
+assert.equal(noInventedPiti.draft.facts?.hoa_monthly, file32OtherReoYes.facts?.hoa_monthly);
+assert.equal(noInventedPiti.draft.statedMonthlyDebts, file32OtherReoYes.statedMonthlyDebts);
+assert.equal(noInventedPiti.draft.statedCurrentHousing, undefined);
 
 const investWithOther = applyExtractedFields(
   draft({
