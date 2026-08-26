@@ -104,6 +104,7 @@ import {
   syncCalculatorDraft,
   writeEstimatedHousing,
 } from "./calculators";
+import { proposeTypedLeaseRental } from "./rentalIncome";
 import {
   applyMortgageSubtract,
   parseMonthlyDebtAmount,
@@ -1464,6 +1465,12 @@ function applyCaptureBody(capture: Capture) {
     const value = parsePropertyType(capture.value);
     if (!value) return current;
     return commit(writePropertyType(current, value));
+  }
+  if (capture.field === "propose-rental-lease") {
+    const rent = Number(String(capture.value).replace(/[$,]/g, ""));
+    if (!Number.isFinite(rent) || rent <= 0) return current;
+    const next = proposeTypedLeaseRental(current, `lease for ${rent} a month`);
+    return next ? commit(next) : current;
   }
   if (capture.field === "propose-subject-address") {
     const address = parseVolunteeredAddress(capture.value) ?? capture.value.trim();

@@ -455,6 +455,7 @@ export type Capture =
   | { field: "skip-property-type" }
   | { field: "propose-property-type"; value: string }
   | { field: "propertyType"; value: string }
+  | { field: "propose-rental-lease"; value: string }
   | { field: "propose-subject-address"; value: string }
   | { field: "subjectAddress"; value: string }
   | { field: "skip-time-on-job" }

@@ -138,6 +138,8 @@ import {
 } from "./qualifyingIncome";
 import {
   isRentalIncomeField,
+  parseStatedMonthlyLease,
+  proposeTypedLeaseRental,
   rentalConfirmAsk,
   RENTAL_INCOME_FIELD,
 } from "./rentalIncome";
@@ -3005,7 +3007,11 @@ export function editPromptFromCapture(capture?: Capture): FoxPrompt | undefined 
   ) {
     return "other-reo";
   }
-  if (capture.field === "propose-subject-address" || capture.field === "subjectAddress") {
+  if (
+    capture.field === "propose-subject-address" ||
+    capture.field === "subjectAddress" ||
+    capture.field === "propose-rental-lease"
+  ) {
     return "confirm-proposal";
   }
   if (
@@ -3173,6 +3179,7 @@ export function workspaceUpdateCopy(capture: Capture, draft: FoxIntakeDraft) {
     const value = parsePropertyType(capture.value);
     return value ? `Updated property type to ${propertyTypeLabel(value)}.` : "Updated property type.";
   }
+  if (capture.field === "propose-rental-lease") return "Updated.";
   if (capture.field === "propose-subject-address") return "Updated.";
   if (capture.field === "subjectAddress") {
     return capture.value.trim()
@@ -4115,7 +4122,8 @@ export function workspaceReply(
         isDeclarationsConfirmPending(draft) ||
         isHouseholdConfirmPending(draft) ||
         isBorrowerNameConfirmPending(draft) ||
-        isOtherReoConfirmPending(draft)) &&
+        isOtherReoConfirmPending(draft) ||
+        isRentalIncomeConfirmPending(draft)) &&
       asksWillIQualify(q)
     ) {
       return answerThenRestore(q, draft);
@@ -4161,6 +4169,21 @@ export function workspaceReply(
     }
     if (draft.pendingProposal) {
       return answerThenRestore(q, draft);
+    }
+  }
+
+  if (
+    prompt !== "current-housing" &&
+    !draft.pendingProposal &&
+    !draft.pendingConflict
+  ) {
+    const leaseDraft = proposeTypedLeaseRental(draft, q);
+    if (leaseDraft?.pendingProposal) {
+      const rent = parseStatedMonthlyLease(q, { occupancy: draft.occupancyChoice.value });
+      return {
+        ...workspacePromptCopy("confirm-proposal", leaseDraft),
+        capture: { field: "propose-rental-lease", value: String(rent ?? leaseDraft.pendingProposal.value) },
+      };
     }
   }
 

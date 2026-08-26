@@ -13,7 +13,7 @@ import {
   type FileFacts,
   type GuidelineAction,
 } from "./conventional";
-import { unsupportedRentalNamed } from "@/lib/income/rental";
+import { parseStatedMonthlyLease, unsupportedRentalNamed } from "@/lib/income/rental";
 
 export type AnswerIntent = {
   topicId: string;
@@ -85,6 +85,10 @@ export function namesUnsupportedRental(text: string) {
   return unsupportedRentalNamed(text);
 }
 
+export function namesStatedMonthlyLease(text: string, occupancy?: string | null) {
+  return parseStatedMonthlyLease(text, { occupancy }) != null;
+}
+
 export function namesNonWarrantableCondo(text: string) {
   return namedCondoIneligible(text);
 }
@@ -102,6 +106,12 @@ export function interpretQuestion(text: string, _file?: FileFacts): AnswerIntent
     return {
       topicId: "income.rental_thin",
       filePatch: { unsupportedRental: true, rentalNamed: true },
+    };
+  }
+  if (namesStatedMonthlyLease(text, _file?.occupancy)) {
+    return {
+      topicId: "income.rental_lease",
+      filePatch: { rentalNamed: true },
     };
   }
   if (namesNonWarrantableCondo(text)) {

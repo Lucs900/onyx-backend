@@ -51,6 +51,36 @@ export function unsupportedRentalNamed(text?: string | null): boolean {
   return UNSUPPORTED_RENTAL.test(text);
 }
 
+/** Stated monthly lease / rent / tenant payment. No dollar → no invent. Not Schedule E. */
+export function parseStatedMonthlyLease(
+  text: string,
+  opts?: { occupancy?: string | null },
+): number | null {
+  const trimmed = text.trim();
+  if (!trimmed || unsupportedRentalNamed(trimmed)) return null;
+  if (/\bschedule\s*e\b|\bsch\.?\s*e\b|\bform\s*8825\b|\b8825\b/i.test(trimmed)) return null;
+  const occupancy = opts?.occupancy ?? "";
+  const investment = occupancy === "investment";
+  const leaseOrTenant = /\b(lease|tenant)\b/i.test(trimmed);
+  const rentCue = /\brent\b/i.test(trimmed);
+  if (!leaseOrTenant && !(investment && rentCue)) return null;
+  const amounts: { value: number; index: number }[] = [];
+  const money = /\$?\s*(\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?)/g;
+  let match: RegExpExecArray | null;
+  while ((match = money.exec(trimmed))) {
+    const n = Number(match[1].replace(/,/g, ""));
+    if (!Number.isFinite(n) || n < 100 || n > 100_000) continue;
+    const nearby = trimmed.slice(match.index, match.index + 28);
+    if (n >= 1900 && n <= 2100 && !/\b(month|mo\b|rent|lease)\b/i.test(nearby)) continue;
+    amounts.push({ value: n, index: match.index });
+  }
+  if (!amounts.length) return null;
+  const monthly = amounts.find((item) =>
+    /\b(a\s+month|\/\s*mo|monthly)\b/i.test(trimmed.slice(item.index, item.index + 28)),
+  );
+  return Math.round((monthly ?? amounts[0]).value);
+}
+
 /** 12-month average of rental income/loss; add back depreciation, interest, HOA, taxes, insurance. */
 export function suggestScheduleERental(input: ScheduleERentalInput): RentalSuggestResult | null {
   if (input.rentalIncomeOrLoss == null || !Number.isFinite(input.rentalIncomeOrLoss)) return null;

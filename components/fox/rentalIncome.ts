@@ -10,6 +10,7 @@ import {
   RENTAL_STILL_USEFUL,
   RENTAL_UNSUPPORTED_CAUTION,
   SUGGESTED_RENTAL_NOTE,
+  parseStatedMonthlyLease,
   rentalConfirmCopy,
   suggestLeaseRental,
   suggestScheduleERental,
@@ -23,6 +24,7 @@ export {
   RENTAL_STILL_USEFUL,
   RENTAL_UNSUPPORTED_CAUTION,
   SUGGESTED_RENTAL_NOTE,
+  parseStatedMonthlyLease,
   rentalConfirmCopy,
   unsupportedRentalNamed,
 };
@@ -111,6 +113,21 @@ export function rentalConfirmAsk(method?: string): string {
 
 export function isRentalIncomeField(field?: string | null): boolean {
   return field === RENTAL_INCOME_FIELD;
+}
+
+export function proposeTypedLeaseRental(draft: FoxIntakeDraft, text: string): FoxIntakeDraft | null {
+  if (draft.pendingConflict) return null;
+  if (draft.facts?.[RENTAL_INCOME_FIELD]?.confirmed) return null;
+  if (draft.pendingProposal && draft.pendingProposal.field !== RENTAL_INCOME_FIELD) return null;
+  if (draftHasUnsupportedRental(draft) || unsupportedRentalNamed(text)) return null;
+  const rent = parseStatedMonthlyLease(text, { occupancy: draft.occupancyChoice.value });
+  if (rent == null) return null;
+  const computed = suggestLeaseRental({ grossMonthlyRent: rent });
+  if (!computed) return null;
+  return {
+    ...draft,
+    pendingProposal: rentalIncomeProposal(computed),
+  };
 }
 
 export function applyRentalIncomeFromExtract(

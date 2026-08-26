@@ -117,11 +117,16 @@ import {
   sketchedLtvFromFacts,
 } from "../lib/guidelines/conventional";
 import {
+  parseStatedMonthlyLease,
   rentalConfirmCopy,
   suggestLeaseRental,
   suggestScheduleERental,
 } from "../lib/income/rental";
-import { applyRentalIncomeFromExtract, RENTAL_INCOME_FIELD } from "../components/fox/rentalIncome";
+import {
+  applyRentalIncomeFromExtract,
+  proposeTypedLeaseRental,
+  RENTAL_INCOME_FIELD,
+} from "../components/fox/rentalIncome";
 import { answerFromFile, foxAnswer, interpretQuestion, topicFromFile } from "../lib/guidelines/answer";
 import {
   ESTIMATED_NOT_FINAL,
@@ -10009,6 +10014,43 @@ assert.equal(
   previewFacts(investBuySfr).filter((fact) => fact.id === "caution").length,
 );
 assert.ok(previewFacts(afterNewCondo).some((fact) => fact.id === "caution" && fact.value === INVESTMENT_CAUTION));
+
+assert.equal(parseStatedMonthlyLease("I have a lease for 3000 a month"), 3000);
+assert.equal(parseStatedMonthlyLease("rent is 3000", { occupancy: "investment" }), 3000);
+assert.equal(parseStatedMonthlyLease("tenant pays 3000 a month"), 3000);
+assert.equal(parseStatedMonthlyLease("I have a lease"), null);
+assert.equal(parseStatedMonthlyLease("I have Airbnb income"), null);
+assert.equal(parseStatedMonthlyLease("rent is 3000", { occupancy: "primary" }), null);
+assert.equal(interpretQuestion("I have a lease for 3000 a month")?.topicId, "income.rental_lease");
+assert.equal(interpretQuestion("I have Airbnb income")?.topicId, "income.rental_thin");
+assert.equal(rentalSuggest(null, { grossMonthlyRent: 3000 })?.monthly, 2250);
+assert.equal(rentalSuggest({ rentalIncomeOrLoss: 12000, depreciation: 6000 })?.monthly, 1500);
+const leaseAsk = workspaceReply("I have a lease for 3000 a month", investBuy);
+assert.match(
+  leaseAsk?.text ?? "",
+  /Suggested rental income · not underwritten\. I’m using 75% of the lease\. Use this\?/,
+);
+assert.doesNotMatch(leaseAsk?.text ?? "", /I can answer from this file/);
+assert.doesNotMatch(leaseAsk?.text ?? "", /Schedule E/);
+assert.equal(leaseAsk?.capture?.field, "propose-rental-lease");
+assert.equal(leaseAsk?.capture && "value" in leaseAsk.capture ? leaseAsk.capture.value : "", "3000");
+assert.ok((leaseAsk?.actions ?? []).some((item) => item.label === "Use this"));
+assert.ok((leaseAsk?.actions ?? []).some((item) => item.label === "Change"));
+assert.equal(guidelineCaution(investBuy), INVESTMENT_CAUTION);
+const leaseProposed = proposeTypedLeaseRental(investBuy, "I have a lease for 3000 a month");
+assert.equal(leaseProposed?.pendingProposal?.field, RENTAL_INCOME_FIELD);
+assert.equal(leaseProposed?.pendingProposal?.value, "2250");
+assert.equal(leaseProposed?.facts?.[RENTAL_INCOME_FIELD], undefined);
+const leaseUsed = resolveProposal(leaseProposed!, "accept");
+assert.equal(leaseUsed.facts?.[RENTAL_INCOME_FIELD]?.value, "2250");
+assert.equal(leaseUsed.facts?.qualifying_income, undefined);
+assert.equal(guidelineCaution(leaseUsed), INVESTMENT_CAUTION);
+assert.equal(resolveProposal(leaseProposed!, "decline").facts?.[RENTAL_INCOME_FIELD], undefined);
+const rentIsAsk = workspaceReply("rent is 3000", investBuy);
+assert.equal(rentIsAsk?.capture?.field, "propose-rental-lease");
+assert.equal(rentIsAsk?.capture && "value" in rentIsAsk.capture ? rentIsAsk.capture.value : "", "3000");
+assert.match(workspaceReply("tenant pays 3000 a month", investBuy)?.text ?? "", /I’m using 75% of the lease/);
+assert.match(workspaceReply("I have Airbnb income", investBuy)?.text ?? "", /I don’t have a rental path for that yet\. I’ll keep gathering\./);
 
 const calcPurchase = ltvCltv({
   purpose: "purchase",
