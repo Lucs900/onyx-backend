@@ -339,6 +339,11 @@ export type FoxIntakeDraft = {
   statedOtherReo?: "none" | "yes";
   otherReoAsked?: boolean;
   otherProperties?: OtherReoRow[];
+  /** Other-property File net. Subject rental is never included. */
+  suggestedFileNet?: number;
+  fileNetRole?: "income" | "liability" | "none" | "thin";
+  fileNetAsked?: boolean;
+  skippedFileNet?: number;
   citizenshipAsked?: boolean;
   formerHistoryAsked?: boolean;
   /** Title / profile enrichment only. Fox does not ask for these this gate. */

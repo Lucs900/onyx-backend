@@ -226,7 +226,8 @@ function normalizeOtherProperties(value: unknown): FoxIntakeDraft["otherProperti
     const address = trimString(raw.address);
     const unpaidPrincipal = trimString(raw.unpaidPrincipal);
     const payment = trimString(raw.payment);
-    if (!address && !unpaidPrincipal && !payment) continue;
+    const leaseGross = trimString(raw.leaseGross);
+    if (!address && !unpaidPrincipal && !payment && !leaseGross) continue;
     rows.push({
       id: trimString(raw.id) || `reo-${rows.length + 1}`,
       ...(trimString(raw.occupancy) ? { occupancy: trimString(raw.occupancy) } : {}),
@@ -234,7 +235,7 @@ function normalizeOtherProperties(value: unknown): FoxIntakeDraft["otherProperti
       ...(unpaidPrincipal ? { unpaidPrincipal } : {}),
       ...(payment ? { payment } : {}),
       ...(trimString(raw.pitia) ? { pitia: trimString(raw.pitia) } : {}),
-      ...(trimString(raw.leaseGross) ? { leaseGross: trimString(raw.leaseGross) } : {}),
+      ...(leaseGross ? { leaseGross } : {}),
     });
   }
   return rows.length ? rows : [];
@@ -400,6 +401,16 @@ function normalize(value: unknown): FoxIntakeDraft {
     rentalGrossMonthly: numberOrUndefined(raw.rentalGrossMonthly),
     rentalPitiaUsed: numberOrUndefined(raw.rentalPitiaUsed),
     suggestedNetRental: signedNumberOrUndefined(raw.suggestedNetRental),
+    suggestedFileNet: signedNumberOrUndefined(raw.suggestedFileNet),
+    fileNetRole:
+      raw.fileNetRole === "income" ||
+      raw.fileNetRole === "liability" ||
+      raw.fileNetRole === "none" ||
+      raw.fileNetRole === "thin"
+        ? raw.fileNetRole
+        : undefined,
+    fileNetAsked: Boolean(raw.fileNetAsked) || undefined,
+    skippedFileNet: signedNumberOrUndefined(raw.skippedFileNet),
     rentalNetRole:
       raw.rentalNetRole === "income" ||
       raw.rentalNetRole === "liability" ||

@@ -120,12 +120,16 @@ import {
   sketchedLtvFromFacts,
 } from "../lib/guidelines/conventional";
 import {
+  netOtherPropertyFile,
   netRentalCashFlow,
   parseStatedMonthlyLease,
   rentalConfirmCopy,
   rentalNetConfirmCopy,
+  fileNetConfirmCopy,
   RENTAL_NEED_HOUSING,
   RENTAL_NEED_STATEMENT,
+  SUGGESTED_FILE_NET_FIELD,
+  SUGGESTED_FILE_NET_NOTE,
   SUGGESTED_NET_NOTE,
   SUGGESTED_NET_RENTAL_FIELD,
   suggestLeaseRental,
@@ -251,6 +255,7 @@ import {
 import {
   OTHER_REO_ASK,
   SUGGESTED_OTHER_REO_NOTE,
+  draftOtherPropertyFileNet,
   otherPropertyPaymentConfirmCopy,
   otherReoRows,
   parseOtherReo,
@@ -11054,6 +11059,172 @@ assert.doesNotMatch(nextFoxAsk(afterCoborrowerNone).text, /About how much do you
 assert.equal(file32Invest.suggestedNetRental, -3293);
 assert.ok(!requiredStructureLines(file32W2None).some((line) => /citizen/i.test(line.label)));
 assert.equal(otherReoRows(draft({ ...file32W2None, statedOtherReo: "none" })).length, 0);
+
+assert.equal(
+  netOtherPropertyFile([
+    { id: "a", rent: 3000, piti: 1450 },
+  ]).fileNet,
+  800,
+);
+assert.equal(
+  netOtherPropertyFile([
+    { id: "a", rent: 3000, piti: 1450 },
+    { id: "b", rent: 2000, piti: 1800 },
+  ]).fileNet,
+  500,
+);
+assert.equal(netOtherPropertyFile([{ id: "thin", rent: 3000 }]).fileNet, null);
+assert.equal(netOtherPropertyFile([{ id: "empty", piti: 1450 }]).fileNet, null);
+assert.equal(
+  fileNetConfirmCopy(800),
+  "Suggested File net is $800 · not underwritten. I’m using 75% of rent minus that property’s PITI, then one net across other properties. Use this?",
+);
+assert.equal(
+  fileNetConfirmCopy(-300),
+  "Suggested File net is −$300 · not underwritten. That would count as a monthly liability. I’m using 75% of rent minus that property’s PITI, then one net across other properties. Use this?",
+);
+
+const noneFileNet = draft({ ...file32OtherReoYes, statedOtherReo: "none", otherProperties: [] });
+assert.equal(draftOtherPropertyFileNet(noneFileNet).fileNet, null);
+assert.equal(noneFileNet.suggestedFileNet, undefined);
+assert.equal(
+  applyExtractedFields(noneFileNet, {
+    extractClass: "mortgage_statement",
+    confidence: 0.93,
+    fields: {
+      servicer: "RIVER SERVICING",
+      unpaid_principal: "220000",
+      current_pi: "1450",
+      property_address: "88 PINE ROAD",
+      occupancy: "investment",
+      gross_monthly_rent: "3000",
+    },
+  }).draft.pendingProposal?.field !== SUGGESTED_FILE_NET_FIELD,
+  true,
+);
+assert.equal(otherReoRows(applyExtractedFields(noneFileNet, {
+  extractClass: "mortgage_statement",
+  confidence: 0.93,
+  fields: {
+    servicer: "RIVER SERVICING",
+    unpaid_principal: "220000",
+    current_pi: "1450",
+    property_address: "88 PINE ROAD",
+    occupancy: "investment",
+    gross_monthly_rent: "3000",
+  },
+}).draft).length, 0);
+
+const oneOtherRental = applyExtractedFields(file32OtherReoYes, {
+  extractClass: "mortgage_statement",
+  confidence: 0.93,
+  fields: {
+    servicer: "RIVER SERVICING",
+    unpaid_principal: "220000",
+    current_pi: "1450",
+    property_address: "88 PINE ROAD",
+    occupancy: "investment",
+    gross_monthly_rent: "3000",
+  },
+});
+assert.equal(otherReoRows(oneOtherRental.draft).length, 1);
+assert.equal(otherReoRows(oneOtherRental.draft)[0]?.leaseGross, "3000");
+assert.equal(otherReoRows(oneOtherRental.draft)[0]?.payment, "1450");
+assert.equal(oneOtherRental.draft.pendingProposal?.field, SUGGESTED_FILE_NET_FIELD);
+assert.equal(oneOtherRental.draft.pendingProposal?.value, "800");
+assert.equal(oneOtherRental.draft.pendingProposal?.note, SUGGESTED_FILE_NET_NOTE);
+assert.match(nextFoxAsk(oneOtherRental.draft).text, /Suggested File net is \$800/);
+assert.match(nextFoxAsk(oneOtherRental.draft).text, /75% of rent minus that property’s PITI, then one net across other properties/);
+assert.doesNotMatch(nextFoxAsk(oneOtherRental.draft).text, /housing now/);
+assert.ok((nextFoxAsk(oneOtherRental.draft).actions ?? []).some((item) => item.label === "Use this"));
+assert.equal(oneOtherRental.draft.facts?.[SUGGESTED_FILE_NET_FIELD], undefined);
+assert.equal(oneOtherRental.draft.suggestedFileNet, undefined);
+assert.equal(oneOtherRental.draft.statedCurrentHousing, undefined);
+const oneUsed = resolveProposal(oneOtherRental.draft, "accept");
+assert.equal(oneUsed.suggestedFileNet, 800);
+assert.equal(oneUsed.fileNetRole, "income");
+assert.equal(oneUsed.facts?.[SUGGESTED_FILE_NET_FIELD]?.value, "800");
+assert.ok(previewFacts(oneUsed).some((fact) => fact.id === "suggestedFileNet" && fact.value === "$800"));
+assert.ok(previewFacts(oneUsed).some((fact) => fact.id === "suggestedFileNet" && fact.note === SUGGESTED_FILE_NET_NOTE));
+const oneSkipped = resolveProposal(oneOtherRental.draft, "decline");
+assert.equal(oneSkipped.suggestedFileNet, undefined);
+assert.equal(oneSkipped.facts?.[SUGGESTED_FILE_NET_FIELD], undefined);
+assert.ok(!previewFacts(oneSkipped).some((fact) => fact.id === "suggestedFileNet"));
+assert.equal(workspaceReply("Skip", oneOtherRental.draft)?.capture?.field, "decline-proposal");
+
+const rentNoPiti = applyExtractedFields(file32OtherReoYes, {
+  extractClass: "mortgage_statement",
+  confidence: 0.93,
+  fields: {
+    servicer: "RIVER SERVICING",
+    unpaid_principal: "220000",
+    property_address: "88 PINE ROAD",
+    occupancy: "investment",
+    gross_monthly_rent: "3000",
+  },
+});
+assert.equal(otherReoRows(rentNoPiti.draft)[0]?.leaseGross, "3000");
+assert.equal(draftOtherPropertyFileNet(rentNoPiti.draft).fileNet, null);
+assert.notEqual(rentNoPiti.draft.pendingProposal?.field, SUGGESTED_FILE_NET_FIELD);
+
+const twoOtherRentals = applyExtractedFields(oneOtherRental.draft, {
+  extractClass: "mortgage_statement",
+  confidence: 0.93,
+  fields: {
+    servicer: "LAKE SERVICING",
+    unpaid_principal: "180000",
+    current_pi: "1800",
+    property_address: "12 CEDAR COURT",
+    occupancy: "investment",
+    monthly_rent: "2000",
+  },
+});
+assert.equal(otherReoRows(twoOtherRentals.draft).length, 2);
+assert.equal(draftOtherPropertyFileNet(twoOtherRentals.draft).fileNet, 500);
+assert.equal(twoOtherRentals.draft.pendingProposal?.field, SUGGESTED_FILE_NET_FIELD);
+assert.equal(twoOtherRentals.draft.pendingProposal?.value, "500");
+assert.match(nextFoxAsk(twoOtherRentals.draft).text, /Suggested File net is \$500/);
+const twoUsed = resolveProposal(twoOtherRentals.draft, "accept");
+assert.equal(twoUsed.suggestedFileNet, 500);
+assert.equal(twoUsed.suggestedNetRental, undefined);
+assert.ok(!previewFacts(twoUsed).some((fact) => fact.id === "suggestedNetRental"));
+
+const investWithOther = applyExtractedFields(
+  draft({
+    ...file32Invest,
+    statedOtherReo: "yes",
+    otherReoAsked: true,
+    pendingProposal: null,
+    subjectAddress: "14 OAK STREET",
+  }),
+  {
+    extractClass: "mortgage_statement",
+    confidence: 0.93,
+    fields: {
+      servicer: "RIVER SERVICING",
+      unpaid_principal: "220000",
+      current_pi: "1450",
+      property_address: "88 PINE ROAD",
+      occupancy: "investment",
+      gross_monthly_rent: "3000",
+    },
+  },
+);
+assert.equal(investWithOther.draft.suggestedNetRental, -3293);
+assert.equal(investWithOther.draft.facts?.[SUGGESTED_NET_RENTAL_FIELD]?.value, "-3293");
+assert.equal(draftOtherPropertyFileNet(investWithOther.draft).fileNet, 800);
+assert.equal(investWithOther.draft.pendingProposal?.field, SUGGESTED_FILE_NET_FIELD);
+assert.equal(investWithOther.draft.pendingProposal?.value, "800");
+const investFileUsed = resolveProposal(investWithOther.draft, "accept");
+assert.equal(investFileUsed.suggestedNetRental, -3293);
+assert.equal(investFileUsed.suggestedFileNet, 800);
+assert.ok(previewFacts(investFileUsed).some((fact) => fact.id === "suggestedNetRental" && fact.value === "−$3,293"));
+assert.ok(previewFacts(investFileUsed).some((fact) => fact.id === "suggestedFileNet" && fact.value === "$800"));
+assert.ok(previewFacts(investFileUsed).some((fact) => fact.id === "income" && /−\$3,293/.test(fact.value)));
+assert.doesNotMatch(
+  previewFacts(investFileUsed).find((fact) => fact.id === "income")?.value ?? "",
+  /\$800/,
+);
 
 extractAdapterSmoke()
   .then(() => {

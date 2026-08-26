@@ -105,13 +105,19 @@ import {
   writeBorrowerName,
 } from "./borrowerName";
 import {
+  FILE_NET_ROLE_FIELD,
   OTHER_REO_PAYMENT_FIELD,
   STATED_OTHER_REO_FIELD,
+  SUGGESTED_FILE_NET_FIELD,
+  fileNetConfirmCopy,
+  isFileNetField,
   isStatedOtherReo,
+  maybeProposeOtherReoFileNet,
   otherPropertyPaymentConfirmCopy,
   otherReoConfirmCopy,
   proposeExtractedOtherReo,
   skipOtherReo,
+  skipOtherReoFileNet,
   writeStatedOtherReo,
 } from "./otherReo";
 import {
@@ -128,10 +134,12 @@ import {
   type NamedDebt,
 } from "@/lib/guidelines/conventional";
 import {
+  FILE_NET_ROLE_FIELD,
   RENTAL_GROSS_FIELD,
   RENTAL_INCOME_FIELD,
   RENTAL_NET_ROLE_FIELD,
   RENTAL_PITIA_FIELD,
+  SUGGESTED_FILE_NET_FIELD,
   SUGGESTED_NET_RENTAL_FIELD,
   draftHasLease,
   draftHasScheduleE,
@@ -790,6 +798,9 @@ export function proposalAskCopy(proposal: FactProposal) {
   if (proposal.field === OTHER_REO_PAYMENT_FIELD) {
     return otherPropertyPaymentConfirmCopy(Number(proposal.value) || 0);
   }
+  if (isFileNetField(proposal.field)) {
+    return fileNetConfirmCopy(Number(proposal.value)) ?? "";
+  }
   if (proposal.field === STATED_OTHER_REO_FIELD && isStatedOtherReo(proposal.value)) {
     return otherReoConfirmCopy(proposal.value);
   }
@@ -957,6 +968,17 @@ function writeConfirmedFact(
     const net = parseRentalMoney(value);
     if (net != null) {
       next = { ...next, suggestedNetRental: net, facts };
+    }
+  }
+  if (field === SUGGESTED_FILE_NET_FIELD) {
+    const net = parseRentalMoney(value);
+    if (net != null) {
+      next = { ...next, suggestedFileNet: net, fileNetAsked: undefined, skippedFileNet: undefined, facts };
+    }
+  }
+  if (field === FILE_NET_ROLE_FIELD) {
+    if (value === "income" || value === "liability" || value === "none" || value === "thin") {
+      next = { ...next, fileNetRole: value, facts };
     }
   }
   if (field === RENTAL_GROSS_FIELD) {
@@ -1160,6 +1182,9 @@ export function resolveProposal(
     if (proposal.field === STATED_OTHER_REO_FIELD) {
       return skipOtherReo({ ...draft, pendingProposal: null });
     }
+    if (isFileNetField(proposal.field)) {
+      return skipOtherReoFileNet({ ...draft, pendingProposal: null });
+    }
     const declined = { ...draft, pendingProposal: null };
     return flushPendingOtherReo(flushPendingCurrentHousing(flushPendingHireDate(declined)));
   }
@@ -1176,6 +1201,7 @@ export function resolveProposal(
       isBorrowerNameField(proposal.field) ||
       isCoborrowerNameField(proposal.field) ||
       proposal.field === STATED_OTHER_REO_FIELD ||
+      isFileNetField(proposal.field) ||
       proposal.kind === "public"
       ? "suggested"
       : isRemainderConfirmField(proposal.field)
@@ -1202,10 +1228,11 @@ export function resolveProposal(
     (proposal.field === SUGGESTED_NET_RENTAL_FIELD || proposal.field === RENTAL_INCOME_FIELD)
       ? syncCalculatorDraft(flushed)
       : flushed;
-  if (winner === "accept" && shouldAskYearsInBusiness(afterNet)) {
-    return withYearsInBusinessAsk(afterNet);
+  const afterFileNet = winner === "accept" ? maybeProposeOtherReoFileNet(afterNet) : afterNet;
+  if (winner === "accept" && shouldAskYearsInBusiness(afterFileNet)) {
+    return withYearsInBusinessAsk(afterFileNet);
   }
-  return afterNet;
+  return afterFileNet;
 }
 
 function flushPendingHireDate(draft: FoxIntakeDraft): FoxIntakeDraft {

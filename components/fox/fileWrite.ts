@@ -94,7 +94,9 @@ import {
 import {
   STATED_OTHER_REO_FIELD,
   appendOtherReoRow,
+  isFileNetConfirmPending,
   isOtherPropertyMortgageExtract,
+  maybeProposeOtherReoFileNet,
   otherReoSettled,
   proposeExtractedOtherPropertyPayment,
   proposeExtractedOtherReo,
@@ -173,6 +175,9 @@ export const EXTRACT_SCHEMA_KEYS: Record<ExtractClass, readonly string[]> = {
     "year_built",
     "annual_taxes",
     "hoa_monthly",
+    "lease_gross",
+    "gross_monthly_rent",
+    "monthly_rent",
   ],
   other: [],
 };
@@ -194,6 +199,10 @@ const MONEY_KEYS = new Set([
   "rental_gross_monthly",
   "rental_pitia_used",
   "suggested_net_rental",
+  "suggestedFileNet",
+  "lease_gross",
+  "gross_monthly_rent",
+  "monthly_rent",
   "schedule_c_net_profit",
   "depreciation",
   "depletion",
@@ -507,6 +516,7 @@ export function factLabel(field: string) {
   if (field === "rental_gross_monthly") return "Suggested rental (gross)";
   if (field === "rental_pitia_used") return "PITIA used to net";
   if (field === "suggested_net_rental") return "Suggested net rental";
+  if (field === "suggestedFileNet") return "File net";
   if (field === "rental_net_role") return "Rental net role";
   if (field === "institution") return "institution";
   if (field === "period_end") return "period end";
@@ -599,7 +609,7 @@ export function displayFactValue(field: string, value: string) {
     const months = Number(value);
     if (Number.isFinite(months) && months > 0) return displayTimeOnJob(months);
   }
-  if (field === "suggested_net_rental") {
+  if (field === "suggested_net_rental" || field === "suggestedFileNet") {
     const n = moneyNumber(value);
     if (n != null) {
       const abs = Math.abs(Math.round(n)).toLocaleString("en-US");
@@ -826,6 +836,14 @@ export function applyExtractedFields(
     if (keepPrimaryPay && PRIMARY_PAY_KEYS.has(field)) continue;
     if (field === HIRE_DATE_FIELD) continue;
     if (extractClass === "government_id" && (field === "full_name" || field === "date_of_birth" || field === "dob")) continue;
+    if (
+      extractClass === "mortgage_statement" &&
+      isOtherPropertyMortgageExtract(next, {
+        address: String(fields.property_address ?? "").trim() || undefined,
+      })
+    ) {
+      continue;
+    }
     if (isRemainderConfirmField(field)) {
       if (
         extractClass === "mortgage_statement" &&
@@ -929,7 +947,14 @@ export function applyExtractedFields(
     fields,
     computed,
   );
-  next = applyRentalIncomeFromExtract(next, extractClass, fields);
+  const otherPropertyMortgageEarly =
+    extractClass === "mortgage_statement" &&
+    isOtherPropertyMortgageExtract(next, {
+      address: String(fields.property_address ?? "").trim() || undefined,
+    });
+  if (!otherPropertyMortgageEarly) {
+    next = applyRentalIncomeFromExtract(next, extractClass, fields);
+  }
   conflict = next.pendingConflict ?? conflict;
   const extractedAssets = extractClass === "bank_statement" ? moneyNumber(fields.ending_balance ?? "") : null;
   if (extractedAssets != null) {
@@ -1066,20 +1091,20 @@ export function applyExtractedFields(
     })
   ) {
     const occupancy = String(fields.occupancy ?? "").trim() || undefined;
-    const investment =
-      occupancy === "investment" || next.occupancyChoice.value === "investment";
     next = appendOtherReoRow(next, {
       address: String(fields.property_address ?? "").trim() || undefined,
       unpaidPrincipal: String(fields.unpaid_principal ?? "").trim() || undefined,
       payment: String(fields.current_pi ?? "").trim() || undefined,
       occupancy,
-      leaseGross: investment
-        ? String(fields.lease_gross ?? fields.gross_monthly_rent ?? "").trim() || undefined
-        : undefined,
+      leaseGross:
+        String(fields.lease_gross ?? fields.gross_monthly_rent ?? fields.monthly_rent ?? "").trim() ||
+        undefined,
     });
+    next = maybeProposeOtherReoFileNet(next);
     if (
       extractedHousing != null &&
       !next.pendingConflict &&
+      !isFileNetConfirmPending(next) &&
       (!next.pendingProposal || next.pendingProposal.field === "otherReoPayment")
     ) {
       next = proposeExtractedOtherPropertyPayment(next, extractedHousing);

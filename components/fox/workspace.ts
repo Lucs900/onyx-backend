@@ -319,6 +319,8 @@ import {
   OTHER_REO_PAYMENT_FIELD,
   STATED_OTHER_REO_FIELD,
   SUGGESTED_OTHER_REO_NOTE,
+  fileNetConfirmCopy,
+  isFileNetField,
   isOtherReoConfirmPending,
   isSkipOtherReoText,
   isStatedOtherReo,
@@ -331,6 +333,7 @@ import {
   parseOtherReo,
   proposeStatedOtherReo,
   skipOtherReo,
+  skipOtherReoFileNet,
   writeStatedOtherReo,
 } from "./otherReo";
 import {
@@ -1423,6 +1426,12 @@ function liveProposalAsk(
   if (proposal.field === OTHER_REO_PAYMENT_FIELD) {
     return {
       text: otherPropertyPaymentConfirmCopy(Number(proposal.value) || 0),
+      actions: otherReoConfirmActions(),
+    };
+  }
+  if (isFileNetField(proposal.field)) {
+    return {
+      text: fileNetConfirmCopy(Number(proposal.value)) ?? "",
       actions: otherReoConfirmActions(),
     };
   }
@@ -2959,6 +2968,7 @@ export function promptForProposalField(field?: string | null): FoxPrompt | undef
   if (isCoborrowerNameField(field)) return "coborrower-name";
   if (isBorrowerNameField(field)) return "borrower-name";
   if (field === STATED_OTHER_REO_FIELD) return "other-reo";
+  if (isFileNetField(field)) return undefined;
   if (field === "property_address" || field === "subjectAddress") return "property-type";
   const fromCapture = editPromptFromPendingField(field);
   return fromCapture === "confirm-proposal" ? undefined : fromCapture;
@@ -2966,6 +2976,7 @@ export function promptForProposalField(field?: string | null): FoxPrompt | undef
 
 export function changePendingProposal(draft: FoxIntakeDraft): FoxIntakeDraft {
   const field = draft.pendingProposal?.field;
+  if (isFileNetField(field)) return skipOtherReoFileNet(draft);
   const prompt = promptForProposalField(field);
   return {
     ...draft,

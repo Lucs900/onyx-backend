@@ -193,6 +193,76 @@ export function suggestLeaseRental(input: LeaseRentalInput): RentalSuggestResult
   };
 }
 
+export const SUGGESTED_FILE_NET_FIELD = "suggestedFileNet";
+export const FILE_NET_ROLE_FIELD = "fileNetRole";
+export const SUGGESTED_FILE_NET_NOTE = "Suggested · not underwritten";
+export const FILE_NET_METHOD =
+  "75% of rent minus that property’s PITI, then one net across other properties";
+
+export type OtherPropertyFileRowInput = {
+  id: string;
+  rent?: number | null;
+  piti?: number | null;
+};
+
+export type OtherPropertyFileRowNet = {
+  id: string;
+  rent: number | null;
+  piti: number | null;
+  net: number | null;
+  complete: boolean;
+  thin: boolean;
+};
+
+export type OtherPropertyFileNet = {
+  rows: OtherPropertyFileRowNet[];
+  fileNet: number | null;
+  role: RentalNetRole;
+  completeCount: number;
+};
+
+/** Other-property File net only. Subject is never included. */
+export function netOtherPropertyFile(rows: OtherPropertyFileRowInput[]): OtherPropertyFileNet {
+  const computed: OtherPropertyFileRowNet[] = rows.map((item) => {
+    const rent =
+      item.rent != null && Number.isFinite(item.rent) && item.rent > 0 ? Math.round(item.rent) : null;
+    const piti =
+      item.piti != null && Number.isFinite(item.piti) && item.piti > 0 ? Math.round(item.piti) : null;
+    if (rent == null) {
+      return { id: item.id, rent: null, piti, net: null, complete: false, thin: true };
+    }
+    if (piti == null) {
+      return { id: item.id, rent, piti: null, net: null, complete: false, thin: true };
+    }
+    return {
+      id: item.id,
+      rent,
+      piti,
+      net: Math.round(rent * LEASE_VACANCY_FACTOR) - piti,
+      complete: true,
+      thin: false,
+    };
+  });
+  const complete = computed.filter((item) => item.complete && item.net != null);
+  const fileNet = complete.length
+    ? complete.reduce((sum, item) => sum + (item.net ?? 0), 0)
+    : null;
+  return {
+    rows: computed,
+    fileNet,
+    role: rentalNetRoleOf(fileNet),
+    completeCount: complete.length,
+  };
+}
+
+export function fileNetConfirmCopy(net: number): string | null {
+  if (!Number.isFinite(net)) return null;
+  const shown = rentalMoneyShown(net);
+  if (!shown.includes("$")) return null;
+  const liability = net < 0 ? " That would count as a monthly liability." : "";
+  return `Suggested File net is ${shown} · not underwritten.${liability} I’m using ${FILE_NET_METHOD}. Use this?`;
+}
+
 /** NOO only. net_i = grossMonthly_i - pitia_i. Aggregate complete properties only. */
 export function netRentalCashFlow(properties: RentalPropertyInput[]): RentalNetResult {
   const rows: RentalPropertyNet[] = properties.map((item) => {
