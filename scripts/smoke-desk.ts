@@ -454,8 +454,9 @@ function confirmLooksRight() {
     "borrower-name": { field: "skip-borrower-name" },
     "other-reo": { field: "skip-other-reo" },
   };
-  for (let i = 0; i < 24; i += 1) {
+  for (let i = 0; i < 20; i += 1) {
     const prompt = workspacePrompt(getFoxDraft());
+    if (prompt === "review") break;
     const capture = skips[prompt];
     if (capture) {
       applyCapture(capture as Parameters<typeof applyCapture>[0]);
@@ -465,14 +466,22 @@ function confirmLooksRight() {
       applyCapture({ field: "skip-docs" });
       continue;
     }
-    if (prompt === "review") {
-      applyCapture({ field: "confirm-draft" });
+    break;
+  }
+  if (workspacePrompt(getFoxDraft()) === "review" || canLooksRight(getFoxDraft())) {
+    applyCapture({ field: "confirm-draft" });
+  }
+  for (let i = 0; i < 4; i += 1) {
+    const prompt = workspacePrompt(getFoxDraft());
+    if (prompt === "household") {
+      applyCapture({ field: "skip-household" });
+      continue;
+    }
+    if (prompt === "coborrower-name") {
+      applyCapture({ field: "skip-coborrower-name" });
       continue;
     }
     break;
-  }
-  if (workspacePrompt(getFoxDraft()) === "review") {
-    return applyCapture({ field: "confirm-draft" });
   }
   return getFoxDraft();
 }
