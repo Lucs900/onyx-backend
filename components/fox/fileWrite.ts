@@ -462,7 +462,7 @@ export function factLabel(field: string) {
   if (field === "declarationTiming") return "Event timing";
   if (field === "statedHousehold") return "Household";
   if (field === "coborrowerName" || field === "coborrower_name" || field === "spouse_name") {
-    return "Other borrower";
+    return "Borrower 2";
   }
   if (isBorrowerNameField(field)) return "Borrower";
   if (field === STATED_OTHER_REO_FIELD) return "Other real estate";
@@ -923,7 +923,7 @@ export function applyExtractedFields(
           field: "coborrowerName",
           fileValue: displayBorrowerName(existingCoborrower),
           documentValue: shown,
-          label: "Other borrower",
+          label: "Borrower 2",
           kind: "document",
         };
         next = { ...next, pendingConflict: conflict };
@@ -1546,7 +1546,7 @@ export const DOC_INVITE_COPY: Record<DocInviteKind, string> = {
   tax_return:
     "Next is your most recent tax return. That’s how I estimate qualifying income. Suggested, not underwritten.",
   prior_year_return: "A prior-year return helps me see if last year was stable. Have one?",
-  coborrower_government_id: "First I need their government ID, so this file has a name on it.",
+  coborrower_government_id: "First I need Borrower 2’s government ID, so this file has a name on it.",
 };
 
 /** ID + this borrower’s income package. Prior-year / second-year sit on remainder. */

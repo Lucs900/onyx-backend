@@ -248,15 +248,21 @@ import {
 } from "./household";
 import {
   SUGGESTED_COBORROWER_NOTE,
-  COBORROWER_HANDOFF,
+  coborrowerExtractCopy,
+  coborrowerFileLabel,
+  coborrowerHandOffCopy,
+  coborrowerIdInviteCopy,
   coborrowerIdOutstanding,
+  coborrowerIncomeInviteCopy,
   coborrowerNameAskCopy,
   coborrowerNameOnFile,
   coborrowerNameSettled,
+  coborrowerSpokenIdCopy,
   isCoborrowerNameConfirmPending,
   isCoborrowerNameField,
   isSkipCoborrowerNameText,
   parseCoborrowerName,
+  primaryFileLabel,
   proposeCoborrowerName,
   skipCoborrowerName,
   writeCoborrowerName,
@@ -1078,7 +1084,7 @@ function incomeFromText(text: string) {
 
 function documentsAskText(draft: FoxIntakeDraft): string {
   if (isCoborrowerNameConfirmPending(draft) && draft.pendingProposal?.value) {
-    return borrowerNameExtractCopy(draft.pendingProposal.value);
+    return coborrowerExtractCopy(draft.pendingProposal.value, draft);
   }
   if (isBorrowerNameConfirmPending(draft) && draft.pendingProposal?.value) {
     return borrowerNameExtractCopy(draft.pendingProposal.value);
@@ -1094,6 +1100,13 @@ function documentsAskText(draft: FoxIntakeDraft): string {
   }
   if (offeringDocStart(draft)) return sketchAndStartDocsCopy(draft).text;
   const invite = nextDocInvite(draft);
+  if (invite === "coborrower_government_id") return coborrowerIdInviteCopy(draft);
+  if (
+    draft.workingOnCoborrower &&
+    (invite === "paystub" || invite === "w2" || invite === "tax_return")
+  ) {
+    return coborrowerIncomeInviteCopy(invite, draft);
+  }
   if (invite) return DOC_INVITE_COPY[invite];
   const useful = stillUsefulAskCopy(draft);
   if (useful) return useful;
@@ -1137,7 +1150,7 @@ function nextDocSpoken(invite: ReturnType<typeof nextDocInvite>): string {
   if (invite === "w2") return "Next is your most recent W-2.";
   if (invite === "prior_year_return") return DOC_INVITE_COPY.prior_year_return;
   if (invite === "government_id") return "Next is a government ID, so the file has a name.";
-  if (invite === "coborrower_government_id") return "Next is their government ID.";
+  if (invite === "coborrower_government_id") return coborrowerSpokenIdCopy();
   return "";
 }
 
@@ -1548,10 +1561,10 @@ function extraCorrectionLines(draft: FoxIntakeDraft): { id: string; label: strin
     extra.push({ id: "household", label: "Household", prompt: "household" });
   }
   if (draft.coborrowerNameAsked || draft.coborrowerName) {
-    extra.push({ id: "coborrower-name", label: "Other borrower", prompt: "coborrower-name" });
+    extra.push({ id: "coborrower-name", label: coborrowerFileLabel(draft), prompt: "coborrower-name" });
   }
   if (draft.borrowerNameAsked || draft.borrowerName || draft.contact.fullName.value) {
-    extra.push({ id: "borrower-name", label: "Borrower", prompt: "borrower-name" });
+    extra.push({ id: "borrower-name", label: primaryFileLabel(draft), prompt: "borrower-name" });
   }
   if (draft.otherReoAsked || draft.statedOtherReo) {
     extra.push({ id: "other-reo", label: "Other real estate", prompt: "other-reo" });
@@ -2217,8 +2230,8 @@ function workspaceAskCopy(
     const invite = nextDocInvite(draft);
     if (invite === "coborrower_government_id") {
       return {
-        text: COBORROWER_HANDOFF,
-        followUp: DOC_INVITE_COPY.coborrower_government_id,
+        text: coborrowerHandOffCopy(draft),
+        followUp: coborrowerIdInviteCopy(draft),
         actions: docInviteActions(),
       };
     }
@@ -3129,12 +3142,12 @@ export function workspaceUpdateCopy(capture: Capture, draft: FoxIntakeDraft) {
       ? `Updated household to ${householdLabel(capture.value)}.`
       : "Updated household.";
   }
-  if (capture.field === "skip-coborrower-name") return "Updated. Other borrower left blank.";
+  if (capture.field === "skip-coborrower-name") return "Updated. Borrower 2 left blank.";
   if (capture.field === "propose-coborrower-name") return "Updated.";
   if (capture.field === "coborrowerName") {
     return capture.value.trim()
-      ? `Updated other borrower to ${capture.value.trim()}.`
-      : "Updated other borrower.";
+      ? `Updated Borrower 2 to ${capture.value.trim()}.`
+      : "Updated Borrower 2.";
   }
   if (capture.field === "skip-borrower-name") return "Updated. Borrower left blank.";
   if (capture.field === "propose-borrower-name") return "Updated.";
@@ -5446,7 +5459,7 @@ export function previewFacts(draft: FoxIntakeDraft): PreviewFact[] {
     const shown = draft.coborrowerName || pendingName || "—";
     facts.push({
       id: "coborrower-name",
-      label: "Other borrower",
+      label: coborrowerFileLabel(draft),
       value: shown,
       note: SUGGESTED_COBORROWER_NOTE,
     });
@@ -5464,7 +5477,7 @@ export function previewFacts(draft: FoxIntakeDraft): PreviewFact[] {
     const shown = borrowerNameOnFile(draft) || pending || "—";
     facts.push({
       id: "borrower",
-      label: "Borrower",
+      label: primaryFileLabel(draft),
       value: shown,
       note: SUGGESTED_BORROWER_NOTE,
     });

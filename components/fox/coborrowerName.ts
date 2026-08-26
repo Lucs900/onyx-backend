@@ -5,9 +5,66 @@ export const COBORROWER_NAME_FIELD = "coborrowerName";
 export const COBORROWER_NAME_FACT = "coborrower_name";
 export const SPOUSE_NAME_FACT = "spouse_name";
 export const SUGGESTED_COBORROWER_NOTE = "Suggested · not underwritten";
-export const COBORROWER_NAME_ASK = "What name should I put for the other borrower?";
-export const COBORROWER_CONFIRM_ASK = "The file already has a name for the other borrower.";
-export const COBORROWER_HANDOFF = "Now working on the other borrower.";
+export const COBORROWER_HANDOFF = "Now working on Borrower 2.";
+
+export function extraBorrowerSlot(_draft?: FoxIntakeDraft): number {
+  return 2;
+}
+
+export function borrowerSlotLabel(slot: number): string {
+  return `Borrower ${slot}`;
+}
+
+export function fileHasMultipleBorrowers(draft: FoxIntakeDraft): boolean {
+  return (
+    draft.statedHousehold === "with_someone" ||
+    draft.workingOnCoborrower === true ||
+    Boolean(draft.coborrowerName?.trim()) ||
+    draft.coborrowerNameAsked === true ||
+    isCoborrowerNameConfirmPending(draft)
+  );
+}
+
+export function primaryFileLabel(draft: FoxIntakeDraft): string {
+  return fileHasMultipleBorrowers(draft) ? "Borrower 1" : "Borrower";
+}
+
+export function coborrowerFileLabel(draft: FoxIntakeDraft): string {
+  return borrowerSlotLabel(extraBorrowerSlot(draft));
+}
+
+export function coborrowerHandOffCopy(draft: FoxIntakeDraft): string {
+  return `Now working on ${borrowerSlotLabel(extraBorrowerSlot(draft))}.`;
+}
+
+export function coborrowerIdInviteCopy(draft: FoxIntakeDraft): string {
+  return `First I need ${borrowerSlotLabel(extraBorrowerSlot(draft))}’s government ID, so this file has a name on it.`;
+}
+
+export function coborrowerExtractCopy(name: string, draft?: FoxIntakeDraft): string {
+  return `I read ${displayBorrowerName(name)} on ${borrowerSlotLabel(extraBorrowerSlot(draft))}’s ID. Use that?`;
+}
+
+export function coborrowerTypedNameAsk(draft?: FoxIntakeDraft): string {
+  return `What name should I put for ${borrowerSlotLabel(extraBorrowerSlot(draft))}?`;
+}
+
+export function coborrowerSpokenIdCopy(draft?: FoxIntakeDraft): string {
+  return `Next is ${borrowerSlotLabel(extraBorrowerSlot(draft))}’s government ID.`;
+}
+
+export function coborrowerIncomeInviteCopy(
+  kind: "paystub" | "w2" | "tax_return",
+  draft?: FoxIntakeDraft,
+): string {
+  const whose = `${borrowerSlotLabel(extraBorrowerSlot(draft))}’s`;
+  if (kind === "paystub") return `Now ${whose} most recent paystub.`;
+  if (kind === "w2") return `Now ${whose} latest W-2.`;
+  return `Now ${whose} latest personal tax return.`;
+}
+
+export const COBORROWER_NAME_ASK = coborrowerTypedNameAsk();
+export const COBORROWER_CONFIRM_ASK = "The file already has a name for Borrower 2.";
 
 export function coborrowerNameFromFile(draft: FoxIntakeDraft) {
   const raw = (
@@ -136,7 +193,7 @@ export function proposeCoborrowerName(draft: FoxIntakeDraft, name: string): FoxI
   const proposal: FactProposal = {
     field: COBORROWER_NAME_FIELD,
     value,
-    label: "Other borrower",
+    label: coborrowerFileLabel(draft),
     kind: "document",
     note: SUGGESTED_COBORROWER_NOTE,
   };
@@ -154,7 +211,7 @@ export function proposeExtractedCoborrowerName(
     pendingProposal: {
       field: COBORROWER_NAME_FIELD,
       value,
-      label: "Other borrower",
+      label: coborrowerFileLabel(draft),
       kind: "document",
       note: SUGGESTED_COBORROWER_NOTE,
       extras,
@@ -171,8 +228,8 @@ export function skipCoborrowerId(draft: FoxIntakeDraft): FoxIntakeDraft {
   };
 }
 
-export function coborrowerNameConfirmCopy(name: string) {
-  return `The file already has ${displayBorrowerName(name)}. ${SUGGESTED_COBORROWER_NOTE}. Use this for the other borrower?`;
+export function coborrowerNameConfirmCopy(name: string, draft?: FoxIntakeDraft) {
+  return `The file already has ${displayBorrowerName(name)}. ${SUGGESTED_COBORROWER_NOTE}. Use this for ${coborrowerFileLabel(draft ?? ({} as FoxIntakeDraft))}?`;
 }
 
 export function coborrowerNameConfirmActions(): FoxAction[] {
@@ -206,7 +263,7 @@ export function coborrowerNameAskCopy(draft: FoxIntakeDraft): {
   const fromFile = coborrowerNameFromFile(draft);
   if (fromFile && !draft.coborrowerName && !draft.coborrowerNameAsked && draft.correcting !== "coborrower-name") {
     return {
-      text: coborrowerNameConfirmCopy(fromFile),
+      text: coborrowerNameConfirmCopy(fromFile, draft),
       actions: [
         {
           id: "use-coborrower-name",
@@ -224,7 +281,7 @@ export function coborrowerNameAskCopy(draft: FoxIntakeDraft): {
     };
   }
   return {
-    text: COBORROWER_NAME_ASK,
+    text: coborrowerTypedNameAsk(draft),
     actions: coborrowerNameSkipActions(),
   };
 }

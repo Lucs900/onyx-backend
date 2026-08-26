@@ -7404,7 +7404,8 @@ assert.ok(
 const withSomeoneChip = workspaceReply("Yes", afterPrimaryPass);
 assert.equal(withSomeoneChip?.capture?.field, "statedHousehold");
 assert.equal(withSomeoneChip?.text, COBORROWER_HANDOFF);
-assert.match(withSomeoneChip?.followUp ?? "", /their government ID/i);
+assert.equal(withSomeoneChip?.text, "Now working on Borrower 2.");
+assert.match(withSomeoneChip?.followUp ?? "", /Borrower 2’s government ID/);
 assert.doesNotMatch(withSomeoneChip?.text ?? "", /What name should I put|What’s their name|occupancy|purchase price|estimated FICO|SSN|income type|second borrower card/i);
 assert.deepEqual(
   (withSomeoneChip?.actions ?? []).map((item) => item.label),
@@ -7430,7 +7431,16 @@ assert.equal(usedWithSomeone.householdAsked, true);
 assert.equal(usedWithSomeone.workingOnCoborrower, true);
 assert.equal(workspacePrompt(usedWithSomeone), "documents");
 assert.equal(workspacePromptCopy("documents", usedWithSomeone).text, COBORROWER_HANDOFF);
-assert.match(workspacePromptCopy("documents", usedWithSomeone).followUp ?? "", /their government ID/i);
+assert.match(workspacePromptCopy("documents", usedWithSomeone).followUp ?? "", /Borrower 2’s government ID/);
+assert.ok(
+  previewFacts(usedWithSomeone).some(
+    (fact) =>
+      fact.id === "borrower" &&
+      fact.label === "Borrower 1" &&
+      fact.value === "Jordan Hale",
+  ),
+);
+assert.ok(previewFacts(usedWithSomeone).every((fact) => fact.id !== "borrower" || fact.label !== "Borrower"));
 assert.doesNotMatch(
   `${workspacePromptCopy("documents", usedWithSomeone).text} ${workspacePromptCopy("documents", usedWithSomeone).followUp ?? ""}`,
   /What name should I put|What’s their name/i,
@@ -7658,7 +7668,7 @@ assert.ok(
 );
 const seOtherYes = workspaceReply("Yes", seOtherReturnIn);
 assert.equal(seOtherYes?.text, COBORROWER_HANDOFF);
-assert.match(seOtherYes?.followUp ?? "", /their government ID/i);
+assert.match(seOtherYes?.followUp ?? "", /Borrower 2’s government ID/);
 assert.doesNotMatch(seOtherYes?.text ?? "", /What name should I put|What’s their name/i);
 assert.deepEqual(
   (seOtherYes?.actions ?? []).map((item) => item.label),
@@ -7674,7 +7684,10 @@ assert.equal(workspacePrompt(seOtherOnCoborrower), "documents");
 assert.equal(workspacePromptCopy("documents", seOtherOnCoborrower).text, COBORROWER_HANDOFF);
 const seOtherSkipCoborrowerId = skipCurrentInvite(seOtherOnCoborrower);
 assert.equal(workspacePrompt(seOtherSkipCoborrowerId), "coborrower-name");
-assert.match(workspacePromptCopy("coborrower-name", seOtherSkipCoborrowerId).text, /other borrower/i);
+assert.equal(
+  workspacePromptCopy("coborrower-name", seOtherSkipCoborrowerId).text,
+  "What name should I put for Borrower 2?",
+);
 
 const coborrowerFromDocs = draft({
   ...afterPrimaryPass,
@@ -7694,6 +7707,7 @@ assert.equal(workspacePromptCopy("documents", coborrowerFromDocs).text, COBORROW
 const coborrowerAfterSkipId = skipCurrentInvite(coborrowerFromDocs);
 assert.equal(workspacePrompt(coborrowerAfterSkipId), "coborrower-name");
 assert.match(workspacePromptCopy("coborrower-name", coborrowerAfterSkipId).text, /Alex Hale/);
+assert.match(workspacePromptCopy("coborrower-name", coborrowerAfterSkipId).text, /Borrower 2/);
 assert.deepEqual(
   (workspacePromptCopy("coborrower-name", coborrowerAfterSkipId).actions ?? []).map((item) => item.label),
   ["Use this", "Change"],
@@ -7708,6 +7722,56 @@ const namedCoborrower = workspaceReply("Alex Hale", {
 });
 assert.equal(namedCoborrower?.capture?.field, "coborrowerName");
 assert.doesNotMatch(namedCoborrower?.text ?? "", /occupancy|purchase price|estimated FICO/i);
+const namedCoborrowerFile = draft({
+  ...coborrowerAfterSkipId,
+  coborrowerNameAsked: true,
+  coborrowerName: "Alex Hale",
+});
+assert.ok(
+  previewFacts(namedCoborrowerFile).some(
+    (fact) =>
+      fact.id === "coborrower-name" &&
+      fact.label === "Borrower 2" &&
+      fact.value === "Alex Hale",
+  ),
+);
+assert.ok(
+  previewFacts(namedCoborrowerFile).some(
+    (fact) => fact.id === "borrower" && fact.label === "Borrower 1" && fact.value === "Jordan Hale",
+  ),
+);
+
+const coborrowerIdExtract = applyExtractedFields(
+  draft({
+    ...seOtherOnCoborrower,
+    documents: [
+      {
+        slot: "id",
+        name: "coborrower-id.png",
+        type: "image/png",
+        size: 4000,
+        receivedAt: "2026-08-22T00:00:00.000Z",
+        status: "reading",
+        party: "coborrower",
+      },
+    ],
+  }),
+  {
+    extractClass: "government_id",
+    confidence: 0.94,
+    fields: { full_name: "Jane Test" },
+  },
+);
+assert.equal(coborrowerIdExtract.draft.pendingProposal?.field, "coborrowerName");
+assert.equal(coborrowerIdExtract.draft.pendingProposal?.label, "Borrower 2");
+assert.equal(
+  docReactionAsk(coborrowerIdExtract.draft, "government_id")?.text,
+  "I read Jane Test on Borrower 2’s ID. Use that?",
+);
+assert.doesNotMatch(
+  docReactionAsk(coborrowerIdExtract.draft, "government_id")?.text ?? "",
+  /paystub|tax return|What name should I put/i,
+);
 
 const afterHouseholdAsk = draft({
   ...afterDeclarationsAsk,
@@ -7737,7 +7801,11 @@ const skippedBorrowerFile = draft({ ...afterHouseholdAsk, borrowerNameAsked: tru
 assert.equal(skippedBorrowerFile.borrowerName, undefined);
 assert.ok(
   previewFacts(skippedBorrowerFile).some(
-    (fact) => fact.id === "borrower" && fact.value === "—" && fact.note === SUGGESTED_BORROWER_NOTE,
+    (fact) =>
+      fact.id === "borrower" &&
+      fact.label === "Borrower" &&
+      fact.value === "—" &&
+      fact.note === SUGGESTED_BORROWER_NOTE,
   ),
 );
 const skipBorrowerQualify = workspaceReply("will i qualify", skippedBorrowerFile);

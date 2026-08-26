@@ -89,6 +89,7 @@ import {
   writeStatedHousehold,
 } from "./household";
 import {
+  coborrowerExtractCopy,
   coborrowerNameConfirmCopy,
   isCoborrowerNameField,
   skipCoborrowerName,
@@ -702,7 +703,9 @@ export function proposalAskCopy(proposal: FactProposal) {
       : borrowerNameConfirmCopy(proposal.value);
   }
   if (isCoborrowerNameField(proposal.field)) {
-    return coborrowerNameConfirmCopy(proposal.value);
+    return proposal.extras
+      ? coborrowerExtractCopy(proposal.value)
+      : coborrowerNameConfirmCopy(proposal.value);
   }
   if (proposal.field === STATED_OTHER_REO_FIELD && isStatedOtherReo(proposal.value)) {
     return otherReoConfirmCopy(proposal.value);
