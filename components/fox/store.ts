@@ -332,6 +332,8 @@ function normalize(value: unknown): FoxIntakeDraft {
         ? raw.coborrowerName.trim()
         : undefined,
     coborrowerNameAsked: Boolean(raw.coborrowerNameAsked || raw.coborrowerName),
+    workingOnCoborrower: Boolean(raw.workingOnCoborrower),
+    coborrowerIdSkipped: Boolean(raw.coborrowerIdSkipped),
     borrowerName:
       typeof raw.borrowerName === "string" && raw.borrowerName.trim()
         ? raw.borrowerName.trim()
@@ -380,6 +382,7 @@ function normalize(value: unknown): FoxIntakeDraft {
       status: doc.status ?? "received",
       bytesRef: typeof doc.bytesRef === "string" ? doc.bytesRef : undefined,
       extractClass: doc.extractClass,
+      party: doc.party === "coborrower" ? "coborrower" : doc.party === "borrower" ? "borrower" : undefined,
     })),
     facts: normalizeFacts(raw.facts),
     pendingConflict: normalizeConflict(raw.pendingConflict),
@@ -999,7 +1002,12 @@ export function addNote(text: string) {
 export function receiveDocument(input: Omit<ReceivedDoc, "status" | "note"> & { status?: DocStatus; note?: string }) {
   const documents = [
     ...current.documents,
-    { ...input, status: input.status ?? "received", note: input.note },
+    {
+      ...input,
+      status: input.status ?? "received",
+      note: input.note,
+      party: input.party ?? (current.workingOnCoborrower ? "coborrower" : "borrower"),
+    },
   ];
   const keepPhase =
     current.workspaceFlow &&

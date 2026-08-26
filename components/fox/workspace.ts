@@ -56,6 +56,7 @@ import {
   nextDocInvite,
   offeringDocStart,
   primaryDocPassFinished,
+  thisBorrowerPrimaryPackageDone,
   skipCurrentInvite,
   holdDocuments,
   layer2Open,
@@ -247,6 +248,8 @@ import {
 } from "./household";
 import {
   SUGGESTED_COBORROWER_NOTE,
+  COBORROWER_HANDOFF,
+  coborrowerIdOutstanding,
   coborrowerNameAskCopy,
   coborrowerNameOnFile,
   coborrowerNameSettled,
@@ -268,6 +271,7 @@ import {
   borrowerNameExtractCopy,
   borrowerNameOnFile,
   borrowerNameSettled,
+  governmentIdOutstanding,
   isBorrowerNameConfirmPending,
   isBorrowerNameField,
   isSkipBorrowerNameText,
@@ -1073,6 +1077,9 @@ function incomeFromText(text: string) {
 }
 
 function documentsAskText(draft: FoxIntakeDraft): string {
+  if (isCoborrowerNameConfirmPending(draft) && draft.pendingProposal?.value) {
+    return borrowerNameExtractCopy(draft.pendingProposal.value);
+  }
   if (isBorrowerNameConfirmPending(draft) && draft.pendingProposal?.value) {
     return borrowerNameExtractCopy(draft.pendingProposal.value);
   }
@@ -1130,6 +1137,7 @@ function nextDocSpoken(invite: ReturnType<typeof nextDocInvite>): string {
   if (invite === "w2") return "Next is your most recent W-2.";
   if (invite === "prior_year_return") return DOC_INVITE_COPY.prior_year_return;
   if (invite === "government_id") return "Next is a government ID, so the file has a name.";
+  if (invite === "coborrower_government_id") return "Next is their government ID.";
   return "";
 }
 
@@ -1138,6 +1146,9 @@ function identityReactionAsk(draft: FoxIntakeDraft): {
   followUp?: string;
   actions?: FoxAction[];
 } {
+  if (isCoborrowerNameConfirmPending(draft) && draft.pendingProposal) {
+    return liveProposalAsk(draft, draft.pendingProposal, "government_id");
+  }
   if (isBorrowerNameConfirmPending(draft) && draft.pendingProposal) {
     return liveProposalAsk(draft, draft.pendingProposal, "government_id");
   }
@@ -1894,7 +1905,13 @@ export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
   if (draft.correcting === "income" && draft.incomeType.value) {
     return "income";
   }
-  if (draft.correcting) return draft.correcting;
+  if (draft.correcting === "borrower-name" && governmentIdOutstanding(draft)) {
+    // Typed name is illegal while government ID is still the next document.
+  } else if (draft.correcting === "coborrower-name" && coborrowerIdOutstanding(draft)) {
+    // Typed coborrower name is illegal while their ID is still the next document.
+  } else if (draft.correcting) {
+    return draft.correcting;
+  }
   if (draft.resumeAfterEdit) {
     if (
       draft.resumeAfterEdit === "declaration-timing" &&
@@ -1902,10 +1919,23 @@ export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
     ) {
       // Stale resume — timing only after an explicit BK / FC / SS Yes.
     } else if (
-      draft.resumeAfterEdit === "coborrower-name" &&
-      (draft.statedHousehold !== "with_someone" || !primaryDocPassFinished(draft))
+      draft.resumeAfterEdit === "borrower-name" &&
+      governmentIdOutstanding(draft)
     ) {
-      // Stale resume — coborrower name only after the primary doc pass.
+      // Stale resume — typed name only after Skip ID or a failed read.
+    } else if (
+      draft.resumeAfterEdit === "coborrower-name" &&
+      (draft.statedHousehold !== "with_someone" ||
+        !thisBorrowerPrimaryPackageDone(draft) ||
+        coborrowerIdOutstanding(draft))
+    ) {
+      // Stale resume — coborrower name only after this borrower’s primary pass, then their ID.
+    } else if (
+      draft.resumeAfterEdit === "household" &&
+      !thisBorrowerPrimaryPackageDone(draft) &&
+      !draft.householdAsked
+    ) {
+      // Stale resume — coborrower ask only after this borrower’s primary package.
     } else {
       return draft.resumeAfterEdit;
     }
@@ -1934,9 +1964,9 @@ export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
   if (needsDeclarationTiming(draft)) return "declaration-timing";
   if (!otherReoSettled(draft)) return "other-reo";
   if (!borrowerNameSettled(draft)) return "borrower-name";
-  if (nextDocInvite(draft) && !primaryDocPassFinished(draft)) return "documents";
-  if (primaryDocPassFinished(draft) && !householdSettled(draft)) return "household";
-  if (primaryDocPassFinished(draft) && !coborrowerNameSettled(draft)) return "coborrower-name";
+  if (nextDocInvite(draft) && !thisBorrowerPrimaryPackageDone(draft)) return "documents";
+  if (thisBorrowerPrimaryPackageDone(draft) && !householdSettled(draft)) return "household";
+  if (thisBorrowerPrimaryPackageDone(draft) && !coborrowerNameSettled(draft)) return "coborrower-name";
   if (!draft.sampleAccepted && draft.awaitingYearsInBusiness) return "documents";
   if (nextDocInvite(draft)) return "documents";
   if (primaryDocPassFinished(draft) && !yearsInBusinessSettled(draft)) return "years-in-business";
@@ -2184,9 +2214,17 @@ function workspaceAskCopy(
         actions: startDocsActions(),
       };
     }
+    const invite = nextDocInvite(draft);
+    if (invite === "coborrower_government_id") {
+      return {
+        text: COBORROWER_HANDOFF,
+        followUp: DOC_INVITE_COPY.coborrower_government_id,
+        actions: docInviteActions(),
+      };
+    }
     return {
       text: documentsAskText(draft),
-      actions: nextDocInvite(draft) ? docInviteActions() : undefined,
+      actions: invite ? docInviteActions() : undefined,
     };
   }
   if (prompt === "preparing") {

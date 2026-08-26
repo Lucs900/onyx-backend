@@ -55,6 +55,7 @@ export type ReceivedDoc = {
   note?: string;
   bytesRef?: string;
   extractClass?: ExtractClass;
+  party?: "borrower" | "coborrower";
 };
 
 export type ProposalKind = "document" | "public" | "computed";
@@ -302,6 +303,8 @@ export type FoxIntakeDraft = {
   householdAsked?: boolean;
   coborrowerName?: string;
   coborrowerNameAsked?: boolean;
+  workingOnCoborrower?: boolean;
+  coborrowerIdSkipped?: boolean;
   borrowerName?: string;
   borrowerNameAsked?: boolean;
   statedOtherReo?: "none" | "yes";

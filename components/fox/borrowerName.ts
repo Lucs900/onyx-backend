@@ -29,10 +29,13 @@ export function governmentIdSkipped(draft: FoxIntakeDraft) {
   return (draft.skippedClasses ?? []).includes("government_id");
 }
 
+function isThisBorrowerIdDoc(doc: FoxIntakeDraft["documents"][number]) {
+  if (doc.party === "coborrower") return false;
+  return doc.extractClass === "government_id" || doc.slot === "id";
+}
+
 export function governmentIdExtractFailed(draft: FoxIntakeDraft) {
-  const idDocs = draft.documents.filter(
-    (doc) => doc.extractClass === "government_id" || doc.slot === "id",
-  );
+  const idDocs = draft.documents.filter(isThisBorrowerIdDoc);
   if (!idDocs.length) return false;
   const finished = idDocs.some(
     (doc) =>
@@ -48,13 +51,18 @@ export function governmentIdExtractFailed(draft: FoxIntakeDraft) {
   return true;
 }
 
+/** ID is still the next expected document. Typed name is illegal while this is true. */
+export function governmentIdOutstanding(draft: FoxIntakeDraft) {
+  return Boolean(
+    governmentIdExpected(draft) && !governmentIdSkipped(draft) && !governmentIdExtractFailed(draft),
+  );
+}
+
 export function borrowerNameSettled(draft: FoxIntakeDraft) {
+  if (governmentIdOutstanding(draft)) return true;
   if (draft.correcting === "borrower-name") return false;
   if (draft.borrowerNameAsked || draft.borrowerName || draft.contact.fullName.value) return true;
   if (isBorrowerNameConfirmPending(draft)) return true;
-  if (governmentIdExpected(draft) && !governmentIdSkipped(draft) && !governmentIdExtractFailed(draft)) {
-    return true;
-  }
   return false;
 }
 

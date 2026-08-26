@@ -73,6 +73,10 @@ import {
   writeBorrowerName,
 } from "./borrowerName";
 import {
+  proposeExtractedCoborrowerName,
+  skipCoborrowerId,
+} from "./coborrowerName";
+import {
   STATED_OTHER_REO_FIELD,
   otherReoSettled,
   proposeExtractedOtherReo,
@@ -909,21 +913,37 @@ export function applyExtractedFields(
     extractClass === "government_id" ? String(fields.full_name ?? "").trim() : "";
   if (extractedName) {
     const shown = displayBorrowerName(extractedName);
-    const existingName = (next.borrowerName || next.contact.fullName.value || "").trim();
     const extras = fields.date_of_birth
       ? [{ field: "date_of_birth", value: String(fields.date_of_birth), label: "date of birth" }]
       : [];
-    if (existingName && !valuesMatch(existingName, shown) && !conflict) {
-      conflict = {
-        field: BORROWER_NAME_FIELD,
-        fileValue: displayBorrowerName(existingName),
-        documentValue: shown,
-        label: "Borrower",
-        kind: "document",
-      };
-      next = { ...next, pendingConflict: conflict };
-    } else if (!existingName && !next.pendingConflict) {
-      next = proposeExtractedBorrowerName(next, shown, extras);
+    if (next.workingOnCoborrower && !next.pendingConflict) {
+      const existingCoborrower = (next.coborrowerName || "").trim();
+      if (existingCoborrower && !valuesMatch(existingCoborrower, shown) && !conflict) {
+        conflict = {
+          field: "coborrowerName",
+          fileValue: displayBorrowerName(existingCoborrower),
+          documentValue: shown,
+          label: "Other borrower",
+          kind: "document",
+        };
+        next = { ...next, pendingConflict: conflict };
+      } else if (!existingCoborrower) {
+        next = proposeExtractedCoborrowerName(next, shown, extras);
+      }
+    } else {
+      const existingName = (next.borrowerName || next.contact.fullName.value || "").trim();
+      if (existingName && !valuesMatch(existingName, shown) && !conflict) {
+        conflict = {
+          field: BORROWER_NAME_FIELD,
+          fileValue: displayBorrowerName(existingName),
+          documentValue: shown,
+          label: "Borrower",
+          kind: "document",
+        };
+        next = { ...next, pendingConflict: conflict };
+      } else if (!existingName && !next.pendingConflict) {
+        next = proposeExtractedBorrowerName(next, shown, extras);
+      }
     }
   }
   if (extractClass === "mortgage_statement" && purchaseFileForOtherReo(next) && !next.statedOtherReo) {
@@ -1516,7 +1536,8 @@ export type DocInviteKind =
   | "paystub"
   | "w2"
   | "tax_return"
-  | "prior_year_return";
+  | "prior_year_return"
+  | "coborrower_government_id";
 
 export const DOC_INVITE_COPY: Record<DocInviteKind, string> = {
   government_id: "First I need a government ID, so this file has a name on it.",
@@ -1525,6 +1546,7 @@ export const DOC_INVITE_COPY: Record<DocInviteKind, string> = {
   tax_return:
     "Next is your most recent tax return. That’s how I estimate qualifying income. Suggested, not underwritten.",
   prior_year_return: "A prior-year return helps me see if last year was stable. Have one?",
+  coborrower_government_id: "First I need their government ID, so this file has a name on it.",
 };
 
 /** ID + this borrower’s income package. Prior-year / second-year sit on remainder. */
@@ -1549,14 +1571,34 @@ export function remainderInviteSequence(draft: FoxIntakeDraft): DocInviteKind[] 
   return steps;
 }
 
+function coborrowerInviteSequence(draft: FoxIntakeDraft): DocInviteKind[] {
+  if (draft.statedHousehold !== "with_someone" || !draft.householdAsked) return [];
+  if (!thisBorrowerPrimaryPackageDone(draft)) return [];
+  return ["coborrower_government_id"];
+}
+
 export function inviteSequence(draft: FoxIntakeDraft): DocInviteKind[] {
-  return [...primaryInviteSequence(draft), ...remainderInviteSequence(draft)];
+  return [...primaryInviteSequence(draft), ...coborrowerInviteSequence(draft), ...remainderInviteSequence(draft)];
 }
 
 function inviteSatisfied(draft: FoxIntakeDraft, kind: DocInviteKind): boolean {
+  if (kind === "coborrower_government_id") {
+    if (draft.coborrowerIdSkipped) return true;
+    return draft.documents.some((doc) => {
+      if (doc.party !== "coborrower") return false;
+      const isId = doc.extractClass === "government_id" || doc.slot === "id";
+      if (!isId) return false;
+      return (
+        doc.status === "extracted" ||
+        doc.status === "failed" ||
+        doc.status === "needs better copy"
+      );
+    });
+  }
   if (kind === "government_id") {
     if ((draft.skippedClasses ?? []).includes("government_id")) return true;
     return draft.documents.some((doc) => {
+      if (doc.party === "coborrower") return false;
       const received = receivedClassOf(doc);
       const isId =
         received === "government_id" ||
@@ -1592,6 +1634,12 @@ function inviteSatisfied(draft: FoxIntakeDraft, kind: DocInviteKind): boolean {
   return (draft.skippedClasses ?? []).includes(kind);
 }
 
+/** This borrower’s ID + income package received, ready, or skipped. Hold / Looks right do not count. */
+export function thisBorrowerPrimaryPackageDone(draft: FoxIntakeDraft) {
+  if (!draft.incomeType.value && !draft.incomeAsked) return false;
+  return primaryInviteSequence(draft).every((kind) => inviteSatisfied(draft, kind));
+}
+
 /** Primary ID / income docs have all been uploaded, skipped, or the borrower left the pass. */
 export function primaryDocPassFinished(draft: FoxIntakeDraft) {
   if (draft.sampleAccepted || draft.documentsSkipped) return true;
@@ -1601,8 +1649,7 @@ export function primaryDocPassFinished(draft: FoxIntakeDraft) {
   ) {
     return true;
   }
-  if (!draft.incomeType.value && !draft.incomeAsked) return false;
-  return primaryInviteSequence(draft).every((kind) => inviteSatisfied(draft, kind));
+  return thisBorrowerPrimaryPackageDone(draft);
 }
 
 export function offeringDocStart(draft: FoxIntakeDraft) {
@@ -1639,6 +1686,9 @@ export function skipCurrentInvite(draft: FoxIntakeDraft): FoxIntakeDraft {
       docsOpen: false,
       correcting: null,
     };
+  }
+  if (kind === "coborrower_government_id") {
+    return skipCoborrowerId(draft);
   }
   if (kind === "prior_year_return") {
     const next = {

@@ -81,6 +81,8 @@ export function skipHousehold(draft: FoxIntakeDraft): FoxIntakeDraft {
     ...draft,
     statedHousehold: undefined,
     householdAsked: true,
+    workingOnCoborrower: undefined,
+    coborrowerIdSkipped: undefined,
     pendingProposal:
       draft.pendingProposal?.field === STATED_HOUSEHOLD_FIELD ? null : draft.pendingProposal,
     correcting: null,
@@ -95,6 +97,8 @@ export function writeStatedHousehold(draft: FoxIntakeDraft, value: StatedHouseho
     ...draft,
     statedHousehold: value,
     householdAsked: true,
+    workingOnCoborrower: value === "with_someone" ? true : undefined,
+    coborrowerIdSkipped: value === "with_someone" ? draft.coborrowerIdSkipped : undefined,
     coborrowerName: value === "with_someone" ? draft.coborrowerName : undefined,
     coborrowerNameAsked: value === "with_someone" ? draft.coborrowerNameAsked : undefined,
     pendingProposal: null,

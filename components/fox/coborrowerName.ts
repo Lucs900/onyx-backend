@@ -5,8 +5,9 @@ export const COBORROWER_NAME_FIELD = "coborrowerName";
 export const COBORROWER_NAME_FACT = "coborrower_name";
 export const SPOUSE_NAME_FACT = "spouse_name";
 export const SUGGESTED_COBORROWER_NOTE = "Suggested · not underwritten";
-export const COBORROWER_NAME_ASK = "What’s their name?";
+export const COBORROWER_NAME_ASK = "What name should I put for the other borrower?";
 export const COBORROWER_CONFIRM_ASK = "The file already has a name for the other borrower.";
+export const COBORROWER_HANDOFF = "Now working on the other borrower.";
 
 export function coborrowerNameFromFile(draft: FoxIntakeDraft) {
   const raw = (
@@ -22,10 +23,46 @@ export function coborrowerNameOnFile(draft: FoxIntakeDraft) {
   return coborrowerNameFromFile(draft);
 }
 
+function isCoborrowerIdDoc(doc: FoxIntakeDraft["documents"][number]) {
+  if (doc.party === "coborrower") return true;
+  return false;
+}
+
+export function coborrowerIdSkipped(draft: FoxIntakeDraft) {
+  return Boolean(draft.coborrowerIdSkipped);
+}
+
+export function coborrowerIdExtractFailed(draft: FoxIntakeDraft) {
+  const idDocs = draft.documents.filter(isCoborrowerIdDoc);
+  if (!idDocs.length) return false;
+  const finished = idDocs.some(
+    (doc) =>
+      doc.status === "extracted" ||
+      doc.status === "failed" ||
+      doc.status === "needs better copy",
+  );
+  if (!finished) return false;
+  if (isCoborrowerNameConfirmPending(draft)) return false;
+  if (draft.coborrowerName || draft.facts?.[COBORROWER_NAME_FACT]?.value) return false;
+  return true;
+}
+
+export function coborrowerIdOutstanding(draft: FoxIntakeDraft) {
+  if (draft.statedHousehold !== "with_someone" || !draft.householdAsked) return false;
+  if (coborrowerIdSkipped(draft)) return false;
+  if (coborrowerIdExtractFailed(draft)) return false;
+  return !draft.documents.some(
+    (doc) =>
+      isCoborrowerIdDoc(doc) &&
+      (doc.status === "extracted" || doc.status === "failed" || doc.status === "needs better copy"),
+  );
+}
+
 export function coborrowerNameSettled(draft: FoxIntakeDraft) {
-  if (draft.correcting === "coborrower-name") return false;
   if (draft.statedHousehold !== "with_someone" || !draft.householdAsked) return true;
-  return Boolean(draft.coborrowerNameAsked || draft.coborrowerName);
+  if (coborrowerIdOutstanding(draft)) return true;
+  if (draft.correcting === "coborrower-name") return false;
+  return Boolean(draft.coborrowerNameAsked || draft.coborrowerName || isCoborrowerNameConfirmPending(draft));
 }
 
 export function isCoborrowerNameConfirmPending(draft: FoxIntakeDraft) {
@@ -104,6 +141,34 @@ export function proposeCoborrowerName(draft: FoxIntakeDraft, name: string): FoxI
     note: SUGGESTED_COBORROWER_NOTE,
   };
   return { ...draft, pendingProposal: proposal };
+}
+
+export function proposeExtractedCoborrowerName(
+  draft: FoxIntakeDraft,
+  name: string,
+  extras: { field: string; value: string; label: string }[] = [],
+): FoxIntakeDraft {
+  const value = displayBorrowerName(name);
+  return {
+    ...draft,
+    pendingProposal: {
+      field: COBORROWER_NAME_FIELD,
+      value,
+      label: "Other borrower",
+      kind: "document",
+      note: SUGGESTED_COBORROWER_NOTE,
+      extras,
+    },
+  };
+}
+
+export function skipCoborrowerId(draft: FoxIntakeDraft): FoxIntakeDraft {
+  return {
+    ...draft,
+    coborrowerIdSkipped: true,
+    docsOpen: false,
+    correcting: null,
+  };
 }
 
 export function coborrowerNameConfirmCopy(name: string) {
