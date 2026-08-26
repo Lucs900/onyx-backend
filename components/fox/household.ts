@@ -14,7 +14,7 @@ export function householdLabel(value: StatedHousehold) {
   return value === "with_someone" ? "Yes" : "None";
 }
 
-/** Primary sketch + docs path has started. Household waits until then. */
+/** Docs have started. Not the household gate — that waits for Looks right. */
 export function primaryDocsInMotion(draft: FoxIntakeDraft) {
   return Boolean(
     draft.docsStarted ||

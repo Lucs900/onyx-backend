@@ -57,6 +57,7 @@ import {
   offeringDocStart,
   primaryDocPassFinished,
   thisBorrowerPrimaryPackageDone,
+  readyForHouseholdAsk,
   skipCurrentInvite,
   holdDocuments,
   layer2Open,
@@ -2005,10 +2006,10 @@ export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
       // Stale resume — coborrower name only after this borrower’s primary pass, then their ID.
     } else if (
       draft.resumeAfterEdit === "household" &&
-      !thisBorrowerPrimaryPackageDone(draft) &&
+      !readyForHouseholdAsk(draft) &&
       !draft.householdAsked
     ) {
-      // Stale resume — coborrower ask only after this borrower’s primary package.
+      // Stale resume — coborrower ask only after Looks right, never mid-docs Skip.
     } else {
       return draft.resumeAfterEdit;
     }
@@ -2038,11 +2039,15 @@ export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
   if (!otherReoSettled(draft)) return "other-reo";
   if (!borrowerNameSettled(draft)) return "borrower-name";
   if (nextDocInvite(draft) && !thisBorrowerPrimaryPackageDone(draft)) return "documents";
-  if (thisBorrowerPrimaryPackageDone(draft) && !householdSettled(draft)) return "household";
-  if (thisBorrowerPrimaryPackageDone(draft) && !coborrowerNameSettled(draft)) return "coborrower-name";
   if (!draft.sampleAccepted && draft.awaitingYearsInBusiness) return "documents";
-  if (nextDocInvite(draft)) return "documents";
+  if (nextDocInvite(draft) && !householdSettled(draft)) return "documents";
   if (primaryDocPassFinished(draft) && !yearsInBusinessSettled(draft)) return "years-in-business";
+  if (!draft.sampleAccepted && !householdSettled(draft)) {
+    return canLooksRight(draft) ? "review" : "amount";
+  }
+  if (readyForHouseholdAsk(draft) && !householdSettled(draft)) return "household";
+  if (!coborrowerNameSettled(draft)) return "coborrower-name";
+  if (nextDocInvite(draft)) return "documents";
   if (!draft.sampleAccepted) return canLooksRight(draft) ? "review" : "amount";
   const holdCalculatorAsk = draft.motion === "in_queue" || draft.motion === "escalated";
   if (!holdCalculatorAsk && housingConfirmNeeded(draft)) return "housing";

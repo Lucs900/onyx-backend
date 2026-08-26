@@ -1755,6 +1755,24 @@ export function thisBorrowerPrimaryPackageDone(draft: FoxIntakeDraft) {
   return primaryInviteSequence(draft).every((kind) => inviteSatisfied(draft, kind));
 }
 
+function b1RemainderOutstanding(draft: FoxIntakeDraft): boolean {
+  return remainderInviteSequence(draft).some((kind) => !inviteSatisfied(draft, kind));
+}
+
+/**
+ * Household / coborrower only after Looks right — never after a mid-docs Skip.
+ * Skip on paystub / W-2 / tax return stays on Borrower 1.
+ */
+export function readyForHouseholdAsk(draft: FoxIntakeDraft): boolean {
+  if (!draft.path || !draft.productIntent) return false;
+  if (!draft.occupancyChoice.value && !draft.occupancyAsked) return false;
+  if (!draft.incomeType.value && !draft.incomeAsked) return false;
+  if (!otherReoSettled(draft)) return false;
+  if (!thisBorrowerPrimaryPackageDone(draft)) return false;
+  if (b1RemainderOutstanding(draft)) return false;
+  return Boolean(draft.sampleAccepted);
+}
+
 /** Primary ID / income docs have all been uploaded, skipped, or the borrower left the pass. */
 export function primaryDocPassFinished(draft: FoxIntakeDraft) {
   if (draft.sampleAccepted || draft.documentsSkipped) return true;
@@ -1777,12 +1795,13 @@ export function offeringDocStart(draft: FoxIntakeDraft) {
 }
 
 export function nextDocInvite(draft: FoxIntakeDraft): DocInviteKind | null {
-  if (draft.sampleAccepted) return null;
   if (!draft.incomeType.value && !draft.incomeAsked) return null;
   if (!borrowerNameSettled(draft)) return null;
   if (!otherReoSettled(draft)) return null;
   if (draft.pendingProposal || draft.pendingConflict) return null;
-  for (const kind of inviteSequence(draft)) {
+  // Looks right closes Borrower 1 invites. Borrower 2’s ID can still open after Yes.
+  const kinds = draft.sampleAccepted ? coborrowerInviteSequence(draft) : inviteSequence(draft);
+  for (const kind of kinds) {
     if (!inviteSatisfied(draft, kind)) return kind;
   }
   return null;

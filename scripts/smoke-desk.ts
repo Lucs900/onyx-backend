@@ -454,7 +454,7 @@ function confirmLooksRight() {
     "borrower-name": { field: "skip-borrower-name" },
     "other-reo": { field: "skip-other-reo" },
   };
-  for (let i = 0; i < 20; i += 1) {
+  for (let i = 0; i < 24; i += 1) {
     const prompt = workspacePrompt(getFoxDraft());
     const capture = skips[prompt];
     if (capture) {
@@ -465,9 +465,16 @@ function confirmLooksRight() {
       applyCapture({ field: "skip-docs" });
       continue;
     }
+    if (prompt === "review") {
+      applyCapture({ field: "confirm-draft" });
+      continue;
+    }
     break;
   }
-  return applyCapture({ field: "confirm-draft" });
+  if (workspacePrompt(getFoxDraft()) === "review") {
+    return applyCapture({ field: "confirm-draft" });
+  }
+  return getFoxDraft();
 }
 
 function withIncome(
@@ -7434,19 +7441,32 @@ const afterPrimaryPass = draft({
   skippedClasses: ["government_id", "paystub", "w2"],
 });
 assert.ok(stillUsefulSection(afterPrimaryPass)?.items.some((item) => item.label === "Latest return"));
-assert.equal(workspacePrompt(afterPrimaryPass), "household");
-assert.equal(workspacePromptCopy("household", afterPrimaryPass).text, HOUSEHOLD_ASK);
+assert.equal(workspacePrompt(afterPrimaryPass), "review");
+assert.match(
+  workspacePromptCopy("review", afterPrimaryPass).text,
+  /complete enough to move|look right/i,
+);
+assert.doesNotMatch(
+  workspacePromptCopy("review", afterPrimaryPass).text,
+  /another borrower|Is there another borrower/i,
+);
+const afterLooksRight = draft({ ...afterPrimaryPass, sampleAccepted: true });
+assert.equal(workspacePrompt(afterLooksRight), "household");
+assert.equal(workspacePromptCopy("household", afterLooksRight).text, HOUSEHOLD_ASK);
 assert.match(HOUSEHOLD_ASK, /another borrower/i);
 assert.doesNotMatch(HOUSEHOLD_ASK, /on your own|with someone/i);
 assert.deepEqual(
-  (workspacePromptCopy("household", afterPrimaryPass).actions ?? []).map((item) => item.label),
+  (workspacePromptCopy("household", afterLooksRight).actions ?? []).map((item) => item.label),
   ["Yes", "None", "Skip", "Not yet"],
 );
 
-const skipHouseholdReply = workspaceReply("Skip", afterPrimaryPass);
+const skipHouseholdReply = workspaceReply("Skip", afterLooksRight);
 assert.equal(skipHouseholdReply?.capture?.field, "skip-household");
-assert.match(skipHouseholdReply?.text ?? "", /look right|government ID|Start with ID|Upload this/i);
-const skippedHouseholdFile = draft({ ...afterPrimaryPass, householdAsked: true });
+assert.match(
+  skipHouseholdReply?.text ?? "",
+  /Estimated housing|look right|government ID|Start with ID|Upload this|Still useful/i,
+);
+const skippedHouseholdFile = draft({ ...afterLooksRight, householdAsked: true });
 assert.equal(skippedHouseholdFile.statedHousehold, undefined);
 assert.ok(
   previewFacts(skippedHouseholdFile).some(
@@ -7481,11 +7501,14 @@ assert.ok(
   }).includes("household" as never),
 );
 
-const aloneChip = workspaceReply("None", afterPrimaryPass);
+const aloneChip = workspaceReply("None", afterLooksRight);
 assert.equal(aloneChip?.capture?.field, "statedHousehold");
-assert.match(aloneChip?.text ?? "", /look right|government ID|Start with ID|Upload this/i);
+assert.match(
+  aloneChip?.text ?? "",
+  /Estimated housing|look right|government ID|Start with ID|Upload this|Still useful/i,
+);
 const aloneConfirmDraft = {
-  ...afterPrimaryPass,
+  ...afterLooksRight,
   pendingProposal: {
     field: "statedHousehold",
     value: "alone",
@@ -7507,7 +7530,7 @@ assert.ok(
   ),
 );
 
-const withSomeoneChip = workspaceReply("Yes", afterPrimaryPass);
+const withSomeoneChip = workspaceReply("Yes", afterLooksRight);
 assert.equal(withSomeoneChip?.capture?.field, "statedHousehold");
 assert.equal(withSomeoneChip?.text, COBORROWER_HANDOFF);
 assert.equal(withSomeoneChip?.text, "Now working on Borrower 2.");
@@ -7518,7 +7541,7 @@ assert.deepEqual(
   ["Upload this", "Skip"],
 );
 const withSomeoneConfirmDraft = {
-  ...afterPrimaryPass,
+  ...afterLooksRight,
   pendingProposal: {
     field: "statedHousehold",
     value: "with_someone",
@@ -7672,8 +7695,26 @@ const w2Named = draft({ ...w2SkipId, borrowerNameAsked: true, borrowerName: "Jan
 assert.equal(workspacePrompt(w2Named), "documents");
 assert.equal(workspacePromptCopy("documents", w2Named).text, DOC_INVITE_COPY.paystub);
 assert.notEqual(workspacePrompt(w2Named), "household");
-const w2PassDone = skipCurrentInvite(skipCurrentInvite(w2Named));
-assert.equal(workspacePrompt(w2PassDone), "household");
+const w2AfterSkipPaystub = skipCurrentInvite(w2Named);
+assert.equal(workspacePrompt(w2AfterSkipPaystub), "documents");
+assert.equal(workspacePromptCopy("documents", w2AfterSkipPaystub).text, DOC_INVITE_COPY.w2);
+assert.doesNotMatch(
+  `${workspacePromptCopy("documents", w2AfterSkipPaystub).text} ${workspacePromptCopy("documents", w2AfterSkipPaystub).followUp ?? ""}`,
+  /another borrower|Is there another borrower|Now working on Borrower 2/i,
+);
+const w2PassDone = skipCurrentInvite(w2AfterSkipPaystub);
+assert.equal(workspacePrompt(w2PassDone), "review");
+assert.match(workspacePromptCopy("review", w2PassDone).text, /complete enough to move|look right/i);
+assert.doesNotMatch(
+  workspacePromptCopy("review", w2PassDone).text,
+  /another borrower|Is there another borrower/i,
+);
+const w2LooksRight = draft({ ...w2PassDone, sampleAccepted: true });
+assert.equal(workspacePrompt(w2LooksRight), "household");
+assert.equal(workspacePromptCopy("household", w2LooksRight).text, HOUSEHOLD_ASK);
+const w2YesBorrower2 = workspaceReply("Yes", w2LooksRight);
+assert.equal(w2YesBorrower2?.text, COBORROWER_HANDOFF);
+assert.match(w2YesBorrower2?.followUp ?? "", /Borrower 2’s government ID/);
 const idReadFailed = draft({
   ...w2SketchNoName,
   docsStarted: true,
@@ -7719,8 +7760,16 @@ assert.equal(workspacePrompt(seNamed), "documents");
 assert.equal(workspacePromptCopy("documents", seNamed).text, DOC_INVITE_COPY.tax_return);
 assert.notEqual(workspacePrompt(seNamed), "household");
 const sePassDone = skipCurrentInvite(seNamed);
-assert.equal(workspacePrompt(sePassDone), "household");
-assert.notEqual(workspacePrompt(sePassDone), "documents");
+assert.equal(workspacePrompt(sePassDone), "documents");
+assert.equal(workspacePromptCopy("documents", sePassDone).text, DOC_INVITE_COPY.prior_year_return);
+assert.doesNotMatch(
+  `${workspacePromptCopy("documents", sePassDone).text} ${workspacePromptCopy("documents", sePassDone).followUp ?? ""}`,
+  /another borrower|Is there another borrower|Now working on Borrower 2/i,
+);
+const seRemainderDone = skipCurrentInvite(sePassDone);
+assert.equal(workspacePrompt(seRemainderDone), "review");
+assert.doesNotMatch(workspacePromptCopy("review", seRemainderDone).text, /another borrower/i);
+assert.equal(workspacePrompt(draft({ ...seRemainderDone, sampleAccepted: true })), "household");
 
 const seOtherReoYes = draft({
   ...afterDeclarationsAsk,
@@ -7766,13 +7815,22 @@ assert.equal(workspacePrompt(seOtherNamed), "documents");
 assert.equal(workspacePromptCopy("documents", seOtherNamed).text, DOC_INVITE_COPY.tax_return);
 assert.notEqual(workspacePrompt(seOtherNamed), "household");
 const seOtherReturnIn = skipCurrentInvite(seOtherNamed);
-assert.equal(workspacePrompt(seOtherReturnIn), "household");
+assert.equal(workspacePrompt(seOtherReturnIn), "documents");
+assert.equal(workspacePromptCopy("documents", seOtherReturnIn).text, DOC_INVITE_COPY.prior_year_return);
+assert.doesNotMatch(
+  `${workspacePromptCopy("documents", seOtherReturnIn).text} ${workspacePromptCopy("documents", seOtherReturnIn).followUp ?? ""}`,
+  /another borrower|Is there another borrower/i,
+);
 assert.ok(
   stillUsefulSection(seOtherReturnIn)?.items.some(
     (item) => item.label === OTHER_REO_MORTGAGE_STATEMENTS,
   ),
 );
-const seOtherYes = workspaceReply("Yes", seOtherReturnIn);
+const seOtherRemainderDone = skipCurrentInvite(seOtherReturnIn);
+assert.equal(workspacePrompt(seOtherRemainderDone), "review");
+const seOtherLooksRight = draft({ ...seOtherRemainderDone, sampleAccepted: true });
+assert.equal(workspacePrompt(seOtherLooksRight), "household");
+const seOtherYes = workspaceReply("Yes", seOtherLooksRight);
 assert.equal(seOtherYes?.text, COBORROWER_HANDOFF);
 assert.match(seOtherYes?.followUp ?? "", /Borrower 2’s government ID/);
 assert.doesNotMatch(seOtherYes?.text ?? "", /What name should I put|What’s their name/i);
@@ -9725,8 +9783,18 @@ assert.equal(workspacePrompt(getFoxDraft()), "documents");
 assert.equal(workspacePromptCopy("documents", getFoxDraft()).text, DOC_INVITE_COPY.paystub);
 assert.notEqual(workspacePrompt(getFoxDraft()), "household");
 applyCapture({ field: "skip-docs" });
+assert.equal(workspacePrompt(getFoxDraft()), "documents");
+assert.equal(workspacePromptCopy("documents", getFoxDraft()).text, DOC_INVITE_COPY.w2);
+assert.doesNotMatch(
+  `${workspacePromptCopy("documents", getFoxDraft()).text} ${workspacePromptCopy("documents", getFoxDraft()).followUp ?? ""}`,
+  /another borrower|Is there another borrower/i,
+);
 applyCapture({ field: "skip-docs" });
+assert.equal(workspacePrompt(getFoxDraft()), "review");
+assert.doesNotMatch(workspacePromptCopy("review", getFoxDraft()).text, /another borrower/i);
+applyCapture({ field: "confirm-draft" });
 assert.equal(workspacePrompt(getFoxDraft()), "household");
+assert.equal(workspacePromptCopy("household", getFoxDraft()).text, HOUSEHOLD_ASK);
 
 resetWorkspaceForEntry("acr", "buy");
 applyCapture({ field: "occupancy", value: "primary" });
@@ -9756,6 +9824,15 @@ assert.equal(workspacePrompt(getFoxDraft()), "documents");
 assert.equal(workspacePromptCopy("documents", getFoxDraft()).text, DOC_INVITE_COPY.tax_return);
 assert.notEqual(workspacePrompt(getFoxDraft()), "household");
 applyCapture({ field: "skip-docs" });
+assert.equal(workspacePrompt(getFoxDraft()), "documents");
+assert.equal(workspacePromptCopy("documents", getFoxDraft()).text, DOC_INVITE_COPY.prior_year_return);
+assert.doesNotMatch(
+  `${workspacePromptCopy("documents", getFoxDraft()).text} ${workspacePromptCopy("documents", getFoxDraft()).followUp ?? ""}`,
+  /another borrower|Is there another borrower/i,
+);
+applyCapture({ field: "skip-docs" });
+assert.equal(workspacePrompt(getFoxDraft()), "review");
+applyCapture({ field: "confirm-draft" });
 assert.equal(workspacePrompt(getFoxDraft()), "household");
 
 const conventionalW2Walk = draft({
