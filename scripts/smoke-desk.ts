@@ -3241,11 +3241,12 @@ assert.notEqual(workspacePrompt(remembered), "occupancy");
 
 const skipItem = workspaceReply("Skip", buyProceed);
 assert.equal(skipItem?.capture?.field, "skip-docs");
-assert.match(skipItem?.text ?? "", /paystub/i);
-assert.match(skipItem?.text ?? "", /Government ID/);
+assert.equal(skipItem?.text, MOTION_COPY.in_queue);
+assert.doesNotMatch(skipItem?.text ?? "", /paystub|Government ID/i);
 const holdItem = workspaceReply("Not yet", buyProceed);
 assert.equal(holdItem?.capture?.field, "hold-docs");
-assert.match(holdItem?.text ?? "", /government ID/i);
+assert.equal(holdItem?.text, MOTION_COPY.in_queue);
+assert.doesNotMatch(holdItem?.text ?? "", /government ID/i);
 assert.notEqual(holdItem?.capture?.field, "not-yet");
 
 function stripReadinessAnswer(text: string) {
