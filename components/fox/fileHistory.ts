@@ -1,4 +1,5 @@
 import type { FoxAction, FoxIntakeDraft } from "./types";
+import { isSimplePrimaryW2File } from "./conventionalFile";
 
 export const FORMER_HISTORY_ASK =
   "Have you had another address or employer in the last two years? Skip is fine.";
@@ -25,6 +26,7 @@ export function formerHistorySettled(draft: FoxIntakeDraft) {
 export function formerHistoryNeeded(draft: FoxIntakeDraft) {
   if (!draft.sampleAccepted) return false;
   if (draft.motion === "in_queue" || draft.motion === "escalated") return false;
+  if (isSimplePrimaryW2File(draft)) return false;
   if (!tenureUnderTwoYears(draft)) return false;
   return !formerHistorySettled(draft);
 }

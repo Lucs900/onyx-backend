@@ -1,4 +1,5 @@
 import type { FactProposal, FoxAction, FoxIntakeDraft } from "./types";
+import { isSimplePrimaryW2File } from "./conventionalFile";
 
 export const CITIZENSHIP_FIELD = "citizenship";
 export const SUGGESTED_CITIZENSHIP_NOTE = "Suggested · not underwritten";
@@ -26,6 +27,7 @@ export function citizenshipNeeded(draft: FoxIntakeDraft) {
   if (citizenshipSettled(draft)) return false;
   if (!draft.sampleAccepted) return false;
   if (draft.motion === "in_queue" || draft.motion === "escalated") return false;
+  if (isSimplePrimaryW2File(draft)) return false;
   return true;
 }
 

@@ -332,8 +332,25 @@ export function conventionalSlotReport(draft: FoxIntakeDraft) {
   };
 }
 
+/** CA conventional 1-unit primary W-2. No coborrower, no other-REO yes, no rental. */
+export function isSimplePrimaryW2File(draft: FoxIntakeDraft) {
+  if (draft.productIntent !== "buy" && draft.productIntent !== "refinance") return false;
+  if (draft.occupancyChoice.value !== "primary") return false;
+  if (draft.incomeType.value !== "w2") return false;
+  if (draft.statedHousehold === "with_someone" || Boolean(draft.coborrowerName?.trim())) return false;
+  if (draft.statedOtherReo === "yes") return false;
+  if (draft.propertyType === "two_to_four") return false;
+  if (draft.suggestedNetRental != null) return false;
+  if (factValue(draft, "suggested_net_rental") || factValue(draft, "rental_income")) return false;
+  if (draft.giftFundsNoted) return false;
+  return true;
+}
+
 /** Reserves, large deposits, gift, or investment — not a full schedule on a simple primary W-2. */
 export function assetsMatter(draft: FoxIntakeDraft) {
+  if (isSimplePrimaryW2File(draft) && !draft.largeDepositFlag && draft.reservesNote !== "reserves_review") {
+    return false;
+  }
   const occupancy = draft.occupancyChoice.value;
   if (occupancy === "investment" || occupancy === "second-home") return true;
   if (draft.giftFundsNoted || draft.largeDepositFlag) return true;

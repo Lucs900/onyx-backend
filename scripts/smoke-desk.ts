@@ -52,6 +52,7 @@ import {
   assetsMatter,
   conventionalFileFromDraft,
   conventionalSlotReport,
+  isSimplePrimaryW2File,
 } from "../components/fox/conventionalFile";
 import {
   DECLINING_INCOME_CAUTION,
@@ -10617,21 +10618,31 @@ const file32W2None = draft({
   otherReoAsked: true,
 });
 assert.equal(workspacePrompt(file32W2None), "done");
-assert.equal(workspacePromptCopy("done", file32W2None).followUp, CITIZENSHIP_ASK);
-assert.ok((workspacePromptCopy("done", file32W2None).actions ?? []).some((item) => item.label === "Skip"));
-assert.ok((workspacePromptCopy("done", file32W2None).actions ?? []).some((item) => item.label === "Proceed"));
+assert.equal(isSimplePrimaryW2File(file32W2None), true);
+const file32W2Done = workspacePromptCopy("done", file32W2None);
+assert.notEqual(file32W2Done.followUp, CITIZENSHIP_ASK);
+assert.notEqual(file32W2Done.followUp, FORMER_HISTORY_ASK);
+assert.doesNotMatch(
+  `${file32W2Done.text} ${file32W2Done.followUp ?? ""}`,
+  /citizen|permanent resident|visa|SSN|date of birth|year built|APN|legal description|HOA dues|HOA questionnaire|asset worksheet|former (address|employer)|a–m|a-m declarations/i,
+);
+assert.ok((file32W2Done.actions ?? []).some((item) => item.label === "Proceed"));
 assert.ok(!requiredStructureLines(file32W2None).some((line) => /citizen/i.test(line.label)));
 assert.equal(assetsMatter(file32W2None), false);
 assert.notEqual(workspacePrompt(file32W2None), "assets");
+assert.notEqual(workspacePrompt(file32W2None), "declarations");
 assert.equal(otherReoRows(file32W2None).length, 0);
 assert.ok(stillUsefulSection(file32W2None)?.items.some((item) => item.label === "Property address"));
 assert.ok(
-  !(stillUsefulSection(file32W2None)?.items ?? []).some((item) => item.label === OTHER_REO_MORTGAGE_STATEMENTS),
+  !(stillUsefulSection(file32W2None)?.items ?? []).some((item) =>
+    /HOA questionnaire|condo project docs|Mortgage statements for all properties owned/i.test(item.label),
+  ),
 );
 const file32W2Skipped = skipCitizenship(file32W2None);
+assert.equal(file32W2None.agencyDeclarations?.citizenship, undefined);
 assert.equal(file32W2Skipped.agencyDeclarations?.citizenship, undefined);
 assert.equal(workspacePrompt(file32W2Skipped), "done");
-const file32W2Slots = conventionalSlotReport(file32W2Skipped);
+const file32W2Slots = conventionalSlotReport(file32W2None);
 assert.deepEqual(file32W2Slots.present, [
   "loan.amounts",
   "credit.stated",
@@ -10639,8 +10650,15 @@ assert.deepEqual(file32W2Slots.present, [
   "property.occupancyStatus",
 ]);
 assert.ok(file32W2Slots.empty.includes("property.address"));
+assert.ok(file32W2Slots.empty.includes("property.yearBuilt"));
+assert.ok(file32W2Slots.empty.includes("property.apn"));
+assert.ok(file32W2Slots.empty.includes("property.legalDescription"));
+assert.ok(file32W2Slots.empty.includes("property.taxes"));
+assert.ok(file32W2Slots.empty.includes("property.hoa"));
 assert.ok(file32W2Slots.empty.includes("property.units"));
 assert.ok(file32W2Slots.empty.includes("declarations.citizenship"));
+assert.ok(file32W2Slots.empty.includes("declarations.a_outstandingJudgments"));
+assert.ok(file32W2Slots.empty.includes("declarations.b_bankruptcy"));
 assert.ok(file32W2Slots.empty.includes("assets.institution"));
 assert.ok(file32W2Slots.empty.includes("history.addressHistory"));
 assert.ok(file32W2Slots.empty.includes("history.employmentHistory"));
@@ -10799,14 +10817,26 @@ assert.ok(file32YesSlots.empty.includes("declarations.citizenship"));
 assert.equal(conventionalFileFromDraft(otherReoStatement.draft).otherProperties.length, 1);
 
 const shortTenure = draft({
-  ...file32W2Skipped,
+  ...file32W2None,
   statedTimeOnJob: 8,
   timeOnJobAsked: true,
   formerHistoryAsked: false,
 });
+assert.equal(isSimplePrimaryW2File(shortTenure), true);
 assert.equal(workspacePrompt(shortTenure), "done");
-assert.equal(workspacePromptCopy("done", shortTenure).followUp, FORMER_HISTORY_ASK);
-const formerSkipped = skipFormerHistory(shortTenure);
+assert.notEqual(workspacePromptCopy("done", shortTenure).followUp, FORMER_HISTORY_ASK);
+assert.equal((shortTenure.addressHistory ?? []).length, 0);
+assert.equal((shortTenure.employmentHistory ?? []).length, 0);
+const seShortTenure = draft({
+  ...file32SeSkipped,
+  statedTimeOnJob: 8,
+  timeOnJobAsked: true,
+  formerHistoryAsked: false,
+});
+assert.equal(isSimplePrimaryW2File(seShortTenure), false);
+assert.equal(workspacePrompt(seShortTenure), "done");
+assert.equal(workspacePromptCopy("done", seShortTenure).followUp, FORMER_HISTORY_ASK);
+const formerSkipped = skipFormerHistory(seShortTenure);
 assert.equal((formerSkipped.addressHistory ?? []).length, 0);
 assert.equal(workspacePrompt(formerSkipped), "done");
 
