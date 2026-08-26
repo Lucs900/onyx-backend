@@ -9891,6 +9891,35 @@ assert.doesNotMatch(
 );
 assert.doesNotMatch(guidelineStoreSrc, /0\.97/);
 
+assert.equal(interpretQuestion("I have Airbnb income")?.topicId, "income.rental_thin");
+assert.equal(interpretQuestion("it’s a condotel")?.topicId, "condo.non_warrantable");
+assert.equal(interpretQuestion("it's a new construction condo")?.topicId, "condo.needs_review");
+assert.equal(foxAnswer("I have Airbnb income", factsFromDraft(investBuy))?.text, RENTAL_UNSUPPORTED_CAUTION);
+assert.equal(foxAnswer("it’s a condotel", factsFromDraft(investBuy))?.text, CONDO_NON_WARRANTABLE_CAUTION);
+const airbnbAsk = workspaceReply("I have Airbnb income", investBuy);
+assert.match(airbnbAsk?.text ?? "", /I don’t have a rental path for that yet\. I’ll keep gathering\./);
+assert.doesNotMatch(airbnbAsk?.text ?? "", /I can answer from this file/);
+assert.equal(airbnbAsk?.capture?.field, "note");
+assert.equal(guidelineCaution(investBuy), INVESTMENT_CAUTION);
+assert.ok((airbnbAsk?.actions ?? []).some((item) => item.label === "Upload this" || item.label === "Skip" || item.label === "Start with ID"));
+const condotelAsk = workspaceReply("it’s a condotel", investBuy);
+assert.match(condotelAsk?.text ?? "", /This condo looks like it needs a licensed review\. I can keep preparing the file\./);
+assert.doesNotMatch(condotelAsk?.text ?? "", /I can answer from this file/);
+assert.equal(guidelineCaution(investBuy), INVESTMENT_CAUTION);
+assert.ok((condotelAsk?.actions ?? []).some((item) => item.label === "Upload this" || item.label === "Skip" || item.label === "Start with ID"));
+const newCondoAsk = workspaceReply("it's a new construction condo", investBuy);
+assert.match(newCondoAsk?.text ?? "", /HOA questionnaire or condo project docs/);
+assert.doesNotMatch(newCondoAsk?.text ?? "", /I can answer from this file/);
+assert.equal(guidelineCaution(investBuy), INVESTMENT_CAUTION);
+const newCondoFile = draft({
+  ...investBuy,
+  notes: [...investBuy.notes, "it's a new construction condo"],
+});
+assert.ok(
+  stillUsefulSection(newCondoFile)?.items.some((item) => item.label === CONDO_HOA_WOULD_HELP || item.ask === CONDO_HOA_WOULD_HELP),
+);
+assert.equal(guidelineCaution(newCondoFile), INVESTMENT_CAUTION);
+
 extractAdapterSmoke()
   .then(() => {
     console.log("desk smoke ok");

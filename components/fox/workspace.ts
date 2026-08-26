@@ -1700,6 +1700,13 @@ function isFreeTextAtGate(text: string) {
   );
 }
 
+function persistGuidelineNote(draft: FoxIntakeDraft, text: string): FoxIntakeDraft {
+  const trimmed = text.trim();
+  if (!trimmed) return draft;
+  if (draft.notes.some((note) => note === trimmed)) return draft;
+  return { ...draft, notes: [...draft.notes, trimmed] };
+}
+
 function freeTextAnswer(input: string, draft: FoxIntakeDraft) {
   if (asksStaffExport(input)) return STAFF_EXPORT_BORROWER_COPY;
   const answered = foxAnswer(input, factsFromDraft(draft));
@@ -1710,7 +1717,17 @@ function freeTextAnswer(input: string, draft: FoxIntakeDraft) {
 }
 
 function answerThenRestore(input: string, draft: FoxIntakeDraft) {
-  return restoredAsk(freeTextAnswer(input, draft), draft);
+  const intent = interpretQuestion(input, factsFromDraft(draft));
+  const nextDraft =
+    intent?.filePatch && intent.topicId !== "language.will_i_qualify"
+      ? persistGuidelineNote(draft, input)
+      : draft;
+  const restored = restoredAsk(freeTextAnswer(input, nextDraft), nextDraft);
+  if (nextDraft === draft) return restored;
+  return {
+    ...restored,
+    capture: { field: "note" as const, value: input.trim() },
+  };
 }
 
 function restoreQueueActions(draft: FoxIntakeDraft) {
@@ -3735,6 +3752,7 @@ function draftAfterCaptureBody(draft: FoxIntakeDraft, capture: Capture): FoxInta
     const amount = parseCurrentHousingAmount(capture.value);
     return amount != null ? writeStatedCurrentHousing(next, amount) : next;
   }
+  if (capture.field === "note") return persistGuidelineNote(next, capture.value);
   return next;
 }
 

@@ -38,6 +38,8 @@ import {
   RENTAL_DOCS_WOULD_HELP,
   condoFlag,
   namedCondoIneligible,
+  namedCondoLanguage,
+  namedNewOrConvertedCondo,
 } from "@/lib/guidelines/conventional";
 import {
   completeness as storeCompleteness,
@@ -1371,7 +1373,12 @@ function fileGuidelineSignals(draft: FoxIntakeDraft): Partial<CompletenessFile> 
     manufactured: /\bmanufactured\b/i.test(text) || Boolean(draft.facts?.manufactured?.value),
     coop: /\bco-?ops?\b/i.test(text),
     pud: /\bpud\b/i.test(text) && !/\bcondo/i.test(text),
-    condoNewOrConverted: /\b(new(ly)? converted|new condo|developer control)\b/i.test(text),
+    ...(draft.propertyType
+      ? {}
+      : namedCondoLanguage(text)
+        ? { propertyType: "condo" as const }
+        : {}),
+    condoNewOrConverted: namedNewOrConvertedCondo(text),
     condoDeveloperControl: /\bdeveloper control\b/i.test(text),
     condoHasHoaDocs: hoaDocs || undefined,
     condoHasProjectFacts: projectFacts || undefined,

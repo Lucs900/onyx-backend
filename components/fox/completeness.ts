@@ -116,6 +116,8 @@ import {
   HIGH_PURCHASE_LTV as STORE_HIGH_PURCHASE_LTV,
   JUMBO_CEILING_LINE,
   namedCondoIneligible,
+  namedCondoLanguage,
+  namedNewOrConvertedCondo,
   completeness as storeCompleteness,
   escalate as storeEscalate,
   flags as storeFlags,
@@ -622,7 +624,12 @@ function guidelineSignalsFromDraft(draft: FoxIntakeDraft): Partial<CompletenessF
     manufactured: /\bmanufactured\b/i.test(text) || Boolean(draft.facts?.manufactured?.value),
     coop: /\bco-?ops?\b/i.test(text),
     pud: /\bpud\b/i.test(text) && !/\bcondo/i.test(text),
-    condoNewOrConverted: /\b(new(ly)? converted|new condo|developer control)\b/i.test(text),
+    ...(draft.propertyType
+      ? {}
+      : namedCondoLanguage(text)
+        ? { propertyType: "condo" as const }
+        : {}),
+    condoNewOrConverted: namedNewOrConvertedCondo(text),
     condoDeveloperControl: /\bdeveloper control\b/i.test(text),
     condoHasHoaDocs: hoaDocs || undefined,
     condoHasProjectFacts: projectFacts || undefined,

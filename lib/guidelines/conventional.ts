@@ -611,7 +611,7 @@ export const TOPICS: Record<string, Topic> = {
     ["Schedule E", "lease"],
     "Wait. A Schedule E or a current lease would help.",
     RENTAL_UNSUPPORTED_CAUTION,
-    RENTAL_DOCS_WOULD_HELP,
+    RENTAL_UNSUPPORTED_CAUTION,
   ),
   "credit.stated_range": topic(
     "credit.stated_range",
@@ -903,6 +903,17 @@ const CONDO_INELIGIBLE =
 
 export function namedCondoIneligible(text?: string | null): boolean {
   return Boolean(text && CONDO_INELIGIBLE.test(text));
+}
+
+export function namedNewOrConvertedCondo(text?: string | null): boolean {
+  if (!text) return false;
+  return /\b(new(ly)?\s+converted|new\s+construction(\s+condo)?|new\s+condo|newly\s+built\s+condo|developer control)\b/i.test(
+    text,
+  );
+}
+
+export function namedCondoLanguage(text?: string | null): boolean {
+  return Boolean(text && /\b(condo|condominium|condotel)\b/i.test(text));
 }
 
 /** Three values only. No project-review engine. No CPM/PERS. */

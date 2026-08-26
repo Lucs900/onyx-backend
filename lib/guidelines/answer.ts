@@ -7,10 +7,13 @@
 import {
   loanExceedsPrice,
   lookup,
+  namedCondoIneligible,
+  namedNewOrConvertedCondo,
   readinessFromFile,
   type FileFacts,
   type GuidelineAction,
 } from "./conventional";
+import { unsupportedRentalNamed } from "@/lib/income/rental";
 
 export type AnswerIntent = {
   topicId: string;
@@ -78,10 +81,40 @@ export function asksPhone(text: string) {
   return /\b(on my phone|on the phone|from my phone|mobile|iphone|android)\b/i.test(text);
 }
 
+export function namesUnsupportedRental(text: string) {
+  return unsupportedRentalNamed(text);
+}
+
+export function namesNonWarrantableCondo(text: string) {
+  return namedCondoIneligible(text);
+}
+
+export function namesNeedsReviewCondo(text: string) {
+  return namedNewOrConvertedCondo(text);
+}
+
 /** Map a question to a store topic. New questions get a topic, not a workspace paragraph. */
 export function interpretQuestion(text: string, _file?: FileFacts): AnswerIntent | null {
   if (asksWillIQualify(text)) {
     return { topicId: "language.will_i_qualify", filePatch: { askedWillIQualify: true } };
+  }
+  if (namesUnsupportedRental(text)) {
+    return {
+      topicId: "income.rental_thin",
+      filePatch: { unsupportedRental: true, rentalNamed: true },
+    };
+  }
+  if (namesNonWarrantableCondo(text)) {
+    return {
+      topicId: "condo.non_warrantable",
+      filePatch: { condoIneligibleNamed: true, propertyType: "condo" },
+    };
+  }
+  if (namesNeedsReviewCondo(text)) {
+    return {
+      topicId: "condo.needs_review",
+      filePatch: { condoNewOrConverted: true, propertyType: "condo" },
+    };
   }
   if (asksCost(text)) return { topicId: "language.cost" };
   if (asksAcrBenefits(text)) return { topicId: "language.acr_benefits" };
