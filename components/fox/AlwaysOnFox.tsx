@@ -95,7 +95,7 @@ import {
   type DocIntakeDetail,
 } from "./fileWrite";
 import { DECLINING_INCOME_CAUTION } from "./qualifyingIncome";
-import { fileExists, finishLineActions, reviewIsSitting } from "./motion";
+import { fileExists, finishLineActions, inQueueEnding, reviewIsSitting } from "./motion";
 import { pathFromHomeChoice } from "./homeIdle";
 import {
   FOX_DISCLOSURE,
@@ -1097,7 +1097,9 @@ export function AlwaysOnFox({
       }
       appendReply(action.label, {
         text: workspaceUpdateCopy(action.capture, live),
-        actions: layer2AskActions(live) ?? finishLineActions(live),
+        actions: inQueueEnding(live)
+          ? finishLineActions(live)
+          : (layer2AskActions(live) ?? finishLineActions(live)),
       });
       if (action.capture.field === "ask-fox") {
         window.requestAnimationFrame(() => focusComposer(true));

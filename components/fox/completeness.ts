@@ -176,8 +176,19 @@ export {
   STATED_CURRENT_HOUSING_FIELD,
 };
 export const YEARS_IN_BUSINESS_FIELD = "years_in_business";
-export const YEARS_IN_BUSINESS_ASK = "How long have you been running this?";
+export const YEARS_IN_BUSINESS_ASK = "How long have you had this business?";
 export const MISSING_LINE = "—";
+
+export function businessNameOnFile(draft?: FoxIntakeDraft | null) {
+  if (!draft) return "";
+  return factValue(draft, "employer_name").trim();
+}
+
+/** Self-employed tenure after a skipped or missing return. Purchase timeline stays “What’s the timeline?” */
+export function yearsInBusinessAskCopy(draft?: FoxIntakeDraft | null) {
+  const name = businessNameOnFile(draft);
+  return name ? `How long have you had ${name}?` : YEARS_IN_BUSINESS_ASK;
+}
 
 export const COMPLETENESS_GROUPS: CompletenessGroup[] = [
   "identity",
