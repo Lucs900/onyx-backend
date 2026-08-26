@@ -2934,6 +2934,30 @@ const buyProceed = afterProceed(afterIncome);
 assert.equal(layer2Open(buyProceed), true);
 assert.equal(workspacePrompt(buyProceed), "done");
 assert.equal(workspacePromptCopy("done", buyProceed).text, MOTION_COPY.in_queue);
+assert.equal(MOTION_COPY.in_queue, "ONYX has this.");
+assert.doesNotMatch(workspacePromptCopy("done", buyProceed).followUp ?? "", /government ID|Purchase contract|Bank statement/i);
+assert.ok(previewFacts(buyProceed).some((fact) => fact.id === "status"));
+assert.ok(previewFacts(buyProceed).some((fact) => fact.id === "next"));
+const noneReoProceed = afterProceed(
+  draft({
+    ...afterIncome,
+    statedOtherReo: "none",
+    otherReoAsked: true,
+  }),
+);
+assert.equal(workspacePromptCopy("done", noneReoProceed).text, MOTION_COPY.in_queue);
+assert.equal(motionOf(noneReoProceed), "in_queue");
+assert.ok(!/agency_ready/.test(fileCompleteness(noneReoProceed)?.copy ?? ""));
+assert.ok(
+  !(stillUsefulSection(noneReoProceed)?.items ?? []).some(
+    (item) => item.label === OTHER_REO_MORTGAGE_STATEMENTS,
+  ),
+);
+assert.doesNotMatch(layer2AskCopy(noneReoProceed), /Mortgage statements for all properties owned/);
+assert.doesNotMatch(
+  `${workspacePromptCopy("done", noneReoProceed).text} ${workspacePromptCopy("done", noneReoProceed).followUp ?? ""}`,
+  /Mortgage statements for all properties owned/,
+);
 const buySection = stillUsefulSection(buyProceed);
 assert.ok(buySection);
 assert.equal(buySection.empty, false);
@@ -4190,8 +4214,8 @@ const queuedBlank = {
   motion: "in_queue" as const,
 };
 assert.equal(workspacePromptCopy("done", queuedBlank).text, MOTION_COPY.in_queue);
-assert.equal(workspacePromptCopy("done", queuedBlank).followUp, layer2AskCopy(queuedBlank));
-assert.match(workspacePromptCopy("done", queuedBlank).followUp ?? "", /government ID/i);
+assert.doesNotMatch(workspacePromptCopy("done", queuedBlank).followUp ?? "", /government ID|Purchase contract|Bank statement/i);
+assert.notEqual(workspacePromptCopy("done", queuedBlank).followUp, layer2AskCopy(queuedBlank));
 assert.ok(!layer2Plan(queuedBlank).some((item) => item.id === "years-in-business"));
 assert.ok(!layer2Plan(queuedBlank).some((item) => item.label === "Years in business"));
 assert.ok(
@@ -8769,17 +8793,18 @@ assert.ok(queuedLabels.indexOf("Upload more") < queuedLabels.indexOf("Request hu
 assert.ok(queuedLabels.indexOf("Ask Fox") < queuedLabels.indexOf("Request human"));
 assert.equal(queuedActions.find((item) => item.label === "Request human")?.quiet, true);
 const whatNext = workspaceReply("What happens next?", queued);
-assert.match(whatNext?.text ?? "", /government ID/i);
-assert.match(whatNext?.text ?? "", /Purchase contract|Bank statement|paystub/i);
-assert.doesNotMatch(whatNext?.text ?? "", /will contact you|we’ll be in touch|your lo has the file|ssn|we pulled|fico/i);
-assert.ok((whatNext?.actions ?? []).some((item) => item.label === "Skip"));
-assert.ok((whatNext?.actions ?? []).some((item) => item.label === "Upload this"));
+assert.equal(whatNext?.text, MOTION_COPY.whatHappensNext);
+assert.doesNotMatch(whatNext?.text ?? "", /government ID|Purchase contract|Bank statement|will contact you|we’ll be in touch|your lo has the file|ssn|we pulled|fico/i);
+assert.ok((whatNext?.actions ?? []).some((item) => item.label === "Upload more"));
+assert.ok((whatNext?.actions ?? []).some((item) => item.label === "Ask Fox"));
+assert.ok(!(whatNext?.actions ?? []).some((item) => item.label === "Upload this"));
 assert.notEqual((whatNext?.actions ?? [])[0]?.label, "Request human");
 const askFox = workspaceReply("Ask Fox", queued);
-assert.match(askFox?.text ?? "", /government ID/i);
-assert.doesNotMatch(askFox?.text ?? "", /will contact you|we’ll be in touch|your lo has the file|ssn|we pulled/i);
-assert.ok((askFox?.actions ?? []).some((item) => item.label === "Skip"));
-assert.match(workspacePromptCopy("done", queued).followUp ?? "", /government ID/i);
+assert.equal(askFox?.text, MOTION_COPY.askFox);
+assert.doesNotMatch(askFox?.text ?? "", /government ID|will contact you|we’ll be in touch|your lo has the file|ssn|we pulled/i);
+assert.ok((askFox?.actions ?? []).some((item) => item.label === "What happens next?"));
+assert.ok(!(askFox?.actions ?? []).some((item) => item.label === "Skip"));
+assert.doesNotMatch(workspacePromptCopy("done", queued).followUp ?? "", /government ID|Purchase contract|Bank statement/i);
 assert.equal(workspacePromptCopy("done", queued).text, MOTION_COPY.in_queue);
 assert.ok((queued.previewOutbox ?? []).some((item) => item.to === "borrower@example.com"));
 assert.ok((queued.events ?? []).some((event) => event.kind === "proceed"));
@@ -8903,7 +8928,8 @@ assert.equal(motionOf(moreFromQueue), "in_queue");
 assert.ok(openReviewWorkItem(moreFromQueue));
 assert.deepEqual(missingExtractClasses(moreFromQueue), missingOnQueue);
 const moreFromQueueAsk = workspacePromptCopy("done", moreFromQueue);
-assert.match(moreFromQueueAsk.text, /file can move|ONYX has this for review/i);
+assert.match(moreFromQueueAsk.text, /ONYX has this/);
+assert.doesNotMatch(moreFromQueueAsk.text, /Government ID,|Purchase contract|Bank statement/i);
 assert.ok((moreFromQueueAsk.actions ?? []).some((item) => item.label === "What happens next?"));
 assert.ok((moreFromQueueAsk.actions ?? []).some((item) => item.label === "Ask Fox"));
 assert.notEqual((moreFromQueueAsk.actions ?? [])[0]?.label, "Request human");
@@ -8954,6 +8980,58 @@ assert.doesNotMatch(
   `${MOTION_COPY.in_queue} ${statusCopy(mvsQueued)} ${nextActorOf(mvsQueued)}`,
   /LO will contact you|we’ll be in touch|waiting for your originator/i,
 );
+
+resetWorkspaceForEntry("acr", "buy");
+applyCapture({ field: "occupancy", value: "primary" });
+applyCapture({ field: "timeline", value: "ready-now" });
+capturePurchaseFunds("850000", "680000");
+applyCapture({ field: "creditRange", value: "760+" });
+applyCapture({ field: "incomeType", value: "w2" });
+applyCapture({ field: "skip-time-on-job" });
+applyCapture({ field: "skip-monthly-debts" });
+applyCapture({ field: "skip-available-assets" });
+applyCapture({ field: "skip-property-type" });
+applyCapture({ field: "skip-current-housing" });
+applyCapture({ field: "skip-declarations" });
+applyCapture({ field: "statedOtherReo", value: "none" });
+applyCapture({ field: "start-docs" });
+applyCapture({ field: "skip-docs" });
+applyCapture({ field: "skip-borrower-name" });
+assert.equal(workspacePrompt(getFoxDraft()), "documents");
+assert.equal(workspacePromptCopy("documents", getFoxDraft()).text, DOC_INVITE_COPY.paystub);
+assert.notEqual(workspacePrompt(getFoxDraft()), "household");
+applyCapture({ field: "skip-docs" });
+assert.notEqual(workspacePrompt(getFoxDraft()), "household");
+applyCapture({ field: "skip-docs" });
+assert.equal(workspacePrompt(getFoxDraft()), "review");
+applyCapture({ field: "confirm-draft" });
+if (workspacePrompt(getFoxDraft()) === "household") applyCapture({ field: "skip-household" });
+if (workspacePrompt(getFoxDraft()) === "housing") applyCapture({ field: "skip-housing" });
+applyCapture({ field: "email", value: "thin-queue@onyx.test" });
+applyCapture({ field: "proceed" });
+const thinQueued = getFoxDraft();
+assert.equal(thinQueued.statedOtherReo, "none");
+assert.equal(motionOf(thinQueued), "in_queue");
+assert.equal(statusCopy(thinQueued), "in_queue");
+assert.equal(nextActorOf(thinQueued), "ONYX");
+assert.equal(workspacePromptCopy("done", thinQueued).text, "ONYX has this.");
+assert.ok(previewFacts(thinQueued).some((fact) => fact.id === "status" && fact.value === "in_queue"));
+assert.ok(previewFacts(thinQueued).some((fact) => fact.id === "next" && fact.value === "ONYX"));
+assert.doesNotMatch(workspacePromptCopy("done", thinQueued).followUp ?? "", /government ID|Purchase contract|Mortgage statements for all properties owned/i);
+assert.ok(
+  !(stillUsefulSection(thinQueued)?.items ?? []).some(
+    (item) => item.label === OTHER_REO_MORTGAGE_STATEMENTS,
+  ),
+);
+assert.ok(stillUsefulSection(thinQueued) && stillUsefulSection(thinQueued)!.items.length > 0);
+assert.match(fileCompleteness(thinQueued)?.copy ?? "", new RegExp(`^sketch · \\d+ of ${CONVENTIONAL_FILE_SLOT_TOTAL}$`));
+assert.ok(!/agency_ready/.test(fileCompleteness(thinQueued)?.copy ?? ""));
+assert.ok(openReviewWorkItem(thinQueued));
+const thinQualify = workspaceReply("will i qualify", thinQueued);
+assert.doesNotMatch(thinQualify?.text ?? "", /you qualify|you are approved|you don.t qualify/i);
+assert.match(`${thinQualify?.text ?? ""} ${thinQualify?.followUp ?? ""}`, /ONYX has this/);
+assert.ok((thinQualify?.actions ?? []).some((item) => item.label === "What happens next?"));
+assert.notEqual((thinQualify?.actions ?? [])[0]?.label, "Request human");
 
 sitExpireReview();
 assert.equal(reviewIsSitting(getFoxDraft()), true);
@@ -9112,6 +9190,8 @@ assert.ok(motionSource.includes('motion === "in_queue"'));
 assert.doesNotMatch(motionSource, /we pulled your credit|experian|equifax|transunion/i);
 assert.ok(!motionSource.includes("Government ID. Most recent tax return. Prior-year return if available."));
 assert.ok(motionSource.includes("This file can move. Proceed, or say not yet."));
+assert.ok(motionSource.includes("ONYX has this."));
+assert.doesNotMatch(motionSource, /LO will contact you/);
 assert.ok(workspaceSrc.includes("CREDIT_STATED_NOTE") || workspaceSrc.includes("Stated · not a pull"));
 assert.ok(workspaceSrc.includes("CREDIT_RANGE_ASK") || workspaceSrc.includes("What is your estimated FICO?"));
 assert.doesNotMatch(workspaceSrc, /What credit range should I use for the estimate/);

@@ -1209,8 +1209,6 @@ export function completeness(
   if (file.statedOtherReo === "yes") {
     stillUseful.push("other property details");
     if (!received.has("mortgage_statement")) stillUseful.push(OTHER_REO_MORTGAGE_STATEMENTS);
-  } else if (file.rentalNeedsStatement) {
-    stillUseful.push(OTHER_REO_MORTGAGE_STATEMENTS);
   }
   if (seLike(file.incomeType) && taxReturns < 1) {
     const idx = stillUseful.indexOf(DOCUMENTED_STILL_USEFUL.tax_return);

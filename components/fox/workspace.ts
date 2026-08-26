@@ -1443,6 +1443,7 @@ export function docReactionAsk(
 }
 
 function rememberedAskCopy(draft: FoxIntakeDraft): string | undefined {
+  if (inQueueEnding(draft)) return undefined;
   if (stillUsefulVisible(draft)) return layer2AskCopy(draft);
   if (!shouldAskYearsInBusiness(draft)) return undefined;
   if (draft.motion === "in_queue" || draft.sampleAccepted) return YEARS_IN_BUSINESS_ASK;
@@ -1758,6 +1759,7 @@ function answerThenRestore(input: string, draft: FoxIntakeDraft) {
 }
 
 function restoreQueueActions(draft: FoxIntakeDraft) {
+  if (inQueueEnding(draft)) return finishLineActions(draft);
   const extra = layer2AskActions(draft) ?? [];
   const finish = finishLineActions(draft);
   const seen = new Set(extra.map((item) => item.label));
@@ -3064,11 +3066,10 @@ export function workspaceUpdateCopy(capture: Capture, draft: FoxIntakeDraft) {
     return "ACR is the desk that stays open after close — letter, scout, and reward. This file is still the loan.";
   }
   if (capture.field === "what-happens-next") {
-    return stillUsefulVisible(draft) ? layer2AskCopy(draft) : MOTION_COPY.whatHappensNext;
+    return MOTION_COPY.whatHappensNext;
   }
   if (capture.field === "ask-fox") {
     if (draft.docsHeld && !draft.sampleAccepted) return HOLD_DOCS_ASK_FOX;
-    if (stillUsefulVisible(draft)) return layer2AskCopy(draft);
     return MOTION_COPY.askFox;
   }
   if (capture.field === "talk-originator") {
@@ -4216,7 +4217,7 @@ export function workspaceReply(
 
   if (layer2Open(draft) && /^skip\b/.test(lower)) {
     return {
-      text: layer2AskCopy(draft),
+      text: inQueueEnding(draft) ? MOTION_COPY.in_queue : layer2AskCopy(draft),
       actions: restoreQueueActions(draft),
       capture: { field: "skip-docs" },
     };
@@ -4224,7 +4225,7 @@ export function workspaceReply(
 
   if (layer2Open(draft) && /^not yet\b/.test(lower)) {
     return {
-      text: layer2AskCopy(draft),
+      text: inQueueEnding(draft) ? MOTION_COPY.in_queue : layer2AskCopy(draft),
       actions: restoreQueueActions(draft),
       capture: { field: "hold-docs" },
     };
@@ -4327,7 +4328,7 @@ export function workspaceReply(
 
   if (inQueueEnding(draft) && /what happens next/.test(lower)) {
     return {
-      text: stillUsefulVisible(draft) ? layer2AskCopy(draft) : MOTION_COPY.whatHappensNext,
+      text: MOTION_COPY.whatHappensNext,
       actions: restoreQueueActions(draft),
       capture: { field: "what-happens-next" },
     };
@@ -4335,7 +4336,7 @@ export function workspaceReply(
 
   if (inQueueEnding(draft) && /^ask fox$/.test(lower)) {
     return {
-      text: layer2Open(draft) ? layer2AskCopy(draft) : MOTION_COPY.askFox,
+      text: MOTION_COPY.askFox,
       actions: restoreQueueActions(draft),
       capture: { field: "ask-fox" },
     };

@@ -1538,7 +1538,9 @@ export function stillUsefulSection(draft: FoxIntakeDraft): {
     ...layer2Plan(draft),
     ...otherReoStillUsefulItems(draft),
     ...guidelineStillUsefulItems(draft),
-  ];
+  ].filter(
+    (item) => item.label !== OTHER_REO_MORTGAGE_STATEMENTS || draft.statedOtherReo === "yes",
+  );
   storeCompleteness(draft.productIntent ?? "", completenessFileFromDraft(draft));
   return { items, empty: items.length === 0 };
 }
@@ -1595,7 +1597,11 @@ function guidelineStillUsefulItems(draft: FoxIntakeDraft): StillUsefulItem[] {
   if ((file.rentalNamed || file.occupancy === "investment") && !file.hasScheduleE && !file.hasLease) {
     items.push(layer2Item("rental-docs", RENTAL_DOCS_WOULD_HELP, RENTAL_DOCS_WOULD_HELP));
   }
-  if (file.rentalNeedsStatement && !items.some((item) => item.label === OTHER_REO_MORTGAGE_STATEMENTS)) {
+  if (
+    draft.statedOtherReo === "yes" &&
+    file.rentalNeedsStatement &&
+    !items.some((item) => item.label === OTHER_REO_MORTGAGE_STATEMENTS)
+  ) {
     items.push(layer2Item("reo-mortgage-rental", OTHER_REO_MORTGAGE_STATEMENTS, OTHER_REO_MORTGAGE_STATEMENTS));
   }
   return items;

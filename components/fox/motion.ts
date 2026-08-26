@@ -41,8 +41,7 @@ export const MOTION_COPY = {
   gatheringPrefix: "These docs help next:",
   gatheringSuffix: "Upload docs, proceed, or say not yet.",
   ready: "This file can move. Proceed, or say not yet.",
-  in_queue:
-    "ONYX has this for review. I’m on it — I’ll nudge if it sits and I’ll bring the result back here.",
+  in_queue: "ONYX has this.",
   whatHappensNext:
     "This is the wait. ONYX has the file for review. I stay in this thread — I’ll nudge if it sits and I’ll bring the result back here.",
   askFox: "I’m here. Type below — I stay on this file while ONYX reviews.",
@@ -331,9 +330,6 @@ export function inQueueEnding(draft: FoxIntakeDraft) {
 export function motionAskText(draft: FoxIntakeDraft) {
   const motion = motionOf(draft);
   if (inQueueEnding(draft)) {
-    if ((draft.docsOpen || motion === "gathering") && missingExtractClasses(draft).length) {
-      return gatheringCopy(draft);
-    }
     return MOTION_COPY.in_queue;
   }
   if (draft.pendingFinish && emailMissing(draft)) return MOTION_COPY.emailAsk;
@@ -461,7 +457,7 @@ function withOutbox(
     subject: finish === "proceed" ? "File in review" : "File on hold",
     body:
       finish === "proceed"
-        ? "ONYX has this for review. I’ll nudge if it sits and I’ll bring the result back here."
+        ? "ONYX has this."
         : "Holding. I’ll keep the file. Say when to proceed.",
     createdAt: now.toISOString(),
   };
