@@ -353,12 +353,29 @@ export function looksLikeTaxReturnFields(
   return false;
 }
 
+export function looksLikeMortgageFields(
+  fields?: Record<string, string | null | undefined> | null,
+): boolean {
+  if (!fields) return false;
+  if (String(fields.current_pi ?? "").trim()) return true;
+  return Boolean(String(fields.servicer ?? "").trim() && String(fields.unpaid_principal ?? "").trim());
+}
+
+export function looksLikeIdFields(
+  fields?: Record<string, string | null | undefined> | null,
+): boolean {
+  return Boolean(fields && String(fields.full_name ?? "").trim());
+}
+
 export function promoteExtractClass(
   extractClass: ExtractClass,
   fields?: Record<string, string | null | undefined> | null,
 ): ExtractClass {
   if (extractClass !== "other") return extractClass;
-  return looksLikeTaxReturnFields(fields) ? "tax_return" : extractClass;
+  if (looksLikeTaxReturnFields(fields)) return "tax_return";
+  if (looksLikeMortgageFields(fields)) return "mortgage_statement";
+  if (looksLikeIdFields(fields)) return "government_id";
+  return extractClass;
 }
 
 /** Filename paystub / W-2 / ID / bank / tax-return names win when extract returns `other`. */
@@ -809,7 +826,10 @@ export function applyExtractedFields(
   const extractClass = promoteExtractClass(input.extractClass, input.fields);
   if (
     extractClass === "other" ||
-    (input.confidence < LOW_EXTRACT_CONFIDENCE && !looksLikeTaxReturnFields(input.fields))
+    (input.confidence < LOW_EXTRACT_CONFIDENCE &&
+      !looksLikeTaxReturnFields(input.fields) &&
+      !looksLikeMortgageFields(input.fields) &&
+      !looksLikeIdFields(input.fields))
   ) {
     return { draft, writes, conflict: null, quietLines: [] };
   }

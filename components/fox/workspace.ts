@@ -319,9 +319,12 @@ import {
   OTHER_REO_PAYMENT_FIELD,
   STATED_OTHER_REO_FIELD,
   SUGGESTED_OTHER_REO_NOTE,
+  applyTypedOtherPropertyRent,
   fileNetConfirmCopy,
+  isFileNetConfirmPending,
   isFileNetField,
   isOtherReoConfirmPending,
+  parseOtherPropertyRent,
   isSkipOtherReoText,
   isStatedOtherReo,
   otherPropertyPaymentConfirmCopy,
@@ -1995,7 +1998,9 @@ export function shouldDeferStillUsefulAsk(draft: FoxIntakeDraft): boolean {
     isDeclarationsConfirmPending(draft) ||
     isHouseholdConfirmPending(draft) ||
     isBorrowerNameConfirmPending(draft) ||
-    isOtherReoConfirmPending(draft)
+    isOtherReoConfirmPending(draft) ||
+    isFileNetConfirmPending(draft) ||
+    draft.pendingProposal?.field === OTHER_REO_PAYMENT_FIELD
   );
 }
 
@@ -4316,9 +4321,31 @@ export function workspaceReply(
     ) {
       return replyToFundsAsk(q, { ...draft, pendingProposal: null });
     }
+    const otherPropertyRentPending = parseOtherPropertyRent(q);
+    if (otherPropertyRentPending != null && draft.statedOtherReo === "yes") {
+      const nextDraft = applyTypedOtherPropertyRent(draft, otherPropertyRentPending);
+      return {
+        ...nextFoxAsk(nextDraft),
+        capture: { field: "otherReoRent", value: String(otherPropertyRentPending) },
+      };
+    }
     if (draft.pendingProposal) {
       return answerThenRestore(q, draft);
     }
+  }
+
+  const typedOtherPropertyRent = parseOtherPropertyRent(q);
+  if (
+    typedOtherPropertyRent != null &&
+    draft.statedOtherReo === "yes" &&
+    prompt !== "current-housing" &&
+    !draft.pendingConflict
+  ) {
+    const nextDraft = applyTypedOtherPropertyRent(draft, typedOtherPropertyRent);
+    return {
+      ...nextFoxAsk(nextDraft),
+      capture: { field: "otherReoRent", value: String(typedOtherPropertyRent) },
+    };
   }
 
   if (

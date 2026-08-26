@@ -7,31 +7,54 @@ import { readPrivateBytes, storageStatus, STORAGE_BLOCKED } from "@/lib/docs/sto
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
-export async function POST(request: Request) {
-  if (storageStatus().storage === "blocked" && !process.env.BLOB_READ_WRITE_TOKEN && !process.env.BLOB_STORE_ID) {
-    return NextResponse.json(
-      { error: STORAGE_BLOCKED, code: "STORAGE_BLOCKED" },
-      { status: 503 },
-    );
-  }
+const INLINE_BYTES_MAX = 4_000_000;
 
-  let body: { bytesRef?: string; name?: string; type?: string };
+function decodeInlineBytes(raw?: string): Uint8Array | null {
+  if (!raw || typeof raw !== "string") return null;
+  const cleaned = raw.replace(/^data:[^;]+;base64,/, "").replace(/\s/g, "");
+  if (!cleaned || cleaned.length > 8_000_000) return null;
   try {
-    body = (await request.json()) as { bytesRef?: string; name?: string; type?: string };
+    const buf = Buffer.from(cleaned, "base64");
+    if (!buf.length || buf.length > INLINE_BYTES_MAX) return null;
+    return new Uint8Array(buf);
+  } catch {
+    return null;
+  }
+}
+
+export async function POST(request: Request) {
+  let body: { bytesRef?: string; name?: string; type?: string; bytes?: string };
+  try {
+    body = (await request.json()) as { bytesRef?: string; name?: string; type?: string; bytes?: string };
   } catch {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
+  const inline = decodeInlineBytes(body.bytes);
   const bytesRef = typeof body.bytesRef === "string" ? body.bytesRef.trim() : "";
-  if (!bytesRef || bytesRef.includes("..") || bytesRef.startsWith("http")) {
-    return NextResponse.json({ error: "Missing bytesRef" }, { status: 400 });
+  if (!inline) {
+    if (storageStatus().storage === "blocked" && !process.env.BLOB_READ_WRITE_TOKEN && !process.env.BLOB_STORE_ID) {
+      return NextResponse.json(
+        { error: STORAGE_BLOCKED, code: "STORAGE_BLOCKED" },
+        { status: 503 },
+      );
+    }
+    if (!bytesRef || bytesRef.includes("..") || bytesRef.startsWith("http")) {
+      return NextResponse.json({ error: "Missing bytesRef" }, { status: 400 });
+    }
   }
 
   try {
-    const stored = await readPrivateBytes(bytesRef);
-    const mediaType = mediaTypeOf(body.name ?? stored.pathname, body.type ?? stored.contentType);
+    const stored = inline
+      ? null
+      : await readPrivateBytes(bytesRef);
+    const bytes = inline ?? stored?.bytes;
+    if (!bytes) {
+      return NextResponse.json({ error: "Missing bytesRef" }, { status: 400 });
+    }
+    const mediaType = mediaTypeOf(body.name ?? stored?.pathname ?? "", body.type ?? stored?.contentType);
     const extracted = await classifyAndExtract(
-      stored.bytes,
+      bytes,
       mediaType,
       grokExtractAdapter,
     );

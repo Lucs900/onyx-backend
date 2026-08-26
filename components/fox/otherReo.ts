@@ -217,6 +217,30 @@ export function otherReoRowPiti(row: OtherReoRow): number | null {
   return parseRowMoney(row.pitia) ?? parseRowMoney(row.payment);
 }
 
+/** Typed rent on an other-property row. Does not invent PITI. */
+export function parseOtherPropertyRent(text: string): number | null {
+  const trimmed = text.trim();
+  if (!trimmed) return null;
+  if (
+    !/\bother propert/.test(trimmed.toLowerCase()) &&
+    !/\bthe rental\b/.test(trimmed.toLowerCase())
+  ) {
+    return null;
+  }
+  if (!/\brent/i.test(trimmed)) return null;
+  const match = trimmed.match(/\$?\s*(\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?/);
+  if (!match) return null;
+  const n = Number(match[1].replace(/,/g, ""));
+  if (!Number.isFinite(n) || n < 100 || n > 100_000) return null;
+  return Math.round(n);
+}
+
+export function applyTypedOtherPropertyRent(draft: FoxIntakeDraft, rent: number): FoxIntakeDraft {
+  if (draft.statedOtherReo !== "yes") return draft;
+  if (!Number.isFinite(rent) || rent <= 0) return draft;
+  return maybeProposeOtherReoFileNet(appendOtherReoRow(draft, { leaseGross: String(Math.round(rent)) }));
+}
+
 export function draftOtherPropertyFileNet(draft: FoxIntakeDraft) {
   if (draft.statedOtherReo !== "yes") {
     return netOtherPropertyFile([]);
