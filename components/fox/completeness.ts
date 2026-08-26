@@ -51,6 +51,7 @@ import {
   SUGGESTED_PROPERTY_NOTE,
   contractAddressConfirmCopy,
   isPropertyTypeValue,
+  parsePropertyType,
   propertyTypeConfirmCopy,
   skipPropertyType,
   typedAddressConfirmCopy,
@@ -1024,6 +1025,14 @@ function writeConfirmedFact(
       confirmedAt: now,
     };
     next = { ...next, subjectAddress: value, facts };
+  }
+  if (field === "year_built") next = { ...next, propertyYearBuilt: value, facts };
+  if (field === "units") next = { ...next, propertyUnits: value, facts };
+  if (field === "annual_taxes") next = { ...next, propertyTaxes: value, facts };
+  if (field === "hoa_monthly") next = { ...next, propertyHoa: value, facts };
+  if (field === "property_type") {
+    const parsed = parsePropertyType(value);
+    if (parsed) next = { ...next, propertyType: parsed, propertyTypeAsked: true, facts };
   }
   if (field === "full_name" && !draft.contact.fullName.value) {
     next = {

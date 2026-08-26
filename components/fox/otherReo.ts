@@ -1,4 +1,4 @@
-import type { FactProposal, FoxAction, FoxIntakeDraft } from "./types";
+import type { FactProposal, FoxAction, FoxIntakeDraft, OtherReoRow } from "./types";
 
 export const STATED_OTHER_REO_FIELD = "statedOtherReo";
 export const SUGGESTED_OTHER_REO_NOTE = "Suggested · not underwritten";
@@ -84,6 +84,7 @@ export function writeStatedOtherReo(draft: FoxIntakeDraft, value: StatedOtherReo
     ...draft,
     statedOtherReo: value,
     otherReoAsked: true,
+    otherProperties: value === "none" ? [] : draft.otherProperties,
     pendingOtherReo: null,
     pendingProposal: null,
     pendingConflict: null,
@@ -115,6 +116,68 @@ export function proposeStatedOtherReo(draft: FoxIntakeDraft, value: StatedOtherR
 
 export function proposeExtractedOtherReo(draft: FoxIntakeDraft): FoxIntakeDraft {
   return proposeStatedOtherReo(draft, "yes");
+}
+
+function normalizeAddr(value?: string) {
+  return (value ?? "").trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+function isSubjectAddress(draft: FoxIntakeDraft, address?: string) {
+  const incoming = normalizeAddr(address);
+  if (!incoming) return false;
+  const subject = normalizeAddr(draft.subjectAddress || draft.facts?.property_address?.value);
+  return Boolean(subject && incoming === subject);
+}
+
+function purchaseLikeFile(draft: FoxIntakeDraft) {
+  if (draft.productIntent === "buy") return true;
+  if (draft.productIntent === "jumbo") return draft.jumboPurpose !== "refinance";
+  return false;
+}
+
+/** Other-property mortgage after Other REO Yes. Subject statements never count. */
+export function isOtherPropertyMortgageExtract(
+  draft: FoxIntakeDraft,
+  row: { address?: string },
+) {
+  if (draft.statedOtherReo !== "yes") return false;
+  if (isSubjectAddress(draft, row.address)) return false;
+  if (purchaseLikeFile(draft)) return true;
+  return Boolean((row.address ?? "").trim());
+}
+
+export function otherReoRows(draft: FoxIntakeDraft): OtherReoRow[] {
+  if (draft.statedOtherReo !== "yes") return [];
+  return (draft.otherProperties ?? []).filter((row) => !isSubjectAddress(draft, row.address));
+}
+
+export function appendOtherReoRow(
+  draft: FoxIntakeDraft,
+  row: Omit<OtherReoRow, "id"> & { id?: string },
+): FoxIntakeDraft {
+  if (draft.statedOtherReo === "none") return { ...draft, otherProperties: [] };
+  if (draft.statedOtherReo !== "yes") return draft;
+  if (isSubjectAddress(draft, row.address)) return draft;
+  const existing = draft.otherProperties ?? [];
+  const address = normalizeAddr(row.address);
+  const unpaid = (row.unpaidPrincipal ?? "").trim();
+  const dup = existing.some((item) => {
+    const sameAddress = address && normalizeAddr(item.address) === address;
+    const sameBalance = unpaid && (item.unpaidPrincipal ?? "").trim() === unpaid;
+    return Boolean(sameAddress || sameBalance);
+  });
+  if (dup) return draft;
+  const next: OtherReoRow = {
+    id: row.id || `reo-${existing.length + 1}`,
+    occupancy: row.occupancy,
+    address: row.address?.trim() || undefined,
+    unpaidPrincipal: row.unpaidPrincipal?.trim() || undefined,
+    payment: row.payment?.trim() || undefined,
+    pitia: row.pitia?.trim() || undefined,
+    leaseGross: row.leaseGross?.trim() || undefined,
+  };
+  if (!next.address && !next.unpaidPrincipal && !next.payment) return draft;
+  return { ...draft, otherProperties: [...existing, next] };
 }
 
 export function otherReoConfirmCopy(value: StatedOtherReo) {

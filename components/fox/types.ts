@@ -228,6 +228,17 @@ export type FileExportMark = {
   downloadedAt: string;
 };
 
+/** One other-property row. Subject is never stored here. */
+export type OtherReoRow = {
+  id: string;
+  occupancy?: string;
+  address?: string;
+  unpaidPrincipal?: string;
+  payment?: string;
+  pitia?: string;
+  leaseGross?: string;
+};
+
 export type FoxIntakeDraft = {
   version: number;
   phase: IntakePhase;
@@ -323,10 +334,14 @@ export type FoxIntakeDraft = {
   borrowerNameAsked?: boolean;
   statedOtherReo?: "none" | "yes";
   otherReoAsked?: boolean;
+  otherProperties?: OtherReoRow[];
+  citizenshipAsked?: boolean;
+  formerHistoryAsked?: boolean;
   /** Title / profile enrichment only. Fox does not ask for these this gate. */
   propertyApn?: string;
   propertyLegalDescription?: string;
   propertyYearBuilt?: string;
+  propertyUnits?: string;
   propertyTaxes?: string;
   propertyHoa?: string;
   /** Thin liability placeholder. Credit pull is the later source of truth. */
@@ -441,6 +456,8 @@ export type FoxPrompt =
   | "years-in-business"
   | "over-price"
   | "housing"
+  | "citizenship"
+  | "former-history"
   | "done";
 
 export type Capture =
@@ -486,6 +503,10 @@ export type Capture =
   | { field: "skip-other-reo" }
   | { field: "propose-other-reo"; value: string }
   | { field: "statedOtherReo"; value: string }
+  | { field: "citizenship"; value: string }
+  | { field: "skip-citizenship" }
+  | { field: "formerHistory"; value: string }
+  | { field: "skip-former-history" }
   | { field: "occupancy"; value: string }
   | { field: "timeline"; value: string }
   | { field: "path"; value: IntakePath }

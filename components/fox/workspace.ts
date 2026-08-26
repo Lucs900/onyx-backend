@@ -189,6 +189,7 @@ import {
   parsePropertyType,
   parseVolunteeredAddress,
   propertyTypeAskCopy,
+  propertyTypeSettled,
   propertyTypeConfirmActions,
   propertyTypeConfirmCopy,
   propertyTypeLabel,
@@ -325,6 +326,25 @@ import {
   skipOtherReo,
   writeStatedOtherReo,
 } from "./otherReo";
+import {
+  CITIZENSHIP_ASK,
+  citizenshipAskCopy,
+  citizenshipLabel,
+  citizenshipNeeded,
+  isFileCitizenshipValue,
+  isSkipCitizenshipText,
+  parseCitizenship,
+  skipCitizenship,
+  writeCitizenship,
+} from "./citizenship";
+import {
+  FORMER_HISTORY_ASK,
+  formerHistoryAskCopy,
+  formerHistoryNeeded,
+  isSkipFormerHistoryText,
+  skipFormerHistory,
+  writeFormerHistoryNote,
+} from "./fileHistory";
 import { asksStaffExport, STAFF_EXPORT_BORROWER_COPY } from "./staffExport";
 import {
   ACR_BENEFITS_LINE,
@@ -2054,6 +2074,9 @@ export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
   const holdCalculatorAsk = draft.motion === "in_queue" || draft.motion === "escalated";
   if (!holdCalculatorAsk && housingConfirmNeeded(draft)) return "housing";
   if (!holdCalculatorAsk && statedDtiAskNeeded(draft)) return "debts";
+  if (!holdCalculatorAsk && !propertyTypeSettled(draft)) return "property-type";
+  if (!holdCalculatorAsk && citizenshipNeeded(draft)) return "citizenship";
+  if (!holdCalculatorAsk && formerHistoryNeeded(draft)) return "former-history";
   return "done";
 }
 
@@ -2244,6 +2267,12 @@ function workspaceAskCopy(
   }
   if (prompt === "declarations") {
     return declarationsAskCopy(draft);
+  }
+  if (prompt === "citizenship") {
+    return citizenshipAskCopy();
+  }
+  if (prompt === "former-history") {
+    return formerHistoryAskCopy();
   }
   if (prompt === "declaration-timing") {
     return declarationTimingAskCopy();
@@ -2994,6 +3023,12 @@ export function editPromptFromCapture(capture?: Capture): FoxPrompt | undefined 
   ) {
     return "household";
   }
+  if (capture.field === "skip-citizenship" || capture.field === "citizenship") {
+    return "citizenship";
+  }
+  if (capture.field === "skip-former-history" || capture.field === "formerHistory") {
+    return "former-history";
+  }
   if (
     capture.field === "skip-coborrower-name" ||
     capture.field === "propose-coborrower-name" ||
@@ -3244,6 +3279,18 @@ export function workspaceUpdateCopy(capture: Capture, draft: FoxIntakeDraft) {
   }
   if (capture.field === "skip-other-reo") return "Updated. Other real estate left blank.";
   if (capture.field === "propose-other-reo") return "Updated.";
+  if (capture.field === "skip-citizenship") return "Updated. Citizenship left blank.";
+  if (capture.field === "citizenship") {
+    return isFileCitizenshipValue(capture.value)
+      ? `Updated citizenship to ${citizenshipLabel(capture.value)}.`
+      : "Updated citizenship.";
+  }
+  if (capture.field === "skip-former-history") return "Updated. Prior history left blank.";
+  if (capture.field === "formerHistory") {
+    return capture.value.trim()
+      ? `Updated prior history to ${capture.value.trim()}.`
+      : "Updated prior history.";
+  }
   if (capture.field === "statedOtherReo") {
     return isStatedOtherReo(capture.value)
       ? `Updated other real estate to ${otherReoLabel(capture.value)}.`
@@ -3684,6 +3731,12 @@ function draftAfterCaptureBody(draft: FoxIntakeDraft, capture: Capture): FoxInta
     const name = parseBorrowerName(capture.value) ?? capture.value.trim();
     return name ? writeBorrowerName(next, name) : next;
   }
+  if (capture.field === "skip-citizenship") return skipCitizenship(next);
+  if (capture.field === "citizenship" && isFileCitizenshipValue(capture.value)) {
+    return writeCitizenship(next, capture.value);
+  }
+  if (capture.field === "skip-former-history") return skipFormerHistory(next);
+  if (capture.field === "formerHistory") return writeFormerHistoryNote(next, capture.value);
   if (capture.field === "skip-other-reo") return skipOtherReo(next);
   if (capture.field === "propose-other-reo" && isStatedOtherReo(capture.value)) {
     return proposeStatedOtherReo(next, capture.value);
@@ -4994,6 +5047,38 @@ export function workspaceReply(
     return answerThenRestore(q, draft);
   }
 
+  if (prompt === "citizenship") {
+    if (isSkipCitizenshipText(q)) {
+      const nextDraft = skipCitizenship(draft);
+      return {
+        ...workspacePromptCopy(workspacePrompt(nextDraft), nextDraft),
+        capture: { field: "skip-citizenship" },
+      };
+    }
+    const value = parseCitizenship(q);
+    if (!value) return answerThenRestore(q, draft);
+    const nextDraft = writeCitizenship(draft, value);
+    return {
+      ...nextFoxAsk(nextDraft),
+      capture: { field: "citizenship", value },
+    };
+  }
+
+  if (prompt === "former-history") {
+    if (isSkipFormerHistoryText(q)) {
+      const nextDraft = skipFormerHistory(draft);
+      return {
+        ...workspacePromptCopy(workspacePrompt(nextDraft), nextDraft),
+        capture: { field: "skip-former-history" },
+      };
+    }
+    const nextDraft = writeFormerHistoryNote(draft, q);
+    return {
+      ...nextFoxAsk(nextDraft),
+      capture: { field: "formerHistory", value: q.trim() },
+    };
+  }
+
   if (prompt === "income") {
     if (draft.incomeType.value && isKeepThisText(q)) return keepThisReply(draft);
     const match = incomeFromText(q);
@@ -5836,20 +5921,20 @@ export function previewFacts(draft: FoxIntakeDraft): PreviewFact[] {
       label: "Next",
       value: nextActorOf(draft),
     });
+    const completeness = fileCompleteness(draft);
+    if (completeness) {
+      facts.push({
+        id: "file",
+        label: "Completeness",
+        value: completeness.copy,
+        note: fileStillUsefulNote(draft),
+      });
+    }
     facts.push({
       id: "waiting",
       label: "Waiting on",
       value: waitingOnOf(draft),
     });
-    const completeness = fileCompleteness(draft);
-    if (completeness) {
-      facts.push({
-        id: "file",
-        label: "File",
-        value: completeness.copy,
-        note: fileStillUsefulNote(draft),
-      });
-    }
     const caution = guidelineCaution(draft);
     if (caution) {
       facts.push({

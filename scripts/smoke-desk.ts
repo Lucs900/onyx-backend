@@ -49,6 +49,7 @@ import {
 } from "../components/fox/completeness";
 import {
   CONVENTIONAL_FILE_SLOT_TOTAL,
+  assetsMatter,
   conventionalFileFromDraft,
   conventionalSlotReport,
 } from "../components/fox/conventionalFile";
@@ -188,6 +189,7 @@ import {
   stillUsefulAskCopy,
   stillUsefulLabels,
   stillUsefulSection,
+  nextStillUsefulItem,
   layer2Plan,
   layer2Open,
   layer2AskCopy,
@@ -247,8 +249,11 @@ import {
 import {
   OTHER_REO_ASK,
   SUGGESTED_OTHER_REO_NOTE,
+  otherReoRows,
   parseOtherReo,
 } from "../components/fox/otherReo";
+import { CITIZENSHIP_ASK, skipCitizenship } from "../components/fox/citizenship";
+import { FORMER_HISTORY_ASK, skipFormerHistory } from "../components/fox/fileHistory";
 import {
   STAFF_EXPORT_BORROWER_COPY,
   derivedExportStatus,
@@ -453,6 +458,8 @@ function confirmLooksRight() {
     "coborrower-name": { field: "skip-coborrower-name" },
     "borrower-name": { field: "skip-borrower-name" },
     "other-reo": { field: "skip-other-reo" },
+    citizenship: { field: "skip-citizenship" },
+    "former-history": { field: "skip-former-history" },
   };
   for (let i = 0; i < 20; i += 1) {
     const prompt = workspacePrompt(getFoxDraft());
@@ -479,6 +486,18 @@ function confirmLooksRight() {
     }
     if (prompt === "coborrower-name") {
       applyCapture({ field: "skip-coborrower-name" });
+      continue;
+    }
+    if (prompt === "property-type") {
+      applyCapture({ field: "skip-property-type" });
+      continue;
+    }
+    if (prompt === "citizenship") {
+      applyCapture({ field: "skip-citizenship" });
+      continue;
+    }
+    if (prompt === "former-history") {
+      applyCapture({ field: "skip-former-history" });
       continue;
     }
     break;
@@ -2123,6 +2142,12 @@ const assignedFacts = previewFacts(afterLooks);
 assert.ok(assignedFacts.some((fact) => fact.id === "status" && fact.value === "gathering"));
 assert.ok(assignedFacts.some((fact) => fact.id === "next" && fact.value === "You"));
 assert.ok(assignedFacts.some((fact) => fact.id === "file"));
+const statusAt = assignedFacts.findIndex((fact) => fact.id === "status");
+const nextAt = assignedFacts.findIndex((fact) => fact.id === "next");
+const completenessAt = assignedFacts.findIndex((fact) => fact.id === "file");
+assert.equal(assignedFacts[completenessAt]?.label, "Completeness");
+assert.ok(statusAt >= 0 && nextAt === statusAt + 1 && completenessAt === nextAt + 1);
+assert.ok(stillUsefulSection(afterLooks)?.items.some((item) => item.label === "Property address"));
 assert.equal(fileCompleteness(afterLooks)?.state, "sketch");
 assert.equal(fileCompleteness(afterLooks)?.copy, `sketch · 4 of ${CONVENTIONAL_FILE_SLOT_TOTAL}`);
 assert.ok(!/agency_partial|agency_ready/.test(fileCompleteness(afterLooks)?.copy ?? ""));
@@ -9527,11 +9552,29 @@ async function extractAdapterSmoke() {
   );
   assert.deepEqual(
     EXTRACT_SCHEMA_KEYS.purchase_contract.slice(),
-    ["property_address", "purchase_price", "close_date"],
+    [
+      "property_address",
+      "purchase_price",
+      "close_date",
+      "property_type",
+      "year_built",
+      "units",
+      "annual_taxes",
+      "hoa_monthly",
+    ],
   );
   assert.deepEqual(
     EXTRACT_SCHEMA_KEYS.mortgage_statement.slice(),
-    ["servicer", "unpaid_principal", "current_pi", "property_address"],
+    [
+      "servicer",
+      "unpaid_principal",
+      "current_pi",
+      "property_address",
+      "occupancy",
+      "year_built",
+      "annual_taxes",
+      "hoa_monthly",
+    ],
   );
 
   const pageBank = printedSampleFromBytes(
@@ -10562,6 +10605,247 @@ assert.equal(uploadDuringHousing?.capture?.field, "upload-more");
 const proceedDuringHousing = workspaceReply("Proceed", beforeProceed);
 assert.equal(proceedDuringHousing?.text, MOTION_COPY.in_queue);
 assert.equal(workspaceReply("Change", w2PrimaryWalk)?.capture?.field, "skip-housing");
+
+const file32W2None = draft({
+  ...afterLooks,
+  housingAsked: true,
+  estimatedHousing: 5400,
+  monthlyDebtsAsked: true,
+  statedMonthlyDebts: 800,
+  statedOtherReo: "none",
+  otherReoAsked: true,
+});
+assert.equal(workspacePrompt(file32W2None), "citizenship");
+assert.equal(workspacePromptCopy("citizenship", file32W2None).text, CITIZENSHIP_ASK);
+assert.ok((workspacePromptCopy("citizenship", file32W2None).actions ?? []).some((item) => item.label === "Skip"));
+assert.ok(!requiredStructureLines(file32W2None).some((line) => /citizen/i.test(line.label)));
+assert.equal(assetsMatter(file32W2None), false);
+assert.notEqual(workspacePrompt(file32W2None), "assets");
+assert.equal(otherReoRows(file32W2None).length, 0);
+assert.ok(stillUsefulSection(file32W2None)?.items.some((item) => item.label === "Property address"));
+assert.ok(
+  !(stillUsefulSection(file32W2None)?.items ?? []).some((item) => item.label === OTHER_REO_MORTGAGE_STATEMENTS),
+);
+const file32W2Skipped = skipCitizenship(file32W2None);
+assert.equal(file32W2Skipped.agencyDeclarations?.citizenship, undefined);
+assert.equal(workspacePrompt(file32W2Skipped), "done");
+const file32W2Slots = conventionalSlotReport(file32W2Skipped);
+assert.deepEqual(file32W2Slots.present, [
+  "loan.amounts",
+  "credit.stated",
+  "income.type",
+  "property.occupancyStatus",
+]);
+assert.ok(file32W2Slots.empty.includes("property.address"));
+assert.ok(file32W2Slots.empty.includes("property.units"));
+assert.ok(file32W2Slots.empty.includes("declarations.citizenship"));
+assert.ok(file32W2Slots.empty.includes("assets.institution"));
+assert.ok(file32W2Slots.empty.includes("history.addressHistory"));
+assert.ok(file32W2Slots.empty.includes("history.employmentHistory"));
+
+const addressStillOpen = draft({
+  ...file32W2Skipped,
+  skippedStillUseful: ["second-year-w2"],
+  documents: [
+    {
+      slot: "id",
+      name: "license.png",
+      type: "image/png",
+      size: 4000,
+      receivedAt: "2026-08-25T00:00:00.000Z",
+      status: "extracted",
+      extractClass: "government_id",
+    },
+    {
+      slot: "paystubs",
+      name: "paystub.pdf",
+      type: "application/pdf",
+      size: 4000,
+      receivedAt: "2026-08-25T00:00:00.000Z",
+      status: "extracted",
+      extractClass: "paystub",
+    },
+    {
+      slot: "w2",
+      name: "w2.pdf",
+      type: "application/pdf",
+      size: 4000,
+      receivedAt: "2026-08-25T00:00:00.000Z",
+      status: "extracted",
+      extractClass: "w2",
+    },
+  ],
+});
+assert.equal(nextStillUsefulItem(addressStillOpen)?.id, "property-address");
+const addressSkipped = skipCurrentStillUseful(addressStillOpen);
+assert.ok((addressSkipped.skippedStillUseful ?? []).includes("property-address"));
+assert.ok(!layer2Plan(addressSkipped).some((item) => item.id === "property-address"));
+assert.ok(conventionalSlotReport(addressSkipped).empty.includes("property.address"));
+assert.equal(conventionalFileFromDraft(addressSkipped).property.address, undefined);
+
+const file32Se = draft({
+  ...file32W2None,
+  incomeType: { ...emptyDraft().incomeType, value: "self-employed" },
+  yearsInBusinessAsked: true,
+  facts: {
+    ...(file32W2None.facts ?? {}),
+    years_in_business: {
+      field: "years_in_business",
+      value: "5",
+      source: "client",
+      confirmed: true,
+    },
+  },
+});
+assert.equal(workspacePrompt(file32Se), "citizenship");
+assert.notEqual(workspacePrompt(file32Se), "assets");
+assert.equal(otherReoRows(file32Se).length, 0);
+const file32SeSkipped = skipCitizenship(file32Se);
+const file32SeSlots = conventionalSlotReport(file32SeSkipped);
+assert.ok(file32SeSlots.present.includes("income.type"));
+assert.ok(file32SeSlots.present.includes("history.employmentHistory"));
+assert.ok(file32SeSlots.empty.includes("property.address"));
+assert.ok(file32SeSlots.empty.includes("declarations.citizenship"));
+assert.ok(file32SeSlots.empty.includes("assets.institution"));
+
+const file32Invest = draft({
+  ...leaseUsed,
+  housingAsked: true,
+  monthlyDebtsAsked: true,
+  statedMonthlyDebts: 400,
+  statedOtherReo: "none",
+  otherReoAsked: true,
+  propertyTypeAsked: true,
+});
+assert.equal(assetsMatter(file32Invest), true);
+assert.equal(workspacePrompt(file32Invest), "citizenship");
+assert.notEqual(workspacePrompt(file32Invest), "assets");
+assert.equal(otherReoRows(file32Invest).length, 0);
+assert.equal(file32Invest.suggestedNetRental, -3293);
+assert.equal(file32Invest.facts?.[SUGGESTED_NET_RENTAL_FIELD]?.value, "-3293");
+const file32InvestSkipped = skipCitizenship(file32Invest);
+const file32InvestSlots = conventionalSlotReport(file32InvestSkipped);
+assert.ok(file32InvestSlots.present.includes("income.rental"));
+assert.ok(file32InvestSlots.present.includes("property.occupancyStatus"));
+assert.ok(file32InvestSlots.empty.includes("property.address"));
+assert.ok(file32InvestSlots.empty.includes("declarations.citizenship"));
+assert.ok(file32InvestSlots.empty.includes("assets.institution"));
+
+const file32OtherReoYes = draft({
+  ...afterLooks,
+  housingAsked: true,
+  monthlyDebtsAsked: true,
+  statedMonthlyDebts: 800,
+  statedOtherReo: "yes",
+  otherReoAsked: true,
+  subjectAddress: "14 OAK STREET",
+});
+assert.equal(otherReoRows(file32OtherReoYes).length, 0);
+assert.ok(
+  (stillUsefulSection(file32OtherReoYes)?.items ?? []).some(
+    (item) => item.label === OTHER_REO_MORTGAGE_STATEMENTS,
+  ),
+);
+const otherReoStatement = applyExtractedFields(file32OtherReoYes, {
+  extractClass: "mortgage_statement",
+  confidence: 0.93,
+  fields: {
+    servicer: "RIVER SERVICING",
+    unpaid_principal: "220000",
+    current_pi: "1450",
+    property_address: "88 PINE ROAD",
+    occupancy: "investment",
+  },
+});
+const otherReoRowsAfter = otherReoRows(otherReoStatement.draft);
+assert.equal(otherReoRowsAfter.length, 1);
+assert.equal(otherReoRowsAfter[0]?.address, "88 PINE ROAD");
+assert.equal(otherReoRowsAfter[0]?.unpaidPrincipal, "220000");
+assert.equal(otherReoRowsAfter[0]?.payment, "1450");
+assert.ok(!otherReoRowsAfter.some((row) => /14 oak street/i.test(row.address ?? "")));
+assert.equal(otherReoStatement.draft.subjectAddress, "14 OAK STREET");
+const subjectMortgage = applyExtractedFields(file32OtherReoYes, {
+  extractClass: "mortgage_statement",
+  confidence: 0.93,
+  fields: {
+    servicer: "OAK SERVICING",
+    unpaid_principal: "960000",
+    current_pi: "4800",
+    property_address: "14 OAK STREET",
+  },
+});
+assert.equal(otherReoRows(subjectMortgage.draft).length, 0);
+const noneReoMortgage = applyExtractedFields(
+  draft({ ...file32OtherReoYes, statedOtherReo: "none" }),
+  {
+    extractClass: "mortgage_statement",
+    confidence: 0.93,
+    fields: {
+      servicer: "RIVER SERVICING",
+      unpaid_principal: "220000",
+      current_pi: "1450",
+      property_address: "88 PINE ROAD",
+    },
+  },
+);
+assert.equal(otherReoRows(noneReoMortgage.draft).length, 0);
+const file32YesSlots = conventionalSlotReport(otherReoStatement.draft);
+assert.ok(file32YesSlots.present.includes("property.address"));
+assert.ok(file32YesSlots.empty.includes("declarations.citizenship"));
+assert.equal(conventionalFileFromDraft(otherReoStatement.draft).otherProperties.length, 1);
+
+const shortTenure = draft({
+  ...file32W2Skipped,
+  statedTimeOnJob: 8,
+  timeOnJobAsked: true,
+  formerHistoryAsked: false,
+});
+assert.equal(workspacePrompt(shortTenure), "former-history");
+assert.equal(workspacePromptCopy("former-history", shortTenure).text, FORMER_HISTORY_ASK);
+const formerSkipped = skipFormerHistory(shortTenure);
+assert.equal((formerSkipped.addressHistory ?? []).length, 0);
+assert.equal(workspacePrompt(formerSkipped), "done");
+
+const presentFromId = applyExtractedFields(file32W2Skipped, {
+  extractClass: "government_id",
+  confidence: 0.94,
+  fields: {
+    full_name: "Ada Borrower",
+    present_address: "9 WILLOW LANE",
+  },
+});
+assert.ok(
+  (presentFromId.draft.addressHistory ?? []).some((item) => item.label === "9 WILLOW LANE"),
+);
+assert.notEqual(presentFromId.draft.subjectAddress, "9 WILLOW LANE");
+assert.ok(conventionalSlotReport(presentFromId.draft).present.includes("history.addressHistory"));
+
+const contractProperty = applyExtractedFields(file32W2Skipped, {
+  extractClass: "purchase_contract",
+  confidence: 0.93,
+  fields: {
+    property_address: "14 OAK STREET",
+    purchase_price: "1200000",
+    close_date: "2026-10-15",
+    property_type: "house",
+    year_built: "1998",
+    units: "1",
+    annual_taxes: "8400",
+    hoa_monthly: "0",
+  },
+});
+const contractAccepted = resolveProposal(contractProperty.draft, "accept");
+assert.equal(contractAccepted.subjectAddress, "14 OAK STREET");
+assert.equal(contractAccepted.propertyType, "sfr");
+assert.equal(contractAccepted.propertyYearBuilt, "1998");
+assert.equal(contractAccepted.propertyUnits, "1");
+assert.equal(contractAccepted.propertyTaxes, "8400");
+const contractSlots = conventionalSlotReport(contractAccepted);
+assert.ok(contractSlots.present.includes("property.address"));
+assert.ok(contractSlots.present.includes("property.propertyType"));
+assert.ok(contractSlots.present.includes("property.yearBuilt"));
+assert.ok(contractSlots.present.includes("property.units"));
+assert.ok(contractSlots.present.includes("property.taxes"));
 
 extractAdapterSmoke()
   .then(() => {

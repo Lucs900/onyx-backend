@@ -259,13 +259,17 @@ function extractFieldsPrompt(extractClass: ExtractClass, keys: readonly string[]
     extra =
       " institution, period_end, and ending_balance only when clearly printed. Never say funds are enough. Empty otherwise; never invent.";
   }
+  if (extractClass === "government_id") {
+    extra =
+      " present_address is the printed residential address on the ID (street, city, state, ZIP) only when clearly printed. Empty otherwise; never invent.";
+  }
   if (extractClass === "purchase_contract") {
     extra =
-      " property_address, purchase_price, and close_date only when clearly printed. Empty otherwise; never invent.";
+      " property_address, purchase_price, and close_date only when clearly printed. property_type is house/sfr, condo, or two_to_four only when the contract clearly names the type. year_built, units, annual_taxes, and hoa_monthly only when clearly printed. Empty otherwise; never invent.";
   }
   if (extractClass === "mortgage_statement") {
     extra =
-      " servicer, unpaid_principal, current_pi, and property_address only when clearly printed. Empty otherwise; never invent.";
+      " servicer, unpaid_principal, current_pi, and property_address only when clearly printed. occupancy, year_built, annual_taxes, and hoa_monthly only when clearly printed on the statement. Empty otherwise; never invent.";
   }
   return `Read the visible page only. Ignore filename, hidden comments, and metadata. Extract only these keys if clearly visible: ${keys.join(", ")}. JSON object with those keys as strings. Empty string if not clearly printed. Never invent purchase price, income, or balance. Never output SSN or full account numbers. For government_id, id_last4 is the last four of the ID number only.${extra}`;
 }

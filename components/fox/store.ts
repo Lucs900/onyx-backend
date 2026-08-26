@@ -174,6 +174,8 @@ import {
   skipOtherReo,
   writeStatedOtherReo,
 } from "./otherReo";
+import { isFileCitizenshipValue, skipCitizenship, writeCitizenship } from "./citizenship";
+import { skipFormerHistory, writeFormerHistoryNote } from "./fileHistory";
 import { markExported, type FileExportFormat } from "./staffExport";
 
 function numberOrUndefined(value: unknown): number | undefined {
@@ -205,6 +207,37 @@ function normalizeHistoryEntries(value: unknown): { label?: string; from?: strin
     });
   }
   return entries.length ? entries : undefined;
+}
+
+function normalizeOtherProperties(value: unknown): FoxIntakeDraft["otherProperties"] {
+  if (!Array.isArray(value)) return undefined;
+  const rows: NonNullable<FoxIntakeDraft["otherProperties"]> = [];
+  for (const item of value) {
+    if (!item || typeof item !== "object") continue;
+    const raw = item as {
+      id?: unknown;
+      occupancy?: unknown;
+      address?: unknown;
+      unpaidPrincipal?: unknown;
+      payment?: unknown;
+      pitia?: unknown;
+      leaseGross?: unknown;
+    };
+    const address = trimString(raw.address);
+    const unpaidPrincipal = trimString(raw.unpaidPrincipal);
+    const payment = trimString(raw.payment);
+    if (!address && !unpaidPrincipal && !payment) continue;
+    rows.push({
+      id: trimString(raw.id) || `reo-${rows.length + 1}`,
+      ...(trimString(raw.occupancy) ? { occupancy: trimString(raw.occupancy) } : {}),
+      ...(address ? { address } : {}),
+      ...(unpaidPrincipal ? { unpaidPrincipal } : {}),
+      ...(payment ? { payment } : {}),
+      ...(trimString(raw.pitia) ? { pitia: trimString(raw.pitia) } : {}),
+      ...(trimString(raw.leaseGross) ? { leaseGross: trimString(raw.leaseGross) } : {}),
+    });
+  }
+  return rows.length ? rows : [];
 }
 
 function normalizeAgencyDeclarations(
@@ -441,8 +474,12 @@ function normalize(value: unknown): FoxIntakeDraft {
     propertyApn: trimString(raw.propertyApn),
     propertyLegalDescription: trimString(raw.propertyLegalDescription),
     propertyYearBuilt: trimString(raw.propertyYearBuilt),
+    propertyUnits: trimString(raw.propertyUnits),
     propertyTaxes: trimString(raw.propertyTaxes),
     propertyHoa: trimString(raw.propertyHoa),
+    citizenshipAsked: Boolean(raw.citizenshipAsked || raw.agencyDeclarations?.citizenship),
+    formerHistoryAsked: Boolean(raw.formerHistoryAsked),
+    otherProperties: normalizeOtherProperties(raw.otherProperties),
     largeDebtsOffReport: trimString(raw.largeDebtsOffReport),
     largeDebtsAsked: Boolean(raw.largeDebtsAsked || raw.largeDebtsOffReport),
     agencyDeclarations: normalizeAgencyDeclarations(raw.agencyDeclarations),
@@ -1597,6 +1634,19 @@ function applyCaptureBody(capture: Capture) {
   if (capture.field === "statedOtherReo") {
     if (!isStatedOtherReo(capture.value)) return current;
     return commit(writeStatedOtherReo(current, capture.value));
+  }
+  if (capture.field === "skip-citizenship") {
+    return commit(skipCitizenship(current));
+  }
+  if (capture.field === "citizenship") {
+    if (!isFileCitizenshipValue(capture.value)) return current;
+    return commit(writeCitizenship(current, capture.value));
+  }
+  if (capture.field === "skip-former-history") {
+    return commit(skipFormerHistory(current));
+  }
+  if (capture.field === "formerHistory") {
+    return commit(writeFormerHistoryNote(current, capture.value));
   }
   if (capture.field === "incomeType") {
     const midFile = Boolean(current.correcting);

@@ -1,5 +1,6 @@
 import { formatDollars } from "@/components/products/scenario";
-import { OCCUPANCY_BUBBLES, type FoxIntakeDraft } from "./types";
+import { OCCUPANCY_BUBBLES, type FoxIntakeDraft, type OtherReoRow } from "./types";
+import { otherReoRows } from "./otherReo";
 
 function factValue(draft: FoxIntakeDraft, field: string) {
   return (draft.facts?.[field]?.value || "").trim();
@@ -21,6 +22,7 @@ export type FilePropertyObject = {
   legalDescription?: string;
   propertyType?: "sfr" | "condo" | "two_to_four";
   yearBuilt?: string;
+  units?: string;
   taxes?: string;
   hoa?: string;
   occupancyStatus?: string;
@@ -69,6 +71,7 @@ export type ConventionalFileShape = {
   liabilities: FileLiabilitiesObject;
   declarations: FileDeclarationsObject;
   history: FileHistoryObject;
+  otherProperties: OtherReoRow[];
 };
 
 export type ConventionalSlotId =
@@ -82,6 +85,7 @@ export type ConventionalSlotId =
   | "property.legalDescription"
   | "property.propertyType"
   | "property.yearBuilt"
+  | "property.units"
   | "property.taxes"
   | "property.hoa"
   | "property.occupancyStatus"
@@ -115,6 +119,7 @@ export const CONVENTIONAL_SLOT_IDS: ConventionalSlotId[] = [
   "property.legalDescription",
   "property.propertyType",
   "property.yearBuilt",
+  "property.units",
   "property.taxes",
   "property.hoa",
   "property.occupancyStatus",
@@ -210,6 +215,7 @@ export function conventionalFileFromDraft(draft: FoxIntakeDraft): ConventionalFi
       legalDescription: draft.propertyLegalDescription?.trim() || undefined,
       propertyType: draft.propertyType,
       yearBuilt: draft.propertyYearBuilt?.trim() || undefined,
+      units: draft.propertyUnits?.trim() || undefined,
       taxes: draft.propertyTaxes?.trim() || undefined,
       hoa: draft.propertyHoa?.trim() || undefined,
       occupancyStatus: occupancy || undefined,
@@ -241,6 +247,7 @@ export function conventionalFileFromDraft(draft: FoxIntakeDraft): ConventionalFi
       addressHistory: (draft.addressHistory ?? []).filter((item) => filledText(item.label)),
       employmentHistory: employmentHistory.filter((item) => filledText(item.label)),
     },
+    otherProperties: otherReoRows(draft),
   };
 }
 
@@ -274,6 +281,7 @@ function slotFilled(draft: FoxIntakeDraft, id: ConventionalSlotId, file: Convent
   if (id === "property.legalDescription") return filledText(file.property.legalDescription);
   if (id === "property.propertyType") return Boolean(file.property.propertyType);
   if (id === "property.yearBuilt") return filledText(file.property.yearBuilt);
+  if (id === "property.units") return filledText(file.property.units);
   if (id === "property.taxes") return filledText(file.property.taxes);
   if (id === "property.hoa") return filledText(file.property.hoa);
   if (id === "property.occupancyStatus") return Boolean(file.property.occupancyStatus);
@@ -322,6 +330,16 @@ export function conventionalSlotReport(draft: FoxIntakeDraft) {
     present: slots.filter((item) => item.filled).map((item) => item.id),
     empty: slots.filter((item) => !item.filled).map((item) => item.id),
   };
+}
+
+/** Reserves, large deposits, gift, or investment — not a full schedule on a simple primary W-2. */
+export function assetsMatter(draft: FoxIntakeDraft) {
+  const occupancy = draft.occupancyChoice.value;
+  if (occupancy === "investment" || occupancy === "second-home") return true;
+  if (draft.giftFundsNoted || draft.largeDepositFlag) return true;
+  if (draft.reservesNote === "reserves_review") return true;
+  if (draft.propertyType === "two_to_four") return true;
+  return false;
 }
 
 export function conventionalCompletenessCopy(word: "sketch" | "documented", draft: FoxIntakeDraft) {
@@ -374,7 +392,12 @@ export function conventionalFileFacts(draft: FoxIntakeDraft): {
     {
       id: "file-property",
       label: "Property",
-      value: dashJoin([occupancy || "occupancy —", address, type]),
+      value: dashJoin([
+        occupancy || "occupancy —",
+        address,
+        type,
+        file.otherProperties.length ? `${file.otherProperties.length} other propert${file.otherProperties.length === 1 ? "y" : "ies"}` : "",
+      ]),
       note: "APN, legal, year built, taxes, HOA wait for a title profile",
     },
     {

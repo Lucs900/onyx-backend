@@ -58,6 +58,7 @@ import {
   PROPERTY_ADDRESS_FACT,
   SUGGESTED_PROPERTY_NOTE,
   isPropertyAddressField,
+  parsePropertyType,
   propertyAddressConflictActions,
 } from "./propertyType";
 import {
@@ -92,16 +93,30 @@ import {
 } from "./coborrowerName";
 import {
   STATED_OTHER_REO_FIELD,
+  appendOtherReoRow,
+  isOtherPropertyMortgageExtract,
   otherReoSettled,
   proposeExtractedOtherReo,
 } from "./otherReo";
+import {
+  writeCurrentEmploymentHistory,
+  writePresentAddressHistory,
+} from "./fileHistory";
 
 export { REJECT_LINE, LIMIT_LINE };
 
 export const LOW_EXTRACT_CONFIDENCE = 0.55;
 
 export const EXTRACT_SCHEMA_KEYS: Record<ExtractClass, readonly string[]> = {
-  government_id: ["full_name", "id_last4", "state", "expiration", "coborrower_name", "spouse_name"],
+  government_id: [
+    "full_name",
+    "id_last4",
+    "state",
+    "expiration",
+    "coborrower_name",
+    "spouse_name",
+    "present_address",
+  ],
   paystub: [
     "employer_name",
     "pay_period_end",
@@ -138,8 +153,26 @@ export const EXTRACT_SCHEMA_KEYS: Record<ExtractClass, readonly string[]> = {
     "k1_distributions",
   ],
   bank_statement: ["institution", "period_end", "ending_balance", "account_type", "account_last4"],
-  purchase_contract: ["property_address", "purchase_price", "close_date"],
-  mortgage_statement: ["servicer", "unpaid_principal", "current_pi", "property_address"],
+  purchase_contract: [
+    "property_address",
+    "purchase_price",
+    "close_date",
+    "property_type",
+    "year_built",
+    "units",
+    "annual_taxes",
+    "hoa_monthly",
+  ],
+  mortgage_statement: [
+    "servicer",
+    "unpaid_principal",
+    "current_pi",
+    "property_address",
+    "occupancy",
+    "year_built",
+    "annual_taxes",
+    "hoa_monthly",
+  ],
   other: [],
 };
 
@@ -401,6 +434,11 @@ export const REMAINDER_CONFIRM_FIELDS = new Set([
   "servicer",
   "unpaid_principal",
   "current_pi",
+  "property_type",
+  "year_built",
+  "units",
+  "annual_taxes",
+  "hoa_monthly",
 ]);
 
 export function isRemainderConfirmField(field: string) {
@@ -475,6 +513,13 @@ export function factLabel(field: string) {
   if (field === "account_last4") return "account last 4";
   if (field === "ending_balance") return "ending balance";
   if (field === "property_address" || field === "subjectAddress") return "property";
+  if (field === "present_address") return "present address";
+  if (field === "property_type") return "property type";
+  if (field === "year_built") return "year built";
+  if (field === "units") return "units";
+  if (field === "annual_taxes") return "annual taxes";
+  if (field === "hoa_monthly") return "HOA dues";
+  if (field === "occupancy") return "occupancy";
   if (field === "purchase_price") return "purchase price";
   if (field === "close_date") return "close date";
   if (field === "servicer") return "servicer";
@@ -668,6 +713,13 @@ function writeField(
       ? { statedAvailableAssets: assetAmount, availableAssetsAsked: true }
       : {}),
     ...(isPropertyAddressField(field) ? { subjectAddress: value } : {}),
+    ...(field === "year_built" ? { propertyYearBuilt: value } : {}),
+    ...(field === "units" ? { propertyUnits: value } : {}),
+    ...(field === "annual_taxes" ? { propertyTaxes: value } : {}),
+    ...(field === "hoa_monthly" ? { propertyHoa: value } : {}),
+    ...(field === "property_type" && parsePropertyType(value)
+      ? { propertyType: parsePropertyType(value) ?? draft.propertyType, propertyTypeAsked: true }
+      : {}),
     ...(field === STATED_TIME_ON_JOB_FIELD && Number.isFinite(Number(value)) && Number(value) > 0
       ? {
           statedTimeOnJob: Math.round(Number(value)),
@@ -774,6 +826,21 @@ export function applyExtractedFields(
     if (field === HIRE_DATE_FIELD) continue;
     if (extractClass === "government_id" && (field === "full_name" || field === "date_of_birth" || field === "dob")) continue;
     if (isRemainderConfirmField(field)) {
+      if (
+        extractClass === "mortgage_statement" &&
+        isOtherPropertyMortgageExtract(next, {
+          address: String(fields.property_address ?? "").trim() || undefined,
+        })
+      ) {
+        continue;
+      }
+      if (
+        extractClass === "mortgage_statement" &&
+        field === "property_address" &&
+        draft.statedOtherReo === "yes"
+      ) {
+        continue;
+      }
       const existingRemainder = existingFact(next, field);
       if (!existingRemainder) {
         remainderWrites.push({ field, value });
@@ -977,6 +1044,33 @@ export function applyExtractedFields(
         next = proposeExtractedBorrowerName(next, shown, extras);
       }
     }
+  }
+  if (extractClass === "government_id") {
+    const present = String(fields.present_address ?? "").trim();
+    if (present) next = writePresentAddressHistory(next, present);
+  }
+  if (extractClass === "paystub" || extractClass === "w2") {
+    const employer = String(fields.employer_name ?? "").trim();
+    if (employer) next = writeCurrentEmploymentHistory(next, employer);
+  }
+  if (
+    extractClass === "mortgage_statement" &&
+    isOtherPropertyMortgageExtract(next, {
+      address: String(fields.property_address ?? "").trim() || undefined,
+    })
+  ) {
+    const occupancy = String(fields.occupancy ?? "").trim() || undefined;
+    const investment =
+      occupancy === "investment" || next.occupancyChoice.value === "investment";
+    next = appendOtherReoRow(next, {
+      address: String(fields.property_address ?? "").trim() || undefined,
+      unpaidPrincipal: String(fields.unpaid_principal ?? "").trim() || undefined,
+      payment: String(fields.current_pi ?? "").trim() || undefined,
+      occupancy,
+      leaseGross: investment
+        ? String(fields.lease_gross ?? fields.gross_monthly_rent ?? "").trim() || undefined
+        : undefined,
+    });
   }
   if (extractClass === "mortgage_statement" && purchaseFileForOtherReo(next) && !next.statedOtherReo) {
     const remainderWillAsk =
@@ -1506,7 +1600,10 @@ export function layer2Plan(draft: FoxIntakeDraft): StillUsefulItem[] {
     if (addressAt >= 0) ids.splice(addressAt, 0, "tax_return");
     else ids.push("tax_return");
   }
-  return ids.map((id) => {
+  const skipped = new Set(draft.skippedStillUseful ?? []);
+  return ids
+    .filter((id) => !skipped.has(id))
+    .map((id) => {
     if (id === "mortgage_statement" && draft.statedOtherReo === "yes") {
       return layer2Item(id, OTHER_REO_MORTGAGE_STATEMENTS, OTHER_REO_MORTGAGE_STATEMENTS);
     }
@@ -1622,7 +1719,17 @@ export function layer2AskActions(draft: FoxIntakeDraft): FoxAction[] | undefined
 }
 
 export function skipCurrentStillUseful(draft: FoxIntakeDraft): FoxIntakeDraft {
-  return { ...draft, docsHeld: false };
+  const next = nextStillUsefulItem(draft);
+  const skipAddress = next?.id === "property-address";
+  return {
+    ...draft,
+    docsHeld: false,
+    skippedStillUseful: skipAddress
+      ? (draft.skippedStillUseful ?? []).includes("property-address")
+        ? draft.skippedStillUseful
+        : [...(draft.skippedStillUseful ?? []), "property-address"]
+      : draft.skippedStillUseful,
+  };
 }
 
 export function missingAskCopy(classes: ExtractClass[]) {
