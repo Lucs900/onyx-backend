@@ -1,14 +1,11 @@
 "use client";
 
-import {
-  useEffect,
-  useState,
-  useSyncExternalStore,
-  type ReactNode,
-} from "react";
+import { useEffect, useState, useSyncExternalStore, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { DocumentDrop } from "./DocumentDrop";
 import { requestFoxExplain, requestFoxFix } from "./AlwaysOnFox";
+import { FOX_KEYBOARD_EVENT } from "./askReveal";
+import { NOTHING_URGENT, stillUsefulSection } from "./fileWrite";
 import { getFoxDraft, getServerDraft, subscribeFoxDraft } from "./store";
 import {
   previewFacts,
@@ -29,19 +26,31 @@ export function StructureRows({
       {facts.map((fact) => {
         const canFix = Boolean(structureFixPrompt(fact.id, draft));
         const canExplain = Boolean(structureExplainCopy(fact.id, draft));
-        const deskState = fact.id === "status";
+        const deskState = fact.id === "status" || fact.id === "next" || fact.id === "file";
         if (canFix) {
           return (
             <button
               key={fact.id}
               type="button"
               className="file-preview__row file-preview__row--tap"
+              aria-label={`Edit ${fact.label}`}
               onClick={() => requestFoxFix(fact.id)}
             >
               <span className="file-preview__label">{fact.label}</span>
               <span className="file-preview__value">
                 <span>{fact.value}</span>
                 {fact.note ? <small>{fact.note}</small> : null}
+                <span className="file-preview__edit">
+                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+                    <path
+                      d="M8.2 1.7 10.3 3.8 4.1 10H2v-2.1l6.2-6.2Z"
+                      stroke="currentColor"
+                      strokeWidth="1.2"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
+                  Edit
+                </span>
               </span>
             </button>
           );
@@ -51,11 +60,7 @@ export function StructureRows({
             <button
               key={fact.id}
               type="button"
-              className={
-                deskState
-                  ? "file-preview__row file-preview__row--tap"
-                  : "file-preview__row file-preview__row--explain"
-              }
+              className="file-preview__row file-preview__row--explain"
               onClick={() => requestFoxExplain(fact.id)}
             >
               <span className="file-preview__label">{fact.label}</span>
@@ -80,82 +85,93 @@ export function StructureRows({
   );
 }
 
+export function StillUsefulSection({
+  draft,
+}: {
+  draft: ReturnType<typeof getFoxDraft>;
+}) {
+  const section = stillUsefulSection(draft);
+  if (!section) return null;
+  return (
+    <section className="fox-still-useful" aria-label="Still useful">
+      <p className="type-eyebrow">Still useful</p>
+      {section.empty ? (
+        <p className="fox-still-useful__empty">{NOTHING_URGENT}</p>
+      ) : (
+        <div className="file-preview__rows">
+          {section.items.map((item) => (
+            <div key={item.id} className="file-preview__row">
+              <span className="file-preview__label">{item.label}</span>
+              <span className="file-preview__value" />
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
 export function WorkspaceFileDock({ children }: { children: ReactNode }) {
   const draft = useSyncExternalStore(subscribeFoxDraft, getFoxDraft, getServerDraft);
   const facts = previewFacts(draft);
+  const showVault = Boolean(draft.docsOpen) && Boolean(draft.sampleAccepted);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
-  const newest =
-    [...facts].reverse().find((fact) => fact.id !== "status") ?? facts[facts.length - 1];
-  const peek = newest ? `${newest.label} · ${newest.value}` : "";
-  const chip =
-    facts.length > 1 ? `Structure · ${facts.length} facts` : peek || "Structure";
-  const pathFact = facts.find((fact) => fact.id === "path");
 
-  useEffect(() => {
-    setMounted(true);
-  }, []);
-
+  useEffect(() => setMounted(true), []);
   useEffect(() => {
     const close = () => setSheetOpen(false);
-    window.addEventListener("onyx:fox-fix", close);
-    window.addEventListener("onyx:fox-explain", close);
-    return () => {
-      window.removeEventListener("onyx:fox-fix", close);
-      window.removeEventListener("onyx:fox-explain", close);
-    };
+    window.addEventListener(FOX_KEYBOARD_EVENT, close);
+    return () => window.removeEventListener(FOX_KEYBOARD_EVENT, close);
   }, []);
-
-  const sheet =
-    mounted && sheetOpen && facts.length
-      ? createPortal(
-          <div className="file-sheet" role="dialog" aria-label="File">
-            <button
-              type="button"
-              className="file-sheet__backdrop"
-              aria-label="Close file"
-              onClick={() => setSheetOpen(false)}
-            />
-            <div className="file-sheet__panel">
-              <div className="file-sheet__head">
-                <div className="file-sheet__heading">
-                  <p className="type-eyebrow">File</p>
-                  {pathFact ? (
-                    <p className="file-sheet__path">
-                      {pathFact.label} · {pathFact.value}
-                    </p>
-                  ) : null}
-                </div>
-                <button
-                  type="button"
-                  className="file-sheet__close"
-                  onClick={() => setSheetOpen(false)}
-                >
-                  Hide
-                </button>
-              </div>
-              <StructureRows facts={facts} draft={draft} />
-            </div>
-          </div>,
-          document.body,
-        )
-      : null;
 
   return (
     <div className="fox-workspace-dock">
-      {facts.length ? (
-        <button
-          type="button"
-          className="fox-structure-chip"
-          onClick={() => setSheetOpen(true)}
-        >
-          {chip}
-        </button>
-      ) : null}
+      <DocumentDrop draft={draft} compact visible={showVault} />
       <div className="fox-workspace-dock__row">
         {children}
+        {facts.length ? (
+          <button
+            type="button"
+            className="fox-file-chip"
+            aria-expanded={sheetOpen}
+            aria-controls="fox-file-sheet"
+            onClick={() => setSheetOpen(true)}
+          >
+            File
+          </button>
+        ) : null}
       </div>
-      {sheet}
+      {mounted && sheetOpen
+        ? createPortal(
+            <div className="file-sheet" id="fox-file-sheet" role="dialog" aria-label="File">
+              <button
+                type="button"
+                className="file-sheet__backdrop"
+                aria-label="Close file"
+                onClick={() => setSheetOpen(false)}
+              />
+              <div className="file-sheet__panel">
+                <div className="file-sheet__head">
+                  <div className="file-sheet__heading">
+                    <p className="type-eyebrow">File</p>
+                    <p className="file-sheet__path">Structure</p>
+                  </div>
+                  <button
+                    type="button"
+                    className="file-sheet__close"
+                    onClick={() => setSheetOpen(false)}
+                  >
+                    Close
+                  </button>
+                </div>
+                <StructureRows facts={facts} draft={draft} />
+                <StillUsefulSection draft={draft} />
+              </div>
+            </div>,
+            document.body,
+          )
+        : null}
     </div>
   );
 }
@@ -178,6 +194,7 @@ export function FilePreview() {
         <p className="type-eyebrow">Structure</p>
         <h2 className="type-card-title">Live file</h2>
         <StructureRows facts={facts} draft={draft} />
+        <StillUsefulSection draft={draft} />
       </div>
       {showDocs ? <DocumentDrop draft={draft} compact /> : null}
     </aside>

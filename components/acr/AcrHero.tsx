@@ -1,6 +1,5 @@
-import Link from "next/link";
 import { AcrPass } from "@/components/AcrPass";
-import { ACR_START_HREF, LOAN_START_HREF } from "@/components/products/startPath";
+import { HeroStartLink } from "@/components/fox/HeroStartLink";
 
 export function AcrHero() {
   return (
@@ -13,17 +12,17 @@ export function AcrHero() {
             <h1 className="type-display acr-hero__title">The desk that stays open</h1>
             <p className="acr-hero__support">
               ACR is an ongoing relationship. After close, the desk stays with
-              you — watching credit, rate, and the next right move.
+              you.
             </p>
           </div>
 
           <div className="acr-hero__actions">
-            <Link href={ACR_START_HREF} className="btn btn--primary btn--hero-primary">
+            <HeroStartLink path="acr" className="btn btn--primary btn--hero-primary">
               Start your relationship
-            </Link>
-            <Link href={LOAN_START_HREF} className="btn btn--secondary btn--hero-secondary">
+            </HeroStartLink>
+            <HeroStartLink path="loan-only" className="btn btn--secondary btn--hero-secondary">
               Just need a mortgage
-            </Link>
+            </HeroStartLink>
           </div>
 
           <p className="acr-hero__legal type-legal">

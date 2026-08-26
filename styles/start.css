@@ -13,7 +13,7 @@
   display: flex;
   flex-direction: column;
   gap: 16px;
-  min-height: calc(100dvh - var(--nav-height) - 48px);
+  min-height: 0;
 }
 
 .start-workspace__fox-wrap,
@@ -31,10 +31,12 @@
 }
 
 .fox-stage--workspace .fox-panel__thread {
-  flex: 1 1 auto;
-  min-height: 240px;
+  flex: 0 1 auto;
+  min-height: 0;
   max-height: none !important;
-  overflow: auto;
+  overflow: visible;
+  padding-bottom: 12px;
+  scroll-padding-bottom: 16px;
 }
 
 .fox-stage.fox-stage--workspace .fox-bar__desk,
@@ -48,12 +50,11 @@
 .fox-bar__desk--plain:focus-within {
   margin-top: 10px;
   min-height: 44px;
-  padding: 8px 0 0;
-  background: transparent !important;
-  background-color: transparent !important;
-  border: 0 !important;
-  border-top: 0 !important;
-  border-radius: 0 !important;
+  padding: 6px 6px 6px 14px;
+  background: var(--paper-elevated) !important;
+  background-color: var(--paper-elevated) !important;
+  border: 1px solid var(--fox-hairline) !important;
+  border-radius: 999px !important;
   box-shadow: none !important;
 }
 
@@ -74,39 +75,42 @@
 
 .fox-stage--workspace .fox-bar__desk--plain {
   position: static;
-  background: var(--paper) !important;
+  background: var(--paper-elevated) !important;
 }
 
-.fox-stage--workspace .fox-bubble--fox.is-prior {
+.fox-stage--workspace .fox-bar__input:focus,
+.fox-stage--workspace .fox-bar__input:focus-visible,
+.fox-bar__desk--plain .fox-bar__input:focus,
+.fox-bar__desk--plain .fox-bar__input:focus-visible {
+  outline: none;
+}
+
+.fox-stage--workspace .fox-bubble--fox,
+.fox-stage--workspace .fox-bubble--fox.is-prior,
+.fox-stage--workspace .fox-bubble--fox.is-current {
   max-width: 92%;
+  padding: 0;
   background: transparent;
+  border: 0;
   border-color: transparent;
   box-shadow: none;
   opacity: 1;
 }
 
-.fox-stage--workspace .fox-bubble--fox.is-prior p,
-.fox-stage--workspace .fox-bubble--fox.is-prior .fox-bubble__fact-label,
-.fox-stage--workspace .fox-bubble--fox.is-prior .fox-bubble__facts li {
+.fox-stage--workspace .fox-bubble--fox.is-prior p {
   color: var(--muted);
 }
 
 .fox-stage--workspace .fox-bubble--fox.is-current {
-  max-width: 100%;
-  padding: 12px 14px;
-  background: var(--paper-elevated);
-  border-color: color-mix(in srgb, var(--ink) 26%, var(--fox-hairline));
+  scroll-margin-top: 12px;
+  scroll-margin-bottom: 16px;
 }
 
 .fox-stage--workspace .fox-bubble--fox.is-current > p {
   color: var(--ink);
   font-size: 16px;
   line-height: 22px;
-  font-weight: 600;
-}
-
-.fox-stage--workspace .fox-bubble--fox.is-current > p:last-of-type {
-  font-weight: 600;
+  font-weight: 500;
 }
 
 .fox-stage--workspace .fox-bubble--client {
@@ -128,9 +132,10 @@
   padding: 0;
   border: 0;
   background: transparent;
-  color: var(--muted);
+  color: color-mix(in srgb, var(--ink) 40%, transparent);
   font-family: var(--font-ui);
   font-size: 12px;
+  line-height: 16px;
   font-weight: 500;
   cursor: pointer;
 }
@@ -184,11 +189,32 @@
   background: var(--paper);
 }
 
+.fox-workspace-dock .structure-drop {
+  padding: 8px 0 0;
+  max-height: min(36dvh, 220px);
+  overflow: auto;
+}
+
 .fox-workspace-dock__row {
   display: flex;
   align-items: center;
   width: 100%;
   gap: 8px;
+}
+
+.fox-file-chip {
+  display: none;
+  flex: 0 0 auto;
+  height: 36px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--paper-elevated);
+  color: var(--ink);
+  font-family: var(--font-ui);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
 }
 
 .fox-workspace-dock__row .fox-bar__desk {
@@ -198,7 +224,8 @@
 }
 
 .fox-structure-peek,
-.fox-structure-chip {
+.fox-structure-chip,
+.fox-structure-notepad {
   display: none;
 }
 
@@ -244,6 +271,24 @@
   border-radius: 8px;
 }
 
+.file-preview__row--tap .file-preview__value > span:first-child {
+  text-decoration: underline;
+  text-decoration-style: dotted;
+  text-underline-offset: 3px;
+}
+
+.file-preview__edit {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 2px;
+  color: var(--muted);
+  font-family: var(--font-ui);
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 500;
+}
+
 .file-preview__row--tap:hover,
 .file-preview__row--tap:focus-visible,
 .file-preview__row--explain:hover,
@@ -254,6 +299,23 @@
 
 .file-preview__row--explain {
   cursor: help;
+}
+
+.fox-still-useful {
+  margin-top: 16px;
+}
+
+.fox-still-useful .type-eyebrow,
+.fox-still-useful__empty {
+  color: var(--muted);
+}
+
+.fox-still-useful__empty {
+  margin: 0;
+  font-family: var(--font-ui);
+  font-size: 13px;
+  line-height: 18px;
+  font-weight: 500;
 }
 
 .structure-drop {
@@ -317,6 +379,23 @@
 .structure-drop__skip:hover,
 .structure-drop__skip:focus-visible {
   border-color: var(--ink);
+}
+
+.structure-drop__reject,
+.structure-drop__files {
+  margin: 0;
+  font-family: var(--font-ui);
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--muted);
+}
+
+.structure-drop__files {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 0;
+  list-style: none;
 }
 
 .file-preview__label {
@@ -418,6 +497,7 @@
   .file-preview__mobile,
   .fox-structure-peek,
   .fox-structure-chip,
+  .fox-structure-notepad,
   .file-sheet {
     display: none !important;
   }
@@ -440,16 +520,16 @@
   .start-workspace__fox-wrap,
   .start-workspace__fox,
   .fox-stage--workspace {
-    min-height: 520px;
-    height: 100%;
+    min-height: 0;
+    height: auto;
   }
 
   .fox-stage--workspace .fox-panel__thread {
     display: flex;
-    flex: 1 1 auto;
-    min-height: 240px;
+    flex: 0 1 auto;
+    min-height: 0;
     max-height: none !important;
-    overflow: auto;
+    overflow: visible;
   }
 }
 
@@ -459,25 +539,28 @@
   }
 
   .fox-structure-chip {
-    display: block;
-    align-self: flex-start;
-    flex: 0 0 auto;
-    max-width: 100%;
-    height: 36px;
-    padding: 0 12px;
-    border: 1px solid var(--fox-hairline);
-    border-radius: 999px;
-    background: var(--paper-elevated);
-    color: var(--ink);
-    font-family: var(--font-ui);
-    font-size: 12px;
-    line-height: 36px;
-    font-weight: 500;
-    text-align: left;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    cursor: pointer;
+    display: none;
+  }
+
+  .fox-workspace-dock {
+    position: sticky;
+    bottom: 0;
+    z-index: 3;
+    background: var(--paper);
+  }
+
+  .fox-structure-notepad {
+    display: none;
+  }
+
+  .fox-file-chip {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .fox-structure-notepad .type-eyebrow {
+    margin: 0 0 8px;
   }
 
   .file-sheet__heading {

@@ -1,19 +1,13 @@
 import { AcrPass } from "./AcrPass";
+import { AdvisorMark } from "./AdvisorMark";
+import { HomeMobileCollapse } from "./HomeMobileCollapse";
 import { HeroStartLink } from "./fox/HeroStartLink";
-import { homePathActions } from "./fox/homeIdle";
-import { emptyDraft } from "./fox/store";
-import { workspacePromptCopy } from "./fox/workspace";
-
-const FALLBACK_PATH: Record<string, "acr" | "loan-only"> = {
-  start: "acr",
-  loan: "loan-only",
-};
-
-const HOME_START_ASK = workspacePromptCopy("intent", emptyDraft());
+import { HOME_FOX_LINE, HOME_IDLE_TEXT } from "./fox/homeIdle";
 
 export function MembershipHero() {
   return (
     <section className="membership-hero page-pad">
+      <HomeMobileCollapse />
       <div className="page-inner membership-hero__inner">
         <div className="membership-hero__type">
           <div className="membership-hero__intro">
@@ -27,6 +21,7 @@ export function MembershipHero() {
             <p className="membership-hero__support">
               We keep your credit and rate working for you.
             </p>
+            <p className="membership-hero__fox-line">{HOME_FOX_LINE}</p>
           </div>
 
           <div className="membership-hero__actions">
@@ -44,27 +39,32 @@ export function MembershipHero() {
         </div>
 
         <div className="membership-hero__fox-wrap">
-          <div className="fox-stage membership-hero__fox-fallback">
-            <div className="fox-bar__head">
-              <span className="fox-bar__title">ONYX Fox</span>
-            </div>
-            <div className="fox-panel__thread">
-              <article className="fox-bubble fox-bubble--fox">
-                <p>{HOME_START_ASK.text}</p>
-                <div className="fox-bubble__actions">
-                  {homePathActions().map((action) => (
-                    <HeroStartLink
-                      key={action.id}
-                      path={FALLBACK_PATH[action.id] ?? "acr"}
-                      className="btn btn--secondary fox-chip"
-                    >
-                      {action.label}
-                    </HeroStartLink>
-                  ))}
-                </div>
-              </article>
-            </div>
-          </div>
+          <form className="fox-bar__desk membership-hero__fox-fallback" action="/start" method="get">
+            <span className="fox-bar__mark">
+              <AdvisorMark size={20} />
+            </span>
+            <label className="visually-hidden" htmlFor="home-fox-fallback">
+              {HOME_IDLE_TEXT}
+            </label>
+            <input
+              id="home-fox-fallback"
+              className="fox-bar__input"
+              type="text"
+              placeholder={HOME_IDLE_TEXT}
+              autoComplete="off"
+            />
+            <button type="submit" className="fox-bar__send" aria-label="Send">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                <path
+                  d="M3 8h9M8.5 3.5 13 8l-4.5 4.5"
+                  stroke="currentColor"
+                  strokeWidth="1.4"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            </button>
+          </form>
           <div id="fox-home-stage" className="membership-hero__fox" />
         </div>
       </div>

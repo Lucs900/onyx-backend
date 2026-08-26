@@ -1,6 +1,3 @@
-import Link from "next/link";
-import { ACR_START_HREF } from "@/components/products/startPath";
-
 export function RewardFolio() {
   return (
     <section className="acr-reward page-pad" aria-labelledby="acr-reward-title">
@@ -26,12 +23,6 @@ export function RewardFolio() {
             <span />
           </div>
         </article>
-
-        <p className="acr-reward__explore type-body">
-          <Link href={ACR_START_HREF}>
-            Explore a scenario to see an estimated reward range.
-          </Link>
-        </p>
       </div>
     </section>
   );

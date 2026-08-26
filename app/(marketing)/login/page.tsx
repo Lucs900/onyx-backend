@@ -1,5 +1,5 @@
 import { MarketingArticle } from "@/components/MarketingArticle";
-import { ACR_START_HREF } from "@/components/products/startPath";
+import { ACR_START_HREF, LOAN_START_HREF } from "@/components/products/startPath";
 import type { Metadata } from "next";
 import Link from "next/link";
 
@@ -19,7 +19,7 @@ export default function LoginPage() {
         <Link href={ACR_START_HREF} className="btn btn--primary">
           Start your relationship
         </Link>
-        <Link href="/start?path=loan" className="btn btn--text">
+        <Link href={LOAN_START_HREF} className="btn btn--text">
           Just need a mortgage
         </Link>
       </div>

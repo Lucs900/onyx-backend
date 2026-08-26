@@ -1,12 +1,12 @@
 "use client";
 
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useSyncExternalStore } from "react";
 import { pathFromQuery, rememberStartPath } from "@/components/products/startPath";
 import { AlwaysOnFox } from "./AlwaysOnFox";
-import { useDocumentReads } from "./DocumentDrop";
 import { FilePreview } from "./FilePreview";
 import {
+  applyPreviewMotionControls,
   continueWorkspaceFromEntry,
   getFoxDraft,
   getServerDraft,
@@ -15,42 +15,63 @@ import {
   resetWorkspaceForEntry,
   setDraftPath,
   setDraftProductIntent,
+  shouldResumeWorkspaceEntry,
   subscribeFoxDraft,
-  workspaceSessionStarted,
 } from "./store";
 import { productIntentFromQuery, productIntentFromSlug } from "./workspace";
 
 export function StartWorkspace() {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const queryPath = pathFromQuery(searchParams.get("path"));
+  const homepageFresh = searchParams.get("fresh") === "1";
   if (typeof window !== "undefined") hydrateFoxDraft();
   if (queryPath) rememberStartPath(queryPath);
-  const startPath = queryPath ?? (workspaceSessionStarted() ? getFoxDraft().path ?? null : rememberStartPath(null));
+  const startPath =
+    queryPath ??
+    (homepageFresh
+      ? rememberStartPath(null)
+      : shouldResumeWorkspaceEntry()
+        ? getFoxDraft().path ?? rememberStartPath(null)
+        : rememberStartPath(null));
   const startIntent =
     productIntentFromQuery(searchParams.get("intent")) ??
     productIntentFromSlug(searchParams.get("product"));
   const booted = useRef(false);
   if (typeof window !== "undefined" && !booted.current) {
     booted.current = true;
-    continueWorkspaceFromEntry(startPath, startIntent);
+    continueWorkspaceFromEntry(startPath, startIntent, { fresh: homepageFresh });
   }
   const draft = useSyncExternalStore(subscribeFoxDraft, getFoxDraft, getServerDraft);
 
-  useDocumentReads(draft);
-
   const lastPath = useRef(startPath);
+  const previewSuggestKey = useRef("");
+  useEffect(() => {
+    if (!homepageFresh) return;
+    const next = new URLSearchParams(searchParams.toString());
+    next.delete("fresh");
+    const qs = next.toString();
+    router.replace(qs ? `/start?${qs}` : "/start", { scroll: false });
+  }, [homepageFresh, router, searchParams]);
   useEffect(() => {
     if (lastPath.current !== startPath) {
       lastPath.current = startPath;
-      if (workspaceSessionStarted()) {
+      if (shouldResumeWorkspaceEntry()) {
         if (startPath && !getFoxDraft().path) setDraftPath(startPath);
-        return;
+      } else {
+        resetWorkspaceForEntry(startPath, startIntent);
+        previewSuggestKey.current = "";
       }
-      resetWorkspaceForEntry(startPath, startIntent);
-      return;
+    } else if (startIntent) {
+      setDraftProductIntent(startIntent);
     }
-    if (startIntent) setDraftProductIntent(startIntent);
-  }, [startIntent, startPath]);
+    const suggest = searchParams.get("suggest");
+    const key = suggest ?? "";
+    if (previewSuggestKey.current !== key) {
+      previewSuggestKey.current = key;
+      applyPreviewMotionControls({ suggest });
+    }
+  }, [searchParams, startIntent, startPath]);
 
   useEffect(() => {
     if (!draft.workspaceFlow) return;
@@ -62,10 +83,12 @@ export function StartWorkspace() {
   const factsExist =
     Boolean(draft.path) ||
     Boolean(draft.productIntent) ||
+    Boolean(draft.pendingProposal) ||
     Boolean(draft.occupancyChoice.value) ||
     Boolean(draft.timelineChoice.value) ||
     draft.loanAmountValue != null ||
     draft.propertyValueAmount != null ||
+    draft.downPaymentAmount != null ||
     draft.documents.length > 0 ||
     draft.documentsSkipped;
 

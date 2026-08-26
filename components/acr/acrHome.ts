@@ -49,7 +49,17 @@ export type LaterOpportunityCard = {
   financingPath: string;
 };
 
-/** Public desk labels only. No dollars, listings, addresses, or returns. */
+/** Public default: wait/hold. Name a move only when the numbers are strong. */
+export const PUBLIC_SCOUT_WAIT = {
+  state: "wait",
+  title: "Hold",
+  sentence: "When the timing is wrong, Fox waits.",
+} as const;
+
+/**
+ * Later logged-in cards only, and only when numbers are strong.
+ * Do not render these as the public /acr default.
+ */
 export const PUBLIC_SCOUT_EXAMPLES = [
   {
     kind: "equity-available",

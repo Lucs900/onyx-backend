@@ -1,16 +1,17 @@
-import { startPathToken } from "@/components/products/startPath";
+import { ACR_START_HREF, LOAN_START_HREF, startPathToken } from "@/components/products/startPath";
 import type { IntakePath } from "./types";
 import type { FoxAction } from "./types";
 
-export const HOME_IDLE_TEXT =
-  "I can prepare a file. Start a relationship, or just get the loan.";
+export const HOME_IDLE_TEXT = "Ask ONYX Fox";
+
+export const HOME_FOX_LINE = "Start a relationship, or just the loan?";
 
 export const HOME_PRODUCT_TEXT = "Buy, refinance, HELOC, jumbo, or other.";
 
 export function homePathActions(): FoxAction[] {
   return [
-    { id: "start", label: "Start your relationship", event: "bubble" },
-    { id: "loan", label: "Just need a mortgage", event: "bubble" },
+    { id: "start", label: "Start your relationship", href: ACR_START_HREF },
+    { id: "loan", label: "Just need a mortgage", href: LOAN_START_HREF },
   ];
 }
 
