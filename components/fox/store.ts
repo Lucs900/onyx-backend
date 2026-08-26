@@ -170,6 +170,8 @@ import {
 } from "./borrowerName";
 import {
   applyTypedOtherPropertyRent,
+  applyTypedOtherPropertyRental,
+  decodeTypedOtherPropertyRental,
   isStatedOtherReo,
   proposeStatedOtherReo,
   skipOtherReo,
@@ -1658,6 +1660,11 @@ function applyCaptureBody(capture: Capture) {
     const rent = Number(String(capture.value).replace(/[$,]/g, ""));
     if (!Number.isFinite(rent) || rent <= 0) return current;
     return commit(applyTypedOtherPropertyRent(current, rent));
+  }
+  if (capture.field === "otherReoRental") {
+    const parsed = decodeTypedOtherPropertyRental(capture.value);
+    if (!parsed) return current;
+    return commit(applyTypedOtherPropertyRental(current, parsed));
   }
   if (capture.field === "skip-citizenship") {
     return commit(skipCitizenship(current));

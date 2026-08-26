@@ -319,12 +319,13 @@ import {
   OTHER_REO_PAYMENT_FIELD,
   STATED_OTHER_REO_FIELD,
   SUGGESTED_OTHER_REO_NOTE,
-  applyTypedOtherPropertyRent,
+  applyTypedOtherPropertyRental,
+  encodeTypedOtherPropertyRental,
   fileNetConfirmCopy,
   isFileNetConfirmPending,
   isFileNetField,
   isOtherReoConfirmPending,
-  parseOtherPropertyRent,
+  parseOtherPropertyRental,
   isSkipOtherReoText,
   isStatedOtherReo,
   otherPropertyPaymentConfirmCopy,
@@ -4160,6 +4161,23 @@ function finishLineTakesCalculatorPrompt(
   return false;
 }
 
+function typedOtherPropertyRentalReply(q: string, draft: FoxIntakeDraft) {
+  if (draft.statedOtherReo !== "yes") return null;
+  const parsed = parseOtherPropertyRental(q);
+  if (!parsed) return null;
+  const nextDraft = applyTypedOtherPropertyRental(draft, parsed);
+  if (parsed.piti != null || parsed.newRow) {
+    return {
+      ...nextFoxAsk(nextDraft),
+      capture: { field: "otherReoRental" as const, value: encodeTypedOtherPropertyRental(parsed) },
+    };
+  }
+  return {
+    ...nextFoxAsk(nextDraft),
+    capture: { field: "otherReoRent" as const, value: String(parsed.rent) },
+  };
+}
+
 export function workspaceReply(
   text: string,
   draft: FoxIntakeDraft,
@@ -4299,8 +4317,10 @@ export function workspaceReply(
         capture: { field: "change-proposal" },
       };
     }
+    const otherPropertyRentalPending = typedOtherPropertyRentalReply(q, draft);
+    if (otherPropertyRentalPending) return otherPropertyRentalPending;
     if (
-      /keep (the )?file|leave blank|no|not me|skip/.test(lower)
+      /keep (the )?file|leave blank|\bno\b|not me|\bskip\b/.test(lower)
     ) {
       const nextDraft = resolveProposal(draft, "decline");
       return {
@@ -4321,31 +4341,14 @@ export function workspaceReply(
     ) {
       return replyToFundsAsk(q, { ...draft, pendingProposal: null });
     }
-    const otherPropertyRentPending = parseOtherPropertyRent(q);
-    if (otherPropertyRentPending != null && draft.statedOtherReo === "yes") {
-      const nextDraft = applyTypedOtherPropertyRent(draft, otherPropertyRentPending);
-      return {
-        ...nextFoxAsk(nextDraft),
-        capture: { field: "otherReoRent", value: String(otherPropertyRentPending) },
-      };
-    }
     if (draft.pendingProposal) {
       return answerThenRestore(q, draft);
     }
   }
 
-  const typedOtherPropertyRent = parseOtherPropertyRent(q);
-  if (
-    typedOtherPropertyRent != null &&
-    draft.statedOtherReo === "yes" &&
-    prompt !== "current-housing" &&
-    !draft.pendingConflict
-  ) {
-    const nextDraft = applyTypedOtherPropertyRent(draft, typedOtherPropertyRent);
-    return {
-      ...nextFoxAsk(nextDraft),
-      capture: { field: "otherReoRent", value: String(typedOtherPropertyRent) },
-    };
+  if (prompt !== "current-housing" && !draft.pendingConflict) {
+    const typedOtherPropertyRental = typedOtherPropertyRentalReply(q, draft);
+    if (typedOtherPropertyRental) return typedOtherPropertyRental;
   }
 
   if (

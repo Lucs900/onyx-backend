@@ -514,6 +514,7 @@ export type Capture =
   | { field: "propose-other-reo"; value: string }
   | { field: "statedOtherReo"; value: string }
   | { field: "otherReoRent"; value: string }
+  | { field: "otherReoRental"; value: string }
   | { field: "citizenship"; value: string }
   | { field: "skip-citizenship" }
   | { field: "formerHistory"; value: string }

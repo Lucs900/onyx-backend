@@ -217,28 +217,106 @@ export function otherReoRowPiti(row: OtherReoRow): number | null {
   return parseRowMoney(row.pitia) ?? parseRowMoney(row.payment);
 }
 
-/** Typed rent on an other-property row. Does not invent PITI. */
-export function parseOtherPropertyRent(text: string): number | null {
-  const trimmed = text.trim();
-  if (!trimmed) return null;
-  if (
-    !/\bother propert/.test(trimmed.toLowerCase()) &&
-    !/\bthe rental\b/.test(trimmed.toLowerCase())
-  ) {
-    return null;
-  }
-  if (!/\brent/i.test(trimmed)) return null;
-  const match = trimmed.match(/\$?\s*(\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?/);
-  if (!match) return null;
-  const n = Number(match[1].replace(/,/g, ""));
+const OTHER_PROPERTY_RENT_MONEY = /\$?\s*(\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?/;
+
+function parseTypedMoney(raw?: string): number | null {
+  if (!raw) return null;
+  const n = Number(raw.replace(/,/g, ""));
   if (!Number.isFinite(n) || n < 100 || n > 100_000) return null;
   return Math.round(n);
 }
 
-export function applyTypedOtherPropertyRent(draft: FoxIntakeDraft, rent: number): FoxIntakeDraft {
+export type TypedOtherPropertyRental = {
+  rent: number;
+  piti?: number;
+  newRow?: boolean;
+};
+
+function mentionsAnotherOtherProperty(lower: string) {
+  return (
+    /\banother (rental|propert(?:y|ies)|home|house)\b/.test(lower) ||
+    /\bsecond (rental|propert(?:y|ies)|home|house)\b/.test(lower) ||
+    /\balso own\b/.test(lower) ||
+    /\bi also\b[\s\S]{0,40}\b(rental|propert(?:y|ies)|home|house)\b/.test(lower)
+  );
+}
+
+function mentionsOtherPropertyRent(lower: string) {
+  return (
+    /\bother propert/.test(lower) ||
+    /\bthe rental\b/.test(lower) ||
+    mentionsAnotherOtherProperty(lower)
+  );
+}
+
+/** Typed rent on an other-property row. Does not invent PITI. */
+export function parseOtherPropertyRent(text: string): number | null {
+  const parsed = parseOtherPropertyRental(text);
+  if (!parsed || parsed.newRow || parsed.piti != null) return null;
+  return parsed.rent;
+}
+
+/** Borrower-given other-property rent, and PITI when they typed it. Not invention. */
+export function parseOtherPropertyRental(text: string): TypedOtherPropertyRental | null {
+  const trimmed = text.trim();
+  if (!trimmed) return null;
+  const lower = trimmed.toLowerCase();
+  if (!mentionsOtherPropertyRent(lower)) return null;
+  if (!/\brent/i.test(trimmed)) return null;
+  const rentMatch =
+    trimmed.match(/\brents?\s+(?:for|is|of)\s+\$?\s*(\d{1,3}(?:,\d{3})+|\d+)/i) ||
+    trimmed.match(/\brent(?:al)?\s+(?:is|of|for)\s+\$?\s*(\d{1,3}(?:,\d{3})+|\d+)/i) ||
+    trimmed.match(OTHER_PROPERTY_RENT_MONEY);
+  const rent = parseTypedMoney(rentMatch?.[1]);
+  if (rent == null) return null;
+  const pitiMatch =
+    trimmed.match(/\bpiti(?:a)?\s+(?:is|of|at|:)?\s+\$?\s*(\d{1,3}(?:,\d{3})+|\d+)/i) ||
+    trimmed.match(/\b(?:payment|mortgage)\s+(?:is|of|at|:)\s+\$?\s*(\d{1,3}(?:,\d{3})+|\d+)/i);
+  const piti = parseTypedMoney(pitiMatch?.[1]) ?? undefined;
+  const newRow = mentionsAnotherOtherProperty(lower);
+  if (piti != null && piti === rent) return { rent, newRow };
+  return piti != null ? { rent, piti, newRow } : { rent, newRow };
+}
+
+export function encodeTypedOtherPropertyRental(parsed: TypedOtherPropertyRental): string {
+  const piti = parsed.piti != null ? String(Math.round(parsed.piti)) : "";
+  const flag = parsed.newRow ? "new" : "";
+  return [String(Math.round(parsed.rent)), piti, flag].join(":");
+}
+
+export function decodeTypedOtherPropertyRental(value: string): TypedOtherPropertyRental | null {
+  const [rentRaw, pitiRaw, flag] = String(value).split(":");
+  const rent = Number(String(rentRaw ?? "").replace(/[$,]/g, ""));
+  if (!Number.isFinite(rent) || rent <= 0) return null;
+  const piti = Number(String(pitiRaw ?? "").replace(/[$,]/g, ""));
+  return {
+    rent: Math.round(rent),
+    ...(Number.isFinite(piti) && piti > 0 ? { piti: Math.round(piti) } : {}),
+    newRow: flag === "new" || pitiRaw === "new",
+  };
+}
+
+export function applyTypedOtherPropertyRental(
+  draft: FoxIntakeDraft,
+  parsed: TypedOtherPropertyRental,
+): FoxIntakeDraft {
   if (draft.statedOtherReo !== "yes") return draft;
-  if (!Number.isFinite(rent) || rent <= 0) return draft;
-  return maybeProposeOtherReoFileNet(appendOtherReoRow(draft, { leaseGross: String(Math.round(rent)) }));
+  if (!Number.isFinite(parsed.rent) || parsed.rent <= 0) return draft;
+  const piti = parsed.piti != null && parsed.piti > 0 ? Math.round(parsed.piti) : undefined;
+  return maybeProposeOtherReoFileNet(
+    appendOtherReoRow(
+      draft,
+      {
+        leaseGross: String(Math.round(parsed.rent)),
+        ...(piti != null ? { payment: String(piti) } : {}),
+      },
+      { forceNew: Boolean(parsed.newRow) },
+    ),
+  );
+}
+
+export function applyTypedOtherPropertyRent(draft: FoxIntakeDraft, rent: number): FoxIntakeDraft {
+  return applyTypedOtherPropertyRental(draft, { rent, newRow: false });
 }
 
 export function draftOtherPropertyFileNet(draft: FoxIntakeDraft) {
@@ -290,6 +368,7 @@ function findOtherReoMatch(
 export function appendOtherReoRow(
   draft: FoxIntakeDraft,
   row: Omit<OtherReoRow, "id"> & { id?: string },
+  opts?: { forceNew?: boolean },
 ): FoxIntakeDraft {
   if (draft.statedOtherReo === "none") return { ...draft, otherProperties: [] };
   if (draft.statedOtherReo !== "yes") return draft;
@@ -307,21 +386,23 @@ export function appendOtherReoRow(
   if (!incoming.address && !incoming.unpaidPrincipal && !incoming.payment && !incoming.leaseGross) {
     return draft;
   }
-  const match = findOtherReoMatch(existing, incoming);
-  if (match) {
-    return {
-      ...draft,
-      otherProperties: existing.map((item) => (item.id === match.id ? mergeOtherReoRow(item, incoming) : item)),
-    };
-  }
-  if (!incoming.address && !incoming.unpaidPrincipal && incoming.leaseGross) {
-    const rentless = existing.filter((item) => otherReoRowRent(item) == null);
-    if (rentless.length === 1) {
-      const target = rentless[0];
+  if (!opts?.forceNew) {
+    const match = findOtherReoMatch(existing, incoming);
+    if (match) {
       return {
         ...draft,
-        otherProperties: existing.map((item) => (item.id === target.id ? mergeOtherReoRow(item, incoming) : item)),
+        otherProperties: existing.map((item) => (item.id === match.id ? mergeOtherReoRow(item, incoming) : item)),
       };
+    }
+    if (!incoming.address && !incoming.unpaidPrincipal && incoming.leaseGross) {
+      const rentless = existing.filter((item) => otherReoRowRent(item) == null);
+      if (rentless.length === 1) {
+        const target = rentless[0];
+        return {
+          ...draft,
+          otherProperties: existing.map((item) => (item.id === target.id ? mergeOtherReoRow(item, incoming) : item)),
+        };
+      }
     }
   }
   return { ...draft, otherProperties: [...existing, incoming] };

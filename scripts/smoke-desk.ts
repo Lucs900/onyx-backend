@@ -257,10 +257,12 @@ import {
   OTHER_REO_ASK,
   SUGGESTED_OTHER_REO_NOTE,
   applyTypedOtherPropertyRent,
+  applyTypedOtherPropertyRental,
   draftOtherPropertyFileNet,
   otherPropertyPaymentConfirmCopy,
   otherReoRows,
   parseOtherPropertyRent,
+  parseOtherPropertyRental,
   parseOtherReo,
   writeStatedOtherReo,
 } from "../components/fox/otherReo";
@@ -11447,6 +11449,14 @@ assert.equal(otherReoRows(pineBytes.draft)[0]?.address, "88 PINE ROAD");
 assert.match(nextFoxAsk(pineBytes.draft).text, /\$3,850 a month on the other property/);
 assert.equal(parseOtherPropertyRent("the other property rents for 3000 a month"), 3000);
 assert.equal(parseOtherPropertyRent("rent is 3000"), null);
+assert.deepEqual(
+  parseOtherPropertyRental("I also own another rental. It rents for 2000 and the PITI is 1800"),
+  { rent: 2000, piti: 1800, newRow: true },
+);
+assert.equal(
+  parseOtherPropertyRent("I also own another rental. It rents for 2000 and the PITI is 1800"),
+  null,
+);
 const pineThenRent = applyTypedOtherPropertyRent(pineBytes.draft, 3000);
 assert.equal(otherReoRows(pineThenRent)[0]?.leaseGross, "3000");
 assert.equal(draftOtherPropertyFileNet(pineThenRent).fileNet, -1600);
@@ -11467,6 +11477,48 @@ const twoRentalWalk = applyTypedOtherPropertyRent(cedarBytes.draft, 2000);
 assert.equal(draftOtherPropertyFileNet(twoRentalWalk).fileNet, -1900);
 assert.equal(twoRentalWalk.pendingProposal?.value, "-1900");
 assert.match(nextFoxAsk(twoRentalWalk).text, /I’m using the other properties I can net/);
+
+const liveSecondRental =
+  "I also own another rental. It rents for 2000 and the PITI is 1800";
+assert.notEqual(workspaceReply(liveSecondRental, pineThenRent)?.capture?.field, "decline-proposal");
+assert.doesNotMatch(workspaceReply(liveSecondRental, pineThenRent)?.text ?? "", /Left that line blank/);
+const typedSecondRental = workspaceReply(liveSecondRental, pineThenRent);
+assert.equal(typedSecondRental?.capture?.field, "otherReoRental");
+assert.match(
+  typedSecondRental?.text ?? "",
+  /Suggested net rental is −\$1,900 · not underwritten\. I’m using the other properties I can net\. Use this\?/,
+);
+const twoTypedRows = applyTypedOtherPropertyRental(pineThenRent, {
+  rent: 2000,
+  piti: 1800,
+  newRow: true,
+});
+assert.equal(otherReoRows(twoTypedRows).length, 2);
+assert.equal(otherReoRows(twoTypedRows)[0]?.leaseGross, "3000");
+assert.equal(otherReoRows(twoTypedRows)[0]?.payment, "3850");
+assert.equal(otherReoRows(twoTypedRows)[1]?.leaseGross, "2000");
+assert.equal(otherReoRows(twoTypedRows)[1]?.payment, "1800");
+assert.equal(draftOtherPropertyFileNet(twoTypedRows).fileNet, -1900);
+assert.equal(twoTypedRows.pendingProposal?.value, "-1900");
+assert.equal(
+  nextFoxAsk(twoTypedRows).text,
+  "Suggested net rental is −$1,900 · not underwritten. I’m using the other properties I can net. Use this?",
+);
+assert.equal(twoTypedRows.statedCurrentHousing, undefined);
+assert.equal(workspaceReply("no", pineThenRent)?.capture?.field, "decline-proposal");
+const usedFirstFileNet = resolveProposal(pineThenRent, "accept");
+assert.equal(usedFirstFileNet.suggestedFileNet, -1600);
+const afterAcceptedSecond = applyTypedOtherPropertyRental(usedFirstFileNet, {
+  rent: 2000,
+  piti: 1800,
+  newRow: true,
+});
+assert.equal(otherReoRows(afterAcceptedSecond).length, 2);
+assert.equal(otherReoRows(afterAcceptedSecond)[0]?.leaseGross, "3000");
+assert.equal(draftOtherPropertyFileNet(afterAcceptedSecond).fileNet, -1900);
+assert.equal(afterAcceptedSecond.pendingProposal?.value, "-1900");
+assert.match(nextFoxAsk(afterAcceptedSecond).text, /I’m using the other properties I can net/);
+assert.match(nextFoxAsk(afterAcceptedSecond).text, /−\$1,900/);
 
 const namedFromIdPage = applyExtractedFields(
   draft({
