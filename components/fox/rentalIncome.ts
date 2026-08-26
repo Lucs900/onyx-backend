@@ -319,6 +319,74 @@ export function isRentalIncomeField(field?: string | null): boolean {
   return field === SUGGESTED_NET_RENTAL_FIELD || field === RENTAL_INCOME_FIELD;
 }
 
+export const SUBJECT_LEASE_ASK =
+  "What’s the monthly lease or rent on this property? A number is enough. Skip is fine.";
+
+export function subjectLeaseAskNeeded(draft: FoxIntakeDraft) {
+  if (draft.occupancyChoice.value !== "investment") return false;
+  if (workingGrossMonthly(draft) != null) return false;
+  if (draft.facts?.[SUGGESTED_NET_RENTAL_FIELD]?.confirmed) return false;
+  if (draft.subjectLeaseAsked) return false;
+  return true;
+}
+
+export function subjectLeaseSettled(draft: FoxIntakeDraft) {
+  if (draft.correcting === "subject-lease") return false;
+  if (draft.occupancyChoice.value !== "investment") return true;
+  return Boolean(draft.subjectLeaseAsked || workingGrossMonthly(draft) != null);
+}
+
+export function skipSubjectLease(draft: FoxIntakeDraft): FoxIntakeDraft {
+  return {
+    ...draft,
+    subjectLeaseAsked: true,
+    correcting: null,
+    correctingLine: null,
+  };
+}
+
+export function parseSubjectLeaseAmount(text: string, occupancy?: string | null): number | null {
+  const fromLease = parseStatedMonthlyLease(text, { occupancy });
+  if (fromLease != null) return fromLease;
+  const trimmed = text.trim();
+  if (!trimmed) return null;
+  if (/\d\s*(k|m|mm|million|thousand)\b/i.test(trimmed)) return null;
+  const match = trimmed.match(/\$?\s*(\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?)/);
+  if (!match) return null;
+  const n = Number(match[1].replace(/,/g, ""));
+  if (!Number.isFinite(n) || n < 100 || n > 100_000) return null;
+  return Math.round(n);
+}
+
+export function subjectLeaseSkipActions(): import("./types").FoxAction[] {
+  return [
+    {
+      id: "skip-subject-lease",
+      label: "Skip",
+      event: "bubble",
+      capture: { field: "skip-subject-lease" },
+    },
+    {
+      id: "hold-subject-lease",
+      label: "Not yet",
+      event: "bubble",
+      capture: { field: "skip-subject-lease" },
+    },
+  ];
+}
+
+export function subjectLeaseAskCopy(): { text: string; actions: import("./types").FoxAction[] } {
+  return {
+    text: SUBJECT_LEASE_ASK,
+    actions: subjectLeaseSkipActions(),
+  };
+}
+
+export function isSkipSubjectLeaseText(text: string) {
+  const lower = text.trim().toLowerCase().replace(/[?.!]+$/g, "");
+  return /^(skip|skip for now|not yet|later|none|no|n\/a|na)$/i.test(lower);
+}
+
 export function rentalThinCopy(reason?: RentalThinReason | null): string | null {
   if (reason === "housing") return RENTAL_NEED_HOUSING;
   if (reason === "statement") return RENTAL_NEED_STATEMENT;

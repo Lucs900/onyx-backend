@@ -129,12 +129,6 @@ function isSubjectAddress(draft: FoxIntakeDraft, address?: string) {
   return Boolean(subject && incoming === subject);
 }
 
-function purchaseLikeFile(draft: FoxIntakeDraft) {
-  if (draft.productIntent === "buy") return true;
-  if (draft.productIntent === "jumbo") return draft.jumboPurpose !== "refinance";
-  return false;
-}
-
 /** Other-property mortgage after Other REO Yes. Subject statements never count. */
 export function isOtherPropertyMortgageExtract(
   draft: FoxIntakeDraft,
@@ -142,8 +136,31 @@ export function isOtherPropertyMortgageExtract(
 ) {
   if (draft.statedOtherReo !== "yes") return false;
   if (isSubjectAddress(draft, row.address)) return false;
-  if (purchaseLikeFile(draft)) return true;
-  return Boolean((row.address ?? "").trim());
+  return true;
+}
+
+export const OTHER_REO_PAYMENT_FIELD = "otherReoPayment";
+export const SUGGESTED_OTHER_PROPERTY_PAYMENT_NOTE = "Suggested · not underwritten";
+
+export function otherPropertyPaymentConfirmCopy(amount: number) {
+  const money = `$${Math.round(amount).toLocaleString("en-US")}`;
+  return `That’s ${money} a month on the other property. ${SUGGESTED_OTHER_PROPERTY_PAYMENT_NOTE}. Use this?`;
+}
+
+export function proposeExtractedOtherPropertyPayment(
+  draft: FoxIntakeDraft,
+  amount: number,
+): FoxIntakeDraft {
+  return {
+    ...draft,
+    pendingProposal: {
+      field: OTHER_REO_PAYMENT_FIELD,
+      value: String(Math.round(amount)),
+      label: "Other property payment",
+      kind: "computed",
+      note: SUGGESTED_OTHER_PROPERTY_PAYMENT_NOTE,
+    },
+  };
 }
 
 export function otherReoRows(draft: FoxIntakeDraft): OtherReoRow[] {

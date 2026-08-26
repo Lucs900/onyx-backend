@@ -67,6 +67,7 @@ import {
   inertSupersededIncomeConfirms,
   lastFoxTurn,
   docReactionAsk,
+  nextDocInvite,
   nextFoxAsk,
   holdDocsAskFox,
   productIntentFromAction,
@@ -843,7 +844,8 @@ export function AlwaysOnFox({
     const ask = isStart
       ? workspacePromptCopy(prompt, live)
       : promptCopy(prompt, live);
-    const mustShowReview = isStart && prompt === "review" && !live.docsHeld;
+    const mustShowReview =
+      isStart && prompt === "review" && !live.docsHeld && !live.looksRightHold && !nextDocInvite(live);
     if (skipPromptSync.current) {
       skipPromptSync.current = false;
       if (!mustShowReview) return;
@@ -961,7 +963,8 @@ export function AlwaysOnFox({
     startAsk === "value" ||
     startAsk === "debts" ||
     startAsk === "assets" ||
-    startAsk === "current-housing";
+    startAsk === "current-housing" ||
+    startAsk === "subject-lease";
   const numberAsk =
     startAsk === "credit" ||
     startAsk === "term" ||

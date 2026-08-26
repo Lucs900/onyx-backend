@@ -105,8 +105,10 @@ import {
   writeBorrowerName,
 } from "./borrowerName";
 import {
+  OTHER_REO_PAYMENT_FIELD,
   STATED_OTHER_REO_FIELD,
   isStatedOtherReo,
+  otherPropertyPaymentConfirmCopy,
   otherReoConfirmCopy,
   proposeExtractedOtherReo,
   skipOtherReo,
@@ -785,6 +787,9 @@ export function proposalAskCopy(proposal: FactProposal) {
       ? coborrowerExtractCopy(proposal.value)
       : coborrowerNameConfirmCopy(proposal.value);
   }
+  if (proposal.field === OTHER_REO_PAYMENT_FIELD) {
+    return otherPropertyPaymentConfirmCopy(Number(proposal.value) || 0);
+  }
   if (proposal.field === STATED_OTHER_REO_FIELD && isStatedOtherReo(proposal.value)) {
     return otherReoConfirmCopy(proposal.value);
   }
@@ -1350,8 +1355,23 @@ export function sketchAssembled(draft: FoxIntakeDraft) {
   return true;
 }
 
+/** Timeline chip or an extracted close date. Skip leaves this empty — do not invent a date. */
+export function timelineFilled(draft: FoxIntakeDraft) {
+  if (draft.timelineChoice.value) return true;
+  return Boolean(factValue(draft, "close_date"));
+}
+
+/** Looks right waits until the current doc/chip ask is idle. */
+export function currentAskIdle(draft: FoxIntakeDraft) {
+  if (draft.pendingProposal || draft.pendingConflict) return false;
+  if (draft.awaitingPayFrequency) return false;
+  if (nextDocInvite(draft)) return false;
+  if (draft.looksRightHold) return false;
+  return true;
+}
+
 export function canLooksRight(draft: FoxIntakeDraft) {
-  return sketchAssembled(draft) && !nextDocInvite(draft);
+  return sketchAssembled(draft) && timelineFilled(draft) && currentAskIdle(draft);
 }
 
 export function parseFundsRole(

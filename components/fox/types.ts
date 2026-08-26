@@ -253,6 +253,10 @@ export type FoxIntakeDraft = {
   timelineChoice: DraftField;
   occupancyAsked: boolean;
   timelineAsked: boolean;
+  /** After a document lands, Looks right waits for the next idle beat. */
+  looksRightHold?: boolean;
+  /** Investment subject lease/rent was asked or skipped. Empty skip does not invent rent. */
+  subjectLeaseAsked?: boolean;
   preferredAsked: boolean;
   correcting: FoxPrompt | null;
   correctingLine?: string | null;
@@ -456,6 +460,7 @@ export type FoxPrompt =
   | "years-in-business"
   | "over-price"
   | "housing"
+  | "subject-lease"
   | "citizenship"
   | "former-history"
   | "done";
@@ -529,6 +534,9 @@ export type Capture =
   | { field: "amountPurpose"; value: string }
   | { field: "creditRange"; value: string }
   | { field: "skip-credit" }
+  | { field: "skip-timeline" }
+  | { field: "skip-subject-lease" }
+  | { field: "statedSubjectLease"; value: string }
   | { field: "termYears"; value: string }
   | { field: "skip-amount" }
   | { field: "skip-value" }

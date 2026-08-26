@@ -134,6 +134,7 @@ import {
 import {
   applyRentalIncomeFromExtract,
   proposeTypedLeaseRental,
+  SUBJECT_LEASE_ASK,
 } from "../components/fox/rentalIncome";
 import { answerFromFile, foxAnswer, interpretQuestion, topicFromFile } from "../lib/guidelines/answer";
 import {
@@ -250,6 +251,7 @@ import {
 import {
   OTHER_REO_ASK,
   SUGGESTED_OTHER_REO_NOTE,
+  otherPropertyPaymentConfirmCopy,
   otherReoRows,
   parseOtherReo,
 } from "../components/fox/otherReo";
@@ -739,6 +741,8 @@ assert.equal(refiChip?.capture && "value" in refiChip.capture ? refiChip.capture
 applyCapture({ field: "productIntent", value: "Refinance" as "refinance" });
 assert.equal(getFoxDraft().productIntent, "refinance");
 applyCapture({ field: "occupancy", value: "primary" });
+assert.equal(workspacePrompt(getFoxDraft()), "timeline");
+applyCapture({ field: "timeline", value: "ready-now" });
 assert.equal(workspacePrompt(getFoxDraft()), "amount");
 assert.equal(amountAskText(getFoxDraft()), "What’s the approximate loan or payoff amount?");
 assert.doesNotMatch(amountAskText(getFoxDraft()), /purchase price|down payment or loan amount/i);
@@ -747,8 +751,10 @@ applyCapture({ field: "occupancy", value: "primary" });
 setFoxMessages([{ id: "open", role: "fox", text: firstPaintAsk.text, actions: firstPaintChips }]);
 const urlRefi = continueWorkspaceFromEntry("acr", "refinance");
 assert.equal(urlRefi.productIntent, "refinance");
-assert.equal(workspacePrompt(urlRefi), "amount");
-assert.equal(amountAskText(urlRefi), "What’s the approximate loan or payoff amount?");
+assert.equal(workspacePrompt(urlRefi), "timeline");
+applyCapture({ field: "timeline", value: "ready-now" });
+assert.equal(workspacePrompt(getFoxDraft()), "amount");
+assert.equal(amountAskText(getFoxDraft()), "What’s the approximate loan or payoff amount?");
 resetWorkspaceForEntry("acr");
 for (const value of ["buy", "refinance", "heloc", "jumbo"] as const) {
   const chip = firstPaintChips.find((item) =>
@@ -760,16 +766,22 @@ for (const value of ["buy", "refinance", "heloc", "jumbo"] as const) {
   assert.equal(getFoxDraft().productIntent, value);
   if (value === "buy") {
     applyCapture({ field: "occupancy", value: "primary" });
+    assert.equal(workspacePrompt(getFoxDraft()), "timeline");
+    applyCapture({ field: "timeline", value: "ready-now" });
     assert.equal(workspacePrompt(getFoxDraft()), "value");
     assert.match(nextFoxAsk(getFoxDraft()).text, /purchase price/);
   }
   if (value === "refinance") {
     applyCapture({ field: "occupancy", value: "primary" });
+    assert.equal(workspacePrompt(getFoxDraft()), "timeline");
+    applyCapture({ field: "timeline", value: "ready-now" });
     assert.match(nextFoxAsk(getFoxDraft()).text, /loan or payoff/);
     assert.doesNotMatch(nextFoxAsk(getFoxDraft()).text, /purchase price/);
   }
   if (value === "heloc") {
     applyCapture({ field: "occupancy", value: "primary" });
+    assert.equal(workspacePrompt(getFoxDraft()), "timeline");
+    applyCapture({ field: "timeline", value: "ready-now" });
     assert.match(nextFoxAsk(getFoxDraft()).text, /line or cash/i);
   }
   if (value === "jumbo") {
@@ -794,14 +806,15 @@ const afterOcc = draft({
   occupancyAsked: true,
   occupancyChoice: { ...emptyDraft().occupancyChoice, value: "primary" },
 });
-assert.equal(workspacePrompt(afterOcc), "value");
-assert.notEqual(workspacePrompt(afterOcc), "timeline");
-assert.equal(amountAskText(afterOcc), "What’s the purchase price?");
-const occThenPrice = workspaceReply("Primary", draft({ path: "acr", productIntent: "buy" }));
-assert.equal(occThenPrice?.capture?.field, "occupancy");
-assert.match(occThenPrice?.text ?? "", /purchase price/i);
-assert.doesNotMatch(occThenPrice?.text ?? "", /^Primary\.|Primary\. What’s the purchase price/i);
-assert.doesNotMatch(occThenPrice?.text ?? "", /timeline|ready now|30–90|just exploring/i);
+assert.equal(workspacePrompt(afterOcc), "timeline");
+assert.notEqual(workspacePrompt(afterOcc), "value");
+assert.equal(workspacePromptCopy("timeline", afterOcc).text, "What’s the timeline?");
+const occThenTimeline = workspaceReply("Primary", draft({ path: "acr", productIntent: "buy" }));
+assert.equal(occThenTimeline?.capture?.field, "occupancy");
+assert.match(occThenTimeline?.text ?? "", /timeline/i);
+assert.doesNotMatch(occThenTimeline?.text ?? "", /^Primary\.|Primary\. What’s the purchase price/i);
+assert.ok((occThenTimeline?.actions ?? []).some((item) => item.label === "Ready now"));
+assert.ok((occThenTimeline?.actions ?? []).some((item) => item.label === "Skip"));
 assert.ok((workspacePromptCopy("occupancy", draft({ path: "acr", productIntent: "buy" })).text ?? "").trim());
 assert.ok(
   (workspacePromptCopy("product", draft({ path: "acr" })).actions ?? []).some((item) => item.label === "Buy"),
@@ -820,7 +833,7 @@ assert.equal(workspacePrompt(afterTime), "amount");
 
 const buyAfterOcc = workspaceReply("Primary", draft({ path: "acr", productIntent: "buy" }));
 assert.equal(buyAfterOcc?.capture?.field, "occupancy");
-assert.match(buyAfterOcc?.text ?? "", /What’s the purchase price\?/);
+assert.match(buyAfterOcc?.text ?? "", /What’s the timeline\?/);
 assert.doesNotMatch(buyAfterOcc?.text ?? "", /Product in the file is Buy/);
 assert.doesNotMatch(buyAfterOcc?.text ?? "", /^Primary\./);
 assert.doesNotMatch(buyAfterOcc?.text ?? "", /rough amount|^what’s a rough amount/i);
@@ -831,10 +844,16 @@ const afterPrimaryBuy = draft({
   occupancyAsked: true,
   occupancyChoice: { ...emptyDraft().occupancyChoice, value: "primary" },
 });
-assert.equal(workspacePrompt(afterPrimaryBuy), "value");
-assert.doesNotMatch(workspacePromptCopy("value", afterPrimaryBuy).text, /Product in the file/);
-assert.ok(!(workspacePromptCopy("value", afterPrimaryBuy).actions ?? []).some((item) => item.label === "Refinance"));
-const typedPriceStayBuy = workspaceReply("850000", afterPrimaryBuy);
+assert.equal(workspacePrompt(afterPrimaryBuy), "timeline");
+assert.doesNotMatch(workspacePromptCopy("timeline", afterPrimaryBuy).text, /Product in the file/);
+assert.ok(!(workspacePromptCopy("timeline", afterPrimaryBuy).actions ?? []).some((item) => item.label === "Refinance"));
+const afterPrimaryTimeline = draft({
+  ...afterPrimaryBuy,
+  timelineAsked: true,
+  timelineChoice: { ...emptyDraft().timelineChoice, value: "ready-now" },
+});
+assert.equal(workspacePrompt(afterPrimaryTimeline), "value");
+const typedPriceStayBuy = workspaceReply("850000", afterPrimaryTimeline);
 assert.equal(typedPriceStayBuy?.capture?.field, "propertyValue");
 assert.equal(
   typedPriceStayBuy?.capture && "value" in typedPriceStayBuy.capture ? typedPriceStayBuy.capture.value : "",
@@ -843,7 +862,7 @@ assert.equal(
 assert.notEqual(typedPriceStayBuy?.capture?.field, "productIntent");
 assert.notEqual(typedPriceStayBuy?.capture?.field, "loanAmount");
 const typedPriceOnProductAsk = workspaceReply("850000", {
-  ...afterPrimaryBuy,
+  ...afterPrimaryTimeline,
   correcting: "product",
 });
 assert.equal(typedPriceOnProductAsk?.capture?.field, "propertyValue");
@@ -1296,6 +1315,8 @@ const refiOffer = withIncome(
       productIntent: "refinance",
       occupancyAsked: true,
       occupancyChoice: { ...emptyDraft().occupancyChoice, value: "second-home" },
+      timelineAsked: true,
+      timelineChoice: { ...emptyDraft().timelineChoice, value: "ready-now" },
       creditAsked: true,
       creditBand: "760+",
     }),
@@ -1423,6 +1444,8 @@ for (const product of [
       productIntent: "heloc",
       occupancyAsked: true,
       occupancyChoice: { ...emptyDraft().occupancyChoice, value: "primary" },
+      timelineAsked: true,
+      timelineChoice: { ...emptyDraft().timelineChoice, value: "ready-now" },
       amountAsked: true,
       loanAmountValue: 150000,
       creditAsked: true,
@@ -1437,6 +1460,8 @@ for (const product of [
         jumboPurpose: "buy",
         occupancyAsked: true,
         occupancyChoice: { ...emptyDraft().occupancyChoice, value: "primary" },
+        timelineAsked: true,
+        timelineChoice: { ...emptyDraft().timelineChoice, value: "ready-now" },
         creditAsked: true,
         creditBand: "760+",
       }),
@@ -1471,10 +1496,27 @@ const noTimelineFile = withIncome(
 );
 assert.equal(noTimelineFile.timelineChoice.value, "");
 assert.equal(canLooksRight(noTimelineFile), false);
-assert.ok(canLooksRight(skipDocInvites(noTimelineFile)));
-assert.equal(workspacePrompt(noTimelineFile), "documents");
-assert.equal(workspacePrompt(skipDocInvites(noTimelineFile)), "review");
+assert.equal(canLooksRight(skipDocInvites(noTimelineFile)), false);
+assert.equal(workspacePrompt(noTimelineFile), "timeline");
+assert.equal(workspacePrompt(skipDocInvites(noTimelineFile)), "timeline");
 assert.ok(previewFacts(noTimelineFile).some((fact) => fact.id === "timeline" && fact.value === "—"));
+const skippedTimeline = draft({ ...noTimelineFile, timelineAsked: true });
+assert.equal(skippedTimeline.timelineChoice.value, "");
+assert.equal(canLooksRight(skipDocInvites(skippedTimeline)), false);
+assert.equal(workspacePrompt(skipDocInvites(skippedTimeline)), "timeline");
+const closeDateUnlocksLooks = draft({
+  ...skippedTimeline,
+  facts: {
+    close_date: {
+      field: "close_date",
+      value: "2026-10-15",
+      source: "document",
+      confirmed: true,
+    },
+  },
+});
+assert.ok(canLooksRight(skipDocInvites(closeDateUnlocksLooks)));
+assert.equal(workspacePrompt(skipDocInvites(closeDateUnlocksLooks)), "review");
 const looksRight = workspaceReply("Looks right", afterIncomeReady);
 assert.equal(creditPullPermitted(applyLooksRightMotion(afterIncomeReady)), false);
 assert.equal(looksRight?.capture?.field, "confirm-draft");
@@ -1787,6 +1829,7 @@ const investBuy = withIncome(
       occupancyChoice: { ...emptyDraft().occupancyChoice, value: "investment" },
       timelineAsked: true,
       timelineChoice: { ...emptyDraft().timelineChoice, value: "ready-now" },
+      subjectLeaseAsked: true,
       creditAsked: true,
       creditBand: "760+",
     }),
@@ -3384,12 +3427,12 @@ assertAnswerThenRestore(workspaceReply("hi", afterCredit), /^Hi\./, { labels: in
 assertAnswerThenRestore(
   workspaceReply("what happens after Proceed?", afterOcc),
   /in queue|licensed originator reviews/i,
-  { text: /purchase price/i, labels: [] },
+  { text: /timeline/i, labels: [] },
 );
 assertAnswerThenRestore(
   workspaceReply("hi", afterOcc),
   /^Hi\./,
-  { text: /purchase price/i, labels: [] },
+  { text: /timeline/i, labels: [] },
 );
 
 const docsChips = ["Upload this", "Skip"];
@@ -5178,6 +5221,8 @@ const overPriceBase = draft({
   productIntent: "buy",
   occupancyAsked: true,
   occupancyChoice: { ...emptyDraft().occupancyChoice, value: "primary" },
+  timelineAsked: true,
+  timelineChoice: { ...emptyDraft().timelineChoice, value: "ready-now" },
   valueAsked: true,
   propertyValueAmount: 500000,
 });
@@ -9300,9 +9345,11 @@ assert.ok(filePreview.includes("DocumentDrop"));
 assert.ok(filePreview.includes('fact.id === "next"'));
 assert.ok(filePreview.includes('fact.id === "file"') || filePreview.includes('id === "file"'));
 const completenessSource = readFileSync(join(root, "components/fox/completeness.ts"), "utf8");
-assert.ok(!completenessSource.includes("if (!draft.timelineChoice.value) return false;"));
+assert.ok(completenessSource.includes("function timelineFilled"));
+assert.ok(completenessSource.includes("function currentAskIdle"));
+assert.ok(completenessSource.includes("timelineFilled(draft) && currentAskIdle(draft)"));
 assert.ok(workspaceSrc.includes("function withFoxFirst") || workspaceSrc.includes("withFoxFirst"));
-assert.ok(!workspaceSrc.includes('if (!draft.timelineAsked && !draft.timelineChoice.value) return "timeline"'));
+assert.ok(workspaceSrc.includes('if (!timelineFilled(draft) && !draft.timelineAsked) return "timeline"'));
 assert.ok(workspaceSrc.includes("The notepad looks complete enough to move. Does it look right?"));
 assert.ok(workspaceSrc.includes("What should I change?"));
 assert.ok(!workspaceSrc.includes("Tap any line on the structure."));
@@ -10035,6 +10082,8 @@ const conventionalRefiWalk = draft({
   productIntent: "refinance",
   occupancyAsked: true,
   occupancyChoice: { ...emptyDraft().occupancyChoice, value: "primary" },
+  timelineAsked: true,
+  timelineChoice: { ...emptyDraft().timelineChoice, value: "ready-now" },
   propertyValueAmount: 1_200_000,
   loanAmountValue: 960_000,
   amountAsked: true,
@@ -10552,7 +10601,8 @@ assert.equal(workspacePrompt(w2PrimaryWalk), "housing");
 const w2Housing = workspaceReply("Use this", w2PrimaryWalk);
 assert.equal(w2Housing?.capture?.field, "estimatedHousing");
 const afterW2Housing = writeEstimatedHousing(w2PrimaryWalk, housing!.estimatedHousing);
-assert.equal(workspacePrompt(afterW2Housing), "debts");
+assert.notEqual(workspacePrompt(afterW2Housing), "debts");
+assert.equal(workspacePrompt(afterW2Housing), "done");
 assert.ok(previewFacts(afterW2Housing).some((fact) => fact.id === "ltv" && fact.value === "80.0%"));
 assert.ok(previewFacts(afterW2Housing).some((fact) => fact.id === "housing" && fact.note === ESTIMATED_NOT_FINAL));
 const afterW2Debts = syncCalculatorDraft(draft({ ...afterW2Housing, statedMonthlyDebts: 800, monthlyDebtsAsked: true }));
@@ -10786,6 +10836,13 @@ assert.equal(otherReoRowsAfter[0]?.unpaidPrincipal, "220000");
 assert.equal(otherReoRowsAfter[0]?.payment, "1450");
 assert.ok(!otherReoRowsAfter.some((row) => /14 oak street/i.test(row.address ?? "")));
 assert.equal(otherReoStatement.draft.subjectAddress, "14 OAK STREET");
+assert.equal(otherReoStatement.draft.statedCurrentHousing, undefined);
+assert.notEqual(otherReoStatement.draft.pendingProposal?.field, "statedCurrentHousing");
+assert.equal(otherReoStatement.draft.pendingProposal?.field, "otherReoPayment");
+assert.match(nextFoxAsk(otherReoStatement.draft).text, /other property/);
+assert.doesNotMatch(nextFoxAsk(otherReoStatement.draft).text, /housing now/);
+assert.match(otherPropertyPaymentConfirmCopy(1450), /other property/);
+assert.doesNotMatch(otherPropertyPaymentConfirmCopy(1450), /housing now/);
 const subjectMortgage = applyExtractedFields(file32OtherReoYes, {
   extractClass: "mortgage_statement",
   confidence: 0.93,
@@ -10880,6 +10937,123 @@ assert.ok(file32ContractSlots.present.includes("property.propertyType"));
 assert.ok(file32ContractSlots.present.includes("property.yearBuilt"));
 assert.ok(file32ContractSlots.present.includes("property.units"));
 assert.ok(file32ContractSlots.present.includes("property.taxes"));
+
+const sequenceW2 = skipDocInvites(
+  draft({
+    ...afterIncome,
+    otherReoAsked: true,
+    statedOtherReo: "none",
+  }),
+);
+assert.ok(sequenceW2.timelineChoice.value);
+assert.ok(canLooksRight(sequenceW2));
+assert.equal(workspacePrompt(sequenceW2), "review");
+assert.match(workspacePromptCopy("review", sequenceW2).text, /Does it look right/);
+const sequenceSkipTimeline = draft({ ...sequenceW2, timelineChoice: emptyDraft().timelineChoice, timelineAsked: true });
+assert.equal(sequenceSkipTimeline.timelineChoice.value, "");
+assert.equal(canLooksRight(sequenceSkipTimeline), false);
+assert.equal(workspacePrompt(sequenceSkipTimeline), "timeline");
+assert.ok(!(workspacePromptCopy("timeline", sequenceSkipTimeline).actions ?? []).some((item) => item.label === "Looks right"));
+
+const sequenceDocHold = applyExtractedFields(sequenceW2, {
+  extractClass: "w2",
+  confidence: 0.93,
+  fields: { employer_name: "ACME", wages: "120000" },
+});
+assert.equal(sequenceDocHold.draft.looksRightHold, true);
+assert.equal(canLooksRight(sequenceDocHold.draft), false);
+assert.notEqual(workspacePrompt(sequenceDocHold.draft), "review");
+assert.doesNotMatch(nextFoxAsk(sequenceDocHold.draft).text, /Does it look right/);
+const afterHoldCleared = draft({ ...sequenceDocHold.draft, looksRightHold: false, pendingProposal: null });
+assert.ok(canLooksRight(afterHoldCleared) || nextDocInvite(afterHoldCleared));
+if (canLooksRight(afterHoldCleared)) {
+  assert.equal(workspacePrompt(afterHoldCleared), "review");
+}
+
+const investLeaseSketch = draft({
+  path: "acr",
+  productIntent: "buy",
+  occupancyAsked: true,
+  occupancyChoice: { ...emptyDraft().occupancyChoice, value: "investment" },
+  timelineAsked: true,
+  timelineChoice: { ...emptyDraft().timelineChoice, value: "ready-now" },
+  valueAsked: true,
+  propertyValueAmount: 850000,
+  downAsked: true,
+  downPaymentAmount: 170000,
+  amountAsked: true,
+  loanAmountValue: 680000,
+});
+assert.equal(workspacePrompt(investLeaseSketch), "subject-lease");
+assert.equal(workspacePromptCopy("subject-lease", investLeaseSketch).text, SUBJECT_LEASE_ASK);
+assert.ok((workspacePromptCopy("subject-lease", investLeaseSketch).actions ?? []).some((item) => item.label === "Skip"));
+const typedLease = workspaceReply("3000", investLeaseSketch);
+assert.equal(typedLease?.capture?.field, "statedSubjectLease");
+assert.notEqual(workspacePrompt(investLeaseSketch), "housing");
+assert.notEqual(workspacePrompt(investLeaseSketch), "property-type");
+const investAfterLooks = draft({
+  ...investLeaseSketch,
+  creditAsked: true,
+  creditBand: "760+",
+  incomeAsked: true,
+  incomeType: { ...emptyDraft().incomeType, value: "w2" },
+  otherReoAsked: true,
+  statedOtherReo: "none",
+  sampleAccepted: true,
+  workspaceDraftStatus: "with-originator",
+  phase: "confirmed",
+});
+assert.equal(workspacePrompt(investAfterLooks), "subject-lease");
+assert.notEqual(workspacePrompt(investAfterLooks), "housing");
+assert.notEqual(workspacePrompt(investAfterLooks), "property-type");
+const leasedThenHousing = draft({
+  ...investAfterLooks,
+  subjectLeaseAsked: true,
+  rentalGrossMonthly: 3000,
+});
+assert.equal(workspacePrompt(leasedThenHousing), "housing");
+
+const walkedOtherReoMortgage = applyExtractedFields(
+  draft({
+    ...afterLooks,
+    statedOtherReo: "yes",
+    otherReoAsked: true,
+    statedCurrentHousing: undefined,
+    currentHousingAsked: false,
+    pendingProposal: null,
+    pendingConflict: null,
+    facts: {},
+  }),
+  {
+    extractClass: "mortgage_statement",
+    confidence: 0.93,
+    fields: {
+      servicer: "RIVER SERVICING",
+      unpaid_principal: "385000",
+      current_pi: "3850",
+    },
+  },
+);
+assert.equal(walkedOtherReoMortgage.draft.statedCurrentHousing, undefined);
+assert.notEqual(walkedOtherReoMortgage.draft.pendingProposal?.field, "statedCurrentHousing");
+assert.equal(otherReoRows(walkedOtherReoMortgage.draft)[0]?.payment, "3850");
+assert.match(nextFoxAsk(walkedOtherReoMortgage.draft).text, /other property/);
+assert.doesNotMatch(nextFoxAsk(walkedOtherReoMortgage.draft).text, /housing now/);
+
+const afterCoborrowerNone = draft({
+  ...afterLooks,
+  housingAsked: true,
+  estimatedHousing: 5543,
+  statedHousehold: "none",
+  householdAsked: true,
+});
+assert.notEqual(workspacePrompt(afterCoborrowerNone), "debts");
+assert.doesNotMatch(nextFoxAsk(afterCoborrowerNone).text, /other debts, not counting this house/);
+assert.doesNotMatch(nextFoxAsk(afterCoborrowerNone).text, /About how much do you pay each month on other debts/);
+
+assert.equal(file32Invest.suggestedNetRental, -3293);
+assert.ok(!requiredStructureLines(file32W2None).some((line) => /citizen/i.test(line.label)));
+assert.equal(otherReoRows(draft({ ...file32W2None, statedOtherReo: "none" })).length, 0);
 
 extractAdapterSmoke()
   .then(() => {

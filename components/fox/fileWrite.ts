@@ -96,6 +96,7 @@ import {
   appendOtherReoRow,
   isOtherPropertyMortgageExtract,
   otherReoSettled,
+  proposeExtractedOtherPropertyPayment,
   proposeExtractedOtherReo,
 } from "./otherReo";
 import {
@@ -982,7 +983,12 @@ export function applyExtractedFields(
   }
   const extractedHousing =
     extractClass === "mortgage_statement" ? moneyNumber(fields.current_pi ?? "") : null;
-  if (extractedHousing != null) {
+  const otherPropertyMortgage =
+    extractClass === "mortgage_statement" &&
+    isOtherPropertyMortgageExtract(next, {
+      address: String(fields.property_address ?? "").trim() || undefined,
+    });
+  if (extractedHousing != null && !otherPropertyMortgage) {
     const housingExtras = remainderWrites.map((item) => ({
       field: item.field,
       value: item.value,
@@ -1071,6 +1077,13 @@ export function applyExtractedFields(
         ? String(fields.lease_gross ?? fields.gross_monthly_rent ?? "").trim() || undefined
         : undefined,
     });
+    if (
+      extractedHousing != null &&
+      !next.pendingConflict &&
+      (!next.pendingProposal || next.pendingProposal.field === "otherReoPayment")
+    ) {
+      next = proposeExtractedOtherPropertyPayment(next, extractedHousing);
+    }
   }
   if (extractClass === "mortgage_statement" && purchaseFileForOtherReo(next) && !next.statedOtherReo) {
     const remainderWillAsk =
@@ -1099,7 +1112,7 @@ export function applyExtractedFields(
     quietLines.push(EMPLOYER_MISMATCH_LINE);
   }
   return {
-    draft: next,
+    draft: { ...next, looksRightHold: true },
     writes,
     conflict,
     quietLines,

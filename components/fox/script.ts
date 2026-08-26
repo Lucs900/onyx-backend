@@ -146,6 +146,7 @@ export function taskContext(stage: FoxStage, draft: FoxIntakeDraft) {
     "years-in-business": "Asking: years in business",
     "over-price": "Checking price and loan",
     housing: "Asking: housing payment",
+    "subject-lease": "Asking: lease or rent",
     citizenship: "Asking: citizenship",
     "former-history": "Asking: prior history",
     done: "Draft confirmed",

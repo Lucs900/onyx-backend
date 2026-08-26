@@ -104,7 +104,7 @@ import {
   syncCalculatorDraft,
   writeEstimatedHousing,
 } from "./calculators";
-import { proposeTypedLeaseRental } from "./rentalIncome";
+import { parseSubjectLeaseAmount, proposeTypedLeaseRental, skipSubjectLease } from "./rentalIncome";
 import {
   applyMortgageSubtract,
   parseMonthlyDebtAmount,
@@ -294,6 +294,8 @@ export function emptyDraft(): FoxIntakeDraft {
     timelineChoice: emptyField("timeline"),
     occupancyAsked: false,
     timelineAsked: false,
+    looksRightHold: false,
+    subjectLeaseAsked: false,
     preferredAsked: false,
     correcting: null,
     correctingLine: null,
@@ -346,6 +348,8 @@ function normalize(value: unknown): FoxIntakeDraft {
     timelineChoice: raw.timelineChoice ?? base.timelineChoice,
     occupancyAsked: Boolean(raw.occupancyAsked),
     timelineAsked: Boolean(raw.timelineAsked),
+    looksRightHold: Boolean(raw.looksRightHold),
+    subjectLeaseAsked: Boolean(raw.subjectLeaseAsked),
     preferredAsked: Boolean(raw.preferredAsked),
     correcting: raw.correcting ?? null,
     correctingLine: typeof raw.correctingLine === "string" && raw.correctingLine
@@ -1434,6 +1438,9 @@ function openReviewOnFile(draft: FoxIntakeDraft) {
 
 export function applyCapture(capture: Capture) {
   const before = current;
+  if (current.looksRightHold) {
+    current = { ...current, looksRightHold: false };
+  }
   const result = applyCaptureBody(capture);
   const settled = settleResumeAfterCapture(before, capture, result);
   if (settled === result) return result;
@@ -1688,6 +1695,22 @@ function applyCaptureBody(capture: Capture) {
       }),
     );
     return current.workspaceFlow ? current : advancePhase();
+  }
+  if (capture.field === "skip-timeline") {
+    return commit({
+      ...current,
+      timelineAsked: true,
+      correcting: null,
+    });
+  }
+  if (capture.field === "skip-subject-lease") {
+    return commit(skipSubjectLease(current));
+  }
+  if (capture.field === "statedSubjectLease") {
+    const rent = parseSubjectLeaseAmount(capture.value, current.occupancyChoice.value);
+    if (rent == null) return commit({ ...current, subjectLeaseAsked: true });
+    const proposed = proposeTypedLeaseRental({ ...current, subjectLeaseAsked: true }, `lease ${rent} a month`);
+    return commit(proposed ?? { ...current, subjectLeaseAsked: true });
   }
   if (capture.field === "skip-docs") {
     if (layer2Open(current)) {

@@ -70,6 +70,7 @@ import {
 import {
   SUGGESTED_NOTE,
   canLooksRight,
+  timelineFilled,
   sketchAssembled,
   completenessExplainCopy,
   fileCompleteness,
@@ -120,7 +121,6 @@ import {
   housingConfirmNeeded,
   skipEstimatedHousing,
   STATED_NOT_FROM_CREDIT,
-  statedDtiAskNeeded,
   syncCalculatorDraft,
   writeEstimatedHousing,
 } from "./calculators";
@@ -139,10 +139,15 @@ import {
 } from "./qualifyingIncome";
 import {
   isRentalIncomeField,
+  isSkipSubjectLeaseText,
   parseStatedMonthlyLease,
+  parseSubjectLeaseAmount,
   proposeTypedLeaseRental,
   rentalConfirmAsk,
   rentalThinCopy,
+  skipSubjectLease,
+  subjectLeaseAskCopy,
+  subjectLeaseAskNeeded,
 } from "./rentalIncome";
 import {
   applyMortgageSubtract,
@@ -311,11 +316,13 @@ import {
 } from "./borrowerName";
 import {
   OTHER_REO_ASK,
+  OTHER_REO_PAYMENT_FIELD,
   STATED_OTHER_REO_FIELD,
   SUGGESTED_OTHER_REO_NOTE,
   isOtherReoConfirmPending,
   isSkipOtherReoText,
   isStatedOtherReo,
+  otherPropertyPaymentConfirmCopy,
   otherReoAskCopy,
   otherReoConfirmActions,
   otherReoConfirmCopy,
@@ -1413,6 +1420,12 @@ function liveProposalAsk(
       actions: otherReoConfirmActions(),
     };
   }
+  if (proposal.field === OTHER_REO_PAYMENT_FIELD) {
+    return {
+      text: otherPropertyPaymentConfirmCopy(Number(proposal.value) || 0),
+      actions: otherReoConfirmActions(),
+    };
+  }
   if (isRentalIncomeField(proposal.field)) {
     const complete = Number(proposal.extras?.find((item) => item.field === "rental_complete_count")?.value ?? 1);
     return {
@@ -1552,6 +1565,7 @@ const CORRECTION_CHIP_IDS = new Set([
   "years-in-business",
   "debts",
   "housing",
+  "subject-lease",
   "assets",
   "property-type",
   "time-on-job",
@@ -1592,6 +1606,9 @@ function extraCorrectionLines(draft: FoxIntakeDraft): { id: string; label: strin
   }
   if (draft.housingAsked || draft.estimatedHousing != null) {
     extra.push({ id: "housing", label: "Housing payment", prompt: "housing" });
+  }
+  if (draft.subjectLeaseAsked || draft.rentalGrossMonthly != null) {
+    extra.push({ id: "subject-lease", label: "Lease or rent", prompt: "subject-lease" });
   }
   if (draft.availableAssetsAsked || draft.statedAvailableAssets != null) {
     extra.push({ id: "assets", label: "Stated available assets", prompt: "assets" });
@@ -2047,6 +2064,7 @@ export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
   if (!draft.productIntent) return "product";
   if (needsJumboPurpose(draft)) return "jumbo-purpose";
   if (!draft.occupancyAsked && !draft.occupancyChoice.value) return "occupancy";
+  if (!timelineFilled(draft) && !draft.timelineAsked) return "timeline";
   if (purchasePriceAskNeeded(draft)) return "value";
   if (fundsAskNeeded(draft)) return "amount";
   if (refiLoanAskNeeded(draft) || (isHelocFile(draft) && !hasHelocLine(draft))) return "amount";
@@ -2055,6 +2073,7 @@ export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
   if (!sketchNumberReady(draft)) {
     return draftUsesPurchasePrice(draft) && !hasPropertyValue(draft) ? "value" : "amount";
   }
+  if (subjectLeaseAskNeeded(draft)) return "subject-lease";
   if (!creditSettled(draft)) return "credit";
   if (!incomeSettled(draft)) return "income";
   if (needsDeclarationTiming(draft)) return "declaration-timing";
@@ -2065,15 +2084,23 @@ export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
   if (nextDocInvite(draft) && !householdSettled(draft)) return "documents";
   if (primaryDocPassFinished(draft) && !yearsInBusinessSettled(draft)) return "years-in-business";
   if (!draft.sampleAccepted && !householdSettled(draft)) {
-    return canLooksRight(draft) ? "review" : "amount";
+    if (!timelineFilled(draft)) return "timeline";
+    if (canLooksRight(draft)) return "review";
+    if (draft.looksRightHold) return "documents";
+    return "amount";
   }
   if (readyForHouseholdAsk(draft) && !householdSettled(draft)) return "household";
   if (!coborrowerNameSettled(draft)) return "coborrower-name";
   if (nextDocInvite(draft)) return "documents";
-  if (!draft.sampleAccepted) return canLooksRight(draft) ? "review" : "amount";
+  if (!draft.sampleAccepted) {
+    if (!timelineFilled(draft)) return "timeline";
+    if (canLooksRight(draft)) return "review";
+    if (draft.looksRightHold) return "documents";
+    return "amount";
+  }
   const holdCalculatorAsk = draft.motion === "in_queue" || draft.motion === "escalated";
+  if (!holdCalculatorAsk && subjectLeaseAskNeeded(draft)) return "subject-lease";
   if (!holdCalculatorAsk && housingConfirmNeeded(draft)) return "housing";
-  if (!holdCalculatorAsk && statedDtiAskNeeded(draft)) return "debts";
   if (!holdCalculatorAsk && !propertyTypeSettled(draft)) return "property-type";
   return "done";
 }
@@ -2193,7 +2220,11 @@ function workspaceAskCopy(
       text: prior ? `Timeline in the file is ${prior}. Still right?` : "What’s the timeline?",
       actions: prior
         ? [...bubbles([...TIMELINE_BUBBLES], "timeline"), ...keepThisActions()]
-        : bubbles([...TIMELINE_BUBBLES], "timeline"),
+        : [
+            ...bubbles([...TIMELINE_BUBBLES], "timeline"),
+            { id: "skip-timeline", label: "Skip", event: "bubble", capture: { field: "skip-timeline" } },
+            { id: "hold-timeline", label: "Not yet", event: "bubble", capture: { field: "skip-timeline" } },
+          ],
     };
   }
   if (prompt === "amount") {
@@ -2263,6 +2294,9 @@ function workspaceAskCopy(
       text: "How is income earned?",
       actions: bubbles([...INCOME_BUBBLES], "incomeType"),
     };
+  }
+  if (prompt === "subject-lease") {
+    return subjectLeaseAskCopy();
   }
   if (prompt === "housing") {
     return housingAskCopy(draft);
@@ -2962,7 +2996,10 @@ export function editPromptFromCapture(capture?: Capture): FoxPrompt | undefined 
     return "offer-heloc";
   }
   if (capture.field === "occupancy") return "occupancy";
-  if (capture.field === "timeline") return "timeline";
+  if (capture.field === "timeline" || capture.field === "skip-timeline") return "timeline";
+  if (capture.field === "skip-subject-lease" || capture.field === "statedSubjectLease") {
+    return "subject-lease";
+  }
   if (
     capture.field === "loanAmount" ||
     capture.field === "skip-amount" ||
@@ -3163,6 +3200,14 @@ export function workspaceUpdateCopy(capture: Capture, draft: FoxIntakeDraft) {
   if (capture.field === "timeline") {
     const label = TIMELINE_BUBBLES.find((item) => item.value === capture.value)?.label;
     return label ? `Updated timeline to ${label}.` : "Updated timeline.";
+  }
+  if (capture.field === "skip-timeline") return "Updated. Timeline left blank.";
+  if (capture.field === "skip-subject-lease") return "Updated. Lease left blank.";
+  if (capture.field === "statedSubjectLease") {
+    const n = Number(capture.value);
+    return Number.isFinite(n) && n > 0
+      ? `Updated lease to ${formatMoney(n)}.`
+      : "Updated lease.";
   }
   if (capture.field === "loanAmount") {
     const n = Number(capture.value.split(":")[0].replace(/,/g, ""));
@@ -3771,6 +3816,20 @@ function draftAfterCaptureBody(draft: FoxIntakeDraft, capture: Capture): FoxInta
   }
   if (capture.field === "timeline") {
     return { ...next, timelineChoice: { ...draft.timelineChoice, value: capture.value }, timelineAsked: true };
+  }
+  if (capture.field === "skip-timeline") {
+    return { ...next, timelineAsked: true };
+  }
+  if (capture.field === "skip-subject-lease") return skipSubjectLease(next);
+  if (capture.field === "statedSubjectLease") {
+    const rent = parseSubjectLeaseAmount(capture.value, next.occupancyChoice.value);
+    if (rent == null) return { ...next, subjectLeaseAsked: true };
+    return (
+      proposeTypedLeaseRental({ ...next, subjectLeaseAsked: true }, `lease ${rent} a month`) ?? {
+        ...next,
+        subjectLeaseAsked: true,
+      }
+    );
   }
   if (capture.field === "amountPurpose") {
     return { ...next, amountPurposeLabel: capture.value };
@@ -4595,6 +4654,13 @@ export function workspaceReply(
 
   if (prompt === "timeline") {
     if (draft.timelineChoice.value && isKeepThisText(q)) return keepThisReply(draft);
+    if (isSkipCreditText(q)) {
+      const nextDraft = { ...draft, timelineAsked: true, correcting: null, correctingLine: null };
+      return {
+        ...nextFoxAsk(nextDraft),
+        capture: { field: "skip-timeline" },
+      };
+    }
     const match = timelineFromText(q);
     if (!match) return answerThenRestore(q, draft);
     const nextDraft = {
@@ -4610,7 +4676,7 @@ export function workspaceReply(
         capture: { field: "timeline", value: match.value },
       };
     }
-    const nextAsk = draftUsesPurchasePrice(nextDraft) ? "value" : "amount";
+    const nextAsk = workspacePrompt(nextDraft);
     return withWorkspaceGuide(
       {
         ...workspacePromptCopy(nextAsk, nextDraft),
@@ -4618,6 +4684,24 @@ export function workspaceReply(
       },
       nextDraft,
     );
+  }
+
+  if (prompt === "subject-lease") {
+    if (isSkipSubjectLeaseText(q)) {
+      const nextDraft = skipSubjectLease(draft);
+      return {
+        ...nextFoxAsk(nextDraft),
+        capture: { field: "skip-subject-lease" },
+      };
+    }
+    const rent = parseSubjectLeaseAmount(q, draft.occupancyChoice.value);
+    if (rent == null) return answerThenRestore(q, draft);
+    const proposed = proposeTypedLeaseRental({ ...draft, subjectLeaseAsked: true }, `lease ${rent} a month`);
+    const nextDraft = proposed ?? { ...draft, subjectLeaseAsked: true };
+    return {
+      ...nextFoxAsk(nextDraft),
+      capture: { field: "statedSubjectLease", value: String(rent) },
+    };
   }
 
   if (prompt === "amount") {
