@@ -137,9 +137,11 @@ export function conventionalIncomeRules(key: string): Record<string, string> {
 export const CONVENTIONAL_KNOWLEDGE_STORE = "v1";
 export const CONVENTIONAL_KNOWLEDGE_STORE_AS_OF = "2026-08-23";
 export const FHFA_HIGH_COST_CEILING_2026 = 1_249_125;
-export const HIGH_PURCHASE_LTV = 0.97;
+/** Sketch high-LTV flag when LTV > 80%. Not a max LTV cell. Do not restore 97%. */
+export const HIGH_PURCHASE_LTV = 0.8;
+export const HIGH_SKETCH_LTV = HIGH_PURCHASE_LTV;
 
-export type GuidelineStatus = "supported" | "partial" | "unsupported";
+export type GuidelineStatus = "working" | "partial" | "empty-as-thin";
 export type GuidelineAction = "stay" | "escalate";
 export type CompletenessLayer = "sketch" | "documented" | "agency_partial";
 
@@ -192,6 +194,20 @@ export type FileFacts = {
   statedMonthlyDebts?: number;
   statedAvailableAssets?: number;
   propertyType?: "sfr" | "condo" | "two_to_four";
+  manufactured?: boolean;
+  coop?: boolean;
+  pud?: boolean;
+  condoNewOrConverted?: boolean;
+  condoDeveloperControl?: boolean;
+  condoHasProjectFacts?: boolean;
+  condoHasHoaDocs?: boolean;
+  condoIneligibleNamed?: boolean;
+  rentalNamed?: boolean;
+  hasScheduleE?: boolean;
+  hasLease?: boolean;
+  unsupportedRental?: boolean;
+  subordinateBalance?: number;
+  citizenship?: "us_citizen" | "permanent_resident" | "other";
   subjectAddress?: string;
   statedTimeOnJob?: number;
   statedCurrentHousing?: number;
@@ -251,33 +267,46 @@ export const NEVER_SAY = [
 const NEVER_SAY_LIST = [...NEVER_SAY];
 
 export const INVESTMENT_CAUTION = "Investment occupancy. Pricing waits.";
-export const CASH_OUT_CAUTION =
-  "You want cash from the refinance. I can keep preparing this file. Pricing waits.";
-export const CASH_OUT_FLAG_CAUTION = "You want cash from the refinance. Pricing waits.";
+export const CASH_OUT_CAUTION = "You want cash from the refinance. Pricing waits.";
+export const CASH_OUT_FLAG_CAUTION = CASH_OUT_CAUTION;
 export const HIGH_LTV_CAUTION = "This loan is a large share of the price. I’ll keep gathering.";
 export const JUMBO_CEILING_LINE =
   "This loan is above the 2026 high-cost ceiling. I can treat it as jumbo if you want.";
 export const GOVVIE_LINE =
-  "That’s a government program. I can keep the sketch. A licensed originator can take that path.";
+  "That’s a government loan. I can keep this sketch. Pricing waits.";
 export const DISTRESS_LINE = "I can keep preparing this file. Pricing waits.";
 export const LOW_CREDIT_CAUTION = "I’ll keep gathering. Pricing waits.";
+export const SECOND_HOME_CAUTION = "Second home. I’ll keep gathering.";
+export const TWO_TO_FOUR_CAUTION = "Two-to-four unit. I’ll keep gathering.";
+export const MANUFACTURED_CAUTION = "Manufactured home. I’ll keep gathering.";
+export const CONDO_NON_WARRANTABLE_CAUTION =
+  "This condo looks like it needs a licensed review. I can keep preparing the file.";
+export const RENTAL_UNSUPPORTED_CAUTION =
+  "I don’t have a rental path for that yet. I’ll keep gathering.";
 export const READINESS_STRONG =
-  "Based on everything so far, this looks like it would qualify under conventional guidelines. Final underwriting still decides.";
+  "This file looks conventionally strong enough to keep moving. Final underwriting still decides.";
 export const READINESS_UW_REVIEW = "I can run this past underwriting before we go further.";
-export const READINESS_THIN_PREFIX = "Not enough yet to tell. Still useful: ";
-export const READINESS_NOT_READY_PREFIX = "This does not look ready yet.";
+export const READINESS_THIN_PREFIX = "This file is still thin. ";
+export const READINESS_NOT_READY_PREFIX = "Not ready yet — ";
+export const LOAN_OVER_PRICE_LINE =
+  "The loan is larger than the purchase price. Want to change the price, the down payment, or the loan?";
+export const BANK_STATEMENT_WOULD_HELP = "A recent bank statement would help.";
+export const LAST_YEAR_RETURN_WOULD_HELP = "Last year’s tax return would help.";
+export const RENTAL_DOCS_WOULD_HELP = "A Schedule E or a current lease would help.";
+export const CONDO_HOA_WOULD_HELP = "HOA questionnaire or condo project docs.";
+export const CONFLICT_NOT_READY = "The File has a conflict on this number.";
 export const COST_LINE =
   "I don’t have a live fee quote. The preview rate is not live. I won’t invent a closing-cost number.";
 export const ACR_BENEFITS_LINE =
   "Fox keeps working after close. On-time payments earn a calculated reward. When the numbers are strong, Fox can help save more, use equity, or prepare another property. When the timing is wrong, Fox waits.";
 export const TIMELINE_LINE = "No close date yet. Sketch now, documents next, review after Proceed.";
 export const PHONE_LINE = "Yes. Same file on your phone — type below or tap a reply.";
-export const LOAN_OVER_PRICE_TEMPLATE =
-  "The loan is {loanAmount} on a {purchasePrice} price. That usually means the price or the loan amount is wrong. I can edit either one.";
+export const LOAN_OVER_PRICE_TEMPLATE = LOAN_OVER_PRICE_LINE;
 export const ESCALATE_LINE =
   "A licensed originator is on this exception. I stay here. I’ll put their result in this thread.";
 export const STAY_LINE = "I stay on this file.";
 export const NOTHING_URGENT_MISSING = "Nothing urgent missing.";
+export const OTHER_REO_MORTGAGE_STATEMENTS = "Mortgage statements for all properties owned.";
 export const LTV_NOT_A_DECISION = "Not a decision";
 export const EMPLOYER_MISMATCH_LINE =
   "The stub employer and the W-2 employer don’t match. I didn’t invent a second job. Confirm if these are two jobs.";
@@ -365,6 +394,33 @@ const CITE_FHFA_2026: AgencyCite = {
   verified: true,
 };
 
+const CITE_FNMA_RENTAL_E: AgencyCite = {
+  agency: "fnma",
+  id: "B3-3.8-01",
+  title: "Rental Income",
+  url: "https://selling-guide.fanniemae.com/sel/b3-3.8-01/rental-income",
+  asOf: CONVENTIONAL_KNOWLEDGE_STORE_AS_OF,
+  verified: true,
+};
+
+const CITE_FNMA_LEASE: AgencyCite = {
+  agency: "fnma",
+  id: "B3-3.6-05",
+  title: "Documentation Requirements for Current Housing Expense",
+  url: "https://selling-guide.fanniemae.com/sel/b3-3.6-05/documentation-requirements",
+  asOf: CONVENTIONAL_KNOWLEDGE_STORE_AS_OF,
+  verified: true,
+};
+
+const CITE_FNMA_CONDO: AgencyCite = {
+  agency: "fnma",
+  id: "B4-2.1-01",
+  title: "General Information on Project Standards",
+  url: "https://selling-guide.fanniemae.com/sel/b4-2.1-01/general-information-project-standards",
+  asOf: CONVENTIONAL_KNOWLEDGE_STORE_AS_OF,
+  verified: true,
+};
+
 const INCOME_NUMBERS_STAY = "Income numbers stay in the income module. This store never recalculates income.";
 const READINESS_SUGGEST = "Readiness from the File. Final underwriting still decides.";
 
@@ -406,7 +462,7 @@ const LOCKED_REMAINDER = [
 export const TOPICS: Record<string, Topic> = {
   "purpose.purchase": topic(
     "purpose.purchase",
-    "supported",
+    "working",
     [CITE_FNMA_PURCHASE],
     ["ID", "income docs", "address", "contract", "bank statement"],
     "Prepare a purchase file. Pricing waits until the sketch is ready.",
@@ -415,7 +471,7 @@ export const TOPICS: Record<string, Topic> = {
   ),
   "purpose.lcor": topic(
     "purpose.lcor",
-    "supported",
+    "working",
     [CITE_FNMA_LCOR],
     ["ID", "income docs", "address", "mortgage statement"],
     "Prepare a refinance file without cash out.",
@@ -433,7 +489,7 @@ export const TOPICS: Record<string, Topic> = {
   ),
   "occupancy.primary": topic(
     "occupancy.primary",
-    "supported",
+    "working",
     [CITE_FNMA_OCCUPANCY],
     ["occupancy"],
     "Primary use. Keep gathering.",
@@ -446,8 +502,8 @@ export const TOPICS: Record<string, Topic> = {
     [CITE_FNMA_OCCUPANCY],
     ["occupancy"],
     "Second-home use. Keep gathering.",
-    "",
-    "Second-home occupancy. I can keep preparing this file.",
+    SECOND_HOME_CAUTION,
+    SECOND_HOME_CAUTION,
   ),
   "occupancy.investment": topic(
     "occupancy.investment",
@@ -460,7 +516,16 @@ export const TOPICS: Record<string, Topic> = {
   ),
   "income.w2_base": topic(
     "income.w2_base",
-    "supported",
+    "working",
+    [CITE_FNMA_INCOME, CITE_FNMA_WAGE_DOCS],
+    ["income docs", "employer/business"],
+    INCOME_NUMBERS_STAY,
+    "",
+    "W-2 income stays on the income module.",
+  ),
+  "income.w2": topic(
+    "income.w2",
+    "working",
     [CITE_FNMA_INCOME, CITE_FNMA_WAGE_DOCS],
     ["income docs", "employer/business"],
     INCOME_NUMBERS_STAY,
@@ -494,6 +559,15 @@ export const TOPICS: Record<string, Topic> = {
     "",
     "Self-employed income stays on the income module.",
   ),
+  "income.se_1084": topic(
+    "income.se_1084",
+    "partial",
+    [CITE_FNMA_INCOME],
+    ["income docs", "employer/business", "SE years"],
+    INCOME_NUMBERS_STAY,
+    "",
+    "Self-employed income stays on the income module.",
+  ),
   "income.k1_ordinary": topic(
     "income.k1_ordinary",
     "partial",
@@ -512,8 +586,44 @@ export const TOPICS: Record<string, Topic> = {
     "",
     "Combined income stays on the income module.",
   ),
+  "income.rental_sche": topic(
+    "income.rental_sche",
+    "partial",
+    [CITE_FNMA_RENTAL_E],
+    ["Schedule E"],
+    "Schedule E 12-month average plus add-backs. Confirm before write. Not qualifying income.",
+    "",
+    RENTAL_DOCS_WOULD_HELP,
+  ),
+  "income.rental_lease": topic(
+    "income.rental_lease",
+    "partial",
+    [CITE_FNMA_LEASE],
+    ["lease"],
+    "75% of gross monthly rent. Confirm before write. Not qualifying income.",
+    "",
+    RENTAL_DOCS_WOULD_HELP,
+  ),
+  "income.rental_thin": topic(
+    "income.rental_thin",
+    "empty-as-thin",
+    [CITE_FNMA_RENTAL_E, CITE_FNMA_LEASE],
+    ["Schedule E", "lease"],
+    "Wait. A Schedule E or a current lease would help.",
+    RENTAL_UNSUPPORTED_CAUTION,
+    RENTAL_DOCS_WOULD_HELP,
+  ),
   "credit.stated_range": topic(
     "credit.stated_range",
+    "partial",
+    [],
+    ["stated credit range"],
+    "A stated range for the sketch. Not a pull.",
+    LOW_CREDIT_CAUTION,
+    "That’s a stated range. I can keep gathering.",
+  ),
+  "credit.stated": topic(
+    "credit.stated",
     "partial",
     [],
     ["stated credit range"],
@@ -525,10 +635,38 @@ export const TOPICS: Record<string, Topic> = {
     "ltv.sketch",
     "partial",
     [CITE_FNMA_LTV, CITE_FNMA_PURCHASE],
-    ["purchase price", "down payment", "loan amount"],
-    "Sketch LTV only. Not a decision.",
+    ["purchase price", "down payment", "loan amount", "property value"],
+    "Sketch LTV only — loan/price or loan/value. Not a decision.",
+    "",
+    LTV_NOT_A_DECISION,
+  ),
+  "ltv.high": topic(
+    "ltv.high",
+    "partial",
+    [CITE_FNMA_LTV],
+    ["purchase price", "loan amount"],
+    "Sketch LTV above 80%. Label, not a decision.",
     HIGH_LTV_CAUTION,
     HIGH_LTV_CAUTION,
+  ),
+  "ltv.ceiling": topic(
+    "ltv.ceiling",
+    "partial",
+    [CITE_FHFA_2026],
+    ["loan amount"],
+    "Above the 2026 high-cost ceiling, offer jumbo once.",
+    JUMBO_CEILING_LINE,
+    JUMBO_CEILING_LINE,
+  ),
+  "ltv.loan_over_price": topic(
+    "ltv.loan_over_price",
+    "partial",
+    [CITE_FNMA_PURCHASE],
+    ["purchase price", "loan amount"],
+    "Number-check first. Escalate only if intentional.",
+    "",
+    LOAN_OVER_PRICE_LINE,
+    ["a number under the purchase price works"],
   ),
   "loan_limits.2026": topic(
     "loan_limits.2026",
@@ -539,9 +677,117 @@ export const TOPICS: Record<string, Topic> = {
     JUMBO_CEILING_LINE,
     JUMBO_CEILING_LINE,
   ),
+  "assets.summary": topic(
+    "assets.summary",
+    "partial",
+    [],
+    ["bank statement"],
+    "Confirmed assets vs down. Empty-as-thin if no statement.",
+    "",
+    BANK_STATEMENT_WOULD_HELP,
+  ),
+  "declarations.late": topic(
+    "declarations.late",
+    "empty-as-thin",
+    [],
+    [],
+    "Declarations stay late. Citizenship is a late File value only.",
+    "",
+    STAY_LINE,
+  ),
+  "declarations.distress": topic(
+    "declarations.distress",
+    "empty-as-thin",
+    [],
+    [],
+    "Volunteer BK / FC is a quiet flag only. No clocks.",
+    DISTRESS_LINE,
+    DISTRESS_LINE,
+  ),
+  "property.1unit": topic(
+    "property.1unit",
+    "working",
+    [],
+    ["property type"],
+    "One-unit. Keep gathering.",
+    "",
+    STAY_LINE,
+  ),
+  "property.2to4": topic(
+    "property.2to4",
+    "partial",
+    [],
+    ["property type"],
+    "Two-to-four unit. Keep gathering.",
+    TWO_TO_FOUR_CAUTION,
+    TWO_TO_FOUR_CAUTION,
+  ),
+  "property.manufactured": topic(
+    "property.manufactured",
+    "partial",
+    [],
+    ["property type"],
+    "Manufactured home. Keep gathering.",
+    MANUFACTURED_CAUTION,
+    MANUFACTURED_CAUTION,
+  ),
+  "condo.warrantable": topic(
+    "condo.warrantable",
+    "working",
+    [CITE_FNMA_CONDO],
+    [],
+    "Internal only. Do not announce warrantable or approved.",
+    "",
+    "",
+  ),
+  "condo.needs_review": topic(
+    "condo.needs_review",
+    "empty-as-thin",
+    [CITE_FNMA_CONDO],
+    ["HOA questionnaire", "condo project docs"],
+    "Stay. Still useful: HOA questionnaire or condo project docs.",
+    "",
+    CONDO_HOA_WOULD_HELP,
+  ),
+  "condo.non_warrantable": topic(
+    "condo.non_warrantable",
+    "partial",
+    [CITE_FNMA_CONDO],
+    [],
+    "Named ineligible signal. Stay. Not a denial.",
+    CONDO_NON_WARRANTABLE_CAUTION,
+    CONDO_NON_WARRANTABLE_CAUTION,
+  ),
+  "overlay.cashout": topic(
+    "overlay.cashout",
+    "partial",
+    [CITE_FNMA_CASH_OUT],
+    ["ID", "income docs", "address", "mortgage statement", "bank statement"],
+    "Prepare the refinance file. Pricing waits.",
+    CASH_OUT_CAUTION,
+    CASH_OUT_CAUTION,
+  ),
+  "overlay.investment": topic(
+    "overlay.investment",
+    "partial",
+    [CITE_FNMA_OCCUPANCY],
+    ["occupancy"],
+    "Investment use. Pricing waits. Rental income does not clear this flag.",
+    INVESTMENT_CAUTION,
+    INVESTMENT_CAUTION,
+  ),
+  "overlay.high_ltv": topic(
+    "overlay.high_ltv",
+    "partial",
+    [CITE_FNMA_LTV],
+    ["purchase price", "loan amount"],
+    "Sketch LTV above 80%. Label, not a decision.",
+    HIGH_LTV_CAUTION,
+    HIGH_LTV_CAUTION,
+  ),
   "flags.distress": topic(
     "flags.distress",
-    "unsupported",
+    "empty-as-thin",
     [],
     [],
     "Keep preparing. Pricing waits.",
@@ -550,7 +796,7 @@ export const TOPICS: Record<string, Topic> = {
   ),
   "flags.govvie": topic(
     "flags.govvie",
-    "unsupported",
+    "empty-as-thin",
     [],
     [],
     "Keep the conventional sketch. No government-program rules in this store.",
@@ -559,16 +805,16 @@ export const TOPICS: Record<string, Topic> = {
   ),
   "language.will_i_qualify": topic(
     "language.will_i_qualify",
-    "unsupported",
+    "empty-as-thin",
     [],
     LOCKED_REMAINDER.slice(),
     READINESS_SUGGEST,
     "",
-    READINESS_UW_REVIEW,
+    READINESS_STRONG,
   ),
   "language.cost": topic(
     "language.cost",
-    "unsupported",
+    "empty-as-thin",
     [],
     [],
     "No invented fee, rate, or closing-cost number.",
@@ -577,7 +823,7 @@ export const TOPICS: Record<string, Topic> = {
   ),
   "language.acr_benefits": topic(
     "language.acr_benefits",
-    "unsupported",
+    "empty-as-thin",
     [],
     [],
     "Relationship-start copy stays locked.",
@@ -586,7 +832,7 @@ export const TOPICS: Record<string, Topic> = {
   ),
   "language.timeline": topic(
     "language.timeline",
-    "unsupported",
+    "empty-as-thin",
     [],
     [],
     "No invented close date.",
@@ -595,7 +841,7 @@ export const TOPICS: Record<string, Topic> = {
   ),
   "language.phone": topic(
     "language.phone",
-    "unsupported",
+    "empty-as-thin",
     [],
     [],
     "Same file on the phone.",
@@ -607,9 +853,9 @@ export const TOPICS: Record<string, Topic> = {
     "partial",
     [CITE_FNMA_PURCHASE],
     ["purchase price", "loan amount"],
-    "Write both numbers. This usually means the price or the loan amount is wrong. Offer an edit. Escalate only if they confirm it is intentional.",
+    "Number-check first. Escalate only if they confirm it is intentional.",
     "",
-    LOAN_OVER_PRICE_TEMPLATE,
+    LOAN_OVER_PRICE_LINE,
     ["a number under the purchase price works"],
   ),
 };
@@ -630,10 +876,52 @@ function purchaseLoan(file: FileFacts): number | null {
 export function sketchedPurchaseLtvFromFacts(file: FileFacts): number | null {
   const purchase = file.purposeHint === "purchase" || file.product === "buy";
   if (!purchase) return null;
-  const price = file.purchasePrice ?? file.propertyValue;
-  const loan = purchaseLoan(file);
-  if (price == null || price <= 0 || loan == null || loan <= 0) return null;
-  return loan / price;
+  return sketchedLtvFromFacts(file);
+}
+
+/** Formula only: loan/price or loan/value. Label, not a decision. */
+export function sketchedLtvFromFacts(file: FileFacts): number | null {
+  const value = file.purchasePrice ?? file.propertyValue;
+  const loan = file.loanAmount ?? purchaseLoan(file);
+  if (value == null || value <= 0 || loan == null || loan <= 0) return null;
+  return loan / value;
+}
+
+/** Typed hook only. Do not invent a CLTV decision. */
+export function sketchedCltvFromFacts(file: FileFacts): number | null {
+  if (file.subordinateBalance == null || file.subordinateBalance <= 0) return null;
+  const value = file.purchasePrice ?? file.propertyValue;
+  const loan = file.loanAmount ?? purchaseLoan(file);
+  if (value == null || value <= 0 || loan == null || loan <= 0) return null;
+  return (loan + file.subordinateBalance) / value;
+}
+
+export type CondoFlag = "warrantable" | "needs_review" | "non_warrantable";
+
+const CONDO_INELIGIBLE =
+  /\b(hotel|condotel|resort|timeshare|fractional|houseboat|continuing care|rental pooling|critical repairs?|evacuation|insolvency)\b/i;
+
+export function namedCondoIneligible(text?: string | null): boolean {
+  return Boolean(text && CONDO_INELIGIBLE.test(text));
+}
+
+/** Three values only. No project-review engine. No CPM/PERS. */
+export function condoFlag(file: FileFacts): CondoFlag | undefined {
+  if (file.coop) return "needs_review";
+  if (file.pud && file.propertyType !== "condo") return undefined;
+  if (file.propertyType !== "condo" && !file.condoIneligibleNamed) return undefined;
+  if (file.condoIneligibleNamed) return "non_warrantable";
+  if (file.propertyType !== "condo") return undefined;
+  if (
+    file.condoNewOrConverted ||
+    file.condoDeveloperControl ||
+    file.condoHasProjectFacts === false ||
+    file.condoHasHoaDocs === false ||
+    (!file.condoHasHoaDocs && !file.condoHasProjectFacts)
+  ) {
+    return "needs_review";
+  }
+  return "warrantable";
 }
 
 function lowestCreditBand(band?: string) {
@@ -684,21 +972,28 @@ export function renderStoreLine(template: string, file: FileFacts) {
 }
 
 export function flags(file: FileFacts): { caution?: string; previewRateAllowed: boolean } {
-  const ltv = sketchedPurchaseLtvFromFacts(file);
+  const ltv = sketchedLtvFromFacts(file);
+  const condo = condoFlag(file);
   let caution: string | undefined;
-  if (file.occupancy === "investment") caution = INVESTMENT_CAUTION;
+  if (lowestCreditBand(file.statedCreditBand)) caution = LOW_CREDIT_CAUTION;
+  else if (file.namedGovvie || file.govProgram) caution = GOVVIE_LINE;
   else if (file.purposeHint === "cash_out") caution = CASH_OUT_CAUTION;
+  else if (file.occupancy === "investment") caution = INVESTMENT_CAUTION;
+  else if (file.occupancy === "second" || file.occupancy === "second-home") caution = SECOND_HOME_CAUTION;
   else if (ltv != null && ltv > HIGH_PURCHASE_LTV && ltv <= 1) caution = HIGH_LTV_CAUTION;
   else if (loanAboveCeiling(file)) caution = JUMBO_CEILING_LINE;
-  else if (file.namedGovvie) caution = GOVVIE_LINE;
-  else if (file.namedDistress) caution = DISTRESS_LINE;
-  else if (lowestCreditBand(file.statedCreditBand)) caution = LOW_CREDIT_CAUTION;
+  else if (file.namedDistress || file.statedDeclaration === "event") caution = DISTRESS_LINE;
+  else if (file.propertyType === "two_to_four") caution = TWO_TO_FOUR_CAUTION;
+  else if (file.manufactured) caution = MANUFACTURED_CAUTION;
+  else if (condo === "non_warrantable") caution = CONDO_NON_WARRANTABLE_CAUTION;
+  else if (file.unsupportedRental) caution = RENTAL_UNSUPPORTED_CAUTION;
 
   const previewRateAllowed =
     conventionalPurchaseOrRefi(file) &&
     file.occupancy !== "investment" &&
     file.purposeHint !== "cash_out" &&
     !file.namedGovvie &&
+    !file.govProgram &&
     !file.namedDistress &&
     !lowestCreditBand(file.statedCreditBand) &&
     !loanAboveCeiling(file) &&
@@ -742,7 +1037,7 @@ export function lookup(
     return {
       topic: topic(
         topicId,
-        "unsupported",
+        "empty-as-thin",
         [],
         [],
         "I can prepare a file.",
@@ -885,7 +1180,26 @@ export function completeness(
   }
   if (file.statedHousehold === "with_someone") stillUseful.push("other borrower details");
   if (file.incomeType && !file.statedOtherReo) stillUseful.push("other real estate");
-  if (file.statedOtherReo === "yes") stillUseful.push("other property details");
+  if (file.statedOtherReo === "yes") {
+    stillUseful.push("other property details");
+    if (!received.has("mortgage_statement")) stillUseful.push(OTHER_REO_MORTGAGE_STATEMENTS);
+  }
+  if (seLike(file.incomeType) && taxReturns < 1) {
+    const idx = stillUseful.indexOf(DOCUMENTED_STILL_USEFUL.tax_return);
+    if (idx >= 0) stillUseful[idx] = LAST_YEAR_RETURN_WOULD_HELP;
+    else stillUseful.push(LAST_YEAR_RETURN_WOULD_HELP);
+  }
+  if (fundsShortOfDown(file) && !received.has("bank_statement")) {
+    const idx = stillUseful.indexOf(DOCUMENTED_STILL_USEFUL.bank_statement);
+    if (idx >= 0) stillUseful[idx] = BANK_STATEMENT_WOULD_HELP;
+    else stillUseful.push(BANK_STATEMENT_WOULD_HELP);
+  }
+  if ((file.rentalNamed || file.occupancy === "investment") && !file.hasScheduleE && !file.hasLease) {
+    stillUseful.push(RENTAL_DOCS_WOULD_HELP);
+  }
+  if (condoFlag(file) === "needs_review") {
+    stillUseful.push(CONDO_HOA_WOULD_HELP);
+  }
 
   const hasSketch = Boolean(file.purchasePrice || file.loanAmount || file.propertyValue);
   const incomeReady = incomeDocsReceived(file.incomeType, received);
@@ -993,18 +1307,6 @@ export function fundsShortLine(file: FileFacts): string | undefined {
   if (!fundsShortOfDown(file) || file.downPayment == null) return undefined;
   return notReadyLine(
     `Available funds look short of the ${moneyShown(file.downPayment)} down payment.`,
-    "More cash to close would likely help.",
-  );
-}
-
-function someIncomeDocsReceived(file: CompletenessFile) {
-  const received = receivedSet(file);
-  return (
-    received.has("paystub") ||
-    received.has("w2") ||
-    received.has("tax_return") ||
-    (file.w2Count ?? 0) > 0 ||
-    taxReturnsOnFile(file) > 0
   );
 }
 
@@ -1071,14 +1373,6 @@ function missingIncomeDocReason(file: CompletenessFile): string | undefined {
     : `${capitalizePhrase(named)} are still missing.`;
 }
 
-function missingIncomeDocFix(file: CompletenessFile): string {
-  const debt = namedDebtOnFile(file);
-  if (debt) return `Paying off ${debt} would likely help.`;
-  const missing = missingRequiredIncomeDocs(file);
-  if (!missing.length) return "Those income docs would likely help.";
-  return `${capitalizePhrase(joinMissingDocs(missing))} would likely help.`;
-}
-
 function productMismatchReason(file: FileFacts): string | undefined {
   if (file.govProgram === "fha") return "That’s an FHA path.";
   if (file.govProgram === "va") return "That’s a VA path.";
@@ -1090,34 +1384,24 @@ function productMismatchReason(file: FileFacts): string | undefined {
   return undefined;
 }
 
-function readinessFix(file: FileFacts, kind: "ltv" | "docs" | "product" | "dti"): string {
-  const debt = namedDebtOnFile(file);
-  if (debt) return `Paying off ${debt} would likely help.`;
-  if (kind === "ltv" || kind === "dti") return "More down payment would likely help.";
-  if (kind === "docs") return "Those income docs would likely help.";
-  return "A conventional file would likely help.";
+function notReadyLine(reason: string): string {
+  const cited = reason.replace(/\.$/, "");
+  return `${READINESS_NOT_READY_PREFIX}${cited}.`;
 }
 
-function notReadyLine(reason: string, fix: string): string {
-  return `${READINESS_NOT_READY_PREFIX} ${reason} ${fix}`;
+function oneStillUseful(file: CompletenessFile): string {
+  const condo = condoFlag(file);
+  if (condo === "needs_review" && layer1SketchPresent(file) && incomeDocumentedEnough(file)) {
+    return CONDO_HOA_WOULD_HELP;
+  }
+  const list = completeness(file.product ?? "", file).stillUseful;
+  if (!list.length) return NOTHING_URGENT_MISSING;
+  const first = list[0];
+  return first.endsWith(".") ? first : `${first}.`;
 }
 
 function thinLine(file: CompletenessFile): string {
-  const product = file.product ?? "";
-  const list = completeness(product, file).stillUseful;
-  const shown = (list.length ? list.join(" · ") : NOTHING_URGENT_MISSING).replace(/\.$/, "");
-  return `${READINESS_THIN_PREFIX}${shown}.`;
-}
-
-function outsideNormalPattern(file: CompletenessFile) {
-  if (file.occupancy === "investment") return true;
-  if (file.purposeHint === "cash_out") return true;
-  if (file.namedDistress || file.statedDeclaration === "event") return true;
-  if (file.state && file.state !== "CA") return true;
-  if (lowestCreditBand(file.statedCreditBand)) return true;
-  if (loanAboveCeiling(file) && file.product !== "jumbo") return true;
-  if (file.incomeType === "other" && someIncomeDocsReceived(file)) return true;
-  return false;
+  return `${READINESS_THIN_PREFIX}${oneStillUseful(file)}`;
 }
 
 function strongEligible(file: CompletenessFile) {
@@ -1126,53 +1410,59 @@ function strongEligible(file: CompletenessFile) {
   if (!layer1SketchPresent(file)) return false;
   if (!incomeDocumentedEnough(file)) return false;
   if (file.occupancy === "investment") return false;
-  if (file.propertyType === "condo" || file.propertyType === "two_to_four") return false;
+  if (file.occupancy === "second" || file.occupancy === "second-home") return false;
+  if (file.propertyType === "two_to_four" || file.manufactured) return false;
+  const condo = condoFlag(file);
+  if (condo === "needs_review" || condo === "non_warrantable") return false;
   if (file.statedTimeOnJob != null && file.statedTimeOnJob < 24) return false;
   if (file.purposeHint === "cash_out") return false;
   if (file.namedGovvie || file.govProgram) return false;
   if (file.namedDistress || file.statedDeclaration === "event") return false;
+  if (file.unsupportedRental) return false;
   if (file.unresolvedConflict) return false;
   if (loanExceedsPrice(file)) return false;
-  const ltv = sketchedPurchaseLtvFromFacts(file);
+  const ltv = sketchedLtvFromFacts(file);
   if (ltv != null && ltv > HIGH_PURCHASE_LTV) return false;
   if (lowestCreditBand(file.statedCreditBand)) return false;
   if (loanAboveCeiling(file)) return false;
   return true;
 }
 
-/** File-based will-I-qualify / readiness pick. Never recalculates income. */
+function flagAsNotReadyReason(file: FileFacts): string | undefined {
+  const flagged = flags(file).caution;
+  return flagged;
+}
+
+/** File-based will-I-qualify / readiness pick. Three shapes only. Never recalculates income. */
 export function readinessFromFile(file: FileFacts): ReadinessRead {
   const complete: CompletenessFile = file;
   if (file.unresolvedConflict) {
-    return { kind: "uw_review", line: READINESS_UW_REVIEW, reason: "unresolvedConflict" };
+    return { kind: "not_ready", line: notReadyLine(CONFLICT_NOT_READY), reason: "unresolvedConflict" };
   }
   if (loanExceedsPrice(file)) {
     return {
-      kind: "uw_review",
-      line: READINESS_UW_REVIEW,
+      kind: "not_ready",
+      line: notReadyLine("The loan is larger than the purchase price."),
       reason: file.commitmentRequired ? "loanExceedsPrice-intentional" : "loanExceedsPrice",
     };
-  }
-  if (outsideNormalPattern(complete)) {
-    return { kind: "uw_review", line: READINESS_UW_REVIEW, reason: "outside-pattern" };
   }
 
   const mismatch = productMismatchReason(file);
   if (mismatch) {
-    return {
-      kind: "not_ready",
-      line: notReadyLine(mismatch, readinessFix(file, "product")),
-      reason: mismatch,
-    };
+    return { kind: "not_ready", line: notReadyLine(mismatch), reason: mismatch };
   }
 
-  const ltv = sketchedPurchaseLtvFromFacts(file);
-  if (ltv != null && ltv > HIGH_PURCHASE_LTV && ltv <= 1) {
-    return {
-      kind: "not_ready",
-      line: notReadyLine("This loan is a large share of the price.", readinessFix(file, "ltv")),
-      reason: "high-ltv",
-    };
+  if (!layer1SketchPresent(complete)) {
+    return { kind: "thin", line: thinLine(complete), reason: "thin-file" };
+  }
+
+  if (
+    file.incomeType &&
+    !incomeDocumentedEnough(complete) &&
+    missingRequiredIncomeDocs(complete).length
+  ) {
+    const reason = missingIncomeDocReason(complete) ?? "Income docs for this path are still missing.";
+    return { kind: "not_ready", line: notReadyLine(reason), reason };
   }
 
   const fundsShort = fundsShortLine(file);
@@ -1180,53 +1470,29 @@ export function readinessFromFile(file: FileFacts): ReadinessRead {
     return { kind: "not_ready", line: fundsShort, reason: "funds-short" };
   }
 
-  if (file.propertyType === "condo" || file.propertyType === "two_to_four") {
-    return { kind: "uw_review", line: READINESS_UW_REVIEW, reason: "property-type" };
-  }
-
-  if (file.statedTimeOnJob != null && file.statedTimeOnJob < 24) {
-    return { kind: "uw_review", line: READINESS_UW_REVIEW, reason: "time-on-job" };
-  }
-
-  if (
-    file.incomeType &&
-    layer1SketchPresent(complete) &&
-    !incomeDocumentedEnough(complete) &&
-    missingRequiredIncomeDocs(complete).length
-  ) {
-    const reason = missingIncomeDocReason(complete) ?? "Income docs for this path are still missing.";
+  if (file.obviousHighDti || obviouslyLargeStatedDebts(file)) {
     return {
       kind: "not_ready",
-      line: notReadyLine(reason, missingIncomeDocFix(complete)),
-      reason,
-    };
-  }
-
-  if (file.obviousHighDti && namedDebtOnFile(file)) {
-    const debt = namedDebtOnFile(file)!;
-    return {
-      kind: "not_ready",
-      line: notReadyLine("Debts on this file look high.", `Paying off ${debt} would likely help.`),
+      line: notReadyLine("Debts on this file look high."),
       reason: "high-dti",
     };
   }
 
-  if (obviouslyLargeStatedDebts(file)) {
-    const debt = namedDebtOnFile(file);
-    if (debt) {
-      return {
-        kind: "not_ready",
-        line: notReadyLine("Debts on this file look high.", `Paying off ${debt} would likely help.`),
-        reason: "high-stated-debts",
-      };
-    }
-    if (strongEligible(complete)) {
-      return { kind: "uw_review", line: READINESS_UW_REVIEW, reason: "high-stated-debts" };
-    }
+  const condo = condoFlag(complete);
+  if (condo === "needs_review") {
+    return { kind: "thin", line: thinLine(complete), reason: "condo-needs-review" };
+  }
+
+  const caution = flagAsNotReadyReason(file);
+  if (caution) {
+    return { kind: "not_ready", line: notReadyLine(caution), reason: caution };
+  }
+
+  if (file.statedTimeOnJob != null && file.statedTimeOnJob < 24) {
     return {
       kind: "not_ready",
-      line: notReadyLine("Debts on this file look high.", readinessFix(file, "dti")),
-      reason: "high-stated-debts",
+      line: notReadyLine("Time on this job is under two years."),
+      reason: "time-on-job",
     };
   }
 

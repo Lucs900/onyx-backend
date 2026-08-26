@@ -101,7 +101,7 @@ function containsPhrase(haystack: string, phrase: string) {
 }
 
 /** Hard rails: no approve/lock/guaranteed, no invented fees/rates/matrix/county, no LO-will-contact.
- * The locked strong readiness line may say “looks like it would qualify … Final underwriting still decides.” */
+ * will-I-qualify uses the three readiness shapes only. Never say you qualify / you are approved. */
 export function applyHardRails(line: string, file: FileFacts, _neverSay: string[] = []): string {
   let out = line;
   if (loanExceedsPrice(file) && !file.commitmentRequired) {

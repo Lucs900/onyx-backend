@@ -27,6 +27,19 @@ import {
   wageIncomeCaution,
 } from "./qualifyingIncome";
 import {
+  applyRentalIncomeFromExtract,
+  draftHasLease,
+  draftHasScheduleE,
+  draftHasUnsupportedRental,
+  draftRentalNamed,
+} from "./rentalIncome";
+import {
+  CONDO_HOA_WOULD_HELP,
+  RENTAL_DOCS_WOULD_HELP,
+  condoFlag,
+  namedCondoIneligible,
+} from "@/lib/guidelines/conventional";
+import {
   completeness as storeCompleteness,
   conventionalGuidelinePattern,
   documentedStillUsefulIds,
@@ -142,6 +155,7 @@ const MONEY_KEYS = new Set([
   "current_pi",
   "income",
   "qualifying_income",
+  "rental_income",
   "schedule_c_net_profit",
   "depreciation",
   "depletion",
@@ -831,6 +845,7 @@ export function applyExtractedFields(
     fields,
     computed,
   );
+  next = applyRentalIncomeFromExtract(next, extractClass, fields);
   conflict = next.pendingConflict ?? conflict;
   const extractedAssets = extractClass === "bank_statement" ? moneyNumber(fields.ending_balance ?? "") : null;
   if (extractedAssets != null) {
@@ -1335,6 +1350,36 @@ export function completenessFileFromDraft(draft: FoxIntakeDraft): CompletenessFi
     ...(draft.coborrowerName ? { coborrowerName: draft.coborrowerName } : {}),
     ...(draft.borrowerName ? { borrowerName: draft.borrowerName } : {}),
     ...(draft.statedOtherReo ? { statedOtherReo: draft.statedOtherReo } : {}),
+    ...fileGuidelineSignals(draft),
+  };
+}
+
+function fileGuidelineSignals(draft: FoxIntakeDraft): Partial<CompletenessFile> {
+  const text = [
+    ...(draft.notes ?? []),
+    ...Object.values(draft.facts ?? {}).map((fact) => fact.value),
+    draft.incomeType.value,
+    ...(draft.documents ?? []).map((doc) => doc.name),
+  ].join(" ");
+  const hoaDocs = (draft.documents ?? []).some((doc) =>
+    /hoa questionnaire|condo project|project docs/i.test(doc.name),
+  ) || Boolean(draft.facts?.hoa_questionnaire?.value || draft.facts?.condo_project_docs?.value);
+  const projectFacts = Boolean(
+    draft.facts?.condo_project_facts?.value || draft.facts?.project_name?.value,
+  );
+  return {
+    manufactured: /\bmanufactured\b/i.test(text) || Boolean(draft.facts?.manufactured?.value),
+    coop: /\bco-?ops?\b/i.test(text),
+    pud: /\bpud\b/i.test(text) && !/\bcondo/i.test(text),
+    condoNewOrConverted: /\b(new(ly)? converted|new condo|developer control)\b/i.test(text),
+    condoDeveloperControl: /\bdeveloper control\b/i.test(text),
+    condoHasHoaDocs: hoaDocs || undefined,
+    condoHasProjectFacts: projectFacts || undefined,
+    condoIneligibleNamed: namedCondoIneligible(text),
+    rentalNamed: draftRentalNamed(draft),
+    hasScheduleE: draftHasScheduleE(draft),
+    hasLease: draftHasLease(draft),
+    unsupportedRental: draftHasUnsupportedRental(draft),
   };
 }
 
@@ -1459,7 +1504,12 @@ export function stillUsefulSection(draft: FoxIntakeDraft): {
         Boolean(item.foxLine),
     )
     .map((item) => layer2Item(item.id, item.title, item.foxLine));
-  const items = [...conditionItems, ...layer2Plan(draft), ...otherReoStillUsefulItems(draft)];
+  const items = [
+    ...conditionItems,
+    ...layer2Plan(draft),
+    ...otherReoStillUsefulItems(draft),
+    ...guidelineStillUsefulItems(draft),
+  ];
   storeCompleteness(draft.productIntent ?? "", completenessFileFromDraft(draft));
   return { items, empty: items.length === 0 };
 }
@@ -1483,6 +1533,18 @@ function otherReoStillUsefulItems(draft: FoxIntakeDraft): StillUsefulItem[] {
   }
   if (draft.occupancyChoice.value === "investment") {
     items.push(layer2Item("other-reo-lease", "Lease", "A lease still helps this file."));
+  }
+  return items;
+}
+
+function guidelineStillUsefulItems(draft: FoxIntakeDraft): StillUsefulItem[] {
+  const file = completenessFileFromDraft(draft);
+  const items: StillUsefulItem[] = [];
+  if ((file.rentalNamed || file.occupancy === "investment") && !file.hasScheduleE && !file.hasLease) {
+    items.push(layer2Item("rental-docs", RENTAL_DOCS_WOULD_HELP, RENTAL_DOCS_WOULD_HELP));
+  }
+  if (condoFlag(file) === "needs_review") {
+    items.push(layer2Item("condo-hoa", CONDO_HOA_WOULD_HELP, CONDO_HOA_WOULD_HELP));
   }
   return items;
 }

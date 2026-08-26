@@ -105,7 +105,22 @@ import {
   readinessFromFile,
   COST_LINE,
   LOAN_OVER_PRICE_TEMPLATE,
+  SECOND_HOME_CAUTION,
+  TWO_TO_FOUR_CAUTION,
+  MANUFACTURED_CAUTION,
+  CONDO_NON_WARRANTABLE_CAUTION,
+  RENTAL_UNSUPPORTED_CAUTION,
+  CONDO_HOA_WOULD_HELP,
+  RENTAL_DOCS_WOULD_HELP,
+  condoFlag,
+  sketchedLtvFromFacts,
 } from "../lib/guidelines/conventional";
+import {
+  rentalConfirmCopy,
+  suggestLeaseRental,
+  suggestScheduleERental,
+} from "../lib/income/rental";
+import { applyRentalIncomeFromExtract, RENTAL_INCOME_FIELD } from "../components/fox/rentalIncome";
 import { answerFromFile, foxAnswer, interpretQuestion, topicFromFile } from "../lib/guidelines/answer";
 import {
   MOTION_COPY,
@@ -2663,13 +2678,12 @@ const acmeQualifyAsk = workspaceReply("will i qualify", acmeWrite.draft);
 assert.notEqual(acmeQualifyAsk?.capture?.field, "accept-proposal");
 assert.notEqual(acmeQualifyAsk?.capture?.field, "decline-proposal");
 assert.equal(acmeWrite.draft.facts?.qualifying_income, undefined);
-assertAnswerThenRestore(acmeQualifyAsk, /This does not look ready yet\./, {
+assertAnswerThenRestore(acmeQualifyAsk, /Not ready yet —/, {
   text: /9,167/,
   labels: ["Use this", "Change"],
 });
 assert.match(acmeQualifyAsk?.text ?? "", /biweekly period × 26 \/ 12/);
 assert.match(acmeQualifyAsk?.text ?? "", /A W-2 is still missing/);
-assert.match(acmeQualifyAsk?.text ?? "", /A W-2 would likely help/);
 assert.doesNotMatch(stripReadinessAnswer(acmeQualifyAsk?.text ?? ""), /you qualify|you are approved|you don’t qualify/i);
 assert.equal(resolveProposal(acmeWrite.draft, "accept").facts?.qualifying_income?.value, "9167");
 assert.equal(resolveProposal(acmeWrite.draft, "decline").facts?.qualifying_income, undefined);
@@ -2720,9 +2734,9 @@ assert.equal(storeEscalate({ unresolvedConflict: true }).action, "escalate");
 assert.equal(storeEscalate({ unresolvedConflict: true }).reason, "unresolvedConflict");
 assert.match(KEEP_BOTH_LINE, /licensed originator is on this exception/);
 assert.doesNotMatch(KEEP_BOTH_LINE, /LO will contact you|you qualify|approved/i);
-assert.equal(foxAnswer("will i qualify", factsFromDraft(keepBoth))?.text, READINESS_UW_REVIEW);
+assert.match(foxAnswer("will i qualify", factsFromDraft(keepBoth))?.text ?? "", /Not ready yet — The File has a conflict on this number\./);
 const keepBothQualify = workspaceReply("will i qualify", keepBoth);
-assertAnswerThenRestore(keepBothQualify, /I can run this past underwriting before we go further/, {
+assertAnswerThenRestore(keepBothQualify, /Not ready yet — The File has a conflict on this number\./, {
   labels: (nextFoxAsk(keepBoth).actions ?? []).map((item) => item.label).filter(Boolean),
 });
 const keepBothReply = workspaceReply("keep both", incomeConflict.draft);
@@ -3158,8 +3172,10 @@ function stripReadinessAnswer(text: string) {
   return text
     .replace(READINESS_STRONG, "")
     .replace(READINESS_UW_REVIEW, "")
+    .replace(/This file is still thin\. [^.]*\./, "")
+    .replace(/Not ready yet — [^.]*\./, "")
     .replace(/Not enough yet to tell\. Still useful: [^.]*\./, "")
-    .replace(/This does not look ready yet\.[^.]*\.[^.]*\./, "");
+    .replace(/Not ready yet —[^.]*\.[^.]*\./, "");
 }
 
 function assertAnswerThenRestore(
@@ -3182,7 +3198,7 @@ const atOccupancy = draft({ path: "acr", productIntent: "buy" });
 const occupancyChips = (workspacePromptCopy("occupancy", atOccupancy).actions ?? []).map(
   (item) => item.label,
 );
-assertAnswerThenRestore(workspaceReply("will i qualify", atOccupancy), /Not enough yet to tell\. Still useful:/, {
+assertAnswerThenRestore(workspaceReply("will i qualify", atOccupancy), /This file is still thin\./, {
   labels: occupancyChips,
 });
 assertAnswerThenRestore(workspaceReply("hi", atOccupancy), /^Hi\./, { labels: occupancyChips });
@@ -3213,7 +3229,7 @@ assertAnswerThenRestore(workspaceReply("when do I close?", atOccupancy), new Reg
 });
 assert.doesNotMatch(workspaceReply("ACR benefits", atOccupancy)?.text ?? "", /I can keep this file current\. Ask anything/);
 assert.doesNotMatch(workspaceReply("closing costs", atOccupancy)?.text ?? "", /%\s*reward|public percent|\$[\d,]+ to \$[\d,]+/i);
-assert.equal(workspaceReply("will i qualify", atOccupancy)?.text?.startsWith("Not enough yet to tell."), true);
+assert.equal(workspaceReply("will i qualify", atOccupancy)?.text?.startsWith("This file is still thin."), true);
 assert.equal(
   workspaceReply("what do I get if I start a relationship", atOccupancy)?.text?.startsWith(ACR_BENEFITS_COPY),
   true,
@@ -3241,12 +3257,12 @@ assert.doesNotMatch(relationshipAtFunds?.text ?? "", /%\s*reward|\$[\d,]+ to \$[
 assertAnswerThenRestore(relationshipAtFunds, new RegExp(ACR_BENEFITS_COPY.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")), {
   labels: ["Use this", "Change"],
 });
-assert.equal(workspaceReply("will i qualify", fundsConfirm)?.text?.startsWith("Not enough yet to tell."), true);
+assert.equal(workspaceReply("will i qualify", fundsConfirm)?.text?.startsWith("This file is still thin."), true);
 assert.equal(workspaceReply("what will this cost me", fundsConfirm)?.text?.startsWith(COST_COPY), true);
 assert.equal(workspaceReply("can I do this on my phone", fundsConfirm)?.text?.startsWith(PHONE_COPY), true);
 
 const creditChips = (workspacePromptCopy("credit", afterFunds).actions ?? []).map((item) => item.label);
-assertAnswerThenRestore(workspaceReply("will i qualify", afterFunds), /Not enough yet to tell\. Still useful:/, {
+assertAnswerThenRestore(workspaceReply("will i qualify", afterFunds), /This file is still thin\./, {
   labels: creditChips,
 });
 assertAnswerThenRestore(
@@ -3270,14 +3286,14 @@ assertAnswerThenRestore(
 );
 
 const docsChips = ["Upload this", "Skip"];
-assertAnswerThenRestore(workspaceReply("will i qualify", afterStartId), /This does not look ready yet\./, {
+assertAnswerThenRestore(workspaceReply("will i qualify", afterStartId), /Not ready yet —/, {
   text: /government ID|name on this file/i,
   labels: docsChips,
 });
 assert.match(workspaceReply("will i qualify", afterStartId)?.text ?? "", /paystub|W-2/);
 const afterSkipId = skipCurrentInvite(afterStartId);
 assert.match(workspacePromptCopy("documents", afterSkipId).text, /latest paystub/i);
-assertAnswerThenRestore(workspaceReply("will i qualify", afterSkipId), /This does not look ready yet\./, {
+assertAnswerThenRestore(workspaceReply("will i qualify", afterSkipId), /Not ready yet —/, {
   text: /latest paystub/i,
   labels: docsChips,
 });
@@ -3294,7 +3310,7 @@ assertAnswerThenRestore(
 );
 
 const holdChips = ["Start with ID", "Ask Fox"];
-assertAnswerThenRestore(workspaceReply("will i qualify", heldDocs), /This does not look ready yet\./, {
+assertAnswerThenRestore(workspaceReply("will i qualify", heldDocs), /Not ready yet —/, {
   labels: holdChips,
 });
 assertAnswerThenRestore(workspaceReply("hi", heldDocs), /^Hi\./, { labels: holdChips });
@@ -3302,7 +3318,7 @@ assertAnswerThenRestore(workspaceReply("hi", heldDocs), /^Hi\./, { labels: holdC
 const looksChips = ["Looks right", "Needs a correction"];
 const qualifyAtReview = workspaceReply("will i qualify", afterIncomeReady);
 assert.notEqual(qualifyAtReview?.capture?.field, "confirm-draft");
-assertAnswerThenRestore(qualifyAtReview, /This does not look ready yet\./, {
+assertAnswerThenRestore(qualifyAtReview, /Not ready yet —/, {
   text: /does it look right/i,
   labels: looksChips,
 });
@@ -3340,7 +3356,7 @@ const atCorrect = { ...afterIncomeReady, correcting: "correct" as const };
 assert.equal(workspacePrompt(atCorrect), "correct");
 const correctChips = (workspacePromptCopy("correct", atCorrect).actions ?? []).map((item) => item.label);
 assert.ok(correctChips.includes("Occupancy"));
-assertAnswerThenRestore(workspaceReply("will i qualify", atCorrect), /This does not look ready yet\./, {
+assertAnswerThenRestore(workspaceReply("will i qualify", atCorrect), /Not ready yet —/, {
   labels: correctChips.filter((label) => label === "Occupancy" || label === "Credit" || label === "Income"),
 });
 assertAnswerThenRestore(workspaceReply("hi", atCorrect), /^Hi\./, {
@@ -3348,7 +3364,7 @@ assertAnswerThenRestore(workspaceReply("hi", atCorrect), /^Hi\./, {
 });
 
 const proceedChips = ["Proceed", "Not yet"];
-assertAnswerThenRestore(workspaceReply("will i qualify", afterLooks), /This does not look ready yet\./, {
+assertAnswerThenRestore(workspaceReply("will i qualify", afterLooks), /Not ready yet —/, {
   labels: proceedChips,
 });
 assertAnswerThenRestore(workspaceReply("hi", afterLooks), /^Hi\./, { labels: proceedChips });
@@ -3358,7 +3374,7 @@ assertAnswerThenRestore(
   { labels: proceedChips },
 );
 
-assertAnswerThenRestore(workspaceReply("will i qualify", buyProceed), /This does not look ready yet\./, {
+assertAnswerThenRestore(workspaceReply("will i qualify", buyProceed), /Not ready yet —/, {
   labels: ["Ask Fox"],
 });
 assertAnswerThenRestore(workspaceReply("hi", buyProceed), /^Hi\./, { labels: ["Ask Fox"] });
@@ -3794,7 +3810,7 @@ assert.match(seLiveAsk.text, /Suggested qualifying income · not underwritten/);
 assert.match(seLiveAsk.text, /Use this/);
 const seQualifyAsk = workspaceReply("will i qualify", seReturn.draft);
 assert.notEqual(seQualifyAsk?.capture?.field, "accept-proposal");
-assertAnswerThenRestore(seQualifyAsk, /looks like it would qualify under conventional guidelines\. Final underwriting still decides\./, {
+assertAnswerThenRestore(seQualifyAsk, /This file looks conventionally strong enough to keep moving\. Final underwriting still decides\./, {
   text: /\$9,000/,
   labels: ["Use this", "Change"],
 });
@@ -4735,7 +4751,7 @@ assert.ok((combinedAsk.actions ?? []).some((item) => item.label === "Change"));
 assertIncomeChipsHoldOverQueue(combinedWrite.draft, /18,167/);
 const combinedQualify = workspaceReply("will i qualify", combinedWrite.draft);
 assert.notEqual(combinedQualify?.capture?.field, "accept-proposal");
-assertAnswerThenRestore(combinedQualify, /This does not look ready yet\./, {
+assertAnswerThenRestore(combinedQualify, /Not ready yet —/, {
   text: /18,167/,
   labels: ["Use this", "Change"],
 });
@@ -5063,7 +5079,7 @@ const overPriceFile = {
   loanAmount: 600000,
 };
 const overPriceLine =
-  "The loan is $600,000 on a $500,000 price. That usually means the price or the loan amount is wrong. I can edit either one.";
+  "The loan is larger than the purchase price. Want to change the price, the down payment, or the loan?";
 assert.equal(topicFromFile(overPriceFile), "flags.loan_over_price");
 assert.equal(interpretQuestion("600000"), null);
 assert.equal(answerFromFile("flags.loan_over_price", overPriceFile).text, overPriceLine);
@@ -5073,10 +5089,9 @@ assert.equal(
   answerFromFile("flags.loan_over_price", { ...overPriceFile, commitmentRequired: true }).text,
   ESCALATE_LINE,
 );
-assert.equal(foxAnswer("will i qualify", overPriceFile)?.text, READINESS_UW_REVIEW);
+assert.match(foxAnswer("will i qualify", overPriceFile)?.text ?? "", /Not ready yet — The loan is larger than the purchase price\./);
 assert.equal(foxAnswer("closing costs", overPriceFile)?.text, COST_LINE);
-assert.match(LOAN_OVER_PRICE_TEMPLATE, /\{loanAmount\}/);
-assert.match(LOAN_OVER_PRICE_TEMPLATE, /\{purchasePrice\}/);
+assert.equal(LOAN_OVER_PRICE_TEMPLATE, overPriceLine);
 for (const typed of ["loan 600000", "600000", "600,000"]) {
   const over = workspaceReply(typed, overPriceBase);
   assert.equal(over?.capture?.field, "loanAmount", typed);
@@ -5084,7 +5099,7 @@ for (const typed of ["loan 600000", "600000", "600,000"]) {
   assert.equal(over?.text, overPriceLine, typed);
   assert.deepEqual(
     (over?.actions ?? []).map((item) => item.label),
-    ["Purchase price", "Loan amount", "That’s right"],
+    ["Purchase price", "Down payment", "Loan amount", "That’s right"],
   );
   assert.doesNotMatch(over?.text ?? "", /under the purchase price|licensed originator is on this exception/i);
 }
@@ -5629,7 +5644,7 @@ assert.match(guidelineStoreSrc, /function readinessFromFile\(/);
 assert.doesNotMatch(guidelineStoreSrc, /I can prepare a file\. I cannot approve or say you qualify/);
 assert.doesNotMatch(guidelineStoreSrc, /I can prepare a file\. I cannot say you qualify/);
 assert.match(guidelineStoreSrc, /flags\.loan_over_price/);
-assert.match(guidelineStoreSrc, /\{loanAmount\}/);
+assert.match(guidelineStoreSrc, /The loan is larger than the purchase price/);
 const answerPathSrc = readFileSync(join(root, "lib/guidelines/answer.ts"), "utf8");
 assert.match(answerPathSrc, /interpretQuestion/);
 assert.match(answerPathSrc, /applyHardRails/);
@@ -5637,7 +5652,7 @@ assert.match(answerPathSrc, /topicFromFile/);
 assert.match(answerPathSrc, /answerFromFile/);
 assert.match(
   storeLookup("language.will_i_qualify", { askedWillIQualify: true }).borrowerLine,
-  /Not enough yet to tell\. Still useful:/,
+  /This file is still thin\./,
 );
 assert.equal(readinessFromFile({ askedWillIQualify: true }).kind, "thin");
 assert.equal(
@@ -5685,7 +5700,7 @@ assert.match(
     incomeType: "w2_base",
     received: ["paystub", "w2"],
   }).line,
-  /This does not look ready yet\. This loan is a large share of the price\. More down payment would likely help\./,
+  /Not ready yet — This loan is a large share of the price/,
 );
 assert.equal(
   readinessFromFile({
@@ -5716,7 +5731,7 @@ const walkMissingStub = readinessFromFile({
 assert.equal(walkMissingStub.kind, "not_ready");
 assert.match(
   walkMissingStub.line,
-  /This does not look ready yet\. A latest paystub and a W-2 are still missing\. A latest paystub and a W-2 would likely help\./,
+  /Not ready yet — A latest paystub and a W-2 are still missing\./,
 );
 assert.doesNotMatch(walkMissingStub.line, /Not enough yet to tell|large share of the price|you don’t qualify/i);
 assert.equal(
@@ -5740,8 +5755,8 @@ assert.equal(
   }).kind,
   "thin",
 );
-assert.equal(readinessFromFile({ unresolvedConflict: true }).line, READINESS_UW_REVIEW);
-assert.equal(
+assert.match(readinessFromFile({ unresolvedConflict: true }).line, /Not ready yet — The File has a conflict on this number\./);
+assert.match(
   readinessFromFile({
     product: "buy",
     purposeHint: "purchase",
@@ -5749,7 +5764,7 @@ assert.equal(
     loanAmount: 600000,
     commitmentRequired: true,
   }).line,
-  READINESS_UW_REVIEW,
+  /Not ready yet — The loan is larger than the purchase price\./,
 );
 assert.doesNotMatch(
   readinessFromFile({ askedWillIQualify: true }).line,
@@ -5763,7 +5778,7 @@ assert.match(
     product: "buy",
     purposeHint: "purchase",
   }).line,
-  /This does not look ready yet\. That’s an FHA path\. A conventional file would likely help\./,
+  /Not ready yet — That’s an FHA path\./,
 );
 assert.match(
   readinessFromFile({
@@ -5779,7 +5794,7 @@ assert.match(
     received: ["paystub", "w2"],
     debts: [{ name: "the auto loan" }],
   }).line,
-  /Paying off the auto loan would likely help/,
+  /This loan is a large share of the price/,
 );
 assert.doesNotMatch(
   readinessFromFile({
@@ -6019,7 +6034,7 @@ assert.equal(
     statedMonthlyDebts: 8000,
     suggestedMonthlyIncome: 9000,
   }).kind,
-  "uw_review",
+  "not_ready",
 );
 assert.doesNotMatch(
   readinessFromFile({
@@ -6152,7 +6167,7 @@ const fundsShortFile = draft({
 const fundsShortAsk = workspaceReply("will i qualify", fundsShortFile);
 assert.match(
   fundsShortAsk?.text ?? "",
-  /This does not look ready yet\. Available funds look short of the \$170,000 down payment\. More cash to close would likely help\./,
+  /Not ready yet — Available funds look short of the \$170,000 down payment\./,
 );
 assert.doesNotMatch(fundsShortAsk?.text ?? "", /you don.t qualify|months? reserves|stated DTI|\d+\s*%|you are approved/i);
 assert.match(fundsShortAsk?.text ?? "", /available funds|Start with ID|Skip/i);
@@ -6448,12 +6463,12 @@ assert.match(volunteerAddress?.text ?? "", /Suggested · not underwritten/);
 
 const condoFile = draft({ ...usedCondo, propertyTypeAsked: true, propertyType: "condo" });
 const condoQualify = workspaceReply("will i qualify", condoFile);
-assert.match(condoQualify?.text ?? "", /I can run this past underwriting before we go further\./);
+assert.match(condoQualify?.text ?? "", /This file is still thin\.|Not ready yet —/);
 assert.doesNotMatch(
   condoQualify?.text ?? "",
   /you don.t qualify|warrantability|county limit|condos are not eligible|you are approved|\bDTI\b|you qualify\b/i,
 );
-assert.match(condoQualify?.text ?? "", /underwriting|Start with ID|Skip|kind of home/i);
+assert.match(condoQualify?.text ?? "", /thin|Start with ID|Skip|kind of home|HOA questionnaire/i);
 assert.equal(
   readinessFromFile({
     product: "buy",
@@ -6468,7 +6483,7 @@ assert.equal(
     received: ["paystub", "w2"],
     propertyType: "condo",
   }).kind,
-  "uw_review",
+  "thin",
 );
 assert.doesNotMatch(
   readinessFromFile({
@@ -6738,12 +6753,12 @@ const sixMonthsFile = draft({
   propertyType: "sfr",
 });
 const sixQualify = workspaceReply("will i qualify", sixMonthsFile);
-assert.match(sixQualify?.text ?? "", /I can run this past underwriting before we go further\./);
+assert.match(sixQualify?.text ?? "", /Not ready yet —|This file is still thin\./);
 assert.doesNotMatch(
   sixQualify?.text ?? "",
   /you don.t qualify|you need two years|VOE|verification of employment|you are approved|\bDTI\b|you qualify\b/i,
 );
-assert.match(sixQualify?.text ?? "", /underwriting|Start with ID|Skip|How long have you been at this job/i);
+assert.match(sixQualify?.text ?? "", /Start with ID|Skip|How long have you been at this job|paystub|W-2|thin/i);
 assert.equal(
   readinessFromFile({
     product: "buy",
@@ -6759,7 +6774,7 @@ assert.equal(
     propertyType: "sfr",
     statedTimeOnJob: 6,
   }).kind,
-  "uw_review",
+  "not_ready",
 );
 assert.equal(
   readinessFromFile({
@@ -7214,12 +7229,12 @@ assert.ok(
   ),
 );
 const eventQualify = workspaceReply("will i qualify", usedEvent);
-assert.match(eventQualify?.text ?? "", /I can run this past underwriting before we go further\./);
+assert.match(eventQualify?.text ?? "", /Not ready yet —|This file is still thin\./);
 assert.doesNotMatch(
   eventQualify?.text ?? "",
   /you don.t qualify|waiting period|7-year|ineligible for conventional|you are approved|\bDTI\b|you qualify\b/i,
 );
-assert.match(eventQualify?.text ?? "", /underwriting|Start with ID|Skip/i);
+assert.match(eventQualify?.text ?? "", /Start with ID|Skip|Pricing waits|thin|paystub/i);
 assert.equal(
   readinessFromFile({
     product: "buy",
@@ -7236,7 +7251,7 @@ assert.equal(
     namedDistress: true,
     statedDeclaration: "event",
   }).kind,
-  "uw_review",
+  "not_ready",
 );
 assert.equal(
   readinessFromFile({
@@ -8864,7 +8879,7 @@ const queueChips = ["What happens next?", "Upload more", "Ask Fox"];
 assertAnswerThenRestore(workspaceReply("What happens next?", mvsAsk), /ONYX|government ID|paystub/i, {
   labels: queueChips,
 });
-assertAnswerThenRestore(workspaceReply("will I qualify?", mvsAsk), /This does not look ready yet\./, {
+assertAnswerThenRestore(workspaceReply("will I qualify?", mvsAsk), /Not ready yet —/, {
   labels: queueChips,
 });
 assertAnswerThenRestore(workspaceReply("what will this cost me", mvsAsk), /fee quote|won.t invent/i, {
@@ -9776,6 +9791,105 @@ assert.match(fileCompleteness(conventionalRefiWalk)?.copy ?? "", /^sketch · 4 o
 const conventionalSrc = readFileSync(join(root, "components/fox/conventionalFile.ts"), "utf8");
 assert.doesNotMatch(conventionalSrc, /ask for APN|legal description quiz|year-built form|HOA dues line|liability worksheet|1003 maze|citizenship quiz/i);
 assert.doesNotMatch(conventionalSrc, /you qualify|credit pull now|full account number|SSN capture/i);
+
+assert.equal(
+  storeFlags({ statedCreditBand: "680-719", occupancy: "investment", purposeHint: "cash_out" }).caution,
+  "I’ll keep gathering. Pricing waits.",
+);
+assert.equal(
+  storeFlags({ occupancy: "second", product: "buy", purposeHint: "purchase", state: "CA" }).caution,
+  SECOND_HOME_CAUTION,
+);
+assert.equal(
+  storeFlags({ propertyType: "two_to_four", occupancy: "primary" }).caution,
+  TWO_TO_FOUR_CAUTION,
+);
+assert.equal(
+  storeFlags({ manufactured: true, occupancy: "primary" }).caution,
+  MANUFACTURED_CAUTION,
+);
+assert.equal(
+  storeFlags({
+    propertyType: "condo",
+    condoIneligibleNamed: true,
+    occupancy: "primary",
+  }).caution,
+  CONDO_NON_WARRANTABLE_CAUTION,
+);
+assert.equal(
+  storeFlags({ unsupportedRental: true, occupancy: "primary" }).caution,
+  RENTAL_UNSUPPORTED_CAUTION,
+);
+assert.equal(condoFlag({ propertyType: "condo", condoHasHoaDocs: true, condoHasProjectFacts: true }), "warrantable");
+assert.equal(condoFlag({ propertyType: "condo" }), "needs_review");
+assert.equal(condoFlag({ propertyType: "condo", condoIneligibleNamed: true }), "non_warrantable");
+assert.equal(condoFlag({ coop: true }), "needs_review");
+assert.equal(condoFlag({ pud: true, propertyType: "sfr" }), undefined);
+assert.equal(sketchedLtvFromFacts({ purchasePrice: 500000, loanAmount: 400000 }), 0.8);
+assert.equal(suggestScheduleERental({ rentalIncomeOrLoss: 12000, depreciation: 6000, interest: 3000, hoa: 1200, taxes: 2400, insurance: 1200 })?.monthly, 2150);
+assert.equal(suggestScheduleERental({ rentalIncomeOrLoss: 12000, depreciation: 6000 })?.monthly, 1500);
+assert.equal(suggestLeaseRental({ grossMonthlyRent: 4000, twoMonthsDeposits: true })?.monthly, 3000);
+assert.equal(suggestLeaseRental({ grossMonthlyRent: 4000 })?.thinner, true);
+assert.equal(rentalConfirmCopy("schedule_e"), "Suggested rental income · not underwritten. I’m using Schedule E. Use this?");
+assert.equal(rentalConfirmCopy("lease_75"), "Suggested rental income · not underwritten. I’m using 75% of the lease. Use this?");
+const rentalExtract = applyRentalIncomeFromExtract(afterLooks, "other", {
+  schedule_e_rental_income: "12000",
+  schedule_e_depreciation: "6000",
+});
+assert.equal(rentalExtract.pendingProposal?.field, RENTAL_INCOME_FIELD);
+assert.equal(rentalExtract.pendingProposal?.value, "1500");
+assert.equal(rentalExtract.facts?.qualifying_income, undefined);
+assert.equal(resolveProposal(rentalExtract, "accept").facts?.[RENTAL_INCOME_FIELD]?.value, "1500");
+assert.equal(resolveProposal(rentalExtract, "decline").facts?.[RENTAL_INCOME_FIELD], undefined);
+const leaseExtract = applyRentalIncomeFromExtract(afterLooks, "other", { gross_monthly_rent: "4000" });
+assert.equal(leaseExtract.pendingProposal?.value, "3000");
+assert.match(rentalConfirmCopy("lease_75"), /75% of the lease/);
+assert.equal(
+  readinessFromFile({
+    product: "buy",
+    purposeHint: "purchase",
+    occupancy: "primary",
+    state: "CA",
+    purchasePrice: 850000,
+    downPayment: 170000,
+    loanAmount: 680000,
+    statedCreditBand: "760+",
+    incomeType: "w2_base",
+    received: ["paystub", "w2"],
+    propertyType: "condo",
+    condoHasHoaDocs: true,
+    condoHasProjectFacts: true,
+  }).kind,
+  "strong",
+);
+assert.match(
+  readinessFromFile({
+    product: "buy",
+    purposeHint: "purchase",
+    occupancy: "primary",
+    state: "CA",
+    purchasePrice: 850000,
+    downPayment: 170000,
+    loanAmount: 680000,
+    statedCreditBand: "760+",
+    incomeType: "w2_base",
+    received: ["paystub", "w2"],
+    propertyType: "condo",
+  }).line,
+  new RegExp(CONDO_HOA_WOULD_HELP.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")),
+);
+assert.ok(
+  storeCompleteness("buy", {
+    purposeHint: "purchase",
+    occupancy: "investment",
+    rentalNamed: true,
+  }).stillUseful.includes(RENTAL_DOCS_WOULD_HELP),
+);
+assert.doesNotMatch(
+  [READINESS_STRONG, GOVVIE_LINE, CASH_OUT_CAUTION, CONDO_NON_WARRANTABLE_CAUTION, RENTAL_UNSUPPORTED_CAUTION].join(" "),
+  /you qualify|you are approved|\bDU\b|\bLPA\b|I can prepare a file\. I cannot approve or say you qualify/,
+);
+assert.doesNotMatch(guidelineStoreSrc, /0\.97/);
 
 extractAdapterSmoke()
   .then(() => {

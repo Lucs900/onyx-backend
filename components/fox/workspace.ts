@@ -124,6 +124,11 @@ import {
   wageMethodNote,
 } from "./qualifyingIncome";
 import {
+  isRentalIncomeField,
+  rentalConfirmAsk,
+  RENTAL_INCOME_FIELD,
+} from "./rentalIncome";
+import {
   applyMortgageSubtract,
   isSkipMonthlyDebtsText,
   isStatedDebtsConfirmPending,
@@ -1372,6 +1377,12 @@ function liveProposalAsk(
       actions: otherReoConfirmActions(),
     };
   }
+  if (isRentalIncomeField(proposal.field)) {
+    return {
+      text: rentalConfirmAsk(proposal.methodNote),
+      actions: incomeConfirmActions(),
+    };
+  }
   if (proposal.field === QUALIFYING_INCOME_FIELD) {
     if (combinedParts(proposal) || proposal.methodNote?.startsWith("combined ")) {
       return combinedReactionAsk(draft, proposal);
@@ -1872,10 +1883,15 @@ export function isQualifyingIncomeConfirmPending(draft: FoxIntakeDraft): boolean
   return draft.pendingProposal?.field === QUALIFYING_INCOME_FIELD;
 }
 
+export function isRentalIncomeConfirmPending(draft: FoxIntakeDraft): boolean {
+  return draft.pendingProposal?.field === RENTAL_INCOME_FIELD;
+}
+
 /** Queue / Looks right waits until Use this / Change on a live income or remainder suggest. */
 export function shouldDeferStillUsefulAsk(draft: FoxIntakeDraft): boolean {
   return (
     isQualifyingIncomeConfirmPending(draft) ||
+    isRentalIncomeConfirmPending(draft) ||
     Boolean(draft.awaitingPayFrequency) ||
     Boolean(draft.pendingProposal && isRemainderConfirmField(draft.pendingProposal.field)) ||
     isStatedAssetsConfirmPending(draft) ||
@@ -2381,6 +2397,12 @@ export function loanOverPriceActions(): FoxAction[] {
       label: "Purchase price",
       event: "bubble",
       capture: { field: "correct", value: "value", line: "price" },
+    },
+    {
+      id: "over-price-down",
+      label: "Down payment",
+      event: "bubble",
+      capture: { field: "correct", value: "amount", line: "down" },
     },
     {
       id: "over-price-loan",
@@ -4139,10 +4161,16 @@ export function workspaceReply(
         capture: { field: "over-price-confirm" },
       };
     }
-    if (/purchase price|the price/.test(lower) && !/loan/.test(lower)) {
+    if (/purchase price|the price/.test(lower) && !/loan/.test(lower) && !/down/.test(lower)) {
       return {
         ...workspacePromptCopy("value", { ...draft, correcting: "value", correctingLine: "price" }),
         capture: { field: "correct", value: "value", line: "price" },
+      };
+    }
+    if (/down payment|the down/.test(lower) && !/loan/.test(lower)) {
+      return {
+        ...workspacePromptCopy("amount", { ...draft, correcting: "amount", correctingLine: "down" }),
+        capture: { field: "correct", value: "amount", line: "down" },
       };
     }
     if (/loan amount|\bloan\b/.test(lower) && !/purchase price/.test(lower)) {

@@ -115,12 +115,21 @@ import {
   HIGH_LTV_CAUTION as STORE_HIGH_LTV_CAUTION,
   HIGH_PURCHASE_LTV as STORE_HIGH_PURCHASE_LTV,
   JUMBO_CEILING_LINE,
+  namedCondoIneligible,
   completeness as storeCompleteness,
   escalate as storeEscalate,
   flags as storeFlags,
   type CompletenessFile,
   type NamedDebt,
 } from "@/lib/guidelines/conventional";
+import {
+  RENTAL_INCOME_FIELD,
+  draftHasLease,
+  draftHasScheduleE,
+  draftHasUnsupportedRental,
+  draftRentalNamed,
+  rentalConfirmAsk,
+} from "./rentalIncome";
 import { conventionalCompletenessCopy, conventionalSlotCount } from "./conventionalFile";
 
 export const SUGGESTED_NOTE = "Suggested · not verified";
@@ -592,6 +601,36 @@ export function factsFromDraft(draft: FoxIntakeDraft): CompletenessFile {
     docsSkipped: Boolean(
       draft.documentsSkipped || draft.docsHeld || (draft.skippedClasses?.length ?? 0) > 0,
     ),
+    ...guidelineSignalsFromDraft(draft),
+  };
+}
+
+function guidelineSignalsFromDraft(draft: FoxIntakeDraft): Partial<CompletenessFile> {
+  const text = [
+    ...(draft.notes ?? []),
+    ...Object.values(draft.facts ?? {}).map((fact) => fact.value),
+    draft.incomeType.value,
+    ...(draft.documents ?? []).map((doc) => doc.name),
+  ].join(" ");
+  const hoaDocs = (draft.documents ?? []).some((doc) =>
+    /hoa questionnaire|condo project|project docs/i.test(doc.name),
+  ) || Boolean(draft.facts?.hoa_questionnaire?.value || draft.facts?.condo_project_docs?.value);
+  const projectFacts = Boolean(
+    draft.facts?.condo_project_facts?.value || draft.facts?.project_name?.value,
+  );
+  return {
+    manufactured: /\bmanufactured\b/i.test(text) || Boolean(draft.facts?.manufactured?.value),
+    coop: /\bco-?ops?\b/i.test(text),
+    pud: /\bpud\b/i.test(text) && !/\bcondo/i.test(text),
+    condoNewOrConverted: /\b(new(ly)? converted|new condo|developer control)\b/i.test(text),
+    condoDeveloperControl: /\bdeveloper control\b/i.test(text),
+    condoHasHoaDocs: hoaDocs || undefined,
+    condoHasProjectFacts: projectFacts || undefined,
+    condoIneligibleNamed: namedCondoIneligible(text),
+    rentalNamed: draftRentalNamed(draft),
+    hasScheduleE: draftHasScheduleE(draft),
+    hasLease: draftHasLease(draft),
+    unsupportedRental: draftHasUnsupportedRental(draft),
   };
 }
 
@@ -726,6 +765,9 @@ export function proposalAskCopy(proposal: FactProposal) {
   const shown = displayFactValue(proposal.field, proposal.value);
   if (proposal.field === QUALIFYING_INCOME_FIELD) {
     return `From the return I’m suggesting ${shown} a month. ${SUGGESTED_INCOME_NOTE}. Use this?`;
+  }
+  if (proposal.field === RENTAL_INCOME_FIELD) {
+    return rentalConfirmAsk(proposal.methodNote);
   }
   if (proposal.field === STATED_MONTHLY_DEBTS_FIELD) {
     return monthlyDebtsConfirmCopy(Number(proposal.value) || 0);
@@ -1036,6 +1078,7 @@ export function resolveProposal(
   }
   const source =
     proposal.field === QUALIFYING_INCOME_FIELD ||
+      proposal.field === RENTAL_INCOME_FIELD ||
       proposal.field === STATED_AVAILABLE_ASSETS_FIELD ||
       proposal.field === PROPERTY_TYPE_FIELD ||
       proposal.field === STATED_TIME_ON_JOB_FIELD ||
