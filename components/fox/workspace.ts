@@ -109,7 +109,7 @@ import {
   withComputedCompanion,
   writeQualifyingIncome,
   writeYearsInBusiness,
-  YEARS_IN_BUSINESS_ASK,
+  yearsInBusinessAskCopy,
   YEARS_IN_BUSINESS_FIELD,
 } from "./completeness";
 import { conventionalFileFacts } from "./conventionalFile";
@@ -384,7 +384,11 @@ import {
   applyEmailThenFinish,
   applyEscalateMotion,
   applyLooksRightMotion,
+  applyNotYetMotion,
+  applyProceedMotion,
+  applySkipEmailThenFinish,
   emailMissing,
+  emailSkipped,
   finishCaptureFromText,
   finishLineActions,
   inQueueEnding,
@@ -1145,7 +1149,7 @@ function documentsAskText(draft: FoxIntakeDraft): string {
   if (isBorrowerNameConfirmPending(draft) && draft.pendingProposal?.value) {
     return borrowerNameExtractCopy(draft.pendingProposal.value);
   }
-  if (draft.awaitingYearsInBusiness) return YEARS_IN_BUSINESS_ASK;
+  if (draft.awaitingYearsInBusiness) return yearsInBusinessAskCopy(draft);
   if (
     draft.docsHeld &&
     !draft.docsStarted &&
@@ -1491,9 +1495,10 @@ export function docReactionAsk(
 
 function rememberedAskCopy(draft: FoxIntakeDraft): string | undefined {
   if (inQueueEnding(draft)) return undefined;
+  if (draft.pendingFinish && emailMissing(draft) && !emailSkipped(draft)) return undefined;
   if (stillUsefulVisible(draft)) return layer2AskCopy(draft);
   if (!shouldAskYearsInBusiness(draft)) return undefined;
-  if (draft.motion === "in_queue" || draft.sampleAccepted) return YEARS_IN_BUSINESS_ASK;
+  if (draft.motion === "in_queue" || draft.sampleAccepted) return yearsInBusinessAskCopy(draft);
   return undefined;
 }
 
@@ -1618,7 +1623,7 @@ function extraCorrectionLines(draft: FoxIntakeDraft): { id: string; label: strin
   if (draft.monthlyDebtsAsked || draft.statedMonthlyDebts != null) {
     extra.push({ id: "debts", label: "Monthly debts", prompt: "debts" });
   }
-  if (draft.housingAsked || draft.estimatedHousing != null) {
+  if (housingConfirmNeeded(draft) || draft.housingAsked || draft.estimatedHousing != null) {
     extra.push({ id: "housing", label: "Housing payment", prompt: "housing" });
   }
   if (draft.subjectLeaseAsked || draft.rentalGrossMonthly != null) {
@@ -1858,7 +1863,7 @@ function sideQuestionAnswer(input: string, draft: FoxIntakeDraft) {
     );
   }
   if (draft.awaitingYearsInBusiness && /\b(years?|how long|business|self.?employ)/i.test(input)) {
-    return "How long you’ve been running it helps me read the return. Not a form — just the file.";
+    return "How long you’ve had this business helps me read the return. Not a form — just the file.";
   }
   if (
     /\b(id|document|return|upload|tax|paystub|w-?2)\b/i.test(input) ||
@@ -2013,7 +2018,7 @@ export function nextFoxAsk(draft: FoxIntakeDraft): {
   actions?: FoxAction[];
 } {
   if (draft.awaitingYearsInBusiness && !draft.pendingProposal && !draft.pendingConflict) {
-    return { text: YEARS_IN_BUSINESS_ASK };
+    return { text: yearsInBusinessAskCopy(draft), actions: yearsInBusinessSkipActions() };
   }
   return workspacePromptCopy(workspacePrompt(draft), draft);
 }
@@ -2122,6 +2127,7 @@ export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
 }
 
 function lateFileRemainder(draft: FoxIntakeDraft): { text?: string; actions?: FoxAction[] } {
+  if (draft.pendingFinish && emailMissing(draft) && !emailSkipped(draft)) return {};
   if (draft.motion === "in_queue" || draft.motion === "escalated") return {};
   if (citizenshipNeeded(draft)) {
     const ask = citizenshipAskCopy();
@@ -2371,13 +2377,13 @@ function workspaceAskCopy(
   }
   if (prompt === "years-in-business") {
     return {
-      text: YEARS_IN_BUSINESS_ASK,
+      text: yearsInBusinessAskCopy(draft),
       actions: yearsInBusinessSkipActions(),
     };
   }
   if (prompt === "documents") {
     if (draft.awaitingYearsInBusiness) {
-      return { text: YEARS_IN_BUSINESS_ASK };
+      return { text: yearsInBusinessAskCopy(draft), actions: yearsInBusinessSkipActions() };
     }
     if (
       draft.docsHeld &&
@@ -3184,10 +3190,13 @@ export function workspaceUpdateCopy(capture: Capture, draft: FoxIntakeDraft) {
     return MOTION_COPY.escalated;
   }
   if (capture.field === "proceed") {
-    return MOTION_COPY.in_queue;
+    return emailMissing(draft) && !emailSkipped(draft) ? MOTION_COPY.emailAsk : MOTION_COPY.in_queue;
   }
   if (capture.field === "not-yet") {
-    return emailMissing(draft) ? MOTION_COPY.emailAsk : MOTION_COPY.on_hold;
+    return emailMissing(draft) && !emailSkipped(draft) ? MOTION_COPY.emailAsk : MOTION_COPY.on_hold;
+  }
+  if (capture.field === "skip-email") {
+    return draft.pendingFinish === "not-yet" ? MOTION_COPY.on_hold : MOTION_COPY.in_queue;
   }
   if (capture.field === "start-docs") {
     return "";
@@ -3608,7 +3617,7 @@ export function parseWorkspaceEdit(
     return { correct: "value", confirm: "What’s the purchase price?" };
   }
 
-  if (/\b(years? in business|been in business|running this)\b/.test(lower)) {
+  if (/\b(years? in business|been in business|had this business|running this)\b/.test(lower)) {
     const years = parseYearsInBusiness(q);
     if (years) {
       return {
@@ -3616,7 +3625,7 @@ export function parseWorkspaceEdit(
         confirm: `Updated years in business to ${years}.`,
       };
     }
-    return { correct: "years-in-business", confirm: YEARS_IN_BUSINESS_ASK };
+    return { correct: "years-in-business", confirm: yearsInBusinessAskCopy(draft) };
   }
 
   if (/\b(loan amount|heloc line|loan|line|cash|payoff)\b/.test(lower) && !/\bpurchase price\b/.test(lower)) {
@@ -3735,6 +3744,12 @@ function draftAfterCapture(draft: FoxIntakeDraft, capture: Capture): FoxIntakeDr
 }
 
 function draftAfterCaptureBody(draft: FoxIntakeDraft, capture: Capture): FoxIntakeDraft {
+  if (capture.field === "needs-correction") {
+    return { ...draft, correcting: "correct", correctingLine: null };
+  }
+  if (capture.field === "skip-email") return applySkipEmailThenFinish(draft);
+  if (capture.field === "proceed") return applyProceedMotion(draft);
+  if (capture.field === "not-yet") return applyNotYetMotion(draft);
   const next = { ...draft, correcting: null, correctingLine: null };
   if (capture.field === "path") return { ...next, path: capture.value };
   if (capture.field === "keep-line") return next;
@@ -4203,7 +4218,7 @@ export function workspaceReply(
         return restoredAsk(
           /(what is acr|what.?s acr|active credit relationship)/i.test(q)
             ? sideQuestionAnswer(q, draft)
-            : "How long you’ve been running it helps me read the return. Not a form — just the file.",
+            : "How long you’ve had this business helps me read the return. Not a form — just the file.",
           draft,
         );
       }
@@ -4918,7 +4933,14 @@ export function workspaceReply(
 
   if (prompt === "housing" && !finishLineTakesCalculatorPrompt(q, prompt, draft)) {
     const estimate = draftHousingEstimate(draft);
-    if (isSkipMonthlyDebtsText(q) || /^change\b/i.test(q.trim())) {
+    if (/^change\b/i.test(q.trim()) || wantsCorrectionMenu(q)) {
+      const nextDraft = { ...draft, correcting: "correct" as const };
+      return {
+        ...workspacePromptCopy("correct", nextDraft),
+        capture: { field: "needs-correction" },
+      };
+    }
+    if (isSkipMonthlyDebtsText(q)) {
       const nextDraft = skipEstimatedHousing(draft);
       return {
         ...workspacePromptCopy(workspacePrompt(nextDraft), nextDraft),
@@ -5463,6 +5485,13 @@ export function workspaceReply(
           capture: { field: "email", value: q.trim() },
         };
       }
+      if (draft.pendingFinish && emailMissing(draft) && !emailSkipped(draft) && /^(skip|later|pass)\b/i.test(lower)) {
+        const nextDraft = applySkipEmailThenFinish(draft);
+        return {
+          ...workspacePromptCopy("done", nextDraft),
+          capture: { field: "skip-email" },
+        };
+      }
       const finish = finishCaptureFromText(q);
       if (finish) {
         if (finish.field === "upload-more") {
@@ -5473,21 +5502,10 @@ export function workspaceReply(
         }
         const nextDraft =
           finish.field === "proceed"
-            ? {
-                ...draft,
-                motion: "in_queue" as const,
-                nextActor: "ONYX" as const,
-                pendingFinish: emailMissing(draft) ? "proceed" : draft.pendingFinish,
-              }
-            : { ...draft, pendingFinish: emailMissing(draft) ? "not-yet" : draft.pendingFinish };
+            ? applyProceedMotion(draft)
+            : applyNotYetMotion(draft);
         return {
           ...workspacePromptCopy("done", nextDraft),
-          text:
-            finish.field === "proceed"
-              ? MOTION_COPY.in_queue
-              : emailMissing(draft)
-                ? MOTION_COPY.emailAsk
-                : MOTION_COPY.on_hold,
           capture: finish,
         };
       }

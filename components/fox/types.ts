@@ -385,6 +385,7 @@ export type FoxIntakeDraft = {
   previewOutbox?: PreviewOutboxItem[];
   pendingFinish?: PendingFinish;
   emailCaptureAsked?: boolean;
+  emailSkipped?: boolean;
   reviewSlaMs?: number;
   termYears?: number;
   termAsked?: boolean;
@@ -575,6 +576,7 @@ export type Capture =
   | { field: "over-price-confirm" }
   | { field: "proceed" }
   | { field: "not-yet" }
+  | { field: "skip-email" }
   | { field: "upload-more" }
   | { field: "correct"; value: string; line?: string }
   | { field: "note"; value: string };

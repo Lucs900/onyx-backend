@@ -326,7 +326,7 @@ export function housingConfirmActions(total: number): FoxAction[] {
       event: "bubble",
       capture: { field: "estimatedHousing", value: String(Math.round(total)) },
     },
-    { id: "change-housing", label: "Change", event: "bubble", capture: { field: "skip-housing" } },
+    { id: "change-housing", label: "Change", event: "bubble", capture: { field: "needs-correction" } },
     { id: "skip-housing", label: "Skip", event: "bubble", capture: { field: "skip-housing" } },
   ];
 }

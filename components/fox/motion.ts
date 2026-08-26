@@ -198,6 +198,25 @@ export function emailMissing(draft: FoxIntakeDraft) {
   return !contactEmail(draft);
 }
 
+export function emailSkipped(draft: FoxIntakeDraft) {
+  return Boolean(draft.emailSkipped);
+}
+
+export function emailReadyToFinish(draft: FoxIntakeDraft) {
+  return !emailMissing(draft) || emailSkipped(draft);
+}
+
+export function emailAskActions(): FoxAction[] {
+  return [
+    {
+      id: "skip-email",
+      label: "Skip",
+      event: "bubble",
+      capture: { field: "skip-email" },
+    },
+  ];
+}
+
 export function looksLikeEmail(value: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
 }
@@ -332,7 +351,9 @@ export function motionAskText(draft: FoxIntakeDraft) {
   if (inQueueEnding(draft)) {
     return MOTION_COPY.in_queue;
   }
-  if (draft.pendingFinish && emailMissing(draft)) return MOTION_COPY.emailAsk;
+  if (draft.pendingFinish && emailMissing(draft) && !emailSkipped(draft)) {
+    return MOTION_COPY.emailAsk;
+  }
   if (motion === "on_hold") return MOTION_COPY.on_hold;
   if (motion === "waiting_out") return returnedReviewNote(draft) || MOTION_COPY.waiting_out;
   if (motion === "escalated") return MOTION_COPY.escalated;
@@ -392,7 +413,9 @@ function inQueueActions(draft: FoxIntakeDraft): FoxAction[] {
 export function finishLineActions(draft: FoxIntakeDraft): FoxAction[] {
   const motion = motionOf(draft);
   if (inQueueEnding(draft)) return inQueueActions(draft);
-  if (draft.pendingFinish && emailMissing(draft)) return [];
+  if (draft.pendingFinish && emailMissing(draft) && !emailSkipped(draft)) {
+    return emailAskActions();
+  }
   if (motion === "escalated") {
     return [
       {
@@ -468,18 +491,26 @@ function withOutbox(
 }
 
 export function applyProceedMotion(draft: FoxIntakeDraft, now = new Date()): FoxIntakeDraft {
+  if (emailMissing(draft) && !emailSkipped(draft)) {
+    return {
+      ...draft,
+      pendingFinish: "proceed",
+      emailCaptureAsked: true,
+      docsOpen: false,
+      correcting: null,
+    };
+  }
   const from = currentMotionKey(draft);
   if (!canTransition(from, "in_queue")) return draft;
   const item = openReviewWorkItem(draft) ?? openReviewItem(draft, now);
-  const missing = emailMissing(draft);
   const withItem = appendFileEvent(
     {
       ...draft,
       motion: "in_queue",
       nextActor: "ONYX",
       waitingOn: "onyx",
-      pendingFinish: missing ? "proceed" : undefined,
-      emailCaptureAsked: missing ? true : draft.emailCaptureAsked,
+      pendingFinish: undefined,
+      emailCaptureAsked: draft.emailCaptureAsked,
       docsOpen: false,
       correcting: null,
       workItems: [...(draft.workItems ?? []).filter((row) => row.id !== item.id), item],
@@ -494,7 +525,7 @@ export function applyProceedMotion(draft: FoxIntakeDraft, now = new Date()): Fox
 }
 
 export function applyNotYetMotion(draft: FoxIntakeDraft, now = new Date()): FoxIntakeDraft {
-  if (emailMissing(draft)) {
+  if (emailMissing(draft) && !emailSkipped(draft)) {
     return {
       ...draft,
       pendingFinish: "not-yet",
@@ -574,6 +605,7 @@ export function applyEmailThenFinish(
         },
       },
       emailCaptureAsked: true,
+      emailSkipped: false,
     },
     "email",
     "Email captured for a reminder.",
@@ -582,6 +614,27 @@ export function applyEmailThenFinish(
   if (pending === "proceed") return applyProceedMotion(withEmail, now);
   if (pending === "not-yet") return applyNotYetMotion(withEmail, now);
   return withEmail;
+}
+
+export function applySkipEmailThenFinish(draft: FoxIntakeDraft, now = new Date()): FoxIntakeDraft {
+  const pending = draft.pendingFinish;
+  const skipped: FoxIntakeDraft = {
+    ...draft,
+    contact: {
+      ...draft.contact,
+      email: {
+        field: "email",
+        value: "",
+        source: "client",
+        confirmed: true,
+      },
+    },
+    emailCaptureAsked: true,
+    emailSkipped: true,
+  };
+  if (pending === "proceed") return applyProceedMotion(skipped, now);
+  if (pending === "not-yet") return applyNotYetMotion(skipped, now);
+  return skipped;
 }
 
 export type ReturnToFoxInput = {

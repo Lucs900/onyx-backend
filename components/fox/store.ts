@@ -35,6 +35,7 @@ import {
   applyEscalateMotion,
   applyLooksRightMotion,
   applyNotYetMotion,
+  applySkipEmailThenFinish,
   applyNudgeMotion,
   applyProceedMotion,
   applyReturnToFoxMotion,
@@ -312,6 +313,7 @@ export function emptyDraft(): FoxIntakeDraft {
     priorYearSkipped: false,
     yearsInBusinessAsked: false,
     awaitingYearsInBusiness: false,
+    emailSkipped: false,
     awaitingPayFrequency: false,
     facts: {},
     pendingConflict: null,
@@ -526,6 +528,7 @@ function normalize(value: unknown): FoxIntakeDraft {
       ? raw.pendingFinish
       : undefined,
     emailCaptureAsked: Boolean(raw.emailCaptureAsked),
+    emailSkipped: Boolean(raw.emailSkipped),
     reviewSlaMs:
       typeof raw.reviewSlaMs === "number" && raw.reviewSlaMs > 0 ? raw.reviewSlaMs : undefined,
     termYears: numberOrUndefined(raw.termYears),
@@ -1807,6 +1810,9 @@ function applyCaptureBody(capture: Capture) {
   }
   if (capture.field === "not-yet") {
     return commit(applyNotYetMotion(current));
+  }
+  if (capture.field === "skip-email") {
+    return commit(applySkipEmailThenFinish(current));
   }
   if (capture.field === "confirm-draft") {
     if (current.workspaceFlow && !canLooksRight(current) && !current.sampleAccepted) {

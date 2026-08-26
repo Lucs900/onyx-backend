@@ -1776,6 +1776,14 @@ export function layer2AskCopy(draft: FoxIntakeDraft) {
 }
 
 export function layer2AskActions(draft: FoxIntakeDraft): FoxAction[] | undefined {
+  if (
+    draft.motion === "in_queue" ||
+    draft.motion === "waiting_out" ||
+    draft.motion === "escalated" ||
+    draft.pendingFinish
+  ) {
+    return undefined;
+  }
   if (!nextStillUsefulItem(draft)) return undefined;
   return [
     { id: "upload-this", label: "Upload this", event: "open-docs", capture: { field: "open-docs" } },
