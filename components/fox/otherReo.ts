@@ -1,4 +1,19 @@
 import type { FactProposal, FoxAction, FoxIntakeDraft, OtherReoRow } from "./types";
+import {
+  FILE_NET_ROLE_FIELD,
+  SUGGESTED_FILE_NET_FIELD,
+  SUGGESTED_FILE_NET_NOTE,
+  fileNetConfirmCopy,
+  netOtherPropertyFile,
+  rentalNetRoleOf,
+} from "@/lib/income/rental";
+
+export {
+  FILE_NET_ROLE_FIELD,
+  SUGGESTED_FILE_NET_FIELD,
+  SUGGESTED_FILE_NET_NOTE,
+  fileNetConfirmCopy,
+};
 
 export const STATED_OTHER_REO_FIELD = "statedOtherReo";
 export const SUGGESTED_OTHER_REO_NOTE = "Suggested · not underwritten";
@@ -65,13 +80,21 @@ export function isSkipOtherReoText(text: string) {
 export function skipOtherReo(draft: FoxIntakeDraft): FoxIntakeDraft {
   const facts = { ...(draft.facts ?? {}) };
   delete facts[STATED_OTHER_REO_FIELD];
+  delete facts[SUGGESTED_FILE_NET_FIELD];
+  delete facts[FILE_NET_ROLE_FIELD];
   return {
     ...draft,
     statedOtherReo: undefined,
     otherReoAsked: true,
+    suggestedFileNet: undefined,
+    fileNetRole: undefined,
+    fileNetAsked: undefined,
+    skippedFileNet: undefined,
     pendingOtherReo: null,
     pendingProposal:
-      draft.pendingProposal?.field === STATED_OTHER_REO_FIELD ? null : draft.pendingProposal,
+      draft.pendingProposal?.field === STATED_OTHER_REO_FIELD || isFileNetConfirmPending(draft)
+        ? null
+        : draft.pendingProposal,
     correcting: null,
     correctingLine: null,
     facts,
@@ -80,26 +103,33 @@ export function skipOtherReo(draft: FoxIntakeDraft): FoxIntakeDraft {
 
 export function writeStatedOtherReo(draft: FoxIntakeDraft, value: StatedOtherReo): FoxIntakeDraft {
   const now = new Date().toISOString();
+  const facts = { ...(draft.facts ?? {}) };
+  facts[STATED_OTHER_REO_FIELD] = {
+    field: STATED_OTHER_REO_FIELD,
+    value,
+    source: "suggested",
+    confirmed: true,
+    confirmedAt: now,
+  };
+  if (value === "none") {
+    delete facts[SUGGESTED_FILE_NET_FIELD];
+    delete facts[FILE_NET_ROLE_FIELD];
+  }
   return {
     ...draft,
     statedOtherReo: value,
     otherReoAsked: true,
     otherProperties: value === "none" ? [] : draft.otherProperties,
+    suggestedFileNet: value === "none" ? undefined : draft.suggestedFileNet,
+    fileNetRole: value === "none" ? undefined : draft.fileNetRole,
+    fileNetAsked: value === "none" ? undefined : draft.fileNetAsked,
+    skippedFileNet: value === "none" ? undefined : draft.skippedFileNet,
     pendingOtherReo: null,
     pendingProposal: null,
     pendingConflict: null,
     correcting: null,
     correctingLine: null,
-    facts: {
-      ...(draft.facts ?? {}),
-      [STATED_OTHER_REO_FIELD]: {
-        field: STATED_OTHER_REO_FIELD,
-        value,
-        source: "suggested",
-        confirmed: true,
-        confirmedAt: now,
-      },
-    },
+    facts,
   };
 }
 
@@ -168,33 +198,288 @@ export function otherReoRows(draft: FoxIntakeDraft): OtherReoRow[] {
   return (draft.otherProperties ?? []).filter((row) => !isSubjectAddress(draft, row.address));
 }
 
+function parseRowMoney(value?: string | null): number | null {
+  if (!value) return null;
+  const cleaned = String(value)
+    .replace(/[$,]/g, "")
+    .replace(/\s/g, "")
+    .replace(/[–—−]/g, "-");
+  if (!cleaned || /[a-z]/i.test(cleaned)) return null;
+  const n = Number(cleaned);
+  return Number.isFinite(n) && n > 0 ? Math.round(n) : null;
+}
+
+export function otherReoRowRent(row: OtherReoRow): number | null {
+  return parseRowMoney(row.leaseGross);
+}
+
+export function otherReoRowPiti(row: OtherReoRow): number | null {
+  return parseRowMoney(row.pitia) ?? parseRowMoney(row.payment);
+}
+
+const OTHER_PROPERTY_RENT_MONEY = /\$?\s*(\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?/;
+
+function parseTypedMoney(raw?: string): number | null {
+  if (!raw) return null;
+  const n = Number(raw.replace(/,/g, ""));
+  if (!Number.isFinite(n) || n < 100 || n > 100_000) return null;
+  return Math.round(n);
+}
+
+export type TypedOtherPropertyRental = {
+  rent: number;
+  piti?: number;
+  newRow?: boolean;
+};
+
+function mentionsAnotherOtherProperty(lower: string) {
+  return (
+    /\banother (rental|propert(?:y|ies)|home|house)\b/.test(lower) ||
+    /\bsecond (rental|propert(?:y|ies)|home|house)\b/.test(lower) ||
+    /\balso own\b/.test(lower) ||
+    /\bi also\b[\s\S]{0,40}\b(rental|propert(?:y|ies)|home|house)\b/.test(lower)
+  );
+}
+
+function mentionsOtherPropertyRent(lower: string) {
+  return (
+    /\bother propert/.test(lower) ||
+    /\bthe rental\b/.test(lower) ||
+    mentionsAnotherOtherProperty(lower)
+  );
+}
+
+/** Typed rent on an other-property row. Does not invent PITI. */
+export function parseOtherPropertyRent(text: string): number | null {
+  const parsed = parseOtherPropertyRental(text);
+  if (!parsed || parsed.newRow || parsed.piti != null) return null;
+  return parsed.rent;
+}
+
+/** Borrower-given other-property rent, and PITI when they typed it. Not invention. */
+export function parseOtherPropertyRental(text: string): TypedOtherPropertyRental | null {
+  const trimmed = text.trim();
+  if (!trimmed) return null;
+  const lower = trimmed.toLowerCase();
+  if (!mentionsOtherPropertyRent(lower)) return null;
+  if (!/\brent/i.test(trimmed)) return null;
+  const rentMatch =
+    trimmed.match(/\brents?\s+(?:for|is|of)\s+\$?\s*(\d{1,3}(?:,\d{3})+|\d+)/i) ||
+    trimmed.match(/\brent(?:al)?\s+(?:is|of|for)\s+\$?\s*(\d{1,3}(?:,\d{3})+|\d+)/i) ||
+    trimmed.match(OTHER_PROPERTY_RENT_MONEY);
+  const rent = parseTypedMoney(rentMatch?.[1]);
+  if (rent == null) return null;
+  const pitiMatch =
+    trimmed.match(/\bpiti(?:a)?\s+(?:is|of|at|:)?\s+\$?\s*(\d{1,3}(?:,\d{3})+|\d+)/i) ||
+    trimmed.match(/\b(?:payment|mortgage)\s+(?:is|of|at|:)\s+\$?\s*(\d{1,3}(?:,\d{3})+|\d+)/i);
+  const piti = parseTypedMoney(pitiMatch?.[1]) ?? undefined;
+  const newRow = mentionsAnotherOtherProperty(lower);
+  if (piti != null && piti === rent) return { rent, newRow };
+  return piti != null ? { rent, piti, newRow } : { rent, newRow };
+}
+
+export function encodeTypedOtherPropertyRental(parsed: TypedOtherPropertyRental): string {
+  const piti = parsed.piti != null ? String(Math.round(parsed.piti)) : "";
+  const flag = parsed.newRow ? "new" : "";
+  return [String(Math.round(parsed.rent)), piti, flag].join(":");
+}
+
+export function decodeTypedOtherPropertyRental(value: string): TypedOtherPropertyRental | null {
+  const [rentRaw, pitiRaw, flag] = String(value).split(":");
+  const rent = Number(String(rentRaw ?? "").replace(/[$,]/g, ""));
+  if (!Number.isFinite(rent) || rent <= 0) return null;
+  const piti = Number(String(pitiRaw ?? "").replace(/[$,]/g, ""));
+  return {
+    rent: Math.round(rent),
+    ...(Number.isFinite(piti) && piti > 0 ? { piti: Math.round(piti) } : {}),
+    newRow: flag === "new" || pitiRaw === "new",
+  };
+}
+
+export function applyTypedOtherPropertyRental(
+  draft: FoxIntakeDraft,
+  parsed: TypedOtherPropertyRental,
+): FoxIntakeDraft {
+  if (draft.statedOtherReo !== "yes") return draft;
+  if (!Number.isFinite(parsed.rent) || parsed.rent <= 0) return draft;
+  const piti = parsed.piti != null && parsed.piti > 0 ? Math.round(parsed.piti) : undefined;
+  return maybeProposeOtherReoFileNet(
+    appendOtherReoRow(
+      draft,
+      {
+        leaseGross: String(Math.round(parsed.rent)),
+        ...(piti != null ? { payment: String(piti) } : {}),
+      },
+      { forceNew: Boolean(parsed.newRow) },
+    ),
+  );
+}
+
+export function applyTypedOtherPropertyRent(draft: FoxIntakeDraft, rent: number): FoxIntakeDraft {
+  return applyTypedOtherPropertyRental(draft, { rent, newRow: false });
+}
+
+export function draftOtherPropertyFileNet(draft: FoxIntakeDraft) {
+  if (draft.statedOtherReo !== "yes") {
+    return netOtherPropertyFile([]);
+  }
+  return netOtherPropertyFile(
+    otherReoRows(draft).map((row) => ({
+      id: row.id,
+      rent: otherReoRowRent(row),
+      piti: otherReoRowPiti(row),
+    })),
+  );
+}
+
+export function isFileNetField(field?: string | null) {
+  return field === SUGGESTED_FILE_NET_FIELD;
+}
+
+export function isFileNetConfirmPending(draft: FoxIntakeDraft) {
+  return draft.pendingProposal?.field === SUGGESTED_FILE_NET_FIELD;
+}
+
+function mergeOtherReoRow(base: OtherReoRow, incoming: Omit<OtherReoRow, "id"> & { id?: string }): OtherReoRow {
+  return {
+    ...base,
+    occupancy: incoming.occupancy?.trim() || base.occupancy,
+    address: incoming.address?.trim() || base.address,
+    unpaidPrincipal: incoming.unpaidPrincipal?.trim() || base.unpaidPrincipal,
+    payment: incoming.payment?.trim() || base.payment,
+    pitia: incoming.pitia?.trim() || base.pitia,
+    leaseGross: incoming.leaseGross?.trim() || base.leaseGross,
+  };
+}
+
+function findOtherReoMatch(
+  existing: OtherReoRow[],
+  row: Omit<OtherReoRow, "id"> & { id?: string },
+): OtherReoRow | undefined {
+  const address = normalizeAddr(row.address);
+  const unpaid = (row.unpaidPrincipal ?? "").trim();
+  return existing.find((item) => {
+    const sameAddress = Boolean(address && normalizeAddr(item.address) === address);
+    const sameBalance = Boolean(unpaid && (item.unpaidPrincipal ?? "").trim() === unpaid);
+    return sameAddress || sameBalance;
+  });
+}
+
 export function appendOtherReoRow(
   draft: FoxIntakeDraft,
   row: Omit<OtherReoRow, "id"> & { id?: string },
+  opts?: { forceNew?: boolean },
 ): FoxIntakeDraft {
   if (draft.statedOtherReo === "none") return { ...draft, otherProperties: [] };
   if (draft.statedOtherReo !== "yes") return draft;
   if (isSubjectAddress(draft, row.address)) return draft;
   const existing = draft.otherProperties ?? [];
-  const address = normalizeAddr(row.address);
-  const unpaid = (row.unpaidPrincipal ?? "").trim();
-  const dup = existing.some((item) => {
-    const sameAddress = address && normalizeAddr(item.address) === address;
-    const sameBalance = unpaid && (item.unpaidPrincipal ?? "").trim() === unpaid;
-    return Boolean(sameAddress || sameBalance);
-  });
-  if (dup) return draft;
-  const next: OtherReoRow = {
+  const incoming: OtherReoRow = {
     id: row.id || `reo-${existing.length + 1}`,
-    occupancy: row.occupancy,
+    occupancy: row.occupancy?.trim() || undefined,
     address: row.address?.trim() || undefined,
     unpaidPrincipal: row.unpaidPrincipal?.trim() || undefined,
     payment: row.payment?.trim() || undefined,
     pitia: row.pitia?.trim() || undefined,
     leaseGross: row.leaseGross?.trim() || undefined,
   };
-  if (!next.address && !next.unpaidPrincipal && !next.payment) return draft;
-  return { ...draft, otherProperties: [...existing, next] };
+  if (!incoming.address && !incoming.unpaidPrincipal && !incoming.payment && !incoming.leaseGross) {
+    return draft;
+  }
+  if (!opts?.forceNew) {
+    const match = findOtherReoMatch(existing, incoming);
+    if (match) {
+      return {
+        ...draft,
+        otherProperties: existing.map((item) => (item.id === match.id ? mergeOtherReoRow(item, incoming) : item)),
+      };
+    }
+    if (!incoming.address && !incoming.unpaidPrincipal && incoming.leaseGross) {
+      const rentless = existing.filter((item) => otherReoRowRent(item) == null);
+      if (rentless.length === 1) {
+        const target = rentless[0];
+        return {
+          ...draft,
+          otherProperties: existing.map((item) => (item.id === target.id ? mergeOtherReoRow(item, incoming) : item)),
+        };
+      }
+    }
+  }
+  return { ...draft, otherProperties: [...existing, incoming] };
+}
+
+export function otherReoFileNetNeedsStatement(draft: FoxIntakeDraft) {
+  if (draft.statedOtherReo !== "yes") return false;
+  return draftOtherPropertyFileNet(draft).rows.some((row) => row.rent != null && row.piti == null);
+}
+
+export function otherReoFileNetProposal(net: number, completeCount: number): FactProposal | null {
+  const copy = fileNetConfirmCopy({ net, completeCount });
+  if (!copy) return null;
+  const role = rentalNetRoleOf(net);
+  return {
+    field: SUGGESTED_FILE_NET_FIELD,
+    value: String(net),
+    label: "File net",
+    kind: "computed",
+    note: SUGGESTED_FILE_NET_NOTE,
+    extras: [
+      { field: FILE_NET_ROLE_FIELD, value: role, label: "File net role" },
+      { field: "file_net_complete_count", value: String(completeCount), label: "Netted other properties" },
+    ],
+  };
+}
+
+function canProposeFileNet(draft: FoxIntakeDraft) {
+  if (draft.pendingConflict) return false;
+  const field = draft.pendingProposal?.field;
+  if (!field) return true;
+  return field === SUGGESTED_FILE_NET_FIELD || field === OTHER_REO_PAYMENT_FIELD;
+}
+
+export function maybeProposeOtherReoFileNet(draft: FoxIntakeDraft): FoxIntakeDraft {
+  if (draft.statedOtherReo !== "yes") {
+    if (!draft.suggestedFileNet && !draft.facts?.[SUGGESTED_FILE_NET_FIELD] && !isFileNetConfirmPending(draft)) {
+      return draft;
+    }
+    const facts = { ...(draft.facts ?? {}) };
+    delete facts[SUGGESTED_FILE_NET_FIELD];
+    delete facts[FILE_NET_ROLE_FIELD];
+    return {
+      ...draft,
+      suggestedFileNet: undefined,
+      fileNetRole: undefined,
+      fileNetAsked: undefined,
+      skippedFileNet: undefined,
+      pendingProposal: isFileNetConfirmPending(draft) ? null : draft.pendingProposal,
+      facts,
+    };
+  }
+  const result = draftOtherPropertyFileNet(draft);
+  if (result.fileNet == null || result.completeCount < 1) return draft;
+  if (draft.facts?.[SUGGESTED_FILE_NET_FIELD]?.confirmed && draft.suggestedFileNet === result.fileNet) {
+    return draft;
+  }
+  if (draft.fileNetAsked && draft.skippedFileNet === result.fileNet) return draft;
+  if (!canProposeFileNet(draft)) return draft;
+  if (isFileNetConfirmPending(draft) && Number(draft.pendingProposal?.value) === result.fileNet) {
+    return draft;
+  }
+  const proposal = otherReoFileNetProposal(result.fileNet, result.completeCount);
+  if (!proposal) return draft;
+  return { ...draft, pendingProposal: proposal, fileNetAsked: undefined };
+}
+
+export function skipOtherReoFileNet(draft: FoxIntakeDraft): FoxIntakeDraft {
+  const pending = draft.pendingProposal;
+  const skipped =
+    pending?.field === SUGGESTED_FILE_NET_FIELD ? Number(pending.value) : draftOtherPropertyFileNet(draft).fileNet;
+  return {
+    ...draft,
+    pendingProposal: pending?.field === SUGGESTED_FILE_NET_FIELD ? null : draft.pendingProposal,
+    fileNetAsked: true,
+    skippedFileNet: Number.isFinite(skipped) ? Math.round(skipped as number) : draft.skippedFileNet,
+  };
 }
 
 export function otherReoConfirmCopy(value: StatedOtherReo) {

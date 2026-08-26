@@ -395,6 +395,12 @@ function classifyPrintedLines(lines: string[]): ExtractClass | null {
   if (/PURCHASE CONTRACT/.test(blob)) return "purchase_contract";
   if (/MORTGAGE STATEMENT/.test(blob)) return "mortgage_statement";
   if (/\bDRIVER|PASSPORT|GOVERNMENT ID\b/.test(blob)) return "government_id";
+  if (/CURRENT P(?:\s*AND\s*I|&I|I)|UNPAID PRINCIPAL|SERVICER:/.test(blob)) {
+    return "mortgage_statement";
+  }
+  if (/FULL NAME:/.test(blob) && /ID LAST 4|GOVERNMENT ID|DRIVER|PASSPORT/.test(blob)) {
+    return "government_id";
+  }
   return null;
 }
 
@@ -487,6 +493,14 @@ export function fieldsFromPrintedLines(
     if (unpaid) putMoney("unpaid_principal", unpaid);
     const currentPi = valueAfter(line, /^CURRENT P(?:\s*AND\s*I|&I|I):\s*/i);
     if (currentPi) putMoney("current_pi", currentPi);
+    const monthlyRent = valueAfter(line, /^(?:MONTHLY RENT|LEASE GROSS|GROSS MONTHLY RENT):\s*/i);
+    if (monthlyRent) {
+      putMoney("lease_gross", monthlyRent);
+      putMoney("gross_monthly_rent", monthlyRent);
+      putMoney("monthly_rent", monthlyRent);
+    }
+    const occupancy = valueAfter(line, /^OCCUPANCY:\s*/i);
+    if (occupancy) put("occupancy", occupancy.toLowerCase());
     const fullName = valueAfter(line, /^FULL NAME:\s*/i);
     if (fullName) put("full_name", fullName);
     const last4 = valueAfter(line, /^ID LAST 4:\s*/i);
@@ -505,8 +519,17 @@ export function fieldsFromPrintedLines(
   return fields;
 }
 
+function inferPrintedClass(lines: string[]): ExtractClass | null {
+  const fromHeader = classifyPrintedLines(lines);
+  if (fromHeader) return fromHeader;
+  const mapped = fieldsFromPrintedLines("other", lines);
+  if (mapped.current_pi || (mapped.servicer && mapped.unpaid_principal)) return "mortgage_statement";
+  if (mapped.full_name) return "government_id";
+  return null;
+}
+
 export function printedSampleFromLines(lines: string[]): PrintedSample | null {
-  const extractClass = classifyPrintedLines(lines);
+  const extractClass = inferPrintedClass(lines);
   if (!extractClass) return null;
   return {
     extractClass,

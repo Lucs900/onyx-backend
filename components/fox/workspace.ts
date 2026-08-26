@@ -319,7 +319,13 @@ import {
   OTHER_REO_PAYMENT_FIELD,
   STATED_OTHER_REO_FIELD,
   SUGGESTED_OTHER_REO_NOTE,
+  applyTypedOtherPropertyRental,
+  encodeTypedOtherPropertyRental,
+  fileNetConfirmCopy,
+  isFileNetConfirmPending,
+  isFileNetField,
   isOtherReoConfirmPending,
+  parseOtherPropertyRental,
   isSkipOtherReoText,
   isStatedOtherReo,
   otherPropertyPaymentConfirmCopy,
@@ -331,6 +337,7 @@ import {
   parseOtherReo,
   proposeStatedOtherReo,
   skipOtherReo,
+  skipOtherReoFileNet,
   writeStatedOtherReo,
 } from "./otherReo";
 import {
@@ -1426,6 +1433,13 @@ function liveProposalAsk(
       actions: otherReoConfirmActions(),
     };
   }
+  if (isFileNetField(proposal.field)) {
+    const complete = Number(proposal.extras?.find((item) => item.field === "file_net_complete_count")?.value ?? 1);
+    return {
+      text: fileNetConfirmCopy({ net: Number(proposal.value), completeCount: complete }) ?? "",
+      actions: otherReoConfirmActions(),
+    };
+  }
   if (isRentalIncomeField(proposal.field)) {
     const complete = Number(proposal.extras?.find((item) => item.field === "rental_complete_count")?.value ?? 1);
     return {
@@ -1985,7 +1999,9 @@ export function shouldDeferStillUsefulAsk(draft: FoxIntakeDraft): boolean {
     isDeclarationsConfirmPending(draft) ||
     isHouseholdConfirmPending(draft) ||
     isBorrowerNameConfirmPending(draft) ||
-    isOtherReoConfirmPending(draft)
+    isOtherReoConfirmPending(draft) ||
+    isFileNetConfirmPending(draft) ||
+    draft.pendingProposal?.field === OTHER_REO_PAYMENT_FIELD
   );
 }
 
@@ -2959,6 +2975,7 @@ export function promptForProposalField(field?: string | null): FoxPrompt | undef
   if (isCoborrowerNameField(field)) return "coborrower-name";
   if (isBorrowerNameField(field)) return "borrower-name";
   if (field === STATED_OTHER_REO_FIELD) return "other-reo";
+  if (isFileNetField(field)) return undefined;
   if (field === "property_address" || field === "subjectAddress") return "property-type";
   const fromCapture = editPromptFromPendingField(field);
   return fromCapture === "confirm-proposal" ? undefined : fromCapture;
@@ -2966,6 +2983,7 @@ export function promptForProposalField(field?: string | null): FoxPrompt | undef
 
 export function changePendingProposal(draft: FoxIntakeDraft): FoxIntakeDraft {
   const field = draft.pendingProposal?.field;
+  if (isFileNetField(field)) return skipOtherReoFileNet(draft);
   const prompt = promptForProposalField(field);
   return {
     ...draft,
@@ -4143,6 +4161,23 @@ function finishLineTakesCalculatorPrompt(
   return false;
 }
 
+function typedOtherPropertyRentalReply(q: string, draft: FoxIntakeDraft) {
+  if (draft.statedOtherReo !== "yes") return null;
+  const parsed = parseOtherPropertyRental(q);
+  if (!parsed) return null;
+  const nextDraft = applyTypedOtherPropertyRental(draft, parsed);
+  if (parsed.piti != null || parsed.newRow) {
+    return {
+      ...nextFoxAsk(nextDraft),
+      capture: { field: "otherReoRental" as const, value: encodeTypedOtherPropertyRental(parsed) },
+    };
+  }
+  return {
+    ...nextFoxAsk(nextDraft),
+    capture: { field: "otherReoRent" as const, value: String(parsed.rent) },
+  };
+}
+
 export function workspaceReply(
   text: string,
   draft: FoxIntakeDraft,
@@ -4282,8 +4317,10 @@ export function workspaceReply(
         capture: { field: "change-proposal" },
       };
     }
+    const otherPropertyRentalPending = typedOtherPropertyRentalReply(q, draft);
+    if (otherPropertyRentalPending) return otherPropertyRentalPending;
     if (
-      /keep (the )?file|leave blank|no|not me|skip/.test(lower)
+      /keep (the )?file|leave blank|\bno\b|not me|\bskip\b/.test(lower)
     ) {
       const nextDraft = resolveProposal(draft, "decline");
       return {
@@ -4307,6 +4344,11 @@ export function workspaceReply(
     if (draft.pendingProposal) {
       return answerThenRestore(q, draft);
     }
+  }
+
+  if (prompt !== "current-housing" && !draft.pendingConflict) {
+    const typedOtherPropertyRental = typedOtherPropertyRentalReply(q, draft);
+    if (typedOtherPropertyRental) return typedOtherPropertyRental;
   }
 
   if (

@@ -94,7 +94,10 @@ import {
 import {
   STATED_OTHER_REO_FIELD,
   appendOtherReoRow,
+  isFileNetConfirmPending,
   isOtherPropertyMortgageExtract,
+  maybeProposeOtherReoFileNet,
+  otherReoFileNetNeedsStatement,
   otherReoSettled,
   proposeExtractedOtherPropertyPayment,
   proposeExtractedOtherReo,
@@ -173,6 +176,9 @@ export const EXTRACT_SCHEMA_KEYS: Record<ExtractClass, readonly string[]> = {
     "year_built",
     "annual_taxes",
     "hoa_monthly",
+    "lease_gross",
+    "gross_monthly_rent",
+    "monthly_rent",
   ],
   other: [],
 };
@@ -194,6 +200,10 @@ const MONEY_KEYS = new Set([
   "rental_gross_monthly",
   "rental_pitia_used",
   "suggested_net_rental",
+  "suggestedFileNet",
+  "lease_gross",
+  "gross_monthly_rent",
+  "monthly_rent",
   "schedule_c_net_profit",
   "depreciation",
   "depletion",
@@ -343,12 +353,29 @@ export function looksLikeTaxReturnFields(
   return false;
 }
 
+export function looksLikeMortgageFields(
+  fields?: Record<string, string | null | undefined> | null,
+): boolean {
+  if (!fields) return false;
+  if (String(fields.current_pi ?? "").trim()) return true;
+  return Boolean(String(fields.servicer ?? "").trim() && String(fields.unpaid_principal ?? "").trim());
+}
+
+export function looksLikeIdFields(
+  fields?: Record<string, string | null | undefined> | null,
+): boolean {
+  return Boolean(fields && String(fields.full_name ?? "").trim());
+}
+
 export function promoteExtractClass(
   extractClass: ExtractClass,
   fields?: Record<string, string | null | undefined> | null,
 ): ExtractClass {
   if (extractClass !== "other") return extractClass;
-  return looksLikeTaxReturnFields(fields) ? "tax_return" : extractClass;
+  if (looksLikeTaxReturnFields(fields)) return "tax_return";
+  if (looksLikeMortgageFields(fields)) return "mortgage_statement";
+  if (looksLikeIdFields(fields)) return "government_id";
+  return extractClass;
 }
 
 /** Filename paystub / W-2 / ID / bank / tax-return names win when extract returns `other`. */
@@ -507,6 +534,7 @@ export function factLabel(field: string) {
   if (field === "rental_gross_monthly") return "Suggested rental (gross)";
   if (field === "rental_pitia_used") return "PITIA used to net";
   if (field === "suggested_net_rental") return "Suggested net rental";
+  if (field === "suggestedFileNet") return "File net";
   if (field === "rental_net_role") return "Rental net role";
   if (field === "institution") return "institution";
   if (field === "period_end") return "period end";
@@ -599,7 +627,7 @@ export function displayFactValue(field: string, value: string) {
     const months = Number(value);
     if (Number.isFinite(months) && months > 0) return displayTimeOnJob(months);
   }
-  if (field === "suggested_net_rental") {
+  if (field === "suggested_net_rental" || field === "suggestedFileNet") {
     const n = moneyNumber(value);
     if (n != null) {
       const abs = Math.abs(Math.round(n)).toLocaleString("en-US");
@@ -798,7 +826,10 @@ export function applyExtractedFields(
   const extractClass = promoteExtractClass(input.extractClass, input.fields);
   if (
     extractClass === "other" ||
-    (input.confidence < LOW_EXTRACT_CONFIDENCE && !looksLikeTaxReturnFields(input.fields))
+    (input.confidence < LOW_EXTRACT_CONFIDENCE &&
+      !looksLikeTaxReturnFields(input.fields) &&
+      !looksLikeMortgageFields(input.fields) &&
+      !looksLikeIdFields(input.fields))
   ) {
     return { draft, writes, conflict: null, quietLines: [] };
   }
@@ -826,6 +857,14 @@ export function applyExtractedFields(
     if (keepPrimaryPay && PRIMARY_PAY_KEYS.has(field)) continue;
     if (field === HIRE_DATE_FIELD) continue;
     if (extractClass === "government_id" && (field === "full_name" || field === "date_of_birth" || field === "dob")) continue;
+    if (
+      extractClass === "mortgage_statement" &&
+      isOtherPropertyMortgageExtract(next, {
+        address: String(fields.property_address ?? "").trim() || undefined,
+      })
+    ) {
+      continue;
+    }
     if (isRemainderConfirmField(field)) {
       if (
         extractClass === "mortgage_statement" &&
@@ -929,7 +968,14 @@ export function applyExtractedFields(
     fields,
     computed,
   );
-  next = applyRentalIncomeFromExtract(next, extractClass, fields);
+  const otherPropertyMortgageEarly =
+    extractClass === "mortgage_statement" &&
+    isOtherPropertyMortgageExtract(next, {
+      address: String(fields.property_address ?? "").trim() || undefined,
+    });
+  if (!otherPropertyMortgageEarly) {
+    next = applyRentalIncomeFromExtract(next, extractClass, fields);
+  }
   conflict = next.pendingConflict ?? conflict;
   const extractedAssets = extractClass === "bank_statement" ? moneyNumber(fields.ending_balance ?? "") : null;
   if (extractedAssets != null) {
@@ -1066,20 +1112,20 @@ export function applyExtractedFields(
     })
   ) {
     const occupancy = String(fields.occupancy ?? "").trim() || undefined;
-    const investment =
-      occupancy === "investment" || next.occupancyChoice.value === "investment";
     next = appendOtherReoRow(next, {
       address: String(fields.property_address ?? "").trim() || undefined,
       unpaidPrincipal: String(fields.unpaid_principal ?? "").trim() || undefined,
       payment: String(fields.current_pi ?? "").trim() || undefined,
       occupancy,
-      leaseGross: investment
-        ? String(fields.lease_gross ?? fields.gross_monthly_rent ?? "").trim() || undefined
-        : undefined,
+      leaseGross:
+        String(fields.lease_gross ?? fields.gross_monthly_rent ?? fields.monthly_rent ?? "").trim() ||
+        undefined,
     });
+    next = maybeProposeOtherReoFileNet(next);
     if (
       extractedHousing != null &&
       !next.pendingConflict &&
+      !isFileNetConfirmPending(next) &&
       (!next.pendingProposal || next.pendingProposal.field === "otherReoPayment")
     ) {
       next = proposeExtractedOtherPropertyPayment(next, extractedHousing);
@@ -1515,7 +1561,7 @@ function fileGuidelineSignals(draft: FoxIntakeDraft): Partial<CompletenessFile> 
     hasScheduleE: draftHasScheduleE(draft),
     hasLease: draftHasLease(draft),
     unsupportedRental: draftHasUnsupportedRental(draft),
-    rentalNeedsStatement: draftNeedsReoStatement(draft),
+    rentalNeedsStatement: draftNeedsReoStatement(draft) || otherReoFileNetNeedsStatement(draft),
   };
 }
 
@@ -1663,7 +1709,14 @@ function otherReoStillUsefulItems(draft: FoxIntakeDraft): StillUsefulItem[] {
       .map((doc) => doc.extractClass as string),
   );
   const items: StillUsefulItem[] = [];
-  if (!received.has("mortgage_statement") && !layer2Plan(draft).some((item) => item.id === "mortgage_statement")) {
+  const alreadyAsking = layer2Plan(draft).some(
+    (item) => item.label === OTHER_REO_MORTGAGE_STATEMENTS || item.id === "mortgage_statement",
+  );
+  if (
+    !alreadyAsking &&
+    ((!received.has("mortgage_statement") && !layer2Plan(draft).some((item) => item.id === "mortgage_statement")) ||
+      otherReoFileNetNeedsStatement(draft))
+  ) {
     items.push(
       layer2Item(
         "other-reo-mortgage",

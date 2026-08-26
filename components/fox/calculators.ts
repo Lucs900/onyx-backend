@@ -29,6 +29,11 @@ import {
 import { rentalMoneyShown } from "@/lib/income/rental";
 import type { FactProposal, FoxAction, FoxIntakeDraft } from "./types";
 import {
+  FILE_NET_ROLE_FIELD,
+  SUGGESTED_FILE_NET_FIELD,
+  SUGGESTED_FILE_NET_NOTE,
+} from "./otherReo";
+import {
   maybeProposeRentalNet,
   PITIA_FROM_FILE_NOTE,
   PITIA_HOUSING_NOTE,
@@ -465,6 +470,24 @@ export function calculatorStructureFacts(draft: FoxIntakeDraft): {
         id: "rentalNetRole",
         label: "Rental net role",
         value: role,
+      });
+    }
+  }
+  const fileNet =
+    draft.suggestedFileNet ?? parseRentalMoney(draft.facts?.[SUGGESTED_FILE_NET_FIELD]?.value);
+  if (draft.facts?.[SUGGESTED_FILE_NET_FIELD]?.confirmed && fileNet != null) {
+    facts.push({
+      id: "suggestedFileNet",
+      label: "File net",
+      value: rentalMoneyShown(fileNet),
+      note: SUGGESTED_FILE_NET_NOTE,
+    });
+    const fileRole = draft.fileNetRole ?? draft.facts?.[FILE_NET_ROLE_FIELD]?.value;
+    if (fileRole) {
+      facts.push({
+        id: "fileNetRole",
+        label: "File net role",
+        value: fileRole,
       });
     }
   }

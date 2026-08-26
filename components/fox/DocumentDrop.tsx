@@ -47,7 +47,7 @@ async function storeBytes(file: File) {
     access: "private",
     handleUploadUrl: "/api/docs/upload",
   });
-  return blob.pathname;
+  return blob.url || blob.pathname;
 }
 
 export function DocumentDrop({
@@ -110,17 +110,20 @@ export function DocumentDrop({
         size: file.size,
         receivedAt,
       });
+      patchReceivedDoc(
+        (doc) => doc.receivedAt === receivedAt && doc.name === file.name,
+        { status: "reading" },
+      );
 
       try {
-        const bytesRef = await storeBytes(file);
-        patchReceivedDoc(
-          (doc) => doc.receivedAt === receivedAt && doc.name === file.name,
-          { bytesRef, status: "reading" },
-        );
+        const snapshot = new Blob([await file.arrayBuffer()], { type: file.type || type });
+        const form = new FormData();
+        form.append("file", snapshot, file.name);
+        form.append("name", file.name);
+        form.append("type", type);
         const response = await fetch("/api/docs/extract", {
           method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ bytesRef, name: file.name, type }),
+          body: form,
         });
         const data = (await response.json()) as {
           class?: string;
@@ -130,13 +133,21 @@ export function DocumentDrop({
           failed?: boolean;
           code?: string;
           error?: string;
+          source?: string;
         };
+        void storeBytes(new File([snapshot], file.name, { type: file.type || type }))
+          .then((bytesRef) => {
+            patchReceivedDoc(
+              (doc) => doc.receivedAt === receivedAt && doc.name === file.name,
+              { bytesRef },
+            );
+          })
+          .catch(() => undefined);
         if (!response.ok) {
           patchReceivedDoc(
             (doc) => doc.receivedAt === receivedAt && doc.name === file.name,
             {
               status: "failed",
-              bytesRef,
               note: data.code === "STORAGE_BLOCKED" ? data.error : FAILED_READ_NOTE,
             },
           );
@@ -190,6 +201,8 @@ export function DocumentDrop({
   const fileInput = (
     <input
       ref={inputRef}
+      id="docs-handoff"
+      data-docs-handoff="true"
       className="visually-hidden"
       type="file"
       multiple

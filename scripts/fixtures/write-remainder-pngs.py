@@ -90,6 +90,28 @@ MORTGAGE_PAGE_NO_PI = [
     "PROPERTY ADDRESS: 14 OAK STREET",
 ]
 
+PINE_MORTGAGE_PAGE = [
+    "MORTGAGE STATEMENT",
+    "SERVICER: RIVER SERVICING",
+    "UNPAID PRINCIPAL: $385,000",
+    "CURRENT PI: $3,850",
+    "PROPERTY ADDRESS: 88 PINE ROAD",
+]
+
+CEDAR_MORTGAGE_PAGE = [
+    "MORTGAGE STATEMENT",
+    "SERVICER: LAKE SERVICING",
+    "UNPAID PRINCIPAL: $180,000",
+    "CURRENT PI: $1,800",
+    "PROPERTY ADDRESS: 12 CEDAR COURT",
+]
+
+ID_PAGE = [
+    "GOVERNMENT ID",
+    "FULL NAME: JORDAN HALE",
+    "ID LAST 4: 4281",
+]
+
 # Wrong hidden comment — extract must ignore this.
 SABOTAGE_COMMENT = [
     "FORM W-2 WAGE AND TAX STATEMENT",
@@ -168,6 +190,9 @@ def main() -> None:
     write_sample("purchase-contract-oak.png", CONTRACT_PAGE)
     write_sample("mortgage-statement-oak.png", MORTGAGE_PAGE)
     write_sample("mortgage-statement-oak-no-pi.png", MORTGAGE_PAGE_NO_PI)
+    write_sample("mortgage-statement-pine.png", PINE_MORTGAGE_PAGE)
+    write_sample("mortgage-statement-cedar.png", CEDAR_MORTGAGE_PAGE)
+    write_sample("government-id-jordan.png", ID_PAGE)
     write_sample("bank-statement-sabotage.png", BANK_PAGE, SABOTAGE_COMMENT)
 
 

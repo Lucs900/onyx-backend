@@ -106,6 +106,18 @@ export function assertOnyxFixtures() {
     "expected scripts/fixtures/mortgage-statement-oak.png",
   );
   assert.ok(
+    paths.some((path) => /mortgage-statement-pine\.png$/.test(path)),
+    "expected scripts/fixtures/mortgage-statement-pine.png",
+  );
+  assert.ok(
+    paths.some((path) => /mortgage-statement-cedar\.png$/.test(path)),
+    "expected scripts/fixtures/mortgage-statement-cedar.png",
+  );
+  assert.ok(
+    paths.some((path) => /government-id-jordan\.png$/.test(path)),
+    "expected scripts/fixtures/government-id-jordan.png",
+  );
+  assert.ok(
     paths.some((path) => /bank-statement-sabotage\.png$/.test(path)),
     "expected scripts/fixtures/bank-statement-sabotage.png",
   );
