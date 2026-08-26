@@ -87,7 +87,7 @@ export { REJECT_LINE, LIMIT_LINE };
 export const LOW_EXTRACT_CONFIDENCE = 0.55;
 
 export const EXTRACT_SCHEMA_KEYS: Record<ExtractClass, readonly string[]> = {
-  government_id: ["full_name", "date_of_birth", "id_last4", "state", "expiration", "coborrower_name", "spouse_name"],
+  government_id: ["full_name", "id_last4", "state", "expiration", "coborrower_name", "spouse_name"],
   paystub: [
     "employer_name",
     "pay_period_end",
@@ -123,7 +123,7 @@ export const EXTRACT_SCHEMA_KEYS: Record<ExtractClass, readonly string[]> = {
     "k1_ordinary_income",
     "k1_distributions",
   ],
-  bank_statement: ["institution", "period_end", "ending_balance"],
+  bank_statement: ["institution", "period_end", "ending_balance", "account_type", "account_last4"],
   purchase_contract: ["property_address", "purchase_price", "close_date"],
   mortgage_statement: ["servicer", "unpaid_principal", "current_pi", "property_address"],
   other: [],
@@ -222,11 +222,10 @@ const YEARLY_TAX_KEYS = new Set([
 ]);
 
 const DROP_FIELD_KEYS =
-  /^(ssn|social|social_security|account|account_number|routing|routing_number|card|cin|dl_number|license_number|full_ssn|full_account)$/i;
+  /^(ssn|social|social_security|account|account_number|routing|routing_number|card|cin|dl_number|license_number|full_ssn|full_account|date_of_birth|dob)$/i;
 const SSN_RE = /\b\d{3}[-\s]?\d{2}[-\s]?\d{4}\b/;
 const LONG_ACCOUNT_RE = /\b\d{8,17}\b/;
 const DATE_KEYS = new Set([
-  "date_of_birth",
   "expiration",
   "pay_period_end",
   "period_end",
@@ -379,6 +378,8 @@ export const REMAINDER_CONFIRM_FIELDS = new Set([
   "institution",
   "period_end",
   "ending_balance",
+  "account_type",
+  "account_last4",
   "servicer",
   "unpaid_principal",
   "current_pi",
@@ -447,6 +448,8 @@ export function factLabel(field: string) {
   if (field === "qualifying_income") return "qualifying income";
   if (field === "institution") return "institution";
   if (field === "period_end") return "period end";
+  if (field === "account_type") return "account type";
+  if (field === "account_last4") return "account last 4";
   if (field === "ending_balance") return "ending balance";
   if (field === "property_address" || field === "subjectAddress") return "property";
   if (field === "purchase_price") return "purchase price";
@@ -489,7 +492,7 @@ export function sanitizeExtractedFields(
     if (key === "fico" || key === "credit" || key === "credit_score") continue;
     let value = String(rawValue ?? "").trim();
     if (!value) continue;
-    if (key === "id_last4") {
+    if (key === "id_last4" || key === "account_last4") {
       value = last4Only(value);
       if (!value) continue;
       next[key] = value;
@@ -634,9 +637,6 @@ function writeField(
     ...(assetAmount != null
       ? { statedAvailableAssets: assetAmount, availableAssetsAsked: true }
       : {}),
-    ...(field === "ending_balance" && moneyNumber(value) != null
-      ? { assetsCheckingSavings: String(moneyNumber(value)) }
-      : {}),
     ...(isPropertyAddressField(field) ? { subjectAddress: value } : {}),
     ...(field === STATED_TIME_ON_JOB_FIELD && Number.isFinite(Number(value)) && Number(value) > 0
       ? {
@@ -742,7 +742,7 @@ export function applyExtractedFields(
     if (!value) continue;
     if (keepPrimaryPay && PRIMARY_PAY_KEYS.has(field)) continue;
     if (field === HIRE_DATE_FIELD) continue;
-    if (extractClass === "government_id" && (field === "full_name" || field === "date_of_birth")) continue;
+    if (extractClass === "government_id" && (field === "full_name" || field === "date_of_birth" || field === "dob")) continue;
     if (isRemainderConfirmField(field)) {
       const existingRemainder = existingFact(next, field);
       if (!existingRemainder) {
@@ -916,9 +916,7 @@ export function applyExtractedFields(
     extractClass === "government_id" ? String(fields.full_name ?? "").trim() : "";
   if (extractedName) {
     const shown = displayBorrowerName(extractedName);
-    const extras = fields.date_of_birth
-      ? [{ field: "date_of_birth", value: String(fields.date_of_birth), label: "date of birth" }]
-      : [];
+    const extras: { field: string; value: string; label: string }[] = [];
     if (next.workingOnCoborrower && !next.pendingConflict) {
       const existingCoborrower = (next.coborrowerName || "").trim();
       if (existingCoborrower && !valuesMatch(existingCoborrower, shown) && !conflict) {

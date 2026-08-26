@@ -206,19 +206,27 @@ function normalizeAgencyDeclarations(
   const citizenship =
     raw.citizenship === "us_citizen" ||
     raw.citizenship === "permanent_resident" ||
-    raw.citizenship === "non_permanent" ||
+    raw.citizenship === "other" ||
     raw.citizenship === "skipped"
       ? raw.citizenship
-      : undefined;
+      : raw.citizenship === "non_permanent"
+        ? "other"
+        : undefined;
   const next: NonNullable<FoxIntakeDraft["agencyDeclarations"]> = {
     ...(citizenship ? { citizenship } : {}),
     ...(yesNo(raw.outstandingJudgments) ? { outstandingJudgments: yesNo(raw.outstandingJudgments) } : {}),
     ...(yesNo(raw.bankruptcy) ? { bankruptcy: yesNo(raw.bankruptcy) } : {}),
     ...(yesNo(raw.foreclosure) ? { foreclosure: yesNo(raw.foreclosure) } : {}),
     ...(yesNo(raw.lawsuit) ? { lawsuit: yesNo(raw.lawsuit) } : {}),
+    ...(yesNo(raw.priorForeclosureObligation)
+      ? { priorForeclosureObligation: yesNo(raw.priorForeclosureObligation) }
+      : {}),
+    ...(yesNo(raw.delinquentFederalDebt) ? { delinquentFederalDebt: yesNo(raw.delinquentFederalDebt) } : {}),
     ...(yesNo(raw.alimonyChildSupport) ? { alimonyChildSupport: yesNo(raw.alimonyChildSupport) } : {}),
     ...(yesNo(raw.borrowedDownPayment) ? { borrowedDownPayment: yesNo(raw.borrowedDownPayment) } : {}),
+    ...(yesNo(raw.comakerOnNote) ? { comakerOnNote: yesNo(raw.comakerOnNote) } : {}),
     ...(yesNo(raw.intentToOccupy) ? { intentToOccupy: yesNo(raw.intentToOccupy) } : {}),
+    ...(yesNo(raw.priorPropertyOwnership) ? { priorPropertyOwnership: yesNo(raw.priorPropertyOwnership) } : {}),
   };
   return Object.keys(next).length ? next : undefined;
 }
@@ -396,9 +404,6 @@ function normalize(value: unknown): FoxIntakeDraft {
     propertyYearBuilt: trimString(raw.propertyYearBuilt),
     propertyTaxes: trimString(raw.propertyTaxes),
     propertyHoa: trimString(raw.propertyHoa),
-    assetsCheckingSavings: trimString(raw.assetsCheckingSavings),
-    assetsRetirement: trimString(raw.assetsRetirement),
-    assetsOther: trimString(raw.assetsOther),
     largeDebtsOffReport: trimString(raw.largeDebtsOffReport),
     largeDebtsAsked: Boolean(raw.largeDebtsAsked || raw.largeDebtsOffReport),
     agencyDeclarations: normalizeAgencyDeclarations(raw.agencyDeclarations),
@@ -471,6 +476,16 @@ function normalizeFacts(value: FoxIntakeDraft["facts"]): Record<string, DraftFie
   const next: Record<string, DraftField> = {};
   for (const [key, field] of Object.entries(value)) {
     if (!field || typeof field !== "object" || typeof field.value !== "string") continue;
+    if (
+      key === "date_of_birth" ||
+      key === "dob" ||
+      key === "ssn" ||
+      key === "full_ssn" ||
+      key === "social" ||
+      key === "social_security"
+    ) {
+      continue;
+    }
     next[key] = {
       field: field.field || key,
       value: field.value,

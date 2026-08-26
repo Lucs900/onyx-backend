@@ -818,6 +818,16 @@ function writeConfirmedFact(
   value: string,
   source: "computed" | "suggested" | "document",
 ): FoxIntakeDraft {
+  if (
+    field === "date_of_birth" ||
+    field === "dob" ||
+    field === "ssn" ||
+    field === "full_ssn" ||
+    field === "social" ||
+    field === "social_security"
+  ) {
+    return draft;
+  }
   const now = new Date().toISOString();
   const facts = { ...(draft.facts ?? {}) };
   facts[field] = {
@@ -860,9 +870,6 @@ function writeConfirmedFact(
       availableAssetsAsked: true,
       facts,
     };
-  }
-  if (field === "ending_balance" && amount != null) {
-    next = { ...next, assetsCheckingSavings: String(amount) };
   }
   if (field === PROPERTY_TYPE_FIELD && isPropertyTypeValue(value)) {
     next = {

@@ -5762,7 +5762,7 @@ export function structureExplainCopy(
   }
   if (id === "declarations" || id === "file-declarations") {
     return {
-      text: "Declarations. Suggested · not underwritten. Not a 1003.",
+      text: "Declarations. Agency a–m can sit on the File later. Not a first-session ask. Not a 1003.",
     };
   }
   if (id === "file-property") {
@@ -5772,12 +5772,12 @@ export function structureExplainCopy(
   }
   if (id === "file-assets") {
     return {
-      text: "High-level assets only. Checking or savings, retirement, other. Statements first. Not an asset form.",
+      text: "Assets from a statement: institution, type, suggested balance, last four. Not an asset form. Not a full account number.",
     };
   }
   if (id === "file-liabilities") {
     return {
-      text: "Liabilities wait for a credit pull. Not a worksheet.",
+      text: "Liabilities wait for a credit pull. Placeholder only. Not a worksheet.",
     };
   }
   if (id === "file-history") {

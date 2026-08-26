@@ -315,22 +315,22 @@ export type FoxIntakeDraft = {
   propertyYearBuilt?: string;
   propertyTaxes?: string;
   propertyHoa?: string;
-  /** High-level asset slots. Source of truth = statements / later connections. */
-  assetsCheckingSavings?: string;
-  assetsRetirement?: string;
-  assetsOther?: string;
   /** Thin liability placeholder. Credit pull is the later source of truth. */
   largeDebtsOffReport?: string;
   largeDebtsAsked?: boolean;
   agencyDeclarations?: {
-    citizenship?: "us_citizen" | "permanent_resident" | "non_permanent" | "skipped";
+    citizenship?: "us_citizen" | "permanent_resident" | "other" | "skipped";
     outstandingJudgments?: "yes" | "no" | "skipped";
     bankruptcy?: "yes" | "no" | "skipped";
     foreclosure?: "yes" | "no" | "skipped";
     lawsuit?: "yes" | "no" | "skipped";
+    priorForeclosureObligation?: "yes" | "no" | "skipped";
+    delinquentFederalDebt?: "yes" | "no" | "skipped";
     alimonyChildSupport?: "yes" | "no" | "skipped";
     borrowedDownPayment?: "yes" | "no" | "skipped";
+    comakerOnNote?: "yes" | "no" | "skipped";
     intentToOccupy?: "yes" | "no" | "skipped";
+    priorPropertyOwnership?: "yes" | "no" | "skipped";
   };
   addressHistory?: { label?: string; from?: string; to?: string }[];
   employmentHistory?: { label?: string; from?: string; to?: string }[];

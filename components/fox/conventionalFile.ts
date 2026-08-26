@@ -13,11 +13,7 @@ export const CONVENTIONAL_FILE_NOTE = "Suggested · not underwritten";
 export const LIABILITIES_SOURCE = "credit_report_later";
 
 export type FileAgencyAnswer = "yes" | "no" | "skipped";
-export type FileCitizenship =
-  | "us_citizen"
-  | "permanent_resident"
-  | "non_permanent"
-  | "skipped";
+export type FileCitizenship = "us_citizen" | "permanent_resident" | "other" | "skipped";
 
 export type FilePropertyObject = {
   address?: string;
@@ -31,25 +27,29 @@ export type FilePropertyObject = {
 };
 
 export type FileAssetsObject = {
-  checkingSavings?: string;
-  retirement?: string;
-  other?: string;
+  institution?: string;
+  type?: string;
+  suggestedBalance?: string;
+  last4?: string;
 };
 
 export type FileLiabilitiesObject = {
   source: typeof LIABILITIES_SOURCE;
-  largeDebtsOffReport?: string;
 };
 
 export type FileDeclarationsObject = {
+  a_outstandingJudgments?: FileAgencyAnswer;
+  b_bankruptcy?: FileAgencyAnswer;
+  c_foreclosure?: FileAgencyAnswer;
+  d_lawsuit?: FileAgencyAnswer;
+  e_priorForeclosureObligation?: FileAgencyAnswer;
+  f_delinquentFederalDebt?: FileAgencyAnswer;
+  g_alimonyChildSupport?: FileAgencyAnswer;
+  h_borrowedDownPayment?: FileAgencyAnswer;
+  i_comakerOnNote?: FileAgencyAnswer;
   citizenship?: FileCitizenship;
-  outstandingJudgments?: FileAgencyAnswer;
-  bankruptcy?: FileAgencyAnswer;
-  foreclosure?: FileAgencyAnswer;
-  lawsuit?: FileAgencyAnswer;
-  alimonyChildSupport?: FileAgencyAnswer;
-  borrowedDownPayment?: FileAgencyAnswer;
-  intentToOccupy?: FileAgencyAnswer;
+  l_intentToOccupy?: FileAgencyAnswer;
+  m_priorPropertyOwnership?: FileAgencyAnswer;
 };
 
 export type FileHistoryEntry = {
@@ -84,18 +84,22 @@ export type ConventionalSlotId =
   | "property.taxes"
   | "property.hoa"
   | "property.occupancyStatus"
-  | "assets.checkingSavings"
-  | "assets.retirement"
-  | "assets.other"
-  | "liabilities.largeDebtsOffReport"
+  | "assets.institution"
+  | "assets.type"
+  | "assets.suggestedBalance"
+  | "assets.last4"
+  | "declarations.a_outstandingJudgments"
+  | "declarations.b_bankruptcy"
+  | "declarations.c_foreclosure"
+  | "declarations.d_lawsuit"
+  | "declarations.e_priorForeclosureObligation"
+  | "declarations.f_delinquentFederalDebt"
+  | "declarations.g_alimonyChildSupport"
+  | "declarations.h_borrowedDownPayment"
+  | "declarations.i_comakerOnNote"
   | "declarations.citizenship"
-  | "declarations.outstandingJudgments"
-  | "declarations.bankruptcy"
-  | "declarations.foreclosure"
-  | "declarations.lawsuit"
-  | "declarations.alimonyChildSupport"
-  | "declarations.borrowedDownPayment"
-  | "declarations.intentToOccupy"
+  | "declarations.l_intentToOccupy"
+  | "declarations.m_priorPropertyOwnership"
   | "history.addressHistory"
   | "history.employmentHistory";
 
@@ -112,18 +116,22 @@ export const CONVENTIONAL_SLOT_IDS: ConventionalSlotId[] = [
   "property.taxes",
   "property.hoa",
   "property.occupancyStatus",
-  "assets.checkingSavings",
-  "assets.retirement",
-  "assets.other",
-  "liabilities.largeDebtsOffReport",
+  "assets.institution",
+  "assets.type",
+  "assets.suggestedBalance",
+  "assets.last4",
+  "declarations.a_outstandingJudgments",
+  "declarations.b_bankruptcy",
+  "declarations.c_foreclosure",
+  "declarations.d_lawsuit",
+  "declarations.e_priorForeclosureObligation",
+  "declarations.f_delinquentFederalDebt",
+  "declarations.g_alimonyChildSupport",
+  "declarations.h_borrowedDownPayment",
+  "declarations.i_comakerOnNote",
   "declarations.citizenship",
-  "declarations.outstandingJudgments",
-  "declarations.bankruptcy",
-  "declarations.foreclosure",
-  "declarations.lawsuit",
-  "declarations.alimonyChildSupport",
-  "declarations.borrowedDownPayment",
-  "declarations.intentToOccupy",
+  "declarations.l_intentToOccupy",
+  "declarations.m_priorPropertyOwnership",
   "history.addressHistory",
   "history.employmentHistory",
 ];
@@ -132,12 +140,6 @@ export const CONVENTIONAL_FILE_SLOT_TOTAL = CONVENTIONAL_SLOT_IDS.length;
 
 function occupancyLabel(value?: string) {
   return OCCUPANCY_BUBBLES.find((item) => item.value === value)?.label ?? "";
-}
-
-function intentToOccupyFromOccupancy(value?: string): FileAgencyAnswer | undefined {
-  if (value === "primary") return "yes";
-  if (value === "second-home" || value === "investment") return "no";
-  return undefined;
 }
 
 function filledText(value?: string | null) {
@@ -155,12 +157,17 @@ function dashJoin(parts: string[]) {
   return parts.filter(Boolean).join(" · ") || "—";
 }
 
+function citizenshipOf(stored: NonNullable<FoxIntakeDraft["agencyDeclarations"]>): FileCitizenship | undefined {
+  if (stored.citizenship === "us_citizen" || stored.citizenship === "permanent_resident") {
+    return stored.citizenship;
+  }
+  if (stored.citizenship === "other" || stored.citizenship === "skipped") return stored.citizenship;
+  return undefined;
+}
+
 export function conventionalFileFromDraft(draft: FoxIntakeDraft): ConventionalFileShape {
   const occupancy = draft.occupancyChoice.value;
   const address = (draft.subjectAddress || factValue(draft, "property_address")).trim();
-  const checking =
-    draft.assetsCheckingSavings?.trim() ||
-    factValue(draft, "ending_balance").trim();
   const employer = factValue(draft, "employer_name").trim();
   const years = factValue(draft, "years_in_business").trim();
   const employmentHistory = [...(draft.employmentHistory ?? [])];
@@ -206,23 +213,27 @@ export function conventionalFileFromDraft(draft: FoxIntakeDraft): ConventionalFi
       occupancyStatus: occupancy || undefined,
     },
     assets: {
-      checkingSavings: checking || undefined,
-      retirement: draft.assetsRetirement?.trim() || undefined,
-      other: draft.assetsOther?.trim() || undefined,
+      institution: factValue(draft, "institution") || undefined,
+      type: factValue(draft, "account_type") || undefined,
+      suggestedBalance: factValue(draft, "ending_balance") || undefined,
+      last4: factValue(draft, "account_last4") || undefined,
     },
     liabilities: {
       source: LIABILITIES_SOURCE,
-      largeDebtsOffReport: draft.largeDebtsOffReport?.trim() || undefined,
     },
     declarations: {
-      citizenship: stored.citizenship,
-      outstandingJudgments: stored.outstandingJudgments,
-      bankruptcy,
-      foreclosure,
-      lawsuit: stored.lawsuit,
-      alimonyChildSupport: stored.alimonyChildSupport,
-      borrowedDownPayment: stored.borrowedDownPayment,
-      intentToOccupy: stored.intentToOccupy || intentToOccupyFromOccupancy(occupancy),
+      a_outstandingJudgments: stored.outstandingJudgments,
+      b_bankruptcy: bankruptcy,
+      c_foreclosure: foreclosure,
+      d_lawsuit: stored.lawsuit,
+      e_priorForeclosureObligation: stored.priorForeclosureObligation,
+      f_delinquentFederalDebt: stored.delinquentFederalDebt,
+      g_alimonyChildSupport: stored.alimonyChildSupport,
+      h_borrowedDownPayment: stored.borrowedDownPayment,
+      i_comakerOnNote: stored.comakerOnNote,
+      citizenship: citizenshipOf(stored),
+      l_intentToOccupy: stored.intentToOccupy,
+      m_priorPropertyOwnership: stored.priorPropertyOwnership,
     },
     history: {
       addressHistory: (draft.addressHistory ?? []).filter((item) => filledText(item.label)),
@@ -258,18 +269,24 @@ function slotFilled(draft: FoxIntakeDraft, id: ConventionalSlotId, file: Convent
   if (id === "property.taxes") return filledText(file.property.taxes);
   if (id === "property.hoa") return filledText(file.property.hoa);
   if (id === "property.occupancyStatus") return Boolean(file.property.occupancyStatus);
-  if (id === "assets.checkingSavings") return filledText(file.assets.checkingSavings);
-  if (id === "assets.retirement") return filledText(file.assets.retirement);
-  if (id === "assets.other") return filledText(file.assets.other);
-  if (id === "liabilities.largeDebtsOffReport") return filledText(file.liabilities.largeDebtsOffReport);
+  if (id === "assets.institution") return filledText(file.assets.institution);
+  if (id === "assets.type") return filledText(file.assets.type);
+  if (id === "assets.suggestedBalance") return filledText(file.assets.suggestedBalance);
+  if (id === "assets.last4") return filledText(file.assets.last4);
+  if (id === "declarations.a_outstandingJudgments") return Boolean(file.declarations.a_outstandingJudgments);
+  if (id === "declarations.b_bankruptcy") return Boolean(file.declarations.b_bankruptcy);
+  if (id === "declarations.c_foreclosure") return Boolean(file.declarations.c_foreclosure);
+  if (id === "declarations.d_lawsuit") return Boolean(file.declarations.d_lawsuit);
+  if (id === "declarations.e_priorForeclosureObligation") {
+    return Boolean(file.declarations.e_priorForeclosureObligation);
+  }
+  if (id === "declarations.f_delinquentFederalDebt") return Boolean(file.declarations.f_delinquentFederalDebt);
+  if (id === "declarations.g_alimonyChildSupport") return Boolean(file.declarations.g_alimonyChildSupport);
+  if (id === "declarations.h_borrowedDownPayment") return Boolean(file.declarations.h_borrowedDownPayment);
+  if (id === "declarations.i_comakerOnNote") return Boolean(file.declarations.i_comakerOnNote);
   if (id === "declarations.citizenship") return Boolean(file.declarations.citizenship);
-  if (id === "declarations.outstandingJudgments") return Boolean(file.declarations.outstandingJudgments);
-  if (id === "declarations.bankruptcy") return Boolean(file.declarations.bankruptcy);
-  if (id === "declarations.foreclosure") return Boolean(file.declarations.foreclosure);
-  if (id === "declarations.lawsuit") return Boolean(file.declarations.lawsuit);
-  if (id === "declarations.alimonyChildSupport") return Boolean(file.declarations.alimonyChildSupport);
-  if (id === "declarations.borrowedDownPayment") return Boolean(file.declarations.borrowedDownPayment);
-  if (id === "declarations.intentToOccupy") return Boolean(file.declarations.intentToOccupy);
+  if (id === "declarations.l_intentToOccupy") return Boolean(file.declarations.l_intentToOccupy);
+  if (id === "declarations.m_priorPropertyOwnership") return Boolean(file.declarations.m_priorPropertyOwnership);
   if (id === "history.addressHistory") return Boolean(file.history.addressHistory?.length);
   return Boolean(file.history.employmentHistory?.length);
 }
@@ -315,7 +332,7 @@ function declarationSpoken(value?: FileAgencyAnswer | FileCitizenship) {
   if (!value || value === "skipped") return "";
   if (value === "us_citizen") return "US citizen";
   if (value === "permanent_resident") return "permanent resident";
-  if (value === "non_permanent") return "non-permanent";
+  if (value === "other") return "other";
   return value;
 }
 
@@ -330,18 +347,16 @@ export function conventionalFileFacts(draft: FoxIntakeDraft): {
   const occupancy = occupancyLabel(file.property.occupancyStatus);
   const address = file.property.address || "address —";
   const type = propertyTypeSpoken(file.property.propertyType) || "type —";
-  const checking = moneyLabel(file.assets.checkingSavings) || "checking/savings —";
-  const retirement = moneyLabel(file.assets.retirement) || "retirement —";
-  const other = moneyLabel(file.assets.other) || "other —";
+  const institution = file.assets.institution || "institution —";
+  const accountType = file.assets.type || "type —";
+  const balance = moneyLabel(file.assets.suggestedBalance) || "balance —";
+  const last4 = file.assets.last4 ? `last4 ${file.assets.last4}` : "last4 —";
   const declarationBits = [
-    declarationSpoken(file.declarations.intentToOccupy)
-      ? `occupy ${declarationSpoken(file.declarations.intentToOccupy)}`
+    declarationSpoken(file.declarations.b_bankruptcy)
+      ? `BK ${declarationSpoken(file.declarations.b_bankruptcy)}`
       : "",
-    declarationSpoken(file.declarations.bankruptcy)
-      ? `BK ${declarationSpoken(file.declarations.bankruptcy)}`
-      : "",
-    declarationSpoken(file.declarations.foreclosure)
-      ? `FC ${declarationSpoken(file.declarations.foreclosure)}`
+    declarationSpoken(file.declarations.c_foreclosure)
+      ? `FC ${declarationSpoken(file.declarations.c_foreclosure)}`
       : "",
     declarationSpoken(file.declarations.citizenship),
   ];
@@ -351,26 +366,26 @@ export function conventionalFileFacts(draft: FoxIntakeDraft): {
     {
       id: "file-property",
       label: "Property",
-      value: dashJoin([occupancy || "occupancy —", address.startsWith("address") ? address : address, type]),
+      value: dashJoin([occupancy || "occupancy —", address, type]),
       note: "APN, legal, year built, taxes, HOA wait for a title profile",
     },
     {
       id: "file-assets",
       label: "Assets",
-      value: dashJoin([checking, retirement, other]),
-      note: "From statements · not a form",
+      value: dashJoin([institution, accountType, balance, last4]),
+      note: "From statements · institution / type / balance / last4 · not a form",
     },
     {
       id: "file-liabilities",
       label: "Liabilities",
-      value: file.liabilities.largeDebtsOffReport?.trim() || "Credit report later",
-      note: "Not a worksheet. Credit pull is the later source.",
+      value: "Credit report later",
+      note: "Placeholder. Empty until a credit pull.",
     },
     {
       id: "file-declarations",
       label: "Declarations",
       value: dashJoin(declarationBits) || "—",
-      note: "Agency set · late · not a 1003",
+      note: "a–m holdable · late · not a first-session ask",
     },
     {
       id: "file-history",
