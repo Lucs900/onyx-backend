@@ -31,6 +31,7 @@ import {
   draftHasLease,
   draftHasScheduleE,
   draftHasUnsupportedRental,
+  draftNeedsReoStatement,
   draftRentalNamed,
 } from "./rentalIncome";
 import {
@@ -156,6 +157,9 @@ const MONEY_KEYS = new Set([
   "income",
   "qualifying_income",
   "rental_income",
+  "rental_gross_monthly",
+  "rental_pitia_used",
+  "suggested_net_rental",
   "schedule_c_net_profit",
   "depreciation",
   "depletion",
@@ -461,6 +465,10 @@ export function factLabel(field: string) {
   if (field === "k1_distributions") return "K-1 distributions";
   if (field === "qualifying_income") return "qualifying income";
   if (field === "rental_income") return "Suggested rental income";
+  if (field === "rental_gross_monthly") return "Suggested rental (gross)";
+  if (field === "rental_pitia_used") return "PITIA used to net";
+  if (field === "suggested_net_rental") return "Suggested net rental";
+  if (field === "rental_net_role") return "Rental net role";
   if (field === "institution") return "institution";
   if (field === "period_end") return "period end";
   if (field === "account_type") return "account type";
@@ -544,6 +552,13 @@ export function displayFactValue(field: string, value: string) {
   if (field === STATED_TIME_ON_JOB_FIELD) {
     const months = Number(value);
     if (Number.isFinite(months) && months > 0) return displayTimeOnJob(months);
+  }
+  if (field === "suggested_net_rental") {
+    const n = moneyNumber(value);
+    if (n != null) {
+      const abs = Math.abs(Math.round(n)).toLocaleString("en-US");
+      return n < 0 ? `−$${abs}` : `$${abs}`;
+    }
   }
   if (MONEY_KEYS.has(field)) {
     const n = moneyNumber(value);
@@ -1356,6 +1371,8 @@ export function completenessFileFromDraft(draft: FoxIntakeDraft): CompletenessFi
     ...(draft.coborrowerName ? { coborrowerName: draft.coborrowerName } : {}),
     ...(draft.borrowerName ? { borrowerName: draft.borrowerName } : {}),
     ...(draft.statedOtherReo ? { statedOtherReo: draft.statedOtherReo } : {}),
+    ...(draft.suggestedNetRental != null ? { suggestedNetRental: draft.suggestedNetRental } : {}),
+    ...(draft.rentalNetRole ? { rentalNetRole: draft.rentalNetRole } : {}),
     ...fileGuidelineSignals(draft),
   };
 }
@@ -1391,6 +1408,7 @@ function fileGuidelineSignals(draft: FoxIntakeDraft): Partial<CompletenessFile> 
     hasScheduleE: draftHasScheduleE(draft),
     hasLease: draftHasLease(draft),
     unsupportedRental: draftHasUnsupportedRental(draft),
+    rentalNeedsStatement: draftNeedsReoStatement(draft),
   };
 }
 
@@ -1576,6 +1594,9 @@ function guidelineStillUsefulItems(draft: FoxIntakeDraft): StillUsefulItem[] {
   const items: StillUsefulItem[] = [];
   if ((file.rentalNamed || file.occupancy === "investment") && !file.hasScheduleE && !file.hasLease) {
     items.push(layer2Item("rental-docs", RENTAL_DOCS_WOULD_HELP, RENTAL_DOCS_WOULD_HELP));
+  }
+  if (file.rentalNeedsStatement && !items.some((item) => item.label === OTHER_REO_MORTGAGE_STATEMENTS)) {
+    items.push(layer2Item("reo-mortgage-rental", OTHER_REO_MORTGAGE_STATEMENTS, OTHER_REO_MORTGAGE_STATEMENTS));
   }
   return items;
 }

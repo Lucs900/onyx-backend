@@ -1,19 +1,36 @@
 /**
- * Rental suggest helper. Cites B3-3.8-01 (Schedule E) and B3-3.6-05 (lease)
- * internally only — never quote those section numbers to the borrower.
+ * Rental suggest + NOO net cash flow (B3-3.8-01 internally only).
  * Suggested · not underwritten. Never call this qualifying income.
+ * Gross is a working figure only. Persist signed net on Use this.
  * Do not apply 75% to Schedule E. Lease vacancy factor is the only 0.75.
+ * Do not net principal-residence rent against subject PITIA.
  */
 
 export const RENTAL_INTERNAL_CITES = ["B3-3.8-01", "B3-3.6-05"] as const;
 export const LEASE_VACANCY_FACTOR = 0.75;
 export const RENTAL_INCOME_FIELD = "rental_income";
+export const RENTAL_GROSS_FIELD = "rental_gross_monthly";
+export const RENTAL_PITIA_FIELD = "rental_pitia_used";
+export const SUGGESTED_NET_RENTAL_FIELD = "suggested_net_rental";
+export const RENTAL_NET_ROLE_FIELD = "rental_net_role";
 export const SUGGESTED_RENTAL_NOTE = "Suggested rental income · not underwritten";
+export const SUGGESTED_GROSS_NOTE = "Suggested rental (gross) · not underwritten";
+export const SUGGESTED_NET_NOTE = "Suggested net rental · not underwritten";
+export const PITIA_FROM_FILE_NOTE = "PITIA used to net · from File";
+export const PITIA_HOUSING_NOTE = "Estimated housing · not final";
 export const RENTAL_STILL_USEFUL = "A Schedule E or a current lease would help.";
 export const RENTAL_UNSUPPORTED_CAUTION =
   "I don’t have a rental path for that yet. I’ll keep gathering.";
+export const RENTAL_NEED_HOUSING =
+  "I need the housing estimate confirmed before I can net this rental.";
+export const RENTAL_NEED_STATEMENT = "I don’t have the payment on that rental yet.";
+export const RENTAL_NET_COST_CAUTION =
+  "This rental looks like a monthly cost. I’ll keep gathering.";
 
 export type RentalMethod = "schedule_e" | "lease_75";
+export type RentalNetRole = "income" | "liability" | "none" | "thin";
+export type RentalPitiaSource = "estimated_housing" | "statement";
+export type RentalThinReason = "housing" | "statement" | "primary";
 
 export type ScheduleERentalInput = {
   rentalIncomeOrLoss?: number | null;
@@ -38,18 +55,80 @@ export type RentalSuggestResult = {
   thinner?: boolean;
 };
 
+export type RentalPropertyInput = {
+  id: string;
+  kind: "subject" | "reo";
+  grossMonthly: number;
+  method: RentalMethod;
+  pitia?: number | null;
+  pitiaSource?: RentalPitiaSource;
+};
+
+export type RentalPropertyNet = {
+  id: string;
+  kind: "subject" | "reo";
+  grossMonthly: number;
+  method: RentalMethod;
+  pitia: number | null;
+  pitiaSource?: RentalPitiaSource;
+  net: number | null;
+  complete: boolean;
+  thinReason?: RentalThinReason;
+};
+
+export type RentalNetResult = {
+  properties: RentalPropertyNet[];
+  aggregateNet: number | null;
+  role: RentalNetRole;
+  completeCount: number;
+  method: RentalMethod | "aggregate";
+  subjectPitiaNetted: boolean;
+  thinReason?: RentalThinReason;
+};
+
 const UNSUPPORTED_RENTAL =
   /\b(airbnb|vrbo|short[-\s]?term|str\b|8825|form\s*8825|schedule\s*f|sch\.?\s*f|boarder|room(er|mate) rent|subject adu|adu to qualify|ytd p&l|ytd pnl|profit and loss)\b/i;
 
 export function rentalMoneyShown(value: number) {
   const rounded = Math.round(value);
   const abs = Math.abs(rounded).toLocaleString("en-US");
-  return rounded < 0 ? `-$${abs}` : `$${abs}`;
+  return rounded < 0 ? `−$${abs}` : `$${abs}`;
 }
 
+/** Retired gross-only confirm. Use rentalNetConfirmCopy. */
 export function rentalConfirmCopy(method: RentalMethod, monthly: number): string {
-  const using = method === "schedule_e" ? "Schedule E" : "75% of the lease";
-  return `Suggested rental income is ${rentalMoneyShown(monthly)} · not underwritten. I’m using ${using}. Use this?`;
+  return (
+    rentalNetConfirmCopy({
+      net: monthly,
+      method,
+      completeCount: 1,
+    }) ?? ""
+  );
+}
+
+export function rentalNetConfirmCopy(opts: {
+  net: number;
+  method: RentalMethod | "aggregate";
+  completeCount: number;
+}): string | null {
+  if (!Number.isFinite(opts.net)) return null;
+  const shown = rentalMoneyShown(opts.net);
+  if (!shown.includes("$")) return null;
+  if (opts.completeCount >= 2) {
+    return `Suggested net rental is ${shown} · not underwritten. I’m using all rental properties I can net. Use this?`;
+  }
+  const using = opts.method === "schedule_e" ? "Schedule E" : "75% of the lease";
+  if (opts.net < 0) {
+    return `Suggested net rental is ${shown} · not underwritten. That would count as a monthly liability. I’m using ${using} minus this property’s PITIA. Use this?`;
+  }
+  return `Suggested net rental is ${shown} · not underwritten. I’m using ${using} minus this property’s PITIA. Use this?`;
+}
+
+export function rentalNetRoleOf(net: number | null): RentalNetRole {
+  if (net == null || !Number.isFinite(net)) return "thin";
+  if (net > 0) return "income";
+  if (net < 0) return "liability";
+  return "none";
 }
 
 export function unsupportedRentalNamed(text?: string | null): boolean {
@@ -111,5 +190,56 @@ export function suggestLeaseRental(input: LeaseRentalInput): RentalSuggestResult
     monthly: Math.round(input.grossMonthlyRent * LEASE_VACANCY_FACTOR),
     method: "lease_75",
     thinner: input.twoMonthsDeposits !== true,
+  };
+}
+
+/** NOO only. net_i = grossMonthly_i - pitia_i. Aggregate complete properties only. */
+export function netRentalCashFlow(properties: RentalPropertyInput[]): RentalNetResult {
+  const rows: RentalPropertyNet[] = properties.map((item) => {
+    const pitia =
+      item.pitia != null && Number.isFinite(item.pitia) && item.pitia > 0 ? Math.round(item.pitia) : null;
+    const gross = Math.round(item.grossMonthly);
+    if (pitia == null) {
+      return {
+        id: item.id,
+        kind: item.kind,
+        grossMonthly: gross,
+        method: item.method,
+        pitia: null,
+        pitiaSource: item.pitiaSource,
+        net: null,
+        complete: false,
+        thinReason: item.kind === "subject" ? "housing" : "statement",
+      };
+    }
+    return {
+      id: item.id,
+      kind: item.kind,
+      grossMonthly: gross,
+      method: item.method,
+      pitia,
+      pitiaSource: item.pitiaSource,
+      net: gross - pitia,
+      complete: true,
+    };
+  });
+  const complete = rows.filter((item) => item.complete && item.net != null);
+  const aggregateNet = complete.length
+    ? complete.reduce((sum, item) => sum + (item.net ?? 0), 0)
+    : null;
+  const role = rentalNetRoleOf(aggregateNet);
+  const method =
+    complete.length >= 2 ? "aggregate" : (complete[0]?.method ?? rows[0]?.method ?? "lease_75");
+  const thinReason = role === "thin" ? rows.find((item) => item.thinReason)?.thinReason : undefined;
+  return {
+    properties: rows,
+    aggregateNet,
+    role,
+    completeCount: complete.length,
+    method,
+    subjectPitiaNetted: complete.some(
+      (item) => item.kind === "subject" && item.pitiaSource === "estimated_housing",
+    ),
+    thinReason,
   };
 }

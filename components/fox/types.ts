@@ -275,6 +275,11 @@ export type FoxIntakeDraft = {
   estimatedHousing?: number;
   housingAsked?: boolean;
   statedDti?: number;
+  rentalGrossMonthly?: number;
+  rentalPitiaUsed?: number;
+  suggestedNetRental?: number;
+  rentalNetRole?: "income" | "liability" | "none" | "thin";
+  rentalThinReason?: "housing" | "statement" | "primary";
   subordinateBalance?: number;
   hoaMonthly?: number;
   miApplies?: boolean;

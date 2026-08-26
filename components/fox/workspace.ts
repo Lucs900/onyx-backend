@@ -141,8 +141,7 @@ import {
   parseStatedMonthlyLease,
   proposeTypedLeaseRental,
   rentalConfirmAsk,
-  RENTAL_INCOME_FIELD,
-  SUGGESTED_RENTAL_NOTE,
+  rentalThinCopy,
 } from "./rentalIncome";
 import {
   applyMortgageSubtract,
@@ -1394,8 +1393,9 @@ function liveProposalAsk(
     };
   }
   if (isRentalIncomeField(proposal.field)) {
+    const complete = Number(proposal.extras?.find((item) => item.field === "rental_complete_count")?.value ?? 1);
     return {
-      text: rentalConfirmAsk(proposal.methodNote, Number(proposal.value) || 0),
+      text: rentalConfirmAsk(proposal.methodNote, Number(proposal.value), complete),
       actions: incomeConfirmActions(),
     };
   }
@@ -1927,7 +1927,7 @@ export function isQualifyingIncomeConfirmPending(draft: FoxIntakeDraft): boolean
 }
 
 export function isRentalIncomeConfirmPending(draft: FoxIntakeDraft): boolean {
-  return draft.pendingProposal?.field === RENTAL_INCOME_FIELD;
+  return isRentalIncomeField(draft.pendingProposal?.field);
 }
 
 /** Queue / Looks right waits until Use this / Change on a live income or remainder suggest. */
@@ -4179,12 +4179,21 @@ export function workspaceReply(
     !draft.pendingConflict
   ) {
     const leaseDraft = proposeTypedLeaseRental(draft, q);
-    if (leaseDraft?.pendingProposal) {
+    if (leaseDraft) {
       const rent = parseStatedMonthlyLease(q, { occupancy: draft.occupancyChoice.value });
-      return {
-        ...workspacePromptCopy("confirm-proposal", leaseDraft),
-        capture: { field: "propose-rental-lease", value: String(rent ?? leaseDraft.pendingProposal.value) },
-      };
+      if (leaseDraft.pendingProposal) {
+        return {
+          ...workspacePromptCopy("confirm-proposal", leaseDraft),
+          capture: { field: "propose-rental-lease", value: String(rent ?? "") },
+        };
+      }
+      const thin = rentalThinCopy(leaseDraft.rentalThinReason);
+      if (thin) {
+        return {
+          text: thin,
+          capture: { field: "propose-rental-lease", value: String(rent ?? "") },
+        };
+      }
     }
   }
 
@@ -5727,15 +5736,6 @@ export function previewFacts(draft: FoxIntakeDraft): PreviewFact[] {
       label: "Qualifying income",
       value: qualifying.value,
       note: qualifying.note,
-    });
-  }
-  const rentalIncome = draft.facts?.[RENTAL_INCOME_FIELD];
-  if (rentalIncome?.confirmed && rentalIncome.value) {
-    facts.push({
-      id: "rental",
-      label: "Suggested rental income",
-      value: displayFactValue(RENTAL_INCOME_FIELD, rentalIncome.value),
-      note: SUGGESTED_RENTAL_NOTE,
     });
   }
   const yearsInBusiness = draft.facts?.years_in_business?.value;

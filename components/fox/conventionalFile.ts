@@ -264,7 +264,10 @@ function slotFilled(draft: FoxIntakeDraft, id: ConventionalSlotId, file: Convent
   }
   if (id === "income.type") return Boolean(draft.incomeType.value);
   if (id === "income.rental") {
-    return Boolean(draft.facts?.rental_income?.confirmed && draft.facts?.rental_income?.value);
+    return Boolean(
+      (draft.facts?.suggested_net_rental?.confirmed && draft.facts?.suggested_net_rental?.value) ||
+        (draft.facts?.rental_income?.confirmed && draft.facts?.rental_income?.value),
+    );
   }
   if (id === "property.address") return filledText(file.property.address);
   if (id === "property.apn") return filledText(file.property.apn);

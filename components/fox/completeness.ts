@@ -125,19 +125,27 @@ import {
   type NamedDebt,
 } from "@/lib/guidelines/conventional";
 import {
+  RENTAL_GROSS_FIELD,
   RENTAL_INCOME_FIELD,
+  RENTAL_NET_ROLE_FIELD,
+  RENTAL_PITIA_FIELD,
+  SUGGESTED_NET_RENTAL_FIELD,
   draftHasLease,
   draftHasScheduleE,
   draftHasUnsupportedRental,
+  draftNeedsReoStatement,
   draftRentalNamed,
+  parseRentalMoney,
   rentalConfirmAsk,
 } from "./rentalIncome";
 import { conventionalCompletenessCopy, conventionalSlotCount } from "./conventionalFile";
 import {
   ESTIMATED_HOUSING_FIELD,
+  draftRentalDtiNet,
   housingConfirmCopy,
   qualifyingIncomeConfirmCopy,
   skipEstimatedHousing,
+  syncCalculatorDraft,
 } from "./calculators";
 import { statedDti } from "@/lib/calculators/conventional";
 
@@ -570,7 +578,12 @@ export function factsFromDraft(draft: FoxIntakeDraft): CompletenessFile {
   const suggestedMonthlyIncome = moneyNumber(draft.facts?.[QUALIFYING_INCOME_FIELD]?.value ?? "");
   const computedDti =
     draft.statedDti ??
-    statedDti(draft.estimatedHousing, draft.statedMonthlyDebts, suggestedMonthlyIncome);
+    statedDti(
+      draft.estimatedHousing,
+      draft.statedMonthlyDebts,
+      suggestedMonthlyIncome,
+      draftRentalDtiNet(draft),
+    );
   const base = completenessFileFromDraft(draft);
   const received = new Set(base.received ?? []);
   for (const id of inferredIncomeClasses(draft)) received.add(id);
@@ -614,6 +627,9 @@ export function factsFromDraft(draft: FoxIntakeDraft): CompletenessFile {
     ...(draft.coborrowerName ? { coborrowerName: draft.coborrowerName } : {}),
     ...(draft.borrowerName ? { borrowerName: draft.borrowerName } : {}),
     ...(draft.statedOtherReo ? { statedOtherReo: draft.statedOtherReo } : {}),
+    ...(draft.suggestedNetRental != null ? { suggestedNetRental: draft.suggestedNetRental } : {}),
+    ...(draft.rentalNetRole ? { rentalNetRole: draft.rentalNetRole } : {}),
+    ...(draftNeedsReoStatement(draft) ? { rentalNeedsStatement: true } : {}),
     ...(suggestedMonthlyIncome != null ? { suggestedMonthlyIncome } : {}),
     docsSkipped: Boolean(
       draft.documentsSkipped || draft.docsHeld || (draft.skippedClasses?.length ?? 0) > 0,
@@ -653,6 +669,7 @@ function guidelineSignalsFromDraft(draft: FoxIntakeDraft): Partial<CompletenessF
     hasScheduleE: draftHasScheduleE(draft),
     hasLease: draftHasLease(draft),
     unsupportedRental: draftHasUnsupportedRental(draft),
+    rentalNeedsStatement: draftNeedsReoStatement(draft),
   };
 }
 
@@ -791,8 +808,9 @@ export function proposalAskCopy(proposal: FactProposal) {
   if (proposal.field === ESTIMATED_HOUSING_FIELD) {
     return housingConfirmCopy(Number(proposal.value) || 0);
   }
-  if (proposal.field === RENTAL_INCOME_FIELD) {
-    return rentalConfirmAsk(proposal.methodNote, Number(proposal.value) || 0);
+  if (proposal.field === RENTAL_INCOME_FIELD || proposal.field === SUGGESTED_NET_RENTAL_FIELD) {
+    const complete = Number(proposal.extras?.find((item) => item.field === "rental_complete_count")?.value ?? 1);
+    return rentalConfirmAsk(proposal.methodNote, Number(proposal.value), complete);
   }
   if (proposal.field === STATED_MONTHLY_DEBTS_FIELD) {
     return monthlyDebtsConfirmCopy(Number(proposal.value) || 0);
@@ -928,6 +946,25 @@ function writeConfirmedFact(
       housingAsked: true,
       facts,
     };
+  }
+  if (field === SUGGESTED_NET_RENTAL_FIELD) {
+    const net = parseRentalMoney(value);
+    if (net != null) {
+      next = { ...next, suggestedNetRental: net, facts };
+    }
+  }
+  if (field === RENTAL_GROSS_FIELD) {
+    const gross = parseRentalMoney(value);
+    if (gross != null) next = { ...next, rentalGrossMonthly: gross, facts };
+  }
+  if (field === RENTAL_PITIA_FIELD) {
+    const pitia = parseRentalMoney(value);
+    if (pitia != null) next = { ...next, rentalPitiaUsed: pitia, facts };
+  }
+  if (field === RENTAL_NET_ROLE_FIELD) {
+    if (value === "income" || value === "liability" || value === "none" || value === "thin") {
+      next = { ...next, rentalNetRole: value, facts };
+    }
   }
   if (field === STATED_MONTHLY_DEBTS_FIELD && amount != null) {
     next = {
@@ -1115,6 +1152,7 @@ export function resolveProposal(
   const source =
     proposal.field === QUALIFYING_INCOME_FIELD ||
       proposal.field === RENTAL_INCOME_FIELD ||
+      proposal.field === SUGGESTED_NET_RENTAL_FIELD ||
       proposal.field === STATED_AVAILABLE_ASSETS_FIELD ||
       proposal.field === PROPERTY_TYPE_FIELD ||
       proposal.field === STATED_TIME_ON_JOB_FIELD ||
@@ -1145,10 +1183,15 @@ export function resolveProposal(
   }
   const cleared = { ...next, pendingProposal: null };
   const flushed = flushPendingOtherReo(flushPendingCurrentHousing(flushPendingHireDate(cleared)));
-  if (winner === "accept" && shouldAskYearsInBusiness(flushed)) {
-    return withYearsInBusinessAsk(flushed);
+  const afterNet =
+    winner === "accept" &&
+    (proposal.field === SUGGESTED_NET_RENTAL_FIELD || proposal.field === RENTAL_INCOME_FIELD)
+      ? syncCalculatorDraft(flushed)
+      : flushed;
+  if (winner === "accept" && shouldAskYearsInBusiness(afterNet)) {
+    return withYearsInBusinessAsk(afterNet);
   }
-  return flushed;
+  return afterNet;
 }
 
 function flushPendingHireDate(draft: FoxIntakeDraft): FoxIntakeDraft {
@@ -1397,9 +1440,10 @@ export function requiredLineValue(
             : raw === "other"
               ? "Other"
               : "";
-    const rental = draft.facts?.[RENTAL_INCOME_FIELD];
+    const rental =
+      draft.facts?.[SUGGESTED_NET_RENTAL_FIELD] ?? draft.facts?.[RENTAL_INCOME_FIELD];
     if (rental?.confirmed && rental.value) {
-      const shown = displayFactValue(RENTAL_INCOME_FIELD, rental.value);
+      const shown = displayFactValue(rental.field, rental.value);
       const bits = [label, shown].filter(Boolean);
       return { value: bits.join(" · "), filled: true };
     }

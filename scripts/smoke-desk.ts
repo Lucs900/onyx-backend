@@ -110,6 +110,7 @@ import {
   MANUFACTURED_CAUTION,
   CONDO_NON_WARRANTABLE_CAUTION,
   HIGH_STATED_DTI_CAUTION,
+  RENTAL_NET_COST_CAUTION,
   RENTAL_UNSUPPORTED_CAUTION,
   CONDO_NEW_CONSTRUCTION_ACK,
   RENTAL_DOCS_WOULD_HELP,
@@ -117,15 +118,20 @@ import {
   sketchedLtvFromFacts,
 } from "../lib/guidelines/conventional";
 import {
+  netRentalCashFlow,
   parseStatedMonthlyLease,
   rentalConfirmCopy,
+  rentalNetConfirmCopy,
+  RENTAL_NEED_HOUSING,
+  RENTAL_NEED_STATEMENT,
+  SUGGESTED_NET_NOTE,
+  SUGGESTED_NET_RENTAL_FIELD,
   suggestLeaseRental,
   suggestScheduleERental,
 } from "../lib/income/rental";
 import {
   applyRentalIncomeFromExtract,
   proposeTypedLeaseRental,
-  RENTAL_INCOME_FIELD,
 } from "../components/fox/rentalIncome";
 import { answerFromFile, foxAnswer, interpretQuestion, topicFromFile } from "../lib/guidelines/answer";
 import {
@@ -9876,20 +9882,32 @@ assert.equal(suggestScheduleERental({ rentalIncomeOrLoss: 12000, depreciation: 6
 assert.equal(suggestScheduleERental({ rentalIncomeOrLoss: 12000, depreciation: 6000 })?.monthly, 1500);
 assert.equal(suggestLeaseRental({ grossMonthlyRent: 4000, twoMonthsDeposits: true })?.monthly, 3000);
 assert.equal(suggestLeaseRental({ grossMonthlyRent: 4000 })?.thinner, true);
-assert.equal(rentalConfirmCopy("schedule_e", 1500), "Suggested rental income is $1,500 · not underwritten. I’m using Schedule E. Use this?");
-assert.equal(rentalConfirmCopy("lease_75", 2250), "Suggested rental income is $2,250 · not underwritten. I’m using 75% of the lease. Use this?");
+assert.equal(
+  rentalNetConfirmCopy({ net: 1500, method: "schedule_e", completeCount: 1 }),
+  "Suggested net rental is $1,500 · not underwritten. I’m using Schedule E minus this property’s PITIA. Use this?",
+);
+assert.equal(
+  rentalNetConfirmCopy({ net: -3293, method: "lease_75", completeCount: 1 }),
+  "Suggested net rental is −$3,293 · not underwritten. That would count as a monthly liability. I’m using 75% of the lease minus this property’s PITIA. Use this?",
+);
+assert.doesNotMatch(
+  rentalConfirmCopy("lease_75", 2250) ?? "",
+  /Suggested rental income is \$2,250 · not underwritten\. I’m using 75% of the lease\. Use this\?/,
+);
 const rentalExtract = applyRentalIncomeFromExtract(afterLooks, "other", {
   schedule_e_rental_income: "12000",
   schedule_e_depreciation: "6000",
 });
-assert.equal(rentalExtract.pendingProposal?.field, RENTAL_INCOME_FIELD);
-assert.equal(rentalExtract.pendingProposal?.value, "1500");
+assert.ok(!rentalExtract.pendingProposal);
+assert.equal(rentalExtract.rentalThinReason, "statement");
+assert.equal(rentalExtract.rentalGrossMonthly, 1500);
 assert.equal(rentalExtract.facts?.qualifying_income, undefined);
-assert.equal(resolveProposal(rentalExtract, "accept").facts?.[RENTAL_INCOME_FIELD]?.value, "1500");
-assert.equal(resolveProposal(rentalExtract, "decline").facts?.[RENTAL_INCOME_FIELD], undefined);
+assert.equal(resolveProposal(rentalExtract, "accept").facts?.[SUGGESTED_NET_RENTAL_FIELD], undefined);
+assert.equal(resolveProposal(rentalExtract, "decline").facts?.[SUGGESTED_NET_RENTAL_FIELD], undefined);
 const leaseExtract = applyRentalIncomeFromExtract(afterLooks, "other", { gross_monthly_rent: "4000" });
-assert.equal(leaseExtract.pendingProposal?.value, "3000");
-assert.match(rentalConfirmCopy("lease_75", 3000), /75% of the lease/);
+assert.ok(!leaseExtract.pendingProposal);
+assert.equal(leaseExtract.rentalGrossMonthly, 3000);
+assert.match(rentalNetConfirmCopy({ net: 3000, method: "lease_75", completeCount: 1 }) ?? "", /75% of the lease/);
 assert.equal(
   readinessFromFile({
     product: "buy",
@@ -10033,46 +10051,134 @@ assert.equal(interpretQuestion("I have a lease for 3000 a month")?.topicId, "inc
 assert.equal(interpretQuestion("I have Airbnb income")?.topicId, "income.rental_thin");
 assert.equal(rentalSuggest(null, { grossMonthlyRent: 3000 })?.monthly, 2250);
 assert.equal(rentalSuggest({ rentalIncomeOrLoss: 12000, depreciation: 6000 })?.monthly, 1500);
-const leaseAsk = workspaceReply("I have a lease for 3000 a month", investBuy);
+const investHousingEst = housingEstimate({
+  purpose: "purchase",
+  loanAmount: 680000,
+  purchasePrice: 850000,
+});
+assert.ok(investHousingEst);
+const investNetWritten = 2250 - investHousingEst!.estimatedHousing;
+assert.equal(investNetWritten, -3293);
+assert.equal(
+  netRentalCashFlow([
+    { id: "subject", kind: "subject", grossMonthly: 2250, method: "lease_75", pitia: investHousingEst!.estimatedHousing, pitiaSource: "estimated_housing" },
+  ]).aggregateNet,
+  -3293,
+);
+assert.equal(
+  netRentalCashFlow([
+    { id: "a", kind: "subject", grossMonthly: 2250, method: "lease_75", pitia: 2000, pitiaSource: "estimated_housing" },
+    { id: "b", kind: "reo", grossMonthly: 1800, method: "schedule_e", pitia: 1500, pitiaSource: "statement" },
+  ]).aggregateNet,
+  550,
+);
+assert.equal(
+  rentalNetConfirmCopy({ net: 550, method: "aggregate", completeCount: 2 }),
+  "Suggested net rental is $550 · not underwritten. I’m using all rental properties I can net. Use this?",
+);
+assert.equal(netRentalCashFlow([{ id: "subject", kind: "subject", grossMonthly: 2250, method: "lease_75" }]).role, "thin");
+
+const thinHousingAsk = workspaceReply("I have a lease for 3000 a month", investBuy);
+assert.equal(thinHousingAsk?.text, RENTAL_NEED_HOUSING);
+assert.doesNotMatch(thinHousingAsk?.text ?? "", /Suggested rental income is \$2,250/);
+assert.doesNotMatch(thinHousingAsk?.text ?? "", /I can answer from this file/);
+assert.equal(thinHousingAsk?.capture?.field, "propose-rental-lease");
+assert.equal(guidelineCaution(investBuy), INVESTMENT_CAUTION);
+
+const skippedInvestHousing = skipEstimatedHousing(draft({ ...investBuy, housingAsked: true }));
+assert.equal(workspaceReply("I have a lease for 3000 a month", skippedInvestHousing)?.text, RENTAL_NEED_HOUSING);
+
+const otherReoNoStatement = draft({
+  ...investBuy,
+  occupancyChoice: { ...emptyDraft().occupancyChoice, value: "primary" },
+  statedOtherReo: "yes",
+  otherReoAsked: true,
+});
+const otherReoThin = workspaceReply("I have a lease for 3000 a month", otherReoNoStatement);
+assert.equal(otherReoThin?.text, RENTAL_NEED_STATEMENT);
+assert.ok((stillUsefulSection(otherReoNoStatement)?.items ?? []).some((item) => item.label === OTHER_REO_MORTGAGE_STATEMENTS) || (stillUsefulSection(proposeTypedLeaseRental(otherReoNoStatement, "I have a lease for 3000 a month")!)?.items ?? []).some((item) => item.label === OTHER_REO_MORTGAGE_STATEMENTS));
+
+const twoFourPrimary = draft({
+  ...investBuy,
+  occupancyChoice: { ...emptyDraft().occupancyChoice, value: "primary" },
+  propertyType: "two_to_four",
+  propertyTypeAsked: true,
+});
+assert.equal(proposeTypedLeaseRental(twoFourPrimary, "I have a lease for 3000 a month"), null);
+
+const investHoused = draft({
+  ...investBuy,
+  estimatedHousing: investHousingEst!.estimatedHousing,
+  housingAsked: true,
+  sampleAccepted: true,
+});
+const leaseAsk = workspaceReply("I have a lease for 3000 a month", investHoused);
 assert.match(
   leaseAsk?.text ?? "",
-  /Suggested rental income is \$2,250 · not underwritten\. I’m using 75% of the lease\. Use this\?/,
+  /Suggested net rental is −\$3,293 · not underwritten\. That would count as a monthly liability\. I’m using 75% of the lease minus this property’s PITIA\. Use this\?/,
 );
+assert.doesNotMatch(leaseAsk?.text ?? "", /Suggested rental income is \$2,250/);
 assert.doesNotMatch(leaseAsk?.text ?? "", /I can answer from this file/);
 assert.doesNotMatch(leaseAsk?.text ?? "", /Schedule E/);
 assert.equal(leaseAsk?.capture?.field, "propose-rental-lease");
 assert.equal(leaseAsk?.capture && "value" in leaseAsk.capture ? leaseAsk.capture.value : "", "3000");
 assert.ok((leaseAsk?.actions ?? []).some((item) => item.label === "Use this"));
 assert.ok((leaseAsk?.actions ?? []).some((item) => item.label === "Change"));
-assert.equal(guidelineCaution(investBuy), INVESTMENT_CAUTION);
-const leaseProposed = proposeTypedLeaseRental(investBuy, "I have a lease for 3000 a month");
-assert.equal(leaseProposed?.pendingProposal?.field, RENTAL_INCOME_FIELD);
-assert.equal(leaseProposed?.pendingProposal?.value, "2250");
-assert.equal(leaseProposed?.facts?.[RENTAL_INCOME_FIELD], undefined);
+assert.equal(guidelineCaution(investHoused), INVESTMENT_CAUTION);
+const leaseProposed = proposeTypedLeaseRental(investHoused, "I have a lease for 3000 a month");
+assert.equal(leaseProposed?.pendingProposal?.field, SUGGESTED_NET_RENTAL_FIELD);
+assert.equal(leaseProposed?.pendingProposal?.value, "-3293");
+assert.equal(leaseProposed?.facts?.[SUGGESTED_NET_RENTAL_FIELD], undefined);
+assert.equal(leaseProposed?.rentalGrossMonthly, 2250);
 assert.ok((stillUsefulSection(investBuy)?.items ?? []).some((item) => item.label === RENTAL_DOCS_WOULD_HELP));
 assert.equal(workspaceReply("Use this", leaseProposed!)?.capture?.field, "accept-proposal");
 const leaseUsed = resolveProposal(leaseProposed!, "accept");
-assert.equal(leaseUsed.facts?.[RENTAL_INCOME_FIELD]?.value, "2250");
-assert.equal(leaseUsed.facts?.[RENTAL_INCOME_FIELD]?.source, "suggested");
+assert.equal(leaseUsed.facts?.[SUGGESTED_NET_RENTAL_FIELD]?.value, "-3293");
+assert.equal(leaseUsed.suggestedNetRental, -3293);
+assert.equal(leaseUsed.rentalNetRole, "liability");
 assert.equal(leaseUsed.facts?.qualifying_income, undefined);
 assert.equal(guidelineCaution(leaseUsed), INVESTMENT_CAUTION);
-assert.ok(previewFacts(leaseUsed).some((fact) => fact.id === "rental" && fact.value === "$2,250"));
-assert.ok(previewFacts(leaseUsed).some((fact) => fact.id === "rental" && fact.note === "Suggested rental income · not underwritten"));
-assert.ok(previewFacts(leaseUsed).some((fact) => fact.id === "income" && /\$2,250/.test(fact.value)));
+assert.ok(previewFacts(leaseUsed).some((fact) => fact.id === "suggestedNetRental" && fact.value === "−$3,293"));
+assert.ok(previewFacts(leaseUsed).some((fact) => fact.id === "suggestedNetRental" && fact.note === SUGGESTED_NET_NOTE));
+assert.ok(previewFacts(leaseUsed).some((fact) => fact.id === "rentalGrossMonthly" && fact.value === "$2,250"));
+assert.ok(previewFacts(leaseUsed).some((fact) => fact.id === "rentalPitiaUsed" && fact.value === `$${investHousingEst!.estimatedHousing.toLocaleString("en-US")}`));
+assert.ok(previewFacts(leaseUsed).some((fact) => fact.id === "rentalNetRole" && fact.value === "liability"));
+assert.ok(previewFacts(leaseUsed).some((fact) => fact.id === "income" && /−\$3,293/.test(fact.value)));
 assert.equal(fileCompleteness(investBuy)?.copy, `sketch · 4 of ${CONVENTIONAL_FILE_SLOT_TOTAL}`);
 assert.equal(fileCompleteness(leaseUsed)?.copy, `sketch · 5 of ${CONVENTIONAL_FILE_SLOT_TOTAL}`);
 assert.ok(!(stillUsefulSection(leaseUsed)?.items ?? []).some((item) => item.label === RENTAL_DOCS_WOULD_HELP));
 const leaseDeclined = resolveProposal(leaseProposed!, "decline");
-assert.equal(leaseDeclined.facts?.[RENTAL_INCOME_FIELD], undefined);
-assert.ok((stillUsefulSection(leaseDeclined)?.items ?? []).some((item) => item.label === RENTAL_DOCS_WOULD_HELP));
-assert.ok(!previewFacts(leaseDeclined).some((fact) => fact.id === "rental"));
+assert.equal(leaseDeclined.facts?.[SUGGESTED_NET_RENTAL_FIELD], undefined);
+assert.equal(leaseDeclined.suggestedNetRental, undefined);
+assert.ok(!previewFacts(leaseDeclined).some((fact) => fact.id === "suggestedNetRental"));
 assert.equal(workspaceReply("Change", leaseProposed!)?.capture?.field, "change-proposal");
 assert.equal(workspaceReply("Skip", leaseProposed!)?.capture?.field, "decline-proposal");
-const rentIsAsk = workspaceReply("rent is 3000", investBuy);
+const rentIsAsk = workspaceReply("rent is 3000", investHoused);
 assert.equal(rentIsAsk?.capture?.field, "propose-rental-lease");
-assert.equal(rentIsAsk?.capture && "value" in rentIsAsk.capture ? rentIsAsk.capture.value : "", "3000");
-assert.match(workspaceReply("tenant pays 3000 a month", investBuy)?.text ?? "", /Suggested rental income is \$2,250 · not underwritten\. I’m using 75% of the lease/);
+assert.match(rentIsAsk?.text ?? "", /−\$3,293/);
+assert.match(workspaceReply("tenant pays 3000 a month", investHoused)?.text ?? "", /Suggested net rental is −\$3,293/);
 assert.match(workspaceReply("I have Airbnb income", investBuy)?.text ?? "", /I don’t have a rental path for that yet\. I’ll keep gathering\./);
+
+const leaseUsedWithDti = syncCalculatorDraft(
+  draft({
+    ...leaseUsed,
+    statedMonthlyDebts: 800,
+    monthlyDebtsAsked: true,
+    facts: {
+      ...(leaseUsed.facts ?? {}),
+      qualifying_income: {
+        field: "qualifying_income",
+        value: "9000",
+        source: "suggested",
+        confirmed: true,
+      },
+    },
+  }),
+);
+assert.ok(previewFacts(leaseUsedWithDti).some((fact) => fact.id === "stated-dti" && fact.note === STATED_NOT_FROM_CREDIT));
+assert.ok(previewFacts(leaseUsedWithDti).some((fact) => fact.id === "suggestedNetRental" && fact.value === "−$3,293"));
+assert.equal(guidelineCaution(leaseUsedWithDti), INVESTMENT_CAUTION);
+assert.notEqual(guidelineCaution(leaseUsedWithDti), RENTAL_NET_COST_CAUTION);
 
 const calcPurchase = ltvCltv({
   purpose: "purchase",
@@ -10264,7 +10370,7 @@ const investRentalWalk = draft({
   sampleAccepted: true,
 });
 assert.equal(rentalSuggest({ rentalIncomeOrLoss: 12000, depreciation: 6000 })?.monthly, 1500);
-assert.match(rentalConfirmCopy("schedule_e", 1500), /I’m using Schedule E\. Use this\?/);
+assert.match(rentalNetConfirmCopy({ net: 1500, method: "schedule_e", completeCount: 1 }) ?? "", /I’m using Schedule E minus this property’s PITIA\. Use this\?/);
 assert.equal(guidelineCaution(investRentalWalk), INVESTMENT_CAUTION);
 assert.notEqual(guidelineCaution(investRentalWalk), HIGH_STATED_DTI_CAUTION);
 

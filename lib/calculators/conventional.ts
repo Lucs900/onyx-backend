@@ -10,10 +10,15 @@ import {
   type FileFacts,
 } from "@/lib/guidelines/conventional";
 import {
+  netRentalCashFlow,
   rentalConfirmCopy,
+  rentalNetConfirmCopy,
   suggestLeaseRental,
   suggestScheduleERental,
   type LeaseRentalInput,
+  type RentalNetResult,
+  type RentalNetRole,
+  type RentalPropertyInput,
   type RentalSuggestResult,
   type ScheduleERentalInput,
 } from "@/lib/income/rental";
@@ -179,18 +184,39 @@ export function housingConfirmCopy(total: number) {
   return `Estimated housing is about ${moneyShown(total)} a month at the sample rate. ${ESTIMATED_NOT_FINAL}. Use this?`;
 }
 
+export type StatedDtiNet = {
+  amount?: number | null;
+  role?: RentalNetRole | null;
+  subjectPitiaNetted?: boolean;
+};
+
 export function statedDti(
   estimatedHousing?: number | null,
   statedMonthlyDebts?: number | null,
   qualifyingIncome?: number | null,
+  net?: StatedDtiNet | null,
 ): number | null {
   const housing = positive(estimatedHousing);
-  const income = positive(qualifyingIncome);
+  let income = positive(qualifyingIncome);
   if (housing == null || income == null) return null;
   if (statedMonthlyDebts == null || !Number.isFinite(statedMonthlyDebts) || statedMonthlyDebts < 0) {
     return null;
   }
-  return (housing + statedMonthlyDebts) / income;
+  let debts = statedMonthlyDebts;
+  const amount = net?.amount;
+  const role = net?.role;
+  if (role === "income" && amount != null && Number.isFinite(amount) && amount > 0) {
+    income += amount;
+    return (housing + debts) / income;
+  }
+  if (role === "liability" && amount != null && Number.isFinite(amount) && amount < 0) {
+    debts += Math.abs(amount);
+    if (net?.subjectPitiaNetted) {
+      return debts / income;
+    }
+    return (housing + debts) / income;
+  }
+  return (housing + debts) / income;
 }
 
 export function rentalSuggest(
@@ -200,7 +226,11 @@ export function rentalSuggest(
   return (scheduleE ? suggestScheduleERental(scheduleE) : null) ?? (lease ? suggestLeaseRental(lease) : null);
 }
 
-export { rentalConfirmCopy };
+export function rentalNet(properties: RentalPropertyInput[]): RentalNetResult {
+  return netRentalCashFlow(properties);
+}
+
+export { netRentalCashFlow, rentalConfirmCopy, rentalNetConfirmCopy };
 
 export function qualifyingIncomeConfirmCopy(monthly: number) {
   return `Suggested monthly income is ${moneyShown(monthly)}. Use this?`;

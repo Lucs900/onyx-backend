@@ -180,6 +180,10 @@ function numberOrUndefined(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : undefined;
 }
 
+function signedNumberOrUndefined(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
 function trimString(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
@@ -356,6 +360,22 @@ function normalize(value: unknown): FoxIntakeDraft {
     estimatedHousing: numberOrUndefined(raw.estimatedHousing),
     housingAsked: Boolean(raw.housingAsked || raw.estimatedHousing != null),
     statedDti: numberOrUndefined(raw.statedDti),
+    rentalGrossMonthly: numberOrUndefined(raw.rentalGrossMonthly),
+    rentalPitiaUsed: numberOrUndefined(raw.rentalPitiaUsed),
+    suggestedNetRental: signedNumberOrUndefined(raw.suggestedNetRental),
+    rentalNetRole:
+      raw.rentalNetRole === "income" ||
+      raw.rentalNetRole === "liability" ||
+      raw.rentalNetRole === "none" ||
+      raw.rentalNetRole === "thin"
+        ? raw.rentalNetRole
+        : undefined,
+    rentalThinReason:
+      raw.rentalThinReason === "housing" ||
+      raw.rentalThinReason === "statement" ||
+      raw.rentalThinReason === "primary"
+        ? raw.rentalThinReason
+        : undefined,
     subordinateBalance: numberOrUndefined(raw.subordinateBalance),
     hoaMonthly: numberOrUndefined(raw.hoaMonthly),
     miApplies: raw.miApplies === true ? true : raw.miApplies === false ? false : undefined,

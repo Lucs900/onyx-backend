@@ -24,8 +24,24 @@ import {
   statedDti,
   type HousingEstimate,
   type LtvCltvResult,
+  type StatedDtiNet,
 } from "@/lib/calculators/conventional";
+import { rentalMoneyShown } from "@/lib/income/rental";
 import type { FactProposal, FoxAction, FoxIntakeDraft } from "./types";
+import {
+  maybeProposeRentalNet,
+  PITIA_FROM_FILE_NOTE,
+  PITIA_HOUSING_NOTE,
+  RENTAL_GROSS_FIELD,
+  RENTAL_NET_ROLE_FIELD,
+  RENTAL_PITIA_FIELD,
+  SUGGESTED_GROSS_NOTE,
+  SUGGESTED_NET_NOTE,
+  SUGGESTED_NET_RENTAL_FIELD,
+  draftNettedRental,
+  parseRentalMoney,
+  workingGrossMonthly,
+} from "./rentalIncome";
 
 export {
   ESTIMATED_HOUSING_FIELD,
@@ -211,8 +227,26 @@ export function persistAssetNotes(draft: FoxIntakeDraft): FoxIntakeDraft {
   };
 }
 
+export function draftRentalDtiNet(draft: FoxIntakeDraft): StatedDtiNet | null {
+  const amount =
+    draft.suggestedNetRental ??
+    parseRentalMoney(draft.facts?.[SUGGESTED_NET_RENTAL_FIELD]?.value);
+  if (amount == null || !draft.facts?.[SUGGESTED_NET_RENTAL_FIELD]?.confirmed) return null;
+  const role = draft.rentalNetRole ?? draft.facts?.[RENTAL_NET_ROLE_FIELD]?.value;
+  return {
+    amount,
+    role: role === "income" || role === "liability" || role === "none" || role === "thin" ? role : undefined,
+    subjectPitiaNetted: draft.facts?.rental_pitia_source?.value === "estimated_housing",
+  };
+}
+
 export function persistStatedDti(draft: FoxIntakeDraft): FoxIntakeDraft {
-  const ratio = statedDti(draft.estimatedHousing, draft.statedMonthlyDebts, qualifyingIncomeMonthly(draft));
+  const ratio = statedDti(
+    draft.estimatedHousing,
+    draft.statedMonthlyDebts,
+    qualifyingIncomeMonthly(draft),
+    draftRentalDtiNet(draft),
+  );
   if (ratio == null) return draft;
   return {
     ...writeFact(draft, STATED_DTI_FIELD, String(ratio)),
@@ -229,7 +263,7 @@ export function syncCalculatorDraft(draft: FoxIntakeDraft): FoxIntakeDraft {
 
 export function writeEstimatedHousing(draft: FoxIntakeDraft, total: number): FoxIntakeDraft {
   const now = new Date().toISOString();
-  return syncCalculatorDraft({
+  const synced = syncCalculatorDraft({
     ...draft,
     estimatedHousing: Math.round(total),
     housingAsked: true,
@@ -247,6 +281,7 @@ export function writeEstimatedHousing(draft: FoxIntakeDraft, total: number): Fox
       },
     },
   });
+  return maybeProposeRentalNet(synced);
 }
 
 export function skipEstimatedHousing(draft: FoxIntakeDraft): FoxIntakeDraft {
@@ -392,7 +427,55 @@ export function calculatorStructureFacts(draft: FoxIntakeDraft): {
       });
     }
   }
-  const dti = draft.statedDti ?? statedDti(draft.estimatedHousing, draft.statedMonthlyDebts, qualifyingIncomeMonthly(draft));
+  const gross = workingGrossMonthly(draft);
+  if (gross != null) {
+    facts.push({
+      id: "rentalGrossMonthly",
+      label: "Suggested rental (gross)",
+      value: moneyShown(gross),
+      note: SUGGESTED_GROSS_NOTE,
+    });
+  }
+  const pitia =
+    draft.rentalPitiaUsed ??
+    parseRentalMoney(draft.facts?.[RENTAL_PITIA_FIELD]?.value) ??
+    (draftNettedRental(draft) && draft.estimatedHousing != null ? draft.estimatedHousing : null);
+  if (pitia != null && pitia > 0 && (draftNettedRental(draft) || draft.facts?.[RENTAL_PITIA_FIELD]?.value)) {
+    const fromHousing = draft.facts?.rental_pitia_source?.value === "estimated_housing";
+    facts.push({
+      id: "rentalPitiaUsed",
+      label: "PITIA used to net",
+      value: moneyShown(pitia),
+      note: fromHousing ? PITIA_HOUSING_NOTE : PITIA_FROM_FILE_NOTE,
+    });
+  }
+  const net =
+    draft.suggestedNetRental ??
+    parseRentalMoney(draft.facts?.[SUGGESTED_NET_RENTAL_FIELD]?.value);
+  if (draftNettedRental(draft) && net != null) {
+    facts.push({
+      id: "suggestedNetRental",
+      label: "Suggested net rental",
+      value: rentalMoneyShown(net),
+      note: SUGGESTED_NET_NOTE,
+    });
+    const role = draft.rentalNetRole ?? draft.facts?.[RENTAL_NET_ROLE_FIELD]?.value;
+    if (role) {
+      facts.push({
+        id: "rentalNetRole",
+        label: "Rental net role",
+        value: role,
+      });
+    }
+  }
+  const dti =
+    draft.statedDti ??
+    statedDti(
+      draft.estimatedHousing,
+      draft.statedMonthlyDebts,
+      qualifyingIncomeMonthly(draft),
+      draftRentalDtiNet(draft),
+    );
   if (dti != null) {
     facts.push({
       id: "stated-dti",

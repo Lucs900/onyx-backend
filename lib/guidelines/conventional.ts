@@ -224,6 +224,9 @@ export type FileFacts = {
   statedDti?: number;
   hoaMonthly?: number;
   miApplies?: boolean;
+  suggestedNetRental?: number;
+  rentalNetRole?: "income" | "liability" | "none" | "thin";
+  rentalNeedsStatement?: boolean;
 };
 
 export type CompletenessFile = FileFacts & {
@@ -289,6 +292,8 @@ export const RENTAL_UNSUPPORTED_CAUTION =
   "I don’t have a rental path for that yet. I’ll keep gathering.";
 export const HIGH_STATED_DTI_CAUTION =
   "This stated payment is a large share of the income I have. I’ll keep gathering.";
+export const RENTAL_NET_COST_CAUTION =
+  "This rental looks like a monthly cost. I’ll keep gathering.";
 export const READINESS_STRONG =
   "This file looks conventionally strong enough to keep moving. Final underwriting still decides.";
 export const READINESS_UW_REVIEW = "I can run this past underwriting before we go further.";
@@ -1004,6 +1009,9 @@ export function flags(file: FileFacts): { caution?: string; previewRateAllowed: 
   else if (file.manufactured) caution = MANUFACTURED_CAUTION;
   else if (condo === "non_warrantable") caution = CONDO_NON_WARRANTABLE_CAUTION;
   else if (file.unsupportedRental) caution = RENTAL_UNSUPPORTED_CAUTION;
+  else if (file.suggestedNetRental != null && file.suggestedNetRental < 0) {
+    caution = RENTAL_NET_COST_CAUTION;
+  }
   else if (file.statedDti != null && file.statedDti >= 1) caution = HIGH_STATED_DTI_CAUTION;
 
   const previewRateAllowed =
@@ -1201,6 +1209,8 @@ export function completeness(
   if (file.statedOtherReo === "yes") {
     stillUseful.push("other property details");
     if (!received.has("mortgage_statement")) stillUseful.push(OTHER_REO_MORTGAGE_STATEMENTS);
+  } else if (file.rentalNeedsStatement) {
+    stillUseful.push(OTHER_REO_MORTGAGE_STATEMENTS);
   }
   if (seLike(file.incomeType) && taxReturns < 1) {
     const idx = stillUseful.indexOf(DOCUMENTED_STILL_USEFUL.tax_return);
