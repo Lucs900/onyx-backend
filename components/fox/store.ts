@@ -173,6 +173,56 @@ function numberOrUndefined(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : undefined;
 }
 
+function trimString(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function normalizeHistoryEntries(value: unknown): { label?: string; from?: string; to?: string }[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const entries: { label: string; from?: string; to?: string }[] = [];
+  for (const item of value) {
+    if (!item || typeof item !== "object") continue;
+    const raw = item as { label?: unknown; from?: unknown; to?: unknown };
+    const label = trimString(raw.label);
+    if (!label) continue;
+    const from = trimString(raw.from);
+    const to = trimString(raw.to);
+    entries.push({
+      label,
+      ...(from ? { from } : {}),
+      ...(to ? { to } : {}),
+    });
+  }
+  return entries.length ? entries : undefined;
+}
+
+function normalizeAgencyDeclarations(
+  value: unknown,
+): FoxIntakeDraft["agencyDeclarations"] | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const raw = value as Record<string, unknown>;
+  const yesNo = (item: unknown): "yes" | "no" | "skipped" | undefined =>
+    item === "yes" || item === "no" || item === "skipped" ? item : undefined;
+  const citizenship =
+    raw.citizenship === "us_citizen" ||
+    raw.citizenship === "permanent_resident" ||
+    raw.citizenship === "non_permanent" ||
+    raw.citizenship === "skipped"
+      ? raw.citizenship
+      : undefined;
+  const next: NonNullable<FoxIntakeDraft["agencyDeclarations"]> = {
+    ...(citizenship ? { citizenship } : {}),
+    ...(yesNo(raw.outstandingJudgments) ? { outstandingJudgments: yesNo(raw.outstandingJudgments) } : {}),
+    ...(yesNo(raw.bankruptcy) ? { bankruptcy: yesNo(raw.bankruptcy) } : {}),
+    ...(yesNo(raw.foreclosure) ? { foreclosure: yesNo(raw.foreclosure) } : {}),
+    ...(yesNo(raw.lawsuit) ? { lawsuit: yesNo(raw.lawsuit) } : {}),
+    ...(yesNo(raw.alimonyChildSupport) ? { alimonyChildSupport: yesNo(raw.alimonyChildSupport) } : {}),
+    ...(yesNo(raw.borrowedDownPayment) ? { borrowedDownPayment: yesNo(raw.borrowedDownPayment) } : {}),
+    ...(yesNo(raw.intentToOccupy) ? { intentToOccupy: yesNo(raw.intentToOccupy) } : {}),
+  };
+  return Object.keys(next).length ? next : undefined;
+}
+
 function emptyField(field: string, value = "", source: DraftField["source"] = "client"): DraftField {
   return { field, value, source, confirmed: false };
 }
@@ -341,6 +391,19 @@ function normalize(value: unknown): FoxIntakeDraft {
     borrowerNameAsked: Boolean(raw.borrowerNameAsked || raw.borrowerName || raw.contact?.fullName?.value),
     statedOtherReo: raw.statedOtherReo === "none" || raw.statedOtherReo === "yes" ? raw.statedOtherReo : undefined,
     otherReoAsked: Boolean(raw.otherReoAsked || raw.statedOtherReo),
+    propertyApn: trimString(raw.propertyApn),
+    propertyLegalDescription: trimString(raw.propertyLegalDescription),
+    propertyYearBuilt: trimString(raw.propertyYearBuilt),
+    propertyTaxes: trimString(raw.propertyTaxes),
+    propertyHoa: trimString(raw.propertyHoa),
+    assetsCheckingSavings: trimString(raw.assetsCheckingSavings),
+    assetsRetirement: trimString(raw.assetsRetirement),
+    assetsOther: trimString(raw.assetsOther),
+    largeDebtsOffReport: trimString(raw.largeDebtsOffReport),
+    largeDebtsAsked: Boolean(raw.largeDebtsAsked || raw.largeDebtsOffReport),
+    agencyDeclarations: normalizeAgencyDeclarations(raw.agencyDeclarations),
+    addressHistory: normalizeHistoryEntries(raw.addressHistory),
+    employmentHistory: normalizeHistoryEntries(raw.employmentHistory),
     pendingOtherReo: raw.pendingOtherReo ? true : null,
     fileExport: normalizeFileExport(raw.fileExport),
     docsOpen: Boolean(raw.docsOpen),

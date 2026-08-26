@@ -309,6 +309,31 @@ export type FoxIntakeDraft = {
   borrowerNameAsked?: boolean;
   statedOtherReo?: "none" | "yes";
   otherReoAsked?: boolean;
+  /** Title / profile enrichment only. Fox does not ask for these this gate. */
+  propertyApn?: string;
+  propertyLegalDescription?: string;
+  propertyYearBuilt?: string;
+  propertyTaxes?: string;
+  propertyHoa?: string;
+  /** High-level asset slots. Source of truth = statements / later connections. */
+  assetsCheckingSavings?: string;
+  assetsRetirement?: string;
+  assetsOther?: string;
+  /** Thin liability placeholder. Credit pull is the later source of truth. */
+  largeDebtsOffReport?: string;
+  largeDebtsAsked?: boolean;
+  agencyDeclarations?: {
+    citizenship?: "us_citizen" | "permanent_resident" | "non_permanent" | "skipped";
+    outstandingJudgments?: "yes" | "no" | "skipped";
+    bankruptcy?: "yes" | "no" | "skipped";
+    foreclosure?: "yes" | "no" | "skipped";
+    lawsuit?: "yes" | "no" | "skipped";
+    alimonyChildSupport?: "yes" | "no" | "skipped";
+    borrowedDownPayment?: "yes" | "no" | "skipped";
+    intentToOccupy?: "yes" | "no" | "skipped";
+  };
+  addressHistory?: { label?: string; from?: string; to?: string }[];
+  employmentHistory?: { label?: string; from?: string; to?: string }[];
   pendingOtherReo?: boolean | null;
   fileExport?: FileExportMark | null;
   docsOpen?: boolean;

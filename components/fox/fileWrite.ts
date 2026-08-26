@@ -634,6 +634,9 @@ function writeField(
     ...(assetAmount != null
       ? { statedAvailableAssets: assetAmount, availableAssetsAsked: true }
       : {}),
+    ...(field === "ending_balance" && moneyNumber(value) != null
+      ? { assetsCheckingSavings: String(moneyNumber(value)) }
+      : {}),
     ...(isPropertyAddressField(field) ? { subjectAddress: value } : {}),
     ...(field === STATED_TIME_ON_JOB_FIELD && Number.isFinite(Number(value)) && Number(value) > 0
       ? {

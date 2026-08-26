@@ -109,6 +109,7 @@ import {
   YEARS_IN_BUSINESS_ASK,
   YEARS_IN_BUSINESS_FIELD,
 } from "./completeness";
+import { conventionalFileFacts } from "./conventionalFile";
 import {
   applyPayFrequencyAnswer,
   decliningIncomeCaution,
@@ -5537,6 +5538,8 @@ export function previewFacts(draft: FoxIntakeDraft): PreviewFact[] {
     });
   }
 
+  facts.push(...conventionalFileFacts(draft));
+
   const employer = factValue(draft, "employer_name");
   const employerProposal =
     draft.pendingProposal?.field === "employer_name" ? draft.pendingProposal : null;
@@ -5757,9 +5760,29 @@ export function structureExplainCopy(
       text: "Current housing. Suggested · not underwritten.",
     };
   }
-  if (id === "declarations") {
+  if (id === "declarations" || id === "file-declarations") {
     return {
-      text: "Declarations. Suggested · not underwritten.",
+      text: "Declarations. Suggested · not underwritten. Not a 1003.",
+    };
+  }
+  if (id === "file-property") {
+    return {
+      text: "Property slots the file can hold. Address from you or a contract. APN, legal, year built, taxes, and HOA wait for a title profile. I won’t quiz you for those.",
+    };
+  }
+  if (id === "file-assets") {
+    return {
+      text: "High-level assets only. Checking or savings, retirement, other. Statements first. Not an asset form.",
+    };
+  }
+  if (id === "file-liabilities") {
+    return {
+      text: "Liabilities wait for a credit pull. Not a worksheet.",
+    };
+  }
+  if (id === "file-history") {
+    return {
+      text: "Two-year address and employment slots. I prefer documents over a form.",
     };
   }
   if (id === "household") {

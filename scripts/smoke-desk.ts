@@ -47,6 +47,11 @@ import {
   showsAgencyCompleteness,
 } from "../components/fox/completeness";
 import {
+  CONVENTIONAL_FILE_SLOT_TOTAL,
+  conventionalFileFromDraft,
+  conventionalSlotReport,
+} from "../components/fox/conventionalFile";
+import {
   DECLINING_INCOME_CAUTION,
   QUALIFYING_INCOME_FIELD,
   YTD_CONFLICT_CAUTION,
@@ -1413,7 +1418,10 @@ assert.ok(creditFacts.every((fact) => fact.label !== "Amount" && fact.label !== 
 assert.equal(structureAmountLabel(afterIncome), "Purchase price");
 assert.ok(canLooksRight(afterIncomeReady));
 assert.equal(fileCompleteness(afterIncome)?.state, "sketch");
-assert.ok(creditFacts.some((fact) => fact.id === "file" && /sketch/.test(fact.value)));
+assert.equal(fileCompleteness(afterIncome)?.total, CONVENTIONAL_FILE_SLOT_TOTAL);
+assert.equal(fileCompleteness(afterIncome)?.filled, 5);
+assert.equal(fileCompleteness(afterIncome)?.copy, `sketch · 5 of ${CONVENTIONAL_FILE_SLOT_TOTAL}`);
+assert.ok(creditFacts.some((fact) => fact.id === "file" && /sketch · 5 of 26/.test(fact.value)));
 assert.ok(
   creditFacts.some(
     (fact) => fact.id === "credit" && fact.value === "760+" && fact.note === CREDIT_STATED_NOTE,
@@ -2044,11 +2052,14 @@ assert.ok(assignedFacts.some((fact) => fact.id === "status" && fact.value === "g
 assert.ok(assignedFacts.some((fact) => fact.id === "next" && fact.value === "You"));
 assert.ok(assignedFacts.some((fact) => fact.id === "file"));
 assert.equal(fileCompleteness(afterLooks)?.state, "sketch");
-assert.equal(fileCompleteness(afterLooks)?.copy, "sketch");
-assert.ok(!/agency_partial|agency_ready|\d of \d/.test(fileCompleteness(afterLooks)?.copy ?? ""));
+assert.equal(fileCompleteness(afterLooks)?.copy, `sketch · 5 of ${CONVENTIONAL_FILE_SLOT_TOTAL}`);
+assert.ok(!/agency_partial|agency_ready/.test(fileCompleteness(afterLooks)?.copy ?? ""));
 assert.ok(
   assignedFacts.some(
-    (fact) => fact.id === "file" && fact.value === "sketch" && !/agency_partial|agency_ready|\d of \d/.test(fact.value),
+    (fact) =>
+      fact.id === "file" &&
+      fact.value === `sketch · 5 of ${CONVENTIONAL_FILE_SLOT_TOTAL}` &&
+      !/agency_partial|agency_ready/.test(fact.value),
   ),
 );
 assert.equal(fileStillUsefulNote(afterLooks), undefined);
@@ -2087,11 +2098,11 @@ const confirmedFromDocs = {
 };
 const docsBeforeLooks = draft({ ...afterIncome, facts: confirmedFromDocs });
 assert.equal(fileCompleteness(docsBeforeLooks)?.state, "agency_partial");
-assert.equal(fileCompleteness(docsBeforeLooks)?.copy, "sketch");
-assert.ok(!/agency_partial|agency_ready|\d of \d/.test(fileCompleteness(docsBeforeLooks)?.copy ?? ""));
+assert.match(fileCompleteness(docsBeforeLooks)?.copy ?? "", /^sketch · \d+ of 26$/);
+assert.ok(!/agency_partial|agency_ready/.test(fileCompleteness(docsBeforeLooks)?.copy ?? ""));
 assert.ok(
   previewFacts(docsBeforeLooks).some(
-    (fact) => fact.id === "file" && fact.value === "sketch" && !/agency_partial|\d of \d/.test(fact.value),
+    (fact) => fact.id === "file" && /^sketch · \d+ of 26$/.test(fact.value) && !/agency_partial/.test(fact.value),
   ),
 );
 assert.ok(assignedFacts.some((fact) => fact.id === "originator" && fact.value === "Licensed originator assigned"));
@@ -2825,7 +2836,7 @@ assert.ok(
   ),
 );
 assert.equal(fileCompleteness(w2AfterLooks)?.state, "sketch");
-assert.equal(fileCompleteness(w2AfterLooks)?.copy, "sketch");
+assert.match(fileCompleteness(w2AfterLooks)?.copy ?? "", /^sketch · \d+ of 26$/);
 assert.ok(!/agency_partial|agency_ready/.test(fileCompleteness(w2AfterLooks)?.copy ?? ""));
 
 const seAfterLooks = draft({
@@ -5150,6 +5161,8 @@ assert.equal(bankAccepted.facts?.institution?.value, "FIRST NATIONAL");
 assert.equal(bankAccepted.facts?.ending_balance?.value, "18400");
 assert.equal(bankAccepted.facts?.period_end?.value, "2026-07-31");
 assert.equal(bankAccepted.statedAvailableAssets, 18400);
+assert.equal(bankAccepted.assetsCheckingSavings, "18400");
+assert.equal(conventionalFileFromDraft(bankAccepted).assets.checkingSavings, "18400");
 assert.equal(bankAccepted.pendingProposal, null);
 assert.ok(!layer2Plan(bankAccepted).some((item) => item.label === "Bank statement"));
 const bankLeft = resolveProposal(bankExtract.draft, "decline");
@@ -5174,6 +5187,7 @@ assert.match(nextFoxAsk(contractSamePrice.draft).text, /Suggested · not underwr
 assert.match(nextFoxAsk(contractSamePrice.draft).text, /Use this/);
 const contractAccepted = resolveProposal(contractSamePrice.draft, "accept");
 assert.equal(contractAccepted.facts?.property_address?.value, "14 OAK STREET");
+assert.equal(conventionalFileFromDraft(contractAccepted).property.address, "14 OAK STREET");
 assert.equal(contractAccepted.subjectAddress, "14 OAK STREET");
 assert.equal(contractAccepted.facts?.close_date?.value, "2026-10-15");
 assert.ok(!layer2Plan(contractAccepted).some((item) => item.label === "Property address"));
@@ -9651,6 +9665,81 @@ assert.equal(workspacePromptCopy("documents", getFoxDraft()).text, DOC_INVITE_CO
 assert.notEqual(workspacePrompt(getFoxDraft()), "household");
 applyCapture({ field: "skip-docs" });
 assert.equal(workspacePrompt(getFoxDraft()), "household");
+
+const conventionalW2Walk = draft({
+  ...afterIncome,
+  otherReoAsked: true,
+  statedOtherReo: "none",
+});
+assert.equal(workspacePrompt(conventionalW2Walk), "documents");
+assert.notEqual(workspacePrompt(conventionalW2Walk), "declarations");
+assert.notEqual(workspacePrompt(conventionalW2Walk), "assets");
+assert.doesNotMatch(
+  `${workspacePromptCopy("documents", conventionalW2Walk).text} ${workspacePromptCopy("documents", conventionalW2Walk).followUp ?? ""}`,
+  /APN|legal description|year built|HOA|citizenship|alimony|judgment|2-year|address history|liability worksheet|1003/i,
+);
+const w2FileFacts = previewFacts(conventionalW2Walk);
+assert.ok(w2FileFacts.some((fact) => fact.id === "file-property" && /Primary/.test(fact.value) && /address —/.test(fact.value)));
+assert.ok(w2FileFacts.some((fact) => fact.id === "file-assets" && /checking\/savings —/.test(fact.value)));
+assert.ok(w2FileFacts.some((fact) => fact.id === "file-liabilities" && fact.value === "Credit report later"));
+assert.ok(w2FileFacts.some((fact) => fact.id === "file-declarations" && /occupy yes/.test(fact.value)));
+assert.ok(w2FileFacts.some((fact) => fact.id === "file-history" && /address —/.test(fact.value) && /employment —/.test(fact.value)));
+assert.equal(fileCompleteness(conventionalW2Walk)?.copy, `sketch · 5 of ${CONVENTIONAL_FILE_SLOT_TOTAL}`);
+const w2Slots = conventionalSlotReport(conventionalW2Walk);
+assert.deepEqual(w2Slots.present, [
+  "loan.amounts",
+  "credit.stated",
+  "income.type",
+  "property.occupancyStatus",
+  "declarations.intentToOccupy",
+]);
+assert.ok(w2Slots.empty.includes("property.apn"));
+assert.ok(w2Slots.empty.includes("property.legalDescription"));
+assert.ok(w2Slots.empty.includes("property.yearBuilt"));
+assert.ok(w2Slots.empty.includes("property.taxes"));
+assert.ok(w2Slots.empty.includes("property.hoa"));
+assert.ok(w2Slots.empty.includes("assets.checkingSavings"));
+assert.ok(w2Slots.empty.includes("declarations.citizenship"));
+assert.ok(w2Slots.empty.includes("history.addressHistory"));
+
+const conventionalSeWalk = draft({
+  ...withIncome(afterCredit, "self-employed"),
+  otherReoAsked: true,
+  statedOtherReo: "none",
+});
+assert.equal(workspacePrompt(conventionalSeWalk), "documents");
+assert.ok(previewFacts(conventionalSeWalk).some((fact) => fact.id === "file-property"));
+assert.ok(previewFacts(conventionalSeWalk).some((fact) => fact.id === "file-assets"));
+assert.ok(previewFacts(conventionalSeWalk).some((fact) => fact.id === "file-liabilities"));
+assert.ok(previewFacts(conventionalSeWalk).some((fact) => fact.id === "file-declarations"));
+assert.ok(previewFacts(conventionalSeWalk).some((fact) => fact.id === "file-history"));
+assert.match(fileCompleteness(conventionalSeWalk)?.copy ?? "", /^sketch · 5 of 26$/);
+
+const conventionalRefiWalk = draft({
+  path: "acr",
+  productIntent: "refinance",
+  occupancyAsked: true,
+  occupancyChoice: { ...emptyDraft().occupancyChoice, value: "primary" },
+  propertyValueAmount: 1_200_000,
+  loanAmountValue: 960_000,
+  amountAsked: true,
+  valueAsked: true,
+  creditAsked: true,
+  creditBand: "760+",
+  incomeAsked: true,
+  incomeType: { ...emptyDraft().incomeType, value: "w2" },
+  otherReoAsked: true,
+  statedOtherReo: "none",
+});
+assert.equal(workspacePrompt(conventionalRefiWalk), "documents");
+assert.ok(previewFacts(conventionalRefiWalk).some((fact) => fact.id === "file-property"));
+assert.ok(previewFacts(conventionalRefiWalk).some((fact) => fact.id === "file-liabilities" && fact.value === "Credit report later"));
+assert.ok(stillUsefulSection(conventionalRefiWalk)?.items.some((item) => item.label === "Mortgage statement"));
+assert.match(fileCompleteness(conventionalRefiWalk)?.copy ?? "", /^sketch · 5 of 26$/);
+
+const conventionalSrc = readFileSync(join(root, "components/fox/conventionalFile.ts"), "utf8");
+assert.doesNotMatch(conventionalSrc, /ask for APN|legal description quiz|year-built form|HOA dues line|liability worksheet|1003 maze|citizenship quiz/i);
+assert.doesNotMatch(conventionalSrc, /you qualify|credit pull now|full account number|SSN capture/i);
 
 extractAdapterSmoke()
   .then(() => {

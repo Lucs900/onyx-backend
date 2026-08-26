@@ -121,6 +121,7 @@ import {
   type CompletenessFile,
   type NamedDebt,
 } from "@/lib/guidelines/conventional";
+import { conventionalCompletenessCopy, conventionalSlotCount } from "./conventionalFile";
 
 export const SUGGESTED_NOTE = "Suggested · not verified";
 export const PROPOSED_NOTE = "Proposed · confirm";
@@ -398,23 +399,21 @@ function identityAndIncomeConfirmedFromDocs(draft: FoxIntakeDraft) {
   return identityDocumented(draft) && incomeDocumented(draft);
 }
 
-function completenessDisplayCopy(state: CompletenessState) {
-  if (state === "documented") return "documented";
-  return "sketch";
+function completenessDisplayCopy(state: CompletenessState, draft: FoxIntakeDraft) {
+  return conventionalCompletenessCopy(state === "documented" ? "documented" : "sketch", draft);
 }
 
 export function fileCompleteness(draft: FoxIntakeDraft): CompletenessMap | null {
   if (!showsAgencyCompleteness(draft)) return null;
   const groups = {} as CompletenessMap["groups"];
-  let filled = 0;
   let documentedCount = 0;
   for (const group of COMPLETENESS_GROUPS) {
     const present = groupPresent(draft, group);
     const documented = groupDocumented(draft, group);
     groups[group] = { present, documented };
-    if (present) filled += 1;
     if (documented) documentedCount += 1;
   }
+  const slots = conventionalSlotCount(draft);
   const minimums = agencyMinimumsMet(draft);
   const fromDocs = identityAndIncomeConfirmedFromDocs(draft);
   let state: CompletenessState = "sketch";
@@ -425,10 +424,10 @@ export function fileCompleteness(draft: FoxIntakeDraft): CompletenessMap | null 
   }
   return {
     state,
-    filled,
-    total: COMPLETENESS_GROUPS.length,
+    filled: slots.filled,
+    total: slots.total,
     groups,
-    copy: completenessDisplayCopy(state),
+    copy: completenessDisplayCopy(state, draft),
   };
 }
 
@@ -861,6 +860,9 @@ function writeConfirmedFact(
       availableAssetsAsked: true,
       facts,
     };
+  }
+  if (field === "ending_balance" && amount != null) {
+    next = { ...next, assetsCheckingSavings: String(amount) };
   }
   if (field === PROPERTY_TYPE_FIELD && isPropertyTypeValue(value)) {
     next = {
