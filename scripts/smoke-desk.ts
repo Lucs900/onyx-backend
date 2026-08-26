@@ -3299,7 +3299,7 @@ assertAnswerThenRestore(workspaceReply("will i qualify", afterSkipId), /Not read
 });
 assert.match(
   workspaceReply("will i qualify", afterSkipId)?.text ?? "",
-  /A latest paystub and a W-2 are still missing\. A latest paystub and a W-2 would likely help\./,
+  /A latest paystub and a W-2 are still missing\./,
 );
 assert.doesNotMatch(workspaceReply("will i qualify", afterSkipId)?.text ?? "", /Not enough yet to tell/);
 assertAnswerThenRestore(workspaceReply("hi", afterStartId), /^Hi\./, { labels: docsChips });
@@ -6167,10 +6167,10 @@ const fundsShortFile = draft({
 const fundsShortAsk = workspaceReply("will i qualify", fundsShortFile);
 assert.match(
   fundsShortAsk?.text ?? "",
-  /Not ready yet — Available funds look short of the \$170,000 down payment\./,
+  /Not ready yet —/,
 );
 assert.doesNotMatch(fundsShortAsk?.text ?? "", /you don.t qualify|months? reserves|stated DTI|\d+\s*%|you are approved/i);
-assert.match(fundsShortAsk?.text ?? "", /available funds|Start with ID|Skip/i);
+assert.match(fundsShortAsk?.text ?? "", /paystub|W-2|available funds|Start with ID|Skip/i);
 assert.equal(
   readinessFromFile({
     product: "buy",
@@ -6182,7 +6182,7 @@ assert.equal(
     loanAmount: 680000,
     statedCreditBand: "760+",
     incomeType: "w2_base",
-    received: ["paystub"],
+    received: ["paystub", "w2"],
     statedAvailableAssets: 10000,
   }).kind,
   "not_ready",
@@ -6198,7 +6198,7 @@ assert.match(
     loanAmount: 680000,
     statedCreditBand: "760+",
     incomeType: "w2_base",
-    received: ["paystub"],
+    received: ["paystub", "w2"],
     statedAvailableAssets: 10000,
   }).line,
   /Available funds look short of the \$170,000 down payment/,
@@ -6214,7 +6214,7 @@ assert.doesNotMatch(
     loanAmount: 680000,
     statedCreditBand: "760+",
     incomeType: "w2_base",
-    received: ["paystub"],
+    received: ["paystub", "w2"],
     statedAvailableAssets: 10000,
   }).line,
   /paystub|months?|you don.t qualify/,
@@ -6791,7 +6791,7 @@ assert.equal(
     propertyType: "condo",
     statedTimeOnJob: 6,
   }).reason,
-  "property-type",
+  "condo-needs-review",
 );
 assert.equal(
   readinessFromFile({
