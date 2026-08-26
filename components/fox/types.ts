@@ -272,6 +272,15 @@ export type FoxIntakeDraft = {
   incomeAsked?: boolean;
   statedMonthlyDebts?: number;
   monthlyDebtsAsked?: boolean;
+  estimatedHousing?: number;
+  housingAsked?: boolean;
+  statedDti?: number;
+  subordinateBalance?: number;
+  hoaMonthly?: number;
+  miApplies?: boolean;
+  reservesNote?: "no_minimum_1unit_primary" | "reserves_review";
+  largeDepositFlag?: boolean;
+  giftFundsNoted?: boolean;
   debtMortgageAsked?: boolean;
   pendingDebtMortgage?: {
     included: number;
@@ -426,6 +435,7 @@ export type FoxPrompt =
   | "qualifying"
   | "years-in-business"
   | "over-price"
+  | "housing"
   | "done";
 
 export type Capture =
@@ -437,6 +447,8 @@ export type Capture =
   | { field: "include-mortgage-debts"; value: string }
   | { field: "subtract-mortgage" }
   | { field: "statedMonthlyDebts"; value: string }
+  | { field: "skip-housing" }
+  | { field: "estimatedHousing"; value: string }
   | { field: "skip-available-assets" }
   | { field: "propose-available-assets"; value: string }
   | { field: "statedAvailableAssets"; value: string }

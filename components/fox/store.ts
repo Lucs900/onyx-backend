@@ -100,6 +100,11 @@ import {
 } from "./completeness";
 import { applyPayFrequencyAnswer } from "./qualifyingIncome";
 import {
+  skipEstimatedHousing,
+  syncCalculatorDraft,
+  writeEstimatedHousing,
+} from "./calculators";
+import {
   applyMortgageSubtract,
   parseMonthlyDebtAmount,
   proposeStatedMonthlyDebts,
@@ -347,6 +352,18 @@ function normalize(value: unknown): FoxIntakeDraft {
     incomeAsked: Boolean(raw.incomeAsked || raw.incomeType?.value),
     statedMonthlyDebts: numberOrUndefined(raw.statedMonthlyDebts),
     monthlyDebtsAsked: Boolean(raw.monthlyDebtsAsked || raw.statedMonthlyDebts != null),
+    estimatedHousing: numberOrUndefined(raw.estimatedHousing),
+    housingAsked: Boolean(raw.housingAsked || raw.estimatedHousing != null),
+    statedDti: numberOrUndefined(raw.statedDti),
+    subordinateBalance: numberOrUndefined(raw.subordinateBalance),
+    hoaMonthly: numberOrUndefined(raw.hoaMonthly),
+    miApplies: raw.miApplies === true ? true : raw.miApplies === false ? false : undefined,
+    reservesNote:
+      raw.reservesNote === "no_minimum_1unit_primary" || raw.reservesNote === "reserves_review"
+        ? raw.reservesNote
+        : undefined,
+    largeDepositFlag: Boolean(raw.largeDepositFlag) || undefined,
+    giftFundsNoted: Boolean(raw.giftFundsNoted) || undefined,
     debtMortgageAsked: Boolean(raw.debtMortgageAsked),
     pendingDebtMortgage: normalizePendingDebtMortgage(raw.pendingDebtMortgage),
     statedAvailableAssets: numberOrUndefined(raw.statedAvailableAssets),
@@ -917,7 +934,7 @@ export function getServerDraft() {
 }
 
 function commit(next: FoxIntakeDraft) {
-  current = { ...next, updatedAt: new Date().toISOString() };
+  current = { ...syncCalculatorDraft(next), updatedAt: new Date().toISOString() };
   persist(current);
   emit();
   return current;
@@ -1413,6 +1430,14 @@ function applyCaptureBody(capture: Capture) {
     const amount = parseMonthlyDebtAmount(capture.value);
     if (amount == null) return current;
     return commit(writeStatedMonthlyDebts(current, amount));
+  }
+  if (capture.field === "skip-housing") {
+    return commit(skipEstimatedHousing(current));
+  }
+  if (capture.field === "estimatedHousing") {
+    const amount = Number(capture.value);
+    if (!Number.isFinite(amount) || amount <= 0) return current;
+    return commit(writeEstimatedHousing(current, amount));
   }
   if (capture.field === "skip-available-assets") {
     return commit(skipAvailableAssets(current));

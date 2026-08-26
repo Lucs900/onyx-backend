@@ -4,7 +4,7 @@ import type { FactProposal, FoxAction, FoxIntakeDraft } from "./types";
 export const STATED_MONTHLY_DEBTS_FIELD = "statedMonthlyDebts";
 export const SUGGESTED_DEBTS_NOTE = "Suggested · not underwritten";
 export const MONTHLY_DEBTS_ASK =
-  "About how much are other monthly debts, not counting this mortgage? A number is enough. Skip is fine.";
+  "About how much do you pay each month on other debts, not counting this house?";
 
 export type PendingDebtMortgage = {
   included: number;
@@ -36,11 +36,15 @@ export function parseMonthlyDebtAmount(text: string): number | null {
   const trimmed = text.trim();
   if (!trimmed) return null;
   if (/\d\s*(k|m|mm|million|thousand)\b/i.test(trimmed)) return null;
-  const match = trimmed.match(/\$?\s*(\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?)/);
-  if (!match) return null;
-  const n = Number(match[1].replace(/,/g, ""));
-  if (!Number.isFinite(n) || n <= 0 || n > 100_000) return null;
-  return Math.round(n);
+  const amounts: number[] = [];
+  const money = /\$?\s*(\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?)/g;
+  let match: RegExpExecArray | null;
+  while ((match = money.exec(trimmed))) {
+    const n = Number(match[1].replace(/,/g, ""));
+    if (Number.isFinite(n) && n > 0 && n <= 100_000) amounts.push(n);
+  }
+  if (!amounts.length) return null;
+  return Math.round(amounts.reduce((sum, n) => sum + n, 0));
 }
 
 export function isSkipMonthlyDebtsText(text: string) {

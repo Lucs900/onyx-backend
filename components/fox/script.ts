@@ -145,6 +145,7 @@ export function taskContext(stage: FoxStage, draft: FoxIntakeDraft) {
     qualifying: "Asking: qualifying income",
     "years-in-business": "Asking: years in business",
     "over-price": "Checking price and loan",
+    housing: "Asking: housing payment",
     done: "Draft confirmed",
   };
   return labels[currentPrompt(draft)];

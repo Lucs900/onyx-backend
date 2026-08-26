@@ -220,6 +220,10 @@ export type FileFacts = {
   suggestedMonthlyIncome?: number;
   docsSkipped?: boolean;
   obviousHighDti?: boolean;
+  estimatedHousing?: number;
+  statedDti?: number;
+  hoaMonthly?: number;
+  miApplies?: boolean;
 };
 
 export type CompletenessFile = FileFacts & {
@@ -283,6 +287,8 @@ export const CONDO_NON_WARRANTABLE_CAUTION =
   "This condo looks like it needs a licensed review. I can keep preparing the file.";
 export const RENTAL_UNSUPPORTED_CAUTION =
   "I don’t have a rental path for that yet. I’ll keep gathering.";
+export const HIGH_STATED_DTI_CAUTION =
+  "This stated payment is a large share of the income I have. I’ll keep gathering.";
 export const READINESS_STRONG =
   "This file looks conventionally strong enough to keep moving. Final underwriting still decides.";
 export const READINESS_UW_REVIEW = "I can run this past underwriting before we go further.";
@@ -998,6 +1004,7 @@ export function flags(file: FileFacts): { caution?: string; previewRateAllowed: 
   else if (file.manufactured) caution = MANUFACTURED_CAUTION;
   else if (condo === "non_warrantable") caution = CONDO_NON_WARRANTABLE_CAUTION;
   else if (file.unsupportedRental) caution = RENTAL_UNSUPPORTED_CAUTION;
+  else if (file.statedDti != null && file.statedDti >= 1) caution = HIGH_STATED_DTI_CAUTION;
 
   const previewRateAllowed =
     conventionalPurchaseOrRefi(file) &&

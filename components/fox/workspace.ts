@@ -112,6 +112,16 @@ import {
 } from "./completeness";
 import { conventionalFileFacts } from "./conventionalFile";
 import {
+  calculatorStructureFacts,
+  draftHousingEstimate,
+  housingAskCopy,
+  housingConfirmNeeded,
+  skipEstimatedHousing,
+  statedDtiAskNeeded,
+  syncCalculatorDraft,
+  writeEstimatedHousing,
+} from "./calculators";
+import {
   applyPayFrequencyAnswer,
   decliningIncomeCaution,
   formatIncomeMoney,
@@ -1514,6 +1524,7 @@ const CORRECTION_CHIP_IDS = new Set([
   "qualifying",
   "years-in-business",
   "debts",
+  "housing",
   "assets",
   "property-type",
   "time-on-job",
@@ -1551,6 +1562,9 @@ function extraCorrectionLines(draft: FoxIntakeDraft): { id: string; label: strin
   }
   if (draft.monthlyDebtsAsked || draft.statedMonthlyDebts != null) {
     extra.push({ id: "debts", label: "Stated monthly debts", prompt: "debts" });
+  }
+  if (draft.housingAsked || draft.estimatedHousing != null) {
+    extra.push({ id: "housing", label: "Housing payment", prompt: "housing" });
   }
   if (draft.availableAssetsAsked || draft.statedAvailableAssets != null) {
     extra.push({ id: "assets", label: "Stated available assets", prompt: "assets" });
@@ -2025,6 +2039,8 @@ export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
   if (nextDocInvite(draft)) return "documents";
   if (primaryDocPassFinished(draft) && !yearsInBusinessSettled(draft)) return "years-in-business";
   if (!draft.sampleAccepted) return canLooksRight(draft) ? "review" : "amount";
+  if (housingConfirmNeeded(draft)) return "housing";
+  if (statedDtiAskNeeded(draft)) return "debts";
   return "done";
 }
 
@@ -2194,6 +2210,9 @@ function workspaceAskCopy(
       text: "How is income earned?",
       actions: bubbles([...INCOME_BUBBLES], "incomeType"),
     };
+  }
+  if (prompt === "housing") {
+    return housingAskCopy(draft);
   }
   if (prompt === "debts") {
     return monthlyDebtsAskCopy(draft);
@@ -2913,6 +2932,9 @@ export function editPromptFromCapture(capture?: Capture): FoxPrompt | undefined 
     capture.field === "statedMonthlyDebts"
   ) {
     return "debts";
+  }
+  if (capture.field === "skip-housing" || capture.field === "estimatedHousing") {
+    return "housing";
   }
   if (
     capture.field === "skip-available-assets" ||
@@ -3740,7 +3762,12 @@ function draftAfterCaptureBody(draft: FoxIntakeDraft, capture: Capture): FoxInta
   if (capture.field === "start-docs") return { ...next, docsStarted: true, docsHeld: false };
   if (capture.field === "statedMonthlyDebts") {
     const amount = parseMonthlyDebtAmount(capture.value);
-    return amount != null ? writeStatedMonthlyDebts(next, amount) : next;
+    return amount != null ? syncCalculatorDraft(writeStatedMonthlyDebts(next, amount)) : next;
+  }
+  if (capture.field === "skip-housing") return skipEstimatedHousing(next);
+  if (capture.field === "estimatedHousing") {
+    const amount = Number(capture.value);
+    return Number.isFinite(amount) && amount > 0 ? writeEstimatedHousing(next, amount) : next;
   }
   if (capture.field === "statedAvailableAssets") {
     const amount = parseAvailableAssetsAmount(capture.value);
@@ -4629,6 +4656,25 @@ export function workspaceReply(
     };
   }
 
+  if (prompt === "housing") {
+    const estimate = draftHousingEstimate(draft);
+    if (isSkipMonthlyDebtsText(q) || /^change\b/i.test(q.trim())) {
+      const nextDraft = skipEstimatedHousing(draft);
+      return {
+        ...workspacePromptCopy(workspacePrompt(nextDraft), nextDraft),
+        capture: { field: "skip-housing" },
+      };
+    }
+    if (/^use this\b/i.test(q.trim()) && estimate) {
+      const nextDraft = writeEstimatedHousing(draft, estimate.estimatedHousing);
+      return {
+        ...workspacePromptCopy(workspacePrompt(nextDraft), nextDraft),
+        capture: { field: "estimatedHousing", value: String(estimate.estimatedHousing) },
+      };
+    }
+    return answerThenRestore(q, draft);
+  }
+
   if (prompt === "debts") {
     if (draft.statedMonthlyDebts != null && isKeepThisText(q)) return keepThisReply(draft);
     if (draft.pendingDebtMortgage) {
@@ -4677,7 +4723,7 @@ export function workspaceReply(
         capture: { field: "include-mortgage-debts", value: String(amount) },
       };
     }
-    const nextDraft = writeStatedMonthlyDebts(draft, amount);
+    const nextDraft = syncCalculatorDraft(writeStatedMonthlyDebts(draft, amount));
     return {
       ...nextFoxAsk(nextDraft),
       capture: { field: "statedMonthlyDebts", value: String(amount) },
@@ -5592,6 +5638,10 @@ export function previewFacts(draft: FoxIntakeDraft): PreviewFact[] {
   }
 
   facts.push(...conventionalFileFacts(draft));
+  const calculatorIds = new Set(facts.map((fact) => fact.id));
+  for (const fact of calculatorStructureFacts(draft)) {
+    if (!calculatorIds.has(fact.id)) facts.push(fact);
+  }
 
   const employer = factValue(draft, "employer_name");
   const employerProposal =
@@ -5762,6 +5812,7 @@ export function structureFixPrompt(
   if (id === "credit") return "credit";
   if (id === "income") return "income";
   if (id === "debts") return "debts";
+  if (id === "housing" || id === "ltv" || id === "cltv" || id === "pi") return "housing";
   if (id === "assets") return "assets";
   if (id === "property-type") return "property-type";
   if (id === "time-on-job") return "time-on-job";

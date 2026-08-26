@@ -133,6 +133,12 @@ import {
   rentalConfirmAsk,
 } from "./rentalIncome";
 import { conventionalCompletenessCopy, conventionalSlotCount } from "./conventionalFile";
+import {
+  ESTIMATED_HOUSING_FIELD,
+  housingConfirmCopy,
+  qualifyingIncomeConfirmCopy,
+  skipEstimatedHousing,
+} from "./calculators";
 
 export const SUGGESTED_NOTE = "Suggested · not verified";
 export const PROPOSED_NOTE = "Proposed · confirm";
@@ -588,6 +594,11 @@ export function factsFromDraft(draft: FoxIntakeDraft): CompletenessFile {
     unresolvedConflict: Boolean(draft.unresolvedConflict),
     ...(debts.length ? { debts } : {}),
     ...(draft.statedMonthlyDebts != null ? { statedMonthlyDebts: draft.statedMonthlyDebts } : {}),
+    ...(draft.estimatedHousing != null ? { estimatedHousing: draft.estimatedHousing } : {}),
+    ...(draft.statedDti != null ? { statedDti: draft.statedDti } : {}),
+    ...(draft.subordinateBalance != null ? { subordinateBalance: draft.subordinateBalance } : {}),
+    ...(draft.hoaMonthly != null ? { hoaMonthly: draft.hoaMonthly } : {}),
+    ...(draft.miApplies != null ? { miApplies: draft.miApplies } : {}),
     ...(draft.statedAvailableAssets != null ? { statedAvailableAssets: draft.statedAvailableAssets } : {}),
     ...(draft.propertyType ? { propertyType: draft.propertyType } : {}),
     ...(draft.subjectAddress ? { subjectAddress: draft.subjectAddress } : {}),
@@ -771,7 +782,10 @@ export function proposalAskCopy(proposal: FactProposal) {
   }
   const shown = displayFactValue(proposal.field, proposal.value);
   if (proposal.field === QUALIFYING_INCOME_FIELD) {
-    return `From the return I’m suggesting ${shown} a month. ${SUGGESTED_INCOME_NOTE}. Use this?`;
+    return qualifyingIncomeConfirmCopy(Number(proposal.value) || 0);
+  }
+  if (proposal.field === ESTIMATED_HOUSING_FIELD) {
+    return housingConfirmCopy(Number(proposal.value) || 0);
   }
   if (proposal.field === RENTAL_INCOME_FIELD) {
     return rentalConfirmAsk(proposal.methodNote);
@@ -902,6 +916,14 @@ function writeConfirmedFact(
   }
   if (field === "employer_name" || field === QUALIFYING_INCOME_FIELD) {
     next = { ...next, facts };
+  }
+  if (field === ESTIMATED_HOUSING_FIELD && amount != null) {
+    next = {
+      ...next,
+      estimatedHousing: amount,
+      housingAsked: true,
+      facts,
+    };
   }
   if (field === STATED_MONTHLY_DEBTS_FIELD && amount != null) {
     next = {
@@ -1050,6 +1072,9 @@ export function resolveProposal(
   const proposal = draft.pendingProposal;
   if (!proposal) return draft;
   if (winner === "decline") {
+    if (proposal.field === ESTIMATED_HOUSING_FIELD) {
+      return skipEstimatedHousing({ ...draft, pendingProposal: null });
+    }
     if (proposal.field === STATED_MONTHLY_DEBTS_FIELD) {
       return skipMonthlyDebts({ ...draft, pendingProposal: null });
     }

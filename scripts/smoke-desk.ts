@@ -109,6 +109,7 @@ import {
   TWO_TO_FOUR_CAUTION,
   MANUFACTURED_CAUTION,
   CONDO_NON_WARRANTABLE_CAUTION,
+  HIGH_STATED_DTI_CAUTION,
   RENTAL_UNSUPPORTED_CAUTION,
   CONDO_NEW_CONSTRUCTION_ACK,
   RENTAL_DOCS_WOULD_HELP,
@@ -122,6 +123,29 @@ import {
 } from "../lib/income/rental";
 import { applyRentalIncomeFromExtract, RENTAL_INCOME_FIELD } from "../components/fox/rentalIncome";
 import { answerFromFile, foxAnswer, interpretQuestion, topicFromFile } from "../lib/guidelines/answer";
+import {
+  ESTIMATED_NOT_FINAL,
+  HIGH_STATED_DTI,
+  PI_SAMPLE_LINE,
+  SAMPLE_INDICATIVE_NOT_LIVE,
+  STATED_DTI_ASK,
+  STATED_NOT_FROM_CREDIT,
+  assetNotes,
+  formatRatioPercent,
+  housingConfirmCopy,
+  housingEstimate,
+  ltvCltv,
+  monthlyPrincipalAndInterest,
+  qualifyingIncomeConfirmCopy,
+  rentalSuggest,
+  statedDti,
+} from "../lib/calculators/conventional";
+import {
+  draftHousingEstimate,
+  skipEstimatedHousing,
+  syncCalculatorDraft,
+  writeEstimatedHousing,
+} from "../components/fox/calculators";
 import {
   MOTION_COPY,
   PAYSTUB_RETURN_LINE,
@@ -2060,7 +2084,7 @@ const afterLooks = draft({
   workspaceDraftStatus: "with-originator",
   phase: "confirmed",
 });
-assert.equal(workspacePrompt(afterLooks), "done");
+assert.equal(workspacePrompt(afterLooks), "housing");
 assert.equal(statusCopy(afterLooks), "gathering");
 assert.equal(nextActorOf(afterLooks), "You");
 assert.notEqual(statusCopy(afterLooks), "Assigned / reviewing");
@@ -3799,8 +3823,8 @@ assert.equal(workspacePrompt(conflictOnPrice), "confirm-proposal");
 assert.equal(composerPlaceholder(conflictOnPrice), "");
 assert.doesNotMatch(composerPlaceholder(conflictOnPrice), /purchase price/i);
 const seAsk = proposalAskCopy(seReturn.draft.pendingProposal!);
-assert.match(seAsk, /From the return I’m suggesting/);
-assert.match(seAsk, /Suggested qualifying income · not underwritten/);
+assert.match(seAsk, /Suggested monthly income is \$9,000/);
+assert.match(seAsk, /Use this/);
 assert.match(seAsk, /9,000/);
 assert.doesNotMatch(seAsk, /1084|\bDU\b|approved|eligible|you qualify|don’t qualify|agency_ready/i);
 const seLiveAsk = workspacePromptCopy("confirm-proposal", seReturn.draft);
@@ -9978,6 +10002,145 @@ assert.equal(
   previewFacts(investBuySfr).filter((fact) => fact.id === "caution").length,
 );
 assert.ok(previewFacts(afterNewCondo).some((fact) => fact.id === "caution" && fact.value === INVESTMENT_CAUTION));
+
+const calcPurchase = ltvCltv({
+  purpose: "purchase",
+  loanAmount: 680000,
+  purchasePrice: 850000,
+});
+assert.equal(calcPurchase?.ltv, 680000 / 850000);
+assert.equal(calcPurchase?.cltv, calcPurchase?.ltv);
+assert.equal(formatRatioPercent(calcPurchase!.ltv), "80.0%");
+const calcWithSub = ltvCltv({
+  purpose: "purchase",
+  loanAmount: 680000,
+  purchasePrice: 850000,
+  subordinateBalance: 20000,
+});
+assert.equal(calcWithSub?.cltv, 700000 / 850000);
+const calcRefi = ltvCltv({
+  purpose: "refi",
+  loanAmount: 400000,
+  propertyValue: 500000,
+});
+assert.equal(calcRefi?.ltv, 0.8);
+const highLtvCalc = ltvCltv({ purpose: "purchase", loanAmount: 765000, purchasePrice: 850000 });
+assert.ok(highLtvCalc && highLtvCalc.ltv > 0.8);
+const housing = housingEstimate({
+  purpose: "purchase",
+  loanAmount: 680000,
+  purchasePrice: 850000,
+});
+assert.equal(housing?.principalAndInterest, monthlyPrincipalAndInterest(680000));
+assert.equal(housing?.taxes, Math.round((850000 * 0.0125) / 12));
+assert.equal(housing?.hoi, Math.round((850000 * 0.0035) / 12));
+assert.equal(housing?.miApplies, false);
+assert.equal(housing?.monthlyMI, 0);
+assert.equal(
+  housing?.estimatedHousing,
+  housing!.principalAndInterest + housing!.taxes + housing!.hoi,
+);
+assert.match(housingConfirmCopy(housing!.estimatedHousing), /Estimated housing is about \$/);
+assert.match(housingConfirmCopy(housing!.estimatedHousing), /Estimated · not final\. Use this\?/);
+const housingHigh = housingEstimate({
+  purpose: "purchase",
+  loanAmount: 765000,
+  purchasePrice: 850000,
+});
+assert.equal(housingHigh?.miApplies, true);
+assert.equal(housingHigh?.monthlyMI, null);
+assert.equal(
+  housingHigh?.estimatedHousing,
+  housingHigh!.principalAndInterest + housingHigh!.taxes + housingHigh!.hoi,
+);
+assert.doesNotMatch(JSON.stringify(housingHigh), /monthlyMI":[1-9]/);
+const ltvFacts = previewFacts(investBuy);
+assert.ok(ltvFacts.some((fact) => fact.id === "ltv" && fact.note === ESTIMATED_NOT_FINAL));
+assert.ok(ltvFacts.some((fact) => fact.id === "cltv" && fact.note === ESTIMATED_NOT_FINAL));
+assert.ok(!ltvFacts.some((fact) => /HOA questionnaire|condo project docs/i.test(`${fact.label} ${fact.value}`)));
+const housingFile = writeEstimatedHousing(investBuy, housing!.estimatedHousing);
+assert.equal(housingFile.estimatedHousing, housing!.estimatedHousing);
+assert.ok(previewFacts(housingFile).some((fact) => fact.id === "housing" && fact.note === ESTIMATED_NOT_FINAL));
+assert.ok(previewFacts(housingFile).some((fact) => fact.id === "pi" && (fact.note ?? "").includes(SAMPLE_INDICATIVE_NOT_LIVE)));
+assert.equal(
+  workspacePrompt(draft({ ...investBuy, sampleAccepted: true })),
+  "housing",
+);
+const housingAsk = workspaceReply(
+  "Use this",
+  draft({ ...investBuy, sampleAccepted: true }),
+);
+assert.match(housingAsk?.text ?? "", /Estimated housing is about \$|About how much do you pay each month/);
+assert.equal(housingAsk?.capture?.field, "estimatedHousing");
+const skippedHousing = skipEstimatedHousing(housingFile);
+assert.equal(skippedHousing.estimatedHousing, undefined);
+assert.equal(skippedHousing.housingAsked, true);
+assert.equal(MONTHLY_DEBTS_ASK, STATED_DTI_ASK);
+assert.equal(parseMonthlyDebtAmount("400, 200 and 150"), 750);
+const incomeReady = draft({
+  ...housingFile,
+  facts: {
+    ...(housingFile.facts ?? {}),
+    qualifying_income: {
+      field: "qualifying_income",
+      value: "4000",
+      source: "suggested",
+      confirmed: true,
+    },
+  },
+});
+assert.equal(statedDti(housingFile.estimatedHousing, 8000, 4000), (housingFile.estimatedHousing! + 8000) / 4000);
+const dtiOver = statedDti(housing!.estimatedHousing, 20000, 4000);
+assert.ok(dtiOver != null && dtiOver >= HIGH_STATED_DTI);
+const dtiFile = syncCalculatorDraft(
+  draft({
+    ...incomeReady,
+    statedMonthlyDebts: 20000,
+    monthlyDebtsAsked: true,
+  }),
+);
+assert.ok((dtiFile.statedDti ?? 0) >= 1);
+assert.equal(guidelineCaution(dtiFile), INVESTMENT_CAUTION);
+assert.ok(previewFacts(dtiFile).some((fact) => fact.id === "stated-dti" && fact.note === STATED_NOT_FROM_CREDIT));
+const primaryDti = syncCalculatorDraft(
+  draft({
+    path: "acr",
+    productIntent: "buy",
+    occupancyChoice: { ...emptyDraft().occupancyChoice, value: "primary" },
+    occupancyAsked: true,
+    estimatedHousing: housing!.estimatedHousing,
+    housingAsked: true,
+    statedMonthlyDebts: 20000,
+    monthlyDebtsAsked: true,
+    loanAmountValue: 680000,
+    propertyValueAmount: 850000,
+    facts: {
+      qualifying_income: {
+        field: "qualifying_income",
+        value: "4000",
+        source: "suggested",
+        confirmed: true,
+      },
+    },
+  }),
+);
+assert.equal(guidelineCaution(primaryDti), HIGH_STATED_DTI_CAUTION);
+assert.equal(qualifyingIncomeConfirmCopy(9000), "Suggested monthly income is $9,000. Use this?");
+assert.equal(rentalSuggest({ rentalIncomeOrLoss: 12000, depreciation: 6000 })?.monthly, 1500);
+assert.equal(rentalSuggest(null, { grossMonthlyRent: 4000 })?.monthly, 3000);
+assert.equal(assetNotes({ occupancy: "primary", propertyType: "sfr" }).reservesNote, "no_minimum_1unit_primary");
+assert.equal(assetNotes({ occupancy: "investment", propertyType: "sfr" }).reservesNote, "reserves_review");
+assert.equal(assetNotes({ occupancy: "primary", propertyType: "sfr", qualifyingIncome: 4000, extractedDeposit: 2001 }).largeDepositFlag, true);
+assert.equal(assetNotes({ occupancy: "primary", giftNamed: true }).giftFundsNoted, true);
+assert.doesNotMatch(
+  [PI_SAMPLE_LINE, housingConfirmCopy(1000), HIGH_STATED_DTI_CAUTION, qualifyingIncomeConfirmCopy(1000)].join(" "),
+  /you qualify|you are approved|\bDU\b|\bLPA\b|HOA questionnaire|reserve months|months of reserves/i,
+);
+assert.doesNotMatch(readFileSync(join(root, "lib/calculators/conventional.ts"), "utf8"), /homemade MI|premium table|0\.52|0\.62/);
+assert.doesNotMatch(
+  stillUsefulSection(housingFile)?.items.map((item) => item.label).join(" ") ?? "",
+  /HOA questionnaire|condo project docs/,
+);
 
 extractAdapterSmoke()
   .then(() => {
