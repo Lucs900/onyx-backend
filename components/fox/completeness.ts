@@ -134,12 +134,10 @@ import {
   type NamedDebt,
 } from "@/lib/guidelines/conventional";
 import {
-  FILE_NET_ROLE_FIELD,
   RENTAL_GROSS_FIELD,
   RENTAL_INCOME_FIELD,
   RENTAL_NET_ROLE_FIELD,
   RENTAL_PITIA_FIELD,
-  SUGGESTED_FILE_NET_FIELD,
   SUGGESTED_NET_RENTAL_FIELD,
   draftHasLease,
   draftHasScheduleE,

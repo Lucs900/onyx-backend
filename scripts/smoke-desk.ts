@@ -9628,6 +9628,9 @@ async function extractAdapterSmoke() {
       "year_built",
       "annual_taxes",
       "hoa_monthly",
+      "lease_gross",
+      "gross_monthly_rent",
+      "monthly_rent",
     ],
   );
 
