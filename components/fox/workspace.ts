@@ -142,6 +142,7 @@ import {
   proposeTypedLeaseRental,
   rentalConfirmAsk,
   RENTAL_INCOME_FIELD,
+  SUGGESTED_RENTAL_NOTE,
 } from "./rentalIncome";
 import {
   applyMortgageSubtract,
@@ -1394,7 +1395,7 @@ function liveProposalAsk(
   }
   if (isRentalIncomeField(proposal.field)) {
     return {
-      text: rentalConfirmAsk(proposal.methodNote),
+      text: rentalConfirmAsk(proposal.methodNote, Number(proposal.value) || 0),
       actions: incomeConfirmActions(),
     };
   }
@@ -5726,6 +5727,15 @@ export function previewFacts(draft: FoxIntakeDraft): PreviewFact[] {
       label: "Qualifying income",
       value: qualifying.value,
       note: qualifying.note,
+    });
+  }
+  const rentalIncome = draft.facts?.[RENTAL_INCOME_FIELD];
+  if (rentalIncome?.confirmed && rentalIncome.value) {
+    facts.push({
+      id: "rental",
+      label: "Suggested rental income",
+      value: displayFactValue(RENTAL_INCOME_FIELD, rentalIncome.value),
+      note: SUGGESTED_RENTAL_NOTE,
     });
   }
   const yearsInBusiness = draft.facts?.years_in_business?.value;

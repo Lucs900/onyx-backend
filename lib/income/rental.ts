@@ -41,9 +41,15 @@ export type RentalSuggestResult = {
 const UNSUPPORTED_RENTAL =
   /\b(airbnb|vrbo|short[-\s]?term|str\b|8825|form\s*8825|schedule\s*f|sch\.?\s*f|boarder|room(er|mate) rent|subject adu|adu to qualify|ytd p&l|ytd pnl|profit and loss)\b/i;
 
-export function rentalConfirmCopy(method: RentalMethod): string {
+export function rentalMoneyShown(value: number) {
+  const rounded = Math.round(value);
+  const abs = Math.abs(rounded).toLocaleString("en-US");
+  return rounded < 0 ? `-$${abs}` : `$${abs}`;
+}
+
+export function rentalConfirmCopy(method: RentalMethod, monthly: number): string {
   const using = method === "schedule_e" ? "Schedule E" : "75% of the lease";
-  return `${SUGGESTED_RENTAL_NOTE}. I’m using ${using}. Use this?`;
+  return `Suggested rental income is ${rentalMoneyShown(monthly)} · not underwritten. I’m using ${using}. Use this?`;
 }
 
 export function unsupportedRentalNamed(text?: string | null): boolean {

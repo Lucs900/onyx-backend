@@ -1470,7 +1470,7 @@ assert.equal(fileCompleteness(afterIncome)?.state, "sketch");
 assert.equal(fileCompleteness(afterIncome)?.total, CONVENTIONAL_FILE_SLOT_TOTAL);
 assert.equal(fileCompleteness(afterIncome)?.filled, 4);
 assert.equal(fileCompleteness(afterIncome)?.copy, `sketch · 4 of ${CONVENTIONAL_FILE_SLOT_TOTAL}`);
-assert.ok(creditFacts.some((fact) => fact.id === "file" && /sketch · 4 of 30/.test(fact.value)));
+assert.ok(creditFacts.some((fact) => fact.id === "file" && new RegExp(`sketch · 4 of ${CONVENTIONAL_FILE_SLOT_TOTAL}`).test(fact.value)));
 assert.ok(
   creditFacts.some(
     (fact) => fact.id === "credit" && fact.value === "760+" && fact.note === CREDIT_STATED_NOTE,
@@ -2148,11 +2148,11 @@ const confirmedFromDocs = {
 };
 const docsBeforeLooks = draft({ ...afterIncome, facts: confirmedFromDocs });
 assert.equal(fileCompleteness(docsBeforeLooks)?.state, "agency_partial");
-assert.match(fileCompleteness(docsBeforeLooks)?.copy ?? "", /^sketch · \d+ of 30$/);
+assert.match(fileCompleteness(docsBeforeLooks)?.copy ?? "", new RegExp(`^sketch · \\d+ of ${CONVENTIONAL_FILE_SLOT_TOTAL}$`));
 assert.ok(!/agency_partial|agency_ready/.test(fileCompleteness(docsBeforeLooks)?.copy ?? ""));
 assert.ok(
   previewFacts(docsBeforeLooks).some(
-    (fact) => fact.id === "file" && /^sketch · \d+ of 30$/.test(fact.value) && !/agency_partial/.test(fact.value),
+    (fact) => fact.id === "file" && new RegExp(`^sketch · \\d+ of ${CONVENTIONAL_FILE_SLOT_TOTAL}$`).test(fact.value) && !/agency_partial/.test(fact.value),
   ),
 );
 assert.ok(assignedFacts.some((fact) => fact.id === "originator" && fact.value === "Licensed originator assigned"));
@@ -2885,7 +2885,7 @@ assert.ok(
   ),
 );
 assert.equal(fileCompleteness(w2AfterLooks)?.state, "sketch");
-assert.match(fileCompleteness(w2AfterLooks)?.copy ?? "", /^sketch · \d+ of 30$/);
+assert.match(fileCompleteness(w2AfterLooks)?.copy ?? "", new RegExp(`^sketch · \\d+ of ${CONVENTIONAL_FILE_SLOT_TOTAL}$`));
 assert.ok(!/agency_partial|agency_ready/.test(fileCompleteness(w2AfterLooks)?.copy ?? ""));
 
 const seAfterLooks = draft({
@@ -9810,7 +9810,7 @@ assert.ok(previewFacts(conventionalSeWalk).some((fact) => fact.id === "file-asse
 assert.ok(previewFacts(conventionalSeWalk).some((fact) => fact.id === "file-liabilities"));
 assert.ok(previewFacts(conventionalSeWalk).some((fact) => fact.id === "file-declarations"));
 assert.ok(previewFacts(conventionalSeWalk).some((fact) => fact.id === "file-history"));
-assert.match(fileCompleteness(conventionalSeWalk)?.copy ?? "", /^sketch · 4 of 30$/);
+assert.match(fileCompleteness(conventionalSeWalk)?.copy ?? "", new RegExp(`^sketch · 4 of ${CONVENTIONAL_FILE_SLOT_TOTAL}$`));
 
 const conventionalRefiWalk = draft({
   path: "acr",
@@ -9832,7 +9832,7 @@ assert.equal(workspacePrompt(conventionalRefiWalk), "documents");
 assert.ok(previewFacts(conventionalRefiWalk).some((fact) => fact.id === "file-property"));
 assert.ok(previewFacts(conventionalRefiWalk).some((fact) => fact.id === "file-liabilities" && fact.value === "Credit report later"));
 assert.ok(stillUsefulSection(conventionalRefiWalk)?.items.some((item) => item.label === "Mortgage statement"));
-assert.match(fileCompleteness(conventionalRefiWalk)?.copy ?? "", /^sketch · 4 of 30$/);
+assert.match(fileCompleteness(conventionalRefiWalk)?.copy ?? "", new RegExp(`^sketch · 4 of ${CONVENTIONAL_FILE_SLOT_TOTAL}$`));
 
 const conventionalSrc = readFileSync(join(root, "components/fox/conventionalFile.ts"), "utf8");
 assert.doesNotMatch(conventionalSrc, /ask for APN|legal description quiz|year-built form|HOA dues line|liability worksheet|1003 maze|citizenship quiz/i);
@@ -9876,8 +9876,8 @@ assert.equal(suggestScheduleERental({ rentalIncomeOrLoss: 12000, depreciation: 6
 assert.equal(suggestScheduleERental({ rentalIncomeOrLoss: 12000, depreciation: 6000 })?.monthly, 1500);
 assert.equal(suggestLeaseRental({ grossMonthlyRent: 4000, twoMonthsDeposits: true })?.monthly, 3000);
 assert.equal(suggestLeaseRental({ grossMonthlyRent: 4000 })?.thinner, true);
-assert.equal(rentalConfirmCopy("schedule_e"), "Suggested rental income · not underwritten. I’m using Schedule E. Use this?");
-assert.equal(rentalConfirmCopy("lease_75"), "Suggested rental income · not underwritten. I’m using 75% of the lease. Use this?");
+assert.equal(rentalConfirmCopy("schedule_e", 1500), "Suggested rental income is $1,500 · not underwritten. I’m using Schedule E. Use this?");
+assert.equal(rentalConfirmCopy("lease_75", 2250), "Suggested rental income is $2,250 · not underwritten. I’m using 75% of the lease. Use this?");
 const rentalExtract = applyRentalIncomeFromExtract(afterLooks, "other", {
   schedule_e_rental_income: "12000",
   schedule_e_depreciation: "6000",
@@ -9889,7 +9889,7 @@ assert.equal(resolveProposal(rentalExtract, "accept").facts?.[RENTAL_INCOME_FIEL
 assert.equal(resolveProposal(rentalExtract, "decline").facts?.[RENTAL_INCOME_FIELD], undefined);
 const leaseExtract = applyRentalIncomeFromExtract(afterLooks, "other", { gross_monthly_rent: "4000" });
 assert.equal(leaseExtract.pendingProposal?.value, "3000");
-assert.match(rentalConfirmCopy("lease_75"), /75% of the lease/);
+assert.match(rentalConfirmCopy("lease_75", 3000), /75% of the lease/);
 assert.equal(
   readinessFromFile({
     product: "buy",
@@ -9953,6 +9953,14 @@ assert.ok(
     purposeHint: "purchase",
     occupancy: "investment",
     rentalNamed: true,
+  }).stillUseful.includes(RENTAL_DOCS_WOULD_HELP),
+);
+assert.ok(
+  !storeCompleteness("buy", {
+    purposeHint: "purchase",
+    occupancy: "investment",
+    rentalNamed: true,
+    hasLease: true,
   }).stillUseful.includes(RENTAL_DOCS_WOULD_HELP),
 );
 assert.doesNotMatch(
@@ -10028,7 +10036,7 @@ assert.equal(rentalSuggest({ rentalIncomeOrLoss: 12000, depreciation: 6000 })?.m
 const leaseAsk = workspaceReply("I have a lease for 3000 a month", investBuy);
 assert.match(
   leaseAsk?.text ?? "",
-  /Suggested rental income · not underwritten\. I’m using 75% of the lease\. Use this\?/,
+  /Suggested rental income is \$2,250 · not underwritten\. I’m using 75% of the lease\. Use this\?/,
 );
 assert.doesNotMatch(leaseAsk?.text ?? "", /I can answer from this file/);
 assert.doesNotMatch(leaseAsk?.text ?? "", /Schedule E/);
@@ -10041,15 +10049,29 @@ const leaseProposed = proposeTypedLeaseRental(investBuy, "I have a lease for 300
 assert.equal(leaseProposed?.pendingProposal?.field, RENTAL_INCOME_FIELD);
 assert.equal(leaseProposed?.pendingProposal?.value, "2250");
 assert.equal(leaseProposed?.facts?.[RENTAL_INCOME_FIELD], undefined);
+assert.ok((stillUsefulSection(investBuy)?.items ?? []).some((item) => item.label === RENTAL_DOCS_WOULD_HELP));
+assert.equal(workspaceReply("Use this", leaseProposed!)?.capture?.field, "accept-proposal");
 const leaseUsed = resolveProposal(leaseProposed!, "accept");
 assert.equal(leaseUsed.facts?.[RENTAL_INCOME_FIELD]?.value, "2250");
+assert.equal(leaseUsed.facts?.[RENTAL_INCOME_FIELD]?.source, "suggested");
 assert.equal(leaseUsed.facts?.qualifying_income, undefined);
 assert.equal(guidelineCaution(leaseUsed), INVESTMENT_CAUTION);
-assert.equal(resolveProposal(leaseProposed!, "decline").facts?.[RENTAL_INCOME_FIELD], undefined);
+assert.ok(previewFacts(leaseUsed).some((fact) => fact.id === "rental" && fact.value === "$2,250"));
+assert.ok(previewFacts(leaseUsed).some((fact) => fact.id === "rental" && fact.note === "Suggested rental income · not underwritten"));
+assert.ok(previewFacts(leaseUsed).some((fact) => fact.id === "income" && /\$2,250/.test(fact.value)));
+assert.equal(fileCompleteness(investBuy)?.copy, `sketch · 4 of ${CONVENTIONAL_FILE_SLOT_TOTAL}`);
+assert.equal(fileCompleteness(leaseUsed)?.copy, `sketch · 5 of ${CONVENTIONAL_FILE_SLOT_TOTAL}`);
+assert.ok(!(stillUsefulSection(leaseUsed)?.items ?? []).some((item) => item.label === RENTAL_DOCS_WOULD_HELP));
+const leaseDeclined = resolveProposal(leaseProposed!, "decline");
+assert.equal(leaseDeclined.facts?.[RENTAL_INCOME_FIELD], undefined);
+assert.ok((stillUsefulSection(leaseDeclined)?.items ?? []).some((item) => item.label === RENTAL_DOCS_WOULD_HELP));
+assert.ok(!previewFacts(leaseDeclined).some((fact) => fact.id === "rental"));
+assert.equal(workspaceReply("Change", leaseProposed!)?.capture?.field, "change-proposal");
+assert.equal(workspaceReply("Skip", leaseProposed!)?.capture?.field, "decline-proposal");
 const rentIsAsk = workspaceReply("rent is 3000", investBuy);
 assert.equal(rentIsAsk?.capture?.field, "propose-rental-lease");
 assert.equal(rentIsAsk?.capture && "value" in rentIsAsk.capture ? rentIsAsk.capture.value : "", "3000");
-assert.match(workspaceReply("tenant pays 3000 a month", investBuy)?.text ?? "", /I’m using 75% of the lease/);
+assert.match(workspaceReply("tenant pays 3000 a month", investBuy)?.text ?? "", /Suggested rental income is \$2,250 · not underwritten\. I’m using 75% of the lease/);
 assert.match(workspaceReply("I have Airbnb income", investBuy)?.text ?? "", /I don’t have a rental path for that yet\. I’ll keep gathering\./);
 
 const calcPurchase = ltvCltv({
@@ -10242,7 +10264,7 @@ const investRentalWalk = draft({
   sampleAccepted: true,
 });
 assert.equal(rentalSuggest({ rentalIncomeOrLoss: 12000, depreciation: 6000 })?.monthly, 1500);
-assert.match(rentalConfirmCopy("schedule_e"), /I’m using Schedule E\. Use this\?/);
+assert.match(rentalConfirmCopy("schedule_e", 1500), /I’m using Schedule E\. Use this\?/);
 assert.equal(guidelineCaution(investRentalWalk), INVESTMENT_CAUTION);
 assert.notEqual(guidelineCaution(investRentalWalk), HIGH_STATED_DTI_CAUTION);
 

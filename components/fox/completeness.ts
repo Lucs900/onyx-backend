@@ -792,7 +792,7 @@ export function proposalAskCopy(proposal: FactProposal) {
     return housingConfirmCopy(Number(proposal.value) || 0);
   }
   if (proposal.field === RENTAL_INCOME_FIELD) {
-    return rentalConfirmAsk(proposal.methodNote);
+    return rentalConfirmAsk(proposal.methodNote, Number(proposal.value) || 0);
   }
   if (proposal.field === STATED_MONTHLY_DEBTS_FIELD) {
     return monthlyDebtsConfirmCopy(Number(proposal.value) || 0);
@@ -1397,6 +1397,12 @@ export function requiredLineValue(
             : raw === "other"
               ? "Other"
               : "";
+    const rental = draft.facts?.[RENTAL_INCOME_FIELD];
+    if (rental?.confirmed && rental.value) {
+      const shown = displayFactValue(RENTAL_INCOME_FIELD, rental.value);
+      const bits = [label, shown].filter(Boolean);
+      return { value: bits.join(" · "), filled: true };
+    }
     return { value: label || MISSING_LINE, filled: Boolean(label) };
   }
   if (line.id === "price" || line.id === "home") {

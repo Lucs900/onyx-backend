@@ -70,6 +70,7 @@ export function draftHasScheduleE(draft: FoxIntakeDraft): boolean {
 export function draftHasLease(draft: FoxIntakeDraft): boolean {
   const facts = draft.facts ?? {};
   if (facts.gross_monthly_rent?.value || facts.lease?.value) return true;
+  if (facts[RENTAL_INCOME_FIELD]?.confirmed && facts[RENTAL_INCOME_FIELD]?.value) return true;
   return (draft.documents ?? []).some((doc) => /lease/i.test(`${doc.name} ${doc.extractClass ?? ""}`));
 }
 
@@ -106,9 +107,9 @@ export function rentalIncomeProposal(result: RentalSuggestResult): FactProposal 
   };
 }
 
-export function rentalConfirmAsk(method?: string): string {
+export function rentalConfirmAsk(method?: string, monthly?: number): string {
   const used: RentalMethod = method === "lease_75" ? "lease_75" : "schedule_e";
-  return rentalConfirmCopy(used);
+  return rentalConfirmCopy(used, monthly ?? 0);
 }
 
 export function isRentalIncomeField(field?: string | null): boolean {

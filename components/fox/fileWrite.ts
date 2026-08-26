@@ -460,6 +460,7 @@ export function factLabel(field: string) {
   if (field === "k1_ordinary_income") return "K-1 ordinary income";
   if (field === "k1_distributions") return "K-1 distributions";
   if (field === "qualifying_income") return "qualifying income";
+  if (field === "rental_income") return "Suggested rental income";
   if (field === "institution") return "institution";
   if (field === "period_end") return "period end";
   if (field === "account_type") return "account type";

@@ -76,6 +76,7 @@ export type ConventionalSlotId =
   | "loan.amounts"
   | "credit.stated"
   | "income.type"
+  | "income.rental"
   | "property.address"
   | "property.apn"
   | "property.legalDescription"
@@ -108,6 +109,7 @@ export const CONVENTIONAL_SLOT_IDS: ConventionalSlotId[] = [
   "loan.amounts",
   "credit.stated",
   "income.type",
+  "income.rental",
   "property.address",
   "property.apn",
   "property.legalDescription",
@@ -261,6 +263,9 @@ function slotFilled(draft: FoxIntakeDraft, id: ConventionalSlotId, file: Convent
     return Boolean(draft.creditBand && draft.creditBand !== "not-sure");
   }
   if (id === "income.type") return Boolean(draft.incomeType.value);
+  if (id === "income.rental") {
+    return Boolean(draft.facts?.rental_income?.confirmed && draft.facts?.rental_income?.value);
+  }
   if (id === "property.address") return filledText(file.property.address);
   if (id === "property.apn") return filledText(file.property.apn);
   if (id === "property.legalDescription") return filledText(file.property.legalDescription);
