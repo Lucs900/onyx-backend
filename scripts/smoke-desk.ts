@@ -10834,18 +10834,18 @@ const contractProperty = applyExtractedFields(file32W2Skipped, {
     hoa_monthly: "0",
   },
 });
-const contractAccepted = resolveProposal(contractProperty.draft, "accept");
-assert.equal(contractAccepted.subjectAddress, "14 OAK STREET");
-assert.equal(contractAccepted.propertyType, "sfr");
-assert.equal(contractAccepted.propertyYearBuilt, "1998");
-assert.equal(contractAccepted.propertyUnits, "1");
-assert.equal(contractAccepted.propertyTaxes, "8400");
-const contractSlots = conventionalSlotReport(contractAccepted);
-assert.ok(contractSlots.present.includes("property.address"));
-assert.ok(contractSlots.present.includes("property.propertyType"));
-assert.ok(contractSlots.present.includes("property.yearBuilt"));
-assert.ok(contractSlots.present.includes("property.units"));
-assert.ok(contractSlots.present.includes("property.taxes"));
+const file32ContractAccepted = resolveProposal(contractProperty.draft, "accept");
+assert.equal(file32ContractAccepted.subjectAddress, "14 OAK STREET");
+assert.equal(file32ContractAccepted.propertyType, "sfr");
+assert.equal(file32ContractAccepted.propertyYearBuilt, "1998");
+assert.equal(file32ContractAccepted.propertyUnits, "1");
+assert.equal(file32ContractAccepted.propertyTaxes, "8400");
+const file32ContractSlots = conventionalSlotReport(file32ContractAccepted);
+assert.ok(file32ContractSlots.present.includes("property.address"));
+assert.ok(file32ContractSlots.present.includes("property.propertyType"));
+assert.ok(file32ContractSlots.present.includes("property.yearBuilt"));
+assert.ok(file32ContractSlots.present.includes("property.units"));
+assert.ok(file32ContractSlots.present.includes("property.taxes"));
 
 extractAdapterSmoke()
   .then(() => {
