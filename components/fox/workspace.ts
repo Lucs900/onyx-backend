@@ -195,12 +195,10 @@ import {
   writeStatedAvailableAssets,
 } from "./availableAssets";
 import {
-  PROPERTY_ADDRESS_ASK,
   PROPERTY_TYPE_ASK,
   PROPERTY_TYPE_FIELD,
   SUGGESTED_PROPERTY_NOTE,
   contractAddressConfirmCopy,
-  idStreetSuggestion,
   isPropertyAddressField,
   isPropertyTypeConfirmPending,
   isSkipPropertyAddressText,
@@ -209,7 +207,9 @@ import {
   parsePropertyType,
   parseVolunteeredAddress,
   propertyAddressAskCopy,
+  propertyAddressAskText,
   propertyAddressSettled,
+  subjectAddressSuggestion,
   propertyTypeAskCopy,
   propertyTypeSettled,
   propertyTypeConfirmActions,
@@ -2205,6 +2205,7 @@ export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
   if (!draft.sampleAccepted && !householdSettled(draft)) {
     if (!timelineFilled(draft)) return "timeline";
     if (historyGapNeeded(draft) && !nextDocInvite(draft)) return "former-history";
+    if (!propertyAddressSettled(draft) && !nextDocInvite(draft)) return "property-address";
     if (canLooksRight(draft)) return "review";
     if (draft.looksRightHold) return "documents";
     return "amount";
@@ -2215,6 +2216,7 @@ export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
   if (!draft.sampleAccepted) {
     if (!timelineFilled(draft)) return "timeline";
     if (historyGapNeeded(draft)) return "former-history";
+    if (!propertyAddressSettled(draft)) return "property-address";
     if (canLooksRight(draft)) return "review";
     if (draft.looksRightHold) return "documents";
     return "amount";
@@ -3432,7 +3434,7 @@ export function workspaceUpdateCopy(capture: Capture, draft: FoxIntakeDraft) {
   if (capture.field === "skip-property-type") return "Updated. Property type left blank.";
   if (capture.field === "propose-property-type") return "Updated.";
   if (capture.field === "skip-property-address") return "Updated. Property address left blank.";
-  if (capture.field === "change-property-address") return PROPERTY_ADDRESS_ASK;
+  if (capture.field === "change-property-address") return propertyAddressAskText(draft);
   if (capture.field === "propertyType") {
     const value = parsePropertyType(capture.value);
     return value ? `Updated property type to ${propertyTypeLabel(value)}.` : "Updated property type.";
@@ -5225,16 +5227,16 @@ export function workspaceReply(
       };
     }
     if (/^use this\b/i.test(q.trim())) {
-      const street = idStreetSuggestion(draft);
-      if (street && draft.correcting !== "property-address") {
-        const nextDraft = writeSubjectAddress(draft, street);
+      const suggestion = subjectAddressSuggestion(draft);
+      if (suggestion) {
+        const nextDraft = writeSubjectAddress(draft, suggestion.street);
         return {
           ...nextFoxAsk(nextDraft),
-          capture: { field: "subjectAddress", value: street },
+          capture: { field: "subjectAddress", value: suggestion.street },
         };
       }
     }
-    if (/^change\b/i.test(q.trim()) && idStreetSuggestion(draft) && draft.correcting !== "property-address") {
+    if (/^change\b/i.test(q.trim()) && subjectAddressSuggestion(draft)) {
       const nextDraft = { ...draft, correcting: "property-address" as const, correctingLine: "property-address" };
       return {
         ...workspacePromptCopy("property-address", nextDraft),
@@ -6158,7 +6160,7 @@ export function previewFacts(draft: FoxIntakeDraft): PreviewFact[] {
     });
   }
 
-  const address = draft.subjectAddress || factValue(draft, "property_address");
+  const address = draft.subjectAddress || "";
   if (
     draft.subjectAddressAsked ||
     address ||

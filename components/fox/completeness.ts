@@ -52,6 +52,7 @@ import {
   contractAddressConfirmCopy,
   isPropertyTypeValue,
   parsePropertyType,
+  propertyAddressSettled,
   propertyTypeConfirmCopy,
   skipPropertyType,
   typedAddressConfirmCopy,
@@ -1441,7 +1442,13 @@ export function currentAskIdle(draft: FoxIntakeDraft) {
 }
 
 export function canLooksRight(draft: FoxIntakeDraft) {
-  return sketchAssembled(draft) && timelineFilled(draft) && currentAskIdle(draft) && !historyGapNeeded(draft);
+  return (
+    sketchAssembled(draft) &&
+    timelineFilled(draft) &&
+    currentAskIdle(draft) &&
+    !historyGapNeeded(draft) &&
+    propertyAddressSettled(draft)
+  );
 }
 
 export function parseFundsRole(

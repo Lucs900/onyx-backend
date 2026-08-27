@@ -391,15 +391,19 @@ Purchase-contract extract still confirm-before-write for address. Never silent-w
 
 Use this writes `subjectAddress` and the existing `property_address` fact (one address, not a fork). Street as extracted; city/state only if on the page. Never invent ZIP or county.
 
-After property type (or that Skip) and the 2-year history gap, Fox may ask once for the subject Property address. Late File slot. Skippable. Not a sketch gate. Chips do not apply — they type or Skip.
+After the 2-year history gaps are answered or skipped, and before Looks right, Fox asks once for the subject Property address. File slot. Skippable. Not a sketch gate. Looks right waits until they type+confirm or Skip. Chips do not apply — they type or Skip.
 
-If the government ID already has a street, suggest it and confirm before write:
+Buy / purchase never writes an ID street onto Property address. Ask exactly:
+
+`What is the address of the home you are buying?`
+
+If a purchase contract is already in and has a street, suggest that contract street and confirm before write. Harbor `government-id-jordan.pdf` has no street — still never treat any ID address as the subject on a purchase.
+
+Refinance or HELOC on a primary: the ID street may suggest Property address. Confirm before write.
 
 `The ID shows 14 OAK STREET. Suggested · not underwritten. Use this?`
 
-If the ID has no street (Harbor `government-id-jordan.pdf` has none), ask:
-
-`What is the property address?`
+“Where did you live before this?” is residence history. It is not the subject property. Do not copy that answer onto Property address.
 
 A typed street confirm-before-write:
 
