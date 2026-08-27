@@ -53,6 +53,7 @@ import {
   isPropertyTypeValue,
   parsePropertyType,
   propertyTypeConfirmCopy,
+  rateLineReady,
   skipPropertyType,
   typedAddressConfirmCopy,
 } from "./propertyType";
@@ -1437,7 +1438,7 @@ export function currentAskIdle(draft: FoxIntakeDraft) {
 }
 
 export function canLooksRight(draft: FoxIntakeDraft) {
-  return sketchAssembled(draft) && timelineFilled(draft) && currentAskIdle(draft);
+  return sketchAssembled(draft) && timelineFilled(draft) && currentAskIdle(draft) && rateLineReady(draft);
 }
 
 export function parseFundsRole(

@@ -209,6 +209,8 @@ import {
   propertyTypeChosen,
   propertyTypeSettled,
   propertyTypeSkipped,
+  creditAnswered,
+  rateLineReady,
   propertyTypeConfirmActions,
   propertyTypeConfirmCopy,
   propertyTypeLabel,
@@ -2058,28 +2060,35 @@ export function formatSamplePayment(loanAmount?: number | null): string {
 }
 
 function creditSettled(draft: FoxIntakeDraft) {
-  return Boolean(draft.creditAsked || draft.creditBand);
+  return creditAnswered(draft);
 }
 
 export function sampleReady(draft: FoxIntakeDraft): boolean {
   return sketchAssembled(draft);
 }
 
-export function propertyTypeRateNote(draft: FoxIntakeDraft) {
-  return draft.propertyType === "sfr" ? PREVIEW_RATE_NOTE : INDICATIVE_NOT_LIVE;
+export function propertyTypeRateNote(_draft?: FoxIntakeDraft) {
+  return INDICATIVE_NOT_LIVE;
 }
 
-/** Sample 6.750% only after House / Condo / 2–4. Skip → Pricing when the file is ready. Missing type → no rate line. */
+/** Skip writes Pricing when the file is ready on the type tap. House/Condo/2–4 wait for FICO. */
 export function previewRateFact(draft: FoxIntakeDraft): PreviewFact | null {
   const intent = draft.productIntent ?? null;
   if (!intent) return null;
-  if (!propertyTypeChosen(draft) && !propertyTypeSkipped(draft)) return null;
-  if (propertyTypeChosen(draft) && previewRateApplies(draft)) {
+  if (propertyTypeSkipped(draft)) {
+    return {
+      id: "rate",
+      label: "Rate",
+      value: PRICING_WHEN_READY,
+    };
+  }
+  if (!propertyTypeChosen(draft) || !creditAnswered(draft)) return null;
+  if (previewRateApplies(draft)) {
     return {
       id: "rate",
       label: "Rate",
       value: `${SAMPLE_STRUCTURE} ${SAMPLE_RATE_LABEL}`,
-      note: propertyTypeRateNote(draft),
+      note: INDICATIVE_NOT_LIVE,
     };
   }
   return {
@@ -2211,6 +2220,9 @@ export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
   if (!propertyTypeSettled(draft)) return "property-type";
   if (subjectLeaseAskNeeded(draft)) return "subject-lease";
   if (!creditSettled(draft)) return "credit";
+  if (!rateLineReady(draft)) {
+    return propertyTypeSettled(draft) ? "credit" : "property-type";
+  }
   if (!incomeSettled(draft)) return "income";
   if (needsDeclarationTiming(draft)) return "declaration-timing";
   if (!otherReoSettled(draft)) return "other-reo";
