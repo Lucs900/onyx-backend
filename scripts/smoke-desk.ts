@@ -8071,12 +8071,14 @@ assert.doesNotMatch(
   /another borrower|What name should I put/i,
 );
 
-const afterPrimaryPass = skipSubjectAddress(
-  draft({
-    ...afterNameForHousehold,
-    docsStarted: true,
-    skippedClasses: ["government_id", "paystub", "w2"],
-  }),
+const afterPrimaryPass = skipCitizenship(
+  skipSubjectAddress(
+    draft({
+      ...afterNameForHousehold,
+      docsStarted: true,
+      skippedClasses: ["government_id", "paystub", "w2"],
+    }),
+  ),
 );
 assert.ok(stillUsefulSection(afterPrimaryPass)?.items.some((item) => item.label === "Latest return"));
 assert.equal(workspacePrompt(afterPrimaryPass), "review");
@@ -8340,7 +8342,7 @@ assert.doesNotMatch(
   `${workspacePromptCopy("documents", w2AfterSkipPaystub).text} ${workspacePromptCopy("documents", w2AfterSkipPaystub).followUp ?? ""}`,
   /another borrower|Is there another borrower|Now working on Borrower 2/i,
 );
-const w2PassDone = skipSubjectAddress(skipCurrentInvite(w2AfterSkipPaystub));
+const w2PassDone = skipCitizenship(skipSubjectAddress(skipCurrentInvite(w2AfterSkipPaystub)));
 assert.equal(workspacePrompt(w2PassDone), "review");
 assert.match(workspacePromptCopy("review", w2PassDone).text, /complete enough to move|look right/i);
 assert.doesNotMatch(
@@ -8404,7 +8406,7 @@ assert.doesNotMatch(
   `${workspacePromptCopy("documents", sePassDone).text} ${workspacePromptCopy("documents", sePassDone).followUp ?? ""}`,
   /another borrower|Is there another borrower|Now working on Borrower 2/i,
 );
-const seRemainderDone = skipSubjectAddress(skipCurrentInvite(sePassDone));
+const seRemainderDone = skipCitizenship(skipSubjectAddress(skipCurrentInvite(sePassDone)));
 assert.equal(workspacePrompt(seRemainderDone), "review");
 assert.doesNotMatch(workspacePromptCopy("review", seRemainderDone).text, /another borrower/i);
 assert.equal(workspacePrompt(draft({ ...seRemainderDone, sampleAccepted: true })), "household");
@@ -8464,7 +8466,7 @@ assert.ok(
     (item) => item.label === OTHER_REO_MORTGAGE_STATEMENTS,
   ),
 );
-const seOtherRemainderDone = skipSubjectAddress(skipCurrentInvite(seOtherReturnIn));
+const seOtherRemainderDone = skipCitizenship(skipSubjectAddress(skipCurrentInvite(seOtherReturnIn)));
 assert.equal(workspacePrompt(seOtherRemainderDone), "review");
 const seOtherLooksRight = draft({ ...seOtherRemainderDone, sampleAccepted: true });
 assert.equal(workspacePrompt(seOtherLooksRight), "household");
