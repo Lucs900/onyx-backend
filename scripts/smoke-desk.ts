@@ -1460,6 +1460,7 @@ const doneWhy = workspaceReply("why do you need that?", {
   ...skipDocInvites(afterIncome),
   sampleAccepted: true,
   housingAsked: true,
+  subjectAddressAsked: true,
   workspaceDraftStatus: "with-originator",
   phase: "confirmed",
 });
@@ -11049,6 +11050,7 @@ const investHoused = draft({
   estimatedHousing: investHousingEst!.estimatedHousing,
   housingAsked: true,
   sampleAccepted: true,
+  subjectAddressAsked: true,
 });
 const leaseAsk = workspaceReply("I have a lease for 3000 a month", investHoused);
 assert.match(
@@ -11187,7 +11189,7 @@ const housingAsk = workspaceReply(
 );
 assert.match(
   housingAsk?.text ?? "",
-  /Estimated housing is about \$|About how much do you pay each month|This file can move|Proceed/,
+  /Estimated housing is about \$|About how much do you pay each month|This file can move|Proceed|What is the property address/,
 );
 assert.equal(housingAsk?.capture?.field, "estimatedHousing");
 const skippedHousing = skipEstimatedHousing(housingFile);
@@ -12068,6 +12070,7 @@ const afterCoborrowerNone = draft({
   estimatedHousing: 5543,
   statedHousehold: "none",
   householdAsked: true,
+  subjectAddressAsked: true,
 });
 assert.notEqual(workspacePrompt(afterCoborrowerNone), "debts");
 assert.doesNotMatch(nextFoxAsk(afterCoborrowerNone).text, /other debts, not counting this house/);
