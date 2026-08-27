@@ -30,6 +30,17 @@ export function propertyTypeSettled(draft: FoxIntakeDraft) {
   return Boolean(draft.propertyTypeAsked || draft.propertyType);
 }
 
+/** House / condo / 2–4 chosen. Skip and a missing type are not chosen. */
+export function propertyTypeChosen(draft: FoxIntakeDraft): draft is FoxIntakeDraft & {
+  propertyType: PropertyTypeValue;
+} {
+  return isPropertyTypeValue(String(draft.propertyType ?? ""));
+}
+
+export function propertyTypeSkipped(draft: FoxIntakeDraft) {
+  return Boolean(draft.propertyTypeAsked && !draft.propertyType && draft.correcting !== "property-type");
+}
+
 export function isPropertyTypeConfirmPending(draft: FoxIntakeDraft) {
   return draft.pendingProposal?.field === PROPERTY_TYPE_FIELD;
 }

@@ -157,6 +157,7 @@ export function housingSettled(draft: FoxIntakeDraft) {
 }
 
 export function housingConfirmNeeded(draft: FoxIntakeDraft) {
+  if (!draft.propertyType) return false;
   return Boolean(draftHousingEstimate(draft) && !housingSettled(draft));
 }
 
@@ -372,7 +373,7 @@ export function calculatorStructureFacts(draft: FoxIntakeDraft): {
     }
   }
   const estimate = draftHousingEstimate(draft);
-  if (draft.estimatedHousing != null && estimate) {
+  if (draft.propertyType && draft.estimatedHousing != null && estimate) {
     facts.push({
       id: "pi",
       label: "P&I",
