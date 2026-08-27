@@ -3,6 +3,8 @@ import {
   DECLINING_INCOME_CAUTION,
   DECLINING_YEAR_RATIO,
   SUGGESTED_INCOME_NOTE,
+  W2_BOX1_MONTHLY_NOTE,
+  BOTH_MONTHLY_LOWER_NOTE,
   YTD_CONFLICT_CAUTION,
   K1_ORDINARY_NOTE,
   SECOND_JOB_SAME_STUB_NOTE,
@@ -28,6 +30,8 @@ export {
   DECLINING_INCOME_CAUTION,
   DECLINING_YEAR_RATIO,
   SUGGESTED_INCOME_NOTE,
+  W2_BOX1_MONTHLY_NOTE,
+  BOTH_MONTHLY_LOWER_NOTE,
   YTD_CONFLICT_CAUTION,
   K1_ORDINARY_NOTE,
   SECOND_JOB_SAME_STUB_NOTE,
@@ -838,7 +842,10 @@ export function withQualifyingIncomeProposal(
   if (!computed) return draft;
   const monthly = String(computed.monthly);
   const existing = existingMonthlyIncome(draft);
-  if (existing && valuesMatch(existing.value, monthly)) {
+  const showBothMonthly =
+    computed.method === "both-lower" ||
+    Boolean(computed.methodNote?.includes(BOTH_MONTHLY_LOWER_NOTE));
+  if (existing && valuesMatch(existing.value, monthly) && !showBothMonthly) {
     return {
       ...draft,
       pendingConflict: null,
@@ -917,12 +924,24 @@ export function qualifyingIncomeNote(draft: FoxIntakeDraft): string | undefined 
   return undefined;
 }
 
+function structureQualifyingValue(amount: string, methodNote?: string) {
+  if (!methodNote) return amount;
+  if (
+    methodNote.includes(W2_BOX1_MONTHLY_NOTE) ||
+    methodNote.includes("W-2 Box 1") ||
+    methodNote.includes("Paystub $")
+  ) {
+    return `${amount} · ${methodNote}`;
+  }
+  return amount;
+}
+
 export function qualifyingIncomeDisplay(draft: FoxIntakeDraft): { value: string; note: string } | null {
   const proposal =
     draft.pendingProposal?.field === QUALIFYING_INCOME_FIELD ? draft.pendingProposal : null;
   if (proposal) {
     return {
-      value: displayMoney(proposal.value),
+      value: structureQualifyingValue(displayMoney(proposal.value), proposal.methodNote),
       note: proposal.note ?? SUGGESTED_INCOME_NOTE,
     };
   }
