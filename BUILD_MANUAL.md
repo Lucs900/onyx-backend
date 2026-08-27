@@ -389,9 +389,27 @@ Purchase-contract extract still confirm-before-write for address. Never silent-w
 
 `The contract shows 1840 Valencia St. Suggested · not underwritten. Use this?`
 
-Use this writes `subjectAddress` and the existing `property_address` fact (one address, not a fork). Street as extracted; city/state only if on the page. Never invent ZIP or county. No required typed-address ask. Free-text “the address is …” still confirm-before-write. If a typed address is already confirmed and the extract differs, ask once (Use document / Keep the typed one). Contract price vs sketch price stays the existing conflict-ask.
+Use this writes `subjectAddress` and the existing `property_address` fact (one address, not a fork). Street as extracted; city/state only if on the page. Never invent ZIP or county.
 
-Still useful may list property type as optional, never required. Property address remains a useful remainder until a contract confirm writes it.
+After property type (or that Skip) and the 2-year history gap, Fox may ask once for the subject Property address. Late File slot. Skippable. Not a sketch gate. Chips do not apply — they type or Skip.
+
+If the government ID already has a street, suggest it and confirm before write:
+
+`The ID shows 14 OAK STREET. Suggested · not underwritten. Use this?`
+
+If the ID has no street (Harbor `government-id-jordan.pdf` has none), ask:
+
+`What is the property address?`
+
+A typed street confirm-before-write:
+
+`That’s 14 Oak Street. Suggested · not underwritten. Use this?`
+
+Use this writes Property address on Structure. Occupancy and property type stay as they are. Skip leaves Property address empty. Do not invent a street. Do not ask year built, taxes, HOA, or APN.
+
+Free-text “the address is …” still confirm-before-write. If a typed address is already confirmed and the extract differs, ask once (Use document / Keep the typed one). Contract price vs sketch price stays the existing conflict-ask.
+
+Still useful may list property type as optional, never required. Still useful may keep Property address if empty.
 
 Readiness: empty type and house/SFR keep existing lines. Condo or 2–4 confirmed uses the UW-review line and never a strong line this gate. Do not name warrantability, HOA, or a county limit.
 

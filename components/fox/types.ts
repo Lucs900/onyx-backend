@@ -311,6 +311,7 @@ export type FoxIntakeDraft = {
   propertyType?: "sfr" | "condo" | "two_to_four";
   propertyTypeAsked?: boolean;
   subjectAddress?: string;
+  subjectAddressAsked?: boolean;
   statedTimeOnJob?: number;
   /** Exact borrower-typed label. Do not invent "years" until guidelines own that. */
   statedTimeOnJobLabel?: string;
@@ -449,6 +450,7 @@ export type FoxPrompt =
   | "debts"
   | "assets"
   | "property-type"
+  | "property-address"
   | "time-on-job"
   | "current-housing"
   | "declarations"
@@ -501,6 +503,8 @@ export type Capture =
   | { field: "propose-rental-lease"; value: string }
   | { field: "propose-subject-address"; value: string }
   | { field: "subjectAddress"; value: string }
+  | { field: "skip-property-address" }
+  | { field: "change-property-address" }
   | { field: "skip-time-on-job" }
   | { field: "propose-time-on-job"; value: string }
   | { field: "statedTimeOnJob"; value: string }

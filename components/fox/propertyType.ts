@@ -6,6 +6,7 @@ export const PROPERTY_ADDRESS_FACT = "property_address";
 export const SUGGESTED_PROPERTY_NOTE = "Suggested · not underwritten";
 export const PROPERTY_TYPE_ASK =
   "What kind of home is this? House, condo, or 2–4 unit is enough. Skip is fine.";
+export const PROPERTY_ADDRESS_ASK = "What is the property address?";
 
 export type PropertyTypeValue = "sfr" | "condo" | "two_to_four";
 
@@ -43,6 +44,33 @@ export function isSubjectAddressConfirmPending(draft: FoxIntakeDraft) {
 
 export function isPropertyAddressField(field: string) {
   return field === PROPERTY_ADDRESS_FACT || field === SUBJECT_ADDRESS_FIELD;
+}
+
+export function propertyAddressSettled(draft: FoxIntakeDraft) {
+  if (draft.correcting === "property-address") return false;
+  return Boolean(
+    draft.subjectAddressAsked ||
+      draft.subjectAddress ||
+      draft.facts?.property_address?.value,
+  );
+}
+
+/** Street printed on the government ID. Never invent one. */
+export function idStreetSuggestion(draft: FoxIntakeDraft): string | null {
+  const fromFact = String(draft.facts?.present_address?.value ?? "").trim();
+  if (fromFact && looksLikeStreet(fromFact)) return fromFact;
+  for (const row of draft.addressHistory ?? []) {
+    const label = String(row.label ?? "").trim();
+    if (label && looksLikeStreet(label)) return label;
+  }
+  return null;
+}
+
+function looksLikeStreet(value: string) {
+  const cleaned = value.replace(/\s+/g, " ").replace(/[.,;]+$/g, "").trim();
+  if (cleaned.length < 5 || cleaned.length > 80) return false;
+  if (parsePropertyType(cleaned)) return false;
+  return /^\d{1,6}\s+[A-Za-z]/.test(cleaned);
 }
 
 /** House / condo / 2–4. Synonyms: single family, sfr, duplex, 2 unit, fourplex. */
@@ -125,12 +153,26 @@ export function writePropertyType(draft: FoxIntakeDraft, value: PropertyTypeValu
   };
 }
 
+export function skipSubjectAddress(draft: FoxIntakeDraft): FoxIntakeDraft {
+  return {
+    ...draft,
+    subjectAddressAsked: true,
+    pendingProposal:
+      isPropertyAddressField(draft.pendingProposal?.field ?? "")
+        ? null
+        : draft.pendingProposal,
+    correcting: null,
+    correctingLine: null,
+  };
+}
+
 export function writeSubjectAddress(draft: FoxIntakeDraft, address: string): FoxIntakeDraft {
   const now = new Date().toISOString();
   const value = address.trim();
   return {
     ...draft,
     subjectAddress: value,
+    subjectAddressAsked: true,
     pendingProposal: null,
     pendingConflict: null,
     correcting: null,
@@ -182,6 +224,18 @@ export function contractAddressConfirmCopy(address: string) {
 
 export function typedAddressConfirmCopy(address: string) {
   return `That’s ${address}. ${SUGGESTED_PROPERTY_NOTE}. Use this?`;
+}
+
+export function idAddressConfirmCopy(address: string) {
+  return `The ID shows ${address}. ${SUGGESTED_PROPERTY_NOTE}. Use this?`;
+}
+
+export function isSkipPropertyAddressText(text: string) {
+  const lower = text.trim().toLowerCase().replace(/[?.!]+$/g, "");
+  return (
+    /^(skip|skip for now|not yet|later|none|no|n\/a|na)$/i.test(lower) ||
+    /^(i )?(don'?t|do not) (have|know)/i.test(lower)
+  );
 }
 
 export function propertyTypeConfirmActions(): FoxAction[] {
@@ -239,6 +293,48 @@ export function propertyTypeAskCopy(draft: FoxIntakeDraft): {
   return {
     text: PROPERTY_TYPE_ASK,
     actions: propertyTypeAskActions(),
+  };
+}
+
+export function propertyAddressSkipActions(): FoxAction[] {
+  return [
+    {
+      id: "skip-property-address",
+      label: "Skip",
+      event: "bubble",
+      capture: { field: "skip-property-address" },
+    },
+  ];
+}
+
+export function propertyAddressAskCopy(draft: FoxIntakeDraft): {
+  text: string;
+  actions?: FoxAction[];
+} {
+  const street = idStreetSuggestion(draft);
+  if (street && draft.correcting !== "property-address") {
+    return {
+      text: idAddressConfirmCopy(street),
+      actions: [
+        {
+          id: "accept-id-address",
+          label: "Use this",
+          event: "bubble",
+          capture: { field: "subjectAddress", value: street },
+        },
+        {
+          id: "change-id-address",
+          label: "Change",
+          event: "bubble",
+          capture: { field: "change-property-address" },
+        },
+        ...propertyAddressSkipActions(),
+      ],
+    };
+  }
+  return {
+    text: PROPERTY_ADDRESS_ASK,
+    actions: propertyAddressSkipActions(),
   };
 }
 

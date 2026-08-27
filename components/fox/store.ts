@@ -129,6 +129,7 @@ import {
   proposePropertyType,
   proposeSubjectAddress,
   skipPropertyType,
+  skipSubjectAddress,
   writePropertyType,
   writeSubjectAddress,
 } from "./propertyType";
@@ -453,6 +454,10 @@ function normalize(value: unknown): FoxIntakeDraft {
       typeof raw.subjectAddress === "string" && raw.subjectAddress.trim()
         ? raw.subjectAddress.trim()
         : undefined,
+    subjectAddressAsked: Boolean(
+      raw.subjectAddressAsked ||
+        (typeof raw.subjectAddress === "string" && raw.subjectAddress.trim()),
+    ),
     statedTimeOnJob: numberOrUndefined(raw.statedTimeOnJob),
     statedTimeOnJobLabel:
       typeof raw.statedTimeOnJobLabel === "string" && raw.statedTimeOnJobLabel.trim()
@@ -1588,6 +1593,16 @@ function applyCaptureBody(capture: Capture) {
     if (!Number.isFinite(rent) || rent <= 0) return current;
     const next = proposeTypedLeaseRental(current, `lease for ${rent} a month`);
     return next ? commit(next) : current;
+  }
+  if (capture.field === "skip-property-address") {
+    return commit(skipSubjectAddress(current));
+  }
+  if (capture.field === "change-property-address") {
+    return commit({
+      ...current,
+      correcting: "property-address",
+      correctingLine: "property-address",
+    });
   }
   if (capture.field === "propose-subject-address") {
     const address = parseVolunteeredAddress(capture.value) ?? capture.value.trim();

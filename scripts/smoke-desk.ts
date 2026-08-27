@@ -241,8 +241,12 @@ import {
   parseAvailableAssetsAmount,
 } from "../components/fox/availableAssets";
 import {
+  PROPERTY_ADDRESS_ASK,
   PROPERTY_TYPE_ASK,
   parsePropertyType,
+  proposeSubjectAddress,
+  skipSubjectAddress,
+  writeSubjectAddress,
 } from "../components/fox/propertyType";
 import {
   TIME_ON_JOB_ASK,
@@ -492,6 +496,7 @@ function confirmLooksRight() {
     debts: { field: "skip-monthly-debts" },
     assets: { field: "skip-available-assets" },
     "property-type": { field: "skip-property-type" },
+    "property-address": { field: "skip-property-address" },
     "current-housing": { field: "skip-current-housing" },
     declarations: { field: "skip-declarations" },
     "declaration-timing": { field: "skip-declaration-timing" },
@@ -519,7 +524,7 @@ function confirmLooksRight() {
   if (workspacePrompt(getFoxDraft()) === "review" || canLooksRight(getFoxDraft())) {
     applyCapture({ field: "confirm-draft" });
   }
-  for (let i = 0; i < 4; i += 1) {
+  for (let i = 0; i < 8; i += 1) {
     const prompt = workspacePrompt(getFoxDraft());
     if (prompt === "household") {
       applyCapture({ field: "skip-household" });
@@ -531,6 +536,10 @@ function confirmLooksRight() {
     }
     if (prompt === "property-type") {
       applyCapture({ field: "skip-property-type" });
+      continue;
+    }
+    if (prompt === "property-address") {
+      applyCapture({ field: "skip-property-address" });
       continue;
     }
     if (prompt === "citizenship") {
@@ -1161,6 +1170,8 @@ assert.equal(structureFixPrompt("qualifying", afterIncome), "qualifying");
 assert.equal(structureFixPrompt("debts", afterIncome), "debts");
 assert.equal(structureFixPrompt("assets", afterIncome), "assets");
 assert.equal(structureFixPrompt("property-type", afterIncome), "property-type");
+assert.equal(structureFixPrompt("address", afterIncome), "property-address");
+assert.equal(structureFixPrompt("property-address", afterIncome), "property-address");
 assert.equal(structureFixPrompt("years-in-business", afterIncome), "years-in-business");
 assert.equal(structureFixPrompt("file"), null);
 assert.equal(structureFixPrompt("rate"), null);
@@ -2027,6 +2038,7 @@ const bkReady = draft({
   ...afterIncome,
   sampleAccepted: true,
   housingAsked: true,
+  subjectAddressAsked: true,
   workspaceDraftStatus: "with-originator",
   phase: "confirmed",
   creditEvent: "bankruptcy",
@@ -11267,7 +11279,15 @@ const w2Housing = workspaceReply("Use this", w2PrimaryWalk);
 assert.equal(w2Housing?.capture?.field, "estimatedHousing");
 const afterW2Housing = writeEstimatedHousing(w2PrimaryWalk, housing!.estimatedHousing);
 assert.notEqual(workspacePrompt(afterW2Housing), "debts");
-assert.equal(workspacePrompt(afterW2Housing), "done");
+assert.equal(workspacePrompt(afterW2Housing), "property-address");
+assert.equal(nextFoxAsk(afterW2Housing).text, PROPERTY_ADDRESS_ASK);
+assert.deepEqual(
+  (nextFoxAsk(afterW2Housing).actions ?? []).map((item) => item.label),
+  ["Skip"],
+);
+assert.doesNotMatch(nextFoxAsk(afterW2Housing).text, /year built|taxes|HOA|APN/i);
+const afterW2Address = skipSubjectAddress(afterW2Housing);
+assert.equal(workspacePrompt(afterW2Address), "done");
 assert.ok(previewFacts(afterW2Housing).some((fact) => fact.id === "ltv" && fact.value === "80.0%"));
 assert.ok(previewFacts(afterW2Housing).some((fact) => fact.id === "housing" && fact.note === ESTIMATED_NOT_FINAL));
 const afterW2Debts = syncCalculatorDraft(draft({ ...afterW2Housing, statedMonthlyDebts: 800, monthlyDebtsAsked: true }));
@@ -11342,9 +11362,23 @@ const file32W2None = draft({
   statedOtherReo: "none",
   otherReoAsked: true,
 });
-assert.equal(workspacePrompt(file32W2None), "done");
+assert.equal(workspacePrompt(file32W2None), "property-address");
+assert.equal(nextFoxAsk(file32W2None).text, PROPERTY_ADDRESS_ASK);
+assert.deepEqual(
+  (nextFoxAsk(file32W2None).actions ?? []).map((item) => item.label),
+  ["Skip"],
+);
+assert.ok(!(nextFoxAsk(file32W2None).actions ?? []).some((item) => /house|condo|2–4|year built|taxes|HOA|APN/i.test(item.label)));
+assert.doesNotMatch(
+  nextFoxAsk(file32W2None).text,
+  /year built|taxes|HOA|APN|questionnaire/i,
+);
+const file32W2Ready = skipSubjectAddress(file32W2None);
+assert.equal(workspacePrompt(file32W2Ready), "done");
+assert.equal(file32W2Ready.subjectAddress, undefined);
+assert.equal(file32W2Ready.facts?.property_address, undefined);
 assert.equal(isSimplePrimaryW2File(file32W2None), true);
-const file32W2Done = workspacePromptCopy("done", file32W2None);
+const file32W2Done = workspacePromptCopy("done", file32W2Ready);
 assert.notEqual(file32W2Done.followUp, CITIZENSHIP_ASK);
 assert.notEqual(file32W2Done.followUp, FORMER_HISTORY_ASK);
 assert.doesNotMatch(
@@ -11354,16 +11388,16 @@ assert.doesNotMatch(
 assert.ok((file32W2Done.actions ?? []).some((item) => item.label === "Proceed"));
 assert.ok(!requiredStructureLines(file32W2None).some((line) => /citizen/i.test(line.label)));
 assert.equal(assetsMatter(file32W2None), false);
-assert.notEqual(workspacePrompt(file32W2None), "assets");
-assert.notEqual(workspacePrompt(file32W2None), "declarations");
+assert.notEqual(workspacePrompt(file32W2Ready), "assets");
+assert.notEqual(workspacePrompt(file32W2Ready), "declarations");
 assert.equal(otherReoRows(file32W2None).length, 0);
-assert.ok(stillUsefulSection(file32W2None)?.items.some((item) => item.label === "Property address"));
+assert.ok(stillUsefulSection(file32W2Ready)?.items.some((item) => item.label === "Property address"));
 assert.ok(
   !(stillUsefulSection(file32W2None)?.items ?? []).some((item) =>
     /HOA questionnaire|condo project docs|Mortgage statements for all properties owned/i.test(item.label),
   ),
 );
-const file32W2Skipped = skipCitizenship(file32W2None);
+const file32W2Skipped = skipCitizenship(file32W2Ready);
 assert.equal(file32W2None.agencyDeclarations?.citizenship, undefined);
 assert.equal(file32W2Skipped.agencyDeclarations?.citizenship, undefined);
 assert.equal(workspacePrompt(file32W2Skipped), "done");
@@ -11448,7 +11482,7 @@ assert.ok(conventionalSlotReport(addressSkipped).empty.includes("property.addres
 assert.equal(conventionalFileFromDraft(addressSkipped).property.address, undefined);
 
 const file32Se = draft({
-  ...file32W2None,
+  ...file32W2Ready,
   incomeType: { ...emptyDraft().incomeType, value: "self-employed" },
   yearsInBusinessAsked: true,
   facts: {
@@ -11481,6 +11515,7 @@ const file32Invest = draft({
   statedOtherReo: "none",
   otherReoAsked: true,
   propertyTypeAsked: true,
+  subjectAddressAsked: true,
 });
 assert.equal(assetsMatter(file32Invest), true);
 assert.equal(workspacePrompt(file32Invest), "done");
@@ -11568,7 +11603,7 @@ assert.ok(file32YesSlots.empty.includes("declarations.citizenship"));
 assert.equal(conventionalFileFromDraft(otherReoStatement.draft).otherProperties.length, 1);
 
 const shortTenure = draft({
-  ...file32W2None,
+  ...file32W2Ready,
   statedTimeOnJob: 8,
   timeOnJobAsked: true,
   formerHistoryAsked: false,
@@ -11619,7 +11654,7 @@ assert.ok(
 );
 
 const harborHistoryBase = draft({
-  ...file32W2Skipped,
+  ...skipCitizenship(file32W2None),
   propertyTypeAsked: true,
   timeOnJobAsked: true,
   currentHousingAsked: true,
@@ -11792,8 +11827,87 @@ assert.ok((harborAfterWho.employmentHistory ?? []).some((item) => item.label ===
 assert.equal(workspacePrompt(harborAfterWho), "former-history");
 assert.equal(nextFoxAsk(harborAfterWho).text, WHERE_BEFORE_ASK);
 const harborWhereSkip = skipFormerHistory(harborAfterWho);
-assert.equal(workspacePrompt(harborWhereSkip), "done");
+assert.equal(workspacePrompt(harborWhereSkip), "property-address");
+assert.equal(nextFoxAsk(harborWhereSkip).text, PROPERTY_ADDRESS_ASK);
+assert.equal(nextFoxAsk(harborWhereSkip).text, "What is the property address?");
+assert.deepEqual(
+  (nextFoxAsk(harborWhereSkip).actions ?? []).map((item) => item.label),
+  ["Skip"],
+);
+assert.ok(!(nextFoxAsk(harborWhereSkip).actions ?? []).some((item) => /house|condo|2–4/i.test(item.label)));
+assert.doesNotMatch(
+  nextFoxAsk(harborWhereSkip).text,
+  /year built|taxes|HOA|APN|questionnaire/i,
+);
 assert.equal((harborWhereSkip.addressHistory ?? []).length, 0);
+const harborOccupancy = harborWhereSkip.occupancyChoice.value;
+const harborType = harborWhereSkip.propertyType;
+const harborTyped = workspaceReply("14 Oak Street", harborWhereSkip);
+assert.equal(harborTyped?.capture?.field, "propose-subject-address");
+assert.match(harborTyped?.text ?? "", /That’s 14 Oak Street/);
+assert.match(harborTyped?.text ?? "", /Suggested · not underwritten/);
+assert.match(harborTyped?.text ?? "", /Use this/);
+assert.doesNotMatch(harborTyped?.text ?? "", /year built|taxes|HOA|APN|questionnaire/i);
+const harborAddressWritten = resolveProposal(
+  proposeSubjectAddress(harborWhereSkip, "14 Oak Street"),
+  "accept",
+);
+assert.equal(harborAddressWritten.subjectAddress, "14 Oak Street");
+assert.equal(harborAddressWritten.facts?.property_address?.value, "14 Oak Street");
+assert.equal(harborAddressWritten.occupancyChoice.value, harborOccupancy);
+assert.equal(harborAddressWritten.propertyType, harborType);
+assert.ok(
+  previewFacts(harborAddressWritten).some(
+    (fact) =>
+      fact.id === "address" &&
+      fact.label === "Property address" &&
+      fact.value === "14 Oak Street" &&
+      fact.note === SUGGESTED_PROPERTY_NOTE,
+  ),
+);
+assert.ok(!layer2Plan(harborAddressWritten).some((item) => item.label === "Property address"));
+const harborSkippedAddress = skipSubjectAddress(harborWhereSkip);
+assert.equal(harborSkippedAddress.subjectAddress, undefined);
+assert.equal(harborSkippedAddress.facts?.property_address, undefined);
+assert.equal(harborSkippedAddress.occupancyChoice.value, harborOccupancy);
+assert.equal(harborSkippedAddress.propertyType, harborType);
+assert.ok(stillUsefulSection(harborSkippedAddress)?.items.some((item) => item.label === "Property address"));
+assert.equal(workspaceReply("Skip", harborWhereSkip)?.capture?.field, "skip-property-address");
+assert.doesNotMatch(
+  `${nextFoxAsk(harborWhereSkip).text} ${nextFoxAsk(harborSkippedAddress).text} ${nextFoxAsk(harborSkippedAddress).followUp ?? ""}`,
+  /year built|annual taxes|HOA questionnaire|APN|legal description/i,
+);
+const harborIdStreet = draft({
+  ...harborWhereSkip,
+  facts: {
+    ...(harborWhereSkip.facts ?? {}),
+    present_address: {
+      field: "present_address",
+      value: "9 WILLOW LANE",
+      source: "document",
+      confirmed: true,
+    },
+  },
+});
+assert.equal(workspacePrompt(harborIdStreet), "property-address");
+assert.equal(
+  nextFoxAsk(harborIdStreet).text,
+  "The ID shows 9 WILLOW LANE. Suggested · not underwritten. Use this?",
+);
+assert.ok((nextFoxAsk(harborIdStreet).actions ?? []).some((item) => item.label === "Use this"));
+assert.ok((nextFoxAsk(harborIdStreet).actions ?? []).some((item) => item.label === "Skip"));
+assert.ok(!(nextFoxAsk(harborIdStreet).actions ?? []).some((item) => /house|condo|2–4/i.test(item.label)));
+const harborIdUsed = workspaceReply("Use this", harborIdStreet);
+assert.equal(harborIdUsed?.capture?.field, "subjectAddress");
+const harborIdWritten = writeSubjectAddress(harborIdStreet, "9 WILLOW LANE");
+assert.equal(harborIdWritten.subjectAddress, "9 WILLOW LANE");
+assert.equal(harborIdWritten.occupancyChoice.value, harborIdStreet.occupancyChoice.value);
+assert.equal(harborIdWritten.propertyType, harborIdStreet.propertyType);
+assert.ok(
+  previewFacts(harborIdWritten).some(
+    (fact) => fact.id === "address" && fact.label === "Property address" && fact.value === "9 WILLOW LANE",
+  ),
+);
 
 const harborHireSuggest = applyExtractedFields(
   draft({ ...file32W2Skipped, propertyTypeAsked: true, timeOnJobAsked: true, currentHousingAsked: true }),
@@ -12426,11 +12540,15 @@ applyCapture({ field: "keep-line" });
 if (workspacePrompt(getFoxDraft()) === "housing") {
   applyCapture({ field: "skip-housing" });
 }
-for (let i = 0; i < 6; i += 1) {
+for (let i = 0; i < 8; i += 1) {
   const prompt = workspacePrompt(getFoxDraft());
   if (prompt === "done") break;
   if (prompt === "property-type") {
     applyCapture({ field: "skip-property-type" });
+    continue;
+  }
+  if (prompt === "property-address") {
+    applyCapture({ field: "skip-property-address" });
     continue;
   }
   if (prompt === "citizenship") {
