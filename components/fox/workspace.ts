@@ -360,7 +360,6 @@ import {
   writeStatedOtherReo,
 } from "./otherReo";
 import {
-  CITIZENSHIP_ASK,
   citizenshipAskCopy,
   citizenshipLabel,
   citizenshipNeeded,
@@ -1676,6 +1675,7 @@ const CORRECTION_CHIP_IDS = new Set([
   "assets",
   "property-type",
   "property-address",
+  "citizenship",
   "time-on-job",
   "current-housing",
   "declarations",
@@ -1750,6 +1750,9 @@ function extraCorrectionLines(draft: FoxIntakeDraft): { id: string; label: strin
   }
   if (draft.otherReoAsked || draft.statedOtherReo) {
     extra.push({ id: "other-reo", label: "Other real estate", prompt: "other-reo" });
+  }
+  if (draft.citizenshipAsked || draft.agencyDeclarations?.citizenship) {
+    extra.push({ id: "citizenship", label: "Citizenship", prompt: "citizenship" });
   }
   return extra;
 }
@@ -2206,6 +2209,7 @@ export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
     if (!timelineFilled(draft)) return "timeline";
     if (historyGapNeeded(draft) && !nextDocInvite(draft)) return "former-history";
     if (!propertyAddressSettled(draft) && !nextDocInvite(draft)) return "property-address";
+    if (citizenshipNeeded(draft) && !nextDocInvite(draft)) return "citizenship";
     if (canLooksRight(draft)) return "review";
     if (draft.looksRightHold) return "documents";
     return "amount";
@@ -2217,6 +2221,7 @@ export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
     if (!timelineFilled(draft)) return "timeline";
     if (historyGapNeeded(draft)) return "former-history";
     if (!propertyAddressSettled(draft)) return "property-address";
+    if (citizenshipNeeded(draft)) return "citizenship";
     if (canLooksRight(draft)) return "review";
     if (draft.looksRightHold) return "documents";
     return "amount";
@@ -2233,13 +2238,6 @@ export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
 function lateFileRemainder(draft: FoxIntakeDraft): { text?: string; actions?: FoxAction[] } {
   if (draft.pendingFinish && emailMissing(draft) && !emailSkipped(draft)) return {};
   if (draft.motion === "in_queue" || draft.motion === "escalated") return {};
-  if (citizenshipNeeded(draft)) {
-    const ask = citizenshipAskCopy();
-    return {
-      text: ask.text,
-      actions: (ask.actions ?? []).filter((item) => item.id !== "hold-citizenship"),
-    };
-  }
   if (formerHistoryNeeded(draft)) {
     const ask = formerHistoryAskCopy(draft);
     return {
@@ -5638,23 +5636,6 @@ export function workspaceReply(
       };
     }
     if (prompt === "done" || prompt === "housing" || prompt === "debts") {
-      if (prompt === "done" && citizenshipNeeded(draft)) {
-        if (isSkipCitizenshipText(q) && !/^not yet$/i.test(q.trim())) {
-          const nextDraft = skipCitizenship(draft);
-          return {
-            ...workspacePromptCopy("done", nextDraft),
-            capture: { field: "skip-citizenship" },
-          };
-        }
-        const citizenship = parseCitizenship(q);
-        if (citizenship) {
-          const nextDraft = writeCitizenship(draft, citizenship);
-          return {
-            ...workspacePromptCopy("done", nextDraft),
-            capture: { field: "citizenship", value: citizenship },
-          };
-        }
-      }
       if (prompt === "done" && formerHistoryNeeded(draft)) {
         if (isSkipFormerHistoryText(q) && !/^not yet$/i.test(q.trim())) {
           const nextDraft = skipFormerHistory(draft);
@@ -6175,6 +6156,14 @@ export function previewFacts(draft: FoxIntakeDraft): PreviewFact[] {
       note: SUGGESTED_PROPERTY_NOTE,
     });
   }
+  const citizenship = draft.agencyDeclarations?.citizenship;
+  if (citizenship && isFileCitizenshipValue(citizenship)) {
+    facts.push({
+      id: "citizenship",
+      label: "Citizenship",
+      value: citizenshipLabel(citizenship),
+    });
+  }
   const institution = factValue(draft, "institution");
   const endingBalance = factValue(draft, "ending_balance");
   if (institution || endingBalance) {
@@ -6411,6 +6400,7 @@ export function structureFixPrompt(
   if (id === "assets") return "assets";
   if (id === "property-type") return "property-type";
   if (id === "address" || id === "property-address") return "property-address";
+  if (id === "citizenship") return "citizenship";
   if (id === "time-on-job") return "time-on-job";
   if (id === "current-housing") return "current-housing";
   if (id === "declarations") return "declarations";
@@ -6458,6 +6448,11 @@ export function structureExplainCopy(
   if (id === "address" || id === "property-address") {
     return {
       text: "Property address. Suggested · not underwritten. Street from you or a contract. I won’t ask year built, taxes, HOA, or APN.",
+    };
+  }
+  if (id === "citizenship") {
+    return {
+      text: "Citizenship for this file. US citizen, permanent resident, or other. Skip leaves it empty.",
     };
   }
   if (id === "time-on-job") {
