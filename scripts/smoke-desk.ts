@@ -11760,7 +11760,7 @@ assert.equal(harborPreLooksIncome.facts?.qualifying_income?.value, "7000");
 assert.equal(harborPreLooksIncome.sampleAccepted, undefined);
 assert.equal(workspacePrompt(harborPreLooksIncome), "former-history");
 assert.equal(nextFoxAsk(harborPreLooksIncome).text, whoBeforeAsk("Harbor Steel"));
-assert.equal(nextFoxAsk(harborPreLooksIncome).text, "Who before Harbor Steel?");
+assert.equal(nextFoxAsk(harborPreLooksIncome).text, "Who did you work for before Harbor Steel?");
 assert.equal(canLooksRight(harborPreLooksIncome), false);
 assert.ok(!(nextFoxAsk(harborPreLooksIncome).actions ?? []).some((item) => item.label === "Looks right"));
 assert.deepEqual(

@@ -5,7 +5,7 @@ export const WHERE_BEFORE_ASK = "Where did you live before this?";
 
 export function whoBeforeAsk(employer: string) {
   const name = displayEmployerForAsk(employer);
-  return name ? `Who before ${name}?` : "Who before this employer?";
+  return name ? `Who did you work for before ${name}?` : "Who did you work for before this employer?";
 }
 
 /** Keep FORMER_HISTORY_ASK as the Harbor employment gap line for existing imports. */
