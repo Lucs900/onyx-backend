@@ -71,7 +71,7 @@ PAGES: dict[str, list[str]] = {
         "EMPLOYER NAME: HARBOR STEEL",
         "BOX 1 WAGES: $84,000",
     ],
-    "pdf-unlabeled-text.pdf": [
+    "government-id-unlabeled-text.pdf": [
         "SAMPLE PAGE",
         "JORDAN HALE",
         "HARBOR STEEL",
@@ -161,7 +161,7 @@ def main() -> None:
     here = Path(__file__).resolve().parent
     for name, lines in PAGES.items():
         write_pdf(here / name, lines)
-    write_empty_pdf(here / "pdf-no-text-layer.pdf")
+    write_empty_pdf(here / "government-id-no-text-layer.pdf")
 
 
 if __name__ == "__main__":

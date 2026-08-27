@@ -122,25 +122,25 @@ async function main() {
   assert.equal(aliasId.fields.present_address, "14 OAK STREET");
 
   const unlabeled = await classifyAndExtract(
-    readFileSync(join(root, "scripts/fixtures/pdf-unlabeled-text.pdf")),
+    readFileSync(join(root, "scripts/fixtures/government-id-unlabeled-text.pdf")),
     "application/pdf",
     deadVision,
     null,
     "id.pdf",
   );
   assert.equal(unlabeled.failed, true);
-  assert.ok(pdfTextLayerCharCount(readFileSync(join(root, "scripts/fixtures/pdf-unlabeled-text.pdf"))) > 0);
+  assert.ok(pdfTextLayerCharCount(readFileSync(join(root, "scripts/fixtures/government-id-unlabeled-text.pdf"))) > 0);
   assert.deepEqual(unlabeled.fields, {});
 
   const emptyLayer = await classifyAndExtract(
-    readFileSync(join(root, "scripts/fixtures/pdf-no-text-layer.pdf")),
+    readFileSync(join(root, "scripts/fixtures/government-id-no-text-layer.pdf")),
     "application/pdf",
     deadVision,
     null,
     "id.pdf",
   );
   assert.equal(emptyLayer.failed, true);
-  assert.equal(pdfTextLayerCharCount(readFileSync(join(root, "scripts/fixtures/pdf-no-text-layer.pdf"))), 0);
+  assert.equal(pdfTextLayerCharCount(readFileSync(join(root, "scripts/fixtures/government-id-no-text-layer.pdf"))), 0);
   assert.ok(emptyLayer.warnings.includes("no-text-layer"));
   assert.equal(emptyLayer.extractClass, "government_id");
 }

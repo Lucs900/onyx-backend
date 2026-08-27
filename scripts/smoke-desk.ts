@@ -9896,7 +9896,7 @@ async function extractAdapterSmoke() {
   assert.equal(aliasW2Pdf.fields.employer_name, "HARBOR STEEL");
   assert.equal(aliasW2Pdf.fields.wages, "84000");
   const unlabeledPdf = await classifyAndExtract(
-    readFileSync(join(root, "scripts/fixtures/pdf-unlabeled-text.pdf")),
+    readFileSync(join(root, "scripts/fixtures/government-id-unlabeled-text.pdf")),
     "application/pdf",
     deadVision,
     null,
@@ -9906,7 +9906,7 @@ async function extractAdapterSmoke() {
   assert.deepEqual(unlabeledPdf.fields, {});
   assert.equal(unlabeledPdf.fields.full_name, undefined);
   const noLayerPdf = await classifyAndExtract(
-    readFileSync(join(root, "scripts/fixtures/pdf-no-text-layer.pdf")),
+    readFileSync(join(root, "scripts/fixtures/government-id-no-text-layer.pdf")),
     "application/pdf",
     deadVision,
     null,
