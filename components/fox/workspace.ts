@@ -2193,6 +2193,7 @@ export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
   if (primaryDocPassFinished(draft) && !yearsInBusinessSettled(draft)) return "years-in-business";
   if (!draft.sampleAccepted && !householdSettled(draft)) {
     if (!timelineFilled(draft)) return "timeline";
+    if (historyGapNeeded(draft) && !nextDocInvite(draft)) return "former-history";
     if (canLooksRight(draft)) return "review";
     if (draft.looksRightHold) return "documents";
     return "amount";
@@ -2202,6 +2203,7 @@ export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
   if (nextDocInvite(draft)) return "documents";
   if (!draft.sampleAccepted) {
     if (!timelineFilled(draft)) return "timeline";
+    if (historyGapNeeded(draft)) return "former-history";
     if (canLooksRight(draft)) return "review";
     if (draft.looksRightHold) return "documents";
     return "amount";

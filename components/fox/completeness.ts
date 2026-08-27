@@ -105,6 +105,7 @@ import {
   writeBorrowerName,
 } from "./borrowerName";
 import {
+  historyGapNeeded,
   writeCurrentEmploymentHistory,
   writeCurrentEmploymentStart,
   writePresentAddressHistory,
@@ -1440,7 +1441,7 @@ export function currentAskIdle(draft: FoxIntakeDraft) {
 }
 
 export function canLooksRight(draft: FoxIntakeDraft) {
-  return sketchAssembled(draft) && timelineFilled(draft) && currentAskIdle(draft);
+  return sketchAssembled(draft) && timelineFilled(draft) && currentAskIdle(draft) && !historyGapNeeded(draft);
 }
 
 export function parseFundsRole(

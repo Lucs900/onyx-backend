@@ -1,7 +1,7 @@
 import type { FoxAction, FoxIntakeDraft } from "./types";
 import { monthsBetween, parseHireDate } from "./timeOnJob";
 
-export const WHERE_BEFORE_ASK = "Where before this address?";
+export const WHERE_BEFORE_ASK = "Where did you live before this?";
 
 export function whoBeforeAsk(employer: string) {
   const name = displayEmployerForAsk(employer);
@@ -104,9 +104,25 @@ export function sawResidencePaper(draft: FoxIntakeDraft) {
   });
 }
 
+/** Use this / Skip on the differ ask writes qualifying income. History waits until that lands. */
+export function qualifyingIncomeWritten(draft: FoxIntakeDraft) {
+  return Boolean(trimLabel(draft.facts?.qualifying_income?.value));
+}
+
+function incomeConfirmStillOpen(draft: FoxIntakeDraft) {
+  return Boolean(
+    draft.awaitingPayFrequency ||
+      draft.awaitingBothMonthlyReason ||
+      draft.awaitingRaiseWhen ||
+      draft.awaitingRaiseYtdFar ||
+      draft.pendingProposal?.field === "qualifying_income",
+  );
+}
+
 export function employmentGapNeeded(draft: FoxIntakeDraft) {
-  if (!draft.sampleAccepted) return false;
   if (draft.motion === "in_queue" || draft.motion === "escalated") return false;
+  if (incomeConfirmStillOpen(draft)) return false;
+  if (!qualifyingIncomeWritten(draft)) return false;
   if (draft.formerEmploymentAsked || draft.formerHistoryAsked) return false;
   if (draft.correcting === "former-history") return true;
   const employer = currentEmployerName(draft);
@@ -117,8 +133,9 @@ export function employmentGapNeeded(draft: FoxIntakeDraft) {
 }
 
 export function addressGapNeeded(draft: FoxIntakeDraft) {
-  if (!draft.sampleAccepted) return false;
   if (draft.motion === "in_queue" || draft.motion === "escalated") return false;
+  if (incomeConfirmStillOpen(draft)) return false;
+  if (!qualifyingIncomeWritten(draft)) return false;
   if (draft.formerAddressAsked || draft.formerHistoryAsked) return false;
   if (employmentGapNeeded(draft)) return false;
   if (hasFormerAddress(draft)) return false;

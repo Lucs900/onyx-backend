@@ -412,13 +412,11 @@ export function conventionalFileFacts(draft: FoxIntakeDraft): {
       id: homes.length > 1 ? `history-address-${index}` : "history-address",
       label: "Address",
       value: formatFileHistoryRow(item),
-      note: "2-year slots · extract first",
     })),
     ...jobs.map((item, index) => ({
       id: jobs.length > 1 ? `history-employment-${index}` : "history-employment",
       label: "Employment",
       value: formatFileHistoryRow(item),
-      note: "2-year slots · extract first",
     })),
   ].filter((row) => row.value);
   return [

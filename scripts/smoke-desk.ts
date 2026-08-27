@@ -11670,16 +11670,115 @@ assert.doesNotMatch(
     .join(" "),
   /address —|employment —/,
 );
+assert.ok(
+  previewFacts(harborW2History.draft).every(
+    (fact) => !/2-year slots|extract first/i.test(`${fact.note ?? ""} ${fact.value}`),
+  ),
+);
 const harborIncomeUsed = resolveProposal(harborW2History.draft, "accept");
 assert.equal(harborIncomeUsed.facts?.employer_name?.value, "Harbor Steel");
 assert.equal(workspacePrompt(harborIncomeUsed), "former-history");
 assert.equal(nextFoxAsk(harborIncomeUsed).text, FORMER_HISTORY_ASK);
 assert.equal(nextFoxAsk(harborIncomeUsed).text, whoBeforeAsk("Harbor Steel"));
+assert.equal(canLooksRight(harborIncomeUsed), false);
+assert.ok(!(nextFoxAsk(harborIncomeUsed).actions ?? []).some((item) => item.label === "Looks right"));
 assert.deepEqual(
   (nextFoxAsk(harborIncomeUsed).actions ?? []).map((item) => item.label),
   ["Skip", "Not yet"],
 );
 assert.doesNotMatch(nextFoxAsk(harborIncomeUsed).text, /employer name|what.?s your employer|how long/i);
+
+const harborPreLooksBase = draft({
+  ...skipDocInvites(afterIncome),
+  householdAsked: false,
+  statedHousehold: undefined,
+});
+assert.equal(harborPreLooksBase.sampleAccepted, undefined);
+const harborPreLooksId = applyExtractedFields(
+  draft({
+    ...harborPreLooksBase,
+    documents: [
+      {
+        slot: "id",
+        name: "government-id-jordan.pdf",
+        type: "application/pdf",
+        size: 4000,
+        receivedAt: "2026-08-27T00:00:00.000Z",
+        status: "extracted",
+        extractClass: "government_id",
+      },
+    ],
+  }),
+  {
+    extractClass: "government_id",
+    confidence: 0.94,
+    fields: { full_name: "JORDAN HALE" },
+  },
+);
+const harborPreLooksNamed = resolveProposal(harborPreLooksId.draft, "accept");
+assert.equal((harborPreLooksNamed.addressHistory ?? []).length, 0);
+const harborPreLooksStub = applyExtractedFields(harborPreLooksNamed, {
+  extractClass: "paystub",
+  confidence: 0.94,
+  fields: printedOtStub!.fields,
+});
+assert.equal(workspacePrompt(harborPreLooksStub.draft), "pay-frequency");
+assert.notEqual(workspacePrompt(harborPreLooksStub.draft), "former-history");
+const harborPreLooksBiweekly = applyPayFrequencyAnswer(harborPreLooksStub.draft, "biweekly");
+const harborPreLooksStubUsed = resolveProposal(harborPreLooksBiweekly, "accept");
+const harborPreLooksBoth = applyExtractedFields(harborPreLooksStubUsed, {
+  extractClass: "w2",
+  confidence: 0.94,
+  fields: printedOtW2!.fields,
+});
+assert.equal(harborPreLooksBoth.draft.awaitingBothMonthlyReason, true);
+assert.equal(harborPreLooksBoth.draft.facts?.qualifying_income, undefined);
+assert.equal(workspacePrompt(harborPreLooksBoth.draft), "both-monthly-reason");
+assert.equal(
+  nextFoxAsk(harborPreLooksBoth.draft).text,
+  "The paystub is $15,167 a month. The W-2 Box 1 is $7,000 a month. Why do they differ?",
+);
+assert.notEqual(workspacePrompt(harborPreLooksBoth.draft), "former-history");
+assert.notEqual(workspacePrompt(harborPreLooksBoth.draft), "review");
+assert.ok(
+  (harborPreLooksBoth.draft.employmentHistory ?? []).some(
+    (item) => /HARBOR STEEL/i.test(item.label ?? "") && !item.from,
+  ),
+);
+assert.ok(
+  previewFacts(harborPreLooksBoth.draft).some(
+    (fact) => fact.id === "history-employment" && /HARBOR STEEL/i.test(fact.value) && !fact.note,
+  ),
+);
+const harborPreLooksSkip = applyBothMonthlyReasonAnswer(harborPreLooksBoth.draft, "skip");
+assert.equal(harborPreLooksSkip.pendingProposal?.value, "7000");
+assert.equal(workspacePrompt(harborPreLooksSkip), "confirm-proposal");
+assert.notEqual(workspacePrompt(harborPreLooksSkip), "former-history");
+assert.notEqual(workspacePrompt(harborPreLooksSkip), "review");
+const harborPreLooksIncome = resolveProposal(harborPreLooksSkip, "accept");
+assert.equal(harborPreLooksIncome.facts?.qualifying_income?.value, "7000");
+assert.equal(harborPreLooksIncome.sampleAccepted, undefined);
+assert.equal(workspacePrompt(harborPreLooksIncome), "former-history");
+assert.equal(nextFoxAsk(harborPreLooksIncome).text, whoBeforeAsk("Harbor Steel"));
+assert.equal(nextFoxAsk(harborPreLooksIncome).text, "Who before Harbor Steel?");
+assert.equal(canLooksRight(harborPreLooksIncome), false);
+assert.ok(!(nextFoxAsk(harborPreLooksIncome).actions ?? []).some((item) => item.label === "Looks right"));
+assert.deepEqual(
+  (nextFoxAsk(harborPreLooksIncome).actions ?? []).map((item) => item.label),
+  ["Skip", "Not yet"],
+);
+const harborPreLooksWhoSkip = skipFormerHistory(harborPreLooksIncome);
+assert.equal(workspacePrompt(harborPreLooksWhoSkip), "former-history");
+assert.equal(nextFoxAsk(harborPreLooksWhoSkip).text, WHERE_BEFORE_ASK);
+assert.equal(nextFoxAsk(harborPreLooksWhoSkip).text, "Where did you live before this?");
+assert.equal(canLooksRight(harborPreLooksWhoSkip), false);
+const harborPreLooksReady = skipFormerHistory(
+  draft({ ...harborPreLooksWhoSkip, looksRightHold: false }),
+);
+assert.equal(workspacePrompt(harborPreLooksReady), "review");
+assert.equal(canLooksRight(harborPreLooksReady), true);
+assert.equal((harborPreLooksReady.addressHistory ?? []).length, 0);
+assert.ok((harborPreLooksReady.employmentHistory ?? []).some((item) => /HARBOR STEEL/i.test(item.label ?? "") && !item.from));
 
 const harborWhoTyped = workspaceReply("Riverside Mill", harborIncomeUsed);
 assert.equal(harborWhoTyped?.capture?.field, "formerHistory");
