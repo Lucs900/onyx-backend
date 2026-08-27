@@ -28,6 +28,7 @@ import {
 } from "@/lib/calculators/conventional";
 import { rentalMoneyShown } from "@/lib/income/rental";
 import type { FactProposal, FoxAction, FoxIntakeDraft } from "./types";
+import { creditAnswered, propertyTypeChosen } from "./propertyType";
 import {
   FILE_NET_ROLE_FIELD,
   SUGGESTED_FILE_NET_FIELD,
@@ -157,6 +158,7 @@ export function housingSettled(draft: FoxIntakeDraft) {
 }
 
 export function housingConfirmNeeded(draft: FoxIntakeDraft) {
+  if (!propertyTypeChosen(draft) || !creditAnswered(draft)) return false;
   return Boolean(draftHousingEstimate(draft) && !housingSettled(draft));
 }
 
@@ -372,7 +374,10 @@ export function calculatorStructureFacts(draft: FoxIntakeDraft): {
     }
   }
   const estimate = draftHousingEstimate(draft);
-  if (draft.estimatedHousing != null && estimate) {
+  const sampleHousingReady = propertyTypeChosen(draft) && creditAnswered(draft);
+  const housingTotal =
+    draft.estimatedHousing ?? (sampleHousingReady && estimate ? estimate.estimatedHousing : null);
+  if (sampleHousingReady && estimate && housingTotal != null) {
     facts.push({
       id: "pi",
       label: "P&I",
@@ -410,7 +415,7 @@ export function calculatorStructureFacts(draft: FoxIntakeDraft): {
     facts.push({
       id: "housing",
       label: HOUSING_PAYMENT_LABEL,
-      value: moneyShown(draft.estimatedHousing),
+      value: moneyShown(housingTotal),
       note: ESTIMATED_NOT_FINAL,
     });
   } else if (estimate?.miApplies) {

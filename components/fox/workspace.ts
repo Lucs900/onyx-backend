@@ -206,7 +206,11 @@ import {
   parsePropertyType,
   parseVolunteeredAddress,
   propertyTypeAskCopy,
+  propertyTypeChosen,
   propertyTypeSettled,
+  propertyTypeSkipped,
+  creditAnswered,
+  rateLineReady,
   propertyTypeConfirmActions,
   propertyTypeConfirmCopy,
   propertyTypeLabel,
@@ -2020,6 +2024,7 @@ function amountHelperActions(field: "skip-amount" | "skip-value"): FoxAction[] {
 
 export const SAMPLE_NOTE = "Sample · indicative · not live";
 export const PREVIEW_RATE_NOTE = "Preview rate · not live";
+export const INDICATIVE_NOT_LIVE = "Indicative · not live";
 export { CREDIT_STATED_NOTE };
 export const CREDIT_RANGE_ASK = "What is your estimated FICO?";
 export const CREDIT_RANGE_FOLLOW = CREDIT_STATED_NOTE;
@@ -2055,11 +2060,42 @@ export function formatSamplePayment(loanAmount?: number | null): string {
 }
 
 function creditSettled(draft: FoxIntakeDraft) {
-  return Boolean(draft.creditAsked || draft.creditBand);
+  return creditAnswered(draft);
 }
 
 export function sampleReady(draft: FoxIntakeDraft): boolean {
   return sketchAssembled(draft);
+}
+
+export function propertyTypeRateNote(_draft?: FoxIntakeDraft) {
+  return INDICATIVE_NOT_LIVE;
+}
+
+/** Skip writes Pricing when the file is ready on the type tap. House/Condo/2–4 wait for FICO. */
+export function previewRateFact(draft: FoxIntakeDraft): PreviewFact | null {
+  const intent = draft.productIntent ?? null;
+  if (!intent) return null;
+  if (propertyTypeSkipped(draft)) {
+    return {
+      id: "rate",
+      label: "Rate",
+      value: PRICING_WHEN_READY,
+    };
+  }
+  if (!propertyTypeChosen(draft) || !creditAnswered(draft)) return null;
+  if (previewRateApplies(draft)) {
+    return {
+      id: "rate",
+      label: "Rate",
+      value: `${SAMPLE_STRUCTURE} ${SAMPLE_RATE_LABEL}`,
+      note: INDICATIVE_NOT_LIVE,
+    };
+  }
+  return {
+    id: "rate",
+    label: "Rate",
+    value: PRICING_WHEN_READY,
+  };
 }
 
 export function isQualifyingIncomeConfirmPending(draft: FoxIntakeDraft): boolean {
@@ -2181,8 +2217,12 @@ export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
   if (!sketchNumberReady(draft)) {
     return draftUsesPurchasePrice(draft) && !hasPropertyValue(draft) ? "value" : "amount";
   }
+  if (!propertyTypeSettled(draft)) return "property-type";
   if (subjectLeaseAskNeeded(draft)) return "subject-lease";
   if (!creditSettled(draft)) return "credit";
+  if (!rateLineReady(draft)) {
+    return propertyTypeSettled(draft) ? "credit" : "property-type";
+  }
   if (!incomeSettled(draft)) return "income";
   if (needsDeclarationTiming(draft)) return "declaration-timing";
   if (!otherReoSettled(draft)) return "other-reo";
@@ -2208,8 +2248,8 @@ export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
   }
   const holdCalculatorAsk = draft.motion === "in_queue" || draft.motion === "escalated";
   if (!holdCalculatorAsk && subjectLeaseAskNeeded(draft)) return "subject-lease";
-  if (!holdCalculatorAsk && housingConfirmNeeded(draft)) return "housing";
   if (!holdCalculatorAsk && !propertyTypeSettled(draft)) return "property-type";
+  if (!holdCalculatorAsk && housingConfirmNeeded(draft)) return "housing";
   return "done";
 }
 
@@ -2571,6 +2611,7 @@ function workspaceAskCopy(
     const outbox = latestOutbox(draft);
     const remind = remindLine(draft);
     const late = lateFileRemainder(draft);
+    const lateActions = citizenshipNeeded(draft) ? [] : (late.actions ?? []);
     return {
       text: motionAskText(draft),
       followUp: late.text || rememberedAskCopy(draft) || remind || undefined,
@@ -2584,7 +2625,7 @@ function workspaceAskCopy(
             },
           ]
         : undefined,
-      actions: [...(late.actions ?? []), ...finishLineActions(draft)],
+      actions: [...lateActions, ...finishLineActions(draft)],
     };
   }
   return {
@@ -5854,6 +5895,39 @@ export function previewFacts(draft: FoxIntakeDraft): PreviewFact[] {
     });
   }
 
+  if (
+    draft.propertyTypeAsked ||
+    draft.propertyType ||
+    isPropertyTypeConfirmPending(draft)
+  ) {
+    const pending = parsePropertyType(draft.pendingProposal?.value ?? "");
+    const shown = draft.propertyType
+      ? propertyTypeLabel(draft.propertyType)
+      : pending
+        ? propertyTypeLabel(pending)
+        : "—";
+    const typeFact = {
+      id: "property-type",
+      label: "Property type",
+      value: shown,
+      note: SUGGESTED_PROPERTY_NOTE,
+    };
+    const creditAt = facts.findIndex((fact) => fact.id === "credit" || fact.id === "income");
+    if (creditAt >= 0) facts.splice(creditAt, 0, typeFact);
+    else facts.push(typeFact);
+  }
+
+  const rateFact = previewRateFact(draft);
+  if (rateFact) {
+    const typeAt = facts.findIndex((fact) => fact.id === "property-type");
+    if (typeAt >= 0) facts.splice(typeAt + 1, 0, rateFact);
+    else {
+      const creditAt = facts.findIndex((fact) => fact.id === "credit" || fact.id === "income");
+      if (creditAt >= 0) facts.splice(creditAt, 0, rateFact);
+      else facts.push(rateFact);
+    }
+  }
+
   if (!requiredIds.has("occupancy")) {
     const occupancy = draft.occupancyChoice.value || "";
     const occupancyLabel = OCCUPANCY_BUBBLES.find((item) => item.value === occupancy)?.label;
@@ -5926,25 +6000,6 @@ export function previewFacts(draft: FoxIntakeDraft): PreviewFact[] {
       label: "Stated available assets",
       value: shown,
       note: SUGGESTED_ASSETS_NOTE,
-    });
-  }
-
-  if (
-    draft.propertyTypeAsked ||
-    draft.propertyType ||
-    isPropertyTypeConfirmPending(draft)
-  ) {
-    const pending = parsePropertyType(draft.pendingProposal?.value ?? "");
-    const shown = draft.propertyType
-      ? propertyTypeLabel(draft.propertyType)
-      : pending
-        ? propertyTypeLabel(pending)
-        : "—";
-    facts.push({
-      id: "property-type",
-      label: "Property type",
-      value: shown,
-      note: SUGGESTED_PROPERTY_NOTE,
     });
   }
 
@@ -6219,23 +6274,6 @@ export function previewFacts(draft: FoxIntakeDraft): PreviewFact[] {
     facts.push({ id: "pay", label: "Pay", value: payBits.join(" · ") });
   }
 
-  if (sampleReady(draft)) {
-    if (previewRateApplies(draft)) {
-      facts.push({
-        id: "rate",
-        label: "Rate",
-        value: `${SAMPLE_STRUCTURE} ${SAMPLE_RATE_LABEL}`,
-        note: PREVIEW_RATE_NOTE,
-      });
-    } else if (intent) {
-      facts.push({
-        id: "rate",
-        label: "Rate",
-        value: PRICING_WHEN_READY,
-      });
-    }
-  }
-
   if (draft.path === "acr" && sampleReady(draft)) {
     facts.push({
       id: "reward",
@@ -6434,9 +6472,10 @@ export function structureExplainCopy(
     };
   }
   if (id === "rate") {
-    if (previewRateApplies(draft) && sampleReady(draft)) {
+    const shown = previewRateFact(draft);
+    if (shown?.value.includes(SAMPLE_RATE_LABEL)) {
       return {
-        text: `${SAMPLE_STRUCTURE} ${SAMPLE_RATE_LABEL}. ${PREVIEW_RATE_NOTE}. I cannot set, lock, or invent a live rate.`,
+        text: `${SAMPLE_STRUCTURE} ${SAMPLE_RATE_LABEL}. ${shown.note ?? propertyTypeRateNote(draft)}. I cannot set, lock, or invent a live rate.`,
       };
     }
     return {
