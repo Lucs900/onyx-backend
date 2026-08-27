@@ -142,6 +142,7 @@ export function taskContext(stage: FoxStage, draft: FoxIntakeDraft) {
     "geo-stop": "California only",
     "confirm-proposal": "Confirm suggestion",
     "pay-frequency": "Asking: pay frequency",
+    "both-monthly-reason": "Asking: paystub and W-2",
     qualifying: "Asking: qualifying income",
     "years-in-business": "Asking: years in business",
     "over-price": "Checking price and loan",

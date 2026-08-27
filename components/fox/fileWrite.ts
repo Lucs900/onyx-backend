@@ -194,6 +194,8 @@ const MONEY_KEYS = new Set([
   "current_pi",
   "income",
   "qualifying_income",
+  "paystub_monthly",
+  "w2_monthly",
   "rental_income",
   "rental_gross_monthly",
   "rental_pitia_used",
@@ -544,6 +546,9 @@ export function factLabel(field: string) {
   if (field === "k1_ordinary_income") return "K-1 ordinary income";
   if (field === "k1_distributions") return "K-1 distributions";
   if (field === "qualifying_income") return "qualifying income";
+  if (field === "paystub_monthly") return "paystub monthly";
+  if (field === "w2_monthly") return "W-2 monthly";
+  if (field === "income_caution") return "income caution";
   if (field === "rental_income") return "Suggested rental income";
   if (field === "rental_gross_monthly") return "Suggested rental (gross)";
   if (field === "rental_pitia_used") return "PITIA used to net";

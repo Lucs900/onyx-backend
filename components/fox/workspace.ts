@@ -126,12 +126,18 @@ import {
   writeEstimatedHousing,
 } from "./calculators";
 import {
+  applyBothMonthlyReasonAnswer,
   applyPayFrequencyAnswer,
+  bothMonthlyAskCopy,
+  bothMonthlyDisplay,
+  bothMonthlyPair,
   decliningIncomeCaution,
   formatIncomeMoney,
   hasK1Ordinary,
+  INCOME_CAUTION_FIELD,
   K1_ORDINARY_NOTE,
   monthlyFromAnnual,
+  parseBothMonthlyReason,
   qualifyingIncomeDisplay,
   scheduleCYearViews,
   SUGGESTED_INCOME_NOTE,
@@ -1354,6 +1360,24 @@ export function payFrequencyAsk(): {
   };
 }
 
+export function bothMonthlyReasonAsk(draft: FoxIntakeDraft): {
+  text: string;
+  actions: FoxAction[];
+} {
+  const pair = bothMonthlyPair(draft);
+  return {
+    text: pair
+      ? bothMonthlyAskCopy(pair.stub, pair.w2)
+      : "The paystub monthly and the W-2 Box 1 monthly differ. Why do they differ?",
+    actions: [
+      { id: "both-raise", label: "Raise / new base", event: "bubble", capture: { field: "bothMonthlyReason", value: "raise" } },
+      { id: "both-ot", label: "Overtime / bonus", event: "bubble", capture: { field: "bothMonthlyReason", value: "overtime-bonus" } },
+      { id: "both-second", label: "Second job", event: "bubble", capture: { field: "bothMonthlyReason", value: "second-job" } },
+      { id: "both-skip", label: "Skip", event: "bubble", capture: { field: "bothMonthlyReason", value: "skip" } },
+    ],
+  };
+}
+
 function liveProposalAsk(
   draft: FoxIntakeDraft,
   proposal: NonNullable<FoxIntakeDraft["pendingProposal"]>,
@@ -1511,6 +1535,7 @@ export function docReactionAsk(
     return identityReactionAsk(draft);
   }
   if (draft.awaitingPayFrequency) return payFrequencyAsk();
+  if (draft.awaitingBothMonthlyReason) return bothMonthlyReasonAsk(draft);
   return null;
 }
 
@@ -2016,6 +2041,7 @@ export function shouldDeferStillUsefulAsk(draft: FoxIntakeDraft): boolean {
     isQualifyingIncomeConfirmPending(draft) ||
     isRentalIncomeConfirmPending(draft) ||
     Boolean(draft.awaitingPayFrequency) ||
+    Boolean(draft.awaitingBothMonthlyReason) ||
     Boolean(draft.pendingProposal && isRemainderConfirmField(draft.pendingProposal.field)) ||
     isStatedAssetsConfirmPending(draft) ||
     isPropertyTypeConfirmPending(draft) ||
@@ -2050,6 +2076,7 @@ export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
   if (draft.pendingOffer === "jumbo") return "offer-jumbo";
   if (draft.pendingOffer === "heloc") return "offer-heloc";
   if (draft.awaitingPayFrequency) return "pay-frequency";
+  if (draft.awaitingBothMonthlyReason) return "both-monthly-reason";
   if (draft.pendingConflict || draft.pendingProposal) return "confirm-proposal";
   if (draft.correcting === "path-switch") return "path-switch";
   if (draft.correcting === "correct") return "correct";
@@ -2461,6 +2488,9 @@ function workspaceAskCopy(
   if (prompt === "pay-frequency") {
     return payFrequencyAsk();
   }
+  if (prompt === "both-monthly-reason") {
+    return bothMonthlyReasonAsk(draft);
+  }
   if (prompt === "confirm-proposal") {
     if (draft.pendingConflict) {
       return {
@@ -2541,6 +2571,7 @@ export function workspaceGreeting(draft: FoxIntakeDraft): {
     prompt === "geo-stop" ||
     prompt === "confirm-proposal" ||
     prompt === "pay-frequency" ||
+    prompt === "both-monthly-reason" ||
     prompt === "done"
   ) {
     return next;
@@ -3933,6 +3964,7 @@ function draftAfterCaptureBody(draft: FoxIntakeDraft, capture: Capture): FoxInta
     return proposeFundsPair(next, down, loan);
   }
   if (capture.field === "payFrequency") return applyPayFrequencyAnswer(next, capture.value);
+  if (capture.field === "bothMonthlyReason") return applyBothMonthlyReasonAnswer(next, capture.value);
   if (capture.field === "accept-proposal") return resolveProposal(next, "accept");
   if (capture.field === "change-proposal") return changePendingProposal(next);
   if (capture.field === "decline-proposal") return resolveProposal(next, "decline");
@@ -4316,6 +4348,16 @@ export function workspaceReply(
       return { ...nextFoxAsk(nextDraft), capture: { field: "payFrequency", value: "monthly" } };
     }
     return { ...payFrequencyAsk() };
+  }
+
+  if (prompt === "both-monthly-reason" || draft.awaitingBothMonthlyReason) {
+    if (isFreeTextAtGate(q)) return answerThenRestore(q, draft);
+    const reason = parseBothMonthlyReason(q);
+    if (reason) {
+      const nextDraft = applyBothMonthlyReasonAnswer(draft, reason);
+      return { ...nextFoxAsk(nextDraft), capture: { field: "bothMonthlyReason", value: reason } };
+    }
+    return { ...bothMonthlyReasonAsk(draft) };
   }
 
   if (draft.pendingProposal || prompt === "confirm-proposal") {
@@ -5687,6 +5729,15 @@ export function fileScenarioRows(draft: FoxIntakeDraft): [string, string][] {
   const timeline = TIMELINE_BUBBLES.find((item) => item.value === draft.timelineChoice.value)?.label;
   if (timeline) rows.push(["Timeline", timeline]);
 
+  const monthlies = bothMonthlyDisplay(draft);
+  if (monthlies) rows.push(["Monthly", monthlies]);
+  const qualifying = qualifyingIncomeDisplay(draft);
+  if (qualifying) rows.push(["Qualifying income", qualifying.value]);
+  const incomeCaution =
+    (draft.facts?.[INCOME_CAUTION_FIELD]?.value ?? "").trim() ||
+    (draft.pendingProposal?.field === QUALIFYING_INCOME_FIELD ? draft.pendingProposal.caution : undefined);
+  if (incomeCaution) rows.push(["Income caution", incomeCaution]);
+
   if (draft.scenario) {
     const extras: [string, string][] = [];
     if (draft.scenario.zip) extras.push(["ZIP", draft.scenario.zip]);
@@ -6045,6 +6096,14 @@ export function previewFacts(draft: FoxIntakeDraft): PreviewFact[] {
       note: SUGGESTED_BORROWER_NOTE,
     });
   }
+  const monthlies = bothMonthlyDisplay(draft);
+  if (monthlies) {
+    facts.push({
+      id: "monthlies",
+      label: "Monthly",
+      value: monthlies,
+    });
+  }
   const qualifying = qualifyingIncomeDisplay(draft);
   if (qualifying) {
     facts.push({
@@ -6052,6 +6111,16 @@ export function previewFacts(draft: FoxIntakeDraft): PreviewFact[] {
       label: "Qualifying income",
       value: qualifying.value,
       note: qualifying.note,
+    });
+  }
+  const incomeCaution =
+    (draft.facts?.[INCOME_CAUTION_FIELD]?.value ?? "").trim() ||
+    (draft.pendingProposal?.field === QUALIFYING_INCOME_FIELD ? draft.pendingProposal.caution : undefined);
+  if (incomeCaution) {
+    facts.push({
+      id: "income-caution",
+      label: "Income caution",
+      value: incomeCaution,
     });
   }
   const yearsInBusiness = draft.facts?.years_in_business?.value;

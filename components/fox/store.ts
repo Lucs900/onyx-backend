@@ -101,7 +101,7 @@ import {
   writeQualifyingIncome,
   writeYearsInBusiness,
 } from "./completeness";
-import { applyPayFrequencyAnswer } from "./qualifyingIncome";
+import { applyBothMonthlyReasonAnswer, applyPayFrequencyAnswer } from "./qualifyingIncome";
 import {
   skipEstimatedHousing,
   syncCalculatorDraft,
@@ -317,6 +317,7 @@ export function emptyDraft(): FoxIntakeDraft {
     awaitingYearsInBusiness: false,
     emailSkipped: false,
     awaitingPayFrequency: false,
+    awaitingBothMonthlyReason: false,
     facts: {},
     pendingConflict: null,
     skippedClasses: [],
@@ -565,6 +566,14 @@ function normalize(value: unknown): FoxIntakeDraft {
     yearsInBusinessAsked: Boolean(raw.yearsInBusinessAsked),
     awaitingYearsInBusiness: Boolean(raw.awaitingYearsInBusiness),
     awaitingPayFrequency: Boolean(raw.awaitingPayFrequency),
+    awaitingBothMonthlyReason: Boolean(raw.awaitingBothMonthlyReason),
+    bothMonthlyReason:
+      raw.bothMonthlyReason === "raise" ||
+      raw.bothMonthlyReason === "overtime-bonus" ||
+      raw.bothMonthlyReason === "second-job" ||
+      raw.bothMonthlyReason === "skip"
+        ? raw.bothMonthlyReason
+        : undefined,
     missingAskKey: typeof raw.missingAskKey === "string" ? raw.missingAskKey : "",
     sections: { ...base.sections, ...raw.sections },
   };
@@ -1795,6 +1804,9 @@ function applyCaptureBody(capture: Capture) {
   }
   if (capture.field === "payFrequency") {
     return commit(applyPayFrequencyAnswer(current, capture.value));
+  }
+  if (capture.field === "bothMonthlyReason") {
+    return commit(applyBothMonthlyReasonAnswer(current, capture.value));
   }
   if (capture.field === "accept-proposal") {
     return commit(resolveProposal(current, "accept"));

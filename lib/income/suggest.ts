@@ -11,7 +11,12 @@ import { conventionalIncomeRules } from "@/lib/guidelines/conventional";
 
 export const SUGGESTED_INCOME_NOTE = "Suggested qualifying income · not underwritten";
 export const W2_BOX1_MONTHLY_NOTE = "Box 1 monthly";
-export const BOTH_MONTHLY_LOWER_NOTE = "Using the lower";
+export const BOTH_MONTHLY_SKIP_NOTE = "Using W-2 Box 1 until we know why they differ.";
+export const BOTH_MONTHLY_RAISE_NOTE = "Using the current paystub. Last year’s W-2 is lower.";
+export const BOTH_MONTHLY_OT_NOTE =
+  "Overtime or bonus on the stub. Using W-2 Box 1 until a second year or a split stub is in.";
+export const BOTH_MONTHLY_SECOND_JOB_NOTE =
+  "They said a second job. Using W-2 Box 1 until that job is documented.";
 export const DECLINING_INCOME_CAUTION = "Income is lower this year. I’m using the later year.";
 export const DECLINING_YEAR_RATIO = 0.9;
 export const YTD_CONFLICT_CAUTION =
@@ -32,8 +37,10 @@ export type QualifyingMethod =
   | "ytd-months"
   | "w2-annual"
   | "ytd-conflict-lower"
-  | "both-lower"
+  | "both-ask"
   | "combined";
+
+export type BothMonthlyReason = "raise" | "overtime-bonus" | "second-job" | "skip";
 
 /** Extracted Schedule C add-backs. Extra lines stay unused unless printed. */
 export type ScheduleCAddBacks = {
@@ -57,6 +64,9 @@ export type IncomeSuggestResult = {
   caution?: string;
   methodNote?: string;
   needsFrequency?: boolean;
+  needsBothReason?: boolean;
+  stubMonthly?: number;
+  w2Monthly?: number;
   partialNotes?: string[];
   parts?: { wage?: number; scheduleC?: number; k1?: number };
 };
@@ -350,7 +360,60 @@ export function formatSuggestMoney(value: number): string {
 }
 
 export function bothMonthlyMethodNote(stubMonthly: number, w2Monthly: number): string {
-  return `Paystub ${formatSuggestMoney(stubMonthly)} · W-2 Box 1 ${formatSuggestMoney(w2Monthly)} · ${BOTH_MONTHLY_LOWER_NOTE}`;
+  return `Paystub ${formatSuggestMoney(stubMonthly)} · W-2 Box 1 ${formatSuggestMoney(w2Monthly)}`;
+}
+
+export function bothMonthlyAskCopy(stubMonthly: number, w2Monthly: number): string {
+  return `The paystub is ${formatSuggestMoney(stubMonthly)} a month. The W-2 Box 1 is ${formatSuggestMoney(w2Monthly)} a month. Why do they differ?`;
+}
+
+export function bothMonthlyReasonNote(reason: BothMonthlyReason): string {
+  if (reason === "raise") return BOTH_MONTHLY_RAISE_NOTE;
+  if (reason === "overtime-bonus") return BOTH_MONTHLY_OT_NOTE;
+  if (reason === "second-job") return BOTH_MONTHLY_SECOND_JOB_NOTE;
+  return BOTH_MONTHLY_SKIP_NOTE;
+}
+
+/** After the one both-in question. No blend. OT/bonus and Skip keep Box 1 / 12. */
+export function proposeBothMonthlyIncome(
+  stubMonthly: number,
+  w2Monthly: number,
+  reason: BothMonthlyReason,
+): IncomeSuggestResult {
+  const note = bothMonthlyReasonNote(reason);
+  if (reason === "raise") {
+    return {
+      monthly: stubMonthly,
+      method: "period-frequency",
+      methodNote: bothMonthlyMethodNote(stubMonthly, w2Monthly),
+      caution: note,
+      stubMonthly,
+      w2Monthly,
+    };
+  }
+  return {
+    monthly: w2Monthly,
+    method: "w2-annual",
+    methodNote: bothMonthlyMethodNote(stubMonthly, w2Monthly),
+    caution: note,
+    stubMonthly,
+    w2Monthly,
+  };
+}
+
+export function parseBothMonthlyReason(raw: string): BothMonthlyReason | null {
+  const v = String(raw ?? "").trim().toLowerCase();
+  if (!v) return null;
+  if (/\b(skip|later|not sure|idk|pass|don.?t know|no idea|unknown)\b/.test(v)) return "skip";
+  if (v === "overtime-bonus" || v === "overtime / bonus" || v === "overtime/bonus") return "overtime-bonus";
+  if (v === "second-job" || v === "second job") return "second-job";
+  if (v === "raise" || v === "raise / new base" || v === "raise/new base") return "raise";
+  if (/\b(overtime|\bot\b|bonus|commission|fat check)\b/.test(v)) return "overtime-bonus";
+  if (/\b(second[- ]job|second employer|side job|other job|two jobs)\b/.test(v)) return "second-job";
+  if (/\b(raise|new base|promotion|base (pay|now|salary)|that.?s (my )?base|current (base|salary|pay))\b/.test(v)) {
+    return "raise";
+  }
+  return null;
 }
 
 function confirmedPayFrequency(input: WageSuggestInput): ConventionalPayFrequency | null {
@@ -516,9 +579,9 @@ function secondJobExtra(input: WageSuggestInput): VariableExtra {
  * W-2 / paystub path. Locked monthly method:
  * 1. One W-2: Box 1 / 12 only. No two-year OT. No second-year average until a second W-2 is in.
  * 2. Paystub monthly: period × frequency after Biweekly / Semimonthly / Monthly is confirmed.
- * 3. Both in: show both monthly numbers. Use the lower. Not a blend.
+ * 3. Both in and they differ: show both. Ask why. Do not write qualifying income yet.
  * 4. YTD writes when printed. It does not replace monthly.
- * 5. Confirm-before-write. Invent nothing.
+ * 5. Confirm-before-write. Invent nothing. No blend.
  */
 export function suggestWageIncome(input: WageSuggestInput): IncomeSuggestResult | null {
   const freq = confirmedPayFrequency(input);
@@ -539,10 +602,22 @@ export function suggestWageIncome(input: WageSuggestInput): IncomeSuggestResult 
   const partialNotes = [...variable.partialNotes, ...second.partialNotes];
 
   if (bothIn && stubMonthly != null && w2Monthly != null) {
-    const lower = Math.min(stubMonthly, w2Monthly);
+    if (materialMonthlyDiff(stubMonthly, w2Monthly)) {
+      return {
+        monthly: 0,
+        method: "both-ask",
+        needsBothReason: true,
+        stubMonthly,
+        w2Monthly,
+        methodNote: bothMonthlyMethodNote(stubMonthly, w2Monthly),
+        partialNotes: partialNotes.length ? partialNotes : undefined,
+      };
+    }
     return {
-      monthly: lower + extra,
-      method: "both-lower",
+      monthly: stubMonthly + extra,
+      method: "period-frequency",
+      stubMonthly,
+      w2Monthly,
       methodNote: [bothMonthlyMethodNote(stubMonthly, w2Monthly), ...second.methodNotes]
         .filter(Boolean)
         .join(" plus "),
