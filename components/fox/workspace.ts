@@ -2210,6 +2210,7 @@ export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
   if (!sketchNumberReady(draft)) {
     return draftUsesPurchasePrice(draft) && !hasPropertyValue(draft) ? "value" : "amount";
   }
+  if (!propertyTypeSettled(draft)) return "property-type";
   if (subjectLeaseAskNeeded(draft)) return "subject-lease";
   if (!creditSettled(draft)) return "credit";
   if (!incomeSettled(draft)) return "income";
