@@ -2,8 +2,8 @@ import {
   REJECT_LINE,
   LIMIT_LINE,
   MAX_DOC_COUNT,
-  FAILED_READ_NOTE,
   isAcceptedFile,
+  isUnreadNote,
 } from "@/lib/docs/accept";
 import type {
   DocSlot,
@@ -332,7 +332,6 @@ export function taxReturnFilename(name: string) {
 }
 
 export function receivedClassOf(doc: ReceivedDoc): ExtractClass | null {
-  if (doc.note === FAILED_READ_NOTE) return null;
   if (doc.extractClass && doc.extractClass !== "other") return doc.extractClass;
   const fromSlot = extractClassFromSlot(doc.slot);
   if (fromSlot) return fromSlot;
@@ -364,6 +363,21 @@ export function looksLikeIdFields(
   fields?: Record<string, string | null | undefined> | null,
 ): boolean {
   return Boolean(fields && String(fields.full_name ?? "").trim());
+}
+
+export function hasLockedSuggestion(
+  extractClass: ExtractClass,
+  fields?: Record<string, string | null | undefined> | null,
+): boolean {
+  const value = (key: string) => String(fields?.[key] ?? "").trim();
+  if (extractClass === "government_id") return Boolean(value("full_name") || value("present_address"));
+  if (extractClass === "paystub") {
+    return Boolean(
+      value("employer_name") || value("gross_period") || value("ytd_gross") || value("pay_period_end"),
+    );
+  }
+  if (extractClass === "w2") return Boolean(value("employer_name") || value("wages"));
+  return Object.values(fields ?? {}).some((item) => String(item ?? "").trim());
 }
 
 export function promoteExtractClass(
@@ -1529,13 +1543,17 @@ function layer2Item(id: string, label: string, ask: string): StillUsefulItem {
 export function completenessFileFromDraft(draft: FoxIntakeDraft): CompletenessFile {
   const received = new Set<string>();
   for (const doc of draft.documents ?? []) {
-    if (doc.note === FAILED_READ_NOTE) continue;
+    const display = preferFilenameClass(doc.extractClass ?? "other", doc.name, doc.slot);
+    if (display === "government_id" || doc.slot === "id" || docsDisplayLabel(doc) === "ID") {
+      received.add("government_id");
+    }
     if (
       (doc.status === "extracted" || doc.status === "received" || doc.status === "reading") &&
-      doc.extractClass
+      display &&
+      display !== "other" &&
+      display !== "government_id"
     ) {
-      if (doc.extractClass === "government_id") continue;
-      received.add(doc.extractClass);
+      received.add(display);
     }
   }
   if (
@@ -1997,7 +2015,14 @@ function inviteSatisfied(draft: FoxIntakeDraft, kind: DocInviteKind): boolean {
         doc.extractClass === "government_id" ||
         doc.slot === "id";
       if (!isId) return false;
-      return doc.status === "extracted" || doc.status === "needs better copy";
+      if (doc.status === "reading") return false;
+      return (
+        doc.status === "extracted" ||
+        doc.status === "received" ||
+        doc.status === "failed" ||
+        doc.status === "needs better copy" ||
+        isUnreadNote(doc.note)
+      );
     });
   }
   if (kind === "prior_year_return") {

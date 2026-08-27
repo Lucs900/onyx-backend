@@ -42,7 +42,7 @@ export function governmentIdExtractFailed(draft: FoxIntakeDraft) {
       doc.status === "extracted" ||
       doc.status === "failed" ||
       doc.status === "needs better copy" ||
-      /could not read/i.test(doc.note ?? ""),
+      /could not read|no text layer/i.test(doc.note ?? ""),
   );
   if (!finished) return false;
   if (isBorrowerNameConfirmPending(draft)) return false;

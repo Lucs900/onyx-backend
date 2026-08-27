@@ -3091,7 +3091,8 @@ const withId = afterProceed(afterIncome, {
     },
   ],
 });
-assert.equal(stillUsefulSection(withId)?.items[0]?.label, "Government ID");
+assert.equal(stillUsefulSection(withId)?.items[0]?.label, "Latest two paystubs");
+assert.ok(!stillUsefulSection(withId)?.items.some((item) => item.label === "Government ID"));
 assert.ok(stillUsefulSection(withId)?.items.some((item) => item.label === "Latest two paystubs"));
 const buyDocsIn = afterProceed(afterIncome, {
   documents: [
@@ -3143,7 +3144,7 @@ const buyDocsIn = afterProceed(afterIncome, {
 });
 assert.deepEqual(
   stillUsefulSection(buyDocsIn)?.items.map((item) => item.label),
-  ["Government ID", "Latest two paystubs", "Latest return", "Property address", "Purchase contract", "Bank statement"],
+  ["Latest two paystubs", "Latest return", "Property address", "Purchase contract", "Bank statement"],
 );
 const seProceed = afterProceed(withIncome(afterCredit, "self-employed"));
 assert.deepEqual(
@@ -3328,7 +3329,7 @@ receiveDocument({
   extractClass: "government_id",
   status: "extracted",
 });
-assert.ok(stillUsefulSection(getFoxDraft())?.items.some((item) => item.label === "Government ID"));
+assert.ok(!stillUsefulSection(getFoxDraft())?.items.some((item) => item.label === "Government ID"));
 assert.ok(stillUsefulSection(getFoxDraft())?.items.some((item) => item.label === "Latest two paystubs"));
 assert.ok(stillUsefulSection(getFoxDraft())?.items.some((item) => item.label === "Purchase contract"));
 assert.ok(stillUsefulSection(getFoxDraft())?.items.some((item) => item.label === "Bank statement"));
@@ -3337,7 +3338,7 @@ const remembered = continueWorkspaceFromEntry("acr", "buy");
 assert.equal(remembered.productIntent, "buy");
 assert.ok((remembered.skippedClasses ?? []).includes("government_id"));
 assert.ok(remembered.documents.some((doc) => doc.extractClass === "government_id"));
-assert.ok(stillUsefulSection(remembered)?.items.some((item) => item.label === "Government ID"));
+assert.ok(!stillUsefulSection(remembered)?.items.some((item) => item.label === "Government ID"));
 assert.ok(stillUsefulSection(remembered)?.items.some((item) => item.label === "Latest two paystubs"));
 assert.ok(stillUsefulSection(remembered)?.items.some((item) => item.label === "Purchase contract"));
 assert.ok(!stillUsefulSection(remembered)?.items.some((item) => item.label === "Employer"));
@@ -5712,6 +5713,98 @@ assert.ok(previewFacts(failedOther.draft).some((fact) => fact.id === "docs" && /
 assert.ok(previewFacts(failedOther.draft).every((fact) => fact.id !== "docs" || !/Other in/.test(fact.value)));
 assert.equal(failedOther.draft.productIntent, "buy");
 assert.ok(!missingExtractClasses(failedOther.draft).includes("government_id"));
+
+const unreadIdDraft = draft({
+  ...afterIncome,
+  docsStarted: true,
+  looksRightHold: true,
+  documents: [
+    {
+      slot: "id",
+      name: "id.pdf",
+      type: "application/pdf",
+      size: 8000,
+      receivedAt: "2026-08-27T00:00:00.000Z",
+      status: "received",
+      extractClass: "government_id",
+      note: FAILED_READ_NOTE,
+    },
+  ],
+});
+assert.equal(docReactionAsk(unreadIdDraft, "government_id"), null);
+assert.equal(nextDocInvite(unreadIdDraft), "paystub");
+assert.equal(workspacePromptCopy("documents", unreadIdDraft).text, DOC_INVITE_COPY.paystub);
+assert.doesNotMatch(workspacePromptCopy("documents", unreadIdDraft).text, /government ID/i);
+assert.ok(!stillUsefulSection(unreadIdDraft)?.items.some((item) => item.label === "Government ID"));
+assert.ok(stillUsefulSection(unreadIdDraft)?.items.some((item) => item.label === "Latest two paystubs"));
+assert.ok(previewFacts(unreadIdDraft).some((fact) => fact.id === "docs" && /ID in/.test(fact.value)));
+assert.equal(canLooksRight(unreadIdDraft), false);
+assert.notEqual(workspacePrompt(unreadIdDraft), "review");
+const unreadStubDraft = draft({
+  ...unreadIdDraft,
+  documents: [
+    ...unreadIdDraft.documents,
+    {
+      slot: "paystubs",
+      name: "paystub.pdf",
+      type: "application/pdf",
+      size: 8000,
+      receivedAt: "2026-08-27T00:01:00.000Z",
+      status: "received",
+      extractClass: "paystub",
+      note: FAILED_READ_NOTE,
+    },
+  ],
+});
+assert.equal(nextDocInvite(unreadStubDraft), "w2");
+assert.doesNotMatch(workspacePromptCopy("documents", unreadStubDraft).text, /paystub/i);
+assert.ok(stillUsefulSection(unreadStubDraft)?.items.some((item) => item.label === "Latest two paystubs"));
+assert.ok(previewFacts(unreadStubDraft).some((fact) => fact.id === "docs" && /Paystubs in/.test(fact.value)));
+const unreadW2Draft = draft({
+  ...unreadStubDraft,
+  documents: [
+    ...unreadStubDraft.documents,
+    {
+      slot: "w2",
+      name: "w2.pdf",
+      type: "application/pdf",
+      size: 8000,
+      receivedAt: "2026-08-27T00:02:00.000Z",
+      status: "received",
+      extractClass: "w2",
+      note: FAILED_READ_NOTE,
+    },
+  ],
+});
+assert.equal(nextDocInvite(unreadW2Draft), null);
+assert.ok(stillUsefulSection(unreadW2Draft)?.items.some((item) => item.label === "Latest two paystubs"));
+assert.ok(stillUsefulSection(unreadW2Draft)?.items.some((item) => item.label === "W-2 most recent two years"));
+assert.equal(canLooksRight(unreadW2Draft), false);
+assert.notEqual(workspacePrompt(unreadW2Draft), "review");
+assert.ok(
+  !(workspacePromptCopy(workspacePrompt(unreadW2Draft), unreadW2Draft).actions ?? []).some(
+    (item) => item.label === "Looks right",
+  ),
+);
+
+resetWorkspaceForEntry("acr", "buy");
+receiveDocument({
+  slot: "id",
+  name: "id.pdf",
+  type: "application/pdf",
+  size: 8000,
+  receivedAt: "2026-08-27T03:00:00.000Z",
+});
+const unreadIdWrite = applyExtractWrite(
+  "2026-08-27T03:00:00.000Z",
+  "id.pdf",
+  { extractClass: "government_id", confidence: 0.9, fields: {} },
+);
+assert.equal(unreadIdWrite.quietLines[0], FAILED_READ_NOTE);
+assert.equal(unreadIdWrite.draft.documents[0]?.status, "received");
+assert.equal(unreadIdWrite.draft.looksRightHold, true);
+applyCapture({ field: "occupancy", value: "primary" });
+assert.equal(getFoxDraft().looksRightHold, true);
 
 const readyPaystub = draft({
   ...afterLooks,
@@ -9284,6 +9377,7 @@ assert.ok(alwaysOn.includes('workspacePromptCopy("done", live)'));
 assert.ok(alwaysOn.includes("DECLINING_INCOME_CAUTION"));
 assert.ok(alwaysOn.includes("isDeadFileWriteLine"));
 assert.ok(alwaysOn.includes("docReactionAsk"));
+assert.ok(alwaysOn.includes("isUnreadNote"));
 assert.ok(alwaysOn.includes("shouldDeferStillUsefulAsk"));
 assert.ok(alwaysOn.includes("holdDocsAskFox"));
 assert.ok(dropSource.includes("shouldDeferStillUsefulAsk"));
@@ -9774,6 +9868,53 @@ async function extractAdapterSmoke() {
   );
   assert.equal(blankPdf.failed, true);
   assert.deepEqual(blankPdf.fields, {});
+  assert.ok(blankPdf.warnings.includes("no-text-layer"));
+
+  const aliasIdPdf = await classifyAndExtract(
+    readFileSync(join(root, "scripts/fixtures/government-id-name-alias.pdf")),
+    "application/pdf",
+    deadVision,
+  );
+  assert.equal(aliasIdPdf.extractClass, "government_id");
+  assert.equal(aliasIdPdf.fields.full_name, "JORDAN HALE");
+  assert.equal(aliasIdPdf.fields.present_address, "14 OAK STREET");
+  const aliasStubPdf = await classifyAndExtract(
+    readFileSync(join(root, "scripts/fixtures/paystub-gross-pay-alias.pdf")),
+    "application/pdf",
+    deadVision,
+  );
+  assert.equal(aliasStubPdf.extractClass, "paystub");
+  assert.equal(aliasStubPdf.fields.employer_name, "HARBOR STEEL");
+  assert.equal(aliasStubPdf.fields.gross_period, "7000");
+  assert.equal(aliasStubPdf.fields.ytd_gross, "49000");
+  const aliasW2Pdf = await classifyAndExtract(
+    readFileSync(join(root, "scripts/fixtures/w2-box1-alias.pdf")),
+    "application/pdf",
+    deadVision,
+  );
+  assert.equal(aliasW2Pdf.extractClass, "w2");
+  assert.equal(aliasW2Pdf.fields.employer_name, "HARBOR STEEL");
+  assert.equal(aliasW2Pdf.fields.wages, "84000");
+  const unlabeledPdf = await classifyAndExtract(
+    readFileSync(join(root, "scripts/fixtures/pdf-unlabeled-text.pdf")),
+    "application/pdf",
+    deadVision,
+    null,
+    "id.pdf",
+  );
+  assert.equal(unlabeledPdf.failed, true);
+  assert.deepEqual(unlabeledPdf.fields, {});
+  assert.equal(unlabeledPdf.fields.full_name, undefined);
+  const noLayerPdf = await classifyAndExtract(
+    readFileSync(join(root, "scripts/fixtures/pdf-no-text-layer.pdf")),
+    "application/pdf",
+    deadVision,
+    null,
+    "id.pdf",
+  );
+  assert.equal(noLayerPdf.failed, true);
+  assert.ok(noLayerPdf.warnings.includes("no-text-layer"));
+  assert.equal(noLayerPdf.extractClass, "government_id");
 
   const extractSrc = readFileSync(join(root, "lib/docs/extract.ts"), "utf8");
   assert.doesNotMatch(extractSrc, /printedSampleFromFilename|BY_NAME/);

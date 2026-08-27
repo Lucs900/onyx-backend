@@ -48,9 +48,10 @@ import {
   parsePreviewSla,
   restripeGatheringOrReady,
 } from "./motion";
-import { FAILED_READ_NOTE } from "@/lib/docs/accept";
+import { FAILED_READ_NOTE, isUnreadNote } from "@/lib/docs/accept";
 import {
   applyExtractedFields,
+  hasLockedSuggestion,
   preferFilenameClass,
   promoteExtractClass,
   resolveFactConflict,
@@ -1243,11 +1244,16 @@ export function applyExtractWrite(
     return { draft: current, writes: [], conflict: null, quietLines: [], extractClass: input.extractClass };
   }
   const extractedClass = promoteExtractClass(input.extractClass, input.fields);
+  const unreadEmpty =
+    !failed &&
+    (extractedClass === "government_id" || extractedClass === "paystub" || extractedClass === "w2") &&
+    !hasLockedSuggestion(extractedClass, input.fields);
+  const treatFailed = Boolean(failed || unreadEmpty);
   const displayClass =
-    failed || extractedClass === "other"
+    treatFailed || extractedClass === "other"
       ? preferFilenameClass(extractedClass, name)
       : extractedClass;
-  const applied = failed
+  const applied = treatFailed
     ? {
         draft: { ...current, looksRightHold: true },
         writes: [],
@@ -1262,8 +1268,8 @@ export function applyExtractWrite(
       ...doc,
       slot,
       extractClass: displayClass,
-      status: (failed ? "received" : "extracted") as DocStatus,
-      note: failed ? FAILED_READ_NOTE : note,
+      status: (treatFailed ? "received" : "extracted") as DocStatus,
+      note: treatFailed ? (isUnreadNote(note) ? note : FAILED_READ_NOTE) : note,
     };
   });
   commit({
@@ -1459,10 +1465,18 @@ function openReviewOnFile(draft: FoxIntakeDraft) {
   );
 }
 
+function hasUnreadReceivedDoc(draft: FoxIntakeDraft) {
+  return draft.documents.some(
+    (doc) => isUnreadNote(doc.note) || doc.status === "failed" || doc.status === "needs better copy",
+  );
+}
+
 export function applyCapture(capture: Capture) {
   const before = current;
   if (current.looksRightHold) {
-    current = { ...current, looksRightHold: false };
+    if (capture.field === "skip-docs" || !hasUnreadReceivedDoc(current)) {
+      current = { ...current, looksRightHold: false };
+    }
   }
   const result = applyCaptureBody(capture);
   const settled = settleResumeAfterCapture(before, capture, result);

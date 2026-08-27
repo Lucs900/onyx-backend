@@ -54,6 +54,28 @@ PAGES: dict[str, list[str]] = {
         "WAGES: $84,000",
         "BONUS: $12,000",
     ],
+    "government-id-name-alias.pdf": [
+        "DRIVER LICENSE",
+        "NAME: JORDAN HALE",
+        "ADDRESS: 14 OAK STREET",
+    ],
+    "paystub-gross-pay-alias.pdf": [
+        "PAY STUB",
+        "EMPLOYER NAME: HARBOR STEEL",
+        "PAY DATE: 2026-07-31",
+        "GROSS PAY: $7,000",
+        "YTD GROSS: $49,000",
+    ],
+    "w2-box1-alias.pdf": [
+        "FORM W-2 WAGE AND TAX STATEMENT",
+        "EMPLOYER NAME: HARBOR STEEL",
+        "BOX 1 WAGES: $84,000",
+    ],
+    "pdf-unlabeled-text.pdf": [
+        "SAMPLE PAGE",
+        "JORDAN HALE",
+        "HARBOR STEEL",
+    ],
 }
 
 
@@ -103,10 +125,43 @@ def write_pdf(path: Path, lines: list[str]) -> None:
     print(f"wrote {path} {path.stat().st_size} bytes")
 
 
+def write_empty_pdf(path: Path) -> None:
+    """Page with no text operators — character count must be 0."""
+    stream = b"q\nQ\n"
+    objects = [
+        b"<< /Type /Catalog /Pages 2 0 R >>",
+        b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+        (
+            b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] "
+            b"/Contents 4 0 R >>"
+        ),
+        b"<< /Length %d >>\nstream\n" % len(stream) + stream + b"\nendstream",
+    ]
+    chunks: list[bytes] = [b"%PDF-1.4\n"]
+    offsets = [0]
+    for index, body in enumerate(objects, start=1):
+        offsets.append(sum(len(part) for part in chunks))
+        chunks.append(f"{index} 0 obj\n".encode("ascii") + body + b"\nendobj\n")
+    xref_at = sum(len(part) for part in chunks)
+    xref = [b"xref\n", f"0 {len(objects) + 1}\n".encode("ascii"), b"0000000000 65535 f \n"]
+    for offset in offsets[1:]:
+        xref.append(f"{offset:010d} 00000 n \n".encode("ascii"))
+    chunks.extend(xref)
+    chunks.append(
+        (
+            f"trailer << /Root 1 0 R /Size {len(objects) + 1} >>\n"
+            f"startxref\n{xref_at}\n%%EOF\n"
+        ).encode("ascii")
+    )
+    path.write_bytes(b"".join(chunks))
+    print(f"wrote {path} {path.stat().st_size} bytes")
+
+
 def main() -> None:
     here = Path(__file__).resolve().parent
     for name, lines in PAGES.items():
         write_pdf(here / name, lines)
+    write_empty_pdf(here / "pdf-no-text-layer.pdf")
 
 
 if __name__ == "__main__":

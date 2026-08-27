@@ -12,6 +12,7 @@ import {
   type Timeline,
 } from "@/components/products/scenario";
 import { pathFromHomeChoice } from "./homeIdle";
+import { isUnreadNote } from "@/lib/docs/accept";
 import {
   AMOUNT_HELPER_BUBBLES,
   AMOUNT_PURPOSE_BUBBLES,
@@ -1502,7 +1503,13 @@ export function docReactionAsk(
     };
   }
   if (draft.pendingProposal) return liveProposalAsk(draft, draft.pendingProposal, cls);
-  if (cls === "government_id") return identityReactionAsk(draft);
+  if (cls === "government_id") {
+    const unreadId = [...draft.documents].reverse().find(
+      (doc) => doc.extractClass === "government_id" || doc.slot === "id",
+    );
+    if (unreadId && isUnreadNote(unreadId.note)) return null;
+    return identityReactionAsk(draft);
+  }
   if (draft.awaitingPayFrequency) return payFrequencyAsk();
   return null;
 }

@@ -3,12 +3,14 @@ import { createOpenAI } from "@ai-sdk/openai";
 import {
   EXTRACT_SCHEMA_KEYS,
   LOW_EXTRACT_CONFIDENCE,
+  hasLockedSuggestion,
+  preferFilenameClass,
   promoteExtractClass,
   sanitizeExtractedFields,
   type ExtractApplyInput,
 } from "@/components/fox/fileWrite";
 import type { ExtractClass } from "@/components/fox/types";
-import { isPdf, readPdfEmbeddedImages } from "@/lib/docs/pdfText";
+import { isPdf, pdfTextLayerCharCount, readPdfEmbeddedImages } from "@/lib/docs/pdfText";
 import { readPrintedSample } from "@/lib/docs/printedSample";
 
 export type ClassifyResult = {
@@ -346,6 +348,20 @@ function printedResult(printed: NonNullable<ReturnType<typeof readPrintedSample>
   };
 }
 
+function unreadResult(
+  extractClass: ExtractClass,
+  filename?: string | null,
+  extraWarning?: string,
+): ClassifyExtractResult {
+  return {
+    extractClass: preferFilenameClass(extractClass, filename ?? ""),
+    confidence: 0,
+    fields: {},
+    warnings: extraWarning ? ["failed", extraWarning] : ["failed"],
+    failed: true,
+  };
+}
+
 function normalizeClassifyResult(classified: ClassifyResult): ClassifyResult {
   return {
     ...classified,
@@ -407,26 +423,41 @@ export async function classifyAndExtract(
   mediaType: string,
   adapter: DocumentExtractAdapter = grokExtractAdapter,
   hint?: ExtractClass | null,
-  _filename?: string | null,
+  filename?: string | null,
 ): Promise<ClassifyExtractResult> {
   const printed = readPrintedSample(bytes);
-  if (printed) return printedResult(printed);
+  if (printed && hasLockedSuggestion(printed.extractClass, printed.fields)) {
+    return printedResult(printed);
+  }
   if (isPdf(bytes) || mediaType === "application/pdf") {
+    const charCount = pdfTextLayerCharCount(bytes);
+    if (charCount > 0) {
+      return unreadResult(printed?.extractClass ?? "other", filename, "unmapped-text");
+    }
     const images = readPdfEmbeddedImages(bytes);
     for (const image of images) {
       const fromPixels = readPrintedSample(image.bytes);
-      if (fromPixels) return printedResult(fromPixels);
+      if (fromPixels && hasLockedSuggestion(fromPixels.extractClass, fromPixels.fields)) {
+        return printedResult(fromPixels);
+      }
     }
     if (images[0]) {
-      return classifyAndExtractPage(images[0].bytes, images[0].mediaType, adapter, hint);
+      const page = await classifyAndExtractPage(images[0].bytes, images[0].mediaType, adapter, hint);
+      const extractClass = preferFilenameClass(page.extractClass, filename ?? "");
+      if (page.failed || !hasLockedSuggestion(extractClass, page.fields)) {
+        return unreadResult(extractClass, filename, "no-text-layer");
+      }
+      return { ...page, extractClass };
     }
-    return {
-      extractClass: "other",
-      confidence: 0,
-      fields: {},
-      warnings: ["failed"],
-      failed: true,
-    };
+    return unreadResult("other", filename, "no-text-layer");
   }
-  return classifyAndExtractPage(bytes, mediaType, adapter, hint);
+  const page = await classifyAndExtractPage(bytes, mediaType, adapter, hint);
+  if (
+    !page.failed &&
+    (page.extractClass === "government_id" || page.extractClass === "paystub" || page.extractClass === "w2") &&
+    !hasLockedSuggestion(page.extractClass, page.fields)
+  ) {
+    return { ...page, failed: true, warnings: [...page.warnings, "failed"] };
+  }
+  return page;
 }

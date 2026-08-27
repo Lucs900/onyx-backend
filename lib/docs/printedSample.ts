@@ -389,17 +389,22 @@ function valueAfter(line: string, label: RegExp) {
 
 function classifyPrintedLines(lines: string[]): ExtractClass | null {
   const blob = lines.join("\n").toUpperCase();
-  if (/\bPAYSTUB\b/.test(blob)) return "paystub";
+  if (/\bPAYSTUB\b|\bPAY STUB\b|EARNINGS STATEMENT|PAY STATEMENT/.test(blob)) return "paystub";
   if (/\bW-?2\b/.test(blob) || /WAGE AND TAX STATEMENT/.test(blob)) return "w2";
   if (/K-?1|1120-?S|FORM 1040|SCHEDULE C/.test(blob)) return "tax_return";
   if (/BANK STATEMENT/.test(blob)) return "bank_statement";
   if (/PURCHASE CONTRACT/.test(blob)) return "purchase_contract";
   if (/MORTGAGE STATEMENT/.test(blob)) return "mortgage_statement";
-  if (/\bDRIVER|PASSPORT|GOVERNMENT ID\b/.test(blob)) return "government_id";
+  if (/\bDRIVER|PASSPORT|GOVERNMENT ID\b|IDENTIFICATION CARD|STATE ID/.test(blob)) {
+    return "government_id";
+  }
   if (/CURRENT P(?:\s*AND\s*I|&I|I)|UNPAID PRINCIPAL|SERVICER:/.test(blob)) {
     return "mortgage_statement";
   }
-  if (/FULL NAME:/.test(blob) && /ID LAST 4|GOVERNMENT ID|DRIVER|PASSPORT/.test(blob)) {
+  if (
+    /(?:FULL NAME|EMPLOYEE NAME|^NAME):/.test(blob) &&
+    /ID LAST 4|GOVERNMENT ID|DRIVER|PASSPORT|IDENTIFICATION/.test(blob)
+  ) {
     return "government_id";
   }
   return null;
@@ -428,18 +433,32 @@ export function fieldsFromPrintedLines(
     if (digits) put(key, digits);
   };
 
-  for (const line of lines) {
-    const hireDate = valueAfter(line, /^(?:HIRE DATE|DATE OF HIRE|START DATE):\s*/i);
+  const labeled = (line: string, next: string, pattern: RegExp) => {
+    const own = valueAfter(line, pattern);
+    if (own) return own;
+    if (!pattern.test(line) || !next) return "";
+    if (/:\s*$/.test(line) && !/^[A-Z][A-Z /]+:/.test(next)) return next.trim();
+    return "";
+  };
+
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i] ?? "";
+    const next = lines[i + 1] ?? "";
+    const hireDate = labeled(line, next, /^(?:HIRE DATE|DATE OF HIRE|START DATE):\s*/i);
     if (hireDate) put("hire_date", hireDate);
-    const employer = valueAfter(line, /^EMPLOYER:\s*/i);
+    const employer = labeled(line, next, /^(?:EMPLOYER NAME|EMPLOYER|COMPANY NAME|COMPANY):\s*/i);
     if (employer) put("employer_name", employer);
-    const periodEnd = valueAfter(line, /^PAY PERIOD END:\s*/i);
+    const periodEnd = labeled(line, next, /^(?:PAY PERIOD END|PERIOD END|PAY DATE|PERIOD ENDING):\s*/i);
     if (periodEnd) put("pay_period_end", periodEnd);
-    const frequency = valueAfter(line, /^PAY FREQUENCY:\s*/i);
+    const frequency = labeled(line, next, /^PAY FREQUENCY:\s*/i);
     if (frequency) put("pay_frequency", frequency.toLowerCase());
-    const gross = valueAfter(line, /^GROSS PERIOD:\s*/i);
+    const gross = labeled(
+      line,
+      next,
+      /^(?:GROSS PERIOD|PERIOD GROSS|GROSS PAY|CURRENT GROSS|THIS PERIOD GROSS):\s*/i,
+    );
     if (gross) putMoney("gross_period", gross);
-    const ytd = valueAfter(line, /^YTD GROSS:\s*/i);
+    const ytd = labeled(line, next, /^(?:YTD GROSS|GROSS YTD|YEAR TO DATE GROSS):\s*/i);
     if (ytd) putMoney("ytd_gross", ytd);
     const net = valueAfter(line, /^NET PERIOD:\s*/i);
     if (net) putMoney("net_period", net);
@@ -455,7 +474,11 @@ export function fieldsFromPrintedLines(
     if (bonus) putMoney("bonus", bonus);
     const commission = valueAfter(line, /^COMMISSION:\s*/i);
     if (commission) putMoney("commission", commission);
-    const wages = valueAfter(line, /^WAGES:\s*/i);
+    const wages = labeled(
+      line,
+      next,
+      /^(?:BOX 1 WAGES|BOX 1|WAGES, TIPS, OTHER COMPENSATION|WAGES):\s*/i,
+    );
     if (wages) putMoney("wages", wages);
     const taxYear = valueAfter(line, /^TAX YEAR:\s*/i);
     if (taxYear) put("tax_year", taxYear.replace(/\D/g, "").slice(0, 4));
@@ -507,7 +530,7 @@ export function fieldsFromPrintedLines(
     }
     const occupancy = valueAfter(line, /^OCCUPANCY:\s*/i);
     if (occupancy) put("occupancy", occupancy.toLowerCase());
-    const fullName = valueAfter(line, /^FULL NAME:\s*/i);
+    const fullName = labeled(line, next, /^(?:FULL NAME|EMPLOYEE NAME|NAME):\s*/i);
     if (fullName) put("full_name", fullName);
     const last4 = valueAfter(line, /^ID LAST 4:\s*/i);
     if (last4) put("id_last4", last4);
