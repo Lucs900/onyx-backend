@@ -95,6 +95,7 @@ import {
   type DocIntakeDetail,
 } from "./fileWrite";
 import { DECLINING_INCOME_CAUTION } from "./qualifyingIncome";
+import { isUnreadNote } from "@/lib/docs/accept";
 import { fileExists, finishLineActions, inQueueEnding, reviewIsSitting } from "./motion";
 import { pathFromHomeChoice } from "./homeIdle";
 import {
@@ -702,6 +703,15 @@ export function AlwaysOnFox({
           if (line === DECLINING_INCOME_CAUTION) continue;
           if (isDeadFileWriteLine(line)) continue;
           next.push({ id: newId(), role: "system", text: line });
+        }
+        if (
+          (detail.quietLines ?? []).some((line) => isUnreadNote(line)) &&
+          !detail.conflict &&
+          !getFoxDraft().pendingProposal &&
+          !getFoxDraft().pendingConflict &&
+          !getFoxDraft().awaitingPayFrequency
+        ) {
+          return next;
         }
         if (detail.conflict) {
           next.push(

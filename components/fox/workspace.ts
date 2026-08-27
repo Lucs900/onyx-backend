@@ -12,6 +12,7 @@ import {
   type Timeline,
 } from "@/components/products/scenario";
 import { pathFromHomeChoice } from "./homeIdle";
+import { isUnreadNote } from "@/lib/docs/accept";
 import {
   AMOUNT_HELPER_BUBBLES,
   AMOUNT_PURPOSE_BUBBLES,
@@ -1458,8 +1459,22 @@ function liveProposalAsk(
     if (scheduleCYearViews(draft).length) return incomeReactionAsk(draft, proposal);
     if (hasK1Ordinary(draft)) return k1ReactionAsk(draft, proposal);
     const cls = extractClass ?? lastExtractedClass(draft);
-    if (cls === "paystub" || cls === "w2" || factValue(draft, "gross_period") || factValue(draft, "wages")) {
-      return wageReactionAsk(draft, proposal, cls);
+    const pendingPay = (proposal.extras ?? []).some(
+      (item) =>
+        item.field === "gross_period" ||
+        item.field === "ytd_gross" ||
+        item.field === "wages" ||
+        item.field === "employer_name" ||
+        item.field === "pay_period_end",
+    );
+    if (
+      cls === "paystub" ||
+      cls === "w2" ||
+      factValue(draft, "gross_period") ||
+      factValue(draft, "wages") ||
+      pendingPay
+    ) {
+      return wageReactionAsk(draft, proposal, cls ?? "paystub");
     }
   }
   const caution =
@@ -1488,7 +1503,13 @@ export function docReactionAsk(
     };
   }
   if (draft.pendingProposal) return liveProposalAsk(draft, draft.pendingProposal, cls);
-  if (cls === "government_id") return identityReactionAsk(draft);
+  if (cls === "government_id") {
+    const unreadId = [...draft.documents].reverse().find(
+      (doc) => doc.extractClass === "government_id" || doc.slot === "id",
+    );
+    if (unreadId && isUnreadNote(unreadId.note)) return null;
+    return identityReactionAsk(draft);
+  }
   if (draft.awaitingPayFrequency) return payFrequencyAsk();
   return null;
 }
@@ -5997,6 +6018,8 @@ export function previewFacts(draft: FoxIntakeDraft): PreviewFact[] {
   const employer = factValue(draft, "employer_name");
   const employerProposal =
     draft.pendingProposal?.field === "employer_name" ? draft.pendingProposal : null;
+  const employerExtra =
+    draft.pendingProposal?.extras?.find((item) => item.field === "employer_name")?.value ?? "";
   if (employer) {
     facts.push({
       id: "employer",
@@ -6012,7 +6035,14 @@ export function previewFacts(draft: FoxIntakeDraft): PreviewFact[] {
       note:
         employerProposal.kind === "public"
           ? SUGGESTED_NOTE
-          : employerProposal.note ?? SUGGESTED_NOTE,
+          : employerProposal.note ?? SUGGESTED_BORROWER_NOTE,
+    });
+  } else if (employerExtra) {
+    facts.push({
+      id: "employer",
+      label: "Employer",
+      value: employerExtra,
+      note: SUGGESTED_BORROWER_NOTE,
     });
   }
   const qualifying = qualifyingIncomeDisplay(draft);
@@ -6032,11 +6062,17 @@ export function previewFacts(draft: FoxIntakeDraft): PreviewFact[] {
       value: yearsInBusiness,
     });
   }
-  const periodPay = factValue(draft, "gross_period");
-  const ytdPay = factValue(draft, "ytd_gross");
-  const wages = factValue(draft, "wages");
+  const pendingExtra = (field: string) =>
+    draft.pendingProposal?.field === field
+      ? draft.pendingProposal.value
+      : draft.pendingProposal?.extras?.find((item) => item.field === field)?.value ?? "";
+  const periodPay = factValue(draft, "gross_period") || pendingExtra("gross_period");
+  const ytdPay = factValue(draft, "ytd_gross") || pendingExtra("ytd_gross");
+  const wages = factValue(draft, "wages") || pendingExtra("wages");
+  const payDate = factValue(draft, "pay_period_end") || pendingExtra("pay_period_end");
   const agi = factValue(draft, "agi");
   const payBits = [
+    payDate ? `Date ${displayFactValue("pay_period_end", payDate)}` : "",
     periodPay ? `Period ${displayFactValue("gross_period", periodPay)}` : "",
     ytdPay ? `YTD ${displayFactValue("ytd_gross", ytdPay)}` : "",
     !periodPay && !ytdPay && wages ? `Wages ${displayFactValue("wages", wages)}` : "",

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { slotForExtractClass } from "@/components/fox/fileWrite";
-import { FAILED_READ_NOTE, RECEIVED_NOTE, mediaTypeOf } from "@/lib/docs/accept";
+import { FAILED_READ_NOTE, NO_TEXT_LAYER_NOTE, RECEIVED_NOTE, mediaTypeOf } from "@/lib/docs/accept";
 import { classifyAndExtract, grokExtractAdapter } from "@/lib/docs/extract";
 import { readPrivateBytes, storageStatus, STORAGE_BLOCKED } from "@/lib/docs/storage";
 
@@ -101,7 +101,9 @@ function extractJson(
     slot: slotForExtractClass(extractClass),
     source,
     note: failed
-      ? FAILED_READ_NOTE
+      ? extracted.warnings.includes("no-text-layer")
+        ? NO_TEXT_LAYER_NOTE
+        : FAILED_READ_NOTE
       : extracted.extractClass === "other" || !Object.keys(extracted.fields).length
         ? RECEIVED_NOTE
         : undefined,
@@ -135,7 +137,13 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Missing file" }, { status: 400 });
     }
     const mediaType = mediaTypeOf(loaded.name, loaded.type);
-    const extracted = await classifyAndExtract(loaded.bytes, mediaType, grokExtractAdapter);
+    const extracted = await classifyAndExtract(
+      loaded.bytes,
+      mediaType,
+      grokExtractAdapter,
+      null,
+      loaded.name,
+    );
     return NextResponse.json(extractJson(extracted, loaded.source));
   } catch (error) {
     const message = error instanceof Error ? error.message : "Extract failed";

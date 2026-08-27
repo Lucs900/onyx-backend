@@ -17,7 +17,12 @@ export const REJECT_LINE = "Use a PDF, JPEG, PNG, HEIC, or WebP under 15 MB.";
 export const LIMIT_LINE = "Ten files is the limit.";
 export const FAILED_READ_NOTE =
   "Fox could not read this file. Type a note or skip. No dollar amounts were invented.";
+export const NO_TEXT_LAYER_NOTE = "This file has no text layer. Type a note or Skip.";
 export const RECEIVED_NOTE = "Document received";
+
+export function isUnreadNote(note?: string | null) {
+  return note === FAILED_READ_NOTE || note === NO_TEXT_LAYER_NOTE;
+}
 
 export const ACCEPT_ATTR =
   ".pdf,.jpg,.jpeg,.png,.heic,.heif,.webp,application/pdf,image/jpeg,image/png,image/heic,image/heif,image/webp";

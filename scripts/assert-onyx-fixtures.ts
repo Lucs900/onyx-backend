@@ -118,6 +118,21 @@ export function assertOnyxFixtures() {
     "expected scripts/fixtures/government-id-jordan.png",
   );
   assert.ok(
+    paths.some((path) => /government-id-jordan\.pdf$/.test(path)),
+    "expected scripts/fixtures/government-id-jordan.pdf",
+  );
+  assert.ok(paths.some((path) => /paystub-acme\.pdf$/.test(path)), "expected scripts/fixtures/paystub-acme.pdf");
+  assert.ok(
+    paths.some((path) => /paystub-ot-bonus-2026\.pdf$/.test(path)),
+    "expected scripts/fixtures/paystub-ot-bonus-2026.pdf",
+  );
+  assert.ok(
+    paths.some((path) => /paystub-bonus-declining-2026\.pdf$/.test(path)),
+    "expected scripts/fixtures/paystub-bonus-declining-2026.pdf",
+  );
+  assert.ok(paths.some((path) => /w2-ot-bonus-2025\.pdf$/.test(path)), "expected scripts/fixtures/w2-ot-bonus-2025.pdf");
+  assert.ok(paths.some((path) => /w2-bonus-2025\.pdf$/.test(path)), "expected scripts/fixtures/w2-bonus-2025.pdf");
+  assert.ok(
     paths.some((path) => /bank-statement-sabotage\.png$/.test(path)),
     "expected scripts/fixtures/bank-statement-sabotage.png",
   );
