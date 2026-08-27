@@ -101,7 +101,7 @@ import {
   writeQualifyingIncome,
   writeYearsInBusiness,
 } from "./completeness";
-import { applyBothMonthlyReasonAnswer, applyPayFrequencyAnswer } from "./qualifyingIncome";
+import { applyBothMonthlyReasonAnswer, applyPayFrequencyAnswer, applyRaiseWhenAnswer, applyRaiseYtdFarAnswer } from "./qualifyingIncome";
 import {
   skipEstimatedHousing,
   syncCalculatorDraft,
@@ -318,6 +318,8 @@ export function emptyDraft(): FoxIntakeDraft {
     emailSkipped: false,
     awaitingPayFrequency: false,
     awaitingBothMonthlyReason: false,
+    awaitingRaiseWhen: false,
+    awaitingRaiseYtdFar: false,
     facts: {},
     pendingConflict: null,
     skippedClasses: [],
@@ -567,6 +569,9 @@ function normalize(value: unknown): FoxIntakeDraft {
     awaitingYearsInBusiness: Boolean(raw.awaitingYearsInBusiness),
     awaitingPayFrequency: Boolean(raw.awaitingPayFrequency),
     awaitingBothMonthlyReason: Boolean(raw.awaitingBothMonthlyReason),
+    awaitingRaiseWhen: Boolean(raw.awaitingRaiseWhen),
+    awaitingRaiseYtdFar: Boolean(raw.awaitingRaiseYtdFar),
+    raiseWhenRaw: typeof raw.raiseWhenRaw === "string" ? raw.raiseWhenRaw : undefined,
     bothMonthlyReason:
       raw.bothMonthlyReason === "raise" ||
       raw.bothMonthlyReason === "overtime-bonus" ||
@@ -1807,6 +1812,13 @@ function applyCaptureBody(capture: Capture) {
   }
   if (capture.field === "bothMonthlyReason") {
     return commit(applyBothMonthlyReasonAnswer(current, capture.value));
+  }
+  if (capture.field === "raiseWhen") {
+    return commit(
+      current.awaitingRaiseYtdFar
+        ? applyRaiseYtdFarAnswer(current, capture.value)
+        : applyRaiseWhenAnswer(current, capture.value),
+    );
   }
   if (capture.field === "accept-proposal") {
     return commit(resolveProposal(current, "accept"));

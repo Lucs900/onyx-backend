@@ -710,7 +710,9 @@ export function AlwaysOnFox({
           !getFoxDraft().pendingProposal &&
           !getFoxDraft().pendingConflict &&
           !getFoxDraft().awaitingPayFrequency &&
-          !getFoxDraft().awaitingBothMonthlyReason
+          !getFoxDraft().awaitingBothMonthlyReason &&
+          !getFoxDraft().awaitingRaiseWhen &&
+          !getFoxDraft().awaitingRaiseYtdFar
         ) {
           return next;
         }
@@ -725,7 +727,9 @@ export function AlwaysOnFox({
           getFoxDraft().pendingProposal ||
           getFoxDraft().pendingConflict ||
           getFoxDraft().awaitingPayFrequency ||
-          getFoxDraft().awaitingBothMonthlyReason
+          getFoxDraft().awaitingBothMonthlyReason ||
+          getFoxDraft().awaitingRaiseWhen ||
+          getFoxDraft().awaitingRaiseYtdFar
         ) {
           const live = getFoxDraft();
           const reaction = docReactionAsk(live, detail.extractClass);
@@ -869,7 +873,9 @@ export function AlwaysOnFox({
         shouldDeferStillUsefulAsk(live) &&
         prompt !== "confirm-proposal" &&
         prompt !== "pay-frequency" &&
-        prompt !== "both-monthly-reason"
+        prompt !== "both-monthly-reason" &&
+        prompt !== "raise-when" &&
+        prompt !== "raise-ytd-far"
       ) {
         return prev;
       }

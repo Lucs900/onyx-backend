@@ -17,6 +17,11 @@ export const BOTH_MONTHLY_OT_NOTE =
   "Overtime or bonus on the stub. Using W-2 Box 1 until a second year or a split stub is in.";
 export const BOTH_MONTHLY_SECOND_JOB_NOTE =
   "They said a second job. Using W-2 Box 1 until that job is documented.";
+export const RAISE_WHEN_ASK = "About when did that become base pay?";
+export const RAISE_YTD_MISSING_NOTE = "Cannot weight without YTD.";
+export const RAISE_WHEN_UNKNOWN_NOTE = "Using W-2 Box 1 until we can weight the raise.";
+export const RAISE_MONTH_MISSING_NOTE = "Cannot weight without a raise month.";
+export const RAISE_YTD_CLOSE_RATIO = 0.1;
 export const DECLINING_INCOME_CAUTION = "Income is lower this year. I’m using the later year.";
 export const DECLINING_YEAR_RATIO = 0.9;
 export const YTD_CONFLICT_CAUTION =
@@ -41,6 +46,12 @@ export type QualifyingMethod =
   | "combined";
 
 export type BothMonthlyReason = "raise" | "overtime-bonus" | "second-job" | "skip";
+export type RaiseWhenKind = "this-year" | "last-year" | "not-sure" | "month";
+export type RaiseWhen = {
+  kind: RaiseWhenKind;
+  month?: number;
+  label: string;
+};
 
 /** Extracted Schedule C add-backs. Extra lines stay unused unless printed. */
 export type ScheduleCAddBacks = {
@@ -65,8 +76,12 @@ export type IncomeSuggestResult = {
   methodNote?: string;
   needsFrequency?: boolean;
   needsBothReason?: boolean;
+  needsRaiseWhen?: boolean;
+  needsRaiseYtdFar?: boolean;
   stubMonthly?: number;
   w2Monthly?: number;
+  expectedYtd?: number;
+  weightNote?: string;
   partialNotes?: string[];
   parts?: { wage?: number; scheduleC?: number; k1?: number };
 };
@@ -414,6 +429,271 @@ export function parseBothMonthlyReason(raw: string): BothMonthlyReason | null {
     return "raise";
   }
   return null;
+}
+
+const MONTH_ROWS: { n: number; long: string; short: string; aliases: string[] }[] = [
+  { n: 1, long: "January", short: "Jan", aliases: ["january", "jan"] },
+  { n: 2, long: "February", short: "Feb", aliases: ["february", "feb"] },
+  { n: 3, long: "March", short: "Mar", aliases: ["march", "mar"] },
+  { n: 4, long: "April", short: "Apr", aliases: ["april", "apr"] },
+  { n: 5, long: "May", short: "May", aliases: ["may"] },
+  { n: 6, long: "June", short: "Jun", aliases: ["june", "jun"] },
+  { n: 7, long: "July", short: "Jul", aliases: ["july", "jul"] },
+  { n: 8, long: "August", short: "Aug", aliases: ["august", "aug"] },
+  { n: 9, long: "September", short: "Sep", aliases: ["september", "sep", "sept"] },
+  { n: 10, long: "October", short: "Oct", aliases: ["october", "oct"] },
+  { n: 11, long: "November", short: "Nov", aliases: ["november", "nov"] },
+  { n: 12, long: "December", short: "Dec", aliases: ["december", "dec"] },
+];
+
+export function monthShortName(month: number): string {
+  return MONTH_ROWS.find((row) => row.n === month)?.short ?? String(month);
+}
+
+export function monthLongName(month: number): string {
+  return MONTH_ROWS.find((row) => row.n === month)?.long ?? String(month);
+}
+
+function monthRangeLabel(start: number, end: number): string {
+  if (start === end) return monthShortName(start);
+  return `${monthShortName(start)}–${monthShortName(end)}`;
+}
+
+export function parseMonthNumber(raw: string): number | null {
+  const v = String(raw ?? "").trim().toLowerCase();
+  if (!v) return null;
+  const iso = v.match(/(?:^|[^\d])(?:20\d{2}[-/])?(\d{1,2})(?:[/-]\d{1,2}(?:[/-]\d{2,4})?)?(?:[^\d]|$)/);
+  const named = MONTH_ROWS.find((row) => row.aliases.some((alias) => new RegExp(`\\b${alias}\\b`, "i").test(v)));
+  if (named) return named.n;
+  if (iso) {
+    const n = Number(iso[1]);
+    if (n >= 1 && n <= 12) return n;
+  }
+  const only = v.match(/^(\d{1,2})$/);
+  if (only) {
+    const n = Number(only[1]);
+    return n >= 1 && n <= 12 ? n : null;
+  }
+  return null;
+}
+
+export function parseRaiseWhen(raw: string): RaiseWhen | null {
+  const v = String(raw ?? "").trim().toLowerCase();
+  if (!v) return null;
+  if (v === "this-year" || v === "this year") return { kind: "this-year", label: "this year" };
+  if (v === "last-year" || v === "last year") return { kind: "last-year", label: "last year" };
+  if (v === "not-sure" || v === "not sure") return { kind: "not-sure", label: "not sure" };
+  if (/\b(skip|later|not sure|idk|pass|don.?t know|no idea|unknown)\b/.test(v)) {
+    return { kind: "not-sure", label: "not sure" };
+  }
+  const month = parseMonthNumber(v);
+  if (month != null) {
+    if (/\blast year\b/.test(v)) return { kind: "last-year", month, label: "last year" };
+    return { kind: "month", month, label: monthLongName(month) };
+  }
+  if (/\bthis year\b/.test(v)) return { kind: "this-year", label: "this year" };
+  if (/\blast year\b/.test(v)) return { kind: "last-year", label: "last year" };
+  return null;
+}
+
+export function raiseWeightMonths(
+  raiseMonth: number,
+  stubMonth: number,
+): { oldMonths: number; newMonths: number } | null {
+  if (raiseMonth < 1 || raiseMonth > 12 || stubMonth < 1 || stubMonth > 12) return null;
+  if (raiseMonth > stubMonth) return null;
+  return { oldMonths: raiseMonth - 1, newMonths: stubMonth - raiseMonth + 1 };
+}
+
+export function expectedRaiseYtd(
+  oldMonthly: number,
+  newMonthly: number,
+  oldMonths: number,
+  newMonths: number,
+): number {
+  return oldMonthly * oldMonths + newMonthly * newMonths;
+}
+
+export function raiseWeightNote(
+  oldMonthly: number,
+  newMonthly: number,
+  raiseMonth: number,
+  stubMonth: number,
+): string | undefined {
+  const split = raiseWeightMonths(raiseMonth, stubMonth);
+  if (!split) return undefined;
+  const bits: string[] = [];
+  if (split.oldMonths > 0) {
+    bits.push(`${monthRangeLabel(1, split.oldMonths)} at ${formatSuggestMoney(oldMonthly)}`);
+  }
+  if (split.newMonths > 0) {
+    bits.push(`${monthRangeLabel(raiseMonth, stubMonth)} at ${formatSuggestMoney(newMonthly)}`);
+  }
+  return bits.length ? bits.join(" · ") : undefined;
+}
+
+export function raiseYtdIsClose(actual: number, expected: number): boolean {
+  if (expected <= 0 || !Number.isFinite(actual) || !Number.isFinite(expected)) return false;
+  return Math.abs(actual - expected) / expected <= RAISE_YTD_CLOSE_RATIO;
+}
+
+export function raiseYtdSupportsNote(whenLabel: string): string {
+  return `YTD supports raise as of ${whenLabel}.`;
+}
+
+export function raiseYtdFarAskCopy(whenLabel: string): string {
+  return `YTD doesn’t support a raise as of ${whenLabel}. What’s on the stub besides the new base?`;
+}
+
+export function raiseYtdFarNote(whenLabel: string): string {
+  return `YTD doesn’t support a raise as of ${whenLabel}.`;
+}
+
+function withBothAndWeight(stubMonthly: number, w2Monthly: number, weightNote?: string): string {
+  return [bothMonthlyMethodNote(stubMonthly, w2Monthly), weightNote].filter(Boolean).join(" · ");
+}
+
+/** After Raise / new base + when. YTD weight only. No silent lower-of. */
+export function proposeRaiseWeightedIncome(input: {
+  stubMonthly: number;
+  w2Monthly: number;
+  when: RaiseWhen;
+  ytdGross?: number | null;
+  stubMonth?: number | null;
+}): IncomeSuggestResult {
+  const stubMonthly = input.stubMonthly;
+  const w2Monthly = input.w2Monthly;
+  const ytd = usableMonthly(input.ytdGross);
+  const stubMonth = input.stubMonth ?? null;
+  const both = bothMonthlyMethodNote(stubMonthly, w2Monthly);
+
+  if (input.when.kind === "not-sure") {
+    return {
+      monthly: w2Monthly,
+      method: "w2-annual",
+      methodNote: both,
+      caution: RAISE_WHEN_UNKNOWN_NOTE,
+      stubMonthly,
+      w2Monthly,
+    };
+  }
+
+  if (input.when.kind === "last-year") {
+    if (ytd == null || stubMonth == null || stubMonth <= 0) {
+      return {
+        monthly: w2Monthly,
+        method: "w2-annual",
+        methodNote: both,
+        caution: RAISE_YTD_MISSING_NOTE,
+        stubMonthly,
+        w2Monthly,
+      };
+    }
+    const expected = stubMonthly * stubMonth;
+    if (raiseYtdIsClose(ytd, expected)) {
+      return {
+        monthly: stubMonthly,
+        method: "period-frequency",
+        methodNote: both,
+        caution: raiseYtdSupportsNote(input.when.label),
+        stubMonthly,
+        w2Monthly,
+        expectedYtd: expected,
+      };
+    }
+    return {
+      monthly: 0,
+      method: "both-ask",
+      methodNote: both,
+      caution: raiseYtdFarNote(input.when.label),
+      needsRaiseYtdFar: true,
+      stubMonthly,
+      w2Monthly,
+      expectedYtd: expected,
+    };
+  }
+
+  if (input.when.kind === "month" && input.when.month != null && stubMonth != null) {
+    const split = raiseWeightMonths(input.when.month, stubMonth);
+    const weightNote = raiseWeightNote(w2Monthly, stubMonthly, input.when.month, stubMonth);
+    if (!split) {
+      if (ytd == null) {
+        return {
+          monthly: stubMonthly,
+          method: "period-frequency",
+          methodNote: withBothAndWeight(stubMonthly, w2Monthly, weightNote),
+          caution: RAISE_YTD_MISSING_NOTE,
+          stubMonthly,
+          w2Monthly,
+          weightNote,
+        };
+      }
+      return {
+        monthly: stubMonthly,
+        method: "period-frequency",
+        methodNote: withBothAndWeight(stubMonthly, w2Monthly, weightNote),
+        caution: RAISE_MONTH_MISSING_NOTE,
+        stubMonthly,
+        w2Monthly,
+        weightNote,
+      };
+    }
+    const expected = expectedRaiseYtd(w2Monthly, stubMonthly, split.oldMonths, split.newMonths);
+    if (ytd == null) {
+      return {
+        monthly: stubMonthly,
+        method: "period-frequency",
+        methodNote: withBothAndWeight(stubMonthly, w2Monthly, weightNote),
+        caution: RAISE_YTD_MISSING_NOTE,
+        stubMonthly,
+        w2Monthly,
+        expectedYtd: expected,
+        weightNote,
+      };
+    }
+    if (raiseYtdIsClose(ytd, expected)) {
+      return {
+        monthly: stubMonthly,
+        method: "period-frequency",
+        methodNote: withBothAndWeight(stubMonthly, w2Monthly, weightNote),
+        caution: raiseYtdSupportsNote(input.when.label),
+        stubMonthly,
+        w2Monthly,
+        expectedYtd: expected,
+        weightNote,
+      };
+    }
+    return {
+      monthly: 0,
+      method: "both-ask",
+      methodNote: withBothAndWeight(stubMonthly, w2Monthly, weightNote),
+      caution: raiseYtdFarNote(input.when.label),
+      needsRaiseYtdFar: true,
+      stubMonthly,
+      w2Monthly,
+      expectedYtd: expected,
+      weightNote,
+    };
+  }
+
+  if (ytd == null) {
+    return {
+      monthly: stubMonthly,
+      method: "period-frequency",
+      methodNote: both,
+      caution: RAISE_YTD_MISSING_NOTE,
+      stubMonthly,
+      w2Monthly,
+    };
+  }
+  return {
+    monthly: stubMonthly,
+    method: "period-frequency",
+    methodNote: both,
+    caution: RAISE_MONTH_MISSING_NOTE,
+    stubMonthly,
+    w2Monthly,
+  };
 }
 
 function confirmedPayFrequency(input: WageSuggestInput): ConventionalPayFrequency | null {

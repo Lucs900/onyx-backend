@@ -403,6 +403,9 @@ export type FoxIntakeDraft = {
   awaitingPayFrequency?: boolean;
   awaitingBothMonthlyReason?: boolean;
   bothMonthlyReason?: "raise" | "overtime-bonus" | "second-job" | "skip";
+  awaitingRaiseWhen?: boolean;
+  awaitingRaiseYtdFar?: boolean;
+  raiseWhenRaw?: string;
   facts?: Record<string, DraftField>;
   pendingConflict?: FactConflict | null;
   unresolvedConflict?: boolean;
@@ -465,6 +468,8 @@ export type FoxPrompt =
   | "confirm-proposal"
   | "pay-frequency"
   | "both-monthly-reason"
+  | "raise-when"
+  | "raise-ytd-far"
   | "qualifying"
   | "years-in-business"
   | "over-price"
@@ -558,6 +563,7 @@ export type Capture =
   | { field: "decline-proposal" }
   | { field: "payFrequency"; value: string }
   | { field: "bothMonthlyReason"; value: string }
+  | { field: "raiseWhen"; value: string }
   | { field: "yearsInBusiness"; value: string }
   | { field: "skip-years-in-business" }
   | { field: "qualifyingIncome"; value: string }

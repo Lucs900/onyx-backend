@@ -16,7 +16,13 @@ import {
   bothMonthlyMethodNote,
   bothMonthlyReasonNote,
   parseBothMonthlyReason,
+  parseRaiseWhen,
   proposeBothMonthlyIncome,
+  proposeRaiseWeightedIncome,
+  raiseYtdFarAskCopy,
+  RAISE_WHEN_ASK,
+  RAISE_YTD_MISSING_NOTE,
+  RAISE_WHEN_UNKNOWN_NOTE,
   k1OrdinaryMonthly,
   laterYearIsMateriallyLower,
   monthlyFromAnnual,
@@ -30,6 +36,7 @@ import {
   yearNumber,
   type BothMonthlyReason,
   type QualifyingMethod,
+  type RaiseWhen,
   type ScheduleCYearInput,
   type WageSuggestInput,
   type WageYearInput,
@@ -52,7 +59,13 @@ export {
   bothMonthlyMethodNote,
   bothMonthlyReasonNote,
   parseBothMonthlyReason,
+  parseRaiseWhen,
   proposeBothMonthlyIncome,
+  proposeRaiseWeightedIncome,
+  raiseYtdFarAskCopy,
+  RAISE_WHEN_ASK,
+  RAISE_YTD_MISSING_NOTE,
+  RAISE_WHEN_UNKNOWN_NOTE,
   k1OrdinaryMonthly,
   monthlyFromAnnual,
   monthsThroughPeriodEnd,
@@ -64,7 +77,7 @@ export {
   suggestWageIncome,
   yearNumber,
 };
-export type { BothMonthlyReason, QualifyingMethod, ScheduleCYearInput, WageSuggestInput, WageYearInput };
+export type { BothMonthlyReason, QualifyingMethod, RaiseWhen, ScheduleCYearInput, WageSuggestInput, WageYearInput };
 
 export const QUALIFYING_INCOME_FIELD = "qualifying_income";
 export const TAX_CASHFLOWS_FIELD = "tax_cashflows";
@@ -103,8 +116,12 @@ export type QualifyingIncomeResult = {
   methodNote?: string;
   needsFrequency?: boolean;
   needsBothReason?: boolean;
+  needsRaiseWhen?: boolean;
+  needsRaiseYtdFar?: boolean;
   stubMonthly?: number;
   w2Monthly?: number;
+  expectedYtd?: number;
+  weightNote?: string;
   partialNotes?: string[];
   parts?: { wage?: number; scheduleC?: number; k1?: number };
 };
@@ -806,6 +823,20 @@ export function enterBothMonthlyAsk(draft: FoxIntakeDraft): FoxIntakeDraft {
   return {
     ...clearQualifyingIncome(draft),
     awaitingBothMonthlyReason: true,
+    awaitingRaiseWhen: false,
+    awaitingRaiseYtdFar: false,
+    awaitingPayFrequency: false,
+    pendingProposal: null,
+    pendingConflict: existingMonthlyIncome(draft)?.via === QUALIFYING_INCOME_FIELD ? null : draft.pendingConflict,
+  };
+}
+
+export function enterRaiseWhenAsk(draft: FoxIntakeDraft): FoxIntakeDraft {
+  return {
+    ...clearQualifyingIncome(draft),
+    awaitingBothMonthlyReason: false,
+    awaitingRaiseWhen: true,
+    awaitingRaiseYtdFar: false,
     awaitingPayFrequency: false,
     pendingProposal: null,
     pendingConflict: existingMonthlyIncome(draft)?.via === QUALIFYING_INCOME_FIELD ? null : draft.pendingConflict,
@@ -841,6 +872,65 @@ export function bothMonthlyDisplay(draft: FoxIntakeDraft): string | null {
   return bothMonthlyMethodNote(pair.stub, pair.w2);
 }
 
+function stubYtdGross(draft: FoxIntakeDraft): number | null {
+  const fromFact = parseExtractMoney(factValue(draft, "ytd_gross"));
+  if (fromFact != null) return fromFact;
+  for (const job of readWageJobs(draft)) {
+    const ytd = parseExtractMoney(job.ytd_gross);
+    if (ytd != null) return ytd;
+  }
+  const extra = draft.pendingProposal?.extras?.find((item) => item.field === "ytd_gross");
+  return extra ? parseExtractMoney(extra.value) : null;
+}
+
+function stubPeriodEnd(draft: FoxIntakeDraft): string | null {
+  const fromFact = factValue(draft, "pay_period_end");
+  if (fromFact) return fromFact;
+  for (const job of readWageJobs(draft)) {
+    if (job.pay_period_end) return job.pay_period_end;
+  }
+  const extra = draft.pendingProposal?.extras?.find((item) => item.field === "pay_period_end");
+  return extra?.value || null;
+}
+
+function applyRaiseProposal(
+  draft: FoxIntakeDraft,
+  proposed: ReturnType<typeof proposeRaiseWeightedIncome>,
+  pair: { stub: number; w2: number },
+  raiseWhenRaw: string,
+): FoxIntakeDraft {
+  const next = writeConfirmedIncomeFact(
+    {
+      ...draft,
+      awaitingBothMonthlyReason: false,
+      awaitingRaiseWhen: false,
+      awaitingRaiseYtdFar: Boolean(proposed.needsRaiseYtdFar),
+      bothMonthlyReason: "raise",
+      raiseWhenRaw,
+      pendingConflict: null,
+      pendingProposal: proposed.needsRaiseYtdFar ? null : draft.pendingProposal,
+    },
+    INCOME_CAUTION_FIELD,
+    proposed.caution ?? RAISE_YTD_MISSING_NOTE,
+    "suggested",
+  );
+  if (proposed.needsRaiseYtdFar) {
+    return { ...next, pendingProposal: null };
+  }
+  return withQualifyingIncomeProposal(next, {
+    monthly: proposed.monthly,
+    basis: "wage",
+    method: proposed.method,
+    methodNote: proposed.methodNote,
+    caution: proposed.caution,
+    stubMonthly: pair.stub,
+    w2Monthly: pair.w2,
+    expectedYtd: proposed.expectedYtd,
+    weightNote: proposed.weightNote,
+    parts: { wage: proposed.monthly },
+  });
+}
+
 export function applyBothMonthlyReasonAnswer(
   draft: FoxIntakeDraft,
   raw: string,
@@ -851,11 +941,21 @@ export function applyBothMonthlyReasonAnswer(
   if (!pair) {
     return { ...draft, awaitingBothMonthlyReason: false };
   }
+  if (reason === "raise") {
+    return enterRaiseWhenAsk({
+      ...draft,
+      bothMonthlyReason: "raise",
+      raiseWhenRaw: undefined,
+      pendingConflict: null,
+    });
+  }
   const proposed = proposeBothMonthlyIncome(pair.stub, pair.w2, reason);
   const next = writeConfirmedIncomeFact(
     {
       ...draft,
       awaitingBothMonthlyReason: false,
+      awaitingRaiseWhen: false,
+      awaitingRaiseYtdFar: false,
       bothMonthlyReason: reason,
       pendingConflict: null,
     },
@@ -873,6 +973,65 @@ export function applyBothMonthlyReasonAnswer(
     w2Monthly: pair.w2,
     parts: { wage: proposed.monthly },
   });
+}
+
+export function applyRaiseWhenAnswer(draft: FoxIntakeDraft, raw: string): FoxIntakeDraft {
+  const when = parseRaiseWhen(raw);
+  if (!when) return draft;
+  const pair = bothMonthlyPair(draft);
+  if (!pair) {
+    return { ...draft, awaitingRaiseWhen: false, awaitingRaiseYtdFar: false };
+  }
+  const proposed = proposeRaiseWeightedIncome({
+    stubMonthly: pair.stub,
+    w2Monthly: pair.w2,
+    when,
+    ytdGross: stubYtdGross(draft),
+    stubMonth: monthsThroughPeriodEnd(stubPeriodEnd(draft)),
+  });
+  return applyRaiseProposal(draft, proposed, pair, raw);
+}
+
+export function applyRaiseYtdFarAnswer(draft: FoxIntakeDraft, raw: string): FoxIntakeDraft {
+  const when = parseRaiseWhen(raw);
+  if (when && (when.kind === "month" || when.kind === "this-year" || when.kind === "last-year")) {
+    return applyRaiseWhenAnswer(draft, raw);
+  }
+  const reason = parseBothMonthlyReason(raw);
+  if (when?.kind === "not-sure" || reason === "skip") {
+    const pair = bothMonthlyPair(draft);
+    if (!pair) {
+      return { ...draft, awaitingRaiseYtdFar: false, awaitingRaiseWhen: false };
+    }
+    const next = writeConfirmedIncomeFact(
+      {
+        ...draft,
+        awaitingRaiseYtdFar: false,
+        awaitingRaiseWhen: false,
+        pendingConflict: null,
+      },
+      INCOME_CAUTION_FIELD,
+      draft.facts?.[INCOME_CAUTION_FIELD]?.value || RAISE_WHEN_UNKNOWN_NOTE,
+      "suggested",
+    );
+    return withQualifyingIncomeProposal(next, {
+      monthly: pair.w2,
+      basis: "wage",
+      method: "w2-annual",
+      methodNote: bothMonthlyMethodNote(pair.stub, pair.w2),
+      caution: next.facts?.[INCOME_CAUTION_FIELD]?.value || RAISE_WHEN_UNKNOWN_NOTE,
+      stubMonthly: pair.stub,
+      w2Monthly: pair.w2,
+      parts: { wage: pair.w2 },
+    });
+  }
+  if (reason && reason !== "raise") {
+    return applyBothMonthlyReasonAnswer(
+      { ...draft, awaitingRaiseWhen: false, awaitingRaiseYtdFar: false },
+      reason,
+    );
+  }
+  return draft;
 }
 
 export function applyPayFrequencyAnswer(draft: FoxIntakeDraft, raw: string): FoxIntakeDraft {
@@ -1068,6 +1227,12 @@ export function applyQualifyingIncomeFromExtract(
   }
   if (computed?.needsBothReason) {
     if (next.pendingConflict && existingMonthlyIncome(draft)?.via === "income") return next;
+    if (draft.bothMonthlyReason === "raise" && draft.raiseWhenRaw) {
+      return applyRaiseWhenAnswer(writeBothMonthlies(next, computed), draft.raiseWhenRaw);
+    }
+    if (draft.bothMonthlyReason === "raise") {
+      return enterRaiseWhenAsk(writeBothMonthlies(next, computed));
+    }
     if (draft.bothMonthlyReason) {
       return applyBothMonthlyReasonAnswer(writeBothMonthlies(next, computed), draft.bothMonthlyReason);
     }
@@ -1081,7 +1246,7 @@ export function applyQualifyingIncomeFromExtract(
   }
   next = writeBothMonthlies(next, computed);
   return withQualifyingIncomeProposal(
-    { ...next, awaitingPayFrequency: false, awaitingBothMonthlyReason: false, pendingConflict: existingMonthlyIncome(draft)?.via === QUALIFYING_INCOME_FIELD ? null : next.pendingConflict },
+    { ...next, awaitingPayFrequency: false, awaitingBothMonthlyReason: false, awaitingRaiseWhen: false, awaitingRaiseYtdFar: false, pendingConflict: existingMonthlyIncome(draft)?.via === QUALIFYING_INCOME_FIELD ? null : next.pendingConflict },
     computed,
     extractClass,
   );
@@ -1110,7 +1275,7 @@ function structureQualifyingValue(amount: string, methodNote?: string) {
 }
 
 export function qualifyingIncomeDisplay(draft: FoxIntakeDraft): { value: string; note: string } | null {
-  if (draft.awaitingBothMonthlyReason) return null;
+  if (draft.awaitingBothMonthlyReason || draft.awaitingRaiseWhen || draft.awaitingRaiseYtdFar) return null;
   const proposal =
     draft.pendingProposal?.field === QUALIFYING_INCOME_FIELD ? draft.pendingProposal : null;
   if (proposal) {

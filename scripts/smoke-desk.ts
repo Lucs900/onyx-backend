@@ -66,6 +66,8 @@ import {
   readTaxCashflows,
   applyBothMonthlyReasonAnswer,
   applyPayFrequencyAnswer,
+  applyRaiseWhenAnswer,
+  applyRaiseYtdFarAnswer,
   hasTwoYearWageHistory,
   scheduleCAnnual,
   stableOrDecliningAnnual,
@@ -76,13 +78,22 @@ import {
   SECOND_JOB_SAME_STUB_NOTE,
   SECOND_JOB_THIN_NOTE,
   BOTH_MONTHLY_OT_NOTE,
-  BOTH_MONTHLY_RAISE_NOTE,
   BOTH_MONTHLY_SECOND_JOB_NOTE,
   BOTH_MONTHLY_SKIP_NOTE,
+  RAISE_WHEN_ASK,
+  RAISE_YTD_MISSING_NOTE,
+  RAISE_WHEN_UNKNOWN_NOTE,
   bothMonthlyAskCopy,
   bothMonthlyMethodNote,
+  expectedRaiseYtd,
   parseBothMonthlyReason,
+  parseRaiseWhen,
   proposeBothMonthlyIncome,
+  proposeRaiseWeightedIncome,
+  raiseWeightMonths,
+  raiseWeightNote,
+  raiseYtdFarAskCopy,
+  raiseYtdSupportsNote,
   suggestCombinedIncome,
   suggestScheduleCIncome,
   suggestWageIncome,
@@ -3756,8 +3767,6 @@ assert.equal(moduleHarborBoth?.methodNote, bothMonthlyMethodNote(15167, 7000));
 assert.notEqual(moduleHarborBoth?.monthly, 8107);
 assert.equal(proposeBothMonthlyIncome(15167, 7000, "skip").monthly, 7000);
 assert.equal(proposeBothMonthlyIncome(15167, 7000, "skip").caution, BOTH_MONTHLY_SKIP_NOTE);
-assert.equal(proposeBothMonthlyIncome(15167, 7000, "raise").monthly, 15167);
-assert.equal(proposeBothMonthlyIncome(15167, 7000, "raise").caution, BOTH_MONTHLY_RAISE_NOTE);
 assert.equal(proposeBothMonthlyIncome(15167, 7000, "overtime-bonus").monthly, 7000);
 assert.equal(proposeBothMonthlyIncome(15167, 7000, "overtime-bonus").caution, BOTH_MONTHLY_OT_NOTE);
 assert.equal(proposeBothMonthlyIncome(15167, 7000, "second-job").monthly, 7000);
@@ -3768,6 +3777,64 @@ assert.equal(parseBothMonthlyReason("that's my base now"), "raise");
 assert.equal(parseBothMonthlyReason("overtime / bonus"), "overtime-bonus");
 assert.equal(parseBothMonthlyReason("second job"), "second-job");
 assert.equal(parseBothMonthlyReason("I don't know"), "skip");
+assert.deepEqual(parseRaiseWhen("This year"), { kind: "this-year", label: "this year" });
+assert.deepEqual(parseRaiseWhen("Last year"), { kind: "last-year", label: "last year" });
+assert.deepEqual(parseRaiseWhen("Not sure"), { kind: "not-sure", label: "not sure" });
+assert.deepEqual(parseRaiseWhen("not-sure"), { kind: "not-sure", label: "not sure" });
+assert.deepEqual(parseRaiseWhen("March"), { kind: "month", month: 3, label: "March" });
+assert.deepEqual(raiseWeightMonths(3, 7), { oldMonths: 2, newMonths: 5 });
+assert.equal(expectedRaiseYtd(7000, 15167, 2, 5), 89835);
+assert.equal(raiseWeightNote(7000, 15167, 3, 7), "Jan–Feb at $7,000 · Mar–Jul at $15,167");
+const harborRaiseNoYtd = proposeRaiseWeightedIncome({
+  stubMonthly: 15167,
+  w2Monthly: 7000,
+  when: { kind: "month", month: 3, label: "March" },
+  stubMonth: 7,
+});
+assert.equal(harborRaiseNoYtd.monthly, 15167);
+assert.equal(harborRaiseNoYtd.caution, RAISE_YTD_MISSING_NOTE);
+assert.equal(harborRaiseNoYtd.weightNote, "Jan–Feb at $7,000 · Mar–Jul at $15,167");
+assert.match(harborRaiseNoYtd.methodNote ?? "", /Jan–Feb at \$7,000/);
+assert.match(harborRaiseNoYtd.methodNote ?? "", /Mar–Jul at \$15,167/);
+assert.equal(harborRaiseNoYtd.expectedYtd, 89835);
+assert.notEqual(harborRaiseNoYtd.monthly, 7000);
+const harborThisYearNoYtd = proposeRaiseWeightedIncome({
+  stubMonthly: 15167,
+  w2Monthly: 7000,
+  when: { kind: "this-year", label: "this year" },
+  stubMonth: 7,
+});
+assert.equal(harborThisYearNoYtd.monthly, 15167);
+assert.equal(harborThisYearNoYtd.caution, RAISE_YTD_MISSING_NOTE);
+assert.notEqual(harborThisYearNoYtd.monthly, 7000);
+const harborLastYearNoYtd = proposeRaiseWeightedIncome({
+  stubMonthly: 15167,
+  w2Monthly: 7000,
+  when: { kind: "last-year", label: "last year" },
+  stubMonth: 7,
+});
+assert.equal(harborLastYearNoYtd.monthly, 7000);
+assert.equal(harborLastYearNoYtd.caution, RAISE_YTD_MISSING_NOTE);
+const harborRaiseClose = proposeRaiseWeightedIncome({
+  stubMonthly: 15167,
+  w2Monthly: 7000,
+  when: { kind: "month", month: 3, label: "March" },
+  ytdGross: 89835,
+  stubMonth: 7,
+});
+assert.equal(harborRaiseClose.monthly, 15167);
+assert.equal(harborRaiseClose.caution, raiseYtdSupportsNote("March"));
+assert.equal(harborRaiseClose.needsRaiseYtdFar, undefined);
+const harborRaiseFar = proposeRaiseWeightedIncome({
+  stubMonthly: 15167,
+  w2Monthly: 7000,
+  when: { kind: "month", month: 3, label: "March" },
+  ytdGross: 49000,
+  stubMonth: 7,
+});
+assert.equal(harborRaiseFar.needsRaiseYtdFar, true);
+assert.equal(harborRaiseFar.monthly, 0);
+assert.notEqual(harborRaiseFar.monthly, 15167);
 
 const moduleSameStubSecond = suggestWageIncome({
   w2Wages: 84000,
@@ -5187,8 +5254,9 @@ assert.notEqual(harborQualifyTooSoon?.capture?.field, "bothMonthlyReason");
 assert.notEqual(harborQualifyTooSoon?.capture?.field, "accept-proposal");
 assert.equal(applyBothMonthlyReasonAnswer(harborBoth.draft, "skip").pendingProposal?.value, "7000");
 assert.equal(applyBothMonthlyReasonAnswer(harborBoth.draft, "skip").pendingProposal?.caution, BOTH_MONTHLY_SKIP_NOTE);
-assert.equal(applyBothMonthlyReasonAnswer(harborBoth.draft, "raise").pendingProposal?.value, "15167");
-assert.equal(applyBothMonthlyReasonAnswer(harborBoth.draft, "raise").pendingProposal?.caution, BOTH_MONTHLY_RAISE_NOTE);
+assert.equal(applyBothMonthlyReasonAnswer(harborBoth.draft, "raise").awaitingRaiseWhen, true);
+assert.equal(applyBothMonthlyReasonAnswer(harborBoth.draft, "raise").pendingProposal, null);
+assert.equal(applyBothMonthlyReasonAnswer(harborBoth.draft, "raise").facts?.qualifying_income, undefined);
 assert.equal(applyBothMonthlyReasonAnswer(harborBoth.draft, "overtime-bonus").pendingProposal?.value, "7000");
 assert.equal(applyBothMonthlyReasonAnswer(harborBoth.draft, "overtime-bonus").pendingProposal?.caution, BOTH_MONTHLY_OT_NOTE);
 assert.equal(applyBothMonthlyReasonAnswer(harborBoth.draft, "second-job").pendingProposal?.value, "7000");
@@ -5209,11 +5277,118 @@ assert.match(harborTypedSkip?.text ?? "", /I’m suggesting \$7,000 a month/);
 const harborTypedRaise = workspaceReply("that's my base now", harborBoth.draft);
 assert.equal(harborTypedRaise?.capture?.field, "bothMonthlyReason");
 assert.equal(harborTypedRaise?.capture?.value, "raise");
-assert.match(harborTypedRaise?.text ?? "", /15,167/);
+assert.equal(harborTypedRaise?.text, RAISE_WHEN_ASK);
+assert.deepEqual(
+  (harborTypedRaise?.actions ?? []).map((item) => item.label),
+  ["This year", "Last year", "Not sure"],
+);
 const harborTypedOt = workspaceReply("overtime", harborBoth.draft);
 assert.equal(harborTypedOt?.capture?.value, "overtime-bonus");
 assert.match(harborTypedOt?.text ?? "", /I’m suggesting \$7,000 a month/);
 assert.doesNotMatch(harborTypedOt?.text ?? "", /15,167 a month from/);
+const harborRaiseWhen = applyBothMonthlyReasonAnswer(harborBoth.draft, "raise");
+assert.equal(harborRaiseWhen.awaitingRaiseWhen, true);
+assert.equal(workspacePrompt(harborRaiseWhen), "raise-when");
+assert.equal(nextFoxAsk(harborRaiseWhen).text, RAISE_WHEN_ASK);
+assert.ok(previewFacts(harborRaiseWhen).some((fact) => fact.id === "monthlies" && /15,167/.test(fact.value)));
+assert.ok(previewFacts(harborRaiseWhen).every((fact) => fact.id !== "qualifying"));
+const harborRaiseQualifyTooSoon = workspaceReply("will i qualify", harborRaiseWhen);
+assert.notEqual(harborRaiseQualifyTooSoon?.capture?.field, "raiseWhen");
+assert.notEqual(harborRaiseQualifyTooSoon?.capture?.field, "accept-proposal");
+const harborMarch = applyRaiseWhenAnswer(harborRaiseWhen, "March");
+assert.equal(harborMarch.awaitingRaiseWhen, false);
+assert.equal(harborMarch.pendingProposal?.value, "15167");
+assert.equal(harborMarch.pendingProposal?.note, SUGGESTED_INCOME_NOTE);
+assert.equal(harborMarch.pendingProposal?.caution, RAISE_YTD_MISSING_NOTE);
+assert.match(harborMarch.pendingProposal?.methodNote ?? "", /Jan–Feb at \$7,000/);
+assert.match(harborMarch.pendingProposal?.methodNote ?? "", /Mar–Jul at \$15,167/);
+assert.equal(harborMarch.facts?.income_caution?.value, RAISE_YTD_MISSING_NOTE);
+assert.equal(harborMarch.facts?.paystub_monthly?.value, "15167");
+assert.equal(harborMarch.facts?.w2_monthly?.value, "7000");
+assert.notEqual(harborMarch.pendingProposal?.value, "7000");
+assert.ok(previewFacts(harborMarch).some((fact) => fact.id === "monthlies" && /15,167/.test(fact.value) && /7,000/.test(fact.value)));
+assert.ok(
+  previewFacts(harborMarch).some(
+    (fact) =>
+      fact.id === "qualifying" &&
+      /15,167/.test(fact.value) &&
+      /Jan–Feb at \$7,000/.test(fact.value) &&
+      /Mar–Jul at \$15,167/.test(fact.value) &&
+      fact.note === SUGGESTED_INCOME_NOTE,
+  ),
+);
+assert.ok(previewFacts(harborMarch).some((fact) => fact.id === "income-caution" && fact.value === RAISE_YTD_MISSING_NOTE));
+assert.ok(fileScenarioRows(harborMarch).some((row) => row[0] === "Income caution" && row[1] === RAISE_YTD_MISSING_NOTE));
+assert.match(nextFoxAsk(harborMarch).text, /I’m suggesting \$15,167 a month/);
+assert.match(nextFoxAsk(harborMarch).text, /Cannot weight without YTD/);
+assert.match(nextFoxAsk(harborMarch).text, /Suggested qualifying income · not underwritten/);
+assert.doesNotMatch(nextFoxAsk(harborMarch).text, /Using the lower/);
+assert.doesNotMatch(RAISE_YTD_MISSING_NOTE, /denied|denial|ineligible|approv|\bDU\b/i);
+const harborThisYear = applyRaiseWhenAnswer(harborRaiseWhen, "this-year");
+assert.equal(harborThisYear.pendingProposal?.value, "15167");
+assert.equal(harborThisYear.pendingProposal?.caution, RAISE_YTD_MISSING_NOTE);
+assert.notEqual(harborThisYear.pendingProposal?.value, "7000");
+assert.ok(previewFacts(harborThisYear).some((fact) => fact.id === "income-caution" && fact.value === RAISE_YTD_MISSING_NOTE));
+const harborLastYear = applyRaiseWhenAnswer(harborRaiseWhen, "last-year");
+assert.equal(harborLastYear.pendingProposal?.value, "7000");
+assert.equal(harborLastYear.pendingProposal?.caution, RAISE_YTD_MISSING_NOTE);
+assert.equal(harborLastYear.facts?.paystub_monthly?.value, "15167");
+assert.ok(previewFacts(harborLastYear).some((fact) => fact.id === "monthlies" && /15,167/.test(fact.value)));
+assert.ok(previewFacts(harborLastYear).some((fact) => fact.id === "income-caution" && fact.value === RAISE_YTD_MISSING_NOTE));
+assert.ok(fileScenarioRows(harborLastYear).some((row) => row[0] === "Income caution" && row[1] === RAISE_YTD_MISSING_NOTE));
+const harborNotSure = applyRaiseWhenAnswer(harborRaiseWhen, "not-sure");
+assert.equal(harborNotSure.pendingProposal?.value, "7000");
+assert.equal(harborNotSure.pendingProposal?.caution, RAISE_WHEN_UNKNOWN_NOTE);
+assert.equal(harborNotSure.facts?.paystub_monthly?.value, "15167");
+assert.ok(previewFacts(harborNotSure).some((fact) => fact.id === "monthlies" && /15,167/.test(fact.value)));
+const harborTypedMarch = workspaceReply("March", harborRaiseWhen);
+assert.equal(harborTypedMarch?.capture?.field, "raiseWhen");
+assert.match(harborTypedMarch?.text ?? "", /15,167/);
+assert.match(harborTypedMarch?.text ?? "", /Cannot weight without YTD/);
+const harborTypedThisYear = workspaceReply("This year", harborRaiseWhen);
+assert.equal(harborTypedThisYear?.capture?.field, "raiseWhen");
+assert.match(harborTypedThisYear?.text ?? "", /15,167/);
+const harborWithYtd = {
+  ...harborRaiseWhen,
+  facts: {
+    ...harborRaiseWhen.facts,
+    ytd_gross: {
+      field: "ytd_gross",
+      value: "89835",
+      source: "extracted-unconfirmed" as const,
+      confirmed: true,
+      confirmedAt: "2026-08-27T00:00:00.000Z",
+    },
+  },
+};
+const harborYtdClose = applyRaiseWhenAnswer(harborWithYtd, "March");
+assert.equal(harborYtdClose.pendingProposal?.value, "15167");
+assert.equal(harborYtdClose.pendingProposal?.caution, raiseYtdSupportsNote("March"));
+assert.equal(harborYtdClose.awaitingRaiseYtdFar, false);
+const harborYtdFarDraft = {
+  ...harborRaiseWhen,
+  facts: {
+    ...harborRaiseWhen.facts,
+    ytd_gross: {
+      field: "ytd_gross",
+      value: "49000",
+      source: "extracted-unconfirmed" as const,
+      confirmed: true,
+      confirmedAt: "2026-08-27T00:00:00.000Z",
+    },
+  },
+};
+const harborYtdFar = applyRaiseWhenAnswer(harborYtdFarDraft, "March");
+assert.equal(harborYtdFar.awaitingRaiseYtdFar, true);
+assert.equal(harborYtdFar.pendingProposal, null);
+assert.notEqual(harborYtdFar.facts?.qualifying_income?.value, "15167");
+assert.equal(nextFoxAsk(harborYtdFar).text, raiseYtdFarAskCopy("March"));
+assert.ok(previewFacts(harborYtdFar).some((fact) => fact.id === "monthlies" && /15,167/.test(fact.value)));
+assert.ok(previewFacts(harborYtdFar).every((fact) => fact.id !== "qualifying"));
+const harborYtdFarSkip = applyRaiseYtdFarAnswer(harborYtdFar, "Skip");
+assert.equal(harborYtdFarSkip.pendingProposal?.value, "7000");
+assert.equal(harborYtdFarSkip.awaitingRaiseYtdFar, false);
+assert.equal(harborYtdFarSkip.facts?.paystub_monthly?.value, "15167");
 
 const walkOtW2Accepted = resolveProposal(walkOtW2First.draft, "accept");
 const walkOtStubAfterW2 = applyExtractedFields(walkOtW2Accepted, {
