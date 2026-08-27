@@ -716,9 +716,28 @@ export function hasK1Ordinary(draft: FoxIntakeDraft): boolean {
 export function applyPayFrequencyAnswer(draft: FoxIntakeDraft, raw: string): FoxIntakeDraft {
   const value = String(raw ?? "").trim().toLowerCase();
   const now = new Date().toISOString();
+  const heldPay = draft.pendingProposal
+    ? [
+        {
+          field: draft.pendingProposal.field,
+          value: draft.pendingProposal.value,
+          label: draft.pendingProposal.label,
+        },
+        ...(draft.pendingProposal.extras ?? []),
+      ].filter(
+        (item) =>
+          item.field &&
+          item.value &&
+          item.field !== QUALIFYING_INCOME_FIELD &&
+          item.field !== "pay_frequency",
+      )
+    : [];
+  const heldFields: Record<string, string> = {};
+  for (const item of heldPay) heldFields[item.field] = item.value;
   const next: FoxIntakeDraft = {
     ...draft,
     awaitingPayFrequency: false,
+    pendingProposal: null,
     facts: {
       ...(draft.facts ?? {}),
       pay_frequency: {
@@ -730,9 +749,26 @@ export function applyPayFrequencyAnswer(draft: FoxIntakeDraft, raw: string): Fox
       },
     },
   };
-  const computed = monthlyQualifyingFromExtract(next, lastWageClass(next), {});
-  if (!computed || computed.needsFrequency || computed.monthly === 0) return next;
-  return withQualifyingIncomeProposal(next, computed, lastWageClass(next));
+  const storedJob = readWageJobs(next)[0];
+  const computed = monthlyQualifyingFromExtract(next, lastWageClass(next), {
+    ...(storedJob ?? {}),
+    ...heldFields,
+    pay_frequency: value,
+  });
+  if (!computed || computed.needsFrequency || computed.monthly === 0) {
+    return heldPay.length ? { ...next, pendingProposal: draft.pendingProposal } : next;
+  }
+  const proposed = withQualifyingIncomeProposal(next, computed, lastWageClass(next));
+  if (proposed.pendingProposal && heldPay.length) {
+    return {
+      ...proposed,
+      pendingProposal: {
+        ...proposed.pendingProposal,
+        extras: [...(proposed.pendingProposal.extras ?? []), ...heldPay],
+      },
+    };
+  }
+  return proposed;
 }
 
 function lastWageClass(draft: FoxIntakeDraft): ExtractClass {

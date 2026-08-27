@@ -8,6 +8,7 @@ import {
   type ExtractApplyInput,
 } from "@/components/fox/fileWrite";
 import type { ExtractClass } from "@/components/fox/types";
+import { isPdf, readPdfEmbeddedImages } from "@/lib/docs/pdfText";
 import { readPrintedSample } from "@/lib/docs/printedSample";
 
 export type ClassifyResult = {
@@ -352,15 +353,12 @@ function normalizeClassifyResult(classified: ClassifyResult): ClassifyResult {
   };
 }
 
-export async function classifyAndExtract(
+async function classifyAndExtractPage(
   bytes: Uint8Array,
   mediaType: string,
-  adapter: DocumentExtractAdapter = grokExtractAdapter,
+  adapter: DocumentExtractAdapter,
   hint?: ExtractClass | null,
-  _filename?: string | null,
 ): Promise<ClassifyExtractResult> {
-  const printed = readPrintedSample(bytes);
-  if (printed) return printedResult(printed);
   let classified: ClassifyResult | null = null;
   try {
     classified = normalizeClassifyResult(await adapter.classify(bytes, mediaType));
@@ -402,4 +400,33 @@ export async function classifyAndExtract(
       failed: true,
     };
   }
+}
+
+export async function classifyAndExtract(
+  bytes: Uint8Array,
+  mediaType: string,
+  adapter: DocumentExtractAdapter = grokExtractAdapter,
+  hint?: ExtractClass | null,
+  _filename?: string | null,
+): Promise<ClassifyExtractResult> {
+  const printed = readPrintedSample(bytes);
+  if (printed) return printedResult(printed);
+  if (isPdf(bytes) || mediaType === "application/pdf") {
+    const images = readPdfEmbeddedImages(bytes);
+    for (const image of images) {
+      const fromPixels = readPrintedSample(image.bytes);
+      if (fromPixels) return printedResult(fromPixels);
+    }
+    if (images[0]) {
+      return classifyAndExtractPage(images[0].bytes, images[0].mediaType, adapter, hint);
+    }
+    return {
+      extractClass: "other",
+      confidence: 0,
+      fields: {},
+      warnings: ["failed"],
+      failed: true,
+    };
+  }
+  return classifyAndExtractPage(bytes, mediaType, adapter, hint);
 }

@@ -41,7 +41,8 @@ export function governmentIdExtractFailed(draft: FoxIntakeDraft) {
     (doc) =>
       doc.status === "extracted" ||
       doc.status === "failed" ||
-      doc.status === "needs better copy",
+      doc.status === "needs better copy" ||
+      /could not read/i.test(doc.note ?? ""),
   );
   if (!finished) return false;
   if (isBorrowerNameConfirmPending(draft)) return false;
@@ -193,8 +194,11 @@ export function borrowerNameConfirmCopy(name: string) {
   return `I’ll use ${displayBorrowerName(name)} on this file. ${SUGGESTED_BORROWER_NOTE}. Use this?`;
 }
 
-export function borrowerNameExtractCopy(name: string) {
-  return `I read ${displayBorrowerName(name)} on the ID. Use that?`;
+export function borrowerNameExtractCopy(name: string, address?: string) {
+  if (address) {
+    return `The ID shows ${displayBorrowerName(name)}, ${address}. ${SUGGESTED_BORROWER_NOTE}. Use this?`;
+  }
+  return `The ID shows ${displayBorrowerName(name)}. ${SUGGESTED_BORROWER_NOTE}. Use this?`;
 }
 
 export function borrowerNameConfirmActions(): FoxAction[] {

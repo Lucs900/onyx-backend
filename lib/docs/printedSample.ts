@@ -6,6 +6,7 @@
 
 import { inflateSync } from "node:zlib";
 import type { ExtractClass } from "@/components/fox/types";
+import { readPdfTextLayer } from "@/lib/docs/pdfText";
 
 export type PrintedSample = {
   extractClass: ExtractClass;
@@ -481,8 +482,13 @@ export function fieldsFromPrintedLines(
     if (bankPeriod) put("period_end", bankPeriod);
     const ending = valueAfter(line, /^ENDING BALANCE:\s*/i);
     if (ending) putMoney("ending_balance", ending);
+    const present = valueAfter(line, /^(?:PRESENT ADDRESS|RESIDENTIAL ADDRESS):\s*/i);
+    if (present) put("present_address", present);
     const address = valueAfter(line, /^(?:PROPERTY ADDRESS|ADDRESS):\s*/i);
-    if (address) put("property_address", address);
+    if (address) {
+      if (extractClass === "government_id") put("present_address", address);
+      else put("property_address", address);
+    }
     const price = valueAfter(line, /^PURCHASE PRICE:\s*/i);
     if (price) putMoney("purchase_price", price);
     const close = valueAfter(line, /^CLOSE DATE:\s*/i);
@@ -550,10 +556,12 @@ export function printedSampleFromBytes(bytes: Uint8Array): PrintedSample | null 
   return printedSampleFromLines(lines);
 }
 
-/** Visible page only. Filename and tEXt are ignored. */
+/** Visible page only. Filename and tEXt are ignored. PDF text layer first. */
 export function readPrintedSample(
   bytes: Uint8Array,
   _filename?: string | null,
 ): PrintedSample | null {
+  const pdfLines = readPdfTextLayer(bytes);
+  if (pdfLines) return printedSampleFromLines(pdfLines);
   return printedSampleFromBytes(bytes);
 }

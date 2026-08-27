@@ -48,6 +48,7 @@ import {
   parsePreviewSla,
   restripeGatheringOrReady,
 } from "./motion";
+import { FAILED_READ_NOTE } from "@/lib/docs/accept";
 import {
   applyExtractedFields,
   preferFilenameClass,
@@ -1247,7 +1248,12 @@ export function applyExtractWrite(
       ? preferFilenameClass(extractedClass, name)
       : extractedClass;
   const applied = failed
-    ? { draft: current, writes: [], conflict: null, quietLines: note ? [note] : [] }
+    ? {
+        draft: { ...current, looksRightHold: true },
+        writes: [],
+        conflict: null,
+        quietLines: note ? [note] : [FAILED_READ_NOTE],
+      }
     : applyExtractedFields(current, { ...input, extractClass: extractedClass });
   const nextDocs = applied.draft.documents.map((doc) => {
     if (doc.receivedAt !== receivedAt || doc.name !== name) return doc;
@@ -1256,8 +1262,8 @@ export function applyExtractWrite(
       ...doc,
       slot,
       extractClass: displayClass,
-      status: (failed ? "failed" : "extracted") as DocStatus,
-      note,
+      status: (failed ? "received" : "extracted") as DocStatus,
+      note: failed ? FAILED_READ_NOTE : note,
     };
   });
   commit({

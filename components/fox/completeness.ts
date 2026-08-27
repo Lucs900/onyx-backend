@@ -105,6 +105,10 @@ import {
   writeBorrowerName,
 } from "./borrowerName";
 import {
+  writeCurrentEmploymentHistory,
+  writePresentAddressHistory,
+} from "./fileHistory";
+import {
   FILE_NET_ROLE_FIELD,
   OTHER_REO_PAYMENT_FIELD,
   STATED_OTHER_REO_FIELD,
@@ -772,6 +776,18 @@ export function remainderAskCopy(proposal: FactProposal) {
   if (writes.some((item) => item.field === "property_address") && writes.length === 1) {
     return `The document has property ${displayFactValue("property_address", writes[0].value)}. Use this?`;
   }
+  if (
+    writes.some(
+      (item) =>
+        item.field === "employer_name" ||
+        item.field === "gross_period" ||
+        item.field === "ytd_gross" ||
+        item.field === "pay_period_end" ||
+        item.field === "wages",
+    )
+  ) {
+    return `The document has ${named}. Suggested · not underwritten. Use this?`;
+  }
   return `The document has ${named}. Use this?`;
 }
 
@@ -798,8 +814,9 @@ export function proposalAskCopy(proposal: FactProposal) {
     return householdConfirmCopy(proposal.value);
   }
   if (isBorrowerNameField(proposal.field)) {
+    const address = proposal.extras?.find((item) => item.field === "present_address")?.value;
     return proposal.extras
-      ? borrowerNameExtractCopy(proposal.value)
+      ? borrowerNameExtractCopy(proposal.value, address)
       : borrowerNameConfirmCopy(proposal.value);
   }
   if (isCoborrowerNameField(proposal.field)) {
@@ -828,12 +845,12 @@ export function proposalAskCopy(proposal: FactProposal) {
       ? availableAssetsExtractCopy(amount)
       : availableAssetsConfirmCopy(amount);
   }
-  if (isRemainderConfirmField(proposal.field) || proposal.extras?.length) {
-    return remainderAskCopy(proposal);
-  }
   const shown = displayFactValue(proposal.field, proposal.value);
   if (proposal.field === QUALIFYING_INCOME_FIELD) {
     return qualifyingIncomeConfirmCopy(Number(proposal.value) || 0);
+  }
+  if (isRemainderConfirmField(proposal.field) || proposal.extras?.length) {
+    return remainderAskCopy(proposal);
   }
   if (proposal.field === ESTIMATED_HOUSING_FIELD) {
     return housingConfirmCopy(Number(proposal.value) || 0);
@@ -968,6 +985,12 @@ function writeConfirmedFact(
   }
   if (field === "employer_name" || field === QUALIFYING_INCOME_FIELD) {
     next = { ...next, facts };
+  }
+  if (field === "employer_name" && value.trim()) {
+    next = writeCurrentEmploymentHistory(next, value);
+  }
+  if (field === "present_address" && value.trim()) {
+    next = writePresentAddressHistory(next, value);
   }
   if (field === ESTIMATED_HOUSING_FIELD && amount != null) {
     next = {

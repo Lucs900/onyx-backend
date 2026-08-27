@@ -2224,8 +2224,8 @@ assert.deepEqual(
   stillUsefulSection(afterIncome)?.items.map((item) => item.label),
   [
     "Government ID",
-    "Latest paystub",
-    "W-2",
+    "Latest two paystubs",
+    "W-2 most recent two years",
     "Property address",
     "Purchase contract",
     "Bank statement",
@@ -2753,20 +2753,27 @@ const paystubWrite = applyExtractedFields(afterLooks, {
 assert.equal(paystubWrite.conflict, null);
 assert.ok(!paystubWrite.quietLines.includes("Updated income from paystub."));
 assert.ok(paystubWrite.quietLines.every((line) => !isDeadFileWriteLine(line)));
-assert.equal(paystubWrite.draft.facts?.employer_name?.value, "Harbor Steel");
-assert.equal(paystubWrite.draft.facts?.gross_period?.value, "7200");
-assert.equal(paystubWrite.draft.facts?.pay_period_end?.value, "2026-07-31");
-assert.equal(paystubWrite.draft.facts?.employer_name?.source, "extracted-unconfirmed");
-assert.equal(paystubWrite.draft.facts?.employer_name?.confirmed, true);
+assert.equal(paystubWrite.draft.facts?.employer_name, undefined);
+assert.equal(paystubWrite.draft.facts?.gross_period, undefined);
 assert.equal(paystubWrite.draft.facts?.ssn, undefined);
 assert.equal(workspacePrompt(paystubWrite.draft), "confirm-proposal");
 assert.equal(paystubWrite.draft.pendingProposal?.field, QUALIFYING_INCOME_FIELD);
 assert.equal(paystubWrite.draft.pendingProposal?.value, "7200");
 assert.equal(paystubWrite.draft.pendingProposal?.note, SUGGESTED_INCOME_NOTE);
+assert.ok(
+  (paystubWrite.draft.pendingProposal?.extras ?? []).some(
+    (item) => item.field === "employer_name" && item.value === "Harbor Steel",
+  ),
+);
 assert.equal(paystubWrite.draft.facts?.qualifying_income, undefined);
 assert.equal(paystubWrite.draft.productIntent, afterLooks.productIntent);
 assert.ok(previewFacts(paystubWrite.draft).some((fact) => fact.id === "employer" && fact.value === "Harbor Steel"));
 assert.ok(previewFacts(paystubWrite.draft).some((fact) => fact.id === "pay" && /7,200/.test(fact.value)));
+const paystubConfirmed = resolveProposal(paystubWrite.draft, "accept");
+assert.equal(paystubConfirmed.facts?.employer_name?.value, "Harbor Steel");
+assert.equal(paystubConfirmed.facts?.gross_period?.value, "7200");
+assert.equal(paystubConfirmed.facts?.pay_period_end?.value, "2026-07-31");
+assert.equal(paystubConfirmed.facts?.ytd_gross?.value, "50400");
 assert.ok(
   previewFacts(paystubWrite.draft).some(
     (fact) =>
@@ -2784,7 +2791,7 @@ assert.match(paystubAsk.text, /monthly period × 12 \/ 12/);
 assert.ok((paystubAsk.actions ?? []).some((item) => item.label === "Use this"));
 assert.ok((paystubAsk.actions ?? []).some((item) => item.label === "Change"));
 assertIncomeChipsHoldOverQueue(paystubWrite.draft, /7,200/);
-assert.equal(resolveProposal(paystubWrite.draft, "accept").facts?.qualifying_income?.value, "7200");
+assert.equal(paystubConfirmed.facts?.qualifying_income?.value, "7200");
 
 const acmeWrite = applyExtractedFields(afterLooks, {
   extractClass: "paystub",
@@ -2822,7 +2829,7 @@ assertAnswerThenRestore(acmeQualifyAsk, /Not ready yet —/, {
   labels: ["Use this", "Change"],
 });
 assert.match(acmeQualifyAsk?.text ?? "", /biweekly period × 26 \/ 12/);
-assert.match(acmeQualifyAsk?.text ?? "", /A W-2 is still missing/);
+assert.match(acmeQualifyAsk?.text ?? "", /A latest paystub and a W-2 are still missing/);
 assert.doesNotMatch(stripReadinessAnswer(acmeQualifyAsk?.text ?? ""), /you qualify|you are approved|you don’t qualify/i);
 assert.equal(resolveProposal(acmeWrite.draft, "accept").facts?.qualifying_income?.value, "9167");
 assert.equal(resolveProposal(acmeWrite.draft, "decline").facts?.qualifying_income, undefined);
@@ -2974,15 +2981,15 @@ const w2AfterLooks = draft({
   ],
 });
 const w2Useful = stillUsefulLabels(w2AfterLooks);
-assert.ok(w2Useful.includes("second-year W-2"));
+assert.ok(w2Useful.includes("W-2 most recent two years"));
 assert.ok(w2Useful.includes("government ID"));
-assert.ok(w2Useful.includes("latest paystub"));
+assert.ok(w2Useful.includes("latest two paystubs"));
 assert.ok(!missingExtractClasses(w2AfterLooks).includes("w2"));
 assert.ok(w2Useful.length > missingExtractClasses(w2AfterLooks).length);
 assert.equal(fileStillUsefulNote(w2AfterLooks), undefined);
 assert.ok(stillUsefulSection(w2AfterLooks)?.items.some((item) => item.label === "Government ID"));
-assert.ok(stillUsefulSection(w2AfterLooks)?.items.some((item) => item.label === "Second-year W-2"));
-assert.match(gatheringList(w2AfterLooks), /second-year W-2/i);
+assert.ok(stillUsefulSection(w2AfterLooks)?.items.some((item) => item.label === "W-2 most recent two years"));
+assert.match(gatheringList(w2AfterLooks), /W-2 most recent two years/i);
 assert.equal(gatheringCopy(w2AfterLooks), MOTION_COPY.ready);
 assert.ok(
   previewFacts(w2AfterLooks).every(
@@ -3048,8 +3055,8 @@ assert.deepEqual(
   buySection.items.map((item) => item.label),
   [
     "Government ID",
-    "Latest paystub",
-    "W-2",
+    "Latest two paystubs",
+    "W-2 most recent two years",
     "Property address",
     "Purchase contract",
     "Bank statement",
@@ -3070,7 +3077,7 @@ assert.doesNotMatch(
 );
 const skippedId = skipCurrentStillUseful(buyProceed);
 assert.ok(stillUsefulSection(skippedId)?.items.some((item) => item.label === "Government ID"));
-assert.ok(stillUsefulSection(skippedId)?.items.some((item) => item.label === "Latest paystub"));
+assert.ok(stillUsefulSection(skippedId)?.items.some((item) => item.label === "Latest two paystubs"));
 const withId = afterProceed(afterIncome, {
   documents: [
     {
@@ -3084,8 +3091,8 @@ const withId = afterProceed(afterIncome, {
     },
   ],
 });
-assert.equal(stillUsefulSection(withId)?.items[0]?.label, "Latest paystub");
-assert.ok(!stillUsefulSection(withId)?.items.some((item) => item.label === "Government ID"));
+assert.equal(stillUsefulSection(withId)?.items[0]?.label, "Government ID");
+assert.ok(stillUsefulSection(withId)?.items.some((item) => item.label === "Latest two paystubs"));
 const buyDocsIn = afterProceed(afterIncome, {
   documents: [
     {
@@ -3136,7 +3143,7 @@ const buyDocsIn = afterProceed(afterIncome, {
 });
 assert.deepEqual(
   stillUsefulSection(buyDocsIn)?.items.map((item) => item.label),
-  ["Latest return", "Property address", "Purchase contract", "Bank statement"],
+  ["Government ID", "Latest two paystubs", "Latest return", "Property address", "Purchase contract", "Bank statement"],
 );
 const seProceed = afterProceed(withIncome(afterCredit, "self-employed"));
 assert.deepEqual(
@@ -3212,6 +3219,15 @@ const emptied = afterProceed(afterIncome, {
       extractClass: "paystub",
     },
     {
+      slot: "paystubs",
+      name: "paystub-2.pdf",
+      type: "application/pdf",
+      size: 4000,
+      receivedAt: "2026-08-20T00:00:01.000Z",
+      status: "extracted",
+      extractClass: "paystub",
+    },
+    {
       slot: "w2",
       name: "w2-2025.pdf",
       type: "application/pdf",
@@ -3248,11 +3264,18 @@ const emptied = afterProceed(afterIncome, {
       extractClass: "bank_statement",
     },
   ],
+  borrowerName: "Jordan Hale",
   facts: {
     property_address: {
       field: "property_address",
       value: "1 Main St",
       source: "client",
+      confirmed: true,
+    },
+    full_name: {
+      field: "full_name",
+      value: "Jordan Hale",
+      source: "document",
       confirmed: true,
     },
   },
@@ -3266,8 +3289,8 @@ const walkSkip = skipCurrentInvite(afterIncome);
 assert.ok((walkSkip.skippedClasses ?? []).includes("government_id"));
 assert.equal(workspacePrompt(walkSkip), "documents");
 assert.ok(stillUsefulSection(walkSkip)?.items.some((item) => item.label === "Government ID"));
-assert.ok(stillUsefulSection(walkSkip)?.items.some((item) => item.label === "Latest paystub"));
-assert.ok(stillUsefulSection(walkSkip)?.items.some((item) => item.label === "W-2"));
+assert.ok(stillUsefulSection(walkSkip)?.items.some((item) => item.label === "Latest two paystubs"));
+assert.ok(stillUsefulSection(walkSkip)?.items.some((item) => item.label === "W-2 most recent two years"));
 assert.ok(stillUsefulSection(walkSkip)?.items.some((item) => item.label === "Property address"));
 assert.ok(stillUsefulSection(walkSkip)?.items.some((item) => item.label === "Purchase contract"));
 assert.ok(stillUsefulSection(walkSkip)?.items.some((item) => item.label === "Bank statement"));
@@ -3305,8 +3328,8 @@ receiveDocument({
   extractClass: "government_id",
   status: "extracted",
 });
-assert.ok(!stillUsefulSection(getFoxDraft())?.items.some((item) => item.label === "Government ID"));
-assert.ok(stillUsefulSection(getFoxDraft())?.items.some((item) => item.label === "Latest paystub"));
+assert.ok(stillUsefulSection(getFoxDraft())?.items.some((item) => item.label === "Government ID"));
+assert.ok(stillUsefulSection(getFoxDraft())?.items.some((item) => item.label === "Latest two paystubs"));
 assert.ok(stillUsefulSection(getFoxDraft())?.items.some((item) => item.label === "Purchase contract"));
 assert.ok(stillUsefulSection(getFoxDraft())?.items.some((item) => item.label === "Bank statement"));
 assert.equal(shouldResumeWorkspaceEntry(), true);
@@ -3314,8 +3337,8 @@ const remembered = continueWorkspaceFromEntry("acr", "buy");
 assert.equal(remembered.productIntent, "buy");
 assert.ok((remembered.skippedClasses ?? []).includes("government_id"));
 assert.ok(remembered.documents.some((doc) => doc.extractClass === "government_id"));
-assert.ok(!stillUsefulSection(remembered)?.items.some((item) => item.label === "Government ID"));
-assert.ok(stillUsefulSection(remembered)?.items.some((item) => item.label === "Latest paystub"));
+assert.ok(stillUsefulSection(remembered)?.items.some((item) => item.label === "Government ID"));
+assert.ok(stillUsefulSection(remembered)?.items.some((item) => item.label === "Latest two paystubs"));
 assert.ok(stillUsefulSection(remembered)?.items.some((item) => item.label === "Purchase contract"));
 assert.ok(!stillUsefulSection(remembered)?.items.some((item) => item.label === "Employer"));
 assert.notEqual(workspacePrompt(remembered), "intent");
@@ -3825,7 +3848,7 @@ assert.equal(workspacePrompt(mayaId.draft), "confirm-proposal");
 const mayaAsk = docReactionAsk(mayaId.draft, "government_id");
 assert.equal(
   mayaAsk?.text,
-  "I read Maya Chen on the ID. Use that?",
+  "The ID shows Maya Chen. Suggested · not underwritten. Use this?",
 );
 assert.doesNotMatch(mayaAsk?.text ?? "", /paystub|tax return|most recent/i);
 assert.deepEqual(
@@ -3878,7 +3901,7 @@ assert.doesNotMatch(JSON.stringify(jordanId.draft.facts ?? {}), /123-45-6789|123
 const jordanAsk = docReactionAsk(jordanId.draft, "government_id");
 assert.equal(
   jordanAsk?.text,
-  "I read Jordan Hale on the ID. Use that?",
+  "The ID shows Jordan Hale. Suggested · not underwritten. Use this?",
 );
 assert.doesNotMatch(jordanAsk?.text ?? "", /JORDAN|date of birth|SSN|social security/);
 assert.ok(!(jordanId.draft.pendingProposal?.extras ?? []).some((item) => item.field === "date_of_birth"));
@@ -5630,20 +5653,24 @@ const wrote = applyExtractWrite(
   "paystub.pdf",
   { extractClass: "paystub", confidence: 0.9, fields: { employer_name: "Harbor Steel", gross_period: "7200" } },
 );
-assert.equal(wrote.draft.facts?.employer_name?.value, "Harbor Steel");
+assert.equal(wrote.draft.facts?.employer_name, undefined);
 assert.equal(wrote.draft.productIntent, "buy");
 assert.equal(wrote.draft.awaitingPayFrequency, true);
-assert.equal(wrote.draft.pendingProposal, null);
-assert.equal(workspacePrompt(wrote.draft), "pay-frequency");
-assert.match(nextFoxAsk(wrote.draft).text, /How often is this paycheck/);
-assert.ok(statusCopy(wrote.draft) === "ready" || statusCopy(wrote.draft) === "gathering");
-assert.ok(previewFacts(wrote.draft).some((fact) => fact.id === "originator"));
-assert.ok(previewFacts(wrote.draft).some((fact) => fact.id === "next"));
+assert.equal(wrote.draft.pendingProposal?.field, "employer_name");
 assert.ok(previewFacts(wrote.draft).some((fact) => fact.id === "employer" && fact.value === "Harbor Steel"));
 assert.ok(previewFacts(wrote.draft).some((fact) => fact.id === "pay" && /7,200/.test(fact.value)));
-assert.ok(previewFacts(wrote.draft).some((fact) => fact.id === "docs" && /Paystubs in/.test(fact.value)));
-assert.ok(previewFacts(wrote.draft).every((fact) => fact.id !== "docs" || !/Other in/.test(fact.value)));
-assert.ok(previewFacts(wrote.draft).every((fact) => fact.id !== "product" || fact.value === "Buy"));
+applyCapture({ field: "accept-proposal" });
+const wroteAccepted = getFoxDraft();
+assert.equal(wroteAccepted.facts?.employer_name?.value, "Harbor Steel");
+assert.equal(wroteAccepted.facts?.gross_period?.value, "7200");
+assert.equal(workspacePrompt(wroteAccepted), "pay-frequency");
+assert.match(nextFoxAsk(wroteAccepted).text, /How often is this paycheck/);
+assert.ok(statusCopy(wroteAccepted) === "ready" || statusCopy(wroteAccepted) === "gathering");
+assert.ok(previewFacts(wroteAccepted).some((fact) => fact.id === "originator"));
+assert.ok(previewFacts(wroteAccepted).some((fact) => fact.id === "next"));
+assert.ok(previewFacts(wroteAccepted).some((fact) => fact.id === "docs" && /Paystubs in/.test(fact.value)));
+assert.ok(previewFacts(wroteAccepted).every((fact) => fact.id !== "docs" || !/Other in/.test(fact.value)));
+assert.ok(previewFacts(wroteAccepted).every((fact) => fact.id !== "product" || fact.value === "Buy"));
 const failedWrite = applyExtractWrite(
   "2026-08-20T00:00:00.000Z",
   "paystub.pdf",
@@ -5678,7 +5705,7 @@ const failedOther = applyExtractWrite(
 );
 assert.equal(failedOther.draft.documents[0]?.slot, "paystubs");
 assert.equal(failedOther.draft.documents[0]?.extractClass, "paystub");
-assert.equal(failedOther.draft.documents[0]?.status, "failed");
+assert.equal(failedOther.draft.documents[0]?.status, "received");
 assert.equal(failedOther.draft.facts?.employer_name, undefined);
 assert.equal(failedOther.quietLines[0], FAILED_READ_NOTE);
 assert.ok(previewFacts(failedOther.draft).some((fact) => fact.id === "docs" && /Paystubs in/.test(fact.value)));
@@ -8746,6 +8773,7 @@ assert.deepEqual(
     purposeHint: "purchase",
     incomeType: "w2_base",
     received: ["government_id", "paystub", "w2"],
+    paystubCount: 2,
     w2Count: 2,
     twoYearWageHistory: true,
   }),
@@ -9713,6 +9741,39 @@ async function extractAdapterSmoke() {
   );
   assert.equal(idWithoutVision.extractClass, "government_id");
   assert.equal(idWithoutVision.fields.full_name, "JORDAN HALE");
+
+  const pdfId = await classifyAndExtract(
+    readFileSync(join(root, "scripts/fixtures/government-id-jordan.pdf")),
+    "application/pdf",
+    deadVision,
+  );
+  assert.equal(pdfId.extractClass, "government_id");
+  assert.equal(pdfId.fields.full_name, "JORDAN HALE");
+  assert.equal(pdfId.failed, undefined);
+  const pdfStub = await classifyAndExtract(
+    readFileSync(join(root, "scripts/fixtures/paystub-acme.pdf")),
+    "application/pdf",
+    deadVision,
+  );
+  assert.equal(pdfStub.extractClass, "paystub");
+  assert.equal(pdfStub.fields.employer_name, "ACME");
+  assert.equal(pdfStub.fields.gross_period, "4230.77");
+  assert.equal(pdfStub.fields.ytd_gross, "29615.39");
+  const pdfW2 = await classifyAndExtract(
+    readFileSync(join(root, "scripts/fixtures/w2-ot-bonus-2025.pdf")),
+    "application/pdf",
+    deadVision,
+  );
+  assert.equal(pdfW2.extractClass, "w2");
+  assert.equal(pdfW2.fields.employer_name, "HARBOR STEEL");
+  assert.equal(pdfW2.fields.wages, "84000");
+  const blankPdf = await classifyAndExtract(
+    new TextEncoder().encode("%PDF-1.4\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF\n"),
+    "application/pdf",
+    deadVision,
+  );
+  assert.equal(blankPdf.failed, true);
+  assert.deepEqual(blankPdf.fields, {});
 
   const extractSrc = readFileSync(join(root, "lib/docs/extract.ts"), "utf8");
   assert.doesNotMatch(extractSrc, /printedSampleFromFilename|BY_NAME/);
@@ -10820,6 +10881,7 @@ assert.ok(file32W2Slots.empty.includes("history.employmentHistory"));
 const addressStillOpen = draft({
   ...file32W2Skipped,
   skippedStillUseful: ["second-year-w2", "tax_return"],
+  borrowerName: "Jordan Hale",
   documents: [
     {
       slot: "id",
@@ -10840,11 +10902,29 @@ const addressStillOpen = draft({
       extractClass: "paystub",
     },
     {
+      slot: "paystubs",
+      name: "paystub-2.pdf",
+      type: "application/pdf",
+      size: 4000,
+      receivedAt: "2026-08-25T00:00:01.000Z",
+      status: "extracted",
+      extractClass: "paystub",
+    },
+    {
       slot: "w2",
       name: "w2.pdf",
       type: "application/pdf",
       size: 4000,
       receivedAt: "2026-08-25T00:00:00.000Z",
+      status: "extracted",
+      extractClass: "w2",
+    },
+    {
+      slot: "w2",
+      name: "w2-prior.pdf",
+      type: "application/pdf",
+      size: 4000,
+      receivedAt: "2026-08-25T00:00:02.000Z",
       status: "extracted",
       extractClass: "w2",
     },
@@ -11009,11 +11089,18 @@ const presentFromId = applyExtractedFields(file32W2Skipped, {
     present_address: "9 WILLOW LANE",
   },
 });
+assert.equal((presentFromId.draft.addressHistory ?? []).length, 0);
 assert.ok(
-  (presentFromId.draft.addressHistory ?? []).some((item) => item.label === "9 WILLOW LANE"),
+  (presentFromId.draft.pendingProposal?.extras ?? []).some(
+    (item) => item.field === "present_address" && item.value === "9 WILLOW LANE",
+  ),
 );
-assert.notEqual(presentFromId.draft.subjectAddress, "9 WILLOW LANE");
-assert.ok(conventionalSlotReport(presentFromId.draft).present.includes("history.addressHistory"));
+const presentAccepted = resolveProposal(presentFromId.draft, "accept");
+assert.ok(
+  (presentAccepted.addressHistory ?? []).some((item) => item.label === "9 WILLOW LANE"),
+);
+assert.notEqual(presentAccepted.subjectAddress, "9 WILLOW LANE");
+assert.ok(conventionalSlotReport(presentAccepted).present.includes("history.addressHistory"));
 
 const contractProperty = applyExtractedFields(file32W2Skipped, {
   extractClass: "purchase_contract",

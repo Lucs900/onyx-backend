@@ -2,6 +2,7 @@ import {
   REJECT_LINE,
   LIMIT_LINE,
   MAX_DOC_COUNT,
+  FAILED_READ_NOTE,
   isAcceptedFile,
 } from "@/lib/docs/accept";
 import type {
@@ -102,10 +103,7 @@ import {
   proposeExtractedOtherPropertyPayment,
   proposeExtractedOtherReo,
 } from "./otherReo";
-import {
-  writeCurrentEmploymentHistory,
-  writePresentAddressHistory,
-} from "./fileHistory";
+import { writeCurrentEmploymentHistory } from "./fileHistory";
 
 export { REJECT_LINE, LIMIT_LINE };
 
@@ -334,6 +332,7 @@ export function taxReturnFilename(name: string) {
 }
 
 export function receivedClassOf(doc: ReceivedDoc): ExtractClass | null {
+  if (doc.note === FAILED_READ_NOTE) return null;
   if (doc.extractClass && doc.extractClass !== "other") return doc.extractClass;
   const fromSlot = extractClassFromSlot(doc.slot);
   if (fromSlot) return fromSlot;
@@ -435,7 +434,8 @@ export function extractClassLabel(extractClass: ExtractClass) {
 }
 
 export function askClassLabel(extractClass: ExtractClass) {
-  if (extractClass === "paystub") return "latest paystub";
+  if (extractClass === "paystub") return "latest two paystubs";
+  if (extractClass === "w2") return "W-2 most recent two years";
   return extractClassLabel(extractClass);
 }
 
@@ -839,6 +839,8 @@ export function applyExtractedFields(
   let next = draft;
   let conflict: FactConflict | null = draft.pendingConflict ?? null;
   let remainderWrites: { field: string; value: string }[] = [];
+  const payConfirmWrites: { field: string; value: string }[] = [];
+  let idAddress = "";
   const incomingEmployer = String(fields.employer_name ?? "")
     .trim()
     .toLowerCase()
@@ -851,12 +853,48 @@ export function applyExtractedFields(
     (extractClass === "paystub" || extractClass === "w2") &&
     Boolean(incomingEmployer && existingEmployer && incomingEmployer !== existingEmployer) &&
     draft.facts?.employer_name?.source !== "client";
+  const PAY_CONFIRM_FIELDS = new Set(["employer_name", "pay_period_end", "gross_period", "ytd_gross"]);
   for (const field of EXTRACT_SCHEMA_KEYS[extractClass]) {
     const value = fields[field];
     if (!value) continue;
+    if (
+      extractClass === "w2" &&
+      field === "employer_name" &&
+      existingEmployer &&
+      incomingEmployer &&
+      incomingEmployer !== existingEmployer
+    ) {
+      if (!conflict) {
+        conflict = {
+          field: "employer_name",
+          fileValue: String(draft.facts?.employer_name?.value ?? ""),
+          documentValue: value,
+          label: factLabel("employer_name"),
+          kind: "document",
+        };
+      }
+      continue;
+    }
     if (keepPrimaryPay && PRIMARY_PAY_KEYS.has(field)) continue;
     if (field === HIRE_DATE_FIELD) continue;
     if (extractClass === "government_id" && (field === "full_name" || field === "date_of_birth" || field === "dob")) continue;
+    if (extractClass === "government_id" && field === "present_address") {
+      idAddress = value;
+      continue;
+    }
+    if (extractClass === "paystub" && PAY_CONFIRM_FIELDS.has(field)) {
+      const existingPay = existingFact(next, field);
+      const typedIncome =
+        existingPay?.via === "income" || existingPay?.via === "qualifying_income";
+      if (typedIncome) {
+        // Typed / qualifying income already on the File — use the existing confirm.
+      } else if (!existingPay) {
+        payConfirmWrites.push({ field, value });
+        continue;
+      } else if (valuesMatch(existingPay.value, value)) {
+        continue;
+      }
+    }
     if (
       extractClass === "mortgage_statement" &&
       isOtherPropertyMortgageExtract(next, {
@@ -1067,6 +1105,9 @@ export function applyExtractedFields(
   if (extractedName) {
     const shown = displayBorrowerName(extractedName);
     const extras: { field: string; value: string; label: string }[] = [];
+    if (idAddress) {
+      extras.push({ field: "present_address", value: idAddress, label: factLabel("present_address") });
+    }
     if (next.workingOnCoborrower && !next.pendingConflict) {
       const existingCoborrower = (next.coborrowerName || "").trim();
       if (existingCoborrower && !valuesMatch(existingCoborrower, shown) && !conflict) {
@@ -1097,13 +1138,43 @@ export function applyExtractedFields(
       }
     }
   }
-  if (extractClass === "government_id") {
-    const present = String(fields.present_address ?? "").trim();
-    if (present) next = writePresentAddressHistory(next, present);
+  if (extractClass === "government_id" && idAddress && !extractedName && !next.pendingConflict) {
+    remainderWrites.push({ field: "present_address", value: idAddress });
   }
-  if (extractClass === "paystub" || extractClass === "w2") {
-    const employer = String(fields.employer_name ?? "").trim();
-    if (employer) next = writeCurrentEmploymentHistory(next, employer);
+  if ((extractClass === "paystub" || extractClass === "w2") && next.facts?.employer_name?.value) {
+    next = writeCurrentEmploymentHistory(next, next.facts.employer_name.value);
+  }
+  if (payConfirmWrites.length) {
+    const extras = payConfirmWrites.map((item) => ({
+      field: item.field,
+      value: item.value,
+      label: factLabel(item.field),
+    }));
+    if (next.pendingProposal) {
+      next = {
+        ...next,
+        pendingProposal: {
+          ...next.pendingProposal,
+          extras: [...(next.pendingProposal.extras ?? []), ...extras],
+        },
+      };
+    } else if (!next.pendingConflict) {
+      const payProposal = remainderProposalFromWrites(extractClass, payConfirmWrites);
+      if (payProposal) {
+        next = {
+          ...next,
+          pendingProposal: { ...payProposal, note: SUGGESTED_BORROWER_NOTE },
+        };
+      }
+    } else {
+      const openConflict = next.pendingConflict;
+      for (const item of payConfirmWrites) {
+        if (openConflict && item.field !== openConflict.field && item.field === "employer_name") {
+          next = writeField(next, item.field, item.value, now);
+          writes.push(item);
+        }
+      }
+    }
   }
   if (
     extractClass === "mortgage_statement" &&
@@ -1152,7 +1223,18 @@ export function applyExtractedFields(
     if (remainder) next = { ...next, pendingProposal: remainder };
   }
   next = attachExtractClass(next, extractClass);
-  const caution = decliningIncomeCaution(next) ?? wageIncomeCaution(next);
+  const cautionFacts = { ...(next.facts ?? {}) };
+  for (const [key, value] of Object.entries(fields)) {
+    if (!value || cautionFacts[key]?.value) continue;
+    cautionFacts[key] = {
+      field: key,
+      value,
+      source: "extracted-unconfirmed",
+      confirmed: false,
+    };
+  }
+  const cautionDraft = { ...next, facts: cautionFacts };
+  const caution = decliningIncomeCaution(cautionDraft) ?? wageIncomeCaution(cautionDraft);
   const quietLines = caution ? [caution] : [];
   if (employerMismatchStay(draft, extractClass, fields) && !quietLines.includes(EMPLOYER_MISMATCH_LINE)) {
     quietLines.push(EMPLOYER_MISMATCH_LINE);
@@ -1326,6 +1408,7 @@ export function deepenStillUseful(draft: FoxIntakeDraft) {
 /** Ask-copy labels plus deepen items the still-useful list may name after Looks right. */
 export type StillUsefulLabel =
   | ReturnType<typeof askClassLabel>
+  | "W-2 most recent two years"
   | "second-year W-2"
   | "prior-year return"
   | "K-1 distributions";
@@ -1348,12 +1431,8 @@ export function stillUsefulLabels(draft: FoxIntakeDraft): StillUsefulLabel[] {
   }
   if (!deepenStillUseful(draft)) return labels;
   const income = draft.incomeType.value;
-  if (
-    (income === "w2" || income === "both") &&
-    receivedClassCount(draft, "w2") === 1 &&
-    !hasTwoYearWageHistory(draft)
-  ) {
-    labels.push("second-year W-2");
+  if ((income === "w2" || income === "both") && receivedClassCount(draft, "w2") < 2) {
+    if (!labels.includes("W-2 most recent two years")) labels.push("W-2 most recent two years");
   }
   if (
     (income === "self-employed" || income === "both" || income === "other") &&
@@ -1375,7 +1454,7 @@ export function stillUsefulLabels(draft: FoxIntakeDraft): StillUsefulLabel[] {
 
 export function shortStillUsefulLabel(label: string) {
   if (/government ID/i.test(label)) return "ID";
-  if (/latest paystub/i.test(label)) return "paystub";
+  if (/latest (two )?paystubs?/i.test(label)) return "paystub";
   if (/^tax return$/i.test(label)) return "return";
   return label;
 }
@@ -1450,12 +1529,22 @@ function layer2Item(id: string, label: string, ask: string): StillUsefulItem {
 export function completenessFileFromDraft(draft: FoxIntakeDraft): CompletenessFile {
   const received = new Set<string>();
   for (const doc of draft.documents ?? []) {
+    if (doc.note === FAILED_READ_NOTE) continue;
     if (
       (doc.status === "extracted" || doc.status === "received" || doc.status === "reading") &&
       doc.extractClass
     ) {
+      if (doc.extractClass === "government_id") continue;
       received.add(doc.extractClass);
     }
+  }
+  if (
+    draft.borrowerName ||
+    draft.contact.fullName.confirmed ||
+    draft.facts?.full_name?.confirmed ||
+    draft.facts?.borrowerName?.confirmed
+  ) {
+    received.add("government_id");
   }
   if (draft.facts?.property_address?.confirmed && factValue(draft, "property_address")) {
     received.add("property_address");
@@ -1490,6 +1579,7 @@ export function completenessFileFromDraft(draft: FoxIntakeDraft): CompletenessFi
     loanAmount: draft.loanAmountValue || undefined,
     propertyValue: draft.propertyValueAmount || undefined,
     received: Array.from(received),
+    paystubCount: receivedClassCount(draft, "paystub"),
     w2Count: receivedClassCount(draft, "w2"),
     taxReturnCount: receivedTaxReturnCount(draft),
     twoYearWageHistory: hasTwoYearWageHistory(draft),
@@ -1630,9 +1720,9 @@ export function shortListSpeak(draft: FoxIntakeDraft): string {
 
 const LAYER2_COPY: Record<DocumentedStillUsefulId, { label: string; ask: string }> = {
   government_id: { label: "Government ID", ask: "A government ID still helps this file." },
-  paystub: { label: "Latest paystub", ask: "A latest paystub still helps this file." },
-  w2: { label: "W-2", ask: "A W-2 still helps this file." },
-  "second-year-w2": { label: "Second-year W-2", ask: "A second-year W-2 still helps this file." },
+  paystub: { label: "Latest two paystubs", ask: "Latest two paystubs still help this file." },
+  w2: { label: "W-2 most recent two years", ask: "W-2 most recent two years still help this file." },
+  "second-year-w2": { label: "W-2 most recent two years", ask: "W-2 most recent two years still help this file." },
   tax_return: { label: "Latest return", ask: "Your latest return still helps this file." },
   "prior-year-return": { label: "Prior-year return", ask: "A prior-year return still helps this file." },
   "k1-distributions": { label: "K-1 distributions", ask: "K-1 distributions still help this file." },
@@ -1907,11 +1997,7 @@ function inviteSatisfied(draft: FoxIntakeDraft, kind: DocInviteKind): boolean {
         doc.extractClass === "government_id" ||
         doc.slot === "id";
       if (!isId) return false;
-      return (
-        doc.status === "extracted" ||
-        doc.status === "failed" ||
-        doc.status === "needs better copy"
-      );
+      return doc.status === "extracted" || doc.status === "needs better copy";
     });
   }
   if (kind === "prior_year_return") {

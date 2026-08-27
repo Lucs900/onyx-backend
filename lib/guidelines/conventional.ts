@@ -231,6 +231,7 @@ export type FileFacts = {
 
 export type CompletenessFile = FileFacts & {
   received?: string[];
+  paystubCount?: number;
   w2Count?: number;
   taxReturnCount?: number;
   twoYearWageHistory?: boolean;
@@ -1154,12 +1155,11 @@ function documentedIncomeItems(file: CompletenessFile, received: Set<string>): D
   const se = seLike(file.incomeType);
   const unknown = !file.incomeType;
   const w2Count = file.w2Count ?? (received.has("w2") ? 1 : 0);
+  const paystubCount = file.paystubCount ?? (received.has("paystub") ? 1 : 0);
   const taxReturns = file.taxReturnCount ?? (received.has("tax_return") ? 1 : 0);
-  const twoYear = Boolean(file.twoYearWageHistory);
   if (w2 || unknown) {
-    if (!received.has("paystub")) items.push("paystub");
-    if (w2Count < 1) items.push("w2");
-    if (w2Count === 1 && !twoYear) items.push("second-year-w2");
+    if (paystubCount < 2) items.push("paystub");
+    if (w2Count < 2) items.push("w2");
   }
   if (se || (unknown && !w2)) {
     if (taxReturns < 1) items.push("tax_return");
