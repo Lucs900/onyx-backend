@@ -709,7 +709,8 @@ export function AlwaysOnFox({
           !detail.conflict &&
           !getFoxDraft().pendingProposal &&
           !getFoxDraft().pendingConflict &&
-          !getFoxDraft().awaitingPayFrequency
+          !getFoxDraft().awaitingPayFrequency &&
+          !getFoxDraft().awaitingBothMonthlyReason
         ) {
           return next;
         }
@@ -723,7 +724,8 @@ export function AlwaysOnFox({
         } else if (
           getFoxDraft().pendingProposal ||
           getFoxDraft().pendingConflict ||
-          getFoxDraft().awaitingPayFrequency
+          getFoxDraft().awaitingPayFrequency ||
+          getFoxDraft().awaitingBothMonthlyReason
         ) {
           const live = getFoxDraft();
           const reaction = docReactionAsk(live, detail.extractClass);
@@ -866,7 +868,8 @@ export function AlwaysOnFox({
         isStart &&
         shouldDeferStillUsefulAsk(live) &&
         prompt !== "confirm-proposal" &&
-        prompt !== "pay-frequency"
+        prompt !== "pay-frequency" &&
+        prompt !== "both-monthly-reason"
       ) {
         return prev;
       }

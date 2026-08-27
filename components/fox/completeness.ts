@@ -1428,6 +1428,7 @@ export function timelineFilled(draft: FoxIntakeDraft) {
 export function currentAskIdle(draft: FoxIntakeDraft) {
   if (draft.pendingProposal || draft.pendingConflict) return false;
   if (draft.awaitingPayFrequency) return false;
+  if (draft.awaitingBothMonthlyReason) return false;
   if (nextDocInvite(draft)) return false;
   if (draft.looksRightHold) return false;
   return true;

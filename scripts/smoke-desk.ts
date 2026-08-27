@@ -64,6 +64,7 @@ import {
   monthlyQualifyingFromExtract,
   parseExtractMoney,
   readTaxCashflows,
+  applyBothMonthlyReasonAnswer,
   applyPayFrequencyAnswer,
   hasTwoYearWageHistory,
   scheduleCAnnual,
@@ -74,7 +75,14 @@ import {
   k1OrdinaryMonthly,
   SECOND_JOB_SAME_STUB_NOTE,
   SECOND_JOB_THIN_NOTE,
+  BOTH_MONTHLY_OT_NOTE,
+  BOTH_MONTHLY_RAISE_NOTE,
+  BOTH_MONTHLY_SECOND_JOB_NOTE,
+  BOTH_MONTHLY_SKIP_NOTE,
+  bothMonthlyAskCopy,
   bothMonthlyMethodNote,
+  parseBothMonthlyReason,
+  proposeBothMonthlyIncome,
   suggestCombinedIncome,
   suggestScheduleCIncome,
   suggestWageIncome,
@@ -3739,10 +3747,27 @@ const moduleHarborBoth = suggestWageIncome({
   grossPeriod: 7000,
   payFrequency: "biweekly",
 });
-assert.equal(moduleHarborBoth?.monthly, 7000);
-assert.equal(moduleHarborBoth?.method, "both-lower");
+assert.equal(moduleHarborBoth?.needsBothReason, true);
+assert.equal(moduleHarborBoth?.monthly, 0);
+assert.equal(moduleHarborBoth?.method, "both-ask");
+assert.equal(moduleHarborBoth?.stubMonthly, 15167);
+assert.equal(moduleHarborBoth?.w2Monthly, 7000);
 assert.equal(moduleHarborBoth?.methodNote, bothMonthlyMethodNote(15167, 7000));
 assert.notEqual(moduleHarborBoth?.monthly, 8107);
+assert.equal(proposeBothMonthlyIncome(15167, 7000, "skip").monthly, 7000);
+assert.equal(proposeBothMonthlyIncome(15167, 7000, "skip").caution, BOTH_MONTHLY_SKIP_NOTE);
+assert.equal(proposeBothMonthlyIncome(15167, 7000, "raise").monthly, 15167);
+assert.equal(proposeBothMonthlyIncome(15167, 7000, "raise").caution, BOTH_MONTHLY_RAISE_NOTE);
+assert.equal(proposeBothMonthlyIncome(15167, 7000, "overtime-bonus").monthly, 7000);
+assert.equal(proposeBothMonthlyIncome(15167, 7000, "overtime-bonus").caution, BOTH_MONTHLY_OT_NOTE);
+assert.equal(proposeBothMonthlyIncome(15167, 7000, "second-job").monthly, 7000);
+assert.equal(proposeBothMonthlyIncome(15167, 7000, "second-job").caution, BOTH_MONTHLY_SECOND_JOB_NOTE);
+assert.equal(parseBothMonthlyReason("Skip"), "skip");
+assert.equal(parseBothMonthlyReason("raise / new base"), "raise");
+assert.equal(parseBothMonthlyReason("that's my base now"), "raise");
+assert.equal(parseBothMonthlyReason("overtime / bonus"), "overtime-bonus");
+assert.equal(parseBothMonthlyReason("second job"), "second-job");
+assert.equal(parseBothMonthlyReason("I don't know"), "skip");
 
 const moduleSameStubSecond = suggestWageIncome({
   w2Wages: 84000,
@@ -4874,11 +4899,13 @@ const ytdVsW2Write = applyExtractedFields(ytdVsW2Draft, {
 });
 assert.equal(ytdVsW2Write.draft.awaitingPayFrequency, true);
 const ytdVsW2Ready = applyPayFrequencyAnswer(ytdVsW2Write.draft, "monthly");
-assert.equal(ytdVsW2Ready.pendingProposal?.value, "7000");
-assert.equal(ytdVsW2Ready.pendingProposal?.note, SUGGESTED_INCOME_NOTE);
-assert.equal(ytdVsW2Ready.pendingProposal?.methodNote, bothMonthlyMethodNote(7200, 7000));
+assert.equal(ytdVsW2Ready.awaitingBothMonthlyReason, true);
+assert.equal(ytdVsW2Ready.pendingProposal, null);
+assert.equal(ytdVsW2Ready.facts?.qualifying_income, undefined);
+assert.equal(ytdVsW2Ready.facts?.paystub_monthly?.value, "7200");
+assert.equal(ytdVsW2Ready.facts?.w2_monthly?.value, "7000");
+assert.equal(nextFoxAsk(ytdVsW2Ready).text, bothMonthlyAskCopy(7200, 7000));
 assert.ok(!ytdVsW2Write.quietLines.includes("YTD and the run-rate don’t match. I’m using the lower number — not a blend."));
-assert.notEqual(ytdVsW2Ready.pendingProposal?.value, "7100");
 
 const singleOtWrite = applyExtractedFields(afterLooks, {
   extractClass: "w2",
@@ -5062,13 +5089,14 @@ const walkOtPair = applyExtractedFields(walkOtAccepted, {
   fields: printedOtW2!.fields,
 });
 assert.equal(walkOtPair.conflict, null);
+assert.equal(walkOtPair.draft.awaitingBothMonthlyReason, false);
 assert.equal(walkOtPair.draft.pendingProposal?.value, "7000");
 assert.notEqual(walkOtPair.draft.pendingProposal?.value, "8107");
 const walkOtAsk = nextFoxAsk(walkOtPair.draft);
 assert.match(walkOtAsk.text, /I’m suggesting \$7,000 a month/);
 assert.match(walkOtAsk.text, /Paystub \$7,000/);
 assert.match(walkOtAsk.text, /W-2 Box 1 \$7,000/);
-assert.match(walkOtAsk.text, /Using the lower/);
+assert.doesNotMatch(walkOtAsk.text, /Using the lower/);
 assert.doesNotMatch(walkOtAsk.text, /two-year OT average/);
 assert.doesNotMatch(walkOtAsk.text, /8,107/);
 assert.ok((walkOtAsk.actions ?? []).some((item) => item.label === "Use this"));
@@ -5132,23 +5160,60 @@ const harborBoth = applyExtractedFields(harborStubAccepted, {
   confidence: 0.94,
   fields: printedOtW2!.fields,
 });
-assert.equal(harborBoth.draft.pendingProposal?.value, "7000");
-assert.equal(harborBoth.draft.pendingProposal?.methodNote, bothMonthlyMethodNote(15167, 7000));
-assert.notEqual(harborBoth.draft.pendingProposal?.value, "8107");
+assert.equal(harborBoth.draft.awaitingBothMonthlyReason, true);
+assert.equal(harborBoth.draft.pendingProposal, null);
+assert.equal(harborBoth.draft.facts?.qualifying_income, undefined);
+assert.equal(harborBoth.draft.facts?.paystub_monthly?.value, "15167");
+assert.equal(harborBoth.draft.facts?.w2_monthly?.value, "7000");
+assert.notEqual(harborBoth.draft.facts?.qualifying_income?.value, "7000");
 assert.ok(
   previewFacts(harborBoth.draft).some(
-    (fact) =>
-      fact.id === "qualifying" &&
-      /15,167/.test(fact.value) &&
-      /7,000/.test(fact.value) &&
-      /Using the lower/.test(fact.value),
+    (fact) => fact.id === "monthlies" && /15,167/.test(fact.value) && /7,000/.test(fact.value),
   ),
 );
+assert.ok(previewFacts(harborBoth.draft).every((fact) => fact.id !== "qualifying"));
 const harborBothAsk = nextFoxAsk(harborBoth.draft);
-assert.match(harborBothAsk.text, /Paystub \$15,167/);
-assert.match(harborBothAsk.text, /W-2 Box 1 \$7,000/);
-assert.match(harborBothAsk.text, /Using the lower/);
-assert.match(harborBothAsk.text, /Suggested qualifying income · not underwritten/);
+assert.equal(harborBothAsk.text, bothMonthlyAskCopy(15167, 7000));
+assert.equal(harborBothAsk.text, "The paystub is $15,167 a month. The W-2 Box 1 is $7,000 a month. Why do they differ?");
+assert.deepEqual(
+  (harborBothAsk.actions ?? []).map((item) => item.label),
+  ["Raise / new base", "Overtime / bonus", "Second job", "Skip"],
+);
+assert.doesNotMatch(harborBothAsk.text, /Using the lower/);
+assert.doesNotMatch(harborBothAsk.text, /Suggested qualifying income · not underwritten/);
+assert.equal(workspacePrompt(harborBoth.draft), "both-monthly-reason");
+const harborQualifyTooSoon = workspaceReply("will i qualify", harborBoth.draft);
+assert.notEqual(harborQualifyTooSoon?.capture?.field, "bothMonthlyReason");
+assert.notEqual(harborQualifyTooSoon?.capture?.field, "accept-proposal");
+assert.equal(applyBothMonthlyReasonAnswer(harborBoth.draft, "skip").pendingProposal?.value, "7000");
+assert.equal(applyBothMonthlyReasonAnswer(harborBoth.draft, "skip").pendingProposal?.caution, BOTH_MONTHLY_SKIP_NOTE);
+assert.equal(applyBothMonthlyReasonAnswer(harborBoth.draft, "raise").pendingProposal?.value, "15167");
+assert.equal(applyBothMonthlyReasonAnswer(harborBoth.draft, "raise").pendingProposal?.caution, BOTH_MONTHLY_RAISE_NOTE);
+assert.equal(applyBothMonthlyReasonAnswer(harborBoth.draft, "overtime-bonus").pendingProposal?.value, "7000");
+assert.equal(applyBothMonthlyReasonAnswer(harborBoth.draft, "overtime-bonus").pendingProposal?.caution, BOTH_MONTHLY_OT_NOTE);
+assert.equal(applyBothMonthlyReasonAnswer(harborBoth.draft, "second-job").pendingProposal?.value, "7000");
+const harborSkip = applyBothMonthlyReasonAnswer(harborBoth.draft, "skip");
+assert.equal(harborSkip.awaitingBothMonthlyReason, false);
+assert.equal(harborSkip.facts?.income_caution?.value, BOTH_MONTHLY_SKIP_NOTE);
+assert.equal(harborSkip.facts?.paystub_monthly?.value, "15167");
+assert.match(nextFoxAsk(harborSkip).text, /I’m suggesting \$7,000 a month/);
+assert.match(nextFoxAsk(harborSkip).text, /Suggested qualifying income · not underwritten/);
+assert.ok(previewFacts(harborSkip).some((fact) => fact.id === "monthlies" && /15,167/.test(fact.value)));
+assert.ok(previewFacts(harborSkip).some((fact) => fact.id === "income-caution" && fact.value === BOTH_MONTHLY_SKIP_NOTE));
+assert.ok(fileScenarioRows(harborSkip).some((row) => row[0] === "Income caution" && row[1] === BOTH_MONTHLY_SKIP_NOTE));
+assert.doesNotMatch(BOTH_MONTHLY_SKIP_NOTE, /denied|denial|ineligible|approv|\bDU\b/i);
+const harborTypedSkip = workspaceReply("Skip", harborBoth.draft);
+assert.equal(harborTypedSkip?.capture?.field, "bothMonthlyReason");
+assert.equal(harborTypedSkip?.capture?.value, "skip");
+assert.match(harborTypedSkip?.text ?? "", /I’m suggesting \$7,000 a month/);
+const harborTypedRaise = workspaceReply("that's my base now", harborBoth.draft);
+assert.equal(harborTypedRaise?.capture?.field, "bothMonthlyReason");
+assert.equal(harborTypedRaise?.capture?.value, "raise");
+assert.match(harborTypedRaise?.text ?? "", /15,167/);
+const harborTypedOt = workspaceReply("overtime", harborBoth.draft);
+assert.equal(harborTypedOt?.capture?.value, "overtime-bonus");
+assert.match(harborTypedOt?.text ?? "", /I’m suggesting \$7,000 a month/);
+assert.doesNotMatch(harborTypedOt?.text ?? "", /15,167 a month from/);
 
 const walkOtW2Accepted = resolveProposal(walkOtW2First.draft, "accept");
 const walkOtStubAfterW2 = applyExtractedFields(walkOtW2Accepted, {
@@ -5159,9 +5224,12 @@ const walkOtStubAfterW2 = applyExtractedFields(walkOtW2Accepted, {
 const walkOtW2ThenStub = walkOtStubAfterW2.draft.awaitingPayFrequency
   ? applyPayFrequencyAnswer(walkOtStubAfterW2.draft, "monthly")
   : walkOtStubAfterW2.draft;
+assert.equal(walkOtW2ThenStub.awaitingBothMonthlyReason, false);
 assert.equal(walkOtW2ThenStub.pendingProposal?.value, "7000");
 assert.notEqual(walkOtW2ThenStub.pendingProposal?.value, "8107");
-assert.match(nextFoxAsk(walkOtW2ThenStub).text, /Using the lower/);
+assert.match(nextFoxAsk(walkOtW2ThenStub).text, /Paystub \$7,000/);
+assert.match(nextFoxAsk(walkOtW2ThenStub).text, /W-2 Box 1 \$7,000/);
+assert.doesNotMatch(nextFoxAsk(walkOtW2ThenStub).text, /Using the lower/);
 assert.doesNotMatch(nextFoxAsk(walkOtW2ThenStub).text, /two-year OT average/);
 assert.equal(hasTwoYearWageHistory(walkOtW2ThenStub), true);
 assert.ok(!stillUsefulLabels(walkOtW2ThenStub).includes("second-year W-2"));
@@ -5185,10 +5253,11 @@ const walkBonusPair = applyExtractedFields(walkBonusAccepted, {
   confidence: 0.94,
   fields: printedBonusW2!.fields,
 });
+assert.equal(walkBonusPair.draft.awaitingBothMonthlyReason, false);
 assert.equal(walkBonusPair.draft.pendingProposal?.value, "7000");
 const walkBonusAsk = nextFoxAsk(walkBonusPair.draft);
 assert.match(walkBonusAsk.text, /I’m suggesting \$7,000 a month/);
-assert.match(walkBonusAsk.text, /Using the lower/);
+assert.doesNotMatch(walkBonusAsk.text, /Using the lower/);
 assert.doesNotMatch(walkBonusAsk.text, /later-year bonus/);
 assert.doesNotMatch(walkBonusAsk.text, /7,857/);
 assert.ok((walkBonusAsk.actions ?? []).some((item) => item.label === "Use this"));
@@ -5209,8 +5278,9 @@ const walkBonusStubAfterW2 = applyExtractedFields(walkBonusW2Accepted, {
 const walkBonusW2ThenStub = walkBonusStubAfterW2.draft.awaitingPayFrequency
   ? applyPayFrequencyAnswer(walkBonusStubAfterW2.draft, "monthly")
   : walkBonusStubAfterW2.draft;
+assert.equal(walkBonusW2ThenStub.awaitingBothMonthlyReason, false);
 assert.equal(walkBonusW2ThenStub.pendingProposal?.value, "7000");
-assert.match(nextFoxAsk(walkBonusW2ThenStub).text, /Using the lower/);
+assert.doesNotMatch(nextFoxAsk(walkBonusW2ThenStub).text, /Using the lower/);
 assert.doesNotMatch(nextFoxAsk(walkBonusW2ThenStub).text, /later-year bonus/);
 
 const nightOnly = applyExtractedFields(afterLooks, {
@@ -6017,9 +6087,10 @@ assert.match(incomeModuleSrc, /"later-year-lower"/);
 assert.match(incomeModuleSrc, /"period-frequency"/);
 assert.match(incomeModuleSrc, /"ytd-months"/);
 assert.match(incomeModuleSrc, /"w2-annual"/);
-assert.match(incomeModuleSrc, /"both-lower"/);
+assert.match(incomeModuleSrc, /"both-ask"/);
 assert.match(incomeModuleSrc, /Box 1 monthly/);
-assert.match(incomeModuleSrc, /Using the lower/);
+assert.match(incomeModuleSrc, /Why do they differ/);
+assert.doesNotMatch(incomeModuleSrc, /Using the lower/);
 assert.match(incomeModuleSrc, /suggestScheduleCIncome/);
 assert.match(incomeModuleSrc, /suggestWageIncome/);
 assert.match(incomeModuleSrc, /No 1084 UI/);
