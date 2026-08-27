@@ -128,6 +128,8 @@ import {
 import {
   applyBothMonthlyReasonAnswer,
   applyPayFrequencyAnswer,
+  applyRaiseWhenAnswer,
+  applyRaiseYtdFarAnswer,
   bothMonthlyAskCopy,
   bothMonthlyDisplay,
   bothMonthlyPair,
@@ -138,7 +140,10 @@ import {
   K1_ORDINARY_NOTE,
   monthlyFromAnnual,
   parseBothMonthlyReason,
+  parseRaiseWhen,
   qualifyingIncomeDisplay,
+  raiseYtdFarAskCopy,
+  RAISE_WHEN_ASK,
   scheduleCYearViews,
   SUGGESTED_INCOME_NOTE,
   wageIncomeCaution,
@@ -1378,6 +1383,34 @@ export function bothMonthlyReasonAsk(draft: FoxIntakeDraft): {
   };
 }
 
+export function raiseWhenAsk(): {
+  text: string;
+  actions: FoxAction[];
+} {
+  return {
+    text: RAISE_WHEN_ASK,
+    actions: [
+      { id: "raise-this-year", label: "This year", event: "bubble", capture: { field: "raiseWhen", value: "this-year" } },
+      { id: "raise-last-year", label: "Last year", event: "bubble", capture: { field: "raiseWhen", value: "last-year" } },
+      { id: "raise-not-sure", label: "Not sure", event: "bubble", capture: { field: "raiseWhen", value: "not-sure" } },
+    ],
+  };
+}
+
+export function raiseYtdFarAsk(draft: FoxIntakeDraft): {
+  text: string;
+  actions: FoxAction[];
+} {
+  const when = parseRaiseWhen(draft.raiseWhenRaw ?? "");
+  return {
+    text: raiseYtdFarAskCopy(when?.label || "that date"),
+    actions: [
+      { id: "raise-ytd-skip", label: "Skip", event: "bubble", capture: { field: "raiseWhen", value: "skip" } },
+      { id: "raise-ytd-not-sure", label: "Not sure", event: "bubble", capture: { field: "raiseWhen", value: "not-sure" } },
+    ],
+  };
+}
+
 function liveProposalAsk(
   draft: FoxIntakeDraft,
   proposal: NonNullable<FoxIntakeDraft["pendingProposal"]>,
@@ -1536,6 +1569,8 @@ export function docReactionAsk(
   }
   if (draft.awaitingPayFrequency) return payFrequencyAsk();
   if (draft.awaitingBothMonthlyReason) return bothMonthlyReasonAsk(draft);
+  if (draft.awaitingRaiseWhen) return raiseWhenAsk();
+  if (draft.awaitingRaiseYtdFar) return raiseYtdFarAsk(draft);
   return null;
 }
 
@@ -2042,6 +2077,8 @@ export function shouldDeferStillUsefulAsk(draft: FoxIntakeDraft): boolean {
     isRentalIncomeConfirmPending(draft) ||
     Boolean(draft.awaitingPayFrequency) ||
     Boolean(draft.awaitingBothMonthlyReason) ||
+    Boolean(draft.awaitingRaiseWhen) ||
+    Boolean(draft.awaitingRaiseYtdFar) ||
     Boolean(draft.pendingProposal && isRemainderConfirmField(draft.pendingProposal.field)) ||
     isStatedAssetsConfirmPending(draft) ||
     isPropertyTypeConfirmPending(draft) ||
@@ -2077,6 +2114,8 @@ export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
   if (draft.pendingOffer === "heloc") return "offer-heloc";
   if (draft.awaitingPayFrequency) return "pay-frequency";
   if (draft.awaitingBothMonthlyReason) return "both-monthly-reason";
+  if (draft.awaitingRaiseWhen) return "raise-when";
+  if (draft.awaitingRaiseYtdFar) return "raise-ytd-far";
   if (draft.pendingConflict || draft.pendingProposal) return "confirm-proposal";
   if (draft.correcting === "path-switch") return "path-switch";
   if (draft.correcting === "correct") return "correct";
@@ -2491,6 +2530,12 @@ function workspaceAskCopy(
   if (prompt === "both-monthly-reason") {
     return bothMonthlyReasonAsk(draft);
   }
+  if (prompt === "raise-when") {
+    return raiseWhenAsk();
+  }
+  if (prompt === "raise-ytd-far") {
+    return raiseYtdFarAsk(draft);
+  }
   if (prompt === "confirm-proposal") {
     if (draft.pendingConflict) {
       return {
@@ -2572,6 +2617,8 @@ export function workspaceGreeting(draft: FoxIntakeDraft): {
     prompt === "confirm-proposal" ||
     prompt === "pay-frequency" ||
     prompt === "both-monthly-reason" ||
+    prompt === "raise-when" ||
+    prompt === "raise-ytd-far" ||
     prompt === "done"
   ) {
     return next;
@@ -3197,6 +3244,7 @@ export function editPromptFromCapture(capture?: Capture): FoxPrompt | undefined 
   ) {
     return "documents";
   }
+  if (capture.field === "raiseWhen") return "raise-when";
   return undefined;
 }
 
@@ -3965,6 +4013,9 @@ function draftAfterCaptureBody(draft: FoxIntakeDraft, capture: Capture): FoxInta
   }
   if (capture.field === "payFrequency") return applyPayFrequencyAnswer(next, capture.value);
   if (capture.field === "bothMonthlyReason") return applyBothMonthlyReasonAnswer(next, capture.value);
+  if (capture.field === "raiseWhen") {
+    return draft.awaitingRaiseYtdFar ? applyRaiseYtdFarAnswer(next, capture.value) : applyRaiseWhenAnswer(next, capture.value);
+  }
   if (capture.field === "accept-proposal") return resolveProposal(next, "accept");
   if (capture.field === "change-proposal") return changePendingProposal(next);
   if (capture.field === "decline-proposal") return resolveProposal(next, "decline");
@@ -4358,6 +4409,23 @@ export function workspaceReply(
       return { ...nextFoxAsk(nextDraft), capture: { field: "bothMonthlyReason", value: reason } };
     }
     return { ...bothMonthlyReasonAsk(draft) };
+  }
+
+  if (prompt === "raise-when" || draft.awaitingRaiseWhen) {
+    if (isFreeTextAtGate(q)) return answerThenRestore(q, draft);
+    const when = parseRaiseWhen(q);
+    if (when) {
+      const nextDraft = applyRaiseWhenAnswer(draft, q);
+      return { ...nextFoxAsk(nextDraft), capture: { field: "raiseWhen", value: q } };
+    }
+    return { ...raiseWhenAsk() };
+  }
+
+  if (prompt === "raise-ytd-far" || draft.awaitingRaiseYtdFar) {
+    if (isFreeTextAtGate(q)) return answerThenRestore(q, draft);
+    const nextDraft = applyRaiseYtdFarAnswer(draft, q);
+    if (nextDraft === draft) return { ...raiseYtdFarAsk(draft) };
+    return { ...nextFoxAsk(nextDraft), capture: { field: "raiseWhen", value: q } };
   }
 
   if (draft.pendingProposal || prompt === "confirm-proposal") {
