@@ -137,7 +137,7 @@ export const EXTRACT_SCHEMA_KEYS: Record<ExtractClass, readonly string[]> = {
     "tax_year",
     "hire_date",
   ],
-  w2: ["tax_year", "employer_name", "wages", "federal_withheld", "overtime", "bonus", "commission", "second_employer_name"],
+  w2: ["tax_year", "employer_name", "wages", "federal_withheld", "overtime", "bonus", "commission", "second_employer_name", "hire_date"],
   tax_return: [
     "tax_year",
     "filing_status",
@@ -154,7 +154,7 @@ export const EXTRACT_SCHEMA_KEYS: Record<ExtractClass, readonly string[]> = {
     "k1_ordinary_income",
     "k1_distributions",
   ],
-  bank_statement: ["institution", "period_end", "ending_balance", "account_type", "account_last4"],
+  bank_statement: ["institution", "period_end", "ending_balance", "account_type", "account_last4", "present_address"],
   purchase_contract: [
     "property_address",
     "purchase_price",
@@ -373,6 +373,9 @@ export function hasLockedSuggestion(
 ): boolean {
   const value = (key: string) => String(fields?.[key] ?? "").trim();
   if (extractClass === "government_id") return Boolean(value("full_name") || value("present_address"));
+  if (extractClass === "bank_statement") {
+    return Boolean(value("institution") || value("ending_balance") || value("present_address"));
+  }
   if (extractClass === "paystub") {
     return Boolean(
       value("employer_name") || value("gross_period") || value("ytd_gross") || value("pay_period_end"),
@@ -901,6 +904,10 @@ export function applyExtractedFields(
       idAddress = value;
       continue;
     }
+    if (extractClass === "bank_statement" && field === "present_address") {
+      idAddress = value;
+      continue;
+    }
     if (extractClass === "paystub" && PAY_CONFIRM_FIELDS.has(field)) {
       const existingPay = existingFact(next, field);
       const typedIncome =
@@ -1060,7 +1067,8 @@ export function applyExtractedFields(
       remainderWrites.length = 0;
     }
   }
-  const rawHire = extractClass === "paystub" ? String(fields.hire_date ?? "").trim() : "";
+  const rawHire =
+    extractClass === "paystub" || extractClass === "w2" ? String(fields.hire_date ?? "").trim() : "";
   const hire = rawHire ? parseHireDate(rawHire) : null;
   const hireMonths = hire ? monthsBetween(hire) : 0;
   if (hire && hireMonths > 0) {
@@ -1119,6 +1127,11 @@ export function applyExtractedFields(
       remainderWrites.length = 0;
     }
   }
+  const statementAddress =
+    extractClass === "bank_statement" ? String(fields.present_address ?? "").trim() : "";
+  if (statementAddress) {
+    idAddress = idAddress || statementAddress;
+  }
   const extractedName =
     extractClass === "government_id" ? String(fields.full_name ?? "").trim() : "";
   if (extractedName) {
@@ -1160,8 +1173,25 @@ export function applyExtractedFields(
   if (extractClass === "government_id" && idAddress && !extractedName && !next.pendingConflict) {
     remainderWrites.push({ field: "present_address", value: idAddress });
   }
-  if ((extractClass === "paystub" || extractClass === "w2") && next.facts?.employer_name?.value) {
-    next = writeCurrentEmploymentHistory(next, next.facts.employer_name.value);
+  if (extractClass === "bank_statement" && statementAddress && !next.pendingConflict) {
+    if (!next.pendingProposal) {
+      remainderWrites.push({ field: "present_address", value: statementAddress });
+    } else if (!(next.pendingProposal.extras ?? []).some((item) => item.field === "present_address")) {
+      next = {
+        ...next,
+        pendingProposal: {
+          ...next.pendingProposal,
+          extras: [
+            ...(next.pendingProposal.extras ?? []),
+            { field: "present_address", value: statementAddress, label: factLabel("present_address") },
+          ],
+        },
+      };
+    }
+  }
+  const extractedEmployer = String(fields.employer_name ?? "").trim();
+  if ((extractClass === "paystub" || extractClass === "w2") && extractedEmployer) {
+    next = writeCurrentEmploymentHistory(next, extractedEmployer);
   }
   if (payConfirmWrites.length) {
     const extras = payConfirmWrites.map((item) => ({

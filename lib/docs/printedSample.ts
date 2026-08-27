@@ -509,8 +509,9 @@ export function fieldsFromPrintedLines(
     if (present) put("present_address", present);
     const address = valueAfter(line, /^(?:PROPERTY ADDRESS|ADDRESS):\s*/i);
     if (address) {
-      if (extractClass === "government_id") put("present_address", address);
-      else put("property_address", address);
+      if (extractClass === "government_id" || extractClass === "bank_statement") {
+        put("present_address", address);
+      } else put("property_address", address);
     }
     const price = valueAfter(line, /^PURCHASE PRICE:\s*/i);
     if (price) putMoney("purchase_price", price);

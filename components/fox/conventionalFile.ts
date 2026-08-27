@@ -179,9 +179,11 @@ export function conventionalFileFromDraft(draft: FoxIntakeDraft): ConventionalFi
   const years = factValue(draft, "years_in_business").trim();
   const employmentHistory = [...(draft.employmentHistory ?? [])];
   if (!employmentHistory.length && employer) {
+    const hireFrom = (draft.pendingHireDate?.label || "").trim();
     employmentHistory.push({
       label: employer,
-      from: draft.statedTimeOnJobLabel || undefined,
+      from: hireFrom || undefined,
+      to: "present",
     });
   }
   if (
@@ -403,8 +405,20 @@ export function conventionalFileFacts(draft: FoxIntakeDraft): {
       : "",
     declarationSpoken(file.declarations.citizenship),
   ];
-  const work = file.history.employmentHistory?.[0]?.label;
-  const lived = file.history.addressHistory?.[0]?.label;
+  const jobs = file.history.employmentHistory ?? [];
+  const homes = file.history.addressHistory ?? [];
+  const historyRows = [
+    ...homes.map((item, index) => ({
+      id: homes.length > 1 ? `history-address-${index}` : "history-address",
+      label: "Address",
+      value: formatFileHistoryRow(item),
+    })),
+    ...jobs.map((item, index) => ({
+      id: jobs.length > 1 ? `history-employment-${index}` : "history-employment",
+      label: "Employment",
+      value: formatFileHistoryRow(item),
+    })),
+  ].filter((row) => row.value);
   return [
     {
       id: "file-property",
@@ -435,14 +449,23 @@ export function conventionalFileFacts(draft: FoxIntakeDraft): {
       value: dashJoin(declarationBits) || "—",
       note: "a–m holdable · late · not a first-session ask",
     },
-    {
-      id: "file-history",
-      label: "History",
-      value: dashJoin([
-        lived ? `address ${lived}` : "address —",
-        work ? `employment ${work}` : "employment —",
-      ]),
-      note: "2-year slots · extract first",
-    },
+    ...historyRows,
   ];
+}
+
+function formatFileHistoryRow(entry: FileHistoryEntry) {
+  const label = (entry.label ?? "").trim();
+  if (!label) return "";
+  const from = (entry.from ?? "").trim();
+  const to = (entry.to ?? "").trim();
+  if (from && /^(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec|\d{4})/i.test(from) && to === "present") {
+    return `${label} · ${from}–present`;
+  }
+  if (from && /^(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec|\d{4})/i.test(from) && to && to !== "former") {
+    return `${label} · ${from}–${to}`;
+  }
+  if (from && /^(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec|\d{4})/i.test(from)) {
+    return `${label} · ${from}`;
+  }
+  return label;
 }

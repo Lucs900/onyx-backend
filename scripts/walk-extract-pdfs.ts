@@ -33,7 +33,7 @@ const deadVision = {
 function structureWrote(draft: FoxIntakeDraft) {
   return previewFacts(draft)
     .filter((fact) =>
-      /borrower|employer|pay|qualifying|docs/i.test(`${fact.id} ${fact.label}`),
+      /borrower|employer|pay|qualifying|docs|history|employment|address/i.test(`${fact.id} ${fact.label}`),
     )
     .map((fact) => `${fact.label}: ${fact.value}${fact.note ? ` (${fact.note})` : ""}`);
 }
@@ -67,6 +67,14 @@ function w2Sketch(): FoxIntakeDraft {
 async function main() {
   const sha = execSync("git rev-parse HEAD", { cwd: root }).toString().trim();
   console.log(`walk SHA ${sha}`);
+  const jordanIdPage = await classifyAndExtract(
+    readFileSync(join(root, "scripts/fixtures/government-id-jordan.pdf")),
+    "application/pdf",
+    deadVision,
+  );
+  assert.equal(jordanIdPage.fields.full_name, "JORDAN HALE");
+  assert.equal(jordanIdPage.fields.present_address, undefined);
+
   let draft = w2Sketch();
   console.log("Still useful before:", stillUsefulLabels(draft));
 
@@ -108,6 +116,20 @@ async function main() {
     console.log(`after ${rel} confirm Structure:`, structureWrote(draft));
     console.log(`  still useful:`, stillUsefulLabels(draft));
     console.log(`  fields:`, extracted.fields);
+    if (rel.endsWith("government-id-jordan.pdf")) {
+      assert.equal(extracted.fields.present_address, undefined);
+      assert.equal((draft.addressHistory ?? []).length, 0);
+    }
+    if (/w2-ot-bonus-2025|w2-bonus-2025|paystub-ot-bonus-2026|paystub-bonus-declining-2026/.test(rel)) {
+      assert.ok(
+        (draft.employmentHistory ?? []).some((item) => /HARBOR STEEL/i.test(item.label ?? "") && !item.from),
+        `${rel} should write Harbor Steel with no invented start date`,
+      );
+      assert.ok(
+        previewFacts(draft).some((fact) => fact.label === "Employment" && /HARBOR STEEL/i.test(fact.value) && !/[–-]/.test(fact.value)),
+        `${rel} History should show employer row without invented dates`,
+      );
+    }
   }
 
   const aliasId = await classifyAndExtract(

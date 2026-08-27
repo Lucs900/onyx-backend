@@ -346,6 +346,8 @@ export type FoxIntakeDraft = {
   skippedFileNet?: number;
   citizenshipAsked?: boolean;
   formerHistoryAsked?: boolean;
+  formerEmploymentAsked?: boolean;
+  formerAddressAsked?: boolean;
   /** Title / profile enrichment only. Fox does not ask for these this gate. */
   propertyApn?: string;
   propertyLegalDescription?: string;
