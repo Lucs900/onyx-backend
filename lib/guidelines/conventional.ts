@@ -72,11 +72,12 @@ const CONVENTIONAL_GUIDELINES: ConventionalGuideline[] = [
   ...bothAgencies(
     "income",
     "w2",
-    "period × frequency, or YTD / months; flag YTD vs run-rate or W-2 mismatch and use the lower — never blend. Variable overtime / bonus / commission only when extracted; two-year average when stable or rising, later year when declining; one-year is Partial. Second job only from a second document with two-year history. Never invent.",
+    "one W-2 → Box 1 / 12 only; paystub → period × confirmed frequency; both → show both monthly numbers and use the lower — never blend. YTD writes when printed; it does not replace monthly. No two-year OT. No second-year average until a second W-2 is in. Confirm before write. Never invent.",
     {
-      base: "period-frequency-or-ytd-months",
-      ytdConflict: "flag-lower",
-      variable: "extracted-two-year-average-or-later",
+      base: "w2-box1-or-period-frequency",
+      both: "show-both-use-lower",
+      ytd: "write-only",
+      variable: "second-w2-only",
       secondJob: "two-documents-two-year",
       blend: "never",
     },

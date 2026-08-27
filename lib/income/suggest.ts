@@ -10,6 +10,8 @@
 import { conventionalIncomeRules } from "@/lib/guidelines/conventional";
 
 export const SUGGESTED_INCOME_NOTE = "Suggested qualifying income · not underwritten";
+export const W2_BOX1_MONTHLY_NOTE = "Box 1 monthly";
+export const BOTH_MONTHLY_LOWER_NOTE = "Using the lower";
 export const DECLINING_INCOME_CAUTION = "Income is lower this year. I’m using the later year.";
 export const DECLINING_YEAR_RATIO = 0.9;
 export const YTD_CONFLICT_CAUTION =
@@ -30,6 +32,7 @@ export type QualifyingMethod =
   | "ytd-months"
   | "w2-annual"
   | "ytd-conflict-lower"
+  | "both-lower"
   | "combined";
 
 /** Extracted Schedule C add-backs. Extra lines stay unused unless printed. */
@@ -341,6 +344,24 @@ function periodFrequencyMonthly(period: number, periods: number): number {
   return Math.round((period * periods) / 12);
 }
 
+export function formatSuggestMoney(value: number): string {
+  const shown = `$${Math.round(Math.abs(value)).toLocaleString("en-US")}`;
+  return value < 0 ? `-${shown}` : shown;
+}
+
+export function bothMonthlyMethodNote(stubMonthly: number, w2Monthly: number): string {
+  return `Paystub ${formatSuggestMoney(stubMonthly)} · W-2 Box 1 ${formatSuggestMoney(w2Monthly)} · ${BOTH_MONTHLY_LOWER_NOTE}`;
+}
+
+function confirmedPayFrequency(input: WageSuggestInput): ConventionalPayFrequency | null {
+  const labeled = periodsPerYear(input.payFrequency);
+  return CONVENTIONAL_FREQUENCIES.find((row) => row.periods === labeled) ?? null;
+}
+
+function w2YearAmount(wages?: number | null): boolean {
+  return usableMonthly(wages) != null;
+}
+
 function ytdMonthsMonthly(input: WageSuggestInput): number | null {
   const ytd = usableMonthly(input.ytdGross);
   const months = monthsThroughPeriodEnd(input.payPeriodEnd);
@@ -416,14 +437,23 @@ function extractedVariableExtra(input: WageSuggestInput): VariableExtra {
   const mode = rules.variable ?? "extracted-two-year-average-or-later";
   if (mode === "never") return { monthly: 0, partialNotes: [], methodNotes: [] };
   const prior = input.priorYear;
+  const twoW2Years = w2YearAmount(input.w2Wages) && w2YearAmount(prior?.wages);
+  if (mode === "second-w2-only" && !twoW2Years) {
+    return { monthly: 0, partialNotes: [], methodNotes: [] };
+  }
   let extra = 0;
   let caution: string | undefined;
   const partialNotes: string[] = [];
   const methodNotes: string[] = [];
   for (const key of VARIABLE_KEYS) {
-    const current = variableMonthlyAmount(input[key], input[ytdKey(key)], input.payPeriodEnd);
+    const current =
+      mode === "second-w2-only"
+        ? variableMonthlyAmount(input[key], null, null)
+        : variableMonthlyAmount(input[key], input[ytdKey(key)], input.payPeriodEnd);
     const last = prior
-      ? variableMonthlyAmount(prior[key], prior[ytdKey(key)], prior.payPeriodEnd ?? input.payPeriodEnd)
+      ? mode === "second-w2-only"
+        ? variableMonthlyAmount(prior[key], null, null)
+        : variableMonthlyAmount(prior[key], prior[ytdKey(key)], prior.payPeriodEnd ?? input.payPeriodEnd)
       : null;
     if (current == null && last == null) continue;
     if (current == null) continue;
@@ -483,84 +513,66 @@ function secondJobExtra(input: WageSuggestInput): VariableExtra {
 }
 
 /**
- * W-2 / paystub path. Base is period × frequency (inferred from YTD/period +
- * period-end when that is a near-exact conventional count), or YTD / months,
- * or W-2 / 12. Do not invent frequency. When two counts fit, ask once.
- * YTD vs run-rate / W-2 mismatch is flagged — never blended.
+ * W-2 / paystub path. Locked monthly method:
+ * 1. One W-2: Box 1 / 12 only. No two-year OT. No second-year average until a second W-2 is in.
+ * 2. Paystub monthly: period × frequency after Biweekly / Semimonthly / Monthly is confirmed.
+ * 3. Both in: show both monthly numbers. Use the lower. Not a blend.
+ * 4. YTD writes when printed. It does not replace monthly.
+ * 5. Confirm-before-write. Invent nothing.
  */
 export function suggestWageIncome(input: WageSuggestInput): IncomeSuggestResult | null {
-  const rules = conventionalIncomeRules("w2");
-  const resolved = resolvePayFrequency(input);
-  if (resolved.ask) {
+  const freq = confirmedPayFrequency(input);
+  const period = usableMonthly(input.grossPeriod);
+  if (period != null && !freq) {
     return { monthly: 0, method: "period-frequency", needsFrequency: true };
   }
 
-  const period = usableMonthly(input.grossPeriod);
-  const periodMonthly =
-    period != null && resolved.freq != null
-      ? periodFrequencyMonthly(period, resolved.freq.periods)
-      : null;
-  const periodEnd = parsePeriodEndDate(input.payPeriodEnd);
-  const ytdCount =
-    period != null && usableMonthly(input.ytdGross) != null
-      ? ytdPeriodCount(input.ytdGross as number, period)
-      : null;
-  const ytdConsistent =
-    resolved.freq != null &&
-    periodEnd != null &&
-    ytdCount != null &&
-    Math.abs(ytdCount - expectedPeriodsThrough(resolved.freq, periodEnd)) <= FREQUENCY_MATCH_SLACK;
-  const ytdMonthly =
-    periodMonthly == null || !ytdConsistent ? ytdMonthsMonthly(input) : null;
+  const stubMonthly =
+    period != null && freq != null ? periodFrequencyMonthly(period, freq.periods) : null;
   const w2Monthly = w2AnnualMonthly(input);
+  if (stubMonthly == null && w2Monthly == null) return null;
 
-  const candidates: { monthly: number; method: QualifyingMethod; note?: string }[] = [];
-  if (periodMonthly != null && resolved.freq) {
-    candidates.push({
-      monthly: periodMonthly,
-      method: "period-frequency",
-      note: frequencyMethodNote(resolved.freq.periods, resolved.freq.label),
-    });
-  }
-  if (ytdMonthly != null) candidates.push({ monthly: ytdMonthly, method: "ytd-months", note: "YTD / months" });
-  if (w2Monthly != null) candidates.push({ monthly: w2Monthly, method: "w2-annual", note: "W-2 / 12" });
-  if (!candidates.length) return null;
-
-  const conflict =
-    (rules.ytdConflict ?? "flag-lower") === "flag-lower" &&
-    candidates.some((row, index) =>
-      candidates.slice(index + 1).some((other) => materialMonthlyDiff(row.monthly, other.monthly)),
-    );
-
-  let chosen = candidates[0];
-  let method: QualifyingMethod = chosen.method;
-  let caution: string | undefined;
-  if (conflict) {
-    const lower = Math.min(...candidates.map((row) => row.monthly));
-    chosen = candidates.find((row) => row.monthly === lower) ?? chosen;
-    method = "ytd-conflict-lower";
-    caution = YTD_CONFLICT_CAUTION;
-  } else if (periodMonthly != null) {
-    chosen = candidates.find((row) => row.method === "period-frequency") ?? chosen;
-    method = "period-frequency";
-  } else if (ytdMonthly != null) {
-    chosen = candidates.find((row) => row.method === "ytd-months") ?? chosen;
-    method = "ytd-months";
-  } else {
-    method = "w2-annual";
-  }
-
-  const variable = extractedVariableExtra(input);
+  const bothIn = stubMonthly != null && w2Monthly != null;
+  const variable = bothIn ? { monthly: 0, partialNotes: [], methodNotes: [] } : extractedVariableExtra(input);
   const second = secondJobExtra(input);
+  const extra = variable.monthly + second.monthly;
   const partialNotes = [...variable.partialNotes, ...second.partialNotes];
-  const methodBits = [chosen.note, ...variable.methodNotes, ...second.methodNotes].filter(
+
+  if (bothIn && stubMonthly != null && w2Monthly != null) {
+    const lower = Math.min(stubMonthly, w2Monthly);
+    return {
+      monthly: lower + extra,
+      method: "both-lower",
+      methodNote: [bothMonthlyMethodNote(stubMonthly, w2Monthly), ...second.methodNotes]
+        .filter(Boolean)
+        .join(" plus "),
+      partialNotes: partialNotes.length ? partialNotes : undefined,
+    };
+  }
+
+  if (stubMonthly != null && freq) {
+    const methodBits = [
+      frequencyMethodNote(freq.periods, freq.label),
+      ...variable.methodNotes,
+      ...second.methodNotes,
+    ].filter((row): row is string => Boolean(row));
+    return {
+      monthly: stubMonthly + extra,
+      method: "period-frequency",
+      methodNote: methodBits.join(" plus "),
+      caution: variable.caution ?? second.caution,
+      partialNotes: partialNotes.length ? partialNotes : undefined,
+    };
+  }
+
+  const methodBits = [W2_BOX1_MONTHLY_NOTE, ...variable.methodNotes, ...second.methodNotes].filter(
     (row): row is string => Boolean(row),
   );
   return {
-    monthly: chosen.monthly + variable.monthly + second.monthly,
-    method,
-    caution: caution ?? variable.caution ?? second.caution,
-    methodNote: methodBits.join(" plus ") || chosen.note,
+    monthly: (w2Monthly ?? 0) + extra,
+    method: "w2-annual",
+    methodNote: methodBits.join(" plus "),
+    caution: variable.caution ?? second.caution,
     partialNotes: partialNotes.length ? partialNotes : undefined,
   };
 }
