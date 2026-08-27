@@ -373,7 +373,9 @@ export function calculatorStructureFacts(draft: FoxIntakeDraft): {
     }
   }
   const estimate = draftHousingEstimate(draft);
-  if (draft.propertyType && draft.estimatedHousing != null && estimate) {
+  const housingTotal =
+    draft.estimatedHousing ?? (draft.propertyType && estimate ? estimate.estimatedHousing : null);
+  if (draft.propertyType && estimate && housingTotal != null) {
     facts.push({
       id: "pi",
       label: "P&I",
@@ -411,7 +413,7 @@ export function calculatorStructureFacts(draft: FoxIntakeDraft): {
     facts.push({
       id: "housing",
       label: HOUSING_PAYMENT_LABEL,
-      value: moneyShown(draft.estimatedHousing),
+      value: moneyShown(housingTotal),
       note: ESTIMATED_NOT_FINAL,
     });
   } else if (estimate?.miApplies) {

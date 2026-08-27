@@ -1112,11 +1112,17 @@ assert.ok(!previewFacts(afterFunds).some((fact) => fact.id === "housing" || fact
 const afterHouseType = withChosenType(afterFunds);
 assert.equal(workspacePrompt(afterHouseType), "credit");
 assert.ok(previewFacts(afterHouseType).some((fact) => fact.id === "property-type" && fact.value === "House"));
-assert.ok(!previewFacts(afterHouseType).some((fact) => fact.id === "housing"));
+assert.ok(
+  previewFacts(afterHouseType).some(
+    (fact) => fact.id === "rate" && fact.value.includes(SAMPLE_RATE_LABEL) && fact.note === PREVIEW_RATE_NOTE,
+  ),
+);
+assert.ok(previewFacts(afterHouseType).some((fact) => fact.id === "housing" && fact.note === ESTIMATED_NOT_FINAL));
 const afterType = skipPropertyType(afterFunds);
 assert.equal(workspacePrompt(afterType), "credit");
 assert.ok(!previewFacts(afterType).some((fact) => fact.id === "housing"));
 assert.ok(previewFacts(afterType).some((fact) => fact.id === "property-type" && fact.value === "—"));
+assert.ok(previewFacts(afterType).some((fact) => fact.id === "rate" && fact.value === PRICING_WHEN_READY));
 const founder850 = withPurchaseFunds(
   draft({ ...afterPrice, propertyValueAmount: 850000 }),
   850000,
@@ -1124,14 +1130,29 @@ const founder850 = withPurchaseFunds(
   680000,
 );
 assert.equal(workspacePrompt(founder850), "property-type");
+assert.ok(!previewFacts(founder850).some((fact) => fact.id === "rate" || fact.id === "housing"));
 const founderCondo = workspaceReply("Condo", founder850);
 assert.equal(founderCondo?.capture?.field, "propertyType");
 assert.match(founderCondo?.text ?? "", /estimated FICO/i);
-assert.doesNotMatch(founderCondo?.text ?? "", /\$6,523|Estimated housing|6\.750%/);
+const afterFounderCondo = writePropertyType(founder850, "condo");
+const founderCondoFacts = previewFacts(afterFounderCondo);
+const founderCondoTypeAt = founderCondoFacts.findIndex((fact) => fact.id === "property-type" && fact.value === "Condo");
+assert.ok(founderCondoTypeAt >= 0);
+assert.equal(founderCondoFacts[founderCondoTypeAt + 1]?.id, "rate");
+assert.ok(founderCondoFacts[founderCondoTypeAt + 1]?.value.includes(SAMPLE_RATE_LABEL));
+assert.equal(founderCondoFacts[founderCondoTypeAt + 1]?.note, INDICATIVE_NOT_LIVE);
+assert.ok(founderCondoFacts.some((fact) => fact.id === "housing"));
 const founderSkip = workspaceReply("Skip", founder850);
 assert.equal(founderSkip?.capture?.field, "skip-property-type");
 assert.match(founderSkip?.text ?? "", /estimated FICO/i);
 assert.doesNotMatch(founderSkip?.text ?? "", /\$6,523|Estimated housing/);
+const afterFounderSkip = skipPropertyType(founder850);
+const founderSkipFacts = previewFacts(afterFounderSkip);
+const founderSkipTypeAt = founderSkipFacts.findIndex((fact) => fact.id === "property-type");
+assert.ok(founderSkipTypeAt >= 0);
+assert.equal(founderSkipFacts[founderSkipTypeAt + 1]?.id, "rate");
+assert.equal(founderSkipFacts[founderSkipTypeAt + 1]?.value, PRICING_WHEN_READY);
+assert.ok(!founderSkipFacts.some((fact) => fact.id === "housing" || fact.id === "pi"));
 
 const creditAsk = workspacePromptCopy("credit", afterPrice);
 assert.equal(creditAsk.text, CREDIT_RANGE_ASK);
@@ -12384,10 +12405,10 @@ const condoFacts = previewFacts(afterCondo);
 const condoTypeAt = condoFacts.findIndex((fact) => fact.id === "property-type" && fact.value === "Condo");
 const condoRateAt = condoFacts.findIndex((fact) => fact.id === "rate");
 assert.ok(condoTypeAt >= 0);
-assert.ok(condoRateAt > condoTypeAt);
+assert.equal(condoRateAt, condoTypeAt + 1);
 assert.equal(condoFacts[condoRateAt]?.value, `${"Conventional 30-year"} ${SAMPLE_RATE_LABEL}`);
 assert.equal(condoFacts[condoRateAt]?.note, INDICATIVE_NOT_LIVE);
-assert.ok(!condoFacts.some((fact) => fact.id === "housing"));
+assert.ok(condoFacts.some((fact) => fact.id === "housing" && fact.value === "$6,523"));
 
 const twoFourBeforePay = writePropertyType(millionLooks, "two_to_four");
 assert.equal(workspacePrompt(twoFourBeforePay), "housing");

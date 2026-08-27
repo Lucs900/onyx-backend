@@ -2071,8 +2071,9 @@ export function propertyTypeRateNote(draft: FoxIntakeDraft) {
 
 /** Sample 6.750% only after House / Condo / 2–4. Skip → Pricing when the file is ready. Missing type → no rate line. */
 export function previewRateFact(draft: FoxIntakeDraft): PreviewFact | null {
-  if (!sampleReady(draft)) return null;
   const intent = draft.productIntent ?? null;
+  if (!intent) return null;
+  if (!propertyTypeChosen(draft) && !propertyTypeSkipped(draft)) return null;
   if (propertyTypeChosen(draft) && previewRateApplies(draft)) {
     return {
       id: "rate",
@@ -2081,14 +2082,11 @@ export function previewRateFact(draft: FoxIntakeDraft): PreviewFact | null {
       note: propertyTypeRateNote(draft),
     };
   }
-  if (intent && (propertyTypeSkipped(draft) || !previewRateApplies(draft))) {
-    return {
-      id: "rate",
-      label: "Rate",
-      value: PRICING_WHEN_READY,
-    };
-  }
-  return null;
+  return {
+    id: "rate",
+    label: "Rate",
+    value: PRICING_WHEN_READY,
+  };
 }
 
 export function isQualifyingIncomeConfirmPending(draft: FoxIntakeDraft): boolean {
@@ -5907,6 +5905,17 @@ export function previewFacts(draft: FoxIntakeDraft): PreviewFact[] {
     else facts.push(typeFact);
   }
 
+  const rateFact = previewRateFact(draft);
+  if (rateFact) {
+    const typeAt = facts.findIndex((fact) => fact.id === "property-type");
+    if (typeAt >= 0) facts.splice(typeAt + 1, 0, rateFact);
+    else {
+      const creditAt = facts.findIndex((fact) => fact.id === "credit" || fact.id === "income");
+      if (creditAt >= 0) facts.splice(creditAt, 0, rateFact);
+      else facts.push(rateFact);
+    }
+  }
+
   if (!requiredIds.has("occupancy")) {
     const occupancy = draft.occupancyChoice.value || "";
     const occupancyLabel = OCCUPANCY_BUBBLES.find((item) => item.value === occupancy)?.label;
@@ -6252,9 +6261,6 @@ export function previewFacts(draft: FoxIntakeDraft): PreviewFact[] {
   if (payBits.length) {
     facts.push({ id: "pay", label: "Pay", value: payBits.join(" · ") });
   }
-
-  const rateFact = previewRateFact(draft);
-  if (rateFact) facts.push(rateFact);
 
   if (draft.path === "acr" && sampleReady(draft)) {
     facts.push({
