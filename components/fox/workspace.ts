@@ -201,10 +201,15 @@ import {
   contractAddressConfirmCopy,
   isPropertyAddressField,
   isPropertyTypeConfirmPending,
+  isSkipPropertyAddressText,
   isSkipPropertyTypeText,
   isSubjectAddressConfirmPending,
   parsePropertyType,
   parseVolunteeredAddress,
+  propertyAddressAskCopy,
+  propertyAddressAskText,
+  propertyAddressSettled,
+  subjectAddressSuggestion,
   propertyTypeAskCopy,
   propertyTypeSettled,
   propertyTypeConfirmActions,
@@ -213,8 +218,10 @@ import {
   proposePropertyType,
   proposeSubjectAddress,
   skipPropertyType,
+  skipSubjectAddress,
   typedAddressConfirmCopy,
   writePropertyType,
+  writeSubjectAddress,
 } from "./propertyType";
 import {
   STATED_TIME_ON_JOB_FIELD,
@@ -1668,6 +1675,7 @@ const CORRECTION_CHIP_IDS = new Set([
   "subject-lease",
   "assets",
   "property-type",
+  "property-address",
   "time-on-job",
   "current-housing",
   "declarations",
@@ -1715,6 +1723,9 @@ function extraCorrectionLines(draft: FoxIntakeDraft): { id: string; label: strin
   }
   if (draft.propertyTypeAsked || draft.propertyType) {
     extra.push({ id: "property-type", label: "Property type", prompt: "property-type" });
+  }
+  if (draft.subjectAddressAsked || draft.subjectAddress || factValue(draft, "property_address")) {
+    extra.push({ id: "property-address", label: "Property address", prompt: "property-address" });
   }
   if (draft.timeOnJobAsked || draft.statedTimeOnJob != null) {
     extra.push({ id: "time-on-job", label: "Time on job", prompt: "time-on-job" });
@@ -2194,6 +2205,7 @@ export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
   if (!draft.sampleAccepted && !householdSettled(draft)) {
     if (!timelineFilled(draft)) return "timeline";
     if (historyGapNeeded(draft) && !nextDocInvite(draft)) return "former-history";
+    if (!propertyAddressSettled(draft) && !nextDocInvite(draft)) return "property-address";
     if (canLooksRight(draft)) return "review";
     if (draft.looksRightHold) return "documents";
     return "amount";
@@ -2204,6 +2216,7 @@ export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
   if (!draft.sampleAccepted) {
     if (!timelineFilled(draft)) return "timeline";
     if (historyGapNeeded(draft)) return "former-history";
+    if (!propertyAddressSettled(draft)) return "property-address";
     if (canLooksRight(draft)) return "review";
     if (draft.looksRightHold) return "documents";
     return "amount";
@@ -2213,6 +2226,7 @@ export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
   if (!holdCalculatorAsk && housingConfirmNeeded(draft)) return "housing";
   if (!holdCalculatorAsk && !propertyTypeSettled(draft)) return "property-type";
   if (!holdCalculatorAsk && historyGapNeeded(draft)) return "former-history";
+  if (!holdCalculatorAsk && !propertyAddressSettled(draft)) return "property-address";
   return "done";
 }
 
@@ -2421,6 +2435,9 @@ function workspaceAskCopy(
   }
   if (prompt === "property-type") {
     return propertyTypeAskCopy(draft);
+  }
+  if (prompt === "property-address") {
+    return propertyAddressAskCopy(draft);
   }
   if (prompt === "time-on-job") {
     return timeOnJobAskCopy(draft);
@@ -3084,7 +3101,7 @@ export function promptForProposalField(field?: string | null): FoxPrompt | undef
   if (isBorrowerNameField(field)) return "borrower-name";
   if (field === STATED_OTHER_REO_FIELD) return "other-reo";
   if (isFileNetField(field)) return undefined;
-  if (field === "property_address" || field === "subjectAddress") return "property-type";
+  if (field === "property_address" || field === "subjectAddress") return "property-address";
   const fromCapture = editPromptFromPendingField(field);
   return fromCapture === "confirm-proposal" ? undefined : fromCapture;
 }
@@ -3172,6 +3189,12 @@ export function editPromptFromCapture(capture?: Capture): FoxPrompt | undefined 
     capture.field === "propertyType"
   ) {
     return "property-type";
+  }
+  if (
+    capture.field === "skip-property-address" ||
+    capture.field === "change-property-address"
+  ) {
+    return "property-address";
   }
   if (
     capture.field === "skip-time-on-job" ||
@@ -3410,6 +3433,8 @@ export function workspaceUpdateCopy(capture: Capture, draft: FoxIntakeDraft) {
   if (capture.field === "propose-available-assets") return "Updated.";
   if (capture.field === "skip-property-type") return "Updated. Property type left blank.";
   if (capture.field === "propose-property-type") return "Updated.";
+  if (capture.field === "skip-property-address") return "Updated. Property address left blank.";
+  if (capture.field === "change-property-address") return propertyAddressAskText(draft);
   if (capture.field === "propertyType") {
     const value = parsePropertyType(capture.value);
     return value ? `Updated property type to ${propertyTypeLabel(value)}.` : "Updated property type.";
@@ -5190,6 +5215,43 @@ export function workspaceReply(
     };
   }
 
+  if (prompt === "property-address") {
+    if ((draft.subjectAddress || factValue(draft, "property_address")) && isKeepThisText(q)) {
+      return keepThisReply(draft);
+    }
+    if (isSkipPropertyAddressText(q)) {
+      const nextDraft = skipSubjectAddress(draft);
+      return {
+        ...workspacePromptCopy(workspacePrompt(nextDraft), nextDraft),
+        capture: { field: "skip-property-address" },
+      };
+    }
+    if (/^use this\b/i.test(q.trim())) {
+      const suggestion = subjectAddressSuggestion(draft);
+      if (suggestion) {
+        const nextDraft = writeSubjectAddress(draft, suggestion.street);
+        return {
+          ...nextFoxAsk(nextDraft),
+          capture: { field: "subjectAddress", value: suggestion.street },
+        };
+      }
+    }
+    if (/^change\b/i.test(q.trim()) && subjectAddressSuggestion(draft)) {
+      const nextDraft = { ...draft, correcting: "property-address" as const, correctingLine: "property-address" };
+      return {
+        ...workspacePromptCopy("property-address", nextDraft),
+        capture: { field: "change-property-address" },
+      };
+    }
+    const typed = parseVolunteeredAddress(q);
+    if (!typed) return answerThenRestore(q, draft);
+    const nextDraft = proposeSubjectAddress(draft, typed);
+    return {
+      ...workspacePromptCopy("confirm-proposal", nextDraft),
+      capture: { field: "propose-subject-address", value: typed },
+    };
+  }
+
   if (prompt === "time-on-job") {
     if (draft.statedTimeOnJob != null && isKeepThisText(q)) return keepThisReply(draft);
     if (isSkipTimeOnJobText(q)) {
@@ -6098,12 +6160,18 @@ export function previewFacts(draft: FoxIntakeDraft): PreviewFact[] {
     });
   }
 
-  const address = draft.subjectAddress || factValue(draft, "property_address");
-  if (address) {
+  const address = draft.subjectAddress || "";
+  if (
+    draft.subjectAddressAsked ||
+    address ||
+    isSubjectAddressConfirmPending(draft)
+  ) {
+    const pending =
+      isSubjectAddressConfirmPending(draft) ? draft.pendingProposal?.value?.trim() : "";
     facts.push({
       id: "address",
-      label: "Property",
-      value: address,
+      label: "Property address",
+      value: address || pending || "—",
       note: SUGGESTED_PROPERTY_NOTE,
     });
   }
@@ -6342,6 +6410,7 @@ export function structureFixPrompt(
   if (id === "housing" || id === "ltv" || id === "cltv" || id === "pi") return "housing";
   if (id === "assets") return "assets";
   if (id === "property-type") return "property-type";
+  if (id === "address" || id === "property-address") return "property-address";
   if (id === "time-on-job") return "time-on-job";
   if (id === "current-housing") return "current-housing";
   if (id === "declarations") return "declarations";
@@ -6384,6 +6453,11 @@ export function structureExplainCopy(
   if (id === "property-type") {
     return {
       text: "Property type. Suggested · not underwritten.",
+    };
+  }
+  if (id === "address" || id === "property-address") {
+    return {
+      text: "Property address. Suggested · not underwritten. Street from you or a contract. I won’t ask year built, taxes, HOA, or APN.",
     };
   }
   if (id === "time-on-job") {

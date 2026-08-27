@@ -763,7 +763,7 @@ function writeField(
     ...(assetAmount != null
       ? { statedAvailableAssets: assetAmount, availableAssetsAsked: true }
       : {}),
-    ...(isPropertyAddressField(field) ? { subjectAddress: value } : {}),
+    ...(isPropertyAddressField(field) ? { subjectAddress: value, subjectAddressAsked: true } : {}),
     ...(field === "year_built" ? { propertyYearBuilt: value } : {}),
     ...(field === "units" ? { propertyUnits: value } : {}),
     ...(field === "annual_taxes" ? { propertyTaxes: value } : {}),

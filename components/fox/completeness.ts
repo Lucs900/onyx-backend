@@ -52,6 +52,7 @@ import {
   contractAddressConfirmCopy,
   isPropertyTypeValue,
   parsePropertyType,
+  propertyAddressSettled,
   propertyTypeConfirmCopy,
   skipPropertyType,
   typedAddressConfirmCopy,
@@ -1091,7 +1092,7 @@ function writeConfirmedFact(
       confirmed: true,
       confirmedAt: now,
     };
-    next = { ...next, subjectAddress: value, facts };
+    next = { ...next, subjectAddress: value, subjectAddressAsked: true, facts };
   }
   if (field === "year_built") next = { ...next, propertyYearBuilt: value, facts };
   if (field === "units") next = { ...next, propertyUnits: value, facts };
@@ -1441,7 +1442,13 @@ export function currentAskIdle(draft: FoxIntakeDraft) {
 }
 
 export function canLooksRight(draft: FoxIntakeDraft) {
-  return sketchAssembled(draft) && timelineFilled(draft) && currentAskIdle(draft) && !historyGapNeeded(draft);
+  return (
+    sketchAssembled(draft) &&
+    timelineFilled(draft) &&
+    currentAskIdle(draft) &&
+    !historyGapNeeded(draft) &&
+    propertyAddressSettled(draft)
+  );
 }
 
 export function parseFundsRole(

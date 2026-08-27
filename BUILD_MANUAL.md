@@ -389,9 +389,31 @@ Purchase-contract extract still confirm-before-write for address. Never silent-w
 
 `The contract shows 1840 Valencia St. Suggested · not underwritten. Use this?`
 
-Use this writes `subjectAddress` and the existing `property_address` fact (one address, not a fork). Street as extracted; city/state only if on the page. Never invent ZIP or county. No required typed-address ask. Free-text “the address is …” still confirm-before-write. If a typed address is already confirmed and the extract differs, ask once (Use document / Keep the typed one). Contract price vs sketch price stays the existing conflict-ask.
+Use this writes `subjectAddress` and the existing `property_address` fact (one address, not a fork). Street as extracted; city/state only if on the page. Never invent ZIP or county.
 
-Still useful may list property type as optional, never required. Property address remains a useful remainder until a contract confirm writes it.
+After the 2-year history gaps are answered or skipped, and before Looks right, Fox asks once for the subject Property address. File slot. Skippable. Not a sketch gate. Looks right waits until they type+confirm or Skip. Chips do not apply — they type or Skip.
+
+Buy / purchase never writes an ID street onto Property address. Ask exactly:
+
+`What is the address of the home you are buying?`
+
+If a purchase contract is already in and has a street, suggest that contract street and confirm before write. Harbor `government-id-jordan.pdf` has no street — still never treat any ID address as the subject on a purchase.
+
+Refinance or HELOC on a primary: the ID street may suggest Property address. Confirm before write.
+
+`The ID shows 14 OAK STREET. Suggested · not underwritten. Use this?`
+
+“Where did you live before this?” is residence history. It is not the subject property. Do not copy that answer onto Property address.
+
+A typed street confirm-before-write:
+
+`That’s 14 Oak Street. Suggested · not underwritten. Use this?`
+
+Use this writes Property address on Structure. Occupancy and property type stay as they are. Skip leaves Property address empty. Do not invent a street. Do not ask year built, taxes, HOA, or APN.
+
+Free-text “the address is …” still confirm-before-write. If a typed address is already confirmed and the extract differs, ask once (Use document / Keep the typed one). Contract price vs sketch price stays the existing conflict-ask.
+
+Still useful may list property type as optional, never required. Still useful may keep Property address if empty.
 
 Readiness: empty type and house/SFR keep existing lines. Condo or 2–4 confirmed uses the UW-review line and never a strong line this gate. Do not name warrantability, HOA, or a county limit.
 
