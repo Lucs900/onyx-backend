@@ -2841,7 +2841,7 @@ assertAnswerThenRestore(acmeQualifyAsk, /Not ready yet —/, {
   labels: ["Use this", "Change"],
 });
 assert.match(acmeQualifyAsk?.text ?? "", /biweekly period × 26 \/ 12/);
-assert.match(acmeQualifyAsk?.text ?? "", /A latest paystub and a W-2 are still missing/);
+assert.match(acmeQualifyAsk?.text ?? "", /A W-2 is still missing/);
 assert.doesNotMatch(stripReadinessAnswer(acmeQualifyAsk?.text ?? ""), /you qualify|you are approved|you don’t qualify/i);
 assert.equal(resolveProposal(acmeReady, "accept").facts?.qualifying_income?.value, "9167");
 assert.equal(resolveProposal(acmeReady, "decline").facts?.qualifying_income, undefined);

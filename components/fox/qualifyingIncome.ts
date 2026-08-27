@@ -842,7 +842,10 @@ export function withQualifyingIncomeProposal(
   if (!computed) return draft;
   const monthly = String(computed.monthly);
   const existing = existingMonthlyIncome(draft);
-  if (existing && valuesMatch(existing.value, monthly)) {
+  const showBothMonthly =
+    computed.method === "both-lower" ||
+    Boolean(computed.methodNote?.includes(BOTH_MONTHLY_LOWER_NOTE));
+  if (existing && valuesMatch(existing.value, monthly) && !showBothMonthly) {
     return {
       ...draft,
       pendingConflict: null,
