@@ -364,9 +364,9 @@ import {
   writeCitizenship,
 } from "./citizenship";
 import {
-  FORMER_HISTORY_ASK,
   formerHistoryAskCopy,
   formerHistoryNeeded,
+  historyGapNeeded,
   isSkipFormerHistoryText,
   skipFormerHistory,
   writeFormerHistoryNote,
@@ -2210,6 +2210,7 @@ export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
   if (!holdCalculatorAsk && subjectLeaseAskNeeded(draft)) return "subject-lease";
   if (!holdCalculatorAsk && housingConfirmNeeded(draft)) return "housing";
   if (!holdCalculatorAsk && !propertyTypeSettled(draft)) return "property-type";
+  if (!holdCalculatorAsk && historyGapNeeded(draft)) return "former-history";
   return "done";
 }
 
@@ -2224,7 +2225,7 @@ function lateFileRemainder(draft: FoxIntakeDraft): { text?: string; actions?: Fo
     };
   }
   if (formerHistoryNeeded(draft)) {
-    const ask = formerHistoryAskCopy();
+    const ask = formerHistoryAskCopy(draft);
     return {
       text: ask.text,
       actions: (ask.actions ?? []).filter((item) => item.id !== "hold-former-history"),
@@ -2432,7 +2433,7 @@ function workspaceAskCopy(
     return citizenshipAskCopy();
   }
   if (prompt === "former-history") {
-    return formerHistoryAskCopy();
+    return formerHistoryAskCopy(draft);
   }
   if (prompt === "declaration-timing") {
     return declarationTimingAskCopy();
@@ -6413,9 +6414,9 @@ export function structureExplainCopy(
       text: "Liabilities wait for a credit pull. Placeholder only. Not a worksheet.",
     };
   }
-  if (id === "file-history") {
+  if (id === "file-history" || id.startsWith("history-employment") || id.startsWith("history-address")) {
     return {
-      text: "Two-year address and employment slots. I prefer documents over a form.",
+      text: "Two-year address and employment slots. I prefer documents over a form. I do not invent a start date or address.",
     };
   }
   if (id === "household") {

@@ -106,6 +106,7 @@ import {
 } from "./borrowerName";
 import {
   writeCurrentEmploymentHistory,
+  writeCurrentEmploymentStart,
   writePresentAddressHistory,
 } from "./fileHistory";
 import {
@@ -1058,7 +1059,9 @@ function writeConfirmedFact(
   if (field === STATED_TIME_ON_JOB_FIELD) {
     const months = Number(value);
     if (Number.isFinite(months) && months > 0) {
-      next = writeStatedTimeOnJob(next, months, displayTimeOnJob(months));
+      const hireLabel = draft.pendingProposal?.hireLabel?.trim();
+      next = writeStatedTimeOnJob(next, months, hireLabel || displayTimeOnJob(months));
+      if (hireLabel) next = writeCurrentEmploymentStart(next, hireLabel);
     }
   }
   if (field === STATED_CURRENT_HOUSING_FIELD && amount != null) {

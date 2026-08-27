@@ -288,7 +288,13 @@ import {
   writeStatedOtherReo,
 } from "../components/fox/otherReo";
 import { CITIZENSHIP_ASK, skipCitizenship } from "../components/fox/citizenship";
-import { FORMER_HISTORY_ASK, skipFormerHistory } from "../components/fox/fileHistory";
+import {
+  FORMER_HISTORY_ASK,
+  WHERE_BEFORE_ASK,
+  skipFormerHistory,
+  whoBeforeAsk,
+  writeFormerHistoryNote,
+} from "../components/fox/fileHistory";
 import {
   STAFF_EXPORT_BORROWER_COPY,
   derivedExportStatus,
@@ -3626,6 +3632,8 @@ assert.ok(EXTRACT_SCHEMA_KEYS.w2.includes("second_employer_name"));
 assert.ok(EXTRACT_SCHEMA_KEYS.w2.includes("overtime"));
 assert.ok(EXTRACT_SCHEMA_KEYS.w2.includes("bonus"));
 assert.ok(EXTRACT_SCHEMA_KEYS.w2.includes("commission"));
+assert.ok(EXTRACT_SCHEMA_KEYS.w2.includes("hire_date"));
+assert.ok(EXTRACT_SCHEMA_KEYS.bank_statement.includes("present_address"));
 assert.ok(!EXTRACT_SCHEMA_KEYS.government_id.includes("date_of_birth"));
 assert.ok(EXTRACT_SCHEMA_KEYS.government_id.includes("id_last4"));
 assert.ok(EXTRACT_SCHEMA_KEYS.bank_statement.includes("account_last4"));
@@ -10095,7 +10103,7 @@ async function extractAdapterSmoke() {
   assert.equal(sabotageOverLie.fields.wages, undefined);
   assert.deepEqual(
     EXTRACT_SCHEMA_KEYS.bank_statement.slice(),
-    ["institution", "period_end", "ending_balance", "account_type", "account_last4"],
+    ["institution", "period_end", "ending_balance", "account_type", "account_last4", "present_address"],
   );
   assert.deepEqual(
     EXTRACT_SCHEMA_KEYS.purchase_contract.slice(),
@@ -10168,6 +10176,7 @@ async function extractAdapterSmoke() {
   );
   assert.equal(pageId?.extractClass, "government_id");
   assert.equal(pageId?.fields.full_name, "JORDAN HALE");
+  assert.equal(pageId?.fields.present_address, undefined);
   const deadVision = {
     async classify(): Promise<never> {
       throw new Error("xAI 503");
@@ -10191,6 +10200,7 @@ async function extractAdapterSmoke() {
   );
   assert.equal(idWithoutVision.extractClass, "government_id");
   assert.equal(idWithoutVision.fields.full_name, "JORDAN HALE");
+  assert.equal(idWithoutVision.fields.present_address, undefined);
 
   const pdfId = await classifyAndExtract(
     readFileSync(join(root, "scripts/fixtures/government-id-jordan.pdf")),
@@ -10199,6 +10209,7 @@ async function extractAdapterSmoke() {
   );
   assert.equal(pdfId.extractClass, "government_id");
   assert.equal(pdfId.fields.full_name, "JORDAN HALE");
+  assert.equal(pdfId.fields.present_address, undefined);
   assert.equal(pdfId.failed, undefined);
   const pdfStub = await classifyAndExtract(
     readFileSync(join(root, "scripts/fixtures/paystub-acme.pdf")),
@@ -10686,7 +10697,8 @@ assert.ok(w2FileFacts.some((fact) => fact.id === "file-property" && /Primary/.te
 assert.ok(w2FileFacts.some((fact) => fact.id === "file-assets" && /institution —/.test(fact.value) && /last4 —/.test(fact.value)));
 assert.ok(w2FileFacts.some((fact) => fact.id === "file-liabilities" && fact.value === "Credit report later"));
 assert.ok(w2FileFacts.some((fact) => fact.id === "file-declarations" && fact.value === "—"));
-assert.ok(w2FileFacts.some((fact) => fact.id === "file-history" && /address —/.test(fact.value) && /employment —/.test(fact.value)));
+assert.ok(w2FileFacts.every((fact) => fact.id !== "file-history"));
+assert.ok(w2FileFacts.every((fact) => !/^history-/.test(fact.id)));
 assert.equal(fileCompleteness(conventionalW2Walk)?.copy, `sketch · 4 of ${CONVENTIONAL_FILE_SLOT_TOTAL}`);
 const w2Slots = conventionalSlotReport(conventionalW2Walk);
 assert.deepEqual(w2Slots.present, [
@@ -10726,7 +10738,8 @@ assert.ok(previewFacts(conventionalSeWalk).some((fact) => fact.id === "file-prop
 assert.ok(previewFacts(conventionalSeWalk).some((fact) => fact.id === "file-assets"));
 assert.ok(previewFacts(conventionalSeWalk).some((fact) => fact.id === "file-liabilities"));
 assert.ok(previewFacts(conventionalSeWalk).some((fact) => fact.id === "file-declarations"));
-assert.ok(previewFacts(conventionalSeWalk).some((fact) => fact.id === "file-history"));
+assert.ok(previewFacts(conventionalSeWalk).every((fact) => fact.id !== "file-history"));
+assert.ok(previewFacts(conventionalSeWalk).every((fact) => !/^history-/.test(fact.id)));
 assert.match(fileCompleteness(conventionalSeWalk)?.copy ?? "", new RegExp(`^sketch · 4 of ${CONVENTIONAL_FILE_SLOT_TOTAL}$`));
 
 const conventionalRefiWalk = draft({
@@ -11573,7 +11586,8 @@ const seShortTenure = draft({
 });
 assert.equal(isSimplePrimaryW2File(seShortTenure), false);
 assert.equal(workspacePrompt(seShortTenure), "done");
-assert.equal(workspacePromptCopy("done", seShortTenure).followUp, FORMER_HISTORY_ASK);
+assert.notEqual(workspacePromptCopy("done", seShortTenure).followUp, FORMER_HISTORY_ASK);
+assert.notEqual(workspacePrompt(seShortTenure), "former-history");
 const formerSkipped = skipFormerHistory(seShortTenure);
 assert.equal((formerSkipped.addressHistory ?? []).length, 0);
 assert.equal(workspacePrompt(formerSkipped), "done");
@@ -11598,6 +11612,113 @@ assert.ok(
 );
 assert.notEqual(presentAccepted.subjectAddress, "9 WILLOW LANE");
 assert.ok(conventionalSlotReport(presentAccepted).present.includes("history.addressHistory"));
+assert.ok(
+  previewFacts(presentAccepted).some(
+    (fact) => fact.id === "history-address" && fact.value === "9 WILLOW LANE",
+  ),
+);
+
+const harborHistoryBase = draft({
+  ...file32W2Skipped,
+  propertyTypeAsked: true,
+  timeOnJobAsked: true,
+  currentHousingAsked: true,
+  documents: [
+    {
+      slot: "id",
+      name: "government-id-jordan.pdf",
+      type: "application/pdf",
+      size: 4000,
+      receivedAt: "2026-08-25T00:00:00.000Z",
+      status: "extracted",
+      extractClass: "government_id",
+    },
+  ],
+});
+const jordanIdNoAddress = applyExtractedFields(harborHistoryBase, {
+  extractClass: "government_id",
+  confidence: 0.94,
+  fields: { full_name: "JORDAN HALE" },
+});
+assert.equal(jordanIdNoAddress.draft.facts?.present_address, undefined);
+assert.equal((jordanIdNoAddress.draft.addressHistory ?? []).length, 0);
+assert.ok(!(jordanIdNoAddress.draft.pendingProposal?.extras ?? []).some((item) => item.field === "present_address"));
+const jordanNamed = resolveProposal(jordanIdNoAddress.draft, "accept");
+assert.equal(jordanNamed.borrowerName, "Jordan Hale");
+assert.equal((jordanNamed.addressHistory ?? []).length, 0);
+assert.ok(previewFacts(jordanNamed).every((fact) => fact.id !== "history-address"));
+
+const harborW2History = applyExtractedFields(jordanNamed, {
+  extractClass: "w2",
+  confidence: 0.94,
+  fields: { tax_year: "2025", employer_name: "Harbor Steel", wages: "84000" },
+});
+assert.equal(harborW2History.draft.facts?.hire_date, undefined);
+assert.ok(
+  (harborW2History.draft.employmentHistory ?? []).some((item) => item.label === "Harbor Steel" && !item.from),
+);
+assert.ok(
+  previewFacts(harborW2History.draft).some(
+    (fact) => fact.id === "history-employment" && fact.value === "Harbor Steel" && !/[–-]/.test(fact.value),
+  ),
+);
+assert.ok(previewFacts(harborW2History.draft).every((fact) => fact.id !== "file-history"));
+assert.doesNotMatch(
+  previewFacts(harborW2History.draft)
+    .filter((fact) => fact.id.startsWith("history-"))
+    .map((fact) => fact.value)
+    .join(" "),
+  /address —|employment —/,
+);
+const harborIncomeUsed = resolveProposal(harborW2History.draft, "accept");
+assert.equal(harborIncomeUsed.facts?.employer_name?.value, "Harbor Steel");
+assert.equal(workspacePrompt(harborIncomeUsed), "former-history");
+assert.equal(nextFoxAsk(harborIncomeUsed).text, FORMER_HISTORY_ASK);
+assert.equal(nextFoxAsk(harborIncomeUsed).text, whoBeforeAsk("Harbor Steel"));
+assert.deepEqual(
+  (nextFoxAsk(harborIncomeUsed).actions ?? []).map((item) => item.label),
+  ["Skip", "Not yet"],
+);
+assert.doesNotMatch(nextFoxAsk(harborIncomeUsed).text, /employer name|what.?s your employer|how long/i);
+
+const harborWhoTyped = workspaceReply("Riverside Mill", harborIncomeUsed);
+assert.equal(harborWhoTyped?.capture?.field, "formerHistory");
+assert.ok(
+  (harborWhoTyped?.capture && "value" in harborWhoTyped.capture ? harborWhoTyped.capture.value : "") ===
+    "Riverside Mill",
+);
+const harborAfterWho = writeFormerHistoryNote(harborIncomeUsed, "Riverside Mill");
+assert.ok((harborAfterWho.employmentHistory ?? []).some((item) => item.label === "Harbor Steel" && !item.from));
+assert.ok((harborAfterWho.employmentHistory ?? []).some((item) => item.label === "Riverside Mill" && item.to === "former"));
+assert.equal(workspacePrompt(harborAfterWho), "former-history");
+assert.equal(nextFoxAsk(harborAfterWho).text, WHERE_BEFORE_ASK);
+const harborWhereSkip = skipFormerHistory(harborAfterWho);
+assert.equal(workspacePrompt(harborWhereSkip), "done");
+assert.equal((harborWhereSkip.addressHistory ?? []).length, 0);
+
+const harborHireSuggest = applyExtractedFields(
+  draft({ ...file32W2Skipped, propertyTypeAsked: true, timeOnJobAsked: true, currentHousingAsked: true }),
+  {
+  extractClass: "paystub",
+  confidence: 0.94,
+  fields: { employer_name: "Harbor Steel", hire_date: "March 2023" },
+});
+assert.equal(harborHireSuggest.draft.pendingProposal?.field, "statedTimeOnJob");
+assert.match(nextFoxAsk(harborHireSuggest.draft).text, /hire date of March 2023/);
+assert.ok((harborHireSuggest.draft.employmentHistory ?? []).some((item) => item.label === "Harbor Steel"));
+const harborHireUsed = resolveProposal(harborHireSuggest.draft, "accept");
+assert.ok(
+  (harborHireUsed.employmentHistory ?? []).some(
+    (item) => item.label === "Harbor Steel" && item.from === "March 2023",
+  ),
+);
+assert.ok(
+  previewFacts(harborHireUsed).some(
+    (fact) => fact.id === "history-employment" && /Harbor Steel/.test(fact.value) && /March 2023/.test(fact.value),
+  ),
+);
+assert.notEqual(workspacePrompt(harborHireUsed), "former-history");
+assert.notEqual(nextFoxAsk(harborHireUsed).text, FORMER_HISTORY_ASK);
 
 const contractProperty = applyExtractedFields(file32W2Skipped, {
   extractClass: "purchase_contract",

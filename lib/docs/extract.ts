@@ -256,11 +256,11 @@ function extractFieldsPrompt(extractClass: ExtractClass, keys: readonly string[]
   }
   if (extractClass === "w2") {
     extra =
-      " overtime, bonus, and commission only when clearly printed on the W-2; empty otherwise; never invent.";
+      " overtime, bonus, and commission only when clearly printed on the W-2; empty otherwise; never invent. hire_date only when a hire date, start date, or date of hire is clearly printed on the page. Empty otherwise; never invent.";
   }
   if (extractClass === "bank_statement") {
     extra =
-      " institution, period_end, and ending_balance only when clearly printed. Never say funds are enough. Empty otherwise; never invent.";
+      " institution, period_end, and ending_balance only when clearly printed. present_address is the printed residential or mailing address only when clearly printed. Never say funds are enough. Empty otherwise; never invent.";
   }
   if (extractClass === "government_id") {
     extra =

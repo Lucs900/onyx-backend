@@ -504,6 +504,8 @@ function normalize(value: unknown): FoxIntakeDraft {
     propertyHoa: trimString(raw.propertyHoa),
     citizenshipAsked: Boolean(raw.citizenshipAsked || raw.agencyDeclarations?.citizenship),
     formerHistoryAsked: Boolean(raw.formerHistoryAsked),
+    formerEmploymentAsked: Boolean(raw.formerEmploymentAsked),
+    formerAddressAsked: Boolean(raw.formerAddressAsked),
     otherProperties: normalizeOtherProperties(raw.otherProperties),
     largeDebtsOffReport: trimString(raw.largeDebtsOffReport),
     largeDebtsAsked: Boolean(raw.largeDebtsAsked || raw.largeDebtsOffReport),

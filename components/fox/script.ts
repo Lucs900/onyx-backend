@@ -151,7 +151,7 @@ export function taskContext(stage: FoxStage, draft: FoxIntakeDraft) {
     housing: "Asking: housing payment",
     "subject-lease": "Asking: lease or rent",
     citizenship: "Asking: citizenship",
-    "former-history": "Asking: prior history",
+    "former-history": "Asking: 2-year history",
     done: "Draft confirmed",
   };
   return labels[currentPrompt(draft)];
