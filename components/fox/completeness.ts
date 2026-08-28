@@ -41,6 +41,7 @@ import {
 import {
   STATED_AVAILABLE_ASSETS_FIELD,
   SUGGESTED_ASSETS_NOTE,
+  assetsSettled,
   availableAssetsConfirmCopy,
   availableAssetsExtractCopy,
   skipAvailableAssets,
@@ -845,8 +846,9 @@ export function proposalAskCopy(proposal: FactProposal) {
   }
   if (proposal.field === STATED_AVAILABLE_ASSETS_FIELD) {
     const amount = Number(proposal.value) || 0;
+    const institution = proposal.extras?.find((item) => item.field === "institution")?.value;
     return proposal.extras?.length
-      ? availableAssetsExtractCopy(amount)
+      ? availableAssetsExtractCopy(amount, institution)
       : availableAssetsConfirmCopy(amount);
   }
   const shown = displayFactValue(proposal.field, proposal.value);
@@ -1449,7 +1451,8 @@ export function canLooksRight(draft: FoxIntakeDraft) {
     currentAskIdle(draft) &&
     !historyGapNeeded(draft) &&
     propertyAddressSettled(draft) &&
-    citizenshipSettled(draft)
+    citizenshipSettled(draft) &&
+    assetsSettled(draft)
   );
 }
 

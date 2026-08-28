@@ -1046,6 +1046,9 @@ export function applyExtractedFields(
     next = applyRentalIncomeFromExtract(next, extractClass, fields);
   }
   conflict = next.pendingConflict ?? conflict;
+  if (extractClass === "bank_statement" && !next.sampleAccepted) {
+    remainderWrites = remainderWrites.filter((item) => item.field !== "account_last4");
+  }
   const extractedAssets = extractClass === "bank_statement" ? moneyNumber(fields.ending_balance ?? "") : null;
   if (extractedAssets != null) {
     if (next.statedAvailableAssets != null) {

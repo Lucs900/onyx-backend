@@ -365,7 +365,7 @@ Use this writes `statedAvailableAssets`. Leave blank writes nothing and restores
 
 Bank statement extract → suggest → confirm → write. Never silent-write:
 
-`The statement shows about $18,400. Suggested · not underwritten as available assets. Use this?`
+`The statement shows FIRST NATIONAL · $18,400. Suggested · not underwritten. Use this?`
 
 If the typed field is empty, offer the extract instead of a second typed ask. If a typed number is already confirmed and the extract differs, ask once (Use document / Keep the typed number). After a confirmed extract, do not re-ask the typed question.
 
@@ -410,6 +410,12 @@ A typed street confirm-before-write:
 `That’s 14 Oak Street. Suggested · not underwritten. Use this?`
 
 Use this writes Property address on Structure. Occupancy and property type stay as they are. Skip leaves Property address empty. Do not invent a street. Do not ask year built, taxes, HOA, or APN.
+
+After citizenship (US citizen · Permanent resident · Other · Skip), and before Looks right, Fox asks once for a bank statement. Extract-first. No cash form. No last4. No full account number.
+
+`A recent bank statement helps fund the down payment. Drop it here, or Skip.`
+
+Skip leaves Assets empty. If a statement is in, suggest institution and a statement balance only — confirm before write, labeled `Suggested · not underwritten`. Looks right waits until they Skip that line or write a confirmed statement extract. Do not invent cash in bank. Other on citizenship still does not fire Request human.
 
 Free-text “the address is …” still confirm-before-write. If a typed address is already confirmed and the extract differs, ask once (Use document / Keep the typed one). Contract price vs sketch price stays the existing conflict-ask.
 

@@ -183,10 +183,13 @@ import {
 import {
   STATED_AVAILABLE_ASSETS_FIELD,
   SUGGESTED_ASSETS_NOTE,
+  assetsNeeded,
   availableAssetsAskCopy,
   availableAssetsConfirmActions,
   availableAssetsConfirmCopy,
   availableAssetsExtractCopy,
+  bankStatementAskCopy,
+  isLateWalkBankStatementAsk,
   isSkipAvailableAssetsText,
   isStatedAssetsConfirmPending,
   parseAvailableAssetsAmount,
@@ -1438,9 +1441,10 @@ function liveProposalAsk(
   if (proposal.field === STATED_AVAILABLE_ASSETS_FIELD) {
     const amount = Number(proposal.value);
     const shown = Number.isFinite(amount) ? amount : 0;
+    const institution = proposal.extras?.find((item) => item.field === "institution")?.value;
     return {
       text: proposal.extras?.length
-        ? availableAssetsExtractCopy(shown)
+        ? availableAssetsExtractCopy(shown, institution)
         : availableAssetsConfirmCopy(shown),
       actions: availableAssetsConfirmActions(),
     };
@@ -2212,6 +2216,7 @@ export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
     if (historyGapNeeded(draft) && !nextDocInvite(draft)) return "former-history";
     if (!propertyAddressSettled(draft) && !nextDocInvite(draft)) return "property-address";
     if (citizenshipNeeded(draft) && !nextDocInvite(draft)) return "citizenship";
+    if (assetsNeeded(draft) && !nextDocInvite(draft)) return "assets";
     if (canLooksRight(draft)) return "review";
     if (draft.looksRightHold) return "documents";
     return "amount";
@@ -2224,6 +2229,7 @@ export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
     if (historyGapNeeded(draft)) return "former-history";
     if (!propertyAddressSettled(draft)) return "property-address";
     if (citizenshipNeeded(draft)) return "citizenship";
+    if (assetsNeeded(draft)) return "assets";
     if (canLooksRight(draft)) return "review";
     if (draft.looksRightHold) return "documents";
     return "amount";
@@ -2431,7 +2437,7 @@ function workspaceAskCopy(
     return monthlyDebtsAskCopy(draft);
   }
   if (prompt === "assets") {
-    return availableAssetsAskCopy(draft);
+    return isLateWalkBankStatementAsk(draft) ? bankStatementAskCopy() : availableAssetsAskCopy(draft);
   }
   if (prompt === "property-type") {
     return propertyTypeAskCopy(draft);
@@ -4081,6 +4087,7 @@ function draftAfterCaptureBody(draft: FoxIntakeDraft, capture: Capture): FoxInta
     const amount = Number(capture.value);
     return Number.isFinite(amount) && amount > 0 ? writeEstimatedHousing(next, amount) : next;
   }
+  if (capture.field === "skip-available-assets") return skipAvailableAssets(next);
   if (capture.field === "statedAvailableAssets") {
     const amount = parseAvailableAssetsAmount(capture.value);
     return amount != null ? writeStatedAvailableAssets(next, amount) : next;
@@ -5179,6 +5186,9 @@ export function workspaceReply(
         ...workspacePromptCopy(workspacePrompt(nextDraft), nextDraft),
         capture: { field: "skip-available-assets" },
       };
+    }
+    if (isLateWalkBankStatementAsk(draft)) {
+      return answerThenRestore(q, draft);
     }
     const amount = parseAvailableAssetsAmount(q);
     if (amount == null) return answerThenRestore(q, draft);
