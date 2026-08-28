@@ -1,5 +1,6 @@
 import { rateflowClientBodyFromDraft, type LiveQuoteOnFile } from "@/lib/rateflow/fromDraft";
 import {
+  parseSafeCouponRows,
   parseSafeQuoteResponse,
   rateflowScenarioKey,
 } from "@/lib/rateflow/quote";
@@ -18,7 +19,12 @@ export async function requestRateflowIfNeeded(
   const body = rateflowClientBodyFromDraft(draft);
   if (!body) return null;
   const key = rateflowScenarioKey(body);
-  if (draft.liveQuote?.key === key) return draft.liveQuote;
+  if (draft.liveQuote?.key === key) {
+    return {
+      ...draft.liveQuote,
+      ...(draft.liveQuoteRows?.length ? { rows: draft.liveQuoteRows } : {}),
+    };
+  }
   if (draft.liveQuoteKey === key && draft.liveQuoteStatus === "unavailable") {
     return "unavailable";
   }
@@ -38,9 +44,11 @@ export async function requestRateflowIfNeeded(
         cache: "no-store",
       });
       if (!response.ok) return null;
-      const quote = parseSafeQuoteResponse(await response.json());
+      const payload = await response.json();
+      const quote = parseSafeQuoteResponse(payload);
       if (!quote) return null;
-      return { key, ...quote };
+      const rows = parseSafeCouponRows(payload);
+      return { key, ...quote, ...(rows.length ? { rows } : {}) };
     } catch {
       return null;
     } finally {

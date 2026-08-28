@@ -190,6 +190,13 @@ import {
 import { isFileCitizenshipValue, skipCitizenship, writeCitizenship } from "./citizenship";
 import { skipFormerHistory, writeFormerHistoryNote } from "./fileHistory";
 import { markExported, type FileExportFormat } from "./staffExport";
+import {
+  acceptPendingLiveCoupon,
+  applyCouponChoice,
+  keepPendingLiveCoupon,
+  normalizeLiveQuoteRows,
+  normalizePendingLiveCoupon,
+} from "./liveCoupon";
 
 function numberOrUndefined(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : undefined;
@@ -603,6 +610,9 @@ function normalize(value: unknown): FoxIntakeDraft {
         ? raw.liveQuoteStatus
         : undefined,
     liveQuote: normalizeLiveQuote(raw.liveQuote),
+    liveQuoteRows: normalizeLiveQuoteRows(raw.liveQuoteRows),
+    liveCouponSettled: Boolean(raw.liveCouponSettled),
+    pendingLiveCoupon: normalizePendingLiveCoupon(raw.pendingLiveCoupon),
     documents: (raw.documents ?? []).map((doc) => ({
       ...doc,
       status: doc.status ?? "received",
@@ -838,6 +848,9 @@ export function omitLiveQuoteForResume(draft: FoxIntakeDraft): FoxIntakeDraft {
   delete next.liveQuote;
   delete next.liveQuoteKey;
   delete next.liveQuoteStatus;
+  delete next.liveQuoteRows;
+  delete next.liveCouponSettled;
+  delete next.pendingLiveCoupon;
   return next;
 }
 
@@ -1126,9 +1139,13 @@ export function setDraftPath(path: IntakePath | null) {
 export function setLiveQuoteResult(
   key: string,
   quote: FoxIntakeDraft["liveQuote"] | null,
+  rows?: FoxIntakeDraft["liveQuoteRows"],
 ) {
   if (!key) return current;
   if (quote && current.liveQuote?.key === quote.key && current.liveQuoteStatus === "ready") {
+    if (rows?.length && !current.liveQuoteRows?.length) {
+      return commit({ ...current, liveQuoteRows: rows });
+    }
     return current;
   }
   if (!quote && current.liveQuoteKey === key && current.liveQuoteStatus === "unavailable") {
@@ -1139,6 +1156,9 @@ export function setLiveQuoteResult(
     liveQuoteKey: key,
     liveQuoteStatus: quote ? "ready" : "unavailable",
     liveQuote: quote ?? undefined,
+    liveQuoteRows: quote ? rows ?? current.liveQuoteRows : undefined,
+    liveCouponSettled: false,
+    pendingLiveCoupon: undefined,
   });
 }
 
@@ -1923,6 +1943,15 @@ function applyCaptureBody(capture: Capture) {
         ? applyRaiseYtdFarAnswer(current, capture.value)
         : applyRaiseWhenAnswer(current, capture.value),
     );
+  }
+  if (capture.field === "couponChoice") {
+    return commit(applyCouponChoice(current, capture.value));
+  }
+  if (capture.field === "accept-live-coupon") {
+    return commit(acceptPendingLiveCoupon(current));
+  }
+  if (capture.field === "keep-live-coupon") {
+    return commit(keepPendingLiveCoupon(current));
   }
   if (capture.field === "accept-proposal") {
     return commit(resolveProposal(current, "accept"));

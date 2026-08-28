@@ -9,6 +9,7 @@ import {
   rateflowScenarioKey,
   zipFromSources,
   type RateflowClientBody,
+  type SafeCouponRow,
 } from "./quote";
 
 function loanAmountFromDraft(draft: FoxIntakeDraft): number | undefined {
@@ -38,6 +39,7 @@ export type LiveQuoteOnFile = {
   principalAndInterest?: number;
   pts?: number;
   term?: number;
+  rows?: SafeCouponRow[];
 };
 
 function listPriceFromDraft(draft: FoxIntakeDraft): number | undefined {

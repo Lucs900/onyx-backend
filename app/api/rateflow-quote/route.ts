@@ -8,6 +8,7 @@ import {
   isRateflowFailure,
   parseClientBody,
   pickConventional30LowestNoPoints,
+  safeCouponRowsFromProducts,
   safeQuoteFromRow,
   type RateflowClientBody,
   type RateflowQuoteReport,
@@ -165,7 +166,12 @@ export async function POST(request: Request) {
     });
     if (!quote) return unavailable(report);
     logReport(report);
-    return NextResponse.json({ ok: true, quote, report });
+    return NextResponse.json({
+      ok: true,
+      quote,
+      rows: safeCouponRowsFromProducts(rows),
+      report,
+    });
   } catch {
     return unavailable(buildReport({ client }));
   } finally {

@@ -1,4 +1,5 @@
 import type { CreditRange, ExplorerScenario } from "@/components/products/scenario";
+import type { SafeCouponRow } from "@/lib/rateflow/quote";
 
 export const INTAKE_STORAGE_KEY = "onyx.foxIntake.draft";
 export const INTAKE_DRAFT_VERSION = 2;
@@ -439,6 +440,16 @@ export type FoxIntakeDraft = {
     pts?: number;
     term?: number;
   };
+  /** Same-search conventional 30 rows. Never shown as a rate table. */
+  liveQuoteRows?: SafeCouponRow[];
+  liveCouponSettled?: boolean;
+  pendingLiveCoupon?: {
+    choice: "lower" | "nocost";
+    rate: number;
+    asOf: string;
+    principalAndInterest?: number;
+    pts?: number;
+  };
   updatedAt: string;
 };
 
@@ -589,6 +600,9 @@ export type Capture =
   | { field: "accept-proposal" }
   | { field: "change-proposal" }
   | { field: "decline-proposal" }
+  | { field: "couponChoice"; value: "this" | "lower" | "nocost" | "skip" }
+  | { field: "accept-live-coupon" }
+  | { field: "keep-live-coupon" }
   | { field: "payFrequency"; value: string }
   | { field: "bothMonthlyReason"; value: string }
   | { field: "raiseWhen"; value: string }

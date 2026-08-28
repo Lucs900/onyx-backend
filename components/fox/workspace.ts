@@ -22,6 +22,25 @@ import {
   zipFromTypedAddress,
 } from "@/lib/rateflow/quote";
 import {
+  COUPON_UNRESOLVED,
+  acceptPendingLiveCoupon,
+  applyCouponChoice,
+  couponCapture,
+  couponChoiceFromText,
+  couponChoiceUnresolved,
+  isCouponSkipText,
+  isKeepLeadConfirmText,
+  isNoCostText,
+  isThisOneText,
+  keepPendingLiveCoupon,
+  liveCouponActions,
+  liveCouponConfirmCopy,
+  liveQuoteReady,
+  shouldDeferNextAskForLiveCoupon,
+  withLiveCouponChips,
+  type CouponChoice,
+} from "./liveCoupon";
+import {
   AMOUNT_HELPER_BUBBLES,
   AMOUNT_PURPOSE_BUBBLES,
   CREDIT_STATED_NOTE,
@@ -2135,7 +2154,7 @@ export function messagesWithLiveQuoteSpeech(
   const lines = liveQuoteThreadLines(quote);
   if (!lines.length) return messages;
   if (lines.every((line) => messages.some((item) => item.role === "fox" && item.text === line))) {
-    return messages;
+    return withLiveCouponChips(messages, draft);
   }
   const combined = lines.join("\n");
   const withoutCombined = messages.filter(
@@ -2143,7 +2162,7 @@ export function messagesWithLiveQuoteSpeech(
   );
   const speech: FoxMessage[] = lines.map((text, index) => ({
     id: `live-quote:${quote.key}:${index}`,
-    role: "fox",
+    role: "fox" as const,
     text,
   }));
   let lastFoxIdx = -1;
@@ -2153,13 +2172,26 @@ export function messagesWithLiveQuoteSpeech(
       break;
     }
   }
-  const promptId = workspacePrompt(draft);
-  const ask = promptId ? workspacePromptCopy(promptId, draft) : null;
+  const nextAskDraft = {
+    ...draft,
+    liveCouponSettled: true,
+    pendingLiveCoupon: undefined,
+  };
+  const promptId = workspacePrompt(nextAskDraft);
+  const ask = promptId ? workspacePromptCopy(promptId, nextAskDraft) : null;
   const last = lastFoxIdx >= 0 ? withoutCombined[lastFoxIdx] : undefined;
-  if (ask && last && last.text === ask.text && !lines.includes(ask.text)) {
-    return [...withoutCombined.slice(0, lastFoxIdx), ...speech, ...withoutCombined.slice(lastFoxIdx)];
+  const lastIsNextAsk = Boolean(ask && last && last.text === ask.text && !lines.includes(ask.text));
+  if (shouldDeferNextAskForLiveCoupon(draft) || draft.pendingLiveCoupon) {
+    const base = lastIsNextAsk ? withoutCombined.slice(0, lastFoxIdx) : withoutCombined;
+    return withLiveCouponChips([...base, ...speech], draft);
   }
-  return [...withoutCombined, ...speech];
+  if (lastIsNextAsk) {
+    return withLiveCouponChips(
+      [...withoutCombined.slice(0, lastFoxIdx), ...speech, ...withoutCombined.slice(lastFoxIdx)],
+      draft,
+    );
+  }
+  return withLiveCouponChips([...withoutCombined, ...speech], draft);
 }
 
 /** Skip writes the honest fallback on the type tap. House/Condo/2–4 wait for FICO, then live or fallback after a real search. */
@@ -2259,7 +2291,7 @@ export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
   if (draft.awaitingBothMonthlyReason) return "both-monthly-reason";
   if (draft.awaitingRaiseWhen) return "raise-when";
   if (draft.awaitingRaiseYtdFar) return "raise-ytd-far";
-  if (draft.pendingConflict || draft.pendingProposal) return "confirm-proposal";
+  if (draft.pendingConflict || draft.pendingProposal || draft.pendingLiveCoupon) return "confirm-proposal";
   if (draft.correcting === "path-switch") return "path-switch";
   if (draft.correcting === "correct") return "correct";
   if (draft.correcting === "credit") return "credit";
@@ -2696,6 +2728,9 @@ function workspaceAskCopy(
     return raiseYtdFarAsk(draft);
   }
   if (prompt === "confirm-proposal") {
+    if (draft.pendingLiveCoupon) {
+      return liveCouponConfirmCopy(draft);
+    }
     if (draft.pendingConflict) {
       return {
         text: conflictAskCopy(draft.pendingConflict),
@@ -3296,10 +3331,13 @@ export function editPromptFromCapture(capture?: Capture): FoxPrompt | undefined 
   if (
     capture.field === "accept-proposal" ||
     capture.field === "change-proposal" ||
-    capture.field === "decline-proposal"
+    capture.field === "decline-proposal" ||
+    capture.field === "accept-live-coupon" ||
+    capture.field === "keep-live-coupon"
   ) {
     return "confirm-proposal";
   }
+  if (capture.field === "couponChoice") return undefined;
   if (capture.field === "creditRange" || capture.field === "skip-credit") return "credit";
   if (capture.field === "termYears" || capture.field === "skip-term") return "term";
   if (capture.field === "incomeType") return "income";
@@ -4491,6 +4529,27 @@ function typedOtherPropertyRentalReply(q: string, draft: FoxIntakeDraft) {
   };
 }
 
+function couponChipReply(draft: FoxIntakeDraft, choice: CouponChoice) {
+  if ((choice === "lower" || choice === "nocost") && couponChoiceUnresolved(draft, choice)) {
+    return {
+      text: COUPON_UNRESOLVED,
+      actions: liveCouponActions(),
+      capture: couponCapture(choice),
+    };
+  }
+  const nextDraft = applyCouponChoice(draft, choice);
+  if (nextDraft.pendingLiveCoupon) {
+    return {
+      ...liveCouponConfirmCopy(nextDraft),
+      capture: couponCapture(choice),
+    };
+  }
+  return {
+    ...nextFoxAsk(nextDraft),
+    capture: couponCapture(choice === "lower" || choice === "nocost" ? "this" : choice),
+  };
+}
+
 export function workspaceReply(
   text: string,
   draft: FoxIntakeDraft,
@@ -4504,6 +4563,38 @@ export function workspaceReply(
   const q = text.trim();
   const lower = q.toLowerCase();
   const prompt = workspacePrompt(draft);
+
+  if (draft.pendingLiveCoupon) {
+    if (/^(yes|use this|use it|confirm|ok|okay)$/i.test(lower)) {
+      const nextDraft = acceptPendingLiveCoupon(draft);
+      return { ...nextFoxAsk(nextDraft), capture: { field: "accept-live-coupon" } };
+    }
+    if (isKeepLeadConfirmText(q) || isCouponSkipText(q) || isThisOneText(q)) {
+      const nextDraft = keepPendingLiveCoupon(draft);
+      return { ...nextFoxAsk(nextDraft), capture: { field: "keep-live-coupon" } };
+    }
+    const pendingChoice = couponChoiceFromText(q);
+    if (pendingChoice === "lower" || pendingChoice === "nocost") {
+      return couponChipReply(
+        { ...draft, pendingLiveCoupon: undefined, liveCouponSettled: false },
+        pendingChoice,
+      );
+    }
+    return {
+      ...liveCouponConfirmCopy(draft),
+      actions: [...(liveCouponConfirmCopy(draft).actions ?? []), ...liveCouponActions()],
+    };
+  }
+
+  if (
+    liveQuoteReady(draft) &&
+    (!draft.liveCouponSettled || isLowerPaymentText(q) || isNoCostText(q))
+  ) {
+    const choice = couponChoiceFromText(q);
+    if (choice && (!draft.liveCouponSettled || choice === "lower" || choice === "nocost")) {
+      return couponChipReply(draft, choice);
+    }
+  }
 
   if (draft.awaitingYearsInBusiness && draft.correcting !== "qualifying") {
     if (isFreeTextAtGate(q)) {

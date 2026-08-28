@@ -23,6 +23,12 @@ import {
   parseSafeQuoteResponse,
   parseZipcode,
   pickConventional30LowestNoPoints,
+  pickLowerPaymentFromRows,
+  pickNoCostFromRows,
+  liveQuoteFromCouponRow,
+  parseSafeCouponRows,
+  safeCouponRowsFromProducts,
+  sameCouponNumbers,
   rateflowScenarioKey,
   safeQuoteFromRow,
   termYearsFromRow,
@@ -236,6 +242,53 @@ assert.match(
   /5\.500% · 15-year · Live as of .+ PT · not a lock/,
 );
 assert.equal(pickConventional30LowestNoPoints([]), null);
+const jimmyRows = safeCouponRowsFromProducts(jimmySheet);
+assert.equal(pickConventional30LowestNoPoints(jimmySheet)?.rate, 6.25);
+assert.equal(pickLowerPaymentFromRows(jimmyRows)?.rate, 6.125);
+assert.ok((pickLowerPaymentFromRows(jimmyRows)?.pts ?? 2) <= 1);
+assert.notEqual(pickLowerPaymentFromRows(jimmyRows)?.rate, 6.49);
+assert.equal(pickNoCostFromRows(jimmyRows)?.rate, 6.25);
+assert.ok((pickNoCostFromRows(jimmyRows)?.pts ?? 0) < 0);
+assert.equal(
+  pickLowerPaymentFromRows([
+    { rate: 6.0, pts: 1.25, principalAndInterest: 4000 },
+    { rate: 6.125, pts: 1.01, principalAndInterest: 4050 },
+  ]),
+  null,
+);
+assert.equal(
+  pickNoCostFromRows([
+    { rate: 6.49, pts: 0 },
+    { rate: 6.375, pts: 0.25 },
+  ]),
+  null,
+);
+assert.equal(
+  pickNoCostFromRows([
+    { rate: 6.75, pts: -1.25 },
+    { rate: 6.625, pts: -1.0 },
+    { rate: 6.49, pts: -0.25 },
+  ])?.rate,
+  6.625,
+);
+assert.equal(
+  pickNoCostFromRows([
+    { rate: 6.49, pts: -0.1 },
+    { rate: 6.375, pts: -0.4 },
+  ])?.pts,
+  -0.4,
+);
+assert.equal(sameCouponNumbers({ rate: 6.25, pts: -0.75 }, { rate: 6.25, pts: -0.75 }), true);
+const reused = liveQuoteFromCouponRow(pickLowerPaymentFromRows(jimmyRows)!, "k", "2026-08-28T21:10:00.000Z");
+assert.equal(reused.asOf, "2026-08-28T21:10:00.000Z");
+assert.equal(reused.rate, 6.125);
+assert.deepEqual(
+  parseSafeCouponRows({
+    ok: true,
+    rows: [{ rate: 6.25, pts: -0.75, principalAndInterest: 4187 }],
+  }),
+  [{ rate: 6.25, pts: -0.75, principalAndInterest: 4187 }],
+);
 assert.ok(isRateflowFailure({ status: "error", message: "no products" }));
 assert.equal(asProductRows({ status: "error" }).length, 0);
 
@@ -346,6 +399,7 @@ assert.ok(route.includes("zipcode: client.zipcode"));
 assert.ok(route.includes('state: "CA"'));
 assert.ok(route.includes("[rateflow-quote]"));
 assert.ok(route.includes("pickConventional30LowestNoPoints"));
+assert.ok(route.includes("safeCouponRowsFromProducts"));
 assert.ok(!route.includes("pickConventional30NearPar"));
 assert.ok(!route.includes("94115"));
 assert.doesNotMatch(route, /console\.(log|info|warn|error)\([^)]*BANKINGBRIDGE_/);

@@ -37,6 +37,7 @@ import {
   replyToMessage,
 } from "./script";
 import { searchedKeyFor } from "@/lib/rateflow/fromDraft";
+import { shouldDeferNextAskForLiveCoupon } from "./liveCoupon";
 import { requestRateflowIfNeeded } from "./rateflowClient";
 import {
   applyCapture,
@@ -884,6 +885,9 @@ export function AlwaysOnFox({
       ) {
         return prev;
       }
+      if (isStart && shouldDeferNextAskForLiveCoupon(live) && prompt !== "confirm-proposal") {
+        return prev;
+      }
       if (isStart && prompt === "done") {
         if (hasPreparedAsk(prev)) return prev;
         if (fileExists(getFoxDraft()) && prev[prev.length - 1]?.role === "fox") return prev;
@@ -928,7 +932,8 @@ export function AlwaysOnFox({
         setLiveQuoteResult(key, null);
         return;
       }
-      setLiveQuoteResult(key, result);
+      const { rows, ...quote } = result;
+      setLiveQuoteResult(key, quote, rows);
       const live = getFoxDraft();
       if (live.liveQuote && live.liveQuoteStatus === "ready") {
         commitMessages((prev) => messagesWithLiveQuoteSpeech(prev, live, live.liveQuote!));

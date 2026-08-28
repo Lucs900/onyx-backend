@@ -78,6 +78,14 @@ export type SafeLiveQuote = {
   term?: number;
 };
 
+/** Conventional 30 row kept from the same search. Never a visible rate table. */
+export type SafeCouponRow = {
+  rate: number;
+  pts?: number;
+  principalAndInterest?: number;
+  price?: number;
+};
+
 export type RateflowQuoteReport = {
   env: {
     BANKINGBRIDGE_API_KEY: boolean;
@@ -312,6 +320,113 @@ export function pickConventional30LowestNoPoints(
   );
   if (!eligible.length) return null;
   return [...eligible].sort(lowestNoPointsSort)[0] ?? null;
+}
+
+export function safeCouponRowsFromProducts(rows: RateflowProductRow[]): SafeCouponRow[] {
+  const out: SafeCouponRow[] = [];
+  for (const row of rows) {
+    if (!isConventional(row) || termYearsFromRow(row) !== 30) continue;
+    const rate = Number(row.rate);
+    if (!Number.isFinite(rate) || rate <= 0 || rate > 25) continue;
+    const pts = pointsFromRow(row);
+    const pi = Number(row.principalAndInterest);
+    const price = Number(row.price);
+    out.push({
+      rate,
+      ...(pts != null ? { pts } : {}),
+      ...(Number.isFinite(pi) && pi > 0 ? { principalAndInterest: pi } : {}),
+      ...(Number.isFinite(price) ? { price } : {}),
+    });
+  }
+  return out;
+}
+
+function couponPts(row: SafeCouponRow): number | undefined {
+  return pointsFromRow(row);
+}
+
+/** Lowest note rate among conventional 30 rows with points <= 1.00. */
+export function pickLowerPaymentFromRows(rows: SafeCouponRow[]): SafeCouponRow | null {
+  const eligible = rows.filter((row) => {
+    const pts = couponPts(row);
+    return Number.isFinite(row.rate) && pts != null && pts <= 1;
+  });
+  if (!eligible.length) return null;
+  return [...eligible].sort((left, right) => {
+    const rateDiff = left.rate - right.rate;
+    if (rateDiff !== 0) return rateDiff;
+    return (couponPts(left) ?? 0) - (couponPts(right) ?? 0);
+  })[0] ?? null;
+}
+
+/**
+ * Prefer credit >= 1.00 (points <= -1.00), lowest coupon among those.
+ * If none, the best credit (most negative points). Par is not a credit.
+ */
+export function pickNoCostFromRows(rows: SafeCouponRow[]): SafeCouponRow | null {
+  const withPts = rows.filter((row) => Number.isFinite(row.rate) && couponPts(row) != null);
+  const bigCredit = withPts.filter((row) => (couponPts(row) ?? 0) <= -1);
+  if (bigCredit.length) {
+    return [...bigCredit].sort((left, right) => {
+      const rateDiff = left.rate - right.rate;
+      if (rateDiff !== 0) return rateDiff;
+      return (couponPts(left) ?? 0) - (couponPts(right) ?? 0);
+    })[0] ?? null;
+  }
+  const anyCredit = withPts.filter((row) => (couponPts(row) ?? 0) < 0);
+  if (!anyCredit.length) return null;
+  return [...anyCredit].sort((left, right) => {
+    const ptsDiff = (couponPts(left) ?? 0) - (couponPts(right) ?? 0);
+    if (ptsDiff !== 0) return ptsDiff;
+    return left.rate - right.rate;
+  })[0] ?? null;
+}
+
+export function sameCouponNumbers(
+  left: { rate?: number; pts?: number } | null | undefined,
+  right: { rate?: number; pts?: number } | null | undefined,
+): boolean {
+  if (!left || !right) return false;
+  if (Number(left.rate) !== Number(right.rate)) return false;
+  return Math.abs((left.pts ?? 0) - (right.pts ?? 0)) < 0.0005;
+}
+
+export function liveQuoteFromCouponRow(
+  row: SafeCouponRow,
+  key: string,
+  asOf: string,
+): { key: string; rate: number; asOf: string; principalAndInterest?: number; pts?: number } {
+  const pts = couponPts(row);
+  return {
+    key,
+    rate: row.rate,
+    asOf,
+    ...(row.principalAndInterest != null ? { principalAndInterest: row.principalAndInterest } : {}),
+    ...(pts != null ? { pts } : {}),
+  };
+}
+
+export function parseSafeCouponRows(input: unknown): SafeCouponRow[] {
+  if (!input || typeof input !== "object") return [];
+  const raw = (input as Record<string, unknown>).rows;
+  if (!Array.isArray(raw)) return [];
+  const out: SafeCouponRow[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== "object") continue;
+    const row = item as Record<string, unknown>;
+    const rate = Number(row.rate);
+    if (!Number.isFinite(rate) || rate <= 0 || rate > 25) continue;
+    const pts = Number(row.pts);
+    const pi = Number(row.principalAndInterest);
+    const price = Number(row.price);
+    out.push({
+      rate,
+      ...(Number.isFinite(pts) ? { pts } : {}),
+      ...(Number.isFinite(pi) && pi > 0 ? { principalAndInterest: pi } : {}),
+      ...(Number.isFinite(price) ? { price } : {}),
+    });
+  }
+  return out;
 }
 
 export function firstResultSummary(rows: RateflowProductRow[]): RateflowQuoteReport["first"] | undefined {

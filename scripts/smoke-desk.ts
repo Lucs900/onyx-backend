@@ -25,7 +25,21 @@ import {
   workspaceSessionStarted,
 } from "../components/fox/store";
 import { liveQuoteMatchesDraft, rateflowClientBodyFromDraft } from "../lib/rateflow/fromDraft";
-import { liveRateLine, liveRateSecondLine, rateflowScenarioKey } from "../lib/rateflow/quote";
+import {
+  liveRateLine,
+  liveRateSecondLine,
+  pickLowerPaymentFromRows,
+  pickNoCostFromRows,
+  rateflowScenarioKey,
+} from "../lib/rateflow/quote";
+import {
+  COUPON_UNRESOLVED,
+  acceptPendingLiveCoupon,
+  applyCouponChoice,
+  couponChoiceFromText,
+  isLowerPaymentText,
+  keepPendingLiveCoupon,
+} from "../components/fox/liveCoupon";
 import {
   SUGGESTED_NOTE,
   SUGGESTED_INCOME_NOTE,
@@ -1263,6 +1277,13 @@ assert.equal(rateflowClientBodyFromDraft(addressAtZipFile)?.zipcode, "94105");
 assert.equal(rateflowClientBodyFromDraft(addressAtZipFile)?.city, "San Francisco");
 assert.equal(rateflowClientBodyFromDraft(addressAtZipFile)?.loan_purpose, "purchase");
 const founderLiveKey = rateflowScenarioKey(rateflowClientBodyFromDraft(afterFounderZip)!);
+const founderCouponRows = [
+  { rate: 6.49, pts: -0.01, principalAndInterest: 4298 },
+  { rate: 6.375, pts: -1.25, principalAndInterest: 4242 },
+  { rate: 6.125, pts: 0, principalAndInterest: 4142 },
+  { rate: 6.0, pts: 0.75, principalAndInterest: 4077 },
+  { rate: 5.875, pts: 1.25, principalAndInterest: 4013 },
+];
 const founderLive = draft({
   ...afterFounderZip,
   liveQuoteKey: founderLiveKey,
@@ -1274,6 +1295,7 @@ const founderLive = draft({
     principalAndInterest: 4142,
     pts: 0,
   },
+  liveQuoteRows: founderCouponRows,
 });
 assert.match(previewFacts(founderLive).find((fact) => fact.id === "rate")?.value ?? "", /6\.125% · Live as of .+ PT · not a lock/);
 assert.doesNotMatch(previewFacts(founderLive).find((fact) => fact.id === "rate")?.value ?? "", /6\.750|approved|locked|committed/);
@@ -1305,10 +1327,12 @@ const founderThread = [
 const founderSpokenThread = messagesWithLiveQuoteSpeech(founderThread, founderLive, founderLive.liveQuote!);
 assert.equal(founderSpokenThread[0].text, founderSpokenLines[0]);
 assert.equal(founderSpokenThread[1].text, founderSpokenLines[1]);
-assert.equal(founderSpokenThread[2].text, founderIncomeAsk.text);
-assert.equal(founderSpokenThread[2].actions, founderIncomeAsk.actions);
-assert.doesNotMatch(founderSpokenThread[0].text, /How is income earned/);
-assert.doesNotMatch(founderSpokenThread[1].text, /How is income earned/);
+assert.equal(founderSpokenThread.length, 2);
+assert.deepEqual(
+  (founderSpokenThread[1].actions ?? []).map((item) => item.label),
+  ["This one", "Lower payment", "No cost", "Skip"],
+);
+assert.doesNotMatch(founderSpokenThread.map((item) => item.text).join("\n"), /How is income earned|6\.490|rate board|6\.750/);
 assert.equal(
   messagesWithLiveQuoteSpeech(founderSpokenThread, founderLive, founderLive.liveQuote!).length,
   founderSpokenThread.length,
@@ -1316,6 +1340,93 @@ assert.equal(
 assert.equal(omitLiveQuoteForResume(founderLive).liveQuote, undefined);
 assert.equal(omitLiveQuoteForResume(founderLive).liveQuoteKey, undefined);
 assert.equal(omitLiveQuoteForResume(founderLive).liveQuoteStatus, undefined);
+assert.equal(omitLiveQuoteForResume(founderLive).liveQuoteRows, undefined);
+assert.equal(couponChoiceFromText("This one"), "this");
+assert.equal(couponChoiceFromText("Skip"), "skip");
+assert.equal(couponChoiceFromText("Lower payment"), "lower");
+assert.equal(couponChoiceFromText("No cost"), "nocost");
+assert.ok(isLowerPaymentText("I'll pay a point"));
+assert.ok(isLowerPaymentText("I will pay a point"));
+assert.ok(isLowerPaymentText("I want the lowest payment"));
+assert.ok(isLowerPaymentText("lowest payment"));
+assert.equal(pickLowerPaymentFromRows(founderCouponRows)?.rate, 6.0);
+assert.equal(pickNoCostFromRows(founderCouponRows)?.rate, 6.375);
+assert.equal(pickNoCostFromRows(founderCouponRows)?.pts, -1.25);
+const founderThisOne = workspaceReply("This one", founderLive);
+assert.equal(founderThisOne?.capture?.field, "couponChoice");
+assert.equal(founderThisOne?.capture && "value" in founderThisOne.capture ? founderThisOne.capture.value : "", "this");
+assert.equal(founderThisOne?.text, founderIncomeAsk.text);
+assert.equal(applyCouponChoice(founderLive, "this").liveQuote?.rate, 6.125);
+assert.equal(applyCouponChoice(founderLive, "this").liveCouponSettled, true);
+assert.equal(workspaceReply("Skip", founderLive)?.capture && "value" in workspaceReply("Skip", founderLive)!.capture!
+  ? workspaceReply("Skip", founderLive)!.capture!.value
+  : "", "skip");
+assert.equal(applyCouponChoice(founderLive, "skip").liveQuote?.rate, 6.125);
+const founderLower = workspaceReply("Lower payment", founderLive);
+assert.equal(founderLower?.capture?.field, "couponChoice");
+assert.equal(founderLower?.capture && "value" in founderLower.capture ? founderLower.capture.value : "", "lower");
+assert.match(founderLower?.text ?? "", /6\.000% · Live as of .+ PT · not a lock/);
+assert.equal(founderLower?.followUp, "P&I $4,077 · 0.75 pts");
+assert.deepEqual(
+  (founderLower?.actions ?? []).map((item) => item.label),
+  ["Use this", "Keep this one", "Skip"],
+);
+assert.doesNotMatch(`${founderLower?.text ?? ""} ${founderLower?.followUp ?? ""}`, /reward|6\.750|6\.490/);
+assert.equal(applyCouponChoice(founderLive, "lower").pendingLiveCoupon?.asOf, founderLive.liveQuote?.asOf);
+assert.equal(applyCouponChoice(founderLive, "lower").liveQuote?.rate, 6.125);
+const founderLowerAccepted = acceptPendingLiveCoupon(applyCouponChoice(founderLive, "lower"));
+assert.equal(founderLowerAccepted.liveQuote?.rate, 6.0);
+assert.equal(founderLowerAccepted.liveQuote?.asOf, "2026-08-28T19:04:00.000Z");
+assert.equal(founderLowerAccepted.liveQuote?.pts, 0.75);
+assert.equal(founderLowerAccepted.liveCouponSettled, true);
+assert.match(previewFacts(founderLowerAccepted).find((fact) => fact.id === "rate")?.value ?? "", /6\.000% · Live as of .+ PT · not a lock/);
+assert.equal(previewFacts(founderLowerAccepted).find((fact) => fact.id === "rate")?.note, "P&I $4,077 · 0.75 pts");
+assert.equal(workspaceReply("Use this", applyCouponChoice(founderLive, "lower"))?.text, founderIncomeAsk.text);
+assert.equal(keepPendingLiveCoupon(applyCouponChoice(founderLive, "lower")).liveQuote?.rate, 6.125);
+assert.equal(workspaceReply("Keep this one", applyCouponChoice(founderLive, "lower"))?.capture?.field, "keep-live-coupon");
+const founderTypedLower = workspaceReply("I will pay a point", founderLive);
+assert.equal(founderTypedLower?.capture && "value" in founderTypedLower.capture ? founderTypedLower.capture.value : "", "lower");
+assert.match(founderTypedLower?.text ?? "", /6\.000%/);
+assert.ok((founderTypedLower?.actions ?? []).some((item) => item.label === "Use this"));
+const founderNoCost = workspaceReply("No cost", founderLive);
+assert.equal(founderNoCost?.capture && "value" in founderNoCost.capture ? founderNoCost.capture.value : "", "nocost");
+assert.match(founderNoCost?.text ?? "", /6\.375% · Live as of .+ PT · not a lock/);
+assert.equal(founderNoCost?.followUp, "P&I $4,242 · -1.25 pts");
+assert.doesNotMatch(founderNoCost?.followUp ?? "", /reward/);
+const founderNoCostAccepted = acceptPendingLiveCoupon(applyCouponChoice(founderLive, "nocost"));
+assert.equal(founderNoCostAccepted.liveQuote?.rate, 6.375);
+assert.equal(founderNoCostAccepted.liveQuote?.asOf, "2026-08-28T19:04:00.000Z");
+assert.equal(founderNoCostAccepted.liveQuote?.pts, -1.25);
+const sameAsLead = draft({
+  ...founderLive,
+  liveQuoteRows: [
+    { rate: 6.125, pts: 0, principalAndInterest: 4142 },
+    { rate: 6.25, pts: 1.5, principalAndInterest: 4187 },
+  ],
+});
+assert.equal(workspaceReply("Lower payment", sameAsLead)?.capture && "value" in workspaceReply("Lower payment", sameAsLead)!.capture!
+  ? workspaceReply("Lower payment", sameAsLead)!.capture!.value
+  : "", "this");
+assert.equal(applyCouponChoice(sameAsLead, "lower").pendingLiveCoupon, undefined);
+assert.equal(applyCouponChoice(sameAsLead, "lower").liveQuote?.rate, 6.125);
+const noLowerRow = draft({
+  ...founderLive,
+  liveQuoteRows: [{ rate: 5.875, pts: 1.25, principalAndInterest: 4013 }],
+});
+assert.equal(workspaceReply("Lower payment", noLowerRow)?.text, COUPON_UNRESOLVED);
+assert.equal(applyCouponChoice(noLowerRow, "lower").liveQuote?.rate, 6.125);
+assert.notEqual(applyCouponChoice(noLowerRow, "lower").liveCouponSettled, true);
+const noCreditRow = draft({
+  ...founderLive,
+  liveQuoteRows: [
+    { rate: 6.125, pts: 0, principalAndInterest: 4142 },
+    { rate: 6.0, pts: 0.75, principalAndInterest: 4077 },
+  ],
+});
+assert.equal(workspaceReply("No cost", noCreditRow)?.text, COUPON_UNRESOLVED);
+assert.equal(applyCouponChoice(noCreditRow, "nocost").liveQuote?.rate, 6.125);
+assert.equal(readFileSync(join(dirname(fileURLToPath(import.meta.url)), "..", "components/fox/liveCoupon.ts"), "utf8").includes("fetch("), false);
+assert.equal(readFileSync(join(dirname(fileURLToPath(import.meta.url)), "..", "components/fox/liveCoupon.ts"), "utf8").includes("rateflow-quote"), false);
 assert.equal(founderLive.liveQuote?.rate, 6.125);
 assert.equal(liveQuoteMatchesDraft(afterFounderZip, founderLive.liveQuote), true);
 const founderZipChange = writePropertyZip(afterFounderZip, "94105");
@@ -1538,13 +1649,19 @@ const founderRefiLive = draft({
     rate: 6.25,
     asOf: "2026-08-28T21:10:00.000Z",
     principalAndInterest: 4187,
-    pts: 0.125,
+    pts: -0.75,
   },
+  liveQuoteRows: [
+    { rate: 6.49, pts: -0.01, principalAndInterest: 4298 },
+    { rate: 6.25, pts: -0.75, principalAndInterest: 4187 },
+    { rate: 6.125, pts: 0.5, principalAndInterest: 4133 },
+    { rate: 6.375, pts: -1.25, principalAndInterest: 4242 },
+  ],
 });
 const founderRefiSpokenLines = liveQuoteThreadLines(founderRefiLive.liveQuote!);
 assert.equal(founderRefiSpokenLines.length, 2);
 assert.match(founderRefiSpokenLines[0] ?? "", /6\.250% · Live as of .+ PT · not a lock/);
-assert.equal(founderRefiSpokenLines[1], "P&I $4,187 · 0.125 pts");
+assert.equal(founderRefiSpokenLines[1], "P&I $4,187 · -0.75 pts");
 assert.equal(founderRefiSpokenLines[0], previewFacts(founderRefiLive).find((fact) => fact.id === "rate")?.value);
 assert.equal(founderRefiSpokenLines[1], previewFacts(founderRefiLive).find((fact) => fact.id === "rate")?.note);
 const founderRefiIncomeAsk = workspacePromptCopy("income", founderRefiLive);
@@ -1557,9 +1674,22 @@ const founderRefiSpokenThread = messagesWithLiveQuoteSpeech(
 );
 assert.equal(founderRefiSpokenThread[0].text, founderRefiSpokenLines[0]);
 assert.equal(founderRefiSpokenThread[1].text, founderRefiSpokenLines[1]);
-assert.equal(founderRefiSpokenThread[2].text, founderRefiIncomeAsk.text);
+assert.equal(founderRefiSpokenThread.length, 2);
+assert.deepEqual(
+  (founderRefiSpokenThread[1].actions ?? []).map((item) => item.label),
+  ["This one", "Lower payment", "No cost", "Skip"],
+);
 assert.doesNotMatch(founderRefiSpokenThread[0].text, /How is income earned/);
 assert.doesNotMatch(founderRefiSpokenThread[1].text, /How is income earned/);
+const founderRefiLower = workspaceReply("Lower payment", founderRefiLive);
+assert.match(founderRefiLower?.text ?? "", /6\.125% · Live as of .+ PT · not a lock/);
+assert.equal(founderRefiLower?.followUp, "P&I $4,133 · 0.5 pts");
+assert.equal(applyCouponChoice(founderRefiLive, "lower").pendingLiveCoupon?.asOf, "2026-08-28T21:10:00.000Z");
+const founderRefiNoCost = workspaceReply("No cost", founderRefiLive);
+assert.match(founderRefiNoCost?.text ?? "", /6\.375%/);
+assert.equal(founderRefiNoCost?.followUp, "P&I $4,242 · -1.25 pts");
+assert.equal(workspaceReply("This one", founderRefiLive)?.text, founderRefiIncomeAsk.text);
+assert.doesNotMatch(nextFoxAsk(founderRefiAddress).text, /purchase price|home you are buying/);
 const founderSkip = workspaceReply("Skip", founder850);
 assert.equal(founderSkip?.capture?.field, "skip-property-type");
 assert.match(founderSkip?.text ?? "", /estimated FICO/i);
@@ -10291,6 +10421,8 @@ const alwaysOn = readFileSync(join(root, "components/fox/AlwaysOnFox.tsx"), "utf
 const rateflowClient = readFileSync(join(root, "components/fox/rateflowClient.ts"), "utf8");
 assert.ok(alwaysOn.includes("requestRateflowIfNeeded"));
 assert.ok(alwaysOn.includes("messagesWithLiveQuoteSpeech"));
+assert.ok(alwaysOn.includes("shouldDeferNextAskForLiveCoupon"));
+assert.ok(!alwaysOn.includes("BANKINGBRIDGE_API_KEY"));
 assert.ok(rateflowClient.includes("/api/rateflow-quote"));
 assert.ok(!alwaysOn.includes("/api/heloc-quote"));
 assert.ok(!rateflowClient.includes("/api/heloc-quote"));
