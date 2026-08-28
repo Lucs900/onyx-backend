@@ -423,6 +423,16 @@ export type FoxIntakeDraft = {
   status?: typeof CONFIRMED_STATUS;
   loStatus?: LoMark;
   previewSample?: boolean;
+  /** Last Rateflow search key. Reuse unless amounts, type, occupancy, or FICO change. */
+  liveQuoteKey?: string;
+  liveQuoteStatus?: "ready" | "unavailable";
+  liveQuote?: {
+    key: string;
+    rate: number;
+    asOf: string;
+    principalAndInterest?: number;
+    pts?: number;
+  };
   updatedAt: string;
 };
 

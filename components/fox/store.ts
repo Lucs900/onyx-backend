@@ -197,6 +197,24 @@ function trimString(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
 
+function normalizeLiveQuote(value: unknown): FoxIntakeDraft["liveQuote"] {
+  if (!value || typeof value !== "object") return undefined;
+  const raw = value as Record<string, unknown>;
+  const key = typeof raw.key === "string" ? raw.key.trim() : "";
+  const rate = Number(raw.rate);
+  const asOf = typeof raw.asOf === "string" ? raw.asOf : "";
+  if (!key || !Number.isFinite(rate) || rate <= 0) return undefined;
+  const principalAndInterest = numberOrUndefined(raw.principalAndInterest);
+  const pts = signedNumberOrUndefined(raw.pts);
+  return {
+    key,
+    rate,
+    asOf,
+    ...(principalAndInterest != null ? { principalAndInterest } : {}),
+    ...(pts != null ? { pts } : {}),
+  };
+}
+
 function normalizeHistoryEntries(value: unknown): { label?: string; from?: string; to?: string }[] | undefined {
   if (!Array.isArray(value)) return undefined;
   const entries: { label: string; from?: string; to?: string }[] = [];
@@ -557,6 +575,14 @@ function normalize(value: unknown): FoxIntakeDraft {
         ? raw.workspaceDraftStatus
         : undefined,
     previewSample: Boolean(raw.previewSample),
+    liveQuoteKey: typeof raw.liveQuoteKey === "string" && raw.liveQuoteKey.trim()
+      ? raw.liveQuoteKey.trim()
+      : undefined,
+    liveQuoteStatus:
+      raw.liveQuoteStatus === "ready" || raw.liveQuoteStatus === "unavailable"
+        ? raw.liveQuoteStatus
+        : undefined,
+    liveQuote: normalizeLiveQuote(raw.liveQuote),
     documents: (raw.documents ?? []).map((doc) => ({
       ...doc,
       status: doc.status ?? "received",
@@ -1067,6 +1093,25 @@ export function setDraftPath(path: IntakePath | null) {
   if (!path) return current;
   if (current.path === path) return current;
   return commit({ ...current, path });
+}
+
+export function setLiveQuoteResult(
+  key: string,
+  quote: FoxIntakeDraft["liveQuote"] | null,
+) {
+  if (!key) return current;
+  if (quote && current.liveQuote?.key === quote.key && current.liveQuoteStatus === "ready") {
+    return current;
+  }
+  if (!quote && current.liveQuoteKey === key && current.liveQuoteStatus === "unavailable") {
+    return current;
+  }
+  return commit({
+    ...current,
+    liveQuoteKey: key,
+    liveQuoteStatus: quote ? "ready" : "unavailable",
+    liveQuote: quote ?? undefined,
+  });
 }
 
 /** /start URL seed. Resume an operating File; do not treat path=acr|loan as a fresh CTA. */

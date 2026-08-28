@@ -36,6 +36,8 @@ import {
   promptCopy,
   replyToMessage,
 } from "./script";
+import { searchedKeyFor } from "@/lib/rateflow/fromDraft";
+import { requestRateflowIfNeeded } from "./rateflowClient";
 import {
   applyCapture,
   applyPreviewMotionControls,
@@ -52,6 +54,7 @@ import {
   setDraftPath,
   setDraftScenario,
   setFoxMessages,
+  setLiveQuoteResult,
   shouldResumeWorkspaceEntry,
   startOverWorkspace,
   subscribeFoxDraft,
@@ -520,6 +523,7 @@ export function AlwaysOnFox({
   const isHome = stage === "home" || pathname === "/";
   const workspaceSurface = isStart || isHome;
   const draft = useSyncExternalStore(subscribeFoxDraft, getFoxDraft, getServerDraft);
+  const rateflowKey = searchedKeyFor(draft) ?? "";
   const [open, setOpen] = useState(() => isStart || isHome || stage === "intake");
   const [ready, setReady] = useState(() => workspaceSurface);
   const [search, setSearch] = useState(() => {
@@ -910,6 +914,25 @@ export function AlwaysOnFox({
     isStart,
     ready,
   ]);
+
+  useEffect(() => {
+    if (!ready || !isStart || !rateflowKey) return;
+    let cancelled = false;
+    void (async () => {
+      const result = await requestRateflowIfNeeded(getFoxDraft());
+      if (cancelled || result == null) return;
+      const key = searchedKeyFor(getFoxDraft());
+      if (!key) return;
+      if (result === "unavailable") {
+        setLiveQuoteResult(key, null);
+        return;
+      }
+      setLiveQuoteResult(key, result);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [isStart, rateflowKey, ready]);
 
   useEffect(() => {
     if (!ready || !isStart) return;

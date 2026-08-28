@@ -23,6 +23,8 @@ import {
   sitExpireReview,
   workspaceSessionStarted,
 } from "../components/fox/store";
+import { rateflowClientBodyFromDraft } from "../lib/rateflow/fromDraft";
+import { liveRateLine, liveRateSecondLine, rateflowScenarioKey } from "../lib/rateflow/quote";
 import {
   SUGGESTED_NOTE,
   SUGGESTED_INCOME_NOTE,
@@ -1640,8 +1642,9 @@ assert.equal(creditPullPermitted({ ...afterIncome, sampleAccepted: true, motion:
 assert.match(structureExplainCopy("credit", afterIncome)?.text ?? "", /stated range/i);
 assert.doesNotMatch(structureExplainCopy("credit", afterIncome)?.text ?? "", /we pulled|fico \d/i);
 assert.ok(creditFacts.some((fact) => fact.id === "income" && fact.value === "W-2"));
-assert.ok(creditFacts.some((fact) => fact.id === "rate" && fact.value.includes(SAMPLE_RATE_LABEL)));
-assert.ok(creditFacts.some((fact) => fact.id === "rate" && fact.note === PREVIEW_RATE_NOTE));
+assert.ok(creditFacts.some((fact) => fact.id === "rate" && fact.value === PRICING_WHEN_READY));
+assert.ok(creditFacts.every((fact) => fact.id !== "rate" || !/6\.750/.test(`${fact.value} ${fact.note ?? ""}`)));
+assert.ok(creditFacts.every((fact) => fact.id !== "rate" || fact.note !== PREVIEW_RATE_NOTE));
 const convReward = creditFacts.find((fact) => fact.id === "reward");
 assert.equal(convReward?.value, "Prepared when you join");
 assert.ok(!/\$[\d,]/.test(convReward?.value ?? ""));
@@ -1651,9 +1654,52 @@ assert.equal(structureFixPrompt("income"), "income");
 
 const recap = fileSummaryFacts(afterIncome);
 const recapRate = recap.find((fact) => fact.id === "rate");
-assert.ok(recapRate?.value.includes(SAMPLE_RATE_LABEL));
-assert.ok(recapRate?.value.includes(PREVIEW_RATE_NOTE));
+assert.equal(recapRate?.value, PRICING_WHEN_READY);
+assert.ok(!recapRate?.value.includes(SAMPLE_RATE_LABEL));
+assert.ok(!recapRate?.value.includes("6.750"));
 assert.ok(recap.some((fact) => fact.id === "income" && fact.value === "W-2"));
+
+const liveReady = {
+  ...afterIncome,
+  propertyType: "sfr" as const,
+  liveQuote: {
+    key: "",
+    rate: 6.125,
+    asOf: "2026-08-28T19:04:00.000Z",
+    principalAndInterest: 5830,
+    pts: 0,
+  },
+};
+const liveBody = rateflowClientBodyFromDraft(liveReady);
+assert.ok(liveBody);
+liveReady.liveQuote.key = rateflowScenarioKey(liveBody!);
+const liveFacts = previewFacts(liveReady);
+const liveRate = liveFacts.find((fact) => fact.id === "rate");
+assert.equal(liveRate?.value, liveRateLine(liveReady.liveQuote));
+assert.equal(liveRate?.note, liveRateSecondLine(liveReady.liveQuote));
+assert.match(liveRate?.value ?? "", /not a lock/);
+assert.doesNotMatch(liveRate?.value ?? "", /approved|locked|committed|6\.750/i);
+assert.equal(liveRate?.note, "P&I $5,830 · 0 pts");
+assert.match(structureExplainCopy("rate", liveReady)?.text ?? "", /not a lock/);
+assert.doesNotMatch(structureExplainCopy("rate", liveReady)?.text ?? "", /6\.750|Preview rate/);
+const staleLive = previewFacts({
+  ...liveReady,
+  loanAmountValue: 800_000,
+});
+assert.ok(staleLive.some((fact) => fact.id === "rate" && fact.value === PRICING_WHEN_READY));
+assert.ok(staleLive.every((fact) => fact.id !== "rate" || !/6\.125|6\.750/.test(fact.value)));
+const migratedSampleRate = migrateRestoredFoxMessages([
+  {
+    id: "old-sample-rate",
+    role: "fox",
+    text: "Here’s a sample structure.",
+    facts: [{ id: "rate", label: "Rate", value: `Conventional 30-year ${SAMPLE_RATE_LABEL}`, note: PREVIEW_RATE_NOTE }],
+  },
+]);
+assert.ok(
+  migratedSampleRate[0]?.facts?.some((fact) => fact.id === "rate" && fact.value === PRICING_WHEN_READY),
+);
+assert.ok(!/6\.750/.test(JSON.stringify(migratedSampleRate)));
 
 const occupancyCopy = workspaceUpdateCopy(
   { field: "occupancy", value: "second-home" },
@@ -9792,8 +9838,12 @@ assert.ok(dropSource.includes("requestFoxPickFile"));
 assert.ok(!dropSource.includes(">Documents<"));
 assert.ok(!dropSource.includes("/api/chat"));
 assert.ok(!dropSource.includes("/api/heloc-quote"));
+assert.ok(!dropSource.includes("/api/rateflow-quote"));
 assert.ok(!dropSource.includes("setTimeout"));
 const alwaysOn = readFileSync(join(root, "components/fox/AlwaysOnFox.tsx"), "utf8");
+assert.ok(alwaysOn.includes("/api/rateflow-quote"));
+assert.ok(!alwaysOn.includes("/api/heloc-quote"));
+assert.ok(!alwaysOn.includes("BANKINGBRIDGE_"));
 assert.ok(
   alwaysOn.includes("file is prepared") ||
     alwaysOn.includes("still useful") ||

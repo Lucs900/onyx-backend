@@ -13,6 +13,8 @@ import {
 } from "@/components/products/scenario";
 import { pathFromHomeChoice } from "./homeIdle";
 import { isUnreadNote } from "@/lib/docs/accept";
+import { liveQuoteMatchesDraft } from "@/lib/rateflow/fromDraft";
+import { liveRateExplain, liveRateLine, liveRateSecondLine } from "@/lib/rateflow/quote";
 import {
   AMOUNT_HELPER_BUBBLES,
   AMOUNT_PURPOSE_BUBBLES,
@@ -6283,12 +6285,13 @@ export function previewFacts(draft: FoxIntakeDraft): PreviewFact[] {
   }
 
   if (sampleReady(draft)) {
-    if (previewRateApplies(draft)) {
+    const live = liveQuoteMatchesDraft(draft, draft.liveQuote) ? draft.liveQuote : null;
+    if (live) {
       facts.push({
         id: "rate",
         label: "Rate",
-        value: `${SAMPLE_STRUCTURE} ${SAMPLE_RATE_LABEL}`,
-        note: PREVIEW_RATE_NOTE,
+        value: liveRateLine(live),
+        note: liveRateSecondLine(live),
       });
     } else if (intent) {
       facts.push({
@@ -6509,10 +6512,9 @@ export function structureExplainCopy(
     };
   }
   if (id === "rate") {
-    if (previewRateApplies(draft) && sampleReady(draft)) {
-      return {
-        text: `${SAMPLE_STRUCTURE} ${SAMPLE_RATE_LABEL}. ${PREVIEW_RATE_NOTE}. I cannot set, lock, or invent a live rate.`,
-      };
+    const live = liveQuoteMatchesDraft(draft, draft.liveQuote) ? draft.liveQuote : null;
+    if (live && sampleReady(draft)) {
+      return { text: liveRateExplain(live) };
     }
     return {
       text: `${PRICING_WHEN_READY}. I cannot set, lock, or invent a live rate.`,
@@ -6619,6 +6621,17 @@ export function sanitizeRewardFact(fact: FoxMessageFact): FoxMessageFact {
   return preparedRewardFact(fact);
 }
 
+function isRateFact(fact: Pick<FoxMessageFact, "id" | "label">) {
+  return fact.id === "rate" || /^rate$/i.test(fact.label);
+}
+
+function sanitizeRateFact(fact: FoxMessageFact): FoxMessageFact {
+  if (!isRateFact(fact)) return fact;
+  const blob = `${fact.value} ${fact.note ?? ""}`;
+  if (!/6\.750/.test(blob)) return fact;
+  return { id: "rate", label: fact.label || "Rate", value: PRICING_WHEN_READY };
+}
+
 function sanitizeRestoredFoxText(text: string): string {
   if (!looksLikeInventedRewardMoney(text) && !INVENTED_REWARD_RANGE.test(text)) return text;
   if (!/(reward|membership)/i.test(text) && !SAMPLE_INDICATIVE.test(text)) return text;
@@ -6687,7 +6700,7 @@ export function migrateRestoredFoxMessages(messages: FoxMessage[]): FoxMessage[]
   return inertSupersededIncomeConfirms(
     messages.map((message) => {
       const text = sanitizeRestoredFoxText(message.text);
-      const facts = message.facts?.map(sanitizeRewardFact);
+      const facts = message.facts?.map((fact) => sanitizeRateFact(sanitizeRewardFact(fact)));
       const factsChanged = Boolean(
         facts && message.facts?.some((fact, index) => fact !== facts[index]),
       );
