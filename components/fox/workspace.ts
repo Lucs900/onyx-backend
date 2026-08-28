@@ -547,6 +547,8 @@ export function productIntentFromText(text: string): ProductIntent | null {
 export function productIntentFromAction(
   action: Pick<FoxAction, "label" | "href" | "capture">,
 ): ProductIntent | null {
+  const field = action.capture?.field;
+  if (field && field !== "productIntent" && field !== "starter") return null;
   const labeled = productIntentFromText(action.label ?? "");
   if (labeled) return labeled;
   if (action.capture?.field === "productIntent" || action.capture?.field === "starter") {

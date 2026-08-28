@@ -749,6 +749,14 @@ assert.equal(productIntentFromAction({ label: "HELOC", capture: { field: "produc
 assert.equal(productIntentFromAction({ label: "Jumbo", capture: { field: "productIntent", value: "buy" } }), "jumbo");
 assert.equal(productIntentFromAction({ label: "Buy", capture: { field: "productIntent", value: "buy" } }), "buy");
 assert.equal(
+  productIntentFromAction({ label: "Other", capture: { field: "citizenship", value: "other" } }),
+  null,
+);
+assert.equal(
+  productIntentFromAction({ label: "US citizen", capture: { field: "citizenship", value: "us_citizen" } }),
+  null,
+);
+assert.equal(
   productIntentFromAction({ label: "Refinance", href: "/start?path=acr&intent=refinance" }),
   "refinance",
 );
@@ -11938,6 +11946,17 @@ assert.equal(
   "other",
 );
 assert.doesNotMatch(harborOtherReply?.text ?? "", /request human|visa/i);
+assert.equal(
+  productIntentFromAction({
+    label: "Other",
+    capture: { field: "citizenship", value: "other" },
+  }),
+  null,
+);
+assert.equal(workspacePrompt(harborPreLooksOther), "review");
+assert.ok((nextFoxAsk(harborPreLooksOther).actions ?? []).some((item) => item.label === "Looks right"));
+assert.ok(!(nextFoxAsk(harborPreLooksOther).actions ?? []).some((item) => item.label === "Request human"));
+assert.notEqual(workspacePrompt(harborPreLooksOther), "citizenship");
 assert.ok(
   previewFacts(harborPreLooksWritten).some(
     (fact) => fact.id === "address" && fact.label === "Property address" && fact.value === "14 Oak Street",
