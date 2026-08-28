@@ -245,6 +245,7 @@ import {
   skipPropertyZip,
   skipSubjectAddress,
   typedAddressConfirmCopy,
+  writeAddressAndAdoptZip,
   writePropertyType,
   writePropertyZip,
   writeSubjectAddress,
@@ -2105,41 +2106,56 @@ export function sampleReady(draft: FoxIntakeDraft): boolean {
   return sketchAssembled(draft);
 }
 
+export function liveQuoteThreadLines(
+  quote: NonNullable<FoxIntakeDraft["liveQuote"]>,
+): string[] {
+  const lines = [liveRateLine(quote)];
+  const second = liveRateSecondLine(quote);
+  if (second) lines.push(second);
+  return lines;
+}
+
 export function liveQuoteThreadCopy(
   quote: NonNullable<FoxIntakeDraft["liveQuote"]>,
 ): string {
-  const second = liveRateSecondLine(quote);
-  return second ? `${liveRateLine(quote)}\n${second}` : liveRateLine(quote);
+  return liveQuoteThreadLines(quote).join("\n");
 }
 
-/** Speak the live line in the thread. Insert before the current ask so chips stay put. */
+/** Two quote lines, then the next question on its own. Never glue onto income. */
 export function messagesWithLiveQuoteSpeech(
   messages: FoxMessage[],
   draft: FoxIntakeDraft,
   quote: NonNullable<FoxIntakeDraft["liveQuote"]>,
 ): FoxMessage[] {
   if (!quote.rate || !quote.asOf) return messages;
-  const copy = liveQuoteThreadCopy(quote);
-  if (messages.some((item) => item.role === "fox" && item.text === copy)) return messages;
-  const speech: FoxMessage = {
-    id: `live-quote:${quote.key}`,
+  const lines = liveQuoteThreadLines(quote);
+  if (!lines.length) return messages;
+  if (lines.every((line) => messages.some((item) => item.role === "fox" && item.text === line))) {
+    return messages;
+  }
+  const combined = lines.join("\n");
+  const withoutCombined = messages.filter(
+    (item) => !(item.role === "fox" && item.text === combined),
+  );
+  const speech: FoxMessage[] = lines.map((text, index) => ({
+    id: `live-quote:${quote.key}:${index}`,
     role: "fox",
-    text: copy,
-  };
+    text,
+  }));
   let lastFoxIdx = -1;
-  for (let i = messages.length - 1; i >= 0; i -= 1) {
-    if (messages[i].role === "fox") {
+  for (let i = withoutCombined.length - 1; i >= 0; i -= 1) {
+    if (withoutCombined[i].role === "fox") {
       lastFoxIdx = i;
       break;
     }
   }
   const promptId = workspacePrompt(draft);
   const ask = promptId ? workspacePromptCopy(promptId, draft) : null;
-  const last = lastFoxIdx >= 0 ? messages[lastFoxIdx] : undefined;
-  if (ask && last && last.text === ask.text) {
-    return [...messages.slice(0, lastFoxIdx), speech, ...messages.slice(lastFoxIdx)];
+  const last = lastFoxIdx >= 0 ? withoutCombined[lastFoxIdx] : undefined;
+  if (ask && last && last.text === ask.text && !lines.includes(ask.text)) {
+    return [...withoutCombined.slice(0, lastFoxIdx), ...speech, ...withoutCombined.slice(lastFoxIdx)];
   }
-  return [...messages, speech];
+  return [...withoutCombined, ...speech];
 }
 
 /** Skip writes the honest fallback on the type tap. House/Condo/2–4 wait for FICO, then live or fallback after a real search. */
@@ -4224,6 +4240,10 @@ function draftAfterCaptureBody(draft: FoxIntakeDraft, capture: Capture): FoxInta
   if (capture.field === "skip-property-zip") return skipPropertyZip(next);
   if (capture.field === "keep-property-zip") return keepPropertyZip(next);
   if (capture.field === "propertyZip") return writePropertyZip(next, capture.value);
+  if (capture.field === "subjectAddress") {
+    const address = parseVolunteeredAddress(capture.value) ?? capture.value.trim();
+    return address ? writeAddressAndAdoptZip(next, address) : next;
+  }
   if (capture.field === "statedTimeOnJob") {
     const months = parseTimeOnJobMonths(capture.value) ?? Number(capture.value);
     if (!Number.isFinite(months) || months <= 0) return next;
@@ -5378,6 +5398,20 @@ export function workspaceReply(
       return {
         ...workspacePromptCopy(workspacePrompt(nextDraft), nextDraft),
         capture: { field: "skip-property-zip" },
+      };
+    }
+    const volunteered = parseVolunteeredAddress(q);
+    if (volunteered) {
+      const nextDraft = writeAddressAndAdoptZip(draft, volunteered);
+      if (propertyZipConfirmNeeded(nextDraft)) {
+        return {
+          ...propertyZipAskCopy(nextDraft),
+          capture: { field: "subjectAddress", value: volunteered },
+        };
+      }
+      return {
+        ...nextFoxAsk(nextDraft),
+        capture: { field: "subjectAddress", value: volunteered },
       };
     }
     const zip = parseZipcode(q) ?? zipFromTypedAddress(q);

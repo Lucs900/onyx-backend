@@ -216,7 +216,18 @@ assert.equal(rateflowClientBodyFromDraft(file({ productIntent: "jumbo" })), null
 assert.equal(rateflowClientBodyFromDraft(file({ loanAmountValue: 1_500_000 })), null);
 assert.equal(rateflowBlockedReason(file({ loanAmountValue: 1_500_000 })), "jumbo");
 assert.equal(rateflowClientBodyFromDraft(file({ govProgram: "fha" })), null);
+assert.equal(rateflowClientBodyFromDraft(file({ govProgram: "va" })), null);
+assert.equal(rateflowClientBodyFromDraft(file({ govProgram: "usda" })), null);
 assert.equal(rateflowClientBodyFromDraft(file({ cashOut: true })), null);
+assert.deepEqual(rateflowClientBodyFromDraft(file({ productIntent: "refinance" })), {
+  loan_purpose: "refinance",
+  residency_type: "primary_home",
+  list_price: 1_200_000,
+  loan_amount: 960_000,
+  credit_score: 760,
+  property_type: "single_family_home",
+  zipcode: "94115",
+});
 assert.equal(rateflowClientBodyFromDraft(file({ propertyType: undefined })), null);
 assert.equal(rateflowClientBodyFromDraft(file({ creditBand: "not-sure" })), null);
 assert.equal(

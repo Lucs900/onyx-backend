@@ -132,6 +132,7 @@ import {
   skipPropertyZip,
   skipSubjectAddress,
   adoptReuseZip,
+  writeAddressAndAdoptZip,
   writePropertyType,
   writePropertyZip,
   writeSubjectAddress,
@@ -1697,7 +1698,7 @@ function applyCaptureBody(capture: Capture) {
   if (capture.field === "subjectAddress") {
     const address = parseVolunteeredAddress(capture.value) ?? capture.value.trim();
     if (!address) return current;
-    return commit(writeSubjectAddress(current, address));
+    return commit(writeAddressAndAdoptZip(current, address));
   }
   if (capture.field === "skip-time-on-job") {
     return commit(skipTimeOnJob(current));

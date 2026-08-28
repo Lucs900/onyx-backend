@@ -130,6 +130,11 @@ export function keepPropertyZip(draft: FoxIntakeDraft): FoxIntakeDraft {
   };
 }
 
+/** Street typed at the ZIP ask writes the File and takes its ZIP. Do not treat it as a side question. */
+export function writeAddressAndAdoptZip(draft: FoxIntakeDraft, address: string): FoxIntakeDraft {
+  return adoptReuseZip(writeSubjectAddress(draft, address));
+}
+
 export function writePropertyZip(draft: FoxIntakeDraft, zip: string): FoxIntakeDraft {
   const parsed = parseZipcode(zip);
   if (!parsed) return draft;
