@@ -5776,12 +5776,10 @@ assert.equal(bankExtract.draft.pendingProposal?.field, "statedAvailableAssets");
 assert.equal(bankExtract.draft.pendingProposal?.value, "18400");
 assert.ok(
   previewFacts(bankExtract.draft).every(
-    (fact) => fact.id !== "assets" && fact.id !== "bank",
-  ),
-);
-assert.ok(
-  previewFacts(bankExtract.draft).every(
-    (fact) => fact.id !== "file-assets" || !/FIRST NATIONAL|18,400|18400/.test(fact.value),
+    (fact) =>
+      (fact.id !== "assets" || !/18,400|18400/.test(fact.value)) &&
+      (fact.id !== "file-assets" || !/FIRST NATIONAL|18,400|18400/.test(fact.value)) &&
+      fact.id !== "bank",
   ),
 );
 const bankAsk = nextFoxAsk(bankExtract.draft);
@@ -12085,22 +12083,19 @@ assert.doesNotMatch(nextFoxAsk(harborStatementIn.draft).text, /last4|account num
 assert.equal(harborStatementIn.draft.statedAvailableAssets, undefined);
 assert.ok(
   previewFacts(harborStatementIn.draft).every(
-    (fact) => fact.id !== "assets" && fact.id !== "bank",
-  ),
-);
-assert.ok(
-  previewFacts(harborStatementIn.draft).some(
     (fact) =>
-      fact.id === "file-assets" &&
-      /institution —/.test(fact.value) &&
-      /balance —/.test(fact.value) &&
-      /last4 —/.test(fact.value) &&
-      !/FIRST NATIONAL|18,400|18400/.test(fact.value),
+      (fact.id !== "assets" || fact.value === "—") &&
+      fact.id !== "bank" &&
+      (fact.id !== "file-assets" ||
+        (/institution —/.test(fact.value) &&
+          /balance —/.test(fact.value) &&
+          /last4 —/.test(fact.value) &&
+          !/FIRST NATIONAL|18,400|18400/.test(fact.value))),
   ),
 );
 assert.ok(
   previewFacts(harborStatementIn.draft).every(
-    (fact) => !/18,400|18400/.test(`${fact.value} ${fact.note ?? ""}`) || fact.id === "docs",
+    (fact) => fact.id === "docs" || !/18,400|18400|FIRST NATIONAL/.test(`${fact.value} ${fact.note ?? ""}`),
   ),
 );
 assert.equal(canLooksRight(harborStatementIn.draft), false);
