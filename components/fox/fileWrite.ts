@@ -645,6 +645,11 @@ export function valuesMatch(left: string, right: string) {
 }
 
 export function displayFactValue(field: string, value: string) {
+  if (field === "citizenship") {
+    if (value === "us_citizen") return "US citizen";
+    if (value === "permanent_resident") return "Permanent resident";
+    if (value === "other") return "Other";
+  }
   if (field === STATED_TIME_ON_JOB_FIELD) {
     const months = Number(value);
     if (Number.isFinite(months) && months > 0) return displayTimeOnJob(months);

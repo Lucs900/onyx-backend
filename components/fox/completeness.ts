@@ -57,6 +57,7 @@ import {
   skipPropertyType,
   typedAddressConfirmCopy,
 } from "./propertyType";
+import { citizenshipSettled } from "./citizenship";
 import {
   STATED_TIME_ON_JOB_FIELD,
   SUGGESTED_TIME_ON_JOB_NOTE,
@@ -1447,7 +1448,8 @@ export function canLooksRight(draft: FoxIntakeDraft) {
     timelineFilled(draft) &&
     currentAskIdle(draft) &&
     !historyGapNeeded(draft) &&
-    propertyAddressSettled(draft)
+    propertyAddressSettled(draft) &&
+    citizenshipSettled(draft)
   );
 }
 

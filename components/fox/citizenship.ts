@@ -1,10 +1,10 @@
 import type { FactProposal, FoxAction, FoxIntakeDraft } from "./types";
-import { isSimplePrimaryW2File } from "./conventionalFile";
+import { propertyAddressSettled } from "./propertyType";
 
 export const CITIZENSHIP_FIELD = "citizenship";
 export const SUGGESTED_CITIZENSHIP_NOTE = "Suggested · not underwritten";
 export const CITIZENSHIP_ASK =
-  "For the file: US citizen, permanent resident, or other? Skip is fine.";
+  "For this file, US citizen, permanent resident, or other?";
 
 export type FileCitizenshipValue = "us_citizen" | "permanent_resident" | "other";
 
@@ -25,9 +25,9 @@ export function citizenshipSettled(draft: FoxIntakeDraft) {
 
 export function citizenshipNeeded(draft: FoxIntakeDraft) {
   if (citizenshipSettled(draft)) return false;
-  if (!draft.sampleAccepted) return false;
+  if (!propertyAddressSettled(draft)) return false;
+  if (draft.sampleAccepted) return false;
   if (draft.motion === "in_queue" || draft.motion === "escalated") return false;
-  if (isSimplePrimaryW2File(draft)) return false;
   return true;
 }
 
@@ -119,12 +119,6 @@ export function citizenshipAskActions(): FoxAction[] {
     {
       id: "skip-citizenship",
       label: "Skip",
-      event: "bubble",
-      capture: { field: "skip-citizenship" },
-    },
-    {
-      id: "hold-citizenship",
-      label: "Not yet",
       event: "bubble",
       capture: { field: "skip-citizenship" },
     },

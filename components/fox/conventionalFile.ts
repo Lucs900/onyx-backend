@@ -376,8 +376,8 @@ function propertyTypeSpoken(value?: FilePropertyObject["propertyType"]) {
 function declarationSpoken(value?: FileAgencyAnswer | FileCitizenship) {
   if (!value || value === "skipped") return "";
   if (value === "us_citizen") return "US citizen";
-  if (value === "permanent_resident") return "permanent resident";
-  if (value === "other") return "other";
+  if (value === "permanent_resident") return "Permanent resident";
+  if (value === "other") return "Other";
   return value;
 }
 

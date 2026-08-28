@@ -291,7 +291,7 @@ import {
   parseOtherReo,
   writeStatedOtherReo,
 } from "../components/fox/otherReo";
-import { CITIZENSHIP_ASK, skipCitizenship } from "../components/fox/citizenship";
+import { CITIZENSHIP_ASK, skipCitizenship, writeCitizenship } from "../components/fox/citizenship";
 import {
   FORMER_HISTORY_ASK,
   WHERE_BEFORE_ASK,
@@ -466,7 +466,7 @@ function skipDocInvites(base: ReturnType<typeof draft>) {
 }
 
 function readyForReview(base: ReturnType<typeof draft>) {
-  return skipSubjectAddress(skipDocInvites(base));
+  return skipCitizenship(skipSubjectAddress(skipDocInvites(base)));
 }
 
 function afterProceed(
@@ -748,6 +748,14 @@ assert.equal(productIntentFromAction({ label: "Refinance", capture: { field: "pr
 assert.equal(productIntentFromAction({ label: "HELOC", capture: { field: "productIntent", value: "buy" } }), "heloc");
 assert.equal(productIntentFromAction({ label: "Jumbo", capture: { field: "productIntent", value: "buy" } }), "jumbo");
 assert.equal(productIntentFromAction({ label: "Buy", capture: { field: "productIntent", value: "buy" } }), "buy");
+assert.equal(
+  productIntentFromAction({ label: "Other", capture: { field: "citizenship", value: "other" } }),
+  null,
+);
+assert.equal(
+  productIntentFromAction({ label: "US citizen", capture: { field: "citizenship", value: "us_citizen" } }),
+  null,
+);
 assert.equal(
   productIntentFromAction({ label: "Refinance", href: "/start?path=acr&intent=refinance" }),
   "refinance",
@@ -2228,6 +2236,9 @@ assert.ok(!(liveLooks?.actions ?? []).some((item) => item.label === "Looks right
 if (liveLooks?.capture) applyCapture(liveLooks.capture);
 assert.equal(workspacePrompt(getFoxDraft()), "property-address");
 applyCapture({ field: "skip-property-address" });
+assert.equal(workspacePrompt(getFoxDraft()), "citizenship");
+assert.equal(nextFoxAsk(getFoxDraft()).text, CITIZENSHIP_ASK);
+applyCapture({ field: "skip-citizenship" });
 assert.equal(workspacePrompt(getFoxDraft()), "review");
 assert.notEqual(getFoxDraft().motion, "in_queue");
 
@@ -2421,7 +2432,8 @@ assert.equal(workspacePromptCopy("documents", w2AfterStub).text, DOC_INVITE_COPY
 const w2AfterPrimary = skipCurrentInvite(w2AfterStub);
 assert.equal(workspacePrompt(w2AfterPrimary), "property-address");
 assert.equal(nextFoxAsk(w2AfterPrimary).text, PURCHASE_ADDRESS_ASK);
-assert.equal(workspacePrompt(skipSubjectAddress(w2AfterPrimary)), "review");
+assert.equal(workspacePrompt(skipSubjectAddress(w2AfterPrimary)), "citizenship");
+assert.equal(workspacePrompt(skipCitizenship(skipSubjectAddress(w2AfterPrimary))), "review");
 const w2Request = docsRequestForIncome("w2");
 assert.deepEqual(w2Request.labels, ["government ID", "latest paystub", "W-2"]);
 assert.ok(!w2Request.labels.includes("Bank statements"));
@@ -2637,6 +2649,8 @@ applyCapture({ field: "skip-docs" });
 applyCapture({ field: "skip-docs" });
 assert.equal(workspacePrompt(getFoxDraft()), "property-address");
 applyCapture({ field: "skip-property-address" });
+assert.equal(workspacePrompt(getFoxDraft()), "citizenship");
+applyCapture({ field: "skip-citizenship" });
 assert.equal(workspacePrompt(getFoxDraft()), "review");
 confirmLooksRight();
 const confirmed = getFoxDraft();
@@ -8065,12 +8079,14 @@ assert.doesNotMatch(
   /another borrower|What name should I put/i,
 );
 
-const afterPrimaryPass = skipSubjectAddress(
-  draft({
-    ...afterNameForHousehold,
-    docsStarted: true,
-    skippedClasses: ["government_id", "paystub", "w2"],
-  }),
+const afterPrimaryPass = skipCitizenship(
+  skipSubjectAddress(
+    draft({
+      ...afterNameForHousehold,
+      docsStarted: true,
+      skippedClasses: ["government_id", "paystub", "w2"],
+    }),
+  ),
 );
 assert.ok(stillUsefulSection(afterPrimaryPass)?.items.some((item) => item.label === "Latest return"));
 assert.equal(workspacePrompt(afterPrimaryPass), "review");
@@ -8334,7 +8350,7 @@ assert.doesNotMatch(
   `${workspacePromptCopy("documents", w2AfterSkipPaystub).text} ${workspacePromptCopy("documents", w2AfterSkipPaystub).followUp ?? ""}`,
   /another borrower|Is there another borrower|Now working on Borrower 2/i,
 );
-const w2PassDone = skipSubjectAddress(skipCurrentInvite(w2AfterSkipPaystub));
+const w2PassDone = skipCitizenship(skipSubjectAddress(skipCurrentInvite(w2AfterSkipPaystub)));
 assert.equal(workspacePrompt(w2PassDone), "review");
 assert.match(workspacePromptCopy("review", w2PassDone).text, /complete enough to move|look right/i);
 assert.doesNotMatch(
@@ -8398,7 +8414,7 @@ assert.doesNotMatch(
   `${workspacePromptCopy("documents", sePassDone).text} ${workspacePromptCopy("documents", sePassDone).followUp ?? ""}`,
   /another borrower|Is there another borrower|Now working on Borrower 2/i,
 );
-const seRemainderDone = skipSubjectAddress(skipCurrentInvite(sePassDone));
+const seRemainderDone = skipCitizenship(skipSubjectAddress(skipCurrentInvite(sePassDone)));
 assert.equal(workspacePrompt(seRemainderDone), "review");
 assert.doesNotMatch(workspacePromptCopy("review", seRemainderDone).text, /another borrower/i);
 assert.equal(workspacePrompt(draft({ ...seRemainderDone, sampleAccepted: true })), "household");
@@ -8458,7 +8474,7 @@ assert.ok(
     (item) => item.label === OTHER_REO_MORTGAGE_STATEMENTS,
   ),
 );
-const seOtherRemainderDone = skipSubjectAddress(skipCurrentInvite(seOtherReturnIn));
+const seOtherRemainderDone = skipCitizenship(skipSubjectAddress(skipCurrentInvite(seOtherReturnIn)));
 assert.equal(workspacePrompt(seOtherRemainderDone), "review");
 const seOtherLooksRight = draft({ ...seOtherRemainderDone, sampleAccepted: true });
 assert.equal(workspacePrompt(seOtherLooksRight), "household");
@@ -9601,6 +9617,8 @@ assert.notEqual(workspacePrompt(getFoxDraft()), "household");
 applyCapture({ field: "skip-docs" });
 assert.equal(workspacePrompt(getFoxDraft()), "property-address");
 applyCapture({ field: "skip-property-address" });
+assert.equal(workspacePrompt(getFoxDraft()), "citizenship");
+applyCapture({ field: "skip-citizenship" });
 assert.equal(workspacePrompt(getFoxDraft()), "review");
 applyCapture({ field: "confirm-draft" });
 if (workspacePrompt(getFoxDraft()) === "household") applyCapture({ field: "skip-household" });
@@ -10668,6 +10686,8 @@ assert.doesNotMatch(
 applyCapture({ field: "skip-docs" });
 assert.equal(workspacePrompt(getFoxDraft()), "property-address");
 applyCapture({ field: "skip-property-address" });
+assert.equal(workspacePrompt(getFoxDraft()), "citizenship");
+applyCapture({ field: "skip-citizenship" });
 assert.equal(workspacePrompt(getFoxDraft()), "review");
 assert.doesNotMatch(workspacePromptCopy("review", getFoxDraft()).text, /another borrower/i);
 applyCapture({ field: "confirm-draft" });
@@ -10711,6 +10731,8 @@ assert.doesNotMatch(
 applyCapture({ field: "skip-docs" });
 assert.equal(workspacePrompt(getFoxDraft()), "property-address");
 applyCapture({ field: "skip-property-address" });
+assert.equal(workspacePrompt(getFoxDraft()), "citizenship");
+applyCapture({ field: "skip-citizenship" });
 assert.equal(workspacePrompt(getFoxDraft()), "review");
 applyCapture({ field: "confirm-draft" });
 assert.equal(workspacePrompt(getFoxDraft()), "household");
@@ -11522,7 +11544,8 @@ const file32Se = draft({
   },
 });
 assert.equal(workspacePrompt(file32Se), "done");
-assert.equal(workspacePromptCopy("done", file32Se).followUp, CITIZENSHIP_ASK);
+assert.notEqual(workspacePromptCopy("done", file32Se).followUp, CITIZENSHIP_ASK);
+assert.ok(!(workspacePromptCopy("done", file32Se).actions ?? []).some((item) => /citizen|Permanent resident|Other/i.test(item.label) && item.label !== "Request human"));
 assert.notEqual(workspacePrompt(file32Se), "assets");
 assert.equal(otherReoRows(file32Se).length, 0);
 const file32SeSkipped = skipCitizenship(file32Se);
@@ -11545,7 +11568,8 @@ const file32Invest = draft({
 });
 assert.equal(assetsMatter(file32Invest), true);
 assert.equal(workspacePrompt(file32Invest), "done");
-assert.equal(workspacePromptCopy("done", file32Invest).followUp, CITIZENSHIP_ASK);
+assert.notEqual(workspacePromptCopy("done", file32Invest).followUp, CITIZENSHIP_ASK);
+assert.ok(!(workspacePromptCopy("done", file32Invest).actions ?? []).some((item) => item.label === "US citizen" || item.label === "Permanent resident"));
 assert.notEqual(workspacePrompt(file32Invest), "assets");
 assert.equal(otherReoRows(file32Invest).length, 0);
 assert.equal(file32Invest.suggestedNetRental, -3293);
@@ -11856,8 +11880,25 @@ const harborPreLooksSkipAddress = skipSubjectAddress(harborPreLooksReady);
 assert.equal(harborPreLooksSkipAddress.subjectAddress, undefined);
 assert.equal(harborPreLooksSkipAddress.occupancyChoice.value, harborPreLooksReady.occupancyChoice.value);
 assert.equal(harborPreLooksSkipAddress.propertyType, harborPreLooksReady.propertyType);
-assert.equal(workspacePrompt(harborPreLooksSkipAddress), "review");
-assert.equal(canLooksRight(harborPreLooksSkipAddress), true);
+assert.equal(workspacePrompt(harborPreLooksSkipAddress), "citizenship");
+assert.equal(nextFoxAsk(harborPreLooksSkipAddress).text, CITIZENSHIP_ASK);
+assert.equal(nextFoxAsk(harborPreLooksSkipAddress).text, "For this file, US citizen, permanent resident, or other?");
+assert.deepEqual(
+  (nextFoxAsk(harborPreLooksSkipAddress).actions ?? []).map((item) => item.label),
+  ["US citizen", "Permanent resident", "Other", "Skip"],
+);
+assert.ok(!(nextFoxAsk(harborPreLooksSkipAddress).actions ?? []).some((item) => item.label === "Looks right"));
+assert.ok(!(nextFoxAsk(harborPreLooksSkipAddress).actions ?? []).some((item) => item.label === "Proceed"));
+assert.ok(!(nextFoxAsk(harborPreLooksSkipAddress).actions ?? []).some((item) => item.label === "Not yet"));
+assert.ok(!(nextFoxAsk(harborPreLooksSkipAddress).actions ?? []).some((item) => item.label === "Request human"));
+assert.doesNotMatch(nextFoxAsk(harborPreLooksSkipAddress).text, /visa|SSN|date of birth/i);
+assert.equal(canLooksRight(harborPreLooksSkipAddress), false);
+const harborPreLooksSkipCitizen = skipCitizenship(harborPreLooksSkipAddress);
+assert.equal(harborPreLooksSkipCitizen.agencyDeclarations?.citizenship, undefined);
+assert.equal(harborPreLooksSkipCitizen.facts?.citizenship, undefined);
+assert.equal(workspacePrompt(harborPreLooksSkipCitizen), "review");
+assert.equal(canLooksRight(harborPreLooksSkipCitizen), true);
+assert.ok((nextFoxAsk(harborPreLooksSkipCitizen).actions ?? []).some((item) => item.label === "Looks right"));
 assert.ok(stillUsefulSection(harborPreLooksSkipAddress)?.items.some((item) => item.label === "Property address"));
 const harborPreLooksTyped = workspaceReply("14 Oak Street", harborPreLooksReady);
 assert.equal(harborPreLooksTyped?.capture?.field, "propose-subject-address");
@@ -11870,8 +11911,52 @@ const harborPreLooksWritten = resolveProposal(
 assert.equal(harborPreLooksWritten.subjectAddress, "14 Oak Street");
 assert.equal(harborPreLooksWritten.occupancyChoice.value, harborPreLooksReady.occupancyChoice.value);
 assert.equal(harborPreLooksWritten.propertyType, harborPreLooksReady.propertyType);
-assert.equal(workspacePrompt(harborPreLooksWritten), "review");
-assert.equal(canLooksRight(harborPreLooksWritten), true);
+assert.equal(workspacePrompt(harborPreLooksWritten), "citizenship");
+assert.equal(canLooksRight(harborPreLooksWritten), false);
+assert.ok(!(nextFoxAsk(harborPreLooksWritten).actions ?? []).some((item) => item.label === "Looks right"));
+const harborPreLooksCitizen = writeCitizenship(harborPreLooksWritten, "us_citizen");
+assert.equal(harborPreLooksCitizen.agencyDeclarations?.citizenship, "us_citizen");
+assert.ok(
+  previewFacts(harborPreLooksCitizen).some(
+    (fact) => fact.id === "citizenship" && fact.value === "US citizen",
+  ),
+);
+assert.ok(
+  previewFacts(harborPreLooksCitizen).some(
+    (fact) => fact.id === "file-declarations" && /US citizen/.test(fact.value),
+  ),
+);
+assert.equal(workspacePrompt(harborPreLooksCitizen), "review");
+assert.equal(canLooksRight(harborPreLooksCitizen), true);
+const harborPreLooksOther = writeCitizenship(harborPreLooksWritten, "other");
+assert.equal(harborPreLooksOther.agencyDeclarations?.citizenship, "other");
+assert.ok(
+  previewFacts(harborPreLooksOther).some(
+    (fact) => fact.id === "citizenship" && fact.value === "Other",
+  ),
+);
+assert.equal(workspacePrompt(harborPreLooksOther), "review");
+assert.equal(canLooksRight(harborPreLooksOther), true);
+assert.notEqual(harborPreLooksOther.motion, "escalated");
+assert.ok(!(nextFoxAsk(harborPreLooksOther).actions ?? []).some((item) => item.label === "Request human"));
+const harborOtherReply = workspaceReply("Other", harborPreLooksWritten);
+assert.equal(harborOtherReply?.capture?.field, "citizenship");
+assert.equal(
+  harborOtherReply?.capture && "value" in harborOtherReply.capture ? harborOtherReply.capture.value : "",
+  "other",
+);
+assert.doesNotMatch(harborOtherReply?.text ?? "", /request human|visa/i);
+assert.equal(
+  productIntentFromAction({
+    label: "Other",
+    capture: { field: "citizenship", value: "other" },
+  }),
+  null,
+);
+assert.equal(workspacePrompt(harborPreLooksOther), "review");
+assert.ok((nextFoxAsk(harborPreLooksOther).actions ?? []).some((item) => item.label === "Looks right"));
+assert.ok(!(nextFoxAsk(harborPreLooksOther).actions ?? []).some((item) => item.label === "Request human"));
+assert.notEqual(workspacePrompt(harborPreLooksOther), "citizenship");
 assert.ok(
   previewFacts(harborPreLooksWritten).some(
     (fact) => fact.id === "address" && fact.label === "Property address" && fact.value === "14 Oak Street",
@@ -12706,6 +12791,10 @@ for (let i = 0; i < 8; i += 1) {
   }
   if (prompt === "property-address") {
     applyCapture({ field: "skip-property-address" });
+    continue;
+  }
+  if (prompt === "citizenship") {
+    applyCapture({ field: "skip-citizenship" });
     continue;
   }
   if (prompt === "household") {
