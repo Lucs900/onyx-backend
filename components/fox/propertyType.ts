@@ -9,6 +9,7 @@ export const PROPERTY_TYPE_ASK =
   "What kind of home is this? House, condo, or 2–4 unit is enough. Skip is fine.";
 export const PROPERTY_ADDRESS_ASK = "What is the property address?";
 export const PURCHASE_ADDRESS_ASK = "What is the address of the home you are buying?";
+export const REFI_ADDRESS_ASK = "What is the address of the home?";
 export const PROPERTY_ZIP_FIELD = "propertyZip";
 export const PROPERTY_ZIP_ASK = "What ZIP is the property in?";
 
@@ -339,7 +340,9 @@ export function subjectAddressSuggestion(draft: FoxIntakeDraft): {
 }
 
 export function propertyAddressAskText(draft: FoxIntakeDraft) {
-  return purchaseLike(draft) ? PURCHASE_ADDRESS_ASK : PROPERTY_ADDRESS_ASK;
+  if (purchaseLike(draft)) return PURCHASE_ADDRESS_ASK;
+  if (draft.productIntent === "refinance") return REFI_ADDRESS_ASK;
+  return PROPERTY_ADDRESS_ASK;
 }
 
 function looksLikeStreet(value: string) {

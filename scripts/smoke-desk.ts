@@ -247,6 +247,7 @@ import {
 } from "../components/fox/availableAssets";
 import {
   PURCHASE_ADDRESS_ASK,
+  REFI_ADDRESS_ASK,
   PROPERTY_TYPE_ASK,
   PROPERTY_ZIP_ASK,
   keepPropertyZip,
@@ -1370,6 +1371,102 @@ const founderRefiReady = draft({
   facts: afterFounderHouse.facts,
 });
 assert.equal(workspacePrompt(founderRefiReady), "property-address");
+assert.equal(workspacePromptCopy("property-address", founderRefiReady).text, REFI_ADDRESS_ASK);
+assert.equal(nextFoxAsk(founderRefiReady).text, REFI_ADDRESS_ASK);
+assert.doesNotMatch(nextFoxAsk(founderRefiReady).text, /you are buying|purchase price|What ZIP is the property in/i);
+const founderRefiWalkAsks = [
+  nextFoxAsk(draft({ path: "acr", productIntent: "refinance" })).text,
+  nextFoxAsk(
+    draft({
+      path: "acr",
+      productIntent: "refinance",
+      occupancyAsked: true,
+      occupancyChoice: { ...emptyDraft().occupancyChoice, value: "primary" },
+    }),
+  ).text,
+  nextFoxAsk(
+    draft({
+      path: "acr",
+      productIntent: "refinance",
+      occupancyAsked: true,
+      occupancyChoice: { ...emptyDraft().occupancyChoice, value: "primary" },
+      timelineAsked: true,
+      timelineChoice: { ...emptyDraft().timelineChoice, value: "ready-now" },
+    }),
+  ).text,
+  nextFoxAsk(
+    draft({
+      path: "acr",
+      productIntent: "refinance",
+      occupancyAsked: true,
+      occupancyChoice: { ...emptyDraft().occupancyChoice, value: "primary" },
+      timelineAsked: true,
+      timelineChoice: { ...emptyDraft().timelineChoice, value: "ready-now" },
+      amountAsked: true,
+      loanAmountValue: 680000,
+    }),
+  ).text,
+  nextFoxAsk(
+    draft({
+      path: "acr",
+      productIntent: "refinance",
+      occupancyAsked: true,
+      occupancyChoice: { ...emptyDraft().occupancyChoice, value: "primary" },
+      timelineAsked: true,
+      timelineChoice: { ...emptyDraft().timelineChoice, value: "ready-now" },
+      amountAsked: true,
+      loanAmountValue: 680000,
+      valueAsked: true,
+      propertyValueAmount: 850000,
+    }),
+  ).text,
+  nextFoxAsk(
+    writePropertyType(
+      draft({
+        path: "acr",
+        productIntent: "refinance",
+        occupancyAsked: true,
+        occupancyChoice: { ...emptyDraft().occupancyChoice, value: "primary" },
+        timelineAsked: true,
+        timelineChoice: { ...emptyDraft().timelineChoice, value: "ready-now" },
+        amountAsked: true,
+        loanAmountValue: 680000,
+        valueAsked: true,
+        propertyValueAmount: 850000,
+      }),
+      "sfr",
+    ),
+  ).text,
+  nextFoxAsk(founderRefiReady).text,
+];
+assert.doesNotMatch(founderRefiWalkAsks.join("\n"), /purchase price|home you are buying/i);
+assert.equal(founderRefiWalkAsks.at(-1), REFI_ADDRESS_ASK);
+assert.match(founderRefiWalkAsks[3] ?? "", /property value/i);
+const founderRefiSkipAddress = workspaceReply("Skip", founderRefiReady);
+assert.equal(founderRefiSkipAddress?.capture?.field, "skip-property-address");
+assert.doesNotMatch(founderRefiSkipAddress?.text ?? "", /What ZIP is the property in|purchase price/i);
+const founderRefiSkipped = skipQuoteAddress(founderRefiReady);
+assert.notEqual(workspacePrompt(founderRefiSkipped), "property-zip");
+assert.ok(previewFacts(founderRefiSkipped).some((fact) => fact.id === "rate" && fact.value === PRICING_WHEN_READY));
+assert.equal(rateflowClientBodyFromDraft(founderRefiSkipped), null);
+const founderRefiZipOnly = workspaceReply("94105", founderRefiReady);
+assert.equal(founderRefiZipOnly?.capture?.field, "propertyZip");
+assert.equal(
+  founderRefiZipOnly?.capture && "value" in founderRefiZipOnly.capture ? founderRefiZipOnly.capture.value : "",
+  "94105",
+);
+assert.equal(writePropertyZip(founderRefiReady, "94105").subjectAddress, undefined);
+const founderRefiStreet = workspaceReply("500 Market St, San Francisco, CA 94105", founderRefiReady);
+assert.equal(founderRefiStreet?.capture?.field, "propose-subject-address");
+assert.match(founderRefiStreet?.text ?? "", /That’s 500 Market St, San Francisco, CA 94105/);
+assert.match(founderRefiStreet?.text ?? "", /Use this/);
+assert.doesNotMatch(founderRefiStreet?.text ?? "", /purchase price|What ZIP is the property in|How is income earned/i);
+const founderRefiProposed = proposeAddressAndAdoptZip(
+  founderRefiReady,
+  "500 Market St, San Francisco, CA 94105",
+);
+assert.equal(founderRefiProposed.subjectAddress, undefined);
+assert.equal(founderRefiProposed.propertyZip, "94105");
 const founderRefiAddress = writeAddressAndAdoptZip(
   founderRefiReady,
   "500 Market St, San Francisco, CA 94105",
@@ -1388,6 +1485,81 @@ assert.equal(rateflowClientBodyFromDraft({ ...founderRefiAddress, govProgram: "f
 assert.equal(rateflowClientBodyFromDraft({ ...founderRefiAddress, govProgram: "va" }), null);
 assert.equal(rateflowClientBodyFromDraft({ ...founderRefiAddress, govProgram: "usda" }), null);
 assert.equal(rateflowClientBodyFromDraft({ ...founderRefiAddress, cashOut: true }), null);
+assert.equal(workspacePrompt({ ...founderRefiAddress, cashOut: true }), "income");
+assert.ok(
+  previewFacts({ ...founderRefiAddress, cashOut: true }).some(
+    (fact) => fact.id === "rate" && fact.value === PRICING_WHEN_READY,
+  ),
+);
+const founderRefiCashOutFirst = workspaceReply("This is a cash-out refinance", founderRefiReady);
+assert.equal(founderRefiCashOutFirst?.capture?.field, "cashOut");
+assert.doesNotMatch(founderRefiCashOutFirst?.text ?? "", /6\.\d{3}% · Live as of/);
+const founderRefiCashOutFile = {
+  ...founderRefiAddress,
+  cashOut: true,
+};
+assert.equal(rateflowClientBodyFromDraft(founderRefiCashOutFile), null);
+assert.equal(workspacePrompt(founderRefiCashOutFile), "income");
+const founderRefiAccepted = resolveProposal(
+  proposeAddressAndAdoptZip(founderRefiReady, "500 Market St, San Francisco, CA 94105"),
+  "accept",
+);
+assert.equal(founderRefiAccepted.subjectAddress, "500 Market St, San Francisco, CA 94105");
+assert.equal(workspacePrompt(founderRefiAccepted), "income");
+assert.equal(rateflowClientBodyFromDraft(founderRefiAccepted)?.loan_purpose, "refinance");
+assert.equal(rateflowClientBodyFromDraft(founderRefiAccepted)?.list_price, 850000);
+const founderRefiKey = rateflowScenarioKey(rateflowClientBodyFromDraft(founderRefiAddress)!);
+assert.notEqual(
+  rateflowScenarioKey(rateflowClientBodyFromDraft({ ...founderRefiAddress, propertyValueAmount: 900000 })!),
+  founderRefiKey,
+);
+assert.notEqual(
+  rateflowScenarioKey(rateflowClientBodyFromDraft({ ...founderRefiAddress, loanAmountValue: 700000 })!),
+  founderRefiKey,
+);
+assert.notEqual(
+  rateflowScenarioKey(rateflowClientBodyFromDraft({ ...founderRefiAddress, propertyType: "condo" })!),
+  founderRefiKey,
+);
+assert.notEqual(
+  rateflowScenarioKey(rateflowClientBodyFromDraft({ ...founderRefiAddress, creditBand: "740-759" })!),
+  founderRefiKey,
+);
+assert.notEqual(
+  rateflowScenarioKey(rateflowClientBodyFromDraft(writePropertyZip(founderRefiAddress, "94115"))!),
+  founderRefiKey,
+);
+const founderRefiLive = draft({
+  ...founderRefiAddress,
+  liveQuoteKey: founderRefiKey,
+  liveQuoteStatus: "ready" as const,
+  liveQuote: {
+    key: founderRefiKey,
+    rate: 6.25,
+    asOf: "2026-08-28T21:10:00.000Z",
+    principalAndInterest: 4187,
+    pts: 0.125,
+  },
+});
+const founderRefiSpokenLines = liveQuoteThreadLines(founderRefiLive.liveQuote!);
+assert.equal(founderRefiSpokenLines.length, 2);
+assert.match(founderRefiSpokenLines[0] ?? "", /6\.250% · Live as of .+ PT · not a lock/);
+assert.equal(founderRefiSpokenLines[1], "P&I $4,187 · 0.125 pts");
+assert.equal(founderRefiSpokenLines[0], previewFacts(founderRefiLive).find((fact) => fact.id === "rate")?.value);
+assert.equal(founderRefiSpokenLines[1], previewFacts(founderRefiLive).find((fact) => fact.id === "rate")?.note);
+const founderRefiIncomeAsk = workspacePromptCopy("income", founderRefiLive);
+assert.equal(founderRefiIncomeAsk.text, "How is income earned?");
+assert.doesNotMatch(founderRefiIncomeAsk.text, /Live as of|P&I|6\.250|purchase price/);
+const founderRefiSpokenThread = messagesWithLiveQuoteSpeech(
+  [{ id: "ask-income", role: "fox" as const, text: founderRefiIncomeAsk.text, actions: founderRefiIncomeAsk.actions }],
+  founderRefiLive,
+  founderRefiLive.liveQuote!,
+);
+assert.equal(founderRefiSpokenThread[0].text, founderRefiSpokenLines[0]);
+assert.equal(founderRefiSpokenThread[1].text, founderRefiSpokenLines[1]);
+assert.equal(founderRefiSpokenThread[2].text, founderRefiIncomeAsk.text);
+assert.doesNotMatch(founderRefiSpokenThread[0].text, /How is income earned/);
+assert.doesNotMatch(founderRefiSpokenThread[1].text, /How is income earned/);
 const founderSkip = workspaceReply("Skip", founder850);
 assert.equal(founderSkip?.capture?.field, "skip-property-type");
 assert.match(founderSkip?.text ?? "", /estimated FICO/i);
