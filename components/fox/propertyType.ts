@@ -32,6 +32,28 @@ export function propertyTypeSettled(draft: FoxIntakeDraft) {
   return Boolean(draft.propertyTypeAsked || draft.propertyType);
 }
 
+/** House / condo / 2–4 chosen. Skip and a missing type are not chosen. */
+export function propertyTypeChosen(draft: FoxIntakeDraft): draft is FoxIntakeDraft & {
+  propertyType: PropertyTypeValue;
+} {
+  return isPropertyTypeValue(String(draft.propertyType ?? ""));
+}
+
+export function propertyTypeSkipped(draft: FoxIntakeDraft) {
+  return Boolean(draft.propertyTypeAsked && !draft.propertyType && draft.correcting !== "property-type");
+}
+
+export function creditAnswered(draft: FoxIntakeDraft) {
+  return Boolean(draft.creditAsked || draft.creditBand);
+}
+
+/** Skip → Pricing when the file is ready. House/Condo/2–4 wait for FICO before a rate line. */
+export function rateLineReady(draft: FoxIntakeDraft) {
+  if (draft.correcting === "property-type") return false;
+  if (propertyTypeSkipped(draft)) return true;
+  return propertyTypeChosen(draft) && creditAnswered(draft);
+}
+
 export function isPropertyTypeConfirmPending(draft: FoxIntakeDraft) {
   return draft.pendingProposal?.field === PROPERTY_TYPE_FIELD;
 }
@@ -301,12 +323,6 @@ export function propertyTypeSkipActions(): FoxAction[] {
     {
       id: "skip-property-type",
       label: "Skip",
-      event: "bubble",
-      capture: { field: "skip-property-type" },
-    },
-    {
-      id: "hold-property-type",
-      label: "Not yet",
       event: "bubble",
       capture: { field: "skip-property-type" },
     },

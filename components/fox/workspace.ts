@@ -13,7 +13,7 @@ import {
 } from "@/components/products/scenario";
 import { pathFromHomeChoice } from "./homeIdle";
 import { isUnreadNote } from "@/lib/docs/accept";
-import { liveQuoteMatchesDraft } from "@/lib/rateflow/fromDraft";
+import { liveQuoteMatchesDraft, searchedKeyFor } from "@/lib/rateflow/fromDraft";
 import { liveRateExplain, liveRateLine, liveRateSecondLine } from "@/lib/rateflow/quote";
 import {
   AMOUNT_HELPER_BUBBLES,
@@ -216,7 +216,11 @@ import {
   propertyAddressSettled,
   subjectAddressSuggestion,
   propertyTypeAskCopy,
+  propertyTypeChosen,
   propertyTypeSettled,
+  propertyTypeSkipped,
+  creditAnswered,
+  rateLineReady,
   propertyTypeConfirmActions,
   propertyTypeConfirmCopy,
   propertyTypeLabel,
@@ -2077,11 +2081,46 @@ export function formatSamplePayment(loanAmount?: number | null): string {
 }
 
 function creditSettled(draft: FoxIntakeDraft) {
-  return Boolean(draft.creditAsked || draft.creditBand);
+  return creditAnswered(draft);
 }
 
 export function sampleReady(draft: FoxIntakeDraft): boolean {
   return sketchAssembled(draft);
+}
+
+/** Skip writes the honest fallback on the type tap. House/Condo/2–4 wait for FICO, then live or fallback after a real search. */
+export function previewRateFact(draft: FoxIntakeDraft): PreviewFact | null {
+  const intent = draft.productIntent ?? null;
+  if (!intent) return null;
+  if (propertyTypeSkipped(draft)) {
+    return {
+      id: "rate",
+      label: "Rate",
+      value: PRICING_WHEN_READY,
+    };
+  }
+  if (!propertyTypeChosen(draft) || !creditAnswered(draft)) return null;
+  const live = liveQuoteMatchesDraft(draft, draft.liveQuote) ? draft.liveQuote : null;
+  if (live) {
+    return {
+      id: "rate",
+      label: "Rate",
+      value: liveRateLine(live),
+      note: liveRateSecondLine(live),
+    };
+  }
+  const key = searchedKeyFor(draft);
+  if (key && !draft.liveQuoteKey && draft.liveQuoteStatus !== "unavailable") {
+    return null;
+  }
+  if (key && draft.liveQuoteKey !== key && draft.liveQuoteStatus !== "unavailable") {
+    return null;
+  }
+  return {
+    id: "rate",
+    label: "Rate",
+    value: PRICING_WHEN_READY,
+  };
 }
 
 export function isQualifyingIncomeConfirmPending(draft: FoxIntakeDraft): boolean {
@@ -2203,8 +2242,12 @@ export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
   if (!sketchNumberReady(draft)) {
     return draftUsesPurchasePrice(draft) && !hasPropertyValue(draft) ? "value" : "amount";
   }
+  if (!propertyTypeSettled(draft)) return "property-type";
   if (subjectLeaseAskNeeded(draft)) return "subject-lease";
   if (!creditSettled(draft)) return "credit";
+  if (!rateLineReady(draft)) {
+    return propertyTypeSettled(draft) ? "credit" : "property-type";
+  }
   if (!incomeSettled(draft)) return "income";
   if (needsDeclarationTiming(draft)) return "declaration-timing";
   if (!otherReoSettled(draft)) return "other-reo";
@@ -6284,23 +6327,8 @@ export function previewFacts(draft: FoxIntakeDraft): PreviewFact[] {
     facts.push({ id: "pay", label: "Pay", value: payBits.join(" · ") });
   }
 
-  if (sampleReady(draft)) {
-    const live = liveQuoteMatchesDraft(draft, draft.liveQuote) ? draft.liveQuote : null;
-    if (live) {
-      facts.push({
-        id: "rate",
-        label: "Rate",
-        value: liveRateLine(live),
-        note: liveRateSecondLine(live),
-      });
-    } else if (intent) {
-      facts.push({
-        id: "rate",
-        label: "Rate",
-        value: PRICING_WHEN_READY,
-      });
-    }
-  }
+  const rateFact = previewRateFact(draft);
+  if (rateFact) facts.push(rateFact);
 
   if (draft.path === "acr" && sampleReady(draft)) {
     facts.push({
@@ -6512,8 +6540,9 @@ export function structureExplainCopy(
     };
   }
   if (id === "rate") {
+    const fact = previewRateFact(draft);
     const live = liveQuoteMatchesDraft(draft, draft.liveQuote) ? draft.liveQuote : null;
-    if (live && sampleReady(draft)) {
+    if (live && fact) {
       return { text: liveRateExplain(live) };
     }
     return {
