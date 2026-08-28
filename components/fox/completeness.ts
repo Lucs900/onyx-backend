@@ -56,6 +56,7 @@ import {
   parsePropertyType,
   propertyAddressSettled,
   propertyTypeConfirmCopy,
+  adoptReuseZip,
   rememberPriorZipOnNewAddress,
   skipPropertyType,
   typedAddressConfirmCopy,
@@ -1099,12 +1100,14 @@ function writeConfirmedFact(
       confirmed: true,
       confirmedAt: now,
     };
-    next = rememberPriorZipOnNewAddress(next, {
-      ...next,
-      subjectAddress: value,
-      subjectAddressAsked: true,
-      facts,
-    });
+    next = adoptReuseZip(
+      rememberPriorZipOnNewAddress(next, {
+        ...next,
+        subjectAddress: value,
+        subjectAddressAsked: true,
+        facts,
+      }),
+    );
   }
   if (field === "year_built") next = { ...next, propertyYearBuilt: value, facts };
   if (field === "units") next = { ...next, propertyUnits: value, facts };

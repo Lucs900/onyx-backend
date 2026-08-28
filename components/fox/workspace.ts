@@ -241,9 +241,11 @@ import {
   propertyTypeConfirmCopy,
   propertyTypeLabel,
   proposePropertyType,
+  proposeAddressAndAdoptZip,
   proposeSubjectAddress,
   skipPropertyType,
   skipPropertyZip,
+  skipQuoteAddress,
   skipSubjectAddress,
   typedAddressConfirmCopy,
   typedZipFromDraft,
@@ -4244,6 +4246,11 @@ function draftAfterCaptureBody(draft: FoxIntakeDraft, capture: Capture): FoxInta
   if (capture.field === "skip-property-zip") return skipPropertyZip(next);
   if (capture.field === "keep-property-zip") return keepPropertyZip(next);
   if (capture.field === "propertyZip") return writePropertyZip(next, capture.value);
+  if (capture.field === "skip-property-address") return skipQuoteAddress(next);
+  if (capture.field === "propose-subject-address") {
+    const proposed = parseVolunteeredAddress(capture.value) ?? capture.value.trim();
+    return proposed ? proposeAddressAndAdoptZip(next, proposed) : next;
+  }
   if (capture.field === "subjectAddress") {
     const address = parseVolunteeredAddress(capture.value) ?? capture.value.trim();
     return address ? writeAddressAndAdoptZip(next, address) : next;
@@ -5432,7 +5439,10 @@ export function workspaceReply(
       return keepThisReply(draft);
     }
     if (isSkipPropertyAddressText(q)) {
-      const nextDraft = skipSubjectAddress(draft);
+      const nextDraft =
+        propertyTypeChosen(draft) && creditAnswered(draft) && !typedZipFromDraft(draft)
+          ? skipQuoteAddress(draft)
+          : skipSubjectAddress(draft);
       return {
         ...workspacePromptCopy(workspacePrompt(nextDraft), nextDraft),
         capture: { field: "skip-property-address" },
@@ -5457,14 +5467,7 @@ export function workspaceReply(
     }
     const typed = parseVolunteeredAddress(q);
     if (typed) {
-      if (propertyTypeChosen(draft) && creditAnswered(draft) && !typedZipFromDraft(draft)) {
-        const nextDraft = writeAddressAndAdoptZip(draft, typed);
-        return {
-          ...nextFoxAsk(nextDraft),
-          capture: { field: "subjectAddress", value: typed },
-        };
-      }
-      const nextDraft = proposeSubjectAddress(draft, typed);
+      const nextDraft = proposeAddressAndAdoptZip(draft, typed);
       return {
         ...workspacePromptCopy("confirm-proposal", nextDraft),
         capture: { field: "propose-subject-address", value: typed },

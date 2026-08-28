@@ -144,6 +144,20 @@ export function writeAddressAndAdoptZip(draft: FoxIntakeDraft, address: string):
   return adoptReuseZip(writeSubjectAddress(draft, address));
 }
 
+/** Confirm-before-write on the street. ZIP from that street is used for Rateflow now. */
+export function proposeAddressAndAdoptZip(draft: FoxIntakeDraft, address: string): FoxIntakeDraft {
+  const proposed = proposeSubjectAddress(draft, address);
+  const zip = zipFromTypedAddress(address);
+  return zip ? writePropertyZip(proposed, zip) : proposed;
+}
+
+/** Skip the quote-path address line. No ZIP-only follow-up. Pricing when the file is ready. */
+export function skipQuoteAddress(draft: FoxIntakeDraft): FoxIntakeDraft {
+  const next = skipSubjectAddress(draft);
+  if (typedZipFromDraft(next)) return next;
+  return skipPropertyZip(next);
+}
+
 export function writePropertyZip(draft: FoxIntakeDraft, zip: string): FoxIntakeDraft {
   const parsed = parseZipcode(zip);
   if (!parsed) return draft;

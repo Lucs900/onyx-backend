@@ -127,11 +127,12 @@ import {
   parsePropertyType,
   parseVolunteeredAddress,
   proposePropertyType,
-  proposeSubjectAddress,
   skipPropertyType,
   skipPropertyZip,
   skipSubjectAddress,
   adoptReuseZip,
+  proposeAddressAndAdoptZip,
+  skipQuoteAddress,
   writeAddressAndAdoptZip,
   writePropertyType,
   writePropertyZip,
@@ -1681,7 +1682,7 @@ function applyCaptureBody(capture: Capture) {
     return next ? commit(next) : current;
   }
   if (capture.field === "skip-property-address") {
-    return commit(skipSubjectAddress(current));
+    return commit(skipQuoteAddress(current));
   }
   if (capture.field === "change-property-address") {
     return commit({
@@ -1693,7 +1694,7 @@ function applyCaptureBody(capture: Capture) {
   if (capture.field === "propose-subject-address") {
     const address = parseVolunteeredAddress(capture.value) ?? capture.value.trim();
     if (!address) return current;
-    return commit(proposeSubjectAddress(current, address));
+    return commit(proposeAddressAndAdoptZip(current, address));
   }
   if (capture.field === "subjectAddress") {
     const address = parseVolunteeredAddress(capture.value) ?? capture.value.trim();
