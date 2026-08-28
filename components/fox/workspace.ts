@@ -30,6 +30,7 @@ import {
   couponChoiceUnresolved,
   isCouponSkipText,
   isKeepLeadConfirmText,
+  isLowerPaymentText,
   isNoCostText,
   isThisOneText,
   keepPendingLiveCoupon,

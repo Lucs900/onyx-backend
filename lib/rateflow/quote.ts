@@ -67,6 +67,10 @@ export type RateflowProductRow = {
   bbLoanType?: string;
   loanType?: string;
   lastUpdate?: number;
+  term?: number;
+  label?: string;
+  pi_monthly?: number;
+  points?: number;
 };
 
 export type SafeLiveQuote = {
@@ -250,26 +254,87 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 export function isRateflowFailure(payload: unknown): boolean {
-  return isRecord(payload) && "status" in payload;
+  if (!isRecord(payload)) return false;
+  const status = String(payload.status ?? "").toLowerCase();
+  if (!status) return false;
+  if (asProductRows(payload).length) return false;
+  return /error|fail/.test(status);
+}
+
+function rawRowsFromPayload(payload: unknown): unknown[] {
+  if (Array.isArray(payload)) return payload;
+  if (!isRecord(payload)) return [];
+  for (const key of ["results", "products", "quotes", "data", "rows"] as const) {
+    const value = payload[key];
+    if (Array.isArray(value)) return value;
+  }
+  return [];
+}
+
+function firstNumber(...values: unknown[]): number | undefined {
+  for (const value of values) {
+    const n = Number(value);
+    if (Number.isFinite(n)) return n;
+  }
+  return undefined;
+}
+
+function firstString(...values: unknown[]): string {
+  for (const value of values) {
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return "";
+}
+
+/** Rateflow refinance often uses results/term/label/pi_monthly instead of an engine array. */
+export function normalizeProductRow(raw: RateflowProductRow | Record<string, unknown>): RateflowProductRow {
+  const rate = firstNumber(raw.rate);
+  const pts = firstNumber(raw.pts, (raw as { points?: unknown }).points);
+  const price = firstNumber(raw.price);
+  const pi = firstNumber(
+    raw.principalAndInterest,
+    (raw as { pi_monthly?: unknown }).pi_monthly,
+    (raw as { piMonthly?: unknown }).piMonthly,
+  );
+  const term = firstNumber(raw.loanTerm, raw.amortizationTerm, raw.term);
+  const name = firstString(raw.productName, raw.label, (raw as { title?: unknown }).title);
+  const type = firstString(raw.bbLoanType, raw.loanType, (raw as { loan_type?: unknown }).loan_type);
+  const amort = firstString(
+    raw.amortizationType,
+    (raw as { amortization_type?: unknown }).amortization_type,
+    (raw as { amortization?: unknown }).amortization,
+  );
+  return {
+    ...raw,
+    ...(rate != null ? { rate } : {}),
+    ...(pts != null ? { pts } : {}),
+    ...(price != null ? { price } : {}),
+    ...(pi != null ? { principalAndInterest: pi } : {}),
+    ...(term != null ? { loanTerm: term } : {}),
+    ...(name ? { productName: name } : {}),
+    ...(type ? { bbLoanType: type } : {}),
+    ...(amort ? { amortizationType: amort } : {}),
+  };
 }
 
 export function asProductRows(payload: unknown): RateflowProductRow[] {
-  if (!Array.isArray(payload)) return [];
-  return payload.filter((row): row is RateflowProductRow => isRecord(row));
+  return rawRowsFromPayload(payload)
+    .filter((row): row is Record<string, unknown> => isRecord(row))
+    .map(normalizeProductRow);
 }
 
 function looksExcludedProduct(text: string): boolean {
   return /fha|va\b|usda|heloc|heloan|non-?qm|jumbo|\barm\b|adjustable/.test(text);
 }
 
-/** Years. Engines sometimes send months (360 → 30). */
+/** Years. Engines sometimes send months (360 → 30). Rateflow uses `term`. */
 export function termYearsFromRow(row: RateflowProductRow): number | undefined {
-  const raw = Number(row.loanTerm ?? row.amortizationTerm);
-  if (Number.isFinite(raw) && raw > 0) {
+  const raw = firstNumber(row.loanTerm, row.amortizationTerm, row.term);
+  if (raw != null && raw > 0) {
     if (raw >= 120 && raw <= 480 && raw % 12 === 0) return raw / 12;
     if (raw <= 50) return raw;
   }
-  const named = String(row.productName ?? "").match(/\b(15|20|25|30|40)\s*(?:yr|year)\b/i);
+  const named = String(row.productName ?? row.label ?? "").match(/\b(15|20|25|30|40)\s*(?:yr|year)\b/i);
   if (named) return Number(named[1]);
   return undefined;
 }
@@ -277,11 +342,12 @@ export function termYearsFromRow(row: RateflowProductRow): number | undefined {
 function isConventional(row: RateflowProductRow): boolean {
   if (!Number.isFinite(Number(row.rate))) return false;
   const type = String(row.bbLoanType ?? row.loanType ?? "").toLowerCase();
-  const name = String(row.productName ?? "").toLowerCase();
+  const name = String(row.productName ?? row.label ?? "").toLowerCase();
   const amort = String(row.amortizationType ?? "").toLowerCase();
   if (looksExcludedProduct(type) || looksExcludedProduct(name)) return false;
   if (amort && amort !== "fixed") return false;
-  if (type && !/conventional|conv|conforming|fnma|fhlmc|fannie|freddie/.test(type)) return false;
+  // Refinance rows often send loanType "Fixed" (or nothing), not "conventional".
+  // The request already asks for conventional. Only drop known other programs.
   return true;
 }
 

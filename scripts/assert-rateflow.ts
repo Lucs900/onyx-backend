@@ -14,6 +14,7 @@ import {
   creditScoreFloor,
   formatAsOfPacific,
   isRateflowFailure,
+  normalizeProductRow,
   liveRateLine,
   liveRateSecondLine,
   mapPropertyType,
@@ -291,6 +292,63 @@ assert.deepEqual(
 );
 assert.ok(isRateflowFailure({ status: "error", message: "no products" }));
 assert.equal(asProductRows({ status: "error" }).length, 0);
+assert.equal(isRateflowFailure({ status: "ok", results: [{ rate: 6.375, pts: -0.07, term: 30 }] }), false);
+const harborRefiPayload = {
+  results: [
+    {
+      rate: 6.49,
+      pts: -0.043,
+      term: 30,
+      pi_monthly: 4294,
+      label: "FHLMC 30 Yr Fixed",
+      loanType: "Fixed",
+    },
+    {
+      rate: 6.375,
+      pts: -0.07,
+      term: 30,
+      pi_monthly: 4242,
+      label: "FHLMC 30 Yr Fixed",
+      loanType: "Fixed",
+    },
+    {
+      rate: 6.25,
+      pts: 0.5,
+      term: 30,
+      pi_monthly: 4187,
+      label: "FHLMC 30 Yr Fixed",
+      loanType: "Fixed",
+    },
+  ],
+};
+const harborRefiRows = asProductRows(harborRefiPayload);
+assert.equal(harborRefiRows.length, 3);
+assert.equal(termYearsFromRow(harborRefiRows[1]!), 30);
+assert.equal(harborRefiRows[1]?.principalAndInterest, 4242);
+assert.equal(pickConventional30LowestNoPoints(harborRefiRows)?.rate, 6.375);
+assert.notEqual(pickConventional30LowestNoPoints(harborRefiRows)?.rate, 6.49);
+assert.ok((pickConventional30LowestNoPoints(harborRefiRows)?.pts ?? 1) <= 0);
+assert.equal(
+  pickConventional30LowestNoPoints(
+    asProductRows([
+      normalizeProductRow({
+        rate: 6.49,
+        pts: -0.043,
+        term: 30,
+        label: "FNMA Conforming 30 Yr Fixed",
+        loanType: "Fixed",
+      }),
+      normalizeProductRow({
+        rate: 6.375,
+        pts: -0.07,
+        term: 30,
+        label: "FNMA Conforming 30 Yr Fixed",
+        loanType: "Fixed",
+      }),
+    ]),
+  )?.rate,
+  6.375,
+);
 
 const quote = safeQuoteFromRow(picked!, new Date("2026-08-28T19:04:00.000Z"));
 assert.ok(quote);
@@ -406,6 +464,7 @@ assert.doesNotMatch(route, /console\.(log|info|warn|error)\([^)]*BANKINGBRIDGE_/
 
 const picker = readFileSync(join(root, "lib/rateflow/quote.ts"), "utf8");
 assert.ok(picker.includes("pickConventional30LowestNoPoints"));
+assert.ok(picker.includes("rawRowsFromPayload") || picker.includes("results"));
 assert.ok(!picker.includes("pickConventional30NearPar"));
 assert.ok(!picker.includes("nearParSort"));
 assert.doesNotMatch(picker, /closest to par/i);
