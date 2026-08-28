@@ -105,7 +105,16 @@ export function propertyZipConfirmNeeded(draft: FoxIntakeDraft) {
 
 export function propertyZipAskNeeded(draft: FoxIntakeDraft) {
   if (propertyZipConfirmNeeded(draft)) return false;
+  if (propertyAddressNeededForQuote(draft)) return false;
   return propertyTypeChosen(draft) && creditAnswered(draft) && !propertyZipSettled(draft);
+}
+
+/** Ask the locked address line before ZIP-only. ZIP-only only after Skip address or an address with no ZIP. */
+export function propertyAddressNeededForQuote(draft: FoxIntakeDraft) {
+  if (draft.correcting === "property-address" || draft.correcting === "property-zip") return false;
+  if (!propertyTypeChosen(draft) || !creditAnswered(draft)) return false;
+  if (propertyZipConfirmNeeded(draft) || propertyZipSettled(draft)) return false;
+  return !propertyAddressSettled(draft);
 }
 
 export function skipPropertyZip(draft: FoxIntakeDraft): FoxIntakeDraft {

@@ -1192,11 +1192,11 @@ const afterFounderHouseFico = draft({
   creditAsked: true,
   creditBand: "760+",
 });
-assert.equal(workspacePrompt(afterFounderHouseFico), "property-zip");
-assert.equal(workspacePromptCopy("property-zip", afterFounderHouseFico).text, PROPERTY_ZIP_ASK);
-assert.deepEqual(
-  (workspacePromptCopy("property-zip", afterFounderHouseFico).actions ?? []).map((item) => item.label),
-  ["Skip"],
+assert.equal(workspacePrompt(afterFounderHouseFico), "property-address");
+assert.equal(workspacePromptCopy("property-address", afterFounderHouseFico).text, PURCHASE_ADDRESS_ASK);
+assert.doesNotMatch(
+  workspacePromptCopy("property-address", afterFounderHouseFico).text,
+  /What ZIP is the property in/,
 );
 assert.equal(rateflowClientBodyFromDraft(afterFounderHouseFico), null);
 assert.equal(previewRateFact(afterFounderHouseFico), null);
@@ -1216,7 +1216,14 @@ assert.equal(rateflowClientBodyFromDraft(afterFounderZip)?.loan_amount, 680000);
 assert.equal(rateflowClientBodyFromDraft(afterFounderZip)?.credit_score, 760);
 assert.equal(previewRateFact(afterFounderZip), null);
 assert.ok(!previewFacts(afterFounderZip).some((fact) => fact.id === "rate"));
-const founderSkipZip = skipPropertyZip(afterFounderHouseFico);
+const skippedAddressForZip = skipSubjectAddress(afterFounderHouseFico);
+assert.equal(workspacePrompt(skippedAddressForZip), "property-zip");
+assert.equal(workspacePromptCopy("property-zip", skippedAddressForZip).text, PROPERTY_ZIP_ASK);
+assert.deepEqual(
+  (workspacePromptCopy("property-zip", skippedAddressForZip).actions ?? []).map((item) => item.label),
+  ["Skip"],
+);
+const founderSkipZip = skipPropertyZip(skippedAddressForZip);
 assert.ok(previewFacts(founderSkipZip).some((fact) => fact.id === "rate" && fact.value === PRICING_WHEN_READY));
 assert.equal(rateflowClientBodyFromDraft(founderSkipZip), null);
 const founderAddressZip = draft({
@@ -1356,7 +1363,7 @@ const founderRefiReady = draft({
   creditBand: "760+",
   facts: afterFounderHouse.facts,
 });
-assert.equal(workspacePrompt(founderRefiReady), "property-zip");
+assert.equal(workspacePrompt(founderRefiReady), "property-address");
 const founderRefiAddress = writeAddressAndAdoptZip(
   founderRefiReady,
   "500 Market St, San Francisco, CA 94105",
@@ -10975,6 +10982,8 @@ applyCapture({ field: "propertyType", value: "sfr" });
 assert.equal(workspacePrompt(getFoxDraft()), "credit");
 applyCapture({ field: "creditRange", value: "720-739" });
 assert.equal(getFoxDraft().creditBand, "720-739");
+assert.equal(workspacePrompt(getFoxDraft()), "property-address");
+applyCapture({ field: "skip-property-address" });
 assert.equal(workspacePrompt(getFoxDraft()), "property-zip");
 applyCapture({ field: "propertyZip", value: "94115" });
 assert.equal(workspacePrompt(getFoxDraft()), "income");
@@ -13268,6 +13277,10 @@ for (let i = 0; i < 12; i += 1) {
   if (prompt === "years-in-business") break;
   if (prompt === "property-type") {
     applyCapture({ field: "skip-property-type" });
+    continue;
+  }
+  if (prompt === "property-address") {
+    applyCapture({ field: "skip-property-address" });
     continue;
   }
   if (prompt === "property-zip") {

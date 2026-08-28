@@ -228,6 +228,7 @@ import {
   propertyTypeSkipped,
   addressZipFromDraft,
   keepPropertyZip,
+  propertyAddressNeededForQuote,
   propertyZipAskCopy,
   propertyZipAskNeeded,
   propertyZipConfirmNeeded,
@@ -245,6 +246,7 @@ import {
   skipPropertyZip,
   skipSubjectAddress,
   typedAddressConfirmCopy,
+  typedZipFromDraft,
   writeAddressAndAdoptZip,
   writePropertyType,
   writePropertyZip,
@@ -2326,7 +2328,9 @@ export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
   if (!rateLineReady(draft)) {
     return propertyTypeSettled(draft) ? "credit" : "property-type";
   }
-  if (propertyZipConfirmNeeded(draft) || propertyZipAskNeeded(draft)) return "property-zip";
+  if (propertyZipConfirmNeeded(draft)) return "property-zip";
+  if (propertyAddressNeededForQuote(draft)) return "property-address";
+  if (propertyZipAskNeeded(draft)) return "property-zip";
   if (!incomeSettled(draft)) return "income";
   if (needsDeclarationTiming(draft)) return "declaration-timing";
   if (!otherReoSettled(draft)) return "other-reo";
@@ -5452,12 +5456,29 @@ export function workspaceReply(
       };
     }
     const typed = parseVolunteeredAddress(q);
-    if (!typed) return answerThenRestore(q, draft);
-    const nextDraft = proposeSubjectAddress(draft, typed);
-    return {
-      ...workspacePromptCopy("confirm-proposal", nextDraft),
-      capture: { field: "propose-subject-address", value: typed },
-    };
+    if (typed) {
+      if (propertyTypeChosen(draft) && creditAnswered(draft) && !typedZipFromDraft(draft)) {
+        const nextDraft = writeAddressAndAdoptZip(draft, typed);
+        return {
+          ...nextFoxAsk(nextDraft),
+          capture: { field: "subjectAddress", value: typed },
+        };
+      }
+      const nextDraft = proposeSubjectAddress(draft, typed);
+      return {
+        ...workspacePromptCopy("confirm-proposal", nextDraft),
+        capture: { field: "propose-subject-address", value: typed },
+      };
+    }
+    const zipOnly = parseZipcode(q);
+    if (zipOnly) {
+      const nextDraft = writePropertyZip(draft, zipOnly);
+      return {
+        ...nextFoxAsk(nextDraft),
+        capture: { field: "propertyZip", value: zipOnly },
+      };
+    }
+    return answerThenRestore(q, draft);
   }
 
   if (prompt === "time-on-job") {
