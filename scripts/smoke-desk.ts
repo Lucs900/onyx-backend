@@ -247,11 +247,14 @@ import {
 import {
   PURCHASE_ADDRESS_ASK,
   PROPERTY_TYPE_ASK,
+  PROPERTY_ZIP_ASK,
   parsePropertyType,
   proposeSubjectAddress,
   skipPropertyType,
+  skipPropertyZip,
   skipSubjectAddress,
   writePropertyType,
+  writePropertyZip,
   writeSubjectAddress,
 } from "../components/fox/propertyType";
 import {
@@ -507,6 +510,7 @@ function confirmLooksRight() {
     debts: { field: "skip-monthly-debts" },
     assets: { field: "skip-available-assets" },
     "property-type": { field: "skip-property-type" },
+    "property-zip": { field: "skip-property-zip" },
     "property-address": { field: "skip-property-address" },
     "current-housing": { field: "skip-current-housing" },
     declarations: { field: "skip-declarations" },
@@ -1181,13 +1185,43 @@ const afterFounderHouseFico = draft({
   creditAsked: true,
   creditBand: "760+",
 });
-assert.equal(workspacePrompt(afterFounderHouseFico), "income");
-assert.ok(rateflowClientBodyFromDraft(afterFounderHouseFico));
+assert.equal(workspacePrompt(afterFounderHouseFico), "property-zip");
+assert.equal(workspacePromptCopy("property-zip", afterFounderHouseFico).text, PROPERTY_ZIP_ASK);
+assert.deepEqual(
+  (workspacePromptCopy("property-zip", afterFounderHouseFico).actions ?? []).map((item) => item.label),
+  ["Skip"],
+);
+assert.equal(rateflowClientBodyFromDraft(afterFounderHouseFico), null);
 assert.equal(previewRateFact(afterFounderHouseFico), null);
 assert.ok(!previewFacts(afterFounderHouseFico).some((fact) => fact.id === "rate"));
-const founderLiveKey = rateflowScenarioKey(rateflowClientBodyFromDraft(afterFounderHouseFico)!);
-const founderLive = draft({
+const founderZipReply = workspaceReply("94115", afterFounderHouseFico);
+assert.equal(founderZipReply?.capture?.field, "propertyZip");
+assert.equal(founderZipReply?.capture && "value" in founderZipReply.capture ? founderZipReply.capture.value : "", "94115");
+assert.doesNotMatch(founderZipReply?.text ?? "", /6\.750|Live as of|Pricing when the file is ready/);
+const afterFounderZip = writePropertyZip(afterFounderHouseFico, "94115");
+assert.equal(workspacePrompt(afterFounderZip), "income");
+assert.equal(rateflowClientBodyFromDraft(afterFounderZip)?.zipcode, "94115");
+assert.equal(rateflowClientBodyFromDraft(afterFounderZip)?.property_type, "single_family_home");
+assert.equal(rateflowClientBodyFromDraft(afterFounderZip)?.loan_purpose, "purchase");
+assert.equal(rateflowClientBodyFromDraft(afterFounderZip)?.residency_type, "primary_home");
+assert.equal(rateflowClientBodyFromDraft(afterFounderZip)?.list_price, 850000);
+assert.equal(rateflowClientBodyFromDraft(afterFounderZip)?.loan_amount, 680000);
+assert.equal(rateflowClientBodyFromDraft(afterFounderZip)?.credit_score, 760);
+assert.equal(previewRateFact(afterFounderZip), null);
+assert.ok(!previewFacts(afterFounderZip).some((fact) => fact.id === "rate"));
+const founderSkipZip = skipPropertyZip(afterFounderHouseFico);
+assert.ok(previewFacts(founderSkipZip).some((fact) => fact.id === "rate" && fact.value === PRICING_WHEN_READY));
+assert.equal(rateflowClientBodyFromDraft(founderSkipZip), null);
+const founderAddressZip = draft({
   ...afterFounderHouseFico,
+  subjectAddress: "1840 Divisadero St, San Francisco, CA 94115",
+});
+assert.notEqual(workspacePrompt(founderAddressZip), "property-zip");
+assert.equal(rateflowClientBodyFromDraft(founderAddressZip)?.zipcode, "94115");
+assert.equal(rateflowClientBodyFromDraft(founderAddressZip)?.city, "San Francisco");
+const founderLiveKey = rateflowScenarioKey(rateflowClientBodyFromDraft(afterFounderZip)!);
+const founderLive = draft({
+  ...afterFounderZip,
   liveQuoteKey: founderLiveKey,
   liveQuoteStatus: "ready" as const,
   liveQuote: {
@@ -1201,7 +1235,7 @@ const founderLive = draft({
 assert.match(previewFacts(founderLive).find((fact) => fact.id === "rate")?.value ?? "", /6\.125% · Live as of .+ PT · not a lock/);
 assert.doesNotMatch(previewFacts(founderLive).find((fact) => fact.id === "rate")?.value ?? "", /6\.750|approved|locked|committed/);
 const founderMiss = draft({
-  ...afterFounderHouseFico,
+  ...afterFounderZip,
   liveQuoteKey: founderLiveKey,
   liveQuoteStatus: "unavailable" as const,
 });
@@ -1751,6 +1785,8 @@ assert.ok(recap.some((fact) => fact.id === "income" && fact.value === "W-2"));
 const liveReady = {
   ...afterIncome,
   propertyType: "sfr" as const,
+  propertyZip: "94115",
+  propertyZipAsked: true,
   liveQuote: {
     key: "",
     rate: 6.125,
@@ -7167,6 +7203,7 @@ assert.equal(usedDocAssets.statedAvailableAssets, 18400);
 const afterAssetsAsk = draft({
   ...afterDebtsAsk,
   availableAssetsAsked: true,
+  propertyZipAsked: true,
 });
 assert.equal(workspacePrompt(afterAssetsAsk), "other-reo");
 assert.equal(workspacePromptCopy("property-type", afterAssetsAsk).text, PROPERTY_TYPE_ASK);
@@ -10801,6 +10838,8 @@ applyCapture({ field: "propertyType", value: "sfr" });
 assert.equal(workspacePrompt(getFoxDraft()), "credit");
 applyCapture({ field: "creditRange", value: "720-739" });
 assert.equal(getFoxDraft().creditBand, "720-739");
+assert.equal(workspacePrompt(getFoxDraft()), "property-zip");
+applyCapture({ field: "propertyZip", value: "94115" });
 assert.equal(workspacePrompt(getFoxDraft()), "income");
 assert.notEqual(workspacePrompt(getFoxDraft()), "declaration-timing");
 assert.notEqual(workspacePrompt(getFoxDraft()), "coborrower-name");
@@ -12614,6 +12653,7 @@ const investAfterLooks = draft({
   incomeType: { ...emptyDraft().incomeType, value: "w2" },
   otherReoAsked: true,
   statedOtherReo: "none",
+  propertyZipAsked: true,
   sampleAccepted: true,
   workspaceDraftStatus: "with-originator",
   phase: "confirmed",
@@ -12625,6 +12665,7 @@ const leasedThenHousing = draft({
   ...withChosenType(investAfterLooks),
   subjectLeaseAsked: true,
   rentalGrossMonthly: 3000,
+  propertyZipAsked: true,
 });
 assert.equal(workspacePrompt(leasedThenHousing), "housing");
 
@@ -13092,6 +13133,10 @@ for (let i = 0; i < 12; i += 1) {
     applyCapture({ field: "skip-property-type" });
     continue;
   }
+  if (prompt === "property-zip") {
+    applyCapture({ field: "skip-property-zip" });
+    continue;
+  }
   if (prompt === "other-reo") {
     applyCapture({ field: "statedOtherReo", value: "none" });
     continue;
@@ -13159,6 +13204,10 @@ for (let i = 0; i < 8; i += 1) {
   if (prompt === "done") break;
   if (prompt === "property-type") {
     applyCapture({ field: "skip-property-type" });
+    continue;
+  }
+  if (prompt === "property-zip") {
+    applyCapture({ field: "skip-property-zip" });
     continue;
   }
   if (prompt === "property-address") {

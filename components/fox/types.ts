@@ -312,6 +312,9 @@ export type FoxIntakeDraft = {
   bankStatementAsked?: boolean;
   propertyType?: "sfr" | "condo" | "two_to_four";
   propertyTypeAsked?: boolean;
+  /** Five-digit ZIP for Rateflow. Never invent 94115. */
+  propertyZip?: string;
+  propertyZipAsked?: boolean;
   subjectAddress?: string;
   subjectAddressAsked?: boolean;
   statedTimeOnJob?: number;
@@ -432,6 +435,7 @@ export type FoxIntakeDraft = {
     asOf: string;
     principalAndInterest?: number;
     pts?: number;
+    term?: number;
   };
   updatedAt: string;
 };
@@ -462,6 +466,7 @@ export type FoxPrompt =
   | "debts"
   | "assets"
   | "property-type"
+  | "property-zip"
   | "property-address"
   | "time-on-job"
   | "current-housing"
@@ -512,6 +517,8 @@ export type Capture =
   | { field: "skip-property-type" }
   | { field: "propose-property-type"; value: string }
   | { field: "propertyType"; value: string }
+  | { field: "skip-property-zip" }
+  | { field: "propertyZip"; value: string }
   | { field: "propose-rental-lease"; value: string }
   | { field: "propose-subject-address"; value: string }
   | { field: "subjectAddress"; value: string }

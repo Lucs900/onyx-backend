@@ -18,11 +18,14 @@ import {
   liveRateSecondLine,
   mapPropertyType,
   mapResidency,
+  cityFromTypedAddress,
   parseClientBody,
   parseSafeQuoteResponse,
+  parseZipcode,
   pickConventional30NearPar,
   rateflowScenarioKey,
   safeQuoteFromRow,
+  termYearsFromRow,
   zipFromTypedAddress,
 } from "../lib/rateflow/quote";
 
@@ -46,6 +49,24 @@ assert.equal(mapPropertyType("two_to_four", "3"), "home_3_units");
 assert.equal(mapPropertyType("two_to_four", "4 units"), "home_4_units");
 assert.equal(zipFromTypedAddress("1840 Valencia St, San Francisco, CA 94110"), "94110");
 assert.equal(zipFromTypedAddress("no zip here"), undefined);
+assert.equal(parseZipcode("94115"), "94115");
+assert.equal(parseZipcode("94115-1234"), "94115");
+assert.equal(parseZipcode("not a zip"), undefined);
+assert.equal(cityFromTypedAddress("1840 Divisadero St, San Francisco, CA 94115"), "San Francisco");
+assert.equal(termYearsFromRow({ loanTerm: 360, productName: "FNMA 30 Yr Fixed" }), 30);
+assert.equal(termYearsFromRow({ loanTerm: 30 }), 30);
+assert.equal(termYearsFromRow({ loanTerm: 15 }), 15);
+assert.equal(
+  parseClientBody({
+    loan_purpose: "purchase",
+    residency_type: "primary_home",
+    list_price: 850000,
+    loan_amount: 680000,
+    credit_score: 760,
+    property_type: "single_family_home",
+  }),
+  null,
+);
 
 const body = parseClientBody({
   loan_purpose: "purchase",
@@ -106,6 +127,35 @@ const picked = pickConventional30NearPar([
   },
 ]);
 assert.equal(picked?.rate, 6.125);
+assert.equal(
+  pickConventional30NearPar([
+    {
+      rate: 5.875,
+      price: 99.8,
+      loanTerm: 360,
+      amortizationType: "Fixed",
+      bbLoanType: "conventional",
+      productName: "FNMA Conforming 30 Yr Fixed",
+    },
+  ])?.rate,
+  5.875,
+);
+const onlyFifteen = pickConventional30NearPar([
+  {
+    rate: 5.5,
+    price: 100,
+    loanTerm: 15,
+    amortizationType: "Fixed",
+    bbLoanType: "conventional",
+    productName: "FNMA Conforming 15 Yr Fixed",
+  },
+]);
+assert.equal(onlyFifteen?.rate, 5.5);
+assert.equal(safeQuoteFromRow(onlyFifteen!, new Date("2026-08-28T19:04:00.000Z"))?.term, 15);
+assert.match(
+  liveRateLine(safeQuoteFromRow(onlyFifteen!, new Date("2026-08-28T19:04:00.000Z"))!),
+  /5\.500% · 15-year · Live as of .+ PT · not a lock/,
+);
 assert.equal(pickConventional30NearPar([]), null);
 assert.ok(isRateflowFailure({ status: "error", message: "no products" }));
 assert.equal(asProductRows({ status: "error" }).length, 0);
@@ -135,10 +185,14 @@ function file(partial: Partial<FoxIntakeDraft>): FoxIntakeDraft {
     propertyType: "sfr",
     creditAsked: true,
     creditBand: "760+",
+    propertyZip: "94115",
+    propertyZipAsked: true,
     ...partial,
   };
 }
 
+assert.equal(rateflowClientBodyFromDraft(file({ propertyZip: undefined, propertyZipAsked: undefined })), null);
+assert.equal(rateflowBlockedReason(file({ propertyZip: undefined, propertyZipAsked: undefined })), "zip");
 assert.deepEqual(rateflowClientBodyFromDraft(file({})), {
   loan_purpose: "purchase",
   residency_type: "primary_home",
@@ -146,6 +200,7 @@ assert.deepEqual(rateflowClientBodyFromDraft(file({})), {
   loan_amount: 960_000,
   credit_score: 760,
   property_type: "single_family_home",
+  zipcode: "94115",
 });
 assert.equal(rateflowClientBodyFromDraft(file({ productIntent: "heloc" })), null);
 assert.equal(rateflowBlockedReason(file({ productIntent: "heloc" })), "product");
@@ -165,6 +220,8 @@ assert.equal(
   rateflowClientBodyFromDraft(
     file({
       productIntent: "refinance",
+      propertyZip: undefined,
+      propertyZipAsked: undefined,
       subjectAddress: "500 Pine St, San Francisco CA 94108",
     }),
   )?.zipcode,
@@ -186,6 +243,11 @@ assert.ok(!route.includes("brand_id"));
 assert.doesNotMatch(route, /BANKINGBRIDGE_[A-Z_]+\s*=\s*['"][^'"]+['"]/);
 assert.ok(route.includes("BANKINGBRIDGE_BRAND_ID"));
 assert.ok(!route.includes("process.env.BANKINGBRIDGE_BRAND_ID") || route.includes("envPresent(\"BANKINGBRIDGE_BRAND_ID\")"));
+assert.ok(route.includes("zipcode: client.zipcode"));
+assert.ok(route.includes('state: "CA"'));
+assert.ok(route.includes("[rateflow-quote]"));
+assert.ok(!route.includes("94115"));
+assert.doesNotMatch(route, /console\.(log|info|warn|error)\([^)]*BANKINGBRIDGE_/);
 
 const fox = readFileSync(join(root, "components/fox/AlwaysOnFox.tsx"), "utf8");
 const client = readFileSync(join(root, "components/fox/rateflowClient.ts"), "utf8");

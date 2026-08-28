@@ -51,7 +51,8 @@ export type RateflowClientBody = {
   loan_amount: number;
   credit_score: number;
   property_type: RateflowPropertyType;
-  zipcode?: string;
+  zipcode: string;
+  city?: string;
 };
 
 export type RateflowProductRow = {
@@ -73,6 +74,32 @@ export type SafeLiveQuote = {
   asOf: string;
   principalAndInterest?: number;
   pts?: number;
+  /** Years. Omitted on conventional 30 so the Structure line stays the default live form. */
+  term?: number;
+};
+
+export type RateflowQuoteReport = {
+  env: {
+    BANKINGBRIDGE_API_KEY: boolean;
+    BANKINGBRIDGE_BRAND_ID: boolean;
+    BANKINGBRIDGE_RATEFLOW_ID: boolean;
+    BANKINGBRIDGE_LOID: boolean;
+  };
+  bbHttpStatus: number | null;
+  resultCount: number;
+  sent: {
+    property_type: string;
+    loan_purpose: string;
+    residency_type: string;
+    loan_type: string;
+    state: string;
+    zip: string;
+  };
+  first?: {
+    rate?: number;
+    term: number | null;
+    label?: string;
+  };
 };
 
 export type SafeQuoteResponse =
@@ -129,9 +156,42 @@ export function mapPropertyType(
   return undefined;
 }
 
+export function parseZipcode(value: string | null | undefined): string | undefined {
+  const raw = String(value ?? "").trim();
+  if (!raw) return undefined;
+  const exact = raw.match(/^(\d{5})(?:-\d{4})?$/);
+  if (exact) return exact[1];
+  const digits = raw.replace(/[^0-9]/g, "");
+  if (digits.length === 5 || digits.length === 9) {
+    const embedded = raw.match(/\b(\d{5})(?:-\d{4})?\b/);
+    return embedded?.[1];
+  }
+  return undefined;
+}
+
 export function zipFromTypedAddress(address: string | null | undefined): string | undefined {
   const match = String(address ?? "").match(/\b(\d{5})(?:-\d{4})?\b/);
   return match?.[1];
+}
+
+export function cityFromTypedAddress(address: string | null | undefined): string | undefined {
+  const match = String(address ?? "").match(/,\s*([^,]+?),\s*[A-Za-z]{2}\b/);
+  const city = match?.[1]?.replace(/\s+/g, " ").trim();
+  if (!city || city.length < 2 || city.length > 40) return undefined;
+  if (/\d/.test(city)) return undefined;
+  return city;
+}
+
+export function zipFromSources(input: {
+  propertyZip?: string | null;
+  address?: string | null;
+  scenarioZip?: string | null;
+}): string | undefined {
+  return (
+    parseZipcode(input.propertyZip) ??
+    zipFromTypedAddress(input.address) ??
+    parseZipcode(input.scenarioZip)
+  );
 }
 
 export function rateflowScenarioKey(body: RateflowClientBody): string {
@@ -161,8 +221,10 @@ export function parseClientBody(input: unknown): RateflowClientBody | null {
   if (!Number.isFinite(listPrice) || listPrice <= 0) return null;
   if (!Number.isFinite(loanAmount) || loanAmount <= 0) return null;
   if (!Number.isFinite(credit) || credit < 300 || credit > 850) return null;
-  const zipRaw = typeof raw.zipcode === "string" ? raw.zipcode.trim() : "";
-  const zip = /^\d{5}$/.test(zipRaw) ? zipRaw : undefined;
+  const zip = parseZipcode(typeof raw.zipcode === "string" ? raw.zipcode : "");
+  if (!zip) return null;
+  const cityRaw = typeof raw.city === "string" ? raw.city.replace(/\s+/g, " ").trim() : "";
+  const city = cityRaw && cityRaw.length >= 2 && cityRaw.length <= 40 && !/\d/.test(cityRaw) ? cityRaw : undefined;
   return {
     loan_purpose: purpose as RateflowPurpose,
     residency_type: residency as RateflowResidency,
@@ -170,7 +232,8 @@ export function parseClientBody(input: unknown): RateflowClientBody | null {
     list_price: Math.round(listPrice),
     loan_amount: Math.round(loanAmount),
     credit_score: Math.round(credit),
-    ...(zip ? { zipcode: zip } : {}),
+    zipcode: zip,
+    ...(city ? { city } : {}),
   };
 }
 
@@ -187,35 +250,66 @@ export function asProductRows(payload: unknown): RateflowProductRow[] {
   return payload.filter((row): row is RateflowProductRow => isRecord(row));
 }
 
-function isConventional30(row: RateflowProductRow): boolean {
-  const type = String(row.bbLoanType ?? row.loanType ?? "").toLowerCase();
-  if (type && type !== "conventional") return false;
-  const term = Number(row.loanTerm ?? row.amortizationTerm);
-  if (Number.isFinite(term) && term !== 30) return false;
-  const amort = String(row.amortizationType ?? "").toLowerCase();
-  if (amort && amort !== "fixed") return false;
-  const name = String(row.productName ?? "").toLowerCase();
-  if (name && /arm|heloc|heloan|fha|va\b|usda|non-?qm|jumbo/.test(name)) return false;
-  if (!Number.isFinite(Number(row.rate))) return false;
-  if (!type && !Number.isFinite(term) && name && !/conventional|conf|fnma|fhlmc|freddie|fannie/.test(name)) {
-    return false;
+function looksExcludedProduct(text: string): boolean {
+  return /fha|va\b|usda|heloc|heloan|non-?qm|jumbo|\barm\b|adjustable/.test(text);
+}
+
+/** Years. Engines sometimes send months (360 → 30). */
+export function termYearsFromRow(row: RateflowProductRow): number | undefined {
+  const raw = Number(row.loanTerm ?? row.amortizationTerm);
+  if (Number.isFinite(raw) && raw > 0) {
+    if (raw >= 120 && raw <= 480 && raw % 12 === 0) return raw / 12;
+    if (raw <= 50) return raw;
   }
-  if (!Number.isFinite(term) && name && !/\b30\b/.test(name)) return false;
+  const named = String(row.productName ?? "").match(/\b(15|20|25|30|40)\s*(?:yr|year)\b/i);
+  if (named) return Number(named[1]);
+  return undefined;
+}
+
+function isConventional(row: RateflowProductRow): boolean {
+  if (!Number.isFinite(Number(row.rate))) return false;
+  const type = String(row.bbLoanType ?? row.loanType ?? "").toLowerCase();
+  const name = String(row.productName ?? "").toLowerCase();
+  const amort = String(row.amortizationType ?? "").toLowerCase();
+  if (looksExcludedProduct(type) || looksExcludedProduct(name)) return false;
+  if (amort && amort !== "fixed") return false;
+  if (type && !/conventional|conv|conforming|fnma|fhlmc|fannie|freddie/.test(type)) return false;
   return true;
 }
 
+function nearParSort(left: RateflowProductRow, right: RateflowProductRow): number {
+  const leftGap = Math.abs(Number(left.price ?? TARGET_PRICE) - TARGET_PRICE);
+  const rightGap = Math.abs(Number(right.price ?? TARGET_PRICE) - TARGET_PRICE);
+  if (leftGap !== rightGap) return leftGap - rightGap;
+  const leftPts = Math.abs(Number(left.pts ?? 0));
+  const rightPts = Math.abs(Number(right.pts ?? 0));
+  if (leftPts !== rightPts) return leftPts - rightPts;
+  return Number(left.rate) - Number(right.rate);
+}
+
+/**
+ * Prefer conventional 30 closest to par. If the only conventional rows are
+ * other terms, take the closest-to-par conventional and keep its term.
+ * Empty array or no conventional rows → null (honest fallback).
+ */
 export function pickConventional30NearPar(rows: RateflowProductRow[]): RateflowProductRow | null {
-  const eligible = rows.filter(isConventional30);
-  if (!eligible.length) return null;
-  return [...eligible].sort((left, right) => {
-    const leftGap = Math.abs(Number(left.price ?? TARGET_PRICE) - TARGET_PRICE);
-    const rightGap = Math.abs(Number(right.price ?? TARGET_PRICE) - TARGET_PRICE);
-    if (leftGap !== rightGap) return leftGap - rightGap;
-    const leftPts = Math.abs(Number(left.pts ?? 0));
-    const rightPts = Math.abs(Number(right.pts ?? 0));
-    if (leftPts !== rightPts) return leftPts - rightPts;
-    return Number(left.rate) - Number(right.rate);
-  })[0];
+  const conventional = rows.filter(isConventional);
+  if (!conventional.length) return null;
+  const thirty = conventional.filter((row) => termYearsFromRow(row) === 30);
+  const pool = thirty.length ? thirty : conventional;
+  return [...pool].sort(nearParSort)[0] ?? null;
+}
+
+export function firstResultSummary(rows: RateflowProductRow[]): RateflowQuoteReport["first"] | undefined {
+  const row = rows[0];
+  if (!row) return undefined;
+  const rate = Number(row.rate);
+  const label = String(row.productName ?? "").trim().slice(0, 80);
+  return {
+    ...(Number.isFinite(rate) ? { rate } : {}),
+    term: termYearsFromRow(row) ?? null,
+    ...(label ? { label } : {}),
+  };
 }
 
 function asOfFromRow(row: RateflowProductRow, fallback = new Date()): Date {
@@ -233,11 +327,13 @@ export function safeQuoteFromRow(row: RateflowProductRow, now = new Date()): Saf
   if (!Number.isFinite(rate) || rate <= 0 || rate > 25) return null;
   const pi = Number(row.principalAndInterest);
   const pts = Number(row.pts);
+  const term = termYearsFromRow(row);
   return {
     rate,
     asOf: asOfFromRow(row, now).toISOString(),
     ...(Number.isFinite(pi) && pi > 0 ? { principalAndInterest: pi } : {}),
     ...(Number.isFinite(pts) ? { pts } : {}),
+    ...(term && term !== 30 ? { term } : {}),
   };
 }
 
@@ -268,7 +364,8 @@ export function formatPts(pts: number): string {
 export function liveRateLine(quote: SafeLiveQuote): string {
   const asOf = formatAsOfPacific(quote.asOf);
   const when = asOf ? `Live as of ${asOf}` : "Live";
-  return `${formatRatePercent(quote.rate)} · ${when} · not a lock`;
+  const term = quote.term != null && quote.term !== 30 ? `${quote.term}-year · ` : "";
+  return `${formatRatePercent(quote.rate)} · ${term}${when} · not a lock`;
 }
 
 export function liveRateSecondLine(quote: SafeLiveQuote): string | undefined {
@@ -299,10 +396,12 @@ export function parseSafeQuoteResponse(input: unknown): SafeLiveQuote | null {
   const asOf = typeof quote.asOf === "string" ? quote.asOf : "";
   const pi = Number(quote.principalAndInterest);
   const pts = Number(quote.pts);
+  const term = Number(quote.term);
   return {
     rate,
     asOf,
     ...(Number.isFinite(pi) && pi > 0 ? { principalAndInterest: pi } : {}),
     ...(Number.isFinite(pts) ? { pts } : {}),
+    ...(Number.isFinite(term) && term > 0 && term !== 30 ? { term } : {}),
   };
 }

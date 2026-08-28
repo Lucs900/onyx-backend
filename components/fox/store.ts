@@ -129,8 +129,10 @@ import {
   proposePropertyType,
   proposeSubjectAddress,
   skipPropertyType,
+  skipPropertyZip,
   skipSubjectAddress,
   writePropertyType,
+  writePropertyZip,
   writeSubjectAddress,
 } from "./propertyType";
 import {
@@ -206,12 +208,14 @@ function normalizeLiveQuote(value: unknown): FoxIntakeDraft["liveQuote"] {
   if (!key || !Number.isFinite(rate) || rate <= 0) return undefined;
   const principalAndInterest = numberOrUndefined(raw.principalAndInterest);
   const pts = signedNumberOrUndefined(raw.pts);
+  const term = numberOrUndefined(raw.term);
   return {
     key,
     rate,
     asOf,
     ...(principalAndInterest != null ? { principalAndInterest } : {}),
     ...(pts != null ? { pts } : {}),
+    ...(term != null && term !== 30 ? { term } : {}),
   };
 }
 
@@ -471,6 +475,14 @@ function normalize(value: unknown): FoxIntakeDraft {
     ),
     propertyType: isPropertyTypeValue(String(raw.propertyType ?? "")) ? raw.propertyType : undefined,
     propertyTypeAsked: Boolean(raw.propertyTypeAsked || raw.propertyType),
+    propertyZip:
+      typeof raw.propertyZip === "string" && /^\d{5}$/.test(raw.propertyZip.trim())
+        ? raw.propertyZip.trim()
+        : undefined,
+    propertyZipAsked: Boolean(
+      raw.propertyZipAsked ||
+        (typeof raw.propertyZip === "string" && /^\d{5}$/.test(raw.propertyZip.trim())),
+    ),
     subjectAddress:
       typeof raw.subjectAddress === "string" && raw.subjectAddress.trim()
         ? raw.subjectAddress.trim()
@@ -1635,6 +1647,14 @@ function applyCaptureBody(capture: Capture) {
     const value = parsePropertyType(capture.value);
     if (!value) return current;
     return commit(writePropertyType(current, value));
+  }
+  if (capture.field === "skip-property-zip") {
+    return commit(skipPropertyZip(current));
+  }
+  if (capture.field === "propertyZip") {
+    const next = writePropertyZip(current, capture.value);
+    if (next === current) return current;
+    return commit(next);
   }
   if (capture.field === "propose-rental-lease") {
     const rent = Number(String(capture.value).replace(/[$,]/g, ""));

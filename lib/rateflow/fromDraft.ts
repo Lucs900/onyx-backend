@@ -1,12 +1,13 @@
 import type { FoxIntakeDraft, ProductIntent } from "@/components/fox/types";
 import { FHFA_HIGH_COST_CEILING_2026 } from "@/lib/guidelines/conventional";
 import {
+  cityFromTypedAddress,
   creditScoreFloor,
   mapPropertyType,
   mapResidency,
   parseClientBody,
   rateflowScenarioKey,
-  zipFromTypedAddress,
+  zipFromSources,
   type RateflowClientBody,
 } from "./quote";
 
@@ -36,6 +37,7 @@ export type LiveQuoteOnFile = {
   asOf: string;
   principalAndInterest?: number;
   pts?: number;
+  term?: number;
 };
 
 function listPriceFromDraft(draft: FoxIntakeDraft): number | undefined {
@@ -68,7 +70,24 @@ export function rateflowBlockedReason(draft: FoxIntakeDraft): string | null {
   if (loanAmount > FHFA_HIGH_COST_CEILING_2026) return "jumbo";
   if (!mapPropertyType(draft.propertyType, draft.propertyUnits)) return "property-type";
   if (creditScoreFloor(draft.creditBand) == null) return "credit";
+  if (!zipFromDraft(draft)) return "zip";
   return null;
+}
+
+export function zipFromDraft(draft: FoxIntakeDraft): string | undefined {
+  const factAddress =
+    typeof draft.facts?.property_address?.value === "string" ? draft.facts.property_address.value : "";
+  return zipFromSources({
+    propertyZip: draft.propertyZip,
+    address: draft.subjectAddress || factAddress,
+    scenarioZip: draft.scenario?.zip,
+  });
+}
+
+export function cityFromDraft(draft: FoxIntakeDraft): string | undefined {
+  const factAddress =
+    typeof draft.facts?.property_address?.value === "string" ? draft.facts.property_address.value : "";
+  return cityFromTypedAddress(draft.subjectAddress || factAddress);
 }
 
 export function rateflowClientBodyFromDraft(draft: FoxIntakeDraft): RateflowClientBody | null {
@@ -82,9 +101,9 @@ export function rateflowClientBodyFromDraft(draft: FoxIntakeDraft): RateflowClie
   if (!purpose || !residency || !propertyType || listPrice == null || loanAmount == null || credit == null) {
     return null;
   }
-  const typedZip =
-    zipFromTypedAddress(draft.subjectAddress) ??
-    (draft.scenario?.zip && /^\d{5}$/.test(draft.scenario.zip) ? draft.scenario.zip : undefined);
+  const zipcode = zipFromDraft(draft);
+  if (!zipcode) return null;
+  const city = cityFromDraft(draft);
   return parseClientBody({
     loan_purpose: purpose,
     residency_type: residency,
@@ -92,7 +111,8 @@ export function rateflowClientBodyFromDraft(draft: FoxIntakeDraft): RateflowClie
     list_price: listPrice,
     loan_amount: loanAmount,
     credit_score: credit,
-    ...(typedZip ? { zipcode: typedZip } : {}),
+    zipcode,
+    ...(city ? { city } : {}),
   });
 }
 

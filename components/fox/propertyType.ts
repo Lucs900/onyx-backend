@@ -1,3 +1,4 @@
+import { parseZipcode, zipFromSources } from "@/lib/rateflow/quote";
 import type { FactProposal, FoxAction, FoxIntakeDraft } from "./types";
 
 export const PROPERTY_TYPE_FIELD = "propertyType";
@@ -8,6 +9,8 @@ export const PROPERTY_TYPE_ASK =
   "What kind of home is this? House, condo, or 2–4 unit is enough. Skip is fine.";
 export const PROPERTY_ADDRESS_ASK = "What is the property address?";
 export const PURCHASE_ADDRESS_ASK = "What is the address of the home you are buying?";
+export const PROPERTY_ZIP_FIELD = "propertyZip";
+export const PROPERTY_ZIP_ASK = "What ZIP is the property in?";
 
 export type PropertyTypeValue = "sfr" | "condo" | "two_to_four";
 
@@ -52,6 +55,79 @@ export function rateLineReady(draft: FoxIntakeDraft) {
   if (draft.correcting === "property-type") return false;
   if (propertyTypeSkipped(draft)) return true;
   return propertyTypeChosen(draft) && creditAnswered(draft);
+}
+
+export function typedZipFromDraft(draft: FoxIntakeDraft): string | undefined {
+  const factAddress =
+    typeof draft.facts?.property_address?.value === "string" ? draft.facts.property_address.value : "";
+  return zipFromSources({
+    propertyZip: draft.propertyZip,
+    address: draft.subjectAddress || factAddress,
+    scenarioZip: draft.scenario?.zip,
+  });
+}
+
+export function propertyZipSettled(draft: FoxIntakeDraft) {
+  if (draft.correcting === "property-zip") return false;
+  return Boolean(typedZipFromDraft(draft) || draft.propertyZipAsked);
+}
+
+export function propertyZipSkipped(draft: FoxIntakeDraft) {
+  return Boolean(
+    draft.propertyZipAsked && !typedZipFromDraft(draft) && draft.correcting !== "property-zip",
+  );
+}
+
+export function propertyZipAskNeeded(draft: FoxIntakeDraft) {
+  return propertyTypeChosen(draft) && creditAnswered(draft) && !propertyZipSettled(draft);
+}
+
+export function skipPropertyZip(draft: FoxIntakeDraft): FoxIntakeDraft {
+  return {
+    ...draft,
+    propertyZip: undefined,
+    propertyZipAsked: true,
+    correcting: draft.correcting === "property-zip" ? null : draft.correcting,
+    correctingLine: draft.correctingLine === "property-zip" ? null : draft.correctingLine,
+  };
+}
+
+export function writePropertyZip(draft: FoxIntakeDraft, zip: string): FoxIntakeDraft {
+  const parsed = parseZipcode(zip);
+  if (!parsed) return draft;
+  return {
+    ...draft,
+    propertyZip: parsed,
+    propertyZipAsked: true,
+    correcting: null,
+    correctingLine: null,
+  };
+}
+
+export function isSkipPropertyZipText(text: string) {
+  const lower = text.trim().toLowerCase().replace(/[?.!]+$/g, "");
+  return (
+    /^(skip|skip for now|not yet|later|none|no|n\/a|na)$/i.test(lower) ||
+    /^(i )?(don'?t|do not) (have|know)/i.test(lower)
+  );
+}
+
+export function propertyZipSkipActions(): FoxAction[] {
+  return [
+    {
+      id: "skip-property-zip",
+      label: "Skip",
+      event: "bubble",
+      capture: { field: "skip-property-zip" },
+    },
+  ];
+}
+
+export function propertyZipAskCopy(): { text: string; actions?: FoxAction[] } {
+  return {
+    text: PROPERTY_ZIP_ASK,
+    actions: propertyZipSkipActions(),
+  };
 }
 
 export function isPropertyTypeConfirmPending(draft: FoxIntakeDraft) {

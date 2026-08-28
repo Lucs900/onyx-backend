@@ -13,8 +13,14 @@ import {
 } from "@/components/products/scenario";
 import { pathFromHomeChoice } from "./homeIdle";
 import { isUnreadNote } from "@/lib/docs/accept";
-import { liveQuoteMatchesDraft, searchedKeyFor } from "@/lib/rateflow/fromDraft";
-import { liveRateExplain, liveRateLine, liveRateSecondLine } from "@/lib/rateflow/quote";
+import { liveQuoteMatchesDraft, searchedKeyFor, zipFromDraft } from "@/lib/rateflow/fromDraft";
+import {
+  liveRateExplain,
+  liveRateLine,
+  liveRateSecondLine,
+  parseZipcode,
+  zipFromTypedAddress,
+} from "@/lib/rateflow/quote";
 import {
   AMOUNT_HELPER_BUBBLES,
   AMOUNT_PURPOSE_BUBBLES,
@@ -208,6 +214,7 @@ import {
   isPropertyTypeConfirmPending,
   isSkipPropertyAddressText,
   isSkipPropertyTypeText,
+  isSkipPropertyZipText,
   isSubjectAddressConfirmPending,
   parsePropertyType,
   parseVolunteeredAddress,
@@ -219,6 +226,9 @@ import {
   propertyTypeChosen,
   propertyTypeSettled,
   propertyTypeSkipped,
+  propertyZipAskCopy,
+  propertyZipAskNeeded,
+  propertyZipSkipped,
   creditAnswered,
   rateLineReady,
   propertyTypeConfirmActions,
@@ -227,9 +237,11 @@ import {
   proposePropertyType,
   proposeSubjectAddress,
   skipPropertyType,
+  skipPropertyZip,
   skipSubjectAddress,
   typedAddressConfirmCopy,
   writePropertyType,
+  writePropertyZip,
   writeSubjectAddress,
 } from "./propertyType";
 import {
@@ -2100,6 +2112,14 @@ export function previewRateFact(draft: FoxIntakeDraft): PreviewFact | null {
     };
   }
   if (!propertyTypeChosen(draft) || !creditAnswered(draft)) return null;
+  if (propertyZipSkipped(draft)) {
+    return {
+      id: "rate",
+      label: "Rate",
+      value: PRICING_WHEN_READY,
+    };
+  }
+  if (!zipFromDraft(draft)) return null;
   const live = liveQuoteMatchesDraft(draft, draft.liveQuote) ? draft.liveQuote : null;
   if (live) {
     return {
@@ -2248,6 +2268,7 @@ export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
   if (!rateLineReady(draft)) {
     return propertyTypeSettled(draft) ? "credit" : "property-type";
   }
+  if (propertyZipAskNeeded(draft)) return "property-zip";
   if (!incomeSettled(draft)) return "income";
   if (needsDeclarationTiming(draft)) return "declaration-timing";
   if (!otherReoSettled(draft)) return "other-reo";
@@ -2486,6 +2507,9 @@ function workspaceAskCopy(
   }
   if (prompt === "property-type") {
     return propertyTypeAskCopy(draft);
+  }
+  if (prompt === "property-zip") {
+    return propertyZipAskCopy();
   }
   if (prompt === "property-address") {
     return propertyAddressAskCopy(draft);
@@ -3241,6 +3265,9 @@ export function editPromptFromCapture(capture?: Capture): FoxPrompt | undefined 
   ) {
     return "property-type";
   }
+  if (capture.field === "skip-property-zip" || capture.field === "propertyZip") {
+    return "property-zip";
+  }
   if (
     capture.field === "skip-property-address" ||
     capture.field === "change-property-address"
@@ -3484,6 +3511,12 @@ export function workspaceUpdateCopy(capture: Capture, draft: FoxIntakeDraft) {
   if (capture.field === "propose-available-assets") return "Updated.";
   if (capture.field === "skip-property-type") return "Updated. Property type left blank.";
   if (capture.field === "propose-property-type") return "Updated.";
+  if (capture.field === "skip-property-zip") return "Updated. Property ZIP left blank.";
+  if (capture.field === "propertyZip") {
+    return capture.value.trim()
+      ? `Updated property ZIP to ${capture.value.trim()}.`
+      : "Updated property ZIP.";
+  }
   if (capture.field === "skip-property-address") return "Updated. Property address left blank.";
   if (capture.field === "change-property-address") return propertyAddressAskText(draft);
   if (capture.field === "propertyType") {
@@ -5267,6 +5300,23 @@ export function workspaceReply(
     return {
       ...nextFoxAsk(nextDraft),
       capture: { field: "propertyType", value },
+    };
+  }
+
+  if (prompt === "property-zip") {
+    if (isSkipPropertyZipText(q)) {
+      const nextDraft = skipPropertyZip(draft);
+      return {
+        ...workspacePromptCopy(workspacePrompt(nextDraft), nextDraft),
+        capture: { field: "skip-property-zip" },
+      };
+    }
+    const zip = parseZipcode(q) ?? zipFromTypedAddress(q);
+    if (!zip) return answerThenRestore(q, draft);
+    const nextDraft = writePropertyZip(draft, zip);
+    return {
+      ...nextFoxAsk(nextDraft),
+      capture: { field: "propertyZip", value: zip },
     };
   }
 
