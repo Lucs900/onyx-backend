@@ -9841,9 +9841,13 @@ assert.ok(!dropSource.includes("/api/heloc-quote"));
 assert.ok(!dropSource.includes("/api/rateflow-quote"));
 assert.ok(!dropSource.includes("setTimeout"));
 const alwaysOn = readFileSync(join(root, "components/fox/AlwaysOnFox.tsx"), "utf8");
-assert.ok(alwaysOn.includes("/api/rateflow-quote"));
+const rateflowClient = readFileSync(join(root, "components/fox/rateflowClient.ts"), "utf8");
+assert.ok(alwaysOn.includes("requestRateflowIfNeeded"));
+assert.ok(rateflowClient.includes("/api/rateflow-quote"));
 assert.ok(!alwaysOn.includes("/api/heloc-quote"));
+assert.ok(!rateflowClient.includes("/api/heloc-quote"));
 assert.ok(!alwaysOn.includes("BANKINGBRIDGE_"));
+assert.ok(!rateflowClient.includes("BANKINGBRIDGE_"));
 assert.ok(
   alwaysOn.includes("file is prepared") ||
     alwaysOn.includes("still useful") ||

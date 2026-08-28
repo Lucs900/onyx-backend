@@ -117,7 +117,7 @@ assert.match(liveRateLine(quote!), /6\.125% · Live as of .+ PT · not a lock/);
 assert.doesNotMatch(liveRateLine(quote!), /approved|locked|committed|6\.750/i);
 assert.equal(liveRateSecondLine(quote!), "P&I $5,830 · -0.05 pts");
 assert.match(formatAsOfPacific(quote!.asOf), /PT$/);
-assert.equal(parseSafeQuoteResponse({ ok: true, quote }), quote);
+assert.deepEqual(parseSafeQuoteResponse({ ok: true, quote }), quote);
 assert.equal(parseSafeQuoteResponse({ ok: false }), null);
 assert.equal(parseSafeQuoteResponse({ rate: 6.75, apiKey: "nope" }), null);
 
@@ -188,9 +188,13 @@ assert.ok(route.includes("BANKINGBRIDGE_BRAND_ID"));
 assert.ok(!route.includes("process.env.BANKINGBRIDGE_BRAND_ID") || route.includes("envPresent(\"BANKINGBRIDGE_BRAND_ID\")"));
 
 const fox = readFileSync(join(root, "components/fox/AlwaysOnFox.tsx"), "utf8");
-assert.ok(fox.includes("/api/rateflow-quote"));
+const client = readFileSync(join(root, "components/fox/rateflowClient.ts"), "utf8");
+assert.ok(fox.includes("requestRateflowIfNeeded"));
+assert.ok(client.includes("/api/rateflow-quote"));
 assert.ok(!fox.includes("/api/heloc-quote"));
+assert.ok(!client.includes("/api/heloc-quote"));
 assert.ok(!fox.includes("BANKINGBRIDGE_"));
+assert.ok(!client.includes("BANKINGBRIDGE_"));
 
 const heloc = readFileSync(join(root, "app/api/heloc-quote/route.ts"), "utf8");
 assert.ok(heloc.includes("calculateHelocQuoteTool"));
