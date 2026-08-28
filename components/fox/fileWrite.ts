@@ -62,6 +62,7 @@ import {
   isPropertyAddressField,
   parsePropertyType,
   propertyAddressConflictActions,
+  rememberPriorZipOnNewAddress,
 } from "./propertyType";
 import {
   HIRE_DATE_FIELD,
@@ -757,7 +758,7 @@ function writeField(
   const pendingProposal =
     draft.pendingProposal && draft.pendingProposal.field === field ? null : draft.pendingProposal;
   const assetAmount = field === STATED_AVAILABLE_ASSETS_FIELD ? moneyNumber(value) : null;
-  return {
+  const written = {
     ...draft,
     facts,
     contact,
@@ -788,6 +789,7 @@ function writeField(
       ? { statedCurrentHousing: Math.round(Number(value)), currentHousingAsked: true }
       : {}),
   };
+  return isPropertyAddressField(field) ? rememberPriorZipOnNewAddress(draft, written) : written;
 }
 
 export function quietLineForClass(extractClass: ExtractClass) {

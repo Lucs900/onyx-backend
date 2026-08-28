@@ -226,9 +226,14 @@ import {
   propertyTypeChosen,
   propertyTypeSettled,
   propertyTypeSkipped,
+  addressZipFromDraft,
+  keepPropertyZip,
   propertyZipAskCopy,
   propertyZipAskNeeded,
+  propertyZipConfirmNeeded,
   propertyZipSkipped,
+  adoptReuseZip,
+  borrowerChosePropertyType,
   creditAnswered,
   rateLineReady,
   propertyTypeConfirmActions,
@@ -2100,6 +2105,43 @@ export function sampleReady(draft: FoxIntakeDraft): boolean {
   return sketchAssembled(draft);
 }
 
+export function liveQuoteThreadCopy(
+  quote: NonNullable<FoxIntakeDraft["liveQuote"]>,
+): string {
+  const second = liveRateSecondLine(quote);
+  return second ? `${liveRateLine(quote)}\n${second}` : liveRateLine(quote);
+}
+
+/** Speak the live line in the thread. Insert before the current ask so chips stay put. */
+export function messagesWithLiveQuoteSpeech(
+  messages: FoxMessage[],
+  draft: FoxIntakeDraft,
+  quote: NonNullable<FoxIntakeDraft["liveQuote"]>,
+): FoxMessage[] {
+  if (!quote.rate || !quote.asOf) return messages;
+  const copy = liveQuoteThreadCopy(quote);
+  if (messages.some((item) => item.role === "fox" && item.text === copy)) return messages;
+  const speech: FoxMessage = {
+    id: `live-quote:${quote.key}`,
+    role: "fox",
+    text: copy,
+  };
+  let lastFoxIdx = -1;
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    if (messages[i].role === "fox") {
+      lastFoxIdx = i;
+      break;
+    }
+  }
+  const promptId = workspacePrompt(draft);
+  const ask = promptId ? workspacePromptCopy(promptId, draft) : null;
+  const last = lastFoxIdx >= 0 ? messages[lastFoxIdx] : undefined;
+  if (ask && last && last.text === ask.text) {
+    return [...messages.slice(0, lastFoxIdx), speech, ...messages.slice(lastFoxIdx)];
+  }
+  return [...messages, speech];
+}
+
 /** Skip writes the honest fallback on the type tap. House/Condo/2–4 wait for FICO, then live or fallback after a real search. */
 export function previewRateFact(draft: FoxIntakeDraft): PreviewFact | null {
   const intent = draft.productIntent ?? null;
@@ -2268,7 +2310,7 @@ export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
   if (!rateLineReady(draft)) {
     return propertyTypeSettled(draft) ? "credit" : "property-type";
   }
-  if (propertyZipAskNeeded(draft)) return "property-zip";
+  if (propertyZipConfirmNeeded(draft) || propertyZipAskNeeded(draft)) return "property-zip";
   if (!incomeSettled(draft)) return "income";
   if (needsDeclarationTiming(draft)) return "declaration-timing";
   if (!otherReoSettled(draft)) return "other-reo";
@@ -2509,7 +2551,7 @@ function workspaceAskCopy(
     return propertyTypeAskCopy(draft);
   }
   if (prompt === "property-zip") {
-    return propertyZipAskCopy();
+    return propertyZipAskCopy(draft);
   }
   if (prompt === "property-address") {
     return propertyAddressAskCopy(draft);
@@ -3265,7 +3307,11 @@ export function editPromptFromCapture(capture?: Capture): FoxPrompt | undefined 
   ) {
     return "property-type";
   }
-  if (capture.field === "skip-property-zip" || capture.field === "propertyZip") {
+  if (
+    capture.field === "skip-property-zip" ||
+    capture.field === "keep-property-zip" ||
+    capture.field === "propertyZip"
+  ) {
     return "property-zip";
   }
   if (
@@ -3512,6 +3558,7 @@ export function workspaceUpdateCopy(capture: Capture, draft: FoxIntakeDraft) {
   if (capture.field === "skip-property-type") return "Updated. Property type left blank.";
   if (capture.field === "propose-property-type") return "Updated.";
   if (capture.field === "skip-property-zip") return "Updated. Property ZIP left blank.";
+  if (capture.field === "keep-property-zip") return "Updated. Kept the property ZIP.";
   if (capture.field === "propertyZip") {
     return capture.value.trim()
       ? `Updated property ZIP to ${capture.value.trim()}.`
@@ -4139,11 +4186,11 @@ function draftAfterCaptureBody(draft: FoxIntakeDraft, capture: Capture): FoxInta
     return { ...next, creditBand: undefined, creditAsked: true };
   }
   if (capture.field === "creditRange") {
-    return {
+    return adoptReuseZip({
       ...next,
       creditBand: capture.value,
       creditAsked: true,
-    };
+    });
   }
   if (capture.field === "termYears") {
     const n = Number(capture.value);
@@ -4174,6 +4221,9 @@ function draftAfterCaptureBody(draft: FoxIntakeDraft, capture: Capture): FoxInta
     const value = parsePropertyType(capture.value);
     return value ? writePropertyType(next, value) : next;
   }
+  if (capture.field === "skip-property-zip") return skipPropertyZip(next);
+  if (capture.field === "keep-property-zip") return keepPropertyZip(next);
+  if (capture.field === "propertyZip") return writePropertyZip(next, capture.value);
   if (capture.field === "statedTimeOnJob") {
     const months = parseTimeOnJobMonths(capture.value) ?? Number(capture.value);
     if (!Number.isFinite(months) || months <= 0) return next;
@@ -5304,6 +5354,25 @@ export function workspaceReply(
   }
 
   if (prompt === "property-zip") {
+    if (propertyZipConfirmNeeded(draft)) {
+      if (isSkipPropertyZipText(q)) {
+        const nextDraft = keepPropertyZip(draft);
+        return {
+          ...workspacePromptCopy(workspacePrompt(nextDraft), nextDraft),
+          capture: { field: "keep-property-zip" },
+        };
+      }
+      if (/^use this\b/i.test(q.trim())) {
+        const zip = addressZipFromDraft(draft);
+        if (zip) {
+          const nextDraft = writePropertyZip(draft, zip);
+          return {
+            ...nextFoxAsk(nextDraft),
+            capture: { field: "propertyZip", value: zip },
+          };
+        }
+      }
+    }
     if (isSkipPropertyZipText(q)) {
       const nextDraft = skipPropertyZip(draft);
       return {
@@ -6088,7 +6157,11 @@ export function previewFacts(draft: FoxIntakeDraft): PreviewFact[] {
       id: "property-type",
       label: "Property type",
       value: shown,
-      note: SUGGESTED_PROPERTY_NOTE,
+      ...(isPropertyTypeConfirmPending(draft) ||
+      draft.facts?.[PROPERTY_TYPE_FIELD]?.source === "suggested" ||
+      !draft.propertyType
+        ? { note: SUGGESTED_PROPERTY_NOTE }
+        : {}),
     });
   }
 
@@ -6525,6 +6598,11 @@ export function structureExplainCopy(
     };
   }
   if (id === "property-type") {
+    if (borrowerChosePropertyType(draft) && draft.propertyType) {
+      return {
+        text: `Property type. ${propertyTypeLabel(draft.propertyType)}.`,
+      };
+    }
     return {
       text: "Property type. Suggested · not underwritten.",
     };

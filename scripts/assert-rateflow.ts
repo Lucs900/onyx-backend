@@ -162,6 +162,14 @@ assert.equal(asProductRows({ status: "error" }).length, 0);
 
 const quote = safeQuoteFromRow(picked!, new Date("2026-08-28T19:04:00.000Z"));
 assert.ok(quote);
+assert.equal(quote?.asOf, "2026-08-28T19:04:00.000Z");
+assert.equal(
+  safeQuoteFromRow(
+    { ...picked!, lastUpdate: 1_700_000_000 },
+    new Date("2026-08-28T22:15:00.000Z"),
+  )?.asOf,
+  "2026-08-28T22:15:00.000Z",
+);
 assert.equal(quote?.rate, 6.125);
 assert.match(liveRateLine(quote!), /6\.125% · Live as of .+ PT · not a lock/);
 assert.doesNotMatch(liveRateLine(quote!), /approved|locked|committed|6\.750/i);
@@ -252,6 +260,7 @@ assert.doesNotMatch(route, /console\.(log|info|warn|error)\([^)]*BANKINGBRIDGE_/
 const fox = readFileSync(join(root, "components/fox/AlwaysOnFox.tsx"), "utf8");
 const client = readFileSync(join(root, "components/fox/rateflowClient.ts"), "utf8");
 assert.ok(fox.includes("requestRateflowIfNeeded"));
+assert.ok(fox.includes("messagesWithLiveQuoteSpeech"));
 assert.ok(client.includes("/api/rateflow-quote"));
 assert.ok(!fox.includes("/api/heloc-quote"));
 assert.ok(!client.includes("/api/heloc-quote"));

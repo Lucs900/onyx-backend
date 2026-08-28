@@ -1,4 +1,4 @@
-import { parseZipcode, zipFromSources } from "@/lib/rateflow/quote";
+import { parseZipcode, zipFromSources, zipFromTypedAddress } from "@/lib/rateflow/quote";
 import type { FactProposal, FoxAction, FoxIntakeDraft } from "./types";
 
 export const PROPERTY_TYPE_FIELD = "propertyType";
@@ -11,6 +11,10 @@ export const PROPERTY_ADDRESS_ASK = "What is the property address?";
 export const PURCHASE_ADDRESS_ASK = "What is the address of the home you are buying?";
 export const PROPERTY_ZIP_FIELD = "propertyZip";
 export const PROPERTY_ZIP_ASK = "What ZIP is the property in?";
+
+export function propertyZipConfirmCopy(zip: string) {
+  return `This address is ${zip}. Use this?`;
+}
 
 export type PropertyTypeValue = "sfr" | "condo" | "two_to_four";
 
@@ -57,18 +61,29 @@ export function rateLineReady(draft: FoxIntakeDraft) {
   return propertyTypeChosen(draft) && creditAnswered(draft);
 }
 
+function factAddressFromDraft(draft: FoxIntakeDraft): string {
+  return typeof draft.facts?.property_address?.value === "string" ? draft.facts.property_address.value : "";
+}
+
+export function addressZipFromDraft(draft: FoxIntakeDraft): string | undefined {
+  return zipFromTypedAddress(draft.subjectAddress || factAddressFromDraft(draft));
+}
+
+export function keptPropertyZip(draft: FoxIntakeDraft): string | undefined {
+  return parseZipcode(draft.propertyZip);
+}
+
 export function typedZipFromDraft(draft: FoxIntakeDraft): string | undefined {
-  const factAddress =
-    typeof draft.facts?.property_address?.value === "string" ? draft.facts.property_address.value : "";
   return zipFromSources({
     propertyZip: draft.propertyZip,
-    address: draft.subjectAddress || factAddress,
+    address: draft.subjectAddress || factAddressFromDraft(draft),
     scenarioZip: draft.scenario?.zip,
   });
 }
 
 export function propertyZipSettled(draft: FoxIntakeDraft) {
   if (draft.correcting === "property-zip") return false;
+  if (propertyZipConfirmNeeded(draft)) return false;
   return Boolean(typedZipFromDraft(draft) || draft.propertyZipAsked);
 }
 
@@ -78,7 +93,18 @@ export function propertyZipSkipped(draft: FoxIntakeDraft) {
   );
 }
 
+/** Later address ZIP differs from the ZIP they already answered. Ask once. */
+export function propertyZipConfirmNeeded(draft: FoxIntakeDraft) {
+  if (draft.correcting === "property-zip") return false;
+  if (!propertyTypeChosen(draft) || !creditAnswered(draft)) return false;
+  const kept = keptPropertyZip(draft);
+  const fromAddress = addressZipFromDraft(draft);
+  if (!kept || !fromAddress || kept === fromAddress) return false;
+  return draft.addressZipOffered !== fromAddress;
+}
+
 export function propertyZipAskNeeded(draft: FoxIntakeDraft) {
+  if (propertyZipConfirmNeeded(draft)) return false;
   return propertyTypeChosen(draft) && creditAnswered(draft) && !propertyZipSettled(draft);
 }
 
@@ -92,13 +118,27 @@ export function skipPropertyZip(draft: FoxIntakeDraft): FoxIntakeDraft {
   };
 }
 
+/** Skip on a later-address confirm. Keep the answered ZIP. Do not ask this address ZIP again. */
+export function keepPropertyZip(draft: FoxIntakeDraft): FoxIntakeDraft {
+  const fromAddress = addressZipFromDraft(draft);
+  return {
+    ...draft,
+    propertyZipAsked: true,
+    addressZipOffered: fromAddress ?? draft.addressZipOffered,
+    correcting: draft.correcting === "property-zip" ? null : draft.correcting,
+    correctingLine: draft.correctingLine === "property-zip" ? null : draft.correctingLine,
+  };
+}
+
 export function writePropertyZip(draft: FoxIntakeDraft, zip: string): FoxIntakeDraft {
   const parsed = parseZipcode(zip);
   if (!parsed) return draft;
+  const fromAddress = addressZipFromDraft(draft);
   return {
     ...draft,
     propertyZip: parsed,
     propertyZipAsked: true,
+    addressZipOffered: fromAddress === parsed ? parsed : draft.addressZipOffered,
     correcting: null,
     correctingLine: null,
   };
@@ -123,11 +163,70 @@ export function propertyZipSkipActions(): FoxAction[] {
   ];
 }
 
-export function propertyZipAskCopy(): { text: string; actions?: FoxAction[] } {
+export function propertyZipConfirmActions(zip: string): FoxAction[] {
+  return [
+    {
+      id: "use-address-zip",
+      label: "Use this",
+      event: "bubble",
+      capture: { field: "propertyZip", value: zip },
+    },
+    {
+      id: "keep-property-zip",
+      label: "Skip",
+      event: "bubble",
+      capture: { field: "keep-property-zip" },
+    },
+  ];
+}
+
+export function propertyZipAskCopy(draft: FoxIntakeDraft): { text: string; actions?: FoxAction[] } {
+  if (propertyZipConfirmNeeded(draft)) {
+    const zip = addressZipFromDraft(draft);
+    if (zip) {
+      return {
+        text: propertyZipConfirmCopy(zip),
+        actions: propertyZipConfirmActions(zip),
+      };
+    }
+  }
   return {
     text: PROPERTY_ZIP_ASK,
     actions: propertyZipSkipActions(),
   };
+}
+
+/** Remember a reused address/scenario ZIP so a later different address can confirm once. */
+export function adoptReuseZip(draft: FoxIntakeDraft): FoxIntakeDraft {
+  if (keptPropertyZip(draft)) return draft;
+  if (!propertyTypeChosen(draft) || !creditAnswered(draft)) return draft;
+  const zip = typedZipFromDraft(draft);
+  if (!zip) return draft;
+  const fromAddress = addressZipFromDraft(draft);
+  return {
+    ...draft,
+    propertyZip: zip,
+    addressZipOffered: fromAddress === zip ? zip : draft.addressZipOffered,
+  };
+}
+
+/** If they already had a ZIP and this address is different, keep the old ZIP until they confirm. */
+export function rememberPriorZipOnNewAddress(
+  before: FoxIntakeDraft,
+  next: FoxIntakeDraft,
+): FoxIntakeDraft {
+  const priorZip = typedZipFromDraft(before);
+  const nextZip = addressZipFromDraft(next);
+  if (priorZip && nextZip && priorZip !== nextZip && !keptPropertyZip(before)) {
+    return { ...next, propertyZip: priorZip };
+  }
+  return next;
+}
+
+export function borrowerChosePropertyType(draft: FoxIntakeDraft) {
+  return (
+    propertyTypeChosen(draft) && draft.facts?.[PROPERTY_TYPE_FIELD]?.source !== "suggested"
+  );
 }
 
 export function isPropertyTypeConfirmPending(draft: FoxIntakeDraft) {
@@ -281,7 +380,7 @@ export function skipPropertyType(draft: FoxIntakeDraft): FoxIntakeDraft {
 
 export function writePropertyType(draft: FoxIntakeDraft, value: PropertyTypeValue): FoxIntakeDraft {
   const now = new Date().toISOString();
-  return {
+  return adoptReuseZip({
     ...draft,
     propertyType: value,
     propertyTypeAsked: true,
@@ -294,12 +393,12 @@ export function writePropertyType(draft: FoxIntakeDraft, value: PropertyTypeValu
       [PROPERTY_TYPE_FIELD]: {
         field: PROPERTY_TYPE_FIELD,
         value,
-        source: "suggested",
+        source: "client",
         confirmed: true,
         confirmedAt: now,
       },
     },
-  };
+  });
 }
 
 export function skipSubjectAddress(draft: FoxIntakeDraft): FoxIntakeDraft {
@@ -318,7 +417,7 @@ export function skipSubjectAddress(draft: FoxIntakeDraft): FoxIntakeDraft {
 export function writeSubjectAddress(draft: FoxIntakeDraft, address: string): FoxIntakeDraft {
   const now = new Date().toISOString();
   const value = address.trim();
-  return {
+  return rememberPriorZipOnNewAddress(draft, {
     ...draft,
     subjectAddress: value,
     subjectAddressAsked: true,
@@ -336,7 +435,7 @@ export function writeSubjectAddress(draft: FoxIntakeDraft, address: string): Fox
         confirmedAt: now,
       },
     },
-  };
+  });
 }
 
 export function proposePropertyType(draft: FoxIntakeDraft, value: PropertyTypeValue): FoxIntakeDraft {

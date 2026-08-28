@@ -312,16 +312,6 @@ export function firstResultSummary(rows: RateflowProductRow[]): RateflowQuoteRep
   };
 }
 
-function asOfFromRow(row: RateflowProductRow, fallback = new Date()): Date {
-  const unix = Number(row.lastUpdate);
-  if (Number.isFinite(unix) && unix > 1_000_000_000) {
-    const ms = unix > 10_000_000_000 ? unix : unix * 1000;
-    const date = new Date(ms);
-    if (!Number.isNaN(date.getTime())) return date;
-  }
-  return fallback;
-}
-
 export function safeQuoteFromRow(row: RateflowProductRow, now = new Date()): SafeLiveQuote | null {
   const rate = Number(row.rate);
   if (!Number.isFinite(rate) || rate <= 0 || rate > 25) return null;
@@ -330,7 +320,7 @@ export function safeQuoteFromRow(row: RateflowProductRow, now = new Date()): Saf
   const term = termYearsFromRow(row);
   return {
     rate,
-    asOf: asOfFromRow(row, now).toISOString(),
+    asOf: now.toISOString(),
     ...(Number.isFinite(pi) && pi > 0 ? { principalAndInterest: pi } : {}),
     ...(Number.isFinite(pts) ? { pts } : {}),
     ...(term && term !== 30 ? { term } : {}),

@@ -17,13 +17,14 @@ import {
   receiveDocument,
   resetWorkspaceForEntry,
   startOverWorkspace,
+  omitLiveQuoteForResume,
   returnToFox,
   setFoxMessages,
   shouldResumeWorkspaceEntry,
   sitExpireReview,
   workspaceSessionStarted,
 } from "../components/fox/store";
-import { rateflowClientBodyFromDraft } from "../lib/rateflow/fromDraft";
+import { liveQuoteMatchesDraft, rateflowClientBodyFromDraft } from "../lib/rateflow/fromDraft";
 import { liveRateLine, liveRateSecondLine, rateflowScenarioKey } from "../lib/rateflow/quote";
 import {
   SUGGESTED_NOTE,
@@ -248,8 +249,10 @@ import {
   PURCHASE_ADDRESS_ASK,
   PROPERTY_TYPE_ASK,
   PROPERTY_ZIP_ASK,
+  keepPropertyZip,
   parsePropertyType,
   proposeSubjectAddress,
+  propertyZipConfirmCopy,
   skipPropertyType,
   skipPropertyZip,
   skipSubjectAddress,
@@ -349,7 +352,9 @@ import {
   loanOverPriceCopy,
   JUMBO_PURPOSE_ASK,
   lastFoxTurn,
+  liveQuoteThreadCopy,
   loanLooksAboveCeiling,
+  messagesWithLiveQuoteSpeech,
   migrateRestoredFoxMessages,
   inertSupersededIncomeConfirms,
   namedOutOfState,
@@ -1241,6 +1246,68 @@ const founderMiss = draft({
 });
 assert.ok(previewFacts(founderMiss).some((fact) => fact.id === "rate" && fact.value === PRICING_WHEN_READY));
 assert.ok(!previewFacts(founderMiss).some((fact) => /6\.750/.test(fact.value)));
+assert.match(previewFacts(afterFounderHouse).find((fact) => fact.id === "property-type")?.value ?? "", /^House$/);
+assert.equal(previewFacts(afterFounderHouse).find((fact) => fact.id === "property-type")?.note, undefined);
+assert.match(structureExplainCopy("property-type", afterFounderHouse)?.text ?? "", /^Property type\. House\.$/);
+assert.doesNotMatch(structureExplainCopy("property-type", afterFounderHouse)?.text ?? "", /Suggested/);
+const founderSpoken = liveQuoteThreadCopy(founderLive.liveQuote!);
+assert.match(founderSpoken, /6\.125% · Live as of .+ PT · not a lock/);
+assert.match(founderSpoken, /P&I \$4,142 · 0 pts/);
+assert.doesNotMatch(founderSpoken, /6\.750|APR|rate board|approved|locked/i);
+assert.equal(founderSpoken.split("\n")[0], previewFacts(founderLive).find((fact) => fact.id === "rate")?.value);
+assert.equal(founderSpoken.split("\n")[1], previewFacts(founderLive).find((fact) => fact.id === "rate")?.note);
+const founderIncomeAsk = workspacePromptCopy("income", founderLive);
+const founderThread = [
+  { id: "ask-income", role: "fox" as const, text: founderIncomeAsk.text, actions: founderIncomeAsk.actions },
+];
+const founderSpokenThread = messagesWithLiveQuoteSpeech(founderThread, founderLive, founderLive.liveQuote!);
+assert.equal(founderSpokenThread[0].text, founderSpoken);
+assert.equal(founderSpokenThread[1].text, founderIncomeAsk.text);
+assert.equal(founderSpokenThread[1].actions, founderIncomeAsk.actions);
+assert.equal(
+  messagesWithLiveQuoteSpeech(founderSpokenThread, founderLive, founderLive.liveQuote!).length,
+  founderSpokenThread.length,
+);
+assert.equal(omitLiveQuoteForResume(founderLive).liveQuote, undefined);
+assert.equal(omitLiveQuoteForResume(founderLive).liveQuoteKey, undefined);
+assert.equal(omitLiveQuoteForResume(founderLive).liveQuoteStatus, undefined);
+assert.equal(founderLive.liveQuote?.rate, 6.125);
+assert.equal(liveQuoteMatchesDraft(afterFounderZip, founderLive.liveQuote), true);
+const founderZipChange = writePropertyZip(afterFounderZip, "94105");
+assert.notEqual(
+  rateflowScenarioKey(rateflowClientBodyFromDraft(afterFounderZip)!),
+  rateflowScenarioKey(rateflowClientBodyFromDraft(founderZipChange)!),
+);
+assert.equal(liveQuoteMatchesDraft(founderZipChange, founderLive.liveQuote), false);
+const laterDifferentZip = writeSubjectAddress(
+  afterFounderZip,
+  "1 Market St, San Francisco, CA 94105",
+);
+assert.equal(workspacePrompt(laterDifferentZip), "property-zip");
+assert.equal(workspacePromptCopy("property-zip", laterDifferentZip).text, propertyZipConfirmCopy("94105"));
+assert.deepEqual(
+  (workspacePromptCopy("property-zip", laterDifferentZip).actions ?? []).map((item) => item.label),
+  ["Use this", "Skip"],
+);
+assert.equal(rateflowClientBodyFromDraft(laterDifferentZip)?.zipcode, "94115");
+const useLaterZip = workspaceReply("Use this", laterDifferentZip);
+assert.equal(useLaterZip?.capture?.field, "propertyZip");
+assert.equal(useLaterZip?.capture && "value" in useLaterZip.capture ? useLaterZip.capture.value : "", "94105");
+assert.equal(writePropertyZip(laterDifferentZip, "94105").propertyZip, "94105");
+assert.equal(rateflowClientBodyFromDraft(writePropertyZip(laterDifferentZip, "94105"))?.zipcode, "94105");
+const keepLaterZip = workspaceReply("Skip", laterDifferentZip);
+assert.equal(keepLaterZip?.capture?.field, "keep-property-zip");
+const keptLaterZip = keepPropertyZip(laterDifferentZip);
+assert.equal(keptLaterZip.propertyZip, "94115");
+assert.equal(keptLaterZip.addressZipOffered, "94105");
+assert.notEqual(workspacePrompt(keptLaterZip), "property-zip");
+assert.equal(rateflowClientBodyFromDraft(keptLaterZip)?.zipcode, "94115");
+assert.equal(
+  workspacePrompt(
+    writeSubjectAddress(keptLaterZip, "1 Market St, San Francisco, CA 94105"),
+  ),
+  "income",
+);
 const founderSkip = workspaceReply("Skip", founder850);
 assert.equal(founderSkip?.capture?.field, "skip-property-type");
 assert.match(founderSkip?.text ?? "", /estimated FICO/i);
@@ -9971,6 +10038,7 @@ assert.ok(!dropSource.includes("setTimeout"));
 const alwaysOn = readFileSync(join(root, "components/fox/AlwaysOnFox.tsx"), "utf8");
 const rateflowClient = readFileSync(join(root, "components/fox/rateflowClient.ts"), "utf8");
 assert.ok(alwaysOn.includes("requestRateflowIfNeeded"));
+assert.ok(alwaysOn.includes("messagesWithLiveQuoteSpeech"));
 assert.ok(rateflowClient.includes("/api/rateflow-quote"));
 assert.ok(!alwaysOn.includes("/api/heloc-quote"));
 assert.ok(!rateflowClient.includes("/api/heloc-quote"));
@@ -10015,6 +10083,8 @@ assert.ok(storeSource.includes("function shouldResumeWorkspaceEntry") || storeSo
 assert.ok(storeSource.includes("fileExists(draft)"));
 assert.ok(storeSource.includes("markHomepageFreshStart"));
 assert.ok(storeSource.includes("startOverWorkspace(path)"));
+assert.ok(storeSource.includes("omitLiveQuoteForResume"));
+assert.ok(storeSource.includes("const raw = session || local"));
 assert.ok(!storeSource.includes("if (workspaceSessionStarted())"));
 const motionSource = readFileSync(join(root, "components/fox/motion.ts"), "utf8");
 assert.ok(motionSource.includes("function creditPullPermitted") || motionSource.includes("export function creditPullPermitted"));

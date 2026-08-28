@@ -131,9 +131,11 @@ import {
   skipPropertyType,
   skipPropertyZip,
   skipSubjectAddress,
+  adoptReuseZip,
   writePropertyType,
   writePropertyZip,
   writeSubjectAddress,
+  keepPropertyZip,
 } from "./propertyType";
 import {
   parseTimeOnJobMonths,
@@ -483,6 +485,10 @@ function normalize(value: unknown): FoxIntakeDraft {
       raw.propertyZipAsked ||
         (typeof raw.propertyZip === "string" && /^\d{5}$/.test(raw.propertyZip.trim())),
     ),
+    addressZipOffered:
+      typeof raw.addressZipOffered === "string" && /^\d{5}$/.test(raw.addressZipOffered.trim())
+        ? raw.addressZipOffered.trim()
+        : undefined,
     subjectAddress:
       typeof raw.subjectAddress === "string" && raw.subjectAddress.trim()
         ? raw.subjectAddress.trim()
@@ -814,9 +820,9 @@ function normalizeProposal(value: FoxIntakeDraft["pendingProposal"]): FactPropos
 function readStored(): FoxIntakeDraft {
   if (typeof window === "undefined") return emptyDraft();
   try {
-    const local = window.localStorage.getItem(INTAKE_STORAGE_KEY);
     const session = window.sessionStorage.getItem(INTAKE_STORAGE_KEY);
-    const raw = local || session;
+    const local = window.localStorage.getItem(INTAKE_STORAGE_KEY);
+    const raw = session || local;
     if (!raw) return emptyDraft();
     return normalize(JSON.parse(raw) as unknown);
   } catch {
@@ -824,12 +830,20 @@ function readStored(): FoxIntakeDraft {
   }
 }
 
+/** A new browser session must not keep an old Live as of. Same tab reuses sessionStorage. */
+export function omitLiveQuoteForResume(draft: FoxIntakeDraft): FoxIntakeDraft {
+  const next = { ...draft };
+  delete next.liveQuote;
+  delete next.liveQuoteKey;
+  delete next.liveQuoteStatus;
+  return next;
+}
+
 function persist(draft: FoxIntakeDraft) {
   if (typeof window === "undefined") return;
-  const raw = JSON.stringify(draft);
   try {
-    window.sessionStorage.setItem(INTAKE_STORAGE_KEY, raw);
-    window.localStorage.setItem(INTAKE_STORAGE_KEY, raw);
+    window.sessionStorage.setItem(INTAKE_STORAGE_KEY, JSON.stringify(draft));
+    window.localStorage.setItem(INTAKE_STORAGE_KEY, JSON.stringify(omitLiveQuoteForResume(draft)));
   } catch {
     // Preview storage can be blocked; keep the in-memory copy.
   }
@@ -1651,6 +1665,9 @@ function applyCaptureBody(capture: Capture) {
   if (capture.field === "skip-property-zip") {
     return commit(skipPropertyZip(current));
   }
+  if (capture.field === "keep-property-zip") {
+    return commit(keepPropertyZip(current));
+  }
   if (capture.field === "propertyZip") {
     const next = writePropertyZip(current, capture.value);
     if (next === current) return current;
@@ -2235,12 +2252,14 @@ function applyCaptureBody(capture: Capture) {
   }
   if (capture.field === "creditRange") {
     return commit(
-      withWorkspaceScenario({
-        ...current,
-        creditBand: capture.value,
-        creditAsked: true,
-        correcting: null,
-      }),
+      adoptReuseZip(
+        withWorkspaceScenario({
+          ...current,
+          creditBand: capture.value,
+          creditAsked: true,
+          correcting: null,
+        }),
+      ),
     );
   }
   if (capture.field === "termYears") {

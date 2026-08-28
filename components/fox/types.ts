@@ -315,6 +315,8 @@ export type FoxIntakeDraft = {
   /** Five-digit ZIP for Rateflow. Never invent 94115. */
   propertyZip?: string;
   propertyZipAsked?: boolean;
+  /** Address ZIP we already offered in “Use this?”. Ask that later ZIP once. */
+  addressZipOffered?: string;
   subjectAddress?: string;
   subjectAddressAsked?: boolean;
   statedTimeOnJob?: number;
@@ -518,6 +520,7 @@ export type Capture =
   | { field: "propose-property-type"; value: string }
   | { field: "propertyType"; value: string }
   | { field: "skip-property-zip" }
+  | { field: "keep-property-zip" }
   | { field: "propertyZip"; value: string }
   | { field: "propose-rental-lease"; value: string }
   | { field: "propose-subject-address"; value: string }

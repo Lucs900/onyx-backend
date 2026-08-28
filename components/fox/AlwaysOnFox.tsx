@@ -69,6 +69,7 @@ import {
   ensureIncomeConfirmChips,
   inertSupersededIncomeConfirms,
   lastFoxTurn,
+  messagesWithLiveQuoteSpeech,
   docReactionAsk,
   nextDocInvite,
   nextFoxAsk,
@@ -928,6 +929,10 @@ export function AlwaysOnFox({
         return;
       }
       setLiveQuoteResult(key, result);
+      const live = getFoxDraft();
+      if (live.liveQuote && live.liveQuoteStatus === "ready") {
+        commitMessages((prev) => messagesWithLiveQuoteSpeech(prev, live, live.liveQuote!));
+      }
     })();
     return () => {
       cancelled = true;
