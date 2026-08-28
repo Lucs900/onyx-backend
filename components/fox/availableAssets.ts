@@ -20,11 +20,7 @@ export function statementExtractConfirmed(draft: FoxIntakeDraft) {
 
 export function assetsSettled(draft: FoxIntakeDraft) {
   if (draft.correcting === "assets") return false;
-  return Boolean(
-    draft.availableAssetsAsked ||
-      draft.statedAvailableAssets != null ||
-      statementExtractConfirmed(draft),
-  );
+  return Boolean(draft.bankStatementAsked || statementExtractConfirmed(draft));
 }
 
 export function assetsNeeded(draft: FoxIntakeDraft) {
@@ -77,6 +73,8 @@ export function skipAvailableAssets(draft: FoxIntakeDraft): FoxIntakeDraft {
     ...draft,
     statedAvailableAssets: undefined,
     availableAssetsAsked: true,
+    bankStatementAsked: isLateWalkBankStatementAsk(draft) ? true : draft.bankStatementAsked,
+    looksRightHold: isLateWalkBankStatementAsk(draft) ? false : draft.looksRightHold,
     pendingProposal:
       draft.pendingProposal?.field === STATED_AVAILABLE_ASSETS_FIELD ? null : draft.pendingProposal,
     correcting: null,
@@ -92,6 +90,8 @@ export function writeStatedAvailableAssets(draft: FoxIntakeDraft, amount: number
     ...draft,
     statedAvailableAssets: Math.round(amount),
     availableAssetsAsked: true,
+    bankStatementAsked: isLateWalkBankStatementAsk(draft) ? true : draft.bankStatementAsked,
+    looksRightHold: isLateWalkBankStatementAsk(draft) ? false : draft.looksRightHold,
     pendingProposal: null,
     pendingConflict: null,
     correcting: null,

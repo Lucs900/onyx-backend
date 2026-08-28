@@ -448,6 +448,9 @@ function normalize(value: unknown): FoxIntakeDraft {
     pendingDebtMortgage: normalizePendingDebtMortgage(raw.pendingDebtMortgage),
     statedAvailableAssets: numberOrUndefined(raw.statedAvailableAssets),
     availableAssetsAsked: Boolean(raw.availableAssetsAsked || raw.statedAvailableAssets != null),
+    bankStatementAsked: Boolean(
+      raw.bankStatementAsked || raw.facts?.institution?.confirmed || raw.facts?.ending_balance?.confirmed,
+    ),
     propertyType: isPropertyTypeValue(String(raw.propertyType ?? "")) ? raw.propertyType : undefined,
     propertyTypeAsked: Boolean(raw.propertyTypeAsked || raw.propertyType),
     subjectAddress:

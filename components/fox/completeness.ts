@@ -44,6 +44,7 @@ import {
   assetsSettled,
   availableAssetsConfirmCopy,
   availableAssetsExtractCopy,
+  isLateWalkBankStatementAsk,
   skipAvailableAssets,
 } from "./availableAssets";
 import {
@@ -1050,6 +1051,8 @@ function writeConfirmedFact(
       ...next,
       statedAvailableAssets: amount,
       availableAssetsAsked: true,
+      bankStatementAsked: isLateWalkBankStatementAsk(draft) ? true : draft.bankStatementAsked,
+      looksRightHold: isLateWalkBankStatementAsk(draft) ? false : draft.looksRightHold,
       facts,
     };
   }

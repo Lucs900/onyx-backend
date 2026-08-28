@@ -308,6 +308,8 @@ export type FoxIntakeDraft = {
   } | null;
   statedAvailableAssets?: number;
   availableAssetsAsked?: boolean;
+  /** Late-walk bank-statement line after citizenship was skipped or written. */
+  bankStatementAsked?: boolean;
   propertyType?: "sfr" | "condo" | "two_to_four";
   propertyTypeAsked?: boolean;
   subjectAddress?: string;
