@@ -981,7 +981,7 @@ export function AlwaysOnFox({
     (startAsk === "amount" && !askingAmountPurpose) ||
     startAsk === "value" ||
     startAsk === "debts" ||
-    startAsk === "assets" ||
+    (startAsk === "assets" && (draft.sampleAccepted || draft.correcting === "assets")) ||
     startAsk === "current-housing" ||
     startAsk === "subject-lease";
   const numberAsk =

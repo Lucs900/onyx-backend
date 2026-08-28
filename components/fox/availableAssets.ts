@@ -1,4 +1,5 @@
 import { formatDollars } from "@/components/products/scenario";
+import { citizenshipSettled } from "./citizenship";
 import type { FactProposal, FoxAction, FoxIntakeDraft } from "./types";
 
 export const STATED_AVAILABLE_ASSETS_FIELD = "statedAvailableAssets";
@@ -6,14 +7,33 @@ export const SUGGESTED_ASSETS_NOTE = "Suggested · not underwritten";
 export const AVAILABLE_ASSETS_ASK =
   "About how much cash or available funds do you have for this purchase? A number is enough. Skip is fine.";
 export const SUGGESTED_ASSETS_EXTRACT_NOTE = "Suggested · not underwritten as available assets";
+export const BANK_STATEMENT_ASK =
+  "I need two recent bank statements to show funds for the down payment. Drop them here, or Skip.";
 
 function money(value: number) {
   return `$${formatDollars(value)}`;
 }
 
+export function statementExtractConfirmed(draft: FoxIntakeDraft) {
+  return Boolean(draft.facts?.institution?.confirmed || draft.facts?.ending_balance?.confirmed);
+}
+
 export function assetsSettled(draft: FoxIntakeDraft) {
   if (draft.correcting === "assets") return false;
-  return Boolean(draft.availableAssetsAsked || draft.statedAvailableAssets != null);
+  return Boolean(draft.bankStatementAsked || statementExtractConfirmed(draft));
+}
+
+export function assetsNeeded(draft: FoxIntakeDraft) {
+  if (assetsSettled(draft)) return false;
+  if (!citizenshipSettled(draft)) return false;
+  if (draft.sampleAccepted) return false;
+  if (draft.motion === "in_queue" || draft.motion === "escalated") return false;
+  return true;
+}
+
+/** Late walk after citizenship: extract-first bank statement line, not the cash form. */
+export function isLateWalkBankStatementAsk(draft: FoxIntakeDraft) {
+  return !draft.sampleAccepted && citizenshipSettled(draft) && draft.correcting !== "assets";
 }
 
 export function isStatedAssetsConfirmPending(draft: FoxIntakeDraft) {
@@ -53,6 +73,8 @@ export function skipAvailableAssets(draft: FoxIntakeDraft): FoxIntakeDraft {
     ...draft,
     statedAvailableAssets: undefined,
     availableAssetsAsked: true,
+    bankStatementAsked: isLateWalkBankStatementAsk(draft) ? true : draft.bankStatementAsked,
+    looksRightHold: isLateWalkBankStatementAsk(draft) ? false : draft.looksRightHold,
     pendingProposal:
       draft.pendingProposal?.field === STATED_AVAILABLE_ASSETS_FIELD ? null : draft.pendingProposal,
     correcting: null,
@@ -68,6 +90,8 @@ export function writeStatedAvailableAssets(draft: FoxIntakeDraft, amount: number
     ...draft,
     statedAvailableAssets: Math.round(amount),
     availableAssetsAsked: true,
+    bankStatementAsked: isLateWalkBankStatementAsk(draft) ? true : draft.bankStatementAsked,
+    looksRightHold: isLateWalkBankStatementAsk(draft) ? false : draft.looksRightHold,
     pendingProposal: null,
     pendingConflict: null,
     correcting: null,
@@ -109,7 +133,7 @@ export function proposeExtractedAvailableAssets(
       value: String(Math.round(amount)),
       label: "Stated available assets",
       kind: "computed",
-      note: SUGGESTED_ASSETS_EXTRACT_NOTE,
+      note: SUGGESTED_ASSETS_NOTE,
       extras,
     },
   };
@@ -119,8 +143,12 @@ export function availableAssetsConfirmCopy(amount: number) {
   return `That’s ${money(amount)} in available funds. ${SUGGESTED_ASSETS_NOTE}. Use this?`;
 }
 
-export function availableAssetsExtractCopy(amount: number) {
-  return `The statement shows about ${money(amount)}. ${SUGGESTED_ASSETS_EXTRACT_NOTE}. Use this?`;
+export function availableAssetsExtractCopy(amount: number, institution?: string) {
+  const who = institution?.trim();
+  const shown = who
+    ? `The statement shows ${who} · ${money(amount)}.`
+    : `The statement shows about ${money(amount)}.`;
+  return `${shown} ${SUGGESTED_ASSETS_NOTE}. Use this?`;
 }
 
 export function availableAssetsConfirmActions(): FoxAction[] {
@@ -145,6 +173,24 @@ export function availableAssetsSkipActions(): FoxAction[] {
       capture: { field: "skip-available-assets" },
     },
   ];
+}
+
+export function bankStatementAskActions(): FoxAction[] {
+  return [
+    {
+      id: "skip-available-assets",
+      label: "Skip",
+      event: "bubble",
+      capture: { field: "skip-available-assets" },
+    },
+  ];
+}
+
+export function bankStatementAskCopy(): { text: string; actions?: FoxAction[] } {
+  return {
+    text: BANK_STATEMENT_ASK,
+    actions: bankStatementAskActions(),
+  };
 }
 
 export function availableAssetsAskCopy(draft: FoxIntakeDraft): {

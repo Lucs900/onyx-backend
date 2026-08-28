@@ -41,8 +41,10 @@ import {
 import {
   STATED_AVAILABLE_ASSETS_FIELD,
   SUGGESTED_ASSETS_NOTE,
+  assetsSettled,
   availableAssetsConfirmCopy,
   availableAssetsExtractCopy,
+  isLateWalkBankStatementAsk,
   skipAvailableAssets,
 } from "./availableAssets";
 import {
@@ -845,8 +847,9 @@ export function proposalAskCopy(proposal: FactProposal) {
   }
   if (proposal.field === STATED_AVAILABLE_ASSETS_FIELD) {
     const amount = Number(proposal.value) || 0;
+    const institution = proposal.extras?.find((item) => item.field === "institution")?.value;
     return proposal.extras?.length
-      ? availableAssetsExtractCopy(amount)
+      ? availableAssetsExtractCopy(amount, institution)
       : availableAssetsConfirmCopy(amount);
   }
   const shown = displayFactValue(proposal.field, proposal.value);
@@ -1048,6 +1051,8 @@ function writeConfirmedFact(
       ...next,
       statedAvailableAssets: amount,
       availableAssetsAsked: true,
+      bankStatementAsked: isLateWalkBankStatementAsk(draft) ? true : draft.bankStatementAsked,
+      looksRightHold: isLateWalkBankStatementAsk(draft) ? false : draft.looksRightHold,
       facts,
     };
   }
@@ -1449,7 +1454,8 @@ export function canLooksRight(draft: FoxIntakeDraft) {
     currentAskIdle(draft) &&
     !historyGapNeeded(draft) &&
     propertyAddressSettled(draft) &&
-    citizenshipSettled(draft)
+    citizenshipSettled(draft) &&
+    assetsSettled(draft)
   );
 }
 
@@ -1489,7 +1495,7 @@ export function requiredLineValue(
   const companionId = proposal?.companion
     ? structureFieldForProposal(proposal.companion.field)
     : "";
-  if (proposal && proposalId === line.id) {
+  if (proposal && proposalId === line.id && proposal.field !== STATED_AVAILABLE_ASSETS_FIELD) {
     return {
       value: displayFactValue(proposal.field, proposal.value),
       note: proposal.note ?? proposalNote(proposal.kind),
