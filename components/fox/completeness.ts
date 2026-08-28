@@ -1495,7 +1495,7 @@ export function requiredLineValue(
   const companionId = proposal?.companion
     ? structureFieldForProposal(proposal.companion.field)
     : "";
-  if (proposal && proposalId === line.id) {
+  if (proposal && proposalId === line.id && proposal.field !== STATED_AVAILABLE_ASSETS_FIELD) {
     return {
       value: displayFactValue(proposal.field, proposal.value),
       note: proposal.note ?? proposalNote(proposal.kind),

@@ -54,6 +54,7 @@ import {
   SUGGESTED_ASSETS_EXTRACT_NOTE,
   availableAssetsConflictActions,
   proposeExtractedAvailableAssets,
+  statementExtractConfirmed,
 } from "./availableAssets";
 import {
   PROPERTY_ADDRESS_FACT,
@@ -1811,7 +1812,7 @@ export function layer2Plan(draft: FoxIntakeDraft): StillUsefulItem[] {
     else ids.push("tax_return");
   }
   const skipped = new Set(draft.skippedStillUseful ?? []);
-  return ids
+  const items = ids
     .filter((id) => !skipped.has(id))
     .map((id) => {
     if (id === "mortgage_statement" && draft.statedOtherReo === "yes") {
@@ -1820,6 +1821,19 @@ export function layer2Plan(draft: FoxIntakeDraft): StillUsefulItem[] {
     const copy = LAYER2_COPY[id];
     return layer2Item(id, copy.label, copy.ask);
   });
+  const bankDocs = (draft.documents ?? []).filter(
+    (document) => document.extractClass === "bank_statement" || document.slot === "bank",
+  ).length;
+  if (statementExtractConfirmed(draft) && bankDocs < 2) {
+    items.push(
+      layer2Item(
+        "second-bank-statement",
+        "Second bank statement",
+        "A second recent bank statement still helps this file.",
+      ),
+    );
+  }
+  return items;
 }
 
 export function nextStillUsefulItem(draft: FoxIntakeDraft): StillUsefulItem | undefined {

@@ -8,7 +8,7 @@ export const AVAILABLE_ASSETS_ASK =
   "About how much cash or available funds do you have for this purchase? A number is enough. Skip is fine.";
 export const SUGGESTED_ASSETS_EXTRACT_NOTE = "Suggested · not underwritten as available assets";
 export const BANK_STATEMENT_ASK =
-  "A recent bank statement helps fund the down payment. Drop it here, or Skip.";
+  "I need two recent bank statements to show funds for the down payment. Drop them here, or Skip.";
 
 function money(value: number) {
   return `$${formatDollars(value)}`;

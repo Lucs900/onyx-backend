@@ -411,11 +411,11 @@ A typed street confirm-before-write:
 
 Use this writes Property address on Structure. Occupancy and property type stay as they are. Skip leaves Property address empty. Do not invent a street. Do not ask year built, taxes, HOA, or APN.
 
-After citizenship (US citizen · Permanent resident · Other · Skip), and before Looks right, Fox asks once for a bank statement. Extract-first. No cash form. No last4. No full account number.
+After citizenship (US citizen · Permanent resident · Other · Skip), and before Looks right, Fox asks once for bank statements. Extract-first. No cash form. No last4. No full account number.
 
-`A recent bank statement helps fund the down payment. Drop it here, or Skip.`
+`I need two recent bank statements to show funds for the down payment. Drop them here, or Skip.`
 
-Skip leaves Assets empty. If a statement is in, suggest institution and a statement balance only — confirm before write, labeled `Suggested · not underwritten`. Looks right waits until they Skip that line or write a confirmed statement extract. Do not invent cash in bank. Other on citizenship still does not fire Request human.
+Skip leaves Assets empty and Stated available assets empty. One uploaded statement may suggest institution and a statement balance in the thread only — confirm before write, labeled `Suggested · not underwritten`. Do not write File / Structure / Stated available assets / Bank / Assets until Use this. After the first confirmed statement, do not re-ask the drop line. The second statement stays Still useful: `Second bank statement`. Looks right may appear after that first confirmed write, or after Skip with no statement. Do not invent cash in bank. Other on citizenship still does not fire Request human.
 
 Free-text “the address is …” still confirm-before-write. If a typed address is already confirmed and the extract differs, ask once (Use document / Keep the typed one). Contract price vs sketch price stays the existing conflict-ask.
 

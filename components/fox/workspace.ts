@@ -5965,20 +5965,11 @@ export function previewFacts(draft: FoxIntakeDraft): PreviewFact[] {
     });
   }
 
-  if (
-    draft.availableAssetsAsked ||
-    draft.statedAvailableAssets != null ||
-    isStatedAssetsConfirmPending(draft)
-  ) {
-    const pendingAmount = isStatedAssetsConfirmPending(draft)
-      ? Number(draft.pendingProposal?.value)
-      : NaN;
+  if (draft.availableAssetsAsked || draft.statedAvailableAssets != null) {
     const shown =
       draft.statedAvailableAssets != null && draft.statedAvailableAssets > 0
         ? formatMoney(draft.statedAvailableAssets)
-        : Number.isFinite(pendingAmount) && pendingAmount > 0
-          ? formatMoney(pendingAmount)
-          : "—";
+        : "—";
     facts.push({
       id: "assets",
       label: "Stated available assets",

@@ -5774,6 +5774,16 @@ assert.equal(bankExtract.draft.facts?.ending_balance, undefined);
 assert.equal(bankExtract.draft.statedAvailableAssets, undefined);
 assert.equal(bankExtract.draft.pendingProposal?.field, "statedAvailableAssets");
 assert.equal(bankExtract.draft.pendingProposal?.value, "18400");
+assert.ok(
+  previewFacts(bankExtract.draft).every(
+    (fact) => fact.id !== "assets" && fact.id !== "bank",
+  ),
+);
+assert.ok(
+  previewFacts(bankExtract.draft).every(
+    (fact) => fact.id !== "file-assets" || !/FIRST NATIONAL|18,400|18400/.test(fact.value),
+  ),
+);
 const bankAsk = nextFoxAsk(bankExtract.draft);
 assert.match(bankAsk.text, /The statement shows FIRST NATIONAL · \$18,400/);
 assert.match(bankAsk.text, /Suggested · not underwritten/);
@@ -11921,7 +11931,7 @@ assert.equal(workspacePrompt(harborPreLooksSkipCitizen), "assets");
 assert.equal(nextFoxAsk(harborPreLooksSkipCitizen).text, BANK_STATEMENT_ASK);
 assert.equal(
   nextFoxAsk(harborPreLooksSkipCitizen).text,
-  "A recent bank statement helps fund the down payment. Drop it here, or Skip.",
+  "I need two recent bank statements to show funds for the down payment. Drop them here, or Skip.",
 );
 assert.deepEqual(
   (nextFoxAsk(harborPreLooksSkipCitizen).actions ?? []).map((item) => item.label),
@@ -11938,6 +11948,21 @@ assert.equal(harborPreLooksSkipAssets.facts?.ending_balance, undefined);
 assert.equal(conventionalFileFromDraft(harborPreLooksSkipAssets).assets.institution, undefined);
 assert.equal(conventionalFileFromDraft(harborPreLooksSkipAssets).assets.suggestedBalance, undefined);
 assert.equal(conventionalFileFromDraft(harborPreLooksSkipAssets).assets.last4, undefined);
+assert.ok(
+  previewFacts(harborPreLooksSkipAssets).some(
+    (fact) => fact.id === "assets" && fact.value === "—" && fact.label === "Stated available assets",
+  ),
+);
+assert.ok(
+  previewFacts(harborPreLooksSkipAssets).some(
+    (fact) =>
+      fact.id === "file-assets" &&
+      /institution —/.test(fact.value) &&
+      /balance —/.test(fact.value) &&
+      /last4 —/.test(fact.value),
+  ),
+);
+assert.ok(previewFacts(harborPreLooksSkipAssets).every((fact) => !/18,400|18400/.test(fact.value)));
 assert.equal(workspacePrompt(harborPreLooksSkipAssets), "review");
 assert.equal(canLooksRight(harborPreLooksSkipAssets), true);
 assert.ok((nextFoxAsk(harborPreLooksSkipAssets).actions ?? []).some((item) => item.label === "Looks right"));
@@ -11970,11 +11995,28 @@ assert.ok(
 );
 assert.equal(workspacePrompt(harborPreLooksCitizen), "assets");
 assert.equal(nextFoxAsk(harborPreLooksCitizen).text, BANK_STATEMENT_ASK);
+assert.equal(
+  nextFoxAsk(harborPreLooksCitizen).text,
+  "I need two recent bank statements to show funds for the down payment. Drop them here, or Skip.",
+);
 assert.equal(canLooksRight(harborPreLooksCitizen), false);
 assert.ok(!(nextFoxAsk(harborPreLooksCitizen).actions ?? []).some((item) => item.label === "Looks right"));
 const harborPreLooksCitizenSkipAssets = skipAvailableAssets(harborPreLooksCitizen);
 assert.equal(harborPreLooksCitizenSkipAssets.statedAvailableAssets, undefined);
 assert.equal(conventionalFileFromDraft(harborPreLooksCitizenSkipAssets).assets.institution, undefined);
+assert.ok(
+  previewFacts(harborPreLooksCitizenSkipAssets).some(
+    (fact) => fact.id === "assets" && fact.value === "—" && fact.label === "Stated available assets",
+  ),
+);
+assert.ok(
+  previewFacts(harborPreLooksCitizenSkipAssets).some(
+    (fact) =>
+      fact.id === "file-assets" &&
+      /institution —/.test(fact.value) &&
+      /balance —/.test(fact.value),
+  ),
+);
 assert.equal(workspacePrompt(harborPreLooksCitizenSkipAssets), "review");
 assert.equal(canLooksRight(harborPreLooksCitizenSkipAssets), true);
 const harborPreLooksOther = writeCitizenship(harborPreLooksWritten, "other");
@@ -12040,6 +12082,27 @@ assert.match(nextFoxAsk(harborStatementIn.draft).text, /FIRST NATIONAL/);
 assert.match(nextFoxAsk(harborStatementIn.draft).text, /\$18,400/);
 assert.match(nextFoxAsk(harborStatementIn.draft).text, /Suggested · not underwritten/);
 assert.doesNotMatch(nextFoxAsk(harborStatementIn.draft).text, /last4|account number|invent/i);
+assert.equal(harborStatementIn.draft.statedAvailableAssets, undefined);
+assert.ok(
+  previewFacts(harborStatementIn.draft).every(
+    (fact) => fact.id !== "assets" && fact.id !== "bank",
+  ),
+);
+assert.ok(
+  previewFacts(harborStatementIn.draft).some(
+    (fact) =>
+      fact.id === "file-assets" &&
+      /institution —/.test(fact.value) &&
+      /balance —/.test(fact.value) &&
+      /last4 —/.test(fact.value) &&
+      !/FIRST NATIONAL|18,400|18400/.test(fact.value),
+  ),
+);
+assert.ok(
+  previewFacts(harborStatementIn.draft).every(
+    (fact) => !/18,400|18400/.test(`${fact.value} ${fact.note ?? ""}`) || fact.id === "docs",
+  ),
+);
 assert.equal(canLooksRight(harborStatementIn.draft), false);
 assert.ok(!(nextFoxAsk(harborStatementIn.draft).actions ?? []).some((item) => item.label === "Looks right"));
 const harborStatementUsed = resolveProposal(harborStatementIn.draft, "accept");
@@ -12067,6 +12130,15 @@ assert.ok(
 assert.equal(workspacePrompt(harborStatementUsed), "review");
 assert.equal(canLooksRight(harborStatementUsed), true);
 assert.ok((nextFoxAsk(harborStatementUsed).actions ?? []).some((item) => item.label === "Looks right"));
+assert.notEqual(nextFoxAsk(harborStatementUsed).text, BANK_STATEMENT_ASK);
+assert.ok(
+  stillUsefulSection(harborStatementUsed)?.items.some((item) => item.label === "Second bank statement"),
+);
+assert.ok(
+  previewFacts(harborStatementUsed).some(
+    (fact) => fact.id === "assets" && fact.value === "$18,400" && fact.label === "Stated available assets",
+  ),
+);
 assert.ok(
   previewFacts(harborPreLooksWritten).some(
     (fact) => fact.id === "address" && fact.label === "Property address" && fact.value === "14 Oak Street",
