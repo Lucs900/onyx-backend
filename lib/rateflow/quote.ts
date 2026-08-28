@@ -277,27 +277,41 @@ function isConventional(row: RateflowProductRow): boolean {
   return true;
 }
 
-function nearParSort(left: RateflowProductRow, right: RateflowProductRow): number {
-  const leftGap = Math.abs(Number(left.price ?? TARGET_PRICE) - TARGET_PRICE);
-  const rightGap = Math.abs(Number(right.price ?? TARGET_PRICE) - TARGET_PRICE);
-  if (leftGap !== rightGap) return leftGap - rightGap;
-  const leftPts = Math.abs(Number(left.pts ?? 0));
-  const rightPts = Math.abs(Number(right.pts ?? 0));
-  if (leftPts !== rightPts) return leftPts - rightPts;
-  return Number(left.rate) - Number(right.rate);
+/** pts when present; otherwise 100 − price. Missing both → unknown. */
+export function pointsFromRow(row: RateflowProductRow): number | undefined {
+  const pts = Number(row.pts);
+  if (Number.isFinite(pts)) return pts;
+  const price = Number(row.price);
+  if (Number.isFinite(price)) return TARGET_PRICE - price;
+  return undefined;
+}
+
+function hasNoPointsCost(row: RateflowProductRow): boolean {
+  const pts = pointsFromRow(row);
+  return pts != null && pts <= 0;
+}
+
+function lowestNoPointsSort(left: RateflowProductRow, right: RateflowProductRow): number {
+  const rateDiff = Number(left.rate) - Number(right.rate);
+  if (rateDiff !== 0) return rateDiff;
+  return (pointsFromRow(left) ?? 0) - (pointsFromRow(right) ?? 0);
 }
 
 /**
- * Prefer conventional 30 closest to par. If the only conventional rows are
- * other terms, take the closest-to-par conventional and keep its term.
- * Empty array or no conventional rows → null (honest fallback).
+ * One conventional 30: among rows with points <= 0, the lowest note rate.
+ * Never lead with a row that charges points. Do not take max rebate or
+ * closest-to-par if a lower coupon is par or has a credit. No 30 with
+ * points <= 0 → null (Pricing when the file is ready). Other terms do
+ * not fill in.
  */
-export function pickConventional30NearPar(rows: RateflowProductRow[]): RateflowProductRow | null {
-  const conventional = rows.filter(isConventional);
-  if (!conventional.length) return null;
-  const thirty = conventional.filter((row) => termYearsFromRow(row) === 30);
-  const pool = thirty.length ? thirty : conventional;
-  return [...pool].sort(nearParSort)[0] ?? null;
+export function pickConventional30LowestNoPoints(
+  rows: RateflowProductRow[],
+): RateflowProductRow | null {
+  const eligible = rows.filter(
+    (row) => isConventional(row) && termYearsFromRow(row) === 30 && hasNoPointsCost(row),
+  );
+  if (!eligible.length) return null;
+  return [...eligible].sort(lowestNoPointsSort)[0] ?? null;
 }
 
 export function firstResultSummary(rows: RateflowProductRow[]): RateflowQuoteReport["first"] | undefined {

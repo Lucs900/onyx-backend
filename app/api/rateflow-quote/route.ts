@@ -7,7 +7,7 @@ import {
   firstResultSummary,
   isRateflowFailure,
   parseClientBody,
-  pickConventional30NearPar,
+  pickConventional30LowestNoPoints,
   safeQuoteFromRow,
   type RateflowClientBody,
   type RateflowQuoteReport,
@@ -155,7 +155,7 @@ export async function POST(request: Request) {
       return unavailable(buildReport({ client, bbHttpStatus: response.status, resultCount: 0 }));
     }
     const rows = asProductRows(payload);
-    const row = pickConventional30NearPar(rows);
+    const row = pickConventional30LowestNoPoints(rows);
     const quote = row ? safeQuoteFromRow(row) : null;
     const report = buildReport({
       client,

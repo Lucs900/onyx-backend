@@ -22,7 +22,7 @@ import {
   parseClientBody,
   parseSafeQuoteResponse,
   parseZipcode,
-  pickConventional30NearPar,
+  pickConventional30LowestNoPoints,
   rateflowScenarioKey,
   safeQuoteFromRow,
   termYearsFromRow,
@@ -87,12 +87,32 @@ assert.equal(
   null,
 );
 
-const picked = pickConventional30NearPar([
+const jimmySheet = [
+  {
+    rate: 6.49,
+    price: 100.01,
+    pts: -0.01,
+    principalAndInterest: 4298,
+    loanTerm: 30,
+    amortizationType: "Fixed",
+    bbLoanType: "conventional",
+    productName: "FNMA Conforming 30 Yr Fixed",
+  },
+  {
+    rate: 6.375,
+    price: 100.375,
+    pts: -0.375,
+    principalAndInterest: 4242,
+    loanTerm: 30,
+    amortizationType: "Fixed",
+    bbLoanType: "conventional",
+    productName: "FNMA Conforming 30 Yr Fixed",
+  },
   {
     rate: 6.25,
-    price: 99.2,
-    pts: 0.8,
-    principalAndInterest: 5910,
+    price: 100.75,
+    pts: -0.75,
+    principalAndInterest: 4187,
     loanTerm: 30,
     amortizationType: "Fixed",
     bbLoanType: "conventional",
@@ -100,9 +120,9 @@ const picked = pickConventional30NearPar([
   },
   {
     rate: 6.125,
-    price: 100.05,
-    pts: -0.05,
-    principalAndInterest: 5830,
+    price: 99.5,
+    pts: 0.5,
+    principalAndInterest: 4133,
     loanTerm: 30,
     amortizationType: "Fixed",
     bbLoanType: "conventional",
@@ -125,10 +145,54 @@ const picked = pickConventional30NearPar([
     bbLoanType: "fha",
     productName: "FHA 30 Yr Fixed",
   },
-]);
-assert.equal(picked?.rate, 6.125);
+];
+const picked = pickConventional30LowestNoPoints(jimmySheet);
+assert.equal(picked?.rate, 6.25);
+assert.notEqual(picked?.rate, 6.49);
+assert.ok((picked?.pts ?? 1) <= 0);
 assert.equal(
-  pickConventional30NearPar([
+  pickConventional30LowestNoPoints([
+    {
+      rate: 6.75,
+      price: 102,
+      pts: -2,
+      loanTerm: 30,
+      amortizationType: "Fixed",
+      bbLoanType: "conventional",
+      productName: "FNMA Conforming 30 Yr Fixed",
+    },
+    {
+      rate: 6.49,
+      price: 100,
+      pts: 0,
+      loanTerm: 30,
+      amortizationType: "Fixed",
+      bbLoanType: "conventional",
+      productName: "FNMA Conforming 30 Yr Fixed",
+    },
+    {
+      rate: 6.375,
+      price: 100.25,
+      pts: -0.25,
+      loanTerm: 30,
+      amortizationType: "Fixed",
+      bbLoanType: "conventional",
+      productName: "FNMA Conforming 30 Yr Fixed",
+    },
+  ])?.rate,
+  6.375,
+);
+assert.equal(
+  pickConventional30LowestNoPoints([
+    {
+      rate: 6.125,
+      price: 99.2,
+      pts: 0.8,
+      loanTerm: 30,
+      amortizationType: "Fixed",
+      bbLoanType: "conventional",
+      productName: "FNMA Conforming 30 Yr Fixed",
+    },
     {
       rate: 5.875,
       price: 99.8,
@@ -137,26 +201,41 @@ assert.equal(
       bbLoanType: "conventional",
       productName: "FNMA Conforming 30 Yr Fixed",
     },
-  ])?.rate,
-  5.875,
+  ]),
+  null,
 );
-const onlyFifteen = pickConventional30NearPar([
+assert.equal(
+  pickConventional30LowestNoPoints([
+    {
+      rate: 5.5,
+      price: 100,
+      pts: 0,
+      loanTerm: 15,
+      amortizationType: "Fixed",
+      bbLoanType: "conventional",
+      productName: "FNMA Conforming 15 Yr Fixed",
+    },
+  ]),
+  null,
+);
+const fifteenQuote = safeQuoteFromRow(
   {
     rate: 5.5,
     price: 100,
+    pts: 0,
     loanTerm: 15,
     amortizationType: "Fixed",
     bbLoanType: "conventional",
     productName: "FNMA Conforming 15 Yr Fixed",
   },
-]);
-assert.equal(onlyFifteen?.rate, 5.5);
-assert.equal(safeQuoteFromRow(onlyFifteen!, new Date("2026-08-28T19:04:00.000Z"))?.term, 15);
+  new Date("2026-08-28T19:04:00.000Z"),
+);
+assert.equal(fifteenQuote?.term, 15);
 assert.match(
-  liveRateLine(safeQuoteFromRow(onlyFifteen!, new Date("2026-08-28T19:04:00.000Z"))!),
+  liveRateLine(fifteenQuote!),
   /5\.500% · 15-year · Live as of .+ PT · not a lock/,
 );
-assert.equal(pickConventional30NearPar([]), null);
+assert.equal(pickConventional30LowestNoPoints([]), null);
 assert.ok(isRateflowFailure({ status: "error", message: "no products" }));
 assert.equal(asProductRows({ status: "error" }).length, 0);
 
@@ -170,10 +249,11 @@ assert.equal(
   )?.asOf,
   "2026-08-28T22:15:00.000Z",
 );
-assert.equal(quote?.rate, 6.125);
-assert.match(liveRateLine(quote!), /6\.125% · Live as of .+ PT · not a lock/);
-assert.doesNotMatch(liveRateLine(quote!), /approved|locked|committed|6\.750/i);
-assert.equal(liveRateSecondLine(quote!), "P&I $5,830 · -0.05 pts");
+assert.equal(quote?.rate, 6.25);
+assert.match(liveRateLine(quote!), /6\.250% · Live as of .+ PT · not a lock/);
+assert.doesNotMatch(liveRateLine(quote!), /approved|locked|committed|6\.750|6\.490/i);
+assert.equal(liveRateSecondLine(quote!), "P&I $4,187 · -0.75 pts");
+assert.doesNotMatch(liveRateSecondLine(quote!) ?? "", /reward/i);
 assert.match(formatAsOfPacific(quote!.asOf), /PT$/);
 assert.deepEqual(parseSafeQuoteResponse({ ok: true, quote }), quote);
 assert.equal(parseSafeQuoteResponse({ ok: false }), null);
@@ -265,8 +345,16 @@ assert.ok(!route.includes("process.env.BANKINGBRIDGE_BRAND_ID") || route.include
 assert.ok(route.includes("zipcode: client.zipcode"));
 assert.ok(route.includes('state: "CA"'));
 assert.ok(route.includes("[rateflow-quote]"));
+assert.ok(route.includes("pickConventional30LowestNoPoints"));
+assert.ok(!route.includes("pickConventional30NearPar"));
 assert.ok(!route.includes("94115"));
 assert.doesNotMatch(route, /console\.(log|info|warn|error)\([^)]*BANKINGBRIDGE_/);
+
+const picker = readFileSync(join(root, "lib/rateflow/quote.ts"), "utf8");
+assert.ok(picker.includes("pickConventional30LowestNoPoints"));
+assert.ok(!picker.includes("pickConventional30NearPar"));
+assert.ok(!picker.includes("nearParSort"));
+assert.doesNotMatch(picker, /closest to par/i);
 
 const fox = readFileSync(join(root, "components/fox/AlwaysOnFox.tsx"), "utf8");
 const client = readFileSync(join(root, "components/fox/rateflowClient.ts"), "utf8");
