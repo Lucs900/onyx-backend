@@ -43,7 +43,7 @@ export function liveCouponActions(draft?: FoxIntakeDraft): FoxAction[] {
   const hideNoCost =
     draft != null &&
     sameCouponNumbers(draft.liveQuote ?? null, pickNoCostFromRows(draft.liveQuoteRows ?? []));
-  return [
+  const chips: FoxAction[] = [
     {
       id: "live-coupon-this",
       label: "This one",
@@ -56,23 +56,22 @@ export function liveCouponActions(draft?: FoxIntakeDraft): FoxAction[] {
       event: "bubble",
       capture: { field: "couponChoice", value: "lower" },
     },
-    ...(hideNoCost
-      ? []
-      : [
-          {
-            id: "live-coupon-nocost" as const,
-            label: "No cost",
-            event: "bubble" as const,
-            capture: { field: "couponChoice" as const, value: "nocost" },
-          },
-        ]),
-    {
-      id: "live-coupon-skip",
-      label: "Skip",
-      event: "bubble",
-      capture: { field: "couponChoice", value: "skip" },
-    },
   ];
+  if (!hideNoCost) {
+    chips.push({
+      id: "live-coupon-nocost",
+      label: "No cost",
+      event: "bubble",
+      capture: { field: "couponChoice", value: "nocost" },
+    });
+  }
+  chips.push({
+    id: "live-coupon-skip",
+    label: "Skip",
+    event: "bubble",
+    capture: { field: "couponChoice", value: "skip" },
+  });
+  return chips;
 }
 
 export function liveCouponConfirmActions(): FoxAction[] {
