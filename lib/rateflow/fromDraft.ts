@@ -93,6 +93,10 @@ export function zipFromDraft(draft: FoxIntakeDraft): string | undefined {
 }
 
 export function cityFromDraft(draft: FoxIntakeDraft): string | undefined {
+  if (draft.subjectState === "CA" && draft.subjectCity?.trim()) {
+    const city = draft.subjectCity.replace(/\s+/g, " ").trim();
+    if (city.length >= 2 && city.length <= 40 && !/\d/.test(city)) return city;
+  }
   const factAddress =
     typeof draft.facts?.property_address?.value === "string" ? draft.facts.property_address.value : "";
   return cityFromTypedAddress(draft.subjectAddress || factAddress);

@@ -52,6 +52,7 @@ import {
   PROPERTY_TYPE_FIELD,
   SUGGESTED_PROPERTY_NOTE,
   contractAddressConfirmCopy,
+  isPlaceAddressProposal,
   isPropertyTypeValue,
   parsePropertyType,
   propertyAddressSettled,
@@ -60,7 +61,10 @@ import {
   rememberPriorZipOnNewAddress,
   skipPropertyType,
   typedAddressConfirmCopy,
+  writePlaceAddress,
+  writePropertyZip,
 } from "./propertyType";
+import { parsePlaceAddress } from "@/lib/places/address";
 import { citizenshipSettled } from "./citizenship";
 import {
   STATED_TIME_ON_JOB_FIELD,
@@ -843,7 +847,8 @@ export function proposalAskCopy(proposal: FactProposal) {
     return otherReoConfirmCopy(proposal.value);
   }
   if (proposal.field === PROPERTY_ADDRESS_FACT || proposal.field === "subjectAddress") {
-    return proposal.note === SUGGESTED_PROPERTY_NOTE && !proposal.extras?.length
+    return proposal.note === SUGGESTED_PROPERTY_NOTE &&
+      (!proposal.extras?.length || isPlaceAddressProposal(proposal))
       ? typedAddressConfirmCopy(proposal.value)
       : contractAddressConfirmCopy(proposal.value);
   }
@@ -1109,6 +1114,21 @@ function writeConfirmedFact(
       }),
     );
   }
+  if (field === "city" && value.trim() && !/\d/.test(value)) {
+    next = { ...next, subjectCity: value.trim(), facts };
+  }
+  if (field === "state" && value.trim().toUpperCase() === "CA") {
+    next = { ...next, subjectState: "CA", facts };
+  }
+  if (field === "county" && value.trim()) {
+    next = { ...next, subjectCounty: value.trim(), facts };
+  }
+  if (field === "street" && value.trim()) {
+    next = { ...next, subjectStreet: value.trim(), facts };
+  }
+  if ((field === "zip" || field === "propertyZip") && /^\d{5}$/.test(value.trim())) {
+    next = writePropertyZip({ ...next, facts }, value.trim());
+  }
   if (field === "year_built") next = { ...next, propertyYearBuilt: value, facts };
   if (field === "units") next = { ...next, propertyUnits: value, facts };
   if (field === "annual_taxes") next = { ...next, propertyTaxes: value, facts };
@@ -1265,6 +1285,22 @@ export function resolveProposal(
         : proposal.kind === "computed"
           ? "computed"
           : "document";
+  if (isPlaceAddressProposal(proposal)) {
+    const extras = Object.fromEntries((proposal.extras ?? []).map((item) => [item.field, item.value]));
+    const place = parsePlaceAddress({
+      line: proposal.value,
+      street: extras.street,
+      city: extras.city,
+      state: extras.state,
+      zip: extras.zip,
+      county: extras.county,
+    });
+    if (place) {
+      const cleared = { ...writePlaceAddress(draft, place), pendingProposal: null };
+      const flushed = flushPendingOtherReo(flushPendingCurrentHousing(flushPendingHireDate(cleared)));
+      return flushed;
+    }
+  }
   let next = writeConfirmedFact(draft, proposal.field, proposal.value, source);
   if (proposal.companion) {
     next = writeConfirmedFact(next, proposal.companion.field, proposal.companion.value, source);

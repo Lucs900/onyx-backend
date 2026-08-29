@@ -4,6 +4,7 @@ import {
   type ExplorerScenario,
 } from "@/components/products/scenario";
 import { explorerCreditFromStated } from "./types";
+import { parsePlaceAddress } from "@/lib/places/address";
 import {
   CONFIRMED_STATUS,
   FOX_MESSAGES_KEY,
@@ -132,6 +133,7 @@ import {
   skipSubjectAddress,
   adoptReuseZip,
   proposeAddressAndAdoptZip,
+  proposePlaceAddress,
   skipQuoteAddress,
   writeAddressAndAdoptZip,
   writePropertyType,
@@ -506,6 +508,19 @@ function normalize(value: unknown): FoxIntakeDraft {
       raw.subjectAddressAsked ||
         (typeof raw.subjectAddress === "string" && raw.subjectAddress.trim()),
     ),
+    subjectStreet:
+      typeof raw.subjectStreet === "string" && raw.subjectStreet.trim()
+        ? raw.subjectStreet.trim()
+        : undefined,
+    subjectCity:
+      typeof raw.subjectCity === "string" && raw.subjectCity.trim()
+        ? raw.subjectCity.trim()
+        : undefined,
+    subjectState: raw.subjectState === "CA" ? "CA" : undefined,
+    subjectCounty:
+      typeof raw.subjectCounty === "string" && raw.subjectCounty.trim()
+        ? raw.subjectCounty.trim()
+        : undefined,
     statedTimeOnJob: numberOrUndefined(raw.statedTimeOnJob),
     statedTimeOnJobLabel:
       typeof raw.statedTimeOnJobLabel === "string" && raw.statedTimeOnJobLabel.trim()
@@ -1715,6 +1730,11 @@ function applyCaptureBody(capture: Capture) {
     const address = parseVolunteeredAddress(capture.value) ?? capture.value.trim();
     if (!address) return current;
     return commit(proposeAddressAndAdoptZip(current, address));
+  }
+  if (capture.field === "propose-place-address") {
+    const place = parsePlaceAddress(capture.value);
+    if (!place) return current;
+    return commit(proposePlaceAddress(current, place));
   }
   if (capture.field === "subjectAddress") {
     const address = parseVolunteeredAddress(capture.value) ?? capture.value.trim();

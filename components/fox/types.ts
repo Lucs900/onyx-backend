@@ -320,6 +320,11 @@ export type FoxIntakeDraft = {
   addressZipOffered?: string;
   subjectAddress?: string;
   subjectAddressAsked?: boolean;
+  /** Places street only. Never invent. */
+  subjectStreet?: string;
+  subjectCity?: string;
+  subjectState?: "CA";
+  subjectCounty?: string;
   statedTimeOnJob?: number;
   /** Exact borrower-typed label. Do not invent "years" until guidelines own that. */
   statedTimeOnJobLabel?: string;
@@ -535,6 +540,7 @@ export type Capture =
   | { field: "propertyZip"; value: string }
   | { field: "propose-rental-lease"; value: string }
   | { field: "propose-subject-address"; value: string }
+  | { field: "propose-place-address"; value: string }
   | { field: "subjectAddress"; value: string }
   | { field: "skip-property-address" }
   | { field: "change-property-address" }

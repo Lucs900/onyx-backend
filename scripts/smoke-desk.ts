@@ -269,6 +269,7 @@ import {
   keepPropertyZip,
   parsePropertyType,
   proposeAddressAndAdoptZip,
+  proposePlaceAddress,
   proposeSubjectAddress,
   propertyZipConfirmCopy,
   skipPropertyType,
@@ -276,6 +277,7 @@ import {
   skipQuoteAddress,
   skipSubjectAddress,
   writeAddressAndAdoptZip,
+  writePlaceAddress,
   writePropertyType,
   writePropertyZip,
   writeSubjectAddress,
@@ -1650,6 +1652,49 @@ assert.equal(founderRefiAccepted.subjectAddress, "500 Market St, San Francisco, 
 assert.equal(workspacePrompt(founderRefiAccepted), "income");
 assert.equal(rateflowClientBodyFromDraft(founderRefiAccepted)?.loan_purpose, "refinance");
 assert.equal(rateflowClientBodyFromDraft(founderRefiAccepted)?.list_price, 850000);
+const harborPlace = {
+  line: "500 Market St, San Francisco, CA 94105",
+  street: "500 Market St",
+  city: "San Francisco",
+  state: "CA" as const,
+  zip: "94105",
+  county: "San Francisco",
+};
+const founderRefiPlaceProposed = proposePlaceAddress(founderRefiReady, harborPlace);
+assert.equal(founderRefiPlaceProposed.propertyZip, undefined);
+assert.equal(rateflowClientBodyFromDraft(founderRefiPlaceProposed), null);
+assert.equal(rateflowBlockedReason(founderRefiPlaceProposed), "address-confirm");
+assert.match(workspacePromptCopy("confirm-proposal", founderRefiPlaceProposed).text, /That’s 500 Market St, San Francisco, CA 94105/);
+assert.match(workspacePromptCopy("confirm-proposal", founderRefiPlaceProposed).text, /Use this/);
+assert.deepEqual(
+  (workspacePromptCopy("confirm-proposal", founderRefiPlaceProposed).actions ?? []).map((item) => item.label),
+  ["Use this", "Change"],
+);
+const founderRefiPlace = resolveProposal(founderRefiPlaceProposed, "accept");
+assert.equal(founderRefiPlace.subjectStreet, "500 Market St");
+assert.equal(founderRefiPlace.subjectCity, "San Francisco");
+assert.equal(founderRefiPlace.subjectState, "CA");
+assert.equal(founderRefiPlace.subjectCounty, "San Francisco");
+assert.equal(founderRefiPlace.propertyZip, "94105");
+assert.notEqual(workspacePrompt(founderRefiPlace), "property-zip");
+assert.doesNotMatch(nextFoxAsk(founderRefiPlace).text, /What ZIP is the property in/);
+assert.equal(rateflowClientBodyFromDraft(founderRefiPlace)?.zipcode, "94105");
+assert.equal(rateflowClientBodyFromDraft(founderRefiPlace)?.city, "San Francisco");
+const founderRefiPlaceNoCounty = writePlaceAddress(founderRefiReady, {
+  line: "500 Market St, San Francisco, CA 94105",
+  street: "500 Market St",
+  city: "San Francisco",
+  state: "CA",
+  zip: "94105",
+});
+assert.equal(founderRefiPlaceNoCounty.subjectCounty, undefined);
+const founderPurchasePlace = resolveProposal(
+  proposePlaceAddress(afterFounderHouseFico, harborPlace),
+  "accept",
+);
+assert.equal(rateflowClientBodyFromDraft(founderPurchasePlace)?.loan_purpose, "purchase");
+assert.equal(rateflowClientBodyFromDraft(founderPurchasePlace)?.zipcode, "94105");
+assert.notEqual(workspacePrompt(founderPurchasePlace), "property-zip");
 const founderRefiKey = rateflowScenarioKey(rateflowClientBodyFromDraft(founderRefiAddress)!);
 assert.notEqual(
   rateflowScenarioKey(rateflowClientBodyFromDraft({ ...founderRefiAddress, propertyValueAmount: 900000 })!),

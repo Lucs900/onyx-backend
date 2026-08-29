@@ -39,6 +39,8 @@ import {
 import { searchedKeyFor } from "@/lib/rateflow/fromDraft";
 import { shouldDeferNextAskForLiveCoupon } from "./liveCoupon";
 import { requestRateflowIfNeeded } from "./rateflowClient";
+import { requestAddressSuggestions, requestPlaceAddress, withStreetSuggestChips } from "./addressSuggest";
+import { encodePlaceAddress, shouldSuggestStreets } from "@/lib/places/address";
 import {
   applyCapture,
   applyPreviewMotionControls,
@@ -948,6 +950,26 @@ export function AlwaysOnFox({
 
   useEffect(() => {
     if (!ready || !isStart) return;
+    if (workspacePrompt(draft) !== "property-address") return;
+    if (draft.pendingProposal) return;
+    const q = input.trim();
+    if (!shouldSuggestStreets(q)) return;
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      void requestAddressSuggestions(q).then((rows) => {
+        if (cancelled || !rows.length) return;
+        if (workspacePrompt(getFoxDraft()) !== "property-address") return;
+        commitMessages((prev) => withStreetSuggestChips(prev, rows));
+      });
+    }, 220);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [draft.pendingProposal, draft.updatedAt, input, isStart, ready]);
+
+  useEffect(() => {
+    if (!ready || !isStart) return;
     const params = new URLSearchParams(
       (typeof window !== "undefined" && window.location.search) || search,
     );
@@ -1213,6 +1235,25 @@ export function AlwaysOnFox({
         );
       }
       commitMessagesNow((prev) => [...prev, ...lines]);
+      return;
+    }
+    const placeCapture = action.capture;
+    if (placeCapture?.field === "propose-place-address") {
+      void (async () => {
+        const place = await requestPlaceAddress(placeCapture.value);
+        if (!place) return;
+        const capture = {
+          field: "propose-place-address" as const,
+          value: encodePlaceAddress(place),
+        };
+        applyCapture(capture);
+        skipPromptSync.current = true;
+        const live = getFoxDraft();
+        const next = workspaceSurface
+          ? withWorkspaceGuide({ ...nextFoxAsk(live), capture }, live)
+          : promptCopy(currentPrompt(live), live);
+        appendReply(action.label, next, editPromptFromCapture(capture), editLineFromCapture(capture));
+      })();
       return;
     }
     if (action.capture || productCapture) {

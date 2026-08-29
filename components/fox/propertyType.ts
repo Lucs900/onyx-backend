@@ -1,4 +1,5 @@
 import { parseZipcode, zipFromSources, zipFromTypedAddress } from "@/lib/rateflow/quote";
+import type { PlaceAddress } from "@/lib/places/address";
 import type { FactProposal, FoxAction, FoxIntakeDraft } from "./types";
 
 export const PROPERTY_TYPE_FIELD = "propertyType";
@@ -150,6 +151,98 @@ export function proposeAddressAndAdoptZip(draft: FoxIntakeDraft, address: string
   const proposed = proposeSubjectAddress(draft, address);
   const zip = zipFromTypedAddress(address);
   return zip ? writePropertyZip(proposed, zip) : proposed;
+}
+
+export function isPlaceAddressProposal(proposal: FactProposal | null | undefined) {
+  if (!proposal || !isPropertyAddressField(proposal.field)) return false;
+  return (proposal.extras ?? []).some(
+    (item) => item.field === "city" || item.field === "zip" || item.field === "street",
+  );
+}
+
+export function proposePlaceAddress(draft: FoxIntakeDraft, place: PlaceAddress): FoxIntakeDraft {
+  const extras = [
+    { field: "street", value: place.street, label: "Street" },
+    { field: "city", value: place.city, label: "City" },
+    { field: "state", value: "CA", label: "State" },
+    { field: "zip", value: place.zip, label: "ZIP" },
+    ...(place.county ? [{ field: "county", value: place.county, label: "County" }] : []),
+  ];
+  return {
+    ...draft,
+    pendingProposal: {
+      field: PROPERTY_ADDRESS_FACT,
+      value: place.line,
+      label: "Property",
+      kind: "computed",
+      note: SUGGESTED_PROPERTY_NOTE,
+      extras,
+    },
+  };
+}
+
+/** Use this writes street, city, CA, ZIP, and county when Places sent one. Do not invent county. */
+export function writePlaceAddress(draft: FoxIntakeDraft, place: PlaceAddress): FoxIntakeDraft {
+  const now = new Date().toISOString();
+  const facts = {
+    ...(draft.facts ?? {}),
+    [PROPERTY_ADDRESS_FACT]: {
+      field: PROPERTY_ADDRESS_FACT,
+      value: place.line,
+      source: "suggested" as const,
+      confirmed: true,
+      confirmedAt: now,
+    },
+    city: {
+      field: "city",
+      value: place.city,
+      source: "suggested" as const,
+      confirmed: true,
+      confirmedAt: now,
+    },
+    state: {
+      field: "state",
+      value: "CA",
+      source: "suggested" as const,
+      confirmed: true,
+      confirmedAt: now,
+    },
+    zip: {
+      field: "zip",
+      value: place.zip,
+      source: "suggested" as const,
+      confirmed: true,
+      confirmedAt: now,
+    },
+    ...(place.county
+      ? {
+          county: {
+            field: "county",
+            value: place.county,
+            source: "suggested" as const,
+            confirmed: true,
+            confirmedAt: now,
+          },
+        }
+      : {}),
+  };
+  return writePropertyZip(
+    {
+      ...draft,
+      subjectAddress: place.line,
+      subjectStreet: place.street,
+      subjectCity: place.city,
+      subjectState: "CA",
+      subjectCounty: place.county,
+      subjectAddressAsked: true,
+      pendingProposal: null,
+      pendingConflict: null,
+      correcting: null,
+      correctingLine: null,
+      facts,
+    },
+    place.zip,
+  );
 }
 
 /** Skip the quote-path address line. No ZIP-only follow-up. Pricing when the file is ready. */

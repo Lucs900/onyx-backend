@@ -265,7 +265,9 @@ import {
   propertyTypeConfirmCopy,
   propertyTypeLabel,
   proposePropertyType,
+  isPlaceAddressProposal,
   proposeAddressAndAdoptZip,
+  proposePlaceAddress,
   proposeSubjectAddress,
   skipPropertyType,
   skipPropertyZip,
@@ -278,6 +280,7 @@ import {
   writePropertyZip,
   writeSubjectAddress,
 } from "./propertyType";
+import { parsePlaceAddress } from "@/lib/places/address";
 import {
   STATED_TIME_ON_JOB_FIELD,
   SUGGESTED_TIME_ON_JOB_NOTE,
@@ -1511,7 +1514,8 @@ function liveProposalAsk(
   if (isPropertyAddressField(proposal.field)) {
     return {
       text:
-        proposal.note === SUGGESTED_PROPERTY_NOTE && !proposal.extras?.length
+        proposal.note === SUGGESTED_PROPERTY_NOTE &&
+        (!proposal.extras?.length || isPlaceAddressProposal(proposal))
           ? typedAddressConfirmCopy(proposal.value)
           : contractAddressConfirmCopy(proposal.value),
       actions: propertyTypeConfirmActions(),
@@ -3387,7 +3391,8 @@ export function editPromptFromCapture(capture?: Capture): FoxPrompt | undefined 
   }
   if (
     capture.field === "skip-property-address" ||
-    capture.field === "change-property-address"
+    capture.field === "change-property-address" ||
+    capture.field === "propose-place-address"
   ) {
     return "property-address";
   }
@@ -3643,6 +3648,7 @@ export function workspaceUpdateCopy(capture: Capture, draft: FoxIntakeDraft) {
   }
   if (capture.field === "propose-rental-lease") return "Updated.";
   if (capture.field === "propose-subject-address") return "Updated.";
+  if (capture.field === "propose-place-address") return "Updated.";
   if (capture.field === "subjectAddress") {
     return capture.value.trim()
       ? `Updated property address to ${capture.value.trim()}.`
@@ -4299,6 +4305,10 @@ function draftAfterCaptureBody(draft: FoxIntakeDraft, capture: Capture): FoxInta
   if (capture.field === "propose-subject-address") {
     const proposed = parseVolunteeredAddress(capture.value) ?? capture.value.trim();
     return proposed ? proposeAddressAndAdoptZip(next, proposed) : next;
+  }
+  if (capture.field === "propose-place-address") {
+    const place = parsePlaceAddress(capture.value);
+    return place ? proposePlaceAddress(next, place) : next;
   }
   if (capture.field === "subjectAddress") {
     const address = parseVolunteeredAddress(capture.value) ?? capture.value.trim();
@@ -6486,6 +6496,30 @@ export function previewFacts(draft: FoxIntakeDraft): PreviewFact[] {
       value: address || pending || "—",
       note: SUGGESTED_PROPERTY_NOTE,
     });
+    if (draft.subjectCity) {
+      facts.push({
+        id: "city",
+        label: "City",
+        value: draft.subjectCity,
+        note: SUGGESTED_PROPERTY_NOTE,
+      });
+    }
+    if (draft.subjectState === "CA") {
+      facts.push({
+        id: "state",
+        label: "State",
+        value: "CA",
+        note: SUGGESTED_PROPERTY_NOTE,
+      });
+    }
+    if (draft.subjectCounty) {
+      facts.push({
+        id: "county",
+        label: "County",
+        value: draft.subjectCounty,
+        note: SUGGESTED_PROPERTY_NOTE,
+      });
+    }
   }
   const citizenship = draft.agencyDeclarations?.citizenship;
   if (citizenship && isFileCitizenshipValue(citizenship)) {
