@@ -106,7 +106,11 @@ import {
   SUGGESTED_NOTE,
   canLooksRight,
   incomeNumberReady,
+  otherReoInterviewBlocked,
   timelineFilled,
+  wageBox5AskNeeded,
+  wageFrequencyAskNeeded,
+  wageStubAskNeeded,
   sketchAssembled,
   completenessExplainCopy,
   fileCompleteness,
@@ -175,14 +179,24 @@ import {
   K1_ORDINARY_NOTE,
   monthlyFromAnnual,
   parseBothMonthlyReason,
+  parseExtractMoney,
   parseRaiseWhen,
+  PAYSTUB_MONTHLY_ASK,
+  proposeBox5Monthly,
+  proposeStubMonthly,
   qualifyingIncomeDisplay,
   raiseYtdFarAskCopy,
   RAISE_WHEN_ASK,
   scheduleCYearViews,
+  skipWageBox5,
+  skipWageFrequency,
+  skipWageStub,
   SUGGESTED_INCOME_NOTE,
   wageIncomeCaution,
   wageMethodNote,
+  writeWagePayFrequency,
+  W2_BOX5_ASK,
+  W2_PAY_FREQUENCY_ASK,
 } from "./qualifyingIncome";
 import {
   isRentalIncomeField,
@@ -1316,7 +1330,7 @@ function landedTaxYear(draft: FoxIntakeDraft): string {
 function nextDocSpoken(invite: ReturnType<typeof nextDocInvite>): string {
   if (invite === "tax_return") return "Next is your most recent tax return.";
   if (invite === "paystub") return "Next is your latest paystub.";
-  if (invite === "w2") return "Next is your most recent W-2.";
+  if (invite === "w2") return DOC_INVITE_COPY.w2;
   if (invite === "prior_year_return") return DOC_INVITE_COPY.prior_year_return;
   if (invite === "government_id") return "Next is a government ID, so the file has a name.";
   if (invite === "coborrower_government_id") return coborrowerSpokenIdCopy();
@@ -1460,6 +1474,31 @@ export function payFrequencyAsk(): {
       { id: "freq-monthly", label: "Monthly", event: "bubble", capture: { field: "payFrequency", value: "monthly" } },
     ],
   };
+}
+
+function wageSkipAction(field: "skip-w2-box5" | "skip-w2-pay-frequency" | "skip-paystub-monthly"): FoxAction {
+  return { id: field, label: "Skip", event: "bubble", capture: { field } };
+}
+
+export function wageBox5Ask(): { text: string; actions: FoxAction[] } {
+  return { text: W2_BOX5_ASK, actions: [wageSkipAction("skip-w2-box5")] };
+}
+
+export function wagePayFrequencyAsk(): { text: string; actions: FoxAction[] } {
+  return {
+    text: W2_PAY_FREQUENCY_ASK,
+    actions: [
+      { id: "wage-freq-weekly", label: "Weekly", event: "bubble", capture: { field: "wagePayFrequency", value: "weekly" } },
+      { id: "wage-freq-biweekly", label: "Biweekly", event: "bubble", capture: { field: "wagePayFrequency", value: "biweekly" } },
+      { id: "wage-freq-semi", label: "Semimonthly", event: "bubble", capture: { field: "wagePayFrequency", value: "semimonthly" } },
+      { id: "wage-freq-monthly", label: "Monthly", event: "bubble", capture: { field: "wagePayFrequency", value: "monthly" } },
+      wageSkipAction("skip-w2-pay-frequency"),
+    ],
+  };
+}
+
+export function wageStubMonthlyAsk(): { text: string; actions: FoxAction[] } {
+  return { text: PAYSTUB_MONTHLY_ASK, actions: [wageSkipAction("skip-paystub-monthly")] };
 }
 
 export function bothMonthlyReasonAsk(draft: FoxIntakeDraft): {
@@ -2368,13 +2407,36 @@ export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
   }
   if (draft.correcting === "path-switch") return "path-switch";
   if (draft.correcting === "correct") return "correct";
-  if (draft.correcting) return draft.correcting;
+  if (draft.correcting === "other-reo" && otherReoInterviewBlocked(draft)) {
+    // Purchase W-2: Other REO is Still useful only.
+  } else if (draft.correcting) return draft.correcting;
   if (draft.resumeAfterEdit) {
     if (
       draft.resumeAfterEdit === "declaration-timing" &&
       draft.statedDeclaration !== "event"
     ) {
       // Stale resume — timing only after an explicit BK / FC / SS Yes.
+    } else if (
+      draft.resumeAfterEdit === "other-reo" &&
+      otherReoInterviewBlocked(draft)
+    ) {
+      // Stale resume — never interview Other REO on purchase W-2.
+    } else if (
+      draft.resumeAfterEdit === "documents" &&
+      !draft.sampleAccepted &&
+      (draft.incomeType.value === "w2" ||
+        draft.incomeType.value === "both" ||
+        !draft.incomeType.value)
+    ) {
+      // Stale resume — W-2 / Skip docs only after Looks right.
+    } else if (
+      (draft.resumeAfterEdit === "w2-box5" ||
+        draft.resumeAfterEdit === "w2-pay-frequency" ||
+        draft.resumeAfterEdit === "paystub-monthly") &&
+      draft.incomeType.value !== "w2" &&
+      draft.incomeType.value !== "both"
+    ) {
+      // Stale wage-thread resume after Skip or SE / Other.
     } else if (
       draft.resumeAfterEdit === "borrower-name" &&
       governmentIdOutstanding(draft)
@@ -2429,15 +2491,11 @@ export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
   if (propertyZipAskNeeded(draft)) return "property-zip";
   if (!incomeSettled(draft)) return "income";
   if (needsDeclarationTiming(draft)) return "declaration-timing";
+  if (!draft.sampleAccepted && wageBox5AskNeeded(draft)) return "w2-box5";
+  if (!draft.sampleAccepted && wageFrequencyAskNeeded(draft)) return "w2-pay-frequency";
+  if (!draft.sampleAccepted && wageStubAskNeeded(draft)) return "paystub-monthly";
   if (!draft.sampleAccepted && incomeNumberReady(draft) && canLooksRight(draft)) {
     return "review";
-  }
-  if (
-    !draft.sampleAccepted &&
-    (draft.incomeType.value === "w2" || draft.incomeType.value === "both") &&
-    nextDocInvite(draft)
-  ) {
-    return "documents";
   }
   if (draft.sampleAccepted && (draft.motion === "in_queue" || draft.motion === "escalated")) {
     return "done";
@@ -2662,6 +2720,15 @@ function workspaceAskCopy(
       text: "How is income earned?",
       actions: incomeAskActions(),
     };
+  }
+  if (prompt === "w2-box5") {
+    return wageBox5Ask();
+  }
+  if (prompt === "w2-pay-frequency") {
+    return wagePayFrequencyAsk();
+  }
+  if (prompt === "paystub-monthly") {
+    return wageStubMonthlyAsk();
   }
   if (prompt === "subject-lease") {
     return subjectLeaseAskCopy();
@@ -2891,6 +2958,9 @@ export function workspaceGreeting(draft: FoxIntakeDraft): {
     prompt === "geo-stop" ||
     prompt === "confirm-proposal" ||
     prompt === "pay-frequency" ||
+    prompt === "w2-box5" ||
+    prompt === "w2-pay-frequency" ||
+    prompt === "paystub-monthly" ||
     prompt === "both-monthly-reason" ||
     prompt === "raise-when" ||
     prompt === "raise-ytd-far" ||
@@ -3423,6 +3493,13 @@ export function editPromptFromCapture(capture?: Capture): FoxPrompt | undefined 
   if (capture.field === "creditRange" || capture.field === "skip-credit") return "credit";
   if (capture.field === "termYears" || capture.field === "skip-term") return "term";
   if (capture.field === "incomeType" || capture.field === "skip-income") return "income";
+  if (capture.field === "w2Box5" || capture.field === "skip-w2-box5") return "w2-box5";
+  if (capture.field === "wagePayFrequency" || capture.field === "skip-w2-pay-frequency") {
+    return "w2-pay-frequency";
+  }
+  if (capture.field === "paystubMonthly" || capture.field === "skip-paystub-monthly") {
+    return "paystub-monthly";
+  }
   if (
     capture.field === "skip-monthly-debts" ||
     capture.field === "propose-monthly-debts" ||
@@ -4316,6 +4393,18 @@ function draftAfterCaptureBody(draft: FoxIntakeDraft, capture: Capture): FoxInta
     return proposeFundsPair(next, down, loan);
   }
   if (capture.field === "payFrequency") return applyPayFrequencyAnswer(next, capture.value);
+  if (capture.field === "w2Box5") {
+    const annual = parseExtractMoney(capture.value) ?? Number(String(capture.value).replace(/,/g, ""));
+    return Number.isFinite(annual) && annual > 0 ? proposeBox5Monthly(next, annual) : next;
+  }
+  if (capture.field === "skip-w2-box5") return skipWageBox5(next);
+  if (capture.field === "wagePayFrequency") return writeWagePayFrequency(next, capture.value);
+  if (capture.field === "skip-w2-pay-frequency") return skipWageFrequency(next);
+  if (capture.field === "paystubMonthly") {
+    const monthly = parseExtractMoney(capture.value) ?? Number(String(capture.value).replace(/,/g, ""));
+    return Number.isFinite(monthly) && monthly > 0 ? proposeStubMonthly(next, monthly) : next;
+  }
+  if (capture.field === "skip-paystub-monthly") return skipWageStub(next);
   if (capture.field === "bothMonthlyReason") return applyBothMonthlyReasonAnswer(next, capture.value);
   if (capture.field === "raiseWhen") {
     return draft.awaitingRaiseYtdFar ? applyRaiseYtdFarAnswer(next, capture.value) : applyRaiseWhenAnswer(next, capture.value);
@@ -4786,6 +4875,73 @@ export function workspaceReply(
       return { ...nextFoxAsk(nextDraft), capture: { field: "payFrequency", value: "monthly" } };
     }
     return { ...payFrequencyAsk() };
+  }
+
+  if (prompt === "w2-box5") {
+    if (isFreeTextAtGate(q)) return answerThenRestore(q, draft);
+    if (/^(skip|later|not sure|idk|pass|not yet)\b/i.test(lower)) {
+      const nextDraft = skipWageBox5(draft);
+      return { ...nextFoxAsk(nextDraft), capture: { field: "skip-w2-box5" } };
+    }
+    if (/address/i.test(q)) {
+      const volunteeredAtBox5 = parseVolunteeredAddress(q);
+      if (volunteeredAtBox5) {
+        const nextDraft = proposeSubjectAddress(draft, volunteeredAtBox5);
+        return {
+          ...workspacePromptCopy("confirm-proposal", nextDraft),
+          capture: { field: "propose-subject-address", value: volunteeredAtBox5 },
+        };
+      }
+    }
+    const annual = parseExtractMoney(q) ?? parseLooseAmount(q);
+    if (annual != null && annual > 0) {
+      const nextDraft = proposeBox5Monthly(draft, annual);
+      return { ...nextFoxAsk(nextDraft), capture: { field: "w2Box5", value: String(Math.round(annual)) } };
+    }
+  }
+
+  if (prompt === "w2-pay-frequency") {
+    if (isFreeTextAtGate(q)) return answerThenRestore(q, draft);
+    if (/^(skip|later|not sure|idk|pass|not yet)\b/i.test(lower)) {
+      const nextDraft = skipWageFrequency(draft);
+      return { ...nextFoxAsk(nextDraft), capture: { field: "skip-w2-pay-frequency" } };
+    }
+    const freq = /\bbi-?weekly\b/i.test(lower)
+      ? "biweekly"
+      : /\bsemi-?month/i.test(lower)
+        ? "semimonthly"
+        : /\bweekly\b/i.test(lower)
+          ? "weekly"
+          : /\bmonth/i.test(lower)
+            ? "monthly"
+            : "";
+    if (freq) {
+      const nextDraft = writeWagePayFrequency(draft, freq);
+      return { ...nextFoxAsk(nextDraft), capture: { field: "wagePayFrequency", value: freq } };
+    }
+  }
+
+  if (prompt === "paystub-monthly") {
+    if (isFreeTextAtGate(q)) return answerThenRestore(q, draft);
+    if (/^(skip|later|not sure|idk|pass|not yet)\b/i.test(lower)) {
+      const nextDraft = skipWageStub(draft);
+      return { ...nextFoxAsk(nextDraft), capture: { field: "skip-paystub-monthly" } };
+    }
+    if (/address/i.test(q)) {
+      const volunteeredAtStub = parseVolunteeredAddress(q);
+      if (volunteeredAtStub) {
+        const nextDraft = proposeSubjectAddress(draft, volunteeredAtStub);
+        return {
+          ...workspacePromptCopy("confirm-proposal", nextDraft),
+          capture: { field: "propose-subject-address", value: volunteeredAtStub },
+        };
+      }
+    }
+    const monthly = parseExtractMoney(q) ?? parseLooseAmount(q);
+    if (monthly != null && monthly > 0) {
+      const nextDraft = proposeStubMonthly(draft, monthly);
+      return { ...nextFoxAsk(nextDraft), capture: { field: "paystubMonthly", value: String(Math.round(monthly)) } };
+    }
   }
 
   if (prompt === "both-monthly-reason" || draft.awaitingBothMonthlyReason) {
@@ -5814,6 +5970,10 @@ export function workspaceReply(
   }
 
   if (prompt === "other-reo") {
+    if (otherReoInterviewBlocked(draft)) {
+      const nextDraft = { ...draft, correcting: null, correctingLine: null };
+      return { ...nextFoxAsk(nextDraft) };
+    }
     if (isSkipOtherReoText(q)) {
       const nextDraft = skipOtherReo(draft);
       return {

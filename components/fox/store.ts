@@ -102,7 +102,19 @@ import {
   writeQualifyingIncome,
   writeYearsInBusiness,
 } from "./completeness";
-import { applyBothMonthlyReasonAnswer, applyPayFrequencyAnswer, applyRaiseWhenAnswer, applyRaiseYtdFarAnswer } from "./qualifyingIncome";
+import {
+  applyBothMonthlyReasonAnswer,
+  applyPayFrequencyAnswer,
+  applyRaiseWhenAnswer,
+  applyRaiseYtdFarAnswer,
+  parseExtractMoney,
+  proposeBox5Monthly,
+  proposeStubMonthly,
+  skipWageBox5,
+  skipWageFrequency,
+  skipWageStub,
+  writeWagePayFrequency,
+} from "./qualifyingIncome";
 import {
   skipEstimatedHousing,
   syncCalculatorDraft,
@@ -353,6 +365,9 @@ export function emptyDraft(): FoxIntakeDraft {
     yearsInBusinessAsked: false,
     awaitingYearsInBusiness: false,
     emailSkipped: false,
+    wageBox5Asked: false,
+    wageFrequencyAsked: false,
+    wageStubAsked: false,
     awaitingPayFrequency: false,
     awaitingBothMonthlyReason: false,
     awaitingRaiseWhen: false,
@@ -650,6 +665,9 @@ function normalize(value: unknown): FoxIntakeDraft {
     priorYearSkipped: Boolean(raw.priorYearSkipped),
     yearsInBusinessAsked: Boolean(raw.yearsInBusinessAsked),
     awaitingYearsInBusiness: Boolean(raw.awaitingYearsInBusiness),
+    wageBox5Asked: Boolean(raw.wageBox5Asked),
+    wageFrequencyAsked: Boolean(raw.wageFrequencyAsked),
+    wageStubAsked: Boolean(raw.wageStubAsked),
     awaitingPayFrequency: Boolean(raw.awaitingPayFrequency),
     awaitingBothMonthlyReason: Boolean(raw.awaitingBothMonthlyReason),
     awaitingRaiseWhen: Boolean(raw.awaitingRaiseWhen),
@@ -1983,6 +2001,26 @@ function applyCaptureBody(capture: Capture) {
   }
   if (capture.field === "payFrequency") {
     return commit(applyPayFrequencyAnswer(current, capture.value));
+  }
+  if (capture.field === "w2Box5") {
+    const annual = parseExtractMoney(capture.value) ?? Number(String(capture.value).replace(/,/g, ""));
+    return Number.isFinite(annual) && annual > 0 ? commit(proposeBox5Monthly(current, annual)) : current;
+  }
+  if (capture.field === "skip-w2-box5") {
+    return commit(skipWageBox5(current));
+  }
+  if (capture.field === "wagePayFrequency") {
+    return commit(writeWagePayFrequency(current, capture.value));
+  }
+  if (capture.field === "skip-w2-pay-frequency") {
+    return commit(skipWageFrequency(current));
+  }
+  if (capture.field === "paystubMonthly") {
+    const monthly = parseExtractMoney(capture.value) ?? Number(String(capture.value).replace(/,/g, ""));
+    return Number.isFinite(monthly) && monthly > 0 ? commit(proposeStubMonthly(current, monthly)) : current;
+  }
+  if (capture.field === "skip-paystub-monthly") {
+    return commit(skipWageStub(current));
   }
   if (capture.field === "bothMonthlyReason") {
     return commit(applyBothMonthlyReasonAnswer(current, capture.value));

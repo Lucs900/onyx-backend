@@ -276,9 +276,11 @@ export function dropResolvedAddressConfirmChips(
   draft: FoxIntakeDraft,
 ): FoxMessage[] {
   const line = fileAddressLine(draft);
-  if (!line) return messages;
   return messages.map((message) => {
-    if (!isAddressConfirmMessage(message, draft)) return message;
+    if (isOnFileAddressLine(message)) {
+      return { ...message, actions: undefined };
+    }
+    if (!line || !isAddressConfirmMessage(message, draft)) return message;
     return {
       ...message,
       text: addressOnFileCopy(line),
@@ -289,7 +291,12 @@ export function dropResolvedAddressConfirmChips(
 }
 
 /** Address Use this only while pendingAddress is set and File address is empty. */
+function isOnFileAddressLine(message: FoxMessage) {
+  return message.role === "fox" && /\. On the file\.?$/i.test((message.text ?? "").trim());
+}
+
 export function visibleFoxActions(message: FoxMessage, draft: FoxIntakeDraft) {
+  if (isOnFileAddressLine(message)) return undefined;
   const actions = message.actions;
   if (!actions?.length) return undefined;
   const next = actions.filter((action) => {

@@ -26,12 +26,15 @@ import {
 import {
   QUALIFYING_INCOME_FIELD,
   SUGGESTED_INCOME_NOTE,
+  STUB_MONTHLY_NOTE,
+  W2_BOX5_MONTHLY_NOTE,
   WAGE_MONTHLY_FIELD,
   SE_MONTHLY_FIELD,
   K1_MONTHLY_FIELD,
   decliningIncomeCaution,
   hasScheduleCCashflow,
   wageIncomeCaution,
+  wageThreadOpen,
 } from "./qualifyingIncome";
 import {
   STATED_MONTHLY_DEBTS_FIELD,
@@ -1325,6 +1328,15 @@ export function resolveProposal(
     if (proposal.parts.scheduleC) next = writeConfirmedFact(next, SE_MONTHLY_FIELD, proposal.parts.scheduleC, source);
     if (proposal.parts.k1) next = writeConfirmedFact(next, K1_MONTHLY_FIELD, proposal.parts.k1, source);
   }
+  if (proposal.field === QUALIFYING_INCOME_FIELD) {
+    const note = proposal.methodNote ?? "";
+    if (note === W2_BOX5_MONTHLY_NOTE || /box 5/i.test(note)) {
+      next = { ...next, wageBox5Asked: true };
+    }
+    if (note === STUB_MONTHLY_NOTE || /stub monthly/i.test(note)) {
+      next = { ...next, wageStubAsked: true };
+    }
+  }
   const cleared = { ...next, pendingProposal: null, pendingAddress: undefined };
   const flushed = flushPendingOtherReo(flushPendingCurrentHousing(flushPendingHireDate(cleared)));
   const afterNet =
@@ -1365,6 +1377,9 @@ function flushPendingCurrentHousing(draft: FoxIntakeDraft): FoxIntakeDraft {
 
 function flushPendingOtherReo(draft: FoxIntakeDraft): FoxIntakeDraft {
   if (!draft.pendingOtherReo || draft.statedOtherReo) {
+    return { ...draft, pendingOtherReo: null };
+  }
+  if (otherReoInterviewBlocked(draft)) {
     return { ...draft, pendingOtherReo: null };
   }
   return proposeExtractedOtherReo({ ...draft, pendingOtherReo: null });
@@ -1492,6 +1507,28 @@ export function timelineFilled(draft: FoxIntakeDraft) {
   return Boolean(factValue(draft, "close_date"));
 }
 
+export function wageBox5AskNeeded(draft: FoxIntakeDraft) {
+  return wageThreadOpen(draft) && !draft.wageBox5Asked;
+}
+
+export function wageFrequencyAskNeeded(draft: FoxIntakeDraft) {
+  return wageThreadOpen(draft) && Boolean(draft.wageBox5Asked) && !draft.wageFrequencyAsked;
+}
+
+export function wageStubAskNeeded(draft: FoxIntakeDraft) {
+  return (
+    wageThreadOpen(draft) &&
+    Boolean(draft.wageBox5Asked) &&
+    Boolean(draft.wageFrequencyAsked) &&
+    !draft.wageStubAsked
+  );
+}
+
+/** Purchase W-2 / Both: Other REO is Still useful only — never an interview. */
+export function otherReoInterviewBlocked(draft: FoxIntakeDraft) {
+  return isPurchaseLike(draft) && wageThreadOpen(draft);
+}
+
 /** Looks right waits until the current doc/chip ask is idle. */
 export function currentAskIdle(draft: FoxIntakeDraft) {
   if (draft.pendingProposal || draft.pendingConflict) return false;
@@ -1499,6 +1536,9 @@ export function currentAskIdle(draft: FoxIntakeDraft) {
   if (draft.awaitingBothMonthlyReason) return false;
   if (draft.awaitingRaiseWhen) return false;
   if (draft.awaitingRaiseYtdFar) return false;
+  if (wageBox5AskNeeded(draft) || wageFrequencyAskNeeded(draft) || wageStubAskNeeded(draft)) {
+    return false;
+  }
   if (nextDocInvite(draft)) return false;
   if (draft.looksRightHold) return false;
   return true;

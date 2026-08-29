@@ -902,6 +902,9 @@ export function AlwaysOnFox({
         shouldDeferStillUsefulAsk(live) &&
         prompt !== "confirm-proposal" &&
         prompt !== "pay-frequency" &&
+        prompt !== "w2-box5" &&
+        prompt !== "w2-pay-frequency" &&
+        prompt !== "paystub-monthly" &&
         prompt !== "both-monthly-reason" &&
         prompt !== "raise-when" &&
         prompt !== "raise-ytd-far"
@@ -1063,7 +1066,9 @@ export function AlwaysOnFox({
     startAsk === "debts" ||
     (startAsk === "assets" && (draft.sampleAccepted || draft.correcting === "assets")) ||
     startAsk === "current-housing" ||
-    startAsk === "subject-lease";
+    startAsk === "subject-lease" ||
+    startAsk === "w2-box5" ||
+    startAsk === "paystub-monthly";
   const numberAsk =
     startAsk === "credit" ||
     startAsk === "term" ||

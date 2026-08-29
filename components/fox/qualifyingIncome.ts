@@ -1294,3 +1294,88 @@ export function qualifyingIncomeDisplay(draft: FoxIntakeDraft): { value: string;
   }
   return null;
 }
+
+export const W2_BOX5_ASK =
+  "What is Box 5 on that W-2? Medicare wages and tips. That is last year’s gross.";
+export const W2_PAY_FREQUENCY_ASK = "How often are you paid?";
+export const PAYSTUB_MONTHLY_ASK = "What is the monthly amount on the latest stub?";
+export const W2_BOX5_MONTHLY_NOTE = "Box 5 monthly";
+export const STUB_MONTHLY_NOTE = "Latest stub monthly";
+
+export function wageThreadOpen(draft: FoxIntakeDraft) {
+  const type = draft.incomeType.value;
+  return type === "w2" || type === "both";
+}
+
+export function skipWageBox5(draft: FoxIntakeDraft): FoxIntakeDraft {
+  return { ...draft, wageBox5Asked: true, pendingProposal: null };
+}
+
+export function skipWageFrequency(draft: FoxIntakeDraft): FoxIntakeDraft {
+  return { ...draft, wageFrequencyAsked: true };
+}
+
+export function skipWageStub(draft: FoxIntakeDraft): FoxIntakeDraft {
+  return { ...draft, wageStubAsked: true, pendingProposal: null };
+}
+
+export function writeWagePayFrequency(draft: FoxIntakeDraft, raw: string): FoxIntakeDraft {
+  const value = String(raw ?? "").trim().toLowerCase();
+  if (!value) return { ...draft, wageFrequencyAsked: true };
+  const now = new Date().toISOString();
+  return {
+    ...draft,
+    wageFrequencyAsked: true,
+    awaitingPayFrequency: false,
+    facts: {
+      ...(draft.facts ?? {}),
+      pay_frequency: {
+        field: "pay_frequency",
+        value,
+        source: "client",
+        confirmed: true,
+        confirmedAt: now,
+      },
+    },
+  };
+}
+
+export function proposeBox5Monthly(draft: FoxIntakeDraft, annual: number): FoxIntakeDraft {
+  if (!Number.isFinite(annual) || annual <= 0) return draft;
+  const monthly = monthlyFromAnnual(annual);
+  if (!monthly || monthly <= 0) return draft;
+  const now = new Date().toISOString();
+  return withQualifyingIncomeProposal(
+    {
+      ...draft,
+      facts: {
+        ...(draft.facts ?? {}),
+        w2_box5: {
+          field: "w2_box5",
+          value: String(Math.round(annual)),
+          source: "client",
+          confirmed: false,
+          confirmedAt: now,
+        },
+      },
+    },
+    {
+      monthly,
+      basis: "wage",
+      method: "w2-annual",
+      methodNote: W2_BOX5_MONTHLY_NOTE,
+      parts: { wage: monthly },
+    },
+  );
+}
+
+export function proposeStubMonthly(draft: FoxIntakeDraft, monthly: number): FoxIntakeDraft {
+  if (!Number.isFinite(monthly) || monthly <= 0) return draft;
+  return withQualifyingIncomeProposal(draft, {
+    monthly: Math.round(monthly),
+    basis: "wage",
+    method: "one-year",
+    methodNote: STUB_MONTHLY_NOTE,
+    parts: { wage: Math.round(monthly) },
+  });
+}

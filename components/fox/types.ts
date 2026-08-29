@@ -286,6 +286,12 @@ export type FoxIntakeDraft = {
   creditBand?: string;
   creditAsked?: boolean;
   incomeAsked?: boolean;
+  /** W-2 thread: Box 5 asked or skipped. Not a File field. */
+  wageBox5Asked?: boolean;
+  /** W-2 thread: pay frequency asked or skipped. Not extract-time frequency. */
+  wageFrequencyAsked?: boolean;
+  /** W-2 thread: stub monthly asked or skipped. Not a File field. */
+  wageStubAsked?: boolean;
   statedMonthlyDebts?: number;
   monthlyDebtsAsked?: boolean;
   estimatedHousing?: number;
@@ -515,6 +521,9 @@ export type FoxPrompt =
   | "geo-stop"
   | "confirm-proposal"
   | "pay-frequency"
+  | "w2-box5"
+  | "w2-pay-frequency"
+  | "paystub-monthly"
   | "both-monthly-reason"
   | "raise-when"
   | "raise-ytd-far"
@@ -620,6 +629,12 @@ export type Capture =
   | { field: "accept-live-coupon" }
   | { field: "keep-live-coupon" }
   | { field: "payFrequency"; value: string }
+  | { field: "w2Box5"; value: string }
+  | { field: "skip-w2-box5" }
+  | { field: "wagePayFrequency"; value: string }
+  | { field: "skip-w2-pay-frequency" }
+  | { field: "paystubMonthly"; value: string }
+  | { field: "skip-paystub-monthly" }
   | { field: "bothMonthlyReason"; value: string }
   | { field: "raiseWhen"; value: string }
   | { field: "yearsInBusiness"; value: string }

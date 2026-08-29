@@ -2010,7 +2010,7 @@ export type DocInviteKind =
 export const DOC_INVITE_COPY: Record<DocInviteKind, string> = {
   government_id: "First I need a government ID, so this file has a name on it.",
   paystub: "Next is your latest paystub. That’s current income on paper.",
-  w2: "Next is your most recent W-2.",
+  w2: "Next is this year’s W-2.",
   tax_return:
     "Next is your most recent tax return. That’s how I estimate qualifying income. Suggested, not underwritten.",
   prior_year_return: "A prior-year return helps me see if last year was stable. Have one?",
@@ -2145,12 +2145,9 @@ export function offeringDocStart(draft: FoxIntakeDraft) {
   );
 }
 
-/** Box 1 / 12 first, then paystub monthly after they confirm frequency. */
-const WAGE_NUMBER_INVITES: DocInviteKind[] = ["w2", "paystub"];
-
-/** Paystub + W-2 received or skipped. Box 1 / stub monthly can land after this. */
+/** Box 5, pay frequency, and stub monthly asked or skipped. No invented monthly. */
 export function wageNumberPathSettled(draft: FoxIntakeDraft) {
-  return inviteSatisfied(draft, "paystub") && inviteSatisfied(draft, "w2");
+  return Boolean(draft.wageBox5Asked && draft.wageFrequencyAsked && draft.wageStubAsked);
 }
 
 /** After Looks right: W-2 = ID, latest paystub, W-2. SE = ID, tax return. */
@@ -2171,15 +2168,7 @@ function afterLooksRightInvites(draft: FoxIntakeDraft): DocInviteKind[] {
 export function nextDocInvite(draft: FoxIntakeDraft): DocInviteKind | null {
   if (!draft.incomeType.value && !draft.incomeAsked) return null;
   if (draft.pendingProposal || draft.pendingConflict) return null;
-  const type = draft.incomeType.value;
-  if (!draft.sampleAccepted) {
-    if (type === "w2" || type === "both") {
-      for (const kind of WAGE_NUMBER_INVITES) {
-        if (!inviteSatisfied(draft, kind)) return kind;
-      }
-    }
-    return null;
-  }
+  if (!draft.sampleAccepted) return null;
   for (const kind of afterLooksRightInvites(draft)) {
     if (!inviteSatisfied(draft, kind)) return kind;
   }
