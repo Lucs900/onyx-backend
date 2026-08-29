@@ -195,6 +195,7 @@ import { markExported, type FileExportFormat } from "./staffExport";
 import {
   acceptPendingLiveCoupon,
   applyCouponChoice,
+  dropResolvedAddressConfirmChips,
   keepPendingLiveCoupon,
   normalizeLiveQuoteRows,
   normalizePendingLiveCoupon,
@@ -934,7 +935,7 @@ function persistMessages(messages: FoxMessage[]) {
 }
 
 function persistMigratedMessages(messages: FoxMessage[]) {
-  foxMessages = migrateRestoredFoxMessages(messages);
+  foxMessages = dropResolvedAddressConfirmChips(migrateRestoredFoxMessages(messages), current);
   messagesHydrated = true;
   persistMessages(foxMessages);
   return foxMessages;
@@ -1103,6 +1104,8 @@ export function hydrateFoxDraft() {
   }
   hydrated = true;
   persist(current);
+  foxMessages = dropResolvedAddressConfirmChips(foxMessages, current);
+  persistMessages(foxMessages);
   emit();
   return current;
 }

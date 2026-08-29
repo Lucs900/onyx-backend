@@ -2179,7 +2179,10 @@ export function messagesWithLiveQuoteSpeech(
   draft: FoxIntakeDraft,
   quote: NonNullable<FoxIntakeDraft["liveQuote"]>,
 ): FoxMessage[] {
-  if (addressConfirmPending(draft) || !addressLineReadyForQuote(draft)) {
+  if (
+    (addressConfirmPending(draft) && !draft.subjectAddress && !draft.subjectAddressAsked) ||
+    !addressLineReadyForQuote(draft)
+  ) {
     return withoutLiveQuoteSpeech(messages);
   }
   if (!quote.rate || !quote.asOf) return messages;

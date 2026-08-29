@@ -370,20 +370,23 @@ export function FoxLauncher() {
 
 function FoxThread({
   messages,
+  draft,
   listRef,
   onAction,
   onEdit,
 }: {
   messages: FoxMessage[];
+  draft: FoxIntakeDraft;
   listRef: { current: HTMLDivElement | null };
   onAction: (action: FoxAction) => void;
   onEdit?: (message: FoxMessage) => void;
 }) {
-  const currentFox = messages.reduce((index, message, i) => (message.role === "fox" ? i : index), -1);
+  const thread = dropResolvedAddressConfirmChips(messages, draft);
+  const currentFox = thread.reduce((index, message, i) => (message.role === "fox" ? i : index), -1);
 
   return (
     <div className="fox-panel__thread" ref={listRef} aria-live="polite">
-      {messages.map((message, index) => {
+      {thread.map((message, index) => {
         if (message.role === "system") {
           return (
             <p key={message.id} className="fox-bubble fox-bubble--system">
@@ -393,6 +396,7 @@ function FoxThread({
         }
         const current = message.role === "fox" && index === currentFox;
         const tone = current ? " is-current" : " is-prior";
+        const shownActions = message.actions;
         return (
           <article
             key={message.id}
@@ -415,10 +419,10 @@ function FoxThread({
               </button>
             ) : null}
             {current &&
-            message.actions?.length &&
+            shownActions?.length &&
             (message.text.trim() || (message.followUp ?? "").trim()) ? (
               <div className="fox-bubble__actions">
-                {message.actions.map((action) =>
+                {shownActions.map((action) =>
                   action.href ? (
                     <Link
                       key={action.id}
@@ -459,6 +463,7 @@ function FoxThread({
 function FoxWorkspace({
   className,
   messages,
+  draft,
   listRef,
   onClose,
   onAction,
@@ -470,6 +475,7 @@ function FoxWorkspace({
 }: {
   className: string;
   messages: FoxMessage[];
+  draft: FoxIntakeDraft;
   listRef: { current: HTMLDivElement | null };
   onClose: () => void;
   onAction: (action: FoxAction) => void;
@@ -502,7 +508,7 @@ function FoxWorkspace({
           </button>
         )}
       </div>
-      <FoxThread messages={messages} listRef={listRef} onAction={onAction} onEdit={onEdit} />
+      <FoxThread messages={messages} draft={draft} listRef={listRef} onAction={onAction} onEdit={onEdit} />
       {composer}
     </div>
   );
@@ -567,10 +573,14 @@ export function AlwaysOnFox({
     const live = getFoxDraft();
     const stored = getFoxMessages();
     if (fileExists(live) && stored.length > resolved.length) {
-      return ensureIncomeConfirmChips(inertSupersededIncomeConfirms(stored), live);
+      return dropResolvedAddressConfirmChips(
+        ensureIncomeConfirmChips(inertSupersededIncomeConfirms(stored), live),
+        live,
+      );
     }
-    setFoxMessages(resolved);
-    return resolved;
+    const held = dropResolvedAddressConfirmChips(resolved, live);
+    setFoxMessages(held);
+    return held;
   };
 
   const commitMessages = (
@@ -1468,6 +1478,7 @@ export function AlwaysOnFox({
             : "fox-bar__workspace"
       }
       messages={messages}
+      draft={draft}
       listRef={listRef}
       onClose={() => setOpen(false)}
       onAction={runAction}

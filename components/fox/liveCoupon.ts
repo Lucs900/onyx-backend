@@ -9,7 +9,6 @@ import {
   sameCouponNumbers,
   type SafeCouponRow,
 } from "@/lib/rateflow/quote";
-import { isSubjectAddressConfirmPending } from "./propertyType";
 import type { Capture, FoxAction, FoxIntakeDraft, FoxMessage } from "./types";
 
 export const COUPON_UNRESOLVED = "Pricing when the file is ready";
@@ -201,24 +200,38 @@ export function couponChoiceUnresolved(draft: FoxIntakeDraft, choice: "lower" | 
   return !row || !draft.liveQuote;
 }
 
-function isAddressConfirmMessage(message: FoxMessage) {
+function addressWrittenOnFile(draft: FoxIntakeDraft) {
+  return Boolean(draft.subjectAddress || draft.subjectAddressAsked);
+}
+
+function looksLikeAddressConfirmProse(message: FoxMessage) {
   if (message.role !== "fox") return false;
-  const hasUse = (message.actions ?? []).some(
-    (action) =>
-      action.capture?.field === "accept-proposal" ||
-      action.capture?.field === "change-proposal" ||
-      action.capture?.field === "decline-proposal" ||
-      action.capture?.field === "subjectAddress" ||
-      action.id === "accept-subject-address",
-  );
-  if (!hasUse) return false;
+  if (message.id.startsWith("live-quote:")) return false;
   const blob = `${message.text}\n${message.followUp ?? ""}`;
-  if (/That’s a (single-family house|condo|2–4 unit)/i.test(blob)) return false;
+  if (/That[\u2019']s a (single-family house|condo|2–4 unit)/i.test(blob)) return false;
   if (/Suggested qualifying income/i.test(blob)) return false;
-  return (
-    /That’s \d/i.test(blob) ||
+  const suggested = /Suggested · not underwritten/i.test(blob) && /Use this\?/i.test(blob);
+  const street =
+    /That[\u2019']s \d/i.test(blob) ||
     /The (contract|ID) shows /i.test(blob) ||
-    (/Suggested · not underwritten/i.test(blob) && /Use this\?/.test(blob))
+    /,\s*CA\b/.test(blob) ||
+    /\b\d{5}\b/.test(blob);
+  return suggested && street;
+}
+
+function isAddressUseAction(action: FoxAction) {
+  const field = action.capture?.field;
+  return (
+    field === "accept-proposal" ||
+    field === "change-proposal" ||
+    field === "decline-proposal" ||
+    field === "subjectAddress" ||
+    action.id === "accept-proposal" ||
+    action.id === "change-proposal" ||
+    action.id === "decline-proposal" ||
+    action.id === "accept-subject-address" ||
+    action.label === "Use this" ||
+    action.label === "Change"
   );
 }
 
@@ -227,17 +240,10 @@ export function dropResolvedAddressConfirmChips(
   messages: FoxMessage[],
   draft: FoxIntakeDraft,
 ): FoxMessage[] {
-  if (isSubjectAddressConfirmPending(draft)) return messages;
+  if (!addressWrittenOnFile(draft)) return messages;
   return messages.map((message) => {
-    if (!isAddressConfirmMessage(message)) return message;
-    const actions = (message.actions ?? []).filter(
-      (action) =>
-        action.capture?.field !== "accept-proposal" &&
-        action.capture?.field !== "change-proposal" &&
-        action.capture?.field !== "decline-proposal" &&
-        action.capture?.field !== "subjectAddress" &&
-        action.id !== "accept-subject-address",
-    );
+    if (!looksLikeAddressConfirmProse(message)) return message;
+    const actions = (message.actions ?? []).filter((action) => !isAddressUseAction(action));
     return { ...message, actions: actions.length ? actions : undefined };
   });
 }

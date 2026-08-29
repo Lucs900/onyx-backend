@@ -1407,15 +1407,38 @@ const leftoverAddressUse = [
   },
   { id: "client-use", role: "client" as const, text: "Use this" },
 ];
+const leftoverWrittenFile = draft({
+  ...founderLive,
+  subjectAddress: "500 Market St, San Francisco, CA 94105",
+  subjectCity: "San Francisco",
+  subjectState: "CA",
+  subjectAddressAsked: true,
+});
+assert.ok(
+  (dropResolvedAddressConfirmChips(leftoverAddressUse, founderLive).find((item) => item.id === "addr-confirm")
+    ?.actions ?? []).some((action) => action.label === "Use this"),
+);
 assert.equal(
-  dropResolvedAddressConfirmChips(leftoverAddressUse, founderLive).find((item) => item.id === "addr-confirm")
+  dropResolvedAddressConfirmChips(leftoverAddressUse, leftoverWrittenFile).find((item) => item.id === "addr-confirm")
     ?.actions,
+  undefined,
+);
+assert.equal(
+  dropResolvedAddressConfirmChips(
+    [
+      {
+        ...leftoverAddressUse[0],
+        actions: [{ id: "use", label: "Use this", event: "bubble" as const }],
+      },
+    ],
+    leftoverWrittenFile,
+  )[0]?.actions,
   undefined,
 );
 const afterAddressWrite = messagesWithLiveQuoteSpeech(
   leftoverAddressUse,
-  founderLive,
-  founderLive.liveQuote!,
+  leftoverWrittenFile,
+  leftoverWrittenFile.liveQuote!,
 );
 assert.ok(afterAddressWrite.some((item) => item.id.startsWith("live-quote:")));
 assert.ok(
@@ -1431,7 +1454,7 @@ assert.deepEqual(
   ["This one", "Lower payment", "Skip"],
 );
 assert.ok(
-  messagesWithLiveQuoteSpeech(afterAddressWrite, founderLive, founderLive.liveQuote!).every(
+  messagesWithLiveQuoteSpeech(afterAddressWrite, leftoverWrittenFile, leftoverWrittenFile.liveQuote!).every(
     (item) => !(item.actions ?? []).some((action) => action.capture?.field === "accept-proposal"),
   ),
 );
