@@ -37,7 +37,6 @@ import {
   liveCouponActions,
   liveCouponConfirmCopy,
   liveQuoteReady,
-  shouldDeferNextAskForLiveCoupon,
   withLiveCouponChips,
   type CouponChoice,
 } from "./liveCoupon";
@@ -2145,7 +2144,25 @@ export function liveQuoteThreadCopy(
   return liveQuoteThreadLines(quote).join("\n");
 }
 
-/** Two quote lines, then the next question on its own. Never glue onto income. */
+const LIVE_QUOTE_INCOME_ASK = "How is income earned?";
+
+function isPrematureFileAskAfterQuote(
+  message: FoxMessage | undefined,
+  nextAskText?: string,
+) {
+  if (!message || message.role !== "fox") return false;
+  if (message.id.startsWith("live-quote:")) return false;
+  if (message.text === LIVE_QUOTE_INCOME_ASK) return true;
+  return Boolean(nextAskText && message.text === nextAskText);
+}
+
+function withoutLiveQuoteSpeech(messages: FoxMessage[]): FoxMessage[] {
+  return messages.filter(
+    (item) => !item.id.startsWith("live-quote:") && item.text !== LIVE_QUOTE_INCOME_ASK,
+  );
+}
+
+/** Two quote lines on one Fox bubble, with coupon chips, before income. */
 export function messagesWithLiveQuoteSpeech(
   messages: FoxMessage[],
   draft: FoxIntakeDraft,
@@ -2154,25 +2171,6 @@ export function messagesWithLiveQuoteSpeech(
   if (!quote.rate || !quote.asOf) return messages;
   const lines = liveQuoteThreadLines(quote);
   if (!lines.length) return messages;
-  if (lines.every((line) => messages.some((item) => item.role === "fox" && item.text === line))) {
-    return withLiveCouponChips(messages, draft);
-  }
-  const combined = lines.join("\n");
-  const withoutCombined = messages.filter(
-    (item) => !(item.role === "fox" && item.text === combined),
-  );
-  const speech: FoxMessage[] = lines.map((text, index) => ({
-    id: `live-quote:${quote.key}:${index}`,
-    role: "fox" as const,
-    text,
-  }));
-  let lastFoxIdx = -1;
-  for (let i = withoutCombined.length - 1; i >= 0; i -= 1) {
-    if (withoutCombined[i].role === "fox") {
-      lastFoxIdx = i;
-      break;
-    }
-  }
   const nextAskDraft = {
     ...draft,
     liveCouponSettled: true,
@@ -2180,19 +2178,25 @@ export function messagesWithLiveQuoteSpeech(
   };
   const promptId = workspacePrompt(nextAskDraft);
   const ask = promptId ? workspacePromptCopy(promptId, nextAskDraft) : null;
-  const last = lastFoxIdx >= 0 ? withoutCombined[lastFoxIdx] : undefined;
-  const lastIsNextAsk = Boolean(ask && last && last.text === ask.text && !lines.includes(ask.text));
-  if (shouldDeferNextAskForLiveCoupon(draft) || draft.pendingLiveCoupon) {
-    const base = lastIsNextAsk ? withoutCombined.slice(0, lastFoxIdx) : withoutCombined;
-    return withLiveCouponChips([...base, ...speech], draft);
+  const existing = messages.find((item) => item.id.startsWith(`live-quote:${quote.key}`));
+  if (existing) {
+    const held = messages.filter((item) => !isPrematureFileAskAfterQuote(item, ask?.text));
+    return withLiveCouponChips(held, draft);
   }
-  if (lastIsNextAsk) {
-    return withLiveCouponChips(
-      [...withoutCombined.slice(0, lastFoxIdx), ...speech, ...withoutCombined.slice(lastFoxIdx)],
-      draft,
-    );
-  }
-  return withLiveCouponChips([...withoutCombined, ...speech], draft);
+  const without = withoutLiveQuoteSpeech(messages).filter(
+    (item) => !isPrematureFileAskAfterQuote(item, ask?.text),
+  );
+  const cleared = without.map((item) =>
+    item.role === "fox" && item.actions?.length ? { ...item, actions: undefined } : item,
+  );
+  const speech: FoxMessage = {
+    id: `live-quote:${quote.key}:0`,
+    role: "fox",
+    text: lines[0] ?? "",
+    ...(lines[1] ? { followUp: lines[1] } : {}),
+    actions: liveCouponActions(),
+  };
+  return withLiveCouponChips([...cleared, speech], draft);
 }
 
 /** Skip writes the honest fallback on the type tap. House/Condo/2–4 wait for FICO, then live or fallback after a real search. */

@@ -34,7 +34,9 @@ export function liveQuoteReady(draft: FoxIntakeDraft) {
 }
 
 export function shouldDeferNextAskForLiveCoupon(draft: FoxIntakeDraft) {
-  return liveQuoteReady(draft) && !draft.liveCouponSettled && !draft.pendingLiveCoupon;
+  if (!draft.liveQuote || draft.liveQuoteStatus !== "ready") return false;
+  if (draft.liveCouponSettled || draft.pendingLiveCoupon) return false;
+  return true;
 }
 
 export function liveCouponActions(): FoxAction[] {
@@ -211,7 +213,8 @@ export function liveCouponConfirmCopy(draft: FoxIntakeDraft): {
 }
 
 export function withLiveCouponChips(messages: FoxMessage[], draft: FoxIntakeDraft): FoxMessage[] {
-  if (!shouldDeferNextAskForLiveCoupon(draft) && !draft.pendingLiveCoupon) return messages;
+  if (!draft.liveQuote) return messages;
+  if (draft.liveCouponSettled && !draft.pendingLiveCoupon) return messages;
   const chips = liveCouponActions();
   let lastQuote = -1;
   for (let i = 0; i < messages.length; i += 1) {

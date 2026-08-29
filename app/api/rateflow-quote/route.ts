@@ -4,10 +4,12 @@ import {
   RATEFLOW_URL,
   TARGET_PRICE,
   asProductRows,
+  eligibleNoPointsCount,
   firstResultSummary,
   isRateflowFailure,
   parseClientBody,
   pickConventional30LowestNoPoints,
+  quoteRowSample,
   safeCouponRowsFromProducts,
   safeQuoteFromRow,
   type RateflowClientBody,
@@ -65,6 +67,9 @@ function buildReport(partial: {
   bbHttpStatus?: number | null;
   resultCount?: number;
   first?: RateflowQuoteReport["first"];
+  pickedRate?: number;
+  eligibleNoPoints?: number;
+  sample?: RateflowQuoteReport["sample"];
 }): RateflowQuoteReport {
   return {
     env: envReport(),
@@ -81,6 +86,9 @@ function buildReport(partial: {
           zip: "",
         },
     ...(partial.first ? { first: partial.first } : {}),
+    ...(partial.pickedRate != null ? { pickedRate: partial.pickedRate } : {}),
+    ...(partial.eligibleNoPoints != null ? { eligibleNoPoints: partial.eligibleNoPoints } : {}),
+    ...(partial.sample?.length ? { sample: partial.sample } : {}),
   };
 }
 
@@ -110,7 +118,9 @@ function bankingBridgeBody(client: RateflowClientBody) {
     loan_type: "conventional",
     loan_term: 30,
     property_type: client.property_type,
-    target_price: TARGET_PRICE,
+    // Purchase keeps par as a hint. Refinance omits it so the coupon stack
+    // is not filtered down to the featured closest-to-par row.
+    ...(client.loan_purpose === "purchase" ? { target_price: TARGET_PRICE } : {}),
     state: "CA",
     zipcode: client.zipcode,
     location: {
@@ -158,11 +168,15 @@ export async function POST(request: Request) {
     const rows = asProductRows(payload);
     const row = pickConventional30LowestNoPoints(rows);
     const quote = row ? safeQuoteFromRow(row) : null;
+    const pickedRate = Number(row?.rate);
     const report = buildReport({
       client,
       bbHttpStatus: response.status,
       resultCount: rows.length,
       first: firstResultSummary(rows),
+      ...(Number.isFinite(pickedRate) ? { pickedRate } : {}),
+      eligibleNoPoints: eligibleNoPointsCount(rows),
+      sample: quoteRowSample(rows),
     });
     if (!quote) return unavailable(report);
     logReport(report);

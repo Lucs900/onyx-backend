@@ -328,6 +328,30 @@ assert.equal(harborRefiRows[1]?.principalAndInterest, 4242);
 assert.equal(pickConventional30LowestNoPoints(harborRefiRows)?.rate, 6.375);
 assert.notEqual(pickConventional30LowestNoPoints(harborRefiRows)?.rate, 6.49);
 assert.ok((pickConventional30LowestNoPoints(harborRefiRows)?.pts ?? 1) <= 0);
+const harborRefiNested = {
+  results: [
+    {
+      term: 30,
+      label: "30 Year Fixed",
+      loanType: "Fixed",
+      rate: 6.49,
+      pts: -0.043,
+      pi_monthly: 4294,
+      rates: [
+        { rate: 6.49, pts: -0.043, pi_monthly: 4294, term: 30 },
+        { rate: 6.375, pts: -0.07, pi_monthly: 4242, term: 30 },
+        { rate: 6.25, pts: 0.555, pi_monthly: 4187, term: 30 },
+      ],
+    },
+  ],
+};
+assert.equal(pickConventional30LowestNoPoints(asProductRows(harborRefiNested))?.rate, 6.375);
+assert.notEqual(pickConventional30LowestNoPoints(asProductRows(harborRefiNested))?.rate, 6.49);
+assert.ok(
+  asProductRows({
+    results: [{ interestRate: 6.375, points: -0.07, term: 30, monthly_payment: 4242 }],
+  })[0]?.rate === 6.375,
+);
 assert.equal(
   pickConventional30LowestNoPoints(
     asProductRows([
@@ -458,6 +482,7 @@ assert.ok(route.includes('state: "CA"'));
 assert.ok(route.includes("[rateflow-quote]"));
 assert.ok(route.includes("pickConventional30LowestNoPoints"));
 assert.ok(route.includes("safeCouponRowsFromProducts"));
+assert.ok(route.includes('client.loan_purpose === "purchase" ? { target_price: TARGET_PRICE }'));
 assert.ok(!route.includes("pickConventional30NearPar"));
 assert.ok(!route.includes("94115"));
 assert.doesNotMatch(route, /console\.(log|info|warn|error)\([^)]*BANKINGBRIDGE_/);

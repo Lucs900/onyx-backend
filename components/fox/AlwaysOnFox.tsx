@@ -862,6 +862,7 @@ export function AlwaysOnFox({
   useEffect(() => {
     if (!ready || (stage !== "intake" && !isStart)) return;
     const live = getFoxDraft();
+    if (isStart && shouldDeferNextAskForLiveCoupon(live)) return;
     const prompt = isStart ? workspacePrompt(live) : currentPrompt(live);
     const ask = isStart
       ? workspacePromptCopy(prompt, live)
@@ -936,6 +937,7 @@ export function AlwaysOnFox({
       setLiveQuoteResult(key, quote, rows);
       const live = getFoxDraft();
       if (live.liveQuote && live.liveQuoteStatus === "ready") {
+        skipPromptSync.current = true;
         commitMessages((prev) => messagesWithLiveQuoteSpeech(prev, live, live.liveQuote!));
       }
     })();

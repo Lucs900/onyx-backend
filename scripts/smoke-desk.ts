@@ -39,6 +39,7 @@ import {
   couponChoiceFromText,
   isLowerPaymentText,
   keepPendingLiveCoupon,
+  shouldDeferNextAskForLiveCoupon,
 } from "../components/fox/liveCoupon";
 import {
   SUGGESTED_NOTE,
@@ -1326,13 +1327,39 @@ const founderThread = [
 ];
 const founderSpokenThread = messagesWithLiveQuoteSpeech(founderThread, founderLive, founderLive.liveQuote!);
 assert.equal(founderSpokenThread[0].text, founderSpokenLines[0]);
-assert.equal(founderSpokenThread[1].text, founderSpokenLines[1]);
-assert.equal(founderSpokenThread.length, 2);
+assert.equal(founderSpokenThread[0].followUp, founderSpokenLines[1]);
+assert.equal(founderSpokenThread.length, 1);
 assert.deepEqual(
-  (founderSpokenThread[1].actions ?? []).map((item) => item.label),
+  (founderSpokenThread[0].actions ?? []).map((item) => item.label),
   ["This one", "Lower payment", "No cost", "Skip"],
 );
-assert.doesNotMatch(founderSpokenThread.map((item) => item.text).join("\n"), /How is income earned|6\.490|rate board|6\.750/);
+assert.doesNotMatch(
+  `${founderSpokenThread[0].text}\n${founderSpokenThread[0].followUp ?? ""}`,
+  /How is income earned|6\.490|rate board|6\.750/,
+);
+const founderQuoteAfterIncome = messagesWithLiveQuoteSpeech(
+  [
+    {
+      id: "addr-confirm",
+      role: "fox" as const,
+      text: "Is this the home you are buying?",
+      actions: [{ id: "use", label: "Use this", event: "bubble" as const, capture: { field: "keep-property-zip" } }],
+    },
+    { id: "ask-income", role: "fox" as const, text: founderIncomeAsk.text },
+  ],
+  founderLive,
+  founderLive.liveQuote!,
+);
+assert.equal(founderQuoteAfterIncome[founderQuoteAfterIncome.length - 1]?.text, founderSpokenLines[0]);
+assert.equal(founderQuoteAfterIncome[founderQuoteAfterIncome.length - 1]?.followUp, founderSpokenLines[1]);
+assert.deepEqual(
+  (founderQuoteAfterIncome[founderQuoteAfterIncome.length - 1]?.actions ?? []).map((item) => item.label),
+  ["This one", "Lower payment", "No cost", "Skip"],
+);
+assert.ok(!founderQuoteAfterIncome.some((item) => item.text === founderIncomeAsk.text));
+assert.ok(!(founderQuoteAfterIncome[0]?.actions ?? []).some((item) => item.label === "Use this"));
+assert.equal(shouldDeferNextAskForLiveCoupon(founderLive), true);
+assert.equal(shouldDeferNextAskForLiveCoupon({ ...founderLive, liveCouponSettled: true }), false);
 assert.equal(
   messagesWithLiveQuoteSpeech(founderSpokenThread, founderLive, founderLive.liveQuote!).length,
   founderSpokenThread.length,
@@ -1673,14 +1700,14 @@ const founderRefiSpokenThread = messagesWithLiveQuoteSpeech(
   founderRefiLive.liveQuote!,
 );
 assert.equal(founderRefiSpokenThread[0].text, founderRefiSpokenLines[0]);
-assert.equal(founderRefiSpokenThread[1].text, founderRefiSpokenLines[1]);
-assert.equal(founderRefiSpokenThread.length, 2);
+assert.equal(founderRefiSpokenThread[0].followUp, founderRefiSpokenLines[1]);
+assert.equal(founderRefiSpokenThread.length, 1);
 assert.deepEqual(
-  (founderRefiSpokenThread[1].actions ?? []).map((item) => item.label),
+  (founderRefiSpokenThread[0].actions ?? []).map((item) => item.label),
   ["This one", "Lower payment", "No cost", "Skip"],
 );
 assert.doesNotMatch(founderRefiSpokenThread[0].text, /How is income earned/);
-assert.doesNotMatch(founderRefiSpokenThread[1].text, /How is income earned/);
+assert.doesNotMatch(founderRefiSpokenThread[0].followUp ?? "", /How is income earned/);
 const founderRefiLower = workspaceReply("Lower payment", founderRefiLive);
 assert.match(founderRefiLower?.text ?? "", /6\.125% · Live as of .+ PT · not a lock/);
 assert.equal(founderRefiLower?.followUp, "P&I $4,133 · 0.5 pts");

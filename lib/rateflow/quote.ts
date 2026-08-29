@@ -112,6 +112,9 @@ export type RateflowQuoteReport = {
     term: number | null;
     label?: string;
   };
+  pickedRate?: number;
+  eligibleNoPoints?: number;
+  sample?: { rate?: number; pts?: number; term: number | null }[];
 };
 
 export type SafeQuoteResponse =
@@ -271,6 +274,28 @@ function rawRowsFromPayload(payload: unknown): unknown[] {
   return [];
 }
 
+/** Refinance often nests coupons under results[].rates / products / options. */
+function collectProductRows(
+  value: unknown,
+  acc: RateflowProductRow[],
+  depth = 0,
+): RateflowProductRow[] {
+  if (depth > 8 || value == null) return acc;
+  if (Array.isArray(value)) {
+    for (const item of value) collectProductRows(item, acc, depth + 1);
+    return acc;
+  }
+  if (!isRecord(value)) return acc;
+  const row = normalizeProductRow(value);
+  if (Number.isFinite(Number(row.rate))) acc.push(row);
+  for (const child of Object.values(value)) {
+    if (Array.isArray(child) || isRecord(child)) {
+      collectProductRows(child, acc, depth + 1);
+    }
+  }
+  return acc;
+}
+
 function firstNumber(...values: unknown[]): number | undefined {
   for (const value of values) {
     const n = Number(value);
@@ -288,13 +313,26 @@ function firstString(...values: unknown[]): string {
 
 /** Rateflow refinance often uses results/term/label/pi_monthly instead of an engine array. */
 export function normalizeProductRow(raw: RateflowProductRow | Record<string, unknown>): RateflowProductRow {
-  const rate = firstNumber(raw.rate);
-  const pts = firstNumber(raw.pts, (raw as { points?: unknown }).points);
-  const price = firstNumber(raw.price);
+  const rate = firstNumber(
+    raw.rate,
+    (raw as { interestRate?: unknown }).interestRate,
+    (raw as { noteRate?: unknown }).noteRate,
+    (raw as { note_rate?: unknown }).note_rate,
+    (raw as { interest_rate?: unknown }).interest_rate,
+  );
+  const pts = firstNumber(
+    raw.pts,
+    (raw as { points?: unknown }).points,
+    (raw as { discountPoints?: unknown }).discountPoints,
+    (raw as { discount_points?: unknown }).discount_points,
+  );
+  const price = firstNumber(raw.price, (raw as { targetPrice?: unknown }).targetPrice);
   const pi = firstNumber(
     raw.principalAndInterest,
     (raw as { pi_monthly?: unknown }).pi_monthly,
     (raw as { piMonthly?: unknown }).piMonthly,
+    (raw as { monthly_payment?: unknown }).monthly_payment,
+    (raw as { monthlyPayment?: unknown }).monthlyPayment,
   );
   const term = firstNumber(raw.loanTerm, raw.amortizationTerm, raw.term);
   const name = firstString(raw.productName, raw.label, (raw as { title?: unknown }).title);
@@ -318,6 +356,8 @@ export function normalizeProductRow(raw: RateflowProductRow | Record<string, unk
 }
 
 export function asProductRows(payload: unknown): RateflowProductRow[] {
+  const deep = collectProductRows(payload, []);
+  if (deep.length) return deep;
   return rawRowsFromPayload(payload)
     .filter((row): row is Record<string, unknown> => isRecord(row))
     .map(normalizeProductRow);
@@ -505,6 +545,24 @@ export function firstResultSummary(rows: RateflowProductRow[]): RateflowQuoteRep
     term: termYearsFromRow(row) ?? null,
     ...(label ? { label } : {}),
   };
+}
+
+export function eligibleNoPointsCount(rows: RateflowProductRow[]): number {
+  return rows.filter(
+    (row) => isConventional(row) && termYearsFromRow(row) === 30 && hasNoPointsCost(row),
+  ).length;
+}
+
+export function quoteRowSample(rows: RateflowProductRow[]): RateflowQuoteReport["sample"] {
+  return rows.slice(0, 12).map((row) => {
+    const rate = Number(row.rate);
+    const pts = pointsFromRow(row);
+    return {
+      ...(Number.isFinite(rate) ? { rate } : {}),
+      ...(pts != null ? { pts } : {}),
+      term: termYearsFromRow(row) ?? null,
+    };
+  });
 }
 
 export function safeQuoteFromRow(row: RateflowProductRow, now = new Date()): SafeLiveQuote | null {
