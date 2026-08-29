@@ -109,7 +109,7 @@ import {
   applyRaiseYtdFarAnswer,
   parseExtractMoney,
   writeWageBox5,
-  proposeStubMonthly,
+  writeTypedStubMonthly,
   skipWageBox5,
   skipWageFrequency,
   skipWageStub,
@@ -2017,7 +2017,7 @@ function applyCaptureBody(capture: Capture) {
   }
   if (capture.field === "paystubMonthly") {
     const monthly = parseExtractMoney(capture.value) ?? Number(String(capture.value).replace(/,/g, ""));
-    return Number.isFinite(monthly) && monthly > 0 ? commit(proposeStubMonthly(current, monthly)) : current;
+    return Number.isFinite(monthly) && monthly > 0 ? commit(writeTypedStubMonthly(current, monthly)) : current;
   }
   if (capture.field === "skip-paystub-monthly") {
     return commit(skipWageStub(current));

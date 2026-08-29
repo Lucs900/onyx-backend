@@ -183,7 +183,7 @@ import {
   parseRaiseWhen,
   PAYSTUB_MONTHLY_ASK,
   writeWageBox5,
-  proposeStubMonthly,
+  writeTypedStubMonthly,
   qualifyingIncomeDisplay,
   raiseYtdFarAskCopy,
   RAISE_WHEN_ASK,
@@ -4402,7 +4402,7 @@ function draftAfterCaptureBody(draft: FoxIntakeDraft, capture: Capture): FoxInta
   if (capture.field === "skip-w2-pay-frequency") return skipWageFrequency(next);
   if (capture.field === "paystubMonthly") {
     const monthly = parseExtractMoney(capture.value) ?? Number(String(capture.value).replace(/,/g, ""));
-    return Number.isFinite(monthly) && monthly > 0 ? proposeStubMonthly(next, monthly) : next;
+    return Number.isFinite(monthly) && monthly > 0 ? writeTypedStubMonthly(next, monthly) : next;
   }
   if (capture.field === "skip-paystub-monthly") return skipWageStub(next);
   if (capture.field === "bothMonthlyReason") return applyBothMonthlyReasonAnswer(next, capture.value);
@@ -4939,7 +4939,7 @@ export function workspaceReply(
     }
     const monthly = parseExtractMoney(q) ?? parseLooseAmount(q);
     if (monthly != null && monthly > 0) {
-      const nextDraft = proposeStubMonthly(draft, monthly);
+      const nextDraft = writeTypedStubMonthly(draft, monthly);
       return { ...nextFoxAsk(nextDraft), capture: { field: "paystubMonthly", value: String(Math.round(monthly)) } };
     }
   }

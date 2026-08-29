@@ -277,7 +277,7 @@ export function dropResolvedAddressConfirmChips(
 ): FoxMessage[] {
   const line = fileAddressLine(draft);
   return messages.map((message) => {
-    if (isOnFileAddressLine(message)) {
+    if (isOnFileAddressLine(message, draft)) {
       return stripUseThisFromOnFileLine(message);
     }
     if (!line || !isAddressConfirmMessage(message, draft)) return message;
@@ -290,11 +290,13 @@ export function dropResolvedAddressConfirmChips(
 }
 
 /** Address Use this only while pendingAddress is set and File address is empty. */
-export function isOnFileAddressLine(message: FoxMessage) {
+export function isOnFileAddressLine(message: FoxMessage, draft?: FoxIntakeDraft) {
   if (message.role !== "fox") return false;
-  const text = (message.text ?? "").replace(/\s+/g, " ").trim();
-  if (/\bon the file\.?$/i.test(text)) return true;
-  if (/\bon the file\b/i.test(text) && !/suggested monthly income/i.test(text)) return true;
+  const blob = foxBlob(message).replace(/\s+/g, " ").trim();
+  if (/suggested monthly income/i.test(blob)) return false;
+  if (/\bon the file\b/i.test(blob)) return true;
+  const written = draft ? fileAddressLine(draft) : "";
+  if (written && blob.includes(written) && /on the file/i.test(blob)) return true;
   return false;
 }
 
@@ -315,29 +317,50 @@ export function paintedFoxActions(
   draft: FoxIntakeDraft,
   current = true,
 ): FoxAction[] | undefined {
-  if (isOnFileAddressLine(message)) return undefined;
+  if (hideAddressUseThisOnBubble(message, draft)) return undefined;
   const shown = visibleFoxActions(message, draft);
   if (!shown?.length) return undefined;
   const next = shown.filter((action) => {
     if (action.label === "Use this" || action.label === "Change") {
-      if (isOnFileAddressLine(message)) return false;
-      if (isAddressUseAction(action)) return shouldShowAddressUseThis(draft);
+      if (hideAddressUseThisOnBubble(message, draft)) return false;
+      if (isAddressConfirmMessage(message, draft)) return shouldShowAddressUseThis(draft);
     }
-    return isAddressUseAction(action) ? shouldShowAddressUseThis(draft) : current;
+    if (isAddressConfirmMessage(message, draft) && isAddressUseAction(action)) {
+      return shouldShowAddressUseThis(draft);
+    }
+    return isKeptUseThis(action) ? true : current;
   });
   return next.length ? next : undefined;
 }
 
+function isAddressOnFileBubble(message: FoxMessage, draft: FoxIntakeDraft) {
+  if (isOnFileAddressLine(message, draft)) return true;
+  const written = fileAddressLine(draft);
+  if (!written) return false;
+  const blob = foxBlob(message);
+  return blob.includes(written) && /\bon the file\b/i.test(blob);
+}
+
+function hideAddressUseThisOnBubble(message: FoxMessage, draft: FoxIntakeDraft) {
+  if (isOnFileAddressLine(message, draft) || isAddressOnFileBubble(message, draft)) return true;
+  return Boolean(fileAddressLine(draft) && isAddressConfirmMessage(message, draft) && !shouldShowAddressUseThis(draft));
+}
+
 export function visibleFoxActions(message: FoxMessage, draft: FoxIntakeDraft) {
-  if (isOnFileAddressLine(message)) return undefined;
+  if (hideAddressUseThisOnBubble(message, draft)) return undefined;
   const actions = message.actions;
   if (!actions?.length) return undefined;
   const next = actions.filter((action) => {
-    if (isOnFileAddressLine(message) && (action.label === "Use this" || action.label === "Change")) {
+    if (hideAddressUseThisOnBubble(message, draft) && (action.label === "Use this" || action.label === "Change")) {
       return false;
     }
-    if (isKeptUseThis(action) && !isOnFileAddressLine(message)) return true;
-    if (isAddressUseAction(action)) return shouldShowAddressUseThis(draft);
+    if (isAddressConfirmMessage(message, draft) && (action.label === "Use this" || action.label === "Change")) {
+      return shouldShowAddressUseThis(draft);
+    }
+    if (isKeptUseThis(action)) return true;
+    if (isAddressUseAction(action) && isAddressConfirmMessage(message, draft)) {
+      return shouldShowAddressUseThis(draft);
+    }
     return true;
   });
   return next.length ? next : undefined;

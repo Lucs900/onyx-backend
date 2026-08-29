@@ -1364,13 +1364,46 @@ export function writeWageBox5(draft: FoxIntakeDraft, annual: number): FoxIntakeD
   };
 }
 
+/** They typed the stub monthly. Write it. Do not ask Use this again. */
+export function writeTypedStubMonthly(draft: FoxIntakeDraft, monthly: number): FoxIntakeDraft {
+  const now = new Date().toISOString();
+  const asked: FoxIntakeDraft = {
+    ...draft,
+    wageStubAsked: true,
+    pendingProposal: null,
+  };
+  if (!Number.isFinite(monthly) || monthly <= 0) return asked;
+  const value = String(Math.round(monthly));
+  return {
+    ...asked,
+    facts: {
+      ...(draft.facts ?? {}),
+      [PAYSTUB_MONTHLY_FIELD]: {
+        field: PAYSTUB_MONTHLY_FIELD,
+        value,
+        source: "client",
+        confirmed: true,
+        confirmedAt: now,
+      },
+      [WAGE_MONTHLY_FIELD]: {
+        field: WAGE_MONTHLY_FIELD,
+        value,
+        source: "suggested",
+        confirmed: true,
+        confirmedAt: now,
+      },
+      [QUALIFYING_INCOME_FIELD]: {
+        field: QUALIFYING_INCOME_FIELD,
+        value,
+        source: "suggested",
+        confirmed: true,
+        confirmedAt: now,
+      },
+    },
+  };
+}
+
+/** @deprecated Use writeTypedStubMonthly — typed stub is a write, not a confirm. */
 export function proposeStubMonthly(draft: FoxIntakeDraft, monthly: number): FoxIntakeDraft {
-  if (!Number.isFinite(monthly) || monthly <= 0) return draft;
-  return withQualifyingIncomeProposal(draft, {
-    monthly: Math.round(monthly),
-    basis: "wage",
-    method: "one-year",
-    methodNote: STUB_MONTHLY_NOTE,
-    parts: { wage: Math.round(monthly) },
-  });
+  return writeTypedStubMonthly(draft, monthly);
 }

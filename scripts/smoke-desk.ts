@@ -1561,6 +1561,44 @@ assert.doesNotMatch(
   dropResolvedAddressConfirmChips([leftoverOnFileWithFollow], leftoverWrittenFile)[0]?.followUp ?? "",
   /Use this/,
 );
+const leftoverOnFileFollowOnly = {
+  id: "addr-on-file-follow-only",
+  role: "fox" as const,
+  text: "801 Marina Blvd, San Francisco, CA 94123.",
+  followUp: "On the file.",
+  actions: leftoverAddressUse[0].actions,
+};
+assert.equal(paintedFoxActions(leftoverOnFileFollowOnly, leftoverWrittenFile, true), undefined);
+assert.equal(visibleFoxActions(leftoverOnFileFollowOnly, leftoverWrittenFile), undefined);
+const leftoverOnFileCouponUse = {
+  id: "addr-on-file-coupon",
+  role: "fox" as const,
+  text: "801 Marina Blvd, San Francisco, CA 94123. On the file.",
+  actions: [
+    { id: "accept-live-coupon", label: "Use this", event: "bubble" as const, capture: { field: "accept-live-coupon" as const } },
+  ],
+};
+assert.equal(paintedFoxActions(leftoverOnFileCouponUse, leftoverWrittenFile, true), undefined);
+const marinaWrittenFile = draft({
+  ...leftoverWrittenFile,
+  subjectAddress: "801 Marina Blvd, San Francisco, CA 94123",
+  subjectCity: "San Francisco",
+  subjectState: "CA",
+  pendingAddress: undefined,
+});
+assert.equal(
+  paintedFoxActions(
+    {
+      id: "marina-on-file",
+      role: "fox" as const,
+      text: "801 Marina Blvd, San Francisco, CA 94123. On the file.",
+      actions: leftoverAddressUse[0].actions,
+    },
+    marinaWrittenFile,
+    true,
+  ),
+  undefined,
+);
 const afterAddressWrite = messagesWithLiveQuoteSpeech(
   leftoverAddressUse,
   leftoverWrittenFile,
@@ -2129,6 +2167,33 @@ assert.deepEqual(
   (workspacePromptCopy("paystub-monthly", founderFreqSkipped).actions ?? []).map((item) => item.label),
   ["Skip"],
 );
+const founderStubTyped = workspaceReply("7,000", founderFreqSkipped);
+assert.equal(founderStubTyped?.capture?.field, "paystubMonthly");
+assert.doesNotMatch(founderStubTyped?.text ?? "", /Suggested monthly income|Use this\?/);
+assert.ok((founderStubTyped?.actions ?? []).some((item) => item.label === "Looks right"));
+assert.ok(!((founderStubTyped?.actions ?? []).some((item) => item.label === "Use this")));
+const founderStubWritten = {
+  ...founderFreqSkipped,
+  wageStubAsked: true,
+  facts: {
+    ...(founderFreqSkipped.facts ?? {}),
+    qualifying_income: {
+      field: "qualifying_income",
+      value: "7000",
+      source: "suggested" as const,
+      confirmed: true,
+    },
+  },
+};
+assert.equal(workspacePrompt(founderStubWritten), "review");
+assert.ok(canLooksRight(founderStubWritten));
+assert.ok(previewFacts(founderStubWritten).some((fact) => fact.id === "qualifying" && /7,000/.test(fact.value)));
+assert.ok(previewFacts(founderStubWritten).some((fact) => fact.id === "qualifying" && /Suggested/.test(fact.note ?? "")));
+const founderStubSkipped = workspaceReply("Skip", founderFreqSkipped);
+assert.equal(founderStubSkipped?.capture?.field, "skip-paystub-monthly");
+assert.ok((founderStubSkipped?.actions ?? []).some((item) => item.label === "Looks right"));
+assert.doesNotMatch(founderStubSkipped?.text ?? "", /Suggested monthly income|Use this\?/);
+assert.ok(canLooksRight({ ...founderFreqSkipped, wageStubAsked: true }));
 const founderWageSkipped = { ...founderFreqSkipped, wageStubAsked: true };
 assert.ok(!previewFacts(founderWageSkipped).some((fact) => fact.id === "qualifying"));
 assert.ok(canLooksRight(founderWageSkipped));
