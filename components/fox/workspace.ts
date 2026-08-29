@@ -39,6 +39,7 @@ import {
   isNoCostText,
   isThisOneText,
   keepPendingLiveCoupon,
+  dropResolvedAddressConfirmChips,
   liveCouponActions,
   liveCouponConfirmCopy,
   liveQuoteReady,
@@ -2193,14 +2194,20 @@ export function messagesWithLiveQuoteSpeech(
   const ask = promptId ? workspacePromptCopy(promptId, nextAskDraft) : null;
   const existing = messages.find((item) => item.id.startsWith(`live-quote:${quote.key}`));
   if (existing) {
-    const held = messages.filter((item) => !isPrematureFileAskAfterQuote(item, ask?.text));
+    const held = dropResolvedAddressConfirmChips(
+      messages.filter((item) => !isPrematureFileAskAfterQuote(item, ask?.text)),
+      draft,
+    );
     return withLiveCouponChips(held, draft);
   }
   const without = withoutLiveQuoteSpeech(messages).filter(
     (item) => !isPrematureFileAskAfterQuote(item, ask?.text),
   );
-  const cleared = without.map((item) =>
-    item.role === "fox" && item.actions?.length ? { ...item, actions: undefined } : item,
+  const cleared = dropResolvedAddressConfirmChips(
+    without.map((item) =>
+      item.role === "fox" && item.actions?.length ? { ...item, actions: undefined } : item,
+    ),
+    draft,
   );
   const speech: FoxMessage = {
     id: `live-quote:${quote.key}:0`,

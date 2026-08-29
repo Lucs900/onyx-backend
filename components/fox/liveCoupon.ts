@@ -9,6 +9,7 @@ import {
   sameCouponNumbers,
   type SafeCouponRow,
 } from "@/lib/rateflow/quote";
+import { isSubjectAddressConfirmPending } from "./propertyType";
 import type { Capture, FoxAction, FoxIntakeDraft, FoxMessage } from "./types";
 
 export const COUPON_UNRESOLVED = "Pricing when the file is ready";
@@ -39,10 +40,15 @@ export function shouldDeferNextAskForLiveCoupon(draft: FoxIntakeDraft) {
   return true;
 }
 
+function hideNoCostChip(draft?: FoxIntakeDraft) {
+  if (!draft?.liveQuote) return false;
+  const pts = draft.liveQuote.pts;
+  if (typeof pts === "number" && Number.isFinite(pts) && pts <= 0) return true;
+  return sameCouponNumbers(draft.liveQuote, pickNoCostFromRows(draft.liveQuoteRows ?? []));
+}
+
 export function liveCouponActions(draft?: FoxIntakeDraft): FoxAction[] {
-  const hideNoCost =
-    draft != null &&
-    sameCouponNumbers(draft.liveQuote ?? null, pickNoCostFromRows(draft.liveQuoteRows ?? []));
+  const hideNoCost = hideNoCostChip(draft);
   const chips: FoxAction[] = [
     {
       id: "live-coupon-this",
@@ -195,6 +201,47 @@ export function couponChoiceUnresolved(draft: FoxIntakeDraft, choice: "lower" | 
   return !row || !draft.liveQuote;
 }
 
+function isAddressConfirmMessage(message: FoxMessage) {
+  if (message.role !== "fox") return false;
+  const hasUse = (message.actions ?? []).some(
+    (action) =>
+      action.capture?.field === "accept-proposal" ||
+      action.capture?.field === "change-proposal" ||
+      action.capture?.field === "decline-proposal" ||
+      action.capture?.field === "subjectAddress" ||
+      action.id === "accept-subject-address",
+  );
+  if (!hasUse) return false;
+  const blob = `${message.text}\n${message.followUp ?? ""}`;
+  if (/That’s a (single-family house|condo|2–4 unit)/i.test(blob)) return false;
+  if (/Suggested qualifying income/i.test(blob)) return false;
+  return (
+    /That’s \d/i.test(blob) ||
+    /The (contract|ID) shows /i.test(blob) ||
+    (/Suggested · not underwritten/i.test(blob) && /Use this\?/.test(blob))
+  );
+}
+
+/** After Use this writes the address, those chips must not stay tappable. */
+export function dropResolvedAddressConfirmChips(
+  messages: FoxMessage[],
+  draft: FoxIntakeDraft,
+): FoxMessage[] {
+  if (isSubjectAddressConfirmPending(draft)) return messages;
+  return messages.map((message) => {
+    if (!isAddressConfirmMessage(message)) return message;
+    const actions = (message.actions ?? []).filter(
+      (action) =>
+        action.capture?.field !== "accept-proposal" &&
+        action.capture?.field !== "change-proposal" &&
+        action.capture?.field !== "decline-proposal" &&
+        action.capture?.field !== "subjectAddress" &&
+        action.id !== "accept-subject-address",
+    );
+    return { ...message, actions: actions.length ? actions : undefined };
+  });
+}
+
 export function liveCouponConfirmCopy(draft: FoxIntakeDraft): {
   text: string;
   followUp?: string;
@@ -219,18 +266,16 @@ export function liveCouponConfirmCopy(draft: FoxIntakeDraft): {
 }
 
 export function withLiveCouponChips(messages: FoxMessage[], draft: FoxIntakeDraft): FoxMessage[] {
-  if (!draft.liveQuote) return messages;
-  if (draft.liveCouponSettled && !draft.pendingLiveCoupon) return messages;
+  const held = dropResolvedAddressConfirmChips(messages, draft);
+  if (!draft.liveQuote) return held;
+  if (draft.liveCouponSettled && !draft.pendingLiveCoupon) return held;
   const chips = liveCouponActions(draft);
   let lastQuote = -1;
-  for (let i = 0; i < messages.length; i += 1) {
-    if (messages[i].id.startsWith("live-quote:")) lastQuote = i;
+  for (let i = 0; i < held.length; i += 1) {
+    if (held[i].id.startsWith("live-quote:")) lastQuote = i;
   }
-  if (lastQuote < 0) return messages;
-  const current = messages[lastQuote];
-  const has = (current.actions ?? []).some((item) => item.capture?.field === "couponChoice");
-  if (has) return messages;
-  return messages.map((item, index) => (index === lastQuote ? { ...item, actions: chips } : item));
+  if (lastQuote < 0) return held;
+  return held.map((item, index) => (index === lastQuote ? { ...item, actions: chips } : item));
 }
 
 export function normalizeLiveQuoteRows(value: unknown): SafeCouponRow[] | undefined {

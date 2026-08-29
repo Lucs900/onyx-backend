@@ -38,8 +38,10 @@ import {
   acceptPendingLiveCoupon,
   applyCouponChoice,
   couponChoiceFromText,
+  dropResolvedAddressConfirmChips,
   isLowerPaymentText,
   keepPendingLiveCoupon,
+  liveCouponActions,
   shouldDeferNextAskForLiveCoupon,
 } from "../components/fox/liveCoupon";
 import {
@@ -1362,7 +1364,7 @@ assert.equal(founderSpokenThread[0].followUp, founderSpokenLines[1]);
 assert.equal(founderSpokenThread.length, 1);
 assert.deepEqual(
   (founderSpokenThread[0].actions ?? []).map((item) => item.label),
-  ["This one", "Lower payment", "No cost", "Skip"],
+  ["This one", "Lower payment", "Skip"],
 );
 assert.doesNotMatch(
   `${founderSpokenThread[0].text}\n${founderSpokenThread[0].followUp ?? ""}`,
@@ -1385,10 +1387,82 @@ assert.equal(founderQuoteAfterIncome[founderQuoteAfterIncome.length - 1]?.text, 
 assert.equal(founderQuoteAfterIncome[founderQuoteAfterIncome.length - 1]?.followUp, founderSpokenLines[1]);
 assert.deepEqual(
   (founderQuoteAfterIncome[founderQuoteAfterIncome.length - 1]?.actions ?? []).map((item) => item.label),
-  ["This one", "Lower payment", "No cost", "Skip"],
+  ["This one", "Lower payment", "Skip"],
 );
 assert.ok(!founderQuoteAfterIncome.some((item) => item.text === founderIncomeAsk.text));
 assert.ok(!(founderQuoteAfterIncome[0]?.actions ?? []).some((item) => item.label === "Use this"));
+assert.deepEqual(
+  liveCouponActions(founderLive).map((item) => item.label),
+  ["This one", "Lower payment", "Skip"],
+);
+const leftoverAddressUse = [
+  {
+    id: "addr-confirm",
+    role: "fox" as const,
+    text: "That’s 500 Market St, San Francisco, CA 94105. Suggested · not underwritten. Use this?",
+    actions: [
+      { id: "accept-proposal", label: "Use this", event: "bubble" as const, capture: { field: "accept-proposal" } },
+      { id: "change-proposal", label: "Change", event: "bubble" as const, capture: { field: "change-proposal" } },
+    ],
+  },
+  { id: "client-use", role: "client" as const, text: "Use this" },
+];
+assert.equal(
+  dropResolvedAddressConfirmChips(leftoverAddressUse, founderLive).find((item) => item.id === "addr-confirm")
+    ?.actions,
+  undefined,
+);
+const afterAddressWrite = messagesWithLiveQuoteSpeech(
+  leftoverAddressUse,
+  founderLive,
+  founderLive.liveQuote!,
+);
+assert.ok(afterAddressWrite.some((item) => item.id.startsWith("live-quote:")));
+assert.ok(
+  afterAddressWrite.every(
+    (item) =>
+      !(item.actions ?? []).some(
+        (action) => action.capture?.field === "accept-proposal" || action.label === "Use this",
+      ),
+  ),
+);
+assert.deepEqual(
+  (afterAddressWrite[afterAddressWrite.length - 1]?.actions ?? []).map((item) => item.label),
+  ["This one", "Lower payment", "Skip"],
+);
+assert.ok(
+  messagesWithLiveQuoteSpeech(afterAddressWrite, founderLive, founderLive.liveQuote!).every(
+    (item) => !(item.actions ?? []).some((action) => action.capture?.field === "accept-proposal"),
+  ),
+);
+const harborPurchaseLead = draft({
+  ...afterFounderZip,
+  liveQuoteKey: founderLiveKey,
+  liveQuoteStatus: "ready" as const,
+  liveQuote: {
+    key: founderLiveKey,
+    rate: 6.375,
+    asOf: "2026-08-28T19:04:00.000Z",
+    principalAndInterest: 4242,
+    pts: -0.07,
+  },
+  liveQuoteRows: [
+    { rate: 6.375, pts: -0.07, principalAndInterest: 4242 },
+    { rate: 6.25, pts: 1.044, principalAndInterest: 4187 },
+    { rate: 6.75, pts: -1.067 },
+  ],
+});
+assert.deepEqual(
+  liveCouponActions(harborPurchaseLead).map((item) => item.label),
+  ["This one", "Lower payment", "Skip"],
+);
+const harborPurchaseLower = acceptPendingLiveCoupon(applyCouponChoice(harborPurchaseLead, "lower"));
+assert.equal(harborPurchaseLower.liveQuote?.rate, 6.25);
+assert.equal(harborPurchaseLower.liveQuote?.pts, 1.044);
+assert.deepEqual(
+  liveCouponActions(harborPurchaseLower).map((item) => item.label),
+  ["This one", "Lower payment", "No cost", "Skip"],
+);
 assert.equal(shouldDeferNextAskForLiveCoupon(founderLive), true);
 assert.equal(shouldDeferNextAskForLiveCoupon({ ...founderLive, liveCouponSettled: true }), false);
 assert.equal(
@@ -1848,6 +1922,16 @@ assert.equal(founderRefiSpokenThread.length, 1);
 assert.deepEqual(
   (founderRefiSpokenThread[0].actions ?? []).map((item) => item.label),
   ["This one", "Lower payment", "Skip"],
+);
+assert.deepEqual(
+  liveCouponActions(founderRefiLive).map((item) => item.label),
+  ["This one", "Lower payment", "Skip"],
+);
+const founderRefiLowerAccepted = acceptPendingLiveCoupon(applyCouponChoice(founderRefiLive, "lower"));
+assert.equal(founderRefiLowerAccepted.liveQuote?.pts, 1.044);
+assert.deepEqual(
+  liveCouponActions(founderRefiLowerAccepted).map((item) => item.label),
+  ["This one", "Lower payment", "No cost", "Skip"],
 );
 assert.doesNotMatch(founderRefiSpokenThread[0].text, /How is income earned|6\.490/);
 assert.doesNotMatch(founderRefiSpokenThread[0].followUp ?? "", /How is income earned|reward/);

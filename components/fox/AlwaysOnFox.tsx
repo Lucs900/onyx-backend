@@ -37,7 +37,7 @@ import {
   replyToMessage,
 } from "./script";
 import { addressConfirmPending, searchedKeyFor } from "@/lib/rateflow/fromDraft";
-import { shouldDeferNextAskForLiveCoupon } from "./liveCoupon";
+import { dropResolvedAddressConfirmChips, shouldDeferNextAskForLiveCoupon } from "./liveCoupon";
 import { requestRateflowIfNeeded } from "./rateflowClient";
 import { requestAddressSuggestions, requestPlaceAddress, withStreetSuggestChips } from "./addressSuggest";
 import { encodePlaceAddress, shouldSuggestStreets } from "@/lib/places/address";
@@ -898,7 +898,9 @@ export function AlwaysOnFox({
       }
       const lastFox = lastFoxTurn(prev);
       if (lastFox && sameFoxAsk(lastFox, ask)) return prev;
-      const held = addressConfirmPending(live) ? withoutLiveQuoteSpeech(prev) : prev;
+      const held = addressConfirmPending(live)
+        ? withoutLiveQuoteSpeech(prev)
+        : dropResolvedAddressConfirmChips(prev, live);
       return [...held, foxAskMessage(ask)];
     });
   }, [draft.updatedAt, isStart, ready, stage]);
@@ -1089,7 +1091,10 @@ export function AlwaysOnFox({
     editLine?: string,
   ) => {
     commitMessagesNow((prev) => {
-      const held = addressConfirmPending(getFoxDraft()) ? withoutLiveQuoteSpeech(prev) : prev;
+      const live = getFoxDraft();
+      const held = addressConfirmPending(live)
+        ? withoutLiveQuoteSpeech(prev)
+        : dropResolvedAddressConfirmChips(prev, live);
       const next: FoxMessage[] = [
         ...held,
         { id: newId(), role: "client", text: clientText, edit, editLine },
