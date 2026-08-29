@@ -4,6 +4,7 @@ import {
   RATEFLOW_URL,
   TARGET_PRICE,
   asProductRows,
+  conventional30Book,
   eligibleNoPointsCount,
   firstResultSummary,
   isRateflowFailure,
@@ -70,6 +71,7 @@ function buildReport(partial: {
   pickedRate?: number;
   eligibleNoPoints?: number;
   sample?: RateflowQuoteReport["sample"];
+  book?: RateflowQuoteReport["book"];
 }): RateflowQuoteReport {
   return {
     env: envReport(),
@@ -89,6 +91,7 @@ function buildReport(partial: {
     ...(partial.pickedRate != null ? { pickedRate: partial.pickedRate } : {}),
     ...(partial.eligibleNoPoints != null ? { eligibleNoPoints: partial.eligibleNoPoints } : {}),
     ...(partial.sample?.length ? { sample: partial.sample } : {}),
+    ...(partial.book?.length ? { book: partial.book } : {}),
   };
 }
 
@@ -177,6 +180,7 @@ export async function POST(request: Request) {
       ...(Number.isFinite(pickedRate) ? { pickedRate } : {}),
       eligibleNoPoints: eligibleNoPointsCount(rows),
       sample: quoteRowSample(rows),
+      book: conventional30Book(rows),
     });
     if (!quote) return unavailable(report);
     logReport(report);

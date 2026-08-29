@@ -115,6 +115,8 @@ export type RateflowQuoteReport = {
   pickedRate?: number;
   eligibleNoPoints?: number;
   sample?: { rate?: number; pts?: number; term: number | null }[];
+  /** Conventional 30 rows the picker sees. Rate + points only. Never secrets. */
+  book?: { rate: number; pts?: number }[];
 };
 
 export type SafeQuoteResponse =
@@ -563,6 +565,35 @@ export function quoteRowSample(rows: RateflowProductRow[]): RateflowQuoteReport[
       term: termYearsFromRow(row) ?? null,
     };
   });
+}
+
+/** Every conventional 30 the lead picker can see. Note rate + points only. */
+export function conventional30Book(rows: RateflowProductRow[]): { rate: number; pts?: number }[] {
+  const book: { rate: number; pts?: number }[] = [];
+  for (const row of rows) {
+    if (!isConventional(row) || termYearsFromRow(row) !== 30) continue;
+    const rate = Number(row.rate);
+    if (!Number.isFinite(rate) || rate <= 0 || rate > 25) continue;
+    const pts = pointsFromRow(row);
+    book.push({ rate, ...(pts != null ? { pts } : {}) });
+  }
+  return book.sort((left, right) => {
+    const rateDiff = left.rate - right.rate;
+    if (rateDiff !== 0) return rateDiff;
+    return (left.pts ?? 99) - (right.pts ?? 99);
+  });
+}
+
+export function lowestNoPointsFromBook(
+  book: { rate: number; pts?: number }[],
+): { rate: number; pts?: number } | null {
+  const eligible = book.filter((row) => row.pts != null && row.pts <= 0);
+  if (!eligible.length) return null;
+  return [...eligible].sort((left, right) => {
+    const rateDiff = left.rate - right.rate;
+    if (rateDiff !== 0) return rateDiff;
+    return (left.pts ?? 0) - (right.pts ?? 0);
+  })[0] ?? null;
 }
 
 export function safeQuoteFromRow(row: RateflowProductRow, now = new Date()): SafeLiveQuote | null {

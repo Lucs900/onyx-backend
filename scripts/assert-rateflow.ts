@@ -26,6 +26,8 @@ import {
   pickConventional30LowestNoPoints,
   pickLowerPaymentFromRows,
   pickNoCostFromRows,
+  conventional30Book,
+  lowestNoPointsFromBook,
   liveQuoteFromCouponRow,
   parseSafeCouponRows,
   safeCouponRowsFromProducts,
@@ -352,6 +354,34 @@ assert.ok(
     results: [{ interestRate: 6.375, points: -0.07, term: 30, monthly_payment: 4242 }],
   })[0]?.rate === 6.375,
 );
+const harborRefiBook = conventional30Book(harborRefiRows);
+assert.deepEqual(
+  harborRefiBook.map((row) => [row.rate, row.pts]),
+  [
+    [6.25, 0.5],
+    [6.375, -0.07],
+    [6.49, -0.043],
+  ],
+);
+assert.equal(lowestNoPointsFromBook(harborRefiBook)?.rate, 6.375);
+const harborLiveFixture = JSON.parse(
+  readFileSync(join(root, "scripts/fixtures/harbor-refi-conv30.json"), "utf8"),
+) as {
+  captured?: boolean;
+  rows?: { rate: number; pts?: number }[];
+  lead?: { rate: number; pts?: number } | null;
+};
+if (harborLiveFixture.captured) {
+  const liveBook = harborLiveFixture.rows ?? [];
+  assert.ok(liveBook.length > 0);
+  const liveLead = lowestNoPointsFromBook(liveBook);
+  assert.deepEqual(liveLead, harborLiveFixture.lead ?? liveLead);
+  assert.equal(liveLead?.rate, pickConventional30LowestNoPoints(
+    liveBook.map((row) => ({ rate: row.rate, pts: row.pts, loanTerm: 30, bbLoanType: "conventional" })),
+  )?.rate);
+  console.log("harbor-refi-conv30 live book", JSON.stringify(liveBook));
+  console.log("harbor-refi-conv30 live lead", JSON.stringify(liveLead));
+}
 assert.equal(
   pickConventional30LowestNoPoints(
     asProductRows([
@@ -482,6 +512,7 @@ assert.ok(route.includes('state: "CA"'));
 assert.ok(route.includes("[rateflow-quote]"));
 assert.ok(route.includes("pickConventional30LowestNoPoints"));
 assert.ok(route.includes("safeCouponRowsFromProducts"));
+assert.ok(route.includes("conventional30Book"));
 assert.ok(route.includes('client.loan_purpose === "purchase" ? { target_price: TARGET_PRICE }'));
 assert.ok(!route.includes("pickConventional30NearPar"));
 assert.ok(!route.includes("94115"));

@@ -1,0 +1,32 @@
+name: Harbor refinance coupon book
+on:
+  pull_request:
+    paths:
+      - "lib/rateflow/**"
+      - "app/api/rateflow-quote/**"
+      - "scripts/capture-harbor-refi-book.ts"
+      - "scripts/fixtures/harbor-refi-conv30.json"
+      - ".github/workflows/harbor-refi-book.yml"
+  workflow_dispatch: {}
+jobs:
+  book:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: npx --yes tsx scripts/capture-harbor-refi-book.ts
+        env:
+          BANKINGBRIDGE_API_KEY: ${{ secrets.BANKINGBRIDGE_API_KEY }}
+          BANKINGBRIDGE_RATEFLOW_ID: ${{ secrets.BANKINGBRIDGE_RATEFLOW_ID }}
+          BANKINGBRIDGE_LOID: ${{ secrets.BANKINGBRIDGE_LOID }}
+          BANKINGBRIDGE_BRAND_ID: ${{ secrets.BANKINGBRIDGE_BRAND_ID }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: harbor-refi-conv30
+          path: scripts/fixtures/harbor-refi-conv30.json
+          if-no-files-found: ignore
