@@ -21,6 +21,7 @@ import {
   nextDocInvite,
   remainderProposalWrites,
   valuesMatch,
+  wageNumberPathSettled,
 } from "./fileWrite";
 import {
   QUALIFYING_INCOME_FIELD,
@@ -41,7 +42,6 @@ import {
 import {
   STATED_AVAILABLE_ASSETS_FIELD,
   SUGGESTED_ASSETS_NOTE,
-  assetsSettled,
   availableAssetsConfirmCopy,
   availableAssetsExtractCopy,
   isLateWalkBankStatementAsk,
@@ -56,6 +56,7 @@ import {
   isPropertyTypeValue,
   parsePropertyType,
   propertyAddressSettled,
+  propertyTypeSettled,
   propertyTypeConfirmCopy,
   adoptReuseZip,
   rememberPriorZipOnNewAddress,
@@ -66,7 +67,6 @@ import {
   writePropertyZip,
 } from "./propertyType";
 import { parsePlaceAddress } from "@/lib/places/address";
-import { citizenshipSettled } from "./citizenship";
 import {
   STATED_TIME_ON_JOB_FIELD,
   SUGGESTED_TIME_ON_JOB_NOTE,
@@ -1504,16 +1504,25 @@ export function currentAskIdle(draft: FoxIntakeDraft) {
   return true;
 }
 
+/** Number on File, skipped type, SE/Other (no invented monthly), or skipped W-2 number path. */
+export function incomeNumberReady(draft: FoxIntakeDraft) {
+  if (factValue(draft, QUALIFYING_INCOME_FIELD)) return true;
+  const type = draft.incomeType.value;
+  if (!type) return Boolean(draft.incomeAsked);
+  if (type === "self-employed" || type === "other") return true;
+  if (type === "w2" || type === "both") return wageNumberPathSettled(draft);
+  return Boolean(draft.incomeAsked);
+}
+
 export function canLooksRight(draft: FoxIntakeDraft) {
-  if (!draft.incomeType.value && !draft.incomeAsked) return false;
+  if (!incomeNumberReady(draft)) return false;
   return (
     sketchAssembled(draft) &&
     timelineFilled(draft) &&
     currentAskIdle(draft) &&
     !historyGapNeeded(draft) &&
-    propertyAddressSettled(draft) &&
-    citizenshipSettled(draft) &&
-    assetsSettled(draft)
+    propertyTypeSettled(draft) &&
+    propertyAddressSettled(draft)
   );
 }
 
@@ -1618,6 +1627,9 @@ export function requiredLineValue(
       const shown = displayFactValue(rental.field, rental.value);
       const bits = [label, shown].filter(Boolean);
       return { value: bits.join(" · "), filled: true };
+    }
+    if (!label && draft.incomeAsked) {
+      return { value: "Skip", filled: true };
     }
     return { value: label || MISSING_LINE, filled: Boolean(label) };
   }

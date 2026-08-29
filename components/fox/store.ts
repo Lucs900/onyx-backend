@@ -1435,8 +1435,13 @@ export function markMissingAsked(key: string) {
 }
 
 export function skipDocuments() {
+  if (current.workspaceFlow && nextDocInvite(current)) {
+    return commit(
+      restripeGatheringOrReady(skipCurrentInvite({ ...current, docsHeld: false })),
+    );
+  }
   if (current.workspaceFlow && !current.sampleAccepted) {
-    return commit(skipCurrentInvite({ ...current, docsHeld: false }));
+    return current;
   }
   const prepared =
     current.sampleAccepted ||
@@ -2045,11 +2050,7 @@ function applyCaptureBody(capture: Capture) {
         ...applyLooksRightMotion(current),
         correcting: null,
       });
-      const nextPrompt = workspacePrompt(current);
-      if (nextPrompt === "done" || nextPrompt === "housing" || nextPrompt === "debts") {
-        return confirmDraft();
-      }
-      return current;
+      return confirmDraft();
     }
     return confirmDraft();
   }

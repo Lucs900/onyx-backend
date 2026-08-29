@@ -101,7 +101,6 @@ import {
   isOtherPropertyMortgageExtract,
   maybeProposeOtherReoFileNet,
   otherReoFileNetNeedsStatement,
-  otherReoSettled,
   proposeExtractedOtherPropertyPayment,
   proposeExtractedOtherReo,
 } from "./otherReo";
@@ -1778,9 +1777,6 @@ export function shortListSpeak(draft: FoxIntakeDraft): string {
     labels.push(draft.statedOtherReo === "yes" ? OTHER_REO_MORTGAGE_STATEMENTS.replace(/\.$/, "") : "mortgage statement");
     if (draft.cashOut) labels.push("bank statement");
   }
-  if (draft.statedOtherReo === "yes" && purchaseLikeFile(draft)) {
-    labels.push(OTHER_REO_MORTGAGE_STATEMENTS.replace(/\.$/, ""));
-  }
   return labelListCopy(labels);
 }
 
@@ -1818,6 +1814,7 @@ export function layer2Plan(draft: FoxIntakeDraft): StillUsefulItem[] {
   const skipped = new Set(draft.skippedStillUseful ?? []);
   const items = ids
     .filter((id) => !skipped.has(id))
+    .filter((id) => !(id === "mortgage_statement" && purchaseLikeFile(draft)))
     .map((id) => {
     if (id === "mortgage_statement" && draft.statedOtherReo === "yes") {
       return layer2Item(id, OTHER_REO_MORTGAGE_STATEMENTS, OTHER_REO_MORTGAGE_STATEMENTS);
@@ -2114,21 +2111,16 @@ export function thisBorrowerPrimaryPackageDone(draft: FoxIntakeDraft) {
   return primaryInviteSequence(draft).every((kind) => inviteSatisfied(draft, kind));
 }
 
-function b1RemainderOutstanding(draft: FoxIntakeDraft): boolean {
-  return remainderInviteSequence(draft).some((kind) => !inviteSatisfied(draft, kind));
-}
-
 /**
  * Household / coborrower only after Looks right — never after a mid-docs Skip.
  * Skip on paystub / W-2 / tax return stays on Borrower 1.
+ * Prior-year return sits on Still useful — not a gate.
  */
 export function readyForHouseholdAsk(draft: FoxIntakeDraft): boolean {
   if (!draft.path || !draft.productIntent) return false;
   if (!draft.occupancyChoice.value && !draft.occupancyAsked) return false;
   if (!draft.incomeType.value && !draft.incomeAsked) return false;
-  if (!otherReoSettled(draft)) return false;
   if (!thisBorrowerPrimaryPackageDone(draft)) return false;
-  if (b1RemainderOutstanding(draft)) return false;
   return Boolean(draft.sampleAccepted);
 }
 
@@ -2153,14 +2145,42 @@ export function offeringDocStart(draft: FoxIntakeDraft) {
   );
 }
 
+/** Box 1 / 12 first, then paystub monthly after they confirm frequency. */
+const WAGE_NUMBER_INVITES: DocInviteKind[] = ["w2", "paystub"];
+
+/** Paystub + W-2 received or skipped. Box 1 / stub monthly can land after this. */
+export function wageNumberPathSettled(draft: FoxIntakeDraft) {
+  return inviteSatisfied(draft, "paystub") && inviteSatisfied(draft, "w2");
+}
+
+/** After Looks right: W-2 = ID, latest paystub, W-2. SE = ID, tax return. */
+function afterLooksRightInvites(draft: FoxIntakeDraft): DocInviteKind[] {
+  const type = draft.incomeType.value;
+  const kinds: DocInviteKind[] = [...coborrowerInviteSequence(draft)];
+  if (!inviteSatisfied(draft, "government_id")) kinds.push("government_id");
+  if (type === "w2" || type === "both") {
+    if (!inviteSatisfied(draft, "paystub")) kinds.push("paystub");
+    if (!inviteSatisfied(draft, "w2")) kinds.push("w2");
+  }
+  if (type === "self-employed" || type === "other" || type === "both") {
+    if (!inviteSatisfied(draft, "tax_return")) kinds.push("tax_return");
+  }
+  return kinds;
+}
+
 export function nextDocInvite(draft: FoxIntakeDraft): DocInviteKind | null {
   if (!draft.incomeType.value && !draft.incomeAsked) return null;
-  if (!borrowerNameSettled(draft)) return null;
-  if (!otherReoSettled(draft)) return null;
   if (draft.pendingProposal || draft.pendingConflict) return null;
-  // Looks right closes Borrower 1 invites. Borrower 2’s ID can still open after Yes.
-  const kinds = draft.sampleAccepted ? coborrowerInviteSequence(draft) : inviteSequence(draft);
-  for (const kind of kinds) {
+  const type = draft.incomeType.value;
+  if (!draft.sampleAccepted) {
+    if (type === "w2" || type === "both") {
+      for (const kind of WAGE_NUMBER_INVITES) {
+        if (!inviteSatisfied(draft, kind)) return kind;
+      }
+    }
+    return null;
+  }
+  for (const kind of afterLooksRightInvites(draft)) {
     if (!inviteSatisfied(draft, kind)) return kind;
   }
   return null;

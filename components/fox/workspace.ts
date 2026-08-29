@@ -105,6 +105,7 @@ import {
 import {
   SUGGESTED_NOTE,
   canLooksRight,
+  incomeNumberReady,
   timelineFilled,
   sketchAssembled,
   completenessExplainCopy,
@@ -413,7 +414,6 @@ import {
   otherReoConfirmActions,
   otherReoConfirmCopy,
   otherReoLabel,
-  otherReoSettled,
   parseOtherReo,
   proposeStatedOtherReo,
   skipOtherReo,
@@ -1275,9 +1275,11 @@ function documentsAskText(draft: FoxIntakeDraft): string {
     return coborrowerIncomeInviteCopy(invite, draft);
   }
   if (invite) return DOC_INVITE_COPY[invite];
-  const useful = stillUsefulAskCopy(draft);
-  if (useful) return useful;
-  return docsRequestForIncome(draft.incomeType.value).text;
+  if (draft.sampleAccepted) {
+    const useful = stillUsefulAskCopy(draft);
+    if (useful) return useful;
+  }
+  return DOC_INVITE_COPY.government_id;
 }
 
 export const DESK_RELATIONSHIP_LINE =
@@ -2366,20 +2368,7 @@ export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
   }
   if (draft.correcting === "path-switch") return "path-switch";
   if (draft.correcting === "correct") return "correct";
-  if (draft.correcting === "credit") return "credit";
-  if (draft.correcting === "term" && (draft.termAsked || draft.termYears != null)) {
-    return "term";
-  }
-  if (draft.correcting === "income" && draft.incomeType.value) {
-    return "income";
-  }
-  if (draft.correcting === "borrower-name" && governmentIdOutstanding(draft)) {
-    // Typed name is illegal while government ID is still the next document.
-  } else if (draft.correcting === "coborrower-name" && coborrowerIdOutstanding(draft)) {
-    // Typed coborrower name is illegal while their ID is still the next document.
-  } else if (draft.correcting) {
-    return draft.correcting;
-  }
+  if (draft.correcting) return draft.correcting;
   if (draft.resumeAfterEdit) {
     if (
       draft.resumeAfterEdit === "declaration-timing" &&
@@ -2440,8 +2429,20 @@ export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
   if (propertyZipAskNeeded(draft)) return "property-zip";
   if (!incomeSettled(draft)) return "income";
   if (needsDeclarationTiming(draft)) return "declaration-timing";
-  if (!otherReoSettled(draft)) return "other-reo";
-  if (!borrowerNameSettled(draft)) return "borrower-name";
+  if (!draft.sampleAccepted && incomeNumberReady(draft) && canLooksRight(draft)) {
+    return "review";
+  }
+  if (
+    !draft.sampleAccepted &&
+    (draft.incomeType.value === "w2" || draft.incomeType.value === "both") &&
+    nextDocInvite(draft)
+  ) {
+    return "documents";
+  }
+  if (draft.sampleAccepted && (draft.motion === "in_queue" || draft.motion === "escalated")) {
+    return "done";
+  }
+  if (draft.sampleAccepted && !borrowerNameSettled(draft)) return "borrower-name";
   if (nextDocInvite(draft) && !thisBorrowerPrimaryPackageDone(draft)) return "documents";
   if (!draft.sampleAccepted && draft.awaitingYearsInBusiness) return "documents";
   if (nextDocInvite(draft) && !householdSettled(draft)) return "documents";
@@ -2747,9 +2748,10 @@ function workspaceAskCopy(
     if (offeringDocStart(draft) && draft.docsHeld) {
       return holdDocsAsk();
     }
-    if (offeringDocStart(draft)) {
+    if (offeringDocStart(draft) && !draft.sampleAccepted) {
+      const invite = nextDocInvite(draft);
       return {
-        ...sketchAndStartDocsCopy(draft),
+        text: invite ? DOC_INVITE_COPY[invite] : documentsAskText(draft),
         actions: startDocsActions(),
       };
     }
@@ -3683,7 +3685,7 @@ export function workspaceUpdateCopy(capture: Capture, draft: FoxIntakeDraft) {
     const label = INCOME_BUBBLES.find((item) => item.value === capture.value)?.label;
     return label ? `Updated income to ${label}.` : "Updated income.";
   }
-  if (capture.field === "skip-income") return "Updated. Income left blank.";
+  if (capture.field === "skip-income") return "Updated. Income: Skip.";
   if (capture.field === "skip-monthly-debts") return "Updated. Monthly debts left blank.";
   if (capture.field === "propose-monthly-debts" || capture.field === "include-mortgage-debts") {
     return "Updated.";

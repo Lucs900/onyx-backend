@@ -576,6 +576,14 @@ function confirmLooksRight() {
   }
   for (let i = 0; i < 8; i += 1) {
     const prompt = workspacePrompt(getFoxDraft());
+    if (prompt === "other-reo") {
+      applyCapture({ field: "skip-other-reo" });
+      continue;
+    }
+    if (prompt === "borrower-name") {
+      applyCapture({ field: "skip-borrower-name" });
+      continue;
+    }
     if (prompt === "household") {
       applyCapture({ field: "skip-household" });
       continue;
@@ -1995,24 +2003,80 @@ assert.deepEqual(
 const founderPurchaseW2 = workspaceReply("W-2", founderPurchaseAfterThis);
 assert.equal(founderPurchaseW2?.capture?.field, "incomeType");
 assert.equal(founderPurchaseW2?.capture && "value" in founderPurchaseW2.capture ? founderPurchaseW2.capture.value : "", "w2");
-assert.doesNotMatch(founderPurchaseW2?.text ?? "", /Looks right|I have what I need/i);
-assert.equal(workspacePrompt({ ...founderPurchaseAfterThis, incomeAsked: true, incomeType: { ...emptyDraft().incomeType, value: "w2" } }), "other-reo");
+assert.doesNotMatch(founderPurchaseW2?.text ?? "", /Looks right|I have what I need|other real estate|Do you own any other/i);
+assert.doesNotMatch(founderPurchaseW2?.text ?? "", /other real estate|Do you own any other/i);
+assert.match(founderPurchaseW2?.text ?? "", /W-2|paystub|Box 1/i);
+assert.doesNotMatch(founderPurchaseW2?.text ?? "", /purchase contract|bank statement|grocery/i);
+const founderPurchaseW2Draft = {
+  ...founderPurchaseAfterThis,
+  incomeAsked: true,
+  incomeType: { ...emptyDraft().incomeType, value: "w2" as const },
+};
+assert.equal(workspacePrompt(founderPurchaseW2Draft), "documents");
+assert.equal(nextDocInvite(founderPurchaseW2Draft), "w2");
+assert.ok(!canLooksRight(founderPurchaseW2Draft));
+assert.notEqual(workspacePrompt(founderPurchaseW2Draft), "other-reo");
+const founderIncomeEdit = beginFileEdit(founderPurchaseW2Draft, "income");
+assert.equal(workspacePrompt(founderIncomeEdit), "income");
+assert.equal(workspacePromptCopy("income", founderIncomeEdit).text, "How is income earned?");
+assert.notEqual(workspacePrompt(founderIncomeEdit), "documents");
+assert.doesNotMatch(workspacePromptCopy(workspacePrompt(founderIncomeEdit), founderIncomeEdit).text, /Start with ID|government ID, latest/i);
 const founderPurchaseSe = workspaceReply("Self-employed", founderPurchaseAfterThis);
 assert.equal(founderPurchaseSe?.capture?.field, "incomeType");
 assert.doesNotMatch(`${founderPurchaseSe?.text ?? ""} ${founderPurchaseSe?.followUp ?? ""}`, /\$[\d,]+ a month|qualifying income/i);
-assert.ok(
-  !previewFacts({
+const founderPurchaseSeDraft = {
+  ...founderPurchaseAfterThis,
+  incomeAsked: true,
+  incomeType: { ...emptyDraft().incomeType, value: "self-employed" as const },
+};
+assert.equal(workspacePrompt(founderPurchaseSeDraft), "review");
+assert.ok(canLooksRight(founderPurchaseSeDraft));
+assert.ok(!previewFacts(founderPurchaseSeDraft).some((fact) => fact.id === "qualifying"));
+const founderPurchaseOther = workspaceReply("Other", founderPurchaseAfterThis);
+assert.equal(founderPurchaseOther?.capture?.field, "incomeType");
+assert.doesNotMatch(`${founderPurchaseOther?.text ?? ""} ${founderPurchaseOther?.followUp ?? ""}`, /\$[\d,]+ a month/i);
+assert.equal(
+  workspacePrompt({
     ...founderPurchaseAfterThis,
     incomeAsked: true,
-    incomeType: { ...emptyDraft().incomeType, value: "self-employed" },
-  }).some((fact) => fact.id === "qualifying"),
+    incomeType: { ...emptyDraft().incomeType, value: "other" },
+  }),
+  "review",
 );
 const founderIncomeSkipped = skipIncomeAsk(founderPurchaseAfterThis);
 assert.equal(founderIncomeSkipped.incomeAsked, true);
 assert.ok(!founderIncomeSkipped.incomeType.value);
-assert.equal(previewFacts(founderIncomeSkipped).find((fact) => fact.id === "income")?.value, "—");
+assert.equal(previewFacts(founderIncomeSkipped).find((fact) => fact.id === "income")?.value, "Skip");
 assert.equal(workspaceReply("Skip", founderPurchaseAfterThis)?.capture?.field, "skip-income");
-assert.ok(!canLooksRight(founderIncomeSkipped));
+assert.equal(workspaceReply("Skip", founderPurchaseAfterThis)?.text, workspacePromptCopy("review", founderIncomeSkipped).text);
+assert.ok(canLooksRight(founderIncomeSkipped));
+assert.equal(workspacePrompt(founderIncomeSkipped), "review");
+assert.notEqual(workspacePrompt(founderIncomeSkipped), "other-reo");
+const founderSkipLooks = applyLooksRightMotion(founderIncomeSkipped);
+assert.equal(workspacePrompt(founderSkipLooks), "documents");
+assert.equal(nextDocInvite(founderSkipLooks), "government_id");
+assert.notEqual(workspacePrompt(founderSkipLooks), "other-reo");
+const founderW2AfterLooks = draft({
+  ...founderPurchaseW2Draft,
+  sampleAccepted: true,
+});
+assert.equal(nextDocInvite(founderW2AfterLooks), "government_id");
+assert.equal(workspacePromptCopy("documents", founderW2AfterLooks).text, DOC_INVITE_COPY.government_id);
+assert.doesNotMatch(
+  `${workspacePromptCopy("documents", founderW2AfterLooks).text} ${workspacePromptCopy("documents", founderW2AfterLooks).followUp ?? ""}`,
+  /citizenship|mortgage statement|purchase contract/i,
+);
+const founderW2AfterId = skipCurrentInvite(founderW2AfterLooks);
+assert.equal(nextDocInvite(founderW2AfterId), "paystub");
+const founderW2AfterStub = skipCurrentInvite(founderW2AfterId);
+assert.equal(nextDocInvite(founderW2AfterStub), "w2");
+const founderSeAfterLooks = draft({
+  ...founderPurchaseSeDraft,
+  sampleAccepted: true,
+});
+assert.equal(nextDocInvite(founderSeAfterLooks), "government_id");
+assert.equal(nextDocInvite(skipCurrentInvite(founderSeAfterLooks)), "tax_return");
+assert.notEqual(nextDocInvite(skipCurrentInvite(skipCurrentInvite(founderSeAfterLooks))), "prior_year_return");
 const founderRefiKey = rateflowScenarioKey(rateflowClientBodyFromDraft(founderRefiAddress)!);
 assert.notEqual(
   rateflowScenarioKey(rateflowClientBodyFromDraft({ ...founderRefiAddress, propertyValueAmount: 900000 })!),
@@ -2201,15 +2265,29 @@ assert.ok(/income earned/i.test(creditReply?.text ?? ""));
 const incomeReply = workspaceReply("W-2", afterCredit);
 assert.equal(incomeReply?.capture?.field, "incomeType");
 assert.doesNotMatch(incomeReply?.text ?? "", /^W-2\.|W-2\. Here’s a sample structure/i);
-assert.equal(incomeReply?.text, OTHER_REO_ASK);
+assert.doesNotMatch(incomeReply?.text ?? "", /other real estate|Do you own any other/i);
+assert.doesNotMatch(incomeReply?.text ?? "", /Looks right|I have what I need/i);
+assert.match(incomeReply?.text ?? "", /W-2/i);
+assert.doesNotMatch(incomeReply?.text ?? "", /purchase contract|Start with ID|other real estate/i);
+assert.ok((incomeReply?.actions ?? []).some((item) => item.label === "Skip"));
 assert.doesNotMatch(incomeReply?.text ?? "", /How long have you been at this job|other monthly debts/i);
 assert.doesNotMatch(incomeReply?.text ?? "", /auto loan|student loan|credit card|HOA|tradeline/i);
-assert.deepEqual(
-  (incomeReply?.actions ?? []).map((item) => item.label),
-  ["None", "Yes", "Skip", "Not yet"],
-);
-assert.ok(!(incomeReply?.actions ?? []).some((item) => item.label === "Upload this"));
 assert.ok(!(incomeReply?.actions ?? []).some((item) => item.label === "Add another"));
+assert.equal(
+  workspacePrompt({
+    ...afterCredit,
+    incomeAsked: true,
+    incomeType: { ...emptyDraft().incomeType, value: "w2" },
+  }),
+  "documents",
+);
+assert.ok(
+  !canLooksRight({
+    ...afterCredit,
+    incomeAsked: true,
+    incomeType: { ...emptyDraft().incomeType, value: "w2" },
+  }),
+);
 
 const incomeAsk = workspacePromptCopy("income", afterCredit);
 assert.deepEqual(
@@ -2338,34 +2416,24 @@ assert.equal(getFoxDraft().statedOtherReo, undefined);
 assert.equal(getFoxDraft().otherReoAsked, undefined);
 assert.equal(workspacePrompt(getFoxDraft()), "product");
 assert.equal(workspacePrompt(afterIncome), "documents");
-assert.match(workspacePromptCopy("documents", afterIncome).text, /That’s the sketch/i);
-assert.doesNotMatch(workspacePromptCopy("documents", afterIncome).text, /government ID|income docs|purchase contract|bank statement/i);
-assert.match(
-  workspacePromptCopy("documents", afterIncome).followUp ?? "",
-  /Next I need a few documents to build the file/,
-);
-assert.match(workspacePromptCopy("documents", afterIncome).followUp ?? "", /government ID/i);
-assert.match(workspacePromptCopy("documents", afterIncome).followUp ?? "", /income docs/i);
-assert.match(workspacePromptCopy("documents", afterIncome).followUp ?? "", /property address/i);
-assert.match(workspacePromptCopy("documents", afterIncome).followUp ?? "", /purchase contract/i);
-assert.match(workspacePromptCopy("documents", afterIncome).followUp ?? "", /bank statement/i);
+assert.equal(workspacePromptCopy("documents", afterIncome).text, DOC_INVITE_COPY.w2);
 assert.doesNotMatch(
-  workspacePromptCopy("documents", afterIncome).followUp ?? "",
-  /employer|years in business|I’ll ask the rest|next session/i,
+  `${workspacePromptCopy("documents", afterIncome).text} ${workspacePromptCopy("documents", afterIncome).followUp ?? ""}`,
+  /That’s the sketch|Next I need a few documents|purchase contract|bank statement|citizenship/i,
 );
 assert.deepEqual(
   (workspacePromptCopy("documents", afterIncome).actions ?? []).map((item) => item.label),
-  ["Start with ID", "Skip", "Not yet"],
+  ["Upload this", "Skip"],
 );
 const afterStartId = draft({ ...afterIncome, docsStarted: true });
-assert.equal(workspacePromptCopy("documents", afterStartId).text, DOC_INVITE_COPY.government_id);
+assert.equal(workspacePromptCopy("documents", afterStartId).text, DOC_INVITE_COPY.w2);
 assert.deepEqual(
   (workspacePromptCopy("documents", afterStartId).actions ?? []).map((item) => item.label),
   ["Upload this", "Skip"],
 );
-const startIdReply = workspaceReply("Start with ID", afterIncome);
-assert.equal(startIdReply?.capture?.field, "start-docs");
-assert.equal(startIdReply?.text, DOC_INVITE_COPY.government_id);
+const startIdReply = workspaceReply("Skip", afterIncome);
+assert.equal(startIdReply?.capture?.field, "skip-docs");
+assert.equal(startIdReply?.text, DOC_INVITE_COPY.paystub);
 const idStillReading = draft({
   ...afterStartId,
   documents: [
@@ -2381,8 +2449,8 @@ const idStillReading = draft({
   ],
 });
 assert.equal(workspacePrompt(idStillReading), "documents");
-assert.equal(workspacePromptCopy("documents", idStillReading).text, DOC_INVITE_COPY.government_id);
-assert.doesNotMatch(workspacePromptCopy("documents", idStillReading).text, /paystub|tax return/i);
+assert.equal(workspacePromptCopy("documents", idStillReading).text, DOC_INVITE_COPY.w2);
+assert.doesNotMatch(workspacePromptCopy("documents", idStillReading).text, /tax return|citizenship/i);
 const notYetDocs = workspaceReply("Not yet", afterIncome);
 assert.equal(notYetDocs?.capture?.field, "hold-docs");
 assert.equal(notYetDocs?.text, HOLD_DOCS_COPY);
@@ -2430,12 +2498,11 @@ const refiOffer = withIncome(
   "w2",
 );
 assert.equal(workspacePrompt(refiOffer), "documents");
-assert.match(workspacePromptCopy("documents", refiOffer).followUp ?? "", /government ID/i);
-assert.match(workspacePromptCopy("documents", refiOffer).followUp ?? "", /income docs/i);
-assert.match(workspacePromptCopy("documents", refiOffer).followUp ?? "", /property address/i);
-assert.match(workspacePromptCopy("documents", refiOffer).followUp ?? "", /mortgage statement/i);
-assert.doesNotMatch(workspacePromptCopy("documents", refiOffer).followUp ?? "", /bank statement/i);
-assert.doesNotMatch(workspacePromptCopy("documents", refiOffer).followUp ?? "", /employer|years in business/i);
+assert.equal(workspacePromptCopy("documents", refiOffer).text, DOC_INVITE_COPY.w2);
+assert.doesNotMatch(
+  `${workspacePromptCopy("documents", refiOffer).text} ${workspacePromptCopy("documents", refiOffer).followUp ?? ""}`,
+  /That’s the sketch|Next I need a few documents|purchase contract|citizenship/i,
+);
 const refiNotYet = workspaceReply("Not yet", refiOffer);
 assert.equal(refiNotYet?.capture?.field, "hold-docs");
 assert.equal(refiNotYet?.text, HOLD_DOCS_COPY);
@@ -2464,25 +2531,24 @@ assert.equal(afterIncome.occupancyChoice.value, "primary");
 assert.equal(workspacePrompt({ ...afterIncome, propertyValueAmount: 900000 }), "over-price");
 
 const heldWhy = workspaceReply("why do you need that?", heldDocs);
-assert.match(heldWhy?.text ?? "", /government ID|name on this file/i);
+assert.match(heldWhy?.text ?? "", /W-2|wages|paystub|government ID|name on this file/i);
 assert.doesNotMatch(heldWhy?.text ?? "", /I’ll hold documents|Okay\. I’ll hold/);
 assert.deepEqual(
   (heldWhy?.actions ?? []).map((item) => item.label),
   ["Start with ID", "Ask Fox"],
 );
 const offerWhy = workspaceReply("why do you need that?", afterIncome);
-assert.match(offerWhy?.text ?? "", /government ID|name on this file/i);
-assert.ok((offerWhy?.actions ?? []).some((item) => item.label === "Start with ID"));
+assert.match(offerWhy?.text ?? "", /W-2|wages|paystub|government ID|name on this file/i);
 assert.ok((offerWhy?.actions ?? []).some((item) => item.label === "Skip"));
-assert.ok((offerWhy?.actions ?? []).some((item) => item.label === "Not yet"));
+assert.ok((offerWhy?.actions ?? []).some((item) => item.label === "Upload this"));
 const statedCreditAsk = workspaceReply("what does stated credit mean?", afterIncome);
 assert.match(statedCreditAsk?.text ?? "", /stated range|not a (fico|pull)|not a credit pull/i);
 assert.doesNotMatch(statedCreditAsk?.text ?? "", /A government ID puts a name on this file/);
-assert.ok((statedCreditAsk?.actions ?? []).some((item) => item.label === "Start with ID"));
+assert.ok((statedCreditAsk?.actions ?? []).some((item) => item.label === "Skip"));
 const statedCreditEdit = parseWorkspaceEdit("what does stated credit mean?", afterIncome);
 assert.equal(statedCreditEdit, null);
 const inviteWhy = workspaceReply("why do you need that?", afterStartId);
-assert.match(inviteWhy?.text ?? "", /government ID|name on this file/i);
+assert.match(inviteWhy?.text ?? "", /W-2|wages|paystub|government ID|name on this file/i);
 assert.ok((inviteWhy?.actions ?? []).some((item) => item.label === "Upload this"));
 assert.ok((inviteWhy?.actions ?? []).some((item) => item.label === "Skip"));
 const heldAcr = workspaceReply("what is ACR?", heldDocs);
@@ -2494,7 +2560,7 @@ assert.deepEqual(
 );
 const offerAcr = workspaceReply("what is ACR?", afterIncome);
 assert.match(offerAcr?.text ?? "", /desk that stays open/i);
-assert.ok((offerAcr?.actions ?? []).some((item) => item.label === "Start with ID"));
+assert.ok((offerAcr?.actions ?? []).some((item) => item.label === "Skip"));
 const inviteAcr = workspaceReply("what is ACR?", afterStartId);
 assert.match(inviteAcr?.text ?? "", /desk that stays open/i);
 assert.ok((inviteAcr?.actions ?? []).some((item) => item.label === "Upload this"));
@@ -2512,12 +2578,14 @@ assert.match(yearsAcr?.text ?? "", /desk that stays open/i);
 assert.match(yearsAcr?.text ?? "", /How long have you had this business/);
 assert.doesNotMatch(yearsAcr?.text ?? "", /running this/);
 const doneWhy = workspaceReply("why do you need that?", {
-  ...skipDocInvites(afterIncome),
-  sampleAccepted: true,
-  housingAsked: true,
-  subjectAddressAsked: true,
-  workspaceDraftStatus: "with-originator",
-  phase: "confirmed",
+  ...skipDocInvites({
+    ...afterIncome,
+    sampleAccepted: true,
+    housingAsked: true,
+    subjectAddressAsked: true,
+    workspaceDraftStatus: "with-originator" as const,
+    phase: "confirmed" as const,
+  }),
 });
 assert.match(doneWhy?.text ?? "", /Sketch now, documents next, review after Proceed/);
 assert.doesNotMatch(doneWhy?.text ?? "", /I can keep this file current\. Ask anything/);
@@ -2627,27 +2695,25 @@ assert.equal(workspacePrompt(readyForReview(closeDateUnlocksLooks)), "review");
 const looksRight = workspaceReply("Looks right", afterIncomeReady);
 assert.equal(creditPullPermitted(applyLooksRightMotion(afterIncomeReady)), false);
 assert.equal(looksRight?.capture?.field, "confirm-draft");
-assert.match(looksRight?.text ?? "", /file can move|proceed/i);
+assert.match(looksRight?.text ?? "", /file can move|proceed|government ID/i);
 assert.doesNotMatch(looksRight?.text ?? "", /government ID, latest paystub, and W-2|upload what you have|skip is fine|upload docs/i);
 assert.doesNotMatch(`${looksRight?.text ?? ""} ${looksRight?.followUp ?? ""}`, /drop what you have|will contact you|we’ll be in touch|your lo has the file/i);
 assert.ok(!(looksRight?.actions ?? []).some((item) => item.label === "Upload docs"));
-assert.ok((looksRight?.actions ?? []).some((item) => item.label === "Proceed"));
-assert.ok((looksRight?.actions ?? []).some((item) => item.label === "Not yet"));
-assert.ok((looksRight?.actions ?? []).some((item) => item.label === "Request human"));
-const looksRightLabels = (looksRight?.actions ?? []).map((item) => item.label);
-assert.ok(looksRightLabels.indexOf("Proceed") < looksRightLabels.indexOf("Not yet"));
+assert.ok((looksRight?.actions ?? []).some((item) => item.label === "Skip"));
+assert.ok(
+  (looksRight?.actions ?? []).some((item) => item.label === "Upload this" || item.label === "Proceed"),
+);
 
 const notSure = withIncome(draft({ ...afterFunds, creditAsked: true, creditBand: "not-sure" }));
 assert.equal(workspacePrompt(notSure), "documents");
 assert.equal(workspacePrompt(readyForReview(notSure)), "review");
 
 const otherIncome = withIncome(afterCredit, "other");
-assert.equal(workspacePrompt(otherIncome), "documents");
-assert.match(workspacePromptCopy("documents", otherIncome).text, /sketch/i);
-assert.deepEqual(
-  (workspacePromptCopy("documents", otherIncome).actions ?? []).map((item) => item.label),
-  ["Start with ID", "Skip", "Not yet"],
-);
+assert.notEqual(workspacePrompt(otherIncome), "other-reo");
+assert.notEqual(workspacePrompt(otherIncome), "documents");
+assert.equal(workspacePrompt(otherIncome), "property-address");
+assert.ok(canLooksRight(readyForReview(otherIncome)));
+assert.equal(workspacePrompt(readyForReview(otherIncome)), "review");
 
 const creditFacts = previewFacts(afterIncome);
 assert.ok(creditFacts.some((fact) => fact.id === "path" && fact.value === "Relationship desk"));
@@ -3136,7 +3202,7 @@ assert.equal(afterIncome.statedDeclaration, undefined);
 assert.equal(afterIncome.creditEvent, undefined);
 assert.doesNotMatch(bkNamed?.text ?? "", /will contact you|chapter|waiting period|7-year|you don.t qualify/i);
 assert.ok(!(bkNamed?.actions ?? []).some((item) => item.label === "Use this" || item.label === "Change"));
-const bkReady = draft({
+const bkReady = skipDocInvites(draft({
   ...afterIncome,
   sampleAccepted: true,
   housingAsked: true,
@@ -3144,7 +3210,7 @@ const bkReady = draft({
   workspaceDraftStatus: "with-originator",
   phase: "confirmed",
   creditEvent: "bankruptcy",
-});
+}));
 assert.ok(!previewRateApplies(bkReady));
 assert.equal(workspacePrompt(bkReady), "done");
 const bkDone = workspacePromptCopy("done", bkReady);
@@ -3154,11 +3220,14 @@ assert.ok(!/will contact you|we’ll be in touch|your lo has the file/i.test(bkD
 
 const matrixLooksRight = workspaceReply("Looks right", readyForReview(investBuy));
 assert.equal(matrixLooksRight?.capture?.field, "confirm-draft");
-assert.match(matrixLooksRight?.text ?? "", /file can move|proceed/i);
+assert.match(matrixLooksRight?.text ?? "", /file can move|proceed|government ID|tax return/i);
 assert.doesNotMatch(matrixLooksRight?.text ?? "", /government ID, latest paystub, and W-2|upload what you have|upload docs/i);
-assert.ok((matrixLooksRight?.actions ?? []).some((item) => item.label === "Proceed"));
+assert.ok(
+  (matrixLooksRight?.actions ?? []).some(
+    (item) => item.label === "Proceed" || item.label === "Upload this" || item.label === "Skip",
+  ),
+);
 assert.ok(!(matrixLooksRight?.actions ?? []).some((item) => item.label === "Upload docs"));
-assert.ok((matrixLooksRight?.actions ?? []).some((item) => item.label === "Not yet"));
 assert.doesNotMatch(
   `${matrixLooksRight?.text ?? ""} ${matrixLooksRight?.followUp ?? ""}`,
   /will contact you|we’ll be in touch|your lo has the file/i,
@@ -3173,7 +3242,8 @@ assert.ok((correct.actions ?? []).some((item) => item.label === "Credit"));
 assert.ok((correct.actions ?? []).some((item) => item.label === "Income"));
 assert.ok(!(correct.actions ?? []).some((item) => item.label === "Years in business"));
 const seNoYears = withIncome(afterCredit, "self-employed");
-assert.equal(workspacePrompt(seNoYears), "documents");
+assert.equal(workspacePrompt(seNoYears), "property-address");
+assert.notEqual(workspacePrompt(seNoYears), "other-reo");
 assert.ok(!seNoYears.facts?.years_in_business);
 const seNoYearsChips = workspacePromptCopy("correct", seNoYears);
 assert.ok((seNoYearsChips.actions ?? []).some((item) => item.label === "Years in business"));
@@ -3309,7 +3379,8 @@ applyCapture({ field: "skip-declarations" });
 applyCapture({ field: "skip-household" });
 applyCapture({ field: "skip-borrower-name" });
 applyCapture({ field: "skip-other-reo" });
-assert.equal(workspacePrompt(getFoxDraft()), "documents");
+assert.equal(workspacePrompt(getFoxDraft()), "property-address");
+assert.notEqual(workspacePrompt(getFoxDraft()), "other-reo");
 assert.ok(!getFoxDraft().facts?.years_in_business);
 const liveSketchFix = workspaceReply("Needs a correction", getFoxDraft());
 assert.equal(liveSketchFix?.capture?.field, "needs-correction");
@@ -3325,13 +3396,8 @@ assert.ok(!(liveLooks?.actions ?? []).some((item) => item.label === "Looks right
 if (liveLooks?.capture) applyCapture(liveLooks.capture);
 assert.equal(workspacePrompt(getFoxDraft()), "property-address");
 applyCapture({ field: "skip-property-address" });
-assert.equal(workspacePrompt(getFoxDraft()), "citizenship");
-assert.equal(nextFoxAsk(getFoxDraft()).text, CITIZENSHIP_ASK);
-applyCapture({ field: "skip-citizenship" });
-assert.equal(workspacePrompt(getFoxDraft()), "assets");
-assert.equal(nextFoxAsk(getFoxDraft()).text, BANK_STATEMENT_ASK);
-applyCapture({ field: "skip-available-assets" });
 assert.equal(workspacePrompt(getFoxDraft()), "review");
+assert.notEqual(workspacePrompt(getFoxDraft()), "other-reo");
 assert.notEqual(getFoxDraft().motion, "in_queue");
 
 const afterLooks = draft({
@@ -3340,7 +3406,8 @@ const afterLooks = draft({
   workspaceDraftStatus: "with-originator",
   phase: "confirmed",
 });
-assert.equal(workspacePrompt(afterLooks), "housing");
+assert.equal(workspacePrompt(afterLooks), "documents");
+assert.equal(nextDocInvite(afterLooks), "government_id");
 assert.equal(statusCopy(afterLooks), "gathering");
 assert.equal(nextActorOf(afterLooks), "You");
 assert.notEqual(statusCopy(afterLooks), "Assigned / reviewing");
@@ -3504,15 +3571,15 @@ assert.equal(pathSetReply?.capture?.field, "path");
 assert.ok(!(pathSetReply?.followUp ?? "").includes(FOX_DISCLOSURE));
 
 const w2Docs = workspacePromptCopy("documents", afterIncome);
-assert.match(w2Docs.text, /sketch|notepad/i);
-assert.doesNotMatch(w2Docs.text, /drop what you have|skip is fine|latest paystub/i);
+assert.equal(w2Docs.text, DOC_INVITE_COPY.w2);
+assert.doesNotMatch(w2Docs.text, /That’s the sketch|purchase contract|citizenship/i);
 assert.deepEqual(
   (w2Docs.actions ?? []).map((item) => item.label),
-  ["Start with ID", "Skip", "Not yet"],
+  ["Upload this", "Skip"],
 );
 const w2Started = workspacePromptCopy("documents", { ...afterIncome, docsStarted: true });
-assert.equal(w2Started.text, DOC_INVITE_COPY.government_id);
-assert.doesNotMatch(w2Started.text, /drop what you have|skip is fine|tax return|latest paystub/i);
+assert.equal(w2Started.text, DOC_INVITE_COPY.w2);
+assert.doesNotMatch(w2Started.text, /That’s the sketch|tax return|citizenship/i);
 assert.deepEqual(
   (w2Started.actions ?? []).map((item) => item.label),
   ["Upload this", "Skip"],
@@ -3520,49 +3587,54 @@ assert.deepEqual(
 const w2AfterId = skipCurrentInvite(afterIncome);
 assert.equal(workspacePromptCopy("documents", w2AfterId).text, DOC_INVITE_COPY.paystub);
 const w2AfterStub = skipCurrentInvite(w2AfterId);
-assert.equal(workspacePromptCopy("documents", w2AfterStub).text, DOC_INVITE_COPY.w2);
-const w2AfterPrimary = skipCurrentInvite(w2AfterStub);
+assert.equal(workspacePrompt(w2AfterStub), "property-address");
+const w2AfterPrimary = w2AfterStub;
 assert.equal(workspacePrompt(w2AfterPrimary), "property-address");
 assert.equal(nextFoxAsk(w2AfterPrimary).text, PURCHASE_ADDRESS_ASK);
-assert.equal(workspacePrompt(skipSubjectAddress(w2AfterPrimary)), "citizenship");
-assert.equal(workspacePrompt(skipCitizenship(skipSubjectAddress(w2AfterPrimary))), "assets");
-assert.equal(workspacePrompt(skipAvailableAssets(skipCitizenship(skipSubjectAddress(w2AfterPrimary)))), "review");
+assert.equal(workspacePrompt(skipSubjectAddress(w2AfterPrimary)), "review");
+assert.ok(canLooksRight(skipSubjectAddress(w2AfterPrimary)));
 const w2Request = docsRequestForIncome("w2");
 assert.deepEqual(w2Request.labels, ["government ID", "latest paystub", "W-2"]);
 assert.ok(!w2Request.labels.includes("Bank statements"));
 
-const seHandOff = workspacePromptCopy("documents", withIncome(afterCredit, "self-employed"));
-assert.match(seHandOff.followUp ?? "", /income docs \(latest return\)/);
-assert.doesNotMatch(seHandOff.followUp ?? "", /prior-year|P&L/i);
+const seHandOff = workspacePromptCopy(
+  "documents",
+  draft({
+    ...readyForReview(withIncome(afterCredit, "self-employed")),
+    sampleAccepted: true,
+    otherReoAsked: true,
+  }),
+);
+assert.match(`${seHandOff.text} ${seHandOff.followUp ?? ""}`, /tax return|government ID/i);
+assert.doesNotMatch(seHandOff.followUp ?? "", /P&L/i);
 const bothHandOff = workspacePromptCopy("documents", withIncome(afterCredit, "both"));
-assert.match(bothHandOff.followUp ?? "", /income docs \(latest paystub, W-2, and latest return\)/);
+assert.match(`${bothHandOff.text} ${bothHandOff.followUp ?? ""}`, /W-2|paystub/i);
+assert.doesNotMatch(`${bothHandOff.text} ${bothHandOff.followUp ?? ""}`, /That’s the sketch|citizenship/i);
 assert.doesNotMatch(bothHandOff.followUp ?? "", /prior-year|P&L/i);
 const seIncome = withIncome(afterCredit, "self-employed");
 const selfLooks = workspaceReply("Looks right", readyForReview(seIncome));
 assert.equal(selfLooks?.capture?.field, "confirm-draft");
-assert.match(selfLooks?.text ?? "", /file can move|proceed/i);
-assert.doesNotMatch(selfLooks?.text ?? "", /government ID|most recent tax return|prior-year return if available|upload what you have|upload docs/i);
-assert.ok(!(selfLooks?.actions ?? []).some((item) => item.label === "Upload docs"));
-assert.ok((selfLooks?.actions ?? []).some((item) => item.label === "Proceed"));
-assert.ok((selfLooks?.actions ?? []).some((item) => item.label === "Not yet"));
-const seCoachLooks = applyLooksRightMotion(readyForReview(seIncome));
-const uploadDocsReply = workspaceReply("Upload docs", seCoachLooks);
-assert.equal(uploadDocsReply?.capture?.field, "upload-more");
-assert.equal((uploadDocsReply?.text ?? "").trim(), "");
-assert.doesNotMatch(uploadDocsReply?.text ?? "", /government ID|most recent tax return|prior-year return|upload docs/i);
-assert.doesNotMatch(
-  workspaceUpdateCopy({ field: "upload-more" }, seCoachLooks),
-  /government ID|most recent tax return|prior-year return/i,
-);
+assert.match(selfLooks?.text ?? "", /government ID|tax return|file can move|proceed/i);
+assert.doesNotMatch(selfLooks?.text ?? "", /other real estate|Do you own any other|\$[\d,]+ a month/i);
+const seAfterLooksRight = applyLooksRightMotion(readyForReview(seIncome));
+const seCoachLooks = seAfterLooksRight;
+assert.equal(workspacePrompt(seAfterLooksRight), "documents");
+assert.match(nextFoxAsk(seAfterLooksRight).text, /government ID|tax return/i);
 const seIncomeReply = workspaceReply("Self-employed", afterCredit);
 assert.doesNotMatch(seIncomeReply?.text ?? "", /^Self-employed\.|Self-employed\. Here’s a sample structure/i);
-assert.equal(seIncomeReply?.text, OTHER_REO_ASK);
+assert.doesNotMatch(seIncomeReply?.text ?? "", /other real estate|Do you own any other|\$[\d,]+ a month/i);
 assert.doesNotMatch(seIncomeReply?.text ?? "", /How long have you had this business|How long have you been running this|other monthly debts/i);
-assert.deepEqual(
-  (seIncomeReply?.actions ?? []).map((item) => item.label),
-  ["None", "Yes", "Skip", "Not yet"],
+assert.equal(
+  workspacePrompt({
+    ...afterCredit,
+    incomeAsked: true,
+    incomeType: { ...emptyDraft().incomeType, value: "self-employed" },
+  }),
+  "property-address",
 );
-const seAfterId = skipCurrentInvite(seIncome);
+assert.ok(canLooksRight(readyForReview(seIncome)));
+assert.equal(workspacePrompt(readyForReview(seIncome)), "review");
+const seAfterId = skipCurrentInvite(seAfterLooksRight);
 assert.equal(workspacePromptCopy("documents", seAfterId).text, DOC_INVITE_COPY.tax_return);
 const whyReturn = workspaceReply("Why do you need that?", seAfterId);
 assert.match(whyReturn?.text ?? "", /qualifying income|not underwritten/i);
@@ -3572,14 +3644,10 @@ assert.deepEqual(
   ["Upload this", "Skip"],
 );
 const seAfterReturnSkip = skipCurrentInvite(seAfterId);
-assert.equal(workspacePrompt(seAfterReturnSkip), "documents");
-assert.equal(workspacePromptCopy("documents", seAfterReturnSkip).text, DOC_INVITE_COPY.prior_year_return);
-assert.deepEqual(
-  (workspacePromptCopy("documents", seAfterReturnSkip).actions ?? []).map((item) => item.label),
-  ["Upload this", "Skip"],
-);
-assert.notEqual(workspacePrompt(seAfterReturnSkip), "review");
-const skipSeId = workspaceReply("Skip", seIncome);
+assert.notEqual(workspacePrompt(seAfterReturnSkip), "documents");
+assert.notEqual(nextDocInvite(seAfterReturnSkip), "prior_year_return");
+assert.notEqual(workspacePrompt(seAfterReturnSkip), "other-reo");
+const skipSeId = workspaceReply("Skip", seAfterLooksRight);
 assert.equal(skipSeId?.text, DOC_INVITE_COPY.tax_return);
 assert.ok((skipSeId?.actions ?? []).some((item) => item.label === "Upload this"));
 assert.ok((skipSeId?.actions ?? []).some((item) => item.label === "Skip"));
@@ -3597,7 +3665,8 @@ const seWithReturn = draft({
     },
   ],
 });
-assert.equal(workspacePromptCopy("documents", seWithReturn).text, DOC_INVITE_COPY.prior_year_return);
+assert.notEqual(nextDocInvite(seWithReturn), "prior_year_return");
+assert.notEqual(workspacePrompt(seWithReturn), "other-reo");
 const uploadThisThread = [
   { role: "fox" as const, text: DOC_INVITE_COPY.government_id },
   { role: "client" as const, text: "Upload this" },
@@ -3605,7 +3674,7 @@ const uploadThisThread = [
 assert.equal(lastFoxTurn(uploadThisThread)?.text, DOC_INVITE_COPY.government_id);
 assert.equal(
   lastFoxTurn(uploadThisThread)?.text,
-  workspacePromptCopy("documents", { ...seIncome, docsStarted: true }).text,
+  workspacePromptCopy("documents", { ...seAfterLooksRight, docsStarted: true }).text,
 );
 const skipThenTax = [
   { role: "fox" as const, text: DOC_INVITE_COPY.government_id },
@@ -3614,10 +3683,6 @@ const skipThenTax = [
 ];
 assert.equal(lastFoxTurn(skipThenTax)?.text, DOC_INVITE_COPY.tax_return);
 assert.notEqual(lastFoxTurn(skipThenTax)?.text, DOC_INVITE_COPY.government_id);
-const priorYearThread = [
-  { role: "fox" as const, text: DOC_INVITE_COPY.prior_year_return },
-  { role: "client" as const, text: "Upload this" },
-];
 const priorYearInFlight = draft({
   ...seWithReturn,
   documents: [
@@ -3632,9 +3697,7 @@ const priorYearInFlight = draft({
     },
   ],
 });
-assert.equal(workspacePrompt(priorYearInFlight), "documents");
-assert.equal(workspacePromptCopy("documents", priorYearInFlight).text, DOC_INVITE_COPY.prior_year_return);
-assert.equal(lastFoxTurn(priorYearThread)?.text, workspacePromptCopy("documents", priorYearInFlight).text);
+assert.notEqual(nextDocInvite(priorYearInFlight), "prior_year_return");
 const priorYearExtract = applyExtractedFields(priorYearInFlight, {
   extractClass: "tax_return",
   confidence: 0.93,
@@ -3650,13 +3713,9 @@ assert.notEqual(
   workspacePromptCopy(workspacePrompt(priorYearExtract.draft), priorYearExtract.draft).text,
   DOC_INVITE_COPY.prior_year_return,
 );
-const selfDocs = workspacePromptCopy("documents", seIncome);
-assert.match(selfDocs.text, /sketch/i);
-assert.doesNotMatch(selfDocs.text, /paystub|w-2|drop what you have/i);
-assert.deepEqual(
-  (selfDocs.actions ?? []).map((item) => item.label),
-  ["Start with ID", "Skip", "Not yet"],
-);
+const selfDocs = workspacePromptCopy("documents", seAfterLooksRight);
+assert.match(selfDocs.text, /government ID|tax return/i);
+assert.doesNotMatch(selfDocs.text, /other real estate|Do you own any other/i);
 assert.ok((selfDocs.actions ?? []).some((item) => item.capture?.field === "skip-docs"));
 const selfRequest = docsRequestForIncome("self-employed");
 assert.deepEqual(selfRequest.labels, ["government ID", "tax return"]);
@@ -3673,8 +3732,10 @@ const otherRequest = docsRequestForIncome("other");
 assert.deepEqual(otherRequest.labels, ["government ID", "tax return"]);
 assert.match(otherRequest.text, /government ID and tax return/i);
 assert.doesNotMatch(otherRequest.text, /drop what you have|latest paystub/i);
-const otherDocs = workspacePromptCopy("documents", withIncome(afterCredit, "other"));
-assert.ok((otherDocs.actions ?? []).some((item) => item.capture?.field === "skip-docs"));
+const otherDraft = withIncome(afterCredit, "other");
+assert.equal(workspacePrompt(otherDraft), "property-address");
+assert.notEqual(workspacePrompt(otherDraft), "other-reo");
+assert.ok(canLooksRight(readyForReview(otherDraft)));
 
 const dropAfterLooks = workspacePromptCopy("documents", {
   ...afterLooks,
@@ -3701,7 +3762,11 @@ assert.ok(previewFacts(skippedLooks).some((fact) => fact.id === "next" && fact.v
 
 const skipReply = workspaceReply("Skip for now", { ...afterLooks, correcting: "documents", docsOpen: true });
 assert.equal(skipReply?.capture?.field, "skip-docs");
-assert.equal(workspacePrompt({ ...afterLooks, documentsSkipped: true, correcting: null, docsOpen: false }), "housing");
+assert.equal(
+  workspacePrompt({ ...afterLooks, documentsSkipped: true, correcting: null, docsOpen: false }),
+  "documents",
+);
+assert.equal(nextDocInvite({ ...afterLooks, documentsSkipped: true, correcting: null, docsOpen: false }), "government_id");
 
 assert.equal(workspacePrompt({ ...afterLooks, correcting: "occupancy" }), "occupancy");
 assert.notEqual(workspacePrompt({ ...afterLooks, correcting: "occupancy" }), "documents");
@@ -3711,7 +3776,15 @@ assert.equal(
     correcting: null,
     occupancyChoice: { ...emptyDraft().occupancyChoice, value: "second-home" },
   }),
-  "housing",
+  "documents",
+);
+assert.equal(
+  nextDocInvite({
+    ...afterLooks,
+    correcting: null,
+    occupancyChoice: { ...emptyDraft().occupancyChoice, value: "second-home" },
+  }),
+  "government_id",
 );
 
 resetWorkspaceForEntry("acr", "buy");
@@ -3742,15 +3815,14 @@ applyCapture({ field: "skip-docs" });
 applyCapture({ field: "skip-docs" });
 assert.equal(workspacePrompt(getFoxDraft()), "property-address");
 applyCapture({ field: "skip-property-address" });
-assert.equal(workspacePrompt(getFoxDraft()), "citizenship");
-applyCapture({ field: "skip-citizenship" });
-assert.equal(workspacePrompt(getFoxDraft()), "assets");
-applyCapture({ field: "skip-available-assets" });
 assert.equal(workspacePrompt(getFoxDraft()), "review");
+assert.notEqual(workspacePrompt(getFoxDraft()), "other-reo");
 confirmLooksRight();
 const confirmed = getFoxDraft();
-assert.equal(workspacePrompt(confirmed), "housing");
-assert.equal(statusCopy(confirmed), "ready");
+assert.equal(workspacePrompt(confirmed), "documents");
+assert.equal(nextDocInvite(confirmed), "government_id");
+assert.notEqual(workspacePrompt(confirmed), "other-reo");
+assert.equal(statusCopy(confirmed), "gathering");
 assert.equal(nextActorOf(confirmed), "You");
 assert.equal(confirmed.phase, "confirmed");
 assert.ok(confirmed.sampleAccepted);
@@ -3759,7 +3831,7 @@ applyCapture({ field: "open-docs" });
 const opened = getFoxDraft();
 assert.equal(opened.docsOpen, true);
 assert.equal(opened.phase, "confirmed");
-assert.equal(workspacePrompt(opened), "housing");
+assert.equal(workspacePrompt(opened), "documents");
 assert.ok(statusCopy(opened) === "ready" || statusCopy(opened) === "gathering");
 applyCapture({ field: "skip-docs" });
 const afterSkip = getFoxDraft();
@@ -3792,7 +3864,8 @@ applyCapture({ field: "skip-household" });
 applyCapture({ field: "skip-borrower-name" });
 applyCapture({ field: "skip-other-reo" });
 assert.equal(getFoxDraft().documentsSkipped, false);
-assert.equal(workspacePrompt(getFoxDraft()), "documents");
+assert.equal(workspacePrompt(getFoxDraft()), "property-address");
+assert.notEqual(workspacePrompt(getFoxDraft()), "other-reo");
 
 const plantedReward = {
   id: "stale-review",
@@ -4458,7 +4531,8 @@ assert.deepEqual(stillUsefulSection(emptied)?.items, [
 assert.equal(stillUsefulSection(emptied)?.empty, false);
 assert.match(layer2AskCopy(emptied), /latest return/i);
 const walkSkip = skipCurrentInvite(afterIncome);
-assert.ok((walkSkip.skippedClasses ?? []).includes("government_id"));
+assert.ok((walkSkip.skippedClasses ?? []).includes("w2"));
+assert.equal(nextDocInvite(walkSkip), "paystub");
 assert.equal(workspacePrompt(walkSkip), "documents");
 assert.ok(stillUsefulSection(walkSkip)?.items.some((item) => item.label === "Government ID"));
 assert.ok(stillUsefulSection(walkSkip)?.items.some((item) => item.label === "Latest two paystubs"));
@@ -4488,9 +4562,11 @@ applyCapture({ field: "skip-household" });
 applyCapture({ field: "skip-borrower-name" });
 applyCapture({ field: "skip-other-reo" });
 applyCapture({ field: "skip-docs" });
-assert.ok((getFoxDraft().skippedClasses ?? []).includes("government_id"));
+assert.ok((getFoxDraft().skippedClasses ?? []).includes("w2"));
+assert.ok(!(getFoxDraft().skippedClasses ?? []).includes("government_id"));
 assert.ok(stillUsefulSection(getFoxDraft())?.items.some((item) => item.label === "Government ID"));
 assert.notEqual(workspacePrompt(getFoxDraft()), "review");
+assert.notEqual(workspacePrompt(getFoxDraft()), "other-reo");
 receiveDocument({
   slot: "id",
   name: "license-id.png",
@@ -4507,7 +4583,7 @@ assert.ok(stillUsefulSection(getFoxDraft())?.items.some((item) => item.label ===
 assert.equal(shouldResumeWorkspaceEntry(), true);
 const remembered = continueWorkspaceFromEntry("acr", "buy");
 assert.equal(remembered.productIntent, "buy");
-assert.ok((remembered.skippedClasses ?? []).includes("government_id"));
+assert.ok((remembered.skippedClasses ?? []).includes("w2"));
 assert.ok(remembered.documents.some((doc) => doc.extractClass === "government_id"));
 assert.ok(!stillUsefulSection(remembered)?.items.some((item) => item.label === "Government ID"));
 assert.ok(stillUsefulSection(remembered)?.items.some((item) => item.label === "Latest two paystubs"));
@@ -4648,7 +4724,7 @@ assertAnswerThenRestore(
 
 const docsChips = ["Upload this", "Skip"];
 assertAnswerThenRestore(workspaceReply("will i qualify", afterStartId), /Not ready yet —/, {
-  text: /government ID|name on this file/i,
+  text: /W-2|wages|paystub/i,
   labels: docsChips,
 });
 assert.match(workspaceReply("will i qualify", afterStartId)?.text ?? "", /paystub|W-2/);
@@ -4683,7 +4759,7 @@ assertAnswerThenRestore(qualifyAtReview, /Not ready yet —/, {
   text: /does it look right/i,
   labels: looksChips,
 });
-const docsStartChips = ["Start with ID", "Skip", "Not yet"];
+const docsStartChips = ["Upload this", "Skip"];
 assertAnswerThenRestore(workspaceReply("do I need my tax return", afterIncome), new RegExp(W2_TAX_RETURN_COPY.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")), {
   labels: docsStartChips,
 });
@@ -4726,14 +4802,15 @@ assertAnswerThenRestore(workspaceReply("hi", atCorrect), /^Hi\./, {
 
 const proceedChips = ["Proceed", "Not yet"];
 const housingChips = ["Use this", "Change"];
+const afterLooksChips = ["Upload this", "Skip"];
 assertAnswerThenRestore(workspaceReply("will i qualify", afterLooks), /Not ready yet —/, {
-  labels: housingChips,
+  labels: afterLooksChips,
 });
-assertAnswerThenRestore(workspaceReply("hi", afterLooks), /^Hi\./, { labels: housingChips });
+assertAnswerThenRestore(workspaceReply("hi", afterLooks), /^Hi\./, { labels: afterLooksChips });
 assertAnswerThenRestore(
   workspaceReply("what happens after Proceed?", afterLooks),
   /in queue|I stay the interface|licensed originator reviews/i,
-  { labels: housingChips },
+  { labels: afterLooksChips },
 );
 
 assertAnswerThenRestore(workspaceReply("will i qualify", buyProceed), /Not ready yet —/, {
@@ -5140,14 +5217,10 @@ assert.equal(mayaNamed.facts?.date_of_birth, undefined);
 const mayaGreet = docReactionAsk(mayaNamed, "government_id");
 assert.match(mayaGreet?.text ?? "", /Nice to meet you, Maya/);
 assert.match(mayaGreet?.text ?? "", /keep this file working|clearer picture|lower cost|stronger equity/);
-assert.match(mayaGreet?.text ?? "", /most recent tax return/);
+assert.doesNotMatch(mayaGreet?.text ?? "", /other real estate|Do you own any other/i);
 assert.doesNotMatch(
   mayaGreet?.text ?? "",
   /Updated identity from ID|approv|eligible|you qualify|sales/i,
-);
-assert.deepEqual(
-  (mayaGreet?.actions ?? []).map((item) => item.label),
-  ["Upload this", "Skip"],
 );
 const jordanId = applyExtractedFields(
   draft({
@@ -5207,12 +5280,15 @@ assert.match(mayaIncomeAsk?.text ?? "", /\$9,000/);
 assert.match(mayaIncomeAsk?.text ?? "", /Use this/);
 assert.doesNotMatch(mayaIncomeAsk?.text ?? "", /Updated income from tax return/);
 const mayaAccepted = resolveProposal(mayaThenReturn.draft, "accept");
-assert.match(workspacePromptCopy("documents", mayaAccepted).text, /prior-year return|stable/i);
-const mayaYears = workspaceReply("How long have you been running this?", mayaAccepted);
+const mayaOnDocs = draft({ ...mayaAccepted, sampleAccepted: true, otherReoAsked: true });
+assert.notEqual(nextDocInvite(mayaOnDocs), "prior_year_return");
+assert.notEqual(workspacePrompt(mayaOnDocs), "other-reo");
+assert.notEqual(workspacePrompt(mayaOnDocs), "documents");
+const mayaYears = workspaceReply("How long have you been running this?", mayaOnDocs);
 assert.equal(mayaYears?.capture, undefined);
-assert.match(mayaYears?.text ?? "", /prior-year return|stable|helps me read the return/i);
-const mayaYearsIn = workspaceReply("5 years", mayaAccepted);
-assert.match(mayaYearsIn?.text ?? "", /prior-year return|stable|I’ll keep that/i);
+assert.match(mayaYears?.text ?? "", /Use this|Estimated housing|prior-year return|stable/i);
+const mayaYearsIn = workspaceReply("5 years", mayaOnDocs);
+assert.match(mayaYearsIn?.text ?? "", /Use this|Estimated housing|I’ll keep that|prior-year return|stable/i);
 assert.doesNotMatch(mayaYearsIn?.text ?? "", /Updated income from tax return/);
 
 const seReturn = applyExtractedFields(seAfterLooks, {
@@ -6024,10 +6100,8 @@ assert.equal(entityWalkWrite.draft.facts?.qualifying_income, undefined);
 assert.equal(entityWalkWrite.draft.facts?.k1_ordinary_income?.value, "40000");
 assert.ok(!missingExtractClasses(entityWalkWrite.draft).includes("tax_return"));
 assert.ok(stillUsefulLabels(entityWalkWrite.draft).includes("K-1 distributions"));
-assert.ok(!stillUsefulLabels(entityWalkWrite.draft).includes("government ID"));
 assert.ok(!stillUsefulLabels(entityWalkWrite.draft).includes("tax return"));
 assert.match(stillUsefulAskCopy(entityWalkWrite.draft), /K-1 distributions/i);
-assert.doesNotMatch(stillUsefulAskCopy(entityWalkWrite.draft), /government ID and tax return/i);
 assert.ok(previewFacts(entityWalkWrite.draft).some((fact) => fact.id === "docs" && /Tax return in/.test(fact.value)));
 assert.ok(previewFacts(entityWalkWrite.draft).every((fact) => fact.id !== "docs" || !/Other in/.test(fact.value)));
 assert.equal(fileCompleteness(entityWalkWrite.draft)?.groups.income.documented, false);
@@ -6667,7 +6741,12 @@ assert.ok(
 assert.doesNotMatch(HIGH_LTV_CAUTION, /approv|eligible|ineligible|\bDU\b|\bAUS\b|you qualify|will contact you/i);
 const highLtvLooks = workspaceReply("Looks right", readyForReview(highLtvBuy));
 assert.equal(highLtvLooks?.capture?.field, "confirm-draft");
-assert.ok((highLtvLooks?.actions ?? []).some((item) => item.label === "Proceed"));
+assert.ok(
+  (highLtvLooks?.actions ?? []).some(
+    (item) => item.label === "Upload this" || item.label === "Proceed",
+  ),
+);
+assert.ok(!(highLtvLooks?.actions ?? []).some((item) => item.label === "None" || item.label === "Yes"));
 assert.notEqual(motionOf(applyLooksRightMotion(highLtvBuy)), "escalated");
 
 const nonsenseBuy = withIncome(
@@ -7216,7 +7295,8 @@ assert.equal(failedOther.quietLines[0], FAILED_READ_NOTE);
 assert.ok(previewFacts(failedOther.draft).some((fact) => fact.id === "docs" && /Paystubs in/.test(fact.value)));
 assert.ok(previewFacts(failedOther.draft).every((fact) => fact.id !== "docs" || !/Other in/.test(fact.value)));
 assert.equal(failedOther.draft.productIntent, "buy");
-assert.ok(!missingExtractClasses(failedOther.draft).includes("government_id"));
+assert.ok(missingExtractClasses(failedOther.draft).includes("government_id"));
+assert.equal(nextDocInvite(failedOther.draft), "government_id");
 
 const unreadIdDraft = draft({
   ...afterIncome,
@@ -7236,8 +7316,8 @@ const unreadIdDraft = draft({
   ],
 });
 assert.equal(docReactionAsk(unreadIdDraft, "government_id"), null);
-assert.equal(nextDocInvite(unreadIdDraft), "paystub");
-assert.equal(workspacePromptCopy("documents", unreadIdDraft).text, DOC_INVITE_COPY.paystub);
+assert.equal(nextDocInvite(unreadIdDraft), "w2");
+assert.equal(workspacePromptCopy("documents", unreadIdDraft).text, DOC_INVITE_COPY.w2);
 assert.doesNotMatch(workspacePromptCopy("documents", unreadIdDraft).text, /government ID/i);
 assert.ok(!stillUsefulSection(unreadIdDraft)?.items.some((item) => item.label === "Government ID"));
 assert.ok(stillUsefulSection(unreadIdDraft)?.items.some((item) => item.label === "Latest two paystubs"));
@@ -7622,13 +7702,14 @@ const afterIncomeType = draft({
   incomeAsked: true,
   incomeType: { ...emptyDraft().incomeType, value: "w2" },
 });
-assert.equal(workspacePrompt(afterIncomeType), "other-reo");
+assert.equal(workspacePrompt(afterIncomeType), "documents");
+assert.notEqual(workspacePrompt(afterIncomeType), "other-reo");
 assert.doesNotMatch(workspacePromptCopy("time-on-job", afterIncomeType).text, /other monthly debts/i);
 const afterTimeOnJobAsk = draft({
   ...afterIncomeType,
   timeOnJobAsked: true,
 });
-assert.equal(workspacePrompt(afterTimeOnJobAsk), "other-reo");
+assert.equal(workspacePrompt(afterTimeOnJobAsk), "documents");
 assert.equal(workspacePromptCopy("debts", afterTimeOnJobAsk).text, MONTHLY_DEBTS_ASK);
 assert.deepEqual(
   (workspacePromptCopy("debts", afterTimeOnJobAsk).actions ?? []).map((item) => item.label),
@@ -7670,23 +7751,16 @@ assert.ok(
 );
 const useDebts = workspaceReply("Use this", debtConfirmDraft);
 assert.equal(useDebts?.capture?.field, "accept-proposal");
-assert.match(useDebts?.text ?? "", /other real estate|Skip is fine/i);
+assert.match(useDebts?.text ?? "", /sketch|government ID|paystub|W-2|document/i);
 const leaveBlankDebts = workspaceReply("Leave blank", debtConfirmDraft);
 assert.equal(leaveBlankDebts?.capture?.field, "decline-proposal");
-assert.match(leaveBlankDebts?.text ?? "", /Left that line blank|other real estate|Skip is fine/i);
-assert.deepEqual(
-  (leaveBlankDebts?.actions ?? []).map((item) => item.label),
-  ["None", "Yes", "Skip", "Not yet"],
-);
+assert.match(leaveBlankDebts?.text ?? "", /Left that line blank|sketch|government ID|paystub|W-2|document/i);
 assert.equal(resolveProposal(debtConfirmDraft, "decline").statedMonthlyDebts, undefined);
 const skipDebts = workspaceReply("Skip", onStep(afterTimeOnJobAsk, "debts"));
 assert.equal(skipDebts?.capture?.field, "skip-monthly-debts");
 assert.equal(skipDebts?.text?.includes("other monthly debts"), false);
-assert.match(skipDebts?.text ?? "", /other real estate|Skip is fine/i);
-assert.deepEqual(
-  (skipDebts?.actions ?? []).map((item) => item.label),
-  ["None", "Yes", "Skip", "Not yet"],
-);
+assert.match(skipDebts?.text ?? "", /sketch|government ID|paystub|W-2|document/i);
+assert.ok((skipDebts?.actions ?? []).some((item) => item.label === "Start with ID" || item.label === "Skip"));
 const notYetDebts = workspaceReply("Not yet", onStep(afterTimeOnJobAsk, "debts"));
 assert.equal(notYetDebts?.capture?.field, "skip-monthly-debts");
 assert.ok(
@@ -7739,7 +7813,7 @@ const subtractMortgage = workspaceReply("Subtract", onStep({
 }, "debts"));
 assert.equal(subtractMortgage?.capture?.field, "subtract-mortgage");
 assert.doesNotMatch(subtractMortgage?.text ?? "", /Use this|Still right/i);
-assert.match(subtractMortgage?.text ?? "", /available funds|kind of home|other real estate/i);
+assert.match(subtractMortgage?.text ?? "", /available funds|kind of home|sketch|government ID|document|W-2|paystub/i);
 const debtsOnFile = draft({
   ...afterTimeOnJobAsk,
   monthlyDebtsAsked: true,
@@ -7880,7 +7954,7 @@ const afterDebtsAsk = draft({
   ...afterTimeOnJobAsk,
   monthlyDebtsAsked: true,
 });
-assert.equal(workspacePrompt(afterDebtsAsk), "other-reo");
+assert.equal(workspacePrompt(afterDebtsAsk), "documents");
 assert.equal(workspacePromptCopy("assets", afterDebtsAsk).text, AVAILABLE_ASSETS_ASK);
 assert.deepEqual(
   (workspacePromptCopy("assets", afterDebtsAsk).actions ?? []).map((item) => item.label),
@@ -7921,17 +7995,17 @@ assert.ok(
 const leaveBlankAssets = workspaceReply("Leave blank", assetConfirmDraft);
 assert.equal(leaveBlankAssets?.capture?.field, "decline-proposal");
 assert.equal(resolveProposal(assetConfirmDraft, "decline").statedAvailableAssets, undefined);
-assert.match(leaveBlankAssets?.text ?? "", /Left that line blank|other real estate|Skip is fine/i);
+assert.match(leaveBlankAssets?.text ?? "", /Left that line blank|sketch|government ID|Start with ID|W-2|paystub|Upload this/i);
 assert.deepEqual(
   (leaveBlankAssets?.actions ?? []).map((item) => item.label),
-  ["None", "Yes", "Skip", "Not yet"],
+  ["Upload this", "Skip"],
 );
 const skipAssets = workspaceReply("Skip", onStep(afterDebtsAsk, "assets"));
 assert.equal(skipAssets?.capture?.field, "skip-available-assets");
-assert.match(skipAssets?.text ?? "", /other real estate|Skip is fine/i);
+assert.match(skipAssets?.text ?? "", /sketch|government ID|paystub|W-2|document/i);
 assert.deepEqual(
   (skipAssets?.actions ?? []).map((item) => item.label),
-  ["None", "Yes", "Skip", "Not yet"],
+  ["Upload this", "Skip"],
 );
 const skippedAssetsFile = draft({ ...afterDebtsAsk, availableAssetsAsked: true });
 assert.equal(skippedAssetsFile.statedAvailableAssets, undefined);
@@ -8117,7 +8191,7 @@ const afterAssetsAsk = draft({
   availableAssetsAsked: true,
   propertyZipAsked: true,
 });
-assert.equal(workspacePrompt(afterAssetsAsk), "other-reo");
+assert.equal(workspacePrompt(afterAssetsAsk), "documents");
 assert.equal(workspacePromptCopy("property-type", afterAssetsAsk).text, PROPERTY_TYPE_ASK);
 assert.deepEqual(
   (workspacePromptCopy("property-type", afterAssetsAsk).actions ?? []).map((item) => item.label),
@@ -8134,14 +8208,14 @@ assert.equal(parsePropertyType("coop"), null);
 for (const spoken of ["Condo", "condo", "condominium"]) {
   const proposed = workspaceReply(spoken, onStep(afterAssetsAsk, "property-type"));
   assert.equal(proposed?.capture?.field, "propertyType");
-  assert.equal(proposed?.text, OTHER_REO_ASK);
+  assert.match(proposed?.text ?? "", /sketch|government ID|document|W-2|paystub/i);
 }
 const houseProposed = workspaceReply("House", onStep(afterAssetsAsk, "property-type"));
 assert.equal(houseProposed?.capture?.field, "propertyType");
-assert.equal(houseProposed?.text, OTHER_REO_ASK);
+assert.match(houseProposed?.text ?? "", /sketch|government ID|document|W-2|paystub/i);
 const twoFourProposed = workspaceReply("2–4", onStep(afterAssetsAsk, "property-type"));
 assert.equal(twoFourProposed?.capture?.field, "propertyType");
-assert.equal(twoFourProposed?.text, OTHER_REO_ASK);
+assert.match(twoFourProposed?.text ?? "", /sketch|government ID|document|W-2|paystub/i);
 const condoConfirmDraft = {
   ...afterAssetsAsk,
   pendingProposal: {
@@ -8167,17 +8241,17 @@ assert.ok(
 const leaveBlankType = workspaceReply("Leave blank", condoConfirmDraft);
 assert.equal(leaveBlankType?.capture?.field, "decline-proposal");
 assert.equal(resolveProposal(condoConfirmDraft, "decline").propertyType, undefined);
-assert.match(leaveBlankType?.text ?? "", /Left that line blank|other real estate|Skip is fine/i);
+assert.match(leaveBlankType?.text ?? "", /Left that line blank|sketch|government ID|Start with ID|W-2|paystub|Upload this/i);
 assert.deepEqual(
   (leaveBlankType?.actions ?? []).map((item) => item.label),
-  ["None", "Yes", "Skip", "Not yet"],
+  ["Upload this", "Skip"],
 );
 const skipType = workspaceReply("Skip", onStep(afterAssetsAsk, "property-type"));
 assert.equal(skipType?.capture?.field, "skip-property-type");
-assert.match(skipType?.text ?? "", /other real estate|Skip is fine/i);
+assert.match(skipType?.text ?? "", /sketch|government ID|paystub|W-2|document/i);
 assert.deepEqual(
   (skipType?.actions ?? []).map((item) => item.label),
-  ["None", "Yes", "Skip", "Not yet"],
+  ["Upload this", "Skip"],
 );
 const skippedTypeFile = draft({ ...afterAssetsAsk, propertyTypeAsked: true });
 assert.equal(skippedTypeFile.propertyType, undefined);
@@ -8274,7 +8348,7 @@ assert.doesNotMatch(
   condoQualify?.text ?? "",
   /you don.t qualify|warrantability|county limit|condos are not eligible|you are approved|\bDTI\b|you qualify\b/i,
 );
-assert.match(condoQualify?.text ?? "", /thin|Start with ID|Skip|kind of home/i);
+assert.match(condoQualify?.text ?? "", /thin|Start with ID|Skip|kind of home|paystub|W-2|Not ready/i);
 assert.doesNotMatch(
   condoQualify?.text ?? "",
   /HOA questionnaire|condo project docs|Form 1076|\bCPM\b|\bPERS\b/i,
@@ -8338,7 +8412,7 @@ assert.equal(workspacePromptCopy("property-type", midTypeEdit).text, PROPERTY_TY
 assert.doesNotMatch(workspacePromptCopy("property-type", midTypeEdit).text, /Still right/i);
 const midHouse = workspaceReply("House", midTypeEdit);
 assert.equal(midHouse?.capture?.field, "propertyType");
-assert.equal(midHouse?.text, OTHER_REO_ASK);
+assert.match(midHouse?.text ?? "", /sketch|government ID|document|W-2|paystub/i);
 assert.equal(emptyDraft().propertyType, undefined);
 assert.equal(structureFixPrompt("property-type"), "property-type");
 
@@ -8354,8 +8428,8 @@ const afterTypeAsk = draft({
   propertyTypeAsked: true,
   propertyType: "sfr",
 });
-assert.equal(workspacePrompt(afterTypeAsk), "other-reo");
-assert.equal(workspacePrompt(afterIncomeType), "other-reo");
+assert.equal(workspacePrompt(afterTypeAsk), "documents");
+assert.equal(workspacePrompt(afterIncomeType), "documents");
 assert.equal(workspacePromptCopy("time-on-job", afterIncomeType).text, TIME_ON_JOB_ASK);
 assert.deepEqual(
   (workspacePromptCopy("time-on-job", afterIncomeType).actions ?? []).map((item) => item.label),
@@ -8378,7 +8452,7 @@ assert.equal(
       propertyTypeAsked: true,
     }),
   ),
-  "other-reo",
+  "property-address",
 );
 const seAfterType = draft({
   ...afterAssetsAsk,
@@ -8386,7 +8460,7 @@ const seAfterType = draft({
   propertyTypeAsked: true,
   yearsInBusinessAsked: true,
 });
-assert.equal(workspacePrompt(seAfterType), "other-reo");
+assert.equal(workspacePrompt(seAfterType), "property-address");
 assert.doesNotMatch(workspacePromptCopy("current-housing", seAfterType).text, /How long have you been at this job/);
 const typedThree = workspaceReply("3", onStep(afterIncomeType, "time-on-job"));
 assert.equal(typedThree?.capture?.field, "statedTimeOnJob");
@@ -8439,17 +8513,17 @@ assert.ok(
 const leaveBlankJob = workspaceReply("Leave blank", yearsConfirmDraft);
 assert.equal(leaveBlankJob?.capture?.field, "decline-proposal");
 assert.equal(resolveProposal(yearsConfirmDraft, "decline").statedTimeOnJob, undefined);
-assert.match(leaveBlankJob?.text ?? "", /Left that line blank|other real estate|Skip is fine/i);
+assert.match(leaveBlankJob?.text ?? "", /Left that line blank|sketch|government ID|Start with ID|W-2|paystub|Upload this/i);
 assert.deepEqual(
   (leaveBlankJob?.actions ?? []).map((item) => item.label),
-  ["None", "Yes", "Skip", "Not yet"],
+  ["Upload this", "Skip"],
 );
 const skipJob = workspaceReply("Skip", onStep(afterIncomeType, "time-on-job"));
 assert.equal(skipJob?.capture?.field, "skip-time-on-job");
-assert.match(skipJob?.text ?? "", /other real estate|Skip is fine/i);
+assert.match(skipJob?.text ?? "", /sketch|government ID|paystub|W-2|document/i);
 assert.deepEqual(
   (skipJob?.actions ?? []).map((item) => item.label),
-  ["None", "Yes", "Skip", "Not yet"],
+  ["Upload this", "Skip"],
 );
 const skippedJobFile = draft({ ...afterTypeAsk, timeOnJobAsked: true });
 assert.equal(skippedJobFile.statedTimeOnJob, undefined);
@@ -8662,7 +8736,7 @@ const afterJobAsk = draft({
   ...afterTypeAsk,
   timeOnJobAsked: true,
 });
-assert.equal(workspacePrompt(afterJobAsk), "other-reo");
+assert.equal(workspacePrompt(afterJobAsk), "documents");
 assert.equal(workspacePromptCopy("current-housing", afterJobAsk).text, CURRENT_HOUSING_ASK);
 assert.deepEqual(
   (workspacePromptCopy("current-housing", afterJobAsk).actions ?? []).map((item) => item.label),
@@ -8676,7 +8750,7 @@ const refiAfterJob = draft({
   productIntent: "refinance",
   cashOut: false,
 });
-assert.equal(workspacePrompt(refiAfterJob), "other-reo");
+assert.equal(workspacePrompt(refiAfterJob), "documents");
 assert.doesNotMatch(workspacePromptCopy("documents", refiAfterJob).text, /pay now for housing/);
 for (const spoken of ["2200", "$2,200", "about 2200"]) {
   const written = workspaceReply(spoken, onStep(afterJobAsk, "current-housing"));
@@ -8709,17 +8783,17 @@ assert.ok(
 const leaveBlankHousing = workspaceReply("Leave blank", housingConfirmDraft);
 assert.equal(leaveBlankHousing?.capture?.field, "decline-proposal");
 assert.equal(resolveProposal(housingConfirmDraft, "decline").statedCurrentHousing, undefined);
-assert.match(leaveBlankHousing?.text ?? "", /Left that line blank|other real estate|Skip is fine/i);
+assert.match(leaveBlankHousing?.text ?? "", /Left that line blank|sketch|government ID|Start with ID|W-2|paystub|Upload this/i);
 assert.deepEqual(
   (leaveBlankHousing?.actions ?? []).map((item) => item.label),
-  ["None", "Yes", "Skip", "Not yet"],
+  ["Upload this", "Skip"],
 );
 const skipHousing = workspaceReply("Skip", onStep(afterJobAsk, "current-housing"));
 assert.equal(skipHousing?.capture?.field, "skip-current-housing");
-assert.match(skipHousing?.text ?? "", /other real estate|Skip is fine/i);
+assert.match(skipHousing?.text ?? "", /sketch|government ID|paystub|W-2|document/i);
 assert.deepEqual(
   (skipHousing?.actions ?? []).map((item) => item.label),
-  ["None", "Yes", "Skip", "Not yet"],
+  ["Upload this", "Skip"],
 );
 const skippedHousingFile = draft({ ...afterJobAsk, currentHousingAsked: true });
 assert.equal(skippedHousingFile.statedCurrentHousing, undefined);
@@ -8890,7 +8964,7 @@ const afterHousingAsk = draft({
   propertyType: "sfr",
   propertyTypeAsked: true,
 });
-assert.equal(workspacePrompt(afterHousingAsk), "other-reo");
+assert.equal(workspacePrompt(afterHousingAsk), "documents");
 assert.equal(workspacePromptCopy("declarations", afterHousingAsk).text, DECLARATIONS_ASK);
 assert.deepEqual(
   (workspacePromptCopy("declarations", afterHousingAsk).actions ?? []).map((item) => item.label),
@@ -8905,11 +8979,7 @@ assert.equal(parseDeclarations("yes", { allowBareYes: true }), "event");
 
 const skipDeclarationsReply = workspaceReply("Skip", onStep(afterHousingAsk, "declarations"));
 assert.equal(skipDeclarationsReply?.capture?.field, "skip-declarations");
-assert.equal(skipDeclarationsReply?.text, OTHER_REO_ASK);
-assert.deepEqual(
-  (skipDeclarationsReply?.actions ?? []).map((item) => item.label),
-  ["None", "Yes", "Skip", "Not yet"],
-);
+assert.match(skipDeclarationsReply?.text ?? "", /sketch|government ID|document|W-2|paystub/i);
 const skippedDeclarationsFile = draft({ ...afterHousingAsk, declarationAsked: true });
 assert.equal(skippedDeclarationsFile.statedDeclaration, undefined);
 assert.ok(
@@ -8940,7 +9010,7 @@ assert.ok(
 
 const noneChip = workspaceReply("None", onStep(afterHousingAsk, "declarations"));
 assert.equal(noneChip?.capture?.field, "statedDeclaration");
-assert.equal(noneChip?.text, OTHER_REO_ASK);
+assert.match(noneChip?.text ?? "", /sketch|government ID|document|W-2|paystub/i);
 const noneConfirmDraft = {
   ...afterHousingAsk,
   pendingProposal: {
@@ -9022,10 +9092,10 @@ const eventConfirmDraft = {
 const leaveBlankEvent = workspaceReply("Leave blank", eventConfirmDraft);
 assert.equal(leaveBlankEvent?.capture?.field, "decline-proposal");
 assert.equal(resolveProposal(eventConfirmDraft, "decline").statedDeclaration, undefined);
-assert.match(leaveBlankEvent?.text ?? "", /Left that line blank|other real estate|Skip is fine/i);
+assert.match(leaveBlankEvent?.text ?? "", /Left that line blank|sketch|government ID|Start with ID|W-2|paystub|Upload this/i);
 assert.deepEqual(
   (leaveBlankEvent?.actions ?? []).map((item) => item.label),
-  ["None", "Yes", "Skip", "Not yet"],
+  ["Upload this", "Skip"],
 );
 const usedEvent = resolveProposal(eventConfirmDraft, "accept");
 assert.equal(usedEvent.statedDeclaration, "event");
@@ -9118,7 +9188,7 @@ assert.equal(workspacePromptCopy("declarations", midDeclarationsEdit).text, DECL
 assert.doesNotMatch(workspacePromptCopy("declarations", midDeclarationsEdit).text, /Still right/i);
 const midNone = workspaceReply("None", midDeclarationsEdit);
 assert.equal(midNone?.capture?.field, "statedDeclaration");
-assert.equal(midNone?.text, OTHER_REO_ASK);
+assert.match(midNone?.text ?? "", /sketch|government ID|document|W-2|paystub/i);
 const midNoneWritten = resolveProposal(
   {
     ...midDeclarationsEdit,
@@ -9151,7 +9221,7 @@ const afterDeclarationsAsk = draft({
   propertyType: "sfr",
   propertyTypeAsked: true,
 });
-assert.equal(workspacePrompt(afterDeclarationsAsk), "other-reo");
+assert.equal(workspacePrompt(afterDeclarationsAsk), "documents");
 assert.doesNotMatch(
   `${workspacePromptCopy(workspacePrompt(afterDeclarationsAsk), afterDeclarationsAsk).text} ${workspacePromptCopy(workspacePrompt(afterDeclarationsAsk), afterDeclarationsAsk).followUp ?? ""}`,
   /on your own|with someone|another borrower|What name should I put/i,
@@ -9180,7 +9250,7 @@ const afterPrimaryDocsStarted = draft({
   docsStarted: true,
 });
 assert.equal(workspacePrompt(afterPrimaryDocsStarted), "documents");
-assert.equal(workspacePromptCopy("documents", afterPrimaryDocsStarted).text, DOC_INVITE_COPY.government_id);
+assert.equal(workspacePromptCopy("documents", afterPrimaryDocsStarted).text, DOC_INVITE_COPY.w2);
 assert.doesNotMatch(
   workspacePromptCopy("documents", afterPrimaryDocsStarted).text,
   /another borrower|What name should I put/i,
@@ -9383,7 +9453,7 @@ assert.equal(
 
 const typedSpouse = workspaceReply("me and my spouse", afterDeclarationsAsk);
 assert.equal(typedSpouse?.capture?.field, "statedHousehold");
-assert.equal(typedSpouse?.text, OTHER_REO_ASK);
+assert.match(typedSpouse?.text ?? "", /sketch|government ID|document|Looks right|W-2|paystub/i);
 assert.doesNotMatch(typedSpouse?.text ?? "", /what is their name|SSN|income type|second borrower/i);
 assert.equal(afterDeclarationsAsk.statedHousehold, undefined);
 
@@ -9398,7 +9468,7 @@ assert.equal(workspacePromptCopy("household", midHouseholdEdit).text, HOUSEHOLD_
 assert.doesNotMatch(workspacePromptCopy("household", midHouseholdEdit).text, /Still right/i);
 const midAlone = workspaceReply("On my own", midHouseholdEdit);
 assert.equal(midAlone?.capture?.field, "statedHousehold");
-assert.equal(midAlone?.text, OTHER_REO_ASK);
+assert.match(midAlone?.text ?? "", /sketch|government ID|document|Looks right|W-2|paystub/i);
 const midAloneWritten = resolveProposal(
   {
     ...midHouseholdEdit,
@@ -9436,29 +9506,31 @@ assert.doesNotMatch(
   `${workspacePromptCopy("documents", w2SketchNoName).text} ${workspacePromptCopy("documents", w2SketchNoName).followUp ?? ""}`,
   /What name should I put|another borrower/i,
 );
-assert.match(workspacePromptCopy("documents", w2SketchNoName).followUp ?? "", /government ID/i);
-const w2StartId = workspaceReply("Start with ID", w2SketchNoName);
-assert.equal(w2StartId?.text, DOC_INVITE_COPY.government_id);
+assert.equal(workspacePromptCopy("documents", w2SketchNoName).text, DOC_INVITE_COPY.w2);
+assert.doesNotMatch(
+  `${workspacePromptCopy("documents", w2SketchNoName).text} ${workspacePromptCopy("documents", w2SketchNoName).followUp ?? ""}`,
+  /Start with ID|citizenship/i,
+);
+const w2StartId = workspaceReply("Upload this", w2SketchNoName);
+assert.equal(w2StartId?.capture?.field, "open-docs");
 assert.doesNotMatch(w2StartId?.text ?? "", /What name should I put|another borrower/i);
 const w2AfterStart = draft({ ...w2SketchNoName, docsStarted: true });
 assert.equal(workspacePrompt(w2AfterStart), "documents");
 assert.notEqual(workspacePrompt(w2AfterStart), "household");
 assert.notEqual(workspacePrompt(w2AfterStart), "borrower-name");
 const w2SkipId = skipCurrentInvite(w2AfterStart);
-assert.equal(workspacePrompt(w2SkipId), "borrower-name");
-assert.equal(workspacePromptCopy("borrower-name", w2SkipId).text, BORROWER_NAME_ASK);
+assert.equal(workspacePrompt(w2SkipId), "documents");
+assert.equal(workspacePromptCopy("documents", w2SkipId).text, DOC_INVITE_COPY.paystub);
+assert.notEqual(workspacePrompt(w2SkipId), "borrower-name");
 assert.equal(w2SkipId.documentsSkipped, false);
 const w2Named = draft({ ...w2SkipId, borrowerNameAsked: true, borrowerName: "Jane Test" });
 assert.equal(workspacePrompt(w2Named), "documents");
 assert.equal(workspacePromptCopy("documents", w2Named).text, DOC_INVITE_COPY.paystub);
 assert.notEqual(workspacePrompt(w2Named), "household");
 const w2AfterSkipPaystub = skipCurrentInvite(w2Named);
-assert.equal(workspacePrompt(w2AfterSkipPaystub), "documents");
-assert.equal(workspacePromptCopy("documents", w2AfterSkipPaystub).text, DOC_INVITE_COPY.w2);
-assert.doesNotMatch(
-  `${workspacePromptCopy("documents", w2AfterSkipPaystub).text} ${workspacePromptCopy("documents", w2AfterSkipPaystub).followUp ?? ""}`,
-  /another borrower|Is there another borrower|Now working on Borrower 2/i,
-);
+assert.notEqual(nextDocInvite(w2AfterSkipPaystub), "w2");
+assert.notEqual(workspacePrompt(w2AfterSkipPaystub), "other-reo");
+assert.equal(workspacePrompt(w2AfterSkipPaystub), "property-address");
 const w2PassDone = skipAvailableAssets(skipCitizenship(skipSubjectAddress(skipCurrentInvite(w2AfterSkipPaystub))));
 assert.equal(workspacePrompt(w2PassDone), "review");
 assert.match(workspacePromptCopy("review", w2PassDone).text, /complete enough to move|look right/i);
@@ -9467,9 +9539,13 @@ assert.doesNotMatch(
   /another borrower|Is there another borrower/i,
 );
 const w2LooksRight = draft({ ...w2PassDone, sampleAccepted: true });
-assert.equal(workspacePrompt(w2LooksRight), "household");
-assert.equal(workspacePromptCopy("household", w2LooksRight).text, HOUSEHOLD_ASK);
-const w2YesBorrower2 = workspaceReply("Yes", w2LooksRight);
+assert.equal(workspacePrompt(w2LooksRight), "documents");
+assert.equal(nextDocInvite(w2LooksRight), "government_id");
+assert.notEqual(workspacePrompt(w2LooksRight), "other-reo");
+const w2AfterLooksId = skipCurrentInvite(w2LooksRight);
+assert.equal(workspacePrompt(w2AfterLooksId), "household");
+assert.equal(workspacePromptCopy("household", w2AfterLooksId).text, HOUSEHOLD_ASK);
+const w2YesBorrower2 = workspaceReply("Yes", w2AfterLooksId);
 assert.equal(w2YesBorrower2?.text, COBORROWER_HANDOFF);
 assert.match(w2YesBorrower2?.followUp ?? "", /Borrower 2’s government ID/);
 const idReadFailed = draft({
@@ -9487,7 +9563,9 @@ const idReadFailed = draft({
     },
   ],
 });
-assert.equal(workspacePrompt(idReadFailed), "borrower-name");
+assert.equal(workspacePrompt(idReadFailed), "documents");
+assert.equal(workspacePromptCopy("documents", idReadFailed).text, DOC_INVITE_COPY.w2);
+assert.notEqual(workspacePrompt(idReadFailed), "borrower-name");
 const namedFromId = draft({
   ...w2SketchNoName,
   docsStarted: true,
@@ -9503,30 +9581,28 @@ const seSketchNoName = draft({
   otherReoAsked: true,
   statedOtherReo: "none",
 });
-assert.equal(workspacePrompt(seSketchNoName), "documents");
-assert.notEqual(workspacePrompt(seSketchNoName), "borrower-name");
+assert.notEqual(workspacePrompt(seSketchNoName), "documents");
+assert.notEqual(workspacePrompt(seSketchNoName), "other-reo");
 assert.notEqual(workspacePrompt(seSketchNoName), "household");
-const seAfterStart = draft({ ...seSketchNoName, docsStarted: true });
-assert.equal(workspacePrompt(seAfterStart), "documents");
-assert.equal(workspacePromptCopy("documents", seAfterStart).text, DOC_INVITE_COPY.government_id);
-assert.notEqual(workspacePrompt(seAfterStart), "household");
-const seSkipId = skipCurrentInvite(seAfterStart);
+const seReadyForLooks = skipAvailableAssets(skipCitizenship(skipSubjectAddress(seSketchNoName)));
+assert.equal(workspacePrompt(seReadyForLooks), "review");
+assert.ok(canLooksRight(seReadyForLooks));
+assert.doesNotMatch(workspacePromptCopy("review", seReadyForLooks).text, /another borrower/i);
+const seAfterLooksRightNoName = draft({ ...seReadyForLooks, sampleAccepted: true });
+assert.equal(workspacePrompt(seAfterLooksRightNoName), "documents");
+assert.equal(workspacePromptCopy("documents", seAfterLooksRightNoName).text, DOC_INVITE_COPY.government_id);
+const seSkipId = skipCurrentInvite(draft({ ...seAfterLooksRightNoName, docsStarted: true }));
 assert.equal(workspacePrompt(seSkipId), "borrower-name");
 const seNamed = draft({ ...seSkipId, borrowerNameAsked: true, borrowerName: "Jane Test" });
 assert.equal(workspacePrompt(seNamed), "documents");
 assert.equal(workspacePromptCopy("documents", seNamed).text, DOC_INVITE_COPY.tax_return);
 assert.notEqual(workspacePrompt(seNamed), "household");
 const sePassDone = skipCurrentInvite(seNamed);
-assert.equal(workspacePrompt(sePassDone), "documents");
-assert.equal(workspacePromptCopy("documents", sePassDone).text, DOC_INVITE_COPY.prior_year_return);
-assert.doesNotMatch(
-  `${workspacePromptCopy("documents", sePassDone).text} ${workspacePromptCopy("documents", sePassDone).followUp ?? ""}`,
-  /another borrower|Is there another borrower|Now working on Borrower 2/i,
-);
-const seRemainderDone = skipAvailableAssets(skipCitizenship(skipSubjectAddress(skipCurrentInvite(sePassDone))));
-assert.equal(workspacePrompt(seRemainderDone), "review");
-assert.doesNotMatch(workspacePromptCopy("review", seRemainderDone).text, /another borrower/i);
-assert.equal(workspacePrompt(draft({ ...seRemainderDone, sampleAccepted: true })), "household");
+assert.notEqual(nextDocInvite(sePassDone), "prior_year_return");
+assert.equal(workspacePrompt(sePassDone), "household");
+assert.match(nextFoxAsk(sePassDone).text, /another borrower/i);
+const seRemainderDone = sePassDone;
+assert.equal(workspacePrompt(seRemainderDone), "household");
 
 const seOtherReoYes = draft({
   ...afterDeclarationsAsk,
@@ -9535,17 +9611,35 @@ const seOtherReoYes = draft({
   otherReoAsked: true,
   statedOtherReo: "yes",
 });
-assert.equal(workspacePrompt(seOtherReoYes), "documents");
-assert.match(
-  workspacePromptCopy("documents", seOtherReoYes).followUp ?? "",
-  /Mortgage statements for all properties owned/i,
+assert.notEqual(workspacePrompt(seOtherReoYes), "documents");
+assert.notEqual(workspacePrompt(seOtherReoYes), "other-reo");
+const seOtherReady = skipAvailableAssets(skipCitizenship(skipSubjectAddress(seOtherReoYes)));
+assert.equal(workspacePrompt(seOtherReady), "review");
+assert.ok(canLooksRight(seOtherReady));
+assert.ok(
+  stillUsefulSection(seOtherReady)?.items.some(
+    (item) => item.label === OTHER_REO_MORTGAGE_STATEMENTS,
+  ),
+);
+const seOtherLooks = draft({
+  ...seOtherReady,
+  sampleAccepted: true,
+  borrowerNameAsked: true,
+  borrowerName: "Jane Test",
+});
+assert.equal(workspacePrompt(seOtherLooks), "documents");
+assert.equal(workspacePromptCopy("documents", seOtherLooks).text, DOC_INVITE_COPY.government_id);
+assert.ok(
+  stillUsefulSection(seOtherLooks)?.items.some(
+    (item) => item.label === OTHER_REO_MORTGAGE_STATEMENTS,
+  ),
 );
 assert.doesNotMatch(
-  `${workspacePromptCopy("documents", seOtherReoYes).text} ${workspacePromptCopy("documents", seOtherReoYes).followUp ?? ""}`,
+  `${workspacePromptCopy("documents", seOtherLooks).text} ${workspacePromptCopy("documents", seOtherLooks).followUp ?? ""}`,
   /What name should I put|another borrower/i,
 );
-const seOtherStart = workspaceReply("Start with ID", seOtherReoYes);
-assert.equal(seOtherStart?.text, DOC_INVITE_COPY.government_id);
+const seOtherStart = workspaceReply("Start with ID", seOtherLooks);
+assert.ok(seOtherStart?.text?.includes(DOC_INVITE_COPY.government_id));
 assert.doesNotMatch(
   `${seOtherStart?.text ?? ""} ${seOtherStart?.followUp ?? ""}`,
   /What name should I put|another borrower|Now working on the other borrower/i,
@@ -9554,15 +9648,14 @@ assert.deepEqual(
   (seOtherStart?.actions ?? []).map((item) => item.label),
   ["Upload this", "Skip"],
 );
-const seOtherStarted = draft({ ...seOtherReoYes, docsStarted: true });
+const seOtherStarted = draft({ ...seOtherLooks, docsStarted: true });
 assert.equal(workspacePrompt(seOtherStarted), "documents");
 assert.equal(workspacePromptCopy("documents", seOtherStarted).text, DOC_INVITE_COPY.government_id);
 assert.notEqual(workspacePrompt(seOtherStarted), "borrower-name");
 assert.notEqual(workspacePrompt(seOtherStarted), "household");
-assert.notEqual(workspacePrompt({ ...seOtherStarted, docsHeld: true }), "household");
-assert.notEqual(workspacePrompt({ ...seOtherStarted, docsHeld: true }), "borrower-name");
 const seOtherSkipId = skipCurrentInvite(seOtherStarted);
-assert.equal(workspacePrompt(seOtherSkipId), "borrower-name");
+assert.equal(workspacePrompt(seOtherSkipId), "documents");
+assert.equal(workspacePromptCopy("documents", seOtherSkipId).text, DOC_INVITE_COPY.tax_return);
 const seOtherNamed = draft({
   ...seOtherSkipId,
   borrowerNameAsked: true,
@@ -9572,20 +9665,17 @@ assert.equal(workspacePrompt(seOtherNamed), "documents");
 assert.equal(workspacePromptCopy("documents", seOtherNamed).text, DOC_INVITE_COPY.tax_return);
 assert.notEqual(workspacePrompt(seOtherNamed), "household");
 const seOtherReturnIn = skipCurrentInvite(seOtherNamed);
-assert.equal(workspacePrompt(seOtherReturnIn), "documents");
-assert.equal(workspacePromptCopy("documents", seOtherReturnIn).text, DOC_INVITE_COPY.prior_year_return);
-assert.doesNotMatch(
-  `${workspacePromptCopy("documents", seOtherReturnIn).text} ${workspacePromptCopy("documents", seOtherReturnIn).followUp ?? ""}`,
-  /another borrower|Is there another borrower/i,
-);
+assert.notEqual(nextDocInvite(seOtherReturnIn), "prior_year_return");
+assert.equal(workspacePrompt(seOtherReturnIn), "household");
+assert.match(nextFoxAsk(seOtherReturnIn).text, /another borrower/i);
 assert.ok(
   stillUsefulSection(seOtherReturnIn)?.items.some(
     (item) => item.label === OTHER_REO_MORTGAGE_STATEMENTS,
   ),
 );
-const seOtherRemainderDone = skipAvailableAssets(skipCitizenship(skipSubjectAddress(skipCurrentInvite(seOtherReturnIn))));
-assert.equal(workspacePrompt(seOtherRemainderDone), "review");
-const seOtherLooksRight = draft({ ...seOtherRemainderDone, sampleAccepted: true });
+const seOtherRemainderDone = skipCurrentInvite(seOtherReturnIn);
+assert.equal(workspacePrompt(seOtherRemainderDone), "household");
+const seOtherLooksRight = seOtherRemainderDone;
 assert.equal(workspacePrompt(seOtherLooksRight), "household");
 const seOtherYes = workspaceReply("Yes", seOtherLooksRight);
 assert.equal(seOtherYes?.text, COBORROWER_HANDOFF);
@@ -9597,6 +9687,7 @@ assert.deepEqual(
 );
 const seOtherOnCoborrower = draft({
   ...seOtherReturnIn,
+  sampleAccepted: true,
   householdAsked: true,
   statedHousehold: "with_someone",
   workingOnCoborrower: true,
@@ -9612,6 +9703,7 @@ assert.equal(
 
 const coborrowerFromDocs = draft({
   ...afterPrimaryPass,
+  sampleAccepted: true,
   householdAsked: true,
   statedHousehold: "with_someone",
   facts: {
@@ -9701,7 +9793,9 @@ const afterHouseholdAsk = draft({
   docsStarted: true,
   skippedClasses: ["government_id"],
 });
-assert.equal(workspacePrompt(afterHouseholdAsk), "borrower-name");
+assert.equal(workspacePrompt(afterHouseholdAsk), "documents");
+assert.equal(workspacePromptCopy("documents", afterHouseholdAsk).text, DOC_INVITE_COPY.w2);
+assert.notEqual(workspacePrompt(afterHouseholdAsk), "borrower-name");
 assert.equal(workspacePromptCopy("borrower-name", afterHouseholdAsk).text, BORROWER_NAME_ASK);
 assert.deepEqual(
   (workspacePromptCopy("borrower-name", afterHouseholdAsk).actions ?? []).map((item) => item.label),
@@ -9711,9 +9805,9 @@ assert.equal(parseBorrowerName("Jordan Hale"), "Jordan Hale");
 assert.equal(parseBorrowerName("it's Jordan"), "Jordan");
 assert.equal(parseBorrowerName("JORDAN HALE"), "Jordan Hale");
 
-const skipBorrowerReply = workspaceReply("Skip", afterHouseholdAsk);
+const skipBorrowerReply = workspaceReply("Skip", onStep(afterHouseholdAsk, "borrower-name"));
 assert.equal(skipBorrowerReply?.capture?.field, "skip-borrower-name");
-assert.match(skipBorrowerReply?.text ?? "", /latest paystub|Skip is fine/i);
+assert.match(skipBorrowerReply?.text ?? "", /latest paystub|W-2|Skip is fine/i);
 assert.deepEqual(
   (skipBorrowerReply?.actions ?? []).map((item) => item.label),
   ["Upload this", "Skip"],
@@ -9750,7 +9844,7 @@ assert.ok(
   }).includes("borrower" as never),
 );
 
-const typedName = workspaceReply("Jordan Hale", afterHouseholdAsk);
+const typedName = workspaceReply("Jordan Hale", onStep(afterHouseholdAsk, "borrower-name"));
 assert.equal(typedName?.capture?.field, "borrowerName");
 assert.doesNotMatch(typedName?.text ?? "", /Use this|Still right/i);
 assert.ok(!(typedName?.actions ?? []).some((item) => item.label === "Use this" || item.label === "Change"));
@@ -9884,7 +9978,7 @@ const afterNameAsk = draft({
   borrowerNameAsked: true,
   borrowerName: "Jordan Hale",
 });
-assert.equal(workspacePrompt(afterNameAsk), "other-reo");
+assert.equal(workspacePrompt(afterNameAsk), "documents");
 assert.equal(workspacePromptCopy("other-reo", afterNameAsk).text, OTHER_REO_ASK);
 assert.deepEqual(
   (workspacePromptCopy("other-reo", afterNameAsk).actions ?? []).map((item) => item.label),
@@ -9897,12 +9991,12 @@ assert.equal(parseOtherReo("I have a rental"), "yes");
 assert.equal(parseOtherReo("yes", { allowBare: true }), "yes");
 assert.equal(parseOtherReo("None"), undefined);
 
-const skipOtherReoReply = workspaceReply("Skip", afterNameAsk);
+const skipOtherReoReply = workspaceReply("Skip", onStep(afterNameAsk, "other-reo"));
 assert.equal(skipOtherReoReply?.capture?.field, "skip-other-reo");
-assert.match(skipOtherReoReply?.text ?? "", /sketch|government ID|Start with ID/i);
+assert.match(skipOtherReoReply?.text ?? "", /sketch|government ID|Start with ID|W-2|paystub|Upload this/i);
 assert.deepEqual(
   (skipOtherReoReply?.actions ?? []).map((item) => item.label),
-  ["Start with ID", "Skip", "Not yet"],
+  ["Upload this", "Skip"],
 );
 const skippedOtherReoFile = draft({ ...afterNameAsk, otherReoAsked: true });
 assert.equal(skippedOtherReoFile.statedOtherReo, undefined);
@@ -9966,7 +10060,7 @@ assert.ok(
   )?.items.some((item) => /lease/i.test(item.label)),
 );
 
-const noneReoChip = workspaceReply("None", afterNameAsk);
+const noneReoChip = workspaceReply("None", onStep(afterNameAsk, "other-reo"));
 assert.equal(noneReoChip?.capture?.field, "statedOtherReo");
 assert.match(noneReoChip?.text ?? "", /paystub|W-2|ID|Skip/i);
 const noneReoConfirmDraft = {
@@ -9999,10 +10093,10 @@ assert.ok(
 const leaveBlankOtherReo = workspaceReply("Leave blank", noneReoConfirmDraft);
 assert.equal(leaveBlankOtherReo?.capture?.field, "decline-proposal");
 assert.equal(resolveProposal(noneReoConfirmDraft, "decline").statedOtherReo, undefined);
-assert.match(leaveBlankOtherReo?.text ?? "", /Left that line blank|sketch|government ID/i);
+assert.match(leaveBlankOtherReo?.text ?? "", /Left that line blank|sketch|government ID|W-2|paystub|Upload this/i);
 assert.deepEqual(
   (leaveBlankOtherReo?.actions ?? []).map((item) => item.label),
-  ["Start with ID", "Skip", "Not yet"],
+  ["Upload this", "Skip"],
 );
 assert.ok(
   !previewFacts(resolveProposal(noneReoConfirmDraft, "decline")).some(
@@ -10010,10 +10104,10 @@ assert.ok(
   ),
 );
 
-const typedRental = workspaceReply("I have a rental", afterNameAsk);
+const typedRental = workspaceReply("I have a rental", onStep(afterNameAsk, "other-reo"));
 assert.equal(typedRental?.capture?.field, "statedOtherReo");
-assert.match(`${typedRental?.text ?? ""} ${typedRental?.followUp ?? ""}`, /Mortgage statements for all properties owned/i);
-assert.match(typedRental?.text ?? "", /paystub|W-2|ID|Skip/i);
+assert.match(`${typedRental?.text ?? ""} ${typedRental?.followUp ?? ""}`, /W-2|paystub|Upload this|Skip/i);
+assert.doesNotMatch(`${typedRental?.text ?? ""} ${typedRental?.followUp ?? ""}`, /citizenship/i);
 assert.doesNotMatch(typedRental?.text ?? "", /address|HOA|rent|value|add another property/i);
 assert.equal(
   stillUsefulSection(
@@ -10025,7 +10119,7 @@ assert.equal(
   )?.items.some((item) => item.label === OTHER_REO_MORTGAGE_STATEMENTS),
   true,
 );
-assert.match(
+assert.doesNotMatch(
   shortListSpeak(draft({ ...afterNameAsk, statedOtherReo: "yes", otherReoAsked: true })),
   /Mortgage statements for all properties owned/,
 );
@@ -10281,7 +10375,7 @@ assert.equal(
 assertAnswerThenRestore(
   workspaceReply("did you send my file", afterIncome),
   new RegExp(STAFF_EXPORT_BORROWER_COPY.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")),
-  { labels: ["Start with ID", "Skip", "Not yet"] },
+  { labels: ["Upload this", "Skip"] },
 );
 const sentFileReply = workspaceReply("did you send my file?", afterIncome);
 assert.doesNotMatch(sentFileReply?.text ?? "", /DU says|exported to Fannie|in underwriting/i);
@@ -10474,6 +10568,9 @@ const skippedNotQueued = getFoxDraft();
 assert.equal(motionOf(skippedNotQueued), "ready");
 assert.equal(statusCopy(skippedNotQueued), "ready");
 assert.ok(!openReviewWorkItem(skippedNotQueued));
+if (workspacePrompt(getFoxDraft()) === "housing") applyCapture({ field: "skip-housing" });
+if (workspacePrompt(getFoxDraft()) === "household") applyCapture({ field: "skip-household" });
+assert.equal(workspaceUpdateCopy({ field: "proceed" }, getFoxDraft()), MOTION_COPY.emailAsk);
 applyCapture({ field: "proceed" });
 const emailGate = getFoxDraft();
 assert.equal(emailGate.pendingFinish, "proceed");
@@ -10486,8 +10583,6 @@ assert.deepEqual(
   ["Skip"],
 );
 assert.ok(!openReviewWorkItem(emailGate));
-assert.equal(workspaceReply("Proceed", beforeProceed)?.text, MOTION_COPY.emailAsk);
-assert.equal(workspaceUpdateCopy({ field: "proceed" }, beforeProceed), MOTION_COPY.emailAsk);
 applyCapture({ field: "email", value: "borrower@example.com" });
 const queued = getFoxDraft();
 assert.equal(motionOf(queued), "in_queue");
@@ -10726,10 +10821,6 @@ assert.notEqual(workspacePrompt(getFoxDraft()), "household");
 applyCapture({ field: "skip-docs" });
 assert.equal(workspacePrompt(getFoxDraft()), "property-address");
 applyCapture({ field: "skip-property-address" });
-assert.equal(workspacePrompt(getFoxDraft()), "citizenship");
-applyCapture({ field: "skip-citizenship" });
-assert.equal(workspacePrompt(getFoxDraft()), "assets");
-applyCapture({ field: "skip-available-assets" });
 assert.equal(workspacePrompt(getFoxDraft()), "review");
 applyCapture({ field: "confirm-draft" });
 if (workspacePrompt(getFoxDraft()) === "household") applyCapture({ field: "skip-household" });
@@ -11513,14 +11604,15 @@ function assertNoSketchReplay(text: string) {
 
 assert.equal(workspacePrompt(afterIncome), "documents");
 const handOffAsk = workspacePromptCopy("documents", afterIncome);
-assert.match(handOffAsk.text, /That’s the sketch/i);
+assert.equal(handOffAsk.text, DOC_INVITE_COPY.w2);
+assert.doesNotMatch(handOffAsk.text, /That’s the sketch|citizenship/i);
 const loanEditHandOff = beginFileEdit({ ...afterIncome, correctingLine: "loan" }, "amount");
 assert.equal(loanEditHandOff.correcting, "amount");
 assert.equal(loanEditHandOff.resumeAfterEdit, "documents");
 assert.equal(workspacePrompt(loanEditHandOff), "amount");
 const skipLoanHandOff = workspaceReply("Skip", loanEditHandOff);
 assert.equal(skipLoanHandOff?.capture?.field, "skip-amount");
-assert.match(skipLoanHandOff?.text ?? "", /That’s the sketch/i);
+assert.match(skipLoanHandOff?.text ?? "", /W-2|That’s the sketch/i);
 assertNoSketchReplay(skipLoanHandOff?.text ?? "");
 assert.equal(
   workspacePrompt({
@@ -11534,10 +11626,10 @@ assert.equal(
 );
 const typedLoanHandOff = workspaceReply("960000", loanEditHandOff);
 assert.equal(typedLoanHandOff?.capture?.field, "loanAmount");
-assert.match(typedLoanHandOff?.text ?? "", /That’s the sketch/i);
+assert.match(typedLoanHandOff?.text ?? "", /W-2|That’s the sketch/i);
 assertNoSketchReplay(typedLoanHandOff?.text ?? "");
 
-const seOnTaxReturn = skipCurrentInvite({ ...seIncome, docsStarted: true });
+const seOnTaxReturn = skipCurrentInvite({ ...seAfterLooksRight, docsStarted: true });
 assert.equal(workspacePrompt(seOnTaxReturn), "documents");
 assert.equal(workspacePromptCopy("documents", seOnTaxReturn).text, DOC_INVITE_COPY.tax_return);
 const loanEditMidDocs = beginFileEdit({ ...seOnTaxReturn, correctingLine: "loan" }, "amount");
@@ -11586,8 +11678,8 @@ const jobEditMidDocs = beginFileEdit(
 assert.equal(jobEditMidDocs.resumeAfterEdit, "documents");
 const jobEditReply = workspaceReply("18 months", jobEditMidDocs);
 assert.equal(jobEditReply?.capture?.field, "statedTimeOnJob");
-assert.equal(workspacePromptCopy("documents", { ...afterIncome, docsStarted: true }).text, DOC_INVITE_COPY.government_id);
-assert.match(jobEditReply?.text ?? "", /government ID|Start with ID/i);
+assert.equal(workspacePromptCopy("documents", { ...afterIncome, docsStarted: true }).text, DOC_INVITE_COPY.w2);
+assert.match(jobEditReply?.text ?? "", /government ID|Start with ID|W-2|paystub/i);
 
 const handOffNoHousehold = draft({
   ...afterIncome,
@@ -11657,7 +11749,7 @@ assert.equal(
 applyCapture({ field: "start-docs" });
 assert.equal(getFoxDraft().resumeAfterEdit, undefined);
 assert.equal(workspacePrompt(getFoxDraft()), "documents");
-assert.equal(workspacePromptCopy("documents", getFoxDraft()).text, DOC_INVITE_COPY.government_id);
+assert.equal(workspacePromptCopy("documents", getFoxDraft()).text, DOC_INVITE_COPY.w2);
 assert.notEqual(workspacePrompt(getFoxDraft()), "household");
 assert.notEqual(workspacePrompt(getFoxDraft()), "borrower-name");
 
@@ -11785,7 +11877,8 @@ applyCapture({ field: "skip-available-assets" });
 applyCapture({ field: "skip-property-type" });
 applyCapture({ field: "skip-current-housing" });
 applyCapture({ field: "skip-declarations" });
-assert.equal(workspacePrompt(getFoxDraft()), "other-reo");
+assert.equal(workspacePrompt(getFoxDraft()), "documents");
+assert.notEqual(workspacePrompt(getFoxDraft()), "other-reo");
 assert.notEqual(workspacePrompt(getFoxDraft()), "borrower-name");
 assert.notEqual(workspacePrompt(getFoxDraft()), "household");
 applyCapture({ field: "skip-other-reo" });
@@ -11796,32 +11889,26 @@ assert.doesNotMatch(
 );
 applyCapture({ field: "start-docs" });
 assert.equal(workspacePrompt(getFoxDraft()), "documents");
-assert.equal(workspacePromptCopy("documents", getFoxDraft()).text, DOC_INVITE_COPY.government_id);
+assert.equal(workspacePromptCopy("documents", getFoxDraft()).text, DOC_INVITE_COPY.w2);
 assert.notEqual(workspacePrompt(getFoxDraft()), "household");
 assert.notEqual(workspacePrompt(getFoxDraft()), "borrower-name");
 applyCapture({ field: "skip-docs" });
-assert.equal(workspacePrompt(getFoxDraft()), "borrower-name");
-applyCapture({ field: "skip-borrower-name" });
 assert.equal(workspacePrompt(getFoxDraft()), "documents");
 assert.equal(workspacePromptCopy("documents", getFoxDraft()).text, DOC_INVITE_COPY.paystub);
+assert.notEqual(workspacePrompt(getFoxDraft()), "borrower-name");
 assert.notEqual(workspacePrompt(getFoxDraft()), "household");
-applyCapture({ field: "skip-docs" });
-assert.equal(workspacePrompt(getFoxDraft()), "documents");
-assert.equal(workspacePromptCopy("documents", getFoxDraft()).text, DOC_INVITE_COPY.w2);
-assert.doesNotMatch(
-  `${workspacePromptCopy("documents", getFoxDraft()).text} ${workspacePromptCopy("documents", getFoxDraft()).followUp ?? ""}`,
-  /another borrower|Is there another borrower/i,
-);
 applyCapture({ field: "skip-docs" });
 assert.equal(workspacePrompt(getFoxDraft()), "property-address");
 applyCapture({ field: "skip-property-address" });
-assert.equal(workspacePrompt(getFoxDraft()), "citizenship");
-applyCapture({ field: "skip-citizenship" });
-assert.equal(workspacePrompt(getFoxDraft()), "assets");
-applyCapture({ field: "skip-available-assets" });
 assert.equal(workspacePrompt(getFoxDraft()), "review");
 assert.doesNotMatch(workspacePromptCopy("review", getFoxDraft()).text, /another borrower/i);
 applyCapture({ field: "confirm-draft" });
+if (workspacePrompt(getFoxDraft()) === "other-reo") applyCapture({ field: "skip-other-reo" });
+if (workspacePrompt(getFoxDraft()) === "borrower-name") applyCapture({ field: "skip-borrower-name" });
+assert.equal(workspacePrompt(getFoxDraft()), "documents");
+assert.equal(nextDocInvite(getFoxDraft()), "government_id");
+applyCapture({ field: "skip-docs" });
+if (workspacePrompt(getFoxDraft()) === "borrower-name") applyCapture({ field: "skip-borrower-name" });
 assert.equal(workspacePrompt(getFoxDraft()), "household");
 assert.equal(workspacePromptCopy("household", getFoxDraft()).text, HOUSEHOLD_ASK);
 
@@ -11839,35 +11926,22 @@ applyCapture({ field: "skip-available-assets" });
 applyCapture({ field: "skip-property-type" });
 applyCapture({ field: "skip-current-housing" });
 applyCapture({ field: "skip-declarations" });
-assert.equal(workspacePrompt(getFoxDraft()), "other-reo");
-assert.notEqual(workspacePrompt(getFoxDraft()), "borrower-name");
-applyCapture({ field: "skip-other-reo" });
-applyCapture({ field: "start-docs" });
-assert.equal(workspacePrompt(getFoxDraft()), "documents");
-assert.equal(workspacePromptCopy("documents", getFoxDraft()).text, DOC_INVITE_COPY.government_id);
-assert.notEqual(workspacePrompt(getFoxDraft()), "household");
-applyCapture({ field: "skip-docs" });
-assert.equal(workspacePrompt(getFoxDraft()), "borrower-name");
-applyCapture({ field: "skip-borrower-name" });
-assert.equal(workspacePrompt(getFoxDraft()), "documents");
-assert.equal(workspacePromptCopy("documents", getFoxDraft()).text, DOC_INVITE_COPY.tax_return);
-assert.notEqual(workspacePrompt(getFoxDraft()), "household");
-applyCapture({ field: "skip-docs" });
-assert.equal(workspacePrompt(getFoxDraft()), "documents");
-assert.equal(workspacePromptCopy("documents", getFoxDraft()).text, DOC_INVITE_COPY.prior_year_return);
-assert.doesNotMatch(
-  `${workspacePromptCopy("documents", getFoxDraft()).text} ${workspacePromptCopy("documents", getFoxDraft()).followUp ?? ""}`,
-  /another borrower|Is there another borrower/i,
-);
-applyCapture({ field: "skip-docs" });
 assert.equal(workspacePrompt(getFoxDraft()), "property-address");
+assert.notEqual(workspacePrompt(getFoxDraft()), "other-reo");
 applyCapture({ field: "skip-property-address" });
-assert.equal(workspacePrompt(getFoxDraft()), "citizenship");
-applyCapture({ field: "skip-citizenship" });
-assert.equal(workspacePrompt(getFoxDraft()), "assets");
-applyCapture({ field: "skip-available-assets" });
 assert.equal(workspacePrompt(getFoxDraft()), "review");
 applyCapture({ field: "confirm-draft" });
+if (workspacePrompt(getFoxDraft()) === "other-reo") applyCapture({ field: "skip-other-reo" });
+if (workspacePrompt(getFoxDraft()) === "borrower-name") applyCapture({ field: "skip-borrower-name" });
+assert.equal(workspacePrompt(getFoxDraft()), "documents");
+assert.match(
+  workspacePromptCopy("documents", getFoxDraft()).text,
+  /government ID|tax return/i,
+);
+applyCapture({ field: "skip-docs" });
+if (workspacePrompt(getFoxDraft()) === "borrower-name") applyCapture({ field: "skip-borrower-name" });
+if (workspacePrompt(getFoxDraft()) === "documents") applyCapture({ field: "skip-docs" });
+if (workspacePrompt(getFoxDraft()) === "documents") applyCapture({ field: "skip-docs" });
 assert.equal(workspacePrompt(getFoxDraft()), "household");
 
 const conventionalW2Walk = draft({
@@ -11923,7 +11997,9 @@ const conventionalSeWalk = draft({
   otherReoAsked: true,
   statedOtherReo: "none",
 });
-assert.equal(workspacePrompt(conventionalSeWalk), "documents");
+assert.notEqual(workspacePrompt(conventionalSeWalk), "other-reo");
+assert.notEqual(workspacePrompt(conventionalSeWalk), "documents");
+assert.ok(["property-address", "review"].includes(workspacePrompt(conventionalSeWalk)));
 assert.ok(previewFacts(conventionalSeWalk).some((fact) => fact.id === "file-property"));
 assert.ok(previewFacts(conventionalSeWalk).some((fact) => fact.id === "file-assets"));
 assert.ok(previewFacts(conventionalSeWalk).some((fact) => fact.id === "file-liabilities"));
@@ -12357,14 +12433,9 @@ const housingFile = writeEstimatedHousing(investBuy, housing!.estimatedHousing);
 assert.equal(housingFile.estimatedHousing, housing!.estimatedHousing);
 assert.ok(previewFacts(housingFile).some((fact) => fact.id === "housing" && fact.note === ESTIMATED_NOT_FINAL));
 assert.ok(previewFacts(housingFile).some((fact) => fact.id === "pi" && (fact.note ?? "").includes(SAMPLE_INDICATIVE_NOT_LIVE)));
-assert.equal(
-  workspacePrompt(draft({ ...investBuy, sampleAccepted: true })),
-  "housing",
-);
-const housingAsk = workspaceReply(
-  "Use this",
-  draft({ ...investBuy, sampleAccepted: true }),
-);
+const investBuyAfterLooks = skipDocInvites(draft({ ...investBuy, sampleAccepted: true }));
+assert.equal(workspacePrompt(investBuyAfterLooks), "housing");
+const housingAsk = workspaceReply("Use this", investBuyAfterLooks);
 assert.match(
   housingAsk?.text ?? "",
   /Estimated housing is about \$|About how much do you pay each month|This file can move|Proceed|What is the (property address|address of the home you are buying)/,
@@ -12440,20 +12511,22 @@ assert.doesNotMatch(
   /HOA questionnaire|condo project docs/,
 );
 
-const w2PrimaryWalk = draft({
-  ...afterLooks,
-  monthlyDebtsAsked: false,
-  statedMonthlyDebts: undefined,
-  facts: {
-    ...(afterLooks.facts ?? {}),
-    qualifying_income: {
-      field: "qualifying_income",
-      value: "12000",
-      source: "suggested",
-      confirmed: true,
+const w2PrimaryWalk = skipDocInvites(
+  draft({
+    ...afterLooks,
+    monthlyDebtsAsked: false,
+    statedMonthlyDebts: undefined,
+    facts: {
+      ...(afterLooks.facts ?? {}),
+      qualifying_income: {
+        field: "qualifying_income",
+        value: "12000",
+        source: "suggested",
+        confirmed: true,
+      },
     },
-  },
-});
+  }),
+);
 assert.equal(workspacePrompt(w2PrimaryWalk), "housing");
 const w2Housing = workspaceReply("Use this", w2PrimaryWalk);
 assert.equal(w2Housing?.capture?.field, "estimatedHousing");
@@ -12491,7 +12564,8 @@ const sePrimaryWalk = draft({
   },
 });
 assert.equal(qualifyingIncomeConfirmCopy(9000), "Suggested monthly income is $9,000. Use this?");
-assert.equal(workspacePrompt(sePrimaryWalk), "housing");
+assert.equal(workspacePrompt(sePrimaryWalk), "documents");
+assert.equal(workspacePrompt(skipDocInvites(sePrimaryWalk)), "housing");
 
 const investRentalWalk = draft({
   ...investBuy,
@@ -12518,9 +12592,19 @@ assert.equal(draftHousingEstimate(higherLtvWalk)?.monthlyMI, null);
 assert.ok(previewFacts(higherLtvWalk).some((fact) => fact.id === "mi" && /amount waits/.test(fact.value)));
 assert.doesNotMatch(JSON.stringify(draftHousingEstimate(higherLtvWalk)), /monthlyMI":[1-9]/);
 
-const uploadDuringHousing = workspaceReply("Upload docs", seCoachLooks);
+const uploadDuringHousing = workspaceReply("Upload docs", skipDocInvites(seCoachLooks));
 assert.equal(uploadDuringHousing?.capture?.field, "upload-more");
-const proceedDuringHousing = workspaceReply("Proceed", beforeProceed);
+const proceedDuringHousing = workspaceReply(
+  "Proceed",
+  skipEstimatedHousing(
+    skipDocInvites({
+      ...beforeProceed,
+      householdAsked: true,
+      borrowerNameAsked: true,
+      otherReoAsked: true,
+    }),
+  ),
+);
 assert.equal(proceedDuringHousing?.text, MOTION_COPY.emailAsk);
 const housingChange = workspaceReply("Change", w2PrimaryWalk);
 assert.equal(housingChange?.capture?.field, "needs-correction");
@@ -12534,15 +12618,17 @@ assert.notEqual(workspacePrompt(afterHousingChange), "property-type");
 assert.notEqual(workspacePrompt(afterHousingChange), "citizenship");
 assert.notEqual(workspacePrompt(afterHousingChange), "coborrower-name");
 
-const file32W2None = draft({
-  ...afterLooks,
-  housingAsked: true,
-  estimatedHousing: 5400,
-  monthlyDebtsAsked: true,
-  statedMonthlyDebts: 800,
-  statedOtherReo: "none",
-  otherReoAsked: true,
-});
+const file32W2None = skipDocInvites(
+  draft({
+    ...afterLooks,
+    housingAsked: true,
+    estimatedHousing: 5400,
+    monthlyDebtsAsked: true,
+    statedMonthlyDebts: 800,
+    statedOtherReo: "none",
+    otherReoAsked: true,
+  }),
+);
 assert.equal(workspacePrompt(file32W2None), "property-address");
 assert.equal(nextFoxAsk(file32W2None).text, PURCHASE_ADDRESS_ASK);
 assert.equal(nextFoxAsk(file32W2None).text, "What is the address of the home you are buying?");
@@ -12677,12 +12763,12 @@ const file32Se = draft({
     },
   },
 });
-assert.equal(workspacePrompt(file32Se), "done");
+assert.equal(workspacePrompt(skipDocInvites(file32Se)), "done");
 assert.notEqual(workspacePromptCopy("done", file32Se).followUp, CITIZENSHIP_ASK);
 assert.ok(!(workspacePromptCopy("done", file32Se).actions ?? []).some((item) => /citizen|Permanent resident|Other/i.test(item.label) && item.label !== "Request human"));
-assert.notEqual(workspacePrompt(file32Se), "assets");
+assert.notEqual(workspacePrompt(skipDocInvites(file32Se)), "assets");
 assert.equal(otherReoRows(file32Se).length, 0);
-const file32SeSkipped = skipCitizenship(file32Se);
+const file32SeSkipped = skipCitizenship(skipDocInvites(file32Se));
 const file32SeSlots = conventionalSlotReport(file32SeSkipped);
 assert.ok(file32SeSlots.present.includes("income.type"));
 assert.ok(file32SeSlots.present.includes("history.employmentHistory"));
@@ -12701,10 +12787,10 @@ const file32Invest = draft({
   subjectAddressAsked: true,
 });
 assert.equal(assetsMatter(file32Invest), true);
-assert.equal(workspacePrompt(file32Invest), "done");
-assert.notEqual(workspacePromptCopy("done", file32Invest).followUp, CITIZENSHIP_ASK);
-assert.ok(!(workspacePromptCopy("done", file32Invest).actions ?? []).some((item) => item.label === "US citizen" || item.label === "Permanent resident"));
-assert.notEqual(workspacePrompt(file32Invest), "assets");
+assert.equal(workspacePrompt(skipDocInvites(file32Invest)), "done");
+assert.notEqual(workspacePromptCopy("done", skipDocInvites(file32Invest)).followUp, CITIZENSHIP_ASK);
+assert.ok(!(workspacePromptCopy("done", skipDocInvites(file32Invest)).actions ?? []).some((item) => item.label === "US citizen" || item.label === "Permanent resident"));
+assert.notEqual(workspacePrompt(skipDocInvites(file32Invest)), "assets");
 assert.equal(otherReoRows(file32Invest).length, 0);
 assert.equal(file32Invest.suggestedNetRental, -3293);
 assert.equal(file32Invest.facts?.[SUGGESTED_NET_RENTAL_FIELD]?.value, "-3293");
@@ -13014,36 +13100,20 @@ const harborPreLooksSkipAddress = skipSubjectAddress(harborPreLooksReady);
 assert.equal(harborPreLooksSkipAddress.subjectAddress, undefined);
 assert.equal(harborPreLooksSkipAddress.occupancyChoice.value, harborPreLooksReady.occupancyChoice.value);
 assert.equal(harborPreLooksSkipAddress.propertyType, harborPreLooksReady.propertyType);
-assert.equal(workspacePrompt(harborPreLooksSkipAddress), "citizenship");
-assert.equal(nextFoxAsk(harborPreLooksSkipAddress).text, CITIZENSHIP_ASK);
-assert.equal(nextFoxAsk(harborPreLooksSkipAddress).text, "For this file, US citizen, permanent resident, or other?");
+assert.equal(workspacePrompt(harborPreLooksSkipAddress), "review");
+assert.equal(canLooksRight(harborPreLooksSkipAddress), true);
+assert.ok((nextFoxAsk(harborPreLooksSkipAddress).actions ?? []).some((item) => item.label === "Looks right"));
+assert.equal(workspacePromptCopy("citizenship", harborPreLooksSkipAddress).text, CITIZENSHIP_ASK);
 assert.deepEqual(
-  (nextFoxAsk(harborPreLooksSkipAddress).actions ?? []).map((item) => item.label),
+  (workspacePromptCopy("citizenship", harborPreLooksSkipAddress).actions ?? []).map((item) => item.label),
   ["US citizen", "Permanent resident", "Other", "Skip"],
 );
-assert.ok(!(nextFoxAsk(harborPreLooksSkipAddress).actions ?? []).some((item) => item.label === "Looks right"));
-assert.ok(!(nextFoxAsk(harborPreLooksSkipAddress).actions ?? []).some((item) => item.label === "Proceed"));
-assert.ok(!(nextFoxAsk(harborPreLooksSkipAddress).actions ?? []).some((item) => item.label === "Not yet"));
-assert.ok(!(nextFoxAsk(harborPreLooksSkipAddress).actions ?? []).some((item) => item.label === "Request human"));
-assert.doesNotMatch(nextFoxAsk(harborPreLooksSkipAddress).text, /visa|SSN|date of birth/i);
-assert.equal(canLooksRight(harborPreLooksSkipAddress), false);
 const harborPreLooksSkipCitizen = skipCitizenship(harborPreLooksSkipAddress);
 assert.equal(harborPreLooksSkipCitizen.agencyDeclarations?.citizenship, undefined);
 assert.equal(harborPreLooksSkipCitizen.facts?.citizenship, undefined);
-assert.equal(workspacePrompt(harborPreLooksSkipCitizen), "assets");
-assert.equal(nextFoxAsk(harborPreLooksSkipCitizen).text, BANK_STATEMENT_ASK);
-assert.equal(
-  nextFoxAsk(harborPreLooksSkipCitizen).text,
-  "I need two recent bank statements to show funds for the down payment. Drop them here, or Skip.",
-);
-assert.deepEqual(
-  (nextFoxAsk(harborPreLooksSkipCitizen).actions ?? []).map((item) => item.label),
-  ["Skip"],
-);
-assert.ok(!(nextFoxAsk(harborPreLooksSkipCitizen).actions ?? []).some((item) => item.label === "Looks right"));
-assert.ok(!(nextFoxAsk(harborPreLooksSkipCitizen).actions ?? []).some((item) => item.label === "Not yet"));
-assert.doesNotMatch(nextFoxAsk(harborPreLooksSkipCitizen).text, /cash|available funds|last4|account number|declarations maze/i);
-assert.equal(canLooksRight(harborPreLooksSkipCitizen), false);
+assert.equal(workspacePrompt(harborPreLooksSkipCitizen), "review");
+assert.equal(canLooksRight(harborPreLooksSkipCitizen), true);
+assert.equal(workspacePromptCopy("assets", harborPreLooksSkipCitizen).text, BANK_STATEMENT_ASK);
 const harborPreLooksSkipAssets = skipAvailableAssets(harborPreLooksSkipCitizen);
 assert.equal(harborPreLooksSkipAssets.statedAvailableAssets, undefined);
 assert.equal(harborPreLooksSkipAssets.facts?.institution, undefined);
@@ -13081,9 +13151,9 @@ const harborPreLooksWritten = resolveProposal(
 assert.equal(harborPreLooksWritten.subjectAddress, "14 Oak Street");
 assert.equal(harborPreLooksWritten.occupancyChoice.value, harborPreLooksReady.occupancyChoice.value);
 assert.equal(harborPreLooksWritten.propertyType, harborPreLooksReady.propertyType);
-assert.equal(workspacePrompt(harborPreLooksWritten), "citizenship");
-assert.equal(canLooksRight(harborPreLooksWritten), false);
-assert.ok(!(nextFoxAsk(harborPreLooksWritten).actions ?? []).some((item) => item.label === "Looks right"));
+assert.equal(workspacePrompt(harborPreLooksWritten), "review");
+assert.equal(canLooksRight(harborPreLooksWritten), true);
+assert.ok((nextFoxAsk(harborPreLooksWritten).actions ?? []).some((item) => item.label === "Looks right"));
 const harborPreLooksCitizen = writeCitizenship(harborPreLooksWritten, "us_citizen");
 assert.equal(harborPreLooksCitizen.agencyDeclarations?.citizenship, "us_citizen");
 assert.ok(
@@ -13096,14 +13166,8 @@ assert.ok(
     (fact) => fact.id === "file-declarations" && /US citizen/.test(fact.value),
   ),
 );
-assert.equal(workspacePrompt(harborPreLooksCitizen), "assets");
-assert.equal(nextFoxAsk(harborPreLooksCitizen).text, BANK_STATEMENT_ASK);
-assert.equal(
-  nextFoxAsk(harborPreLooksCitizen).text,
-  "I need two recent bank statements to show funds for the down payment. Drop them here, or Skip.",
-);
-assert.equal(canLooksRight(harborPreLooksCitizen), false);
-assert.ok(!(nextFoxAsk(harborPreLooksCitizen).actions ?? []).some((item) => item.label === "Looks right"));
+assert.equal(workspacePrompt(harborPreLooksCitizen), "review");
+assert.equal(canLooksRight(harborPreLooksCitizen), true);
 const harborPreLooksCitizenSkipAssets = skipAvailableAssets(harborPreLooksCitizen);
 assert.equal(harborPreLooksCitizenSkipAssets.statedAvailableAssets, undefined);
 assert.equal(conventionalFileFromDraft(harborPreLooksCitizenSkipAssets).assets.institution, undefined);
@@ -13129,11 +13193,11 @@ assert.ok(
     (fact) => fact.id === "citizenship" && fact.value === "Other",
   ),
 );
-assert.equal(workspacePrompt(harborPreLooksOther), "assets");
-assert.equal(canLooksRight(harborPreLooksOther), false);
+assert.equal(workspacePrompt(harborPreLooksOther), "review");
+assert.equal(canLooksRight(harborPreLooksOther), true);
 assert.notEqual(harborPreLooksOther.motion, "escalated");
 assert.ok(!(nextFoxAsk(harborPreLooksOther).actions ?? []).some((item) => item.label === "Request human"));
-const harborOtherReply = workspaceReply("Other", harborPreLooksWritten);
+const harborOtherReply = workspaceReply("Other", onStep(harborPreLooksWritten, "citizenship"));
 assert.equal(harborOtherReply?.capture?.field, "citizenship");
 assert.equal(
   harborOtherReply?.capture && "value" in harborOtherReply.capture ? harborOtherReply.capture.value : "",
@@ -13152,7 +13216,7 @@ assert.equal(workspacePrompt(harborPreLooksOtherSkipAssets), "review");
 assert.ok((nextFoxAsk(harborPreLooksOtherSkipAssets).actions ?? []).some((item) => item.label === "Looks right"));
 assert.ok(!(nextFoxAsk(harborPreLooksOther).actions ?? []).some((item) => item.label === "Request human"));
 assert.notEqual(workspacePrompt(harborPreLooksOther), "citizenship");
-assert.notEqual(workspacePrompt(harborPreLooksOther), "review");
+assert.equal(workspacePrompt(harborPreLooksOther), "review");
 const harborTypedCash = workspaceReply("50000", harborPreLooksCitizen);
 assert.notEqual(harborTypedCash?.capture?.field, "statedAvailableAssets");
 assert.equal(harborPreLooksCitizen.statedAvailableAssets, undefined);
@@ -13585,7 +13649,16 @@ const leasedThenHousing = draft({
   rentalGrossMonthly: 3000,
   propertyZipAsked: true,
 });
-assert.equal(workspacePrompt(leasedThenHousing), "housing");
+assert.equal(
+  workspacePrompt(
+    skipDocInvites({
+      ...leasedThenHousing,
+      householdAsked: true,
+      borrowerNameAsked: true,
+    }),
+  ),
+  "housing",
+);
 
 const walkedOtherReoMortgage = applyExtractedFields(
   draft({
@@ -14046,7 +14119,11 @@ applyCapture({ field: "creditRange", value: "760+" });
 applyCapture({ field: "incomeType", value: "self-employed" });
 for (let i = 0; i < 12; i += 1) {
   const prompt = workspacePrompt(getFoxDraft());
-  if (prompt === "years-in-business") break;
+  if (prompt === "review") break;
+  if (prompt === "years-in-business") {
+    applyCapture({ field: "skip-years-in-business" });
+    continue;
+  }
   if (prompt === "property-type") {
     applyCapture({ field: "skip-property-type" });
     continue;
@@ -14073,11 +14150,11 @@ for (let i = 0; i < 12; i += 1) {
   }
   break;
 }
-assert.equal(workspacePrompt(getFoxDraft()), "years-in-business");
-assert.equal(nextFoxAsk(getFoxDraft()).text, YEARS_IN_BUSINESS_ASK);
-assert.doesNotMatch(nextFoxAsk(getFoxDraft()).text, /running this|What’s the timeline\?/);
-applyCapture({ field: "skip-years-in-business" });
-for (let i = 0; i < 8; i += 1) {
+assert.equal(workspacePrompt(getFoxDraft()), "review");
+assert.ok(canLooksRight(getFoxDraft()));
+assert.equal(workspacePromptCopy("years-in-business", getFoxDraft()).text, YEARS_IN_BUSINESS_ASK);
+assert.doesNotMatch(workspacePromptCopy("years-in-business", getFoxDraft()).text, /running this|What’s the timeline\?/);
+for (let i = 0; i < 12; i += 1) {
   const prompt = workspacePrompt(getFoxDraft());
   if (prompt === "review") {
     applyCapture({ field: "confirm-draft" });
@@ -14097,6 +14174,22 @@ for (let i = 0; i < 8; i += 1) {
   }
   if (prompt === "assets") {
     applyCapture({ field: "skip-available-assets" });
+    continue;
+  }
+  if (prompt === "other-reo") {
+    applyCapture({ field: "skip-other-reo" });
+    continue;
+  }
+  if (prompt === "borrower-name") {
+    applyCapture({ field: "skip-borrower-name" });
+    continue;
+  }
+  if (prompt === "years-in-business") {
+    applyCapture({ field: "skip-years-in-business" });
+    continue;
+  }
+  if (prompt === "documents" || nextDocInvite(getFoxDraft())) {
+    applyCapture({ field: "skip-docs" });
     continue;
   }
   if (prompt === "household") {

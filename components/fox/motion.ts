@@ -2,6 +2,7 @@ import {
   askClassLabel,
   missingExtractClasses,
   missingListCopy,
+  nextDocInvite,
   receivedTaxReturnCount,
   stillUsefulLabels,
 } from "./fileWrite";
@@ -142,7 +143,7 @@ export function waitingOnOf(draft: FoxIntakeDraft): WaitingOn {
 }
 
 export function inferMotionAfterLooks(draft: FoxIntakeDraft): FileMotion {
-  return missingExtractClasses(draft).length ? "gathering" : "ready";
+  return nextDocInvite({ ...draft, sampleAccepted: true }) ? "gathering" : "ready";
 }
 
 export function restripeGatheringOrReady(draft: FoxIntakeDraft): FoxIntakeDraft {
@@ -440,12 +441,13 @@ export function applyLooksRightMotion(draft: FoxIntakeDraft): FoxIntakeDraft {
     return applyEscalateMotion(
       appendFileEvent(
         {
-          ...draft,
-          sampleAccepted: true,
-          docsOpen: false,
-          pendingFinish: undefined,
-          workspaceDraftStatus: "ready",
-        },
+      ...draft,
+      sampleAccepted: true,
+      phase: "confirmed",
+      docsOpen: false,
+      pendingFinish: undefined,
+      workspaceDraftStatus: "ready",
+    },
         "looks-right",
         "Looks right — file confirmed. Originator assigned.",
       ),
@@ -456,6 +458,7 @@ export function applyLooksRightMotion(draft: FoxIntakeDraft): FoxIntakeDraft {
     {
       ...draft,
       sampleAccepted: true,
+      phase: "confirmed",
       motion,
       nextActor: nextForMotion(motion),
       waitingOn: waitingOnForMotion(motion),
