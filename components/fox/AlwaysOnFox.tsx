@@ -82,6 +82,7 @@ import {
   withoutLiveQuoteSpeech,
   docReactionAsk,
   nextDocInvite,
+  incomeAskOpen,
   nextFoxAsk,
   holdDocsAskFox,
   productIntentFromAction,
@@ -1297,10 +1298,19 @@ export function AlwaysOnFox({
         appendStructureFix(action.label, capture);
         return;
       }
+      const couponResolved =
+        (capture.field === "couponChoice" &&
+          (capture.value === "this" || capture.value === "skip")) ||
+        capture.field === "accept-live-coupon" ||
+        capture.field === "keep-live-coupon";
+      const afterCoupon =
+        couponResolved && incomeAskOpen(live)
+          ? workspacePromptCopy("income", live)
+          : nextFoxAsk(live);
       const next =
         workspaceSurface
           ? withWorkspaceGuide(
-              { ...nextFoxAsk(live), capture },
+              { ...afterCoupon, capture },
               live,
             )
           : promptCopy(currentPrompt(live), live);

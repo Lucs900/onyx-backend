@@ -417,6 +417,8 @@ import {
   structureExplainCopy,
   structureFixPrompt,
   workspaceGreeting,
+  incomeAskOpen,
+  skipIncomeAsk,
   workspacePrompt,
   workspacePromptCopy,
   workspaceReply,
@@ -1593,6 +1595,12 @@ const founderThisOne = workspaceReply("This one", founderLive);
 assert.equal(founderThisOne?.capture?.field, "couponChoice");
 assert.equal(founderThisOne?.capture && "value" in founderThisOne.capture ? founderThisOne.capture.value : "", "this");
 assert.equal(founderThisOne?.text, founderIncomeAsk.text);
+assert.notEqual(workspacePrompt(applyCouponChoice(founderLive, "this")), "review");
+assert.notEqual(workspacePrompt(applyCouponChoice(founderLive, "this")), "documents");
+assert.equal(canLooksRight(applyCouponChoice(founderLive, "this")), false);
+assert.equal(workspaceReply("Skip", founderLive)?.text, founderIncomeAsk.text);
+assert.notEqual(workspacePrompt(applyCouponChoice(founderLive, "skip")), "review");
+assert.notEqual(workspacePrompt(applyCouponChoice(founderLive, "skip")), "documents");
 assert.equal(applyCouponChoice(founderLive, "this").liveQuote?.rate, 6.125);
 assert.equal(applyCouponChoice(founderLive, "this").liveCouponSettled, true);
 assert.equal(workspaceReply("Skip", founderLive)?.capture && "value" in workspaceReply("Skip", founderLive)!.capture!
@@ -1959,6 +1967,52 @@ assert.equal(
 assert.equal(rateflowClientBodyFromDraft(founderPurchasePlace)?.loan_purpose, "purchase");
 assert.equal(rateflowClientBodyFromDraft(founderPurchasePlace)?.zipcode, "94105");
 assert.notEqual(workspacePrompt(founderPurchasePlace), "property-zip");
+const founderPurchaseLiveKey = rateflowScenarioKey(rateflowClientBodyFromDraft(founderPurchasePlace)!);
+const founderPurchaseLive = draft({
+  ...founderPurchasePlace,
+  liveQuoteKey: founderPurchaseLiveKey,
+  liveQuoteStatus: "ready" as const,
+  liveQuote: {
+    ...founderLive.liveQuote!,
+    key: founderPurchaseLiveKey,
+  },
+  liveQuoteRows: founderCouponRows,
+});
+assert.equal(incomeAskOpen(founderPurchaseLive), true);
+assert.equal(workspaceReply("This one", founderPurchaseLive)?.text, "How is income earned?");
+assert.equal(workspaceReply("Skip", founderPurchaseLive)?.text, "How is income earned?");
+assert.equal(workspacePrompt(applyCouponChoice(founderPurchaseLive, "this")), "income");
+assert.equal(workspacePrompt(applyCouponChoice(founderPurchaseLive, "skip")), "income");
+assert.ok(!canLooksRight(applyCouponChoice(founderPurchaseLive, "this")));
+assert.ok(!canLooksRight(applyCouponChoice(founderPurchaseLive, "skip")));
+assert.notEqual(workspacePrompt(applyCouponChoice(founderPurchaseLive, "this")), "review");
+assert.notEqual(workspacePrompt(applyCouponChoice(founderPurchaseLive, "this")), "documents");
+const founderPurchaseAfterThis = applyCouponChoice(founderPurchaseLive, "this");
+assert.deepEqual(
+  (workspaceReply("This one", founderPurchaseLive)?.actions ?? []).map((item) => item.label),
+  ["W-2", "Self-employed", "Both", "Other", "Skip"],
+);
+const founderPurchaseW2 = workspaceReply("W-2", founderPurchaseAfterThis);
+assert.equal(founderPurchaseW2?.capture?.field, "incomeType");
+assert.equal(founderPurchaseW2?.capture && "value" in founderPurchaseW2.capture ? founderPurchaseW2.capture.value : "", "w2");
+assert.doesNotMatch(founderPurchaseW2?.text ?? "", /Looks right|I have what I need/i);
+assert.equal(workspacePrompt({ ...founderPurchaseAfterThis, incomeAsked: true, incomeType: { ...emptyDraft().incomeType, value: "w2" } }), "other-reo");
+const founderPurchaseSe = workspaceReply("Self-employed", founderPurchaseAfterThis);
+assert.equal(founderPurchaseSe?.capture?.field, "incomeType");
+assert.doesNotMatch(`${founderPurchaseSe?.text ?? ""} ${founderPurchaseSe?.followUp ?? ""}`, /\$[\d,]+ a month|qualifying income/i);
+assert.ok(
+  !previewFacts({
+    ...founderPurchaseAfterThis,
+    incomeAsked: true,
+    incomeType: { ...emptyDraft().incomeType, value: "self-employed" },
+  }).some((fact) => fact.id === "qualifying"),
+);
+const founderIncomeSkipped = skipIncomeAsk(founderPurchaseAfterThis);
+assert.equal(founderIncomeSkipped.incomeAsked, true);
+assert.ok(!founderIncomeSkipped.incomeType.value);
+assert.equal(previewFacts(founderIncomeSkipped).find((fact) => fact.id === "income")?.value, "—");
+assert.equal(workspaceReply("Skip", founderPurchaseAfterThis)?.capture?.field, "skip-income");
+assert.ok(!canLooksRight(founderIncomeSkipped));
 const founderRefiKey = rateflowScenarioKey(rateflowClientBodyFromDraft(founderRefiAddress)!);
 assert.notEqual(
   rateflowScenarioKey(rateflowClientBodyFromDraft({ ...founderRefiAddress, propertyValueAmount: 900000 })!),
@@ -2095,6 +2149,9 @@ assert.equal(applyCouponChoice(founderRefiLive, "nocost").pendingLiveCoupon, und
 assert.equal(applyCouponChoice(founderRefiLive, "nocost").liveQuote?.rate, 6.75);
 assert.equal(applyCouponChoice(founderRefiLive, "nocost").liveCouponSettled, true);
 assert.equal(workspaceReply("This one", founderRefiLive)?.text, founderRefiIncomeAsk.text);
+assert.equal(workspaceReply("Skip", founderRefiLive)?.text, founderRefiIncomeAsk.text);
+assert.notEqual(workspacePrompt(applyCouponChoice(founderRefiLive, "this")), "review");
+assert.notEqual(workspacePrompt(applyCouponChoice(founderRefiLive, "skip")), "documents");
 assert.doesNotMatch(nextFoxAsk(founderRefiAddress).text, /purchase price|home you are buying/);
 const founderSkip = workspaceReply("Skip", founder850);
 assert.equal(founderSkip?.capture?.field, "skip-property-type");
@@ -2157,7 +2214,7 @@ assert.ok(!(incomeReply?.actions ?? []).some((item) => item.label === "Add anoth
 const incomeAsk = workspacePromptCopy("income", afterCredit);
 assert.deepEqual(
   (incomeAsk.actions ?? []).map((item) => item.label),
-  ["W-2", "Self-employed", "Both", "Other"],
+  ["W-2", "Self-employed", "Both", "Other", "Skip"],
 );
 
 const afterIncome = withIncome(afterCredit, "w2");

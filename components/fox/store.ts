@@ -1877,6 +1877,14 @@ function applyCaptureBody(capture: Capture) {
   if (capture.field === "formerHistory") {
     return commit(writeFormerHistoryNote(current, capture.value));
   }
+  if (capture.field === "skip-income") {
+    return commit({
+      ...current,
+      incomeAsked: true,
+      correcting: current.correcting === "income" ? null : current.correcting,
+      correctingLine: current.correctingLine === "income" ? null : current.correctingLine,
+    });
+  }
   if (capture.field === "incomeType") {
     const midFile = Boolean(current.correcting);
     commit({

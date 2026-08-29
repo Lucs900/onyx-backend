@@ -531,6 +531,7 @@ export type Capture =
   | { field: "fullName" | "email" | "phone" | "preferredContact"; value: string }
   | { field: "preferred-asked"; value: string }
   | { field: "incomeType"; value: string }
+  | { field: "skip-income" }
   | { field: "skip-monthly-debts" }
   | { field: "propose-monthly-debts"; value: string }
   | { field: "include-mortgage-debts"; value: string }

@@ -1186,6 +1186,32 @@ export function incomeSettled(draft: FoxIntakeDraft) {
   return Boolean(draft.incomeAsked || draft.incomeType.value);
 }
 
+/** File Income has no type and they have not skipped. */
+export function incomeAskOpen(draft: FoxIntakeDraft) {
+  return !draft.incomeAsked && !draft.incomeType.value;
+}
+
+export function skipIncomeAsk(draft: FoxIntakeDraft): FoxIntakeDraft {
+  return {
+    ...draft,
+    incomeAsked: true,
+    correcting: draft.correcting === "income" ? null : draft.correcting,
+    correctingLine: draft.correctingLine === "income" ? null : draft.correctingLine,
+  };
+}
+
+export function isSkipIncomeText(text: string) {
+  const lower = text.trim().toLowerCase().replace(/[?.!]+$/g, "");
+  return /^(skip|skip for now)$/i.test(lower);
+}
+
+function incomeAskActions(): FoxAction[] {
+  return [
+    ...bubbles([...INCOME_BUBBLES], "incomeType"),
+    { id: "skip-income", label: "Skip", event: "bubble", capture: { field: "skip-income" } },
+  ];
+}
+
 export { nextDocInvite, skipCurrentInvite, DOC_INVITE_COPY };
 
 export function docsRequestForIncome(income?: string | null): {
@@ -2388,6 +2414,7 @@ export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
     !draft.sampleAccepted &&
     nextDocInvite(draft)
   ) {
+    if (incomeAskOpen(draft)) return "income";
     return "documents";
   }
   if (!draft.productIntent) return "product";
@@ -2632,7 +2659,7 @@ function workspaceAskCopy(
   if (prompt === "income") {
     return {
       text: "How is income earned?",
-      actions: bubbles([...INCOME_BUBBLES], "incomeType"),
+      actions: incomeAskActions(),
     };
   }
   if (prompt === "subject-lease") {
@@ -3393,7 +3420,7 @@ export function editPromptFromCapture(capture?: Capture): FoxPrompt | undefined 
   if (capture.field === "couponChoice") return undefined;
   if (capture.field === "creditRange" || capture.field === "skip-credit") return "credit";
   if (capture.field === "termYears" || capture.field === "skip-term") return "term";
-  if (capture.field === "incomeType") return "income";
+  if (capture.field === "incomeType" || capture.field === "skip-income") return "income";
   if (
     capture.field === "skip-monthly-debts" ||
     capture.field === "propose-monthly-debts" ||
@@ -3656,6 +3683,7 @@ export function workspaceUpdateCopy(capture: Capture, draft: FoxIntakeDraft) {
     const label = INCOME_BUBBLES.find((item) => item.value === capture.value)?.label;
     return label ? `Updated income to ${label}.` : "Updated income.";
   }
+  if (capture.field === "skip-income") return "Updated. Income left blank.";
   if (capture.field === "skip-monthly-debts") return "Updated. Monthly debts left blank.";
   if (capture.field === "propose-monthly-debts" || capture.field === "include-mortgage-debts") {
     return "Updated.";
@@ -4315,6 +4343,7 @@ function draftAfterCaptureBody(draft: FoxIntakeDraft, capture: Capture): FoxInta
   if (capture.field === "skip-value") return { ...next, valueAsked: true, propertyValueAmount: undefined };
   if (capture.field === "skip-term") return { ...next, termAsked: true, termYears: undefined };
   if (capture.field === "incomeType") return withIncomeType(next, capture.value);
+  if (capture.field === "skip-income") return skipIncomeAsk(next);
   if (capture.field === "skip-docs") return skipCurrentInvite({ ...next, docsHeld: false });
   if (capture.field === "hold-docs") return holdDocuments(next);
   if (capture.field === "start-docs") return { ...next, docsStarted: true, docsHeld: false };
@@ -4603,6 +4632,12 @@ function couponChipReply(draft: FoxIntakeDraft, choice: CouponChoice) {
       capture: couponCapture(choice),
     };
   }
+  if (incomeAskOpen(nextDraft)) {
+    return {
+      ...workspacePromptCopy("income", nextDraft),
+      capture: couponCapture(choice === "lower" || choice === "nocost" ? "this" : choice),
+    };
+  }
   return {
     ...nextFoxAsk(nextDraft),
     capture: couponCapture(choice === "lower" || choice === "nocost" ? "this" : choice),
@@ -4626,11 +4661,17 @@ export function workspaceReply(
   if (draft.pendingLiveCoupon) {
     if (/^(yes|use this|use it|confirm|ok|okay)$/i.test(lower)) {
       const nextDraft = acceptPendingLiveCoupon(draft);
-      return { ...nextFoxAsk(nextDraft), capture: { field: "accept-live-coupon" } };
+      return {
+        ...(incomeAskOpen(nextDraft) ? workspacePromptCopy("income", nextDraft) : nextFoxAsk(nextDraft)),
+        capture: { field: "accept-live-coupon" },
+      };
     }
     if (isKeepLeadConfirmText(q) || isCouponSkipText(q) || isThisOneText(q)) {
       const nextDraft = keepPendingLiveCoupon(draft);
-      return { ...nextFoxAsk(nextDraft), capture: { field: "keep-live-coupon" } };
+      return {
+        ...(incomeAskOpen(nextDraft) ? workspacePromptCopy("income", nextDraft) : nextFoxAsk(nextDraft)),
+        capture: { field: "keep-live-coupon" },
+      };
     }
     const pendingChoice = couponChoiceFromText(q);
     if (pendingChoice === "lower" || pendingChoice === "nocost") {
@@ -5824,6 +5865,13 @@ export function workspaceReply(
   }
 
   if (prompt === "income") {
+    if (isSkipIncomeText(q)) {
+      const nextDraft = skipIncomeAsk(draft);
+      return {
+        ...nextFoxAsk(nextDraft),
+        capture: { field: "skip-income" },
+      };
+    }
     if (draft.incomeType.value && isKeepThisText(q)) return keepThisReply(draft);
     const match = incomeFromText(q);
     if (!match) return answerThenRestore(q, draft);
@@ -6313,7 +6361,7 @@ export function previewFacts(draft: FoxIntakeDraft): PreviewFact[] {
     });
   }
 
-  if (!requiredIds.has("income") && incomeSettled(draft)) {
+  if (!requiredIds.has("income") && draft.incomeType.value) {
     const incomeLabel =
       INCOME_BUBBLES.find((item) => item.value === draft.incomeType.value)?.label ?? "Other";
     facts.push({ id: "income", label: "Income", value: incomeLabel });

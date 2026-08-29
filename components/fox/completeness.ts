@@ -1505,6 +1505,7 @@ export function currentAskIdle(draft: FoxIntakeDraft) {
 }
 
 export function canLooksRight(draft: FoxIntakeDraft) {
+  if (!draft.incomeType.value && !draft.incomeAsked) return false;
   return (
     sketchAssembled(draft) &&
     timelineFilled(draft) &&
