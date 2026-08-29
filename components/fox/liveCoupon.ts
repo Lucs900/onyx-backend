@@ -39,7 +39,10 @@ export function shouldDeferNextAskForLiveCoupon(draft: FoxIntakeDraft) {
   return true;
 }
 
-export function liveCouponActions(): FoxAction[] {
+export function liveCouponActions(draft?: FoxIntakeDraft): FoxAction[] {
+  const hideNoCost =
+    draft != null &&
+    sameCouponNumbers(draft.liveQuote ?? null, pickNoCostFromRows(draft.liveQuoteRows ?? []));
   return [
     {
       id: "live-coupon-this",
@@ -53,12 +56,16 @@ export function liveCouponActions(): FoxAction[] {
       event: "bubble",
       capture: { field: "couponChoice", value: "lower" },
     },
-    {
-      id: "live-coupon-nocost",
-      label: "No cost",
-      event: "bubble",
-      capture: { field: "couponChoice", value: "nocost" },
-    },
+    ...(hideNoCost
+      ? []
+      : [
+          {
+            id: "live-coupon-nocost" as const,
+            label: "No cost",
+            event: "bubble" as const,
+            capture: { field: "couponChoice" as const, value: "nocost" },
+          },
+        ]),
     {
       id: "live-coupon-skip",
       label: "Skip",
@@ -196,7 +203,7 @@ export function liveCouponConfirmCopy(draft: FoxIntakeDraft): {
 } {
   const pending = draft.pendingLiveCoupon;
   if (!pending) {
-    return { text: COUPON_UNRESOLVED, actions: liveCouponActions() };
+    return { text: COUPON_UNRESOLVED, actions: liveCouponActions(draft) };
   }
   const quote = {
     rate: pending.rate,
@@ -215,7 +222,7 @@ export function liveCouponConfirmCopy(draft: FoxIntakeDraft): {
 export function withLiveCouponChips(messages: FoxMessage[], draft: FoxIntakeDraft): FoxMessage[] {
   if (!draft.liveQuote) return messages;
   if (draft.liveCouponSettled && !draft.pendingLiveCoupon) return messages;
-  const chips = liveCouponActions();
+  const chips = liveCouponActions(draft);
   let lastQuote = -1;
   for (let i = 0; i < messages.length; i += 1) {
     if (messages[i].id.startsWith("live-quote:")) lastQuote = i;

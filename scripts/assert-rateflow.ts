@@ -24,6 +24,8 @@ import {
   parseSafeQuoteResponse,
   parseZipcode,
   pickConventional30LowestNoPoints,
+  pickConventional30NoCost,
+  pickLeadRow,
   pickLowerPaymentFromRows,
   pickNoCostFromRows,
   conventional30Book,
@@ -256,8 +258,19 @@ assert.equal(
   pickLowerPaymentFromRows([
     { rate: 6.0, pts: 1.25, principalAndInterest: 4000 },
     { rate: 6.125, pts: 1.01, principalAndInterest: 4050 },
-  ]),
+  ])?.rate,
+  6.125,
+);
+assert.equal(
+  pickLowerPaymentFromRows([{ rate: 6.0, pts: 1.25, principalAndInterest: 4000 }]),
   null,
+);
+assert.equal(
+  pickLowerPaymentFromRows([
+    { rate: 6.25, pts: 1.044, principalAndInterest: 4187 },
+    { rate: 6.375, pts: 0.413, principalAndInterest: 4242 },
+  ])?.rate,
+  6.25,
 );
 assert.equal(
   pickNoCostFromRows([
@@ -330,6 +343,7 @@ assert.equal(harborRefiRows[1]?.principalAndInterest, 4242);
 assert.equal(pickConventional30LowestNoPoints(harborRefiRows)?.rate, 6.375);
 assert.notEqual(pickConventional30LowestNoPoints(harborRefiRows)?.rate, 6.49);
 assert.ok((pickConventional30LowestNoPoints(harborRefiRows)?.pts ?? 1) <= 0);
+assert.equal(pickLeadRow(harborRefiRows, "purchase")?.rate, 6.375);
 const harborRefiNested = {
   results: [
     {
@@ -371,14 +385,74 @@ const harborLiveFixture = JSON.parse(
   rows?: { rate: number; pts?: number }[];
   lead?: { rate: number; pts?: number } | null;
 };
+const harborWalkRows = [
+  {
+    rate: 6.25,
+    pts: 1.044,
+    loanTerm: 30,
+    bbLoanType: "conventional",
+    productName: "FNMA Conforming 30 Yr Fixed",
+  },
+  {
+    rate: 6.49,
+    pts: -0.043,
+    loanTerm: 30,
+    bbLoanType: "conventional",
+    productName: "FNMA Conforming 30 Yr Fixed",
+  },
+  {
+    rate: 6.75,
+    pts: -1.067,
+    loanTerm: 30,
+    bbLoanType: "conventional",
+    productName: "FNMA Conforming 30 Yr Fixed",
+  },
+  {
+    rate: 6.375,
+    pts: 0.413,
+    loanTerm: 30,
+    bbLoanType: "conventional",
+    productName: "FNMA Conforming 30 Yr Fixed",
+  },
+];
+assert.equal(pickLeadRow(harborWalkRows, "refinance")?.rate, 6.75);
+assert.equal(pickLeadRow(harborWalkRows, "refinance")?.pts, -1.067);
+assert.notEqual(pickLeadRow(harborWalkRows, "refinance")?.rate, 6.49);
+assert.equal(pickConventional30NoCost(harborWalkRows)?.rate, 6.75);
+assert.equal(pickLowerPaymentFromRows(safeCouponRowsFromProducts(harborWalkRows))?.rate, 6.25);
+assert.equal(pickLowerPaymentFromRows(safeCouponRowsFromProducts(harborWalkRows))?.pts, 1.044);
+assert.equal(pickNoCostFromRows(safeCouponRowsFromProducts(harborWalkRows))?.rate, 6.75);
+assert.equal(pickLeadRow(harborRefiRows, "purchase")?.rate, pickConventional30LowestNoPoints(harborRefiRows)?.rate);
+assert.equal(
+  pickConventional30NoCost([
+    { rate: 6.49, pts: -0.043, loanTerm: 30, bbLoanType: "conventional" },
+    { rate: 6.375, pts: -0.07, loanTerm: 30, bbLoanType: "conventional" },
+  ])?.rate,
+  6.375,
+);
+assert.equal(
+  pickConventional30NoCost([
+    { rate: 6.49, pts: 0.1, loanTerm: 30, bbLoanType: "conventional" },
+    { rate: 6.25, pts: 1.044, loanTerm: 30, bbLoanType: "conventional" },
+  ]),
+  null,
+);
 if (harborLiveFixture.captured) {
   const liveBook = harborLiveFixture.rows ?? [];
   assert.ok(liveBook.length > 0);
-  const liveLead = lowestNoPointsFromBook(liveBook);
-  assert.deepEqual(liveLead, harborLiveFixture.lead ?? liveLead);
-  assert.equal(liveLead?.rate, pickConventional30LowestNoPoints(
-    liveBook.map((row) => ({ rate: row.rate, pts: row.pts, loanTerm: 30, bbLoanType: "conventional" })),
-  )?.rate);
+  const liveProducts = liveBook.map((row) => ({
+    rate: row.rate,
+    pts: row.pts,
+    loanTerm: 30,
+    bbLoanType: "conventional",
+  }));
+  const liveLead = pickLeadRow(liveProducts, "refinance");
+  assert.deepEqual(
+    liveLead ? { rate: liveLead.rate, ...(liveLead.pts != null ? { pts: liveLead.pts } : {}) } : null,
+    harborLiveFixture.lead ?? (liveLead ? { rate: liveLead.rate, pts: liveLead.pts } : null),
+  );
+  assert.equal(liveLead?.rate, pickConventional30NoCost(liveProducts)?.rate);
+  assert.notEqual(liveLead?.rate, 6.49);
   console.log("harbor-refi-conv30 live book", JSON.stringify(liveBook));
   console.log("harbor-refi-conv30 live lead", JSON.stringify(liveLead));
 }
@@ -495,6 +569,20 @@ assert.equal(
   rateflowClientBodyFromDraft(file({ propertyType: "two_to_four", propertyUnits: "3" }))?.property_type,
   "home_3_units",
 );
+const addressConfirmDraft = file({
+  pendingProposal: {
+    field: "property_address",
+    value: "500 Market St, San Francisco, CA 94105",
+    label: "address",
+    kind: "computed",
+  },
+});
+assert.equal(rateflowClientBodyFromDraft(addressConfirmDraft), null);
+assert.equal(rateflowBlockedReason(addressConfirmDraft), "address-confirm");
+assert.deepEqual(
+  rateflowClientBodyFromDraft({ ...addressConfirmDraft, pendingProposal: null }),
+  rateflowClientBodyFromDraft(file({})),
+);
 
 const route = readFileSync(join(root, "app/api/rateflow-quote/route.ts"), "utf8");
 assert.ok(route.includes('headers: {\n        "content-type": "application/json",\n        "x-api-key": apiKey,'));
@@ -510,7 +598,9 @@ assert.ok(!route.includes("process.env.BANKINGBRIDGE_BRAND_ID") || route.include
 assert.ok(route.includes("zipcode: client.zipcode"));
 assert.ok(route.includes('state: "CA"'));
 assert.ok(route.includes("[rateflow-quote]"));
-assert.ok(route.includes("pickConventional30LowestNoPoints"));
+assert.ok(route.includes("pickLeadRow"));
+assert.ok(!route.includes("6.750"));
+assert.ok(!route.includes("6.75"));
 assert.ok(route.includes("safeCouponRowsFromProducts"));
 assert.ok(route.includes("conventional30Book"));
 assert.ok(route.includes('client.loan_purpose === "purchase" ? { target_price: TARGET_PRICE }'));
@@ -520,10 +610,16 @@ assert.doesNotMatch(route, /console\.(log|info|warn|error)\([^)]*BANKINGBRIDGE_/
 
 const picker = readFileSync(join(root, "lib/rateflow/quote.ts"), "utf8");
 assert.ok(picker.includes("pickConventional30LowestNoPoints"));
+assert.ok(picker.includes("pickConventional30NoCost"));
+assert.ok(picker.includes("pickLeadRow"));
 assert.ok(picker.includes("rawRowsFromPayload") || picker.includes("results"));
 assert.ok(!picker.includes("pickConventional30NearPar"));
 assert.ok(!picker.includes("nearParSort"));
 assert.doesNotMatch(picker, /closest to par/i);
+
+const fromDraft = readFileSync(join(root, "lib/rateflow/fromDraft.ts"), "utf8");
+assert.ok(fromDraft.includes("address-confirm"));
+assert.ok(fromDraft.includes("addressConfirmPending"));
 
 const fox = readFileSync(join(root, "components/fox/AlwaysOnFox.tsx"), "utf8");
 const client = readFileSync(join(root, "components/fox/rateflowClient.ts"), "utf8");

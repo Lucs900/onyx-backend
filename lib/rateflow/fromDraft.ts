@@ -58,12 +58,18 @@ function loanPurposeFromDraft(draft: FoxIntakeDraft): "purchase" | "refinance" |
   return undefined;
 }
 
+export function addressConfirmPending(draft: FoxIntakeDraft) {
+  const field = draft.pendingProposal?.field;
+  return field === "property_address" || field === "subjectAddress";
+}
+
 export function rateflowBlockedReason(draft: FoxIntakeDraft): string | null {
   const intent = draft.productIntent;
   if (!intent || BLOCKED_INTENTS.has(intent)) return "product";
   if (draft.outOfState) return "state";
   if (draft.govProgram) return "program";
   if (draft.cashOut) return "cash-out";
+  if (addressConfirmPending(draft)) return "address-confirm";
   if (!loanPurposeFromDraft(draft)) return "purpose";
   if (!mapResidency(draft.occupancyChoice.value || draft.scenario?.occupancy)) return "occupancy";
   if (listPriceFromDraft(draft) == null) return "value";

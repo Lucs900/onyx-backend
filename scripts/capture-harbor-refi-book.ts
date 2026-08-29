@@ -11,7 +11,7 @@ import {
   asProductRows,
   conventional30Book,
   isRateflowFailure,
-  lowestNoPointsFromBook,
+  pickLeadRow,
 } from "../lib/rateflow/quote";
 
 const HARBOR_REFI = {
@@ -96,8 +96,12 @@ async function main() {
       console.log("harbor-refi-book: rateflow failure");
       return;
     }
-    const book = conventional30Book(asProductRows(payload));
-    const lead = lowestNoPointsFromBook(book);
+    const rows = asProductRows(payload);
+    const book = conventional30Book(rows);
+    const picked = pickLeadRow(rows, "refinance");
+    const lead = picked
+      ? { rate: Number(picked.rate), ...(picked.pts != null ? { pts: picked.pts } : {}) }
+      : null;
     const fixture = {
       scenario: HARBOR_REFI,
       captured: true,

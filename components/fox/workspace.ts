@@ -13,7 +13,12 @@ import {
 } from "@/components/products/scenario";
 import { pathFromHomeChoice } from "./homeIdle";
 import { isUnreadNote } from "@/lib/docs/accept";
-import { liveQuoteMatchesDraft, searchedKeyFor, zipFromDraft } from "@/lib/rateflow/fromDraft";
+import {
+  addressConfirmPending,
+  liveQuoteMatchesDraft,
+  searchedKeyFor,
+  zipFromDraft,
+} from "@/lib/rateflow/fromDraft";
 import {
   liveRateExplain,
   liveRateLine,
@@ -2168,6 +2173,7 @@ export function messagesWithLiveQuoteSpeech(
   draft: FoxIntakeDraft,
   quote: NonNullable<FoxIntakeDraft["liveQuote"]>,
 ): FoxMessage[] {
+  if (addressConfirmPending(draft)) return messages;
   if (!quote.rate || !quote.asOf) return messages;
   const lines = liveQuoteThreadLines(quote);
   if (!lines.length) return messages;
@@ -2194,7 +2200,7 @@ export function messagesWithLiveQuoteSpeech(
     role: "fox",
     text: lines[0] ?? "",
     ...(lines[1] ? { followUp: lines[1] } : {}),
-    actions: liveCouponActions(),
+    actions: liveCouponActions(draft),
   };
   return withLiveCouponChips([...cleared, speech], draft);
 }
@@ -4538,7 +4544,7 @@ function couponChipReply(draft: FoxIntakeDraft, choice: CouponChoice) {
   if ((choice === "lower" || choice === "nocost") && couponChoiceUnresolved(draft, choice)) {
     return {
       text: COUPON_UNRESOLVED,
-      actions: liveCouponActions(),
+      actions: liveCouponActions(draft),
       capture: couponCapture(choice),
     };
   }
@@ -4587,7 +4593,7 @@ export function workspaceReply(
     }
     return {
       ...liveCouponConfirmCopy(draft),
-      actions: [...(liveCouponConfirmCopy(draft).actions ?? []), ...liveCouponActions()],
+      actions: [...(liveCouponConfirmCopy(draft).actions ?? []), ...liveCouponActions(draft)],
     };
   }
 

@@ -430,6 +430,37 @@ export function pickConventional30LowestNoPoints(
   return [...eligible].sort(lowestNoPointsSort)[0] ?? null;
 }
 
+/**
+ * Refinance lead: lowest conventional 30 with credit >= 1.00 (pts <= -1.00).
+ * If none, the best credit (most negative points). Par is not a credit.
+ */
+export function pickConventional30NoCost(rows: RateflowProductRow[]): RateflowProductRow | null {
+  const conv30 = rows.filter(
+    (row) => isConventional(row) && termYearsFromRow(row) === 30 && Number.isFinite(Number(row.rate)),
+  );
+  const withPts = conv30.filter((row) => pointsFromRow(row) != null);
+  const bigCredit = withPts.filter((row) => (pointsFromRow(row) ?? 0) <= -1);
+  if (bigCredit.length) {
+    return [...bigCredit].sort(lowestNoPointsSort)[0] ?? null;
+  }
+  const anyCredit = withPts.filter((row) => (pointsFromRow(row) ?? 0) < 0);
+  if (!anyCredit.length) return null;
+  return [...anyCredit].sort((left, right) => {
+    const ptsDiff = (pointsFromRow(left) ?? 0) - (pointsFromRow(right) ?? 0);
+    if (ptsDiff !== 0) return ptsDiff;
+    return Number(left.rate) - Number(right.rate);
+  })[0] ?? null;
+}
+
+export function pickLeadRow(
+  rows: RateflowProductRow[],
+  purpose: RateflowPurpose,
+): RateflowProductRow | null {
+  return purpose === "refinance"
+    ? pickConventional30NoCost(rows)
+    : pickConventional30LowestNoPoints(rows);
+}
+
 export function safeCouponRowsFromProducts(rows: RateflowProductRow[]): SafeCouponRow[] {
   const out: SafeCouponRow[] = [];
   for (const row of rows) {
@@ -453,11 +484,14 @@ function couponPts(row: SafeCouponRow): number | undefined {
   return pointsFromRow(row);
 }
 
-/** Lowest note rate among conventional 30 rows with points <= 1.00. */
+/** One-point quotes often print as 1.044. Do not cap under 0.50. */
+export const LOWER_PAYMENT_MAX_PTS = 1.05;
+
+/** Lowest note rate among conventional 30 rows with points <= 1.00 (1.05 to include 1.044). */
 export function pickLowerPaymentFromRows(rows: SafeCouponRow[]): SafeCouponRow | null {
   const eligible = rows.filter((row) => {
     const pts = couponPts(row);
-    return Number.isFinite(row.rate) && pts != null && pts <= 1;
+    return Number.isFinite(row.rate) && pts != null && pts <= LOWER_PAYMENT_MAX_PTS;
   });
   if (!eligible.length) return null;
   return [...eligible].sort((left, right) => {

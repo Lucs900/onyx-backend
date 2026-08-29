@@ -9,7 +9,7 @@ import {
   firstResultSummary,
   isRateflowFailure,
   parseClientBody,
-  pickConventional30LowestNoPoints,
+  pickLeadRow,
   quoteRowSample,
   safeCouponRowsFromProducts,
   safeQuoteFromRow,
@@ -169,7 +169,7 @@ export async function POST(request: Request) {
       return unavailable(buildReport({ client, bbHttpStatus: response.status, resultCount: 0 }));
     }
     const rows = asProductRows(payload);
-    const row = pickConventional30LowestNoPoints(rows);
+    const row = pickLeadRow(rows, client.loan_purpose);
     const quote = row ? safeQuoteFromRow(row) : null;
     const pickedRate = Number(row?.rate);
     const report = buildReport({
