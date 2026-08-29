@@ -640,6 +640,7 @@ function normalize(value: unknown): FoxIntakeDraft {
     pendingConflict: normalizeConflict(raw.pendingConflict),
     unresolvedConflict: Boolean(raw.unresolvedConflict),
     pendingProposal: normalizeProposal(raw.pendingProposal),
+    pendingAddress: normalizePendingAddress(raw.pendingAddress),
     skippedClasses: Array.isArray(raw.skippedClasses)
       ? raw.skippedClasses.filter((item): item is ExtractClass => typeof item === "string")
       : [],
@@ -799,6 +800,19 @@ function normalizePendingCurrentHousing(
         }))
     : undefined;
   return { amount: Math.round(amount), ...(extras?.length ? { extras } : {}) };
+}
+
+function normalizePendingAddress(value: FoxIntakeDraft["pendingAddress"]) {
+  const place = parsePlaceAddress(value);
+  if (!place) return undefined;
+  return {
+    line: place.line,
+    street: place.street,
+    city: place.city,
+    state: "CA" as const,
+    zip: place.zip,
+    ...(place.county ? { county: place.county } : {}),
+  };
 }
 
 function normalizeProposal(value: FoxIntakeDraft["pendingProposal"]): FactProposal | null {

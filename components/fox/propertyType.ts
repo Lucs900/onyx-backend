@@ -178,6 +178,14 @@ export function proposePlaceAddress(draft: FoxIntakeDraft, place: PlaceAddress):
   ];
   return {
     ...draft,
+    pendingAddress: {
+      line: place.line,
+      street: place.street,
+      city: place.city,
+      state: "CA",
+      zip: place.zip,
+      ...(place.county ? { county: place.county } : {}),
+    },
     pendingProposal: {
       field: PROPERTY_ADDRESS_FACT,
       value: place.line,
@@ -243,6 +251,7 @@ export function writePlaceAddress(draft: FoxIntakeDraft, place: PlaceAddress): F
       subjectState: "CA",
       subjectCounty: place.county,
       subjectAddressAsked: true,
+      pendingAddress: undefined,
       pendingProposal: null,
       pendingConflict: null,
       correcting: null,
@@ -365,10 +374,27 @@ export function isPropertyTypeConfirmPending(draft: FoxIntakeDraft) {
 }
 
 export function isSubjectAddressConfirmPending(draft: FoxIntakeDraft) {
+  if (draft.pendingAddress?.line?.trim()) return true;
   return (
     draft.pendingProposal?.field === PROPERTY_ADDRESS_FACT ||
     draft.pendingProposal?.field === SUBJECT_ADDRESS_FIELD
   );
+}
+
+export function fileAddressLine(draft: FoxIntakeDraft) {
+  const written = typeof draft.subjectAddress === "string" ? draft.subjectAddress.trim() : "";
+  if (written) return written;
+  return factAddressFromDraft(draft).trim();
+}
+
+/** Use this paints only while a street is pending and File address is still blank. */
+export function shouldShowAddressUseThis(draft: FoxIntakeDraft) {
+  return Boolean(draft.pendingAddress?.line?.trim()) && !fileAddressLine(draft);
+}
+
+export function addressOnFileCopy(line: string) {
+  const clean = line.replace(/[.\s]+$/g, "").trim();
+  return `${clean}. On the file.`;
 }
 
 export function isPropertyAddressField(field: string) {
@@ -538,6 +564,7 @@ export function skipSubjectAddress(draft: FoxIntakeDraft): FoxIntakeDraft {
   return {
     ...draft,
     subjectAddressAsked: true,
+    pendingAddress: undefined,
     pendingProposal:
       isPropertyAddressField(draft.pendingProposal?.field ?? "")
         ? null
@@ -554,6 +581,7 @@ export function writeSubjectAddress(draft: FoxIntakeDraft, address: string): Fox
     ...draft,
     subjectAddress: value,
     subjectAddressAsked: true,
+    pendingAddress: undefined,
     pendingProposal: null,
     pendingConflict: null,
     correcting: null,
@@ -592,7 +620,25 @@ export function proposeSubjectAddress(draft: FoxIntakeDraft, address: string): F
     kind: "computed",
     note: SUGGESTED_PROPERTY_NOTE,
   };
-  return { ...draft, pendingProposal: proposal };
+  const zip = zipFromTypedAddress(proposal.value);
+  const city = cityFromTypedAddressSafe(proposal.value);
+  return {
+    ...draft,
+    pendingAddress: {
+      line: proposal.value,
+      street: proposal.value,
+      city: city || "",
+      state: "CA",
+      zip: zip || "",
+    },
+    pendingProposal: proposal,
+  };
+}
+
+function cityFromTypedAddressSafe(address: string) {
+  const match = address.match(/,\s*([^,]+),\s*CA\b/i);
+  const city = match?.[1]?.replace(/\s+/g, " ").trim() ?? "";
+  return city.length >= 2 && city.length <= 40 && !/\d/.test(city) ? city : "";
 }
 
 export function propertyTypeConfirmCopy(value: PropertyTypeValue) {

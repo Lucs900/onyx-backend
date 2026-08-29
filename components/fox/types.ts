@@ -320,6 +320,15 @@ export type FoxIntakeDraft = {
   addressZipOffered?: string;
   subjectAddress?: string;
   subjectAddressAsked?: boolean;
+  /** Places / typed street waiting for Use this. Not File. Not Rateflow. */
+  pendingAddress?: {
+    line: string;
+    street: string;
+    city: string;
+    state: "CA";
+    zip: string;
+    county?: string;
+  };
   /** Places street only. Never invent. */
   subjectStreet?: string;
   subjectCity?: string;

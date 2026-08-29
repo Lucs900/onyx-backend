@@ -60,6 +60,7 @@ function loanPurposeFromDraft(draft: FoxIntakeDraft): "purchase" | "refinance" |
 }
 
 export function addressConfirmPending(draft: FoxIntakeDraft) {
+  if (draft.pendingAddress?.line?.trim()) return true;
   const field = draft.pendingProposal?.field;
   return field === "property_address" || field === "subjectAddress";
 }

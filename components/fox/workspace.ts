@@ -2315,7 +2315,12 @@ export function nextFoxAsk(draft: FoxIntakeDraft): {
   facts?: ReturnType<typeof workspacePromptCopy>["facts"];
   actions?: FoxAction[];
 } {
-  if (draft.awaitingYearsInBusiness && !draft.pendingProposal && !draft.pendingConflict) {
+  if (
+    draft.awaitingYearsInBusiness &&
+    !draft.pendingProposal &&
+    !draft.pendingConflict &&
+    !draft.pendingAddress
+  ) {
     return { text: yearsInBusinessAskCopy(draft), actions: yearsInBusinessSkipActions() };
   }
   return workspacePromptCopy(workspacePrompt(draft), draft);
@@ -2330,7 +2335,9 @@ export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
   if (draft.awaitingBothMonthlyReason) return "both-monthly-reason";
   if (draft.awaitingRaiseWhen) return "raise-when";
   if (draft.awaitingRaiseYtdFar) return "raise-ytd-far";
-  if (draft.pendingConflict || draft.pendingProposal || draft.pendingLiveCoupon) return "confirm-proposal";
+  if (draft.pendingConflict || draft.pendingProposal || draft.pendingAddress || draft.pendingLiveCoupon) {
+    return "confirm-proposal";
+  }
   if (draft.correcting === "path-switch") return "path-switch";
   if (draft.correcting === "correct") return "correct";
   if (draft.correcting === "credit") return "credit";
@@ -2774,6 +2781,12 @@ function workspaceAskCopy(
       return {
         text: conflictAskCopy(draft.pendingConflict),
         actions: conflictActions(draft.pendingConflict),
+      };
+    }
+    if (draft.pendingAddress?.line) {
+      return {
+        text: typedAddressConfirmCopy(draft.pendingAddress.line),
+        actions: propertyTypeConfirmActions(),
       };
     }
     const proposal = draft.pendingProposal;
@@ -3322,9 +3335,10 @@ export function promptForProposalField(field?: string | null): FoxPrompt | undef
 export function changePendingProposal(draft: FoxIntakeDraft): FoxIntakeDraft {
   const field = draft.pendingProposal?.field;
   if (isFileNetField(field)) return skipOtherReoFileNet(draft);
-  const prompt = promptForProposalField(field);
+  const prompt = promptForProposalField(field ?? (draft.pendingAddress ? "property_address" : undefined));
   return {
     ...draft,
+    pendingAddress: undefined,
     pendingProposal: null,
     correcting: prompt ?? null,
     correctingLine:

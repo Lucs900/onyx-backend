@@ -39,9 +39,11 @@ import {
 import { addressConfirmPending, searchedKeyFor } from "@/lib/rateflow/fromDraft";
 import {
   dropResolvedAddressConfirmChips,
+  isAddressUseAction,
   shouldDeferNextAskForLiveCoupon,
   visibleFoxActions,
 } from "./liveCoupon";
+import { shouldShowAddressUseThis } from "./propertyType";
 import { requestRateflowIfNeeded } from "./rateflowClient";
 import { requestAddressSuggestions, requestPlaceAddress, withStreetSuggestChips } from "./addressSuggest";
 import { encodePlaceAddress, shouldSuggestStreets } from "@/lib/places/address";
@@ -401,6 +403,9 @@ function FoxThread({
         const current = message.role === "fox" && index === currentFox;
         const tone = current ? " is-current" : " is-prior";
         const shownActions = visibleFoxActions(message, draft);
+        const paintActions = (shownActions ?? []).filter((action) =>
+          isAddressUseAction(action) ? shouldShowAddressUseThis(draft) : current,
+        );
         return (
           <article
             key={message.id}
@@ -422,11 +427,10 @@ function FoxThread({
                 Edit
               </button>
             ) : null}
-            {current &&
-            shownActions?.length &&
+            {paintActions.length > 0 &&
             (message.text.trim() || (message.followUp ?? "").trim()) ? (
               <div className="fox-bubble__actions">
-                {shownActions.map((action) =>
+                {paintActions.map((action) =>
                   action.href ? (
                     <Link
                       key={action.id}

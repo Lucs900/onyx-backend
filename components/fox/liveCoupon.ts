@@ -9,6 +9,7 @@ import {
   sameCouponNumbers,
   type SafeCouponRow,
 } from "@/lib/rateflow/quote";
+import { addressOnFileCopy, fileAddressLine, shouldShowAddressUseThis } from "./propertyType";
 import type { Capture, FoxAction, FoxIntakeDraft, FoxMessage } from "./types";
 
 export const COUPON_UNRESOLVED = "Pricing when the file is ready";
@@ -200,15 +201,6 @@ export function couponChoiceUnresolved(draft: FoxIntakeDraft, choice: "lower" | 
   return !row || !draft.liveQuote;
 }
 
-function addressWrittenOnFile(draft: FoxIntakeDraft) {
-  const fact = draft.facts?.property_address?.value;
-  return Boolean(
-    draft.subjectAddress ||
-      draft.subjectAddressAsked ||
-      (typeof fact === "string" && fact.trim()),
-  );
-}
-
 function foxBlob(message: FoxMessage) {
   return `${message.text}\n${message.followUp ?? ""}`;
 }
@@ -221,7 +213,7 @@ function isKeptUseThis(action: FoxAction) {
   );
 }
 
-function isAddressUseAction(action: FoxAction) {
+export function isAddressUseAction(action: FoxAction) {
   if (isKeptUseThis(action)) return false;
   const field = action.capture?.field;
   return (
@@ -262,23 +254,15 @@ function looksLikeStreetAddress(blob: string) {
   return false;
 }
 
-/** Address confirm — do not require the middot + “Use this?” pair. */
 function isAddressConfirmMessage(message: FoxMessage, draft: FoxIntakeDraft) {
   if (message.role !== "fox") return false;
   if (message.id.startsWith("live-quote:")) return false;
   const blob = foxBlob(message);
   if (looksLikeOtherProposalConfirm(blob)) return false;
-  const written = typeof draft.subjectAddress === "string" ? draft.subjectAddress.trim() : "";
+  const written = fileAddressLine(draft);
   if (written && blob.includes(written)) return true;
-  const fact =
-    typeof draft.facts?.property_address?.value === "string" ? draft.facts.property_address.value.trim() : "";
-  if (fact && blob.includes(fact)) return true;
   if (looksLikeStreetAddress(blob)) return true;
   return false;
-}
-
-function stripAddressUseThisQuestion(text: string) {
-  return text.replace(/\s*Use this\??\s*$/i, "").trim();
 }
 
 export function isLiveRateSpeech(text?: string) {
@@ -286,30 +270,34 @@ export function isLiveRateSpeech(text?: string) {
   return /%\s*·\s*.*Live as of/i.test(text) || /Live as of .+\s*·\s*not a lock/i.test(text);
 }
 
-/** After Use this writes the address, that confirm’s actions must be gone — any row. */
+/** After File write, that confirm becomes “{line}. On the file.” — no Use this. */
 export function dropResolvedAddressConfirmChips(
   messages: FoxMessage[],
   draft: FoxIntakeDraft,
 ): FoxMessage[] {
-  if (!addressWrittenOnFile(draft)) return messages;
+  const line = fileAddressLine(draft);
+  if (!line) return messages;
   return messages.map((message) => {
     if (!isAddressConfirmMessage(message, draft)) return message;
-    const actions = (message.actions ?? []).filter((action) => !isAddressUseAction(action));
-    const text = stripAddressUseThisQuestion(message.text);
-    const followUp = message.followUp ? stripAddressUseThisQuestion(message.followUp) : message.followUp;
     return {
       ...message,
-      text,
-      followUp: followUp || undefined,
-      actions: actions.length ? actions : undefined,
+      text: addressOnFileCopy(line),
+      followUp: isLiveRateSpeech(message.followUp) ? undefined : message.followUp,
+      actions: undefined,
     };
   });
 }
 
-/** Paint-time guard. After File write, leftover address Use this never renders. */
+/** Address Use this only while pendingAddress is set and File address is empty. */
 export function visibleFoxActions(message: FoxMessage, draft: FoxIntakeDraft) {
-  const actions = dropResolvedAddressConfirmChips([message], draft)[0]?.actions;
-  return actions?.length ? actions : undefined;
+  const actions = message.actions;
+  if (!actions?.length) return undefined;
+  const next = actions.filter((action) => {
+    if (isKeptUseThis(action)) return true;
+    if (isAddressUseAction(action)) return shouldShowAddressUseThis(draft);
+    return true;
+  });
+  return next.length ? next : undefined;
 }
 
 export function liveCouponConfirmCopy(draft: FoxIntakeDraft): {

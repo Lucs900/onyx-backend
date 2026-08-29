@@ -272,9 +272,11 @@ import {
   keepPropertyZip,
   parsePropertyType,
   proposeAddressAndAdoptZip,
+  addressOnFileCopy,
   proposePlaceAddress,
   proposeSubjectAddress,
   propertyZipConfirmCopy,
+  shouldShowAddressUseThis,
   skipPropertyType,
   skipPropertyZip,
   skipQuoteAddress,
@@ -1465,10 +1467,15 @@ assert.equal(
   ),
   undefined,
 );
+assert.equal(
+  dropResolvedAddressConfirmChips(leftoverAddressUse, leftoverWrittenFile).find((item) => item.id === "addr-confirm")
+    ?.text,
+  "500 Market St, San Francisco, CA 94105. On the file.",
+);
 assert.doesNotMatch(
   dropResolvedAddressConfirmChips(leftoverAddressUse, leftoverWrittenFile).find((item) => item.id === "addr-confirm")
     ?.text ?? "",
-  /Use this\?/,
+  /Suggested · not underwritten|Use this\?/,
 );
 const incomeUseAfterAddress = dropResolvedAddressConfirmChips(
   [
@@ -1868,6 +1875,7 @@ const harborPlace = {
   county: "San Francisco",
 };
 const founderRefiPlaceProposed = proposePlaceAddress(founderRefiReady, harborPlace);
+assert.equal(founderRefiPlaceProposed.pendingAddress?.line, harborPlace.line);
 assert.equal(founderRefiPlaceProposed.propertyZip, undefined);
 assert.equal(founderRefiPlaceProposed.subjectAddress, undefined);
 assert.equal(founderRefiPlaceProposed.subjectCity, undefined);
@@ -1875,11 +1883,28 @@ assert.equal(founderRefiPlaceProposed.subjectState, undefined);
 assert.equal(founderRefiPlaceProposed.subjectCounty, undefined);
 assert.equal(rateflowClientBodyFromDraft(founderRefiPlaceProposed), null);
 assert.equal(rateflowBlockedReason(founderRefiPlaceProposed), "address-confirm");
+assert.equal(shouldShowAddressUseThis(founderRefiPlaceProposed), true);
 assert.ok(
   !previewFacts(founderRefiPlaceProposed).some((fact) =>
     ["address", "city", "state", "county", "rate"].includes(fact.id),
   ),
 );
+assert.ok(
+  (visibleFoxActions(
+    {
+      id: "addr-pending",
+      role: "fox",
+      text: workspacePromptCopy("confirm-proposal", founderRefiPlaceProposed).text,
+      actions: workspacePromptCopy("confirm-proposal", founderRefiPlaceProposed).actions,
+    },
+    founderRefiPlaceProposed,
+  ) ?? []).some((action) => action.label === "Use this"),
+);
+const founderRefiPlaceSkipped = skipQuoteAddress(founderRefiPlaceProposed);
+assert.equal(founderRefiPlaceSkipped.pendingAddress, undefined);
+assert.equal(founderRefiPlaceSkipped.subjectAddress, undefined);
+assert.equal(shouldShowAddressUseThis(founderRefiPlaceSkipped), false);
+assert.equal(rateflowClientBodyFromDraft(founderRefiPlaceSkipped), null);
 assert.match(workspacePromptCopy("confirm-proposal", founderRefiPlaceProposed).text, /That’s 500 Market St, San Francisco, CA 94105/);
 assert.match(workspacePromptCopy("confirm-proposal", founderRefiPlaceProposed).text, /Use this/);
 assert.deepEqual(
@@ -1887,6 +1912,9 @@ assert.deepEqual(
   ["Use this", "Change"],
 );
 const founderRefiPlace = resolveProposal(founderRefiPlaceProposed, "accept");
+assert.equal(founderRefiPlace.pendingAddress, undefined);
+assert.equal(founderRefiPlace.subjectAddress, harborPlace.line);
+assert.equal(shouldShowAddressUseThis(founderRefiPlace), false);
 assert.equal(founderRefiPlace.subjectStreet, "500 Market St");
 assert.equal(founderRefiPlace.subjectCity, "San Francisco");
 assert.equal(founderRefiPlace.subjectState, "CA");
@@ -1904,9 +1932,29 @@ const founderRefiPlaceNoCounty = writePlaceAddress(founderRefiReady, {
   zip: "94105",
 });
 assert.equal(founderRefiPlaceNoCounty.subjectCounty, undefined);
-const founderPurchasePlace = resolveProposal(
-  proposePlaceAddress(afterFounderHouseFico, harborPlace),
-  "accept",
+const founderPurchasePending = proposePlaceAddress(afterFounderHouseFico, harborPlace);
+assert.equal(founderPurchasePending.subjectAddress, undefined);
+assert.equal(founderPurchasePending.pendingAddress?.line, harborPlace.line);
+assert.equal(shouldShowAddressUseThis(founderPurchasePending), true);
+assert.equal(rateflowClientBodyFromDraft(founderPurchasePending), null);
+assert.ok(!previewFacts(founderPurchasePending).some((fact) => fact.id === "address" || fact.id === "rate"));
+const founderPurchasePlace = resolveProposal(founderPurchasePending, "accept");
+assert.equal(founderPurchasePlace.pendingAddress, undefined);
+assert.equal(founderPurchasePlace.subjectAddress, harborPlace.line);
+assert.equal(shouldShowAddressUseThis(founderPurchasePlace), false);
+assert.equal(
+  dropResolvedAddressConfirmChips(
+    [
+      {
+        id: "addr-confirm",
+        role: "fox" as const,
+        text: workspacePromptCopy("confirm-proposal", founderPurchasePending).text,
+        actions: workspacePromptCopy("confirm-proposal", founderPurchasePending).actions,
+      },
+    ],
+    founderPurchasePlace,
+  )[0]?.text,
+  addressOnFileCopy(harborPlace.line),
 );
 assert.equal(rateflowClientBodyFromDraft(founderPurchasePlace)?.loan_purpose, "purchase");
 assert.equal(rateflowClientBodyFromDraft(founderPurchasePlace)?.zipcode, "94105");

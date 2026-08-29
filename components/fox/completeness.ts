@@ -60,6 +60,7 @@ import {
   adoptReuseZip,
   rememberPriorZipOnNewAddress,
   skipPropertyType,
+  skipQuoteAddress,
   typedAddressConfirmCopy,
   writePlaceAddress,
   writePropertyZip,
@@ -1110,6 +1111,7 @@ function writeConfirmedFact(
         ...next,
         subjectAddress: value,
         subjectAddressAsked: true,
+        pendingAddress: undefined,
         facts,
       }),
     );
@@ -1222,8 +1224,18 @@ export function resolveProposal(
   draft: FoxIntakeDraft,
   winner: "accept" | "decline",
 ): FoxIntakeDraft {
+  if (winner === "accept" && draft.pendingAddress?.line && draft.pendingAddress.zip && draft.pendingAddress.city) {
+    const place = parsePlaceAddress(draft.pendingAddress);
+    if (place) {
+      const cleared = { ...writePlaceAddress(draft, place), pendingProposal: null };
+      return flushPendingOtherReo(flushPendingCurrentHousing(flushPendingHireDate(cleared)));
+    }
+  }
   const proposal = draft.pendingProposal;
-  if (!proposal) return draft;
+  if (!proposal) {
+    if (winner === "decline" && draft.pendingAddress) return skipQuoteAddress(draft);
+    return draft;
+  }
   if (winner === "decline") {
     if (proposal.field === ESTIMATED_HOUSING_FIELD) {
       return skipEstimatedHousing({ ...draft, pendingProposal: null });
@@ -1313,7 +1325,7 @@ export function resolveProposal(
     if (proposal.parts.scheduleC) next = writeConfirmedFact(next, SE_MONTHLY_FIELD, proposal.parts.scheduleC, source);
     if (proposal.parts.k1) next = writeConfirmedFact(next, K1_MONTHLY_FIELD, proposal.parts.k1, source);
   }
-  const cleared = { ...next, pendingProposal: null };
+  const cleared = { ...next, pendingProposal: null, pendingAddress: undefined };
   const flushed = flushPendingOtherReo(flushPendingCurrentHousing(flushPendingHireDate(cleared)));
   const afterNet =
     winner === "accept" &&
