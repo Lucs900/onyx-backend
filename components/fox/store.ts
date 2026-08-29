@@ -108,7 +108,7 @@ import {
   applyRaiseWhenAnswer,
   applyRaiseYtdFarAnswer,
   parseExtractMoney,
-  proposeBox5Monthly,
+  writeWageBox5,
   proposeStubMonthly,
   skipWageBox5,
   skipWageFrequency,
@@ -2004,7 +2004,7 @@ function applyCaptureBody(capture: Capture) {
   }
   if (capture.field === "w2Box5") {
     const annual = parseExtractMoney(capture.value) ?? Number(String(capture.value).replace(/,/g, ""));
-    return Number.isFinite(annual) && annual > 0 ? commit(proposeBox5Monthly(current, annual)) : current;
+    return commit(writeWageBox5(current, Number.isFinite(annual) ? annual : 0));
   }
   if (capture.field === "skip-w2-box5") {
     return commit(skipWageBox5(current));

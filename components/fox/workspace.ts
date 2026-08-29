@@ -182,7 +182,7 @@ import {
   parseExtractMoney,
   parseRaiseWhen,
   PAYSTUB_MONTHLY_ASK,
-  proposeBox5Monthly,
+  writeWageBox5,
   proposeStubMonthly,
   qualifyingIncomeDisplay,
   raiseYtdFarAskCopy,
@@ -4395,7 +4395,7 @@ function draftAfterCaptureBody(draft: FoxIntakeDraft, capture: Capture): FoxInta
   if (capture.field === "payFrequency") return applyPayFrequencyAnswer(next, capture.value);
   if (capture.field === "w2Box5") {
     const annual = parseExtractMoney(capture.value) ?? Number(String(capture.value).replace(/,/g, ""));
-    return Number.isFinite(annual) && annual > 0 ? proposeBox5Monthly(next, annual) : next;
+    return writeWageBox5(next, Number.isFinite(annual) ? annual : 0);
   }
   if (capture.field === "skip-w2-box5") return skipWageBox5(next);
   if (capture.field === "wagePayFrequency") return writeWagePayFrequency(next, capture.value);
@@ -4895,7 +4895,7 @@ export function workspaceReply(
     }
     const annual = parseExtractMoney(q) ?? parseLooseAmount(q);
     if (annual != null && annual > 0) {
-      const nextDraft = proposeBox5Monthly(draft, annual);
+      const nextDraft = writeWageBox5(draft, annual);
       return { ...nextFoxAsk(nextDraft), capture: { field: "w2Box5", value: String(Math.round(annual)) } };
     }
   }

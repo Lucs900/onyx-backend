@@ -278,21 +278,54 @@ export function dropResolvedAddressConfirmChips(
   const line = fileAddressLine(draft);
   return messages.map((message) => {
     if (isOnFileAddressLine(message)) {
-      return { ...message, actions: undefined };
+      return stripUseThisFromOnFileLine(message);
     }
     if (!line || !isAddressConfirmMessage(message, draft)) return message;
-    return {
+    return stripUseThisFromOnFileLine({
       ...message,
       text: addressOnFileCopy(line),
       followUp: isLiveRateSpeech(message.followUp) ? undefined : message.followUp,
-      actions: undefined,
-    };
+    });
   });
 }
 
 /** Address Use this only while pendingAddress is set and File address is empty. */
-function isOnFileAddressLine(message: FoxMessage) {
-  return message.role === "fox" && /\. On the file\.?$/i.test((message.text ?? "").trim());
+export function isOnFileAddressLine(message: FoxMessage) {
+  if (message.role !== "fox") return false;
+  const text = (message.text ?? "").replace(/\s+/g, " ").trim();
+  if (/\bon the file\.?$/i.test(text)) return true;
+  if (/\bon the file\b/i.test(text) && !/suggested monthly income/i.test(text)) return true;
+  return false;
+}
+
+function stripUseThisFromOnFileLine(message: FoxMessage): FoxMessage {
+  const text = (message.text ?? "").replace(/\s*Use this\??\s*$/i, "").trim();
+  const followUp = (message.followUp ?? "").replace(/\s*Use this\??\s*$/i, "").trim();
+  return {
+    ...message,
+    text,
+    followUp: followUp || undefined,
+    actions: undefined,
+  };
+}
+
+/** Visible chips on a bubble — this is the leftover score, not a DOM count. */
+export function paintedFoxActions(
+  message: FoxMessage,
+  draft: FoxIntakeDraft,
+  current = true,
+): FoxAction[] | undefined {
+  if (isOnFileAddressLine(message)) return undefined;
+  const shown = visibleFoxActions(message, draft);
+  if (!shown?.length) return undefined;
+  const next = shown.filter((action) => {
+    if (action.label === "Use this" || action.label === "Change") {
+      if (isOnFileAddressLine(message)) return false;
+      if (isAddressUseAction(action)) return shouldShowAddressUseThis(draft);
+    }
+    return isAddressUseAction(action) ? shouldShowAddressUseThis(draft) : current;
+  });
+  return next.length ? next : undefined;
 }
 
 export function visibleFoxActions(message: FoxMessage, draft: FoxIntakeDraft) {
@@ -300,7 +333,10 @@ export function visibleFoxActions(message: FoxMessage, draft: FoxIntakeDraft) {
   const actions = message.actions;
   if (!actions?.length) return undefined;
   const next = actions.filter((action) => {
-    if (isKeptUseThis(action)) return true;
+    if (isOnFileAddressLine(message) && (action.label === "Use this" || action.label === "Change")) {
+      return false;
+    }
+    if (isKeptUseThis(action) && !isOnFileAddressLine(message)) return true;
     if (isAddressUseAction(action)) return shouldShowAddressUseThis(draft);
     return true;
   });

@@ -26,6 +26,7 @@ import {
   parseExtractMoney,
   readTaxCashflows,
   wageIncomeCaution,
+  wageThreadOpen,
 } from "./qualifyingIncome";
 import {
   applyRentalIncomeFromExtract,
@@ -1470,13 +1471,56 @@ export function deepenStillUseful(draft: FoxIntakeDraft) {
 export type StillUsefulLabel =
   | ReturnType<typeof askClassLabel>
   | "W-2 most recent two years"
+  | "This year’s W-2"
+  | "latest paystub"
   | "second-year W-2"
   | "prior-year return"
   | "K-1 distributions";
 
+function wageGroceryExtractClass(id: string) {
+  return (
+    id === "government_id" ||
+    id === "paystub" ||
+    id === "w2" ||
+    id === "second-year-w2" ||
+    id === "tax_return" ||
+    id === "prior-year-return" ||
+    id === "k1-distributions" ||
+    id === "ytd-pnl"
+  );
+}
+
+/** W-2 after Looks right: one of each. Do not invent a return or a second year. */
+function dropWageAfterLooksRightExtra(draft: FoxIntakeDraft, id: string) {
+  if (!draft.sampleAccepted || !wageThreadOpen(draft)) return false;
+  if (id === "second-year-w2") return true;
+  if (draft.incomeType.value === "w2") {
+    if (
+      id === "tax_return" ||
+      id === "prior-year-return" ||
+      id === "k1-distributions" ||
+      id === "ytd-pnl"
+    ) {
+      return true;
+    }
+  }
+  if (id === "paystub" && receivedClassCount(draft, "paystub") >= 1) return true;
+  if (id === "w2" && receivedClassCount(draft, "w2") >= 1) return true;
+  return false;
+}
+
+function wageAskClassLabel(draft: FoxIntakeDraft, extractClass: ExtractClass): StillUsefulLabel {
+  if (draft.sampleAccepted && wageThreadOpen(draft)) {
+    if (extractClass === "paystub") return "latest paystub";
+    if (extractClass === "w2") return "This year’s W-2";
+  }
+  return askClassLabel(extractClass);
+}
+
 function wantsW2RemainderReturn(draft: FoxIntakeDraft) {
   const income = draft.incomeType.value;
   if (income !== "w2") return false;
+  if (wageThreadOpen(draft)) return false;
   if (receivedTaxReturnCount(draft) >= 1) return false;
   if ((draft.skippedClasses ?? []).includes("tax_return")) return false;
   return primaryInviteSequence(draft).every((kind) => inviteSatisfied(draft, kind));
@@ -1484,15 +1528,18 @@ function wantsW2RemainderReturn(draft: FoxIntakeDraft) {
 
 export function stillUsefulLabels(draft: FoxIntakeDraft): StillUsefulLabel[] {
   const taxReturns = receivedTaxReturnCount(draft);
+  const groceryBeforeLooksRight = wageThreadOpen(draft) && !draft.sampleAccepted;
   const labels: StillUsefulLabel[] = missingExtractClasses(draft)
     .filter((item) => item !== "tax_return" || taxReturns < 1)
-    .map(askClassLabel);
+    .filter((item) => !groceryBeforeLooksRight || !wageGroceryExtractClass(item))
+    .filter((item) => !dropWageAfterLooksRightExtra(draft, item))
+    .map((item) => wageAskClassLabel(draft, item));
   if (wantsW2RemainderReturn(draft) && !labels.includes(askClassLabel("tax_return") as StillUsefulLabel)) {
     labels.push(askClassLabel("tax_return") as StillUsefulLabel);
   }
   if (!deepenStillUseful(draft)) return labels;
   const income = draft.incomeType.value;
-  if ((income === "w2" || income === "both") && receivedClassCount(draft, "w2") < 2) {
+  if ((income === "w2" || income === "both") && !wageThreadOpen(draft) && receivedClassCount(draft, "w2") < 2) {
     if (!labels.includes("W-2 most recent two years")) labels.push("W-2 most recent two years");
   }
   if (
@@ -1736,6 +1783,23 @@ export function stillUsefulVisible(draft: FoxIntakeDraft) {
   return Boolean(draft.path && draft.productIntent && draft.incomeType.value);
 }
 
+function isWageGroceryBeforeLooksRight(draft: FoxIntakeDraft, id: string) {
+  if (draft.sampleAccepted) return false;
+  if (!wageThreadOpen(draft)) return false;
+  return wageGroceryExtractClass(id);
+}
+
+function wageStillUsefulCopy(id: string): { label: string; ask: string } | null {
+  if (id === "paystub") {
+    return { label: "Latest paystub", ask: "Your latest paystub still helps this file." };
+  }
+  if (id === "w2") {
+    return { label: "This year’s W-2", ask: "This year’s W-2 still helps this file." };
+  }
+  if (id === "second-year-w2") return null;
+  return null;
+}
+
 function incomeDocsPhrase(draft: FoxIntakeDraft) {
   const income = draft.incomeType.value;
   if (income === "w2") {
@@ -1815,12 +1879,18 @@ export function layer2Plan(draft: FoxIntakeDraft): StillUsefulItem[] {
   const items = ids
     .filter((id) => !skipped.has(id))
     .filter((id) => !(id === "mortgage_statement" && purchaseLikeFile(draft)))
-    .map((id) => {
+    .filter((id) => !isWageGroceryBeforeLooksRight(draft, id))
+    .filter((id) => !dropWageAfterLooksRightExtra(draft, id))
+    .flatMap((id) => {
     if (id === "mortgage_statement" && draft.statedOtherReo === "yes") {
-      return layer2Item(id, OTHER_REO_MORTGAGE_STATEMENTS, OTHER_REO_MORTGAGE_STATEMENTS);
+      return [layer2Item(id, OTHER_REO_MORTGAGE_STATEMENTS, OTHER_REO_MORTGAGE_STATEMENTS)];
     }
-    const copy = LAYER2_COPY[id];
-    return layer2Item(id, copy.label, copy.ask);
+    const wageCopy =
+      draft.sampleAccepted && wageThreadOpen(draft) ? wageStillUsefulCopy(id) : null;
+    if (wageCopy === null && id === "second-year-w2" && wageThreadOpen(draft)) return [];
+    const copy = wageCopy ?? LAYER2_COPY[id];
+    if (!copy) return [];
+    return [layer2Item(id, copy.label, copy.ask)];
   });
   const bankDocs = (draft.documents ?? []).filter(
     (document) => document.extractClass === "bank_statement" || document.slot === "bank",

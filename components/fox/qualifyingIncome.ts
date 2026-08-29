@@ -1340,33 +1340,28 @@ export function writeWagePayFrequency(draft: FoxIntakeDraft, raw: string): FoxIn
   };
 }
 
-export function proposeBox5Monthly(draft: FoxIntakeDraft, annual: number): FoxIntakeDraft {
-  if (!Number.isFinite(annual) || annual <= 0) return draft;
-  const monthly = monthlyFromAnnual(annual);
-  if (!monthly || monthly <= 0) return draft;
+/** Box 5 is last year’s gross. Do not invent a monthly or open Use this. */
+export function writeWageBox5(draft: FoxIntakeDraft, annual: number): FoxIntakeDraft {
   const now = new Date().toISOString();
-  return withQualifyingIncomeProposal(
-    {
-      ...draft,
-      facts: {
-        ...(draft.facts ?? {}),
-        w2_box5: {
-          field: "w2_box5",
-          value: String(Math.round(annual)),
-          source: "client",
-          confirmed: false,
-          confirmedAt: now,
-        },
+  const next: FoxIntakeDraft = {
+    ...draft,
+    wageBox5Asked: true,
+    pendingProposal: null,
+  };
+  if (!Number.isFinite(annual) || annual <= 0) return next;
+  return {
+    ...next,
+    facts: {
+      ...(draft.facts ?? {}),
+      w2_box5: {
+        field: "w2_box5",
+        value: String(Math.round(annual)),
+        source: "client",
+        confirmed: true,
+        confirmedAt: now,
       },
     },
-    {
-      monthly,
-      basis: "wage",
-      method: "w2-annual",
-      methodNote: W2_BOX5_MONTHLY_NOTE,
-      parts: { wage: monthly },
-    },
-  );
+  };
 }
 
 export function proposeStubMonthly(draft: FoxIntakeDraft, monthly: number): FoxIntakeDraft {
