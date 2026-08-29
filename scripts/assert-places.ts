@@ -123,6 +123,10 @@ assert.equal(REFI_ADDRESS_ASK, "What is the address of the home?");
 const proposed = proposePlaceAddress(base, harbor!);
 assert.equal(isPlaceAddressProposal(proposed.pendingProposal), true);
 assert.equal(proposed.propertyZip, undefined);
+assert.equal(proposed.subjectAddress, undefined);
+assert.equal(proposed.subjectCity, undefined);
+assert.equal(proposed.subjectState, undefined);
+assert.equal(proposed.subjectCounty, undefined);
 assert.equal(rateflowClientBodyFromDraft(proposed), null);
 assert.equal(rateflowBlockedReason(proposed), "address-confirm");
 

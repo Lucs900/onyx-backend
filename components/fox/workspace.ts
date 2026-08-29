@@ -252,6 +252,7 @@ import {
   propertyTypeSkipped,
   addressZipFromDraft,
   keepPropertyZip,
+  addressLineReadyForQuote,
   propertyAddressNeededForQuote,
   propertyZipAskCopy,
   propertyZipAskNeeded,
@@ -2165,7 +2166,7 @@ function isPrematureFileAskAfterQuote(
   return Boolean(nextAskText && message.text === nextAskText);
 }
 
-function withoutLiveQuoteSpeech(messages: FoxMessage[]): FoxMessage[] {
+export function withoutLiveQuoteSpeech(messages: FoxMessage[]): FoxMessage[] {
   return messages.filter(
     (item) => !item.id.startsWith("live-quote:") && item.text !== LIVE_QUOTE_INCOME_ASK,
   );
@@ -2177,7 +2178,9 @@ export function messagesWithLiveQuoteSpeech(
   draft: FoxIntakeDraft,
   quote: NonNullable<FoxIntakeDraft["liveQuote"]>,
 ): FoxMessage[] {
-  if (addressConfirmPending(draft)) return messages;
+  if (addressConfirmPending(draft) || !addressLineReadyForQuote(draft)) {
+    return withoutLiveQuoteSpeech(messages);
+  }
   if (!quote.rate || !quote.asOf) return messages;
   const lines = liveQuoteThreadLines(quote);
   if (!lines.length) return messages;
@@ -2221,6 +2224,7 @@ export function previewRateFact(draft: FoxIntakeDraft): PreviewFact | null {
     };
   }
   if (!propertyTypeChosen(draft) || !creditAnswered(draft)) return null;
+  if (addressConfirmPending(draft) || propertyAddressNeededForQuote(draft)) return null;
   if (propertyZipSkipped(draft)) {
     return {
       id: "rate",
@@ -6483,17 +6487,11 @@ export function previewFacts(draft: FoxIntakeDraft): PreviewFact[] {
   }
 
   const address = draft.subjectAddress || "";
-  if (
-    draft.subjectAddressAsked ||
-    address ||
-    isSubjectAddressConfirmPending(draft)
-  ) {
-    const pending =
-      isSubjectAddressConfirmPending(draft) ? draft.pendingProposal?.value?.trim() : "";
+  if ((draft.subjectAddressAsked || address) && !isSubjectAddressConfirmPending(draft)) {
     facts.push({
       id: "address",
       label: "Property address",
-      value: address || pending || "—",
+      value: address || "—",
       note: SUGGESTED_PROPERTY_NOTE,
     });
     if (draft.subjectCity) {

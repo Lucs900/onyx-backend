@@ -1,4 +1,5 @@
 import type { FoxIntakeDraft, ProductIntent } from "@/components/fox/types";
+import { addressLineReadyForQuote } from "@/components/fox/propertyType";
 import { FHFA_HIGH_COST_CEILING_2026 } from "@/lib/guidelines/conventional";
 import {
   cityFromTypedAddress,
@@ -70,6 +71,7 @@ export function rateflowBlockedReason(draft: FoxIntakeDraft): string | null {
   if (draft.govProgram) return "program";
   if (draft.cashOut) return "cash-out";
   if (addressConfirmPending(draft)) return "address-confirm";
+  if (!addressLineReadyForQuote(draft)) return "address";
   if (!loanPurposeFromDraft(draft)) return "purpose";
   if (!mapResidency(draft.occupancyChoice.value || draft.scenario?.occupancy)) return "occupancy";
   if (listPriceFromDraft(draft) == null) return "value";
@@ -83,12 +85,12 @@ export function rateflowBlockedReason(draft: FoxIntakeDraft): string | null {
 }
 
 export function zipFromDraft(draft: FoxIntakeDraft): string | undefined {
+  if (addressConfirmPending(draft) || !addressLineReadyForQuote(draft)) return undefined;
   const factAddress =
     typeof draft.facts?.property_address?.value === "string" ? draft.facts.property_address.value : "";
   return zipFromSources({
     propertyZip: draft.propertyZip,
     address: draft.subjectAddress || factAddress,
-    scenarioZip: draft.scenario?.zip,
   });
 }
 

@@ -36,7 +36,7 @@ import {
   promptCopy,
   replyToMessage,
 } from "./script";
-import { searchedKeyFor } from "@/lib/rateflow/fromDraft";
+import { addressConfirmPending, searchedKeyFor } from "@/lib/rateflow/fromDraft";
 import { shouldDeferNextAskForLiveCoupon } from "./liveCoupon";
 import { requestRateflowIfNeeded } from "./rateflowClient";
 import { requestAddressSuggestions, requestPlaceAddress, withStreetSuggestChips } from "./addressSuggest";
@@ -73,6 +73,7 @@ import {
   inertSupersededIncomeConfirms,
   lastFoxTurn,
   messagesWithLiveQuoteSpeech,
+  withoutLiveQuoteSpeech,
   docReactionAsk,
   nextDocInvite,
   nextFoxAsk,
@@ -897,7 +898,8 @@ export function AlwaysOnFox({
       }
       const lastFox = lastFoxTurn(prev);
       if (lastFox && sameFoxAsk(lastFox, ask)) return prev;
-      return [...prev, foxAskMessage(ask)];
+      const held = addressConfirmPending(live) ? withoutLiveQuoteSpeech(prev) : prev;
+      return [...held, foxAskMessage(ask)];
     });
   }, [draft.updatedAt, isStart, ready, stage]);
 
@@ -1087,8 +1089,9 @@ export function AlwaysOnFox({
     editLine?: string,
   ) => {
     commitMessagesNow((prev) => {
+      const held = addressConfirmPending(getFoxDraft()) ? withoutLiveQuoteSpeech(prev) : prev;
       const next: FoxMessage[] = [
-        ...prev,
+        ...held,
         { id: newId(), role: "client", text: clientText, edit, editLine },
       ];
       if (!fox.text.trim() && !(fox.followUp ?? "").trim()) return next;

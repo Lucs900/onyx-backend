@@ -1222,6 +1222,25 @@ assert.doesNotMatch(
 assert.equal(rateflowClientBodyFromDraft(afterFounderHouseFico), null);
 assert.equal(previewRateFact(afterFounderHouseFico), null);
 assert.ok(!previewFacts(afterFounderHouseFico).some((fact) => fact.id === "rate"));
+const harborScenarioAtAddress = draft({
+  ...afterFounderHouseFico,
+  scenario: {
+    zip: "94105",
+    purpose: "purchase",
+    productSlug: "conventional-purchase",
+    productName: "Conventional Purchase",
+  },
+});
+assert.equal(workspacePrompt(harborScenarioAtAddress), "property-address");
+assert.equal(rateflowClientBodyFromDraft(harborScenarioAtAddress), null);
+assert.equal(rateflowBlockedReason(harborScenarioAtAddress), "address");
+assert.equal(previewRateFact(harborScenarioAtAddress), null);
+assert.ok(!previewFacts(harborScenarioAtAddress).some((fact) => fact.id === "rate"));
+const harborScenarioSkipped = skipQuoteAddress(harborScenarioAtAddress);
+assert.equal(rateflowClientBodyFromDraft(harborScenarioSkipped), null);
+assert.ok(
+  previewFacts(harborScenarioSkipped).some((fact) => fact.id === "rate" && fact.value === PRICING_WHEN_READY),
+);
 const founderZipReply = workspaceReply("94115", afterFounderHouseFico);
 assert.equal(founderZipReply?.capture?.field, "propertyZip");
 assert.equal(founderZipReply?.capture && "value" in founderZipReply.capture ? founderZipReply.capture.value : "", "94115");
@@ -1270,9 +1289,17 @@ const addressAtZipProposed = proposeAddressAndAdoptZip(
   "500 Market St, San Francisco, CA 94105",
 );
 assert.equal(addressAtZipProposed.subjectAddress, undefined);
-assert.equal(addressAtZipProposed.propertyZip, "94105");
+assert.equal(addressAtZipProposed.propertyZip, undefined);
+assert.equal(addressAtZipProposed.subjectCity, undefined);
+assert.equal(addressAtZipProposed.subjectState, undefined);
+assert.equal(addressAtZipProposed.subjectCounty, undefined);
 assert.equal(rateflowClientBodyFromDraft(addressAtZipProposed), null);
 assert.equal(rateflowBlockedReason(addressAtZipProposed), "address-confirm");
+assert.ok(
+  !previewFacts(addressAtZipProposed).some((fact) =>
+    ["address", "city", "state", "county", "rate"].includes(fact.id),
+  ),
+);
 const addressAtZipFile = resolveProposal(addressAtZipProposed, "accept");
 assert.equal(addressAtZipFile.subjectAddress, "500 Market St, San Francisco, CA 94105");
 assert.equal(addressAtZipFile.propertyZip, "94105");
@@ -1608,9 +1635,17 @@ const founderRefiProposed = proposeAddressAndAdoptZip(
   "500 Market St, San Francisco, CA 94105",
 );
 assert.equal(founderRefiProposed.subjectAddress, undefined);
-assert.equal(founderRefiProposed.propertyZip, "94105");
+assert.equal(founderRefiProposed.propertyZip, undefined);
+assert.equal(founderRefiProposed.subjectCity, undefined);
+assert.equal(founderRefiProposed.subjectState, undefined);
+assert.equal(founderRefiProposed.subjectCounty, undefined);
 assert.equal(rateflowClientBodyFromDraft(founderRefiProposed), null);
 assert.equal(rateflowBlockedReason(founderRefiProposed), "address-confirm");
+assert.ok(
+  !previewFacts(founderRefiProposed).some((fact) =>
+    ["address", "city", "state", "county", "rate"].includes(fact.id),
+  ),
+);
 const founderRefiAddress = writeAddressAndAdoptZip(
   founderRefiReady,
   "500 Market St, San Francisco, CA 94105",
@@ -1662,8 +1697,17 @@ const harborPlace = {
 };
 const founderRefiPlaceProposed = proposePlaceAddress(founderRefiReady, harborPlace);
 assert.equal(founderRefiPlaceProposed.propertyZip, undefined);
+assert.equal(founderRefiPlaceProposed.subjectAddress, undefined);
+assert.equal(founderRefiPlaceProposed.subjectCity, undefined);
+assert.equal(founderRefiPlaceProposed.subjectState, undefined);
+assert.equal(founderRefiPlaceProposed.subjectCounty, undefined);
 assert.equal(rateflowClientBodyFromDraft(founderRefiPlaceProposed), null);
 assert.equal(rateflowBlockedReason(founderRefiPlaceProposed), "address-confirm");
+assert.ok(
+  !previewFacts(founderRefiPlaceProposed).some((fact) =>
+    ["address", "city", "state", "county", "rate"].includes(fact.id),
+  ),
+);
 assert.match(workspacePromptCopy("confirm-proposal", founderRefiPlaceProposed).text, /That’s 500 Market St, San Francisco, CA 94105/);
 assert.match(workspacePromptCopy("confirm-proposal", founderRefiPlaceProposed).text, /Use this/);
 assert.deepEqual(
@@ -1766,6 +1810,32 @@ assert.deepEqual(
 assert.deepEqual(
   messagesWithLiveQuoteSpeech(founderRefiConfirmThread, addressAtZipProposed, founderLive.liveQuote!),
   founderRefiConfirmThread,
+);
+const stackedQuoteWhileConfirm = [
+  {
+    id: "live-quote:stale:0",
+    role: "fox" as const,
+    text: "6.375% · Live as of 12:04 PM PT · not a lock",
+    followUp: "P&I $4,242 · -0.07 pts",
+    actions: [
+      { id: "this", label: "This one", event: "bubble" as const, capture: { field: "live-coupon", value: "lead" } },
+      { id: "lower", label: "Lower payment", event: "bubble" as const, capture: { field: "live-coupon", value: "lower" } },
+      { id: "nocost", label: "No cost", event: "bubble" as const, capture: { field: "live-coupon", value: "nocost" } },
+    ],
+  },
+  ...founderRefiConfirmThread,
+];
+const heldAddressConfirm = messagesWithLiveQuoteSpeech(
+  stackedQuoteWhileConfirm,
+  founderRefiPlaceProposed,
+  founderLive.liveQuote!,
+);
+assert.equal(heldAddressConfirm.length, 1);
+assert.equal(heldAddressConfirm[0]?.id, "addr-confirm");
+assert.ok(!heldAddressConfirm.some((item) => item.id.startsWith("live-quote:")));
+assert.doesNotMatch(
+  (heldAddressConfirm[0]?.actions ?? []).map((item) => item.label).join(" "),
+  /This one|Lower payment|No cost/,
 );
 const founderRefiSpokenThread = messagesWithLiveQuoteSpeech(
   [{ id: "ask-income", role: "fox" as const, text: founderRefiIncomeAsk.text, actions: founderRefiIncomeAsk.actions }],

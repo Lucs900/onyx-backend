@@ -519,7 +519,41 @@ function file(partial: Partial<FoxIntakeDraft>): FoxIntakeDraft {
 }
 
 assert.equal(rateflowClientBodyFromDraft(file({ propertyZip: undefined, propertyZipAsked: undefined })), null);
-assert.equal(rateflowBlockedReason(file({ propertyZip: undefined, propertyZipAsked: undefined })), "zip");
+assert.equal(rateflowBlockedReason(file({ propertyZip: undefined, propertyZipAsked: undefined })), "address");
+assert.equal(
+  rateflowClientBodyFromDraft(
+    file({
+      propertyZip: undefined,
+      propertyZipAsked: undefined,
+      scenario: {
+        zip: "94105",
+        purpose: "purchase",
+        propertyValue: 850000,
+        amountMode: "loan",
+        creditRange: "760+",
+        occupancy: "primary",
+      },
+    }),
+  ),
+  null,
+);
+assert.equal(
+  rateflowBlockedReason(
+    file({
+      propertyZip: undefined,
+      propertyZipAsked: undefined,
+      scenario: {
+        zip: "94105",
+        purpose: "purchase",
+        propertyValue: 850000,
+        amountMode: "loan",
+        creditRange: "760+",
+        occupancy: "primary",
+      },
+    }),
+  ),
+  "address",
+);
 assert.deepEqual(rateflowClientBodyFromDraft(file({})), {
   loan_purpose: "purchase",
   residency_type: "primary_home",

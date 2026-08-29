@@ -79,7 +79,6 @@ export function typedZipFromDraft(draft: FoxIntakeDraft): string | undefined {
   return zipFromSources({
     propertyZip: draft.propertyZip,
     address: draft.subjectAddress || factAddressFromDraft(draft),
-    scenarioZip: draft.scenario?.zip,
   });
 }
 
@@ -115,8 +114,19 @@ export function propertyZipAskNeeded(draft: FoxIntakeDraft) {
 export function propertyAddressNeededForQuote(draft: FoxIntakeDraft) {
   if (draft.correcting === "property-address" || draft.correcting === "property-zip") return false;
   if (!propertyTypeChosen(draft) || !creditAnswered(draft)) return false;
-  if (propertyZipConfirmNeeded(draft) || propertyZipSettled(draft)) return false;
+  if (propertyZipConfirmNeeded(draft)) return false;
+  if (isSubjectAddressConfirmPending(draft)) return false;
+  if (draft.propertyZipAsked && !propertyAddressSettled(draft)) return false;
   return !propertyAddressSettled(draft);
+}
+
+/** Use this, Skip, or ZIP-only finished the address line. A pending street chip has not. */
+export function addressLineReadyForQuote(draft: FoxIntakeDraft) {
+  if (isSubjectAddressConfirmPending(draft)) return false;
+  if (propertyAddressSettled(draft)) return true;
+  if (draft.propertyZipAsked) return true;
+  if (propertyTypeChosen(draft) && creditAnswered(draft)) return false;
+  return true;
 }
 
 export function skipPropertyZip(draft: FoxIntakeDraft): FoxIntakeDraft {
@@ -146,11 +156,9 @@ export function writeAddressAndAdoptZip(draft: FoxIntakeDraft, address: string):
   return adoptReuseZip(writeSubjectAddress(draft, address));
 }
 
-/** Confirm-before-write on the street. ZIP from that street is used for Rateflow now. */
+/** Confirm-before-write on the street. File ZIP waits for Use this. */
 export function proposeAddressAndAdoptZip(draft: FoxIntakeDraft, address: string): FoxIntakeDraft {
-  const proposed = proposeSubjectAddress(draft, address);
-  const zip = zipFromTypedAddress(address);
-  return zip ? writePropertyZip(proposed, zip) : proposed;
+  return proposeSubjectAddress(draft, address);
 }
 
 export function isPlaceAddressProposal(proposal: FactProposal | null | undefined) {
@@ -245,10 +253,11 @@ export function writePlaceAddress(draft: FoxIntakeDraft, place: PlaceAddress): F
   );
 }
 
-/** Skip the quote-path address line. No ZIP-only follow-up. Pricing when the file is ready. */
+/** Skip the quote-path address line. Keep only a ZIP they already wrote. No homepage ZIP. */
 export function skipQuoteAddress(draft: FoxIntakeDraft): FoxIntakeDraft {
   const next = skipSubjectAddress(draft);
-  if (typedZipFromDraft(next)) return next;
+  if (draft.propertyZipAsked && keptPropertyZip(next)) return next;
+  if (addressZipFromDraft(next)) return next;
   return skipPropertyZip(next);
 }
 
