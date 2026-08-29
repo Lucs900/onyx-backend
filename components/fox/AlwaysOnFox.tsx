@@ -227,13 +227,14 @@ function foxAskMessage(ask: {
   facts?: FoxMessage["facts"];
   actions?: FoxAction[];
 }): FoxMessage {
+  const onFile = /\bon the file\.?\s*$/i.test((ask.text ?? "").trim());
   return {
     id: newId(),
     role: "fox",
     text: ask.text,
-    followUp: ask.followUp,
+    followUp: onFile ? undefined : ask.followUp,
     facts: ask.facts,
-    actions: ask.actions,
+    actions: onFile ? undefined : ask.actions,
   };
 }
 

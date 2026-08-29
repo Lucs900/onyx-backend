@@ -40,6 +40,7 @@ import {
   isThisOneText,
   keepPendingLiveCoupon,
   dropResolvedAddressConfirmChips,
+  isOnFileAddressLine,
   isLiveRateSpeech,
   liveCouponActions,
   liveCouponConfirmCopy,
@@ -7269,6 +7270,7 @@ export function ensureIncomeConfirmChips(messages: FoxMessage[], draft: FoxIntak
   if (latest < 0) return messages;
   return messages.map((message, index) => {
     if (index !== latest) return message;
+    if (isOnFileAddressLine(message)) return { ...message, actions: undefined };
     const actions = message.actions ?? [];
     const hasUse = actions.some((action) => action.capture?.field === "accept-proposal");
     const hasLeave = actions.some((action) => action.capture?.field === "decline-proposal");

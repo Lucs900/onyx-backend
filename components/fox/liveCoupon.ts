@@ -205,6 +205,54 @@ function foxBlob(message: FoxMessage) {
   return `${message.text}\n${message.followUp ?? ""}`;
 }
 
+/** Written-address line only — text, not follow-up / income / coupon blob. */
+export function isOnFileAddressText(message: FoxMessage) {
+  if (message.role !== "fox") return false;
+  return /\bon the file\.?\s*$/i.test((message.text ?? "").trim());
+}
+
+function onFileFollowOnly(message: FoxMessage) {
+  if (message.role !== "fox") return false;
+  if (isOnFileAddressText(message)) return false;
+  return /\bon the file\.?\s*$/i.test((message.followUp ?? "").trim()) && looksLikeStreetAddress(message.text);
+}
+
+function spokenLineFromOnFile(message: FoxMessage, fileLine?: string) {
+  const text = (message.text ?? "").trim();
+  const fromText = text.match(/^(.*)\.\s*On the file\.?$/i)?.[1]?.trim();
+  if (fromText) return fromText;
+  if (fileLine?.trim()) return fileLine.trim();
+  return text.replace(/[.\s]+$/g, "").replace(/\s*Use this\??\s*$/i, "").trim();
+}
+
+/** After File write, that bubble is text only. No leftover pending chips. */
+export function sealOnFileAddressMessage(message: FoxMessage, fileLine?: string): FoxMessage {
+  const spoken = spokenLineFromOnFile(message, fileLine);
+  return {
+    ...message,
+    text: spoken ? addressOnFileCopy(spoken) : (message.text ?? "").replace(/\s*Use this\??\s*$/i, "").trim(),
+    followUp: undefined,
+    actions: undefined,
+  };
+}
+
+function dropUseThisEchoUnderOnFile(messages: FoxMessage[]) {
+  const next: FoxMessage[] = [];
+  for (const item of messages) {
+    const prev = next[next.length - 1];
+    if (
+      item.role === "client" &&
+      /^use this\??$/i.test(item.text.trim()) &&
+      prev &&
+      isOnFileAddressText(prev)
+    ) {
+      continue;
+    }
+    next.push(item);
+  }
+  return next;
+}
+
 function isKeptUseThis(action: FoxAction) {
   return (
     action.capture?.field === "accept-live-coupon" ||
@@ -270,59 +318,58 @@ export function isLiveRateSpeech(text?: string) {
   return /%\s*·\s*.*Live as of/i.test(text) || /Live as of .+\s*·\s*not a lock/i.test(text);
 }
 
-/** After File write, that confirm becomes “{line}. On the file.” — no Use this. */
+/** After File write, that confirm becomes “{line}. On the file.” — text only. */
 export function dropResolvedAddressConfirmChips(
   messages: FoxMessage[],
   draft: FoxIntakeDraft,
 ): FoxMessage[] {
   const line = fileAddressLine(draft);
-  return messages.map((message) => {
-    if (isOnFileAddressLine(message, draft)) {
-      return stripUseThisFromOnFileLine(message);
+  const sealed = messages.map((message) => {
+    if (isOnFileAddressLine(message)) {
+      return sealOnFileAddressMessage(message, line || undefined);
     }
-    if (!line || !isAddressConfirmMessage(message, draft)) return message;
-    return stripUseThisFromOnFileLine({
-      ...message,
-      text: addressOnFileCopy(line),
-      followUp: isLiveRateSpeech(message.followUp) ? undefined : message.followUp,
-    });
+    if (line && isAddressConfirmMessage(message, draft)) {
+      return sealOnFileAddressMessage(message, line);
+    }
+    return message;
   });
+  return line ? dropUseThisEchoUnderOnFile(sealed) : sealed;
 }
 
-/** Address Use this only while pendingAddress is set and File address is empty. */
-export function isOnFileAddressLine(message: FoxMessage, draft?: FoxIntakeDraft) {
-  if (message.role !== "fox") return false;
-  const blob = foxBlob(message).replace(/\s+/g, " ").trim();
-  if (/suggested monthly income/i.test(blob)) return false;
-  if (/\bon the file\b/i.test(blob)) return true;
-  const written = draft ? fileAddressLine(draft) : "";
-  if (written && blob.includes(written) && /on the file/i.test(blob)) return true;
-  return false;
+/** On the file wins from the spoken line. Follow-up / coupon / income cannot keep chips. */
+export function isOnFileAddressLine(message: FoxMessage, _draft?: FoxIntakeDraft) {
+  return isOnFileAddressText(message) || onFileFollowOnly(message);
 }
 
-function stripUseThisFromOnFileLine(message: FoxMessage): FoxMessage {
-  const text = (message.text ?? "").replace(/\s*Use this\??\s*$/i, "").trim();
-  const followUp = (message.followUp ?? "").replace(/\s*Use this\??\s*$/i, "").trim();
-  return {
-    ...message,
-    text,
-    followUp: followUp || undefined,
-    actions: undefined,
-  };
+/** Painted Use this buttons on an On the file line. This is the leftover score, not a DOM count. */
+export function leftoverUseThisPaintedOnOnFile(
+  messages: FoxMessage[],
+  draft: FoxIntakeDraft,
+): number {
+  const thread = dropResolvedAddressConfirmChips(messages, draft);
+  let count = 0;
+  for (const message of thread) {
+    if (!isOnFileAddressLine(message)) continue;
+    const painted = paintedFoxActions(message, draft, true) ?? [];
+    count += painted.filter((action) => action.label === "Use this").length;
+    if (/\bUse this\b/i.test(`${message.text}\n${message.followUp ?? ""}`)) count += 1;
+    if (message.actions?.some((action) => action.label === "Use this")) count += 1;
+  }
+  return count;
 }
 
-/** Visible chips on a bubble — this is the leftover score, not a DOM count. */
+/** Visible chips on a bubble — leftover score is the painted button, not a DOM count. */
 export function paintedFoxActions(
   message: FoxMessage,
   draft: FoxIntakeDraft,
   current = true,
 ): FoxAction[] | undefined {
-  if (hideAddressUseThisOnBubble(message, draft)) return undefined;
+  if (isOnFileAddressLine(message) || hideAddressUseThisOnBubble(message, draft)) return undefined;
   const shown = visibleFoxActions(message, draft);
   if (!shown?.length) return undefined;
   const next = shown.filter((action) => {
     if (action.label === "Use this" || action.label === "Change") {
-      if (hideAddressUseThisOnBubble(message, draft)) return false;
+      if (isOnFileAddressLine(message) || hideAddressUseThisOnBubble(message, draft)) return false;
       if (isAddressConfirmMessage(message, draft)) return shouldShowAddressUseThis(draft);
     }
     if (isAddressConfirmMessage(message, draft) && isAddressUseAction(action)) {
@@ -333,24 +380,17 @@ export function paintedFoxActions(
   return next.length ? next : undefined;
 }
 
-function isAddressOnFileBubble(message: FoxMessage, draft: FoxIntakeDraft) {
-  if (isOnFileAddressLine(message, draft)) return true;
-  const written = fileAddressLine(draft);
-  if (!written) return false;
-  const blob = foxBlob(message);
-  return blob.includes(written) && /\bon the file\b/i.test(blob);
-}
-
 function hideAddressUseThisOnBubble(message: FoxMessage, draft: FoxIntakeDraft) {
-  if (isOnFileAddressLine(message, draft) || isAddressOnFileBubble(message, draft)) return true;
+  if (isOnFileAddressLine(message)) return true;
   return Boolean(fileAddressLine(draft) && isAddressConfirmMessage(message, draft) && !shouldShowAddressUseThis(draft));
 }
 
 export function visibleFoxActions(message: FoxMessage, draft: FoxIntakeDraft) {
-  if (hideAddressUseThisOnBubble(message, draft)) return undefined;
+  if (isOnFileAddressLine(message) || hideAddressUseThisOnBubble(message, draft)) return undefined;
   const actions = message.actions;
   if (!actions?.length) return undefined;
   const next = actions.filter((action) => {
+    if (isOnFileAddressLine(message)) return false;
     if (hideAddressUseThisOnBubble(message, draft) && (action.label === "Use this" || action.label === "Change")) {
       return false;
     }
@@ -399,7 +439,11 @@ export function withLiveCouponChips(messages: FoxMessage[], draft: FoxIntakeDraf
     if (held[i].id.startsWith("live-quote:")) lastQuote = i;
   }
   if (lastQuote < 0) return held;
-  return held.map((item, index) => (index === lastQuote ? { ...item, actions: chips } : item));
+  return held.map((item, index) => {
+    if (index !== lastQuote) return item;
+    if (isOnFileAddressLine(item)) return { ...item, actions: undefined };
+    return { ...item, actions: chips };
+  });
 }
 
 export function normalizeLiveQuoteRows(value: unknown): SafeCouponRow[] | undefined {

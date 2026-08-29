@@ -41,6 +41,7 @@ import {
   dropResolvedAddressConfirmChips,
   isLowerPaymentText,
   keepPendingLiveCoupon,
+  leftoverUseThisPaintedOnOnFile,
   liveCouponActions,
   paintedFoxActions,
   shouldDeferNextAskForLiveCoupon,
@@ -277,6 +278,8 @@ import {
   parsePropertyType,
   proposeAddressAndAdoptZip,
   addressOnFileCopy,
+  propertyTypeConfirmActions,
+  typedAddressConfirmCopy,
   proposePlaceAddress,
   proposeSubjectAddress,
   propertyZipConfirmCopy,
@@ -1598,6 +1601,75 @@ assert.equal(
     true,
   ),
   undefined,
+);
+const marinaPendingLine = "801 Marina Blvd, San Francisco, CA 94123";
+const marinaPendingConfirm = {
+  id: "marina-pending",
+  role: "fox" as const,
+  text: typedAddressConfirmCopy(marinaPendingLine),
+  actions: propertyTypeConfirmActions(),
+};
+const marinaPendingDraft = draft({
+  ...founderLive,
+  subjectAddress: undefined,
+  subjectAddressAsked: false,
+  pendingAddress: {
+    line: marinaPendingLine,
+    street: "801 Marina Blvd",
+    city: "San Francisco",
+    state: "CA",
+    zip: "94123",
+  },
+});
+assert.equal(shouldShowAddressUseThis(marinaPendingDraft), true);
+assert.ok(
+  (paintedFoxActions(marinaPendingConfirm, marinaPendingDraft, true) ?? []).some(
+    (action) => action.label === "Use this",
+  ),
+  "pending Use this stays while File address is empty",
+);
+const marinaWalkThread = [
+  marinaPendingConfirm,
+  { id: "marina-use", role: "client" as const, text: "Use this" },
+];
+const marinaOnFileThread = dropResolvedAddressConfirmChips(marinaWalkThread, marinaWrittenFile);
+const marinaOnFileBubble = marinaOnFileThread.find((item) => item.role === "fox");
+assert.equal(marinaOnFileBubble?.text, addressOnFileCopy(marinaPendingLine));
+assert.equal(marinaOnFileBubble?.followUp, undefined);
+assert.equal(marinaOnFileBubble?.actions, undefined);
+assert.equal(paintedFoxActions(marinaOnFileBubble!, marinaWrittenFile, true), undefined);
+assert.equal(paintedFoxActions(marinaOnFileBubble!, marinaWrittenFile, false), undefined);
+assert.equal(leftoverUseThisPaintedOnOnFile(marinaWalkThread, marinaWrittenFile), 0);
+assert.ok(
+  !marinaOnFileThread.some((item) => item.role === "client" && /^use this$/i.test(item.text)),
+  "no Use this under On the file after File write",
+);
+const marinaLeftoverOnSpoken = {
+  id: "marina-leftover-chips",
+  role: "fox" as const,
+  text: addressOnFileCopy(marinaPendingLine),
+  followUp: "Suggested monthly income is $7,000. Use this?",
+  actions: [
+    ...propertyTypeConfirmActions(),
+    {
+      id: "accept-live-coupon",
+      label: "Use this" as const,
+      event: "bubble" as const,
+      capture: { field: "accept-live-coupon" as const },
+    },
+  ],
+};
+assert.equal(
+  leftoverUseThisPaintedOnOnFile([marinaLeftoverOnSpoken], marinaWrittenFile),
+  0,
+);
+assert.equal(
+  dropResolvedAddressConfirmChips([marinaLeftoverOnSpoken], marinaWrittenFile)[0]?.actions,
+  undefined,
+);
+assert.doesNotMatch(
+  dropResolvedAddressConfirmChips([marinaLeftoverOnSpoken], marinaWrittenFile)[0]?.text ?? "",
+  /Use this/,
 );
 const afterAddressWrite = messagesWithLiveQuoteSpeech(
   leftoverAddressUse,
