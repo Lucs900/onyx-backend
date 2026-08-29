@@ -37,7 +37,11 @@ import {
   replyToMessage,
 } from "./script";
 import { addressConfirmPending, searchedKeyFor } from "@/lib/rateflow/fromDraft";
-import { dropResolvedAddressConfirmChips, shouldDeferNextAskForLiveCoupon } from "./liveCoupon";
+import {
+  dropResolvedAddressConfirmChips,
+  shouldDeferNextAskForLiveCoupon,
+  visibleFoxActions,
+} from "./liveCoupon";
 import { requestRateflowIfNeeded } from "./rateflowClient";
 import { requestAddressSuggestions, requestPlaceAddress, withStreetSuggestChips } from "./addressSuggest";
 import { encodePlaceAddress, shouldSuggestStreets } from "@/lib/places/address";
@@ -145,11 +149,11 @@ function seedWorkspaceMessages(
       const last = stored[stored.length - 1];
       if (last?.role === "client") {
         const ask = foxAskMessage(workspacePromptCopy(workspacePrompt(live), live));
-        const next = [...stored, ask];
+        const next = dropResolvedAddressConfirmChips([...stored, ask], live);
         setFoxMessages(next);
         return next;
       }
-      return stored;
+      return dropResolvedAddressConfirmChips(stored, live);
     }
     if (fileExists(live)) {
       const ask = [foxAskMessage(workspacePromptCopy(workspacePrompt(live), live))];
@@ -396,7 +400,7 @@ function FoxThread({
         }
         const current = message.role === "fox" && index === currentFox;
         const tone = current ? " is-current" : " is-prior";
-        const shownActions = message.actions;
+        const shownActions = visibleFoxActions(message, draft);
         return (
           <article
             key={message.id}
@@ -603,7 +607,7 @@ export function AlwaysOnFox({
     const stored = getFoxMessages();
     const live = getFoxDraft();
     if (!shouldResumeWorkspaceEntry(live, stored) || !stored.length) return;
-    setMessages(stored);
+    setMessages(dropResolvedAddressConfirmChips(stored, live));
   }, [isStart, draft.motion, draft.updatedAt]);
 
   useLayoutEffect(() => {

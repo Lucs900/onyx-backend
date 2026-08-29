@@ -43,6 +43,7 @@ import {
   keepPendingLiveCoupon,
   liveCouponActions,
   shouldDeferNextAskForLiveCoupon,
+  visibleFoxActions,
 } from "../components/fox/liveCoupon";
 import {
   SUGGESTED_NOTE,
@@ -1435,6 +1436,55 @@ assert.equal(
   )[0]?.actions,
   undefined,
 );
+assert.equal(
+  dropResolvedAddressConfirmChips(
+    [
+      {
+        id: "addr-bare",
+        role: "fox" as const,
+        text: "That’s 500 Market St, San Francisco, CA 94105.",
+        actions: [{ id: "use", label: "Use this", event: "bubble" as const }],
+      },
+    ],
+    leftoverWrittenFile,
+  )[0]?.actions,
+  undefined,
+);
+assert.equal(
+  visibleFoxActions(
+    {
+      id: "addr-current",
+      role: "fox",
+      text: leftoverAddressUse[0].text,
+      followUp: leftoverWrittenFile.liveQuote
+        ? `${leftoverWrittenFile.liveQuote.rate}% · Live as of Aug 28, 2026, 12:04 PM PT · not a lock`
+        : undefined,
+      actions: leftoverAddressUse[0].actions,
+    },
+    leftoverWrittenFile,
+  ),
+  undefined,
+);
+assert.doesNotMatch(
+  dropResolvedAddressConfirmChips(leftoverAddressUse, leftoverWrittenFile).find((item) => item.id === "addr-confirm")
+    ?.text ?? "",
+  /Use this\?/,
+);
+const incomeUseAfterAddress = dropResolvedAddressConfirmChips(
+  [
+    {
+      id: "income-confirm",
+      role: "fox" as const,
+      text: "I’m suggesting $8,000 a month from W-2. Suggested qualifying income · not underwritten. Use this?",
+      actions: leftoverAddressUse[0].actions,
+    },
+  ],
+  leftoverWrittenFile,
+)[0];
+assert.ok(
+  (incomeUseAfterAddress?.actions ?? []).some((action) => action.label === "Use this"),
+  "later income Use this stays after address write",
+);
 const afterAddressWrite = messagesWithLiveQuoteSpeech(
   leftoverAddressUse,
   leftoverWrittenFile,
@@ -1457,6 +1507,31 @@ assert.ok(
   messagesWithLiveQuoteSpeech(afterAddressWrite, leftoverWrittenFile, leftoverWrittenFile.liveQuote!).every(
     (item) => !(item.actions ?? []).some((action) => action.capture?.field === "accept-proposal"),
   ),
+);
+const sameBubbleConfirm = messagesWithLiveQuoteSpeech(
+  [
+    {
+      id: "addr-confirm",
+      role: "fox" as const,
+      text: leftoverAddressUse[0].text,
+      followUp: liveRateLine(leftoverWrittenFile.liveQuote!),
+      actions: leftoverAddressUse[0].actions,
+    },
+  ],
+  leftoverWrittenFile,
+  leftoverWrittenFile.liveQuote!,
+);
+assert.ok(sameBubbleConfirm.some((item) => item.id.startsWith("live-quote:")));
+assert.equal(
+  sameBubbleConfirm.find((item) => item.id === "addr-confirm")?.actions,
+  undefined,
+);
+assert.ok(
+  sameBubbleConfirm.every((item) => !(item.actions ?? []).some((action) => action.label === "Use this")),
+);
+assert.deepEqual(
+  (sameBubbleConfirm[sameBubbleConfirm.length - 1]?.actions ?? []).map((item) => item.label),
+  ["This one", "Lower payment", "Skip"],
 );
 const harborPurchaseLead = draft({
   ...afterFounderZip,

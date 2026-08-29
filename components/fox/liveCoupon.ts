@@ -201,25 +201,28 @@ export function couponChoiceUnresolved(draft: FoxIntakeDraft, choice: "lower" | 
 }
 
 function addressWrittenOnFile(draft: FoxIntakeDraft) {
-  return Boolean(draft.subjectAddress || draft.subjectAddressAsked);
+  const fact = draft.facts?.property_address?.value;
+  return Boolean(
+    draft.subjectAddress ||
+      draft.subjectAddressAsked ||
+      (typeof fact === "string" && fact.trim()),
+  );
 }
 
-function looksLikeAddressConfirmProse(message: FoxMessage) {
-  if (message.role !== "fox") return false;
-  if (message.id.startsWith("live-quote:")) return false;
-  const blob = `${message.text}\n${message.followUp ?? ""}`;
-  if (/That[\u2019']s a (single-family house|condo|2–4 unit)/i.test(blob)) return false;
-  if (/Suggested qualifying income/i.test(blob)) return false;
-  const suggested = /Suggested · not underwritten/i.test(blob) && /Use this\?/i.test(blob);
-  const street =
-    /That[\u2019']s \d/i.test(blob) ||
-    /The (contract|ID) shows /i.test(blob) ||
-    /,\s*CA\b/.test(blob) ||
-    /\b\d{5}\b/.test(blob);
-  return suggested && street;
+function foxBlob(message: FoxMessage) {
+  return `${message.text}\n${message.followUp ?? ""}`;
+}
+
+function isKeptUseThis(action: FoxAction) {
+  return (
+    action.capture?.field === "accept-live-coupon" ||
+    action.capture?.field === "keep-live-coupon" ||
+    action.capture?.field === "couponChoice"
+  );
 }
 
 function isAddressUseAction(action: FoxAction) {
+  if (isKeptUseThis(action)) return false;
   const field = action.capture?.field;
   return (
     field === "accept-proposal" ||
@@ -235,17 +238,78 @@ function isAddressUseAction(action: FoxAction) {
   );
 }
 
-/** After Use this writes the address, those chips must not stay tappable. */
+function looksLikeOtherProposalConfirm(blob: string) {
+  if (/That[\u2019']s a (single-family house|condo|2–4 unit)/i.test(blob)) return true;
+  if (/Suggested qualifying income/i.test(blob)) return true;
+  if (/qualifying income/i.test(blob)) return true;
+  if (/\ba month\b/i.test(blob)) return true;
+  if (
+    /available funds|other debts|housing now|hire date|other real estate|bankruptcy|just you|more than one borrower/i.test(
+      blob,
+    )
+  ) {
+    return true;
+  }
+  return false;
+}
+
+function looksLikeStreetAddress(blob: string) {
+  if (/That[\u2019']s \d/i.test(blob)) return true;
+  if (/The (contract|ID) shows .+\d/i.test(blob)) return true;
+  if (/This address is \d{5}/i.test(blob)) return true;
+  if (/,\s*CA\s+\d{5}\b/.test(blob)) return true;
+  if (/\b\d{1,6}\s+\S.+(CA|California)\b/i.test(blob)) return true;
+  return false;
+}
+
+/** Address confirm — do not require the middot + “Use this?” pair. */
+function isAddressConfirmMessage(message: FoxMessage, draft: FoxIntakeDraft) {
+  if (message.role !== "fox") return false;
+  if (message.id.startsWith("live-quote:")) return false;
+  const blob = foxBlob(message);
+  if (looksLikeOtherProposalConfirm(blob)) return false;
+  const written = typeof draft.subjectAddress === "string" ? draft.subjectAddress.trim() : "";
+  if (written && blob.includes(written)) return true;
+  const fact =
+    typeof draft.facts?.property_address?.value === "string" ? draft.facts.property_address.value.trim() : "";
+  if (fact && blob.includes(fact)) return true;
+  if (looksLikeStreetAddress(blob)) return true;
+  return false;
+}
+
+function stripAddressUseThisQuestion(text: string) {
+  return text.replace(/\s*Use this\??\s*$/i, "").trim();
+}
+
+export function isLiveRateSpeech(text?: string) {
+  if (!text) return false;
+  return /%\s*·\s*.*Live as of/i.test(text) || /Live as of .+\s*·\s*not a lock/i.test(text);
+}
+
+/** After Use this writes the address, that confirm’s actions must be gone — any row. */
 export function dropResolvedAddressConfirmChips(
   messages: FoxMessage[],
   draft: FoxIntakeDraft,
 ): FoxMessage[] {
   if (!addressWrittenOnFile(draft)) return messages;
   return messages.map((message) => {
-    if (!looksLikeAddressConfirmProse(message)) return message;
+    if (!isAddressConfirmMessage(message, draft)) return message;
     const actions = (message.actions ?? []).filter((action) => !isAddressUseAction(action));
-    return { ...message, actions: actions.length ? actions : undefined };
+    const text = stripAddressUseThisQuestion(message.text);
+    const followUp = message.followUp ? stripAddressUseThisQuestion(message.followUp) : message.followUp;
+    return {
+      ...message,
+      text,
+      followUp: followUp || undefined,
+      actions: actions.length ? actions : undefined,
+    };
   });
+}
+
+/** Paint-time guard. After File write, leftover address Use this never renders. */
+export function visibleFoxActions(message: FoxMessage, draft: FoxIntakeDraft) {
+  const actions = dropResolvedAddressConfirmChips([message], draft)[0]?.actions;
+  return actions?.length ? actions : undefined;
 }
 
 export function liveCouponConfirmCopy(draft: FoxIntakeDraft): {
