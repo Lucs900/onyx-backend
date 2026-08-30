@@ -59,6 +59,9 @@ import {
   resolveReceivedSlot,
   nextDocInvite,
   skipCurrentInvite,
+  skipUnreadDoc,
+  retryUnreadDoc,
+  writeUnreadNote,
   skipRemainingClasses,
   layer2Open,
   skipCurrentStillUseful,
@@ -110,6 +113,7 @@ import {
   parseExtractMoney,
   writeWageBox5,
   writeTypedStubMonthly,
+  skipWageDocs,
   skipWageBox5,
   skipWageFrequency,
   skipWageStub,
@@ -365,9 +369,11 @@ export function emptyDraft(): FoxIntakeDraft {
     yearsInBusinessAsked: false,
     awaitingYearsInBusiness: false,
     emailSkipped: false,
+    wageDocsAsked: false,
     wageBox5Asked: false,
     wageFrequencyAsked: false,
     wageStubAsked: false,
+    awaitingUnreadNote: false,
     awaitingPayFrequency: false,
     awaitingBothMonthlyReason: false,
     awaitingRaiseWhen: false,
@@ -665,9 +671,11 @@ function normalize(value: unknown): FoxIntakeDraft {
     priorYearSkipped: Boolean(raw.priorYearSkipped),
     yearsInBusinessAsked: Boolean(raw.yearsInBusinessAsked),
     awaitingYearsInBusiness: Boolean(raw.awaitingYearsInBusiness),
+    wageDocsAsked: Boolean(raw.wageDocsAsked),
     wageBox5Asked: Boolean(raw.wageBox5Asked),
     wageFrequencyAsked: Boolean(raw.wageFrequencyAsked),
     wageStubAsked: Boolean(raw.wageStubAsked),
+    awaitingUnreadNote: Boolean(raw.awaitingUnreadNote),
     awaitingPayFrequency: Boolean(raw.awaitingPayFrequency),
     awaitingBothMonthlyReason: Boolean(raw.awaitingBothMonthlyReason),
     awaitingRaiseWhen: Boolean(raw.awaitingRaiseWhen),
@@ -1646,7 +1654,12 @@ function hasUnreadReceivedDoc(draft: FoxIntakeDraft) {
 export function applyCapture(capture: Capture) {
   const before = current;
   if (current.looksRightHold) {
-    if (capture.field === "skip-docs" || !hasUnreadReceivedDoc(current)) {
+    if (
+      capture.field === "skip-docs" ||
+      capture.field === "skip-unread-doc" ||
+      capture.field === "skip-wage-docs" ||
+      !hasUnreadReceivedDoc(current)
+    ) {
       current = { ...current, looksRightHold: false };
     }
   }
@@ -2002,6 +2015,18 @@ function applyCaptureBody(capture: Capture) {
   if (capture.field === "payFrequency") {
     return commit(applyPayFrequencyAnswer(current, capture.value));
   }
+  if (capture.field === "skip-wage-docs") {
+    return commit(skipWageDocs(current));
+  }
+  if (capture.field === "retry-unread-doc") {
+    return commit(retryUnreadDoc(current));
+  }
+  if (capture.field === "note-unread-doc") {
+    return commit({ ...current, awaitingUnreadNote: true });
+  }
+  if (capture.field === "skip-unread-doc") {
+    return commit(skipUnreadDoc(current));
+  }
   if (capture.field === "w2Box5") {
     const annual = parseExtractMoney(capture.value) ?? Number(String(capture.value).replace(/,/g, ""));
     return commit(writeWageBox5(current, Number.isFinite(annual) ? annual : 0));
@@ -2154,6 +2179,9 @@ function applyCaptureBody(capture: Capture) {
     });
   }
   if (capture.field === "note") {
+    if (current.awaitingUnreadNote) {
+      return commit(writeUnreadNote(current, capture.value));
+    }
     return addNote(capture.value);
   }
   if (capture.field === "path") {

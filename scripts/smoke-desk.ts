@@ -92,9 +92,16 @@ import {
   DECLINING_INCOME_CAUTION,
   QUALIFYING_INCOME_FIELD,
   PAYSTUB_MONTHLY_ASK,
+  PAYSTUB_AMOUNT_FIELD,
+  WAGE_DOCS_ASK,
+  WAGE_EXTRACT_FIELD,
   W2_BOX1_MONTHLY_NOTE,
   W2_BOX5_ASK,
   W2_PAY_FREQUENCY_ASK,
+  wageExtractConfirmCopy,
+  acceptWageExtract,
+  writeWagePayFrequency,
+  writeTypedStubMonthly,
   laterYearIncomeLower,
   monthlyFromAnnual,
   monthlyQualifyingFromExtract,
@@ -265,6 +272,7 @@ import {
   resolveFactConflict,
   sanitizeExtractedFields,
   skipRemainingClasses,
+  skipUnreadDoc,
   slotFromFilename as slotFromName,
   nextDocInvite,
 } from "../components/fox/fileWrite";
@@ -439,6 +447,8 @@ import {
   workspacePrompt,
   workspacePromptCopy,
   workspaceReply,
+  unreadDocActions,
+  wageDocsAsk,
   persistGuidelineNote,
   docReactionAsk,
   nextFoxAsk,
@@ -532,6 +542,7 @@ function settleWageAsks(base: ReturnType<typeof draft>) {
   if (type !== "w2" && type !== "both") return base;
   return draft({
     ...base,
+    wageDocsAsked: true,
     wageBox5Asked: true,
     wageFrequencyAsked: true,
     wageStubAsked: true,
@@ -586,6 +597,7 @@ function confirmLooksRight() {
     "other-reo": { field: "skip-other-reo" },
     citizenship: { field: "skip-citizenship" },
     "former-history": { field: "skip-former-history" },
+    "wage-docs": { field: "skip-wage-docs" },
     "w2-box5": { field: "skip-w2-box5" },
     "w2-pay-frequency": { field: "skip-w2-pay-frequency" },
     "paystub-monthly": { field: "skip-paystub-monthly" },
@@ -691,6 +703,7 @@ function withIncome(
     borrowerNameAsked: true,
     otherReoAsked: true,
     incomeType: { ...emptyDraft().incomeType, value },
+    wageDocsAsked: value === "w2" || value === "both" ? true : undefined,
     wageBox5Asked: value === "w2" || value === "both" ? true : undefined,
     wageFrequencyAsked: value === "w2" || value === "both" ? true : undefined,
     wageStubAsked: value === "w2" || value === "both" ? true : undefined,
@@ -2275,28 +2288,40 @@ assert.equal(founderPurchaseW2?.capture?.field, "incomeType");
 assert.equal(founderPurchaseW2?.capture && "value" in founderPurchaseW2.capture ? founderPurchaseW2.capture.value : "", "w2");
 assert.doesNotMatch(founderPurchaseW2?.text ?? "", /Looks right|I have what I need|other real estate|Do you own any other/i);
 assert.doesNotMatch(founderPurchaseW2?.text ?? "", /other real estate|Do you own any other/i);
-assert.equal(founderPurchaseW2?.text, W2_BOX5_ASK);
-assert.doesNotMatch(founderPurchaseW2?.text ?? "", /purchase contract|bank statement|grocery|Box 1|Box 12/i);
-assert.doesNotMatch(founderPurchaseW2?.text ?? "", /Next is your (most recent )?W-2|Upload this/i);
+assert.equal(founderPurchaseW2?.text, WAGE_DOCS_ASK);
+assert.doesNotMatch(founderPurchaseW2?.text ?? "", /purchase contract|bank statement|grocery|Box 1|Box 12|Box 5/i);
+assert.doesNotMatch(founderPurchaseW2?.text ?? "", /Next is your (most recent )?W-2|Upload this|What is Box 5/i);
+assert.doesNotMatch(founderPurchaseW2?.text ?? "", /Other REO|citizenship|What name should I put/i);
 assert.deepEqual((founderPurchaseW2?.actions ?? []).map((item) => item.label), ["Skip"]);
 const founderPurchaseW2Draft = {
   ...founderPurchaseAfterThis,
   incomeAsked: true,
   incomeType: { ...emptyDraft().incomeType, value: "w2" as const },
 };
-assert.equal(workspacePrompt(founderPurchaseW2Draft), "w2-box5");
+assert.equal(workspacePrompt(founderPurchaseW2Draft), "wage-docs");
+assert.equal(workspacePromptCopy("wage-docs", founderPurchaseW2Draft).text, WAGE_DOCS_ASK);
 assert.equal(nextDocInvite(founderPurchaseW2Draft), null);
 assert.ok(!canLooksRight(founderPurchaseW2Draft));
 assert.notEqual(workspacePrompt(founderPurchaseW2Draft), "other-reo");
 assert.notEqual(workspacePrompt(founderPurchaseW2Draft), "documents");
 assert.notEqual(workspacePrompt(founderPurchaseW2Draft), "citizenship");
-assert.doesNotMatch(workspacePromptCopy("w2-box5", founderPurchaseW2Draft).text, /Upload this|Next is your/i);
+assert.notEqual(workspacePrompt(founderPurchaseW2Draft), "w2-box5");
+assert.doesNotMatch(workspacePromptCopy("wage-docs", founderPurchaseW2Draft).text, /Upload this|Next is your|What is Box 5/i);
 assert.ok(
   !(stillUsefulSection(founderPurchaseW2Draft)?.items ?? []).some((item) =>
     /paystub|W-2|government ID|latest return/i.test(item.label),
   ),
 );
-const founderBox5Typed = workspaceReply("84,000", founderPurchaseW2Draft);
+const founderSkipWageDocs = workspaceReply("Skip", founderPurchaseW2Draft);
+assert.equal(founderSkipWageDocs?.capture?.field, "skip-wage-docs");
+assert.equal(founderSkipWageDocs?.text, W2_BOX5_ASK);
+assert.deepEqual((founderSkipWageDocs?.actions ?? []).map((item) => item.label), ["Skip"]);
+const founderTypedW2Draft = {
+  ...founderPurchaseW2Draft,
+  wageDocsAsked: true,
+};
+assert.equal(workspacePrompt(founderTypedW2Draft), "w2-box5");
+const founderBox5Typed = workspaceReply("84,000", founderTypedW2Draft);
 assert.equal(founderBox5Typed?.capture?.field, "w2Box5");
 assert.equal(founderBox5Typed?.text, W2_PAY_FREQUENCY_ASK);
 assert.doesNotMatch(founderBox5Typed?.text ?? "", /Suggested monthly income|\$7,000|Use this\?/);
@@ -2309,10 +2334,10 @@ assert.deepEqual((founderBox5Typed?.actions ?? []).map((item) => item.label), [
 ]);
 assert.ok(!previewFacts(founderPurchaseW2Draft).some((fact) => fact.id === "qualifying"));
 const founderBox5Written = {
-  ...founderPurchaseW2Draft,
+  ...founderTypedW2Draft,
   wageBox5Asked: true,
   facts: {
-    ...(founderPurchaseW2Draft.facts ?? {}),
+    ...(founderTypedW2Draft.facts ?? {}),
     w2_box5: { field: "w2_box5", value: "84000", source: "client" as const, confirmed: true },
   },
 };
@@ -2324,7 +2349,7 @@ assert.doesNotMatch(
   /Suggested monthly|\$7,000|Box 5 \/ 12/i,
 );
 const founderBox5Skipped = {
-  ...founderPurchaseW2Draft,
+  ...founderTypedW2Draft,
   wageBox5Asked: true,
 };
 assert.equal(workspacePrompt(founderBox5Skipped), "w2-pay-frequency");
@@ -2373,6 +2398,97 @@ assert.ok(canLooksRight(founderWageSkipped));
 assert.equal(workspacePrompt(founderWageSkipped), "review");
 assert.notEqual(workspacePrompt(founderWageSkipped), "other-reo");
 assert.equal(nextDocInvite(founderWageSkipped), null);
+
+const walkABase = { ...founderPurchaseW2Draft, looksRightHold: false };
+assert.equal(workspacePrompt(walkABase), "wage-docs");
+assert.equal(wageDocsAsk(walkABase).text, WAGE_DOCS_ASK);
+const walkAAfterW2 = applyExtractedFields(walkABase, {
+  extractClass: "w2",
+  confidence: 0.92,
+  fields: { medicare_wages: "182000", tax_year: "2025" },
+});
+assert.equal(walkAAfterW2.draft.pendingProposal, null);
+assert.equal(workspacePrompt({ ...walkAAfterW2.draft, looksRightHold: false }), "wage-docs");
+const walkAAfterStub = applyExtractedFields(walkAAfterW2.draft, {
+  extractClass: "paystub",
+  confidence: 0.92,
+  fields: { gross_period: "7000", pay_frequency: "biweekly" },
+});
+assert.equal(walkAAfterStub.draft.pendingProposal?.field, WAGE_EXTRACT_FIELD);
+const walkAConfirm = workspacePromptCopy("confirm-proposal", walkAAfterStub.draft);
+assert.equal(walkAConfirm.text, wageExtractConfirmCopy(182000, 7000, "biweekly"));
+assert.equal(walkAConfirm.text, "Box 5 $182,000. Stub $7,000 biweekly. Use this?");
+assert.doesNotMatch(walkAConfirm.text, /Suggested · not underwritten|I’m suggesting/i);
+assert.deepEqual((walkAConfirm.actions ?? []).map((item) => item.label), ["Use this", "Change"]);
+const walkAUsed = acceptWageExtract(walkAAfterStub.draft);
+assert.equal(walkAUsed.facts?.w2_box5?.value, "182000");
+assert.equal(walkAUsed.facts?.[PAYSTUB_AMOUNT_FIELD]?.value, "7000");
+assert.equal(walkAUsed.facts?.pay_frequency?.value, "biweekly");
+assert.equal(walkAUsed.facts?.paystub_monthly?.value, "15167");
+assert.equal(walkAUsed.facts?.qualifying_income?.value, "15167");
+assert.equal(workspacePrompt(walkAUsed), "review");
+assert.ok(canLooksRight(walkAUsed));
+assert.ok((workspacePromptCopy("review", walkAUsed).actions ?? []).some((item) => item.label === "Looks right"));
+const walkAFailedId = draft({
+  ...walkAUsed,
+  sampleAccepted: true,
+  looksRightHold: false,
+  documents: [
+    ...(walkAUsed.documents ?? []),
+    {
+      slot: "id",
+      name: "government-id-jordan.pdf",
+      type: "application/pdf",
+      size: 8000,
+      receivedAt: "2026-08-30T00:00:00.000Z",
+      status: "received",
+      extractClass: "government_id",
+      note: FAILED_READ_NOTE,
+    },
+  ],
+});
+assert.equal(nextDocInvite(walkAFailedId), "government_id");
+assert.equal(workspacePrompt(walkAFailedId), "documents");
+assert.notEqual(workspacePrompt(walkAFailedId), "borrower-name");
+assert.doesNotMatch(
+  workspacePromptCopy("documents", walkAFailedId).text,
+  /What name should I put on this file/i,
+);
+assert.deepEqual(
+  (workspacePromptCopy("documents", walkAFailedId).actions ?? []).map((item) => item.label),
+  unreadDocActions().map((item) => item.label),
+);
+assert.deepEqual(
+  (workspacePromptCopy("documents", walkAFailedId).actions ?? []).map((item) => item.label),
+  ["Upload again", "Type a note", "Skip"],
+);
+const walkARetry = workspaceReply("Upload again", walkAFailedId);
+assert.equal(walkARetry?.capture?.field, "retry-unread-doc");
+assert.equal(nextDocInvite(walkAFailedId), "government_id");
+assert.notEqual(walkARetry?.text, "What name should I put on this file? Skip is fine if you’ll upload an ID.");
+
+const walkBSkip = workspaceReply("Skip", founderPurchaseW2Draft);
+assert.equal(walkBSkip?.text, W2_BOX5_ASK);
+const walkBBox5 = workspaceReply("182,000", founderTypedW2Draft);
+assert.equal(walkBBox5?.capture?.field, "w2Box5");
+assert.equal(walkBBox5?.text, W2_PAY_FREQUENCY_ASK);
+const walkBFreqDraft = writeWagePayFrequency(
+  { ...founderTypedW2Draft, wageBox5Asked: true, facts: { ...(founderTypedW2Draft.facts ?? {}), w2_box5: { field: "w2_box5", value: "182000", source: "client" as const, confirmed: true } } },
+  "biweekly",
+);
+assert.equal(workspacePrompt(walkBFreqDraft), "paystub-monthly");
+assert.equal(workspacePromptCopy("paystub-monthly", walkBFreqDraft).text, PAYSTUB_MONTHLY_ASK);
+assert.doesNotMatch(PAYSTUB_MONTHLY_ASK, /monthly amount/i);
+const walkBStub = workspaceReply("7,000", walkBFreqDraft);
+assert.equal(walkBStub?.capture?.field, "paystubMonthly");
+assert.ok((walkBStub?.actions ?? []).some((item) => item.label === "Looks right"));
+assert.ok(!(walkBStub?.actions ?? []).some((item) => item.label === "Use this"));
+const walkBWritten = writeTypedStubMonthly(walkBFreqDraft, 7000);
+assert.equal(walkBWritten.facts?.[PAYSTUB_AMOUNT_FIELD]?.value, "7000");
+assert.equal(walkBWritten.facts?.paystub_monthly?.value, "15167");
+assert.equal(workspacePrompt(walkBWritten), "review");
+assert.ok(canLooksRight(walkBWritten));
+
 const founderIncomeEdit = beginFileEdit(founderPurchaseW2Draft, "income");
 assert.equal(workspacePrompt(founderIncomeEdit), "income");
 assert.equal(workspacePromptCopy("income", founderIncomeEdit).text, "How is income earned?");
@@ -2631,8 +2747,8 @@ assert.equal(incomeReply?.capture?.field, "incomeType");
 assert.doesNotMatch(incomeReply?.text ?? "", /^W-2\.|W-2\. Here’s a sample structure/i);
 assert.doesNotMatch(incomeReply?.text ?? "", /other real estate|Do you own any other/i);
 assert.doesNotMatch(incomeReply?.text ?? "", /Looks right|I have what I need/i);
-assert.equal(incomeReply?.text, W2_BOX5_ASK);
-assert.doesNotMatch(incomeReply?.text ?? "", /purchase contract|Start with ID|other real estate/i);
+assert.equal(incomeReply?.text, WAGE_DOCS_ASK);
+assert.doesNotMatch(incomeReply?.text ?? "", /purchase contract|Start with ID|other real estate|What is Box 5/i);
 assert.ok((incomeReply?.actions ?? []).some((item) => item.label === "Skip"));
 assert.ok(!(incomeReply?.actions ?? []).some((item) => item.label === "Upload this"));
 assert.doesNotMatch(incomeReply?.text ?? "", /How long have you been at this job|other monthly debts/i);
@@ -2644,7 +2760,7 @@ assert.equal(
     incomeAsked: true,
     incomeType: { ...emptyDraft().incomeType, value: "w2" },
   }),
-  "w2-box5",
+  "wage-docs",
 );
 assert.ok(
   !canLooksRight({
@@ -4185,6 +4301,8 @@ capturePurchaseFunds("1200000", "960000");
 applyCapture({ field: "creditRange", value: "760+" });
 assert.equal(workspacePrompt(getFoxDraft()), "income");
 applyCapture({ field: "incomeType", value: "w2" });
+assert.equal(workspacePrompt(getFoxDraft()), "wage-docs");
+applyCapture({ field: "skip-wage-docs" });
 assert.equal(workspacePrompt(getFoxDraft()), "w2-box5");
 applyCapture({ field: "skip-w2-box5" });
 applyCapture({ field: "skip-w2-pay-frequency" });
@@ -4942,6 +5060,7 @@ applyCapture({ field: "propose-funds", value: "240000:960000" });
 applyCapture({ field: "accept-proposal" });
 applyCapture({ field: "creditRange", value: "760+" });
 applyCapture({ field: "incomeType", value: "w2" });
+applyCapture({ field: "skip-wage-docs" });
 applyCapture({ field: "skip-w2-box5" });
 applyCapture({ field: "skip-w2-pay-frequency" });
 applyCapture({ field: "skip-paystub-monthly" });
@@ -7718,8 +7837,18 @@ const unreadIdDraft = draft({
 });
 assert.equal(docReactionAsk(unreadIdDraft, "government_id"), null);
 assert.equal(nextDocInvite(unreadIdDraft), null);
-assert.notEqual(workspacePrompt(unreadIdDraft), "documents");
-assert.equal(nextDocInvite({ ...unreadIdDraft, sampleAccepted: true, looksRightHold: false }), "paystub");
+assert.notEqual(workspacePrompt(unreadIdDraft), "borrower-name");
+assert.equal(nextDocInvite({ ...unreadIdDraft, sampleAccepted: true, looksRightHold: false }), "government_id");
+assert.equal(
+  workspacePrompt({ ...unreadIdDraft, sampleAccepted: true, looksRightHold: false }),
+  "documents",
+);
+assert.deepEqual(
+  (workspacePromptCopy("documents", { ...unreadIdDraft, sampleAccepted: true, looksRightHold: false }).actions ?? []).map(
+    (item) => item.label,
+  ),
+  ["Upload again", "Type a note", "Skip"],
+);
 assert.ok(!stillUsefulSection(unreadIdDraft)?.items.some((item) => item.label === "Government ID"));
 assert.ok(!stillUsefulSection(unreadIdDraft)?.items.some((item) => /paystub|W-2|latest return/i.test(item.label)));
 assert.ok(previewFacts(unreadIdDraft).some((fact) => fact.id === "docs" && /ID in/.test(fact.value)));
@@ -7742,7 +7871,7 @@ const unreadStubDraft = draft({
   ],
 });
 assert.equal(nextDocInvite(unreadStubDraft), null);
-assert.equal(nextDocInvite({ ...unreadStubDraft, sampleAccepted: true, looksRightHold: false }), "w2");
+assert.equal(nextDocInvite({ ...unreadStubDraft, sampleAccepted: true, looksRightHold: false }), "government_id");
 assert.ok(!stillUsefulSection(unreadStubDraft)?.items.some((item) => /paystub|W-2|latest return/i.test(item.label)));
 assert.ok(previewFacts(unreadStubDraft).some((fact) => fact.id === "docs" && /Paystubs in/.test(fact.value)));
 const unreadW2Draft = draft({
@@ -8100,6 +8229,7 @@ assert.doesNotMatch(
 const afterIncomeType = draft({
   ...afterCredit,
   incomeAsked: true,
+  wageDocsAsked: true,
   incomeType: { ...emptyDraft().incomeType, value: "w2" },
 });
 assert.equal(workspacePrompt(afterIncomeType), "w2-box5");
@@ -9961,8 +10091,16 @@ const idReadFailed = draft({
     },
   ],
 });
-assert.equal(workspacePrompt(idReadFailed), "borrower-name");
-const idFailedNamed = draft({ ...idReadFailed, borrowerNameAsked: true });
+assert.equal(workspacePrompt(idReadFailed), "documents");
+assert.equal(nextDocInvite(idReadFailed), "government_id");
+assert.notEqual(workspacePrompt(idReadFailed), "borrower-name");
+assert.deepEqual(
+  (workspacePromptCopy("documents", idReadFailed).actions ?? []).map((item) => item.label),
+  ["Upload again", "Type a note", "Skip"],
+);
+const idFailedSkip = skipUnreadDoc(idReadFailed);
+assert.equal(workspacePrompt(idFailedSkip), "borrower-name");
+const idFailedNamed = draft({ ...idFailedSkip, borrowerNameAsked: true });
 assert.equal(workspacePrompt(idFailedNamed), "documents");
 assert.equal(workspacePromptCopy("documents", idFailedNamed).text, DOC_INVITE_COPY.paystub);
 const namedFromId = draft({
@@ -11198,6 +11336,7 @@ applyCapture({ field: "timeline", value: "ready-now" });
 capturePurchaseFunds("850000", "680000");
 applyCapture({ field: "creditRange", value: "760+" });
 applyCapture({ field: "incomeType", value: "w2" });
+applyCapture({ field: "skip-wage-docs" });
 applyCapture({ field: "skip-w2-box5" });
 applyCapture({ field: "skip-w2-pay-frequency" });
 applyCapture({ field: "skip-paystub-monthly" });
@@ -12111,6 +12250,7 @@ applyCapture({ field: "propose-funds", value: "170000:680000" });
 applyCapture({ field: "accept-proposal" });
 applyCapture({ field: "creditRange", value: "760+" });
 applyCapture({ field: "incomeType", value: "w2" });
+applyCapture({ field: "skip-wage-docs" });
 applyCapture({ field: "skip-w2-box5" });
 applyCapture({ field: "skip-w2-pay-frequency" });
 applyCapture({ field: "skip-paystub-monthly" });
@@ -12287,9 +12427,11 @@ applyCapture({ field: "accept-proposal" });
 applyCapture({ field: "skip-property-type" });
 applyCapture({ field: "creditRange", value: "760+" });
 applyCapture({ field: "incomeType", value: "w2" });
-assert.equal(workspacePrompt(getFoxDraft()), "w2-box5");
+assert.equal(workspacePrompt(getFoxDraft()), "wage-docs");
 assert.notEqual(workspacePrompt(getFoxDraft()), "other-reo");
 assert.notEqual(workspacePrompt(getFoxDraft()), "documents");
+applyCapture({ field: "skip-wage-docs" });
+assert.equal(workspacePrompt(getFoxDraft()), "w2-box5");
 applyCapture({ field: "skip-w2-box5" });
 assert.equal(workspacePrompt(getFoxDraft()), "w2-pay-frequency");
 applyCapture({ field: "skip-w2-pay-frequency" });

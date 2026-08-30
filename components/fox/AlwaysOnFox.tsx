@@ -105,6 +105,7 @@ import {
   nextDocInvite,
   incomeAskOpen,
   nextFoxAsk,
+  unreadDocActions,
   holdDocsAskFox,
   productIntentFromAction,
   shouldDeferStillUsefulAsk,
@@ -779,6 +780,15 @@ export function AlwaysOnFox({
           !getFoxDraft().awaitingRaiseWhen &&
           !getFoxDraft().awaitingRaiseYtdFar
         ) {
+          const live = getFoxDraft();
+          const ask = workspacePromptCopy(workspacePrompt(live), live);
+          next.push(
+            foxAskMessage({
+              text: ask.text,
+              followUp: ask.followUp,
+              actions: unreadDocActions(),
+            }),
+          );
           return next;
         }
         if (detail.conflict) {
@@ -939,6 +949,7 @@ export function AlwaysOnFox({
         shouldDeferStillUsefulAsk(live) &&
         prompt !== "confirm-proposal" &&
         prompt !== "pay-frequency" &&
+        prompt !== "wage-docs" &&
         prompt !== "w2-box5" &&
         prompt !== "w2-pay-frequency" &&
         prompt !== "paystub-monthly" &&
@@ -1150,7 +1161,11 @@ export function AlwaysOnFox({
     startAsk === "time-on-job" ||
     startAsk === "years-in-business";
   const needsTyping =
-    moneyAsk || numberAsk || askingAmountPurpose || startAsk === "property-address";
+    moneyAsk ||
+    numberAsk ||
+    askingAmountPurpose ||
+    startAsk === "property-address" ||
+    Boolean(draft.awaitingUnreadNote);
 
   const focusComposer = (force = false) => {
     const node = inputRef.current;
@@ -1305,6 +1320,22 @@ export function AlwaysOnFox({
       if (action.capture.field === "ask-fox") {
         window.requestAnimationFrame(() => focusComposer(true));
       }
+      return;
+    }
+    if (action.capture?.field === "retry-unread-doc") {
+      applyCapture(action.capture);
+      skipPromptSync.current = true;
+      requestFoxPickFile();
+      const live = getFoxDraft();
+      appendReply(action.label, workspacePromptCopy(workspacePrompt(live), live));
+      return;
+    }
+    if (action.capture?.field === "note-unread-doc") {
+      applyCapture(action.capture);
+      skipPromptSync.current = true;
+      const live = getFoxDraft();
+      appendReply(action.label, workspacePromptCopy(workspacePrompt(live), live));
+      window.requestAnimationFrame(() => focusComposer(true));
       return;
     }
     if (

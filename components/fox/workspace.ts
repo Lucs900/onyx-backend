@@ -95,6 +95,10 @@ import {
   thisBorrowerPrimaryPackageDone,
   readyForHouseholdAsk,
   skipCurrentInvite,
+  skipUnreadDoc,
+  retryUnreadDoc,
+  unreadDocOpen,
+  writeUnreadNote,
   holdDocuments,
   layer2Open,
   layer2AskCopy,
@@ -109,6 +113,7 @@ import {
   incomeNumberReady,
   otherReoInterviewBlocked,
   timelineFilled,
+  wageDocsAskNeeded,
   wageBox5AskNeeded,
   wageFrequencyAskNeeded,
   wageStubAskNeeded,
@@ -183,6 +188,15 @@ import {
   parseExtractMoney,
   parseRaiseWhen,
   PAYSTUB_MONTHLY_ASK,
+  PAYSTUB_AMOUNT_FIELD,
+  WAGE_DOCS_ASK,
+  changeWageExtract,
+  isWageExtractProposal,
+  readStubAmount,
+  readWageBox5,
+  readWageFrequency,
+  skipWageDocs,
+  wageExtractConfirmCopy,
   writeWageBox5,
   writeTypedStubMonthly,
   qualifyingIncomeDisplay,
@@ -1483,6 +1497,23 @@ function wageSkipAction(field: "skip-w2-box5" | "skip-w2-pay-frequency" | "skip-
   return { id: field, label: "Skip", event: "bubble", capture: { field } };
 }
 
+export function unreadDocActions(): FoxAction[] {
+  return [
+    { id: "retry-unread-doc", label: "Upload again", event: "bubble", capture: { field: "retry-unread-doc" } },
+    { id: "note-unread-doc", label: "Type a note", event: "bubble", capture: { field: "note-unread-doc" } },
+    { id: "skip-unread-doc", label: "Skip", event: "bubble", capture: { field: "skip-unread-doc" } },
+  ];
+}
+
+export function wageDocsAsk(draft?: FoxIntakeDraft): { text: string; actions: FoxAction[] } {
+  return {
+    text: WAGE_DOCS_ASK,
+    actions: draft && unreadDocOpen(draft)
+      ? unreadDocActions()
+      : [{ id: "skip-wage-docs", label: "Skip", event: "bubble", capture: { field: "skip-wage-docs" } }],
+  };
+}
+
 export function wageBox5Ask(): { text: string; actions: FoxAction[] } {
   return { text: W2_BOX5_ASK, actions: [wageSkipAction("skip-w2-box5")] };
 }
@@ -1559,6 +1590,23 @@ function liveProposalAsk(
   followUp?: string;
   actions?: FoxAction[];
 } {
+  if (isWageExtractProposal(proposal)) {
+    const box5 =
+      Number(proposal.extras?.find((item) => item.field === "w2_box5")?.value) ||
+      readWageBox5(draft) ||
+      0;
+    const stub =
+      Number(proposal.extras?.find((item) => item.field === PAYSTUB_AMOUNT_FIELD)?.value) ||
+      readStubAmount(draft) ||
+      0;
+    const frequency =
+      proposal.extras?.find((item) => item.field === "pay_frequency")?.value ||
+      readWageFrequency(draft);
+    return {
+      text: wageExtractConfirmCopy(box5, stub, frequency),
+      actions: incomeConfirmActions(),
+    };
+  }
   if (proposal.field === STATED_MONTHLY_DEBTS_FIELD) {
     const amount = Number(proposal.value);
     return {
@@ -2445,7 +2493,8 @@ export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
     ) {
       // Stale resume — W-2 / Skip docs only after Looks right.
     } else if (
-      (draft.resumeAfterEdit === "w2-box5" ||
+      (draft.resumeAfterEdit === "wage-docs" ||
+        draft.resumeAfterEdit === "w2-box5" ||
         draft.resumeAfterEdit === "w2-pay-frequency" ||
         draft.resumeAfterEdit === "paystub-monthly") &&
       draft.incomeType.value !== "w2" &&
@@ -2456,7 +2505,7 @@ export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
       draft.resumeAfterEdit === "borrower-name" &&
       governmentIdOutstanding(draft)
     ) {
-      // Stale resume — typed name only after Skip ID or a failed read.
+      // Stale resume — typed name only after Skip ID. Failed read stays on the ID item.
     } else if (
       draft.resumeAfterEdit === "coborrower-name" &&
       (draft.statedHousehold !== "with_someone" ||
@@ -2506,6 +2555,7 @@ export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
   if (propertyZipAskNeeded(draft)) return "property-zip";
   if (!incomeSettled(draft)) return "income";
   if (needsDeclarationTiming(draft)) return "declaration-timing";
+  if (!draft.sampleAccepted && wageDocsAskNeeded(draft)) return "wage-docs";
   if (!draft.sampleAccepted && wageBox5AskNeeded(draft)) return "w2-box5";
   if (!draft.sampleAccepted && wageFrequencyAskNeeded(draft)) return "w2-pay-frequency";
   if (!draft.sampleAccepted && wageStubAskNeeded(draft)) return "paystub-monthly";
@@ -2736,6 +2786,9 @@ function workspaceAskCopy(
       actions: incomeAskActions(),
     };
   }
+  if (prompt === "wage-docs") {
+    return wageDocsAsk(draft);
+  }
   if (prompt === "w2-box5") {
     return wageBox5Ask();
   }
@@ -2838,6 +2891,12 @@ function workspaceAskCopy(
       };
     }
     const invite = nextDocInvite(draft);
+    if (unreadDocOpen(draft)) {
+      return {
+        text: documentsAskText(draft),
+        actions: unreadDocActions(),
+      };
+    }
     if (invite === "coborrower_government_id") {
       return {
         text: coborrowerHandOffCopy(draft),
@@ -2973,6 +3032,7 @@ export function workspaceGreeting(draft: FoxIntakeDraft): {
     prompt === "geo-stop" ||
     prompt === "confirm-proposal" ||
     prompt === "pay-frequency" ||
+    prompt === "wage-docs" ||
     prompt === "w2-box5" ||
     prompt === "w2-pay-frequency" ||
     prompt === "paystub-monthly" ||
@@ -3447,6 +3507,7 @@ export function promptForProposalField(field?: string | null): FoxPrompt | undef
 }
 
 export function changePendingProposal(draft: FoxIntakeDraft): FoxIntakeDraft {
+  if (isWageExtractProposal(draft.pendingProposal)) return changeWageExtract(draft);
   const field = draft.pendingProposal?.field;
   if (isFileNetField(field)) return skipOtherReoFileNet(draft);
   const prompt = promptForProposalField(field ?? (draft.pendingAddress ? "property_address" : undefined));
@@ -3508,6 +3569,14 @@ export function editPromptFromCapture(capture?: Capture): FoxPrompt | undefined 
   if (capture.field === "creditRange" || capture.field === "skip-credit") return "credit";
   if (capture.field === "termYears" || capture.field === "skip-term") return "term";
   if (capture.field === "incomeType" || capture.field === "skip-income") return "income";
+  if (capture.field === "skip-wage-docs") return "wage-docs";
+  if (
+    capture.field === "retry-unread-doc" ||
+    capture.field === "note-unread-doc" ||
+    capture.field === "skip-unread-doc"
+  ) {
+    return undefined;
+  }
   if (capture.field === "w2Box5" || capture.field === "skip-w2-box5") return "w2-box5";
   if (capture.field === "wagePayFrequency" || capture.field === "skip-w2-pay-frequency") {
     return "w2-pay-frequency";
@@ -3778,6 +3847,7 @@ export function workspaceUpdateCopy(capture: Capture, draft: FoxIntakeDraft) {
     return label ? `Updated income to ${label}.` : "Updated income.";
   }
   if (capture.field === "skip-income") return "Updated. Income: Skip.";
+  if (capture.field === "skip-wage-docs") return "Updated. Typing the W-2.";
   if (capture.field === "skip-monthly-debts") return "Updated. Monthly debts left blank.";
   if (capture.field === "propose-monthly-debts" || capture.field === "include-mortgage-debts") {
     return "Updated.";
@@ -4408,6 +4478,10 @@ function draftAfterCaptureBody(draft: FoxIntakeDraft, capture: Capture): FoxInta
     return proposeFundsPair(next, down, loan);
   }
   if (capture.field === "payFrequency") return applyPayFrequencyAnswer(next, capture.value);
+  if (capture.field === "skip-wage-docs") return skipWageDocs(next);
+  if (capture.field === "retry-unread-doc") return retryUnreadDoc(next);
+  if (capture.field === "note-unread-doc") return { ...next, awaitingUnreadNote: true };
+  if (capture.field === "skip-unread-doc") return skipUnreadDoc(next);
   if (capture.field === "w2Box5") {
     const annual = parseExtractMoney(capture.value) ?? Number(String(capture.value).replace(/,/g, ""));
     return writeWageBox5(next, Number.isFinite(annual) ? annual : 0);
@@ -4903,6 +4977,50 @@ export function workspaceReply(
       return { ...nextFoxAsk(nextDraft), capture: { field: "payFrequency", value: "monthly" } };
     }
     return { ...payFrequencyAsk() };
+  }
+
+  if (draft.awaitingUnreadNote) {
+    if (/^(skip|later|not sure|idk|pass|not yet)\b/i.test(lower)) {
+      const nextDraft = skipUnreadDoc(draft);
+      return { ...nextFoxAsk(nextDraft), capture: { field: "skip-unread-doc" } };
+    }
+    if (/upload again|try again|re-?upload/i.test(lower)) {
+      return {
+        ...workspacePromptCopy(workspacePrompt({ ...draft, awaitingUnreadNote: false }), draft),
+        capture: { field: "retry-unread-doc" },
+      };
+    }
+    const nextDraft = writeUnreadNote(draft, q);
+    return { ...nextFoxAsk(nextDraft), capture: { field: "note", value: q } };
+  }
+
+  if (unreadDocOpen(draft) && (prompt === "wage-docs" || prompt === "documents")) {
+    if (/upload again|try again|re-?upload/i.test(lower)) {
+      return {
+        text: prompt === "wage-docs" ? WAGE_DOCS_ASK : documentsAskText(draft),
+        actions: unreadDocActions(),
+        capture: { field: "retry-unread-doc" },
+      };
+    }
+    if (/^(type a note|note)$/i.test(lower)) {
+      return {
+        text: prompt === "wage-docs" ? WAGE_DOCS_ASK : documentsAskText(draft),
+        actions: unreadDocActions(),
+        capture: { field: "note-unread-doc" },
+      };
+    }
+    if (/^(skip|later|not sure|idk|pass|not yet)\b/i.test(lower)) {
+      const nextDraft = skipUnreadDoc(draft);
+      return { ...nextFoxAsk(nextDraft), capture: { field: "skip-unread-doc" } };
+    }
+  }
+
+  if (prompt === "wage-docs") {
+    if (isFreeTextAtGate(q)) return answerThenRestore(q, draft);
+    if (/^(skip|later|not sure|idk|pass|not yet|type it)\b/i.test(lower)) {
+      const nextDraft = skipWageDocs(draft);
+      return { ...nextFoxAsk(nextDraft), capture: { field: "skip-wage-docs" } };
+    }
   }
 
   if (prompt === "w2-box5") {

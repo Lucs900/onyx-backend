@@ -256,7 +256,7 @@ function extractFieldsPrompt(extractClass: ExtractClass, keys: readonly string[]
   }
   if (extractClass === "w2") {
     extra =
-      " overtime, bonus, and commission only when clearly printed on the W-2; empty otherwise; never invent. hire_date only when a hire date, start date, or date of hire is clearly printed on the page. Empty otherwise; never invent.";
+      " medicare_wages / box5 is Box 5 Medicare wages and tips when clearly printed — prefer that over Box 1 wages. overtime, bonus, and commission only when clearly printed on the W-2; empty otherwise; never invent. hire_date only when a hire date, start date, or date of hire is clearly printed on the page. Empty otherwise; never invent.";
   }
   if (extractClass === "bank_statement") {
     extra =

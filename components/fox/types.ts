@@ -286,12 +286,16 @@ export type FoxIntakeDraft = {
   creditBand?: string;
   creditAsked?: boolean;
   incomeAsked?: boolean;
+  /** W-2 thread: drop last year’s W-2 + stub asked or skipped. Typed path only after this. */
+  wageDocsAsked?: boolean;
   /** W-2 thread: Box 5 asked or skipped. Not a File field. */
   wageBox5Asked?: boolean;
   /** W-2 thread: pay frequency asked or skipped. Not extract-time frequency. */
   wageFrequencyAsked?: boolean;
-  /** W-2 thread: stub monthly asked or skipped. Not a File field. */
+  /** W-2 thread: stub amount asked or skipped. Not a File field. */
   wageStubAsked?: boolean;
+  /** Failed-read note: next typed line stays on that unread item. */
+  awaitingUnreadNote?: boolean;
   statedMonthlyDebts?: number;
   monthlyDebtsAsked?: boolean;
   estimatedHousing?: number;
@@ -521,6 +525,7 @@ export type FoxPrompt =
   | "geo-stop"
   | "confirm-proposal"
   | "pay-frequency"
+  | "wage-docs"
   | "w2-box5"
   | "w2-pay-frequency"
   | "paystub-monthly"
@@ -629,6 +634,10 @@ export type Capture =
   | { field: "accept-live-coupon" }
   | { field: "keep-live-coupon" }
   | { field: "payFrequency"; value: string }
+  | { field: "skip-wage-docs" }
+  | { field: "retry-unread-doc" }
+  | { field: "note-unread-doc" }
+  | { field: "skip-unread-doc" }
   | { field: "w2Box5"; value: string }
   | { field: "skip-w2-box5" }
   | { field: "wagePayFrequency"; value: string }

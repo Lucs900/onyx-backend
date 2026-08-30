@@ -21,10 +21,13 @@ import {
   hasScheduleCCashflow,
   hasTwoYearWageHistory,
   k1OrdinaryMissingDistributions,
+  isWageExtractFirstPath,
+  maybeProposeWageExtract,
   monthlyQualifyingFromExtract,
   normalizeReturnKind,
   parseExtractMoney,
   readTaxCashflows,
+  skipWageDocs,
   wageIncomeCaution,
   wageThreadOpen,
 } from "./qualifyingIncome";
@@ -139,7 +142,19 @@ export const EXTRACT_SCHEMA_KEYS: Record<ExtractClass, readonly string[]> = {
     "tax_year",
     "hire_date",
   ],
-  w2: ["tax_year", "employer_name", "wages", "federal_withheld", "overtime", "bonus", "commission", "second_employer_name", "hire_date"],
+  w2: [
+    "tax_year",
+    "employer_name",
+    "wages",
+    "medicare_wages",
+    "box5",
+    "federal_withheld",
+    "overtime",
+    "bonus",
+    "commission",
+    "second_employer_name",
+    "hire_date",
+  ],
   tax_return: [
     "tax_year",
     "filing_status",
@@ -383,7 +398,14 @@ export function hasLockedSuggestion(
       value("employer_name") || value("gross_period") || value("ytd_gross") || value("pay_period_end"),
     );
   }
-  if (extractClass === "w2") return Boolean(value("employer_name") || value("wages"));
+  if (extractClass === "w2") {
+    return Boolean(
+      value("employer_name") ||
+        value("medicare_wages") ||
+        value("box5") ||
+        value("wages"),
+    );
+  }
   return Object.values(fields ?? {}).some((item) => String(item ?? "").trim());
 }
 
@@ -1036,12 +1058,39 @@ export function applyExtractedFields(
       };
     }
   }
-  next = applyQualifyingIncomeFromExtract(
-    { ...next, pendingConflict: conflict },
-    extractClass,
-    fields,
-    computed,
-  );
+  const wageExtractFirst =
+    isWageExtractFirstPath(next) && (extractClass === "w2" || extractClass === "paystub");
+  if (wageExtractFirst) {
+    const nowStamp = new Date().toISOString();
+    const box5 =
+      parseExtractMoney(fields.medicare_wages) ??
+      parseExtractMoney(fields.box5) ??
+      parseExtractMoney(fields.wages);
+    const stub = parseExtractMoney(fields.gross_period);
+    const freq = String(fields.pay_frequency ?? "").trim();
+    if (box5 != null && box5 > 0 && !next.facts?.w2_box5?.value) {
+      next = writeField(next, "w2_box5", String(Math.round(box5)), nowStamp);
+      writes.push({ field: "w2_box5", value: String(Math.round(box5)) });
+    }
+    if (stub != null && stub > 0 && !next.facts?.paystub_amount?.value) {
+      next = writeField(next, "paystub_amount", String(Math.round(stub)), nowStamp);
+      writes.push({ field: "paystub_amount", value: String(Math.round(stub)) });
+    }
+    if (freq && !next.facts?.pay_frequency?.value) {
+      next = writeField(next, "pay_frequency", freq, nowStamp);
+      writes.push({ field: "pay_frequency", value: freq });
+    }
+    next = maybeProposeWageExtract({ ...next, pendingConflict: null, awaitingPayFrequency: false }, fields);
+    conflict = next.pendingConflict ?? null;
+  } else {
+    next = applyQualifyingIncomeFromExtract(
+      { ...next, pendingConflict: conflict },
+      extractClass,
+      fields,
+      computed,
+    );
+    conflict = next.pendingConflict ?? conflict;
+  }
   const otherPropertyMortgageEarly =
     extractClass === "mortgage_statement" &&
     isOtherPropertyMortgageExtract(next, {
@@ -1081,7 +1130,9 @@ export function applyExtractedFields(
     }
   }
   const rawHire =
-    extractClass === "paystub" || extractClass === "w2" ? String(fields.hire_date ?? "").trim() : "";
+    !wageExtractFirst && (extractClass === "paystub" || extractClass === "w2")
+      ? String(fields.hire_date ?? "").trim()
+      : "";
   const hire = rawHire ? parseHireDate(rawHire) : null;
   const hireMonths = hire ? monthsBetween(hire) : 0;
   if (hire && hireMonths > 0) {
@@ -1146,7 +1197,9 @@ export function applyExtractedFields(
     idAddress = idAddress || statementAddress;
   }
   const extractedName =
-    extractClass === "government_id" ? String(fields.full_name ?? "").trim() : "";
+    extractClass === "government_id" && !isWageExtractFirstPath(next)
+      ? String(fields.full_name ?? "").trim()
+      : "";
   if (extractedName) {
     const shown = displayBorrowerName(extractedName);
     const extras: { field: string; value: string; label: string }[] = [];
@@ -1206,7 +1259,7 @@ export function applyExtractedFields(
   if ((extractClass === "paystub" || extractClass === "w2") && extractedEmployer) {
     next = writeCurrentEmploymentHistory(next, extractedEmployer);
   }
-  if (payConfirmWrites.length) {
+  if (payConfirmWrites.length && !wageExtractFirst) {
     const extras = payConfirmWrites.map((item) => ({
       field: item.field,
       value: item.value,
@@ -2119,6 +2172,35 @@ export function inviteSequence(draft: FoxIntakeDraft): DocInviteKind[] {
   return [...primaryInviteSequence(draft), ...coborrowerInviteSequence(draft), ...remainderInviteSequence(draft)];
 }
 
+export function unreadDocOpen(draft: FoxIntakeDraft): ReceivedDoc | null {
+  const docs = [...(draft.documents ?? [])].reverse();
+  return (
+    docs.find(
+      (doc) =>
+        isUnreadNote(doc.note) ||
+        doc.status === "failed" ||
+        doc.status === "needs better copy",
+    ) ?? null
+  );
+}
+
+function classSuccessfullyRead(draft: FoxIntakeDraft, kind: DocInviteKind): boolean {
+  return (draft.documents ?? []).some((doc) => {
+    if (doc.status !== "extracted") return false;
+    if (isUnreadNote(doc.note)) return false;
+    if (kind === "government_id") {
+      if (doc.party === "coborrower") return false;
+      const received = receivedClassOf(doc);
+      return (
+        received === "government_id" ||
+        doc.extractClass === "government_id" ||
+        doc.slot === "id"
+      );
+    }
+    return receivedClassOf(doc) === kind;
+  });
+}
+
 function inviteSatisfied(draft: FoxIntakeDraft, kind: DocInviteKind): boolean {
   if (kind === "coborrower_government_id") {
     if (draft.coborrowerIdSkipped) return true;
@@ -2135,23 +2217,7 @@ function inviteSatisfied(draft: FoxIntakeDraft, kind: DocInviteKind): boolean {
   }
   if (kind === "government_id") {
     if ((draft.skippedClasses ?? []).includes("government_id")) return true;
-    return draft.documents.some((doc) => {
-      if (doc.party === "coborrower") return false;
-      const received = receivedClassOf(doc);
-      const isId =
-        received === "government_id" ||
-        doc.extractClass === "government_id" ||
-        doc.slot === "id";
-      if (!isId) return false;
-      if (doc.status === "reading") return false;
-      return (
-        doc.status === "extracted" ||
-        doc.status === "received" ||
-        doc.status === "failed" ||
-        doc.status === "needs better copy" ||
-        isUnreadNote(doc.note)
-      );
-    });
+    return classSuccessfullyRead(draft, "government_id");
   }
   if (kind === "prior_year_return") {
     if (draft.priorYearSkipped) return true;
@@ -2171,8 +2237,10 @@ function inviteSatisfied(draft: FoxIntakeDraft, kind: DocInviteKind): boolean {
     }
     return false;
   }
-  if (receivedExtractClasses(draft).has(kind)) return true;
-  return (draft.skippedClasses ?? []).includes(kind);
+  if (classSuccessfullyRead(draft, kind)) return true;
+  if ((draft.skippedClasses ?? []).includes(kind)) return true;
+  if (kind === "tax_return" && receivedTaxReturnCount(draft) >= 1) return true;
+  return false;
 }
 
 /** This borrower’s ID + income package received, ready, or skipped. Hold / Looks right do not count. */
@@ -2280,6 +2348,38 @@ export function skipCurrentInvite(draft: FoxIntakeDraft): FoxIntakeDraft {
     ...next,
     documentsSkipped: draft.documents.length === 0 && !hasRemainingPrimaryInvites(next),
   };
+}
+
+export function retryUnreadDoc(draft: FoxIntakeDraft): FoxIntakeDraft {
+  return { ...draft, awaitingUnreadNote: false };
+}
+
+export function writeUnreadNote(draft: FoxIntakeDraft, text: string): FoxIntakeDraft {
+  const unread = unreadDocOpen(draft);
+  const note = text.trim();
+  if (!unread || !note) return { ...draft, awaitingUnreadNote: false };
+  return {
+    ...draft,
+    awaitingUnreadNote: false,
+    looksRightHold: true,
+    notes: [...(draft.notes ?? []), note],
+    documents: draft.documents.map((doc) =>
+      doc.receivedAt === unread.receivedAt && doc.name === unread.name
+        ? { ...doc, note }
+        : doc,
+    ),
+  };
+}
+
+/** Skip on a received-unread item. Before Looks right, Skip on wage docs opens typed Box 5. */
+export function skipUnreadDoc(draft: FoxIntakeDraft): FoxIntakeDraft {
+  const unread = unreadDocOpen(draft);
+  const next: FoxIntakeDraft = { ...draft, looksRightHold: undefined, awaitingUnreadNote: false };
+  const kind = unread ? receivedClassOf(unread) ?? unread.extractClass : null;
+  if (!draft.sampleAccepted && (kind === "w2" || kind === "paystub" || wageThreadOpen(draft))) {
+    return skipWageDocs(next);
+  }
+  return skipCurrentInvite(next);
 }
 
 export function holdDocuments(draft: FoxIntakeDraft): FoxIntakeDraft {

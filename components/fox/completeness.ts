@@ -35,6 +35,9 @@ import {
   hasScheduleCCashflow,
   wageIncomeCaution,
   wageThreadOpen,
+  acceptWageExtract,
+  isWageExtractProposal,
+  wageExtractConfirmCopy,
 } from "./qualifyingIncome";
 import {
   STATED_MONTHLY_DEBTS_FIELD,
@@ -808,6 +811,14 @@ export function remainderAskCopy(proposal: FactProposal) {
 }
 
 export function proposalAskCopy(proposal: FactProposal) {
+  if (isWageExtractProposal(proposal)) {
+    const box5 = Number(proposal.extras?.find((item) => item.field === "w2_box5")?.value ?? 0);
+    const stub = Number(
+      proposal.extras?.find((item) => item.field === "paystub_amount")?.value ?? 0,
+    );
+    const frequency = proposal.extras?.find((item) => item.field === "pay_frequency")?.value ?? "";
+    return wageExtractConfirmCopy(box5, stub, frequency);
+  }
   if (proposal.field === PROPERTY_TYPE_FIELD && isPropertyTypeValue(proposal.value)) {
     return propertyTypeConfirmCopy(proposal.value);
   }
@@ -1239,6 +1250,16 @@ export function resolveProposal(
     if (winner === "decline" && draft.pendingAddress) return skipQuoteAddress(draft);
     return draft;
   }
+  if (isWageExtractProposal(proposal)) {
+    if (winner === "accept") return acceptWageExtract(draft);
+    return {
+      ...draft,
+      pendingProposal: null,
+      correcting: null,
+      correctingLine: null,
+      wageDocsAsked: false,
+    };
+  }
   if (winner === "decline") {
     if (proposal.field === ESTIMATED_HOUSING_FIELD) {
       return skipEstimatedHousing({ ...draft, pendingProposal: null });
@@ -1507,8 +1528,12 @@ export function timelineFilled(draft: FoxIntakeDraft) {
   return Boolean(factValue(draft, "close_date"));
 }
 
+export function wageDocsAskNeeded(draft: FoxIntakeDraft) {
+  return wageThreadOpen(draft) && !draft.sampleAccepted && !draft.wageDocsAsked;
+}
+
 export function wageBox5AskNeeded(draft: FoxIntakeDraft) {
-  return wageThreadOpen(draft) && !draft.wageBox5Asked;
+  return wageThreadOpen(draft) && Boolean(draft.wageDocsAsked) && !draft.wageBox5Asked;
 }
 
 export function wageFrequencyAskNeeded(draft: FoxIntakeDraft) {
@@ -1536,7 +1561,12 @@ export function currentAskIdle(draft: FoxIntakeDraft) {
   if (draft.awaitingBothMonthlyReason) return false;
   if (draft.awaitingRaiseWhen) return false;
   if (draft.awaitingRaiseYtdFar) return false;
-  if (wageBox5AskNeeded(draft) || wageFrequencyAskNeeded(draft) || wageStubAskNeeded(draft)) {
+  if (
+    wageDocsAskNeeded(draft) ||
+    wageBox5AskNeeded(draft) ||
+    wageFrequencyAskNeeded(draft) ||
+    wageStubAskNeeded(draft)
+  ) {
     return false;
   }
   if (nextDocInvite(draft)) return false;

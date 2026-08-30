@@ -52,10 +52,20 @@ export function governmentIdExtractFailed(draft: FoxIntakeDraft) {
   return true;
 }
 
+/** ID was successfully read. Failed / unread stays on the ID item — not the name ask. */
+export function governmentIdSuccessfullyRead(draft: FoxIntakeDraft) {
+  return draft.documents.some(
+    (doc) =>
+      isThisBorrowerIdDoc(doc) &&
+      doc.status === "extracted" &&
+      !/could not read|no text layer/i.test(doc.note ?? ""),
+  );
+}
+
 /** ID is still the next expected document. Typed name is illegal while this is true. */
 export function governmentIdOutstanding(draft: FoxIntakeDraft) {
   return Boolean(
-    governmentIdExpected(draft) && !governmentIdSkipped(draft) && !governmentIdExtractFailed(draft),
+    governmentIdExpected(draft) && !governmentIdSkipped(draft) && !governmentIdSuccessfullyRead(draft),
   );
 }
 
