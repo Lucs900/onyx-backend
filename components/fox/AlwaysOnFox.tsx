@@ -968,6 +968,7 @@ export function AlwaysOnFox({
     const already = getFoxDraft();
     if (already.liveQuote?.key === rateflowKey && already.liveQuoteStatus === "ready") return;
     let cancelled = false;
+    skipPromptSync.current = true;
     setLookupWait("rateflow");
     commitMessages((prev) => withWaitLine(prev, "rateflow"));
     void (async () => {
@@ -1308,6 +1309,7 @@ export function AlwaysOnFox({
     const placeCapture = action.capture;
     if (placeCapture?.field === "propose-place-address") {
       const gen = ++placesWaitGen.current;
+      skipPromptSync.current = true;
       setLookupWait("places");
       commitMessages((prev) => withWaitLine(prev, "places"));
       void (async () => {
@@ -1325,9 +1327,7 @@ export function AlwaysOnFox({
         applyCapture(capture);
         skipPromptSync.current = true;
         const live = getFoxDraft();
-        const next = workspaceSurface
-          ? withWorkspaceGuide({ ...nextFoxAsk(live), capture }, live)
-          : promptCopy(currentPrompt(live), live);
+        const next = workspacePromptCopy("confirm-proposal", live);
         appendReply(action.label, next, editPromptFromCapture(capture), editLineFromCapture(capture));
       })();
       return;
@@ -1427,6 +1427,7 @@ export function AlwaysOnFox({
     ) {
       const spoken = text;
       const gen = ++placesWaitGen.current;
+      skipPromptSync.current = true;
       setLookupWait("places");
       commitMessages((prev) => withWaitLine(prev, "places"));
       void (async () => {
@@ -1452,7 +1453,7 @@ export function AlwaysOnFox({
         applyCapture(capture);
         skipPromptSync.current = true;
         const live = getFoxDraft();
-        const next = withWorkspaceGuide({ ...nextFoxAsk(live), capture }, live);
+        const next = workspacePromptCopy("confirm-proposal", live);
         appendReply(spoken, next, editPromptFromCapture(capture), editLineFromCapture(capture));
       })();
       return;

@@ -1697,6 +1697,14 @@ assert.equal(workspaceReply("Use this", marinaPendingDraft)?.text, addressOnFile
 assert.equal(workspaceReply("Use this", marinaPendingDraft)?.capture?.field, "accept-proposal");
 assert.equal(workspaceReply("Change", marinaPendingDraft)?.text, PURCHASE_ADDRESS_ASK);
 assert.equal(workspaceReply("Change", marinaPendingDraft)?.capture?.field, "change-proposal");
+assert.doesNotMatch(
+  workspaceReply("will I qualify", marinaPendingDraft)?.text ?? "",
+  /I can answer from this file/,
+);
+assert.equal(
+  workspaceReply("will I qualify", marinaPendingDraft)?.text,
+  typedAddressConfirmCopy(marinaPendingLine),
+);
 assert.ok(!(workspaceReply("Use this", marinaPendingDraft)?.actions ?? []).some((item) => item.label === "Use this"));
 assert.doesNotMatch(
   [typedAddressConfirmCopy(marinaPendingLine), addressOnFileCopy(), workspaceReply("Use this", marinaPendingDraft)?.text ?? ""].join("\n"),

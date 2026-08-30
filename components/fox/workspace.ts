@@ -2060,6 +2060,18 @@ function restoredAsk(answer: string, draft: FoxIntakeDraft) {
       actions: ask.actions,
     };
   }
+  if (
+    isSubjectAddressConfirmPending(draft) ||
+    ask.text === addressOnFileCopy() ||
+    /^\d.+\. Use this\?$/.test(ask.text)
+  ) {
+    return {
+      text: ask.text,
+      followUp: ask.followUp,
+      facts: ask.facts,
+      actions: ask.actions,
+    };
+  }
   return {
     text: `${answer} ${ask.text}`.trim(),
     followUp: ask.followUp,
