@@ -2405,30 +2405,109 @@ assert.equal(wageDocsAsk(walkABase).text, WAGE_DOCS_ASK);
 const walkAAfterW2 = applyExtractedFields(walkABase, {
   extractClass: "w2",
   confidence: 0.92,
-  fields: { medicare_wages: "182000", tax_year: "2025" },
+  fields: { medicare_wages: "182000", tax_year: "2025", employer_name: "HARBOR STEEL", wages: "84000" },
 });
 assert.equal(walkAAfterW2.draft.pendingProposal, null);
+assert.equal(walkAAfterW2.draft.facts?.employer_name, undefined);
+assert.equal(walkAAfterW2.draft.facts?.wages, undefined);
+assert.equal(walkAAfterW2.draft.facts?.w2_box5, undefined);
+assert.equal(walkAAfterW2.draft.facts?.qualifying_income, undefined);
+assert.equal((walkAAfterW2.draft.employmentHistory ?? []).length, 0);
+assert.ok(!previewFacts(walkAAfterW2.draft).some((fact) => fact.id === "employer" || fact.id === "pay" || fact.id === "qualifying" || fact.id === "history-employment"));
 assert.equal(workspacePrompt({ ...walkAAfterW2.draft, looksRightHold: false }), "wage-docs");
 const walkAAfterStub = applyExtractedFields(walkAAfterW2.draft, {
   extractClass: "paystub",
   confidence: 0.92,
-  fields: { gross_period: "7000", pay_frequency: "biweekly" },
+  fields: { gross_period: "7000", pay_frequency: "biweekly", employer_name: "HARBOR STEEL" },
 });
 assert.equal(walkAAfterStub.draft.pendingProposal?.field, WAGE_EXTRACT_FIELD);
+assert.equal(walkAAfterStub.draft.facts?.employer_name, undefined);
+assert.equal(walkAAfterStub.draft.facts?.wages, undefined);
+assert.equal(walkAAfterStub.draft.facts?.w2_box5, undefined);
+assert.equal(walkAAfterStub.draft.facts?.paystub_amount, undefined);
+assert.equal(walkAAfterStub.draft.facts?.pay_frequency, undefined);
+assert.equal(walkAAfterStub.draft.facts?.qualifying_income, undefined);
+assert.equal((walkAAfterStub.draft.employmentHistory ?? []).length, 0);
+assert.ok(!previewFacts(walkAAfterStub.draft).some((fact) => fact.id === "employer" || fact.id === "pay" || fact.id === "qualifying" || fact.id === "history-employment"));
 const walkAConfirm = workspacePromptCopy("confirm-proposal", walkAAfterStub.draft);
 assert.equal(walkAConfirm.text, wageExtractConfirmCopy(182000, 7000, "biweekly"));
 assert.equal(walkAConfirm.text, "Box 5 $182,000. Stub $7,000 biweekly. Use this?");
-assert.doesNotMatch(walkAConfirm.text, /Suggested · not underwritten|I’m suggesting/i);
+assert.doesNotMatch(walkAConfirm.text, /Suggested · not underwritten|I’m suggesting|Wages \$84,000/i);
 assert.deepEqual((walkAConfirm.actions ?? []).map((item) => item.label), ["Use this", "Change"]);
+assert.equal(workspacePrompt(walkAAfterStub.draft), "confirm-proposal");
 const walkAUsed = acceptWageExtract(walkAAfterStub.draft);
 assert.equal(walkAUsed.facts?.w2_box5?.value, "182000");
 assert.equal(walkAUsed.facts?.[PAYSTUB_AMOUNT_FIELD]?.value, "7000");
 assert.equal(walkAUsed.facts?.pay_frequency?.value, "biweekly");
 assert.equal(walkAUsed.facts?.paystub_monthly?.value, "15167");
 assert.equal(walkAUsed.facts?.qualifying_income?.value, "15167");
+assert.equal(walkAUsed.facts?.employer_name?.value, "HARBOR STEEL");
+assert.ok((walkAUsed.employmentHistory ?? []).some((item) => /HARBOR STEEL/i.test(item.label ?? "")));
 assert.equal(workspacePrompt(walkAUsed), "review");
 assert.ok(canLooksRight(walkAUsed));
 assert.ok((workspacePromptCopy("review", walkAUsed).actions ?? []).some((item) => item.label === "Looks right"));
+const harborBox1Only = applyExtractedFields(walkABase, {
+  extractClass: "w2",
+  confidence: 0.94,
+  fields: { employer_name: "HARBOR STEEL", wages: "84000", tax_year: "2025" },
+});
+assert.equal(harborBox1Only.draft.pendingProposal, null);
+assert.equal(harborBox1Only.draft.facts?.employer_name, undefined);
+assert.equal(harborBox1Only.draft.facts?.wages, undefined);
+assert.equal(harborBox1Only.draft.facts?.qualifying_income, undefined);
+assert.equal(workspacePrompt({ ...harborBox1Only.draft, looksRightHold: false }), "wage-docs");
+const harborBox1Stub = applyExtractedFields(harborBox1Only.draft, {
+  extractClass: "paystub",
+  confidence: 0.94,
+  fields: { employer_name: "HARBOR STEEL", gross_period: "7000" },
+});
+assert.equal(harborBox1Stub.draft.pendingProposal, null);
+assert.equal(harborBox1Stub.draft.facts?.employer_name, undefined);
+assert.equal(harborBox1Stub.draft.facts?.wages, undefined);
+assert.equal(harborBox1Stub.draft.facts?.qualifying_income, undefined);
+assert.ok(!previewFacts(harborBox1Stub.draft).some((fact) => fact.id === "employer" || fact.id === "pay" || fact.id === "qualifying"));
+assert.equal(workspacePrompt({ ...harborBox1Stub.draft, looksRightHold: false }), "wage-docs");
+const harborDocsBase = {
+  ...walkABase,
+  documents: [
+    {
+      slot: "w2" as const,
+      name: "w2-ot-bonus-2025.png",
+      type: "image/png",
+      size: 8000,
+      receivedAt: "2026-08-30T00:00:00.000Z",
+      status: "received" as const,
+    },
+    {
+      slot: "paystubs" as const,
+      name: "paystub-ot-bonus-2026.png",
+      type: "image/png",
+      size: 8000,
+      receivedAt: "2026-08-30T00:00:01.000Z",
+      status: "received" as const,
+    },
+  ],
+};
+const harborW2Held = applyExtractedFields(harborDocsBase, {
+  extractClass: "w2",
+  confidence: 0.94,
+  fields: { medicare_wages: "182000", employer_name: "HARBOR STEEL", wages: "84000" },
+});
+const harborBothHeld = applyExtractedFields(harborW2Held.draft, {
+  extractClass: "paystub",
+  confidence: 0.94,
+  fields: { gross_period: "7000", pay_frequency: "biweekly", employer_name: "HARBOR STEEL" },
+});
+assert.equal(harborBothHeld.draft.pendingProposal?.field, WAGE_EXTRACT_FIELD);
+assert.equal(workspacePromptCopy("confirm-proposal", harborBothHeld.draft).text, "Box 5 $182,000. Stub $7,000 biweekly. Use this?");
+assert.ok(previewFacts(harborBothHeld.draft).some((fact) => fact.id === "docs" && /W-2 in/i.test(fact.value) && /Paystub/i.test(fact.value)));
+assert.ok(!previewFacts(harborBothHeld.draft).some((fact) => fact.id === "employer" || fact.id === "pay" || fact.id === "qualifying" || fact.id === "history-employment"));
+const harborUsed = acceptWageExtract(harborBothHeld.draft);
+assert.equal(harborUsed.facts?.employer_name?.value, "HARBOR STEEL");
+assert.equal(harborUsed.facts?.w2_box5?.value, "182000");
+assert.equal(harborUsed.facts?.qualifying_income?.value, "15167");
+assert.ok(previewFacts(harborUsed).some((fact) => fact.id === "employer" && /HARBOR STEEL/i.test(fact.value)));
+assert.ok(previewFacts(harborUsed).some((fact) => fact.id === "qualifying"));
 const walkAFailedId = draft({
   ...walkAUsed,
   sampleAccepted: true,

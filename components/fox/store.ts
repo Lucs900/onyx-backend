@@ -658,6 +658,7 @@ function normalize(value: unknown): FoxIntakeDraft {
       party: doc.party === "coborrower" ? "coborrower" : doc.party === "borrower" ? "borrower" : undefined,
     })),
     facts: normalizeFacts(raw.facts),
+    pendingWageExtract: normalizePendingWageExtract(raw.pendingWageExtract),
     pendingConflict: normalizeConflict(raw.pendingConflict),
     unresolvedConflict: Boolean(raw.unresolvedConflict),
     pendingProposal: normalizeProposal(raw.pendingProposal),
@@ -797,6 +798,24 @@ function normalizeFileExport(value: FoxIntakeDraft["fileExport"]): FoxIntakeDraf
     status: "exported",
     downloadedAt: value.downloadedAt,
   };
+}
+
+function normalizePendingWageExtract(
+  value: FoxIntakeDraft["pendingWageExtract"],
+): FoxIntakeDraft["pendingWageExtract"] {
+  if (!value || typeof value !== "object") return undefined;
+  const box5 = Number(value.box5);
+  const stub = Number(value.stub);
+  const frequency = typeof value.frequency === "string" ? value.frequency.trim() : "";
+  const employer = typeof value.employer === "string" ? value.employer.trim() : "";
+  const next = {
+    ...(Number.isFinite(box5) && box5 > 0 ? { box5 } : {}),
+    ...(Number.isFinite(stub) && stub > 0 ? { stub } : {}),
+    ...(frequency ? { frequency } : {}),
+    ...(employer ? { employer } : {}),
+  };
+  if (!next.box5 && !next.stub && !next.frequency && !next.employer) return undefined;
+  return next;
 }
 
 function normalizePendingHireDate(

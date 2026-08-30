@@ -1,4 +1,5 @@
 import type { ExtractClass, FactProposal, FieldSource, FoxIntakeDraft } from "./types";
+import { writeCurrentEmploymentHistory } from "./fileHistory";
 import {
   DECLINING_INCOME_CAUTION,
   DECLINING_YEAR_RATIO,
@@ -1330,29 +1331,50 @@ export function isWageExtractProposal(proposal?: { field?: string } | null): boo
   return proposal?.field === WAGE_EXTRACT_FIELD;
 }
 
+/** Box 5 Medicare wages only. Never Box 1 `wages`. */
 export function readWageBox5(draft: FoxIntakeDraft, fields?: Record<string, string>): number | null {
-  const fromFields =
-    parseExtractMoney(fields?.medicare_wages) ??
-    parseExtractMoney(fields?.box5) ??
-    parseExtractMoney(fields?.wages);
+  const fromFields = parseExtractMoney(fields?.medicare_wages) ?? parseExtractMoney(fields?.box5);
   if (fromFields != null && fromFields > 0) return fromFields;
-  return (
-    parseExtractMoney(factValue(draft, "w2_box5")) ??
-    parseExtractMoney(factValue(draft, "medicare_wages")) ??
-    parseExtractMoney(factValue(draft, "wages"))
-  );
+  if (draft.pendingWageExtract?.box5 && draft.pendingWageExtract.box5 > 0) {
+    return draft.pendingWageExtract.box5;
+  }
+  return parseExtractMoney(factValue(draft, "w2_box5")) ?? parseExtractMoney(factValue(draft, "medicare_wages"));
 }
 
 export function readStubAmount(draft: FoxIntakeDraft, fields?: Record<string, string>): number | null {
   const fromFields = parseExtractMoney(fields?.gross_period) ?? parseExtractMoney(fields?.paystub_amount);
   if (fromFields != null && fromFields > 0) return fromFields;
+  if (draft.pendingWageExtract?.stub && draft.pendingWageExtract.stub > 0) {
+    return draft.pendingWageExtract.stub;
+  }
   return parseExtractMoney(factValue(draft, PAYSTUB_AMOUNT_FIELD)) ?? parseExtractMoney(factValue(draft, "gross_period"));
 }
 
 export function readWageFrequency(draft: FoxIntakeDraft, fields?: Record<string, string>): string {
   const fromFields = speakPayFrequency(fields?.pay_frequency);
   if (fromFields) return fromFields;
+  if (draft.pendingWageExtract?.frequency) return draft.pendingWageExtract.frequency;
   return speakPayFrequency(factValue(draft, "pay_frequency"));
+}
+
+export function mergePendingWageExtract(
+  draft: FoxIntakeDraft,
+  fields?: Record<string, string>,
+): FoxIntakeDraft {
+  const prev = draft.pendingWageExtract ?? {};
+  const box5 = parseExtractMoney(fields?.medicare_wages) ?? parseExtractMoney(fields?.box5);
+  const stub = parseExtractMoney(fields?.gross_period);
+  const frequency = speakPayFrequency(fields?.pay_frequency);
+  const employer = String(fields?.employer_name ?? "").trim();
+  const next = {
+    ...prev,
+    ...(box5 != null && box5 > 0 ? { box5 } : {}),
+    ...(stub != null && stub > 0 ? { stub } : {}),
+    ...(frequency ? { frequency } : {}),
+    ...(employer ? { employer } : {}),
+  };
+  if (!next.box5 && !next.stub && !next.frequency && !next.employer) return draft;
+  return { ...draft, pendingWageExtract: next };
 }
 
 export function isWageExtractFirstPath(draft: FoxIntakeDraft): boolean {
@@ -1369,6 +1391,7 @@ export function skipWageDocs(draft: FoxIntakeDraft): FoxIntakeDraft {
     ...draft,
     wageDocsAsked: true,
     pendingProposal: isWageExtractProposal(draft.pendingProposal) ? null : draft.pendingProposal,
+    pendingWageExtract: undefined,
     looksRightHold: false,
     awaitingUnreadNote: false,
   };
@@ -1512,35 +1535,10 @@ export function proposeWageExtract(draft: FoxIntakeDraft, box5: number, stub: nu
   if (!spoken || periods == null || box5 <= 0 || stub <= 0) return draft;
   const monthly = Math.round((stub * periods) / 12);
   if (monthly <= 0) return draft;
-  const now = new Date().toISOString();
   return {
     ...draft,
     awaitingPayFrequency: false,
     looksRightHold: false,
-    facts: {
-      ...(draft.facts ?? {}),
-      w2_box5: {
-        field: "w2_box5",
-        value: String(Math.round(box5)),
-        source: "extracted-unconfirmed",
-        confirmed: false,
-        confirmedAt: now,
-      },
-      [PAYSTUB_AMOUNT_FIELD]: {
-        field: PAYSTUB_AMOUNT_FIELD,
-        value: String(Math.round(stub)),
-        source: "extracted-unconfirmed",
-        confirmed: false,
-        confirmedAt: now,
-      },
-      pay_frequency: {
-        field: "pay_frequency",
-        value: spoken,
-        source: "extracted-unconfirmed",
-        confirmed: false,
-        confirmedAt: now,
-      },
-    },
     pendingProposal: {
       field: WAGE_EXTRACT_FIELD,
       value: String(monthly),
@@ -1564,17 +1562,25 @@ export function maybeProposeWageExtract(
 ): FoxIntakeDraft {
   if (!isWageExtractFirstPath(draft)) return draft;
   if (draft.pendingConflict) return draft;
-  const box5 = readWageBox5(draft, fields);
-  const stub = readStubAmount(draft, fields);
-  const frequency = readWageFrequency(draft, fields);
-  if (box5 == null || stub == null || !frequency) return draft;
-  return proposeWageExtract(draft, box5, stub, frequency);
+  const held = mergePendingWageExtract(draft, fields);
+  const box5 = readWageBox5(held, fields);
+  const stub = readStubAmount(held, fields);
+  const frequency = readWageFrequency(held, fields);
+  if (box5 == null || stub == null || !frequency) return held;
+  return proposeWageExtract(held, box5, stub, frequency);
 }
 
 export function acceptWageExtract(draft: FoxIntakeDraft): FoxIntakeDraft {
   const proposal = draft.pendingProposal;
   if (!isWageExtractProposal(proposal) || !proposal) {
-    return { ...draft, wageDocsAsked: true, wageBox5Asked: true, wageFrequencyAsked: true, wageStubAsked: true };
+    return {
+      ...draft,
+      wageDocsAsked: true,
+      wageBox5Asked: true,
+      wageFrequencyAsked: true,
+      wageStubAsked: true,
+      pendingWageExtract: undefined,
+    };
   }
   const now = new Date().toISOString();
   let next: FoxIntakeDraft = {
@@ -1585,6 +1591,7 @@ export function acceptWageExtract(draft: FoxIntakeDraft): FoxIntakeDraft {
     wageStubAsked: true,
     awaitingPayFrequency: false,
     pendingProposal: null,
+    pendingWageExtract: undefined,
     looksRightHold: false,
   };
   const extras = proposal.extras ?? [];
@@ -1598,7 +1605,38 @@ export function acceptWageExtract(draft: FoxIntakeDraft): FoxIntakeDraft {
       confirmedAt: now,
     };
   }
+  const box5 = extras.find((item) => item.field === "w2_box5")?.value ?? "";
+  const stub = extras.find((item) => item.field === PAYSTUB_AMOUNT_FIELD)?.value ?? "";
+  if (box5 && !facts.medicare_wages?.value) {
+    facts.medicare_wages = {
+      field: "medicare_wages",
+      value: box5,
+      source: "document",
+      confirmed: true,
+      confirmedAt: now,
+    };
+  }
+  if (stub && !facts.gross_period?.value) {
+    facts.gross_period = {
+      field: "gross_period",
+      value: stub,
+      source: "document",
+      confirmed: true,
+      confirmedAt: now,
+    };
+  }
+  const employer = (draft.pendingWageExtract?.employer ?? "").trim();
+  if (employer) {
+    facts.employer_name = {
+      field: "employer_name",
+      value: employer,
+      source: "document",
+      confirmed: true,
+      confirmedAt: now,
+    };
+  }
   next = { ...next, facts };
+  if (employer) next = writeCurrentEmploymentHistory(next, employer);
   return next;
 }
 
@@ -1607,6 +1645,7 @@ export function changeWageExtract(draft: FoxIntakeDraft): FoxIntakeDraft {
   return {
     ...draft,
     pendingProposal: null,
+    pendingWageExtract: undefined,
     correcting: null,
     correctingLine: null,
     wageDocsAsked: false,

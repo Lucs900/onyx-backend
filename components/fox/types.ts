@@ -442,6 +442,13 @@ export type FoxIntakeDraft = {
   awaitingRaiseYtdFar?: boolean;
   raiseWhenRaw?: string;
   facts?: Record<string, DraftField>;
+  /** W-2 extract hold. Not File. Confirm speaks this; Use this writes File. */
+  pendingWageExtract?: {
+    box5?: number;
+    stub?: number;
+    frequency?: string;
+    employer?: string;
+  } | null;
   pendingConflict?: FactConflict | null;
   unresolvedConflict?: boolean;
   pendingProposal?: FactProposal | null;

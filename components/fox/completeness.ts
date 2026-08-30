@@ -36,6 +36,7 @@ import {
   wageIncomeCaution,
   wageThreadOpen,
   acceptWageExtract,
+  changeWageExtract,
   isWageExtractProposal,
   wageExtractConfirmCopy,
 } from "./qualifyingIncome";
@@ -1252,13 +1253,7 @@ export function resolveProposal(
   }
   if (isWageExtractProposal(proposal)) {
     if (winner === "accept") return acceptWageExtract(draft);
-    return {
-      ...draft,
-      pendingProposal: null,
-      correcting: null,
-      correctingLine: null,
-      wageDocsAsked: false,
-    };
+    return changeWageExtract(draft);
   }
   if (winner === "decline") {
     if (proposal.field === ESTIMATED_HOUSING_FIELD) {

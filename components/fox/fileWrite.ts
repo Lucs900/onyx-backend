@@ -890,6 +890,8 @@ export function applyExtractedFields(
   const fields = sanitizeExtractedFields(extractClass, input.fields);
   const computed = monthlyQualifyingFromExtract(draft, extractClass, fields);
   const now = new Date().toISOString();
+  const wageExtractFirst =
+    isWageExtractFirstPath(draft) && (extractClass === "w2" || extractClass === "paystub");
   let next = draft;
   let conflict: FactConflict | null = draft.pendingConflict ?? null;
   let remainderWrites: { field: string; value: string }[] = [];
@@ -908,9 +910,16 @@ export function applyExtractedFields(
     Boolean(incomingEmployer && existingEmployer && incomingEmployer !== existingEmployer) &&
     draft.facts?.employer_name?.source !== "client";
   const PAY_CONFIRM_FIELDS = new Set(["employer_name", "pay_period_end", "gross_period", "ytd_gross"]);
+  const WAGE_EXTRACT_HOLD_KEYS = new Set<string>([
+    ...EXTRACT_SCHEMA_KEYS.w2,
+    ...EXTRACT_SCHEMA_KEYS.paystub,
+    "w2_box5",
+    "paystub_amount",
+  ]);
   for (const field of EXTRACT_SCHEMA_KEYS[extractClass]) {
     const value = fields[field];
     if (!value) continue;
+    if (wageExtractFirst && WAGE_EXTRACT_HOLD_KEYS.has(field)) continue;
     if (
       extractClass === "w2" &&
       field === "employer_name" &&
@@ -1058,28 +1067,7 @@ export function applyExtractedFields(
       };
     }
   }
-  const wageExtractFirst =
-    isWageExtractFirstPath(next) && (extractClass === "w2" || extractClass === "paystub");
   if (wageExtractFirst) {
-    const nowStamp = new Date().toISOString();
-    const box5 =
-      parseExtractMoney(fields.medicare_wages) ??
-      parseExtractMoney(fields.box5) ??
-      parseExtractMoney(fields.wages);
-    const stub = parseExtractMoney(fields.gross_period);
-    const freq = String(fields.pay_frequency ?? "").trim();
-    if (box5 != null && box5 > 0 && !next.facts?.w2_box5?.value) {
-      next = writeField(next, "w2_box5", String(Math.round(box5)), nowStamp);
-      writes.push({ field: "w2_box5", value: String(Math.round(box5)) });
-    }
-    if (stub != null && stub > 0 && !next.facts?.paystub_amount?.value) {
-      next = writeField(next, "paystub_amount", String(Math.round(stub)), nowStamp);
-      writes.push({ field: "paystub_amount", value: String(Math.round(stub)) });
-    }
-    if (freq && !next.facts?.pay_frequency?.value) {
-      next = writeField(next, "pay_frequency", freq, nowStamp);
-      writes.push({ field: "pay_frequency", value: freq });
-    }
     next = maybeProposeWageExtract({ ...next, pendingConflict: null, awaitingPayFrequency: false }, fields);
     conflict = next.pendingConflict ?? null;
   } else {
@@ -1256,7 +1244,7 @@ export function applyExtractedFields(
     }
   }
   const extractedEmployer = String(fields.employer_name ?? "").trim();
-  if ((extractClass === "paystub" || extractClass === "w2") && extractedEmployer) {
+  if (!wageExtractFirst && (extractClass === "paystub" || extractClass === "w2") && extractedEmployer) {
     next = writeCurrentEmploymentHistory(next, extractedEmployer);
   }
   if (payConfirmWrites.length && !wageExtractFirst) {
