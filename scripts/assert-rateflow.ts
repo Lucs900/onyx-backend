@@ -708,7 +708,7 @@ async function withMockedRateflow(
   }
 }
 
-await withMockedRateflow(
+void withMockedRateflow(
   async (calls) => {
     if (calls.n === 1) {
       return new Response(JSON.stringify({ ok: false }), {
@@ -730,22 +730,28 @@ await withMockedRateflow(
     assert.ok(firstMiss && firstMiss !== "unavailable");
     assert.equal(firstMiss.rate, 6.125);
   },
-);
-
-await withMockedRateflow(
-  async () =>
-    new Response(JSON.stringify({ ok: false }), {
-      status: 200,
-      headers: { "content-type": "application/json" },
-    }),
-  async (calls) => {
-    const exhausted = await requestRateflowIfNeeded(marinaReadyFile);
-    assert.equal(calls.n, 2);
-    assert.equal(exhausted, "unavailable");
-    const again = await requestRateflowIfNeeded(marinaReadyFile);
-    assert.equal(again, "unavailable");
-    assert.equal(calls.n, 2, "do not keep refetching after the retry");
-  },
-);
-
-console.log("assert-rateflow: ok");
+)
+  .then(() =>
+    withMockedRateflow(
+      async () =>
+        new Response(JSON.stringify({ ok: false }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      async (calls) => {
+        const exhausted = await requestRateflowIfNeeded(marinaReadyFile);
+        assert.equal(calls.n, 2);
+        assert.equal(exhausted, "unavailable");
+        const again = await requestRateflowIfNeeded(marinaReadyFile);
+        assert.equal(again, "unavailable");
+        assert.equal(calls.n, 2, "do not keep refetching after the retry");
+      },
+    ),
+  )
+  .then(() => {
+    console.log("assert-rateflow: ok");
+  })
+  .catch((error: unknown) => {
+    console.error(error);
+    process.exitCode = 1;
+  });
