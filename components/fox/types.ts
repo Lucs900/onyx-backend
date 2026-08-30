@@ -448,6 +448,8 @@ export type FoxIntakeDraft = {
     stub?: number;
     frequency?: string;
     employer?: string;
+    w2In?: boolean;
+    stubIn?: boolean;
   } | null;
   pendingConflict?: FactConflict | null;
   unresolvedConflict?: boolean;

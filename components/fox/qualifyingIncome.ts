@@ -1360,6 +1360,7 @@ export function readWageFrequency(draft: FoxIntakeDraft, fields?: Record<string,
 export function mergePendingWageExtract(
   draft: FoxIntakeDraft,
   fields?: Record<string, string>,
+  extractClass?: ExtractClass,
 ): FoxIntakeDraft {
   const prev = draft.pendingWageExtract ?? {};
   const box5 = parseExtractMoney(fields?.medicare_wages) ?? parseExtractMoney(fields?.box5);
@@ -1368,13 +1369,47 @@ export function mergePendingWageExtract(
   const employer = String(fields?.employer_name ?? "").trim();
   const next = {
     ...prev,
+    ...(extractClass === "w2" ? { w2In: true } : {}),
+    ...(extractClass === "paystub" ? { stubIn: true } : {}),
     ...(box5 != null && box5 > 0 ? { box5 } : {}),
     ...(stub != null && stub > 0 ? { stub } : {}),
     ...(frequency ? { frequency } : {}),
     ...(employer ? { employer } : {}),
   };
-  if (!next.box5 && !next.stub && !next.frequency && !next.employer) return draft;
+  if (!next.box5 && !next.stub && !next.frequency && !next.employer && !next.w2In && !next.stubIn) {
+    return draft;
+  }
   return { ...draft, pendingWageExtract: next };
+}
+
+export function wageExtractCanConfirm(draft: FoxIntakeDraft, fields?: Record<string, string>): boolean {
+  const box5 = readWageBox5(draft, fields);
+  const stub = readStubAmount(draft, fields);
+  const frequency = readWageFrequency(draft, fields);
+  return box5 != null && box5 > 0 && stub != null && stub > 0 && Boolean(frequency);
+}
+
+export function wageExtractPairReceived(draft: FoxIntakeDraft): boolean {
+  const w2 =
+    Boolean(draft.pendingWageExtract?.w2In) ||
+    (draft.documents ?? []).some((doc) => {
+      const cls = doc.extractClass;
+      return cls === "w2" || doc.slot === "w2";
+    });
+  const stub =
+    Boolean(draft.pendingWageExtract?.stubIn) ||
+    (draft.documents ?? []).some((doc) => {
+      const cls = doc.extractClass;
+      return cls === "paystub" || doc.slot === "paystubs";
+    });
+  return w2 && stub;
+}
+
+/** Both files in, but Box 5 / stub / frequency was not actually read. Not Box 1. */
+export function wageExtractFailedRead(draft: FoxIntakeDraft): boolean {
+  if (!isWageExtractFirstPath(draft)) return false;
+  if (isWageExtractProposal(draft.pendingProposal)) return false;
+  return wageExtractPairReceived(draft) && !wageExtractCanConfirm(draft);
 }
 
 export function isWageExtractFirstPath(draft: FoxIntakeDraft): boolean {
@@ -1559,10 +1594,12 @@ export function proposeWageExtract(draft: FoxIntakeDraft, box5: number, stub: nu
 export function maybeProposeWageExtract(
   draft: FoxIntakeDraft,
   fields?: Record<string, string>,
+  extractClass?: ExtractClass,
 ): FoxIntakeDraft {
   if (!isWageExtractFirstPath(draft)) return draft;
   if (draft.pendingConflict) return draft;
-  const held = mergePendingWageExtract(draft, fields);
+  const held = mergePendingWageExtract(draft, fields, extractClass);
+  if (!wageExtractCanConfirm(held, fields)) return held;
   const box5 = readWageBox5(held, fields);
   const stub = readStubAmount(held, fields);
   const frequency = readWageFrequency(held, fields);

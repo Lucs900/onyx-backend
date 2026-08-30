@@ -813,8 +813,12 @@ function normalizePendingWageExtract(
     ...(Number.isFinite(stub) && stub > 0 ? { stub } : {}),
     ...(frequency ? { frequency } : {}),
     ...(employer ? { employer } : {}),
+    ...(value.w2In ? { w2In: true } : {}),
+    ...(value.stubIn ? { stubIn: true } : {}),
   };
-  if (!next.box5 && !next.stub && !next.frequency && !next.employer) return undefined;
+  if (!next.box5 && !next.stub && !next.frequency && !next.employer && !next.w2In && !next.stubIn) {
+    return undefined;
+  }
   return next;
 }
 

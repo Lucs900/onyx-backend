@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { greeting, promptCopy } from "../components/fox/script";
@@ -147,6 +147,7 @@ import {
   printedSampleFromFilename,
   readPngPrintedLines,
   readPngVisibleLines,
+  readPrintedSample,
 } from "../lib/docs/printedSample";
 import {
   CASH_OUT_CAUTION,
@@ -2415,6 +2416,10 @@ assert.equal(walkAAfterW2.draft.facts?.qualifying_income, undefined);
 assert.equal((walkAAfterW2.draft.employmentHistory ?? []).length, 0);
 assert.ok(!previewFacts(walkAAfterW2.draft).some((fact) => fact.id === "employer" || fact.id === "pay" || fact.id === "qualifying" || fact.id === "history-employment"));
 assert.equal(workspacePrompt({ ...walkAAfterW2.draft, looksRightHold: false }), "wage-docs");
+assert.deepEqual(
+  (wageDocsAsk(walkAAfterW2.draft).actions ?? []).map((item) => item.label),
+  ["Skip"],
+);
 const walkAAfterStub = applyExtractedFields(walkAAfterW2.draft, {
   extractClass: "paystub",
   confidence: 0.92,
@@ -2456,6 +2461,10 @@ assert.equal(harborBox1Only.draft.facts?.employer_name, undefined);
 assert.equal(harborBox1Only.draft.facts?.wages, undefined);
 assert.equal(harborBox1Only.draft.facts?.qualifying_income, undefined);
 assert.equal(workspacePrompt({ ...harborBox1Only.draft, looksRightHold: false }), "wage-docs");
+assert.deepEqual(
+  (wageDocsAsk(harborBox1Only.draft).actions ?? []).map((item) => item.label),
+  ["Skip"],
+);
 const harborBox1Stub = applyExtractedFields(harborBox1Only.draft, {
   extractClass: "paystub",
   confidence: 0.94,
@@ -2467,6 +2476,110 @@ assert.equal(harborBox1Stub.draft.facts?.wages, undefined);
 assert.equal(harborBox1Stub.draft.facts?.qualifying_income, undefined);
 assert.ok(!previewFacts(harborBox1Stub.draft).some((fact) => fact.id === "employer" || fact.id === "pay" || fact.id === "qualifying"));
 assert.equal(workspacePrompt({ ...harborBox1Stub.draft, looksRightHold: false }), "wage-docs");
+assert.equal(harborBox1Stub.draft.pendingProposal, null);
+assert.deepEqual(
+  (wageDocsAsk(harborBox1Stub.draft).actions ?? []).map((item) => item.label),
+  ["Upload again", "Type a note", "Skip"],
+);
+assert.notEqual(
+  (wageDocsAsk(harborBox1Stub.draft).actions ?? []).map((item) => item.id).join("|"),
+  "skip-wage-docs",
+);
+const harborFailedRetry = workspaceReply("Upload again", harborBox1Stub.draft);
+assert.equal(harborFailedRetry?.capture?.field, "retry-unread-doc");
+assert.equal(workspacePrompt(harborBox1Stub.draft), "wage-docs");
+assert.deepEqual(
+  (harborFailedRetry?.actions ?? []).map((item) => item.label),
+  ["Upload again", "Type a note", "Skip"],
+);
+const harborFailedSkip = workspaceReply("Skip", harborBox1Stub.draft);
+assert.equal(harborFailedSkip?.capture?.field, "skip-unread-doc");
+assert.equal(harborFailedSkip?.text, W2_BOX5_ASK);
+assert.notEqual(harborFailedSkip?.text, "What name should I put on this file? Skip is fine if you’ll upload an ID.");
+const harborPrintedW2 = printedSampleFromFilename("w2-ot-bonus-2025.png");
+const harborPrintedStub = printedSampleFromFilename("paystub-ot-bonus-2026.png");
+assert.equal(harborPrintedW2?.fields.wages, "84000");
+assert.equal(harborPrintedW2?.fields.medicare_wages, undefined);
+assert.equal(harborPrintedW2?.fields.box5, undefined);
+assert.equal(harborPrintedStub?.fields.gross_period, "7000");
+assert.equal(harborPrintedStub?.fields.pay_frequency, undefined);
+const harborPdfPaths = [
+  join(dirname(fileURLToPath(import.meta.url)), "fixtures", "w2-ot-bonus-2025.pdf"),
+  "/tmp/onyx-extract-pdfs/w2-ot-bonus-2025.pdf",
+].filter((path) => existsSync(path));
+const harborStubPdfPaths = [
+  join(dirname(fileURLToPath(import.meta.url)), "fixtures", "paystub-ot-bonus-2026.pdf"),
+  "/tmp/onyx-extract-pdfs/paystub-ot-bonus-2026.pdf",
+].filter((path) => existsSync(path));
+if (harborPdfPaths[0]) {
+  const layer = readPrintedSample(readFileSync(harborPdfPaths[0]));
+  assert.equal(layer?.extractClass, "w2");
+  assert.equal(layer?.fields.medicare_wages, undefined);
+  assert.equal(layer?.fields.box5, undefined);
+  assert.ok(!layer?.fields.wages || layer.fields.wages === "84000");
+}
+if (harborStubPdfPaths[0]) {
+  const layer = readPrintedSample(readFileSync(harborStubPdfPaths[0]));
+  assert.equal(layer?.extractClass, "paystub");
+  assert.equal(layer?.fields.pay_frequency, undefined);
+  assert.ok(!layer?.fields.gross_period || layer.fields.gross_period === "7000");
+}
+const harborPdfW2 = applyExtractedFields(
+  {
+    ...walkABase,
+    documents: [
+      {
+        slot: "w2" as const,
+        name: "w2-ot-bonus-2025.pdf",
+        type: "application/pdf",
+        size: 8000,
+        receivedAt: "2026-08-30T00:02:00.000Z",
+        status: "received" as const,
+      },
+    ],
+  },
+  {
+    extractClass: "w2",
+    confidence: 0.94,
+    fields: harborPrintedW2!.fields,
+  },
+);
+assert.equal(harborPdfW2.draft.pendingProposal, null);
+assert.deepEqual(
+  (wageDocsAsk(harborPdfW2.draft).actions ?? []).map((item) => item.label),
+  ["Skip"],
+);
+const harborPdfBoth = applyExtractedFields(
+  {
+    ...harborPdfW2.draft,
+    documents: [
+      ...harborPdfW2.draft.documents,
+      {
+        slot: "paystubs" as const,
+        name: "paystub-ot-bonus-2026.pdf",
+        type: "application/pdf",
+        size: 8000,
+        receivedAt: "2026-08-30T00:02:01.000Z",
+        status: "received" as const,
+      },
+    ],
+  },
+  {
+    extractClass: "paystub",
+    confidence: 0.94,
+    fields: harborPrintedStub!.fields,
+  },
+);
+assert.equal(harborPdfBoth.draft.pendingProposal, null);
+assert.equal(harborPdfBoth.draft.facts?.employer_name, undefined);
+assert.equal(harborPdfBoth.draft.facts?.wages, undefined);
+assert.equal(harborPdfBoth.draft.facts?.qualifying_income, undefined);
+assert.ok(previewFacts(harborPdfBoth.draft).some((fact) => fact.id === "docs" && /W-2 in/i.test(fact.value) && /Paystub/i.test(fact.value)));
+assert.deepEqual(
+  (workspacePromptCopy("wage-docs", harborPdfBoth.draft).actions ?? []).map((item) => item.label),
+  ["Upload again", "Type a note", "Skip"],
+);
+assert.doesNotMatch(workspacePromptCopy("wage-docs", harborPdfBoth.draft).text, /Box 5 \$/);
 const harborDocsBase = {
   ...walkABase,
   documents: [

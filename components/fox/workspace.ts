@@ -197,6 +197,7 @@ import {
   readWageFrequency,
   skipWageDocs,
   wageExtractConfirmCopy,
+  wageExtractFailedRead,
   writeWageBox5,
   writeTypedStubMonthly,
   qualifyingIncomeDisplay,
@@ -1508,9 +1509,10 @@ export function unreadDocActions(): FoxAction[] {
 export function wageDocsAsk(draft?: FoxIntakeDraft): { text: string; actions: FoxAction[] } {
   return {
     text: WAGE_DOCS_ASK,
-    actions: draft && unreadDocOpen(draft)
-      ? unreadDocActions()
-      : [{ id: "skip-wage-docs", label: "Skip", event: "bubble", capture: { field: "skip-wage-docs" } }],
+    actions:
+      draft && (unreadDocOpen(draft) || wageExtractFailedRead(draft))
+        ? unreadDocActions()
+        : [{ id: "skip-wage-docs", label: "Skip", event: "bubble", capture: { field: "skip-wage-docs" } }],
   };
 }
 
@@ -4994,7 +4996,10 @@ export function workspaceReply(
     return { ...nextFoxAsk(nextDraft), capture: { field: "note", value: q } };
   }
 
-  if (unreadDocOpen(draft) && (prompt === "wage-docs" || prompt === "documents")) {
+  if (
+    (unreadDocOpen(draft) || (prompt === "wage-docs" && wageExtractFailedRead(draft))) &&
+    (prompt === "wage-docs" || prompt === "documents")
+  ) {
     if (/upload again|try again|re-?upload/i.test(lower)) {
       return {
         text: prompt === "wage-docs" ? WAGE_DOCS_ASK : documentsAskText(draft),

@@ -23,6 +23,7 @@ import {
   k1OrdinaryMissingDistributions,
   isWageExtractFirstPath,
   maybeProposeWageExtract,
+  wageExtractFailedRead,
   monthlyQualifyingFromExtract,
   normalizeReturnKind,
   parseExtractMoney,
@@ -1068,7 +1069,11 @@ export function applyExtractedFields(
     }
   }
   if (wageExtractFirst) {
-    next = maybeProposeWageExtract({ ...next, pendingConflict: null, awaitingPayFrequency: false }, fields);
+    next = maybeProposeWageExtract(
+      { ...next, pendingConflict: null, awaitingPayFrequency: false },
+      fields,
+      extractClass,
+    );
     conflict = next.pendingConflict ?? null;
   } else {
     next = applyQualifyingIncomeFromExtract(
@@ -2162,13 +2167,19 @@ export function inviteSequence(draft: FoxIntakeDraft): DocInviteKind[] {
 
 export function unreadDocOpen(draft: FoxIntakeDraft): ReceivedDoc | null {
   const docs = [...(draft.documents ?? [])].reverse();
+  const unread = docs.find(
+    (doc) =>
+      isUnreadNote(doc.note) ||
+      doc.status === "failed" ||
+      doc.status === "needs better copy",
+  );
+  if (unread) return unread;
+  if (!wageExtractFailedRead(draft)) return null;
   return (
-    docs.find(
-      (doc) =>
-        isUnreadNote(doc.note) ||
-        doc.status === "failed" ||
-        doc.status === "needs better copy",
-    ) ?? null
+    docs.find((doc) => {
+      const cls = receivedClassOf(doc) ?? doc.extractClass;
+      return cls === "w2" || cls === "paystub" || doc.slot === "w2" || doc.slot === "paystubs";
+    }) ?? null
   );
 }
 

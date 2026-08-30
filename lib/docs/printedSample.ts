@@ -480,6 +480,15 @@ export function fieldsFromPrintedLines(
       /^(?:BOX 1 WAGES|BOX 1|WAGES, TIPS, OTHER COMPENSATION|WAGES):\s*/i,
     );
     if (wages) putMoney("wages", wages);
+    const box5 = labeled(
+      line,
+      next,
+      /^(?:BOX 5 MEDICARE WAGES(?: AND TIPS)?|BOX 5|MEDICARE WAGES(?: AND TIPS)?):\s*/i,
+    );
+    if (box5) {
+      putMoney("medicare_wages", box5);
+      putMoney("box5", box5);
+    }
     const taxYear = valueAfter(line, /^TAX YEAR:\s*/i);
     if (taxYear) put("tax_year", taxYear.replace(/\D/g, "").slice(0, 4));
     const netProfit = valueAfter(line, /^LINE 31 NET PROFIT:\s*/i);
