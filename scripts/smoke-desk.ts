@@ -1690,6 +1690,14 @@ assert.doesNotMatch(
   /Use this/,
 );
 assert.equal(addressOnFileCopy(marinaPendingLine), "On the file.");
+const foxChipTap = readFileSync(join(root, "components/fox/AlwaysOnFox.tsx"), "utf8");
+const foxChipTapStart = foxChipTap.indexOf('placeCapture?.field === "propose-place-address"');
+const foxChipTapEnd = foxChipTap.indexOf("if (action.capture || productCapture)", foxChipTapStart);
+assert.ok(foxChipTapStart >= 0 && foxChipTapEnd > foxChipTapStart);
+assert.doesNotMatch(
+  foxChipTap.slice(foxChipTapStart, foxChipTapEnd),
+  /withWaitLine\(\s*prev,\s*"places"\s*\)|setLookupWait\(\s*"places"\s*\)/,
+);
 assert.equal(placeAddressConfirmCopy(marinaPendingLine), `${marinaPendingLine}. Use this?`);
 assert.equal(typedAddressConfirmCopy(marinaPendingLine), `${marinaPendingLine}. Use this?`);
 assert.doesNotMatch(typedAddressConfirmCopy(marinaPendingLine), /Suggested · not underwritten|That’s /);

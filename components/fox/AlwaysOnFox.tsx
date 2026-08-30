@@ -47,6 +47,7 @@ import {
   parseSafePlaceAddress,
   requestAddressSuggestions,
   requestPlaceAddress,
+  withoutStreetSuggestChips,
   withStreetSuggestChips,
 } from "./addressSuggest";
 import { encodePlaceAddress, looksLikePlaceId, shouldSuggestStreets } from "@/lib/places/address";
@@ -581,6 +582,7 @@ export function AlwaysOnFox({
   const caretRef = useRef<number | null>(null);
   const [lookupWait, setLookupWait] = useState<LookupWait | null>(null);
   const placesWaitGen = useRef(0);
+  const placesSuggestFrozen = useRef(false);
   const fieldId = useId();
   const greetKey = `${pathname}${search}`;
   const useHomeStage = Boolean(homeStage);
@@ -1004,15 +1006,19 @@ export function AlwaysOnFox({
 
   useEffect(() => {
     if (!ready || !isStart) return;
+    if (placesSuggestFrozen.current) return;
     if (workspacePrompt(draft) !== "property-address") return;
-    if (draft.pendingProposal) return;
+    if (draft.pendingProposal || draft.pendingAddress) return;
     const q = input.trim();
     if (!shouldSuggestStreets(q)) return;
     let cancelled = false;
     const timer = window.setTimeout(() => {
       void requestAddressSuggestions(q).then((rows) => {
         if (cancelled || !rows.length) return;
-        if (workspacePrompt(getFoxDraft()) !== "property-address") return;
+        if (placesSuggestFrozen.current) return;
+        const live = getFoxDraft();
+        if (workspacePrompt(live) !== "property-address") return;
+        if (live.pendingProposal || live.pendingAddress) return;
         commitMessages((prev) => withStreetSuggestChips(prev, rows));
       });
     }, 220);
@@ -1020,7 +1026,7 @@ export function AlwaysOnFox({
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [draft.pendingProposal, draft.updatedAt, input, isStart, ready]);
+  }, [draft.pendingAddress, draft.pendingProposal, draft.updatedAt, input, isStart, ready]);
 
   useEffect(() => {
     if (!ready || !isStart) return;
@@ -1194,8 +1200,12 @@ export function AlwaysOnFox({
   const runAction = (action: FoxAction) => {
     if (action.capture?.field === "skip-property-address") {
       placesWaitGen.current += 1;
+      placesSuggestFrozen.current = false;
       setLookupWait(null);
       commitMessages((prev) => withoutWaitLines(prev));
+    }
+    if (action.capture?.field === "change-proposal") {
+      placesSuggestFrozen.current = false;
     }
     if (action.capture?.field === "couponChoice" && action.capture.value === "skip") {
       setLookupWait((current) => (current === "rateflow" ? null : current));
@@ -1309,21 +1319,29 @@ export function AlwaysOnFox({
     const placeCapture = action.capture;
     if (placeCapture?.field === "propose-place-address") {
       const gen = ++placesWaitGen.current;
+      placesSuggestFrozen.current = true;
       skipPromptSync.current = true;
-      setLookupWait("places");
-      commitMessages((prev) => withWaitLine(prev, "places"));
+      setInput("");
+      if (lookupWait === "places") {
+        setLookupWait(null);
+        commitMessages((prev) => withoutWaitLines(withoutStreetSuggestChips(prev)));
+      } else {
+        commitMessages((prev) => withoutStreetSuggestChips(prev));
+      }
       void (async () => {
         const place = looksLikePlaceId(placeCapture.value)
           ? await requestPlaceAddress(placeCapture.value)
           : parseSafePlaceAddress(placeCapture.value);
         if (gen !== placesWaitGen.current) return;
-        setLookupWait(null);
-        commitMessages((prev) => withoutWaitLines(prev));
-        if (!place) return;
-        const capture = {
-          field: "propose-place-address" as const,
-          value: encodePlaceAddress(place),
-        };
+        const capture = place
+          ? {
+              field: "propose-place-address" as const,
+              value: encodePlaceAddress(place),
+            }
+          : {
+              field: "propose-subject-address" as const,
+              value: action.label,
+            };
         applyCapture(capture);
         skipPromptSync.current = true;
         const live = getFoxDraft();
@@ -1416,6 +1434,7 @@ export function AlwaysOnFox({
     setInput("");
     if (isStart && lookupWait === "places" && isSkipPropertyAddressText(text)) {
       placesWaitGen.current += 1;
+      placesSuggestFrozen.current = false;
       setLookupWait(null);
       commitMessages((prev) => withoutWaitLines(prev));
     }
@@ -1469,6 +1488,12 @@ export function AlwaysOnFox({
       const invitePick = reply.capture.field === "open-docs" && !draft.sampleAccepted;
       if (!invitePick) applyCapture(reply.capture);
       skipPromptSync.current = true;
+      if (
+        reply.capture.field === "change-proposal" ||
+        reply.capture.field === "skip-property-address"
+      ) {
+        placesSuggestFrozen.current = false;
+      }
     }
     if (reply.capture?.field === "open-docs" && !draft.sampleAccepted) {
       requestFoxPickFile();
@@ -1615,6 +1640,7 @@ export function AlwaysOnFox({
               const path = startPath ?? getFoxDraft().path ?? "acr";
               const fresh = startOverWorkspace(path);
               skipPromptSync.current = true;
+              placesSuggestFrozen.current = false;
               setInput("");
               const greet = [foxAskMessage(workspaceGreeting(fresh))];
               setFoxMessages(greet);

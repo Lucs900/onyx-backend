@@ -12,6 +12,7 @@ import {
   placeAddressConfirmCopy,
   proposePlaceAddress,
   propertyAddressAskText,
+  propertyAddressSkipActions,
   typedAddressConfirmCopy,
   writePlaceAddress,
 } from "../components/fox/propertyType";
@@ -25,6 +26,11 @@ import {
   withoutWaitLines,
 } from "../components/fox/lookupWait";
 import { rateflowBlockedReason, rateflowClientBodyFromDraft } from "../lib/rateflow/fromDraft";
+import {
+  canPaintStreetSuggestChips,
+  withoutStreetSuggestChips,
+  withStreetSuggestChips,
+} from "../components/fox/addressSuggest";
 import {
   GOOGLE_PLACES_KEY_NAME,
   isCaliforniaLine,
@@ -204,5 +210,75 @@ assert.deepEqual(
 );
 assert.ok(fox.includes("Looking that up") || fox.includes("PLACES_WAIT_LINE") || fox.includes("withWaitLine"));
 assert.ok(fox.includes("is-waiting") || readFileSync(join(root, "styles/fox.css"), "utf8").includes("fox-mark-pulse"));
+
+const chipTapStart = fox.indexOf('placeCapture?.field === "propose-place-address"');
+const chipTapEnd = fox.indexOf("if (action.capture || productCapture)", chipTapStart);
+assert.ok(chipTapStart >= 0 && chipTapEnd > chipTapStart);
+const chipTap = fox.slice(chipTapStart, chipTapEnd);
+assert.doesNotMatch(chipTap, /withWaitLine\(\s*prev,\s*"places"\s*\)/);
+assert.doesNotMatch(chipTap, /setLookupWait\(\s*"places"\s*\)/);
+assert.match(chipTap, /placesSuggestFrozen/);
+assert.match(chipTap, /withoutStreetSuggestChips/);
+assert.match(chipTap, /confirm-proposal/);
+assert.match(chipTap, /propose-subject-address/);
+assert.match(fox, /setLookupWait\(\s*"places"\s*\)/);
+assert.match(fox, /withWaitLine\(\s*prev,\s*"places"\s*\)/);
+
+const marinaChip = "801 Marina Boulevard, San Francisco, CA";
+const waitBubble = {
+  id: "wait",
+  role: "fox" as const,
+  text: PLACES_WAIT_LINE,
+  actions: placesWaitActions(),
+};
+const confirmBubble = {
+  id: "confirm",
+  role: "fox" as const,
+  text: `${harbor!.line}. Use this?`,
+  actions: [
+    { id: "accept-proposal", label: "Use this", event: "bubble" as const, capture: { field: "accept-proposal" as const } },
+    { id: "change-proposal", label: "Change", event: "bubble" as const, capture: { field: "change-proposal" as const } },
+  ],
+};
+const askBubble = {
+  id: "ask",
+  role: "fox" as const,
+  text: PURCHASE_ADDRESS_ASK,
+  actions: [
+    {
+      id: "place-marina",
+      label: marinaChip,
+      event: "bubble" as const,
+      capture: { field: "propose-place-address" as const, value: "ChIJHarbor" },
+    },
+    ...propertyAddressSkipActions(),
+  ],
+};
+assert.equal(canPaintStreetSuggestChips(waitBubble), false);
+assert.equal(canPaintStreetSuggestChips(confirmBubble), false);
+assert.equal(canPaintStreetSuggestChips(askBubble), true);
+assert.equal(
+  withStreetSuggestChips([waitBubble], [{ id: "ChIJHarbor", line: marinaChip }])[0]?.text,
+  PLACES_WAIT_LINE,
+);
+assert.equal(
+  (withStreetSuggestChips([waitBubble], [{ id: "ChIJHarbor", line: marinaChip }])[0]?.actions ?? [])
+    .some((item) => item.label === marinaChip),
+  false,
+);
+assert.equal(
+  (withStreetSuggestChips([confirmBubble], [{ id: "ChIJHarbor", line: marinaChip }])[0]?.actions ?? [])
+    .some((item) => item.capture?.field === "propose-place-address"),
+  false,
+);
+const stripped = withoutStreetSuggestChips([askBubble]);
+assert.equal(
+  (stripped[0]?.actions ?? []).some((item) => item.capture?.field === "propose-place-address"),
+  false,
+);
+assert.equal(
+  (stripped[0]?.actions ?? []).some((item) => item.capture?.field === "skip-property-address"),
+  true,
+);
 
 console.log("assert-places: ok");
