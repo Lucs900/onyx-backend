@@ -2407,6 +2407,11 @@ export function messagesWithPricingWhenReady(
     return messages;
   }
   if (threadHasRateOrReadySpeech(messages)) return messages;
+  // Conventional purchase/refi with type + FICO + address + amounts: ready
+  // line only after Rateflow is finalized unavailable (retry exhausted).
+  if (searchedKeyFor(draft) && draft.liveQuoteStatus !== "unavailable") {
+    return messages;
+  }
   return [
     ...messages,
     {

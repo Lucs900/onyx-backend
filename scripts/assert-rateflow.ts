@@ -5,6 +5,11 @@ import { fileURLToPath } from "node:url";
 import { emptyDraft } from "../components/fox/store";
 import type { FoxIntakeDraft } from "../components/fox/types";
 import {
+  RATEFLOW_EMPTY_RETRIES,
+  requestRateflowIfNeeded,
+  resetRateflowClientForTests,
+} from "../components/fox/rateflowClient";
+import {
   rateflowBlockedReason,
   rateflowClientBodyFromDraft,
 } from "../lib/rateflow/fromDraft";
@@ -661,6 +666,8 @@ assert.ok(fox.includes("requestRateflowIfNeeded"));
 assert.ok(fox.includes("messagesWithLiveQuoteSpeech"));
 assert.ok(fox.includes("messagesWithRateOrReadySpeech"));
 assert.ok(client.includes("/api/rateflow-quote"));
+assert.ok(client.includes("RATEFLOW_EMPTY_RETRIES"));
+assert.ok(client.includes("for (let attempt = 0; !result && attempt < RATEFLOW_EMPTY_RETRIES;"));
 assert.ok(!fox.includes("/api/heloc-quote"));
 assert.ok(!client.includes("/api/heloc-quote"));
 assert.ok(!fox.includes("BANKINGBRIDGE_"));
@@ -669,5 +676,76 @@ assert.ok(!client.includes("BANKINGBRIDGE_"));
 const heloc = readFileSync(join(root, "app/api/heloc-quote/route.ts"), "utf8");
 assert.ok(heloc.includes("calculateHelocQuoteTool"));
 assert.ok(!heloc.includes("rateflow"));
+
+assert.equal(RATEFLOW_EMPTY_RETRIES, 1);
+
+const marinaReadyFile = file({
+  productIntent: "refinance",
+  propertyValueAmount: 1_000_000,
+  loanAmountValue: 500_000,
+  subjectAddress: "801 Marina Blvd, San Francisco, CA 94123",
+  propertyZip: "94123",
+});
+assert.equal(rateflowClientBodyFromDraft(marinaReadyFile)?.zipcode, "94123");
+assert.equal(rateflowClientBodyFromDraft(marinaReadyFile)?.loan_purpose, "refinance");
+
+const originalFetch = globalThis.fetch;
+async function withMockedRateflow(
+  handler: (calls: { n: number }) => Promise<Response>,
+  run: (calls: { n: number }) => Promise<void>,
+) {
+  const calls = { n: 0 };
+  resetRateflowClientForTests();
+  globalThis.fetch = (async () => {
+    calls.n += 1;
+    return handler(calls);
+  }) as typeof fetch;
+  try {
+    await run(calls);
+  } finally {
+    globalThis.fetch = originalFetch;
+    resetRateflowClientForTests();
+  }
+}
+
+await withMockedRateflow(
+  async (calls) => {
+    if (calls.n === 1) {
+      return new Response(JSON.stringify({ ok: false }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }
+    return new Response(
+      JSON.stringify({
+        ok: true,
+        quote: { rate: 6.125, asOf: "2026-08-28T21:10:00.000Z", pts: -1.25 },
+      }),
+      { status: 200, headers: { "content-type": "application/json" } },
+    );
+  },
+  async (calls) => {
+    const firstMiss = await requestRateflowIfNeeded(marinaReadyFile);
+    assert.equal(calls.n, 2, "retry Rateflow once after empty/error");
+    assert.ok(firstMiss && firstMiss !== "unavailable");
+    assert.equal(firstMiss.rate, 6.125);
+  },
+);
+
+await withMockedRateflow(
+  async () =>
+    new Response(JSON.stringify({ ok: false }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    }),
+  async (calls) => {
+    const exhausted = await requestRateflowIfNeeded(marinaReadyFile);
+    assert.equal(calls.n, 2);
+    assert.equal(exhausted, "unavailable");
+    const again = await requestRateflowIfNeeded(marinaReadyFile);
+    assert.equal(again, "unavailable");
+    assert.equal(calls.n, 2, "do not keep refetching after the retry");
+  },
+);
 
 console.log("assert-rateflow: ok");
