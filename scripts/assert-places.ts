@@ -4,6 +4,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { emptyDraft } from "../components/fox/store";
 import { resolveProposal } from "../components/fox/completeness";
+import { changePendingProposal, workspacePromptCopy, workspaceReply } from "../components/fox/workspace";
 import {
   PURCHASE_ADDRESS_ASK,
   REFI_ADDRESS_ASK,
@@ -280,5 +281,51 @@ assert.equal(
   (stripped[0]?.actions ?? []).some((item) => item.capture?.field === "skip-property-address"),
   true,
 );
+
+const marinaPlace = {
+  line: "801 Marina Blvd, San Francisco, CA 94123",
+  street: "801 Marina Blvd",
+  city: "San Francisco",
+  state: "CA",
+  zip: "94123",
+  county: "San Francisco",
+};
+const marinaBuy = { ...base, productIntent: "buy" as const };
+const marinaAfterChip = proposePlaceAddress(marinaBuy, marinaPlace);
+const marinaConfirm = workspacePromptCopy("confirm-proposal", marinaAfterChip);
+assert.equal(marinaConfirm.text, `${marinaPlace.line}. Use this?`);
+assert.deepEqual(
+  (marinaConfirm.actions ?? []).map((item) => item.label),
+  ["Use this", "Change"],
+);
+assert.equal(marinaAfterChip.subjectAddress, undefined);
+assert.equal(marinaAfterChip.propertyZip, undefined);
+assert.doesNotMatch(marinaConfirm.text, /Looking that up|Suggested · not underwritten/);
+const marinaChipThread = [
+  ...stripped,
+  { id: "chip", role: "client" as const, text: marinaChip },
+  {
+    id: "marina-confirm",
+    role: "fox" as const,
+    text: marinaConfirm.text,
+    actions: marinaConfirm.actions,
+  },
+];
+assert.equal(marinaChipThread.some((item) => isLookupWaitLine(item.text)), false);
+assert.equal(
+  (withStreetSuggestChips(marinaChipThread, [{ id: "ChIJHarbor", line: marinaChip }]).at(-1)
+    ?.actions ?? []).some((item) => item.capture?.field === "propose-place-address"),
+  false,
+);
+assert.equal(workspaceReply("Use this", marinaAfterChip)?.text, addressOnFileCopy());
+assert.equal(workspaceReply("Use this", marinaAfterChip)?.capture?.field, "accept-proposal");
+assert.equal(resolveProposal(marinaAfterChip, "accept").subjectStreet, "801 Marina Blvd");
+assert.equal(resolveProposal(marinaAfterChip, "accept").propertyZip, "94123");
+assert.equal(workspaceReply("Change", marinaAfterChip)?.text, PURCHASE_ADDRESS_ASK);
+assert.equal(workspaceReply("Change", marinaAfterChip)?.capture?.field, "change-proposal");
+const marinaChanged = changePendingProposal(marinaAfterChip);
+assert.equal(marinaChanged.subjectAddress, undefined);
+assert.equal(marinaChanged.pendingAddress, undefined);
+assert.equal(marinaChanged.pendingProposal, null);
 
 console.log("assert-places: ok");
