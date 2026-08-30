@@ -1,4 +1,4 @@
-import { liveQuoteMatchesDraft } from "@/lib/rateflow/fromDraft";
+import { liveQuoteMatchesDraft, searchedKeyFor } from "@/lib/rateflow/fromDraft";
 import {
   liveQuoteFromCouponRow,
   liveRateLine,
@@ -35,9 +35,10 @@ export function liveQuoteReady(draft: FoxIntakeDraft) {
 }
 
 export function shouldDeferNextAskForLiveCoupon(draft: FoxIntakeDraft) {
-  if (!draft.liveQuote || draft.liveQuoteStatus !== "ready") return false;
   if (draft.liveCouponSettled || draft.pendingLiveCoupon) return false;
-  return true;
+  if (draft.liveQuote && draft.liveQuoteStatus === "ready") return true;
+  if (draft.liveQuoteStatus === "unavailable") return false;
+  return Boolean(searchedKeyFor(draft));
 }
 
 function hideNoCostChip(draft?: FoxIntakeDraft) {
@@ -217,20 +218,11 @@ function onFileFollowOnly(message: FoxMessage) {
   return /\bon the file\.?\s*$/i.test((message.followUp ?? "").trim()) && looksLikeStreetAddress(message.text);
 }
 
-function spokenLineFromOnFile(message: FoxMessage, fileLine?: string) {
-  const text = (message.text ?? "").trim();
-  const fromText = text.match(/^(.*)\.\s*On the file\.?$/i)?.[1]?.trim();
-  if (fromText) return fromText;
-  if (fileLine?.trim()) return fileLine.trim();
-  return text.replace(/[.\s]+$/g, "").replace(/\s*Use this\??\s*$/i, "").trim();
-}
-
-/** After File write, that bubble is text only. No leftover pending chips. */
-export function sealOnFileAddressMessage(message: FoxMessage, fileLine?: string): FoxMessage {
-  const spoken = spokenLineFromOnFile(message, fileLine);
+/** After File write, that bubble is “On the file.” — three words, no street, no chips. */
+export function sealOnFileAddressMessage(message: FoxMessage, _fileLine?: string): FoxMessage {
   return {
     ...message,
-    text: spoken ? addressOnFileCopy(spoken) : (message.text ?? "").replace(/\s*Use this\??\s*$/i, "").trim(),
+    text: addressOnFileCopy(),
     followUp: undefined,
     actions: undefined,
   };
@@ -318,7 +310,7 @@ export function isLiveRateSpeech(text?: string) {
   return /%\s*·\s*.*Live as of/i.test(text) || /Live as of .+\s*·\s*not a lock/i.test(text);
 }
 
-/** After File write, that confirm becomes “{line}. On the file.” — text only. */
+/** After File write, that confirm becomes “On the file.” — text only. */
 export function dropResolvedAddressConfirmChips(
   messages: FoxMessage[],
   draft: FoxIntakeDraft,

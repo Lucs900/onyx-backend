@@ -104,6 +104,21 @@
   fill: var(--sunset);
 }
 
+@keyframes fox-mark-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.42;
+  }
+}
+
+/* Places / Rateflow wait: opacity pulse only. No bounce, spinner, or sunset ring. */
+.fox-bar__mark.is-waiting {
+  animation: fox-mark-pulse 1.15s ease-in-out infinite;
+}
+
 .fox-bar__prompt,
 .fox-bar__title {
   flex: 0 0 auto;

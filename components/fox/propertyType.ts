@@ -392,9 +392,15 @@ export function shouldShowAddressUseThis(draft: FoxIntakeDraft) {
   return Boolean(draft.pendingAddress?.line?.trim()) && !fileAddressLine(draft);
 }
 
-export function addressOnFileCopy(line: string) {
-  const clean = line.replace(/[.\s]+$/g, "").trim();
-  return `${clean}. On the file.`;
+/** After Use this writes File. Three words only — no street glued on. */
+export function addressOnFileCopy(_line?: string) {
+  return "On the file.";
+}
+
+/** Places / typed pending street. File is still empty. */
+export function placeAddressConfirmCopy(address: string) {
+  const clean = address.replace(/[.\s]+$/g, "").trim();
+  return `${clean}. Use this?`;
 }
 
 export function isPropertyAddressField(field: string) {
@@ -650,7 +656,7 @@ export function contractAddressConfirmCopy(address: string) {
 }
 
 export function typedAddressConfirmCopy(address: string) {
-  return `That’s ${address}. ${SUGGESTED_PROPERTY_NOTE}. Use this?`;
+  return placeAddressConfirmCopy(address);
 }
 
 export function idAddressConfirmCopy(address: string) {

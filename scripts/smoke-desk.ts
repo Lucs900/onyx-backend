@@ -48,6 +48,14 @@ import {
   visibleFoxActions,
 } from "../components/fox/liveCoupon";
 import {
+  PLACES_WAIT_LINE,
+  RATEFLOW_WAIT_LINE,
+  isLookupWaitLine,
+  rateflowWaitActions,
+  withWaitLine,
+  withoutWaitLines,
+} from "../components/fox/lookupWait";
+import {
   SUGGESTED_NOTE,
   SUGGESTED_INCOME_NOTE,
   SUGGESTED_DEBTS_NOTE,
@@ -278,6 +286,7 @@ import {
   parsePropertyType,
   proposeAddressAndAdoptZip,
   addressOnFileCopy,
+  placeAddressConfirmCopy,
   propertyTypeConfirmActions,
   typedAddressConfirmCopy,
   proposePlaceAddress,
@@ -1334,8 +1343,9 @@ assert.equal(
   addressAtZipAsk?.capture && "value" in addressAtZipAsk.capture ? addressAtZipAsk.capture.value : "",
   "500 Market St, San Francisco, CA 94105",
 );
-assert.match(addressAtZipAsk?.text ?? "", /That’s 500 Market St, San Francisco, CA 94105/);
+assert.equal(addressAtZipAsk?.text, placeAddressConfirmCopy("500 Market St, San Francisco, CA 94105"));
 assert.match(addressAtZipAsk?.text ?? "", /Use this/);
+assert.doesNotMatch(addressAtZipAsk?.text ?? "", /Suggested · not underwritten|That’s /);
 assert.doesNotMatch(addressAtZipAsk?.text ?? "", /What ZIP is the property in|How is income earned/);
 const addressAtZipProposed = proposeAddressAndAdoptZip(
   afterFounderHouseFico,
@@ -1518,7 +1528,7 @@ assert.equal(
 assert.equal(
   dropResolvedAddressConfirmChips(leftoverAddressUse, leftoverWrittenFile).find((item) => item.id === "addr-confirm")
     ?.text,
-  "500 Market St, San Francisco, CA 94105. On the file.",
+  addressOnFileCopy(),
 );
 assert.doesNotMatch(
   dropResolvedAddressConfirmChips(leftoverAddressUse, leftoverWrittenFile).find((item) => item.id === "addr-confirm")
@@ -1663,6 +1673,14 @@ assert.equal(
   leftoverUseThisPaintedOnOnFile([marinaLeftoverOnSpoken], marinaWrittenFile),
   0,
 );
+assert.equal(isLookupWaitLine(PLACES_WAIT_LINE), true);
+assert.equal(isLookupWaitLine(RATEFLOW_WAIT_LINE), true);
+const marinaWait = withWaitLine([marinaPendingConfirm], "places");
+assert.equal(marinaWait[marinaWait.length - 1]?.text, PLACES_WAIT_LINE);
+assert.ok((marinaWait[marinaWait.length - 1]?.actions ?? []).some((item) => item.label === "Skip"));
+assert.equal(withoutWaitLines(marinaWait).length, 1);
+assert.equal(withoutWaitLines(withWaitLine([], "rateflow"))[0], undefined);
+assert.ok((rateflowWaitActions() ?? []).some((item) => item.label === "Skip"));
 assert.equal(
   dropResolvedAddressConfirmChips([marinaLeftoverOnSpoken], marinaWrittenFile)[0]?.actions,
   undefined,
@@ -1670,6 +1688,19 @@ assert.equal(
 assert.doesNotMatch(
   dropResolvedAddressConfirmChips([marinaLeftoverOnSpoken], marinaWrittenFile)[0]?.text ?? "",
   /Use this/,
+);
+assert.equal(addressOnFileCopy(marinaPendingLine), "On the file.");
+assert.equal(placeAddressConfirmCopy(marinaPendingLine), `${marinaPendingLine}. Use this?`);
+assert.equal(typedAddressConfirmCopy(marinaPendingLine), `${marinaPendingLine}. Use this?`);
+assert.doesNotMatch(typedAddressConfirmCopy(marinaPendingLine), /Suggested · not underwritten|That’s /);
+assert.equal(workspaceReply("Use this", marinaPendingDraft)?.text, addressOnFileCopy());
+assert.equal(workspaceReply("Use this", marinaPendingDraft)?.capture?.field, "accept-proposal");
+assert.equal(workspaceReply("Change", marinaPendingDraft)?.text, PURCHASE_ADDRESS_ASK);
+assert.equal(workspaceReply("Change", marinaPendingDraft)?.capture?.field, "change-proposal");
+assert.ok(!(workspaceReply("Use this", marinaPendingDraft)?.actions ?? []).some((item) => item.label === "Use this"));
+assert.doesNotMatch(
+  [typedAddressConfirmCopy(marinaPendingLine), addressOnFileCopy(), workspaceReply("Use this", marinaPendingDraft)?.text ?? ""].join("\n"),
+  /Suggested · not underwritten/,
 );
 const afterAddressWrite = messagesWithLiveQuoteSpeech(
   leftoverAddressUse,
@@ -1991,8 +2022,9 @@ assert.equal(
 assert.equal(writePropertyZip(founderRefiReady, "94105").subjectAddress, undefined);
 const founderRefiStreet = workspaceReply("500 Market St, San Francisco, CA 94105", founderRefiReady);
 assert.equal(founderRefiStreet?.capture?.field, "propose-subject-address");
-assert.match(founderRefiStreet?.text ?? "", /That’s 500 Market St, San Francisco, CA 94105/);
+assert.equal(founderRefiStreet?.text, placeAddressConfirmCopy("500 Market St, San Francisco, CA 94105"));
 assert.match(founderRefiStreet?.text ?? "", /Use this/);
+assert.doesNotMatch(founderRefiStreet?.text ?? "", /Suggested · not underwritten|That’s /);
 assert.doesNotMatch(founderRefiStreet?.text ?? "", /purchase price|What ZIP is the property in|How is income earned/i);
 const founderRefiProposed = proposeAddressAndAdoptZip(
   founderRefiReady,
@@ -2090,7 +2122,14 @@ assert.equal(founderRefiPlaceSkipped.pendingAddress, undefined);
 assert.equal(founderRefiPlaceSkipped.subjectAddress, undefined);
 assert.equal(shouldShowAddressUseThis(founderRefiPlaceSkipped), false);
 assert.equal(rateflowClientBodyFromDraft(founderRefiPlaceSkipped), null);
-assert.match(workspacePromptCopy("confirm-proposal", founderRefiPlaceProposed).text, /That’s 500 Market St, San Francisco, CA 94105/);
+assert.equal(
+  workspacePromptCopy("confirm-proposal", founderRefiPlaceProposed).text,
+  placeAddressConfirmCopy(harborPlace.line),
+);
+assert.doesNotMatch(
+  workspacePromptCopy("confirm-proposal", founderRefiPlaceProposed).text,
+  /Suggested · not underwritten|That’s /,
+);
 assert.match(workspacePromptCopy("confirm-proposal", founderRefiPlaceProposed).text, /Use this/);
 assert.deepEqual(
   (workspacePromptCopy("confirm-proposal", founderRefiPlaceProposed).actions ?? []).map((item) => item.label),
@@ -2127,6 +2166,31 @@ const founderPurchasePlace = resolveProposal(founderPurchasePending, "accept");
 assert.equal(founderPurchasePlace.pendingAddress, undefined);
 assert.equal(founderPurchasePlace.subjectAddress, harborPlace.line);
 assert.equal(shouldShowAddressUseThis(founderPurchasePlace), false);
+assert.equal(workspaceReply("Use this", founderPurchasePending)?.text, addressOnFileCopy());
+assert.doesNotMatch(workspaceReply("Use this", founderPurchasePending)?.text ?? "", /Suggested · not underwritten|Use this/);
+assert.equal(workspaceReply("Change", founderPurchasePending)?.text, PURCHASE_ADDRESS_ASK);
+assert.ok(
+  previewFacts(founderPurchasePlace).some(
+    (fact) => fact.id === "address" && fact.note === SUGGESTED_PROPERTY_NOTE,
+  ),
+);
+assert.ok(
+  previewFacts(founderPurchasePlace).some(
+    (fact) => fact.id === "city" && fact.value === "San Francisco" && fact.note === SUGGESTED_PROPERTY_NOTE,
+  ),
+);
+assert.ok(
+  previewFacts(founderPurchasePlace).some(
+    (fact) => fact.id === "state" && fact.value === "CA" && fact.note === SUGGESTED_PROPERTY_NOTE,
+  ),
+);
+assert.ok(
+  previewFacts(founderPurchasePlace).some(
+    (fact) => fact.id === "county" && fact.value === "San Francisco" && fact.note === SUGGESTED_PROPERTY_NOTE,
+  ),
+);
+assert.equal(shouldDeferNextAskForLiveCoupon(founderPurchasePending), false);
+assert.equal(shouldDeferNextAskForLiveCoupon(founderPurchasePlace), true);
 assert.equal(
   dropResolvedAddressConfirmChips(
     [
@@ -8638,8 +8702,8 @@ assert.equal(resolveFactConflict(typedThenAddress.draft, "document").subjectAddr
 
 const volunteerAddress = workspaceReply("the address is 1840 Valencia", skippedTypeFile);
 assert.equal(volunteerAddress?.capture?.field, "propose-subject-address");
-assert.match(volunteerAddress?.text ?? "", /That’s 1840 Valencia/);
-assert.match(volunteerAddress?.text ?? "", /Suggested · not underwritten/);
+assert.equal(volunteerAddress?.text, placeAddressConfirmCopy("1840 Valencia"));
+assert.doesNotMatch(volunteerAddress?.text ?? "", /Suggested · not underwritten|That’s /);
 
 const condoFile = draft({ ...usedCondo, propertyTypeAsked: true, propertyType: "condo" });
 const condoQualify = workspaceReply("will i qualify", condoFile);
@@ -13455,7 +13519,8 @@ assert.ok((nextFoxAsk(harborPreLooksSkipAssets).actions ?? []).some((item) => it
 assert.ok(stillUsefulSection(harborPreLooksSkipAddress)?.items.some((item) => item.label === "Property address"));
 const harborPreLooksTyped = workspaceReply("14 Oak Street", harborPreLooksReady);
 assert.equal(harborPreLooksTyped?.capture?.field, "propose-subject-address");
-assert.match(harborPreLooksTyped?.text ?? "", /That’s 14 Oak Street/);
+assert.equal(harborPreLooksTyped?.text, placeAddressConfirmCopy("14 Oak Street"));
+assert.doesNotMatch(harborPreLooksTyped?.text ?? "", /Suggested · not underwritten|That’s /);
 assert.doesNotMatch(harborPreLooksTyped?.text ?? "", /look right|year built|taxes|HOA|APN/i);
 const harborPreLooksWritten = resolveProposal(
   proposeSubjectAddress(harborPreLooksReady, "14 Oak Street"),
@@ -13666,8 +13731,8 @@ const harborOccupancy = harborWhereSkip.occupancyChoice.value;
 const harborType = harborWhereSkip.propertyType;
 const harborTyped = workspaceReply("14 Oak Street", harborWhereSkip);
 assert.equal(harborTyped?.capture?.field, "propose-subject-address");
-assert.match(harborTyped?.text ?? "", /That’s 14 Oak Street/);
-assert.match(harborTyped?.text ?? "", /Suggested · not underwritten/);
+assert.equal(harborTyped?.text, placeAddressConfirmCopy("14 Oak Street"));
+assert.doesNotMatch(harborTyped?.text ?? "", /Suggested · not underwritten|That’s /);
 assert.match(harborTyped?.text ?? "", /Use this/);
 assert.doesNotMatch(harborTyped?.text ?? "", /year built|taxes|HOA|APN|questionnaire/i);
 const harborAddressWritten = resolveProposal(

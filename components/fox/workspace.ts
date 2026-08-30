@@ -292,6 +292,8 @@ import {
   skipPropertyZip,
   skipQuoteAddress,
   skipSubjectAddress,
+  addressOnFileCopy,
+  fileAddressLine,
   typedAddressConfirmCopy,
   typedZipFromDraft,
   writeAddressAndAdoptZip,
@@ -4779,6 +4781,19 @@ export function workspaceReply(
   }
 
   if (
+    searchedKeyFor(draft) &&
+    !liveQuoteReady(draft) &&
+    draft.liveQuoteStatus !== "unavailable" &&
+    !propertyZipConfirmNeeded(draft) &&
+    prompt !== "property-zip" &&
+    !draft.pendingProposal &&
+    !draft.pendingAddress &&
+    isCouponSkipText(q)
+  ) {
+    return couponChipReply(draft, "skip");
+  }
+
+  if (
     liveQuoteReady(draft) &&
     (!draft.liveCouponSettled || isLowerPaymentText(q) || isNoCostText(q))
   ) {
@@ -4995,6 +5010,12 @@ export function workspaceReply(
       /yes that.?s me|use this/.test(lower)
     ) {
       const nextDraft = resolveProposal(draft, "accept");
+      if (isSubjectAddressConfirmPending(draft) && fileAddressLine(nextDraft)) {
+        return {
+          text: addressOnFileCopy(),
+          capture: { field: "accept-proposal" },
+        };
+      }
       return {
         ...nextFoxAsk(nextDraft),
         capture: { field: "accept-proposal" },

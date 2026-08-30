@@ -7,11 +7,23 @@ import { resolveProposal } from "../components/fox/completeness";
 import {
   PURCHASE_ADDRESS_ASK,
   REFI_ADDRESS_ASK,
+  addressOnFileCopy,
   isPlaceAddressProposal,
+  placeAddressConfirmCopy,
   proposePlaceAddress,
   propertyAddressAskText,
+  typedAddressConfirmCopy,
   writePlaceAddress,
 } from "../components/fox/propertyType";
+import {
+  PLACES_WAIT_LINE,
+  RATEFLOW_WAIT_LINE,
+  isLookupWaitLine,
+  placesWaitActions,
+  rateflowWaitActions,
+  withWaitLine,
+  withoutWaitLines,
+} from "../components/fox/lookupWait";
 import { rateflowBlockedReason, rateflowClientBodyFromDraft } from "../lib/rateflow/fromDraft";
 import {
   GOOGLE_PLACES_KEY_NAME,
@@ -168,5 +180,29 @@ assert.ok(fox.includes("/api/address-suggest") || fox.includes("requestAddressSu
 assert.ok(!fox.includes("maps.googleapis.com"));
 assert.doesNotMatch(suggest, /console\.(log|info|warn|error)\([^)]*GOOGLE_/);
 assert.doesNotMatch(details, /console\.(log|info|warn|error)\([^)]*GOOGLE_/);
+
+assert.equal(placeAddressConfirmCopy(harbor!.line), `${harbor!.line}. Use this?`);
+assert.equal(typedAddressConfirmCopy(harbor!.line), placeAddressConfirmCopy(harbor!.line));
+assert.doesNotMatch(typedAddressConfirmCopy(harbor!.line), /Suggested · not underwritten|That’s /);
+assert.equal(addressOnFileCopy(harbor!.line), "On the file.");
+assert.equal(isLookupWaitLine(PLACES_WAIT_LINE), true);
+assert.equal(isLookupWaitLine(RATEFLOW_WAIT_LINE), true);
+assert.equal(isLookupWaitLine(`${harbor!.line}. Use this?`), false);
+const waitThread = withWaitLine([], "places");
+assert.equal(waitThread[0]?.text, PLACES_WAIT_LINE);
+assert.deepEqual(
+  (waitThread[0]?.actions ?? []).map((item) => item.label),
+  placesWaitActions().map((item) => item.label),
+);
+assert.equal(withoutWaitLines(waitThread).length, 0);
+const rateWait = withWaitLine(waitThread, "rateflow");
+assert.equal(rateWait.length, 1);
+assert.equal(rateWait[0]?.text, RATEFLOW_WAIT_LINE);
+assert.deepEqual(
+  (rateWait[0]?.actions ?? []).map((item) => item.label),
+  rateflowWaitActions().map((item) => item.label),
+);
+assert.ok(fox.includes("Looking that up") || fox.includes("PLACES_WAIT_LINE") || fox.includes("withWaitLine"));
+assert.ok(fox.includes("is-waiting") || readFileSync(join(root, "styles/fox.css"), "utf8").includes("fox-mark-pulse"));
 
 console.log("assert-places: ok");
