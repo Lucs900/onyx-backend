@@ -40,6 +40,7 @@ import { addressConfirmPending, searchedKeyFor } from "@/lib/rateflow/fromDraft"
 import {
   dropAbandonedAddressConfirm,
   dropResolvedAddressConfirmChips,
+  isStreetSuggestChipLabel,
   paintedFoxActions,
   shouldDeferNextAskForLiveCoupon,
 } from "./liveCoupon";
@@ -426,7 +427,11 @@ function FoxThread({
         }
         const current = message.role === "fox" && index === currentFox;
         const tone = current ? " is-current" : " is-prior";
-        const paintActions = paintedFoxActions(message, draft, current) ?? [];
+        const paintActions = (paintedFoxActions(message, draft, current) ?? []).filter(
+          (action) =>
+            action.capture?.field !== "propose-place-address" &&
+            !isStreetSuggestChipLabel(action.label),
+        );
         return (
           <article
             key={message.id}
@@ -1624,7 +1629,7 @@ export function AlwaysOnFox({
   };
 
   const desk = (
-    <div className="fox-bar__compose">
+    <div className={streetSuggestions.length ? "fox-bar__compose is-suggesting" : "fox-bar__compose"}>
       {streetSuggestions.length > 0 ? (
         <ul id={suggestId} className="fox-bar__suggest" role="listbox">
           {streetSuggestions.map((item) => (

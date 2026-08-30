@@ -4,7 +4,12 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { emptyDraft } from "../components/fox/store";
 import { resolveProposal } from "../components/fox/completeness";
-import { dropAbandonedAddressConfirm, paintedFoxActions } from "../components/fox/liveCoupon";
+import {
+  dropAbandonedAddressConfirm,
+  isStreetSuggestChipLabel,
+  paintedFoxActions,
+  paintedStreetSuggestCount,
+} from "../components/fox/liveCoupon";
 import { changePendingProposal, workspacePromptCopy, workspaceReply } from "../components/fox/workspace";
 import {
   PURCHASE_ADDRESS_ASK,
@@ -225,11 +230,17 @@ assert.match(chipTap, /setStreetSuggestions/);
 assert.match(chipTap, /confirm-proposal/);
 assert.match(chipTap, /propose-subject-address/);
 assert.match(fox, /fox-bar__suggest/);
+assert.match(fox, /fox-bar__compose/);
 assert.match(fox, /setStreetSuggestions/);
 assert.doesNotMatch(fox, /withStreetSuggestChips/);
 assert.match(fox, /setLookupWait\(\s*"places"\s*\)/);
 assert.match(fox, /withWaitLine\(\s*prev,\s*"places"\s*\)/);
-assert.ok(readFileSync(join(root, "styles/fox.css"), "utf8").includes("fox-bar__suggest"));
+const foxCss = readFileSync(join(root, "styles/fox.css"), "utf8");
+assert.ok(foxCss.includes("fox-bar__suggest"));
+assert.doesNotMatch(foxCss, /\.fox-bar__suggest\s*\{[^}]*position:\s*absolute/);
+const foxThread = fox.slice(fox.indexOf("function FoxThread"), fox.indexOf("export function AlwaysOnFox"));
+assert.doesNotMatch(foxThread, /streetSuggestions|fox-bar__suggest/);
+assert.match(foxThread, /isStreetSuggestChipLabel/);
 
 const marinaChip = "801 Marina Boulevard, San Francisco, CA";
 const waitBubble = {
@@ -359,5 +370,44 @@ assert.equal(
   true,
 );
 assert.equal(paintedFoxActions(confirmBubble, marinaChanged, true), undefined);
+
+const harborStreetChips = [
+  "801 Marina Village Parkway, Alameda, CA",
+  "801 Marina Way South, Richmond, CA",
+  "801 Marina View Drive, El Dorado Hills, CA",
+  "801 Marina Boulevard, San Francisco, CA",
+  "801 Marina Boulevard, San Leandro, CA",
+];
+for (const line of harborStreetChips) {
+  assert.equal(isStreetSuggestChipLabel(line), true);
+}
+assert.equal(isStreetSuggestChipLabel("Skip"), false);
+assert.equal(isStreetSuggestChipLabel("Use this"), false);
+const harborAskWithStreets = {
+  id: "harbor-ask",
+  role: "fox" as const,
+  text: PURCHASE_ADDRESS_ASK,
+  actions: [
+    ...harborStreetChips.map((line, index) => ({
+      id: `place-harbor-${index}`,
+      label: line,
+      event: "bubble" as const,
+      capture: { field: "propose-place-address" as const, value: `ChIJHarbor${index}` },
+    })),
+    ...propertyAddressSkipActions(),
+  ],
+};
+assert.equal(paintedStreetSuggestCount([harborAskWithStreets], marinaBuy), 0);
+assert.equal(
+  (paintedFoxActions(harborAskWithStreets, marinaBuy, true) ?? []).some((item) =>
+    harborStreetChips.includes(item.label),
+  ),
+  false,
+);
+assert.equal(
+  (paintedFoxActions(harborAskWithStreets, marinaBuy, true) ?? []).some((item) => item.label === "Skip"),
+  true,
+);
+assert.equal(paintedStreetSuggestCount(marinaChipThread, marinaAfterChip), 0);
 
 console.log("assert-places: ok");

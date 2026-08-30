@@ -253,6 +253,34 @@ function isKeptUseThis(action: FoxAction) {
   );
 }
 
+/** Founder score: a street line painted as a thread chip / pill / answer row. */
+export function isStreetSuggestChipLabel(label: string) {
+  const raw = label.replace(/\s+/g, " ").trim();
+  if (!raw) return false;
+  if (/^(Skip|Use this|Change|Not yet)$/i.test(raw)) return false;
+  return /^\d{1,6}\s+\S/.test(raw) && /,\s*CA\b/.test(raw);
+}
+
+/** Count street chips on the painted Fox thread. Composer list rows do not count. */
+export function paintedStreetSuggestCount(messages: FoxMessage[], draft: FoxIntakeDraft) {
+  let lastFox = -1;
+  for (let i = 0; i < messages.length; i += 1) {
+    if (messages[i].role === "fox") lastFox = i;
+  }
+  let count = 0;
+  for (let i = 0; i < messages.length; i += 1) {
+    const message = messages[i];
+    if (message.role !== "fox") continue;
+    const painted = paintedFoxActions(message, draft, i === lastFox) ?? [];
+    for (const action of painted) {
+      if (action.capture?.field === "propose-place-address" || isStreetSuggestChipLabel(action.label)) {
+        count += 1;
+      }
+    }
+  }
+  return count;
+}
+
 export function isAddressUseAction(action: FoxAction) {
   if (isKeptUseThis(action)) return false;
   const field = action.capture?.field;
@@ -374,7 +402,9 @@ export function paintedFoxActions(
   const shown = visibleFoxActions(message, draft);
   if (!shown?.length) return undefined;
   const next = shown.filter((action) => {
-    if (action.capture?.field === "propose-place-address") return false;
+    if (action.capture?.field === "propose-place-address" || isStreetSuggestChipLabel(action.label)) {
+      return false;
+    }
     if (action.label === "Use this" || action.label === "Change") {
       if (isOnFileAddressLine(message) || hideAddressUseThisOnBubble(message, draft)) return false;
       if (isAddressConfirmMessage(message, draft)) return shouldShowAddressUseThis(draft);
@@ -397,7 +427,9 @@ export function visibleFoxActions(message: FoxMessage, draft: FoxIntakeDraft) {
   const actions = message.actions;
   if (!actions?.length) return undefined;
   const next = actions.filter((action) => {
-    if (action.capture?.field === "propose-place-address") return false;
+    if (action.capture?.field === "propose-place-address" || isStreetSuggestChipLabel(action.label)) {
+      return false;
+    }
     if (isOnFileAddressLine(message)) return false;
     if (hideAddressUseThisOnBubble(message, draft) && (action.label === "Use this" || action.label === "Change")) {
       return false;

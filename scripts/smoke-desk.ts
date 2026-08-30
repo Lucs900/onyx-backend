@@ -1704,6 +1704,10 @@ assert.doesNotMatch(
 );
 assert.match(foxChipTap, /fox-bar__suggest/);
 assert.doesNotMatch(foxChipTap, /withStreetSuggestChips/);
+assert.doesNotMatch(
+  readFileSync(join(dirname(fileURLToPath(import.meta.url)), "..", "styles/fox.css"), "utf8"),
+  /\.fox-bar__suggest\s*\{[^}]*position:\s*absolute/,
+);
 assert.equal(placeAddressConfirmCopy(marinaPendingLine), `${marinaPendingLine}. Use this?`);
 assert.equal(typedAddressConfirmCopy(marinaPendingLine), `${marinaPendingLine}. Use this?`);
 assert.doesNotMatch(typedAddressConfirmCopy(marinaPendingLine), /Suggested · not underwritten|That’s /);

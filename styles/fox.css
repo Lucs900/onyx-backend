@@ -151,35 +151,40 @@
 }
 
 .fox-bar__compose {
-  position: relative;
+  display: flex;
+  flex-direction: column;
   flex: 1 1 auto;
   min-width: 0;
   width: 100%;
 }
 
-.fox-bar__suggest {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: calc(100% + 6px);
-  z-index: 6;
-  margin: 0;
-  padding: 6px;
-  list-style: none;
+/* Places list lives in the composer dock, in flow. Never overlay the thread. */
+.fox-bar__compose.is-suggesting {
   background: var(--paper-elevated);
   border: 1px solid var(--fox-hairline);
-  border-radius: 16px;
-  box-shadow: var(--fox-lift);
-  max-height: min(240px, 36vh);
+  border-radius: 20px;
+}
+
+.fox-bar__suggest {
+  position: static;
+  z-index: auto;
+  margin: 0;
+  padding: 6px 6px 0;
+  list-style: none;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  max-height: min(200px, 28vh);
   overflow: auto;
 }
 
 .fox-bar__suggest-row {
   display: block;
   width: 100%;
-  padding: 10px 12px;
+  padding: 8px 12px;
   border: 0;
-  border-radius: 12px;
+  border-radius: 10px;
   background: transparent;
   color: var(--ink);
   font-family: var(--font-ui);
@@ -192,6 +197,18 @@
 .fox-bar__suggest-row:hover,
 .fox-bar__suggest-row:focus-visible {
   background: color-mix(in srgb, var(--ink) 8%, var(--paper-elevated));
+}
+
+.fox-stage.fox-stage--workspace .fox-bar__compose.is-suggesting .fox-bar__desk,
+.fox-stage--workspace .fox-bar__compose.is-suggesting .fox-bar__desk,
+.fox-bar__compose.is-suggesting .fox-bar__desk,
+.fox-bar__compose.is-suggesting .fox-bar__desk--plain,
+.fox-bar__compose.is-suggesting .fox-bar__desk--plain:hover,
+.fox-bar__compose.is-suggesting .fox-bar__desk--plain:focus-within {
+  margin-top: 0 !important;
+  border: 0 !important;
+  border-radius: 0 0 999px 999px !important;
+  box-shadow: none !important;
 }
 
 .fox-stage--workspace .fox-bar__input:focus,
