@@ -1,7 +1,5 @@
 import { parsePlaceAddress, type PlaceAddress, type PlaceSuggestion } from "@/lib/places/address";
-import { isLookupWaitLine, isLookupWaitMessage } from "./lookupWait";
-import { propertyAddressSkipActions } from "./propertyType";
-import type { FoxAction, FoxMessage } from "./types";
+import type { FoxMessage } from "./types";
 
 export function parseSafePlaceAddress(input: unknown): PlaceAddress | null {
   if (!input || typeof input !== "object") return null;
@@ -55,63 +53,27 @@ export async function requestPlaceAddress(id: string): Promise<PlaceAddress | nu
   }
 }
 
-export function streetSuggestActions(suggestions: PlaceSuggestion[]): FoxAction[] {
-  return [
-    ...suggestions.map((item) => ({
-      id: `place-${item.id}`,
-      label: item.line,
-      event: "bubble" as const,
-      capture: { field: "propose-place-address" as const, value: item.id },
-    })),
-    ...propertyAddressSkipActions(),
-  ];
+/** Places matches belong on the composer dropdown. Never paint them as thread chips. */
+export function canPaintStreetSuggestChips(_message?: FoxMessage) {
+  return false;
 }
 
-export function canPaintStreetSuggestChips(message: FoxMessage) {
-  if (isLookupWaitMessage(message) || isLookupWaitLine(message.text)) return false;
-  if (/\. Use this\?$/.test((message.text ?? "").trim())) return false;
-  if ((message.actions ?? []).some((item) => item.capture?.field === "accept-proposal")) {
-    return false;
-  }
-  if ((message.actions ?? []).some((item) => item.capture?.field === "couponChoice")) {
-    return false;
-  }
-  return true;
+export function withStreetSuggestChips(messages: FoxMessage[], _suggestions?: PlaceSuggestion[]) {
+  return dropStreetSuggestChips(messages);
 }
 
-function lastFoxIndex(messages: FoxMessage[]) {
-  let lastFox = -1;
-  for (let i = 0; i < messages.length; i += 1) {
-    if (messages[i].role === "fox") lastFox = i;
-  }
-  return lastFox;
+/** Strip leftover street-suggest chips. Keep Skip on the address ask. */
+export function dropStreetSuggestChips(messages: FoxMessage[]): FoxMessage[] {
+  let changed = false;
+  const next = messages.map((item) => {
+    if (item.role !== "fox") return item;
+    const actions = item.actions ?? [];
+    const kept = actions.filter((action) => action.capture?.field !== "propose-place-address");
+    if (kept.length === actions.length) return item;
+    changed = true;
+    return { ...item, actions: kept.length ? kept : undefined };
+  });
+  return changed ? next : messages;
 }
 
-export function withStreetSuggestChips(
-  messages: FoxMessage[],
-  suggestions: PlaceSuggestion[],
-): FoxMessage[] {
-  if (!suggestions.length) return messages;
-  const lastFox = lastFoxIndex(messages);
-  if (lastFox < 0) return messages;
-  const current = messages[lastFox];
-  if (!canPaintStreetSuggestChips(current)) return messages;
-  const chips = streetSuggestActions(suggestions);
-  return messages.map((item, index) => (index === lastFox ? { ...item, actions: chips } : item));
-}
-
-/** Drop already-returned suggestion chips so a tap cannot re-paint them. Keep Skip. */
-export function withoutStreetSuggestChips(messages: FoxMessage[]): FoxMessage[] {
-  const lastFox = lastFoxIndex(messages);
-  if (lastFox < 0) return messages;
-  const current = messages[lastFox];
-  const nextActions = (current.actions ?? []).filter(
-    (item) => item.capture?.field !== "propose-place-address",
-  );
-  if (nextActions.length === (current.actions ?? []).length) return messages;
-  return messages.map((item, index) =>
-    index === lastFox
-      ? { ...item, actions: nextActions.length ? nextActions : undefined }
-      : item,
-  );
-}
+export const withoutStreetSuggestChips = dropStreetSuggestChips;

@@ -4,6 +4,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { emptyDraft } from "../components/fox/store";
 import { resolveProposal } from "../components/fox/completeness";
+import { dropAbandonedAddressConfirm, paintedFoxActions } from "../components/fox/liveCoupon";
 import { changePendingProposal, workspacePromptCopy, workspaceReply } from "../components/fox/workspace";
 import {
   PURCHASE_ADDRESS_ASK,
@@ -29,6 +30,7 @@ import {
 import { rateflowBlockedReason, rateflowClientBodyFromDraft } from "../lib/rateflow/fromDraft";
 import {
   canPaintStreetSuggestChips,
+  dropStreetSuggestChips,
   withoutStreetSuggestChips,
   withStreetSuggestChips,
 } from "../components/fox/addressSuggest";
@@ -219,11 +221,15 @@ const chipTap = fox.slice(chipTapStart, chipTapEnd);
 assert.doesNotMatch(chipTap, /withWaitLine\(\s*prev,\s*"places"\s*\)/);
 assert.doesNotMatch(chipTap, /setLookupWait\(\s*"places"\s*\)/);
 assert.match(chipTap, /placesSuggestFrozen/);
-assert.match(chipTap, /withoutStreetSuggestChips/);
+assert.match(chipTap, /setStreetSuggestions/);
 assert.match(chipTap, /confirm-proposal/);
 assert.match(chipTap, /propose-subject-address/);
+assert.match(fox, /fox-bar__suggest/);
+assert.match(fox, /setStreetSuggestions/);
+assert.doesNotMatch(fox, /withStreetSuggestChips/);
 assert.match(fox, /setLookupWait\(\s*"places"\s*\)/);
 assert.match(fox, /withWaitLine\(\s*prev,\s*"places"\s*\)/);
+assert.ok(readFileSync(join(root, "styles/fox.css"), "utf8").includes("fox-bar__suggest"));
 
 const marinaChip = "801 Marina Boulevard, San Francisco, CA";
 const waitBubble = {
@@ -257,22 +263,24 @@ const askBubble = {
 };
 assert.equal(canPaintStreetSuggestChips(waitBubble), false);
 assert.equal(canPaintStreetSuggestChips(confirmBubble), false);
-assert.equal(canPaintStreetSuggestChips(askBubble), true);
+assert.equal(canPaintStreetSuggestChips(askBubble), false);
 assert.equal(
-  withStreetSuggestChips([waitBubble], [{ id: "ChIJHarbor", line: marinaChip }])[0]?.text,
-  PLACES_WAIT_LINE,
-);
-assert.equal(
-  (withStreetSuggestChips([waitBubble], [{ id: "ChIJHarbor", line: marinaChip }])[0]?.actions ?? [])
-    .some((item) => item.label === marinaChip),
-  false,
-);
-assert.equal(
-  (withStreetSuggestChips([confirmBubble], [{ id: "ChIJHarbor", line: marinaChip }])[0]?.actions ?? [])
+  (withStreetSuggestChips([askBubble], [{ id: "ChIJHarbor", line: marinaChip }])[0]?.actions ?? [])
     .some((item) => item.capture?.field === "propose-place-address"),
   false,
 );
-const stripped = withoutStreetSuggestChips([askBubble]);
+assert.equal(
+  (withStreetSuggestChips([askBubble], [{ id: "ChIJHarbor", line: marinaChip }])[0]?.actions ?? [])
+    .some((item) => item.capture?.field === "skip-property-address"),
+  true,
+);
+assert.equal(
+  (paintedFoxActions(askBubble, { ...emptyDraft(), pendingAddress: undefined }, true) ?? [])
+    .some((item) => item.capture?.field === "propose-place-address"),
+  false,
+);
+const stripped = dropStreetSuggestChips([askBubble]);
+assert.deepEqual(stripped[0]?.actions, withoutStreetSuggestChips([askBubble])[0]?.actions);
 assert.equal(
   (stripped[0]?.actions ?? []).some((item) => item.capture?.field === "propose-place-address"),
   false,
@@ -302,7 +310,12 @@ assert.equal(marinaAfterChip.subjectAddress, undefined);
 assert.equal(marinaAfterChip.propertyZip, undefined);
 assert.doesNotMatch(marinaConfirm.text, /Looking that up|Suggested · not underwritten/);
 const marinaChipThread = [
-  ...stripped,
+  {
+    id: "ask-only",
+    role: "fox" as const,
+    text: PURCHASE_ADDRESS_ASK,
+    actions: propertyAddressSkipActions(),
+  },
   { id: "chip", role: "client" as const, text: marinaChip },
   {
     id: "marina-confirm",
@@ -313,8 +326,9 @@ const marinaChipThread = [
 ];
 assert.equal(marinaChipThread.some((item) => isLookupWaitLine(item.text)), false);
 assert.equal(
-  (withStreetSuggestChips(marinaChipThread, [{ id: "ChIJHarbor", line: marinaChip }]).at(-1)
-    ?.actions ?? []).some((item) => item.capture?.field === "propose-place-address"),
+  marinaChipThread.some((item) =>
+    (item.actions ?? []).some((action) => action.capture?.field === "propose-place-address"),
+  ),
   false,
 );
 assert.equal(workspaceReply("Use this", marinaAfterChip)?.text, addressOnFileCopy());
@@ -327,5 +341,23 @@ const marinaChanged = changePendingProposal(marinaAfterChip);
 assert.equal(marinaChanged.subjectAddress, undefined);
 assert.equal(marinaChanged.pendingAddress, undefined);
 assert.equal(marinaChanged.pendingProposal, null);
+assert.equal(
+  dropAbandonedAddressConfirm(marinaChipThread, marinaAfterChip).some((item) => item.id === "marina-confirm"),
+  true,
+);
+const marinaAfterChangeThread = dropAbandonedAddressConfirm(marinaChipThread, marinaChanged);
+assert.equal(
+  marinaAfterChangeThread.some((item) => item.id === "marina-confirm"),
+  false,
+);
+assert.equal(
+  marinaAfterChangeThread.some((item) => /\. Use this\?/.test(item.text ?? "")),
+  false,
+);
+assert.equal(
+  marinaAfterChangeThread.some((item) => item.text === PURCHASE_ADDRESS_ASK),
+  true,
+);
+assert.equal(paintedFoxActions(confirmBubble, marinaChanged, true), undefined);
 
 console.log("assert-places: ok");

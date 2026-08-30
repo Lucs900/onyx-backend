@@ -217,10 +217,16 @@
   cursor: pointer;
 }
 
+.fox-workspace-dock__row .fox-bar__compose,
 .fox-workspace-dock__row .fox-bar__desk {
   flex: 1 1 auto;
   min-width: 0;
   width: 100%;
+}
+
+.fox-workspace-dock,
+.fox-workspace-dock__row {
+  overflow: visible;
 }
 
 .fox-structure-peek,

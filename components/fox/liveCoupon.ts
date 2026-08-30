@@ -310,6 +310,20 @@ export function isLiveRateSpeech(text?: string) {
   return /%\s*·\s*.*Live as of/i.test(text) || /Live as of .+\s*·\s*not a lock/i.test(text);
 }
 
+/** Change: leftover `{address}. Use this?` leaves the thread while File is still empty. */
+export function dropAbandonedAddressConfirm(
+  messages: FoxMessage[],
+  draft: FoxIntakeDraft,
+): FoxMessage[] {
+  if (shouldShowAddressUseThis(draft) || fileAddressLine(draft)) return messages;
+  return messages.filter((message) => {
+    if (message.role !== "fox") return true;
+    if (isOnFileAddressLine(message)) return true;
+    if (!isAddressConfirmMessage(message, draft)) return true;
+    return !/\. Use this\?$/.test((message.text ?? "").trim());
+  });
+}
+
 /** After File write, that confirm becomes “On the file.” — text only. */
 export function dropResolvedAddressConfirmChips(
   messages: FoxMessage[],
@@ -360,6 +374,7 @@ export function paintedFoxActions(
   const shown = visibleFoxActions(message, draft);
   if (!shown?.length) return undefined;
   const next = shown.filter((action) => {
+    if (action.capture?.field === "propose-place-address") return false;
     if (action.label === "Use this" || action.label === "Change") {
       if (isOnFileAddressLine(message) || hideAddressUseThisOnBubble(message, draft)) return false;
       if (isAddressConfirmMessage(message, draft)) return shouldShowAddressUseThis(draft);
@@ -382,6 +397,7 @@ export function visibleFoxActions(message: FoxMessage, draft: FoxIntakeDraft) {
   const actions = message.actions;
   if (!actions?.length) return undefined;
   const next = actions.filter((action) => {
+    if (action.capture?.field === "propose-place-address") return false;
     if (isOnFileAddressLine(message)) return false;
     if (hideAddressUseThisOnBubble(message, draft) && (action.label === "Use this" || action.label === "Change")) {
       return false;

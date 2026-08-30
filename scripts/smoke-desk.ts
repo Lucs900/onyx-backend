@@ -38,6 +38,7 @@ import {
   acceptPendingLiveCoupon,
   applyCouponChoice,
   couponChoiceFromText,
+  dropAbandonedAddressConfirm,
   dropResolvedAddressConfirmChips,
   isLowerPaymentText,
   keepPendingLiveCoupon,
@@ -1701,6 +1702,8 @@ assert.doesNotMatch(
   foxChipTap.slice(foxChipTapStart, foxChipTapEnd),
   /withWaitLine\(\s*prev,\s*"places"\s*\)|setLookupWait\(\s*"places"\s*\)/,
 );
+assert.match(foxChipTap, /fox-bar__suggest/);
+assert.doesNotMatch(foxChipTap, /withStreetSuggestChips/);
 assert.equal(placeAddressConfirmCopy(marinaPendingLine), `${marinaPendingLine}. Use this?`);
 assert.equal(typedAddressConfirmCopy(marinaPendingLine), `${marinaPendingLine}. Use this?`);
 assert.doesNotMatch(typedAddressConfirmCopy(marinaPendingLine), /Suggested · not underwritten|That’s /);
@@ -1708,6 +1711,17 @@ assert.equal(workspaceReply("Use this", marinaPendingDraft)?.text, addressOnFile
 assert.equal(workspaceReply("Use this", marinaPendingDraft)?.capture?.field, "accept-proposal");
 assert.equal(workspaceReply("Change", marinaPendingDraft)?.text, PURCHASE_ADDRESS_ASK);
 assert.equal(workspaceReply("Change", marinaPendingDraft)?.capture?.field, "change-proposal");
+assert.equal(
+  dropAbandonedAddressConfirm([marinaPendingConfirm], marinaPendingDraft)[0]?.text,
+  typedAddressConfirmCopy(marinaPendingLine),
+);
+assert.equal(
+  dropAbandonedAddressConfirm(
+    [marinaPendingConfirm],
+    { ...marinaPendingDraft, pendingAddress: undefined, pendingProposal: null },
+  ).length,
+  0,
+);
 assert.doesNotMatch(
   workspaceReply("will I qualify", marinaPendingDraft)?.text ?? "",
   /I can answer from this file/,

@@ -38,19 +38,24 @@ import {
 } from "./script";
 import { addressConfirmPending, searchedKeyFor } from "@/lib/rateflow/fromDraft";
 import {
+  dropAbandonedAddressConfirm,
   dropResolvedAddressConfirmChips,
   paintedFoxActions,
   shouldDeferNextAskForLiveCoupon,
 } from "./liveCoupon";
 import { requestRateflowIfNeeded } from "./rateflowClient";
 import {
+  dropStreetSuggestChips,
   parseSafePlaceAddress,
   requestAddressSuggestions,
   requestPlaceAddress,
-  withoutStreetSuggestChips,
-  withStreetSuggestChips,
 } from "./addressSuggest";
-import { encodePlaceAddress, looksLikePlaceId, shouldSuggestStreets } from "@/lib/places/address";
+import {
+  encodePlaceAddress,
+  looksLikePlaceId,
+  shouldSuggestStreets,
+  type PlaceSuggestion,
+} from "@/lib/places/address";
 import {
   type LookupWait,
   withWaitLine,
@@ -404,7 +409,9 @@ function FoxThread({
   onAction: (action: FoxAction) => void;
   onEdit?: (message: FoxMessage) => void;
 }) {
-  const thread = dropResolvedAddressConfirmChips(messages, draft);
+  const thread = dropStreetSuggestChips(
+    dropAbandonedAddressConfirm(dropResolvedAddressConfirmChips(messages, draft), draft),
+  );
   const currentFox = thread.reduce((index, message, i) => (message.role === "fox" ? i : index), -1);
 
   return (
@@ -581,9 +588,11 @@ export function AlwaysOnFox({
   const inputRef = useRef<HTMLInputElement>(null);
   const caretRef = useRef<number | null>(null);
   const [lookupWait, setLookupWait] = useState<LookupWait | null>(null);
+  const [streetSuggestions, setStreetSuggestions] = useState<PlaceSuggestion[]>([]);
   const placesWaitGen = useRef(0);
   const placesSuggestFrozen = useRef(false);
   const fieldId = useId();
+  const suggestId = useId();
   const greetKey = `${pathname}${search}`;
   const useHomeStage = Boolean(homeStage);
 
@@ -598,12 +607,19 @@ export function AlwaysOnFox({
     const live = getFoxDraft();
     const stored = getFoxMessages();
     if (fileExists(live) && stored.length > resolved.length) {
-      return dropResolvedAddressConfirmChips(
-        ensureIncomeConfirmChips(inertSupersededIncomeConfirms(stored), live),
-        live,
+      return dropStreetSuggestChips(
+        dropAbandonedAddressConfirm(
+          dropResolvedAddressConfirmChips(
+            ensureIncomeConfirmChips(inertSupersededIncomeConfirms(stored), live),
+            live,
+          ),
+          live,
+        ),
       );
     }
-    const held = dropResolvedAddressConfirmChips(resolved, live);
+    const held = dropStreetSuggestChips(
+      dropAbandonedAddressConfirm(dropResolvedAddressConfirmChips(resolved, live), live),
+    );
     setFoxMessages(held);
     return held;
   };
@@ -1005,21 +1021,41 @@ export function AlwaysOnFox({
   }, [isStart, rateflowKey, ready]);
 
   useEffect(() => {
-    if (!ready || !isStart) return;
-    if (placesSuggestFrozen.current) return;
-    if (workspacePrompt(draft) !== "property-address") return;
-    if (draft.pendingProposal || draft.pendingAddress) return;
+    if (!ready || !isStart) {
+      setStreetSuggestions([]);
+      return;
+    }
+    if (placesSuggestFrozen.current) {
+      setStreetSuggestions([]);
+      return;
+    }
+    if (workspacePrompt(draft) !== "property-address" || draft.pendingProposal || draft.pendingAddress) {
+      setStreetSuggestions([]);
+      return;
+    }
     const q = input.trim();
-    if (!shouldSuggestStreets(q)) return;
+    if (!shouldSuggestStreets(q)) {
+      setStreetSuggestions([]);
+      return;
+    }
     let cancelled = false;
     const timer = window.setTimeout(() => {
       void requestAddressSuggestions(q).then((rows) => {
-        if (cancelled || !rows.length) return;
-        if (placesSuggestFrozen.current) return;
+        if (cancelled) return;
+        if (placesSuggestFrozen.current) {
+          setStreetSuggestions([]);
+          return;
+        }
         const live = getFoxDraft();
-        if (workspacePrompt(live) !== "property-address") return;
-        if (live.pendingProposal || live.pendingAddress) return;
-        commitMessages((prev) => withStreetSuggestChips(prev, rows));
+        if (workspacePrompt(live) !== "property-address") {
+          setStreetSuggestions([]);
+          return;
+        }
+        if (live.pendingProposal || live.pendingAddress) {
+          setStreetSuggestions([]);
+          return;
+        }
+        setStreetSuggestions(rows);
       });
     }, 220);
     return () => {
@@ -1108,7 +1144,8 @@ export function AlwaysOnFox({
     startAsk === "term" ||
     startAsk === "time-on-job" ||
     startAsk === "years-in-business";
-  const needsTyping = moneyAsk || numberAsk || askingAmountPurpose;
+  const needsTyping =
+    moneyAsk || numberAsk || askingAmountPurpose || startAsk === "property-address";
 
   const focusComposer = (force = false) => {
     const node = inputRef.current;
@@ -1131,6 +1168,7 @@ export function AlwaysOnFox({
 
   useEffect(() => {
     setInput("");
+    setStreetSuggestions([]);
   }, [startAsk]);
 
   if (!stage && !isStart) return null;
@@ -1201,11 +1239,14 @@ export function AlwaysOnFox({
     if (action.capture?.field === "skip-property-address") {
       placesWaitGen.current += 1;
       placesSuggestFrozen.current = false;
+      setStreetSuggestions([]);
       setLookupWait(null);
       commitMessages((prev) => withoutWaitLines(prev));
     }
     if (action.capture?.field === "change-proposal") {
       placesSuggestFrozen.current = false;
+      setStreetSuggestions([]);
+      setInput("");
     }
     if (action.capture?.field === "couponChoice" && action.capture.value === "skip") {
       setLookupWait((current) => (current === "rateflow" ? null : current));
@@ -1321,12 +1362,13 @@ export function AlwaysOnFox({
       const gen = ++placesWaitGen.current;
       placesSuggestFrozen.current = true;
       skipPromptSync.current = true;
+      setStreetSuggestions([]);
       setInput("");
       if (lookupWait === "places") {
         setLookupWait(null);
-        commitMessages((prev) => withoutWaitLines(withoutStreetSuggestChips(prev)));
+        commitMessages((prev) => withoutWaitLines(dropStreetSuggestChips(prev)));
       } else {
-        commitMessages((prev) => withoutStreetSuggestChips(prev));
+        commitMessages((prev) => dropStreetSuggestChips(prev));
       }
       void (async () => {
         const place = looksLikePlaceId(placeCapture.value)
@@ -1401,8 +1443,20 @@ export function AlwaysOnFox({
         edit,
         capture.field === "correct" ? undefined : editLineFromCapture(capture),
       );
+      if (capture.field === "change-proposal" && addressPending) {
+        window.requestAnimationFrame(() => focusComposer(true));
+      }
       continueHomeToDesk();
     }
+  };
+
+  const pickStreetSuggestion = (place: PlaceSuggestion) => {
+    runAction({
+      id: `place-${place.id}`,
+      label: place.line,
+      event: "bubble",
+      capture: { field: "propose-place-address", value: place.id },
+    });
   };
 
   const onSubmit = (event: FormEvent) => {
@@ -1493,6 +1547,7 @@ export function AlwaysOnFox({
         reply.capture.field === "skip-property-address"
       ) {
         placesSuggestFrozen.current = false;
+        setStreetSuggestions([]);
       }
     }
     if (reply.capture?.field === "open-docs" && !draft.sampleAccepted) {
@@ -1521,6 +1576,9 @@ export function AlwaysOnFox({
         : undefined,
       workspaceSurface ? editLineFromCapture(reply.capture) : undefined,
     );
+    if (reply.capture?.field === "change-proposal") {
+      window.requestAnimationFrame(() => focusComposer(true));
+    }
     continueHomeToDesk();
   };
 
@@ -1550,7 +1608,10 @@ export function AlwaysOnFox({
   const onComposerBlur = (event: FocusEvent<HTMLInputElement>) => {
     if (!needsTyping) return;
     const next = event.relatedTarget;
-    if (next instanceof HTMLElement && next.closest("button, a, .fox-chip, .fox-bar__send")) {
+    if (
+      next instanceof HTMLElement &&
+      next.closest("button, a, .fox-chip, .fox-bar__send, .fox-bar__suggest")
+    ) {
       return;
     }
     window.setTimeout(() => {
@@ -1563,51 +1624,73 @@ export function AlwaysOnFox({
   };
 
   const desk = (
-    <form
-      className={isStart ? "fox-bar__desk fox-bar__desk--plain" : "fox-bar__desk"}
-      onSubmit={onSubmit}
-    >
-      <span className={lookupWait ? "fox-bar__mark is-waiting" : "fox-bar__mark"}>
-        <AdvisorMark size={20} />
-      </span>
-      <label className="visually-hidden" htmlFor={fieldId}>
-        Message Fox
-      </label>
-      <input
-        key={composerMode}
-        ref={inputRef}
-        id={fieldId}
-        className="fox-bar__input"
-        type="text"
-        value={input}
-        onChange={onComposerChange}
-        onFocus={() => {
-          setOpen(true);
-          window.dispatchEvent(new Event(FOX_KEYBOARD_EVENT));
-        }}
-        onBlur={onComposerBlur}
-        placeholder=""
-        inputMode={composerMode}
-        autoFocus={needsTyping}
-        autoComplete="off"
-      />
-      <button
-        type="submit"
-        className="fox-bar__send"
-        disabled={!input.trim()}
-        aria-label="Send"
+    <div className="fox-bar__compose">
+      {streetSuggestions.length > 0 ? (
+        <ul id={suggestId} className="fox-bar__suggest" role="listbox">
+          {streetSuggestions.map((item) => (
+            <li key={item.id} role="presentation">
+              <button
+                type="button"
+                role="option"
+                className="fox-bar__suggest-row"
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => pickStreetSuggestion(item)}
+              >
+                {item.line}
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      <form
+        className={isStart ? "fox-bar__desk fox-bar__desk--plain" : "fox-bar__desk"}
+        onSubmit={onSubmit}
       >
-        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-          <path
-            d="M3 8h9M8.5 3.5 13 8l-4.5 4.5"
-            stroke="currentColor"
-            strokeWidth="1.4"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        </svg>
-      </button>
-    </form>
+        <span className={lookupWait ? "fox-bar__mark is-waiting" : "fox-bar__mark"}>
+          <AdvisorMark size={20} />
+        </span>
+        <label className="visually-hidden" htmlFor={fieldId}>
+          Message Fox
+        </label>
+        <input
+          key={composerMode}
+          ref={inputRef}
+          id={fieldId}
+          className="fox-bar__input"
+          type="text"
+          value={input}
+          onChange={onComposerChange}
+          onFocus={() => {
+            setOpen(true);
+            window.dispatchEvent(new Event(FOX_KEYBOARD_EVENT));
+          }}
+          onBlur={onComposerBlur}
+          placeholder=""
+          inputMode={composerMode}
+          autoFocus={needsTyping}
+          autoComplete="off"
+          aria-autocomplete="list"
+          aria-expanded={streetSuggestions.length > 0}
+          aria-controls={streetSuggestions.length > 0 ? suggestId : undefined}
+        />
+        <button
+          type="submit"
+          className="fox-bar__send"
+          disabled={!input.trim()}
+          aria-label="Send"
+        >
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+            <path
+              d="M3 8h9M8.5 3.5 13 8l-4.5 4.5"
+              stroke="currentColor"
+              strokeWidth="1.4"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+        </button>
+      </form>
+    </div>
   );
 
   const workspace = isHome || !(open || isStart) ? null : (
@@ -1641,6 +1724,7 @@ export function AlwaysOnFox({
               const fresh = startOverWorkspace(path);
               skipPromptSync.current = true;
               placesSuggestFrozen.current = false;
+              setStreetSuggestions([]);
               setInput("");
               const greet = [foxAskMessage(workspaceGreeting(fresh))];
               setFoxMessages(greet);
