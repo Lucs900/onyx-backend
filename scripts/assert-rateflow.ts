@@ -659,6 +659,7 @@ const fox = readFileSync(join(root, "components/fox/AlwaysOnFox.tsx"), "utf8");
 const client = readFileSync(join(root, "components/fox/rateflowClient.ts"), "utf8");
 assert.ok(fox.includes("requestRateflowIfNeeded"));
 assert.ok(fox.includes("messagesWithLiveQuoteSpeech"));
+assert.ok(fox.includes("messagesWithRateOrReadySpeech"));
 assert.ok(client.includes("/api/rateflow-quote"));
 assert.ok(!fox.includes("/api/heloc-quote"));
 assert.ok(!client.includes("/api/heloc-quote"));

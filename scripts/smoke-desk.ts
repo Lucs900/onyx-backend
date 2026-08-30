@@ -411,6 +411,9 @@ import {
   liveQuoteThreadLines,
   loanLooksAboveCeiling,
   messagesWithLiveQuoteSpeech,
+  messagesWithPricingWhenReady,
+  messagesWithRateOrReadySpeech,
+  threadHasRateOrReadySpeech,
   migrateRestoredFoxMessages,
   inertSupersededIncomeConfirms,
   namedOutOfState,
@@ -2925,6 +2928,113 @@ assert.equal(workspaceReply("Skip", founderRefiLive)?.text, founderRefiIncomeAsk
 assert.notEqual(workspacePrompt(applyCouponChoice(founderRefiLive, "this")), "review");
 assert.notEqual(workspacePrompt(applyCouponChoice(founderRefiLive, "skip")), "documents");
 assert.doesNotMatch(nextFoxAsk(founderRefiAddress).text, /purchase price|home you are buying/);
+
+const harborMarinaLine = "801 Marina Blvd, San Francisco, CA 94105";
+const harborMarinaReady = draft({
+  path: "acr",
+  productIntent: "refinance",
+  occupancyAsked: true,
+  occupancyChoice: { ...emptyDraft().occupancyChoice, value: "primary" },
+  timelineAsked: true,
+  timelineChoice: { ...emptyDraft().timelineChoice, value: "ready-now" },
+  valueAsked: true,
+  propertyValueAmount: 1000000,
+  amountAsked: true,
+  loanAmountValue: 500000,
+  propertyType: "sfr",
+  propertyTypeAsked: true,
+  creditAsked: true,
+  creditBand: "760+",
+});
+assert.equal(workspacePrompt(harborMarinaReady), "property-address");
+const harborMarinaProposed = proposeAddressAndAdoptZip(harborMarinaReady, harborMarinaLine);
+assert.equal(rateflowClientBodyFromDraft(harborMarinaProposed), null);
+assert.equal(workspaceReply("Use this", harborMarinaProposed)?.text, addressOnFileCopy());
+const harborMarinaFile = writeAddressAndAdoptZip(harborMarinaReady, harborMarinaLine);
+assert.equal(harborMarinaFile.loanAmountValue, 500000);
+assert.equal(harborMarinaFile.propertyValueAmount, 1000000);
+assert.equal(rateflowClientBodyFromDraft(harborMarinaFile)?.loan_purpose, "refinance");
+assert.equal(rateflowClientBodyFromDraft(harborMarinaFile)?.credit_score, 760);
+assert.equal(rateflowClientBodyFromDraft(harborMarinaFile)?.zipcode, "94105");
+assert.equal(rateflowClientBodyFromDraft(harborMarinaFile)?.list_price, 1000000);
+assert.equal(rateflowClientBodyFromDraft(harborMarinaFile)?.loan_amount, 500000);
+const harborMarinaConfirmThread = [
+  {
+    id: "marina-addr-confirm",
+    role: "fox" as const,
+    text: placeAddressConfirmCopy(harborMarinaLine),
+    actions: [{ id: "use", label: "Use this", event: "bubble" as const, capture: { field: "accept-proposal" } }],
+  },
+];
+assert.equal(
+  threadHasRateOrReadySpeech(
+    messagesWithRateOrReadySpeech(harborMarinaConfirmThread, harborMarinaProposed),
+  ),
+  false,
+  "Use this must finish before the live line",
+);
+const harborMarinaOnFile = dropResolvedAddressConfirmChips(harborMarinaConfirmThread, harborMarinaFile);
+assert.equal(harborMarinaOnFile[0]?.text, addressOnFileCopy());
+assert.equal(threadHasRateOrReadySpeech(harborMarinaOnFile), false, "On the file. alone is the hang");
+const harborMarinaKey = rateflowScenarioKey(rateflowClientBodyFromDraft(harborMarinaFile)!);
+const harborMarinaLive = draft({
+  ...harborMarinaFile,
+  liveQuoteKey: harborMarinaKey,
+  liveQuoteStatus: "ready" as const,
+  liveQuote: {
+    key: harborMarinaKey,
+    rate: 6.75,
+    asOf: "2026-08-28T21:10:00.000Z",
+    pts: -1.067,
+  },
+  liveQuoteRows: founderRefiCouponRows,
+});
+assert.equal(
+  pickLeadRow(
+    founderRefiCouponRows.map((row) => ({ ...row, loanTerm: 30, bbLoanType: "conventional" })),
+    "refinance",
+  )?.rate,
+  6.75,
+);
+const harborMarinaSpoken = messagesWithRateOrReadySpeech(harborMarinaOnFile, harborMarinaLive);
+assert.ok(harborMarinaOnFile.some((item) => item.text === addressOnFileCopy()));
+assert.ok(harborMarinaSpoken.some((item) => item.text === addressOnFileCopy()), "On the file. ack stays");
+assert.ok(threadHasRateOrReadySpeech(harborMarinaSpoken));
+const harborMarinaQuote = harborMarinaSpoken.find((item) => item.id.startsWith("live-quote:"));
+assert.ok(harborMarinaQuote);
+assert.match(harborMarinaQuote?.text ?? "", /6\.750% · Live as of .+ PT · not a lock/);
+assert.equal(harborMarinaQuote?.followUp, "-1.067 pts");
+assert.doesNotMatch(harborMarinaQuote?.text ?? "", /6\.490/);
+assert.deepEqual(
+  (harborMarinaQuote?.actions ?? []).map((item) => item.label),
+  ["This one", "Lower payment", "Skip"],
+);
+assert.notEqual(harborMarinaSpoken[harborMarinaSpoken.length - 1]?.text, addressOnFileCopy());
+const harborMarinaEmpty = messagesWithRateOrReadySpeech(harborMarinaOnFile, {
+  ...harborMarinaFile,
+  liveQuoteStatus: "unavailable" as const,
+});
+assert.equal(harborMarinaEmpty[harborMarinaEmpty.length - 1]?.text, PRICING_WHEN_READY);
+assert.ok(harborMarinaEmpty.some((item) => item.text === addressOnFileCopy()));
+assert.ok(threadHasRateOrReadySpeech(harborMarinaEmpty));
+assert.notEqual(harborMarinaEmpty[harborMarinaEmpty.length - 1]?.text, addressOnFileCopy());
+const harborMarinaError = messagesWithPricingWhenReady(harborMarinaOnFile, harborMarinaFile);
+assert.equal(harborMarinaError[harborMarinaError.length - 1]?.text, PRICING_WHEN_READY);
+assert.equal(
+  messagesWithRateOrReadySpeech(harborMarinaEmpty, {
+    ...harborMarinaFile,
+    liveQuoteStatus: "unavailable" as const,
+  }).filter((item) => item.text === PRICING_WHEN_READY).length,
+  1,
+);
+const harborMarinaWait = withWaitLine(harborMarinaOnFile, "rateflow");
+assert.equal(harborMarinaWait[harborMarinaWait.length - 1]?.text, RATEFLOW_WAIT_LINE);
+assert.equal(
+  messagesWithPricingWhenReady(harborMarinaWait, harborMarinaFile)[harborMarinaWait.length - 1]?.text,
+  RATEFLOW_WAIT_LINE,
+);
+assert.equal(threadHasRateOrReadySpeech(harborMarinaWait), false);
+
 const founderSkip = workspaceReply("Skip", founder850);
 assert.equal(founderSkip?.capture?.field, "skip-property-type");
 assert.match(founderSkip?.text ?? "", /estimated FICO/i);
@@ -11745,7 +11855,10 @@ const alwaysOn = readFileSync(join(root, "components/fox/AlwaysOnFox.tsx"), "utf
 const rateflowClient = readFileSync(join(root, "components/fox/rateflowClient.ts"), "utf8");
 assert.ok(alwaysOn.includes("requestRateflowIfNeeded"));
 assert.ok(alwaysOn.includes("messagesWithLiveQuoteSpeech"));
+assert.ok(alwaysOn.includes("messagesWithRateOrReadySpeech"));
+assert.ok(alwaysOn.includes("threadHasRateOrReadySpeech"));
 assert.ok(alwaysOn.includes("shouldDeferNextAskForLiveCoupon"));
+assert.ok(alwaysOn.includes("messagesWithRateOrReadySpeech(withoutWaitLines"));
 assert.ok(!alwaysOn.includes("BANKINGBRIDGE_API_KEY"));
 assert.ok(rateflowClient.includes("/api/rateflow-quote"));
 assert.ok(!alwaysOn.includes("/api/heloc-quote"));

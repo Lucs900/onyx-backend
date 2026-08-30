@@ -100,6 +100,8 @@ import {
   inertSupersededIncomeConfirms,
   lastFoxTurn,
   messagesWithLiveQuoteSpeech,
+  messagesWithRateOrReadySpeech,
+  threadHasRateOrReadySpeech,
   withoutLiveQuoteSpeech,
   docReactionAsk,
   nextDocInvite,
@@ -1014,7 +1016,14 @@ export function AlwaysOnFox({
   useEffect(() => {
     if (!ready || !isStart || !rateflowKey) return;
     const already = getFoxDraft();
-    if (already.liveQuote?.key === rateflowKey && already.liveQuoteStatus === "ready") return;
+    if (already.liveQuote?.key === rateflowKey && already.liveQuoteStatus === "ready") {
+      commitMessages((prev) => {
+        if (threadHasRateOrReadySpeech(prev)) return prev;
+        skipPromptSync.current = true;
+        return messagesWithRateOrReadySpeech(withoutWaitLines(prev), already);
+      });
+      return;
+    }
     let cancelled = false;
     skipPromptSync.current = true;
     setLookupWait("rateflow");
@@ -1023,27 +1032,19 @@ export function AlwaysOnFox({
       const result = await requestRateflowIfNeeded(getFoxDraft());
       if (cancelled) return;
       setLookupWait(null);
-      const key = searchedKeyFor(getFoxDraft());
-      if (!key) {
-        commitMessages((prev) => withoutWaitLines(prev));
-        return;
-      }
-      if (result == null || result === "unavailable") {
+      const liveNow = getFoxDraft();
+      const key = searchedKeyFor(liveNow) || rateflowKey;
+      if (result && result !== "unavailable") {
+        const { rows, ...quote } = result;
+        setLiveQuoteResult(key, quote, rows);
+      } else if (key) {
         setLiveQuoteResult(key, null);
-        commitMessages((prev) => withoutWaitLines(prev));
-        return;
       }
-      const { rows, ...quote } = result;
-      setLiveQuoteResult(key, quote, rows);
       const live = getFoxDraft();
-      if (live.liveQuote && live.liveQuoteStatus === "ready") {
-        skipPromptSync.current = true;
-        commitMessages((prev) =>
-          messagesWithLiveQuoteSpeech(withoutWaitLines(prev), live, live.liveQuote!),
-        );
-      } else {
-        commitMessages((prev) => withoutWaitLines(prev));
-      }
+      skipPromptSync.current = Boolean(live.liveQuote && live.liveQuoteStatus === "ready");
+      commitMessages((prev) =>
+        messagesWithRateOrReadySpeech(withoutWaitLines(prev), live),
+      );
     })();
     return () => {
       cancelled = true;
@@ -1460,6 +1461,21 @@ export function AlwaysOnFox({
         return;
       }
       if (capture.field === "accept-proposal" && addressPending && fileAddressLine(live)) {
+        const waitingForLive =
+          Boolean(searchedKeyFor(live)) &&
+          live.liveQuoteStatus !== "unavailable" &&
+          !(live.liveQuoteStatus === "ready" && live.liveQuote);
+        if (!waitingForLive) {
+          commitMessagesNow((prev) => {
+            const held = dropResolvedAddressConfirmChips(prev, live);
+            const next: FoxMessage[] = [
+              ...held,
+              { id: newId(), role: "client", text: action.label },
+            ];
+            return messagesWithRateOrReadySpeech(next, live);
+          });
+          return;
+        }
         appendReply(action.label, { text: "" });
         return;
       }

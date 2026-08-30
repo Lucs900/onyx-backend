@@ -2375,6 +2375,67 @@ export function messagesWithLiveQuoteSpeech(
   return withLiveCouponChips([...cleared, speech], draft);
 }
 
+export function isPricingWhenReadySpeech(message: FoxMessage) {
+  if (message.role !== "fox") return false;
+  return message.id.startsWith("pricing-ready:") || message.text === PRICING_WHEN_READY;
+}
+
+/** Live coupon bubble or the honest ready fallback — not the File-write ack. */
+export function threadHasRateOrReadySpeech(messages: FoxMessage[]) {
+  return messages.some(
+    (item) =>
+      item.role === "fox" &&
+      (item.id.startsWith("live-quote:") ||
+        isLiveRateSpeech(item.text) ||
+        isPricingWhenReadySpeech(item)),
+  );
+}
+
+export function withoutPricingWhenReadySpeech(messages: FoxMessage[]): FoxMessage[] {
+  return messages.filter((item) => !isPricingWhenReadySpeech(item));
+}
+
+/** Rateflow empty / error after the address is on File. Never a dead On the file. */
+export function messagesWithPricingWhenReady(
+  messages: FoxMessage[],
+  draft: FoxIntakeDraft,
+): FoxMessage[] {
+  if (addressConfirmPending(draft) || !addressLineReadyForQuote(draft) || !fileAddressLine(draft)) {
+    return messages;
+  }
+  if (messages.some((item) => item.role === "fox" && item.id.startsWith("wait:"))) {
+    return messages;
+  }
+  if (threadHasRateOrReadySpeech(messages)) return messages;
+  return [
+    ...messages,
+    {
+      id: "pricing-ready:0",
+      role: "fox",
+      text: PRICING_WHEN_READY,
+    },
+  ];
+}
+
+/**
+ * After Use this writes the subject address, always speak a live rate line
+ * or exactly `Pricing when the file is ready.`
+ */
+export function messagesWithRateOrReadySpeech(
+  messages: FoxMessage[],
+  draft: FoxIntakeDraft,
+): FoxMessage[] {
+  const quote = draft.liveQuote;
+  if (liveQuoteReady(draft) && quote?.rate && quote.asOf) {
+    return messagesWithLiveQuoteSpeech(
+      withoutPricingWhenReadySpeech(messages),
+      draft,
+      quote,
+    );
+  }
+  return messagesWithPricingWhenReady(messages, draft);
+}
+
 /** Skip writes the honest fallback on the type tap. House/Condo/2–4 wait for FICO, then live or fallback after a real search. */
 export function previewRateFact(draft: FoxIntakeDraft): PreviewFact | null {
   const intent = draft.productIntent ?? null;
