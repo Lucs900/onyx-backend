@@ -122,6 +122,8 @@ function incomeConfirmStillOpen(draft: FoxIntakeDraft) {
 export function employmentGapNeeded(draft: FoxIntakeDraft) {
   if (draft.motion === "in_queue" || draft.motion === "escalated") return false;
   if (incomeConfirmStillOpen(draft)) return false;
+  /** Extract-first Use this writes Box 5 / File. Looks right is next. History waits. */
+  if (!draft.sampleAccepted && Boolean(trimLabel(draft.facts?.w2_box5?.value))) return false;
   if (!qualifyingIncomeWritten(draft)) return false;
   if (draft.formerEmploymentAsked || draft.formerHistoryAsked) return false;
   if (draft.correcting === "former-history") return true;
