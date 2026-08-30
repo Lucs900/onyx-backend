@@ -1690,7 +1690,10 @@ assert.doesNotMatch(
   /Use this/,
 );
 assert.equal(addressOnFileCopy(marinaPendingLine), "On the file.");
-const foxChipTap = readFileSync(join(root, "components/fox/AlwaysOnFox.tsx"), "utf8");
+const foxChipTap = readFileSync(
+  join(dirname(fileURLToPath(import.meta.url)), "..", "components/fox/AlwaysOnFox.tsx"),
+  "utf8",
+);
 const foxChipTapStart = foxChipTap.indexOf('placeCapture?.field === "propose-place-address"');
 const foxChipTapEnd = foxChipTap.indexOf("if (action.capture || productCapture)", foxChipTapStart);
 assert.ok(foxChipTapStart >= 0 && foxChipTapEnd > foxChipTapStart);
