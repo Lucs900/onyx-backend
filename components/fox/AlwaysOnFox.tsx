@@ -106,6 +106,7 @@ import {
   incomeAskOpen,
   nextFoxAsk,
   unreadDocActions,
+  retainWageDocsLine,
   holdDocsAskFox,
   productIntentFromAction,
   shouldDeferStillUsefulAsk,
@@ -291,6 +292,27 @@ function sameFoxAsk(
   const leftActions = (last.actions ?? []).map(actionKey).join("|");
   const rightActions = (ask.actions ?? []).map(actionKey).join("|");
   return leftActions === rightActions;
+}
+
+function applyFoxAsk(
+  messages: FoxMessage[],
+  ask: {
+    text: string;
+    followUp?: string;
+    facts?: FoxMessage["facts"];
+    actions?: FoxAction[];
+  },
+): FoxMessage[] {
+  const last = lastFoxTurn(messages);
+  if (last && retainWageDocsLine(last.text, ask.text)) {
+    return messages.map((message) =>
+      message.id === last.id
+        ? { ...message, followUp: ask.followUp, facts: ask.facts, actions: ask.actions }
+        : message,
+    );
+  }
+  if (last && sameFoxAsk(last, ask)) return messages;
+  return [...messages, foxAskMessage(ask)];
 }
 
 function hasReviewAsk(messages: FoxMessage[]) {
@@ -782,14 +804,11 @@ export function AlwaysOnFox({
         ) {
           const live = getFoxDraft();
           const ask = workspacePromptCopy(workspacePrompt(live), live);
-          next.push(
-            foxAskMessage({
-              text: ask.text,
-              followUp: ask.followUp,
-              actions: unreadDocActions(),
-            }),
-          );
-          return next;
+          return applyFoxAsk(next, {
+            text: ask.text,
+            followUp: ask.followUp,
+            actions: unreadDocActions(),
+          });
         }
         if (detail.conflict) {
           next.push(
@@ -814,25 +833,20 @@ export function AlwaysOnFox({
                 actions: conflictActions(live.pendingConflict),
               }
             : reaction ?? workspacePromptCopy("confirm-proposal", live);
-          const lastFox = lastFoxTurn(next);
-          if (!lastFox || !sameFoxAsk(lastFox, ask)) {
-            next.push(foxAskMessage(ask));
-          }
+          const painted = applyFoxAsk(next, ask);
           if (
             detail.refreshStillUseful &&
             live.sampleAccepted &&
             !shouldDeferStillUsefulAsk(live)
           ) {
-            return withUpdatedStillUsefulAsk(next, getFoxDraft());
+            return withUpdatedStillUsefulAsk(painted, getFoxDraft());
           }
+          return painted;
         } else if (getFoxDraft().workspaceFlow && !getFoxDraft().sampleAccepted) {
           const live = getFoxDraft();
           const reaction = docReactionAsk(live, detail.extractClass);
           const ask = reaction ?? workspacePromptCopy(workspacePrompt(live), live);
-          const lastFox = lastFoxTurn(next);
-          if (!lastFox || !sameFoxAsk(lastFox, ask)) {
-            next.push(foxAskMessage(ask));
-          }
+          return applyFoxAsk(next, ask);
         } else if (detail.refreshStillUseful) {
           return withUpdatedStillUsefulAsk(next, getFoxDraft());
         } else if (detail.missing?.length) {
@@ -971,7 +985,7 @@ export function AlwaysOnFox({
       const held = addressConfirmPending(live)
         ? withoutLiveQuoteSpeech(prev)
         : dropResolvedAddressConfirmChips(prev, live);
-      return [...held, foxAskMessage(ask)];
+      return applyFoxAsk(held, ask);
     });
   }, [draft.updatedAt, isStart, ready, stage]);
 

@@ -102,6 +102,8 @@ import {
   acceptWageExtract,
   writeWagePayFrequency,
   writeTypedStubMonthly,
+  writeWageBox5,
+  bothMonthlyDisplay,
   laterYearIncomeLower,
   monthlyFromAnnual,
   monthlyQualifyingFromExtract,
@@ -450,6 +452,8 @@ import {
   workspaceReply,
   unreadDocActions,
   wageDocsAsk,
+  retainWageDocsLine,
+  bothMonthlyReasonAsk,
   persistGuidelineNote,
   docReactionAsk,
   nextFoxAsk,
@@ -2293,7 +2297,7 @@ assert.equal(founderPurchaseW2?.text, WAGE_DOCS_ASK);
 assert.doesNotMatch(founderPurchaseW2?.text ?? "", /purchase contract|bank statement|grocery|Box 1|Box 12|Box 5/i);
 assert.doesNotMatch(founderPurchaseW2?.text ?? "", /Next is your (most recent )?W-2|Upload this|What is Box 5/i);
 assert.doesNotMatch(founderPurchaseW2?.text ?? "", /Other REO|citizenship|What name should I put/i);
-assert.deepEqual((founderPurchaseW2?.actions ?? []).map((item) => item.label), ["Skip"]);
+assert.deepEqual((founderPurchaseW2?.actions ?? []).map((item) => item.label), ["Upload", "Skip"]);
 const founderPurchaseW2Draft = {
   ...founderPurchaseAfterThis,
   incomeAsked: true,
@@ -2403,6 +2407,12 @@ assert.equal(nextDocInvite(founderWageSkipped), null);
 const walkABase = { ...founderPurchaseW2Draft, looksRightHold: false };
 assert.equal(workspacePrompt(walkABase), "wage-docs");
 assert.equal(wageDocsAsk(walkABase).text, WAGE_DOCS_ASK);
+assert.deepEqual((wageDocsAsk(walkABase).actions ?? []).map((item) => item.label), ["Upload", "Skip"]);
+assert.equal(retainWageDocsLine(WAGE_DOCS_ASK, WAGE_DOCS_ASK), true);
+assert.equal(retainWageDocsLine(WAGE_DOCS_ASK, "What is Box 5 on that W-2? Medicare wages and tips. That is last year’s gross."), false);
+const walkAUpload = workspaceReply("Upload", walkABase);
+assert.equal(walkAUpload?.capture?.field, "open-docs");
+assert.deepEqual((walkAUpload?.actions ?? []).map((item) => item.label), ["Upload", "Skip"]);
 const walkAAfterW2 = applyExtractedFields(walkABase, {
   extractClass: "w2",
   confidence: 0.92,
@@ -2418,7 +2428,7 @@ assert.ok(!previewFacts(walkAAfterW2.draft).some((fact) => fact.id === "employer
 assert.equal(workspacePrompt({ ...walkAAfterW2.draft, looksRightHold: false }), "wage-docs");
 assert.deepEqual(
   (wageDocsAsk(walkAAfterW2.draft).actions ?? []).map((item) => item.label),
-  ["Skip"],
+  ["Upload", "Skip"],
 );
 const walkAAfterStub = applyExtractedFields(walkAAfterW2.draft, {
   extractClass: "paystub",
@@ -2463,7 +2473,7 @@ assert.equal(harborBox1Only.draft.facts?.qualifying_income, undefined);
 assert.equal(workspacePrompt({ ...harborBox1Only.draft, looksRightHold: false }), "wage-docs");
 assert.deepEqual(
   (wageDocsAsk(harborBox1Only.draft).actions ?? []).map((item) => item.label),
-  ["Skip"],
+  ["Upload", "Skip"],
 );
 const harborBox1Stub = applyExtractedFields(harborBox1Only.draft, {
   extractClass: "paystub",
@@ -2547,7 +2557,7 @@ const harborPdfW2 = applyExtractedFields(
 assert.equal(harborPdfW2.draft.pendingProposal, null);
 assert.deepEqual(
   (wageDocsAsk(harborPdfW2.draft).actions ?? []).map((item) => item.label),
-  ["Skip"],
+  ["Upload", "Skip"],
 );
 const harborPdfBoth = applyExtractedFields(
   {
@@ -2680,6 +2690,32 @@ assert.equal(walkBWritten.facts?.[PAYSTUB_AMOUNT_FIELD]?.value, "7000");
 assert.equal(walkBWritten.facts?.paystub_monthly?.value, "15167");
 assert.equal(workspacePrompt(walkBWritten), "review");
 assert.ok(canLooksRight(walkBWritten));
+const typedBox5Draft = writeWageBox5(founderTypedW2Draft, 84000);
+assert.equal(typedBox5Draft.facts?.w2_box5?.value, "84000");
+assert.equal(typedBox5Draft.facts?.wages, undefined);
+const typedBox5Freq = writeWagePayFrequency(typedBox5Draft, "biweekly");
+const typedBox5Stub = writeTypedStubMonthly(typedBox5Freq, 7000);
+assert.equal(typedBox5Stub.facts?.w2_box5?.value, "84000");
+assert.equal(typedBox5Stub.facts?.w2_monthly?.value, "7000");
+assert.equal(typedBox5Stub.facts?.wages, undefined);
+assert.equal(workspacePrompt(typedBox5Stub), "both-monthly-reason");
+assert.match(bothMonthlyReasonAsk(typedBox5Stub).text, /W-2 Box 5 is \$7,000/);
+assert.doesNotMatch(bothMonthlyReasonAsk(typedBox5Stub).text, /Box 1/);
+assert.match(bothMonthlyDisplay(typedBox5Stub) ?? "", /W-2 Box 5 \$7,000/);
+assert.doesNotMatch(bothMonthlyDisplay(typedBox5Stub) ?? "", /Box 1/);
+assert.ok(
+  previewFacts(typedBox5Stub).every(
+    (fact) => !/Box 1/.test(`${fact.value} ${fact.note ?? ""}`),
+  ),
+);
+const typedBox5Skip = applyBothMonthlyReasonAnswer(typedBox5Stub, "skip");
+assert.match(typedBox5Skip.facts?.income_caution?.value ?? "", /W-2 Box 5/);
+assert.doesNotMatch(typedBox5Skip.facts?.income_caution?.value ?? "", /Box 1/);
+assert.ok(
+  previewFacts(typedBox5Skip).every(
+    (fact) => !/Box 1/.test(`${fact.value} ${fact.note ?? ""}`),
+  ),
+);
 
 const founderIncomeEdit = beginFileEdit(founderPurchaseW2Draft, "income");
 assert.equal(workspacePrompt(founderIncomeEdit), "income");
@@ -2941,8 +2977,9 @@ assert.doesNotMatch(incomeReply?.text ?? "", /other real estate|Do you own any o
 assert.doesNotMatch(incomeReply?.text ?? "", /Looks right|I have what I need/i);
 assert.equal(incomeReply?.text, WAGE_DOCS_ASK);
 assert.doesNotMatch(incomeReply?.text ?? "", /purchase contract|Start with ID|other real estate|What is Box 5/i);
-assert.ok((incomeReply?.actions ?? []).some((item) => item.label === "Skip"));
+assert.deepEqual((incomeReply?.actions ?? []).map((item) => item.label), ["Upload", "Skip"]);
 assert.ok(!(incomeReply?.actions ?? []).some((item) => item.label === "Upload this"));
+assert.ok(!(incomeReply?.actions ?? []).some((item) => item.label === "Upload again"));
 assert.doesNotMatch(incomeReply?.text ?? "", /How long have you been at this job|other monthly debts/i);
 assert.doesNotMatch(incomeReply?.text ?? "", /auto loan|student loan|credit card|HOA|tradeline/i);
 assert.ok(!(incomeReply?.actions ?? []).some((item) => item.label === "Add another"));

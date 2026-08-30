@@ -870,7 +870,7 @@ export function bothMonthlyPair(draft: FoxIntakeDraft): { stub: number; w2: numb
 export function bothMonthlyDisplay(draft: FoxIntakeDraft): string | null {
   const pair = bothMonthlyPair(draft);
   if (!pair) return null;
-  return bothMonthlyMethodNote(pair.stub, pair.w2);
+  return bothMonthlyMethodNoteForDraft(draft, pair.stub, pair.w2);
 }
 
 function stubYtdGross(draft: FoxIntakeDraft): number | null {
@@ -951,6 +951,8 @@ export function applyBothMonthlyReasonAnswer(
     });
   }
   const proposed = proposeBothMonthlyIncome(pair.stub, pair.w2, reason);
+  const caution = box5WageCopy(draft, proposed.caution ?? bothMonthlyReasonNote(reason));
+  const methodNote = bothMonthlyMethodNoteForDraft(draft, pair.stub, pair.w2);
   const next = writeConfirmedIncomeFact(
     {
       ...draft,
@@ -961,15 +963,15 @@ export function applyBothMonthlyReasonAnswer(
       pendingConflict: null,
     },
     INCOME_CAUTION_FIELD,
-    proposed.caution ?? bothMonthlyReasonNote(reason),
+    caution,
     "suggested",
   );
   return withQualifyingIncomeProposal(next, {
     monthly: proposed.monthly,
     basis: "wage",
     method: proposed.method,
-    methodNote: proposed.methodNote,
-    caution: proposed.caution,
+    methodNote,
+    caution,
     stubMonthly: pair.stub,
     w2Monthly: pair.w2,
     parts: { wage: proposed.monthly },
@@ -1019,8 +1021,8 @@ export function applyRaiseYtdFarAnswer(draft: FoxIntakeDraft, raw: string): FoxI
       monthly: pair.w2,
       basis: "wage",
       method: "w2-annual",
-      methodNote: bothMonthlyMethodNote(pair.stub, pair.w2),
-      caution: next.facts?.[INCOME_CAUTION_FIELD]?.value || RAISE_WHEN_UNKNOWN_NOTE,
+      methodNote: bothMonthlyMethodNoteForDraft(draft, pair.stub, pair.w2),
+      caution: box5WageCopy(draft, next.facts?.[INCOME_CAUTION_FIELD]?.value || RAISE_WHEN_UNKNOWN_NOTE),
       stubMonthly: pair.stub,
       w2Monthly: pair.w2,
       parts: { wage: pair.w2 },
@@ -1304,6 +1306,34 @@ export const PAYSTUB_MONTHLY_ASK = "What's the amount on the latest stub?";
 export const PAYSTUB_AMOUNT_FIELD = "paystub_amount";
 export const WAGE_EXTRACT_FIELD = "wage_extract";
 export const W2_BOX5_MONTHLY_NOTE = "Box 5 monthly";
+export const BOTH_MONTHLY_SKIP_NOTE_BOX5 = "Using W-2 Box 5 until we know why they differ.";
+
+export function typedBox5OnFile(draft: FoxIntakeDraft): boolean {
+  return Boolean(parseExtractMoney(factValue(draft, "w2_box5")));
+}
+
+export function bothMonthlyMethodNoteForDraft(
+  draft: FoxIntakeDraft,
+  stubMonthly: number,
+  w2Monthly: number,
+): string {
+  const note = bothMonthlyMethodNote(stubMonthly, w2Monthly);
+  return typedBox5OnFile(draft) ? note.replace(/W-2 Box 1/g, "W-2 Box 5") : note;
+}
+
+export function bothMonthlyAskCopyForDraft(
+  draft: FoxIntakeDraft,
+  stubMonthly: number,
+  w2Monthly: number,
+): string {
+  const copy = bothMonthlyAskCopy(stubMonthly, w2Monthly);
+  return typedBox5OnFile(draft) ? copy.replace(/W-2 Box 1/g, "W-2 Box 5") : copy;
+}
+
+function box5WageCopy(draft: FoxIntakeDraft, text: string): string {
+  return typedBox5OnFile(draft) ? text.replace(/W-2 Box 1/g, "W-2 Box 5") : text;
+}
+
 export const STUB_MONTHLY_NOTE = "Latest stub monthly";
 
 export function speakPayFrequency(raw?: string | null): string {

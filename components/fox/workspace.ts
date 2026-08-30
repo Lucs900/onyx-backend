@@ -175,9 +175,10 @@ import {
   applyPayFrequencyAnswer,
   applyRaiseWhenAnswer,
   applyRaiseYtdFarAnswer,
-  bothMonthlyAskCopy,
+  bothMonthlyAskCopyForDraft,
   bothMonthlyDisplay,
   bothMonthlyPair,
+  typedBox5OnFile,
   decliningIncomeCaution,
   formatIncomeMoney,
   hasK1Ordinary,
@@ -1512,8 +1513,16 @@ export function wageDocsAsk(draft?: FoxIntakeDraft): { text: string; actions: Fo
     actions:
       draft && (unreadDocOpen(draft) || wageExtractFailedRead(draft))
         ? unreadDocActions()
-        : [{ id: "skip-wage-docs", label: "Skip", event: "bubble", capture: { field: "skip-wage-docs" } }],
+        : [
+            { id: "wage-docs-upload", label: "Upload", event: "open-docs", capture: { field: "open-docs" } },
+            { id: "skip-wage-docs", label: "Skip", event: "bubble", capture: { field: "skip-wage-docs" } },
+          ],
   };
+}
+
+/** Same drop sentence stays one Fox line. Chips may change on that line. */
+export function retainWageDocsLine(lastText?: string | null, nextText?: string | null): boolean {
+  return lastText === WAGE_DOCS_ASK && nextText === WAGE_DOCS_ASK;
 }
 
 export function wageBox5Ask(): { text: string; actions: FoxAction[] } {
@@ -1544,8 +1553,10 @@ export function bothMonthlyReasonAsk(draft: FoxIntakeDraft): {
   const pair = bothMonthlyPair(draft);
   return {
     text: pair
-      ? bothMonthlyAskCopy(pair.stub, pair.w2)
-      : "The paystub monthly and the W-2 Box 1 monthly differ. Why do they differ?",
+      ? bothMonthlyAskCopyForDraft(draft, pair.stub, pair.w2)
+      : typedBox5OnFile(draft)
+        ? "The paystub monthly and the W-2 Box 5 monthly differ. Why do they differ?"
+        : "The paystub monthly and the W-2 Box 1 monthly differ. Why do they differ?",
     actions: [
       { id: "both-raise", label: "Raise / new base", event: "bubble", capture: { field: "bothMonthlyReason", value: "raise" } },
       { id: "both-ot", label: "Overtime / bonus", event: "bubble", capture: { field: "bothMonthlyReason", value: "overtime-bonus" } },
@@ -5022,6 +5033,9 @@ export function workspaceReply(
 
   if (prompt === "wage-docs") {
     if (isFreeTextAtGate(q)) return answerThenRestore(q, draft);
+    if (/^upload$/i.test(lower)) {
+      return { ...wageDocsAsk(draft), capture: { field: "open-docs" } };
+    }
     if (/^(skip|later|not sure|idk|pass|not yet|type it)\b/i.test(lower)) {
       const nextDraft = skipWageDocs(draft);
       return { ...nextFoxAsk(nextDraft), capture: { field: "skip-wage-docs" } };
