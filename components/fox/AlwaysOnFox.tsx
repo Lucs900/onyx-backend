@@ -720,6 +720,41 @@ export function AlwaysOnFox({
     setMessages(dropResolvedAddressConfirmChips(stored, live));
   }, [isStart, draft.motion, draft.updatedAt]);
 
+  useEffect(() => {
+    if (!isStart) return;
+    const onDrag = (event: globalThis.DragEvent) => {
+      if (!transferHasFiles(event.dataTransfer)) return;
+      event.preventDefault();
+      if (event.dataTransfer) event.dataTransfer.dropEffect = "copy";
+    };
+    const onDrop = (event: globalThis.DragEvent) => {
+      const target = event.target;
+      if (target instanceof Element && target.closest("[data-composer-drop], .fox-bar__desk")) {
+        return;
+      }
+      const files = filesFromDataTransfer(event.dataTransfer);
+      if (!files.length) return;
+      event.preventDefault();
+      void ingestDroppedFiles(files);
+    };
+    const onPaste = (event: globalThis.ClipboardEvent) => {
+      const files = filesFromClipboard(event.clipboardData);
+      if (!files.length) return;
+      event.preventDefault();
+      void ingestDroppedFiles(files);
+    };
+    document.addEventListener("dragenter", onDrag);
+    document.addEventListener("dragover", onDrag);
+    document.addEventListener("drop", onDrop);
+    document.addEventListener("paste", onPaste);
+    return () => {
+      document.removeEventListener("dragenter", onDrag);
+      document.removeEventListener("dragover", onDrag);
+      document.removeEventListener("drop", onDrop);
+      document.removeEventListener("paste", onPaste);
+    };
+  }, [isStart]);
+
   useLayoutEffect(() => {
     const syncStage = () => {
       setHomeStage(isHome ? visibleHomeStage() : null);

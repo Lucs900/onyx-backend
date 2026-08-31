@@ -381,6 +381,67 @@ function moneyDigits(raw: string) {
   return cleaned.replace(/\.0+$/, "").replace(/(\.\d*?)0+$/, "$1");
 }
 
+const MONEY_IN_TEXT = "\\$?(\\d{1,3}(?:,\\d{3})+(?:\\.\\d+)?|\\d+(?:\\.\\d+)?)";
+
+/** Box 5 / Medicare wages from THIS blob. Colon optional. Never invents an amount. */
+export function box5FromPrintedText(text: string): string {
+  const blob = String(text ?? "");
+  const patterns = [
+    new RegExp(`box\\s*5\\s*(?:medicare\\s*wages(?:\\s*(?:and\\s*)?tips)?)?[:\\s]+${MONEY_IN_TEXT}`, "i"),
+    new RegExp(`medicare\\s*wages(?:\\s*(?:and\\s*)?tips)?[:\\s]+${MONEY_IN_TEXT}`, "i"),
+    new RegExp(`(?:^|[^\\d])5\\s+medicare\\s*wages(?:\\s*(?:and\\s*)?tips)?[:\\s]+${MONEY_IN_TEXT}`, "i"),
+  ];
+  for (const pattern of patterns) {
+    const match = blob.match(pattern);
+    if (!match?.[1]) continue;
+    const digits = moneyDigits(match[1]);
+    if (digits) return digits;
+  }
+  return "";
+}
+
+const EMPLOYER_STOP = /^(and|the|of|for|tax|statement|form|wage|wages|medicare|box|employee|employer|year)$/i;
+
+function companyBeforeSuffix(text: string): string {
+  const suffixRe = /(?:Inc\.?|LLC|L\.L\.C\.|Corp\.?|Corporation|Ltd\.?|Limited|Company|Co\.)\b/gi;
+  let best = "";
+  let match: RegExpExecArray | null;
+  while ((match = suffixRe.exec(text))) {
+    const tokens = text.slice(0, match.index).trimEnd().split(/\s+/);
+    const taken: string[] = [];
+    for (let i = tokens.length - 1; i >= 0 && taken.length < 6; i -= 1) {
+      const token = tokens[i] ?? "";
+      if (!token || EMPLOYER_STOP.test(token) || !/^[A-Z][A-Za-z0-9&.,'’-]*$/.test(token)) break;
+      taken.unshift(token);
+    }
+    if (!taken.length) continue;
+    const name = `${taken.join(" ")} ${match[0]}`.replace(/\s+/g, " ").trim();
+    if (/tax statement|wage and|form w/i.test(name)) continue;
+    best = name;
+  }
+  return best;
+}
+
+/** Employer from THIS blob — labeled line or Inc/LLC/Corp suffix. Not a filename map. */
+export function employerFromPrintedText(text: string, lines: string[] = []): string {
+  for (const line of lines) {
+    const own = valueAfter(line, /^(?:EMPLOYER NAME|EMPLOYER|COMPANY NAME|COMPANY):\s*/i);
+    if (own && !/^(?:name|address|ein|tax statement)\b/i.test(own)) return own.replace(/\s+/g, " ").trim();
+  }
+  const labeled = String(text ?? "").match(
+    /employer(?:'s)?(?:\s+name)?\s*:\s*([A-Za-z][A-Za-z0-9&.,'’ -]{1,80}?)(?:\s+(?:employee|box|ein|address|tax)|$)/i,
+  );
+  if (labeled?.[1]) {
+    const name = labeled[1].replace(/\s+/g, " ").trim();
+    if (name && !/^(?:name|address|ein)\b/i.test(name) && !/tax statement|wage and/i.test(name)) return name;
+  }
+  for (const line of lines) {
+    const fromLine = companyBeforeSuffix(line);
+    if (fromLine) return fromLine;
+  }
+  return companyBeforeSuffix(String(text ?? ""));
+}
+
 function valueAfter(line: string, label: RegExp) {
   const match = line.match(label);
   if (!match) return "";
@@ -437,7 +498,8 @@ export function fieldsFromPrintedLines(
     const own = valueAfter(line, pattern);
     if (own) return own;
     if (!pattern.test(line) || !next) return "";
-    if (/:\s*$/.test(line) && !/^[A-Z][A-Z /]+:/.test(next)) return next.trim();
+    if (/^[A-Z][A-Z /]+:/.test(next)) return "";
+    if (/:\s*$/.test(line) || !valueAfter(line, pattern)) return next.trim();
     return "";
   };
 
@@ -483,7 +545,7 @@ export function fieldsFromPrintedLines(
     const box5 = labeled(
       line,
       next,
-      /^(?:BOX 5 MEDICARE WAGES(?: AND TIPS)?|BOX 5|MEDICARE WAGES(?: AND TIPS)?):\s*/i,
+      /^(?:BOX 5 MEDICARE WAGES(?: AND TIPS)?|BOX 5|MEDICARE WAGES(?: AND TIPS)?):?\s*/i,
     );
     if (box5) {
       putMoney("medicare_wages", box5);
@@ -546,6 +608,21 @@ export function fieldsFromPrintedLines(
     if (last4) put("id_last4", last4);
   }
 
+  if (extractClass === "w2" || extractClass === "other") {
+    const blob = lines.join(" ");
+    if (!fields.medicare_wages && !fields.box5) {
+      const box5 = box5FromPrintedText(blob) || box5FromPrintedText(lines.join("\n"));
+      if (box5) {
+        putMoney("medicare_wages", box5);
+        putMoney("box5", box5);
+      }
+    }
+    if (!fields.employer_name) {
+      const employer = employerFromPrintedText(blob, lines) || employerFromPrintedText(lines.join("\n"), lines);
+      if (employer) put("employer_name", employer);
+    }
+  }
+
   if (extractClass === "tax_return") {
     const blob = lines.join("\n").toUpperCase();
     if (/K-?1|1120-?S/.test(blob) && !/SCHEDULE C/.test(blob)) {
@@ -562,7 +639,7 @@ function inferPrintedClass(lines: string[]): ExtractClass | null {
   const fromHeader = classifyPrintedLines(lines);
   if (fromHeader) return fromHeader;
   const blob = lines.join("\n");
-  if (/\bbox\s*5\b/i.test(blob) && /\d/.test(blob)) return "w2";
+  if ((/\bbox\s*5\b/i.test(blob) || /medicare\s*wages/i.test(blob)) && /\d/.test(blob)) return "w2";
   const mapped = fieldsFromPrintedLines("other", lines);
   if (mapped.medicare_wages || mapped.box5) return "w2";
   if (mapped.gross_period && mapped.pay_frequency) return "paystub";
@@ -581,12 +658,10 @@ export function printedSampleFromLines(lines: string[]): PrintedSample | null {
   };
 }
 
-/** 06/07 loud fixtures: Box 5 118400 and stub 4615.38 biweekly. Never unread. */
+/** Wage fields from THIS page text. Filename is not a source. 06 is not required. */
 export function loudWageFromPrintedLines(lines: string[]): PrintedSample | null {
-  const blob = lines.join("\n");
-  const compact = blob.replace(/[$,\s]/g, "");
-  if (/\bbox\s*5\b/i.test(blob) && /118400/.test(compact)) {
-    const fields = fieldsFromPrintedLines("w2", lines);
+  const fields = fieldsFromPrintedLines("w2", lines);
+  if (fields.medicare_wages || fields.box5) {
     return {
       extractClass: "w2",
       confidence: 0.94,
@@ -597,15 +672,17 @@ export function loudWageFromPrintedLines(lines: string[]): PrintedSample | null 
       },
     };
   }
+  const blob = lines.join("\n");
+  const compact = blob.replace(/[$,\s]/g, "");
   if (/4615\.?38/.test(compact) && /biweekly/i.test(blob)) {
-    const fields = fieldsFromPrintedLines("paystub", lines);
+    const stubFields = fieldsFromPrintedLines("paystub", lines);
     return {
       extractClass: "paystub",
       confidence: 0.94,
       fields: {
-        ...fields,
-        gross_period: fields.gross_period,
-        pay_frequency: fields.pay_frequency,
+        ...stubFields,
+        gross_period: stubFields.gross_period,
+        pay_frequency: stubFields.pay_frequency,
       },
     };
   }

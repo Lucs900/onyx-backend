@@ -2,7 +2,7 @@
 
 import { upload } from "@vercel/blob/client";
 import { useEffect, useRef, useState } from "react";
-import { ACCEPT_ATTR, FAILED_READ_NOTE, RECEIVED_NOTE, mediaTypeOf } from "@/lib/docs/accept";
+import { ACCEPT_ATTR, FAILED_READ_NOTE, RECEIVED_NOTE, isUnreadNote, mediaTypeOf } from "@/lib/docs/accept";
 export { unreadDropBytesCopy } from "@/lib/docs/accept";
 import {
   applyExtractWrite,
@@ -32,8 +32,24 @@ export function requestFoxPickFile() {
 }
 
 export function filesFromDataTransfer(data: DataTransfer | null | undefined): File[] {
-  if (!data?.files?.length) return [];
-  return Array.from(data.files);
+  if (!data) return [];
+  const seen = new Map<string, File>();
+  const add = (file: File | null | undefined) => {
+    if (!file) return;
+    const key = `${file.name}:${file.size}:${file.type}:${file.lastModified}`;
+    if (!seen.has(key)) seen.set(key, file);
+  };
+  if (data.files?.length) {
+    for (const file of Array.from(data.files)) add(file);
+  }
+  const items = data.items;
+  if (items?.length) {
+    for (let i = 0; i < items.length; i += 1) {
+      const item = items[i];
+      if (item?.kind === "file") add(item.getAsFile());
+    }
+  }
+  return Array.from(seen.values());
 }
 
 export function filesFromClipboard(data: DataTransfer | null | undefined): File[] {
@@ -141,7 +157,6 @@ export async function ingestDroppedFiles(files: File[]) {
           );
         })
         .catch(() => undefined);
-      const textEmpty = Boolean(data.failed) && (data.textLayerChars ?? 0) === 0;
       if (!response.ok) {
         patchReceivedDoc(
           (doc) => doc.receivedAt === receivedAt && doc.name === file.name,
@@ -150,7 +165,7 @@ export async function ingestDroppedFiles(files: File[]) {
             note: data.code === "STORAGE_BLOCKED" ? data.error : FAILED_READ_NOTE,
           },
         );
-        emitFailedRead(textEmpty ? emptyRead : undefined);
+        emitFailedRead(emptyRead);
         continue;
       }
       const applied = applyExtractWrite(
@@ -168,6 +183,8 @@ export async function ingestDroppedFiles(files: File[]) {
       const key = stillUsefulRefreshKey(after);
       const askStillUseful = !applied.conflict && after.missingAskKey !== key;
       if (askStillUseful) markMissingAsked(key);
+      const spokeUnread =
+        Boolean(data.failed) || applied.quietLines.some((line) => isUnreadNote(line));
       emitDocIntake({
         extractClass: applied.extractClass,
         quietLines: applied.quietLines.length
@@ -175,7 +192,7 @@ export async function ingestDroppedFiles(files: File[]) {
           : data.failed
             ? [FAILED_READ_NOTE]
             : [],
-        ...(textEmpty ? { emptyRead } : {}),
+        ...(spokeUnread ? { emptyRead } : {}),
         conflict: applied.conflict,
         missing:
           askStillUseful && !after.pendingProposal && !fileExists(after)

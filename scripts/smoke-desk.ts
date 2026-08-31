@@ -148,6 +148,8 @@ import {
   variableMonthlyAmount,
 } from "../lib/income/suggest";
 import {
+  box5FromPrintedText,
+  employerFromPrintedText,
   loudWageFromPrintedLines,
   printedSampleFromBytes,
   printedSampleFromFilename,
@@ -2691,6 +2693,34 @@ assert.equal(loudStubPrinted?.fields.pay_frequency, "biweekly");
 assert.equal(wageExtractConfirmCopy(118400, 4615.38, "biweekly"), "Box 5 $118,400. Stub $4,615.38 biweekly. Use this?");
 assert.equal(wageW2ConfirmCopy(118400, "Harbor Pacific Design Inc"), "Box 5 $118,400. Harbor Pacific Design Inc. Use this?");
 assert.equal(unreadDropBytesCopy("06-w2-2025-box5-loud.pdf", 12345), "06-w2-2025-box5-loud.pdf · 12,345 bytes");
+assert.equal(unreadDropBytesCopy("03-w2-2025-jordan-hale.pdf", 88421), "03-w2-2025-jordan-hale.pdf · 88,421 bytes");
+const unlabeledWageLines = [
+  "Wage and Tax Statement",
+  "Harbor Pacific Design Inc",
+  "Box 5 Medicare wages 118,400.00",
+];
+assert.equal(box5FromPrintedText(unlabeledWageLines.join(" ")), "118400");
+assert.equal(employerFromPrintedText(unlabeledWageLines.join(" "), unlabeledWageLines), "Harbor Pacific Design Inc");
+const unlabeledLoud = loudWageFromPrintedLines(unlabeledWageLines);
+assert.equal(unlabeledLoud?.extractClass, "w2");
+assert.equal(unlabeledLoud?.fields.medicare_wages ?? unlabeledLoud?.fields.box5, "118400");
+assert.equal(unlabeledLoud?.fields.employer_name, "Harbor Pacific Design Inc");
+const splitLoud = loudWageFromPrintedLines([
+  "Box",
+  "5",
+  "Medicare wages",
+  "118,400.00",
+  "Harbor Pacific Design Inc",
+]);
+assert.equal(splitLoud?.fields.medicare_wages ?? splitLoud?.fields.box5, "118400");
+assert.equal(splitLoud?.fields.employer_name, "Harbor Pacific Design Inc");
+const box1OnlyLoud = loudWageFromPrintedLines([
+  "FORM W-2 WAGE AND TAX STATEMENT",
+  "EMPLOYER: HARBOR STEEL",
+  "WAGES: $84,000",
+]);
+assert.equal(box1OnlyLoud, null);
+assert.equal(box5FromPrintedText("EMPLOYER: HARBOR STEEL WAGES: $84,000"), "");
 assert.equal(wageDocsAsk(walkABase).text, WAGE_DOCS_ASK);
 assert.deepEqual((wageDocsAsk(walkABase).actions ?? []).map((item) => item.label), ["Upload", "Skip"]);
 const loudAfterW2 = applyExtractedFields(walkABase, {
@@ -12028,6 +12058,10 @@ assert.ok(!dropSource.includes("await storeBytes"));
 assert.ok(!dropSource.includes('status: "failed", note: FAILED_READ_NOTE'));
 assert.ok(!dropSource.includes("fileToBase64"));
 assert.ok(dropSource.includes("quietLines: [FAILED_READ_NOTE]"));
+assert.ok(!dropSource.includes("textEmpty ? emptyRead"));
+assert.ok(dropSource.includes("spokeUnread ? { emptyRead }"));
+assert.ok(dropSource.includes("getAsFile"));
+assert.ok(dropSource.includes('kind === "file"'));
 assert.ok(dropSource.includes('aria-label="Upload"'));
 assert.ok(dropSource.includes("onyx:fox-pick-file"));
 assert.ok(dropSource.includes("requestFoxPickFile"));
@@ -12040,6 +12074,8 @@ const alwaysOn = readFileSync(join(root, "components/fox/AlwaysOnFox.tsx"), "utf
 const rateflowClient = readFileSync(join(root, "components/fox/rateflowClient.ts"), "utf8");
 assert.ok(alwaysOn.includes("ingestDroppedFiles"));
 assert.ok(alwaysOn.includes("data-composer-drop"));
+assert.ok(alwaysOn.includes('document.addEventListener("drop"'));
+assert.ok(alwaysOn.includes("filesFromDataTransfer"));
 assert.ok(alwaysOn.includes("requestRateflowIfNeeded"));
 assert.ok(alwaysOn.includes("messagesWithLiveQuoteSpeech"));
 assert.ok(alwaysOn.includes("messagesWithRateOrReadySpeech"));
@@ -12645,6 +12681,38 @@ async function extractAdapterSmoke() {
   assert.match(extractSrc, /readPrintedSample\(bytes\)/);
   assert.equal(loudWageFromPrintedLines(readPdfTextLayer(loudW2Bytes) ?? [])?.fields.medicare_wages, "118400");
   assert.equal(loudWageFromPrintedLines(readPdfTextLayer(loudStubBytes) ?? [])?.fields.gross_period, "4615.38");
+  const tj = (lines: string[]) => {
+    const escaped = (text: string) => text.replace(/\\/g, "\\\\").replace(/\(/g, "\\(").replace(/\)/g, "\\)");
+    const ops = lines.map((line) => `(${escaped(line)}) Tj T*`).join(" ");
+    const content = `BT /F1 12 Tf 72 720 Td ${ops} ET`;
+    const body = `<< /Length ${content.length} >>stream\n${content}\nendstream`;
+    return new TextEncoder().encode(`%PDF-1.4\n1 0 obj${body}\nendobj\ntrailer<<>>\n%%EOF\n`);
+  };
+  const jordanHaleBytes = tj([
+    "Wage and Tax Statement",
+    "Harbor Pacific Design Inc",
+    "Box 5 Medicare wages 118,400.00",
+  ]);
+  const jordanHalePdf = await classifyAndExtract(
+    jordanHaleBytes,
+    "application/pdf",
+    deadVision,
+    null,
+    "03-w2-2025-jordan-hale.pdf",
+  );
+  assert.notEqual(jordanHalePdf.failed, true, "03-style text layer is confirm, not unread");
+  assert.equal(jordanHalePdf.extractClass, "w2");
+  assert.equal(jordanHalePdf.fields.medicare_wages ?? jordanHalePdf.fields.box5, "118400");
+  assert.equal(jordanHalePdf.fields.employer_name, "Harbor Pacific Design Inc");
+  const jordanHaleAfter = applyExtractedFields(walkABase, {
+    extractClass: "w2",
+    confidence: 0.94,
+    fields: jordanHalePdf.fields,
+  });
+  assert.equal(
+    workspacePromptCopy("confirm-proposal", jordanHaleAfter.draft).text,
+    "Box 5 $118,400. Harbor Pacific Design Inc. Use this?",
+  );
   const classifiedK1 = await classifyAndExtract(new Uint8Array([9, 8, 7]), "image/png", {
     async classify() {
       return { class: "k1" as never, confidence: 0.9, readable: true };

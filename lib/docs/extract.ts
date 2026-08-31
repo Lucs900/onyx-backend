@@ -472,7 +472,7 @@ export async function classifyAndExtract(
         return printedResult(fromLines, textLayerChars);
       }
       const blob = layer.join("\n");
-      if (/\bbox\s*5\b/i.test(blob)) {
+      if (/\bbox\s*5\b/i.test(blob) || /medicare\s*wages/i.test(blob)) {
         const fields = printed?.fields?.medicare_wages || printed?.fields?.box5
           ? printed.fields
           : fieldsFromPrintedLines("w2", layer);
