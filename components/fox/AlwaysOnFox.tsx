@@ -486,13 +486,11 @@ function FoxThread({
   draft,
   listRef,
   onAction,
-  onEdit,
 }: {
   messages: FoxMessage[];
   draft: FoxIntakeDraft;
   listRef: { current: HTMLDivElement | null };
   onAction: (action: FoxAction) => void;
-  onEdit?: (message: FoxMessage) => void;
 }) {
   const thread = dropStreetSuggestChips(
     dropAbandonedAddressConfirm(dropResolvedAddressConfirmChips(messages, draft), draft),
@@ -528,21 +526,12 @@ function FoxThread({
             className={
               message.role === "fox"
                 ? `fox-bubble fox-bubble--fox${tone}`
-                : "fox-bubble fox-bubble--client"
+                : "fox-bubble fox-bubble--client is-used"
             }
             aria-current={current ? "step" : undefined}
           >
             <p>{message.text}</p>
             {message.followUp ? <p>{message.followUp}</p> : null}
-            {message.role === "client" && message.edit && onEdit ? (
-              <button
-                type="button"
-                className="fox-bubble__edit"
-                onClick={() => onEdit(message)}
-              >
-                Edit
-              </button>
-            ) : null}
             {paintActions.length > 0 &&
             (message.text.trim() || (message.followUp ?? "").trim()) ? (
               <div className="fox-bubble__actions">
@@ -618,7 +607,6 @@ function FoxWorkspace({
   listRef,
   onClose,
   onAction,
-  onEdit,
   composer,
   hideClose,
   stickyDisclosure,
@@ -630,7 +618,6 @@ function FoxWorkspace({
   listRef: { current: HTMLDivElement | null };
   onClose: () => void;
   onAction: (action: FoxAction) => void;
-  onEdit?: (message: FoxMessage) => void;
   composer?: ReactNode;
   hideClose?: boolean;
   stickyDisclosure?: boolean;
@@ -667,7 +654,7 @@ function FoxWorkspace({
           </button>
         )}
       </div>
-      <FoxThread messages={messages} draft={draft} listRef={listRef} onAction={onAction} onEdit={onEdit} />
+      <FoxThread messages={messages} draft={draft} listRef={listRef} onAction={onAction} />
       {composer}
     </div>
   );
@@ -1423,18 +1410,6 @@ export function AlwaysOnFox({
     router.push(deskHrefFromSession(live.path ?? null, live.productIntent ?? null));
   };
 
-  const editClientLine = (message: FoxMessage) => {
-    if (!isStart || !message.edit) return;
-    skipPromptSync.current = true;
-    applyCapture({
-      field: "correct",
-      value: message.edit,
-      line: message.editLine ?? message.edit,
-    });
-    const ask = workspacePromptCopy(message.edit, getFoxDraft());
-    commitMessages((prev) => [...dropFoxActions(prev), foxAskMessage(ask)]);
-  };
-
   const runAction = (action: FoxAction) => {
     if (action.capture?.field === "skip-property-address") {
       skipPropertyAddressFromComposer(action.label);
@@ -1944,7 +1919,6 @@ export function AlwaysOnFox({
       listRef={listRef}
       onClose={() => setOpen(false)}
       onAction={runAction}
-      onEdit={editClientLine}
       composer={
         isStart ? (
           <WorkspaceFileDock>{desk}</WorkspaceFileDock>

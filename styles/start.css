@@ -115,18 +115,22 @@
   font-weight: 500;
 }
 
-.fox-stage--workspace .fox-bubble--client {
+.fox-stage--workspace .fox-bubble--client,
+.fox-stage--workspace .fox-bubble--client.is-used {
   align-self: flex-end;
   max-width: 80%;
-  background: color-mix(in srgb, var(--ink) 7%, var(--paper-elevated));
-  border-color: color-mix(in srgb, var(--ink) 14%, var(--line));
+  padding: 0;
+  background: transparent;
+  border: 0;
+  border-color: transparent;
   box-shadow: none;
   opacity: 1;
 }
 
-.fox-stage--workspace .fox-bubble--client p {
-  color: var(--ink);
-  font-weight: 500;
+.fox-stage--workspace .fox-bubble--client p,
+.fox-stage--workspace .fox-bubble--client.is-used p {
+  color: var(--muted);
+  font-weight: 400;
 }
 
 .fox-stage--workspace .fox-bubble__edit {
