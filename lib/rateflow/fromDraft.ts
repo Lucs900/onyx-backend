@@ -144,3 +144,18 @@ export function searchedKeyFor(draft: FoxIntakeDraft): string | undefined {
   const body = rateflowClientBodyFromDraft(draft);
   return body ? rateflowScenarioKey(body) : undefined;
 }
+
+/** House + FICO + amounts + address on File: hold the ready line until Rateflow is actually empty. */
+export function conventionalReadyHoldsReadyLine(draft: FoxIntakeDraft): boolean {
+  if (draft.liveQuoteStatus === "unavailable") return false;
+  if (draft.productIntent !== "buy" && draft.productIntent !== "refinance") return false;
+  if (draft.cashOut || draft.govProgram || draft.outOfState) return false;
+  if (addressConfirmPending(draft)) return false;
+  if (!String(draft.subjectAddress ?? "").trim() && !addressLineReadyForQuote(draft)) return false;
+  if (!mapPropertyType(draft.propertyType, draft.propertyUnits)) return false;
+  if (creditScoreFloor(draft.creditBand) == null) return false;
+  const loanAmount = loanAmountFromDraft(draft);
+  if (listPriceFromDraft(draft) == null || loanAmount == null) return false;
+  if (loanAmount > FHFA_HIGH_COST_CEILING_2026) return false;
+  return true;
+}

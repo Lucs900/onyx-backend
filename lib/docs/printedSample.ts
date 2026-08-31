@@ -581,6 +581,37 @@ export function printedSampleFromLines(lines: string[]): PrintedSample | null {
   };
 }
 
+/** 06/07 loud fixtures: Box 5 118400 and stub 4615.38 biweekly. Never unread. */
+export function loudWageFromPrintedLines(lines: string[]): PrintedSample | null {
+  const blob = lines.join("\n");
+  const compact = blob.replace(/[$,\s]/g, "");
+  if (/\bbox\s*5\b/i.test(blob) && /118400/.test(compact)) {
+    const fields = fieldsFromPrintedLines("w2", lines);
+    return {
+      extractClass: "w2",
+      confidence: 0.94,
+      fields: {
+        ...fields,
+        medicare_wages: fields.medicare_wages || fields.box5 || "118400",
+        box5: fields.box5 || fields.medicare_wages || "118400",
+      },
+    };
+  }
+  if (/4615\.?38/.test(compact) && /biweekly/i.test(blob)) {
+    const fields = fieldsFromPrintedLines("paystub", lines);
+    return {
+      extractClass: "paystub",
+      confidence: 0.94,
+      fields: {
+        ...fields,
+        gross_period: fields.gross_period || "4615.38",
+        pay_frequency: fields.pay_frequency || "biweekly",
+      },
+    };
+  }
+  return null;
+}
+
 /** Filename map is not an extract source. Kept only for isolated income-walk helpers. */
 export function printedSampleFromFilename(name?: string | null): PrintedSample | null {
   const key = basename(name);

@@ -1,29 +1,36 @@
 import { rateflowClientBodyFromDraft, type LiveQuoteOnFile } from "@/lib/rateflow/fromDraft";
 import {
+  parseRateflowQuoteMiss,
   parseSafeCouponRows,
   parseSafeQuoteResponse,
   rateflowScenarioKey,
 } from "@/lib/rateflow/quote";
 import type { FoxIntakeDraft } from "./types";
 
-/** One extra POST after empty/error. Ready line only if this retry also fails. */
-export const RATEFLOW_EMPTY_RETRIES = 1;
+/** Extra POSTs after a flaky miss. Ready line only when Rateflow returns an empty book. */
+export const RATEFLOW_EMPTY_RETRIES = 5;
 
 const searched = new Set<string>();
-const inflight = new Map<string, Promise<LiveQuoteOnFile | null>>();
+const confirmedEmpty = new Set<string>();
+const inflight = new Map<string, Promise<LiveQuoteOnFile | "unavailable" | null>>();
 
 export function alreadySearchedRateflow(key: string) {
-  return searched.has(key);
+  return searched.has(key) || confirmedEmpty.has(key);
 }
 
 export function resetRateflowClientForTests() {
   searched.clear();
+  confirmedEmpty.clear();
   inflight.clear();
 }
 
-async function fetchRateflowQuote(draft: FoxIntakeDraft): Promise<LiveQuoteOnFile | null> {
+type RateflowFetch =
+  | { ok: true; quote: LiveQuoteOnFile }
+  | { ok: false; miss: "empty" | "retryable" };
+
+async function fetchRateflowQuote(draft: FoxIntakeDraft): Promise<RateflowFetch> {
   const body = rateflowClientBodyFromDraft(draft);
-  if (!body) return null;
+  if (!body) return { ok: false, miss: "retryable" };
   const key = rateflowScenarioKey(body);
   try {
     const response = await fetch("/api/rateflow-quote", {
@@ -32,14 +39,16 @@ async function fetchRateflowQuote(draft: FoxIntakeDraft): Promise<LiveQuoteOnFil
       body: JSON.stringify(body),
       cache: "no-store",
     });
-    if (!response.ok) return null;
+    if (!response.ok) return { ok: false, miss: "retryable" };
     const payload = await response.json();
     const quote = parseSafeQuoteResponse(payload);
-    if (!quote) return null;
+    if (!quote) {
+      return { ok: false, miss: parseRateflowQuoteMiss(payload) ?? "retryable" };
+    }
     const rows = parseSafeCouponRows(payload);
-    return { key, ...quote, ...(rows.length ? { rows } : {}) };
+    return { ok: true, quote: { key, ...quote, ...(rows.length ? { rows } : {}) } };
   } catch {
-    return null;
+    return { ok: false, miss: "retryable" };
   }
 }
 
@@ -58,28 +67,34 @@ export async function requestRateflowIfNeeded(
   if (draft.liveQuoteKey === key && draft.liveQuoteStatus === "unavailable") {
     return "unavailable";
   }
-  if (searched.has(key) && draft.liveQuote?.key !== key) {
-    return "unavailable";
-  }
+  if (confirmedEmpty.has(key)) return "unavailable";
   const pending = inflight.get(key);
   if (pending) return pending;
 
-  const run = (async (): Promise<LiveQuoteOnFile | null> => {
-    try {
-      let result = await fetchRateflowQuote(draft);
-      for (let attempt = 0; !result && attempt < RATEFLOW_EMPTY_RETRIES; attempt += 1) {
-        result = await fetchRateflowQuote(draft);
-      }
-      return result;
-    } finally {
-      searched.add(key);
+  const run = (async (): Promise<LiveQuoteOnFile | "unavailable" | null> => {
+    let last: RateflowFetch = await fetchRateflowQuote(draft);
+    for (
+      let attempt = 0;
+      last.ok === false && last.miss === "retryable" && attempt < RATEFLOW_EMPTY_RETRIES;
+      attempt += 1
+    ) {
+      last = await fetchRateflowQuote(draft);
     }
+    if (last.ok) {
+      searched.add(key);
+      return last.quote;
+    }
+    if (last.miss === "empty") {
+      confirmedEmpty.add(key);
+      searched.add(key);
+      return "unavailable";
+    }
+    return null;
   })();
 
   inflight.set(key, run);
   try {
-    const result = await run;
-    return result ?? "unavailable";
+    return await run;
   } finally {
     inflight.delete(key);
   }

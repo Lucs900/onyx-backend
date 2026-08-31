@@ -99,10 +99,16 @@ function logReport(report: RateflowQuoteReport) {
   console.info("[rateflow-quote]", JSON.stringify(report));
 }
 
-function unavailable(report?: RateflowQuoteReport) {
+function retryable(report?: RateflowQuoteReport) {
   const safe = report ?? buildReport({});
   logReport(safe);
-  return NextResponse.json({ ok: false, report: safe }, { status: 200 });
+  return NextResponse.json({ ok: false, retryable: true, report: safe }, { status: 200 });
+}
+
+function empty(report?: RateflowQuoteReport) {
+  const safe = report ?? buildReport({});
+  logReport(safe);
+  return NextResponse.json({ ok: false, empty: true, report: safe }, { status: 200 });
 }
 
 function bankingBridgeBody(client: RateflowClientBody) {
@@ -135,18 +141,18 @@ function bankingBridgeBody(client: RateflowClientBody) {
 }
 
 export async function POST(request: Request) {
-  if (!rateflowSecretsReady()) return unavailable();
+  if (!rateflowSecretsReady()) return retryable();
   let raw: unknown;
   try {
     raw = await request.json();
   } catch {
-    return unavailable();
+    return retryable();
   }
   const client = parseClientBody(raw);
-  if (!client) return unavailable();
+  if (!client) return retryable();
   const body = bankingBridgeBody(client);
   const apiKey = process.env.BANKINGBRIDGE_API_KEY;
-  if (!body || !apiKey) return unavailable(buildReport({ client }));
+  if (!body || !apiKey) return retryable(buildReport({ client }));
 
   const ac = new AbortController();
   const timer = setTimeout(() => ac.abort(), RATEFLOW_TIMEOUT_MS);
@@ -162,11 +168,11 @@ export async function POST(request: Request) {
       cache: "no-store",
     });
     if (!response.ok) {
-      return unavailable(buildReport({ client, bbHttpStatus: response.status }));
+      return retryable(buildReport({ client, bbHttpStatus: response.status }));
     }
     const payload: unknown = await response.json();
     if (isRateflowFailure(payload)) {
-      return unavailable(buildReport({ client, bbHttpStatus: response.status, resultCount: 0 }));
+      return retryable(buildReport({ client, bbHttpStatus: response.status, resultCount: 0 }));
     }
     const rows = asProductRows(payload);
     const row = pickLeadRow(rows, client.loan_purpose);
@@ -182,7 +188,9 @@ export async function POST(request: Request) {
       sample: quoteRowSample(rows),
       book: conventional30Book(rows),
     });
-    if (!quote) return unavailable(report);
+    if (!quote) {
+      return rows.length ? retryable(report) : empty(report);
+    }
     logReport(report);
     return NextResponse.json({
       ok: true,
@@ -191,7 +199,7 @@ export async function POST(request: Request) {
       report,
     });
   } catch {
-    return unavailable(buildReport({ client }));
+    return retryable(buildReport({ client }));
   } finally {
     clearTimeout(timer);
   }

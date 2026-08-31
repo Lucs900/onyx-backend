@@ -117,15 +117,18 @@ export function DocumentDrop({
 
       try {
         const snapshot = new Blob([await file.arrayBuffer()], { type: file.type || type });
-        const form = new FormData();
-        form.append("file", snapshot, file.name);
-        form.append("name", file.name);
-        form.append("type", type);
-        const response = await fetch("/api/docs/extract", {
-          method: "POST",
-          body: form,
-        });
-        const data = (await response.json()) as {
+        const postExtract = async () => {
+          const form = new FormData();
+          form.append("file", snapshot, file.name);
+          form.append("name", file.name);
+          form.append("type", type);
+          return fetch("/api/docs/extract", {
+            method: "POST",
+            body: form,
+          });
+        };
+        let response = await postExtract();
+        let data = (await response.json()) as {
           class?: string;
           confidence?: number;
           fields?: Record<string, string>;
@@ -135,6 +138,14 @@ export function DocumentDrop({
           error?: string;
           source?: string;
         };
+        if (
+          type === "application/pdf" &&
+          (data.failed || !response.ok) &&
+          data.code !== "STORAGE_BLOCKED"
+        ) {
+          response = await postExtract();
+          data = (await response.json()) as typeof data;
+        }
         void storeBytes(new File([snapshot], file.name, { type: file.type || type }))
           .then((bytesRef) => {
             patchReceivedDoc(

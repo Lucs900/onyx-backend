@@ -1029,22 +1029,35 @@ export function AlwaysOnFox({
     setLookupWait("rateflow");
     commitMessages((prev) => withWaitLine(prev, "rateflow"));
     void (async () => {
-      const result = await requestRateflowIfNeeded(getFoxDraft());
-      if (cancelled) return;
-      setLookupWait(null);
-      const liveNow = getFoxDraft();
-      const key = searchedKeyFor(liveNow) || rateflowKey;
-      if (result && result !== "unavailable") {
-        const { rows, ...quote } = result;
-        setLiveQuoteResult(key, quote, rows);
-      } else if (key) {
-        setLiveQuoteResult(key, null);
+      while (!cancelled) {
+        const result = await requestRateflowIfNeeded(getFoxDraft());
+        if (cancelled) return;
+        const liveNow = getFoxDraft();
+        const key = searchedKeyFor(liveNow) || rateflowKey;
+        if (result && result !== "unavailable") {
+          setLookupWait(null);
+          const { rows, ...quote } = result;
+          setLiveQuoteResult(key, quote, rows);
+          const live = getFoxDraft();
+          skipPromptSync.current = Boolean(live.liveQuote && live.liveQuoteStatus === "ready");
+          commitMessages((prev) =>
+            messagesWithRateOrReadySpeech(withoutWaitLines(prev), live),
+          );
+          return;
+        }
+        if (result === "unavailable") {
+          setLookupWait(null);
+          if (key) setLiveQuoteResult(key, null);
+          const live = getFoxDraft();
+          skipPromptSync.current = false;
+          commitMessages((prev) =>
+            messagesWithRateOrReadySpeech(withoutWaitLines(prev), live),
+          );
+          return;
+        }
+        commitMessages((prev) => withWaitLine(prev, "rateflow"));
+        await new Promise((resolve) => window.setTimeout(resolve, 400));
       }
-      const live = getFoxDraft();
-      skipPromptSync.current = Boolean(live.liveQuote && live.liveQuoteStatus === "ready");
-      commitMessages((prev) =>
-        messagesWithRateOrReadySpeech(withoutWaitLines(prev), live),
-      );
     })();
     return () => {
       cancelled = true;

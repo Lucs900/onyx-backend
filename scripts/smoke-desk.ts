@@ -24,7 +24,7 @@ import {
   sitExpireReview,
   workspaceSessionStarted,
 } from "../components/fox/store";
-import { liveQuoteMatchesDraft, rateflowBlockedReason, rateflowClientBodyFromDraft, searchedKeyFor } from "../lib/rateflow/fromDraft";
+import { conventionalReadyHoldsReadyLine, liveQuoteMatchesDraft, rateflowBlockedReason, rateflowClientBodyFromDraft, searchedKeyFor } from "../lib/rateflow/fromDraft";
 import {
   liveLoanNowCopy,
   liveRateLine,
@@ -100,6 +100,7 @@ import {
   W2_BOX5_ASK,
   W2_PAY_FREQUENCY_ASK,
   wageExtractConfirmCopy,
+  wageExtractFailedRead,
   acceptWageExtract,
   writeWagePayFrequency,
   writeTypedStubMonthly,
@@ -146,6 +147,7 @@ import {
   variableMonthlyAmount,
 } from "../lib/income/suggest";
 import {
+  loudWageFromPrintedLines,
   printedSampleFromBytes,
   printedSampleFromFilename,
   readPngPrintedLines,
@@ -2608,6 +2610,7 @@ assert.ok(
     (fact) => fact.id === "employer" || fact.id === "pay" || fact.id === "qualifying",
   ),
 );
+assert.equal(wageExtractFailedRead(harborPdfBoth.draft), true);
 assert.doesNotMatch(JSON.stringify(previewFacts(harborPdfBoth.draft)), /84,000|84000|W-2 in|Paystub/);
 assert.equal(workspacePrompt({ ...harborPdfBoth.draft, looksRightHold: false }), "wage-docs");
 assert.notEqual(workspacePrompt(harborPdfBoth.draft), "borrower-name");
@@ -2735,6 +2738,53 @@ assert.deepEqual(
 );
 assert.ok(!previewFacts(loudAfterStub.draft).some((fact) => fact.id === "employer" || fact.id === "pay" || fact.id === "qualifying"));
 assert.doesNotMatch(workspacePromptCopy("confirm-proposal", loudAfterStub.draft).text, /84,000|84000/);
+assert.equal(wageExtractFailedRead(loudAfterStub.draft), false);
+assert.ok(
+  previewFacts(loudAfterStub.draft).some((fact) => fact.id === "docs" && /W-2 in/i.test(fact.value) && /Paystub/i.test(fact.value)),
+);
+assert.doesNotMatch(
+  previewFacts(loudAfterStub.draft).find((fact) => fact.id === "docs")?.value ?? "",
+  /received · could not read/,
+);
+const loudW2HeldOnly = applyExtractedFields(
+  {
+    ...walkABase,
+    documents: [
+      {
+        slot: "w2" as const,
+        name: "06-w2-2025-box5-loud.pdf",
+        type: "application/pdf",
+        size: loudW2Bytes.length,
+        receivedAt: "2026-08-30T22:10:00.000Z",
+        status: "extracted" as const,
+        extractClass: "w2" as const,
+        bytesRef: "fox-intake/06-w2-2025-box5-loud.pdf",
+      },
+      {
+        slot: "paystubs" as const,
+        name: "07-paystub-biweekly-loud.pdf",
+        type: "application/pdf",
+        size: loudStubBytes.length,
+        receivedAt: "2026-08-30T22:10:01.000Z",
+        status: "received" as const,
+        bytesRef: "fox-intake/07-paystub-biweekly-loud.pdf",
+      },
+    ],
+  },
+  {
+    extractClass: "w2",
+    confidence: 0.94,
+    fields: loudW2Printed!.fields,
+  },
+);
+assert.equal(wageExtractFailedRead(loudW2HeldOnly.draft), false, "Box 5 in text is confirm, not unread");
+assert.equal(loudW2HeldOnly.draft.documents[0]?.bytesRef, "fox-intake/06-w2-2025-box5-loud.pdf");
+assert.equal(loudW2HeldOnly.draft.documents[1]?.bytesRef, "fox-intake/07-paystub-biweekly-loud.pdf");
+assert.deepEqual(
+  (wageDocsAsk(loudW2HeldOnly.draft).actions ?? []).map((item) => item.label),
+  ["Upload", "Skip"],
+);
+assert.notEqual(workspacePrompt(loudW2HeldOnly.draft), "borrower-name");
 const loudUsed = acceptWageExtract(loudAfterStub.draft);
 assert.equal(loudUsed.facts?.w2_box5?.value, "118400");
 assert.equal(loudUsed.facts?.[PAYSTUB_AMOUNT_FIELD]?.value, "4615.38");
@@ -3071,6 +3121,8 @@ assert.equal(rateflowClientBodyFromDraft(harborMarinaFile)?.city, "San Francisco
 assert.equal(rateflowClientBodyFromDraft(harborMarinaFile)?.list_price, 1000000);
 assert.equal(rateflowClientBodyFromDraft(harborMarinaFile)?.loan_amount, 500000);
 assert.ok(searchedKeyFor(harborMarinaFile));
+assert.equal(conventionalReadyHoldsReadyLine(harborMarinaFile), true);
+assert.ok(!previewFacts(harborMarinaFile).some((fact) => fact.id === "rate" && fact.value === PRICING_WHEN_READY));
 const harborMarinaConfirmThread = [
   {
     id: "marina-addr-confirm",
@@ -11953,6 +12005,7 @@ assert.ok(dropSource.includes("/api/docs/upload"));
 assert.ok(dropSource.includes("/api/docs/extract"));
 assert.ok(dropSource.includes("FormData"));
 assert.ok(dropSource.includes('form.append("file"'));
+assert.ok(dropSource.includes("postExtract"));
 assert.ok(dropSource.includes("docs-handoff"));
 assert.ok(dropSource.includes("await file.arrayBuffer()"));
 assert.ok(dropSource.indexOf("await fetch(\"/api/docs/extract\"") < dropSource.indexOf("void storeBytes"));
@@ -11979,7 +12032,9 @@ assert.ok(alwaysOn.includes("messagesWithRateOrReadySpeech(withoutWaitLines"));
 assert.ok(!alwaysOn.includes("BANKINGBRIDGE_API_KEY"));
 assert.ok(rateflowClient.includes("/api/rateflow-quote"));
 assert.ok(rateflowClient.includes("RATEFLOW_EMPTY_RETRIES"));
-assert.ok(rateflowClient.includes("for (let attempt = 0; !result && attempt < RATEFLOW_EMPTY_RETRIES;"));
+assert.ok(rateflowClient.includes("attempt < RATEFLOW_EMPTY_RETRIES"));
+assert.ok(rateflowClient.includes('miss === "retryable"'));
+assert.ok(alwaysOn.includes("while (!cancelled)"));
 assert.ok(!alwaysOn.includes("/api/heloc-quote"));
 assert.ok(!rateflowClient.includes("/api/heloc-quote"));
 assert.ok(!alwaysOn.includes("BANKINGBRIDGE_"));
@@ -12569,7 +12624,10 @@ async function extractAdapterSmoke() {
 
   const extractSrc = readFileSync(join(root, "lib/docs/extract.ts"), "utf8");
   assert.doesNotMatch(extractSrc, /printedSampleFromFilename|BY_NAME/);
+  assert.match(extractSrc, /loudWageFromPrintedLines/);
   assert.match(extractSrc, /readPrintedSample\(bytes\)/);
+  assert.equal(loudWageFromPrintedLines(readPdfTextLayer(loudW2Bytes) ?? [])?.fields.medicare_wages, "118400");
+  assert.equal(loudWageFromPrintedLines(readPdfTextLayer(loudStubBytes) ?? [])?.fields.gross_period, "4615.38");
   const classifiedK1 = await classifyAndExtract(new Uint8Array([9, 8, 7]), "image/png", {
     async classify() {
       return { class: "k1" as never, confidence: 0.9, readable: true };

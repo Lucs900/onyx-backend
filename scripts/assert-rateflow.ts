@@ -26,6 +26,7 @@ import {
   mapResidency,
   cityFromTypedAddress,
   parseClientBody,
+  parseRateflowQuoteMiss,
   parseSafeQuoteResponse,
   parseZipcode,
   pickConventional30LowestNoPoints,
@@ -456,7 +457,10 @@ if (harborLiveFixture.captured) {
     liveLead ? { rate: liveLead.rate, ...(liveLead.pts != null ? { pts: liveLead.pts } : {}) } : null,
     harborLiveFixture.lead ?? (liveLead ? { rate: liveLead.rate, pts: liveLead.pts } : null),
   );
-  assert.equal(liveLead?.rate, pickConventional30NoCost(liveProducts)?.rate);
+  assert.equal(
+    liveLead?.rate,
+    (pickConventional30NoCost(liveProducts) ?? pickConventional30LowestNoPoints(liveProducts))?.rate,
+  );
   assert.notEqual(liveLead?.rate, 6.49);
   console.log("harbor-refi-conv30 live book", JSON.stringify(liveBook));
   console.log("harbor-refi-conv30 live lead", JSON.stringify(liveLead));
@@ -638,6 +642,8 @@ assert.ok(route.includes("zipcode: client.zipcode"));
 assert.ok(route.includes('state: "CA"'));
 assert.ok(route.includes("[rateflow-quote]"));
 assert.ok(route.includes("pickLeadRow"));
+assert.ok(route.includes("empty: true"));
+assert.ok(route.includes("retryable: true"));
 assert.ok(!route.includes("6.750"));
 assert.ok(!route.includes("6.75"));
 assert.ok(route.includes("safeCouponRowsFromProducts"));
@@ -661,6 +667,7 @@ assert.doesNotMatch(picker, /closest to par/i);
 const fromDraft = readFileSync(join(root, "lib/rateflow/fromDraft.ts"), "utf8");
 assert.ok(fromDraft.includes("address-confirm"));
 assert.ok(fromDraft.includes("addressConfirmPending"));
+assert.ok(fromDraft.includes("conventionalReadyHoldsReadyLine"));
 
 const fox = readFileSync(join(root, "components/fox/AlwaysOnFox.tsx"), "utf8");
 const client = readFileSync(join(root, "components/fox/rateflowClient.ts"), "utf8");
@@ -669,7 +676,10 @@ assert.ok(fox.includes("messagesWithLiveQuoteSpeech"));
 assert.ok(fox.includes("messagesWithRateOrReadySpeech"));
 assert.ok(client.includes("/api/rateflow-quote"));
 assert.ok(client.includes("RATEFLOW_EMPTY_RETRIES"));
-assert.ok(client.includes("for (let attempt = 0; !result && attempt < RATEFLOW_EMPTY_RETRIES;"));
+assert.ok(client.includes("attempt < RATEFLOW_EMPTY_RETRIES"));
+assert.ok(client.includes("parseRateflowQuoteMiss"));
+assert.ok(client.includes('miss === "retryable"'));
+assert.ok(fox.includes("while (!cancelled)"));
 assert.ok(!fox.includes("/api/heloc-quote"));
 assert.ok(!client.includes("/api/heloc-quote"));
 assert.ok(!fox.includes("BANKINGBRIDGE_"));
@@ -679,7 +689,21 @@ const heloc = readFileSync(join(root, "app/api/heloc-quote/route.ts"), "utf8");
 assert.ok(heloc.includes("calculateHelocQuoteTool"));
 assert.ok(!heloc.includes("rateflow"));
 
-assert.equal(RATEFLOW_EMPTY_RETRIES, 1);
+assert.equal(RATEFLOW_EMPTY_RETRIES, 5);
+assert.equal(parseRateflowQuoteMiss({ ok: true, quote: { rate: 6.125 } }), null);
+assert.equal(parseRateflowQuoteMiss({ ok: false, empty: true }), "empty");
+assert.equal(parseRateflowQuoteMiss({ ok: false }), "retryable");
+assert.equal(parseRateflowQuoteMiss({ ok: false, retryable: true }), "retryable");
+assert.equal(
+  pickLeadRow(
+    [
+      { rate: 6.375, pts: 0, loanTerm: 30, bbLoanType: "conventional" },
+      { rate: 6.25, pts: 1.044, loanTerm: 30, bbLoanType: "conventional" },
+    ],
+    "refinance",
+  )?.rate,
+  6.375,
+);
 
 const marinaReadyFile = file({
   productIntent: "refinance",
@@ -742,11 +766,28 @@ void withMockedRateflow(
         }),
       async (calls) => {
         const exhausted = await requestRateflowIfNeeded(marinaReadyFile);
-        assert.equal(calls.n, 2);
-        assert.equal(exhausted, "unavailable");
+        assert.equal(calls.n, RATEFLOW_EMPTY_RETRIES + 1, "retry flaky misses; do not treat them as empty");
+        assert.equal(exhausted, null);
+        const again = await requestRateflowIfNeeded(marinaReadyFile);
+        assert.equal(again, null);
+        assert.equal(calls.n, (RATEFLOW_EMPTY_RETRIES + 1) * 2, "flaky miss is not cached as empty");
+      },
+    ),
+  )
+  .then(() =>
+    withMockedRateflow(
+      async () =>
+        new Response(JSON.stringify({ ok: false, empty: true }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      async (calls) => {
+        const emptyBook = await requestRateflowIfNeeded(marinaReadyFile);
+        assert.equal(calls.n, 1, "an empty book is actually empty");
+        assert.equal(emptyBook, "unavailable");
         const again = await requestRateflowIfNeeded(marinaReadyFile);
         assert.equal(again, "unavailable");
-        assert.equal(calls.n, 2, "do not keep refetching after the retry");
+        assert.equal(calls.n, 1, "do not refetch a confirmed empty book");
       },
     ),
   )

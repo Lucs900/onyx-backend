@@ -15,6 +15,7 @@ import { pathFromHomeChoice } from "./homeIdle";
 import { isUnreadNote } from "@/lib/docs/accept";
 import {
   addressConfirmPending,
+  conventionalReadyHoldsReadyLine,
   liveQuoteMatchesDraft,
   searchedKeyFor,
   zipFromDraft,
@@ -2404,8 +2405,8 @@ export function messagesWithPricingWhenReady(
   }
   if (threadHasRateOrReadySpeech(messages)) return messages;
   // Conventional purchase/refi with type + FICO + address + amounts: ready
-  // line only after Rateflow is finalized unavailable (retry exhausted).
-  if (searchedKeyFor(draft) && draft.liveQuoteStatus !== "unavailable") {
+  // line only when Rateflow returned an empty book — not a flaky first call.
+  if (conventionalReadyHoldsReadyLine(draft) || (searchedKeyFor(draft) && draft.liveQuoteStatus !== "unavailable")) {
     return messages;
   }
   return [
@@ -2467,6 +2468,9 @@ export function previewRateFact(draft: FoxIntakeDraft): PreviewFact | null {
     };
   }
   const key = searchedKeyFor(draft);
+  if (conventionalReadyHoldsReadyLine(draft)) {
+    return null;
+  }
   if (key && !draft.liveQuoteKey && draft.liveQuoteStatus !== "unavailable") {
     return null;
   }

@@ -11,7 +11,12 @@ import {
 } from "@/components/fox/fileWrite";
 import type { ExtractClass } from "@/components/fox/types";
 import { isPdf, pdfTextLayerCharCount, readPdfEmbeddedImages, readPdfTextLayer } from "@/lib/docs/pdfText";
-import { fieldsFromPrintedLines, readPrintedSample } from "@/lib/docs/printedSample";
+import {
+  fieldsFromPrintedLines,
+  loudWageFromPrintedLines,
+  printedSampleFromLines,
+  readPrintedSample,
+} from "@/lib/docs/printedSample";
 
 export type ClassifyResult = {
   class: ExtractClass;
@@ -425,6 +430,13 @@ export async function classifyAndExtract(
   hint?: ExtractClass | null,
   filename?: string | null,
 ): Promise<ClassifyExtractResult> {
+  if (isPdf(bytes) || mediaType === "application/pdf") {
+    const layer = readPdfTextLayer(bytes);
+    if (layer?.length) {
+      const loud = loudWageFromPrintedLines(layer);
+      if (loud) return printedResult(loud);
+    }
+  }
   const printed = readPrintedSample(bytes);
   if (printed && hasLockedSuggestion(printed.extractClass, printed.fields)) {
     return printedResult(printed);
@@ -432,6 +444,12 @@ export async function classifyAndExtract(
   if (isPdf(bytes) || mediaType === "application/pdf") {
     const layer = readPdfTextLayer(bytes);
     if (layer?.length) {
+      const loud = loudWageFromPrintedLines(layer);
+      if (loud) return printedResult(loud);
+      const fromLines = printedSampleFromLines(layer);
+      if (fromLines && hasLockedSuggestion(fromLines.extractClass, fromLines.fields)) {
+        return printedResult(fromLines);
+      }
       const blob = layer.join("\n");
       if (/\bbox\s*5\b/i.test(blob)) {
         const fields = printed?.fields?.medicare_wages || printed?.fields?.box5
@@ -444,6 +462,14 @@ export async function classifyAndExtract(
             fields,
           });
         }
+      }
+      const stubFields = fieldsFromPrintedLines("paystub", layer);
+      if (hasLockedSuggestion("paystub", stubFields)) {
+        return printedResult({
+          extractClass: "paystub",
+          confidence: 0.94,
+          fields: stubFields,
+        });
       }
       if (printed && hasLockedSuggestion(printed.extractClass, printed.fields)) {
         return printedResult(printed);

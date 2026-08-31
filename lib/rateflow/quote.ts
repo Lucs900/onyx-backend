@@ -456,9 +456,19 @@ export function pickLeadRow(
   rows: RateflowProductRow[],
   purpose: RateflowPurpose,
 ): RateflowProductRow | null {
-  return purpose === "refinance"
-    ? pickConventional30NoCost(rows)
-    : pickConventional30LowestNoPoints(rows);
+  if (purpose === "refinance") {
+    return pickConventional30NoCost(rows) ?? pickConventional30LowestNoPoints(rows);
+  }
+  return pickConventional30LowestNoPoints(rows);
+}
+
+/** `ok: false` without `empty: true` is a flake — retry. Ready line only on a real empty book. */
+export function parseRateflowQuoteMiss(input: unknown): "empty" | "retryable" | null {
+  if (!input || typeof input !== "object") return "retryable";
+  const raw = input as Record<string, unknown>;
+  if (raw.ok === true) return null;
+  if (raw.empty === true) return "empty";
+  return "retryable";
 }
 
 export function safeCouponRowsFromProducts(rows: RateflowProductRow[]): SafeCouponRow[] {

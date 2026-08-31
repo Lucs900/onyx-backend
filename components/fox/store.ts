@@ -1446,7 +1446,13 @@ export function applyExtractWrite(
     !failed &&
     (extractedClass === "government_id" || extractedClass === "paystub" || extractedClass === "w2") &&
     !hasLockedSuggestion(extractedClass, input.fields);
-  const treatFailed = Boolean(failed || unreadEmpty);
+  const box5Read = Boolean(
+    String(input.fields?.medicare_wages ?? "").trim() || String(input.fields?.box5 ?? "").trim(),
+  );
+  const stubRead = Boolean(
+    String(input.fields?.gross_period ?? "").trim() && String(input.fields?.pay_frequency ?? "").trim(),
+  );
+  const treatFailed = Boolean(failed || unreadEmpty) && !box5Read && !stubRead;
   const displayClass =
     treatFailed || extractedClass === "other"
       ? preferFilenameClass(extractedClass, name)

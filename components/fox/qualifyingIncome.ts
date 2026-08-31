@@ -1443,10 +1443,11 @@ export function wageExtractPairReceived(draft: FoxIntakeDraft): boolean {
   return w2 && stub;
 }
 
-/** Both files in, but Box 5 / stub / frequency was not actually read. Not Box 1. */
+/** Both files in, Box 5 absent, and stub / frequency was not actually read. Not Box 1. */
 export function wageExtractFailedRead(draft: FoxIntakeDraft): boolean {
   if (!isWageExtractFirstPath(draft)) return false;
   if (isWageExtractProposal(draft.pendingProposal)) return false;
+  if (readWageBox5(draft) != null) return false;
   return wageExtractPairReceived(draft) && !wageExtractCanConfirm(draft);
 }
 
