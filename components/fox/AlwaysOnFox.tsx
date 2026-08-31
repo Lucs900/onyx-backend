@@ -455,6 +455,31 @@ export function FoxLauncher() {
   );
 }
 
+function isStatementsAskChip(action: FoxAction) {
+  const field = action.capture?.field;
+  return (
+    action.label === "Upload this" ||
+    (action.label === "Skip" && field === "skip-docs") ||
+    action.label === "Proceed" ||
+    action.label === "Not yet" ||
+    action.label === "Request human"
+  );
+}
+
+function foxTurnAlreadyUsed(thread: FoxMessage[], index: number) {
+  for (let i = index + 1; i < thread.length; i += 1) {
+    const item = thread[i];
+    if (item.role === "fox") return true;
+    if (
+      item.role === "client" &&
+      /^(This one|Use this|Looks right|Skip)$/i.test(item.text.trim())
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
 function FoxThread({
   messages,
   draft,
@@ -483,16 +508,22 @@ function FoxThread({
             </p>
           );
         }
-        const current = message.role === "fox" && index === currentFox;
+        const current =
+          message.role === "fox" && index === currentFox && !foxTurnAlreadyUsed(thread, index);
         const tone = current ? " is-current" : " is-prior";
-        const paintActions = (paintedFoxActions(message, draft, current) ?? []).filter(
-          (action) =>
-            action.capture?.field !== "propose-place-address" &&
-            !isStreetSuggestChipLabel(action.label),
-        );
+        const rawActions = current
+          ? (paintedFoxActions(message, draft, true) ?? []).filter(
+              (action) =>
+                action.capture?.field !== "propose-place-address" &&
+                !isStreetSuggestChipLabel(action.label),
+            )
+          : [];
+        const paintActions = rawActions.some(isStatementsAskChip)
+          ? rawActions.filter(isStatementsAskChip)
+          : rawActions;
         return (
           <article
-            key={message.id}
+            key={`${message.id}:${current ? "live" : "text"}`}
             className={
               message.role === "fox"
                 ? `fox-bubble fox-bubble--fox${tone}`

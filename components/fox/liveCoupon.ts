@@ -535,7 +535,7 @@ export function paintedFoxActions(
   if (!current) return undefined;
   const shown = visibleFoxActions(message, draft);
   if (!shown?.length) return undefined;
-  const docAsk = looksRightDocAskOpen(draft);
+  const docAsk = looksRightDocAskOpen(draft) || shown.some(isAfterLooksRightDocChip);
   const next = shown.filter((action) => {
     if (action.capture?.field === "propose-place-address" || isStreetSuggestChipLabel(action.label)) {
       return false;
