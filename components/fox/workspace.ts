@@ -179,6 +179,7 @@ import {
   bothMonthlyDisplay,
   bothMonthlyPair,
   typedBox5OnFile,
+  wageW2ExtractAccepted,
   decliningIncomeCaution,
   formatIncomeMoney,
   hasK1Ordinary,
@@ -191,6 +192,7 @@ import {
   PAYSTUB_MONTHLY_ASK,
   PAYSTUB_AMOUNT_FIELD,
   WAGE_DOCS_ASK,
+  WAGE_STUB_DROP_ASK,
   changeWageExtract,
   isWageExtractProposal,
   isWageW2OnlyProposal,
@@ -201,6 +203,7 @@ import {
   wageExtractConfirmCopy,
   wageW2ConfirmCopy,
   wageExtractFailedRead,
+  wageThreadOpen,
   writeWageBox5,
   writeTypedStubMonthly,
   qualifyingIncomeDisplay,
@@ -1544,7 +1547,16 @@ export function wagePayFrequencyAsk(): { text: string; actions: FoxAction[] } {
   };
 }
 
-export function wageStubMonthlyAsk(): { text: string; actions: FoxAction[] } {
+export function wageStubMonthlyAsk(draft?: FoxIntakeDraft): { text: string; actions: FoxAction[] } {
+  if (draft && wageW2ExtractAccepted(draft) && !readStubAmount(draft)) {
+    return {
+      text: WAGE_STUB_DROP_ASK,
+      actions: [
+        { id: "wage-stub-upload", label: "Upload", event: "open-docs", capture: { field: "open-docs" } },
+        wageSkipAction("skip-paystub-monthly"),
+      ],
+    };
+  }
   return { text: PAYSTUB_MONTHLY_ASK, actions: [wageSkipAction("skip-paystub-monthly")] };
 }
 
@@ -2881,7 +2893,7 @@ function workspaceAskCopy(
     return wagePayFrequencyAsk();
   }
   if (prompt === "paystub-monthly") {
-    return wageStubMonthlyAsk();
+    return wageStubMonthlyAsk(draft);
   }
   if (prompt === "subject-lease") {
     return subjectLeaseAskCopy();
@@ -5160,6 +5172,9 @@ export function workspaceReply(
 
   if (prompt === "paystub-monthly") {
     if (isFreeTextAtGate(q)) return answerThenRestore(q, draft);
+    if (/^upload$/i.test(lower)) {
+      return { ...wageStubMonthlyAsk(draft), capture: { field: "open-docs" } };
+    }
     if (/^(skip|later|not sure|idk|pass|not yet)\b/i.test(lower)) {
       const nextDraft = skipWageStub(draft);
       return { ...nextFoxAsk(nextDraft), capture: { field: "skip-paystub-monthly" } };
@@ -6624,21 +6639,34 @@ function numbersFact(draft: FoxIntakeDraft): PreviewFact | null {
 function docsFact(draft: FoxIntakeDraft): PreviewFact | null {
   if (draft.documents.length) {
     const wageUnread = wageExtractFailedRead(draft);
+    const w2Written = Boolean(factValue(draft, "w2_box5") || factValue(draft, "medicare_wages"));
     const labels = Array.from(
       new Set(
-        draft.documents.map((doc) => {
-          const wageLabel = docsDisplayLabel(doc);
-          const unreadWage =
-            wageUnread && (wageLabel === "W-2" || wageLabel === "Paystubs");
-          return isUnreadNote(doc.note) ||
-            doc.status === "failed" ||
-            doc.status === "needs better copy" ||
-            unreadWage
-            ? "received · could not read"
-            : `${wageLabel} in`;
-        }),
+        draft.documents
+          .map((doc) => {
+            const wageLabel = docsDisplayLabel(doc);
+            const failed =
+              isUnreadNote(doc.note) ||
+              doc.status === "failed" ||
+              doc.status === "needs better copy";
+            if (failed) return "received · could not read";
+            if (wageUnread && (wageLabel === "W-2" || wageLabel === "Paystubs")) {
+              return "received · could not read";
+            }
+            if (
+              wageLabel === "W-2" &&
+              wageThreadOpen(draft) &&
+              !draft.sampleAccepted &&
+              !w2Written
+            ) {
+              return "";
+            }
+            return `${wageLabel} in`;
+          })
+          .filter(Boolean),
       ),
     );
+    if (!labels.length) return null;
     return {
       id: "docs",
       label: "Docs",
@@ -7173,9 +7201,8 @@ export function previewFacts(draft: FoxIntakeDraft): PreviewFact[] {
   }
 
   if (
-    draft.sampleAccepted ||
-    draft.workspaceDraftStatus === "with-originator" ||
-    draft.phase === "confirmed"
+    (draft.sampleAccepted || draft.phase === "confirmed") &&
+    !isWageExtractProposal(draft.pendingProposal)
   ) {
     facts.push({
       id: "originator",

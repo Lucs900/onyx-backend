@@ -1302,6 +1302,7 @@ export const W2_BOX5_ASK =
   "What is Box 5 on that W-2? Medicare wages and tips. That is last year’s gross.";
 export const W2_PAY_FREQUENCY_ASK = "How often are you paid?";
 export const WAGE_DOCS_ASK = "Drop last year’s W-2 and a recent paystub. Skip if you want to type it.";
+export const WAGE_STUB_DROP_ASK = "Drop a recent paystub. Skip if you want to type it.";
 export const PAYSTUB_MONTHLY_ASK = "What's the amount on the latest stub?";
 export const PAYSTUB_AMOUNT_FIELD = "paystub_amount";
 export const WAGE_EXTRACT_FIELD = "wage_extract";
@@ -1310,6 +1311,12 @@ export const BOTH_MONTHLY_SKIP_NOTE_BOX5 = "Using W-2 Box 5 until we know why th
 
 export function typedBox5OnFile(draft: FoxIntakeDraft): boolean {
   return Boolean(parseExtractMoney(factValue(draft, "w2_box5")));
+}
+
+/** Extract Use this wrote Box 5. Typed Box 5 stays on the amount ask. */
+export function wageW2ExtractAccepted(draft: FoxIntakeDraft): boolean {
+  const fact = draft.facts?.w2_box5 ?? draft.facts?.medicare_wages;
+  return Boolean(fact?.confirmed && fact.source === "document" && parseExtractMoney(fact.value));
 }
 
 export function bothMonthlyMethodNoteForDraft(
@@ -1495,7 +1502,7 @@ export function skipWageFrequency(draft: FoxIntakeDraft): FoxIntakeDraft {
 }
 
 export function skipWageStub(draft: FoxIntakeDraft): FoxIntakeDraft {
-  return { ...draft, wageStubAsked: true, pendingProposal: null };
+  return { ...draft, wageStubAsked: true, pendingProposal: null, looksRightHold: false };
 }
 
 export function writeWagePayFrequency(draft: FoxIntakeDraft, raw: string): FoxIntakeDraft {
@@ -1624,7 +1631,7 @@ export function proposeWageW2Extract(draft: FoxIntakeDraft, box5: number, employ
   return {
     ...draft,
     awaitingPayFrequency: false,
-    looksRightHold: false,
+    looksRightHold: true,
     pendingProposal: {
       field: WAGE_EXTRACT_FIELD,
       value: Number.isInteger(box5) ? String(box5) : String(Math.round(box5 * 100) / 100),
@@ -1647,7 +1654,7 @@ export function proposeWageExtract(draft: FoxIntakeDraft, box5: number, stub: nu
   return {
     ...draft,
     awaitingPayFrequency: false,
-    looksRightHold: false,
+    looksRightHold: true,
     pendingProposal: {
       field: WAGE_EXTRACT_FIELD,
       value: String(monthly),
@@ -1701,16 +1708,17 @@ export function acceptWageExtract(draft: FoxIntakeDraft): FoxIntakeDraft {
     };
   }
   const now = new Date().toISOString();
+  const w2Only = isWageW2OnlyProposal(proposal);
   let next: FoxIntakeDraft = {
     ...draft,
     wageDocsAsked: true,
     wageBox5Asked: true,
     wageFrequencyAsked: true,
-    wageStubAsked: true,
+    wageStubAsked: !w2Only,
     awaitingPayFrequency: false,
     pendingProposal: null,
-    pendingWageExtract: undefined,
-    looksRightHold: false,
+    pendingWageExtract: w2Only ? { ...draft.pendingWageExtract, w2In: true } : undefined,
+    looksRightHold: w2Only,
   };
   const extras = proposal.extras ?? [];
   const facts = { ...(draft.facts ?? {}) };

@@ -95,6 +95,7 @@ import {
   PAYSTUB_MONTHLY_ASK,
   PAYSTUB_AMOUNT_FIELD,
   WAGE_DOCS_ASK,
+  WAGE_STUB_DROP_ASK,
   WAGE_EXTRACT_FIELD,
   W2_BOX1_MONTHLY_NOTE,
   W2_BOX5_ASK,
@@ -103,6 +104,8 @@ import {
   wageW2ConfirmCopy,
   wageExtractFailedRead,
   acceptWageExtract,
+  changeWageExtract,
+  skipWageStub,
   writeWagePayFrequency,
   writeTypedStubMonthly,
   writeWageBox5,
@@ -2574,7 +2577,7 @@ const harborPdfW2 = applyExtractedFields(
 );
 assert.equal(harborPdfW2.draft.pendingProposal, null);
 assert.equal(harborPdfW2.draft.documents[0]?.bytesRef, "fox-intake/w2-ot-bonus-2025.pdf");
-assert.ok(previewFacts(harborPdfW2.draft).some((fact) => fact.id === "docs" && fact.value === "W-2 in"));
+assert.ok(!previewFacts(harborPdfW2.draft).some((fact) => fact.id === "docs" && fact.value === "W-2 in"));
 assert.deepEqual(
   (wageDocsAsk(harborPdfW2.draft).actions ?? []).map((item) => item.label),
   ["Upload", "Skip"],
@@ -2662,8 +2665,10 @@ const harborBothHeld = applyExtractedFields(harborW2Held.draft, {
 });
 assert.equal(harborBothHeld.draft.pendingProposal?.field, WAGE_EXTRACT_FIELD);
 assert.equal(workspacePromptCopy("confirm-proposal", harborBothHeld.draft).text, "Box 5 $182,000. Stub $7,000 biweekly. Use this?");
-assert.ok(previewFacts(harborBothHeld.draft).some((fact) => fact.id === "docs" && /W-2 in/i.test(fact.value) && /Paystub/i.test(fact.value)));
+assert.ok(!previewFacts(harborBothHeld.draft).some((fact) => fact.id === "docs" && /W-2 in/i.test(fact.value)));
 assert.ok(!previewFacts(harborBothHeld.draft).some((fact) => fact.id === "employer" || fact.id === "pay" || fact.id === "qualifying" || fact.id === "history-employment"));
+assert.ok(!previewFacts(harborBothHeld.draft).some((fact) => fact.id === "originator"));
+assert.ok(!(workspacePromptCopy("confirm-proposal", harborBothHeld.draft).actions ?? []).some((item) => item.label === "Looks right"));
 const harborUsed = acceptWageExtract(harborBothHeld.draft);
 assert.equal(harborUsed.facts?.employer_name?.value, "HARBOR STEEL");
 assert.equal(harborUsed.facts?.w2_box5?.value, "182000");
@@ -2737,10 +2742,54 @@ assert.equal(loudAfterW2.draft.facts?.employer_name, undefined);
 assert.equal(loudAfterW2.draft.facts?.w2_box5, undefined);
 assert.equal(loudAfterW2.draft.facts?.qualifying_income, undefined);
 assert.ok(!previewFacts(loudAfterW2.draft).some((fact) => fact.id === "employer" || fact.id === "pay" || fact.id === "qualifying"));
+assert.ok(!previewFacts(loudAfterW2.draft).some((fact) => fact.id === "docs" && /W-2 in/i.test(fact.value)));
+assert.ok(!previewFacts(loudAfterW2.draft).some((fact) => fact.id === "docs" && /could not read/i.test(fact.value)));
+assert.ok(!previewFacts(loudAfterW2.draft).some((fact) => fact.id === "originator"));
+assert.ok(!canLooksRight(loudAfterW2.draft));
 assert.deepEqual(
   (workspacePromptCopy("confirm-proposal", loudAfterW2.draft).actions ?? []).map((item) => item.label),
   ["Use this", "Change"],
 );
+assert.ok(!(workspacePromptCopy("confirm-proposal", loudAfterW2.draft).actions ?? []).some((item) => item.label === "Looks right"));
+const loudW2Changed = changeWageExtract(loudAfterW2.draft);
+assert.equal(loudW2Changed.facts?.employer_name, undefined);
+assert.equal(loudW2Changed.facts?.w2_box5, undefined);
+assert.equal(loudW2Changed.pendingProposal, null);
+const loudW2Used = acceptWageExtract({
+  ...loudAfterW2.draft,
+  documents: [
+    {
+      slot: "w2" as const,
+      name: "03-w2-2025-jordan-hale.pdf",
+      type: "application/pdf",
+      size: 8000,
+      receivedAt: "2026-08-31T00:00:00.000Z",
+      status: "extracted" as const,
+      extractClass: "w2" as const,
+    },
+  ],
+});
+assert.equal(loudW2Used.facts?.w2_box5?.value, "118400");
+assert.equal(loudW2Used.facts?.employer_name?.value, "Harbor Pacific Design Inc");
+assert.ok(previewFacts(loudW2Used).some((fact) => fact.id === "docs" && fact.value === "W-2 in"));
+assert.ok(previewFacts(loudW2Used).some((fact) => fact.id === "employer" && /Harbor Pacific Design Inc/i.test(fact.value)));
+assert.ok(!previewFacts(loudW2Used).some((fact) => fact.id === "originator"));
+assert.equal(workspacePrompt(loudW2Used), "paystub-monthly");
+assert.equal(workspacePromptCopy("paystub-monthly", loudW2Used).text, WAGE_STUB_DROP_ASK);
+assert.deepEqual(
+  (workspacePromptCopy("paystub-monthly", loudW2Used).actions ?? []).map((item) => item.label),
+  ["Upload", "Skip"],
+);
+assert.ok(!canLooksRight(loudW2Used));
+assert.ok(!(workspacePromptCopy("paystub-monthly", loudW2Used).actions ?? []).some((item) => item.label === "Looks right"));
+assert.equal(loudW2Used.facts?.[PAYSTUB_AMOUNT_FIELD], undefined);
+const loudW2StubSkipped = skipWageStub(loudW2Used);
+assert.ok(canLooksRight(loudW2StubSkipped));
+assert.equal(workspacePrompt(loudW2StubSkipped), "review");
+assert.ok((workspacePromptCopy("review", loudW2StubSkipped).actions ?? []).some((item) => item.label === "Looks right"));
+assert.equal(loudW2StubSkipped.facts?.[PAYSTUB_AMOUNT_FIELD], undefined);
+assert.ok(!previewFacts(loudW2StubSkipped).some((fact) => fact.id === "originator"));
+assert.equal(nextDocInvite(loudW2StubSkipped), null);
 const loudAfterStub = applyExtractedFields(
   {
     ...loudAfterW2.draft,
@@ -2783,9 +2832,9 @@ assert.deepEqual(
 assert.ok(!previewFacts(loudAfterStub.draft).some((fact) => fact.id === "employer" || fact.id === "pay" || fact.id === "qualifying"));
 assert.doesNotMatch(workspacePromptCopy("confirm-proposal", loudAfterStub.draft).text, /84,000|84000/);
 assert.equal(wageExtractFailedRead(loudAfterStub.draft), false);
-assert.ok(
-  previewFacts(loudAfterStub.draft).some((fact) => fact.id === "docs" && /W-2 in/i.test(fact.value) && /Paystub/i.test(fact.value)),
-);
+assert.ok(!previewFacts(loudAfterStub.draft).some((fact) => fact.id === "docs" && /W-2 in/i.test(fact.value)));
+assert.ok(!previewFacts(loudAfterStub.draft).some((fact) => fact.id === "originator"));
+assert.ok(!(workspacePromptCopy("confirm-proposal", loudAfterStub.draft).actions ?? []).some((item) => item.label === "Looks right"));
 assert.doesNotMatch(
   previewFacts(loudAfterStub.draft).find((fact) => fact.id === "docs")?.value ?? "",
   /received · could not read/,
