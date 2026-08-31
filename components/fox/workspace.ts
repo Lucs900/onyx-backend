@@ -176,6 +176,7 @@ import {
   applyRaiseWhenAnswer,
   applyRaiseYtdFarAnswer,
   bothMonthlyAskCopyForDraft,
+  WAGE_BOX5_STUB_DIFFER_ASK,
   bothMonthlyDisplay,
   bothMonthlyPair,
   typedBox5OnFile,
@@ -1574,6 +1575,17 @@ export function bothMonthlyReasonAsk(draft: FoxIntakeDraft): {
   text: string;
   actions: FoxAction[];
 } {
+  if (wageW2ExtractAccepted(draft) && draft.stubExtractAccepted) {
+    return {
+      text: WAGE_BOX5_STUB_DIFFER_ASK,
+      actions: [
+        { id: "both-raise", label: "Raise", event: "bubble", capture: { field: "bothMonthlyReason", value: "raise" } },
+        { id: "both-ot", label: "OT", event: "bubble", capture: { field: "bothMonthlyReason", value: "overtime-bonus" } },
+        { id: "both-second", label: "Second job", event: "bubble", capture: { field: "bothMonthlyReason", value: "second-job" } },
+        { id: "both-skip", label: "Skip", event: "bubble", capture: { field: "bothMonthlyReason", value: "skip" } },
+      ],
+    };
+  }
   const pair = bothMonthlyPair(draft);
   return {
     text: pair

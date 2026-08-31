@@ -143,7 +143,7 @@ import {
   layer2AskActions,
   type DocIntakeDetail,
 } from "./fileWrite";
-import { DECLINING_INCOME_CAUTION, WAGE_DOCS_ASK, WAGE_STUB_DROP_ASK } from "./qualifyingIncome";
+import { DECLINING_INCOME_CAUTION, WAGE_BOX5_STUB_DIFFER_ASK, WAGE_DOCS_ASK, WAGE_STUB_DROP_ASK } from "./qualifyingIncome";
 import { isUnreadNote } from "@/lib/docs/accept";
 import { fileExists, finishLineActions, inQueueEnding, reviewIsSitting } from "./motion";
 import { pathFromHomeChoice } from "./homeIdle";
@@ -332,6 +332,15 @@ function applyFoxAsk(
     (last.text === WAGE_STUB_DROP_ASK || /^Drop a recent paystub\b/i.test(last.text)) &&
     ask.text !== last.text &&
     ask.text !== WAGE_STUB_DROP_ASK
+  ) {
+    return messages.map((message) =>
+      message.id === last.id ? foxAskMessage(ask) : message,
+    );
+  }
+  if (
+    last &&
+    /Use this\?$/.test(last.text) &&
+    ask.text === WAGE_BOX5_STUB_DIFFER_ASK
   ) {
     return messages.map((message) =>
       message.id === last.id ? foxAskMessage(ask) : message,

@@ -10,6 +10,7 @@ import {
   BOTH_MONTHLY_OT_NOTE,
   BOTH_MONTHLY_SECOND_JOB_NOTE,
   YTD_CONFLICT_CAUTION,
+  YTD_CONFLICT_GAP,
   K1_ORDINARY_NOTE,
   SECOND_JOB_SAME_STUB_NOTE,
   SECOND_JOB_THIN_NOTE,
@@ -950,6 +951,26 @@ export function applyBothMonthlyReasonAnswer(
       pendingConflict: null,
     });
   }
+  if (wageExtractBothOnFile(draft) && reason === "skip") {
+    return {
+      ...draft,
+      awaitingBothMonthlyReason: false,
+      awaitingRaiseWhen: false,
+      awaitingRaiseYtdFar: false,
+      bothMonthlyReason: "skip",
+      looksRightHold: false,
+      pendingProposal: null,
+      pendingConflict: null,
+    };
+  }
+  if (wageExtractBothOnFile(draft) && reason === "second-job") {
+    return proposeStubJobAsk({
+      ...draft,
+      awaitingBothMonthlyReason: false,
+      bothMonthlyReason: "second-job",
+      looksRightHold: true,
+    });
+  }
   const proposed = proposeBothMonthlyIncome(pair.stub, pair.w2, reason);
   const caution = box5WageCopy(draft, proposed.caution ?? bothMonthlyReasonNote(reason));
   const methodNote = bothMonthlyMethodNoteForDraft(draft, pair.stub, pair.w2);
@@ -1345,6 +1366,25 @@ function box5WageCopy(draft: FoxIntakeDraft, text: string): string {
 }
 
 export const STUB_MONTHLY_NOTE = "Latest stub monthly";
+/** After stub Use this: Box 5 and stub monthly are close, not the same. One line. */
+export const WAGE_BOX5_STUB_DIFFER_ASK = "Last year and this stub are close, not the same month.";
+
+function wageExtractBox5StubDiffer(
+  draft: FoxIntakeDraft,
+  stubMonthly: number,
+): { w2Monthly: number } | null {
+  if (!wageW2ExtractAccepted(draft) || stubMonthly <= 0) return null;
+  const box5 = readWageBox5(draft);
+  if (box5 == null || box5 <= 0) return null;
+  const w2Monthly = monthlyFromAnnual(box5);
+  if (w2Monthly <= 0) return null;
+  if (Math.abs(stubMonthly - w2Monthly) < YTD_CONFLICT_GAP) return null;
+  return { w2Monthly };
+}
+
+function wageExtractBothOnFile(draft: FoxIntakeDraft): boolean {
+  return wageW2ExtractAccepted(draft) && Boolean(draft.stubExtractAccepted);
+}
 
 export function speakPayFrequency(raw?: string | null): string {
   const v = String(raw ?? "")
@@ -2113,6 +2153,11 @@ function writeStubPayLine(
   } else if (mode === "only" && parts.employer && !fileEmployer) {
     next = writeCurrentEmploymentHistory(next, parts.employer);
   }
+  const differ = mode !== "two" ? wageExtractBox5StubDiffer(next, parts.monthly) : null;
+  if (differ) {
+    next = writeConfirmedIncomeFact(next, W2_MONTHLY_FIELD, String(differ.w2Monthly), "computed");
+    return { ...enterBothMonthlyAsk(next), looksRightHold: true };
+  }
   return next;
 }
 
@@ -2153,6 +2198,17 @@ export function acceptStubExtract(draft: FoxIntakeDraft): FoxIntakeDraft {
 export function acceptStubJob(draft: FoxIntakeDraft, answer: "same" | "two"): FoxIntakeDraft {
   const parts = stubExtractParts(draft);
   if (!parts) return draft;
+  if (draft.stubExtractAccepted) {
+    let next: FoxIntakeDraft = {
+      ...draft,
+      pendingProposal: null,
+      awaitingBothMonthlyReason: false,
+      looksRightHold: false,
+      bothMonthlyReason: answer === "two" ? "second-job" : draft.bothMonthlyReason,
+    };
+    if (answer === "two") next = writeCurrentEmploymentHistory(next, parts.employer);
+    return next;
+  }
   return writeStubPayLine(draft, parts, answer);
 }
 

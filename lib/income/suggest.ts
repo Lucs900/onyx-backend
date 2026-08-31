@@ -420,7 +420,7 @@ export function parseBothMonthlyReason(raw: string): BothMonthlyReason | null {
   const v = String(raw ?? "").trim().toLowerCase();
   if (!v) return null;
   if (/\b(skip|later|not sure|idk|pass|don.?t know|no idea|unknown)\b/.test(v)) return "skip";
-  if (v === "overtime-bonus" || v === "overtime / bonus" || v === "overtime/bonus") return "overtime-bonus";
+  if (v === "ot" || v === "overtime-bonus" || v === "overtime / bonus" || v === "overtime/bonus") return "overtime-bonus";
   if (v === "second-job" || v === "second job") return "second-job";
   if (v === "raise" || v === "raise / new base" || v === "raise/new base") return "raise";
   if (/\b(overtime|\bot\b|bonus|commission|fat check)\b/.test(v)) return "overtime-bonus";
