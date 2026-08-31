@@ -23,7 +23,12 @@ import {
   k1OrdinaryMissingDistributions,
   isWageExtractFirstPath,
   isWageExtractProposal,
+  isStubExtractProposal,
+  isStubJobProposal,
   maybeProposeWageExtract,
+  maybeProposeStubExtract,
+  shouldProposeStubExtract,
+  employersClose,
   wageExtractFailedRead,
   monthlyQualifyingFromExtract,
   normalizeReturnKind,
@@ -1078,7 +1083,15 @@ export function applyExtractedFields(
     Boolean(readStubAmount(draft)) ||
     Boolean(draft.wageFrequencyAsked) ||
     Boolean(draft.awaitingPayFrequency);
-  if (wageExtractFirst || (holdWageFileWrites && extractClass === "w2" && !stubAlreadyOnFile)) {
+  if (shouldProposeStubExtract(draft, extractClass)) {
+    const employee = String(input.fields.full_name ?? input.fields.employee_name ?? "").trim();
+    next = maybeProposeStubExtract(
+      { ...next, pendingConflict: null, awaitingPayFrequency: false },
+      employee ? { ...fields, full_name: employee } : fields,
+      extractClass,
+    );
+    conflict = next.pendingConflict ?? null;
+  } else if (wageExtractFirst || (holdWageFileWrites && extractClass === "w2" && !stubAlreadyOnFile)) {
     next = maybeProposeWageExtract(
       { ...next, pendingConflict: null, awaitingPayFrequency: false },
       fields,
@@ -1133,7 +1146,9 @@ export function applyExtractedFields(
     }
   }
   const rawHire =
-    !wageExtractFirst && (extractClass === "paystub" || extractClass === "w2")
+    !wageExtractFirst &&
+    !isStubExtractProposal(next.pendingProposal) &&
+    (extractClass === "paystub" || extractClass === "w2")
       ? String(fields.hire_date ?? "").trim()
       : "";
   const hire = rawHire ? parseHireDate(rawHire) : null;
@@ -1262,12 +1277,25 @@ export function applyExtractedFields(
   if (
     !wageExtractFirst &&
     !isWageExtractProposal(next.pendingProposal) &&
+    !isStubExtractProposal(next.pendingProposal) &&
+    !isStubJobProposal(next.pendingProposal) &&
     (extractClass === "paystub" || extractClass === "w2") &&
     extractedEmployer
   ) {
-    next = writeCurrentEmploymentHistory(next, extractedEmployer);
+    const already = (next.employmentHistory ?? []).some((item) =>
+      employersClose(item.label, extractedEmployer),
+    );
+    if (!already) {
+      next = writeCurrentEmploymentHistory(next, extractedEmployer);
+    }
   }
-  if (payConfirmWrites.length && !wageExtractFirst && !isWageExtractProposal(next.pendingProposal)) {
+  if (
+    payConfirmWrites.length &&
+    !wageExtractFirst &&
+    !isWageExtractProposal(next.pendingProposal) &&
+    !isStubExtractProposal(next.pendingProposal) &&
+    !isStubJobProposal(next.pendingProposal)
+  ) {
     const extras = payConfirmWrites.map((item) => ({
       field: item.field,
       value: item.value,
@@ -1359,7 +1387,12 @@ export function applyExtractedFields(
   const cautionDraft = { ...next, facts: cautionFacts };
   const caution = decliningIncomeCaution(cautionDraft) ?? wageIncomeCaution(cautionDraft);
   const quietLines = caution ? [caution] : [];
-  if (employerMismatchStay(draft, extractClass, fields) && !quietLines.includes(EMPLOYER_MISMATCH_LINE)) {
+  if (
+    employerMismatchStay(draft, extractClass, fields) &&
+    !isStubExtractProposal(next.pendingProposal) &&
+    !isStubJobProposal(next.pendingProposal) &&
+    !quietLines.includes(EMPLOYER_MISMATCH_LINE)
+  ) {
     quietLines.push(EMPLOYER_MISMATCH_LINE);
   }
   return {
@@ -1392,6 +1425,7 @@ function employerMismatchStay(
   const incoming = normalizeEmployerName(fields.employer_name);
   const existing = normalizeEmployerName(draft.facts?.employer_name?.value);
   if (!incoming || !existing || incoming === existing) return false;
+  if (employersClose(fields.employer_name, draft.facts?.employer_name?.value)) return false;
   // W-2-only drop never invents a stub or a stub-employer mismatch.
   if (extractClass !== "paystub") return false;
   const fileHasW2 =

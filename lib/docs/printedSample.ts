@@ -672,18 +672,12 @@ export function loudWageFromPrintedLines(lines: string[]): PrintedSample | null 
       },
     };
   }
-  const blob = lines.join("\n");
-  const compact = blob.replace(/[$,\s]/g, "");
-  if (/4615\.?38/.test(compact) && /biweekly/i.test(blob)) {
-    const stubFields = fieldsFromPrintedLines("paystub", lines);
+  const stubFields = fieldsFromPrintedLines("paystub", lines);
+  if (stubFields.gross_period && stubFields.pay_frequency) {
     return {
       extractClass: "paystub",
       confidence: 0.94,
-      fields: {
-        ...stubFields,
-        gross_period: stubFields.gross_period,
-        pay_frequency: stubFields.pay_frequency,
-      },
+      fields: stubFields,
     };
   }
   return null;

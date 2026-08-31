@@ -36,9 +36,14 @@ import {
   wageIncomeCaution,
   wageThreadOpen,
   acceptWageExtract,
+  acceptStubExtract,
   changeWageExtract,
+  changeStubExtract,
   isWageExtractProposal,
+  isStubExtractProposal,
+  isStubJobProposal,
   isWageW2OnlyProposal,
+  stubExtractConfirmCopy,
   wageExtractConfirmCopy,
   wageW2ConfirmCopy,
 } from "./qualifyingIncome";
@@ -824,6 +829,15 @@ export function proposalAskCopy(proposal: FactProposal) {
     if (isWageW2OnlyProposal(proposal)) return wageW2ConfirmCopy(box5, employer);
     return wageExtractConfirmCopy(box5, stub, frequency);
   }
+  if (isStubExtractProposal(proposal)) {
+    const stub = Number(proposal.extras?.find((item) => item.field === "paystub_amount")?.value ?? 0);
+    const frequency = proposal.extras?.find((item) => item.field === "pay_frequency")?.value ?? "";
+    const employer = proposal.extras?.find((item) => item.field === "employer_name")?.value ?? "";
+    const employee = proposal.extras?.find((item) => item.field === "full_name")?.value ?? "";
+    const monthly = Number(proposal.extras?.find((item) => item.field === "paystub_monthly")?.value ?? 0);
+    return stubExtractConfirmCopy(employer, stub, frequency, monthly, employee);
+  }
+  if (isStubJobProposal(proposal)) return "Same job or two jobs?";
   if (proposal.field === PROPERTY_TYPE_FIELD && isPropertyTypeValue(proposal.value)) {
     return propertyTypeConfirmCopy(proposal.value);
   }
@@ -1258,6 +1272,14 @@ export function resolveProposal(
   if (isWageExtractProposal(proposal)) {
     if (winner === "accept") return acceptWageExtract(draft);
     return changeWageExtract(draft);
+  }
+  if (isStubExtractProposal(proposal)) {
+    if (winner === "accept") return acceptStubExtract(draft);
+    return changeStubExtract(draft);
+  }
+  if (isStubJobProposal(proposal)) {
+    if (winner === "accept") return acceptStubExtract(draft);
+    return changeStubExtract(draft);
   }
   if (winner === "decline") {
     if (proposal.field === ESTIMATED_HOUSING_FIELD) {

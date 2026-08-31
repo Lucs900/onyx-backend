@@ -294,6 +294,8 @@ export type FoxIntakeDraft = {
   wageFrequencyAsked?: boolean;
   /** W-2 thread: stub amount asked or skipped. Not a File field. */
   wageStubAsked?: boolean;
+  /** Stub extract Use this wrote pay onto Employment. Not the combined W-2+stub extract. */
+  stubExtractAccepted?: boolean;
   /** Failed-read note: next typed line stays on that unread item. */
   awaitingUnreadNote?: boolean;
   statedMonthlyDebts?: number;
@@ -448,6 +450,8 @@ export type FoxIntakeDraft = {
     stub?: number;
     frequency?: string;
     employer?: string;
+    employee?: string;
+    monthly?: number;
     w2In?: boolean;
     stubIn?: boolean;
   } | null;
@@ -653,6 +657,7 @@ export type Capture =
   | { field: "skip-w2-pay-frequency" }
   | { field: "paystubMonthly"; value: string }
   | { field: "skip-paystub-monthly" }
+  | { field: "stubJob"; value: "same" | "two" }
   | { field: "bothMonthlyReason"; value: string }
   | { field: "raiseWhen"; value: string }
   | { field: "yearsInBusiness"; value: string }

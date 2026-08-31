@@ -97,6 +97,13 @@ import {
   WAGE_DOCS_ASK,
   WAGE_STUB_DROP_ASK,
   WAGE_EXTRACT_FIELD,
+  STUB_EXTRACT_FIELD,
+  STUB_JOB_FIELD,
+  STUB_JOB_ASK,
+  stubExtractConfirmCopy,
+  acceptStubExtract,
+  acceptStubJob,
+  changeStubExtract,
   W2_BOX1_MONTHLY_NOTE,
   W2_BOX5_ASK,
   W2_PAY_FREQUENCY_ASK,
@@ -2695,6 +2702,8 @@ assert.doesNotMatch(JSON.stringify(loudW2Printed?.fields ?? {}), /84000/);
 assert.equal(loudStubPrinted?.extractClass, "paystub");
 assert.equal(loudStubPrinted?.fields.gross_period, "4615.38");
 assert.equal(loudStubPrinted?.fields.pay_frequency, "biweekly");
+assert.equal(loudStubPrinted?.fields.employer_name, "Harbor Pacific Design Inc");
+assert.equal(loudStubPrinted?.fields.full_name, "Jordan Hale");
 assert.equal(wageExtractConfirmCopy(118400, 4615.38, "biweekly"), "Box 5 $118,400. Stub $4,615.38 biweekly. Use this?");
 assert.equal(wageW2ConfirmCopy(118400, "Harbor Pacific Design Inc"), "Box 5 $118,400. Harbor Pacific Design Inc. Use this?");
 assert.equal(unreadDropBytesCopy("06-w2-2025-box5-loud.pdf", 12345), "06-w2-2025-box5-loud.pdf · 12,345 bytes");
@@ -2838,6 +2847,195 @@ assert.ok((workspacePromptCopy("review", loudW2StubSkipped).actions ?? []).some(
 assert.equal(loudW2StubSkipped.facts?.[PAYSTUB_AMOUNT_FIELD], undefined);
 assert.ok(!previewFacts(loudW2StubSkipped).some((fact) => fact.id === "originator"));
 assert.equal(nextDocInvite(loudW2StubSkipped), null);
+
+const loudStubSpoken = stubExtractConfirmCopy(
+  "Harbor Pacific Design Inc",
+  4615.38,
+  "biweekly",
+  9999.99,
+  "Jordan Hale",
+);
+assert.equal(
+  loudStubSpoken,
+  "Harbor Pacific Design Inc. Jordan Hale. $4,615.38 biweekly. $9,999.99 a month. Use this?",
+);
+const loudStubAfterW2 = applyExtractedFields(
+  {
+    ...loudW2Used,
+    documents: [
+      ...(loudW2Used.documents ?? []),
+      {
+        slot: "paystubs" as const,
+        name: "paycheck.pdf",
+        type: "application/pdf",
+        size: loudStubBytes.length,
+        receivedAt: "2026-08-31T00:01:00.000Z",
+        status: "extracted" as const,
+        extractClass: "paystub" as const,
+      },
+    ],
+  },
+  {
+    extractClass: "paystub",
+    confidence: 0.94,
+    fields: loudStubPrinted!.fields,
+  },
+);
+assert.equal(loudStubAfterW2.draft.pendingProposal?.field, STUB_EXTRACT_FIELD);
+assert.equal(workspacePrompt(loudStubAfterW2.draft), "confirm-proposal");
+assert.equal(workspacePromptCopy("confirm-proposal", loudStubAfterW2.draft).text, loudStubSpoken);
+assert.deepEqual(
+  (workspacePromptCopy("confirm-proposal", loudStubAfterW2.draft).actions ?? []).map((item) => item.label),
+  ["Use this", "Change", "Skip"],
+);
+assert.ok(!(workspacePromptCopy("confirm-proposal", loudStubAfterW2.draft).actions ?? []).some((item) => item.label === "Looks right"));
+assert.equal(loudStubAfterW2.draft.facts?.[PAYSTUB_AMOUNT_FIELD], undefined);
+assert.equal(loudStubAfterW2.draft.facts?.pay_frequency, undefined);
+assert.equal(loudStubAfterW2.draft.facts?.paystub_monthly, undefined);
+assert.equal(loudStubAfterW2.draft.facts?.gross_period, undefined);
+assert.ok(!previewFacts(loudStubAfterW2.draft).some((fact) => fact.id === "pay" || fact.id === "qualifying"));
+assert.ok(
+  previewFacts(loudStubAfterW2.draft).some(
+    (fact) =>
+      fact.label === "Employment" &&
+      /Harbor Pacific Design Inc/i.test(fact.value) &&
+      /Box 5 \$118,400/.test(fact.value),
+  ),
+);
+assert.equal(
+  previewFacts(loudStubAfterW2.draft).filter((fact) => fact.id === "employer" || fact.label === "Employment").length,
+  1,
+);
+assert.ok(!previewFacts(loudStubAfterW2.draft).some((fact) => fact.id === "originator"));
+assert.ok(!canLooksRight(loudStubAfterW2.draft));
+assert.ok(!loudStubAfterW2.quietLines.includes(EMPLOYER_MISMATCH_LINE));
+
+const loudStubChanged = changeStubExtract(loudStubAfterW2.draft);
+assert.equal(loudStubChanged.pendingProposal?.field, STUB_EXTRACT_FIELD);
+assert.equal(workspacePrompt(loudStubChanged), "confirm-proposal");
+assert.equal(workspacePromptCopy("confirm-proposal", loudStubChanged).text, loudStubSpoken);
+assert.equal(loudStubChanged.facts?.[PAYSTUB_AMOUNT_FIELD], undefined);
+assert.equal(loudStubChanged.facts?.pay_frequency, undefined);
+assert.equal(loudStubChanged.facts?.paystub_monthly, undefined);
+assert.ok(
+  previewFacts(loudStubChanged).some(
+    (fact) => fact.label === "Employment" && /Box 5 \$118,400/.test(fact.value),
+  ),
+);
+assert.ok(!canLooksRight(loudStubChanged));
+assert.ok(!previewFacts(loudStubChanged).some((fact) => fact.id === "originator"));
+
+const loudStubUsed = acceptStubExtract(loudStubAfterW2.draft);
+assert.equal(loudStubUsed.facts?.[PAYSTUB_AMOUNT_FIELD]?.value, "4615.38");
+assert.equal(loudStubUsed.facts?.pay_frequency?.value, "biweekly");
+assert.equal(loudStubUsed.facts?.paystub_monthly?.value, "9999.99");
+assert.equal(loudStubUsed.facts?.employer_name?.value, "Harbor Pacific Design Inc");
+assert.equal((loudStubUsed.employmentHistory ?? []).length, 1);
+assert.ok(
+  previewFacts(loudStubUsed).some(
+    (fact) =>
+      fact.label === "Employment" &&
+      /Harbor Pacific Design Inc/i.test(fact.value) &&
+      /biweekly/.test(fact.value) &&
+      /\$4,615\.38/.test(fact.value) &&
+      /\$9,999\.99 a month/.test(fact.value),
+  ),
+);
+assert.equal(
+  previewFacts(loudStubUsed).filter((fact) => fact.id === "employer" || fact.label === "Employment").length,
+  1,
+);
+assert.ok(canLooksRight(loudStubUsed));
+assert.equal(workspacePrompt(loudStubUsed), "review");
+assert.ok((workspacePromptCopy("review", loudStubUsed).actions ?? []).some((item) => item.label === "Looks right"));
+
+const loudStubClose = applyExtractedFields(
+  {
+    ...loudW2Used,
+    documents: [
+      ...(loudW2Used.documents ?? []),
+      {
+        slot: "paystubs" as const,
+        name: "harbor-pacific.pdf",
+        type: "application/pdf",
+        size: 1200,
+        receivedAt: "2026-08-31T00:02:00.000Z",
+        status: "extracted" as const,
+        extractClass: "paystub" as const,
+      },
+    ],
+  },
+  {
+    extractClass: "paystub",
+    confidence: 0.94,
+    fields: {
+      ...loudStubPrinted!.fields,
+      employer_name: "Harbor Pacific",
+    },
+  },
+);
+assert.equal(loudStubClose.draft.pendingProposal?.field, STUB_EXTRACT_FIELD);
+const loudStubCloseUsed = acceptStubExtract(loudStubClose.draft);
+assert.equal((loudStubCloseUsed.employmentHistory ?? []).length, 1);
+assert.equal(loudStubCloseUsed.facts?.employer_name?.value, "Harbor Pacific Design Inc");
+assert.equal(loudStubCloseUsed.facts?.[PAYSTUB_AMOUNT_FIELD]?.value, "4615.38");
+assert.equal(loudStubCloseUsed.pendingProposal, null);
+assert.ok(!previewFacts(loudStubCloseUsed).some((fact) => /Acme|Night Shift/i.test(fact.value)));
+
+const loudStubDiffer = applyExtractedFields(
+  {
+    ...loudW2Used,
+    documents: [
+      ...(loudW2Used.documents ?? []),
+      {
+        slot: "paystubs" as const,
+        name: "other-job.pdf",
+        type: "application/pdf",
+        size: 1200,
+        receivedAt: "2026-08-31T00:03:00.000Z",
+        status: "extracted" as const,
+        extractClass: "paystub" as const,
+      },
+    ],
+  },
+  {
+    extractClass: "paystub",
+    confidence: 0.94,
+    fields: {
+      ...loudStubPrinted!.fields,
+      employer_name: "Acme Steel LLC",
+    },
+  },
+);
+assert.equal(loudStubDiffer.draft.pendingProposal?.field, STUB_EXTRACT_FIELD);
+assert.equal((loudStubDiffer.draft.employmentHistory ?? []).length, 1);
+const loudStubDifferAsked = acceptStubExtract(loudStubDiffer.draft);
+assert.equal(loudStubDifferAsked.pendingProposal?.field, STUB_JOB_FIELD);
+assert.equal(workspacePromptCopy("confirm-proposal", loudStubDifferAsked).text, STUB_JOB_ASK);
+assert.deepEqual(
+  (workspacePromptCopy("confirm-proposal", loudStubDifferAsked).actions ?? []).map((item) => item.label),
+  ["Same job", "Two jobs"],
+);
+assert.equal(loudStubDifferAsked.facts?.[PAYSTUB_AMOUNT_FIELD], undefined);
+assert.equal((loudStubDifferAsked.employmentHistory ?? []).length, 1);
+assert.ok(!canLooksRight(loudStubDifferAsked));
+const loudStubSameJob = acceptStubJob(loudStubDifferAsked, "same");
+assert.equal((loudStubSameJob.employmentHistory ?? []).length, 1);
+assert.equal(loudStubSameJob.facts?.employer_name?.value, "Harbor Pacific Design Inc");
+assert.equal(loudStubSameJob.facts?.[PAYSTUB_AMOUNT_FIELD]?.value, "4615.38");
+const loudStubTwoJobs = acceptStubJob(loudStubDifferAsked, "two");
+assert.equal((loudStubTwoJobs.employmentHistory ?? []).length, 2);
+assert.ok((loudStubTwoJobs.employmentHistory ?? []).some((item) => /Acme Steel/i.test(item.label ?? "")));
+assert.ok((loudStubTwoJobs.employmentHistory ?? []).some((item) => /Harbor Pacific Design Inc/i.test(item.label ?? "")));
+assert.equal(loudStubTwoJobs.facts?.employer_name?.value, "Harbor Pacific Design Inc");
+assert.equal(loudStubTwoJobs.facts?.[PAYSTUB_AMOUNT_FIELD]?.value, "4615.38");
+
+const loudStubSkippedAfterDrop = skipWageStub(loudStubAfterW2.draft);
+assert.ok(canLooksRight(loudStubSkippedAfterDrop));
+assert.equal(workspacePrompt(loudStubSkippedAfterDrop), "review");
+assert.equal(loudStubSkippedAfterDrop.facts?.[PAYSTUB_AMOUNT_FIELD], undefined);
+assert.equal(loudStubSkippedAfterDrop.facts?.pay_frequency, undefined);
+
 const loudAfterStub = applyExtractedFields(
   {
     ...loudAfterW2.draft,

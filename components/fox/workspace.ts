@@ -191,11 +191,19 @@ import {
   parseRaiseWhen,
   PAYSTUB_MONTHLY_ASK,
   PAYSTUB_AMOUNT_FIELD,
+  PAYSTUB_MONTHLY_FIELD,
   WAGE_DOCS_ASK,
   WAGE_STUB_DROP_ASK,
   changeWageExtract,
+  changeStubExtract,
+  acceptStubJob,
   isWageExtractProposal,
+  isStubExtractProposal,
+  isStubJobProposal,
   isWageW2OnlyProposal,
+  STUB_JOB_ASK,
+  stubExtractConfirmCopy,
+  employersClose,
   wageEmploymentUnconfirmed,
   wageEmploymentFileLine,
   readStubAmount,
@@ -1641,6 +1649,39 @@ function liveProposalAsk(
       actions: incomeConfirmActions(),
     };
   }
+  if (isStubExtractProposal(proposal)) {
+    const stub =
+      Number(proposal.extras?.find((item) => item.field === PAYSTUB_AMOUNT_FIELD)?.value) ||
+      readStubAmount(draft) ||
+      0;
+    const frequency =
+      proposal.extras?.find((item) => item.field === "pay_frequency")?.value ||
+      readWageFrequency(draft);
+    const employer =
+      proposal.extras?.find((item) => item.field === "employer_name")?.value ||
+      String(draft.pendingWageExtract?.employer ?? "").trim();
+    const employee = proposal.extras?.find((item) => item.field === "full_name")?.value ?? "";
+    const monthly =
+      Number(proposal.extras?.find((item) => item.field === PAYSTUB_MONTHLY_FIELD)?.value) ||
+      draft.pendingWageExtract?.monthly ||
+      0;
+    return {
+      text: stubExtractConfirmCopy(employer, stub, frequency, monthly, employee),
+      actions: [
+        ...incomeConfirmActions(),
+        wageSkipAction("skip-paystub-monthly"),
+      ],
+    };
+  }
+  if (isStubJobProposal(proposal)) {
+    return {
+      text: STUB_JOB_ASK,
+      actions: [
+        { id: "stub-same-job", label: "Same job", event: "bubble", capture: { field: "stubJob", value: "same" } },
+        { id: "stub-two-jobs", label: "Two jobs", event: "bubble", capture: { field: "stubJob", value: "two" } },
+      ],
+    };
+  }
   if (proposal.field === STATED_MONTHLY_DEBTS_FIELD) {
     const amount = Number(proposal.value);
     return {
@@ -2534,7 +2575,9 @@ export function shouldDeferStillUsefulAsk(draft: FoxIntakeDraft): boolean {
     isOtherReoConfirmPending(draft) ||
     isFileNetConfirmPending(draft) ||
     draft.pendingProposal?.field === OTHER_REO_PAYMENT_FIELD ||
-    isWageExtractProposal(draft.pendingProposal)
+    isWageExtractProposal(draft.pendingProposal) ||
+    isStubExtractProposal(draft.pendingProposal) ||
+    isStubJobProposal(draft.pendingProposal)
   );
 }
 
@@ -3608,6 +3651,9 @@ export function promptForProposalField(field?: string | null): FoxPrompt | undef
 
 export function changePendingProposal(draft: FoxIntakeDraft): FoxIntakeDraft {
   if (isWageExtractProposal(draft.pendingProposal)) return changeWageExtract(draft);
+  if (isStubExtractProposal(draft.pendingProposal) || isStubJobProposal(draft.pendingProposal)) {
+    return changeStubExtract(draft);
+  }
   const field = draft.pendingProposal?.field;
   if (isFileNetField(field)) return skipOtherReoFileNet(draft);
   const prompt = promptForProposalField(field ?? (draft.pendingAddress ? "property_address" : undefined));
@@ -3684,6 +3730,7 @@ export function editPromptFromCapture(capture?: Capture): FoxPrompt | undefined 
   if (capture.field === "paystubMonthly" || capture.field === "skip-paystub-monthly") {
     return "paystub-monthly";
   }
+  if (capture.field === "stubJob") return "confirm-proposal";
   if (
     capture.field === "skip-monthly-debts" ||
     capture.field === "propose-monthly-debts" ||
@@ -4594,6 +4641,11 @@ function draftAfterCaptureBody(draft: FoxIntakeDraft, capture: Capture): FoxInta
     return Number.isFinite(monthly) && monthly > 0 ? writeTypedStubMonthly(next, monthly) : next;
   }
   if (capture.field === "skip-paystub-monthly") return skipWageStub(next);
+  if (capture.field === "stubJob") {
+    return capture.value === "two" || capture.value === "same"
+      ? acceptStubJob(next, capture.value)
+      : next;
+  }
   if (capture.field === "bothMonthlyReason") return applyBothMonthlyReasonAnswer(next, capture.value);
   if (capture.field === "raiseWhen") {
     return draft.awaitingRaiseYtdFar ? applyRaiseYtdFarAnswer(next, capture.value) : applyRaiseWhenAnswer(next, capture.value);
@@ -7088,11 +7140,17 @@ export function previewFacts(draft: FoxIntakeDraft): PreviewFact[] {
   facts.push(
     ...conventionalFileFacts(draft).filter((fact) => {
       if (!String(fact.id).startsWith("history-employment")) return true;
-      if (hideWageEmployment || wageEmploymentLine) return false;
+      if (hideWageEmployment) return false;
+      const jobLabel = fact.value.replace(/\s+[–-].*$/, "").trim();
+      if (wageEmploymentLine) {
+        if (jobLabel.toLowerCase() === employerOnFile.toLowerCase()) return false;
+        if (employersClose(jobLabel, employerOnFile)) return false;
+        return true;
+      }
       if (
         !draft.sampleAccepted &&
         employerOnFile &&
-        fact.value.replace(/\s+[–-].*$/, "").trim().toLowerCase() === employerOnFile.toLowerCase()
+        jobLabel.toLowerCase() === employerOnFile.toLowerCase()
       ) {
         return false;
       }
@@ -7134,7 +7192,11 @@ export function previewFacts(draft: FoxIntakeDraft): PreviewFact[] {
           ? SUGGESTED_NOTE
           : employerProposal.note ?? SUGGESTED_BORROWER_NOTE,
     });
-  } else if (employerExtra && !isWageExtractProposal(draft.pendingProposal)) {
+  } else if (
+    employerExtra &&
+    !isWageExtractProposal(draft.pendingProposal) &&
+    !isStubExtractProposal(draft.pendingProposal)
+  ) {
     facts.push({
       id: "employer",
       label: "Employer",
@@ -7181,10 +7243,12 @@ export function previewFacts(draft: FoxIntakeDraft): PreviewFact[] {
     draft.pendingProposal?.field === field
       ? draft.pendingProposal.value
       : draft.pendingProposal?.extras?.find((item) => item.field === field)?.value ?? "";
-  const periodPay = factValue(draft, "gross_period") || pendingExtra("gross_period");
-  const ytdPay = factValue(draft, "ytd_gross") || pendingExtra("ytd_gross");
-  const wages = factValue(draft, "wages") || pendingExtra("wages");
-  const payDate = factValue(draft, "pay_period_end") || pendingExtra("pay_period_end");
+  const hideStubPay =
+    isStubExtractProposal(draft.pendingProposal) || isStubJobProposal(draft.pendingProposal);
+  const periodPay = hideStubPay ? "" : factValue(draft, "gross_period") || pendingExtra("gross_period");
+  const ytdPay = hideStubPay ? "" : factValue(draft, "ytd_gross") || pendingExtra("ytd_gross");
+  const wages = hideStubPay ? "" : factValue(draft, "wages") || pendingExtra("wages");
+  const payDate = hideStubPay ? "" : factValue(draft, "pay_period_end") || pendingExtra("pay_period_end");
   const agi = factValue(draft, "agi");
   const payBits = [
     payDate ? `Date ${displayFactValue("pay_period_end", payDate)}` : "",
@@ -7229,7 +7293,9 @@ export function previewFacts(draft: FoxIntakeDraft): PreviewFact[] {
 
   if (
     (draft.sampleAccepted || draft.phase === "confirmed") &&
-    !isWageExtractProposal(draft.pendingProposal)
+    !isWageExtractProposal(draft.pendingProposal) &&
+    !isStubExtractProposal(draft.pendingProposal) &&
+    !isStubJobProposal(draft.pendingProposal)
   ) {
     facts.push({
       id: "originator",

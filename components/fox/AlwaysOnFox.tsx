@@ -143,7 +143,7 @@ import {
   layer2AskActions,
   type DocIntakeDetail,
 } from "./fileWrite";
-import { DECLINING_INCOME_CAUTION, WAGE_DOCS_ASK } from "./qualifyingIncome";
+import { DECLINING_INCOME_CAUTION, WAGE_DOCS_ASK, WAGE_STUB_DROP_ASK } from "./qualifyingIncome";
 import { isUnreadNote } from "@/lib/docs/accept";
 import { fileExists, finishLineActions, inQueueEnding, reviewIsSitting } from "./motion";
 import { pathFromHomeChoice } from "./homeIdle";
@@ -323,6 +323,11 @@ function applyFoxAsk(
     );
   }
   if (last && last.text === WAGE_DOCS_ASK && ask.text !== WAGE_DOCS_ASK) {
+    return messages.map((message) =>
+      message.id === last.id ? foxAskMessage(ask) : message,
+    );
+  }
+  if (last && last.text === WAGE_STUB_DROP_ASK && ask.text !== WAGE_STUB_DROP_ASK) {
     return messages.map((message) =>
       message.id === last.id ? foxAskMessage(ask) : message,
     );

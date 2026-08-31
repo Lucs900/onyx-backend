@@ -117,6 +117,7 @@ import {
   skipWageBox5,
   skipWageFrequency,
   skipWageStub,
+  acceptStubJob,
   writeWagePayFrequency,
 } from "./qualifyingIncome";
 import {
@@ -373,6 +374,7 @@ export function emptyDraft(): FoxIntakeDraft {
     wageBox5Asked: false,
     wageFrequencyAsked: false,
     wageStubAsked: false,
+    stubExtractAccepted: false,
     awaitingUnreadNote: false,
     awaitingPayFrequency: false,
     awaitingBothMonthlyReason: false,
@@ -676,6 +678,7 @@ function normalize(value: unknown): FoxIntakeDraft {
     wageBox5Asked: Boolean(raw.wageBox5Asked),
     wageFrequencyAsked: Boolean(raw.wageFrequencyAsked),
     wageStubAsked: Boolean(raw.wageStubAsked),
+    stubExtractAccepted: Boolean(raw.stubExtractAccepted),
     awaitingUnreadNote: Boolean(raw.awaitingUnreadNote),
     awaitingPayFrequency: Boolean(raw.awaitingPayFrequency),
     awaitingBothMonthlyReason: Boolean(raw.awaitingBothMonthlyReason),
@@ -808,15 +811,19 @@ function normalizePendingWageExtract(
   const stub = Number(value.stub);
   const frequency = typeof value.frequency === "string" ? value.frequency.trim() : "";
   const employer = typeof value.employer === "string" ? value.employer.trim() : "";
+  const employee = typeof value.employee === "string" ? value.employee.trim() : "";
+  const monthly = Number(value.monthly);
   const next = {
     ...(Number.isFinite(box5) && box5 > 0 ? { box5 } : {}),
     ...(Number.isFinite(stub) && stub > 0 ? { stub } : {}),
     ...(frequency ? { frequency } : {}),
     ...(employer ? { employer } : {}),
+    ...(employee ? { employee } : {}),
+    ...(Number.isFinite(monthly) && monthly > 0 ? { monthly } : {}),
     ...(value.w2In ? { w2In: true } : {}),
     ...(value.stubIn ? { stubIn: true } : {}),
   };
-  if (!next.box5 && !next.stub && !next.frequency && !next.employer && !next.w2In && !next.stubIn) {
+  if (!next.box5 && !next.stub && !next.frequency && !next.employer && !next.employee && !next.monthly && !next.w2In && !next.stubIn) {
     return undefined;
   }
   return next;
@@ -2075,6 +2082,11 @@ function applyCaptureBody(capture: Capture) {
   }
   if (capture.field === "skip-paystub-monthly") {
     return commit(skipWageStub(current));
+  }
+  if (capture.field === "stubJob") {
+    return capture.value === "same" || capture.value === "two"
+      ? commit(acceptStubJob(current, capture.value))
+      : current;
   }
   if (capture.field === "bothMonthlyReason") {
     return commit(applyBothMonthlyReasonAnswer(current, capture.value));

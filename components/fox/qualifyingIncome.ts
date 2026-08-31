@@ -1306,6 +1306,9 @@ export const WAGE_STUB_DROP_ASK = "Drop a recent paystub. Skip if you want to ty
 export const PAYSTUB_MONTHLY_ASK = "What's the amount on the latest stub?";
 export const PAYSTUB_AMOUNT_FIELD = "paystub_amount";
 export const WAGE_EXTRACT_FIELD = "wage_extract";
+export const STUB_EXTRACT_FIELD = "stub_extract";
+export const STUB_JOB_FIELD = "stub_job";
+export const STUB_JOB_ASK = "Same job or two jobs?";
 export const W2_BOX5_MONTHLY_NOTE = "Box 5 monthly";
 export const BOTH_MONTHLY_SKIP_NOTE_BOX5 = "Using W-2 Box 5 until we know why they differ.";
 
@@ -1381,15 +1384,69 @@ export function wageW2ConfirmCopy(box5: number, employer: string): string {
 export function wageEmploymentFileLine(draft: FoxIntakeDraft): string {
   if (draft.sampleAccepted || !wageW2ExtractAccepted(draft)) return "";
   if (isWageExtractProposal(draft.pendingProposal)) return "";
-  if (readStubAmount(draft) || parseExtractMoney(factValue(draft, PAYSTUB_MONTHLY_FIELD))) return "";
   const employer = factValue(draft, "employer_name").trim();
   const box5 = readWageBox5(draft);
+  const stub =
+    parseExtractMoney(factValue(draft, PAYSTUB_AMOUNT_FIELD)) ??
+    parseExtractMoney(factValue(draft, "gross_period"));
+  const frequency = speakPayFrequency(factValue(draft, "pay_frequency"));
+  const monthly = parseExtractMoney(factValue(draft, PAYSTUB_MONTHLY_FIELD));
+  if (draft.stubExtractAccepted && stub != null && stub > 0 && frequency) {
+    if (stubTwoJobsOnFile(draft)) {
+      if (!employer || box5 == null || box5 <= 0) return "";
+      return `${employer}, Box 5 ${speakWageMoney(box5)}`;
+    }
+    const monthlyBit = monthly != null && monthly > 0 ? `, ${speakWageMoney(monthly)} a month` : "";
+    return `${employer}, ${frequency}, ${speakWageMoney(stub)}${monthlyBit}`;
+  }
+  if (stub != null && stub > 0) return "";
+  if (parseExtractMoney(factValue(draft, PAYSTUB_MONTHLY_FIELD))) return "";
   if (!employer || box5 == null || box5 <= 0) return "";
   return `${employer}, Box 5 ${speakWageMoney(box5)}`;
 }
 
 export function isWageExtractProposal(proposal?: { field?: string } | null): boolean {
   return proposal?.field === WAGE_EXTRACT_FIELD;
+}
+
+export function isStubExtractProposal(proposal?: { field?: string } | null): boolean {
+  return proposal?.field === STUB_EXTRACT_FIELD;
+}
+
+export function isStubJobProposal(proposal?: { field?: string } | null): boolean {
+  return proposal?.field === STUB_JOB_FIELD;
+}
+
+export function normalizeEmployerName(value?: string | null): string {
+  return String(value ?? "")
+    .toLowerCase()
+    .replace(/\b(inc|llc|l\.l\.c|corp|corporation|ltd|limited|company|co)\b\.?/g, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+/** Harbor Pacific Design Inc / Harbor Pacific / Harbor Pacific Design are the same job. */
+export function employersClose(left?: string | null, right?: string | null): boolean {
+  const a = normalizeEmployerName(left);
+  const b = normalizeEmployerName(right);
+  if (!a || !b) return false;
+  if (a === b) return true;
+  if (a.includes(b) || b.includes(a)) return true;
+  const leftTokens = a.split(/\s+/).filter((token) => token.length > 2);
+  const rightTokens = b.split(/\s+/).filter((token) => token.length > 2);
+  const shared = leftTokens.filter((token) => rightTokens.includes(token));
+  return shared.length >= 2;
+}
+
+export function stubTwoJobsOnFile(draft: FoxIntakeDraft): boolean {
+  const jobs = draft.employmentHistory ?? [];
+  if (jobs.length < 2) return false;
+  const labels = jobs
+    .map((item) => String(item.label ?? "").trim())
+    .filter(Boolean);
+  if (labels.length < 2) return false;
+  const first = labels[0] ?? "";
+  return labels.some((label) => !employersClose(first, label));
 }
 
 /** File Employment / Employer stay empty until Use this or Change. */
@@ -1696,6 +1753,7 @@ export function maybeProposeWageExtract(
   extractClass?: ExtractClass,
 ): FoxIntakeDraft {
   if (draft.sampleAccepted || !wageThreadOpen(draft)) return draft;
+  if (wageW2ExtractAccepted(draft)) return draft;
   if (draft.pendingConflict) return draft;
   const held = mergePendingWageExtract(draft, fields, extractClass);
   if (wageExtractCanConfirm(held, fields)) {
@@ -1824,6 +1882,278 @@ export function changeWageExtract(draft: FoxIntakeDraft): FoxIntakeDraft {
     return proposeWageW2Extract(cleared, box5, employer);
   }
   return { ...cleared, pendingWageExtract: undefined };
+}
+
+function moneyFieldValue(value: number): string {
+  const cents = Math.round(value * 100);
+  if (cents % 100 === 0) return String(cents / 100);
+  return (cents / 100).toFixed(2);
+}
+
+export function conventionalStubMonthly(stub: number, frequency: string): number | null {
+  const spoken = speakPayFrequency(frequency) || String(frequency ?? "").trim().toLowerCase();
+  const periods = periodsPerYear(spoken);
+  if (periods == null || periods <= 0 || stub <= 0) return null;
+  return Math.round((stub * periods * 100) / 12) / 100;
+}
+
+export function stubExtractConfirmCopy(
+  employer: string,
+  stub: number,
+  frequency: string,
+  monthly: number,
+  employee?: string,
+): string {
+  const name = String(employer ?? "").trim();
+  const spoken = speakPayFrequency(frequency) || String(frequency ?? "").trim().toLowerCase();
+  const who = String(employee ?? "").trim();
+  const person = who ? ` ${who}.` : "";
+  return `${name}.${person} ${speakWageMoney(stub)} ${spoken}. ${speakWageMoney(monthly)} a month. Use this?`;
+}
+
+function stubEmployeeName(fields?: Record<string, string>, draft?: FoxIntakeDraft): string {
+  return String(
+    fields?.full_name ?? fields?.employee_name ?? draft?.pendingWageExtract?.employee ?? "",
+  ).trim();
+}
+
+function stubEmployerName(fields?: Record<string, string>, draft?: FoxIntakeDraft): string {
+  return String(fields?.employer_name ?? draft?.pendingWageExtract?.employer ?? "").trim();
+}
+
+export function shouldProposeStubExtract(
+  draft: FoxIntakeDraft,
+  extractClass?: ExtractClass,
+): boolean {
+  if (extractClass !== "paystub") return false;
+  if (draft.sampleAccepted || draft.wageStubAsked || draft.stubExtractAccepted) return false;
+  if (!wageThreadOpen(draft)) return false;
+  if (isWageExtractFirstPath(draft)) return false;
+  return wageW2ExtractAccepted(draft) || Boolean(draft.wageDocsAsked);
+}
+
+export function proposeStubExtract(
+  draft: FoxIntakeDraft,
+  stub: number,
+  frequency: string,
+  employer: string,
+  employee?: string,
+): FoxIntakeDraft {
+  const spoken = speakPayFrequency(frequency);
+  const monthly = conventionalStubMonthly(stub, spoken || frequency);
+  const name = String(employer ?? "").trim();
+  if (!spoken || monthly == null || monthly <= 0 || stub <= 0 || !name) return draft;
+  const who = String(employee ?? "").trim();
+  return {
+    ...draft,
+    awaitingPayFrequency: false,
+    looksRightHold: true,
+    pendingWageExtract: {
+      ...(draft.pendingWageExtract ?? {}),
+      stub,
+      frequency: spoken,
+      employer: name,
+      ...(who ? { employee: who } : {}),
+      monthly,
+      stubIn: true,
+    },
+    pendingProposal: {
+      field: STUB_EXTRACT_FIELD,
+      value: moneyFieldValue(monthly),
+      label: "stub extract",
+      kind: "computed",
+      extras: [
+        { field: "employer_name", value: name, label: "employer" },
+        ...(who ? [{ field: "full_name", value: who, label: "employee" }] : []),
+        { field: PAYSTUB_AMOUNT_FIELD, value: moneyFieldValue(stub), label: "stub amount" },
+        { field: "pay_frequency", value: spoken, label: "pay frequency" },
+        { field: PAYSTUB_MONTHLY_FIELD, value: moneyFieldValue(monthly), label: "stub monthly" },
+      ],
+    },
+  };
+}
+
+export function maybeProposeStubExtract(
+  draft: FoxIntakeDraft,
+  fields?: Record<string, string>,
+  extractClass?: ExtractClass,
+): FoxIntakeDraft {
+  if (!shouldProposeStubExtract(draft, extractClass)) return draft;
+  const stub = parseExtractMoney(fields?.gross_period) ?? parseExtractMoney(fields?.paystub_amount);
+  const frequency = speakPayFrequency(fields?.pay_frequency);
+  const employer = stubEmployerName(fields, draft);
+  const employee = stubEmployeeName(fields, draft);
+  if (stub == null || stub <= 0 || !frequency || !employer) return draft;
+  return proposeStubExtract(draft, stub, frequency, employer, employee);
+}
+
+function stubExtractParts(draft: FoxIntakeDraft): {
+  stub: number;
+  frequency: string;
+  employer: string;
+  employee: string;
+  monthly: number;
+} | null {
+  const proposal = draft.pendingProposal;
+  const extras = proposal?.extras ?? [];
+  const stub =
+    Number(extras.find((item) => item.field === PAYSTUB_AMOUNT_FIELD)?.value ?? 0) ||
+    draft.pendingWageExtract?.stub ||
+    0;
+  const frequency =
+    extras.find((item) => item.field === "pay_frequency")?.value ||
+    draft.pendingWageExtract?.frequency ||
+    "";
+  const employer = (
+    extras.find((item) => item.field === "employer_name")?.value ||
+    draft.pendingWageExtract?.employer ||
+    ""
+  ).trim();
+  const employee = (
+    extras.find((item) => item.field === "full_name")?.value ||
+    draft.pendingWageExtract?.employee ||
+    ""
+  ).trim();
+  const spoken = speakPayFrequency(frequency);
+  const monthly =
+    Number(extras.find((item) => item.field === PAYSTUB_MONTHLY_FIELD)?.value ?? 0) ||
+    draft.pendingWageExtract?.monthly ||
+    conventionalStubMonthly(stub, spoken || frequency) ||
+    0;
+  if (stub <= 0 || !spoken || monthly <= 0 || !employer) return null;
+  return { stub, frequency: spoken, employer, employee, monthly };
+}
+
+function writeStubPayLine(
+  draft: FoxIntakeDraft,
+  parts: { stub: number; frequency: string; employer: string; monthly: number },
+  mode: "same" | "two" | "only",
+): FoxIntakeDraft {
+  const now = new Date().toISOString();
+  const facts = { ...(draft.facts ?? {}) };
+  const fileEmployer = factValue(draft, "employer_name").trim();
+  if (mode === "only" && parts.employer && !fileEmployer) {
+    facts.employer_name = {
+      field: "employer_name",
+      value: parts.employer,
+      source: "document",
+      confirmed: true,
+      confirmedAt: now,
+    };
+  }
+  facts[PAYSTUB_AMOUNT_FIELD] = {
+    field: PAYSTUB_AMOUNT_FIELD,
+    value: moneyFieldValue(parts.stub),
+    source: "document",
+    confirmed: true,
+    confirmedAt: now,
+  };
+  facts.gross_period = {
+    field: "gross_period",
+    value: moneyFieldValue(parts.stub),
+    source: "document",
+    confirmed: true,
+    confirmedAt: now,
+  };
+  facts.pay_frequency = {
+    field: "pay_frequency",
+    value: parts.frequency,
+    source: "document",
+    confirmed: true,
+    confirmedAt: now,
+  };
+  facts[PAYSTUB_MONTHLY_FIELD] = {
+    field: PAYSTUB_MONTHLY_FIELD,
+    value: moneyFieldValue(parts.monthly),
+    source: "document",
+    confirmed: true,
+    confirmedAt: now,
+  };
+  let next: FoxIntakeDraft = {
+    ...draft,
+    wageDocsAsked: true,
+    wageStubAsked: true,
+    stubExtractAccepted: true,
+    awaitingPayFrequency: false,
+    pendingProposal: null,
+    looksRightHold: false,
+    facts,
+  };
+  if (mode === "two") {
+    next = writeCurrentEmploymentHistory(next, parts.employer);
+  } else if (mode === "only" && parts.employer && !fileEmployer) {
+    next = writeCurrentEmploymentHistory(next, parts.employer);
+  }
+  return next;
+}
+
+function proposeStubJobAsk(draft: FoxIntakeDraft): FoxIntakeDraft {
+  const parts = stubExtractParts(draft);
+  if (!parts) return draft;
+  return {
+    ...draft,
+    looksRightHold: true,
+    pendingProposal: {
+      field: STUB_JOB_FIELD,
+      value: "",
+      label: "stub job",
+      kind: "computed",
+      extras: [
+        { field: "employer_name", value: parts.employer, label: "employer" },
+        ...(parts.employee ? [{ field: "full_name", value: parts.employee, label: "employee" }] : []),
+        { field: PAYSTUB_AMOUNT_FIELD, value: moneyFieldValue(parts.stub), label: "stub amount" },
+        { field: "pay_frequency", value: parts.frequency, label: "pay frequency" },
+        { field: PAYSTUB_MONTHLY_FIELD, value: moneyFieldValue(parts.monthly), label: "stub monthly" },
+      ],
+    },
+  };
+}
+
+export function acceptStubExtract(draft: FoxIntakeDraft): FoxIntakeDraft {
+  const proposal = draft.pendingProposal;
+  if (!isStubExtractProposal(proposal) && !isStubJobProposal(proposal)) return draft;
+  const parts = stubExtractParts(draft);
+  if (!parts) return draft;
+  const fileEmployer = factValue(draft, "employer_name").trim();
+  if (fileEmployer && !employersClose(fileEmployer, parts.employer)) {
+    return proposeStubJobAsk(draft);
+  }
+  return writeStubPayLine(draft, parts, fileEmployer ? "same" : "only");
+}
+
+export function acceptStubJob(draft: FoxIntakeDraft, answer: "same" | "two"): FoxIntakeDraft {
+  const parts = stubExtractParts(draft);
+  if (!parts) return draft;
+  return writeStubPayLine(draft, parts, answer);
+}
+
+export function changeStubExtract(draft: FoxIntakeDraft): FoxIntakeDraft {
+  const parts = stubExtractParts({
+    ...draft,
+    pendingProposal: isStubExtractProposal(draft.pendingProposal) || isStubJobProposal(draft.pendingProposal)
+      ? draft.pendingProposal
+      : draft.pendingProposal,
+  });
+  const held = parts ?? {
+    stub: draft.pendingWageExtract?.stub ?? 0,
+    frequency: draft.pendingWageExtract?.frequency ?? "",
+    employer: draft.pendingWageExtract?.employer ?? "",
+    employee: draft.pendingWageExtract?.employee ?? "",
+    monthly: draft.pendingWageExtract?.monthly ?? 0,
+  };
+  const cleared: FoxIntakeDraft = {
+    ...draft,
+    pendingProposal: null,
+    correcting: null,
+    correctingLine: null,
+    wageStubAsked: false,
+    stubExtractAccepted: false,
+    looksRightHold: true,
+  };
+  if (held.stub > 0 && held.frequency && held.employer) {
+    return proposeStubExtract(cleared, held.stub, held.frequency, held.employer, held.employee);
+  }
+  return cleared;
 }
 
 /** @deprecated Use writeTypedStubMonthly — typed stub is a write, not a confirm. */
