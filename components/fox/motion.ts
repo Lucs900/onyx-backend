@@ -364,6 +364,16 @@ export function motionAskText(draft: FoxIntakeDraft) {
   return gatheringCopy(draft);
 }
 
+export function afterLooksRightDocActions(draft: FoxIntakeDraft): FoxAction[] {
+  return [
+    { id: "upload-this", label: "Upload this", event: "open-docs", capture: { field: "open-docs" } },
+    { id: "skip-docs", label: "Skip", event: "bubble", capture: { field: "skip-docs" } },
+    { id: "proceed", label: "Proceed", event: "bubble", capture: { field: "proceed" } },
+    { id: "not-yet-docs", label: "Not yet", event: "bubble", capture: { field: "hold-docs" } },
+    ...sideDoorActions(draft),
+  ];
+}
+
 function sideDoorActions(draft: FoxIntakeDraft): FoxAction[] {
   const actions: FoxAction[] = [];
   if (!draft.originatorRequested && draft.motion !== "escalated") {
@@ -449,7 +459,7 @@ export function applyLooksRightMotion(draft: FoxIntakeDraft): FoxIntakeDraft {
       workspaceDraftStatus: "ready",
     },
         "looks-right",
-        "Looks right — file confirmed. Originator assigned.",
+        "Looks right — file confirmed.",
       ),
     );
   }
@@ -467,7 +477,7 @@ export function applyLooksRightMotion(draft: FoxIntakeDraft): FoxIntakeDraft {
       workspaceDraftStatus: "ready",
     },
     "looks-right",
-    "Looks right — file confirmed. Originator assigned.",
+    "Looks right — file confirmed.",
   );
 }
 

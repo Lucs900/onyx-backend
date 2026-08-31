@@ -1129,7 +1129,7 @@ export function applyExtractedFields(
     next = applyRentalIncomeFromExtract(next, extractClass, fields);
   }
   conflict = next.pendingConflict ?? conflict;
-  if (extractClass === "bank_statement" && !next.sampleAccepted) {
+  if (extractClass === "bank_statement") {
     remainderWrites = remainderWrites.filter((item) => item.field !== "account_last4");
   }
   const extractedAssets = extractClass === "bank_statement" ? moneyNumber(fields.ending_balance ?? "") : null;
@@ -2185,7 +2185,9 @@ export type DocInviteKind =
   | "w2"
   | "tax_return"
   | "prior_year_return"
-  | "coborrower_government_id";
+  | "coborrower_government_id"
+  | "bank_statement"
+  | "purchase_contract";
 
 export const DOC_INVITE_COPY: Record<DocInviteKind, string> = {
   government_id: "First I need a government ID, so this file has a name on it.",
@@ -2195,6 +2197,8 @@ export const DOC_INVITE_COPY: Record<DocInviteKind, string> = {
     "Next is your most recent tax return. That’s how I estimate qualifying income. Suggested, not underwritten.",
   prior_year_return: "A prior-year return helps me see if last year was stable. Have one?",
   coborrower_government_id: "First I need Borrower 2’s government ID, so this file has a name on it.",
+  bank_statement: "Two recent statements to show funds for the down payment.",
+  purchase_contract: "Purchase contract if you have it. Skip is fine.",
 };
 
 /** ID + this borrower’s income package. Prior-year / second-year sit on remainder. */
@@ -2351,11 +2355,21 @@ export function wageNumberPathSettled(draft: FoxIntakeDraft) {
   return Boolean(draft.wageBox5Asked && draft.wageFrequencyAsked && draft.wageStubAsked);
 }
 
-/** After Looks right: W-2 = ID, latest paystub, W-2. SE = ID, tax return. */
+/** Extracted W-2 + stub on the file — not a skip-only package. */
+export function wageExtractOnFile(draft: FoxIntakeDraft) {
+  return classSuccessfullyRead(draft, "w2") && classSuccessfullyRead(draft, "paystub");
+}
+
+/** After Looks right: W-2 = ID, latest paystub, W-2. SE = ID, tax return. Extracted wage package → ID, statements, contract. */
 function afterLooksRightInvites(draft: FoxIntakeDraft): DocInviteKind[] {
   const type = draft.incomeType.value;
   const kinds: DocInviteKind[] = [...coborrowerInviteSequence(draft)];
   if (!inviteSatisfied(draft, "government_id")) kinds.push("government_id");
+  if (wageExtractOnFile(draft)) {
+    if (!inviteSatisfied(draft, "bank_statement")) kinds.push("bank_statement");
+    if (!inviteSatisfied(draft, "purchase_contract")) kinds.push("purchase_contract");
+    return kinds;
+  }
   if (type === "w2" || type === "both") {
     if (!inviteSatisfied(draft, "paystub")) kinds.push("paystub");
     if (!inviteSatisfied(draft, "w2")) kinds.push("w2");

@@ -3118,6 +3118,72 @@ assert.equal(
   wageEmploymentFileLine(loudStubUsed),
   "Harbor Pacific Design Inc, Box 5 $118,400, biweekly, $4,615.38, $9,999.99 a month",
 );
+const AFTER_LOOKS_DOC_CHIPS = ["Upload this", "Skip", "Proceed", "Not yet", "Request human"];
+const harborLooksRight = applyLooksRightMotion(loudStubUsed);
+assert.equal(workspacePrompt(harborLooksRight), "documents");
+assert.equal(nextDocInvite(harborLooksRight), "government_id");
+assert.equal(workspacePromptCopy("documents", harborLooksRight).text, DOC_INVITE_COPY.government_id);
+assert.deepEqual(
+  (workspacePromptCopy("documents", harborLooksRight).actions ?? []).map((item) => item.label),
+  AFTER_LOOKS_DOC_CHIPS,
+);
+assert.ok(!(workspacePromptCopy("documents", harborLooksRight).actions ?? []).some((item) => /^(Raise|OT|Second job)$/.test(item.label)));
+assert.ok(!(nextFoxAsk(harborLooksRight).actions ?? []).some((item) => /^(Raise|OT|Second job)$/.test(item.label)));
+assert.equal(harborLooksRight.docsOpen, false);
+assert.equal(harborLooksRight.sampleAccepted, true);
+assert.ok(!previewFacts(harborLooksRight).some((fact) => fact.id === "originator" && fact.value === "Licensed originator assigned"));
+assert.ok(previewFacts(harborLooksRight).some((fact) => fact.id === "originator" && fact.value === "Fox is the desk"));
+assert.notEqual(workspacePrompt(harborLooksRight), "household");
+assert.notEqual(workspacePrompt(harborLooksRight), "citizenship");
+assert.notEqual(workspacePrompt(harborLooksRight), "property-type");
+assert.notEqual(workspacePrompt(harborLooksRight), "occupancy");
+assert.notEqual(workspacePrompt(harborLooksRight), "assets");
+assert.notEqual(workspacePrompt(harborLooksRight), "borrower-name");
+assert.doesNotMatch(
+  `${workspacePromptCopy("documents", harborLooksRight).text} ${workspacePromptCopy("documents", harborLooksRight).followUp ?? ""}`,
+  /dropzone|vault|occupancy|purchase price|estimated FICO|Raise|OT|Second job|citizenship|coborrower|property type/i,
+);
+assert.ok(
+  previewFacts(harborLooksRight).some(
+    (fact) =>
+      fact.label === "Employment" &&
+      /Harbor Pacific Design Inc/i.test(fact.value) &&
+      /Box 5 \$118,400/.test(fact.value) &&
+      /biweekly/.test(fact.value) &&
+      /\$4,615\.38/.test(fact.value) &&
+      /\$9,999\.99 a month/.test(fact.value),
+  ),
+);
+assert.ok(!stillUsefulSection(harborLooksRight)?.items.some((item) => /paystub|W-2/i.test(item.label)));
+assert.equal(workspaceReply("Not yet", harborLooksRight)?.capture?.field, "hold-docs");
+assert.equal(workspaceReply("Proceed", harborLooksRight)?.capture?.field, "proceed");
+const harborAfterIdSkip = skipCurrentInvite(harborLooksRight);
+assert.equal(workspacePrompt(harborAfterIdSkip), "documents");
+assert.equal(nextDocInvite(harborAfterIdSkip), "bank_statement");
+assert.equal(workspacePromptCopy("documents", harborAfterIdSkip).text, DOC_INVITE_COPY.bank_statement);
+assert.deepEqual(
+  (workspacePromptCopy("documents", harborAfterIdSkip).actions ?? []).map((item) => item.label),
+  AFTER_LOOKS_DOC_CHIPS,
+);
+assert.ok(!(workspacePromptCopy("documents", harborAfterIdSkip).actions ?? []).some((item) => /^(Raise|OT|Second job)$/.test(item.label)));
+assert.notEqual(workspacePrompt(harborAfterIdSkip), "household");
+assert.notEqual(workspacePrompt(harborAfterIdSkip), "assets");
+const harborAfterBankSkip = skipCurrentInvite(harborAfterIdSkip);
+assert.equal(harborAfterBankSkip.statedAvailableAssets, undefined);
+assert.equal(harborAfterBankSkip.facts?.institution, undefined);
+assert.equal(harborAfterBankSkip.facts?.ending_balance, undefined);
+assert.equal(harborAfterBankSkip.facts?.account_last4, undefined);
+assert.equal(conventionalFileFromDraft(harborAfterBankSkip).assets.institution, undefined);
+assert.equal(conventionalFileFromDraft(harborAfterBankSkip).assets.suggestedBalance, undefined);
+assert.equal(conventionalFileFromDraft(harborAfterBankSkip).assets.last4, undefined);
+assert.equal(nextDocInvite(harborAfterBankSkip), "purchase_contract");
+assert.equal(workspacePrompt(harborAfterBankSkip), "documents");
+assert.equal(workspacePromptCopy("documents", harborAfterBankSkip).text, DOC_INVITE_COPY.purchase_contract);
+assert.ok(stillUsefulSection(harborAfterBankSkip)?.items.some((item) => item.label === "Purchase contract"));
+assert.ok(!stillUsefulSection(harborAfterBankSkip)?.items.some((item) => /paystub|W-2/i.test(item.label)));
+assert.notEqual(workspacePrompt(harborAfterBankSkip), "household");
+assert.notEqual(workspacePrompt(harborAfterBankSkip), "citizenship");
+assert.notEqual(workspacePrompt(harborAfterBankSkip), "property-type");
 const loudStubLower = applyExtractedFields(
   {
     ...loudW2Used,
@@ -4007,13 +4073,13 @@ assert.doesNotMatch(
 );
 assert.deepEqual(
   (workspacePromptCopy("documents", afterIncomeLooks).actions ?? []).map((item) => item.label),
-  ["Upload this", "Skip"],
+  AFTER_LOOKS_DOC_CHIPS,
 );
 const afterStartId = draft({ ...afterIncomeLooks, docsStarted: true });
 assert.equal(workspacePromptCopy("documents", afterStartId).text, DOC_INVITE_COPY.government_id);
 assert.deepEqual(
   (workspacePromptCopy("documents", afterStartId).actions ?? []).map((item) => item.label),
-  ["Upload this", "Skip"],
+  AFTER_LOOKS_DOC_CHIPS,
 );
 const startIdReply = workspaceReply("Skip", afterIncomeLooks);
 assert.equal(startIdReply?.capture?.field, "skip-docs");
@@ -4050,7 +4116,7 @@ assert.notEqual(workspacePrompt(heldDocs), "review");
 assert.equal(workspacePromptCopy("documents", heldDocs).text, DOC_INVITE_COPY.government_id);
 assert.deepEqual(
   (workspacePromptCopy("documents", heldDocs).actions ?? []).map((item) => item.label),
-  ["Upload this", "Skip"],
+  AFTER_LOOKS_DOC_CHIPS,
 );
 const askFoxHeld = workspaceReply("Ask Fox", heldDocs);
 assert.equal(askFoxHeld?.capture?.field, "ask-fox");
@@ -4128,7 +4194,7 @@ assert.match(heldWhy?.text ?? "", /W-2|wages|paystub|government ID|name on this 
 assert.doesNotMatch(heldWhy?.text ?? "", /I’ll hold documents|Okay\. I’ll hold/);
 assert.deepEqual(
   (heldWhy?.actions ?? []).map((item) => item.label),
-  ["Upload this", "Skip"],
+  AFTER_LOOKS_DOC_CHIPS,
 );
 const offerWhy = workspaceReply("why do you need that?", afterIncomeLooks);
 assert.match(offerWhy?.text ?? "", /W-2|wages|paystub|government ID|name on this file/i);
@@ -4149,7 +4215,7 @@ assert.match(heldAcr?.text ?? "", /desk that stays open/i);
 assert.doesNotMatch(heldAcr?.text ?? "", /I’ll hold documents|Okay\. I’ll hold/);
 assert.deepEqual(
   (heldAcr?.actions ?? []).map((item) => item.label),
-  ["Upload this", "Skip"],
+  AFTER_LOOKS_DOC_CHIPS,
 );
 const offerAcr = workspaceReply("what is ACR?", afterIncomeLooks);
 assert.match(offerAcr?.text ?? "", /desk that stays open/i);
@@ -5074,7 +5140,8 @@ assert.ok(
     (fact) => fact.id === "file" && new RegExp(`^sketch · \\d+ of ${CONVENTIONAL_FILE_SLOT_TOTAL}$`).test(fact.value) && !/agency_partial/.test(fact.value),
   ),
 );
-assert.ok(assignedFacts.some((fact) => fact.id === "originator" && fact.value === "Licensed originator assigned"));
+assert.ok(assignedFacts.some((fact) => fact.id === "originator" && fact.value === "Fox is the desk"));
+assert.ok(!assignedFacts.some((fact) => fact.id === "originator" && fact.value === "Licensed originator assigned"));
 assert.ok(assignedFacts.some((fact) => fact.id === "letter"));
 const assignedReward = assignedFacts.find((fact) => fact.id === "reward");
 assert.equal(assignedReward?.value, "Prepared when you join");
@@ -5174,14 +5241,14 @@ assert.equal(w2Docs.text, DOC_INVITE_COPY.government_id);
 assert.doesNotMatch(w2Docs.text, /That’s the sketch|purchase contract|citizenship/i);
 assert.deepEqual(
   (w2Docs.actions ?? []).map((item) => item.label),
-  ["Upload this", "Skip"],
+  AFTER_LOOKS_DOC_CHIPS,
 );
 const w2Started = workspacePromptCopy("documents", { ...afterIncomeLooks, docsStarted: true });
 assert.equal(w2Started.text, DOC_INVITE_COPY.government_id);
 assert.doesNotMatch(w2Started.text, /That’s the sketch|tax return|citizenship/i);
 assert.deepEqual(
   (w2Started.actions ?? []).map((item) => item.label),
-  ["Upload this", "Skip"],
+  AFTER_LOOKS_DOC_CHIPS,
 );
 const w2AfterId = skipCurrentInvite(afterIncomeLooks);
 assert.equal(workspacePromptCopy("documents", w2AfterId).text, DOC_INVITE_COPY.paystub);
@@ -5241,7 +5308,7 @@ assert.match(whyReturn?.text ?? "", /qualifying income|not underwritten/i);
 assert.match(whyReturn?.text ?? "", /most recent tax return/i);
 assert.deepEqual(
   (whyReturn?.actions ?? []).map((item) => item.label),
-  ["Upload this", "Skip"],
+  AFTER_LOOKS_DOC_CHIPS,
 );
 const seAfterReturnSkip = skipCurrentInvite(seAfterId);
 assert.notEqual(workspacePrompt(seAfterReturnSkip), "documents");
@@ -6339,7 +6406,7 @@ assertAnswerThenRestore(
   { text: /timeline/i, labels: [] },
 );
 
-const docsChips = ["Upload this", "Skip"];
+const docsChips = AFTER_LOOKS_DOC_CHIPS;
 assertAnswerThenRestore(workspaceReply("will i qualify", afterStartId), /Not ready yet —/, {
   text: /W-2|wages|paystub/i,
   labels: docsChips,
@@ -6363,7 +6430,7 @@ assertAnswerThenRestore(
   { labels: docsChips },
 );
 
-const holdChips = ["Upload this", "Skip"];
+const holdChips = AFTER_LOOKS_DOC_CHIPS;
 assertAnswerThenRestore(workspaceReply("will i qualify", heldDocs), /Not ready yet —/, {
   labels: holdChips,
 });
@@ -6420,7 +6487,7 @@ assertAnswerThenRestore(workspaceReply("hi", atCorrect), /^Hi\./, {
 
 const proceedChips = ["Proceed", "Not yet"];
 const housingChips = ["Use this", "Change"];
-const afterLooksChips = ["Upload this", "Skip"];
+const afterLooksChips = AFTER_LOOKS_DOC_CHIPS;
 assertAnswerThenRestore(workspaceReply("will i qualify", afterLooks), /Not ready yet —/, {
   labels: afterLooksChips,
 });
@@ -8593,7 +8660,7 @@ const bankWithLast4 = applyExtractedFields(afterLooks, {
 });
 const bankLast4Accepted = resolveProposal(bankWithLast4.draft, "accept");
 assert.equal(conventionalFileFromDraft(bankLast4Accepted).assets.type, "checking");
-assert.equal(conventionalFileFromDraft(bankLast4Accepted).assets.last4, "1234");
+assert.equal(conventionalFileFromDraft(bankLast4Accepted).assets.last4, undefined);
 assert.doesNotMatch(JSON.stringify(bankLast4Accepted.facts ?? {}), /9999888877771234/);
 assert.equal(bankAccepted.pendingProposal, null);
 assert.ok(!layer2Plan(bankAccepted).some((item) => item.label === "Bank statement"));
@@ -11282,7 +11349,7 @@ assert.doesNotMatch(
 );
 assert.deepEqual(
   (seOtherStart?.actions ?? []).map((item) => item.label),
-  ["Upload this", "Skip"],
+  AFTER_LOOKS_DOC_CHIPS,
 );
 const seOtherStarted = draft({ ...seOtherLooks, docsStarted: true });
 assert.equal(workspacePrompt(seOtherStarted), "documents");

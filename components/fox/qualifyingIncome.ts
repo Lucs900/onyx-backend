@@ -1459,7 +1459,7 @@ export function wageW2ConfirmCopy(box5: number, employer: string): string {
 
 /** File Employment after Use this: employer and Box 5. Stub Use this adds pay on the same row. Not Box 1. */
 export function wageEmploymentFileLine(draft: FoxIntakeDraft): string {
-  if (draft.sampleAccepted || !wageW2ExtractAccepted(draft)) return "";
+  if (!wageW2ExtractAccepted(draft)) return "";
   if (isWageExtractProposal(draft.pendingProposal)) return "";
   const employer = factValue(draft, "employer_name").trim();
   const box5 = readWageBox5(draft);

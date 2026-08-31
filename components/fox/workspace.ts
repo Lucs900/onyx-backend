@@ -94,6 +94,7 @@ import {
   primaryDocPassFinished,
   thisBorrowerPrimaryPackageDone,
   readyForHouseholdAsk,
+  wageExtractOnFile,
   skipCurrentInvite,
   skipUnreadDoc,
   retryUnreadDoc,
@@ -513,6 +514,7 @@ import {
 import {
   applyEmailThenFinish,
   applyEscalateMotion,
+  afterLooksRightDocActions,
   applyLooksRightMotion,
   applyNotYetMotion,
   applyProceedMotion,
@@ -1371,6 +1373,8 @@ function nextDocSpoken(invite: ReturnType<typeof nextDocInvite>): string {
   if (invite === "prior_year_return") return DOC_INVITE_COPY.prior_year_return;
   if (invite === "government_id") return "Next is a government ID, so the file has a name.";
   if (invite === "coborrower_government_id") return coborrowerSpokenIdCopy();
+  if (invite === "bank_statement") return DOC_INVITE_COPY.bank_statement;
+  if (invite === "purchase_contract") return DOC_INVITE_COPY.purchase_contract;
   return "";
 }
 
@@ -1392,7 +1396,7 @@ function identityReactionAsk(draft: FoxIntakeDraft): {
   return {
     text: `${greet} ${DESK_RELATIONSHIP_LINE}${next ? ` ${next}` : ""}`.trim(),
     actions: invite
-      ? docInviteActions()
+      ? documentInviteActions(draft)
       : canLooksRight(draft)
         ? [
             { id: "looks-right", label: "Looks right", event: "bubble", capture: { field: "confirm-draft" } },
@@ -2106,6 +2110,14 @@ function docInviteActions(): FoxAction[] {
   ];
 }
 
+function documentInviteActions(draft: FoxIntakeDraft): FoxAction[] {
+  const invite = nextDocInvite(draft);
+  if (draft.sampleAccepted && invite && invite !== "coborrower_government_id") {
+    return afterLooksRightDocActions(draft);
+  }
+  return docInviteActions();
+}
+
 function looksLikeQuestion(text: string) {
   const trimmed = text.trim();
   return (
@@ -2732,6 +2744,10 @@ export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
   if (draft.sampleAccepted && (draft.motion === "in_queue" || draft.motion === "escalated")) {
     return "done";
   }
+  if (draft.sampleAccepted && wageExtractOnFile(draft)) {
+    if (nextDocInvite(draft)) return "documents";
+    return "done";
+  }
   if (draft.sampleAccepted && !borrowerNameSettled(draft)) return "borrower-name";
   if (nextDocInvite(draft) && !thisBorrowerPrimaryPackageDone(draft)) return "documents";
   if (!draft.sampleAccepted && draft.awaitingYearsInBusiness) return "documents";
@@ -3073,7 +3089,7 @@ function workspaceAskCopy(
     }
     return {
       text: documentsAskText(draft),
-      actions: invite ? docInviteActions() : undefined,
+      actions: invite ? documentInviteActions(draft) : undefined,
     };
   }
   if (prompt === "preparing") {
@@ -6461,6 +6477,13 @@ export function workspaceReply(
       }
       return answerThenRestore(q, draft);
     }
+    if (draft.sampleAccepted && /^proceed\b/i.test(lower)) {
+      const nextDraft = applyProceedMotion(draft);
+      return {
+        ...workspacePromptCopy(workspacePrompt(nextDraft), nextDraft),
+        capture: { field: "proceed" },
+      };
+    }
     if (/\bnot yet\b/.test(lower)) {
       const nextDraft = holdDocuments(draft);
       return {
@@ -7336,7 +7359,10 @@ export function previewFacts(draft: FoxIntakeDraft): PreviewFact[] {
     facts.push({
       id: "originator",
       label: "Originator",
-      value: "Licensed originator assigned",
+      value:
+        draft.motion === "in_queue" || draft.motion === "escalated"
+          ? "Licensed originator assigned"
+          : "Fox is the desk",
     });
   }
 
