@@ -1902,13 +1902,11 @@ export function stubExtractConfirmCopy(
   stub: number,
   frequency: string,
   monthly: number,
-  employee?: string,
+  _employee?: string,
 ): string {
   const name = String(employer ?? "").trim();
   const spoken = speakPayFrequency(frequency) || String(frequency ?? "").trim().toLowerCase();
-  const who = String(employee ?? "").trim();
-  const person = who ? ` ${who}.` : "";
-  return `${name}.${person} ${speakWageMoney(stub)} ${spoken}. ${speakWageMoney(monthly)} a month. Use this?`;
+  return `${name}. ${speakWageMoney(stub)} ${spoken}. ${speakWageMoney(monthly)} a month. Use this?`;
 }
 
 function stubEmployeeName(fields?: Record<string, string>, draft?: FoxIntakeDraft): string {
@@ -1918,18 +1916,45 @@ function stubEmployeeName(fields?: Record<string, string>, draft?: FoxIntakeDraf
 }
 
 function stubEmployerName(fields?: Record<string, string>, draft?: FoxIntakeDraft): string {
-  return String(fields?.employer_name ?? draft?.pendingWageExtract?.employer ?? "").trim();
+  return String(
+    fields?.employer_name ??
+      draft?.pendingWageExtract?.employer ??
+      (draft ? factValue(draft, "employer_name") : ""),
+  ).trim();
+}
+
+/** After W-2 Use this / Skip W-2, waiting for stub confirm. Not extract-first. */
+export function stubExtractAskOpen(draft: FoxIntakeDraft): boolean {
+  if (draft.sampleAccepted || draft.wageStubAsked || draft.stubExtractAccepted) return false;
+  if (!wageThreadOpen(draft)) return false;
+  if (isWageExtractFirstPath(draft)) return false;
+  return wageW2ExtractAccepted(draft) || Boolean(draft.wageDocsAsked);
+}
+
+export function canSpeakStubExtract(
+  draft: FoxIntakeDraft,
+  fields?: Record<string, string | null | undefined> | null,
+): boolean {
+  const stub =
+    parseExtractMoney(fields?.gross_period) ??
+    parseExtractMoney(fields?.paystub_amount) ??
+    parseExtractMoney(String(fields?.gross_period ?? ""));
+  const frequency = speakPayFrequency(String(fields?.pay_frequency ?? ""));
+  const employer = stubEmployerName(
+    {
+      employer_name: String(fields?.employer_name ?? ""),
+    },
+    draft,
+  );
+  return stub != null && stub > 0 && Boolean(frequency) && Boolean(employer);
 }
 
 export function shouldProposeStubExtract(
   draft: FoxIntakeDraft,
   extractClass?: ExtractClass,
 ): boolean {
-  if (extractClass !== "paystub") return false;
-  if (draft.sampleAccepted || draft.wageStubAsked || draft.stubExtractAccepted) return false;
-  if (!wageThreadOpen(draft)) return false;
-  if (isWageExtractFirstPath(draft)) return false;
-  return wageW2ExtractAccepted(draft) || Boolean(draft.wageDocsAsked);
+  if (extractClass && extractClass !== "paystub" && extractClass !== "other") return false;
+  return stubExtractAskOpen(draft);
 }
 
 export function proposeStubExtract(

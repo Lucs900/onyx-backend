@@ -137,7 +137,9 @@ export async function POST(request: Request) {
       }
       return NextResponse.json({ error: "Missing file" }, { status: 400 });
     }
-    const mediaType = mediaTypeOf(loaded.name, loaded.type);
+    const mediaType = /\.pdf$/i.test(loaded.name)
+      ? "application/pdf"
+      : mediaTypeOf(loaded.name, loaded.type);
     const extracted = await classifyAndExtract(
       loaded.bytes,
       mediaType,

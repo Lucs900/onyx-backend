@@ -12,6 +12,7 @@ import {
   continueWorkspaceFromEntry,
   emptyDraft,
   getFoxDraft,
+  loadIntakeDraft,
   getFoxMessages,
   nudgeReview,
   receiveDocument,
@@ -2853,11 +2854,10 @@ const loudStubSpoken = stubExtractConfirmCopy(
   4615.38,
   "biweekly",
   9999.99,
-  "Jordan Hale",
 );
 assert.equal(
   loudStubSpoken,
-  "Harbor Pacific Design Inc. Jordan Hale. $4,615.38 biweekly. $9,999.99 a month. Use this?",
+  "Harbor Pacific Design Inc. $4,615.38 biweekly. $9,999.99 a month. Use this?",
 );
 const loudStubAfterW2 = applyExtractedFields(
   {
@@ -2886,8 +2886,9 @@ assert.equal(workspacePrompt(loudStubAfterW2.draft), "confirm-proposal");
 assert.equal(workspacePromptCopy("confirm-proposal", loudStubAfterW2.draft).text, loudStubSpoken);
 assert.deepEqual(
   (workspacePromptCopy("confirm-proposal", loudStubAfterW2.draft).actions ?? []).map((item) => item.label),
-  ["Use this", "Change", "Skip"],
+  ["Use this", "Change"],
 );
+assert.ok(!previewFacts(loudStubAfterW2.draft).some((fact) => fact.id === "docs" && /Paystubs in/i.test(fact.value)));
 assert.ok(!(workspacePromptCopy("confirm-proposal", loudStubAfterW2.draft).actions ?? []).some((item) => item.label === "Looks right"));
 assert.equal(loudStubAfterW2.draft.facts?.[PAYSTUB_AMOUNT_FIELD], undefined);
 assert.equal(loudStubAfterW2.draft.facts?.pay_frequency, undefined);
@@ -13093,6 +13094,88 @@ async function extractAdapterSmoke() {
   assert.ok(previewFacts(jordanHaleUsed).some((fact) => fact.id === "docs" && fact.value === "W-2 in"));
   assert.equal(workspacePrompt(jordanHaleUsed), "paystub-monthly");
   assert.ok(!canLooksRight(jordanHaleUsed));
+  const stubFile = new File([loudStubBytes], "paycheck.pdf", { type: "application/pdf" });
+  const stubFromBytes = await classifyAndExtract(
+    new Uint8Array(await stubFile.arrayBuffer()),
+    "application/octet-stream",
+    deadVision,
+    null,
+    stubFile.name,
+  );
+  assert.notEqual(stubFromBytes.failed, true, "07 text layer is confirm, not unread");
+  assert.equal(stubFromBytes.extractClass, "paystub");
+  assert.equal(stubFromBytes.fields.gross_period, "4615.38");
+  assert.equal(stubFromBytes.fields.pay_frequency, "biweekly");
+  assert.equal(stubFromBytes.fields.employer_name, "Harbor Pacific Design Inc");
+  const stubAfterW2OtherClass = applyExtractedFields(jordanHaleUsed, {
+    extractClass: "other",
+    confidence: 0.31,
+    fields: stubFromBytes.fields,
+  });
+  assert.equal(stubAfterW2OtherClass.draft.pendingProposal?.field, STUB_EXTRACT_FIELD);
+  assert.equal(
+    workspacePromptCopy("confirm-proposal", stubAfterW2OtherClass.draft).text,
+    "Harbor Pacific Design Inc. $4,615.38 biweekly. $9,999.99 a month. Use this?",
+  );
+  assert.ok(
+    !previewFacts(stubAfterW2OtherClass.draft).some((fact) => fact.id === "docs" && /Paystubs in/i.test(fact.value)),
+  );
+  loadIntakeDraft({
+    ...jordanHaleUsed,
+    documents: [
+      ...(jordanHaleUsed.documents ?? []),
+      {
+        slot: "paystubs" as const,
+        name: "paycheck.pdf",
+        type: "application/pdf",
+        size: loudStubBytes.length,
+        receivedAt: "2026-08-31T12:00:00.000Z",
+        status: "reading" as const,
+      },
+    ],
+  });
+  const stubWrite = applyExtractWrite(
+    "2026-08-31T12:00:00.000Z",
+    "paycheck.pdf",
+    {
+      extractClass: stubFromBytes.extractClass,
+      confidence: stubFromBytes.confidence,
+      fields: stubFromBytes.fields,
+    },
+  );
+  assert.equal(stubWrite.draft.pendingProposal?.field, STUB_EXTRACT_FIELD);
+  assert.equal(
+    workspacePromptCopy("confirm-proposal", stubWrite.draft).text,
+    "Harbor Pacific Design Inc. $4,615.38 biweekly. $9,999.99 a month. Use this?",
+  );
+  assert.ok(!previewFacts(stubWrite.draft).some((fact) => fact.id === "docs" && /Paystubs in/i.test(fact.value)));
+  assert.equal(stubWrite.draft.facts?.paystub_amount, undefined);
+  assert.equal(stubWrite.draft.facts?.pay_frequency, undefined);
+  loadIntakeDraft({
+    ...jordanHaleUsed,
+    documents: [
+      ...(jordanHaleUsed.documents ?? []),
+      {
+        slot: "paystubs" as const,
+        name: "paycheck.pdf",
+        type: "application/pdf",
+        size: loudStubBytes.length,
+        receivedAt: "2026-08-31T12:01:00.000Z",
+        status: "received" as const,
+      },
+    ],
+  });
+  const stubSilentOther = applyExtractWrite(
+    "2026-08-31T12:01:00.000Z",
+    "paycheck.pdf",
+    { extractClass: "other", confidence: 0.31, fields: {} },
+    "Document received",
+    false,
+  );
+  assert.equal(stubSilentOther.draft.pendingProposal, null);
+  assert.ok(stubSilentOther.quietLines.some((line) => /could not read/i.test(line) || line === FAILED_READ_NOTE));
+  assert.ok(!previewFacts(stubSilentOther.draft).some((fact) => fact.id === "docs" && /Paystubs in/i.test(fact.value)));
+  assert.notEqual(workspacePrompt(stubSilentOther.draft), "review");
   const classifiedK1 = await classifyAndExtract(new Uint8Array([9, 8, 7]), "image/png", {
     async classify() {
       return { class: "k1" as never, confidence: 0.9, readable: true };

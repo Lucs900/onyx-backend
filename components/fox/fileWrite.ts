@@ -28,6 +28,8 @@ import {
   maybeProposeWageExtract,
   maybeProposeStubExtract,
   shouldProposeStubExtract,
+  stubExtractAskOpen,
+  canSpeakStubExtract,
   employersClose,
   wageExtractFailedRead,
   monthlyQualifyingFromExtract,
@@ -417,6 +419,15 @@ export function hasLockedSuggestion(
   return Object.values(fields ?? {}).some((item) => String(item ?? "").trim());
 }
 
+export function looksLikePaystubFields(
+  fields?: Record<string, string | null | undefined> | null,
+): boolean {
+  const value = (key: string) => String(fields?.[key] ?? "").trim();
+  if (value("gross_period") && value("pay_frequency")) return true;
+  if (value("employer_name") && value("gross_period")) return true;
+  return Boolean(value("gross_period") && value("pay_period_end"));
+}
+
 export function promoteExtractClass(
   extractClass: ExtractClass,
   fields?: Record<string, string | null | undefined> | null,
@@ -424,6 +435,7 @@ export function promoteExtractClass(
   if (extractClass !== "other") return extractClass;
   if (looksLikeTaxReturnFields(fields)) return "tax_return";
   if (looksLikeMortgageFields(fields)) return "mortgage_statement";
+  if (looksLikePaystubFields(fields)) return "paystub";
   if (looksLikeIdFields(fields)) return "government_id";
   return extractClass;
 }
@@ -891,7 +903,8 @@ export function applyExtractedFields(
     (input.confidence < LOW_EXTRACT_CONFIDENCE &&
       !looksLikeTaxReturnFields(input.fields) &&
       !looksLikeMortgageFields(input.fields) &&
-      !looksLikeIdFields(input.fields))
+      !looksLikeIdFields(input.fields) &&
+      !looksLikePaystubFields(input.fields))
   ) {
     return { draft, writes, conflict: null, quietLines: [] };
   }

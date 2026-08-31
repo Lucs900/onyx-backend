@@ -53,6 +53,7 @@ import { FAILED_READ_NOTE, isUnreadNote } from "@/lib/docs/accept";
 import {
   applyExtractedFields,
   hasLockedSuggestion,
+  looksLikePaystubFields,
   preferFilenameClass,
   promoteExtractClass,
   resolveFactConflict,
@@ -119,6 +120,10 @@ import {
   skipWageStub,
   acceptStubJob,
   writeWagePayFrequency,
+  stubExtractAskOpen,
+  canSpeakStubExtract,
+  maybeProposeStubExtract,
+  isStubExtractProposal,
 } from "./qualifyingIncome";
 import {
   skipEstimatedHousing,
@@ -1184,6 +1189,11 @@ export function getFoxDraft() {
   return current;
 }
 
+/** Test / replay helper. Composer ingest still goes through applyExtractWrite. */
+export function loadIntakeDraft(next: FoxIntakeDraft) {
+  return commit(next);
+}
+
 export function subscribeFoxDraft(listener: () => void) {
   listeners.add(listener);
   return () => listeners.delete(listener);
@@ -1448,7 +1458,12 @@ export function applyExtractWrite(
   if (!match) {
     return { draft: current, writes: [], conflict: null, quietLines: [], extractClass: input.extractClass };
   }
-  const extractedClass = promoteExtractClass(input.extractClass, input.fields);
+  const extractedClass = promoteExtractClass(
+    looksLikePaystubFields(input.fields) && input.extractClass === "other"
+      ? "paystub"
+      : input.extractClass,
+    input.fields,
+  );
   const unreadEmpty =
     !failed &&
     (extractedClass === "government_id" || extractedClass === "paystub" || extractedClass === "w2") &&
@@ -1459,19 +1474,41 @@ export function applyExtractWrite(
   const stubRead = Boolean(
     String(input.fields?.gross_period ?? "").trim() && String(input.fields?.pay_frequency ?? "").trim(),
   );
-  const treatFailed = Boolean(failed || unreadEmpty) && !box5Read && !stubRead;
+  const stubAskOpen = stubExtractAskOpen(current);
+  const stubCanSpeak = canSpeakStubExtract(current, input.fields);
+  const silentStubReceive = stubAskOpen && !stubCanSpeak && !box5Read;
+  const treatFailed =
+    (Boolean(failed || unreadEmpty) && !box5Read && !stubRead) || silentStubReceive;
   const displayClass =
     treatFailed || extractedClass === "other"
       ? preferFilenameClass(extractedClass, name)
       : extractedClass;
-  const applied = treatFailed
+  const applyClass = stubAskOpen && stubCanSpeak ? "paystub" : extractedClass;
+  let applied = treatFailed
     ? {
         draft: { ...current, looksRightHold: true },
         writes: [],
         conflict: null,
-        quietLines: note ? [note] : [FAILED_READ_NOTE],
+        quietLines: note && isUnreadNote(note) ? [note] : [FAILED_READ_NOTE],
       }
-    : applyExtractedFields(current, { ...input, extractClass: extractedClass });
+    : applyExtractedFields(current, { ...input, extractClass: applyClass });
+  if (
+    !treatFailed &&
+    stubAskOpen &&
+    stubCanSpeak &&
+    !isStubExtractProposal(applied.draft.pendingProposal)
+  ) {
+    applied = {
+      ...applied,
+      draft: maybeProposeStubExtract(
+        { ...applied.draft, pendingConflict: null, awaitingPayFrequency: false },
+        Object.fromEntries(
+          Object.entries(input.fields ?? {}).map(([key, value]) => [key, String(value ?? "")]),
+        ),
+        "paystub",
+      ),
+    };
+  }
   const nextDocs = applied.draft.documents.map((doc) => {
     if (doc.receivedAt !== receivedAt || doc.name !== name) return doc;
     const slot = resolveReceivedSlot(doc.slot, name, displayClass);

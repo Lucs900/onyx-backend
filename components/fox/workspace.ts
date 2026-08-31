@@ -1667,10 +1667,7 @@ function liveProposalAsk(
       0;
     return {
       text: stubExtractConfirmCopy(employer, stub, frequency, monthly, employee),
-      actions: [
-        ...incomeConfirmActions(),
-        wageSkipAction("skip-paystub-monthly"),
-      ],
+      actions: incomeConfirmActions(),
     };
   }
   if (isStubJobProposal(proposal)) {
@@ -6713,6 +6710,18 @@ function docsFact(draft: FoxIntakeDraft): PreviewFact | null {
               wageThreadOpen(draft) &&
               !draft.sampleAccepted &&
               !w2Written
+            ) {
+              return "";
+            }
+            const stubWritten =
+              draft.stubExtractAccepted ||
+              Boolean(factValue(draft, "paystub_amount") || factValue(draft, "gross_period"));
+            if (
+              wageLabel === "Paystubs" &&
+              wageThreadOpen(draft) &&
+              !draft.sampleAccepted &&
+              wageW2ExtractAccepted(draft) &&
+              !stubWritten
             ) {
               return "";
             }

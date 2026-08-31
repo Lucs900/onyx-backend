@@ -327,7 +327,12 @@ function applyFoxAsk(
       message.id === last.id ? foxAskMessage(ask) : message,
     );
   }
-  if (last && last.text === WAGE_STUB_DROP_ASK && ask.text !== WAGE_STUB_DROP_ASK) {
+  if (
+    last &&
+    (last.text === WAGE_STUB_DROP_ASK || /^Drop a recent paystub\b/i.test(last.text)) &&
+    ask.text !== last.text &&
+    ask.text !== WAGE_STUB_DROP_ASK
+  ) {
     return messages.map((message) =>
       message.id === last.id ? foxAskMessage(ask) : message,
     );
