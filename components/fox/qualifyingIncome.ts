@@ -1380,7 +1380,7 @@ export function wageW2ConfirmCopy(box5: number, employer: string): string {
   return `Box 5 ${speakWageMoney(box5)}. ${name}. Use this?`;
 }
 
-/** File Employment after Use this: employer and Box 5 only. Not Box 1. */
+/** File Employment after Use this: employer and Box 5. Stub Use this adds pay on the same row. Not Box 1. */
 export function wageEmploymentFileLine(draft: FoxIntakeDraft): string {
   if (draft.sampleAccepted || !wageW2ExtractAccepted(draft)) return "";
   if (isWageExtractProposal(draft.pendingProposal)) return "";
@@ -1397,7 +1397,11 @@ export function wageEmploymentFileLine(draft: FoxIntakeDraft): string {
       return `${employer}, Box 5 ${speakWageMoney(box5)}`;
     }
     const monthlyBit = monthly != null && monthly > 0 ? `, ${speakWageMoney(monthly)} a month` : "";
-    return `${employer}, ${frequency}, ${speakWageMoney(stub)}${monthlyBit}`;
+    const stubBit = `${frequency}, ${speakWageMoney(stub)}${monthlyBit}`;
+    if (employer && box5 != null && box5 > 0) {
+      return `${employer}, Box 5 ${speakWageMoney(box5)}, ${stubBit}`;
+    }
+    return `${employer}, ${stubBit}`;
   }
   if (stub != null && stub > 0) return "";
   if (parseExtractMoney(factValue(draft, PAYSTUB_MONTHLY_FIELD))) return "";

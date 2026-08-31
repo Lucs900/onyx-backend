@@ -110,6 +110,7 @@ import {
   W2_BOX5_ASK,
   W2_PAY_FREQUENCY_ASK,
   wageExtractConfirmCopy,
+  wageEmploymentFileLine,
   wageW2ConfirmCopy,
   wageExtractFailedRead,
   acceptWageExtract,
@@ -2994,15 +2995,27 @@ const unlabeledStubUsed = acceptStubExtract(unlabeledStubAfterW2.draft);
 assert.equal(unlabeledStubUsed.facts?.[PAYSTUB_AMOUNT_FIELD]?.value, "4615.38");
 assert.equal(unlabeledStubUsed.facts?.pay_frequency?.value, "biweekly");
 assert.equal(unlabeledStubUsed.facts?.paystub_monthly?.value, "9999.99");
+assert.equal(unlabeledStubUsed.facts?.w2_box5?.value, "118400");
 assert.equal((unlabeledStubUsed.employmentHistory ?? []).length, 1);
+assert.equal(
+  wageEmploymentFileLine(unlabeledStubUsed),
+  "Harbor Pacific Design Inc, Box 5 $118,400, biweekly, $4,615.38, $9,999.99 a month",
+);
 assert.ok(
   previewFacts(unlabeledStubUsed).some(
     (fact) =>
       fact.label === "Employment" &&
       /Harbor Pacific Design Inc/i.test(fact.value) &&
+      /Box 5 \$118,400/.test(fact.value) &&
+      /118,?400/.test(fact.value) &&
+      /biweekly/.test(fact.value) &&
       /\$4,615\.38/.test(fact.value) &&
       /\$9,999\.99 a month/.test(fact.value),
   ),
+);
+assert.equal(
+  previewFacts(unlabeledStubUsed).filter((fact) => fact.id === "employer" || fact.label === "Employment").length,
+  1,
 );
 assert.deepEqual(
   (workspacePromptCopy("confirm-proposal", loudStubAfterW2.draft).actions ?? []).map((item) => item.label),
@@ -3050,13 +3063,20 @@ const loudStubUsed = acceptStubExtract(loudStubAfterW2.draft);
 assert.equal(loudStubUsed.facts?.[PAYSTUB_AMOUNT_FIELD]?.value, "4615.38");
 assert.equal(loudStubUsed.facts?.pay_frequency?.value, "biweekly");
 assert.equal(loudStubUsed.facts?.paystub_monthly?.value, "9999.99");
+assert.equal(loudStubUsed.facts?.w2_box5?.value, "118400");
 assert.equal(loudStubUsed.facts?.employer_name?.value, "Harbor Pacific Design Inc");
 assert.equal((loudStubUsed.employmentHistory ?? []).length, 1);
+assert.equal(
+  wageEmploymentFileLine(loudStubUsed),
+  "Harbor Pacific Design Inc, Box 5 $118,400, biweekly, $4,615.38, $9,999.99 a month",
+);
 assert.ok(
   previewFacts(loudStubUsed).some(
     (fact) =>
       fact.label === "Employment" &&
       /Harbor Pacific Design Inc/i.test(fact.value) &&
+      /Box 5 \$118,400/.test(fact.value) &&
+      /118,?400/.test(fact.value) &&
       /biweekly/.test(fact.value) &&
       /\$4,615\.38/.test(fact.value) &&
       /\$9,999\.99 a month/.test(fact.value),
@@ -3144,6 +3164,12 @@ const loudStubSameJob = acceptStubJob(loudStubDifferAsked, "same");
 assert.equal((loudStubSameJob.employmentHistory ?? []).length, 1);
 assert.equal(loudStubSameJob.facts?.employer_name?.value, "Harbor Pacific Design Inc");
 assert.equal(loudStubSameJob.facts?.[PAYSTUB_AMOUNT_FIELD]?.value, "4615.38");
+assert.equal(loudStubSameJob.facts?.w2_box5?.value, "118400");
+assert.equal(loudStubSameJob.facts?.paystub_monthly?.value, "9999.99");
+assert.equal(
+  wageEmploymentFileLine(loudStubSameJob),
+  "Harbor Pacific Design Inc, Box 5 $118,400, biweekly, $4,615.38, $9,999.99 a month",
+);
 const loudStubTwoJobs = acceptStubJob(loudStubDifferAsked, "two");
 assert.equal((loudStubTwoJobs.employmentHistory ?? []).length, 2);
 assert.ok((loudStubTwoJobs.employmentHistory ?? []).some((item) => /Acme Steel/i.test(item.label ?? "")));
@@ -3156,6 +3182,8 @@ assert.ok(canLooksRight(loudStubSkippedAfterDrop));
 assert.equal(workspacePrompt(loudStubSkippedAfterDrop), "review");
 assert.equal(loudStubSkippedAfterDrop.facts?.[PAYSTUB_AMOUNT_FIELD], undefined);
 assert.equal(loudStubSkippedAfterDrop.facts?.pay_frequency, undefined);
+assert.equal(loudStubSkippedAfterDrop.facts?.w2_box5?.value, "118400");
+assert.equal(wageEmploymentFileLine(loudStubSkippedAfterDrop), "Harbor Pacific Design Inc, Box 5 $118,400");
 
 const loudAfterStub = applyExtractedFields(
   {
