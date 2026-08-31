@@ -422,14 +422,48 @@ function companyBeforeSuffix(text: string): string {
   return best;
 }
 
+/** Period gross from THIS blob. Colon optional. Comma optional. Never invents an amount. */
+export function grossPeriodFromPrintedText(text: string): string {
+  const blob = String(text ?? "");
+  const patterns = [
+    new RegExp(
+      `(?:gross(?:\\s*(?:period|pay|current|this\\s*period))?|(?:period|current|this\\s*period)\\s*gross)\\s*:?\\s*${MONEY_IN_TEXT}`,
+      "i",
+    ),
+  ];
+  for (const pattern of patterns) {
+    const match = blob.match(pattern);
+    if (!match?.[1]) continue;
+    const digits = moneyDigits(match[1]);
+    if (digits) return digits;
+  }
+  return "";
+}
+
+/** Pay frequency from THIS blob. Colon optional. BIWEEKLY = biweekly. */
+export function payFrequencyFromPrintedText(text: string): string {
+  const blob = String(text ?? "");
+  const match = blob.match(
+    /\b(bi[\s-]?weekly|every\s*2\s*weeks|fortnight(?:ly)?|semi[\s-]?monthly|twice[\s-]?a[\s-]?month|weekly|monthly)\b/i,
+  );
+  const raw = match?.[1] ?? "";
+  if (!raw) return "";
+  const compact = raw.toLowerCase().replace(/[\s_-]+/g, "");
+  if (/(biweekly|every2weeks|fortnight)/.test(compact)) return "biweekly";
+  if (/(semimonth|twiceamonth)/.test(compact)) return "semimonthly";
+  if (/weekly/.test(compact)) return "weekly";
+  if (/month/.test(compact)) return "monthly";
+  return "";
+}
+
 /** Employer from THIS blob — labeled line or Inc/LLC/Corp suffix. Not a filename map. */
 export function employerFromPrintedText(text: string, lines: string[] = []): string {
   for (const line of lines) {
-    const own = valueAfter(line, /^(?:EMPLOYER NAME|EMPLOYER|COMPANY NAME|COMPANY):\s*/i);
+    const own = valueAfter(line, /^(?:EMPLOYER NAME|EMPLOYER|COMPANY NAME|COMPANY):?\s*/i);
     if (own && !/^(?:name|address|ein|tax statement)\b/i.test(own)) return own.replace(/\s+/g, " ").trim();
   }
   const labeled = String(text ?? "").match(
-    /employer(?:'s)?(?:\s+name)?\s*:\s*([A-Za-z][A-Za-z0-9&.,'’ -]{1,80}?)(?:\s+(?:employee|box|ein|address|tax)|$)/i,
+    /employer(?:'s)?(?:\s+name)?\s*:?\s*([A-Za-z][A-Za-z0-9&.,'’ -]{1,80}?)(?:\s+(?:employee|box|ein|address|tax)|$)/i,
   );
   if (labeled?.[1]) {
     const name = labeled[1].replace(/\s+/g, " ").trim();
@@ -450,7 +484,14 @@ function valueAfter(line: string, label: RegExp) {
 
 function classifyPrintedLines(lines: string[]): ExtractClass | null {
   const blob = lines.join("\n").toUpperCase();
-  if (/\bPAYSTUB\b|\bPAY STUB\b|EARNINGS STATEMENT|PAY STATEMENT/.test(blob)) return "paystub";
+  if (
+    /\bPAYSTUB\b|\bPAY STUB\b|EARNINGS STATEMENT|PAY STATEMENT/.test(blob) ||
+    (/\bBI[\s-]?WEEKLY\b|\bSEMI[\s-]?MONTHLY\b|\bWEEKLY\b|\bMONTHLY\b/.test(blob) &&
+      /\bGROSS\b/.test(blob) &&
+      /\d/.test(blob))
+  ) {
+    return "paystub";
+  }
   if (/\bW-?2\b/.test(blob) || /WAGE AND TAX STATEMENT/.test(blob)) return "w2";
   if (/K-?1|1120-?S|FORM 1040|SCHEDULE C/.test(blob)) return "tax_return";
   if (/BANK STATEMENT/.test(blob)) return "bank_statement";
@@ -508,16 +549,16 @@ export function fieldsFromPrintedLines(
     const next = lines[i + 1] ?? "";
     const hireDate = labeled(line, next, /^(?:HIRE DATE|DATE OF HIRE|START DATE):\s*/i);
     if (hireDate) put("hire_date", hireDate);
-    const employer = labeled(line, next, /^(?:EMPLOYER NAME|EMPLOYER|COMPANY NAME|COMPANY):\s*/i);
+    const employer = labeled(line, next, /^(?:EMPLOYER NAME|EMPLOYER|COMPANY NAME|COMPANY):?\s*/i);
     if (employer) put("employer_name", employer);
-    const periodEnd = labeled(line, next, /^(?:PAY PERIOD END|PERIOD END|PAY DATE|PERIOD ENDING):\s*/i);
+    const periodEnd = labeled(line, next, /^(?:PAY PERIOD END|PERIOD END|PAY DATE|PERIOD ENDING):?\s*/i);
     if (periodEnd) put("pay_period_end", periodEnd);
-    const frequency = labeled(line, next, /^PAY FREQUENCY:\s*/i);
+    const frequency = labeled(line, next, /^(?:PAY FREQUENCY|FREQUENCY|PAY CYCLE):?\s*/i);
     if (frequency) put("pay_frequency", frequency.toLowerCase());
     const gross = labeled(
       line,
       next,
-      /^(?:GROSS PERIOD|PERIOD GROSS|GROSS PAY|CURRENT GROSS|THIS PERIOD GROSS):\s*/i,
+      /^(?:GROSS PERIOD|PERIOD GROSS|GROSS PAY|CURRENT GROSS|THIS PERIOD GROSS|GROSS):?\s*/i,
     );
     if (gross) putMoney("gross_period", gross);
     const ytd = labeled(line, next, /^(?:YTD GROSS|GROSS YTD|YEAR TO DATE GROSS):\s*/i);
@@ -619,6 +660,23 @@ export function fieldsFromPrintedLines(
     }
     if (!fields.employer_name) {
       const employer = employerFromPrintedText(blob, lines) || employerFromPrintedText(lines.join("\n"), lines);
+      if (employer) put("employer_name", employer);
+    }
+  }
+
+  if (extractClass === "paystub" || extractClass === "other") {
+    const blob = lines.join(" ");
+    const stacked = lines.join("\n");
+    if (!fields.gross_period) {
+      const gross = grossPeriodFromPrintedText(blob) || grossPeriodFromPrintedText(stacked);
+      if (gross) putMoney("gross_period", gross);
+    }
+    if (!fields.pay_frequency) {
+      const frequency = payFrequencyFromPrintedText(blob) || payFrequencyFromPrintedText(stacked);
+      if (frequency) put("pay_frequency", frequency);
+    }
+    if (!fields.employer_name) {
+      const employer = employerFromPrintedText(blob, lines) || employerFromPrintedText(stacked, lines);
       if (employer) put("employer_name", employer);
     }
   }

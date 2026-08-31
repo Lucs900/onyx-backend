@@ -102,6 +102,7 @@ import {
   STUB_JOB_FIELD,
   STUB_JOB_ASK,
   stubExtractConfirmCopy,
+  conventionalStubMonthly,
   acceptStubExtract,
   acceptStubJob,
   changeStubExtract,
@@ -161,6 +162,8 @@ import {
 import {
   box5FromPrintedText,
   employerFromPrintedText,
+  grossPeriodFromPrintedText,
+  payFrequencyFromPrintedText,
   loudWageFromPrintedLines,
   printedSampleFromBytes,
   printedSampleFromFilename,
@@ -2747,6 +2750,54 @@ const box1OnlyLoud = loudWageFromPrintedLines([
 ]);
 assert.equal(box1OnlyLoud, null);
 assert.equal(box5FromPrintedText("EMPLOYER: HARBOR STEEL WAGES: $84,000"), "");
+const unlabeledStubLines = [
+  "Harbor Pacific Design Inc",
+  "Jordan Hale",
+  "BIWEEKLY",
+  "gross 4,615.38",
+];
+assert.doesNotMatch(unlabeledStubLines.join("\n"), /EMPLOYER:|GROSS PERIOD:|PAY FREQUENCY:/);
+assert.equal(grossPeriodFromPrintedText(unlabeledStubLines.join(" ")), "4615.38");
+assert.equal(grossPeriodFromPrintedText("gross 4615.38"), "4615.38");
+assert.equal(payFrequencyFromPrintedText(unlabeledStubLines.join(" ")), "biweekly");
+assert.equal(payFrequencyFromPrintedText("BIWEEKLY"), "biweekly");
+assert.equal(employerFromPrintedText(unlabeledStubLines.join(" "), unlabeledStubLines), "Harbor Pacific Design Inc");
+const unlabeledStub = loudWageFromPrintedLines(unlabeledStubLines);
+assert.equal(unlabeledStub?.extractClass, "paystub");
+assert.equal(unlabeledStub?.fields.gross_period, "4615.38");
+assert.equal(unlabeledStub?.fields.pay_frequency, "biweekly");
+assert.equal(unlabeledStub?.fields.employer_name, "Harbor Pacific Design Inc");
+assert.equal(conventionalStubMonthly(4615.38, "biweekly"), 9999.99);
+assert.equal(
+  stubExtractConfirmCopy(
+    unlabeledStub!.fields.employer_name,
+    Number(unlabeledStub!.fields.gross_period),
+    unlabeledStub!.fields.pay_frequency,
+    conventionalStubMonthly(4615.38, "biweekly") ?? 0,
+  ),
+  "Harbor Pacific Design Inc. $4,615.38 biweekly. $9,999.99 a month. Use this?",
+);
+const splitUnlabeledStub = loudWageFromPrintedLines([
+  "Harbor Pacific Design Inc",
+  "BIWEEKLY",
+  "gross",
+  "4,615.38",
+]);
+assert.equal(splitUnlabeledStub?.extractClass, "paystub");
+assert.equal(splitUnlabeledStub?.fields.gross_period, "4615.38");
+assert.equal(splitUnlabeledStub?.fields.pay_frequency, "biweekly");
+assert.equal(splitUnlabeledStub?.fields.employer_name, "Harbor Pacific Design Inc");
+assert.equal(
+  stubExtractConfirmCopy(
+    splitUnlabeledStub!.fields.employer_name,
+    Number(splitUnlabeledStub!.fields.gross_period),
+    splitUnlabeledStub!.fields.pay_frequency,
+    9999.99,
+  ),
+  "Harbor Pacific Design Inc. $4,615.38 biweekly. $9,999.99 a month. Use this?",
+);
+assert.equal(loudWageFromPrintedLines(["Harbor Pacific Design Inc", "BIWEEKLY"]), null);
+assert.equal(grossPeriodFromPrintedText("Harbor Pacific Design Inc BIWEEKLY"), "");
 assert.equal(wageDocsAsk(walkABase).text, WAGE_DOCS_ASK);
 assert.deepEqual((wageDocsAsk(walkABase).actions ?? []).map((item) => item.label), ["Upload", "Skip"]);
 const loudAfterW2 = applyExtractedFields(walkABase, {
@@ -2884,6 +2935,75 @@ const loudStubAfterW2 = applyExtractedFields(
 assert.equal(loudStubAfterW2.draft.pendingProposal?.field, STUB_EXTRACT_FIELD);
 assert.equal(workspacePrompt(loudStubAfterW2.draft), "confirm-proposal");
 assert.equal(workspacePromptCopy("confirm-proposal", loudStubAfterW2.draft).text, loudStubSpoken);
+const unlabeledStubAfterW2 = applyExtractedFields(
+  {
+    ...loudW2Used,
+    documents: [
+      ...(loudW2Used.documents ?? []),
+      {
+        slot: "paystubs" as const,
+        name: "any-stub.pdf",
+        type: "application/pdf",
+        size: 3344,
+        receivedAt: "2026-08-31T00:01:30.000Z",
+        status: "extracted" as const,
+        extractClass: "paystub" as const,
+      },
+    ],
+  },
+  {
+    extractClass: "paystub",
+    confidence: 0.94,
+    fields: unlabeledStub!.fields,
+  },
+);
+assert.equal(
+  workspacePromptCopy("confirm-proposal", unlabeledStubAfterW2.draft).text,
+  "Harbor Pacific Design Inc. $4,615.38 biweekly. $9,999.99 a month. Use this?",
+);
+assert.deepEqual(
+  (workspacePromptCopy("confirm-proposal", unlabeledStubAfterW2.draft).actions ?? []).map((item) => item.label),
+  ["Use this", "Change"],
+);
+assert.ok(!previewFacts(unlabeledStubAfterW2.draft).some((fact) => fact.id === "docs" && /Paystubs in/i.test(fact.value)));
+assert.equal(unlabeledStubAfterW2.draft.facts?.[PAYSTUB_AMOUNT_FIELD], undefined);
+assert.equal(unlabeledStubAfterW2.draft.facts?.pay_frequency, undefined);
+assert.equal(unlabeledStubAfterW2.draft.facts?.paystub_monthly, undefined);
+assert.equal(unlabeledStubAfterW2.draft.facts?.gross_period, undefined);
+assert.ok(
+  previewFacts(unlabeledStubAfterW2.draft).some(
+    (fact) =>
+      fact.label === "Employment" &&
+      /Harbor Pacific Design Inc/i.test(fact.value) &&
+      /Box 5 \$118,400/.test(fact.value),
+  ),
+);
+assert.equal(
+  previewFacts(unlabeledStubAfterW2.draft).filter((fact) => fact.id === "employer" || fact.label === "Employment").length,
+  1,
+);
+const unlabeledStubChanged = changeStubExtract(unlabeledStubAfterW2.draft);
+assert.equal(unlabeledStubChanged.facts?.[PAYSTUB_AMOUNT_FIELD], undefined);
+assert.equal(unlabeledStubChanged.facts?.pay_frequency, undefined);
+assert.ok(
+  previewFacts(unlabeledStubChanged).some(
+    (fact) => fact.label === "Employment" && /Box 5 \$118,400/.test(fact.value),
+  ),
+);
+const unlabeledStubUsed = acceptStubExtract(unlabeledStubAfterW2.draft);
+assert.equal(unlabeledStubUsed.facts?.[PAYSTUB_AMOUNT_FIELD]?.value, "4615.38");
+assert.equal(unlabeledStubUsed.facts?.pay_frequency?.value, "biweekly");
+assert.equal(unlabeledStubUsed.facts?.paystub_monthly?.value, "9999.99");
+assert.equal((unlabeledStubUsed.employmentHistory ?? []).length, 1);
+assert.ok(
+  previewFacts(unlabeledStubUsed).some(
+    (fact) =>
+      fact.label === "Employment" &&
+      /Harbor Pacific Design Inc/i.test(fact.value) &&
+      /\$4,615\.38/.test(fact.value) &&
+      /\$9,999\.99 a month/.test(fact.value),
+  ),
+);
 assert.deepEqual(
   (workspacePromptCopy("confirm-proposal", loudStubAfterW2.draft).actions ?? []).map((item) => item.label),
   ["Use this", "Change"],
