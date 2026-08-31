@@ -2698,7 +2698,18 @@ assert.equal(loudStubPrinted?.fields.pay_frequency, "biweekly");
 assert.equal(wageExtractConfirmCopy(118400, 4615.38, "biweekly"), "Box 5 $118,400. Stub $4,615.38 biweekly. Use this?");
 assert.equal(wageW2ConfirmCopy(118400, "Harbor Pacific Design Inc"), "Box 5 $118,400. Harbor Pacific Design Inc. Use this?");
 assert.equal(unreadDropBytesCopy("06-w2-2025-box5-loud.pdf", 12345), "06-w2-2025-box5-loud.pdf · 12,345 bytes");
-assert.equal(unreadDropBytesCopy("03-w2-2025-jordan-hale.pdf", 88421), "03-w2-2025-jordan-hale.pdf · 88,421 bytes");
+const jordanHalePath = join(dirname(fileURLToPath(import.meta.url)), "..", "sample-docs", "03-w2-2025-jordan-hale.pdf");
+assert.equal(existsSync(jordanHalePath), true);
+const jordanHaleDisk = readFileSync(jordanHalePath);
+assert.equal(
+  unreadDropBytesCopy("03-w2-2025-jordan-hale.pdf", jordanHaleDisk.length),
+  `03-w2-2025-jordan-hale.pdf · ${jordanHaleDisk.length.toLocaleString("en-US")} bytes`,
+);
+const jordanHaleLayer = (readPdfTextLayer(jordanHaleDisk) ?? []).join("\n");
+assert.match(jordanHaleLayer, /Harbor Pacific Design Inc/);
+assert.match(jordanHaleLayer, /Box 5 Medicare wages 118,400\.00/);
+assert.doesNotMatch(jordanHaleLayer, /BOX 5 MEDICARE WAGES AND TIPS:/);
+assert.doesNotMatch(jordanHaleLayer, /^EMPLOYER:/m);
 const unlabeledWageLines = [
   "Wage and Tax Statement",
   "Harbor Pacific Design Inc",
@@ -12125,6 +12136,10 @@ assert.ok(alwaysOn.includes("ingestDroppedFiles"));
 assert.ok(alwaysOn.includes("data-composer-drop"));
 assert.ok(alwaysOn.includes('document.addEventListener("drop"'));
 assert.ok(alwaysOn.includes("filesFromDataTransfer"));
+assert.ok(alwaysOn.includes("void ingestDroppedFiles(files)"));
+assert.ok(!alwaysOn.includes("setInputFiles"));
+assert.ok(dropSource.includes("Reads the dropped File bytes"));
+assert.doesNotMatch(dropSource, /printedSampleFromFilename|06-w2-2025-box5-loud/);
 assert.ok(alwaysOn.includes("requestRateflowIfNeeded"));
 assert.ok(alwaysOn.includes("messagesWithLiveQuoteSpeech"));
 assert.ok(alwaysOn.includes("messagesWithRateOrReadySpeech"));
@@ -12726,42 +12741,52 @@ async function extractAdapterSmoke() {
 
   const extractSrc = readFileSync(join(root, "lib/docs/extract.ts"), "utf8");
   assert.doesNotMatch(extractSrc, /printedSampleFromFilename|BY_NAME/);
+  assert.doesNotMatch(extractSrc, /06-w2-2025-box5-loud/);
+  const printedSrc = readFileSync(join(root, "lib/docs/printedSample.ts"), "utf8");
+  assert.doesNotMatch(printedSrc, /03-w2-2025-jordan-hale/);
   assert.match(extractSrc, /loudWageFromPrintedLines/);
   assert.match(extractSrc, /readPrintedSample\(bytes\)/);
   assert.equal(loudWageFromPrintedLines(readPdfTextLayer(loudW2Bytes) ?? [])?.fields.medicare_wages, "118400");
   assert.equal(loudWageFromPrintedLines(readPdfTextLayer(loudStubBytes) ?? [])?.fields.gross_period, "4615.38");
-  const tj = (lines: string[]) => {
-    const escaped = (text: string) => text.replace(/\\/g, "\\\\").replace(/\(/g, "\\(").replace(/\)/g, "\\)");
-    const ops = lines.map((line) => `(${escaped(line)}) Tj T*`).join(" ");
-    const content = `BT /F1 12 Tf 72 720 Td ${ops} ET`;
-    const body = `<< /Length ${content.length} >>stream\n${content}\nendstream`;
-    return new TextEncoder().encode(`%PDF-1.4\n1 0 obj${body}\nendobj\ntrailer<<>>\n%%EOF\n`);
-  };
-  const jordanHaleBytes = tj([
-    "Wage and Tax Statement",
-    "Harbor Pacific Design Inc",
-    "Box 5 Medicare wages 118,400.00",
-  ]);
+  const jordanHaleBytes = readFileSync(join(root, "sample-docs/03-w2-2025-jordan-hale.pdf"));
+  const jordanHaleFile = new File([jordanHaleBytes], "03-w2-2025-jordan-hale.pdf", {
+    type: "application/pdf",
+  });
+  assert.equal(jordanHaleFile.name, "03-w2-2025-jordan-hale.pdf");
+  assert.equal(jordanHaleFile.size, jordanHaleBytes.length);
   const jordanHalePdf = await classifyAndExtract(
-    jordanHaleBytes,
+    new Uint8Array(await jordanHaleFile.arrayBuffer()),
     "application/pdf",
     deadVision,
     null,
-    "03-w2-2025-jordan-hale.pdf",
+    jordanHaleFile.name,
   );
-  assert.notEqual(jordanHalePdf.failed, true, "03-style text layer is confirm, not unread");
+  assert.notEqual(jordanHalePdf.failed, true, "03 text layer is confirm, not unread");
   assert.equal(jordanHalePdf.extractClass, "w2");
   assert.equal(jordanHalePdf.fields.medicare_wages ?? jordanHalePdf.fields.box5, "118400");
   assert.equal(jordanHalePdf.fields.employer_name, "Harbor Pacific Design Inc");
+  assert.equal(walkABase.facts?.employer_name, undefined);
+  assert.equal(walkABase.facts?.w2_box5, undefined);
+  assert.equal(walkABase.facts?.qualifying_income, undefined);
   const jordanHaleAfter = applyExtractedFields(walkABase, {
     extractClass: "w2",
     confidence: 0.94,
     fields: jordanHalePdf.fields,
   });
+  assert.equal(jordanHaleAfter.draft.facts?.employer_name, undefined);
+  assert.equal(jordanHaleAfter.draft.facts?.w2_box5, undefined);
+  assert.equal(jordanHaleAfter.draft.facts?.qualifying_income, undefined);
   assert.equal(
     workspacePromptCopy("confirm-proposal", jordanHaleAfter.draft).text,
     "Box 5 $118,400. Harbor Pacific Design Inc. Use this?",
   );
+  assert.deepEqual(
+    (workspacePromptCopy("confirm-proposal", jordanHaleAfter.draft).actions ?? []).map((item) => item.label),
+    ["Use this", "Change"],
+  );
+  assert.ok(!(workspacePromptCopy("confirm-proposal", jordanHaleAfter.draft).actions ?? []).some((item) => item.label === "Looks right"));
+  assert.ok(!previewFacts(jordanHaleAfter.draft).some((fact) => fact.id === "originator"));
+  assert.ok(!previewFacts(jordanHaleAfter.draft).some((fact) => fact.id === "docs" && /W-2 in|could not read/i.test(fact.value)));
   const classifiedK1 = await classifyAndExtract(new Uint8Array([9, 8, 7]), "image/png", {
     async classify() {
       return { class: "k1" as never, confidence: 0.9, readable: true };
@@ -12799,6 +12824,27 @@ async function extractAdapterSmoke() {
   assert.equal(handed.failed, false);
   assert.equal(handed.class, "mortgage_statement");
   assert.equal(handed.fields?.current_pi, "3850");
+  const composerForm = new FormData();
+  composerForm.append("file", jordanHaleFile, jordanHaleFile.name);
+  composerForm.append("name", jordanHaleFile.name);
+  composerForm.append("type", "application/pdf");
+  const composerPosted = await extractRoutePost(
+    new Request("http://local/api/docs/extract", { method: "POST", body: composerForm }),
+  );
+  const composerRead = (await composerPosted.json()) as {
+    class?: string;
+    fields?: Record<string, string>;
+    failed?: boolean;
+    source?: string;
+    note?: string;
+  };
+  assert.equal(composerPosted.status, 200);
+  assert.equal(composerRead.source, "file");
+  assert.notEqual(composerRead.failed, true);
+  assert.equal(composerRead.class, "w2");
+  assert.equal(composerRead.fields?.medicare_wages ?? composerRead.fields?.box5, "118400");
+  assert.equal(composerRead.fields?.employer_name, "Harbor Pacific Design Inc");
+  assert.doesNotMatch(JSON.stringify(composerRead.fields ?? {}), /84000/);
   const extractRouteSrc = readFileSync(join(root, "app/api/docs/extract/route.ts"), "utf8");
   assert.match(extractRouteSrc, /source: "file"/);
   assert.match(extractRouteSrc, /readPrivateBytes/);
