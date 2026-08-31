@@ -197,6 +197,7 @@ import {
   isWageExtractProposal,
   isWageW2OnlyProposal,
   wageEmploymentUnconfirmed,
+  wageEmploymentFileLine,
   readStubAmount,
   readWageBox5,
   readWageFrequency,
@@ -7082,11 +7083,12 @@ export function previewFacts(draft: FoxIntakeDraft): PreviewFact[] {
   }
 
   const hideWageEmployment = wageEmploymentUnconfirmed(draft);
+  const wageEmploymentLine = hideWageEmployment ? "" : wageEmploymentFileLine(draft);
   const employerOnFile = factValue(draft, "employer_name").trim();
   facts.push(
     ...conventionalFileFacts(draft).filter((fact) => {
       if (!String(fact.id).startsWith("history-employment")) return true;
-      if (hideWageEmployment) return false;
+      if (hideWageEmployment || wageEmploymentLine) return false;
       if (
         !draft.sampleAccepted &&
         employerOnFile &&
@@ -7109,6 +7111,12 @@ export function previewFacts(draft: FoxIntakeDraft): PreviewFact[] {
     draft.pendingProposal?.extras?.find((item) => item.field === "employer_name")?.value ?? "";
   if (hideWageEmployment) {
     // Employer / Employment stay empty until Use this or Change.
+  } else if (wageEmploymentLine) {
+    facts.push({
+      id: "history-employment",
+      label: "Employment",
+      value: wageEmploymentLine,
+    });
   } else if (employer) {
     facts.push({
       id: "employer",
@@ -7185,7 +7193,7 @@ export function previewFacts(draft: FoxIntakeDraft): PreviewFact[] {
     !periodPay && !ytdPay && wages ? `Wages ${displayFactValue("wages", wages)}` : "",
     !periodPay && !ytdPay && !wages && agi ? `AGI ${displayFactValue("agi", agi)}` : "",
   ].filter(Boolean);
-  if (payBits.length && !hideWageEmployment) {
+  if (payBits.length && !hideWageEmployment && !wageEmploymentLine) {
     facts.push({ id: "pay", label: "Pay", value: payBits.join(" · ") });
   }
 

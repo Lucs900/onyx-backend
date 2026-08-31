@@ -2770,7 +2770,25 @@ assert.ok(!(workspacePromptCopy("confirm-proposal", loudAfterW2.draft).actions ?
 const loudW2Changed = changeWageExtract(loudAfterW2.draft);
 assert.equal(loudW2Changed.facts?.employer_name, undefined);
 assert.equal(loudW2Changed.facts?.w2_box5, undefined);
-assert.equal(loudW2Changed.pendingProposal, null);
+assert.equal((loudW2Changed.employmentHistory ?? []).length, 0);
+assert.equal(loudW2Changed.pendingProposal?.field, WAGE_EXTRACT_FIELD);
+assert.equal(workspacePrompt(loudW2Changed), "confirm-proposal");
+assert.notEqual(workspacePrompt(loudW2Changed), "paystub-monthly");
+assert.notEqual(workspacePrompt(loudW2Changed), "review");
+assert.equal(
+  workspacePromptCopy("confirm-proposal", loudW2Changed).text,
+  "Box 5 $118,400. Harbor Pacific Design Inc. Use this?",
+);
+assert.deepEqual(
+  (workspacePromptCopy("confirm-proposal", loudW2Changed).actions ?? []).map((item) => item.label),
+  ["Use this", "Change"],
+);
+assert.ok(!canLooksRight(loudW2Changed));
+assert.equal(
+  previewFacts(loudW2Changed).filter((fact) => fact.id === "employer" || fact.label === "Employment").length,
+  0,
+);
+assert.ok(!previewFacts(loudW2Changed).some((fact) => fact.id === "docs" && /W-2 in/i.test(fact.value)));
 const loudW2Used = acceptWageExtract({
   ...loudAfterW2.draft,
   documents: [
@@ -2787,12 +2805,22 @@ const loudW2Used = acceptWageExtract({
 });
 assert.equal(loudW2Used.facts?.w2_box5?.value, "118400");
 assert.equal(loudW2Used.facts?.employer_name?.value, "Harbor Pacific Design Inc");
+assert.equal(loudW2Used.facts?.wages, undefined);
+assert.equal(loudW2Used.facts?.[PAYSTUB_AMOUNT_FIELD], undefined);
 assert.ok(previewFacts(loudW2Used).some((fact) => fact.id === "docs" && fact.value === "W-2 in"));
-assert.ok(previewFacts(loudW2Used).some((fact) => fact.id === "employer" && /Harbor Pacific Design Inc/i.test(fact.value)));
+assert.ok(
+  previewFacts(loudW2Used).some(
+    (fact) =>
+      fact.label === "Employment" &&
+      /Harbor Pacific Design Inc/i.test(fact.value) &&
+      /Box 5 \$118,400/.test(fact.value),
+  ),
+);
 assert.equal(
   previewFacts(loudW2Used).filter((fact) => fact.id === "employer" || fact.label === "Employment").length,
   1,
 );
+assert.ok(!previewFacts(loudW2Used).some((fact) => /84,?000|Box 1/i.test(fact.value)));
 assert.ok(!previewFacts(loudW2Used).some((fact) => fact.id === "originator"));
 assert.equal(workspacePrompt(loudW2Used), "paystub-monthly");
 assert.equal(workspacePromptCopy("paystub-monthly", loudW2Used).text, WAGE_STUB_DROP_ASK);
@@ -12823,6 +12851,50 @@ async function extractAdapterSmoke() {
     ),
     "W-2-only confirm must not invent stub extras",
   );
+  const jordanHaleChanged = changeWageExtract(jordanHaleAfter.draft);
+  assert.equal(jordanHaleChanged.facts?.employer_name, undefined);
+  assert.equal(jordanHaleChanged.facts?.w2_box5, undefined);
+  assert.equal((jordanHaleChanged.employmentHistory ?? []).length, 0);
+  assert.equal(workspacePrompt(jordanHaleChanged), "confirm-proposal");
+  assert.notEqual(workspacePrompt(jordanHaleChanged), "paystub-monthly");
+  assert.notEqual(workspacePrompt(jordanHaleChanged), "review");
+  assert.equal(
+    previewFacts(jordanHaleChanged).filter((fact) => fact.id === "employer" || fact.label === "Employment").length,
+    0,
+  );
+  const jordanHaleUsed = acceptWageExtract({
+    ...jordanHaleAfter.draft,
+    documents: [
+      {
+        slot: "w2" as const,
+        name: "03-w2-2025-jordan-hale.pdf",
+        type: "application/pdf",
+        size: jordanHaleBytes.length,
+        receivedAt: "2026-08-31T00:00:00.000Z",
+        status: "extracted" as const,
+        extractClass: "w2" as const,
+      },
+    ],
+  });
+  assert.equal(jordanHaleUsed.facts?.w2_box5?.value, "118400");
+  assert.equal(jordanHaleUsed.facts?.employer_name?.value, "Harbor Pacific Design Inc");
+  assert.equal(jordanHaleUsed.facts?.wages, undefined);
+  assert.equal(
+    previewFacts(jordanHaleUsed).filter((fact) => fact.id === "employer" || fact.label === "Employment").length,
+    1,
+  );
+  assert.ok(
+    previewFacts(jordanHaleUsed).some(
+      (fact) =>
+        fact.label === "Employment" &&
+        /Harbor Pacific Design Inc/i.test(fact.value) &&
+        /Box 5 \$118,400/.test(fact.value),
+    ),
+  );
+  assert.ok(!previewFacts(jordanHaleUsed).some((fact) => /84,?000|Box 1/i.test(fact.value)));
+  assert.ok(previewFacts(jordanHaleUsed).some((fact) => fact.id === "docs" && fact.value === "W-2 in"));
+  assert.equal(workspacePrompt(jordanHaleUsed), "paystub-monthly");
+  assert.ok(!canLooksRight(jordanHaleUsed));
   const classifiedK1 = await classifyAndExtract(new Uint8Array([9, 8, 7]), "image/png", {
     async classify() {
       return { class: "k1" as never, confidence: 0.9, readable: true };

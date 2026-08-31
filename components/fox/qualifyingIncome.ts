@@ -1377,6 +1377,17 @@ export function wageW2ConfirmCopy(box5: number, employer: string): string {
   return `Box 5 ${speakWageMoney(box5)}. ${name}. Use this?`;
 }
 
+/** File Employment after Use this: employer and Box 5 only. Not Box 1. */
+export function wageEmploymentFileLine(draft: FoxIntakeDraft): string {
+  if (draft.sampleAccepted || !wageW2ExtractAccepted(draft)) return "";
+  if (isWageExtractProposal(draft.pendingProposal)) return "";
+  if (readStubAmount(draft) || parseExtractMoney(factValue(draft, PAYSTUB_MONTHLY_FIELD))) return "";
+  const employer = factValue(draft, "employer_name").trim();
+  const box5 = readWageBox5(draft);
+  if (!employer || box5 == null || box5 <= 0) return "";
+  return `${employer}, Box 5 ${speakWageMoney(box5)}`;
+}
+
 export function isWageExtractProposal(proposal?: { field?: string } | null): boolean {
   return proposal?.field === WAGE_EXTRACT_FIELD;
 }
@@ -1729,7 +1740,9 @@ export function acceptWageExtract(draft: FoxIntakeDraft): FoxIntakeDraft {
   };
   const extras = proposal.extras ?? [];
   const facts = { ...(draft.facts ?? {}) };
+  const w2OnlyWrite = new Set(["w2_box5", "employer_name", "medicare_wages"]);
   for (const extra of extras) {
+    if (w2Only && !w2OnlyWrite.has(extra.field)) continue;
     facts[extra.field] = {
       field: extra.field,
       value: extra.value,
@@ -1739,7 +1752,7 @@ export function acceptWageExtract(draft: FoxIntakeDraft): FoxIntakeDraft {
     };
   }
   const box5 = extras.find((item) => item.field === "w2_box5")?.value ?? "";
-  const stub = extras.find((item) => item.field === PAYSTUB_AMOUNT_FIELD)?.value ?? "";
+  const stub = w2Only ? "" : extras.find((item) => item.field === PAYSTUB_AMOUNT_FIELD)?.value ?? "";
   if (box5 && !facts.medicare_wages?.value) {
     facts.medicare_wages = {
       field: "medicare_wages",
@@ -1758,7 +1771,11 @@ export function acceptWageExtract(draft: FoxIntakeDraft): FoxIntakeDraft {
       confirmedAt: now,
     };
   }
-  const employer = (draft.pendingWageExtract?.employer ?? "").trim();
+  const employer = (
+    extras.find((item) => item.field === "employer_name")?.value ??
+    draft.pendingWageExtract?.employer ??
+    ""
+  ).trim();
   if (employer) {
     facts.employer_name = {
       field: "employer_name",
@@ -1768,21 +1785,45 @@ export function acceptWageExtract(draft: FoxIntakeDraft): FoxIntakeDraft {
       confirmedAt: now,
     };
   }
+  if (w2Only) {
+    delete facts.wages;
+    delete facts.gross_period;
+    delete facts.paystub_amount;
+    delete facts.pay_frequency;
+  }
   next = { ...next, facts };
   if (employer) next = writeCurrentEmploymentHistory(next, employer);
   return next;
 }
 
 export function changeWageExtract(draft: FoxIntakeDraft): FoxIntakeDraft {
-  if (!isWageExtractProposal(draft.pendingProposal)) return draft;
-  return {
+  const proposal = draft.pendingProposal;
+  if (!isWageExtractProposal(proposal) || !proposal) return draft;
+  const extras = proposal.extras ?? [];
+  const box5 = Number(extras.find((item) => item.field === "w2_box5")?.value ?? draft.pendingWageExtract?.box5 ?? 0);
+  const employer = (
+    extras.find((item) => item.field === "employer_name")?.value ??
+    draft.pendingWageExtract?.employer ??
+    ""
+  ).trim();
+  const stub = Number(extras.find((item) => item.field === PAYSTUB_AMOUNT_FIELD)?.value ?? 0);
+  const frequency = extras.find((item) => item.field === "pay_frequency")?.value ?? "";
+  const cleared: FoxIntakeDraft = {
     ...draft,
     pendingProposal: null,
-    pendingWageExtract: undefined,
     correcting: null,
     correctingLine: null,
     wageDocsAsked: false,
+    wageStubAsked: false,
+    looksRightHold: true,
   };
+  if (stub > 0 && frequency && box5 > 0) {
+    return proposeWageExtract(cleared, box5, stub, frequency);
+  }
+  if (box5 > 0 && employer) {
+    return proposeWageW2Extract(cleared, box5, employer);
+  }
+  return { ...cleared, pendingWageExtract: undefined };
 }
 
 /** @deprecated Use writeTypedStubMonthly — typed stub is a write, not a confirm. */
