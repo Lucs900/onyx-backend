@@ -651,6 +651,8 @@ const picker = readFileSync(join(root, "lib/rateflow/quote.ts"), "utf8");
 assert.ok(picker.includes("pickConventional30LowestNoPoints"));
 assert.ok(picker.includes("pickConventional30NoCost"));
 assert.ok(picker.includes("pickLeadRow"));
+assert.ok(picker.includes("liveLoanNowCopy"));
+assert.ok(picker.includes("This loan right now:"));
 assert.ok(picker.includes("rawRowsFromPayload") || picker.includes("results"));
 assert.ok(!picker.includes("pickConventional30NearPar"));
 assert.ok(!picker.includes("nearParSort"));

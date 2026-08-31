@@ -676,6 +676,23 @@ export function liveRateLine(quote: SafeLiveQuote): string {
   return `${formatRatePercent(quote.rate)} · ${term}${when} · not a lock`;
 }
 
+/** Spoken File line after address Use this. One Fox bubble. */
+export function liveLoanNowCopy(quote: SafeLiveQuote): string {
+  const rate = formatRatePercent(quote.rate);
+  const clock = formatAsOfPacific(quote.asOf).replace(/\s*PT$/, "");
+  const bits = [`This loan right now: ${rate}.`];
+  if (quote.principalAndInterest != null) {
+    bits.push(`P&I ${formatPiMonthly(quote.principalAndInterest)}.`);
+  }
+  if (quote.pts != null) {
+    const pts = Math.round(quote.pts * 1000) / 1000;
+    bits.push(`${pts} pts.`);
+  }
+  bits.push("Not a lock.");
+  if (clock) bits.push(`As of ${clock} PT.`);
+  return bits.join(" ");
+}
+
 export function liveRateSecondLine(quote: SafeLiveQuote): string | undefined {
   const bits: string[] = [];
   if (quote.principalAndInterest != null) {

@@ -561,7 +561,11 @@ export function fieldsFromPrintedLines(
 function inferPrintedClass(lines: string[]): ExtractClass | null {
   const fromHeader = classifyPrintedLines(lines);
   if (fromHeader) return fromHeader;
+  const blob = lines.join("\n");
+  if (/\bbox\s*5\b/i.test(blob) && /\d/.test(blob)) return "w2";
   const mapped = fieldsFromPrintedLines("other", lines);
+  if (mapped.medicare_wages || mapped.box5) return "w2";
+  if (mapped.gross_period && mapped.pay_frequency) return "paystub";
   if (mapped.current_pi || (mapped.servicer && mapped.unpaid_principal)) return "mortgage_statement";
   if (mapped.full_name) return "government_id";
   return null;

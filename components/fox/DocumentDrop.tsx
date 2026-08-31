@@ -97,7 +97,7 @@ export function DocumentDrop({
         });
         patchReceivedDoc(
           (doc) => doc.receivedAt === receivedAt && doc.name === file.name,
-          { status: "needs better copy", note: FAILED_READ_NOTE },
+          { status: "received", note: FAILED_READ_NOTE },
         );
         emitFailedRead();
         continue;
@@ -147,7 +147,7 @@ export function DocumentDrop({
           patchReceivedDoc(
             (doc) => doc.receivedAt === receivedAt && doc.name === file.name,
             {
-              status: "failed",
+              status: "received",
               note: data.code === "STORAGE_BLOCKED" ? data.error : FAILED_READ_NOTE,
             },
           );
@@ -187,9 +187,22 @@ export function DocumentDrop({
             !shouldDeferStillUsefulAsk(after),
         });
       } catch {
+        try {
+          const snapshot = new Blob([await file.arrayBuffer()], { type: file.type || type });
+          void storeBytes(new File([snapshot], file.name, { type: file.type || type }))
+            .then((bytesRef) => {
+              patchReceivedDoc(
+                (doc) => doc.receivedAt === receivedAt && doc.name === file.name,
+                { bytesRef },
+              );
+            })
+            .catch(() => undefined);
+        } catch {
+          /* keep the received row even if bytes cannot be re-read */
+        }
         patchReceivedDoc(
           (doc) => doc.receivedAt === receivedAt && doc.name === file.name,
-          { status: "failed", note: FAILED_READ_NOTE },
+          { status: "received", note: FAILED_READ_NOTE },
         );
         emitFailedRead();
       }

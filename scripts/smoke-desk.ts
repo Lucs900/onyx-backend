@@ -26,6 +26,7 @@ import {
 } from "../components/fox/store";
 import { liveQuoteMatchesDraft, rateflowBlockedReason, rateflowClientBodyFromDraft, searchedKeyFor } from "../lib/rateflow/fromDraft";
 import {
+  liveLoanNowCopy,
   liveRateLine,
   liveRateSecondLine,
   pickLeadRow,
@@ -151,6 +152,7 @@ import {
   readPngVisibleLines,
   readPrintedSample,
 } from "../lib/docs/printedSample";
+import { readPdfTextLayer } from "../lib/docs/pdfText";
 import {
   CASH_OUT_CAUTION,
   CONVENTIONAL_GUIDELINE_VERSION,
@@ -1414,7 +1416,7 @@ const founderLive = draft({
   },
   liveQuoteRows: founderCouponRows,
 });
-assert.match(previewFacts(founderLive).find((fact) => fact.id === "rate")?.value ?? "", /6\.125% · Live as of .+ PT · not a lock/);
+assert.match(previewFacts(founderLive).find((fact) => fact.id === "rate")?.value ?? "", /This loan right now: 6\.125%\./);
 assert.doesNotMatch(previewFacts(founderLive).find((fact) => fact.id === "rate")?.value ?? "", /6\.750|approved|locked|committed/);
 const founderMiss = draft({
   ...afterFounderZip,
@@ -1429,12 +1431,13 @@ assert.match(structureExplainCopy("property-type", afterFounderHouse)?.text ?? "
 assert.doesNotMatch(structureExplainCopy("property-type", afterFounderHouse)?.text ?? "", /Suggested/);
 const founderSpoken = liveQuoteThreadCopy(founderLive.liveQuote!);
 const founderSpokenLines = liveQuoteThreadLines(founderLive.liveQuote!);
-assert.equal(founderSpokenLines.length, 2);
-assert.match(founderSpokenLines[0] ?? "", /6\.125% · Live as of .+ PT · not a lock/);
-assert.equal(founderSpokenLines[1], "P&I $4,142 · 0 pts");
+assert.equal(founderSpokenLines.length, 1);
+assert.match(founderSpokenLines[0] ?? "", /This loan right now: 6\.125%\./);
+assert.match(founderSpokenLines[0] ?? "", /P&I \$4,142\. 0 pts\. Not a lock\. As of .+ PT\./);
+assert.doesNotMatch(founderSpokenLines[0] ?? "", /6\.125% · Live as of|P&I \$4,142 · 0 pts/);
 assert.doesNotMatch(founderSpoken, /6\.750|APR|rate board|approved|locked|How is income earned/i);
 assert.equal(founderSpokenLines[0], previewFacts(founderLive).find((fact) => fact.id === "rate")?.value);
-assert.equal(founderSpokenLines[1], previewFacts(founderLive).find((fact) => fact.id === "rate")?.note);
+assert.equal(previewFacts(founderLive).find((fact) => fact.id === "rate")?.note, undefined);
 const founderIncomeAsk = workspacePromptCopy("income", founderLive);
 assert.equal(founderIncomeAsk.text, "How is income earned?");
 assert.doesNotMatch(founderIncomeAsk.text, /Live as of|P&I|6\.125/);
@@ -1443,7 +1446,7 @@ const founderThread = [
 ];
 const founderSpokenThread = messagesWithLiveQuoteSpeech(founderThread, founderLive, founderLive.liveQuote!);
 assert.equal(founderSpokenThread[0].text, founderSpokenLines[0]);
-assert.equal(founderSpokenThread[0].followUp, founderSpokenLines[1]);
+assert.equal(founderSpokenThread[0].followUp, undefined);
 assert.equal(founderSpokenThread.length, 1);
 assert.deepEqual(
   (founderSpokenThread[0].actions ?? []).map((item) => item.label),
@@ -1467,7 +1470,7 @@ const founderQuoteAfterIncome = messagesWithLiveQuoteSpeech(
   founderLive.liveQuote!,
 );
 assert.equal(founderQuoteAfterIncome[founderQuoteAfterIncome.length - 1]?.text, founderSpokenLines[0]);
-assert.equal(founderQuoteAfterIncome[founderQuoteAfterIncome.length - 1]?.followUp, founderSpokenLines[1]);
+assert.equal(founderQuoteAfterIncome[founderQuoteAfterIncome.length - 1]?.followUp, undefined);
 assert.deepEqual(
   (founderQuoteAfterIncome[founderQuoteAfterIncome.length - 1]?.actions ?? []).map((item) => item.label),
   ["This one", "Lower payment", "Skip"],
@@ -1876,8 +1879,9 @@ assert.equal(applyCouponChoice(founderLive, "skip").liveQuote?.rate, 6.125);
 const founderLower = workspaceReply("Lower payment", founderLive);
 assert.equal(founderLower?.capture?.field, "couponChoice");
 assert.equal(founderLower?.capture && "value" in founderLower.capture ? founderLower.capture.value : "", "lower");
-assert.match(founderLower?.text ?? "", /6\.000% · Live as of .+ PT · not a lock/);
-assert.equal(founderLower?.followUp, "P&I $4,077 · 0.75 pts");
+assert.match(founderLower?.text ?? "", /This loan right now: 6\.000%\./);
+assert.match(founderLower?.text ?? "", /P&I \$4,077\. 0.75 pts\. Not a lock\. As of .+ PT\./);
+assert.equal(founderLower?.followUp, undefined);
 assert.deepEqual(
   (founderLower?.actions ?? []).map((item) => item.label),
   ["Use this", "Keep this one", "Skip"],
@@ -1890,8 +1894,8 @@ assert.equal(founderLowerAccepted.liveQuote?.rate, 6.0);
 assert.equal(founderLowerAccepted.liveQuote?.asOf, "2026-08-28T19:04:00.000Z");
 assert.equal(founderLowerAccepted.liveQuote?.pts, 0.75);
 assert.equal(founderLowerAccepted.liveCouponSettled, true);
-assert.match(previewFacts(founderLowerAccepted).find((fact) => fact.id === "rate")?.value ?? "", /6\.000% · Live as of .+ PT · not a lock/);
-assert.equal(previewFacts(founderLowerAccepted).find((fact) => fact.id === "rate")?.note, "P&I $4,077 · 0.75 pts");
+assert.match(previewFacts(founderLowerAccepted).find((fact) => fact.id === "rate")?.value ?? "", /This loan right now: 6\.000%\./);
+assert.equal(previewFacts(founderLowerAccepted).find((fact) => fact.id === "rate")?.note, undefined);
 assert.equal(workspaceReply("Use this", applyCouponChoice(founderLive, "lower"))?.text, founderIncomeAsk.text);
 assert.equal(keepPendingLiveCoupon(applyCouponChoice(founderLive, "lower")).liveQuote?.rate, 6.125);
 assert.equal(workspaceReply("Keep this one", applyCouponChoice(founderLive, "lower"))?.capture?.field, "keep-live-coupon");
@@ -1901,8 +1905,9 @@ assert.match(founderTypedLower?.text ?? "", /6\.000%/);
 assert.ok((founderTypedLower?.actions ?? []).some((item) => item.label === "Use this"));
 const founderNoCost = workspaceReply("No cost", founderLive);
 assert.equal(founderNoCost?.capture && "value" in founderNoCost.capture ? founderNoCost.capture.value : "", "nocost");
-assert.match(founderNoCost?.text ?? "", /6\.375% · Live as of .+ PT · not a lock/);
-assert.equal(founderNoCost?.followUp, "P&I $4,242 · -1.25 pts");
+assert.match(founderNoCost?.text ?? "", /This loan right now: 6\.375%\./);
+assert.match(founderNoCost?.text ?? "", /P&I \$4,242\. -1.25 pts\. Not a lock\. As of .+ PT\./);
+assert.equal(founderNoCost?.followUp, undefined);
 assert.doesNotMatch(founderNoCost?.followUp ?? "", /reward/);
 const founderNoCostAccepted = acceptPendingLiveCoupon(applyCouponChoice(founderLive, "nocost"));
 assert.equal(founderNoCostAccepted.liveQuote?.rate, 6.375);
@@ -2634,6 +2639,90 @@ assert.equal(harborUsed.facts?.w2_box5?.value, "182000");
 assert.equal(harborUsed.facts?.qualifying_income?.value, "15167");
 assert.ok(previewFacts(harborUsed).some((fact) => fact.id === "employer" && /HARBOR STEEL/i.test(fact.value)));
 assert.ok(previewFacts(harborUsed).some((fact) => fact.id === "qualifying"));
+
+const loudW2Path = join(dirname(fileURLToPath(import.meta.url)), "..", "sample-docs", "06-w2-2025-box5-loud.pdf");
+const loudStubPath = join(dirname(fileURLToPath(import.meta.url)), "..", "sample-docs", "07-paystub-biweekly-loud.pdf");
+assert.equal(existsSync(loudW2Path), true);
+assert.equal(existsSync(loudStubPath), true);
+const loudW2Bytes = readFileSync(loudW2Path);
+const loudStubBytes = readFileSync(loudStubPath);
+const loudW2Layer = (readPdfTextLayer(loudW2Bytes) ?? []).join("\n");
+const loudStubLayer = (readPdfTextLayer(loudStubBytes) ?? []).join("\n");
+assert.match(loudW2Layer, /Box 5/i);
+assert.match(loudW2Layer, /118400/);
+assert.match(loudStubLayer, /4615\.38/);
+const loudW2Printed = readPrintedSample(loudW2Bytes);
+const loudStubPrinted = readPrintedSample(loudStubBytes);
+assert.equal(loudW2Printed?.extractClass, "w2");
+assert.equal(loudW2Printed?.fields.medicare_wages ?? loudW2Printed?.fields.box5, "118400");
+assert.doesNotMatch(JSON.stringify(loudW2Printed?.fields ?? {}), /84000/);
+assert.equal(loudStubPrinted?.extractClass, "paystub");
+assert.equal(loudStubPrinted?.fields.gross_period, "4615.38");
+assert.equal(loudStubPrinted?.fields.pay_frequency, "biweekly");
+assert.equal(wageExtractConfirmCopy(118400, 4615.38, "biweekly"), "Box 5 $118,400. Stub $4,615.38 biweekly. Use this?");
+assert.equal(wageDocsAsk(walkABase).text, WAGE_DOCS_ASK);
+assert.deepEqual((wageDocsAsk(walkABase).actions ?? []).map((item) => item.label), ["Upload", "Skip"]);
+const loudAfterW2 = applyExtractedFields(walkABase, {
+  extractClass: "w2",
+  confidence: 0.94,
+  fields: loudW2Printed!.fields,
+});
+assert.equal(loudAfterW2.draft.pendingProposal, null);
+assert.equal(loudAfterW2.draft.facts?.employer_name, undefined);
+assert.equal(loudAfterW2.draft.facts?.w2_box5, undefined);
+assert.equal(loudAfterW2.draft.facts?.qualifying_income, undefined);
+assert.ok(!previewFacts(loudAfterW2.draft).some((fact) => fact.id === "employer" || fact.id === "pay" || fact.id === "qualifying"));
+assert.deepEqual((wageDocsAsk(loudAfterW2.draft).actions ?? []).map((item) => item.label), ["Upload", "Skip"]);
+const loudAfterStub = applyExtractedFields(
+  {
+    ...loudAfterW2.draft,
+    documents: [
+      {
+        slot: "w2" as const,
+        name: "06-w2-2025-box5-loud.pdf",
+        type: "application/pdf",
+        size: loudW2Bytes.length,
+        receivedAt: "2026-08-30T22:00:00.000Z",
+        status: "extracted" as const,
+        extractClass: "w2" as const,
+      },
+      {
+        slot: "paystubs" as const,
+        name: "07-paystub-biweekly-loud.pdf",
+        type: "application/pdf",
+        size: loudStubBytes.length,
+        receivedAt: "2026-08-30T22:00:01.000Z",
+        status: "extracted" as const,
+        extractClass: "paystub" as const,
+      },
+    ],
+  },
+  {
+    extractClass: "paystub",
+    confidence: 0.94,
+    fields: loudStubPrinted!.fields,
+  },
+);
+assert.equal(loudAfterStub.draft.pendingProposal?.field, WAGE_EXTRACT_FIELD);
+assert.equal(
+  workspacePromptCopy("confirm-proposal", loudAfterStub.draft).text,
+  "Box 5 $118,400. Stub $4,615.38 biweekly. Use this?",
+);
+assert.deepEqual(
+  (workspacePromptCopy("confirm-proposal", loudAfterStub.draft).actions ?? []).map((item) => item.label),
+  ["Use this", "Change"],
+);
+assert.ok(!previewFacts(loudAfterStub.draft).some((fact) => fact.id === "employer" || fact.id === "pay" || fact.id === "qualifying"));
+assert.doesNotMatch(workspacePromptCopy("confirm-proposal", loudAfterStub.draft).text, /84,000|84000/);
+const loudUsed = acceptWageExtract(loudAfterStub.draft);
+assert.equal(loudUsed.facts?.w2_box5?.value, "118400");
+assert.equal(loudUsed.facts?.[PAYSTUB_AMOUNT_FIELD]?.value, "4615.38");
+assert.equal(loudUsed.facts?.pay_frequency?.value, "biweekly");
+assert.equal(loudUsed.facts?.paystub_monthly?.value, "10000");
+assert.ok(canLooksRight(loudUsed));
+assert.ok((workspacePromptCopy("review", loudUsed).actions ?? []).some((item) => item.label === "Looks right"));
+assert.doesNotMatch(JSON.stringify(loudUsed.facts?.w2_box5 ?? {}), /Box 1/);
+
 const walkAFailedId = draft({
   ...walkAUsed,
   sampleAccepted: true,
@@ -2835,12 +2924,12 @@ const founderRefiLive = draft({
   liveQuoteRows: founderRefiCouponRows,
 });
 const founderRefiSpokenLines = liveQuoteThreadLines(founderRefiLive.liveQuote!);
-assert.equal(founderRefiSpokenLines.length, 2);
-assert.match(founderRefiSpokenLines[0] ?? "", /6\.750% · Live as of .+ PT · not a lock/);
-assert.equal(founderRefiSpokenLines[1], "-1.067 pts");
-assert.doesNotMatch(founderRefiSpokenLines[0] ?? "", /6\.490/);
+assert.equal(founderRefiSpokenLines.length, 1);
+assert.match(founderRefiSpokenLines[0] ?? "", /This loan right now: 6\.750%\./);
+assert.match(founderRefiSpokenLines[0] ?? "", /-1.067 pts\. Not a lock\. As of .+ PT\./);
+assert.doesNotMatch(founderRefiSpokenLines[0] ?? "", /6\.490|6\.750% · Live as of/);
 assert.equal(founderRefiSpokenLines[0], previewFacts(founderRefiLive).find((fact) => fact.id === "rate")?.value);
-assert.equal(founderRefiSpokenLines[1], previewFacts(founderRefiLive).find((fact) => fact.id === "rate")?.note);
+assert.equal(previewFacts(founderRefiLive).find((fact) => fact.id === "rate")?.note, undefined);
 const founderRefiIncomeAsk = workspacePromptCopy("income", founderRefiLive);
 assert.equal(founderRefiIncomeAsk.text, "How is income earned?");
 assert.doesNotMatch(founderRefiIncomeAsk.text, /Live as of|P&I|6\.750|6\.490|purchase price/);
@@ -2892,7 +2981,7 @@ const founderRefiSpokenThread = messagesWithLiveQuoteSpeech(
   founderRefiLive.liveQuote!,
 );
 assert.equal(founderRefiSpokenThread[0].text, founderRefiSpokenLines[0]);
-assert.equal(founderRefiSpokenThread[0].followUp, founderRefiSpokenLines[1]);
+assert.equal(founderRefiSpokenThread[0].followUp, undefined);
 assert.equal(founderRefiSpokenThread.length, 1);
 assert.deepEqual(
   (founderRefiSpokenThread[0].actions ?? []).map((item) => item.label),
@@ -2911,8 +3000,9 @@ assert.deepEqual(
 assert.doesNotMatch(founderRefiSpokenThread[0].text, /How is income earned|6\.490/);
 assert.doesNotMatch(founderRefiSpokenThread[0].followUp ?? "", /How is income earned|reward/);
 const founderRefiLower = workspaceReply("Lower payment", founderRefiLive);
-assert.match(founderRefiLower?.text ?? "", /6\.250% · Live as of .+ PT · not a lock/);
-assert.equal(founderRefiLower?.followUp, "P&I $4,187 · 1.044 pts");
+assert.match(founderRefiLower?.text ?? "", /This loan right now: 6\.250%\./);
+assert.match(founderRefiLower?.text ?? "", /P&I \$4,187\. 1.044 pts\. Not a lock\. As of .+ PT\./);
+assert.equal(founderRefiLower?.followUp, undefined);
 assert.equal(applyCouponChoice(founderRefiLive, "lower").pendingLiveCoupon?.asOf, "2026-08-28T21:10:00.000Z");
 assert.equal(applyCouponChoice(founderRefiLive, "lower").liveQuote?.rate, 6.75);
 assert.equal(workspaceReply("I will pay a point", founderRefiLive)?.capture && "value" in workspaceReply("I will pay a point", founderRefiLive)!.capture!
@@ -3006,8 +3096,9 @@ assert.ok(harborMarinaSpoken.some((item) => item.text === addressOnFileCopy()), 
 assert.ok(threadHasRateOrReadySpeech(harborMarinaSpoken));
 const harborMarinaQuote = harborMarinaSpoken.find((item) => item.id.startsWith("live-quote:"));
 assert.ok(harborMarinaQuote, "conventional ready file must speak a live line");
-assert.match(harborMarinaQuote?.text ?? "", /%\s*·\s*Live as of .+ PT · not a lock/);
-assert.match(harborMarinaQuote?.followUp ?? "", /P&I \$[\d,]+ · .+ pts/);
+assert.match(harborMarinaQuote?.text ?? "", /This loan right now: /);
+assert.match(harborMarinaQuote?.text ?? "", /P&I \$[\d,]+\. .+ pts\. Not a lock\. As of .+ PT\./);
+assert.equal(harborMarinaQuote?.followUp, undefined);
 assert.doesNotMatch(harborMarinaQuote?.text ?? "", /Pricing when the file is ready|6\.490/);
 assert.deepEqual(
   (harborMarinaQuote?.actions ?? []).map((item) => item.label),
@@ -3618,12 +3709,12 @@ assert.ok(liveBody);
 liveReady.liveQuote.key = rateflowScenarioKey(liveBody!);
 const liveFacts = previewFacts(liveReady);
 const liveRate = liveFacts.find((fact) => fact.id === "rate");
-assert.equal(liveRate?.value, liveRateLine(liveReady.liveQuote));
-assert.equal(liveRate?.note, liveRateSecondLine(liveReady.liveQuote));
-assert.match(liveRate?.value ?? "", /not a lock/);
-assert.doesNotMatch(liveRate?.value ?? "", /approved|locked|committed|6\.750/i);
-assert.equal(liveRate?.note, "P&I $5,830 · 0 pts");
-assert.match(structureExplainCopy("rate", liveReady)?.text ?? "", /not a lock/);
+assert.equal(liveRate?.value, liveLoanNowCopy(liveReady.liveQuote));
+assert.equal(liveRate?.note, undefined);
+assert.match(liveRate?.value ?? "", /This loan right now: /);
+assert.match(liveRate?.value ?? "", /Not a lock/);
+assert.doesNotMatch(liveRate?.value ?? "", /approved|locked|committed|6\.750|Live as of/i);
+assert.match(structureExplainCopy("rate", liveReady)?.text ?? "", /not a lock/i);
 assert.doesNotMatch(structureExplainCopy("rate", liveReady)?.text ?? "", /6\.750|Preview rate/);
 const staleLive = previewFacts({
   ...liveReady,
@@ -8154,7 +8245,8 @@ assert.equal(failedOther.draft.documents[0]?.extractClass, "paystub");
 assert.equal(failedOther.draft.documents[0]?.status, "received");
 assert.equal(failedOther.draft.facts?.employer_name, undefined);
 assert.equal(failedOther.quietLines[0], FAILED_READ_NOTE);
-assert.ok(previewFacts(failedOther.draft).some((fact) => fact.id === "docs" && /Paystubs in/.test(fact.value)));
+assert.ok(previewFacts(failedOther.draft).some((fact) => fact.id === "docs" && fact.value === "received · could not read"));
+assert.equal(failedOther.draft.documents[0]?.bytesRef, "fox-intake/paystub-acme.png");
 assert.ok(previewFacts(failedOther.draft).every((fact) => fact.id !== "docs" || !/Other in/.test(fact.value)));
 assert.equal(failedOther.draft.productIntent, "buy");
 assert.ok(missingExtractClasses(failedOther.draft).includes("government_id"));
@@ -8193,7 +8285,7 @@ assert.deepEqual(
 );
 assert.ok(!stillUsefulSection(unreadIdDraft)?.items.some((item) => item.label === "Government ID"));
 assert.ok(!stillUsefulSection(unreadIdDraft)?.items.some((item) => /paystub|W-2|latest return/i.test(item.label)));
-assert.ok(previewFacts(unreadIdDraft).some((fact) => fact.id === "docs" && /ID in/.test(fact.value)));
+assert.ok(previewFacts(unreadIdDraft).some((fact) => fact.id === "docs" && fact.value === "received · could not read"));
 assert.equal(canLooksRight(unreadIdDraft), false);
 assert.notEqual(workspacePrompt(unreadIdDraft), "review");
 const unreadStubDraft = draft({
@@ -8215,7 +8307,7 @@ const unreadStubDraft = draft({
 assert.equal(nextDocInvite(unreadStubDraft), null);
 assert.equal(nextDocInvite({ ...unreadStubDraft, sampleAccepted: true, looksRightHold: false }), "government_id");
 assert.ok(!stillUsefulSection(unreadStubDraft)?.items.some((item) => /paystub|W-2|latest return/i.test(item.label)));
-assert.ok(previewFacts(unreadStubDraft).some((fact) => fact.id === "docs" && /Paystubs in/.test(fact.value)));
+assert.ok(previewFacts(unreadStubDraft).some((fact) => fact.id === "docs" && /received · could not read/.test(fact.value)));
 const unreadW2Draft = draft({
   ...unreadStubDraft,
   documents: [
@@ -11844,6 +11936,7 @@ assert.ok(dropSource.includes("docs-handoff"));
 assert.ok(dropSource.includes("await file.arrayBuffer()"));
 assert.ok(dropSource.indexOf("await fetch(\"/api/docs/extract\"") < dropSource.indexOf("void storeBytes"));
 assert.ok(!dropSource.includes("await storeBytes"));
+assert.ok(!dropSource.includes('status: "failed", note: FAILED_READ_NOTE'));
 assert.ok(!dropSource.includes("fileToBase64"));
 assert.ok(dropSource.includes("quietLines: [FAILED_READ_NOTE]"));
 assert.ok(dropSource.includes('aria-label="Upload"'));
@@ -12380,6 +12473,24 @@ async function extractAdapterSmoke() {
   assert.equal(pdfW2.extractClass, "w2");
   assert.equal(pdfW2.fields.employer_name, "HARBOR STEEL");
   assert.equal(pdfW2.fields.wages, "84000");
+  const loudW2Pdf = await classifyAndExtract(
+    readFileSync(join(root, "sample-docs/06-w2-2025-box5-loud.pdf")),
+    "application/pdf",
+    deadVision,
+  );
+  assert.notEqual(loudW2Pdf.failed, true, "Box 5 is in the text layer — unread is a code fail");
+  assert.equal(loudW2Pdf.extractClass, "w2");
+  assert.equal(loudW2Pdf.fields.medicare_wages ?? loudW2Pdf.fields.box5, "118400");
+  assert.doesNotMatch(JSON.stringify(loudW2Pdf.fields), /84000/);
+  const loudStubPdf = await classifyAndExtract(
+    readFileSync(join(root, "sample-docs/07-paystub-biweekly-loud.pdf")),
+    "application/pdf",
+    deadVision,
+  );
+  assert.notEqual(loudStubPdf.failed, true);
+  assert.equal(loudStubPdf.extractClass, "paystub");
+  assert.equal(loudStubPdf.fields.gross_period, "4615.38");
+  assert.equal(loudStubPdf.fields.pay_frequency, "biweekly");
   const blankPdf = await classifyAndExtract(
     new TextEncoder().encode("%PDF-1.4\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF\n"),
     "application/pdf",

@@ -21,8 +21,7 @@ import {
 } from "@/lib/rateflow/fromDraft";
 import {
   liveRateExplain,
-  liveRateLine,
-  liveRateSecondLine,
+  liveLoanNowCopy,
   parseZipcode,
   zipFromTypedAddress,
 } from "@/lib/rateflow/quote";
@@ -2287,10 +2286,7 @@ export function sampleReady(draft: FoxIntakeDraft): boolean {
 export function liveQuoteThreadLines(
   quote: NonNullable<FoxIntakeDraft["liveQuote"]>,
 ): string[] {
-  const lines = [liveRateLine(quote)];
-  const second = liveRateSecondLine(quote);
-  if (second) lines.push(second);
-  return lines;
+  return [liveLoanNowCopy(quote)];
 }
 
 export function liveQuoteThreadCopy(
@@ -2467,8 +2463,7 @@ export function previewRateFact(draft: FoxIntakeDraft): PreviewFact | null {
     return {
       id: "rate",
       label: "Rate",
-      value: liveRateLine(live),
-      note: liveRateSecondLine(live),
+      value: liveLoanNowCopy(live),
     };
   }
   const key = searchedKeyFor(draft);
@@ -6618,12 +6613,20 @@ function numbersFact(draft: FoxIntakeDraft): PreviewFact | null {
 function docsFact(draft: FoxIntakeDraft): PreviewFact | null {
   if (draft.documents.length) {
     const labels = Array.from(
-      new Set(draft.documents.map((doc) => docsDisplayLabel(doc))),
+      new Set(
+        draft.documents.map((doc) =>
+          isUnreadNote(doc.note) ||
+          doc.status === "failed" ||
+          doc.status === "needs better copy"
+            ? "received · could not read"
+            : `${docsDisplayLabel(doc)} in`,
+        ),
+      ),
     );
     return {
       id: "docs",
       label: "Docs",
-      value: labels.map((item) => `${item} in`).join(" · "),
+      value: labels.join(" · "),
     };
   }
   if (draft.documentsSkipped) {

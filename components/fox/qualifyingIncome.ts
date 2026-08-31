@@ -1349,7 +1349,15 @@ export function speakPayFrequency(raw?: string | null): string {
 }
 
 export function speakWageMoney(value: number): string {
-  return `$${Math.round(Math.abs(value)).toLocaleString("en-US")}`;
+  const abs = Math.abs(value);
+  const cents = Math.round(abs * 100);
+  if (cents % 100 !== 0) {
+    return `$${(cents / 100).toLocaleString("en-US", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    })}`;
+  }
+  return `$${Math.round(abs).toLocaleString("en-US")}`;
 }
 
 export function wageExtractConfirmCopy(box5: number, stub: number, frequency: string): string {
@@ -1610,8 +1618,8 @@ export function proposeWageExtract(draft: FoxIntakeDraft, box5: number, stub: nu
       label: "wage extract",
       kind: "computed",
       extras: [
-        { field: "w2_box5", value: String(Math.round(box5)), label: "Box 5" },
-        { field: PAYSTUB_AMOUNT_FIELD, value: String(Math.round(stub)), label: "stub amount" },
+        { field: "w2_box5", value: Number.isInteger(box5) ? String(box5) : String(Math.round(box5 * 100) / 100), label: "Box 5" },
+        { field: PAYSTUB_AMOUNT_FIELD, value: Number.isInteger(stub) ? String(stub) : String(Math.round(stub * 100) / 100), label: "stub amount" },
         { field: "pay_frequency", value: spoken, label: "pay frequency" },
         { field: PAYSTUB_MONTHLY_FIELD, value: String(monthly), label: "stub monthly" },
         { field: WAGE_MONTHLY_FIELD, value: String(monthly), label: "wage monthly" },

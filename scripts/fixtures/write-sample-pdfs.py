@@ -157,11 +157,35 @@ def write_empty_pdf(path: Path) -> None:
     print(f"wrote {path} {path.stat().st_size} bytes")
 
 
+LOUD_PAGES: dict[str, list[str]] = {
+    "06-w2-2025-box5-loud.pdf": [
+        "FORM W-2 WAGE AND TAX STATEMENT",
+        "TAX YEAR: 2025",
+        "EMPLOYER: Harbor Pacific Design Inc",
+        "EMPLOYEE NAME: Jordan Hale",
+        "BOX 5 MEDICARE WAGES AND TIPS: 118400.00",
+        "BOX 5: 118400.00",
+        "one hundred eighteen thousand four hundred",
+    ],
+    "07-paystub-biweekly-loud.pdf": [
+        "PAYSTUB",
+        "EMPLOYER: Harbor Pacific Design Inc",
+        "EMPLOYEE NAME: Jordan Hale",
+        "GROSS PERIOD: 4615.38",
+        "PAY FREQUENCY: biweekly",
+    ],
+}
+
+
 def main() -> None:
     here = Path(__file__).resolve().parent
     for name, lines in PAGES.items():
         write_pdf(here / name, lines)
     write_empty_pdf(here / "government-id-no-text-layer.pdf")
+    sample_docs = here.parent.parent / "sample-docs"
+    sample_docs.mkdir(parents=True, exist_ok=True)
+    for name, lines in LOUD_PAGES.items():
+        write_pdf(sample_docs / name, lines)
 
 
 if __name__ == "__main__":

@@ -121,13 +121,10 @@ async function main() {
       assert.equal((draft.addressHistory ?? []).length, 0);
     }
     if (/w2-ot-bonus-2025|w2-bonus-2025|paystub-ot-bonus-2026|paystub-bonus-declining-2026/.test(rel)) {
+      assert.equal(draft.facts?.employer_name, undefined, `${rel} holds employer until Use this`);
       assert.ok(
-        (draft.employmentHistory ?? []).some((item) => /HARBOR STEEL/i.test(item.label ?? "") && !item.from),
-        `${rel} should write Harbor Steel with no invented start date`,
-      );
-      assert.ok(
-        previewFacts(draft).some((fact) => fact.label === "Employment" && /HARBOR STEEL/i.test(fact.value) && !/[–-]/.test(fact.value)),
-        `${rel} History should show employer row without invented dates`,
+        !(draft.employmentHistory ?? []).some((item) => /HARBOR STEEL/i.test(item.label ?? "")),
+        `${rel} must not write Harbor Steel before Use this`,
       );
     }
   }

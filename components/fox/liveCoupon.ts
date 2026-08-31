@@ -1,8 +1,7 @@
 import { liveQuoteMatchesDraft, searchedKeyFor } from "@/lib/rateflow/fromDraft";
 import {
   liveQuoteFromCouponRow,
-  liveRateLine,
-  liveRateSecondLine,
+  liveLoanNowCopy,
   pickLowerPaymentFromRows,
   pickNoCostFromRows,
   pointsFromRow,
@@ -335,7 +334,11 @@ function isAddressConfirmMessage(message: FoxMessage, draft: FoxIntakeDraft) {
 
 export function isLiveRateSpeech(text?: string) {
   if (!text) return false;
-  return /%\s*·\s*.*Live as of/i.test(text) || /Live as of .+\s*·\s*not a lock/i.test(text);
+  return (
+    /This loan right now:/i.test(text) ||
+    /%\s*·\s*.*Live as of/i.test(text) ||
+    /Live as of .+\s*·\s*not a lock/i.test(text)
+  );
 }
 
 /** Change: leftover `{address}. Use this?` leaves the thread while File is still empty. */
@@ -461,10 +464,8 @@ export function liveCouponConfirmCopy(draft: FoxIntakeDraft): {
     principalAndInterest: pending.principalAndInterest,
     pts: pending.pts,
   };
-  const second = liveRateSecondLine(quote);
   return {
-    text: liveRateLine(quote),
-    followUp: second,
+    text: liveLoanNowCopy(quote),
     actions: liveCouponConfirmActions(),
   };
 }

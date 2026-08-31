@@ -10,8 +10,8 @@ import {
   type ExtractApplyInput,
 } from "@/components/fox/fileWrite";
 import type { ExtractClass } from "@/components/fox/types";
-import { isPdf, pdfTextLayerCharCount, readPdfEmbeddedImages } from "@/lib/docs/pdfText";
-import { readPrintedSample } from "@/lib/docs/printedSample";
+import { isPdf, pdfTextLayerCharCount, readPdfEmbeddedImages, readPdfTextLayer } from "@/lib/docs/pdfText";
+import { fieldsFromPrintedLines, readPrintedSample } from "@/lib/docs/printedSample";
 
 export type ClassifyResult = {
   class: ExtractClass;
@@ -430,6 +430,26 @@ export async function classifyAndExtract(
     return printedResult(printed);
   }
   if (isPdf(bytes) || mediaType === "application/pdf") {
+    const layer = readPdfTextLayer(bytes);
+    if (layer?.length) {
+      const blob = layer.join("\n");
+      if (/\bbox\s*5\b/i.test(blob)) {
+        const fields = printed?.fields?.medicare_wages || printed?.fields?.box5
+          ? printed.fields
+          : fieldsFromPrintedLines("w2", layer);
+        if (hasLockedSuggestion("w2", fields)) {
+          return printedResult({
+            extractClass: "w2",
+            confidence: printed?.confidence ?? 0.94,
+            fields,
+          });
+        }
+      }
+      if (printed && hasLockedSuggestion(printed.extractClass, printed.fields)) {
+        return printedResult(printed);
+      }
+      return unreadResult(printed?.extractClass ?? "other", filename, "unmapped-text");
+    }
     const charCount = pdfTextLayerCharCount(bytes);
     if (charCount > 0) {
       return unreadResult(printed?.extractClass ?? "other", filename, "unmapped-text");
