@@ -297,6 +297,7 @@ import {
   parseVolunteeredAddress,
   propertyAddressAskCopy,
   propertyAddressAskText,
+  propertyAddressSkipActions,
   propertyAddressSettled,
   subjectAddressSuggestion,
   propertyTypeAskCopy,
@@ -3139,7 +3140,7 @@ function workspaceAskCopy(
     if (draft.pendingAddress?.line) {
       return {
         text: typedAddressConfirmCopy(draft.pendingAddress.line),
-        actions: propertyTypeConfirmActions(),
+        actions: [...propertyTypeConfirmActions(), ...propertyAddressSkipActions()],
       };
     }
     const proposal = draft.pendingProposal;
@@ -5319,6 +5320,13 @@ export function workspaceReply(
   }
 
   if (draft.pendingProposal || prompt === "confirm-proposal") {
+    if (isSubjectAddressConfirmPending(draft) && isSkipPropertyAddressText(q)) {
+      const nextDraft = skipQuoteAddress(draft);
+      return {
+        ...nextFoxAsk(nextDraft),
+        capture: { field: "skip-property-address" },
+      };
+    }
     if (
       (isQualifyingIncomeConfirmPending(draft) ||
         isStatedDebtsConfirmPending(draft) ||

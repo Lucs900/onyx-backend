@@ -461,8 +461,17 @@ function isStatementsAskChip(action: FoxAction) {
     action.label === "Upload this" ||
     (action.label === "Skip" && field === "skip-docs") ||
     action.label === "Proceed" ||
-    action.label === "Not yet" ||
+    (action.label === "Not yet" && field === "hold-docs") ||
     action.label === "Request human"
+  );
+}
+
+function isStatementsAskLine(actions: FoxAction[]) {
+  return actions.some(
+    (action) =>
+      action.label === "Upload this" ||
+      (action.label === "Skip" && action.capture?.field === "skip-docs") ||
+      action.label === "Proceed",
   );
 }
 
@@ -518,7 +527,7 @@ function FoxThread({
                 !isStreetSuggestChipLabel(action.label),
             )
           : [];
-        const paintActions = rawActions.some(isStatementsAskChip)
+        const paintActions = isStatementsAskLine(rawActions)
           ? rawActions.filter(isStatementsAskChip)
           : rawActions;
         return (
@@ -1706,11 +1715,21 @@ export function AlwaysOnFox({
     }
     setOpen(true);
     setInput("");
-    if (isStart && lookupWait === "places" && isSkipPropertyAddressText(text)) {
+    if (
+      isStart &&
+      (lookupWait === "places" ||
+        startAsk === "property-address" ||
+        isSubjectAddressConfirmPending(draft)) &&
+      isSkipPropertyAddressText(text)
+    ) {
       placesWaitGen.current += 1;
       placesSuggestFrozen.current = false;
       setLookupWait(null);
-      commitMessages((prev) => withoutWaitLines(prev));
+      setStreetSuggestions([]);
+      applyCapture({ field: "skip-property-address" });
+      skipPromptSync.current = true;
+      appendReply(text, nextFoxAsk(getFoxDraft()));
+      return;
     }
     if (
       isStart &&
