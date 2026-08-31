@@ -1398,6 +1398,16 @@ export function AlwaysOnFox({
     });
   };
 
+  const skipPropertyAddressFromComposer = (spoken: string) => {
+    placesWaitGen.current += 1;
+    placesSuggestFrozen.current = false;
+    setLookupWait(null);
+    setStreetSuggestions([]);
+    applyCapture({ field: "skip-property-address" });
+    skipPromptSync.current = true;
+    appendReply(spoken, nextFoxAsk(getFoxDraft()));
+  };
+
   const appendStructureFix = (clientText: string, capture: Capture) => {
     const live = getFoxDraft();
     const next = workspacePromptCopy(workspacePrompt(live), live);
@@ -1435,11 +1445,8 @@ export function AlwaysOnFox({
 
   const runAction = (action: FoxAction) => {
     if (action.capture?.field === "skip-property-address") {
-      placesWaitGen.current += 1;
-      placesSuggestFrozen.current = false;
-      setStreetSuggestions([]);
-      setLookupWait(null);
-      commitMessages((prev) => withoutWaitLines(prev));
+      skipPropertyAddressFromComposer(action.label);
+      return;
     }
     if (action.capture?.field === "change-proposal") {
       placesSuggestFrozen.current = false;
@@ -1722,13 +1729,7 @@ export function AlwaysOnFox({
         isSubjectAddressConfirmPending(draft)) &&
       isSkipPropertyAddressText(text)
     ) {
-      placesWaitGen.current += 1;
-      placesSuggestFrozen.current = false;
-      setLookupWait(null);
-      setStreetSuggestions([]);
-      applyCapture({ field: "skip-property-address" });
-      skipPromptSync.current = true;
-      appendReply(text, nextFoxAsk(getFoxDraft()));
+      skipPropertyAddressFromComposer(text);
       return;
     }
     if (
