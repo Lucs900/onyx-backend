@@ -292,7 +292,50 @@ function lastFoxIndex(messages: FoxMessage[]) {
   return last;
 }
 
-/** After Looks right, leftover Use this / rate chips go inert — same rule as On the file. */
+function isLooksRightChip(action: FoxAction) {
+  return (
+    action.label === "Looks right" ||
+    action.label === "Needs a correction" ||
+    action.capture?.field === "confirm-draft" ||
+    action.capture?.field === "needs-correction"
+  );
+}
+
+function leftoverChipCount(actions: FoxAction[] | undefined, kind: "use-this" | "looks-right") {
+  if (!actions?.length) return 0;
+  return actions.filter((action) =>
+    kind === "looks-right" ? isLooksRightChip(action) : action.label === "Use this",
+  ).length;
+}
+
+function leftoverOnOlderTurns(
+  messages: FoxMessage[],
+  draft: FoxIntakeDraft,
+  kind: "use-this" | "looks-right",
+) {
+  const thread = dropResolvedAddressConfirmChips(messages, draft);
+  const last = lastFoxIndex(thread);
+  let count = 0;
+  for (let i = 0; i < thread.length; i += 1) {
+    const message = thread[i];
+    if (message.role !== "fox" || i === last) continue;
+    count += leftoverChipCount(paintedFoxActions(message, draft, false), kind);
+    count += leftoverChipCount(message.actions, kind);
+  }
+  return count;
+}
+
+/** Leftover Use this still live on older Fox turns after Skip ID. */
+export function leftoverUseThisOnOlderTurns(messages: FoxMessage[], draft: FoxIntakeDraft) {
+  return leftoverOnOlderTurns(messages, draft, "use-this");
+}
+
+/** Leftover Looks right still live on older Fox turns after Skip ID. */
+export function leftoverLooksRightOnOlderTurns(messages: FoxMessage[], draft: FoxIntakeDraft) {
+  return leftoverOnOlderTurns(messages, draft, "looks-right");
+}
+
+/** After Looks right, older Fox turns are text. Chips live only on the latest ask. */
 function dropLeftoverConfirmChipsOnLooksRightDocAsk(
   messages: FoxMessage[],
   draft: FoxIntakeDraft,
@@ -301,10 +344,11 @@ function dropLeftoverConfirmChipsOnLooksRightDocAsk(
   const current = lastFoxIndex(messages);
   return messages.map((message, index) => {
     if (message.role !== "fox" || !message.actions?.length) return message;
-    const next = message.actions.filter((action) =>
-      index === current ? isAfterLooksRightDocChip(action) : !isLeftoverConfirmChip(action),
-    );
-    if (next.length === (message.actions?.length ?? 0)) return message;
+    if (index !== current) {
+      return { ...message, text: message.text, followUp: message.followUp, facts: message.facts, actions: undefined };
+    }
+    const next = message.actions.filter(isAfterLooksRightDocChip);
+    if (next.length === message.actions.length) return message;
     return { ...message, actions: next.length ? next : undefined };
   });
 }
@@ -471,6 +515,7 @@ export function paintedFoxActions(
   current = true,
 ): FoxAction[] | undefined {
   if (isOnFileAddressLine(message) || hideAddressUseThisOnBubble(message, draft)) return undefined;
+  if (looksRightDocAskOpen(draft) && !current) return undefined;
   const shown = visibleFoxActions(message, draft);
   if (!shown?.length) return undefined;
   const docAsk = looksRightDocAskOpen(draft);
@@ -506,7 +551,9 @@ export function visibleFoxActions(message: FoxMessage, draft: FoxIntakeDraft) {
       return false;
     }
     if (isOnFileAddressLine(message)) return false;
-    if (looksRightDocAskOpen(draft) && isLeftoverConfirmChip(action)) return false;
+    if (looksRightDocAskOpen(draft) && (isLeftoverConfirmChip(action) || isLooksRightChip(action))) {
+      return false;
+    }
     if (hideAddressUseThisOnBubble(message, draft) && (action.label === "Use this" || action.label === "Change")) {
       return false;
     }

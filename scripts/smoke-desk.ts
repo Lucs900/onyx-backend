@@ -45,6 +45,8 @@ import {
   isLowerPaymentText,
   keepPendingLiveCoupon,
   leftoverConfirmChipsLiveOnLatest,
+  leftoverLooksRightOnOlderTurns,
+  leftoverUseThisOnOlderTurns,
   leftoverUseThisPaintedOnOnFile,
   liveCouponActions,
   paintedFoxActions,
@@ -3204,9 +3206,23 @@ const leftoverUseThisChips = [
   { id: "accept-proposal", label: "Use this", event: "bubble" as const, capture: { field: "accept-proposal" as const } },
   { id: "change-proposal", label: "Change", event: "bubble" as const, capture: { field: "change-proposal" as const } },
 ];
+const leftoverLooksRightChips = [
+  { id: "looks-right", label: "Looks right", event: "bubble" as const, capture: { field: "confirm-draft" as const } },
+  { id: "needs-fix", label: "Needs a correction", event: "bubble" as const, capture: { field: "needs-correction" as const } },
+];
 const leftoverRateChips = liveCouponActions(harborAfterIdSkip);
 const harborSkipIdAskActions = workspacePromptCopy("documents", harborAfterIdSkip).actions ?? [];
+const harborAddressSpoken = "That’s 2847 Harbor Pacific Drive, Long Beach, CA 90803. Use this?";
+const harborW2Spoken = "Box 5 $118,400. Harbor Pacific Design Inc. Use this?";
+const harborStubSpoken = "Harbor Pacific Design Inc. $4,615.38 biweekly. $9,999.99 a month. Use this?";
+const harborReviewSpoken = workspacePromptCopy("review", loudStubUsed).text;
 const harborSkipIdThread = [
+  {
+    id: "address",
+    role: "fox" as const,
+    text: harborAddressSpoken,
+    actions: leftoverUseThisChips,
+  },
   {
     id: "rate",
     role: "fox" as const,
@@ -3216,14 +3232,20 @@ const harborSkipIdThread = [
   {
     id: "w2",
     role: "fox" as const,
-    text: "Box 5 $118,400. Harbor Pacific Design Inc. Use this?",
+    text: harborW2Spoken,
     actions: leftoverUseThisChips,
   },
   {
     id: "stub",
     role: "fox" as const,
-    text: "Harbor Pacific Design Inc. $4,615.38 biweekly. $9,999.99 a month. Use this?",
+    text: harborStubSpoken,
     actions: leftoverUseThisChips,
+  },
+  {
+    id: "review",
+    role: "fox" as const,
+    text: harborReviewSpoken,
+    actions: leftoverLooksRightChips,
   },
   {
     id: "id",
@@ -3236,11 +3258,12 @@ const harborSkipIdThread = [
     id: "statements",
     role: "fox" as const,
     text: DOC_INVITE_COPY.bank_statement,
-    actions: [...leftoverUseThisChips, ...leftoverRateChips, ...harborSkipIdAskActions],
+    actions: [...leftoverUseThisChips, ...leftoverLooksRightChips, ...leftoverRateChips, ...harborSkipIdAskActions],
   },
 ];
 const harborSkipIdPainted = dropResolvedAddressConfirmChips(harborSkipIdThread, harborAfterIdSkip);
 const harborSkipIdLatest = [...harborSkipIdPainted].reverse().find((item) => item.role === "fox");
+assert.equal(harborSkipIdLatest?.id, "statements");
 assert.equal(harborSkipIdLatest?.text, DOC_INVITE_COPY.bank_statement);
 assert.deepEqual(
   (paintedFoxActions(harborSkipIdLatest!, harborAfterIdSkip, true) ?? []).map((item) => item.label),
@@ -3248,17 +3271,30 @@ assert.deepEqual(
 );
 assert.ok(
   !(paintedFoxActions(harborSkipIdLatest!, harborAfterIdSkip, true) ?? []).some((item) =>
-    /^(Use this|Change|This one|Lower payment|No cost)$/.test(item.label),
+    /^(Use this|Change|This one|Lower payment|No cost|Looks right|Needs a correction)$/.test(item.label),
   ),
 );
 assert.equal(leftoverConfirmChipsLiveOnLatest(harborSkipIdThread, harborAfterIdSkip), 0);
+assert.equal(leftoverUseThisOnOlderTurns(harborSkipIdThread, harborAfterIdSkip), 0);
+assert.equal(leftoverLooksRightOnOlderTurns(harborSkipIdThread, harborAfterIdSkip), 0);
 assert.ok(stillUsefulSection(harborAfterIdSkip)?.items.some((item) => item.label === "Government ID"));
-for (const older of harborSkipIdPainted.filter((item) => item.role === "fox" && item.id !== harborSkipIdLatest?.id)) {
-  const painted = paintedFoxActions(older, harborAfterIdSkip, false) ?? [];
+assert.equal(harborAfterIdSkip.statedAvailableAssets, undefined);
+for (const spoken of [harborW2Spoken, harborStubSpoken, harborReviewSpoken, DOC_INVITE_COPY.government_id]) {
   assert.ok(
-    !painted.some((item) => /^(Use this|Change|This one|Lower payment|No cost)$/.test(item.label)),
-    `${older.id} leftover confirm chips stayed live`,
+    harborSkipIdPainted.some((item) => item.role === "fox" && item.text === spoken),
+    `spoken line was stripped: ${spoken}`,
   );
+}
+const harborAddressPainted = harborSkipIdPainted.find((item) => item.id === "address");
+assert.ok(harborAddressPainted?.text);
+assert.ok(
+  harborAddressPainted?.text === harborAddressSpoken || /on the file\.?$/i.test(harborAddressPainted?.text ?? ""),
+  "address spoken line was stripped",
+);
+for (const older of harborSkipIdPainted.filter((item) => item.role === "fox" && item.id !== harborSkipIdLatest?.id)) {
+  const painted = paintedFoxActions(older, harborAfterIdSkip, false);
+  assert.equal(painted, undefined, `${older.id} still has live chips above the statements ask`);
+  assert.equal(older.actions, undefined, `${older.id} leftover chips stayed stored`);
 }
 const harborSkipIdStatementPending = applyExtractedFields(
   {
