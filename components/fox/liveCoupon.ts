@@ -277,10 +277,7 @@ function isAfterLooksRightDocChip(action: FoxAction) {
   const field = action.capture?.field;
   return (
     (action.label === "Upload this" && (field === "open-docs" || action.event === "open-docs")) ||
-    (action.label === "Skip" && field === "skip-docs") ||
-    (action.label === "Proceed" && field === "proceed") ||
-    (action.label === "Not yet" && field === "hold-docs") ||
-    (action.label === "Request human" && field === "talk-originator")
+    (action.label === "Skip" && field === "skip-docs")
   );
 }
 

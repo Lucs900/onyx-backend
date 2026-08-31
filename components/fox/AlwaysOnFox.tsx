@@ -455,24 +455,16 @@ export function FoxLauncher() {
   );
 }
 
-function isStatementsAskChip(action: FoxAction) {
+function isDocRowChip(action: FoxAction) {
   const field = action.capture?.field;
   return (
     action.label === "Upload this" ||
-    (action.label === "Skip" && field === "skip-docs") ||
-    action.label === "Proceed" ||
-    (action.label === "Not yet" && field === "hold-docs") ||
-    action.label === "Request human"
+    (action.label === "Skip" && field === "skip-docs")
   );
 }
 
-function isStatementsAskLine(actions: FoxAction[]) {
-  return actions.some(
-    (action) =>
-      action.label === "Upload this" ||
-      (action.label === "Skip" && action.capture?.field === "skip-docs") ||
-      action.label === "Proceed",
-  );
+function isDocRowLine(actions: FoxAction[]) {
+  return actions.some((action) => action.label === "Upload this");
 }
 
 function foxTurnAlreadyUsed(thread: FoxMessage[], index: number) {
@@ -527,8 +519,8 @@ function FoxThread({
                 !isStreetSuggestChipLabel(action.label),
             )
           : [];
-        const paintActions = isStatementsAskLine(rawActions)
-          ? rawActions.filter(isStatementsAskChip)
+        const paintActions = isDocRowLine(rawActions)
+          ? rawActions.filter(isDocRowChip)
           : rawActions;
         return (
           <article

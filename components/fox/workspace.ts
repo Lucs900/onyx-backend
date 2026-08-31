@@ -515,7 +515,6 @@ import {
 import {
   applyEmailThenFinish,
   applyEscalateMotion,
-  afterLooksRightDocActions,
   applyLooksRightMotion,
   applyNotYetMotion,
   applyProceedMotion,
@@ -2111,11 +2110,7 @@ function docInviteActions(): FoxAction[] {
   ];
 }
 
-function documentInviteActions(draft: FoxIntakeDraft): FoxAction[] {
-  const invite = nextDocInvite(draft);
-  if (draft.sampleAccepted && invite && invite !== "coborrower_government_id") {
-    return afterLooksRightDocActions(draft);
-  }
+function documentInviteActions(_draft: FoxIntakeDraft): FoxAction[] {
   return docInviteActions();
 }
 
