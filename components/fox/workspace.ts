@@ -196,6 +196,7 @@ import {
   changeWageExtract,
   isWageExtractProposal,
   isWageW2OnlyProposal,
+  wageEmploymentUnconfirmed,
   readStubAmount,
   readWageBox5,
   readWageFrequency,
@@ -2531,7 +2532,8 @@ export function shouldDeferStillUsefulAsk(draft: FoxIntakeDraft): boolean {
     isBorrowerNameConfirmPending(draft) ||
     isOtherReoConfirmPending(draft) ||
     isFileNetConfirmPending(draft) ||
-    draft.pendingProposal?.field === OTHER_REO_PAYMENT_FIELD
+    draft.pendingProposal?.field === OTHER_REO_PAYMENT_FIELD ||
+    isWageExtractProposal(draft.pendingProposal)
   );
 }
 
@@ -7079,7 +7081,22 @@ export function previewFacts(draft: FoxIntakeDraft): PreviewFact[] {
     });
   }
 
-  facts.push(...conventionalFileFacts(draft));
+  const hideWageEmployment = wageEmploymentUnconfirmed(draft);
+  const employerOnFile = factValue(draft, "employer_name").trim();
+  facts.push(
+    ...conventionalFileFacts(draft).filter((fact) => {
+      if (!String(fact.id).startsWith("history-employment")) return true;
+      if (hideWageEmployment) return false;
+      if (
+        !draft.sampleAccepted &&
+        employerOnFile &&
+        fact.value.replace(/\s+[–-].*$/, "").trim().toLowerCase() === employerOnFile.toLowerCase()
+      ) {
+        return false;
+      }
+      return true;
+    }),
+  );
   const calculatorIds = new Set(facts.map((fact) => fact.id));
   for (const fact of calculatorStructureFacts(draft)) {
     if (!calculatorIds.has(fact.id)) facts.push(fact);
@@ -7090,7 +7107,9 @@ export function previewFacts(draft: FoxIntakeDraft): PreviewFact[] {
     draft.pendingProposal?.field === "employer_name" ? draft.pendingProposal : null;
   const employerExtra =
     draft.pendingProposal?.extras?.find((item) => item.field === "employer_name")?.value ?? "";
-  if (employer) {
+  if (hideWageEmployment) {
+    // Employer / Employment stay empty until Use this or Change.
+  } else if (employer) {
     facts.push({
       id: "employer",
       label: "Employer",
@@ -7166,7 +7185,7 @@ export function previewFacts(draft: FoxIntakeDraft): PreviewFact[] {
     !periodPay && !ytdPay && wages ? `Wages ${displayFactValue("wages", wages)}` : "",
     !periodPay && !ytdPay && !wages && agi ? `AGI ${displayFactValue("agi", agi)}` : "",
   ].filter(Boolean);
-  if (payBits.length) {
+  if (payBits.length && !hideWageEmployment) {
     facts.push({ id: "pay", label: "Pay", value: payBits.join(" · ") });
   }
 

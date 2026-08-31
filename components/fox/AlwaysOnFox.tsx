@@ -143,7 +143,7 @@ import {
   layer2AskActions,
   type DocIntakeDetail,
 } from "./fileWrite";
-import { DECLINING_INCOME_CAUTION } from "./qualifyingIncome";
+import { DECLINING_INCOME_CAUTION, WAGE_DOCS_ASK } from "./qualifyingIncome";
 import { isUnreadNote } from "@/lib/docs/accept";
 import { fileExists, finishLineActions, inQueueEnding, reviewIsSitting } from "./motion";
 import { pathFromHomeChoice } from "./homeIdle";
@@ -320,6 +320,11 @@ function applyFoxAsk(
       message.id === last.id
         ? { ...message, followUp: ask.followUp, facts: ask.facts, actions: ask.actions }
         : message,
+    );
+  }
+  if (last && last.text === WAGE_DOCS_ASK && ask.text !== WAGE_DOCS_ASK) {
+    return messages.map((message) =>
+      message.id === last.id ? foxAskMessage(ask) : message,
     );
   }
   if (last && sameFoxAsk(last, ask)) return messages;

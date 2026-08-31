@@ -2753,6 +2753,11 @@ assert.equal(loudAfterW2.draft.facts?.employer_name, undefined);
 assert.equal(loudAfterW2.draft.facts?.w2_box5, undefined);
 assert.equal(loudAfterW2.draft.facts?.qualifying_income, undefined);
 assert.ok(!previewFacts(loudAfterW2.draft).some((fact) => fact.id === "employer" || fact.id === "pay" || fact.id === "qualifying"));
+assert.ok(!previewFacts(loudAfterW2.draft).some((fact) => fact.id === "history-employment" || fact.label === "Employment"));
+assert.equal(
+  previewFacts(loudAfterW2.draft).filter((fact) => fact.id === "employer" || fact.label === "Employment").length,
+  0,
+);
 assert.ok(!previewFacts(loudAfterW2.draft).some((fact) => fact.id === "docs" && /W-2 in/i.test(fact.value)));
 assert.ok(!previewFacts(loudAfterW2.draft).some((fact) => fact.id === "docs" && /could not read/i.test(fact.value)));
 assert.ok(!previewFacts(loudAfterW2.draft).some((fact) => fact.id === "originator"));
@@ -2784,6 +2789,10 @@ assert.equal(loudW2Used.facts?.w2_box5?.value, "118400");
 assert.equal(loudW2Used.facts?.employer_name?.value, "Harbor Pacific Design Inc");
 assert.ok(previewFacts(loudW2Used).some((fact) => fact.id === "docs" && fact.value === "W-2 in"));
 assert.ok(previewFacts(loudW2Used).some((fact) => fact.id === "employer" && /Harbor Pacific Design Inc/i.test(fact.value)));
+assert.equal(
+  previewFacts(loudW2Used).filter((fact) => fact.id === "employer" || fact.label === "Employment").length,
+  1,
+);
 assert.ok(!previewFacts(loudW2Used).some((fact) => fact.id === "originator"));
 assert.equal(workspacePrompt(loudW2Used), "paystub-monthly");
 assert.equal(workspacePromptCopy("paystub-monthly", loudW2Used).text, WAGE_STUB_DROP_ASK);
@@ -12139,6 +12148,8 @@ assert.ok(alwaysOn.includes('document.addEventListener("drop"'));
 assert.ok(alwaysOn.includes("filesFromDataTransfer"));
 assert.ok(alwaysOn.includes("void ingestDroppedFiles(files)"));
 assert.ok(!alwaysOn.includes("setInputFiles"));
+assert.ok(alwaysOn.includes("last.text === WAGE_DOCS_ASK"));
+assert.ok(alwaysOn.includes("ask.text !== WAGE_DOCS_ASK"));
 assert.ok(!alwaysOn.includes("docs-handoff"));
 assert.ok(dropSource.includes("COMPOSER_ATTACH_ID"));
 assert.ok(dropSource.includes("composer-attach"));
@@ -12798,6 +12809,20 @@ async function extractAdapterSmoke() {
   assert.ok(!(workspacePromptCopy("confirm-proposal", jordanHaleAfter.draft).actions ?? []).some((item) => item.label === "Looks right"));
   assert.ok(!previewFacts(jordanHaleAfter.draft).some((fact) => fact.id === "originator"));
   assert.ok(!previewFacts(jordanHaleAfter.draft).some((fact) => fact.id === "docs" && /W-2 in|could not read/i.test(fact.value)));
+  assert.equal(
+    previewFacts(jordanHaleAfter.draft).filter((fact) => fact.id === "employer" || fact.label === "Employment").length,
+    0,
+  );
+  assert.equal((jordanHaleAfter.draft.employmentHistory ?? []).length, 0);
+  assert.ok(!jordanHaleAfter.quietLines.includes(EMPLOYER_MISMATCH_LINE));
+  assert.equal(workspacePrompt(jordanHaleAfter.draft), "confirm-proposal");
+  assert.notEqual(workspacePrompt(jordanHaleAfter.draft), "paystub-monthly");
+  assert.ok(
+    !(jordanHaleAfter.draft.pendingProposal?.extras ?? []).some(
+      (item) => item.field === "paystub_amount" || item.field === "pay_frequency" || item.field === "gross_period",
+    ),
+    "W-2-only confirm must not invent stub extras",
+  );
   const classifiedK1 = await classifyAndExtract(new Uint8Array([9, 8, 7]), "image/png", {
     async classify() {
       return { class: "k1" as never, confidence: 0.9, readable: true };

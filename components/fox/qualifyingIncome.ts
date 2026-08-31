@@ -1381,6 +1381,11 @@ export function isWageExtractProposal(proposal?: { field?: string } | null): boo
   return proposal?.field === WAGE_EXTRACT_FIELD;
 }
 
+/** File Employment / Employer stay empty until Use this or Change. */
+export function wageEmploymentUnconfirmed(draft: FoxIntakeDraft): boolean {
+  return wageThreadOpen(draft) && !draft.sampleAccepted && isWageExtractProposal(draft.pendingProposal);
+}
+
 export function isWageW2OnlyProposal(proposal?: { field?: string; extras?: { field: string; value: string }[] } | null): boolean {
   if (!isWageExtractProposal(proposal) || !proposal) return false;
   const extras = proposal.extras ?? [];
@@ -1424,8 +1429,10 @@ export function mergePendingWageExtract(
 ): FoxIntakeDraft {
   const prev = draft.pendingWageExtract ?? {};
   const box5 = parseExtractMoney(fields?.medicare_wages) ?? parseExtractMoney(fields?.box5);
-  const stub = parseExtractMoney(fields?.gross_period);
-  const frequency = speakPayFrequency(fields?.pay_frequency);
+  const stub =
+    extractClass === "w2" ? undefined : parseExtractMoney(fields?.gross_period);
+  const frequency =
+    extractClass === "w2" ? undefined : speakPayFrequency(fields?.pay_frequency);
   const employer = String(fields?.employer_name ?? "").trim();
   const next = {
     ...prev,
@@ -1677,7 +1684,7 @@ export function maybeProposeWageExtract(
   fields?: Record<string, string>,
   extractClass?: ExtractClass,
 ): FoxIntakeDraft {
-  if (!isWageExtractFirstPath(draft)) return draft;
+  if (draft.sampleAccepted || !wageThreadOpen(draft)) return draft;
   if (draft.pendingConflict) return draft;
   const held = mergePendingWageExtract(draft, fields, extractClass);
   if (wageExtractCanConfirm(held, fields)) {
