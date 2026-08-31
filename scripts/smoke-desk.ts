@@ -100,6 +100,7 @@ import {
   W2_BOX5_ASK,
   W2_PAY_FREQUENCY_ASK,
   wageExtractConfirmCopy,
+  wageW2ConfirmCopy,
   wageExtractFailedRead,
   acceptWageExtract,
   writeWagePayFrequency,
@@ -383,7 +384,7 @@ import {
 } from "../components/fox/staffExport";
 import { scrollDeltaToClearAsk, scrollDeltaToFollowLastLine } from "../components/fox/askReveal";
 import { subjectMortgagePayment } from "../components/fox/monthlyDebts";
-import { FAILED_READ_NOTE } from "../lib/docs/accept";
+import { FAILED_READ_NOTE, unreadDropBytesCopy } from "../lib/docs/accept";
 import { classifyAndExtract, imageDataUrl, visionChatBody } from "../lib/docs/extract";
 import {
   CREDIT_WORKSPACE_BUBBLES,
@@ -2428,17 +2429,21 @@ const walkAAfterW2 = applyExtractedFields(walkABase, {
   confidence: 0.92,
   fields: { medicare_wages: "182000", tax_year: "2025", employer_name: "HARBOR STEEL", wages: "84000" },
 });
-assert.equal(walkAAfterW2.draft.pendingProposal, null);
+assert.equal(walkAAfterW2.draft.pendingProposal?.field, WAGE_EXTRACT_FIELD);
+assert.equal(
+  workspacePromptCopy("confirm-proposal", walkAAfterW2.draft).text,
+  wageW2ConfirmCopy(182000, "HARBOR STEEL"),
+);
 assert.equal(walkAAfterW2.draft.facts?.employer_name, undefined);
 assert.equal(walkAAfterW2.draft.facts?.wages, undefined);
 assert.equal(walkAAfterW2.draft.facts?.w2_box5, undefined);
 assert.equal(walkAAfterW2.draft.facts?.qualifying_income, undefined);
 assert.equal((walkAAfterW2.draft.employmentHistory ?? []).length, 0);
 assert.ok(!previewFacts(walkAAfterW2.draft).some((fact) => fact.id === "employer" || fact.id === "pay" || fact.id === "qualifying" || fact.id === "history-employment"));
-assert.equal(workspacePrompt({ ...walkAAfterW2.draft, looksRightHold: false }), "wage-docs");
+assert.equal(workspacePrompt({ ...walkAAfterW2.draft, looksRightHold: false }), "confirm-proposal");
 assert.deepEqual(
-  (wageDocsAsk(walkAAfterW2.draft).actions ?? []).map((item) => item.label),
-  ["Upload", "Skip"],
+  (workspacePromptCopy("confirm-proposal", walkAAfterW2.draft).actions ?? []).map((item) => item.label),
+  ["Use this", "Change"],
 );
 const walkAAfterStub = applyExtractedFields(walkAAfterW2.draft, {
   extractClass: "paystub",
@@ -2684,6 +2689,8 @@ assert.equal(loudStubPrinted?.extractClass, "paystub");
 assert.equal(loudStubPrinted?.fields.gross_period, "4615.38");
 assert.equal(loudStubPrinted?.fields.pay_frequency, "biweekly");
 assert.equal(wageExtractConfirmCopy(118400, 4615.38, "biweekly"), "Box 5 $118,400. Stub $4,615.38 biweekly. Use this?");
+assert.equal(wageW2ConfirmCopy(118400, "Harbor Pacific Design Inc"), "Box 5 $118,400. Harbor Pacific Design Inc. Use this?");
+assert.equal(unreadDropBytesCopy("06-w2-2025-box5-loud.pdf", 12345), "06-w2-2025-box5-loud.pdf · 12,345 bytes");
 assert.equal(wageDocsAsk(walkABase).text, WAGE_DOCS_ASK);
 assert.deepEqual((wageDocsAsk(walkABase).actions ?? []).map((item) => item.label), ["Upload", "Skip"]);
 const loudAfterW2 = applyExtractedFields(walkABase, {
@@ -2691,12 +2698,19 @@ const loudAfterW2 = applyExtractedFields(walkABase, {
   confidence: 0.94,
   fields: loudW2Printed!.fields,
 });
-assert.equal(loudAfterW2.draft.pendingProposal, null);
+assert.equal(loudAfterW2.draft.pendingProposal?.field, WAGE_EXTRACT_FIELD);
+assert.equal(
+  workspacePromptCopy("confirm-proposal", loudAfterW2.draft).text,
+  "Box 5 $118,400. Harbor Pacific Design Inc. Use this?",
+);
 assert.equal(loudAfterW2.draft.facts?.employer_name, undefined);
 assert.equal(loudAfterW2.draft.facts?.w2_box5, undefined);
 assert.equal(loudAfterW2.draft.facts?.qualifying_income, undefined);
 assert.ok(!previewFacts(loudAfterW2.draft).some((fact) => fact.id === "employer" || fact.id === "pay" || fact.id === "qualifying"));
-assert.deepEqual((wageDocsAsk(loudAfterW2.draft).actions ?? []).map((item) => item.label), ["Upload", "Skip"]);
+assert.deepEqual(
+  (workspacePromptCopy("confirm-proposal", loudAfterW2.draft).actions ?? []).map((item) => item.label),
+  ["Use this", "Change"],
+);
 const loudAfterStub = applyExtractedFields(
   {
     ...loudAfterW2.draft,
@@ -2780,9 +2794,9 @@ const loudW2HeldOnly = applyExtractedFields(
 assert.equal(wageExtractFailedRead(loudW2HeldOnly.draft), false, "Box 5 in text is confirm, not unread");
 assert.equal(loudW2HeldOnly.draft.documents[0]?.bytesRef, "fox-intake/06-w2-2025-box5-loud.pdf");
 assert.equal(loudW2HeldOnly.draft.documents[1]?.bytesRef, "fox-intake/07-paystub-biweekly-loud.pdf");
-assert.deepEqual(
-  (wageDocsAsk(loudW2HeldOnly.draft).actions ?? []).map((item) => item.label),
-  ["Upload", "Skip"],
+assert.equal(
+  workspacePromptCopy("confirm-proposal", loudW2HeldOnly.draft).text,
+  "Box 5 $118,400. Harbor Pacific Design Inc. Use this?",
 );
 assert.notEqual(workspacePrompt(loudW2HeldOnly.draft), "borrower-name");
 const loudUsed = acceptWageExtract(loudAfterStub.draft);
@@ -12003,6 +12017,7 @@ assert.ok(startWorkspace.includes("fresh: homepageFresh") || startWorkspace.incl
 const dropSource = readFileSync(join(root, "components/fox/DocumentDrop.tsx"), "utf8");
 assert.ok(dropSource.includes("/api/docs/upload"));
 assert.ok(dropSource.includes("/api/docs/extract"));
+assert.ok(dropSource.includes("ingestDroppedFiles"));
 assert.ok(dropSource.includes("FormData"));
 assert.ok(dropSource.includes('form.append("file"'));
 assert.ok(dropSource.includes("postExtract"));
@@ -12023,6 +12038,8 @@ assert.ok(!dropSource.includes("/api/rateflow-quote"));
 assert.ok(!dropSource.includes("setTimeout"));
 const alwaysOn = readFileSync(join(root, "components/fox/AlwaysOnFox.tsx"), "utf8");
 const rateflowClient = readFileSync(join(root, "components/fox/rateflowClient.ts"), "utf8");
+assert.ok(alwaysOn.includes("ingestDroppedFiles"));
+assert.ok(alwaysOn.includes("data-composer-drop"));
 assert.ok(alwaysOn.includes("requestRateflowIfNeeded"));
 assert.ok(alwaysOn.includes("messagesWithLiveQuoteSpeech"));
 assert.ok(alwaysOn.includes("messagesWithRateOrReadySpeech"));

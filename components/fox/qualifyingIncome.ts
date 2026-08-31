@@ -1365,8 +1365,23 @@ export function wageExtractConfirmCopy(box5: number, stub: number, frequency: st
   return `Box 5 ${speakWageMoney(box5)}. Stub ${speakWageMoney(stub)} ${spoken}. Use this?`;
 }
 
+export function wageW2ConfirmCopy(box5: number, employer: string): string {
+  const name = String(employer ?? "").trim();
+  return `Box 5 ${speakWageMoney(box5)}. ${name}. Use this?`;
+}
+
 export function isWageExtractProposal(proposal?: { field?: string } | null): boolean {
   return proposal?.field === WAGE_EXTRACT_FIELD;
+}
+
+export function isWageW2OnlyProposal(proposal?: { field?: string; extras?: { field: string; value: string }[] } | null): boolean {
+  if (!isWageExtractProposal(proposal) || !proposal) return false;
+  const extras = proposal.extras ?? [];
+  const box5 = Number(extras.find((item) => item.field === "w2_box5")?.value ?? 0);
+  const employer = (extras.find((item) => item.field === "employer_name")?.value ?? "").trim();
+  const stub = Number(extras.find((item) => item.field === PAYSTUB_AMOUNT_FIELD)?.value ?? 0);
+  const frequency = extras.find((item) => item.field === "pay_frequency")?.value ?? "";
+  return box5 > 0 && Boolean(employer) && !(stub > 0 && frequency);
 }
 
 /** Box 5 Medicare wages only. Never Box 1 `wages`. */
@@ -1603,6 +1618,26 @@ export function writeTypedStubMonthly(draft: FoxIntakeDraft, stubAmount: number)
   return next;
 }
 
+export function proposeWageW2Extract(draft: FoxIntakeDraft, box5: number, employer: string): FoxIntakeDraft {
+  const name = String(employer ?? "").trim();
+  if (box5 <= 0 || !name) return draft;
+  return {
+    ...draft,
+    awaitingPayFrequency: false,
+    looksRightHold: false,
+    pendingProposal: {
+      field: WAGE_EXTRACT_FIELD,
+      value: Number.isInteger(box5) ? String(box5) : String(Math.round(box5 * 100) / 100),
+      label: "wage extract",
+      kind: "computed",
+      extras: [
+        { field: "w2_box5", value: Number.isInteger(box5) ? String(box5) : String(Math.round(box5 * 100) / 100), label: "Box 5" },
+        { field: "employer_name", value: name, label: "employer" },
+      ],
+    },
+  };
+}
+
 export function proposeWageExtract(draft: FoxIntakeDraft, box5: number, stub: number, frequency: string): FoxIntakeDraft {
   const spoken = speakPayFrequency(frequency);
   const periods = periodsPerYear(spoken || frequency);
@@ -1638,12 +1673,19 @@ export function maybeProposeWageExtract(
   if (!isWageExtractFirstPath(draft)) return draft;
   if (draft.pendingConflict) return draft;
   const held = mergePendingWageExtract(draft, fields, extractClass);
-  if (!wageExtractCanConfirm(held, fields)) return held;
+  if (wageExtractCanConfirm(held, fields)) {
+    const box5 = readWageBox5(held, fields);
+    const stub = readStubAmount(held, fields);
+    const frequency = readWageFrequency(held, fields);
+    if (box5 == null || stub == null || !frequency) return held;
+    return proposeWageExtract(held, box5, stub, frequency);
+  }
   const box5 = readWageBox5(held, fields);
-  const stub = readStubAmount(held, fields);
-  const frequency = readWageFrequency(held, fields);
-  if (box5 == null || stub == null || !frequency) return held;
-  return proposeWageExtract(held, box5, stub, frequency);
+  const employer = String(fields?.employer_name ?? held.pendingWageExtract?.employer ?? "").trim();
+  if (box5 != null && box5 > 0 && employer) {
+    return proposeWageW2Extract(held, box5, employer);
+  }
+  return held;
 }
 
 export function acceptWageExtract(draft: FoxIntakeDraft): FoxIntakeDraft {

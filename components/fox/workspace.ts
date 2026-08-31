@@ -193,11 +193,13 @@ import {
   WAGE_DOCS_ASK,
   changeWageExtract,
   isWageExtractProposal,
+  isWageW2OnlyProposal,
   readStubAmount,
   readWageBox5,
   readWageFrequency,
   skipWageDocs,
   wageExtractConfirmCopy,
+  wageW2ConfirmCopy,
   wageExtractFailedRead,
   writeWageBox5,
   writeTypedStubMonthly,
@@ -1615,8 +1617,13 @@ function liveProposalAsk(
     const frequency =
       proposal.extras?.find((item) => item.field === "pay_frequency")?.value ||
       readWageFrequency(draft);
+    const employer =
+      proposal.extras?.find((item) => item.field === "employer_name")?.value ||
+      String(draft.pendingWageExtract?.employer ?? "").trim();
     return {
-      text: wageExtractConfirmCopy(box5, stub, frequency),
+      text: isWageW2OnlyProposal(proposal)
+        ? wageW2ConfirmCopy(box5, employer)
+        : wageExtractConfirmCopy(box5, stub, frequency),
       actions: incomeConfirmActions(),
     };
   }
@@ -7072,7 +7079,7 @@ export function previewFacts(draft: FoxIntakeDraft): PreviewFact[] {
           ? SUGGESTED_NOTE
           : employerProposal.note ?? SUGGESTED_BORROWER_NOTE,
     });
-  } else if (employerExtra) {
+  } else if (employerExtra && !isWageExtractProposal(draft.pendingProposal)) {
     facts.push({
       id: "employer",
       label: "Employer",

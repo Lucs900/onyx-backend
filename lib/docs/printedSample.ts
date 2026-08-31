@@ -592,8 +592,8 @@ export function loudWageFromPrintedLines(lines: string[]): PrintedSample | null 
       confidence: 0.94,
       fields: {
         ...fields,
-        medicare_wages: fields.medicare_wages || fields.box5 || "118400",
-        box5: fields.box5 || fields.medicare_wages || "118400",
+        medicare_wages: fields.medicare_wages || fields.box5,
+        box5: fields.box5 || fields.medicare_wages,
       },
     };
   }
@@ -604,8 +604,8 @@ export function loudWageFromPrintedLines(lines: string[]): PrintedSample | null 
       confidence: 0.94,
       fields: {
         ...fields,
-        gross_period: fields.gross_period || "4615.38",
-        pay_frequency: fields.pay_frequency || "biweekly",
+        gross_period: fields.gross_period,
+        pay_frequency: fields.pay_frequency,
       },
     };
   }

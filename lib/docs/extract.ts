@@ -41,6 +41,7 @@ export type DocumentExtractAdapter = {
 export type ClassifyExtractResult = ExtractApplyInput & {
   warnings: string[];
   failed?: boolean;
+  textLayerChars?: number;
 };
 
 const CLASSES: ExtractClass[] = [
@@ -344,12 +345,16 @@ export const grokExtractAdapter: DocumentExtractAdapter = {
   },
 };
 
-function printedResult(printed: NonNullable<ReturnType<typeof readPrintedSample>>): ClassifyExtractResult {
+function printedResult(
+  printed: NonNullable<ReturnType<typeof readPrintedSample>>,
+  textLayerChars?: number,
+): ClassifyExtractResult {
   return {
     extractClass: printed.extractClass,
     confidence: printed.confidence,
     fields: printed.fields,
     warnings: [],
+    ...(textLayerChars != null ? { textLayerChars } : {}),
   };
 }
 
@@ -357,6 +362,7 @@ function unreadResult(
   extractClass: ExtractClass,
   filename?: string | null,
   extraWarning?: string,
+  textLayerChars?: number,
 ): ClassifyExtractResult {
   return {
     extractClass: preferFilenameClass(extractClass, filename ?? ""),
@@ -364,6 +370,7 @@ function unreadResult(
     fields: {},
     warnings: extraWarning ? ["failed", extraWarning] : ["failed"],
     failed: true,
+    ...(textLayerChars != null ? { textLayerChars } : {}),
   };
 }
 
@@ -423,6 +430,19 @@ async function classifyAndExtractPage(
   }
 }
 
+function textLayerCharCountOf(bytes: Uint8Array, mediaType: string): number {
+  if (!(isPdf(bytes) || mediaType === "application/pdf")) return 0;
+  return pdfTextLayerCharCount(bytes);
+}
+
+function withTextChars(
+  result: ClassifyExtractResult,
+  bytes: Uint8Array,
+  mediaType: string,
+): ClassifyExtractResult {
+  return { ...result, textLayerChars: result.textLayerChars ?? textLayerCharCountOf(bytes, mediaType) };
+}
+
 export async function classifyAndExtract(
   bytes: Uint8Array,
   mediaType: string,
@@ -430,25 +450,26 @@ export async function classifyAndExtract(
   hint?: ExtractClass | null,
   filename?: string | null,
 ): Promise<ClassifyExtractResult> {
+  const textLayerChars = textLayerCharCountOf(bytes, mediaType);
   if (isPdf(bytes) || mediaType === "application/pdf") {
     const layer = readPdfTextLayer(bytes);
     if (layer?.length) {
       const loud = loudWageFromPrintedLines(layer);
-      if (loud) return printedResult(loud);
+      if (loud) return printedResult(loud, textLayerChars);
     }
   }
   const printed = readPrintedSample(bytes);
   if (printed && hasLockedSuggestion(printed.extractClass, printed.fields)) {
-    return printedResult(printed);
+    return printedResult(printed, textLayerChars);
   }
   if (isPdf(bytes) || mediaType === "application/pdf") {
     const layer = readPdfTextLayer(bytes);
     if (layer?.length) {
       const loud = loudWageFromPrintedLines(layer);
-      if (loud) return printedResult(loud);
+      if (loud) return printedResult(loud, textLayerChars);
       const fromLines = printedSampleFromLines(layer);
       if (fromLines && hasLockedSuggestion(fromLines.extractClass, fromLines.fields)) {
-        return printedResult(fromLines);
+        return printedResult(fromLines, textLayerChars);
       }
       const blob = layer.join("\n");
       if (/\bbox\s*5\b/i.test(blob)) {
@@ -460,7 +481,7 @@ export async function classifyAndExtract(
             extractClass: "w2",
             confidence: printed?.confidence ?? 0.94,
             fields,
-          });
+          }, textLayerChars);
         }
       }
       const stubFields = fieldsFromPrintedLines("paystub", layer);
@@ -469,33 +490,33 @@ export async function classifyAndExtract(
           extractClass: "paystub",
           confidence: 0.94,
           fields: stubFields,
-        });
+        }, textLayerChars);
       }
       if (printed && hasLockedSuggestion(printed.extractClass, printed.fields)) {
-        return printedResult(printed);
+        return printedResult(printed, textLayerChars);
       }
-      return unreadResult(printed?.extractClass ?? "other", filename, "unmapped-text");
+      return unreadResult(printed?.extractClass ?? "other", filename, "unmapped-text", textLayerChars);
     }
     const charCount = pdfTextLayerCharCount(bytes);
     if (charCount > 0) {
-      return unreadResult(printed?.extractClass ?? "other", filename, "unmapped-text");
+      return unreadResult(printed?.extractClass ?? "other", filename, "unmapped-text", charCount);
     }
     const images = readPdfEmbeddedImages(bytes);
     for (const image of images) {
       const fromPixels = readPrintedSample(image.bytes);
       if (fromPixels && hasLockedSuggestion(fromPixels.extractClass, fromPixels.fields)) {
-        return printedResult(fromPixels);
+        return printedResult(fromPixels, textLayerChars);
       }
     }
     if (images[0]) {
       const page = await classifyAndExtractPage(images[0].bytes, images[0].mediaType, adapter, hint);
       const extractClass = preferFilenameClass(page.extractClass, filename ?? "");
       if (page.failed || !hasLockedSuggestion(extractClass, page.fields)) {
-        return unreadResult(extractClass, filename, "no-text-layer");
+        return unreadResult(extractClass, filename, "no-text-layer", textLayerChars);
       }
-      return { ...page, extractClass };
+      return { ...page, extractClass, textLayerChars };
     }
-    return unreadResult("other", filename, "no-text-layer");
+    return unreadResult("other", filename, "no-text-layer", textLayerChars);
   }
   const page = await classifyAndExtractPage(bytes, mediaType, adapter, hint);
   if (
@@ -503,7 +524,7 @@ export async function classifyAndExtract(
     (page.extractClass === "government_id" || page.extractClass === "paystub" || page.extractClass === "w2") &&
     !hasLockedSuggestion(page.extractClass, page.fields)
   ) {
-    return { ...page, failed: true, warnings: [...page.warnings, "failed"] };
+    return withTextChars({ ...page, failed: true, warnings: [...page.warnings, "failed"] }, bytes, mediaType);
   }
-  return page;
+  return withTextChars(page, bytes, mediaType);
 }

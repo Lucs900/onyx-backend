@@ -24,6 +24,13 @@ export function isUnreadNote(note?: string | null) {
   return note === FAILED_READ_NOTE || note === NO_TEXT_LAYER_NOTE;
 }
 
+/** Thread line when the dropped file’s text layer is empty. No dollars. */
+export function unreadDropBytesCopy(name: string, size: number) {
+  const shown = String(name ?? "").trim() || "file";
+  const bytes = Number.isFinite(size) ? Math.max(0, Math.round(size)) : 0;
+  return `${shown} · ${bytes.toLocaleString("en-US")} bytes`;
+}
+
 export const ACCEPT_ATTR =
   ".pdf,.jpg,.jpeg,.png,.heic,.heif,.webp,application/pdf,image/jpeg,image/png,image/heic,image/heif,image/webp";
 

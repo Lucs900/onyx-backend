@@ -2455,6 +2455,7 @@ export type DocIntakeDetail = {
   missing?: ExtractClass[];
   refreshStillUseful?: boolean;
   extractClass?: ExtractClass;
+  emptyRead?: { name: string; size: number };
 };
 
 export function emitDocIntake(detail: DocIntakeDetail) {

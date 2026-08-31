@@ -10,6 +10,8 @@ import {
   useState,
   useSyncExternalStore,
   type ChangeEvent,
+  type ClipboardEvent,
+  type DragEvent,
   type FocusEvent,
   type FormEvent,
   type ReactNode,
@@ -120,7 +122,13 @@ import {
   workspacePromptCopy,
   workspaceUpdateCopy,
 } from "./workspace";
-import { requestFoxPickFile } from "./DocumentDrop";
+import {
+  filesFromClipboard,
+  filesFromDataTransfer,
+  ingestDroppedFiles,
+  requestFoxPickFile,
+} from "./DocumentDrop";
+import { unreadDropBytesCopy } from "@/lib/docs/accept";
 import { WorkspaceFileDock } from "./FilePreview";
 import {
   DOC_INTAKE_EVENT,
@@ -519,6 +527,33 @@ function FoxThread({
   );
 }
 
+function transferHasFiles(data: DataTransfer | null | undefined) {
+  if (!data) return false;
+  return Array.from(data.types ?? []).includes("Files") || Boolean(data.files?.length);
+}
+
+function onComposerFileDrag(event: DragEvent<HTMLElement>) {
+  if (!transferHasFiles(event.dataTransfer)) return;
+  event.preventDefault();
+  event.stopPropagation();
+  if (event.dataTransfer) event.dataTransfer.dropEffect = "copy";
+}
+
+function onComposerFileDrop(event: DragEvent<HTMLElement>) {
+  const files = filesFromDataTransfer(event.dataTransfer);
+  if (!files.length) return;
+  event.preventDefault();
+  event.stopPropagation();
+  void ingestDroppedFiles(files);
+}
+
+function onComposerFilePaste(event: ClipboardEvent<HTMLElement>) {
+  const files = filesFromClipboard(event.clipboardData);
+  if (!files.length) return;
+  event.preventDefault();
+  void ingestDroppedFiles(files);
+}
+
 function FoxWorkspace({
   className,
   messages,
@@ -545,7 +580,15 @@ function FoxWorkspace({
   onStartOver?: () => void;
 }) {
   return (
-    <div id="fox-panel" className={className}>
+    <div
+      id="fox-panel"
+      className={className}
+      data-composer-drop="true"
+      onDragEnter={onComposerFileDrag}
+      onDragOver={onComposerFileDrag}
+      onDrop={onComposerFileDrop}
+      onPaste={onComposerFilePaste}
+    >
       <div className="fox-bar__head">
         <div className="fox-bar__head-copy">
           <span className="fox-bar__title">ONYX Fox</span>
@@ -793,6 +836,13 @@ export function AlwaysOnFox({
           if (line === DECLINING_INCOME_CAUTION) continue;
           if (isDeadFileWriteLine(line)) continue;
           next.push({ id: newId(), role: "system", text: line });
+        }
+        if (detail.emptyRead) {
+          const live = getFoxDraft();
+          return applyFoxAsk(next, {
+            text: unreadDropBytesCopy(detail.emptyRead.name, detail.emptyRead.size),
+            actions: unreadDocActions(),
+          });
         }
         if (
           (detail.quietLines ?? []).some((line) => isUnreadNote(line)) &&
@@ -1724,6 +1774,10 @@ export function AlwaysOnFox({
       <form
         className={isStart ? "fox-bar__desk fox-bar__desk--plain" : "fox-bar__desk"}
         onSubmit={onSubmit}
+        onDragEnter={onComposerFileDrag}
+        onDragOver={onComposerFileDrag}
+        onDrop={onComposerFileDrop}
+        onPaste={onComposerFilePaste}
       >
         <span className={lookupWait ? "fox-bar__mark is-waiting" : "fox-bar__mark"}>
           <AdvisorMark size={20} />

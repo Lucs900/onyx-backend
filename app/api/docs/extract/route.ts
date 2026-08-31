@@ -100,6 +100,7 @@ function extractJson(
     warnings: extracted.warnings,
     slot: slotForExtractClass(extractClass),
     source,
+    textLayerChars: extracted.textLayerChars ?? 0,
     note: failed
       ? extracted.warnings.includes("no-text-layer")
         ? NO_TEXT_LAYER_NOTE

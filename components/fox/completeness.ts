@@ -38,7 +38,9 @@ import {
   acceptWageExtract,
   changeWageExtract,
   isWageExtractProposal,
+  isWageW2OnlyProposal,
   wageExtractConfirmCopy,
+  wageW2ConfirmCopy,
 } from "./qualifyingIncome";
 import {
   STATED_MONTHLY_DEBTS_FIELD,
@@ -818,6 +820,8 @@ export function proposalAskCopy(proposal: FactProposal) {
       proposal.extras?.find((item) => item.field === "paystub_amount")?.value ?? 0,
     );
     const frequency = proposal.extras?.find((item) => item.field === "pay_frequency")?.value ?? "";
+    const employer = proposal.extras?.find((item) => item.field === "employer_name")?.value ?? "";
+    if (isWageW2OnlyProposal(proposal)) return wageW2ConfirmCopy(box5, employer);
     return wageExtractConfirmCopy(box5, stub, frequency);
   }
   if (proposal.field === PROPERTY_TYPE_FIELD && isPropertyTypeValue(proposal.value)) {
