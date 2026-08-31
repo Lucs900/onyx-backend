@@ -2360,14 +2360,13 @@ export function wageExtractOnFile(draft: FoxIntakeDraft) {
   return classSuccessfullyRead(draft, "w2") && classSuccessfullyRead(draft, "paystub");
 }
 
-/** After Looks right: W-2 = ID, latest paystub, W-2. SE = ID, tax return. Extracted wage package → ID, statements, contract. */
+/** After Looks right: W-2 = ID, latest paystub, W-2. SE = ID, tax return. Extracted wage package → ID, then statements. Purchase contract stays Still useful. */
 function afterLooksRightInvites(draft: FoxIntakeDraft): DocInviteKind[] {
   const type = draft.incomeType.value;
   const kinds: DocInviteKind[] = [...coborrowerInviteSequence(draft)];
   if (!inviteSatisfied(draft, "government_id")) kinds.push("government_id");
   if (wageExtractOnFile(draft)) {
     if (!inviteSatisfied(draft, "bank_statement")) kinds.push("bank_statement");
-    if (!inviteSatisfied(draft, "purchase_contract")) kinds.push("purchase_contract");
     return kinds;
   }
   if (type === "w2" || type === "both") {

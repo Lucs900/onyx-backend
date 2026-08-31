@@ -3157,6 +3157,11 @@ assert.ok(
 assert.ok(!stillUsefulSection(harborLooksRight)?.items.some((item) => /paystub|W-2/i.test(item.label)));
 assert.equal(workspaceReply("Not yet", harborLooksRight)?.capture?.field, "hold-docs");
 assert.equal(workspaceReply("Proceed", harborLooksRight)?.capture?.field, "proceed");
+const harborSkipIdReply = workspaceReply("Skip", harborLooksRight);
+assert.equal(harborSkipIdReply?.capture?.field, "skip-docs");
+assert.equal(harborSkipIdReply?.text, DOC_INVITE_COPY.bank_statement);
+assert.deepEqual((harborSkipIdReply?.actions ?? []).map((item) => item.label), AFTER_LOOKS_DOC_CHIPS);
+assert.ok(!(harborSkipIdReply?.actions ?? []).some((item) => /^(Raise|OT|Second job)$/.test(item.label)));
 const harborAfterIdSkip = skipCurrentInvite(harborLooksRight);
 assert.equal(workspacePrompt(harborAfterIdSkip), "documents");
 assert.equal(nextDocInvite(harborAfterIdSkip), "bank_statement");
@@ -3166,8 +3171,79 @@ assert.deepEqual(
   AFTER_LOOKS_DOC_CHIPS,
 );
 assert.ok(!(workspacePromptCopy("documents", harborAfterIdSkip).actions ?? []).some((item) => /^(Raise|OT|Second job)$/.test(item.label)));
+assert.ok((workspacePromptCopy("documents", harborAfterIdSkip).actions ?? []).at(-1)?.label === "Request human");
+assert.ok((workspacePromptCopy("documents", harborAfterIdSkip).actions ?? []).at(-1)?.quiet);
+assert.equal(harborAfterIdSkip.docsOpen, false);
+assert.ok(stillUsefulSection(harborAfterIdSkip)?.items.some((item) => item.label === "Government ID"));
+assert.ok(stillUsefulSection(harborAfterIdSkip)?.items.some((item) => item.label === "Purchase contract"));
+assert.ok(!stillUsefulSection(harborAfterIdSkip)?.items.some((item) => /paystub|W-2/i.test(item.label)));
+assert.doesNotMatch(
+  `${workspacePromptCopy("documents", harborAfterIdSkip).text} ${workspacePromptCopy("documents", harborAfterIdSkip).followUp ?? ""}`,
+  /purchase contract|vault|dropzone|Raise|OT|Second job|citizenship|coborrower|property type/i,
+);
+assert.equal(harborAfterIdSkip.borrowerName, undefined);
+assert.equal(harborAfterIdSkip.borrowerNameAsked, undefined);
+assert.equal(harborAfterIdSkip.contact.fullName.value, "");
+assert.equal(harborAfterIdSkip.facts?.full_name, undefined);
+assert.equal(harborAfterIdSkip.facts?.borrowerName, undefined);
+assert.ok(!previewFacts(harborAfterIdSkip).some((fact) => fact.id === "borrower" && /Jordan|Hale/i.test(fact.value)));
+assert.ok(!previewFacts(harborAfterIdSkip).some((fact) => /Jordan Hale/i.test(`${fact.value} ${fact.note ?? ""}`)));
+assert.equal(harborAfterIdSkip.statedAvailableAssets, undefined);
+assert.equal(harborAfterIdSkip.facts?.institution, undefined);
+assert.equal(harborAfterIdSkip.facts?.ending_balance, undefined);
+assert.equal(harborAfterIdSkip.facts?.account_last4, undefined);
+assert.equal(conventionalFileFromDraft(harborAfterIdSkip).assets.institution, undefined);
+assert.equal(conventionalFileFromDraft(harborAfterIdSkip).assets.suggestedBalance, undefined);
+assert.equal(conventionalFileFromDraft(harborAfterIdSkip).assets.last4, undefined);
+assert.ok(!previewFacts(harborAfterIdSkip).some((fact) => fact.id === "assets" && /18,400|18400|FIRST NATIONAL/i.test(fact.value)));
 assert.notEqual(workspacePrompt(harborAfterIdSkip), "household");
 assert.notEqual(workspacePrompt(harborAfterIdSkip), "assets");
+assert.notEqual(workspacePrompt(harborAfterIdSkip), "borrower-name");
+const harborSkipIdStatementPending = applyExtractedFields(
+  {
+    ...harborAfterIdSkip,
+    documents: [
+      ...(harborAfterIdSkip.documents ?? []),
+      {
+        slot: "bank" as const,
+        name: "statement.pdf",
+        type: "application/pdf",
+        size: 4000,
+        receivedAt: "2026-08-31T00:10:00.000Z",
+        status: "extracted" as const,
+        extractClass: "bank_statement" as const,
+      },
+    ],
+  },
+  {
+    extractClass: "bank_statement",
+    confidence: 0.94,
+    fields: {
+      institution: "FIRST NATIONAL",
+      period_end: "2026-07-31",
+      ending_balance: "18400",
+      account_last4: "1234",
+      account_number: "9999888877771234",
+    },
+  },
+);
+assert.equal(harborSkipIdStatementPending.draft.facts?.institution, undefined);
+assert.equal(harborSkipIdStatementPending.draft.facts?.ending_balance, undefined);
+assert.equal(harborSkipIdStatementPending.draft.facts?.account_last4, undefined);
+assert.equal(harborSkipIdStatementPending.draft.statedAvailableAssets, undefined);
+assert.equal(harborSkipIdStatementPending.draft.pendingProposal?.field, "statedAvailableAssets");
+assert.ok(!(harborSkipIdStatementPending.draft.pendingProposal?.extras ?? []).some((item) => item.field === "account_last4"));
+assert.ok(stillUsefulSection(harborSkipIdStatementPending.draft)?.items.some((item) => item.label === "Government ID"));
+const harborSkipIdStatementUsed = resolveProposal(harborSkipIdStatementPending.draft, "accept");
+assert.equal(harborSkipIdStatementUsed.facts?.institution?.value, "FIRST NATIONAL");
+assert.equal(harborSkipIdStatementUsed.facts?.ending_balance?.value, "18400");
+assert.equal(harborSkipIdStatementUsed.facts?.account_last4, undefined);
+assert.equal(conventionalFileFromDraft(harborSkipIdStatementUsed).assets.last4, undefined);
+assert.ok(stillUsefulSection(harborSkipIdStatementUsed)?.items.some((item) => item.label === "Government ID"));
+assert.ok(stillUsefulSection(harborSkipIdStatementUsed)?.items.some((item) => item.label === "Second bank statement"));
+assert.ok(stillUsefulSection(harborSkipIdStatementUsed)?.items.some((item) => item.label === "Purchase contract"));
+assert.equal(nextDocInvite(harborSkipIdStatementUsed), null);
+assert.notEqual(nextDocInvite(harborSkipIdStatementUsed), "purchase_contract");
 const harborAfterBankSkip = skipCurrentInvite(harborAfterIdSkip);
 assert.equal(harborAfterBankSkip.statedAvailableAssets, undefined);
 assert.equal(harborAfterBankSkip.facts?.institution, undefined);
@@ -3176,11 +3252,18 @@ assert.equal(harborAfterBankSkip.facts?.account_last4, undefined);
 assert.equal(conventionalFileFromDraft(harborAfterBankSkip).assets.institution, undefined);
 assert.equal(conventionalFileFromDraft(harborAfterBankSkip).assets.suggestedBalance, undefined);
 assert.equal(conventionalFileFromDraft(harborAfterBankSkip).assets.last4, undefined);
-assert.equal(nextDocInvite(harborAfterBankSkip), "purchase_contract");
-assert.equal(workspacePrompt(harborAfterBankSkip), "documents");
-assert.equal(workspacePromptCopy("documents", harborAfterBankSkip).text, DOC_INVITE_COPY.purchase_contract);
+assert.equal(nextDocInvite(harborAfterBankSkip), null);
+assert.notEqual(nextDocInvite(harborAfterBankSkip), "purchase_contract");
+assert.notEqual(workspacePrompt(harborAfterBankSkip), "documents");
+assert.notEqual(
+  workspacePromptCopy(workspacePrompt(harborAfterBankSkip), harborAfterBankSkip).text,
+  DOC_INVITE_COPY.purchase_contract,
+);
+assert.ok(stillUsefulSection(harborAfterBankSkip)?.items.some((item) => item.label === "Government ID"));
 assert.ok(stillUsefulSection(harborAfterBankSkip)?.items.some((item) => item.label === "Purchase contract"));
 assert.ok(!stillUsefulSection(harborAfterBankSkip)?.items.some((item) => /paystub|W-2/i.test(item.label)));
+assert.equal(harborAfterBankSkip.borrowerName, undefined);
+assert.equal(harborAfterBankSkip.facts?.full_name, undefined);
 assert.notEqual(workspacePrompt(harborAfterBankSkip), "household");
 assert.notEqual(workspacePrompt(harborAfterBankSkip), "citizenship");
 assert.notEqual(workspacePrompt(harborAfterBankSkip), "property-type");
