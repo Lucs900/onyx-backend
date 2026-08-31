@@ -123,6 +123,7 @@ import {
   workspaceUpdateCopy,
 } from "./workspace";
 import {
+  ComposerAttach,
   filesFromClipboard,
   filesFromDataTransfer,
   ingestDroppedFiles,
@@ -1841,6 +1842,7 @@ export function AlwaysOnFox({
           aria-expanded={streetSuggestions.length > 0}
           aria-controls={streetSuggestions.length > 0 ? suggestId : undefined}
         />
+        {isStart ? <ComposerAttach /> : null}
         <button
           type="submit"
           className="fox-bar__send"

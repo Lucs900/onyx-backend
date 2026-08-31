@@ -64,7 +64,9 @@
 }
 
 .fox-stage--workspace .fox-bar__send,
-.fox-bar__desk--plain .fox-bar__send {
+.fox-bar__desk--plain .fox-bar__send,
+.fox-stage--workspace .fox-bar__attach,
+.fox-bar__desk--plain .fox-bar__attach {
   width: 36px;
   height: 36px;
 }

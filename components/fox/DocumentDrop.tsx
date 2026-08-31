@@ -25,9 +25,16 @@ import { fileExists } from "./motion";
 export { slotFromFilename };
 
 export const FOX_PICK_FILE_EVENT = "onyx:fox-pick-file";
+export const COMPOSER_ATTACH_ID = "composer-attach";
 
+/** Composer attach first. Hidden #docs-handoff is vault-only, not the walk door. */
 export function requestFoxPickFile() {
   if (typeof window === "undefined") return;
+  const composer = document.getElementById(COMPOSER_ATTACH_ID);
+  if (composer instanceof HTMLInputElement && !composer.disabled) {
+    composer.click();
+    return;
+  }
   window.dispatchEvent(new Event(FOX_PICK_FILE_EVENT));
 }
 
@@ -76,7 +83,7 @@ async function storeBytes(file: File) {
   return blob.url || blob.pathname;
 }
 
-/** Thread / composer / attach. Reads the dropped File bytes — not a fixture. */
+/** Thread / composer drop or composer attach. Reads those File bytes — not a fixture. */
 export async function ingestDroppedFiles(files: File[]) {
   for (const file of files) {
     const type = mediaTypeOf(file.name, file.type);
@@ -224,6 +231,54 @@ export async function ingestDroppedFiles(files: File[]) {
       emitFailedRead(emptyRead);
     }
   }
+}
+
+/** Visible composer attach. Posts the chosen File through ingestDroppedFiles. */
+export function ComposerAttach() {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [busy, setBusy] = useState(false);
+
+  const onFiles = (files: FileList | null) => {
+    if (!files?.length) return;
+    setBusy(true);
+    void ingestDroppedFiles(Array.from(files)).finally(() => setBusy(false));
+  };
+
+  return (
+    <>
+      <input
+        ref={inputRef}
+        id={COMPOSER_ATTACH_ID}
+        data-composer-attach="true"
+        className="visually-hidden"
+        type="file"
+        multiple
+        accept={ACCEPT_ATTR}
+        disabled={busy}
+        onChange={(event) => {
+          onFiles(event.target.files);
+          event.target.value = "";
+        }}
+      />
+      <button
+        type="button"
+        className="fox-bar__attach"
+        aria-label="Attach"
+        disabled={busy}
+        onClick={() => inputRef.current?.click()}
+      >
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+          <path
+            d="M13.2 8.15 8.02 13.33a3.3 3.3 0 0 1-4.67-4.67l5.18-5.18a2.2 2.2 0 1 1 3.11 3.11L6.46 11.77a1.1 1.1 0 1 1-1.56-1.56l4.8-4.8"
+            stroke="currentColor"
+            strokeWidth="1.4"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
+      </button>
+    </>
+  );
 }
 
 export function DocumentDrop({

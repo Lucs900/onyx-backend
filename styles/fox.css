@@ -218,6 +218,31 @@
   outline: none;
 }
 
+.fox-bar__attach {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.fox-bar__attach:hover,
+.fox-bar__attach:focus-visible {
+  background: color-mix(in srgb, var(--ink) 8%, transparent);
+}
+
+.fox-bar__attach:disabled {
+  opacity: 0.28;
+  cursor: default;
+}
+
 .fox-bar__send {
   display: inline-flex;
   align-items: center;
