@@ -46,10 +46,12 @@ import {
   keepPendingLiveCoupon,
   leftoverConfirmChipsLiveOnLatest,
   leftoverLooksRightOnOlderTurns,
+  leftoverThisOneOnOlderTurns,
   leftoverUseThisOnOlderTurns,
   leftoverUseThisPaintedOnOnFile,
   liveCouponActions,
   paintedFoxActions,
+  withLiveCouponChips,
   shouldDeferNextAskForLiveCoupon,
   visibleFoxActions,
 } from "../components/fox/liveCoupon";
@@ -444,6 +446,7 @@ import {
   messagesWithRateOrReadySpeech,
   threadHasRateOrReadySpeech,
   migrateRestoredFoxMessages,
+  ensureIncomeConfirmChips,
   inertSupersededIncomeConfirms,
   namedOutOfState,
   parseFundsAmount,
@@ -3295,6 +3298,121 @@ for (const older of harborSkipIdPainted.filter((item) => item.role === "fox" && 
   const painted = paintedFoxActions(older, harborAfterIdSkip, false);
   assert.equal(painted, undefined, `${older.id} still has live chips above the statements ask`);
   assert.equal(older.actions, undefined, `${older.id} leftover chips stayed stored`);
+}
+function persistLiveFoxThread(messages: typeof harborSkipIdThread, draft: typeof harborAfterIdSkip) {
+  return withLiveCouponChips(
+    dropResolvedAddressConfirmChips(
+      ensureIncomeConfirmChips(inertSupersededIncomeConfirms(messages), draft),
+      draft,
+    ),
+    draft,
+  );
+}
+function tapUsedFoxChip(
+  messages: typeof harborSkipIdThread,
+  draft: typeof harborAfterIdSkip,
+  label: string,
+  next: { id: string; text: string; actions?: (typeof leftoverUseThisChips)[number][] },
+) {
+  const held = persistLiveFoxThread(messages, draft);
+  return persistLiveFoxThread(
+    [
+      ...held,
+      { id: `used-${next.id}`, role: "client" as const, text: label },
+      { id: next.id, role: "fox" as const, text: next.text, actions: next.actions },
+    ],
+    draft,
+  );
+}
+function usedTurnLiveChipCount(
+  messages: typeof harborSkipIdThread,
+  draft: typeof harborAfterIdSkip,
+  foxId: string,
+) {
+  const thread = persistLiveFoxThread(messages, draft);
+  const last = [...thread].reverse().find((item) => item.role === "fox");
+  const used = thread.find((item) => item.id === foxId);
+  if (!used || used.role !== "fox" || used.id === last?.id) return -1;
+  return (paintedFoxActions(used, draft, false) ?? []).length + (used.actions?.length ?? 0);
+}
+const harborUsedQuoteDraft = {
+  ...loudStubUsed,
+  liveQuote: founderPurchaseLive.liveQuote,
+  liveQuoteStatus: "ready" as const,
+  liveQuoteRows: founderPurchaseLive.liveQuoteRows,
+  liveCouponSettled: false,
+};
+const harborAfterThisUsed = applyCouponChoice(harborUsedQuoteDraft, "this");
+let harborUsedWalk = persistLiveFoxThread(
+  [
+    {
+      id: "live-quote:harbor:0",
+      role: "fox" as const,
+      text: "This loan right now is a sample.",
+      actions: liveCouponActions(harborUsedQuoteDraft),
+    },
+  ],
+  harborUsedQuoteDraft,
+);
+harborUsedWalk = tapUsedFoxChip(harborUsedWalk, harborAfterThisUsed, "This one", {
+  id: "w2",
+  text: harborW2Spoken,
+  actions: leftoverUseThisChips,
+});
+assert.equal(usedTurnLiveChipCount(harborUsedWalk, harborAfterThisUsed, "live-quote:harbor:0"), 0);
+assert.equal(leftoverThisOneOnOlderTurns(harborUsedWalk, harborAfterThisUsed), 0);
+harborUsedWalk = tapUsedFoxChip(harborUsedWalk, loudStubUsed, "Use this", {
+  id: "stub",
+  text: harborStubSpoken,
+  actions: leftoverUseThisChips,
+});
+assert.equal(usedTurnLiveChipCount(harborUsedWalk, loudStubUsed, "w2"), 0);
+assert.equal(leftoverUseThisOnOlderTurns(harborUsedWalk, loudStubUsed), 0);
+harborUsedWalk = tapUsedFoxChip(harborUsedWalk, loudStubUsed, "Use this", {
+  id: "review",
+  text: harborReviewSpoken,
+  actions: leftoverLooksRightChips,
+});
+assert.equal(usedTurnLiveChipCount(harborUsedWalk, loudStubUsed, "stub"), 0);
+harborUsedWalk = tapUsedFoxChip(harborUsedWalk, harborLooksRight, "Looks right", {
+  id: "id",
+  text: DOC_INVITE_COPY.government_id,
+  actions: workspacePromptCopy("documents", harborLooksRight).actions,
+});
+assert.equal(usedTurnLiveChipCount(harborUsedWalk, harborLooksRight, "review"), 0);
+assert.equal(leftoverLooksRightOnOlderTurns(harborUsedWalk, harborLooksRight), 0);
+harborUsedWalk = tapUsedFoxChip(harborUsedWalk, harborAfterIdSkip, "Skip", {
+  id: "statements",
+  text: DOC_INVITE_COPY.bank_statement,
+  actions: [...leftoverUseThisChips, ...leftoverLooksRightChips, ...leftoverRateChips, ...harborSkipIdAskActions],
+});
+const harborUsedWalkPainted = persistLiveFoxThread(harborUsedWalk, harborAfterIdSkip);
+const harborUsedWalkLatest = [...harborUsedWalkPainted].reverse().find((item) => item.role === "fox");
+assert.equal(harborUsedWalkLatest?.id, "statements");
+assert.equal(harborUsedWalkLatest?.text, DOC_INVITE_COPY.bank_statement);
+assert.deepEqual(
+  (paintedFoxActions(harborUsedWalkLatest!, harborAfterIdSkip, true) ?? []).map((item) => item.label),
+  AFTER_LOOKS_DOC_CHIPS,
+);
+assert.equal(usedTurnLiveChipCount(harborUsedWalkPainted, harborAfterIdSkip, "live-quote:harbor:0"), 0);
+assert.equal(usedTurnLiveChipCount(harborUsedWalkPainted, harborAfterIdSkip, "w2"), 0);
+assert.equal(usedTurnLiveChipCount(harborUsedWalkPainted, harborAfterIdSkip, "stub"), 0);
+assert.equal(usedTurnLiveChipCount(harborUsedWalkPainted, harborAfterIdSkip, "review"), 0);
+assert.equal(leftoverThisOneOnOlderTurns(harborUsedWalkPainted, harborAfterIdSkip), 0);
+assert.equal(leftoverUseThisOnOlderTurns(harborUsedWalkPainted, harborAfterIdSkip), 0);
+assert.equal(leftoverLooksRightOnOlderTurns(harborUsedWalkPainted, harborAfterIdSkip), 0);
+assert.equal(leftoverConfirmChipsLiveOnLatest(harborUsedWalkPainted, harborAfterIdSkip), 0);
+assert.ok(stillUsefulSection(harborAfterIdSkip)?.items.some((item) => item.label === "Government ID"));
+assert.equal(harborAfterIdSkip.statedAvailableAssets, undefined);
+for (const spoken of [harborW2Spoken, harborStubSpoken, harborReviewSpoken, DOC_INVITE_COPY.government_id]) {
+  assert.ok(
+    harborUsedWalkPainted.some((item) => item.role === "fox" && item.text === spoken),
+    `used-walk spoken line was stripped: ${spoken}`,
+  );
+}
+for (const older of harborUsedWalkPainted.filter((item) => item.role === "fox" && item.id !== harborUsedWalkLatest?.id)) {
+  assert.equal(paintedFoxActions(older, harborAfterIdSkip, false), undefined, `${older.id} used chips stayed live`);
+  assert.equal(older.actions, undefined, `${older.id} used chips stayed stored`);
 }
 const harborSkipIdStatementPending = applyExtractedFields(
   {

@@ -42,6 +42,7 @@ import { addressConfirmPending, searchedKeyFor } from "@/lib/rateflow/fromDraft"
 import {
   dropAbandonedAddressConfirm,
   dropResolvedAddressConfirmChips,
+  freezeUsedFoxTurns,
   isStreetSuggestChipLabel,
   paintedFoxActions,
   shouldDeferNextAskForLiveCoupon,
@@ -315,17 +316,20 @@ function applyFoxAsk(
   },
 ): FoxMessage[] {
   const last = lastFoxTurn(messages);
-  if (last && retainWageDocsLine(last.text, ask.text)) {
-    return messages.map((message) =>
-      message.id === last.id
-        ? { ...message, followUp: ask.followUp, facts: ask.facts, actions: ask.actions }
-        : message,
+  const freezeOthers = (keepId: string, replacement: FoxMessage) =>
+    freezeUsedFoxTurns(
+      messages.map((message) => (message.id === keepId ? replacement : message)),
     );
+  if (last && retainWageDocsLine(last.text, ask.text)) {
+    return freezeOthers(last.id, {
+      ...last,
+      followUp: ask.followUp,
+      facts: ask.facts,
+      actions: ask.actions,
+    });
   }
   if (last && last.text === WAGE_DOCS_ASK && ask.text !== WAGE_DOCS_ASK) {
-    return messages.map((message) =>
-      message.id === last.id ? foxAskMessage(ask) : message,
-    );
+    return freezeOthers(last.id, foxAskMessage(ask));
   }
   if (
     last &&
@@ -333,21 +337,17 @@ function applyFoxAsk(
     ask.text !== last.text &&
     ask.text !== WAGE_STUB_DROP_ASK
   ) {
-    return messages.map((message) =>
-      message.id === last.id ? foxAskMessage(ask) : message,
-    );
+    return freezeOthers(last.id, foxAskMessage(ask));
   }
   if (
     last &&
     /\ba month\. Use this\?$/.test(last.text) &&
     ask.text !== last.text
   ) {
-    return messages.map((message) =>
-      message.id === last.id ? foxAskMessage(ask) : message,
-    );
+    return freezeOthers(last.id, foxAskMessage(ask));
   }
-  if (last && sameFoxAsk(last, ask)) return messages;
-  return [...messages, foxAskMessage(ask)];
+  if (last && sameFoxAsk(last, ask)) return freezeUsedFoxTurns(messages);
+  return [...freezeUsedFoxTurns(messages), foxAskMessage(ask)];
 }
 
 function hasReviewAsk(messages: FoxMessage[]) {
