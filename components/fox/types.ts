@@ -454,6 +454,8 @@ export type FoxIntakeDraft = {
     monthly?: number;
     w2In?: boolean;
     stubIn?: boolean;
+    /** OT / bonus / commission printed on the stub. Not a File field. */
+    variablePay?: boolean;
   } | null;
   pendingConflict?: FactConflict | null;
   unresolvedConflict?: boolean;

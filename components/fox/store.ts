@@ -827,8 +827,9 @@ function normalizePendingWageExtract(
     ...(Number.isFinite(monthly) && monthly > 0 ? { monthly } : {}),
     ...(value.w2In ? { w2In: true } : {}),
     ...(value.stubIn ? { stubIn: true } : {}),
+    ...(value.variablePay ? { variablePay: true } : {}),
   };
-  if (!next.box5 && !next.stub && !next.frequency && !next.employer && !next.employee && !next.monthly && !next.w2In && !next.stubIn) {
+  if (!next.box5 && !next.stub && !next.frequency && !next.employer && !next.employee && !next.monthly && !next.w2In && !next.stubIn && !next.variablePay) {
     return undefined;
   }
   return next;

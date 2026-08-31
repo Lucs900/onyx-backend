@@ -177,6 +177,8 @@ import {
   applyRaiseYtdFarAnswer,
   bothMonthlyAskCopyForDraft,
   WAGE_BOX5_STUB_DIFFER_ASK,
+  WAGE_STUB_LOWER_CAUTION,
+  BOX5_STUB_MATERIAL_RATIO,
   bothMonthlyDisplay,
   bothMonthlyPair,
   typedBox5OnFile,
@@ -1576,6 +1578,19 @@ export function bothMonthlyReasonAsk(draft: FoxIntakeDraft): {
   actions: FoxAction[];
 } {
   if (wageW2ExtractAccepted(draft) && draft.stubExtractAccepted) {
+    const pair = bothMonthlyPair(draft);
+    const w2 = pair?.w2 ?? 0;
+    const stub = pair?.stub ?? 0;
+    const lower =
+      w2 > 0 && stub + 1e-9 < w2 && (w2 - stub) / w2 >= BOX5_STUB_MATERIAL_RATIO;
+    if (lower) {
+      return {
+        text: WAGE_STUB_LOWER_CAUTION,
+        actions: [
+          { id: "both-skip", label: "Skip", event: "bubble", capture: { field: "bothMonthlyReason", value: "skip" } },
+        ],
+      };
+    }
     return {
       text: WAGE_BOX5_STUB_DIFFER_ASK,
       actions: [

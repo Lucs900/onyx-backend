@@ -103,6 +103,9 @@ import {
   STUB_JOB_ASK,
   stubExtractConfirmCopy,
   WAGE_BOX5_STUB_DIFFER_ASK,
+  WAGE_STUB_LOWER_CAUTION,
+  BOX5_STUB_MATERIAL_RATIO,
+  box5StubMonthlyGapRatio,
   conventionalStubMonthly,
   acceptStubExtract,
   acceptStubJob,
@@ -3018,19 +3021,16 @@ assert.equal(
   previewFacts(unlabeledStubUsed).filter((fact) => fact.id === "employer" || fact.label === "Employment").length,
   1,
 );
-assert.equal(unlabeledStubUsed.awaitingBothMonthlyReason, true);
-assert.equal(workspacePrompt(unlabeledStubUsed), "both-monthly-reason");
-assert.equal(workspacePromptCopy("both-monthly-reason", unlabeledStubUsed).text, WAGE_BOX5_STUB_DIFFER_ASK);
-assert.equal(
-  workspacePromptCopy("both-monthly-reason", unlabeledStubUsed).text,
-  "Last year and this stub are close, not the same month.",
+assert.ok(box5StubMonthlyGapRatio(9999.99, monthlyFromAnnual(118400)) < BOX5_STUB_MATERIAL_RATIO);
+assert.ok(!unlabeledStubUsed.awaitingBothMonthlyReason);
+assert.equal(workspacePrompt(unlabeledStubUsed), "review");
+assert.ok(canLooksRight(unlabeledStubUsed));
+assert.ok((workspacePromptCopy("review", unlabeledStubUsed).actions ?? []).some((item) => item.label === "Looks right"));
+assert.ok(!(workspacePromptCopy("review", unlabeledStubUsed).actions ?? []).some((item) => /^(Raise|OT|Second job)$/.test(item.label)));
+assert.doesNotMatch(
+  `${workspacePromptCopy("review", unlabeledStubUsed).text} ${workspacePromptCopy("review", unlabeledStubUsed).followUp ?? ""}`,
+  /Last year and this stub are close, not the same month/,
 );
-assert.deepEqual(
-  (workspacePromptCopy("both-monthly-reason", unlabeledStubUsed).actions ?? []).map((item) => item.label),
-  ["Raise", "OT", "Second job", "Skip"],
-);
-assert.ok(!canLooksRight(unlabeledStubUsed));
-assert.ok(!(workspacePromptCopy("both-monthly-reason", unlabeledStubUsed).actions ?? []).some((item) => item.label === "Looks right"));
 assert.deepEqual(
   (workspacePromptCopy("confirm-proposal", loudStubAfterW2.draft).actions ?? []).map((item) => item.label),
   ["Use this", "Change"],
@@ -3100,59 +3100,99 @@ assert.equal(
   previewFacts(loudStubUsed).filter((fact) => fact.id === "employer" || fact.label === "Employment").length,
   1,
 );
-assert.equal(loudStubUsed.awaitingBothMonthlyReason, true);
-assert.equal(workspacePrompt(loudStubUsed), "both-monthly-reason");
-assert.equal(workspacePromptCopy("both-monthly-reason", loudStubUsed).text, WAGE_BOX5_STUB_DIFFER_ASK);
-assert.equal(
-  workspacePromptCopy("both-monthly-reason", loudStubUsed).text,
-  "Last year and this stub are close, not the same month.",
+assert.equal(monthlyFromAnnual(118400), 9867);
+assert.ok(box5StubMonthlyGapRatio(9999.99, 9867) < BOX5_STUB_MATERIAL_RATIO);
+assert.ok(!loudStubUsed.awaitingBothMonthlyReason);
+assert.equal(workspacePrompt(loudStubUsed), "review");
+assert.ok(canLooksRight(loudStubUsed));
+assert.ok((workspacePromptCopy("review", loudStubUsed).actions ?? []).some((item) => item.label === "Looks right"));
+assert.ok(!(workspacePromptCopy("review", loudStubUsed).actions ?? []).some((item) => /^(Raise|OT|Second job)$/.test(item.label)));
+assert.ok(!(nextFoxAsk(loudStubUsed).actions ?? []).some((item) => /^(Raise|OT|Second job)$/.test(item.label)));
+assert.doesNotMatch(nextFoxAsk(loudStubUsed).text, /Last year and this stub are close, not the same month/);
+assert.doesNotMatch(
+  `${workspacePromptCopy("review", loudStubUsed).text} ${workspacePromptCopy("review", loudStubUsed).followUp ?? ""}`,
+  /Last year and this stub are close, not the same month|qualifying|Box 5\/12|9,867/,
 );
-assert.deepEqual(
-  (workspacePromptCopy("both-monthly-reason", loudStubUsed).actions ?? []).map((item) => item.label),
-  ["Raise", "OT", "Second job", "Skip"],
-);
-assert.ok(!canLooksRight(loudStubUsed));
-assert.ok(!(workspacePromptCopy("both-monthly-reason", loudStubUsed).actions ?? []).some((item) => item.label === "Looks right"));
-assert.ok(!(workspacePromptCopy("both-monthly-reason", loudStubUsed).actions ?? []).some((item) => item.label === "Use this"));
+assert.equal(loudStubUsed.facts?.income_caution, undefined);
 assert.equal(
   wageEmploymentFileLine(loudStubUsed),
   "Harbor Pacific Design Inc, Box 5 $118,400, biweekly, $4,615.38, $9,999.99 a month",
 );
-const loudStubDifferSkipped = applyBothMonthlyReasonAnswer(loudStubUsed, "skip");
-assert.equal(loudStubDifferSkipped.awaitingBothMonthlyReason, false);
-assert.ok(canLooksRight(loudStubDifferSkipped));
-assert.equal(workspacePrompt(loudStubDifferSkipped), "review");
-assert.ok((workspacePromptCopy("review", loudStubDifferSkipped).actions ?? []).some((item) => item.label === "Looks right"));
-assert.equal(
-  wageEmploymentFileLine(loudStubDifferSkipped),
-  "Harbor Pacific Design Inc, Box 5 $118,400, biweekly, $4,615.38, $9,999.99 a month",
+const loudStubLower = applyExtractedFields(
+  {
+    ...loudW2Used,
+    documents: [
+      ...(loudW2Used.documents ?? []),
+      {
+        slot: "paystubs" as const,
+        name: "lower-stub.pdf",
+        type: "application/pdf",
+        size: 1800,
+        receivedAt: "2026-08-31T00:04:00.000Z",
+        status: "extracted" as const,
+        extractClass: "paystub" as const,
+      },
+    ],
+  },
+  {
+    extractClass: "paystub",
+    confidence: 0.94,
+    fields: {
+      employer_name: "Harbor Pacific Design Inc",
+      gross_period: "3000",
+      pay_frequency: "biweekly",
+    },
+  },
 );
-assert.equal(loudStubDifferSkipped.facts?.income_caution, undefined);
-assert.equal((loudStubDifferSkipped.employmentHistory ?? []).length, 1);
-const loudStubDifferRaise = applyBothMonthlyReasonAnswer(loudStubUsed, "raise");
-assert.equal(loudStubDifferRaise.awaitingRaiseWhen, true);
-assert.ok(!canLooksRight(loudStubDifferRaise));
-const loudStubDifferOt = applyBothMonthlyReasonAnswer(loudStubUsed, "ot");
-assert.equal(loudStubDifferOt.awaitingBothMonthlyReason, false);
-assert.equal(loudStubDifferOt.pendingProposal?.field, QUALIFYING_INCOME_FIELD);
-assert.equal(loudStubDifferOt.facts?.w2_box5?.value, "118400");
-assert.equal(loudStubDifferOt.facts?.paystub_monthly?.value, "9999.99");
-assert.equal(loudStubDifferOt.facts?.ytd_gross, undefined);
-assert.equal(
-  wageEmploymentFileLine(loudStubDifferOt),
-  "Harbor Pacific Design Inc, Box 5 $118,400, biweekly, $4,615.38, $9,999.99 a month",
+const loudStubLowerUsed = acceptStubExtract(loudStubLower.draft);
+assert.ok(box5StubMonthlyGapRatio(Number(loudStubLowerUsed.facts?.paystub_monthly?.value), 9867) >= BOX5_STUB_MATERIAL_RATIO);
+assert.equal(loudStubLowerUsed.awaitingBothMonthlyReason, true);
+assert.equal(workspacePrompt(loudStubLowerUsed), "both-monthly-reason");
+assert.equal(workspacePromptCopy("both-monthly-reason", loudStubLowerUsed).text, WAGE_STUB_LOWER_CAUTION);
+assert.deepEqual(
+  (workspacePromptCopy("both-monthly-reason", loudStubLowerUsed).actions ?? []).map((item) => item.label),
+  ["Skip"],
 );
-assert.ok(!canLooksRight(loudStubDifferOt));
-const loudStubDifferSecond = applyBothMonthlyReasonAnswer(loudStubUsed, "second-job");
-assert.equal(loudStubDifferSecond.pendingProposal?.field, STUB_JOB_FIELD);
-assert.equal((loudStubDifferSecond.employmentHistory ?? []).length, 1);
-assert.ok(!canLooksRight(loudStubDifferSecond));
-const loudStubDifferSecondConfirmed = acceptStubJob(loudStubDifferSecond, "two");
-assert.equal(loudStubDifferSecondConfirmed.pendingProposal, null);
-assert.equal(
-  wageEmploymentFileLine(loudStubDifferSecondConfirmed),
-  "Harbor Pacific Design Inc, Box 5 $118,400, biweekly, $4,615.38, $9,999.99 a month",
+assert.ok(!canLooksRight(loudStubLowerUsed));
+assert.ok(!(workspacePromptCopy("both-monthly-reason", loudStubLowerUsed).actions ?? []).some((item) => /^(Raise|OT|Second job|Looks right)$/.test(item.label)));
+const loudStubOtGap = applyExtractedFields(
+  {
+    ...loudW2Used,
+    documents: [
+      ...(loudW2Used.documents ?? []),
+      {
+        slot: "paystubs" as const,
+        name: "ot-stub.pdf",
+        type: "application/pdf",
+        size: 1800,
+        receivedAt: "2026-08-31T00:05:00.000Z",
+        status: "extracted" as const,
+        extractClass: "paystub" as const,
+      },
+    ],
+  },
+  {
+    extractClass: "paystub",
+    confidence: 0.94,
+    fields: {
+      employer_name: "Harbor Pacific Design Inc",
+      gross_period: "6000",
+      pay_frequency: "biweekly",
+      overtime_ytd: "8000",
+    },
+  },
 );
+const loudStubOtUsed = acceptStubExtract(loudStubOtGap.draft);
+assert.ok(box5StubMonthlyGapRatio(Number(loudStubOtUsed.facts?.paystub_monthly?.value), 9867) >= BOX5_STUB_MATERIAL_RATIO);
+assert.equal(loudStubOtUsed.awaitingBothMonthlyReason, true);
+assert.equal(workspacePrompt(loudStubOtUsed), "both-monthly-reason");
+assert.equal(workspacePromptCopy("both-monthly-reason", loudStubOtUsed).text, WAGE_BOX5_STUB_DIFFER_ASK);
+assert.deepEqual(
+  (workspacePromptCopy("both-monthly-reason", loudStubOtUsed).actions ?? []).map((item) => item.label),
+  ["Raise", "OT", "Second job", "Skip"],
+);
+assert.ok(!canLooksRight(loudStubOtUsed));
+assert.ok(!(workspacePromptCopy("both-monthly-reason", loudStubOtUsed).actions ?? []).some((item) => item.label === "Looks right"));
 
 const loudStubClose = applyExtractedFields(
   {

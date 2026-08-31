@@ -10,7 +10,6 @@ import {
   BOTH_MONTHLY_OT_NOTE,
   BOTH_MONTHLY_SECOND_JOB_NOTE,
   YTD_CONFLICT_CAUTION,
-  YTD_CONFLICT_GAP,
   K1_ORDINARY_NOTE,
   SECOND_JOB_SAME_STUB_NOTE,
   SECOND_JOB_THIN_NOTE,
@@ -1368,18 +1367,56 @@ function box5WageCopy(draft: FoxIntakeDraft, text: string): string {
 export const STUB_MONTHLY_NOTE = "Latest stub monthly";
 /** After stub Use this: Box 5 and stub monthly are close, not the same. One line. */
 export const WAGE_BOX5_STUB_DIFFER_ASK = "Last year and this stub are close, not the same month.";
+/** Gap 10%+ lower. One line. Skip allowed. No qualifying math. */
+export const WAGE_STUB_LOWER_CAUTION = "This stub is lower than last year.";
+/** |stub monthly − Box 5/12| ÷ Box 5/12. Under this, UW does not need a story. */
+export const BOX5_STUB_MATERIAL_RATIO = 0.1;
 
-function wageExtractBox5StubDiffer(
+const VARIABLE_PAY_KEYS = [
+  "overtime",
+  "bonus",
+  "commission",
+  "overtime_ytd",
+  "bonus_ytd",
+  "commission_ytd",
+] as const;
+
+function moneyOnPage(raw?: string | null): boolean {
+  const n = parseExtractMoney(raw);
+  return n != null && n > 0;
+}
+
+export function fieldsHaveVariablePay(fields?: Record<string, string | null | undefined> | null): boolean {
+  return VARIABLE_PAY_KEYS.some((key) => moneyOnPage(fields?.[key]));
+}
+
+function stubVariablePayOnPage(draft: FoxIntakeDraft): boolean {
+  if (draft.pendingWageExtract?.variablePay) return true;
+  if (VARIABLE_PAY_KEYS.some((key) => moneyOnPage(factValue(draft, key)))) return true;
+  return readWageJobs(draft).some((job) => VARIABLE_PAY_KEYS.some((key) => moneyOnPage(job[key])));
+}
+
+export function box5StubMonthlyGapRatio(stubMonthly: number, box5Monthly: number): number {
+  if (!(box5Monthly > 0)) return 0;
+  return Math.abs(stubMonthly - box5Monthly) / box5Monthly;
+}
+
+function wageExtractAfterStubDecision(
   draft: FoxIntakeDraft,
   stubMonthly: number,
-): { w2Monthly: number } | null {
-  if (!wageW2ExtractAccepted(draft) || stubMonthly <= 0) return null;
+  mode: "same" | "two" | "only",
+): { kind: "quiet" } | { kind: "lower"; w2Monthly: number } | { kind: "chips"; w2Monthly: number } {
+  if (mode === "two") return { kind: "quiet" };
+  if (!wageW2ExtractAccepted(draft) || stubMonthly <= 0) return { kind: "quiet" };
   const box5 = readWageBox5(draft);
-  if (box5 == null || box5 <= 0) return null;
+  if (box5 == null || box5 <= 0) return { kind: "quiet" };
   const w2Monthly = monthlyFromAnnual(box5);
-  if (w2Monthly <= 0) return null;
-  if (Math.abs(stubMonthly - w2Monthly) < YTD_CONFLICT_GAP) return null;
-  return { w2Monthly };
+  if (w2Monthly <= 0) return { kind: "quiet" };
+  const gap = box5StubMonthlyGapRatio(stubMonthly, w2Monthly);
+  if (gap < BOX5_STUB_MATERIAL_RATIO) return { kind: "quiet" };
+  if (stubMonthly + 1e-9 < w2Monthly) return { kind: "lower", w2Monthly };
+  if (stubVariablePayOnPage(draft)) return { kind: "chips", w2Monthly };
+  return { kind: "quiet" };
 }
 
 function wageExtractBothOnFile(draft: FoxIntakeDraft): boolean {
@@ -2007,12 +2044,14 @@ export function proposeStubExtract(
   frequency: string,
   employer: string,
   employee?: string,
+  variablePay?: boolean,
 ): FoxIntakeDraft {
   const spoken = speakPayFrequency(frequency);
   const monthly = conventionalStubMonthly(stub, spoken || frequency);
   const name = String(employer ?? "").trim();
   if (!spoken || monthly == null || monthly <= 0 || stub <= 0 || !name) return draft;
   const who = String(employee ?? "").trim();
+  const variable = Boolean(variablePay || draft.pendingWageExtract?.variablePay);
   return {
     ...draft,
     awaitingPayFrequency: false,
@@ -2025,6 +2064,7 @@ export function proposeStubExtract(
       ...(who ? { employee: who } : {}),
       monthly,
       stubIn: true,
+      ...(variable ? { variablePay: true } : {}),
     },
     pendingProposal: {
       field: STUB_EXTRACT_FIELD,
@@ -2053,7 +2093,7 @@ export function maybeProposeStubExtract(
   const employer = stubEmployerName(fields, draft);
   const employee = stubEmployeeName(fields, draft);
   if (stub == null || stub <= 0 || !frequency || !employer) return draft;
-  return proposeStubExtract(draft, stub, frequency, employer, employee);
+  return proposeStubExtract(draft, stub, frequency, employer, employee, fieldsHaveVariablePay(fields));
 }
 
 function stubExtractParts(draft: FoxIntakeDraft): {
@@ -2153,9 +2193,14 @@ function writeStubPayLine(
   } else if (mode === "only" && parts.employer && !fileEmployer) {
     next = writeCurrentEmploymentHistory(next, parts.employer);
   }
-  const differ = mode !== "two" ? wageExtractBox5StubDiffer(next, parts.monthly) : null;
-  if (differ) {
-    next = writeConfirmedIncomeFact(next, W2_MONTHLY_FIELD, String(differ.w2Monthly), "computed");
+  const decision = wageExtractAfterStubDecision(next, parts.monthly, mode);
+  if (decision.kind === "chips") {
+    next = writeConfirmedIncomeFact(next, W2_MONTHLY_FIELD, String(decision.w2Monthly), "computed");
+    return { ...enterBothMonthlyAsk(next), looksRightHold: true };
+  }
+  if (decision.kind === "lower") {
+    next = writeConfirmedIncomeFact(next, W2_MONTHLY_FIELD, String(decision.w2Monthly), "computed");
+    next = writeConfirmedIncomeFact(next, INCOME_CAUTION_FIELD, WAGE_STUB_LOWER_CAUTION, "suggested");
     return { ...enterBothMonthlyAsk(next), looksRightHold: true };
   }
   return next;
