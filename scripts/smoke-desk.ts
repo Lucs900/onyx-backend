@@ -44,6 +44,7 @@ import {
   dropResolvedAddressConfirmChips,
   isLowerPaymentText,
   keepPendingLiveCoupon,
+  leftoverConfirmChipsLiveOnLatest,
   leftoverUseThisPaintedOnOnFile,
   liveCouponActions,
   paintedFoxActions,
@@ -3199,6 +3200,66 @@ assert.ok(!previewFacts(harborAfterIdSkip).some((fact) => fact.id === "assets" &
 assert.notEqual(workspacePrompt(harborAfterIdSkip), "household");
 assert.notEqual(workspacePrompt(harborAfterIdSkip), "assets");
 assert.notEqual(workspacePrompt(harborAfterIdSkip), "borrower-name");
+const leftoverUseThisChips = [
+  { id: "accept-proposal", label: "Use this", event: "bubble" as const, capture: { field: "accept-proposal" as const } },
+  { id: "change-proposal", label: "Change", event: "bubble" as const, capture: { field: "change-proposal" as const } },
+];
+const leftoverRateChips = liveCouponActions(harborAfterIdSkip);
+const harborSkipIdAskActions = workspacePromptCopy("documents", harborAfterIdSkip).actions ?? [];
+const harborSkipIdThread = [
+  {
+    id: "rate",
+    role: "fox" as const,
+    text: "This loan right now is a sample.",
+    actions: leftoverRateChips,
+  },
+  {
+    id: "w2",
+    role: "fox" as const,
+    text: "Box 5 $118,400. Harbor Pacific Design Inc. Use this?",
+    actions: leftoverUseThisChips,
+  },
+  {
+    id: "stub",
+    role: "fox" as const,
+    text: "Harbor Pacific Design Inc. $4,615.38 biweekly. $9,999.99 a month. Use this?",
+    actions: leftoverUseThisChips,
+  },
+  {
+    id: "id",
+    role: "fox" as const,
+    text: DOC_INVITE_COPY.government_id,
+    actions: workspacePromptCopy("documents", harborLooksRight).actions,
+  },
+  { id: "client-skip", role: "client" as const, text: "Skip" },
+  {
+    id: "statements",
+    role: "fox" as const,
+    text: DOC_INVITE_COPY.bank_statement,
+    actions: [...leftoverUseThisChips, ...leftoverRateChips, ...harborSkipIdAskActions],
+  },
+];
+const harborSkipIdPainted = dropResolvedAddressConfirmChips(harborSkipIdThread, harborAfterIdSkip);
+const harborSkipIdLatest = [...harborSkipIdPainted].reverse().find((item) => item.role === "fox");
+assert.equal(harborSkipIdLatest?.text, DOC_INVITE_COPY.bank_statement);
+assert.deepEqual(
+  (paintedFoxActions(harborSkipIdLatest!, harborAfterIdSkip, true) ?? []).map((item) => item.label),
+  AFTER_LOOKS_DOC_CHIPS,
+);
+assert.ok(
+  !(paintedFoxActions(harborSkipIdLatest!, harborAfterIdSkip, true) ?? []).some((item) =>
+    /^(Use this|Change|This one|Lower payment|No cost)$/.test(item.label),
+  ),
+);
+assert.equal(leftoverConfirmChipsLiveOnLatest(harborSkipIdThread, harborAfterIdSkip), 0);
+assert.ok(stillUsefulSection(harborAfterIdSkip)?.items.some((item) => item.label === "Government ID"));
+for (const older of harborSkipIdPainted.filter((item) => item.role === "fox" && item.id !== harborSkipIdLatest?.id)) {
+  const painted = paintedFoxActions(older, harborAfterIdSkip, false) ?? [];
+  assert.ok(
+    !painted.some((item) => /^(Use this|Change|This one|Lower payment|No cost)$/.test(item.label)),
+    `${older.id} leftover confirm chips stayed live`,
+  );
+}
 const harborSkipIdStatementPending = applyExtractedFields(
   {
     ...harborAfterIdSkip,

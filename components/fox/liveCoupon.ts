@@ -8,6 +8,7 @@ import {
   sameCouponNumbers,
   type SafeCouponRow,
 } from "@/lib/rateflow/quote";
+import { nextDocInvite } from "./fileWrite";
 import { addressOnFileCopy, fileAddressLine, shouldShowAddressUseThis } from "./propertyType";
 import type { Capture, FoxAction, FoxIntakeDraft, FoxMessage } from "./types";
 
@@ -252,6 +253,62 @@ function isKeptUseThis(action: FoxAction) {
   );
 }
 
+/** Looks right finished the sketch. The live line is one missing doc — leftover confirms are paint. */
+export function looksRightDocAskOpen(draft: FoxIntakeDraft) {
+  return Boolean(draft.sampleAccepted && nextDocInvite(draft));
+}
+
+function isLeftoverConfirmChip(action: FoxAction) {
+  const field = action.capture?.field;
+  if (
+    field === "accept-proposal" ||
+    field === "decline-proposal" ||
+    field === "change-proposal" ||
+    field === "accept-live-coupon" ||
+    field === "keep-live-coupon" ||
+    field === "couponChoice"
+  ) {
+    return true;
+  }
+  return /^(Use this|Change|This one|Lower payment|No cost)$/i.test(action.label);
+}
+
+function isAfterLooksRightDocChip(action: FoxAction) {
+  const field = action.capture?.field;
+  return (
+    (action.label === "Upload this" && (field === "open-docs" || action.event === "open-docs")) ||
+    (action.label === "Skip" && field === "skip-docs") ||
+    (action.label === "Proceed" && field === "proceed") ||
+    (action.label === "Not yet" && field === "hold-docs") ||
+    (action.label === "Request human" && field === "talk-originator")
+  );
+}
+
+function lastFoxIndex(messages: FoxMessage[]) {
+  let last = -1;
+  for (let i = 0; i < messages.length; i += 1) {
+    if (messages[i].role === "fox") last = i;
+  }
+  return last;
+}
+
+/** After Looks right, leftover Use this / rate chips go inert — same rule as On the file. */
+function dropLeftoverConfirmChipsOnLooksRightDocAsk(
+  messages: FoxMessage[],
+  draft: FoxIntakeDraft,
+): FoxMessage[] {
+  if (!looksRightDocAskOpen(draft)) return messages;
+  const current = lastFoxIndex(messages);
+  return messages.map((message, index) => {
+    if (message.role !== "fox" || !message.actions?.length) return message;
+    const next = message.actions.filter((action) =>
+      index === current ? isAfterLooksRightDocChip(action) : !isLeftoverConfirmChip(action),
+    );
+    if (next.length === (message.actions?.length ?? 0)) return message;
+    return { ...message, actions: next.length ? next : undefined };
+  });
+}
+
 /** Founder score: a street line painted as a thread chip / pill / answer row. */
 export function isStreetSuggestChipLabel(label: string) {
   const raw = label.replace(/\s+/g, " ").trim();
@@ -370,12 +427,24 @@ export function dropResolvedAddressConfirmChips(
     }
     return message;
   });
-  return line ? dropUseThisEchoUnderOnFile(sealed) : sealed;
+  const afterAddress = line ? dropUseThisEchoUnderOnFile(sealed) : sealed;
+  return dropLeftoverConfirmChipsOnLooksRightDocAsk(afterAddress, draft);
 }
 
 /** On the file wins from the spoken line. Follow-up / coupon / income cannot keep chips. */
 export function isOnFileAddressLine(message: FoxMessage, _draft?: FoxIntakeDraft) {
   return isOnFileAddressText(message) || onFileFollowOnly(message);
+}
+
+/** Leftover Use this / rate chips still live on the latest Fox line after Looks right. */
+export function leftoverConfirmChipsLiveOnLatest(
+  messages: FoxMessage[],
+  draft: FoxIntakeDraft,
+): number {
+  const thread = dropResolvedAddressConfirmChips(messages, draft);
+  const last = lastFoxIndex(thread);
+  if (last < 0) return 0;
+  return (paintedFoxActions(thread[last]!, draft, true) ?? []).filter(isLeftoverConfirmChip).length;
 }
 
 /** Painted Use this buttons on an On the file line. This is the leftover score, not a DOM count. */
@@ -404,10 +473,13 @@ export function paintedFoxActions(
   if (isOnFileAddressLine(message) || hideAddressUseThisOnBubble(message, draft)) return undefined;
   const shown = visibleFoxActions(message, draft);
   if (!shown?.length) return undefined;
+  const docAsk = looksRightDocAskOpen(draft);
   const next = shown.filter((action) => {
     if (action.capture?.field === "propose-place-address" || isStreetSuggestChipLabel(action.label)) {
       return false;
     }
+    if (docAsk && isLeftoverConfirmChip(action)) return false;
+    if (docAsk) return current && isAfterLooksRightDocChip(action);
     if (action.label === "Use this" || action.label === "Change") {
       if (isOnFileAddressLine(message) || hideAddressUseThisOnBubble(message, draft)) return false;
       if (isAddressConfirmMessage(message, draft)) return shouldShowAddressUseThis(draft);
@@ -434,6 +506,7 @@ export function visibleFoxActions(message: FoxMessage, draft: FoxIntakeDraft) {
       return false;
     }
     if (isOnFileAddressLine(message)) return false;
+    if (looksRightDocAskOpen(draft) && isLeftoverConfirmChip(action)) return false;
     if (hideAddressUseThisOnBubble(message, draft) && (action.label === "Use this" || action.label === "Change")) {
       return false;
     }
@@ -472,6 +545,7 @@ export function liveCouponConfirmCopy(draft: FoxIntakeDraft): {
 
 export function withLiveCouponChips(messages: FoxMessage[], draft: FoxIntakeDraft): FoxMessage[] {
   const held = dropResolvedAddressConfirmChips(messages, draft);
+  if (looksRightDocAskOpen(draft)) return held;
   if (!draft.liveQuote) return held;
   if (draft.liveCouponSettled && !draft.pendingLiveCoupon) return held;
   const chips = liveCouponActions(draft);
