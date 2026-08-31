@@ -6612,15 +6612,20 @@ function numbersFact(draft: FoxIntakeDraft): PreviewFact | null {
 
 function docsFact(draft: FoxIntakeDraft): PreviewFact | null {
   if (draft.documents.length) {
+    const wageUnread = wageExtractFailedRead(draft);
     const labels = Array.from(
       new Set(
-        draft.documents.map((doc) =>
-          isUnreadNote(doc.note) ||
-          doc.status === "failed" ||
-          doc.status === "needs better copy"
+        draft.documents.map((doc) => {
+          const wageLabel = docsDisplayLabel(doc);
+          const unreadWage =
+            wageUnread && (wageLabel === "W-2" || wageLabel === "Paystubs");
+          return isUnreadNote(doc.note) ||
+            doc.status === "failed" ||
+            doc.status === "needs better copy" ||
+            unreadWage
             ? "received · could not read"
-            : `${docsDisplayLabel(doc)} in`,
-        ),
+            : `${wageLabel} in`;
+        }),
       ),
     );
     return {
