@@ -144,7 +144,7 @@ import {
   requiredLineValue,
   requiredStructureLines,
   QUALIFYING_INCOME_FIELD,
-  lockedDownShare,
+  applyPriceKeepDownShare,
   resolveProposal,
   shouldAskYearsInBusiness,
   skipYearsInBusiness,
@@ -835,22 +835,7 @@ function editingPurchasePrice(draft: FoxIntakeDraft) {
 }
 
 function proposePriceLockedPair(draft: FoxIntakeDraft, price: number): FoxIntakeDraft | null {
-  const share = lockedDownShare(draft);
-  if (share == null || price <= 0) return null;
-  const down = Math.round(price * share);
-  const loan = impliedLoanAmount(price, down);
-  if (loan == null) return null;
-  return proposeFundsPair(
-    {
-      ...draft,
-      propertyValueAmount: price,
-      valueAsked: true,
-      correcting: null,
-      correctingLine: null,
-    },
-    down,
-    loan,
-  );
+  return applyPriceKeepDownShare(draft, price);
 }
 
 export function amountAskText(draft: FoxIntakeDraft) {
@@ -2730,6 +2715,8 @@ export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
       // Stale resume — household is not the post-Looks-right door.
     } else if (draft.resumeAfterEdit === "housing" && draft.sampleAccepted) {
       // Stale resume — housing estimate is not the post-Looks-right door.
+    } else if (draft.resumeAfterEdit === "credit") {
+      // Stale resume — FICO is not the price / down / loan correction door.
     } else {
       return draft.resumeAfterEdit;
     }
@@ -3263,6 +3250,7 @@ export function formatMoney(value: number) {
 }
 
 export function needsOverPriceCheck(draft: FoxIntakeDraft) {
+  if (draft.pendingProposal) return false;
   return (
     isPurchaseLike(draft) &&
     loanExceedsPurchasePrice(draft) &&
@@ -3434,14 +3422,12 @@ function replyToPropertyValueAsk(
   if (amount == null) {
     return answerThenRestore(q, draft);
   }
-  if (!editingPurchasePrice(draft)) {
-    const lockedPair = proposePriceLockedPair(draft, amount);
-    if (lockedPair) {
-      return {
-        ...workspacePromptCopy("confirm-proposal", lockedPair),
-        capture: { field: "propertyValue", value: String(amount) },
-      };
-    }
+  const lockedPair = proposePriceLockedPair(draft, amount);
+  if (lockedPair) {
+    return {
+      ...workspacePromptCopy("confirm-proposal", lockedPair),
+      capture: { field: "propertyValue", value: String(amount) },
+    };
   }
   const nextDraft = editingPurchasePrice(draft)
     ? {
@@ -4585,6 +4571,16 @@ export function settleResumeAfterCapture(
   if (capture.field === "confirm-draft") {
     return { ...next, resumeAfterEdit: undefined };
   }
+  if (
+    next.resumeAfterEdit === "credit" &&
+    (capture.field === "propertyValue" ||
+      capture.field === "downPayment" ||
+      capture.field === "loanAmount" ||
+      capture.field === "propose-funds" ||
+      capture.field === "accept-proposal")
+  ) {
+    return { ...next, resumeAfterEdit: undefined };
+  }
   const acted = editPromptFromCapture(capture);
   if (acted === next.resumeAfterEdit && before.correcting !== acted) {
     return { ...next, resumeAfterEdit: undefined };
@@ -4695,6 +4691,9 @@ function draftAfterCaptureBody(draft: FoxIntakeDraft, capture: Capture): FoxInta
   }
   if (capture.field === "cashOut") return { ...next, cashOut: true };
   if (capture.field === "over-price-confirm") {
+    if (!loanExceedsPurchasePrice(draft)) {
+      return { ...next, overPriceConfirmed: false };
+    }
     return applyEscalateMotion({ ...next, overPriceConfirmed: true });
   }
   if (capture.field === "occupancy") {
@@ -4734,12 +4733,7 @@ function draftAfterCaptureBody(draft: FoxIntakeDraft, capture: Capture): FoxInta
   if (capture.field === "propertyValue") {
     const n = Number(capture.value.replace(/,/g, ""));
     const price = Number.isFinite(n) && n > 0 ? n : draft.propertyValueAmount;
-    if (
-      !editingPurchasePrice(draft) &&
-      price != null &&
-      price > 0 &&
-      price !== draft.propertyValueAmount
-    ) {
+    if (price != null && price > 0 && price !== draft.propertyValueAmount) {
       const locked = proposePriceLockedPair(draft, price);
       if (locked) return locked;
     }
@@ -5596,6 +5590,13 @@ export function workspaceReply(
         lower,
       )
     ) {
+      if (!loanExceedsPurchasePrice(draft)) {
+        const nextDraft = { ...draft, overPriceConfirmed: false, correcting: null, correctingLine: null };
+        return {
+          ...nextFoxAsk(nextDraft),
+          capture: { field: "keep-line" },
+        };
+      }
       const nextDraft = applyEscalateMotion({ ...draft, overPriceConfirmed: true });
       return {
         text: answerFromFile("flags.loan_over_price", factsFromDraft(nextDraft)).text,

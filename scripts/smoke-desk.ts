@@ -81,6 +81,7 @@ import {
   fileCompleteness,
   guidelineCaution,
   loanExceedsPurchasePrice,
+  applyPriceKeepDownShare,
   proposalAskCopy,
   remainderAskCopy,
   proposeFundsPair,
@@ -1216,6 +1217,37 @@ assert.match(proposalAskCopy(getFoxDraft().pendingProposal!), /\$170,000 down ·
 applyCapture({ field: "accept-proposal" });
 assert.equal(getFoxDraft().downPaymentAmount, 170000);
 assert.equal(getFoxDraft().loanAmountValue, 680000);
+const moneyWalk = draft({
+  ...afterPrice,
+  propertyValueAmount: 500000,
+  downPaymentAmount: 100000,
+  loanAmountValue: 400000,
+  valueAsked: true,
+  downAsked: true,
+  amountAsked: true,
+  creditAsked: true,
+  creditBand: "760+",
+  correcting: "value",
+  correctingLine: "price",
+});
+const moneyPriceEdit = workspaceReply("300000", moneyWalk);
+assert.equal(moneyPriceEdit?.capture?.field, "propertyValue");
+assert.match(moneyPriceEdit?.text ?? "", /\$60,000 down · \$240,000 loan/i);
+assert.ok((moneyPriceEdit?.actions ?? []).some((item) => item.label === "Use this"));
+assert.doesNotMatch(moneyPriceEdit?.text ?? "", /larger than the purchase price|FICO/i);
+assert.ok(!(moneyPriceEdit?.actions ?? []).some((item) => /FICO|That’s right/i.test(item.label)));
+const moneyProposed = applyPriceKeepDownShare(moneyWalk, 300000);
+assert.equal(moneyProposed?.propertyValueAmount, 300000);
+assert.equal(moneyProposed?.loanAmountValue, undefined);
+assert.ok(!loanExceedsPurchasePrice(moneyProposed));
+const moneyAccepted = resolveProposal(moneyProposed!, "accept");
+assert.equal(moneyAccepted.propertyValueAmount, 300000);
+assert.equal(moneyAccepted.downPaymentAmount, 60000);
+assert.equal(moneyAccepted.loanAmountValue, 240000);
+assert.ok(!loanExceedsPurchasePrice(moneyAccepted));
+assert.notEqual(workspacePrompt(moneyAccepted), "over-price");
+assert.notEqual(workspacePrompt(moneyAccepted), "credit");
+assert.notEqual(workspaceReply("That’s right", moneyAccepted)?.capture?.field, "over-price-confirm");
 applyCapture({ field: "correct", value: "amount" });
 assert.equal(getFoxDraft().correcting, "amount");
 assert.doesNotMatch(composerAmountHint(getFoxDraft()), /purchase price/i);

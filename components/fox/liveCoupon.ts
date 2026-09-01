@@ -9,6 +9,7 @@ import {
   type SafeCouponRow,
 } from "@/lib/rateflow/quote";
 import { nextDocInvite } from "./fileWrite";
+import { loanExceedsPurchasePrice } from "./completeness";
 import { addressOnFileCopy, fileAddressLine, shouldShowAddressUseThis } from "./propertyType";
 import type { Capture, FoxAction, FoxIntakeDraft, FoxMessage } from "./types";
 
@@ -289,6 +290,17 @@ function lastFoxIndex(messages: FoxMessage[]) {
   return last;
 }
 
+function isOverPriceChip(action: FoxAction) {
+  const field = action.capture?.field;
+  return (
+    field === "over-price-confirm" ||
+    action.id === "over-price-price" ||
+    action.id === "over-price-down" ||
+    action.id === "over-price-loan" ||
+    action.id === "over-price-confirm"
+  );
+}
+
 function isLooksRightChip(action: FoxAction) {
   return (
     action.label === "Looks right" ||
@@ -566,6 +578,9 @@ export function visibleFoxActions(message: FoxMessage, draft: FoxIntakeDraft) {
     }
     if (isOnFileAddressLine(message)) return false;
     if (looksRightDocAskOpen(draft) && (isLeftoverConfirmChip(action) || isLooksRightChip(action))) {
+      return false;
+    }
+    if (isOverPriceChip(action) && !loanExceedsPurchasePrice(draft)) {
       return false;
     }
     if (hideAddressUseThisOnBubble(message, draft) && (action.label === "Use this" || action.label === "Change")) {

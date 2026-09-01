@@ -95,9 +95,9 @@ import {
 } from "@/components/products/startPath";
 import {
   applyStubEmployerSuggestion,
+  applyPriceKeepDownShare,
   canLooksRight,
-  impliedLoanAmount,
-  lockedDownShare,
+  loanExceedsPurchasePrice,
   proposePublicSuggestion,
   proposeFundsPair,
   resolveProposal,
@@ -2148,7 +2148,7 @@ function applyCaptureBody(capture: Capture) {
     return commit(keepPendingLiveCoupon(current));
   }
   if (capture.field === "accept-proposal") {
-    return commit(resolveProposal(current, "accept"));
+    return commit(withWorkspaceScenario(resolveProposal(current, "accept")));
   }
   if (capture.field === "decline-proposal") {
     return commit(resolveProposal(current, "decline"));
@@ -2224,6 +2224,9 @@ function applyCaptureBody(capture: Capture) {
     });
   }
   if (capture.field === "over-price-confirm") {
+    if (!loanExceedsPurchasePrice(current)) {
+      return commit({ ...current, overPriceConfirmed: false });
+    }
     return commit({
       ...applyEscalateMotion({ ...current, overPriceConfirmed: true }),
       loStatus: current.loStatus ?? "in review",
@@ -2388,10 +2391,10 @@ function applyCaptureBody(capture: Capture) {
   if (capture.field === "propertyValue") {
     const value = Number(capture.value.replace(/,/g, ""));
     const nextPrice = Number.isFinite(value) && value > 0 ? value : current.propertyValueAmount;
-    const share = lockedDownShare(current);
-    const editingPrice =
-      (current.correcting === "value" || current.correctingLine === "price") &&
-      current.correctingLine !== "home";
+    if (nextPrice != null && nextPrice > 0 && nextPrice !== current.propertyValueAmount) {
+      const locked = applyPriceKeepDownShare(current, nextPrice);
+      if (locked) return commit(withWorkspaceScenario(locked));
+    }
     const next = {
       ...current,
       valueAsked: true,
@@ -2399,21 +2402,6 @@ function applyCaptureBody(capture: Capture) {
       correctingLine: null,
       propertyValueAmount: nextPrice,
     };
-    if (editingPrice) {
-      return commit(withWorkspaceScenario(next));
-    }
-    if (
-      share != null &&
-      nextPrice != null &&
-      nextPrice > 0 &&
-      nextPrice !== current.propertyValueAmount
-    ) {
-      const down = Math.round(nextPrice * share);
-      const loan = impliedLoanAmount(nextPrice, down);
-      if (loan != null) {
-        return commit(withWorkspaceScenario(proposeFundsPair(next, down, loan)));
-      }
-    }
     return commit(
       withWorkspaceScenario(withComputedCompanion(withMatrixAfterAmount(next))),
     );

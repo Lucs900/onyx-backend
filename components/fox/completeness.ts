@@ -299,12 +299,34 @@ export function hasHelocLine(draft?: FoxIntakeDraft | null) {
 
 /** Confirmed down ÷ price. Used to re-propose the pair when price changes. */
 export function lockedDownShare(draft?: FoxIntakeDraft | null): number | null {
-  if (!draft || !isPurchaseLike(draft) || !hasPropertyValue(draft) || !hasDownPayment(draft)) {
-    return null;
+  if (!draft || !isPurchaseLike(draft) || !hasPropertyValue(draft)) return null;
+  const price = draft.propertyValueAmount!;
+  if (hasDownPayment(draft)) {
+    const share = draft.downPaymentAmount! / price;
+    if (Number.isFinite(share) && share > 0 && share < 1) return share;
   }
-  const share = draft.downPaymentAmount! / draft.propertyValueAmount!;
-  if (!Number.isFinite(share) || share <= 0 || share >= 1) return null;
-  return share;
+  if (hasLoanAmount(draft) && draft.loanAmountValue! < price) {
+    const share = (price - draft.loanAmountValue!) / price;
+    if (Number.isFinite(share) && share > 0 && share < 1) return share;
+  }
+  return null;
+}
+
+/** Price, down, and loan already close the triangle. */
+export function purchaseFileAddsUp(draft?: FoxIntakeDraft | null) {
+  if (!draft || !isPurchaseLike(draft)) return false;
+  const price = draft.propertyValueAmount;
+  const down = draft.downPaymentAmount;
+  const loan = draft.loanAmountValue;
+  if (price == null || down == null || loan == null) return false;
+  if (price <= 0 || down <= 0 || loan <= 0) return false;
+  return Math.abs(down + loan - price) <= 1;
+}
+
+export function isFundsPairProposal(proposal?: { field?: string; companion?: { field?: string } } | null) {
+  if (!proposal?.companion) return false;
+  const fields = [proposal.field, proposal.companion.field];
+  return fields.includes("downPayment") && fields.includes("loanAmount");
 }
 
 export function impliedLoanAmount(price?: number | null, down?: number | null) {
@@ -532,6 +554,8 @@ export function sketchedPurchaseLtv(draft?: FoxIntakeDraft | null): number | nul
 }
 
 export function loanExceedsPurchasePrice(draft?: FoxIntakeDraft | null) {
+  if (purchaseFileAddsUp(draft)) return false;
+  if (isFundsPairProposal(draft?.pendingProposal)) return false;
   const ltv = sketchedPurchaseLtv(draft);
   return ltv != null && ltv > 1;
 }
@@ -993,6 +1017,37 @@ export function proposeFundsPair(draft: FoxIntakeDraft, down: number, loan: numb
   };
 }
 
+/** Keep the down percent. Write the new price. Propose new cash down + loan. Confirm-before-write. */
+export function applyPriceKeepDownShare(draft: FoxIntakeDraft, price: number): FoxIntakeDraft | null {
+  const share = lockedDownShare(draft);
+  if (share == null || price <= 0) return null;
+  const down = Math.round(price * share);
+  const loan = impliedLoanAmount(price, down);
+  if (loan == null) return null;
+  return proposeFundsPair(
+    {
+      ...draft,
+      propertyValueAmount: price,
+      valueAsked: true,
+      correcting: null,
+      correctingLine: null,
+      loanAmountValue: undefined,
+      downPaymentAmount: undefined,
+      overPriceConfirmed: false,
+      scenario: draft.scenario
+        ? {
+            ...draft.scenario,
+            propertyValue: price,
+            loanAmount: undefined,
+            downPayment: undefined,
+          }
+        : draft.scenario,
+    },
+    down,
+    loan,
+  );
+}
+
 function writeConfirmedFact(
   draft: FoxIntakeDraft,
   field: string,
@@ -1227,6 +1282,10 @@ export function withComputedCompanion(
 ): FoxIntakeDraft {
   if (!isPurchaseLike(draft) || draft.pendingProposal || draft.pendingConflict) return draft;
   const price = draft.propertyValueAmount;
+  if ((price == null || price <= 0) && hasDownPayment(draft) && hasLoanAmount(draft)) {
+    const nextPrice = Math.round(draft.downPaymentAmount! + draft.loanAmountValue!);
+    return nextPrice > 0 ? { ...draft, propertyValueAmount: nextPrice, valueAsked: true } : draft;
+  }
   if (price == null || price <= 0) return draft;
   const proposeLoan = hasDownPayment(draft) && (!hasLoanAmount(draft) || force === "down");
   if (proposeLoan) {
