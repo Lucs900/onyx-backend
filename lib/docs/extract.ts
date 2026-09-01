@@ -266,7 +266,7 @@ function extractFieldsPrompt(extractClass: ExtractClass, keys: readonly string[]
   }
   if (extractClass === "bank_statement") {
     extra =
-      " institution, period_end, and ending_balance only when clearly printed. present_address is the printed residential or mailing address only when clearly printed. Never say funds are enough. Empty otherwise; never invent.";
+      " institution and ending_balance only when clearly printed. Never extract account_last4, account numbers, masked account digits, or last four. Never output a full or partial account number. Never say funds are enough. Empty otherwise; never invent.";
   }
   if (extractClass === "government_id") {
     extra =
@@ -324,7 +324,10 @@ export const grokExtractAdapter: DocumentExtractAdapter = {
   },
 
   async extract(bytes, mediaType, extractClass) {
-    const keys = EXTRACT_SCHEMA_KEYS[extractClass];
+    const keys =
+      extractClass === "bank_statement"
+        ? EXTRACT_SCHEMA_KEYS[extractClass].filter((key) => key !== "account_last4")
+        : EXTRACT_SCHEMA_KEYS[extractClass];
     if (!keys.length) {
       return { fields: {}, warnings: ["Class is other. No numbers invented."] };
     }

@@ -135,6 +135,7 @@ const GLYPHS: Record<string, readonly string[]> = {
   "/": ["00001", "00001", "00010", "00100", "01000", "10000", "10000"],
   "(": ["00100", "01000", "10000", "10000", "10000", "01000", "00100"],
   ")": ["00100", "00010", "00001", "00001", "00001", "00010", "00100"],
+  "*": ["00100", "10101", "01110", "11111", "01110", "10101", "00100"],
 };
 
 const GLYPH_LIST = Object.entries(GLYPHS).filter(([ch]) => ch !== " ");
@@ -611,8 +612,11 @@ export function fieldsFromPrintedLines(
       const shown = emptyIfNotShown(distributions);
       if (shown) putMoney("k1_distributions", shown);
     }
+    if (/^(?:ACCOUNT(?:\s+(?:NO|NUMBER|#|HOLDER))?|ACCOUNT LAST\s*4|LAST\s*4)\s*:/i.test(line)) {
+      continue;
+    }
     const institution = valueAfter(line, /^INSTITUTION:\s*/i);
-    if (institution) put("institution", institution);
+    if (institution && !/4412|\*{2,}/.test(institution)) put("institution", institution);
     const bankPeriod = valueAfter(line, /^PERIOD END:\s*/i);
     if (bankPeriod) put("period_end", bankPeriod);
     const ending = valueAfter(line, /^ENDING BALANCE:\s*/i);
@@ -702,6 +706,7 @@ function inferPrintedClass(lines: string[]): ExtractClass | null {
   if (mapped.medicare_wages || mapped.box5) return "w2";
   if (mapped.gross_period && mapped.pay_frequency) return "paystub";
   if (mapped.current_pi || (mapped.servicer && mapped.unpaid_principal)) return "mortgage_statement";
+  if (mapped.institution || mapped.ending_balance) return "bank_statement";
   if (mapped.full_name) return "government_id";
   return null;
 }

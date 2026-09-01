@@ -67,6 +67,7 @@ import {
   STATED_AVAILABLE_ASSETS_FIELD,
   SUGGESTED_ASSETS_EXTRACT_NOTE,
   availableAssetsConflictActions,
+  displayInstitution,
   proposeExtractedAvailableAssets,
   statementExtractConfirmed,
 } from "./availableAssets";
@@ -655,6 +656,9 @@ export function sanitizeExtractedFields(
     if (key === "fico" || key === "credit" || key === "credit_score") continue;
     let value = String(rawValue ?? "").trim();
     if (!value) continue;
+    if (extractClass === "bank_statement" && (key === "account_last4" || key === "account_number")) {
+      continue;
+    }
     if (key === "id_last4" || key === "account_last4") {
       value = last4Only(value);
       if (!value) continue;
@@ -971,7 +975,12 @@ export function applyExtractedFields(
       continue;
     }
     if (extractClass === "bank_statement" && field === "present_address") {
-      idAddress = value;
+      continue;
+    }
+    if (
+      extractClass === "bank_statement" &&
+      (field === "account_last4" || field === "account_type" || field === "period_end")
+    ) {
       continue;
     }
     if (extractClass === "paystub" && PAY_CONFIRM_FIELDS.has(field)) {
@@ -1130,7 +1139,9 @@ export function applyExtractedFields(
   }
   conflict = next.pendingConflict ?? conflict;
   if (extractClass === "bank_statement") {
-    remainderWrites = remainderWrites.filter((item) => item.field !== "account_last4");
+    remainderWrites = remainderWrites.filter(
+      (item) => item.field === "institution" || item.field === "ending_balance",
+    );
   }
   const extractedAssets = extractClass === "bank_statement" ? moneyNumber(fields.ending_balance ?? "") : null;
   if (extractedAssets != null) {
@@ -1146,14 +1157,20 @@ export function applyExtractedFields(
         next = { ...next, pendingConflict: conflict };
       }
     } else if (!next.pendingConflict) {
+      const institution = displayInstitution(String(fields.institution ?? "").trim());
       next = proposeExtractedAvailableAssets(
         next,
         extractedAssets,
-        remainderWrites.map((item) => ({
-          field: item.field,
-          value: item.value,
-          label: factLabel(item.field),
-        })),
+        [
+          ...(institution
+            ? [{ field: "institution", value: institution, label: factLabel("institution") }]
+            : []),
+          {
+            field: "ending_balance",
+            value: String(extractedAssets),
+            label: factLabel("ending_balance"),
+          },
+        ],
       );
       remainderWrites.length = 0;
     }
@@ -1222,11 +1239,6 @@ export function applyExtractedFields(
       remainderWrites.length = 0;
     }
   }
-  const statementAddress =
-    extractClass === "bank_statement" ? String(fields.present_address ?? "").trim() : "";
-  if (statementAddress) {
-    idAddress = idAddress || statementAddress;
-  }
   const extractedName =
     extractClass === "government_id" && !isWageExtractFirstPath(next)
       ? String(fields.full_name ?? "").trim()
@@ -1269,22 +1281,6 @@ export function applyExtractedFields(
   }
   if (extractClass === "government_id" && idAddress && !extractedName && !next.pendingConflict) {
     remainderWrites.push({ field: "present_address", value: idAddress });
-  }
-  if (extractClass === "bank_statement" && statementAddress && !next.pendingConflict) {
-    if (!next.pendingProposal) {
-      remainderWrites.push({ field: "present_address", value: statementAddress });
-    } else if (!(next.pendingProposal.extras ?? []).some((item) => item.field === "present_address")) {
-      next = {
-        ...next,
-        pendingProposal: {
-          ...next.pendingProposal,
-          extras: [
-            ...(next.pendingProposal.extras ?? []),
-            { field: "present_address", value: statementAddress, label: factLabel("present_address") },
-          ],
-        },
-      };
-    }
   }
   const extractedEmployer = String(fields.employer_name ?? "").trim();
   if (
@@ -2285,6 +2281,10 @@ function inviteSatisfied(draft: FoxIntakeDraft, kind: DocInviteKind): boolean {
   if (kind === "government_id") {
     if ((draft.skippedClasses ?? []).includes("government_id")) return true;
     return classSuccessfullyRead(draft, "government_id");
+  }
+  if (kind === "bank_statement") {
+    if ((draft.skippedClasses ?? []).includes("bank_statement")) return true;
+    return statementExtractConfirmed(draft);
   }
   if (kind === "prior_year_return") {
     if (draft.priorYearSkipped) return true;

@@ -143,8 +143,19 @@ export function availableAssetsConfirmCopy(amount: number) {
   return `That’s ${money(amount)} in available funds. ${SUGGESTED_ASSETS_NOTE}. Use this?`;
 }
 
+/** Speak / File institution. All-caps page text becomes title case. Never last4. */
+export function displayInstitution(name?: string | null) {
+  const trimmed = String(name ?? "").trim();
+  if (!trimmed) return "";
+  if (/4412|\*{2,}|x{4,}/i.test(trimmed)) return "";
+  if (trimmed !== trimmed.toUpperCase()) return trimmed;
+  return trimmed
+    .toLowerCase()
+    .replace(/\b([a-z])/g, (ch) => ch.toUpperCase());
+}
+
 export function availableAssetsExtractCopy(amount: number, institution?: string) {
-  const who = institution?.trim();
+  const who = displayInstitution(institution);
   const shown = who
     ? `The statement shows ${who} · ${money(amount)}.`
     : `The statement shows about ${money(amount)}.`;

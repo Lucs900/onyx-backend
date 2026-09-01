@@ -3687,6 +3687,16 @@ export function changePendingProposal(draft: FoxIntakeDraft): FoxIntakeDraft {
     return changeStubExtract(draft);
   }
   const field = draft.pendingProposal?.field;
+  if (field === STATED_AVAILABLE_ASSETS_FIELD) {
+    const fromStatement = Boolean(draft.pendingProposal?.extras?.length);
+    return {
+      ...draft,
+      pendingProposal: null,
+      pendingConflict: null,
+      correcting: fromStatement || draft.sampleAccepted ? null : "assets",
+      correctingLine: null,
+    };
+  }
   if (isFileNetField(field)) return skipOtherReoFileNet(draft);
   const prompt = promptForProposalField(field ?? (draft.pendingAddress ? "property_address" : undefined));
   return {

@@ -226,7 +226,7 @@ export function conventionalFileFromDraft(draft: FoxIntakeDraft): ConventionalFi
       institution: factValue(draft, "institution") || undefined,
       type: factValue(draft, "account_type") || undefined,
       suggestedBalance: factValue(draft, "ending_balance") || undefined,
-      last4: factValue(draft, "account_last4") || undefined,
+      last4: undefined,
     },
     liabilities: {
       source: LIABILITIES_SOURCE,
@@ -393,7 +393,7 @@ export function conventionalFileFacts(draft: FoxIntakeDraft): {
   const address = file.property.address || "address —";
   const type = propertyTypeSpoken(file.property.propertyType) || "type —";
   const institution = file.assets.institution || "institution —";
-  const accountType = file.assets.type || "type —";
+  const accountType = file.assets.type || "";
   const balance = moneyLabel(file.assets.suggestedBalance) || "balance —";
   const last4 = file.assets.last4 ? `last4 ${file.assets.last4}` : "last4 —";
   const declarationBits = [
