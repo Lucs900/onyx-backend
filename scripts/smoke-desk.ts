@@ -1227,15 +1227,35 @@ const moneyWalk = draft({
   amountAsked: true,
   propertyType: "sfr",
   propertyTypeAsked: true,
-  propertyZip: "94123",
+  propertyZip: "94105",
+  propertyZipAsked: true,
+  subjectAddress: "94105",
+  subjectAddressAsked: true,
   creditAsked: true,
   creditBand: "760+",
+  incomeType: { ...emptyDraft().incomeType, value: "w2" },
+  incomeAsked: true,
   resumeAfterEdit: "credit",
+  liveQuote: { key: "old-rate", rate: 6.5, asOf: "2026-01-01" },
+  liveQuoteKey: "old-rate",
+  liveQuoteStatus: "ready",
   facts: {
     employer_name: {
       field: "employer_name",
       value: "Harbor Co",
       source: "document",
+      confirmed: true,
+    },
+    zip: {
+      field: "zip",
+      value: "94105",
+      source: "client",
+      confirmed: true,
+    },
+    property_address: {
+      field: "property_address",
+      value: "94105",
+      source: "client",
       confirmed: true,
     },
   },
@@ -1251,7 +1271,7 @@ const moneyWalk = draft({
     },
   ],
   scenario: {
-    zip: "94123",
+    zip: "94105",
     purpose: "purchase",
     propertyValue: 500000,
     amountMode: "loan",
@@ -1270,31 +1290,45 @@ assert.equal(moneyRewound.loanAmountValue, undefined);
 assert.equal(moneyRewound.creditBand, undefined);
 assert.equal(moneyRewound.propertyType, undefined);
 assert.equal(moneyRewound.resumeAfterEdit, undefined);
-assert.equal(moneyRewound.propertyZip, "94123");
+assert.equal(moneyRewound.propertyZip, undefined);
+assert.equal(moneyRewound.propertyZipAsked, false);
+assert.equal(moneyRewound.subjectAddress, undefined);
+assert.equal(moneyRewound.facts?.zip, undefined);
+assert.equal(moneyRewound.facts?.property_address, undefined);
+assert.equal(moneyRewound.scenario?.zip, "");
+assert.equal(moneyRewound.liveQuote, undefined);
+assert.equal(previewRateFact(moneyRewound), null);
 assert.equal(moneyRewound.facts?.employer_name?.value, "Harbor Co");
+assert.equal(moneyRewound.incomeType.value, "w2");
 assert.equal(moneyRewound.documents[0]?.name, "license.png");
 assert.equal(workspacePrompt(moneyRewound), "value");
 assert.match(amountAskText(moneyRewound), /Purchase price in the file is \$500,000\. Still right\?/);
-assert.doesNotMatch(workspacePromptCopy("value", moneyRewound).text, /FICO|House|condo|credit/i);
+assert.doesNotMatch(workspacePromptCopy("value", moneyRewound).text, /FICO|House|condo|credit|income|94105/i);
 const moneyPriceEdit = workspaceReply("300000", moneyRewound);
 assert.equal(moneyPriceEdit?.capture?.field, "propertyValue");
 assert.match(moneyPriceEdit?.text ?? "", /down payment or loan amount/i);
-assert.doesNotMatch(moneyPriceEdit?.text ?? "", /\$60,000 down|Use this|FICO|House|condo|credit/i);
-assert.ok(!(moneyPriceEdit?.actions ?? []).some((item) => /FICO|That’s right|760|720|House|Condo|Use this/i.test(item.label)));
+assert.doesNotMatch(moneyPriceEdit?.text ?? "", /\$60,000 down|Use this|FICO|House|condo|credit|income|94105/i);
+assert.ok(!(moneyPriceEdit?.actions ?? []).some((item) => /FICO|That’s right|760|720|House|Condo|Use this|W-2/i.test(item.label)));
 const moneyAfterPrice = writePurchasePrice(moneyRewound, 300000);
 assert.equal(moneyAfterPrice.propertyValueAmount, 300000);
 assert.equal(moneyAfterPrice.downPaymentAmount, undefined);
 assert.equal(moneyAfterPrice.loanAmountValue, undefined);
+assert.equal(moneyAfterPrice.propertyZip, undefined);
 assert.equal(moneyAfterPrice.scenario?.loanAmount, undefined);
+assert.equal(moneyAfterPrice.scenario?.zip, "");
 assert.equal(moneyAfterPrice.facts?.employer_name?.value, "Harbor Co");
+assert.equal(moneyAfterPrice.incomeType.value, "w2");
+assert.equal(previewRateFact(moneyAfterPrice), null);
 assert.equal(workspacePrompt(moneyAfterPrice), "amount");
+assert.notEqual(workspacePrompt(moneyAfterPrice), "income");
 assert.equal(amountAskText(moneyAfterPrice), "What’s the down payment or loan amount?");
-assert.doesNotMatch(workspacePromptCopy("amount", moneyAfterPrice).text, /FICO|House|condo|credit/i);
+assert.doesNotMatch(workspacePromptCopy("amount", moneyAfterPrice).text, /FICO|House|condo|credit|income|94105/i);
 const moneyDown = workspaceReply("20", moneyAfterPrice);
 assert.equal(moneyDown?.capture?.field, "propose-funds");
 assert.equal(moneyDown?.capture && "value" in moneyDown.capture ? moneyDown.capture.value : "", "60000:240000");
 assert.match(moneyDown?.text ?? "", /\$60,000 down · \$240,000 loan/i);
 assert.ok((moneyDown?.actions ?? []).some((item) => item.label === "Use this"));
+assert.doesNotMatch(moneyDown?.text ?? "", /income|How is income|W-2/i);
 const moneyProposed = proposeFundsPair(moneyAfterPrice, 60000, 240000);
 assert.equal(workspacePrompt(moneyProposed), "confirm-proposal");
 assert.ok(!loanExceedsPurchasePrice(moneyProposed));
@@ -1302,10 +1336,15 @@ const moneyAccepted = resolveProposal(moneyProposed, "accept");
 assert.equal(moneyAccepted.propertyValueAmount, 300000);
 assert.equal(moneyAccepted.downPaymentAmount, 60000);
 assert.equal(moneyAccepted.loanAmountValue, 240000);
-assert.equal(moneyAccepted.propertyZip, "94123");
+assert.equal(moneyAccepted.propertyZip, undefined);
+assert.equal(moneyAccepted.subjectAddress, undefined);
 assert.equal(moneyAccepted.facts?.employer_name?.value, "Harbor Co");
+assert.equal(moneyAccepted.incomeType.value, "w2");
 assert.equal(moneyAccepted.documents[0]?.name, "license.png");
+assert.equal(previewRateFact(moneyAccepted), null);
 assert.ok(!loanExceedsPurchasePrice(moneyAccepted));
+assert.equal(workspacePrompt(moneyAccepted), "property-type");
+assert.notEqual(workspacePrompt(moneyAccepted), "income");
 assert.notEqual(workspacePrompt(moneyAccepted), "over-price");
 assert.notEqual(workspacePrompt(moneyAccepted), "credit");
 assert.notEqual(workspaceReply("That’s right", moneyAccepted)?.capture?.field, "over-price-confirm");
