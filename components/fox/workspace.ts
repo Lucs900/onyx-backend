@@ -4630,6 +4630,26 @@ function parseRefiDocumentsBareValue(
   };
 }
 
+/** Keep the edited borrower turn. Later House / FICO / ZIP / rate bubbles are gone. */
+export function threadThroughEditedTurn(messages: FoxMessage[], editedId: string): FoxMessage[] {
+  const index = messages.findIndex((message) => message.id === editedId);
+  return index >= 0 ? messages.slice(0, index + 1) : messages;
+}
+
+export function findClientEditMessageId(
+  messages: FoxMessage[],
+  prompt: FoxPrompt,
+  line?: string,
+): string | undefined {
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const message = messages[i];
+    if (message.role !== "client" || message.edit !== prompt) continue;
+    if (line && message.editLine && message.editLine !== line) continue;
+    return message.id;
+  }
+  return undefined;
+}
+
 /** Hover Edit returns to that question. Price rewind starts money over — no interrupt propose. */
 export function beginFileEdit(
   draft: FoxIntakeDraft,

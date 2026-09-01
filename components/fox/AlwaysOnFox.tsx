@@ -124,6 +124,8 @@ import {
   workspacePrompt,
   workspacePromptCopy,
   workspaceUpdateCopy,
+  threadThroughEditedTurn,
+  findClientEditMessageId,
 } from "./workspace";
 import {
   ComposerAttach,
@@ -501,7 +503,7 @@ function FoxThread({
   draft: FoxIntakeDraft;
   listRef: { current: HTMLDivElement | null };
   onAction: (action: FoxAction) => void;
-  onEdit?: (prompt: FoxPrompt, line?: string) => void;
+  onEdit?: (prompt: FoxPrompt, line?: string, messageId?: string) => void;
 }) {
   const [editOpenId, setEditOpenId] = useState<string | null>(null);
   const thread = dropStreetSuggestChips(
@@ -593,7 +595,7 @@ function FoxThread({
                 className="fox-bubble__edit"
                 onClick={(event) => {
                   event.stopPropagation();
-                  onEdit?.(message.edit as FoxPrompt, message.editLine);
+                  onEdit?.(message.edit as FoxPrompt, message.editLine, message.id);
                 }}
               >
                 Edit
@@ -652,7 +654,7 @@ function FoxWorkspace({
   listRef: { current: HTMLDivElement | null };
   onClose: () => void;
   onAction: (action: FoxAction) => void;
-  onEdit?: (prompt: FoxPrompt, line?: string) => void;
+  onEdit?: (prompt: FoxPrompt, line?: string, messageId?: string) => void;
   composer?: ReactNode;
   hideClose?: boolean;
   stickyDisclosure?: boolean;
@@ -925,7 +927,14 @@ export function AlwaysOnFox({
       applyCapture({ field: "correct", value: prompt, line: field });
       const live = getFoxDraft();
       const ask = workspacePromptCopy(prompt, live);
-      commitMessages((prev) => [...dropFoxActions(prev), foxAskMessage(ask)]);
+      commitMessages((prev) => {
+        const editedId =
+          prompt === "value" || field === "price"
+            ? findClientEditMessageId(prev, prompt, field)
+            : undefined;
+        const kept = editedId ? threadThroughEditedTurn(prev, editedId) : prev;
+        return [...dropFoxActions(kept), foxAskMessage(ask)];
+      });
     };
     const onExplain = (event: Event) => {
       const field = String((event as CustomEvent<{ field?: string }>).detail?.field ?? "").trim();
@@ -1447,13 +1456,17 @@ export function AlwaysOnFox({
     router.push(deskHrefFromSession(live.path ?? null, live.productIntent ?? null));
   };
 
-  const editThreadTurn = (prompt: FoxPrompt, line?: string) => {
+  const editThreadTurn = (prompt: FoxPrompt, line?: string, messageId?: string) => {
     if (!isStart) return;
     skipPromptSync.current = true;
     applyCapture({ field: "correct", value: prompt, line });
     const live = getFoxDraft();
     const ask = workspacePromptCopy(prompt, live);
-    commitMessages((prev) => [...dropFoxActions(prev), foxAskMessage(ask)]);
+    commitMessages((prev) => {
+      const editedId = messageId ?? findClientEditMessageId(prev, prompt, line);
+      const kept = editedId ? threadThroughEditedTurn(prev, editedId) : prev;
+      return [...dropFoxActions(kept), foxAskMessage(ask)];
+    });
   };
 
   const runAction = (action: FoxAction) => {

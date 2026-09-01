@@ -499,6 +499,8 @@ import {
   DOC_INVITE_COPY,
   beginFileEdit,
   writePurchasePrice,
+  threadThroughEditedTurn,
+  findClientEditMessageId,
 } from "../components/fox/workspace";
 import { HOME_FOX_LINE, HOME_IDLE_TEXT, homePathActions, homeProductActions } from "../components/fox/homeIdle";
 import { assertOnyxFixtures } from "./assert-onyx-fixtures";
@@ -1348,6 +1350,28 @@ assert.notEqual(workspacePrompt(moneyAccepted), "income");
 assert.notEqual(workspacePrompt(moneyAccepted), "over-price");
 assert.notEqual(workspacePrompt(moneyAccepted), "credit");
 assert.notEqual(workspaceReply("That’s right", moneyAccepted)?.capture?.field, "over-price-confirm");
+const moneyThread = [
+  { id: "fox-price", role: "fox" as const, text: "What’s the purchase price?" },
+  { id: "price-500k", role: "client" as const, text: "$500,000", edit: "value" as const, editLine: "price" },
+  { id: "fox-down", role: "fox" as const, text: "What’s the down payment or loan amount?" },
+  { id: "down-100k", role: "client" as const, text: "$100,000", edit: "amount" as const, editLine: "down" },
+  { id: "fox-house", role: "fox" as const, text: "What kind of home is this? House, condo, or 2–4 unit is enough." },
+  { id: "house", role: "client" as const, text: "House", edit: "property-type" as const },
+  { id: "fox-fico", role: "fox" as const, text: "Estimated FICO?" },
+  { id: "fico", role: "client" as const, text: "760+", edit: "credit" as const },
+  { id: "fox-zip", role: "fox" as const, text: "What ZIP is the property in?" },
+  { id: "zip", role: "client" as const, text: "94123", edit: "property-zip" as const },
+  { id: "fox-rate", role: "fox" as const, text: "6.500% · live as of now." },
+];
+assert.equal(findClientEditMessageId(moneyThread, "value", "price"), "price-500k");
+const moneyThreadRewound = threadThroughEditedTurn(moneyThread, "price-500k");
+assert.deepEqual(
+  moneyThreadRewound.map((message) => message.id),
+  ["fox-price", "price-500k"],
+);
+assert.ok(!moneyThreadRewound.some((message) => /House|760\+|94123|6\.500%/i.test(message.text)));
+const moneyHouseAsk = workspacePromptCopy("property-type", moneyAccepted);
+assert.doesNotMatch(`${moneyHouseAsk.text} ${moneyHouseAsk.followUp ?? ""}`, /6\.500|live as of|94123|760\+/i);
 applyCapture({ field: "correct", value: "amount" });
 assert.equal(getFoxDraft().correcting, "amount");
 assert.doesNotMatch(composerAmountHint(getFoxDraft()), /purchase price/i);
