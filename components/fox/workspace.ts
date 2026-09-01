@@ -113,7 +113,6 @@ import {
   canLooksRight,
   incomeNumberReady,
   otherReoInterviewBlocked,
-  timelineFilled,
   wageDocsAskNeeded,
   wageBox5AskNeeded,
   wageFrequencyAskNeeded,
@@ -2710,7 +2709,6 @@ export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
   if (!draft.productIntent) return "product";
   if (needsJumboPurpose(draft)) return "jumbo-purpose";
   if (!draft.occupancyAsked && !draft.occupancyChoice.value) return "occupancy";
-  if (!timelineFilled(draft) && !draft.timelineAsked) return "timeline";
   if (purchasePriceAskNeeded(draft)) return "value";
   if (fundsAskNeeded(draft)) return "amount";
   if (refiLoanAskNeeded(draft) || (isHelocFile(draft) && !hasHelocLine(draft))) return "amount";
@@ -2750,7 +2748,6 @@ export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
   if (nextDocInvite(draft) && !householdSettled(draft)) return "documents";
   if (primaryDocPassFinished(draft) && !yearsInBusinessSettled(draft)) return "years-in-business";
   if (!draft.sampleAccepted && !householdSettled(draft)) {
-    if (!timelineFilled(draft)) return "timeline";
     if (historyGapNeeded(draft) && !nextDocInvite(draft)) return "former-history";
     if (!propertyAddressSettled(draft) && !nextDocInvite(draft)) return "property-address";
     if (citizenshipNeeded(draft) && !nextDocInvite(draft)) return "citizenship";
@@ -2763,7 +2760,6 @@ export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
   if (!coborrowerNameSettled(draft)) return "coborrower-name";
   if (nextDocInvite(draft)) return "documents";
   if (!draft.sampleAccepted) {
-    if (!timelineFilled(draft)) return "timeline";
     if (historyGapNeeded(draft)) return "former-history";
     if (!propertyAddressSettled(draft)) return "property-address";
     if (citizenshipNeeded(draft)) return "citizenship";

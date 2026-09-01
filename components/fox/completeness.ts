@@ -1609,7 +1609,6 @@ export function canLooksRight(draft: FoxIntakeDraft) {
   if (!incomeNumberReady(draft)) return false;
   return (
     sketchAssembled(draft) &&
-    timelineFilled(draft) &&
     currentAskIdle(draft) &&
     !historyGapNeeded(draft) &&
     propertyTypeSettled(draft) &&
