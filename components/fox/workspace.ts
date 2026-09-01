@@ -1241,6 +1241,24 @@ function bubbles(
   }));
 }
 
+export const LOOKS_RIGHT_COMPLETE_ASK =
+  "The notepad looks complete enough to move. Does it look right?";
+export const LOOKS_RIGHT_MOVE_ASK = "The file can move. Does it look right?";
+
+/** Harbor W-2+stub Use this (or a written monthly). Income Skip / doc Skip stay incomplete. */
+export function incomeFilledForLooksRight(draft: FoxIntakeDraft) {
+  if (draft.incomeAsked && !draft.incomeType.value) return false;
+  if (wageThreadOpen(draft)) {
+    if (wageW2ExtractAccepted(draft) && draft.stubExtractAccepted) return true;
+    return Boolean(factValue(draft, QUALIFYING_INCOME_FIELD));
+  }
+  return Boolean(draft.incomeType.value);
+}
+
+export function looksRightAskCopy(draft: FoxIntakeDraft) {
+  return incomeFilledForLooksRight(draft) ? LOOKS_RIGHT_COMPLETE_ASK : LOOKS_RIGHT_MOVE_ASK;
+}
+
 export function incomeSettled(draft: FoxIntakeDraft) {
   return Boolean(draft.incomeAsked || draft.incomeType.value);
 }
@@ -1535,6 +1553,12 @@ export function unreadDocActions(): FoxAction[] {
     { id: "note-unread-doc", label: "Type a note", event: "bubble", capture: { field: "note-unread-doc" } },
     { id: "skip-unread-doc", label: "Skip", event: "bubble", capture: { field: "skip-unread-doc" } },
   ];
+}
+
+/** After Looks right, unread keeps Upload this · Skip so the line is not a dead-end. */
+export function unreadRestoreActions(draft: FoxIntakeDraft): FoxAction[] {
+  if (draft.sampleAccepted) return documentInviteActions(draft);
+  return unreadDocActions();
 }
 
 export function isBankUnreadAsk(draft: FoxIntakeDraft) {
@@ -3083,7 +3107,7 @@ function workspaceAskCopy(
     if (unreadDocOpen(draft)) {
       return {
         text: isBankUnreadAsk(draft) ? RECEIVED_UNREAD_ASK : documentsAskText(draft),
-        actions: unreadDocActions(),
+        actions: unreadRestoreActions(draft),
       };
     }
     if (invite === "coborrower_government_id") {
@@ -3110,7 +3134,7 @@ function workspaceAskCopy(
       };
     }
     return {
-      text: "The notepad looks complete enough to move. Does it look right?",
+      text: looksRightAskCopy(draft),
       actions: [
         { id: "looks-right", label: "Looks right", event: "bubble", capture: { field: "confirm-draft" } },
         { id: "needs-fix", label: "Needs a correction", event: "bubble", capture: { field: "needs-correction" } },
@@ -5210,14 +5234,14 @@ export function workspaceReply(
     if (/upload again|try again|re-?upload/i.test(lower)) {
       return {
         text: prompt === "wage-docs" ? WAGE_DOCS_ASK : documentsAskText(draft),
-        actions: unreadDocActions(),
+        actions: unreadRestoreActions(draft),
         capture: { field: "retry-unread-doc" },
       };
     }
     if (/^(type a note|note)$/i.test(lower)) {
       return {
         text: prompt === "wage-docs" ? WAGE_DOCS_ASK : documentsAskText(draft),
-        actions: unreadDocActions(),
+        actions: unreadRestoreActions(draft),
         capture: { field: "note-unread-doc" },
       };
     }

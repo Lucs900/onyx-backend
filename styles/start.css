@@ -129,11 +129,18 @@
 
 .fox-stage--workspace .fox-bubble--client p,
 .fox-stage--workspace .fox-bubble--client.is-used p {
-  color: var(--muted);
+  color: color-mix(in srgb, var(--muted) 72%, var(--paper));
+  font-size: 13px;
+  line-height: 18px;
   font-weight: 400;
 }
 
-.fox-stage--workspace .fox-bubble__edit {
+.fox-stage--workspace .fox-bubble--fox .fox-bubble__edit {
+  display: none;
+}
+
+.fox-stage--workspace .fox-bubble--client .fox-bubble__edit {
+  display: none;
   margin-top: 6px;
   padding: 0;
   border: 0;
@@ -146,8 +153,18 @@
   cursor: pointer;
 }
 
-.fox-stage--workspace .fox-bubble__edit:hover,
-.fox-stage--workspace .fox-bubble__edit:focus-visible {
+@media (hover: hover) and (pointer: fine) {
+  .fox-stage--workspace .fox-bubble--client:hover .fox-bubble__edit {
+    display: inline-flex;
+  }
+}
+
+.fox-stage--workspace .fox-bubble--client.is-edit-open .fox-bubble__edit {
+  display: inline-flex;
+}
+
+.fox-stage--workspace .fox-bubble--client .fox-bubble__edit:hover,
+.fox-stage--workspace .fox-bubble--client .fox-bubble__edit:focus-visible {
   color: var(--ink);
 }
 

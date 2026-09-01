@@ -112,7 +112,7 @@ import {
   nextFoxAsk,
   isBankUnreadAsk,
   RECEIVED_UNREAD_ASK,
-  unreadDocActions,
+  unreadRestoreActions,
   retainWageDocsLine,
   holdDocsAskFox,
   productIntentFromAction,
@@ -157,6 +157,7 @@ import {
   type FoxAction,
   type FoxIntakeDraft,
   type FoxMessage,
+  type FoxPrompt,
   type IntakePath,
   type ProductIntent,
 } from "./types";
@@ -488,12 +489,15 @@ function FoxThread({
   draft,
   listRef,
   onAction,
+  onEdit,
 }: {
   messages: FoxMessage[];
   draft: FoxIntakeDraft;
   listRef: { current: HTMLDivElement | null };
   onAction: (action: FoxAction) => void;
+  onEdit?: (prompt: FoxPrompt, line?: string) => void;
 }) {
+  const [editOpenId, setEditOpenId] = useState<string | null>(null);
   const thread = dropStreetSuggestChips(
     dropAbandonedAddressConfirm(dropResolvedAddressConfirmChips(messages, draft), draft),
   );
@@ -522,15 +526,24 @@ function FoxThread({
         const paintActions = isDocRowLine(rawActions)
           ? rawActions.filter(isDocRowChip)
           : rawActions;
+        const canEdit = message.role === "client" && Boolean(message.edit) && Boolean(onEdit);
         return (
           <article
             key={`${message.id}:${current ? "live" : "text"}`}
             className={
               message.role === "fox"
                 ? `fox-bubble fox-bubble--fox${tone}`
-                : "fox-bubble fox-bubble--client is-used"
+                : `fox-bubble fox-bubble--client is-used${editOpenId === message.id ? " is-edit-open" : ""}`
             }
             aria-current={current ? "step" : undefined}
+            onClick={
+              canEdit
+                ? () => {
+                    if (window.matchMedia("(hover: hover) and (pointer: fine)").matches) return;
+                    setEditOpenId((id) => (id === message.id ? null : message.id));
+                  }
+                : undefined
+            }
           >
             <p>{message.text}</p>
             {message.followUp ? <p>{message.followUp}</p> : null}
@@ -567,6 +580,18 @@ function FoxThread({
                   ),
                 )}
               </div>
+            ) : null}
+            {canEdit ? (
+              <button
+                type="button"
+                className="fox-bubble__edit"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onEdit?.(message.edit as FoxPrompt, message.editLine);
+                }}
+              >
+                Edit
+              </button>
             ) : null}
           </article>
         );
@@ -609,6 +634,7 @@ function FoxWorkspace({
   listRef,
   onClose,
   onAction,
+  onEdit,
   composer,
   hideClose,
   stickyDisclosure,
@@ -620,6 +646,7 @@ function FoxWorkspace({
   listRef: { current: HTMLDivElement | null };
   onClose: () => void;
   onAction: (action: FoxAction) => void;
+  onEdit?: (prompt: FoxPrompt, line?: string) => void;
   composer?: ReactNode;
   hideClose?: boolean;
   stickyDisclosure?: boolean;
@@ -656,7 +683,7 @@ function FoxWorkspace({
           </button>
         )}
       </div>
-      <FoxThread messages={messages} draft={draft} listRef={listRef} onAction={onAction} />
+      <FoxThread messages={messages} draft={draft} listRef={listRef} onAction={onAction} onEdit={onEdit} />
       {composer}
     </div>
   );
@@ -924,7 +951,7 @@ export function AlwaysOnFox({
             text: isBankUnreadAsk(live)
               ? RECEIVED_UNREAD_ASK
               : unreadDropBytesCopy(detail.emptyRead.name, detail.emptyRead.size),
-            actions: unreadDocActions(),
+            actions: unreadRestoreActions(live),
           });
         }
         if (
@@ -942,7 +969,7 @@ export function AlwaysOnFox({
           return applyFoxAsk(next, {
             text: ask.text,
             followUp: ask.followUp,
-            actions: unreadDocActions(),
+            actions: unreadRestoreActions(live),
           });
         }
         if (detail.conflict) {
@@ -1412,6 +1439,15 @@ export function AlwaysOnFox({
     if (!isHome) return;
     const live = getFoxDraft();
     router.push(deskHrefFromSession(live.path ?? null, live.productIntent ?? null));
+  };
+
+  const editThreadTurn = (prompt: FoxPrompt, line?: string) => {
+    if (!isStart) return;
+    skipPromptSync.current = true;
+    applyCapture({ field: "correct", value: prompt, line });
+    const live = getFoxDraft();
+    const ask = workspacePromptCopy(prompt, live);
+    commitMessages((prev) => [...dropFoxActions(prev), foxAskMessage(ask)]);
   };
 
   const runAction = (action: FoxAction) => {
@@ -1919,6 +1955,7 @@ export function AlwaysOnFox({
       listRef={listRef}
       onClose={() => setOpen(false)}
       onAction={runAction}
+      onEdit={isStart ? editThreadTurn : undefined}
       composer={
         isStart ? (
           <WorkspaceFileDock>{desk}</WorkspaceFileDock>

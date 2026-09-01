@@ -4816,7 +4816,8 @@ const creditSpokenReply = workspaceReply("credit is 760+", afterIncome);
 assert.equal(creditSpokenReply?.capture?.field, "creditRange");
 
 const review = workspacePromptCopy("review", afterIncomeReady);
-assert.match(review.text, /notepad looks complete/i);
+assert.doesNotMatch(review.text, /complete/i);
+assert.match(review.text, /can move/i);
 assert.match(review.text, /does it look right/i);
 assert.doesNotMatch(review.text, /here.?s the file/i);
 assert.equal((review.facts ?? []).length, 0);
