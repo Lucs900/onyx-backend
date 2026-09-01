@@ -409,7 +409,7 @@ export function isPropertyAddressField(field: string) {
 
 export function propertyAddressSettled(draft: FoxIntakeDraft) {
   if (draft.correcting === "property-address") return false;
-  return Boolean(draft.subjectAddressAsked || draft.subjectAddress);
+  return Boolean(draft.subjectAddressAsked || draft.subjectAddress || draft.propertyZipAsked);
 }
 
 function purchaseLike(draft: FoxIntakeDraft) {

@@ -94,7 +94,6 @@ import {
   primaryDocPassFinished,
   thisBorrowerPrimaryPackageDone,
   readyForHouseholdAsk,
-  wageExtractOnFile,
   skipCurrentInvite,
   skipUnreadDoc,
   retryUnreadDoc,
@@ -417,7 +416,6 @@ import {
   coborrowerIncomeInviteCopy,
   coborrowerNameAskCopy,
   coborrowerNameOnFile,
-  coborrowerNameSettled,
   coborrowerSpokenIdCopy,
   isCoborrowerNameConfirmPending,
   isCoborrowerNameField,
@@ -437,7 +435,6 @@ import {
   borrowerNameConfirmCopy,
   borrowerNameExtractCopy,
   borrowerNameOnFile,
-  borrowerNameSettled,
   governmentIdOutstanding,
   isBorrowerNameConfirmPending,
   isBorrowerNameField,
@@ -2677,22 +2674,24 @@ export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
       // Stale wage-thread resume after Skip or SE / Other.
     } else if (
       draft.resumeAfterEdit === "borrower-name" &&
-      governmentIdOutstanding(draft)
+      (governmentIdOutstanding(draft) || draft.sampleAccepted)
     ) {
-      // Stale resume — typed name only after Skip ID. Failed read stays on the ID item.
+      // Stale resume — after Looks right, Skip ID goes to statements, not typed name.
     } else if (
       draft.resumeAfterEdit === "coborrower-name" &&
-      (draft.statedHousehold !== "with_someone" ||
+      (draft.sampleAccepted ||
+        draft.statedHousehold !== "with_someone" ||
         !thisBorrowerPrimaryPackageDone(draft) ||
         coborrowerIdOutstanding(draft))
     ) {
-      // Stale resume — coborrower name only after this borrower’s primary pass, then their ID.
+      // Stale resume — coborrower name is not the post-Looks-right door.
     } else if (
       draft.resumeAfterEdit === "household" &&
-      !readyForHouseholdAsk(draft) &&
-      !draft.householdAsked
+      (draft.sampleAccepted || (!readyForHouseholdAsk(draft) && !draft.householdAsked))
     ) {
-      // Stale resume — coborrower ask only after Looks right, never mid-docs Skip.
+      // Stale resume — household is not the post-Looks-right door.
+    } else if (draft.resumeAfterEdit === "housing" && draft.sampleAccepted) {
+      // Stale resume — housing estimate is not the post-Looks-right door.
     } else {
       return draft.resumeAfterEdit;
     }
@@ -2738,11 +2737,7 @@ export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
   if (draft.sampleAccepted && (draft.motion === "in_queue" || draft.motion === "escalated")) {
     return "done";
   }
-  if (draft.sampleAccepted && wageExtractOnFile(draft)) {
-    if (nextDocInvite(draft)) return "documents";
-    return "done";
-  }
-  if (draft.sampleAccepted && !borrowerNameSettled(draft)) return "borrower-name";
+  if (draft.sampleAccepted && nextDocInvite(draft)) return "documents";
   if (nextDocInvite(draft) && !thisBorrowerPrimaryPackageDone(draft)) return "documents";
   if (!draft.sampleAccepted && draft.awaitingYearsInBusiness) return "documents";
   if (nextDocInvite(draft) && !householdSettled(draft)) return "documents";
@@ -2756,8 +2751,6 @@ export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
     if (draft.looksRightHold) return "documents";
     return "amount";
   }
-  if (readyForHouseholdAsk(draft) && !householdSettled(draft)) return "household";
-  if (!coborrowerNameSettled(draft)) return "coborrower-name";
   if (nextDocInvite(draft)) return "documents";
   if (!draft.sampleAccepted) {
     if (historyGapNeeded(draft)) return "former-history";
@@ -2770,7 +2763,7 @@ export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
   }
   const holdCalculatorAsk = draft.motion === "in_queue" || draft.motion === "escalated";
   if (!holdCalculatorAsk && subjectLeaseAskNeeded(draft)) return "subject-lease";
-  if (!holdCalculatorAsk && housingConfirmNeeded(draft)) return "housing";
+  if (!holdCalculatorAsk && !draft.sampleAccepted && housingConfirmNeeded(draft)) return "housing";
   if (!holdCalculatorAsk && !propertyTypeSettled(draft)) return "property-type";
   if (!holdCalculatorAsk && historyGapNeeded(draft)) return "former-history";
   if (!holdCalculatorAsk && !propertyAddressSettled(draft)) return "property-address";
