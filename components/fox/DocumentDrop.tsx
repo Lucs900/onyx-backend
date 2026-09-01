@@ -16,6 +16,7 @@ import type { ExtractClass, FoxIntakeDraft } from "./types";
 import { shouldDeferStillUsefulAsk, slotFromFilename } from "./workspace";
 import {
   emitDocIntake,
+  extractHintFromDraft,
   missingExtractClasses,
   rejectIncomingFile,
   stillUsefulRefreshKey,
@@ -131,6 +132,8 @@ export async function ingestDroppedFiles(files: File[]) {
         form.append("file", snapshot, file.name);
         form.append("name", file.name);
         form.append("type", type);
+        const hint = extractHintFromDraft(getFoxDraft(), file.name);
+        if (hint) form.append("hint", hint);
         return fetch("/api/docs/extract", {
           method: "POST",
           body: form,

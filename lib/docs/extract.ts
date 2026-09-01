@@ -4,6 +4,7 @@ import {
   EXTRACT_SCHEMA_KEYS,
   LOW_EXTRACT_CONFIDENCE,
   hasLockedSuggestion,
+  looksLikeBankFields,
   preferFilenameClass,
   promoteExtractClass,
   sanitizeExtractedFields,
@@ -294,6 +295,12 @@ function asClass(value: unknown): ExtractClass {
   return CLASSES.includes(raw as ExtractClass) ? (raw as ExtractClass) : "other";
 }
 
+export function extractHintOf(value: unknown): ExtractClass | null {
+  if (value == null || String(value).trim() === "") return null;
+  const next = asClass(value);
+  return next === "other" ? null : next;
+}
+
 function asConfidence(value: unknown) {
   const n = typeof value === "number" ? value : Number(value);
   if (!Number.isFinite(n)) return 0;
@@ -393,7 +400,8 @@ async function classifyAndExtractPage(
   let classified: ClassifyResult | null = null;
   try {
     classified = normalizeClassifyResult(await adapter.classify(bytes, mediaType));
-    if (classified.readable === false) {
+    const hinted = hint && hint !== "other" ? hint : undefined;
+    if (classified.readable === false && hinted !== "bank_statement") {
       return {
         extractClass: classified.class,
         confidence: classified.confidence,
@@ -402,10 +410,14 @@ async function classifyAndExtractPage(
         failed: true,
       };
     }
-    const hinted = hint && hint !== "other" ? hint : undefined;
     const confident =
       classified.class !== "other" && classified.confidence >= LOW_EXTRACT_CONFIDENCE;
-    const extractAs = confident ? classified.class : hinted;
+    const extractAs =
+      hinted === "bank_statement"
+        ? "bank_statement"
+        : confident
+          ? classified.class
+          : hinted;
     if (!extractAs || extractAs === "other") {
       return {
         extractClass: classified.class,
@@ -514,20 +526,41 @@ export async function classifyAndExtract(
     if (images[0]) {
       const page = await classifyAndExtractPage(images[0].bytes, images[0].mediaType, adapter, hint);
       const extractClass = preferFilenameClass(page.extractClass, filename ?? "");
-      if (page.failed || !hasLockedSuggestion(extractClass, page.fields)) {
-        return unreadResult(extractClass, filename, "no-text-layer", textLayerChars);
+      const bankLocked = extractClass === "bank_statement" || hint === "bank_statement";
+      const locked = bankLocked
+        ? looksLikeBankFields(page.fields)
+        : hasLockedSuggestion(extractClass, page.fields);
+      if (page.failed || !locked) {
+        return unreadResult(bankLocked ? "bank_statement" : extractClass, filename, "no-text-layer", textLayerChars);
       }
-      return { ...page, extractClass, textLayerChars };
+      return { ...page, extractClass: bankLocked ? "bank_statement" : extractClass, textLayerChars };
     }
     return unreadResult("other", filename, "no-text-layer", textLayerChars);
   }
   const page = await classifyAndExtractPage(bytes, mediaType, adapter, hint);
+  const bankHint = hint === "bank_statement" || page.extractClass === "bank_statement";
   if (
     !page.failed &&
-    (page.extractClass === "government_id" || page.extractClass === "paystub" || page.extractClass === "w2") &&
-    !hasLockedSuggestion(page.extractClass, page.fields)
+    (
+      page.extractClass === "government_id" ||
+      page.extractClass === "paystub" ||
+      page.extractClass === "w2" ||
+      bankHint
+    ) &&
+    !(bankHint
+      ? looksLikeBankFields(page.fields)
+      : hasLockedSuggestion(page.extractClass, page.fields))
   ) {
-    return withTextChars({ ...page, failed: true, warnings: [...page.warnings, "failed"] }, bytes, mediaType);
+    return withTextChars(
+      {
+        ...page,
+        extractClass: bankHint ? "bank_statement" : page.extractClass,
+        failed: true,
+        warnings: [...page.warnings, "failed"],
+      },
+      bytes,
+      mediaType,
+    );
   }
   return withTextChars(page, bytes, mediaType);
 }

@@ -110,6 +110,8 @@ import {
   nextDocInvite,
   incomeAskOpen,
   nextFoxAsk,
+  isBankUnreadAsk,
+  RECEIVED_UNREAD_ASK,
   unreadDocActions,
   retainWageDocsLine,
   holdDocsAskFox,
@@ -919,7 +921,9 @@ export function AlwaysOnFox({
         if (detail.emptyRead) {
           const live = getFoxDraft();
           return applyFoxAsk(next, {
-            text: unreadDropBytesCopy(detail.emptyRead.name, detail.emptyRead.size),
+            text: isBankUnreadAsk(live)
+              ? RECEIVED_UNREAD_ASK
+              : unreadDropBytesCopy(detail.emptyRead.name, detail.emptyRead.size),
             actions: unreadDocActions(),
           });
         }

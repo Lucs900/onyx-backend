@@ -8,9 +8,9 @@ export const PROPERTY_ADDRESS_FACT = "property_address";
 export const SUGGESTED_PROPERTY_NOTE = "Suggested · not underwritten";
 export const PROPERTY_TYPE_ASK =
   "What kind of home is this? House, condo, or 2–4 unit is enough. Skip is fine.";
-export const PROPERTY_ADDRESS_ASK = "What is the property address?";
-export const PURCHASE_ADDRESS_ASK = "What is the address of the home you are buying?";
-export const REFI_ADDRESS_ASK = "What is the address of the home?";
+export const PROPERTY_ADDRESS_ASK = "What is the property address or ZIP?";
+export const PURCHASE_ADDRESS_ASK = "What is the address or ZIP of the home you are buying?";
+export const REFI_ADDRESS_ASK = "What is the address or ZIP of the home?";
 export const PROPERTY_ZIP_FIELD = "propertyZip";
 export const PROPERTY_ZIP_ASK = "What ZIP is the property in?";
 
@@ -270,17 +270,72 @@ export function skipQuoteAddress(draft: FoxIntakeDraft): FoxIntakeDraft {
   return skipPropertyZip(next);
 }
 
+function existingFileAddress(draft: FoxIntakeDraft) {
+  return String(draft.subjectAddress ?? "").trim();
+}
+
+/** ZIP alone, or city + ZIP. A street line is not a ZIP-only File address. */
+function isZipOnlyFileAddress(value: string, zip?: string) {
+  const t = value.trim();
+  if (!t) return true;
+  if (/^\d{5}$/.test(t)) return true;
+  if (zip && t === zip) return true;
+  return /^[A-Za-z][A-Za-z .'-]+,\s*CA\s+\d{5}$/.test(t);
+}
+
+function fileAddressForZip(draft: FoxIntakeDraft, zip: string) {
+  const existing = existingFileAddress(draft);
+  if (existing && !isZipOnlyFileAddress(existing, draft.propertyZip)) return existing;
+  const city = String(draft.subjectCity ?? draft.facts?.city?.value ?? "").trim();
+  if (city && city.length >= 2 && city.length <= 40 && !/\d/.test(city)) {
+    return `${city}, CA ${zip}`;
+  }
+  return zip;
+}
+
 export function writePropertyZip(draft: FoxIntakeDraft, zip: string): FoxIntakeDraft {
   const parsed = parseZipcode(zip);
   if (!parsed) return draft;
   const fromAddress = addressZipFromDraft(draft);
+  const now = new Date().toISOString();
+  const location = fileAddressForZip(draft, parsed);
+  const keepStreet = Boolean(
+    existingFileAddress(draft) && !isZipOnlyFileAddress(existingFileAddress(draft), draft.propertyZip),
+  );
   return {
     ...draft,
     propertyZip: parsed,
     propertyZipAsked: true,
     addressZipOffered: fromAddress === parsed ? parsed : draft.addressZipOffered,
+    ...(keepStreet
+      ? {}
+      : {
+          subjectAddress: location,
+          subjectAddressAsked: true,
+        }),
     correcting: null,
     correctingLine: null,
+    facts: {
+      ...(draft.facts ?? {}),
+      zip: {
+        field: "zip",
+        value: parsed,
+        source: "client",
+        confirmed: true,
+        confirmedAt: now,
+      },
+      ...(keepStreet
+        ? {}
+        : {
+            [PROPERTY_ADDRESS_FACT]: {
+              field: PROPERTY_ADDRESS_FACT,
+              value: location,
+              source: "client",
+              confirmed: true,
+              confirmedAt: now,
+            },
+          }),
+    },
   };
 }
 

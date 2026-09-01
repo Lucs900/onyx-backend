@@ -53,6 +53,7 @@ import { FAILED_READ_NOTE, isUnreadNote } from "@/lib/docs/accept";
 import {
   applyExtractedFields,
   hasLockedSuggestion,
+  looksLikeBankFields,
   looksLikePaystubFields,
   preferFilenameClass,
   promoteExtractClass,
@@ -1465,10 +1466,12 @@ export function applyExtractWrite(
       : input.extractClass,
     input.fields,
   );
+  const bankInvite = nextDocInvite(current) === "bank_statement";
   const unreadEmpty =
     !failed &&
-    (extractedClass === "government_id" || extractedClass === "paystub" || extractedClass === "w2") &&
-    !hasLockedSuggestion(extractedClass, input.fields);
+    (((extractedClass === "government_id" || extractedClass === "paystub" || extractedClass === "w2") &&
+      !hasLockedSuggestion(extractedClass, input.fields)) ||
+      ((bankInvite || extractedClass === "bank_statement") && !looksLikeBankFields(input.fields)));
   const box5Read = Boolean(
     String(input.fields?.medicare_wages ?? "").trim() || String(input.fields?.box5 ?? "").trim(),
   );

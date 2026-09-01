@@ -143,8 +143,8 @@ const base = {
 
 assert.equal(propertyAddressAskText({ ...base, productIntent: "buy" }), PURCHASE_ADDRESS_ASK);
 assert.equal(propertyAddressAskText(base), REFI_ADDRESS_ASK);
-assert.equal(PURCHASE_ADDRESS_ASK, "What is the address of the home you are buying?");
-assert.equal(REFI_ADDRESS_ASK, "What is the address of the home?");
+assert.equal(PURCHASE_ADDRESS_ASK, "What is the address or ZIP of the home you are buying?");
+assert.equal(REFI_ADDRESS_ASK, "What is the address or ZIP of the home?");
 
 const proposed = proposePlaceAddress(base, harbor!);
 assert.equal(isPlaceAddressProposal(proposed.pendingProposal), true);

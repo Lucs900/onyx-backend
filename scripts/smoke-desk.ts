@@ -1361,9 +1361,13 @@ const founderZipReply = workspaceReply("94115", afterFounderHouseFico);
 assert.equal(founderZipReply?.capture?.field, "propertyZip");
 assert.equal(founderZipReply?.capture && "value" in founderZipReply.capture ? founderZipReply.capture.value : "", "94115");
 assert.doesNotMatch(founderZipReply?.text ?? "", /6\.750|Live as of|Pricing when the file is ready|What ZIP is the property in/);
-assert.equal(writePropertyZip(afterFounderHouseFico, "94115").subjectAddress, undefined);
+assert.equal(writePropertyZip(afterFounderHouseFico, "94115").subjectAddress, "94115");
 const afterFounderZip = writePropertyZip(afterFounderHouseFico, "94115");
-assert.equal(afterFounderZip.subjectAddress, undefined);
+assert.equal(afterFounderZip.subjectAddress, "94115");
+assert.equal(afterFounderZip.facts?.zip?.value, "94115");
+assert.equal(afterFounderZip.facts?.property_address?.value, "94115");
+assert.equal(conventionalFileFromDraft(afterFounderZip).property.address, "94115");
+assert.notEqual(workspacePrompt(afterFounderZip), "property-address");
 assert.equal(workspacePrompt(afterFounderZip), "income");
 assert.equal(rateflowClientBodyFromDraft(afterFounderZip)?.zipcode, "94115");
 assert.equal(rateflowClientBodyFromDraft(afterFounderZip)?.property_type, "single_family_home");
@@ -2112,7 +2116,9 @@ assert.equal(
   founderRefiZipOnly?.capture && "value" in founderRefiZipOnly.capture ? founderRefiZipOnly.capture.value : "",
   "94105",
 );
-assert.equal(writePropertyZip(founderRefiReady, "94105").subjectAddress, undefined);
+assert.equal(writePropertyZip(founderRefiReady, "94105").subjectAddress, "94105");
+assert.equal(writePropertyZip(founderRefiReady, "94105").facts?.property_address?.value, "94105");
+assert.equal(conventionalFileFromDraft(writePropertyZip(founderRefiReady, "94105")).property.address, "94105");
 const founderRefiStreet = workspaceReply("500 Market St, San Francisco, CA 94105", founderRefiReady);
 assert.equal(founderRefiStreet?.capture?.field, "propose-subject-address");
 assert.equal(founderRefiStreet?.text, placeAddressConfirmCopy("500 Market St, San Francisco, CA 94105"));
@@ -5138,6 +5144,9 @@ assert.equal(
 
 assert.ok(namedOutOfState("I live in Texas"));
 assert.ok(!namedOutOfState("I live in California"));
+assert.ok(!namedOutOfState("10000"));
+assert.ok(!namedOutOfState("$10,000"));
+assert.ok(!namedOutOfState("10,000"));
 const geoStop = workspaceReply("The property is in Texas", afterIncome);
 assert.equal(geoStop?.capture?.field, "out-of-state");
 assert.equal(geoStop?.text, GEO_STOP_COPY);
@@ -14813,7 +14822,7 @@ const afterW2Housing = writeEstimatedHousing(w2PrimaryWalk, housing!.estimatedHo
 assert.notEqual(workspacePrompt(afterW2Housing), "debts");
 assert.equal(workspacePrompt(afterW2Housing), "property-address");
 assert.equal(nextFoxAsk(afterW2Housing).text, PURCHASE_ADDRESS_ASK);
-assert.equal(nextFoxAsk(afterW2Housing).text, "What is the address of the home you are buying?");
+assert.equal(nextFoxAsk(afterW2Housing).text, "What is the address or ZIP of the home you are buying?");
 assert.deepEqual(
   (nextFoxAsk(afterW2Housing).actions ?? []).map((item) => item.label),
   ["Skip"],
@@ -14910,7 +14919,7 @@ const file32W2None = skipDocInvites(
 );
 assert.equal(workspacePrompt(file32W2None), "property-address");
 assert.equal(nextFoxAsk(file32W2None).text, PURCHASE_ADDRESS_ASK);
-assert.equal(nextFoxAsk(file32W2None).text, "What is the address of the home you are buying?");
+assert.equal(nextFoxAsk(file32W2None).text, "What is the address or ZIP of the home you are buying?");
 assert.deepEqual(
   (nextFoxAsk(file32W2None).actions ?? []).map((item) => item.label),
   ["Skip"],
@@ -15361,7 +15370,7 @@ const harborPreLooksReady = skipFormerHistory(
 );
 assert.equal(workspacePrompt(harborPreLooksReady), "property-address");
 assert.equal(nextFoxAsk(harborPreLooksReady).text, PURCHASE_ADDRESS_ASK);
-assert.equal(nextFoxAsk(harborPreLooksReady).text, "What is the address of the home you are buying?");
+assert.equal(nextFoxAsk(harborPreLooksReady).text, "What is the address or ZIP of the home you are buying?");
 assert.deepEqual(
   (nextFoxAsk(harborPreLooksReady).actions ?? []).map((item) => item.label),
   ["Skip"],
@@ -15618,7 +15627,7 @@ assert.equal(nextFoxAsk(harborAfterWho).text, WHERE_BEFORE_ASK);
 const harborWhereSkip = skipFormerHistory(harborAfterWho);
 assert.equal(workspacePrompt(harborWhereSkip), "property-address");
 assert.equal(nextFoxAsk(harborWhereSkip).text, PURCHASE_ADDRESS_ASK);
-assert.equal(nextFoxAsk(harborWhereSkip).text, "What is the address of the home you are buying?");
+assert.equal(nextFoxAsk(harborWhereSkip).text, "What is the address or ZIP of the home you are buying?");
 assert.deepEqual(
   (nextFoxAsk(harborWhereSkip).actions ?? []).map((item) => item.label),
   ["Skip"],
@@ -15680,7 +15689,7 @@ const harborIdStreet = draft({
 });
 assert.equal(workspacePrompt(harborIdStreet), "property-address");
 assert.equal(nextFoxAsk(harborIdStreet).text, PURCHASE_ADDRESS_ASK);
-assert.equal(nextFoxAsk(harborIdStreet).text, "What is the address of the home you are buying?");
+assert.equal(nextFoxAsk(harborIdStreet).text, "What is the address or ZIP of the home you are buying?");
 assert.doesNotMatch(nextFoxAsk(harborIdStreet).text, /ID shows|9 WILLOW LANE/i);
 assert.deepEqual(
   (nextFoxAsk(harborIdStreet).actions ?? []).map((item) => item.label),

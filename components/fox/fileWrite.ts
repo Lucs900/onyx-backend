@@ -395,6 +395,14 @@ export function looksLikeIdFields(
   return Boolean(fields && String(fields.full_name ?? "").trim());
 }
 
+/** Institution or ending balance — the two File writes. Never last4. */
+export function looksLikeBankFields(
+  fields?: Record<string, string | null | undefined> | null,
+): boolean {
+  const value = (key: string) => String(fields?.[key] ?? "").trim();
+  return Boolean(value("institution") || value("ending_balance"));
+}
+
 export function hasLockedSuggestion(
   extractClass: ExtractClass,
   fields?: Record<string, string | null | undefined> | null,
@@ -438,6 +446,7 @@ export function promoteExtractClass(
   if (looksLikeMortgageFields(fields)) return "mortgage_statement";
   if (looksLikePaystubFields(fields)) return "paystub";
   if (looksLikeIdFields(fields)) return "government_id";
+  if (looksLikeBankFields(fields)) return "bank_statement";
   return extractClass;
 }
 
@@ -908,7 +917,8 @@ export function applyExtractedFields(
       !looksLikeTaxReturnFields(input.fields) &&
       !looksLikeMortgageFields(input.fields) &&
       !looksLikeIdFields(input.fields) &&
-      !looksLikePaystubFields(input.fields))
+      !looksLikePaystubFields(input.fields) &&
+      !looksLikeBankFields(input.fields))
   ) {
     return { draft, writes, conflict: null, quietLines: [] };
   }
@@ -2374,6 +2384,21 @@ export function nextDocInvite(draft: FoxIntakeDraft): DocInviteKind | null {
   if (!draft.sampleAccepted) return null;
   for (const kind of afterLooksRightInvites(draft)) {
     if (!inviteSatisfied(draft, kind)) return kind;
+  }
+  return null;
+}
+
+/** Composer extract hint. Statements ask → bank_statement so a real drop is not classed `other`. */
+export function extractHintFromDraft(draft: FoxIntakeDraft, name?: string): ExtractClass | null {
+  const invite = nextDocInvite(draft);
+  if (invite === "bank_statement") return "bank_statement";
+  if (invite === "government_id" || invite === "coborrower_government_id") return "government_id";
+  if (invite === "paystub") return "paystub";
+  if (invite === "w2") return "w2";
+  if (invite === "tax_return" || invite === "prior_year_return") return "tax_return";
+  if (invite === "purchase_contract") return "purchase_contract";
+  if (name && (extractClassFromFilename(name) === "bank_statement" || slotFromFilename(name) === "bank")) {
+    return "bank_statement";
   }
   return null;
 }

@@ -1127,16 +1127,26 @@ export function namedCalifornia(text: string) {
   return Boolean(zip && isCaliforniaZip(zip[1]));
 }
 
+/** Wage / cash / ZIP digits alone. Never a California geo reject. */
+export function isBareMoneyOrNumber(text: string) {
+  const trimmed = text.trim();
+  if (!trimmed) return false;
+  return /^\$?[\d,]+(?:\.\d+)?$/.test(trimmed.replace(/\s+/g, ""));
+}
+
 export function namedOutOfState(text: string) {
-  const lower = text.trim().toLowerCase();
+  const trimmed = text.trim();
+  if (!trimmed || isBareMoneyOrNumber(trimmed)) return false;
+  const lower = trimmed.toLowerCase();
   if (namedCalifornia(text) && !/\b(not|outside|isn't|isnt)\b.{0,20}\bcalifornia\b/.test(lower)) {
     return false;
   }
   if (/\b(not|outside|isn't|isnt)\b.{0,20}\bcalifornia\b/.test(lower)) return true;
   if (/\bout of state\b/.test(lower)) return true;
   if (NON_CA_STATES.some((state) => new RegExp(`\\b${state}\\b`).test(lower))) return true;
+  const zipCue = /\bzip(?:\s*code)?\b/i.test(trimmed);
   const zip = lower.match(/\b(\d{5})\b/);
-  if (zip && !isCaliforniaZip(zip[1])) return true;
+  if (zipCue && zip && !isCaliforniaZip(zip[1])) return true;
   return /\b(?:in|from|near)\s+(az|co|fl|ga|il|nc|nj|nv|ny|tn|tx|wa)\b/.test(lower);
 }
 
@@ -1517,12 +1527,23 @@ function wageSkipAction(field: "skip-w2-box5" | "skip-w2-pay-frequency" | "skip-
   return { id: field, label: "Skip", event: "bubble", capture: { field } };
 }
 
+export const RECEIVED_UNREAD_ASK = "Received · could not read.";
+
 export function unreadDocActions(): FoxAction[] {
   return [
     { id: "retry-unread-doc", label: "Upload again", event: "bubble", capture: { field: "retry-unread-doc" } },
     { id: "note-unread-doc", label: "Type a note", event: "bubble", capture: { field: "note-unread-doc" } },
     { id: "skip-unread-doc", label: "Skip", event: "bubble", capture: { field: "skip-unread-doc" } },
   ];
+}
+
+export function isBankUnreadAsk(draft: FoxIntakeDraft) {
+  const unread = unreadDocOpen(draft);
+  return (
+    nextDocInvite(draft) === "bank_statement" ||
+    unread?.extractClass === "bank_statement" ||
+    unread?.slot === "bank"
+  );
 }
 
 export function wageDocsAsk(draft?: FoxIntakeDraft): { text: string; actions: FoxAction[] } {
@@ -3061,7 +3082,7 @@ function workspaceAskCopy(
     const invite = nextDocInvite(draft);
     if (unreadDocOpen(draft)) {
       return {
-        text: documentsAskText(draft),
+        text: isBankUnreadAsk(draft) ? RECEIVED_UNREAD_ASK : documentsAskText(draft),
         actions: unreadDocActions(),
       };
     }
@@ -4817,7 +4838,8 @@ function matrixReply(
   const moneyAtAsk =
     (prompt === "assets" && parseAvailableAssetsAmount(text) != null) ||
     (prompt === "debts" && parseMonthlyDebtAmount(text) != null);
-  if (namedCalifornia(text) && draft.outOfState && !moneyAtAsk) {
+  const bareWage = isBareMoneyOrNumber(text);
+  if (namedCalifornia(text) && draft.outOfState && !moneyAtAsk && !bareWage) {
     const nextDraft = { ...draft, outOfState: false };
     return continueAfterFlag(
       "California — I can prepare this file.",
@@ -4825,7 +4847,7 @@ function matrixReply(
       { field: "in-state" },
     );
   }
-  if (!moneyAtAsk && namedOutOfState(text)) {
+  if (!moneyAtAsk && !bareWage && namedOutOfState(text)) {
     return {
       text: GEO_STOP_COPY,
       actions: draft.originatorRequested ? undefined : [requestHumanAction()],
