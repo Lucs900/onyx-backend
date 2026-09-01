@@ -1713,6 +1713,8 @@ export function AlwaysOnFox({
     if (
       isStart &&
       startAsk === "amount" &&
+      draft.correcting !== "value" &&
+      draft.correctingLine !== "price" &&
       draft.propertyValueAmount != null &&
       Number(moneyDigits) === draft.propertyValueAmount
     ) {

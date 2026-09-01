@@ -827,6 +827,13 @@ function isKeepThisText(text: string) {
   return /^(keep( this)?|still right|yes|ok|okay|never mind|back)$/i.test(text.trim());
 }
 
+function editingPurchasePrice(draft: FoxIntakeDraft) {
+  return (
+    (draft.correcting === "value" || draft.correctingLine === "price") &&
+    draft.correctingLine !== "home"
+  );
+}
+
 function proposePriceLockedPair(draft: FoxIntakeDraft, price: number): FoxIntakeDraft | null {
   const share = lockedDownShare(draft);
   if (share == null || price <= 0) return null;
@@ -1555,9 +1562,9 @@ export function unreadDocActions(): FoxAction[] {
   ];
 }
 
-/** After Looks right, unread keeps Upload this · Skip so the line is not a dead-end. */
+/** After Looks right, or while ID / statements are open, unread keeps Upload this · Skip. */
 export function unreadRestoreActions(draft: FoxIntakeDraft): FoxAction[] {
-  if (draft.sampleAccepted) return documentInviteActions(draft);
+  if (draft.sampleAccepted || nextDocInvite(draft)) return documentInviteActions(draft);
   return unreadDocActions();
 }
 
@@ -2128,20 +2135,8 @@ function dismissesCorrectionMenu(text: string) {
   return /^(looks right|looks good|still right|confirm|yes|ok|okay|good)$/i.test(text.trim());
 }
 
-function skipRemainingInvites(draft: FoxIntakeDraft): FoxIntakeDraft {
-  let next = draft;
-  for (let i = 0; i < 8 && nextDocInvite(next); i += 1) {
-    next = skipCurrentInvite(next);
-  }
-  return { ...next, correcting: null, correctingLine: null };
-}
-
 function draftAfterDismissCorrection(draft: FoxIntakeDraft): FoxIntakeDraft {
-  const next: FoxIntakeDraft = { ...draft, correcting: null, correctingLine: null };
-  if (!next.sampleAccepted && sketchAssembled(next) && nextDocInvite(next)) {
-    return skipRemainingInvites(next);
-  }
-  return next;
+  return { ...draft, correcting: null, correctingLine: null };
 }
 
 function docInviteActions(): FoxAction[] {
@@ -2703,11 +2698,9 @@ export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
     } else if (
       draft.resumeAfterEdit === "documents" &&
       !draft.sampleAccepted &&
-      (draft.incomeType.value === "w2" ||
-        draft.incomeType.value === "both" ||
-        !draft.incomeType.value)
+      !nextDocInvite(draft)
     ) {
-      // Stale resume — W-2 / Skip docs only after Looks right.
+      // Stale resume — ID / statements already answered or skipped.
     } else if (
       (draft.resumeAfterEdit === "wage-docs" ||
         draft.resumeAfterEdit === "w2-box5" ||
@@ -2776,6 +2769,7 @@ export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
   if (!draft.sampleAccepted && wageBox5AskNeeded(draft)) return "w2-box5";
   if (!draft.sampleAccepted && wageFrequencyAskNeeded(draft)) return "w2-pay-frequency";
   if (!draft.sampleAccepted && wageStubAskNeeded(draft)) return "paystub-monthly";
+  if (!draft.sampleAccepted && nextDocInvite(draft)) return "documents";
   if (!draft.sampleAccepted && incomeNumberReady(draft) && canLooksRight(draft)) {
     return "review";
   }
@@ -3414,6 +3408,68 @@ export function parseFundsAmount(text: string, price?: number | null): FundsPars
   return null;
 }
 
+function replyToPropertyValueAsk(
+  q: string,
+  draft: FoxIntakeDraft,
+): {
+  text: string;
+  followUp?: string;
+  facts?: PreviewFact[];
+  actions?: FoxAction[];
+  capture?: Capture;
+} {
+  const requiredValue = purchasePriceAskNeeded(draft) || propertyValueAskNeeded(draft);
+  if (hasPropertyValue(draft) && isKeepThisText(q)) return keepThisReply(draft);
+  if (isUnknownAmount(q)) {
+    if (requiredValue && !editingPurchasePrice(draft)) {
+      return { text: `${amountAskText(draft)} A number works.` };
+    }
+    const nextDraft = { ...draft, valueAsked: true, correcting: null, correctingLine: null };
+    return {
+      ...workspacePromptCopy(workspacePrompt(nextDraft), nextDraft),
+      capture: { field: "skip-value" },
+    };
+  }
+  const amount = parseAmountPair(q).value ?? parseLooseAmount(q);
+  if (amount == null) {
+    return answerThenRestore(q, draft);
+  }
+  if (!editingPurchasePrice(draft)) {
+    const lockedPair = proposePriceLockedPair(draft, amount);
+    if (lockedPair) {
+      return {
+        ...workspacePromptCopy("confirm-proposal", lockedPair),
+        capture: { field: "propertyValue", value: String(amount) },
+      };
+    }
+  }
+  const nextDraft = editingPurchasePrice(draft)
+    ? {
+        ...draft,
+        propertyValueAmount: amount,
+        valueAsked: true,
+        correcting: null,
+        correctingLine: null,
+      }
+    : withComputedCompanion(
+        withMatrixAfterAmount({
+          ...draft,
+          propertyValueAmount: amount,
+          valueAsked: true,
+          correcting: null,
+          correctingLine: null,
+        }),
+      );
+  const next = workspacePromptCopy(workspacePrompt(nextDraft), nextDraft);
+  return withWorkspaceGuide(
+    {
+      ...next,
+      capture: { field: "propertyValue", value: String(amount) },
+    },
+    nextDraft,
+  );
+}
+
 function replyToFundsAsk(
   q: string,
   draft: FoxIntakeDraft,
@@ -3424,6 +3480,9 @@ function replyToFundsAsk(
   actions?: FoxAction[];
   capture?: Capture;
 } {
+  if (editingPurchasePrice(draft)) {
+    return replyToPropertyValueAsk(q, draft);
+  }
   if (isUnknownAmount(q)) {
     if (draft.correcting === "amount" || draft.resumeAfterEdit) {
       const nextDraft = {
@@ -3687,6 +3746,7 @@ export function editLineFromCapture(capture?: Capture): string | undefined {
     return "down";
   }
   if (capture.field === "loanAmount" || capture.field === "skip-amount") return "loan";
+  if (capture.field === "propertyValue" || capture.field === "skip-value") return "price";
   return undefined;
 }
 
@@ -4674,7 +4734,12 @@ function draftAfterCaptureBody(draft: FoxIntakeDraft, capture: Capture): FoxInta
   if (capture.field === "propertyValue") {
     const n = Number(capture.value.replace(/,/g, ""));
     const price = Number.isFinite(n) && n > 0 ? n : draft.propertyValueAmount;
-    if (price != null && price > 0 && price !== draft.propertyValueAmount) {
+    if (
+      !editingPurchasePrice(draft) &&
+      price != null &&
+      price > 0 &&
+      price !== draft.propertyValueAmount
+    ) {
       const locked = proposePriceLockedPair(draft, price);
       if (locked) return locked;
     }
@@ -5837,6 +5902,9 @@ export function workspaceReply(
   }
 
   if (prompt === "amount") {
+    if (editingPurchasePrice(draft)) {
+      return replyToPropertyValueAsk(q, draft);
+    }
     if (
       editingConfirmedDown(draft) &&
       /^(keep( this)?|still right|yes|ok|okay|never mind|back)$/i.test(lower)
@@ -5919,46 +5987,7 @@ export function workspaceReply(
   }
 
   if (prompt === "value") {
-    const requiredValue = purchasePriceAskNeeded(draft) || propertyValueAskNeeded(draft);
-    if (hasPropertyValue(draft) && isKeepThisText(q)) return keepThisReply(draft);
-    if (isUnknownAmount(q)) {
-      if (requiredValue) {
-        return { text: `${amountAskText(draft)} A number works.` };
-      }
-      const nextDraft = { ...draft, valueAsked: true };
-      return {
-        ...workspacePromptCopy(workspacePrompt(nextDraft), nextDraft),
-        capture: { field: "skip-value" },
-      };
-    }
-    const amount = parseAmountPair(q).value ?? parseLooseAmount(q);
-    if (amount == null) {
-      return answerThenRestore(q, draft);
-    }
-    const lockedPair = proposePriceLockedPair(draft, amount);
-    if (lockedPair) {
-      return {
-        ...workspacePromptCopy("confirm-proposal", lockedPair),
-        capture: { field: "propertyValue", value: String(amount) },
-      };
-    }
-    const nextDraft = withComputedCompanion(
-      withMatrixAfterAmount({
-        ...draft,
-        propertyValueAmount: amount,
-        valueAsked: true,
-        correcting: null,
-        correctingLine: null,
-      }),
-    );
-    const next = workspacePromptCopy(workspacePrompt(nextDraft), nextDraft);
-    return withWorkspaceGuide(
-      {
-        ...next,
-        capture: { field: "propertyValue", value: String(amount) },
-      },
-      nextDraft,
-    );
+    return replyToPropertyValueAsk(q, draft);
   }
 
   if (prompt === "credit") {

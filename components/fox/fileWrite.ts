@@ -2351,13 +2351,9 @@ export function primaryDocPassFinished(draft: FoxIntakeDraft) {
   return thisBorrowerPrimaryPackageDone(draft);
 }
 
-export function offeringDocStart(draft: FoxIntakeDraft) {
-  return (
-    !draft.docsStarted &&
-    !draft.sampleAccepted &&
-    draft.documents.length === 0 &&
-    nextDocInvite(draft) === "government_id"
-  );
+/** Pre-Looks-right ID / statements use Upload this · Skip, not Start with ID. */
+export function offeringDocStart(_draft: FoxIntakeDraft) {
+  return false;
 }
 
 /** Box 5, pay frequency, and stub monthly asked or skipped. No invented monthly. */
@@ -2370,8 +2366,26 @@ export function wageExtractOnFile(draft: FoxIntakeDraft) {
   return classSuccessfullyRead(draft, "w2") && classSuccessfullyRead(draft, "paystub");
 }
 
-/** After Looks right: Government ID, then statements. No coborrower / household / name on this door. */
-function afterLooksRightInvites(draft: FoxIntakeDraft): DocInviteKind[] {
+/** W-2 drop / Box 5 / frequency / stub confirm still live — ID wait. */
+function wageSketchBlocksDocInvite(draft: FoxIntakeDraft): boolean {
+  if (draft.sampleAccepted || !wageThreadOpen(draft)) return false;
+  if (
+    isWageExtractProposal(draft.pendingProposal) ||
+    isStubExtractProposal(draft.pendingProposal) ||
+    isStubJobProposal(draft.pendingProposal)
+  ) {
+    return true;
+  }
+  if (stubExtractAskOpen(draft)) return true;
+  if (!draft.wageDocsAsked) return true;
+  if (!draft.wageBox5Asked) return true;
+  if (!draft.wageFrequencyAsked) return true;
+  if (!draft.wageStubAsked) return true;
+  return false;
+}
+
+/** ID, then statements. After income is closed — before Looks right. Same door after Looks right if still open. */
+function lockedFileDocInvites(draft: FoxIntakeDraft): DocInviteKind[] {
   const kinds: DocInviteKind[] = [];
   if (!inviteSatisfied(draft, "government_id")) kinds.push("government_id");
   if (!inviteSatisfied(draft, "bank_statement")) kinds.push("bank_statement");
@@ -2381,8 +2395,8 @@ function afterLooksRightInvites(draft: FoxIntakeDraft): DocInviteKind[] {
 export function nextDocInvite(draft: FoxIntakeDraft): DocInviteKind | null {
   if (!draft.incomeType.value && !draft.incomeAsked) return null;
   if (draft.pendingProposal || draft.pendingConflict) return null;
-  if (!draft.sampleAccepted) return null;
-  for (const kind of afterLooksRightInvites(draft)) {
+  if (wageSketchBlocksDocInvite(draft)) return null;
+  for (const kind of lockedFileDocInvites(draft)) {
     if (!inviteSatisfied(draft, kind)) return kind;
   }
   return null;

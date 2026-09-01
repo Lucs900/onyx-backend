@@ -2364,7 +2364,27 @@ assert.ok(
 const founderSkipWageDocs = workspaceReply("Skip", founderPurchaseW2Draft);
 assert.equal(founderSkipWageDocs?.capture?.field, "skip-wage-docs");
 assert.doesNotMatch(founderSkipWageDocs?.text ?? "", /Box 5|How often are you paid|amount on the latest stub/i);
-assert.ok((founderSkipWageDocs?.actions ?? []).some((item) => item.label === "Looks right"));
+assert.doesNotMatch(founderSkipWageDocs?.text ?? "", /look right|file can move/i);
+assert.equal(founderSkipWageDocs?.text, DOC_INVITE_COPY.government_id);
+assert.ok((founderSkipWageDocs?.actions ?? []).some((item) => item.label === "Upload this"));
+assert.ok(!(founderSkipWageDocs?.actions ?? []).some((item) => item.label === "Looks right"));
+const founderAfterWageDocSkip = {
+  ...founderPurchaseW2Draft,
+  wageDocsAsked: true,
+  wageBox5Asked: true,
+  wageFrequencyAsked: true,
+  wageStubAsked: true,
+};
+assert.equal(nextDocInvite(founderAfterWageDocSkip), "government_id");
+assert.equal(workspacePrompt(founderAfterWageDocSkip), "documents");
+const founderAfterIdSkip = skipCurrentInvite(founderAfterWageDocSkip);
+assert.equal(nextDocInvite(founderAfterIdSkip), "bank_statement");
+assert.equal(workspacePrompt(founderAfterIdSkip), "documents");
+assert.equal(workspacePromptCopy("documents", founderAfterIdSkip).text, DOC_INVITE_COPY.bank_statement);
+const founderAfterStmtSkip = skipCurrentInvite(founderAfterIdSkip);
+assert.equal(nextDocInvite(founderAfterStmtSkip), null);
+assert.equal(workspacePrompt(founderAfterStmtSkip), "review");
+assert.match(workspacePromptCopy("review", founderAfterStmtSkip).text, /file can move/i);
 const founderTypedW2Draft = {
   ...founderPurchaseW2Draft,
   wageDocsAsked: true,
@@ -2417,7 +2437,8 @@ assert.deepEqual(
 const founderStubTyped = workspaceReply("7,000", founderFreqSkipped);
 assert.equal(founderStubTyped?.capture?.field, "paystubMonthly");
 assert.doesNotMatch(founderStubTyped?.text ?? "", /Suggested monthly income|Use this\?/);
-assert.ok((founderStubTyped?.actions ?? []).some((item) => item.label === "Looks right"));
+assert.equal(founderStubTyped?.text, DOC_INVITE_COPY.government_id);
+assert.ok(!(founderStubTyped?.actions ?? []).some((item) => item.label === "Looks right"));
 assert.ok(!((founderStubTyped?.actions ?? []).some((item) => item.label === "Use this")));
 const founderStubWritten = {
   ...founderFreqSkipped,
@@ -2432,21 +2453,23 @@ const founderStubWritten = {
     },
   },
 };
-assert.equal(workspacePrompt(founderStubWritten), "review");
-assert.ok(canLooksRight(founderStubWritten));
+assert.equal(workspacePrompt(founderStubWritten), "documents");
+assert.ok(!canLooksRight(founderStubWritten));
+assert.equal(nextDocInvite(founderStubWritten), "government_id");
 assert.ok(previewFacts(founderStubWritten).some((fact) => fact.id === "qualifying" && /7,000/.test(fact.value)));
 assert.ok(previewFacts(founderStubWritten).some((fact) => fact.id === "qualifying" && /Suggested/.test(fact.note ?? "")));
 const founderStubSkipped = workspaceReply("Skip", founderFreqSkipped);
 assert.equal(founderStubSkipped?.capture?.field, "skip-paystub-monthly");
-assert.ok((founderStubSkipped?.actions ?? []).some((item) => item.label === "Looks right"));
+assert.equal(founderStubSkipped?.text, DOC_INVITE_COPY.government_id);
+assert.ok(!(founderStubSkipped?.actions ?? []).some((item) => item.label === "Looks right"));
 assert.doesNotMatch(founderStubSkipped?.text ?? "", /Suggested monthly income|Use this\?/);
-assert.ok(canLooksRight({ ...founderFreqSkipped, wageStubAsked: true }));
+assert.ok(!canLooksRight({ ...founderFreqSkipped, wageStubAsked: true }));
 const founderWageSkipped = { ...founderFreqSkipped, wageStubAsked: true };
 assert.ok(!previewFacts(founderWageSkipped).some((fact) => fact.id === "qualifying"));
-assert.ok(canLooksRight(founderWageSkipped));
-assert.equal(workspacePrompt(founderWageSkipped), "review");
+assert.ok(!canLooksRight(founderWageSkipped));
+assert.equal(workspacePrompt(founderWageSkipped), "documents");
 assert.notEqual(workspacePrompt(founderWageSkipped), "other-reo");
-assert.equal(nextDocInvite(founderWageSkipped), null);
+assert.equal(nextDocInvite(founderWageSkipped), "government_id");
 
 const walkABase = { ...founderPurchaseW2Draft, looksRightHold: false };
 assert.equal(workspacePrompt(walkABase), "wage-docs");

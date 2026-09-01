@@ -96,7 +96,6 @@ import {
 import {
   applyStubEmployerSuggestion,
   canLooksRight,
-  sketchAssembled,
   impliedLoanAmount,
   lockedDownShare,
   proposePublicSuggestion,
@@ -2213,18 +2212,7 @@ function applyCaptureBody(capture: Capture) {
     return commit({ ...current, correcting: null });
   }
   if (capture.field === "keep-line") {
-    let next: FoxIntakeDraft = { ...current, correcting: null, correctingLine: null };
-    if (
-      current.correcting === "correct" &&
-      !current.sampleAccepted &&
-      sketchAssembled(next) &&
-      nextDocInvite(next)
-    ) {
-      for (let i = 0; i < 8 && nextDocInvite(next); i += 1) {
-        next = { ...skipCurrentInvite(next), correcting: null, correctingLine: null };
-      }
-    }
-    return commit(next);
+    return commit({ ...current, correcting: null, correctingLine: null });
   }
   if (capture.field === "what-acr" || capture.field === "what-happens-next" || capture.field === "ask-fox") {
     return current;
@@ -2401,6 +2389,9 @@ function applyCaptureBody(capture: Capture) {
     const value = Number(capture.value.replace(/,/g, ""));
     const nextPrice = Number.isFinite(value) && value > 0 ? value : current.propertyValueAmount;
     const share = lockedDownShare(current);
+    const editingPrice =
+      (current.correcting === "value" || current.correctingLine === "price") &&
+      current.correctingLine !== "home";
     const next = {
       ...current,
       valueAsked: true,
@@ -2408,6 +2399,9 @@ function applyCaptureBody(capture: Capture) {
       correctingLine: null,
       propertyValueAmount: nextPrice,
     };
+    if (editingPrice) {
+      return commit(withWorkspaceScenario(next));
+    }
     if (
       share != null &&
       nextPrice != null &&

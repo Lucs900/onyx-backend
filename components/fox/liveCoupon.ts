@@ -255,7 +255,7 @@ function isKeptUseThis(action: FoxAction) {
 
 /** Looks right finished the sketch. The live line is one missing doc — leftover confirms are paint. */
 export function looksRightDocAskOpen(draft: FoxIntakeDraft) {
-  return Boolean(draft.sampleAccepted && nextDocInvite(draft));
+  return Boolean(nextDocInvite(draft));
 }
 
 function isLeftoverConfirmChip(action: FoxAction) {
