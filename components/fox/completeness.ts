@@ -297,7 +297,7 @@ export function hasHelocLine(draft?: FoxIntakeDraft | null) {
   return isHelocFile(draft) && hasLoanAmount(draft);
 }
 
-/** Confirmed down ÷ price. Used to re-propose the pair when price changes. */
+/** Confirmed down ÷ price. Not the price Edit door. */
 export function lockedDownShare(draft?: FoxIntakeDraft | null): number | null {
   if (!draft || !isPurchaseLike(draft) || !hasPropertyValue(draft)) return null;
   const price = draft.propertyValueAmount!;
@@ -1017,7 +1017,7 @@ export function proposeFundsPair(draft: FoxIntakeDraft, down: number, loan: numb
   };
 }
 
-/** Keep the down percent. Write the new price. Propose new cash down + loan. Confirm-before-write. */
+/** Locked-percent pair. Price Edit does not use this — it rewinds and re-asks down. */
 export function applyPriceKeepDownShare(draft: FoxIntakeDraft, price: number): FoxIntakeDraft | null {
   const share = lockedDownShare(draft);
   if (share == null || price <= 0) return null;

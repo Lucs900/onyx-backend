@@ -80,6 +80,7 @@ import {
   purposeForIntent,
   slugForIntent,
   beginFileEdit,
+  writePurchasePrice,
   changePendingProposal,
   settleResumeAfterCapture,
   persistGuidelineNote,
@@ -95,7 +96,6 @@ import {
 } from "@/components/products/startPath";
 import {
   applyStubEmployerSuggestion,
-  applyPriceKeepDownShare,
   canLooksRight,
   loanExceedsPurchasePrice,
   proposePublicSuggestion,
@@ -2234,9 +2234,10 @@ function applyCaptureBody(capture: Capture) {
   }
   if (capture.field === "correct") {
     const field = capture.value as FoxPrompt;
+    const edited = beginFileEdit(current, field, capture.line);
     return commit({
-      ...beginFileEdit(current, field),
-      correctingLine: capture.line ?? null,
+      ...edited,
+      correctingLine: capture.line ?? edited.correctingLine ?? null,
       sections: unsetForPrompt(current.sections, capture.value),
     });
   }
@@ -2390,21 +2391,8 @@ function applyCaptureBody(capture: Capture) {
   }
   if (capture.field === "propertyValue") {
     const value = Number(capture.value.replace(/,/g, ""));
-    const nextPrice = Number.isFinite(value) && value > 0 ? value : current.propertyValueAmount;
-    if (nextPrice != null && nextPrice > 0 && nextPrice !== current.propertyValueAmount) {
-      const locked = applyPriceKeepDownShare(current, nextPrice);
-      if (locked) return commit(withWorkspaceScenario(locked));
-    }
-    const next = {
-      ...current,
-      valueAsked: true,
-      correcting: null,
-      correctingLine: null,
-      propertyValueAmount: nextPrice,
-    };
-    return commit(
-      withWorkspaceScenario(withComputedCompanion(withMatrixAfterAmount(next))),
-    );
+    if (!Number.isFinite(value) || value <= 0) return current;
+    return commit(withWorkspaceScenario(writePurchasePrice(current, value)));
   }
   if (capture.field === "downPayment") {
     const value = Number(capture.value.replace(/,/g, ""));

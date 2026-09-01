@@ -144,7 +144,6 @@ import {
   requiredLineValue,
   requiredStructureLines,
   QUALIFYING_INCOME_FIELD,
-  applyPriceKeepDownShare,
   isFundsPairProposal,
   resolveProposal,
   shouldAskYearsInBusiness,
@@ -835,8 +834,66 @@ function editingPurchasePrice(draft: FoxIntakeDraft) {
   );
 }
 
-function proposePriceLockedPair(draft: FoxIntakeDraft, price: number): FoxIntakeDraft | null {
-  return applyPriceKeepDownShare(draft, price);
+function isPurchasePriceEdit(field: FoxPrompt, line?: string | null) {
+  if (line === "home") return false;
+  return field === "value" || line === "price";
+}
+
+function clearLiveQuote(): Pick<
+  FoxIntakeDraft,
+  "liveQuote" | "liveQuoteKey" | "liveQuoteStatus" | "liveQuoteRows" | "pendingLiveCoupon"
+> {
+  return {
+    liveQuote: undefined,
+    liveQuoteKey: undefined,
+    liveQuoteStatus: undefined,
+    liveQuoteRows: undefined,
+    pendingLiveCoupon: undefined,
+  };
+}
+
+function clearDownstreamMoneyInterview(draft: FoxIntakeDraft): FoxIntakeDraft {
+  return {
+    ...draft,
+    ...clearLiveQuote(),
+    downPaymentAmount: undefined,
+    loanAmountValue: undefined,
+    downAsked: false,
+    amountAsked: false,
+    overPriceConfirmed: false,
+    resumeAfterEdit: undefined,
+    propertyType: undefined,
+    propertyTypeAsked: false,
+    creditBand: undefined,
+    creditAsked: false,
+    pendingProposal: isFundsPairProposal(draft.pendingProposal) ? null : draft.pendingProposal,
+    scenario: draft.scenario
+      ? {
+          ...draft.scenario,
+          loanAmount: undefined,
+          downPayment: undefined,
+        }
+      : draft.scenario,
+  };
+}
+
+/** Price write starts money over. Old loan is not File truth. Docs and extracts stay. */
+export function writePurchasePrice(draft: FoxIntakeDraft, price: number): FoxIntakeDraft {
+  return clearDownstreamMoneyInterview({
+    ...draft,
+    propertyValueAmount: price,
+    valueAsked: true,
+    correcting: null,
+    correctingLine: null,
+    scenario: draft.scenario
+      ? {
+          ...draft.scenario,
+          propertyValue: price,
+          loanAmount: undefined,
+          downPayment: undefined,
+        }
+      : draft.scenario,
+  });
 }
 
 export function amountAskText(draft: FoxIntakeDraft) {
@@ -3429,30 +3486,7 @@ function replyToPropertyValueAsk(
   if (amount == null) {
     return answerThenRestore(q, draft);
   }
-  const lockedPair = proposePriceLockedPair(draft, amount);
-  if (lockedPair) {
-    return {
-      ...workspacePromptCopy("confirm-proposal", lockedPair),
-      capture: { field: "propertyValue", value: String(amount) },
-    };
-  }
-  const nextDraft = editingPurchasePrice(draft)
-    ? {
-        ...draft,
-        propertyValueAmount: amount,
-        valueAsked: true,
-        correcting: null,
-        correctingLine: null,
-      }
-    : withComputedCompanion(
-        withMatrixAfterAmount({
-          ...draft,
-          propertyValueAmount: amount,
-          valueAsked: true,
-          correcting: null,
-          correctingLine: null,
-        }),
-      );
+  const nextDraft = writePurchasePrice(draft, amount);
   const next = workspacePromptCopy(workspacePrompt(nextDraft), nextDraft);
   return withWorkspaceGuide(
     {
@@ -4551,8 +4585,20 @@ function parseRefiDocumentsBareValue(
   };
 }
 
-/** Snapshot the live step, then reopen only the edited field. */
-export function beginFileEdit(draft: FoxIntakeDraft, field: FoxPrompt): FoxIntakeDraft {
+/** Hover Edit returns to that question. Price rewind starts money over — no interrupt propose. */
+export function beginFileEdit(
+  draft: FoxIntakeDraft,
+  field: FoxPrompt,
+  line?: string | null,
+): FoxIntakeDraft {
+  const editLine = line ?? draft.correctingLine;
+  if (isPurchasePriceEdit(field, editLine)) {
+    return {
+      ...clearDownstreamMoneyInterview(draft),
+      correcting: "value",
+      correctingLine: editLine === "home" ? "home" : "price",
+    };
+  }
   const prior =
     draft.resumeAfterEdit ??
     workspacePrompt({
@@ -4600,6 +4646,9 @@ function draftAfterCapture(draft: FoxIntakeDraft, capture: Capture): FoxIntakeDr
 }
 
 function draftAfterCaptureBody(draft: FoxIntakeDraft, capture: Capture): FoxIntakeDraft {
+  if (capture.field === "correct") {
+    return beginFileEdit(draft, capture.value as FoxPrompt, capture.line);
+  }
   if (capture.field === "needs-correction") {
     return { ...draft, correcting: "correct", correctingLine: null };
   }
@@ -4739,18 +4788,8 @@ function draftAfterCaptureBody(draft: FoxIntakeDraft, capture: Capture): FoxInta
   }
   if (capture.field === "propertyValue") {
     const n = Number(capture.value.replace(/,/g, ""));
-    const price = Number.isFinite(n) && n > 0 ? n : draft.propertyValueAmount;
-    if (price != null && price > 0 && price !== draft.propertyValueAmount) {
-      const locked = proposePriceLockedPair(draft, price);
-      if (locked) return locked;
-    }
-    return withComputedCompanion(
-      withMatrixAfterAmount({
-        ...next,
-        valueAsked: true,
-        propertyValueAmount: price,
-      }),
-    );
+    if (!Number.isFinite(n) || n <= 0) return next;
+    return writePurchasePrice(draft, n);
   }
   if (capture.field === "downPayment") {
     const n = Number(capture.value.replace(/,/g, ""));
