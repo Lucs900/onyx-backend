@@ -1225,8 +1225,12 @@ const moneyWalk = draft({
   valueAsked: true,
   downAsked: true,
   amountAsked: true,
+  propertyType: "sfr",
+  propertyTypeAsked: true,
+  propertyZip: "94123",
   creditAsked: true,
   creditBand: "760+",
+  resumeAfterEdit: "credit",
   correcting: "value",
   correctingLine: "price",
 });
@@ -1234,16 +1238,21 @@ const moneyPriceEdit = workspaceReply("300000", moneyWalk);
 assert.equal(moneyPriceEdit?.capture?.field, "propertyValue");
 assert.match(moneyPriceEdit?.text ?? "", /\$60,000 down · \$240,000 loan/i);
 assert.ok((moneyPriceEdit?.actions ?? []).some((item) => item.label === "Use this"));
-assert.doesNotMatch(moneyPriceEdit?.text ?? "", /larger than the purchase price|FICO/i);
-assert.ok(!(moneyPriceEdit?.actions ?? []).some((item) => /FICO|That’s right/i.test(item.label)));
+assert.doesNotMatch(moneyPriceEdit?.text ?? "", /larger than the purchase price|FICO|estimated FICO/i);
+assert.ok(!(moneyPriceEdit?.actions ?? []).some((item) => /FICO|That’s right|760|720/i.test(item.label)));
 const moneyProposed = applyPriceKeepDownShare(moneyWalk, 300000);
 assert.equal(moneyProposed?.propertyValueAmount, 300000);
 assert.equal(moneyProposed?.loanAmountValue, undefined);
+assert.equal(moneyProposed?.propertyType, "sfr");
+assert.equal(moneyProposed?.propertyZip, "94123");
+assert.equal(workspacePrompt(moneyProposed!), "confirm-proposal");
 assert.ok(!loanExceedsPurchasePrice(moneyProposed));
 const moneyAccepted = resolveProposal(moneyProposed!, "accept");
 assert.equal(moneyAccepted.propertyValueAmount, 300000);
 assert.equal(moneyAccepted.downPaymentAmount, 60000);
 assert.equal(moneyAccepted.loanAmountValue, 240000);
+assert.equal(moneyAccepted.propertyType, "sfr");
+assert.equal(moneyAccepted.propertyZip, "94123");
 assert.ok(!loanExceedsPurchasePrice(moneyAccepted));
 assert.notEqual(workspacePrompt(moneyAccepted), "over-price");
 assert.notEqual(workspacePrompt(moneyAccepted), "credit");

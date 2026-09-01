@@ -1351,9 +1351,9 @@ function withWorkspaceScenario(draft: FoxIntakeDraft): FoxIntakeDraft {
       (draft.occupancyChoice.value as ExplorerScenario["occupancy"]) || scenario.occupancy,
     timeline:
       (draft.timelineChoice.value as ExplorerScenario["timeline"]) || scenario.timeline,
-    loanAmount: draft.loanAmountValue ?? scenario.loanAmount,
+    loanAmount: draft.loanAmountValue,
     propertyValue: draft.propertyValueAmount ?? scenario.propertyValue,
-    downPayment: draft.downPaymentAmount ?? scenario.downPayment,
+    downPayment: draft.downPaymentAmount,
     creditRange: explorerCreditFromStated(draft.creditBand) ?? scenario.creditRange,
   };
   writeScenario(next);

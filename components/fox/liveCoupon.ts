@@ -9,7 +9,7 @@ import {
   type SafeCouponRow,
 } from "@/lib/rateflow/quote";
 import { nextDocInvite } from "./fileWrite";
-import { loanExceedsPurchasePrice } from "./completeness";
+import { isFundsPairProposal, loanExceedsPurchasePrice } from "./completeness";
 import { addressOnFileCopy, fileAddressLine, shouldShowAddressUseThis } from "./propertyType";
 import type { Capture, FoxAction, FoxIntakeDraft, FoxMessage } from "./types";
 
@@ -581,6 +581,14 @@ export function visibleFoxActions(message: FoxMessage, draft: FoxIntakeDraft) {
       return false;
     }
     if (isOverPriceChip(action) && !loanExceedsPurchasePrice(draft)) {
+      return false;
+    }
+    if (
+      (action.capture?.field === "creditRange" || action.capture?.field === "skip-credit") &&
+      (isFundsPairProposal(draft.pendingProposal) ||
+        draft.correcting === "value" ||
+        draft.correcting === "amount")
+    ) {
       return false;
     }
     if (hideAddressUseThisOnBubble(message, draft) && (action.label === "Use this" || action.label === "Change")) {

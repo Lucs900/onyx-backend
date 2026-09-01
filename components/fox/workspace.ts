@@ -145,6 +145,7 @@ import {
   requiredStructureLines,
   QUALIFYING_INCOME_FIELD,
   applyPriceKeepDownShare,
+  isFundsPairProposal,
   resolveProposal,
   shouldAskYearsInBusiness,
   skipYearsInBusiness,
@@ -2743,8 +2744,14 @@ export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
   }
   if (!propertyTypeSettled(draft)) return "property-type";
   if (subjectLeaseAskNeeded(draft)) return "subject-lease";
-  if (!creditSettled(draft)) return "credit";
-  if (!rateLineReady(draft)) {
+  if (
+    !creditSettled(draft) &&
+    draft.resumeAfterEdit !== "credit" &&
+    !isFundsPairProposal(draft.pendingProposal)
+  ) {
+    return "credit";
+  }
+  if (!rateLineReady(draft) && draft.resumeAfterEdit !== "credit" && !isFundsPairProposal(draft.pendingProposal)) {
     return propertyTypeSettled(draft) ? "credit" : "property-type";
   }
   if (propertyZipConfirmNeeded(draft)) return "property-zip";

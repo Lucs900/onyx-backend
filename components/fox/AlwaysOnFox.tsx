@@ -422,6 +422,12 @@ function structureWriteCapture(field?: string) {
   return (
     field != null &&
     field !== "correct" &&
+    field !== "propertyValue" &&
+    field !== "downPayment" &&
+    field !== "loanAmount" &&
+    field !== "skip-value" &&
+    field !== "skip-amount" &&
+    field !== "skip-down" &&
     field !== "propose-funds" &&
     field !== "accept-proposal" &&
     field !== "change-proposal" &&
