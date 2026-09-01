@@ -42,6 +42,7 @@ import {
   isWageExtractProposal,
   isStubExtractProposal,
   isStubJobProposal,
+  stubExtractAskOpen,
   isWageW2OnlyProposal,
   stubExtractConfirmCopy,
   wageExtractConfirmCopy,
@@ -1586,7 +1587,8 @@ export function currentAskIdle(draft: FoxIntakeDraft) {
     wageDocsAskNeeded(draft) ||
     wageBox5AskNeeded(draft) ||
     wageFrequencyAskNeeded(draft) ||
-    wageStubAskNeeded(draft)
+    wageStubAskNeeded(draft) ||
+    stubExtractAskOpen(draft)
   ) {
     return false;
   }
@@ -1597,7 +1599,6 @@ export function currentAskIdle(draft: FoxIntakeDraft) {
 
 /** Number on File, skipped type, SE/Other (no invented monthly), or skipped W-2 number path. */
 export function incomeNumberReady(draft: FoxIntakeDraft) {
-  if (factValue(draft, QUALIFYING_INCOME_FIELD)) return true;
   const type = draft.incomeType.value;
   if (!type) return Boolean(draft.incomeAsked);
   if (type === "self-employed" || type === "other") return true;
@@ -1605,7 +1606,28 @@ export function incomeNumberReady(draft: FoxIntakeDraft) {
   return Boolean(draft.incomeAsked);
 }
 
+/** Drop invite / Box 5 / stub confirm still live. Looks right must not fire. */
+export function wageIncomeSketchOpen(draft: FoxIntakeDraft) {
+  if (draft.sampleAccepted || !wageThreadOpen(draft)) return false;
+  if (
+    isWageExtractProposal(draft.pendingProposal) ||
+    isStubExtractProposal(draft.pendingProposal) ||
+    isStubJobProposal(draft.pendingProposal)
+  ) {
+    return true;
+  }
+  return (
+    wageDocsAskNeeded(draft) ||
+    wageBox5AskNeeded(draft) ||
+    wageFrequencyAskNeeded(draft) ||
+    wageStubAskNeeded(draft) ||
+    stubExtractAskOpen(draft)
+  );
+}
+
 export function canLooksRight(draft: FoxIntakeDraft) {
+  if (wageIncomeSketchOpen(draft)) return false;
+  if (nextDocInvite(draft)) return false;
   if (!incomeNumberReady(draft)) return false;
   return (
     sketchAssembled(draft) &&

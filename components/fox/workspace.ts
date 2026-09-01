@@ -4050,7 +4050,7 @@ export function workspaceUpdateCopy(capture: Capture, draft: FoxIntakeDraft) {
     return label ? `Updated income to ${label}.` : "Updated income.";
   }
   if (capture.field === "skip-income") return "Updated. Income: Skip.";
-  if (capture.field === "skip-wage-docs") return "Updated. Typing the W-2.";
+  if (capture.field === "skip-wage-docs") return "Updated. W-2 left for later.";
   if (capture.field === "skip-monthly-debts") return "Updated. Monthly debts left blank.";
   if (capture.field === "propose-monthly-debts" || capture.field === "include-mortgage-debts") {
     return "Updated.";

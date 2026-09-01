@@ -1642,6 +1642,10 @@ export function skipWageDocs(draft: FoxIntakeDraft): FoxIntakeDraft {
   return {
     ...draft,
     wageDocsAsked: true,
+    wageBox5Asked: true,
+    wageFrequencyAsked: true,
+    wageStubAsked: true,
+    awaitingPayFrequency: false,
     pendingProposal: isWageExtractProposal(draft.pendingProposal) ? null : draft.pendingProposal,
     pendingWageExtract: undefined,
     looksRightHold: false,

@@ -2461,7 +2461,7 @@ export function writeUnreadNote(draft: FoxIntakeDraft, text: string): FoxIntakeD
   };
 }
 
-/** Skip on a received-unread item. Before Looks right, Skip on wage docs opens typed Box 5. */
+/** Skip on a received-unread item. Before Looks right, Skip on wage docs parks typed income. */
 export function skipUnreadDoc(draft: FoxIntakeDraft): FoxIntakeDraft {
   const unread = unreadDocOpen(draft);
   const next: FoxIntakeDraft = { ...draft, looksRightHold: undefined, awaitingUnreadNote: false };

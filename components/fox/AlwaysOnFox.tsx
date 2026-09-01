@@ -1494,20 +1494,16 @@ export function AlwaysOnFox({
       window.requestAnimationFrame(() => focusComposer(true));
       return;
     }
-    if (
-      action.capture?.field === "open-docs" ||
-      action.capture?.field === "upload-more" ||
-      action.event === "open-docs"
-    ) {
-      const invitePick =
-        action.capture?.field === "open-docs" && !getFoxDraft().sampleAccepted;
-      if (invitePick) {
+    if (action.capture?.field === "open-docs" || action.event === "open-docs") {
+      if (!getFoxDraft().sampleAccepted) {
         applyCapture({ field: "start-docs" });
-        skipPromptSync.current = true;
-        requestFoxPickFile();
-        return;
       }
-      applyCapture(action.capture ?? { field: "open-docs" });
+      skipPromptSync.current = true;
+      requestFoxPickFile();
+      return;
+    }
+    if (action.capture?.field === "upload-more") {
+      applyCapture(action.capture);
       skipPromptSync.current = true;
       appendReply(action.label, { text: "" });
       window.requestAnimationFrame(() => {
@@ -1761,9 +1757,9 @@ export function AlwaysOnFox({
         setStreetSuggestions([]);
       }
     }
-    if (reply.capture?.field === "open-docs" && !draft.sampleAccepted) {
+    if (reply.capture?.field === "open-docs") {
       requestFoxPickFile();
-    } else if (reply.capture?.field === "open-docs" || reply.capture?.field === "upload-more") {
+    } else if (reply.capture?.field === "upload-more") {
       window.requestAnimationFrame(() => {
         document.getElementById("fox-documents")?.scrollIntoView({
           block: "nearest",

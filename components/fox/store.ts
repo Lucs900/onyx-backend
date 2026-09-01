@@ -2168,7 +2168,7 @@ function applyCaptureBody(capture: Capture) {
       return commit({
         ...current,
         docsStarted: true,
-        docsOpen: true,
+        docsOpen: false,
         correcting: null,
       });
     }

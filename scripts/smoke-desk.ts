@@ -2363,8 +2363,8 @@ assert.ok(
 );
 const founderSkipWageDocs = workspaceReply("Skip", founderPurchaseW2Draft);
 assert.equal(founderSkipWageDocs?.capture?.field, "skip-wage-docs");
-assert.equal(founderSkipWageDocs?.text, W2_BOX5_ASK);
-assert.deepEqual((founderSkipWageDocs?.actions ?? []).map((item) => item.label), ["Skip"]);
+assert.doesNotMatch(founderSkipWageDocs?.text ?? "", /Box 5|How often are you paid|amount on the latest stub/i);
+assert.ok((founderSkipWageDocs?.actions ?? []).some((item) => item.label === "Looks right"));
 const founderTypedW2Draft = {
   ...founderPurchaseW2Draft,
   wageDocsAsked: true,
@@ -2552,7 +2552,7 @@ assert.deepEqual(
 );
 const harborFailedSkip = workspaceReply("Skip", harborBox1Stub.draft);
 assert.equal(harborFailedSkip?.capture?.field, "skip-unread-doc");
-assert.equal(harborFailedSkip?.text, W2_BOX5_ASK);
+assert.doesNotMatch(harborFailedSkip?.text ?? "", /Box 5|How often are you paid|amount on the latest stub/i);
 assert.notEqual(harborFailedSkip?.text, "What name should I put on this file? Skip is fine if you’ll upload an ID.");
 const harborPrintedW2 = printedSampleFromFilename("w2-ot-bonus-2025.png");
 const harborPrintedStub = printedSampleFromFilename("paystub-ot-bonus-2026.png");
@@ -3795,7 +3795,7 @@ assert.equal(nextDocInvite(walkAFailedId), "government_id");
 assert.notEqual(walkARetry?.text, "What name should I put on this file? Skip is fine if you’ll upload an ID.");
 
 const walkBSkip = workspaceReply("Skip", founderPurchaseW2Draft);
-assert.equal(walkBSkip?.text, W2_BOX5_ASK);
+assert.doesNotMatch(walkBSkip?.text ?? "", /Box 5|How often are you paid|amount on the latest stub/i);
 const walkBBox5 = workspaceReply("182,000", founderTypedW2Draft);
 assert.equal(walkBBox5?.capture?.field, "w2Box5");
 assert.equal(walkBBox5?.text, W2_PAY_FREQUENCY_ASK);
@@ -13139,8 +13139,8 @@ assert.ok(foxSource.includes('line: field'));
 
 const filePreview = readFileSync(join(root, "components/fox/FilePreview.tsx"), "utf8");
 assert.ok(filePreview.includes("!draft.workspaceFlow"));
-assert.ok(filePreview.includes("draft.docsOpen"));
-assert.ok(filePreview.includes("sampleAccepted"));
+assert.ok(filePreview.includes("visible={showVault}"));
+assert.ok(filePreview.includes("const showVault = false"));
 assert.ok(filePreview.includes("fox-file-chip"));
 assert.ok(filePreview.includes("file-sheet"));
 assert.ok(filePreview.includes("Still useful"));
