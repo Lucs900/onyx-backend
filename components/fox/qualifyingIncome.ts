@@ -1468,20 +1468,26 @@ export function wageEmploymentFileLine(draft: FoxIntakeDraft): string {
     parseExtractMoney(factValue(draft, "gross_period"));
   const frequency = speakPayFrequency(factValue(draft, "pay_frequency"));
   const monthly = parseExtractMoney(factValue(draft, PAYSTUB_MONTHLY_FIELD));
-  if (draft.stubExtractAccepted && stub != null && stub > 0 && frequency) {
+  const stubReady =
+    Boolean(draft.stubExtractAccepted) &&
+    ((stub != null && stub > 0 && Boolean(frequency)) || (monthly != null && monthly > 0));
+  if (stubReady) {
     if (stubTwoJobsOnFile(draft)) {
       if (!employer || box5 == null || box5 <= 0) return "";
       return `${employer}, Box 5 ${speakWageMoney(box5)}`;
     }
     const monthlyBit = monthly != null && monthly > 0 ? `, ${speakWageMoney(monthly)} a month` : "";
-    const stubBit = `${frequency}, ${speakWageMoney(stub)}${monthlyBit}`;
+    const stubBit =
+      stub != null && stub > 0 && frequency
+        ? `${frequency}, ${speakWageMoney(stub)}${monthlyBit}`
+        : monthly != null && monthly > 0
+          ? `${speakWageMoney(monthly)} a month`
+          : "";
     if (employer && box5 != null && box5 > 0) {
-      return `${employer}, Box 5 ${speakWageMoney(box5)}, ${stubBit}`;
+      return stubBit ? `${employer}, Box 5 ${speakWageMoney(box5)}, ${stubBit}` : `${employer}, Box 5 ${speakWageMoney(box5)}`;
     }
-    return `${employer}, ${stubBit}`;
+    return stubBit ? `${employer}, ${stubBit}` : employer;
   }
-  if (stub != null && stub > 0) return "";
-  if (parseExtractMoney(factValue(draft, PAYSTUB_MONTHLY_FIELD))) return "";
   if (!employer || box5 == null || box5 <= 0) return "";
   return `${employer}, Box 5 ${speakWageMoney(box5)}`;
 }

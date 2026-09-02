@@ -7077,9 +7077,20 @@ export function previewFacts(draft: FoxIntakeDraft): PreviewFact[] {
     });
   }
 
+  const hideWageEmployment = wageEmploymentUnconfirmed(draft);
+  const wageEmploymentLine = hideWageEmployment ? "" : wageEmploymentFileLine(draft);
+
   const required = requiredStructureLines(draft);
   const requiredIds = new Set(required.map((line) => line.id));
   for (const line of required) {
+    if (line.id === "income" && wageEmploymentLine) {
+      facts.push({
+        id: "history-employment",
+        label: "Employment",
+        value: wageEmploymentLine,
+      });
+      continue;
+    }
     const shown = requiredLineValue(draft, line);
     facts.push({
       id: line.id,
@@ -7118,7 +7129,7 @@ export function previewFacts(draft: FoxIntakeDraft): PreviewFact[] {
     });
   }
 
-  if (!requiredIds.has("income") && draft.incomeType.value) {
+  if (!requiredIds.has("income") && draft.incomeType.value && !wageEmploymentLine) {
     const incomeLabel =
       INCOME_BUBBLES.find((item) => item.value === draft.incomeType.value)?.label ?? "Other";
     facts.push({ id: "income", label: "Income", value: incomeLabel });
@@ -7390,8 +7401,6 @@ export function previewFacts(draft: FoxIntakeDraft): PreviewFact[] {
     });
   }
 
-  const hideWageEmployment = wageEmploymentUnconfirmed(draft);
-  const wageEmploymentLine = hideWageEmployment ? "" : wageEmploymentFileLine(draft);
   const employerOnFile = factValue(draft, "employer_name").trim();
   facts.push(
     ...conventionalFileFacts(draft).filter((fact) => {
@@ -7423,14 +7432,19 @@ export function previewFacts(draft: FoxIntakeDraft): PreviewFact[] {
     draft.pendingProposal?.field === "employer_name" ? draft.pendingProposal : null;
   const employerExtra =
     draft.pendingProposal?.extras?.find((item) => item.field === "employer_name")?.value ?? "";
+  const alreadyEmployment = facts.some(
+    (fact) => fact.id === "history-employment" || fact.label === "Employment",
+  );
   if (hideWageEmployment) {
     // Employer / Employment stay empty until Use this or Change.
   } else if (wageEmploymentLine) {
-    facts.push({
-      id: "history-employment",
-      label: "Employment",
-      value: wageEmploymentLine,
-    });
+    if (!alreadyEmployment) {
+      facts.push({
+        id: "history-employment",
+        label: "Employment",
+        value: wageEmploymentLine,
+      });
+    }
   } else if (employer) {
     facts.push({
       id: "employer",
