@@ -2099,7 +2099,11 @@ function applyCaptureBody(capture: Capture) {
     return commit(proposed ?? { ...current, subjectLeaseAsked: true });
   }
   if (capture.field === "skip-docs") {
-    if (isBorrowerNameConfirmPending(current) || isPurchaseContractConfirmPending(current)) {
+    if (
+      isBorrowerNameConfirmPending(current) ||
+      isPurchaseContractConfirmPending(current) ||
+      (nextDocInvite(current) && !layer2Open(current))
+    ) {
       return commit(restripeGatheringOrReady(skipCurrentInvite({ ...current, docsHeld: false })));
     }
     if (layer2Open(current)) {

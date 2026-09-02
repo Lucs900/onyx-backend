@@ -2246,17 +2246,34 @@ export function layer2AskActions(draft: FoxIntakeDraft): FoxAction[] | undefined
   ];
 }
 
+function stillUsefulSkipClass(id: string): ExtractClass | null {
+  if (id === "government_id") return "government_id";
+  if (id === "purchase_contract") return "purchase_contract";
+  if (id === "bank_statement") return "bank_statement";
+  if (id === "paystub") return "paystub";
+  if (id === "w2") return "w2";
+  if (id === "tax_return") return "tax_return";
+  return null;
+}
+
 export function skipCurrentStillUseful(draft: FoxIntakeDraft): FoxIntakeDraft {
   const next = nextStillUsefulItem(draft);
-  const skipAddress = next?.id === "property-address";
+  if (!next) return { ...draft, docsHeld: false };
+  const docKind = stillUsefulSkipClass(next.id);
+  if (docKind) {
+    return {
+      ...draft,
+      docsHeld: false,
+      skippedClasses: Array.from(new Set([...(draft.skippedClasses ?? []), docKind])),
+    };
+  }
+  const skipId = next.id;
   return {
     ...draft,
     docsHeld: false,
-    skippedStillUseful: skipAddress
-      ? (draft.skippedStillUseful ?? []).includes("property-address")
-        ? draft.skippedStillUseful
-        : [...(draft.skippedStillUseful ?? []), "property-address"]
-      : draft.skippedStillUseful,
+    skippedStillUseful: (draft.skippedStillUseful ?? []).includes(skipId)
+      ? draft.skippedStillUseful
+      : [...(draft.skippedStillUseful ?? []), skipId],
   };
 }
 
@@ -2306,7 +2323,7 @@ export const DOC_INVITE_COPY: Record<DocInviteKind, string> = {
   prior_year_return: "A prior-year return helps me see if last year was stable. Have one?",
   coborrower_government_id: "First I need Borrower 2’s government ID, so this file has a name on it.",
   bank_statement: "Two recent statements to show funds for the down payment.",
-  purchase_contract: "Purchase contract if you have it. Skip is fine.",
+  purchase_contract: "The purchase contract is the property on paper. Skip is fine.",
 };
 
 /** ID + this borrower’s income package. Prior-year / second-year sit on remainder. */
@@ -2486,11 +2503,18 @@ function wageSketchBlocksDocInvite(draft: FoxIntakeDraft): boolean {
   return false;
 }
 
-/** ID, then statements. After income is closed — before Looks right. Same door after Looks right if still open. */
+/** ID, then statements. After Looks right on a purchase, the missing contract is next — one file, not a dump. */
 function lockedFileDocInvites(draft: FoxIntakeDraft): DocInviteKind[] {
   const kinds: DocInviteKind[] = [];
   if (!inviteSatisfied(draft, "government_id")) kinds.push("government_id");
   if (!inviteSatisfied(draft, "bank_statement")) kinds.push("bank_statement");
+  if (
+    draft.sampleAccepted &&
+    purchaseLikeFile(draft) &&
+    !inviteSatisfied(draft, "purchase_contract")
+  ) {
+    kinds.push("purchase_contract");
+  }
   return kinds;
 }
 

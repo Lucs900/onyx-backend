@@ -13,16 +13,18 @@ import { readPdfTextLayer } from "../lib/docs/pdfText";
 import { printedSampleFromLines, readPrintedSample } from "../lib/docs/printedSample";
 import {
   applyExtractedFields,
+  DOC_INVITE_COPY,
   extractHintFromDraft,
+  nextDocInvite,
   resolveFactConflict,
   skipCurrentInvite,
   stillUsefulSection,
 } from "../components/fox/fileWrite";
-import { proposalAskCopy, resolveProposal } from "../components/fox/completeness";
-import { applyProceedMotion } from "../components/fox/motion";
+import { canLooksRight, proposalAskCopy, resolveProposal } from "../components/fox/completeness";
+import { applyLooksRightMotion, applyProceedMotion } from "../components/fox/motion";
 import { applyCapture, applyExtractWrite, emptyDraft, getFoxDraft, loadIntakeDraft, receiveDocument } from "../components/fox/store";
 import { conventionalFileFacts } from "../components/fox/conventionalFile";
-import { docReactionAsk, nextFoxAsk, previewFacts } from "../components/fox/workspace";
+import { docReactionAsk, nextFoxAsk, previewFacts, workspacePrompt, workspacePromptCopy } from "../components/fox/workspace";
 import type { FoxIntakeDraft } from "../components/fox/types";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -191,6 +193,44 @@ async function main() {
   assert.equal(extractHintFromDraft(sketch, "02-purchase-contract-valencia.pdf"), "purchase_contract");
   assert.ok(stillUsefulLabels(sketch).some((label) => /purchase contract/i.test(label)));
 
+  const preLooks = {
+    ...sketch,
+    sampleAccepted: false,
+    subjectAddressAsked: true,
+    skippedClasses: ["bank_statement"],
+  };
+  assert.equal(nextDocInvite(preLooks), null);
+  assert.notEqual(nextDocInvite(preLooks), "purchase_contract");
+  assert.equal(canLooksRight(preLooks), true);
+  const afterLooks = applyLooksRightMotion(preLooks);
+  assert.equal(nextDocInvite(afterLooks), "purchase_contract");
+  assert.equal(workspacePrompt(afterLooks), "documents");
+  const looksAsk = nextFoxAsk(afterLooks);
+  assert.equal(looksAsk.text, DOC_INVITE_COPY.purchase_contract);
+  assert.match(looksAsk.text, /purchase contract/i);
+  assert.match(looksAsk.text, /property on paper/i);
+  assert.doesNotMatch(looksAsk.text, /Government ID|, and |What’s a good email|email/i);
+  assert.doesNotMatch(looksAsk.followUp ?? "", /Government ID|Purchase contract|Bank statement/i);
+  assert.deepEqual(
+    (looksAsk.actions ?? []).map((item) => item.label),
+    ["Upload this", "Skip"],
+  );
+  assert.ok(!(looksAsk.actions ?? []).some((item) => item.label === "Proceed"));
+  assert.equal(workspacePromptCopy("documents", afterLooks).text, DOC_INVITE_COPY.purchase_contract);
+  noFnma(looksAsk.text);
+
+  loadIntakeDraft(afterLooks);
+  applyCapture({ field: "skip-docs" });
+  const skippedInvite = getFoxDraft();
+  assert.ok((skippedInvite.skippedClasses ?? []).includes("purchase_contract"));
+  assert.ok(
+    stillUsefulLabels(skippedInvite).some((label) => /purchase contract/i.test(label)),
+    stillUsefulLabels(skippedInvite).join(" · "),
+  );
+  assert.notEqual(nextDocInvite(skippedInvite), "purchase_contract");
+  assert.doesNotMatch(nextFoxAsk(skippedInvite).text, /What’s a good email|email/i);
+  noFnma(nextFoxAsk(skippedInvite).text);
+
   const composerFile = new File([bytes], "02-purchase-contract-valencia.pdf", { type: "" });
   const snapshotType = "application/pdf";
   const keep = new File([new Blob([await composerFile.arrayBuffer()], { type: snapshotType })], composerFile.name, {
@@ -294,9 +334,9 @@ async function main() {
   );
   noFnma(nextFoxAsk(skipped).text);
 
-  const skippedInvite = skipCurrentInvite(composerWrite.draft);
-  assert.ok(!skippedInvite.pendingProposal);
-  assert.ok(stillUsefulLabels(skippedInvite).some((label) => /purchase contract/i.test(label)));
+  const skippedFromConfirm = skipCurrentInvite(composerWrite.draft);
+  assert.ok(!skippedFromConfirm.pendingProposal);
+  assert.ok(stillUsefulLabels(skippedFromConfirm).some((label) => /purchase contract/i.test(label)));
 
   const used = resolveProposal(composerWrite.draft, "accept");
   assert.match(used.subjectAddress ?? "", /1840 Valencia/i);

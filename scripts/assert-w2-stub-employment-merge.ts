@@ -8,8 +8,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { classifyAndExtract } from "../lib/docs/extract";
-import { applyExtractedFields } from "../components/fox/fileWrite";
-import { stillUsefulSection } from "../components/fox/fileWrite";
+import { applyExtractedFields, DOC_INVITE_COPY, nextDocInvite, stillUsefulSection } from "../components/fox/fileWrite";
 import { canLooksRight, resolveProposal } from "../components/fox/completeness";
 import { applyLooksRightMotion, applyProceedMotion } from "../components/fox/motion";
 import { emptyDraft } from "../components/fox/store";
@@ -177,7 +176,16 @@ async function main() {
   assert.match(afterLooksJobs[0]?.value ?? "", /Harbor Pacific Design Inc/);
   assert.match(afterLooksJobs[0]?.value ?? "", /Box 5 \$118,400/);
   assert.match(afterLooksJobs[0]?.value ?? "", /\$9,999\.99 a month/);
-  assert.ok((workspacePromptCopy(workspacePrompt(looks), looks).actions ?? []).some((item) => item.label === "Proceed"));
+  assert.equal(nextDocInvite(looks), "purchase_contract");
+  assert.equal(workspacePrompt(looks), "documents");
+  const afterLooksAsk = workspacePromptCopy(workspacePrompt(looks), looks);
+  assert.equal(afterLooksAsk.text, DOC_INVITE_COPY.purchase_contract);
+  assert.deepEqual(
+    (afterLooksAsk.actions ?? []).map((item) => item.label),
+    ["Upload this", "Skip"],
+  );
+  assert.ok(!(afterLooksAsk.actions ?? []).some((item) => item.label === "Proceed"));
+  assert.doesNotMatch(afterLooksAsk.text, /What’s a good email|email/i);
 
   const proceeded = applyProceedMotion(looks);
   assert.equal(proceeded.motion, "in_queue");

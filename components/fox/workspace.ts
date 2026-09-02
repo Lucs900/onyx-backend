@@ -2443,6 +2443,9 @@ function documentQuestionAnswer(draft: FoxIntakeDraft) {
   if (invite === "w2") {
     return conventionalGuidelinePattern("docs", "w2", "That’s last year’s wages on paper.");
   }
+  if (invite === "purchase_contract") {
+    return conventionalGuidelinePattern("docs", "purchase_contract", "The purchase contract is the property on paper.");
+  }
   if (draft.correcting === "correct") return "That’s so I can fix one line on the sketch.";
   if (draft.sampleAccepted) return TIMELINE_COPY;
   return FILE_ANSWER_COPY;
@@ -2888,6 +2891,10 @@ export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
   if (!rateLineReady(draft) && draft.resumeAfterEdit !== "credit" && !isFundsPairProposal(draft.pendingProposal)) {
     return propertyTypeSettled(draft) ? "credit" : "property-type";
   }
+  if (draft.sampleAccepted && (draft.motion === "in_queue" || draft.motion === "escalated")) {
+    return "done";
+  }
+  if (draft.sampleAccepted && nextDocInvite(draft)) return "documents";
   if (propertyZipConfirmNeeded(draft)) return "property-zip";
   if (propertyAddressNeededForQuote(draft)) return "property-address";
   if (propertyZipAskNeeded(draft)) return "property-zip";
@@ -2901,10 +2908,6 @@ export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
   if (!draft.sampleAccepted && incomeNumberReady(draft) && canLooksRight(draft)) {
     return "review";
   }
-  if (draft.sampleAccepted && (draft.motion === "in_queue" || draft.motion === "escalated")) {
-    return "done";
-  }
-  if (draft.sampleAccepted && nextDocInvite(draft)) return "documents";
   if (nextDocInvite(draft) && !thisBorrowerPrimaryPackageDone(draft)) return "documents";
   if (!draft.sampleAccepted && draft.awaitingYearsInBusiness) return "documents";
   if (nextDocInvite(draft) && !householdSettled(draft)) return "documents";
