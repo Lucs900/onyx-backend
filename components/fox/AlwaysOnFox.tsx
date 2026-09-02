@@ -126,6 +126,7 @@ import {
   workspaceUpdateCopy,
   threadThroughEditedTurn,
   findClientEditMessageId,
+  replaceClientTurn,
 } from "./workspace";
 import {
   ComposerAttach,
@@ -928,12 +929,12 @@ export function AlwaysOnFox({
       const live = getFoxDraft();
       const ask = workspacePromptCopy(prompt, live);
       commitMessages((prev) => {
-        const editedId =
-          prompt === "value" || field === "price"
-            ? findClientEditMessageId(prev, prompt, field)
-            : undefined;
+        const priceEdit = prompt === "value" || field === "price";
+        const editedId = priceEdit ? findClientEditMessageId(prev, prompt, field) : undefined;
         const kept = editedId ? threadThroughEditedTurn(prev, editedId) : prev;
-        return [...dropFoxActions(kept), foxAskMessage(ask)];
+        const stripped = dropFoxActions(kept);
+        if (priceEdit) return stripped;
+        return [...stripped, foxAskMessage(ask)];
       });
     };
     const onExplain = (event: Event) => {
@@ -1461,11 +1462,13 @@ export function AlwaysOnFox({
     skipPromptSync.current = true;
     applyCapture({ field: "correct", value: prompt, line });
     const live = getFoxDraft();
-    const ask = workspacePromptCopy(prompt, live);
     commitMessages((prev) => {
+      const priceEdit = prompt === "value" || line === "price";
       const editedId = messageId ?? findClientEditMessageId(prev, prompt, line);
       const kept = editedId ? threadThroughEditedTurn(prev, editedId) : prev;
-      return [...dropFoxActions(kept), foxAskMessage(ask)];
+      const stripped = dropFoxActions(kept);
+      if (priceEdit) return stripped;
+      return [...stripped, foxAskMessage(workspacePromptCopy(prompt, live))];
     });
   };
 
@@ -1829,6 +1832,33 @@ export function AlwaysOnFox({
     }
     if (editing && reply.capture) {
       appendStructureFix(clientMoneyText(text, reply.capture), reply.capture);
+      return;
+    }
+    const rewritePrice = Boolean(
+      isStart &&
+        (draft.correcting === "value" || draft.correctingLine === "price") &&
+        draft.correctingLine !== "home" &&
+        reply.capture?.field === "propertyValue",
+    );
+    if (rewritePrice) {
+      const spoken = clientMoneyText(text, reply.capture);
+      commitMessagesNow((prev) => {
+        const editedId = findClientEditMessageId(prev, "value", "price");
+        const next = editedId
+          ? replaceClientTurn(prev, editedId, spoken)
+          : [
+              ...prev,
+              {
+                id: newId(),
+                role: "client" as const,
+                text: spoken,
+                edit: "value" as const,
+                editLine: "price",
+              },
+            ];
+        return [...dropFoxActions(next), foxAskMessage(reply)];
+      });
+      continueHomeToDesk();
       return;
     }
     appendReply(

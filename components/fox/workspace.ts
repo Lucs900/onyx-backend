@@ -944,11 +944,9 @@ export function writePurchasePrice(draft: FoxIntakeDraft, price: number): FoxInt
 export function amountAskText(draft: FoxIntakeDraft) {
   if (
     (draft.correctingLine === "price" || draft.correcting === "value") &&
-    hasPropertyValue(draft) &&
     draft.correctingLine !== "home"
   ) {
-    const n = draft.propertyValueAmount;
-    return `Purchase price in the file is ${formatMoney(n ?? 0)}. Still right?`;
+    return "What’s the purchase price?";
   }
   if (draft.correctingLine === "home" && hasPropertyValue(draft)) {
     const n = draft.propertyValueAmount;
@@ -3050,13 +3048,13 @@ function workspaceAskCopy(
   }
   if (prompt === "value") {
     const requiredValue = purchasePriceAskNeeded(draft) || propertyValueAskNeeded(draft);
-    const editingPrice = Boolean(
-      draft.correcting === "value" && hasPropertyValue(draft),
-    );
+    const rewritingPrice =
+      (draft.correcting === "value" || draft.correctingLine === "price") &&
+      draft.correctingLine !== "home";
     return {
       text: amountAskText({ ...draft, productIntent: draft.productIntent ?? "buy" }),
-      actions: editingPrice
-        ? keepThisActions()
+      actions: rewritingPrice
+        ? undefined
         : requiredValue
           ? undefined
           : amountHelperActions("skip-value"),
@@ -3516,7 +3514,9 @@ function replyToPropertyValueAsk(
   capture?: Capture;
 } {
   const requiredValue = purchasePriceAskNeeded(draft) || propertyValueAskNeeded(draft);
-  if (hasPropertyValue(draft) && isKeepThisText(q)) return keepThisReply(draft);
+  if (hasPropertyValue(draft) && isKeepThisText(q) && !editingPurchasePrice(draft)) {
+    return keepThisReply(draft);
+  }
   if (isUnknownAmount(q)) {
     if (requiredValue && !editingPurchasePrice(draft)) {
       return { text: `${amountAskText(draft)} A number works.` };
@@ -4634,6 +4634,15 @@ function parseRefiDocumentsBareValue(
 export function threadThroughEditedTurn(messages: FoxMessage[], editedId: string): FoxMessage[] {
   const index = messages.findIndex((message) => message.id === editedId);
   return index >= 0 ? messages.slice(0, index + 1) : messages;
+}
+
+/** Grok-style: that price bubble becomes the new price. */
+export function replaceClientTurn(
+  messages: FoxMessage[],
+  editedId: string,
+  text: string,
+): FoxMessage[] {
+  return messages.map((message) => (message.id === editedId ? { ...message, text } : message));
 }
 
 export function findClientEditMessageId(

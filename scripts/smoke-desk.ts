@@ -501,6 +501,7 @@ import {
   writePurchasePrice,
   threadThroughEditedTurn,
   findClientEditMessageId,
+  replaceClientTurn,
 } from "../components/fox/workspace";
 import { HOME_FOX_LINE, HOME_IDLE_TEXT, homePathActions, homeProductActions } from "../components/fox/homeIdle";
 import { assertOnyxFixtures } from "./assert-onyx-fixtures";
@@ -1304,8 +1305,10 @@ assert.equal(moneyRewound.facts?.employer_name?.value, "Harbor Co");
 assert.equal(moneyRewound.incomeType.value, "w2");
 assert.equal(moneyRewound.documents[0]?.name, "license.png");
 assert.equal(workspacePrompt(moneyRewound), "value");
-assert.match(amountAskText(moneyRewound), /Purchase price in the file is \$500,000\. Still right\?/);
-assert.doesNotMatch(workspacePromptCopy("value", moneyRewound).text, /FICO|House|condo|credit|income|94105/i);
+assert.equal(amountAskText(moneyRewound), "What’s the purchase price?");
+assert.doesNotMatch(amountAskText(moneyRewound), /still right/i);
+assert.ok(!(workspacePromptCopy("value", moneyRewound).actions ?? []).some((item) => item.label === "Keep this"));
+assert.doesNotMatch(workspacePromptCopy("value", moneyRewound).text, /FICO|House|condo|credit|income|94105|still right/i);
 const moneyPriceEdit = workspaceReply("300000", moneyRewound);
 assert.equal(moneyPriceEdit?.capture?.field, "propertyValue");
 assert.match(moneyPriceEdit?.text ?? "", /down payment or loan amount/i);
@@ -1370,6 +1373,13 @@ assert.deepEqual(
   ["fox-price", "price-500k"],
 );
 assert.ok(!moneyThreadRewound.some((message) => /House|760\+|94123|6\.500%/i.test(message.text)));
+const moneyThreadInPlace = replaceClientTurn(moneyThreadRewound, "price-500k", "$300,000");
+assert.equal(moneyThreadInPlace.find((message) => message.id === "price-500k")?.text, "$300,000");
+assert.ok(!moneyThreadInPlace.some((message) => /\$500,000|Still right|Keep this/i.test(message.text)));
+assert.deepEqual(
+  moneyThreadInPlace.map((message) => message.id),
+  ["fox-price", "price-500k"],
+);
 const moneyHouseAsk = workspacePromptCopy("property-type", moneyAccepted);
 assert.doesNotMatch(`${moneyHouseAsk.text} ${moneyHouseAsk.followUp ?? ""}`, /6\.500|live as of|94123|760\+/i);
 applyCapture({ field: "correct", value: "amount" });
@@ -4463,19 +4473,15 @@ const midFile = {
 };
 applyCapture({ field: "correct", value: "value", line: "price" });
 const priceEditAsk = workspacePromptCopy("value", getFoxDraft());
-assert.match(priceEditAsk.text, /still right/i);
-assert.ok((priceEditAsk.actions ?? []).some((item) => item.label === "Keep this"));
+assert.doesNotMatch(priceEditAsk.text, /still right/i);
+assert.ok(!(priceEditAsk.actions ?? []).some((item) => item.label === "Keep this"));
+assert.match(priceEditAsk.text, /purchase price/i);
 assert.equal(getFoxDraft().propertyValueAmount, midFile.price);
 assert.equal(getFoxDraft().downPaymentAmount, undefined);
 assert.equal(getFoxDraft().loanAmountValue, undefined);
 assert.equal(getFoxDraft().occupancyChoice.value, midFile.occupancy);
 assert.equal(getFoxDraft().incomeType.value, midFile.income);
-applyCapture({ field: "keep-line" });
-assert.equal(getFoxDraft().propertyValueAmount, midFile.price);
-assert.equal(getFoxDraft().downPaymentAmount, undefined);
-assert.equal(getFoxDraft().occupancyChoice.value, midFile.occupancy);
-assert.equal(workspacePrompt(getFoxDraft()), "amount");
-applyCapture({ field: "correct", value: "value", line: "price" });
+assert.equal(workspacePrompt(getFoxDraft()), "value");
 const priceRetype = workspaceReply("1200000", getFoxDraft());
 assert.equal(priceRetype?.capture?.field, "propertyValue");
 assert.match(priceRetype?.text ?? "", /down payment or loan amount/i);
