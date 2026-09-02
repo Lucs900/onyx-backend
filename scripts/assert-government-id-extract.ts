@@ -1,15 +1,15 @@
 /**
  * After W-2 path, Fox asks for government ID so the file has a name.
- * Composer drop of 08-ca-id-jordan-hale-loud.pdf: speak name, Use this writes.
+ * Composer paperclip of 01-ca-id-jordan-hale.pdf: FN/LN → Jordan Hale.
  * File name stays empty until Use this. ID street is residence only.
- * Skip leaves Government ID on Still useful.
+ * DL number is never written. Skip leaves Government ID on Still useful.
  */
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { classifyAndExtract } from "../lib/docs/extract";
-import { loudIdFromPrintedLines, readPrintedSample } from "../lib/docs/printedSample";
+import { loudIdFromPrintedLines, nameFromCaIdLines, readPrintedSample } from "../lib/docs/printedSample";
 import { readPdfTextLayer } from "../lib/docs/pdfText";
 import { applyExtractedFields, stillUsefulSection, skipCurrentInvite, DOC_INVITE_COPY, extractHintFromDraft, nextDocInvite } from "../components/fox/fileWrite";
 import { canLooksRight, resolveProposal, proposalAskCopy } from "../components/fox/completeness";
@@ -30,14 +30,15 @@ import { wageEmploymentFileLine } from "../components/fox/qualifyingIncome";
 import type { FoxIntakeDraft } from "../components/fox/types";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const ID = join(root, "sample-docs/08-ca-id-jordan-hale-loud.pdf");
+const ID = join(root, "sample-docs/01-ca-id-jordan-hale.pdf");
+const LOUD_08 = join(root, "sample-docs/08-ca-id-jordan-hale-loud.pdf");
 
 const deadVision = {
   async classify(): Promise<never> {
-    throw new Error("vision should not run on 08 text");
+    throw new Error("vision should not run on 01 text");
   },
   async extract(): Promise<never> {
-    throw new Error("vision should not run on 08 text");
+    throw new Error("vision should not run on 01 text");
   },
 };
 
@@ -123,12 +124,25 @@ function stillUsefulLabels(draft: FoxIntakeDraft) {
 }
 
 async function main() {
+  assert.equal(nameFromCaIdLines(["LN HALE", "FN JORDAN"]), "JORDAN HALE");
+  assert.equal(nameFromCaIdLines(["LN", "HALE", "FN", "JORDAN"]), "JORDAN HALE");
+  assert.equal(nameFromCaIdLines(["DCS HALE", "DAC JORDAN"]), "JORDAN HALE");
+  assert.equal(nameFromCaIdLines(["1 HALE", "2 JORDAN"]), "JORDAN HALE");
+  assert.equal(
+    nameFromCaIdLines(["CALIFORNIA DRIVER LICENSE DL D1234567 LN HALE FN JORDAN"]),
+    "JORDAN HALE",
+  );
+  assert.equal(nameFromCaIdLines(["DRIVER LICENSE", "DL D1234567"]), "");
+
   const bytes = readFileSync(ID);
   const layer = readPdfTextLayer(bytes) ?? [];
-  assert.ok(layer.length, "08 CA ID has a text layer");
+  assert.ok(layer.length, "01 CA ID has a text layer");
   assert.match(layer.join("\n"), /DRIVER LICENSE/i);
-  assert.match(layer.join("\n"), /JORDAN HALE|FN JORDAN/i);
+  assert.match(layer.join("\n"), /FN JORDAN/i);
+  assert.match(layer.join("\n"), /LN HALE/i);
   assert.match(layer.join("\n"), /1847 Filbert/i);
+  assert.match(layer.join("\n"), /D1234567/);
+  assert.doesNotMatch(layer.join("\n"), /FULL NAME:/i);
 
   const printed = readPrintedSample(bytes);
   const loud = loudIdFromPrintedLines(layer);
@@ -142,13 +156,25 @@ async function main() {
     "application/pdf",
     deadVision,
     null,
-    "08-ca-id-jordan-hale-loud.pdf",
+    "01-ca-id-jordan-hale.pdf",
   );
-  assert.notEqual(extracted.failed, true, "08 text layer is confirm, not unread");
+  assert.notEqual(extracted.failed, true, "01 text layer is confirm, not unread");
   assert.equal(extracted.extractClass, "government_id");
   assert.match(extracted.fields.full_name ?? "", /JORDAN HALE/i);
   assert.match(extracted.fields.present_address ?? "", /1847 Filbert/i);
   assert.equal(extracted.fields.property_address, undefined);
+  assert.doesNotMatch(JSON.stringify(extracted.fields), /D1234567/);
+  assert.equal(extracted.fields.id_last4, undefined);
+
+  const loud08 = await classifyAndExtract(
+    readFileSync(LOUD_08),
+    "application/pdf",
+    deadVision,
+    null,
+    "08-ca-id-jordan-hale-loud.pdf",
+  );
+  assert.notEqual(loud08.failed, true);
+  assert.match(loud08.fields.full_name ?? "", /JORDAN HALE/i);
 
   const afterDocs = wageDocsDraft();
   assert.equal(nextDocInvite(afterDocs), "government_id");
@@ -158,20 +184,20 @@ async function main() {
 
   const afterLooks = { ...afterDocs, sampleAccepted: true };
   assert.equal(nextDocInvite(afterLooks), "government_id");
-  assert.equal(extractHintFromDraft(afterLooks, "08-ca-id-jordan-hale-loud.pdf"), "government_id");
+  assert.equal(extractHintFromDraft(afterLooks, "01-ca-id-jordan-hale.pdf"), "government_id");
   assert.equal(
-    extractHintFromDraft({ ...afterLooks, pendingProposal: { field: "loanAmount", value: "960000", label: "loan", kind: "computed" } }, "08-ca-id-jordan-hale-loud.pdf"),
+    extractHintFromDraft({ ...afterLooks, pendingProposal: { field: "loanAmount", value: "960000", label: "loan", kind: "computed" } }, "01-ca-id-jordan-hale.pdf"),
     "government_id",
   );
   assert.equal(
-    extractHintFromDraft({ ...afterLooks, skippedClasses: ["government_id"] }, "08-ca-id-jordan-hale-loud.pdf"),
+    extractHintFromDraft({ ...afterLooks, skippedClasses: ["government_id"] }, "01-ca-id-jordan-hale.pdf"),
     "government_id",
   );
   assert.ok(isGovernmentIdInviteLine(DOC_INVITE_COPY.government_id));
   assert.ok(isGovernmentIdInviteLine("Next is a government ID, so the file has a name."));
 
-  const composerFile = new File([bytes], "08-ca-id-jordan-hale-loud.pdf", { type: "" });
-  assert.equal(composerFile.name, "08-ca-id-jordan-hale-loud.pdf");
+  const composerFile = new File([bytes], "01-ca-id-jordan-hale.pdf", { type: "" });
+  assert.equal(composerFile.name, "01-ca-id-jordan-hale.pdf");
   assert.equal(composerFile.size, bytes.length);
   const snapshotType = "application/pdf";
   const keep = new File([new Blob([await composerFile.arrayBuffer()], { type: snapshotType })], composerFile.name, {
@@ -196,11 +222,12 @@ async function main() {
   };
   assert.equal(composerPosted.status, 200);
   assert.equal(composerRead.source, "file");
-  assert.notEqual(composerRead.failed, true, "composer File of 08 is confirm, not unread");
+  assert.notEqual(composerRead.failed, true, "composer File of 01 is confirm, not unread");
   assert.equal(composerRead.class, "government_id");
   assert.match(composerRead.fields?.full_name ?? "", /JORDAN HALE/i);
   assert.match(composerRead.fields?.present_address ?? "", /1847 Filbert/i);
   assert.equal(composerRead.fields?.property_address, undefined);
+  assert.doesNotMatch(JSON.stringify(composerRead.fields ?? {}), /D1234567/);
 
   const receivedAt = "2026-09-02T00:02:00.000Z";
   loadIntakeDraft(afterLooks);
@@ -231,8 +258,13 @@ async function main() {
   assert.equal(composerWrite.draft.borrowerName, undefined);
   assert.equal(composerWrite.draft.contact.fullName.value, "");
   const composerSpoken = proposalAskCopy(composerWrite.draft.pendingProposal!);
-  assert.match(composerSpoken, /The ID shows Jordan Hale/);
+  assert.equal(
+    composerSpoken,
+    "The ID shows Jordan Hale. Suggested · not underwritten. Use this?",
+  );
   assert.doesNotMatch(composerSpoken, /^On the file\.?$/);
+  assert.doesNotMatch(JSON.stringify(composerWrite.draft), /D1234567/);
+  assert.equal(composerWrite.draft.facts?.id_last4, undefined);
   const composerAsk = docReactionAsk(composerWrite.draft, "government_id");
   assert.equal(composerAsk?.text, composerSpoken);
   assert.deepEqual((composerAsk?.actions ?? []).map((item) => item.label), ["Use this", "Skip"]);
@@ -390,7 +422,7 @@ async function main() {
     stubExtractAccepted: false,
   };
   assert.equal(nextDocInvite(wageFirst), null);
-  assert.equal(extractHintFromDraft(wageFirst, "08-ca-id-jordan-hale-loud.pdf"), "government_id");
+  assert.equal(extractHintFromDraft(wageFirst, "01-ca-id-jordan-hale.pdf"), "government_id");
   const wageFirstDrop = applyExtractedFields(wageFirst, {
     extractClass: "government_id",
     confidence: 0.94,
@@ -482,7 +514,7 @@ async function main() {
       ...afterDrop.draft.documents,
       {
         slot: "id" as const,
-        name: "08-ca-id-jordan-hale-loud.pdf",
+        name: "01-ca-id-jordan-hale.pdf",
         type: "application/pdf",
         size: 4000,
         receivedAt: "2026-09-02T00:02:00.000Z",
@@ -517,6 +549,8 @@ async function main() {
   const used = resolveProposal(afterDrop.draft, "accept");
   assert.equal(used.borrowerName, "Jordan Hale");
   assert.equal(used.contact.fullName.value, "Jordan Hale");
+  assert.doesNotMatch(JSON.stringify(used), /D1234567/);
+  assert.equal(used.facts?.id_last4, undefined);
   assert.equal(used.subjectAddress, undefined);
   assert.equal(used.subjectStreet, undefined);
   assert.notEqual(used.facts?.present_address?.value, used.subjectAddress);

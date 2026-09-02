@@ -165,6 +165,39 @@ def write_founder_bank_pdf(path: Path) -> None:
     write_pdf_bytes(path, stream)
 
 
+def write_founder_ca_id_pdf(path: Path) -> None:
+    """Real CA DL face: FN/LN labels, Filbert residence, DL number not for File.
+
+    Text runs sit on one line the way a card PDF often extracts — not the 08
+    FULL NAME stub. Parser must read FN JORDAN / LN HALE without OCR.
+    """
+    stream = "\n".join(
+        [
+            "BT",
+            "/F1 14 Tf",
+            "72 740 Td",
+            "(CALIFORNIA DRIVER LICENSE) Tj",
+            "/F1 11 Tf",
+            "0 -20 Td",
+            "(DL D1234567 EXP 08/15/2028 LN HALE FN JORDAN) Tj",
+            "0 -22 Td",
+            "(1847 FILBERT ST) Tj",
+            "0 -16 Td",
+            "(SAN FRANCISCO, CA 94123) Tj",
+            "ET",
+        ]
+    ).encode("latin-1")
+    if b"FULL NAME:" in stream or b"RESIDENTIAL ADDRESS:" in stream:
+        raise SystemExit("01 CA ID must use FN/LN labels, not the 08 FULL NAME stub")
+    if b"FN JORDAN" not in stream or b"LN HALE" not in stream:
+        raise SystemExit("01 CA ID must print FN JORDAN and LN HALE")
+    if b"D1234567" not in stream:
+        raise SystemExit("01 CA ID must print a DL line that extract must not write")
+    if b"FILBERT" not in stream:
+        raise SystemExit("01 CA ID must print the Filbert residence")
+    write_pdf_bytes(path, stream)
+
+
 def write_empty_pdf(path: Path) -> None:
     """Page with no text operators — character count must be 0."""
     stream = b"q\nQ\n"
@@ -234,6 +267,7 @@ def main() -> None:
     sample_docs.mkdir(parents=True, exist_ok=True)
     for name, lines in LOUD_PAGES.items():
         write_pdf(sample_docs / name, lines)
+    write_founder_ca_id_pdf(sample_docs / "01-ca-id-jordan-hale.pdf")
     write_founder_bank_pdf(here / FOUNDER_BANK_NAME)
     write_founder_bank_pdf(sample_docs / FOUNDER_BANK_NAME)
 

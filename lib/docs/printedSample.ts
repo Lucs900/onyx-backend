@@ -680,6 +680,13 @@ export function fieldsFromPrintedLines(
     }
     delete fields.property_address;
     delete fields.subjectAddress;
+    delete fields.daq;
+    delete fields.dl;
+    delete fields.dl_number;
+    delete fields.license_number;
+    for (const key of Object.keys(fields)) {
+      if (isCaDriverLicenseNumber(fields[key] ?? "")) delete fields[key];
+    }
   }
 
   if (extractClass === "bank_statement") {
@@ -739,16 +746,77 @@ export function fieldsFromPrintedLines(
   return fields;
 }
 
-/** CA DL LN/FN on THIS page. Never invents a name. */
+export function isCaDriverLicenseNumber(value: string) {
+  return /^[A-Z]\d{7}$/i.test(String(value ?? "").replace(/\s+/g, ""));
+}
+
+function looksLikePersonNameToken(value: string) {
+  const t = value.replace(/[,;]+$/g, "").replace(/\s+/g, " ").trim();
+  if (!t || t.length < 2 || t.length > 40) return "";
+  if (/[0-9]/.test(t)) return "";
+  if (
+    /^(DL|EXP|DOB|SEX|HGT|WGT|HAIR|EYES|CLASS|END|RSTR|USA|CA|CALIFORNIA|DRIVER|LICENSE|IDENTIFICATION|CARD|STATE|ADDRESS)$/i.test(
+      t,
+    )
+  ) {
+    return "";
+  }
+  if (!/^[A-Za-z][A-Za-z.'\- ]*[A-Za-z.']$/.test(t) && !/^[A-Za-z][A-Za-z.'\-]*$/.test(t)) return "";
+  return t;
+}
+
+function firstNameFieldValue(raw: string) {
+  const cut = raw.split(/\s+(?:LN|DL|EXP|DOB|SEX|MN|DCS|DAQ|DAG|DAI|DAJ|DAK|CLASS)\b/i)[0] ?? raw;
+  const tokens = cut.trim().split(/\s+/).filter(Boolean).slice(0, 3);
+  return looksLikePersonNameToken(tokens.join(" "));
+}
+
+function lastNameFieldValue(raw: string) {
+  const cut = raw.split(/\s+(?:FN|DL|EXP|DOB|SEX|MN|DAC|DAQ|DAG|CLASS)\b/i)[0] ?? raw;
+  const token = (cut.trim().split(/\s+/)[0] ?? "").trim();
+  return looksLikePersonNameToken(token);
+}
+
+/** CA DL LN/FN and AAMVA name codes on THIS page. Never invents a name. */
 export function nameFromCaIdLines(lines: string[]): string {
   let last = "";
   let first = "";
-  for (const line of lines) {
-    const ln = valueAfter(line, /^(?:LN|LAST NAME)\s*:?\s*/i);
-    if (ln && /^[A-Za-z][A-Za-z.'\-]*$/.test(ln)) last = ln;
-    const fn = valueAfter(line, /^(?:FN|FIRST NAME)\s*:?\s*/i);
-    if (fn && /^[A-Za-z][A-Za-z.'\- ]*[A-Za-z.']$/.test(fn)) first = fn;
+  const takeLast = (raw: string) => {
+    const value = lastNameFieldValue(raw);
+    if (value && !last) last = value;
+  };
+  const takeFirst = (raw: string) => {
+    const value = firstNameFieldValue(raw);
+    if (value && !first) first = value;
+  };
+
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = (lines[i] ?? "").trim();
+    const next = (lines[i + 1] ?? "").trim();
+    const lnSame = line.match(/(?:^|[\s|/])(?:LN|LAST NAME|DCS)\s*:?\s+([A-Za-z][A-Za-z.'\- ]*)/i);
+    if (lnSame?.[1]) takeLast(lnSame[1]);
+    const fnSame = line.match(/(?:^|[\s|/])(?:FN|FIRST NAME|DAC)\s*:?\s+([A-Za-z][A-Za-z.'\- ]*)/i);
+    if (fnSame?.[1]) takeFirst(fnSame[1]);
+    if (/^(?:LN|LAST NAME|DCS)\s*:?\s*$/i.test(line)) takeLast(next);
+    if (/^(?:FN|FIRST NAME|DAC)\s*:?\s*$/i.test(line)) takeFirst(next);
+    const field1 = line.match(/^(?:1|1\.)\s+(?:LN\s*:?\s+)?([A-Za-z][A-Za-z.'\-]*)$/i);
+    if (field1?.[1]) takeLast(field1[1]);
+    const field2 = line.match(/^(?:2|2\.)\s+(?:FN\s*:?\s+)?([A-Za-z][A-Za-z.'\- ]+)$/i);
+    if (field2?.[1]) takeFirst(field2[1]);
   }
+
+  if (!first || !last) {
+    const blob = lines.join("\n");
+    if (!last) {
+      const ln = blob.match(/\b(?:LN|LAST NAME|DCS)\s*:?\s+([A-Za-z][A-Za-z.'\-]*)/i);
+      if (ln?.[1]) takeLast(ln[1]);
+    }
+    if (!first) {
+      const fn = blob.match(/\b(?:FN|FIRST NAME|DAC)\s*:?\s+([A-Za-z][A-Za-z.'\-]+(?:\s+[A-Za-z][A-Za-z.'\-]*){0,2})/i);
+      if (fn?.[1]) takeFirst(fn[1]);
+    }
+  }
+
   if (first && last) return `${first} ${last}`.replace(/\s+/g, " ").trim();
   return "";
 }
@@ -756,22 +824,49 @@ export function nameFromCaIdLines(lines: string[]): string {
 /** ID street is residence. Never a subject / purchase address. */
 export function residenceFromIdLines(lines: string[]): string {
   for (const line of lines) {
-    const labeled = valueAfter(line, /^(?:RESIDENTIAL ADDRESS|PRESENT ADDRESS)\s*:?\s*/i);
+    const labeled = valueAfter(
+      line,
+      /^(?:RESIDENTIAL ADDRESS|PRESENT ADDRESS|DAG)\s*:?\s*/i,
+    );
     if (labeled) return labeled.replace(/\s+/g, " ").trim();
+    const mid = line.match(
+      /(?:RESIDENTIAL ADDRESS|PRESENT ADDRESS)\s*:?\s+(\d{1,6}\s+\S.+)/i,
+    );
+    if (mid?.[1]) return mid[1].replace(/\s+/g, " ").trim();
+  }
+  const street = lines
+    .map((line) => line.match(/\bDAG\s*:?\s+(.+)/i)?.[1]?.trim() ?? "")
+    .find(Boolean);
+  const city = lines
+    .map((line) => line.match(/\bDAI\s*:?\s+(.+)/i)?.[1]?.trim() ?? "")
+    .find(Boolean);
+  const state = lines
+    .map((line) => line.match(/\bDAJ\s*:?\s+([A-Za-z]{2})\b/i)?.[1]?.trim() ?? "")
+    .find(Boolean);
+  const zip = lines
+    .map((line) => line.match(/\bDAK\s*:?\s+(\d{5}(?:-\d{4})?)/i)?.[1]?.trim() ?? "")
+    .find(Boolean);
+  if (street && (city || zip)) {
+    return [street, [city, state || "CA", zip].filter(Boolean).join(" ")]
+      .filter(Boolean)
+      .join(", ")
+      .replace(/\s+/g, " ")
+      .trim();
   }
   for (let i = 0; i < lines.length; i += 1) {
     const line = (lines[i] ?? "").trim();
+    const streetLine = line.replace(/^(?:8|8\.)\s+/, "");
     if (
-      !/^\d{1,6}\s+[A-Za-z]/.test(line) ||
-      !/\b(ST|STREET|AVE|AVENUE|BLVD|RD|ROAD|LN|LANE|DR|DRIVE|WAY|CT|COURT|PL|PLACE)\b/i.test(line)
+      !/^\d{1,6}\s+[A-Za-z]/.test(streetLine) ||
+      !/\b(ST|STREET|AVE|AVENUE|BLVD|RD|ROAD|LN|LANE|DR|DRIVE|WAY|CT|COURT|PL|PLACE)\b/i.test(streetLine)
     ) {
       continue;
     }
     const next = (lines[i + 1] ?? "").trim();
     if (next && /\bCA\b/i.test(next) && /\d{5}/.test(next) && !/^[A-Z][A-Z /]+:/.test(next)) {
-      return `${line}, ${next}`.replace(/\s+/g, " ").trim();
+      return `${streetLine}, ${next}`.replace(/\s+/g, " ").trim();
     }
-    return line;
+    return streetLine;
   }
   return "";
 }

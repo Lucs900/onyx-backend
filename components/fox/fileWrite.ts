@@ -314,7 +314,8 @@ const YEARLY_TAX_KEYS = new Set([
 ]);
 
 const DROP_FIELD_KEYS =
-  /^(ssn|social|social_security|account|account_number|routing|routing_number|card|cin|dl_number|license_number|full_ssn|full_account|date_of_birth|dob)$/i;
+  /^(ssn|social|social_security|account|account_number|routing|routing_number|card|cin|dl|dl_number|daq|license|license_number|full_ssn|full_account|date_of_birth|dob)$/i;
+const CA_DL_NUMBER_RE = /^[A-Z]\d{7}$/i;
 const SSN_RE = /\b\d{3}[-\s]?\d{2}[-\s]?\d{4}\b/;
 const LONG_ACCOUNT_RE = /\b\d{8,17}\b/;
 const DATE_KEYS = new Set([
@@ -675,11 +676,13 @@ export function sanitizeExtractedFields(
       if (!value) continue;
     }
     if (key === "id_last4" || key === "account_last4") {
+      if (CA_DL_NUMBER_RE.test(value.replace(/\s+/g, ""))) continue;
       value = last4Only(value);
       if (!value) continue;
       next[key] = value;
       continue;
     }
+    if (CA_DL_NUMBER_RE.test(value.replace(/\s+/g, ""))) continue;
     if (SSN_RE.test(value)) continue;
     if (
       LONG_ACCOUNT_RE.test(value.replace(/[\s-]/g, "")) &&
