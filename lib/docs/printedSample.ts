@@ -507,7 +507,9 @@ function classifyPrintedLines(lines: string[]): ExtractClass | null {
   ) {
     return "bank_statement";
   }
-  if (/PURCHASE CONTRACT/.test(blob)) return "purchase_contract";
+  if (/PURCHASE CONTRACT|PURCHASE AGREEMENT|CALIFORNIA RESIDENTIAL PURCHASE/.test(blob)) {
+    return "purchase_contract";
+  }
   if (/MORTGAGE STATEMENT/.test(blob)) return "mortgage_statement";
   if (
     /\bDRIVER|PASSPORT|GOVERNMENT ID\b|IDENTIFICATION CARD|STATE ID/.test(blob) ||
@@ -647,7 +649,7 @@ export function fieldsFromPrintedLines(
     const address = labeled(
       line,
       next,
-      /^(?:PROPERTY ADDRESS|SUBJECT PROPERTY(?: ADDRESS)?|ADDRESS):\s*/i,
+      /^(?:PROPERTY ADDRESS|SUBJECT PROPERTY(?: ADDRESS)?|THE PROPERTY(?: TO BE ACQUIRED)?|ADDRESS):\s*/i,
     );
     if (address) {
       if (extractClass === "government_id" || extractClass === "bank_statement") {
@@ -661,7 +663,7 @@ export function fieldsFromPrintedLines(
     const sellerCredit = labeled(
       line,
       next,
-      /^(?:SELLER CREDIT|SELLER CREDITS|SELLER CONCESSION|CREDIT TO BUYER):\s*/i,
+      /^(?:SELLER CREDIT|SELLER CREDITS|SELLER CONCESSION|SELLER CONCESSIONS|CREDIT TO BUYER):\s*/i,
     );
     if (sellerCredit && /\$|[\d,]+\.\d{2}\b/.test(sellerCredit) && moneyDigits(emptyIfNotShown(sellerCredit))) {
       putMoney("seller_credit", sellerCredit);
@@ -692,6 +694,17 @@ export function fieldsFromPrintedLines(
     if (fullName) put("full_name", fullName);
     const last4 = valueAfter(line, /^ID LAST 4:\s*/i);
     if (last4) put("id_last4", last4);
+  }
+
+  if (extractClass === "purchase_contract") {
+    if (!fields.property_address) {
+      const street = streetFromContractLines(lines);
+      if (street) put("property_address", street);
+    }
+    if (!fields.seller_credit) {
+      const credit = sellerCreditFromContractLines(lines);
+      if (credit) put("seller_credit", credit);
+    }
   }
 
   if (extractClass === "government_id" || extractClass === "other") {
@@ -933,6 +946,73 @@ export function printedSampleFromLines(lines: string[]): PrintedSample | null {
     confidence: 0.94,
     fields: fieldsFromPrintedLines(extractClass, lines),
   };
+}
+
+function zipOnlyContractAddress(value: string) {
+  const t = value.trim();
+  if (!t) return true;
+  if (/^\d{5}(?:-\d{4})?$/.test(t)) return true;
+  return /^[A-Za-z][A-Za-z .'-]+,\s*CA\s+\d{5}(?:-\d{4})?$/.test(t);
+}
+
+function cleanContractStreet(raw: string) {
+  const next = raw
+    .replace(/\s+/g, " ")
+    .replace(/[.;]+$/g, "")
+    .trim();
+  if (!next || zipOnlyContractAddress(next)) return "";
+  if (!/^\d{1,6}\s+[A-Za-z]/.test(next)) return "";
+  if (!/\b(ST|STREET|AVE|AVENUE|BLVD|RD|ROAD|LN|LANE|DR|DRIVE|WAY|CT|COURT|PL|PLACE)\b/i.test(next)) {
+    return "";
+  }
+  return next;
+}
+
+/** Subject street from labeled or one-line contract text. Not a residence ZIP. */
+function streetFromContractLines(lines: string[]): string {
+  const blob = lines.join("\n");
+  const labeled = blob.match(
+    /(?:subject\s+property(?:\s+address)?|property\s+address|the\s+property(?:\s+to\s+be\s+acquired)?)\s*:?\s*(?:is\s+)?(\d{1,6}\s+[A-Za-z][^\n]+)/i,
+  );
+  const fromLabel = cleanContractStreet(labeled?.[1] ?? "");
+  if (fromLabel) return fromLabel;
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = (lines[i] ?? "").trim();
+    if (/present address|residential address|buyer address/i.test(line)) continue;
+    const oneLine = line.match(
+      /(\d{1,6}\s+[A-Za-z][^,]*,\s*[A-Za-z .'-]+,\s*CA\s+\d{5}(?:-\d{4})?)/i,
+    );
+    const cleaned = cleanContractStreet(oneLine?.[1] ?? "");
+    if (cleaned) return cleaned;
+    if (
+      /^\d{1,6}\s+[A-Za-z]/.test(line) &&
+      /\b(ST|STREET|AVE|AVENUE|BLVD|RD|ROAD|LN|LANE|DR|DRIVE|WAY|CT|COURT|PL|PLACE)\b/i.test(line)
+    ) {
+      const next = (lines[i + 1] ?? "").trim();
+      if (next && /\bCA\b/i.test(next) && /\d{5}/.test(next) && !/^[A-Z][A-Z /]+:/.test(next)) {
+        const joined = cleanContractStreet(`${line}, ${next}`);
+        if (joined) return joined;
+      }
+    }
+  }
+  return "";
+}
+
+/** Seller credit only when a dollar amount is printed next to seller credit / concession language. */
+function sellerCreditFromContractLines(lines: string[]): string {
+  const blob = lines.join("\n");
+  const patterns = [
+    /seller\s+(?:credit|credits|concession|concessions)(?:\s+to\s+(?:the\s+)?buyer)?\s*:?\s*\$?\s*([\d,]+(?:\.\d{2})?)/i,
+    /seller\s+(?:to\s+)?credits?\s+(?:the\s+)?buyer[^$\d]{0,80}\$?\s*([\d,]+(?:\.\d{2})?)/i,
+    /credit\s+to\s+(?:the\s+)?buyer\s*:?\s*\$?\s*([\d,]+(?:\.\d{2})?)/i,
+  ];
+  for (const pattern of patterns) {
+    const match = blob.match(pattern);
+    if (!match?.[1] || /none|n\/a|not shown/i.test(match[0])) continue;
+    const digits = moneyDigits(match[1]);
+    if (digits && Number(digits) > 0) return digits;
+  }
+  return "";
 }
 
 /** Purchase contract fields from THIS page text. Filename is not a source. */

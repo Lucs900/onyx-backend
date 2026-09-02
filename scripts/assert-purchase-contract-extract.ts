@@ -177,6 +177,18 @@ async function main() {
   assert.match(clipperPage?.fields.close_date ?? "", /October 15, 2026|10\/15\/2026|2026-10-15/);
   assert.equal(clipperPage?.fields.seller_credit, "5000");
 
+  const carNarrative = printedSampleFromLines([
+    "CALIFORNIA RESIDENTIAL PURCHASE AGREEMENT",
+    "THE PROPERTY to be acquired is 88 Clipper Street, San Francisco, CA 94114",
+    "THE PURCHASE PRICE offered is Eight Hundred Fifty Thousand Dollars $850,000.00",
+    "Close of Escrow shall occur on October 15, 2026",
+    "Seller credits Buyer $5,000.00 toward closing costs",
+  ]);
+  assert.equal(carNarrative?.extractClass, "purchase_contract");
+  assert.match(carNarrative?.fields.property_address ?? "", /88 Clipper Street, San Francisco, CA 94114/i);
+  assert.equal(carNarrative?.fields.seller_credit, "5000");
+  assert.doesNotMatch(carNarrative?.fields.property_address ?? "", /94123|Filbert/i);
+
   const extracted = await classifyAndExtract(
     bytes,
     "application/pdf",
@@ -547,6 +559,78 @@ async function main() {
     ),
   );
   noFnma(nextFoxAsk(clipperUsed).text);
+
+  const aliasExtract = applyExtractedFields(zipOnly, {
+    extractClass: "purchase_contract",
+    confidence: 0.94,
+    fields: {
+      subject_property: "88 Clipper Street, San Francisco, CA 94114",
+      purchase_price: "850000",
+      close_date: "October 15, 2026",
+      seller_concession: "$5,000.00",
+    },
+  });
+  assert.equal(aliasExtract.conflict?.field, "purchase_price");
+  assert.match(aliasExtract.draft.pendingProposal?.value ?? "", /88 Clipper Street/i);
+  assert.ok(
+    (aliasExtract.draft.pendingProposal?.extras ?? []).some(
+      (item) => item.field === "seller_credit" && /5000/.test(item.value),
+    ),
+  );
+  const aliasPriced = resolveFactConflict(aliasExtract.draft, "document");
+  const aliasUsed = resolveProposal(aliasPriced, "accept");
+  assert.match(aliasUsed.subjectAddress ?? "", /88 Clipper Street, San Francisco, CA 94114/i);
+  assert.doesNotMatch(aliasUsed.subjectAddress ?? "", /94123|Filbert/i);
+  assert.equal(aliasUsed.facts?.seller_credit?.value, "5000");
+  assert.ok(previewFacts(aliasUsed).some((fact) => fact.label === "Seller credit" && /\$5,000/.test(fact.value)));
+  assert.ok(
+    previewFacts(aliasUsed).some((fact) => /88 Clipper Street, San Francisco, CA 94114/i.test(fact.value)),
+  );
+
+  const closeOnly = resolveProposal(
+    {
+      ...zipOnly,
+      propertyValueAmount: 850_000,
+      pendingAddress: undefined,
+      pendingConflict: null,
+      pendingProposal: {
+        field: "close_date",
+        value: "10/15/2026",
+        label: "close date",
+        kind: "computed",
+        extras: [
+          { field: "property_address", value: "88 Clipper Street, San Francisco, CA 94114", label: "property address" },
+          { field: "seller_credit", value: "5000", label: "seller credit" },
+        ],
+      },
+      facts: {
+        ...zipOnly.facts,
+        seller_credit: {
+          field: "seller_credit",
+          value: "5000",
+          source: "extracted-unconfirmed",
+          confirmed: false,
+        },
+      },
+    },
+    "accept",
+  );
+  assert.match(closeOnly.subjectAddress ?? "", /88 Clipper Street, San Francisco, CA 94114/i);
+  assert.doesNotMatch(closeOnly.subjectAddress ?? "", /94123/);
+  assert.match(closeOnly.facts?.close_date?.value ?? "", /10\/15\/2026|2026-10-15/);
+  assert.equal(closeOnly.facts?.seller_credit?.value, "5000");
+  assert.equal(closeOnly.facts?.seller_credit?.confirmed, true);
+  const closeOnlyFacts = previewFacts(closeOnly);
+  assert.ok(closeOnlyFacts.some((fact) => /88 Clipper Street, San Francisco, CA 94114/i.test(fact.value)));
+  assert.ok(closeOnlyFacts.some((fact) => fact.label === "Close" && /October 15, 2026/.test(fact.value)));
+  assert.ok(closeOnlyFacts.some((fact) => fact.label === "Seller credit" && /\$5,000/.test(fact.value)));
+  assert.ok(
+    closeOnlyFacts.every(
+      (fact) =>
+        (fact.id !== "address" && fact.id !== "file-property" && fact.label !== "Property address") ||
+        !/94123/.test(fact.value),
+    ),
+  );
 
   const emptyAssets = conventionalFileFacts({ ...emptyDraft(), productIntent: "buy", path: "acr" });
   assert.ok(emptyAssets.some((fact) => fact.id === "file-assets" && fact.value === ""));

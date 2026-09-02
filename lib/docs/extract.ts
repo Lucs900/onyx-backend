@@ -277,7 +277,7 @@ function extractFieldsPrompt(extractClass: ExtractClass, keys: readonly string[]
   }
   if (extractClass === "purchase_contract") {
     extra =
-      " property_address, purchase_price, close_date, and seller_credit only when clearly printed. seller_credit only when a dollar amount is on the page — never invent a credit. inspection_contingency, loan_contingency, and appraisal_contingency are dates only when printed; they are dates, not a guideline decision. addenda is the printed addenda list only. Never say this fails FNMA. Never invent underwriting. property_type is house/sfr, condo, or two_to_four only when the contract clearly names the type. year_built, units, annual_taxes, and hoa_monthly only when clearly printed. Empty otherwise; never invent.";
+      " property_address is the full subject street on the contract (for example 88 Clipper Street, San Francisco, CA 94114). Never a buyer/residence ZIP alone, never 94123 by itself, never city+ZIP without a street. Map subject property, premises, or the property to be acquired onto property_address. purchase_price is the total purchase price. close_date is close of escrow / closing date. seller_credit is the printed seller credit, seller concession, seller credits buyer, or credit to buyer — only when a dollar amount is on the page (for example $5,000). Never invent a credit. inspection_contingency, loan_contingency, and appraisal_contingency are dates only when printed; they are dates, not a guideline decision. addenda is the printed addenda list only. Never say this fails FNMA. Never invent underwriting. property_type is house/sfr, condo, or two_to_four only when the contract clearly names the type. year_built, units, annual_taxes, and hoa_monthly only when clearly printed. Empty otherwise; never invent.";
   }
   if (extractClass === "mortgage_statement") {
     extra =
@@ -343,9 +343,12 @@ export const grokExtractAdapter: DocumentExtractAdapter = {
       extractFieldsPrompt(extractClass, keys),
     );
     const raw: Record<string, string> = {};
+    for (const [key, value] of Object.entries(parsed)) {
+      if (value == null || typeof value === "object") continue;
+      raw[key] = String(value);
+    }
     for (const key of keys) {
-      const value = parsed[key];
-      raw[key] = value == null ? "" : String(value);
+      if (raw[key] == null) raw[key] = "";
     }
     return {
       fields: sanitizeExtractedFields(extractClass, raw),

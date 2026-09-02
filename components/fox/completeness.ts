@@ -17,6 +17,7 @@ import {
   displayFactValue,
   factLabel,
   factValue,
+  applyPurchaseContractAccept,
   isPurchaseContractConfirmPending,
   isRemainderConfirmField,
   nextDocInvite,
@@ -1518,7 +1519,7 @@ export function resolveProposal(
   const afterFileNet = winner === "accept" ? maybeProposeOtherReoFileNet(afterNet) : afterNet;
   const afterContract =
     winner === "accept" && isPurchaseContractConfirmPending(draft)
-      ? { ...afterFileNet, looksRightHold: false }
+      ? { ...applyPurchaseContractAccept(afterFileNet, draft.pendingProposal), looksRightHold: false }
       : afterFileNet;
   if (winner === "accept" && shouldAskYearsInBusiness(afterContract)) {
     return withYearsInBusinessAsk(afterContract);

@@ -1,6 +1,7 @@
 import { formatDollars } from "@/components/products/scenario";
 import { OCCUPANCY_BUBBLES, type FoxIntakeDraft, type OtherReoRow } from "./types";
 import { otherReoRows } from "./otherReo";
+import { displayedSubjectAddress } from "./propertyType";
 
 function factValue(draft: FoxIntakeDraft, field: string) {
   return (draft.facts?.[field]?.value || "").trim();
@@ -174,7 +175,7 @@ function citizenshipOf(stored: NonNullable<FoxIntakeDraft["agencyDeclarations"]>
 
 export function conventionalFileFromDraft(draft: FoxIntakeDraft): ConventionalFileShape {
   const occupancy = draft.occupancyChoice.value;
-  const address = (draft.subjectAddress || factValue(draft, "property_address")).trim();
+  const address = displayedSubjectAddress(draft).trim();
   const employer = factValue(draft, "employer_name").trim();
   const years = factValue(draft, "years_in_business").trim();
   const employmentHistory = [...(draft.employmentHistory ?? [])];

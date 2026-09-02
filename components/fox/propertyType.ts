@@ -453,9 +453,17 @@ export function isSubjectAddressConfirmPending(draft: FoxIntakeDraft) {
 }
 
 export function fileAddressLine(draft: FoxIntakeDraft) {
-  const written = typeof draft.subjectAddress === "string" ? draft.subjectAddress.trim() : "";
-  if (written) return written;
-  return factAddressFromDraft(draft).trim();
+  return displayedSubjectAddress(draft);
+}
+
+/** A confirmed contract street beats ZIP-only from ID / residence. Unconfirmed extract stays off Structure until Use this. */
+export function displayedSubjectAddress(draft: FoxIntakeDraft) {
+  const subject = typeof draft.subjectAddress === "string" ? draft.subjectAddress.trim() : "";
+  const fact = factAddressFromDraft(draft).trim();
+  const factConfirmed = Boolean(draft.facts?.property_address?.confirmed && fact);
+  if (subject && !isZipOnlyFileAddress(subject, draft.propertyZip)) return subject;
+  if (factConfirmed && !isZipOnlyFileAddress(fact, draft.propertyZip)) return fact;
+  return subject || (factConfirmed ? fact : "");
 }
 
 /** Use this paints only while a street is pending and File address is still blank. */

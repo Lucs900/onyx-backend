@@ -332,6 +332,7 @@ import {
   skipQuoteAddress,
   skipSubjectAddress,
   addressOnFileCopy,
+  displayedSubjectAddress,
   fileAddressLine,
   typedAddressConfirmCopy,
   typedZipFromDraft,
@@ -7414,7 +7415,7 @@ export function previewFacts(draft: FoxIntakeDraft): PreviewFact[] {
     });
   }
 
-  const address = draft.subjectAddress || "";
+  const address = displayedSubjectAddress(draft);
   if ((draft.subjectAddressAsked || address) && !isSubjectAddressConfirmPending(draft)) {
     facts.push({
       id: "address",
