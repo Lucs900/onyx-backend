@@ -74,9 +74,7 @@ PAGES: dict[str, list[str]] = {
     "05-bank-statement-pacific-coast-jul-2026.pdf": [
         "PACIFIC COAST BANK",
         "BANK STATEMENT",
-        "INSTITUTION: Pacific Coast Bank",
-        "PERIOD END: 2026-07-31",
-        "ENDING BALANCE: $84,220.15",
+        "Ending balance 07/31/2026 -> $84,220.15",
         "RESIDENTIAL ADDRESS: 1847 Filbert St, San Francisco, CA 94123",
         "MORTGAGE SAMPLE - NOT A REAL STATEMENT",
     ],

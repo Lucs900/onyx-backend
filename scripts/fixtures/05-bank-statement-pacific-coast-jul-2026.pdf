@@ -9,7 +9,7 @@ endobj
 << /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>
 endobj
 4 0 obj
-<< /Length 331 >>
+<< /Length 261 >>
 stream
 BT
 /F1 12 Tf
@@ -18,11 +18,7 @@ BT
 0 -18 Td
 (BANK STATEMENT) Tj
 0 -18 Td
-(INSTITUTION: Pacific Coast Bank) Tj
-0 -18 Td
-(PERIOD END: 2026-07-31) Tj
-0 -18 Td
-(ENDING BALANCE: $84,220.15) Tj
+(Ending balance 07/31/2026 -> $84,220.15) Tj
 0 -18 Td
 (RESIDENTIAL ADDRESS: 1847 Filbert St, San Francisco, CA 94123) Tj
 0 -18 Td
@@ -40,8 +36,8 @@ xref
 0000000058 00000 n 
 0000000115 00000 n 
 0000000241 00000 n 
-0000000623 00000 n 
+0000000553 00000 n 
 trailer << /Root 1 0 R /Size 6 >>
 startxref
-693
+623
 %%EOF

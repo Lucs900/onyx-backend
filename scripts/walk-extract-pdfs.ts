@@ -10,7 +10,7 @@ import { applyExtractedFields, stillUsefulSection } from "../components/fox/file
 import { resolveProposal } from "../components/fox/completeness";
 import { nextFoxAsk, previewFacts } from "../components/fox/workspace";
 import { emptyDraft } from "../components/fox/store";
-import { readPrintedSample } from "../lib/docs/printedSample";
+import { printedSampleFromLines, readPrintedSample } from "../lib/docs/printedSample";
 import type { ExtractClass, FoxIntakeDraft } from "../components/fox/types";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -43,8 +43,6 @@ function structureWrote(draft: FoxIntakeDraft) {
 function stillUsefulLabels(draft: FoxIntakeDraft) {
   return stillUsefulSection(draft)?.items.map((item) => item.label) ?? [];
 }
-
-const OFFICIAL_BANK = "scripts/fixtures/05-bank-statement-pacific-coast-jul-2026.pdf";
 
 function statementsSketch(): FoxIntakeDraft {
   return {
@@ -193,12 +191,39 @@ async function main() {
   assert.ok(emptyLayer.warnings.includes("no-text-layer"));
   assert.equal(emptyLayer.extractClass, "government_id");
 
-  const officialBankBytes = readFileSync(join(root, OFFICIAL_BANK));
-  assert.ok(readPdfTextLayer(officialBankBytes)?.length, `${OFFICIAL_BANK} has no text layer`);
+  const dateLineBank = printedSampleFromLines([
+    "PACIFIC COAST BANK",
+    "BANK STATEMENT",
+    "Ending balance 07/31/2026 → $84,220.15",
+    "RESIDENTIAL ADDRESS: 1847 Filbert St, San Francisco, CA 94123",
+  ]);
+  assert.equal(dateLineBank?.extractClass, "bank_statement");
+  assert.equal(dateLineBank?.fields.institution, "PACIFIC COAST BANK");
+  assert.equal(dateLineBank?.fields.ending_balance, "84220.15");
+  assert.notEqual(dateLineBank?.fields.ending_balance, "7");
+  assert.notEqual(dateLineBank?.fields.ending_balance, "07");
+  const dateOnlyBank = printedSampleFromLines([
+    "PACIFIC COAST BANK",
+    "BANK STATEMENT",
+    "Ending balance 07/31/2026",
+  ]);
+  assert.equal(dateOnlyBank?.fields.ending_balance, undefined);
+
+  const officialBankBytes = readFileSync(join(root, "sample-docs/05-bank-statement-pacific-coast-jul-2026.pdf"));
+  assert.ok(readPdfTextLayer(officialBankBytes)?.length, "sample-docs official bank has no text layer");
+  assert.ok(
+    (readPdfTextLayer(officialBankBytes) ?? []).some((line) => /07\/31\/2026/.test(line) && /84,220\.15/.test(line)),
+    "official fixture must print Ending balance 07/31/2026 and $84,220.15",
+  );
+  assert.ok(
+    !(readPdfTextLayer(officialBankBytes) ?? []).some((line) => /^ENDING BALANCE:\s*\$84,220\.15$/i.test(line)),
+    "official fixture is not the thin ENDING BALANCE: $84,220.15 stub",
+  );
   const officialPrinted = readPrintedSample(officialBankBytes);
   assert.equal(officialPrinted?.extractClass, "bank_statement");
-  assert.equal(officialPrinted?.fields.institution, "Pacific Coast Bank");
+  assert.match(officialPrinted?.fields.institution ?? "", /Pacific Coast Bank/i);
   assert.equal(officialPrinted?.fields.ending_balance, "84220.15");
+  assert.notEqual(officialPrinted?.fields.ending_balance, "7");
   assert.equal(officialPrinted?.fields.account_last4, undefined);
   assert.match(officialPrinted?.fields.present_address ?? "", /1847 Filbert/);
   assert.equal(officialPrinted?.fields.property_address, undefined);
@@ -211,16 +236,25 @@ async function main() {
   );
   assert.notEqual(officialBank.failed, true, `official bank failed: ${officialBank.warnings.join(" | ")}`);
   assert.equal(officialBank.extractClass, "bank_statement");
-  assert.equal(officialBank.fields.institution, "Pacific Coast Bank");
+  assert.match(officialBank.fields.institution ?? "", /Pacific Coast Bank/i);
   assert.equal(officialBank.fields.ending_balance, "84220.15");
+  assert.notEqual(officialBank.fields.ending_balance, "7");
   assert.equal(officialBank.fields.account_last4, undefined);
   assert.equal(officialBank.fields.property_address, undefined);
+  const sevenRejected = applyExtractedFields(statementsSketch(), {
+    extractClass: "bank_statement",
+    confidence: 0.94,
+    fields: { institution: "Pacific Coast Bank", ending_balance: "7" },
+  });
+  assert.notEqual(sevenRejected.draft.pendingProposal?.value, "7");
+  assert.notEqual(sevenRejected.draft.statedAvailableAssets, 7);
   const officialPending = applyExtractedFields(statementsSketch(), officialBank);
   assert.equal(officialPending.draft.facts?.institution, undefined);
   assert.equal(officialPending.draft.facts?.ending_balance, undefined);
   assert.equal(officialPending.draft.statedAvailableAssets, undefined);
   assert.equal(officialPending.draft.pendingProposal?.field, "statedAvailableAssets");
   assert.equal(officialPending.draft.pendingProposal?.value, "84220.15");
+  assert.notEqual(officialPending.draft.pendingProposal?.value, "7");
   assert.ok(
     !(officialPending.draft.pendingProposal?.extras ?? []).some(
       (item) => item.field === "account_last4" || item.field === "present_address" || item.field === "property_address",

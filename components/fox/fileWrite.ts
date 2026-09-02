@@ -41,6 +41,7 @@ import {
   wageIncomeCaution,
   wageThreadOpen,
 } from "./qualifyingIncome";
+import { bankEndingBalanceAmount } from "@/lib/docs/bankBalance";
 import {
   applyRentalIncomeFromExtract,
   draftHasLease,
@@ -667,6 +668,10 @@ export function sanitizeExtractedFields(
     if (!value) continue;
     if (extractClass === "bank_statement" && (key === "account_last4" || key === "account_number")) {
       continue;
+    }
+    if (extractClass === "bank_statement" && key === "ending_balance") {
+      value = bankEndingBalanceAmount(value);
+      if (!value) continue;
     }
     if (key === "id_last4" || key === "account_last4") {
       value = last4Only(value);

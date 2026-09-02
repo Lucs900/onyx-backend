@@ -267,7 +267,7 @@ function extractFieldsPrompt(extractClass: ExtractClass, keys: readonly string[]
   }
   if (extractClass === "bank_statement") {
     extra =
-      " institution and ending_balance only when clearly printed. Never extract account_last4, account numbers, masked account digits, or last four. Never output a full or partial account number. Never say funds are enough. Empty otherwise; never invent.";
+      " institution and ending_balance only when clearly printed. ending_balance is the dollar ending balance (for example $84,220.15), never a statement-period date or the day/month fragment 07 from 07/31/2026. Never extract account_last4, account numbers, masked account digits, or last four. Never output a full or partial account number. Never say funds are enough. Empty otherwise; never invent.";
   }
   if (extractClass === "government_id") {
     extra =

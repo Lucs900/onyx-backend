@@ -6,6 +6,7 @@
 
 import { inflateSync } from "node:zlib";
 import type { ExtractClass } from "@/components/fox/types";
+import { bankEndingBalanceAmount, isDateFragmentAmount } from "@/lib/docs/bankBalance";
 import { readPdfTextLayer } from "@/lib/docs/pdfText";
 
 export type PrintedSample = {
@@ -624,8 +625,11 @@ export function fieldsFromPrintedLines(
     if (institution && !/4412|\*{2,}|x{4,}/i.test(institution)) put("institution", institution);
     const bankPeriod = valueAfter(line, /^(?:PERIOD END|STATEMENT PERIOD(?: END)?|PERIOD ENDING):\s*/i);
     if (bankPeriod) put("period_end", bankPeriod);
-    const ending = labeled(line, next, /^(?:ENDING BALANCE|ENDING BAL\.?|ENDING ACCOUNT BALANCE):\s*/i);
-    if (ending) putMoney("ending_balance", ending);
+    const ending = labeled(line, next, /^(?:ENDING BALANCE|ENDING BAL\.?|ENDING ACCOUNT BALANCE):?\s*/i);
+    if (ending) {
+      const amount = bankEndingBalanceAmount(ending);
+      if (amount) put("ending_balance", amount);
+    }
     const present = valueAfter(line, /^(?:PRESENT ADDRESS|RESIDENTIAL ADDRESS):\s*/i);
     if (present) put("present_address", present);
     const address = valueAfter(line, /^(?:PROPERTY ADDRESS|ADDRESS):\s*/i);
@@ -663,9 +667,11 @@ export function fieldsFromPrintedLines(
       const fromHeader = institutionFromBankLines(lines);
       if (fromHeader) put("institution", fromHeader);
     }
-    if (!fields.ending_balance) {
-      const ending = endingBalanceFromBankText(lines.join("\n"));
-      if (ending) putMoney("ending_balance", ending);
+    const fromText = endingBalanceFromBankText(lines.join("\n"));
+    if (fromText && (!fields.ending_balance || isDateFragmentAmount(fields.ending_balance))) {
+      fields.ending_balance = fromText;
+    } else if (fields.ending_balance && isDateFragmentAmount(fields.ending_balance)) {
+      delete fields.ending_balance;
     }
   }
 
@@ -725,10 +731,14 @@ function institutionFromBankLines(lines: string[]): string {
 }
 
 function endingBalanceFromBankText(text: string): string {
-  const match = String(text ?? "").match(
-    /(?:ending(?:\s+account)?\s+balance|ending\s+bal\.?)[:\s]+\$?([\d,]+(?:\.\d{2})?)/i,
-  );
-  return match?.[1] ?? "";
+  const blob = String(text ?? "");
+  const label = /(?:ending(?:\s+account)?\s+balance|ending\s+bal\.?)\b/gi;
+  let match: RegExpExecArray | null;
+  while ((match = label.exec(blob))) {
+    const amount = bankEndingBalanceAmount(blob.slice(match.index + match[0].length, match.index + match[0].length + 200));
+    if (amount) return amount;
+  }
+  return "";
 }
 
 function inferPrintedClass(lines: string[]): ExtractClass | null {
