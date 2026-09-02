@@ -136,6 +136,10 @@ export function assertOnyxFixtures() {
     paths.some((path) => /bank-statement-sabotage\.png$/.test(path)),
     "expected scripts/fixtures/bank-statement-sabotage.png",
   );
+  assert.ok(
+    paths.some((path) => /05-bank-statement-pacific-coast-jul-2026\.pdf$/.test(path)),
+    "expected scripts/fixtures/05-bank-statement-pacific-coast-jul-2026.pdf",
+  );
 }
 
 const invokedDirectly =

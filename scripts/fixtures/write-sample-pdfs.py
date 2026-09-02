@@ -71,6 +71,15 @@ PAGES: dict[str, list[str]] = {
         "EMPLOYER NAME: HARBOR STEEL",
         "BOX 1 WAGES: $84,000",
     ],
+    "05-bank-statement-pacific-coast-jul-2026.pdf": [
+        "PACIFIC COAST BANK",
+        "BANK STATEMENT",
+        "INSTITUTION: Pacific Coast Bank",
+        "PERIOD END: 2026-07-31",
+        "ENDING BALANCE: $84,220.15",
+        "RESIDENTIAL ADDRESS: 1847 Filbert St, San Francisco, CA 94123",
+        "MORTGAGE SAMPLE - NOT A REAL STATEMENT",
+    ],
     "government-id-unlabeled-text.pdf": [
         "SAMPLE PAGE",
         "JORDAN HALE",
@@ -186,6 +195,8 @@ def main() -> None:
     sample_docs.mkdir(parents=True, exist_ok=True)
     for name, lines in LOUD_PAGES.items():
         write_pdf(sample_docs / name, lines)
+    official_bank = "05-bank-statement-pacific-coast-jul-2026.pdf"
+    write_pdf(sample_docs / official_bank, PAGES[official_bank])
 
 
 if __name__ == "__main__":

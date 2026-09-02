@@ -495,7 +495,12 @@ function classifyPrintedLines(lines: string[]): ExtractClass | null {
   }
   if (/\bW-?2\b/.test(blob) || /WAGE AND TAX STATEMENT/.test(blob)) return "w2";
   if (/K-?1|1120-?S|FORM 1040|SCHEDULE C/.test(blob)) return "tax_return";
-  if (/BANK STATEMENT/.test(blob)) return "bank_statement";
+  if (
+    /BANK STATEMENT|ACCOUNT STATEMENT/.test(blob) ||
+    (/\bBANK\b/.test(blob) && /ENDING BALANCE|ENDING BAL\b/.test(blob) && !/\bPAYSTUB\b|\bW-?2\b/.test(blob))
+  ) {
+    return "bank_statement";
+  }
   if (/PURCHASE CONTRACT/.test(blob)) return "purchase_contract";
   if (/MORTGAGE STATEMENT/.test(blob)) return "mortgage_statement";
   if (/\bDRIVER|PASSPORT|GOVERNMENT ID\b|IDENTIFICATION CARD|STATE ID/.test(blob)) {
@@ -615,11 +620,11 @@ export function fieldsFromPrintedLines(
     if (/^(?:ACCOUNT(?:\s+(?:NO|NUMBER|#|HOLDER))?|ACCOUNT LAST\s*4|LAST\s*4)\s*:/i.test(line)) {
       continue;
     }
-    const institution = valueAfter(line, /^INSTITUTION:\s*/i);
-    if (institution && !/4412|\*{2,}/.test(institution)) put("institution", institution);
-    const bankPeriod = valueAfter(line, /^PERIOD END:\s*/i);
+    const institution = labeled(line, next, /^(?:INSTITUTION|BANK NAME):\s*/i);
+    if (institution && !/4412|\*{2,}|x{4,}/i.test(institution)) put("institution", institution);
+    const bankPeriod = valueAfter(line, /^(?:PERIOD END|STATEMENT PERIOD(?: END)?|PERIOD ENDING):\s*/i);
     if (bankPeriod) put("period_end", bankPeriod);
-    const ending = valueAfter(line, /^ENDING BALANCE:\s*/i);
+    const ending = labeled(line, next, /^(?:ENDING BALANCE|ENDING BAL\.?|ENDING ACCOUNT BALANCE):\s*/i);
     if (ending) putMoney("ending_balance", ending);
     const present = valueAfter(line, /^(?:PRESENT ADDRESS|RESIDENTIAL ADDRESS):\s*/i);
     if (present) put("present_address", present);
@@ -651,6 +656,17 @@ export function fieldsFromPrintedLines(
     if (fullName) put("full_name", fullName);
     const last4 = valueAfter(line, /^ID LAST 4:\s*/i);
     if (last4) put("id_last4", last4);
+  }
+
+  if (extractClass === "bank_statement") {
+    if (!fields.institution) {
+      const fromHeader = institutionFromBankLines(lines);
+      if (fromHeader) put("institution", fromHeader);
+    }
+    if (!fields.ending_balance) {
+      const ending = endingBalanceFromBankText(lines.join("\n"));
+      if (ending) putMoney("ending_balance", ending);
+    }
   }
 
   if (extractClass === "w2" || extractClass === "other") {
@@ -695,6 +711,24 @@ export function fieldsFromPrintedLines(
   }
 
   return fields;
+}
+
+function institutionFromBankLines(lines: string[]): string {
+  for (const line of lines) {
+    const t = line.trim();
+    if (!t || /statement|period|ending|account|address|holder|sample|mortgage|page|balance/i.test(t)) {
+      continue;
+    }
+    if (/\bBANK\b/i.test(t) && t.length <= 48 && !/\$/.test(t) && !/\d{4}/.test(t)) return t;
+  }
+  return "";
+}
+
+function endingBalanceFromBankText(text: string): string {
+  const match = String(text ?? "").match(
+    /(?:ending(?:\s+account)?\s+balance|ending\s+bal\.?)[:\s]+\$?([\d,]+(?:\.\d{2})?)/i,
+  );
+  return match?.[1] ?? "";
 }
 
 function inferPrintedClass(lines: string[]): ExtractClass | null {

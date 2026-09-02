@@ -984,7 +984,10 @@ export function applyExtractedFields(
       idAddress = value;
       continue;
     }
-    if (extractClass === "bank_statement" && field === "present_address") {
+    if (
+      extractClass === "bank_statement" &&
+      (field === "present_address" || field === "property_address" || field === "subjectAddress")
+    ) {
       continue;
     }
     if (

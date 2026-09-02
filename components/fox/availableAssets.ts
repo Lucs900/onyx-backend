@@ -130,7 +130,7 @@ export function proposeExtractedAvailableAssets(
     ...draft,
     pendingProposal: {
       field: STATED_AVAILABLE_ASSETS_FIELD,
-      value: String(Math.round(amount)),
+      value: String(amount),
       label: "Stated available assets",
       kind: "computed",
       note: SUGGESTED_ASSETS_NOTE,
