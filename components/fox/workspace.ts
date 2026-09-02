@@ -1907,7 +1907,9 @@ function liveProposalAsk(
   if (isBorrowerNameField(proposal.field)) {
     return {
       text: proposalAskCopy(proposal),
-      actions: proposal.extras?.length ? borrowerNameExtractActions() : borrowerNameConfirmActions(),
+      actions: /The ID shows /i.test(proposalAskCopy(proposal))
+        ? borrowerNameExtractActions()
+        : borrowerNameConfirmActions(),
     };
   }
   if (proposal.field === STATED_OTHER_REO_FIELD) {
@@ -6973,6 +6975,16 @@ function docsFact(draft: FoxIntakeDraft): PreviewFact | null {
             if (failed) return "received · could not read";
             if (wageUnread && (wageLabel === "W-2" || wageLabel === "Paystubs")) {
               return "received · could not read";
+            }
+            if (wageLabel === "ID") {
+              if (isBorrowerNameConfirmPending(draft)) return "";
+              if (
+                doc.status === "extracted" &&
+                !draft.borrowerName &&
+                !draft.contact.fullName.value
+              ) {
+                return "";
+              }
             }
             if (
               wageLabel === "W-2" &&

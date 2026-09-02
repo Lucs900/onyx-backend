@@ -178,9 +178,11 @@ async function main() {
   assert.equal(confirmAsk.text, spoken);
   assert.doesNotMatch(confirmAsk.text, /^On the file\.?$/);
   const confirmChips = (confirmAsk.actions ?? []).map((item) => item.label);
-  assert.ok(confirmChips.includes("Upload this"), confirmChips.join(" · "));
-  assert.ok(confirmChips.includes("Skip"), confirmChips.join(" · "));
-  assert.ok(confirmChips.includes("Use this"), confirmChips.join(" · "));
+  assert.deepEqual(confirmChips, ["Use this", "Skip"]);
+  const inviteChips = (workspacePromptCopy("documents", afterLooks).actions ?? []).map((item) => item.label);
+  assert.ok(inviteChips.includes("Upload this"));
+  assert.ok(inviteChips.includes("Skip"));
+  assert.ok(!inviteChips.includes("Use this"));
   const confirmTurn = {
     id: "id-confirm",
     role: "fox" as const,
@@ -190,12 +192,28 @@ async function main() {
   const painted = paintThreadActions(paintedFoxActions(confirmTurn, afterDrop.draft, true) ?? []).map(
     (item) => item.label,
   );
-  assert.ok(painted.includes("Upload this"), painted.join(" · "));
-  assert.ok(painted.includes("Skip"), painted.join(" · "));
-  assert.ok(painted.includes("Use this"), painted.join(" · "));
+  assert.deepEqual(painted, ["Use this", "Skip"]);
+  const afterDropWithDoc = {
+    ...afterDrop.draft,
+    documents: [
+      ...afterDrop.draft.documents,
+      {
+        slot: "id" as const,
+        name: "08-ca-id-jordan-hale-loud.pdf",
+        type: "application/pdf",
+        size: 4000,
+        receivedAt: "2026-09-02T00:02:00.000Z",
+        status: "extracted" as const,
+        extractClass: "government_id" as const,
+      },
+    ],
+  };
   assert.ok(
-    painted.includes("Upload this") && painted.includes("Skip") && painted.includes("Use this"),
-    painted.join(" · "),
+    previewFacts(afterDropWithDoc).every((fact) => fact.id !== "docs" || !/ID in/.test(fact.value)),
+    previewFacts(afterDropWithDoc)
+      .filter((fact) => fact.id === "docs")
+      .map((fact) => fact.value)
+      .join(" · "),
   );
   const withZipOnFile = { ...afterDrop.draft, subjectAddress: "94115", subjectAddressAsked: true };
   const sealed = dropResolvedAddressConfirmChips([confirmTurn], withZipOnFile);
@@ -222,6 +240,14 @@ async function main() {
   assert.doesNotMatch(used.subjectAddress ?? "", /1847 Filbert/i);
   const usedFacts = previewFacts(used);
   assert.ok(usedFacts.some((fact) => fact.id === "borrower" && /Jordan Hale/i.test(fact.value)));
+  const usedWithDoc = resolveProposal(afterDropWithDoc, "accept");
+  assert.ok(
+    previewFacts(usedWithDoc).some((fact) => fact.id === "docs" && /ID in/.test(fact.value)),
+    previewFacts(usedWithDoc)
+      .filter((fact) => fact.id === "docs")
+      .map((fact) => fact.value)
+      .join(" · "),
+  );
   assert.ok(
     usedFacts.some(
       (fact) =>

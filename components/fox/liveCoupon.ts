@@ -282,6 +282,13 @@ function isAfterLooksRightDocChip(action: FoxAction) {
   );
 }
 
+function isIdConfirmChip(action: FoxAction) {
+  return (
+    action.label === "Use this" ||
+    (action.label === "Skip" && action.capture?.field === "skip-docs")
+  );
+}
+
 function lastFoxIndex(messages: FoxMessage[]) {
   let last = -1;
   for (let i = 0; i < messages.length; i += 1) {
@@ -374,10 +381,8 @@ function dropLeftoverConfirmChipsOnLooksRightDocAsk(
       return { ...message, text: message.text, followUp: message.followUp, facts: message.facts, actions: undefined };
     }
     const keepIdUseThis = /The ID shows /i.test(foxBlob(message));
-    const next = message.actions.filter(
-      (action) =>
-        isAfterLooksRightDocChip(action) ||
-        (keepIdUseThis && (action.label === "Use this" || action.label === "Change")),
+    const next = message.actions.filter((action) =>
+      keepIdUseThis ? isIdConfirmChip(action) : isAfterLooksRightDocChip(action),
     );
     if (next.length === message.actions.length) return message;
     return { ...message, actions: next.length ? next : undefined };
@@ -573,12 +578,7 @@ export function paintedFoxActions(
       return false;
     }
     if (idNameConfirm) {
-      return (
-        isAfterLooksRightDocChip(action) ||
-        action.label === "Use this" ||
-        action.label === "Change" ||
-        isKeptUseThis(action)
-      );
+      return isIdConfirmChip(action);
     }
     if (docAsk && isLeftoverConfirmChip(action)) return false;
     if (docAsk) return current && isAfterLooksRightDocChip(action);

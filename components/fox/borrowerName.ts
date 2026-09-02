@@ -218,12 +218,11 @@ export function borrowerNameConfirmActions(): FoxAction[] {
   ];
 }
 
-/** ID extract confirm keeps the invite door plus Use this. */
+/** ID extract confirm. Ask turn stays Upload this · Skip. */
 export function borrowerNameExtractActions(): FoxAction[] {
   return [
-    { id: "upload-this", label: "Upload this", event: "open-docs", capture: { field: "open-docs" } },
+    { id: "accept-proposal", label: "Use this", event: "bubble", capture: { field: "accept-proposal" } },
     { id: "skip-docs", label: "Skip", event: "bubble", capture: { field: "skip-docs" } },
-    ...borrowerNameConfirmActions(),
   ];
 }
 
