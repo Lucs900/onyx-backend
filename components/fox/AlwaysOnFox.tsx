@@ -159,7 +159,7 @@ import {
   type DocIntakeDetail,
 } from "./fileWrite";
 import { DECLINING_INCOME_CAUTION, WAGE_DOCS_ASK, WAGE_STUB_DROP_ASK } from "./qualifyingIncome";
-import { ID_UNREAD_ASK, isBorrowerNameConfirmPending } from "./borrowerName";
+import { governmentIdSkipped, ID_UNREAD_ASK, isBorrowerNameConfirmPending } from "./borrowerName";
 import { isUnreadNote } from "@/lib/docs/accept";
 import { fileExists, finishLineActions, inQueueEnding, reviewIsSitting } from "./motion";
 import { pathFromHomeChoice } from "./homeIdle";
@@ -362,6 +362,9 @@ function applyFoxAsk(
     return freezeUsedFoxTurns(dropOnFileAddressLines(messages));
   }
   if (last && isGovernmentIdInviteLine(last.text) && ask.text !== last.text) {
+    return freezeOthers(last.id, foxAskMessage(ask));
+  }
+  if (last && /The ID shows /i.test(last.text) && !/The ID shows /i.test(ask.text)) {
     return freezeOthers(last.id, foxAskMessage(ask));
   }
   if (
@@ -993,7 +996,11 @@ export function AlwaysOnFox({
             Boolean(detail.emptyRead) ||
             (detail.quietLines ?? []).some((line) => isUnreadNote(line)) ||
             (!intakeDraft.pendingProposal && !intakeDraft.pendingConflict);
-          if (unreadId && !isBorrowerNameConfirmPending(intakeDraft)) {
+          if (
+            unreadId &&
+            !isBorrowerNameConfirmPending(intakeDraft) &&
+            !(governmentIdSkipped(intakeDraft) && !detail.emptyRead)
+          ) {
             return applyFoxAsk(next, {
               text: ID_UNREAD_ASK,
               actions: unreadRestoreActions(intakeDraft),

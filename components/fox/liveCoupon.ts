@@ -381,7 +381,8 @@ function dropLeftoverConfirmChipsOnLooksRightDocAsk(
     if (index !== current) {
       return { ...message, text: message.text, followUp: message.followUp, facts: message.facts, actions: undefined };
     }
-    const keepIdUseThis = /The ID shows /i.test(foxBlob(message));
+    const keepIdUseThis =
+      /The ID shows /i.test(foxBlob(message)) && isBorrowerNameConfirmPending(draft);
     const next = message.actions.filter((action) =>
       keepIdUseThis ? isIdConfirmChip(action) : isAfterLooksRightDocChip(action),
     );
@@ -643,7 +644,7 @@ export function paintedFoxActions(
       return false;
     }
     if (idNameConfirm) {
-      return isIdConfirmChip(action);
+      return isBorrowerNameConfirmPending(draft) && isIdConfirmChip(action);
     }
     if (docAsk && isLeftoverConfirmChip(action)) return false;
     if (docAsk) return current && isAfterLooksRightDocChip(action);
@@ -676,7 +677,7 @@ export function visibleFoxActions(message: FoxMessage, draft: FoxIntakeDraft) {
     if (
       looksRightDocAskOpen(draft) &&
       (isLeftoverConfirmChip(action) || isLooksRightChip(action)) &&
-      !/The ID shows /i.test(foxBlob(message))
+      !(/The ID shows /i.test(foxBlob(message)) && isBorrowerNameConfirmPending(draft))
     ) {
       return false;
     }

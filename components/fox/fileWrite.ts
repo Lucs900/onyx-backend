@@ -102,6 +102,7 @@ import {
   borrowerNameConflictActions,
   borrowerNameSettled,
   displayBorrowerName,
+  governmentIdSkipped,
   isBorrowerNameConfirmPending,
   isBorrowerNameField,
   proposeExtractedBorrowerName,
@@ -1321,7 +1322,7 @@ export function applyExtractedFields(
           kind: "document",
         };
         next = { ...next, pendingConflict: conflict };
-      } else if (!existingName && !next.pendingConflict) {
+      } else if (!existingName && !next.pendingConflict && !governmentIdSkipped(next)) {
         next = proposeExtractedBorrowerName(next, shown, extras);
       }
     }
@@ -2479,9 +2480,29 @@ function hasRemainingPrimaryInvites(draft: FoxIntakeDraft) {
 }
 
 export function skipCurrentInvite(draft: FoxIntakeDraft): FoxIntakeDraft {
-  const kind = isBorrowerNameConfirmPending(draft)
-    ? "government_id"
-    : nextDocInvite(draft);
+  if (isBorrowerNameConfirmPending(draft)) {
+    const facts = { ...(draft.facts ?? {}) };
+    delete facts[BORROWER_NAME_FIELD];
+    const skipped = Array.from(
+      new Set([...(draft.skippedClasses ?? []), "government_id" as ExtractClass]),
+    );
+    const next = {
+      ...draft,
+      borrowerName: undefined,
+      skippedClasses: skipped,
+      docsOpen: false,
+      correcting: null,
+      correctingLine: null,
+      pendingProposal: null,
+      pendingConflict: null,
+      facts,
+    };
+    return {
+      ...next,
+      documentsSkipped: draft.documents.length === 0 && !hasRemainingPrimaryInvites(next),
+    };
+  }
+  const kind = nextDocInvite(draft);
   if (!kind) {
     return {
       ...draft,
@@ -2511,7 +2532,6 @@ export function skipCurrentInvite(draft: FoxIntakeDraft): FoxIntakeDraft {
     skippedClasses: skipped,
     docsOpen: false,
     correcting: null,
-    ...(isBorrowerNameConfirmPending(draft) ? { pendingProposal: null } : {}),
   };
   return {
     ...next,

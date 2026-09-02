@@ -197,6 +197,7 @@ import {
   writeCoborrowerName,
 } from "./coborrowerName";
 import {
+  isBorrowerNameConfirmPending,
   parseBorrowerName,
   proposeBorrowerName,
   skipBorrowerName,
@@ -1414,13 +1415,19 @@ export function addNote(text: string) {
 }
 
 export function receiveDocument(input: Omit<ReceivedDoc, "status" | "note"> & { status?: DocStatus; note?: string }) {
+  const party = input.party ?? (current.workingOnCoborrower ? "coborrower" : "borrower");
+  const incomingBorrowerId =
+    party !== "coborrower" && (input.extractClass === "government_id" || input.slot === "id");
+  const skippedClasses = incomingBorrowerId
+    ? (current.skippedClasses ?? []).filter((kind) => kind !== "government_id")
+    : current.skippedClasses;
   const documents = [
     ...current.documents,
     {
       ...input,
       status: input.status ?? "received",
       note: input.note,
-      party: input.party ?? (current.workingOnCoborrower ? "coborrower" : "borrower"),
+      party,
     },
   ];
   const keepPhase =
@@ -1430,6 +1437,7 @@ export function receiveDocument(input: Omit<ReceivedDoc, "status" | "note"> & { 
     restripeGatheringOrReady({
       ...current,
       documents,
+      skippedClasses,
       documentsSkipped: false,
       docsStarted: true,
       docsOpen: false,
@@ -1564,7 +1572,7 @@ export function markMissingAsked(key: string) {
 }
 
 export function skipDocuments() {
-  if (current.workspaceFlow && nextDocInvite(current)) {
+  if (current.workspaceFlow && (isBorrowerNameConfirmPending(current) || nextDocInvite(current))) {
     return commit(
       restripeGatheringOrReady(skipCurrentInvite({ ...current, docsHeld: false })),
     );
@@ -2082,6 +2090,9 @@ function applyCaptureBody(capture: Capture) {
     return commit(proposed ?? { ...current, subjectLeaseAsked: true });
   }
   if (capture.field === "skip-docs") {
+    if (isBorrowerNameConfirmPending(current)) {
+      return commit(restripeGatheringOrReady(skipCurrentInvite({ ...current, docsHeld: false })));
+    }
     if (layer2Open(current)) {
       return commit(skipCurrentStillUseful(current));
     }

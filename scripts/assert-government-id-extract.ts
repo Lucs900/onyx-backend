@@ -14,8 +14,9 @@ import { readPdfTextLayer } from "../lib/docs/pdfText";
 import { applyExtractedFields, stillUsefulSection, skipCurrentInvite, DOC_INVITE_COPY, extractHintFromDraft, nextDocInvite } from "../components/fox/fileWrite";
 import { canLooksRight, resolveProposal, proposalAskCopy } from "../components/fox/completeness";
 import { applyLooksRightMotion, applyProceedMotion } from "../components/fox/motion";
-import { applyExtractWrite, emptyDraft, getFoxDraft, loadIntakeDraft, receiveDocument } from "../components/fox/store";
-import { docReactionAsk, isGovernmentIdInviteLine, previewFacts, workspacePrompt, workspacePromptCopy } from "../components/fox/workspace";
+import { applyCapture, applyExtractWrite, emptyDraft, getFoxDraft, loadIntakeDraft, receiveDocument } from "../components/fox/store";
+import { conventionalFileFacts } from "../components/fox/conventionalFile";
+import { docReactionAsk, isGovernmentIdInviteLine, nextFoxAsk, previewFacts, workspacePrompt, workspacePromptCopy } from "../components/fox/workspace";
 import {
   applyIdExtractAsk,
   dropResolvedAddressConfirmChips,
@@ -388,6 +389,67 @@ async function main() {
     stillUsefulLabels(skippedFromComposer).some((label) => /government ID/i.test(label)),
     stillUsefulLabels(skippedFromComposer).join(" · "),
   );
+  assert.doesNotMatch(nextFoxAsk(skippedFromComposer).text, /The ID shows Jordan Hale/);
+  assert.ok(
+    previewFacts(skippedFromComposer).every((fact) => fact.id !== "docs" || !/ID in/.test(fact.value)),
+  );
+  assert.ok(
+    conventionalFileFacts(afterLooks).every(
+      (fact) =>
+        fact.id !== "file-assets" ||
+        (fact.value === "" && !/institution —|balance —|last4 —/.test(fact.value)),
+    ),
+  );
+
+  loadIntakeDraft(composerWrite.draft);
+  applyCapture({ field: "skip-docs" });
+  const skippedByChip = getFoxDraft();
+  assert.ok(!skippedByChip.pendingProposal);
+  assert.equal(skippedByChip.borrowerName, undefined);
+  assert.equal(skippedByChip.contact.fullName.value, "");
+  assert.ok((skippedByChip.skippedClasses ?? []).includes("government_id"));
+  assert.ok(
+    stillUsefulLabels(skippedByChip).some((label) => /government ID/i.test(label)),
+    stillUsefulLabels(skippedByChip).join(" · "),
+  );
+  assert.doesNotMatch(nextFoxAsk(skippedByChip).text, /The ID shows Jordan Hale/);
+  assert.doesNotMatch(nextFoxAsk(skippedByChip).text, /The ID shows Lukasz/);
+  assert.ok(
+    previewFacts(skippedByChip).every(
+      (fact) => fact.id !== "borrower" && (fact.id !== "docs" || !/ID in/.test(fact.value)),
+    ),
+  );
+  const skipChipPaint = dropResolvedAddressConfirmChips(
+    [
+      {
+        id: "id-confirm",
+        role: "fox",
+        text: composerSpoken,
+        actions: composerAsk!.actions,
+      },
+    ],
+    skippedByChip,
+  );
+  const skipChipLast = [...skipChipPaint].reverse().find((message) => message.role === "fox");
+  assert.deepEqual(
+    paintThreadActions(paintedFoxActions(skipChipLast!, skippedByChip, true) ?? []).map((item) => item.label),
+    [],
+  );
+
+  const proceededConfirm = applyProceedMotion({ ...composerWrite.draft, emailSkipped: true });
+  assert.equal(proceededConfirm.pendingProposal?.field, "borrowerName");
+  loadIntakeDraft(proceededConfirm);
+  applyCapture({ field: "skip-docs" });
+  const skippedAfterProceed = getFoxDraft();
+  assert.ok(!skippedAfterProceed.pendingProposal, "Skip after Proceed must clear the ID confirm");
+  assert.equal(skippedAfterProceed.borrowerName, undefined);
+  assert.ok((skippedAfterProceed.skippedClasses ?? []).includes("government_id"));
+  assert.ok(
+    stillUsefulLabels(skippedAfterProceed).some((label) => /government ID/i.test(label)),
+    stillUsefulLabels(skippedAfterProceed).join(" · "),
+  );
+  assert.doesNotMatch(nextFoxAsk(skippedAfterProceed).text, /The ID shows Jordan Hale/);
+  assert.doesNotMatch(nextFoxAsk(skippedAfterProceed).text, /The ID shows Lukasz/);
 
   loadIntakeDraft({ ...afterLooks, skippedClasses: ["government_id"] });
   receiveDocument({
@@ -397,7 +459,7 @@ async function main() {
     size: keep.size,
     receivedAt: "2026-09-02T00:03:00.000Z",
   });
-  assert.equal(nextDocInvite(getFoxDraft()), "bank_statement");
+  assert.equal(nextDocInvite(getFoxDraft()), "government_id");
   const bankInviteWrite = applyExtractWrite(
     "2026-09-02T00:03:00.000Z",
     keep.name,

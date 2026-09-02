@@ -392,10 +392,11 @@ export function conventionalFileFacts(draft: FoxIntakeDraft): {
   const occupancy = occupancyLabel(file.property.occupancyStatus);
   const address = file.property.address || "address —";
   const type = propertyTypeSpoken(file.property.propertyType) || "type —";
-  const institution = file.assets.institution || "institution —";
+  const institution = file.assets.institution || "";
   const accountType = file.assets.type || "";
-  const balance = moneyLabel(file.assets.suggestedBalance) || "balance —";
+  const balance = moneyLabel(file.assets.suggestedBalance);
   const last4 = file.assets.last4 ? `last4 ${file.assets.last4}` : "";
+  const assetsValue = [institution, accountType, balance, last4].filter(Boolean).join(" · ");
   const declarationBits = [
     declarationSpoken(file.declarations.b_bankruptcy)
       ? `BK ${declarationSpoken(file.declarations.b_bankruptcy)}`
@@ -434,21 +435,29 @@ export function conventionalFileFacts(draft: FoxIntakeDraft): {
     {
       id: "file-assets",
       label: "Assets",
-      value: dashJoin([institution, accountType, balance, last4]),
+      value: assetsValue,
       note: "From statements · institution / type / balance / last4 · not a form",
     },
     ...((draft.assetAccounts ?? []).length > 1
-      ? (draft.assetAccounts ?? []).slice(1).map((account, index) => ({
-          id: `file-assets-${index + 1}`,
-          label: "Assets",
-          value: dashJoin([
+      ? (draft.assetAccounts ?? []).slice(1).flatMap((account, index) => {
+          const extra = [
             account.institution || "",
             account.type || "",
-            moneyLabel(account.balance) || "",
+            moneyLabel(account.balance),
             account.last4 ? `last4 ${account.last4}` : "",
-          ]),
-          note: "From statements · institution / type / balance / last4 · not a form",
-        }))
+          ]
+            .filter(Boolean)
+            .join(" · ");
+          if (!extra) return [];
+          return [
+            {
+              id: `file-assets-${index + 1}`,
+              label: "Assets",
+              value: extra,
+              note: "From statements · institution / type / balance / last4 · not a form",
+            },
+          ];
+        })
       : []),
     {
       id: "file-liabilities",

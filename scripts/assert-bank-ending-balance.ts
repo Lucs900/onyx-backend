@@ -184,6 +184,16 @@ async function main() {
   assert.ok(usedFacts.some((fact) => fact.id === "file-assets" && /4419/.test(fact.value) && /\$84,220\.15/.test(fact.value)));
   assert.ok(usedFacts.every((fact) => fact.id !== "file-assets-1" && !/2281/.test(fact.value)));
   assert.ok(usedFacts.every((fact) => fact.id !== "file-assets" || !/last4 —/.test(fact.value)));
+  const emptyAssets = conventionalFileFacts({ ...emptyDraft(), productIntent: "buy", path: "acr" });
+  assert.ok(emptyAssets.some((fact) => fact.id === "file-assets"));
+  assert.ok(
+    emptyAssets.every(
+      (fact) =>
+        fact.id !== "file-assets" && !fact.id.startsWith("file-assets-")
+          ? true
+          : fact.value === "" && !/institution —|balance —|last4 —/.test(fact.value),
+    ),
+  );
 
   assert.equal(safeAccountLast4("****4419"), "4419");
   assert.equal(safeAccountLast4("Checking ****4419"), "4419");

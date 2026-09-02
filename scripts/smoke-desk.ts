@@ -14437,7 +14437,7 @@ assert.doesNotMatch(
 );
 const w2FileFacts = previewFacts(conventionalW2Walk);
 assert.ok(w2FileFacts.some((fact) => fact.id === "file-property" && /Primary/.test(fact.value) && /address —/.test(fact.value)));
-assert.ok(w2FileFacts.some((fact) => fact.id === "file-assets" && /institution —/.test(fact.value) && !/last4/.test(fact.value)));
+assert.ok(w2FileFacts.some((fact) => fact.id === "file-assets" && fact.value === "" && !/institution —|balance —|last4/.test(fact.value)));
 assert.ok(w2FileFacts.some((fact) => fact.id === "file-liabilities" && fact.value === "Credit report later"));
 assert.ok(w2FileFacts.some((fact) => fact.id === "file-declarations" && fact.value === "—"));
 assert.ok(w2FileFacts.every((fact) => fact.id !== "file-history"));
@@ -15614,9 +15614,8 @@ assert.ok(
   previewFacts(harborPreLooksSkipAssets).some(
     (fact) =>
       fact.id === "file-assets" &&
-      /institution —/.test(fact.value) &&
-      /balance —/.test(fact.value) &&
-      !/last4/.test(fact.value),
+      fact.value === "" &&
+      !/institution —|balance —|last4/.test(fact.value),
   ),
 );
 assert.ok(previewFacts(harborPreLooksSkipAssets).every((fact) => !/18,400|18400/.test(fact.value)));
@@ -15665,8 +15664,8 @@ assert.ok(
   previewFacts(harborPreLooksCitizenSkipAssets).some(
     (fact) =>
       fact.id === "file-assets" &&
-      /institution —/.test(fact.value) &&
-      /balance —/.test(fact.value),
+      fact.value === "" &&
+      !/institution —|balance —|last4/.test(fact.value),
   ),
 );
 assert.equal(workspacePrompt(harborPreLooksCitizenSkipAssets), "review");
@@ -15742,9 +15741,8 @@ assert.ok(
       (fact.id !== "assets" || fact.value === "—") &&
       fact.id !== "bank" &&
       (fact.id !== "file-assets" ||
-        (/institution —/.test(fact.value) &&
-          /balance —/.test(fact.value) &&
-          !/last4/.test(fact.value) &&
+        (fact.value === "" &&
+          !/institution —|balance —|last4/.test(fact.value) &&
           !/FIRST NATIONAL|18,400|18400/.test(fact.value))),
   ),
 );
