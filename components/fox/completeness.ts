@@ -17,6 +17,7 @@ import {
   displayFactValue,
   factLabel,
   factValue,
+  isPurchaseContractConfirmPending,
   isRemainderConfirmField,
   nextDocInvite,
   remainderProposalWrites,
@@ -1353,7 +1354,13 @@ export function resolveProposal(
   draft: FoxIntakeDraft,
   winner: "accept" | "decline",
 ): FoxIntakeDraft {
-  if (winner === "accept" && draft.pendingAddress?.line && draft.pendingAddress.zip && draft.pendingAddress.city) {
+  if (
+    winner === "accept" &&
+    !isPurchaseContractConfirmPending(draft) &&
+    draft.pendingAddress?.line &&
+    draft.pendingAddress.zip &&
+    draft.pendingAddress.city
+  ) {
     const place = parsePlaceAddress(draft.pendingAddress);
     if (place) {
       const cleared = { ...writePlaceAddress(draft, place), pendingProposal: null };
@@ -1449,7 +1456,21 @@ export function resolveProposal(
       county: extras.county,
     });
     if (place) {
-      const cleared = { ...writePlaceAddress(draft, place), pendingProposal: null };
+      let placed = writePlaceAddress(draft, place);
+      for (const extra of proposal.extras ?? []) {
+        if (
+          extra.field === "street" ||
+          extra.field === "city" ||
+          extra.field === "state" ||
+          extra.field === "zip" ||
+          extra.field === "county" ||
+          extra.field === "propertyZip"
+        ) {
+          continue;
+        }
+        placed = writeConfirmedFact(placed, extra.field, extra.value, source);
+      }
+      const cleared = { ...placed, pendingProposal: null, pendingAddress: undefined };
       const flushed = flushPendingOtherReo(flushPendingCurrentHousing(flushPendingHireDate(cleared)));
       return flushed;
     }
@@ -1495,10 +1516,14 @@ export function resolveProposal(
       ? syncCalculatorDraft(flushed)
       : flushed;
   const afterFileNet = winner === "accept" ? maybeProposeOtherReoFileNet(afterNet) : afterNet;
-  if (winner === "accept" && shouldAskYearsInBusiness(afterFileNet)) {
-    return withYearsInBusinessAsk(afterFileNet);
+  const afterContract =
+    winner === "accept" && isPurchaseContractConfirmPending(draft)
+      ? { ...afterFileNet, looksRightHold: false }
+      : afterFileNet;
+  if (winner === "accept" && shouldAskYearsInBusiness(afterContract)) {
+    return withYearsInBusinessAsk(afterContract);
   }
-  return afterFileNet;
+  return afterContract;
 }
 
 function flushPendingHireDate(draft: FoxIntakeDraft): FoxIntakeDraft {

@@ -644,17 +644,25 @@ export function fieldsFromPrintedLines(
     }
     const present = valueAfter(line, /^(?:PRESENT ADDRESS|RESIDENTIAL ADDRESS):\s*/i);
     if (present) put("present_address", present);
-    const address = valueAfter(line, /^(?:PROPERTY ADDRESS|ADDRESS):\s*/i);
+    const address = labeled(
+      line,
+      next,
+      /^(?:PROPERTY ADDRESS|SUBJECT PROPERTY(?: ADDRESS)?|ADDRESS):\s*/i,
+    );
     if (address) {
       if (extractClass === "government_id" || extractClass === "bank_statement") {
         put("present_address", address);
       } else put("property_address", address);
     }
-    const price = valueAfter(line, /^PURCHASE PRICE:\s*/i);
+    const price = labeled(line, next, /^(?:PURCHASE PRICE|TOTAL PURCHASE PRICE):\s*/i);
     if (price) putMoney("purchase_price", price);
-    const close = valueAfter(line, /^CLOSE DATE:\s*/i);
+    const close = labeled(line, next, /^(?:CLOSE DATE|CLOSE OF ESCROW|CLOSING DATE):\s*/i);
     if (close) put("close_date", close);
-    const sellerCredit = labeled(line, next, /^SELLER CREDIT:\s*/i);
+    const sellerCredit = labeled(
+      line,
+      next,
+      /^(?:SELLER CREDIT|SELLER CREDITS|SELLER CONCESSION|CREDIT TO BUYER):\s*/i,
+    );
     if (sellerCredit && /\$|[\d,]+\.\d{2}\b/.test(sellerCredit) && moneyDigits(emptyIfNotShown(sellerCredit))) {
       putMoney("seller_credit", sellerCredit);
     }

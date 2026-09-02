@@ -3294,6 +3294,9 @@ function workspaceAskCopy(
     if (isBorrowerNameConfirmPending(draft) && draft.pendingProposal) {
       return liveProposalAsk(draft, draft.pendingProposal, "government_id");
     }
+    if (isPurchaseContractConfirmPending(draft) && draft.pendingProposal) {
+      return liveProposalAsk(draft, draft.pendingProposal);
+    }
     if (draft.pendingAddress?.line) {
       return {
         text: typedAddressConfirmCopy(draft.pendingAddress.line),

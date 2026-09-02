@@ -164,6 +164,19 @@ async function main() {
   ]);
   assert.equal(noCredit?.fields.seller_credit, undefined);
 
+  const clipperPage = printedSampleFromLines([
+    "CALIFORNIA RESIDENTIAL PURCHASE AGREEMENT",
+    "SUBJECT PROPERTY: 88 Clipper Street, San Francisco, CA 94114",
+    "TOTAL PURCHASE PRICE: $850,000",
+    "CLOSE OF ESCROW: October 15, 2026",
+    "SELLER CONCESSION: $5,000.00",
+  ]);
+  assert.equal(clipperPage?.extractClass, "purchase_contract");
+  assert.match(clipperPage?.fields.property_address ?? "", /88 Clipper Street/i);
+  assert.equal(clipperPage?.fields.purchase_price, "850000");
+  assert.match(clipperPage?.fields.close_date ?? "", /October 15, 2026|10\/15\/2026|2026-10-15/);
+  assert.equal(clipperPage?.fields.seller_credit, "5000");
+
   const extracted = await classifyAndExtract(
     bytes,
     "application/pdf",
@@ -202,6 +215,27 @@ async function main() {
   assert.equal(nextDocInvite(preLooks), null);
   assert.notEqual(nextDocInvite(preLooks), "purchase_contract");
   assert.equal(canLooksRight(preLooks), true);
+
+  const zipOnlyPreLooks = {
+    ...preLooks,
+    subjectAddress: "94123",
+    propertyZip: "94123",
+    propertyZipAsked: true,
+    facts: {
+      ...preLooks.facts,
+      property_address: {
+        field: "property_address",
+        value: "94123",
+        source: "client" as const,
+        confirmed: true,
+      },
+    },
+  };
+  assert.equal(nextDocInvite(zipOnlyPreLooks), "purchase_contract");
+  assert.equal(canLooksRight(zipOnlyPreLooks), false);
+  assert.equal(workspacePrompt(zipOnlyPreLooks), "documents");
+  assert.equal(nextFoxAsk(zipOnlyPreLooks).text, DOC_INVITE_COPY.purchase_contract);
+  assert.doesNotMatch(nextFoxAsk(zipOnlyPreLooks).text, /What’s a good email|email/i);
   const afterLooks = applyLooksRightMotion(preLooks);
   assert.equal(nextDocInvite(afterLooks), "purchase_contract");
   assert.equal(workspacePrompt(afterLooks), "documents");
@@ -411,6 +445,8 @@ async function main() {
 
   const zipOnly = {
     ...sketch,
+    sampleAccepted: false,
+    skippedClasses: ["bank_statement"],
     propertyValueAmount: 500_000,
     downPaymentAmount: 100_000,
     loanAmountValue: 400_000,
@@ -418,6 +454,25 @@ async function main() {
     subjectAddressAsked: true,
     propertyZip: "94123",
     propertyZipAsked: true,
+    pendingAddress: {
+      line: "San Francisco, CA 94123",
+      street: "San Francisco, CA 94123",
+      city: "San Francisco",
+      state: "CA",
+      zip: "94123",
+    },
+    documents: [
+      ...sketch.documents,
+      {
+        slot: "other" as const,
+        name: "02-purchase-contract.pdf",
+        type: "application/pdf",
+        size: 4000,
+        receivedAt: "2026-09-02T00:12:00.000Z",
+        status: "extracted" as const,
+        extractClass: "purchase_contract" as const,
+      },
+    ],
     facts: {
       ...sketch.facts,
       property_address: {
@@ -440,6 +495,7 @@ async function main() {
   });
   assert.equal(clipperExtract.conflict?.field, "purchase_price");
   assert.equal(clipperExtract.draft.subjectAddress, "94123");
+  assert.equal(clipperExtract.draft.pendingAddress, undefined);
   assert.equal(clipperExtract.draft.pendingProposal?.field, "property_address");
   assert.match(clipperExtract.draft.pendingProposal?.value ?? "", /88 Clipper Street/i);
   assert.ok((clipperExtract.draft.pendingProposal?.extras ?? []).some((item) => item.field === "close_date"));
@@ -452,6 +508,8 @@ async function main() {
   assert.equal(clipperPriced.propertyValueAmount, 850_000);
   assert.ok(!clipperPriced.pendingConflict);
   assert.equal(clipperPriced.pendingProposal?.field, "property_address");
+  assert.match(nextFoxAsk(clipperPriced).text, /88 Clipper Street/i);
+  assert.doesNotMatch(nextFoxAsk(clipperPriced).text, /San Francisco, CA 94123\. Use this/i);
   const clipperUsed = resolveProposal(clipperPriced, "accept");
   assert.match(clipperUsed.subjectAddress ?? "", /88 Clipper Street/i);
   assert.match(clipperUsed.subjectAddress ?? "", /San Francisco, CA 94114/i);
@@ -476,6 +534,18 @@ async function main() {
     clipperFacts.map((fact) => `${fact.label} ${fact.value}`).join(" · "),
   );
   assert.ok(clipperFacts.every((fact) => fact.id !== "file-property" || !/Filbert/i.test(fact.value)));
+  assert.ok(canLooksRight(clipperUsed));
+  assert.equal(workspacePrompt(clipperUsed), "review");
+  assert.doesNotMatch(nextFoxAsk(clipperUsed).text, /94123/);
+  const clipperLooks = applyLooksRightMotion(clipperUsed);
+  assert.ok(previewFacts(clipperLooks).some((fact) => /88 Clipper Street, San Francisco, CA 94114/i.test(fact.value)));
+  assert.ok(
+    previewFacts(clipperLooks).every(
+      (fact) =>
+        (fact.id !== "address" && fact.id !== "file-property" && fact.label !== "Property address") ||
+        !/94123/.test(fact.value),
+    ),
+  );
   noFnma(nextFoxAsk(clipperUsed).text);
 
   const emptyAssets = conventionalFileFacts({ ...emptyDraft(), productIntent: "buy", path: "acr" });

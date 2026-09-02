@@ -1506,7 +1506,13 @@ export function applyExtractedFields(
     (!next.pendingProposal || isRemainderConfirmField(next.pendingProposal.field))
   ) {
     const remainder = remainderProposalFromWrites(extractClass, remainderWrites);
-    if (remainder) next = { ...next, pendingProposal: remainder };
+    if (remainder) {
+      next = {
+        ...next,
+        pendingProposal: remainder,
+        ...(extractClass === "purchase_contract" ? { pendingAddress: undefined } : {}),
+      };
+    }
   }
   if (conflict && !next.pendingConflict) {
     next = { ...next, pendingConflict: conflict };
@@ -2543,15 +2549,22 @@ function wageSketchBlocksDocInvite(draft: FoxIntakeDraft): boolean {
   return false;
 }
 
-/** ID, then statements. After Looks right on a purchase, the missing contract is next — one file, not a dump. */
+function zipOnlySubject(draft: FoxIntakeDraft) {
+  const line = String(draft.subjectAddress || draft.facts?.property_address?.value || "").trim();
+  const zip = String(draft.propertyZip || "").trim();
+  if (line && !isZipOnlyFileAddress(line, zip || undefined)) return false;
+  return Boolean(zip || /^\d{5}$/.test(line) || /,\s*CA\s+\d{5}$/i.test(line));
+}
+
+/** ID, then statements. ZIP-only purchase asks for the contract before Looks right. After Looks right, a missing contract is still next. */
 function lockedFileDocInvites(draft: FoxIntakeDraft): DocInviteKind[] {
   const kinds: DocInviteKind[] = [];
   if (!inviteSatisfied(draft, "government_id")) kinds.push("government_id");
   if (!inviteSatisfied(draft, "bank_statement")) kinds.push("bank_statement");
   if (
-    draft.sampleAccepted &&
     purchaseLikeFile(draft) &&
-    !inviteSatisfied(draft, "purchase_contract")
+    !inviteSatisfied(draft, "purchase_contract") &&
+    (draft.sampleAccepted || zipOnlySubject(draft))
   ) {
     kinds.push("purchase_contract");
   }
