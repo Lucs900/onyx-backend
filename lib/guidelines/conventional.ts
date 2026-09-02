@@ -1158,11 +1158,14 @@ function documentedIncomeItems(file: CompletenessFile, received: Set<string>): D
   const w2Count = file.w2Count ?? (received.has("w2") ? 1 : 0);
   const paystubCount = file.paystubCount ?? (received.has("paystub") ? 1 : 0);
   const taxReturns = file.taxReturnCount ?? (received.has("tax_return") ? 1 : 0);
-  if (w2 || unknown) {
+  if (w2) {
     if (paystubCount < 2) items.push("paystub");
     if (w2Count < 2) items.push("w2");
+  } else if (unknown) {
+    if (paystubCount < 1) items.push("paystub");
+    if (w2Count < 1) items.push("w2");
   }
-  if (se || (unknown && !w2)) {
+  if (se) {
     if (taxReturns < 1) items.push("tax_return");
     if (taxReturns === 1) {
       if (file.k1OrdinaryOnly && !file.hasScheduleC) items.push("k1-distributions");

@@ -515,11 +515,11 @@ export function askClassLabel(extractClass: ExtractClass) {
 
 export function incomeRequestedClasses(income?: string | null): ExtractClass[] {
   const out: ExtractClass[] = ["government_id"];
-  if (income === "w2" || income === "both") {
+  if (income === "w2" || income === "both" || !income) {
     out.push("paystub", "w2");
   }
-  if (income === "self-employed" || income === "other" || income === "both" || !income) {
-    if (income !== "w2") out.push("tax_return");
+  if (income === "self-employed" || income === "other" || income === "both") {
+    out.push("tax_return");
   }
   return out;
 }
@@ -1902,9 +1902,9 @@ export function layer2Open(draft: FoxIntakeDraft) {
   );
 }
 
-/** Remainder board after the sketch exists. Skip does not hide an item; received does. */
+/** Remainder board after the sketch exists. Income Skip still shows the board. */
 export function stillUsefulVisible(draft: FoxIntakeDraft) {
-  return Boolean(draft.path && draft.productIntent && draft.incomeType.value);
+  return Boolean(draft.path && draft.productIntent && (draft.incomeType.value || draft.incomeAsked));
 }
 
 function isWageGroceryBeforeLooksRight(draft: FoxIntakeDraft, id: string) {
@@ -2012,7 +2012,13 @@ export function layer2Plan(draft: FoxIntakeDraft): StillUsefulItem[] {
     const wageCopy =
       draft.sampleAccepted && wageThreadOpen(draft) ? wageStillUsefulCopy(id) : null;
     if (wageCopy === null && id === "second-year-w2" && wageThreadOpen(draft)) return [];
-    const copy = wageCopy ?? LAYER2_COPY[id];
+    const skippedIncomeCopy =
+      !draft.incomeType.value && id === "paystub"
+        ? { label: "Latest paystub", ask: "A recent paystub still helps this file." }
+        : !draft.incomeType.value && id === "w2"
+          ? { label: "W-2", ask: "A W-2 still helps this file." }
+          : null;
+    const copy = wageCopy ?? skippedIncomeCopy ?? LAYER2_COPY[id];
     if (!copy) return [];
     return [layer2Item(id, copy.label, copy.ask)];
   });
@@ -2058,7 +2064,7 @@ export function stillUsefulSection(draft: FoxIntakeDraft): {
     (item) => item.label !== OTHER_REO_MORTGAGE_STATEMENTS || draft.statedOtherReo === "yes",
   );
   storeCompleteness(draft.productIntent ?? "", completenessFileFromDraft(draft));
-  return { items, empty: items.length === 0 };
+  return { items: items.slice(0, 3), empty: items.length === 0 };
 }
 
 function otherReoStillUsefulItems(draft: FoxIntakeDraft): StillUsefulItem[] {

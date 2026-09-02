@@ -1831,7 +1831,10 @@ export function requiredLineValue(
 export function completenessExplainCopy(draft: FoxIntakeDraft) {
   const map = fileCompleteness(draft);
   if (!map) return "This file stays thin. No agency completeness score.";
-  return `File is ${map.copy}. I cannot approve, lock, or commit to lend.`;
+  if (map.state === "documented") {
+    return "This file has the documented minimums. I cannot approve, lock, or commit to lend.";
+  }
+  return "This file is still a sketch. I cannot approve, lock, or commit to lend.";
 }
 
 export function intentUsesPurchasePrice(

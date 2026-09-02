@@ -118,7 +118,6 @@ import {
   wageStubAskNeeded,
   sketchAssembled,
   completenessExplainCopy,
-  fileCompleteness,
   factsFromDraft,
   guidelineCaution,
   fundsAskNeeded,
@@ -7578,15 +7577,6 @@ export function previewFacts(draft: FoxIntakeDraft): PreviewFact[] {
       label: "Next",
       value: nextActorOf(draft),
     });
-    const completeness = fileCompleteness(draft);
-    if (completeness) {
-      facts.push({
-        id: "file",
-        label: "Completeness",
-        value: completeness.copy,
-        note: fileStillUsefulNote(draft),
-      });
-    }
     facts.push({
       id: "waiting",
       label: "Waiting on",
