@@ -45,6 +45,7 @@ import {
   freezeUsedFoxTurns,
   isStreetSuggestChipLabel,
   paintedFoxActions,
+  paintThreadActions,
   shouldDeferNextAskForLiveCoupon,
 } from "./liveCoupon";
 import { requestRateflowIfNeeded } from "./rateflowClient";
@@ -472,18 +473,6 @@ export function FoxLauncher() {
   );
 }
 
-function isDocRowChip(action: FoxAction) {
-  const field = action.capture?.field;
-  return (
-    action.label === "Upload this" ||
-    (action.label === "Skip" && field === "skip-docs")
-  );
-}
-
-function isDocRowLine(actions: FoxAction[]) {
-  return actions.some((action) => action.label === "Upload this");
-}
-
 function foxTurnAlreadyUsed(thread: FoxMessage[], index: number) {
   for (let i = index + 1; i < thread.length; i += 1) {
     const item = thread[i];
@@ -537,9 +526,7 @@ function FoxThread({
                 !isStreetSuggestChipLabel(action.label),
             )
           : [];
-        const paintActions = isDocRowLine(rawActions)
-          ? rawActions.filter(isDocRowChip)
-          : rawActions;
+        const paintActions = paintThreadActions(rawActions);
         const canEdit = message.role === "client" && Boolean(message.edit) && Boolean(onEdit);
         return (
           <article

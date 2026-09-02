@@ -373,7 +373,12 @@ function dropLeftoverConfirmChipsOnLooksRightDocAsk(
     if (index !== current) {
       return { ...message, text: message.text, followUp: message.followUp, facts: message.facts, actions: undefined };
     }
-    const next = message.actions.filter(isAfterLooksRightDocChip);
+    const keepIdUseThis = /The ID shows /i.test(foxBlob(message));
+    const next = message.actions.filter(
+      (action) =>
+        isAfterLooksRightDocChip(action) ||
+        (keepIdUseThis && (action.label === "Use this" || action.label === "Change")),
+    );
     if (next.length === message.actions.length) return message;
     return { ...message, actions: next.length ? next : undefined };
   });
@@ -536,6 +541,21 @@ export function leftoverUseThisPaintedOnOnFile(
   return count;
 }
 
+/** Invite-only rows stay Upload this · Skip. ID confirm keeps Use this on the same row. */
+export function paintThreadActions(actions: FoxAction[]): FoxAction[] {
+  if (
+    actions.some((action) => action.label === "Upload this") &&
+    !actions.some((action) => action.label === "Use this")
+  ) {
+    return actions.filter(
+      (action) =>
+        action.label === "Upload this" ||
+        (action.label === "Skip" && action.capture?.field === "skip-docs"),
+    );
+  }
+  return actions;
+}
+
 /** Visible chips on a bubble — leftover score is the painted button, not a DOM count. */
 export function paintedFoxActions(
   message: FoxMessage,
@@ -588,7 +608,11 @@ export function visibleFoxActions(message: FoxMessage, draft: FoxIntakeDraft) {
       return false;
     }
     if (isOnFileAddressLine(message)) return false;
-    if (looksRightDocAskOpen(draft) && (isLeftoverConfirmChip(action) || isLooksRightChip(action))) {
+    if (
+      looksRightDocAskOpen(draft) &&
+      (isLeftoverConfirmChip(action) || isLooksRightChip(action)) &&
+      !/The ID shows /i.test(foxBlob(message))
+    ) {
       return false;
     }
     if (isOverPriceChip(action) && !loanExceedsPurchasePrice(draft)) {

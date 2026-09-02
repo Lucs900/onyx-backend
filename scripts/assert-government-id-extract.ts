@@ -16,7 +16,7 @@ import { canLooksRight, resolveProposal, proposalAskCopy } from "../components/f
 import { applyLooksRightMotion, applyProceedMotion } from "../components/fox/motion";
 import { emptyDraft } from "../components/fox/store";
 import { docReactionAsk, previewFacts, workspacePrompt, workspacePromptCopy } from "../components/fox/workspace";
-import { dropResolvedAddressConfirmChips, paintedFoxActions } from "../components/fox/liveCoupon";
+import { dropResolvedAddressConfirmChips, paintedFoxActions, paintThreadActions } from "../components/fox/liveCoupon";
 import { addressOnFileCopy } from "../components/fox/propertyType";
 import { wageEmploymentFileLine } from "../components/fox/qualifyingIncome";
 import type { FoxIntakeDraft } from "../components/fox/types";
@@ -187,10 +187,16 @@ async function main() {
     text: confirmAsk.text,
     actions: confirmAsk.actions,
   };
-  const painted = (paintedFoxActions(confirmTurn, afterDrop.draft, true) ?? []).map((item) => item.label);
+  const painted = paintThreadActions(paintedFoxActions(confirmTurn, afterDrop.draft, true) ?? []).map(
+    (item) => item.label,
+  );
   assert.ok(painted.includes("Upload this"), painted.join(" · "));
   assert.ok(painted.includes("Skip"), painted.join(" · "));
   assert.ok(painted.includes("Use this"), painted.join(" · "));
+  assert.ok(
+    painted.includes("Upload this") && painted.includes("Skip") && painted.includes("Use this"),
+    painted.join(" · "),
+  );
   const withZipOnFile = { ...afterDrop.draft, subjectAddress: "94115", subjectAddressAsked: true };
   const sealed = dropResolvedAddressConfirmChips([confirmTurn], withZipOnFile);
   assert.equal(sealed[0]?.text, confirmAsk.text);
