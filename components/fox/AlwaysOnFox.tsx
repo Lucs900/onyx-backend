@@ -40,9 +40,14 @@ import {
 } from "./script";
 import { addressConfirmPending, searchedKeyFor } from "@/lib/rateflow/fromDraft";
 import {
+  applyIdExtractAsk,
   dropAbandonedAddressConfirm,
+  dropOnFileAddressLines,
   dropResolvedAddressConfirmChips,
   freezeUsedFoxTurns,
+  isIdExtractAskText,
+  isIdExtractPath,
+  isOnFileAddressLine,
   isStreetSuggestChipLabel,
   paintedFoxActions,
   paintThreadActions,
@@ -154,6 +159,7 @@ import {
   type DocIntakeDetail,
 } from "./fileWrite";
 import { DECLINING_INCOME_CAUTION, WAGE_DOCS_ASK, WAGE_STUB_DROP_ASK } from "./qualifyingIncome";
+import { ID_UNREAD_ASK, isBorrowerNameConfirmPending } from "./borrowerName";
 import { isUnreadNote } from "@/lib/docs/accept";
 import { fileExists, finishLineActions, inQueueEnding, reviewIsSitting } from "./motion";
 import { pathFromHomeChoice } from "./homeIdle";
@@ -348,6 +354,12 @@ function applyFoxAsk(
     ask.text !== WAGE_STUB_DROP_ASK
   ) {
     return freezeOthers(last.id, foxAskMessage(ask));
+  }
+  if (isIdExtractAskText(ask.text)) {
+    return applyIdExtractAsk(messages, foxAskMessage(ask));
+  }
+  if (isOnFileAddressLine({ id: last?.id ?? "on-file", role: "fox", text: ask.text })) {
+    return freezeUsedFoxTurns(dropOnFileAddressLines(messages));
   }
   if (last && isGovernmentIdInviteLine(last.text) && ask.text !== last.text) {
     return freezeOthers(last.id, foxAskMessage(ask));
@@ -757,7 +769,12 @@ export function AlwaysOnFox({
     );
     const live = getFoxDraft();
     const stored = getFoxMessages();
-    if (fileExists(live) && stored.length > resolved.length) {
+    if (
+      fileExists(live) &&
+      stored.length > resolved.length &&
+      !isIdExtractPath(live) &&
+      !resolved.some((message) => isIdExtractAskText(message.text))
+    ) {
       return dropStreetSuggestChips(
         dropAbandonedAddressConfirm(
           dropResolvedAddressConfirmChips(
@@ -795,6 +812,8 @@ export function AlwaysOnFox({
     const stored = getFoxMessages();
     const live = getFoxDraft();
     if (!shouldResumeWorkspaceEntry(live, stored) || !stored.length) return;
+    if (isIdExtractPath(live)) return;
+    if (live.documents.some((doc) => doc.status === "reading")) return;
     setMessages(dropResolvedAddressConfirmChips(stored, live));
   }, [isStart, draft.motion, draft.updatedAt]);
 
@@ -956,6 +975,38 @@ export function AlwaysOnFox({
           if (line === DECLINING_INCOME_CAUTION) continue;
           if (isDeadFileWriteLine(line)) continue;
           next.push({ id: newId(), role: "system", text: line });
+        }
+        const intakeDraft = getFoxDraft();
+        const idDrop =
+          detail.extractClass === "government_id" ||
+          isBorrowerNameConfirmPending(intakeDraft) ||
+          intakeDraft.documents.some(
+            (doc) =>
+              (doc.extractClass === "government_id" || doc.slot === "id") &&
+              (doc.status === "extracted" ||
+                doc.status === "received" ||
+                doc.status === "reading" ||
+                /could not read|no text layer/i.test(doc.note ?? "")),
+          );
+        if (idDrop) {
+          const unreadId =
+            Boolean(detail.emptyRead) ||
+            (detail.quietLines ?? []).some((line) => isUnreadNote(line)) ||
+            (!intakeDraft.pendingProposal && !intakeDraft.pendingConflict);
+          if (unreadId && !isBorrowerNameConfirmPending(intakeDraft)) {
+            return applyFoxAsk(next, {
+              text: ID_UNREAD_ASK,
+              actions: unreadRestoreActions(intakeDraft),
+            });
+          }
+          const reaction = docReactionAsk(intakeDraft, "government_id");
+          const ask = intakeDraft.pendingConflict
+            ? {
+                text: conflictAskCopy(intakeDraft.pendingConflict),
+                actions: conflictActions(intakeDraft.pendingConflict),
+              }
+            : reaction ?? workspacePromptCopy("confirm-proposal", intakeDraft);
+          return applyFoxAsk(next, ask);
         }
         if (detail.emptyRead) {
           const live = getFoxDraft();
@@ -1121,9 +1172,14 @@ export function AlwaysOnFox({
     const live = getFoxDraft();
     if (isStart && shouldHoldAskForLiveLine(live)) return;
     if (isStart && shouldDeferNextAskForLiveCoupon(live)) return;
+    if (isStart && live.documents.some((doc) => doc.status === "reading" && (doc.extractClass === "government_id" || doc.slot === "id"))) {
+      return;
+    }
     const prompt = isStart ? workspacePrompt(live) : currentPrompt(live);
     const ask = isStart
-      ? workspacePromptCopy(prompt, live)
+      ? isBorrowerNameConfirmPending(live)
+        ? docReactionAsk(live, "government_id") ?? workspacePromptCopy("confirm-proposal", live)
+        : workspacePromptCopy(prompt, live)
       : promptCopy(prompt, live);
     const mustShowReview =
       isStart && prompt === "review" && !live.docsHeld && !live.looksRightHold && !nextDocInvite(live);
@@ -1160,6 +1216,9 @@ export function AlwaysOnFox({
       }
       const lastFox = lastFoxTurn(prev);
       if (lastFox && sameFoxAsk(lastFox, ask)) return prev;
+      if (isOnFileAddressLine({ id: lastFox?.id ?? "on-file", role: "fox", text: ask.text })) {
+        return isIdExtractPath(live) ? dropOnFileAddressLines(prev) : prev;
+      }
       const held = addressConfirmPending(live)
         ? withoutLiveQuoteSpeech(prev)
         : dropResolvedAddressConfirmChips(prev, live);

@@ -9,6 +9,7 @@ import {
   type SafeCouponRow,
 } from "@/lib/rateflow/quote";
 import { nextDocInvite } from "./fileWrite";
+import { ID_UNREAD_ASK, isBorrowerNameConfirmPending } from "./borrowerName";
 import { isFundsPairProposal, loanExceedsPurchasePrice } from "./completeness";
 import { addressOnFileCopy, fileAddressLine, shouldShowAddressUseThis } from "./propertyType";
 import type { Capture, FoxAction, FoxIntakeDraft, FoxMessage } from "./types";
@@ -434,7 +435,63 @@ export function isAddressUseAction(action: FoxAction) {
   );
 }
 
+function isIdDocRow(doc: FoxIntakeDraft["documents"][number]) {
+  if (doc.party === "coborrower") return false;
+  if (doc.extractClass === "government_id" || doc.slot === "id") return true;
+  return /(?:^|[^a-z0-9])(id|dl|license)(?:[^a-z0-9]|$)/i.test(doc.name ?? "");
+}
+
+/** Composer ID drop / confirm / unread. Invite alone keeps the earlier address On the file. */
+export function isIdExtractPath(draft: FoxIntakeDraft) {
+  if (isBorrowerNameConfirmPending(draft)) return true;
+  return (draft.documents ?? []).some((doc) => {
+    if (!isIdDocRow(doc)) return false;
+    if (doc.status === "reading" || doc.status === "extracted" || doc.status === "received" || doc.status === "failed") {
+      return true;
+    }
+    return /could not read|no text layer/i.test(doc.note ?? "");
+  });
+}
+
+export function isIdExtractAskText(text?: string | null) {
+  const value = String(text ?? "").trim();
+  return (
+    /The ID shows /i.test(value) ||
+    value === ID_UNREAD_ASK ||
+    /^I could not read this\.?$/i.test(value) ||
+    /First I need a government ID/i.test(value) ||
+    /Next is a government ID/i.test(value)
+  );
+}
+
+function isIdExtractThreadText(blob: string) {
+  return isIdExtractAskText(blob);
+}
+
+export function dropOnFileAddressLines(messages: FoxMessage[]): FoxMessage[] {
+  return messages.filter((message) => !isOnFileAddressLine(message));
+}
+
+/** Paperclip / composer drop of an ID: replace the invite. Never append On the file. */
+export function applyIdExtractAsk(messages: FoxMessage[], ask: FoxMessage): FoxMessage[] {
+  const cleaned = dropOnFileAddressLines(messages);
+  const last = lastFoxIndex(cleaned);
+  const lastMsg = last >= 0 ? cleaned[last] : undefined;
+  const replace =
+    lastMsg &&
+    (isIdExtractThreadText(foxBlob(lastMsg)) ||
+      isOnFileAddressLine(lastMsg) ||
+      looksLikeStreetAddress(foxBlob(lastMsg)));
+  if (replace && lastMsg) {
+    return freezeUsedFoxTurns(
+      cleaned.map((message, index) => (index === last ? { ...ask, id: lastMsg.id } : message)),
+    );
+  }
+  return [...freezeUsedFoxTurns(cleaned), ask];
+}
+
 function looksLikeOtherProposalConfirm(blob: string) {
+  if (isIdExtractThreadText(blob)) return true;
   if (/That[\u2019']s a (single-family house|condo|2–4 unit)/i.test(blob)) return true;
   if (/Suggested qualifying income/i.test(blob)) return true;
   if (/qualifying income/i.test(blob)) return true;
@@ -451,6 +508,7 @@ function looksLikeOtherProposalConfirm(blob: string) {
 }
 
 function looksLikeStreetAddress(blob: string) {
+  if (isIdExtractThreadText(blob)) return false;
   if (/The ID shows /i.test(blob)) return false;
   if (/That[\u2019']s \d/i.test(blob)) return true;
   if (/The contract shows .+\d/i.test(blob)) return true;
@@ -499,8 +557,15 @@ export function dropResolvedAddressConfirmChips(
   messages: FoxMessage[],
   draft: FoxIntakeDraft,
 ): FoxMessage[] {
+  if (isIdExtractPath(draft)) {
+    return dropLeftoverConfirmChipsOnLooksRightDocAsk(
+      freezeUsedFoxTurns(dropOnFileAddressLines(messages)),
+      draft,
+    );
+  }
   const line = fileAddressLine(draft);
   const sealed = messages.map((message) => {
+    if (isIdExtractThreadText(foxBlob(message))) return message;
     if (isOnFileAddressLine(message)) {
       return sealOnFileAddressMessage(message, line || undefined);
     }

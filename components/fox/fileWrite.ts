@@ -410,7 +410,7 @@ export function hasLockedSuggestion(
   fields?: Record<string, string | null | undefined> | null,
 ): boolean {
   const value = (key: string) => String(fields?.[key] ?? "").trim();
-  if (extractClass === "government_id") return Boolean(value("full_name") || value("present_address"));
+  if (extractClass === "government_id") return Boolean(value("full_name"));
   if (extractClass === "bank_statement") {
     return Boolean(value("institution") || value("ending_balance") || value("present_address"));
   }
@@ -1309,7 +1309,7 @@ export function applyExtractedFields(
     }
   }
   if (extractClass === "government_id" && idAddress && !extractedName && !next.pendingConflict) {
-    remainderWrites.push({ field: "present_address", value: idAddress });
+    // Residence only. Never a subject / On the file. remainder.
   }
   const extractedEmployer = String(fields.employer_name ?? "").trim();
   if (

@@ -16,8 +16,16 @@ import { canLooksRight, resolveProposal, proposalAskCopy } from "../components/f
 import { applyLooksRightMotion, applyProceedMotion } from "../components/fox/motion";
 import { applyExtractWrite, emptyDraft, getFoxDraft, loadIntakeDraft, receiveDocument } from "../components/fox/store";
 import { docReactionAsk, isGovernmentIdInviteLine, previewFacts, workspacePrompt, workspacePromptCopy } from "../components/fox/workspace";
-import { dropResolvedAddressConfirmChips, paintedFoxActions, paintThreadActions } from "../components/fox/liveCoupon";
+import {
+  applyIdExtractAsk,
+  dropResolvedAddressConfirmChips,
+  isIdExtractPath,
+  paintedFoxActions,
+  paintThreadActions,
+} from "../components/fox/liveCoupon";
 import { addressOnFileCopy } from "../components/fox/propertyType";
+import { ID_UNREAD_ASK } from "../components/fox/borrowerName";
+import { hasLockedSuggestion } from "../components/fox/fileWrite";
 import { wageEmploymentFileLine } from "../components/fox/qualifyingIncome";
 import type { FoxIntakeDraft } from "../components/fox/types";
 
@@ -228,6 +236,113 @@ async function main() {
   const composerAsk = docReactionAsk(composerWrite.draft, "government_id");
   assert.equal(composerAsk?.text, composerSpoken);
   assert.deepEqual((composerAsk?.actions ?? []).map((item) => item.label), ["Use this", "Skip"]);
+  assert.equal(hasLockedSuggestion("government_id", { present_address: "1847 Filbert St, San Francisco, CA 94123" }), false);
+  assert.equal(hasLockedSuggestion("government_id", { full_name: "JORDAN HALE" }), true);
+
+  const marinaLine = "801 Marina Blvd, San Francisco, CA 94123";
+  const leftoverStreet = {
+    id: "addr-confirm",
+    role: "fox" as const,
+    text: `${marinaLine}. Use this?`,
+    actions: [
+      { id: "accept-proposal", label: "Use this", event: "bubble" as const, capture: { field: "accept-proposal" } },
+      { id: "change-proposal", label: "Change", event: "bubble" as const, capture: { field: "change-proposal" } },
+    ],
+  };
+  const idInvite = {
+    id: "id-invite",
+    role: "fox" as const,
+    text: DOC_INVITE_COPY.government_id,
+    actions: [
+      { id: "upload-this", label: "Upload this", event: "open-docs" as const, capture: { field: "open-docs" } },
+      { id: "skip-docs", label: "Skip", event: "bubble" as const, capture: { field: "skip-docs" } },
+    ],
+  };
+  const fileHasStreet = {
+    ...afterLooks,
+    subjectAddress: marinaLine,
+    subjectStreet: marinaLine,
+    subjectAddressAsked: true,
+    pendingAddress: { line: marinaLine, street: "801 Marina Blvd", city: "San Francisco", state: "CA", zip: "94123" },
+  };
+  assert.equal(isIdExtractPath(fileHasStreet), false);
+  const atIdAsk = dropResolvedAddressConfirmChips([leftoverStreet, idInvite], fileHasStreet);
+  assert.ok(atIdAsk.some((message) => message.id === "id-invite"));
+  assert.equal(isIdExtractPath(composerWrite.draft), true);
+
+  const afterComposerId = {
+    ...composerWrite.draft,
+    subjectAddress: marinaLine,
+    subjectStreet: marinaLine,
+    subjectAddressAsked: true,
+  };
+  const composerPaint = dropResolvedAddressConfirmChips(
+    applyIdExtractAsk(atIdAsk, {
+      id: "id-confirm",
+      role: "fox",
+      text: composerAsk!.text,
+      actions: composerAsk!.actions,
+    }),
+    afterComposerId,
+  );
+  const composerLast = [...composerPaint].reverse().find((message) => message.role === "fox");
+  assert.match(composerLast?.text ?? "", /The ID shows Jordan Hale/);
+  assert.doesNotMatch(composerLast?.text ?? "", /On the file/);
+  assert.deepEqual(
+    (composerLast?.actions ?? []).map((item) => item.label),
+    ["Use this", "Skip"],
+  );
+  assert.equal(
+    composerPaint.filter((message) => message.text === addressOnFileCopy()).length,
+    0,
+    composerPaint.map((message) => message.text).join(" | "),
+  );
+  noBorrowerOnFile(afterComposerId);
+  assert.ok(
+    previewFacts(afterComposerId).every((fact) => fact.id !== "docs" || !/ID in/.test(fact.value)),
+  );
+
+  loadIntakeDraft(fileHasStreet);
+  receiveDocument({
+    slot: "id",
+    name: "unreadable-id.pdf",
+    type: "application/pdf",
+    size: 400,
+    receivedAt: "2026-09-02T00:05:00.000Z",
+  });
+  const addressOnlyWrite = applyExtractWrite(
+    "2026-09-02T00:05:00.000Z",
+    "unreadable-id.pdf",
+    {
+      extractClass: "government_id",
+      confidence: 0.9,
+      fields: { present_address: "1847 Filbert St, San Francisco, CA 94123" },
+    },
+    "Fox could not read this file. Type a note or skip. No dollar amounts were invented.",
+    false,
+  );
+  assert.ok(!addressOnlyWrite.draft.pendingProposal, "address-only ID invents nothing");
+  assert.equal(addressOnlyWrite.draft.borrowerName, undefined);
+  assert.ok(addressOnlyWrite.quietLines.some((line) => /could not read/i.test(line)));
+  const unreadPaint = dropResolvedAddressConfirmChips(
+    applyIdExtractAsk(atIdAsk, {
+      id: "id-unread",
+      role: "fox",
+      text: ID_UNREAD_ASK,
+      actions: [{ id: "skip-docs", label: "Skip", event: "bubble", capture: { field: "skip-docs" } }],
+    }),
+    addressOnlyWrite.draft,
+  );
+  const unreadLast = [...unreadPaint].reverse().find((message) => message.role === "fox");
+  assert.equal(unreadLast?.text, ID_UNREAD_ASK);
+  assert.equal(
+    unreadPaint.filter((message) => message.text === addressOnFileCopy()).length,
+    0,
+  );
+  assert.ok(
+    stillUsefulLabels(addressOnlyWrite.draft).some((label) => /government ID/i.test(label)),
+    stillUsefulLabels(addressOnlyWrite.draft).join(" · "),
+  );
   const composerDraft = {
     ...composerWrite.draft,
     documents: [...composerWrite.draft.documents],
@@ -313,8 +428,11 @@ async function main() {
   assert.doesNotMatch(dropSource, /form\.append\("file", snapshot/);
   const alwaysOn = readFileSync(join(root, "components/fox/AlwaysOnFox.tsx"), "utf8");
   assert.match(alwaysOn, /isGovernmentIdInviteLine\(last\.text\)/);
+  assert.match(alwaysOn, /applyIdExtractAsk/);
+  assert.match(alwaysOn, /isIdExtractAskText/);
   assert.match(alwaysOn, /void ingestDroppedFiles\(files\)/);
   assert.doesNotMatch(alwaysOn, /setInputFiles/);
+  assert.match(readFileSync(join(root, "components/fox/DocumentDrop.tsx"), "utf8"), /ComposerAttach/);
 
   const afterDrop = applyExtractedFields(afterLooks, {
     extractClass: extracted.extractClass,

@@ -5,6 +5,7 @@ export const FULL_NAME_FACT = "full_name";
 export const SUGGESTED_BORROWER_NOTE = "Suggested · not underwritten";
 export const BORROWER_NAME_ASK =
   "What name should I put on this file? Skip is fine if you’ll upload an ID.";
+export const ID_UNREAD_ASK = "I could not read this.";
 
 export function displayBorrowerName(value: string) {
   return value

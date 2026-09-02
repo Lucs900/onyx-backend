@@ -1459,10 +1459,13 @@ export function applyExtractWrite(
   if (!match) {
     return { draft: current, writes: [], conflict: null, quietLines: [], extractClass: input.extractClass };
   }
+  const filenameClass = preferFilenameClass("other", name);
   const extractedClass = promoteExtractClass(
-    looksLikePaystubFields(input.fields) && input.extractClass === "other"
-      ? "paystub"
-      : input.extractClass,
+    filenameClass === "government_id"
+      ? "government_id"
+      : looksLikePaystubFields(input.fields) && input.extractClass === "other"
+        ? "paystub"
+        : input.extractClass,
     input.fields,
   );
   const bankInvite = nextDocInvite(current) === "bank_statement";
