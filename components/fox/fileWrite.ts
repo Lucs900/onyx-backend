@@ -1271,9 +1271,7 @@ export function applyExtractedFields(
     }
   }
   const extractedName =
-    extractClass === "government_id" && !isWageExtractFirstPath(next)
-      ? String(fields.full_name ?? "").trim()
-      : "";
+    extractClass === "government_id" ? String(fields.full_name ?? "").trim() : "";
   if (extractedName) {
     const shown = displayBorrowerName(extractedName);
     const extras: { field: string; value: string; label: string }[] = [];
@@ -1776,7 +1774,12 @@ export function completenessFileFromDraft(draft: FoxIntakeDraft): CompletenessFi
   for (const doc of draft.documents ?? []) {
     const display = preferFilenameClass(doc.extractClass ?? "other", doc.name, doc.slot);
     if (display === "government_id" || doc.slot === "id" || docsDisplayLabel(doc) === "ID") {
-      received.add("government_id");
+      const named = Boolean(
+        draft.borrowerName || draft.contact.fullName.value || draft.facts?.full_name?.value,
+      );
+      if (doc.status === "extracted" && !isUnreadNote(doc.note) && named) {
+        received.add("government_id");
+      }
     }
     if (
       (doc.status === "extracted" || doc.status === "received" || doc.status === "reading") &&
@@ -2432,8 +2435,17 @@ export function nextDocInvite(draft: FoxIntakeDraft): DocInviteKind | null {
   return null;
 }
 
-/** Composer extract hint. Statements ask → bank_statement so a real drop is not classed `other`. */
+/** Composer extract hint. Dropped filename wins so 08 at the ID ask is government_id, not leftover bank/other. */
 export function extractHintFromDraft(draft: FoxIntakeDraft, name?: string): ExtractClass | null {
+  if (name) {
+    const fromName = extractClassFromFilename(name);
+    if (fromName && fromName !== "other") return fromName;
+    const slot = slotFromFilename(name);
+    if (slot === "id") return "government_id";
+    if (slot === "bank") return "bank_statement";
+    if (slot === "w2") return "w2";
+    if (slot === "paystubs") return "paystub";
+  }
   const invite = nextDocInvite(draft);
   if (invite === "bank_statement") return "bank_statement";
   if (invite === "government_id" || invite === "coborrower_government_id") return "government_id";
@@ -2441,9 +2453,6 @@ export function extractHintFromDraft(draft: FoxIntakeDraft, name?: string): Extr
   if (invite === "w2") return "w2";
   if (invite === "tax_return" || invite === "prior_year_return") return "tax_return";
   if (invite === "purchase_contract") return "purchase_contract";
-  if (name && (extractClassFromFilename(name) === "bank_statement" || slotFromFilename(name) === "bank")) {
-    return "bank_statement";
-  }
   return null;
 }
 
@@ -2452,8 +2461,9 @@ function hasRemainingPrimaryInvites(draft: FoxIntakeDraft) {
 }
 
 export function skipCurrentInvite(draft: FoxIntakeDraft): FoxIntakeDraft {
-  const peek = isBorrowerNameConfirmPending(draft) ? { ...draft, pendingProposal: null } : draft;
-  const kind = nextDocInvite(peek);
+  const kind = isBorrowerNameConfirmPending(draft)
+    ? "government_id"
+    : nextDocInvite(draft);
   if (!kind) {
     return {
       ...draft,

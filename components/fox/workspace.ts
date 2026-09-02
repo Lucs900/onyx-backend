@@ -1682,6 +1682,14 @@ export function retainWageDocsLine(lastText?: string | null, nextText?: string |
   return lastText === WAGE_DOCS_ASK && nextText === WAGE_DOCS_ASK;
 }
 
+/** Composer ID ask. Real drop of 08 replaces this line with The ID shows. */
+export function isGovernmentIdInviteLine(text?: string | null): boolean {
+  const value = String(text ?? "").trim();
+  if (!value) return false;
+  if (value === DOC_INVITE_COPY.government_id) return true;
+  return /First I need a government ID|Next is a government ID/i.test(value);
+}
+
 export function wageBox5Ask(): { text: string; actions: FoxAction[] } {
   return { text: W2_BOX5_ASK, actions: [wageSkipAction("skip-w2-box5")] };
 }

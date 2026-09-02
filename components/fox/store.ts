@@ -1466,11 +1466,13 @@ export function applyExtractWrite(
     input.fields,
   );
   const bankInvite = nextDocInvite(current) === "bank_statement";
+  const idWageLocked =
+    extractedClass === "government_id" || extractedClass === "paystub" || extractedClass === "w2";
   const unreadEmpty =
     !failed &&
-    (((extractedClass === "government_id" || extractedClass === "paystub" || extractedClass === "w2") &&
-      !hasLockedSuggestion(extractedClass, input.fields)) ||
-      ((bankInvite || extractedClass === "bank_statement") && !looksLikeBankFields(input.fields)));
+    (idWageLocked
+      ? !hasLockedSuggestion(extractedClass, input.fields)
+      : (bankInvite || extractedClass === "bank_statement") && !looksLikeBankFields(input.fields));
   const box5Read = Boolean(
     String(input.fields?.medicare_wages ?? "").trim() || String(input.fields?.box5 ?? "").trim(),
   );

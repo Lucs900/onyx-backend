@@ -117,6 +117,7 @@ import {
   RECEIVED_UNREAD_ASK,
   unreadRestoreActions,
   retainWageDocsLine,
+  isGovernmentIdInviteLine,
   holdDocsAskFox,
   productIntentFromAction,
   shouldDeferStillUsefulAsk,
@@ -346,6 +347,9 @@ function applyFoxAsk(
     ask.text !== last.text &&
     ask.text !== WAGE_STUB_DROP_ASK
   ) {
+    return freezeOthers(last.id, foxAskMessage(ask));
+  }
+  if (last && isGovernmentIdInviteLine(last.text) && ask.text !== last.text) {
     return freezeOthers(last.id, foxAskMessage(ask));
   }
   if (

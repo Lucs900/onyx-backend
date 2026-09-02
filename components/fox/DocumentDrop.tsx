@@ -125,14 +125,14 @@ export async function ingestDroppedFiles(files: File[]) {
     );
 
     try {
-      const snapshot = new Blob([await file.arrayBuffer()], { type: file.type || type });
-      const keep = new File([snapshot], file.name, { type: file.type || type });
+      const hint = extractHintFromDraft(getFoxDraft(), file.name);
+      const snapshot = new Blob([await file.arrayBuffer()], { type });
+      const keep = new File([snapshot], file.name, { type });
       const postExtract = async () => {
         const form = new FormData();
-        form.append("file", snapshot, file.name);
+        form.append("file", keep, file.name);
         form.append("name", file.name);
         form.append("type", type);
-        const hint = extractHintFromDraft(getFoxDraft(), file.name);
         if (hint) form.append("hint", hint);
         return fetch("/api/docs/extract", {
           method: "POST",

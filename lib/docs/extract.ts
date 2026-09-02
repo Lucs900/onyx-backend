@@ -474,6 +474,15 @@ export async function classifyAndExtract(
       if (loud) return printedResult(loud, textLayerChars);
       const loudId = loudIdFromPrintedLines(layer);
       if (loudId) return printedResult(loudId, textLayerChars);
+      if (hint === "government_id") {
+        const hintedId = fieldsFromPrintedLines("government_id", layer);
+        if (hasLockedSuggestion("government_id", hintedId)) {
+          return printedResult(
+            { extractClass: "government_id", confidence: 0.94, fields: hintedId },
+            textLayerChars,
+          );
+        }
+      }
     }
   }
   const printed = readPrintedSample(bytes);
@@ -512,6 +521,15 @@ export async function classifyAndExtract(
       }
       const loudId = loudIdFromPrintedLines(layer);
       if (loudId) return printedResult(loudId, textLayerChars);
+      if (hint === "government_id") {
+        const hintedId = fieldsFromPrintedLines("government_id", layer);
+        if (hasLockedSuggestion("government_id", hintedId)) {
+          return printedResult(
+            { extractClass: "government_id", confidence: 0.94, fields: hintedId },
+            textLayerChars,
+          );
+        }
+      }
       if (printed && hasLockedSuggestion(printed.extractClass, printed.fields)) {
         return printedResult(printed, textLayerChars);
       }
