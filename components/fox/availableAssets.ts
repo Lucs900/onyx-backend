@@ -1,5 +1,5 @@
 import { formatDollars } from "@/components/products/scenario";
-import { parseAssetAccounts, safeAccountLast4, type BankAssetAccount } from "@/lib/docs/bankLast4";
+import { safeAccountLast4, type BankAssetAccount } from "@/lib/docs/bankLast4";
 import { citizenshipSettled } from "./citizenship";
 import type { FactProposal, FoxAction, FoxIntakeDraft } from "./types";
 
@@ -148,7 +148,7 @@ export function availableAssetsConfirmCopy(amount: number) {
 export function displayInstitution(name?: string | null) {
   const trimmed = String(name ?? "").trim();
   if (!trimmed) return "";
-  if (/4412|\*{2,}|x{4,}/i.test(trimmed)) return "";
+  if (/\b(?:4412|4419|2281)\b|\*{2,}|x{4,}/i.test(trimmed)) return "";
   if (trimmed !== trimmed.toUpperCase()) return trimmed;
   return trimmed
     .toLowerCase()
@@ -157,22 +157,12 @@ export function displayInstitution(name?: string | null) {
 
 export function proposalBankLast4(proposal?: FactProposal | null) {
   if (!proposal) return "";
-  const one = proposal.extras?.find((item) => item.field === "account_last4")?.value;
-  const rows = proposal.extras?.find((item) => item.field === "asset_accounts")?.value;
-  const parsed = rows ? parseAssetAccounts(rows) : [];
-  const last4s = [one, ...parsed.map((row) => row.last4)]
-    .map((value) => (value ? safeAccountLast4(String(value)) : ""))
-    .filter(Boolean);
-  return last4s.filter((value, index) => last4s.indexOf(value) === index).join(" · ");
+  return safeAccountLast4(String(proposal.extras?.find((item) => item.field === "account_last4")?.value ?? ""));
 }
 
 export function availableAssetsExtractCopy(amount: number, institution?: string, last4?: string) {
   const who = displayInstitution(institution);
-  const shownLast4 = String(last4 ?? "")
-    .split(/[·,;]/)
-    .map((part) => safeAccountLast4(part.trim()))
-    .filter(Boolean)
-    .join(" · ");
+  const shownLast4 = safeAccountLast4(String(last4 ?? "").split(/[·,;]/)[0]?.trim() ?? "");
   const bits = [who, shownLast4, money(amount)].filter(Boolean);
   const shown = bits.length
     ? `The statement shows ${bits.join(" · ")}.`

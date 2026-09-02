@@ -42,7 +42,7 @@ import {
   wageThreadOpen,
 } from "./qualifyingIncome";
 import { bankEndingBalanceAmount } from "@/lib/docs/bankBalance";
-import { parseAssetAccounts, safeAccountLast4 } from "@/lib/docs/bankLast4";
+import { safeAccountLast4 } from "@/lib/docs/bankLast4";
 import {
   applyRentalIncomeFromExtract,
   draftHasLease,
@@ -668,8 +668,6 @@ export function sanitizeExtractedFields(
     let value = String(rawValue ?? "").trim();
     if (!value) continue;
     if (key === "asset_accounts") {
-      const rows = parseAssetAccounts(value);
-      if (rows.length > 1) next.asset_accounts = JSON.stringify(rows);
       continue;
     }
     if (allowed.size && !allowed.has(key)) continue;
@@ -683,15 +681,9 @@ export function sanitizeExtractedFields(
     }
     if (key === "account_last4") {
       if (CA_DL_NUMBER_RE.test(value.replace(/\s+/g, ""))) continue;
-      const last4s = value
-        .split(/[,;]/)
-        .map((part) => safeAccountLast4(part.trim()))
-        .filter(Boolean);
-      if (!last4s.length) continue;
-      next.account_last4 = last4s[0] ?? "";
-      if (last4s.length > 1 && !next.asset_accounts) {
-        next.asset_accounts = JSON.stringify(last4s.map((last4) => ({ last4 })));
-      }
+      const last4 = safeAccountLast4(value.split(/[,;·]/)[0]?.trim() ?? "");
+      if (!last4) continue;
+      next.account_last4 = last4;
       continue;
     }
     if (key === "id_last4") {
@@ -1193,8 +1185,7 @@ export function applyExtractedFields(
       (item) =>
         item.field === "institution" ||
         item.field === "ending_balance" ||
-        item.field === "account_last4" ||
-        item.field === "asset_accounts",
+        item.field === "account_last4",
     );
   }
   const extractedAssets = extractClass === "bank_statement" ? moneyNumber(fields.ending_balance ?? "") : null;
@@ -1213,7 +1204,6 @@ export function applyExtractedFields(
     } else if (!next.pendingConflict) {
       const institution = displayInstitution(String(fields.institution ?? "").trim());
       const last4 = String(fields.account_last4 ?? "").trim();
-      const assetAccounts = String(fields.asset_accounts ?? "").trim();
       next = proposeExtractedAvailableAssets(
         next,
         extractedAssets,
@@ -1229,9 +1219,6 @@ export function applyExtractedFields(
             value: String(extractedAssets),
             label: factLabel("ending_balance"),
           },
-          ...(assetAccounts
-            ? [{ field: "asset_accounts", value: assetAccounts, label: "accounts" }]
-            : []),
         ],
       );
       remainderWrites.length = 0;

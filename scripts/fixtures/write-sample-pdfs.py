@@ -129,15 +129,15 @@ def write_pdf(path: Path, lines: list[str]) -> None:
 
 
 FOUNDER_BANK_NAME = "05-bank-statement-pacific-coast-jul-2026.pdf"
-LAST4_BANK_NAME = "09-bank-statement-pacific-coast-4412.pdf"
 
 
 def write_founder_bank_pdf(path: Path) -> None:
-    """Founder layout: Ending balance 07/31/2026 next to $84,220.15.
+    """Founder layout: one checking ****4419, ending $84,220.15.
 
+    ****2281 is a transfer destination, not a second account.
     Not the thin stub (ENDING BALANCE: $x / PERIOD END: ISO date).
     Date and dollar are separate text runs so extract cannot treat 07 as money.
-    Filbert is residence only. No last4.
+    Filbert is residence only.
     """
     stream = "\n".join(
         [
@@ -148,13 +148,17 @@ def write_founder_bank_pdf(path: Path) -> None:
             "/F1 11 Tf",
             "0 -20 Td",
             "(ACCOUNT STATEMENT) Tj",
+            "0 -16 Td",
+            "(Checking ****4419) Tj",
             "0 -18 Td",
             "(RESIDENTIAL ADDRESS: 1847 Filbert St, San Francisco, CA 94123) Tj",
             "0 -28 Td",
             "(Ending balance 07/31/2026) Tj",
             "260 0 Td",
             "($84,220.15) Tj",
-            "-260 -36 Td",
+            "-260 -22 Td",
+            "(Transfer to ****2281) Tj",
+            "0 -36 Td",
             "(MORTGAGE SAMPLE - NOT A REAL STATEMENT) Tj",
             "ET",
         ]
@@ -163,37 +167,10 @@ def write_founder_bank_pdf(path: Path) -> None:
         raise SystemExit("founder bank page must not recreate the labeled stub")
     if b"07/31/2026" not in stream or b"$84,220.15" not in stream:
         raise SystemExit("founder bank page must print 07/31/2026 and $84,220.15")
-    write_pdf_bytes(path, stream)
-
-
-def write_last4_bank_pdf(path: Path) -> None:
-    """Same founder bank layout plus a labeled last4. 05 stays last4-free."""
-    stream = "\n".join(
-        [
-            "BT",
-            "/F1 18 Tf",
-            "72 740 Td",
-            "(PACIFIC COAST BANK) Tj",
-            "/F1 11 Tf",
-            "0 -20 Td",
-            "(ACCOUNT STATEMENT) Tj",
-            "0 -18 Td",
-            "(RESIDENTIAL ADDRESS: 1847 Filbert St, San Francisco, CA 94123) Tj",
-            "0 -18 Td",
-            "(ACCOUNT LAST 4: 4412) Tj",
-            "0 -28 Td",
-            "(Ending balance 07/31/2026) Tj",
-            "260 0 Td",
-            "($84,220.15) Tj",
-            "-260 -36 Td",
-            "(MORTGAGE SAMPLE - NOT A REAL STATEMENT) Tj",
-            "ET",
-        ]
-    ).encode("latin-1")
-    if b"ACCOUNT LAST 4: 4412" not in stream:
-        raise SystemExit("09 bank page must print ACCOUNT LAST 4: 4412")
-    if b"07/31/2026" not in stream or b"$84,220.15" not in stream:
-        raise SystemExit("09 bank page must print 07/31/2026 and $84,220.15")
+    if b"****4419" not in stream:
+        raise SystemExit("founder bank page must print checking ****4419")
+    if b"****2281" not in stream:
+        raise SystemExit("founder bank page must print transfer destination ****2281")
     write_pdf_bytes(path, stream)
 
 
@@ -302,8 +279,6 @@ def main() -> None:
     write_founder_ca_id_pdf(sample_docs / "01-ca-id-jordan-hale.pdf")
     write_founder_bank_pdf(here / FOUNDER_BANK_NAME)
     write_founder_bank_pdf(sample_docs / FOUNDER_BANK_NAME)
-    write_last4_bank_pdf(here / LAST4_BANK_NAME)
-    write_last4_bank_pdf(sample_docs / LAST4_BANK_NAME)
 
 
 if __name__ == "__main__":

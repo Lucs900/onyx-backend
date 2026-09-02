@@ -226,7 +226,8 @@ async function main() {
   assert.match(officialPrinted?.fields.institution ?? "", /Pacific Coast Bank/i);
   assert.equal(officialPrinted?.fields.ending_balance, "84220.15");
   assert.notEqual(officialPrinted?.fields.ending_balance, "7");
-  assert.equal(officialPrinted?.fields.account_last4, undefined);
+  assert.equal(officialPrinted?.fields.account_last4, "4419");
+  assert.equal(officialPrinted?.fields.asset_accounts, undefined);
   assert.match(officialPrinted?.fields.present_address ?? "", /1847 Filbert/);
   assert.equal(officialPrinted?.fields.property_address, undefined);
   const officialBank = await classifyAndExtract(
@@ -241,7 +242,8 @@ async function main() {
   assert.match(officialBank.fields.institution ?? "", /Pacific Coast Bank/i);
   assert.equal(officialBank.fields.ending_balance, "84220.15");
   assert.notEqual(officialBank.fields.ending_balance, "7");
-  assert.equal(officialBank.fields.account_last4, undefined);
+  assert.equal(officialBank.fields.account_last4, "4419");
+  assert.doesNotMatch(JSON.stringify(officialBank.fields), /2281/);
   assert.equal(officialBank.fields.property_address, undefined);
   const sevenRejected = applyExtractedFields(statementsSketch(), {
     extractClass: "bank_statement",
@@ -258,8 +260,13 @@ async function main() {
   assert.equal(officialPending.draft.pendingProposal?.value, "84220.15");
   assert.notEqual(officialPending.draft.pendingProposal?.value, "7");
   assert.ok(
+    (officialPending.draft.pendingProposal?.extras ?? []).some(
+      (item) => item.field === "account_last4" && item.value === "4419",
+    ),
+  );
+  assert.ok(
     !(officialPending.draft.pendingProposal?.extras ?? []).some(
-      (item) => item.field === "account_last4" || item.field === "present_address" || item.field === "property_address",
+      (item) => item.field === "present_address" || item.field === "property_address" || item.field === "asset_accounts",
     ),
   );
   const officialAsk = nextFoxAsk(officialPending.draft);
@@ -268,21 +275,25 @@ async function main() {
   assert.match(officialAsk.text, /Use this/);
   assert.ok((officialAsk.actions ?? []).some((item) => item.label === "Use this"));
   assert.ok((officialAsk.actions ?? []).some((item) => item.label === "Change"));
-  assert.doesNotMatch(officialAsk.text, /Filbert|last4|account number/i);
+  assert.match(officialAsk.text, /4419/);
+  assert.doesNotMatch(officialAsk.text, /Filbert|2281|4419 · 2281|account number|routing/i);
   const officialUsed = resolveProposal(officialPending.draft, "accept");
   assert.equal(officialUsed.facts?.institution?.value, "Pacific Coast Bank");
   assert.equal(officialUsed.facts?.ending_balance?.value, "84220.15");
-  assert.equal(officialUsed.facts?.account_last4, undefined);
+  assert.equal(officialUsed.facts?.account_last4?.value, "4419");
+  assert.equal(officialUsed.assetAccounts?.length ?? 1, 1);
   assert.equal(officialUsed.statedAvailableAssets, 84220.15);
   assert.equal(officialUsed.subjectAddress, "14 Oak Street");
   assert.doesNotMatch(`${officialUsed.subjectAddress} ${officialUsed.facts?.property_address?.value ?? ""}`, /Filbert/i);
   assert.equal(conventionalFileFromDraft(officialUsed).assets.institution, "Pacific Coast Bank");
   assert.equal(conventionalFileFromDraft(officialUsed).assets.suggestedBalance, "84220.15");
-  assert.equal(conventionalFileFromDraft(officialUsed).assets.last4, undefined);
+  assert.equal(conventionalFileFromDraft(officialUsed).assets.last4, "4419");
   assert.equal(conventionalFileFromDraft(officialUsed).property.address, "14 Oak Street");
   assert.ok(
     previewFacts(officialUsed).every(
-      (fact) => fact.id !== "file-assets" || !/last4 \d|Filbert/i.test(fact.value),
+      (fact) =>
+        (fact.id !== "file-assets" || (/4419/.test(fact.value) && !/2281|Filbert/i.test(fact.value))) &&
+        fact.id !== "file-assets-1",
     ),
   );
   const officialSkipped = resolveProposal(officialPending.draft, "decline");

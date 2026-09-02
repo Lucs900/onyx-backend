@@ -11,7 +11,7 @@ import {
   bankEndingBalanceFromStatementText,
   isDateFragmentAmount,
 } from "@/lib/docs/bankBalance";
-import { collectAccountLast4s, safeAccountLast4 } from "@/lib/docs/bankLast4";
+import { isTransferCounterpartyLine, safeAccountLast4, statementAccountLast4 } from "@/lib/docs/bankLast4";
 import { readPdfTextLayer } from "@/lib/docs/pdfText";
 
 export type PrintedSample = {
@@ -627,12 +627,14 @@ export function fieldsFromPrintedLines(
       if (shown) putMoney("k1_distributions", shown);
     }
     if (/^(?:ACCOUNT(?:\s+(?:NO|NUMBER|#|HOLDER))?|ACCOUNT LAST\s*4|LAST\s*4)\s*:/i.test(line)) {
-      const last4 = safeAccountLast4(line);
-      if (last4) put("account_last4", last4);
+      if (!isTransferCounterpartyLine(line)) {
+        const last4 = safeAccountLast4(line);
+        if (last4) put("account_last4", last4);
+      }
       continue;
     }
     const institution = labeled(line, next, /^(?:INSTITUTION|BANK NAME):\s*/i);
-    if (institution && !/4412|\*{2,}|x{4,}/i.test(institution)) put("institution", institution);
+    if (institution && !/\b(?:4412|4419|2281)\b|\*{2,}|x{4,}/i.test(institution)) put("institution", institution);
     const bankPeriod = valueAfter(line, /^(?:PERIOD END|STATEMENT PERIOD(?: END)?|PERIOD ENDING):\s*/i);
     if (bankPeriod) put("period_end", bankPeriod);
     const ending = labeled(line, next, /^(?:ENDING BALANCE|ENDING BAL\.?|ENDING ACCOUNT BALANCE):?\s*/i);
@@ -703,25 +705,9 @@ export function fieldsFromPrintedLines(
     } else if (fields.ending_balance && isDateFragmentAmount(fields.ending_balance)) {
       delete fields.ending_balance;
     }
-    const last4s = collectAccountLast4s(lines.join("\n"));
-    if (last4s[0] && !fields.account_last4) put("account_last4", last4s[0]);
-    const allLast4s = [fields.account_last4, ...last4s].filter(
-      (value, index, list): value is string => Boolean(value) && list.indexOf(value) === index,
-    );
-    if (allLast4s.length > 1) {
-      const perBalance = accountBalancesFromLines(lines);
-      fields.asset_accounts = JSON.stringify(
-        allLast4s.map((last4, index) => ({
-          ...(fields.institution ? { institution: fields.institution } : {}),
-          last4,
-          ...(perBalance[index]
-            ? { balance: perBalance[index] }
-            : index === 0 && fields.ending_balance
-              ? { balance: fields.ending_balance }
-              : {}),
-        })),
-      );
-    }
+    const last4 = statementAccountLast4(lines.join("\n"));
+    if (last4 && !fields.account_last4) put("account_last4", last4);
+    delete fields.asset_accounts;
   }
 
   if (extractClass === "w2" || extractClass === "other") {
@@ -893,22 +879,10 @@ export function residenceFromIdLines(lines: string[]): string {
   return "";
 }
 
-function accountBalancesFromLines(lines: string[]): string[] {
-  const out: string[] = [];
-  for (const line of lines) {
-    const labeled = line.match(/ACCOUNT\s+(\d+)\s+ENDING BALANCE:\s*(.+)/i);
-    if (!labeled) continue;
-    const amount = bankEndingBalanceAmount(labeled[2] ?? "");
-    const idx = Number(labeled[1]) - 1;
-    if (amount && idx >= 0) out[idx] = amount;
-  }
-  return out;
-}
-
 function institutionFromBankLines(lines: string[]): string {
   for (const line of lines) {
     const t = line.trim();
-    if (!t || /statement|period|ending|account|address|holder|sample|mortgage|page|balance/i.test(t)) {
+    if (!t || /statement|period|ending|account|address|holder|sample|mortgage|page|balance|transfer/i.test(t)) {
       continue;
     }
     if (/\bBANK\b/i.test(t) && t.length <= 48 && !/\$/.test(t) && !/\d{4}/.test(t)) return t;

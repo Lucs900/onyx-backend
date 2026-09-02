@@ -1068,13 +1068,10 @@ function writeConfirmedFact(
     return draft;
   }
   if (field === "asset_accounts") {
-    let next = draft;
-    for (const row of parseAssetAccounts(value)) {
-      next = writeAssetAccount(next, row);
-    }
-    const facts = { ...(next.facts ?? {}) };
+    const facts = { ...(draft.facts ?? {}) };
     delete facts.asset_accounts;
-    return { ...next, facts };
+    const first = parseAssetAccounts(value)[0];
+    return first ? writeAssetAccount({ ...draft, facts }, first) : { ...draft, facts };
   }
   if (field === "account_last4") {
     const last4 = safeAccountLast4(value);

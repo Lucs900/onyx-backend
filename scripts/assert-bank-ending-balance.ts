@@ -13,7 +13,7 @@ import {
 import { classifyAndExtract } from "../lib/docs/extract";
 import { readPdfTextLayer } from "../lib/docs/pdfText";
 import { printedSampleFromLines, readPrintedSample } from "../lib/docs/printedSample";
-import { safeAccountLast4, collectAccountLast4s } from "../lib/docs/bankLast4";
+import { safeAccountLast4, collectAccountLast4s, statementAccountLast4 } from "../lib/docs/bankLast4";
 import { displayInstitution, writeAssetAccount } from "../components/fox/availableAssets";
 import { resolveProposal } from "../components/fox/completeness";
 import { conventionalFileFacts, conventionalFileFromDraft } from "../components/fox/conventionalFile";
@@ -24,7 +24,6 @@ import { nextFoxAsk, previewFacts } from "../components/fox/workspace";
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const SAMPLE = join(root, "sample-docs/05-bank-statement-pacific-coast-jul-2026.pdf");
 const FIXTURE = join(root, "scripts/fixtures/05-bank-statement-pacific-coast-jul-2026.pdf");
-const LAST4_SAMPLE = join(root, "sample-docs/09-bank-statement-pacific-coast-4412.pdf");
 
 const deadVision = {
   async classify(): Promise<never> {
@@ -109,9 +108,13 @@ for (const path of [SAMPLE, FIXTURE]) {
   assert.ok(lines?.length, `${path} has no text layer`);
   assert.ok(lines.some((line) => /07\/31\/2026/.test(line)), `${path} text missing date`);
   assert.ok(lines.some((line) => /84,220\.15/.test(line)), `${path} text missing amount`);
+  assert.ok(lines.some((line) => /\*{4}4419/.test(line)), `${path} text missing checking ****4419`);
+  assert.ok(lines.some((line) => /Transfer to \*{4}2281/.test(line)), `${path} text missing transfer ****2281`);
   const printed = readPrintedSample(bytes);
   assertEnding(`fixture ${path}`, printed?.fields.ending_balance);
   assert.equal(displayInstitution(printed?.fields.institution), "Pacific Coast Bank");
+  assert.equal(printed?.fields.account_last4, "4419", `${path} last4`);
+  assert.equal(printed?.fields.asset_accounts, undefined, `${path} one statement`);
 }
 
 async function main() {
@@ -125,6 +128,9 @@ async function main() {
   assert.notEqual(extracted.failed, true, extracted.warnings.join(" | "));
   assertEnding("classifyAndExtract", extracted.fields.ending_balance);
   assert.equal(displayInstitution(extracted.fields.institution), "Pacific Coast Bank");
+  assert.equal(extracted.fields.account_last4, "4419");
+  assert.equal(extracted.fields.asset_accounts, undefined);
+  assert.doesNotMatch(JSON.stringify(extracted.fields), /2281|routing/i);
 
   const pending = applyExtractedFields(
     {
@@ -157,25 +163,31 @@ async function main() {
   refuseSeven("confirm value", pending.draft.pendingProposal?.value);
   const ask = nextFoxAsk(pending.draft);
   assert.match(ask.text, /Pacific Coast Bank/);
+  assert.match(ask.text, /4419/);
   assert.match(ask.text, /\$84,220\.15/);
   assert.match(ask.text, /Use this/);
+  assert.doesNotMatch(ask.text, /2281|4419 · 2281|Filbert|routing/i);
   refuseSeven("confirm speak", ask.text);
-  assert.doesNotMatch(ask.text, /Filbert/i);
   const used = resolveProposal(pending.draft, "accept");
   assert.equal(used.facts?.institution?.value, "Pacific Coast Bank");
   assert.equal(used.facts?.ending_balance?.value, "84220.15");
   assert.equal(used.statedAvailableAssets, 84220.15);
-  assert.equal(used.facts?.account_last4, undefined);
+  assert.equal(used.facts?.account_last4?.value, "4419");
+  assert.equal(used.assetAccounts?.length ?? 1, 1);
   assert.equal(used.subjectAddress, "14 Oak Street");
   assert.doesNotMatch(`${used.subjectAddress} ${used.facts?.property_address?.value ?? ""}`, /Filbert/i);
+  assert.doesNotMatch(JSON.stringify(used.facts ?? {}), /2281|routing/i);
   assert.equal(conventionalFileFromDraft(used).assets.suggestedBalance, "84220.15");
-  assert.equal(conventionalFileFromDraft(used).assets.last4, undefined);
+  assert.equal(conventionalFileFromDraft(used).assets.last4, "4419");
   refuseSeven("file write", used.facts?.ending_balance?.value);
-  assert.ok(
-    previewFacts(used).every((fact) => fact.id !== "file-assets" || !/last4 —/.test(fact.value)),
-    "blank last4 must not paint last4 —",
-  );
+  const usedFacts = previewFacts(used);
+  assert.ok(usedFacts.some((fact) => fact.id === "file-assets" && /4419/.test(fact.value) && /\$84,220\.15/.test(fact.value)));
+  assert.ok(usedFacts.every((fact) => fact.id !== "file-assets-1" && !/2281/.test(fact.value)));
+  assert.ok(usedFacts.every((fact) => fact.id !== "file-assets" || !/last4 —/.test(fact.value)));
 
+  assert.equal(safeAccountLast4("****4419"), "4419");
+  assert.equal(safeAccountLast4("Checking ****4419"), "4419");
+  assert.equal(safeAccountLast4("Transfer to ****2281"), "");
   assert.equal(safeAccountLast4("****4412"), "4412");
   assert.equal(safeAccountLast4("LAST 4: 4412"), "4412");
   assert.equal(safeAccountLast4("Account ending in 4412"), "4412");
@@ -185,57 +197,56 @@ async function main() {
   assert.equal(safeAccountLast4("07/31/2026"), "");
   assert.equal(safeAccountLast4("$84,220.15"), "");
   assert.deepEqual(collectAccountLast4s("Ending balance 07/31/2026 → $84,220.15"), []);
+  assert.equal(
+    statementAccountLast4(["PACIFIC COAST BANK", "Checking ****4419", "Transfer to ****2281", sameLine].join("\n")),
+    "4419",
+  );
 
-  const last4Printed = printedSampleFromLines([
+  const transferPrinted = printedSampleFromLines([
     ...header,
-    "ACCOUNT LAST 4: 4412",
+    "Checking ****4419",
+    "Transfer to ****2281",
     sameLine,
     residence,
   ]);
-  assert.equal(last4Printed?.extractClass, "bank_statement");
-  assert.equal(last4Printed?.fields.account_last4, "4412");
-  assertEnding("last4 printed", last4Printed?.fields.ending_balance);
-  const last4Pending = applyExtractedFields(
+  assert.equal(transferPrinted?.extractClass, "bank_statement");
+  assert.equal(transferPrinted?.fields.account_last4, "4419");
+  assert.equal(transferPrinted?.fields.asset_accounts, undefined);
+  assertEnding("transfer printed", transferPrinted?.fields.ending_balance);
+  const transferPending = applyExtractedFields(
     {
       ...emptyDraft(),
       path: "acr",
       productIntent: "buy",
       occupancyAsked: true,
       occupancyChoice: { ...emptyDraft().occupancyChoice, value: "primary" },
-      timelineAsked: true,
-      timelineChoice: { ...emptyDraft().timelineChoice, value: "ready-now" },
-      incomeAsked: true,
-      incomeType: { ...emptyDraft().incomeType, value: "w2" },
-      creditAsked: true,
-      creditBand: "760+",
-      propertyValueAmount: 1_200_000,
-      loanAmountValue: 960_000,
-      valueAsked: true,
-      amountAsked: true,
-      otherReoAsked: true,
-      statedOtherReo: "none",
-      subjectAddress: "14 Oak Street",
-      subjectAddressAsked: true,
       citizenshipAsked: true,
       agencyDeclarations: { citizenship: "us_citizen" },
+      subjectAddress: "14 Oak Street",
+      subjectAddressAsked: true,
     },
     {
       extractClass: "bank_statement",
       confidence: 0.94,
-      fields: last4Printed!.fields,
+      fields: transferPrinted!.fields,
     },
   );
-  assert.equal(last4Pending.draft.facts?.account_last4, undefined);
-  assert.ok((last4Pending.draft.pendingProposal?.extras ?? []).some((item) => item.field === "account_last4" && item.value === "4412"));
-  assert.match(nextFoxAsk(last4Pending.draft).text, /4412/);
-  assert.match(nextFoxAsk(last4Pending.draft).text, /Pacific Coast Bank/);
-  assert.match(nextFoxAsk(last4Pending.draft).text, /\$84,220\.15/);
-  const last4Used = resolveProposal(last4Pending.draft, "accept");
-  assert.equal(last4Used.facts?.account_last4?.value, "4412");
-  assert.equal(conventionalFileFromDraft(last4Used).assets.last4, "4412");
+  assert.equal(transferPending.draft.facts?.account_last4, undefined);
   assert.ok(
-    previewFacts(last4Used).some((fact) => fact.id === "file-assets" && /last4 4412/.test(fact.value)),
+    (transferPending.draft.pendingProposal?.extras ?? []).some(
+      (item) => item.field === "account_last4" && item.value === "4419",
+    ),
   );
+  assert.ok(!(transferPending.draft.pendingProposal?.extras ?? []).some((item) => item.field === "asset_accounts"));
+  const transferAsk = nextFoxAsk(transferPending.draft);
+  assert.match(transferAsk.text, /Pacific Coast Bank · 4419 · \$84,220\.15/);
+  assert.match(transferAsk.text, /Suggested · not underwritten/);
+  assert.doesNotMatch(transferAsk.text, /2281|4419 · 2281/);
+  const transferUsed = resolveProposal(transferPending.draft, "accept");
+  assert.equal(transferUsed.facts?.account_last4?.value, "4419");
+  assert.equal(transferUsed.assetAccounts?.length ?? 1, 1);
+  assert.equal(conventionalFileFromDraft(transferUsed).assets.last4, "4419");
+  assert.ok(conventionalFileFacts(transferUsed).every((fact) => fact.id !== "file-assets-1" && !/2281/.test(fact.value)));
 
   const fullAccount = applyExtractedFields(
     {
@@ -262,62 +273,13 @@ async function main() {
   assert.doesNotMatch(JSON.stringify(fullUsed.facts ?? {}), /9999888877771234/);
   assert.equal(conventionalFileFromDraft(fullUsed).assets.last4, undefined);
 
-  const twoPrinted = printedSampleFromLines([
-    ...header,
-    "ACCOUNT LAST 4: 4412",
-    "ACCOUNT LAST 4: 7788",
-    "ENDING BALANCE: $20,000.00",
-    "ACCOUNT 1 ENDING BALANCE: $12,000.00",
-    "ACCOUNT 2 ENDING BALANCE: $8,000.00",
-  ]);
-  assert.equal(twoPrinted?.fields.account_last4, "4412");
-  assert.ok(twoPrinted?.fields.asset_accounts);
-  const twoRows = JSON.parse(twoPrinted!.fields.asset_accounts) as { last4?: string; balance?: string }[];
-  assert.equal(twoRows.length, 2);
-  assert.equal(twoRows[0]?.last4, "4412");
-  assert.equal(twoRows[1]?.last4, "7788");
-  const twoPending = applyExtractedFields(
-    {
-      ...emptyDraft(),
-      path: "acr",
-      productIntent: "buy",
-      occupancyAsked: true,
-      occupancyChoice: { ...emptyDraft().occupancyChoice, value: "primary" },
-      citizenshipAsked: true,
-      agencyDeclarations: { citizenship: "us_citizen" },
-    },
-    {
-      extractClass: "bank_statement",
-      confidence: 0.94,
-      fields: twoPrinted!.fields,
-    },
-  );
-  const twoUsed = resolveProposal(twoPending.draft, "accept");
-  assert.equal(twoUsed.assetAccounts?.length, 2);
-  assert.equal(twoUsed.assetAccounts?.[0]?.last4, "4412");
-  assert.equal(twoUsed.assetAccounts?.[1]?.last4, "7788");
-  const twoFacts = conventionalFileFacts(twoUsed);
-  assert.ok(twoFacts.some((fact) => fact.id === "file-assets" && /4412/.test(fact.value)));
-  assert.ok(twoFacts.some((fact) => fact.id === "file-assets-1" && /7788/.test(fact.value)));
-
   const sameBank = writeAssetAccount(
-    writeAssetAccount(emptyDraft(), { institution: "Pacific Coast Bank", last4: "4412", balance: "12000" }),
+    writeAssetAccount(emptyDraft(), { institution: "Pacific Coast Bank", last4: "4419", balance: "84220.15" }),
     { institution: "Pacific Coast Bank", last4: "7788", balance: "8000" },
   );
   assert.equal(sameBank.assetAccounts?.length, 2);
 
-  const last4Bytes = readFileSync(LAST4_SAMPLE);
-  const last4Extracted = await classifyAndExtract(
-    last4Bytes,
-    "application/pdf",
-    deadVision,
-    "bank_statement",
-    "09-bank-statement-pacific-coast-4412.pdf",
-  );
-  assert.equal(last4Extracted.fields.account_last4, "4412");
-  assertEnding("09 extract", last4Extracted.fields.ending_balance);
-
-  const composerFile = new File([last4Bytes], "09-bank-statement-pacific-coast-4412.pdf", { type: "" });
+  const composerFile = new File([readFileSync(SAMPLE)], "05-bank-statement-pacific-coast-jul-2026.pdf", { type: "" });
   const snapshotType = "application/pdf";
   const keep = new File([new Blob([await composerFile.arrayBuffer()], { type: snapshotType })], composerFile.name, {
     type: snapshotType,
@@ -341,11 +303,12 @@ async function main() {
   };
   assert.equal(composerPosted.status, 200);
   assert.equal(composerRead.source, "file");
-  assert.notEqual(composerRead.failed, true, "composer File of 09 is confirm, not unread");
+  assert.notEqual(composerRead.failed, true, "composer File of 05 is confirm, not unread");
   assert.equal(composerRead.class, "bank_statement");
-  assert.equal(composerRead.fields?.account_last4, "4412");
-  assertEnding("09 composer", composerRead.fields?.ending_balance);
-  assert.doesNotMatch(JSON.stringify(composerRead.fields ?? {}), /9999888877771234|D1234567/);
+  assert.equal(composerRead.fields?.account_last4, "4419");
+  assert.equal(composerRead.fields?.asset_accounts, undefined);
+  assertEnding("05 composer", composerRead.fields?.ending_balance);
+  assert.doesNotMatch(JSON.stringify(composerRead.fields ?? {}), /2281|9999888877771234|routing/i);
   const composerWrite = applyExtractedFields(
     {
       ...emptyDraft(),
@@ -365,11 +328,18 @@ async function main() {
     },
   );
   assert.equal(composerWrite.draft.facts?.account_last4, undefined);
-  assert.ok((composerWrite.draft.pendingProposal?.extras ?? []).some((item) => item.field === "account_last4"));
-  assert.match(nextFoxAsk(composerWrite.draft).text, /4412/);
+  assert.ok(
+    (composerWrite.draft.pendingProposal?.extras ?? []).some(
+      (item) => item.field === "account_last4" && item.value === "4419",
+    ),
+  );
+  assert.match(nextFoxAsk(composerWrite.draft).text, /Pacific Coast Bank · 4419 · \$84,220\.15/);
+  assert.doesNotMatch(nextFoxAsk(composerWrite.draft).text, /2281|4419 · 2281/);
   const composerUsed = resolveProposal(composerWrite.draft, "accept");
-  assert.equal(composerUsed.facts?.account_last4?.value, "4412");
-  assert.equal(conventionalFileFromDraft(composerUsed).assets.last4, "4412");
+  assert.equal(composerUsed.facts?.account_last4?.value, "4419");
+  assert.equal(conventionalFileFromDraft(composerUsed).assets.last4, "4419");
+  assert.equal(composerUsed.assetAccounts?.length ?? 1, 1);
+  assert.ok(conventionalFileFacts(composerUsed).every((fact) => fact.id !== "file-assets-1"));
 
   console.log("founder-layout bank ending-balance unit test PASS");
 }

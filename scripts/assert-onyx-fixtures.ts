@@ -140,10 +140,6 @@ export function assertOnyxFixtures() {
     paths.some((path) => /05-bank-statement-pacific-coast-jul-2026\.pdf$/.test(path)),
     "expected scripts/fixtures/05-bank-statement-pacific-coast-jul-2026.pdf",
   );
-  assert.ok(
-    paths.some((path) => /09-bank-statement-pacific-coast-4412\.pdf$/.test(path)),
-    "expected scripts/fixtures/09-bank-statement-pacific-coast-4412.pdf",
-  );
 }
 
 const invokedDirectly =
