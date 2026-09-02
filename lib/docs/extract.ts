@@ -14,6 +14,7 @@ import type { ExtractClass } from "@/components/fox/types";
 import { isPdf, pdfTextLayerCharCount, readPdfEmbeddedImages, readPdfTextLayer } from "@/lib/docs/pdfText";
 import {
   fieldsFromPrintedLines,
+  loudContractFromPrintedLines,
   loudIdFromPrintedLines,
   loudWageFromPrintedLines,
   printedSampleFromLines,
@@ -276,7 +277,7 @@ function extractFieldsPrompt(extractClass: ExtractClass, keys: readonly string[]
   }
   if (extractClass === "purchase_contract") {
     extra =
-      " property_address, purchase_price, and close_date only when clearly printed. property_type is house/sfr, condo, or two_to_four only when the contract clearly names the type. year_built, units, annual_taxes, and hoa_monthly only when clearly printed. Empty otherwise; never invent.";
+      " property_address, purchase_price, close_date, and seller_credit only when clearly printed. seller_credit only when a dollar amount is on the page — never invent a credit. inspection_contingency, loan_contingency, and appraisal_contingency are dates only when printed; they are dates, not a guideline decision. addenda is the printed addenda list only. Never say this fails FNMA. Never invent underwriting. property_type is house/sfr, condo, or two_to_four only when the contract clearly names the type. year_built, units, annual_taxes, and hoa_monthly only when clearly printed. Empty otherwise; never invent.";
   }
   if (extractClass === "mortgage_statement") {
     extra =
@@ -471,6 +472,8 @@ export async function classifyAndExtract(
       if (loud) return printedResult(loud, textLayerChars);
       const loudId = loudIdFromPrintedLines(layer);
       if (loudId) return printedResult(loudId, textLayerChars);
+      const loudContract = loudContractFromPrintedLines(layer);
+      if (loudContract) return printedResult(loudContract, textLayerChars);
       if (hint === "government_id") {
         const hintedId = fieldsFromPrintedLines("government_id", layer);
         if (hasLockedSuggestion("government_id", hintedId)) {
@@ -518,6 +521,17 @@ export async function classifyAndExtract(
       }
       const loudId = loudIdFromPrintedLines(layer);
       if (loudId) return printedResult(loudId, textLayerChars);
+      const loudContract = loudContractFromPrintedLines(layer);
+      if (loudContract) return printedResult(loudContract, textLayerChars);
+      if (hint === "purchase_contract") {
+        const hintedContract = fieldsFromPrintedLines("purchase_contract", layer);
+        if (hasLockedSuggestion("purchase_contract", hintedContract)) {
+          return printedResult(
+            { extractClass: "purchase_contract", confidence: 0.94, fields: hintedContract },
+            textLayerChars,
+          );
+        }
+      }
       if (hint === "government_id") {
         const hintedId = fieldsFromPrintedLines("government_id", layer);
         if (hasLockedSuggestion("government_id", hintedId)) {

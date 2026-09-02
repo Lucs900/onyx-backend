@@ -710,6 +710,33 @@ export function contractAddressConfirmCopy(address: string) {
   return `The contract shows ${address}. ${SUGGESTED_PROPERTY_NOTE}. Use this?`;
 }
 
+function contractMoneyShown(value: string) {
+  const n = Number(String(value).replace(/[$,]/g, ""));
+  if (!Number.isFinite(n)) return value.trim();
+  return `$${Math.round(Math.abs(n)).toLocaleString("en-US")}`;
+}
+
+export function contractExtractConfirmCopy(
+  address: string,
+  extras: { field: string; value: string }[] = [],
+) {
+  const bits = [address.trim()].filter(Boolean);
+  const price = extras.find((item) => item.field === "purchase_price")?.value;
+  const close = extras.find((item) => item.field === "close_date")?.value;
+  const credit = extras.find((item) => item.field === "seller_credit")?.value;
+  if (price) bits.push(contractMoneyShown(price));
+  if (close) bits.push(`close ${close.trim()}`);
+  if (credit) bits.push(`seller credit ${contractMoneyShown(credit)}`);
+  return `The contract shows ${bits.join(", ")}. ${SUGGESTED_PROPERTY_NOTE}. Use this?`;
+}
+
+export function contractExtractActions(): FoxAction[] {
+  return [
+    { id: "accept-proposal", label: "Use this", event: "bubble", capture: { field: "accept-proposal" } },
+    { id: "skip-docs", label: "Skip", event: "bubble", capture: { field: "skip-docs" } },
+  ];
+}
+
 export function typedAddressConfirmCopy(address: string) {
   return placeAddressConfirmCopy(address);
 }

@@ -654,6 +654,18 @@ export function fieldsFromPrintedLines(
     if (price) putMoney("purchase_price", price);
     const close = valueAfter(line, /^CLOSE DATE:\s*/i);
     if (close) put("close_date", close);
+    const sellerCredit = labeled(line, next, /^SELLER CREDIT:\s*/i);
+    if (sellerCredit && /\$|[\d,]+\.\d{2}\b/.test(sellerCredit) && moneyDigits(emptyIfNotShown(sellerCredit))) {
+      putMoney("seller_credit", sellerCredit);
+    }
+    const inspection = labeled(line, next, /^INSPECTION CONTINGENCY:\s*/i);
+    if (inspection && /\d/.test(inspection)) put("inspection_contingency", inspection);
+    const loanContingency = labeled(line, next, /^LOAN CONTINGENCY:\s*/i);
+    if (loanContingency && /\d/.test(loanContingency)) put("loan_contingency", loanContingency);
+    const appraisal = labeled(line, next, /^APPRAISAL CONTINGENCY:\s*/i);
+    if (appraisal && /\d/.test(appraisal)) put("appraisal_contingency", appraisal);
+    const addenda = labeled(line, next, /^ADDENDA:\s*/i);
+    if (addenda && !/fails|fnma|ineligible|guideline/i.test(addenda)) put("addenda", addenda);
     const servicer = valueAfter(line, /^SERVICER:\s*/i);
     if (servicer) put("servicer", servicer);
     const unpaid = valueAfter(line, /^UNPAID PRINCIPAL:\s*/i);
@@ -900,6 +912,7 @@ function inferPrintedClass(lines: string[]): ExtractClass | null {
   if (mapped.gross_period && mapped.pay_frequency) return "paystub";
   if (mapped.current_pi || (mapped.servicer && mapped.unpaid_principal)) return "mortgage_statement";
   if (mapped.institution || mapped.ending_balance) return "bank_statement";
+  if (mapped.purchase_price || mapped.seller_credit) return "purchase_contract";
   if (mapped.full_name) return "government_id";
   return null;
 }
@@ -911,6 +924,25 @@ export function printedSampleFromLines(lines: string[]): PrintedSample | null {
     extractClass,
     confidence: 0.94,
     fields: fieldsFromPrintedLines(extractClass, lines),
+  };
+}
+
+/** Purchase contract fields from THIS page text. Filename is not a source. */
+export function loudContractFromPrintedLines(lines: string[]): PrintedSample | null {
+  const blob = lines.join("\n");
+  if (/\bW-?2\b|PAYSTUB|WAGE AND TAX STATEMENT|ACCOUNT STATEMENT|BANK STATEMENT|DRIVER LICENSE|\bLN\b.*\bFN\b/i.test(blob)) {
+    return null;
+  }
+  if (!/PURCHASE CONTRACT|PURCHASE AGREEMENT|CALIFORNIA RESIDENTIAL PURCHASE/i.test(blob)) {
+    return null;
+  }
+  const fields = fieldsFromPrintedLines("purchase_contract", lines);
+  if (!fields.property_address && !fields.purchase_price && !fields.close_date) return null;
+  delete fields.present_address;
+  return {
+    extractClass: "purchase_contract",
+    confidence: 0.94,
+    fields,
   };
 }
 

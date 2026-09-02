@@ -54,6 +54,8 @@ import {
   applyExtractedFields,
   hasLockedSuggestion,
   looksLikeBankFields,
+  looksLikeContractFields,
+  isPurchaseContractConfirmPending,
   looksLikePaystubFields,
   preferFilenameClass,
   promoteExtractClass,
@@ -1505,7 +1507,11 @@ export function applyExtractWrite(
     !failed &&
     (idWageLocked
       ? !hasLockedSuggestion(extractedClass, input.fields)
-      : (bankInvite || extractedClass === "bank_statement") && !looksLikeBankFields(input.fields));
+      : extractedClass === "purchase_contract"
+        ? !looksLikeContractFields(input.fields)
+        : (bankInvite || extractedClass === "bank_statement") &&
+          !looksLikeBankFields(input.fields) &&
+          !looksLikeContractFields(input.fields));
   const box5Read = Boolean(
     String(input.fields?.medicare_wages ?? "").trim() || String(input.fields?.box5 ?? "").trim(),
   );
@@ -1572,7 +1578,10 @@ export function markMissingAsked(key: string) {
 }
 
 export function skipDocuments() {
-  if (current.workspaceFlow && (isBorrowerNameConfirmPending(current) || nextDocInvite(current))) {
+  if (
+    current.workspaceFlow &&
+    (isBorrowerNameConfirmPending(current) || isPurchaseContractConfirmPending(current) || nextDocInvite(current))
+  ) {
     return commit(
       restripeGatheringOrReady(skipCurrentInvite({ ...current, docsHeld: false })),
     );
@@ -2090,7 +2099,7 @@ function applyCaptureBody(capture: Capture) {
     return commit(proposed ?? { ...current, subjectLeaseAsked: true });
   }
   if (capture.field === "skip-docs") {
-    if (isBorrowerNameConfirmPending(current)) {
+    if (isBorrowerNameConfirmPending(current) || isPurchaseContractConfirmPending(current)) {
       return commit(restripeGatheringOrReady(skipCurrentInvite({ ...current, docsHeld: false })));
     }
     if (layer2Open(current)) {

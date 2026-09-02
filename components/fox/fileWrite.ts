@@ -191,6 +191,11 @@ export const EXTRACT_SCHEMA_KEYS: Record<ExtractClass, readonly string[]> = {
     "property_address",
     "purchase_price",
     "close_date",
+    "seller_credit",
+    "inspection_contingency",
+    "loan_contingency",
+    "appraisal_contingency",
+    "addenda",
     "property_type",
     "year_built",
     "units",
@@ -222,6 +227,7 @@ const MONEY_KEYS = new Set([
   "agi",
   "ending_balance",
   "purchase_price",
+  "seller_credit",
   "unpaid_principal",
   "current_pi",
   "income",
@@ -327,6 +333,9 @@ const DATE_KEYS = new Set([
   "close_date",
   "tax_year",
   "hire_date",
+  "inspection_contingency",
+  "loan_contingency",
+  "appraisal_contingency",
 ]);
 
 export function slotForExtractClass(extractClass: ExtractClass): DocSlot {
@@ -356,6 +365,7 @@ export function extractClassFromSlot(slot: DocSlot): ExtractClass | null {
 }
 
 export function extractClassFromFilename(name: string): ExtractClass | null {
+  if (/purchase.?contract|purchase.?agree|\bpsa\b/i.test(name)) return "purchase_contract";
   return extractClassFromSlot(slotFromFilename(name));
 }
 
@@ -408,6 +418,13 @@ export function looksLikeBankFields(
   return Boolean(value("institution") || value("ending_balance"));
 }
 
+export function looksLikeContractFields(
+  fields?: Record<string, string | null | undefined> | null,
+): boolean {
+  const value = (key: string) => String(fields?.[key] ?? "").trim();
+  return Boolean(value("property_address") || value("purchase_price") || value("close_date") || value("seller_credit"));
+}
+
 export function hasLockedSuggestion(
   extractClass: ExtractClass,
   fields?: Record<string, string | null | undefined> | null,
@@ -430,6 +447,7 @@ export function hasLockedSuggestion(
         value("wages"),
     );
   }
+  if (extractClass === "purchase_contract") return looksLikeContractFields(fields);
   return Object.values(fields ?? {}).some((item) => String(item ?? "").trim());
 }
 
@@ -452,6 +470,7 @@ export function promoteExtractClass(
   if (looksLikePaystubFields(fields)) return "paystub";
   if (looksLikeIdFields(fields)) return "government_id";
   if (looksLikeBankFields(fields)) return "bank_statement";
+  if (looksLikeContractFields(fields)) return "purchase_contract";
   return extractClass;
 }
 
@@ -492,6 +511,7 @@ export function docsDisplayLabel(doc: {
   if (extractClass === "government_id") return "ID";
   if (extractClass === "bank_statement") return "Bank statements";
   if (extractClass === "tax_return") return "Tax return";
+  if (extractClass === "purchase_contract") return "Purchase contract";
   const slot = resolveReceivedSlot(doc.slot, doc.name, extractClass);
   if (slot === "paystubs") return "Paystubs";
   if (slot === "w2") return "W-2";
@@ -532,6 +552,11 @@ export const REMAINDER_CONFIRM_FIELDS = new Set([
   "property_address",
   "purchase_price",
   "close_date",
+  "seller_credit",
+  "inspection_contingency",
+  "loan_contingency",
+  "appraisal_contingency",
+  "addenda",
   "institution",
   "period_end",
   "ending_balance",
@@ -632,6 +657,11 @@ export function factLabel(field: string) {
   if (field === "occupancy") return "occupancy";
   if (field === "purchase_price") return "purchase price";
   if (field === "close_date") return "close date";
+  if (field === "seller_credit") return "seller credit";
+  if (field === "inspection_contingency") return "inspection contingency";
+  if (field === "loan_contingency") return "loan contingency";
+  if (field === "appraisal_contingency") return "appraisal contingency";
+  if (field === "addenda") return "addenda";
   if (field === "servicer") return "servicer";
   if (field === "unpaid_principal") return "unpaid principal";
   if (field === "current_pi") return "current P&I";
@@ -1068,7 +1098,15 @@ export function applyExtractedFields(
         remainderWrites.push({ field, value });
         continue;
       }
-      if (valuesMatch(existingRemainder.value, value)) continue;
+      if (valuesMatch(existingRemainder.value, value)) {
+        if (
+          extractClass === "purchase_contract" &&
+          (field === "purchase_price" || field === "close_date" || field === "seller_credit")
+        ) {
+          remainderWrites.push({ field, value });
+        }
+        continue;
+      }
       if (!conflict) {
         conflict = {
           field,
@@ -1429,6 +1467,9 @@ export function applyExtractedFields(
   ) {
     const remainder = remainderProposalFromWrites(extractClass, remainderWrites);
     if (remainder) next = { ...next, pendingProposal: remainder };
+  }
+  if (conflict && !next.pendingConflict) {
+    next = { ...next, pendingConflict: conflict };
   }
   next = attachExtractClass(next, extractClass);
   const cautionFacts = { ...(next.facts ?? {}) };
@@ -1800,11 +1841,20 @@ export function completenessFileFromDraft(draft: FoxIntakeDraft): CompletenessFi
         received.add("government_id");
       }
     }
+    if (display === "purchase_contract") {
+      const written = Boolean(
+        (draft.facts?.purchase_price?.confirmed && draft.facts.purchase_price.value) ||
+          (draft.facts?.close_date?.confirmed && draft.facts.close_date.value) ||
+          (draft.subjectAddress && draft.facts?.property_address?.confirmed),
+      );
+      if (written) received.add("purchase_contract");
+    }
     if (
       (doc.status === "extracted" || doc.status === "received" || doc.status === "reading") &&
       display &&
       display !== "other" &&
-      display !== "government_id"
+      display !== "government_id" &&
+      display !== "purchase_contract"
     ) {
       received.add(display);
     }
@@ -2479,7 +2529,34 @@ function hasRemainingPrimaryInvites(draft: FoxIntakeDraft) {
   return primaryInviteSequence(draft).some((kind) => !inviteSatisfied(draft, kind));
 }
 
+export function isPurchaseContractConfirmPending(draft: FoxIntakeDraft) {
+  const proposal = draft.pendingProposal;
+  if (!proposal || !isRemainderConfirmField(proposal.field)) return false;
+  return (draft.documents ?? []).some(
+    (doc) =>
+      (doc.extractClass === "purchase_contract" || /purchase.?contract|purchase.?agree|\bpsa\b/i.test(doc.name)) &&
+      (doc.status === "extracted" || doc.status === "received"),
+  );
+}
+
 export function skipCurrentInvite(draft: FoxIntakeDraft): FoxIntakeDraft {
+  if (isPurchaseContractConfirmPending(draft)) {
+    const skipped = Array.from(
+      new Set([...(draft.skippedClasses ?? []), "purchase_contract" as ExtractClass]),
+    );
+    const next = {
+      ...draft,
+      skippedClasses: skipped,
+      docsOpen: false,
+      correcting: null,
+      correctingLine: null,
+      pendingProposal: null,
+    };
+    return {
+      ...next,
+      documentsSkipped: draft.documents.length === 0 && !hasRemainingPrimaryInvites(next),
+    };
+  }
   if (isBorrowerNameConfirmPending(draft)) {
     const facts = { ...(draft.facts ?? {}) };
     delete facts[BORROWER_NAME_FIELD];

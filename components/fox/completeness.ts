@@ -823,7 +823,14 @@ export function remainderAskCopy(proposal: FactProposal) {
   if (writes.some((item) => item.field === "ending_balance" || item.field === "institution")) {
     return `The bank statement has ${named}. Use this?`;
   }
-  if (writes.some((item) => item.field === "purchase_price" || item.field === "close_date")) {
+  if (
+    writes.some(
+      (item) =>
+        item.field === "purchase_price" ||
+        item.field === "close_date" ||
+        item.field === "seller_credit",
+    )
+  ) {
     return `The purchase contract has ${named}. Use this?`;
   }
   if (writes.some((item) => item.field === "servicer" || item.field === "unpaid_principal")) {

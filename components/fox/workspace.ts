@@ -79,6 +79,7 @@ import {
   displayFactValue,
   docsDisplayLabel,
   factValue,
+  isPurchaseContractConfirmPending,
   isRemainderConfirmField,
   fileStillUsefulNote,
   incomeRequestedClasses,
@@ -287,6 +288,8 @@ import {
   PROPERTY_ADDRESS_FACT,
   SUGGESTED_PROPERTY_NOTE,
   contractAddressConfirmCopy,
+  contractExtractActions,
+  contractExtractConfirmCopy,
   isPropertyAddressField,
   isPropertyTypeConfirmPending,
   isSkipPropertyAddressText,
@@ -1880,6 +1883,12 @@ function liveProposalAsk(
     };
   }
   if (isPropertyAddressField(proposal.field)) {
+    if (isPurchaseContractConfirmPending(draft)) {
+      return {
+        text: contractExtractConfirmCopy(proposal.value, proposal.extras ?? []),
+        actions: contractExtractActions(),
+      };
+    }
     return {
       text:
         proposal.note === SUGGESTED_PROPERTY_NOTE &&
@@ -5581,6 +5590,13 @@ export function workspaceReply(
         capture: { field: "skip-docs" },
       };
     }
+    if (isPurchaseContractConfirmPending(draft) && isSkipBorrowerNameText(q)) {
+      const nextDraft = skipCurrentInvite(draft);
+      return {
+        ...nextFoxAsk(nextDraft),
+        capture: { field: "skip-docs" },
+      };
+    }
     if (
       (isQualifyingIncomeConfirmPending(draft) ||
         isStatedDebtsConfirmPending(draft) ||
@@ -6994,6 +7010,17 @@ function docsFact(draft: FoxIntakeDraft): PreviewFact | null {
                 doc.status === "extracted" &&
                 !draft.borrowerName &&
                 !draft.contact.fullName.value
+              ) {
+                return "";
+              }
+            }
+            if (wageLabel === "Purchase contract") {
+              if (isPurchaseContractConfirmPending(draft)) return "";
+              if (
+                doc.status === "extracted" &&
+                !draft.facts?.purchase_price?.confirmed &&
+                !draft.facts?.close_date?.confirmed &&
+                !draft.subjectAddress
               ) {
                 return "";
               }
