@@ -990,6 +990,18 @@ export function applyExtractedFields(
       continue;
     }
     if (
+      extractClass === "government_id" &&
+      (field === "state" ||
+        field === "street" ||
+        field === "city" ||
+        field === "zip" ||
+        field === "propertyZip" ||
+        field === "subjectAddress" ||
+        field === "property_address")
+    ) {
+      continue;
+    }
+    if (
       extractClass === "bank_statement" &&
       (field === "present_address" || field === "property_address" || field === "subjectAddress")
     ) {

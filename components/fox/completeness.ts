@@ -68,6 +68,7 @@ import {
   SUGGESTED_PROPERTY_NOTE,
   contractAddressConfirmCopy,
   isPlaceAddressProposal,
+  isPropertyAddressField,
   isPropertyTypeValue,
   parsePropertyType,
   propertyAddressSettled,
@@ -885,9 +886,8 @@ export function proposalAskCopy(proposal: FactProposal) {
     return householdConfirmCopy(proposal.value);
   }
   if (isBorrowerNameField(proposal.field)) {
-    const address = proposal.extras?.find((item) => item.field === "present_address")?.value;
     return proposal.extras
-      ? borrowerNameExtractCopy(proposal.value, address)
+      ? borrowerNameExtractCopy(proposal.value)
       : borrowerNameConfirmCopy(proposal.value);
   }
   if (isCoborrowerNameField(proposal.field)) {
@@ -1423,6 +1423,18 @@ export function resolveProposal(
     next = writeConfirmedFact(next, proposal.companion.field, proposal.companion.value, source);
   }
   for (const extra of proposal.extras ?? []) {
+    if (
+      isBorrowerNameField(proposal.field) &&
+      (isPropertyAddressField(extra.field) ||
+        extra.field === "subjectAddress" ||
+        extra.field === "street" ||
+        extra.field === "city" ||
+        extra.field === "state" ||
+        extra.field === "zip" ||
+        extra.field === "propertyZip")
+    ) {
+      continue;
+    }
     next = writeConfirmedFact(next, extra.field, extra.value, source);
   }
   if (proposal.field === QUALIFYING_INCOME_FIELD && proposal.parts) {

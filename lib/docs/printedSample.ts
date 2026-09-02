@@ -508,7 +508,10 @@ function classifyPrintedLines(lines: string[]): ExtractClass | null {
   }
   if (/PURCHASE CONTRACT/.test(blob)) return "purchase_contract";
   if (/MORTGAGE STATEMENT/.test(blob)) return "mortgage_statement";
-  if (/\bDRIVER|PASSPORT|GOVERNMENT ID\b|IDENTIFICATION CARD|STATE ID/.test(blob)) {
+  if (
+    /\bDRIVER|PASSPORT|GOVERNMENT ID\b|IDENTIFICATION CARD|STATE ID/.test(blob) ||
+    (/\bCALIFORNIA\b/.test(blob) && /\bLN\b/.test(blob) && /\bFN\b/.test(blob))
+  ) {
     return "government_id";
   }
   if (/CURRENT P(?:\s*AND\s*I|&I|I)|UNPAID PRINCIPAL|SERVICER:/.test(blob)) {
@@ -666,6 +669,19 @@ export function fieldsFromPrintedLines(
     if (last4) put("id_last4", last4);
   }
 
+  if (extractClass === "government_id" || extractClass === "other") {
+    if (!fields.full_name) {
+      const fromLnFn = nameFromCaIdLines(lines);
+      if (fromLnFn) put("full_name", fromLnFn);
+    }
+    if (!fields.present_address) {
+      const residence = residenceFromIdLines(lines);
+      if (residence) put("present_address", residence);
+    }
+    delete fields.property_address;
+    delete fields.subjectAddress;
+  }
+
   if (extractClass === "bank_statement") {
     if (!fields.institution) {
       const fromHeader = institutionFromBankLines(lines);
@@ -723,6 +739,43 @@ export function fieldsFromPrintedLines(
   return fields;
 }
 
+/** CA DL LN/FN on THIS page. Never invents a name. */
+export function nameFromCaIdLines(lines: string[]): string {
+  let last = "";
+  let first = "";
+  for (const line of lines) {
+    const ln = valueAfter(line, /^(?:LN|LAST NAME)\s*:?\s*/i);
+    if (ln && /^[A-Za-z][A-Za-z.'\-]*$/.test(ln)) last = ln;
+    const fn = valueAfter(line, /^(?:FN|FIRST NAME)\s*:?\s*/i);
+    if (fn && /^[A-Za-z][A-Za-z.'\- ]*[A-Za-z.']$/.test(fn)) first = fn;
+  }
+  if (first && last) return `${first} ${last}`.replace(/\s+/g, " ").trim();
+  return "";
+}
+
+/** ID street is residence. Never a subject / purchase address. */
+export function residenceFromIdLines(lines: string[]): string {
+  for (const line of lines) {
+    const labeled = valueAfter(line, /^(?:RESIDENTIAL ADDRESS|PRESENT ADDRESS)\s*:?\s*/i);
+    if (labeled) return labeled.replace(/\s+/g, " ").trim();
+  }
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = (lines[i] ?? "").trim();
+    if (
+      !/^\d{1,6}\s+[A-Za-z]/.test(line) ||
+      !/\b(ST|STREET|AVE|AVENUE|BLVD|RD|ROAD|LN|LANE|DR|DRIVE|WAY|CT|COURT|PL|PLACE)\b/i.test(line)
+    ) {
+      continue;
+    }
+    const next = (lines[i + 1] ?? "").trim();
+    if (next && /\bCA\b/i.test(next) && /\d{5}/.test(next) && !/^[A-Z][A-Z /]+:/.test(next)) {
+      return `${line}, ${next}`.replace(/\s+/g, " ").trim();
+    }
+    return line;
+  }
+  return "";
+}
+
 function institutionFromBankLines(lines: string[]): string {
   for (const line of lines) {
     const t = line.trim();
@@ -755,6 +808,29 @@ export function printedSampleFromLines(lines: string[]): PrintedSample | null {
     extractClass,
     confidence: 0.94,
     fields: fieldsFromPrintedLines(extractClass, lines),
+  };
+}
+
+/** CA ID name from THIS page text. Filename is not a source. 08 is not required. */
+export function loudIdFromPrintedLines(lines: string[]): PrintedSample | null {
+  const blob = lines.join("\n");
+  if (/\bW-?2\b|PAYSTUB|WAGE AND TAX STATEMENT|ACCOUNT STATEMENT|BANK STATEMENT/i.test(blob)) {
+    return null;
+  }
+  if (
+    !/\bDRIVER|PASSPORT|GOVERNMENT ID\b|IDENTIFICATION CARD|STATE ID|CALIFORNIA/i.test(blob) &&
+    !(/\bLN\b/.test(blob) && /\bFN\b/.test(blob))
+  ) {
+    return null;
+  }
+  const fields = fieldsFromPrintedLines("government_id", lines);
+  if (!fields.full_name) return null;
+  delete fields.property_address;
+  delete fields.subjectAddress;
+  return {
+    extractClass: "government_id",
+    confidence: 0.94,
+    fields,
   };
 }
 

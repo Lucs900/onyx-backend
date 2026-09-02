@@ -214,6 +214,14 @@ LOUD_PAGES: dict[str, list[str]] = {
         "GROSS PERIOD: 4615.38",
         "PAY FREQUENCY: biweekly",
     ],
+    "08-ca-id-jordan-hale-loud.pdf": [
+        "CALIFORNIA",
+        "DRIVER LICENSE",
+        "LN HALE",
+        "FN JORDAN",
+        "FULL NAME: JORDAN HALE",
+        "RESIDENTIAL ADDRESS: 1847 Filbert St, San Francisco, CA 94123",
+    ],
 }
 
 

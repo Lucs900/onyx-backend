@@ -14,6 +14,7 @@ import type { ExtractClass } from "@/components/fox/types";
 import { isPdf, pdfTextLayerCharCount, readPdfEmbeddedImages, readPdfTextLayer } from "@/lib/docs/pdfText";
 import {
   fieldsFromPrintedLines,
+  loudIdFromPrintedLines,
   loudWageFromPrintedLines,
   printedSampleFromLines,
   readPrintedSample,
@@ -471,6 +472,8 @@ export async function classifyAndExtract(
     if (layer?.length) {
       const loud = loudWageFromPrintedLines(layer);
       if (loud) return printedResult(loud, textLayerChars);
+      const loudId = loudIdFromPrintedLines(layer);
+      if (loudId) return printedResult(loudId, textLayerChars);
     }
   }
   const printed = readPrintedSample(bytes);
@@ -507,6 +510,8 @@ export async function classifyAndExtract(
           fields: stubFields,
         }, textLayerChars);
       }
+      const loudId = loudIdFromPrintedLines(layer);
+      if (loudId) return printedResult(loudId, textLayerChars);
       if (printed && hasLockedSuggestion(printed.extractClass, printed.fields)) {
         return printedResult(printed, textLayerChars);
       }
