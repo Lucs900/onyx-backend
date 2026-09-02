@@ -15,7 +15,9 @@ import { applyExtractedFields, stillUsefulSection, skipCurrentInvite, DOC_INVITE
 import { canLooksRight, resolveProposal, proposalAskCopy } from "../components/fox/completeness";
 import { applyLooksRightMotion, applyProceedMotion } from "../components/fox/motion";
 import { emptyDraft } from "../components/fox/store";
-import { previewFacts, workspacePrompt, workspacePromptCopy } from "../components/fox/workspace";
+import { docReactionAsk, previewFacts, workspacePrompt, workspacePromptCopy } from "../components/fox/workspace";
+import { dropResolvedAddressConfirmChips, paintedFoxActions } from "../components/fox/liveCoupon";
+import { addressOnFileCopy } from "../components/fox/propertyType";
 import { wageEmploymentFileLine } from "../components/fox/qualifyingIncome";
 import type { FoxIntakeDraft } from "../components/fox/types";
 
@@ -172,6 +174,38 @@ async function main() {
   assert.match(spoken, /Suggested · not underwritten/);
   assert.match(spoken, /Use this/);
   assert.doesNotMatch(spoken, /1847 Filbert|subject|purchase/i);
+  const confirmAsk = docReactionAsk(afterDrop.draft, "government_id") ?? workspacePromptCopy("confirm-proposal", afterDrop.draft);
+  assert.equal(confirmAsk.text, spoken);
+  assert.doesNotMatch(confirmAsk.text, /^On the file\.?$/);
+  const confirmChips = (confirmAsk.actions ?? []).map((item) => item.label);
+  assert.ok(confirmChips.includes("Upload this"), confirmChips.join(" · "));
+  assert.ok(confirmChips.includes("Skip"), confirmChips.join(" · "));
+  assert.ok(confirmChips.includes("Use this"), confirmChips.join(" · "));
+  const confirmTurn = {
+    id: "id-confirm",
+    role: "fox" as const,
+    text: confirmAsk.text,
+    actions: confirmAsk.actions,
+  };
+  const painted = (paintedFoxActions(confirmTurn, afterDrop.draft, true) ?? []).map((item) => item.label);
+  assert.ok(painted.includes("Upload this"), painted.join(" · "));
+  assert.ok(painted.includes("Skip"), painted.join(" · "));
+  assert.ok(painted.includes("Use this"), painted.join(" · "));
+  const withZipOnFile = { ...afterDrop.draft, subjectAddress: "94115", subjectAddressAsked: true };
+  const sealed = dropResolvedAddressConfirmChips([confirmTurn], withZipOnFile);
+  assert.equal(sealed[0]?.text, confirmAsk.text);
+  assert.notEqual(sealed[0]?.text, addressOnFileCopy());
+  assert.ok((sealed[0]?.actions ?? []).some((item) => item.label === "Use this"));
+
+  const skippedFromConfirm = skipCurrentInvite(afterDrop.draft);
+  assert.equal(skippedFromConfirm.pendingProposal, null);
+  assert.equal(skippedFromConfirm.borrowerName, undefined);
+  assert.ok((skippedFromConfirm.skippedClasses ?? []).includes("government_id"));
+  const skipConfirmLabels = stillUsefulLabels(skippedFromConfirm);
+  assert.ok(
+    skipConfirmLabels.some((label) => /government ID/i.test(label)),
+    skipConfirmLabels.join(" · "),
+  );
 
   const used = resolveProposal(afterDrop.draft, "accept");
   assert.equal(used.borrowerName, "Jordan Hale");

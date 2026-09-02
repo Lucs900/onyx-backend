@@ -48,6 +48,7 @@ import {
   withLiveCouponChips,
   type CouponChoice,
 } from "./liveCoupon";
+import { RATEFLOW_WAIT_LINE, rateflowWaitActions } from "./lookupWait";
 import {
   AMOUNT_HELPER_BUBBLES,
   AMOUNT_PURPOSE_BUBBLES,
@@ -433,6 +434,7 @@ import {
   borrowerNameAskCopy,
   borrowerNameConfirmActions,
   borrowerNameConfirmCopy,
+  borrowerNameExtractActions,
   borrowerNameExtractCopy,
   borrowerNameOnFile,
   governmentIdOutstanding,
@@ -1905,7 +1907,7 @@ function liveProposalAsk(
   if (isBorrowerNameField(proposal.field)) {
     return {
       text: proposalAskCopy(proposal),
-      actions: borrowerNameConfirmActions(),
+      actions: proposal.extras?.length ? borrowerNameExtractActions() : borrowerNameConfirmActions(),
     };
   }
   if (proposal.field === STATED_OTHER_REO_FIELD) {
@@ -2734,6 +2736,16 @@ export function shouldDeferStillUsefulAsk(draft: FoxIntakeDraft): boolean {
   );
 }
 
+/** ZIP / address started a live search. Do not speak income on the spinner. */
+export function shouldHoldAskForLiveLine(draft: FoxIntakeDraft) {
+  if (draft.liveCouponSettled || draft.pendingLiveCoupon) return false;
+  if (draft.pendingProposal || draft.pendingConflict || draft.pendingAddress) return false;
+  if (liveQuoteReady(draft)) return false;
+  if (draft.liveQuoteStatus === "unavailable") return false;
+  if (!searchedKeyFor(draft)) return false;
+  return incomeAskOpen(draft);
+}
+
 /** Single /start conversation engine. Desktop and mobile share this order, copy, and path rules. */
 export function nextFoxAsk(draft: FoxIntakeDraft): {
   text: string;
@@ -2741,6 +2753,9 @@ export function nextFoxAsk(draft: FoxIntakeDraft): {
   facts?: ReturnType<typeof workspacePromptCopy>["facts"];
   actions?: FoxAction[];
 } {
+  if (shouldHoldAskForLiveLine(draft)) {
+    return { text: RATEFLOW_WAIT_LINE, actions: rateflowWaitActions() };
+  }
   if (
     draft.awaitingYearsInBusiness &&
     !draft.pendingProposal &&
@@ -3256,7 +3271,7 @@ function workspaceAskCopy(
     if (draft.pendingAddress?.line) {
       return {
         text: typedAddressConfirmCopy(draft.pendingAddress.line),
-        actions: [...propertyTypeConfirmActions(), ...propertyAddressSkipActions()],
+        actions: propertyTypeConfirmActions(),
       };
     }
     const proposal = draft.pendingProposal;
@@ -5543,6 +5558,13 @@ export function workspaceReply(
       return {
         ...nextFoxAsk(nextDraft),
         capture: { field: "skip-property-address" },
+      };
+    }
+    if (isBorrowerNameConfirmPending(draft) && isSkipBorrowerNameText(q)) {
+      const nextDraft = skipCurrentInvite(draft);
+      return {
+        ...nextFoxAsk(nextDraft),
+        capture: { field: "skip-docs" },
       };
     }
     if (

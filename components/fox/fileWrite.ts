@@ -101,6 +101,7 @@ import {
   borrowerNameConflictActions,
   borrowerNameSettled,
   displayBorrowerName,
+  isBorrowerNameConfirmPending,
   isBorrowerNameField,
   proposeExtractedBorrowerName,
   SUGGESTED_BORROWER_NOTE,
@@ -2451,7 +2452,8 @@ function hasRemainingPrimaryInvites(draft: FoxIntakeDraft) {
 }
 
 export function skipCurrentInvite(draft: FoxIntakeDraft): FoxIntakeDraft {
-  const kind = nextDocInvite(draft);
+  const peek = isBorrowerNameConfirmPending(draft) ? { ...draft, pendingProposal: null } : draft;
+  const kind = nextDocInvite(peek);
   if (!kind) {
     return {
       ...draft,
@@ -2476,7 +2478,13 @@ export function skipCurrentInvite(draft: FoxIntakeDraft): FoxIntakeDraft {
     };
   }
   const skipped = Array.from(new Set([...(draft.skippedClasses ?? []), kind]));
-  const next = { ...draft, skippedClasses: skipped, docsOpen: false, correcting: null };
+  const next = {
+    ...draft,
+    skippedClasses: skipped,
+    docsOpen: false,
+    correcting: null,
+    ...(isBorrowerNameConfirmPending(draft) ? { pendingProposal: null } : {}),
+  };
   return {
     ...next,
     documentsSkipped: draft.documents.length === 0 && !hasRemainingPrimaryInvites(next),

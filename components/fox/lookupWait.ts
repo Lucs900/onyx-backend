@@ -41,9 +41,13 @@ export function waitActionsFor(kind: LookupWait): FoxAction[] {
   return kind === "places" ? placesWaitActions() : rateflowWaitActions();
 }
 
+const LIVE_LINE_INCOME_ASK = "How is income earned?";
+
 /** One status line in the thread. Replaces any prior wait. Never glued onto a result bubble. */
 export function withWaitLine(messages: FoxMessage[], kind: LookupWait): FoxMessage[] {
-  const held = withoutWaitLines(messages);
+  const held = withoutWaitLines(messages).filter(
+    (item) => kind !== "rateflow" || item.role !== "fox" || item.text !== LIVE_LINE_INCOME_ASK,
+  );
   return [
     ...held,
     {

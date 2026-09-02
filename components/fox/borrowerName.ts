@@ -218,6 +218,15 @@ export function borrowerNameConfirmActions(): FoxAction[] {
   ];
 }
 
+/** ID extract confirm keeps the invite door plus Use this. */
+export function borrowerNameExtractActions(): FoxAction[] {
+  return [
+    { id: "upload-this", label: "Upload this", event: "open-docs", capture: { field: "open-docs" } },
+    { id: "skip-docs", label: "Skip", event: "bubble", capture: { field: "skip-docs" } },
+    ...borrowerNameConfirmActions(),
+  ];
+}
+
 export function borrowerNameSkipActions(): FoxAction[] {
   return [
     {

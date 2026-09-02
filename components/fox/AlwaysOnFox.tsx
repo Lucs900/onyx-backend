@@ -62,6 +62,7 @@ import {
 } from "@/lib/places/address";
 import {
   type LookupWait,
+  isLookupWaitLine,
   withWaitLine,
   withoutWaitLines,
 } from "./lookupWait";
@@ -110,6 +111,7 @@ import {
   nextDocInvite,
   incomeAskOpen,
   nextFoxAsk,
+  shouldHoldAskForLiveLine,
   isBankUnreadAsk,
   RECEIVED_UNREAD_ASK,
   unreadRestoreActions,
@@ -353,6 +355,9 @@ function applyFoxAsk(
     return freezeOthers(last.id, foxAskMessage(ask));
   }
   if (last && sameFoxAsk(last, ask)) return freezeUsedFoxTurns(messages);
+  if (last && isLookupWaitLine(last.text) && ask.text === "How is income earned?") {
+    return freezeUsedFoxTurns(messages);
+  }
   return [...freezeUsedFoxTurns(messages), foxAskMessage(ask)];
 }
 
@@ -1123,6 +1128,7 @@ export function AlwaysOnFox({
   useEffect(() => {
     if (!ready || (stage !== "intake" && !isStart)) return;
     const live = getFoxDraft();
+    if (isStart && shouldHoldAskForLiveLine(live)) return;
     if (isStart && shouldDeferNextAskForLiveCoupon(live)) return;
     const prompt = isStart ? workspacePrompt(live) : currentPrompt(live);
     const ask = isStart
@@ -1149,6 +1155,9 @@ export function AlwaysOnFox({
         prompt !== "raise-when" &&
         prompt !== "raise-ytd-far"
       ) {
+        return prev;
+      }
+      if (isStart && shouldHoldAskForLiveLine(live)) {
         return prev;
       }
       if (isStart && shouldDeferNextAskForLiveCoupon(live) && prompt !== "confirm-proposal") {

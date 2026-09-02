@@ -429,6 +429,7 @@ function looksLikeOtherProposalConfirm(blob: string) {
   if (/Suggested qualifying income/i.test(blob)) return true;
   if (/qualifying income/i.test(blob)) return true;
   if (/\ba month\b/i.test(blob)) return true;
+  if (/The ID shows /i.test(blob)) return true;
   if (
     /available funds|other debts|housing now|hire date|other real estate|bankruptcy|just you|more than one borrower/i.test(
       blob,
@@ -440,8 +441,9 @@ function looksLikeOtherProposalConfirm(blob: string) {
 }
 
 function looksLikeStreetAddress(blob: string) {
+  if (/The ID shows /i.test(blob)) return false;
   if (/That[\u2019']s \d/i.test(blob)) return true;
-  if (/The (contract|ID) shows .+\d/i.test(blob)) return true;
+  if (/The contract shows .+\d/i.test(blob)) return true;
   if (/This address is \d{5}/i.test(blob)) return true;
   if (/,\s*CA\s+\d{5}\b/.test(blob)) return true;
   if (/\b\d{1,6}\s+\S.+(CA|California)\b/i.test(blob)) return true;
@@ -544,10 +546,19 @@ export function paintedFoxActions(
   if (!current) return undefined;
   const shown = visibleFoxActions(message, draft);
   if (!shown?.length) return undefined;
+  const idNameConfirm = /The ID shows /i.test(foxBlob(message));
   const docAsk = looksRightDocAskOpen(draft) || shown.some(isAfterLooksRightDocChip);
   const next = shown.filter((action) => {
     if (action.capture?.field === "propose-place-address" || isStreetSuggestChipLabel(action.label)) {
       return false;
+    }
+    if (idNameConfirm) {
+      return (
+        isAfterLooksRightDocChip(action) ||
+        action.label === "Use this" ||
+        action.label === "Change" ||
+        isKeptUseThis(action)
+      );
     }
     if (docAsk && isLeftoverConfirmChip(action)) return false;
     if (docAsk) return current && isAfterLooksRightDocChip(action);
