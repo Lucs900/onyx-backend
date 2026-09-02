@@ -7297,20 +7297,19 @@ export function previewFacts(draft: FoxIntakeDraft): PreviewFact[] {
     });
   }
 
-  if (
-    draft.borrowerNameAsked ||
-    draft.borrowerName ||
-    draft.contact.fullName.value ||
-    isBorrowerNameConfirmPending(draft)
-  ) {
-    const pending = isBorrowerNameConfirmPending(draft)
-      ? draft.pendingProposal?.value
-      : undefined;
-    const shown = borrowerNameOnFile(draft) || pending || "—";
+  const writtenBorrower = borrowerNameOnFile(draft);
+  if (writtenBorrower) {
     facts.push({
       id: "borrower",
       label: primaryFileLabel(draft),
-      value: shown,
+      value: writtenBorrower,
+      note: SUGGESTED_BORROWER_NOTE,
+    });
+  } else if (draft.borrowerNameAsked && !isBorrowerNameConfirmPending(draft)) {
+    facts.push({
+      id: "borrower",
+      label: primaryFileLabel(draft),
+      value: "—",
       note: SUGGESTED_BORROWER_NOTE,
     });
   }

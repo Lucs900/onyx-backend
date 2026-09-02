@@ -1922,6 +1922,9 @@ export function stillUsefulVisible(draft: FoxIntakeDraft) {
 function isWageGroceryBeforeLooksRight(draft: FoxIntakeDraft, id: string) {
   if (draft.sampleAccepted) return false;
   if (!wageThreadOpen(draft)) return false;
+  if (id === "government_id" && (draft.skippedClasses ?? []).includes("government_id")) {
+    return false;
+  }
   return wageGroceryExtractClass(id);
 }
 
