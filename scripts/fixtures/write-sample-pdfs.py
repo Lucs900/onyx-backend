@@ -71,13 +71,6 @@ PAGES: dict[str, list[str]] = {
         "EMPLOYER NAME: HARBOR STEEL",
         "BOX 1 WAGES: $84,000",
     ],
-    "05-bank-statement-pacific-coast-jul-2026.pdf": [
-        "PACIFIC COAST BANK",
-        "BANK STATEMENT",
-        "Ending balance 07/31/2026 -> $84,220.15",
-        "RESIDENTIAL ADDRESS: 1847 Filbert St, San Francisco, CA 94123",
-        "MORTGAGE SAMPLE - NOT A REAL STATEMENT",
-    ],
     "government-id-unlabeled-text.pdf": [
         "SAMPLE PAGE",
         "JORDAN HALE",
@@ -100,8 +93,7 @@ def content_stream(lines: list[str]) -> bytes:
     return "\n".join(commands).encode("latin-1")
 
 
-def write_pdf(path: Path, lines: list[str]) -> None:
-    stream = content_stream(lines)
+def write_pdf_bytes(path: Path, stream: bytes) -> None:
     objects = [
         b"<< /Type /Catalog /Pages 2 0 R >>",
         b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
@@ -130,6 +122,47 @@ def write_pdf(path: Path, lines: list[str]) -> None:
     )
     path.write_bytes(b"".join(chunks))
     print(f"wrote {path} {path.stat().st_size} bytes")
+
+
+def write_pdf(path: Path, lines: list[str]) -> None:
+    write_pdf_bytes(path, content_stream(lines))
+
+
+FOUNDER_BANK_NAME = "05-bank-statement-pacific-coast-jul-2026.pdf"
+
+
+def write_founder_bank_pdf(path: Path) -> None:
+    """Founder layout: Ending balance 07/31/2026 next to $84,220.15.
+
+    Not the thin stub (ENDING BALANCE: $x / PERIOD END: ISO date).
+    Date and dollar are separate text runs so extract cannot treat 07 as money.
+    Filbert is residence only. No last4.
+    """
+    stream = "\n".join(
+        [
+            "BT",
+            "/F1 18 Tf",
+            "72 740 Td",
+            "(PACIFIC COAST BANK) Tj",
+            "/F1 11 Tf",
+            "0 -20 Td",
+            "(ACCOUNT STATEMENT) Tj",
+            "0 -18 Td",
+            "(RESIDENTIAL ADDRESS: 1847 Filbert St, San Francisco, CA 94123) Tj",
+            "0 -28 Td",
+            "(Ending balance 07/31/2026) Tj",
+            "260 0 Td",
+            "($84,220.15) Tj",
+            "-260 -36 Td",
+            "(MORTGAGE SAMPLE - NOT A REAL STATEMENT) Tj",
+            "ET",
+        ]
+    ).encode("latin-1")
+    if b"ENDING BALANCE:" in stream or b"PERIOD END:" in stream:
+        raise SystemExit("founder bank page must not recreate the labeled stub")
+    if b"07/31/2026" not in stream or b"$84,220.15" not in stream:
+        raise SystemExit("founder bank page must print 07/31/2026 and $84,220.15")
+    write_pdf_bytes(path, stream)
 
 
 def write_empty_pdf(path: Path) -> None:
@@ -193,8 +226,8 @@ def main() -> None:
     sample_docs.mkdir(parents=True, exist_ok=True)
     for name, lines in LOUD_PAGES.items():
         write_pdf(sample_docs / name, lines)
-    official_bank = "05-bank-statement-pacific-coast-jul-2026.pdf"
-    write_pdf(sample_docs / official_bank, PAGES[official_bank])
+    write_founder_bank_pdf(here / FOUNDER_BANK_NAME)
+    write_founder_bank_pdf(sample_docs / FOUNDER_BANK_NAME)
 
 
 if __name__ == "__main__":

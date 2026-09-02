@@ -9,19 +9,22 @@ endobj
 << /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>
 endobj
 4 0 obj
-<< /Length 261 >>
+<< /Length 288 >>
 stream
 BT
-/F1 12 Tf
-72 720 Td
+/F1 18 Tf
+72 740 Td
 (PACIFIC COAST BANK) Tj
-0 -18 Td
-(BANK STATEMENT) Tj
-0 -18 Td
-(Ending balance 07/31/2026 -> $84,220.15) Tj
+/F1 11 Tf
+0 -20 Td
+(ACCOUNT STATEMENT) Tj
 0 -18 Td
 (RESIDENTIAL ADDRESS: 1847 Filbert St, San Francisco, CA 94123) Tj
-0 -18 Td
+0 -28 Td
+(Ending balance 07/31/2026) Tj
+260 0 Td
+($84,220.15) Tj
+-260 -36 Td
 (MORTGAGE SAMPLE - NOT A REAL STATEMENT) Tj
 ET
 endstream
@@ -36,8 +39,8 @@ xref
 0000000058 00000 n 
 0000000115 00000 n 
 0000000241 00000 n 
-0000000553 00000 n 
+0000000580 00000 n 
 trailer << /Root 1 0 R /Size 6 >>
 startxref
-623
+650
 %%EOF

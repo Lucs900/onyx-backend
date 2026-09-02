@@ -6,7 +6,11 @@
 
 import { inflateSync } from "node:zlib";
 import type { ExtractClass } from "@/components/fox/types";
-import { bankEndingBalanceAmount, isDateFragmentAmount } from "@/lib/docs/bankBalance";
+import {
+  bankEndingBalanceAmount,
+  bankEndingBalanceFromStatementText,
+  isDateFragmentAmount,
+} from "@/lib/docs/bankBalance";
 import { readPdfTextLayer } from "@/lib/docs/pdfText";
 
 export type PrintedSample = {
@@ -667,7 +671,7 @@ export function fieldsFromPrintedLines(
       const fromHeader = institutionFromBankLines(lines);
       if (fromHeader) put("institution", fromHeader);
     }
-    const fromText = endingBalanceFromBankText(lines.join("\n"));
+    const fromText = bankEndingBalanceFromStatementText(lines.join("\n"));
     if (fromText && (!fields.ending_balance || isDateFragmentAmount(fields.ending_balance))) {
       fields.ending_balance = fromText;
     } else if (fields.ending_balance && isDateFragmentAmount(fields.ending_balance)) {
@@ -726,17 +730,6 @@ function institutionFromBankLines(lines: string[]): string {
       continue;
     }
     if (/\bBANK\b/i.test(t) && t.length <= 48 && !/\$/.test(t) && !/\d{4}/.test(t)) return t;
-  }
-  return "";
-}
-
-function endingBalanceFromBankText(text: string): string {
-  const blob = String(text ?? "");
-  const label = /(?:ending(?:\s+account)?\s+balance|ending\s+bal\.?)\b/gi;
-  let match: RegExpExecArray | null;
-  while ((match = label.exec(blob))) {
-    const amount = bankEndingBalanceAmount(blob.slice(match.index + match[0].length, match.index + match[0].length + 200));
-    if (amount) return amount;
   }
   return "";
 }

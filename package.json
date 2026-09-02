@@ -6,7 +6,7 @@
     "dev": "next dev",
     "build": "npx --yes tsx scripts/capture-harbor-refi-book.ts && next build",
     "start": "next start",
-    "test": "npx --yes tsx scripts/assert-onyx-fixtures.ts && npx --yes tsx scripts/assert-rateflow.ts && npx --yes tsx scripts/assert-places.ts && npx --yes tsx scripts/smoke-desk.ts",
+    "test": "npx --yes tsx scripts/assert-bank-ending-balance.ts && npx --yes tsx scripts/assert-onyx-fixtures.ts && npx --yes tsx scripts/assert-rateflow.ts && npx --yes tsx scripts/assert-places.ts && npx --yes tsx scripts/smoke-desk.ts",
     "smoke": "npx --yes tsx scripts/assert-onyx-fixtures.ts && npx --yes tsx scripts/assert-rateflow.ts && npx --yes tsx scripts/assert-places.ts && npx --yes tsx scripts/smoke-desk.ts"
   },
   "dependencies": {

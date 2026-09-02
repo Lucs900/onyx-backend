@@ -47,3 +47,21 @@ export function bankEndingBalanceAmount(raw?: string | null): string {
   }
   return "";
 }
+
+/**
+ * Ending balance after the printed "Ending balance" label.
+ * Reads the following window so a date on the label line and $84,220.15
+ * on the same or next line both resolve to 84220.15 — never 07 / $7.
+ */
+export function bankEndingBalanceFromStatementText(text?: string | null): string {
+  const blob = String(text ?? "");
+  const label = /(?:ending(?:\s+account)?\s+balance|ending\s+bal\.?)\b/gi;
+  let match: RegExpExecArray | null;
+  while ((match = label.exec(blob))) {
+    const amount = bankEndingBalanceAmount(
+      blob.slice(match.index + match[0].length, match.index + match[0].length + 240),
+    );
+    if (amount) return amount;
+  }
+  return "";
+}

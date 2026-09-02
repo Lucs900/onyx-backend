@@ -211,8 +211,10 @@ async function main() {
 
   const officialBankBytes = readFileSync(join(root, "sample-docs/05-bank-statement-pacific-coast-jul-2026.pdf"));
   assert.ok(readPdfTextLayer(officialBankBytes)?.length, "sample-docs official bank has no text layer");
+  const officialLines = readPdfTextLayer(officialBankBytes) ?? [];
   assert.ok(
-    (readPdfTextLayer(officialBankBytes) ?? []).some((line) => /07\/31\/2026/.test(line) && /84,220\.15/.test(line)),
+    officialLines.some((line) => /07\/31\/2026/.test(line)) &&
+      officialLines.some((line) => /84,220\.15/.test(line)),
     "official fixture must print Ending balance 07/31/2026 and $84,220.15",
   );
   assert.ok(
