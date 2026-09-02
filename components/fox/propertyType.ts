@@ -275,12 +275,28 @@ function existingFileAddress(draft: FoxIntakeDraft) {
 }
 
 /** ZIP alone, or city + ZIP. A street line is not a ZIP-only File address. */
-function isZipOnlyFileAddress(value: string, zip?: string) {
+export function isZipOnlyFileAddress(value: string, zip?: string) {
   const t = value.trim();
   if (!t) return true;
   if (/^\d{5}$/.test(t)) return true;
   if (zip && t === zip) return true;
   return /^[A-Za-z][A-Za-z .'-]+,\s*CA\s+\d{5}$/.test(t);
+}
+
+/** Writing a street over ZIP-only (ID / residence zip) takes the street. Do not keep 94123. */
+export function adoptStreetOverZipOnly(before: FoxIntakeDraft, next: FoxIntakeDraft): FoxIntakeDraft {
+  const prior = (before.subjectAddress || factAddressFromDraft(before)).trim();
+  if (!isZipOnlyFileAddress(prior, before.propertyZip)) {
+    return rememberPriorZipOnNewAddress(before, next);
+  }
+  const fromStreet = addressZipFromDraft(next);
+  if (!fromStreet) return next;
+  return {
+    ...next,
+    propertyZip: fromStreet,
+    propertyZipAsked: true,
+    addressZipOffered: fromStreet,
+  };
 }
 
 function fileAddressForZip(draft: FoxIntakeDraft, zip: string) {

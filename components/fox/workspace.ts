@@ -7444,6 +7444,20 @@ export function previewFacts(draft: FoxIntakeDraft): PreviewFact[] {
       });
     }
   }
+  if (draft.facts?.close_date?.confirmed && factValue(draft, "close_date")) {
+    facts.push({
+      id: "close",
+      label: "Close",
+      value: displayFactValue("close_date", factValue(draft, "close_date")),
+    });
+  }
+  if (draft.facts?.seller_credit?.confirmed && factValue(draft, "seller_credit")) {
+    facts.push({
+      id: "seller-credit",
+      label: "Seller credit",
+      value: displayFactValue("seller_credit", factValue(draft, "seller_credit")),
+    });
+  }
   const citizenship = draft.agencyDeclarations?.citizenship;
   if (citizenship && isFileCitizenshipValue(citizenship)) {
     facts.push({

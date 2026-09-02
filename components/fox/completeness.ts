@@ -78,7 +78,7 @@ import {
   propertyTypeSettled,
   propertyTypeConfirmCopy,
   adoptReuseZip,
-  rememberPriorZipOnNewAddress,
+  adoptStreetOverZipOnly,
   skipPropertyType,
   skipQuoteAddress,
   typedAddressConfirmCopy,
@@ -1232,7 +1232,7 @@ function writeConfirmedFact(
       confirmedAt: now,
     };
     next = adoptReuseZip(
-      rememberPriorZipOnNewAddress(next, {
+      adoptStreetOverZipOnly(draft, {
         ...next,
         subjectAddress: value,
         subjectAddressAsked: true,

@@ -354,6 +354,9 @@ async function main() {
   assert.ok(!stillUsefulLabels(used).some((label) => /purchase contract/i.test(label)));
   const usedFacts = previewFacts(used);
   assert.ok(usedFacts.some((fact) => /1840 Valencia/i.test(fact.value)));
+  assert.ok(usedFacts.some((fact) => fact.label === "Purchase price" && /\$1,200,000/.test(fact.value)));
+  assert.ok(usedFacts.some((fact) => fact.label === "Close" && /October 15, 2026/.test(fact.value)));
+  assert.ok(usedFacts.some((fact) => fact.label === "Seller credit" && /\$5,000/.test(fact.value)));
   assert.ok(usedFacts.every((fact) => fact.id !== "file-property" || !/1847 Filbert/i.test(fact.value)));
   assert.ok(
     conventionalFileFacts(used).every(
@@ -405,6 +408,75 @@ async function main() {
   assert.ok(!documented.pendingConflict);
   noFnma(nextFoxAsk(kept).text);
   noFnma(nextFoxAsk(documented).text);
+
+  const zipOnly = {
+    ...sketch,
+    propertyValueAmount: 500_000,
+    downPaymentAmount: 100_000,
+    loanAmountValue: 400_000,
+    subjectAddress: "94123",
+    subjectAddressAsked: true,
+    propertyZip: "94123",
+    propertyZipAsked: true,
+    facts: {
+      ...sketch.facts,
+      property_address: {
+        field: "property_address",
+        value: "94123",
+        source: "client" as const,
+        confirmed: true,
+      },
+    },
+  };
+  const clipperExtract = applyExtractedFields(zipOnly, {
+    extractClass: "purchase_contract",
+    confidence: 0.94,
+    fields: {
+      property_address: "88 Clipper Street, San Francisco, CA 94114",
+      purchase_price: "850000",
+      close_date: "10/15/2026",
+      seller_credit: "5000",
+    },
+  });
+  assert.equal(clipperExtract.conflict?.field, "purchase_price");
+  assert.equal(clipperExtract.draft.subjectAddress, "94123");
+  assert.equal(clipperExtract.draft.pendingProposal?.field, "property_address");
+  assert.match(clipperExtract.draft.pendingProposal?.value ?? "", /88 Clipper Street/i);
+  assert.ok((clipperExtract.draft.pendingProposal?.extras ?? []).some((item) => item.field === "close_date"));
+  assert.ok(
+    (clipperExtract.draft.pendingProposal?.extras ?? []).some(
+      (item) => item.field === "seller_credit" && item.value === "5000",
+    ),
+  );
+  const clipperPriced = resolveFactConflict(clipperExtract.draft, "document");
+  assert.equal(clipperPriced.propertyValueAmount, 850_000);
+  assert.ok(!clipperPriced.pendingConflict);
+  assert.equal(clipperPriced.pendingProposal?.field, "property_address");
+  const clipperUsed = resolveProposal(clipperPriced, "accept");
+  assert.match(clipperUsed.subjectAddress ?? "", /88 Clipper Street/i);
+  assert.match(clipperUsed.subjectAddress ?? "", /San Francisco, CA 94114/i);
+  assert.doesNotMatch(clipperUsed.subjectAddress ?? "", /94123|Filbert/i);
+  assert.equal(clipperUsed.facts?.property_address?.value, clipperUsed.subjectAddress);
+  assert.equal(clipperUsed.facts?.purchase_price?.value, "850000");
+  assert.equal(clipperUsed.propertyValueAmount, 850_000);
+  assert.match(clipperUsed.facts?.close_date?.value ?? "", /10\/15\/2026|2026-10-15/);
+  assert.equal(clipperUsed.facts?.seller_credit?.value, "5000");
+  assert.match(clipperUsed.facts?.present_address?.value ?? "", /1847 Filbert/i);
+  const clipperFacts = previewFacts(clipperUsed);
+  assert.ok(clipperFacts.some((fact) => /88 Clipper Street, San Francisco, CA 94114/i.test(fact.value)));
+  assert.ok(clipperFacts.some((fact) => fact.label === "Purchase price" && /\$850,000/.test(fact.value)));
+  assert.ok(clipperFacts.some((fact) => fact.label === "Close" && /October 15, 2026/.test(fact.value)));
+  assert.ok(clipperFacts.some((fact) => fact.label === "Seller credit" && /\$5,000/.test(fact.value)));
+  assert.ok(
+    clipperFacts.every(
+      (fact) =>
+        (fact.id !== "address" && fact.id !== "file-property" && fact.label !== "Property address") ||
+        !/94123/.test(fact.value),
+    ),
+    clipperFacts.map((fact) => `${fact.label} ${fact.value}`).join(" · "),
+  );
+  assert.ok(clipperFacts.every((fact) => fact.id !== "file-property" || !/Filbert/i.test(fact.value)));
+  noFnma(nextFoxAsk(clipperUsed).text);
 
   const emptyAssets = conventionalFileFacts({ ...emptyDraft(), productIntent: "buy", path: "acr" });
   assert.ok(emptyAssets.some((fact) => fact.id === "file-assets" && fact.value === ""));

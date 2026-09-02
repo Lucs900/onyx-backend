@@ -79,7 +79,8 @@ import {
   isPropertyAddressField,
   parsePropertyType,
   propertyAddressConflictActions,
-  rememberPriorZipOnNewAddress,
+  adoptStreetOverZipOnly,
+  isZipOnlyFileAddress,
 } from "./propertyType";
 import {
   HIRE_DATE_FIELD,
@@ -769,6 +770,10 @@ export function displayFactValue(field: string, value: string) {
       return n < 0 ? `−$${abs}` : `$${abs}`;
     }
   }
+  if (field === "close_date") {
+    const spoken = spokenCloseDate(value);
+    if (spoken) return spoken;
+  }
   if (MONEY_KEYS.has(field)) {
     const n = moneyNumber(value);
     if (n != null) {
@@ -777,6 +782,32 @@ export function displayFactValue(field: string, value: string) {
     }
   }
   return value;
+}
+
+function spokenCloseDate(value: string) {
+  const t = value.trim();
+  if (/^[A-Za-z]+ \d{1,2}, \d{4}$/.test(t)) return t;
+  const iso = t.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  const us = t.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  const year = iso ? Number(iso[1]) : us ? Number(us[3]) : NaN;
+  const month = iso ? Number(iso[2]) : us ? Number(us[1]) : NaN;
+  const day = iso ? Number(iso[3]) : us ? Number(us[2]) : NaN;
+  if (!year || month < 1 || month > 12 || day < 1 || day > 31) return "";
+  const months = [
+    "January",
+    "February",
+    "March",
+    "April",
+    "May",
+    "June",
+    "July",
+    "August",
+    "September",
+    "October",
+    "November",
+    "December",
+  ];
+  return `${months[month - 1]} ${day}, ${year}`;
 }
 
 function existingFact(draft: FoxIntakeDraft, field: string): { value: string; via: string } | null {
@@ -897,7 +928,7 @@ function writeField(
       ? { statedCurrentHousing: Math.round(Number(value)), currentHousingAsked: true }
       : {}),
   };
-  return isPropertyAddressField(field) ? rememberPriorZipOnNewAddress(draft, written) : written;
+  return isPropertyAddressField(field) ? adoptStreetOverZipOnly(draft, written) : written;
 }
 
 export function quietLineForClass(extractClass: ExtractClass) {
@@ -1094,6 +1125,15 @@ export function applyExtractedFields(
         continue;
       }
       const existingRemainder = existingFact(next, field);
+      if (
+        extractClass === "purchase_contract" &&
+        field === "property_address" &&
+        existingRemainder &&
+        isZipOnlyFileAddress(existingRemainder.value, next.propertyZip)
+      ) {
+        remainderWrites.push({ field, value });
+        continue;
+      }
       if (!existingRemainder) {
         remainderWrites.push({ field, value });
         continue;
