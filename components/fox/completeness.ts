@@ -60,8 +60,11 @@ import {
   availableAssetsConfirmCopy,
   availableAssetsExtractCopy,
   isLateWalkBankStatementAsk,
+  proposalBankLast4,
   skipAvailableAssets,
+  writeAssetAccount,
 } from "./availableAssets";
+import { parseAssetAccounts, safeAccountLast4 } from "@/lib/docs/bankLast4";
 import {
   PROPERTY_ADDRESS_FACT,
   PROPERTY_TYPE_FIELD,
@@ -813,7 +816,7 @@ function fundsMoneyShown(field: string, value: string) {
 }
 
 export function remainderAskCopy(proposal: FactProposal) {
-  const writes = remainderProposalWrites(proposal);
+  const writes = remainderProposalWrites(proposal).filter((item) => item.field !== "asset_accounts");
   const named = writes
     .map((item) => `${item.label} ${displayFactValue(item.field, item.value)}`)
     .join(", ");
@@ -915,7 +918,7 @@ export function proposalAskCopy(proposal: FactProposal) {
     const amount = Number(proposal.value) || 0;
     const institution = proposal.extras?.find((item) => item.field === "institution")?.value;
     return proposal.extras?.length
-      ? availableAssetsExtractCopy(amount, institution)
+      ? availableAssetsExtractCopy(amount, institution, proposalBankLast4(proposal))
       : availableAssetsConfirmCopy(amount);
   }
   const shown = displayFactValue(proposal.field, proposal.value);
@@ -1064,6 +1067,23 @@ function writeConfirmedFact(
   ) {
     return draft;
   }
+  if (field === "asset_accounts") {
+    let next = draft;
+    for (const row of parseAssetAccounts(value)) {
+      next = writeAssetAccount(next, row);
+    }
+    const facts = { ...(next.facts ?? {}) };
+    delete facts.asset_accounts;
+    return { ...next, facts };
+  }
+  if (field === "account_last4") {
+    const last4 = safeAccountLast4(value);
+    if (!last4) return draft;
+    value = last4;
+  }
+  if (field === "account_number") {
+    return draft;
+  }
   const now = new Date().toISOString();
   const facts = { ...(draft.facts ?? {}) };
   facts[field] = {
@@ -1152,6 +1172,18 @@ function writeConfirmedFact(
       looksRightHold: isLateWalkBankStatementAsk(draft) ? false : draft.looksRightHold,
       facts,
     };
+  }
+  if (field === "institution" && value.trim()) {
+    next = writeAssetAccount(next, { institution: value });
+  }
+  if (field === "account_last4" && value.trim()) {
+    next = writeAssetAccount(next, { last4: value });
+  }
+  if (field === "ending_balance" && value.trim()) {
+    next = writeAssetAccount(next, { balance: value });
+  }
+  if (field === "account_type" && value.trim()) {
+    next = writeAssetAccount(next, { type: value });
   }
   if (field === PROPERTY_TYPE_FIELD && isPropertyTypeValue(value)) {
     next = {

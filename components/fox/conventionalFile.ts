@@ -223,10 +223,10 @@ export function conventionalFileFromDraft(draft: FoxIntakeDraft): ConventionalFi
       occupancyStatus: occupancy || undefined,
     },
     assets: {
-      institution: factValue(draft, "institution") || undefined,
-      type: factValue(draft, "account_type") || undefined,
-      suggestedBalance: factValue(draft, "ending_balance") || undefined,
-      last4: undefined,
+      institution: (draft.assetAccounts?.[0]?.institution || factValue(draft, "institution")) || undefined,
+      type: (draft.assetAccounts?.[0]?.type || factValue(draft, "account_type")) || undefined,
+      suggestedBalance: (draft.assetAccounts?.[0]?.balance || factValue(draft, "ending_balance")) || undefined,
+      last4: (draft.assetAccounts?.[0]?.last4 || factValue(draft, "account_last4")) || undefined,
     },
     liabilities: {
       source: LIABILITIES_SOURCE,
@@ -395,7 +395,7 @@ export function conventionalFileFacts(draft: FoxIntakeDraft): {
   const institution = file.assets.institution || "institution —";
   const accountType = file.assets.type || "";
   const balance = moneyLabel(file.assets.suggestedBalance) || "balance —";
-  const last4 = file.assets.last4 ? `last4 ${file.assets.last4}` : "last4 —";
+  const last4 = file.assets.last4 ? `last4 ${file.assets.last4}` : "";
   const declarationBits = [
     declarationSpoken(file.declarations.b_bankruptcy)
       ? `BK ${declarationSpoken(file.declarations.b_bankruptcy)}`
@@ -437,6 +437,19 @@ export function conventionalFileFacts(draft: FoxIntakeDraft): {
       value: dashJoin([institution, accountType, balance, last4]),
       note: "From statements · institution / type / balance / last4 · not a form",
     },
+    ...((draft.assetAccounts ?? []).length > 1
+      ? (draft.assetAccounts ?? []).slice(1).map((account, index) => ({
+          id: `file-assets-${index + 1}`,
+          label: "Assets",
+          value: dashJoin([
+            account.institution || "",
+            account.type || "",
+            moneyLabel(account.balance) || "",
+            account.last4 ? `last4 ${account.last4}` : "",
+          ]),
+          note: "From statements · institution / type / balance / last4 · not a form",
+        }))
+      : []),
     {
       id: "file-liabilities",
       label: "Liabilities",

@@ -274,6 +274,27 @@ function normalizeHistoryEntries(value: unknown): { label?: string; from?: strin
   return entries.length ? entries : undefined;
 }
 
+function normalizeAssetAccounts(value: unknown): FoxIntakeDraft["assetAccounts"] {
+  if (!Array.isArray(value)) return undefined;
+  const rows: NonNullable<FoxIntakeDraft["assetAccounts"]> = [];
+  for (const item of value) {
+    if (!item || typeof item !== "object") continue;
+    const raw = item as { institution?: unknown; last4?: unknown; balance?: unknown; type?: unknown };
+    const institution = trimString(raw.institution);
+    const last4 = trimString(raw.last4);
+    const balance = trimString(raw.balance);
+    const type = trimString(raw.type);
+    if (!institution && !last4 && !balance) continue;
+    rows.push({
+      ...(institution ? { institution } : {}),
+      ...(last4 ? { last4 } : {}),
+      ...(balance ? { balance } : {}),
+      ...(type ? { type } : {}),
+    });
+  }
+  return rows.length ? rows : undefined;
+}
+
 function normalizeOtherProperties(value: unknown): FoxIntakeDraft["otherProperties"] {
   if (!Array.isArray(value)) return undefined;
   const rows: NonNullable<FoxIntakeDraft["otherProperties"]> = [];
@@ -609,6 +630,7 @@ function normalize(value: unknown): FoxIntakeDraft {
     agencyDeclarations: normalizeAgencyDeclarations(raw.agencyDeclarations),
     addressHistory: normalizeHistoryEntries(raw.addressHistory),
     employmentHistory: normalizeHistoryEntries(raw.employmentHistory),
+    assetAccounts: normalizeAssetAccounts(raw.assetAccounts),
     pendingOtherReo: raw.pendingOtherReo ? true : null,
     fileExport: normalizeFileExport(raw.fileExport),
     docsOpen: Boolean(raw.docsOpen),

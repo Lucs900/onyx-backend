@@ -268,7 +268,7 @@ function extractFieldsPrompt(extractClass: ExtractClass, keys: readonly string[]
   }
   if (extractClass === "bank_statement") {
     extra =
-      " institution and ending_balance only when clearly printed. ending_balance is the dollar ending balance (for example $84,220.15), never a statement-period date or the day/month fragment 07 from 07/31/2026. Never extract account_last4, account numbers, masked account digits, or last four. Never output a full or partial account number. Never say funds are enough. Empty otherwise; never invent.";
+      " institution, ending_balance, and account_last4 only when clearly printed. ending_balance is the dollar ending balance (for example $84,220.15), never a statement-period date or the day/month fragment 07 from 07/31/2026. account_last4 is the last four digits only when the page prints them as last 4 or a masked account (for example ****4412 or LAST 4: 4412). Never output a full account number. Never derive last4 from a full number, a date, or a dollar amount. If two accounts are printed, put both last4 values as 4412,7788. Empty if last4 is not on the page. Never say funds are enough. Empty otherwise; never invent.";
   }
   if (extractClass === "government_id") {
     extra =
@@ -332,10 +332,7 @@ export const grokExtractAdapter: DocumentExtractAdapter = {
   },
 
   async extract(bytes, mediaType, extractClass) {
-    const keys =
-      extractClass === "bank_statement"
-        ? EXTRACT_SCHEMA_KEYS[extractClass].filter((key) => key !== "account_last4")
-        : EXTRACT_SCHEMA_KEYS[extractClass];
+    const keys = EXTRACT_SCHEMA_KEYS[extractClass];
     if (!keys.length) {
       return { fields: {}, warnings: ["Class is other. No numbers invented."] };
     }

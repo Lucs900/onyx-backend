@@ -3642,13 +3642,13 @@ assert.equal(harborSkipIdStatementPending.draft.facts?.ending_balance, undefined
 assert.equal(harborSkipIdStatementPending.draft.facts?.account_last4, undefined);
 assert.equal(harborSkipIdStatementPending.draft.statedAvailableAssets, undefined);
 assert.equal(harborSkipIdStatementPending.draft.pendingProposal?.field, "statedAvailableAssets");
-assert.ok(!(harborSkipIdStatementPending.draft.pendingProposal?.extras ?? []).some((item) => item.field === "account_last4"));
+assert.ok((harborSkipIdStatementPending.draft.pendingProposal?.extras ?? []).some((item) => item.field === "account_last4" && item.value === "1234"));
 assert.ok(stillUsefulSection(harborSkipIdStatementPending.draft)?.items.some((item) => item.label === "Government ID"));
 const harborSkipIdStatementUsed = resolveProposal(harborSkipIdStatementPending.draft, "accept");
 assert.equal(harborSkipIdStatementUsed.facts?.institution?.value, "FIRST NATIONAL");
 assert.equal(harborSkipIdStatementUsed.facts?.ending_balance?.value, "18400");
-assert.equal(harborSkipIdStatementUsed.facts?.account_last4, undefined);
-assert.equal(conventionalFileFromDraft(harborSkipIdStatementUsed).assets.last4, undefined);
+assert.equal(harborSkipIdStatementUsed.facts?.account_last4?.value, "1234");
+assert.equal(conventionalFileFromDraft(harborSkipIdStatementUsed).assets.last4, "1234");
 assert.ok(stillUsefulSection(harborSkipIdStatementUsed)?.items.some((item) => item.label === "Government ID"));
 assert.ok(stillUsefulSection(harborSkipIdStatementUsed)?.items.some((item) => item.label === "Second bank statement"));
 assert.ok(stillUsefulSection(harborSkipIdStatementUsed)?.items.some((item) => item.label === "Purchase contract"));
@@ -14437,7 +14437,7 @@ assert.doesNotMatch(
 );
 const w2FileFacts = previewFacts(conventionalW2Walk);
 assert.ok(w2FileFacts.some((fact) => fact.id === "file-property" && /Primary/.test(fact.value) && /address —/.test(fact.value)));
-assert.ok(w2FileFacts.some((fact) => fact.id === "file-assets" && /institution —/.test(fact.value) && /last4 —/.test(fact.value)));
+assert.ok(w2FileFacts.some((fact) => fact.id === "file-assets" && /institution —/.test(fact.value) && !/last4/.test(fact.value)));
 assert.ok(w2FileFacts.some((fact) => fact.id === "file-liabilities" && fact.value === "Credit report later"));
 assert.ok(w2FileFacts.some((fact) => fact.id === "file-declarations" && fact.value === "—"));
 assert.ok(w2FileFacts.every((fact) => fact.id !== "file-history"));
@@ -15616,7 +15616,7 @@ assert.ok(
       fact.id === "file-assets" &&
       /institution —/.test(fact.value) &&
       /balance —/.test(fact.value) &&
-      /last4 —/.test(fact.value),
+      !/last4/.test(fact.value),
   ),
 );
 assert.ok(previewFacts(harborPreLooksSkipAssets).every((fact) => !/18,400|18400/.test(fact.value)));
@@ -15729,11 +15729,12 @@ assert.equal(harborStatementIn.draft.facts?.account_last4, undefined);
 assert.equal(harborStatementIn.draft.statedAvailableAssets, undefined);
 assert.equal(harborStatementIn.draft.pendingProposal?.field, "statedAvailableAssets");
 assert.equal(harborStatementIn.draft.pendingProposal?.value, printedBank!.fields.ending_balance);
-assert.ok(!(harborStatementIn.draft.pendingProposal?.extras ?? []).some((item) => item.field === "account_last4"));
+assert.ok((harborStatementIn.draft.pendingProposal?.extras ?? []).some((item) => item.field === "account_last4" && item.value === "1234"));
 assert.match(nextFoxAsk(harborStatementIn.draft).text, /FIRST NATIONAL/);
 assert.match(nextFoxAsk(harborStatementIn.draft).text, /\$18,400/);
+assert.match(nextFoxAsk(harborStatementIn.draft).text, /1234/);
 assert.match(nextFoxAsk(harborStatementIn.draft).text, /Suggested · not underwritten/);
-assert.doesNotMatch(nextFoxAsk(harborStatementIn.draft).text, /last4|account number|invent/i);
+assert.doesNotMatch(nextFoxAsk(harborStatementIn.draft).text, /account number|invent|9999888877771234/i);
 assert.equal(harborStatementIn.draft.statedAvailableAssets, undefined);
 assert.ok(
   previewFacts(harborStatementIn.draft).every(
@@ -15743,7 +15744,7 @@ assert.ok(
       (fact.id !== "file-assets" ||
         (/institution —/.test(fact.value) &&
           /balance —/.test(fact.value) &&
-          /last4 —/.test(fact.value) &&
+          !/last4/.test(fact.value) &&
           !/FIRST NATIONAL|18,400|18400/.test(fact.value))),
   ),
 );
@@ -15757,18 +15758,18 @@ assert.ok(!(nextFoxAsk(harborStatementIn.draft).actions ?? []).some((item) => it
 const harborStatementUsed = resolveProposal(harborStatementIn.draft, "accept");
 assert.equal(harborStatementUsed.facts?.institution?.value, "FIRST NATIONAL");
 assert.equal(harborStatementUsed.facts?.ending_balance?.value, "18400");
-assert.equal(harborStatementUsed.facts?.account_last4, undefined);
+assert.equal(harborStatementUsed.facts?.account_last4?.value, "1234");
 assert.doesNotMatch(JSON.stringify(harborStatementUsed.facts ?? {}), /9999888877771234/);
 assert.equal(conventionalFileFromDraft(harborStatementUsed).assets.institution, "FIRST NATIONAL");
 assert.equal(conventionalFileFromDraft(harborStatementUsed).assets.suggestedBalance, "18400");
-assert.equal(conventionalFileFromDraft(harborStatementUsed).assets.last4, undefined);
+assert.equal(conventionalFileFromDraft(harborStatementUsed).assets.last4, "1234");
 assert.ok(
   previewFacts(harborStatementUsed).some(
     (fact) =>
       fact.id === "file-assets" &&
       /FIRST NATIONAL/.test(fact.value) &&
       /\$18,400/.test(fact.value) &&
-      !/last4 \d/.test(fact.value),
+      /last4 1234/.test(fact.value),
   ),
 );
 assert.ok(

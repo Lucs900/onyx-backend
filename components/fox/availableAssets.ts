@@ -1,4 +1,5 @@
 import { formatDollars } from "@/components/products/scenario";
+import { parseAssetAccounts, safeAccountLast4, type BankAssetAccount } from "@/lib/docs/bankLast4";
 import { citizenshipSettled } from "./citizenship";
 import type { FactProposal, FoxAction, FoxIntakeDraft } from "./types";
 
@@ -154,12 +155,79 @@ export function displayInstitution(name?: string | null) {
     .replace(/\b([a-z])/g, (ch) => ch.toUpperCase());
 }
 
-export function availableAssetsExtractCopy(amount: number, institution?: string) {
+export function proposalBankLast4(proposal?: FactProposal | null) {
+  if (!proposal) return "";
+  const one = proposal.extras?.find((item) => item.field === "account_last4")?.value;
+  const rows = proposal.extras?.find((item) => item.field === "asset_accounts")?.value;
+  const parsed = rows ? parseAssetAccounts(rows) : [];
+  const last4s = [one, ...parsed.map((row) => row.last4)]
+    .map((value) => (value ? safeAccountLast4(String(value)) : ""))
+    .filter(Boolean);
+  return last4s.filter((value, index) => last4s.indexOf(value) === index).join(" · ");
+}
+
+export function availableAssetsExtractCopy(amount: number, institution?: string, last4?: string) {
   const who = displayInstitution(institution);
-  const shown = who
-    ? `The statement shows ${who} · ${money(amount)}.`
+  const shownLast4 = String(last4 ?? "")
+    .split(/[·,;]/)
+    .map((part) => safeAccountLast4(part.trim()))
+    .filter(Boolean)
+    .join(" · ");
+  const bits = [who, shownLast4, money(amount)].filter(Boolean);
+  const shown = bits.length
+    ? `The statement shows ${bits.join(" · ")}.`
     : `The statement shows about ${money(amount)}.`;
   return `${shown} ${SUGGESTED_ASSETS_NOTE}. Use this?`;
+}
+
+function accountKey(row: BankAssetAccount) {
+  return `${(row.institution || "").trim().toLowerCase()}|${(row.last4 || "").trim()}`;
+}
+
+function definedAccount(row: BankAssetAccount): BankAssetAccount {
+  return {
+    ...(row.institution?.trim() ? { institution: row.institution.trim() } : {}),
+    ...(row.last4?.trim() ? { last4: row.last4.trim() } : {}),
+    ...(row.balance?.trim() ? { balance: row.balance.trim() } : {}),
+    ...(row.type?.trim() ? { type: row.type.trim() } : {}),
+  };
+}
+
+/** Same bank + different last4 is a second row. Blank last4 updates the institution row. */
+export function writeAssetAccount(draft: FoxIntakeDraft, incoming: BankAssetAccount): FoxIntakeDraft {
+  const nextRow = definedAccount({
+    ...incoming,
+    last4: incoming.last4 ? safeAccountLast4(incoming.last4) : incoming.last4,
+    institution: incoming.institution ? displayInstitution(incoming.institution) || incoming.institution.trim() : incoming.institution,
+  });
+  if (!nextRow.institution && !nextRow.last4 && !nextRow.balance && !nextRow.type) return draft;
+  const list = [...(draft.assetAccounts ?? [])];
+  const incomingKey = accountKey(nextRow);
+  let idx = list.findIndex((row) => accountKey(row) === incomingKey);
+  if (idx < 0 && nextRow.last4) {
+    const inst = (nextRow.institution || "").trim().toLowerCase();
+    idx = list.findIndex((row) => {
+      if (row.last4) return false;
+      const rowInst = (row.institution || "").trim().toLowerCase();
+      if (inst) return rowInst === inst;
+      return list.length === 1;
+    });
+  }
+  if (idx < 0 && !nextRow.last4) {
+    const inst = (nextRow.institution || "").trim().toLowerCase();
+    if (inst) {
+      idx = list.findIndex((row) => !(row.last4) && (row.institution || "").trim().toLowerCase() === inst);
+      if (idx < 0) idx = list.findIndex((row) => (row.institution || "").trim().toLowerCase() === inst);
+    } else if (list.length === 1) {
+      idx = 0;
+    }
+  }
+  if (idx >= 0) {
+    list[idx] = definedAccount({ ...list[idx], ...nextRow });
+  } else {
+    list.push(nextRow);
+  }
+  return { ...draft, assetAccounts: list };
 }
 
 export function availableAssetsConfirmActions(): FoxAction[] {

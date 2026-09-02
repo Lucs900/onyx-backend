@@ -42,6 +42,7 @@ import {
   wageThreadOpen,
 } from "./qualifyingIncome";
 import { bankEndingBalanceAmount } from "@/lib/docs/bankBalance";
+import { parseAssetAccounts, safeAccountLast4 } from "@/lib/docs/bankLast4";
 import {
   applyRentalIncomeFromExtract,
   draftHasLease,
@@ -398,7 +399,7 @@ export function looksLikeIdFields(
   return Boolean(fields && String(fields.full_name ?? "").trim());
 }
 
-/** Institution or ending balance — the two File writes. Never last4. */
+/** Institution or ending balance — last4 alone is not a lock. */
 export function looksLikeBankFields(
   fields?: Record<string, string | null | undefined> | null,
 ): boolean {
@@ -664,18 +665,36 @@ export function sanitizeExtractedFields(
   for (const [rawKey, rawValue] of Object.entries(fields ?? {})) {
     const key = rawKey.trim();
     if (!key || DROP_FIELD_KEYS.test(key)) continue;
-    if (allowed.size && !allowed.has(key)) continue;
-    if (key === "fico" || key === "credit" || key === "credit_score") continue;
     let value = String(rawValue ?? "").trim();
     if (!value) continue;
-    if (extractClass === "bank_statement" && (key === "account_last4" || key === "account_number")) {
+    if (key === "asset_accounts") {
+      const rows = parseAssetAccounts(value);
+      if (rows.length > 1) next.asset_accounts = JSON.stringify(rows);
+      continue;
+    }
+    if (allowed.size && !allowed.has(key)) continue;
+    if (key === "fico" || key === "credit" || key === "credit_score") continue;
+    if (extractClass === "bank_statement" && key === "account_number") {
       continue;
     }
     if (extractClass === "bank_statement" && key === "ending_balance") {
       value = bankEndingBalanceAmount(value);
       if (!value) continue;
     }
-    if (key === "id_last4" || key === "account_last4") {
+    if (key === "account_last4") {
+      if (CA_DL_NUMBER_RE.test(value.replace(/\s+/g, ""))) continue;
+      const last4s = value
+        .split(/[,;]/)
+        .map((part) => safeAccountLast4(part.trim()))
+        .filter(Boolean);
+      if (!last4s.length) continue;
+      next.account_last4 = last4s[0] ?? "";
+      if (last4s.length > 1 && !next.asset_accounts) {
+        next.asset_accounts = JSON.stringify(last4s.map((last4) => ({ last4 })));
+      }
+      continue;
+    }
+    if (key === "id_last4") {
       if (CA_DL_NUMBER_RE.test(value.replace(/\s+/g, ""))) continue;
       value = last4Only(value);
       if (!value) continue;
@@ -1011,10 +1030,7 @@ export function applyExtractedFields(
     ) {
       continue;
     }
-    if (
-      extractClass === "bank_statement" &&
-      (field === "account_last4" || field === "account_type" || field === "period_end")
-    ) {
+    if (extractClass === "bank_statement" && (field === "account_type" || field === "period_end")) {
       continue;
     }
     if (extractClass === "paystub" && PAY_CONFIRM_FIELDS.has(field)) {
@@ -1174,7 +1190,11 @@ export function applyExtractedFields(
   conflict = next.pendingConflict ?? conflict;
   if (extractClass === "bank_statement") {
     remainderWrites = remainderWrites.filter(
-      (item) => item.field === "institution" || item.field === "ending_balance",
+      (item) =>
+        item.field === "institution" ||
+        item.field === "ending_balance" ||
+        item.field === "account_last4" ||
+        item.field === "asset_accounts",
     );
   }
   const extractedAssets = extractClass === "bank_statement" ? moneyNumber(fields.ending_balance ?? "") : null;
@@ -1192,6 +1212,8 @@ export function applyExtractedFields(
       }
     } else if (!next.pendingConflict) {
       const institution = displayInstitution(String(fields.institution ?? "").trim());
+      const last4 = String(fields.account_last4 ?? "").trim();
+      const assetAccounts = String(fields.asset_accounts ?? "").trim();
       next = proposeExtractedAvailableAssets(
         next,
         extractedAssets,
@@ -1199,11 +1221,17 @@ export function applyExtractedFields(
           ...(institution
             ? [{ field: "institution", value: institution, label: factLabel("institution") }]
             : []),
+          ...(last4
+            ? [{ field: "account_last4", value: last4, label: factLabel("account_last4") }]
+            : []),
           {
             field: "ending_balance",
             value: String(extractedAssets),
             label: factLabel("ending_balance"),
           },
+          ...(assetAccounts
+            ? [{ field: "asset_accounts", value: assetAccounts, label: "accounts" }]
+            : []),
         ],
       );
       remainderWrites.length = 0;

@@ -271,6 +271,7 @@ import {
   availableAssetsConfirmActions,
   availableAssetsConfirmCopy,
   availableAssetsExtractCopy,
+  proposalBankLast4,
   bankStatementAskCopy,
   isLateWalkBankStatementAsk,
   isSkipAvailableAssetsText,
@@ -1866,7 +1867,7 @@ function liveProposalAsk(
     const institution = proposal.extras?.find((item) => item.field === "institution")?.value;
     return {
       text: proposal.extras?.length
-        ? availableAssetsExtractCopy(shown, institution)
+        ? availableAssetsExtractCopy(shown, institution, proposalBankLast4(proposal))
         : availableAssetsConfirmCopy(shown),
       actions: availableAssetsConfirmActions(),
     };
@@ -7423,11 +7424,16 @@ export function previewFacts(draft: FoxIntakeDraft): PreviewFact[] {
   }
   const institution = factValue(draft, "institution");
   const endingBalance = factValue(draft, "ending_balance");
+  const accountLast4 = factValue(draft, "account_last4");
   if (institution || endingBalance) {
     facts.push({
       id: "bank",
       label: "Bank",
-      value: [institution, endingBalance ? displayFactValue("ending_balance", endingBalance) : ""]
+      value: [
+        institution,
+        accountLast4,
+        endingBalance ? displayFactValue("ending_balance", endingBalance) : "",
+      ]
         .filter(Boolean)
         .join(" · "),
     });
@@ -7757,7 +7763,7 @@ export function structureExplainCopy(
       text: "Property slots the file can hold. Address from you or a contract. APN, legal, year built, taxes, and HOA wait for a title profile. I won’t quiz you for those.",
     };
   }
-  if (id === "file-assets") {
+  if (id === "file-assets" || id.startsWith("file-assets-")) {
     return {
       text: "Assets from a statement: institution, type, suggested balance, last four. Not an asset form. Not a full account number.",
     };

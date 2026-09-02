@@ -11,6 +11,7 @@ import {
   bankEndingBalanceFromStatementText,
   isDateFragmentAmount,
 } from "@/lib/docs/bankBalance";
+import { collectAccountLast4s, safeAccountLast4 } from "@/lib/docs/bankLast4";
 import { readPdfTextLayer } from "@/lib/docs/pdfText";
 
 export type PrintedSample = {
@@ -626,6 +627,8 @@ export function fieldsFromPrintedLines(
       if (shown) putMoney("k1_distributions", shown);
     }
     if (/^(?:ACCOUNT(?:\s+(?:NO|NUMBER|#|HOLDER))?|ACCOUNT LAST\s*4|LAST\s*4)\s*:/i.test(line)) {
+      const last4 = safeAccountLast4(line);
+      if (last4) put("account_last4", last4);
       continue;
     }
     const institution = labeled(line, next, /^(?:INSTITUTION|BANK NAME):\s*/i);
@@ -699,6 +702,25 @@ export function fieldsFromPrintedLines(
       fields.ending_balance = fromText;
     } else if (fields.ending_balance && isDateFragmentAmount(fields.ending_balance)) {
       delete fields.ending_balance;
+    }
+    const last4s = collectAccountLast4s(lines.join("\n"));
+    if (last4s[0] && !fields.account_last4) put("account_last4", last4s[0]);
+    const allLast4s = [fields.account_last4, ...last4s].filter(
+      (value, index, list): value is string => Boolean(value) && list.indexOf(value) === index,
+    );
+    if (allLast4s.length > 1) {
+      const perBalance = accountBalancesFromLines(lines);
+      fields.asset_accounts = JSON.stringify(
+        allLast4s.map((last4, index) => ({
+          ...(fields.institution ? { institution: fields.institution } : {}),
+          last4,
+          ...(perBalance[index]
+            ? { balance: perBalance[index] }
+            : index === 0 && fields.ending_balance
+              ? { balance: fields.ending_balance }
+              : {}),
+        })),
+      );
     }
   }
 
@@ -869,6 +891,18 @@ export function residenceFromIdLines(lines: string[]): string {
     return streetLine;
   }
   return "";
+}
+
+function accountBalancesFromLines(lines: string[]): string[] {
+  const out: string[] = [];
+  for (const line of lines) {
+    const labeled = line.match(/ACCOUNT\s+(\d+)\s+ENDING BALANCE:\s*(.+)/i);
+    if (!labeled) continue;
+    const amount = bankEndingBalanceAmount(labeled[2] ?? "");
+    const idx = Number(labeled[1]) - 1;
+    if (amount && idx >= 0) out[idx] = amount;
+  }
+  return out;
 }
 
 function institutionFromBankLines(lines: string[]): string {

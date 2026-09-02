@@ -409,6 +409,7 @@ export type FoxIntakeDraft = {
   };
   addressHistory?: { label?: string; from?: string; to?: string }[];
   employmentHistory?: { label?: string; from?: string; to?: string }[];
+  assetAccounts?: { institution?: string; last4?: string; balance?: string; type?: string }[];
   pendingOtherReo?: boolean | null;
   fileExport?: FileExportMark | null;
   docsOpen?: boolean;
