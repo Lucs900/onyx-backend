@@ -48,7 +48,7 @@ import {
   withLiveCouponChips,
   type CouponChoice,
 } from "./liveCoupon";
-import { RATEFLOW_WAIT_LINE, pricingFailedActions } from "./lookupWait";
+import { RATEFLOW_WAIT_LINE, isLookupWaitLine, pricingFailedActions } from "./lookupWait";
 import {
   AMOUNT_HELPER_BUBBLES,
   AMOUNT_PURPOSE_BUBBLES,
@@ -98,7 +98,6 @@ import {
   lastExtractedClass,
   nextDocInvite,
   offeringDocStart,
-  primaryDocPassFinished,
   thisBorrowerPrimaryPackageDone,
   readyForHouseholdAsk,
   skipCurrentInvite,
@@ -155,8 +154,11 @@ import {
   resolveProposal,
   shouldAskYearsInBusiness,
   skipYearsInBusiness,
+  wantsYearsInBusinessAsk,
+  withIncomeTypeYearsAsk,
   yearsInBusinessSettled,
   yearsInBusinessSkipActions,
+  yearsInBusinessValue,
   sketchAmountsReady,
   withComputedCompanion,
   writeQualifyingIncome,
@@ -1465,7 +1467,9 @@ function documentsAskText(draft: FoxIntakeDraft): string {
   if (isBorrowerNameConfirmPending(draft) && draft.pendingProposal?.value) {
     return borrowerNameExtractCopy(draft.pendingProposal.value);
   }
-  if (draft.awaitingYearsInBusiness) return yearsInBusinessAskCopy(draft);
+  if (draft.awaitingYearsInBusiness && !yearsInBusinessValue(draft)) {
+    return yearsInBusinessAskCopy(draft);
+  }
   if (
     draft.docsHeld &&
     !draft.docsStarted &&
@@ -2077,12 +2081,8 @@ export function docReactionAsk(
 function rememberedAskCopy(draft: FoxIntakeDraft): string | undefined {
   if (inQueueEnding(draft)) return undefined;
   if (draft.pendingFinish && emailMissing(draft) && !emailSkipped(draft)) return undefined;
-  if (draft.sampleAccepted && stillUsefulVisible(draft)) {
-    return shouldAskYearsInBusiness(draft) ? yearsInBusinessAskCopy(draft) : undefined;
-  }
+  if (draft.sampleAccepted && stillUsefulVisible(draft)) return undefined;
   if (stillUsefulVisible(draft)) return layer2AskCopy(draft);
-  if (!shouldAskYearsInBusiness(draft)) return undefined;
-  if (draft.motion === "in_queue" || draft.sampleAccepted) return yearsInBusinessAskCopy(draft);
   return undefined;
 }
 
@@ -2528,11 +2528,11 @@ function sketchNumberReady(draft: FoxIntakeDraft) {
 }
 
 function withIncomeType(draft: FoxIntakeDraft, value: string): FoxIntakeDraft {
-  return {
+  return withIncomeTypeYearsAsk({
     ...draft,
     incomeType: { ...draft.incomeType, value },
     incomeAsked: true,
-  };
+  });
 }
 
 function amountHelperActions(field: "skip-amount" | "skip-value"): FoxAction[] {
@@ -2602,20 +2602,88 @@ export function liveQuoteThreadCopy(
 
 const LIVE_QUOTE_INCOME_ASK = "How is income earned?";
 
-function isPrematureFileAskAfterQuote(
-  message: FoxMessage | undefined,
-  nextAskText?: string,
-) {
+function isYearsInBusinessAskText(text: string) {
+  return /^How long have you had /i.test(text.trim());
+}
+
+function isFileQuestionSpeech(message: FoxMessage) {
+  if (message.role !== "fox") return false;
+  if (message.id.startsWith("live-quote:")) return false;
+  if (message.id.startsWith("wait:")) return false;
+  if (message.id.startsWith("pricing-ready:")) return false;
+  if (isLookupWaitLine(message.text)) return false;
+  if (isLiveRateSpeech(message.text)) return false;
+  if (message.text === PRICING_WHEN_READY) return false;
+  if (isOnFileAddressLine(message)) return false;
+  if (message.text === LIVE_QUOTE_INCOME_ASK) return false;
+  const text = message.text.trim();
+  if (!text) return false;
+  if (message.actions?.length) return true;
+  return /\?/.test(text) || isYearsInBusinessAskText(text);
+}
+
+function lastOpenFileAsk(messages: FoxMessage[]): FoxMessage | undefined {
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    if (isFileQuestionSpeech(messages[i]!)) return messages[i];
+  }
+  return undefined;
+}
+
+function shouldRestoreAskAfterLiveQuote(draft: FoxIntakeDraft, ask?: FoxMessage) {
+  if (!ask) return false;
+  if (ask.text === LIVE_QUOTE_INCOME_ASK) return false;
+  if (isYearsInBusinessAskText(ask.text)) {
+    return (
+      Boolean(draft.awaitingYearsInBusiness) &&
+      !yearsInBusinessValue(draft) &&
+      wantsYearsInBusinessAsk(draft)
+    );
+  }
+  return true;
+}
+
+function restoredAskAfterLiveQuote(ask: FoxMessage): FoxMessage {
+  return {
+    ...ask,
+    id: `fox-ask-after-quote:${ask.id}`,
+    actions: isYearsInBusinessAskText(ask.text)
+      ? yearsInBusinessSkipActions()
+      : ask.actions,
+  };
+}
+
+function isPrematureFileAskAfterQuote(message: FoxMessage | undefined) {
   if (!message || message.role !== "fox") return false;
   if (message.id.startsWith("live-quote:")) return false;
-  if (message.text === LIVE_QUOTE_INCOME_ASK) return true;
-  return Boolean(nextAskText && message.text === nextAskText);
+  return message.text === LIVE_QUOTE_INCOME_ASK;
 }
 
 export function withoutLiveQuoteSpeech(messages: FoxMessage[]): FoxMessage[] {
   return messages.filter(
     (item) => !item.id.startsWith("live-quote:") && item.text !== LIVE_QUOTE_INCOME_ASK,
   );
+}
+
+function withRestoredAskAfterQuote(
+  thread: FoxMessage[],
+  draft: FoxIntakeDraft,
+  openAsk?: FoxMessage,
+): FoxMessage[] {
+  if (!openAsk || !shouldRestoreAskAfterLiveQuote(draft, openAsk)) return thread;
+  const last = thread[thread.length - 1];
+  if (last && last.text === openAsk.text && !last.id.startsWith("live-quote:")) {
+    return thread.map((item, index) =>
+      index === thread.length - 1
+        ? {
+            ...item,
+            actions: isYearsInBusinessAskText(openAsk.text)
+              ? yearsInBusinessSkipActions()
+              : openAsk.actions,
+          }
+        : item,
+    );
+  }
+  return [...thread, restoredAskAfterLiveQuote(openAsk)];
 }
 
 /** Two quote lines on one Fox bubble, with coupon chips, before income. */
@@ -2633,18 +2701,15 @@ export function messagesWithLiveQuoteSpeech(
   if (!quote.rate || !quote.asOf) return messages;
   const lines = liveQuoteThreadLines(quote);
   if (!lines.length) return messages;
-  const nextAskDraft = {
-    ...draft,
-    liveCouponSettled: true,
-    pendingLiveCoupon: undefined,
-  };
-  const promptId = workspacePrompt(nextAskDraft);
-  const ask = promptId ? workspacePromptCopy(promptId, nextAskDraft) : null;
+  const openAsk = lastOpenFileAsk(
+    messages.filter((item) => !item.id.startsWith("live-quote:")),
+  );
   const existing = messages.find((item) => item.id.startsWith(`live-quote:${quote.key}`));
   if (existing) {
     const held = dropResolvedAddressConfirmChips(
       messages
-        .filter((item) => !isPrematureFileAskAfterQuote(item, ask?.text))
+        .filter((item) => item.id !== openAsk?.id)
+        .filter((item) => !isPrematureFileAskAfterQuote(item))
         .map((item) =>
           item.role === "fox" && isLiveRateSpeech(item.followUp)
             ? { ...item, followUp: undefined }
@@ -2652,10 +2717,10 @@ export function messagesWithLiveQuoteSpeech(
         ),
       draft,
     );
-    return withLiveCouponChips(held, draft);
+    return withRestoredAskAfterQuote(withLiveCouponChips(held, draft), draft, openAsk);
   }
   const without = withoutLiveQuoteSpeech(messages).filter(
-    (item) => !isPrematureFileAskAfterQuote(item, ask?.text),
+    (item) => item.id !== openAsk?.id && !isPrematureFileAskAfterQuote(item),
   );
   const cleared = dropResolvedAddressConfirmChips(
     without.map((item) => {
@@ -2673,7 +2738,11 @@ export function messagesWithLiveQuoteSpeech(
     ...(lines[1] ? { followUp: lines[1] } : {}),
     actions: liveCouponActions(draft),
   };
-  return withLiveCouponChips([...cleared, speech], draft);
+  return withRestoredAskAfterQuote(
+    withLiveCouponChips([...cleared, speech], draft),
+    draft,
+    openAsk,
+  );
 }
 
 export function isPricingWhenReadySpeech(message: FoxMessage) {
@@ -2854,6 +2923,8 @@ export function nextFoxAsk(draft: FoxIntakeDraft): {
   if (
     !draft.sampleAccepted &&
     draft.awaitingYearsInBusiness &&
+    !yearsInBusinessValue(draft) &&
+    wantsYearsInBusinessAsk(draft) &&
     !draft.pendingProposal &&
     !draft.pendingConflict &&
     !draft.pendingAddress
@@ -2976,6 +3047,7 @@ export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
   if (propertyAddressNeededForQuote(draft)) return "property-address";
   if (propertyZipAskNeeded(draft)) return "property-zip";
   if (!incomeSettled(draft)) return "income";
+  if (!draft.sampleAccepted && !yearsInBusinessSettled(draft)) return "years-in-business";
   if (needsDeclarationTiming(draft)) return "declaration-timing";
   if (!draft.sampleAccepted && wageDocsAskNeeded(draft)) return "wage-docs";
   if (!draft.sampleAccepted && wageBox5AskNeeded(draft)) return "w2-box5";
@@ -2986,11 +3058,7 @@ export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
     return "review";
   }
   if (nextDocInvite(draft) && !thisBorrowerPrimaryPackageDone(draft)) return "documents";
-  if (!draft.sampleAccepted && draft.awaitingYearsInBusiness) return "documents";
   if (nextDocInvite(draft) && !householdSettled(draft)) return "documents";
-  if (!draft.sampleAccepted && primaryDocPassFinished(draft) && !yearsInBusinessSettled(draft)) {
-    return "years-in-business";
-  }
   if (!draft.sampleAccepted && !householdSettled(draft)) {
     if (historyGapNeeded(draft) && !nextDocInvite(draft)) return "former-history";
     if (!propertyAddressSettled(draft) && !nextDocInvite(draft)) return "property-address";
@@ -3287,7 +3355,7 @@ function workspaceAskCopy(
     };
   }
   if (prompt === "documents") {
-    if (draft.awaitingYearsInBusiness) {
+    if (draft.awaitingYearsInBusiness && !yearsInBusinessValue(draft)) {
       return { text: yearsInBusinessAskCopy(draft), actions: yearsInBusinessSkipActions() };
     }
     if (

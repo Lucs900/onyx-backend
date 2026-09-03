@@ -40,7 +40,6 @@ import {
   SE_MONTHLY_FIELD,
   K1_MONTHLY_FIELD,
   decliningIncomeCaution,
-  hasScheduleCCashflow,
   wageIncomeCaution,
   wageThreadOpen,
   acceptWageExtract,
@@ -1596,9 +1595,6 @@ export function resolveProposal(
       : hasPurchaseContractDoc(afterFileNet) || afterFileNet.lastPurchaseContractFields
         ? queuePurchaseSketchReconcile(afterFileNet)
         : afterFileNet;
-  if (winner === "accept" && shouldAskYearsInBusiness(afterContract)) {
-    return withYearsInBusinessAsk(afterContract);
-  }
   return afterContract;
 }
 
@@ -1646,9 +1642,11 @@ export function wantsYearsInBusinessAsk(draft: FoxIntakeDraft) {
 }
 
 export function yearsInBusinessSettled(draft: FoxIntakeDraft) {
-  if (draft.correcting === "years-in-business" || draft.awaitingYearsInBusiness) return false;
+  if (draft.correcting === "years-in-business") return false;
+  if (yearsInBusinessValue(draft)) return true;
   if (!wantsYearsInBusinessAsk(draft)) return true;
-  return Boolean(yearsInBusinessValue(draft) || draft.yearsInBusinessAsked);
+  if (draft.awaitingYearsInBusiness) return false;
+  return true;
 }
 
 export function yearsInBusinessSkipActions(): FoxAction[] {
@@ -1659,22 +1657,27 @@ export function yearsInBusinessSkipActions(): FoxAction[] {
       event: "bubble",
       capture: { field: "skip-years-in-business" },
     },
-    {
-      id: "hold-years-in-business",
-      label: "Not yet",
-      event: "bubble",
-      capture: { field: "skip-years-in-business" },
-    },
   ];
 }
 
 export function shouldAskYearsInBusiness(draft: FoxIntakeDraft) {
   return (
-    hasScheduleCCashflow(draft) &&
+    wantsYearsInBusinessAsk(draft) &&
     !yearsInBusinessValue(draft) &&
-    !draft.yearsInBusinessAsked &&
-    !draft.awaitingYearsInBusiness
+    Boolean(draft.awaitingYearsInBusiness)
   );
+}
+
+/** Open years once, immediately after income type becomes Self-employed / Both. */
+export function withIncomeTypeYearsAsk(draft: FoxIntakeDraft): FoxIntakeDraft {
+  const income = draft.incomeType.value;
+  if (income === "self-employed" || income === "both") {
+    if (yearsInBusinessValue(draft) || draft.yearsInBusinessAsked) {
+      return { ...draft, awaitingYearsInBusiness: false };
+    }
+    return { ...draft, awaitingYearsInBusiness: true };
+  }
+  return { ...draft, awaitingYearsInBusiness: false };
 }
 
 export function withYearsInBusinessAsk(draft: FoxIntakeDraft): FoxIntakeDraft {

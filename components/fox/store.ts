@@ -107,6 +107,7 @@ import {
   resolveProposal,
   skipYearsInBusiness,
   withComputedCompanion,
+  withIncomeTypeYearsAsk,
   writeQualifyingIncome,
   writeYearsInBusiness,
 } from "./completeness";
@@ -2089,16 +2090,18 @@ function applyCaptureBody(capture: Capture) {
   }
   if (capture.field === "incomeType") {
     const midFile = Boolean(current.correcting);
-    commit({
-      ...current,
-      incomeType: clientField("incomeType", capture.value),
-      incomeAsked: true,
-      correcting: null,
-      correctingLine: null,
-      sections: { ...current.sections, income: false },
-      status: midFile ? current.status : undefined,
-      confirmedAt: midFile ? current.confirmedAt : undefined,
-    });
+    commit(
+      withIncomeTypeYearsAsk({
+        ...current,
+        incomeType: clientField("incomeType", capture.value),
+        incomeAsked: true,
+        correcting: null,
+        correctingLine: null,
+        sections: { ...current.sections, income: false },
+        status: midFile ? current.status : undefined,
+        confirmedAt: midFile ? current.confirmedAt : undefined,
+      }),
+    );
     return current.workspaceFlow ? current : advancePhase();
   }
   if (capture.field === "occupancy") {
