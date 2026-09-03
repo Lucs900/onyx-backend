@@ -32,7 +32,7 @@ import {
   workspaceReply,
 } from "../components/fox/workspace";
 import { RATEFLOW_WAIT_LINE } from "../components/fox/lookupWait";
-import { rateflowBlockedReason } from "../lib/rateflow/fromDraft";
+import { rateflowBlockedReason, searchedKeyFor } from "../lib/rateflow/fromDraft";
 import type { FoxIntakeDraft } from "../components/fox/types";
 
 function sketch(): FoxIntakeDraft {
@@ -140,8 +140,16 @@ assert.doesNotMatch(out?.text ?? "", new RegExp(PRICING_WHEN_READY));
 assert.ok(!(out?.actions ?? []).some((item) => /Try again|Skip/i.test(item.label)));
 const after97535 = writePropertyZip(addressAsk, "97535");
 assert.equal(after97535.outOfState, true);
+assert.equal(after97535.propertyType, "sfr");
+assert.equal(after97535.creditBand, "760+");
 assert.equal(previewRateFact(after97535), null);
 assert.ok(!previewFacts(after97535).some((fact) => fact.value === PRICING_WHEN_READY));
+const oregonZip = previewFacts(after97535).find((fact) => fact.id === "zip");
+assert.ok(
+  !oregonZip ||
+    (oregonZip.value.startsWith("97535") &&
+      /California only/i.test(`${oregonZip.value} ${oregonZip.note ?? ""}`)),
+);
 assert.ok(
   !messagesWithRateOrReadySpeech([], after97535).some((item) => item.text === PRICING_WHEN_READY),
 );
@@ -161,21 +169,40 @@ assert.ok(
 const stopped: FoxIntakeDraft = { ...addressAsk, outOfState: true, liveQuoteStatus: "unavailable" };
 assert.equal(nextFoxAsk(stopped).text, GEO_STOP_COPY);
 assert.doesNotMatch(nextFoxAsk(stopped).text, new RegExp(PRICING_WHEN_READY));
-const ca = workspaceReply("94123", stopped);
+const ca = workspaceReply("94123", after97535);
 assert.equal(ca?.capture?.field, "propertyZip");
 assert.notEqual(ca?.text, GEO_STOP_COPY);
 assert.doesNotMatch(ca?.text ?? "", new RegExp(PRICING_WHEN_READY));
-const priced: FoxIntakeDraft = {
-  ...sketch(),
-  outOfState: false,
-  propertyZip: "94123",
-  propertyZipAsked: true,
-  subjectAddress: "94123",
-  subjectAddressAsked: true,
-};
+assert.equal(ca?.text, RATEFLOW_WAIT_LINE);
+const priced: FoxIntakeDraft = writePropertyZip(after97535, "94123");
+assert.equal(priced.outOfState, false);
+assert.equal(priced.propertyZip, "94123");
+assert.equal(priced.propertyType, "sfr");
+assert.equal(priced.creditBand, "760+");
 assert.equal(rateflowBlockedReason(priced), null);
 assert.equal(shouldHoldAskForLiveLine(priced), true);
 assert.equal(nextFoxAsk(priced).text, RATEFLOW_WAIT_LINE);
+assert.equal(previewRateFact(priced), null);
+assert.ok(!previewFacts(priced).some((fact) => fact.value === PRICING_WHEN_READY));
+const liveKey = searchedKeyFor(priced);
+assert.ok(liveKey);
+const harborPriced: FoxIntakeDraft = {
+  ...priced,
+  liveQuote: {
+    key: liveKey,
+    rate: 6.375,
+    asOf: "2026-01-02T18:00:00.000Z",
+    pts: -0.07,
+  },
+  liveQuoteKey: liveKey,
+  liveQuoteStatus: "ready",
+};
+const harborRate = previewRateFact(harborPriced);
+assert.ok(harborRate);
+assert.match(harborRate.value, /6\.375%/);
+assert.match(harborRate.value, /-0\.07/);
+assert.doesNotMatch(harborRate.value, new RegExp(PRICING_WHEN_READY));
+assert.ok(!previewFacts(harborPriced).some((fact) => fact.value === PRICING_WHEN_READY));
 
 assert.equal(parsePropertyType("two_to_four"), "two_to_four");
 const typed = writePropertyType(sketch(), "two_to_four");

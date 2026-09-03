@@ -1278,7 +1278,7 @@ export function namedOutOfState(text: string) {
 
 function fileNeedsCaliforniaAsk(draft: FoxIntakeDraft) {
   if (draft.outOfState) return true;
-  const zip = String(draft.propertyZip ?? "").trim();
+  const zip = typedZipFromDraft(draft) ?? String(draft.propertyZip ?? "").trim();
   return /^\d{5}$/.test(zip) && !isCaliforniaZip(zip);
 }
 
@@ -2745,9 +2745,17 @@ export function messagesWithRateOrReadySpeech(
   return messagesWithPricingWhenReady(messages, draft);
 }
 
-/** Skip writes the honest fallback on the type tap. House/Condo/2–4 wait for FICO, then live or fallback after a real search. */
+/** Ready-line only for HELOC / Jumbo / investment, or House / FICO / CA ZIP actually missing. */
 export function previewRateFact(draft: FoxIntakeDraft): PreviewFact | null {
   if (fileNeedsCaliforniaAsk(draft)) return null;
+  const live = liveQuoteMatchesDraft(draft, draft.liveQuote) ? draft.liveQuote : null;
+  if (live) {
+    return {
+      id: "rate",
+      label: "Rate",
+      value: liveLoanNowCopy(live),
+    };
+  }
   const intent = draft.productIntent ?? null;
   if (!intent) return null;
   if (propertyTypeSkipped(draft)) {
@@ -2759,7 +2767,15 @@ export function previewRateFact(draft: FoxIntakeDraft): PreviewFact | null {
   }
   if (!propertyTypeChosen(draft) || !creditAnswered(draft)) return null;
   if (addressConfirmPending(draft) || propertyAddressNeededForQuote(draft)) return null;
-  if (propertyZipSkipped(draft)) {
+  if (propertyZipSkipped(draft) || (draft.creditAsked && !draft.creditBand)) {
+    return {
+      id: "rate",
+      label: "Rate",
+      value: PRICING_WHEN_READY,
+    };
+  }
+  const occupancy = draft.occupancyChoice?.value;
+  if (intent === "heloc" || intent === "jumbo" || occupancy === "investment") {
     return {
       id: "rate",
       label: "Rate",
@@ -2767,29 +2783,10 @@ export function previewRateFact(draft: FoxIntakeDraft): PreviewFact | null {
     };
   }
   if (!zipFromDraft(draft)) return null;
-  const live = liveQuoteMatchesDraft(draft, draft.liveQuote) ? draft.liveQuote : null;
-  if (live) {
-    return {
-      id: "rate",
-      label: "Rate",
-      value: liveLoanNowCopy(live),
-    };
-  }
+  if (conventionalReadyHoldsReadyLine(draft)) return null;
   const key = searchedKeyFor(draft);
-  if (conventionalReadyHoldsReadyLine(draft)) {
-    return null;
-  }
-  if (key && !draft.liveQuoteKey && draft.liveQuoteStatus !== "unavailable") {
-    return null;
-  }
-  if (key && draft.liveQuoteKey !== key && draft.liveQuoteStatus !== "unavailable") {
-    return null;
-  }
-  return {
-    id: "rate",
-    label: "Rate",
-    value: PRICING_WHEN_READY,
-  };
+  if (key && draft.liveQuoteStatus !== "unavailable") return null;
+  return null;
 }
 
 export function isQualifyingIncomeConfirmPending(draft: FoxIntakeDraft): boolean {
@@ -7841,6 +7838,17 @@ export function previewFacts(draft: FoxIntakeDraft): PreviewFact[] {
   ].filter(Boolean);
   if (payBits.length && !hideWageEmployment && !wageEmploymentLine) {
     facts.push({ id: "pay", label: "Pay", value: payBits.join(" · ") });
+  }
+
+  const zipOnFile = parseZipcode(draft.propertyZip) ?? typedZipFromDraft(draft);
+  if (zipOnFile) {
+    facts.push({
+      id: "zip",
+      label: "ZIP",
+      value: zipOnFile,
+      note:
+        draft.outOfState || !isCaliforniaZip(zipOnFile) ? "California only" : undefined,
+    });
   }
 
   const rateFact = previewRateFact(draft);

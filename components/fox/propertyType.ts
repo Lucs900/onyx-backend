@@ -319,8 +319,15 @@ export function writePropertyZip(draft: FoxIntakeDraft, zip: string): FoxIntakeD
   if (!isCaliforniaZip(parsed)) {
     return {
       ...draft,
+      propertyZip: parsed,
       outOfState: true,
       propertyZipAsked: true,
+      liveQuote: undefined,
+      liveQuoteKey: undefined,
+      liveQuoteStatus: undefined,
+      liveQuoteRows: undefined,
+      liveCouponSettled: false,
+      pendingLiveCoupon: undefined,
       correcting: null,
       correctingLine: null,
     };
