@@ -523,6 +523,7 @@ function isAddressConfirmMessage(message: FoxMessage, draft: FoxIntakeDraft) {
   if (message.role !== "fox") return false;
   if (message.id.startsWith("live-quote:")) return false;
   const blob = foxBlob(message);
+  if (/What’s the down payment or loan amount|Purchase is \$/.test(blob)) return false;
   if (looksLikeOtherProposalConfirm(blob)) return false;
   const written = fileAddressLine(draft);
   if (written && blob.includes(written)) return true;

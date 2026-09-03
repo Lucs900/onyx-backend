@@ -1226,6 +1226,14 @@ export function AlwaysOnFox({
         if (hasPreparedAsk(prev)) return prev;
         if (fileExists(getFoxDraft()) && prev[prev.length - 1]?.role === "fox") return prev;
       }
+      if (
+        isStart &&
+        prompt === "amount" &&
+        lastFoxTurn(prev) &&
+        isOnFileAddressLine(lastFoxTurn(prev)!)
+      ) {
+        return [...dropFoxActions(withoutTrailingSealedFoxLines(prev)), foxAskMessage(ask)];
+      }
       const lastFox = lastFoxTurn(prev);
       if (lastFox && sameFoxAsk(lastFox, ask)) return prev;
       if (isOnFileAddressLine({ id: lastFox?.id ?? "on-file", role: "fox", text: ask.text })) {
@@ -1924,6 +1932,8 @@ export function AlwaysOnFox({
     );
     if (rewritePrice) {
       const spoken = clientMoneyText(text, reply.capture);
+      const liveAfterPrice = getFoxDraft();
+      const fundsAsk = workspacePromptCopy("amount", liveAfterPrice);
       commitMessagesNow((prev) => {
         const editedId = findClientEditMessageId(prev, "value", "price");
         const cut = editedId ? threadThroughEditedTurn(prev, editedId) : prev;
@@ -1941,7 +1951,7 @@ export function AlwaysOnFox({
             ];
         return [
           ...dropFoxActions(withoutTrailingSealedFoxLines(next)),
-          foxAskMessage(reply),
+          foxAskMessage(fundsAsk),
         ];
       });
       continueHomeToDesk();

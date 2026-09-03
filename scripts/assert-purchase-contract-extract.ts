@@ -46,6 +46,7 @@ import {
   writePurchasePrice,
 } from "../components/fox/workspace";
 import { shouldKeepStoredFoxThread, withoutTrailingSealedFoxLines } from "../components/fox/persistThread";
+import { dropResolvedAddressConfirmChips } from "../components/fox/liveCoupon";
 import { RATEFLOW_WAIT_LINE, withWaitLine, withoutWaitLines } from "../components/fox/lookupWait";
 import type { FoxIntakeDraft, FoxMessage } from "../components/fox/types";
 
@@ -704,7 +705,63 @@ async function main() {
   const priceTyped20 = workspaceReply("20", afterPrice);
   assert.equal(priceTyped20?.capture?.field, "propose-funds");
   assert.equal(priceTyped20?.capture && "value" in priceTyped20.capture ? priceTyped20.capture.value : "", "180000:720000");
+  assert.match(priceTyped20?.text ?? "", /\$180,000 down · \$720,000 loan|Use this/i);
   assert.doesNotMatch(priceTyped20?.text ?? "", /estimated FICO|How is income|citizenship|On the file/i);
+
+  const looksRightFile = applyLooksRightMotion(clipperUsed);
+  const leftoverStreet = {
+    ...looksRightFile,
+    pendingAddress: {
+      line: "88 Clipper Street, San Francisco, CA 94114",
+      street: "88 Clipper Street",
+      city: "San Francisco",
+      state: "CA",
+      zip: "94114",
+    },
+  };
+  const leftoverPriceEdit = beginFileEdit(leftoverStreet, "value", "price");
+  assert.equal(leftoverPriceEdit.pendingAddress, undefined);
+  assert.equal(workspacePrompt(leftoverPriceEdit), "value");
+  const leftoverPriceReply = workspaceReply("$900,000", leftoverPriceEdit);
+  assert.equal(leftoverPriceReply?.capture?.field, "propertyValue");
+  assert.match(leftoverPriceReply?.text ?? "", /What’s the down payment or loan amount\?/);
+  assert.match(leftoverPriceReply?.text ?? "", /Purchase is \$900,000/);
+  assert.doesNotMatch(leftoverPriceReply?.text ?? "", /On the file|Use this\?/);
+  const leftoverAfterPrice = writePurchasePrice(leftoverStreet, 900_000);
+  assert.equal(leftoverAfterPrice.pendingAddress, undefined);
+  assert.equal(workspacePrompt(leftoverAfterPrice), "amount");
+  assert.notEqual(workspacePrompt(leftoverAfterPrice), "confirm-proposal");
+  assert.match(nextFoxAsk(leftoverAfterPrice).text, /What’s the down payment or loan amount\?/);
+  assert.doesNotMatch(nextFoxAsk(leftoverAfterPrice).text, /On the file/);
+  const stillPending = {
+    ...leftoverAfterPrice,
+    pendingAddress: leftoverStreet.pendingAddress,
+  };
+  assert.equal(workspacePrompt(stillPending), "amount");
+  assert.notEqual(workspacePrompt(stillPending), "confirm-proposal");
+  assert.doesNotMatch(nextFoxAsk(stillPending).text, /On the file/);
+  assert.equal(workspaceReply("20", stillPending)?.capture?.field, "propose-funds");
+  const leftoverTwenty = workspaceReply("20", leftoverAfterPrice);
+  assert.equal(leftoverTwenty?.capture?.field, "propose-funds");
+  assert.equal(
+    leftoverTwenty?.capture && "value" in leftoverTwenty.capture ? leftoverTwenty.capture.value : "",
+    "180000:720000",
+  );
+  assert.match(leftoverTwenty?.text ?? "", /\$180,000 down · \$720,000 loan/i);
+  assert.ok((leftoverTwenty?.actions ?? []).some((item) => item.label === "Use this"));
+  const sealedAsk = dropResolvedAddressConfirmChips(
+    [
+      {
+        id: "addr-confirm",
+        role: "fox",
+        text: "88 Clipper Street, San Francisco, CA 94114. Use this?",
+      },
+      { id: "funds-ask", role: "fox", text: nextFoxAsk(leftoverAfterPrice).text },
+    ],
+    leftoverAfterPrice,
+  );
+  assert.ok(sealedAsk.some((item) => /What’s the down payment or loan amount\?/.test(item.text)));
+  assert.ok(!sealedAsk.some((item) => item.id === "funds-ask" && item.text === "On the file."));
   const priceTypedDown = workspaceReply("225000", afterPrice);
   assert.equal(priceTypedDown?.capture?.field, "propose-funds");
   assert.equal(priceTypedDown?.capture && "value" in priceTypedDown.capture ? priceTypedDown.capture.value : "", "225000:675000");

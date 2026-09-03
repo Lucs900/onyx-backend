@@ -901,6 +901,7 @@ function clearDependentFunds(draft: FoxIntakeDraft): FoxIntakeDraft {
     overPriceConfirmed: false,
     resumeAfterEdit: undefined,
     pendingProposal: isFundsPairProposal(draft.pendingProposal) ? null : draft.pendingProposal,
+    pendingAddress: fileAddressLine(draft) ? undefined : draft.pendingAddress,
     facts,
     scenario: draft.scenario
       ? {
@@ -2387,6 +2388,14 @@ function restoredAsk(answer: string, draft: FoxIntakeDraft) {
       actions: ask.actions,
     };
   }
+  if (fundsAskNeeded(draft) && !isFundsPairProposal(draft.pendingProposal)) {
+    return {
+      text: `${answer} ${ask.text}`.trim(),
+      followUp: ask.followUp,
+      facts: ask.facts,
+      actions: ask.actions,
+    };
+  }
   if (
     isSubjectAddressConfirmPending(draft) ||
     ask.text === addressOnFileCopy() ||
@@ -2763,6 +2772,7 @@ export function isRentalIncomeConfirmPending(draft: FoxIntakeDraft): boolean {
 
 /** Queue / Looks right waits until Use this / Change on a live income or remainder suggest. */
 export function shouldDeferStillUsefulAsk(draft: FoxIntakeDraft): boolean {
+  if (fundsAskNeeded(draft) && !isFundsPairProposal(draft.pendingProposal)) return false;
   return (
     isQualifyingIncomeConfirmPending(draft) ||
     isRentalIncomeConfirmPending(draft) ||
@@ -2830,6 +2840,8 @@ export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
   if (draft.awaitingRaiseYtdFar) return "raise-ytd-far";
   const notepadEdit = notepadEditPrompt(draft);
   if (notepadEdit) return notepadEdit;
+  if (isFundsPairProposal(draft.pendingProposal)) return "confirm-proposal";
+  if (fundsAskNeeded(draft)) return "amount";
   if (draft.pendingConflict || draft.pendingProposal || draft.pendingAddress || draft.pendingLiveCoupon) {
     return "confirm-proposal";
   }
@@ -3616,7 +3628,9 @@ function replyToPropertyValueAsk(
     return answerThenRestore(q, draft);
   }
   const nextDraft = writePurchasePrice(draft, amount);
-  const next = workspacePromptCopy(workspacePrompt(nextDraft), nextDraft);
+  const next = fundsAskNeeded(nextDraft)
+    ? workspacePromptCopy("amount", nextDraft)
+    : workspacePromptCopy(workspacePrompt(nextDraft), nextDraft);
   return withWorkspaceGuide(
     {
       ...next,
@@ -5409,6 +5423,13 @@ export function workspaceReply(
     return replyToPropertyValueAsk(q, draft);
   }
   if (notepadEdit === "amount") {
+    return replyToFundsAsk(q, draft);
+  }
+  if (
+    fundsAskNeeded(draft) &&
+    !editingPurchasePrice(draft) &&
+    parseFundsAmount(q, draft.propertyValueAmount)
+  ) {
     return replyToFundsAsk(q, draft);
   }
   if (notepadEdit === "credit") {
