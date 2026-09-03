@@ -291,7 +291,6 @@ import {
 import {
   PROPERTY_TYPE_ASK,
   PROPERTY_TYPE_FIELD,
-  PROPERTY_ADDRESS_FACT,
   SUGGESTED_PROPERTY_NOTE,
   contractAddressConfirmCopy,
   contractExtractActions,
@@ -853,7 +852,7 @@ function isPurchasePriceEdit(field: FoxPrompt, line?: string | null) {
   return field === "value" || line === "price";
 }
 
-function clearLiveQuote(): Pick<
+export function clearLiveQuote(): Pick<
   FoxIntakeDraft,
   "liveQuote" | "liveQuoteKey" | "liveQuoteStatus" | "liveQuoteRows" | "pendingLiveCoupon"
 > {
@@ -866,36 +865,15 @@ function clearLiveQuote(): Pick<
   };
 }
 
-const ZIP_ADDRESS_FACT_FIELDS = [
-  "zip",
-  "propertyZip",
-  PROPERTY_ADDRESS_FACT,
-  "city",
-  "state",
-  "street",
-  "county",
-] as const;
-
-function withoutZipAddressFacts(facts?: FoxIntakeDraft["facts"]) {
-  if (!facts) return facts;
-  const next = { ...facts };
-  for (const field of ZIP_ADDRESS_FACT_FIELDS) delete next[field];
-  return next;
-}
-
-function isZipOrAddressProposal(proposal?: FoxIntakeDraft["pendingProposal"]) {
-  if (!proposal) return false;
-  const field = proposal.field;
-  return (
-    field === "zip" ||
-    field === "propertyZip" ||
-    field === PROPERTY_ADDRESS_FACT ||
-    field === "subjectAddress" ||
-    field === PROPERTY_TYPE_FIELD
-  );
-}
-
-function clearDownstreamMoneyInterview(draft: FoxIntakeDraft): FoxIntakeDraft {
+/** Price Edit clears only dependent down/loan and live rate. Occupancy, FICO, ZIP, and docs stay. */
+function clearDependentFunds(draft: FoxIntakeDraft): FoxIntakeDraft {
+  const facts = draft.facts ? { ...draft.facts } : draft.facts;
+  if (facts) {
+    delete facts.downPayment;
+    delete facts.loanAmount;
+    delete facts.ltv;
+    delete facts.cltv;
+  }
   return {
     ...draft,
     ...clearLiveQuote(),
@@ -905,44 +883,36 @@ function clearDownstreamMoneyInterview(draft: FoxIntakeDraft): FoxIntakeDraft {
     amountAsked: false,
     overPriceConfirmed: false,
     resumeAfterEdit: undefined,
-    propertyType: undefined,
-    propertyTypeAsked: false,
-    creditBand: undefined,
-    creditAsked: false,
-    propertyZip: undefined,
-    propertyZipAsked: false,
-    addressZipOffered: undefined,
-    subjectAddress: undefined,
-    subjectAddressAsked: false,
-    subjectCity: undefined,
-    subjectState: undefined,
-    subjectStreet: undefined,
-    subjectCounty: undefined,
-    pendingAddress: undefined,
-    pendingProposal:
-      isFundsPairProposal(draft.pendingProposal) || isZipOrAddressProposal(draft.pendingProposal)
-        ? null
-        : draft.pendingProposal,
-    facts: withoutZipAddressFacts(draft.facts),
+    pendingProposal: isFundsPairProposal(draft.pendingProposal) ? null : draft.pendingProposal,
+    facts,
     scenario: draft.scenario
       ? {
           ...draft.scenario,
           loanAmount: undefined,
           downPayment: undefined,
-          zip: "",
         }
       : draft.scenario,
   };
 }
 
-/** Price write starts money over. ZIP, House, FICO, and live rate are gone. Docs and income extracts stay. */
+/** Price write clears dependent down/loan and live rate. Reconfirm down/loan. FICO, occupancy, income, citizenship, ZIP, and docs stay. */
 export function writePurchasePrice(draft: FoxIntakeDraft, price: number): FoxIntakeDraft {
-  return clearDownstreamMoneyInterview({
+  const facts = draft.facts?.purchase_price
+    ? {
+        ...draft.facts,
+        purchase_price: {
+          ...draft.facts.purchase_price,
+          value: String(price),
+        },
+      }
+    : draft.facts;
+  return clearDependentFunds({
     ...draft,
     propertyValueAmount: price,
     valueAsked: true,
     correcting: null,
     correctingLine: null,
+    facts,
     scenario: draft.scenario
       ? {
           ...draft.scenario,
@@ -3673,6 +3643,7 @@ function replyToFundsAsk(
     }
     const nextDraft = {
       ...draft,
+      ...clearLiveQuote(),
       correcting: null,
       correctingLine: null,
       pendingProposal: null,
@@ -3698,7 +3669,13 @@ function replyToFundsAsk(
         : parsed.asPercent
           ? "down"
           : parseFundsRole(q, price) ?? (parsed.dollars < (price ?? 0) * 0.5 ? "down" : "loan");
-  const cleared = { ...draft, correcting: null, correctingLine: null, pendingProposal: null as null };
+  const cleared = {
+    ...draft,
+    ...clearLiveQuote(),
+    correcting: null,
+    correctingLine: null,
+    pendingProposal: null as null,
+  };
   const pairConfirm =
     price != null &&
     price > 0 &&
@@ -4748,7 +4725,7 @@ export function findClientEditMessageId(
   return undefined;
 }
 
-/** Hover Edit returns to that question. Price rewind starts money over — no interrupt propose. */
+/** Hover Edit returns to that question. Price Edit clears down/loan only — no occupancy/FICO rewind. */
 export function beginFileEdit(
   draft: FoxIntakeDraft,
   field: FoxPrompt,
@@ -4765,7 +4742,7 @@ export function beginFileEdit(
   }
   if (isPurchasePriceEdit(field, editLine)) {
     return {
-      ...clearDownstreamMoneyInterview(draft),
+      ...clearDependentFunds(draft),
       correcting: "value",
       correctingLine: editLine === "home" ? "home" : "price",
     };
@@ -4951,6 +4928,7 @@ function draftAfterCaptureBody(draft: FoxIntakeDraft, capture: Capture): FoxInta
     return withComputedCompanion(
       withMatrixAfterAmount({
         ...next,
+        ...clearLiveQuote(),
         amountAsked: true,
         loanAmountValue: Number.isFinite(n) && n > 0 ? n : draft.loanAmountValue,
       }),
@@ -4967,6 +4945,7 @@ function draftAfterCaptureBody(draft: FoxIntakeDraft, capture: Capture): FoxInta
     return withComputedCompanion(
       {
         ...next,
+        ...clearLiveQuote(),
         downAsked: true,
         downPaymentAmount: Number.isFinite(n) && n > 0 ? n : draft.downPaymentAmount,
       },
@@ -5019,6 +4998,7 @@ function draftAfterCaptureBody(draft: FoxIntakeDraft, capture: Capture): FoxInta
   if (capture.field === "creditRange") {
     return adoptReuseZip({
       ...next,
+      ...clearLiveQuote(),
       creditBand: capture.value,
       creditAsked: true,
     });
@@ -6268,7 +6248,14 @@ export function workspaceReply(
     }
     const range = parseCreditRange(q);
     if (!range) return answerThenRestore(q, draft);
-    const nextDraft = { ...draft, creditBand: range, creditAsked: true, correcting: null, correctingLine: null };
+    const nextDraft = {
+      ...draft,
+      ...clearLiveQuote(),
+      creditBand: range,
+      creditAsked: true,
+      correcting: null,
+      correctingLine: null,
+    };
     if (draft.correcting === "credit") {
       return {
         ...nextFoxAsk(nextDraft),

@@ -31,6 +31,8 @@ import { applyLooksRightMotion, applyNotYetMotion, applyProceedMotion } from "..
 import { applyCapture, applyExtractWrite, emptyDraft, getFoxDraft, loadIntakeDraft, receiveDocument } from "../components/fox/store";
 import { conventionalFileFacts } from "../components/fox/conventionalFile";
 import {
+  amountAskText,
+  beginFileEdit,
   docReactionAsk,
   nextFoxAsk,
   parseFundsAmount,
@@ -38,6 +40,7 @@ import {
   workspacePrompt,
   workspacePromptCopy,
   workspaceReply,
+  writePurchasePrice,
 } from "../components/fox/workspace";
 import type { FoxIntakeDraft } from "../components/fox/types";
 
@@ -630,6 +633,119 @@ async function main() {
   );
   assert.equal(rateflowBlockedReason(clipperUsed), null);
   assert.equal(rateflowClientBodyFromDraft(clipperUsed)?.loan_amount, 400_000);
+
+  const clipperQuoted = {
+    ...clipperUsed,
+    liveQuote: { key: "old-clipper", rate: 6.5, asOf: "2026-01-01" },
+    liveQuoteKey: "old-clipper",
+    liveQuoteStatus: "ready" as const,
+  };
+  const priceEdit = beginFileEdit(clipperQuoted, "value", "price");
+  assert.equal(priceEdit.correcting, "value");
+  assert.equal(priceEdit.correctingLine, "price");
+  assert.equal(priceEdit.propertyValueAmount, 850_000);
+  assert.equal(priceEdit.downPaymentAmount, undefined);
+  assert.equal(priceEdit.loanAmountValue, undefined);
+  assert.equal(priceEdit.creditBand, "760+");
+  assert.equal(priceEdit.creditAsked, true);
+  assert.equal(priceEdit.occupancyChoice.value, "primary");
+  assert.equal(priceEdit.occupancyAsked, true);
+  assert.equal(priceEdit.incomeType.value, "w2");
+  assert.equal(priceEdit.incomeAsked, true);
+  assert.equal(priceEdit.citizenshipAsked, true);
+  assert.equal(priceEdit.propertyType, "sfr");
+  assert.equal(priceEdit.propertyZip, clipperQuoted.propertyZip);
+  assert.match(priceEdit.subjectAddress ?? "", /88 Clipper Street, San Francisco, CA 94114/i);
+  assert.equal(priceEdit.facts?.seller_credit?.value, "5000");
+  assert.match(priceEdit.facts?.close_date?.value ?? "", /10\/15\/2026|2026-10-15/);
+  assert.equal(priceEdit.facts?.employer_name?.value, clipperQuoted.facts?.employer_name?.value);
+  assert.equal(priceEdit.documents.length, clipperQuoted.documents.length);
+  assert.equal(priceEdit.liveQuote, undefined);
+  assert.equal(workspacePrompt(priceEdit), "value");
+  assert.notEqual(workspacePrompt(priceEdit), "credit");
+  assert.notEqual(workspacePrompt(priceEdit), "occupancy");
+  assert.notEqual(workspacePrompt(priceEdit), "income");
+  assert.notEqual(workspacePrompt(priceEdit), "citizenship");
+  assert.equal(amountAskText(priceEdit), "What’s the purchase price?");
+  assert.doesNotMatch(nextFoxAsk(priceEdit).text, /estimated FICO|How is income|citizenship|Primary residence/i);
+
+  const afterPrice = writePurchasePrice(priceEdit, 900_000);
+  assert.equal(afterPrice.propertyValueAmount, 900_000);
+  assert.equal(afterPrice.downPaymentAmount, undefined);
+  assert.equal(afterPrice.loanAmountValue, undefined);
+  assert.equal(afterPrice.creditBand, "760+");
+  assert.equal(afterPrice.occupancyChoice.value, "primary");
+  assert.equal(afterPrice.incomeType.value, "w2");
+  assert.equal(afterPrice.citizenshipAsked, true);
+  assert.equal(afterPrice.propertyType, "sfr");
+  assert.match(afterPrice.subjectAddress ?? "", /88 Clipper Street, San Francisco, CA 94114/i);
+  assert.equal(afterPrice.facts?.seller_credit?.value, "5000");
+  assert.match(afterPrice.facts?.close_date?.value ?? "", /10\/15\/2026|2026-10-15/);
+  assert.equal(afterPrice.facts?.purchase_price?.value, "900000");
+  assert.equal(afterPrice.documents.length, clipperQuoted.documents.length);
+  assert.equal(afterPrice.liveQuote, undefined);
+  assert.equal(workspacePrompt(afterPrice), "amount");
+  assert.notEqual(workspacePrompt(afterPrice), "credit");
+  assert.notEqual(workspacePrompt(afterPrice), "occupancy");
+  assert.notEqual(workspacePrompt(afterPrice), "income");
+  assert.notEqual(workspacePrompt(afterPrice), "citizenship");
+  assert.equal(amountAskText(afterPrice), "What’s the down payment or loan amount?");
+  assert.doesNotMatch(
+    nextFoxAsk(afterPrice).text,
+    /estimated FICO|How is income|citizenship|Primary residence/i,
+  );
+  const priceTyped20 = workspaceReply("20", afterPrice);
+  assert.equal(priceTyped20?.capture?.field, "propose-funds");
+  assert.equal(priceTyped20?.capture && "value" in priceTyped20.capture ? priceTyped20.capture.value : "", "180000:720000");
+  assert.doesNotMatch(priceTyped20?.text ?? "", /estimated FICO|How is income|citizenship/i);
+
+  loadIntakeDraft(clipperQuoted);
+  applyCapture({ field: "correct", value: "amount", line: "down" });
+  applyCapture({ field: "downPayment", value: "200000" });
+  const afterDown = getFoxDraft();
+  assert.equal(afterDown.propertyValueAmount, 850_000);
+  assert.equal(afterDown.downPaymentAmount, 200_000);
+  assert.equal(afterDown.loanAmountValue, 650_000);
+  assert.ok(purchaseFileAddsUp(afterDown));
+  assert.equal(afterDown.creditBand, "760+");
+  assert.equal(afterDown.occupancyChoice.value, "primary");
+  assert.equal(afterDown.incomeType.value, "w2");
+  assert.match(afterDown.subjectAddress ?? "", /88 Clipper Street, San Francisco, CA 94114/i);
+  assert.equal(afterDown.facts?.seller_credit?.value, "5000");
+  assert.equal(afterDown.liveQuote, undefined);
+  assert.equal(rateflowClientBodyFromDraft(afterDown)?.loan_amount, 650_000);
+
+  loadIntakeDraft(clipperQuoted);
+  applyCapture({ field: "correct", value: "amount", line: "loan" });
+  applyCapture({ field: "loanAmount", value: "500000" });
+  const afterLoan = getFoxDraft();
+  assert.equal(afterLoan.propertyValueAmount, 850_000);
+  assert.equal(afterLoan.loanAmountValue, 500_000);
+  assert.equal(afterLoan.downPaymentAmount, 350_000);
+  assert.ok(purchaseFileAddsUp(afterLoan));
+  assert.equal(afterLoan.liveQuote, undefined);
+  assert.equal(rateflowClientBodyFromDraft(afterLoan)?.loan_amount, 500_000);
+  assert.match(afterLoan.subjectAddress ?? "", /88 Clipper Street, San Francisco, CA 94114/i);
+
+  loadIntakeDraft(clipperQuoted);
+  applyCapture({ field: "correct", value: "credit" });
+  applyCapture({ field: "creditRange", value: "720-759" });
+  const afterCredit = getFoxDraft();
+  assert.equal(afterCredit.creditBand, "720-759");
+  assert.equal(afterCredit.propertyValueAmount, 850_000);
+  assert.equal(afterCredit.downPaymentAmount, 450_000);
+  assert.equal(afterCredit.loanAmountValue, 400_000);
+  assert.ok(purchaseFileAddsUp(afterCredit));
+  assert.equal(afterCredit.occupancyChoice.value, "primary");
+  assert.equal(afterCredit.incomeType.value, "w2");
+  assert.equal(afterCredit.citizenshipAsked, true);
+  assert.match(afterCredit.subjectAddress ?? "", /88 Clipper Street, San Francisco, CA 94114/i);
+  assert.equal(afterCredit.facts?.seller_credit?.value, "5000");
+  assert.equal(afterCredit.documents.length, clipperQuoted.documents.length);
+  assert.equal(afterCredit.liveQuote, undefined);
+  assert.equal(rateflowClientBodyFromDraft(afterCredit)?.loan_amount, 400_000);
+  assert.notEqual(rateflowClientBodyFromDraft(afterCredit)?.credit_score, rateflowClientBodyFromDraft(clipperQuoted)?.credit_score);
+
   const clipperLooks = applyLooksRightMotion(clipperUsed);
   const clipperLooksAsk = nextFoxAsk(clipperLooks);
   assert.match(clipperLooksAsk.text, /I can send this to review/);

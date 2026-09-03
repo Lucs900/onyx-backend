@@ -1078,7 +1078,7 @@ export function proposeFundsPair(draft: FoxIntakeDraft, down: number, loan: numb
   };
 }
 
-/** Locked-percent pair. Price Edit does not use this — it rewinds and re-asks down. */
+/** Locked-percent pair. Price Edit does not use this — it clears down/loan and re-asks. */
 export function applyPriceKeepDownShare(draft: FoxIntakeDraft, price: number): FoxIntakeDraft | null {
   const share = lockedDownShare(draft);
   if (share == null || price <= 0) return null;
@@ -1392,6 +1392,9 @@ export function withComputedCompanion(
     const down = impliedDownPayment(price, draft.loanAmountValue);
     if (down == null) return draft;
     if (draft.downPaymentAmount === down) return draft;
+    if (force === "loan" && hasDownPayment(draft)) {
+      return { ...draft, downPaymentAmount: down, downAsked: true };
+    }
     return {
       ...draft,
       pendingProposal: makeProposal("downPayment", String(down), "computed", "down payment"),

@@ -82,6 +82,7 @@ import {
   purposeForIntent,
   slugForIntent,
   beginFileEdit,
+  clearLiveQuote,
   writePurchasePrice,
   changePendingProposal,
   settleResumeAfterCapture,
@@ -2441,6 +2442,7 @@ function applyCaptureBody(capture: Capture) {
         withComputedCompanion(
           withMatrixAfterAmount({
             ...current,
+            ...clearLiveQuote(),
             amountAsked: true,
             correcting: null,
             correctingLine: null,
@@ -2465,6 +2467,7 @@ function applyCaptureBody(capture: Capture) {
         withComputedCompanion(
           {
             ...current,
+            ...clearLiveQuote(),
             downAsked: true,
             correcting: null,
             correctingLine: null,
@@ -2514,6 +2517,7 @@ function applyCaptureBody(capture: Capture) {
       adoptReuseZip(
         withWorkspaceScenario({
           ...current,
+          ...clearLiveQuote(),
           creditBand: capture.value,
           creditAsked: true,
           correcting: null,
