@@ -1277,7 +1277,7 @@ export function AlwaysOnFox({
     const already = getFoxDraft();
     if (already.liveQuote?.key === rateflowKey && already.liveQuoteStatus === "ready") {
       commitMessages((prev) => {
-        skipPromptSync.current = false;
+        skipPromptSync.current = shouldDeferNextAskForLiveCoupon(already);
         return messagesWithRateOrReadySpeech(withoutWaitLines(prev), already);
       });
       return;
@@ -1298,7 +1298,7 @@ export function AlwaysOnFox({
           const { rows, ...quote } = result;
           setLiveQuoteResult(key, quote, rows);
           const live = getFoxDraft();
-          skipPromptSync.current = false;
+          skipPromptSync.current = shouldDeferNextAskForLiveCoupon(live);
           commitMessages((prev) =>
             messagesWithRateOrReadySpeech(withoutWaitLines(prev), live),
           );

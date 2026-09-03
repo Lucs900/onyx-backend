@@ -2,6 +2,7 @@
  * After ZIP, Fox says Getting a live line. Income waits until the rate posts.
  * One turn. No stacked How is income earned? on the spinner. No chips on the wait.
  * This one · Lower payment only after a quote. No Skip on a successful quote row.
+ * Quote stays latest on the Rateflow tick so those chips paint. Income waits for type.
  * Fail/timeout: Try again · Skip. No chips on Getting a live line.
  */
 import assert from "node:assert/strict";
@@ -11,6 +12,7 @@ import {
   PRICING_WHEN_READY,
   messagesWithLiveQuoteSpeech,
   messagesWithPricingWhenReady,
+  messagesWithRateOrReadySpeech,
   nextFoxAsk,
   shouldHoldAskForLiveLine,
   workspacePrompt,
@@ -114,18 +116,34 @@ assert.deepEqual(
   (liveCouponActions(quoted) ?? []).map((item) => item.label),
   ["This one", "Lower payment"],
 );
-assert.equal(shouldDeferNextAskForLiveCoupon(quoted), false);
+assert.equal(shouldDeferNextAskForLiveCoupon(quoted), true);
 assert.equal(shouldHoldAskForLiveLine(quoted), false);
 assert.equal(nextFoxAsk(quoted).text, "How is income earned?");
 assert.match(quoteTurn?.text ?? "", /Not a lock/);
+assert.ok(!quoteThread.some((item) => /How is income earned/.test(item.text)));
+assert.ok(quoteThread[quoteThread.length - 1]?.id.startsWith("live-quote:"));
 assert.deepEqual(
   (paintedFoxActions(quoteTurn!, quoted, true) ?? []).map((item) => item.label),
   ["This one", "Lower payment"],
 );
 assert.ok(!(paintedFoxActions(quoteTurn!, quoted, true) ?? []).some((item) => item.label === "Skip"));
+const paintedQuote = messagesWithRateOrReadySpeech(withWaitLine([], "rateflow"), quoted);
+const paintedLast = paintedQuote[paintedQuote.length - 1];
+assert.ok(paintedLast?.id.startsWith("live-quote:"));
+assert.deepEqual(
+  (paintedLast?.actions ?? []).map((item) => item.label),
+  ["This one", "Lower payment"],
+);
+assert.ok(!paintedQuote.some((item) => /How is income earned/.test(item.text)));
 const continueWithoutChip = workspaceReply("W-2", quoted);
 assert.equal(continueWithoutChip?.capture?.field, "incomeType");
 assert.notEqual(continueWithoutChip?.capture?.field, "couponChoice");
+const afterTypedIncome: FoxIntakeDraft = {
+  ...quoted,
+  incomeAsked: true,
+  incomeType: { ...quoted.incomeType, value: "w2" },
+};
+assert.equal(shouldDeferNextAskForLiveCoupon(afterTypedIncome), false);
 
 const failed: FoxIntakeDraft = {
   ...afterZip,

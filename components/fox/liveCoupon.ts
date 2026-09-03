@@ -39,8 +39,10 @@ export function liveQuoteReady(draft: FoxIntakeDraft) {
 
 export function shouldDeferNextAskForLiveCoupon(draft: FoxIntakeDraft) {
   if (draft.liveCouponSettled || draft.pendingLiveCoupon) return false;
-  if (draft.liveQuote && draft.liveQuoteStatus === "ready") return false;
   if (draft.liveQuoteStatus === "unavailable") return false;
+  if (draft.liveQuote && draft.liveQuoteStatus === "ready") {
+    return !draft.incomeAsked && !draft.incomeType.value;
+  }
   return Boolean(searchedKeyFor(draft));
 }
 
