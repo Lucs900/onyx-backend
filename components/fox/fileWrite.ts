@@ -2689,6 +2689,15 @@ export function nextDocInvite(draft: FoxIntakeDraft): DocInviteKind | null {
   if (!draft.incomeType.value && !draft.incomeAsked) return null;
   if (draft.pendingProposal || draft.pendingConflict) return null;
   if (wageSketchBlocksDocInvite(draft)) return null;
+  const income = draft.incomeType.value;
+  if (income === "self-employed" || income === "other" || income === "both") {
+    for (const kind of primaryInviteSequence(draft)) {
+      if (!inviteSatisfied(draft, kind)) return kind;
+    }
+    for (const kind of remainderInviteSequence(draft)) {
+      if (!inviteSatisfied(draft, kind)) return kind;
+    }
+  }
   for (const kind of lockedFileDocInvites(draft)) {
     if (!inviteSatisfied(draft, kind)) return kind;
   }

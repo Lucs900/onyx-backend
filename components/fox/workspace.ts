@@ -1060,7 +1060,7 @@ export function sampleRateApplies(intent?: ProductIntent | null) {
 export const FHFA_HIGH_COST_CEILING_2026 = STORE_HIGH_COST_CEILING;
 export const PRICING_WHEN_READY = "Pricing when the file is ready";
 export const GEO_STOP_COPY =
-  "I can only prepare California files. I cannot prepare this file.";
+  "ONYX is California only. Type a California ZIP or address.";
 export const JUMBO_PURPOSE_ASK = "Are you buying or refinancing?";
 export const JUMBO_OFFER_COPY = JUMBO_CEILING_LINE;
 export const HELOC_OFFER_COPY =
@@ -1259,7 +1259,10 @@ export function isBareMoneyOrNumber(text: string) {
 
 export function namedOutOfState(text: string) {
   const trimmed = text.trim();
-  if (!trimmed || isBareMoneyOrNumber(trimmed)) return false;
+  if (!trimmed) return false;
+  const zipOnly = trimmed.match(/^(\d{5})$/);
+  if (zipOnly) return !isCaliforniaZip(zipOnly[1]);
+  if (isBareMoneyOrNumber(trimmed)) return false;
   const lower = trimmed.toLowerCase();
   if (namedCalifornia(text) && !/\b(not|outside|isn't|isnt)\b.{0,20}\bcalifornia\b/.test(lower)) {
     return false;
@@ -1271,6 +1274,12 @@ export function namedOutOfState(text: string) {
   const zip = lower.match(/\b(\d{5})\b/);
   if (zipCue && zip && !isCaliforniaZip(zip[1])) return true;
   return /\b(?:in|from|near)\s+(az|co|fl|ga|il|nc|nj|nv|ny|tn|tx|wa)\b/.test(lower);
+}
+
+function fileNeedsCaliforniaAsk(draft: FoxIntakeDraft) {
+  if (draft.outOfState) return true;
+  const zip = String(draft.propertyZip ?? "").trim();
+  return /^\d{5}$/.test(zip) && !isCaliforniaZip(zip);
 }
 
 export function namedGovProgram(text: string): GovProgram | null {
@@ -2833,6 +2842,9 @@ export function nextFoxAsk(draft: FoxIntakeDraft): {
   facts?: ReturnType<typeof workspacePromptCopy>["facts"];
   actions?: FoxAction[];
 } {
+  if (fileNeedsCaliforniaAsk(draft)) {
+    return workspacePromptCopy("geo-stop", draft);
+  }
   if (shouldHoldAskForLiveLine(draft)) {
     return { text: RATEFLOW_WAIT_LINE };
   }
@@ -2840,6 +2852,7 @@ export function nextFoxAsk(draft: FoxIntakeDraft): {
     return { text: PRICING_WHEN_READY, actions: pricingFailedActions() };
   }
   if (
+    !draft.sampleAccepted &&
     draft.awaitingYearsInBusiness &&
     !draft.pendingProposal &&
     !draft.pendingConflict &&
@@ -2851,7 +2864,7 @@ export function nextFoxAsk(draft: FoxIntakeDraft): {
 }
 
 export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
-  if (draft.outOfState) return "geo-stop";
+  if (fileNeedsCaliforniaAsk(draft)) return "geo-stop";
   if (!draft.path) return "intent";
   if (draft.pendingOffer === "jumbo") return "offer-jumbo";
   if (draft.pendingOffer === "heloc") return "offer-heloc";
@@ -2975,7 +2988,9 @@ export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
   if (nextDocInvite(draft) && !thisBorrowerPrimaryPackageDone(draft)) return "documents";
   if (!draft.sampleAccepted && draft.awaitingYearsInBusiness) return "documents";
   if (nextDocInvite(draft) && !householdSettled(draft)) return "documents";
-  if (primaryDocPassFinished(draft) && !yearsInBusinessSettled(draft)) return "years-in-business";
+  if (!draft.sampleAccepted && primaryDocPassFinished(draft) && !yearsInBusinessSettled(draft)) {
+    return "years-in-business";
+  }
   if (!draft.sampleAccepted && !householdSettled(draft)) {
     if (historyGapNeeded(draft) && !nextDocInvite(draft)) return "former-history";
     if (!propertyAddressSettled(draft) && !nextDocInvite(draft)) return "property-address";
@@ -2999,12 +3014,13 @@ export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
   if (!holdCalculatorAsk && subjectLeaseAskNeeded(draft)) return "subject-lease";
   if (!holdCalculatorAsk && !draft.sampleAccepted && housingConfirmNeeded(draft)) return "housing";
   if (!holdCalculatorAsk && !propertyTypeSettled(draft)) return "property-type";
-  if (!holdCalculatorAsk && historyGapNeeded(draft)) return "former-history";
+  if (!holdCalculatorAsk && !draft.sampleAccepted && historyGapNeeded(draft)) return "former-history";
   if (!holdCalculatorAsk && !propertyAddressSettled(draft)) return "property-address";
   return "done";
 }
 
 function lateFileRemainder(draft: FoxIntakeDraft): { text?: string; actions?: FoxAction[] } {
+  if (draft.sampleAccepted) return {};
   if (draft.pendingFinish && emailMissing(draft) && !emailSkipped(draft)) return {};
   if (draft.motion === "in_queue" || draft.motion === "escalated") return {};
   if (formerHistoryNeeded(draft)) {
@@ -5188,8 +5204,16 @@ function matrixReply(
     (prompt === "assets" && parseAvailableAssetsAmount(text) != null) ||
     (prompt === "debts" && parseMonthlyDebtAmount(text) != null);
   const bareWage = isBareMoneyOrNumber(text);
-  if (namedCalifornia(text) && draft.outOfState && !moneyAtAsk && !bareWage) {
-    const nextDraft = { ...draft, outOfState: false };
+  if (namedCalifornia(text) && draft.outOfState && !moneyAtAsk) {
+    const zip = parseZipcode(text);
+    const cleared = { ...draft, outOfState: false };
+    const nextDraft = zip ? writePropertyZip(cleared, zip) : cleared;
+    if (zip) {
+      return {
+        ...nextFoxAsk(nextDraft),
+        capture: { field: "propertyZip", value: zip },
+      };
+    }
     return continueAfterFlag(
       "California — I can prepare this file.",
       nextDraft,
@@ -5471,7 +5495,7 @@ export function workspaceReply(
   }
 
   if (draft.pendingLiveCoupon) {
-    if (/^(yes|use this|use it|confirm|ok|okay)$/i.test(lower)) {
+    if (/^(yes|use this|use the new line|use it|confirm|ok|okay)$/i.test(lower)) {
       const nextDraft = acceptPendingLiveCoupon(draft);
       return {
         ...(incomeAskOpen(nextDraft) ? workspacePromptCopy("income", nextDraft) : nextFoxAsk(nextDraft)),
@@ -5494,7 +5518,6 @@ export function workspaceReply(
     }
     return {
       ...liveCouponConfirmCopy(draft),
-      actions: [...(liveCouponConfirmCopy(draft).actions ?? []), ...liveCouponActions(draft)],
     };
   }
 
@@ -6186,7 +6209,15 @@ export function workspaceReply(
 
   if (prompt === "geo-stop") {
     if (namedCalifornia(q)) {
-      const nextDraft = { ...draft, outOfState: false };
+      const zip = parseZipcode(q);
+      const cleared = { ...draft, outOfState: false };
+      const nextDraft = zip ? writePropertyZip(cleared, zip) : cleared;
+      if (zip) {
+        return {
+          ...nextFoxAsk(nextDraft),
+          capture: { field: "propertyZip", value: zip },
+        };
+      }
       return continueAfterFlag(
         "California — I can prepare this file.",
         nextDraft,

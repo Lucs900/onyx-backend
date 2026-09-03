@@ -1,6 +1,7 @@
 import type { FoxIntakeDraft, ProductIntent } from "@/components/fox/types";
 import { purchaseSketchMismatch } from "@/components/fox/fileWrite";
 import { addressLineReadyForQuote } from "@/components/fox/propertyType";
+import { isCaliforniaZip } from "@/components/products/scenario";
 import { FHFA_HIGH_COST_CEILING_2026 } from "@/lib/guidelines/conventional";
 import {
   cityFromTypedAddress,
@@ -70,6 +71,8 @@ export function rateflowBlockedReason(draft: FoxIntakeDraft): string | null {
   const intent = draft.productIntent;
   if (!intent || BLOCKED_INTENTS.has(intent)) return "product";
   if (draft.outOfState) return "state";
+  const zip = zipFromDraft(draft);
+  if (zip && !isCaliforniaZip(zip)) return "state";
   if (draft.govProgram) return "program";
   if (draft.cashOut) return "cash-out";
   if (addressConfirmPending(draft)) return "address-confirm";
@@ -152,6 +155,8 @@ export function conventionalReadyHoldsReadyLine(draft: FoxIntakeDraft): boolean 
   if (draft.liveQuoteStatus === "unavailable") return false;
   if (draft.productIntent !== "buy" && draft.productIntent !== "refinance") return false;
   if (draft.cashOut || draft.govProgram || draft.outOfState) return false;
+  const readyZip = zipFromDraft(draft);
+  if (readyZip && !isCaliforniaZip(readyZip)) return false;
   if (addressConfirmPending(draft)) return false;
   if (!String(draft.subjectAddress ?? "").trim() && !addressLineReadyForQuote(draft)) return false;
   if (!mapPropertyType(draft.propertyType, draft.propertyUnits)) return false;

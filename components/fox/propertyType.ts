@@ -1,3 +1,4 @@
+import { isCaliforniaZip } from "@/components/products/scenario";
 import { parseZipcode, zipFromSources, zipFromTypedAddress } from "@/lib/rateflow/quote";
 import type { PlaceAddress } from "@/lib/places/address";
 import type { FactProposal, FoxAction, FoxIntakeDraft } from "./types";
@@ -312,16 +313,40 @@ function fileAddressForZip(draft: FoxIntakeDraft, zip: string) {
 export function writePropertyZip(draft: FoxIntakeDraft, zip: string): FoxIntakeDraft {
   const parsed = parseZipcode(zip);
   if (!parsed) return draft;
+  if (!isCaliforniaZip(parsed)) {
+    return {
+      ...draft,
+      outOfState: true,
+      propertyZipAsked: true,
+      correcting: null,
+      correctingLine: null,
+    };
+  }
   const fromAddress = addressZipFromDraft(draft);
   const now = new Date().toISOString();
   const location = fileAddressForZip(draft, parsed);
   const keepStreet = Boolean(
     existingFileAddress(draft) && !isZipOnlyFileAddress(existingFileAddress(draft), draft.propertyZip),
   );
+  const reprice =
+    draft.propertyZip !== parsed ||
+    Boolean(draft.outOfState) ||
+    draft.liveQuoteStatus === "unavailable";
   return {
     ...draft,
+    outOfState: false,
     propertyZip: parsed,
     propertyZipAsked: true,
+    ...(reprice
+      ? {
+          liveQuote: undefined,
+          liveQuoteKey: undefined,
+          liveQuoteStatus: undefined,
+          liveQuoteRows: undefined,
+          liveCouponSettled: false,
+          pendingLiveCoupon: undefined,
+        }
+      : {}),
     addressZipOffered: fromAddress === parsed ? parsed : draft.addressZipOffered,
     ...(keepStreet
       ? {}
@@ -569,6 +594,7 @@ function looksLikeStreet(value: string) {
 export function parsePropertyType(text: string): PropertyTypeValue | null {
   const lower = text.trim().toLowerCase().replace(/[?.!]+$/g, "");
   if (!lower) return null;
+  if (isPropertyTypeValue(lower)) return lower;
   if (/\b(condo|condominium)\b/.test(lower)) return "condo";
   if (
     /\b(2\s*[-–to]{1,3}\s*4|two\s*[-–to]{1,3}\s*four|duplex|triplex|fourplex|2\s*-?\s*unit|3\s*-?\s*unit|4\s*-?\s*unit|two\s+unit|three\s+unit|four\s+unit)\b/.test(

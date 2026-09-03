@@ -1,6 +1,7 @@
 import { liveQuoteMatchesDraft, searchedKeyFor } from "@/lib/rateflow/fromDraft";
 import {
   liveQuoteFromCouponRow,
+  formatRatePercent,
   liveLoanNowCopy,
   pickLowerPaymentFromRows,
   pickNoCostFromRows,
@@ -63,23 +64,22 @@ export function liveCouponActions(_draft?: FoxIntakeDraft): FoxAction[] {
   ];
 }
 
-export function liveCouponConfirmActions(): FoxAction[] {
+export function liveCouponConfirmActions(draft?: FoxIntakeDraft): FoxAction[] {
+  const lead = draft?.liveQuote?.rate;
+  const keep =
+    typeof lead === "number" && Number.isFinite(lead) && lead > 0
+      ? `Keep ${formatRatePercent(lead)}`
+      : "Keep this one";
   return [
     {
       id: "accept-live-coupon",
-      label: "Use this",
+      label: "Use the new line",
       event: "bubble",
       capture: { field: "accept-live-coupon" },
     },
     {
       id: "keep-live-coupon",
-      label: "Keep this one",
-      event: "bubble",
-      capture: { field: "keep-live-coupon" },
-    },
-    {
-      id: "skip-live-coupon",
-      label: "Skip",
+      label: keep,
       event: "bubble",
       capture: { field: "keep-live-coupon" },
     },
@@ -108,7 +108,9 @@ export function isCouponSkipText(text: string) {
 }
 
 export function isKeepLeadConfirmText(text: string) {
-  return /^(keep this one|keep this)$/.test(text.trim().toLowerCase());
+  const lower = text.trim().toLowerCase();
+  if (/^(keep this one|keep this)$/.test(lower)) return true;
+  return /^keep\s+\d+(?:\.\d+)?%$/.test(lower);
 }
 
 export function couponChoiceFromText(text: string): CouponChoice | null {
@@ -252,7 +254,9 @@ function isLeftoverConfirmChip(action: FoxAction) {
   ) {
     return true;
   }
-  return /^(Use this|Change|This one|Lower payment|No cost)$/i.test(action.label);
+  return /^(Use this|Use the new line|Change|This one|Lower payment|No cost|Keep this one|Keep \d)/i.test(
+    action.label,
+  );
 }
 
 function isAfterLooksRightDocChip(action: FoxAction) {
@@ -755,7 +759,7 @@ export function liveCouponConfirmCopy(draft: FoxIntakeDraft): {
   };
   return {
     text: liveLoanNowCopy(quote),
-    actions: liveCouponConfirmActions(),
+    actions: liveCouponConfirmActions(draft),
   };
 }
 

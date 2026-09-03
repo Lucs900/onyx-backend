@@ -170,6 +170,10 @@ async function main() {
   assert.ok(canLooksRight(used));
   assert.ok((workspacePromptCopy("review", used).actions ?? []).some((item) => item.label === "Looks right"));
   const looks = applyLooksRightMotion(used);
+  assert.notEqual(workspacePrompt(looks), "former-history");
+  assert.notEqual(workspacePrompt(looks), "citizenship");
+  assert.notEqual(workspacePrompt(looks), "years-in-business");
+  assert.doesNotMatch(nextFoxAsk(looks).text, /Who did you work for before|US citizen|years in business|How long have you had/i);
   assert.equal(looks.sampleAccepted, true);
   const afterLooksJobs = employmentRows(looks);
   assert.equal(afterLooksJobs.length, 1);
