@@ -1,4 +1,5 @@
 import type { FoxIntakeDraft, ProductIntent } from "@/components/fox/types";
+import { purchaseSketchMismatch } from "@/components/fox/fileWrite";
 import { addressLineReadyForQuote } from "@/components/fox/propertyType";
 import { FHFA_HIGH_COST_CEILING_2026 } from "@/lib/guidelines/conventional";
 import {
@@ -76,6 +77,7 @@ export function rateflowBlockedReason(draft: FoxIntakeDraft): string | null {
   if (!loanPurposeFromDraft(draft)) return "purpose";
   if (!mapResidency(draft.occupancyChoice.value || draft.scenario?.occupancy)) return "occupancy";
   if (listPriceFromDraft(draft) == null) return "value";
+  if (purchaseSketchMismatch(draft)) return "purchase-split";
   const loanAmount = loanAmountFromDraft(draft);
   if (loanAmount == null) return "loan";
   if (loanAmount > FHFA_HIGH_COST_CEILING_2026) return "jumbo";

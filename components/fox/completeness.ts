@@ -20,9 +20,12 @@ import {
   applyPurchaseContractAccept,
   hasPurchaseContractDoc,
   isPurchaseContractConfirmPending,
+  isPurchaseSplitReconcileProposal,
   isRemainderConfirmField,
   proposalFromLastPurchaseContract,
   purchaseContractStreetFromDraft,
+  queuePurchaseContractRemainder,
+  queuePurchaseSketchReconcile,
   nextDocInvite,
   remainderProposalWrites,
   valuesMatch,
@@ -860,7 +863,46 @@ export function remainderAskCopy(proposal: FactProposal) {
   return `The document has ${named}. Use this?`;
 }
 
+export function purchaseSplitAskCopy(proposal: FactProposal) {
+  const extra = (field: string) => proposal.extras?.find((item) => item.field === field)?.value ?? "";
+  const price = extra("purchase_price") || proposal.value;
+  const oldDown = extra("oldDown");
+  const oldLoan = extra("oldLoan");
+  const sketch = extra("sketch");
+  const close = extra("close_date");
+  const credit = extra("seller_credit");
+  const bits = [`Purchase is ${fundsMoneyShown("purchase_price", price)}.`];
+  if (close) bits.push(`Close ${displayFactValue("close_date", close)}.`);
+  if (credit) bits.push(`Seller credit ${fundsMoneyShown("seller_credit", credit)}.`);
+  bits.push(
+    `The file still has ${fundsMoneyShown("downPayment", oldDown)} down and ${fundsMoneyShown("loanAmount", oldLoan)} loan. That was the ${fundsMoneyShown("purchase_price", sketch)} sketch.`,
+  );
+  bits.push("Use this split, or change down or loan.");
+  return bits.join(" ");
+}
+
+export function purchaseSplitActions(): FoxAction[] {
+  return [
+    { id: "accept-proposal", label: "Use this split", event: "bubble", capture: { field: "accept-proposal" } },
+    {
+      id: "correct-down",
+      label: "Change down",
+      event: "bubble",
+      capture: { field: "correct", value: "amount", line: "down" },
+    },
+    {
+      id: "correct-loan",
+      label: "Change loan",
+      event: "bubble",
+      capture: { field: "correct", value: "amount", line: "loan" },
+    },
+  ];
+}
+
 export function proposalAskCopy(proposal: FactProposal) {
+  if (isPurchaseSplitReconcileProposal(proposal)) {
+    return purchaseSplitAskCopy(proposal);
+  }
   if (isWageExtractProposal(proposal)) {
     const box5 = Number(proposal.extras?.find((item) => item.field === "w2_box5")?.value ?? 0);
     const stub = Number(
@@ -1539,8 +1581,15 @@ export function resolveProposal(
   const afterContract =
     winner === "accept" &&
     (isPurchaseContractConfirmPending(draft) || Boolean(draft.lastPurchaseContractFields))
-      ? { ...applyPurchaseContractAccept(afterFileNet, draft.pendingProposal), looksRightHold: false }
-      : afterFileNet;
+      ? queuePurchaseSketchReconcile(
+          queuePurchaseContractRemainder({
+            ...applyPurchaseContractAccept(afterFileNet, draft.pendingProposal),
+            looksRightHold: false,
+          }),
+        )
+      : hasPurchaseContractDoc(afterFileNet) || afterFileNet.lastPurchaseContractFields
+        ? queuePurchaseSketchReconcile(afterFileNet)
+        : afterFileNet;
   if (winner === "accept" && shouldAskYearsInBusiness(afterContract)) {
     return withYearsInBusinessAsk(afterContract);
   }
@@ -1782,6 +1831,14 @@ export function canLooksRight(draft: FoxIntakeDraft) {
   if (wageIncomeSketchOpen(draft)) return false;
   if (nextDocInvite(draft)) return false;
   if (!incomeNumberReady(draft)) return false;
+  if (
+    isPurchaseLike(draft) &&
+    hasDownPayment(draft) &&
+    hasLoanAmount(draft) &&
+    !purchaseFileAddsUp(draft)
+  ) {
+    return false;
+  }
   return (
     sketchAssembled(draft) &&
     currentAskIdle(draft) &&

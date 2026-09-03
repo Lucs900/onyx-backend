@@ -11,6 +11,7 @@ import type {
   ExtractClass,
   FactConflict,
   FactProposal,
+  FactWrite,
   FoxAction,
   FoxIntakeDraft,
   ReceivedDoc,
@@ -1762,7 +1763,9 @@ export function resolveFactConflict(
     (conflict.field === "purchase_price" || isPropertyAddressField(conflict.field))
   ) {
     const written = applyPurchaseContractAccept(resolved, resolved.pendingProposal);
-    return queuePurchaseContractRemainder({ ...written, looksRightHold: false });
+    return queuePurchaseSketchReconcile(
+      queuePurchaseContractRemainder({ ...written, looksRightHold: false }),
+    );
   }
   return resolved;
 }
@@ -2755,7 +2758,11 @@ export function proposalFromLastPurchaseContract(draft: FoxIntakeDraft): FactPro
   for (const field of PURCHASE_CONTRACT_ACCEPT_FIELDS) {
     const value = String(fields[field] ?? "").trim();
     if (!value) continue;
-    if (field === "property_address" && isZipOnlyFileAddress(value, draft.propertyZip)) continue;
+    if (field === "property_address") {
+      if (isZipOnlyFileAddress(value, draft.propertyZip)) continue;
+      const shown = displayedSubjectAddress(draft);
+      if (shown && !isZipOnlyFileAddress(shown, draft.propertyZip)) continue;
+    }
     if (field === "purchase_price" && draft.facts?.purchase_price?.confirmed && factValue(draft, "purchase_price")) {
       continue;
     }
@@ -2781,6 +2788,76 @@ export function queuePurchaseContractRemainder(draft: FoxIntakeDraft): FoxIntake
     return { ...draft, pendingAddress: undefined };
   }
   return { ...draft, pendingProposal: remainder, pendingAddress: undefined };
+}
+
+export const PURCHASE_SPLIT_RECONCILE_NOTE = "purchase-split-reconcile";
+
+export function isPurchaseSplitReconcileProposal(proposal?: FactProposal | null) {
+  return (
+    proposal?.note === PURCHASE_SPLIT_RECONCILE_NOTE &&
+    proposal.field === "downPayment" &&
+    proposal.companion?.field === "loanAmount"
+  );
+}
+
+/** Price wrote. Down + loan still add to the old sketch. */
+export function purchaseSketchMismatch(draft?: FoxIntakeDraft | null) {
+  if (!draft || draft.productIntent !== "buy") return null;
+  const price = draft.propertyValueAmount;
+  const down = draft.downPaymentAmount;
+  const loan = draft.loanAmountValue;
+  if (price == null || down == null || loan == null) return null;
+  if (price <= 0 || down <= 0 || loan <= 0) return null;
+  if (Math.abs(down + loan - price) <= 1) return null;
+  if (loan >= price) return null;
+  const nextDown = Math.round(price - loan);
+  if (nextDown <= 0 || nextDown >= price) return null;
+  return {
+    price,
+    down,
+    loan,
+    sketch: Math.round(down + loan),
+    nextDown,
+    keepLoan: loan,
+  };
+}
+
+export function needsPurchaseSplitAsk(draft?: FoxIntakeDraft | null) {
+  return Boolean(isPurchaseSplitReconcileProposal(draft?.pendingProposal) || purchaseSketchMismatch(draft));
+}
+
+/** After contract write, ask before rewriting down to keep the loan. */
+export function queuePurchaseSketchReconcile(draft: FoxIntakeDraft): FoxIntakeDraft {
+  const mismatch = purchaseSketchMismatch(draft);
+  if (!mismatch) return draft;
+  if (proposalFromLastPurchaseContract(draft)) return draft;
+  const extras: FactWrite[] = [
+    { field: "purchase_price", value: String(mismatch.price), label: "purchase price" },
+    { field: "oldDown", value: String(mismatch.down), label: "old down" },
+    { field: "oldLoan", value: String(mismatch.loan), label: "old loan" },
+    { field: "sketch", value: String(mismatch.sketch), label: "sketch" },
+  ];
+  const close = factValue(draft, "close_date");
+  if (close) extras.push({ field: "close_date", value: close, label: "close date" });
+  const credit = factValue(draft, "seller_credit");
+  if (credit) extras.push({ field: "seller_credit", value: credit, label: "seller credit" });
+  return {
+    ...draft,
+    pendingProposal: {
+      field: "downPayment",
+      value: String(mismatch.nextDown),
+      label: "down payment",
+      kind: "computed",
+      note: PURCHASE_SPLIT_RECONCILE_NOTE,
+      companion: {
+        field: "loanAmount",
+        value: String(mismatch.keepLoan),
+        label: "loan amount",
+      },
+      extras,
+    },
+    pendingAddress: undefined,
+  };
 }
 
 /** After Use this, write the contract street and seller credit even if the chip was a leftover ZIP place. */
@@ -2824,6 +2901,7 @@ export function applyPurchaseContractAccept(
 export function isPurchaseContractConfirmPending(draft: FoxIntakeDraft) {
   if (!hasPurchaseContractDoc(draft) && !draft.lastPurchaseContractFields) return false;
   const proposal = draft.pendingProposal;
+  if (isPurchaseSplitReconcileProposal(proposal)) return false;
   if (proposal && isRemainderConfirmField(proposal.field)) return true;
   if (purchaseContractStreetFromDraft(draft) || String(draft.lastPurchaseContractFields?.seller_credit ?? "").trim()) {
     return Boolean(proposal || draft.pendingAddress);

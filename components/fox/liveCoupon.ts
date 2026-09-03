@@ -8,7 +8,7 @@ import {
   sameCouponNumbers,
   type SafeCouponRow,
 } from "@/lib/rateflow/quote";
-import { nextDocInvite } from "./fileWrite";
+import { nextDocInvite, needsPurchaseSplitAsk } from "./fileWrite";
 import { ID_UNREAD_ASK, isBorrowerNameConfirmPending } from "./borrowerName";
 import { isFundsPairProposal, loanExceedsPurchasePrice } from "./completeness";
 import { addressOnFileCopy, fileAddressLine, shouldShowAddressUseThis } from "./propertyType";
@@ -558,6 +558,9 @@ export function dropResolvedAddressConfirmChips(
   messages: FoxMessage[],
   draft: FoxIntakeDraft,
 ): FoxMessage[] {
+  if (needsPurchaseSplitAsk(draft)) {
+    return dropLeftoverConfirmChipsOnLooksRightDocAsk(messages, draft);
+  }
   if (isIdExtractPath(draft)) {
     return dropLeftoverConfirmChipsOnLooksRightDocAsk(
       freezeUsedFoxTurns(dropOnFileAddressLines(messages)),

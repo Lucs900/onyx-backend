@@ -20,7 +20,13 @@ import {
   skipCurrentInvite,
   stillUsefulSection,
 } from "../components/fox/fileWrite";
-import { canLooksRight, proposalAskCopy, resolveProposal } from "../components/fox/completeness";
+import {
+  canLooksRight,
+  purchaseFileAddsUp,
+  proposalAskCopy,
+  resolveProposal,
+} from "../components/fox/completeness";
+import { rateflowClientBodyFromDraft, rateflowBlockedReason } from "../lib/rateflow/fromDraft";
 import { applyLooksRightMotion, applyProceedMotion } from "../components/fox/motion";
 import { applyCapture, applyExtractWrite, emptyDraft, getFoxDraft, loadIntakeDraft, receiveDocument } from "../components/fox/store";
 import { conventionalFileFacts } from "../components/fox/conventionalFile";
@@ -536,6 +542,23 @@ async function main() {
     ),
   );
   assert.doesNotMatch(nextFoxAsk(clipperPriced).text, /San Francisco, CA 94123\. Use this|Government ID|Bank statement/i);
+  const clipperSplit = nextFoxAsk(clipperPriced);
+  assert.match(clipperSplit.text, /Purchase is \$850,000/);
+  assert.match(clipperSplit.text, /Close October 15, 2026/);
+  assert.match(clipperSplit.text, /Seller credit \$5,000/);
+  assert.match(clipperSplit.text, /\$100,000 down/);
+  assert.match(clipperSplit.text, /\$400,000 loan/);
+  assert.match(clipperSplit.text, /\$500,000 sketch/);
+  assert.match(clipperSplit.text, /Use this split, or change down or loan/);
+  assert.doesNotMatch(clipperSplit.text, /On the file/);
+  assert.equal(canLooksRight(clipperPriced), false);
+  assert.equal(workspacePrompt(clipperPriced), "confirm-proposal");
+  assert.ok((clipperSplit.actions ?? []).some((item) => item.label === "Use this split"));
+  assert.ok((clipperSplit.actions ?? []).some((item) => item.label === "Change down"));
+  assert.ok((clipperSplit.actions ?? []).some((item) => item.label === "Change loan"));
+  assert.equal(rateflowBlockedReason(clipperPriced), "purchase-split");
+  assert.equal(clipperPriced.downPaymentAmount, 100_000);
+  assert.equal(clipperPriced.loanAmountValue, 400_000);
   const clipperUsed = resolveProposal(clipperPriced, "accept");
   assert.match(clipperUsed.subjectAddress ?? "", /88 Clipper Street/i);
   assert.match(clipperUsed.subjectAddress ?? "", /San Francisco, CA 94114/i);
@@ -560,9 +583,14 @@ async function main() {
     clipperFacts.map((fact) => `${fact.label} ${fact.value}`).join(" · "),
   );
   assert.ok(clipperFacts.every((fact) => fact.id !== "file-property" || !/Filbert/i.test(fact.value)));
+  assert.equal(clipperUsed.downPaymentAmount, 450_000);
+  assert.equal(clipperUsed.loanAmountValue, 400_000);
+  assert.ok(purchaseFileAddsUp(clipperUsed));
   assert.ok(canLooksRight(clipperUsed));
   assert.equal(workspacePrompt(clipperUsed), "review");
-  assert.doesNotMatch(nextFoxAsk(clipperUsed).text, /94123/);
+  assert.doesNotMatch(nextFoxAsk(clipperUsed).text, /94123|On the file/);
+  assert.equal(rateflowBlockedReason(clipperUsed), null);
+  assert.equal(rateflowClientBodyFromDraft(clipperUsed)?.loan_amount, 400_000);
   const clipperLooks = applyLooksRightMotion(clipperUsed);
   assert.ok(previewFacts(clipperLooks).some((fact) => /88 Clipper Street, San Francisco, CA 94114/i.test(fact.value)));
   assert.ok(
@@ -716,7 +744,10 @@ async function main() {
       .map((fact) => `${fact.label} ${fact.value}`)
       .join(" · "),
   );
-  assert.doesNotMatch(nextFoxAsk(leftoverUsed).text, /Government ID|Bank statement|government ID/i);
+  assert.match(nextFoxAsk(leftoverUsed).text, /Purchase is \$850,000/);
+  assert.match(nextFoxAsk(leftoverUsed).text, /Use this split, or change down or loan/);
+  assert.doesNotMatch(nextFoxAsk(leftoverUsed).text, /On the file|Government ID|Bank statement|government ID/i);
+  assert.equal(canLooksRight(leftoverUsed), false);
 
   const emptyAssets = conventionalFileFacts({ ...emptyDraft(), productIntent: "buy", path: "acr" });
   assert.ok(emptyAssets.some((fact) => fact.id === "file-assets" && fact.value === ""));

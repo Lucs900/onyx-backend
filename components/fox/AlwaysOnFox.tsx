@@ -151,6 +151,7 @@ import {
   conflictActions,
   conflictAskCopy,
   hasPurchaseContractDoc,
+  needsPurchaseSplitAsk,
   missingAskActions,
   missingAskCopy,
   isDeadFileWriteLine,
@@ -1731,6 +1732,10 @@ export function AlwaysOnFox({
         return;
       }
       if (capture.field === "accept-proposal" && addressPending && fileAddressLine(live)) {
+        if (needsPurchaseSplitAsk(live)) {
+          appendReply(action.label, nextFoxAsk(live));
+          return;
+        }
         const waitingForLive =
           Boolean(searchedKeyFor(live)) &&
           live.liveQuoteStatus !== "unavailable" &&

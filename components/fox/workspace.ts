@@ -80,7 +80,9 @@ import {
   docsDisplayLabel,
   factValue,
   isPurchaseContractConfirmPending,
+  isPurchaseSplitReconcileProposal,
   isRemainderConfirmField,
+  needsPurchaseSplitAsk,
   purchaseContractFieldsFromDraft,
   purchaseContractStreetFromDraft,
   fileStillUsefulNote,
@@ -141,6 +143,7 @@ import {
   proposalActions,
   proposalAskCopy,
   proposeFundsPair,
+  purchaseSplitActions,
   purchasePriceAskNeeded,
   propertyValueAskNeeded,
   refiLoanAskNeeded,
@@ -1808,6 +1811,12 @@ function liveProposalAsk(
   followUp?: string;
   actions?: FoxAction[];
 } {
+  if (isPurchaseSplitReconcileProposal(proposal)) {
+    return {
+      text: proposalAskCopy(proposal),
+      actions: purchaseSplitActions(),
+    };
+  }
   if (isWageExtractProposal(proposal)) {
     const box5 =
       Number(proposal.extras?.find((item) => item.field === "w2_box5")?.value) ||
@@ -4726,6 +4735,9 @@ export function beginFileEdit(
   line?: string | null,
 ): FoxIntakeDraft {
   const editLine = line ?? draft.correctingLine;
+  if (isPurchaseSplitReconcileProposal(draft.pendingProposal) && field === "amount") {
+    draft = { ...draft, pendingProposal: null, pendingAddress: undefined };
+  }
   if (isPurchasePriceEdit(field, editLine)) {
     return {
       ...clearDownstreamMoneyInterview(draft),
@@ -5642,6 +5654,12 @@ export function workspaceReply(
       /yes that.?s me|use this/.test(lower)
     ) {
       const nextDraft = resolveProposal(draft, "accept");
+      if (needsPurchaseSplitAsk(nextDraft)) {
+        return {
+          ...nextFoxAsk(nextDraft),
+          capture: { field: "accept-proposal" },
+        };
+      }
       if (isSubjectAddressConfirmPending(draft) && fileAddressLine(nextDraft)) {
         return {
           text: addressOnFileCopy(),
@@ -5652,6 +5670,34 @@ export function workspaceReply(
         ...nextFoxAsk(nextDraft),
         capture: { field: "accept-proposal" },
       };
+    }
+    if (isPurchaseSplitReconcileProposal(draft.pendingProposal)) {
+      if (/change loan|\bloan\b/.test(lower) && !/down/.test(lower)) {
+        const nextDraft = {
+          ...draft,
+          pendingProposal: null,
+          pendingAddress: undefined,
+          correcting: "amount" as const,
+          correctingLine: "loan",
+        };
+        return {
+          ...workspacePromptCopy("amount", nextDraft),
+          capture: { field: "correct", value: "amount", line: "loan" },
+        };
+      }
+      if (/change down|\bdown\b/.test(lower) && !/loan/.test(lower)) {
+        const nextDraft = {
+          ...draft,
+          pendingProposal: null,
+          pendingAddress: undefined,
+          correcting: "amount" as const,
+          correctingLine: "down",
+        };
+        return {
+          ...workspacePromptCopy("amount", nextDraft),
+          capture: { field: "correct", value: "amount", line: "down" },
+        };
+      }
     }
     if (/^change\b/.test(lower)) {
       const nextDraft = changePendingProposal(draft);
