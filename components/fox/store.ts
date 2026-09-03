@@ -83,6 +83,7 @@ import {
   slugForIntent,
   beginFileEdit,
   clearLiveQuote,
+  parseLooseAmount,
   writePurchasePrice,
   changePendingProposal,
   settleResumeAfterCapture,
@@ -2433,10 +2434,10 @@ function applyCaptureBody(capture: Capture) {
   }
   if (capture.field === "loanAmount") {
     const [loanRaw, valueRaw] = capture.value.split(":");
-    const loan = Number(loanRaw.replace(/,/g, ""));
-    const value = valueRaw ? Number(valueRaw.replace(/,/g, "")) : undefined;
-    const hasLoan = Number.isFinite(loan) && loan > 0;
-    const hasValue = value != null && Number.isFinite(value) && value > 0;
+    const loan = captureMoney(loanRaw);
+    const value = valueRaw ? captureMoney(valueRaw) : undefined;
+    const hasLoan = loan != null;
+    const hasValue = value != null;
     return commit(
       withWorkspaceScenario(
         withComputedCompanion(
@@ -2456,12 +2457,13 @@ function applyCaptureBody(capture: Capture) {
     );
   }
   if (capture.field === "propertyValue") {
-    const value = Number(capture.value.replace(/,/g, ""));
-    if (!Number.isFinite(value) || value <= 0) return current;
+    const value = captureMoney(capture.value);
+    if (value == null) return current;
     return commit(withWorkspaceScenario(writePurchasePrice(current, value)));
   }
   if (capture.field === "downPayment") {
-    const value = Number(capture.value.replace(/,/g, ""));
+    const value = captureMoney(capture.value);
+    if (value == null) return current;
     return commit(
       withWorkspaceScenario(
         withComputedCompanion(
@@ -2471,8 +2473,7 @@ function applyCaptureBody(capture: Capture) {
             downAsked: true,
             correcting: null,
             correctingLine: null,
-            downPaymentAmount:
-              Number.isFinite(value) && value > 0 ? value : current.downPaymentAmount,
+            downPaymentAmount: value,
           },
           current.loanAmountValue != null && current.loanAmountValue > 0 ? "down" : undefined,
         ),
@@ -2546,6 +2547,13 @@ function sectionToPrompt(id: SectionId): FoxPrompt {
   if (id === "occupancy") return "occupancy";
   if (id === "documents") return "documents";
   return "review";
+}
+
+function captureMoney(raw: string): number | undefined {
+  const parsed = parseLooseAmount(raw);
+  if (parsed != null && parsed > 0) return parsed;
+  const n = Number(String(raw).replace(/[$,\s]/g, ""));
+  return Number.isFinite(n) && n > 0 ? n : undefined;
 }
 
 function unsetForPrompt(

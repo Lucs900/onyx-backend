@@ -28,6 +28,7 @@ import {
 } from "../components/fox/completeness";
 import { rateflowClientBodyFromDraft, rateflowBlockedReason } from "../lib/rateflow/fromDraft";
 import { applyLooksRightMotion, applyNotYetMotion, applyProceedMotion } from "../components/fox/motion";
+import { replyToMessage } from "../components/fox/script";
 import { applyCapture, applyExtractWrite, emptyDraft, getFoxDraft, loadIntakeDraft, receiveDocument } from "../components/fox/store";
 import { conventionalFileFacts } from "../components/fox/conventionalFile";
 import {
@@ -37,6 +38,7 @@ import {
   nextFoxAsk,
   parseFundsAmount,
   previewFacts,
+  structureFixPrompt,
   workspacePrompt,
   workspacePromptCopy,
   workspaceReply,
@@ -745,6 +747,80 @@ async function main() {
   assert.equal(afterCredit.liveQuote, undefined);
   assert.equal(rateflowClientBodyFromDraft(afterCredit)?.loan_amount, 400_000);
   assert.notEqual(rateflowClientBodyFromDraft(afterCredit)?.credit_score, rateflowClientBodyFromDraft(clipperQuoted)?.credit_score);
+
+  const clipperWalk = {
+    ...clipperQuoted,
+    pendingLiveCoupon: {
+      choice: "lower" as const,
+      rate: 6.25,
+      asOf: "2026-01-01",
+    },
+  };
+  loadIntakeDraft(clipperWalk);
+  assert.equal(structureFixPrompt("price", getFoxDraft()), "value");
+  applyCapture({ field: "correct", value: structureFixPrompt("price", getFoxDraft())!, line: "price" });
+  assert.equal(workspacePrompt(getFoxDraft()), "value");
+  assert.notEqual(workspacePrompt(getFoxDraft()), "confirm-proposal");
+  assert.notEqual(workspacePrompt(getFoxDraft()), "citizenship");
+  const priceReply = replyToMessage("$900,000", "start", getFoxDraft(), null);
+  assert.equal(priceReply.capture?.field, "propertyValue");
+  if (priceReply.capture) applyCapture(priceReply.capture);
+  const priceSaved = getFoxDraft();
+  assert.equal(priceSaved.propertyValueAmount, 900_000);
+  assert.equal(priceSaved.downPaymentAmount, undefined);
+  assert.equal(priceSaved.loanAmountValue, undefined);
+  assert.equal(priceSaved.creditBand, "760+");
+  assert.equal(priceSaved.occupancyChoice.value, "primary");
+  assert.equal(priceSaved.incomeType.value, "w2");
+  assert.notEqual(workspacePrompt(priceSaved), "occupancy");
+  assert.notEqual(workspacePrompt(priceSaved), "credit");
+  assert.notEqual(workspacePrompt(priceSaved), "income");
+  assert.notEqual(workspacePrompt(priceSaved), "citizenship");
+  assert.ok(previewFacts(priceSaved).some((fact) => fact.id === "price" && /\$900,000/.test(fact.value)));
+  assert.match(priceSaved.subjectAddress ?? "", /88 Clipper Street, San Francisco, CA 94114/i);
+  assert.equal(priceSaved.facts?.seller_credit?.value, "5000");
+
+  loadIntakeDraft(clipperWalk);
+  applyCapture({ field: "correct", value: structureFixPrompt("down", getFoxDraft())!, line: "down" });
+  assert.equal(workspacePrompt(getFoxDraft()), "amount");
+  const downReply = replyToMessage("200,000", "start", getFoxDraft(), null);
+  assert.equal(downReply.capture?.field, "downPayment");
+  if (downReply.capture) applyCapture(downReply.capture);
+  const downSaved = getFoxDraft();
+  assert.equal(downSaved.downPaymentAmount, 200_000);
+  assert.equal(downSaved.loanAmountValue, 650_000);
+  assert.equal(downSaved.propertyValueAmount, 850_000);
+  assert.ok(purchaseFileAddsUp(downSaved));
+  assert.ok(previewFacts(downSaved).some((fact) => fact.id === "down" && /\$200,000/.test(fact.value)));
+  assert.ok(previewFacts(downSaved).some((fact) => fact.id === "loan" && /\$650,000/.test(fact.value)));
+  assert.equal(rateflowClientBodyFromDraft(downSaved)?.loan_amount, 650_000);
+  assert.equal(downSaved.liveQuote, undefined);
+
+  loadIntakeDraft(clipperWalk);
+  applyCapture({ field: "correct", value: structureFixPrompt("loan", getFoxDraft())!, line: "loan" });
+  const loanReply = replyToMessage("$500,000", "start", getFoxDraft(), null);
+  assert.equal(loanReply.capture?.field, "loanAmount");
+  if (loanReply.capture) applyCapture(loanReply.capture);
+  const loanSaved = getFoxDraft();
+  assert.equal(loanSaved.loanAmountValue, 500_000);
+  assert.equal(loanSaved.downPaymentAmount, 350_000);
+  assert.ok(purchaseFileAddsUp(loanSaved));
+  assert.equal(rateflowClientBodyFromDraft(loanSaved)?.loan_amount, 500_000);
+
+  loadIntakeDraft(clipperWalk);
+  applyCapture({ field: "correct", value: structureFixPrompt("credit", getFoxDraft())!, line: "credit" });
+  const creditReply = replyToMessage("720-759", "start", getFoxDraft(), null);
+  assert.equal(creditReply.capture?.field, "creditRange");
+  if (creditReply.capture) applyCapture(creditReply.capture);
+  const creditSaved = getFoxDraft();
+  assert.ok(creditSaved.creditBand === "720-759" || creditSaved.creditBand === "720");
+  assert.notEqual(creditSaved.creditBand, "760+");
+  assert.equal(creditSaved.propertyValueAmount, 850_000);
+  assert.equal(creditSaved.downPaymentAmount, 450_000);
+  assert.equal(creditSaved.loanAmountValue, 400_000);
+  assert.ok(previewFacts(creditSaved).some((fact) => fact.id === "credit" && /720/.test(fact.value)));
+  assert.equal(creditSaved.liveQuote, undefined);
+  assert.notEqual(rateflowClientBodyFromDraft(creditSaved)?.credit_score, rateflowClientBodyFromDraft(clipperQuoted)?.credit_score);
 
   const clipperLooks = applyLooksRightMotion(clipperUsed);
   const clipperLooksAsk = nextFoxAsk(clipperLooks);

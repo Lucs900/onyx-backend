@@ -847,6 +847,22 @@ function editingPurchasePrice(draft: FoxIntakeDraft) {
   );
 }
 
+/** Structure Edit is in progress. Typed values write this field, not a leftover confirm. */
+function notepadEditPrompt(draft: FoxIntakeDraft): FoxPrompt | null {
+  if (draft.correcting === "credit") return "credit";
+  if (draft.correctingLine === "home") return "value";
+  if (editingPurchasePrice(draft) || draft.correcting === "value") return "value";
+  if (
+    draft.correcting === "amount" ||
+    draft.correctingLine === "down" ||
+    draft.correctingLine === "loan" ||
+    draft.correctingLine === "down-or-loan"
+  ) {
+    return "amount";
+  }
+  return null;
+}
+
 function isPurchasePriceEdit(field: FoxPrompt, line?: string | null) {
   if (line === "home") return false;
   return field === "value" || line === "price";
@@ -2802,6 +2818,8 @@ export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
   if (draft.awaitingBothMonthlyReason) return "both-monthly-reason";
   if (draft.awaitingRaiseWhen) return "raise-when";
   if (draft.awaitingRaiseYtdFar) return "raise-ytd-far";
+  const notepadEdit = notepadEditPrompt(draft);
+  if (notepadEdit) return notepadEdit;
   if (draft.pendingConflict || draft.pendingProposal || draft.pendingAddress || draft.pendingLiveCoupon) {
     return "confirm-proposal";
   }
@@ -4924,7 +4942,7 @@ function draftAfterCaptureBody(draft: FoxIntakeDraft, capture: Capture): FoxInta
     return { ...next, amountPurposeLabel: capture.value };
   }
   if (capture.field === "loanAmount") {
-    const n = Number(capture.value.split(":")[0].replace(/,/g, ""));
+    const n = parseLooseAmount(capture.value.split(":")[0]) ?? Number(capture.value.split(":")[0].replace(/[$,\s]/g, ""));
     return withComputedCompanion(
       withMatrixAfterAmount({
         ...next,
@@ -4936,18 +4954,19 @@ function draftAfterCaptureBody(draft: FoxIntakeDraft, capture: Capture): FoxInta
     );
   }
   if (capture.field === "propertyValue") {
-    const n = Number(capture.value.replace(/,/g, ""));
+    const n = parseLooseAmount(capture.value) ?? Number(capture.value.replace(/[$,\s]/g, ""));
     if (!Number.isFinite(n) || n <= 0) return next;
     return writePurchasePrice(draft, n);
   }
   if (capture.field === "downPayment") {
-    const n = Number(capture.value.replace(/,/g, ""));
+    const n = parseLooseAmount(capture.value) ?? Number(capture.value.replace(/[$,\s]/g, ""));
+    if (!Number.isFinite(n) || n <= 0) return next;
     return withComputedCompanion(
       {
         ...next,
         ...clearLiveQuote(),
         downAsked: true,
-        downPaymentAmount: Number.isFinite(n) && n > 0 ? n : draft.downPaymentAmount,
+        downPaymentAmount: n,
       },
       hasLoanAmount(draft) ? "down" : undefined,
     );
@@ -5313,6 +5332,53 @@ function couponChipReply(draft: FoxIntakeDraft, choice: CouponChoice) {
   };
 }
 
+function replyToCreditAsk(
+  q: string,
+  draft: FoxIntakeDraft,
+): {
+  text: string;
+  followUp?: string;
+  facts?: PreviewFact[];
+  actions?: FoxAction[];
+  capture?: Capture;
+} {
+  if (draft.creditBand && isKeepThisText(q)) return keepThisReply(draft);
+  if (looksLikeQuestion(q)) {
+    return answerThenRestore(q, draft);
+  }
+  if (isSkipCreditText(q)) {
+    const nextDraft = { ...draft, creditBand: undefined, creditAsked: true, correcting: null, correctingLine: null };
+    return {
+      ...nextFoxAsk(nextDraft),
+      capture: { field: "skip-credit" },
+    };
+  }
+  const range = parseCreditRange(q);
+  if (!range) return answerThenRestore(q, draft);
+  const nextDraft = {
+    ...draft,
+    ...clearLiveQuote(),
+    creditBand: range,
+    creditAsked: true,
+    correcting: null,
+    correctingLine: null,
+  };
+  if (draft.correcting === "credit") {
+    return {
+      ...nextFoxAsk(nextDraft),
+      capture: { field: "creditRange", value: range },
+    };
+  }
+  const next = workspacePromptCopy(workspacePrompt(nextDraft), nextDraft);
+  return withWorkspaceGuide(
+    {
+      ...next,
+      capture: { field: "creditRange", value: range },
+    },
+    nextDraft,
+  );
+}
+
 export function workspaceReply(
   text: string,
   draft: FoxIntakeDraft,
@@ -5326,6 +5392,17 @@ export function workspaceReply(
   const q = text.trim();
   const lower = q.toLowerCase();
   const prompt = workspacePrompt(draft);
+  const notepadEdit = notepadEditPrompt(draft);
+
+  if (notepadEdit === "value") {
+    return replyToPropertyValueAsk(q, draft);
+  }
+  if (notepadEdit === "amount") {
+    return replyToFundsAsk(q, draft);
+  }
+  if (notepadEdit === "credit") {
+    return replyToCreditAsk(q, draft);
+  }
 
   if (draft.pendingLiveCoupon) {
     if (/^(yes|use this|use it|confirm|ok|okay)$/i.test(lower)) {
@@ -6235,41 +6312,7 @@ export function workspaceReply(
   }
 
   if (prompt === "credit") {
-    if (draft.creditBand && isKeepThisText(q)) return keepThisReply(draft);
-    if (looksLikeQuestion(q)) {
-      return answerThenRestore(q, draft);
-    }
-    if (isSkipCreditText(q)) {
-      const nextDraft = { ...draft, creditBand: undefined, creditAsked: true, correcting: null, correctingLine: null };
-      return {
-        ...nextFoxAsk(nextDraft),
-        capture: { field: "skip-credit" },
-      };
-    }
-    const range = parseCreditRange(q);
-    if (!range) return answerThenRestore(q, draft);
-    const nextDraft = {
-      ...draft,
-      ...clearLiveQuote(),
-      creditBand: range,
-      creditAsked: true,
-      correcting: null,
-      correctingLine: null,
-    };
-    if (draft.correcting === "credit") {
-      return {
-        ...nextFoxAsk(nextDraft),
-        capture: { field: "creditRange", value: range },
-      };
-    }
-    const next = workspacePromptCopy(workspacePrompt(nextDraft), nextDraft);
-    return withWorkspaceGuide(
-      {
-        ...next,
-        capture: { field: "creditRange", value: range },
-      },
-      nextDraft,
-    );
+    return replyToCreditAsk(q, draft);
   }
 
   if (prompt === "term") {
