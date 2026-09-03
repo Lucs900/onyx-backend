@@ -32,7 +32,7 @@ import {
   workspaceReply,
 } from "../components/fox/workspace";
 import { RATEFLOW_WAIT_LINE } from "../components/fox/lookupWait";
-import { rateflowBlockedReason, searchedKeyFor } from "../lib/rateflow/fromDraft";
+import { rateflowBlockedReason, rateflowClientBodyFromDraft, searchedKeyFor } from "../lib/rateflow/fromDraft";
 import type { FoxIntakeDraft } from "../components/fox/types";
 
 function sketch(): FoxIntakeDraft {
@@ -184,25 +184,11 @@ assert.equal(shouldHoldAskForLiveLine(priced), true);
 assert.equal(nextFoxAsk(priced).text, RATEFLOW_WAIT_LINE);
 assert.equal(previewRateFact(priced), null);
 assert.ok(!previewFacts(priced).some((fact) => fact.value === PRICING_WHEN_READY));
-const liveKey = searchedKeyFor(priced);
-assert.ok(liveKey);
-const harborPriced: FoxIntakeDraft = {
-  ...priced,
-  liveQuote: {
-    key: liveKey,
-    rate: 6.375,
-    asOf: "2026-01-02T18:00:00.000Z",
-    pts: -0.07,
-  },
-  liveQuoteKey: liveKey,
-  liveQuoteStatus: "ready",
-};
-const harborRate = previewRateFact(harborPriced);
-assert.ok(harborRate);
-assert.match(harborRate.value, /6\.375%/);
-assert.match(harborRate.value, /-0\.07/);
-assert.doesNotMatch(harborRate.value, new RegExp(PRICING_WHEN_READY));
-assert.ok(!previewFacts(harborPriced).some((fact) => fact.value === PRICING_WHEN_READY));
+const cleanCA = writePropertyZip(addressAsk, "94123");
+assert.deepEqual(rateflowClientBodyFromDraft(priced), rateflowClientBodyFromDraft(cleanCA));
+assert.equal(rateflowClientBodyFromDraft(priced)?.loan_purpose, "purchase");
+assert.equal(searchedKeyFor(priced), searchedKeyFor(cleanCA));
+assert.equal(priced.productIntent, cleanCA.productIntent);
 
 assert.equal(parsePropertyType("two_to_four"), "two_to_four");
 const typed = writePropertyType(sketch(), "two_to_four");

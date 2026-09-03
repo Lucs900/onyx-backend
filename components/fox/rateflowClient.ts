@@ -3,7 +3,6 @@ import {
   parseRateflowQuoteMiss,
   parseSafeCouponRows,
   parseSafeQuoteResponse,
-  pickLeadRow,
   rateflowScenarioKey,
 } from "@/lib/rateflow/quote";
 import type { FoxIntakeDraft } from "./types";
@@ -59,21 +58,7 @@ async function fetchRateflowQuote(draft: FoxIntakeDraft): Promise<RateflowFetch>
       return { ok: false, miss: parseRateflowQuoteMiss(payload) ?? "retryable" };
     }
     const rows = parseSafeCouponRows(payload);
-    const picked = pickLeadRow(
-      rows.map((row) => ({ ...row, loanTerm: 30 })),
-      body.loan_purpose,
-    );
-    const lead = picked
-      ? {
-          ...quote,
-          rate: Number(picked.rate),
-          ...(picked.pts != null ? { pts: picked.pts } : {}),
-          ...(picked.principalAndInterest != null
-            ? { principalAndInterest: picked.principalAndInterest }
-            : {}),
-        }
-      : quote;
-    return { ok: true, quote: { key, ...lead, ...(rows.length ? { rows } : {}) } };
+    return { ok: true, quote: { key, ...quote, ...(rows.length ? { rows } : {}) } };
   } catch {
     return { ok: false, miss: "retryable" };
   }

@@ -490,6 +490,11 @@ export function pickConventional30NoCost(rows: RateflowProductRow[]): RateflowPr
   })[0] ?? null;
 }
 
+/** Purchase lead: conventional 30, points <= 0, then lowest rate. Same after a ZIP write. */
+export function purchaseLeadRow(rows: RateflowProductRow[]): RateflowProductRow | null {
+  return pickConventional30LowestNoPoints(rows);
+}
+
 export function pickLeadRow(
   rows: RateflowProductRow[],
   purpose: RateflowPurpose,
@@ -497,7 +502,7 @@ export function pickLeadRow(
   if (purpose === "refinance") {
     return pickConventional30NoCost(rows) ?? pickConventional30LowestNoPoints(rows);
   }
-  return pickConventional30LowestNoPoints(rows);
+  return purchaseLeadRow(rows);
 }
 
 /** `ok: false` without `empty: true` is a flake — retry. Ready line only on a real empty book. */

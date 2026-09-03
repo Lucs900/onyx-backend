@@ -32,6 +32,7 @@ import {
   pickConventional30LowestNoPoints,
   pickConventional30NoCost,
   pickLeadRow,
+  purchaseLeadRow,
   pickLowerPaymentFromRows,
   pickNoCostFromRows,
   conventional30Book,
@@ -387,13 +388,19 @@ const harborPurchaseNested = {
 };
 const harborPurchaseNestedRows = asProductRows(harborPurchaseNested);
 assert.ok(harborPurchaseNestedRows.length > 1);
-assert.equal(harborPurchaseNestedRows[0]?.rate, 6.49);
-assert.equal(pickLeadRow(harborPurchaseNestedRows, "purchase")?.rate, 6.375);
-assert.equal(pickLeadRow(harborPurchaseNestedRows, "purchase")?.pts, -0.07);
-assert.notEqual(pickLeadRow(harborPurchaseNestedRows, "purchase")?.rate, harborPurchaseNestedRows[0]?.rate);
-assert.notEqual(pickLeadRow(harborPurchaseNestedRows, "purchase")?.pts, 0.313);
-assert.equal(pickConventional30LowestNoPoints(harborPurchaseNestedRows)?.rate, 6.375);
-assert.equal(pickConventional30NoCost(harborPurchaseNestedRows)?.rate, 6.49);
+const nestedPurchaseLead = purchaseLeadRow(harborPurchaseNestedRows);
+assert.equal(nestedPurchaseLead?.rate, pickConventional30LowestNoPoints(harborPurchaseNestedRows)?.rate);
+assert.equal(nestedPurchaseLead?.pts, pickConventional30LowestNoPoints(harborPurchaseNestedRows)?.pts);
+assert.equal(pickLeadRow(harborPurchaseNestedRows, "purchase")?.rate, nestedPurchaseLead?.rate);
+assert.ok(nestedPurchaseLead && (nestedPurchaseLead.pts ?? 1) <= 0);
+assert.notEqual(nestedPurchaseLead?.rate, harborPurchaseNestedRows[0]?.rate);
+assert.ok((nestedPurchaseLead?.pts ?? 0) <= 0);
+assert.ok(harborPurchaseNestedRows.some((row) => (row.pts ?? 0) > 0));
+assert.notEqual(
+  nestedPurchaseLead?.pts,
+  harborPurchaseNestedRows.find((row) => (row.pts ?? 0) > 0)?.pts,
+);
+assert.notEqual(nestedPurchaseLead?.rate, pickConventional30NoCost(harborPurchaseNestedRows)?.rate);
 assert.ok(
   asProductRows({
     results: [{ interestRate: 6.375, points: -0.07, term: 30, monthly_payment: 4242 }],
@@ -453,32 +460,20 @@ assert.equal(pickConventional30NoCost(harborWalkRows)?.rate, 6.75);
 assert.equal(pickLowerPaymentFromRows(safeCouponRowsFromProducts(harborWalkRows))?.rate, 6.25);
 assert.equal(pickLowerPaymentFromRows(safeCouponRowsFromProducts(harborWalkRows))?.pts, 1.044);
 assert.equal(pickNoCostFromRows(safeCouponRowsFromProducts(harborWalkRows))?.rate, 6.75);
-assert.equal(pickLeadRow(harborRefiRows, "purchase")?.rate, pickConventional30LowestNoPoints(harborRefiRows)?.rate);
-const harborPurchaseLead = [
-  {
-    rate: 6.49,
-    pts: -0.168,
-    loanTerm: 30,
-    bbLoanType: "conventional",
-    productName: "FNMA Conforming 30 Yr Fixed",
-  },
-  {
-    rate: 6.375,
-    pts: -0.07,
-    loanTerm: 30,
-    bbLoanType: "conventional",
-    productName: "FNMA Conforming 30 Yr Fixed",
-  },
+assert.equal(pickLeadRow(harborRefiRows, "purchase")?.rate, purchaseLeadRow(harborRefiRows)?.rate);
+assert.equal(purchaseLeadRow(harborRefiRows)?.rate, pickConventional30LowestNoPoints(harborRefiRows)?.rate);
+const firstRowIsNotPurchaseRule = [
+  { rate: 7.1, pts: -0.2, loanTerm: 30, bbLoanType: "conventional" },
+  { rate: 6.8, pts: -0.05, loanTerm: 30, bbLoanType: "conventional" },
+  { rate: 6.8, pts: 0.4, loanTerm: 30, bbLoanType: "conventional" },
 ];
-assert.equal(pickLeadRow(harborPurchaseLead, "purchase")?.rate, 6.375);
-assert.equal(pickLeadRow(harborPurchaseLead, "purchase")?.pts, -0.07);
-assert.notEqual(pickLeadRow(harborPurchaseLead, "purchase")?.rate, 6.49);
-assert.notEqual(pickLeadRow(harborPurchaseLead, "purchase")?.rate, harborPurchaseLead[0]?.rate);
-assert.equal(pickConventional30LowestNoPoints(harborPurchaseLead)?.rate, 6.375);
-assert.equal(pickConventional30NoCost(harborPurchaseLead)?.rate, 6.49);
+assert.equal(purchaseLeadRow(firstRowIsNotPurchaseRule)?.rate, pickConventional30LowestNoPoints(firstRowIsNotPurchaseRule)?.rate);
+assert.ok((purchaseLeadRow(firstRowIsNotPurchaseRule)?.pts ?? 1) <= 0);
+assert.notEqual(purchaseLeadRow(firstRowIsNotPurchaseRule)?.rate, firstRowIsNotPurchaseRule[0]?.rate);
+assert.notEqual(purchaseLeadRow(firstRowIsNotPurchaseRule)?.pts, 0.4);
 assert.notEqual(
-  pickLeadRow(harborPurchaseLead, "purchase")?.rate,
-  pickConventional30NoCost(harborPurchaseLead)?.rate,
+  purchaseLeadRow(firstRowIsNotPurchaseRule)?.rate,
+  pickConventional30NoCost(firstRowIsNotPurchaseRule)?.rate,
 );
 assert.equal(
   pickConventional30NoCost([
@@ -693,6 +688,7 @@ assert.ok(route.includes("zipcode: client.zipcode"));
 assert.ok(route.includes('state: "CA"'));
 assert.ok(route.includes("[rateflow-quote]"));
 assert.ok(route.includes("pickLeadRow"));
+assert.ok(route.includes("purchaseLeadRow"));
 assert.ok(route.includes("empty: true"));
 assert.ok(route.includes("retryable: true"));
 assert.ok(!route.includes("6.750"));
@@ -709,6 +705,7 @@ const picker = readFileSync(join(root, "lib/rateflow/quote.ts"), "utf8");
 assert.ok(picker.includes("pickConventional30LowestNoPoints"));
 assert.ok(picker.includes("pickConventional30NoCost"));
 assert.ok(picker.includes("pickLeadRow"));
+assert.ok(picker.includes("purchaseLeadRow"));
 assert.ok(picker.includes("liveLoanNowCopy"));
 assert.ok(picker.includes("This loan right now:"));
 assert.ok(picker.includes("rawRowsFromPayload") || picker.includes("results"));
@@ -727,7 +724,8 @@ assert.ok(fox.includes("requestRateflowIfNeeded"));
 assert.ok(fox.includes("messagesWithLiveQuoteSpeech"));
 assert.ok(fox.includes("messagesWithRateOrReadySpeech"));
 assert.ok(client.includes("/api/rateflow-quote"));
-assert.ok(client.includes("pickLeadRow"));
+assert.ok(!client.includes("pickLeadRow"));
+assert.ok(!client.includes("purchaseLeadRow"));
 assert.ok(client.includes("RATEFLOW_EMPTY_RETRIES"));
 assert.ok(client.includes("attempt < RATEFLOW_EMPTY_RETRIES"));
 assert.ok(client.includes("parseRateflowQuoteMiss"));

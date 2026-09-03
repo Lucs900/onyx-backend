@@ -9,6 +9,7 @@ import {
   isRateflowFailure,
   parseClientBody,
   pickLeadRow,
+  purchaseLeadRow,
   quoteRowSample,
   safeCouponRowsFromProducts,
   safeQuoteFromRow,
@@ -126,8 +127,8 @@ function bankingBridgeBody(client: RateflowClientBody) {
     loan_type: "conventional",
     loan_term: 30,
     property_type: client.property_type,
-    // Do not send a par hint. That featured coupon is 6.490 / -0.168,
-    // not the lowest conventional 30 with points <= 0 (6.375 / -0.07).
+    // Do not send a par hint. That featured first coupon is not the
+    // purchase lead (conventional 30, points <= 0, then lowest rate).
     state: "CA",
     zipcode: client.zipcode,
     location: {
@@ -173,7 +174,10 @@ export async function POST(request: Request) {
       return retryable(buildReport({ client, bbHttpStatus: response.status, resultCount: 0 }));
     }
     const rows = asProductRows(payload);
-    const row = pickLeadRow(rows, client.loan_purpose);
+    const row =
+      client.loan_purpose === "purchase"
+        ? purchaseLeadRow(rows)
+        : pickLeadRow(rows, client.loan_purpose);
     const quote = row ? safeQuoteFromRow(row) : null;
     const pickedRate = Number(row?.rate);
     const report = buildReport({
