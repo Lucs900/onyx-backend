@@ -83,6 +83,7 @@ import {
   slugForIntent,
   beginFileEdit,
   clearLiveQuote,
+  retryLiveQuote,
   parseLooseAmount,
   writePurchasePrice,
   changePendingProposal,
@@ -2206,6 +2207,9 @@ function applyCaptureBody(capture: Capture) {
   }
   if (capture.field === "couponChoice") {
     return commit(applyCouponChoice(current, capture.value));
+  }
+  if (capture.field === "retry-rateflow") {
+    return commit({ ...current, ...retryLiveQuote() });
   }
   if (capture.field === "accept-live-coupon") {
     return commit(acceptPendingLiveCoupon(current));

@@ -53,7 +53,6 @@ import {
   paintThreadActions,
   shouldDeferNextAskForLiveCoupon,
 } from "./liveCoupon";
-import { requestRateflowIfNeeded } from "./rateflowClient";
 import {
   dropStreetSuggestChips,
   parseSafePlaceAddress,
@@ -68,10 +67,12 @@ import {
 } from "@/lib/places/address";
 import {
   type LookupWait,
+  RATEFLOW_UI_WAIT_MS,
   isLookupWaitLine,
   withWaitLine,
   withoutWaitLines,
 } from "./lookupWait";
+import { requestRateflowIfNeeded, resetRateflowSearch } from "./rateflowClient";
 import { shouldKeepStoredFoxThread, withoutTrailingSealedFoxLines } from "./persistThread";
 import {
   fileAddressLine,
@@ -1222,6 +1223,9 @@ export function AlwaysOnFox({
       if (isStart && shouldDeferNextAskForLiveCoupon(live) && prompt !== "confirm-proposal") {
         return prev;
       }
+      if (isStart && live.liveQuoteStatus === "unavailable" && !live.liveCouponSettled && !live.liveQuote) {
+        return prev;
+      }
       if (isStart && prompt === "done") {
         if (hasPreparedAsk(prev)) return prev;
         if (fileExists(getFoxDraft()) && prev[prev.length - 1]?.role === "fox") return prev;
@@ -1282,6 +1286,7 @@ export function AlwaysOnFox({
     skipPromptSync.current = true;
     setLookupWait("rateflow");
     commitMessages((prev) => withWaitLine(prev, "rateflow"));
+    const startedAt = Date.now();
     void (async () => {
       while (!cancelled) {
         const result = await requestRateflowIfNeeded(getFoxDraft());
@@ -1299,11 +1304,11 @@ export function AlwaysOnFox({
           );
           return;
         }
-        if (result === "unavailable") {
+        if (result === "unavailable" || Date.now() - startedAt >= RATEFLOW_UI_WAIT_MS) {
           setLookupWait(null);
           if (key) setLiveQuoteResult(key, null);
           const live = getFoxDraft();
-          skipPromptSync.current = false;
+          skipPromptSync.current = true;
           commitMessages((prev) =>
             messagesWithRateOrReadySpeech(withoutWaitLines(prev), live),
           );
@@ -1316,7 +1321,7 @@ export function AlwaysOnFox({
     return () => {
       cancelled = true;
     };
-  }, [isStart, rateflowKey, ready]);
+  }, [isStart, rateflowKey, ready, draft.liveQuoteRetryAt]);
 
   useEffect(() => {
     if (!ready || !isStart) {
@@ -1563,6 +1568,9 @@ export function AlwaysOnFox({
     if (action.capture?.field === "couponChoice" && action.capture.value === "skip") {
       setLookupWait((current) => (current === "rateflow" ? null : current));
       commitMessages((prev) => withoutWaitLines(prev));
+    }
+    if (action.capture?.field === "retry-rateflow") {
+      resetRateflowSearch(searchedKeyFor(getFoxDraft()) || rateflowKey);
     }
     const productIntent = productIntentFromAction(action);
     const productCapture = productIntent

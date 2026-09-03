@@ -24,6 +24,18 @@ export function resetRateflowClientForTests() {
   inflight.clear();
 }
 
+export function resetRateflowSearch(key?: string) {
+  if (!key) {
+    searched.clear();
+    confirmedEmpty.clear();
+    inflight.clear();
+    return;
+  }
+  searched.delete(key);
+  confirmedEmpty.delete(key);
+  inflight.delete(key);
+}
+
 type RateflowFetch =
   | { ok: true; quote: LiveQuoteOnFile }
   | { ok: false; miss: "empty" | "retryable" };

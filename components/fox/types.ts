@@ -474,6 +474,8 @@ export type FoxIntakeDraft = {
   /** Last Rateflow search key. Reuse unless amounts, type, occupancy, or FICO change. */
   liveQuoteKey?: string;
   liveQuoteStatus?: "ready" | "unavailable";
+  /** Bumps the live-line effect after Try again. */
+  liveQuoteRetryAt?: number;
   liveQuote?: {
     key: string;
     rate: number;
@@ -649,6 +651,7 @@ export type Capture =
   | { field: "change-proposal" }
   | { field: "decline-proposal" }
   | { field: "couponChoice"; value: "this" | "lower" | "nocost" | "skip" }
+  | { field: "retry-rateflow" }
   | { field: "accept-live-coupon" }
   | { field: "keep-live-coupon" }
   | { field: "payFrequency"; value: string }

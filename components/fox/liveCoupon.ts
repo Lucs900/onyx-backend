@@ -11,6 +11,7 @@ import {
 import { nextDocInvite, needsPurchaseSplitAsk } from "./fileWrite";
 import { ID_UNREAD_ASK, isBorrowerNameConfirmPending } from "./borrowerName";
 import { isFundsPairProposal, loanExceedsPurchasePrice } from "./completeness";
+import { isLookupWaitLine, isLookupWaitMessage } from "./lookupWait";
 import { addressOnFileCopy, fileAddressLine, shouldShowAddressUseThis } from "./propertyType";
 import type { Capture, FoxAction, FoxIntakeDraft, FoxMessage } from "./types";
 
@@ -386,6 +387,7 @@ function dropLeftoverConfirmChipsOnLooksRightDocAsk(
     const keepFundsPair =
       isFundsPairProposal(draft.pendingProposal) && isFundsPairConfirmText(message.text);
     const next = message.actions.filter((action) => {
+      if (isPricingFailSpeech(message) && isPricingFailChip(action)) return true;
       if (
         keepFundsPair &&
         (action.capture?.field === "accept-proposal" || action.capture?.field === "change-proposal")
@@ -497,6 +499,18 @@ export function applyIdExtractAsk(messages: FoxMessage[], ask: FoxMessage): FoxM
     );
   }
   return [...freezeUsedFoxTurns(cleaned), ask];
+}
+
+function isPricingFailSpeech(message: FoxMessage) {
+  return message.id.startsWith("pricing-ready:") || message.text === "Pricing when the file is ready";
+}
+
+function isPricingFailChip(action: FoxAction) {
+  return (
+    action.capture?.field === "retry-rateflow" ||
+    action.id === "pricing-ready-retry" ||
+    action.id === "pricing-ready-skip"
+  );
 }
 
 function isFundsPairConfirmText(text?: string) {
@@ -656,6 +670,7 @@ export function paintedFoxActions(
   draft: FoxIntakeDraft,
   current = true,
 ): FoxAction[] | undefined {
+  if (isLookupWaitMessage(message) || isLookupWaitLine(message.text)) return undefined;
   if (isOnFileAddressLine(message) || hideAddressUseThisOnBubble(message, draft)) return undefined;
   if (!current) return undefined;
   const shown = visibleFoxActions(message, draft);
@@ -676,6 +691,7 @@ export function paintedFoxActions(
     ) {
       return true;
     }
+    if (current && isPricingFailSpeech(message) && isPricingFailChip(action)) return true;
     if (docAsk && isLeftoverConfirmChip(action)) return false;
     if (docAsk) return current && isAfterLooksRightDocChip(action);
     if (action.label === "Use this" || action.label === "Change") {
@@ -696,6 +712,7 @@ function hideAddressUseThisOnBubble(message: FoxMessage, draft: FoxIntakeDraft) 
 }
 
 export function visibleFoxActions(message: FoxMessage, draft: FoxIntakeDraft) {
+  if (isLookupWaitMessage(message) || isLookupWaitLine(message.text)) return undefined;
   if (isOnFileAddressLine(message) || hideAddressUseThisOnBubble(message, draft)) return undefined;
   const actions = message.actions;
   if (!actions?.length) return undefined;
@@ -711,7 +728,8 @@ export function visibleFoxActions(message: FoxMessage, draft: FoxIntakeDraft) {
       !(
         isFundsPairProposal(draft.pendingProposal) &&
         (action.capture?.field === "accept-proposal" || action.capture?.field === "change-proposal")
-      )
+      ) &&
+      !(isPricingFailSpeech(message) && isPricingFailChip(action))
     ) {
       return false;
     }

@@ -48,7 +48,7 @@ import {
   withLiveCouponChips,
   type CouponChoice,
 } from "./liveCoupon";
-import { RATEFLOW_WAIT_LINE, rateflowWaitActions } from "./lookupWait";
+import { RATEFLOW_WAIT_LINE, pricingFailedActions } from "./lookupWait";
 import {
   AMOUNT_HELPER_BUBBLES,
   AMOUNT_PURPOSE_BUBBLES,
@@ -879,6 +879,23 @@ export function clearLiveQuote(): Pick<
     liveQuoteStatus: undefined,
     liveQuoteRows: undefined,
     pendingLiveCoupon: undefined,
+  };
+}
+
+export function retryLiveQuote(): Pick<
+  FoxIntakeDraft,
+  | "liveQuote"
+  | "liveQuoteKey"
+  | "liveQuoteStatus"
+  | "liveQuoteRows"
+  | "pendingLiveCoupon"
+  | "liveCouponSettled"
+  | "liveQuoteRetryAt"
+> {
+  return {
+    ...clearLiveQuote(),
+    liveCouponSettled: false,
+    liveQuoteRetryAt: Date.now(),
   };
 }
 
@@ -2693,6 +2710,7 @@ export function messagesWithPricingWhenReady(
       id: "pricing-ready:0",
       role: "fox",
       text: PRICING_WHEN_READY,
+      actions: pricingFailedActions(),
     },
   ];
 }
@@ -2816,7 +2834,10 @@ export function nextFoxAsk(draft: FoxIntakeDraft): {
   actions?: FoxAction[];
 } {
   if (shouldHoldAskForLiveLine(draft)) {
-    return { text: RATEFLOW_WAIT_LINE, actions: rateflowWaitActions() };
+    return { text: RATEFLOW_WAIT_LINE };
+  }
+  if (draft.liveQuoteStatus === "unavailable" && !draft.liveCouponSettled && !draft.liveQuote) {
+    return { text: PRICING_WHEN_READY, actions: pricingFailedActions() };
   }
   if (
     draft.awaitingYearsInBusiness &&
@@ -4035,7 +4056,7 @@ export function editPromptFromCapture(capture?: Capture): FoxPrompt | undefined 
   ) {
     return "confirm-proposal";
   }
-  if (capture.field === "couponChoice") return undefined;
+  if (capture.field === "couponChoice" || capture.field === "retry-rateflow") return undefined;
   if (capture.field === "creditRange" || capture.field === "skip-credit") return "credit";
   if (capture.field === "termYears" || capture.field === "skip-term") return "term";
   if (capture.field === "incomeType" || capture.field === "skip-income") return "income";
@@ -5008,6 +5029,7 @@ function draftAfterCaptureBody(draft: FoxIntakeDraft, capture: Capture): FoxInta
   }
   if (capture.field === "payFrequency") return applyPayFrequencyAnswer(next, capture.value);
   if (capture.field === "skip-wage-docs") return skipWageDocs(next);
+  if (capture.field === "retry-rateflow") return { ...next, ...retryLiveQuote() };
   if (capture.field === "retry-unread-doc") return retryUnreadDoc(next);
   if (capture.field === "note-unread-doc") return { ...next, awaitingUnreadNote: true };
   if (capture.field === "skip-unread-doc") return skipUnreadDoc(next);
@@ -5438,6 +5460,15 @@ export function workspaceReply(
   if (notepadEdit === "credit") {
     return replyToCreditAsk(q, draft);
   }
+  if (/^try again$/i.test(lower) && (draft.liveQuoteStatus === "unavailable" || shouldHoldAskForLiveLine(draft))) {
+    return {
+      text: RATEFLOW_WAIT_LINE,
+      capture: { field: "retry-rateflow" },
+    };
+  }
+  if (draft.liveQuoteStatus === "unavailable" && !draft.liveCouponSettled && isCouponSkipText(q)) {
+    return couponChipReply(draft, "skip");
+  }
 
   if (draft.pendingLiveCoupon) {
     if (/^(yes|use this|use it|confirm|ok|okay)$/i.test(lower)) {
@@ -5470,7 +5501,6 @@ export function workspaceReply(
   if (
     searchedKeyFor(draft) &&
     !liveQuoteReady(draft) &&
-    draft.liveQuoteStatus !== "unavailable" &&
     !propertyZipConfirmNeeded(draft) &&
     prompt !== "property-zip" &&
     !draft.pendingProposal &&
