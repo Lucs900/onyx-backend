@@ -3365,6 +3365,12 @@ function workspaceAskCopy(
     };
   }
   if (prompt === "done") {
+    if (inQueueEnding(draft)) {
+      return {
+        text: MOTION_COPY.in_queue,
+        actions: finishLineActions(draft),
+      };
+    }
     const outbox = latestOutbox(draft);
     const remind = remindLine(draft);
     const late = lateFileRemainder(draft);
@@ -4176,7 +4182,7 @@ export function workspaceUpdateCopy(capture: Capture, draft: FoxIntakeDraft) {
     return "ACR is the desk that stays open after close — letter, scout, and reward. This file is still the loan.";
   }
   if (capture.field === "what-happens-next") {
-    return MOTION_COPY.whatHappensNext;
+    return MOTION_COPY.in_queue;
   }
   if (capture.field === "ask-fox") {
     if (draft.docsHeld && !draft.sampleAccepted) return HOLD_DOCS_ASK_FOX;
@@ -5913,9 +5919,9 @@ export function workspaceReply(
 
   if (inQueueEnding(draft) && /what happens next/.test(lower)) {
     return {
-      text: MOTION_COPY.whatHappensNext,
+      text: MOTION_COPY.in_queue,
       actions: restoreQueueActions(draft),
-      capture: { field: "what-happens-next" },
+      capture: { field: "ask-fox" },
     };
   }
 

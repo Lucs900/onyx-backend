@@ -198,8 +198,14 @@ async function main() {
   assert.equal(proceeded.motion, "in_queue");
   assert.equal(proceeded.nextActor, "ONYX");
   assert.equal(proceeded.pendingFinish, undefined);
-  assert.match(nextFoxAsk(proceeded).text, /ONYX has this for review\. I’m still here/);
-  assert.doesNotMatch(nextFoxAsk(proceeded).text, /What’s a good email|email/i);
+  const proceededAsk = nextFoxAsk(proceeded);
+  assert.equal(proceededAsk.text, "ONYX has this for review. I’m still here.");
+  assert.equal(proceededAsk.followUp, undefined);
+  assert.doesNotMatch(proceededAsk.text, /What’s a good email|email|This is the wait|What happens next/i);
+  assert.deepEqual(
+    (proceededAsk.actions ?? []).map((item) => item.label),
+    ["Ask Fox", "Upload more", "Request human"],
+  );
   const still = stillUsefulSection(proceeded);
   if (still && !still.empty) {
     assert.ok(still.items.length >= 1 && still.items.length <= 3, "Still useful shows next 1–3 only");

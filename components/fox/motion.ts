@@ -417,10 +417,10 @@ function sideDoorActions(draft: FoxIntakeDraft): FoxAction[] {
 function inQueueActions(draft: FoxIntakeDraft): FoxAction[] {
   return [
     {
-      id: "what-happens-next",
-      label: "What happens next?",
+      id: "ask-fox",
+      label: "Ask Fox",
       event: "bubble",
-      capture: { field: "what-happens-next" },
+      capture: { field: "ask-fox" },
     },
     {
       id: "upload-more",
@@ -428,13 +428,7 @@ function inQueueActions(draft: FoxIntakeDraft): FoxAction[] {
       event: "open-docs",
       capture: { field: "upload-more" },
     },
-    {
-      id: "ask-fox",
-      label: "Ask Fox",
-      event: "bubble",
-      capture: { field: "ask-fox" },
-    },
-    ...sideDoorActions(draft),
+    ...sideDoorActions(draft).filter((item) => item.id === "request-human"),
   ];
 }
 

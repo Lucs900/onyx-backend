@@ -435,9 +435,15 @@ async function main() {
   assert.equal(proceeded.motion, "in_queue");
   assert.equal(proceeded.nextActor, "ONYX");
   assert.equal(proceeded.pendingFinish, undefined);
-  assert.match(nextFoxAsk(proceeded).text, /ONYX has this for review\. I’m still here/);
-  assert.doesNotMatch(nextFoxAsk(proceeded).text, /What’s a good email|email/i);
-  noFnma(nextFoxAsk(proceeded).text);
+  const proceededAsk = nextFoxAsk(proceeded);
+  assert.equal(proceededAsk.text, "ONYX has this for review. I’m still here.");
+  assert.equal(proceededAsk.followUp, undefined);
+  assert.doesNotMatch(proceededAsk.text, /What’s a good email|email|This is the wait|What happens next/i);
+  assert.deepEqual(
+    (proceededAsk.actions ?? []).map((item) => item.label),
+    ["Ask Fox", "Upload more", "Request human"],
+  );
+  noFnma(proceededAsk.text);
   assert.doesNotMatch(JSON.stringify(proceeded), /UW Manager|this fails FNMA/i);
 
   const conflictDraft = applyExtractedFields(
@@ -647,8 +653,14 @@ async function main() {
   assert.equal(clipperProceed.motion, "in_queue");
   assert.equal(clipperProceed.nextActor, "ONYX");
   assert.equal(clipperProceed.pendingFinish, undefined);
-  assert.match(nextFoxAsk(clipperProceed).text, /ONYX has this for review\. I’m still here/);
-  assert.doesNotMatch(nextFoxAsk(clipperProceed).text, /What’s a good email|Skip email|email/i);
+  const clipperProceedAsk = nextFoxAsk(clipperProceed);
+  assert.equal(clipperProceedAsk.text, "ONYX has this for review. I’m still here.");
+  assert.equal(clipperProceedAsk.followUp, undefined);
+  assert.doesNotMatch(clipperProceedAsk.text, /What’s a good email|Skip email|email|This is the wait|What happens next/i);
+  assert.deepEqual(
+    (clipperProceedAsk.actions ?? []).map((item) => item.label),
+    ["Ask Fox", "Upload more", "Request human"],
+  );
   const clipperHold = applyNotYetMotion({
     ...clipperLooks,
     emailSkipped: false,
