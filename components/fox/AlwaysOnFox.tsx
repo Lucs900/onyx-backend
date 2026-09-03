@@ -212,15 +212,13 @@ function seedWorkspaceMessages(
       }
       return dropResolvedAddressConfirmChips(stored, live);
     }
-    if (fileExists(live)) {
+    if (fileExists(live) || live.fileId) {
       const ask = [foxAskMessage(workspacePromptCopy(workspacePrompt(live), live))];
       setFoxMessages(ask);
       return ask;
     }
   }
-  const draft = continueWorkspaceFromEntry(path ?? null, intent ?? null, {
-    fresh: typeof window !== "undefined" && isHomepageFreshQuery(window.location.search),
-  });
+  const draft = continueWorkspaceFromEntry(path ?? null, intent ?? null);
   const greet = [foxAskMessage(workspaceGreeting(draft))];
   setFoxMessages(greet);
   return greet;

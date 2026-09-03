@@ -96,7 +96,6 @@ import {
   START_PATH_KEY,
   consumeHomepageFreshStart,
   homepageFreshEntryPending,
-  markHomepageFreshStart,
   writeStartPath,
 } from "@/components/products/startPath";
 import {
@@ -368,6 +367,29 @@ function normalizeAgencyDeclarations(
   return Object.keys(next).length ? next : undefined;
 }
 
+function readFileId(raw: object): string | undefined {
+  const rec = raw as Record<string, unknown>;
+  const value = rec.fileId ?? rec.file_id;
+  if (typeof value !== "string") return undefined;
+  const id = value.trim();
+  return id || undefined;
+}
+
+export function mintFileId(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return `file_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
+}
+
+export function ensureFileId(draft: FoxIntakeDraft): FoxIntakeDraft {
+  const existing = draft.fileId?.trim();
+  if (existing) {
+    return existing === draft.fileId ? draft : { ...draft, fileId: existing };
+  }
+  return { ...draft, fileId: mintFileId() };
+}
+
 function emptyField(field: string, value = "", source: DraftField["source"] = "client"): DraftField {
   return { field, value, source, confirmed: false };
 }
@@ -462,6 +484,7 @@ function normalize(value: unknown): FoxIntakeDraft {
       ? (raw.resumeAfterEdit as FoxPrompt)
       : undefined,
     path: raw.path === "acr" || raw.path === "loan-only" ? raw.path : undefined,
+    fileId: readFileId(raw),
     productIntent: normalizeProductIntent(raw.productIntent),
     jumboPurpose: raw.jumboPurpose === "buy" || raw.jumboPurpose === "refinance"
       ? raw.jumboPurpose
@@ -1096,6 +1119,7 @@ export function shouldResumeWorkspaceEntry(
   draft: FoxIntakeDraft = current,
   messages: FoxMessage[] = getFoxMessages(),
 ) {
+  if (draft.fileId?.trim()) return true;
   if (fileExists(draft) || workspaceSessionStarted(draft, messages)) return true;
   return Boolean(
     (draft.skippedClasses && draft.skippedClasses.length > 0) ||
@@ -1106,7 +1130,9 @@ export function shouldResumeWorkspaceEntry(
 
 function resumeWorkspaceEntry(path?: IntakePath | null, intent: ProductIntent | null = null) {
   markWorkspaceEntry(current.path ?? path);
-  if (!current.workspaceFlow) {
+  if (!current.fileId) {
+    commit(ensureFileId({ ...current, workspaceFlow: true }));
+  } else if (!current.workspaceFlow) {
     commit({ ...current, workspaceFlow: true });
   }
   if (path && !current.path) setDraftPath(path);
@@ -1141,7 +1167,7 @@ export function clearPreviewWorkspaceStorage() {
   }
 }
 
-/** Explicit Start over. Same wipe as homepage CTA, plus the three preview storage keys. */
+/** Start over is the only wipe: new file_id, empty Structure, empty thread. */
 export function startOverWorkspace(path: IntakePath | null = null) {
   clearPreviewWorkspaceStorage();
   foxMessages = [];
@@ -1154,26 +1180,26 @@ export function startOverWorkspace(path: IntakePath | null = null) {
   return next;
 }
 
-/** Wipe the prior file. Keep the new path and honor intent without a second reset. */
+/** Open a new File and mint file_id. Not a refresh / homepage resume. */
 export function resetWorkspaceForEntry(
   path: IntakePath | null,
   intent: ProductIntent | null = null,
 ) {
   markWorkspaceEntry(path);
-  current = {
+  current = ensureFileId({
     ...emptyDraft(),
     path: path ?? undefined,
     productIntent: intent ?? undefined,
     workspaceFlow: true,
     updatedAt: new Date().toISOString(),
-  };
+  });
   clearFoxMessages();
   persist(current);
   emit();
   return current;
 }
 
-/** Keep a live homepage thread or an in-motion File. Fresh start is homepage CTA only. */
+/** Resume this browser File. leftover ?fresh=1 must not wipe. */
 export function continueWorkspaceFromEntry(
   path: IntakePath | null,
   intent: ProductIntent | null = null,
@@ -1181,11 +1207,8 @@ export function continueWorkspaceFromEntry(
 ) {
   if (!hydrated) hydrateFoxDraft();
   hydrateFoxMessages();
-  const fresh = Boolean(entry?.fresh) || homepageFreshEntryPending();
-  if (fresh) {
+  if (entry?.fresh || homepageFreshEntryPending()) {
     consumeHomepageFreshStart();
-    const next = startOverWorkspace(path);
-    return intent ? setDraftProductIntent(intent) : next;
   }
   if (shouldResumeWorkspaceEntry()) {
     return resumeWorkspaceEntry(path, intent);
@@ -1215,6 +1238,9 @@ export function hydrateFoxDraft() {
     return current;
   }
   current = readStored();
+  if (!current.fileId && shouldResumeWorkspaceEntry(current, foxMessages)) {
+    current = ensureFileId(current);
+  }
   if (!current.scenario) {
     const scenario = readScenario();
     if (scenario) current = withScenario(current, scenario);
@@ -1322,10 +1348,14 @@ export function applyWorkspaceEntry(
   return resetWorkspaceForEntry(path, intent);
 }
 
-/** Homepage CTA: always a new file. Return to Fox / refresh must not call this. */
+/** Homepage CTA: resume this browser File. Mint only when the browser is empty. */
 export function beginWorkspaceFromHero(path: IntakePath) {
-  markHomepageFreshStart();
-  return startOverWorkspace(path);
+  if (!hydrated) hydrateFoxDraft();
+  hydrateFoxMessages();
+  if (shouldResumeWorkspaceEntry()) {
+    return resumeWorkspaceEntry(current.path ?? path);
+  }
+  return resetWorkspaceForEntry(path, null);
 }
 
 function withProductIntent(draft: FoxIntakeDraft, intent: ProductIntent): FoxIntakeDraft {

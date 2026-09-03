@@ -265,6 +265,8 @@ export type FoxIntakeDraft = {
   resumeAfterEdit?: FoxPrompt;
   scenario: ExplorerScenario | null;
   path?: IntakePath;
+  /** Stable browser File identity. Minted once; Start over is the only remint. */
+  fileId?: string;
   productIntent?: ProductIntent;
   jumboPurpose?: JumboPurpose;
   jumboOffered?: boolean;
