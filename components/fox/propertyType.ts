@@ -456,14 +456,14 @@ export function fileAddressLine(draft: FoxIntakeDraft) {
   return displayedSubjectAddress(draft);
 }
 
-/** A confirmed contract street beats ZIP-only from ID / residence. Unconfirmed extract stays off Structure until Use this. */
+/** Confirmed contract / Places street only. A ZIP or city+ZIP is not a subject address. */
 export function displayedSubjectAddress(draft: FoxIntakeDraft) {
   const subject = typeof draft.subjectAddress === "string" ? draft.subjectAddress.trim() : "";
   const fact = factAddressFromDraft(draft).trim();
   const factConfirmed = Boolean(draft.facts?.property_address?.confirmed && fact);
   if (subject && !isZipOnlyFileAddress(subject, draft.propertyZip)) return subject;
   if (factConfirmed && !isZipOnlyFileAddress(fact, draft.propertyZip)) return fact;
-  return subject || (factConfirmed ? fact : "");
+  return "";
 }
 
 /** Use this paints only while a street is pending and File address is still blank. */

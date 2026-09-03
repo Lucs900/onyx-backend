@@ -519,9 +519,23 @@ async function main() {
   const clipperPriced = resolveFactConflict(clipperExtract.draft, "document");
   assert.equal(clipperPriced.propertyValueAmount, 850_000);
   assert.ok(!clipperPriced.pendingConflict);
-  assert.equal(clipperPriced.pendingProposal?.field, "property_address");
-  assert.match(nextFoxAsk(clipperPriced).text, /88 Clipper Street/i);
-  assert.doesNotMatch(nextFoxAsk(clipperPriced).text, /San Francisco, CA 94123\. Use this/i);
+  assert.match(clipperPriced.subjectAddress ?? "", /88 Clipper Street, San Francisco, CA 94114/i);
+  assert.doesNotMatch(clipperPriced.subjectAddress ?? "", /94123|Filbert/i);
+  assert.equal(clipperPriced.facts?.seller_credit?.value, "5000");
+  assert.match(clipperPriced.facts?.close_date?.value ?? "", /10\/15\/2026|2026-10-15/);
+  assert.ok(
+    previewFacts(clipperPriced).some((fact) => /88 Clipper Street, San Francisco, CA 94114/i.test(fact.value)),
+  );
+  assert.ok(previewFacts(clipperPriced).some((fact) => fact.label === "Seller credit" && /\$5,000/.test(fact.value)));
+  assert.ok(
+    previewFacts(clipperPriced).every(
+      (fact) =>
+        fact.id !== "file-property" ||
+        (/88 Clipper Street, San Francisco, CA 94114/i.test(fact.value) &&
+          !/Primary · 94123 · House|94123/.test(fact.value)),
+    ),
+  );
+  assert.doesNotMatch(nextFoxAsk(clipperPriced).text, /San Francisco, CA 94123\. Use this|Government ID|Bank statement/i);
   const clipperUsed = resolveProposal(clipperPriced, "accept");
   assert.match(clipperUsed.subjectAddress ?? "", /88 Clipper Street/i);
   assert.match(clipperUsed.subjectAddress ?? "", /San Francisco, CA 94114/i);
@@ -591,6 +605,8 @@ async function main() {
     ),
   );
   const aliasPriced = resolveFactConflict(aliasExtract.draft, "document");
+  assert.match(aliasPriced.subjectAddress ?? "", /88 Clipper Street, San Francisco, CA 94114/i);
+  assert.equal(aliasPriced.facts?.seller_credit?.value, "5000");
   const aliasUsed = resolveProposal(aliasPriced, "accept");
   assert.match(aliasUsed.subjectAddress ?? "", /88 Clipper Street, San Francisco, CA 94114/i);
   assert.doesNotMatch(aliasUsed.subjectAddress ?? "", /94123|Filbert/i);

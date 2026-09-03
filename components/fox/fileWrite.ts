@@ -1761,7 +1761,8 @@ export function resolveFactConflict(
     hasPurchaseContractDoc(resolved) &&
     (conflict.field === "purchase_price" || isPropertyAddressField(conflict.field))
   ) {
-    return queuePurchaseContractRemainder(resolved);
+    const written = applyPurchaseContractAccept(resolved, resolved.pendingProposal);
+    return queuePurchaseContractRemainder({ ...written, looksRightHold: false });
   }
   return resolved;
 }

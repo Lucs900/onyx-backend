@@ -390,13 +390,9 @@ export function conventionalFileFacts(draft: FoxIntakeDraft): {
 }[] {
   if (!holdsConventionalFile(draft)) return [];
   const file = conventionalFileFromDraft(draft);
-  const occupancy = occupancyLabel(file.property.occupancyStatus);
   const street = displayedSubjectAddress(draft).trim();
   const address =
-    street && !isZipOnlyFileAddress(street, draft.propertyZip)
-      ? street
-      : street || file.property.address || "address —";
-  const type = propertyTypeSpoken(file.property.propertyType) || "type —";
+    street && !isZipOnlyFileAddress(street, draft.propertyZip) ? street : "address —";
   const institution = file.assets.institution || "";
   const accountType = file.assets.type || "";
   const balance = moneyLabel(file.assets.suggestedBalance);
@@ -430,9 +426,7 @@ export function conventionalFileFacts(draft: FoxIntakeDraft): {
       id: "file-property",
       label: "Property",
       value: dashJoin([
-        occupancy || "occupancy —",
         address,
-        type,
         file.otherProperties.length ? `${file.otherProperties.length} other propert${file.otherProperties.length === 1 ? "y" : "ies"}` : "",
       ]),
       note: "APN, legal, year built, taxes, HOA wait for a title profile",

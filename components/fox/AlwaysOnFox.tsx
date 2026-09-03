@@ -150,6 +150,7 @@ import {
   DOC_INTAKE_EVENT,
   conflictActions,
   conflictAskCopy,
+  hasPurchaseContractDoc,
   missingAskActions,
   missingAskCopy,
   isDeadFileWriteLine,
@@ -1646,6 +1647,14 @@ export function AlwaysOnFox({
       applyCapture(action.capture);
       skipPromptSync.current = true;
       const live = getFoxDraft();
+      if (hasPurchaseContractDoc(live)) {
+        const ask =
+          live.pendingConflict || live.pendingProposal
+            ? (docReactionAsk(live) ?? nextFoxAsk(live))
+            : nextFoxAsk(live);
+        appendReply(action.label, ask);
+        return;
+      }
       const key = stillUsefulRefreshKey(live);
       const lines: FoxMessage[] = [
         {
