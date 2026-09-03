@@ -90,6 +90,9 @@ export function propertyZipSettled(draft: FoxIntakeDraft) {
 }
 
 export function propertyZipSkipped(draft: FoxIntakeDraft) {
+  if (draft.outOfState) return false;
+  const zip = String(draft.propertyZip ?? "").trim();
+  if (/^\d{5}$/.test(zip) && !isCaliforniaZip(zip)) return false;
   return Boolean(
     draft.propertyZipAsked && !typedZipFromDraft(draft) && draft.correcting !== "property-zip",
   );

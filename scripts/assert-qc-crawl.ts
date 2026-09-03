@@ -16,14 +16,17 @@ import {
   liveCouponConfirmCopy,
 } from "../components/fox/liveCoupon";
 import { applyLooksRightMotion } from "../components/fox/motion";
-import { parsePropertyType, writePropertyType } from "../components/fox/propertyType";
+import { parsePropertyType, writePropertyType, writePropertyZip } from "../components/fox/propertyType";
 import { subjectLeaseAskNeeded } from "../components/fox/rentalIncome";
 import { emptyDraft } from "../components/fox/store";
 import {
   GEO_STOP_COPY,
   PRICING_WHEN_READY,
+  messagesWithRateOrReadySpeech,
   namedOutOfState,
   nextFoxAsk,
+  previewFacts,
+  previewRateFact,
   shouldHoldAskForLiveLine,
   workspacePrompt,
   workspaceReply,
@@ -135,6 +138,26 @@ assert.match(out?.text ?? "", /California only/);
 assert.equal(out?.text, GEO_STOP_COPY);
 assert.doesNotMatch(out?.text ?? "", new RegExp(PRICING_WHEN_READY));
 assert.ok(!(out?.actions ?? []).some((item) => /Try again|Skip/i.test(item.label)));
+const after97535 = writePropertyZip(addressAsk, "97535");
+assert.equal(after97535.outOfState, true);
+assert.equal(previewRateFact(after97535), null);
+assert.ok(!previewFacts(after97535).some((fact) => fact.value === PRICING_WHEN_READY));
+assert.ok(
+  !messagesWithRateOrReadySpeech([], after97535).some((item) => item.text === PRICING_WHEN_READY),
+);
+const leftoverReady: FoxIntakeDraft = {
+  ...after97535,
+  liveQuoteStatus: "unavailable",
+  propertyZipAsked: true,
+};
+assert.equal(previewRateFact(leftoverReady), null);
+assert.ok(!previewFacts(leftoverReady).some((fact) => fact.value === PRICING_WHEN_READY));
+assert.ok(
+  !messagesWithRateOrReadySpeech(
+    [{ id: "pricing-ready:0", role: "fox", text: PRICING_WHEN_READY }],
+    leftoverReady,
+  ).some((item) => item.text === PRICING_WHEN_READY),
+);
 const stopped: FoxIntakeDraft = { ...addressAsk, outOfState: true, liveQuoteStatus: "unavailable" };
 assert.equal(nextFoxAsk(stopped).text, GEO_STOP_COPY);
 assert.doesNotMatch(nextFoxAsk(stopped).text, new RegExp(PRICING_WHEN_READY));

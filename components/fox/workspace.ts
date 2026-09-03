@@ -2701,6 +2701,7 @@ export function messagesWithPricingWhenReady(
   messages: FoxMessage[],
   draft: FoxIntakeDraft,
 ): FoxMessage[] {
+  if (fileNeedsCaliforniaAsk(draft)) return withoutPricingWhenReadySpeech(messages);
   if (addressConfirmPending(draft) || !addressLineReadyForQuote(draft) || !fileAddressLine(draft)) {
     return messages;
   }
@@ -2732,6 +2733,7 @@ export function messagesWithRateOrReadySpeech(
   messages: FoxMessage[],
   draft: FoxIntakeDraft,
 ): FoxMessage[] {
+  if (fileNeedsCaliforniaAsk(draft)) return withoutPricingWhenReadySpeech(messages);
   const quote = draft.liveQuote;
   if (liveQuoteReady(draft) && quote?.rate && quote.asOf) {
     return messagesWithLiveQuoteSpeech(
@@ -2745,6 +2747,7 @@ export function messagesWithRateOrReadySpeech(
 
 /** Skip writes the honest fallback on the type tap. House/Condo/2–4 wait for FICO, then live or fallback after a real search. */
 export function previewRateFact(draft: FoxIntakeDraft): PreviewFact | null {
+  if (fileNeedsCaliforniaAsk(draft)) return null;
   const intent = draft.productIntent ?? null;
   if (!intent) return null;
   if (propertyTypeSkipped(draft)) {
