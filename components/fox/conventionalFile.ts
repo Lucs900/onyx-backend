@@ -1,7 +1,7 @@
 import { formatDollars } from "@/components/products/scenario";
 import { OCCUPANCY_BUBBLES, type FoxIntakeDraft, type OtherReoRow } from "./types";
 import { otherReoRows } from "./otherReo";
-import { displayedSubjectAddress } from "./propertyType";
+import { displayedSubjectAddress, isZipOnlyFileAddress } from "./propertyType";
 
 function factValue(draft: FoxIntakeDraft, field: string) {
   return (draft.facts?.[field]?.value || "").trim();
@@ -391,7 +391,11 @@ export function conventionalFileFacts(draft: FoxIntakeDraft): {
   if (!holdsConventionalFile(draft)) return [];
   const file = conventionalFileFromDraft(draft);
   const occupancy = occupancyLabel(file.property.occupancyStatus);
-  const address = file.property.address || "address —";
+  const street = displayedSubjectAddress(draft).trim();
+  const address =
+    street && !isZipOnlyFileAddress(street, draft.propertyZip)
+      ? street
+      : street || file.property.address || "address —";
   const type = propertyTypeSpoken(file.property.propertyType) || "type —";
   const institution = file.assets.institution || "";
   const accountType = file.assets.type || "";

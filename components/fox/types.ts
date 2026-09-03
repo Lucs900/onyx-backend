@@ -332,6 +332,8 @@ export type FoxIntakeDraft = {
   addressZipOffered?: string;
   subjectAddress?: string;
   subjectAddressAsked?: boolean;
+  /** Last purchase-contract extract. Use this / Use document write from this, not a leftover ZIP place. */
+  lastPurchaseContractFields?: Record<string, string>;
   /** Places / typed street waiting for Use this. Not File. Not Rateflow. */
   pendingAddress?: {
     line: string;

@@ -561,6 +561,7 @@ function normalize(value: unknown): FoxIntakeDraft {
       raw.subjectAddressAsked ||
         (typeof raw.subjectAddress === "string" && raw.subjectAddress.trim()),
     ),
+    lastPurchaseContractFields: normalizeLastPurchaseContractFields(raw.lastPurchaseContractFields),
     subjectStreet:
       typeof raw.subjectStreet === "string" && raw.subjectStreet.trim()
         ? raw.subjectStreet.trim()
@@ -887,6 +888,18 @@ function normalizePendingCurrentHousing(
         }))
     : undefined;
   return { amount: Math.round(amount), ...(extras?.length ? { extras } : {}) };
+}
+
+function normalizeLastPurchaseContractFields(value: FoxIntakeDraft["lastPurchaseContractFields"]) {
+  if (!value || typeof value !== "object") return undefined;
+  const next: Record<string, string> = {};
+  for (const [key, raw] of Object.entries(value)) {
+    const field = String(key ?? "").trim();
+    const text = String(raw ?? "").trim();
+    if (!field || !text) continue;
+    next[field] = text;
+  }
+  return Object.keys(next).length ? next : undefined;
 }
 
 function normalizePendingAddress(value: FoxIntakeDraft["pendingAddress"]) {

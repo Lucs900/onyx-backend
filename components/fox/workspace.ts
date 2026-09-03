@@ -81,6 +81,8 @@ import {
   factValue,
   isPurchaseContractConfirmPending,
   isRemainderConfirmField,
+  purchaseContractFieldsFromDraft,
+  purchaseContractStreetFromDraft,
   fileStillUsefulNote,
   incomeRequestedClasses,
   missingListCopy,
@@ -1884,9 +1886,23 @@ function liveProposalAsk(
     };
   }
   if (isPropertyAddressField(proposal.field)) {
-    if (isPurchaseContractConfirmPending(draft)) {
+    if (isPurchaseContractConfirmPending(draft) || purchaseContractStreetFromDraft(draft)) {
+      const street = purchaseContractStreetFromDraft(draft) || proposal.value;
+      const fields = purchaseContractFieldsFromDraft(draft);
+      const extras = [
+        ...(proposal.extras ?? []),
+        ...(fields.purchase_price && !(proposal.extras ?? []).some((item) => item.field === "purchase_price")
+          ? [{ field: "purchase_price", value: fields.purchase_price, label: "purchase price" }]
+          : []),
+        ...(fields.close_date && !(proposal.extras ?? []).some((item) => item.field === "close_date")
+          ? [{ field: "close_date", value: fields.close_date, label: "close date" }]
+          : []),
+        ...(fields.seller_credit && !(proposal.extras ?? []).some((item) => item.field === "seller_credit")
+          ? [{ field: "seller_credit", value: fields.seller_credit, label: "seller credit" }]
+          : []),
+      ];
       return {
-        text: contractExtractConfirmCopy(proposal.value, proposal.extras ?? []),
+        text: contractExtractConfirmCopy(street, extras),
         actions: contractExtractActions(),
       };
     }

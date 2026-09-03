@@ -559,6 +559,19 @@ async function main() {
     ),
   );
   noFnma(nextFoxAsk(clipperUsed).text);
+  assert.doesNotMatch(nextFoxAsk(clipperUsed).text, /Government ID|Bank statement|government ID/i);
+  assert.ok(
+    conventionalFileFacts(clipperUsed).some(
+      (fact) =>
+        fact.id === "file-property" &&
+        /88 Clipper Street, San Francisco, CA 94114/i.test(fact.value) &&
+        !/Primary · 94123 · House/i.test(fact.value),
+    ),
+    conventionalFileFacts(clipperUsed)
+      .filter((fact) => fact.id === "file-property")
+      .map((fact) => fact.value)
+      .join(" · "),
+  );
 
   const aliasExtract = applyExtractedFields(zipOnly, {
     extractClass: "purchase_contract",
@@ -631,6 +644,63 @@ async function main() {
         !/94123/.test(fact.value),
     ),
   );
+
+  const leftoverPlace = {
+    ...zipOnly,
+    propertyValueAmount: 850_000,
+    lastPurchaseContractFields: {
+      property_address: "88 Clipper Street, San Francisco, CA 94114",
+      purchase_price: "850000",
+      close_date: "10/15/2026",
+      seller_credit: "5000",
+    },
+    pendingConflict: null,
+    pendingAddress: {
+      line: "San Francisco, CA 94123",
+      street: "San Francisco, CA 94123",
+      city: "San Francisco",
+      state: "CA" as const,
+      zip: "94123",
+    },
+    pendingProposal: {
+      field: "property_address",
+      value: "San Francisco, CA 94123",
+      label: "Property",
+      kind: "computed" as const,
+      note: "Suggested · not underwritten",
+      extras: [
+        { field: "street", value: "San Francisco, CA 94123", label: "Street" },
+        { field: "city", value: "San Francisco", label: "City" },
+        { field: "zip", value: "94123", label: "ZIP" },
+      ],
+    },
+  };
+  const leftoverAsk = nextFoxAsk(leftoverPlace);
+  assert.match(leftoverAsk.text, /88 Clipper Street/i);
+  assert.match(leftoverAsk.text, /seller credit \$5,000/i);
+  assert.doesNotMatch(leftoverAsk.text, /San Francisco, CA 94123\. Use this/i);
+  const leftoverUsed = resolveProposal(leftoverPlace, "accept");
+  assert.match(leftoverUsed.subjectAddress ?? "", /88 Clipper Street, San Francisco, CA 94114/i);
+  assert.doesNotMatch(leftoverUsed.subjectAddress ?? "", /94123|Filbert/i);
+  assert.equal(leftoverUsed.facts?.seller_credit?.value, "5000");
+  assert.match(leftoverUsed.facts?.close_date?.value ?? "", /10\/15\/2026|2026-10-15/);
+  const leftoverFacts = previewFacts(leftoverUsed);
+  assert.ok(leftoverFacts.some((fact) => /88 Clipper Street, San Francisco, CA 94114/i.test(fact.value)));
+  assert.ok(leftoverFacts.some((fact) => fact.label === "Seller credit" && /\$5,000/.test(fact.value)));
+  assert.ok(leftoverFacts.some((fact) => fact.label === "Close" && /October 15, 2026/.test(fact.value)));
+  assert.ok(
+    leftoverFacts.every(
+      (fact) =>
+        fact.id !== "file-property" ||
+        (/88 Clipper Street, San Francisco, CA 94114/i.test(fact.value) &&
+          !/Primary · 94123 · House/i.test(fact.value)),
+    ),
+    leftoverFacts
+      .filter((fact) => fact.id === "file-property" || fact.label === "Property address")
+      .map((fact) => `${fact.label} ${fact.value}`)
+      .join(" · "),
+  );
+  assert.doesNotMatch(nextFoxAsk(leftoverUsed).text, /Government ID|Bank statement|government ID/i);
 
   const emptyAssets = conventionalFileFacts({ ...emptyDraft(), productIntent: "buy", path: "acr" });
   assert.ok(emptyAssets.some((fact) => fact.id === "file-assets" && fact.value === ""));

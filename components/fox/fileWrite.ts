@@ -81,6 +81,7 @@ import {
   propertyAddressConflictActions,
   adoptStreetOverZipOnly,
   displayedSubjectAddress,
+  isPlaceAddressProposal,
   isZipOnlyFileAddress,
 } from "./propertyType";
 import {
@@ -697,6 +698,13 @@ export function last4Only(value: string) {
   return digits.slice(-4);
 }
 
+function looksLikeContractStreet(value: string) {
+  const t = value.trim();
+  if (!t || isZipOnlyFileAddress(t)) return false;
+  if (!/^\d{1,6}\s+[A-Za-z]/.test(t)) return false;
+  return /\b(ST|STREET|AVE|AVENUE|BLVD|RD|ROAD|LN|LANE|DR|DRIVE|WAY|CT|COURT|PL|PLACE)\b/i.test(t);
+}
+
 export function sanitizeExtractedFields(
   extractClass: ExtractClass,
   fields: Record<string, string | null | undefined>,
@@ -729,9 +737,13 @@ export function sanitizeExtractedFields(
         key === "subject_address" ||
         key === "premises" ||
         key === "property_street" ||
-        key === "subject_property_address"
+        key === "subject_property_address" ||
+        key === "property" ||
+        key === "address"
       ) {
-        if (!next.property_address) next.property_address = value;
+        if (!next.property_address && looksLikeContractStreet(value)) {
+          next.property_address = value;
+        }
         continue;
       }
     }
@@ -1552,6 +1564,11 @@ export function applyExtractedFields(
     }
   }
   if (extractClass === "purchase_contract") {
+    if (isPlaceAddressProposal(next.pendingProposal)) {
+      next = { ...next, pendingProposal: null, pendingAddress: undefined };
+    } else {
+      next = { ...next, pendingAddress: undefined };
+    }
     const have = new Set(remainderWrites.map((item) => item.field));
     const street = String(fields.property_address ?? "").trim();
     if (
@@ -1561,6 +1578,10 @@ export function applyExtractedFields(
       conflict?.field !== "property_address"
     ) {
       remainderWrites.push({ field: "property_address", value: street });
+    }
+    const close = String(fields.close_date ?? "").trim();
+    if (close && !have.has("close_date") && conflict?.field !== "close_date") {
+      remainderWrites.push({ field: "close_date", value: close });
     }
     const credit = String(fields.seller_credit ?? "").trim();
     const creditAmount = moneyNumber(credit);
@@ -1573,6 +1594,7 @@ export function applyExtractedFields(
     ) {
       remainderWrites.push({ field: "seller_credit", value: credit });
     }
+    next = { ...next, lastPurchaseContractFields: { ...fields } };
   }
   if (
     remainderWrites.length &&
@@ -1734,7 +1756,14 @@ export function resolveFactConflict(
       confirmedAt: now,
     };
   }
-  return { ...withValue, facts, pendingConflict: null, unresolvedConflict: false };
+  const resolved = { ...withValue, facts, pendingConflict: null, unresolvedConflict: false };
+  if (
+    hasPurchaseContractDoc(resolved) &&
+    (conflict.field === "purchase_price" || isPropertyAddressField(conflict.field))
+  ) {
+    return queuePurchaseContractRemainder(resolved);
+  }
+  return resolved;
 }
 
 const COUNTED_DOC_STATUSES = new Set<ReceivedDoc["status"]>(["received", "reading", "extracted"]);
@@ -2694,30 +2723,80 @@ const PURCHASE_CONTRACT_ACCEPT_FIELDS = [
   "seller_credit",
 ] as const;
 
-/** After Use this, write the contract street and seller credit even if the primary ask was close date. */
+export function hasPurchaseContractDoc(draft: FoxIntakeDraft) {
+  return (draft.documents ?? []).some(
+    (doc) =>
+      (doc.extractClass === "purchase_contract" || /purchase.?contract|purchase.?agree|\bpsa\b/i.test(doc.name)) &&
+      (doc.status === "extracted" || doc.status === "received"),
+  );
+}
+
+export function purchaseContractFieldsFromDraft(draft: FoxIntakeDraft): Record<string, string> {
+  const next: Record<string, string> = { ...(draft.lastPurchaseContractFields ?? {}) };
+  if (draft.pendingProposal) {
+    for (const item of remainderProposalWrites(draft.pendingProposal)) {
+      if (item.field && item.value && !next[item.field]) next[item.field] = item.value.trim();
+    }
+  }
+  return next;
+}
+
+export function purchaseContractStreetFromDraft(draft: FoxIntakeDraft) {
+  const street = String(draft.lastPurchaseContractFields?.property_address ?? "").trim();
+  if (!street || isZipOnlyFileAddress(street, draft.propertyZip)) return "";
+  if (!looksLikeContractStreet(street) && !/^\d{1,6}\s+/.test(street)) return "";
+  return street;
+}
+
+export function proposalFromLastPurchaseContract(draft: FoxIntakeDraft): FactProposal | null {
+  const fields = purchaseContractFieldsFromDraft(draft);
+  const writes: { field: string; value: string }[] = [];
+  for (const field of PURCHASE_CONTRACT_ACCEPT_FIELDS) {
+    const value = String(fields[field] ?? "").trim();
+    if (!value) continue;
+    if (field === "property_address" && isZipOnlyFileAddress(value, draft.propertyZip)) continue;
+    if (field === "purchase_price" && draft.facts?.purchase_price?.confirmed && factValue(draft, "purchase_price")) {
+      continue;
+    }
+    if (field === "close_date" && draft.facts?.close_date?.confirmed && factValue(draft, "close_date")) {
+      continue;
+    }
+    if (field === "seller_credit") {
+      const amount = moneyNumber(value);
+      if (amount == null || amount <= 0) continue;
+      if (draft.facts?.seller_credit?.confirmed && factValue(draft, "seller_credit")) continue;
+      writes.push({ field, value: String(amount) });
+      continue;
+    }
+    writes.push({ field, value });
+  }
+  return remainderProposalFromWrites("purchase_contract", writes);
+}
+
+/** After Use document on price, keep the contract street / close / credit queued for Use this. */
+export function queuePurchaseContractRemainder(draft: FoxIntakeDraft): FoxIntakeDraft {
+  const remainder = proposalFromLastPurchaseContract(draft);
+  if (!remainder) {
+    return { ...draft, pendingAddress: undefined };
+  }
+  return { ...draft, pendingProposal: remainder, pendingAddress: undefined };
+}
+
+/** After Use this, write the contract street and seller credit even if the chip was a leftover ZIP place. */
 export function applyPurchaseContractAccept(
   draft: FoxIntakeDraft,
   proposal?: FactProposal | null,
 ): FoxIntakeDraft {
-  const fromProposal = new Map<string, string>();
-  if (proposal) {
-    for (const item of remainderProposalWrites(proposal)) {
-      if (item.field && item.value) fromProposal.set(item.field, item.value.trim());
-    }
-  }
+  const fields = purchaseContractFieldsFromDraft({ ...draft, pendingProposal: proposal ?? draft.pendingProposal });
   const now = new Date().toISOString();
-  let next = draft;
+  let next: FoxIntakeDraft = { ...draft, pendingAddress: undefined };
   for (const field of PURCHASE_CONTRACT_ACCEPT_FIELDS) {
-    const factValueRaw = String(next.facts?.[field]?.value ?? "").trim();
-    const incoming = fromProposal.get(field) || factValueRaw;
+    const incoming = String(fields[field] ?? "").trim();
     if (!incoming) continue;
     if (field === "property_address") {
       if (isZipOnlyFileAddress(incoming, next.propertyZip)) continue;
       const shown = displayedSubjectAddress(next);
-      if (shown && !isZipOnlyFileAddress(shown, next.propertyZip)) {
-        if (valuesMatch(shown, incoming)) continue;
-        continue;
-      }
+      if (shown && !isZipOnlyFileAddress(shown, next.propertyZip)) continue;
       next = writeField(next, field, incoming, now);
       continue;
     }
@@ -2738,17 +2817,17 @@ export function applyPurchaseContractAccept(
       next = writeField(next, field, incoming, now);
     }
   }
-  return next;
+  return { ...next, pendingAddress: undefined };
 }
 
 export function isPurchaseContractConfirmPending(draft: FoxIntakeDraft) {
+  if (!hasPurchaseContractDoc(draft) && !draft.lastPurchaseContractFields) return false;
   const proposal = draft.pendingProposal;
-  if (!proposal || !isRemainderConfirmField(proposal.field)) return false;
-  return (draft.documents ?? []).some(
-    (doc) =>
-      (doc.extractClass === "purchase_contract" || /purchase.?contract|purchase.?agree|\bpsa\b/i.test(doc.name)) &&
-      (doc.status === "extracted" || doc.status === "received"),
-  );
+  if (proposal && isRemainderConfirmField(proposal.field)) return true;
+  if (purchaseContractStreetFromDraft(draft) || String(draft.lastPurchaseContractFields?.seller_credit ?? "").trim()) {
+    return Boolean(proposal || draft.pendingAddress);
+  }
+  return false;
 }
 
 export function skipCurrentInvite(draft: FoxIntakeDraft): FoxIntakeDraft {

@@ -18,8 +18,11 @@ import {
   factLabel,
   factValue,
   applyPurchaseContractAccept,
+  hasPurchaseContractDoc,
   isPurchaseContractConfirmPending,
   isRemainderConfirmField,
+  proposalFromLastPurchaseContract,
+  purchaseContractStreetFromDraft,
   nextDocInvite,
   remainderProposalWrites,
   valuesMatch,
@@ -81,6 +84,7 @@ import {
   propertyTypeConfirmCopy,
   adoptReuseZip,
   adoptStreetOverZipOnly,
+  isZipOnlyFileAddress,
   skipPropertyType,
   skipQuoteAddress,
   typedAddressConfirmCopy,
@@ -1355,9 +1359,24 @@ export function resolveProposal(
   draft: FoxIntakeDraft,
   winner: "accept" | "decline",
 ): FoxIntakeDraft {
+  if (winner === "accept" && purchaseContractStreetFromDraft(draft) && hasPurchaseContractDoc(draft)) {
+    const placeLike =
+      isPlaceAddressProposal(draft.pendingProposal) ||
+      isZipOnlyFileAddress(draft.pendingProposal?.value ?? "", draft.propertyZip) ||
+      Boolean(draft.pendingAddress?.line && !draft.pendingProposal);
+    if (placeLike) {
+      const contractProposal = proposalFromLastPurchaseContract(draft);
+      draft = {
+        ...draft,
+        pendingProposal: contractProposal ?? draft.pendingProposal,
+        pendingAddress: undefined,
+      };
+    }
+  }
   if (
     winner === "accept" &&
     !isPurchaseContractConfirmPending(draft) &&
+    !purchaseContractStreetFromDraft(draft) &&
     draft.pendingAddress?.line &&
     draft.pendingAddress.zip &&
     draft.pendingAddress.city
@@ -1446,7 +1465,7 @@ export function resolveProposal(
         : proposal.kind === "computed"
           ? "computed"
           : "document";
-  if (isPlaceAddressProposal(proposal)) {
+  if (isPlaceAddressProposal(proposal) && !purchaseContractStreetFromDraft(draft)) {
     const extras = Object.fromEntries((proposal.extras ?? []).map((item) => [item.field, item.value]));
     const place = parsePlaceAddress({
       line: proposal.value,
@@ -1518,7 +1537,8 @@ export function resolveProposal(
       : flushed;
   const afterFileNet = winner === "accept" ? maybeProposeOtherReoFileNet(afterNet) : afterNet;
   const afterContract =
-    winner === "accept" && isPurchaseContractConfirmPending(draft)
+    winner === "accept" &&
+    (isPurchaseContractConfirmPending(draft) || Boolean(draft.lastPurchaseContractFields))
       ? { ...applyPurchaseContractAccept(afterFileNet, draft.pendingProposal), looksRightHold: false }
       : afterFileNet;
   if (winner === "accept" && shouldAskYearsInBusiness(afterContract)) {
