@@ -39,21 +39,13 @@ export function liveQuoteReady(draft: FoxIntakeDraft) {
 
 export function shouldDeferNextAskForLiveCoupon(draft: FoxIntakeDraft) {
   if (draft.liveCouponSettled || draft.pendingLiveCoupon) return false;
-  if (draft.liveQuote && draft.liveQuoteStatus === "ready") return true;
+  if (draft.liveQuote && draft.liveQuoteStatus === "ready") return false;
   if (draft.liveQuoteStatus === "unavailable") return false;
   return Boolean(searchedKeyFor(draft));
 }
 
-function hideNoCostChip(draft?: FoxIntakeDraft) {
-  if (!draft?.liveQuote) return false;
-  const pts = draft.liveQuote.pts;
-  if (typeof pts === "number" && Number.isFinite(pts) && pts <= 0) return true;
-  return sameCouponNumbers(draft.liveQuote, pickNoCostFromRows(draft.liveQuoteRows ?? []));
-}
-
-export function liveCouponActions(draft?: FoxIntakeDraft): FoxAction[] {
-  const hideNoCost = hideNoCostChip(draft);
-  const chips: FoxAction[] = [
+export function liveCouponActions(_draft?: FoxIntakeDraft): FoxAction[] {
+  return [
     {
       id: "live-coupon-this",
       label: "This one",
@@ -67,21 +59,6 @@ export function liveCouponActions(draft?: FoxIntakeDraft): FoxAction[] {
       capture: { field: "couponChoice", value: "lower" },
     },
   ];
-  if (!hideNoCost) {
-    chips.push({
-      id: "live-coupon-nocost",
-      label: "No cost",
-      event: "bubble",
-      capture: { field: "couponChoice", value: "nocost" },
-    });
-  }
-  chips.push({
-    id: "live-coupon-skip",
-    label: "Skip",
-    event: "bubble",
-    capture: { field: "couponChoice", value: "skip" },
-  });
-  return chips;
 }
 
 export function liveCouponConfirmActions(): FoxAction[] {

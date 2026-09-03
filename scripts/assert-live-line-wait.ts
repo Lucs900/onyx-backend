@@ -1,7 +1,8 @@
 /**
  * After ZIP, Fox says Getting a live line. Income waits until the rate posts.
  * One turn. No stacked How is income earned? on the spinner. No chips on the wait.
- * This one · Lower payment · Skip only after a quote. Fail/timeout: Try again · Skip.
+ * This one · Lower payment only after a quote. No Skip on a successful quote row.
+ * Fail/timeout: Try again · Skip. No chips on Getting a live line.
  */
 import assert from "node:assert/strict";
 import { emptyDraft } from "../components/fox/store";
@@ -22,7 +23,13 @@ import {
   rateflowWaitActions,
   withWaitLine,
 } from "../components/fox/lookupWait";
-import { applyCouponChoice, liveCouponActions, paintedFoxActions } from "../components/fox/liveCoupon";
+import {
+  applyCouponChoice,
+  liveCouponActions,
+  paintedFoxActions,
+  shouldDeferNextAskForLiveCoupon,
+} from "../components/fox/liveCoupon";
+import { searchedKeyFor } from "../lib/rateflow/fromDraft";
 import type { FoxIntakeDraft, FoxMessage } from "../components/fox/types";
 
 function zipReadyDraft(): FoxIntakeDraft {
@@ -87,22 +94,38 @@ assert.equal(stacked[0]?.actions, undefined);
 assert.ok(!stacked.some((item) => item.text === "How is income earned?"));
 assert.equal(paintedFoxActions(stacked[0]!, afterZip, true), undefined);
 
+const liveKey = searchedKeyFor(afterZip);
+assert.ok(liveKey);
 const quoted: FoxIntakeDraft = {
   ...afterZip,
-  liveQuote: { key: "live-1", rate: 6.375, asOf: "2026-01-02", principalAndInterest: 4211 },
-  liveQuoteKey: "live-1",
+  liveQuote: { key: liveKey!, rate: 6.375, asOf: "2026-01-02", principalAndInterest: 4211 },
+  liveQuoteKey: liveKey,
   liveQuoteStatus: "ready",
 };
 const quoteThread = messagesWithLiveQuoteSpeech([], quoted, quoted.liveQuote!);
 const quoteTurn = quoteThread.find((item) => item.id.startsWith("live-quote:"));
 assert.ok(quoteTurn);
 assert.deepEqual(
-  (quoteTurn?.actions ?? []).map((item) => item.label).filter((label) => label !== "No cost"),
-  ["This one", "Lower payment", "Skip"],
+  (quoteTurn?.actions ?? []).map((item) => item.label),
+  ["This one", "Lower payment"],
 );
-assert.ok((liveCouponActions(quoted) ?? []).some((item) => item.label === "This one"));
-assert.ok((liveCouponActions(quoted) ?? []).some((item) => item.label === "Lower payment"));
-assert.ok((liveCouponActions(quoted) ?? []).some((item) => item.label === "Skip"));
+assert.ok(!(quoteTurn?.actions ?? []).some((item) => item.label === "Skip"));
+assert.deepEqual(
+  (liveCouponActions(quoted) ?? []).map((item) => item.label),
+  ["This one", "Lower payment"],
+);
+assert.equal(shouldDeferNextAskForLiveCoupon(quoted), false);
+assert.equal(shouldHoldAskForLiveLine(quoted), false);
+assert.equal(nextFoxAsk(quoted).text, "How is income earned?");
+assert.match(quoteTurn?.text ?? "", /Not a lock/);
+assert.deepEqual(
+  (paintedFoxActions(quoteTurn!, quoted, true) ?? []).map((item) => item.label),
+  ["This one", "Lower payment"],
+);
+assert.ok(!(paintedFoxActions(quoteTurn!, quoted, true) ?? []).some((item) => item.label === "Skip"));
+const continueWithoutChip = workspaceReply("W-2", quoted);
+assert.equal(continueWithoutChip?.capture?.field, "incomeType");
+assert.notEqual(continueWithoutChip?.capture?.field, "couponChoice");
 
 const failed: FoxIntakeDraft = {
   ...afterZip,
