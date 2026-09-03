@@ -1379,7 +1379,7 @@ export function withComputedCompanion(
     const loan = impliedLoanAmount(price, draft.downPaymentAmount);
     if (loan == null) return draft;
     if (draft.loanAmountValue === loan) return draft;
-    if (force === "down" && hasLoanAmount(draft)) {
+    if (force === "down") {
       return { ...draft, loanAmountValue: loan, amountAsked: true };
     }
     return {
@@ -1392,7 +1392,7 @@ export function withComputedCompanion(
     const down = impliedDownPayment(price, draft.loanAmountValue);
     if (down == null) return draft;
     if (draft.downPaymentAmount === down) return draft;
-    if (force === "loan" && hasDownPayment(draft)) {
+    if (force === "loan") {
       return { ...draft, downPaymentAmount: down, downAsked: true };
     }
     return {

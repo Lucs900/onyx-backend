@@ -26,7 +26,7 @@ import {
   proposalAskCopy,
   resolveProposal,
 } from "../components/fox/completeness";
-import { rateflowClientBodyFromDraft, rateflowBlockedReason } from "../lib/rateflow/fromDraft";
+import { rateflowClientBodyFromDraft, rateflowBlockedReason, searchedKeyFor } from "../lib/rateflow/fromDraft";
 import { applyLooksRightMotion, applyNotYetMotion, applyProceedMotion } from "../components/fox/motion";
 import { replyToMessage } from "../components/fox/script";
 import { applyCapture, applyExtractWrite, emptyDraft, getFoxDraft, loadIntakeDraft, receiveDocument } from "../components/fox/store";
@@ -35,6 +35,7 @@ import {
   amountAskText,
   beginFileEdit,
   docReactionAsk,
+  messagesWithRateOrReadySpeech,
   nextFoxAsk,
   parseFundsAmount,
   previewFacts,
@@ -44,7 +45,9 @@ import {
   workspaceReply,
   writePurchasePrice,
 } from "../components/fox/workspace";
-import type { FoxIntakeDraft } from "../components/fox/types";
+import { shouldKeepStoredFoxThread, withoutTrailingSealedFoxLines } from "../components/fox/persistThread";
+import { RATEFLOW_WAIT_LINE, withWaitLine, withoutWaitLines } from "../components/fox/lookupWait";
+import type { FoxIntakeDraft, FoxMessage } from "../components/fox/types";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const CONTRACT = join(root, "sample-docs/02-purchase-contract-valencia.pdf");
@@ -691,15 +694,40 @@ async function main() {
   assert.notEqual(workspacePrompt(afterPrice), "occupancy");
   assert.notEqual(workspacePrompt(afterPrice), "income");
   assert.notEqual(workspacePrompt(afterPrice), "citizenship");
-  assert.equal(amountAskText(afterPrice), "What’s the down payment or loan amount?");
+  assert.match(amountAskText(afterPrice), /What’s the down payment or loan amount\?/);
+  assert.match(amountAskText(afterPrice), /Purchase is \$900,000/);
+  assert.doesNotMatch(amountAskText(afterPrice), /On the file/);
   assert.doesNotMatch(
     nextFoxAsk(afterPrice).text,
-    /estimated FICO|How is income|citizenship|Primary residence/i,
+    /On the file|estimated FICO|How is income|citizenship|Primary residence/i,
   );
   const priceTyped20 = workspaceReply("20", afterPrice);
   assert.equal(priceTyped20?.capture?.field, "propose-funds");
   assert.equal(priceTyped20?.capture && "value" in priceTyped20.capture ? priceTyped20.capture.value : "", "180000:720000");
-  assert.doesNotMatch(priceTyped20?.text ?? "", /estimated FICO|How is income|citizenship/i);
+  assert.doesNotMatch(priceTyped20?.text ?? "", /estimated FICO|How is income|citizenship|On the file/i);
+  const priceTypedDown = workspaceReply("225000", afterPrice);
+  assert.equal(priceTypedDown?.capture?.field, "propose-funds");
+  assert.equal(priceTypedDown?.capture && "value" in priceTypedDown.capture ? priceTypedDown.capture.value : "", "225000:675000");
+  assert.match(priceTypedDown?.text ?? "", /\$225,000 down · \$675,000 loan/i);
+  loadIntakeDraft(afterPrice);
+  if (priceTypedDown?.capture) applyCapture(priceTypedDown.capture);
+  const pairAccepted = resolveProposal(getFoxDraft(), "accept");
+  assert.equal(pairAccepted.downPaymentAmount, 225_000);
+  assert.equal(pairAccepted.loanAmountValue, 675_000);
+  assert.ok(purchaseFileAddsUp(pairAccepted));
+  assert.ok(previewFacts(pairAccepted).some((fact) => fact.id === "loan" && /\$675,000/.test(fact.value)));
+  assert.equal(rateflowClientBodyFromDraft(pairAccepted)?.loan_amount, 675_000);
+  assert.doesNotMatch(nextFoxAsk(pairAccepted).text, /On the file/);
+
+  loadIntakeDraft(afterPrice);
+  applyCapture({ field: "downPayment", value: "225000" });
+  const afterPriceDown = getFoxDraft();
+  assert.equal(afterPriceDown.propertyValueAmount, 900_000);
+  assert.equal(afterPriceDown.downPaymentAmount, 225_000);
+  assert.equal(afterPriceDown.loanAmountValue, 675_000);
+  assert.ok(purchaseFileAddsUp(afterPriceDown));
+  assert.ok(previewFacts(afterPriceDown).every((fact) => fact.id !== "loan" || !/^—$/.test(fact.value)));
+  assert.equal(rateflowClientBodyFromDraft(afterPriceDown)?.loan_amount, 675_000);
 
   loadIntakeDraft(clipperQuoted);
   applyCapture({ field: "correct", value: "amount", line: "down" });
@@ -764,8 +792,14 @@ async function main() {
   assert.notEqual(workspacePrompt(getFoxDraft()), "citizenship");
   const priceReply = replyToMessage("$900,000", "start", getFoxDraft(), null);
   assert.equal(priceReply.capture?.field, "propertyValue");
+  assert.match(priceReply.text, /What’s the down payment or loan amount\?/);
+  assert.match(priceReply.text, /Purchase is \$900,000/);
+  assert.doesNotMatch(priceReply.text, /On the file/);
   if (priceReply.capture) applyCapture(priceReply.capture);
   const priceSaved = getFoxDraft();
+  assert.equal(workspacePrompt(priceSaved), "amount");
+  assert.match(nextFoxAsk(priceSaved).text, /What’s the down payment or loan amount\?/);
+  assert.doesNotMatch(nextFoxAsk(priceSaved).text, /On the file/);
   assert.equal(priceSaved.propertyValueAmount, 900_000);
   assert.equal(priceSaved.downPaymentAmount, undefined);
   assert.equal(priceSaved.loanAmountValue, undefined);
@@ -779,6 +813,14 @@ async function main() {
   assert.ok(previewFacts(priceSaved).some((fact) => fact.id === "price" && /\$900,000/.test(fact.value)));
   assert.match(priceSaved.subjectAddress ?? "", /88 Clipper Street, San Francisco, CA 94114/i);
   assert.equal(priceSaved.facts?.seller_credit?.value, "5000");
+  loadIntakeDraft(priceSaved);
+  const afterPriceFunds = replyToMessage("225000", "start", getFoxDraft(), null);
+  assert.equal(afterPriceFunds.capture?.field, "propose-funds");
+  assert.equal(
+    afterPriceFunds.capture && "value" in afterPriceFunds.capture ? afterPriceFunds.capture.value : "",
+    "225000:675000",
+  );
+  assert.doesNotMatch(afterPriceFunds.text, /On the file/);
 
   loadIntakeDraft(clipperWalk);
   applyCapture({ field: "correct", value: structureFixPrompt("down", getFoxDraft())!, line: "down" });
@@ -821,6 +863,81 @@ async function main() {
   assert.ok(previewFacts(creditSaved).some((fact) => fact.id === "credit" && /720/.test(fact.value)));
   assert.equal(creditSaved.liveQuote, undefined);
   assert.notEqual(rateflowClientBodyFromDraft(creditSaved)?.credit_score, rateflowClientBodyFromDraft(clipperQuoted)?.credit_score);
+
+  const onFileTurn: FoxMessage = { id: "on-file-1", role: "fox", text: "On the file." };
+  const priceClient: FoxMessage = {
+    id: "price-1",
+    role: "client",
+    text: "$850,000",
+    edit: "value",
+    editLine: "price",
+  };
+  const looksTurn: FoxMessage = {
+    id: "looks-1",
+    role: "fox",
+    text: "The file looks like this. Looks right, or change a line.",
+  };
+  const storedFileThread: FoxMessage[] = [
+    { id: "hello", role: "fox", text: "Let’s start the file." },
+    priceClient,
+    looksTurn,
+    onFileTurn,
+  ];
+  const priceRewrite: FoxMessage[] = [
+    { id: "hello", role: "fox", text: "Let’s start the file." },
+    { ...priceClient, text: "$900,000" },
+    { id: "funds-ask", role: "fox", text: amountAskText(afterPrice) },
+  ];
+  assert.equal(
+    shouldKeepStoredFoxThread(storedFileThread, priceRewrite, { fileExists: true }),
+    false,
+  );
+  assert.ok(!withoutTrailingSealedFoxLines([...priceRewrite, onFileTurn]).some((item) => item.text === "On the file."));
+  const staleSeed: FoxMessage[] = [
+    { id: "seed-1", role: "fox", text: "Let’s start the file." },
+    { id: "seed-2", role: "client", text: "Buy" },
+  ];
+  assert.equal(
+    shouldKeepStoredFoxThread(storedFileThread, staleSeed, { fileExists: true }),
+    true,
+  );
+
+  const pairKey = searchedKeyFor(pairAccepted);
+  const ficoKey = searchedKeyFor(creditSaved);
+  assert.ok(pairKey);
+  assert.ok(ficoKey);
+  assert.notEqual(pairKey, ficoKey);
+  const hungThread = withWaitLine(
+    [
+      { id: "hello", role: "fox", text: "Let’s start the file." },
+      { id: "live-quote:old-clipper:0", role: "fox", text: "This loan right now: 6.500% · P&I $4,546" },
+    ],
+    "rateflow",
+  );
+  assert.ok(hungThread.some((item) => item.text === RATEFLOW_WAIT_LINE));
+  const settledPair = messagesWithRateOrReadySpeech(withoutWaitLines(hungThread), {
+    ...pairAccepted,
+    liveQuote: { key: pairKey, rate: 6.375, asOf: "2026-01-02", principalAndInterest: 4400 },
+    liveQuoteKey: pairKey,
+    liveQuoteStatus: "ready",
+  });
+  assert.ok(!settledPair.some((item) => item.text === RATEFLOW_WAIT_LINE));
+  assert.ok(settledPair.some((item) => item.id.startsWith(`live-quote:${pairKey}`)));
+  assert.equal(
+    shouldKeepStoredFoxThread(hungThread, settledPair, { fileExists: true }),
+    false,
+  );
+  const settledFico = messagesWithRateOrReadySpeech(withoutWaitLines(hungThread), {
+    ...creditSaved,
+    liveQuote: { key: ficoKey, rate: 6.625, asOf: "2026-01-02", principalAndInterest: 4600 },
+    liveQuoteKey: ficoKey,
+    liveQuoteStatus: "ready",
+  });
+  assert.ok(!settledFico.some((item) => item.text === RATEFLOW_WAIT_LINE));
+  assert.ok(settledFico.some((item) => item.id.startsWith(`live-quote:${ficoKey}`)));
+  assert.equal(creditSaved.liveQuote, undefined);
+  assert.equal(creditSaved.downPaymentAmount, 450_000);
+  assert.equal(creditSaved.loanAmountValue, 400_000);
 
   const clipperLooks = applyLooksRightMotion(clipperUsed);
   const clipperLooksAsk = nextFoxAsk(clipperLooks);

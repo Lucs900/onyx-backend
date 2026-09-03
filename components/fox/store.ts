@@ -2451,7 +2451,11 @@ function applyCaptureBody(capture: Capture) {
             loanAmountValue: hasLoan ? loan : current.loanAmountValue,
             propertyValueAmount: hasValue ? value : current.propertyValueAmount,
           }),
-          current.downPaymentAmount != null && current.downPaymentAmount > 0 ? "loan" : undefined,
+          (current.downPaymentAmount != null && current.downPaymentAmount > 0) ||
+          current.sampleAccepted ||
+          Boolean(current.subjectAddress?.trim())
+            ? "loan"
+            : undefined,
         ),
       ),
     );
@@ -2475,7 +2479,11 @@ function applyCaptureBody(capture: Capture) {
             correctingLine: null,
             downPaymentAmount: value,
           },
-          current.loanAmountValue != null && current.loanAmountValue > 0 ? "down" : undefined,
+          (current.loanAmountValue != null && current.loanAmountValue > 0) ||
+          current.sampleAccepted ||
+          Boolean(current.subjectAddress?.trim())
+            ? "down"
+            : undefined,
         ),
       ),
     );

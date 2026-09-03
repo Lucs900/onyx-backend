@@ -530,6 +530,7 @@ import {
   applySkipEmailThenFinish,
   emailMissing,
   emailSkipped,
+  fileExists,
   finishCaptureFromText,
   finishLineActions,
   inQueueEnding,
@@ -974,6 +975,15 @@ export function amountAskText(draft: FoxIntakeDraft) {
     fundsAskNeeded(draft) ||
     (draft.correcting === "amount" && isPurchaseLike(draft) && hasPropertyValue(draft))
   ) {
+    const price = draft.propertyValueAmount;
+    if (
+      fundsAskNeeded(draft) &&
+      (fileExists(draft) || Boolean(draft.subjectAddress?.trim())) &&
+      price != null &&
+      price > 0
+    ) {
+      return `Purchase is ${formatMoney(price)}. What’s the down payment or loan amount?`;
+    }
     return "What’s the down payment or loan amount?";
   }
   if (propertyValueAskNeeded(draft)) return "What’s the property value?";
@@ -3700,7 +3710,8 @@ function replyToFundsAsk(
     (parsed.asPercent ||
       (parsed.explicitDollars && parsed.dollars < 1000) ||
       draft.correctingLine === "down-or-loan" ||
-      Boolean(purchaseSketchMismatch(draft)));
+      Boolean(purchaseSketchMismatch(draft)) ||
+      (fundsAskNeeded(draft) && (fileExists(draft) || Boolean(draft.subjectAddress?.trim()))));
   if (pairConfirm && editingConfirmedDown(draft) && draft.correctingLine !== "down-or-loan") {
     const loan = impliedLoanAmount(price, parsed.dollars);
     if (loan == null) {

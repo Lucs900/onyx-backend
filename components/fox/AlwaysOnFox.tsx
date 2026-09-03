@@ -72,6 +72,7 @@ import {
   withWaitLine,
   withoutWaitLines,
 } from "./lookupWait";
+import { shouldKeepStoredFoxThread, withoutTrailingSealedFoxLines } from "./persistThread";
 import {
   fileAddressLine,
   isSkipPropertyAddressText,
@@ -111,7 +112,6 @@ import {
   lastFoxTurn,
   messagesWithLiveQuoteSpeech,
   messagesWithRateOrReadySpeech,
-  threadHasRateOrReadySpeech,
   withoutLiveQuoteSpeech,
   docReactionAsk,
   nextDocInvite,
@@ -777,10 +777,11 @@ export function AlwaysOnFox({
     const live = getFoxDraft();
     const stored = getFoxMessages();
     if (
-      fileExists(live) &&
-      stored.length > resolved.length &&
-      !isIdExtractPath(live) &&
-      !resolved.some((message) => isIdExtractAskText(message.text))
+      shouldKeepStoredFoxThread(stored, resolved, {
+        fileExists: fileExists(live),
+        isIdExtractPath: isIdExtractPath(live),
+        idExtractAsk: resolved.some((message) => isIdExtractAskText(message.text)),
+      })
     ) {
       return dropStreetSuggestChips(
         dropAbandonedAddressConfirm(
@@ -1264,7 +1265,6 @@ export function AlwaysOnFox({
     const already = getFoxDraft();
     if (already.liveQuote?.key === rateflowKey && already.liveQuoteStatus === "ready") {
       commitMessages((prev) => {
-        if (threadHasRateOrReadySpeech(prev)) return prev;
         skipPromptSync.current = true;
         return messagesWithRateOrReadySpeech(withoutWaitLines(prev), already);
       });
@@ -1926,10 +1926,11 @@ export function AlwaysOnFox({
       const spoken = clientMoneyText(text, reply.capture);
       commitMessagesNow((prev) => {
         const editedId = findClientEditMessageId(prev, "value", "price");
+        const cut = editedId ? threadThroughEditedTurn(prev, editedId) : prev;
         const next = editedId
-          ? replaceClientTurn(prev, editedId, spoken)
+          ? replaceClientTurn(cut, editedId, spoken)
           : [
-              ...prev,
+              ...cut,
               {
                 id: newId(),
                 role: "client" as const,
@@ -1938,7 +1939,10 @@ export function AlwaysOnFox({
                 editLine: "price",
               },
             ];
-        return [...dropFoxActions(next), foxAskMessage(reply)];
+        return [
+          ...dropFoxActions(withoutTrailingSealedFoxLines(next)),
+          foxAskMessage(reply),
+        ];
       });
       continueHomeToDesk();
       return;
