@@ -383,9 +383,17 @@ function dropLeftoverConfirmChipsOnLooksRightDocAsk(
     }
     const keepIdUseThis =
       /The ID shows /i.test(foxBlob(message)) && isBorrowerNameConfirmPending(draft);
-    const next = message.actions.filter((action) =>
-      keepIdUseThis ? isIdConfirmChip(action) : isAfterLooksRightDocChip(action),
-    );
+    const keepFundsPair =
+      isFundsPairProposal(draft.pendingProposal) && isFundsPairConfirmText(message.text);
+    const next = message.actions.filter((action) => {
+      if (
+        keepFundsPair &&
+        (action.capture?.field === "accept-proposal" || action.capture?.field === "change-proposal")
+      ) {
+        return true;
+      }
+      return keepIdUseThis ? isIdConfirmChip(action) : isAfterLooksRightDocChip(action);
+    });
     if (next.length === message.actions.length) return message;
     return { ...message, actions: next.length ? next : undefined };
   });
@@ -491,7 +499,17 @@ export function applyIdExtractAsk(messages: FoxMessage[], ask: FoxMessage): FoxM
   return [...freezeUsedFoxTurns(cleaned), ask];
 }
 
+function isFundsPairConfirmText(text?: string) {
+  if (!text) return false;
+  return (
+    / down · .+ loan\. Use this\?/i.test(text) ||
+    /Loan amount would be .+\. Use this\?/i.test(text) ||
+    /Down payment would be .+\. Use this\?/i.test(text)
+  );
+}
+
 function looksLikeOtherProposalConfirm(blob: string) {
+  if (isFundsPairConfirmText(blob)) return true;
   if (isIdExtractThreadText(blob)) return true;
   if (/That[\u2019']s a (single-family house|condo|2–4 unit)/i.test(blob)) return true;
   if (/Suggested qualifying income/i.test(blob)) return true;
@@ -524,6 +542,7 @@ function isAddressConfirmMessage(message: FoxMessage, draft: FoxIntakeDraft) {
   if (message.id.startsWith("live-quote:")) return false;
   const blob = foxBlob(message);
   if (/What’s the down payment or loan amount|Purchase is \$/.test(blob)) return false;
+  if (isFundsPairConfirmText(blob)) return false;
   if (looksLikeOtherProposalConfirm(blob)) return false;
   const written = fileAddressLine(draft);
   if (written && blob.includes(written)) return true;
@@ -650,6 +669,13 @@ export function paintedFoxActions(
     if (idNameConfirm) {
       return isBorrowerNameConfirmPending(draft) && isIdConfirmChip(action);
     }
+    if (
+      current &&
+      isFundsPairProposal(draft.pendingProposal) &&
+      (action.capture?.field === "accept-proposal" || action.capture?.field === "change-proposal")
+    ) {
+      return true;
+    }
     if (docAsk && isLeftoverConfirmChip(action)) return false;
     if (docAsk) return current && isAfterLooksRightDocChip(action);
     if (action.label === "Use this" || action.label === "Change") {
@@ -681,7 +707,11 @@ export function visibleFoxActions(message: FoxMessage, draft: FoxIntakeDraft) {
     if (
       looksRightDocAskOpen(draft) &&
       (isLeftoverConfirmChip(action) || isLooksRightChip(action)) &&
-      !(/The ID shows /i.test(foxBlob(message)) && isBorrowerNameConfirmPending(draft))
+      !(/The ID shows /i.test(foxBlob(message)) && isBorrowerNameConfirmPending(draft)) &&
+      !(
+        isFundsPairProposal(draft.pendingProposal) &&
+        (action.capture?.field === "accept-proposal" || action.capture?.field === "change-proposal")
+      )
     ) {
       return false;
     }

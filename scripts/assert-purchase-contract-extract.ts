@@ -46,7 +46,7 @@ import {
   writePurchasePrice,
 } from "../components/fox/workspace";
 import { shouldKeepStoredFoxThread, withoutTrailingSealedFoxLines } from "../components/fox/persistThread";
-import { dropResolvedAddressConfirmChips } from "../components/fox/liveCoupon";
+import { dropResolvedAddressConfirmChips, paintedFoxActions } from "../components/fox/liveCoupon";
 import { RATEFLOW_WAIT_LINE, withWaitLine, withoutWaitLines } from "../components/fox/lookupWait";
 import type { FoxIntakeDraft, FoxMessage } from "../components/fox/types";
 
@@ -762,6 +762,53 @@ async function main() {
   );
   assert.ok(sealedAsk.some((item) => /What’s the down payment or loan amount\?/.test(item.text)));
   assert.ok(!sealedAsk.some((item) => item.id === "funds-ask" && item.text === "On the file."));
+
+  const leftoverPairDraft = {
+    ...leftoverAfterPrice,
+    pendingAddress: leftoverStreet.pendingAddress,
+  };
+  loadIntakeDraft(leftoverPairDraft);
+  applyCapture({ field: "propose-funds", value: "180000:720000" });
+  const pairProposed = getFoxDraft();
+  const pairAsk = nextFoxAsk(pairProposed);
+  assert.match(pairAsk.text, /\$180,000 down · \$720,000 loan/);
+  assert.match(pairAsk.text, /Use this\?/);
+  assert.doesNotMatch(pairAsk.text, /On the file/);
+  assert.ok((pairAsk.actions ?? []).some((item) => item.label === "Use this"));
+  assert.ok((pairAsk.actions ?? []).some((item) => item.label === "Change"));
+  assert.ok(previewFacts(pairProposed).some((fact) => fact.id === "down" && /Proposed/.test(fact.note ?? "") || /\$180,000/.test(fact.value)));
+  const pairTurn: FoxMessage = {
+    id: "pair-confirm",
+    role: "fox",
+    text: pairAsk.text,
+    actions: pairAsk.actions,
+  };
+  const pairPainted = dropResolvedAddressConfirmChips(
+    [
+      {
+        id: "addr-confirm",
+        role: "fox",
+        text: "88 Clipper Street, San Francisco, CA 94114. Use this?",
+      },
+      pairTurn,
+    ],
+    pairProposed,
+  );
+  const pairKept = pairPainted.find((item) => item.id === "pair-confirm");
+  assert.ok(pairKept);
+  assert.match(pairKept?.text ?? "", /\$180,000 down · \$720,000 loan/);
+  assert.doesNotMatch(pairKept?.text ?? "", /On the file/);
+  assert.ok((pairKept?.actions ?? []).some((item) => item.label === "Use this"));
+  assert.ok(
+    (paintedFoxActions(pairKept!, pairProposed, true) ?? []).some((item) => item.label === "Use this"),
+  );
+  const pairCommitted = resolveProposal(pairProposed, "accept");
+  assert.equal(pairCommitted.downPaymentAmount, 180_000);
+  assert.equal(pairCommitted.loanAmountValue, 720_000);
+  assert.ok(purchaseFileAddsUp(pairCommitted));
+  assert.ok(previewFacts(pairCommitted).every((fact) => fact.id !== "down" && fact.id !== "loan" || !/Proposed/.test(fact.note ?? "")));
+  assert.equal(rateflowClientBodyFromDraft(pairCommitted)?.loan_amount, 720_000);
+  assert.equal(rateflowBlockedReason(pairCommitted), null);
   const priceTypedDown = workspaceReply("225000", afterPrice);
   assert.equal(priceTypedDown?.capture?.field, "propose-funds");
   assert.equal(priceTypedDown?.capture && "value" in priceTypedDown.capture ? priceTypedDown.capture.value : "", "225000:675000");

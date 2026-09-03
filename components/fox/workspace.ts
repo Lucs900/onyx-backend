@@ -3329,6 +3329,9 @@ function workspaceAskCopy(
     return raiseYtdFarAsk(draft);
   }
   if (prompt === "confirm-proposal") {
+    if (isFundsPairProposal(draft.pendingProposal) && draft.pendingProposal) {
+      return liveProposalAsk(draft, draft.pendingProposal);
+    }
     if (draft.pendingLiveCoupon) {
       return liveCouponConfirmCopy(draft);
     }
