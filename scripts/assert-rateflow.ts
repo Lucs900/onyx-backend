@@ -429,6 +429,32 @@ assert.equal(pickLowerPaymentFromRows(safeCouponRowsFromProducts(harborWalkRows)
 assert.equal(pickLowerPaymentFromRows(safeCouponRowsFromProducts(harborWalkRows))?.pts, 1.044);
 assert.equal(pickNoCostFromRows(safeCouponRowsFromProducts(harborWalkRows))?.rate, 6.75);
 assert.equal(pickLeadRow(harborRefiRows, "purchase")?.rate, pickConventional30LowestNoPoints(harborRefiRows)?.rate);
+const harborPurchaseLead = [
+  {
+    rate: 6.49,
+    pts: -0.168,
+    loanTerm: 30,
+    bbLoanType: "conventional",
+    productName: "FNMA Conforming 30 Yr Fixed",
+  },
+  {
+    rate: 6.375,
+    pts: -0.07,
+    loanTerm: 30,
+    bbLoanType: "conventional",
+    productName: "FNMA Conforming 30 Yr Fixed",
+  },
+];
+assert.equal(pickLeadRow(harborPurchaseLead, "purchase")?.rate, 6.375);
+assert.equal(pickLeadRow(harborPurchaseLead, "purchase")?.pts, -0.07);
+assert.notEqual(pickLeadRow(harborPurchaseLead, "purchase")?.rate, 6.49);
+assert.notEqual(pickLeadRow(harborPurchaseLead, "purchase")?.rate, harborPurchaseLead[0]?.rate);
+assert.equal(pickConventional30LowestNoPoints(harborPurchaseLead)?.rate, 6.375);
+assert.equal(pickConventional30NoCost(harborPurchaseLead)?.rate, 6.49);
+assert.notEqual(
+  pickLeadRow(harborPurchaseLead, "purchase")?.rate,
+  pickConventional30NoCost(harborPurchaseLead)?.rate,
+);
 assert.equal(
   pickConventional30NoCost([
     { rate: 6.49, pts: -0.043, loanTerm: 30, bbLoanType: "conventional" },
@@ -648,7 +674,8 @@ assert.ok(!route.includes("6.750"));
 assert.ok(!route.includes("6.75"));
 assert.ok(route.includes("safeCouponRowsFromProducts"));
 assert.ok(route.includes("conventional30Book"));
-assert.ok(route.includes('client.loan_purpose === "purchase" ? { target_price: TARGET_PRICE }'));
+assert.ok(!route.includes("target_price"));
+assert.ok(!route.includes("TARGET_PRICE"));
 assert.ok(!route.includes("pickConventional30NearPar"));
 assert.ok(!route.includes("94115"));
 assert.doesNotMatch(route, /console\.(log|info|warn|error)\([^)]*BANKINGBRIDGE_/);

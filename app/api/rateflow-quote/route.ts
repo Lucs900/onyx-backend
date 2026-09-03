@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 import {
   RATEFLOW_TIMEOUT_MS,
   RATEFLOW_URL,
-  TARGET_PRICE,
   asProductRows,
   conventional30Book,
   eligibleNoPointsCount,
@@ -127,9 +126,8 @@ function bankingBridgeBody(client: RateflowClientBody) {
     loan_type: "conventional",
     loan_term: 30,
     property_type: client.property_type,
-    // Purchase keeps par as a hint. Refinance omits it so the coupon stack
-    // is not filtered down to the featured closest-to-par row.
-    ...(client.loan_purpose === "purchase" ? { target_price: TARGET_PRICE } : {}),
+    // Do not send a par hint. That featured coupon is 6.490 / -0.168,
+    // not the lowest conventional 30 with points <= 0 (6.375 / -0.07).
     state: "CA",
     zipcode: client.zipcode,
     location: {
