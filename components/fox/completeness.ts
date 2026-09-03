@@ -866,35 +866,38 @@ export function remainderAskCopy(proposal: FactProposal) {
 export function purchaseSplitAskCopy(proposal: FactProposal) {
   const extra = (field: string) => proposal.extras?.find((item) => item.field === field)?.value ?? "";
   const price = extra("purchase_price") || proposal.value;
-  const oldDown = extra("oldDown");
-  const oldLoan = extra("oldLoan");
+  const oldLoan = extra("oldLoan") || proposal.companion?.value || "";
   const sketch = extra("sketch");
   const close = extra("close_date");
   const credit = extra("seller_credit");
+  const nextDown = proposal.field === "downPayment" ? proposal.value : extra("nextDown");
+  const loanShown = fundsMoneyShown("loanAmount", oldLoan);
   const bits = [`Purchase is ${fundsMoneyShown("purchase_price", price)}.`];
   if (close) bits.push(`Close ${displayFactValue("close_date", close)}.`);
   if (credit) bits.push(`Seller credit ${fundsMoneyShown("seller_credit", credit)}.`);
-  bits.push(
-    `The file still has ${fundsMoneyShown("downPayment", oldDown)} down and ${fundsMoneyShown("loanAmount", oldLoan)} loan. That was the ${fundsMoneyShown("purchase_price", sketch)} sketch.`,
-  );
-  bits.push("Use this split, or change down or loan.");
+  bits.push(`The loan is still ${loanShown} from the old ${fundsMoneyShown("purchase_price", sketch)} sketch.`);
+  bits.push(`Keep the ${loanShown} loan? Down becomes ${fundsMoneyShown("downPayment", nextDown)}.`);
+  bits.push("Or type a new down or loan.");
   return bits.join(" ");
 }
 
-export function purchaseSplitActions(): FoxAction[] {
+export function purchaseSplitActions(proposal?: FactProposal | null): FoxAction[] {
+  const loan =
+    proposal?.companion?.value ||
+    proposal?.extras?.find((item) => item.field === "oldLoan")?.value ||
+    "";
   return [
-    { id: "accept-proposal", label: "Use this split", event: "bubble", capture: { field: "accept-proposal" } },
     {
-      id: "correct-down",
-      label: "Change down",
+      id: "accept-proposal",
+      label: `Keep ${fundsMoneyShown("loanAmount", loan)} loan`,
       event: "bubble",
-      capture: { field: "correct", value: "amount", line: "down" },
+      capture: { field: "accept-proposal" },
     },
     {
-      id: "correct-loan",
-      label: "Change loan",
+      id: "change-split",
+      label: "Change down or loan",
       event: "bubble",
-      capture: { field: "correct", value: "amount", line: "loan" },
+      capture: { field: "correct", value: "amount", line: "down-or-loan" },
     },
   ];
 }

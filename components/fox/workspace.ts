@@ -83,6 +83,7 @@ import {
   isPurchaseSplitReconcileProposal,
   isRemainderConfirmField,
   needsPurchaseSplitAsk,
+  purchaseSketchMismatch,
   purchaseContractFieldsFromDraft,
   purchaseContractStreetFromDraft,
   fileStillUsefulNote,
@@ -967,6 +968,9 @@ export function amountAskText(draft: FoxIntakeDraft) {
     const n = draft.downPaymentAmount;
     return `Down payment in the file is ${formatMoney(n ?? 0)}. Still right?`;
   }
+  if (draft.correctingLine === "down-or-loan") {
+    return "What’s the down payment or loan amount?";
+  }
   if (draft.correctingLine === "down") {
     const n = draft.downPaymentAmount;
     return n != null && n > 0
@@ -1814,7 +1818,7 @@ function liveProposalAsk(
   if (isPurchaseSplitReconcileProposal(proposal)) {
     return {
       text: proposalAskCopy(proposal),
-      actions: purchaseSplitActions(),
+      actions: purchaseSplitActions(proposal),
     };
   }
   if (isWageExtractProposal(proposal)) {
@@ -3685,8 +3689,11 @@ function replyToFundsAsk(
   const pairConfirm =
     price != null &&
     price > 0 &&
-    (parsed.asPercent || (parsed.explicitDollars && parsed.dollars < 1000));
-  if (pairConfirm && editingConfirmedDown(draft)) {
+    (parsed.asPercent ||
+      (parsed.explicitDollars && parsed.dollars < 1000) ||
+      draft.correctingLine === "down-or-loan" ||
+      Boolean(purchaseSketchMismatch(draft)));
+  if (pairConfirm && editingConfirmedDown(draft) && draft.correctingLine !== "down-or-loan") {
     const loan = impliedLoanAmount(price, parsed.dollars);
     if (loan == null) {
       return {
@@ -4736,7 +4743,12 @@ export function beginFileEdit(
 ): FoxIntakeDraft {
   const editLine = line ?? draft.correctingLine;
   if (isPurchaseSplitReconcileProposal(draft.pendingProposal) && field === "amount") {
-    draft = { ...draft, pendingProposal: null, pendingAddress: undefined };
+    draft = {
+      ...draft,
+      pendingProposal: null,
+      pendingAddress: undefined,
+      correctingLine: line ?? "down-or-loan",
+    };
   }
   if (isPurchasePriceEdit(field, editLine)) {
     return {
@@ -5672,30 +5684,28 @@ export function workspaceReply(
       };
     }
     if (isPurchaseSplitReconcileProposal(draft.pendingProposal)) {
-      if (/change loan|\bloan\b/.test(lower) && !/down/.test(lower)) {
-        const nextDraft = {
-          ...draft,
-          pendingProposal: null,
-          pendingAddress: undefined,
-          correcting: "amount" as const,
-          correctingLine: "loan",
-        };
+      if (
+        /^(yes|ok|okay|confirm|keep|keep it|keep that)$/i.test(lower) ||
+        /keep the .+loan/.test(lower) ||
+        /keep \$?[\d,]+(?:\.00)? loan/.test(lower)
+      ) {
+        const nextDraft = resolveProposal(draft, "accept");
         return {
-          ...workspacePromptCopy("amount", nextDraft),
-          capture: { field: "correct", value: "amount", line: "loan" },
+          ...nextFoxAsk(nextDraft),
+          capture: { field: "accept-proposal" },
         };
       }
-      if (/change down|\bdown\b/.test(lower) && !/loan/.test(lower)) {
+      if (/change down or loan|^change\b|type a new/.test(lower)) {
         const nextDraft = {
           ...draft,
           pendingProposal: null,
           pendingAddress: undefined,
           correcting: "amount" as const,
-          correctingLine: "down",
+          correctingLine: "down-or-loan",
         };
         return {
           ...workspacePromptCopy("amount", nextDraft),
-          capture: { field: "correct", value: "amount", line: "down" },
+          capture: { field: "correct", value: "amount", line: "down-or-loan" },
         };
       }
     }

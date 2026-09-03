@@ -30,7 +30,15 @@ import { rateflowClientBodyFromDraft, rateflowBlockedReason } from "../lib/ratef
 import { applyLooksRightMotion, applyProceedMotion } from "../components/fox/motion";
 import { applyCapture, applyExtractWrite, emptyDraft, getFoxDraft, loadIntakeDraft, receiveDocument } from "../components/fox/store";
 import { conventionalFileFacts } from "../components/fox/conventionalFile";
-import { docReactionAsk, nextFoxAsk, previewFacts, workspacePrompt, workspacePromptCopy } from "../components/fox/workspace";
+import {
+  docReactionAsk,
+  nextFoxAsk,
+  parseFundsAmount,
+  previewFacts,
+  workspacePrompt,
+  workspacePromptCopy,
+  workspaceReply,
+} from "../components/fox/workspace";
 import type { FoxIntakeDraft } from "../components/fox/types";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -546,16 +554,25 @@ async function main() {
   assert.match(clipperSplit.text, /Purchase is \$850,000/);
   assert.match(clipperSplit.text, /Close October 15, 2026/);
   assert.match(clipperSplit.text, /Seller credit \$5,000/);
-  assert.match(clipperSplit.text, /\$100,000 down/);
-  assert.match(clipperSplit.text, /\$400,000 loan/);
-  assert.match(clipperSplit.text, /\$500,000 sketch/);
-  assert.match(clipperSplit.text, /Use this split, or change down or loan/);
-  assert.doesNotMatch(clipperSplit.text, /On the file/);
+  assert.match(clipperSplit.text, /The loan is still \$400,000 from the old \$500,000 sketch/);
+  assert.match(clipperSplit.text, /Keep the \$400,000 loan\? Down becomes \$450,000/);
+  assert.match(clipperSplit.text, /Or type a new down or loan/);
+  assert.doesNotMatch(clipperSplit.text, /On the file|Use this split/);
   assert.equal(canLooksRight(clipperPriced), false);
   assert.equal(workspacePrompt(clipperPriced), "confirm-proposal");
-  assert.ok((clipperSplit.actions ?? []).some((item) => item.label === "Use this split"));
-  assert.ok((clipperSplit.actions ?? []).some((item) => item.label === "Change down"));
-  assert.ok((clipperSplit.actions ?? []).some((item) => item.label === "Change loan"));
+  assert.deepEqual(
+    (clipperSplit.actions ?? []).map((item) => item.label),
+    ["Keep $400,000 loan", "Change down or loan"],
+  );
+  assert.equal(parseFundsAmount("20", 850_000)?.dollars, 170_000);
+  assert.equal(parseFundsAmount("20", 850_000)?.asPercent, true);
+  const typed20 = workspaceReply("20", clipperPriced);
+  assert.match(typed20.text, /\$170,000 down/);
+  assert.match(typed20.text, /\$680,000 loan/);
+  assert.equal(typed20.capture?.field, "propose-funds");
+  assert.equal(typed20.capture?.value, "170000:680000");
+  assert.equal(clipperPriced.downPaymentAmount, 100_000);
+  assert.equal(clipperPriced.loanAmountValue, 400_000);
   assert.equal(rateflowBlockedReason(clipperPriced), "purchase-split");
   assert.equal(clipperPriced.downPaymentAmount, 100_000);
   assert.equal(clipperPriced.loanAmountValue, 400_000);
@@ -745,8 +762,13 @@ async function main() {
       .join(" · "),
   );
   assert.match(nextFoxAsk(leftoverUsed).text, /Purchase is \$850,000/);
-  assert.match(nextFoxAsk(leftoverUsed).text, /Use this split, or change down or loan/);
-  assert.doesNotMatch(nextFoxAsk(leftoverUsed).text, /On the file|Government ID|Bank statement|government ID/i);
+  assert.match(nextFoxAsk(leftoverUsed).text, /Keep the \$400,000 loan\? Down becomes \$450,000/);
+  assert.match(nextFoxAsk(leftoverUsed).text, /Or type a new down or loan/);
+  assert.doesNotMatch(nextFoxAsk(leftoverUsed).text, /On the file|Use this split|Government ID|Bank statement|government ID/i);
+  assert.deepEqual(
+    (nextFoxAsk(leftoverUsed).actions ?? []).map((item) => item.label),
+    ["Keep $400,000 loan", "Change down or loan"],
+  );
   assert.equal(canLooksRight(leftoverUsed), false);
 
   const emptyAssets = conventionalFileFacts({ ...emptyDraft(), productIntent: "buy", path: "acr" });
