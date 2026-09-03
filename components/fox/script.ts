@@ -300,7 +300,7 @@ export function promptCopy(prompt: FoxPrompt, draft?: FoxIntakeDraft): { text: s
   }
   if (prompt === "review") {
     return {
-      text: "Does this look right?",
+      text: "The file looks like this. Looks right, or change a line.",
       actions: [
         { id: "looks-right", label: "Looks right", event: "bubble", capture: { field: "confirm-draft" } },
         { id: "needs-fix", label: "Needs a correction", event: "bubble", capture: { field: "needs-correction" } },

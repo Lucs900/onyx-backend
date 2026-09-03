@@ -605,10 +605,26 @@ async function main() {
   assert.ok(purchaseFileAddsUp(clipperUsed));
   assert.ok(canLooksRight(clipperUsed));
   assert.equal(workspacePrompt(clipperUsed), "review");
-  assert.doesNotMatch(nextFoxAsk(clipperUsed).text, /94123|On the file/);
+  assert.equal(nextFoxAsk(clipperUsed).text, "The file looks like this. Looks right, or change a line.");
+  assert.doesNotMatch(nextFoxAsk(clipperUsed).text, /94123|On the file|file can move|I can send this to review/);
+  assert.deepEqual(
+    (nextFoxAsk(clipperUsed).actions ?? []).map((item) => item.label),
+    ["Looks right", "Needs a correction"],
+  );
   assert.equal(rateflowBlockedReason(clipperUsed), null);
   assert.equal(rateflowClientBodyFromDraft(clipperUsed)?.loan_amount, 400_000);
   const clipperLooks = applyLooksRightMotion(clipperUsed);
+  const clipperLooksAsk = nextFoxAsk(clipperLooks);
+  assert.match(clipperLooksAsk.text, /I can send this to review/);
+  assert.doesNotMatch(clipperLooksAsk.text, /file can move|Looks right, or change a line/);
+  assert.ok((clipperLooksAsk.actions ?? []).some((item) => item.label === "Proceed"));
+  assert.ok((clipperLooksAsk.actions ?? []).some((item) => item.label === "Not yet"));
+  assert.ok(!(clipperLooksAsk.actions ?? []).some((item) => item.label === "Looks right"));
+  if (/Still useful:/.test(clipperLooksAsk.text)) {
+    assert.match(clipperLooksAsk.text, /Skip is fine/);
+    const named = clipperLooksAsk.text.match(/Still useful:\s*(.+?)\s*Skip is fine/)?.[1] ?? "";
+    assert.ok(named.split(/,| and /).filter(Boolean).length <= 3, named);
+  }
   assert.ok(previewFacts(clipperLooks).some((fact) => /88 Clipper Street, San Francisco, CA 94114/i.test(fact.value)));
   assert.ok(
     previewFacts(clipperLooks).every(

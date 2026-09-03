@@ -1,10 +1,12 @@
 import {
   askClassLabel,
+  labelListCopy,
   missingExtractClasses,
   missingListCopy,
   nextDocInvite,
   receivedTaxReturnCount,
   stillUsefulLabels,
+  stillUsefulSection,
 } from "./fileWrite";
 import { canLooksRight, shouldEscalate } from "./completeness";
 import type {
@@ -41,7 +43,7 @@ export const WAITING_OUT_LINE =
 export const MOTION_COPY = {
   gatheringPrefix: "These docs help next:",
   gatheringSuffix: "Upload docs, proceed, or say not yet.",
-  ready: "This file can move. Proceed, or say not yet.",
+  ready: "I can send this to review.",
   in_queue: "ONYX has this.",
   whatHappensNext:
     "This is the wait. ONYX has the file for review. I stay in this thread — I’ll nudge if it sits and I’ll bring the result back here.",
@@ -329,9 +331,16 @@ export function gatheringCopy(draft: FoxIntakeDraft) {
   return docsHandoffCopy(draft);
 }
 
+/** After Looks right: send-to-review. Chat names the next 1–3 only. Skip is fine. */
+export function afterLooksRightAskCopy(draft: FoxIntakeDraft) {
+  const items = (stillUsefulSection(draft)?.items ?? []).slice(0, 3);
+  if (!items.length) return MOTION_COPY.ready;
+  return `${MOTION_COPY.ready} Still useful: ${labelListCopy(items.map((item) => item.label))} Skip is fine.`;
+}
+
 /** After Looks right, Fox does not dump the vault. One-at-a-time invites happen before Looks right. */
-export function docsHandoffCopy(_draft: FoxIntakeDraft) {
-  return MOTION_COPY.ready;
+export function docsHandoffCopy(draft: FoxIntakeDraft) {
+  return afterLooksRightAskCopy(draft);
 }
 
 /** Bureau pull is allowed only after Proceed into licensed review. Never on browse, sketch, Looks right, or docs. */
@@ -359,7 +368,7 @@ export function motionAskText(draft: FoxIntakeDraft) {
   if (motion === "waiting_out") return returnedReviewNote(draft) || MOTION_COPY.waiting_out;
   if (motion === "escalated") return MOTION_COPY.escalated;
   if (motion === "needs_you") return needsYouCopy(draft);
-  if (motion === "ready") return MOTION_COPY.ready;
+  if (motion === "ready") return docsHandoffCopy(draft);
   if (motion === "gathering" || motion === "confirmed") return gatheringCopy(draft);
   return gatheringCopy(draft);
 }

@@ -524,6 +524,7 @@ import {
 import {
   applyEmailThenFinish,
   applyEscalateMotion,
+  afterLooksRightAskCopy,
   applyLooksRightMotion,
   applyNotYetMotion,
   applyProceedMotion,
@@ -1350,8 +1351,8 @@ function bubbles(
 }
 
 export const LOOKS_RIGHT_COMPLETE_ASK =
-  "The notepad looks complete enough to move. Does it look right?";
-export const LOOKS_RIGHT_MOVE_ASK = "The file can move. Does it look right?";
+  "The file looks like this. Looks right, or change a line.";
+export const LOOKS_RIGHT_MOVE_ASK = "The file looks like this. Looks right, or change a line.";
 
 /** Harbor W-2+stub Use this (or a written monthly). Income Skip / doc Skip stay incomplete. */
 export function incomeFilledForLooksRight(draft: FoxIntakeDraft) {
@@ -1461,8 +1462,7 @@ function documentsAskText(draft: FoxIntakeDraft): string {
   }
   if (invite) return DOC_INVITE_COPY[invite];
   if (draft.sampleAccepted) {
-    const useful = stillUsefulAskCopy(draft);
-    if (useful) return useful;
+    return afterLooksRightAskCopy(draft);
   }
   return DOC_INVITE_COPY.government_id;
 }
@@ -2054,6 +2054,9 @@ export function docReactionAsk(
 function rememberedAskCopy(draft: FoxIntakeDraft): string | undefined {
   if (inQueueEnding(draft)) return undefined;
   if (draft.pendingFinish && emailMissing(draft) && !emailSkipped(draft)) return undefined;
+  if (draft.sampleAccepted && stillUsefulVisible(draft)) {
+    return shouldAskYearsInBusiness(draft) ? yearsInBusinessAskCopy(draft) : undefined;
+  }
   if (stillUsefulVisible(draft)) return layer2AskCopy(draft);
   if (!shouldAskYearsInBusiness(draft)) return undefined;
   if (draft.motion === "in_queue" || draft.sampleAccepted) return yearsInBusinessAskCopy(draft);
@@ -3274,7 +3277,11 @@ function workspaceAskCopy(
     }
     return {
       text: documentsAskText(draft),
-      actions: invite ? documentInviteActions(draft) : undefined,
+      actions: invite
+        ? documentInviteActions(draft)
+        : draft.sampleAccepted
+          ? finishLineActions(draft)
+          : undefined,
     };
   }
   if (prompt === "preparing") {

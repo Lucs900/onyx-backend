@@ -391,6 +391,8 @@ function hasReviewAsk(messages: FoxMessage[]) {
         message.text.includes("Here’s a sample structure.") ||
         /here.?s the file/i.test(message.text) ||
         /notepad looks complete/i.test(message.text) ||
+        /the file looks like this/i.test(message.text) ||
+        /looks right, or change a line/i.test(message.text) ||
         /does it look right/i.test(message.text)),
   );
 }
@@ -399,7 +401,7 @@ function hasPreparedAsk(messages: FoxMessage[]) {
   return messages.some(
     (message) =>
       message.role === "fox" &&
-      (/these docs help next|upload what you have|still useful:|this file can move|onyx has this for review|holding\. i.?ll keep|licensed originator is on this exception|i need .+ from you|what.?s a good email|file is prepared/i.test(
+      (/these docs help next|upload what you have|still useful:|this file can move|i can send this to review|onyx has this for review|holding\. i.?ll keep|licensed originator is on this exception|i need .+ from you|what.?s a good email|file is prepared/i.test(
         message.text,
       )),
   );
