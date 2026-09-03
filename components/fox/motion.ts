@@ -44,7 +44,7 @@ export const MOTION_COPY = {
   gatheringPrefix: "These docs help next:",
   gatheringSuffix: "Upload docs, proceed, or say not yet.",
   ready: "I can send this to review.",
-  in_queue: "ONYX has this.",
+  in_queue: "ONYX has this for review. I’m still here.",
   whatHappensNext:
     "This is the wait. ONYX has the file for review. I stay in this thread — I’ll nudge if it sits and I’ll bring the result back here.",
   askFox: "I’m here. Type below — I stay on this file while ONYX reviews.",
@@ -205,8 +205,16 @@ export function emailSkipped(draft: FoxIntakeDraft) {
   return Boolean(draft.emailSkipped);
 }
 
+/** Parked: Proceed / Not yet do not open the email gate. */
+export const EMAIL_AFTER_PROCEED_PARKED = true;
+
+export function emailFinishGateOpen(draft: FoxIntakeDraft) {
+  if (EMAIL_AFTER_PROCEED_PARKED) return false;
+  return emailMissing(draft) && !emailSkipped(draft);
+}
+
 export function emailReadyToFinish(draft: FoxIntakeDraft) {
-  return !emailMissing(draft) || emailSkipped(draft);
+  return !emailFinishGateOpen(draft);
 }
 
 export function emailAskActions(): FoxAction[] {
@@ -361,7 +369,7 @@ export function motionAskText(draft: FoxIntakeDraft) {
   if (inQueueEnding(draft)) {
     return MOTION_COPY.in_queue;
   }
-  if (draft.pendingFinish && emailMissing(draft) && !emailSkipped(draft)) {
+  if (draft.pendingFinish && emailFinishGateOpen(draft)) {
     return MOTION_COPY.emailAsk;
   }
   if (motion === "on_hold") return MOTION_COPY.on_hold;
@@ -433,7 +441,7 @@ function inQueueActions(draft: FoxIntakeDraft): FoxAction[] {
 export function finishLineActions(draft: FoxIntakeDraft): FoxAction[] {
   const motion = motionOf(draft);
   if (inQueueEnding(draft)) return inQueueActions(draft);
-  if (draft.pendingFinish && emailMissing(draft) && !emailSkipped(draft)) {
+  if (draft.pendingFinish && emailFinishGateOpen(draft)) {
     return emailAskActions();
   }
   if (motion === "escalated") {
@@ -513,7 +521,7 @@ function withOutbox(
 }
 
 export function applyProceedMotion(draft: FoxIntakeDraft, now = new Date()): FoxIntakeDraft {
-  if (emailMissing(draft) && !emailSkipped(draft)) {
+  if (emailFinishGateOpen(draft)) {
     return {
       ...draft,
       pendingFinish: "proceed",
@@ -547,7 +555,7 @@ export function applyProceedMotion(draft: FoxIntakeDraft, now = new Date()): Fox
 }
 
 export function applyNotYetMotion(draft: FoxIntakeDraft, now = new Date()): FoxIntakeDraft {
-  if (emailMissing(draft) && !emailSkipped(draft)) {
+  if (emailFinishGateOpen(draft)) {
     return {
       ...draft,
       pendingFinish: "not-yet",

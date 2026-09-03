@@ -12,7 +12,7 @@ import { applyExtractedFields, DOC_INVITE_COPY, nextDocInvite, stillUsefulSectio
 import { canLooksRight, resolveProposal } from "../components/fox/completeness";
 import { applyLooksRightMotion, applyProceedMotion } from "../components/fox/motion";
 import { emptyDraft } from "../components/fox/store";
-import { previewFacts, workspacePrompt, workspacePromptCopy } from "../components/fox/workspace";
+import { nextFoxAsk, previewFacts, workspacePrompt, workspacePromptCopy } from "../components/fox/workspace";
 import { wageEmploymentFileLine } from "../components/fox/qualifyingIncome";
 import type { FoxIntakeDraft } from "../components/fox/types";
 
@@ -187,8 +187,19 @@ async function main() {
   assert.ok(!(afterLooksAsk.actions ?? []).some((item) => item.label === "Proceed"));
   assert.doesNotMatch(afterLooksAsk.text, /What’s a good email|email/i);
 
-  const proceeded = applyProceedMotion(looks);
+  const proceeded = applyProceedMotion({
+    ...looks,
+    emailSkipped: false,
+    contact: {
+      ...looks.contact,
+      email: { field: "email", value: "", source: "client", confirmed: false },
+    },
+  });
   assert.equal(proceeded.motion, "in_queue");
+  assert.equal(proceeded.nextActor, "ONYX");
+  assert.equal(proceeded.pendingFinish, undefined);
+  assert.match(nextFoxAsk(proceeded).text, /ONYX has this for review\. I’m still here/);
+  assert.doesNotMatch(nextFoxAsk(proceeded).text, /What’s a good email|email/i);
   const still = stillUsefulSection(proceeded);
   if (still && !still.empty) {
     assert.ok(still.items.length >= 1 && still.items.length <= 3, "Still useful shows next 1–3 only");

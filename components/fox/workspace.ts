@@ -4186,10 +4186,10 @@ export function workspaceUpdateCopy(capture: Capture, draft: FoxIntakeDraft) {
     return MOTION_COPY.escalated;
   }
   if (capture.field === "proceed") {
-    return emailMissing(draft) && !emailSkipped(draft) ? MOTION_COPY.emailAsk : MOTION_COPY.in_queue;
+    return MOTION_COPY.in_queue;
   }
   if (capture.field === "not-yet") {
-    return emailMissing(draft) && !emailSkipped(draft) ? MOTION_COPY.emailAsk : MOTION_COPY.on_hold;
+    return MOTION_COPY.on_hold;
   }
   if (capture.field === "skip-email") {
     return draft.pendingFinish === "not-yet" ? MOTION_COPY.on_hold : MOTION_COPY.in_queue;

@@ -27,7 +27,7 @@ import {
   resolveProposal,
 } from "../components/fox/completeness";
 import { rateflowClientBodyFromDraft, rateflowBlockedReason } from "../lib/rateflow/fromDraft";
-import { applyLooksRightMotion, applyProceedMotion } from "../components/fox/motion";
+import { applyLooksRightMotion, applyNotYetMotion, applyProceedMotion } from "../components/fox/motion";
 import { applyCapture, applyExtractWrite, emptyDraft, getFoxDraft, loadIntakeDraft, receiveDocument } from "../components/fox/store";
 import { conventionalFileFacts } from "../components/fox/conventionalFile";
 import {
@@ -424,8 +424,19 @@ async function main() {
     ),
   );
 
-  const proceeded = applyProceedMotion({ ...used, emailSkipped: true });
+  const proceeded = applyProceedMotion({
+    ...used,
+    emailSkipped: false,
+    contact: {
+      ...used.contact,
+      email: { field: "email", value: "", source: "client", confirmed: false },
+    },
+  });
   assert.equal(proceeded.motion, "in_queue");
+  assert.equal(proceeded.nextActor, "ONYX");
+  assert.equal(proceeded.pendingFinish, undefined);
+  assert.match(nextFoxAsk(proceeded).text, /ONYX has this for review\. I’m still here/);
+  assert.doesNotMatch(nextFoxAsk(proceeded).text, /What’s a good email|email/i);
   noFnma(nextFoxAsk(proceeded).text);
   assert.doesNotMatch(JSON.stringify(proceeded), /UW Manager|this fails FNMA/i);
 
@@ -625,6 +636,30 @@ async function main() {
     const named = clipperLooksAsk.text.match(/Still useful:\s*(.+?)\s*Skip is fine/)?.[1] ?? "";
     assert.ok(named.split(/,| and /).filter(Boolean).length <= 3, named);
   }
+  const clipperProceed = applyProceedMotion({
+    ...clipperLooks,
+    emailSkipped: false,
+    contact: {
+      ...clipperLooks.contact,
+      email: { field: "email", value: "", source: "client", confirmed: false },
+    },
+  });
+  assert.equal(clipperProceed.motion, "in_queue");
+  assert.equal(clipperProceed.nextActor, "ONYX");
+  assert.equal(clipperProceed.pendingFinish, undefined);
+  assert.match(nextFoxAsk(clipperProceed).text, /ONYX has this for review\. I’m still here/);
+  assert.doesNotMatch(nextFoxAsk(clipperProceed).text, /What’s a good email|Skip email|email/i);
+  const clipperHold = applyNotYetMotion({
+    ...clipperLooks,
+    emailSkipped: false,
+    contact: {
+      ...clipperLooks.contact,
+      email: { field: "email", value: "", source: "client", confirmed: false },
+    },
+  });
+  assert.equal(clipperHold.motion, "on_hold");
+  assert.equal(clipperHold.pendingFinish, undefined);
+  assert.doesNotMatch(nextFoxAsk(clipperHold).text, /What’s a good email|email/i);
   assert.ok(previewFacts(clipperLooks).some((fact) => /88 Clipper Street, San Francisco, CA 94114/i.test(fact.value)));
   assert.ok(
     previewFacts(clipperLooks).every(
