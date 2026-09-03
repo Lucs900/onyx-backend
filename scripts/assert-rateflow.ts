@@ -369,6 +369,31 @@ const harborRefiNested = {
 };
 assert.equal(pickConventional30LowestNoPoints(asProductRows(harborRefiNested))?.rate, 6.375);
 assert.notEqual(pickConventional30LowestNoPoints(asProductRows(harborRefiNested))?.rate, 6.49);
+const harborPurchaseNested = {
+  results: [
+    {
+      rate: 6.49,
+      pts: -0.168,
+      term: 30,
+      label: "FNMA Conforming 30 Yr Fixed",
+      loanType: "Fixed",
+      rates: [
+        { rate: 6.49, pts: -0.168 },
+        { rate: 6.375, pts: -0.07 },
+        { rate: 6.375, pts: 0.313 },
+      ],
+    },
+  ],
+};
+const harborPurchaseNestedRows = asProductRows(harborPurchaseNested);
+assert.ok(harborPurchaseNestedRows.length > 1);
+assert.equal(harborPurchaseNestedRows[0]?.rate, 6.49);
+assert.equal(pickLeadRow(harborPurchaseNestedRows, "purchase")?.rate, 6.375);
+assert.equal(pickLeadRow(harborPurchaseNestedRows, "purchase")?.pts, -0.07);
+assert.notEqual(pickLeadRow(harborPurchaseNestedRows, "purchase")?.rate, harborPurchaseNestedRows[0]?.rate);
+assert.notEqual(pickLeadRow(harborPurchaseNestedRows, "purchase")?.pts, 0.313);
+assert.equal(pickConventional30LowestNoPoints(harborPurchaseNestedRows)?.rate, 6.375);
+assert.equal(pickConventional30NoCost(harborPurchaseNestedRows)?.rate, 6.49);
 assert.ok(
   asProductRows({
     results: [{ interestRate: 6.375, points: -0.07, term: 30, monthly_payment: 4242 }],
@@ -702,6 +727,7 @@ assert.ok(fox.includes("requestRateflowIfNeeded"));
 assert.ok(fox.includes("messagesWithLiveQuoteSpeech"));
 assert.ok(fox.includes("messagesWithRateOrReadySpeech"));
 assert.ok(client.includes("/api/rateflow-quote"));
+assert.ok(client.includes("pickLeadRow"));
 assert.ok(client.includes("RATEFLOW_EMPTY_RETRIES"));
 assert.ok(client.includes("attempt < RATEFLOW_EMPTY_RETRIES"));
 assert.ok(client.includes("parseRateflowQuoteMiss"));

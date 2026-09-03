@@ -276,23 +276,54 @@ function rawRowsFromPayload(payload: unknown): unknown[] {
   return [];
 }
 
-/** Refinance often nests coupons under results[].rates / products / options. */
+type CouponInherit = {
+  loanTerm?: number;
+  productName?: string;
+  bbLoanType?: string;
+  amortizationType?: string;
+};
+
+function withInheritedCouponFields(
+  row: RateflowProductRow,
+  inherit?: CouponInherit,
+): RateflowProductRow {
+  return {
+    ...row,
+    ...(row.loanTerm == null && inherit?.loanTerm != null ? { loanTerm: inherit.loanTerm } : {}),
+    ...(row.productName ? {} : inherit?.productName ? { productName: inherit.productName } : {}),
+    ...(row.bbLoanType ? {} : inherit?.bbLoanType ? { bbLoanType: inherit.bbLoanType } : {}),
+    ...(row.amortizationType
+      ? {}
+      : inherit?.amortizationType
+        ? { amortizationType: inherit.amortizationType }
+        : {}),
+  };
+}
+
+/** Coupon stack is results[].rates (or products / options). Inherit the 30-year term. */
 function collectProductRows(
   value: unknown,
   acc: RateflowProductRow[],
   depth = 0,
+  inherit?: CouponInherit,
 ): RateflowProductRow[] {
   if (depth > 8 || value == null) return acc;
   if (Array.isArray(value)) {
-    for (const item of value) collectProductRows(item, acc, depth + 1);
+    for (const item of value) collectProductRows(item, acc, depth + 1, inherit);
     return acc;
   }
   if (!isRecord(value)) return acc;
-  const row = normalizeProductRow(value);
+  const row = withInheritedCouponFields(normalizeProductRow(value), inherit);
   if (Number.isFinite(Number(row.rate))) acc.push(row);
+  const nextInherit: CouponInherit = {
+    loanTerm: firstNumber(row.loanTerm, inherit?.loanTerm),
+    productName: row.productName || inherit?.productName,
+    bbLoanType: row.bbLoanType || inherit?.bbLoanType,
+    amortizationType: row.amortizationType || inherit?.amortizationType,
+  };
   for (const child of Object.values(value)) {
     if (Array.isArray(child) || isRecord(child)) {
-      collectProductRows(child, acc, depth + 1);
+      collectProductRows(child, acc, depth + 1, nextInherit);
     }
   }
   return acc;
@@ -393,6 +424,17 @@ function isConventional(row: RateflowProductRow): boolean {
   return true;
 }
 
+/** Nested Rateflow coupons often omit term. The request is conventional 30. */
+function isConventional30(row: RateflowProductRow): boolean {
+  if (!isConventional(row)) return false;
+  const term = termYearsFromRow(row);
+  if (term === 30) return true;
+  if (term != null) return false;
+  const name = String(row.productName ?? row.label ?? "").toLowerCase();
+  if (/\b(15|20|25|40)\s*(?:yr|year)\b/.test(name)) return false;
+  return true;
+}
+
 /** pts when present; otherwise 100 − price. Missing both → unknown. */
 export function pointsFromRow(row: RateflowProductRow): number | undefined {
   const pts = Number(row.pts);
@@ -423,9 +465,7 @@ function lowestNoPointsSort(left: RateflowProductRow, right: RateflowProductRow)
 export function pickConventional30LowestNoPoints(
   rows: RateflowProductRow[],
 ): RateflowProductRow | null {
-  const eligible = rows.filter(
-    (row) => isConventional(row) && termYearsFromRow(row) === 30 && hasNoPointsCost(row),
-  );
+  const eligible = rows.filter((row) => isConventional30(row) && hasNoPointsCost(row));
   if (!eligible.length) return null;
   return [...eligible].sort(lowestNoPointsSort)[0] ?? null;
 }
@@ -435,9 +475,7 @@ export function pickConventional30LowestNoPoints(
  * If none, the best credit (most negative points). Par is not a credit.
  */
 export function pickConventional30NoCost(rows: RateflowProductRow[]): RateflowProductRow | null {
-  const conv30 = rows.filter(
-    (row) => isConventional(row) && termYearsFromRow(row) === 30 && Number.isFinite(Number(row.rate)),
-  );
+  const conv30 = rows.filter((row) => isConventional30(row) && Number.isFinite(Number(row.rate)));
   const withPts = conv30.filter((row) => pointsFromRow(row) != null);
   const bigCredit = withPts.filter((row) => (pointsFromRow(row) ?? 0) <= -1);
   if (bigCredit.length) {
@@ -474,7 +512,7 @@ export function parseRateflowQuoteMiss(input: unknown): "empty" | "retryable" | 
 export function safeCouponRowsFromProducts(rows: RateflowProductRow[]): SafeCouponRow[] {
   const out: SafeCouponRow[] = [];
   for (const row of rows) {
-    if (!isConventional(row) || termYearsFromRow(row) !== 30) continue;
+    if (!isConventional30(row)) continue;
     const rate = Number(row.rate);
     if (!Number.isFinite(rate) || rate <= 0 || rate > 25) continue;
     const pts = pointsFromRow(row);
@@ -594,9 +632,7 @@ export function firstResultSummary(rows: RateflowProductRow[]): RateflowQuoteRep
 }
 
 export function eligibleNoPointsCount(rows: RateflowProductRow[]): number {
-  return rows.filter(
-    (row) => isConventional(row) && termYearsFromRow(row) === 30 && hasNoPointsCost(row),
-  ).length;
+  return rows.filter((row) => isConventional30(row) && hasNoPointsCost(row)).length;
 }
 
 export function quoteRowSample(rows: RateflowProductRow[]): RateflowQuoteReport["sample"] {
@@ -615,7 +651,7 @@ export function quoteRowSample(rows: RateflowProductRow[]): RateflowQuoteReport[
 export function conventional30Book(rows: RateflowProductRow[]): { rate: number; pts?: number }[] {
   const book: { rate: number; pts?: number }[] = [];
   for (const row of rows) {
-    if (!isConventional(row) || termYearsFromRow(row) !== 30) continue;
+    if (!isConventional30(row)) continue;
     const rate = Number(row.rate);
     if (!Number.isFinite(rate) || rate <= 0 || rate > 25) continue;
     const pts = pointsFromRow(row);
