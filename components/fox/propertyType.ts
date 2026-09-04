@@ -108,7 +108,15 @@ export function propertyZipConfirmNeeded(draft: FoxIntakeDraft) {
   return draft.addressZipOffered !== fromAddress;
 }
 
+/** A California ZIP is already on File. Do not reopen ZIP / address for the live line. */
+export function californiaZipOnFile(draft: FoxIntakeDraft) {
+  if (draft.outOfState) return false;
+  const zip = keptPropertyZip(draft) ?? typedZipFromDraft(draft);
+  return Boolean(zip && isCaliforniaZip(zip));
+}
+
 export function propertyZipAskNeeded(draft: FoxIntakeDraft) {
+  if (draft.correcting !== "property-zip" && californiaZipOnFile(draft)) return false;
   if (propertyZipConfirmNeeded(draft)) return false;
   if (propertyAddressNeededForQuote(draft)) return false;
   return propertyTypeChosen(draft) && creditAnswered(draft) && !propertyZipSettled(draft);
@@ -117,6 +125,7 @@ export function propertyZipAskNeeded(draft: FoxIntakeDraft) {
 /** Ask the locked address line before ZIP-only. ZIP-only only after Skip address or an address with no ZIP. */
 export function propertyAddressNeededForQuote(draft: FoxIntakeDraft) {
   if (draft.correcting === "property-address" || draft.correcting === "property-zip") return false;
+  if (californiaZipOnFile(draft)) return false;
   if (!propertyTypeChosen(draft) || !creditAnswered(draft)) return false;
   if (propertyZipConfirmNeeded(draft)) return false;
   if (isSubjectAddressConfirmPending(draft)) return false;

@@ -79,6 +79,7 @@ import {
 import { requestRateflowIfNeeded, resetRateflowSearch } from "./rateflowClient";
 import { shouldKeepStoredFoxThread, withoutTrailingSealedFoxLines } from "./persistThread";
 import {
+  californiaZipOnFile,
   fileAddressLine,
   isSkipPropertyAddressText,
   isSubjectAddressConfirmPending,
@@ -1227,6 +1228,13 @@ export function AlwaysOnFox({
         return prev;
       }
       if (isStart && shouldDeferNextAskForLiveCoupon(live) && prompt !== "confirm-proposal") {
+        return prev;
+      }
+      if (
+        isStart &&
+        californiaZipOnFile(live) &&
+        (prompt === "property-address" || prompt === "property-zip" || prompt === "geo-stop")
+      ) {
         return prev;
       }
       if (isStart && live.liveQuoteStatus === "unavailable" && !live.liveCouponSettled && !live.liveQuote) {

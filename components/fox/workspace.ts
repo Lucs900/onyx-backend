@@ -295,9 +295,15 @@ import {
   writeStatedAvailableAssets,
 } from "./availableAssets";
 import {
+  PROPERTY_ADDRESS_ASK,
   PROPERTY_TYPE_ASK,
   PROPERTY_TYPE_FIELD,
+  PROPERTY_ZIP_ASK,
+  PURCHASE_ADDRESS_ASK,
+  REFI_ADDRESS_ASK,
   SUGGESTED_PROPERTY_NOTE,
+  californiaZipOnFile,
+  keptPropertyZip,
   contractAddressConfirmCopy,
   contractExtractActions,
   contractExtractConfirmCopy,
@@ -2438,6 +2444,15 @@ function restoredAsk(answer: string, draft: FoxIntakeDraft) {
       actions: ask.actions,
     };
   }
+  // Never prefix the invent-nothing fallback onto How is income earned.
+  if (isIncomeAskText(ask.text) && answer === FILE_ANSWER_COPY) {
+    return {
+      text: ask.text,
+      followUp: ask.followUp,
+      facts: ask.facts,
+      actions: ask.actions,
+    };
+  }
   return {
     text: `${answer} ${ask.text}`.trim(),
     followUp: ask.followUp,
@@ -2610,6 +2625,29 @@ function isYearsInBusinessAskText(text: string) {
   return /^How long have you had /i.test(text.trim());
 }
 
+function isIncomeAskText(text: string) {
+  return text.trim() === LIVE_QUOTE_INCOME_ASK || /^How is income earned\?/i.test(text.trim());
+}
+
+function isZipOrAddressAskText(text: string) {
+  const t = text.trim();
+  if (!t) return false;
+  if (
+    t === PROPERTY_ADDRESS_ASK ||
+    t === PURCHASE_ADDRESS_ASK ||
+    t === REFI_ADDRESS_ASK ||
+    t === PROPERTY_ZIP_ASK ||
+    t === GEO_STOP_COPY
+  ) {
+    return true;
+  }
+  if (/address or ZIP/i.test(t)) return true;
+  if (/^What ZIP is the property/i.test(t)) return true;
+  if (/ONYX is California only/i.test(t) || /Type a California ZIP or address/i.test(t)) return true;
+  if (/^This address is \d{5}\. Use this\?$/i.test(t)) return true;
+  return false;
+}
+
 
 function isFileQuestionSpeech(message: FoxMessage) {
   if (message.role !== "fox") return false;
@@ -2637,6 +2675,8 @@ function lastOpenFileAsk(messages: FoxMessage[]): FoxMessage | undefined {
 function shouldRestoreAskAfterLiveQuote(draft: FoxIntakeDraft, ask?: FoxMessage) {
   if (!ask) return false;
   if (ask.text === LIVE_QUOTE_INCOME_ASK) return false;
+  // A rate line landing must not reopen ZIP / address / California-only.
+  if (isZipOrAddressAskText(ask.text)) return false;
   if (isYearsInBusinessAskText(ask.text)) {
     return (
       Boolean(draft.awaitingYearsInBusiness) &&
@@ -6958,7 +6998,14 @@ export function workspaceReply(
     }
     if (draft.incomeType.value && isKeepThisText(q)) return keepThisReply(draft);
     const match = incomeFromText(q);
-    if (!match) return answerThenRestore(q, draft);
+    if (!match) {
+      const zip = parseZipcode(q);
+      const onFile = keptPropertyZip(draft) ?? typedZipFromDraft(draft);
+      if (zip && californiaZipOnFile(draft) && zip === onFile) {
+        return { ...nextFoxAsk(draft) };
+      }
+      return answerThenRestore(q, draft);
+    }
     const nextDraft = {
       ...withIncomeType(draft, match.value),
       correcting: null,
