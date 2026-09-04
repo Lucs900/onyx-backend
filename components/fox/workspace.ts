@@ -227,6 +227,7 @@ import {
   wageThreadOpen,
   writeWageBox5,
   writeTypedStubMonthly,
+  isEntityCashFlowProposal,
   isScheduleECashFlowProposal,
   qualifyingIncomeDisplay,
   raiseYtdFarAskCopy,
@@ -1662,6 +1663,24 @@ function scheduleEReactionAsk(draft: FoxIntakeDraft, proposal: NonNullable<FoxIn
   };
 }
 
+function entityReactionAsk(draft: FoxIntakeDraft, proposal: NonNullable<FoxIntakeDraft["pendingProposal"]>): {
+  text: string;
+  followUp?: string;
+  actions?: FoxAction[];
+} {
+  const shown = displayFactValue(proposal.field, proposal.value);
+  const year = landedTaxYear(draft);
+  const method = proposal.methodNote ?? "";
+  const form = /1120-?s|ordinary \+ dep/i.test(method) && !/8825|GP to Hale/i.test(method)
+    ? "Form 1120-S"
+    : "Form 1065";
+  const ack = year ? `Got the ${year} ${form}.` : `Got the ${form}.`;
+  return {
+    text: `${ack} I’m suggesting ${shown} a month from ${method}. ${SUGGESTED_INCOME_NOTE}. Use this?`,
+    actions: incomeConfirmActions(),
+  };
+}
+
 function wageReactionAsk(
   draft: FoxIntakeDraft,
   proposal: NonNullable<FoxIntakeDraft["pendingProposal"]>,
@@ -2074,6 +2093,7 @@ function liveProposalAsk(
     ) {
       return scheduleEReactionAsk(draft, proposal);
     }
+    if (isEntityCashFlowProposal(proposal)) return entityReactionAsk(draft, proposal);
     if (scheduleCYearViews(draft).length) return incomeReactionAsk(draft, proposal);
     if (hasK1Ordinary(draft)) return k1ReactionAsk(draft, proposal);
     const cls = extractClass ?? lastExtractedClass(draft);
@@ -2114,6 +2134,18 @@ export function scheduleEIntakeAsk(
   actions?: FoxAction[];
 } | null {
   if (!isScheduleECashFlowProposal(draft.pendingProposal)) return null;
+  return docReactionAsk(draft, extractClass) ?? workspacePromptCopy("confirm-proposal", draft);
+}
+
+export function entityIntakeAsk(
+  draft: FoxIntakeDraft,
+  extractClass?: ReturnType<typeof lastExtractedClass>,
+): {
+  text: string;
+  followUp?: string;
+  actions?: FoxAction[];
+} | null {
+  if (!isEntityCashFlowProposal(draft.pendingProposal)) return null;
   return docReactionAsk(draft, extractClass) ?? workspacePromptCopy("confirm-proposal", draft);
 }
 

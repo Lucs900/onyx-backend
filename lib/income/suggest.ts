@@ -219,6 +219,44 @@ export function k1OrdinaryMonthly(ordinaryIncome: number): number {
   return monthlyFromAnnual(ordinaryIncome);
 }
 
+/** Entity 1065 / 1120-S cash flow. Ownership applies to pooled totals; GP named to the partner is not multiplied again. */
+export function entityCashFlowAnnual(input: {
+  ordinary: number;
+  rental8825?: number | null;
+  depreciation?: number | null;
+  amortization?: number | null;
+  te?: number | null;
+  guaranteedPayments?: number | null;
+  ownershipPercent?: number | null;
+}): number | null {
+  if (!Number.isFinite(input.ordinary)) return null;
+  const share = (input.ownershipPercent ?? 0) / 100;
+  if (!Number.isFinite(share) || share <= 0) return null;
+  const pooled =
+    input.ordinary +
+    (input.rental8825 ?? 0) +
+    (input.depreciation ?? 0) +
+    (input.amortization ?? 0) -
+    (input.te ?? 0);
+  return pooled * share + (input.guaranteedPayments ?? 0);
+}
+
+export function entityCashFlowMonthly(input: Parameters<typeof entityCashFlowAnnual>[0]): number | null {
+  const annual = entityCashFlowAnnual(input);
+  return annual == null ? null : monthlyFromAnnual(annual);
+}
+
+export function entityCashFlowMethodNote(input: {
+  kind?: string | null;
+  ownershipPercent?: number | null;
+  guaranteedPayments?: number | null;
+}): string {
+  const kind = String(input.kind ?? "").toLowerCase();
+  if (kind === "1120s" || kind === "1120-s") return "ordinary + dep − T&E / 12";
+  const pct = input.ownershipPercent != null && input.ownershipPercent > 0 ? `${input.ownershipPercent}%` : "ownership";
+  return `(ordinary + 8825 rental + dep + amort − T&E) × ${pct} + GP to Hale / 12`;
+}
+
 /** Schedule E Part I: rents received minus cash expenses ex-depreciation, /12. Not 75%. Not PITIA. */
 export function scheduleECashFlowMonthly(rentsReceived: number, cashExpenses: number): number | null {
   if (!Number.isFinite(rentsReceived) || !Number.isFinite(cashExpenses)) return null;

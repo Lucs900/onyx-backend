@@ -195,6 +195,15 @@ export const EXTRACT_SCHEMA_KEYS: Record<ExtractClass, readonly string[]> = {
     "schedule_e_cash_expenses",
     "schedule_e_part2_names",
     "schedule_e_property_address",
+    "entity_ordinary_income",
+    "entity_8825_rental",
+    "entity_depreciation",
+    "entity_amortization",
+    "entity_te",
+    "entity_guaranteed_payments",
+    "ownership_percent",
+    "entity_taxable_income",
+    "entity_name",
   ],
   bank_statement: ["institution", "period_end", "ending_balance", "account_type", "account_last4", "present_address"],
   purchase_contract: [
@@ -262,6 +271,13 @@ const MONEY_KEYS = new Set([
   "mileage_depreciation",
   "k1_ordinary_income",
   "k1_distributions",
+  "entity_ordinary_income",
+  "entity_8825_rental",
+  "entity_depreciation",
+  "entity_amortization",
+  "entity_te",
+  "entity_guaranteed_payments",
+  "entity_taxable_income",
   "schedule_e_rents_received",
   "schedule_e_cash_expenses",
   "overtime",
@@ -335,6 +351,15 @@ const YEARLY_TAX_KEYS = new Set([
   "schedule_e_cash_expenses",
   "schedule_e_part2_names",
   "schedule_e_property_address",
+  "entity_ordinary_income",
+  "entity_8825_rental",
+  "entity_depreciation",
+  "entity_amortization",
+  "entity_te",
+  "entity_guaranteed_payments",
+  "ownership_percent",
+  "entity_taxable_income",
+  "entity_name",
 ]);
 
 const DROP_FIELD_KEYS =
@@ -406,10 +431,11 @@ export function looksLikeTaxReturnFields(
 ): boolean {
   if (!fields) return false;
   const kind = normalizeReturnKind(String(fields.return_kind ?? ""));
-  if (kind === "k1" || kind === "1065" || kind === "1120s" || kind === "schedule_c" || kind === "schedule_e") {
+  if (kind === "k1" || kind === "1065" || kind === "1120s" || kind === "1120" || kind === "schedule_c" || kind === "schedule_e") {
     return true;
   }
   if (String(fields.k1_ordinary_income ?? "").trim()) return true;
+  if (String(fields.entity_ordinary_income ?? "").trim()) return true;
   if (String(fields.schedule_c_net_profit ?? "").trim()) return true;
   if (String(fields.schedule_e_rents_received ?? "").trim()) return true;
   return false;
@@ -472,8 +498,13 @@ export function hasLockedSuggestion(
     if (kind === "schedule_e") {
       return Boolean(value("schedule_e_rents_received") && value("schedule_e_cash_expenses"));
     }
+    if (kind === "1120") {
+      return Boolean(String(fields?.return_kind ?? "").trim());
+    }
     if (kind === "k1" || kind === "1065" || kind === "1120s") {
-      return Boolean(String(fields?.k1_ordinary_income ?? "").trim());
+      return Boolean(
+        String(fields?.k1_ordinary_income ?? "").trim() || String(fields?.entity_ordinary_income ?? "").trim(),
+      );
     }
   }
   return Object.values(fields ?? {}).some((item) => String(item ?? "").trim());
@@ -497,6 +528,7 @@ export function k1OrdinaryMissingFromExtract(
   const kind = normalizeReturnKind(String(fields?.return_kind ?? ""));
   const namedK1 = kind === "k1" || kind === "1065" || kind === "1120s";
   const filenameK1 = /k-?1/i.test(name ?? "");
+  if (String(fields?.entity_ordinary_income ?? "").trim() || kind === "1120") return false;
   if (!namedK1 && !filenameK1) return false;
   return !String(fields?.k1_ordinary_income ?? "").trim();
 }
@@ -1276,7 +1308,16 @@ export function applyExtractedFields(
       if (
         field === "schedule_e_rents_received" ||
         field === "schedule_e_cash_expenses" ||
-        field === "schedule_e_property_address"
+        field === "schedule_e_property_address" ||
+        field === "entity_ordinary_income" ||
+        field === "entity_8825_rental" ||
+        field === "entity_depreciation" ||
+        field === "entity_amortization" ||
+        field === "entity_te" ||
+        field === "entity_guaranteed_payments" ||
+        field === "ownership_percent" ||
+        field === "entity_taxable_income" ||
+        field === "entity_name"
       ) {
         continue;
       }
@@ -1684,7 +1725,16 @@ export function applyExtractedFields(
     if (
       key === "schedule_e_rents_received" ||
       key === "schedule_e_cash_expenses" ||
-      key === "schedule_e_property_address"
+      key === "schedule_e_property_address" ||
+      key === "entity_ordinary_income" ||
+      key === "entity_8825_rental" ||
+      key === "entity_depreciation" ||
+      key === "entity_amortization" ||
+      key === "entity_te" ||
+      key === "entity_guaranteed_payments" ||
+      key === "ownership_percent" ||
+      key === "entity_taxable_income" ||
+      key === "entity_name"
     ) {
       continue;
     }

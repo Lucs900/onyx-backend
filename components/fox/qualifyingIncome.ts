@@ -25,6 +25,8 @@ import {
   RAISE_WHEN_ASK,
   RAISE_YTD_MISSING_NOTE,
   RAISE_WHEN_UNKNOWN_NOTE,
+  entityCashFlowMethodNote,
+  entityCashFlowMonthly,
   k1OrdinaryMonthly,
   scheduleECashFlowMonthly,
   laterYearIsMateriallyLower,
@@ -87,8 +89,8 @@ export type { BothMonthlyReason, QualifyingMethod, RaiseWhen, ScheduleCYearInput
 export const QUALIFYING_INCOME_FIELD = "qualifying_income";
 export const TAX_CASHFLOWS_FIELD = "tax_cashflows";
 
-export type TaxReturnKind = "schedule_c" | "schedule_e" | "k1" | "1065" | "1120s" | "";
-export type QualifyingBasis = "schedule_c" | "schedule_e" | "wage" | "k1" | "combined";
+export type TaxReturnKind = "schedule_c" | "schedule_e" | "k1" | "1065" | "1120s" | "1120" | "";
+export type QualifyingBasis = "schedule_c" | "schedule_e" | "wage" | "k1" | "entity" | "combined";
 
 export const WAGE_MONTHLY_FIELD = "wage_monthly";
 export const SE_MONTHLY_FIELD = "se_monthly";
@@ -115,6 +117,15 @@ export type TaxYearCashflow = {
   schedule_e_cash_expenses: string;
   schedule_e_part2_names: string;
   schedule_e_property_address: string;
+  entity_ordinary_income: string;
+  entity_8825_rental: string;
+  entity_depreciation: string;
+  entity_amortization: string;
+  entity_te: string;
+  entity_guaranteed_payments: string;
+  ownership_percent: string;
+  entity_taxable_income: string;
+  entity_name: string;
 };
 
 export type QualifyingIncomeResult = {
@@ -187,6 +198,7 @@ export function normalizeReturnKind(raw?: string | null): TaxReturnKind {
   if (v.includes("k1")) return "k1";
   if (v.includes("1065") || v.includes("partnership")) return "1065";
   if (v.includes("1120s") || v.includes("scorp")) return "1120s";
+  if (v === "1120" || v.endsWith("1120") || v.includes("ccorp")) return "1120";
   return "";
 }
 
@@ -278,6 +290,15 @@ export function readTaxCashflows(draft: FoxIntakeDraft): TaxYearCashflow[] {
           schedule_e_cash_expenses: String(row.schedule_e_cash_expenses ?? ""),
           schedule_e_part2_names: String(row.schedule_e_part2_names ?? ""),
           schedule_e_property_address: String(row.schedule_e_property_address ?? ""),
+          entity_ordinary_income: String(row.entity_ordinary_income ?? ""),
+          entity_8825_rental: String(row.entity_8825_rental ?? ""),
+          entity_depreciation: String(row.entity_depreciation ?? ""),
+          entity_amortization: String(row.entity_amortization ?? ""),
+          entity_te: String(row.entity_te ?? ""),
+          entity_guaranteed_payments: String(row.entity_guaranteed_payments ?? ""),
+          ownership_percent: String(row.ownership_percent ?? ""),
+          entity_taxable_income: String(row.entity_taxable_income ?? ""),
+          entity_name: String(row.entity_name ?? ""),
         },
       ];
     });
@@ -292,12 +313,16 @@ export function cashflowFromExtract(fields: Record<string, string>): TaxYearCash
   const k1_ordinary_income = String(fields.k1_ordinary_income ?? "").trim();
   const schedule_e_rents_received = String(fields.schedule_e_rents_received ?? "").trim();
   const schedule_e_cash_expenses = String(fields.schedule_e_cash_expenses ?? "").trim();
+  const entity_ordinary_income = String(fields.entity_ordinary_income ?? "").trim();
+  const entity_taxable_income = String(fields.entity_taxable_income ?? "").trim();
   const return_kind = inferReturnKind(fields);
   if (
     !tax_year &&
     !schedule_c_net_profit &&
     !k1_ordinary_income &&
     !schedule_e_rents_received &&
+    !entity_ordinary_income &&
+    !entity_taxable_income &&
     !return_kind
   ) {
     return null;
@@ -319,6 +344,15 @@ export function cashflowFromExtract(fields: Record<string, string>): TaxYearCash
     schedule_e_cash_expenses,
     schedule_e_part2_names: String(fields.schedule_e_part2_names ?? "").trim(),
     schedule_e_property_address: String(fields.schedule_e_property_address ?? "").trim(),
+    entity_ordinary_income,
+    entity_8825_rental: String(fields.entity_8825_rental ?? "").trim(),
+    entity_depreciation: String(fields.entity_depreciation ?? "").trim(),
+    entity_amortization: String(fields.entity_amortization ?? "").trim(),
+    entity_te: String(fields.entity_te ?? "").trim(),
+    entity_guaranteed_payments: String(fields.entity_guaranteed_payments ?? "").trim(),
+    ownership_percent: String(fields.ownership_percent ?? "").trim(),
+    entity_taxable_income,
+    entity_name: String(fields.entity_name ?? "").trim(),
   };
 }
 
@@ -326,6 +360,10 @@ export function inferReturnKind(fields: Record<string, string>): TaxReturnKind {
   const named = normalizeReturnKind(fields.return_kind);
   if (named) return named;
   if (String(fields.schedule_e_rents_received ?? "").trim()) return "schedule_e";
+  if (String(fields.entity_ordinary_income ?? "").trim()) {
+    return String(fields.ownership_percent ?? "") === "100" ? "1120s" : "1065";
+  }
+  if (String(fields.entity_taxable_income ?? "").trim()) return "1120";
   if (String(fields.k1_ordinary_income ?? "").trim() && !String(fields.schedule_c_net_profit ?? "").trim()) {
     return "k1";
   }
@@ -333,12 +371,44 @@ export function inferReturnKind(fields: Record<string, string>): TaxReturnKind {
   return "";
 }
 
+function isEntityOrK1Kind(kind: TaxReturnKind) {
+  return kind === "k1" || kind === "1065" || kind === "1120s";
+}
+
+function pickCashflowValue(previous: string, incoming: string) {
+  return incoming.trim() || previous.trim();
+}
+
+function mergeEntityYearRow(existing: TaxYearCashflow, incoming: TaxYearCashflow): TaxYearCashflow {
+  const keys = Object.keys(existing) as (keyof TaxYearCashflow)[];
+  const next = { ...existing };
+  for (const key of keys) {
+    next[key] = pickCashflowValue(String(existing[key] ?? ""), String(incoming[key] ?? "")) as never;
+  }
+  next.return_kind = incoming.return_kind || existing.return_kind;
+  next.tax_year = incoming.tax_year || existing.tax_year;
+  return next;
+}
+
 export function mergeTaxCashflows(existing: TaxYearCashflow[], incoming: TaxYearCashflow | null): TaxYearCashflow[] {
   if (!incoming) return existing;
-  const key = incoming.tax_year || `unknown-${existing.length}`;
-  const next = existing.filter((row) => (row.tax_year || "") !== key);
-  next.push({ ...incoming, tax_year: incoming.tax_year || key });
-  return next.sort((a, b) => (yearNumber(a.tax_year) ?? 0) - (yearNumber(b.tax_year) ?? 0));
+  const incomingEntity = isEntityOrK1Kind(incoming.return_kind) || Boolean(incoming.entity_ordinary_income || incoming.k1_ordinary_income);
+  const match = existing.findIndex((row) => {
+    if ((row.tax_year || "") !== (incoming.tax_year || "")) return false;
+    const rowEntity = isEntityOrK1Kind(row.return_kind) || Boolean(row.entity_ordinary_income || row.k1_ordinary_income);
+    if (incomingEntity && rowEntity) return true;
+    return row.return_kind === incoming.return_kind;
+  });
+  if (match >= 0) {
+    const next = [...existing];
+    next[match] = incomingEntity
+      ? mergeEntityYearRow(existing[match], incoming)
+      : { ...incoming, tax_year: incoming.tax_year || existing[match].tax_year };
+    return next.sort((a, b) => (yearNumber(a.tax_year) ?? 0) - (yearNumber(b.tax_year) ?? 0));
+  }
+  return [...existing, { ...incoming, tax_year: incoming.tax_year || `unknown-${existing.length}` }].sort(
+    (a, b) => (yearNumber(a.tax_year) ?? 0) - (yearNumber(b.tax_year) ?? 0),
+  );
 }
 
 function scheduleEMonthly(years: TaxYearCashflow[]): number | null {
@@ -354,6 +424,50 @@ function scheduleEMonthly(years: TaxYearCashflow[]): number | null {
   const latest = usable[usable.length - 1];
   if (latest.rents == null || latest.cash == null) return null;
   return scheduleECashFlowMonthly(latest.rents, latest.cash);
+}
+
+function entityRowMonthly(row: TaxYearCashflow): number | null {
+  const ordinary = parseExtractMoney(row.entity_ordinary_income);
+  if (ordinary == null) return null;
+  const ownership = parseExtractMoney(row.ownership_percent);
+  if (ownership == null) return null;
+  return entityCashFlowMonthly({
+    ordinary,
+    rental8825: parseExtractMoney(row.entity_8825_rental),
+    depreciation: parseExtractMoney(row.entity_depreciation),
+    amortization: parseExtractMoney(row.entity_amortization),
+    te: parseExtractMoney(row.entity_te),
+    guaranteedPayments: parseExtractMoney(row.entity_guaranteed_payments),
+    ownershipPercent: ownership,
+  });
+}
+
+function entityMonthly(years: TaxYearCashflow[]): { monthly: number; row: TaxYearCashflow } | null {
+  const usable = years
+    .map((row) => ({
+      year: yearNumber(row.tax_year) ?? 0,
+      monthly: entityRowMonthly(row),
+      row,
+    }))
+    .filter((item) => item.monthly != null)
+    .sort((a, b) => a.year - b.year);
+  if (!usable.length) return null;
+  const latest = usable[usable.length - 1];
+  if (latest.monthly == null) return null;
+  return { monthly: latest.monthly, row: latest.row };
+}
+
+function entityResultFromRow(row: TaxYearCashflow, monthly: number): QualifyingIncomeResult {
+  return {
+    monthly,
+    basis: "entity",
+    methodNote: entityCashFlowMethodNote({
+      kind: row.return_kind,
+      ownershipPercent: parseExtractMoney(row.ownership_percent),
+      guaranteedPayments: parseExtractMoney(row.entity_guaranteed_payments),
+    }),
+    parts: { k1: monthly },
+  };
 }
 
 function k1Monthly(years: TaxYearCashflow[]): number | null {
@@ -730,9 +844,10 @@ function maybeCombine(
             }
           : null);
   const k1 =
-    incoming.basis === "k1"
+    incoming.basis === "k1" || incoming.basis === "entity"
       ? incoming.monthly
-      : k1Monthly(years.length ? years : readTaxCashflows(draft)) ??
+      : entityMonthly(years.length ? years : readTaxCashflows(draft))?.monthly ??
+        k1Monthly(years.length ? years : readTaxCashflows(draft)) ??
         confirmedMonthly(draft, K1_MONTHLY_FIELD);
   const combined = suggestCombinedIncome({
     wage,
@@ -797,6 +912,10 @@ export function monthlyQualifyingFromExtract(
       methodNote: "rents minus cash expenses / 12",
     };
   }
+  const incomingEntity = incoming ? entityRowMonthly(incoming) : null;
+  if (incomingEntity != null && incoming) {
+    return maybeCombine(draft, entityResultFromRow(incoming, incomingEntity), years);
+  }
   const scheduleC = suggestScheduleCIncome(scheduleCYearsFromCashflows(years));
   if (scheduleC != null) {
     return maybeCombine(
@@ -818,6 +937,10 @@ export function monthlyQualifyingFromExtract(
       },
       years,
     );
+  }
+  const fileEntity = entityMonthly(years);
+  if (fileEntity) {
+    return maybeCombine(draft, entityResultFromRow(fileEntity.row, fileEntity.monthly), years);
   }
   const entity = k1Monthly(years);
   if (entity != null) {
@@ -1259,6 +1382,16 @@ export function isScheduleECashFlowProposal(proposal?: FactProposal | null): boo
   );
 }
 
+export function isEntityCashFlowProposal(proposal?: FactProposal | null): boolean {
+  if (!proposal || proposal.field !== QUALIFYING_INCOME_FIELD) return false;
+  const method = proposal.methodNote ?? "";
+  return (
+    /8825 rental/i.test(method) ||
+    /ordinary \+ dep/i.test(method) ||
+    /GP to Hale/i.test(method)
+  );
+}
+
 export function maybeProposeQualifyingFromTaxFile(draft: FoxIntakeDraft): FoxIntakeDraft {
   if (draft.pendingProposal?.field === QUALIFYING_INCOME_FIELD) return draft;
   if (draft.pendingProposal && draft.pendingProposal.field !== QUALIFYING_INCOME_FIELD) {
@@ -1268,7 +1401,11 @@ export function maybeProposeQualifyingFromTaxFile(draft: FoxIntakeDraft): FoxInt
   if (!computed || computed.needsFrequency || computed.needsBothReason || computed.monthly === 0) {
     return draft;
   }
-  if (computed.basis !== "schedule_e" && existingMonthlyIncome(draft)?.via === QUALIFYING_INCOME_FIELD) {
+  if (
+    computed.basis !== "schedule_e" &&
+    computed.basis !== "entity" &&
+    existingMonthlyIncome(draft)?.via === QUALIFYING_INCOME_FIELD
+  ) {
     return draft;
   }
   return withQualifyingIncomeProposal(draft, computed, "tax_return");
@@ -1287,7 +1424,7 @@ export function withQualifyingIncomeProposal(
     Boolean(computed.stubMonthly != null && computed.w2Monthly != null) ||
     Boolean(computed.methodNote?.includes("W-2 Box 1"));
   if (existing && valuesMatch(existing.value, monthly) && !showBothMonthly) {
-    if (computed.basis === "schedule_e") {
+    if (computed.basis === "schedule_e" || computed.basis === "entity") {
       return {
         ...draft,
         pendingConflict: null,
@@ -1402,7 +1539,7 @@ export function qualifyingIncomeDisplay(draft: FoxIntakeDraft): { value: string;
   if (draft.awaitingBothMonthlyReason || draft.awaitingRaiseWhen || draft.awaitingRaiseYtdFar) return null;
   const proposal =
     draft.pendingProposal?.field === QUALIFYING_INCOME_FIELD ? draft.pendingProposal : null;
-  if (proposal && !isScheduleECashFlowProposal(proposal)) {
+  if (proposal && !isScheduleECashFlowProposal(proposal) && !isEntityCashFlowProposal(proposal)) {
     return {
       value: structureQualifyingValue(displayMoney(proposal.value), proposal.methodNote),
       note: proposal.note ?? SUGGESTED_INCOME_NOTE,

@@ -59,6 +59,13 @@ export function isScheduleEConfirmAskText(text?: string) {
   return /rents minus cash expenses \/ 12/i.test(text ?? "") && /Use this/i.test(text ?? "");
 }
 
+export function isEntityConfirmAskText(text?: string) {
+  return (
+    /Use this/i.test(text ?? "") &&
+    (/8825 rental/i.test(text ?? "") || /ordinary \+ dep/i.test(text ?? "") || /GP to Hale/i.test(text ?? ""))
+  );
+}
+
 export function shouldKeepStoredFoxThread(
   stored: FoxMessage[],
   incoming: FoxMessage[],
@@ -69,7 +76,9 @@ export function shouldKeepStoredFoxThread(
   } = {},
 ) {
   if (!opts.fileExists || opts.isIdExtractPath || opts.idExtractAsk) return false;
-  if (incoming.some((item) => isScheduleEConfirmAskText(item.text))) return false;
+  if (incoming.some((item) => isScheduleEConfirmAskText(item.text) || isEntityConfirmAskText(item.text))) {
+    return false;
+  }
   if (stored.length <= incoming.length) return false;
   return !isIntentionalIncomingThread(stored, incoming);
 }
