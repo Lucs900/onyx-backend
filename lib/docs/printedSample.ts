@@ -496,9 +496,24 @@ function looksLikeScheduleCWorksheet(lines: string[]) {
   return /\bLINE\s*31\b/.test(blob) && /NET PROFIT/.test(blob);
 }
 
+function k1WorksheetKind(lines: string[]): "1065" | "1120s" | "k1" | null {
+  const blob = lines.join("\n").toUpperCase();
+  if (/SCHEDULE K-1\s*\(\s*FORM 1065\s*\)|K-1\s*\(\s*FORM 1065\s*\)/.test(blob)) return "1065";
+  if (/SCHEDULE K-1\s*\(\s*FORM 1120S?\s*\)|K-1\s*\(\s*FORM 1120S\s*\)/.test(blob)) return "1120s";
+  if (/SCHEDULE K-1 FORM 1120-?S/.test(blob)) return "k1";
+  if (/SCHEDULE K-1/.test(blob) && /FORM 1065/.test(blob)) return "1065";
+  if (/SCHEDULE K-1/.test(blob) && /1120-?S/.test(blob)) return "1120s";
+  return null;
+}
+
+function looksLikeK1Worksheet(lines: string[]) {
+  return k1WorksheetKind(lines) != null;
+}
+
 function classifyPrintedLines(lines: string[]): ExtractClass | null {
   const blob = lines.join("\n").toUpperCase();
   if (looksLikeScheduleCWorksheet(lines)) return "tax_return";
+  if (looksLikeK1Worksheet(lines)) return "tax_return";
   if (
     /\bPAYSTUB\b|\bPAY STUB\b|EARNINGS STATEMENT|PAY STATEMENT/.test(blob) ||
     (/\bBI[\s-]?WEEKLY\b|\bSEMI[\s-]?MONTHLY\b|\bWEEKLY\b|\bMONTHLY\b/.test(blob) &&
@@ -585,7 +600,7 @@ function worksheetLineBlock(lines: string[], lineNo: string) {
 
 function firstMoneyInBlock(texts: string[]) {
   for (const text of texts) {
-    if (/expected 1084|suggested monthly|method:/i.test(text)) continue;
+    if (/expected 1084|suggested monthly|method:|ordinary alone/i.test(text)) continue;
     const own = moneyDigits(text.replace(/^\$\s*/, ""));
     if (own) return own;
     const tail = text.match(/\$\s*([\d,]+(?:\.\d+)?)/);
@@ -635,6 +650,49 @@ function applyScheduleCWorksheetFields(
   if (line6.some((text) => /nonrecurring|one[\s-]?time/i.test(text))) {
     const other = firstMoneyInBlock(line6);
     if (other) putMoney("nonrecurring_other_income", other);
+  }
+}
+
+function worksheetBoxBlock(lines: string[], boxNo: string) {
+  const start = new RegExp(`^box\\s*${boxNo}\\b`, "i");
+  for (let i = 0; i < lines.length; i += 1) {
+    const head = (lines[i] ?? "").trim();
+    if (!start.test(head)) continue;
+    if (/expected 1084|ordinary alone/i.test(head)) continue;
+    const texts = [head];
+    for (let j = i + 1; j < lines.length; j += 1) {
+      const next = (lines[j] ?? "").trim();
+      if (
+        /^box\s*\d/i.test(next) ||
+        /^form\s*10(65|20)/i.test(next) ||
+        /^expected 1084/i.test(next) ||
+        /^suggested monthly/i.test(next) ||
+        /^ordinary alone/i.test(next)
+      ) {
+        break;
+      }
+      texts.push(next);
+    }
+    return texts;
+  }
+  return [];
+}
+
+/** K-1 Box 1 ordinary from THIS page. Never Expected 1084, coaching /12, or ownership. */
+function applyK1WorksheetFields(
+  lines: string[],
+  put: (key: string, value: string) => void,
+  putMoney: (key: string, value: string) => void,
+) {
+  if (!looksLikeK1Worksheet(lines) && !lines.some((line) => /^box\s*1\b/i.test(line.trim()))) {
+    return;
+  }
+  const taxYear = stackedLabelValue(lines, /^TAX YEAR:?\s*/i);
+  if (taxYear) put("tax_year", taxYear.replace(/\D/g, "").slice(0, 4));
+  const box1 = worksheetBoxBlock(lines, "1");
+  if (box1.some((text) => /ordinary business income/i.test(text))) {
+    const ordinary = firstMoneyInBlock(box1);
+    if (ordinary) putMoney("k1_ordinary_income", ordinary);
   }
 }
 
@@ -882,11 +940,15 @@ export function fieldsFromPrintedLines(
 
   if (extractClass === "tax_return" || extractClass === "other") {
     applyScheduleCWorksheetFields(lines, put, putMoney);
+    applyK1WorksheetFields(lines, put, putMoney);
   }
 
   if (extractClass === "tax_return") {
     const blob = lines.join("\n").toUpperCase();
-    if (/K-?1|1120-?S/.test(blob) && !looksLikeScheduleCWorksheet(lines)) {
+    const k1Kind = k1WorksheetKind(lines);
+    if (k1Kind) {
+      fields.return_kind = k1Kind;
+    } else if (/K-?1|1120-?S/.test(blob) && !looksLikeScheduleCWorksheet(lines)) {
       fields.return_kind = "k1";
     } else if (looksLikeScheduleCWorksheet(lines) || fields.schedule_c_net_profit) {
       fields.return_kind = "schedule_c";
@@ -1038,7 +1100,7 @@ function inferPrintedClass(lines: string[]): ExtractClass | null {
   const blob = lines.join("\n");
   if ((/\bbox\s*5\b/i.test(blob) || /medicare\s*wages/i.test(blob)) && /\d/.test(blob)) return "w2";
   const mapped = fieldsFromPrintedLines("other", lines);
-  if (mapped.schedule_c_net_profit) return "tax_return";
+  if (mapped.schedule_c_net_profit || mapped.k1_ordinary_income) return "tax_return";
   if (mapped.medicare_wages || mapped.box5) return "w2";
   if (mapped.gross_period && mapped.pay_frequency) return "paystub";
   if (mapped.current_pi || (mapped.servicer && mapped.unpaid_principal)) return "mortgage_statement";
@@ -1164,6 +1226,25 @@ export function loudIdFromPrintedLines(lines: string[]): PrintedSample | null {
     extractClass: "government_id",
     confidence: 0.94,
     fields,
+  };
+}
+
+/** K-1 Box 1 ordinary from THIS page text. Filename, Expected 1084, and coaching /12 are not sources. */
+export function loudK1FromPrintedLines(lines: string[]): PrintedSample | null {
+  const kind = k1WorksheetKind(lines);
+  if (!kind) return null;
+  const fields = fieldsFromPrintedLines("tax_return", lines);
+  if (!fields.k1_ordinary_income || !fields.tax_year) return null;
+  delete fields.wages;
+  delete fields.medicare_wages;
+  delete fields.box5;
+  delete fields.employer_name;
+  delete fields.gross_period;
+  delete fields.schedule_c_net_profit;
+  return {
+    extractClass: "tax_return",
+    confidence: 0.94,
+    fields: { ...fields, return_kind: kind },
   };
 }
 

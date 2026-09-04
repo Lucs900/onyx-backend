@@ -16,6 +16,7 @@ import {
   fieldsFromPrintedLines,
   loudContractFromPrintedLines,
   loudIdFromPrintedLines,
+  loudK1FromPrintedLines,
   loudScheduleCFromPrintedLines,
   loudWageFromPrintedLines,
   printedSampleFromLines,
@@ -474,6 +475,8 @@ export async function classifyAndExtract(
     if (layer?.length) {
       const loudScheduleC = loudScheduleCFromPrintedLines(layer);
       if (loudScheduleC) return printedResult(loudScheduleC, textLayerChars);
+      const loudK1 = loudK1FromPrintedLines(layer);
+      if (loudK1) return printedResult(loudK1, textLayerChars);
       const loud = loudWageFromPrintedLines(layer);
       if (loud) return printedResult(loud, textLayerChars);
       const loudId = loudIdFromPrintedLines(layer);
@@ -500,6 +503,8 @@ export async function classifyAndExtract(
     if (layer?.length) {
       const loudScheduleC = loudScheduleCFromPrintedLines(layer);
       if (loudScheduleC) return printedResult(loudScheduleC, textLayerChars);
+      const loudK1 = loudK1FromPrintedLines(layer);
+      if (loudK1) return printedResult(loudK1, textLayerChars);
       const loud = loudWageFromPrintedLines(layer);
       if (loud) return printedResult(loud, textLayerChars);
       const fromLines = printedSampleFromLines(layer);
