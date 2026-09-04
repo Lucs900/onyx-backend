@@ -1180,6 +1180,20 @@ function existingMonthlyIncome(draft: FoxIntakeDraft): { value: string; via: "qu
   return null;
 }
 
+/** Cashflows already on File. Same confirm-before-write gate Schedule C uses. */
+export function maybeProposeQualifyingFromTaxFile(draft: FoxIntakeDraft): FoxIntakeDraft {
+  if (draft.pendingProposal?.field === QUALIFYING_INCOME_FIELD) return draft;
+  if (existingMonthlyIncome(draft)?.via === QUALIFYING_INCOME_FIELD) return draft;
+  if (draft.pendingProposal && draft.pendingProposal.field !== QUALIFYING_INCOME_FIELD) {
+    return draft;
+  }
+  const computed = monthlyQualifyingFromExtract(draft, "tax_return", {});
+  if (!computed || computed.needsFrequency || computed.needsBothReason || computed.monthly === 0) {
+    return draft;
+  }
+  return withQualifyingIncomeProposal(draft, computed, "tax_return");
+}
+
 export function withQualifyingIncomeProposal(
   draft: FoxIntakeDraft,
   computed: QualifyingIncomeResult | null,

@@ -9,6 +9,7 @@ import {
   stillUsefulSection,
 } from "./fileWrite";
 import { canLooksRight, shouldEscalate } from "./completeness";
+import { maybeProposeQualifyingFromTaxFile, QUALIFYING_INCOME_FIELD } from "./qualifyingIncome";
 import type {
   Capture,
   FileCondition,
@@ -457,7 +458,10 @@ export function finishLineActions(draft: FoxIntakeDraft): FoxAction[] {
 }
 
 export function applyLooksRightMotion(draft: FoxIntakeDraft): FoxIntakeDraft {
-  if (!canLooksRight(draft) && !draft.sampleAccepted) return draft;
+  const held = maybeProposeQualifyingFromTaxFile(draft);
+  if (held.pendingProposal?.field === QUALIFYING_INCOME_FIELD) return held;
+  if (!canLooksRight(held) && !held.sampleAccepted) return held;
+  draft = held;
   if (shouldEscalate(draft)) {
     return applyEscalateMotion(
       appendFileEvent(
@@ -515,6 +519,9 @@ function withOutbox(
 }
 
 export function applyProceedMotion(draft: FoxIntakeDraft, now = new Date()): FoxIntakeDraft {
+  const held = maybeProposeQualifyingFromTaxFile(draft);
+  if (held.pendingProposal?.field === QUALIFYING_INCOME_FIELD) return held;
+  draft = held;
   if (emailFinishGateOpen(draft)) {
     return {
       ...draft,

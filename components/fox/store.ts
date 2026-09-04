@@ -53,6 +53,7 @@ import { FAILED_READ_NOTE, isUnreadNote } from "@/lib/docs/accept";
 import {
   applyExtractedFields,
   hasLockedSuggestion,
+  k1OrdinaryMissingFromExtract,
   looksLikeBankFields,
   looksLikeContractFields,
   isPurchaseContractConfirmPending,
@@ -1561,8 +1562,9 @@ export function applyExtractWrite(
       : extractedClass === "purchase_contract"
         ? !looksLikeContractFields(input.fields)
         : (bankInvite || extractedClass === "bank_statement") &&
-          !looksLikeBankFields(input.fields) &&
-          !looksLikeContractFields(input.fields));
+            !looksLikeBankFields(input.fields) &&
+            !looksLikeContractFields(input.fields));
+  const k1Unread = !failed && k1OrdinaryMissingFromExtract(input.fields, name);
   const box5Read = Boolean(
     String(input.fields?.medicare_wages ?? "").trim() || String(input.fields?.box5 ?? "").trim(),
   );
@@ -1573,7 +1575,7 @@ export function applyExtractWrite(
   const stubCanSpeak = canSpeakStubExtract(current, input.fields);
   const silentStubReceive = stubAskOpen && !stubCanSpeak && !box5Read;
   const treatFailed =
-    (Boolean(failed || unreadEmpty) && !box5Read && !stubRead) || silentStubReceive;
+    (Boolean(failed || unreadEmpty || k1Unread) && !box5Read && !stubRead) || silentStubReceive;
   const displayClass =
     treatFailed || extractedClass === "other"
       ? preferFilenameClass(extractedClass, name)

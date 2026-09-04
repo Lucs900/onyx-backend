@@ -7,11 +7,12 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { classifyAndExtract } from "../lib/docs/extract";
-import { applyExtractedFields } from "../components/fox/fileWrite";
-import { applyProceedMotion, applyUploadMoreMotion } from "../components/fox/motion";
-import { emptyDraft } from "../components/fox/store";
+import { applyExtractedFields, nextDocInvite } from "../components/fox/fileWrite";
+import { applyLooksRightMotion, applyProceedMotion, applyUploadMoreMotion } from "../components/fox/motion";
+import { applyExtractWrite, emptyDraft, loadIntakeDraft, receiveDocument } from "../components/fox/store";
 import { monthlyQualifyingFromExtract } from "../components/fox/qualifyingIncome";
 import { K1_ORDINARY_NOTE, SUGGESTED_INCOME_NOTE } from "../lib/income/suggest";
+import { workspacePromptCopy } from "../components/fox/workspace";
 import type { FoxIntakeDraft } from "../components/fox/types";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -177,6 +178,92 @@ async function main() {
     fields: thirteen.fields,
   });
   assert.equal(afterProceedWrite.draft.pendingProposal?.value, "3333");
+
+  function walkSe(): FoxIntakeDraft {
+    return {
+      ...seSketch(),
+      propertyValueAmount: 850_000,
+      downPaymentAmount: 170_000,
+      loanAmountValue: 680_000,
+      propertyType: "house",
+      propertyTypeAsked: true,
+      propertyZip: "94123",
+      propertyZipAsked: true,
+      yearsInBusinessAsked: true,
+      monthlyDebtsAsked: true,
+      skippedClasses: ["government_id"],
+    };
+  }
+
+  const receivedAt = "2026-09-04T21:00:00.000Z";
+  loadIntakeDraft(walkSe());
+  receiveDocument({
+    slot: "other",
+    name: "13-k1-1065-2024-bay-street.pdf",
+    type: "application/pdf",
+    size: 2048,
+    receivedAt,
+  });
+  const liveWrite = applyExtractWrite(
+    receivedAt,
+    "13-k1-1065-2024-bay-street.pdf",
+    {
+      extractClass: "tax_return",
+      confidence: 0.94,
+      fields: thirteen.fields,
+    },
+  );
+  assert.equal(liveWrite.draft.pendingProposal?.field, "qualifying_income");
+  assert.equal(liveWrite.draft.pendingProposal?.value, "3333");
+  assert.equal(liveWrite.draft.pendingProposal?.note, SUGGESTED_INCOME_NOTE);
+  assert.match(liveWrite.draft.pendingProposal?.caution ?? "", /Ordinary is not confirmed cash flow/);
+  assert.ok(!liveWrite.draft.facts?.qualifying_income?.confirmed);
+  const liveAsk = workspacePromptCopy("confirm-proposal", liveWrite.draft);
+  assert.match(liveAsk.text, /\$3,333/);
+  assert.match(liveAsk.text, /Ordinary is not confirmed cash flow/);
+  assert.match(liveAsk.text, /Suggested qualifying income · not underwritten/);
+  assert.ok((liveAsk.actions ?? []).some((item) => item.label === "Use this"));
+  const couponAsk = workspacePromptCopy("confirm-proposal", {
+    ...liveWrite.draft,
+    pendingLiveCoupon: { choice: "lower", rate: 6.125, asOf: "2026-09-04" },
+  });
+  assert.match(couponAsk.text, /\$3,333/);
+  assert.ok((couponAsk.actions ?? []).some((item) => item.label === "Use this"));
+  const looks = applyLooksRightMotion(liveWrite.draft);
+  assert.equal(looks.pendingProposal?.value, "3333");
+  assert.ok(!looks.sampleAccepted);
+  const queued = applyProceedMotion(liveWrite.draft);
+  assert.notEqual(queued.motion, "in_queue");
+  assert.equal(queued.pendingProposal?.value, "3333");
+
+  const unreadAt = "2026-09-04T21:01:00.000Z";
+  loadIntakeDraft(walkSe());
+  receiveDocument({
+    slot: "other",
+    name: "13-k1-1065-2024-bay-street.pdf",
+    type: "application/pdf",
+    size: 2048,
+    receivedAt: unreadAt,
+  });
+  const unreadWrite = applyExtractWrite(
+    unreadAt,
+    "13-k1-1065-2024-bay-street.pdf",
+    { extractClass: "other", confidence: 0, fields: {} },
+    undefined,
+    true,
+  );
+  assert.notEqual(unreadWrite.draft.pendingProposal?.field, "qualifying_income");
+  assert.equal(nextDocInvite(unreadWrite.draft), "tax_return");
+  assert.ok(!applyLooksRightMotion(unreadWrite.draft).sampleAccepted);
+  assert.notEqual(applyProceedMotion(unreadWrite.draft).motion, "in_queue");
+
+  const kindOnly = applyExtractedFields(walkSe(), {
+    extractClass: "tax_return",
+    confidence: 0.94,
+    fields: { return_kind: "1065", tax_year: "2024" },
+  });
+  assert.notEqual(kindOnly.draft.pendingProposal?.field, "qualifying_income");
+  assert.ok(!kindOnly.draft.facts?.qualifying_income);
 
   console.log("assert-k1-extract: 13=$3,333 · 15=$4,000 · cover writes nothing");
 }

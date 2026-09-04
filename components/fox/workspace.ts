@@ -3507,6 +3507,9 @@ function workspaceAskCopy(
     if (isFundsPairProposal(draft.pendingProposal) && draft.pendingProposal) {
       return liveProposalAsk(draft, draft.pendingProposal);
     }
+    if (draft.pendingProposal?.field === QUALIFYING_INCOME_FIELD) {
+      return liveProposalAsk(draft, draft.pendingProposal);
+    }
     if (draft.pendingLiveCoupon) {
       return liveCouponConfirmCopy(draft);
     }

@@ -22,6 +22,7 @@ import {
   hasScheduleCCashflow,
   hasTwoYearWageHistory,
   k1OrdinaryMissingDistributions,
+  maybeProposeQualifyingFromTaxFile,
   isWageExtractFirstPath,
   isWageExtractProposal,
   isStubExtractProposal,
@@ -452,7 +453,24 @@ export function hasLockedSuggestion(
     );
   }
   if (extractClass === "purchase_contract") return looksLikeContractFields(fields);
+  if (extractClass === "tax_return") {
+    const kind = normalizeReturnKind(String(fields?.return_kind ?? ""));
+    if (kind === "k1" || kind === "1065" || kind === "1120s") {
+      return Boolean(String(fields?.k1_ordinary_income ?? "").trim());
+    }
+  }
   return Object.values(fields ?? {}).some((item) => String(item ?? "").trim());
+}
+
+export function k1OrdinaryMissingFromExtract(
+  fields?: Record<string, string | null | undefined> | null,
+  name?: string,
+) {
+  const kind = normalizeReturnKind(String(fields?.return_kind ?? ""));
+  const namedK1 = kind === "k1" || kind === "1065" || kind === "1120s";
+  const filenameK1 = /k-?1/i.test(name ?? "");
+  if (!namedK1 && !filenameK1) return false;
+  return !String(fields?.k1_ordinary_income ?? "").trim();
 }
 
 export function looksLikePaystubFields(
@@ -1643,6 +1661,7 @@ export function applyExtractedFields(
   ) {
     quietLines.push(EMPLOYER_MISMATCH_LINE);
   }
+  next = maybeProposeQualifyingFromTaxFile(next);
   return {
     draft: { ...next, looksRightHold: true },
     writes,
@@ -2619,7 +2638,6 @@ function inviteSatisfied(draft: FoxIntakeDraft, kind: DocInviteKind): boolean {
   }
   if (classSuccessfullyRead(draft, kind)) return true;
   if ((draft.skippedClasses ?? []).includes(kind)) return true;
-  if (kind === "tax_return" && receivedTaxReturnCount(draft) >= 1) return true;
   return false;
 }
 
