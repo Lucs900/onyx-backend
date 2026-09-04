@@ -8,24 +8,45 @@ https://onyx-backend-git-cursor-live-rateflow-preview-bc93-onyx-direct.vercel.ap
 
 ## How Manager runs it
 
-From the repo root, on this preview branch:
+The preview is behind Vercel Authentication. Playwright sends an origin-scoped header on every request **before the first navigation**:
+
+- preferred: `x-vercel-trusted-oidc-idp-token: $VERCEL_OIDC_TOKEN`
+- fallback: `x-vercel-protection-bypass: $VERCEL_AUTOMATION_BYPASS_SECRET` plus `x-vercel-set-bypass-cookie: true`
+
+Do not disable Deployment Protection. Do not commit `.env.local` or the secret.
+
+### OIDC (preferred)
+
+From the repo root, on this preview branch, with Vercel CLI logged in (`npx vercel login` or `VERCEL_TOKEN`) and the project linked to team **onyx-direct** / project **onyx-backend**:
 
 ```bash
+npx vercel env pull .env.local --yes
 bash scripts/assert-spine-walker.sh
 ```
 
-Override the start URL only if needed:
+or, without writing a file:
+
+```bash
+npx vercel env run -- bash scripts/assert-spine-walker.sh
+```
+
+`bash scripts/assert-spine-walker.sh` also sources `.env.local` if present, and if the CLI is already logged in it will `env pull` (to a temp file) or wrap itself in `vercel env run`.
+
+### Automation bypass (fallback)
+
+If OIDC pull is unavailable, create a secret in Vercel → Project → Settings → Deployment Protection → Protection Bypass for Automation. Then:
+
+```bash
+VERCEL_AUTOMATION_BYPASS_SECRET='…' bash scripts/assert-spine-walker.sh
+```
+
+Do not commit that value.
+
+### URL override
 
 ```bash
 SPINE_WALKER_URL='https://onyx-backend-git-cursor-live-rateflow-preview-bc93-onyx-direct.vercel.app/start?path=acr' bash scripts/assert-spine-walker.sh
 ```
-
-If the preview is behind Vercel Authentication / SSO, set one of:
-
-- `VERCEL_AUTOMATION_BYPASS_SECRET` — sent as `x-vercel-protection-bypass` plus `x-vercel-set-bypass-cookie`
-- `VERCEL_OIDC_TOKEN` — sent as `x-vercel-trusted-oidc-idp-token` (same pattern as the access-protected-vercel skill)
-
-A repo-root `.env.local` is sourced automatically. Do not commit it.
 
 Stdout is one line per case: `N PASS …` or `N FAIL …` plus the adjacent beat on FAIL.
 

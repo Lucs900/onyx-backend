@@ -4,7 +4,7 @@
  *
  * Run: bash scripts/assert-spine-walker.sh
  */
-import { chromium, type Browser, type Page } from "playwright";
+import { chromium, type Browser, type BrowserContext, type Page } from "playwright";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -36,26 +36,26 @@ type CaseResult = { n: number; title: string; ok: boolean; beat?: string };
 
 function protectionHeaders(): Record<string, string> {
   const headers: Record<string, string> = {};
-  const bypass = process.env.VERCEL_AUTOMATION_BYPASS_SECRET?.trim();
   const oidc = process.env.VERCEL_OIDC_TOKEN?.trim();
-  if (bypass) {
-    headers["x-vercel-protection-bypass"] = bypass;
-    headers["x-vercel-set-bypass-cookie"] = "samesitenone";
-  }
+  const bypass = process.env.VERCEL_AUTOMATION_BYPASS_SECRET?.trim();
   if (oidc) {
     headers["x-vercel-trusted-oidc-idp-token"] = oidc;
+  }
+  if (bypass) {
+    headers["x-vercel-protection-bypass"] = bypass;
+    headers["x-vercel-set-bypass-cookie"] = "true";
   }
   return headers;
 }
 
 function startUrl(): string {
-  const bypass = process.env.VERCEL_AUTOMATION_BYPASS_SECRET?.trim();
-  if (!bypass) return PREVIEW_URL;
-  const url = new URL(PREVIEW_URL);
-  if (!url.searchParams.has("x-vercel-protection-bypass")) {
-    url.searchParams.set("x-vercel-protection-bypass", bypass);
-  }
-  return url.toString();
+  return PREVIEW_URL;
+}
+
+function previewAuthKind(): "oidc" | "bypass" | "none" {
+  if (process.env.VERCEL_OIDC_TOKEN?.trim()) return "oidc";
+  if (process.env.VERCEL_AUTOMATION_BYPASS_SECRET?.trim()) return "bypass";
+  return "none";
 }
 
 async function currentText(page: Page): Promise<string> {
@@ -675,6 +675,25 @@ async function openBrowser() {
   return chromium.launch({ headless: true });
 }
 
+async function newPreviewContext(browser: Browser): Promise<BrowserContext> {
+  const headers = protectionHeaders();
+  const context = await browser.newContext({
+    viewport: { width: 1400, height: 900 },
+    extraHTTPHeaders: headers,
+  });
+  if (Object.keys(headers).length) {
+    await context.route("**/*", async (route) => {
+      await route.continue({
+        headers: {
+          ...route.request().headers(),
+          ...headers,
+        },
+      });
+    });
+  }
+  return context;
+}
+
 function oneLine(value: string) {
   return value.replace(/\s+/g, " ").trim();
 }
@@ -683,10 +702,7 @@ async function runCase(
   browser: Browser,
   spec: (typeof CASES)[number],
 ): Promise<CaseResult> {
-  const context = await browser.newContext({
-    viewport: { width: 1400, height: 900 },
-    extraHTTPHeaders: protectionHeaders(),
-  });
+  const context = await newPreviewContext(browser);
   const page = await context.newPage();
   try {
     await spec.run(page);
@@ -712,10 +728,11 @@ async function main() {
   const browser = await openBrowser();
   const results: CaseResult[] = [];
   try {
-    const probeContext = await browser.newContext({
-      viewport: { width: 1400, height: 900 },
-      extraHTTPHeaders: protectionHeaders(),
-    });
+    const kind = previewAuthKind();
+    if (kind === "oidc") console.error("spine-walker: sending x-vercel-trusted-oidc-idp-token");
+    else if (kind === "bypass") console.error("spine-walker: sending x-vercel-protection-bypass");
+    else console.error("spine-walker: no OIDC or automation-bypass token — preview will SSO");
+    const probeContext = await newPreviewContext(browser);
     const probe = await probeContext.newPage();
     try {
       await probeAccess(probe);
