@@ -27,6 +27,14 @@ export function debtsSettled(draft: FoxIntakeDraft) {
   return Boolean(draft.monthlyDebtsAsked || draft.statedMonthlyDebts != null);
 }
 
+/** One stated-monthly-total ask after income type (and after years if SE). */
+export function shouldAskMonthlyDebts(draft: FoxIntakeDraft) {
+  if (draft.sampleAccepted) return false;
+  if (!draft.awaitingMonthlyDebts) return false;
+  if (draft.monthlyDebtsAsked || draft.statedMonthlyDebts != null) return false;
+  return true;
+}
+
 export function isStatedDebtsConfirmPending(draft: FoxIntakeDraft) {
   return draft.pendingProposal?.field === STATED_MONTHLY_DEBTS_FIELD;
 }
@@ -77,6 +85,7 @@ export function skipMonthlyDebts(draft: FoxIntakeDraft): FoxIntakeDraft {
     ...draft,
     statedMonthlyDebts: undefined,
     monthlyDebtsAsked: true,
+    awaitingMonthlyDebts: false,
     pendingDebtMortgage: null,
     pendingProposal:
       draft.pendingProposal?.field === STATED_MONTHLY_DEBTS_FIELD ? null : draft.pendingProposal,
@@ -93,6 +102,7 @@ export function writeStatedMonthlyDebts(draft: FoxIntakeDraft, amount: number): 
     ...draft,
     statedMonthlyDebts: Math.round(amount),
     monthlyDebtsAsked: true,
+    awaitingMonthlyDebts: false,
     pendingDebtMortgage: null,
     pendingProposal: null,
     correcting: null,
@@ -115,7 +125,7 @@ export function proposeStatedMonthlyDebts(draft: FoxIntakeDraft, amount: number)
   const proposal: FactProposal = {
     field: STATED_MONTHLY_DEBTS_FIELD,
     value,
-    label: "Monthly debts",
+    label: "Stated monthly debts",
     kind: "computed",
     note: SUGGESTED_DEBTS_NOTE,
   };
@@ -140,7 +150,6 @@ export function monthlyDebtsConfirmActions(): FoxAction[] {
 export function monthlyDebtsSkipActions(): FoxAction[] {
   return [
     { id: "skip-monthly-debts", label: "Skip", event: "bubble", capture: { field: "skip-monthly-debts" } },
-    { id: "hold-monthly-debts", label: "Not yet", event: "bubble", capture: { field: "skip-monthly-debts" } },
   ];
 }
 

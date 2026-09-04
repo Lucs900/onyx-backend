@@ -442,6 +442,7 @@ export type FoxIntakeDraft = {
   priorYearSkipped?: boolean;
   yearsInBusinessAsked?: boolean;
   awaitingYearsInBusiness?: boolean;
+  awaitingMonthlyDebts?: boolean;
   awaitingPayFrequency?: boolean;
   awaitingBothMonthlyReason?: boolean;
   bothMonthlyReason?: "raise" | "overtime-bonus" | "second-job" | "skip";

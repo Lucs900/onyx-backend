@@ -261,13 +261,16 @@ import {
   monthlyDebtsAskCopy,
   monthlyDebtsConfirmActions,
   monthlyDebtsConfirmCopy,
+  monthlyDebtsSkipActions,
   mortgageIncludedAskWithoutPayment,
   mortgageSubtractActions,
   mortgageSubtractAsk,
   parseMonthlyDebtAmount,
   proposeStatedMonthlyDebts,
+  shouldAskMonthlyDebts,
   skipMonthlyDebts,
   writeStatedMonthlyDebts,
+  MONTHLY_DEBTS_ASK,
   STATED_MONTHLY_DEBTS_FIELD,
   SUGGESTED_DEBTS_NOTE,
   subjectMortgagePayment,
@@ -2606,6 +2609,10 @@ function isYearsInBusinessAskText(text: string) {
   return /^How long have you had /i.test(text.trim());
 }
 
+function isMonthlyDebtsAskText(text: string) {
+  return text.trim() === MONTHLY_DEBTS_ASK || /other debts, not counting this house/i.test(text);
+}
+
 function isFileQuestionSpeech(message: FoxMessage) {
   if (message.role !== "fox") return false;
   if (message.id.startsWith("live-quote:")) return false;
@@ -2639,6 +2646,9 @@ function shouldRestoreAskAfterLiveQuote(draft: FoxIntakeDraft, ask?: FoxMessage)
       wantsYearsInBusinessAsk(draft)
     );
   }
+  if (isMonthlyDebtsAskText(ask.text)) {
+    return shouldAskMonthlyDebts(draft);
+  }
   return true;
 }
 
@@ -2648,7 +2658,9 @@ function restoredAskAfterLiveQuote(ask: FoxMessage): FoxMessage {
     id: `fox-ask-after-quote:${ask.id}`,
     actions: isYearsInBusinessAskText(ask.text)
       ? yearsInBusinessSkipActions()
-      : ask.actions,
+      : isMonthlyDebtsAskText(ask.text)
+        ? monthlyDebtsSkipActions()
+        : ask.actions,
   };
 }
 
@@ -2678,7 +2690,9 @@ function withRestoredAskAfterQuote(
             ...item,
             actions: isYearsInBusinessAskText(openAsk.text)
               ? yearsInBusinessSkipActions()
-              : openAsk.actions,
+              : isMonthlyDebtsAskText(openAsk.text)
+                ? monthlyDebtsSkipActions()
+                : openAsk.actions,
           }
         : item,
     );
@@ -3048,6 +3062,7 @@ export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
   if (propertyZipAskNeeded(draft)) return "property-zip";
   if (!incomeSettled(draft)) return "income";
   if (!draft.sampleAccepted && !yearsInBusinessSettled(draft)) return "years-in-business";
+  if (!draft.sampleAccepted && shouldAskMonthlyDebts(draft)) return "debts";
   if (needsDeclarationTiming(draft)) return "declaration-timing";
   if (!draft.sampleAccepted && wageDocsAskNeeded(draft)) return "wage-docs";
   if (!draft.sampleAccepted && wageBox5AskNeeded(draft)) return "w2-box5";
@@ -5594,6 +5609,8 @@ export function workspaceReply(
     !liveQuoteReady(draft) &&
     !propertyZipConfirmNeeded(draft) &&
     prompt !== "property-zip" &&
+    prompt !== "debts" &&
+    prompt !== "years-in-business" &&
     !draft.pendingProposal &&
     !draft.pendingAddress &&
     isCouponSkipText(q)
@@ -6567,10 +6584,11 @@ export function workspaceReply(
         capture: { field: "include-mortgage-debts", value: String(amount) },
       };
     }
-    const nextDraft = syncCalculatorDraft(writeStatedMonthlyDebts(draft, amount));
+    const nextDraft = proposeStatedMonthlyDebts(draft, amount);
     return {
-      ...nextFoxAsk(nextDraft),
-      capture: { field: "statedMonthlyDebts", value: String(amount) },
+      text: monthlyDebtsConfirmCopy(amount),
+      actions: monthlyDebtsConfirmActions(),
+      capture: { field: "propose-monthly-debts", value: String(amount) },
     };
   }
 
@@ -7498,17 +7516,20 @@ export function previewFacts(draft: FoxIntakeDraft): PreviewFact[] {
     const pendingAmount = isStatedDebtsConfirmPending(draft)
       ? Number(draft.pendingProposal?.value)
       : NaN;
-    const shown =
+    const written =
       draft.statedMonthlyDebts != null && draft.statedMonthlyDebts > 0
         ? formatMoney(draft.statedMonthlyDebts)
-        : Number.isFinite(pendingAmount) && pendingAmount > 0
-          ? formatMoney(pendingAmount)
-          : "—";
+        : "";
+    const pending =
+      !written && Number.isFinite(pendingAmount) && pendingAmount > 0
+        ? formatMoney(pendingAmount)
+        : "";
+    const shown = written || pending;
     facts.push({
       id: "debts",
-      label: "Monthly debts",
+      label: "Stated monthly debts",
       value: shown,
-      note: STATED_NOT_FROM_CREDIT,
+      note: shown ? SUGGESTED_DEBTS_NOTE : undefined,
     });
   }
 
@@ -8046,7 +8067,12 @@ export function structureExplainCopy(
       text: "That’s a stated range for the estimate. Not a FICO and not a credit pull.",
     };
   }
-  if (id === "debts" || id === "stated-dti") {
+  if (id === "debts") {
+    return {
+      text: `Stated monthly debts. ${SUGGESTED_DEBTS_NOTE}. Not a credit pull.`,
+    };
+  }
+  if (id === "stated-dti") {
     return {
       text: `Monthly debts. ${STATED_NOT_FROM_CREDIT}. Not a credit pull.`,
     };

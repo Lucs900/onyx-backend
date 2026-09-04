@@ -1213,6 +1213,7 @@ function writeConfirmedFact(
       ...next,
       statedMonthlyDebts: amount,
       monthlyDebtsAsked: true,
+      awaitingMonthlyDebts: false,
       pendingDebtMortgage: null,
       facts,
     };
@@ -1668,16 +1669,22 @@ export function shouldAskYearsInBusiness(draft: FoxIntakeDraft) {
   );
 }
 
-/** Open years once, immediately after income type becomes Self-employed / Both. */
+/** Open years once after SE/Both. Always open the one debts ask unless already settled. */
 export function withIncomeTypeYearsAsk(draft: FoxIntakeDraft): FoxIntakeDraft {
   const income = draft.incomeType.value;
+  let next: FoxIntakeDraft = { ...draft };
   if (income === "self-employed" || income === "both") {
-    if (yearsInBusinessValue(draft) || draft.yearsInBusinessAsked) {
-      return { ...draft, awaitingYearsInBusiness: false };
-    }
-    return { ...draft, awaitingYearsInBusiness: true };
+    next =
+      yearsInBusinessValue(next) || next.yearsInBusinessAsked
+        ? { ...next, awaitingYearsInBusiness: false }
+        : { ...next, awaitingYearsInBusiness: true };
+  } else {
+    next = { ...next, awaitingYearsInBusiness: false };
   }
-  return { ...draft, awaitingYearsInBusiness: false };
+  if (income && !next.monthlyDebtsAsked && next.statedMonthlyDebts == null) {
+    return { ...next, awaitingMonthlyDebts: true };
+  }
+  return { ...next, awaitingMonthlyDebts: false };
 }
 
 export function withYearsInBusinessAsk(draft: FoxIntakeDraft): FoxIntakeDraft {
