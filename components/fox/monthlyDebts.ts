@@ -153,6 +153,28 @@ export function monthlyDebtsSkipActions(): FoxAction[] {
   ];
 }
 
+export function isMonthlyDebtsAskText(text?: string) {
+  const trimmed = (text ?? "").trim();
+  if (!trimmed) return false;
+  return (
+    trimmed === MONTHLY_DEBTS_ASK ||
+    /other monthly debts, not counting this mortgage/i.test(trimmed)
+  );
+}
+
+/** Sketch debts row: Skip only. Never Not yet / Proceed / Request human. */
+export function paintedMonthlyDebtsActions(actions?: FoxAction[]): FoxAction[] {
+  const skip = monthlyDebtsSkipActions();
+  if (!actions?.length) return skip;
+  if (
+    actions.some((action) => action.capture?.field === "skip-monthly-debts") ||
+    actions.some((action) => action.label === "Skip")
+  ) {
+    return skip;
+  }
+  return skip;
+}
+
 export function mortgageSubtractAsk(included: number, mortgage: number) {
   const other = Math.max(0, included - mortgage);
   if (other <= 0) {

@@ -26,6 +26,10 @@ import {
 } from "../components/fox/monthlyDebts";
 import { emptyDraft } from "../components/fox/store";
 import {
+  paintedFoxActions,
+  paintThreadActions,
+} from "../components/fox/liveCoupon";
+import {
   messagesWithLiveQuoteSpeech,
   nextFoxAsk,
   previewFacts,
@@ -115,6 +119,35 @@ const afterYears = writeYearsInBusiness(afterSE, "2");
 assert.equal(workspacePrompt(afterYears), "debts");
 assert.equal(nextFoxAsk(afterYears).text, MONTHLY_DEBTS_ASK);
 assert.deepEqual((nextFoxAsk(afterYears).actions ?? []).map((item) => item.label), ["Skip"]);
+assert.ok(
+  !(nextFoxAsk(afterYears).actions ?? []).some((item) =>
+    /Not yet|Proceed|Request human/i.test(item.label),
+  ),
+);
+const leakedDebts: FoxMessage = {
+  id: "debts-leaked",
+  role: "fox",
+  text: MONTHLY_DEBTS_ASK,
+  actions: [
+    ...monthlyDebtsSkipActions(),
+    { id: "not-yet", label: "Not yet", event: "bubble", capture: { field: "not-yet" } },
+    { id: "proceed", label: "Proceed", event: "bubble", capture: { field: "proceed" } },
+    { id: "request-human", label: "Request human", event: "bubble", capture: { field: "talk-originator" } },
+  ],
+};
+assert.deepEqual(
+  (paintedFoxActions(leakedDebts, afterYears, true) ?? []).map((item) => item.label),
+  ["Skip"],
+);
+assert.deepEqual(
+  paintThreadActions(leakedDebts.actions ?? []).map((item) => item.label),
+  ["Skip"],
+);
+assert.ok(
+  !(paintedFoxActions(leakedDebts, afterYears, true) ?? []).some((item) =>
+    /Not yet|Proceed|Request human/i.test(item.label),
+  ),
+);
 
 const skipped = skipMonthlyDebts(afterYears);
 assert.equal(skipped.monthlyDebtsAsked, true);

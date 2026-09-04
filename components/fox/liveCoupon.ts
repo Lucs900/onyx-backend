@@ -13,6 +13,10 @@ import { nextDocInvite, needsPurchaseSplitAsk } from "./fileWrite";
 import { ID_UNREAD_ASK, isBorrowerNameConfirmPending } from "./borrowerName";
 import { isFundsPairProposal, loanExceedsPurchasePrice } from "./completeness";
 import { isLookupWaitLine, isLookupWaitMessage } from "./lookupWait";
+import {
+  isMonthlyDebtsAskText,
+  paintedMonthlyDebtsActions,
+} from "./monthlyDebts";
 import { addressOnFileCopy, fileAddressLine, shouldShowAddressUseThis } from "./propertyType";
 import type { Capture, FoxAction, FoxIntakeDraft, FoxMessage } from "./types";
 
@@ -634,6 +638,9 @@ export function leftoverUseThisPaintedOnOnFile(
 
 /** Invite-only rows stay Upload this · Skip. ID confirm keeps Use this on the same row. */
 export function paintThreadActions(actions: FoxAction[]): FoxAction[] {
+  if (actions.some((action) => action.capture?.field === "skip-monthly-debts")) {
+    return paintedMonthlyDebtsActions(actions);
+  }
   if (
     actions.some((action) => action.label === "Upload this") &&
     !actions.some((action) => action.label === "Use this")
@@ -656,6 +663,7 @@ export function paintedFoxActions(
   if (isLookupWaitMessage(message) || isLookupWaitLine(message.text)) return undefined;
   if (isOnFileAddressLine(message) || hideAddressUseThisOnBubble(message, draft)) return undefined;
   if (!current) return undefined;
+  if (isMonthlyDebtsAskText(message.text)) return paintedMonthlyDebtsActions(message.actions);
   const shown = visibleFoxActions(message, draft);
   if (!shown?.length) return undefined;
   const idNameConfirm = /The ID shows /i.test(foxBlob(message));

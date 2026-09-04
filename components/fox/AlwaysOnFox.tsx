@@ -54,6 +54,10 @@ import {
   shouldDeferNextAskForLiveCoupon,
 } from "./liveCoupon";
 import {
+  isMonthlyDebtsAskText,
+  monthlyDebtsSkipActions,
+} from "./monthlyDebts";
+import {
   dropStreetSuggestChips,
   parseSafePlaceAddress,
   requestAddressSuggestions,
@@ -288,7 +292,11 @@ function foxAskMessage(ask: {
     text: ask.text,
     followUp: onFile ? undefined : ask.followUp,
     facts: ask.facts,
-    actions: onFile ? undefined : ask.actions,
+    actions: onFile
+      ? undefined
+      : isMonthlyDebtsAskText(ask.text)
+        ? monthlyDebtsSkipActions()
+        : ask.actions,
   };
 }
 

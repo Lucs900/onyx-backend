@@ -262,6 +262,7 @@ import {
   monthlyDebtsConfirmActions,
   monthlyDebtsConfirmCopy,
   monthlyDebtsSkipActions,
+  isMonthlyDebtsAskText,
   mortgageIncludedAskWithoutPayment,
   mortgageSubtractActions,
   mortgageSubtractAsk,
@@ -2609,12 +2610,6 @@ function isYearsInBusinessAskText(text: string) {
   return /^How long have you had /i.test(text.trim());
 }
 
-function isMonthlyDebtsAskText(text: string) {
-  return (
-    text.trim() === MONTHLY_DEBTS_ASK ||
-    /other monthly debts, not counting this mortgage/i.test(text)
-  );
-}
 
 function isFileQuestionSpeech(message: FoxMessage) {
   if (message.role !== "fox") return false;
@@ -2947,6 +2942,15 @@ export function nextFoxAsk(draft: FoxIntakeDraft): {
     !draft.pendingAddress
   ) {
     return { text: yearsInBusinessAskCopy(draft), actions: yearsInBusinessSkipActions() };
+  }
+  if (
+    !draft.sampleAccepted &&
+    shouldAskMonthlyDebts(draft) &&
+    !draft.pendingProposal &&
+    !draft.pendingConflict &&
+    !draft.pendingAddress
+  ) {
+    return { text: MONTHLY_DEBTS_ASK, actions: monthlyDebtsSkipActions() };
   }
   return workspacePromptCopy(workspacePrompt(draft), draft);
 }
@@ -3309,7 +3313,10 @@ function workspaceAskCopy(
     return housingAskCopy(draft);
   }
   if (prompt === "debts") {
-    return monthlyDebtsAskCopy(draft);
+    return {
+      text: monthlyDebtsAskCopy(draft).text,
+      actions: monthlyDebtsSkipActions(),
+    };
   }
   if (prompt === "assets") {
     return isLateWalkBankStatementAsk(draft) ? bankStatementAskCopy() : availableAssetsAskCopy(draft);
