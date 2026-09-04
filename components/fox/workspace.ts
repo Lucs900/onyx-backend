@@ -112,6 +112,7 @@ import {
   stillUsefulVisible,
   shortListSpeak,
   persistCondoNeedsReview,
+  secondBankStatementInviteCopy,
 } from "./fileWrite";
 import {
   SUGGESTED_NOTE,
@@ -1491,6 +1492,7 @@ function documentsAskText(draft: FoxIntakeDraft): string {
   if (offeringDocStart(draft)) return sketchAndStartDocsCopy(draft).text;
   const invite = nextDocInvite(draft);
   if (invite === "coborrower_government_id") return coborrowerIdInviteCopy(draft);
+  if (invite === "second_bank_statement") return secondBankStatementInviteCopy(draft);
   if (
     draft.workingOnCoborrower &&
     (invite === "paystub" || invite === "w2" || invite === "tax_return")
@@ -1535,7 +1537,7 @@ function landedTaxYear(draft: FoxIntakeDraft): string {
   return last ? String(last.year) : "";
 }
 
-function nextDocSpoken(invite: ReturnType<typeof nextDocInvite>): string {
+function nextDocSpoken(invite: ReturnType<typeof nextDocInvite>, draft?: FoxIntakeDraft): string {
   if (invite === "tax_return") return "Next is your most recent tax return.";
   if (invite === "paystub") return "Next is your latest paystub.";
   if (invite === "w2") return DOC_INVITE_COPY.w2;
@@ -1543,6 +1545,9 @@ function nextDocSpoken(invite: ReturnType<typeof nextDocInvite>): string {
   if (invite === "government_id") return "Next is a government ID, so the file has a name.";
   if (invite === "coborrower_government_id") return coborrowerSpokenIdCopy();
   if (invite === "bank_statement") return DOC_INVITE_COPY.bank_statement;
+  if (invite === "second_bank_statement") {
+    return draft ? secondBankStatementInviteCopy(draft) : DOC_INVITE_COPY.second_bank_statement;
+  }
   if (invite === "purchase_contract") return DOC_INVITE_COPY.purchase_contract;
   return "";
 }
@@ -1561,7 +1566,7 @@ function identityReactionAsk(draft: FoxIntakeDraft): {
   const name = firstNameFromDraft(draft);
   const greet = name ? `Nice to meet you, ${name}.` : "Got your ID.";
   const invite = name ? nextDocInvite(draft) : null;
-  const next = nextDocSpoken(invite);
+  const next = nextDocSpoken(invite, draft);
   return {
     text: `${greet} ${DESK_RELATIONSHIP_LINE}${next ? ` ${next}` : ""}`.trim(),
     actions: invite
@@ -1710,6 +1715,7 @@ export function isBankUnreadAsk(draft: FoxIntakeDraft) {
   const unread = unreadDocOpen(draft);
   return (
     nextDocInvite(draft) === "bank_statement" ||
+    nextDocInvite(draft) === "second_bank_statement" ||
     unread?.extractClass === "bank_statement" ||
     unread?.slot === "bank"
   );
@@ -2525,6 +2531,13 @@ function documentQuestionAnswer(draft: FoxIntakeDraft) {
   }
   if (invite === "w2") {
     return conventionalGuidelinePattern("docs", "w2", "That’s last year’s wages on paper.");
+  }
+  if (invite === "bank_statement" || invite === "second_bank_statement") {
+    return conventionalGuidelinePattern(
+      "docs",
+      "bank_statement",
+      "A second recent statement helps show funds. Suggested, not underwritten.",
+    );
   }
   if (invite === "purchase_contract") {
     return conventionalGuidelinePattern("docs", "purchase_contract", "The purchase contract is the property on paper.");

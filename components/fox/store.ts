@@ -422,6 +422,7 @@ export function emptyDraft(): FoxIntakeDraft {
     docsStarted: false,
     docsHeld: false,
     priorYearSkipped: false,
+    secondBankStatementSkipped: false,
     yearsInBusinessAsked: false,
     awaitingYearsInBusiness: false,
     awaitingMonthlyDebts: false,
@@ -731,6 +732,7 @@ function normalize(value: unknown): FoxIntakeDraft {
       ? raw.skippedStillUseful.filter((item): item is string => typeof item === "string" && item.length > 0)
       : [],
     priorYearSkipped: Boolean(raw.priorYearSkipped),
+    secondBankStatementSkipped: Boolean(raw.secondBankStatementSkipped),
     yearsInBusinessAsked: Boolean(raw.yearsInBusinessAsked),
     awaitingYearsInBusiness: Boolean(raw.awaitingYearsInBusiness),
     awaitingMonthlyDebts: Boolean(raw.awaitingMonthlyDebts),

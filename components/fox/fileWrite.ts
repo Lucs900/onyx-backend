@@ -2270,9 +2270,7 @@ export function layer2Plan(draft: FoxIntakeDraft): StillUsefulItem[] {
     if (!copy) return [];
     return [layer2Item(id, copy.label, copy.ask)];
   });
-  const bankDocs = (draft.documents ?? []).filter(
-    (document) => document.extractClass === "bank_statement" || document.slot === "bank",
-  ).length;
+  const bankDocs = bankStatementDocCount(draft);
   if (statementExtractConfirmed(draft) && bankDocs < 2) {
     items.push(
       layer2Item(
@@ -2472,6 +2470,7 @@ export type DocInviteKind =
   | "prior_year_return"
   | "coborrower_government_id"
   | "bank_statement"
+  | "second_bank_statement"
   | "purchase_contract";
 
 export const DOC_INVITE_COPY: Record<DocInviteKind, string> = {
@@ -2483,8 +2482,30 @@ export const DOC_INVITE_COPY: Record<DocInviteKind, string> = {
   prior_year_return: "A prior-year return helps me see if last year was stable. Have one?",
   coborrower_government_id: "First I need Borrower 2’s government ID, so this file has a name on it.",
   bank_statement: "Two recent statements to show funds for the down payment.",
+  second_bank_statement: "A second recent statement helps. Skip is fine.",
   purchase_contract: "The purchase contract is the property on paper. Skip is fine.",
 };
+
+export function bankStatementDocCount(draft: FoxIntakeDraft) {
+  return (draft.documents ?? []).filter(
+    (document) => document.extractClass === "bank_statement" || document.slot === "bank",
+  ).length;
+}
+
+/** After the first statement writes Assets, offer a second statement once. */
+export function secondBankStatementInviteNeeded(draft: FoxIntakeDraft) {
+  if (draft.secondBankStatementSkipped) return false;
+  if (!statementExtractConfirmed(draft)) return false;
+  return bankStatementDocCount(draft) < 2;
+}
+
+export function secondBankStatementInviteCopy(draft: FoxIntakeDraft) {
+  const who =
+    displayInstitution(
+      String(draft.facts?.institution?.value ?? draft.assetAccounts?.[0]?.institution ?? ""),
+    ) || "That statement";
+  return `${who} is in. A second recent statement helps. Skip is fine.`;
+}
 
 /** ID + this borrower’s income package. Prior-year / second-year sit on remainder. */
 export function primaryInviteSequence(draft: FoxIntakeDraft): DocInviteKind[] {
@@ -2574,6 +2595,9 @@ function inviteSatisfied(draft: FoxIntakeDraft, kind: DocInviteKind): boolean {
   if (kind === "bank_statement") {
     if ((draft.skippedClasses ?? []).includes("bank_statement")) return true;
     return statementExtractConfirmed(draft);
+  }
+  if (kind === "second_bank_statement") {
+    return !secondBankStatementInviteNeeded(draft);
   }
   if (kind === "prior_year_return") {
     if (draft.priorYearSkipped) return true;
@@ -2675,6 +2699,7 @@ function lockedFileDocInvites(draft: FoxIntakeDraft): DocInviteKind[] {
   const kinds: DocInviteKind[] = [];
   if (!inviteSatisfied(draft, "government_id")) kinds.push("government_id");
   if (!inviteSatisfied(draft, "bank_statement")) kinds.push("bank_statement");
+  if (secondBankStatementInviteNeeded(draft)) kinds.push("second_bank_statement");
   if (
     purchaseLikeFile(draft) &&
     !inviteSatisfied(draft, "purchase_contract") &&
@@ -2716,7 +2741,7 @@ export function extractHintFromDraft(draft: FoxIntakeDraft, name?: string): Extr
     if (slot === "paystubs") return "paystub";
   }
   const invite = nextDocInvite(draft);
-  if (invite === "bank_statement") return "bank_statement";
+  if (invite === "bank_statement" || invite === "second_bank_statement") return "bank_statement";
   if (invite === "government_id" || invite === "coborrower_government_id") return "government_id";
   if (invite === "paystub") return "paystub";
   if (invite === "w2") return "w2";
@@ -2980,6 +3005,14 @@ export function skipCurrentInvite(draft: FoxIntakeDraft): FoxIntakeDraft {
     return {
       ...next,
       documentsSkipped: draft.documents.length === 0 && !hasRemainingPrimaryInvites(next),
+    };
+  }
+  if (kind === "second_bank_statement") {
+    return {
+      ...draft,
+      secondBankStatementSkipped: true,
+      docsOpen: false,
+      correcting: null,
     };
   }
   const skipped = Array.from(new Set([...(draft.skippedClasses ?? []), kind]));

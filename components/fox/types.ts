@@ -325,6 +325,8 @@ export type FoxIntakeDraft = {
   availableAssetsAsked?: boolean;
   /** Late-walk bank-statement line after citizenship was skipped or written. */
   bankStatementAsked?: boolean;
+  /** One-shot second-statement invite was skipped. Still useful keeps the second statement. */
+  secondBankStatementSkipped?: boolean;
   propertyType?: "sfr" | "condo" | "two_to_four";
   propertyTypeAsked?: boolean;
   /** Five-digit ZIP for Rateflow. Never invent 94115. */
