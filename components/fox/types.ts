@@ -828,7 +828,6 @@ export const TERM_BUBBLES = [
 ] as const;
 
 export const AMOUNT_HELPER_BUBBLES = [
-  { id: "not-sure", label: "Not sure" },
   { id: "skip", label: "Skip for now" },
 ] as const;
 

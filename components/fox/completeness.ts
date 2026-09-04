@@ -1072,8 +1072,17 @@ export function makeFundsPairProposal(down: number, loan: number): FactProposal 
 }
 
 export function proposeFundsPair(draft: FoxIntakeDraft, down: number, loan: number): FoxIntakeDraft {
+  const price = draft.propertyValueAmount ?? 0;
+  const staleLoan = price > 0 && (draft.loanAmountValue ?? 0) > price;
   return {
     ...draft,
+    ...(staleLoan
+      ? {
+          loanAmountValue: undefined,
+          amountAsked: false,
+          overPriceConfirmed: false,
+        }
+      : {}),
     pendingProposal: makeFundsPairProposal(down, loan),
   };
 }
@@ -1597,6 +1606,9 @@ export function resolveProposal(
       : hasPurchaseContractDoc(afterFileNet) || afterFileNet.lastPurchaseContractFields
         ? queuePurchaseSketchReconcile(afterFileNet)
         : afterFileNet;
+  if (winner === "accept" && isFundsPairProposal(proposal)) {
+    return { ...afterContract, overPriceConfirmed: false };
+  }
   return afterContract;
 }
 
@@ -1848,6 +1860,7 @@ export function wageIncomeSketchOpen(draft: FoxIntakeDraft) {
 export function canLooksRight(draft: FoxIntakeDraft) {
   if (wageIncomeSketchOpen(draft)) return false;
   if (nextDocInvite(draft)) return false;
+  if (loanExceedsPurchasePrice(draft)) return false;
   if (!incomeNumberReady(draft)) return false;
   if (
     isPurchaseLike(draft) &&

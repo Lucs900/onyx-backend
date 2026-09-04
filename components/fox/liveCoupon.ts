@@ -11,7 +11,7 @@ import {
 } from "@/lib/rateflow/quote";
 import { nextDocInvite, needsPurchaseSplitAsk } from "./fileWrite";
 import { ID_UNREAD_ASK, isBorrowerNameConfirmPending } from "./borrowerName";
-import { isFundsPairProposal, loanExceedsPurchasePrice } from "./completeness";
+import { isFundsPairProposal, isPurchaseLike, loanExceedsPurchasePrice } from "./completeness";
 import { isLookupWaitLine, isLookupWaitMessage } from "./lookupWait";
 import {
   isMonthlyDebtsAskText,
@@ -725,6 +725,13 @@ export function visibleFoxActions(message: FoxMessage, draft: FoxIntakeDraft) {
       return false;
     }
     if (isOverPriceChip(action) && !loanExceedsPurchasePrice(draft)) {
+      return false;
+    }
+    if (
+      isPurchaseLike(draft) &&
+      (action.label === "Not sure" || action.label === "Skip for now") &&
+      (action.capture?.field === "skip-amount" || action.capture?.field === "skip-value")
+    ) {
       return false;
     }
     if (

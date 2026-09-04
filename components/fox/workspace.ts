@@ -50,7 +50,6 @@ import {
 } from "./liveCoupon";
 import { RATEFLOW_WAIT_LINE, isLookupWaitLine, pricingFailedActions } from "./lookupWait";
 import {
-  AMOUNT_HELPER_BUBBLES,
   AMOUNT_PURPOSE_BUBBLES,
   CREDIT_STATED_NOTE,
   CREDIT_WORKSPACE_BUBBLES,
@@ -909,6 +908,26 @@ export function retryLiveQuote(): Pick<
     ...clearLiveQuote(),
     liveCouponSettled: false,
     liveQuoteRetryAt: Date.now(),
+  };
+}
+
+/** Impossible loan is not File while they pick Price or Down payment. */
+export function clearImpossibleLoan(draft: FoxIntakeDraft): FoxIntakeDraft {
+  const price = draft.propertyValueAmount ?? 0;
+  const loan = draft.loanAmountValue ?? 0;
+  if (!(price > 0 && loan > price)) return draft;
+  return {
+    ...draft,
+    ...clearLiveQuote(),
+    loanAmountValue: undefined,
+    amountAsked: false,
+    overPriceConfirmed: false,
+    scenario: draft.scenario
+      ? {
+          ...draft.scenario,
+          loanAmount: undefined,
+        }
+      : draft.scenario,
   };
 }
 
@@ -2567,15 +2586,6 @@ function withIncomeType(draft: FoxIntakeDraft, value: string): FoxIntakeDraft {
   });
 }
 
-function amountHelperActions(field: "skip-amount" | "skip-value"): FoxAction[] {
-  return AMOUNT_HELPER_BUBBLES.map((item) => ({
-    id: `${field}-${item.id}`,
-    label: item.label,
-    event: "bubble" as const,
-    capture: { field },
-  }));
-}
-
 export const SAMPLE_NOTE = "Sample · indicative · not live";
 export const PREVIEW_RATE_NOTE = "Preview rate · not live";
 export { CREDIT_STATED_NOTE };
@@ -3290,34 +3300,16 @@ function workspaceAskCopy(
     }
     const askingPurpose =
       draft.productIntent === "other" && !draft.amountPurposeLabel;
-    const requiredAmount =
-      fundsAskNeeded(draft) ||
-      refiLoanAskNeeded(draft) ||
-      (isHelocFile(draft) && !hasHelocLine(draft));
     return {
       text: amountAskText(draft),
       actions: askingPurpose
-        ? [
-            ...bubbles([...AMOUNT_PURPOSE_BUBBLES], "amountPurpose"),
-            ...amountHelperActions("skip-amount"),
-          ]
-        : requiredAmount
-          ? undefined
-          : amountHelperActions("skip-amount"),
+        ? bubbles([...AMOUNT_PURPOSE_BUBBLES], "amountPurpose")
+        : undefined,
     };
   }
   if (prompt === "value") {
-    const requiredValue = purchasePriceAskNeeded(draft) || propertyValueAskNeeded(draft);
-    const rewritingPrice =
-      (draft.correcting === "value" || draft.correctingLine === "price") &&
-      draft.correctingLine !== "home";
     return {
       text: amountAskText({ ...draft, productIntent: draft.productIntent ?? "buy" }),
-      actions: rewritingPrice
-        ? undefined
-        : requiredValue
-          ? undefined
-          : amountHelperActions("skip-value"),
     };
   }
   if (prompt === "credit") {
@@ -3800,8 +3792,10 @@ function replyToPropertyValueAsk(
     return keepThisReply(draft);
   }
   if (isUnknownAmount(q)) {
-    if (requiredValue && !editingPurchasePrice(draft)) {
-      return { text: `${amountAskText(draft)} A number works.` };
+    if (isPurchaseLike(draft) || requiredValue || editingPurchasePrice(draft)) {
+      return {
+        text: `${amountAskText(draft)} A purchase price in dollars works.`,
+      };
     }
     const nextDraft = { ...draft, valueAsked: true, correcting: null, correctingLine: null };
     return {
@@ -3840,7 +3834,18 @@ function replyToFundsAsk(
     return replyToPropertyValueAsk(q, draft);
   }
   if (isUnknownAmount(q)) {
-    if (draft.correcting === "amount" || draft.resumeAfterEdit) {
+    if (draft.correctingLine === "loan") {
+      return { text: `${amountAskText(draft)} A loan amount in dollars works.` };
+    }
+    if (draft.correctingLine === "down") {
+      return { text: `${amountAskText(draft)} A percent or dollars down works.` };
+    }
+    if (isPurchaseLike(draft) || fundsAskNeeded(draft) || draft.correcting === "amount") {
+      return {
+        text: `${amountAskText(draft)} A percent, dollars down, or the loan works.`,
+      };
+    }
+    if (draft.resumeAfterEdit) {
       const nextDraft = {
         ...draft,
         amountAsked: true,
@@ -4974,6 +4979,26 @@ export function beginFileEdit(
       ...clearDependentFunds(draft),
       correcting: "value",
       correctingLine: editLine === "home" ? "home" : "price",
+    };
+  }
+  if (
+    field === "amount" &&
+    (editLine === "down" || editLine === "loan" || editLine === "down-or-loan")
+  ) {
+    const cleared = clearImpossibleLoan(draft);
+    const prior =
+      cleared.resumeAfterEdit ??
+      workspacePrompt({
+        ...cleared,
+        correcting: null,
+        correctingLine: undefined,
+        resumeAfterEdit: undefined,
+      });
+    return {
+      ...cleared,
+      correcting: "amount",
+      correctingLine: editLine,
+      resumeAfterEdit: prior !== "amount" ? prior : cleared.resumeAfterEdit,
     };
   }
   const prior =
@@ -6161,20 +6186,23 @@ export function workspaceReply(
       };
     }
     if (/purchase price|the price/.test(lower) && !/loan/.test(lower) && !/down/.test(lower)) {
+      const nextDraft = beginFileEdit(draft, "value", "price");
       return {
-        ...workspacePromptCopy("value", { ...draft, correcting: "value", correctingLine: "price" }),
+        ...workspacePromptCopy("value", nextDraft),
         capture: { field: "correct", value: "value", line: "price" },
       };
     }
     if (/down payment|the down/.test(lower) && !/loan/.test(lower)) {
+      const nextDraft = beginFileEdit(draft, "amount", "down");
       return {
-        ...workspacePromptCopy("amount", { ...draft, correcting: "amount", correctingLine: "down" }),
+        ...workspacePromptCopy("amount", nextDraft),
         capture: { field: "correct", value: "amount", line: "down" },
       };
     }
     if (/loan amount|\bloan\b/.test(lower) && !/purchase price/.test(lower)) {
+      const nextDraft = beginFileEdit(draft, "amount", "loan");
       return {
-        ...workspacePromptCopy("amount", { ...draft, correcting: "amount", correctingLine: "loan" }),
+        ...workspacePromptCopy("amount", nextDraft),
         capture: { field: "correct", value: "amount", line: "loan" },
       };
     }
