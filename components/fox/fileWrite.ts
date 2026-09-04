@@ -1273,6 +1273,13 @@ export function applyExtractedFields(
     }
     const existing = existingFact(next, field);
     if (!existing || (extractClass === "tax_return" && YEARLY_TAX_KEYS.has(field))) {
+      if (
+        field === "schedule_e_rents_received" ||
+        field === "schedule_e_cash_expenses" ||
+        field === "schedule_e_property_address"
+      ) {
+        continue;
+      }
       next = writeField(next, field, value, now);
       writes.push({ field, value });
       continue;
@@ -1674,6 +1681,13 @@ export function applyExtractedFields(
   for (const [key, value] of Object.entries(fields)) {
     if (!value) continue;
     const already = cautionFacts[key];
+    if (
+      key === "schedule_e_rents_received" ||
+      key === "schedule_e_cash_expenses" ||
+      key === "schedule_e_property_address"
+    ) {
+      continue;
+    }
     if (key === "property_address") {
       if (isZipOnlyFileAddress(value, next.propertyZip) || already?.value) continue;
     } else if (already?.confirmed && already.value) {

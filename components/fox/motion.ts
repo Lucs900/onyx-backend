@@ -583,13 +583,14 @@ export function applyNotYetMotion(draft: FoxIntakeDraft, now = new Date()): FoxI
 }
 
 export function applyUploadMoreMotion(draft: FoxIntakeDraft): FoxIntakeDraft {
-  const held = draft.motion === "on_hold" || draft.motion === "needs_you" || draft.motion === "ready";
-  const motion: FileMotion = held || !draft.motion ? inferMotionAfterLooks(draft) : draft.motion === "in_queue" || draft.motion === "escalated"
-    ? draft.motion
+  const proposed = maybeProposeQualifyingFromTaxFile(draft);
+  const held = proposed.motion === "on_hold" || proposed.motion === "needs_you" || proposed.motion === "ready";
+  const motion: FileMotion = held || !proposed.motion ? inferMotionAfterLooks(proposed) : proposed.motion === "in_queue" || proposed.motion === "escalated"
+    ? proposed.motion
     : "gathering";
   return appendFileEvent(
     {
-      ...draft,
+      ...proposed,
       motion,
       nextActor: nextForMotion(motion),
       waitingOn: waitingOnForMotion(motion),

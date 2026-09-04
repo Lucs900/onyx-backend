@@ -1251,14 +1251,24 @@ function existingMonthlyIncome(draft: FoxIntakeDraft): { value: string; via: "qu
 }
 
 /** Cashflows already on File. Same confirm-before-write gate Schedule C uses. */
+export function isScheduleECashFlowProposal(proposal?: FactProposal | null): boolean {
+  if (!proposal || proposal.field !== QUALIFYING_INCOME_FIELD) return false;
+  return (
+    proposal.note === SUGGESTED_RENTAL_CASH_FLOW_NOTE ||
+    proposal.methodNote === "rents minus cash expenses / 12"
+  );
+}
+
 export function maybeProposeQualifyingFromTaxFile(draft: FoxIntakeDraft): FoxIntakeDraft {
   if (draft.pendingProposal?.field === QUALIFYING_INCOME_FIELD) return draft;
-  if (existingMonthlyIncome(draft)?.via === QUALIFYING_INCOME_FIELD) return draft;
   if (draft.pendingProposal && draft.pendingProposal.field !== QUALIFYING_INCOME_FIELD) {
     return draft;
   }
   const computed = monthlyQualifyingFromExtract(draft, "tax_return", {});
   if (!computed || computed.needsFrequency || computed.needsBothReason || computed.monthly === 0) {
+    return draft;
+  }
+  if (computed.basis !== "schedule_e" && existingMonthlyIncome(draft)?.via === QUALIFYING_INCOME_FIELD) {
     return draft;
   }
   return withQualifyingIncomeProposal(draft, computed, "tax_return");
@@ -1277,6 +1287,13 @@ export function withQualifyingIncomeProposal(
     Boolean(computed.stubMonthly != null && computed.w2Monthly != null) ||
     Boolean(computed.methodNote?.includes("W-2 Box 1"));
   if (existing && valuesMatch(existing.value, monthly) && !showBothMonthly) {
+    if (computed.basis === "schedule_e") {
+      return {
+        ...draft,
+        pendingConflict: null,
+        pendingProposal: qualifyingIncomeProposal(computed),
+      };
+    }
     return {
       ...draft,
       pendingConflict: null,
@@ -1385,18 +1402,21 @@ export function qualifyingIncomeDisplay(draft: FoxIntakeDraft): { value: string;
   if (draft.awaitingBothMonthlyReason || draft.awaitingRaiseWhen || draft.awaitingRaiseYtdFar) return null;
   const proposal =
     draft.pendingProposal?.field === QUALIFYING_INCOME_FIELD ? draft.pendingProposal : null;
-  if (proposal) {
+  if (proposal && !isScheduleECashFlowProposal(proposal)) {
     return {
       value: structureQualifyingValue(displayMoney(proposal.value), proposal.methodNote),
       note: proposal.note ?? SUGGESTED_INCOME_NOTE,
     };
   }
   const stored = factValue(draft, QUALIFYING_INCOME_FIELD);
-  if (stored) {
+  if (stored && draft.facts?.[QUALIFYING_INCOME_FIELD]?.confirmed) {
     const pair = bothMonthlyDisplay(draft);
     return {
       value: pair ? structureQualifyingValue(displayMoney(stored), pair) : displayMoney(stored),
-      note: SUGGESTED_INCOME_NOTE,
+      note:
+        hasScheduleECashflow(draft) && !hasScheduleCCashflow(draft) && !hasK1Ordinary(draft)
+          ? SUGGESTED_RENTAL_CASH_FLOW_NOTE
+          : SUGGESTED_INCOME_NOTE,
     };
   }
   return null;

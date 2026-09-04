@@ -27,7 +27,7 @@ import { applyExtractWrite, emptyDraft, loadIntakeDraft, receiveDocument } from 
 import { monthlyQualifyingFromExtract } from "../components/fox/qualifyingIncome";
 import { resolveProposal } from "../components/fox/completeness";
 import { SUGGESTED_RENTAL_CASH_FLOW_NOTE } from "../lib/income/suggest";
-import { workspacePromptCopy } from "../components/fox/workspace";
+import { nextFoxAsk, previewFacts, workspacePrompt, workspacePromptCopy } from "../components/fox/workspace";
 import type { FoxIntakeDraft } from "../components/fox/types";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -217,7 +217,13 @@ async function main() {
   assert.equal(propose17.draft.pendingProposal?.value, "2550");
   assert.equal(propose17.draft.pendingProposal?.note, SUGGESTED_RENTAL_CASH_FLOW_NOTE);
   assert.equal(propose17.draft.pendingProposal?.methodNote, "rents minus cash expenses / 12");
-  assert.ok(!propose17.draft.facts?.qualifying_income?.confirmed);
+  assert.ok(!propose17.draft.facts?.qualifying_income);
+  assert.ok(!propose17.draft.facts?.schedule_e_rents_received);
+  assert.ok(!propose17.draft.facts?.schedule_e_cash_expenses);
+  const proposedFacts = previewFacts(propose17.draft);
+  assert.ok(!proposedFacts.some((fact) => fact.id === "qualifying"));
+  assert.ok(!proposedFacts.some((fact) => /2,550|2550/.test(fact.value)));
+  assert.ok(proposedFacts.every((fact) => fact.id !== "income" || !/\$/.test(fact.value)));
   assert.equal(propose17.draft.pendingProposal?.field, "qualifying_income");
   assert.ok(!(propose17.draft.pendingProposal?.extras ?? []).some((item) => /pitia/i.test(item.field)));
   assert.notEqual(propose17.draft.pendingProposal?.field, "suggested_net_rental");
@@ -245,6 +251,45 @@ async function main() {
   });
   assert.equal(afterProceedWrite.draft.pendingProposal?.value, "2550");
   assert.equal(afterProceedWrite.draft.pendingProposal?.note, SUGGESTED_RENTAL_CASH_FLOW_NOTE);
+  assert.ok(!afterProceedWrite.draft.facts?.qualifying_income);
+
+  const queuedWalk: FoxIntakeDraft = {
+    ...walkSe(),
+    sampleAccepted: true,
+    phase: "confirmed",
+    motion: "in_queue",
+    workspaceDraftStatus: "ready",
+  };
+  const afterQueueMore = applyUploadMoreMotion(queuedWalk);
+  const afterQueueAt = "2026-09-04T22:02:00.000Z";
+  loadIntakeDraft(afterQueueMore);
+  receiveDocument({
+    slot: "other",
+    name: "17-schedule-e-2025-sanchez-rental.pdf",
+    type: "application/pdf",
+    size: 2048,
+    receivedAt: afterQueueAt,
+  });
+  const afterQueueWrite = applyExtractWrite(
+    afterQueueAt,
+    "17-schedule-e-2025-sanchez-rental.pdf",
+    {
+      extractClass: "tax_return",
+      confidence: 0.94,
+      fields: seventeen.fields,
+    },
+  );
+  assert.equal(afterQueueWrite.draft.pendingProposal?.value, "2550");
+  assert.equal(afterQueueWrite.draft.pendingProposal?.note, SUGGESTED_RENTAL_CASH_FLOW_NOTE);
+  assert.ok(!afterQueueWrite.draft.facts?.qualifying_income);
+  assert.equal(workspacePrompt(afterQueueWrite.draft), "confirm-proposal");
+  const afterQueueAsk = nextFoxAsk(afterQueueWrite.draft);
+  assert.match(afterQueueAsk.text, /\$2,550/);
+  assert.match(afterQueueAsk.text, /Use this/);
+  assert.ok((afterQueueAsk.actions ?? []).some((item) => item.label === "Use this"));
+  assert.doesNotMatch(afterQueueAsk.text, /ONYX has this for review/i);
+  assert.ok(!previewFacts(afterQueueWrite.draft).some((fact) => fact.id === "qualifying"));
+  assert.ok(!previewFacts(afterQueueWrite.draft).some((fact) => /2,550|2550/.test(fact.value)));
 
   const receivedAt = "2026-09-04T22:00:00.000Z";
   loadIntakeDraft(walkSe());
@@ -285,6 +330,7 @@ async function main() {
   const used = resolveProposal(liveWrite.draft, "accept");
   assert.equal(used.facts?.qualifying_income?.value, "2550");
   assert.equal(used.facts?.qualifying_income?.confirmed, true);
+  assert.ok(previewFacts(used).some((fact) => fact.id === "qualifying" && /2,550/.test(fact.value)));
   assert.match(used.subjectAddress ?? "", /88 Clipper Street/i);
   assert.doesNotMatch(used.subjectAddress ?? "", /Sanchez|Filbert/i);
   assert.ok(!used.facts?.suggested_net_rental?.value);
