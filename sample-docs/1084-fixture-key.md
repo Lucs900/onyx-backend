@@ -70,6 +70,31 @@ W-2 $36,000 is wage. Combined names both methods. Do not fold W-2 into K-1.
 - 18-schedule-f-2025-hale-farm.pdf — classify as farm. Thin.
 - 19-1040-cover-2024-jordan-hale.pdf / 20-1040-cover-2025-jordan-hale.pdf — pointers only.
 
+## Form 1065 — Bay Street Partners LLC · Hale 40%
+
+Entity totals. Partner share = × 40%, except guaranteed payments already named to Hale.
+
+| File | Year | Ordinary entity | 8825 rental entity | Dep entity | Amort entity | T&E entity | GP to Hale | 1084 cash Hale | /12 |
+|---|---|---|---|---|---|---|---|---|---|
+| 21-1065-2024-bay-street.pdf | 2024 | 100,000 | 5,000 | 15,000 | 2,000 | 1,000 | 18,000 | 66,400 | 5,533 |
+| 22-1065-2025-bay-street.pdf | 2025 | 110,000 | 5,500 | 15,000 | 2,000 | 1,000 | 18,000 | 70,600 | 5,883 |
+
+Do not add page-1 ordinary if K-1 Box 1 is already on the File. Upgrade ordinary-only $3,333 → $5,533.
+8825 rental on this return is not Schedule E Part I (Sanchez). Clipper on this page is entity mail.
+
+## Form 1120-S — Harbor Studio Inc · Hale 100%
+
+| File | Year | Ordinary | Dep | T&E | Dist | W-2 | 1084 cash | /12 |
+|---|---|---|---|---|---|---|---|---|
+| 23-1120s-2024-harbor-studio.pdf | 2024 | 48,000 | 8,000 | 600 | 40,000 | 36,000 | 55,400 | 4,617 |
+| 24-1120s-2025-harbor-studio.pdf | 2025 | 52,000 | 8,000 | 600 | 44,000 | 36,000 | 59,400 | 4,950 |
+
+W-2 $36,000 stays a wage row. Upgrade K-1 ordinary-only $4,000 → $4,617.
+
+## Form 1120 — Hale Holdings Inc (thin)
+
+- 25-1120-2024-thin-c-corp.pdf — taxable income $22,000 is entity only. Write no SE income.
+
 ## Walk rules for Manager
 
 1. Composer-drop. Hard Start over. Not a /workspace fixture read.
