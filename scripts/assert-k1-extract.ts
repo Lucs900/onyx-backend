@@ -6,7 +6,11 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { POST as extractRoute } from "../app/api/docs/extract/route";
 import { classifyAndExtract } from "../lib/docs/extract";
+import { FAILED_READ_NOTE } from "../lib/docs/accept";
+import { readPdfTextLayer } from "../lib/docs/pdfText";
+import { loudK1FromPrintedLines, loudWageFromPrintedLines } from "../lib/docs/printedSample";
 import { applyExtractedFields, nextDocInvite } from "../components/fox/fileWrite";
 import { applyLooksRightMotion, applyProceedMotion, applyUploadMoreMotion } from "../components/fox/motion";
 import { applyExtractWrite, emptyDraft, loadIntakeDraft, receiveDocument } from "../components/fox/store";
@@ -71,6 +75,56 @@ async function main() {
   assert.notEqual(thirteen.fields.k1_ordinary_income, "35000");
   assert.notEqual(thirteen.fields.k1_ordinary_income, "3333");
   assert.equal(thirteen.fields.k1_distributions, undefined);
+
+  const thirteenBytes = load("13-k1-1065-2024-bay-street.pdf");
+  const layer = readPdfTextLayer(thirteenBytes) ?? [];
+  assert.ok(layer.length, "fixture 13 must have a PDF text layer");
+  const collapsed = [layer.join(" ")];
+  const collapsedK1 = loudK1FromPrintedLines(collapsed);
+  assert.equal(collapsedK1?.extractClass, "tax_return");
+  assert.equal(collapsedK1?.fields.return_kind, "1065");
+  assert.equal(collapsedK1?.fields.k1_ordinary_income, "40000");
+  assert.equal(collapsedK1?.fields.tax_year, "2024");
+  assert.notEqual(collapsedK1?.fields.k1_ordinary_income, "66400");
+  assert.notEqual(collapsedK1?.fields.k1_ordinary_income, "3333");
+  assert.equal(loudWageFromPrintedLines(layer), null);
+  assert.equal(loudWageFromPrintedLines(collapsed), null);
+
+  const liveHint = await classifyAndExtract(
+    thirteenBytes,
+    "application/pdf",
+    deadVision,
+    "tax_return",
+    "13-k1-1065-2024-bay-street.pdf",
+  );
+  assert.notEqual(liveHint.failed, true);
+  assert.equal(liveHint.fields.k1_ordinary_income, "40000");
+
+  const form = new FormData();
+  form.append(
+    "file",
+    new File([Buffer.from(thirteenBytes)], "13-k1-1065-2024-bay-street.pdf", {
+      type: "application/pdf",
+    }),
+    "13-k1-1065-2024-bay-street.pdf",
+  );
+  form.append("name", "13-k1-1065-2024-bay-street.pdf");
+  form.append("type", "application/pdf");
+  form.append("hint", "tax_return");
+  const routed = await extractRoute(
+    new Request("http://localhost/api/docs/extract", { method: "POST", body: form }),
+  );
+  const routedJson = (await routed.json()) as {
+    class?: string;
+    failed?: boolean;
+    note?: string;
+    fields?: Record<string, string>;
+  };
+  assert.notEqual(routedJson.failed, true);
+  assert.notEqual(routedJson.note, FAILED_READ_NOTE);
+  assert.equal(routedJson.class, "tax_return");
+  assert.equal(routedJson.fields?.k1_ordinary_income, "40000");
+  assert.equal(routedJson.fields?.return_kind, "1065");
 
   const fifteen = await classifyAndExtract(
     load("15-k1-1120s-2024-harbor-studio.pdf"),
@@ -213,6 +267,7 @@ async function main() {
       fields: thirteen.fields,
     },
   );
+  assert.ok(!liveWrite.quietLines.some((line) => line === FAILED_READ_NOTE));
   assert.equal(liveWrite.draft.pendingProposal?.field, "qualifying_income");
   assert.equal(liveWrite.draft.pendingProposal?.value, "3333");
   assert.equal(liveWrite.draft.pendingProposal?.note, SUGGESTED_INCOME_NOTE);

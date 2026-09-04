@@ -497,13 +497,53 @@ function looksLikeScheduleCWorksheet(lines: string[]) {
 }
 
 function k1WorksheetKind(lines: string[]): "1065" | "1120s" | "k1" | null {
-  const blob = lines.join("\n").toUpperCase();
+  const blob = lines.join("\n").toUpperCase().replace(/\u00a0/g, " ");
   if (/SCHEDULE K-1\s*\(\s*FORM 1065\s*\)|K-1\s*\(\s*FORM 1065\s*\)/.test(blob)) return "1065";
   if (/SCHEDULE K-1\s*\(\s*FORM 1120S?\s*\)|K-1\s*\(\s*FORM 1120S\s*\)/.test(blob)) return "1120s";
   if (/SCHEDULE K-1 FORM 1120-?S/.test(blob)) return "k1";
   if (/SCHEDULE K-1/.test(blob) && /FORM 1065/.test(blob)) return "1065";
   if (/SCHEDULE K-1/.test(blob) && /1120-?S/.test(blob)) return "1120s";
+  if (/\bK-1\b/.test(blob) && /ORDINARY BUSINESS INCOME/.test(blob) && /1065/.test(blob)) return "1065";
+  if (/\bK-1\b/.test(blob) && /ORDINARY BUSINESS INCOME/.test(blob) && /1120/.test(blob)) return "1120s";
+  if (/\bK-1\b/.test(blob) && /ORDINARY BUSINESS INCOME/.test(blob)) return "k1";
   return null;
+}
+
+/** Composer / PDF operators may join labels onto one line. Split · the same way Schedule C reads stacked labels. */
+function flattenPrintedLines(lines: string[]): string[] {
+  const out: string[] = [];
+  for (const raw of lines) {
+    for (const part of String(raw ?? "").replace(/\u00a0/g, " ").split(/\s*·\s*/)) {
+      const t = part.replace(/\s+/g, " ").trim();
+      if (t) out.push(t);
+    }
+  }
+  return out;
+}
+
+/** Box 1 ordinary from THIS blob. Never Expected 1084, coaching /12, Box 2, GP, or distributions. */
+function k1OrdinaryFromPrintedText(text: string): string {
+  const blob = String(text ?? "").replace(/\u00a0/g, " ");
+  const patterns = [
+    /box\s*1\b[\s\S]{0,160}?ordinary business income(?:\s*\(\s*loss\s*\))?\s*:?\s*\$?\s*([\d,]+(?:\.\d+)?)/i,
+    /ordinary business income(?:\s*\(\s*loss\s*\))?\s*:?\s*\$?\s*([\d,]+(?:\.\d+)?)/i,
+  ];
+  for (const pattern of patterns) {
+    const match = blob.match(pattern);
+    if (!match?.[1]) continue;
+    if (/expected 1084|ordinary alone|suggested monthly/i.test(match[0])) continue;
+    const digits = moneyDigits(match[1]);
+    if (digits) return digits;
+  }
+  return "";
+}
+
+function k1TaxYearFromPrintedText(text: string): string {
+  const blob = String(text ?? "").replace(/\u00a0/g, " ");
+  const labeled = blob.match(/tax year\s*:?\s*(20\d{2})/i);
+  if (labeled?.[1]) return labeled[1];
+  const header = blob.match(/schedule k-1[^\n]{0,100}?(20\d{2})/i);
+  return header?.[1] ?? "";
 }
 
 function looksLikeK1Worksheet(lines: string[]) {
@@ -684,16 +724,29 @@ function applyK1WorksheetFields(
   put: (key: string, value: string) => void,
   putMoney: (key: string, value: string) => void,
 ) {
-  if (!looksLikeK1Worksheet(lines) && !lines.some((line) => /^box\s*1\b/i.test(line.trim()))) {
+  const normalized = flattenPrintedLines(lines);
+  if (
+    !looksLikeK1Worksheet(normalized) &&
+    !looksLikeK1Worksheet(lines) &&
+    !normalized.some((line) => /^box\s*1\b/i.test(line.trim()))
+  ) {
     return;
   }
-  const taxYear = stackedLabelValue(lines, /^TAX YEAR:?\s*/i);
+  const taxYear =
+    stackedLabelValue(normalized, /^TAX YEAR:?\s*/i) ||
+    k1TaxYearFromPrintedText(normalized.join("\n")) ||
+    k1TaxYearFromPrintedText(normalized.join(" "));
   if (taxYear) put("tax_year", taxYear.replace(/\D/g, "").slice(0, 4));
-  const box1 = worksheetBoxBlock(lines, "1");
+  const box1 = worksheetBoxBlock(normalized, "1");
+  let ordinary = "";
   if (box1.some((text) => /ordinary business income/i.test(text))) {
-    const ordinary = firstMoneyInBlock(box1);
-    if (ordinary) putMoney("k1_ordinary_income", ordinary);
+    ordinary = firstMoneyInBlock(box1);
   }
+  if (!ordinary) {
+    ordinary =
+      k1OrdinaryFromPrintedText(normalized.join("\n")) || k1OrdinaryFromPrintedText(normalized.join(" "));
+  }
+  if (ordinary) putMoney("k1_ordinary_income", ordinary);
 }
 
 /** Map labeled page lines onto extract keys. Absent keys stay empty. */
@@ -1097,6 +1150,7 @@ function institutionFromBankLines(lines: string[]): string {
 function inferPrintedClass(lines: string[]): ExtractClass | null {
   const fromHeader = classifyPrintedLines(lines);
   if (fromHeader) return fromHeader;
+  if (looksLikeK1Worksheet(lines) || looksLikeScheduleCWorksheet(lines)) return "tax_return";
   const blob = lines.join("\n");
   if ((/\bbox\s*5\b/i.test(blob) || /medicare\s*wages/i.test(blob)) && /\d/.test(blob)) return "w2";
   const mapped = fieldsFromPrintedLines("other", lines);
@@ -1262,6 +1316,7 @@ export function loudScheduleCFromPrintedLines(lines: string[]): PrintedSample | 
 
 /** Wage fields from THIS page text. Filename is not a source. 06 is not required. */
 export function loudWageFromPrintedLines(lines: string[]): PrintedSample | null {
+  if (looksLikeK1Worksheet(lines)) return null;
   const fields = fieldsFromPrintedLines("w2", lines);
   if (fields.medicare_wages || fields.box5) {
     return {
