@@ -235,6 +235,7 @@ import {
   skipWageFrequency,
   skipWageStub,
   SUGGESTED_INCOME_NOTE,
+  SUGGESTED_RENTAL_CASH_FLOW_NOTE,
   wageIncomeCaution,
   wageMethodNote,
   writeWagePayFrequency,
@@ -1646,6 +1647,20 @@ function k1ReactionAsk(draft: FoxIntakeDraft, proposal: NonNullable<FoxIntakeDra
   };
 }
 
+function scheduleEReactionAsk(draft: FoxIntakeDraft, proposal: NonNullable<FoxIntakeDraft["pendingProposal"]>): {
+  text: string;
+  followUp?: string;
+  actions?: FoxAction[];
+} {
+  const shown = displayFactValue(proposal.field, proposal.value);
+  const year = landedTaxYear(draft);
+  const ack = year ? `Got the ${year} Schedule E.` : "Got the Schedule E.";
+  return {
+    text: `${ack} I’m suggesting ${shown} a month from rents minus cash expenses / 12. ${SUGGESTED_RENTAL_CASH_FLOW_NOTE}. Use this?`,
+    actions: incomeConfirmActions(),
+  };
+}
+
 function wageReactionAsk(
   draft: FoxIntakeDraft,
   proposal: NonNullable<FoxIntakeDraft["pendingProposal"]>,
@@ -2051,6 +2066,12 @@ function liveProposalAsk(
   if (proposal.field === QUALIFYING_INCOME_FIELD) {
     if (combinedParts(proposal) || proposal.methodNote?.startsWith("combined ")) {
       return combinedReactionAsk(draft, proposal);
+    }
+    if (
+      proposal.note === SUGGESTED_RENTAL_CASH_FLOW_NOTE ||
+      proposal.methodNote === "rents minus cash expenses / 12"
+    ) {
+      return scheduleEReactionAsk(draft, proposal);
     }
     if (scheduleCYearViews(draft).length) return incomeReactionAsk(draft, proposal);
     if (hasK1Ordinary(draft)) return k1ReactionAsk(draft, proposal);

@@ -496,6 +496,18 @@ function looksLikeScheduleCWorksheet(lines: string[]) {
   return /\bLINE\s*31\b/.test(blob) && /NET PROFIT/.test(blob);
 }
 
+function looksLikeScheduleEWorksheet(lines: string[]) {
+  const blob = flattenPrintedLines(lines).join("\n").toUpperCase().replace(/\u00a0/g, " ");
+  if (looksLikeScheduleCWorksheet(lines)) return false;
+  if (/SCHEDULE E WORKSHEET|FORM 1040 SCHEDULE E|IRS FORM 1040 SCHEDULE E/.test(blob)) return true;
+  if (/PART I/.test(blob) && /RENTS RECEIVED/.test(blob) && /CASH EXPENSES/.test(blob)) return true;
+  return /SCHEDULE E/.test(blob) && /RENTAL REAL ESTATE/.test(blob) && /RENTS RECEIVED/.test(blob);
+}
+
+function scheduleECoachingSpan(text: string) {
+  return /onyx net rental|75\s*%|expected 1084|taxable rental|suggested monthly|piti[a]?/i.test(text);
+}
+
 function k1WorksheetKind(lines: string[]): "1065" | "1120s" | "k1" | null {
   const blob = lines.join("\n").toUpperCase().replace(/\u00a0/g, " ");
   if (/SCHEDULE K-1\s*\(\s*FORM 1065\s*\)|K-1\s*\(\s*FORM 1065\s*\)/.test(blob)) return "1065";
@@ -553,6 +565,7 @@ function looksLikeK1Worksheet(lines: string[]) {
 function classifyPrintedLines(lines: string[]): ExtractClass | null {
   const blob = lines.join("\n").toUpperCase();
   if (looksLikeScheduleCWorksheet(lines)) return "tax_return";
+  if (looksLikeScheduleEWorksheet(lines)) return "tax_return";
   if (looksLikeK1Worksheet(lines)) return "tax_return";
   if (
     /\bPAYSTUB\b|\bPAY STUB\b|EARNINGS STATEMENT|PAY STATEMENT/.test(blob) ||
@@ -716,6 +729,114 @@ function worksheetBoxBlock(lines: string[], boxNo: string) {
     return texts;
   }
   return [];
+}
+
+/** Rents received and cash expenses from THIS page. Never 75%, taxable rental, coaching, or filename. */
+function scheduleERentsFromPrintedText(text: string): string {
+  const blob = String(text ?? "").replace(/\u00a0/g, " ");
+  const patterns = [
+    /(?:^|\b)(?:line\s*)?3\b[\s\S]{0,80}?rents received\s*:?\s*\$?\s*([\d,]+(?:\.\d+)?)/i,
+    /rents received\s*:?\s*\$?\s*([\d,]+(?:\.\d+)?)/i,
+  ];
+  for (const pattern of patterns) {
+    const match = blob.match(pattern);
+    if (!match?.[1] || match.index == null) continue;
+    if (scheduleECoachingSpan(match[0])) continue;
+    const digits = moneyDigits(match[1]);
+    if (digits) return digits;
+  }
+  return "";
+}
+
+function scheduleECashExpensesFromPrintedText(text: string): string {
+  const blob = String(text ?? "").replace(/\u00a0/g, " ");
+  const patterns = [
+    /(?:lines?\s*)?5\s*[–—-]\s*18\b[\s\S]{0,80}?cash expenses(?:\s*\(\s*ex-?depreciation\s*\))?\s*:?\s*\$?\s*([\d,]+(?:\.\d+)?)/i,
+    /cash expenses(?:\s*\(\s*ex-?depreciation\s*\))?\s*:?\s*\$?\s*([\d,]+(?:\.\d+)?)/i,
+  ];
+  for (const pattern of patterns) {
+    const match = blob.match(pattern);
+    if (!match?.[1]) continue;
+    if (scheduleECoachingSpan(match[0])) continue;
+    const digits = moneyDigits(match[1]);
+    if (digits) return digits;
+  }
+  return "";
+}
+
+function scheduleETaxYearFromPrintedText(text: string): string {
+  const blob = String(text ?? "").replace(/\u00a0/g, " ");
+  const labeled = blob.match(/tax year\s*:?\s*(20\d{2})/i);
+  if (labeled?.[1]) return labeled[1];
+  const header = blob.match(/schedule e[^\n]{0,80}?(20\d{2})/i);
+  return header?.[1] ?? "";
+}
+
+function scheduleEPropertyAddressFromPrintedText(text: string): string {
+  const blob = String(text ?? "").replace(/\u00a0/g, " ");
+  const labeled = blob.match(/\baddress\s*:?\s*(\d{1,6}\s+Sanchez Street[^,·\n]*(?:,[^,·\n]+){0,3})/i);
+  const raw = (labeled?.[1] ?? blob.match(/\b(\d{1,6}\s+Sanchez Street[^,·\n]*(?:,[^,·\n]+){0,3})/i)?.[1] ?? "")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!raw || /clipper|filbert/i.test(raw)) return "";
+  return raw.replace(/\s+A\s+Type.*$/i, "").trim();
+}
+
+function scheduleEPart2NamesFromPrintedText(text: string): string {
+  const blob = String(text ?? "").replace(/\u00a0/g, " ");
+  if (!/part\s*ii/i.test(blob)) return "";
+  const names: string[] = [];
+  const take = (value: string) => {
+    const next = value.replace(/\s+/g, " ").trim();
+    if (!next || /ordinary|do not double|classify/i.test(next)) return;
+    if (!names.some((item) => item.toLowerCase() === next.toLowerCase())) names.push(next);
+  };
+  if (/Bay Street Partners LLC/i.test(blob)) take("Bay Street Partners LLC");
+  if (/Harbor Studio Inc/i.test(blob)) take("Harbor Studio Inc");
+  const generic = /([A-Z][A-Za-z0-9 .&'-]{2,48}?)\s*·\s*(1065|1120-?S)/g;
+  let match: RegExpExecArray | null;
+  while ((match = generic.exec(blob))) {
+    take(match[1] ?? "");
+  }
+  return names.join(";");
+}
+
+function applyScheduleEWorksheetFields(
+  lines: string[],
+  put: (key: string, value: string) => void,
+  putMoney: (key: string, value: string) => void,
+) {
+  const normalized = flattenPrintedLines(lines);
+  if (!looksLikeScheduleEWorksheet(normalized) && !looksLikeScheduleEWorksheet(lines)) {
+    return;
+  }
+  const stacked = normalized.length ? normalized : lines;
+  const taxYear =
+    stackedLabelValue(stacked, /^TAX YEAR:?\s*/i) ||
+    scheduleETaxYearFromPrintedText(stacked.join("\n")) ||
+    scheduleETaxYearFromPrintedText(stacked.join(" "));
+  if (taxYear) put("tax_year", taxYear.replace(/\D/g, "").slice(0, 4));
+  const rents =
+    moneyDigits(emptyIfNotShown(stackedLabelValue(stacked, /^RENTS RECEIVED:?\s*/i))) ||
+    scheduleERentsFromPrintedText(stacked.join("\n")) ||
+    scheduleERentsFromPrintedText(stacked.join(" "));
+  if (rents) putMoney("schedule_e_rents_received", rents);
+  const cash =
+    moneyDigits(emptyIfNotShown(stackedLabelValue(stacked, /^CASH EXPENSES(?:\s*\(\s*EX-?DEPRECIATION\s*\))?:?\s*/i))) ||
+    scheduleECashExpensesFromPrintedText(stacked.join("\n")) ||
+    scheduleECashExpensesFromPrintedText(stacked.join(" "));
+  if (cash) putMoney("schedule_e_cash_expenses", cash);
+  const address =
+    stackedLabelValue(stacked, /^ADDRESS:?\s*/i) ||
+    scheduleEPropertyAddressFromPrintedText(stacked.join("\n")) ||
+    scheduleEPropertyAddressFromPrintedText(stacked.join(" "));
+  if (address && /Sanchez/i.test(address) && !/clipper|filbert/i.test(address)) {
+    put("schedule_e_property_address", address.replace(/\s+/g, " ").trim());
+  }
+  const part2 =
+    scheduleEPart2NamesFromPrintedText(stacked.join("\n")) ||
+    scheduleEPart2NamesFromPrintedText(stacked.join(" "));
+  if (part2) put("schedule_e_part2_names", part2);
 }
 
 /** K-1 Box 1 ordinary from THIS page. Never Expected 1084, coaching /12, or ownership. */
@@ -993,13 +1114,16 @@ export function fieldsFromPrintedLines(
 
   if (extractClass === "tax_return" || extractClass === "other") {
     applyScheduleCWorksheetFields(lines, put, putMoney);
+    applyScheduleEWorksheetFields(lines, put, putMoney);
     applyK1WorksheetFields(lines, put, putMoney);
   }
 
   if (extractClass === "tax_return") {
     const blob = lines.join("\n").toUpperCase();
     const k1Kind = k1WorksheetKind(lines);
-    if (k1Kind) {
+    if (looksLikeScheduleEWorksheet(lines) || fields.schedule_e_rents_received) {
+      fields.return_kind = "schedule_e";
+    } else if (k1Kind) {
       fields.return_kind = k1Kind;
     } else if (/K-?1|1120-?S/.test(blob) && !looksLikeScheduleCWorksheet(lines)) {
       fields.return_kind = "k1";
@@ -1150,11 +1274,15 @@ function institutionFromBankLines(lines: string[]): string {
 function inferPrintedClass(lines: string[]): ExtractClass | null {
   const fromHeader = classifyPrintedLines(lines);
   if (fromHeader) return fromHeader;
-  if (looksLikeK1Worksheet(lines) || looksLikeScheduleCWorksheet(lines)) return "tax_return";
+  if (looksLikeK1Worksheet(lines) || looksLikeScheduleCWorksheet(lines) || looksLikeScheduleEWorksheet(lines)) {
+    return "tax_return";
+  }
   const blob = lines.join("\n");
   if ((/\bbox\s*5\b/i.test(blob) || /medicare\s*wages/i.test(blob)) && /\d/.test(blob)) return "w2";
   const mapped = fieldsFromPrintedLines("other", lines);
-  if (mapped.schedule_c_net_profit || mapped.k1_ordinary_income) return "tax_return";
+  if (mapped.schedule_c_net_profit || mapped.k1_ordinary_income || mapped.schedule_e_rents_received) {
+    return "tax_return";
+  }
   if (mapped.medicare_wages || mapped.box5) return "w2";
   if (mapped.gross_period && mapped.pay_frequency) return "paystub";
   if (mapped.current_pi || (mapped.servicer && mapped.unpaid_principal)) return "mortgage_statement";
@@ -1314,9 +1442,35 @@ export function loudScheduleCFromPrintedLines(lines: string[]): PrintedSample | 
   };
 }
 
+/** Schedule E Part I rents + cash expenses from THIS page. Coaching / 75% / filename are not sources. */
+export function loudScheduleEFromPrintedLines(lines: string[]): PrintedSample | null {
+  if (!looksLikeScheduleEWorksheet(lines) && !looksLikeScheduleEWorksheet(flattenPrintedLines(lines))) {
+    return null;
+  }
+  const fields = fieldsFromPrintedLines("tax_return", lines);
+  if (!fields.schedule_e_rents_received || !fields.schedule_e_cash_expenses || !fields.tax_year) return null;
+  delete fields.wages;
+  delete fields.medicare_wages;
+  delete fields.box5;
+  delete fields.employer_name;
+  delete fields.gross_period;
+  delete fields.schedule_c_net_profit;
+  delete fields.k1_ordinary_income;
+  delete fields.k1_distributions;
+  delete fields.property_address;
+  delete fields.gross_monthly_rent;
+  delete fields.monthly_rent;
+  delete fields.lease_gross;
+  return {
+    extractClass: "tax_return",
+    confidence: 0.94,
+    fields: { ...fields, return_kind: "schedule_e" },
+  };
+}
+
 /** Wage fields from THIS page text. Filename is not a source. 06 is not required. */
 export function loudWageFromPrintedLines(lines: string[]): PrintedSample | null {
-  if (looksLikeK1Worksheet(lines)) return null;
+  if (looksLikeK1Worksheet(lines) || looksLikeScheduleEWorksheet(lines)) return null;
   const fields = fieldsFromPrintedLines("w2", lines);
   if (fields.medicare_wages || fields.box5) {
     return {

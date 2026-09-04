@@ -54,6 +54,7 @@ import {
   applyExtractedFields,
   hasLockedSuggestion,
   k1OrdinaryMissingFromExtract,
+  scheduleECashFlowMissingFromExtract,
   looksLikeBankFields,
   looksLikeContractFields,
   isPurchaseContractConfirmPending,
@@ -1565,6 +1566,7 @@ export function applyExtractWrite(
             !looksLikeBankFields(input.fields) &&
             !looksLikeContractFields(input.fields));
   const k1Unread = !failed && k1OrdinaryMissingFromExtract(input.fields, name);
+  const scheduleEUnread = !failed && scheduleECashFlowMissingFromExtract(input.fields);
   const box5Read = Boolean(
     String(input.fields?.medicare_wages ?? "").trim() || String(input.fields?.box5 ?? "").trim(),
   );
@@ -1575,7 +1577,8 @@ export function applyExtractWrite(
   const stubCanSpeak = canSpeakStubExtract(current, input.fields);
   const silentStubReceive = stubAskOpen && !stubCanSpeak && !box5Read;
   const treatFailed =
-    (Boolean(failed || unreadEmpty || k1Unread) && !box5Read && !stubRead) || silentStubReceive;
+    (Boolean(failed || unreadEmpty || k1Unread || scheduleEUnread) && !box5Read && !stubRead) ||
+    silentStubReceive;
   const displayClass =
     treatFailed || extractedClass === "other"
       ? preferFilenameClass(extractedClass, name)

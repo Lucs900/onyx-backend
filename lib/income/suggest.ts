@@ -28,6 +28,7 @@ export const YTD_CONFLICT_CAUTION =
   "YTD and the run-rate don’t match. I’m using the lower number — not a blend.";
 export const YTD_CONFLICT_GAP = 50;
 export const K1_ORDINARY_NOTE = "Ordinary is not confirmed cash flow.";
+export const SUGGESTED_RENTAL_CASH_FLOW_NOTE = "Suggested rental cash flow · not underwritten";
 export const FREQUENCY_MATCH_SLACK = 0.55;
 export const VARIABLE_THIN_NOTE = "History is thin.";
 export const SECOND_JOB_THIN_NOTE = "Second-job history is thin.";
@@ -216,6 +217,12 @@ export function suggestScheduleCIncome(years: ScheduleCYearInput[]): IncomeSugge
 /** K-1 ordinary / 12. Suggested only — not confirmed cash flow. */
 export function k1OrdinaryMonthly(ordinaryIncome: number): number {
   return monthlyFromAnnual(ordinaryIncome);
+}
+
+/** Schedule E Part I: rents received minus cash expenses ex-depreciation, /12. Not 75%. Not PITIA. */
+export function scheduleECashFlowMonthly(rentsReceived: number, cashExpenses: number): number | null {
+  if (!Number.isFinite(rentsReceived) || !Number.isFinite(cashExpenses)) return null;
+  return monthlyFromAnnual(rentsReceived - cashExpenses);
 }
 
 export function periodsPerYear(raw?: string | null): number | null {

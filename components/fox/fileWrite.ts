@@ -20,6 +20,7 @@ import {
   applyQualifyingIncomeFromExtract,
   decliningIncomeCaution,
   hasScheduleCCashflow,
+  hasScheduleECashflow,
   hasTwoYearWageHistory,
   k1OrdinaryMissingDistributions,
   maybeProposeQualifyingFromTaxFile,
@@ -190,6 +191,10 @@ export const EXTRACT_SCHEMA_KEYS: Record<ExtractClass, readonly string[]> = {
     "mileage_depreciation",
     "k1_ordinary_income",
     "k1_distributions",
+    "schedule_e_rents_received",
+    "schedule_e_cash_expenses",
+    "schedule_e_part2_names",
+    "schedule_e_property_address",
   ],
   bank_statement: ["institution", "period_end", "ending_balance", "account_type", "account_last4", "present_address"],
   purchase_contract: [
@@ -257,6 +262,8 @@ const MONEY_KEYS = new Set([
   "mileage_depreciation",
   "k1_ordinary_income",
   "k1_distributions",
+  "schedule_e_rents_received",
+  "schedule_e_cash_expenses",
   "overtime",
   "bonus",
   "commission",
@@ -324,6 +331,10 @@ const YEARLY_TAX_KEYS = new Set([
   "mileage_depreciation",
   "k1_ordinary_income",
   "k1_distributions",
+  "schedule_e_rents_received",
+  "schedule_e_cash_expenses",
+  "schedule_e_part2_names",
+  "schedule_e_property_address",
 ]);
 
 const DROP_FIELD_KEYS =
@@ -395,9 +406,12 @@ export function looksLikeTaxReturnFields(
 ): boolean {
   if (!fields) return false;
   const kind = normalizeReturnKind(String(fields.return_kind ?? ""));
-  if (kind === "k1" || kind === "1065" || kind === "1120s" || kind === "schedule_c") return true;
+  if (kind === "k1" || kind === "1065" || kind === "1120s" || kind === "schedule_c" || kind === "schedule_e") {
+    return true;
+  }
   if (String(fields.k1_ordinary_income ?? "").trim()) return true;
   if (String(fields.schedule_c_net_profit ?? "").trim()) return true;
+  if (String(fields.schedule_e_rents_received ?? "").trim()) return true;
   return false;
 }
 
@@ -455,11 +469,25 @@ export function hasLockedSuggestion(
   if (extractClass === "purchase_contract") return looksLikeContractFields(fields);
   if (extractClass === "tax_return") {
     const kind = normalizeReturnKind(String(fields?.return_kind ?? ""));
+    if (kind === "schedule_e") {
+      return Boolean(value("schedule_e_rents_received") && value("schedule_e_cash_expenses"));
+    }
     if (kind === "k1" || kind === "1065" || kind === "1120s") {
       return Boolean(String(fields?.k1_ordinary_income ?? "").trim());
     }
   }
   return Object.values(fields ?? {}).some((item) => String(item ?? "").trim());
+}
+
+export function scheduleECashFlowMissingFromExtract(
+  fields?: Record<string, string | null | undefined> | null,
+) {
+  const kind = normalizeReturnKind(String(fields?.return_kind ?? ""));
+  if (kind !== "schedule_e") return false;
+  return (
+    !String(fields?.schedule_e_rents_received ?? "").trim() ||
+    !String(fields?.schedule_e_cash_expenses ?? "").trim()
+  );
 }
 
 export function k1OrdinaryMissingFromExtract(
@@ -662,6 +690,10 @@ export function factLabel(field: string) {
   if (field === "mileage_depreciation") return "mileage depreciation";
   if (field === "k1_ordinary_income") return "K-1 ordinary income";
   if (field === "k1_distributions") return "K-1 distributions";
+  if (field === "schedule_e_rents_received") return "Schedule E rents received";
+  if (field === "schedule_e_cash_expenses") return "Schedule E cash expenses";
+  if (field === "schedule_e_part2_names") return "Schedule E Part II names";
+  if (field === "schedule_e_property_address") return "Schedule E property";
   if (field === "qualifying_income") return "qualifying income";
   if (field === "paystub_monthly") return "paystub monthly";
   if (field === "w2_monthly") return "W-2 monthly";
@@ -1336,7 +1368,13 @@ export function applyExtractedFields(
     isOtherPropertyMortgageExtract(next, {
       address: String(fields.property_address ?? "").trim() || undefined,
     });
-  if (!otherPropertyMortgageEarly) {
+  if (
+    !otherPropertyMortgageEarly &&
+    !(
+      String(fields.schedule_e_rents_received ?? "").trim() &&
+      String(fields.schedule_e_cash_expenses ?? "").trim()
+    )
+  ) {
     next = applyRentalIncomeFromExtract(next, extractClass, fields);
   }
   conflict = next.pendingConflict ?? conflict;
@@ -1849,7 +1887,9 @@ export type StillUsefulLabel =
   | "latest paystub"
   | "second-year W-2"
   | "prior-year return"
-  | "K-1 distributions";
+  | "K-1 distributions"
+  | "Bay Street K-1"
+  | "Harbor Studio K-1";
 
 function wageGroceryExtractClass(id: string) {
   return (
@@ -1900,6 +1940,35 @@ function wantsW2RemainderReturn(draft: FoxIntakeDraft) {
   return primaryInviteSequence(draft).every((kind) => inviteSatisfied(draft, kind));
 }
 
+const SCHEDULE_E_NAMED_K1S = [
+  { label: "Bay Street K-1" as const, test: /bay\s*street/i },
+  { label: "Harbor Studio K-1" as const, test: /harbor\s*studio/i },
+];
+
+function scheduleEPart2NamesOnFile(draft: FoxIntakeDraft): string[] {
+  const fromFact = String(draft.facts?.schedule_e_part2_names?.value ?? "");
+  const fromCash = readTaxCashflows(draft).flatMap((row) =>
+    String(row.schedule_e_part2_names ?? "").split(";"),
+  );
+  return [...fromFact.split(";"), ...fromCash].map((item) => item.trim()).filter(Boolean);
+}
+
+function namedK1DocumentOnFile(draft: FoxIntakeDraft, test: RegExp) {
+  return (draft.documents ?? []).some((doc) => test.test(doc.name));
+}
+
+export function nextScheduleENamedK1Label(draft: FoxIntakeDraft): StillUsefulLabel | null {
+  if (!hasScheduleECashflow(draft) && !scheduleEPart2NamesOnFile(draft).length) return null;
+  const names = scheduleEPart2NamesOnFile(draft);
+  const wanted = names.length
+    ? SCHEDULE_E_NAMED_K1S.filter((item) => names.some((name) => item.test.test(name)))
+    : SCHEDULE_E_NAMED_K1S;
+  for (const item of wanted) {
+    if (!namedK1DocumentOnFile(draft, item.test)) return item.label;
+  }
+  return null;
+}
+
 export function stillUsefulLabels(draft: FoxIntakeDraft): StillUsefulLabel[] {
   const taxReturns = receivedTaxReturnCount(draft);
   const groceryBeforeLooksRight = wageThreadOpen(draft) && !draft.sampleAccepted;
@@ -1911,7 +1980,11 @@ export function stillUsefulLabels(draft: FoxIntakeDraft): StillUsefulLabel[] {
   if (wantsW2RemainderReturn(draft) && !labels.includes(askClassLabel("tax_return") as StillUsefulLabel)) {
     labels.push(askClassLabel("tax_return") as StillUsefulLabel);
   }
-  if (!deepenStillUseful(draft)) return labels;
+  if (!deepenStillUseful(draft)) {
+    const namedK1 = nextScheduleENamedK1Label(draft);
+    if (namedK1 && !labels.includes(namedK1)) labels.push(namedK1);
+    return labels;
+  }
   const income = draft.incomeType.value;
   if ((income === "w2" || income === "both") && !wageThreadOpen(draft) && receivedClassCount(draft, "w2") < 2) {
     if (!labels.includes("W-2 most recent two years")) labels.push("W-2 most recent two years");
@@ -1920,11 +1993,16 @@ export function stillUsefulLabels(draft: FoxIntakeDraft): StillUsefulLabel[] {
     (income === "self-employed" || income === "both" || income === "other") &&
     taxReturns === 1
   ) {
+    const namedK1 = nextScheduleENamedK1Label(draft);
     labels.push(
-      k1OrdinaryMissingDistributions(draft) && !hasScheduleCCashflow(draft)
-        ? "K-1 distributions"
-        : "prior-year return",
+      namedK1 ??
+        (k1OrdinaryMissingDistributions(draft) && !hasScheduleCCashflow(draft)
+          ? "K-1 distributions"
+          : "prior-year return"),
     );
+  } else {
+    const namedK1 = nextScheduleENamedK1Label(draft);
+    if (namedK1 && !labels.includes(namedK1)) labels.push(namedK1);
   }
   return taxReturns >= 2
     ? labels.filter(
@@ -2296,6 +2374,16 @@ export function layer2Plan(draft: FoxIntakeDraft): StillUsefulItem[] {
         "second-bank-statement",
         "Second bank statement",
         "A second recent bank statement still helps this file.",
+      ),
+    );
+  }
+  const namedK1 = nextScheduleENamedK1Label(draft);
+  if (namedK1 && !items.some((item) => item.label === namedK1)) {
+    items.push(
+      layer2Item(
+        namedK1 === "Harbor Studio K-1" ? "harbor-studio-k1" : "bay-street-k1",
+        namedK1,
+        `The ${namedK1} still helps this file.`,
       ),
     );
   }

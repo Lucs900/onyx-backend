@@ -11,6 +11,7 @@ import {
   BOTH_MONTHLY_SECOND_JOB_NOTE,
   YTD_CONFLICT_CAUTION,
   K1_ORDINARY_NOTE,
+  SUGGESTED_RENTAL_CASH_FLOW_NOTE,
   SECOND_JOB_SAME_STUB_NOTE,
   SECOND_JOB_THIN_NOTE,
   bothMonthlyAskCopy,
@@ -25,6 +26,7 @@ import {
   RAISE_YTD_MISSING_NOTE,
   RAISE_WHEN_UNKNOWN_NOTE,
   k1OrdinaryMonthly,
+  scheduleECashFlowMonthly,
   laterYearIsMateriallyLower,
   monthlyFromAnnual,
   monthsThroughPeriodEnd,
@@ -54,6 +56,7 @@ export {
   BOTH_MONTHLY_SECOND_JOB_NOTE,
   YTD_CONFLICT_CAUTION,
   K1_ORDINARY_NOTE,
+  SUGGESTED_RENTAL_CASH_FLOW_NOTE,
   SECOND_JOB_SAME_STUB_NOTE,
   SECOND_JOB_THIN_NOTE,
   bothMonthlyAskCopy,
@@ -68,6 +71,7 @@ export {
   RAISE_YTD_MISSING_NOTE,
   RAISE_WHEN_UNKNOWN_NOTE,
   k1OrdinaryMonthly,
+  scheduleECashFlowMonthly,
   monthlyFromAnnual,
   monthsThroughPeriodEnd,
   periodsPerYear,
@@ -83,8 +87,8 @@ export type { BothMonthlyReason, QualifyingMethod, RaiseWhen, ScheduleCYearInput
 export const QUALIFYING_INCOME_FIELD = "qualifying_income";
 export const TAX_CASHFLOWS_FIELD = "tax_cashflows";
 
-export type TaxReturnKind = "schedule_c" | "k1" | "1065" | "1120s" | "";
-export type QualifyingBasis = "schedule_c" | "wage" | "k1" | "combined";
+export type TaxReturnKind = "schedule_c" | "schedule_e" | "k1" | "1065" | "1120s" | "";
+export type QualifyingBasis = "schedule_c" | "schedule_e" | "wage" | "k1" | "combined";
 
 export const WAGE_MONTHLY_FIELD = "wage_monthly";
 export const SE_MONTHLY_FIELD = "se_monthly";
@@ -107,6 +111,10 @@ export type TaxYearCashflow = {
   mileage_depreciation: string;
   k1_ordinary_income: string;
   k1_distributions: string;
+  schedule_e_rents_received: string;
+  schedule_e_cash_expenses: string;
+  schedule_e_part2_names: string;
+  schedule_e_property_address: string;
 };
 
 export type QualifyingIncomeResult = {
@@ -175,6 +183,7 @@ export function normalizeReturnKind(raw?: string | null): TaxReturnKind {
     .replace(/[\s_-]+/g, "");
   if (!v) return "";
   if (v.includes("schedulec") || v === "c" || v.includes("1040c")) return "schedule_c";
+  if (v.includes("schedulee") || v.includes("1040e")) return "schedule_e";
   if (v.includes("k1")) return "k1";
   if (v.includes("1065") || v.includes("partnership")) return "1065";
   if (v.includes("1120s") || v.includes("scorp")) return "1120s";
@@ -265,6 +274,10 @@ export function readTaxCashflows(draft: FoxIntakeDraft): TaxYearCashflow[] {
           mileage_depreciation: String(row.mileage_depreciation ?? ""),
           k1_ordinary_income: String(row.k1_ordinary_income ?? ""),
           k1_distributions: String(row.k1_distributions ?? ""),
+          schedule_e_rents_received: String(row.schedule_e_rents_received ?? ""),
+          schedule_e_cash_expenses: String(row.schedule_e_cash_expenses ?? ""),
+          schedule_e_part2_names: String(row.schedule_e_part2_names ?? ""),
+          schedule_e_property_address: String(row.schedule_e_property_address ?? ""),
         },
       ];
     });
@@ -277,8 +290,18 @@ export function cashflowFromExtract(fields: Record<string, string>): TaxYearCash
   const tax_year = String(fields.tax_year ?? "").trim();
   const schedule_c_net_profit = String(fields.schedule_c_net_profit ?? "").trim();
   const k1_ordinary_income = String(fields.k1_ordinary_income ?? "").trim();
+  const schedule_e_rents_received = String(fields.schedule_e_rents_received ?? "").trim();
+  const schedule_e_cash_expenses = String(fields.schedule_e_cash_expenses ?? "").trim();
   const return_kind = inferReturnKind(fields);
-  if (!tax_year && !schedule_c_net_profit && !k1_ordinary_income && !return_kind) return null;
+  if (
+    !tax_year &&
+    !schedule_c_net_profit &&
+    !k1_ordinary_income &&
+    !schedule_e_rents_received &&
+    !return_kind
+  ) {
+    return null;
+  }
   return {
     tax_year,
     return_kind,
@@ -292,12 +315,17 @@ export function cashflowFromExtract(fields: Record<string, string>): TaxYearCash
     mileage_depreciation: String(fields.mileage_depreciation ?? "").trim(),
     k1_ordinary_income,
     k1_distributions: String(fields.k1_distributions ?? "").trim(),
+    schedule_e_rents_received,
+    schedule_e_cash_expenses,
+    schedule_e_part2_names: String(fields.schedule_e_part2_names ?? "").trim(),
+    schedule_e_property_address: String(fields.schedule_e_property_address ?? "").trim(),
   };
 }
 
 export function inferReturnKind(fields: Record<string, string>): TaxReturnKind {
   const named = normalizeReturnKind(fields.return_kind);
   if (named) return named;
+  if (String(fields.schedule_e_rents_received ?? "").trim()) return "schedule_e";
   if (String(fields.k1_ordinary_income ?? "").trim() && !String(fields.schedule_c_net_profit ?? "").trim()) {
     return "k1";
   }
@@ -311,6 +339,21 @@ export function mergeTaxCashflows(existing: TaxYearCashflow[], incoming: TaxYear
   const next = existing.filter((row) => (row.tax_year || "") !== key);
   next.push({ ...incoming, tax_year: incoming.tax_year || key });
   return next.sort((a, b) => (yearNumber(a.tax_year) ?? 0) - (yearNumber(b.tax_year) ?? 0));
+}
+
+function scheduleEMonthly(years: TaxYearCashflow[]): number | null {
+  const usable = years
+    .map((row) => ({
+      year: yearNumber(row.tax_year) ?? 0,
+      rents: parseExtractMoney(row.schedule_e_rents_received),
+      cash: parseExtractMoney(row.schedule_e_cash_expenses),
+    }))
+    .filter((row) => row.rents != null && row.cash != null)
+    .sort((a, b) => a.year - b.year);
+  if (!usable.length) return null;
+  const latest = usable[usable.length - 1];
+  if (latest.rents == null || latest.cash == null) return null;
+  return scheduleECashFlowMonthly(latest.rents, latest.cash);
 }
 
 function k1Monthly(years: TaxYearCashflow[]): number | null {
@@ -336,6 +379,14 @@ export function k1OrdinaryMissingDistributions(draft: FoxIntakeDraft): boolean {
 
 export function hasScheduleCCashflow(draft: FoxIntakeDraft): boolean {
   return readTaxCashflows(draft).some((row) => String(row.schedule_c_net_profit ?? "").trim());
+}
+
+export function hasScheduleECashflow(draft: FoxIntakeDraft): boolean {
+  return readTaxCashflows(draft).some(
+    (row) =>
+      row.return_kind === "schedule_e" ||
+      (String(row.schedule_e_rents_received ?? "").trim() && String(row.schedule_e_cash_expenses ?? "").trim()),
+  );
 }
 
 function pickWageField(fields: Record<string, string>, draft: FoxIntakeDraft, key: string) {
@@ -735,6 +786,17 @@ export function monthlyQualifyingFromExtract(
   if (extractClass !== "tax_return") return null;
   const incoming = cashflowFromExtract(fields);
   const years = mergeTaxCashflows(readTaxCashflows(draft), incoming);
+  const incomingRental =
+    incoming && incoming.schedule_e_rents_received && incoming.schedule_e_cash_expenses
+      ? scheduleEMonthly([incoming])
+      : null;
+  if (incomingRental != null) {
+    return {
+      monthly: incomingRental,
+      basis: "schedule_e",
+      methodNote: "rents minus cash expenses / 12",
+    };
+  }
   const scheduleC = suggestScheduleCIncome(scheduleCYearsFromCashflows(years));
   if (scheduleC != null) {
     return maybeCombine(
@@ -770,6 +832,14 @@ export function monthlyQualifyingFromExtract(
       },
       years,
     );
+  }
+  const fileRental = scheduleEMonthly(years);
+  if (fileRental != null) {
+    return {
+      monthly: fileRental,
+      basis: "schedule_e",
+      methodNote: "rents minus cash expenses / 12",
+    };
   }
   return null;
 }
@@ -1162,9 +1232,9 @@ export function qualifyingIncomeProposal(computed: QualifyingIncomeResult): Fact
   return {
     field: QUALIFYING_INCOME_FIELD,
     value: String(computed.monthly),
-    label: "qualifying income",
+    label: computed.basis === "schedule_e" ? "rental cash flow" : "qualifying income",
     kind: "computed",
-    note: SUGGESTED_INCOME_NOTE,
+    note: computed.basis === "schedule_e" ? SUGGESTED_RENTAL_CASH_FLOW_NOTE : SUGGESTED_INCOME_NOTE,
     methodNote: computed.methodNote,
     caution: computed.caution,
     partialNotes: computed.partialNotes,
