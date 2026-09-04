@@ -4,7 +4,7 @@ import type { FactProposal, FoxAction, FoxIntakeDraft } from "./types";
 export const STATED_MONTHLY_DEBTS_FIELD = "statedMonthlyDebts";
 export const SUGGESTED_DEBTS_NOTE = "Suggested · not underwritten";
 export const MONTHLY_DEBTS_ASK =
-  "About how much do you pay each month on other debts, not counting this house?";
+  "About how much are other monthly debts, not counting this mortgage?";
 
 export type PendingDebtMortgage = {
   included: number;

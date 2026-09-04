@@ -2610,7 +2610,10 @@ function isYearsInBusinessAskText(text: string) {
 }
 
 function isMonthlyDebtsAskText(text: string) {
-  return text.trim() === MONTHLY_DEBTS_ASK || /other debts, not counting this house/i.test(text);
+  return (
+    text.trim() === MONTHLY_DEBTS_ASK ||
+    /other monthly debts, not counting this mortgage/i.test(text)
+  );
 }
 
 function isFileQuestionSpeech(message: FoxMessage) {
@@ -6537,6 +6540,12 @@ export function workspaceReply(
   }
 
   if (prompt === "debts" && !finishLineTakesCalculatorPrompt(q, prompt, draft)) {
+    if (
+      draft.correcting !== "debts" &&
+      (draft.sampleAccepted || draft.motion === "in_queue" || draft.motion === "escalated")
+    ) {
+      return answerThenRestore(q, draft);
+    }
     if (draft.statedMonthlyDebts != null && isKeepThisText(q)) return keepThisReply(draft);
     if (draft.pendingDebtMortgage) {
       if (/^subtract\b/i.test(lower) || /subtract/.test(lower)) {

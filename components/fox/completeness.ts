@@ -59,6 +59,7 @@ import {
   STATED_MONTHLY_DEBTS_FIELD,
   SUGGESTED_DEBTS_NOTE,
   monthlyDebtsConfirmCopy,
+  shouldAskMonthlyDebts,
   skipMonthlyDebts,
 } from "./monthlyDebts";
 import {
@@ -1812,6 +1813,7 @@ export function currentAskIdle(draft: FoxIntakeDraft) {
   }
   if (nextDocInvite(draft)) return false;
   if (draft.looksRightHold) return false;
+  if (shouldAskMonthlyDebts(draft)) return false;
   return true;
 }
 

@@ -1,7 +1,7 @@
 /**
- * Liabilities v1: one stated monthly-debts ask after years (SE) or income (W-2).
- * Skip leaves Stated monthly debts empty. $800 writes after Use this.
- * Years leftover stays: SE → one years ask → 2 writes → rate pull does not reprint years.
+ * Liabilities v1: one stated monthly-debts ask after years (SE) or income (W-2),
+ * before Looks right. Skip leaves the line empty. $800 writes after Use this.
+ * in_queue 800 is not the write. Years leftover stays accepted.
  */
 import assert from "node:assert/strict";
 import {
@@ -9,10 +9,13 @@ import {
   nextDocInvite,
 } from "../components/fox/fileWrite";
 import {
+  canLooksRight,
   YEARS_IN_BUSINESS_ASK,
   withIncomeTypeYearsAsk,
   writeYearsInBusiness,
 } from "../components/fox/completeness";
+import { skipFormerHistory } from "../components/fox/fileHistory";
+import { applyLooksRightMotion, applyProceedMotion } from "../components/fox/motion";
 import {
   MONTHLY_DEBTS_ASK,
   monthlyDebtsConfirmCopy,
@@ -75,6 +78,10 @@ function statedDebtsLine(draft: FoxIntakeDraft) {
   return previewFacts(draft).find((item) => item.id === "debts");
 }
 
+assert.equal(
+  MONTHLY_DEBTS_ASK,
+  "About how much are other monthly debts, not counting this mortgage?",
+);
 assert.deepEqual(
   monthlyDebtsSkipActions().map((item) => item.label),
   ["Skip"],
@@ -114,7 +121,7 @@ assert.equal(skipped.monthlyDebtsAsked, true);
 assert.equal(skipped.statedMonthlyDebts, undefined);
 assert.equal(skipped.awaitingMonthlyDebts, false);
 assert.notEqual(workspacePrompt(skipped), "debts");
-assert.doesNotMatch(nextFoxAsk(skipped).text, /other debts, not counting this house/);
+assert.doesNotMatch(nextFoxAsk(skipped).text, /other monthly debts, not counting this mortgage/);
 const skippedLine = statedDebtsLine(skipped);
 assert.ok(skippedLine);
 assert.equal(skippedLine?.label, "Stated monthly debts");
@@ -219,6 +226,71 @@ assert.equal(afterReprice.filter((item) => /How long have you had/.test(item.tex
 assert.doesNotMatch(afterReprice[afterReprice.length - 1]?.text ?? "", /How long have you had/);
 assert.notEqual(workspacePrompt(reprice), "years-in-business");
 assert.equal(workspacePrompt(reprice), "debts");
+
+function looksReadyW2(): FoxIntakeDraft {
+  return skipFormerHistory({
+    ...sketch(),
+    subjectAddress: "500 Market St, San Francisco, CA 94105",
+    subjectAddressAsked: true,
+    propertyZip: "94105",
+    propertyZipAsked: true,
+    incomeAsked: true,
+    incomeType: { ...emptyDraft().incomeType, value: "w2" },
+    wageDocsAsked: true,
+    wageBox5Asked: true,
+    wageFrequencyAsked: true,
+    wageStubAsked: true,
+    facts: {
+      qualifying_income: {
+        field: "qualifying_income",
+        value: "9999.99",
+        source: "client",
+        confirmed: true,
+      },
+      employer_name: {
+        field: "employer_name",
+        value: "Harbor Pacific Design Inc",
+        source: "document",
+        confirmed: true,
+      },
+      w2_box5: { field: "w2_box5", value: "118400", source: "document", confirmed: true },
+    },
+    employmentHistory: [{ label: "Harbor Pacific Design Inc", to: "present" }],
+    skippedClasses: ["government_id", "bank_statement"],
+  });
+}
+
+const dueBeforeLooks = {
+  ...looksReadyW2(),
+  awaitingMonthlyDebts: true,
+};
+assert.equal(canLooksRight(looksReadyW2()), true);
+assert.equal(canLooksRight(dueBeforeLooks), false);
+assert.equal(workspacePrompt(dueBeforeLooks), "debts");
+assert.notEqual(workspacePrompt(dueBeforeLooks), "review");
+assert.equal(nextFoxAsk(dueBeforeLooks).text, MONTHLY_DEBTS_ASK);
+assert.equal(applyLooksRightMotion(dueBeforeLooks).sampleAccepted, undefined);
+const skippedThenLooks = skipMonthlyDebts(dueBeforeLooks);
+assert.ok(canLooksRight(skippedThenLooks));
+assert.notEqual(workspacePrompt(skippedThenLooks), "debts");
+const afterLooks = applyLooksRightMotion(skippedThenLooks);
+assert.equal(afterLooks.sampleAccepted, true);
+assert.notEqual(workspacePrompt(afterLooks), "debts");
+assert.doesNotMatch(nextFoxAsk(afterLooks).text, /other monthly debts/);
+const proceeded = applyProceedMotion(afterLooks);
+assert.equal(proceeded.motion, "in_queue");
+const lateEight = workspaceReply("800", proceeded);
+assert.notEqual(lateEight?.capture?.field, "propose-monthly-debts");
+assert.notEqual(lateEight?.capture?.field, "statedMonthlyDebts");
+assert.doesNotMatch(lateEight?.text ?? "", /other monthly debts, not counting this mortgage/);
+const lateOnDebtsPrompt = workspaceReply("800", {
+  ...proceeded,
+  correcting: null,
+  awaitingMonthlyDebts: true,
+  monthlyDebtsAsked: false,
+});
+assert.notEqual(lateOnDebtsPrompt?.capture?.field, "propose-monthly-debts");
+assert.notEqual(lateOnDebtsPrompt?.capture?.field, "statedMonthlyDebts");
 
 const crawl6: FoxIntakeDraft = {
   ...sketch(),
