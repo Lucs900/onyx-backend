@@ -109,9 +109,72 @@ jobs:
         uses: actions/github-script@v7
         with:
           script: |
-            const token = await core.getIDToken();
-            core.setSecret(token);
-            core.exportVariable("VERCEL_OIDC_TOKEN", token);
+            const fs = require("fs");
+            const { spawnSync } = require("child_process");
+            const decodePayload = (jwt) =>
+              JSON.parse(Buffer.from(jwt.split(".")[1], "base64url").toString("utf8"));
+            const audOf = (payload) =>
+              (Array.isArray(payload.aud) ? payload.aud : [payload.aud]).filter(Boolean);
+            const probe = (token) => {
+              const url = process.env.SPINE_WALKER_URL;
+              if (!url) return { status: "no-url", host: "-" };
+              const headerFile = "/tmp/oidc-probe-headers.txt";
+              const result = spawnSync(
+                "curl",
+                [
+                  "-sS",
+                  "-D",
+                  headerFile,
+                  "-o",
+                  "/dev/null",
+                  "-w",
+                  "%{http_code}",
+                  "--max-redirs",
+                  "0",
+                  "-H",
+                  `x-vercel-trusted-oidc-idp-token: ${token}`,
+                  url,
+                ],
+                { encoding: "utf8" },
+              );
+              const status = String(result.stdout || "").trim() || "curl-error";
+              let host = "-";
+              try {
+                const loc = fs
+                  .readFileSync(headerFile, "utf8")
+                  .split(/\r?\n/)
+                  .find((line) => /^location:/i.test(line));
+                if (loc) host = new URL(loc.slice(loc.indexOf(":") + 1).trim()).hostname;
+              } catch {
+                host = "unparsed";
+              }
+              return { status, host };
+            };
+            const take = async (audience) => {
+              const token = audience ? await core.getIDToken(audience) : await core.getIDToken();
+              core.setSecret(token);
+              const payload = decodePayload(token);
+              const label = audience ? `audience=${audience}` : "default";
+              core.info(
+                `OIDC ${label} aud=${audOf(payload).join(",")} iss=${payload.iss || ""} repository=${payload.repository || ""}`,
+              );
+              const hit = probe(token);
+              core.info(`OIDC preview probe status=${hit.status} location_host=${hit.host}`);
+              return { token, payload, hit };
+            };
+            const want = "https://github.com/";
+            const first = await take();
+            let picked = first;
+            if (!audOf(first.payload).includes(want)) {
+              const second = await take(want);
+              const firstOk = /^2/.test(first.hit.status);
+              const secondOk = /^2/.test(second.hit.status);
+              picked = secondOk || !firstOk ? second : first;
+            }
+            if (!/^2/.test(picked.hit.status) && /vercel\.com$/i.test(picked.hit.host)) {
+              core.info("OIDC token still redirected to Vercel SSO — walker will treat this as SSO, not a product fail");
+            }
+            core.exportVariable("VERCEL_OIDC_TOKEN", picked.token);
       - name: Run spine walker
         run: bash scripts/assert-spine-walker.sh
         env:
