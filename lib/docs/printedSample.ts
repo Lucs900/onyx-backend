@@ -489,8 +489,16 @@ function valueAfter(line: string, label: RegExp) {
   return line.slice(match[0].length).trim();
 }
 
+function looksLikeScheduleCWorksheet(lines: string[]) {
+  const blob = lines.join("\n").toUpperCase();
+  if (/SCHEDULE C WORKSHEET|FORM 1040 SCHEDULE C|IRS FORM 1040 SCHEDULE C/.test(blob)) return true;
+  if (/PROFIT OR LOSS FROM BUSINESS/.test(blob)) return true;
+  return /\bLINE\s*31\b/.test(blob) && /NET PROFIT/.test(blob);
+}
+
 function classifyPrintedLines(lines: string[]): ExtractClass | null {
   const blob = lines.join("\n").toUpperCase();
+  if (looksLikeScheduleCWorksheet(lines)) return "tax_return";
   if (
     /\bPAYSTUB\b|\bPAY STUB\b|EARNINGS STATEMENT|PAY STATEMENT/.test(blob) ||
     (/\bBI[\s-]?WEEKLY\b|\bSEMI[\s-]?MONTHLY\b|\bWEEKLY\b|\bMONTHLY\b/.test(blob) &&
@@ -533,6 +541,101 @@ function emptyIfNotShown(raw: string) {
   if (!raw) return "";
   if (/not shown|n\/a|none/i.test(raw)) return "";
   return raw;
+}
+
+function stackedLabelValue(lines: string[], label: RegExp) {
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = (lines[i] ?? "").trim();
+    const own = valueAfter(line, label);
+    if (own) return own;
+    if (!label.test(line)) continue;
+    const next = (lines[i + 1] ?? "").trim();
+    if (!next || /^[A-Z][A-Z /]+:/.test(next)) continue;
+    if (/^line\s*\d+/i.test(next) || /^part\s+/i.test(next) || /^expected 1084/i.test(next)) continue;
+    return next;
+  }
+  return "";
+}
+
+function worksheetLineBlock(lines: string[], lineNo: string) {
+  const start = new RegExp(`^line\\s*${lineNo}\\b`, "i");
+  for (let i = 0; i < lines.length; i += 1) {
+    const head = (lines[i] ?? "").trim();
+    if (!start.test(head)) continue;
+    if (/expected 1084/i.test(head)) continue;
+    const texts = [head];
+    for (let j = i + 1; j < lines.length; j += 1) {
+      const next = (lines[j] ?? "").trim();
+      if (
+        /^line\s*\d+/i.test(next) ||
+        /^part\s+/i.test(next) ||
+        /^expected 1084/i.test(next) ||
+        /^page\s*2\b/i.test(next) ||
+        /^suggested monthly/i.test(next) ||
+        /^(?:8829|4562)$/i.test(next)
+      ) {
+        break;
+      }
+      texts.push(next);
+    }
+    return texts;
+  }
+  return [];
+}
+
+function firstMoneyInBlock(texts: string[]) {
+  for (const text of texts) {
+    if (/expected 1084|suggested monthly|method:/i.test(text)) continue;
+    const own = moneyDigits(text.replace(/^\$\s*/, ""));
+    if (own) return own;
+    const tail = text.match(/\$\s*([\d,]+(?:\.\d+)?)/);
+    if (tail?.[1]) {
+      const digits = moneyDigits(tail[1]);
+      if (digits) return digits;
+    }
+  }
+  return "";
+}
+
+/** Worksheet labels (stacked or colon). Never reads Expected 1084 or the filename. */
+function applyScheduleCWorksheetFields(
+  lines: string[],
+  put: (key: string, value: string) => void,
+  putMoney: (key: string, value: string) => void,
+) {
+  if (!looksLikeScheduleCWorksheet(lines) && !lines.some((line) => /^line\s*31\b/i.test(line.trim()))) {
+    return;
+  }
+  const taxYear = stackedLabelValue(lines, /^TAX YEAR:?\s*/i);
+  if (taxYear) put("tax_year", taxYear.replace(/\D/g, "").slice(0, 4));
+  const business = stackedLabelValue(lines, /^BUSINESS NAME:?\s*/i);
+  if (business && !/^(?:name|address|ein)\b/i.test(business)) put("business_name", business);
+
+  const line31 = worksheetLineBlock(lines, "31");
+  if (line31.some((text) => /net profit/i.test(text))) {
+    const net = firstMoneyInBlock(line31);
+    if (net) putMoney("schedule_c_net_profit", net);
+  }
+  const line12 = worksheetLineBlock(lines, "12");
+  if (line12.some((text) => /depletion/i.test(text))) {
+    const depletion = firstMoneyInBlock(line12);
+    if (depletion) putMoney("depletion", depletion);
+  }
+  const line13 = worksheetLineBlock(lines, "13");
+  if (line13.some((text) => /depreciation/i.test(text))) {
+    const dep = firstMoneyInBlock(line13);
+    if (dep) putMoney("depreciation", dep);
+  }
+  const line30 = worksheetLineBlock(lines, "30");
+  if (line30.some((text) => /business use of home|form 8829/i.test(text))) {
+    const home = firstMoneyInBlock(line30);
+    if (home) putMoney("business_use_of_home", home);
+  }
+  const line6 = worksheetLineBlock(lines, "6");
+  if (line6.some((text) => /nonrecurring|one[\s-]?time/i.test(text))) {
+    const other = firstMoneyInBlock(line6);
+    if (other) putMoney("nonrecurring_other_income", other);
+  }
 }
 
 /** Map labeled page lines onto extract keys. Absent keys stay empty. */
@@ -611,6 +714,8 @@ export function fieldsFromPrintedLines(
     }
     const taxYear = valueAfter(line, /^TAX YEAR:\s*/i);
     if (taxYear) put("tax_year", taxYear.replace(/\D/g, "").slice(0, 4));
+    const business = valueAfter(line, /^(?:BUSINESS NAME|BUSINESS):\s*/i);
+    if (business) put("business_name", business);
     const netProfit = valueAfter(line, /^LINE 31 NET PROFIT:\s*/i);
     if (netProfit) putMoney("schedule_c_net_profit", netProfit);
     const dep = valueAfter(line, /^LINE 13 DEPRECIATION:\s*/i);
@@ -775,11 +880,15 @@ export function fieldsFromPrintedLines(
     }
   }
 
+  if (extractClass === "tax_return" || extractClass === "other") {
+    applyScheduleCWorksheetFields(lines, put, putMoney);
+  }
+
   if (extractClass === "tax_return") {
     const blob = lines.join("\n").toUpperCase();
-    if (/K-?1|1120-?S/.test(blob) && !/SCHEDULE C/.test(blob)) {
+    if (/K-?1|1120-?S/.test(blob) && !looksLikeScheduleCWorksheet(lines)) {
       fields.return_kind = "k1";
-    } else if (/SCHEDULE C|FORM 1040/.test(blob)) {
+    } else if (looksLikeScheduleCWorksheet(lines) || fields.schedule_c_net_profit) {
       fields.return_kind = "schedule_c";
     }
   }
@@ -929,6 +1038,7 @@ function inferPrintedClass(lines: string[]): ExtractClass | null {
   const blob = lines.join("\n");
   if ((/\bbox\s*5\b/i.test(blob) || /medicare\s*wages/i.test(blob)) && /\d/.test(blob)) return "w2";
   const mapped = fieldsFromPrintedLines("other", lines);
+  if (mapped.schedule_c_net_profit) return "tax_return";
   if (mapped.medicare_wages || mapped.box5) return "w2";
   if (mapped.gross_period && mapped.pay_frequency) return "paystub";
   if (mapped.current_pi || (mapped.servicer && mapped.unpaid_principal)) return "mortgage_statement";
@@ -1054,6 +1164,18 @@ export function loudIdFromPrintedLines(lines: string[]): PrintedSample | null {
     extractClass: "government_id",
     confidence: 0.94,
     fields,
+  };
+}
+
+/** Schedule C fields from THIS page text. Filename and Expected 1084 are not sources. */
+export function loudScheduleCFromPrintedLines(lines: string[]): PrintedSample | null {
+  if (!looksLikeScheduleCWorksheet(lines)) return null;
+  const fields = fieldsFromPrintedLines("tax_return", lines);
+  if (!fields.schedule_c_net_profit || !fields.tax_year) return null;
+  return {
+    extractClass: "tax_return",
+    confidence: 0.94,
+    fields: { ...fields, return_kind: "schedule_c" },
   };
 }
 

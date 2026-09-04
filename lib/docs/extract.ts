@@ -16,6 +16,7 @@ import {
   fieldsFromPrintedLines,
   loudContractFromPrintedLines,
   loudIdFromPrintedLines,
+  loudScheduleCFromPrintedLines,
   loudWageFromPrintedLines,
   printedSampleFromLines,
   readPrintedSample,
@@ -471,6 +472,8 @@ export async function classifyAndExtract(
   if (isPdf(bytes) || mediaType === "application/pdf") {
     const layer = readPdfTextLayer(bytes);
     if (layer?.length) {
+      const loudScheduleC = loudScheduleCFromPrintedLines(layer);
+      if (loudScheduleC) return printedResult(loudScheduleC, textLayerChars);
       const loud = loudWageFromPrintedLines(layer);
       if (loud) return printedResult(loud, textLayerChars);
       const loudId = loudIdFromPrintedLines(layer);
@@ -495,6 +498,8 @@ export async function classifyAndExtract(
   if (isPdf(bytes) || mediaType === "application/pdf") {
     const layer = readPdfTextLayer(bytes);
     if (layer?.length) {
+      const loudScheduleC = loudScheduleCFromPrintedLines(layer);
+      if (loudScheduleC) return printedResult(loudScheduleC, textLayerChars);
       const loud = loudWageFromPrintedLines(layer);
       if (loud) return printedResult(loud, textLayerChars);
       const fromLines = printedSampleFromLines(layer);
