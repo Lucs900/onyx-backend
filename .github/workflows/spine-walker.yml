@@ -1,0 +1,119 @@
+name: Spine walker
+on:
+  workflow_dispatch: {}
+  push:
+    paths:
+      - "app/(marketing)/start/**"
+      - "components/fox/**"
+      - "lib/**"
+      - "app/api/**"
+      - "scripts/spine-walker/**"
+      - "scripts/assert-spine-walker.sh"
+      - ".github/workflows/spine-walker.yml"
+      - "sample-docs/**"
+  pull_request:
+    paths:
+      - "app/(marketing)/start/**"
+      - "components/fox/**"
+      - "lib/**"
+      - "app/api/**"
+      - "scripts/spine-walker/**"
+      - "scripts/assert-spine-walker.sh"
+      - ".github/workflows/spine-walker.yml"
+      - "sample-docs/**"
+jobs:
+  walk:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      id-token: write
+      deployments: read
+      checks: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Wait for this SHA preview
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const sha = context.payload.pull_request?.head?.sha || context.sha;
+            const { owner, repo } = context.repo;
+            core.info(`Waiting for Vercel preview of ${sha}`);
+            const deadline = Date.now() + 12 * 60 * 1000;
+            const originFrom = (raw) => {
+              try {
+                const url = new URL(String(raw || ""));
+                if (!/\.vercel\.app$/i.test(url.hostname)) return "";
+                return url.origin;
+              } catch {
+                return "";
+              }
+            };
+            while (Date.now() < deadline) {
+              const deployments = await github.rest.repos.listDeployments({
+                owner,
+                repo,
+                sha,
+                per_page: 20,
+              });
+              for (const deployment of deployments.data) {
+                if (!/preview/i.test(deployment.environment || "")) continue;
+                const statuses = await github.rest.repos.listDeploymentStatuses({
+                  owner,
+                  repo,
+                  deployment_id: deployment.id,
+                  per_page: 10,
+                });
+                const ok = statuses.data.find(
+                  (item) =>
+                    item.state === "success" &&
+                    originFrom(item.environment_url || item.target_url),
+                );
+                const origin = ok
+                  ? originFrom(ok.environment_url || ok.target_url)
+                  : "";
+                if (origin) {
+                  const start = `${origin}/start?path=acr`;
+                  core.info(`Preview ready: ${start}`);
+                  core.exportVariable("SPINE_WALKER_URL", start);
+                  return;
+                }
+              }
+              const checks = await github.rest.checks.listForRef({
+                owner,
+                repo,
+                ref: sha,
+                per_page: 50,
+              });
+              const vercelCheck = checks.data.check_runs.find(
+                (item) =>
+                  /vercel/i.test(item.name || "") &&
+                  item.status === "completed" &&
+                  item.conclusion === "success",
+              );
+              const checkOrigin = originFrom(vercelCheck?.details_url);
+              if (checkOrigin) {
+                const start = `${checkOrigin}/start?path=acr`;
+                core.info(`Preview ready from check: ${start}`);
+                core.exportVariable("SPINE_WALKER_URL", start);
+                return;
+              }
+              await new Promise((resolve) => setTimeout(resolve, 10000));
+            }
+            core.setFailed(`No Vercel preview success for ${sha} within 12m`);
+      - name: GitHub OIDC for Vercel Trusted Sources
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const token = await core.getIDToken();
+            core.setSecret(token);
+            core.exportVariable("VERCEL_OIDC_TOKEN", token);
+      - name: Run spine walker
+        run: bash scripts/assert-spine-walker.sh
+        env:
+          SPINE_WALKER_URL: ${{ env.SPINE_WALKER_URL }}
+          VERCEL_OIDC_TOKEN: ${{ env.VERCEL_OIDC_TOKEN }}

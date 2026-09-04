@@ -82,7 +82,10 @@ if [[ ! -d node_modules/playwright ]]; then
   npm install
 fi
 
-if [[ ! -f .browser-ok ]]; then
+if [[ "${CI:-}" == "true" ]]; then
+  npx playwright install --with-deps chromium
+  touch .browser-ok
+elif [[ ! -f .browser-ok ]]; then
   npx playwright install chromium
   touch .browser-ok
 fi
