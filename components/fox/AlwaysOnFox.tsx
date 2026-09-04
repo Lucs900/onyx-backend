@@ -96,6 +96,7 @@ import {
   getFoxMessages,
   getServerDraft,
   hydrateFoxDraft,
+  loadIntakeDraft,
   markMissingAsked,
   nudgeReview,
   setDraftPath,
@@ -120,6 +121,7 @@ import {
   messagesWithRateOrReadySpeech,
   withoutLiveQuoteSpeech,
   docReactionAsk,
+  scheduleEIntakeAsk,
   nextDocInvite,
   incomeAskOpen,
   nextFoxAsk,
@@ -166,7 +168,13 @@ import {
   layer2AskActions,
   type DocIntakeDetail,
 } from "./fileWrite";
-import { DECLINING_INCOME_CAUTION, WAGE_DOCS_ASK, WAGE_STUB_DROP_ASK } from "./qualifyingIncome";
+import {
+  DECLINING_INCOME_CAUTION,
+  WAGE_DOCS_ASK,
+  WAGE_STUB_DROP_ASK,
+  isScheduleECashFlowProposal,
+  maybeProposeQualifyingFromTaxFile,
+} from "./qualifyingIncome";
 import { governmentIdSkipped, ID_UNREAD_ASK, isBorrowerNameConfirmPending } from "./borrowerName";
 import { isUnreadNote } from "@/lib/docs/accept";
 import { fileExists, finishLineActions, inQueueEnding, reviewIsSitting } from "./motion";
@@ -1055,6 +1063,19 @@ export function AlwaysOnFox({
             actions: unreadRestoreActions(live),
           });
         }
+        const scheduleEDraft = (() => {
+          const current = getFoxDraft();
+          if (isScheduleECashFlowProposal(current.pendingProposal)) return current;
+          if (detail.extractClass !== "tax_return") return current;
+          const proposed = maybeProposeQualifyingFromTaxFile(current);
+          if (!isScheduleECashFlowProposal(proposed.pendingProposal)) return current;
+          loadIntakeDraft(proposed);
+          return proposed;
+        })();
+        const scheduleEAsk = scheduleEIntakeAsk(scheduleEDraft, detail.extractClass);
+        if (scheduleEAsk) {
+          return applyFoxAsk(next, scheduleEAsk);
+        }
         if (detail.conflict) {
           next.push(
             foxAskMessage({
@@ -1205,7 +1226,7 @@ export function AlwaysOnFox({
       isStart && prompt === "review" && !live.docsHeld && !live.looksRightHold && !nextDocInvite(live);
     if (skipPromptSync.current) {
       skipPromptSync.current = false;
-      if (!mustShowReview) return;
+      if (!mustShowReview && !isScheduleECashFlowProposal(live.pendingProposal)) return;
     }
     commitMessages((prev) => {
       if (mustShowReview && hasReviewAsk(prev)) return prev;

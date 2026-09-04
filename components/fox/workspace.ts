@@ -227,6 +227,7 @@ import {
   wageThreadOpen,
   writeWageBox5,
   writeTypedStubMonthly,
+  isScheduleECashFlowProposal,
   qualifyingIncomeDisplay,
   raiseYtdFarAskCopy,
   RAISE_WHEN_ASK,
@@ -2101,6 +2102,19 @@ function liveProposalAsk(
     followUp: caution ? proposalAskCopy(proposal) : undefined,
     actions: proposal.field === QUALIFYING_INCOME_FIELD ? incomeConfirmActions() : proposalActions(proposal.kind),
   };
+}
+
+/** After Proceed, a fresh Schedule E drop still speaks Use this · Change — never the review line. */
+export function scheduleEIntakeAsk(
+  draft: FoxIntakeDraft,
+  extractClass?: ReturnType<typeof lastExtractedClass>,
+): {
+  text: string;
+  followUp?: string;
+  actions?: FoxAction[];
+} | null {
+  if (!isScheduleECashFlowProposal(draft.pendingProposal)) return null;
+  return docReactionAsk(draft, extractClass) ?? workspacePromptCopy("confirm-proposal", draft);
 }
 
 export function docReactionAsk(
@@ -8423,8 +8437,9 @@ function isQualifyingIncomeConfirm(message: FoxMessage) {
   if (message.role !== "fox") return false;
   const blob = `${message.text}\n${message.followUp ?? ""}`;
   if (/Suggested qualifying income/i.test(blob)) return true;
+  if (/Suggested rental cash flow/i.test(blob)) return true;
   return (message.actions ?? []).some((action) => action.capture?.field === "accept-proposal")
-    && /qualifying income/i.test(blob);
+    && /qualifying income|rental cash flow/i.test(blob);
 }
 
 function dropProposalActions(message: FoxMessage): FoxMessage {

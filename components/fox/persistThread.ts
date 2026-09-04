@@ -55,6 +55,10 @@ function isIntentionalIncomingThread(stored: FoxMessage[], incoming: FoxMessage[
  * Hydration can race a short in-memory seed against a longer stored file thread.
  * Keep stored only for that stale prefix — not for a price rewrite or wait-line settle.
  */
+export function isScheduleEConfirmAskText(text?: string) {
+  return /rents minus cash expenses \/ 12/i.test(text ?? "") && /Use this/i.test(text ?? "");
+}
+
 export function shouldKeepStoredFoxThread(
   stored: FoxMessage[],
   incoming: FoxMessage[],
@@ -65,6 +69,7 @@ export function shouldKeepStoredFoxThread(
   } = {},
 ) {
   if (!opts.fileExists || opts.isIdExtractPath || opts.idExtractAsk) return false;
+  if (incoming.some((item) => isScheduleEConfirmAskText(item.text))) return false;
   if (stored.length <= incoming.length) return false;
   return !isIntentionalIncomingThread(stored, incoming);
 }

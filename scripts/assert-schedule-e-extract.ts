@@ -27,7 +27,8 @@ import { applyExtractWrite, emptyDraft, loadIntakeDraft, receiveDocument } from 
 import { monthlyQualifyingFromExtract } from "../components/fox/qualifyingIncome";
 import { resolveProposal } from "../components/fox/completeness";
 import { SUGGESTED_RENTAL_CASH_FLOW_NOTE } from "../lib/income/suggest";
-import { nextFoxAsk, previewFacts, workspacePrompt, workspacePromptCopy } from "../components/fox/workspace";
+import { nextFoxAsk, previewFacts, scheduleEIntakeAsk, workspacePrompt, workspacePromptCopy } from "../components/fox/workspace";
+import { shouldKeepStoredFoxThread } from "../components/fox/persistThread";
 import type { FoxIntakeDraft } from "../components/fox/types";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -290,6 +291,12 @@ async function main() {
   assert.doesNotMatch(afterQueueAsk.text, /ONYX has this for review/i);
   assert.ok(!previewFacts(afterQueueWrite.draft).some((fact) => fact.id === "qualifying"));
   assert.ok(!previewFacts(afterQueueWrite.draft).some((fact) => /2,550|2550/.test(fact.value)));
+  const afterQueueIntake = scheduleEIntakeAsk(afterQueueWrite.draft, "tax_return");
+  assert.ok(afterQueueIntake);
+  assert.match(afterQueueIntake?.text ?? "", /\$2,550/);
+  assert.ok((afterQueueIntake?.actions ?? []).some((item) => item.label === "Use this"));
+  assert.ok((afterQueueIntake?.actions ?? []).some((item) => item.label === "Change"));
+  assert.doesNotMatch(afterQueueIntake?.text ?? "", /ONYX has this for review/i);
 
   const receivedAt = "2026-09-04T22:00:00.000Z";
   loadIntakeDraft(walkSe());
@@ -331,6 +338,74 @@ async function main() {
   assert.equal(used.facts?.qualifying_income?.value, "2550");
   assert.equal(used.facts?.qualifying_income?.confirmed, true);
   assert.ok(previewFacts(used).some((fact) => fact.id === "qualifying" && /2,550/.test(fact.value)));
+
+  const caseBQueue: FoxIntakeDraft = {
+    ...used,
+    pendingProposal: null,
+    sampleAccepted: true,
+    phase: "confirmed",
+    motion: "in_queue",
+    workspaceDraftStatus: "ready",
+  };
+  const caseBMore = applyUploadMoreMotion(caseBQueue);
+  const caseBAt = "2026-09-04T22:12:00.000Z";
+  loadIntakeDraft(caseBMore);
+  receiveDocument({
+    slot: "other",
+    name: "17-schedule-e-2025-sanchez-rental.pdf",
+    type: "application/pdf",
+    size: 2048,
+    receivedAt: caseBAt,
+  });
+  const caseBWrite = applyExtractWrite(
+    caseBAt,
+    "17-schedule-e-2025-sanchez-rental.pdf",
+    {
+      extractClass: "tax_return",
+      confidence: 0.94,
+      fields: seventeen.fields,
+    },
+  );
+  assert.equal(caseBWrite.draft.pendingProposal?.value, "2550");
+  assert.equal(caseBWrite.draft.pendingProposal?.note, SUGGESTED_RENTAL_CASH_FLOW_NOTE);
+  assert.equal(caseBWrite.draft.facts?.qualifying_income?.value, "2550");
+  assert.equal(caseBWrite.draft.facts?.qualifying_income?.confirmed, true);
+  assert.equal(workspacePrompt(caseBWrite.draft), "confirm-proposal");
+  const caseBAsk = scheduleEIntakeAsk(caseBWrite.draft, "tax_return") ?? nextFoxAsk(caseBWrite.draft);
+  assert.match(caseBAsk.text, /Got the 2025 Schedule E/);
+  assert.match(caseBAsk.text, /\$2,550/);
+  assert.match(caseBAsk.text, /rents minus cash expenses \/ 12/);
+  assert.match(caseBAsk.text, /Suggested rental cash flow · not underwritten/);
+  assert.match(caseBAsk.text, /Use this/);
+  assert.ok((caseBAsk.actions ?? []).some((item) => item.label === "Use this"));
+  assert.ok((caseBAsk.actions ?? []).some((item) => item.label === "Change"));
+  assert.doesNotMatch(caseBAsk.text, /ONYX has this for review/i);
+  assert.equal(
+    shouldKeepStoredFoxThread(
+      [
+        {
+          id: "stored-review",
+          role: "fox",
+          text: "ONYX has this for review. I’m still here.",
+        },
+        {
+          id: "stored-review-2",
+          role: "fox",
+          text: "ONYX has this for review. I’m still here.",
+        },
+      ],
+      [
+        {
+          id: "fresh-se",
+          role: "fox",
+          text: caseBAsk.text,
+          actions: caseBAsk.actions,
+        },
+      ],
+      { fileExists: true },
+    ),
+    false,
+  );
   assert.match(used.subjectAddress ?? "", /88 Clipper Street/i);
   assert.doesNotMatch(used.subjectAddress ?? "", /Sanchez|Filbert/i);
   assert.ok(!used.facts?.suggested_net_rental?.value);
