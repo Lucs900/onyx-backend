@@ -66,6 +66,14 @@ export function isEntityConfirmAskText(text?: string) {
   );
 }
 
+export function isSameBusinessConfirmAskText(text?: string) {
+  return (
+    /Use this/i.test(text ?? "") &&
+    /W-2 wages/i.test(text ?? "") &&
+    (/entity cash flow/i.test(text ?? "") || /K-1 ordinary/i.test(text ?? ""))
+  );
+}
+
 export function shouldKeepStoredFoxThread(
   stored: FoxMessage[],
   incoming: FoxMessage[],
@@ -76,7 +84,14 @@ export function shouldKeepStoredFoxThread(
   } = {},
 ) {
   if (!opts.fileExists || opts.isIdExtractPath || opts.idExtractAsk) return false;
-  if (incoming.some((item) => isScheduleEConfirmAskText(item.text) || isEntityConfirmAskText(item.text))) {
+  if (
+    incoming.some(
+      (item) =>
+        isScheduleEConfirmAskText(item.text) ||
+        isEntityConfirmAskText(item.text) ||
+        isSameBusinessConfirmAskText(item.text),
+    )
+  ) {
     return false;
   }
   if (stored.length <= incoming.length) return false;

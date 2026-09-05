@@ -228,6 +228,7 @@ import {
   writeWageBox5,
   writeTypedStubMonthly,
   isEntityCashFlowProposal,
+  isSameBusinessWageEntityProposal,
   isScheduleECashFlowProposal,
   qualifyingIncomeDisplay,
   raiseYtdFarAskCopy,
@@ -1711,6 +1712,24 @@ function combinedParts(proposal: NonNullable<FoxIntakeDraft["pendingProposal"]>)
   return [parts.wage, parts.scheduleC, parts.k1].filter(Boolean).length >= 2;
 }
 
+function sameBusinessReactionAsk(
+  draft: FoxIntakeDraft,
+  proposal: NonNullable<FoxIntakeDraft["pendingProposal"]>,
+): {
+  text: string;
+  followUp?: string;
+  actions?: FoxAction[];
+} {
+  const shown = displayFactValue(proposal.field, proposal.value);
+  const method = proposal.methodNote ?? "W-2 wages + entity cash flow";
+  const cls = lastExtractedClass(draft);
+  const ack = cls === "tax_return" ? "Got the return." : "Got the W-2.";
+  return {
+    text: `${ack} I’m suggesting ${shown} a month from ${method}. ${SUGGESTED_INCOME_NOTE}. Use this?`,
+    actions: incomeConfirmActions(),
+  };
+}
+
 function combinedReactionAsk(
   draft: FoxIntakeDraft,
   proposal: NonNullable<FoxIntakeDraft["pendingProposal"]>,
@@ -2084,6 +2103,7 @@ function liveProposalAsk(
     };
   }
   if (proposal.field === QUALIFYING_INCOME_FIELD) {
+    if (isSameBusinessWageEntityProposal(proposal)) return sameBusinessReactionAsk(draft, proposal);
     if (combinedParts(proposal) || proposal.methodNote?.startsWith("combined ")) {
       return combinedReactionAsk(draft, proposal);
     }
@@ -2146,6 +2166,18 @@ export function entityIntakeAsk(
   actions?: FoxAction[];
 } | null {
   if (!isEntityCashFlowProposal(draft.pendingProposal)) return null;
+  return docReactionAsk(draft, extractClass) ?? workspacePromptCopy("confirm-proposal", draft);
+}
+
+export function sameBusinessIntakeAsk(
+  draft: FoxIntakeDraft,
+  extractClass?: ReturnType<typeof lastExtractedClass>,
+): {
+  text: string;
+  followUp?: string;
+  actions?: FoxAction[];
+} | null {
+  if (!isSameBusinessWageEntityProposal(draft.pendingProposal)) return null;
   return docReactionAsk(draft, extractClass) ?? workspacePromptCopy("confirm-proposal", draft);
 }
 

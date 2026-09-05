@@ -540,6 +540,33 @@ function normalizeEmployer(raw?: string | null) {
     .trim();
 }
 
+function entityNamesOnFile(draft: FoxIntakeDraft, years: TaxYearCashflow[] = [], fields?: Record<string, string>) {
+  const names = [
+    ...years.map((row) => row.entity_name),
+    ...readTaxCashflows(draft).map((row) => row.entity_name),
+    String(fields?.entity_name ?? ""),
+    String(factValue(draft, "entity_name") ?? ""),
+  ];
+  return names.map((name) => String(name ?? "").trim()).filter(Boolean);
+}
+
+export function sameBusinessEmployerAndEntity(
+  employer?: string | null,
+  entity?: string | null,
+) {
+  return employersClose(employer, entity);
+}
+
+export function sameBusinessWageAndEntity(
+  draft: FoxIntakeDraft,
+  fields: Record<string, string> = {},
+  years: TaxYearCashflow[] = readTaxCashflows(draft),
+) {
+  const employer = String(fields.employer_name ?? factValue(draft, "employer_name") ?? "").trim();
+  if (!employer) return false;
+  return entityNamesOnFile(draft, years, fields).some((name) => sameBusinessEmployerAndEntity(employer, name));
+}
+
 export function readWageJobs(draft: FoxIntakeDraft): WageJobCashflow[] {
   const raw = factValue(draft, WAGE_JOBS_FIELD);
   if (!raw) return [];
@@ -683,7 +710,8 @@ function wageSuggestInput(draft: FoxIntakeDraft, fields: Record<string, string>)
   const incomingIsSecond = Boolean(
     incomingEmployer &&
       primaryEmployer &&
-      normalizeEmployer(incomingEmployer) !== normalizeEmployer(primaryEmployer),
+      !employersClose(incomingEmployer, primaryEmployer) &&
+      !sameBusinessWageAndEntity(draft, fields),
   );
   const employer = incomingIsSecond ? primaryEmployer : incomingEmployer || primaryEmployer;
   const sameEmployer = jobsForEmployer(jobs, employer);
@@ -810,7 +838,9 @@ function maybeCombine(
   draft: FoxIntakeDraft,
   incoming: QualifyingIncomeResult,
   years: TaxYearCashflow[],
+  fields: Record<string, string> = {},
 ): QualifyingIncomeResult {
+  const cashYears = years.length ? years : readTaxCashflows(draft);
   const wage =
     incoming.basis === "wage"
       ? {
@@ -836,26 +866,48 @@ function maybeCombine(
           caution: incoming.caution,
           methodNote: incoming.methodNote,
         }
-      : scheduleCSuggestFromYears(years.length ? years : readTaxCashflows(draft)) ??
+      : scheduleCSuggestFromYears(cashYears) ??
         (confirmedMonthly(draft, SE_MONTHLY_FIELD) != null
           ? {
               monthly: confirmedMonthly(draft, SE_MONTHLY_FIELD) as number,
               method: "one-year" as const,
             }
           : null);
+  const fileEntity = entityMonthly(cashYears);
   const k1 =
     incoming.basis === "k1" || incoming.basis === "entity"
       ? incoming.monthly
-      : entityMonthly(years.length ? years : readTaxCashflows(draft))?.monthly ??
-        k1Monthly(years.length ? years : readTaxCashflows(draft)) ??
-        confirmedMonthly(draft, K1_MONTHLY_FIELD);
+      : fileEntity?.monthly ?? k1Monthly(cashYears) ?? confirmedMonthly(draft, K1_MONTHLY_FIELD);
   const combined = suggestCombinedIncome({
     wage,
     scheduleC,
     k1Monthly: k1,
   });
   if (!combined) return incoming;
-  return toQualifyingResult(combined, "combined");
+  const result = toQualifyingResult(combined, "combined");
+  if (!sameBusinessWageAndEntity(draft, fields, cashYears)) return result;
+  const wageNote = wage?.methodNote || W2_BOX1_MONTHLY_NOTE;
+  const useEntityCash = incoming.basis === "entity" || Boolean(fileEntity);
+  if (useEntityCash) {
+    const entityNote =
+      incoming.basis === "entity" && incoming.methodNote
+        ? incoming.methodNote
+        : fileEntity
+          ? entityCashFlowMethodNote({
+              kind: fileEntity.row.return_kind,
+              ownershipPercent: parseExtractMoney(fileEntity.row.ownership_percent),
+              guaranteedPayments: parseExtractMoney(fileEntity.row.entity_guaranteed_payments),
+            })
+          : "entity cash flow";
+    return {
+      ...result,
+      methodNote: `combined W-2 wages + entity cash flow · ${wageNote} plus ${entityNote}`,
+    };
+  }
+  return {
+    ...result,
+    methodNote: `combined wage + K-1 · W-2 wages + K-1 ordinary · ${wageNote} plus ${incoming.methodNote || "ordinary / 12"}`,
+  };
 }
 
 export function monthlyQualifyingFromExtract(
@@ -869,7 +921,9 @@ export function monthlyQualifyingFromExtract(
     if (wage.needsFrequency) {
       return { monthly: 0, basis: "wage", method: wage.method, needsFrequency: true };
     }
-    if (wage.needsBothReason) {
+    const years = readTaxCashflows(draft);
+    const sameBusiness = sameBusinessWageAndEntity(draft, fields, years);
+    if (wage.needsBothReason && !sameBusiness) {
       return {
         monthly: 0,
         basis: "wage",
@@ -881,21 +935,24 @@ export function monthlyQualifyingFromExtract(
         partialNotes: wage.partialNotes,
       };
     }
-    if (wage.monthly === 0) return null;
+    const wageMonthly =
+      wage.needsBothReason && sameBusiness ? wage.w2Monthly ?? wage.monthly : wage.monthly;
+    if (wageMonthly === 0) return null;
     return maybeCombine(
       draft,
       {
-        monthly: wage.monthly,
+        monthly: wageMonthly,
         basis: "wage",
-        method: wage.method,
+        method: wage.method === "both-ask" ? "w2-annual" : wage.method,
         caution: wage.caution,
-        methodNote: wage.methodNote,
-        partialNotes: wage.partialNotes,
-        stubMonthly: wage.stubMonthly,
-        w2Monthly: wage.w2Monthly,
-        parts: { wage: wage.monthly },
+        methodNote: sameBusiness ? W2_BOX1_MONTHLY_NOTE : wage.methodNote,
+        partialNotes: sameBusiness ? undefined : wage.partialNotes,
+        stubMonthly: sameBusiness ? undefined : wage.stubMonthly,
+        w2Monthly: sameBusiness ? undefined : wage.w2Monthly,
+        parts: { wage: wageMonthly },
       },
-      readTaxCashflows(draft),
+      years,
+      fields,
     );
   }
   if (extractClass !== "tax_return") return null;
@@ -914,7 +971,7 @@ export function monthlyQualifyingFromExtract(
   }
   const incomingEntity = incoming ? entityRowMonthly(incoming) : null;
   if (incomingEntity != null && incoming) {
-    return maybeCombine(draft, entityResultFromRow(incoming, incomingEntity), years);
+    return maybeCombine(draft, entityResultFromRow(incoming, incomingEntity), years, fields);
   }
   const scheduleC = suggestScheduleCIncome(scheduleCYearsFromCashflows(years));
   if (scheduleC != null) {
@@ -936,11 +993,12 @@ export function monthlyQualifyingFromExtract(
         parts: { scheduleC: scheduleC.monthly },
       },
       years,
+      fields,
     );
   }
   const fileEntity = entityMonthly(years);
   if (fileEntity) {
-    return maybeCombine(draft, entityResultFromRow(fileEntity.row, fileEntity.monthly), years);
+    return maybeCombine(draft, entityResultFromRow(fileEntity.row, fileEntity.monthly), years, fields);
   }
   const entity = k1Monthly(years);
   if (entity != null) {
@@ -954,6 +1012,7 @@ export function monthlyQualifyingFromExtract(
         parts: { k1: entity },
       },
       years,
+      fields,
     );
   }
   const fileRental = scheduleEMonthly(years);
@@ -1392,6 +1451,12 @@ export function isEntityCashFlowProposal(proposal?: FactProposal | null): boolea
   );
 }
 
+export function isSameBusinessWageEntityProposal(proposal?: FactProposal | null): boolean {
+  if (!proposal || proposal.field !== QUALIFYING_INCOME_FIELD) return false;
+  const method = proposal.methodNote ?? "";
+  return /W-2 wages/i.test(method) && (/entity cash flow/i.test(method) || /K-1 ordinary/i.test(method));
+}
+
 export function maybeProposeQualifyingFromTaxFile(draft: FoxIntakeDraft): FoxIntakeDraft {
   if (draft.pendingProposal?.field === QUALIFYING_INCOME_FIELD) return draft;
   if (draft.pendingProposal && draft.pendingProposal.field !== QUALIFYING_INCOME_FIELD) {
@@ -1487,6 +1552,14 @@ export function applyQualifyingIncomeFromExtract(
     return { ...next, awaitingPayFrequency: true, pendingProposal: null };
   }
   if (computed?.needsBothReason) {
+    if (sameBusinessWageAndEntity(next, fields)) {
+      next = writeBothMonthlies(next, { ...computed, needsBothReason: false });
+      return withQualifyingIncomeProposal(
+        { ...next, awaitingBothMonthlyReason: false, awaitingRaiseWhen: false, awaitingRaiseYtdFar: false, awaitingPayFrequency: false },
+        { ...computed, needsBothReason: false },
+        extractClass,
+      );
+    }
     if (next.pendingConflict && existingMonthlyIncome(draft)?.via === "income") return next;
     if (draft.bothMonthlyReason === "raise" && draft.raiseWhenRaw) {
       return applyRaiseWhenAnswer(writeBothMonthlies(next, computed), draft.raiseWhenRaw);
@@ -1539,7 +1612,12 @@ export function qualifyingIncomeDisplay(draft: FoxIntakeDraft): { value: string;
   if (draft.awaitingBothMonthlyReason || draft.awaitingRaiseWhen || draft.awaitingRaiseYtdFar) return null;
   const proposal =
     draft.pendingProposal?.field === QUALIFYING_INCOME_FIELD ? draft.pendingProposal : null;
-  if (proposal && !isScheduleECashFlowProposal(proposal) && !isEntityCashFlowProposal(proposal)) {
+  if (
+    proposal &&
+    !isScheduleECashFlowProposal(proposal) &&
+    !isEntityCashFlowProposal(proposal) &&
+    !isSameBusinessWageEntityProposal(proposal)
+  ) {
     return {
       value: structureQualifyingValue(displayMoney(proposal.value), proposal.methodNote),
       note: proposal.note ?? SUGGESTED_INCOME_NOTE,

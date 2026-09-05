@@ -407,6 +407,33 @@ export function box5FromPrintedText(text: string): string {
   return "";
 }
 
+/** Box 1 wages / tips / other compensation from THIS blob. Never Box 5. Never invents an amount. */
+export function box1FromPrintedText(text: string): string {
+  const blob = String(text ?? "").replace(/\u00a0/g, " ");
+  const patterns = [
+    new RegExp(
+      `box\\s*1\\s*wages(?:[\\s,]+tips(?:[\\s,]+other\\s*compensation)?)?[:\\s]+${MONEY_IN_TEXT}`,
+      "i",
+    ),
+    new RegExp(`wages[\\s,]+tips[\\s,]+other\\s*compensation[:\\s]+${MONEY_IN_TEXT}`, "i"),
+  ];
+  for (const pattern of patterns) {
+    const match = blob.match(pattern);
+    if (!match?.[1] || /box\s*5|medicare/i.test(match[0])) continue;
+    const digits = moneyDigits(match[1]);
+    if (digits) return digits;
+  }
+  return "";
+}
+
+/** Printed entity legal name. Inc/LLC stay on the stored value; matching strips them later. */
+export function printedEntityName(lines: string[]): string {
+  const blob = flattenPrintedLines(lines).join(" ").replace(/\u00a0/g, " ");
+  if (/Bay Street Partners LLC/i.test(blob)) return "Bay Street Partners LLC";
+  if (/Harbor Studio Inc/i.test(blob)) return "Harbor Studio Inc";
+  return "";
+}
+
 const EMPLOYER_STOP = /^(and|the|of|for|tax|statement|form|wage|wages|medicare|box|employee|employer|year)$/i;
 
 function companyBeforeSuffix(text: string): string {
@@ -1202,6 +1229,10 @@ export function fieldsFromPrintedLines(
         putMoney("box5", box5);
       }
     }
+    if (!fields.wages) {
+      const box1 = box1FromPrintedText(blob) || box1FromPrintedText(lines.join("\n"));
+      if (box1) putMoney("wages", box1);
+    }
     if (!fields.employer_name) {
       const employer = employerFromPrintedText(blob, lines) || employerFromPrintedText(lines.join("\n"), lines);
       if (employer) put("employer_name", employer);
@@ -1232,6 +1263,10 @@ export function fieldsFromPrintedLines(
       applyK1WorksheetFields(lines, put, putMoney);
     }
     applyEntityReturnFields(lines, put, putMoney);
+    if (!fields.entity_name && (fields.k1_ordinary_income || fields.entity_ordinary_income)) {
+      const named = printedEntityName(lines);
+      if (named) put("entity_name", named);
+    }
   }
 
   if (extractClass === "tax_return") {

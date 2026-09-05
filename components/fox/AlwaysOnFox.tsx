@@ -122,6 +122,7 @@ import {
   withoutLiveQuoteSpeech,
   docReactionAsk,
   entityIntakeAsk,
+  sameBusinessIntakeAsk,
   scheduleEIntakeAsk,
   nextDocInvite,
   incomeAskOpen,
@@ -174,6 +175,7 @@ import {
   WAGE_DOCS_ASK,
   WAGE_STUB_DROP_ASK,
   isEntityCashFlowProposal,
+  isSameBusinessWageEntityProposal,
   isScheduleECashFlowProposal,
   maybeProposeQualifyingFromTaxFile,
 } from "./qualifyingIncome";
@@ -1069,15 +1071,17 @@ export function AlwaysOnFox({
           const current = getFoxDraft();
           if (
             isScheduleECashFlowProposal(current.pendingProposal) ||
-            isEntityCashFlowProposal(current.pendingProposal)
+            isEntityCashFlowProposal(current.pendingProposal) ||
+            isSameBusinessWageEntityProposal(current.pendingProposal)
           ) {
             return current;
           }
-          if (detail.extractClass !== "tax_return") return current;
+          if (detail.extractClass !== "tax_return" && detail.extractClass !== "w2") return current;
           const proposed = maybeProposeQualifyingFromTaxFile(current);
           if (
             !isScheduleECashFlowProposal(proposed.pendingProposal) &&
-            !isEntityCashFlowProposal(proposed.pendingProposal)
+            !isEntityCashFlowProposal(proposed.pendingProposal) &&
+            !isSameBusinessWageEntityProposal(proposed.pendingProposal)
           ) {
             return current;
           }
@@ -1086,7 +1090,8 @@ export function AlwaysOnFox({
         })();
         const scheduleEAsk =
           scheduleEIntakeAsk(scheduleEDraft, detail.extractClass) ??
-          entityIntakeAsk(scheduleEDraft, detail.extractClass);
+          entityIntakeAsk(scheduleEDraft, detail.extractClass) ??
+          sameBusinessIntakeAsk(scheduleEDraft, detail.extractClass);
         if (scheduleEAsk) {
           return applyFoxAsk(next, scheduleEAsk);
         }
@@ -1243,7 +1248,8 @@ export function AlwaysOnFox({
       if (
         !mustShowReview &&
         !isScheduleECashFlowProposal(live.pendingProposal) &&
-        !isEntityCashFlowProposal(live.pendingProposal)
+        !isEntityCashFlowProposal(live.pendingProposal) &&
+        !isSameBusinessWageEntityProposal(live.pendingProposal)
       ) {
         return;
       }
