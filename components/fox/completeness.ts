@@ -1607,9 +1607,9 @@ export function resolveProposal(
         ? queuePurchaseSketchReconcile(afterFileNet)
         : afterFileNet;
   if (winner === "accept" && isFundsPairProposal(proposal)) {
-    return { ...afterContract, overPriceConfirmed: false };
+    return { ...afterContract, overPriceConfirmed: false, looksRightHold: false };
   }
-  return afterContract;
+  return { ...afterContract, looksRightHold: winner === "accept" ? false : afterContract.looksRightHold };
 }
 
 function flushPendingHireDate(draft: FoxIntakeDraft): FoxIntakeDraft {

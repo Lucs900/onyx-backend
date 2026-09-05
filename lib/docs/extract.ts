@@ -15,6 +15,7 @@ import { isPdf, pdfTextLayerCharCount, readPdfEmbeddedImages, readPdfTextLayer }
 import {
   fieldsFromPrintedLines,
   loudContractFromPrintedLines,
+  loudCoverFromPrintedLines,
   loudIdFromPrintedLines,
   loudEntityReturnFromPrintedLines,
   loudK1FromPrintedLines,
@@ -483,6 +484,8 @@ export async function classifyAndExtract(
       if (loudEntity) return printedResult(loudEntity, textLayerChars);
       const loudK1 = loudK1FromPrintedLines(layer);
       if (loudK1) return printedResult(loudK1, textLayerChars);
+      const loudCover = loudCoverFromPrintedLines(layer);
+      if (loudCover) return printedResult(loudCover, textLayerChars);
       const loud = loudWageFromPrintedLines(layer);
       if (loud) return printedResult(loud, textLayerChars);
       const loudId = loudIdFromPrintedLines(layer);
@@ -515,6 +518,8 @@ export async function classifyAndExtract(
       if (loudEntity) return printedResult(loudEntity, textLayerChars);
       const loudK1 = loudK1FromPrintedLines(layer);
       if (loudK1) return printedResult(loudK1, textLayerChars);
+      const loudCover = loudCoverFromPrintedLines(layer);
+      if (loudCover) return printedResult(loudCover, textLayerChars);
       const loud = loudWageFromPrintedLines(layer);
       if (loud) return printedResult(loud, textLayerChars);
       const fromLines = printedSampleFromLines(layer);

@@ -199,7 +199,12 @@ export function normalizeReturnKind(raw?: string | null): TaxReturnKind {
   if (v.includes("1065") || v.includes("partnership")) return "1065";
   if (v.includes("1120s") || v.includes("scorp")) return "1120s";
   if (v === "1120" || v.endsWith("1120") || v.includes("ccorp")) return "1120";
+  if (v === "cover" || v.includes("1040cover")) return "";
   return "";
+}
+
+export function isCoverReturnFields(fields?: Record<string, string | null | undefined> | null) {
+  return String(fields?.return_kind ?? "").trim().toLowerCase() === "cover";
 }
 
 function cashflowToScheduleCYear(row: TaxYearCashflow): ScheduleCYearInput | null {
@@ -308,6 +313,7 @@ export function readTaxCashflows(draft: FoxIntakeDraft): TaxYearCashflow[] {
 }
 
 export function cashflowFromExtract(fields: Record<string, string>): TaxYearCashflow | null {
+  if (isCoverReturnFields(fields)) return null;
   const tax_year = String(fields.tax_year ?? "").trim();
   const schedule_c_net_profit = String(fields.schedule_c_net_profit ?? "").trim();
   const k1_ordinary_income = String(fields.k1_ordinary_income ?? "").trim();

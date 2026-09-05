@@ -24,6 +24,8 @@ import {
   hasTwoYearWageHistory,
   k1OrdinaryMissingDistributions,
   maybeProposeQualifyingFromTaxFile,
+  isCoverReturnFields,
+  hasK1Ordinary,
   isWageExtractFirstPath,
   isWageExtractProposal,
   isStubExtractProposal,
@@ -204,6 +206,7 @@ export const EXTRACT_SCHEMA_KEYS: Record<ExtractClass, readonly string[]> = {
     "ownership_percent",
     "entity_taxable_income",
     "entity_name",
+    "cover_schedules",
   ],
   bank_statement: ["institution", "period_end", "ending_balance", "account_type", "account_last4", "present_address"],
   purchase_contract: [
@@ -360,6 +363,7 @@ const YEARLY_TAX_KEYS = new Set([
   "ownership_percent",
   "entity_taxable_income",
   "entity_name",
+  "cover_schedules",
 ]);
 
 const DROP_FIELD_KEYS =
@@ -500,6 +504,9 @@ export function hasLockedSuggestion(
     }
     if (kind === "1120") {
       return Boolean(String(fields?.return_kind ?? "").trim());
+    }
+    if (isCoverReturnFields(fields)) {
+      return Boolean(value("tax_year") || value("cover_schedules"));
     }
     if (kind === "k1" || kind === "1065" || kind === "1120s") {
       return Boolean(
@@ -1175,9 +1182,19 @@ export function applyExtractedFields(
     "w2_box5",
     "paystub_amount",
   ]);
+  const coverReturn = isCoverReturnFields(fields);
   for (const field of EXTRACT_SCHEMA_KEYS[extractClass]) {
     const value = fields[field];
     if (!value) continue;
+    if (coverReturn && field !== "tax_year" && field !== "return_kind" && field !== "cover_schedules") continue;
+    if (
+      coverReturn &&
+      field === "return_kind" &&
+      String(next.facts?.return_kind?.value ?? "").trim() &&
+      String(next.facts?.return_kind?.value ?? "").trim().toLowerCase() !== "cover"
+    ) {
+      continue;
+    }
     if ((wageExtractFirst || holdWageFileWrites) && WAGE_EXTRACT_HOLD_KEYS.has(field)) continue;
     if (
       extractClass === "w2" &&
@@ -1402,7 +1419,7 @@ export function applyExtractedFields(
       extractClass,
     );
     conflict = next.pendingConflict ?? null;
-  } else {
+  } else if (!coverReturn) {
     next = applyQualifyingIncomeFromExtract(
       { ...next, pendingConflict: conflict },
       extractClass,
@@ -1763,9 +1780,11 @@ export function applyExtractedFields(
   ) {
     quietLines.push(EMPLOYER_MISMATCH_LINE);
   }
-  next = maybeProposeQualifyingFromTaxFile(next);
+  if (!coverReturn) next = maybeProposeQualifyingFromTaxFile(next);
+  const holdLooksRight =
+    !coverReturn || Boolean(next.pendingProposal || conflict || next.pendingConflict);
   return {
-    draft: { ...next, looksRightHold: true },
+    draft: { ...next, looksRightHold: holdLooksRight },
     writes,
     conflict,
     quietLines,
@@ -1893,11 +1912,15 @@ export function resolveFactConflict(
 
 const COUNTED_DOC_STATUSES = new Set<ReceivedDoc["status"]>(["received", "reading", "extracted"]);
 
+export function isCoverReturnDoc(doc: ReceivedDoc) {
+  return /1040-cover|1040 cover|cover page/i.test(doc.name ?? "");
+}
+
 export function receivedTaxReturnCount(draft: FoxIntakeDraft): number {
   let fromDocs = 0;
   for (const doc of draft.documents) {
     if (!COUNTED_DOC_STATUSES.has(doc.status)) continue;
-    if (receivedClassOf(doc) === "tax_return") fromDocs += 1;
+    if (receivedClassOf(doc) === "tax_return" && !isCoverReturnDoc(doc)) fromDocs += 1;
   }
   const years = new Set<string>();
   for (const row of readTaxCashflows(draft)) {
@@ -1953,7 +1976,53 @@ export type StillUsefulLabel =
   | "prior-year return"
   | "K-1 distributions"
   | "Bay Street K-1"
-  | "Harbor Studio K-1";
+  | "Harbor Studio K-1"
+  | "Schedule C"
+  | "Schedule E"
+  | "K-1"
+  | "1065"
+  | "1120-S"
+  | "Schedule F";
+
+const COVER_SCHEDULE_LABELS: Record<string, StillUsefulLabel> = {
+  schedule_c: "Schedule C",
+  schedule_e: "Schedule E",
+  k1: "K-1",
+  "1065": "1065",
+  "1120s": "1120-S",
+  schedule_f: "Schedule F",
+};
+
+export function coverSchedulesOnFile(draft: FoxIntakeDraft): string[] {
+  const raw = factValue(draft, "cover_schedules");
+  return raw
+    .split(/[;,]/)
+    .map((item) => item.trim().toLowerCase().replace(/[\s_-]+/g, "_"))
+    .filter(Boolean);
+}
+
+function coverSchedulePresent(draft: FoxIntakeDraft, id: string) {
+  if (id === "schedule_c") return hasScheduleCCashflow(draft);
+  if (id === "schedule_e") return hasScheduleECashflow(draft);
+  if (id === "k1" || id === "1065" || id === "1120s") {
+    return (
+      hasK1Ordinary(draft) ||
+      readTaxCashflows(draft).some((row) => String(row.entity_ordinary_income ?? "").trim())
+    );
+  }
+  if (id === "schedule_f") {
+    return (draft.documents ?? []).some((doc) => /schedule-f|schedule f|farm/i.test(doc.name));
+  }
+  return false;
+}
+
+export function nextCoverScheduleLabels(draft: FoxIntakeDraft): StillUsefulLabel[] {
+  return coverSchedulesOnFile(draft)
+    .filter((id) => !coverSchedulePresent(draft, id))
+    .map((id) => COVER_SCHEDULE_LABELS[id])
+    .filter((label): label is StillUsefulLabel => Boolean(label))
+    .slice(0, 3);
+}
 
 function wageGroceryExtractClass(id: string) {
   return (
@@ -2047,6 +2116,9 @@ export function stillUsefulLabels(draft: FoxIntakeDraft): StillUsefulLabel[] {
   if (!deepenStillUseful(draft)) {
     const namedK1 = nextScheduleENamedK1Label(draft);
     if (namedK1 && !labels.includes(namedK1)) labels.push(namedK1);
+    for (const cover of nextCoverScheduleLabels(draft)) {
+      if (!labels.includes(cover)) labels.push(cover);
+    }
     return labels;
   }
   const income = draft.incomeType.value;
@@ -2067,6 +2139,9 @@ export function stillUsefulLabels(draft: FoxIntakeDraft): StillUsefulLabel[] {
   } else {
     const namedK1 = nextScheduleENamedK1Label(draft);
     if (namedK1 && !labels.includes(namedK1)) labels.push(namedK1);
+  }
+  for (const cover of nextCoverScheduleLabels(draft)) {
+    if (!labels.includes(cover)) labels.push(cover);
   }
   return taxReturns >= 2
     ? labels.filter(

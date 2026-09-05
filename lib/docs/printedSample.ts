@@ -589,6 +589,32 @@ function looksLikeK1Worksheet(lines: string[]) {
   return k1WorksheetKind(lines) != null;
 }
 
+/** Form 1040 cover / pointer page. Not Schedule C, E, K-1, or a W-2. */
+export function looksLike1040CoverWorksheet(lines: string[]) {
+  if (looksLikeScheduleCWorksheet(lines) || looksLikeScheduleEWorksheet(lines)) return false;
+  if (looksLikeEntityReturnWorksheet(lines) || looksLikeK1Worksheet(lines)) return false;
+  const blob = flattenPrintedLines(lines).join("\n").toUpperCase().replace(/\u00a0/g, " ");
+  if (!/FORM 1040|U\.?S\.?\s*INDIVIDUAL INCOME TAX RETURN/.test(blob)) return false;
+  return /COVER PAGE|SCHEDULES ARE SEPARATE|POINTERS, NOT THE CASH-FLOW|A 1040 COVER IS NOT ENOUGH/.test(blob);
+}
+
+export function coverSchedulesFromPrintedLines(lines: string[]): string[] {
+  const blob = flattenPrintedLines(lines).join("\n").replace(/\u00a0/g, " ");
+  const named: string[] = [];
+  const take = (id: string) => {
+    if (!named.includes(id)) named.push(id);
+  };
+  if (/sch(?:edule)?\s*1\s*\/\s*c\b|use schedule c/i.test(blob)) take("schedule_c");
+  if (/sch(?:edule)?\s*1\s*\/\s*e\b|use sch(?:edule)? e/i.test(blob)) take("schedule_e");
+  if (/\bk-?1\b/i.test(blob) || /1065|1120-?s/i.test(blob)) {
+    if (/use sch(?:edule)? e \+ k-?1|k-?1/i.test(blob)) take("k1");
+    if (/\b1065\b/i.test(blob)) take("1065");
+    if (/1120-?s/i.test(blob)) take("1120s");
+  }
+  if (/sch(?:edule)?\s*1\s*\/\s*f\b|use schedule f/i.test(blob)) take("schedule_f");
+  return named;
+}
+
 /** Form 1065 / 1120-S / 1120 entity return — not Schedule K-1, not Schedule C, not Schedule E. */
 export function entityReturnKind(lines: string[]): "1065" | "1120s" | "1120" | null {
   if (looksLikeScheduleCWorksheet(lines) || looksLikeScheduleEWorksheet(lines)) {
@@ -707,6 +733,7 @@ function classifyPrintedLines(lines: string[]): ExtractClass | null {
   if (looksLikeScheduleEWorksheet(lines)) return "tax_return";
   if (looksLikeEntityReturnWorksheet(lines)) return "tax_return";
   if (looksLikeK1Worksheet(lines)) return "tax_return";
+  if (looksLike1040CoverWorksheet(lines)) return "tax_return";
   if (
     /\bPAYSTUB\b|\bPAY STUB\b|EARNINGS STATEMENT|PAY STATEMENT/.test(blob) ||
     (/\bBI[\s-]?WEEKLY\b|\bSEMI[\s-]?MONTHLY\b|\bWEEKLY\b|\bMONTHLY\b/.test(blob) &&
@@ -723,7 +750,7 @@ function classifyPrintedLines(lines: string[]): ExtractClass | null {
   ) {
     return "bank_statement";
   }
-  if (/PURCHASE CONTRACT|PURCHASE AGREEMENT|CALIFORNIA RESIDENTIAL PURCHASE/.test(blob)) {
+  if (/PURCHASE CONTRACT|PURCHASE AGREEMENT|PURCHASE AND SALE|CALIFORNIA RESIDENTIAL PURCHASE/.test(blob)) {
     return "purchase_contract";
   }
   if (/MORTGAGE STATEMENT/.test(blob)) return "mortgage_statement";
@@ -1256,7 +1283,7 @@ export function fieldsFromPrintedLines(
     }
   }
 
-  if (extractClass === "tax_return" || extractClass === "other") {
+  if ((extractClass === "tax_return" || extractClass === "other") && !looksLike1040CoverWorksheet(lines)) {
     applyScheduleCWorksheetFields(lines, put, putMoney);
     applyScheduleEWorksheetFields(lines, put, putMoney);
     if (!entityReturnKind(lines)) {
@@ -1273,7 +1300,24 @@ export function fieldsFromPrintedLines(
     const blob = lines.join("\n").toUpperCase();
     const k1Kind = k1WorksheetKind(lines);
     const entityKind = entityReturnKind(lines);
-    if (looksLikeScheduleEWorksheet(lines) || fields.schedule_e_rents_received) {
+    if (looksLike1040CoverWorksheet(lines)) {
+      fields.return_kind = "cover";
+      const year =
+        stackedLabelValue(flattenPrintedLines(lines), /^TAX YEAR:?\s*/i) ||
+        blob.match(/\b(20\d{2})\b/)?.[1] ||
+        "";
+      if (year) put("tax_year", year.replace(/\D/g, "").slice(0, 4));
+      const named = coverSchedulesFromPrintedLines(lines);
+      if (named.length) put("cover_schedules", named.join(";"));
+      delete fields.schedule_c_net_profit;
+      delete fields.k1_ordinary_income;
+      delete fields.schedule_e_rents_received;
+      delete fields.schedule_e_cash_expenses;
+      delete fields.entity_ordinary_income;
+      delete fields.wages;
+      delete fields.property_address;
+      delete fields.present_address;
+    } else if (looksLikeScheduleEWorksheet(lines) || fields.schedule_e_rents_received) {
       fields.return_kind = "schedule_e";
     } else if (entityKind) {
       fields.return_kind = entityKind;
@@ -1480,7 +1524,7 @@ function cleanContractStreet(raw: string) {
 function streetFromContractLines(lines: string[]): string {
   const blob = lines.join("\n");
   const labeled = blob.match(
-    /(?:subject\s+property(?:\s+address)?|property\s+address|the\s+property(?:\s+to\s+be\s+acquired)?)\s*:?\s*(?:is\s+)?(\d{1,6}\s+[A-Za-z][^\n]+)/i,
+    /(?:subject\s+property(?:\s+address)?|property\s+address|(?:^|\n)\s*property|the\s+property(?:\s+to\s+be\s+acquired)?)\s*:?\s*(?:is\s+)?(\d{1,6}\s+[A-Za-z][^\n]+)/i,
   );
   const fromLabel = cleanContractStreet(labeled?.[1] ?? "");
   if (fromLabel) return fromLabel;
@@ -1523,13 +1567,38 @@ function sellerCreditFromContractLines(lines: string[]): string {
   return "";
 }
 
+/** 1040 cover pointers only. Invents no income. Filbert is residence, not subject. */
+export function loudCoverFromPrintedLines(lines: string[]): PrintedSample | null {
+  if (!looksLike1040CoverWorksheet(lines)) return null;
+  const fields = fieldsFromPrintedLines("tax_return", lines);
+  delete fields.schedule_c_net_profit;
+  delete fields.k1_ordinary_income;
+  delete fields.k1_distributions;
+  delete fields.schedule_e_rents_received;
+  delete fields.schedule_e_cash_expenses;
+  delete fields.entity_ordinary_income;
+  delete fields.entity_taxable_income;
+  delete fields.wages;
+  delete fields.medicare_wages;
+  delete fields.box5;
+  delete fields.property_address;
+  delete fields.present_address;
+  delete fields.subjectAddress;
+  if (!fields.tax_year) return null;
+  return {
+    extractClass: "tax_return",
+    confidence: 0.94,
+    fields: { ...fields, return_kind: "cover" },
+  };
+}
+
 /** Purchase contract fields from THIS page text. Filename is not a source. */
 export function loudContractFromPrintedLines(lines: string[]): PrintedSample | null {
   const blob = lines.join("\n");
   if (/\bW-?2\b|PAYSTUB|WAGE AND TAX STATEMENT|ACCOUNT STATEMENT|BANK STATEMENT|DRIVER LICENSE|\bLN\b.*\bFN\b/i.test(blob)) {
     return null;
   }
-  if (!/PURCHASE CONTRACT|PURCHASE AGREEMENT|CALIFORNIA RESIDENTIAL PURCHASE/i.test(blob)) {
+  if (!/PURCHASE CONTRACT|PURCHASE AGREEMENT|PURCHASE AND SALE|CALIFORNIA RESIDENTIAL PURCHASE/i.test(blob)) {
     return null;
   }
   const fields = fieldsFromPrintedLines("purchase_contract", lines);
