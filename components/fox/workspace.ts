@@ -500,7 +500,6 @@ import {
 import {
   citizenshipAskCopy,
   citizenshipLabel,
-  citizenshipNeeded,
   isFileCitizenshipValue,
   isSkipCitizenshipText,
   parseCitizenship,
@@ -3196,6 +3195,8 @@ export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
       // Stale resume — household is not the post-Looks-right door.
     } else if (draft.resumeAfterEdit === "housing" && draft.sampleAccepted) {
       // Stale resume — housing estimate is not the post-Looks-right door.
+    } else if (draft.resumeAfterEdit === "citizenship") {
+      // Stale resume — citizenship is not a Fox ask after Looks right.
     } else if (draft.resumeAfterEdit === "credit") {
       // Stale resume — FICO is not the price / down / loan correction door.
     } else {
@@ -3258,7 +3259,6 @@ export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
   if (!draft.sampleAccepted && !householdSettled(draft)) {
     if (historyGapNeeded(draft) && !nextDocInvite(draft)) return "former-history";
     if (!propertyAddressSettled(draft) && !nextDocInvite(draft)) return "property-address";
-    if (citizenshipNeeded(draft) && !nextDocInvite(draft)) return "citizenship";
     if (assetsNeeded(draft) && !nextDocInvite(draft)) return "assets";
     if (canLooksRight(draft)) return "review";
     if (draft.looksRightHold) return "documents";
@@ -3268,7 +3268,6 @@ export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
   if (!draft.sampleAccepted) {
     if (historyGapNeeded(draft)) return "former-history";
     if (!propertyAddressSettled(draft)) return "property-address";
-    if (citizenshipNeeded(draft)) return "citizenship";
     if (assetsNeeded(draft)) return "assets";
     if (canLooksRight(draft)) return "review";
     if (draft.looksRightHold) return "documents";
@@ -5752,6 +5751,14 @@ export function workspaceReply(
   const lower = q.toLowerCase();
   const prompt = workspacePrompt(draft);
   const notepadEdit = notepadEditPrompt(draft);
+
+  if (
+    /^looks right$/i.test(q) &&
+    !draft.sampleAccepted &&
+    (draft.pendingProposal || draft.pendingConflict)
+  ) {
+    return workspacePromptCopy(prompt === "confirm-proposal" ? "confirm-proposal" : prompt, draft);
+  }
 
   if (notepadEdit === "value") {
     return replyToPropertyValueAsk(q, draft);

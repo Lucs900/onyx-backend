@@ -2300,7 +2300,11 @@ function applyCaptureBody(capture: Capture) {
     return commit(applySkipEmailThenFinish(current));
   }
   if (capture.field === "confirm-draft") {
-    if (current.workspaceFlow && !canLooksRight(current) && !current.sampleAccepted) {
+    if (
+      current.workspaceFlow &&
+      !current.sampleAccepted &&
+      (!canLooksRight(current) || current.pendingProposal || current.pendingConflict)
+    ) {
       return current;
     }
     if (current.workspaceFlow && !current.sampleAccepted) {

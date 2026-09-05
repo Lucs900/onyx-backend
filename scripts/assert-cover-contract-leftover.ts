@@ -1,6 +1,7 @@
 /**
- * Live extract entrypoint for fixture 09 / 19 / 20.
+ * Live extract entrypoint for fixture 09 / 19 / 20 / leftover D.
  * Cover is not unread at a bank invite. Contract Use this writes 94114.
+ * Looks right after fixture 10 Use this does not ask citizenship.
  */
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -28,16 +29,18 @@ import {
   stillUsefulAskCopy,
   stillUsefulLabels,
 } from "../components/fox/fileWrite";
-import { applyExtractWrite, emptyDraft, loadIntakeDraft, receiveDocument } from "../components/fox/store";
+import { applyCapture, applyExtractWrite, emptyDraft, loadIntakeDraft, receiveDocument } from "../components/fox/store";
 import { canLooksRight, resolveProposal } from "../components/fox/completeness";
 import { applyLooksRightMotion } from "../components/fox/motion";
-import { citizenshipNeeded } from "../components/fox/citizenship";
+import { CITIZENSHIP_ASK, citizenshipNeeded } from "../components/fox/citizenship";
+import { skipFormerHistory } from "../components/fox/fileHistory";
 import {
   isContractExtractAskText,
   isPurchaseContractInviteLine,
   nextFoxAsk,
   workspacePrompt,
   workspacePromptCopy,
+  workspaceReply,
 } from "../components/fox/workspace";
 import { dropAbandonedAddressConfirm, paintedFoxActions } from "../components/fox/liveCoupon";
 import { shouldShowAddressUseThis } from "../components/fox/propertyType";
@@ -470,8 +473,87 @@ async function main() {
 
   const afterUse = { ...midUsed, pendingProposal: null, looksRightHold: false };
   const looks = applyLooksRightMotion(afterUse);
-  assert.equal(citizenshipNeeded({ ...looks, sampleAccepted: true }), false);
-  assert.notEqual(workspacePrompt({ ...looks, sampleAccepted: true }), "citizenship");
+  assert.equal(citizenshipNeeded(looks), false);
+  assert.notEqual(workspacePrompt(looks), "citizenship");
+  assert.doesNotMatch(`${nextFoxAsk(looks).text} ${nextFoxAsk(looks).followUp ?? ""}`, /citizen|permanent resident/i);
+
+  let leftoverD = seSketch();
+  leftoverD = skipCurrentInvite(leftoverD);
+  assert.equal(nextDocInvite(leftoverD), "tax_return");
+  const ten = await routeExtract(
+    "10-1040-schedule-c-2024-hale-design.pdf",
+    extractHintFromDraft(leftoverD, "10-1040-schedule-c-2024-hale-design.pdf"),
+  );
+  assert.notEqual(ten.failed, true);
+  const tenAt = "2026-09-05T18:00:00.000Z";
+  const tenWrite = writeLive(
+    leftoverD,
+    "10-1040-schedule-c-2024-hale-design.pdf",
+    (ten.class as ExtractClass) ?? "tax_return",
+    ten.fields ?? {},
+    tenAt,
+    ten.failed,
+    ten.note,
+  );
+  leftoverD = tenWrite.draft;
+  assert.equal(leftoverD.pendingProposal?.field, "qualifying_income");
+  assert.equal(leftoverD.pendingProposal?.value, "8292");
+  assert.equal(workspacePrompt(leftoverD), "confirm-proposal");
+  assert.equal(canLooksRight(leftoverD), false);
+  const qiAsk = nextFoxAsk(leftoverD);
+  assert.match(qiAsk.text, /\$8,292/);
+  assert.ok((qiAsk.actions ?? []).some((item) => item.label === "Use this"));
+  assert.ok(!(qiAsk.actions ?? []).some((item) => item.label === "Looks right"));
+  const leftoverReview: FoxMessage = {
+    id: "leftover-review",
+    role: "fox",
+    text: "The file looks like this. Looks right, or change a line.",
+    actions: [
+      { id: "looks-right", label: "Looks right", event: "bubble", capture: { field: "confirm-draft" } },
+      { id: "needs-fix", label: "Needs a correction", event: "bubble", capture: { field: "needs-correction" } },
+    ],
+  };
+  assert.ok(
+    !(paintedFoxActions(leftoverReview, leftoverD, true) ?? []).some((item) => item.label === "Looks right"),
+  );
+  const looksWhileOpen = applyLooksRightMotion(leftoverD);
+  assert.notEqual(looksWhileOpen.sampleAccepted, true);
+  assert.equal(looksWhileOpen.pendingProposal?.field, "qualifying_income");
+  assert.notEqual(workspacePrompt(looksWhileOpen), "citizenship");
+  const replyWhileOpen = workspaceReply("Looks right", leftoverD);
+  assert.notEqual(replyWhileOpen?.capture?.field, "confirm-draft");
+  assert.doesNotMatch(`${replyWhileOpen?.text ?? ""} ${replyWhileOpen?.followUp ?? ""}`, /citizen|permanent resident/i);
+  assert.notEqual(replyWhileOpen?.text, CITIZENSHIP_ASK);
+  loadIntakeDraft(leftoverD);
+  const blockedLooks = applyCapture({ field: "confirm-draft" });
+  assert.notEqual(blockedLooks.sampleAccepted, true);
+  assert.equal(blockedLooks.pendingProposal?.field, "qualifying_income");
+  assert.notEqual(workspacePrompt(blockedLooks), "citizenship");
+
+  leftoverD = resolveProposal(leftoverD, "accept");
+  assert.equal(leftoverD.facts?.qualifying_income?.value, "8292");
+  const looksAfterQi = applyLooksRightMotion(leftoverD);
+  assert.notEqual(workspacePrompt(looksAfterQi), "citizenship");
+  assert.doesNotMatch(
+    `${nextFoxAsk(looksAfterQi).text} ${nextFoxAsk(looksAfterQi).followUp ?? ""}`,
+    /citizen|permanent resident/i,
+  );
+  assert.ok(!(nextFoxAsk(looksAfterQi).actions ?? []).some((item) => /citizen|permanent resident/i.test(item.label)));
+
+  leftoverD = skipCurrentInvite(leftoverD);
+  leftoverD = skipCurrentInvite(leftoverD);
+  leftoverD = skipCurrentInvite(leftoverD);
+  leftoverD = skipFormerHistory(leftoverD);
+  leftoverD = skipFormerHistory(leftoverD);
+  const afterLooks = applyLooksRightMotion(leftoverD);
+  assert.equal(afterLooks.sampleAccepted, true);
+  assert.notEqual(workspacePrompt(afterLooks), "citizenship");
+  assert.equal(citizenshipNeeded(afterLooks), false);
+  const afterLooksAsk = nextFoxAsk(afterLooks);
+  assert.doesNotMatch(`${afterLooksAsk.text} ${afterLooksAsk.followUp ?? ""}`, /citizen|permanent resident/i);
+  assert.ok(!(afterLooksAsk.actions ?? []).some((item) => /citizen|permanent resident/i.test(item.label)));
+  assert.notEqual(afterLooksAsk.text, CITIZENSHIP_ASK);
+  assert.notEqual(afterLooksAsk.followUp, CITIZENSHIP_ASK);
 
   assert.equal(rejectIncomingFile(afterCs, "19-1040-cover-2024-jordan-hale.pdf", "application/pdf", 3114), null);
   const twentyWrite = applyExtractedFields(afterCs, {

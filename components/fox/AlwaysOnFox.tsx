@@ -181,6 +181,7 @@ import {
   isScheduleECashFlowProposal,
   maybeProposeQualifyingFromTaxFile,
 } from "./qualifyingIncome";
+import { canLooksRight } from "./completeness";
 import { governmentIdSkipped, ID_UNREAD_ASK, isBorrowerNameConfirmPending } from "./borrowerName";
 import { isUnreadNote } from "@/lib/docs/accept";
 import { fileExists, finishLineActions, inQueueEnding, reviewIsSitting } from "./motion";
@@ -1801,6 +1802,16 @@ export function AlwaysOnFox({
     if (action.capture || productCapture) {
       const capture = productCapture ?? action.capture;
       if (!capture) return;
+      if (capture.field === "confirm-draft") {
+        const liveBefore = getFoxDraft();
+        if (
+          !liveBefore.sampleAccepted &&
+          (liveBefore.pendingProposal || liveBefore.pendingConflict || !canLooksRight(liveBefore))
+        ) {
+          skipPromptSync.current = true;
+          return;
+        }
+      }
       if (capture.field === "path") {
         writeStartPath(capture.value);
       }

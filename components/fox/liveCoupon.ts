@@ -690,6 +690,7 @@ export function paintedFoxActions(
       return true;
     }
     if (current && isPricingFailSpeech(message) && isPricingFailChip(action)) return true;
+    if ((draft.pendingProposal || draft.pendingConflict) && isLooksRightChip(action)) return false;
     if (docAsk && isLeftoverConfirmChip(action)) return false;
     if (docAsk) return current && isAfterLooksRightDocChip(action);
     if (action.label === "Use this" || action.label === "Change") {
@@ -719,6 +720,9 @@ export function visibleFoxActions(message: FoxMessage, draft: FoxIntakeDraft) {
       return false;
     }
     if (isOnFileAddressLine(message)) return false;
+    if ((draft.pendingProposal || draft.pendingConflict) && isLooksRightChip(action)) {
+      return false;
+    }
     if (
       looksRightDocAskOpen(draft) &&
       (isLeftoverConfirmChip(action) || isLooksRightChip(action)) &&
