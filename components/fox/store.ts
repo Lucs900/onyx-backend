@@ -131,6 +131,7 @@ import {
   canSpeakStubExtract,
   maybeProposeStubExtract,
   isStubExtractProposal,
+  isCoverReturnFields,
 } from "./qualifyingIncome";
 import {
   skipEstimatedHousing,
@@ -1560,6 +1561,7 @@ export function applyExtractWrite(
   const unreadEmpty =
     !failed &&
     !lockedSuggestion &&
+    !isCoverReturnFields(input.fields) &&
     (idWageLocked
       ? true
       : extractedClass === "purchase_contract"

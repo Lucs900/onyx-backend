@@ -176,12 +176,11 @@ export function isSkipFormerHistoryText(text: string) {
 }
 
 export function skipFormerHistory(draft: FoxIntakeDraft): FoxIntakeDraft {
-  const kind = historyGapKind(draft);
   return {
     ...draft,
-    formerEmploymentAsked: Boolean(draft.formerEmploymentAsked || kind === "employment" || !kind),
-    formerAddressAsked: Boolean(draft.formerAddressAsked || kind === "address" || !kind),
-    formerHistoryAsked: kind ? draft.formerHistoryAsked : true,
+    formerEmploymentAsked: true,
+    formerAddressAsked: true,
+    formerHistoryAsked: true,
     correcting: null,
     correctingLine: null,
   };

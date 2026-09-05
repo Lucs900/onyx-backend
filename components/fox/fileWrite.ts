@@ -395,7 +395,9 @@ export function slotFromFilename(name: string): DocSlot {
   const lower = name.toLowerCase();
   if (/w-?2/.test(lower)) return "w2";
   if (/pay.?stub|payslip/.test(lower)) return "paystubs";
-  if (/tax|1099|k-?1|schedule.?c|profit|business|\bentity\b|\breturn\b/.test(lower)) return "other";
+  if (/1040.?cover|cover.?page|tax|1099|k-?1|schedule.?c|profit|business|\bentity\b|\breturn\b/.test(lower)) {
+    return "other";
+  }
   if (/bank|statement/.test(lower)) return "bank";
   if (/\bid\b|license|passport|driver/.test(lower)) return "id";
   return "other";
@@ -411,6 +413,7 @@ export function extractClassFromSlot(slot: DocSlot): ExtractClass | null {
 
 export function extractClassFromFilename(name: string): ExtractClass | null {
   if (/purchase.?contract|purchase.?agree|\bpsa\b/i.test(name)) return "purchase_contract";
+  if (/1040.?cover|cover.?page/i.test(name)) return "tax_return";
   return extractClassFromSlot(slotFromFilename(name));
 }
 
@@ -480,6 +483,9 @@ export function hasLockedSuggestion(
   fields?: Record<string, string | null | undefined> | null,
 ): boolean {
   const value = (key: string) => String(fields?.[key] ?? "").trim();
+  if (isCoverReturnFields(fields)) {
+    return Boolean(value("tax_year") || value("cover_schedules"));
+  }
   if (extractClass === "government_id") return Boolean(value("full_name"));
   if (extractClass === "bank_statement") {
     return Boolean(value("institution") || value("ending_balance") || value("present_address"));
@@ -555,6 +561,7 @@ export function promoteExtractClass(
   extractClass: ExtractClass,
   fields?: Record<string, string | null | undefined> | null,
 ): ExtractClass {
+  if (isCoverReturnFields(fields)) return "tax_return";
   if (extractClass !== "other") return extractClass;
   if (looksLikeTaxReturnFields(fields)) return "tax_return";
   if (looksLikeMortgageFields(fields)) return "mortgage_statement";
@@ -1421,6 +1428,28 @@ export function applyExtractedFields(
       extractClass,
     );
     conflict = next.pendingConflict ?? null;
+    if (
+      next.incomeType.value === "both" &&
+      hasScheduleCCashflow(next) &&
+      isWageExtractProposal(next.pendingProposal)
+    ) {
+      const combined = monthlyQualifyingFromExtract(next, extractClass, fields);
+      if (combined && !combined.needsFrequency && !combined.needsBothReason && combined.monthly > 0) {
+        next = applyQualifyingIncomeFromExtract(
+          {
+            ...next,
+            awaitingBothMonthlyReason: false,
+            awaitingPayFrequency: false,
+            awaitingRaiseWhen: false,
+            awaitingRaiseYtdFar: false,
+          },
+          extractClass,
+          fields,
+          combined,
+        );
+        conflict = next.pendingConflict ?? conflict;
+      }
+    }
   } else if (!coverReturn) {
     next = applyQualifyingIncomeFromExtract(
       { ...next, pendingConflict: conflict },
@@ -1429,6 +1458,18 @@ export function applyExtractedFields(
       computed,
     );
     conflict = next.pendingConflict ?? conflict;
+    if (
+      next.incomeType.value === "both" &&
+      (computed?.basis === "combined" || next.pendingProposal?.methodNote?.startsWith("combined "))
+    ) {
+      next = {
+        ...next,
+        awaitingBothMonthlyReason: false,
+        awaitingPayFrequency: false,
+        awaitingRaiseWhen: false,
+        awaitingRaiseYtdFar: false,
+      };
+    }
   }
   const otherPropertyMortgageEarly =
     extractClass === "mortgage_statement" &&
@@ -1918,6 +1959,21 @@ export function isCoverReturnDoc(doc: ReceivedDoc) {
   return /1040-cover|1040 cover|cover page/i.test(doc.name ?? "");
 }
 
+export function lastExtractIsCover(draft: FoxIntakeDraft) {
+  for (let i = draft.documents.length - 1; i >= 0; i -= 1) {
+    const doc = draft.documents[i];
+    if (doc.status !== "extracted") continue;
+    return isCoverReturnDoc(doc);
+  }
+  return false;
+}
+
+export function coverMapAskCopy(draft: FoxIntakeDraft) {
+  const labels = nextCoverScheduleLabels(draft);
+  if (!labels.length) return "";
+  return `Got the cover. Still useful: ${labelListCopy(labels).replace(/\.$/, "")}.`;
+}
+
 export function receivedTaxReturnCount(draft: FoxIntakeDraft): number {
   let fromDocs = 0;
   for (const doc of draft.documents) {
@@ -2003,8 +2059,18 @@ export function coverSchedulesOnFile(draft: FoxIntakeDraft): string[] {
     .filter(Boolean);
 }
 
+function hasScheduleCOnFile(draft: FoxIntakeDraft) {
+  if (hasScheduleCCashflow(draft)) return true;
+  if (normalizeReturnKind(factValue(draft, "return_kind")) === "schedule_c") return true;
+  return (draft.documents ?? []).some((doc) => {
+    if (receivedClassOf(doc) !== "tax_return") return false;
+    if (isCoverReturnDoc(doc)) return false;
+    return /schedule.?c|schedule-c/i.test(doc.name);
+  });
+}
+
 function coverSchedulePresent(draft: FoxIntakeDraft, id: string) {
-  if (id === "schedule_c") return hasScheduleCCashflow(draft);
+  if (id === "schedule_c") return hasScheduleCOnFile(draft);
   if (id === "schedule_e") return hasScheduleECashflow(draft);
   if (id === "k1" || id === "1065" || id === "1120s") {
     return (
@@ -2181,6 +2247,8 @@ export function missingListCopy(classes: ExtractClass[]) {
 }
 
 export function stillUsefulAskCopy(draft: FoxIntakeDraft) {
+  const cover = nextCoverScheduleLabels(draft);
+  if (cover.length) return labelListCopy(cover);
   if (stillUsefulVisible(draft)) return layer2AskCopy(draft);
   return labelListCopy(stillUsefulLabels(draft));
 }
@@ -2652,6 +2720,8 @@ function guidelineStillUsefulItems(draft: FoxIntakeDraft): StillUsefulItem[] {
 }
 
 export function layer2AskCopy(draft: FoxIntakeDraft) {
+  const cover = nextCoverScheduleLabels(draft);
+  if (cover.length) return labelListCopy(cover);
   const labels = layer2Plan(draft).map((item) => item.label);
   return labels.length ? labelListCopy(labels) : NOTHING_URGENT;
 }
@@ -2830,6 +2900,7 @@ function classSuccessfullyRead(draft: FoxIntakeDraft, kind: DocInviteKind): bool
   return (draft.documents ?? []).some((doc) => {
     if (doc.status !== "extracted") return false;
     if (isUnreadNote(doc.note)) return false;
+    if ((kind === "tax_return" || kind === "prior_year_return") && isCoverReturnDoc(doc)) return false;
     if (kind === "government_id") {
       if (doc.party === "coborrower") return false;
       const received = receivedClassOf(doc);
@@ -2873,7 +2944,7 @@ function inviteSatisfied(draft: FoxIntakeDraft, kind: DocInviteKind): boolean {
     let extracted = 0;
     for (const doc of draft.documents) {
       if (doc.status !== "extracted") continue;
-      if (receivedClassOf(doc) === "tax_return") extracted += 1;
+      if (receivedClassOf(doc) === "tax_return" && !isCoverReturnDoc(doc)) extracted += 1;
     }
     const years = new Set<string>();
     for (const row of readTaxCashflows(draft)) {
@@ -3176,7 +3247,11 @@ export function applyPurchaseContractAccept(
     if (field === "property_address") {
       if (isZipOnlyFileAddress(incoming, next.propertyZip)) continue;
       const shown = displayedSubjectAddress(next);
-      if (shown && !isZipOnlyFileAddress(shown, next.propertyZip)) continue;
+      const present = factValue(next, "present_address");
+      const shownIsResidence =
+        Boolean(shown && present) &&
+        shown.replace(/\s+/g, " ").trim().toLowerCase() === present.replace(/\s+/g, " ").trim().toLowerCase();
+      if (shown && !isZipOnlyFileAddress(shown, next.propertyZip) && !shownIsResidence) continue;
       next = writeField(next, field, incoming, now);
       continue;
     }
@@ -3317,15 +3392,15 @@ export function writeUnreadNote(draft: FoxIntakeDraft, text: string): FoxIntakeD
   };
 }
 
-/** Skip on a received-unread item. Before Looks right, Skip on wage docs parks typed income. */
+/** Skip on a received-unread item. Upload again stays. Do not auto-advance the invite. */
 export function skipUnreadDoc(draft: FoxIntakeDraft): FoxIntakeDraft {
   const unread = unreadDocOpen(draft);
   const next: FoxIntakeDraft = { ...draft, looksRightHold: undefined, awaitingUnreadNote: false };
   const kind = unread ? receivedClassOf(unread) ?? unread.extractClass : null;
-  if (!draft.sampleAccepted && (kind === "w2" || kind === "paystub" || wageThreadOpen(draft))) {
+  if (!draft.sampleAccepted && (kind === "w2" || kind === "paystub")) {
     return skipWageDocs(next);
   }
-  return skipCurrentInvite(next);
+  return next;
 }
 
 export function holdDocuments(draft: FoxIntakeDraft): FoxIntakeDraft {

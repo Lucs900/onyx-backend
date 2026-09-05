@@ -1413,7 +1413,12 @@ export function AlwaysOnFox({
       setStreetSuggestions([]);
       return;
     }
-    if (workspacePrompt(draft) !== "property-address" || draft.pendingProposal || draft.pendingAddress) {
+    if (
+      workspacePrompt(draft) !== "property-address" ||
+      workspacePrompt(draft) === "former-history" ||
+      draft.pendingProposal ||
+      draft.pendingAddress
+    ) {
       setStreetSuggestions([]);
       return;
     }
@@ -1953,6 +1958,8 @@ export function AlwaysOnFox({
     }
     if (
       isStart &&
+      startAsk !== "former-history" &&
+      workspacePrompt(draft) !== "former-history" &&
       (startAsk === "property-address" || lookupWait === "places") &&
       parseVolunteeredAddress(text) &&
       !isSkipPropertyAddressText(text)

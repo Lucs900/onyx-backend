@@ -409,7 +409,7 @@ async function main() {
 
   const afterCs = afterTwoScheduleCs();
   assert.equal(nextDocInvite(afterCs), "bank_statement");
-  assert.equal(extractHintFromDraft(afterCs, "19-1040-cover-2024-jordan-hale.pdf"), "bank_statement");
+  assert.equal(extractHintFromDraft(afterCs, "19-1040-cover-2024-jordan-hale.pdf"), "tax_return");
   const nineteen = await routeExtract("19-1040-cover-2024-jordan-hale.pdf", "bank_statement");
   const coverAt = "2026-09-05T17:02:00.000Z";
   const coverWrite = writeLive(

@@ -95,6 +95,9 @@ import {
   DOC_INVITE_COPY,
   firstNameFromDraft,
   lastExtractedClass,
+  lastExtractIsCover,
+  coverMapAskCopy,
+  nextCoverScheduleLabels,
   nextDocInvite,
   offeringDocStart,
   thisBorrowerPrimaryPackageDone,
@@ -355,6 +358,7 @@ import {
   addressOnFileCopy,
   displayedSubjectAddress,
   fileAddressLine,
+  isZipOnlyFileAddress,
   typedAddressConfirmCopy,
   typedZipFromDraft,
   writeAddressAndAdoptZip,
@@ -1521,6 +1525,10 @@ function documentsAskText(draft: FoxIntakeDraft): string {
   ) {
     return coborrowerIncomeInviteCopy(invite, draft);
   }
+  const coverAsk = nextCoverScheduleLabels(draft).length ? coverMapAskCopy(draft) : "";
+  if (coverAsk && (lastExtractIsCover(draft) || invite === "bank_statement" || invite === "prior_year_return")) {
+    return coverAsk;
+  }
   if (invite) return DOC_INVITE_COPY[invite];
   if (draft.sampleAccepted) {
     return afterLooksRightAskCopy(draft);
@@ -1779,6 +1787,7 @@ export function unreadDocActions(): FoxAction[] {
 
 /** After Looks right, or while ID / statements are open, unread keeps Upload this · Skip. */
 export function unreadRestoreActions(draft: FoxIntakeDraft): FoxAction[] {
+  if (unreadDocOpen(draft)) return unreadDocActions();
   if (draft.sampleAccepted || nextDocInvite(draft)) return documentInviteActions(draft);
   return unreadDocActions();
 }
@@ -2220,6 +2229,15 @@ export function docReactionAsk(
   if (draft.awaitingBothMonthlyReason) return bothMonthlyReasonAsk(draft);
   if (draft.awaitingRaiseWhen) return raiseWhenAsk();
   if (draft.awaitingRaiseYtdFar) return raiseYtdFarAsk(draft);
+  if (cls === "tax_return" && lastExtractIsCover(draft)) {
+    const coverAsk = coverMapAskCopy(draft);
+    if (coverAsk) {
+      return {
+        text: coverAsk,
+        actions: layer2AskActions(draft) ?? documentInviteActions(draft),
+      };
+    }
+  }
   return null;
 }
 
@@ -5822,6 +5840,7 @@ export function workspaceReply(
     prompt !== "years-in-business" &&
     !draft.pendingProposal &&
     !draft.pendingAddress &&
+    !unreadDocOpen(draft) &&
     isCouponSkipText(q)
   ) {
     return couponChipReply(draft, "skip");
@@ -8154,7 +8173,14 @@ export function previewFacts(draft: FoxIntakeDraft): PreviewFact[] {
     facts.push({ id: "pay", label: "Pay", value: payBits.join(" · ") });
   }
 
-  const zipOnFile = parseZipcode(draft.propertyZip) ?? typedZipFromDraft(draft);
+  const subjectLine =
+    displayedSubjectAddress(draft) ||
+    String(draft.subjectAddress ?? draft.facts?.property_address?.value ?? "").trim();
+  const subjectZip =
+    subjectLine && !isZipOnlyFileAddress(subjectLine, draft.propertyZip)
+      ? zipFromTypedAddress(subjectLine)
+      : undefined;
+  const zipOnFile = subjectZip || parseZipcode(draft.propertyZip) || typedZipFromDraft(draft);
   if (zipOnFile) {
     facts.push({
       id: "zip",

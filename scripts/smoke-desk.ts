@@ -11768,8 +11768,12 @@ assert.deepEqual(
   ["Upload again", "Type a note", "Skip"],
 );
 const idFailedSkip = skipUnreadDoc(idReadFailed);
-assert.equal(workspacePrompt(idFailedSkip), "borrower-name");
-const idFailedNamed = draft({ ...idFailedSkip, borrowerNameAsked: true });
+assert.equal(workspacePrompt(idFailedSkip), "documents");
+assert.equal(nextDocInvite(idFailedSkip), "government_id");
+assert.notEqual(workspacePrompt(idFailedSkip), "borrower-name");
+const idFailedAfterInviteSkip = skipCurrentInvite(idFailedSkip);
+assert.equal(workspacePrompt(idFailedAfterInviteSkip), "borrower-name");
+const idFailedNamed = draft({ ...idFailedAfterInviteSkip, borrowerNameAsked: true });
 assert.equal(workspacePrompt(idFailedNamed), "documents");
 assert.equal(workspacePromptCopy("documents", idFailedNamed).text, DOC_INVITE_COPY.paystub);
 const namedFromId = draft({
@@ -15562,13 +15566,10 @@ assert.deepEqual(
   ["Skip", "Not yet"],
 );
 const harborPreLooksWhoSkip = skipFormerHistory(harborPreLooksIncome);
-assert.equal(workspacePrompt(harborPreLooksWhoSkip), "former-history");
-assert.equal(nextFoxAsk(harborPreLooksWhoSkip).text, WHERE_BEFORE_ASK);
-assert.equal(nextFoxAsk(harborPreLooksWhoSkip).text, "Where did you live before this?");
+assert.equal(workspacePrompt(harborPreLooksWhoSkip), "property-address");
+assert.doesNotMatch(nextFoxAsk(harborPreLooksWhoSkip).text, /Where did you live before this/);
 assert.equal(canLooksRight(harborPreLooksWhoSkip), false);
-const harborPreLooksReady = skipFormerHistory(
-  draft({ ...harborPreLooksWhoSkip, looksRightHold: false }),
-);
+const harborPreLooksReady = draft({ ...harborPreLooksWhoSkip, looksRightHold: false });
 assert.equal(workspacePrompt(harborPreLooksReady), "property-address");
 assert.equal(nextFoxAsk(harborPreLooksReady).text, PURCHASE_ADDRESS_ASK);
 assert.equal(nextFoxAsk(harborPreLooksReady).text, "What is the address or ZIP of the home you are buying?");
@@ -15799,7 +15800,7 @@ assert.ok(
 );
 assert.notEqual(harborPreLooksWritten.facts?.present_address?.value, "14 Oak Street");
 const harborPreLooksWhereTyped = writeFormerHistoryNote(
-  draft({ ...harborPreLooksWhoSkip, looksRightHold: false }),
+  draft({ ...harborPreLooksIncome, formerEmploymentAsked: true, looksRightHold: false }),
   "12 Pine Road",
 );
 assert.equal(harborPreLooksWhereTyped.subjectAddress, undefined);

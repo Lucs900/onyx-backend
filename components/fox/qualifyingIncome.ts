@@ -802,8 +802,24 @@ function confirmedMonthly(draft: FoxIntakeDraft, field: string): number | null {
 
 function wageSuggestFromFile(draft: FoxIntakeDraft, fields: Record<string, string> = {}) {
   const wage = suggestWageIncome(wageSuggestInput(draft, fields));
-  if (!wage || wage.needsFrequency || wage.needsBothReason || wage.monthly === 0) return null;
-  return wage;
+  if (wage && !wage.needsFrequency && !wage.needsBothReason && wage.monthly > 0) return wage;
+  if (draft.incomeType.value !== "both") return null;
+  const confirmed =
+    confirmedMonthly(draft, WAGE_MONTHLY_FIELD) ?? confirmedMonthly(draft, W2_MONTHLY_FIELD);
+  const box5 =
+    parseExtractMoney(factValue(draft, "w2_box5")) ??
+    parseExtractMoney(factValue(draft, "medicare_wages")) ??
+    (draft.pendingWageExtract?.box5 && draft.pendingWageExtract.box5 > 0
+      ? draft.pendingWageExtract.box5
+      : null);
+  const fromBox5 = box5 != null && box5 > 0 ? Math.round(box5 / 12) : null;
+  const monthly = confirmed != null && confirmed > 0 ? confirmed : fromBox5;
+  if (monthly == null || monthly <= 0) return null;
+  return {
+    monthly,
+    method: "w2-annual" as const,
+    methodNote: wageMethodNote(draft) ?? "W-2",
+  };
 }
 
 function scheduleCSuggestFromYears(years: TaxYearCashflow[]) {
@@ -1477,6 +1493,12 @@ export function maybeProposeQualifyingFromTaxFile(draft: FoxIntakeDraft): FoxInt
     computed.basis !== "entity" &&
     existingMonthlyIncome(draft)?.via === QUALIFYING_INCOME_FIELD
   ) {
+    if (
+      draft.incomeType.value === "both" &&
+      (computed.basis === "combined" || computed.basis === "schedule_c")
+    ) {
+      return withQualifyingIncomeProposal(draft, computed, "tax_return");
+    }
     return draft;
   }
   return withQualifyingIncomeProposal(draft, computed, "tax_return");

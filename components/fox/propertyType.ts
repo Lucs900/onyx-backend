@@ -105,6 +105,9 @@ export function propertyZipConfirmNeeded(draft: FoxIntakeDraft) {
   const kept = keptPropertyZip(draft);
   const fromAddress = addressZipFromDraft(draft);
   if (!kept || !fromAddress || kept === fromAddress) return false;
+  if (draft.addressZipOffered && draft.propertyZip && draft.addressZipOffered === draft.propertyZip) {
+    return false;
+  }
   return draft.addressZipOffered !== fromAddress;
 }
 
