@@ -45,6 +45,8 @@ import {
   dropOnFileAddressLines,
   dropResolvedAddressConfirmChips,
   freezeUsedFoxTurns,
+  stripLooksRightWhileUseThisOpen,
+  threadHasOpenUseThisConfirm,
   isIdExtractAskText,
   isIdExtractPath,
   isOnFileAddressLine,
@@ -181,7 +183,7 @@ import {
   isScheduleECashFlowProposal,
   maybeProposeQualifyingFromTaxFile,
 } from "./qualifyingIncome";
-import { canLooksRight } from "./completeness";
+import { canLooksRight, draftHasOpenConfirmCard } from "./completeness";
 import { governmentIdSkipped, ID_UNREAD_ASK, isBorrowerNameConfirmPending } from "./borrowerName";
 import { isUnreadNote } from "@/lib/docs/accept";
 import { fileExists, finishLineActions, inQueueEnding, reviewIsSitting } from "./motion";
@@ -406,7 +408,7 @@ function applyFoxAsk(
   if (last && isLookupWaitLine(last.text) && ask.text === "How is income earned?") {
     return freezeUsedFoxTurns(messages);
   }
-  return [...freezeUsedFoxTurns(messages), foxAskMessage(ask)];
+  return freezeUsedFoxTurns([...messages, foxAskMessage(ask)]);
 }
 
 function hasReviewAsk(messages: FoxMessage[]) {
@@ -796,8 +798,11 @@ export function AlwaysOnFox({
     prev: FoxMessage[],
     next: FoxMessage[] | ((prev: FoxMessage[]) => FoxMessage[]),
   ) => {
-    const resolved = ensureIncomeConfirmChips(
-      inertSupersededIncomeConfirms(typeof next === "function" ? next(prev) : next),
+    const resolved = stripLooksRightWhileUseThisOpen(
+      ensureIncomeConfirmChips(
+        inertSupersededIncomeConfirms(typeof next === "function" ? next(prev) : next),
+        getFoxDraft(),
+      ),
       getFoxDraft(),
     );
     const live = getFoxDraft();
@@ -812,7 +817,10 @@ export function AlwaysOnFox({
       return dropStreetSuggestChips(
         dropAbandonedAddressConfirm(
           dropResolvedAddressConfirmChips(
-            ensureIncomeConfirmChips(inertSupersededIncomeConfirms(stored), live),
+            stripLooksRightWhileUseThisOpen(
+              ensureIncomeConfirmChips(inertSupersededIncomeConfirms(stored), live),
+              live,
+            ),
             live,
           ),
           live,
@@ -1321,8 +1329,14 @@ export function AlwaysOnFox({
     if (!ready || !isStart) return;
     const live = getFoxDraft();
     if (live.docsHeld || workspacePrompt(live) !== "review") return;
+    if (draftHasOpenConfirmCard(live)) return;
     const ask = workspacePromptCopy("review", live);
-    commitMessages((prev) => (hasReviewAsk(prev) ? prev : [...prev, foxAskMessage(ask)]));
+    commitMessages((prev) => {
+      if (hasReviewAsk(prev) || threadHasOpenUseThisConfirm(prev) || draftHasOpenConfirmCard(getFoxDraft())) {
+        return prev;
+      }
+      return freezeUsedFoxTurns([...prev, foxAskMessage(ask)]);
+    });
   }, [
     draft.amountAsked,
     draft.loanAmountValue,
@@ -1570,7 +1584,7 @@ export function AlwaysOnFox({
         { id: newId(), role: "client", text: clientText, edit, editLine },
       ];
       if (!fox.text.trim() && !(fox.followUp ?? "").trim()) return next;
-      return [...next, foxAskMessage(fox)];
+      return freezeUsedFoxTurns([...next, foxAskMessage(fox)]);
     });
   };
 
@@ -1806,7 +1820,10 @@ export function AlwaysOnFox({
         const liveBefore = getFoxDraft();
         if (
           !liveBefore.sampleAccepted &&
-          (liveBefore.pendingProposal || liveBefore.pendingConflict || !canLooksRight(liveBefore))
+          (liveBefore.pendingProposal ||
+            liveBefore.pendingConflict ||
+            liveBefore.pendingAddress ||
+            !canLooksRight(liveBefore))
         ) {
           skipPromptSync.current = true;
           return;

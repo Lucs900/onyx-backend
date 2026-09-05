@@ -3583,7 +3583,7 @@ function workspaceAskCopy(
     return { text: "I’m preparing your file." };
   }
   if (prompt === "review") {
-    if (!canLooksRight(draft)) {
+    if (!canLooksRight(draft) || draft.pendingProposal || draft.pendingConflict || draft.pendingAddress) {
       const missing = missingAmountAsk(draft);
       return {
         text: missing || "I still need a required amount on this file.",

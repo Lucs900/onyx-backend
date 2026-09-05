@@ -2303,7 +2303,7 @@ function applyCaptureBody(capture: Capture) {
     if (
       current.workspaceFlow &&
       !current.sampleAccepted &&
-      (!canLooksRight(current) || current.pendingProposal || current.pendingConflict)
+      (!canLooksRight(current) || current.pendingProposal || current.pendingConflict || current.pendingAddress)
     ) {
       return current;
     }

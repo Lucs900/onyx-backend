@@ -1807,9 +1807,14 @@ export function otherReoInterviewBlocked(draft: FoxIntakeDraft) {
   return isPurchaseLike(draft) && wageThreadOpen(draft);
 }
 
+/** Use this / Use document / Change confirm still live on File. Looks right must wait. */
+export function draftHasOpenConfirmCard(draft: FoxIntakeDraft) {
+  return Boolean(draft.pendingProposal || draft.pendingConflict || draft.pendingAddress);
+}
+
 /** Looks right waits until the current doc/chip ask is idle. */
 export function currentAskIdle(draft: FoxIntakeDraft) {
-  if (draft.pendingProposal || draft.pendingConflict) return false;
+  if (draftHasOpenConfirmCard(draft)) return false;
   if (draft.awaitingPayFrequency) return false;
   if (draft.awaitingBothMonthlyReason) return false;
   if (draft.awaitingRaiseWhen) return false;
@@ -1858,6 +1863,7 @@ export function wageIncomeSketchOpen(draft: FoxIntakeDraft) {
 }
 
 export function canLooksRight(draft: FoxIntakeDraft) {
+  if (draftHasOpenConfirmCard(draft)) return false;
   if (wageIncomeSketchOpen(draft)) return false;
   if (nextDocInvite(draft)) return false;
   if (loanExceedsPurchasePrice(draft)) return false;

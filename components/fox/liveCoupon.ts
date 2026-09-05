@@ -311,6 +311,44 @@ function isLooksRightChip(action: FoxAction) {
   );
 }
 
+function isOpenUseThisConfirmChip(action: FoxAction) {
+  const field = action.capture?.field;
+  if (
+    field === "accept-proposal" ||
+    field === "change-proposal" ||
+    field === "use-document-fact" ||
+    field === "keep-file-fact" ||
+    field === "keep-both-facts" ||
+    field === "decline-proposal"
+  ) {
+    return true;
+  }
+  return /^(Use this|Use document|Change)$/i.test(action.label);
+}
+
+export function messageHasOpenUseThisConfirm(message: FoxMessage) {
+  return (message.actions ?? []).some(isOpenUseThisConfirmChip);
+}
+
+export function threadHasOpenUseThisConfirm(messages: FoxMessage[]) {
+  return messages.some((message) => message.role === "fox" && messageHasOpenUseThisConfirm(message));
+}
+
+/** Looks right never shares a thread with an open Use this / Use document / Change card. */
+export function stripLooksRightWhileUseThisOpen(
+  messages: FoxMessage[],
+  draft: FoxIntakeDraft,
+): FoxMessage[] {
+  const open = Boolean(draft.pendingProposal || draft.pendingConflict || draft.pendingAddress);
+  if (!open && !threadHasOpenUseThisConfirm(messages)) return messages;
+  return messages.map((message) => {
+    if (message.role !== "fox" || !message.actions?.length) return message;
+    const next = message.actions.filter((action) => !isLooksRightChip(action));
+    if (next.length === message.actions.length) return message;
+    return { ...message, actions: next.length ? next : undefined };
+  });
+}
+
 function leftoverChipCount(actions: FoxAction[] | undefined, kind: "use-this" | "looks-right" | "this-one") {
   if (!actions?.length) return 0;
   return actions.filter((action) => {
@@ -690,7 +728,15 @@ export function paintedFoxActions(
       return true;
     }
     if (current && isPricingFailSpeech(message) && isPricingFailChip(action)) return true;
-    if ((draft.pendingProposal || draft.pendingConflict) && isLooksRightChip(action)) return false;
+    if (
+      (draft.pendingProposal ||
+        draft.pendingConflict ||
+        draft.pendingAddress ||
+        messageHasOpenUseThisConfirm(message)) &&
+      isLooksRightChip(action)
+    ) {
+      return false;
+    }
     if (docAsk && isLeftoverConfirmChip(action)) return false;
     if (docAsk) return current && isAfterLooksRightDocChip(action);
     if (action.label === "Use this" || action.label === "Change") {
@@ -720,7 +766,13 @@ export function visibleFoxActions(message: FoxMessage, draft: FoxIntakeDraft) {
       return false;
     }
     if (isOnFileAddressLine(message)) return false;
-    if ((draft.pendingProposal || draft.pendingConflict) && isLooksRightChip(action)) {
+    if (
+      (draft.pendingProposal ||
+        draft.pendingConflict ||
+        draft.pendingAddress ||
+        messageHasOpenUseThisConfirm(message)) &&
+      isLooksRightChip(action)
+    ) {
       return false;
     }
     if (
