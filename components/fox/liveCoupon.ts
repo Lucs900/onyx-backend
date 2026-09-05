@@ -17,7 +17,12 @@ import {
   isMonthlyDebtsAskText,
   paintedMonthlyDebtsActions,
 } from "./monthlyDebts";
-import { addressOnFileCopy, fileAddressLine, shouldShowAddressUseThis } from "./propertyType";
+import {
+  addressOnFileCopy,
+  fileAddressLine,
+  isSubjectAddressConfirmPending,
+  shouldShowAddressUseThis,
+} from "./propertyType";
 import type { Capture, FoxAction, FoxIntakeDraft, FoxMessage } from "./types";
 
 export const COUPON_UNRESOLVED = "Pricing when the file is ready";
@@ -667,7 +672,9 @@ export function paintedFoxActions(
   const shown = visibleFoxActions(message, draft);
   if (!shown?.length) return undefined;
   const idNameConfirm = /The ID shows /i.test(foxBlob(message));
-  const docAsk = looksRightDocAskOpen(draft) || shown.some(isAfterLooksRightDocChip);
+  const streetConfirm = shouldShowAddressUseThis(draft) || isSubjectAddressConfirmPending(draft);
+  const docAsk =
+    !streetConfirm && (looksRightDocAskOpen(draft) || shown.some(isAfterLooksRightDocChip));
   const next = shown.filter((action) => {
     if (action.capture?.field === "propose-place-address" || isStreetSuggestChipLabel(action.label)) {
       return false;

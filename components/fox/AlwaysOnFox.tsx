@@ -132,7 +132,9 @@ import {
   RECEIVED_UNREAD_ASK,
   unreadRestoreActions,
   retainWageDocsLine,
+  isContractExtractAskText,
   isGovernmentIdInviteLine,
+  isPurchaseContractInviteLine,
   holdDocsAskFox,
   productIntentFromAction,
   shouldDeferStillUsefulAsk,
@@ -384,6 +386,9 @@ function applyFoxAsk(
     return freezeUsedFoxTurns(dropOnFileAddressLines(messages));
   }
   if (last && isGovernmentIdInviteLine(last.text) && ask.text !== last.text) {
+    return freezeOthers(last.id, foxAskMessage(ask));
+  }
+  if (last && isPurchaseContractInviteLine(last.text) && isContractExtractAskText(ask.text)) {
     return freezeOthers(last.id, foxAskMessage(ask));
   }
   if (last && /The ID shows /i.test(last.text) && !/The ID shows /i.test(ask.text)) {

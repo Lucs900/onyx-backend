@@ -20,9 +20,11 @@ import {
   extractHintFromDraft,
   layer2AskCopy,
   layer2Plan,
+  DOC_INVITE_COPY,
   nextCoverScheduleLabels,
   nextDocInvite,
   rejectIncomingFile,
+  skipCurrentInvite,
   stillUsefulAskCopy,
   stillUsefulLabels,
 } from "../components/fox/fileWrite";
@@ -30,9 +32,17 @@ import { applyExtractWrite, emptyDraft, loadIntakeDraft, receiveDocument } from 
 import { canLooksRight, resolveProposal } from "../components/fox/completeness";
 import { applyLooksRightMotion } from "../components/fox/motion";
 import { citizenshipNeeded } from "../components/fox/citizenship";
-import { workspacePrompt, workspacePromptCopy } from "../components/fox/workspace";
+import {
+  isContractExtractAskText,
+  isPurchaseContractInviteLine,
+  nextFoxAsk,
+  workspacePrompt,
+  workspacePromptCopy,
+} from "../components/fox/workspace";
+import { dropAbandonedAddressConfirm, paintedFoxActions } from "../components/fox/liveCoupon";
+import { shouldShowAddressUseThis } from "../components/fox/propertyType";
 import { searchedKeyFor } from "../lib/rateflow/fromDraft";
-import type { ExtractClass, FoxIntakeDraft } from "../components/fox/types";
+import type { ExtractClass, FoxIntakeDraft, FoxMessage } from "../components/fox/types";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -72,7 +82,7 @@ function seSketch(): FoxIntakeDraft {
     propertyZip: "94123",
     propertyZipAsked: true,
     subjectAddressAsked: true,
-    propertyType: "house",
+    propertyType: "sfr",
     propertyTypeAsked: true,
     yearsInBusinessAsked: true,
     monthlyDebtsAsked: true,
@@ -338,6 +348,60 @@ async function main() {
   assert.equal(used.liveQuote, undefined);
   assert.notEqual(searchedKeyFor(used), searchedKeyFor(seSketch()));
   assert.equal(used.looksRightHold, false);
+
+  let inviteWalk = seSketch();
+  assert.equal(nextDocInvite(inviteWalk), "government_id");
+  inviteWalk = skipCurrentInvite(inviteWalk);
+  assert.equal(nextDocInvite(inviteWalk), "tax_return");
+  inviteWalk = skipCurrentInvite(inviteWalk);
+  assert.equal(nextDocInvite(inviteWalk), "prior_year_return");
+  inviteWalk = skipCurrentInvite(inviteWalk);
+  assert.equal(nextDocInvite(inviteWalk), "bank_statement");
+  inviteWalk = skipCurrentInvite(inviteWalk);
+  assert.equal(nextDocInvite(inviteWalk), "purchase_contract");
+  assert.equal(extractHintFromDraft(inviteWalk, "09-purchase-contract-clipper.pdf"), "purchase_contract");
+  const inviteAsk = nextFoxAsk(inviteWalk);
+  assert.equal(inviteAsk.text, DOC_INVITE_COPY.purchase_contract);
+  assert.equal(isPurchaseContractInviteLine(inviteAsk.text), true);
+  const inviteRoute = await routeExtract("09-purchase-contract-clipper.pdf", "purchase_contract");
+  assert.notEqual(inviteRoute.failed, true);
+  const inviteAt = "2026-09-05T17:04:00.000Z";
+  const inviteWrite = writeLive(
+    inviteWalk,
+    "09-purchase-contract-clipper.pdf",
+    (inviteRoute.class as ExtractClass) ?? "purchase_contract",
+    inviteRoute.fields ?? {},
+    inviteAt,
+    inviteRoute.failed,
+    inviteRoute.note,
+  );
+  assert.ok(!inviteWrite.quietLines.some((line) => line === FAILED_READ_NOTE));
+  assert.equal(workspacePrompt(inviteWrite.draft), "confirm-proposal");
+  assert.equal(canLooksRight(inviteWrite.draft), false);
+  assert.equal(shouldShowAddressUseThis(inviteWrite.draft), true);
+  const inviteConfirm = nextFoxAsk(inviteWrite.draft);
+  assert.equal(isContractExtractAskText(inviteConfirm.text), true);
+  assert.match(inviteConfirm.text, /88 Clipper Street/i);
+  assert.match(inviteConfirm.text, /94114/);
+  assert.ok((inviteConfirm.actions ?? []).some((item) => item.label === "Use this" || item.label === "Use document"));
+  const inviteBubble: FoxMessage = {
+    id: "contract-extract",
+    role: "fox",
+    text: inviteConfirm.text,
+    actions: inviteConfirm.actions,
+  };
+  const kept = dropAbandonedAddressConfirm(
+    [{ id: "invite", role: "fox", text: DOC_INVITE_COPY.purchase_contract, actions: inviteAsk.actions }, inviteBubble],
+    inviteWrite.draft,
+  );
+  assert.ok(kept.some((item) => isContractExtractAskText(item.text)));
+  assert.ok((paintedFoxActions(inviteBubble, inviteWrite.draft, true) ?? []).some((item) => item.label === "Use this"));
+  const inviteUsed = resolveProposal(inviteWrite.draft, "accept");
+  assert.match(inviteUsed.subjectAddress ?? "", /88 Clipper Street/i);
+  assert.equal(inviteUsed.propertyZip, "94114");
+  assert.match(inviteUsed.facts?.present_address?.value ?? "", /94123/);
+  assert.equal(shouldShowAddressUseThis(inviteUsed), false);
+  assert.notEqual(searchedKeyFor(inviteUsed), searchedKeyFor(inviteWalk));
 
   const afterCs = afterTwoScheduleCs();
   assert.equal(nextDocInvite(afterCs), "bank_statement");

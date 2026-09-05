@@ -1820,6 +1820,18 @@ export function isGovernmentIdInviteLine(text?: string | null): boolean {
   return /First I need a government ID|Next is a government ID/i.test(value);
 }
 
+/** Composer contract ask. Paperclip of 09 replaces this line with The contract shows. */
+export function isPurchaseContractInviteLine(text?: string | null): boolean {
+  const value = String(text ?? "").trim();
+  if (!value) return false;
+  if (value === DOC_INVITE_COPY.purchase_contract) return true;
+  return /purchase contract is the property on paper/i.test(value);
+}
+
+export function isContractExtractAskText(text?: string | null): boolean {
+  return /^The contract shows /i.test(String(text ?? "").trim());
+}
+
 export function wageBox5Ask(): { text: string; actions: FoxAction[] } {
   return { text: W2_BOX5_ASK, actions: [wageSkipAction("skip-w2-box5")] };
 }

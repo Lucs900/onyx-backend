@@ -520,9 +520,16 @@ export function displayedSubjectAddress(draft: FoxIntakeDraft) {
   return "";
 }
 
-/** Use this paints only while a street is pending and File address is still blank. */
+/** Use this paints while a street is pending (Places line or contract proposal) and File is still ZIP-only / blank. */
 export function shouldShowAddressUseThis(draft: FoxIntakeDraft) {
-  return Boolean(draft.pendingAddress?.line?.trim()) && !fileAddressLine(draft);
+  if (fileAddressLine(draft)) return false;
+  if (draft.pendingAddress?.line?.trim()) return true;
+  const proposed = String(draft.pendingProposal?.value ?? "").trim();
+  return (
+    isPropertyAddressField(draft.pendingProposal?.field ?? "") &&
+    Boolean(proposed) &&
+    !isZipOnlyFileAddress(proposed, draft.propertyZip)
+  );
 }
 
 /** After Use this writes File. Three words only — no street glued on. */
