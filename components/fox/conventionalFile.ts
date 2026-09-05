@@ -1,6 +1,7 @@
 import { formatDollars } from "@/components/products/scenario";
 import { OCCUPANCY_BUBBLES, type FoxIntakeDraft, type OtherReoRow } from "./types";
 import { otherReoRows } from "./otherReo";
+import { displayedSubjectAddress, isZipOnlyFileAddress } from "./propertyType";
 
 function factValue(draft: FoxIntakeDraft, field: string) {
   return (draft.facts?.[field]?.value || "").trim();
@@ -174,7 +175,7 @@ function citizenshipOf(stored: NonNullable<FoxIntakeDraft["agencyDeclarations"]>
 
 export function conventionalFileFromDraft(draft: FoxIntakeDraft): ConventionalFileShape {
   const occupancy = draft.occupancyChoice.value;
-  const address = (draft.subjectAddress || factValue(draft, "property_address")).trim();
+  const address = displayedSubjectAddress(draft).trim();
   const employer = factValue(draft, "employer_name").trim();
   const years = factValue(draft, "years_in_business").trim();
   const employmentHistory = [...(draft.employmentHistory ?? [])];
@@ -223,10 +224,10 @@ export function conventionalFileFromDraft(draft: FoxIntakeDraft): ConventionalFi
       occupancyStatus: occupancy || undefined,
     },
     assets: {
-      institution: factValue(draft, "institution") || undefined,
-      type: factValue(draft, "account_type") || undefined,
-      suggestedBalance: factValue(draft, "ending_balance") || undefined,
-      last4: factValue(draft, "account_last4") || undefined,
+      institution: (draft.assetAccounts?.[0]?.institution || factValue(draft, "institution")) || undefined,
+      type: (draft.assetAccounts?.[0]?.type || factValue(draft, "account_type")) || undefined,
+      suggestedBalance: (draft.assetAccounts?.[0]?.balance || factValue(draft, "ending_balance")) || undefined,
+      last4: (draft.assetAccounts?.[0]?.last4 || factValue(draft, "account_last4")) || undefined,
     },
     liabilities: {
       source: LIABILITIES_SOURCE,
@@ -389,13 +390,14 @@ export function conventionalFileFacts(draft: FoxIntakeDraft): {
 }[] {
   if (!holdsConventionalFile(draft)) return [];
   const file = conventionalFileFromDraft(draft);
-  const occupancy = occupancyLabel(file.property.occupancyStatus);
-  const address = file.property.address || "address —";
-  const type = propertyTypeSpoken(file.property.propertyType) || "type —";
-  const institution = file.assets.institution || "institution —";
-  const accountType = file.assets.type || "type —";
-  const balance = moneyLabel(file.assets.suggestedBalance) || "balance —";
-  const last4 = file.assets.last4 ? `last4 ${file.assets.last4}` : "last4 —";
+  const street = displayedSubjectAddress(draft).trim();
+  const address =
+    street && !isZipOnlyFileAddress(street, draft.propertyZip) ? street : "address —";
+  const institution = file.assets.institution || "";
+  const accountType = file.assets.type || "";
+  const balance = moneyLabel(file.assets.suggestedBalance);
+  const last4 = file.assets.last4 ? `last4 ${file.assets.last4}` : "";
+  const assetsValue = [institution, accountType, balance, last4].filter(Boolean).join(" · ");
   const declarationBits = [
     declarationSpoken(file.declarations.b_bankruptcy)
       ? `BK ${declarationSpoken(file.declarations.b_bankruptcy)}`
@@ -424,9 +426,7 @@ export function conventionalFileFacts(draft: FoxIntakeDraft): {
       id: "file-property",
       label: "Property",
       value: dashJoin([
-        occupancy || "occupancy —",
         address,
-        type,
         file.otherProperties.length ? `${file.otherProperties.length} other propert${file.otherProperties.length === 1 ? "y" : "ies"}` : "",
       ]),
       note: "APN, legal, year built, taxes, HOA wait for a title profile",
@@ -434,9 +434,30 @@ export function conventionalFileFacts(draft: FoxIntakeDraft): {
     {
       id: "file-assets",
       label: "Assets",
-      value: dashJoin([institution, accountType, balance, last4]),
+      value: assetsValue,
       note: "From statements · institution / type / balance / last4 · not a form",
     },
+    ...((draft.assetAccounts ?? []).length > 1
+      ? (draft.assetAccounts ?? []).slice(1).flatMap((account, index) => {
+          const extra = [
+            account.institution || "",
+            account.type || "",
+            moneyLabel(account.balance),
+            account.last4 ? `last4 ${account.last4}` : "",
+          ]
+            .filter(Boolean)
+            .join(" · ");
+          if (!extra) return [];
+          return [
+            {
+              id: `file-assets-${index + 1}`,
+              label: "Assets",
+              value: extra,
+              note: "From statements · institution / type / balance / last4 · not a form",
+            },
+          ];
+        })
+      : []),
     {
       id: "file-liabilities",
       label: "Liabilities",

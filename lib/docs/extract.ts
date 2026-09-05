@@ -4,14 +4,27 @@ import {
   EXTRACT_SCHEMA_KEYS,
   LOW_EXTRACT_CONFIDENCE,
   hasLockedSuggestion,
+  looksLikeBankFields,
   preferFilenameClass,
   promoteExtractClass,
   sanitizeExtractedFields,
   type ExtractApplyInput,
 } from "@/components/fox/fileWrite";
 import type { ExtractClass } from "@/components/fox/types";
-import { isPdf, pdfTextLayerCharCount, readPdfEmbeddedImages } from "@/lib/docs/pdfText";
-import { readPrintedSample } from "@/lib/docs/printedSample";
+import { isPdf, pdfTextLayerCharCount, readPdfEmbeddedImages, readPdfTextLayer } from "@/lib/docs/pdfText";
+import {
+  fieldsFromPrintedLines,
+  loudContractFromPrintedLines,
+  loudCoverFromPrintedLines,
+  loudIdFromPrintedLines,
+  loudEntityReturnFromPrintedLines,
+  loudK1FromPrintedLines,
+  loudScheduleCFromPrintedLines,
+  loudScheduleEFromPrintedLines,
+  loudWageFromPrintedLines,
+  printedSampleFromLines,
+  readPrintedSample,
+} from "@/lib/docs/printedSample";
 
 export type ClassifyResult = {
   class: ExtractClass;
@@ -36,6 +49,7 @@ export type DocumentExtractAdapter = {
 export type ClassifyExtractResult = ExtractApplyInput & {
   warnings: string[];
   failed?: boolean;
+  textLayerChars?: number;
 };
 
 const CLASSES: ExtractClass[] = [
@@ -256,11 +270,11 @@ function extractFieldsPrompt(extractClass: ExtractClass, keys: readonly string[]
   }
   if (extractClass === "w2") {
     extra =
-      " overtime, bonus, and commission only when clearly printed on the W-2; empty otherwise; never invent. hire_date only when a hire date, start date, or date of hire is clearly printed on the page. Empty otherwise; never invent.";
+      " medicare_wages / box5 is Box 5 Medicare wages and tips when clearly printed — prefer that over Box 1 wages. overtime, bonus, and commission only when clearly printed on the W-2; empty otherwise; never invent. hire_date only when a hire date, start date, or date of hire is clearly printed on the page. Empty otherwise; never invent.";
   }
   if (extractClass === "bank_statement") {
     extra =
-      " institution, period_end, and ending_balance only when clearly printed. present_address is the printed residential or mailing address only when clearly printed. Never say funds are enough. Empty otherwise; never invent.";
+      " institution, ending_balance, and account_last4 only when clearly printed. ending_balance is the dollar ending balance (for example $84,220.15), never a statement-period date or the day/month fragment 07 from 07/31/2026. account_last4 is the last four of THIS statement's own account only (for example ****4419). Never extract a transfer-to, ACH, wire, or counterparty mask (for example ****2281 on a transfer line). One statement = one last4. Never output a full account number or routing number. Never derive last4 from a full number, a date, or a dollar amount. Empty if last4 is not on the page. Never say funds are enough. Empty otherwise; never invent.";
   }
   if (extractClass === "government_id") {
     extra =
@@ -268,7 +282,7 @@ function extractFieldsPrompt(extractClass: ExtractClass, keys: readonly string[]
   }
   if (extractClass === "purchase_contract") {
     extra =
-      " property_address, purchase_price, and close_date only when clearly printed. property_type is house/sfr, condo, or two_to_four only when the contract clearly names the type. year_built, units, annual_taxes, and hoa_monthly only when clearly printed. Empty otherwise; never invent.";
+      " property_address is the full subject street on the contract (for example 88 Clipper Street, San Francisco, CA 94114). Never a buyer/residence ZIP alone, never 94123 by itself, never city+ZIP without a street. Map subject property, premises, or the property to be acquired onto property_address. purchase_price is the total purchase price. close_date is close of escrow / closing date. seller_credit is the printed seller credit, seller concession, seller credits buyer, or credit to buyer — only when a dollar amount is on the page (for example $5,000). Never invent a credit. inspection_contingency, loan_contingency, and appraisal_contingency are dates only when printed; they are dates, not a guideline decision. addenda is the printed addenda list only. Never say this fails FNMA. Never invent underwriting. property_type is house/sfr, condo, or two_to_four only when the contract clearly names the type. year_built, units, annual_taxes, and hoa_monthly only when clearly printed. Empty otherwise; never invent.";
   }
   if (extractClass === "mortgage_statement") {
     extra =
@@ -286,6 +300,12 @@ function asClass(value: unknown): ExtractClass {
     return "tax_return";
   }
   return CLASSES.includes(raw as ExtractClass) ? (raw as ExtractClass) : "other";
+}
+
+export function extractHintOf(value: unknown): ExtractClass | null {
+  if (value == null || String(value).trim() === "") return null;
+  const next = asClass(value);
+  return next === "other" ? null : next;
 }
 
 function asConfidence(value: unknown) {
@@ -328,9 +348,12 @@ export const grokExtractAdapter: DocumentExtractAdapter = {
       extractFieldsPrompt(extractClass, keys),
     );
     const raw: Record<string, string> = {};
+    for (const [key, value] of Object.entries(parsed)) {
+      if (value == null || typeof value === "object") continue;
+      raw[key] = String(value);
+    }
     for (const key of keys) {
-      const value = parsed[key];
-      raw[key] = value == null ? "" : String(value);
+      if (raw[key] == null) raw[key] = "";
     }
     return {
       fields: sanitizeExtractedFields(extractClass, raw),
@@ -339,12 +362,16 @@ export const grokExtractAdapter: DocumentExtractAdapter = {
   },
 };
 
-function printedResult(printed: NonNullable<ReturnType<typeof readPrintedSample>>): ClassifyExtractResult {
+function printedResult(
+  printed: NonNullable<ReturnType<typeof readPrintedSample>>,
+  textLayerChars?: number,
+): ClassifyExtractResult {
   return {
     extractClass: printed.extractClass,
     confidence: printed.confidence,
     fields: printed.fields,
     warnings: [],
+    ...(textLayerChars != null ? { textLayerChars } : {}),
   };
 }
 
@@ -352,6 +379,7 @@ function unreadResult(
   extractClass: ExtractClass,
   filename?: string | null,
   extraWarning?: string,
+  textLayerChars?: number,
 ): ClassifyExtractResult {
   return {
     extractClass: preferFilenameClass(extractClass, filename ?? ""),
@@ -359,6 +387,7 @@ function unreadResult(
     fields: {},
     warnings: extraWarning ? ["failed", extraWarning] : ["failed"],
     failed: true,
+    ...(textLayerChars != null ? { textLayerChars } : {}),
   };
 }
 
@@ -378,7 +407,8 @@ async function classifyAndExtractPage(
   let classified: ClassifyResult | null = null;
   try {
     classified = normalizeClassifyResult(await adapter.classify(bytes, mediaType));
-    if (classified.readable === false) {
+    const hinted = hint && hint !== "other" ? hint : undefined;
+    if (classified.readable === false && hinted !== "bank_statement") {
       return {
         extractClass: classified.class,
         confidence: classified.confidence,
@@ -387,10 +417,14 @@ async function classifyAndExtractPage(
         failed: true,
       };
     }
-    const hinted = hint && hint !== "other" ? hint : undefined;
     const confident =
       classified.class !== "other" && classified.confidence >= LOW_EXTRACT_CONFIDENCE;
-    const extractAs = confident ? classified.class : hinted;
+    const extractAs =
+      hinted === "bank_statement"
+        ? "bank_statement"
+        : confident
+          ? classified.class
+          : hinted;
     if (!extractAs || extractAs === "other") {
       return {
         extractClass: classified.class,
@@ -418,6 +452,19 @@ async function classifyAndExtractPage(
   }
 }
 
+function textLayerCharCountOf(bytes: Uint8Array, mediaType: string): number {
+  if (!(isPdf(bytes) || mediaType === "application/pdf")) return 0;
+  return pdfTextLayerCharCount(bytes);
+}
+
+function withTextChars(
+  result: ClassifyExtractResult,
+  bytes: Uint8Array,
+  mediaType: string,
+): ClassifyExtractResult {
+  return { ...result, textLayerChars: result.textLayerChars ?? textLayerCharCountOf(bytes, mediaType) };
+}
+
 export async function classifyAndExtract(
   bytes: Uint8Array,
   mediaType: string,
@@ -425,39 +472,166 @@ export async function classifyAndExtract(
   hint?: ExtractClass | null,
   filename?: string | null,
 ): Promise<ClassifyExtractResult> {
+  const textLayerChars = textLayerCharCountOf(bytes, mediaType);
+  if (isPdf(bytes) || mediaType === "application/pdf") {
+    const layer = readPdfTextLayer(bytes);
+    if (layer?.length) {
+      const loudScheduleC = loudScheduleCFromPrintedLines(layer);
+      if (loudScheduleC) return printedResult(loudScheduleC, textLayerChars);
+      const loudScheduleE = loudScheduleEFromPrintedLines(layer);
+      if (loudScheduleE) return printedResult(loudScheduleE, textLayerChars);
+      const loudEntity = loudEntityReturnFromPrintedLines(layer);
+      if (loudEntity) return printedResult(loudEntity, textLayerChars);
+      const loudK1 = loudK1FromPrintedLines(layer);
+      if (loudK1) return printedResult(loudK1, textLayerChars);
+      const loudCover =
+        loudCoverFromPrintedLines(layer) || loudCoverFromPrintedLines([layer.join(" ")]);
+      if (loudCover) return printedResult(loudCover, textLayerChars);
+      const loud = loudWageFromPrintedLines(layer);
+      if (loud) return printedResult(loud, textLayerChars);
+      const loudId = loudIdFromPrintedLines(layer);
+      if (loudId) return printedResult(loudId, textLayerChars);
+      const loudContract =
+        loudContractFromPrintedLines(layer) || loudContractFromPrintedLines([layer.join(" ")]);
+      if (loudContract) return printedResult(loudContract, textLayerChars);
+      if (hint === "government_id") {
+        const hintedId = fieldsFromPrintedLines("government_id", layer);
+        if (hasLockedSuggestion("government_id", hintedId)) {
+          return printedResult(
+            { extractClass: "government_id", confidence: 0.94, fields: hintedId },
+            textLayerChars,
+          );
+        }
+      }
+    }
+  }
   const printed = readPrintedSample(bytes);
   if (printed && hasLockedSuggestion(printed.extractClass, printed.fields)) {
-    return printedResult(printed);
+    return printedResult(printed, textLayerChars);
   }
   if (isPdf(bytes) || mediaType === "application/pdf") {
+    const layer = readPdfTextLayer(bytes);
+    if (layer?.length) {
+      const loudScheduleC = loudScheduleCFromPrintedLines(layer);
+      if (loudScheduleC) return printedResult(loudScheduleC, textLayerChars);
+      const loudScheduleE = loudScheduleEFromPrintedLines(layer);
+      if (loudScheduleE) return printedResult(loudScheduleE, textLayerChars);
+      const loudEntity = loudEntityReturnFromPrintedLines(layer);
+      if (loudEntity) return printedResult(loudEntity, textLayerChars);
+      const loudK1 = loudK1FromPrintedLines(layer);
+      if (loudK1) return printedResult(loudK1, textLayerChars);
+      const loudCover =
+        loudCoverFromPrintedLines(layer) || loudCoverFromPrintedLines([layer.join(" ")]);
+      if (loudCover) return printedResult(loudCover, textLayerChars);
+      const loud = loudWageFromPrintedLines(layer);
+      if (loud) return printedResult(loud, textLayerChars);
+      const fromLines = printedSampleFromLines(layer);
+      if (fromLines && hasLockedSuggestion(fromLines.extractClass, fromLines.fields)) {
+        return printedResult(fromLines, textLayerChars);
+      }
+      const blob = layer.join("\n");
+      if (/\bbox\s*5\b/i.test(blob) || /medicare\s*wages/i.test(blob)) {
+        const fields = printed?.fields?.medicare_wages || printed?.fields?.box5
+          ? printed.fields
+          : fieldsFromPrintedLines("w2", layer);
+        if (hasLockedSuggestion("w2", fields)) {
+          return printedResult({
+            extractClass: "w2",
+            confidence: printed?.confidence ?? 0.94,
+            fields,
+          }, textLayerChars);
+        }
+      }
+      const stubFields = fieldsFromPrintedLines("paystub", layer);
+      if (hasLockedSuggestion("paystub", stubFields)) {
+        return printedResult({
+          extractClass: "paystub",
+          confidence: 0.94,
+          fields: stubFields,
+        }, textLayerChars);
+      }
+      const loudId = loudIdFromPrintedLines(layer);
+      if (loudId) return printedResult(loudId, textLayerChars);
+      const loudContract =
+        loudContractFromPrintedLines(layer) || loudContractFromPrintedLines([layer.join(" ")]);
+      if (loudContract) return printedResult(loudContract, textLayerChars);
+      if (hint === "purchase_contract") {
+        const hintedContract = fieldsFromPrintedLines("purchase_contract", layer);
+        if (hasLockedSuggestion("purchase_contract", hintedContract)) {
+          return printedResult(
+            { extractClass: "purchase_contract", confidence: 0.94, fields: hintedContract },
+            textLayerChars,
+          );
+        }
+      }
+      if (hint === "government_id") {
+        const hintedId = fieldsFromPrintedLines("government_id", layer);
+        if (hasLockedSuggestion("government_id", hintedId)) {
+          return printedResult(
+            { extractClass: "government_id", confidence: 0.94, fields: hintedId },
+            textLayerChars,
+          );
+        }
+      }
+      if (printed && hasLockedSuggestion(printed.extractClass, printed.fields)) {
+        return printedResult(printed, textLayerChars);
+      }
+      const collapsed = [layer.join(" ")];
+      const collapsedCover = loudCoverFromPrintedLines(collapsed);
+      if (collapsedCover) return printedResult(collapsedCover, textLayerChars);
+      const collapsedContract = loudContractFromPrintedLines(collapsed);
+      if (collapsedContract) return printedResult(collapsedContract, textLayerChars);
+      return unreadResult(printed?.extractClass ?? "other", filename, "unmapped-text", textLayerChars);
+    }
     const charCount = pdfTextLayerCharCount(bytes);
     if (charCount > 0) {
-      return unreadResult(printed?.extractClass ?? "other", filename, "unmapped-text");
+      return unreadResult(printed?.extractClass ?? "other", filename, "unmapped-text", charCount);
     }
     const images = readPdfEmbeddedImages(bytes);
     for (const image of images) {
       const fromPixels = readPrintedSample(image.bytes);
       if (fromPixels && hasLockedSuggestion(fromPixels.extractClass, fromPixels.fields)) {
-        return printedResult(fromPixels);
+        return printedResult(fromPixels, textLayerChars);
       }
     }
     if (images[0]) {
       const page = await classifyAndExtractPage(images[0].bytes, images[0].mediaType, adapter, hint);
       const extractClass = preferFilenameClass(page.extractClass, filename ?? "");
-      if (page.failed || !hasLockedSuggestion(extractClass, page.fields)) {
-        return unreadResult(extractClass, filename, "no-text-layer");
+      const bankLocked = extractClass === "bank_statement" || hint === "bank_statement";
+      const locked = bankLocked
+        ? looksLikeBankFields(page.fields)
+        : hasLockedSuggestion(extractClass, page.fields);
+      if (page.failed || !locked) {
+        return unreadResult(bankLocked ? "bank_statement" : extractClass, filename, "no-text-layer", textLayerChars);
       }
-      return { ...page, extractClass };
+      return { ...page, extractClass: bankLocked ? "bank_statement" : extractClass, textLayerChars };
     }
-    return unreadResult("other", filename, "no-text-layer");
+    return unreadResult("other", filename, "no-text-layer", textLayerChars);
   }
   const page = await classifyAndExtractPage(bytes, mediaType, adapter, hint);
+  const bankHint = hint === "bank_statement" || page.extractClass === "bank_statement";
   if (
     !page.failed &&
-    (page.extractClass === "government_id" || page.extractClass === "paystub" || page.extractClass === "w2") &&
-    !hasLockedSuggestion(page.extractClass, page.fields)
+    (
+      page.extractClass === "government_id" ||
+      page.extractClass === "paystub" ||
+      page.extractClass === "w2" ||
+      bankHint
+    ) &&
+    !(bankHint
+      ? looksLikeBankFields(page.fields)
+      : hasLockedSuggestion(page.extractClass, page.fields))
   ) {
-    return { ...page, failed: true, warnings: [...page.warnings, "failed"] };
+    return withTextChars(
+      {
+        ...page,
+        extractClass: bankHint ? "bank_statement" : page.extractClass,
+        failed: true,
+        warnings: [...page.warnings, "failed"],
+      },
+      bytes,
+      mediaType,
+    );
   }
-  return page;
+  return withTextChars(page, bytes, mediaType);
 }

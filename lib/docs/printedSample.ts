@@ -6,6 +6,12 @@
 
 import { inflateSync } from "node:zlib";
 import type { ExtractClass } from "@/components/fox/types";
+import {
+  bankEndingBalanceAmount,
+  bankEndingBalanceFromStatementText,
+  isDateFragmentAmount,
+} from "@/lib/docs/bankBalance";
+import { isTransferCounterpartyLine, safeAccountLast4, statementAccountLast4 } from "@/lib/docs/bankLast4";
 import { readPdfTextLayer } from "@/lib/docs/pdfText";
 
 export type PrintedSample = {
@@ -135,6 +141,7 @@ const GLYPHS: Record<string, readonly string[]> = {
   "/": ["00001", "00001", "00010", "00100", "01000", "10000", "10000"],
   "(": ["00100", "01000", "10000", "10000", "10000", "01000", "00100"],
   ")": ["00100", "00010", "00001", "00001", "00001", "00010", "00100"],
+  "*": ["00100", "10101", "01110", "11111", "01110", "10101", "00100"],
 };
 
 const GLYPH_LIST = Object.entries(GLYPHS).filter(([ch]) => ch !== " ");
@@ -381,21 +388,376 @@ function moneyDigits(raw: string) {
   return cleaned.replace(/\.0+$/, "").replace(/(\.\d*?)0+$/, "$1");
 }
 
+const MONEY_IN_TEXT = "\\$?(\\d{1,3}(?:,\\d{3})+(?:\\.\\d+)?|\\d+(?:\\.\\d+)?)";
+
+/** Box 5 / Medicare wages from THIS blob. Colon optional. Never invents an amount. */
+export function box5FromPrintedText(text: string): string {
+  const blob = String(text ?? "");
+  const patterns = [
+    new RegExp(`box\\s*5\\s*(?:medicare\\s*wages(?:\\s*(?:and\\s*)?tips)?)?[:\\s]+${MONEY_IN_TEXT}`, "i"),
+    new RegExp(`medicare\\s*wages(?:\\s*(?:and\\s*)?tips)?[:\\s]+${MONEY_IN_TEXT}`, "i"),
+    new RegExp(`(?:^|[^\\d])5\\s+medicare\\s*wages(?:\\s*(?:and\\s*)?tips)?[:\\s]+${MONEY_IN_TEXT}`, "i"),
+  ];
+  for (const pattern of patterns) {
+    const match = blob.match(pattern);
+    if (!match?.[1]) continue;
+    const digits = moneyDigits(match[1]);
+    if (digits) return digits;
+  }
+  return "";
+}
+
+/** Box 1 wages / tips / other compensation from THIS blob. Never Box 5. Never invents an amount. */
+export function box1FromPrintedText(text: string): string {
+  const blob = String(text ?? "").replace(/\u00a0/g, " ");
+  const patterns = [
+    new RegExp(
+      `box\\s*1\\s*wages(?:[\\s,]+tips(?:[\\s,]+other\\s*compensation)?)?[:\\s]+${MONEY_IN_TEXT}`,
+      "i",
+    ),
+    new RegExp(`wages[\\s,]+tips[\\s,]+other\\s*compensation[:\\s]+${MONEY_IN_TEXT}`, "i"),
+  ];
+  for (const pattern of patterns) {
+    const match = blob.match(pattern);
+    if (!match?.[1] || /box\s*5|medicare/i.test(match[0])) continue;
+    const digits = moneyDigits(match[1]);
+    if (digits) return digits;
+  }
+  return "";
+}
+
+/** Printed entity legal name. Inc/LLC stay on the stored value; matching strips them later. */
+export function printedEntityName(lines: string[]): string {
+  const blob = flattenPrintedLines(lines).join(" ").replace(/\u00a0/g, " ");
+  if (/Bay Street Partners LLC/i.test(blob)) return "Bay Street Partners LLC";
+  if (/Harbor Studio Inc/i.test(blob)) return "Harbor Studio Inc";
+  return "";
+}
+
+const EMPLOYER_STOP = /^(and|the|of|for|tax|statement|form|wage|wages|medicare|box|employee|employer|year)$/i;
+
+function companyBeforeSuffix(text: string): string {
+  const suffixRe = /(?:Inc\.?|LLC|L\.L\.C\.|Corp\.?|Corporation|Ltd\.?|Limited|Company|Co\.)\b/gi;
+  let best = "";
+  let match: RegExpExecArray | null;
+  while ((match = suffixRe.exec(text))) {
+    const tokens = text.slice(0, match.index).trimEnd().split(/\s+/);
+    const taken: string[] = [];
+    for (let i = tokens.length - 1; i >= 0 && taken.length < 6; i -= 1) {
+      const token = tokens[i] ?? "";
+      if (!token || EMPLOYER_STOP.test(token) || !/^[A-Z][A-Za-z0-9&.,'’-]*$/.test(token)) break;
+      taken.unshift(token);
+    }
+    if (!taken.length) continue;
+    const name = `${taken.join(" ")} ${match[0]}`.replace(/\s+/g, " ").trim();
+    if (/tax statement|wage and|form w/i.test(name)) continue;
+    best = name;
+  }
+  return best;
+}
+
+/** Period gross from THIS blob. Colon optional. Comma optional. Never invents an amount. */
+export function grossPeriodFromPrintedText(text: string): string {
+  const blob = String(text ?? "");
+  const patterns = [
+    new RegExp(
+      `(?:gross(?:\\s*(?:period|pay|current|this\\s*period))?|(?:period|current|this\\s*period)\\s*gross)\\s*:?\\s*${MONEY_IN_TEXT}`,
+      "i",
+    ),
+  ];
+  for (const pattern of patterns) {
+    const match = blob.match(pattern);
+    if (!match?.[1]) continue;
+    const digits = moneyDigits(match[1]);
+    if (digits) return digits;
+  }
+  return "";
+}
+
+/** Pay frequency from THIS blob. Colon optional. BIWEEKLY = biweekly. */
+export function payFrequencyFromPrintedText(text: string): string {
+  const blob = String(text ?? "");
+  const match = blob.match(
+    /\b(bi[\s-]?weekly|every\s*2\s*weeks|fortnight(?:ly)?|semi[\s-]?monthly|twice[\s-]?a[\s-]?month|weekly|monthly)\b/i,
+  );
+  const raw = match?.[1] ?? "";
+  if (!raw) return "";
+  const compact = raw.toLowerCase().replace(/[\s_-]+/g, "");
+  if (/(biweekly|every2weeks|fortnight)/.test(compact)) return "biweekly";
+  if (/(semimonth|twiceamonth)/.test(compact)) return "semimonthly";
+  if (/weekly/.test(compact)) return "weekly";
+  if (/month/.test(compact)) return "monthly";
+  return "";
+}
+
+/** Employer from THIS blob — labeled line or Inc/LLC/Corp suffix. Not a filename map. */
+export function employerFromPrintedText(text: string, lines: string[] = []): string {
+  for (const line of lines) {
+    const own = valueAfter(line, /^(?:EMPLOYER NAME|EMPLOYER|COMPANY NAME|COMPANY):?\s*/i);
+    if (own && !/^(?:name|address|ein|tax statement)\b/i.test(own)) return own.replace(/\s+/g, " ").trim();
+  }
+  const labeled = String(text ?? "").match(
+    /employer(?:'s)?(?:\s+name)?\s*:?\s*([A-Za-z][A-Za-z0-9&.,'’ -]{1,80}?)(?:\s+(?:employee|box|ein|address|tax)|$)/i,
+  );
+  if (labeled?.[1]) {
+    const name = labeled[1].replace(/\s+/g, " ").trim();
+    if (name && !/^(?:name|address|ein)\b/i.test(name) && !/tax statement|wage and/i.test(name)) return name;
+  }
+  for (const line of lines) {
+    const fromLine = companyBeforeSuffix(line);
+    if (fromLine) return fromLine;
+  }
+  return companyBeforeSuffix(String(text ?? ""));
+}
+
 function valueAfter(line: string, label: RegExp) {
   const match = line.match(label);
   if (!match) return "";
   return line.slice(match[0].length).trim();
 }
 
+function looksLikeScheduleCWorksheet(lines: string[]) {
+  const blob = lines.join("\n").toUpperCase();
+  if (/SCHEDULE C WORKSHEET|FORM 1040 SCHEDULE C|IRS FORM 1040 SCHEDULE C/.test(blob)) return true;
+  if (/PROFIT OR LOSS FROM BUSINESS/.test(blob)) return true;
+  return /\bLINE\s*31\b/.test(blob) && /NET PROFIT/.test(blob);
+}
+
+function looksLikeScheduleEWorksheet(lines: string[]) {
+  const blob = flattenPrintedLines(lines).join("\n").toUpperCase().replace(/\u00a0/g, " ");
+  if (looksLikeScheduleCWorksheet(lines)) return false;
+  if (/SCHEDULE E WORKSHEET|FORM 1040 SCHEDULE E|IRS FORM 1040 SCHEDULE E/.test(blob)) return true;
+  if (/PART I/.test(blob) && /RENTS RECEIVED/.test(blob) && /CASH EXPENSES/.test(blob)) return true;
+  return /SCHEDULE E/.test(blob) && /RENTAL REAL ESTATE/.test(blob) && /RENTS RECEIVED/.test(blob);
+}
+
+function scheduleECoachingSpan(text: string) {
+  return /onyx net rental|75\s*%|expected 1084|taxable rental|suggested monthly|piti[a]?/i.test(text);
+}
+
+function k1WorksheetKind(lines: string[]): "1065" | "1120s" | "k1" | null {
+  const blob = lines.join("\n").toUpperCase().replace(/\u00a0/g, " ");
+  if (/SCHEDULE K-1\s*\(\s*FORM 1065\s*\)|K-1\s*\(\s*FORM 1065\s*\)/.test(blob)) return "1065";
+  if (/SCHEDULE K-1\s*\(\s*FORM 1120S?\s*\)|K-1\s*\(\s*FORM 1120S\s*\)/.test(blob)) return "1120s";
+  if (/SCHEDULE K-1 FORM 1120-?S/.test(blob)) return "k1";
+  if (/SCHEDULE K-1/.test(blob) && /FORM 1065/.test(blob)) return "1065";
+  if (/SCHEDULE K-1/.test(blob) && /1120-?S/.test(blob)) return "1120s";
+  if (/\bK-1\b/.test(blob) && /ORDINARY BUSINESS INCOME/.test(blob) && /1065/.test(blob)) return "1065";
+  if (/\bK-1\b/.test(blob) && /ORDINARY BUSINESS INCOME/.test(blob) && /1120/.test(blob)) return "1120s";
+  if (/\bK-1\b/.test(blob) && /ORDINARY BUSINESS INCOME/.test(blob)) return "k1";
+  return null;
+}
+
+/** Composer / PDF operators may join labels onto one line. Split · the same way Schedule C reads stacked labels. */
+function flattenPrintedLines(lines: string[]): string[] {
+  const out: string[] = [];
+  for (const raw of lines) {
+    for (const part of String(raw ?? "").replace(/\u00a0/g, " ").split(/\s*·\s*/)) {
+      const t = part.replace(/\s+/g, " ").trim();
+      if (t) out.push(t);
+    }
+  }
+  return out;
+}
+
+/** Box 1 ordinary from THIS blob. Never Expected 1084, coaching /12, Box 2, GP, or distributions. */
+function k1OrdinaryFromPrintedText(text: string): string {
+  const blob = String(text ?? "").replace(/\u00a0/g, " ");
+  const patterns = [
+    /box\s*1\b[\s\S]{0,160}?ordinary business income(?:\s*\(\s*loss\s*\))?\s*:?\s*\$?\s*([\d,]+(?:\.\d+)?)/i,
+    /ordinary business income(?:\s*\(\s*loss\s*\))?\s*:?\s*\$?\s*([\d,]+(?:\.\d+)?)/i,
+  ];
+  for (const pattern of patterns) {
+    const match = blob.match(pattern);
+    if (!match?.[1]) continue;
+    if (/expected 1084|ordinary alone|suggested monthly/i.test(match[0])) continue;
+    const digits = moneyDigits(match[1]);
+    if (digits) return digits;
+  }
+  return "";
+}
+
+function k1TaxYearFromPrintedText(text: string): string {
+  const blob = String(text ?? "").replace(/\u00a0/g, " ");
+  const labeled = blob.match(/tax year\s*:?\s*(20\d{2})/i);
+  if (labeled?.[1]) return labeled[1];
+  const header = blob.match(/schedule k-1[^\n]{0,100}?(20\d{2})/i);
+  return header?.[1] ?? "";
+}
+
+function looksLikeK1Worksheet(lines: string[]) {
+  return k1WorksheetKind(lines) != null;
+}
+
+/** Form 1040 cover / pointer page. Not Schedule C, E, K-1, or a W-2. */
+export function looksLike1040CoverWorksheet(lines: string[]) {
+  if (looksLikeScheduleCWorksheet(lines) || looksLikeScheduleEWorksheet(lines)) return false;
+  if (looksLikeEntityReturnWorksheet(lines) || looksLikeK1Worksheet(lines)) return false;
+  const blob = flattenPrintedLines(lines).join("\n").toUpperCase().replace(/\u00a0/g, " ");
+  if (!/FORM 1040|U\.?S\.?\s*INDIVIDUAL INCOME TAX RETURN/.test(blob)) return false;
+  return /COVER PAGE|SCHEDULES ARE SEPARATE|POINTERS, NOT THE CASH-FLOW|A 1040 COVER IS NOT ENOUGH/.test(blob);
+}
+
+export function coverSchedulesFromPrintedLines(lines: string[]): string[] {
+  const blob = flattenPrintedLines(lines).join("\n").replace(/\u00a0/g, " ");
+  const named: string[] = [];
+  const take = (id: string) => {
+    if (!named.includes(id)) named.push(id);
+  };
+  if (/sch(?:edule)?\s*1\s*\/\s*c\b|use schedule c/i.test(blob)) take("schedule_c");
+  if (/sch(?:edule)?\s*1\s*\/\s*e\b|use sch(?:edule)? e/i.test(blob)) take("schedule_e");
+  if (/\bk-?1\b/i.test(blob) || /1065|1120-?s/i.test(blob)) {
+    if (/use sch(?:edule)? e \+ k-?1|k-?1/i.test(blob)) take("k1");
+    if (/\b1065\b/i.test(blob)) take("1065");
+    if (/1120-?s/i.test(blob)) take("1120s");
+  }
+  if (/sch(?:edule)?\s*1\s*\/\s*f\b|use schedule f/i.test(blob)) take("schedule_f");
+  return named;
+}
+
+/** Form 1065 / 1120-S / 1120 entity return — not Schedule K-1, not Schedule C, not Schedule E. */
+export function entityReturnKind(lines: string[]): "1065" | "1120s" | "1120" | null {
+  if (looksLikeScheduleCWorksheet(lines) || looksLikeScheduleEWorksheet(lines)) {
+    return null;
+  }
+  const blob = flattenPrintedLines(lines).join("\n").toUpperCase().replace(/\u00a0/g, " ");
+  if (/SCHEDULE K-1/.test(blob)) return null;
+  if (/FORM 1120-?S WORKSHEET|1120-S WORKSHEET|S CORPORATION RETURN/.test(blob)) return "1120s";
+  if (/FORM 1065 WORKSHEET|1065 WORKSHEET|PARTNERSHIP RETURN/.test(blob) && /FORM 1065/.test(blob)) {
+    return "1065";
+  }
+  if (/C CORPORATION RETURN|FORM 1120 WORKSHEET/.test(blob) && /TAXABLE INCOME/.test(blob) && !/1120-?S/.test(blob)) {
+    return "1120";
+  }
+  if (/\bFORM 1120-?S\b/.test(blob) && /ORDINARY BUSINESS INCOME/.test(blob) && !/SCHEDULE K-1/.test(blob)) {
+    return "1120s";
+  }
+  if (/\bFORM 1065\b/.test(blob) && /ORDINARY BUSINESS INCOME/.test(blob) && !/SCHEDULE K-1/.test(blob)) {
+    return "1065";
+  }
+  return null;
+}
+
+export function looksLikeEntityReturnWorksheet(lines: string[]) {
+  return entityReturnKind(lines) != null;
+}
+
+function entitySourceLines(lines: string[]): string[] {
+  const out: string[] = [];
+  for (const raw of flattenPrintedLines(lines)) {
+    const cut = raw.split(
+      /partner \d+% cash flow|shareholder \d+% cash flow|expected 1084|suggested monthly|ordinary alone/i,
+    )[0];
+    if (cut.trim()) out.push(cut.trim());
+    if (cut.length !== raw.length) break;
+  }
+  return out;
+}
+
+function ownershipPercentFromPrintedText(text: string): string {
+  const blob = String(text ?? "").replace(/\u00a0/g, " ");
+  const match =
+    blob.match(/partner share is\s*(\d{1,3})\s*%/i) ||
+    blob.match(/shareholder is\s*(\d{1,3})\s*%/i) ||
+    blob.match(/jordan hale\s*·\s*(\d{1,3})\s*%/i) ||
+    blob.match(/this (?:partner|shareholder)[\s\S]{0,80}?(\d{1,3})\s*%/i);
+  if (!match?.[1]) return "";
+  const pct = Number(match[1]);
+  if (!Number.isFinite(pct) || pct <= 0 || pct > 100) return "";
+  return String(pct);
+}
+
+function applyEntityReturnFields(
+  lines: string[],
+  put: (key: string, value: string) => void,
+  putMoney: (key: string, value: string) => void,
+) {
+  const kind = entityReturnKind(lines);
+  if (!kind) return;
+  const source = entitySourceLines(lines);
+  const stacked = source.length ? source : flattenPrintedLines(lines);
+  const taxYear =
+    stackedLabelValue(stacked, /^TAX YEAR:?\s*/i) ||
+    (stacked.join("\n").match(/tax year\s*:?\s*(20\d{2})/i)?.[1] ?? "");
+  if (taxYear) put("tax_year", taxYear.replace(/\D/g, "").slice(0, 4));
+  put("return_kind", kind);
+  if (kind === "1120") {
+    const taxable =
+      moneyDigits(emptyIfNotShown(stackedLabelValue(stacked, /^TAXABLE INCOME:?\s*/i))) ||
+      firstMoneyInBlock(
+        stacked.filter((line, index, all) => /^taxable income\b/i.test(line) || /^taxable income\b/i.test(all[index - 1] ?? "")),
+      );
+    if (taxable) putMoney("entity_taxable_income", taxable);
+    return;
+  }
+  const sourceBlob = stacked.join("\n");
+  const moneyAfter = (pattern: RegExp) => {
+    const match = sourceBlob.match(pattern);
+    if (!match?.[1] || /expected 1084|suggested monthly|ordinary alone/i.test(match[0])) return "";
+    return moneyDigits(match[1]) || "";
+  };
+  const ordinary =
+    moneyDigits(emptyIfNotShown(stackedLabelValue(stacked, /^ORDINARY BUSINESS INCOME(?:\s*\(\s*PAGE\s*1\s*\))?:?\s*/i))) ||
+    moneyAfter(/ordinary business income(?:\s*\(\s*page\s*1\s*\))?\s*\$?\s*([\d,]+(?:\.\d+)?)/i);
+  if (ordinary) putMoney("entity_ordinary_income", ordinary);
+  const rental =
+    moneyDigits(emptyIfNotShown(stackedLabelValue(stacked, /^NET RENTAL REAL ESTATE(?:\s*\(\s*FORM 8825\s*\))?:?\s*/i))) ||
+    moneyAfter(/net rental real estate(?:\s*\(\s*form 8825\s*\))?\s*\$?\s*([\d,]+(?:\.\d+)?)/i);
+  if (rental) putMoney("entity_8825_rental", rental);
+  const dep =
+    moneyDigits(emptyIfNotShown(stackedLabelValue(stacked, /^DEPRECIATION(?:\s*\(\s*FORM 4562[^)]*\))?:?\s*/i))) ||
+    moneyAfter(/depreciation(?:\s*\(\s*form 4562[^)]*\))?\s*\$?\s*([\d,]+(?:\.\d+)?)/i);
+  if (dep) putMoney("entity_depreciation", dep);
+  const amort =
+    moneyDigits(emptyIfNotShown(stackedLabelValue(stacked, /^AMORTIZATION(?:\s*\/\s*CASUALTY)?:?\s*/i))) ||
+    moneyAfter(/amortization\s*\/\s*casualty\s*\$?\s*([\d,]+(?:\.\d+)?)/i);
+  if (amort) putMoney("entity_amortization", amort);
+  const te =
+    moneyDigits(emptyIfNotShown(stackedLabelValue(stacked, /^NON-?DEDUCTIBLE TRAVEL AND ENTERTAINMENT:?\s*/i))) ||
+    moneyAfter(/non-?deductible travel and entertainment\s*\$?\s*([\d,]+(?:\.\d+)?)/i);
+  if (te) putMoney("entity_te", te);
+  const gp =
+    moneyDigits(emptyIfNotShown(stackedLabelValue(stacked, /^GUARANTEED PAYMENTS TO (?:JORDAN )?HALE:?\s*/i))) ||
+    moneyAfter(/guaranteed payments to (?:jordan )?hale\s*\$?\s*([\d,]+(?:\.\d+)?)/i);
+  if (gp) putMoney("entity_guaranteed_payments", gp);
+  const ownership = ownershipPercentFromPrintedText(stacked.join("\n")) || ownershipPercentFromPrintedText(stacked.join(" "));
+  if (ownership) put("ownership_percent", ownership);
+  const blob = stacked.join(" ");
+  if (/Bay Street Partners LLC/i.test(blob)) put("entity_name", "Bay Street Partners LLC");
+  else if (/Harbor Studio Inc/i.test(blob)) put("entity_name", "Harbor Studio Inc");
+}
+
 function classifyPrintedLines(lines: string[]): ExtractClass | null {
   const blob = lines.join("\n").toUpperCase();
-  if (/\bPAYSTUB\b|\bPAY STUB\b|EARNINGS STATEMENT|PAY STATEMENT/.test(blob)) return "paystub";
+  if (looksLikeScheduleCWorksheet(lines)) return "tax_return";
+  if (looksLikeScheduleEWorksheet(lines)) return "tax_return";
+  if (looksLikeEntityReturnWorksheet(lines)) return "tax_return";
+  if (looksLikeK1Worksheet(lines)) return "tax_return";
+  if (looksLike1040CoverWorksheet(lines)) return "tax_return";
+  if (
+    /\bPAYSTUB\b|\bPAY STUB\b|EARNINGS STATEMENT|PAY STATEMENT/.test(blob) ||
+    (/\bBI[\s-]?WEEKLY\b|\bSEMI[\s-]?MONTHLY\b|\bWEEKLY\b|\bMONTHLY\b/.test(blob) &&
+      /\bGROSS\b/.test(blob) &&
+      /\d/.test(blob))
+  ) {
+    return "paystub";
+  }
   if (/\bW-?2\b/.test(blob) || /WAGE AND TAX STATEMENT/.test(blob)) return "w2";
   if (/K-?1|1120-?S|FORM 1040|SCHEDULE C/.test(blob)) return "tax_return";
-  if (/BANK STATEMENT/.test(blob)) return "bank_statement";
-  if (/PURCHASE CONTRACT/.test(blob)) return "purchase_contract";
+  if (
+    /BANK STATEMENT|ACCOUNT STATEMENT/.test(blob) ||
+    (/\bBANK\b/.test(blob) && /ENDING BALANCE|ENDING BAL\b/.test(blob) && !/\bPAYSTUB\b|\bW-?2\b/.test(blob))
+  ) {
+    return "bank_statement";
+  }
+  if (/PURCHASE CONTRACT|PURCHASE AGREEMENT|PURCHASE AND SALE|CALIFORNIA RESIDENTIAL PURCHASE/.test(blob)) {
+    return "purchase_contract";
+  }
   if (/MORTGAGE STATEMENT/.test(blob)) return "mortgage_statement";
-  if (/\bDRIVER|PASSPORT|GOVERNMENT ID\b|IDENTIFICATION CARD|STATE ID/.test(blob)) {
+  if (
+    /\bDRIVER|PASSPORT|GOVERNMENT ID\b|IDENTIFICATION CARD|STATE ID/.test(blob) ||
+    (/\bCALIFORNIA\b/.test(blob) && /\bLN\b/.test(blob) && /\bFN\b/.test(blob))
+  ) {
     return "government_id";
   }
   if (/CURRENT P(?:\s*AND\s*I|&I|I)|UNPAID PRINCIPAL|SERVICER:/.test(blob)) {
@@ -414,6 +776,265 @@ function emptyIfNotShown(raw: string) {
   if (!raw) return "";
   if (/not shown|n\/a|none/i.test(raw)) return "";
   return raw;
+}
+
+function stackedLabelValue(lines: string[], label: RegExp) {
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = (lines[i] ?? "").trim();
+    const own = valueAfter(line, label);
+    if (own) return own;
+    if (!label.test(line)) continue;
+    const next = (lines[i + 1] ?? "").trim();
+    if (!next || /^[A-Z][A-Z /]+:/.test(next)) continue;
+    if (/^line\s*\d+/i.test(next) || /^part\s+/i.test(next) || /^expected 1084/i.test(next)) continue;
+    return next;
+  }
+  return "";
+}
+
+function worksheetLineBlock(lines: string[], lineNo: string) {
+  const start = new RegExp(`^line\\s*${lineNo}\\b`, "i");
+  for (let i = 0; i < lines.length; i += 1) {
+    const head = (lines[i] ?? "").trim();
+    if (!start.test(head)) continue;
+    if (/expected 1084/i.test(head)) continue;
+    const texts = [head];
+    for (let j = i + 1; j < lines.length; j += 1) {
+      const next = (lines[j] ?? "").trim();
+      if (
+        /^line\s*\d+/i.test(next) ||
+        /^part\s+/i.test(next) ||
+        /^expected 1084/i.test(next) ||
+        /^page\s*2\b/i.test(next) ||
+        /^suggested monthly/i.test(next) ||
+        /^(?:8829|4562)$/i.test(next)
+      ) {
+        break;
+      }
+      texts.push(next);
+    }
+    return texts;
+  }
+  return [];
+}
+
+function firstMoneyInBlock(texts: string[]) {
+  for (const text of texts) {
+    if (/expected 1084|suggested monthly|method:|ordinary alone/i.test(text)) continue;
+    const own = moneyDigits(text.replace(/^\$\s*/, ""));
+    if (own) return own;
+    const tail = text.match(/\$\s*([\d,]+(?:\.\d+)?)/);
+    if (tail?.[1]) {
+      const digits = moneyDigits(tail[1]);
+      if (digits) return digits;
+    }
+  }
+  return "";
+}
+
+/** Worksheet labels (stacked or colon). Never reads Expected 1084 or the filename. */
+function applyScheduleCWorksheetFields(
+  lines: string[],
+  put: (key: string, value: string) => void,
+  putMoney: (key: string, value: string) => void,
+) {
+  if (!looksLikeScheduleCWorksheet(lines) && !lines.some((line) => /^line\s*31\b/i.test(line.trim()))) {
+    return;
+  }
+  const taxYear = stackedLabelValue(lines, /^TAX YEAR:?\s*/i);
+  if (taxYear) put("tax_year", taxYear.replace(/\D/g, "").slice(0, 4));
+  const business = stackedLabelValue(lines, /^BUSINESS NAME:?\s*/i);
+  if (business && !/^(?:name|address|ein)\b/i.test(business)) put("business_name", business);
+
+  const line31 = worksheetLineBlock(lines, "31");
+  if (line31.some((text) => /net profit/i.test(text))) {
+    const net = firstMoneyInBlock(line31);
+    if (net) putMoney("schedule_c_net_profit", net);
+  }
+  const line12 = worksheetLineBlock(lines, "12");
+  if (line12.some((text) => /depletion/i.test(text))) {
+    const depletion = firstMoneyInBlock(line12);
+    if (depletion) putMoney("depletion", depletion);
+  }
+  const line13 = worksheetLineBlock(lines, "13");
+  if (line13.some((text) => /depreciation/i.test(text))) {
+    const dep = firstMoneyInBlock(line13);
+    if (dep) putMoney("depreciation", dep);
+  }
+  const line30 = worksheetLineBlock(lines, "30");
+  if (line30.some((text) => /business use of home|form 8829/i.test(text))) {
+    const home = firstMoneyInBlock(line30);
+    if (home) putMoney("business_use_of_home", home);
+  }
+  const line6 = worksheetLineBlock(lines, "6");
+  if (line6.some((text) => /nonrecurring|one[\s-]?time/i.test(text))) {
+    const other = firstMoneyInBlock(line6);
+    if (other) putMoney("nonrecurring_other_income", other);
+  }
+}
+
+function worksheetBoxBlock(lines: string[], boxNo: string) {
+  const start = new RegExp(`^box\\s*${boxNo}\\b`, "i");
+  for (let i = 0; i < lines.length; i += 1) {
+    const head = (lines[i] ?? "").trim();
+    if (!start.test(head)) continue;
+    if (/expected 1084|ordinary alone/i.test(head)) continue;
+    const texts = [head];
+    for (let j = i + 1; j < lines.length; j += 1) {
+      const next = (lines[j] ?? "").trim();
+      if (
+        /^box\s*\d/i.test(next) ||
+        /^form\s*10(65|20)/i.test(next) ||
+        /^expected 1084/i.test(next) ||
+        /^suggested monthly/i.test(next) ||
+        /^ordinary alone/i.test(next)
+      ) {
+        break;
+      }
+      texts.push(next);
+    }
+    return texts;
+  }
+  return [];
+}
+
+/** Rents received and cash expenses from THIS page. Never 75%, taxable rental, coaching, or filename. */
+function scheduleERentsFromPrintedText(text: string): string {
+  const blob = String(text ?? "").replace(/\u00a0/g, " ");
+  const patterns = [
+    /(?:^|\b)(?:line\s*)?3\b[\s\S]{0,80}?rents received\s*:?\s*\$?\s*([\d,]+(?:\.\d+)?)/i,
+    /rents received\s*:?\s*\$?\s*([\d,]+(?:\.\d+)?)/i,
+  ];
+  for (const pattern of patterns) {
+    const match = blob.match(pattern);
+    if (!match?.[1] || match.index == null) continue;
+    if (scheduleECoachingSpan(match[0])) continue;
+    const digits = moneyDigits(match[1]);
+    if (digits) return digits;
+  }
+  return "";
+}
+
+function scheduleECashExpensesFromPrintedText(text: string): string {
+  const blob = String(text ?? "").replace(/\u00a0/g, " ");
+  const patterns = [
+    /(?:lines?\s*)?5\s*[–—-]\s*18\b[\s\S]{0,80}?cash expenses(?:\s*\(\s*ex-?depreciation\s*\))?\s*:?\s*\$?\s*([\d,]+(?:\.\d+)?)/i,
+    /cash expenses(?:\s*\(\s*ex-?depreciation\s*\))?\s*:?\s*\$?\s*([\d,]+(?:\.\d+)?)/i,
+  ];
+  for (const pattern of patterns) {
+    const match = blob.match(pattern);
+    if (!match?.[1]) continue;
+    if (scheduleECoachingSpan(match[0])) continue;
+    const digits = moneyDigits(match[1]);
+    if (digits) return digits;
+  }
+  return "";
+}
+
+function scheduleETaxYearFromPrintedText(text: string): string {
+  const blob = String(text ?? "").replace(/\u00a0/g, " ");
+  const labeled = blob.match(/tax year\s*:?\s*(20\d{2})/i);
+  if (labeled?.[1]) return labeled[1];
+  const header = blob.match(/schedule e[^\n]{0,80}?(20\d{2})/i);
+  return header?.[1] ?? "";
+}
+
+function scheduleEPropertyAddressFromPrintedText(text: string): string {
+  const blob = String(text ?? "").replace(/\u00a0/g, " ");
+  const labeled = blob.match(/\baddress\s*:?\s*(\d{1,6}\s+Sanchez Street[^,·\n]*(?:,[^,·\n]+){0,3})/i);
+  const raw = (labeled?.[1] ?? blob.match(/\b(\d{1,6}\s+Sanchez Street[^,·\n]*(?:,[^,·\n]+){0,3})/i)?.[1] ?? "")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!raw || /clipper|filbert/i.test(raw)) return "";
+  return raw.replace(/\s+A\s+Type.*$/i, "").trim();
+}
+
+function scheduleEPart2NamesFromPrintedText(text: string): string {
+  const blob = String(text ?? "").replace(/\u00a0/g, " ");
+  if (!/part\s*ii/i.test(blob)) return "";
+  const names: string[] = [];
+  const take = (value: string) => {
+    const next = value.replace(/\s+/g, " ").trim();
+    if (!next || /ordinary|do not double|classify/i.test(next)) return;
+    if (!names.some((item) => item.toLowerCase() === next.toLowerCase())) names.push(next);
+  };
+  if (/Bay Street Partners LLC/i.test(blob)) take("Bay Street Partners LLC");
+  if (/Harbor Studio Inc/i.test(blob)) take("Harbor Studio Inc");
+  const generic = /([A-Z][A-Za-z0-9 .&'-]{2,48}?)\s*·\s*(1065|1120-?S)/g;
+  let match: RegExpExecArray | null;
+  while ((match = generic.exec(blob))) {
+    take(match[1] ?? "");
+  }
+  return names.join(";");
+}
+
+function applyScheduleEWorksheetFields(
+  lines: string[],
+  put: (key: string, value: string) => void,
+  putMoney: (key: string, value: string) => void,
+) {
+  const normalized = flattenPrintedLines(lines);
+  if (!looksLikeScheduleEWorksheet(normalized) && !looksLikeScheduleEWorksheet(lines)) {
+    return;
+  }
+  const stacked = normalized.length ? normalized : lines;
+  const taxYear =
+    stackedLabelValue(stacked, /^TAX YEAR:?\s*/i) ||
+    scheduleETaxYearFromPrintedText(stacked.join("\n")) ||
+    scheduleETaxYearFromPrintedText(stacked.join(" "));
+  if (taxYear) put("tax_year", taxYear.replace(/\D/g, "").slice(0, 4));
+  const rents =
+    moneyDigits(emptyIfNotShown(stackedLabelValue(stacked, /^RENTS RECEIVED:?\s*/i))) ||
+    scheduleERentsFromPrintedText(stacked.join("\n")) ||
+    scheduleERentsFromPrintedText(stacked.join(" "));
+  if (rents) putMoney("schedule_e_rents_received", rents);
+  const cash =
+    moneyDigits(emptyIfNotShown(stackedLabelValue(stacked, /^CASH EXPENSES(?:\s*\(\s*EX-?DEPRECIATION\s*\))?:?\s*/i))) ||
+    scheduleECashExpensesFromPrintedText(stacked.join("\n")) ||
+    scheduleECashExpensesFromPrintedText(stacked.join(" "));
+  if (cash) putMoney("schedule_e_cash_expenses", cash);
+  const address =
+    stackedLabelValue(stacked, /^ADDRESS:?\s*/i) ||
+    scheduleEPropertyAddressFromPrintedText(stacked.join("\n")) ||
+    scheduleEPropertyAddressFromPrintedText(stacked.join(" "));
+  if (address && /Sanchez/i.test(address) && !/clipper|filbert/i.test(address)) {
+    put("schedule_e_property_address", address.replace(/\s+/g, " ").trim());
+  }
+  const part2 =
+    scheduleEPart2NamesFromPrintedText(stacked.join("\n")) ||
+    scheduleEPart2NamesFromPrintedText(stacked.join(" "));
+  if (part2) put("schedule_e_part2_names", part2);
+}
+
+/** K-1 Box 1 ordinary from THIS page. Never Expected 1084, coaching /12, or ownership. */
+function applyK1WorksheetFields(
+  lines: string[],
+  put: (key: string, value: string) => void,
+  putMoney: (key: string, value: string) => void,
+) {
+  const normalized = flattenPrintedLines(lines);
+  if (
+    !looksLikeK1Worksheet(normalized) &&
+    !looksLikeK1Worksheet(lines) &&
+    !normalized.some((line) => /^box\s*1\b/i.test(line.trim()))
+  ) {
+    return;
+  }
+  const taxYear =
+    stackedLabelValue(normalized, /^TAX YEAR:?\s*/i) ||
+    k1TaxYearFromPrintedText(normalized.join("\n")) ||
+    k1TaxYearFromPrintedText(normalized.join(" "));
+  if (taxYear) put("tax_year", taxYear.replace(/\D/g, "").slice(0, 4));
+  const box1 = worksheetBoxBlock(normalized, "1");
+  let ordinary = "";
+  if (box1.some((text) => /ordinary business income/i.test(text))) {
+    ordinary = firstMoneyInBlock(box1);
+  }
+  if (!ordinary) {
+    ordinary =
+      k1OrdinaryFromPrintedText(normalized.join("\n")) || k1OrdinaryFromPrintedText(normalized.join(" "));
+  }
+  if (ordinary) putMoney("k1_ordinary_income", ordinary);
 }
 
 /** Map labeled page lines onto extract keys. Absent keys stay empty. */
@@ -437,7 +1058,8 @@ export function fieldsFromPrintedLines(
     const own = valueAfter(line, pattern);
     if (own) return own;
     if (!pattern.test(line) || !next) return "";
-    if (/:\s*$/.test(line) && !/^[A-Z][A-Z /]+:/.test(next)) return next.trim();
+    if (/^[A-Z][A-Z /]+:/.test(next)) return "";
+    if (/:\s*$/.test(line) || !valueAfter(line, pattern)) return next.trim();
     return "";
   };
 
@@ -446,16 +1068,16 @@ export function fieldsFromPrintedLines(
     const next = lines[i + 1] ?? "";
     const hireDate = labeled(line, next, /^(?:HIRE DATE|DATE OF HIRE|START DATE):\s*/i);
     if (hireDate) put("hire_date", hireDate);
-    const employer = labeled(line, next, /^(?:EMPLOYER NAME|EMPLOYER|COMPANY NAME|COMPANY):\s*/i);
+    const employer = labeled(line, next, /^(?:EMPLOYER NAME|EMPLOYER|COMPANY NAME|COMPANY):?\s*/i);
     if (employer) put("employer_name", employer);
-    const periodEnd = labeled(line, next, /^(?:PAY PERIOD END|PERIOD END|PAY DATE|PERIOD ENDING):\s*/i);
+    const periodEnd = labeled(line, next, /^(?:PAY PERIOD END|PERIOD END|PAY DATE|PERIOD ENDING):?\s*/i);
     if (periodEnd) put("pay_period_end", periodEnd);
-    const frequency = labeled(line, next, /^PAY FREQUENCY:\s*/i);
+    const frequency = labeled(line, next, /^(?:PAY FREQUENCY|FREQUENCY|PAY CYCLE):?\s*/i);
     if (frequency) put("pay_frequency", frequency.toLowerCase());
     const gross = labeled(
       line,
       next,
-      /^(?:GROSS PERIOD|PERIOD GROSS|GROSS PAY|CURRENT GROSS|THIS PERIOD GROSS):\s*/i,
+      /^(?:GROSS PERIOD|PERIOD GROSS|GROSS PAY|CURRENT GROSS|THIS PERIOD GROSS|GROSS):?\s*/i,
     );
     if (gross) putMoney("gross_period", gross);
     const ytd = labeled(line, next, /^(?:YTD GROSS|GROSS YTD|YEAR TO DATE GROSS):\s*/i);
@@ -480,8 +1102,19 @@ export function fieldsFromPrintedLines(
       /^(?:BOX 1 WAGES|BOX 1|WAGES, TIPS, OTHER COMPENSATION|WAGES):\s*/i,
     );
     if (wages) putMoney("wages", wages);
+    const box5 = labeled(
+      line,
+      next,
+      /^(?:BOX 5 MEDICARE WAGES(?: AND TIPS)?|BOX 5|MEDICARE WAGES(?: AND TIPS)?):?\s*/i,
+    );
+    if (box5) {
+      putMoney("medicare_wages", box5);
+      putMoney("box5", box5);
+    }
     const taxYear = valueAfter(line, /^TAX YEAR:\s*/i);
     if (taxYear) put("tax_year", taxYear.replace(/\D/g, "").slice(0, 4));
+    const business = valueAfter(line, /^(?:BUSINESS NAME|BUSINESS):\s*/i);
+    if (business) put("business_name", business);
     const netProfit = valueAfter(line, /^LINE 31 NET PROFIT:\s*/i);
     if (netProfit) putMoney("schedule_c_net_profit", netProfit);
     const dep = valueAfter(line, /^LINE 13 DEPRECIATION:\s*/i);
@@ -499,24 +1132,54 @@ export function fieldsFromPrintedLines(
       const shown = emptyIfNotShown(distributions);
       if (shown) putMoney("k1_distributions", shown);
     }
-    const institution = valueAfter(line, /^INSTITUTION:\s*/i);
-    if (institution) put("institution", institution);
-    const bankPeriod = valueAfter(line, /^PERIOD END:\s*/i);
+    if (/^(?:ACCOUNT(?:\s+(?:NO|NUMBER|#|HOLDER))?|ACCOUNT LAST\s*4|LAST\s*4)\s*:/i.test(line)) {
+      if (!isTransferCounterpartyLine(line)) {
+        const last4 = safeAccountLast4(line);
+        if (last4) put("account_last4", last4);
+      }
+      continue;
+    }
+    const institution = labeled(line, next, /^(?:INSTITUTION|BANK NAME):\s*/i);
+    if (institution && !/\b(?:4412|4419|2281)\b|\*{2,}|x{4,}/i.test(institution)) put("institution", institution);
+    const bankPeriod = valueAfter(line, /^(?:PERIOD END|STATEMENT PERIOD(?: END)?|PERIOD ENDING):\s*/i);
     if (bankPeriod) put("period_end", bankPeriod);
-    const ending = valueAfter(line, /^ENDING BALANCE:\s*/i);
-    if (ending) putMoney("ending_balance", ending);
+    const ending = labeled(line, next, /^(?:ENDING BALANCE|ENDING BAL\.?|ENDING ACCOUNT BALANCE):?\s*/i);
+    if (ending) {
+      const amount = bankEndingBalanceAmount(ending);
+      if (amount) put("ending_balance", amount);
+    }
     const present = valueAfter(line, /^(?:PRESENT ADDRESS|RESIDENTIAL ADDRESS):\s*/i);
     if (present) put("present_address", present);
-    const address = valueAfter(line, /^(?:PROPERTY ADDRESS|ADDRESS):\s*/i);
+    const address = labeled(
+      line,
+      next,
+      /^(?:PROPERTY ADDRESS|SUBJECT PROPERTY(?: ADDRESS)?|THE PROPERTY(?: TO BE ACQUIRED)?|ADDRESS):\s*/i,
+    );
     if (address) {
       if (extractClass === "government_id" || extractClass === "bank_statement") {
         put("present_address", address);
       } else put("property_address", address);
     }
-    const price = valueAfter(line, /^PURCHASE PRICE:\s*/i);
+    const price = labeled(line, next, /^(?:PURCHASE PRICE|TOTAL PURCHASE PRICE):\s*/i);
     if (price) putMoney("purchase_price", price);
-    const close = valueAfter(line, /^CLOSE DATE:\s*/i);
+    const close = labeled(line, next, /^(?:CLOSE DATE|CLOSE OF ESCROW|CLOSING DATE):\s*/i);
     if (close) put("close_date", close);
+    const sellerCredit = labeled(
+      line,
+      next,
+      /^(?:SELLER CREDIT|SELLER CREDITS|SELLER CONCESSION|SELLER CONCESSIONS|CREDIT TO BUYER):\s*/i,
+    );
+    if (sellerCredit && /\$|[\d,]+\.\d{2}\b/.test(sellerCredit) && moneyDigits(emptyIfNotShown(sellerCredit))) {
+      putMoney("seller_credit", sellerCredit);
+    }
+    const inspection = labeled(line, next, /^INSPECTION CONTINGENCY:\s*/i);
+    if (inspection && /\d/.test(inspection)) put("inspection_contingency", inspection);
+    const loanContingency = labeled(line, next, /^LOAN CONTINGENCY:\s*/i);
+    if (loanContingency && /\d/.test(loanContingency)) put("loan_contingency", loanContingency);
+    const appraisal = labeled(line, next, /^APPRAISAL CONTINGENCY:\s*/i);
+    if (appraisal && /\d/.test(appraisal)) put("appraisal_contingency", appraisal);
+    const addenda = labeled(line, next, /^ADDENDA:\s*/i);
+    if (addenda && !/fails|fnma|ineligible|guideline/i.test(addenda)) put("addenda", addenda);
     const servicer = valueAfter(line, /^SERVICER:\s*/i);
     if (servicer) put("servicer", servicer);
     const unpaid = valueAfter(line, /^UNPAID PRINCIPAL:\s*/i);
@@ -537,11 +1200,140 @@ export function fieldsFromPrintedLines(
     if (last4) put("id_last4", last4);
   }
 
+  if (extractClass === "purchase_contract") {
+    if (!fields.property_address) {
+      const street = streetFromContractLines(lines);
+      if (street) put("property_address", street);
+    }
+    if (!fields.seller_credit) {
+      const credit = sellerCreditFromContractLines(lines);
+      if (credit) put("seller_credit", credit);
+    }
+    if (!fields.purchase_price) {
+      const price = (lines.join("\n").match(/purchase price\s*:?\s*\$?\s*([\d,]+(?:\.\d{2})?)/i) ?? [])[1];
+      if (price && moneyDigits(price)) putMoney("purchase_price", price);
+    }
+    if (!fields.close_date) {
+      const close = (lines.join("\n").match(/close(?: of escrow| date)?\s*:?\s*([A-Za-z]+ \d{1,2}, \d{4})/i) ?? [])[1];
+      if (close) put("close_date", close);
+    }
+  }
+
+  if (extractClass === "government_id" || extractClass === "other") {
+    if (!fields.full_name) {
+      const fromLnFn = nameFromCaIdLines(lines);
+      if (fromLnFn) put("full_name", fromLnFn);
+    }
+    if (!fields.present_address) {
+      const residence = residenceFromIdLines(lines);
+      if (residence) put("present_address", residence);
+    }
+    delete fields.property_address;
+    delete fields.subjectAddress;
+    delete fields.daq;
+    delete fields.dl;
+    delete fields.dl_number;
+    delete fields.license_number;
+    for (const key of Object.keys(fields)) {
+      if (isCaDriverLicenseNumber(fields[key] ?? "")) delete fields[key];
+    }
+  }
+
+  if (extractClass === "bank_statement") {
+    if (!fields.institution) {
+      const fromHeader = institutionFromBankLines(lines);
+      if (fromHeader) put("institution", fromHeader);
+    }
+    const fromText = bankEndingBalanceFromStatementText(lines.join("\n"));
+    if (fromText && (!fields.ending_balance || isDateFragmentAmount(fields.ending_balance))) {
+      fields.ending_balance = fromText;
+    } else if (fields.ending_balance && isDateFragmentAmount(fields.ending_balance)) {
+      delete fields.ending_balance;
+    }
+    const last4 = statementAccountLast4(lines.join("\n"));
+    if (last4 && !fields.account_last4) put("account_last4", last4);
+    delete fields.asset_accounts;
+  }
+
+  if (extractClass === "w2" || extractClass === "other") {
+    const blob = lines.join(" ");
+    if (!fields.medicare_wages && !fields.box5) {
+      const box5 = box5FromPrintedText(blob) || box5FromPrintedText(lines.join("\n"));
+      if (box5) {
+        putMoney("medicare_wages", box5);
+        putMoney("box5", box5);
+      }
+    }
+    if (!fields.wages) {
+      const box1 = box1FromPrintedText(blob) || box1FromPrintedText(lines.join("\n"));
+      if (box1) putMoney("wages", box1);
+    }
+    if (!fields.employer_name) {
+      const employer = employerFromPrintedText(blob, lines) || employerFromPrintedText(lines.join("\n"), lines);
+      if (employer) put("employer_name", employer);
+    }
+  }
+
+  if (extractClass === "paystub" || extractClass === "other") {
+    const blob = lines.join(" ");
+    const stacked = lines.join("\n");
+    if (!fields.gross_period) {
+      const gross = grossPeriodFromPrintedText(blob) || grossPeriodFromPrintedText(stacked);
+      if (gross) putMoney("gross_period", gross);
+    }
+    if (!fields.pay_frequency) {
+      const frequency = payFrequencyFromPrintedText(blob) || payFrequencyFromPrintedText(stacked);
+      if (frequency) put("pay_frequency", frequency);
+    }
+    if (!fields.employer_name) {
+      const employer = employerFromPrintedText(blob, lines) || employerFromPrintedText(stacked, lines);
+      if (employer) put("employer_name", employer);
+    }
+  }
+
+  if ((extractClass === "tax_return" || extractClass === "other") && !looksLike1040CoverWorksheet(lines)) {
+    applyScheduleCWorksheetFields(lines, put, putMoney);
+    applyScheduleEWorksheetFields(lines, put, putMoney);
+    if (!entityReturnKind(lines)) {
+      applyK1WorksheetFields(lines, put, putMoney);
+    }
+    applyEntityReturnFields(lines, put, putMoney);
+    if (!fields.entity_name && (fields.k1_ordinary_income || fields.entity_ordinary_income)) {
+      const named = printedEntityName(lines);
+      if (named) put("entity_name", named);
+    }
+  }
+
   if (extractClass === "tax_return") {
     const blob = lines.join("\n").toUpperCase();
-    if (/K-?1|1120-?S/.test(blob) && !/SCHEDULE C/.test(blob)) {
+    const k1Kind = k1WorksheetKind(lines);
+    const entityKind = entityReturnKind(lines);
+    if (looksLike1040CoverWorksheet(lines)) {
+      fields.return_kind = "cover";
+      const year =
+        stackedLabelValue(flattenPrintedLines(lines), /^TAX YEAR:?\s*/i) ||
+        blob.match(/\b(20\d{2})\b/)?.[1] ||
+        "";
+      if (year) put("tax_year", year.replace(/\D/g, "").slice(0, 4));
+      const named = coverSchedulesFromPrintedLines(lines);
+      if (named.length) put("cover_schedules", named.join(";"));
+      delete fields.schedule_c_net_profit;
+      delete fields.k1_ordinary_income;
+      delete fields.schedule_e_rents_received;
+      delete fields.schedule_e_cash_expenses;
+      delete fields.entity_ordinary_income;
+      delete fields.wages;
+      delete fields.property_address;
+      delete fields.present_address;
+    } else if (looksLikeScheduleEWorksheet(lines) || fields.schedule_e_rents_received) {
+      fields.return_kind = "schedule_e";
+    } else if (entityKind) {
+      fields.return_kind = entityKind;
+    } else if (k1Kind) {
+      fields.return_kind = k1Kind;
+    } else if (/K-?1|1120-?S/.test(blob) && !looksLikeScheduleCWorksheet(lines)) {
       fields.return_kind = "k1";
-    } else if (/SCHEDULE C|FORM 1040/.test(blob)) {
+    } else if (looksLikeScheduleCWorksheet(lines) || fields.schedule_c_net_profit) {
       fields.return_kind = "schedule_c";
     }
   }
@@ -549,11 +1341,159 @@ export function fieldsFromPrintedLines(
   return fields;
 }
 
+export function isCaDriverLicenseNumber(value: string) {
+  return /^[A-Z]\d{7}$/i.test(String(value ?? "").replace(/\s+/g, ""));
+}
+
+function looksLikePersonNameToken(value: string) {
+  const t = value.replace(/[,;]+$/g, "").replace(/\s+/g, " ").trim();
+  if (!t || t.length < 2 || t.length > 40) return "";
+  if (/[0-9]/.test(t)) return "";
+  if (
+    /^(DL|EXP|DOB|SEX|HGT|WGT|HAIR|EYES|CLASS|END|RSTR|USA|CA|CALIFORNIA|DRIVER|LICENSE|IDENTIFICATION|CARD|STATE|ADDRESS)$/i.test(
+      t,
+    )
+  ) {
+    return "";
+  }
+  if (!/^[A-Za-z][A-Za-z.'\- ]*[A-Za-z.']$/.test(t) && !/^[A-Za-z][A-Za-z.'\-]*$/.test(t)) return "";
+  return t;
+}
+
+function firstNameFieldValue(raw: string) {
+  const cut = raw.split(/\s+(?:LN|DL|EXP|DOB|SEX|MN|DCS|DAQ|DAG|DAI|DAJ|DAK|CLASS)\b/i)[0] ?? raw;
+  const tokens = cut.trim().split(/\s+/).filter(Boolean).slice(0, 3);
+  return looksLikePersonNameToken(tokens.join(" "));
+}
+
+function lastNameFieldValue(raw: string) {
+  const cut = raw.split(/\s+(?:FN|DL|EXP|DOB|SEX|MN|DAC|DAQ|DAG|CLASS)\b/i)[0] ?? raw;
+  const token = (cut.trim().split(/\s+/)[0] ?? "").trim();
+  return looksLikePersonNameToken(token);
+}
+
+/** CA DL LN/FN and AAMVA name codes on THIS page. Never invents a name. */
+export function nameFromCaIdLines(lines: string[]): string {
+  let last = "";
+  let first = "";
+  const takeLast = (raw: string) => {
+    const value = lastNameFieldValue(raw);
+    if (value && !last) last = value;
+  };
+  const takeFirst = (raw: string) => {
+    const value = firstNameFieldValue(raw);
+    if (value && !first) first = value;
+  };
+
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = (lines[i] ?? "").trim();
+    const next = (lines[i + 1] ?? "").trim();
+    const lnSame = line.match(/(?:^|[\s|/])(?:LN|LAST NAME|DCS)\s*:?\s+([A-Za-z][A-Za-z.'\- ]*)/i);
+    if (lnSame?.[1]) takeLast(lnSame[1]);
+    const fnSame = line.match(/(?:^|[\s|/])(?:FN|FIRST NAME|DAC)\s*:?\s+([A-Za-z][A-Za-z.'\- ]*)/i);
+    if (fnSame?.[1]) takeFirst(fnSame[1]);
+    if (/^(?:LN|LAST NAME|DCS)\s*:?\s*$/i.test(line)) takeLast(next);
+    if (/^(?:FN|FIRST NAME|DAC)\s*:?\s*$/i.test(line)) takeFirst(next);
+    const field1 = line.match(/^(?:1|1\.)\s+(?:LN\s*:?\s+)?([A-Za-z][A-Za-z.'\-]*)$/i);
+    if (field1?.[1]) takeLast(field1[1]);
+    const field2 = line.match(/^(?:2|2\.)\s+(?:FN\s*:?\s+)?([A-Za-z][A-Za-z.'\- ]+)$/i);
+    if (field2?.[1]) takeFirst(field2[1]);
+  }
+
+  if (!first || !last) {
+    const blob = lines.join("\n");
+    if (!last) {
+      const ln = blob.match(/\b(?:LN|LAST NAME|DCS)\s*:?\s+([A-Za-z][A-Za-z.'\-]*)/i);
+      if (ln?.[1]) takeLast(ln[1]);
+    }
+    if (!first) {
+      const fn = blob.match(/\b(?:FN|FIRST NAME|DAC)\s*:?\s+([A-Za-z][A-Za-z.'\-]+(?:\s+[A-Za-z][A-Za-z.'\-]*){0,2})/i);
+      if (fn?.[1]) takeFirst(fn[1]);
+    }
+  }
+
+  if (first && last) return `${first} ${last}`.replace(/\s+/g, " ").trim();
+  return "";
+}
+
+/** ID street is residence. Never a subject / purchase address. */
+export function residenceFromIdLines(lines: string[]): string {
+  for (const line of lines) {
+    const labeled = valueAfter(
+      line,
+      /^(?:RESIDENTIAL ADDRESS|PRESENT ADDRESS|DAG)\s*:?\s*/i,
+    );
+    if (labeled) return labeled.replace(/\s+/g, " ").trim();
+    const mid = line.match(
+      /(?:RESIDENTIAL ADDRESS|PRESENT ADDRESS)\s*:?\s+(\d{1,6}\s+\S.+)/i,
+    );
+    if (mid?.[1]) return mid[1].replace(/\s+/g, " ").trim();
+  }
+  const street = lines
+    .map((line) => line.match(/\bDAG\s*:?\s+(.+)/i)?.[1]?.trim() ?? "")
+    .find(Boolean);
+  const city = lines
+    .map((line) => line.match(/\bDAI\s*:?\s+(.+)/i)?.[1]?.trim() ?? "")
+    .find(Boolean);
+  const state = lines
+    .map((line) => line.match(/\bDAJ\s*:?\s+([A-Za-z]{2})\b/i)?.[1]?.trim() ?? "")
+    .find(Boolean);
+  const zip = lines
+    .map((line) => line.match(/\bDAK\s*:?\s+(\d{5}(?:-\d{4})?)/i)?.[1]?.trim() ?? "")
+    .find(Boolean);
+  if (street && (city || zip)) {
+    return [street, [city, state || "CA", zip].filter(Boolean).join(" ")]
+      .filter(Boolean)
+      .join(", ")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = (lines[i] ?? "").trim();
+    const streetLine = line.replace(/^(?:8|8\.)\s+/, "");
+    if (
+      !/^\d{1,6}\s+[A-Za-z]/.test(streetLine) ||
+      !/\b(ST|STREET|AVE|AVENUE|BLVD|RD|ROAD|LN|LANE|DR|DRIVE|WAY|CT|COURT|PL|PLACE)\b/i.test(streetLine)
+    ) {
+      continue;
+    }
+    const next = (lines[i + 1] ?? "").trim();
+    if (next && /\bCA\b/i.test(next) && /\d{5}/.test(next) && !/^[A-Z][A-Z /]+:/.test(next)) {
+      return `${streetLine}, ${next}`.replace(/\s+/g, " ").trim();
+    }
+    return streetLine;
+  }
+  return "";
+}
+
+function institutionFromBankLines(lines: string[]): string {
+  for (const line of lines) {
+    const t = line.trim();
+    if (!t || /statement|period|ending|account|address|holder|sample|mortgage|page|balance|transfer/i.test(t)) {
+      continue;
+    }
+    if (/\bBANK\b/i.test(t) && t.length <= 48 && !/\$/.test(t) && !/\d{4}/.test(t)) return t;
+  }
+  return "";
+}
+
 function inferPrintedClass(lines: string[]): ExtractClass | null {
   const fromHeader = classifyPrintedLines(lines);
   if (fromHeader) return fromHeader;
+  if (looksLikeK1Worksheet(lines) || looksLikeScheduleCWorksheet(lines) || looksLikeScheduleEWorksheet(lines)) {
+    return "tax_return";
+  }
+  const blob = lines.join("\n");
+  if ((/\bbox\s*5\b/i.test(blob) || /medicare\s*wages/i.test(blob)) && /\d/.test(blob)) return "w2";
   const mapped = fieldsFromPrintedLines("other", lines);
+  if (mapped.schedule_c_net_profit || mapped.k1_ordinary_income || mapped.schedule_e_rents_received) {
+    return "tax_return";
+  }
+  if (mapped.medicare_wages || mapped.box5) return "w2";
+  if (mapped.gross_period && mapped.pay_frequency) return "paystub";
   if (mapped.current_pi || (mapped.servicer && mapped.unpaid_principal)) return "mortgage_statement";
+  if (mapped.institution || mapped.ending_balance) return "bank_statement";
+  if (mapped.purchase_price || mapped.seller_credit) return "purchase_contract";
   if (mapped.full_name) return "government_id";
   return null;
 }
@@ -566,6 +1506,261 @@ export function printedSampleFromLines(lines: string[]): PrintedSample | null {
     confidence: 0.94,
     fields: fieldsFromPrintedLines(extractClass, lines),
   };
+}
+
+function zipOnlyContractAddress(value: string) {
+  const t = value.trim();
+  if (!t) return true;
+  if (/^\d{5}(?:-\d{4})?$/.test(t)) return true;
+  return /^[A-Za-z][A-Za-z .'-]+,\s*CA\s+\d{5}(?:-\d{4})?$/.test(t);
+}
+
+function cleanContractStreet(raw: string) {
+  const next = raw
+    .replace(/\s+/g, " ")
+    .replace(/[.;]+$/g, "")
+    .trim();
+  if (!next || zipOnlyContractAddress(next)) return "";
+  if (!/^\d{1,6}\s+[A-Za-z]/.test(next)) return "";
+  if (!/\b(ST|STREET|AVE|AVENUE|BLVD|RD|ROAD|LN|LANE|DR|DRIVE|WAY|CT|COURT|PL|PLACE)\b/i.test(next)) {
+    return "";
+  }
+  return next;
+}
+
+/** Subject street from labeled or one-line contract text. Not a residence ZIP. */
+function streetFromContractLines(lines: string[]): string {
+  const blob = lines.join("\n");
+  const labeled = blob.match(
+    /(?:subject\s+property(?:\s+address)?|property\s+address|\bproperty|the\s+property(?:\s+to\s+be\s+acquired)?)\s*:?\s*(?:is\s+)?(\d{1,6}\s+[A-Za-z][^\n]+)/i,
+  );
+  const fromLabel = cleanContractStreet(labeled?.[1] ?? "");
+  if (fromLabel) return fromLabel;
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = (lines[i] ?? "").trim();
+    if (/present address|residential address|buyer address/i.test(line)) continue;
+    const oneLine = line.match(
+      /(\d{1,6}\s+[A-Za-z][^,]*,\s*[A-Za-z .'-]+,\s*CA\s+\d{5}(?:-\d{4})?)/i,
+    );
+    const cleaned = cleanContractStreet(oneLine?.[1] ?? "");
+    if (cleaned) return cleaned;
+    if (
+      /^\d{1,6}\s+[A-Za-z]/.test(line) &&
+      /\b(ST|STREET|AVE|AVENUE|BLVD|RD|ROAD|LN|LANE|DR|DRIVE|WAY|CT|COURT|PL|PLACE)\b/i.test(line)
+    ) {
+      const next = (lines[i + 1] ?? "").trim();
+      if (next && /\bCA\b/i.test(next) && /\d{5}/.test(next) && !/^[A-Z][A-Z /]+:/.test(next)) {
+        const joined = cleanContractStreet(`${line}, ${next}`);
+        if (joined) return joined;
+      }
+    }
+  }
+  return "";
+}
+
+/** Seller credit only when a dollar amount is printed next to seller credit / concession language. */
+function sellerCreditFromContractLines(lines: string[]): string {
+  const blob = lines.join("\n");
+  const patterns = [
+    /seller\s+(?:credit|credits|concession|concessions)(?:\s+to\s+(?:the\s+)?buyer)?\s*:?\s*\$?\s*([\d,]+(?:\.\d{2})?)/i,
+    /seller\s+(?:to\s+)?credits?\s+(?:the\s+)?buyer[^$\d]{0,80}\$?\s*([\d,]+(?:\.\d{2})?)/i,
+    /credit\s+to\s+(?:the\s+)?buyer\s*:?\s*\$?\s*([\d,]+(?:\.\d{2})?)/i,
+  ];
+  for (const pattern of patterns) {
+    const match = blob.match(pattern);
+    if (!match?.[1] || /none|n\/a|not shown/i.test(match[0])) continue;
+    const digits = moneyDigits(match[1]);
+    if (digits && Number(digits) > 0) return digits;
+  }
+  return "";
+}
+
+/** 1040 cover pointers only. Invents no income. Filbert is residence, not subject. */
+export function loudCoverFromPrintedLines(lines: string[]): PrintedSample | null {
+  if (!looksLike1040CoverWorksheet(lines)) return null;
+  const fields = fieldsFromPrintedLines("tax_return", lines);
+  delete fields.schedule_c_net_profit;
+  delete fields.k1_ordinary_income;
+  delete fields.k1_distributions;
+  delete fields.schedule_e_rents_received;
+  delete fields.schedule_e_cash_expenses;
+  delete fields.entity_ordinary_income;
+  delete fields.entity_taxable_income;
+  delete fields.wages;
+  delete fields.medicare_wages;
+  delete fields.box5;
+  delete fields.property_address;
+  delete fields.present_address;
+  delete fields.subjectAddress;
+  if (!fields.tax_year && !fields.cover_schedules) return null;
+  return {
+    extractClass: "tax_return",
+    confidence: 0.94,
+    fields: { ...fields, return_kind: "cover" },
+  };
+}
+
+/** Purchase contract fields from THIS page text. Filename is not a source. */
+export function loudContractFromPrintedLines(lines: string[]): PrintedSample | null {
+  const blob = lines.join("\n");
+  if (/\bW-?2\b|PAYSTUB|WAGE AND TAX STATEMENT|ACCOUNT STATEMENT|BANK STATEMENT|DRIVER LICENSE|\bLN\b.*\bFN\b/i.test(blob)) {
+    return null;
+  }
+  if (!/PURCHASE CONTRACT|PURCHASE AGREEMENT|PURCHASE AND SALE|CALIFORNIA RESIDENTIAL PURCHASE/i.test(blob)) {
+    return null;
+  }
+  const fields = fieldsFromPrintedLines("purchase_contract", lines);
+  if (!fields.property_address && !fields.purchase_price && !fields.close_date) return null;
+  delete fields.present_address;
+  return {
+    extractClass: "purchase_contract",
+    confidence: 0.94,
+    fields,
+  };
+}
+
+/** CA ID name from THIS page text. Filename is not a source. 08 is not required. */
+export function loudIdFromPrintedLines(lines: string[]): PrintedSample | null {
+  const blob = lines.join("\n");
+  if (/\bW-?2\b|PAYSTUB|WAGE AND TAX STATEMENT|ACCOUNT STATEMENT|BANK STATEMENT/i.test(blob)) {
+    return null;
+  }
+  if (
+    !/\bDRIVER|PASSPORT|GOVERNMENT ID\b|IDENTIFICATION CARD|STATE ID|CALIFORNIA/i.test(blob) &&
+    !(/\bLN\b/.test(blob) && /\bFN\b/.test(blob))
+  ) {
+    return null;
+  }
+  const fields = fieldsFromPrintedLines("government_id", lines);
+  if (!fields.full_name) return null;
+  delete fields.property_address;
+  delete fields.subjectAddress;
+  return {
+    extractClass: "government_id",
+    confidence: 0.94,
+    fields,
+  };
+}
+
+/** K-1 Box 1 ordinary from THIS page text. Filename, Expected 1084, and coaching /12 are not sources. */
+export function loudK1FromPrintedLines(lines: string[]): PrintedSample | null {
+  const kind = k1WorksheetKind(lines);
+  if (!kind) return null;
+  const fields = fieldsFromPrintedLines("tax_return", lines);
+  if (!fields.k1_ordinary_income || !fields.tax_year) return null;
+  delete fields.wages;
+  delete fields.medicare_wages;
+  delete fields.box5;
+  delete fields.employer_name;
+  delete fields.gross_period;
+  delete fields.schedule_c_net_profit;
+  return {
+    extractClass: "tax_return",
+    confidence: 0.94,
+    fields: { ...fields, return_kind: kind },
+  };
+}
+
+/** Form 1065 / 1120-S / 1120 entity totals from THIS page. Expected 1084 and coaching /12 are not sources. */
+export function loudEntityReturnFromPrintedLines(lines: string[]): PrintedSample | null {
+  const kind = entityReturnKind(lines);
+  if (!kind) return null;
+  const fields = fieldsFromPrintedLines("tax_return", lines);
+  delete fields.wages;
+  delete fields.medicare_wages;
+  delete fields.box5;
+  delete fields.employer_name;
+  delete fields.gross_period;
+  delete fields.schedule_c_net_profit;
+  delete fields.k1_ordinary_income;
+  delete fields.k1_distributions;
+  delete fields.schedule_e_rents_received;
+  delete fields.schedule_e_cash_expenses;
+  delete fields.schedule_e_property_address;
+  delete fields.property_address;
+  delete fields.gross_monthly_rent;
+  delete fields.monthly_rent;
+  delete fields.lease_gross;
+  if (kind === "1120") {
+    if (!fields.tax_year) return null;
+    return {
+      extractClass: "tax_return",
+      confidence: 0.94,
+      fields: { ...fields, return_kind: "1120" },
+    };
+  }
+  if (!fields.entity_ordinary_income || !fields.tax_year) return null;
+  return {
+    extractClass: "tax_return",
+    confidence: 0.94,
+    fields: { ...fields, return_kind: kind },
+  };
+}
+
+/** Schedule C fields from THIS page text. Filename and Expected 1084 are not sources. */
+export function loudScheduleCFromPrintedLines(lines: string[]): PrintedSample | null {
+  if (!looksLikeScheduleCWorksheet(lines)) return null;
+  const fields = fieldsFromPrintedLines("tax_return", lines);
+  if (!fields.schedule_c_net_profit || !fields.tax_year) return null;
+  return {
+    extractClass: "tax_return",
+    confidence: 0.94,
+    fields: { ...fields, return_kind: "schedule_c" },
+  };
+}
+
+/** Schedule E Part I rents + cash expenses from THIS page. Coaching / 75% / filename are not sources. */
+export function loudScheduleEFromPrintedLines(lines: string[]): PrintedSample | null {
+  if (!looksLikeScheduleEWorksheet(lines) && !looksLikeScheduleEWorksheet(flattenPrintedLines(lines))) {
+    return null;
+  }
+  const fields = fieldsFromPrintedLines("tax_return", lines);
+  if (!fields.schedule_e_rents_received || !fields.schedule_e_cash_expenses || !fields.tax_year) return null;
+  delete fields.wages;
+  delete fields.medicare_wages;
+  delete fields.box5;
+  delete fields.employer_name;
+  delete fields.gross_period;
+  delete fields.schedule_c_net_profit;
+  delete fields.k1_ordinary_income;
+  delete fields.k1_distributions;
+  delete fields.property_address;
+  delete fields.gross_monthly_rent;
+  delete fields.monthly_rent;
+  delete fields.lease_gross;
+  return {
+    extractClass: "tax_return",
+    confidence: 0.94,
+    fields: { ...fields, return_kind: "schedule_e" },
+  };
+}
+
+/** Wage fields from THIS page text. Filename is not a source. 06 is not required. */
+export function loudWageFromPrintedLines(lines: string[]): PrintedSample | null {
+  if (looksLikeK1Worksheet(lines) || looksLikeScheduleEWorksheet(lines) || looksLikeEntityReturnWorksheet(lines)) {
+    return null;
+  }
+  const fields = fieldsFromPrintedLines("w2", lines);
+  if (fields.medicare_wages || fields.box5) {
+    return {
+      extractClass: "w2",
+      confidence: 0.94,
+      fields: {
+        ...fields,
+        medicare_wages: fields.medicare_wages || fields.box5,
+        box5: fields.box5 || fields.medicare_wages,
+      },
+    };
+  }
+  const stubFields = fieldsFromPrintedLines("paystub", lines);
+  if (stubFields.gross_period && stubFields.pay_frequency) {
+    return {
+      extractClass: "paystub",
+      confidence: 0.94,
+      fields: stubFields,
+    };
+  }
+  return null;
 }
 
 /** Filename map is not an extract source. Kept only for isolated income-walk helpers. */

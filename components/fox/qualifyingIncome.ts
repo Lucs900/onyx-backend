@@ -1,4 +1,5 @@
 import type { ExtractClass, FactProposal, FieldSource, FoxIntakeDraft } from "./types";
+import { writeCurrentEmploymentHistory } from "./fileHistory";
 import {
   DECLINING_INCOME_CAUTION,
   DECLINING_YEAR_RATIO,
@@ -10,6 +11,7 @@ import {
   BOTH_MONTHLY_SECOND_JOB_NOTE,
   YTD_CONFLICT_CAUTION,
   K1_ORDINARY_NOTE,
+  SUGGESTED_RENTAL_CASH_FLOW_NOTE,
   SECOND_JOB_SAME_STUB_NOTE,
   SECOND_JOB_THIN_NOTE,
   bothMonthlyAskCopy,
@@ -23,7 +25,10 @@ import {
   RAISE_WHEN_ASK,
   RAISE_YTD_MISSING_NOTE,
   RAISE_WHEN_UNKNOWN_NOTE,
+  entityCashFlowMethodNote,
+  entityCashFlowMonthly,
   k1OrdinaryMonthly,
+  scheduleECashFlowMonthly,
   laterYearIsMateriallyLower,
   monthlyFromAnnual,
   monthsThroughPeriodEnd,
@@ -53,6 +58,7 @@ export {
   BOTH_MONTHLY_SECOND_JOB_NOTE,
   YTD_CONFLICT_CAUTION,
   K1_ORDINARY_NOTE,
+  SUGGESTED_RENTAL_CASH_FLOW_NOTE,
   SECOND_JOB_SAME_STUB_NOTE,
   SECOND_JOB_THIN_NOTE,
   bothMonthlyAskCopy,
@@ -67,6 +73,7 @@ export {
   RAISE_YTD_MISSING_NOTE,
   RAISE_WHEN_UNKNOWN_NOTE,
   k1OrdinaryMonthly,
+  scheduleECashFlowMonthly,
   monthlyFromAnnual,
   monthsThroughPeriodEnd,
   periodsPerYear,
@@ -82,8 +89,8 @@ export type { BothMonthlyReason, QualifyingMethod, RaiseWhen, ScheduleCYearInput
 export const QUALIFYING_INCOME_FIELD = "qualifying_income";
 export const TAX_CASHFLOWS_FIELD = "tax_cashflows";
 
-export type TaxReturnKind = "schedule_c" | "k1" | "1065" | "1120s" | "";
-export type QualifyingBasis = "schedule_c" | "wage" | "k1" | "combined";
+export type TaxReturnKind = "schedule_c" | "schedule_e" | "k1" | "1065" | "1120s" | "1120" | "";
+export type QualifyingBasis = "schedule_c" | "schedule_e" | "wage" | "k1" | "entity" | "combined";
 
 export const WAGE_MONTHLY_FIELD = "wage_monthly";
 export const SE_MONTHLY_FIELD = "se_monthly";
@@ -106,6 +113,19 @@ export type TaxYearCashflow = {
   mileage_depreciation: string;
   k1_ordinary_income: string;
   k1_distributions: string;
+  schedule_e_rents_received: string;
+  schedule_e_cash_expenses: string;
+  schedule_e_part2_names: string;
+  schedule_e_property_address: string;
+  entity_ordinary_income: string;
+  entity_8825_rental: string;
+  entity_depreciation: string;
+  entity_amortization: string;
+  entity_te: string;
+  entity_guaranteed_payments: string;
+  ownership_percent: string;
+  entity_taxable_income: string;
+  entity_name: string;
 };
 
 export type QualifyingIncomeResult = {
@@ -174,10 +194,17 @@ export function normalizeReturnKind(raw?: string | null): TaxReturnKind {
     .replace(/[\s_-]+/g, "");
   if (!v) return "";
   if (v.includes("schedulec") || v === "c" || v.includes("1040c")) return "schedule_c";
+  if (v.includes("schedulee") || v.includes("1040e")) return "schedule_e";
   if (v.includes("k1")) return "k1";
   if (v.includes("1065") || v.includes("partnership")) return "1065";
   if (v.includes("1120s") || v.includes("scorp")) return "1120s";
+  if (v === "1120" || v.endsWith("1120") || v.includes("ccorp")) return "1120";
+  if (v === "cover" || v.includes("1040cover")) return "";
   return "";
+}
+
+export function isCoverReturnFields(fields?: Record<string, string | null | undefined> | null) {
+  return String(fields?.return_kind ?? "").trim().toLowerCase() === "cover";
 }
 
 function cashflowToScheduleCYear(row: TaxYearCashflow): ScheduleCYearInput | null {
@@ -264,6 +291,19 @@ export function readTaxCashflows(draft: FoxIntakeDraft): TaxYearCashflow[] {
           mileage_depreciation: String(row.mileage_depreciation ?? ""),
           k1_ordinary_income: String(row.k1_ordinary_income ?? ""),
           k1_distributions: String(row.k1_distributions ?? ""),
+          schedule_e_rents_received: String(row.schedule_e_rents_received ?? ""),
+          schedule_e_cash_expenses: String(row.schedule_e_cash_expenses ?? ""),
+          schedule_e_part2_names: String(row.schedule_e_part2_names ?? ""),
+          schedule_e_property_address: String(row.schedule_e_property_address ?? ""),
+          entity_ordinary_income: String(row.entity_ordinary_income ?? ""),
+          entity_8825_rental: String(row.entity_8825_rental ?? ""),
+          entity_depreciation: String(row.entity_depreciation ?? ""),
+          entity_amortization: String(row.entity_amortization ?? ""),
+          entity_te: String(row.entity_te ?? ""),
+          entity_guaranteed_payments: String(row.entity_guaranteed_payments ?? ""),
+          ownership_percent: String(row.ownership_percent ?? ""),
+          entity_taxable_income: String(row.entity_taxable_income ?? ""),
+          entity_name: String(row.entity_name ?? ""),
         },
       ];
     });
@@ -273,11 +313,26 @@ export function readTaxCashflows(draft: FoxIntakeDraft): TaxYearCashflow[] {
 }
 
 export function cashflowFromExtract(fields: Record<string, string>): TaxYearCashflow | null {
+  if (isCoverReturnFields(fields)) return null;
   const tax_year = String(fields.tax_year ?? "").trim();
   const schedule_c_net_profit = String(fields.schedule_c_net_profit ?? "").trim();
   const k1_ordinary_income = String(fields.k1_ordinary_income ?? "").trim();
+  const schedule_e_rents_received = String(fields.schedule_e_rents_received ?? "").trim();
+  const schedule_e_cash_expenses = String(fields.schedule_e_cash_expenses ?? "").trim();
+  const entity_ordinary_income = String(fields.entity_ordinary_income ?? "").trim();
+  const entity_taxable_income = String(fields.entity_taxable_income ?? "").trim();
   const return_kind = inferReturnKind(fields);
-  if (!tax_year && !schedule_c_net_profit && !k1_ordinary_income && !return_kind) return null;
+  if (
+    !tax_year &&
+    !schedule_c_net_profit &&
+    !k1_ordinary_income &&
+    !schedule_e_rents_received &&
+    !entity_ordinary_income &&
+    !entity_taxable_income &&
+    !return_kind
+  ) {
+    return null;
+  }
   return {
     tax_year,
     return_kind,
@@ -291,12 +346,30 @@ export function cashflowFromExtract(fields: Record<string, string>): TaxYearCash
     mileage_depreciation: String(fields.mileage_depreciation ?? "").trim(),
     k1_ordinary_income,
     k1_distributions: String(fields.k1_distributions ?? "").trim(),
+    schedule_e_rents_received,
+    schedule_e_cash_expenses,
+    schedule_e_part2_names: String(fields.schedule_e_part2_names ?? "").trim(),
+    schedule_e_property_address: String(fields.schedule_e_property_address ?? "").trim(),
+    entity_ordinary_income,
+    entity_8825_rental: String(fields.entity_8825_rental ?? "").trim(),
+    entity_depreciation: String(fields.entity_depreciation ?? "").trim(),
+    entity_amortization: String(fields.entity_amortization ?? "").trim(),
+    entity_te: String(fields.entity_te ?? "").trim(),
+    entity_guaranteed_payments: String(fields.entity_guaranteed_payments ?? "").trim(),
+    ownership_percent: String(fields.ownership_percent ?? "").trim(),
+    entity_taxable_income,
+    entity_name: String(fields.entity_name ?? "").trim(),
   };
 }
 
 export function inferReturnKind(fields: Record<string, string>): TaxReturnKind {
   const named = normalizeReturnKind(fields.return_kind);
   if (named) return named;
+  if (String(fields.schedule_e_rents_received ?? "").trim()) return "schedule_e";
+  if (String(fields.entity_ordinary_income ?? "").trim()) {
+    return String(fields.ownership_percent ?? "") === "100" ? "1120s" : "1065";
+  }
+  if (String(fields.entity_taxable_income ?? "").trim()) return "1120";
   if (String(fields.k1_ordinary_income ?? "").trim() && !String(fields.schedule_c_net_profit ?? "").trim()) {
     return "k1";
   }
@@ -304,12 +377,103 @@ export function inferReturnKind(fields: Record<string, string>): TaxReturnKind {
   return "";
 }
 
+function isEntityOrK1Kind(kind: TaxReturnKind) {
+  return kind === "k1" || kind === "1065" || kind === "1120s";
+}
+
+function pickCashflowValue(previous: string, incoming: string) {
+  return incoming.trim() || previous.trim();
+}
+
+function mergeEntityYearRow(existing: TaxYearCashflow, incoming: TaxYearCashflow): TaxYearCashflow {
+  const keys = Object.keys(existing) as (keyof TaxYearCashflow)[];
+  const next = { ...existing };
+  for (const key of keys) {
+    next[key] = pickCashflowValue(String(existing[key] ?? ""), String(incoming[key] ?? "")) as never;
+  }
+  next.return_kind = incoming.return_kind || existing.return_kind;
+  next.tax_year = incoming.tax_year || existing.tax_year;
+  return next;
+}
+
 export function mergeTaxCashflows(existing: TaxYearCashflow[], incoming: TaxYearCashflow | null): TaxYearCashflow[] {
   if (!incoming) return existing;
-  const key = incoming.tax_year || `unknown-${existing.length}`;
-  const next = existing.filter((row) => (row.tax_year || "") !== key);
-  next.push({ ...incoming, tax_year: incoming.tax_year || key });
-  return next.sort((a, b) => (yearNumber(a.tax_year) ?? 0) - (yearNumber(b.tax_year) ?? 0));
+  const incomingEntity = isEntityOrK1Kind(incoming.return_kind) || Boolean(incoming.entity_ordinary_income || incoming.k1_ordinary_income);
+  const match = existing.findIndex((row) => {
+    if ((row.tax_year || "") !== (incoming.tax_year || "")) return false;
+    const rowEntity = isEntityOrK1Kind(row.return_kind) || Boolean(row.entity_ordinary_income || row.k1_ordinary_income);
+    if (incomingEntity && rowEntity) return true;
+    return row.return_kind === incoming.return_kind;
+  });
+  if (match >= 0) {
+    const next = [...existing];
+    next[match] = incomingEntity
+      ? mergeEntityYearRow(existing[match], incoming)
+      : { ...incoming, tax_year: incoming.tax_year || existing[match].tax_year };
+    return next.sort((a, b) => (yearNumber(a.tax_year) ?? 0) - (yearNumber(b.tax_year) ?? 0));
+  }
+  return [...existing, { ...incoming, tax_year: incoming.tax_year || `unknown-${existing.length}` }].sort(
+    (a, b) => (yearNumber(a.tax_year) ?? 0) - (yearNumber(b.tax_year) ?? 0),
+  );
+}
+
+function scheduleEMonthly(years: TaxYearCashflow[]): number | null {
+  const usable = years
+    .map((row) => ({
+      year: yearNumber(row.tax_year) ?? 0,
+      rents: parseExtractMoney(row.schedule_e_rents_received),
+      cash: parseExtractMoney(row.schedule_e_cash_expenses),
+    }))
+    .filter((row) => row.rents != null && row.cash != null)
+    .sort((a, b) => a.year - b.year);
+  if (!usable.length) return null;
+  const latest = usable[usable.length - 1];
+  if (latest.rents == null || latest.cash == null) return null;
+  return scheduleECashFlowMonthly(latest.rents, latest.cash);
+}
+
+function entityRowMonthly(row: TaxYearCashflow): number | null {
+  const ordinary = parseExtractMoney(row.entity_ordinary_income);
+  if (ordinary == null) return null;
+  const ownership = parseExtractMoney(row.ownership_percent);
+  if (ownership == null) return null;
+  return entityCashFlowMonthly({
+    ordinary,
+    rental8825: parseExtractMoney(row.entity_8825_rental),
+    depreciation: parseExtractMoney(row.entity_depreciation),
+    amortization: parseExtractMoney(row.entity_amortization),
+    te: parseExtractMoney(row.entity_te),
+    guaranteedPayments: parseExtractMoney(row.entity_guaranteed_payments),
+    ownershipPercent: ownership,
+  });
+}
+
+function entityMonthly(years: TaxYearCashflow[]): { monthly: number; row: TaxYearCashflow } | null {
+  const usable = years
+    .map((row) => ({
+      year: yearNumber(row.tax_year) ?? 0,
+      monthly: entityRowMonthly(row),
+      row,
+    }))
+    .filter((item) => item.monthly != null)
+    .sort((a, b) => a.year - b.year);
+  if (!usable.length) return null;
+  const latest = usable[usable.length - 1];
+  if (latest.monthly == null) return null;
+  return { monthly: latest.monthly, row: latest.row };
+}
+
+function entityResultFromRow(row: TaxYearCashflow, monthly: number): QualifyingIncomeResult {
+  return {
+    monthly,
+    basis: "entity",
+    methodNote: entityCashFlowMethodNote({
+      kind: row.return_kind,
+      ownershipPercent: parseExtractMoney(row.ownership_percent),
+      guaranteedPayments: parseExtractMoney(row.entity_guaranteed_payments),
+    }),
+    parts: { k1: monthly },
+  };
 }
 
 function k1Monthly(years: TaxYearCashflow[]): number | null {
@@ -335,6 +499,14 @@ export function k1OrdinaryMissingDistributions(draft: FoxIntakeDraft): boolean {
 
 export function hasScheduleCCashflow(draft: FoxIntakeDraft): boolean {
   return readTaxCashflows(draft).some((row) => String(row.schedule_c_net_profit ?? "").trim());
+}
+
+export function hasScheduleECashflow(draft: FoxIntakeDraft): boolean {
+  return readTaxCashflows(draft).some(
+    (row) =>
+      row.return_kind === "schedule_e" ||
+      (String(row.schedule_e_rents_received ?? "").trim() && String(row.schedule_e_cash_expenses ?? "").trim()),
+  );
 }
 
 function pickWageField(fields: Record<string, string>, draft: FoxIntakeDraft, key: string) {
@@ -372,6 +544,33 @@ function normalizeEmployer(raw?: string | null) {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, " ")
     .trim();
+}
+
+function entityNamesOnFile(draft: FoxIntakeDraft, years: TaxYearCashflow[] = [], fields?: Record<string, string>) {
+  const names = [
+    ...years.map((row) => row.entity_name),
+    ...readTaxCashflows(draft).map((row) => row.entity_name),
+    String(fields?.entity_name ?? ""),
+    String(factValue(draft, "entity_name") ?? ""),
+  ];
+  return names.map((name) => String(name ?? "").trim()).filter(Boolean);
+}
+
+export function sameBusinessEmployerAndEntity(
+  employer?: string | null,
+  entity?: string | null,
+) {
+  return employersClose(employer, entity);
+}
+
+export function sameBusinessWageAndEntity(
+  draft: FoxIntakeDraft,
+  fields: Record<string, string> = {},
+  years: TaxYearCashflow[] = readTaxCashflows(draft),
+) {
+  const employer = String(fields.employer_name ?? factValue(draft, "employer_name") ?? "").trim();
+  if (!employer) return false;
+  return entityNamesOnFile(draft, years, fields).some((name) => sameBusinessEmployerAndEntity(employer, name));
 }
 
 export function readWageJobs(draft: FoxIntakeDraft): WageJobCashflow[] {
@@ -517,7 +716,8 @@ function wageSuggestInput(draft: FoxIntakeDraft, fields: Record<string, string>)
   const incomingIsSecond = Boolean(
     incomingEmployer &&
       primaryEmployer &&
-      normalizeEmployer(incomingEmployer) !== normalizeEmployer(primaryEmployer),
+      !employersClose(incomingEmployer, primaryEmployer) &&
+      !sameBusinessWageAndEntity(draft, fields),
   );
   const employer = incomingIsSecond ? primaryEmployer : incomingEmployer || primaryEmployer;
   const sameEmployer = jobsForEmployer(jobs, employer);
@@ -644,7 +844,9 @@ function maybeCombine(
   draft: FoxIntakeDraft,
   incoming: QualifyingIncomeResult,
   years: TaxYearCashflow[],
+  fields: Record<string, string> = {},
 ): QualifyingIncomeResult {
+  const cashYears = years.length ? years : readTaxCashflows(draft);
   const wage =
     incoming.basis === "wage"
       ? {
@@ -670,25 +872,48 @@ function maybeCombine(
           caution: incoming.caution,
           methodNote: incoming.methodNote,
         }
-      : scheduleCSuggestFromYears(years.length ? years : readTaxCashflows(draft)) ??
+      : scheduleCSuggestFromYears(cashYears) ??
         (confirmedMonthly(draft, SE_MONTHLY_FIELD) != null
           ? {
               monthly: confirmedMonthly(draft, SE_MONTHLY_FIELD) as number,
               method: "one-year" as const,
             }
           : null);
+  const fileEntity = entityMonthly(cashYears);
   const k1 =
-    incoming.basis === "k1"
+    incoming.basis === "k1" || incoming.basis === "entity"
       ? incoming.monthly
-      : k1Monthly(years.length ? years : readTaxCashflows(draft)) ??
-        confirmedMonthly(draft, K1_MONTHLY_FIELD);
+      : fileEntity?.monthly ?? k1Monthly(cashYears) ?? confirmedMonthly(draft, K1_MONTHLY_FIELD);
   const combined = suggestCombinedIncome({
     wage,
     scheduleC,
     k1Monthly: k1,
   });
   if (!combined) return incoming;
-  return toQualifyingResult(combined, "combined");
+  const result = toQualifyingResult(combined, "combined");
+  if (!sameBusinessWageAndEntity(draft, fields, cashYears)) return result;
+  const wageNote = wage?.methodNote || W2_BOX1_MONTHLY_NOTE;
+  const useEntityCash = incoming.basis === "entity" || Boolean(fileEntity);
+  if (useEntityCash) {
+    const entityNote =
+      incoming.basis === "entity" && incoming.methodNote
+        ? incoming.methodNote
+        : fileEntity
+          ? entityCashFlowMethodNote({
+              kind: fileEntity.row.return_kind,
+              ownershipPercent: parseExtractMoney(fileEntity.row.ownership_percent),
+              guaranteedPayments: parseExtractMoney(fileEntity.row.entity_guaranteed_payments),
+            })
+          : "entity cash flow";
+    return {
+      ...result,
+      methodNote: `combined W-2 wages + entity cash flow · ${wageNote} plus ${entityNote}`,
+    };
+  }
+  return {
+    ...result,
+    methodNote: `combined wage + K-1 · W-2 wages + K-1 ordinary · ${wageNote} plus ${incoming.methodNote || "ordinary / 12"}`,
+  };
 }
 
 export function monthlyQualifyingFromExtract(
@@ -702,7 +927,9 @@ export function monthlyQualifyingFromExtract(
     if (wage.needsFrequency) {
       return { monthly: 0, basis: "wage", method: wage.method, needsFrequency: true };
     }
-    if (wage.needsBothReason) {
+    const years = readTaxCashflows(draft);
+    const sameBusiness = sameBusinessWageAndEntity(draft, fields, years);
+    if (wage.needsBothReason && !sameBusiness) {
       return {
         monthly: 0,
         basis: "wage",
@@ -714,26 +941,44 @@ export function monthlyQualifyingFromExtract(
         partialNotes: wage.partialNotes,
       };
     }
-    if (wage.monthly === 0) return null;
+    const wageMonthly =
+      wage.needsBothReason && sameBusiness ? wage.w2Monthly ?? wage.monthly : wage.monthly;
+    if (wageMonthly === 0) return null;
     return maybeCombine(
       draft,
       {
-        monthly: wage.monthly,
+        monthly: wageMonthly,
         basis: "wage",
-        method: wage.method,
+        method: wage.method === "both-ask" ? "w2-annual" : wage.method,
         caution: wage.caution,
-        methodNote: wage.methodNote,
-        partialNotes: wage.partialNotes,
-        stubMonthly: wage.stubMonthly,
-        w2Monthly: wage.w2Monthly,
-        parts: { wage: wage.monthly },
+        methodNote: sameBusiness ? W2_BOX1_MONTHLY_NOTE : wage.methodNote,
+        partialNotes: sameBusiness ? undefined : wage.partialNotes,
+        stubMonthly: sameBusiness ? undefined : wage.stubMonthly,
+        w2Monthly: sameBusiness ? undefined : wage.w2Monthly,
+        parts: { wage: wageMonthly },
       },
-      readTaxCashflows(draft),
+      years,
+      fields,
     );
   }
   if (extractClass !== "tax_return") return null;
   const incoming = cashflowFromExtract(fields);
   const years = mergeTaxCashflows(readTaxCashflows(draft), incoming);
+  const incomingRental =
+    incoming && incoming.schedule_e_rents_received && incoming.schedule_e_cash_expenses
+      ? scheduleEMonthly([incoming])
+      : null;
+  if (incomingRental != null) {
+    return {
+      monthly: incomingRental,
+      basis: "schedule_e",
+      methodNote: "rents minus cash expenses / 12",
+    };
+  }
+  const incomingEntity = incoming ? entityRowMonthly(incoming) : null;
+  if (incomingEntity != null && incoming) {
+    return maybeCombine(draft, entityResultFromRow(incoming, incomingEntity), years, fields);
+  }
   const scheduleC = suggestScheduleCIncome(scheduleCYearsFromCashflows(years));
   if (scheduleC != null) {
     return maybeCombine(
@@ -754,7 +999,12 @@ export function monthlyQualifyingFromExtract(
         parts: { scheduleC: scheduleC.monthly },
       },
       years,
+      fields,
     );
+  }
+  const fileEntity = entityMonthly(years);
+  if (fileEntity) {
+    return maybeCombine(draft, entityResultFromRow(fileEntity.row, fileEntity.monthly), years, fields);
   }
   const entity = k1Monthly(years);
   if (entity != null) {
@@ -768,7 +1018,16 @@ export function monthlyQualifyingFromExtract(
         parts: { k1: entity },
       },
       years,
+      fields,
     );
+  }
+  const fileRental = scheduleEMonthly(years);
+  if (fileRental != null) {
+    return {
+      monthly: fileRental,
+      basis: "schedule_e",
+      methodNote: "rents minus cash expenses / 12",
+    };
   }
   return null;
 }
@@ -869,7 +1128,7 @@ export function bothMonthlyPair(draft: FoxIntakeDraft): { stub: number; w2: numb
 export function bothMonthlyDisplay(draft: FoxIntakeDraft): string | null {
   const pair = bothMonthlyPair(draft);
   if (!pair) return null;
-  return bothMonthlyMethodNote(pair.stub, pair.w2);
+  return bothMonthlyMethodNoteForDraft(draft, pair.stub, pair.w2);
 }
 
 function stubYtdGross(draft: FoxIntakeDraft): number | null {
@@ -949,7 +1208,29 @@ export function applyBothMonthlyReasonAnswer(
       pendingConflict: null,
     });
   }
+  if (wageExtractBothOnFile(draft) && reason === "skip") {
+    return {
+      ...draft,
+      awaitingBothMonthlyReason: false,
+      awaitingRaiseWhen: false,
+      awaitingRaiseYtdFar: false,
+      bothMonthlyReason: "skip",
+      looksRightHold: false,
+      pendingProposal: null,
+      pendingConflict: null,
+    };
+  }
+  if (wageExtractBothOnFile(draft) && reason === "second-job") {
+    return proposeStubJobAsk({
+      ...draft,
+      awaitingBothMonthlyReason: false,
+      bothMonthlyReason: "second-job",
+      looksRightHold: true,
+    });
+  }
   const proposed = proposeBothMonthlyIncome(pair.stub, pair.w2, reason);
+  const caution = box5WageCopy(draft, proposed.caution ?? bothMonthlyReasonNote(reason));
+  const methodNote = bothMonthlyMethodNoteForDraft(draft, pair.stub, pair.w2);
   const next = writeConfirmedIncomeFact(
     {
       ...draft,
@@ -960,15 +1241,15 @@ export function applyBothMonthlyReasonAnswer(
       pendingConflict: null,
     },
     INCOME_CAUTION_FIELD,
-    proposed.caution ?? bothMonthlyReasonNote(reason),
+    caution,
     "suggested",
   );
   return withQualifyingIncomeProposal(next, {
     monthly: proposed.monthly,
     basis: "wage",
     method: proposed.method,
-    methodNote: proposed.methodNote,
-    caution: proposed.caution,
+    methodNote,
+    caution,
     stubMonthly: pair.stub,
     w2Monthly: pair.w2,
     parts: { wage: proposed.monthly },
@@ -1018,8 +1299,8 @@ export function applyRaiseYtdFarAnswer(draft: FoxIntakeDraft, raw: string): FoxI
       monthly: pair.w2,
       basis: "wage",
       method: "w2-annual",
-      methodNote: bothMonthlyMethodNote(pair.stub, pair.w2),
-      caution: next.facts?.[INCOME_CAUTION_FIELD]?.value || RAISE_WHEN_UNKNOWN_NOTE,
+      methodNote: bothMonthlyMethodNoteForDraft(draft, pair.stub, pair.w2),
+      caution: box5WageCopy(draft, next.facts?.[INCOME_CAUTION_FIELD]?.value || RAISE_WHEN_UNKNOWN_NOTE),
       stubMonthly: pair.stub,
       w2Monthly: pair.w2,
       parts: { wage: pair.w2 },
@@ -1139,9 +1420,9 @@ export function qualifyingIncomeProposal(computed: QualifyingIncomeResult): Fact
   return {
     field: QUALIFYING_INCOME_FIELD,
     value: String(computed.monthly),
-    label: "qualifying income",
+    label: computed.basis === "schedule_e" ? "rental cash flow" : "qualifying income",
     kind: "computed",
-    note: SUGGESTED_INCOME_NOTE,
+    note: computed.basis === "schedule_e" ? SUGGESTED_RENTAL_CASH_FLOW_NOTE : SUGGESTED_INCOME_NOTE,
     methodNote: computed.methodNote,
     caution: computed.caution,
     partialNotes: computed.partialNotes,
@@ -1157,6 +1438,50 @@ function existingMonthlyIncome(draft: FoxIntakeDraft): { value: string; via: "qu
   return null;
 }
 
+/** Cashflows already on File. Same confirm-before-write gate Schedule C uses. */
+export function isScheduleECashFlowProposal(proposal?: FactProposal | null): boolean {
+  if (!proposal || proposal.field !== QUALIFYING_INCOME_FIELD) return false;
+  return (
+    proposal.note === SUGGESTED_RENTAL_CASH_FLOW_NOTE ||
+    proposal.methodNote === "rents minus cash expenses / 12"
+  );
+}
+
+export function isEntityCashFlowProposal(proposal?: FactProposal | null): boolean {
+  if (!proposal || proposal.field !== QUALIFYING_INCOME_FIELD) return false;
+  const method = proposal.methodNote ?? "";
+  return (
+    /8825 rental/i.test(method) ||
+    /ordinary \+ dep/i.test(method) ||
+    /GP to Hale/i.test(method)
+  );
+}
+
+export function isSameBusinessWageEntityProposal(proposal?: FactProposal | null): boolean {
+  if (!proposal || proposal.field !== QUALIFYING_INCOME_FIELD) return false;
+  const method = proposal.methodNote ?? "";
+  return /W-2 wages/i.test(method) && (/entity cash flow/i.test(method) || /K-1 ordinary/i.test(method));
+}
+
+export function maybeProposeQualifyingFromTaxFile(draft: FoxIntakeDraft): FoxIntakeDraft {
+  if (draft.pendingProposal?.field === QUALIFYING_INCOME_FIELD) return draft;
+  if (draft.pendingProposal && draft.pendingProposal.field !== QUALIFYING_INCOME_FIELD) {
+    return draft;
+  }
+  const computed = monthlyQualifyingFromExtract(draft, "tax_return", {});
+  if (!computed || computed.needsFrequency || computed.needsBothReason || computed.monthly === 0) {
+    return draft;
+  }
+  if (
+    computed.basis !== "schedule_e" &&
+    computed.basis !== "entity" &&
+    existingMonthlyIncome(draft)?.via === QUALIFYING_INCOME_FIELD
+  ) {
+    return draft;
+  }
+  return withQualifyingIncomeProposal(draft, computed, "tax_return");
+}
+
 export function withQualifyingIncomeProposal(
   draft: FoxIntakeDraft,
   computed: QualifyingIncomeResult | null,
@@ -1170,6 +1495,13 @@ export function withQualifyingIncomeProposal(
     Boolean(computed.stubMonthly != null && computed.w2Monthly != null) ||
     Boolean(computed.methodNote?.includes("W-2 Box 1"));
   if (existing && valuesMatch(existing.value, monthly) && !showBothMonthly) {
+    if (computed.basis === "schedule_e" || computed.basis === "entity") {
+      return {
+        ...draft,
+        pendingConflict: null,
+        pendingProposal: qualifyingIncomeProposal(computed),
+      };
+    }
     return {
       ...draft,
       pendingConflict: null,
@@ -1226,6 +1558,14 @@ export function applyQualifyingIncomeFromExtract(
     return { ...next, awaitingPayFrequency: true, pendingProposal: null };
   }
   if (computed?.needsBothReason) {
+    if (sameBusinessWageAndEntity(next, fields)) {
+      next = writeBothMonthlies(next, { ...computed, needsBothReason: false });
+      return withQualifyingIncomeProposal(
+        { ...next, awaitingBothMonthlyReason: false, awaitingRaiseWhen: false, awaitingRaiseYtdFar: false, awaitingPayFrequency: false },
+        { ...computed, needsBothReason: false },
+        extractClass,
+      );
+    }
     if (next.pendingConflict && existingMonthlyIncome(draft)?.via === "income") return next;
     if (draft.bothMonthlyReason === "raise" && draft.raiseWhenRaw) {
       return applyRaiseWhenAnswer(writeBothMonthlies(next, computed), draft.raiseWhenRaw);
@@ -1278,19 +1618,1010 @@ export function qualifyingIncomeDisplay(draft: FoxIntakeDraft): { value: string;
   if (draft.awaitingBothMonthlyReason || draft.awaitingRaiseWhen || draft.awaitingRaiseYtdFar) return null;
   const proposal =
     draft.pendingProposal?.field === QUALIFYING_INCOME_FIELD ? draft.pendingProposal : null;
-  if (proposal) {
+  if (
+    proposal &&
+    !isScheduleECashFlowProposal(proposal) &&
+    !isEntityCashFlowProposal(proposal) &&
+    !isSameBusinessWageEntityProposal(proposal)
+  ) {
     return {
       value: structureQualifyingValue(displayMoney(proposal.value), proposal.methodNote),
       note: proposal.note ?? SUGGESTED_INCOME_NOTE,
     };
   }
   const stored = factValue(draft, QUALIFYING_INCOME_FIELD);
-  if (stored) {
+  if (stored && draft.facts?.[QUALIFYING_INCOME_FIELD]?.confirmed) {
     const pair = bothMonthlyDisplay(draft);
     return {
       value: pair ? structureQualifyingValue(displayMoney(stored), pair) : displayMoney(stored),
-      note: SUGGESTED_INCOME_NOTE,
+      note:
+        hasScheduleECashflow(draft) && !hasScheduleCCashflow(draft) && !hasK1Ordinary(draft)
+          ? SUGGESTED_RENTAL_CASH_FLOW_NOTE
+          : SUGGESTED_INCOME_NOTE,
     };
   }
   return null;
+}
+
+export const W2_BOX5_ASK =
+  "What is Box 5 on that W-2? Medicare wages and tips. That is last year’s gross.";
+export const W2_PAY_FREQUENCY_ASK = "How often are you paid?";
+export const WAGE_DOCS_ASK = "Drop last year’s W-2 and a recent paystub. Skip if you want to type it.";
+export const WAGE_STUB_DROP_ASK = "Drop a recent paystub. Skip if you want to type it.";
+export const PAYSTUB_MONTHLY_ASK = "What's the amount on the latest stub?";
+export const PAYSTUB_AMOUNT_FIELD = "paystub_amount";
+export const WAGE_EXTRACT_FIELD = "wage_extract";
+export const STUB_EXTRACT_FIELD = "stub_extract";
+export const STUB_JOB_FIELD = "stub_job";
+export const STUB_JOB_ASK = "Same job or two jobs?";
+export const W2_BOX5_MONTHLY_NOTE = "Box 5 monthly";
+export const BOTH_MONTHLY_SKIP_NOTE_BOX5 = "Using W-2 Box 5 until we know why they differ.";
+
+export function typedBox5OnFile(draft: FoxIntakeDraft): boolean {
+  return Boolean(parseExtractMoney(factValue(draft, "w2_box5")));
+}
+
+/** Extract Use this wrote Box 5. Typed Box 5 stays on the amount ask. */
+export function wageW2ExtractAccepted(draft: FoxIntakeDraft): boolean {
+  const fact = draft.facts?.w2_box5 ?? draft.facts?.medicare_wages;
+  return Boolean(fact?.confirmed && fact.source === "document" && parseExtractMoney(fact.value));
+}
+
+export function bothMonthlyMethodNoteForDraft(
+  draft: FoxIntakeDraft,
+  stubMonthly: number,
+  w2Monthly: number,
+): string {
+  const note = bothMonthlyMethodNote(stubMonthly, w2Monthly);
+  return typedBox5OnFile(draft) ? note.replace(/W-2 Box 1/g, "W-2 Box 5") : note;
+}
+
+export function bothMonthlyAskCopyForDraft(
+  draft: FoxIntakeDraft,
+  stubMonthly: number,
+  w2Monthly: number,
+): string {
+  const copy = bothMonthlyAskCopy(stubMonthly, w2Monthly);
+  return typedBox5OnFile(draft) ? copy.replace(/W-2 Box 1/g, "W-2 Box 5") : copy;
+}
+
+function box5WageCopy(draft: FoxIntakeDraft, text: string): string {
+  return typedBox5OnFile(draft) ? text.replace(/W-2 Box 1/g, "W-2 Box 5") : text;
+}
+
+export const STUB_MONTHLY_NOTE = "Latest stub monthly";
+/** After stub Use this: Box 5 and stub monthly are close, not the same. One line. */
+export const WAGE_BOX5_STUB_DIFFER_ASK = "Last year and this stub are close, not the same month.";
+/** Gap 10%+ lower. One line. Skip allowed. No qualifying math. */
+export const WAGE_STUB_LOWER_CAUTION = "This stub is lower than last year.";
+/** |stub monthly − Box 5/12| ÷ Box 5/12. Under this, UW does not need a story. */
+export const BOX5_STUB_MATERIAL_RATIO = 0.1;
+
+const VARIABLE_PAY_KEYS = [
+  "overtime",
+  "bonus",
+  "commission",
+  "overtime_ytd",
+  "bonus_ytd",
+  "commission_ytd",
+] as const;
+
+function moneyOnPage(raw?: string | null): boolean {
+  const n = parseExtractMoney(raw);
+  return n != null && n > 0;
+}
+
+export function fieldsHaveVariablePay(fields?: Record<string, string | null | undefined> | null): boolean {
+  return VARIABLE_PAY_KEYS.some((key) => moneyOnPage(fields?.[key]));
+}
+
+function stubVariablePayOnPage(draft: FoxIntakeDraft): boolean {
+  if (draft.pendingWageExtract?.variablePay) return true;
+  if (VARIABLE_PAY_KEYS.some((key) => moneyOnPage(factValue(draft, key)))) return true;
+  return readWageJobs(draft).some((job) => VARIABLE_PAY_KEYS.some((key) => moneyOnPage(job[key])));
+}
+
+export function box5StubMonthlyGapRatio(stubMonthly: number, box5Monthly: number): number {
+  if (!(box5Monthly > 0)) return 0;
+  return Math.abs(stubMonthly - box5Monthly) / box5Monthly;
+}
+
+function wageExtractAfterStubDecision(
+  draft: FoxIntakeDraft,
+  stubMonthly: number,
+  mode: "same" | "two" | "only",
+): { kind: "quiet" } | { kind: "lower"; w2Monthly: number } | { kind: "chips"; w2Monthly: number } {
+  if (mode === "two") return { kind: "quiet" };
+  if (!wageW2ExtractAccepted(draft) || stubMonthly <= 0) return { kind: "quiet" };
+  const box5 = readWageBox5(draft);
+  if (box5 == null || box5 <= 0) return { kind: "quiet" };
+  const w2Monthly = monthlyFromAnnual(box5);
+  if (w2Monthly <= 0) return { kind: "quiet" };
+  const gap = box5StubMonthlyGapRatio(stubMonthly, w2Monthly);
+  if (gap < BOX5_STUB_MATERIAL_RATIO) return { kind: "quiet" };
+  if (stubMonthly + 1e-9 < w2Monthly) return { kind: "lower", w2Monthly };
+  if (stubVariablePayOnPage(draft)) return { kind: "chips", w2Monthly };
+  return { kind: "quiet" };
+}
+
+function wageExtractBothOnFile(draft: FoxIntakeDraft): boolean {
+  return wageW2ExtractAccepted(draft) && Boolean(draft.stubExtractAccepted);
+}
+
+export function speakPayFrequency(raw?: string | null): string {
+  const v = String(raw ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/[\s_-]+/g, "");
+  if (/(biweekly|every2weeks|fortnight)/.test(v)) return "biweekly";
+  if (/(semimonth|twiceamonth)/.test(v)) return "semimonthly";
+  if (/weekly/.test(v)) return "weekly";
+  if (/month/.test(v)) return "monthly";
+  return "";
+}
+
+export function speakWageMoney(value: number): string {
+  const abs = Math.abs(value);
+  const cents = Math.round(abs * 100);
+  if (cents % 100 !== 0) {
+    return `$${(cents / 100).toLocaleString("en-US", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    })}`;
+  }
+  return `$${Math.round(abs).toLocaleString("en-US")}`;
+}
+
+export function wageExtractConfirmCopy(box5: number, stub: number, frequency: string): string {
+  const spoken = speakPayFrequency(frequency) || frequency.trim().toLowerCase();
+  return `Box 5 ${speakWageMoney(box5)}. Stub ${speakWageMoney(stub)} ${spoken}. Use this?`;
+}
+
+export function wageW2ConfirmCopy(box5: number, employer: string): string {
+  const name = String(employer ?? "").trim();
+  return `Box 5 ${speakWageMoney(box5)}. ${name}. Use this?`;
+}
+
+/** File Employment after Use this: employer and Box 5. Stub Use this adds pay on the same row. Not Box 1. */
+export function wageEmploymentFileLine(draft: FoxIntakeDraft): string {
+  if (!wageW2ExtractAccepted(draft)) return "";
+  if (isWageExtractProposal(draft.pendingProposal)) return "";
+  const employer = factValue(draft, "employer_name").trim();
+  const box5 = readWageBox5(draft);
+  const stub =
+    parseExtractMoney(factValue(draft, PAYSTUB_AMOUNT_FIELD)) ??
+    parseExtractMoney(factValue(draft, "gross_period"));
+  const frequency = speakPayFrequency(factValue(draft, "pay_frequency"));
+  const monthly = parseExtractMoney(factValue(draft, PAYSTUB_MONTHLY_FIELD));
+  const stubReady =
+    Boolean(draft.stubExtractAccepted) &&
+    ((stub != null && stub > 0 && Boolean(frequency)) || (monthly != null && monthly > 0));
+  if (stubReady) {
+    if (stubTwoJobsOnFile(draft)) {
+      if (!employer || box5 == null || box5 <= 0) return "";
+      return `${employer}, Box 5 ${speakWageMoney(box5)}`;
+    }
+    const monthlyBit = monthly != null && monthly > 0 ? `, ${speakWageMoney(monthly)} a month` : "";
+    const stubBit =
+      stub != null && stub > 0 && frequency
+        ? `${frequency}, ${speakWageMoney(stub)}${monthlyBit}`
+        : monthly != null && monthly > 0
+          ? `${speakWageMoney(monthly)} a month`
+          : "";
+    if (employer && box5 != null && box5 > 0) {
+      return stubBit ? `${employer}, Box 5 ${speakWageMoney(box5)}, ${stubBit}` : `${employer}, Box 5 ${speakWageMoney(box5)}`;
+    }
+    return stubBit ? `${employer}, ${stubBit}` : employer;
+  }
+  if (!employer || box5 == null || box5 <= 0) return "";
+  return `${employer}, Box 5 ${speakWageMoney(box5)}`;
+}
+
+export function isWageExtractProposal(proposal?: { field?: string } | null): boolean {
+  return proposal?.field === WAGE_EXTRACT_FIELD;
+}
+
+export function isStubExtractProposal(proposal?: { field?: string } | null): boolean {
+  return proposal?.field === STUB_EXTRACT_FIELD;
+}
+
+export function isStubJobProposal(proposal?: { field?: string } | null): boolean {
+  return proposal?.field === STUB_JOB_FIELD;
+}
+
+export function normalizeEmployerName(value?: string | null): string {
+  return String(value ?? "")
+    .toLowerCase()
+    .replace(/\b(inc|llc|l\.l\.c|corp|corporation|ltd|limited|company|co)\b\.?/g, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+/** Harbor Pacific Design Inc / Harbor Pacific / Harbor Pacific Design are the same job. */
+export function employersClose(left?: string | null, right?: string | null): boolean {
+  const a = normalizeEmployerName(left);
+  const b = normalizeEmployerName(right);
+  if (!a || !b) return false;
+  if (a === b) return true;
+  if (a.includes(b) || b.includes(a)) return true;
+  const leftTokens = a.split(/\s+/).filter((token) => token.length > 2);
+  const rightTokens = b.split(/\s+/).filter((token) => token.length > 2);
+  const shared = leftTokens.filter((token) => rightTokens.includes(token));
+  return shared.length >= 2;
+}
+
+export function stubTwoJobsOnFile(draft: FoxIntakeDraft): boolean {
+  const jobs = draft.employmentHistory ?? [];
+  if (jobs.length < 2) return false;
+  const labels = jobs
+    .map((item) => String(item.label ?? "").trim())
+    .filter(Boolean);
+  if (labels.length < 2) return false;
+  const first = labels[0] ?? "";
+  return labels.some((label) => !employersClose(first, label));
+}
+
+/** File Employment / Employer stay empty until Use this or Change. */
+export function wageEmploymentUnconfirmed(draft: FoxIntakeDraft): boolean {
+  return wageThreadOpen(draft) && !draft.sampleAccepted && isWageExtractProposal(draft.pendingProposal);
+}
+
+export function isWageW2OnlyProposal(proposal?: { field?: string; extras?: { field: string; value: string }[] } | null): boolean {
+  if (!isWageExtractProposal(proposal) || !proposal) return false;
+  const extras = proposal.extras ?? [];
+  const box5 = Number(extras.find((item) => item.field === "w2_box5")?.value ?? 0);
+  const employer = (extras.find((item) => item.field === "employer_name")?.value ?? "").trim();
+  const stub = Number(extras.find((item) => item.field === PAYSTUB_AMOUNT_FIELD)?.value ?? 0);
+  const frequency = extras.find((item) => item.field === "pay_frequency")?.value ?? "";
+  return box5 > 0 && Boolean(employer) && !(stub > 0 && frequency);
+}
+
+/** Box 5 Medicare wages only. Never Box 1 `wages`. */
+export function readWageBox5(draft: FoxIntakeDraft, fields?: Record<string, string>): number | null {
+  const fromFields = parseExtractMoney(fields?.medicare_wages) ?? parseExtractMoney(fields?.box5);
+  if (fromFields != null && fromFields > 0) return fromFields;
+  if (draft.pendingWageExtract?.box5 && draft.pendingWageExtract.box5 > 0) {
+    return draft.pendingWageExtract.box5;
+  }
+  return parseExtractMoney(factValue(draft, "w2_box5")) ?? parseExtractMoney(factValue(draft, "medicare_wages"));
+}
+
+export function readStubAmount(draft: FoxIntakeDraft, fields?: Record<string, string>): number | null {
+  const fromFields = parseExtractMoney(fields?.gross_period) ?? parseExtractMoney(fields?.paystub_amount);
+  if (fromFields != null && fromFields > 0) return fromFields;
+  if (draft.pendingWageExtract?.stub && draft.pendingWageExtract.stub > 0) {
+    return draft.pendingWageExtract.stub;
+  }
+  return parseExtractMoney(factValue(draft, PAYSTUB_AMOUNT_FIELD)) ?? parseExtractMoney(factValue(draft, "gross_period"));
+}
+
+export function readWageFrequency(draft: FoxIntakeDraft, fields?: Record<string, string>): string {
+  const fromFields = speakPayFrequency(fields?.pay_frequency);
+  if (fromFields) return fromFields;
+  if (draft.pendingWageExtract?.frequency) return draft.pendingWageExtract.frequency;
+  return speakPayFrequency(factValue(draft, "pay_frequency"));
+}
+
+export function mergePendingWageExtract(
+  draft: FoxIntakeDraft,
+  fields?: Record<string, string>,
+  extractClass?: ExtractClass,
+): FoxIntakeDraft {
+  const prev = draft.pendingWageExtract ?? {};
+  const box5 = parseExtractMoney(fields?.medicare_wages) ?? parseExtractMoney(fields?.box5);
+  const stub =
+    extractClass === "w2" ? undefined : parseExtractMoney(fields?.gross_period);
+  const frequency =
+    extractClass === "w2" ? undefined : speakPayFrequency(fields?.pay_frequency);
+  const employer = String(fields?.employer_name ?? "").trim();
+  const next = {
+    ...prev,
+    ...(extractClass === "w2" ? { w2In: true } : {}),
+    ...(extractClass === "paystub" ? { stubIn: true } : {}),
+    ...(box5 != null && box5 > 0 ? { box5 } : {}),
+    ...(stub != null && stub > 0 ? { stub } : {}),
+    ...(frequency ? { frequency } : {}),
+    ...(employer ? { employer } : {}),
+  };
+  if (!next.box5 && !next.stub && !next.frequency && !next.employer && !next.w2In && !next.stubIn) {
+    return draft;
+  }
+  return { ...draft, pendingWageExtract: next };
+}
+
+export function wageExtractCanConfirm(draft: FoxIntakeDraft, fields?: Record<string, string>): boolean {
+  const box5 = readWageBox5(draft, fields);
+  const stub = readStubAmount(draft, fields);
+  const frequency = readWageFrequency(draft, fields);
+  return box5 != null && box5 > 0 && stub != null && stub > 0 && Boolean(frequency);
+}
+
+export function wageExtractPairReceived(draft: FoxIntakeDraft): boolean {
+  const w2 =
+    Boolean(draft.pendingWageExtract?.w2In) ||
+    (draft.documents ?? []).some((doc) => {
+      const cls = doc.extractClass;
+      return cls === "w2" || doc.slot === "w2";
+    });
+  const stub =
+    Boolean(draft.pendingWageExtract?.stubIn) ||
+    (draft.documents ?? []).some((doc) => {
+      const cls = doc.extractClass;
+      return cls === "paystub" || doc.slot === "paystubs";
+    });
+  return w2 && stub;
+}
+
+/** Both files in, Box 5 absent, and stub / frequency was not actually read. Not Box 1. */
+export function wageExtractFailedRead(draft: FoxIntakeDraft): boolean {
+  if (!isWageExtractFirstPath(draft)) return false;
+  if (isWageExtractProposal(draft.pendingProposal)) return false;
+  if (readWageBox5(draft) != null) return false;
+  return wageExtractPairReceived(draft) && !wageExtractCanConfirm(draft);
+}
+
+export function isWageExtractFirstPath(draft: FoxIntakeDraft): boolean {
+  return wageThreadOpen(draft) && !draft.sampleAccepted && !draft.wageDocsAsked;
+}
+
+export function wageThreadOpen(draft: FoxIntakeDraft) {
+  const type = draft.incomeType.value;
+  return type === "w2" || type === "both";
+}
+
+export function skipWageDocs(draft: FoxIntakeDraft): FoxIntakeDraft {
+  return {
+    ...draft,
+    wageDocsAsked: true,
+    wageBox5Asked: true,
+    wageFrequencyAsked: true,
+    wageStubAsked: true,
+    awaitingPayFrequency: false,
+    pendingProposal: isWageExtractProposal(draft.pendingProposal) ? null : draft.pendingProposal,
+    pendingWageExtract: undefined,
+    looksRightHold: false,
+    awaitingUnreadNote: false,
+  };
+}
+
+export function skipWageBox5(draft: FoxIntakeDraft): FoxIntakeDraft {
+  return { ...draft, wageBox5Asked: true, pendingProposal: null };
+}
+
+export function skipWageFrequency(draft: FoxIntakeDraft): FoxIntakeDraft {
+  return { ...draft, wageFrequencyAsked: true };
+}
+
+export function skipWageStub(draft: FoxIntakeDraft): FoxIntakeDraft {
+  return { ...draft, wageStubAsked: true, pendingProposal: null, looksRightHold: false };
+}
+
+export function writeWagePayFrequency(draft: FoxIntakeDraft, raw: string): FoxIntakeDraft {
+  const value = String(raw ?? "").trim().toLowerCase();
+  if (!value) return { ...draft, wageFrequencyAsked: true };
+  const now = new Date().toISOString();
+  return {
+    ...draft,
+    wageFrequencyAsked: true,
+    awaitingPayFrequency: false,
+    facts: {
+      ...(draft.facts ?? {}),
+      pay_frequency: {
+        field: "pay_frequency",
+        value,
+        source: "client",
+        confirmed: true,
+        confirmedAt: now,
+      },
+    },
+  };
+}
+
+/** Box 5 is last year’s gross. Do not invent a monthly or open Use this. */
+export function writeWageBox5(draft: FoxIntakeDraft, annual: number): FoxIntakeDraft {
+  const now = new Date().toISOString();
+  const next: FoxIntakeDraft = {
+    ...draft,
+    wageBox5Asked: true,
+    pendingProposal: null,
+  };
+  if (!Number.isFinite(annual) || annual <= 0) return next;
+  return {
+    ...next,
+    facts: {
+      ...(draft.facts ?? {}),
+      w2_box5: {
+        field: "w2_box5",
+        value: String(Math.round(annual)),
+        source: "client",
+        confirmed: true,
+        confirmedAt: now,
+      },
+    },
+  };
+}
+
+/** They typed the stub amount. Fox converts to monthly. Both numbers stay. Do not ask Use this again. */
+export function writeTypedStubMonthly(draft: FoxIntakeDraft, stubAmount: number): FoxIntakeDraft {
+  const now = new Date().toISOString();
+  const asked: FoxIntakeDraft = {
+    ...draft,
+    wageStubAsked: true,
+    wageDocsAsked: true,
+    pendingProposal: null,
+  };
+  if (!Number.isFinite(stubAmount) || stubAmount <= 0) return asked;
+  const stubValue = String(Math.round(stubAmount));
+  const periods = periodsPerYear(factValue(draft, "pay_frequency"));
+  const monthly = periods != null && periods > 0 ? Math.round((stubAmount * periods) / 12) : null;
+  const box5 = parseExtractMoney(factValue(asked, "w2_box5"));
+  const w2Monthly = box5 != null && box5 > 0 ? monthlyFromAnnual(box5) : null;
+  let next: FoxIntakeDraft = {
+    ...asked,
+    facts: {
+      ...(draft.facts ?? {}),
+      [PAYSTUB_AMOUNT_FIELD]: {
+        field: PAYSTUB_AMOUNT_FIELD,
+        value: stubValue,
+        source: "client",
+        confirmed: true,
+        confirmedAt: now,
+      },
+    },
+  };
+  if (monthly == null || monthly <= 0) return next;
+  const monthlyValue = String(monthly);
+  next = {
+    ...next,
+    facts: {
+      ...(next.facts ?? {}),
+      [PAYSTUB_MONTHLY_FIELD]: {
+        field: PAYSTUB_MONTHLY_FIELD,
+        value: monthlyValue,
+        source: "client",
+        confirmed: true,
+        confirmedAt: now,
+      },
+      [WAGE_MONTHLY_FIELD]: {
+        field: WAGE_MONTHLY_FIELD,
+        value: monthlyValue,
+        source: "suggested",
+        confirmed: true,
+        confirmedAt: now,
+      },
+      [QUALIFYING_INCOME_FIELD]: {
+        field: QUALIFYING_INCOME_FIELD,
+        value: monthlyValue,
+        source: "suggested",
+        confirmed: true,
+        confirmedAt: now,
+      },
+    },
+  };
+  if (w2Monthly != null && Math.abs(monthly - w2Monthly) >= 50) {
+    return enterBothMonthlyAsk({
+      ...next,
+      facts: {
+        ...(next.facts ?? {}),
+        [W2_MONTHLY_FIELD]: {
+          field: W2_MONTHLY_FIELD,
+          value: String(w2Monthly),
+          source: "computed",
+          confirmed: true,
+          confirmedAt: now,
+        },
+      },
+    });
+  }
+  return next;
+}
+
+export function proposeWageW2Extract(draft: FoxIntakeDraft, box5: number, employer: string): FoxIntakeDraft {
+  const name = String(employer ?? "").trim();
+  if (box5 <= 0 || !name) return draft;
+  return {
+    ...draft,
+    awaitingPayFrequency: false,
+    looksRightHold: true,
+    pendingProposal: {
+      field: WAGE_EXTRACT_FIELD,
+      value: Number.isInteger(box5) ? String(box5) : String(Math.round(box5 * 100) / 100),
+      label: "wage extract",
+      kind: "computed",
+      extras: [
+        { field: "w2_box5", value: Number.isInteger(box5) ? String(box5) : String(Math.round(box5 * 100) / 100), label: "Box 5" },
+        { field: "employer_name", value: name, label: "employer" },
+      ],
+    },
+  };
+}
+
+export function proposeWageExtract(draft: FoxIntakeDraft, box5: number, stub: number, frequency: string): FoxIntakeDraft {
+  const spoken = speakPayFrequency(frequency);
+  const periods = periodsPerYear(spoken || frequency);
+  if (!spoken || periods == null || box5 <= 0 || stub <= 0) return draft;
+  const monthly = Math.round((stub * periods) / 12);
+  if (monthly <= 0) return draft;
+  return {
+    ...draft,
+    awaitingPayFrequency: false,
+    looksRightHold: true,
+    pendingProposal: {
+      field: WAGE_EXTRACT_FIELD,
+      value: String(monthly),
+      label: "wage extract",
+      kind: "computed",
+      extras: [
+        { field: "w2_box5", value: Number.isInteger(box5) ? String(box5) : String(Math.round(box5 * 100) / 100), label: "Box 5" },
+        { field: PAYSTUB_AMOUNT_FIELD, value: Number.isInteger(stub) ? String(stub) : String(Math.round(stub * 100) / 100), label: "stub amount" },
+        { field: "pay_frequency", value: spoken, label: "pay frequency" },
+        { field: PAYSTUB_MONTHLY_FIELD, value: String(monthly), label: "stub monthly" },
+        { field: WAGE_MONTHLY_FIELD, value: String(monthly), label: "wage monthly" },
+        { field: QUALIFYING_INCOME_FIELD, value: String(monthly), label: "qualifying income" },
+      ],
+    },
+  };
+}
+
+export function maybeProposeWageExtract(
+  draft: FoxIntakeDraft,
+  fields?: Record<string, string>,
+  extractClass?: ExtractClass,
+): FoxIntakeDraft {
+  if (draft.sampleAccepted || !wageThreadOpen(draft)) return draft;
+  if (wageW2ExtractAccepted(draft)) return draft;
+  if (draft.pendingConflict) return draft;
+  const held = mergePendingWageExtract(draft, fields, extractClass);
+  if (wageExtractCanConfirm(held, fields)) {
+    const box5 = readWageBox5(held, fields);
+    const stub = readStubAmount(held, fields);
+    const frequency = readWageFrequency(held, fields);
+    if (box5 == null || stub == null || !frequency) return held;
+    return proposeWageExtract(held, box5, stub, frequency);
+  }
+  const box5 = readWageBox5(held, fields);
+  const employer = String(fields?.employer_name ?? held.pendingWageExtract?.employer ?? "").trim();
+  if (box5 != null && box5 > 0 && employer) {
+    return proposeWageW2Extract(held, box5, employer);
+  }
+  return held;
+}
+
+export function acceptWageExtract(draft: FoxIntakeDraft): FoxIntakeDraft {
+  const proposal = draft.pendingProposal;
+  if (!isWageExtractProposal(proposal) || !proposal) {
+    return {
+      ...draft,
+      wageDocsAsked: true,
+      wageBox5Asked: true,
+      wageFrequencyAsked: true,
+      wageStubAsked: true,
+      pendingWageExtract: undefined,
+    };
+  }
+  const now = new Date().toISOString();
+  const w2Only = isWageW2OnlyProposal(proposal);
+  let next: FoxIntakeDraft = {
+    ...draft,
+    wageDocsAsked: true,
+    wageBox5Asked: true,
+    wageFrequencyAsked: true,
+    wageStubAsked: !w2Only,
+    awaitingPayFrequency: false,
+    pendingProposal: null,
+    pendingWageExtract: w2Only ? { ...draft.pendingWageExtract, w2In: true } : undefined,
+    looksRightHold: w2Only,
+  };
+  const extras = proposal.extras ?? [];
+  const facts = { ...(draft.facts ?? {}) };
+  const w2OnlyWrite = new Set(["w2_box5", "employer_name", "medicare_wages"]);
+  for (const extra of extras) {
+    if (w2Only && !w2OnlyWrite.has(extra.field)) continue;
+    facts[extra.field] = {
+      field: extra.field,
+      value: extra.value,
+      source: extra.field === QUALIFYING_INCOME_FIELD || extra.field === WAGE_MONTHLY_FIELD ? "suggested" : "document",
+      confirmed: true,
+      confirmedAt: now,
+    };
+  }
+  const box5 = extras.find((item) => item.field === "w2_box5")?.value ?? "";
+  const stub = w2Only ? "" : extras.find((item) => item.field === PAYSTUB_AMOUNT_FIELD)?.value ?? "";
+  if (box5 && !facts.medicare_wages?.value) {
+    facts.medicare_wages = {
+      field: "medicare_wages",
+      value: box5,
+      source: "document",
+      confirmed: true,
+      confirmedAt: now,
+    };
+  }
+  if (stub && !facts.gross_period?.value) {
+    facts.gross_period = {
+      field: "gross_period",
+      value: stub,
+      source: "document",
+      confirmed: true,
+      confirmedAt: now,
+    };
+  }
+  const employer = (
+    extras.find((item) => item.field === "employer_name")?.value ??
+    draft.pendingWageExtract?.employer ??
+    ""
+  ).trim();
+  if (employer) {
+    facts.employer_name = {
+      field: "employer_name",
+      value: employer,
+      source: "document",
+      confirmed: true,
+      confirmedAt: now,
+    };
+  }
+  if (w2Only) {
+    delete facts.wages;
+    delete facts.gross_period;
+    delete facts.paystub_amount;
+    delete facts.pay_frequency;
+  }
+  next = { ...next, facts };
+  if (employer) next = writeCurrentEmploymentHistory(next, employer);
+  return next;
+}
+
+export function changeWageExtract(draft: FoxIntakeDraft): FoxIntakeDraft {
+  const proposal = draft.pendingProposal;
+  if (!isWageExtractProposal(proposal) || !proposal) return draft;
+  const extras = proposal.extras ?? [];
+  const box5 = Number(extras.find((item) => item.field === "w2_box5")?.value ?? draft.pendingWageExtract?.box5 ?? 0);
+  const employer = (
+    extras.find((item) => item.field === "employer_name")?.value ??
+    draft.pendingWageExtract?.employer ??
+    ""
+  ).trim();
+  const stub = Number(extras.find((item) => item.field === PAYSTUB_AMOUNT_FIELD)?.value ?? 0);
+  const frequency = extras.find((item) => item.field === "pay_frequency")?.value ?? "";
+  const cleared: FoxIntakeDraft = {
+    ...draft,
+    pendingProposal: null,
+    correcting: null,
+    correctingLine: null,
+    wageDocsAsked: false,
+    wageStubAsked: false,
+    looksRightHold: true,
+  };
+  if (stub > 0 && frequency && box5 > 0) {
+    return proposeWageExtract(cleared, box5, stub, frequency);
+  }
+  if (box5 > 0 && employer) {
+    return proposeWageW2Extract(cleared, box5, employer);
+  }
+  return { ...cleared, pendingWageExtract: undefined };
+}
+
+function moneyFieldValue(value: number): string {
+  const cents = Math.round(value * 100);
+  if (cents % 100 === 0) return String(cents / 100);
+  return (cents / 100).toFixed(2);
+}
+
+export function conventionalStubMonthly(stub: number, frequency: string): number | null {
+  const spoken = speakPayFrequency(frequency) || String(frequency ?? "").trim().toLowerCase();
+  const periods = periodsPerYear(spoken);
+  if (periods == null || periods <= 0 || stub <= 0) return null;
+  return Math.round((stub * periods * 100) / 12) / 100;
+}
+
+export function stubExtractConfirmCopy(
+  employer: string,
+  stub: number,
+  frequency: string,
+  monthly: number,
+  _employee?: string,
+): string {
+  const name = String(employer ?? "").trim();
+  const spoken = speakPayFrequency(frequency) || String(frequency ?? "").trim().toLowerCase();
+  return `${name}. ${speakWageMoney(stub)} ${spoken}. ${speakWageMoney(monthly)} a month. Use this?`;
+}
+
+function stubEmployeeName(fields?: Record<string, string>, draft?: FoxIntakeDraft): string {
+  return String(
+    fields?.full_name ?? fields?.employee_name ?? draft?.pendingWageExtract?.employee ?? "",
+  ).trim();
+}
+
+function stubEmployerName(fields?: Record<string, string>, draft?: FoxIntakeDraft): string {
+  return String(
+    fields?.employer_name ??
+      draft?.pendingWageExtract?.employer ??
+      (draft ? factValue(draft, "employer_name") : ""),
+  ).trim();
+}
+
+/** After W-2 Use this / Skip W-2, waiting for stub confirm. Not extract-first. */
+export function stubExtractAskOpen(draft: FoxIntakeDraft): boolean {
+  if (draft.sampleAccepted || draft.wageStubAsked || draft.stubExtractAccepted) return false;
+  if (!wageThreadOpen(draft)) return false;
+  if (isWageExtractFirstPath(draft)) return false;
+  return wageW2ExtractAccepted(draft) || Boolean(draft.wageDocsAsked);
+}
+
+export function canSpeakStubExtract(
+  draft: FoxIntakeDraft,
+  fields?: Record<string, string | null | undefined> | null,
+): boolean {
+  const stub =
+    parseExtractMoney(fields?.gross_period) ??
+    parseExtractMoney(fields?.paystub_amount) ??
+    parseExtractMoney(String(fields?.gross_period ?? ""));
+  const frequency = speakPayFrequency(String(fields?.pay_frequency ?? ""));
+  const employer = stubEmployerName(
+    {
+      employer_name: String(fields?.employer_name ?? ""),
+    },
+    draft,
+  );
+  return stub != null && stub > 0 && Boolean(frequency) && Boolean(employer);
+}
+
+export function shouldProposeStubExtract(
+  draft: FoxIntakeDraft,
+  extractClass?: ExtractClass,
+): boolean {
+  if (extractClass && extractClass !== "paystub" && extractClass !== "other") return false;
+  return stubExtractAskOpen(draft);
+}
+
+export function proposeStubExtract(
+  draft: FoxIntakeDraft,
+  stub: number,
+  frequency: string,
+  employer: string,
+  employee?: string,
+  variablePay?: boolean,
+): FoxIntakeDraft {
+  const spoken = speakPayFrequency(frequency);
+  const monthly = conventionalStubMonthly(stub, spoken || frequency);
+  const name = String(employer ?? "").trim();
+  if (!spoken || monthly == null || monthly <= 0 || stub <= 0 || !name) return draft;
+  const who = String(employee ?? "").trim();
+  const variable = Boolean(variablePay || draft.pendingWageExtract?.variablePay);
+  return {
+    ...draft,
+    awaitingPayFrequency: false,
+    looksRightHold: true,
+    pendingWageExtract: {
+      ...(draft.pendingWageExtract ?? {}),
+      stub,
+      frequency: spoken,
+      employer: name,
+      ...(who ? { employee: who } : {}),
+      monthly,
+      stubIn: true,
+      ...(variable ? { variablePay: true } : {}),
+    },
+    pendingProposal: {
+      field: STUB_EXTRACT_FIELD,
+      value: moneyFieldValue(monthly),
+      label: "stub extract",
+      kind: "computed",
+      extras: [
+        { field: "employer_name", value: name, label: "employer" },
+        ...(who ? [{ field: "full_name", value: who, label: "employee" }] : []),
+        { field: PAYSTUB_AMOUNT_FIELD, value: moneyFieldValue(stub), label: "stub amount" },
+        { field: "pay_frequency", value: spoken, label: "pay frequency" },
+        { field: PAYSTUB_MONTHLY_FIELD, value: moneyFieldValue(monthly), label: "stub monthly" },
+      ],
+    },
+  };
+}
+
+export function maybeProposeStubExtract(
+  draft: FoxIntakeDraft,
+  fields?: Record<string, string>,
+  extractClass?: ExtractClass,
+): FoxIntakeDraft {
+  if (!shouldProposeStubExtract(draft, extractClass)) return draft;
+  const stub = parseExtractMoney(fields?.gross_period) ?? parseExtractMoney(fields?.paystub_amount);
+  const frequency = speakPayFrequency(fields?.pay_frequency);
+  const employer = stubEmployerName(fields, draft);
+  const employee = stubEmployeeName(fields, draft);
+  if (stub == null || stub <= 0 || !frequency || !employer) return draft;
+  return proposeStubExtract(draft, stub, frequency, employer, employee, fieldsHaveVariablePay(fields));
+}
+
+function stubExtractParts(draft: FoxIntakeDraft): {
+  stub: number;
+  frequency: string;
+  employer: string;
+  employee: string;
+  monthly: number;
+} | null {
+  const proposal = draft.pendingProposal;
+  const extras = proposal?.extras ?? [];
+  const stub =
+    Number(extras.find((item) => item.field === PAYSTUB_AMOUNT_FIELD)?.value ?? 0) ||
+    draft.pendingWageExtract?.stub ||
+    0;
+  const frequency =
+    extras.find((item) => item.field === "pay_frequency")?.value ||
+    draft.pendingWageExtract?.frequency ||
+    "";
+  const employer = (
+    extras.find((item) => item.field === "employer_name")?.value ||
+    draft.pendingWageExtract?.employer ||
+    ""
+  ).trim();
+  const employee = (
+    extras.find((item) => item.field === "full_name")?.value ||
+    draft.pendingWageExtract?.employee ||
+    ""
+  ).trim();
+  const spoken = speakPayFrequency(frequency);
+  const monthly =
+    Number(extras.find((item) => item.field === PAYSTUB_MONTHLY_FIELD)?.value ?? 0) ||
+    draft.pendingWageExtract?.monthly ||
+    conventionalStubMonthly(stub, spoken || frequency) ||
+    0;
+  if (stub <= 0 || !spoken || monthly <= 0 || !employer) return null;
+  return { stub, frequency: spoken, employer, employee, monthly };
+}
+
+function writeStubPayLine(
+  draft: FoxIntakeDraft,
+  parts: { stub: number; frequency: string; employer: string; monthly: number },
+  mode: "same" | "two" | "only",
+): FoxIntakeDraft {
+  const now = new Date().toISOString();
+  const facts = { ...(draft.facts ?? {}) };
+  const fileEmployer = factValue(draft, "employer_name").trim();
+  if (mode === "only" && parts.employer && !fileEmployer) {
+    facts.employer_name = {
+      field: "employer_name",
+      value: parts.employer,
+      source: "document",
+      confirmed: true,
+      confirmedAt: now,
+    };
+  }
+  facts[PAYSTUB_AMOUNT_FIELD] = {
+    field: PAYSTUB_AMOUNT_FIELD,
+    value: moneyFieldValue(parts.stub),
+    source: "document",
+    confirmed: true,
+    confirmedAt: now,
+  };
+  facts.gross_period = {
+    field: "gross_period",
+    value: moneyFieldValue(parts.stub),
+    source: "document",
+    confirmed: true,
+    confirmedAt: now,
+  };
+  facts.pay_frequency = {
+    field: "pay_frequency",
+    value: parts.frequency,
+    source: "document",
+    confirmed: true,
+    confirmedAt: now,
+  };
+  facts[PAYSTUB_MONTHLY_FIELD] = {
+    field: PAYSTUB_MONTHLY_FIELD,
+    value: moneyFieldValue(parts.monthly),
+    source: "document",
+    confirmed: true,
+    confirmedAt: now,
+  };
+  let next: FoxIntakeDraft = {
+    ...draft,
+    wageDocsAsked: true,
+    wageStubAsked: true,
+    stubExtractAccepted: true,
+    awaitingPayFrequency: false,
+    pendingProposal: null,
+    looksRightHold: false,
+    facts,
+  };
+  if (mode === "two") {
+    next = writeCurrentEmploymentHistory(next, parts.employer);
+  } else if (mode === "only" && parts.employer && !fileEmployer) {
+    next = writeCurrentEmploymentHistory(next, parts.employer);
+  }
+  const decision = wageExtractAfterStubDecision(next, parts.monthly, mode);
+  if (decision.kind === "chips") {
+    next = writeConfirmedIncomeFact(next, W2_MONTHLY_FIELD, String(decision.w2Monthly), "computed");
+    return { ...enterBothMonthlyAsk(next), looksRightHold: true };
+  }
+  if (decision.kind === "lower") {
+    next = writeConfirmedIncomeFact(next, W2_MONTHLY_FIELD, String(decision.w2Monthly), "computed");
+    next = writeConfirmedIncomeFact(next, INCOME_CAUTION_FIELD, WAGE_STUB_LOWER_CAUTION, "suggested");
+    return { ...enterBothMonthlyAsk(next), looksRightHold: true };
+  }
+  return next;
+}
+
+function proposeStubJobAsk(draft: FoxIntakeDraft): FoxIntakeDraft {
+  const parts = stubExtractParts(draft);
+  if (!parts) return draft;
+  return {
+    ...draft,
+    looksRightHold: true,
+    pendingProposal: {
+      field: STUB_JOB_FIELD,
+      value: "",
+      label: "stub job",
+      kind: "computed",
+      extras: [
+        { field: "employer_name", value: parts.employer, label: "employer" },
+        ...(parts.employee ? [{ field: "full_name", value: parts.employee, label: "employee" }] : []),
+        { field: PAYSTUB_AMOUNT_FIELD, value: moneyFieldValue(parts.stub), label: "stub amount" },
+        { field: "pay_frequency", value: parts.frequency, label: "pay frequency" },
+        { field: PAYSTUB_MONTHLY_FIELD, value: moneyFieldValue(parts.monthly), label: "stub monthly" },
+      ],
+    },
+  };
+}
+
+export function acceptStubExtract(draft: FoxIntakeDraft): FoxIntakeDraft {
+  const proposal = draft.pendingProposal;
+  if (!isStubExtractProposal(proposal) && !isStubJobProposal(proposal)) return draft;
+  const parts = stubExtractParts(draft);
+  if (!parts) return draft;
+  const fileEmployer = factValue(draft, "employer_name").trim();
+  if (fileEmployer && !employersClose(fileEmployer, parts.employer)) {
+    return proposeStubJobAsk(draft);
+  }
+  return writeStubPayLine(draft, parts, fileEmployer ? "same" : "only");
+}
+
+export function acceptStubJob(draft: FoxIntakeDraft, answer: "same" | "two"): FoxIntakeDraft {
+  const parts = stubExtractParts(draft);
+  if (!parts) return draft;
+  if (draft.stubExtractAccepted) {
+    let next: FoxIntakeDraft = {
+      ...draft,
+      pendingProposal: null,
+      awaitingBothMonthlyReason: false,
+      looksRightHold: false,
+      bothMonthlyReason: answer === "two" ? "second-job" : draft.bothMonthlyReason,
+    };
+    if (answer === "two") next = writeCurrentEmploymentHistory(next, parts.employer);
+    return next;
+  }
+  return writeStubPayLine(draft, parts, answer);
+}
+
+export function changeStubExtract(draft: FoxIntakeDraft): FoxIntakeDraft {
+  const parts = stubExtractParts({
+    ...draft,
+    pendingProposal: isStubExtractProposal(draft.pendingProposal) || isStubJobProposal(draft.pendingProposal)
+      ? draft.pendingProposal
+      : draft.pendingProposal,
+  });
+  const held = parts ?? {
+    stub: draft.pendingWageExtract?.stub ?? 0,
+    frequency: draft.pendingWageExtract?.frequency ?? "",
+    employer: draft.pendingWageExtract?.employer ?? "",
+    employee: draft.pendingWageExtract?.employee ?? "",
+    monthly: draft.pendingWageExtract?.monthly ?? 0,
+  };
+  const cleared: FoxIntakeDraft = {
+    ...draft,
+    pendingProposal: null,
+    correcting: null,
+    correctingLine: null,
+    wageStubAsked: false,
+    stubExtractAccepted: false,
+    looksRightHold: true,
+  };
+  if (held.stub > 0 && held.frequency && held.employer) {
+    return proposeStubExtract(cleared, held.stub, held.frequency, held.employer, held.employee);
+  }
+  return cleared;
+}
+
+/** @deprecated Use writeTypedStubMonthly — typed stub is a write, not a confirm. */
+export function proposeStubMonthly(draft: FoxIntakeDraft, monthly: number): FoxIntakeDraft {
+  return writeTypedStubMonthly(draft, monthly);
 }

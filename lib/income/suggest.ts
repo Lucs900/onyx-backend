@@ -28,6 +28,7 @@ export const YTD_CONFLICT_CAUTION =
   "YTD and the run-rate don’t match. I’m using the lower number — not a blend.";
 export const YTD_CONFLICT_GAP = 50;
 export const K1_ORDINARY_NOTE = "Ordinary is not confirmed cash flow.";
+export const SUGGESTED_RENTAL_CASH_FLOW_NOTE = "Suggested rental cash flow · not underwritten";
 export const FREQUENCY_MATCH_SLACK = 0.55;
 export const VARIABLE_THIN_NOTE = "History is thin.";
 export const SECOND_JOB_THIN_NOTE = "Second-job history is thin.";
@@ -216,6 +217,50 @@ export function suggestScheduleCIncome(years: ScheduleCYearInput[]): IncomeSugge
 /** K-1 ordinary / 12. Suggested only — not confirmed cash flow. */
 export function k1OrdinaryMonthly(ordinaryIncome: number): number {
   return monthlyFromAnnual(ordinaryIncome);
+}
+
+/** Entity 1065 / 1120-S cash flow. Ownership applies to pooled totals; GP named to the partner is not multiplied again. */
+export function entityCashFlowAnnual(input: {
+  ordinary: number;
+  rental8825?: number | null;
+  depreciation?: number | null;
+  amortization?: number | null;
+  te?: number | null;
+  guaranteedPayments?: number | null;
+  ownershipPercent?: number | null;
+}): number | null {
+  if (!Number.isFinite(input.ordinary)) return null;
+  const share = (input.ownershipPercent ?? 0) / 100;
+  if (!Number.isFinite(share) || share <= 0) return null;
+  const pooled =
+    input.ordinary +
+    (input.rental8825 ?? 0) +
+    (input.depreciation ?? 0) +
+    (input.amortization ?? 0) -
+    (input.te ?? 0);
+  return pooled * share + (input.guaranteedPayments ?? 0);
+}
+
+export function entityCashFlowMonthly(input: Parameters<typeof entityCashFlowAnnual>[0]): number | null {
+  const annual = entityCashFlowAnnual(input);
+  return annual == null ? null : monthlyFromAnnual(annual);
+}
+
+export function entityCashFlowMethodNote(input: {
+  kind?: string | null;
+  ownershipPercent?: number | null;
+  guaranteedPayments?: number | null;
+}): string {
+  const kind = String(input.kind ?? "").toLowerCase();
+  if (kind === "1120s" || kind === "1120-s") return "ordinary + dep − T&E / 12";
+  const pct = input.ownershipPercent != null && input.ownershipPercent > 0 ? `${input.ownershipPercent}%` : "ownership";
+  return `(ordinary + 8825 rental + dep + amort − T&E) × ${pct} + GP to Hale / 12`;
+}
+
+/** Schedule E Part I: rents received minus cash expenses ex-depreciation, /12. Not 75%. Not PITIA. */
+export function scheduleECashFlowMonthly(rentsReceived: number, cashExpenses: number): number | null {
+  if (!Number.isFinite(rentsReceived) || !Number.isFinite(cashExpenses)) return null;
+  return monthlyFromAnnual(rentsReceived - cashExpenses);
 }
 
 export function periodsPerYear(raw?: string | null): number | null {
@@ -420,7 +465,7 @@ export function parseBothMonthlyReason(raw: string): BothMonthlyReason | null {
   const v = String(raw ?? "").trim().toLowerCase();
   if (!v) return null;
   if (/\b(skip|later|not sure|idk|pass|don.?t know|no idea|unknown)\b/.test(v)) return "skip";
-  if (v === "overtime-bonus" || v === "overtime / bonus" || v === "overtime/bonus") return "overtime-bonus";
+  if (v === "ot" || v === "overtime-bonus" || v === "overtime / bonus" || v === "overtime/bonus") return "overtime-bonus";
   if (v === "second-job" || v === "second job") return "second-job";
   if (v === "raise" || v === "raise / new base" || v === "raise/new base") return "raise";
   if (/\b(overtime|\bot\b|bonus|commission|fat check)\b/.test(v)) return "overtime-bonus";

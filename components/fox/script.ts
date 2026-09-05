@@ -122,6 +122,7 @@ export function taskContext(stage: FoxStage, draft: FoxIntakeDraft) {
     debts: "Asking: monthly debts",
     assets: "Asking: available funds",
     "property-type": "Asking: property type",
+    "property-zip": "Asking: property ZIP",
     "property-address": "Asking: property address",
     "time-on-job": "Asking: time on job",
     "current-housing": "Asking: current housing",
@@ -143,6 +144,10 @@ export function taskContext(stage: FoxStage, draft: FoxIntakeDraft) {
     "geo-stop": "California only",
     "confirm-proposal": "Confirm suggestion",
     "pay-frequency": "Asking: pay frequency",
+    "wage-docs": "Asking: W-2 and paystub",
+    "w2-box5": "Asking: W-2 Box 5",
+    "w2-pay-frequency": "Asking: pay frequency",
+    "paystub-monthly": "Asking: stub monthly",
     "both-monthly-reason": "Asking: paystub and W-2",
     "raise-when": "Asking: raise date",
     "raise-ytd-far": "Asking: raise YTD",
@@ -295,7 +300,7 @@ export function promptCopy(prompt: FoxPrompt, draft?: FoxIntakeDraft): { text: s
   }
   if (prompt === "review") {
     return {
-      text: "Does this look right?",
+      text: "The file looks like this. Looks right, or change a line.",
       actions: [
         { id: "looks-right", label: "Looks right", event: "bubble", capture: { field: "confirm-draft" } },
         { id: "needs-fix", label: "Needs a correction", event: "bubble", capture: { field: "needs-correction" } },

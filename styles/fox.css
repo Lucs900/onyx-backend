@@ -104,6 +104,21 @@
   fill: var(--sunset);
 }
 
+@keyframes fox-mark-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.42;
+  }
+}
+
+/* Places / Rateflow wait: opacity pulse only. No bounce, spinner, or sunset ring. */
+.fox-bar__mark.is-waiting {
+  animation: fox-mark-pulse 1.15s ease-in-out infinite;
+}
+
 .fox-bar__prompt,
 .fox-bar__title {
   flex: 0 0 auto;
@@ -135,11 +150,97 @@
   color: var(--muted);
 }
 
+.fox-bar__compose {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-width: 0;
+  width: 100%;
+}
+
+/* Places list lives in the composer dock, in flow. Never overlay the thread. */
+.fox-bar__compose.is-suggesting {
+  background: var(--paper-elevated);
+  border: 1px solid var(--fox-hairline);
+  border-radius: 20px;
+}
+
+.fox-bar__suggest {
+  position: static;
+  z-index: auto;
+  margin: 0;
+  padding: 6px 6px 0;
+  list-style: none;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  max-height: min(200px, 28vh);
+  overflow: auto;
+}
+
+.fox-bar__suggest-row {
+  display: block;
+  width: 100%;
+  padding: 8px 12px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--ink);
+  font-family: var(--font-ui);
+  font-size: 14px;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+}
+
+.fox-bar__suggest-row:hover,
+.fox-bar__suggest-row:focus-visible {
+  background: color-mix(in srgb, var(--ink) 8%, var(--paper-elevated));
+}
+
+.fox-stage.fox-stage--workspace .fox-bar__compose.is-suggesting .fox-bar__desk,
+.fox-stage--workspace .fox-bar__compose.is-suggesting .fox-bar__desk,
+.fox-bar__compose.is-suggesting .fox-bar__desk,
+.fox-bar__compose.is-suggesting .fox-bar__desk--plain,
+.fox-bar__compose.is-suggesting .fox-bar__desk--plain:hover,
+.fox-bar__compose.is-suggesting .fox-bar__desk--plain:focus-within {
+  margin-top: 0 !important;
+  border: 0 !important;
+  border-radius: 0 0 999px 999px !important;
+  box-shadow: none !important;
+}
+
 .fox-stage--workspace .fox-bar__input:focus,
 .fox-stage--workspace .fox-bar__input:focus-visible,
 .fox-bar__desk--plain .fox-bar__input:focus,
 .fox-bar__desk--plain .fox-bar__input:focus-visible {
   outline: none;
+}
+
+.fox-bar__attach {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.fox-bar__attach:hover,
+.fox-bar__attach:focus-visible {
+  background: color-mix(in srgb, var(--ink) 8%, transparent);
+}
+
+.fox-bar__attach:disabled {
+  opacity: 0.28;
+  cursor: default;
 }
 
 .fox-bar__send {

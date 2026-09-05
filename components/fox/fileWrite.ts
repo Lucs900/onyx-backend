@@ -11,6 +11,7 @@ import type {
   ExtractClass,
   FactConflict,
   FactProposal,
+  FactWrite,
   FoxAction,
   FoxIntakeDraft,
   ReceivedDoc,
@@ -19,14 +20,34 @@ import {
   applyQualifyingIncomeFromExtract,
   decliningIncomeCaution,
   hasScheduleCCashflow,
+  hasScheduleECashflow,
   hasTwoYearWageHistory,
   k1OrdinaryMissingDistributions,
+  maybeProposeQualifyingFromTaxFile,
+  isCoverReturnFields,
+  hasK1Ordinary,
+  isWageExtractFirstPath,
+  isWageExtractProposal,
+  isStubExtractProposal,
+  isStubJobProposal,
+  maybeProposeWageExtract,
+  maybeProposeStubExtract,
+  shouldProposeStubExtract,
+  stubExtractAskOpen,
+  canSpeakStubExtract,
+  employersClose,
+  wageExtractFailedRead,
   monthlyQualifyingFromExtract,
   normalizeReturnKind,
   parseExtractMoney,
+  readStubAmount,
   readTaxCashflows,
+  skipWageDocs,
   wageIncomeCaution,
+  wageThreadOpen,
 } from "./qualifyingIncome";
+import { bankEndingBalanceAmount } from "@/lib/docs/bankBalance";
+import { safeAccountLast4 } from "@/lib/docs/bankLast4";
 import {
   applyRentalIncomeFromExtract,
   draftHasLease,
@@ -53,6 +74,7 @@ import {
   STATED_AVAILABLE_ASSETS_FIELD,
   SUGGESTED_ASSETS_EXTRACT_NOTE,
   availableAssetsConflictActions,
+  displayInstitution,
   proposeExtractedAvailableAssets,
   statementExtractConfirmed,
 } from "./availableAssets";
@@ -62,6 +84,10 @@ import {
   isPropertyAddressField,
   parsePropertyType,
   propertyAddressConflictActions,
+  adoptStreetOverZipOnly,
+  displayedSubjectAddress,
+  isPlaceAddressProposal,
+  isZipOnlyFileAddress,
 } from "./propertyType";
 import {
   HIRE_DATE_FIELD,
@@ -84,6 +110,8 @@ import {
   borrowerNameConflictActions,
   borrowerNameSettled,
   displayBorrowerName,
+  governmentIdSkipped,
+  isBorrowerNameConfirmPending,
   isBorrowerNameField,
   proposeExtractedBorrowerName,
   SUGGESTED_BORROWER_NOTE,
@@ -100,7 +128,6 @@ import {
   isOtherPropertyMortgageExtract,
   maybeProposeOtherReoFileNet,
   otherReoFileNetNeedsStatement,
-  otherReoSettled,
   proposeExtractedOtherPropertyPayment,
   proposeExtractedOtherReo,
 } from "./otherReo";
@@ -138,7 +165,19 @@ export const EXTRACT_SCHEMA_KEYS: Record<ExtractClass, readonly string[]> = {
     "tax_year",
     "hire_date",
   ],
-  w2: ["tax_year", "employer_name", "wages", "federal_withheld", "overtime", "bonus", "commission", "second_employer_name", "hire_date"],
+  w2: [
+    "tax_year",
+    "employer_name",
+    "wages",
+    "medicare_wages",
+    "box5",
+    "federal_withheld",
+    "overtime",
+    "bonus",
+    "commission",
+    "second_employer_name",
+    "hire_date",
+  ],
   tax_return: [
     "tax_year",
     "filing_status",
@@ -154,12 +193,31 @@ export const EXTRACT_SCHEMA_KEYS: Record<ExtractClass, readonly string[]> = {
     "mileage_depreciation",
     "k1_ordinary_income",
     "k1_distributions",
+    "schedule_e_rents_received",
+    "schedule_e_cash_expenses",
+    "schedule_e_part2_names",
+    "schedule_e_property_address",
+    "entity_ordinary_income",
+    "entity_8825_rental",
+    "entity_depreciation",
+    "entity_amortization",
+    "entity_te",
+    "entity_guaranteed_payments",
+    "ownership_percent",
+    "entity_taxable_income",
+    "entity_name",
+    "cover_schedules",
   ],
   bank_statement: ["institution", "period_end", "ending_balance", "account_type", "account_last4", "present_address"],
   purchase_contract: [
     "property_address",
     "purchase_price",
     "close_date",
+    "seller_credit",
+    "inspection_contingency",
+    "loan_contingency",
+    "appraisal_contingency",
+    "addenda",
     "property_type",
     "year_built",
     "units",
@@ -191,6 +249,7 @@ const MONEY_KEYS = new Set([
   "agi",
   "ending_balance",
   "purchase_price",
+  "seller_credit",
   "unpaid_principal",
   "current_pi",
   "income",
@@ -215,6 +274,15 @@ const MONEY_KEYS = new Set([
   "mileage_depreciation",
   "k1_ordinary_income",
   "k1_distributions",
+  "entity_ordinary_income",
+  "entity_8825_rental",
+  "entity_depreciation",
+  "entity_amortization",
+  "entity_te",
+  "entity_guaranteed_payments",
+  "entity_taxable_income",
+  "schedule_e_rents_received",
+  "schedule_e_cash_expenses",
   "overtime",
   "bonus",
   "commission",
@@ -282,10 +350,25 @@ const YEARLY_TAX_KEYS = new Set([
   "mileage_depreciation",
   "k1_ordinary_income",
   "k1_distributions",
+  "schedule_e_rents_received",
+  "schedule_e_cash_expenses",
+  "schedule_e_part2_names",
+  "schedule_e_property_address",
+  "entity_ordinary_income",
+  "entity_8825_rental",
+  "entity_depreciation",
+  "entity_amortization",
+  "entity_te",
+  "entity_guaranteed_payments",
+  "ownership_percent",
+  "entity_taxable_income",
+  "entity_name",
+  "cover_schedules",
 ]);
 
 const DROP_FIELD_KEYS =
-  /^(ssn|social|social_security|account|account_number|routing|routing_number|card|cin|dl_number|license_number|full_ssn|full_account|date_of_birth|dob)$/i;
+  /^(ssn|social|social_security|account|account_number|routing|routing_number|card|cin|dl|dl_number|daq|license|license_number|full_ssn|full_account|date_of_birth|dob)$/i;
+const CA_DL_NUMBER_RE = /^[A-Z]\d{7}$/i;
 const SSN_RE = /\b\d{3}[-\s]?\d{2}[-\s]?\d{4}\b/;
 const LONG_ACCOUNT_RE = /\b\d{8,17}\b/;
 const DATE_KEYS = new Set([
@@ -295,6 +378,9 @@ const DATE_KEYS = new Set([
   "close_date",
   "tax_year",
   "hire_date",
+  "inspection_contingency",
+  "loan_contingency",
+  "appraisal_contingency",
 ]);
 
 export function slotForExtractClass(extractClass: ExtractClass): DocSlot {
@@ -324,6 +410,7 @@ export function extractClassFromSlot(slot: DocSlot): ExtractClass | null {
 }
 
 export function extractClassFromFilename(name: string): ExtractClass | null {
+  if (/purchase.?contract|purchase.?agree|\bpsa\b/i.test(name)) return "purchase_contract";
   return extractClassFromSlot(slotFromFilename(name));
 }
 
@@ -348,9 +435,14 @@ export function looksLikeTaxReturnFields(
 ): boolean {
   if (!fields) return false;
   const kind = normalizeReturnKind(String(fields.return_kind ?? ""));
-  if (kind === "k1" || kind === "1065" || kind === "1120s" || kind === "schedule_c") return true;
+  if (kind === "k1" || kind === "1065" || kind === "1120s" || kind === "1120" || kind === "schedule_c" || kind === "schedule_e") {
+    return true;
+  }
+  if (isCoverReturnFields(fields)) return true;
   if (String(fields.k1_ordinary_income ?? "").trim()) return true;
+  if (String(fields.entity_ordinary_income ?? "").trim()) return true;
   if (String(fields.schedule_c_net_profit ?? "").trim()) return true;
+  if (String(fields.schedule_e_rents_received ?? "").trim()) return true;
   return false;
 }
 
@@ -368,12 +460,27 @@ export function looksLikeIdFields(
   return Boolean(fields && String(fields.full_name ?? "").trim());
 }
 
+/** Institution or ending balance — last4 alone is not a lock. */
+export function looksLikeBankFields(
+  fields?: Record<string, string | null | undefined> | null,
+): boolean {
+  const value = (key: string) => String(fields?.[key] ?? "").trim();
+  return Boolean(value("institution") || value("ending_balance"));
+}
+
+export function looksLikeContractFields(
+  fields?: Record<string, string | null | undefined> | null,
+): boolean {
+  const value = (key: string) => String(fields?.[key] ?? "").trim();
+  return Boolean(value("property_address") || value("purchase_price") || value("close_date") || value("seller_credit"));
+}
+
 export function hasLockedSuggestion(
   extractClass: ExtractClass,
   fields?: Record<string, string | null | undefined> | null,
 ): boolean {
   const value = (key: string) => String(fields?.[key] ?? "").trim();
-  if (extractClass === "government_id") return Boolean(value("full_name") || value("present_address"));
+  if (extractClass === "government_id") return Boolean(value("full_name"));
   if (extractClass === "bank_statement") {
     return Boolean(value("institution") || value("ending_balance") || value("present_address"));
   }
@@ -382,8 +489,66 @@ export function hasLockedSuggestion(
       value("employer_name") || value("gross_period") || value("ytd_gross") || value("pay_period_end"),
     );
   }
-  if (extractClass === "w2") return Boolean(value("employer_name") || value("wages"));
+  if (extractClass === "w2") {
+    return Boolean(
+      value("employer_name") ||
+        value("medicare_wages") ||
+        value("box5") ||
+        value("wages"),
+    );
+  }
+  if (extractClass === "purchase_contract") return looksLikeContractFields(fields);
+  if (extractClass === "tax_return") {
+    const kind = normalizeReturnKind(String(fields?.return_kind ?? ""));
+    if (kind === "schedule_e") {
+      return Boolean(value("schedule_e_rents_received") && value("schedule_e_cash_expenses"));
+    }
+    if (kind === "1120") {
+      return Boolean(String(fields?.return_kind ?? "").trim());
+    }
+    if (isCoverReturnFields(fields)) {
+      return Boolean(value("tax_year") || value("cover_schedules"));
+    }
+    if (kind === "k1" || kind === "1065" || kind === "1120s") {
+      return Boolean(
+        String(fields?.k1_ordinary_income ?? "").trim() || String(fields?.entity_ordinary_income ?? "").trim(),
+      );
+    }
+  }
   return Object.values(fields ?? {}).some((item) => String(item ?? "").trim());
+}
+
+export function scheduleECashFlowMissingFromExtract(
+  fields?: Record<string, string | null | undefined> | null,
+) {
+  const kind = normalizeReturnKind(String(fields?.return_kind ?? ""));
+  if (kind !== "schedule_e") return false;
+  return (
+    !String(fields?.schedule_e_rents_received ?? "").trim() ||
+    !String(fields?.schedule_e_cash_expenses ?? "").trim()
+  );
+}
+
+export function k1OrdinaryMissingFromExtract(
+  fields?: Record<string, string | null | undefined> | null,
+  name?: string,
+) {
+  if (isCoverReturnFields(fields)) return false;
+  const kind = normalizeReturnKind(String(fields?.return_kind ?? ""));
+  const namedK1 = kind === "k1" || kind === "1065" || kind === "1120s";
+  const filenameK1 = /k-?1/i.test(name ?? "");
+  if (String(fields?.entity_ordinary_income ?? "").trim() || kind === "1120") return false;
+  if (!namedK1 && !filenameK1) return false;
+  return !String(fields?.k1_ordinary_income ?? "").trim();
+}
+
+export function looksLikePaystubFields(
+  fields?: Record<string, string | null | undefined> | null,
+): boolean {
+  const value = (key: string) => String(fields?.[key] ?? "").trim();
+  if (value("gross_period") && value("pay_frequency")) return true;
+  if (value("employer_name") && value("gross_period")) return true;
+  return Boolean(value("gross_period") && value("pay_period_end"));
 }
 
 export function promoteExtractClass(
@@ -393,7 +558,10 @@ export function promoteExtractClass(
   if (extractClass !== "other") return extractClass;
   if (looksLikeTaxReturnFields(fields)) return "tax_return";
   if (looksLikeMortgageFields(fields)) return "mortgage_statement";
+  if (looksLikePaystubFields(fields)) return "paystub";
   if (looksLikeIdFields(fields)) return "government_id";
+  if (looksLikeBankFields(fields)) return "bank_statement";
+  if (looksLikeContractFields(fields)) return "purchase_contract";
   return extractClass;
 }
 
@@ -434,6 +602,7 @@ export function docsDisplayLabel(doc: {
   if (extractClass === "government_id") return "ID";
   if (extractClass === "bank_statement") return "Bank statements";
   if (extractClass === "tax_return") return "Tax return";
+  if (extractClass === "purchase_contract") return "Purchase contract";
   const slot = resolveReceivedSlot(doc.slot, doc.name, extractClass);
   if (slot === "paystubs") return "Paystubs";
   if (slot === "w2") return "W-2";
@@ -461,11 +630,11 @@ export function askClassLabel(extractClass: ExtractClass) {
 
 export function incomeRequestedClasses(income?: string | null): ExtractClass[] {
   const out: ExtractClass[] = ["government_id"];
-  if (income === "w2" || income === "both") {
+  if (income === "w2" || income === "both" || !income) {
     out.push("paystub", "w2");
   }
-  if (income === "self-employed" || income === "other" || income === "both" || !income) {
-    if (income !== "w2") out.push("tax_return");
+  if (income === "self-employed" || income === "other" || income === "both") {
+    out.push("tax_return");
   }
   return out;
 }
@@ -474,6 +643,11 @@ export const REMAINDER_CONFIRM_FIELDS = new Set([
   "property_address",
   "purchase_price",
   "close_date",
+  "seller_credit",
+  "inspection_contingency",
+  "loan_contingency",
+  "appraisal_contingency",
+  "addenda",
   "institution",
   "period_end",
   "ending_balance",
@@ -494,10 +668,18 @@ export function isRemainderConfirmField(field: string) {
 }
 
 export function remainderProposalFromWrites(
-  _extractClass: ExtractClass,
+  extractClass: ExtractClass,
   writes: { field: string; value: string }[],
 ): FactProposal | null {
-  const usable = writes.filter((item) => item.field && item.value);
+  let usable = writes.filter((item) => item.field && item.value);
+  if (extractClass === "purchase_contract") {
+    const rank = ["property_address", "purchase_price", "close_date", "seller_credit"];
+    usable = [...usable].sort((a, b) => {
+      const ai = rank.indexOf(a.field);
+      const bi = rank.indexOf(b.field);
+      return (ai < 0 ? 99 : ai) - (bi < 0 ? 99 : bi);
+    });
+  }
   if (!usable.length) return null;
   const [first, ...rest] = usable;
   return {
@@ -549,6 +731,10 @@ export function factLabel(field: string) {
   if (field === "mileage_depreciation") return "mileage depreciation";
   if (field === "k1_ordinary_income") return "K-1 ordinary income";
   if (field === "k1_distributions") return "K-1 distributions";
+  if (field === "schedule_e_rents_received") return "Schedule E rents received";
+  if (field === "schedule_e_cash_expenses") return "Schedule E cash expenses";
+  if (field === "schedule_e_part2_names") return "Schedule E Part II names";
+  if (field === "schedule_e_property_address") return "Schedule E property";
   if (field === "qualifying_income") return "qualifying income";
   if (field === "paystub_monthly") return "paystub monthly";
   if (field === "w2_monthly") return "W-2 monthly";
@@ -574,6 +760,11 @@ export function factLabel(field: string) {
   if (field === "occupancy") return "occupancy";
   if (field === "purchase_price") return "purchase price";
   if (field === "close_date") return "close date";
+  if (field === "seller_credit") return "seller credit";
+  if (field === "inspection_contingency") return "inspection contingency";
+  if (field === "loan_contingency") return "loan contingency";
+  if (field === "appraisal_contingency") return "appraisal contingency";
+  if (field === "addenda") return "addenda";
   if (field === "servicer") return "servicer";
   if (field === "unpaid_principal") return "unpaid principal";
   if (field === "current_pi") return "current P&I";
@@ -599,6 +790,13 @@ export function last4Only(value: string) {
   return digits.slice(-4);
 }
 
+function looksLikeContractStreet(value: string) {
+  const t = value.trim();
+  if (!t || isZipOnlyFileAddress(t)) return false;
+  if (!/^\d{1,6}\s+[A-Za-z]/.test(t)) return false;
+  return /\b(ST|STREET|AVE|AVENUE|BLVD|RD|ROAD|LN|LANE|DR|DRIVE|WAY|CT|COURT|PL|PLACE)\b/i.test(t);
+}
+
 export function sanitizeExtractedFields(
   extractClass: ExtractClass,
   fields: Record<string, string | null | undefined>,
@@ -608,16 +806,63 @@ export function sanitizeExtractedFields(
   for (const [rawKey, rawValue] of Object.entries(fields ?? {})) {
     const key = rawKey.trim();
     if (!key || DROP_FIELD_KEYS.test(key)) continue;
-    if (allowed.size && !allowed.has(key)) continue;
-    if (key === "fico" || key === "credit" || key === "credit_score") continue;
     let value = String(rawValue ?? "").trim();
     if (!value) continue;
-    if (key === "id_last4" || key === "account_last4") {
+    if (key === "asset_accounts") {
+      continue;
+    }
+    if (extractClass === "purchase_contract") {
+      if (
+        key === "seller_credits" ||
+        key === "seller_concession" ||
+        key === "seller_concessions" ||
+        key === "concession" ||
+        key === "credit_to_buyer" ||
+        key === "buyer_credit" ||
+        key === "seller_credit_amount"
+      ) {
+        if (!next.seller_credit) next.seller_credit = value;
+        continue;
+      }
+      if (
+        key === "subject_property" ||
+        key === "subject_address" ||
+        key === "premises" ||
+        key === "property_street" ||
+        key === "subject_property_address" ||
+        key === "property" ||
+        key === "address"
+      ) {
+        if (!next.property_address && looksLikeContractStreet(value)) {
+          next.property_address = value;
+        }
+        continue;
+      }
+    }
+    if (allowed.size && !allowed.has(key)) continue;
+    if (key === "fico" || key === "credit" || key === "credit_score") continue;
+    if (extractClass === "bank_statement" && key === "account_number") {
+      continue;
+    }
+    if (extractClass === "bank_statement" && key === "ending_balance") {
+      value = bankEndingBalanceAmount(value);
+      if (!value) continue;
+    }
+    if (key === "account_last4") {
+      if (CA_DL_NUMBER_RE.test(value.replace(/\s+/g, ""))) continue;
+      const last4 = safeAccountLast4(value.split(/[,;·]/)[0]?.trim() ?? "");
+      if (!last4) continue;
+      next.account_last4 = last4;
+      continue;
+    }
+    if (key === "id_last4") {
+      if (CA_DL_NUMBER_RE.test(value.replace(/\s+/g, ""))) continue;
       value = last4Only(value);
       if (!value) continue;
       next[key] = value;
       continue;
     }
+    if (CA_DL_NUMBER_RE.test(value.replace(/\s+/g, ""))) continue;
     if (SSN_RE.test(value)) continue;
     if (
       LONG_ACCOUNT_RE.test(value.replace(/[\s-]/g, "")) &&
@@ -627,6 +872,17 @@ export function sanitizeExtractedFields(
       continue;
     }
     next[key] = value;
+  }
+  if (extractClass === "purchase_contract") {
+    const credit = next.seller_credit;
+    if (credit) {
+      const n = parseExtractMoney(credit);
+      if (n != null && n > 0) next.seller_credit = String(Math.round(n));
+      else delete next.seller_credit;
+    }
+    if (next.property_address && isZipOnlyFileAddress(next.property_address)) {
+      delete next.property_address;
+    }
   }
   return next;
 }
@@ -662,6 +918,10 @@ export function displayFactValue(field: string, value: string) {
       return n < 0 ? `−$${abs}` : `$${abs}`;
     }
   }
+  if (field === "close_date") {
+    const spoken = spokenCloseDate(value);
+    if (spoken) return spoken;
+  }
   if (MONEY_KEYS.has(field)) {
     const n = moneyNumber(value);
     if (n != null) {
@@ -670,6 +930,32 @@ export function displayFactValue(field: string, value: string) {
     }
   }
   return value;
+}
+
+function spokenCloseDate(value: string) {
+  const t = value.trim();
+  if (/^[A-Za-z]+ \d{1,2}, \d{4}$/.test(t)) return t;
+  const iso = t.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  const us = t.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  const year = iso ? Number(iso[1]) : us ? Number(us[3]) : NaN;
+  const month = iso ? Number(iso[2]) : us ? Number(us[1]) : NaN;
+  const day = iso ? Number(iso[3]) : us ? Number(us[2]) : NaN;
+  if (!year || month < 1 || month > 12 || day < 1 || day > 31) return "";
+  const months = [
+    "January",
+    "February",
+    "March",
+    "April",
+    "May",
+    "June",
+    "July",
+    "August",
+    "September",
+    "October",
+    "November",
+    "December",
+  ];
+  return `${months[month - 1]} ${day}, ${year}`;
 }
 
 function existingFact(draft: FoxIntakeDraft, field: string): { value: string; via: string } | null {
@@ -695,10 +981,9 @@ function existingFact(draft: FoxIntakeDraft, field: string): { value: string; vi
     return { value: String(draft.statedCurrentHousing), via: "structure" };
   }
   if (isPropertyAddressField(field) && (draft.subjectAddress || draft.facts?.property_address?.value)) {
-    return {
-      value: draft.subjectAddress || draft.facts?.property_address?.value || "",
-      via: "structure",
-    };
+    const value = draft.subjectAddress || draft.facts?.property_address?.value || "";
+    if (isZipOnlyFileAddress(value, draft.propertyZip)) return null;
+    return { value, via: "structure" };
   }
   const direct = draft.facts?.[field]?.value;
   if (direct) return { value: direct, via: field };
@@ -757,7 +1042,7 @@ function writeField(
   const pendingProposal =
     draft.pendingProposal && draft.pendingProposal.field === field ? null : draft.pendingProposal;
   const assetAmount = field === STATED_AVAILABLE_ASSETS_FIELD ? moneyNumber(value) : null;
-  return {
+  const written = {
     ...draft,
     facts,
     contact,
@@ -769,7 +1054,9 @@ function writeField(
     ...(assetAmount != null
       ? { statedAvailableAssets: assetAmount, availableAssetsAsked: true }
       : {}),
-    ...(isPropertyAddressField(field) ? { subjectAddress: value, subjectAddressAsked: true } : {}),
+    ...(isPropertyAddressField(field)
+      ? { subjectAddress: value, subjectAddressAsked: true, pendingAddress: undefined }
+      : {}),
     ...(field === "year_built" ? { propertyYearBuilt: value } : {}),
     ...(field === "units" ? { propertyUnits: value } : {}),
     ...(field === "annual_taxes" ? { propertyTaxes: value } : {}),
@@ -788,6 +1075,7 @@ function writeField(
       ? { statedCurrentHousing: Math.round(Number(value)), currentHousingAsked: true }
       : {}),
   };
+  return isPropertyAddressField(field) ? adoptStreetOverZipOnly(draft, written) : written;
 }
 
 export function quietLineForClass(extractClass: ExtractClass) {
@@ -857,13 +1145,21 @@ export function applyExtractedFields(
     (input.confidence < LOW_EXTRACT_CONFIDENCE &&
       !looksLikeTaxReturnFields(input.fields) &&
       !looksLikeMortgageFields(input.fields) &&
-      !looksLikeIdFields(input.fields))
+      !looksLikeIdFields(input.fields) &&
+      !looksLikePaystubFields(input.fields) &&
+      !looksLikeBankFields(input.fields))
   ) {
     return { draft, writes, conflict: null, quietLines: [] };
   }
   const fields = sanitizeExtractedFields(extractClass, input.fields);
   const computed = monthlyQualifyingFromExtract(draft, extractClass, fields);
   const now = new Date().toISOString();
+  const wageExtractFirst =
+    isWageExtractFirstPath(draft) && (extractClass === "w2" || extractClass === "paystub");
+  const holdWageFileWrites =
+    wageThreadOpen(draft) &&
+    !draft.sampleAccepted &&
+    (extractClass === "w2" || extractClass === "paystub");
   let next = draft;
   let conflict: FactConflict | null = draft.pendingConflict ?? null;
   let remainderWrites: { field: string; value: string }[] = [];
@@ -882,9 +1178,26 @@ export function applyExtractedFields(
     Boolean(incomingEmployer && existingEmployer && incomingEmployer !== existingEmployer) &&
     draft.facts?.employer_name?.source !== "client";
   const PAY_CONFIRM_FIELDS = new Set(["employer_name", "pay_period_end", "gross_period", "ytd_gross"]);
+  const WAGE_EXTRACT_HOLD_KEYS = new Set<string>([
+    ...EXTRACT_SCHEMA_KEYS.w2,
+    ...EXTRACT_SCHEMA_KEYS.paystub,
+    "w2_box5",
+    "paystub_amount",
+  ]);
+  const coverReturn = isCoverReturnFields(fields);
   for (const field of EXTRACT_SCHEMA_KEYS[extractClass]) {
     const value = fields[field];
     if (!value) continue;
+    if (coverReturn && field !== "tax_year" && field !== "return_kind" && field !== "cover_schedules") continue;
+    if (
+      coverReturn &&
+      field === "return_kind" &&
+      String(next.facts?.return_kind?.value ?? "").trim() &&
+      String(next.facts?.return_kind?.value ?? "").trim().toLowerCase() !== "cover"
+    ) {
+      continue;
+    }
+    if ((wageExtractFirst || holdWageFileWrites) && WAGE_EXTRACT_HOLD_KEYS.has(field)) continue;
     if (
       extractClass === "w2" &&
       field === "employer_name" &&
@@ -910,8 +1223,25 @@ export function applyExtractedFields(
       idAddress = value;
       continue;
     }
-    if (extractClass === "bank_statement" && field === "present_address") {
-      idAddress = value;
+    if (
+      extractClass === "government_id" &&
+      (field === "state" ||
+        field === "street" ||
+        field === "city" ||
+        field === "zip" ||
+        field === "propertyZip" ||
+        field === "subjectAddress" ||
+        field === "property_address")
+    ) {
+      continue;
+    }
+    if (
+      extractClass === "bank_statement" &&
+      (field === "present_address" || field === "property_address" || field === "subjectAddress")
+    ) {
+      continue;
+    }
+    if (extractClass === "bank_statement" && (field === "account_type" || field === "period_end")) {
       continue;
     }
     if (extractClass === "paystub" && PAY_CONFIRM_FIELDS.has(field)) {
@@ -952,11 +1282,35 @@ export function applyExtractedFields(
         continue;
       }
       const existingRemainder = existingFact(next, field);
+      if (
+        extractClass === "purchase_contract" &&
+        field === "property_address" &&
+        isZipOnlyFileAddress(value, next.propertyZip)
+      ) {
+        continue;
+      }
+      if (
+        extractClass === "purchase_contract" &&
+        field === "property_address" &&
+        existingRemainder &&
+        isZipOnlyFileAddress(existingRemainder.value, next.propertyZip)
+      ) {
+        remainderWrites.push({ field, value });
+        continue;
+      }
       if (!existingRemainder) {
         remainderWrites.push({ field, value });
         continue;
       }
-      if (valuesMatch(existingRemainder.value, value)) continue;
+      if (valuesMatch(existingRemainder.value, value)) {
+        if (
+          extractClass === "purchase_contract" &&
+          (field === "purchase_price" || field === "close_date" || field === "seller_credit")
+        ) {
+          remainderWrites.push({ field, value });
+        }
+        continue;
+      }
       if (!conflict) {
         conflict = {
           field,
@@ -970,6 +1324,22 @@ export function applyExtractedFields(
     }
     const existing = existingFact(next, field);
     if (!existing || (extractClass === "tax_return" && YEARLY_TAX_KEYS.has(field))) {
+      if (
+        field === "schedule_e_rents_received" ||
+        field === "schedule_e_cash_expenses" ||
+        field === "schedule_e_property_address" ||
+        field === "entity_ordinary_income" ||
+        field === "entity_8825_rental" ||
+        field === "entity_depreciation" ||
+        field === "entity_amortization" ||
+        field === "entity_te" ||
+        field === "entity_guaranteed_payments" ||
+        field === "ownership_percent" ||
+        field === "entity_taxable_income" ||
+        field === "entity_name"
+      ) {
+        continue;
+      }
       next = writeField(next, field, value, now);
       writes.push({ field, value });
       continue;
@@ -1032,23 +1402,56 @@ export function applyExtractedFields(
       };
     }
   }
-  next = applyQualifyingIncomeFromExtract(
-    { ...next, pendingConflict: conflict },
-    extractClass,
-    fields,
-    computed,
-  );
+  const stubAlreadyOnFile =
+    Boolean(readStubAmount(draft)) ||
+    Boolean(draft.wageFrequencyAsked) ||
+    Boolean(draft.awaitingPayFrequency);
+  if (shouldProposeStubExtract(draft, extractClass)) {
+    const employee = String(input.fields.full_name ?? input.fields.employee_name ?? "").trim();
+    next = maybeProposeStubExtract(
+      { ...next, pendingConflict: null, awaitingPayFrequency: false },
+      employee ? { ...fields, full_name: employee } : fields,
+      extractClass,
+    );
+    conflict = next.pendingConflict ?? null;
+  } else if (wageExtractFirst || (holdWageFileWrites && extractClass === "w2" && !stubAlreadyOnFile)) {
+    next = maybeProposeWageExtract(
+      { ...next, pendingConflict: null, awaitingPayFrequency: false },
+      fields,
+      extractClass,
+    );
+    conflict = next.pendingConflict ?? null;
+  } else if (!coverReturn) {
+    next = applyQualifyingIncomeFromExtract(
+      { ...next, pendingConflict: conflict },
+      extractClass,
+      fields,
+      computed,
+    );
+    conflict = next.pendingConflict ?? conflict;
+  }
   const otherPropertyMortgageEarly =
     extractClass === "mortgage_statement" &&
     isOtherPropertyMortgageExtract(next, {
       address: String(fields.property_address ?? "").trim() || undefined,
     });
-  if (!otherPropertyMortgageEarly) {
+  if (
+    !otherPropertyMortgageEarly &&
+    !(
+      String(fields.schedule_e_rents_received ?? "").trim() &&
+      String(fields.schedule_e_cash_expenses ?? "").trim()
+    )
+  ) {
     next = applyRentalIncomeFromExtract(next, extractClass, fields);
   }
   conflict = next.pendingConflict ?? conflict;
-  if (extractClass === "bank_statement" && !next.sampleAccepted) {
-    remainderWrites = remainderWrites.filter((item) => item.field !== "account_last4");
+  if (extractClass === "bank_statement") {
+    remainderWrites = remainderWrites.filter(
+      (item) =>
+        item.field === "institution" ||
+        item.field === "ending_balance" ||
+        item.field === "account_last4",
+    );
   }
   const extractedAssets = extractClass === "bank_statement" ? moneyNumber(fields.ending_balance ?? "") : null;
   if (extractedAssets != null) {
@@ -1064,20 +1467,34 @@ export function applyExtractedFields(
         next = { ...next, pendingConflict: conflict };
       }
     } else if (!next.pendingConflict) {
+      const institution = displayInstitution(String(fields.institution ?? "").trim());
+      const last4 = String(fields.account_last4 ?? "").trim();
       next = proposeExtractedAvailableAssets(
         next,
         extractedAssets,
-        remainderWrites.map((item) => ({
-          field: item.field,
-          value: item.value,
-          label: factLabel(item.field),
-        })),
+        [
+          ...(institution
+            ? [{ field: "institution", value: institution, label: factLabel("institution") }]
+            : []),
+          ...(last4
+            ? [{ field: "account_last4", value: last4, label: factLabel("account_last4") }]
+            : []),
+          {
+            field: "ending_balance",
+            value: String(extractedAssets),
+            label: factLabel("ending_balance"),
+          },
+        ],
       );
       remainderWrites.length = 0;
     }
   }
   const rawHire =
-    extractClass === "paystub" || extractClass === "w2" ? String(fields.hire_date ?? "").trim() : "";
+    !wageExtractFirst &&
+    !isStubExtractProposal(next.pendingProposal) &&
+    (extractClass === "paystub" || extractClass === "w2")
+      ? String(fields.hire_date ?? "").trim()
+      : "";
   const hire = rawHire ? parseHireDate(rawHire) : null;
   const hireMonths = hire ? monthsBetween(hire) : 0;
   if (hire && hireMonths > 0) {
@@ -1136,11 +1553,6 @@ export function applyExtractedFields(
       remainderWrites.length = 0;
     }
   }
-  const statementAddress =
-    extractClass === "bank_statement" ? String(fields.present_address ?? "").trim() : "";
-  if (statementAddress) {
-    idAddress = idAddress || statementAddress;
-  }
   const extractedName =
     extractClass === "government_id" ? String(fields.full_name ?? "").trim() : "";
   if (extractedName) {
@@ -1174,35 +1586,37 @@ export function applyExtractedFields(
           kind: "document",
         };
         next = { ...next, pendingConflict: conflict };
-      } else if (!existingName && !next.pendingConflict) {
+      } else if (!existingName && !next.pendingConflict && !governmentIdSkipped(next)) {
         next = proposeExtractedBorrowerName(next, shown, extras);
       }
     }
   }
   if (extractClass === "government_id" && idAddress && !extractedName && !next.pendingConflict) {
-    remainderWrites.push({ field: "present_address", value: idAddress });
-  }
-  if (extractClass === "bank_statement" && statementAddress && !next.pendingConflict) {
-    if (!next.pendingProposal) {
-      remainderWrites.push({ field: "present_address", value: statementAddress });
-    } else if (!(next.pendingProposal.extras ?? []).some((item) => item.field === "present_address")) {
-      next = {
-        ...next,
-        pendingProposal: {
-          ...next.pendingProposal,
-          extras: [
-            ...(next.pendingProposal.extras ?? []),
-            { field: "present_address", value: statementAddress, label: factLabel("present_address") },
-          ],
-        },
-      };
-    }
+    // Residence only. Never a subject / On the file. remainder.
   }
   const extractedEmployer = String(fields.employer_name ?? "").trim();
-  if ((extractClass === "paystub" || extractClass === "w2") && extractedEmployer) {
-    next = writeCurrentEmploymentHistory(next, extractedEmployer);
+  if (
+    !wageExtractFirst &&
+    !isWageExtractProposal(next.pendingProposal) &&
+    !isStubExtractProposal(next.pendingProposal) &&
+    !isStubJobProposal(next.pendingProposal) &&
+    (extractClass === "paystub" || extractClass === "w2") &&
+    extractedEmployer
+  ) {
+    const already = (next.employmentHistory ?? []).some((item) =>
+      employersClose(item.label, extractedEmployer),
+    );
+    if (!already) {
+      next = writeCurrentEmploymentHistory(next, extractedEmployer);
+    }
   }
-  if (payConfirmWrites.length) {
+  if (
+    payConfirmWrites.length &&
+    !wageExtractFirst &&
+    !isWageExtractProposal(next.pendingProposal) &&
+    !isStubExtractProposal(next.pendingProposal) &&
+    !isStubJobProposal(next.pendingProposal)
+  ) {
     const extras = payConfirmWrites.map((item) => ({
       field: item.field,
       value: item.value,
@@ -1273,17 +1687,83 @@ export function applyExtractedFields(
       next = proposeExtractedOtherReo(next);
     }
   }
+  if (extractClass === "purchase_contract") {
+    if (isPlaceAddressProposal(next.pendingProposal)) {
+      next = { ...next, pendingProposal: null, pendingAddress: undefined };
+    } else {
+      next = { ...next, pendingAddress: undefined };
+    }
+    const have = new Set(remainderWrites.map((item) => item.field));
+    const street = String(fields.property_address ?? "").trim();
+    if (
+      street &&
+      !isZipOnlyFileAddress(street, next.propertyZip) &&
+      !have.has("property_address") &&
+      conflict?.field !== "property_address"
+    ) {
+      remainderWrites.push({ field: "property_address", value: street });
+    }
+    const close = String(fields.close_date ?? "").trim();
+    if (close && !have.has("close_date") && conflict?.field !== "close_date") {
+      remainderWrites.push({ field: "close_date", value: close });
+    }
+    const credit = String(fields.seller_credit ?? "").trim();
+    const creditAmount = moneyNumber(credit);
+    if (
+      credit &&
+      creditAmount != null &&
+      creditAmount > 0 &&
+      !have.has("seller_credit") &&
+      conflict?.field !== "seller_credit"
+    ) {
+      remainderWrites.push({ field: "seller_credit", value: credit });
+    }
+    next = { ...next, lastPurchaseContractFields: { ...fields } };
+  }
   if (
     remainderWrites.length &&
     (!next.pendingProposal || isRemainderConfirmField(next.pendingProposal.field))
   ) {
     const remainder = remainderProposalFromWrites(extractClass, remainderWrites);
-    if (remainder) next = { ...next, pendingProposal: remainder };
+    if (remainder) {
+      next = {
+        ...next,
+        pendingProposal: remainder,
+        ...(extractClass === "purchase_contract" ? { pendingAddress: undefined } : {}),
+      };
+    }
+  }
+  if (conflict && !next.pendingConflict) {
+    next = { ...next, pendingConflict: conflict };
   }
   next = attachExtractClass(next, extractClass);
   const cautionFacts = { ...(next.facts ?? {}) };
   for (const [key, value] of Object.entries(fields)) {
-    if (!value || cautionFacts[key]?.value) continue;
+    if (!value) continue;
+    const already = cautionFacts[key];
+    if (
+      key === "schedule_e_rents_received" ||
+      key === "schedule_e_cash_expenses" ||
+      key === "schedule_e_property_address" ||
+      key === "entity_ordinary_income" ||
+      key === "entity_8825_rental" ||
+      key === "entity_depreciation" ||
+      key === "entity_amortization" ||
+      key === "entity_te" ||
+      key === "entity_guaranteed_payments" ||
+      key === "ownership_percent" ||
+      key === "entity_taxable_income" ||
+      key === "entity_name"
+    ) {
+      continue;
+    }
+    if (key === "property_address") {
+      if (isZipOnlyFileAddress(value, next.propertyZip) || already?.value) continue;
+    } else if (already?.confirmed && already.value) {
+      continue;
+    } else if (already?.value && key !== "seller_credit") {
+      continue;
+    }
     cautionFacts[key] = {
       field: key,
       value,
@@ -1294,11 +1774,19 @@ export function applyExtractedFields(
   const cautionDraft = { ...next, facts: cautionFacts };
   const caution = decliningIncomeCaution(cautionDraft) ?? wageIncomeCaution(cautionDraft);
   const quietLines = caution ? [caution] : [];
-  if (employerMismatchStay(draft, extractClass, fields) && !quietLines.includes(EMPLOYER_MISMATCH_LINE)) {
+  if (
+    employerMismatchStay(draft, extractClass, fields) &&
+    !isStubExtractProposal(next.pendingProposal) &&
+    !isStubJobProposal(next.pendingProposal) &&
+    !quietLines.includes(EMPLOYER_MISMATCH_LINE)
+  ) {
     quietLines.push(EMPLOYER_MISMATCH_LINE);
   }
+  if (!coverReturn) next = maybeProposeQualifyingFromTaxFile(next);
+  const holdLooksRight =
+    !coverReturn || Boolean(next.pendingProposal || conflict || next.pendingConflict);
   return {
-    draft: { ...next, looksRightHold: true },
+    draft: { ...next, looksRightHold: holdLooksRight },
     writes,
     conflict,
     quietLines,
@@ -1327,9 +1815,12 @@ function employerMismatchStay(
   const incoming = normalizeEmployerName(fields.employer_name);
   const existing = normalizeEmployerName(draft.facts?.employer_name?.value);
   if (!incoming || !existing || incoming === existing) return false;
+  if (employersClose(fields.employer_name, draft.facts?.employer_name?.value)) return false;
+  // W-2-only drop never invents a stub or a stub-employer mismatch.
+  if (extractClass !== "paystub") return false;
   const fileHasW2 =
     receivedClassCount(draft, "w2") > 0 || Boolean(String(draft.facts?.wages?.value ?? "").trim());
-  return (extractClass === "paystub" && fileHasW2) || (extractClass === "w2" && Boolean(existing));
+  return fileHasW2;
 }
 
 function attachExtractClass(draft: FoxIntakeDraft, extractClass: ExtractClass): FoxIntakeDraft {
@@ -1408,16 +1899,30 @@ export function resolveFactConflict(
       confirmedAt: now,
     };
   }
-  return { ...withValue, facts, pendingConflict: null, unresolvedConflict: false };
+  const resolved = { ...withValue, facts, pendingConflict: null, unresolvedConflict: false };
+  if (
+    hasPurchaseContractDoc(resolved) &&
+    (conflict.field === "purchase_price" || isPropertyAddressField(conflict.field))
+  ) {
+    const written = applyPurchaseContractAccept(resolved, resolved.pendingProposal);
+    return queuePurchaseSketchReconcile(
+      queuePurchaseContractRemainder({ ...written, looksRightHold: false }),
+    );
+  }
+  return resolved;
 }
 
 const COUNTED_DOC_STATUSES = new Set<ReceivedDoc["status"]>(["received", "reading", "extracted"]);
+
+export function isCoverReturnDoc(doc: ReceivedDoc) {
+  return /1040-cover|1040 cover|cover page/i.test(doc.name ?? "");
+}
 
 export function receivedTaxReturnCount(draft: FoxIntakeDraft): number {
   let fromDocs = 0;
   for (const doc of draft.documents) {
     if (!COUNTED_DOC_STATUSES.has(doc.status)) continue;
-    if (receivedClassOf(doc) === "tax_return") fromDocs += 1;
+    if (receivedClassOf(doc) === "tax_return" && !isCoverReturnDoc(doc)) fromDocs += 1;
   }
   const years = new Set<string>();
   for (const row of readTaxCashflows(draft)) {
@@ -1467,40 +1972,178 @@ export function deepenStillUseful(draft: FoxIntakeDraft) {
 export type StillUsefulLabel =
   | ReturnType<typeof askClassLabel>
   | "W-2 most recent two years"
+  | "This year’s W-2"
+  | "latest paystub"
   | "second-year W-2"
   | "prior-year return"
-  | "K-1 distributions";
+  | "K-1 distributions"
+  | "Bay Street K-1"
+  | "Harbor Studio K-1"
+  | "Schedule C"
+  | "Schedule E"
+  | "K-1"
+  | "1065"
+  | "1120-S"
+  | "Schedule F";
+
+const COVER_SCHEDULE_LABELS: Record<string, StillUsefulLabel> = {
+  schedule_c: "Schedule C",
+  schedule_e: "Schedule E",
+  k1: "K-1",
+  "1065": "1065",
+  "1120s": "1120-S",
+  schedule_f: "Schedule F",
+};
+
+export function coverSchedulesOnFile(draft: FoxIntakeDraft): string[] {
+  const raw = factValue(draft, "cover_schedules");
+  return raw
+    .split(/[;,]/)
+    .map((item) => item.trim().toLowerCase().replace(/[\s_-]+/g, "_"))
+    .filter(Boolean);
+}
+
+function coverSchedulePresent(draft: FoxIntakeDraft, id: string) {
+  if (id === "schedule_c") return hasScheduleCCashflow(draft);
+  if (id === "schedule_e") return hasScheduleECashflow(draft);
+  if (id === "k1" || id === "1065" || id === "1120s") {
+    return (
+      hasK1Ordinary(draft) ||
+      readTaxCashflows(draft).some((row) => String(row.entity_ordinary_income ?? "").trim())
+    );
+  }
+  if (id === "schedule_f") {
+    return (draft.documents ?? []).some((doc) => /schedule-f|schedule f|farm/i.test(doc.name));
+  }
+  return false;
+}
+
+export function nextCoverScheduleLabels(draft: FoxIntakeDraft): StillUsefulLabel[] {
+  return coverSchedulesOnFile(draft)
+    .filter((id) => !coverSchedulePresent(draft, id))
+    .map((id) => COVER_SCHEDULE_LABELS[id])
+    .filter((label): label is StillUsefulLabel => Boolean(label))
+    .slice(0, 3);
+}
+
+function wageGroceryExtractClass(id: string) {
+  return (
+    id === "government_id" ||
+    id === "paystub" ||
+    id === "w2" ||
+    id === "second-year-w2" ||
+    id === "tax_return" ||
+    id === "prior-year-return" ||
+    id === "k1-distributions" ||
+    id === "ytd-pnl"
+  );
+}
+
+/** W-2 after Looks right: one of each. Do not invent a return or a second year. */
+function dropWageAfterLooksRightExtra(draft: FoxIntakeDraft, id: string) {
+  if (!draft.sampleAccepted || !wageThreadOpen(draft)) return false;
+  if (id === "second-year-w2") return true;
+  if (draft.incomeType.value === "w2") {
+    if (
+      id === "tax_return" ||
+      id === "prior-year-return" ||
+      id === "k1-distributions" ||
+      id === "ytd-pnl"
+    ) {
+      return true;
+    }
+  }
+  if (id === "paystub" && receivedClassCount(draft, "paystub") >= 1) return true;
+  if (id === "w2" && receivedClassCount(draft, "w2") >= 1) return true;
+  return false;
+}
+
+function wageAskClassLabel(draft: FoxIntakeDraft, extractClass: ExtractClass): StillUsefulLabel {
+  if (draft.sampleAccepted && wageThreadOpen(draft)) {
+    if (extractClass === "paystub") return "latest paystub";
+    if (extractClass === "w2") return "This year’s W-2";
+  }
+  return askClassLabel(extractClass);
+}
 
 function wantsW2RemainderReturn(draft: FoxIntakeDraft) {
   const income = draft.incomeType.value;
   if (income !== "w2") return false;
+  if (wageThreadOpen(draft)) return false;
   if (receivedTaxReturnCount(draft) >= 1) return false;
   if ((draft.skippedClasses ?? []).includes("tax_return")) return false;
   return primaryInviteSequence(draft).every((kind) => inviteSatisfied(draft, kind));
 }
 
+const SCHEDULE_E_NAMED_K1S = [
+  { label: "Bay Street K-1" as const, test: /bay\s*street/i },
+  { label: "Harbor Studio K-1" as const, test: /harbor\s*studio/i },
+];
+
+function scheduleEPart2NamesOnFile(draft: FoxIntakeDraft): string[] {
+  const fromFact = String(draft.facts?.schedule_e_part2_names?.value ?? "");
+  const fromCash = readTaxCashflows(draft).flatMap((row) =>
+    String(row.schedule_e_part2_names ?? "").split(";"),
+  );
+  return [...fromFact.split(";"), ...fromCash].map((item) => item.trim()).filter(Boolean);
+}
+
+function namedK1DocumentOnFile(draft: FoxIntakeDraft, test: RegExp) {
+  return (draft.documents ?? []).some((doc) => test.test(doc.name));
+}
+
+export function nextScheduleENamedK1Label(draft: FoxIntakeDraft): StillUsefulLabel | null {
+  if (!hasScheduleECashflow(draft) && !scheduleEPart2NamesOnFile(draft).length) return null;
+  const names = scheduleEPart2NamesOnFile(draft);
+  const wanted = names.length
+    ? SCHEDULE_E_NAMED_K1S.filter((item) => names.some((name) => item.test.test(name)))
+    : SCHEDULE_E_NAMED_K1S;
+  for (const item of wanted) {
+    if (!namedK1DocumentOnFile(draft, item.test)) return item.label;
+  }
+  return null;
+}
+
 export function stillUsefulLabels(draft: FoxIntakeDraft): StillUsefulLabel[] {
   const taxReturns = receivedTaxReturnCount(draft);
+  const groceryBeforeLooksRight = wageThreadOpen(draft) && !draft.sampleAccepted;
   const labels: StillUsefulLabel[] = missingExtractClasses(draft)
     .filter((item) => item !== "tax_return" || taxReturns < 1)
-    .map(askClassLabel);
+    .filter((item) => !groceryBeforeLooksRight || !wageGroceryExtractClass(item))
+    .filter((item) => !dropWageAfterLooksRightExtra(draft, item))
+    .map((item) => wageAskClassLabel(draft, item));
   if (wantsW2RemainderReturn(draft) && !labels.includes(askClassLabel("tax_return") as StillUsefulLabel)) {
     labels.push(askClassLabel("tax_return") as StillUsefulLabel);
   }
-  if (!deepenStillUseful(draft)) return labels;
+  if (!deepenStillUseful(draft)) {
+    const namedK1 = nextScheduleENamedK1Label(draft);
+    if (namedK1 && !labels.includes(namedK1)) labels.push(namedK1);
+    for (const cover of nextCoverScheduleLabels(draft)) {
+      if (!labels.includes(cover)) labels.push(cover);
+    }
+    return labels;
+  }
   const income = draft.incomeType.value;
-  if ((income === "w2" || income === "both") && receivedClassCount(draft, "w2") < 2) {
+  if ((income === "w2" || income === "both") && !wageThreadOpen(draft) && receivedClassCount(draft, "w2") < 2) {
     if (!labels.includes("W-2 most recent two years")) labels.push("W-2 most recent two years");
   }
   if (
     (income === "self-employed" || income === "both" || income === "other") &&
     taxReturns === 1
   ) {
+    const namedK1 = nextScheduleENamedK1Label(draft);
     labels.push(
-      k1OrdinaryMissingDistributions(draft) && !hasScheduleCCashflow(draft)
-        ? "K-1 distributions"
-        : "prior-year return",
+      namedK1 ??
+        (k1OrdinaryMissingDistributions(draft) && !hasScheduleCCashflow(draft)
+          ? "K-1 distributions"
+          : "prior-year return"),
     );
+  } else {
+    const namedK1 = nextScheduleENamedK1Label(draft);
+    if (namedK1 && !labels.includes(namedK1)) labels.push(namedK1);
+  }
+  for (const cover of nextCoverScheduleLabels(draft)) {
+    if (!labels.includes(cover)) labels.push(cover);
   }
   return taxReturns >= 2
     ? labels.filter(
@@ -1589,13 +2232,27 @@ export function completenessFileFromDraft(draft: FoxIntakeDraft): CompletenessFi
   for (const doc of draft.documents ?? []) {
     const display = preferFilenameClass(doc.extractClass ?? "other", doc.name, doc.slot);
     if (display === "government_id" || doc.slot === "id" || docsDisplayLabel(doc) === "ID") {
-      received.add("government_id");
+      const named = Boolean(
+        draft.borrowerName || draft.contact.fullName.value || draft.facts?.full_name?.value,
+      );
+      if (doc.status === "extracted" && !isUnreadNote(doc.note) && named) {
+        received.add("government_id");
+      }
+    }
+    if (display === "purchase_contract") {
+      const written = Boolean(
+        (draft.facts?.purchase_price?.confirmed && draft.facts.purchase_price.value) ||
+          (draft.facts?.close_date?.confirmed && draft.facts.close_date.value) ||
+          (draft.subjectAddress && draft.facts?.property_address?.confirmed),
+      );
+      if (written) received.add("purchase_contract");
     }
     if (
       (doc.status === "extracted" || doc.status === "received" || doc.status === "reading") &&
       display &&
       display !== "other" &&
-      display !== "government_id"
+      display !== "government_id" &&
+      display !== "purchase_contract"
     ) {
       received.add(display);
     }
@@ -1728,9 +2385,29 @@ export function layer2Open(draft: FoxIntakeDraft) {
   );
 }
 
-/** Remainder board after the sketch exists. Skip does not hide an item; received does. */
+/** Remainder board after the sketch exists. Income Skip still shows the board. */
 export function stillUsefulVisible(draft: FoxIntakeDraft) {
-  return Boolean(draft.path && draft.productIntent && draft.incomeType.value);
+  return Boolean(draft.path && draft.productIntent && (draft.incomeType.value || draft.incomeAsked));
+}
+
+function isWageGroceryBeforeLooksRight(draft: FoxIntakeDraft, id: string) {
+  if (draft.sampleAccepted) return false;
+  if (!wageThreadOpen(draft)) return false;
+  if (id === "government_id" && (draft.skippedClasses ?? []).includes("government_id")) {
+    return false;
+  }
+  return wageGroceryExtractClass(id);
+}
+
+function wageStillUsefulCopy(id: string): { label: string; ask: string } | null {
+  if (id === "paystub") {
+    return { label: "Latest paystub", ask: "Your latest paystub still helps this file." };
+  }
+  if (id === "w2") {
+    return { label: "This year’s W-2", ask: "This year’s W-2 still helps this file." };
+  }
+  if (id === "second-year-w2") return null;
+  return null;
 }
 
 function incomeDocsPhrase(draft: FoxIntakeDraft) {
@@ -1774,9 +2451,6 @@ export function shortListSpeak(draft: FoxIntakeDraft): string {
     labels.push(draft.statedOtherReo === "yes" ? OTHER_REO_MORTGAGE_STATEMENTS.replace(/\.$/, "") : "mortgage statement");
     if (draft.cashOut) labels.push("bank statement");
   }
-  if (draft.statedOtherReo === "yes" && purchaseLikeFile(draft)) {
-    labels.push(OTHER_REO_MORTGAGE_STATEMENTS.replace(/\.$/, ""));
-  }
   return labelListCopy(labels);
 }
 
@@ -1814,16 +2488,27 @@ export function layer2Plan(draft: FoxIntakeDraft): StillUsefulItem[] {
   const skipped = new Set(draft.skippedStillUseful ?? []);
   const items = ids
     .filter((id) => !skipped.has(id))
-    .map((id) => {
+    .filter((id) => !(id === "mortgage_statement" && purchaseLikeFile(draft)))
+    .filter((id) => !isWageGroceryBeforeLooksRight(draft, id))
+    .filter((id) => !dropWageAfterLooksRightExtra(draft, id))
+    .flatMap((id) => {
     if (id === "mortgage_statement" && draft.statedOtherReo === "yes") {
-      return layer2Item(id, OTHER_REO_MORTGAGE_STATEMENTS, OTHER_REO_MORTGAGE_STATEMENTS);
+      return [layer2Item(id, OTHER_REO_MORTGAGE_STATEMENTS, OTHER_REO_MORTGAGE_STATEMENTS)];
     }
-    const copy = LAYER2_COPY[id];
-    return layer2Item(id, copy.label, copy.ask);
+    const wageCopy =
+      draft.sampleAccepted && wageThreadOpen(draft) ? wageStillUsefulCopy(id) : null;
+    if (wageCopy === null && id === "second-year-w2" && wageThreadOpen(draft)) return [];
+    const skippedIncomeCopy =
+      !draft.incomeType.value && id === "paystub"
+        ? { label: "Latest paystub", ask: "A recent paystub still helps this file." }
+        : !draft.incomeType.value && id === "w2"
+          ? { label: "W-2", ask: "A W-2 still helps this file." }
+          : null;
+    const copy = wageCopy ?? skippedIncomeCopy ?? LAYER2_COPY[id];
+    if (!copy) return [];
+    return [layer2Item(id, copy.label, copy.ask)];
   });
-  const bankDocs = (draft.documents ?? []).filter(
-    (document) => document.extractClass === "bank_statement" || document.slot === "bank",
-  ).length;
+  const bankDocs = bankStatementDocCount(draft);
   if (statementExtractConfirmed(draft) && bankDocs < 2) {
     items.push(
       layer2Item(
@@ -1833,7 +2518,38 @@ export function layer2Plan(draft: FoxIntakeDraft): StillUsefulItem[] {
       ),
     );
   }
+  const namedK1 = nextScheduleENamedK1Label(draft);
+  if (namedK1 && !items.some((item) => item.label === namedK1)) {
+    items.push(
+      layer2Item(
+        namedK1 === "Harbor Studio K-1" ? "harbor-studio-k1" : "bay-street-k1",
+        namedK1,
+        `The ${namedK1} still helps this file.`,
+      ),
+    );
+  }
+  const coverItems = nextCoverScheduleLabels(draft)
+    .filter((label) => !skipped.has(coverLayer2Id(label)))
+    .filter((label) => !items.some((item) => item.label === label))
+    .map((label) =>
+      layer2Item(
+        coverLayer2Id(label),
+        label,
+        `The ${label} named on the 1040 cover still helps this file.`,
+      ),
+    );
+  items.unshift(...coverItems);
   return items;
+}
+
+function coverLayer2Id(label: StillUsefulLabel) {
+  if (label === "Schedule C") return "cover-schedule-c";
+  if (label === "Schedule E") return "cover-schedule-e";
+  if (label === "K-1") return "cover-k1";
+  if (label === "1065") return "cover-1065";
+  if (label === "1120-S") return "cover-1120s";
+  if (label === "Schedule F") return "cover-schedule-f";
+  return `cover-${label.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
 }
 
 export function nextStillUsefulItem(draft: FoxIntakeDraft): StillUsefulItem | undefined {
@@ -1863,7 +2579,7 @@ export function stillUsefulSection(draft: FoxIntakeDraft): {
     (item) => item.label !== OTHER_REO_MORTGAGE_STATEMENTS || draft.statedOtherReo === "yes",
   );
   storeCompleteness(draft.productIntent ?? "", completenessFileFromDraft(draft));
-  return { items, empty: items.length === 0 };
+  return { items: items.slice(0, 3), empty: items.length === 0 };
 }
 
 function otherReoStillUsefulItems(draft: FoxIntakeDraft): StillUsefulItem[] {
@@ -1957,17 +2673,34 @@ export function layer2AskActions(draft: FoxIntakeDraft): FoxAction[] | undefined
   ];
 }
 
+function stillUsefulSkipClass(id: string): ExtractClass | null {
+  if (id === "government_id") return "government_id";
+  if (id === "purchase_contract") return "purchase_contract";
+  if (id === "bank_statement") return "bank_statement";
+  if (id === "paystub") return "paystub";
+  if (id === "w2") return "w2";
+  if (id === "tax_return") return "tax_return";
+  return null;
+}
+
 export function skipCurrentStillUseful(draft: FoxIntakeDraft): FoxIntakeDraft {
   const next = nextStillUsefulItem(draft);
-  const skipAddress = next?.id === "property-address";
+  if (!next) return { ...draft, docsHeld: false };
+  const docKind = stillUsefulSkipClass(next.id);
+  if (docKind) {
+    return {
+      ...draft,
+      docsHeld: false,
+      skippedClasses: Array.from(new Set([...(draft.skippedClasses ?? []), docKind])),
+    };
+  }
+  const skipId = next.id;
   return {
     ...draft,
     docsHeld: false,
-    skippedStillUseful: skipAddress
-      ? (draft.skippedStillUseful ?? []).includes("property-address")
-        ? draft.skippedStillUseful
-        : [...(draft.skippedStillUseful ?? []), "property-address"]
-      : draft.skippedStillUseful,
+    skippedStillUseful: (draft.skippedStillUseful ?? []).includes(skipId)
+      ? draft.skippedStillUseful
+      : [...(draft.skippedStillUseful ?? []), skipId],
   };
 }
 
@@ -2004,17 +2737,44 @@ export type DocInviteKind =
   | "w2"
   | "tax_return"
   | "prior_year_return"
-  | "coborrower_government_id";
+  | "coborrower_government_id"
+  | "bank_statement"
+  | "second_bank_statement"
+  | "purchase_contract";
 
 export const DOC_INVITE_COPY: Record<DocInviteKind, string> = {
   government_id: "First I need a government ID, so this file has a name on it.",
   paystub: "Next is your latest paystub. That’s current income on paper.",
-  w2: "Next is your most recent W-2.",
+  w2: "Next is this year’s W-2.",
   tax_return:
     "Next is your most recent tax return. That’s how I estimate qualifying income. Suggested, not underwritten.",
   prior_year_return: "A prior-year return helps me see if last year was stable. Have one?",
   coborrower_government_id: "First I need Borrower 2’s government ID, so this file has a name on it.",
+  bank_statement: "Two recent statements to show funds for the down payment.",
+  second_bank_statement: "A second recent statement helps. Skip is fine.",
+  purchase_contract: "The purchase contract is the property on paper. Skip is fine.",
 };
+
+export function bankStatementDocCount(draft: FoxIntakeDraft) {
+  return (draft.documents ?? []).filter(
+    (document) => document.extractClass === "bank_statement" || document.slot === "bank",
+  ).length;
+}
+
+/** After the first statement writes Assets, offer a second statement once. */
+export function secondBankStatementInviteNeeded(draft: FoxIntakeDraft) {
+  if (draft.secondBankStatementSkipped) return false;
+  if (!statementExtractConfirmed(draft)) return false;
+  return bankStatementDocCount(draft) < 2;
+}
+
+export function secondBankStatementInviteCopy(draft: FoxIntakeDraft) {
+  const who =
+    displayInstitution(
+      String(draft.facts?.institution?.value ?? draft.assetAccounts?.[0]?.institution ?? ""),
+    ) || "That statement";
+  return `${who} is in. A second recent statement helps. Skip is fine.`;
+}
 
 /** ID + this borrower’s income package. Prior-year / second-year sit on remainder. */
 export function primaryInviteSequence(draft: FoxIntakeDraft): DocInviteKind[] {
@@ -2048,6 +2808,41 @@ export function inviteSequence(draft: FoxIntakeDraft): DocInviteKind[] {
   return [...primaryInviteSequence(draft), ...coborrowerInviteSequence(draft), ...remainderInviteSequence(draft)];
 }
 
+export function unreadDocOpen(draft: FoxIntakeDraft): ReceivedDoc | null {
+  const docs = [...(draft.documents ?? [])].reverse();
+  const unread = docs.find(
+    (doc) =>
+      isUnreadNote(doc.note) ||
+      doc.status === "failed" ||
+      doc.status === "needs better copy",
+  );
+  if (unread) return unread;
+  if (!wageExtractFailedRead(draft)) return null;
+  return (
+    docs.find((doc) => {
+      const cls = receivedClassOf(doc) ?? doc.extractClass;
+      return cls === "w2" || cls === "paystub" || doc.slot === "w2" || doc.slot === "paystubs";
+    }) ?? null
+  );
+}
+
+function classSuccessfullyRead(draft: FoxIntakeDraft, kind: DocInviteKind): boolean {
+  return (draft.documents ?? []).some((doc) => {
+    if (doc.status !== "extracted") return false;
+    if (isUnreadNote(doc.note)) return false;
+    if (kind === "government_id") {
+      if (doc.party === "coborrower") return false;
+      const received = receivedClassOf(doc);
+      return (
+        received === "government_id" ||
+        doc.extractClass === "government_id" ||
+        doc.slot === "id"
+      );
+    }
+    return receivedClassOf(doc) === kind;
+  });
+}
+
 function inviteSatisfied(draft: FoxIntakeDraft, kind: DocInviteKind): boolean {
   if (kind === "coborrower_government_id") {
     if (draft.coborrowerIdSkipped) return true;
@@ -2064,23 +2859,14 @@ function inviteSatisfied(draft: FoxIntakeDraft, kind: DocInviteKind): boolean {
   }
   if (kind === "government_id") {
     if ((draft.skippedClasses ?? []).includes("government_id")) return true;
-    return draft.documents.some((doc) => {
-      if (doc.party === "coborrower") return false;
-      const received = receivedClassOf(doc);
-      const isId =
-        received === "government_id" ||
-        doc.extractClass === "government_id" ||
-        doc.slot === "id";
-      if (!isId) return false;
-      if (doc.status === "reading") return false;
-      return (
-        doc.status === "extracted" ||
-        doc.status === "received" ||
-        doc.status === "failed" ||
-        doc.status === "needs better copy" ||
-        isUnreadNote(doc.note)
-      );
-    });
+    return classSuccessfullyRead(draft, "government_id");
+  }
+  if (kind === "bank_statement") {
+    if ((draft.skippedClasses ?? []).includes("bank_statement")) return true;
+    return statementExtractConfirmed(draft);
+  }
+  if (kind === "second_bank_statement") {
+    return !secondBankStatementInviteNeeded(draft);
   }
   if (kind === "prior_year_return") {
     if (draft.priorYearSkipped) return true;
@@ -2100,8 +2886,9 @@ function inviteSatisfied(draft: FoxIntakeDraft, kind: DocInviteKind): boolean {
     }
     return false;
   }
-  if (receivedExtractClasses(draft).has(kind)) return true;
-  return (draft.skippedClasses ?? []).includes(kind);
+  if (classSuccessfullyRead(draft, kind)) return true;
+  if ((draft.skippedClasses ?? []).includes(kind)) return true;
+  return false;
 }
 
 /** This borrower’s ID + income package received, ready, or skipped. Hold / Looks right do not count. */
@@ -2110,21 +2897,16 @@ export function thisBorrowerPrimaryPackageDone(draft: FoxIntakeDraft) {
   return primaryInviteSequence(draft).every((kind) => inviteSatisfied(draft, kind));
 }
 
-function b1RemainderOutstanding(draft: FoxIntakeDraft): boolean {
-  return remainderInviteSequence(draft).some((kind) => !inviteSatisfied(draft, kind));
-}
-
 /**
  * Household / coborrower only after Looks right — never after a mid-docs Skip.
  * Skip on paystub / W-2 / tax return stays on Borrower 1.
+ * Prior-year return sits on Still useful — not a gate.
  */
 export function readyForHouseholdAsk(draft: FoxIntakeDraft): boolean {
   if (!draft.path || !draft.productIntent) return false;
   if (!draft.occupancyChoice.value && !draft.occupancyAsked) return false;
   if (!draft.incomeType.value && !draft.incomeAsked) return false;
-  if (!otherReoSettled(draft)) return false;
   if (!thisBorrowerPrimaryPackageDone(draft)) return false;
-  if (b1RemainderOutstanding(draft)) return false;
   return Boolean(draft.sampleAccepted);
 }
 
@@ -2140,25 +2922,99 @@ export function primaryDocPassFinished(draft: FoxIntakeDraft) {
   return thisBorrowerPrimaryPackageDone(draft);
 }
 
-export function offeringDocStart(draft: FoxIntakeDraft) {
-  return (
-    !draft.docsStarted &&
-    !draft.sampleAccepted &&
-    draft.documents.length === 0 &&
-    nextDocInvite(draft) === "government_id"
-  );
+/** Pre-Looks-right ID / statements use Upload this · Skip, not Start with ID. */
+export function offeringDocStart(_draft: FoxIntakeDraft) {
+  return false;
+}
+
+/** Box 5, pay frequency, and stub monthly asked or skipped. No invented monthly. */
+export function wageNumberPathSettled(draft: FoxIntakeDraft) {
+  return Boolean(draft.wageBox5Asked && draft.wageFrequencyAsked && draft.wageStubAsked);
+}
+
+/** Extracted W-2 + stub on the file — not a skip-only package. */
+export function wageExtractOnFile(draft: FoxIntakeDraft) {
+  return classSuccessfullyRead(draft, "w2") && classSuccessfullyRead(draft, "paystub");
+}
+
+/** W-2 drop / Box 5 / frequency / stub confirm still live — ID wait. */
+function wageSketchBlocksDocInvite(draft: FoxIntakeDraft): boolean {
+  if (draft.sampleAccepted || !wageThreadOpen(draft)) return false;
+  if (
+    isWageExtractProposal(draft.pendingProposal) ||
+    isStubExtractProposal(draft.pendingProposal) ||
+    isStubJobProposal(draft.pendingProposal)
+  ) {
+    return true;
+  }
+  if (stubExtractAskOpen(draft)) return true;
+  if (!draft.wageDocsAsked) return true;
+  if (!draft.wageBox5Asked) return true;
+  if (!draft.wageFrequencyAsked) return true;
+  if (!draft.wageStubAsked) return true;
+  return false;
+}
+
+function zipOnlySubject(draft: FoxIntakeDraft) {
+  const line = String(draft.subjectAddress || draft.facts?.property_address?.value || "").trim();
+  const zip = String(draft.propertyZip || "").trim();
+  if (line && !isZipOnlyFileAddress(line, zip || undefined)) return false;
+  return Boolean(zip || /^\d{5}$/.test(line) || /,\s*CA\s+\d{5}$/i.test(line));
+}
+
+/** ID, then statements. ZIP-only purchase asks for the contract before Looks right. After Looks right, a missing contract is still next. */
+function lockedFileDocInvites(draft: FoxIntakeDraft): DocInviteKind[] {
+  const kinds: DocInviteKind[] = [];
+  if (!inviteSatisfied(draft, "government_id")) kinds.push("government_id");
+  if (!inviteSatisfied(draft, "bank_statement")) kinds.push("bank_statement");
+  if (secondBankStatementInviteNeeded(draft)) kinds.push("second_bank_statement");
+  if (
+    purchaseLikeFile(draft) &&
+    !inviteSatisfied(draft, "purchase_contract") &&
+    (draft.sampleAccepted || zipOnlySubject(draft))
+  ) {
+    kinds.push("purchase_contract");
+  }
+  return kinds;
 }
 
 export function nextDocInvite(draft: FoxIntakeDraft): DocInviteKind | null {
   if (!draft.incomeType.value && !draft.incomeAsked) return null;
-  if (!borrowerNameSettled(draft)) return null;
-  if (!otherReoSettled(draft)) return null;
   if (draft.pendingProposal || draft.pendingConflict) return null;
-  // Looks right closes Borrower 1 invites. Borrower 2’s ID can still open after Yes.
-  const kinds = draft.sampleAccepted ? coborrowerInviteSequence(draft) : inviteSequence(draft);
-  for (const kind of kinds) {
+  if (wageSketchBlocksDocInvite(draft)) return null;
+  const income = draft.incomeType.value;
+  if (income === "self-employed" || income === "other" || income === "both") {
+    for (const kind of primaryInviteSequence(draft)) {
+      if (!inviteSatisfied(draft, kind)) return kind;
+    }
+    for (const kind of remainderInviteSequence(draft)) {
+      if (!inviteSatisfied(draft, kind)) return kind;
+    }
+  }
+  for (const kind of lockedFileDocInvites(draft)) {
     if (!inviteSatisfied(draft, kind)) return kind;
   }
+  return null;
+}
+
+/** Composer extract hint. Dropped filename wins so 08 at the ID ask is government_id, not leftover bank/other. */
+export function extractHintFromDraft(draft: FoxIntakeDraft, name?: string): ExtractClass | null {
+  if (name) {
+    const fromName = extractClassFromFilename(name);
+    if (fromName && fromName !== "other") return fromName;
+    const slot = slotFromFilename(name);
+    if (slot === "id") return "government_id";
+    if (slot === "bank") return "bank_statement";
+    if (slot === "w2") return "w2";
+    if (slot === "paystubs") return "paystub";
+  }
+  const invite = nextDocInvite(draft);
+  if (invite === "bank_statement" || invite === "second_bank_statement") return "bank_statement";
+  if (invite === "government_id" || invite === "coborrower_government_id") return "government_id";
+  if (invite === "paystub") return "paystub";
+  if (invite === "w2") return "w2";
+  if (invite === "tax_return" || invite === "prior_year_return") return "tax_return";
+  if (invite === "purchase_contract") return "purchase_contract";
   return null;
 }
 
@@ -2166,7 +3022,235 @@ function hasRemainingPrimaryInvites(draft: FoxIntakeDraft) {
   return primaryInviteSequence(draft).some((kind) => !inviteSatisfied(draft, kind));
 }
 
+const PURCHASE_CONTRACT_ACCEPT_FIELDS = [
+  "property_address",
+  "purchase_price",
+  "close_date",
+  "seller_credit",
+] as const;
+
+export function hasPurchaseContractDoc(draft: FoxIntakeDraft) {
+  return (draft.documents ?? []).some(
+    (doc) =>
+      (doc.extractClass === "purchase_contract" || /purchase.?contract|purchase.?agree|\bpsa\b/i.test(doc.name)) &&
+      (doc.status === "extracted" || doc.status === "received"),
+  );
+}
+
+export function purchaseContractFieldsFromDraft(draft: FoxIntakeDraft): Record<string, string> {
+  const next: Record<string, string> = { ...(draft.lastPurchaseContractFields ?? {}) };
+  if (draft.pendingProposal) {
+    for (const item of remainderProposalWrites(draft.pendingProposal)) {
+      if (item.field && item.value && !next[item.field]) next[item.field] = item.value.trim();
+    }
+  }
+  return next;
+}
+
+export function purchaseContractStreetFromDraft(draft: FoxIntakeDraft) {
+  const street = String(draft.lastPurchaseContractFields?.property_address ?? "").trim();
+  if (!street || isZipOnlyFileAddress(street, draft.propertyZip)) return "";
+  if (!looksLikeContractStreet(street) && !/^\d{1,6}\s+/.test(street)) return "";
+  return street;
+}
+
+export function proposalFromLastPurchaseContract(draft: FoxIntakeDraft): FactProposal | null {
+  const fields = purchaseContractFieldsFromDraft(draft);
+  const writes: { field: string; value: string }[] = [];
+  for (const field of PURCHASE_CONTRACT_ACCEPT_FIELDS) {
+    const value = String(fields[field] ?? "").trim();
+    if (!value) continue;
+    if (field === "property_address") {
+      if (isZipOnlyFileAddress(value, draft.propertyZip)) continue;
+      const shown = displayedSubjectAddress(draft);
+      if (shown && !isZipOnlyFileAddress(shown, draft.propertyZip)) continue;
+    }
+    if (field === "purchase_price" && draft.facts?.purchase_price?.confirmed && factValue(draft, "purchase_price")) {
+      continue;
+    }
+    if (field === "close_date" && draft.facts?.close_date?.confirmed && factValue(draft, "close_date")) {
+      continue;
+    }
+    if (field === "seller_credit") {
+      const amount = moneyNumber(value);
+      if (amount == null || amount <= 0) continue;
+      if (draft.facts?.seller_credit?.confirmed && factValue(draft, "seller_credit")) continue;
+      writes.push({ field, value: String(amount) });
+      continue;
+    }
+    writes.push({ field, value });
+  }
+  return remainderProposalFromWrites("purchase_contract", writes);
+}
+
+/** After Use document on price, keep the contract street / close / credit queued for Use this. */
+export function queuePurchaseContractRemainder(draft: FoxIntakeDraft): FoxIntakeDraft {
+  const remainder = proposalFromLastPurchaseContract(draft);
+  if (!remainder) {
+    return { ...draft, pendingAddress: undefined };
+  }
+  return { ...draft, pendingProposal: remainder, pendingAddress: undefined };
+}
+
+export const PURCHASE_SPLIT_RECONCILE_NOTE = "purchase-split-reconcile";
+
+export function isPurchaseSplitReconcileProposal(proposal?: FactProposal | null) {
+  return (
+    proposal?.note === PURCHASE_SPLIT_RECONCILE_NOTE &&
+    proposal.field === "downPayment" &&
+    proposal.companion?.field === "loanAmount"
+  );
+}
+
+/** Price wrote. Down + loan still add to the old sketch. */
+export function purchaseSketchMismatch(draft?: FoxIntakeDraft | null) {
+  if (!draft || draft.productIntent !== "buy") return null;
+  const price = draft.propertyValueAmount;
+  const down = draft.downPaymentAmount;
+  const loan = draft.loanAmountValue;
+  if (price == null || down == null || loan == null) return null;
+  if (price <= 0 || down <= 0 || loan <= 0) return null;
+  if (Math.abs(down + loan - price) <= 1) return null;
+  if (loan >= price) return null;
+  const nextDown = Math.round(price - loan);
+  if (nextDown <= 0 || nextDown >= price) return null;
+  return {
+    price,
+    down,
+    loan,
+    sketch: Math.round(down + loan),
+    nextDown,
+    keepLoan: loan,
+  };
+}
+
+export function needsPurchaseSplitAsk(draft?: FoxIntakeDraft | null) {
+  return Boolean(isPurchaseSplitReconcileProposal(draft?.pendingProposal) || purchaseSketchMismatch(draft));
+}
+
+/** After contract write, ask before rewriting down to keep the loan. */
+export function queuePurchaseSketchReconcile(draft: FoxIntakeDraft): FoxIntakeDraft {
+  const mismatch = purchaseSketchMismatch(draft);
+  if (!mismatch) return draft;
+  if (proposalFromLastPurchaseContract(draft)) return draft;
+  const extras: FactWrite[] = [
+    { field: "purchase_price", value: String(mismatch.price), label: "purchase price" },
+    { field: "oldDown", value: String(mismatch.down), label: "old down" },
+    { field: "oldLoan", value: String(mismatch.loan), label: "old loan" },
+    { field: "sketch", value: String(mismatch.sketch), label: "sketch" },
+  ];
+  const close = factValue(draft, "close_date");
+  if (close) extras.push({ field: "close_date", value: close, label: "close date" });
+  const credit = factValue(draft, "seller_credit");
+  if (credit) extras.push({ field: "seller_credit", value: credit, label: "seller credit" });
+  return {
+    ...draft,
+    pendingProposal: {
+      field: "downPayment",
+      value: String(mismatch.nextDown),
+      label: "down payment",
+      kind: "computed",
+      note: PURCHASE_SPLIT_RECONCILE_NOTE,
+      companion: {
+        field: "loanAmount",
+        value: String(mismatch.keepLoan),
+        label: "loan amount",
+      },
+      extras,
+    },
+    pendingAddress: undefined,
+  };
+}
+
+/** After Use this, write the contract street and seller credit even if the chip was a leftover ZIP place. */
+export function applyPurchaseContractAccept(
+  draft: FoxIntakeDraft,
+  proposal?: FactProposal | null,
+): FoxIntakeDraft {
+  const fields = purchaseContractFieldsFromDraft({ ...draft, pendingProposal: proposal ?? draft.pendingProposal });
+  const now = new Date().toISOString();
+  let next: FoxIntakeDraft = { ...draft, pendingAddress: undefined };
+  for (const field of PURCHASE_CONTRACT_ACCEPT_FIELDS) {
+    const incoming = String(fields[field] ?? "").trim();
+    if (!incoming) continue;
+    if (field === "property_address") {
+      if (isZipOnlyFileAddress(incoming, next.propertyZip)) continue;
+      const shown = displayedSubjectAddress(next);
+      if (shown && !isZipOnlyFileAddress(shown, next.propertyZip)) continue;
+      next = writeField(next, field, incoming, now);
+      continue;
+    }
+    if (field === "seller_credit") {
+      const amount = moneyNumber(incoming);
+      if (amount == null || amount <= 0) continue;
+      if (next.facts?.seller_credit?.confirmed && factValue(next, "seller_credit")) continue;
+      next = writeField(next, field, String(amount), now);
+      continue;
+    }
+    if (field === "close_date") {
+      if (next.facts?.close_date?.confirmed && factValue(next, "close_date")) continue;
+      next = writeField(next, field, incoming, now);
+      continue;
+    }
+    if (field === "purchase_price") {
+      if (next.propertyValueAmount != null && next.propertyValueAmount > 0) continue;
+      next = writeField(next, field, incoming, now);
+    }
+  }
+  return { ...next, pendingAddress: undefined };
+}
+
+export function isPurchaseContractConfirmPending(draft: FoxIntakeDraft) {
+  if (!hasPurchaseContractDoc(draft) && !draft.lastPurchaseContractFields) return false;
+  const proposal = draft.pendingProposal;
+  if (isPurchaseSplitReconcileProposal(proposal)) return false;
+  if (proposal && isRemainderConfirmField(proposal.field)) return true;
+  if (purchaseContractStreetFromDraft(draft) || String(draft.lastPurchaseContractFields?.seller_credit ?? "").trim()) {
+    return Boolean(proposal || draft.pendingAddress);
+  }
+  return false;
+}
+
 export function skipCurrentInvite(draft: FoxIntakeDraft): FoxIntakeDraft {
+  if (isPurchaseContractConfirmPending(draft)) {
+    const skipped = Array.from(
+      new Set([...(draft.skippedClasses ?? []), "purchase_contract" as ExtractClass]),
+    );
+    const next = {
+      ...draft,
+      skippedClasses: skipped,
+      docsOpen: false,
+      correcting: null,
+      correctingLine: null,
+      pendingProposal: null,
+    };
+    return {
+      ...next,
+      documentsSkipped: draft.documents.length === 0 && !hasRemainingPrimaryInvites(next),
+    };
+  }
+  if (isBorrowerNameConfirmPending(draft)) {
+    const facts = { ...(draft.facts ?? {}) };
+    delete facts[BORROWER_NAME_FIELD];
+    const skipped = Array.from(
+      new Set([...(draft.skippedClasses ?? []), "government_id" as ExtractClass]),
+    );
+    const next = {
+      ...draft,
+      borrowerName: undefined,
+      skippedClasses: skipped,
+      docsOpen: false,
+      correcting: null,
+      correctingLine: null,
+      pendingProposal: null,
+      pendingConflict: null,
+      facts,
+    };
+    return {
+      ...next,
+      documentsSkipped: draft.documents.length === 0 && !hasRemainingPrimaryInvites(next),
+    };
+  }
   const kind = nextDocInvite(draft);
   if (!kind) {
     return {
@@ -2191,12 +3275,57 @@ export function skipCurrentInvite(draft: FoxIntakeDraft): FoxIntakeDraft {
       documentsSkipped: draft.documents.length === 0 && !hasRemainingPrimaryInvites(next),
     };
   }
+  if (kind === "second_bank_statement") {
+    return {
+      ...draft,
+      secondBankStatementSkipped: true,
+      docsOpen: false,
+      correcting: null,
+    };
+  }
   const skipped = Array.from(new Set([...(draft.skippedClasses ?? []), kind]));
-  const next = { ...draft, skippedClasses: skipped, docsOpen: false, correcting: null };
+  const next = {
+    ...draft,
+    skippedClasses: skipped,
+    docsOpen: false,
+    correcting: null,
+  };
   return {
     ...next,
     documentsSkipped: draft.documents.length === 0 && !hasRemainingPrimaryInvites(next),
   };
+}
+
+export function retryUnreadDoc(draft: FoxIntakeDraft): FoxIntakeDraft {
+  return { ...draft, awaitingUnreadNote: false };
+}
+
+export function writeUnreadNote(draft: FoxIntakeDraft, text: string): FoxIntakeDraft {
+  const unread = unreadDocOpen(draft);
+  const note = text.trim();
+  if (!unread || !note) return { ...draft, awaitingUnreadNote: false };
+  return {
+    ...draft,
+    awaitingUnreadNote: false,
+    looksRightHold: true,
+    notes: [...(draft.notes ?? []), note],
+    documents: draft.documents.map((doc) =>
+      doc.receivedAt === unread.receivedAt && doc.name === unread.name
+        ? { ...doc, note }
+        : doc,
+    ),
+  };
+}
+
+/** Skip on a received-unread item. Before Looks right, Skip on wage docs parks typed income. */
+export function skipUnreadDoc(draft: FoxIntakeDraft): FoxIntakeDraft {
+  const unread = unreadDocOpen(draft);
+  const next: FoxIntakeDraft = { ...draft, looksRightHold: undefined, awaitingUnreadNote: false };
+  const kind = unread ? receivedClassOf(unread) ?? unread.extractClass : null;
+  if (!draft.sampleAccepted && (kind === "w2" || kind === "paystub" || wageThreadOpen(draft))) {
+    return skipWageDocs(next);
+  }
+  return skipCurrentInvite(next);
 }
 
 export function holdDocuments(draft: FoxIntakeDraft): FoxIntakeDraft {
@@ -2273,6 +3402,7 @@ export type DocIntakeDetail = {
   missing?: ExtractClass[];
   refreshStillUseful?: boolean;
   extractClass?: ExtractClass;
+  emptyRead?: { name: string; size: number };
 };
 
 export function emitDocIntake(detail: DocIntakeDetail) {

@@ -93,8 +93,7 @@ def content_stream(lines: list[str]) -> bytes:
     return "\n".join(commands).encode("latin-1")
 
 
-def write_pdf(path: Path, lines: list[str]) -> None:
-    stream = content_stream(lines)
+def write_pdf_bytes(path: Path, stream: bytes) -> None:
     objects = [
         b"<< /Type /Catalog /Pages 2 0 R >>",
         b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
@@ -123,6 +122,89 @@ def write_pdf(path: Path, lines: list[str]) -> None:
     )
     path.write_bytes(b"".join(chunks))
     print(f"wrote {path} {path.stat().st_size} bytes")
+
+
+def write_pdf(path: Path, lines: list[str]) -> None:
+    write_pdf_bytes(path, content_stream(lines))
+
+
+FOUNDER_BANK_NAME = "05-bank-statement-pacific-coast-jul-2026.pdf"
+
+
+def write_founder_bank_pdf(path: Path) -> None:
+    """Founder layout: one checking ****4419, ending $84,220.15.
+
+    ****2281 is a transfer destination, not a second account.
+    Not the thin stub (ENDING BALANCE: $x / PERIOD END: ISO date).
+    Date and dollar are separate text runs so extract cannot treat 07 as money.
+    Filbert is residence only.
+    """
+    stream = "\n".join(
+        [
+            "BT",
+            "/F1 18 Tf",
+            "72 740 Td",
+            "(PACIFIC COAST BANK) Tj",
+            "/F1 11 Tf",
+            "0 -20 Td",
+            "(ACCOUNT STATEMENT) Tj",
+            "0 -16 Td",
+            "(Checking ****4419) Tj",
+            "0 -18 Td",
+            "(RESIDENTIAL ADDRESS: 1847 Filbert St, San Francisco, CA 94123) Tj",
+            "0 -28 Td",
+            "(Ending balance 07/31/2026) Tj",
+            "260 0 Td",
+            "($84,220.15) Tj",
+            "-260 -22 Td",
+            "(Transfer to ****2281) Tj",
+            "0 -36 Td",
+            "(MORTGAGE SAMPLE - NOT A REAL STATEMENT) Tj",
+            "ET",
+        ]
+    ).encode("latin-1")
+    if b"ENDING BALANCE:" in stream or b"PERIOD END:" in stream:
+        raise SystemExit("founder bank page must not recreate the labeled stub")
+    if b"07/31/2026" not in stream or b"$84,220.15" not in stream:
+        raise SystemExit("founder bank page must print 07/31/2026 and $84,220.15")
+    if b"****4419" not in stream:
+        raise SystemExit("founder bank page must print checking ****4419")
+    if b"****2281" not in stream:
+        raise SystemExit("founder bank page must print transfer destination ****2281")
+    write_pdf_bytes(path, stream)
+
+
+def write_founder_ca_id_pdf(path: Path) -> None:
+    """Real CA DL face: FN/LN labels, Filbert residence, DL number not for File.
+
+    Text runs sit on one line the way a card PDF often extracts — not the 08
+    FULL NAME stub. Parser must read FN JORDAN / LN HALE without OCR.
+    """
+    stream = "\n".join(
+        [
+            "BT",
+            "/F1 14 Tf",
+            "72 740 Td",
+            "(CALIFORNIA DRIVER LICENSE) Tj",
+            "/F1 11 Tf",
+            "0 -20 Td",
+            "(DL D1234567 EXP 08/15/2028 LN HALE FN JORDAN) Tj",
+            "0 -22 Td",
+            "(1847 FILBERT ST) Tj",
+            "0 -16 Td",
+            "(SAN FRANCISCO, CA 94123) Tj",
+            "ET",
+        ]
+    ).encode("latin-1")
+    if b"FULL NAME:" in stream or b"RESIDENTIAL ADDRESS:" in stream:
+        raise SystemExit("01 CA ID must use FN/LN labels, not the 08 FULL NAME stub")
+    if b"FN JORDAN" not in stream or b"LN HALE" not in stream:
+        raise SystemExit("01 CA ID must print FN JORDAN and LN HALE")
+    if b"D1234567" not in stream:
+        raise SystemExit("01 CA ID must print a DL line that extract must not write")
+    if b"FILBERT" not in stream:
+        raise SystemExit("01 CA ID must print the Filbert residence")
+    write_pdf_bytes(path, stream)
 
 
 def write_empty_pdf(path: Path) -> None:
@@ -157,11 +239,46 @@ def write_empty_pdf(path: Path) -> None:
     print(f"wrote {path} {path.stat().st_size} bytes")
 
 
+LOUD_PAGES: dict[str, list[str]] = {
+    "06-w2-2025-box5-loud.pdf": [
+        "FORM W-2 WAGE AND TAX STATEMENT",
+        "TAX YEAR: 2025",
+        "EMPLOYER: Harbor Pacific Design Inc",
+        "EMPLOYEE NAME: Jordan Hale",
+        "BOX 5 MEDICARE WAGES AND TIPS: 118400.00",
+        "BOX 5: 118400.00",
+        "one hundred eighteen thousand four hundred",
+    ],
+    "07-paystub-biweekly-loud.pdf": [
+        "PAYSTUB",
+        "EMPLOYER: Harbor Pacific Design Inc",
+        "EMPLOYEE NAME: Jordan Hale",
+        "GROSS PERIOD: 4615.38",
+        "PAY FREQUENCY: biweekly",
+    ],
+    "08-ca-id-jordan-hale-loud.pdf": [
+        "CALIFORNIA",
+        "DRIVER LICENSE",
+        "LN HALE",
+        "FN JORDAN",
+        "FULL NAME: JORDAN HALE",
+        "RESIDENTIAL ADDRESS: 1847 Filbert St, San Francisco, CA 94123",
+    ],
+}
+
+
 def main() -> None:
     here = Path(__file__).resolve().parent
     for name, lines in PAGES.items():
         write_pdf(here / name, lines)
     write_empty_pdf(here / "government-id-no-text-layer.pdf")
+    sample_docs = here.parent.parent / "sample-docs"
+    sample_docs.mkdir(parents=True, exist_ok=True)
+    for name, lines in LOUD_PAGES.items():
+        write_pdf(sample_docs / name, lines)
+    write_founder_ca_id_pdf(sample_docs / "01-ca-id-jordan-hale.pdf")
+    write_founder_bank_pdf(here / FOUNDER_BANK_NAME)
+    write_founder_bank_pdf(sample_docs / FOUNDER_BANK_NAME)
 
 
 if __name__ == "__main__":
