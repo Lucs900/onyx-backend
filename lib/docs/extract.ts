@@ -484,13 +484,15 @@ export async function classifyAndExtract(
       if (loudEntity) return printedResult(loudEntity, textLayerChars);
       const loudK1 = loudK1FromPrintedLines(layer);
       if (loudK1) return printedResult(loudK1, textLayerChars);
-      const loudCover = loudCoverFromPrintedLines(layer);
+      const loudCover =
+        loudCoverFromPrintedLines(layer) || loudCoverFromPrintedLines([layer.join(" ")]);
       if (loudCover) return printedResult(loudCover, textLayerChars);
       const loud = loudWageFromPrintedLines(layer);
       if (loud) return printedResult(loud, textLayerChars);
       const loudId = loudIdFromPrintedLines(layer);
       if (loudId) return printedResult(loudId, textLayerChars);
-      const loudContract = loudContractFromPrintedLines(layer);
+      const loudContract =
+        loudContractFromPrintedLines(layer) || loudContractFromPrintedLines([layer.join(" ")]);
       if (loudContract) return printedResult(loudContract, textLayerChars);
       if (hint === "government_id") {
         const hintedId = fieldsFromPrintedLines("government_id", layer);
@@ -518,7 +520,8 @@ export async function classifyAndExtract(
       if (loudEntity) return printedResult(loudEntity, textLayerChars);
       const loudK1 = loudK1FromPrintedLines(layer);
       if (loudK1) return printedResult(loudK1, textLayerChars);
-      const loudCover = loudCoverFromPrintedLines(layer);
+      const loudCover =
+        loudCoverFromPrintedLines(layer) || loudCoverFromPrintedLines([layer.join(" ")]);
       if (loudCover) return printedResult(loudCover, textLayerChars);
       const loud = loudWageFromPrintedLines(layer);
       if (loud) return printedResult(loud, textLayerChars);
@@ -549,7 +552,8 @@ export async function classifyAndExtract(
       }
       const loudId = loudIdFromPrintedLines(layer);
       if (loudId) return printedResult(loudId, textLayerChars);
-      const loudContract = loudContractFromPrintedLines(layer);
+      const loudContract =
+        loudContractFromPrintedLines(layer) || loudContractFromPrintedLines([layer.join(" ")]);
       if (loudContract) return printedResult(loudContract, textLayerChars);
       if (hint === "purchase_contract") {
         const hintedContract = fieldsFromPrintedLines("purchase_contract", layer);
@@ -572,6 +576,11 @@ export async function classifyAndExtract(
       if (printed && hasLockedSuggestion(printed.extractClass, printed.fields)) {
         return printedResult(printed, textLayerChars);
       }
+      const collapsed = [layer.join(" ")];
+      const collapsedCover = loudCoverFromPrintedLines(collapsed);
+      if (collapsedCover) return printedResult(collapsedCover, textLayerChars);
+      const collapsedContract = loudContractFromPrintedLines(collapsed);
+      if (collapsedContract) return printedResult(collapsedContract, textLayerChars);
       return unreadResult(printed?.extractClass ?? "other", filename, "unmapped-text", textLayerChars);
     }
     const charCount = pdfTextLayerCharCount(bytes);

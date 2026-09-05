@@ -1556,10 +1556,12 @@ export function applyExtractWrite(
   const bankInvite = nextDocInvite(current) === "bank_statement";
   const idWageLocked =
     extractedClass === "government_id" || extractedClass === "paystub" || extractedClass === "w2";
+  const lockedSuggestion = hasLockedSuggestion(extractedClass, input.fields);
   const unreadEmpty =
     !failed &&
+    !lockedSuggestion &&
     (idWageLocked
-      ? !hasLockedSuggestion(extractedClass, input.fields)
+      ? true
       : extractedClass === "purchase_contract"
         ? !looksLikeContractFields(input.fields)
         : (bankInvite || extractedClass === "bank_statement") &&

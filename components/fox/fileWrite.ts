@@ -438,6 +438,7 @@ export function looksLikeTaxReturnFields(
   if (kind === "k1" || kind === "1065" || kind === "1120s" || kind === "1120" || kind === "schedule_c" || kind === "schedule_e") {
     return true;
   }
+  if (isCoverReturnFields(fields)) return true;
   if (String(fields.k1_ordinary_income ?? "").trim()) return true;
   if (String(fields.entity_ordinary_income ?? "").trim()) return true;
   if (String(fields.schedule_c_net_profit ?? "").trim()) return true;
@@ -532,6 +533,7 @@ export function k1OrdinaryMissingFromExtract(
   fields?: Record<string, string | null | undefined> | null,
   name?: string,
 ) {
+  if (isCoverReturnFields(fields)) return false;
   const kind = normalizeReturnKind(String(fields?.return_kind ?? ""));
   const namedK1 = kind === "k1" || kind === "1065" || kind === "1120s";
   const filenameK1 = /k-?1/i.test(name ?? "");
@@ -2526,7 +2528,28 @@ export function layer2Plan(draft: FoxIntakeDraft): StillUsefulItem[] {
       ),
     );
   }
+  const coverItems = nextCoverScheduleLabels(draft)
+    .filter((label) => !skipped.has(coverLayer2Id(label)))
+    .filter((label) => !items.some((item) => item.label === label))
+    .map((label) =>
+      layer2Item(
+        coverLayer2Id(label),
+        label,
+        `The ${label} named on the 1040 cover still helps this file.`,
+      ),
+    );
+  items.unshift(...coverItems);
   return items;
+}
+
+function coverLayer2Id(label: StillUsefulLabel) {
+  if (label === "Schedule C") return "cover-schedule-c";
+  if (label === "Schedule E") return "cover-schedule-e";
+  if (label === "K-1") return "cover-k1";
+  if (label === "1065") return "cover-1065";
+  if (label === "1120-S") return "cover-1120s";
+  if (label === "Schedule F") return "cover-schedule-f";
+  return `cover-${label.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
 }
 
 export function nextStillUsefulItem(draft: FoxIntakeDraft): StillUsefulItem | undefined {

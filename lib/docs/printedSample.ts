@@ -1209,6 +1209,14 @@ export function fieldsFromPrintedLines(
       const credit = sellerCreditFromContractLines(lines);
       if (credit) put("seller_credit", credit);
     }
+    if (!fields.purchase_price) {
+      const price = (lines.join("\n").match(/purchase price\s*:?\s*\$?\s*([\d,]+(?:\.\d{2})?)/i) ?? [])[1];
+      if (price && moneyDigits(price)) putMoney("purchase_price", price);
+    }
+    if (!fields.close_date) {
+      const close = (lines.join("\n").match(/close(?: of escrow| date)?\s*:?\s*([A-Za-z]+ \d{1,2}, \d{4})/i) ?? [])[1];
+      if (close) put("close_date", close);
+    }
   }
 
   if (extractClass === "government_id" || extractClass === "other") {
@@ -1524,7 +1532,7 @@ function cleanContractStreet(raw: string) {
 function streetFromContractLines(lines: string[]): string {
   const blob = lines.join("\n");
   const labeled = blob.match(
-    /(?:subject\s+property(?:\s+address)?|property\s+address|(?:^|\n)\s*property|the\s+property(?:\s+to\s+be\s+acquired)?)\s*:?\s*(?:is\s+)?(\d{1,6}\s+[A-Za-z][^\n]+)/i,
+    /(?:subject\s+property(?:\s+address)?|property\s+address|\bproperty|the\s+property(?:\s+to\s+be\s+acquired)?)\s*:?\s*(?:is\s+)?(\d{1,6}\s+[A-Za-z][^\n]+)/i,
   );
   const fromLabel = cleanContractStreet(labeled?.[1] ?? "");
   if (fromLabel) return fromLabel;
@@ -1584,7 +1592,7 @@ export function loudCoverFromPrintedLines(lines: string[]): PrintedSample | null
   delete fields.property_address;
   delete fields.present_address;
   delete fields.subjectAddress;
-  if (!fields.tax_year) return null;
+  if (!fields.tax_year && !fields.cover_schedules) return null;
   return {
     extractClass: "tax_return",
     confidence: 0.94,
