@@ -338,8 +338,12 @@ async function main() {
 
   const proceeded = applyProceedMotion({ ...looks, sampleAccepted: true, emailSkipped: true });
   assert.ok(extractHintFromDraft(proceeded, "09-purchase-contract-clipper.pdf"));
+  assert.ok(extractHintFromDraft(proceeded, "09-purchase-contract-88-clipper.pdf"));
   assert.ok(extractHintFromDraft(proceeded, "19-1040-cover-2024-jordan-hale.pdf"));
   assert.ok(extractHintFromDraft(proceeded, "05-bank-statement-pacific-coast-jul-2026.pdf"));
+  const alias = await routeExtract("09-purchase-contract-88-clipper.pdf", "purchase_contract");
+  assert.notEqual(alias.failed, true);
+  assert.equal(alias.class, nine.class);
 
   console.log("assert-harbor-acceptance-file: Both · 03+07 Harbor row · C · cover · 05 · 09 Clipper 94114");
 }

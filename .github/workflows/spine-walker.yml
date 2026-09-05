@@ -9,6 +9,7 @@ on:
       - "app/api/**"
       - "scripts/spine-walker/**"
       - "scripts/assert-spine-walker.sh"
+      - "scripts/assert-harbor-acceptance-file.ts"
       - ".github/workflows/spine-walker.yml"
       - "sample-docs/**"
   pull_request:
@@ -19,6 +20,7 @@ on:
       - "app/api/**"
       - "scripts/spine-walker/**"
       - "scripts/assert-spine-walker.sh"
+      - "scripts/assert-harbor-acceptance-file.ts"
       - ".github/workflows/spine-walker.yml"
       - "sample-docs/**"
 jobs:

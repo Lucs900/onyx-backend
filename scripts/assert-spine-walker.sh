@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Spine walker — eight locked preview cases. Hard Start over each case.
+# Spine walker — nine locked preview cases. Hard Start over each case.
+# Case 9 harbor-both-cover-contract. Also runs scripts/assert-harbor-acceptance-file.ts.
 #
 # Preferred (OIDC, after vercel login / VERCEL_TOKEN):
 #   npx vercel env run -- bash scripts/assert-spine-walker.sh
@@ -88,6 +89,22 @@ if [[ "${CI:-}" == "true" ]]; then
 elif [[ ! -f .browser-ok ]]; then
   npx playwright install chromium
   touch .browser-ok
+fi
+
+harbor_leftover_wanted() {
+  if [[ -z "${SPINE_WALKER_ONLY:-}" ]]; then
+    return 0
+  fi
+  [[ ",${SPINE_WALKER_ONLY}," == *",9,"* ]]
+}
+
+if harbor_leftover_wanted; then
+  if [[ ! -d "$ROOT/node_modules/next" ]]; then
+    echo "spine-walker: npm install (harbor leftover)" >&2
+    (cd "$ROOT" && npm install)
+  fi
+  echo "spine-walker: harbor leftover (assert-harbor-acceptance-file)"
+  (cd "$ROOT" && npx --yes tsx scripts/assert-harbor-acceptance-file.ts)
 fi
 
 exec npx tsx walker.ts "$@"

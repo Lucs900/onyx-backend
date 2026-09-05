@@ -1,10 +1,13 @@
 /**
- * Spine walker — eight locked preview cases. Hard Start over each case.
+ * Spine walker — nine locked preview cases. Hard Start over each case.
  * Assert only. Does not invent product behavior.
+ * Case 9 is harbor-both-cover-contract. Leftover assert-harbor-acceptance-file
+ * runs from scripts/assert-spine-walker.sh before Playwright.
  *
  * Run: bash scripts/assert-spine-walker.sh
  */
 import { chromium, type Browser, type BrowserContext, type Page } from "playwright";
+import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -12,13 +15,18 @@ const PREVIEW_URL =
   process.env.SPINE_WALKER_URL ??
   "https://onyx-backend-git-cursor-live-rateflow-preview-bc93-onyx-direct.vercel.app/start?path=acr";
 
-const BANK_PDF = join(
-  dirname(fileURLToPath(import.meta.url)),
-  "..",
-  "..",
-  "sample-docs",
+const SAMPLE_DOCS = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "sample-docs");
+const BANK_PDF = join(SAMPLE_DOCS, "05-bank-statement-pacific-coast-jul-2026.pdf");
+const HARBOR_CONTRACT_PDF = join(SAMPLE_DOCS, "09-purchase-contract-88-clipper.pdf");
+const HARBOR_DROPS = [
+  "03-w2-2025-jordan-hale.pdf",
+  "07-paystub-biweekly-loud.pdf",
+  "01-ca-id-jordan-hale.pdf",
+  "10-1040-schedule-c-2024-hale-design.pdf",
+  "19-1040-cover-2024-jordan-hale.pdf",
   "05-bank-statement-pacific-coast-jul-2026.pdf",
-);
+  "09-purchase-contract-88-clipper.pdf",
+] as const;
 
 const CURRENT = ".fox-bubble--fox.is-current";
 const CHIP = ".fox-bubble--fox.is-current button.fox-chip, .fox-bubble--fox.is-current a.fox-chip";
@@ -156,7 +164,7 @@ async function sendZip(page: Page, zip: string, expect: "geo" | "price") {
   );
 }
 
-async function structureMap(page: Page): Promise<Record<string, string>> {
+async function structureRows(page: Page): Promise<{ label: string; value: string; note: string }[]> {
   const desktop = page.locator(".file-preview__desktop .file-preview__row");
   const sheet = page.locator(".file-sheet .file-preview__row");
   let rows = desktop;
@@ -169,17 +177,26 @@ async function structureMap(page: Page): Promise<Record<string, string>> {
     rows = sheet;
   }
   const n = await rows.count();
-  const out: Record<string, string> = {};
+  const out: { label: string; value: string; note: string }[] = [];
   for (let i = 0; i < n; i++) {
     const row = rows.nth(i);
     const label = ((await row.locator(".file-preview__label").innerText()) ?? "").trim();
     const value = ((await row.locator(".file-preview__value > span").first().innerText()) ?? "").trim();
-    if (label) out[label] = value;
+    const note = ((await row.locator(".file-preview__value small").first().innerText().catch(() => "")) ?? "")
+      .replace(/\s+/g, " ")
+      .trim();
+    if (label) out.push({ label, value, note });
   }
   const close = page.locator(".file-sheet__close");
   if ((await close.count()) > 0 && (await close.isVisible().catch(() => false))) {
     await close.click();
   }
+  return out;
+}
+
+async function structureMap(page: Page): Promise<Record<string, string>> {
+  const out: Record<string, string> = {};
+  for (const row of await structureRows(page)) out[row.label] = row.value;
   return out;
 }
 
@@ -660,6 +677,251 @@ async function case8(page: Page) {
   assertCopyChips(restored.text, restored.chips);
 }
 
+async function stillUsefulLabels(page: Page): Promise<string[]> {
+  const loc = page.locator(".fox-still-useful .file-preview__label");
+  if ((await loc.count()) === 0) return [];
+  return loc.allTextContents().then((items) =>
+    items.map((item) => item.replace(/\s+/g, " ").trim()).filter(Boolean),
+  );
+}
+
+async function looksRightVisible(page: Page): Promise<boolean> {
+  const buttons = page.getByRole("button", { name: /^Looks right$/i });
+  const n = await buttons.count();
+  for (let i = 0; i < n; i += 1) {
+    if (await buttons.nth(i).isVisible().catch(() => false)) return true;
+  }
+  return false;
+}
+
+async function assertLooksRightHiddenWhileUseThis(page: Page) {
+  const chips = await currentChips(page);
+  const useOpen =
+    hasChip(chips, "Use this") ||
+    hasChip(chips, "Use document") ||
+    hasChip(chips, /^Change$/);
+  if (!useOpen) return;
+  if (hasChip(chips, "Looks right") || (await looksRightVisible(page))) {
+    throw new BeatFail(
+      `Looks right visible while Use this is open — ${await currentText(page)} | ${chips.join(" · ")}`,
+    );
+  }
+}
+
+async function composerDrop(page: Page, name: string) {
+  const attach = page.locator("[data-composer-attach='true'], [data-docs-handoff='true']").first();
+  await attach.waitFor({ state: "attached", timeout: 15_000 });
+  await attach.setInputFiles(join(SAMPLE_DOCS, name));
+}
+
+async function skipHarborSideAsk(page: Page): Promise<boolean> {
+  const text = await currentText(page);
+  const chips = await currentChips(page);
+  if (hasChip(chips, "Same job")) {
+    await clickChip(page, "Same job");
+    return true;
+  }
+  if (
+    /Who did you work for before|Where did you live before/i.test(text) &&
+    hasChip(chips, "Skip")
+  ) {
+    await clickChip(page, "Skip");
+    return true;
+  }
+  if (hasChip(chips, "This one") && /Getting a live line|Not a lock|This one/i.test(text)) {
+    await clickChip(page, "This one");
+    return true;
+  }
+  if (
+    hasChip(chips, "Skip") &&
+    (hasChip(chips, "Second job") || hasChip(chips, "Raise") || hasChip(chips, "OT")) &&
+    /differ|monthly|why/i.test(text)
+  ) {
+    await clickChip(page, "Skip");
+    return true;
+  }
+  return false;
+}
+
+async function settleHarborSideAsks(page: Page, budget = 8_000) {
+  const started = Date.now();
+  while (Date.now() - started < budget) {
+    if (!(await skipHarborSideAsk(page))) return;
+    await page.waitForTimeout(200);
+  }
+}
+
+async function dropHarborDoc(page: Page, name: string, kind: "confirm" | "cover" | "income") {
+  const before = await currentText(page);
+  await composerDrop(page, name);
+  const started = Date.now();
+  while (Date.now() - started < 90_000) {
+    const text = await currentText(page);
+    const chips = await currentChips(page);
+    if (/could not read|unreadable/i.test(text)) {
+      throw new BeatFail(`${name} unread — ${text}`);
+    }
+    if (await skipHarborSideAsk(page)) {
+      await page.waitForTimeout(200);
+      continue;
+    }
+    if (kind === "cover") {
+      if (text === before) {
+        await page.waitForTimeout(250);
+        continue;
+      }
+      const useful = await stillUsefulLabels(page);
+      const usefulText = useful.join(" · ");
+      const blob = `${text} ${usefulText}`;
+      const named = /K-1|1065|Schedule E|Sch E/i.test(blob);
+      if (/Schedule C/i.test(usefulText)) {
+        throw new BeatFail(`cover still useful named another C — ${blob}`);
+      }
+      if (/Two recent statements/i.test(text) && !named) {
+        throw new BeatFail(`bank-first after a cover — ${text}`);
+      }
+      if (named && (/cover|Still useful/i.test(blob) || /K-1|1065|Schedule E|Sch E/i.test(text))) {
+        if (hasChip(chips, "Use this") || hasChip(chips, "Use document")) {
+          await assertLooksRightHiddenWhileUseThis(page);
+          await clickChip(page, hasChip(chips, "Use this") ? "Use this" : "Use document");
+        }
+        await settleHarborSideAsks(page);
+        return;
+      }
+      await page.waitForTimeout(250);
+      continue;
+    }
+    if (text !== before && (hasChip(chips, "Use this") || hasChip(chips, "Use document"))) {
+      await assertLooksRightHiddenWhileUseThis(page);
+      if (kind === "income") {
+        if (!/combined wage \+ Schedule C/i.test(text)) {
+          throw new BeatFail(`Schedule C Use this was not combined wage + Schedule C — ${text}`);
+        }
+        if (!/W-2|Box 5|biweekly|wage/i.test(text) || !/Schedule C/i.test(text)) {
+          throw new BeatFail(`combined income methods not named — ${text}`);
+        }
+      }
+      assertCopyChips(text, chips);
+      await clickChip(page, hasChip(chips, "Use this") ? "Use this" : "Use document");
+      await settleHarborSideAsks(page);
+      return;
+    }
+    await page.waitForTimeout(250);
+  }
+  throw new BeatFail(`${name} never settled — ${await currentText(page)} | ${(await currentChips(page)).join(" · ")}`);
+}
+
+async function walkHarborFileAnswers(page: Page) {
+  await walkBuyPrimary(page);
+  await writePrice(page, "1000000");
+  await waitAsk(page, /down payment or loan amount/i);
+  await typeSend(page, "20");
+  await acceptOfferedFunds(page);
+  await walkHouseCredit(page);
+  await waitAsk(page, /address or ZIP/i);
+  await sendZip(page, "94123", "price");
+  await settleQuoteToIncome(page, true);
+  await clickChip(page, "Both");
+  await waitCurrent(
+    page,
+    (text, chips) =>
+      /How long have you had|years in business|other monthly debts/i.test(text) || hasChip(chips, "Skip"),
+    20_000,
+  );
+  if (/How long have you had|years in business/i.test(await currentText(page))) {
+    await typeSend(page, "2");
+  }
+  await waitAsk(page, /other monthly debts/i, 20_000);
+  assertCopyChips(await currentText(page), await currentChips(page));
+  await clickChip(page, "Skip");
+  await waitCurrent(page, (text) => !/other monthly debts/i.test(text), 15_000);
+}
+
+async function assertHarborFileAfterContract(page: Page) {
+  const rows = await structureRows(page);
+  const blob = rows.map((row) => `${row.label}: ${row.value}`).join(" | ");
+  const employment = rows.filter((row) => row.label === "Employment");
+  const harbor = employment.filter((row) => /Harbor/i.test(row.value));
+  if (harbor.length !== 1) {
+    throw new BeatFail(`expected one Harbor Employment row — ${blob}`);
+  }
+  if (!/Box 5/i.test(harbor[0].value) || !/month/i.test(harbor[0].value)) {
+    throw new BeatFail(`Harbor row missing Box 5 + stub monthly — ${harbor[0].value}`);
+  }
+  if (employment.some((row) => row.value && !/Harbor/i.test(row.value))) {
+    throw new BeatFail(`second job on File — ${blob}`);
+  }
+  const qualifying = rows.find((row) => row.label === "Qualifying income");
+  if (!qualifying?.value || qualifying.value === "—") {
+    throw new BeatFail(`qualifying income missing — ${blob}`);
+  }
+  const property = rows.find((row) => row.label === "Property address");
+  if (!/88 Clipper Street/i.test(property?.value ?? "") || !/San Francisco/i.test(property?.value ?? "")) {
+    throw new BeatFail(`property was not 88 Clipper Street, San Francisco — ${property?.value ?? blob}`);
+  }
+  if (!/94114/.test(property?.value ?? "") || /Filbert|94123/i.test(property?.value ?? "")) {
+    throw new BeatFail(`property ZIP/residence wrong — ${property?.value ?? blob}`);
+  }
+  const zip = rows.find((row) => row.label === "ZIP");
+  if ((zip?.value ?? "").replace(/\s+/g, "") !== "94114") {
+    throw new BeatFail(`ZIP line was not 94114 — ${zip?.value ?? blob}`);
+  }
+  const residence = rows.some((row) => /Filbert/i.test(row.value) && !/Clipper/i.test(row.value));
+  if (!residence) {
+    throw new BeatFail(`Filbert did not stay residence — ${blob}`);
+  }
+}
+
+async function case9(page: Page) {
+  if (!existsSync(HARBOR_CONTRACT_PDF)) {
+    throw new BeatFail("missing alias 09-purchase-contract-88-clipper.pdf");
+  }
+  await hardStartOver(page);
+  await walkHarborFileAnswers(page);
+  await dropHarborDoc(page, HARBOR_DROPS[0], "confirm");
+  await dropHarborDoc(page, HARBOR_DROPS[1], "confirm");
+  await dropHarborDoc(page, HARBOR_DROPS[2], "confirm");
+  await dropHarborDoc(page, HARBOR_DROPS[3], "income");
+  const incomeAfterC = (await structureRows(page)).find((row) => row.label === "Qualifying income")?.value ?? "";
+  if (!incomeAfterC || incomeAfterC === "—") {
+    throw new BeatFail("combined qualifying income missing after Schedule C Use this");
+  }
+  await dropHarborDoc(page, HARBOR_DROPS[4], "cover");
+  const incomeAfterCover = (await structureRows(page)).find((row) => row.label === "Qualifying income")?.value ?? "";
+  if (incomeAfterCover !== incomeAfterC) {
+    throw new BeatFail(`cover changed combined income — ${incomeAfterC} → ${incomeAfterCover}`);
+  }
+  await dropHarborDoc(page, HARBOR_DROPS[5], "confirm");
+  await dropHarborDoc(page, HARBOR_DROPS[6], "confirm");
+  await settleHarborSideAsks(page, 12_000);
+  const incomeAfterContract = (await structureRows(page)).find((row) => row.label === "Qualifying income")?.value ?? "";
+  if (incomeAfterContract !== incomeAfterC) {
+    throw new BeatFail(`contract walk changed combined income — ${incomeAfterC} → ${incomeAfterContract}`);
+  }
+  await assertHarborFileAfterContract(page);
+  await waitCurrent(
+    page,
+    (_text, chips) => hasChip(chips, "Looks right") || hasChip(chips, "Use this"),
+    20_000,
+  ).catch(() => null);
+  if (hasChip(await currentChips(page), "Use this") || hasChip(await currentChips(page), "Use document")) {
+    await assertLooksRightHiddenWhileUseThis(page);
+    await clickChip(page, hasChip(await currentChips(page), "Use this") ? "Use this" : "Use document");
+    await settleHarborSideAsks(page);
+    await assertHarborFileAfterContract(page);
+  }
+  if (!hasChip(await currentChips(page), "Looks right")) {
+    await waitCurrent(page, (_text, chips) => hasChip(chips, "Looks right"), 20_000);
+  }
+  await clickChip(page, "Looks right");
+  const after = await waitCurrent(page, (text) => !/Looks right, or change a line/i.test(text), 15_000).catch(
+    async () => ({ text: await currentText(page), chips: await currentChips(page) }),
+  );
+  if (/citizen|permanent resident/i.test(after.text) || after.chips.some((chip) => /citizen|permanent resident/i.test(chip))) {
+    throw new BeatFail(`citizenship after Looks right — ${after.text} | ${after.chips.join(" · ")}`);
+  }
+}
+
 const CASES: { n: number; title: string; run: (page: Page) => Promise<void> }[] = [
   { n: 1, title: "20 on a known price → down and loan write, Use this once", run: case1 },
   { n: 2, title: "Price 500000 then 1000000 → conflict → Down payment → 20 → Use this → 100000 / 400000, no second conflict", run: case2 },
@@ -669,6 +931,7 @@ const CASES: { n: number; title: string; run: (page: Page) => Promise<void> }[] 
   { n: 6, title: "Skip ID. Skip stated debts. File still moves", run: case6 },
   { n: 7, title: "2–4 asks rent. Skip rent allowed", run: case7 },
   { n: 8, title: "Mid-ask sideways question. Answer, then the same next chip", run: case8 },
+  { n: 9, title: "harbor-both-cover-contract", run: case9 },
 ];
 
 async function openBrowser() {
