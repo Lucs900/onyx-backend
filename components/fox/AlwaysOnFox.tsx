@@ -401,6 +401,9 @@ function applyFoxAsk(
   if (last && /The ID shows /i.test(last.text) && !/The ID shows /i.test(ask.text)) {
     return freezeOthers(last.id, foxAskMessage(ask));
   }
+  if (last && isContractExtractAskText(last.text) && !isContractExtractAskText(ask.text)) {
+    return freezeUsedFoxTurns([...messages, foxAskMessage(ask)]);
+  }
   if (
     last &&
     /\ba month\. Use this\?$/.test(last.text) &&
@@ -1318,7 +1321,14 @@ export function AlwaysOnFox({
         lastFoxTurn(prev) &&
         isOnFileAddressLine(lastFoxTurn(prev)!)
       ) {
-        return [...dropFoxActions(withoutTrailingSealedFoxLines(prev)), foxAskMessage(ask)];
+        const cut = dropFoxActions(withoutTrailingSealedFoxLines(prev));
+        if (cut.some((item) => isContractExtractAskText(item.text))) {
+          return applyFoxAsk(
+            cut.filter((item) => !isOnFileAddressLine(item)),
+            ask,
+          );
+        }
+        return [...cut, foxAskMessage(ask)];
       }
       const lastFox = lastFoxTurn(prev);
       if (lastFox && sameFoxAsk(lastFox, ask)) return prev;
@@ -1849,7 +1859,9 @@ export function AlwaysOnFox({
       const addressPending =
         isSubjectAddressConfirmPending(draft) || Boolean(draft.pendingAddress?.line);
       const contractConfirm =
-        capture.field === "accept-proposal" && isPurchaseContractConfirmPending(draft);
+        capture.field === "accept-proposal" &&
+        (isPurchaseContractConfirmPending(draft) ||
+          isContractExtractAskText(lastFoxTurn(getFoxMessages())?.text));
       applyCapture(capture);
       skipPromptSync.current = true;
       const live = getFoxDraft();

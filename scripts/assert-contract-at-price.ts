@@ -14,14 +14,16 @@ import {
   resolveProposal,
 } from "../components/fox/completeness";
 import { emptyDraft } from "../components/fox/store";
+import { dropResolvedAddressConfirmChips, freezeUsedFoxTurns } from "../components/fox/liveCoupon";
 import {
   CREDIT_RANGE_ASK,
   docReactionAsk,
+  isContractExtractAskText,
   nextFoxAsk,
   workspacePrompt,
   workspaceReply,
 } from "../components/fox/workspace";
-import type { FoxIntakeDraft } from "../components/fox/types";
+import type { FoxIntakeDraft, FoxMessage } from "../components/fox/types";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const CONTRACT = join(root, "sample-docs/09-purchase-contract-clipper.pdf");
@@ -119,6 +121,22 @@ async function main() {
   noDeadAsk(typed?.text ?? "");
   assert.match(typed?.text ?? "", /down payment or loan amount/i);
   assert.equal(typed?.capture?.field, "accept-proposal");
+
+  const beforeUse: FoxMessage[] = [
+    { id: "price-ask", role: "fox", text: "What’s the purchase price?" },
+    { id: "contract-confirm", role: "fox", text: confirm.text, actions: confirm.actions },
+  ];
+  const held = dropResolvedAddressConfirmChips(beforeUse, used);
+  assert.ok(held.some((item) => isContractExtractAskText(item.text)));
+  assert.ok(held.every((item) => !/On the file/i.test(`${item.text}\n${item.followUp ?? ""}`)));
+  const painted = freezeUsedFoxTurns([
+    ...held,
+    { id: "use-this", role: "client", text: "Use this" },
+    { id: "funds-ask", role: "fox", text: afterUse.text },
+  ]);
+  assert.ok(painted.every((item) => !/On the file/i.test(`${item.text}\n${item.followUp ?? ""}`)));
+  assert.doesNotMatch(painted[painted.length - 1]?.text ?? "", /Try again/i);
+  assert.match(painted[painted.length - 1]?.text ?? "", /down payment or loan amount/i);
 
   console.log("assert-contract-at-price: 09 at price ask writes Clipper · $850,000 · close · next is funds");
 }

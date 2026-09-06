@@ -617,7 +617,19 @@ export function dropAbandonedAddressConfirm(
   });
 }
 
-/** After File write, that confirm becomes “On the file.” — text only. */
+function isPurchaseContractConfirmText(blob: string) {
+  return /The contract shows /i.test(blob);
+}
+
+/** Contract Use this keeps the extract line. Do not rewrite it to “On the file.” */
+function holdPurchaseContractConfirm(message: FoxMessage): FoxMessage {
+  return {
+    ...message,
+    actions: undefined,
+  };
+}
+
+/** After File write, a Places confirm becomes “On the file.” — text only. */
 export function dropResolvedAddressConfirmChips(
   messages: FoxMessage[],
   draft: FoxIntakeDraft,
@@ -634,6 +646,9 @@ export function dropResolvedAddressConfirmChips(
   const line = fileAddressLine(draft);
   const sealed = messages.map((message) => {
     if (isIdExtractThreadText(foxBlob(message))) return message;
+    if (isPurchaseContractConfirmText(foxBlob(message))) {
+      return holdPurchaseContractConfirm(message);
+    }
     if (isOnFileAddressLine(message)) {
       return sealOnFileAddressMessage(message, line || undefined);
     }
