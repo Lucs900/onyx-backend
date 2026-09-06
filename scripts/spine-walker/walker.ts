@@ -412,6 +412,7 @@ async function settleQuoteToIncome(page: Page, allowPricingSkip = false, zip = "
   );
   let leftZip = false;
   let resentZip = false;
+  let retriedRate = false;
   const started = Date.now();
   while (Date.now() - started < 90_000) {
     const text = await currentText(page);
@@ -446,11 +447,19 @@ async function settleQuoteToIncome(page: Page, allowPricingSkip = false, zip = "
       return;
     }
     if (/Pricing when the file is ready/i.test(text)) {
+      if (hasChip(chips, "Try again") && !retriedRate) {
+        retriedRate = true;
+        await clickChip(page, "Try again");
+        continue;
+      }
       if (!allowPricingSkip) {
         throw new BeatFail(`94123 did not price — ${text} | ${chips.join(" · ")}`);
       }
       if (hasChip(chips, "Skip")) {
-        await clickChip(page, "Skip");
+        await page
+          .locator(".fox-bubble--fox.is-current")
+          .getByRole("button", { name: "Skip", exact: true })
+          .click();
         await waitAsk(page, /How is income earned/i, 20_000);
         return;
       }
@@ -1194,38 +1203,10 @@ async function openBrowser() {
 
 async function newPreviewContext(browser: Browser): Promise<BrowserContext> {
   const headers = protectionHeaders();
-  const context = await browser.newContext({
+  return browser.newContext({
     viewport: { width: 1400, height: 900 },
     extraHTTPHeaders: headers,
   });
-  if (Object.keys(headers).length) {
-    let host = "";
-    try {
-      host = new URL(PREVIEW_URL).hostname;
-    } catch {
-      host = "";
-    }
-    await context.route("**/*", async (route) => {
-      const reqHost = (() => {
-        try {
-          return new URL(route.request().url()).hostname;
-        } catch {
-          return "";
-        }
-      })();
-      if (host && reqHost && reqHost !== host) {
-        await route.continue();
-        return;
-      }
-      await route.continue({
-        headers: {
-          ...route.request().headers(),
-          ...headers,
-        },
-      });
-    });
-  }
-  return context;
 }
 
 function oneLine(value: string) {

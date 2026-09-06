@@ -13263,6 +13263,7 @@ assert.ok(!workspaceSrc.includes("Updated from the document."));
 assert.ok(alwaysOn.includes("inertSupersededIncomeConfirms"));
 assert.ok(alwaysOn.includes("Start over"));
 assert.ok(alwaysOn.includes("startOverWorkspace"));
+assert.ok(alwaysOn.includes("resetRateflowSearch"));
 const storeSource = readFileSync(join(root, "components/fox/store.ts"), "utf8");
 assert.ok(storeSource.includes("onyx.foxIntake.draft") || storeSource.includes("INTAKE_STORAGE_KEY"));
 assert.ok(storeSource.includes("START_PATH_KEY"));

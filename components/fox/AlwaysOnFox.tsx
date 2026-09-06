@@ -1390,6 +1390,7 @@ export function AlwaysOnFox({
   useEffect(() => {
     if (!ready || !isStart || !rateflowKey) return;
     const already = getFoxDraft();
+    if (already.liveCouponSettled) return;
     if (already.liveQuote?.key === rateflowKey && already.liveQuoteStatus === "ready") {
       commitMessages((prev) => {
         skipPromptSync.current = shouldDeferNextAskForLiveCoupon(already);
@@ -1436,7 +1437,7 @@ export function AlwaysOnFox({
     return () => {
       cancelled = true;
     };
-  }, [isStart, rateflowKey, ready, draft.liveQuoteRetryAt]);
+  }, [isStart, rateflowKey, ready, draft.liveQuoteRetryAt, draft.liveCouponSettled]);
 
   useEffect(() => {
     if (!ready || !isStart) {
@@ -2264,6 +2265,8 @@ export function AlwaysOnFox({
           ? () => {
               const path = startPath ?? getFoxDraft().path ?? "acr";
               const fresh = startOverWorkspace(path);
+              resetRateflowSearch();
+              setLookupWait(null);
               skipPromptSync.current = true;
               placesSuggestFrozen.current = false;
               setStreetSuggestions([]);
