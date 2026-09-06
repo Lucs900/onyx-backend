@@ -2377,11 +2377,13 @@ export function stillUsefulLabels(draft: FoxIntakeDraft): StillUsefulLabel[] {
       : haveYears.length
         ? (`${recent} Schedule C` as StillUsefulLabel)
         : null;
+    const namedYearFallback = (`${haveYears.includes(recent) ? prior : recent} Schedule C`) as StillUsefulLabel;
     labels.push(
       namedK1 ??
         (k1OrdinaryMissingDistributions(draft) && !hasScheduleCCashflow(draft)
           ? "K-1 distributions"
-          : nextYearLabel ?? "prior-year return"),
+          : nextYearLabel ??
+            (income === "both" || haveYears.includes(recent) ? namedYearFallback : "prior-year return")),
     );
   } else {
     const namedK1 = nextScheduleENamedK1Label(draft);
@@ -2701,6 +2703,23 @@ export function shortListSpeak(draft: FoxIntakeDraft): string {
   return labelListCopy(labels);
 }
 
+function namedYearLayer2Copy(draft: FoxIntakeDraft, id: string): { label: string; ask: string } | null {
+  const income = draft.incomeType.value;
+  const have = scheduleCYearsOnFile(draft);
+  const recent = mostRecentFederalYear(draft);
+  const knownRecent = have.includes(recent);
+  if (income !== "both" && !knownRecent) return null;
+  if (id === "tax_return") {
+    return { label: `${recent} federal return`, ask: taxReturnInviteCopy(draft) };
+  }
+  if (id === "prior-year-return") {
+    const prior = String(Number(recent) - 1);
+    const label = have.includes(recent) ? `${prior} Schedule C` : `${recent} Schedule C`;
+    return { label, ask: priorYearReturnInviteCopy(draft) };
+  }
+  return null;
+}
+
 const LAYER2_COPY: Record<DocumentedStillUsefulId, { label: string; ask: string }> = {
   government_id: { label: "Government ID", ask: "A government ID still helps this file." },
   paystub: { label: "Latest two paystubs", ask: "Latest two paystubs still help this file." },
@@ -2751,7 +2770,7 @@ export function layer2Plan(draft: FoxIntakeDraft): StillUsefulItem[] {
         : !draft.incomeType.value && id === "w2"
           ? { label: "W-2", ask: "A W-2 still helps this file." }
           : null;
-    const copy = wageCopy ?? skippedIncomeCopy ?? LAYER2_COPY[id];
+    const copy = wageCopy ?? skippedIncomeCopy ?? namedYearLayer2Copy(draft, id) ?? LAYER2_COPY[id];
     if (!copy) return [];
     return [layer2Item(id, copy.label, copy.ask)];
   });

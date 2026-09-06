@@ -2621,7 +2621,7 @@ function sideQuestionAnswer(input: string, draft: FoxIntakeDraft) {
   if (asksTaxReturnNeed(input)) {
     if (draft.incomeType.value === "w2") return W2_TAX_RETURN_COPY;
     if (draft.incomeType.value === "both") {
-      return "This path needs a paystub, a W-2, and the return.";
+      return docInviteAskCopy(draft, "tax_return");
     }
     return conventionalGuidelinePattern(
       "docs",
@@ -2666,6 +2666,7 @@ function documentQuestionAnswer(draft: FoxIntakeDraft) {
     return conventionalGuidelinePattern("docs", "government_id", "A government ID puts a name on this file.");
   }
   if (invite === "tax_return") {
+    if (draft.incomeType.value === "both") return docInviteAskCopy(draft, "tax_return");
     return `${docInviteAskCopy(draft, "tax_return")} That’s how I estimate qualifying income. Suggested, not underwritten.`;
   }
   if (invite === "prior_year_return") {
