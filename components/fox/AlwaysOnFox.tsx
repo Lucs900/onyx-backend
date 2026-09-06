@@ -1014,6 +1014,9 @@ export function AlwaysOnFox({
         const next = [...prev];
         if (detail.reject) {
           next.push({ id: newId(), role: "system", text: detail.reject });
+          if (!detail.extractClass && !detail.emptyRead && !(detail.quietLines ?? []).length) {
+            return next;
+          }
         }
         for (const line of detail.quietLines ?? []) {
           if (line === DECLINING_INCOME_CAUTION) continue;

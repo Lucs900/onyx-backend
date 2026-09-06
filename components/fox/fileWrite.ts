@@ -1,6 +1,7 @@
 import {
   REJECT_LINE,
   LIMIT_LINE,
+  LIMIT_LINE_REPEAT,
   MAX_DOC_COUNT,
   isAcceptedFile,
   isUnreadNote,
@@ -133,7 +134,13 @@ import {
 } from "./otherReo";
 import { writeCurrentEmploymentHistory } from "./fileHistory";
 
-export { REJECT_LINE, LIMIT_LINE };
+export { REJECT_LINE, LIMIT_LINE, LIMIT_LINE_REPEAT };
+
+export function leftoverCapSpeech(draft: FoxIntakeDraft) {
+  if (draft.documents.length < MAX_DOC_COUNT) return null;
+  if (draft.docCapSpoken) return null;
+  return LIMIT_LINE;
+}
 
 export const LOW_EXTRACT_CONFIDENCE = 0.55;
 
@@ -646,6 +653,69 @@ export function incomeRequestedClasses(income?: string | null): ExtractClass[] {
     out.push("tax_return");
   }
   return out;
+}
+
+function docPresentOnFile(doc: ReceivedDoc) {
+  return doc.status === "extracted" || doc.status === "received" || doc.status === "reading";
+}
+
+/** W-2, paystub, or a named job already on File. */
+export function employmentOnFile(draft: FoxIntakeDraft) {
+  if ((draft.employmentHistory ?? []).some((row) => String(row.label ?? "").trim())) return true;
+  if (String(draft.facts?.employer_name?.value ?? "").trim()) return true;
+  if (isWageExtractProposal(draft.pendingProposal) || isStubExtractProposal(draft.pendingProposal)) {
+    return true;
+  }
+  return draft.documents.some(
+    (doc) =>
+      (doc.extractClass === "w2" ||
+        doc.extractClass === "paystub" ||
+        doc.slot === "w2" ||
+        doc.slot === "paystubs") &&
+      docPresentOnFile(doc),
+  );
+}
+
+/** A 1040 / Schedule C / K-1 / 1065 / Schedule E already on File. */
+export function returnOnFile(draft: FoxIntakeDraft) {
+  if (hasScheduleCCashflow(draft) || hasScheduleECashflow(draft) || hasK1Ordinary(draft)) return true;
+  return draft.documents.some((doc) => doc.extractClass === "tax_return" && docPresentOnFile(doc));
+}
+
+export function incomeEvidenceOnFile(draft: FoxIntakeDraft) {
+  return employmentOnFile(draft) || returnOnFile(draft);
+}
+
+function incomingEmployment(extractClass: ExtractClass, fields: Record<string, string>) {
+  return (
+    extractClass === "w2" ||
+    extractClass === "paystub" ||
+    Boolean(String(fields.employer_name ?? "").trim() || String(fields.wages ?? "").trim())
+  );
+}
+
+function incomingReturn(extractClass: ExtractClass) {
+  return extractClass === "tax_return";
+}
+
+/** File already has Employment or a return — do not replay How is income earned / drop W-2. */
+export function withFileIncomeHygiene(
+  draft: FoxIntakeDraft,
+  extractClass?: ExtractClass,
+  fields: Record<string, string> = {},
+): FoxIntakeDraft {
+  const employed = employmentOnFile(draft) || (extractClass ? incomingEmployment(extractClass, fields) : false);
+  const returned = returnOnFile(draft) || (extractClass ? incomingReturn(extractClass) : false);
+  if (!employed && !returned) return draft;
+  const inferred = employed && returned ? "both" : returned ? "self-employed" : "w2";
+  if (draft.incomeType.value) {
+    return { ...draft, incomeAsked: true };
+  }
+  return {
+    ...draft,
+    incomeAsked: true,
+    incomeType: { ...draft.incomeType, value: inferred, source: "document", confirmed: false },
+  };
 }
 
 export const REMAINDER_CONFIRM_FIELDS = new Set([
@@ -1161,6 +1231,7 @@ export function applyExtractedFields(
     return { draft, writes, conflict: null, quietLines: [] };
   }
   const fields = sanitizeExtractedFields(extractClass, input.fields);
+  draft = withFileIncomeHygiene(draft, extractClass, fields);
   const computed = monthlyQualifyingFromExtract(draft, extractClass, fields);
   const now = new Date().toISOString();
   const wageExtractFirst =

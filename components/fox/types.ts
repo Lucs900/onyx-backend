@@ -439,6 +439,8 @@ export type FoxIntakeDraft = {
   notes: string[];
   documents: ReceivedDoc[];
   documentsSkipped: boolean;
+  /** Ten-file cap spoken once. Leftover attaches stay silent. */
+  docCapSpoken?: boolean;
   docsStarted?: boolean;
   docsHeld?: boolean;
   priorYearSkipped?: boolean;

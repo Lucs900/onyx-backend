@@ -8,6 +8,7 @@ import { parsePlaceAddress } from "@/lib/places/address";
 import {
   CONFIRMED_STATUS,
   FOX_MESSAGES_KEY,
+  FOX_PANEL_KEY,
   INTAKE_DRAFT_VERSION,
   INTAKE_STORAGE_KEY,
   type Capture,
@@ -422,6 +423,7 @@ export function emptyDraft(): FoxIntakeDraft {
     notes: [],
     documents: [],
     documentsSkipped: false,
+    docCapSpoken: false,
     docsStarted: false,
     docsHeld: false,
     priorYearSkipped: false,
@@ -672,6 +674,7 @@ function normalize(value: unknown): FoxIntakeDraft {
     docsOpen: Boolean(raw.docsOpen),
     docsStarted: Boolean(raw.docsStarted),
     docsHeld: Boolean(raw.docsHeld),
+    docCapSpoken: Boolean(raw.docCapSpoken),
     originatorRequested: Boolean(raw.originatorRequested),
     motion: isFileMotion(raw.motion) ? raw.motion : undefined,
     nextActor: isFileNext(raw.nextActor) ? raw.nextActor : undefined,
@@ -1161,7 +1164,7 @@ function markWorkspaceEntry(path?: IntakePath | null) {
   hydrated = true;
 }
 
-const PREVIEW_STORAGE_KEYS = [INTAKE_STORAGE_KEY, FOX_MESSAGES_KEY, START_PATH_KEY];
+const PREVIEW_STORAGE_KEYS = [INTAKE_STORAGE_KEY, FOX_MESSAGES_KEY, START_PATH_KEY, FOX_PANEL_KEY];
 
 export function clearPreviewWorkspaceStorage() {
   if (typeof window === "undefined") return;
@@ -1182,10 +1185,29 @@ export function startOverWorkspace(path: IntakePath | null = null) {
   messagesHydrated = true;
   hydrated = false;
   workspaceEntryKey = null;
-  current = emptyDraft();
+  current = {
+    ...emptyDraft(),
+    facts: {},
+    notes: [],
+    documents: [],
+    documentsSkipped: false,
+    docCapSpoken: false,
+    pendingProposal: null,
+    pendingConflict: null,
+    employmentHistory: [],
+    conditions: [],
+    skippedStillUseful: [],
+    skippedClasses: [],
+  };
   const next = resetWorkspaceForEntry(path, null);
   if (path) writeStartPath(path);
   return next;
+}
+
+export function markDocCapSpoken() {
+  if (current.docCapSpoken) return current;
+  commit({ ...current, docCapSpoken: true });
+  return current;
 }
 
 /** Open a new File and mint file_id. Not a refresh / homepage resume. */

@@ -2,12 +2,13 @@
 
 import { upload } from "@vercel/blob/client";
 import { useEffect, useRef, useState } from "react";
-import { ACCEPT_ATTR, FAILED_READ_NOTE, RECEIVED_NOTE, isUnreadNote, mediaTypeOf } from "@/lib/docs/accept";
+import { ACCEPT_ATTR, FAILED_READ_NOTE, LIMIT_LINE, RECEIVED_NOTE, isUnreadNote, mediaTypeOf } from "@/lib/docs/accept";
 export { unreadDropBytesCopy } from "@/lib/docs/accept";
 import {
   applyExtractWrite,
   applyCapture,
   getFoxDraft,
+  markDocCapSpoken,
   markMissingAsked,
   patchReceivedDoc,
   receiveDocument,
@@ -89,6 +90,13 @@ export async function ingestDroppedFiles(files: File[]) {
   for (const file of files) {
     const type = mediaTypeOf(file.name, file.type);
     const blocked = rejectIncomingFile(getFoxDraft(), file.name, type, file.size);
+    if (blocked === LIMIT_LINE) {
+      if (!getFoxDraft().docCapSpoken) {
+        emitDocIntake({ reject: LIMIT_LINE });
+        markDocCapSpoken();
+      }
+      continue;
+    }
     if (blocked) {
       emitDocIntake({ reject: blocked });
       continue;

@@ -87,6 +87,7 @@ import {
   purchaseContractStreetFromDraft,
   fileStillUsefulNote,
   incomeRequestedClasses,
+  incomeEvidenceOnFile,
   missingListCopy,
   slotFromFilename,
   stillUsefulAskCopy,
@@ -1434,12 +1435,12 @@ export function looksRightAskCopy(draft: FoxIntakeDraft) {
 }
 
 export function incomeSettled(draft: FoxIntakeDraft) {
-  return Boolean(draft.incomeAsked || draft.incomeType.value);
+  return Boolean(draft.incomeAsked || draft.incomeType.value || incomeEvidenceOnFile(draft));
 }
 
-/** File Income has no type and they have not skipped. */
+/** File Income has no type, they have not skipped, and no Employment / return is on File. */
 export function incomeAskOpen(draft: FoxIntakeDraft) {
-  return !draft.incomeAsked && !draft.incomeType.value;
+  return !draft.incomeAsked && !draft.incomeType.value && !incomeEvidenceOnFile(draft);
 }
 
 export function skipIncomeAsk(draft: FoxIntakeDraft): FoxIntakeDraft {

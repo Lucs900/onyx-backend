@@ -27,6 +27,9 @@ import {
   queuePurchaseContractRemainder,
   queuePurchaseSketchReconcile,
   nextDocInvite,
+  employmentOnFile,
+  returnOnFile,
+  incomeEvidenceOnFile,
   remainderProposalWrites,
   valuesMatch,
   wageNumberPathSettled,
@@ -1786,6 +1789,7 @@ export function timelineFilled(draft: FoxIntakeDraft) {
 }
 
 export function wageDocsAskNeeded(draft: FoxIntakeDraft) {
+  if (employmentOnFile(draft) || returnOnFile(draft)) return false;
   return wageThreadOpen(draft) && !draft.sampleAccepted && !draft.wageDocsAsked;
 }
 
@@ -1993,6 +1997,9 @@ export function requiredLineValue(
     }
     if (!label && draft.incomeAsked) {
       return { value: "Skip", filled: true };
+    }
+    if (!label && incomeEvidenceOnFile(draft)) {
+      return { value: employmentOnFile(draft) ? "W-2" : "Return", filled: true };
     }
     return { value: label || MISSING_LINE, filled: Boolean(label) };
   }
