@@ -1978,6 +1978,39 @@ export function lastExtractIsCover(draft: FoxIntakeDraft) {
   return false;
 }
 
+function coverYearFromDoc(doc: { name?: string }) {
+  const named = /(?:cover|1040)[^\d]*(20\d{2})|(20\d{2})[^\d]*(?:cover|1040)/i.exec(doc.name ?? "");
+  return named?.[1] || named?.[2] || "";
+}
+
+function lastCoverYear(draft: FoxIntakeDraft) {
+  for (let i = draft.documents.length - 1; i >= 0; i -= 1) {
+    const doc = draft.documents[i];
+    if (doc.status !== "extracted") continue;
+    if (!isCoverReturnDoc(doc)) return "";
+    return coverYearFromDoc(doc) || factValue(draft, "tax_year").replace(/\D/g, "").slice(-4);
+  }
+  return "";
+}
+
+function extractedCoverCountForYear(draft: FoxIntakeDraft, year: string) {
+  let count = 0;
+  for (const doc of draft.documents ?? []) {
+    if (doc.status !== "extracted") continue;
+    if (!isCoverReturnDoc(doc)) continue;
+    if (coverYearFromDoc(doc) === year) count += 1;
+  }
+  return count;
+}
+
+export function shouldSpeakCoverMap(draft: FoxIntakeDraft) {
+  if (!lastExtractIsCover(draft)) return false;
+  if (nextDocInvite(draft) === "prior_year_return") return false;
+  const year = lastCoverYear(draft);
+  if (year && extractedCoverCountForYear(draft, year) > 1) return false;
+  return Boolean(coverMapAskCopy(draft) || nextCoverPageInviteCopy(draft));
+}
+
 export function coverMapAskCopy(draft: FoxIntakeDraft) {
   const labels = speakCoverScheduleLabels(nextCoverScheduleLabels(draft));
   if (!labels.length) return "";
@@ -1995,14 +2028,39 @@ export function mostRecentFederalYear(draft?: FoxIntakeDraft | null) {
   return String(fileClockYear(draft) - 1);
 }
 
+function hasScheduleCDocForYear(draft: FoxIntakeDraft, year: string) {
+  return (draft.documents ?? []).some((doc) => {
+    if (isCoverReturnDoc(doc)) return false;
+    if (!/schedule.?c/i.test(doc.name ?? "")) return false;
+    return doc.name.includes(year);
+  });
+}
+
+function hasCoverDocForYear(draft: FoxIntakeDraft, year: string) {
+  return (draft.documents ?? []).some((doc) => {
+    if (doc.status !== "extracted") return false;
+    if (!isCoverReturnDoc(doc)) return false;
+    return coverYearFromDoc(doc) === year;
+  });
+}
+
 export function scheduleCYearsOnFile(draft: FoxIntakeDraft): string[] {
   const years = new Set<string>();
   const factYear = factValue(draft, "tax_year").replace(/\D/g, "").slice(-4);
-  if (/^20\d{2}$/.test(factYear) && hasScheduleCOnFile(draft)) years.add(factYear);
+  if (
+    /^20\d{2}$/.test(factYear) &&
+    hasScheduleCOnFile(draft) &&
+    normalizeReturnKind(factValue(draft, "return_kind")) === "schedule_c" &&
+    !hasCoverDocForYear(draft, factYear)
+  ) {
+    years.add(factYear);
+  }
   for (const row of readTaxCashflows(draft)) {
     const year = row.tax_year.trim();
     if (!/^20\d{2}$/.test(year)) continue;
-    if (row.return_kind === "schedule_c" || row.schedule_c_net_profit) years.add(year);
+    if (!(row.return_kind === "schedule_c" || row.schedule_c_net_profit)) continue;
+    if (hasCoverDocForYear(draft, year) && !hasScheduleCDocForYear(draft, year)) continue;
+    years.add(year);
   }
   for (const doc of draft.documents ?? []) {
     if (isCoverReturnDoc(doc)) continue;
@@ -2037,15 +2095,11 @@ export function taxReturnInviteCopy(draft: FoxIntakeDraft) {
 export function priorYearReturnInviteCopy(draft: FoxIntakeDraft) {
   const recent = mostRecentFederalYear(draft);
   const prior = String(Number(recent) - 1);
-  const name = spokenScheduleCName(draft);
   const have = scheduleCYearsOnFile(draft);
-  if (have.includes(recent)) {
-    return `I have ${recent} ${name}. I need the ${prior} return next — Form 1040, all pages.`;
+  if (have.includes(prior) && !have.includes(recent)) {
+    return `I need the ${recent} return — Form 1040, all pages.`;
   }
-  if (have.length) {
-    return `I have ${have[have.length - 1]} ${name}. I need the ${recent} return next — Form 1040, all pages.`;
-  }
-  return `I have ${recent} ${name}. I need the ${prior} return next — Form 1040, all pages.`;
+  return `I need the ${prior} return — Form 1040, all pages.`;
 }
 
 export function docInviteAskCopy(draft: FoxIntakeDraft, invite: DocInviteKind) {
@@ -2161,7 +2215,9 @@ export type StillUsefulLabel =
   | "1120-S"
   | "Schedule F"
   | "2024 Schedule C"
-  | "2025 Schedule C";
+  | "2025 Schedule C"
+  | "2024 return"
+  | "2025 return";
 
 const COVER_SCHEDULE_LABELS: Record<string, StillUsefulLabel> = {
   schedule_c: "Schedule C",
@@ -2272,6 +2328,17 @@ export function hasCoverOnFile(draft: FoxIntakeDraft) {
   return (draft.documents ?? []).some((doc) => isCoverReturnDoc(doc));
 }
 
+function federalReturnYearsDone(draft: FoxIntakeDraft) {
+  const recent = mostRecentFederalYear(draft);
+  const prior = String(Number(recent) - 1);
+  const have = scheduleCYearsOnFile(draft);
+  if (have.includes(recent) && have.includes(prior)) return true;
+  if (draft.priorYearSkipped && (have.includes(recent) || receivedTaxReturnCount(draft) >= 1)) {
+    return true;
+  }
+  return false;
+}
+
 export function nextCoverPageInviteCopy(draft: FoxIntakeDraft) {
   const recent = mostRecentFederalYear(draft);
   const listed = (form: string) => `The 1040 lists a ${form}. I still need that ${recent} ${form}.`;
@@ -2279,6 +2346,7 @@ export function nextCoverPageInviteCopy(draft: FoxIntakeDraft) {
   if (ids.includes("schedule_c") && !hasScheduleCOnFile(draft)) {
     return listed("Schedule C");
   }
+  if (!federalReturnYearsDone(draft)) return "";
   const next = speakCoverScheduleLabels(nextCoverScheduleLabels(draft))[0];
   if (!next) return "";
   if (next === "Schedule C") return listed("Schedule C");
@@ -2384,6 +2452,12 @@ export function stillUsefulLabels(draft: FoxIntakeDraft): StillUsefulLabel[] {
     if (namedK1 && !labels.includes(namedK1)) labels.push(namedK1);
     for (const cover of nextCoverScheduleLabels(draft)) {
       if (!labels.includes(cover)) labels.push(cover);
+    }
+    const recent = mostRecentFederalYear(draft);
+    const prior = String(Number(recent) - 1);
+    if (hasScheduleCOnFile(draft) && !scheduleCYearsOnFile(draft).includes(prior)) {
+      const yearLabel = `${prior} return` as StillUsefulLabel;
+      if (!labels.includes(yearLabel)) labels.push(yearLabel);
     }
     return labels;
   }
@@ -2672,6 +2746,7 @@ function isWageGroceryBeforeLooksRight(draft: FoxIntakeDraft, id: string) {
   if (id === "government_id" && (draft.skippedClasses ?? []).includes("government_id")) {
     return false;
   }
+  if (id === "prior-year-return" && hasScheduleCOnFile(draft)) return false;
   return wageGroceryExtractClass(id);
 }
 
@@ -2741,8 +2816,8 @@ function namedYearLayer2Copy(draft: FoxIntakeDraft, id: string): { label: string
   }
   if (id === "prior-year-return") {
     const prior = String(Number(recent) - 1);
-    const label = have.includes(recent) ? `${prior} Schedule C` : `${recent} Schedule C`;
-    return { label, ask: priorYearReturnInviteCopy(draft) };
+    const year = have.includes(recent) ? prior : recent;
+    return { label: `${year} return`, ask: priorYearReturnInviteCopy(draft) };
   }
   return null;
 }
@@ -3042,7 +3117,7 @@ export const DOC_INVITE_COPY: Record<DocInviteKind, string> = {
   paystub: "Next is your latest paystub. That’s current income on paper.",
   w2: "Next is this year’s W-2.",
   tax_return: "I need your 2025 federal tax return — Form 1040, all pages.",
-  prior_year_return: "I have 2025 Hale Design. I need the 2024 return next — Form 1040, all pages.",
+  prior_year_return: "I need the 2024 return — Form 1040, all pages.",
   coborrower_government_id: "First I need Borrower 2’s government ID, so this file has a name on it.",
   bank_statement: "Two recent statements to show funds for the down payment.",
   second_bank_statement: "A second recent statement helps. Skip is fine.",

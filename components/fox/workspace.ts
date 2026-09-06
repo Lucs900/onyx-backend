@@ -99,6 +99,7 @@ import {
   lastExtractIsCover,
   coverMapAskCopy,
   nextCoverPageInviteCopy,
+  shouldSpeakCoverMap,
   nextCoverScheduleLabels,
   nextDocInvite,
   offeringDocStart,
@@ -1528,7 +1529,7 @@ function documentsAskText(draft: FoxIntakeDraft): string {
     return coborrowerIncomeInviteCopy(invite, draft);
   }
   const coverAsk = nextCoverScheduleLabels(draft).length ? coverMapAskCopy(draft) : "";
-  if (coverAsk && lastExtractIsCover(draft)) {
+  if (coverAsk && shouldSpeakCoverMap(draft)) {
     return coverAsk;
   }
   if (invite) return docInviteAskCopy(draft, invite);
@@ -2232,7 +2233,7 @@ export function docReactionAsk(
   if (draft.awaitingBothMonthlyReason) return bothMonthlyReasonAsk(draft);
   if (draft.awaitingRaiseWhen) return raiseWhenAsk();
   if (draft.awaitingRaiseYtdFar) return raiseYtdFarAsk(draft);
-  if (cls === "tax_return" && lastExtractIsCover(draft)) {
+  if (cls === "tax_return" && shouldSpeakCoverMap(draft)) {
     const coverAsk = coverMapAskCopy(draft);
     if (coverAsk) {
       return {
@@ -3591,10 +3592,7 @@ function workspaceAskCopy(
     }
     return {
       text: documentsAskText(draft),
-      followUp:
-        lastExtractIsCover(draft) && nextCoverScheduleLabels(draft).length
-          ? nextCoverPageInviteCopy(draft) || undefined
-          : undefined,
+      followUp: shouldSpeakCoverMap(draft) ? nextCoverPageInviteCopy(draft) || undefined : undefined,
       actions: invite
         ? documentInviteActions(draft)
         : draft.sampleAccepted
