@@ -2027,11 +2027,11 @@ export function spokenScheduleCName(draft: FoxIntakeDraft) {
 
 export function taxReturnInviteCopy(draft: FoxIntakeDraft) {
   const recent = mostRecentFederalYear(draft);
-  const name = hasScheduleCOnFile(draft) ? spokenScheduleCName(draft) : "";
-  if (name) {
-    return `I need your ${recent} federal return — the 1040 cover and the Schedule C for ${name}.`;
+  if (hasCoverOnFile(draft)) {
+    const next = nextCoverPageInviteCopy(draft);
+    if (next) return next;
   }
-  return `I need your ${recent} federal return — the 1040 cover and Schedule C.`;
+  return `I need your ${recent} Form 1040 — the first pages.`;
 }
 
 export function priorYearReturnInviteCopy(draft: FoxIntakeDraft) {
@@ -2265,6 +2265,28 @@ export function speakCoverScheduleLabels(labels: StillUsefulLabel[]): string[] {
     out.push(label);
   }
   return out;
+}
+
+export function hasCoverOnFile(draft: FoxIntakeDraft) {
+  if (coverSchedulesOnFile(draft).length) return true;
+  return (draft.documents ?? []).some((doc) => isCoverReturnDoc(doc));
+}
+
+export function nextCoverPageInviteCopy(draft: FoxIntakeDraft) {
+  const recent = mostRecentFederalYear(draft);
+  const ids = coverSchedulesOnFile(draft);
+  if (ids.includes("schedule_c") && !hasScheduleCOnFile(draft)) {
+    return `Next is the ${recent} Schedule C.`;
+  }
+  const next = speakCoverScheduleLabels(nextCoverScheduleLabels(draft))[0];
+  if (!next) return "";
+  if (next === "Schedule C") return `Next is the ${recent} Schedule C.`;
+  if (next === "K-1 / 1065" || next === "K-1") return `Next is the ${recent} K-1.`;
+  if (next === "1065") return `Next is the ${recent} Form 1065.`;
+  if (next === "1120-S") return `Next is the ${recent} Form 1120-S.`;
+  if (next === "Schedule E") return `Next is the ${recent} Schedule E.`;
+  if (next === "Schedule F") return `Next is the ${recent} Schedule F.`;
+  return `Next is the ${recent} ${next}.`;
 }
 
 function wageGroceryExtractClass(id: string) {
@@ -3018,7 +3040,7 @@ export const DOC_INVITE_COPY: Record<DocInviteKind, string> = {
   government_id: "First I need a government ID, so this file has a name on it.",
   paystub: "Next is your latest paystub. That’s current income on paper.",
   w2: "Next is this year’s W-2.",
-  tax_return: "I need your 2025 federal return — the 1040 cover and Schedule C.",
+  tax_return: "I need your 2025 Form 1040 — the first pages.",
   prior_year_return: "I have 2025 Hale Design. I need the 2024 Schedule C next.",
   coborrower_government_id: "First I need Borrower 2’s government ID, so this file has a name on it.",
   bank_statement: "Two recent statements to show funds for the down payment.",

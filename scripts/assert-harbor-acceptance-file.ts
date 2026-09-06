@@ -2,7 +2,7 @@
  * Harbor Acceptance File — Manager walk only.
  * Start over → Buy → Primary → House → 94123 → 760+ → $1,000,000 → 20
  * Income Both · W-2 03 + stub 07 · years 2 · debts Skip · ID 01
- * Schedule C 11 first (named 2024 next) · 10 · cover 19 · bank 05 · contract 09
+ * After ID: 2025 Form 1040 first pages · cover 20 then 2025 Schedule C · 10 · cover 19 · bank 05 · contract 09
  */
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -18,6 +18,7 @@ import {
   extractHintFromDraft,
   intakeIsCoverDrop,
   intakeIsIdDrop,
+  nextCoverPageInviteCopy,
   nextCoverScheduleLabels,
   nextDocInvite,
   priorYearReturnInviteCopy,
@@ -194,13 +195,64 @@ async function main() {
 
   assert.equal(nextDocInvite(file), "tax_return");
   const firstReturnAsk = taxReturnInviteCopy(file);
-  assert.equal(firstReturnAsk, "I need your 2025 federal return — the 1040 cover and Schedule C.");
-  assert.doesNotMatch(firstReturnAsk, /Hale Design/i);
+  assert.equal(firstReturnAsk, "I need your 2025 Form 1040 — the first pages.");
+  assert.doesNotMatch(firstReturnAsk, /Schedule C|Hale Design|1065|1120/i);
   assert.equal(nextFoxAsk(file).text, firstReturnAsk);
-  assert.doesNotMatch(nextFoxAsk(file).text, /Hale Design|most recent tax return|prior-year/i);
-  assert.doesNotMatch(docInviteAskCopy(file, "tax_return"), /Hale Design|prior-year|most recent tax return/i);
+  assert.doesNotMatch(nextFoxAsk(file).text, /Schedule C|Hale Design|1065|1120|most recent tax return|prior-year/i);
+  assert.doesNotMatch(docInviteAskCopy(file, "tax_return"), /Schedule C|Hale Design|1065|1120|prior-year|most recent tax return/i);
   assert.equal(workspacePromptCopy("documents", file).text, firstReturnAsk);
-  assert.doesNotMatch(workspacePromptCopy("documents", file).text, /Hale Design|prior-year|most recent tax return/i);
+  assert.doesNotMatch(workspacePromptCopy("documents", file).text, /Schedule C|Hale Design|1065|1120|prior-year|most recent tax return/i);
+
+  const incomeBeforeCoverFirst = file.facts?.qualifying_income?.value;
+  const twentyFirst = await routeExtract(
+    "20-1040-cover-2025-jordan-hale.pdf",
+    extractHintFromDraft(file, "20-1040-cover-2025-jordan-hale.pdf"),
+  );
+  assert.notEqual(twentyFirst.failed, true);
+  const twentyFirstWrite = writeLive(
+    structuredClone(file),
+    "20-1040-cover-2025-jordan-hale.pdf",
+    (twentyFirst.class as ExtractClass) ?? "tax_return",
+    twentyFirst.fields ?? {},
+    "2026-09-05T20:02:20.000Z",
+    twentyFirst.failed,
+    twentyFirst.note,
+  );
+  const coverFirst = twentyFirstWrite.draft;
+  assert.equal(coverFirst.facts?.qualifying_income?.value, incomeBeforeCoverFirst);
+  assert.notEqual(coverFirst.pendingProposal?.field, "qualifying_income");
+  const coverFirstAsk = nextFoxAsk(coverFirst);
+  assert.match(coverFirstAsk.text, /^Got the cover\./);
+  assert.equal((coverFirstAsk.text.match(/Got the cover/g) ?? []).length, 1);
+  assert.doesNotMatch(coverFirstAsk.text, /Hale Design|qualifying_income|\$/i);
+  const coverFirstLabels = nextCoverScheduleLabels(coverFirst);
+  assert.ok(coverFirstLabels.includes("Schedule C"));
+  assert.ok(coverFirstLabels.some((label) => label === "K-1" || label === "1065" || label === "Schedule E"));
+  assert.ok(coverFirstLabels.some((label) => label === "Schedule F") || coverFirstLabels.includes("Schedule F"));
+  assert.equal(coverFirstAsk.followUp, "Next is the 2025 Schedule C.");
+  assert.equal(nextCoverPageInviteCopy(coverFirst), "Next is the 2025 Schedule C.");
+  assert.equal(taxReturnInviteCopy(coverFirst), "Next is the 2025 Schedule C.");
+  assert.doesNotMatch(coverFirstAsk.followUp ?? "", /Hale Design/i);
+
+  const elevenAfterCover = await routeExtract(
+    "11-1040-schedule-c-2025-hale-design.pdf",
+    extractHintFromDraft(coverFirst, "11-1040-schedule-c-2025-hale-design.pdf"),
+  );
+  assert.notEqual(elevenAfterCover.failed, true);
+  let coverThenC = writeLive(
+    coverFirst,
+    "11-1040-schedule-c-2025-hale-design.pdf",
+    (elevenAfterCover.class as ExtractClass) ?? "tax_return",
+    elevenAfterCover.fields ?? {},
+    "2026-09-05T20:02:25.000Z",
+    elevenAfterCover.failed,
+    elevenAfterCover.note,
+  ).draft;
+  assert.equal(coverThenC.pendingProposal?.field, "qualifying_income");
+  assert.match(coverThenC.pendingProposal?.methodNote ?? "", /combined wage \+ Schedule C/);
+  coverThenC = resolveProposal(coverThenC, "accept");
+  assert.equal(nextFoxAsk(coverThenC).text, "I have 2025 Hale Design. I need the 2024 Schedule C next.");
+  assert.doesNotMatch(nextFoxAsk(coverThenC).text, /prior-year|most recent tax return|Got the cover/i);
 
   const elevenFirst = await routeExtract(
     "11-1040-schedule-c-2025-hale-design.pdf",

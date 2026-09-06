@@ -98,6 +98,7 @@ import {
   lastExtractedClass,
   lastExtractIsCover,
   coverMapAskCopy,
+  nextCoverPageInviteCopy,
   nextCoverScheduleLabels,
   nextDocInvite,
   offeringDocStart,
@@ -1527,7 +1528,7 @@ function documentsAskText(draft: FoxIntakeDraft): string {
     return coborrowerIncomeInviteCopy(invite, draft);
   }
   const coverAsk = nextCoverScheduleLabels(draft).length ? coverMapAskCopy(draft) : "";
-  if (coverAsk && (lastExtractIsCover(draft) || invite === "bank_statement" || invite === "prior_year_return")) {
+  if (coverAsk && lastExtractIsCover(draft)) {
     return coverAsk;
   }
   if (invite) return docInviteAskCopy(draft, invite);
@@ -2236,6 +2237,7 @@ export function docReactionAsk(
     if (coverAsk) {
       return {
         text: coverAsk,
+        followUp: nextCoverPageInviteCopy(draft) || undefined,
         actions: layer2AskActions(draft) ?? documentInviteActions(draft),
       };
     }
@@ -3589,6 +3591,10 @@ function workspaceAskCopy(
     }
     return {
       text: documentsAskText(draft),
+      followUp:
+        lastExtractIsCover(draft) && nextCoverScheduleLabels(draft).length
+          ? nextCoverPageInviteCopy(draft) || undefined
+          : undefined,
       actions: invite
         ? documentInviteActions(draft)
         : draft.sampleAccepted
