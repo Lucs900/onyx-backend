@@ -1,7 +1,8 @@
 /**
  * File / next-ask hygiene leftover.
  * Notepad drives the next ask. Employment or a return on File does not replay
- * How is income earned / drop W-2. Ten-file cap speaks once. Start over wipes QI / Docs / Note / Still useful.
+ * How is income earned / drop W-2. Ten-file cap is per drop/batch only.
+ * Start over wipes QI / Docs / Note / Still useful.
  */
 import assert from "node:assert/strict";
 import { emptyDraft, loadIntakeDraft, startOverWorkspace } from "../components/fox/store";
@@ -9,6 +10,7 @@ import {
   applyExtractedFields,
   leftoverCapSpeech,
   LIMIT_LINE,
+  rejectIncomingFile,
   resolveFactConflict,
   stillUsefulSection,
 } from "../components/fox/fileWrite";
@@ -16,7 +18,7 @@ import { resolveProposal, wageDocsAskNeeded } from "../components/fox/completene
 import { incomeAskOpen, nextFoxAsk, previewFacts } from "../components/fox/workspace";
 import { WAGE_DOCS_ASK } from "../components/fox/qualifyingIncome";
 import { DECLINING_INCOME_CAUTION } from "../lib/income/suggest";
-import { LIMIT_LINE_REPEAT, MAX_DOC_COUNT } from "../lib/docs/accept";
+import { dropBatchCap, LIMIT_LINE_REPEAT, MAX_DOC_COUNT } from "../lib/docs/accept";
 import type { FoxIntakeDraft } from "../components/fox/types";
 
 function sketch(income?: string): FoxIntakeDraft {
@@ -186,7 +188,19 @@ function main() {
   assert.equal(leftoverContract.conflict, null);
   assert.doesNotMatch(nextFoxAsk(leftoverContract.draft).text, /Which should I keep/);
 
-  const ten: FoxIntakeDraft = {
+  const names = Array.from({ length: 11 }, (_, i) => `file-${i + 1}.pdf`);
+  const batch = dropBatchCap(names);
+  assert.equal(batch.keep.length, MAX_DOC_COUNT);
+  assert.deepEqual(batch.leftover, ["file-11.pdf"]);
+  assert.equal(batch.speech, LIMIT_LINE);
+  assert.equal(leftoverCapSpeech(11), LIMIT_LINE);
+  assert.equal(leftoverCapSpeech(10), null);
+  assert.equal(leftoverCapSpeech(11, true), null);
+  assert.equal(dropBatchCap(names.slice(0, 10)).speech, null);
+  assert.doesNotMatch(LIMIT_LINE, /Ten files is the limit/i);
+  assert.equal(LIMIT_LINE, "I have 10. I’ll read these. Drop the rest after.");
+  assert.notEqual(LIMIT_LINE, LIMIT_LINE_REPEAT);
+  const tenOnFile: FoxIntakeDraft = {
     ...sketch("w2"),
     documents: Array.from({ length: MAX_DOC_COUNT }, (_, i) => ({
       slot: "other" as const,
@@ -198,12 +212,12 @@ function main() {
       extractClass: "other" as const,
     })),
   };
-  assert.equal(leftoverCapSpeech(ten), LIMIT_LINE);
-  assert.doesNotMatch(LIMIT_LINE, /Ten files is the limit/i);
-  assert.equal(LIMIT_LINE, "I have 10. I’ll read these. Drop the rest after.");
-  assert.notEqual(LIMIT_LINE, LIMIT_LINE_REPEAT);
-  const spoken = { ...ten, docCapSpoken: true };
-  assert.equal(leftoverCapSpeech(spoken), null);
+  assert.equal(
+    rejectIncomingFile(tenOnFile, "next-batch.pdf", "application/pdf", 2048),
+    null,
+    "ten files on File does not lock the next drop",
+  );
+  assert.equal(dropBatchCap(["next-batch.pdf"]).speech, null);
 
   const dirty: FoxIntakeDraft = {
     ...sketch("self-employed"),
@@ -257,7 +271,7 @@ function main() {
   assert.ok(!previewFacts(buy).some((fact) => fact.id === "qualifying"));
   assert.equal(stillUsefulSection(buy), null);
 
-  console.log("assert-file-next-ask: File drives next ask · cap once · Start over wipes QI/Docs/Note");
+  console.log("assert-file-next-ask: File drives next ask · per-drop 10-file cap · Start over wipes QI/Docs/Note");
 }
 
 main();

@@ -16,6 +16,22 @@ export const ACCEPTED_EXT = new Set(["pdf", "jpg", "jpeg", "png", "heic", "heif"
 export const REJECT_LINE = "Use a PDF, JPEG, PNG, HEIC, or WebP under 15 MB.";
 export const LIMIT_LINE = "I have 10. I’ll read these. Drop the rest after.";
 export const LIMIT_LINE_REPEAT = "Ten files is the limit.";
+
+/** One drop/batch only. After these 10 are read, attach is open again. */
+export function dropBatchCap<T>(items: readonly T[]): {
+  keep: T[];
+  leftover: T[];
+  speech: string | null;
+} {
+  if (items.length <= MAX_DOC_COUNT) {
+    return { keep: items.slice(), leftover: [], speech: null };
+  }
+  return {
+    keep: items.slice(0, MAX_DOC_COUNT),
+    leftover: items.slice(MAX_DOC_COUNT),
+    speech: LIMIT_LINE,
+  };
+}
 export const FAILED_READ_NOTE =
   "Fox could not read this file. Type a note or skip. No dollar amounts were invented.";
 export const NO_TEXT_LAYER_NOTE = "This file has no text layer. Type a note or Skip.";

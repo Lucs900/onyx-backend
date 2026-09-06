@@ -147,9 +147,8 @@ export function conflictAlreadySpoken(
   return Boolean(conflict && draft.lastSpokenConflictKey === conflictKey(conflict));
 }
 
-export function leftoverCapSpeech(draft: FoxIntakeDraft) {
-  if (draft.documents.length < MAX_DOC_COUNT) return null;
-  if (draft.docCapSpoken) return null;
+export function leftoverCapSpeech(batchCount: number, spoken = false) {
+  if (spoken || batchCount <= MAX_DOC_COUNT) return null;
   return LIMIT_LINE;
 }
 
@@ -3840,12 +3839,11 @@ export function skipRemainingClasses(draft: FoxIntakeDraft): FoxIntakeDraft {
 }
 
 export function rejectIncomingFile(
-  draft: FoxIntakeDraft,
+  _draft: FoxIntakeDraft,
   name: string,
   type: string,
   size: number,
 ): string | null {
-  if (draft.documents.length >= MAX_DOC_COUNT) return LIMIT_LINE;
   if (!isAcceptedFile(name, type, size)) return REJECT_LINE;
   return null;
 }

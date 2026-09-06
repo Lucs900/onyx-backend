@@ -2,13 +2,12 @@
 
 import { upload } from "@vercel/blob/client";
 import { useEffect, useRef, useState } from "react";
-import { ACCEPT_ATTR, FAILED_READ_NOTE, LIMIT_LINE, RECEIVED_NOTE, isUnreadNote, mediaTypeOf } from "@/lib/docs/accept";
+import { ACCEPT_ATTR, FAILED_READ_NOTE, RECEIVED_NOTE, dropBatchCap, isUnreadNote, mediaTypeOf } from "@/lib/docs/accept";
 export { unreadDropBytesCopy } from "@/lib/docs/accept";
 import {
   applyExtractWrite,
   applyCapture,
   getFoxDraft,
-  markDocCapSpoken,
   markMissingAsked,
   patchReceivedDoc,
   receiveDocument,
@@ -87,16 +86,13 @@ async function storeBytes(file: File) {
 
 /** Thread / composer drop or composer attach. Reads those File bytes — not a fixture. */
 export async function ingestDroppedFiles(files: File[]) {
-  for (const file of files) {
+  const { keep, speech } = dropBatchCap(files);
+  if (speech) {
+    emitDocIntake({ reject: speech });
+  }
+  for (const file of keep) {
     const type = mediaTypeOf(file.name, file.type);
     const blocked = rejectIncomingFile(getFoxDraft(), file.name, type, file.size);
-    if (blocked === LIMIT_LINE) {
-      if (!getFoxDraft().docCapSpoken) {
-        emitDocIntake({ reject: LIMIT_LINE });
-        markDocCapSpoken();
-      }
-      continue;
-    }
     if (blocked) {
       emitDocIntake({ reject: blocked });
       continue;
