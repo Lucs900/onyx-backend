@@ -172,6 +172,8 @@ import {
   stillUsefulAskCopy,
   stillUsefulRefreshKey,
   layer2AskActions,
+  intakeIsCoverDrop,
+  intakeIsIdDrop,
   type DocIntakeDetail,
 } from "./fileWrite";
 import {
@@ -1019,17 +1021,15 @@ export function AlwaysOnFox({
           next.push({ id: newId(), role: "system", text: line });
         }
         const intakeDraft = getFoxDraft();
+        const coverDrop = intakeIsCoverDrop(intakeDraft, detail);
+        if (coverDrop) {
+          const kept = next.filter((message) => !isUnreadNote(message.text) && message.text !== ID_UNREAD_ASK);
+          const coverAsk = docReactionAsk(intakeDraft, "tax_return") ?? workspacePromptCopy(workspacePrompt(intakeDraft), intakeDraft);
+          return applyFoxAsk(kept, coverAsk);
+        }
         const idDrop =
-          detail.extractClass === "government_id" ||
-          isBorrowerNameConfirmPending(intakeDraft) ||
-          intakeDraft.documents.some(
-            (doc) =>
-              (doc.extractClass === "government_id" || doc.slot === "id") &&
-              (doc.status === "extracted" ||
-                doc.status === "received" ||
-                doc.status === "reading" ||
-                /could not read|no text layer/i.test(doc.note ?? "")),
-          );
+          intakeIsIdDrop(intakeDraft, detail) ||
+          (isBorrowerNameConfirmPending(intakeDraft) && intakeIsIdDrop(intakeDraft, { extractClass: "government_id" }));
         if (idDrop) {
           const unreadId =
             Boolean(detail.emptyRead) ||

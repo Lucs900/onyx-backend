@@ -93,6 +93,7 @@ import {
   conflictActions,
   conflictAskCopy,
   DOC_INVITE_COPY,
+  docInviteAskCopy,
   firstNameFromDraft,
   lastExtractedClass,
   lastExtractIsCover,
@@ -1529,7 +1530,7 @@ function documentsAskText(draft: FoxIntakeDraft): string {
   if (coverAsk && (lastExtractIsCover(draft) || invite === "bank_statement" || invite === "prior_year_return")) {
     return coverAsk;
   }
-  if (invite) return DOC_INVITE_COPY[invite];
+  if (invite) return docInviteAskCopy(draft, invite);
   if (draft.sampleAccepted) {
     return afterLooksRightAskCopy(draft);
   }
@@ -1568,10 +1569,11 @@ function landedTaxYear(draft: FoxIntakeDraft): string {
 }
 
 function nextDocSpoken(invite: ReturnType<typeof nextDocInvite>, draft?: FoxIntakeDraft): string {
-  if (invite === "tax_return") return "Next is your most recent tax return.";
+  if (invite === "tax_return" || invite === "prior_year_return") {
+    return draft ? docInviteAskCopy(draft, invite) : DOC_INVITE_COPY[invite];
+  }
   if (invite === "paystub") return "Next is your latest paystub.";
   if (invite === "w2") return DOC_INVITE_COPY.w2;
-  if (invite === "prior_year_return") return DOC_INVITE_COPY.prior_year_return;
   if (invite === "government_id") return "Next is a government ID, so the file has a name.";
   if (invite === "coborrower_government_id") return coborrowerSpokenIdCopy();
   if (invite === "bank_statement") return DOC_INVITE_COPY.bank_statement;
@@ -2664,14 +2666,10 @@ function documentQuestionAnswer(draft: FoxIntakeDraft) {
     return conventionalGuidelinePattern("docs", "government_id", "A government ID puts a name on this file.");
   }
   if (invite === "tax_return") {
-    return conventionalGuidelinePattern(
-      "docs",
-      "tax_return",
-      "That’s how I estimate qualifying income. Suggested, not underwritten.",
-    );
+    return `${docInviteAskCopy(draft, "tax_return")} That’s how I estimate qualifying income. Suggested, not underwritten.`;
   }
   if (invite === "prior_year_return") {
-    return conventionalGuidelinePattern("docs", "prior_year_return", "It helps me see if last year was stable.");
+    return docInviteAskCopy(draft, "prior_year_return");
   }
   if (invite === "paystub") {
     return conventionalGuidelinePattern("docs", "paystub", "That’s current income on paper.");
@@ -3570,7 +3568,7 @@ function workspaceAskCopy(
     if (offeringDocStart(draft) && !draft.sampleAccepted) {
       const invite = nextDocInvite(draft);
       return {
-        text: invite ? DOC_INVITE_COPY[invite] : documentsAskText(draft),
+        text: invite ? docInviteAskCopy(draft, invite) : documentsAskText(draft),
         actions: startDocsActions(),
       };
     }

@@ -14,10 +14,16 @@ import { searchedKeyFor } from "../lib/rateflow/fromDraft";
 import {
   coverMapAskCopy,
   DOC_INVITE_COPY,
+  docInviteAskCopy,
   extractHintFromDraft,
+  intakeIsCoverDrop,
+  intakeIsIdDrop,
   nextCoverScheduleLabels,
   nextDocInvite,
+  priorYearReturnInviteCopy,
   skipUnreadDoc,
+  speakCoverScheduleLabels,
+  taxReturnInviteCopy,
   unreadDocOpen,
 } from "../components/fox/fileWrite";
 import { applyExtractWrite, emptyDraft, loadIntakeDraft, receiveDocument } from "../components/fox/store";
@@ -186,6 +192,14 @@ async function main() {
   assert.match(file.facts?.present_address?.value ?? "", /Filbert/i);
   assert.match(file.facts?.present_address?.value ?? "", /94123/);
 
+  assert.equal(nextDocInvite(file), "tax_return");
+  const firstReturnAsk = taxReturnInviteCopy(file);
+  assert.match(firstReturnAsk, /I need your 2025 federal return — the 1040 cover and the Schedule C for Hale Design/);
+  assert.doesNotMatch(firstReturnAsk, /prior-year/i);
+  assert.doesNotMatch(docInviteAskCopy(file, "tax_return"), /prior-year/i);
+  assert.match(workspacePromptCopy("documents", file).text, /2025 federal return/);
+  assert.doesNotMatch(workspacePromptCopy("documents", file).text, /prior-year/i);
+
   const ten = await routeExtract(
     "10-1040-schedule-c-2024-hale-design.pdf",
     extractHintFromDraft(file, "10-1040-schedule-c-2024-hale-design.pdf"),
@@ -218,6 +232,27 @@ async function main() {
   file = incomeBeforeCover;
   const lockedIncome = file.facts?.qualifying_income?.value;
   assert.ok(lockedIncome);
+  assert.doesNotMatch(docInviteAskCopy(file, nextDocInvite(file) ?? "prior_year_return"), /prior-year/i);
+  assert.match(priorYearReturnInviteCopy(file), /I have 2024 Hale Design\. I need the 2025 Schedule C next/);
+
+  const eleven = await routeExtract(
+    "11-1040-schedule-c-2025-hale-design.pdf",
+    extractHintFromDraft(file, "11-1040-schedule-c-2025-hale-design.pdf"),
+  );
+  assert.notEqual(eleven.failed, true);
+  const elevenOnly = acceptIfOpen(
+    writeLive(
+      { ...bothSketch(), incomeType: { ...emptyDraft().incomeType, value: "both" } },
+      "11-1040-schedule-c-2025-hale-design.pdf",
+      (eleven.class as ExtractClass) ?? "tax_return",
+      eleven.fields ?? {},
+      "2026-09-05T20:03:30.000Z",
+      eleven.failed,
+      eleven.note,
+    ).draft,
+  );
+  assert.match(priorYearReturnInviteCopy(elevenOnly), /I have 2025 Hale Design\. I need the 2024 Schedule C next/);
+  assert.doesNotMatch(priorYearReturnInviteCopy(elevenOnly), /prior-year/i);
 
   assert.equal(extractHintFromDraft(file, "19-1040-cover-2024-jordan-hale.pdf"), "tax_return");
   const cover = await routeExtract(
@@ -251,6 +286,36 @@ async function main() {
   assert.doesNotMatch(coverMapAskCopy(file), /Schedule C/);
   assert.match(`${coverAsk.text} ${coverAsk.followUp ?? ""}`, /K-1|1065|Schedule E/);
   assert.doesNotMatch(`${coverAsk.text} ${coverAsk.followUp ?? ""}`, /Schedule C/);
+  assert.match(coverAsk.text, /^Got the cover\./);
+  assert.doesNotMatch(coverAsk.text, /could not read|unreadable/i);
+  assert.equal(intakeIsCoverDrop(file, { extractClass: "tax_return", emptyRead: { name: "19-1040-cover-2024-jordan-hale.pdf" } }), true);
+  assert.equal(intakeIsIdDrop(file, { extractClass: "tax_return", emptyRead: { name: "19-1040-cover-2024-jordan-hale.pdf" } }), false);
+  const spokenCover = speakCoverScheduleLabels(coverLabels);
+  assert.ok(spokenCover.some((label) => label === "Schedule E"));
+  assert.ok(spokenCover.some((label) => label === "K-1 / 1065" || label === "K-1" || label === "1065"));
+  assert.ok(spokenCover.some((label) => label === "Schedule F") || coverLabels.includes("Schedule F"));
+  assert.equal(cover.fields?.k1_ordinary_income, undefined);
+  assert.equal(cover.fields?.schedule_e_rents_received, undefined);
+  assert.equal(cover.fields?.entity_ordinary_income, undefined);
+
+  const twenty = await routeExtract("20-1040-cover-2025-jordan-hale.pdf", "tax_return");
+  assert.notEqual(twenty.failed, true);
+  assert.equal(twenty.class, "tax_return");
+  assert.equal(twenty.fields?.return_kind, "cover");
+  const twentyWrite = writeLive(
+    file,
+    "20-1040-cover-2025-jordan-hale.pdf",
+    (twenty.class as ExtractClass) ?? "tax_return",
+    twenty.fields ?? {},
+    "2026-09-05T20:04:30.000Z",
+    twenty.failed,
+    twenty.note,
+  );
+  assert.ok(!twentyWrite.quietLines.some((line) => line === FAILED_READ_NOTE || /could not read|unreadable/i.test(line)));
+  assert.equal(twentyWrite.draft.facts?.qualifying_income?.value, lockedIncome);
+  assert.match(coverMapAskCopy(twentyWrite.draft), /^Got the cover\./);
+  assert.doesNotMatch(coverMapAskCopy(twentyWrite.draft), /could not read/i);
+  assert.equal(intakeIsIdDrop(twentyWrite.draft, { extractClass: "tax_return" }), false);
 
   const unreadAt = "2026-09-05T20:05:00.000Z";
   const unreadWrite = writeLive(

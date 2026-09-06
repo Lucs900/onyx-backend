@@ -1317,6 +1317,8 @@ export function fieldsFromPrintedLines(
       if (year) put("tax_year", year.replace(/\D/g, "").slice(0, 4));
       const named = coverSchedulesFromPrintedLines(lines);
       if (named.length) put("cover_schedules", named.join(";"));
+      const k1Names = scheduleEPart2NamesFromPrintedText(flattenPrintedLines(lines).join("\n"));
+      if (k1Names) put("cover_k1_names", k1Names);
       delete fields.schedule_c_net_profit;
       delete fields.k1_ordinary_income;
       delete fields.schedule_e_rents_received;

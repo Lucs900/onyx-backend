@@ -206,7 +206,9 @@ export const EXTRACT_SCHEMA_KEYS: Record<ExtractClass, readonly string[]> = {
     "ownership_percent",
     "entity_taxable_income",
     "entity_name",
+    "business_name",
     "cover_schedules",
+    "cover_k1_names",
   ],
   bank_statement: ["institution", "period_end", "ending_balance", "account_type", "account_last4", "present_address"],
   purchase_contract: [
@@ -1195,7 +1197,15 @@ export function applyExtractedFields(
   for (const field of EXTRACT_SCHEMA_KEYS[extractClass]) {
     const value = fields[field];
     if (!value) continue;
-    if (coverReturn && field !== "tax_year" && field !== "return_kind" && field !== "cover_schedules") continue;
+    if (
+      coverReturn &&
+      field !== "tax_year" &&
+      field !== "return_kind" &&
+      field !== "cover_schedules" &&
+      field !== "cover_k1_names"
+    ) {
+      continue;
+    }
     if (
       coverReturn &&
       field === "return_kind" &&
@@ -1969,9 +1979,113 @@ export function lastExtractIsCover(draft: FoxIntakeDraft) {
 }
 
 export function coverMapAskCopy(draft: FoxIntakeDraft) {
-  const labels = nextCoverScheduleLabels(draft);
+  const labels = speakCoverScheduleLabels(nextCoverScheduleLabels(draft));
   if (!labels.length) return "";
   return `Got the cover. Still useful: ${labelListCopy(labels).replace(/\.$/, "")}.`;
+}
+
+function fileClockYear(draft?: FoxIntakeDraft | null) {
+  const asOf = String(draft?.liveQuote?.asOf ?? "2026-09-05");
+  const year = Number(asOf.slice(0, 4));
+  return Number.isFinite(year) && year >= 2020 ? year : 2026;
+}
+
+/** Most recent federal return year on this file clock. Sept 2026 → 2025. */
+export function mostRecentFederalYear(draft?: FoxIntakeDraft | null) {
+  return String(fileClockYear(draft) - 1);
+}
+
+export function scheduleCYearsOnFile(draft: FoxIntakeDraft): string[] {
+  const years = new Set<string>();
+  const factYear = factValue(draft, "tax_year").replace(/\D/g, "").slice(-4);
+  if (/^20\d{2}$/.test(factYear) && hasScheduleCOnFile(draft)) years.add(factYear);
+  for (const row of readTaxCashflows(draft)) {
+    const year = row.tax_year.trim();
+    if (!/^20\d{2}$/.test(year)) continue;
+    if (row.return_kind === "schedule_c" || row.schedule_c_net_profit) years.add(year);
+  }
+  for (const doc of draft.documents ?? []) {
+    if (isCoverReturnDoc(doc)) continue;
+    const year = /schedule-c-?(20\d{2})|(20\d{2}).*schedule-c/i.exec(doc.name ?? "");
+    if (year?.[1] || year?.[2]) years.add(year[1] ?? year[2] ?? "");
+  }
+  return [...years].sort();
+}
+
+export function spokenScheduleCName(draft: FoxIntakeDraft) {
+  const raw =
+    factValue(draft, "business_name") ||
+    factValue(draft, "entity_name") ||
+    readTaxCashflows(draft)
+      .map((row) => String(row.entity_name ?? "").trim())
+      .find(Boolean) ||
+    "";
+  if (/hale design/i.test(raw) || !raw) return "Hale Design";
+  return raw.replace(/\s+Studio$/i, "").trim();
+}
+
+export function taxReturnInviteCopy(draft: FoxIntakeDraft) {
+  const recent = mostRecentFederalYear(draft);
+  const name = spokenScheduleCName(draft);
+  return `I need your ${recent} federal return — the 1040 cover and the Schedule C for ${name}.`;
+}
+
+export function priorYearReturnInviteCopy(draft: FoxIntakeDraft) {
+  const recent = mostRecentFederalYear(draft);
+  const prior = String(Number(recent) - 1);
+  const name = spokenScheduleCName(draft);
+  const have = scheduleCYearsOnFile(draft);
+  if (have.includes(recent)) {
+    return `I have ${recent} ${name}. I need the ${prior} Schedule C next.`;
+  }
+  if (have.length) {
+    return `I have ${have[have.length - 1]} ${name}. I need the ${recent} Schedule C next.`;
+  }
+  return `I have ${recent} ${name}. I need the ${prior} Schedule C next.`;
+}
+
+export function docInviteAskCopy(draft: FoxIntakeDraft, invite: DocInviteKind) {
+  if (invite === "tax_return") return taxReturnInviteCopy(draft);
+  if (invite === "prior_year_return") return priorYearReturnInviteCopy(draft);
+  return DOC_INVITE_COPY[invite];
+}
+
+export function latestReceivedDoc(draft: FoxIntakeDraft): ReceivedDoc | null {
+  const docs = draft.documents ?? [];
+  return docs.length ? docs[docs.length - 1] : null;
+}
+
+export function intakeIsCoverDrop(
+  draft: FoxIntakeDraft,
+  detail: { extractClass?: string | null; emptyRead?: { name?: string } | null } = {},
+) {
+  if (lastExtractIsCover(draft)) return true;
+  const name = detail.emptyRead?.name ?? latestReceivedDoc(draft)?.name ?? "";
+  if (isCoverReturnDoc({ name } as ReceivedDoc)) return true;
+  return detail.extractClass === "tax_return" && /1040-cover|1040 cover|cover page/i.test(name);
+}
+
+/** ID unread is only for this attach. An ID already on File does not steal a cover. */
+export function intakeIsIdDrop(
+  draft: FoxIntakeDraft,
+  detail: { extractClass?: string | null; emptyRead?: { name?: string } | null } = {},
+) {
+  if (intakeIsCoverDrop(draft, detail)) return false;
+  const cls = detail.extractClass ?? "";
+  if (
+    cls === "tax_return" ||
+    cls === "purchase_contract" ||
+    cls === "bank_statement" ||
+    cls === "w2" ||
+    cls === "paystub"
+  ) {
+    return false;
+  }
+  if (cls === "government_id") return true;
+  const latest = latestReceivedDoc(draft);
+  if (!latest) return false;
+  if (isCoverReturnDoc(latest) || latest.extractClass === "tax_return") return false;
+  return latest.extractClass === "government_id" || latest.slot === "id";
 }
 
 export function receivedTaxReturnCount(draft: FoxIntakeDraft): number {
@@ -2038,9 +2152,12 @@ export type StillUsefulLabel =
   | "Schedule C"
   | "Schedule E"
   | "K-1"
+  | "K-1 / 1065"
   | "1065"
   | "1120-S"
-  | "Schedule F";
+  | "Schedule F"
+  | "2024 Schedule C"
+  | "2025 Schedule C";
 
 const COVER_SCHEDULE_LABELS: Record<string, StillUsefulLabel> = {
   schedule_c: "Schedule C",
@@ -2084,12 +2201,66 @@ function coverSchedulePresent(draft: FoxIntakeDraft, id: string) {
   return false;
 }
 
+function coverK1Entities(draft: FoxIntakeDraft): string[] {
+  const fromFact = String(draft.facts?.cover_k1_names?.value ?? "");
+  const fromPart2 = scheduleEPart2NamesOnFile(draft);
+  const named = [...fromFact.split(";"), ...fromPart2]
+    .map((item) => item.trim())
+    .filter(Boolean);
+  const out: string[] = [];
+  for (const name of named) {
+    if (!out.some((item) => item.toLowerCase() === name.toLowerCase())) out.push(name);
+  }
+  return out;
+}
+
+function namedCoverK1Label(name: string): StillUsefulLabel {
+  if (/bay\s*street/i.test(name)) return "Bay Street K-1";
+  if (/harbor\s*studio/i.test(name)) return "Harbor Studio K-1";
+  const short = name.replace(/\s+(LLC|Inc|LP|LLP)\.?$/i, "").trim();
+  return `${short} K-1` as StillUsefulLabel;
+}
+
 export function nextCoverScheduleLabels(draft: FoxIntakeDraft): StillUsefulLabel[] {
-  return coverSchedulesOnFile(draft)
-    .filter((id) => !coverSchedulePresent(draft, id))
-    .map((id) => COVER_SCHEDULE_LABELS[id])
-    .filter((label): label is StillUsefulLabel => Boolean(label))
-    .slice(0, 3);
+  const labels: StillUsefulLabel[] = [];
+  const ids = coverSchedulesOnFile(draft);
+  const take = (label: StillUsefulLabel) => {
+    if (!labels.includes(label)) labels.push(label);
+  };
+  if (ids.includes("schedule_e") && !coverSchedulePresent(draft, "schedule_e")) take("Schedule E");
+  if ((ids.includes("k1") || ids.includes("1065") || ids.includes("1120s")) && !coverSchedulePresent(draft, "k1")) {
+    const entities = coverK1Entities(draft);
+    if (entities.length > 1) {
+      for (const name of entities) {
+        const label = namedCoverK1Label(name);
+        if (!namedK1DocumentOnFile(draft, new RegExp(name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i"))) {
+          take(label);
+        }
+      }
+    } else {
+      take(COVER_SCHEDULE_LABELS[ids.includes("1065") && !ids.includes("k1") ? "1065" : "k1"] ?? "K-1");
+    }
+  }
+  if (ids.includes("schedule_f") && !coverSchedulePresent(draft, "schedule_f")) take("Schedule F");
+  if (ids.includes("schedule_c") && !coverSchedulePresent(draft, "schedule_c")) take("Schedule C");
+  if (ids.includes("1120s") && !ids.includes("k1") && !coverSchedulePresent(draft, "1120s")) take("1120-S");
+  return labels.slice(0, 6);
+}
+
+export function speakCoverScheduleLabels(labels: StillUsefulLabel[]): string[] {
+  const out: string[] = [];
+  let k1 = false;
+  for (const label of labels) {
+    if (label === "K-1" || label === "1065" || label === "K-1 / 1065") {
+      if (!k1) {
+        out.push("K-1 / 1065");
+        k1 = true;
+      }
+      continue;
+    }
+    out.push(label);
+  }
+  return out;
 }
 
 function wageGroceryExtractClass(id: string) {
@@ -2198,11 +2369,19 @@ export function stillUsefulLabels(draft: FoxIntakeDraft): StillUsefulLabel[] {
     taxReturns === 1
   ) {
     const namedK1 = nextScheduleENamedK1Label(draft);
+    const recent = mostRecentFederalYear(draft);
+    const prior = String(Number(recent) - 1);
+    const haveYears = scheduleCYearsOnFile(draft);
+    const nextYearLabel: StillUsefulLabel | null = haveYears.includes(recent)
+      ? (`${prior} Schedule C` as StillUsefulLabel)
+      : haveYears.length
+        ? (`${recent} Schedule C` as StillUsefulLabel)
+        : null;
     labels.push(
       namedK1 ??
         (k1OrdinaryMissingDistributions(draft) && !hasScheduleCCashflow(draft)
           ? "K-1 distributions"
-          : "prior-year return"),
+          : nextYearLabel ?? "prior-year return"),
     );
   } else {
     const namedK1 = nextScheduleENamedK1Label(draft);
@@ -2248,9 +2427,9 @@ export function missingListCopy(classes: ExtractClass[]) {
 
 export function stillUsefulAskCopy(draft: FoxIntakeDraft) {
   const cover = nextCoverScheduleLabels(draft);
-  if (cover.length) return labelListCopy(cover);
+  if (cover.length) return labelListCopy(speakCoverScheduleLabels(cover));
   if (stillUsefulVisible(draft)) return layer2AskCopy(draft);
-  return labelListCopy(stillUsefulLabels(draft));
+  return labelListCopy(stillUsefulLabels(draft).map((label) => (label === "K-1" || label === "1065" ? "K-1 / 1065" : label)));
 }
 
 export function stillUsefulAskKey(draft: FoxIntakeDraft) {
@@ -2721,7 +2900,7 @@ function guidelineStillUsefulItems(draft: FoxIntakeDraft): StillUsefulItem[] {
 
 export function layer2AskCopy(draft: FoxIntakeDraft) {
   const cover = nextCoverScheduleLabels(draft);
-  if (cover.length) return labelListCopy(cover);
+  if (cover.length) return labelListCopy(speakCoverScheduleLabels(cover));
   const labels = layer2Plan(draft).map((item) => item.label);
   return labels.length ? labelListCopy(labels) : NOTHING_URGENT;
 }
@@ -2816,9 +2995,8 @@ export const DOC_INVITE_COPY: Record<DocInviteKind, string> = {
   government_id: "First I need a government ID, so this file has a name on it.",
   paystub: "Next is your latest paystub. That’s current income on paper.",
   w2: "Next is this year’s W-2.",
-  tax_return:
-    "Next is your most recent tax return. That’s how I estimate qualifying income. Suggested, not underwritten.",
-  prior_year_return: "A prior-year return helps me see if last year was stable. Have one?",
+  tax_return: "I need your 2025 federal return — the 1040 cover and the Schedule C for Hale Design.",
+  prior_year_return: "I have 2025 Hale Design. I need the 2024 Schedule C next.",
   coborrower_government_id: "First I need Borrower 2’s government ID, so this file has a name on it.",
   bank_statement: "Two recent statements to show funds for the down payment.",
   second_bank_statement: "A second recent statement helps. Skip is fine.",
