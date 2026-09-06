@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
-# Spine walker — nine locked preview cases. Hard Start over each case.
-# Case 9 harbor-both-cover-contract. Also runs scripts/assert-harbor-acceptance-file.ts.
+# Spine walker — thirteen locked preview cases. Hard Start over each case.
+# Case 9 harbor-both-cover-contract. Lukasz Harbor leftovers run before Playwright:
+# 09 at price, House-turn 740–759, 03+07 before income, Start over wipe.
+# CI fail = red.
 #
 # Preferred (OIDC, after vercel login / VERCEL_TOKEN):
 #   npx vercel env run -- bash scripts/assert-spine-walker.sh
@@ -91,20 +93,41 @@ elif [[ ! -f .browser-ok ]]; then
   touch .browser-ok
 fi
 
-harbor_leftover_wanted() {
+leftover_wanted() {
+  local n="$1"
   if [[ -z "${SPINE_WALKER_ONLY:-}" ]]; then
     return 0
   fi
-  [[ ",${SPINE_WALKER_ONLY}," == *",9,"* ]]
+  [[ ",${SPINE_WALKER_ONLY}," == *",${n},"* ]]
 }
 
-if harbor_leftover_wanted; then
+run_leftover() {
+  local script="$1"
+  echo "spine-walker: leftover ${script}"
+  (cd "$ROOT" && npx --yes tsx "scripts/${script}")
+}
+
+if leftover_wanted 9 || leftover_wanted 10 || leftover_wanted 11 || leftover_wanted 12 || leftover_wanted 13; then
   if [[ ! -d "$ROOT/node_modules/next" ]]; then
     echo "spine-walker: npm install (harbor leftover)" >&2
     (cd "$ROOT" && npm install)
   fi
-  echo "spine-walker: harbor leftover (assert-harbor-acceptance-file)"
-  (cd "$ROOT" && npx --yes tsx scripts/assert-harbor-acceptance-file.ts)
+fi
+
+if leftover_wanted 9; then
+  run_leftover assert-harbor-acceptance-file.ts
+fi
+if leftover_wanted 10; then
+  run_leftover assert-contract-at-price.ts
+fi
+if leftover_wanted 11; then
+  run_leftover assert-house-credit-band.ts
+fi
+if leftover_wanted 12; then
+  run_leftover assert-w2-stub-employment-merge.ts
+fi
+if leftover_wanted 12 || leftover_wanted 13; then
+  run_leftover assert-file-next-ask.ts
 fi
 
 exec npx tsx walker.ts "$@"

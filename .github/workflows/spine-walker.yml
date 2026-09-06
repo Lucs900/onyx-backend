@@ -10,6 +10,10 @@ on:
       - "scripts/spine-walker/**"
       - "scripts/assert-spine-walker.sh"
       - "scripts/assert-harbor-acceptance-file.ts"
+      - "scripts/assert-contract-at-price.ts"
+      - "scripts/assert-house-credit-band.ts"
+      - "scripts/assert-file-next-ask.ts"
+      - "scripts/assert-w2-stub-employment-merge.ts"
       - ".github/workflows/spine-walker.yml"
       - "sample-docs/**"
   pull_request:
@@ -21,6 +25,10 @@ on:
       - "scripts/spine-walker/**"
       - "scripts/assert-spine-walker.sh"
       - "scripts/assert-harbor-acceptance-file.ts"
+      - "scripts/assert-contract-at-price.ts"
+      - "scripts/assert-house-credit-band.ts"
+      - "scripts/assert-file-next-ask.ts"
+      - "scripts/assert-w2-stub-employment-merge.ts"
       - ".github/workflows/spine-walker.yml"
       - "sample-docs/**"
 jobs:

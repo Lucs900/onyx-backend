@@ -3334,7 +3334,8 @@ export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
     return "credit";
   }
   if (!rateLineReady(draft) && draft.resumeAfterEdit !== "credit" && !isFundsPairProposal(draft.pendingProposal)) {
-    return propertyTypeSettled(draft) ? "credit" : "property-type";
+    if (!propertyTypeSettled(draft)) return "property-type";
+    if (!creditSettled(draft)) return "credit";
   }
   if (draft.sampleAccepted && (draft.motion === "in_queue" || draft.motion === "escalated")) {
     return "done";
@@ -3524,6 +3525,11 @@ function workspaceAskCopy(
     };
   }
   if (prompt === "credit") {
+    if (draft.creditBand) {
+      const settled = { ...draft, creditAsked: true as const };
+      const next = workspacePrompt(settled);
+      if (next !== "credit") return workspaceAskCopy(next, settled);
+    }
     return {
       text: CREDIT_RANGE_ASK,
       followUp: CREDIT_RANGE_FOLLOW,
@@ -4271,6 +4277,26 @@ export function parseCreditRange(text: string): string | null {
     if (score >= 300 && score <= 850) return String(score);
   }
   return null;
+}
+
+/** House-turn / volunteered band. Money is not a FICO. */
+export function parseVolunteeredCreditBand(text: string): string | null {
+  const trimmed = text.trim();
+  if (!trimmed) return null;
+  if (/[$,]/.test(trimmed)) return null;
+  if (/^\d{4,}/.test(trimmed.replace(/,/g, ""))) return null;
+  return parseCreditRange(trimmed);
+}
+
+function writeStatedCreditBand(draft: FoxIntakeDraft, range: string): FoxIntakeDraft {
+  return {
+    ...draft,
+    ...clearLiveQuote(),
+    creditBand: range,
+    creditAsked: true,
+    correcting: draft.correcting === "credit" ? null : draft.correcting,
+    correctingLine: draft.correcting === "credit" ? null : draft.correctingLine,
+  };
 }
 
 export function parseTermYears(text: string): number | null | "skip" {
@@ -5878,6 +5904,24 @@ export function workspaceReply(
   if (notepadEdit === "credit") {
     return replyToCreditAsk(q, draft);
   }
+  const volunteeredCredit =
+    prompt !== "credit" &&
+    prompt !== "value" &&
+    prompt !== "amount" &&
+    !draft.creditBand &&
+    !draft.correcting &&
+    !draft.pendingProposal &&
+    !draft.pendingConflict
+      ? parseVolunteeredCreditBand(q)
+      : null;
+  if (volunteeredCredit) {
+    const nextDraft = writeStatedCreditBand(draft, volunteeredCredit);
+    const next = nextFoxAsk(nextDraft);
+    return {
+      ...next,
+      capture: { field: "creditRange", value: volunteeredCredit },
+    };
+  }
   if (/^try again$/i.test(lower) && (draft.liveQuoteStatus === "unavailable" || shouldHoldAskForLiveLine(draft))) {
     return {
       text: RATEFLOW_WAIT_LINE,
@@ -6936,6 +6980,14 @@ export function workspaceReply(
 
   if (prompt === "property-type") {
     if (draft.propertyType && isKeepThisText(q)) return keepThisReply(draft);
+    const typedCredit = parseVolunteeredCreditBand(q);
+    if (typedCredit) {
+      const nextDraft = writeStatedCreditBand(draft, typedCredit);
+      return {
+        ...nextFoxAsk(nextDraft),
+        capture: { field: "creditRange", value: typedCredit },
+      };
+    }
     if (isSkipPropertyTypeText(q)) {
       const nextDraft = skipPropertyType(draft);
       return {

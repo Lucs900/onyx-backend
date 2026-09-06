@@ -1,8 +1,9 @@
 /**
- * Spine walker — nine locked preview cases. Hard Start over each case.
+ * Spine walker — thirteen locked preview cases. Hard Start over each case.
  * Assert only. Does not invent product behavior.
- * Case 9 is harbor-both-cover-contract. Leftover assert-harbor-acceptance-file
- * runs from scripts/assert-spine-walker.sh before Playwright.
+ * Case 9 is harbor-both-cover-contract. Lukasz Harbor leftovers (09 at price,
+ * House-turn 740–759, 03+07 before income, Start over wipe) run from
+ * scripts/assert-spine-walker.sh before Playwright. CI fail = red.
  *
  * Run: bash scripts/assert-spine-walker.sh
  */
@@ -925,6 +926,164 @@ async function case9(page: Page) {
   }
 }
 
+async function foxTexts(page: Page): Promise<string[]> {
+  const loc = page.locator(".fox-bubble--fox");
+  const n = await loc.count();
+  const out: string[] = [];
+  for (let i = 0; i < n; i += 1) {
+    out.push(((await loc.nth(i).innerText()) ?? "").replace(/\s+/g, " ").trim());
+  }
+  return out;
+}
+
+function contractConfirmCount(texts: string[]) {
+  return texts.filter((text) => /The contract shows /i.test(text)).length;
+}
+
+async function case10(page: Page) {
+  if (!existsSync(HARBOR_CONTRACT_PDF)) {
+    throw new BeatFail("missing alias 09-purchase-contract-88-clipper.pdf");
+  }
+  await hardStartOver(page);
+  await walkBuyPrimary(page);
+  await waitAsk(page, /purchase price/i);
+  await composerDrop(page, "09-purchase-contract-88-clipper.pdf");
+  await waitCurrent(page, (text, chips) => /The contract shows /i.test(text) && hasChip(chips, "Use this"), 90_000);
+  const confirm = await currentText(page);
+  if (/On the file/i.test(confirm)) {
+    throw new BeatFail(`09 confirm said On the file — ${confirm}`);
+  }
+  if (contractConfirmCount(await foxTexts(page)) !== 1) {
+    throw new BeatFail(`09 confirm printed more than once — ${confirm}`);
+  }
+  await clickChip(page, "Use this");
+  const after = await waitCurrent(
+    page,
+    (text) => !/The contract shows /i.test(text) || /down payment or loan amount/i.test(text),
+    20_000,
+  );
+  if (contractConfirmCount(await foxTexts(page)) !== 1) {
+    throw new BeatFail("09 confirm reprinted after Use this");
+  }
+  if (/On the file|Try again/i.test(after.text)) {
+    throw new BeatFail(`after 09 Use this — ${after.text}`);
+  }
+  if (/purchase price/i.test(after.text) && !/down payment or loan amount/i.test(after.text)) {
+    throw new BeatFail(`second purchase-price ask after 09 — ${after.text}`);
+  }
+  if (/estimated FICO/i.test(after.text)) {
+    throw new BeatFail(`FICO re-ask after 09 — ${after.text}`);
+  }
+  if (!/down payment or loan amount/i.test(after.text)) {
+    throw new BeatFail(`after 09 expected funds ask — ${after.text}`);
+  }
+  const map = await structureMap(page);
+  const blob = Object.entries(map)
+    .map(([label, value]) => `${label}: ${value}`)
+    .join(" | ");
+  if (!/88 Clipper/i.test(map["Property address"] ?? blob) || !/94114/.test(map["Property address"] ?? blob)) {
+    throw new BeatFail(`09 did not write Clipper — ${blob}`);
+  }
+  if (!/\$850,000/.test(map["Purchase price"] ?? "")) {
+    throw new BeatFail(`09 did not write $850,000 — ${blob}`);
+  }
+  if (!/October 15, 2026|10\/15\/2026/.test(map["Close"] ?? blob)) {
+    throw new BeatFail(`09 did not write close — ${blob}`);
+  }
+  if (map["Seller credit"] && !/\$5,000/.test(map["Seller credit"])) {
+    throw new BeatFail(`09 seller credit wrong — ${blob}`);
+  }
+}
+
+async function case11(page: Page) {
+  await hardStartOver(page);
+  await walkBuyPrimary(page);
+  await writePrice(page, "850000");
+  await waitAsk(page, /down payment or loan amount/i);
+  await typeSend(page, "20");
+  await acceptOfferedFunds(page);
+  await waitAsk(page, /House, condo, or 2–4|What kind of home/i);
+  assertCopyChips(await currentText(page), await currentChips(page));
+  const input = page.locator(INPUT);
+  await input.waitFor({ state: "visible", timeout: 10_000 });
+  await input.click();
+  await input.fill("");
+  await input.pressSequentially("740–759", { delay: 15 });
+  const send = page.locator(SEND);
+  if (await send.isDisabled()) await input.press("Enter");
+  else await send.click();
+  const started = Date.now();
+  let credit = "";
+  while (Date.now() - started < 15_000) {
+    const map = await structureMap(page);
+    credit = map["Credit"] ?? "";
+    if (/740/.test(credit)) break;
+    await page.waitForTimeout(200);
+  }
+  if (!/740/.test(credit)) {
+    throw new BeatFail(`Credit not written after House-turn 740–759 — ${credit || "(missing)"}`);
+  }
+  const next = await currentText(page);
+  if (/estimated FICO|What is your estimated FICO/i.test(next)) {
+    throw new BeatFail(`House-turn 740–759 then FICO ask — ${next}`);
+  }
+}
+
+async function case12(page: Page) {
+  await hardStartOver(page);
+  await walkToQuotedIncome(page, "94123", true);
+  await waitAsk(page, /How is income earned/i);
+  await dropHarborDoc(page, "03-w2-2025-jordan-hale.pdf", "confirm");
+  await dropHarborDoc(page, "07-paystub-biweekly-loud.pdf", "confirm");
+  const after = await currentText(page);
+  const chips = await currentChips(page);
+  if (/How is income earned/i.test(after) && chips.some((chip) => /W-2|Self-employed|Both|Other/i.test(chip))) {
+    throw new BeatFail(`empty income quiz after 03+07 — ${after} | ${chips.join(" · ")}`);
+  }
+  const map = await structureMap(page);
+  const income = `${map["Income"] ?? ""} ${map["Employment"] ?? ""} ${map["Qualifying income"] ?? ""}`;
+  if (!/Harbor|W-2|\$/.test(income)) {
+    throw new BeatFail(`03+07 did not write income — ${income || "(empty)"}`);
+  }
+}
+
+async function case13(page: Page) {
+  await hardStartOver(page);
+  await walkToQuotedIncome(page, "94123", true);
+  await clickChip(page, "W-2");
+  await waitCurrent(page, (text) => !/How is income earned/i.test(text), 15_000);
+  await composerDrop(page, "03-w2-2025-jordan-hale.pdf");
+  await waitCurrent(
+    page,
+    (text, chips) =>
+      hasChip(chips, "Use this") || hasChip(chips, "Use document") || /Harbor|Box 5/i.test(text),
+    90_000,
+  );
+  if (hasChip(await currentChips(page), "Use this") || hasChip(await currentChips(page), "Use document")) {
+    await clickChip(page, hasChip(await currentChips(page), "Use this") ? "Use this" : "Use document");
+  }
+  await page.locator(START_OVER).click();
+  await page.locator(".fox-bubble--fox.is-current").getByRole("button", { name: "Buy", exact: true }).waitFor({
+    state: "visible",
+    timeout: 15_000,
+  });
+  const map = await structureMap(page);
+  const income = map["Income"] ?? map["Qualifying income"] ?? "";
+  if (income && income !== "—") {
+    throw new BeatFail(`Start over left income — ${income}`);
+  }
+  if (map["Docs"] && map["Docs"] !== "—") {
+    throw new BeatFail(`Start over left Docs — ${map["Docs"]}`);
+  }
+  if (map["Note"] && map["Note"] !== "—") {
+    throw new BeatFail(`Start over left Note — ${map["Note"]}`);
+  }
+  const useful = await stillUsefulLabels(page);
+  if (useful.length) {
+    throw new BeatFail(`Start over left Still useful — ${useful.join(" · ")}`);
+  }
+}
+
 const CASES: { n: number; title: string; run: (page: Page) => Promise<void> }[] = [
   { n: 1, title: "20 on a known price → down and loan write, Use this once", run: case1 },
   { n: 2, title: "Price 500000 then 1000000 → conflict → Down payment → 20 → Use this → 100000 / 400000, no second conflict", run: case2 },
@@ -935,6 +1094,10 @@ const CASES: { n: number; title: string; run: (page: Page) => Promise<void> }[] 
   { n: 7, title: "2–4 asks rent. Skip rent allowed", run: case7 },
   { n: 8, title: "Mid-ask sideways question. Answer, then the same next chip", run: case8 },
   { n: 9, title: "harbor-both-cover-contract", run: case9 },
+  { n: 10, title: "09 at the price ask writes Clipper once, then funds", run: case10 },
+  { n: 11, title: "House-turn 740–759 writes Credit, next is not FICO", run: case11 },
+  { n: 12, title: "03+07 before income type → no empty income quiz", run: case12 },
+  { n: 13, title: "Start over clears income, Docs, Note, Still useful", run: case13 },
 ];
 
 async function openBrowser() {

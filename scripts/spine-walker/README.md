@@ -1,6 +1,6 @@
 # Spine walker
 
-Playwright walk of the nine locked preview cases. Not a product slice. Hard **Start over** each case. A handwritten walk is not PASS. Case 9 also runs `scripts/assert-harbor-acceptance-file.ts` from the spine-walker script before Playwright.
+Playwright walk of the thirteen locked preview cases. Not a product slice. Hard **Start over** each case. A handwritten walk is not PASS. A Manager PASS with a red walker is FAIL. Case 9 also runs `scripts/assert-harbor-acceptance-file.ts`. Cases 10–13 also run the Lukasz Harbor leftovers (`assert-contract-at-price`, `assert-house-credit-band`, `assert-w2-stub-employment-merge`, `assert-file-next-ask`) from the spine-walker script before Playwright. CI fail = red.
 
 ## Preview
 
@@ -63,5 +63,9 @@ Optional: `SPINE_WALKER_ONLY=1,8` runs a subset. Each case uses a fresh browser 
 7. 2–4 asks rent. Skip rent allowed.
 8. Mid-ask sideways question. Answer, then the same next chip.
 9. harbor-both-cover-contract. Both → years 2 → debts Skip → composer-drop 03, 07, 01, 10, 19, 05, `09-purchase-contract-88-clipper.pdf`. One Harbor Employment row. Combined wage + Schedule C. Cover 19 maps K-1 / 1065 / Sch E. Clipper 94114, Filbert stays residence. Looks right hidden while Use this is open. No citizenship after Looks right.
+10. 09 at the price ask. Confirm once. Use this writes Clipper / $850,000 / close / seller credit. Next is funds. No second price ask. No On the file.
+11. On the House turn, type 740–759. Credit writes on Structure. Next Fox line is not the FICO ask.
+12. 03+07 before income type. No empty income quiz.
+13. Start over clears income, Docs, Note, Still useful.
 
-FAIL if copy and chips disagree. FAIL if Structure and chat disagree. FAIL if a write did not kill the old number.
+FAIL if copy and chips disagree. FAIL if Structure and chat disagree. FAIL if a write did not kill the old number. FAIL if Credit is on File and Fox asks FICO.
