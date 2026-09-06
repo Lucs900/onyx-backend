@@ -45,6 +45,7 @@ import {
   dropOnFileAddressLines,
   dropResolvedAddressConfirmChips,
   freezeUsedFoxTurns,
+  withoutDuplicateContractConfirm,
   stripLooksRightWhileUseThisOpen,
   threadHasOpenUseThisConfirm,
   isIdExtractAskText,
@@ -400,6 +401,22 @@ function applyFoxAsk(
   }
   if (last && /The ID shows /i.test(last.text) && !/The ID shows /i.test(ask.text)) {
     return freezeOthers(last.id, foxAskMessage(ask));
+  }
+  if (isContractExtractAskText(ask.text)) {
+    const held = withoutDuplicateContractConfirm(messages);
+    const existing = lastFoxTurn(held);
+    if (existing && isContractExtractAskText(existing.text)) {
+      return freezeUsedFoxTurns(
+        held.map((message) =>
+          message.id === existing.id
+            ? {
+                ...existing,
+                actions: existing.actions?.length ? existing.actions : ask.actions,
+              }
+            : message,
+        ),
+      );
+    }
   }
   if (last && isContractExtractAskText(last.text) && !isContractExtractAskText(ask.text)) {
     return freezeUsedFoxTurns([...messages, foxAskMessage(ask)]);

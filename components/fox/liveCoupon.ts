@@ -9,7 +9,7 @@ import {
   sameCouponNumbers,
   type SafeCouponRow,
 } from "@/lib/rateflow/quote";
-import { nextDocInvite, needsPurchaseSplitAsk } from "./fileWrite";
+import { isPurchaseContractConfirmPending, nextDocInvite, needsPurchaseSplitAsk } from "./fileWrite";
 import { ID_UNREAD_ASK, isBorrowerNameConfirmPending } from "./borrowerName";
 import { isFundsPairProposal, isPurchaseLike, loanExceedsPurchasePrice } from "./completeness";
 import { isLookupWaitLine, isLookupWaitMessage } from "./lookupWait";
@@ -629,13 +629,27 @@ function holdPurchaseContractConfirm(message: FoxMessage): FoxMessage {
   };
 }
 
+/** One “The contract shows …” bubble. Prompt-sync must not append a second copy. */
+export function withoutDuplicateContractConfirm(messages: FoxMessage[]): FoxMessage[] {
+  let seen = false;
+  return messages.filter((message) => {
+    if (message.role !== "fox" || !isPurchaseContractConfirmText(foxBlob(message))) return true;
+    if (seen) return false;
+    seen = true;
+    return true;
+  });
+}
+
 /** After File write, a Places confirm becomes “On the file.” — text only. */
 export function dropResolvedAddressConfirmChips(
   messages: FoxMessage[],
   draft: FoxIntakeDraft,
 ): FoxMessage[] {
   if (needsPurchaseSplitAsk(draft)) {
-    return dropLeftoverConfirmChipsOnLooksRightDocAsk(messages, draft);
+    return dropLeftoverConfirmChipsOnLooksRightDocAsk(
+      withoutDuplicateContractConfirm(messages),
+      draft,
+    );
   }
   if (isIdExtractPath(draft)) {
     return dropLeftoverConfirmChipsOnLooksRightDocAsk(
@@ -644,10 +658,11 @@ export function dropResolvedAddressConfirmChips(
     );
   }
   const line = fileAddressLine(draft);
+  const pendingContract = isPurchaseContractConfirmPending(draft);
   const sealed = messages.map((message) => {
     if (isIdExtractThreadText(foxBlob(message))) return message;
     if (isPurchaseContractConfirmText(foxBlob(message))) {
-      return holdPurchaseContractConfirm(message);
+      return line && !pendingContract ? holdPurchaseContractConfirm(message) : message;
     }
     if (isOnFileAddressLine(message)) {
       return sealOnFileAddressMessage(message, line || undefined);
@@ -658,7 +673,10 @@ export function dropResolvedAddressConfirmChips(
     return message;
   });
   const afterAddress = line ? dropUseThisEchoUnderOnFile(sealed) : sealed;
-  return dropLeftoverConfirmChipsOnLooksRightDocAsk(afterAddress, draft);
+  return dropLeftoverConfirmChipsOnLooksRightDocAsk(
+    withoutDuplicateContractConfirm(afterAddress),
+    draft,
+  );
 }
 
 /** On the file wins from the spoken line. Follow-up / coupon / income cannot keep chips. */
