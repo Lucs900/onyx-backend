@@ -2003,9 +2003,20 @@ function extractedCoverCountForYear(draft: FoxIntakeDraft, year: string) {
   return count;
 }
 
+function extractedCoverCount(draft: FoxIntakeDraft) {
+  let count = 0;
+  for (const doc of draft.documents ?? []) {
+    if (doc.status !== "extracted") continue;
+    if (isCoverReturnDoc(doc)) count += 1;
+  }
+  return count;
+}
+
 export function shouldSpeakCoverMap(draft: FoxIntakeDraft) {
   if (!lastExtractIsCover(draft)) return false;
   if (nextDocInvite(draft) === "prior_year_return") return false;
+  if (draft.priorYearSkipped) return false;
+  if (extractedCoverCount(draft) > 1) return false;
   const year = lastCoverYear(draft);
   if (year && extractedCoverCountForYear(draft, year) > 1) return false;
   return Boolean(coverMapAskCopy(draft) || nextCoverPageInviteCopy(draft));
@@ -2340,6 +2351,9 @@ function federalReturnYearsDone(draft: FoxIntakeDraft) {
 }
 
 export function nextCoverPageInviteCopy(draft: FoxIntakeDraft) {
+  if (lastExtractIsCover(draft) && (draft.priorYearSkipped || extractedCoverCount(draft) > 1)) {
+    return "";
+  }
   const recent = mostRecentFederalYear(draft);
   const listed = (form: string) => `The 1040 lists a ${form}. I still need that ${recent} ${form}.`;
   const ids = coverSchedulesOnFile(draft);

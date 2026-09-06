@@ -264,7 +264,8 @@ async function main() {
       (label) => label === "K-1" || label === "1065" || label === "Schedule E",
     ),
   );
-  assert.doesNotMatch(nextFoxAsk(skipped2024).text, /Schedule E|K-1|1065|Schedule F|prior-year/i);
+  const afterSkipAsk = nextFoxAsk(skipped2024).text;
+  assert.doesNotMatch(afterSkipAsk, /Schedule E|K-1|1065|Schedule F|prior-year|Got the cover/i);
   const nineteenWhile2024 = writeLive(
     structuredClone(coverThenC),
     "19-1040-cover-2024-jordan-hale.pdf",
@@ -275,6 +276,16 @@ async function main() {
   assert.doesNotMatch(nextFoxAsk(nineteenWhile2024).text, /Got the cover/i);
   assert.equal(nextFoxAsk(nineteenWhile2024).text, "I need the 2024 return — Form 1040, all pages.");
   assert.equal(nineteenWhile2024.facts?.qualifying_income?.value, coverThenC.facts?.qualifying_income?.value);
+  const nineteenAfterSkip = writeLive(
+    structuredClone(skipped2024),
+    "19-1040-cover-2024-jordan-hale.pdf",
+    "tax_return",
+    { return_kind: "cover", tax_year: "2024", cover_schedules: "schedule_c;schedule_e;k1;schedule_f" },
+    "2026-09-05T20:02:29.000Z",
+  ).draft;
+  assert.doesNotMatch(nextFoxAsk(nineteenAfterSkip).text, /Got the cover|Schedule E|K-1|1065|Schedule F|prior-year/i);
+  assert.equal(nextFoxAsk(nineteenAfterSkip).text, afterSkipAsk);
+  assert.equal(nineteenAfterSkip.facts?.qualifying_income?.value, skipped2024.facts?.qualifying_income?.value);
 
   const elevenFirst = await routeExtract(
     "11-1040-schedule-c-2025-hale-design.pdf",
