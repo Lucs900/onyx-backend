@@ -1,7 +1,7 @@
 /**
  * Spine walker — thirteen locked preview cases. Hard Start over each case
- * on one preview session so Vercel SSO does not eat later gotos. Each case
- * wipes the File draft, reloads /start, then clicks Start over.
+ * on one preview session so Vercel SSO does not eat later gotos. Do not
+ * reload or goto after the first desk — later navigations hit SSO.
  * Assert only. Does not invent product behavior.
  * Case 9 is harbor-both-cover-contract. Lukasz Harbor leftovers (09 at price,
  * House-turn 740–759, 03+07 before income, Start over wipe) run from
@@ -302,44 +302,20 @@ async function probeAccess(page: Page) {
   await openStartDesk(page);
 }
 
-async function clearFoxDraftStorage(page: Page) {
-  await page
-    .evaluate(() => {
-      const keys = ["onyx.foxIntake.draft", "onyx.fox.messages", "onyx.startPath", "onyx.fox.panelOpen"];
-      for (const key of keys) {
-        try {
-          window.localStorage.removeItem(key);
-          window.sessionStorage.removeItem(key);
-        } catch {
-          /* private mode */
-        }
-      }
-    })
-    .catch(() => null);
+async function waitBuyChip(page: Page) {
+  await page.locator(".fox-bubble--fox.is-current").getByRole("button", { name: "Buy", exact: true }).waitFor({
+    state: "visible",
+    timeout: 15_000,
+  });
 }
 
 async function hardStartOver(page: Page) {
-  await assertGate(page);
-  const onDesk = await startOverButton(page).isVisible().catch(() => false);
-  if (onDesk) {
-    await page.locator(".fox-bubble--fox.is-current").waitFor({ state: "visible", timeout: 15_000 }).catch(() => null);
-    await startOverButton(page).click().catch(() => null);
-    await page.waitForTimeout(200);
-  }
-  await clearFoxDraftStorage(page);
-  if (onDesk || /\/start/i.test(page.url())) {
-    await page.reload({ waitUntil: "domcontentloaded", timeout: 45_000 });
-    await page.waitForTimeout(400);
-    await assertGate(page);
-    try {
-      await waitStartOverVisible(page, 20_000);
-    } catch {
-      await openStartDesk(page);
-    }
-  } else {
+  if (!(await startOverButton(page).isVisible().catch(() => false))) {
     await openStartDesk(page);
+  } else {
+    await assertGate(page);
   }
-  await page.locator(".fox-bubble--fox.is-current").waitFor({ state: "visible", timeout: 15_000 });
+  await page.locator(".fox-bubble--fox.is-current").waitFor({ state: "visible", timeout: 15_000 }).catch(() => null);
   await page
     .locator("button.fox-file-chip, .file-preview, .fox-bar__head, .start-workspace__fox")
     .first()
@@ -348,10 +324,7 @@ async function hardStartOver(page: Page) {
   await startOverButton(page).click();
   await page.waitForTimeout(400);
   try {
-    await page.locator(".fox-bubble--fox.is-current").getByRole("button", { name: "Buy", exact: true }).waitFor({
-      state: "visible",
-      timeout: 15_000,
-    });
+    await waitBuyChip(page);
   } catch {
     throw new BeatFail(`Start over did not restore Buy — ${await pageBlob(page)}`);
   }

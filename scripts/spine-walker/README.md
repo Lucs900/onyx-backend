@@ -50,7 +50,7 @@ SPINE_WALKER_URL='https://onyx-backend-git-cursor-live-rateflow-preview-bc93-ony
 
 Stdout is one line per case: `N PASS …` or `N FAIL …` plus the adjacent beat on FAIL.
 
-Optional: `SPINE_WALKER_ONLY=1,8` runs a subset. One preview session (cookies stay). Each case wipes the File, reloads the desk, waits for the draft, then clicks **Start over**.
+Optional: `SPINE_WALKER_ONLY=1,8` runs a subset. One preview session. Each case waits for the File draft, then clicks **Start over** on the live desk. Do not reload after the first open — later navigations hit Vercel SSO.
 
 ## Locked cases (assert only)
 
