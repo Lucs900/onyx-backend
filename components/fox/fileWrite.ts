@@ -2009,7 +2009,7 @@ export function scheduleCYearsOnFile(draft: FoxIntakeDraft): string[] {
     const year = /schedule-c-?(20\d{2})|(20\d{2}).*schedule-c/i.exec(doc.name ?? "");
     if (year?.[1] || year?.[2]) years.add(year[1] ?? year[2] ?? "");
   }
-  return [...years].sort();
+  return Array.from(years).sort();
 }
 
 export function spokenScheduleCName(draft: FoxIntakeDraft) {
