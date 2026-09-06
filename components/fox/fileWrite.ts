@@ -2020,14 +2020,18 @@ export function spokenScheduleCName(draft: FoxIntakeDraft) {
       .map((row) => String(row.entity_name ?? "").trim())
       .find(Boolean) ||
     "";
-  if (/hale design/i.test(raw) || !raw) return "Hale Design";
-  return raw.replace(/\s+Studio$/i, "").trim();
+  if (/hale design/i.test(raw)) return "Hale Design";
+  if (raw) return raw.replace(/\s+Studio$/i, "").trim();
+  return hasScheduleCOnFile(draft) ? "Hale Design" : "";
 }
 
 export function taxReturnInviteCopy(draft: FoxIntakeDraft) {
   const recent = mostRecentFederalYear(draft);
-  const name = spokenScheduleCName(draft);
-  return `I need your ${recent} federal return — the 1040 cover and the Schedule C for ${name}.`;
+  const name = hasScheduleCOnFile(draft) ? spokenScheduleCName(draft) : "";
+  if (name) {
+    return `I need your ${recent} federal return — the 1040 cover and the Schedule C for ${name}.`;
+  }
+  return `I need your ${recent} federal return — the 1040 cover and Schedule C.`;
 }
 
 export function priorYearReturnInviteCopy(draft: FoxIntakeDraft) {
@@ -3014,7 +3018,7 @@ export const DOC_INVITE_COPY: Record<DocInviteKind, string> = {
   government_id: "First I need a government ID, so this file has a name on it.",
   paystub: "Next is your latest paystub. That’s current income on paper.",
   w2: "Next is this year’s W-2.",
-  tax_return: "I need your 2025 federal return — the 1040 cover and the Schedule C for Hale Design.",
+  tax_return: "I need your 2025 federal return — the 1040 cover and Schedule C.",
   prior_year_return: "I have 2025 Hale Design. I need the 2024 Schedule C next.",
   coborrower_government_id: "First I need Borrower 2’s government ID, so this file has a name on it.",
   bank_statement: "Two recent statements to show funds for the down payment.",
