@@ -236,6 +236,7 @@ import {
   isEntityCashFlowProposal,
   isSameBusinessWageEntityProposal,
   isScheduleECashFlowProposal,
+  K1_MONTHLY_FIELD,
   qualifyingIncomeDisplay,
   raiseYtdFarAskCopy,
   RAISE_WHEN_ASK,
@@ -246,7 +247,6 @@ import {
   SUGGESTED_INCOME_NOTE,
   SUGGESTED_RENTAL_CASH_FLOW_NOTE,
   wageIncomeCaution,
-  wageMethodNote,
   writeWagePayFrequency,
   W2_BOX5_ASK,
   W2_PAY_FREQUENCY_ASK,
@@ -1614,6 +1614,45 @@ function identityReactionAsk(draft: FoxIntakeDraft): {
   };
 }
 
+function incomeStoryLine(
+  draft: FoxIntakeDraft,
+  proposal: NonNullable<FoxIntakeDraft["pendingProposal"]>,
+): string {
+  const parts = proposal.parts ?? {};
+  const existing = parseExtractMoney(factValue(draft, QUALIFYING_INCOME_FIELD));
+  const nextMonthly = parseExtractMoney(proposal.value);
+  const changed = existing != null && nextMonthly != null && existing !== nextMonthly;
+  if (isSameBusinessWageEntityProposal(proposal)) return "That’s the same business.";
+  if (isEntityCashFlowProposal(proposal) && factValue(draft, K1_MONTHLY_FIELD)) {
+    return "That updates the same row.";
+  }
+  if (combinedParts(proposal) || proposal.methodNote?.startsWith("combined ")) {
+    if (parts.k1 && (parts.scheduleC || parts.wage)) return "That includes the K-1.";
+    if (parts.wage && parts.scheduleC) return "That includes wages and the Schedule C.";
+    if (changed) return "That changes the monthly number.";
+    return "";
+  }
+  if (!changed) return "";
+  if (isScheduleECashFlowProposal(proposal)) return "That includes the rental.";
+  if (isEntityCashFlowProposal(proposal)) return "That includes the 1065.";
+  if (hasK1Ordinary(draft)) return "That includes the K-1.";
+  return "That changes the monthly number.";
+}
+
+function incomeSuggestSpeech(opts: {
+  ack?: string;
+  monthly: string;
+  story?: string;
+  caution?: string;
+  note: string;
+}): string {
+  const lead = [opts.ack, `I’m suggesting ${opts.monthly} a month.`, opts.story, opts.caution, opts.note]
+    .filter((bit) => Boolean(bit && String(bit).trim()))
+    .join(" ");
+  const closed = /[.!?]$/.test(lead) ? lead : `${lead}.`;
+  return `${closed} Use this?`;
+}
+
 function incomeReactionAsk(draft: FoxIntakeDraft, proposal: NonNullable<FoxIntakeDraft["pendingProposal"]>): {
   text: string;
   followUp?: string;
@@ -1625,7 +1664,12 @@ function incomeReactionAsk(draft: FoxIntakeDraft, proposal: NonNullable<FoxIntak
   const ack = year ? `Got the ${year} return.` : "Got the return.";
   if (years.length < 2) {
     return {
-      text: `${ack} I’m suggesting ${shown} a month from Schedule C one-year. ${SUGGESTED_INCOME_NOTE}. Use this?`,
+      text: incomeSuggestSpeech({
+        ack,
+        monthly: shown,
+        story: incomeStoryLine(draft, proposal),
+        note: SUGGESTED_INCOME_NOTE,
+      }),
       actions: incomeConfirmActions(),
     };
   }
@@ -1656,7 +1700,13 @@ function k1ReactionAsk(draft: FoxIntakeDraft, proposal: NonNullable<FoxIntakeDra
   const year = landedTaxYear(draft);
   const ack = year ? `Got the ${year} K-1.` : "Got the K-1.";
   return {
-    text: `${ack} I’m suggesting ${shown} a month from ordinary / 12. ${K1_ORDINARY_NOTE} ${SUGGESTED_INCOME_NOTE}. Use this?`,
+    text: incomeSuggestSpeech({
+      ack,
+      monthly: shown,
+      story: incomeStoryLine(draft, proposal),
+      caution: K1_ORDINARY_NOTE,
+      note: SUGGESTED_INCOME_NOTE,
+    }),
     actions: incomeConfirmActions(),
   };
 }
@@ -1670,7 +1720,12 @@ function scheduleEReactionAsk(draft: FoxIntakeDraft, proposal: NonNullable<FoxIn
   const year = landedTaxYear(draft);
   const ack = year ? `Got the ${year} Schedule E.` : "Got the Schedule E.";
   return {
-    text: `${ack} I’m suggesting ${shown} a month from rents minus cash expenses / 12. ${SUGGESTED_RENTAL_CASH_FLOW_NOTE}. Use this?`,
+    text: incomeSuggestSpeech({
+      ack,
+      monthly: shown,
+      story: incomeStoryLine(draft, proposal),
+      note: SUGGESTED_RENTAL_CASH_FLOW_NOTE,
+    }),
     actions: incomeConfirmActions(),
   };
 }
@@ -1688,7 +1743,12 @@ function entityReactionAsk(draft: FoxIntakeDraft, proposal: NonNullable<FoxIntak
     : "Form 1065";
   const ack = year ? `Got the ${year} ${form}.` : `Got the ${form}.`;
   return {
-    text: `${ack} I’m suggesting ${shown} a month from ${method}. ${SUGGESTED_INCOME_NOTE}. Use this?`,
+    text: incomeSuggestSpeech({
+      ack,
+      monthly: shown,
+      story: incomeStoryLine(draft, proposal),
+      note: SUGGESTED_INCOME_NOTE,
+    }),
     actions: incomeConfirmActions(),
   };
 }
@@ -1704,15 +1764,18 @@ function wageReactionAsk(
 } {
   const cls = extractClass ?? lastExtractedClass(draft);
   const shown = displayFactValue(proposal.field, proposal.value);
-  const method = proposal.methodNote ?? wageMethodNote(draft);
-  const methodBit = method ? ` from ${method}` : "";
   const doc = cls === "w2" ? "W-2" : "paystub";
   const partial = (proposal.partialNotes ?? []).join(" ");
   const caution =
     proposal.caution && !partial.includes(proposal.caution) ? proposal.caution : undefined;
-  const inLine = [partial, caution, SUGGESTED_INCOME_NOTE].filter(Boolean).join(" ");
   return {
-    text: `Got the ${doc}. I’m suggesting ${shown} a month${methodBit}. ${inLine}. Use this?`,
+    text: incomeSuggestSpeech({
+      ack: `Got the ${doc}.`,
+      monthly: shown,
+      story: incomeStoryLine(draft, proposal),
+      caution: [partial, caution].filter(Boolean).join(" ") || undefined,
+      note: SUGGESTED_INCOME_NOTE,
+    }),
     followUp: partial || caution ? undefined : wageIncomeCaution(draft),
     actions: incomeConfirmActions(),
   };
@@ -1732,11 +1795,15 @@ function sameBusinessReactionAsk(
   actions?: FoxAction[];
 } {
   const shown = displayFactValue(proposal.field, proposal.value);
-  const method = proposal.methodNote ?? "W-2 wages + entity cash flow";
   const cls = lastExtractedClass(draft);
   const ack = cls === "tax_return" ? "Got the return." : "Got the W-2.";
   return {
-    text: `${ack} I’m suggesting ${shown} a month from ${method}. ${SUGGESTED_INCOME_NOTE}. Use this?`,
+    text: incomeSuggestSpeech({
+      ack,
+      monthly: shown,
+      story: "That’s the same business.",
+      note: SUGGESTED_INCOME_NOTE,
+    }),
     actions: incomeConfirmActions(),
   };
 }
@@ -1750,11 +1817,15 @@ function combinedReactionAsk(
   actions?: FoxAction[];
 } {
   const shown = displayFactValue(proposal.field, proposal.value);
-  const method = proposal.methodNote ?? "combined wage + Schedule C";
-  const k1Note = proposal.parts?.k1 ? `${K1_ORDINARY_NOTE} ` : "";
+  const k1Note = proposal.parts?.k1 ? K1_ORDINARY_NOTE : undefined;
   const partial = (proposal.partialNotes ?? []).join(" ");
   return {
-    text: `I’m suggesting ${shown} a month from ${method}. ${partial ? `${partial} ` : ""}${k1Note}${SUGGESTED_INCOME_NOTE}. Use this?`,
+    text: incomeSuggestSpeech({
+      monthly: shown,
+      story: incomeStoryLine(draft, proposal),
+      caution: [partial, k1Note].filter(Boolean).join(" ") || undefined,
+      note: SUGGESTED_INCOME_NOTE,
+    }),
     followUp: proposal.caution ?? wageIncomeCaution(draft) ?? decliningIncomeCaution(draft),
     actions: incomeConfirmActions(),
   };

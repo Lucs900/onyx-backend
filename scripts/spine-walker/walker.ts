@@ -794,11 +794,14 @@ async function dropHarborDoc(page: Page, name: string, kind: "confirm" | "cover"
     if (text !== before && (hasChip(chips, "Use this") || hasChip(chips, "Use document"))) {
       await assertLooksRightHiddenWhileUseThis(page);
       if (kind === "income") {
-        if (!/combined wage \+ Schedule C/i.test(text)) {
-          throw new BeatFail(`Schedule C Use this was not combined wage + Schedule C — ${text}`);
+        if (!/I’m suggesting/i.test(text) || !/a month/i.test(text)) {
+          throw new BeatFail(`Schedule C Use this was not a monthly suggest — ${text}`);
         }
-        if (!/W-2|Box 5|biweekly|wage/i.test(text) || !/Schedule C/i.test(text)) {
-          throw new BeatFail(`combined income methods not named — ${text}`);
+        if (!/wages and the Schedule C/i.test(text)) {
+          throw new BeatFail(`combined income story not named — ${text}`);
+        }
+        if (/ordinary \/ 12|rents minus cash|8825 rental|biweekly period|Box 1 monthly plus/i.test(text)) {
+          throw new BeatFail(`formula in chat — ${text}`);
         }
       }
       assertCopyChips(text, chips);

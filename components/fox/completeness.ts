@@ -33,6 +33,7 @@ import {
 } from "./fileWrite";
 import {
   QUALIFYING_INCOME_FIELD,
+  QUALIFYING_METHOD_FIELD,
   SUGGESTED_INCOME_NOTE,
   STUB_MONTHLY_NOTE,
   W2_BOX5_MONTHLY_NOTE,
@@ -1579,6 +1580,9 @@ export function resolveProposal(
   }
   if (proposal.field === QUALIFYING_INCOME_FIELD) {
     const note = proposal.methodNote ?? "";
+    if (note) {
+      next = writeConfirmedFact(next, QUALIFYING_METHOD_FIELD, note, source);
+    }
     if (note === W2_BOX5_MONTHLY_NOTE || /box 5/i.test(note)) {
       next = { ...next, wageBox5Asked: true };
     }

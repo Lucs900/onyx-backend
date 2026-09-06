@@ -205,7 +205,8 @@ async function main() {
   const ask21 = workspacePromptCopy("confirm-proposal", propose21.draft);
   assert.match(ask21.text, /\$5,533/);
   assert.match(ask21.text, /Form 1065/);
-  assert.match(ask21.text, /8825 rental/);
+  assert.match(ask21.text, /I’m suggesting/);
+  assert.doesNotMatch(ask21.text, /8825 rental|ordinary \+ dep|GP to Hale \/ 12/);
   assert.match(ask21.text, /Suggested qualifying income · not underwritten/);
   assert.ok((ask21.actions ?? []).some((item) => item.label === "Use this"));
   assert.ok((ask21.actions ?? []).some((item) => item.label === "Change"));

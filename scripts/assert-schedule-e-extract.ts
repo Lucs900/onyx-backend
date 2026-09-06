@@ -323,7 +323,8 @@ async function main() {
   assert.ok(!liveWrite.draft.facts?.qualifying_income?.confirmed);
   const liveAsk = workspacePromptCopy("confirm-proposal", liveWrite.draft);
   assert.match(liveAsk.text, /\$2,550/);
-  assert.match(liveAsk.text, /rents minus cash expenses \/ 12/);
+  assert.match(liveAsk.text, /I’m suggesting/);
+  assert.doesNotMatch(liveAsk.text, /rents minus cash expenses \/ 12/);
   assert.match(liveAsk.text, /Suggested rental cash flow · not underwritten/);
   assert.doesNotMatch(liveAsk.text, /75%|PITIA|Clipper|Filbert|\$3,333|\$4,000|24,400/i);
   assert.ok((liveAsk.actions ?? []).some((item) => item.label === "Use this"));
@@ -374,7 +375,8 @@ async function main() {
   const caseBAsk = scheduleEIntakeAsk(caseBWrite.draft, "tax_return") ?? nextFoxAsk(caseBWrite.draft);
   assert.match(caseBAsk.text, /Got the 2025 Schedule E/);
   assert.match(caseBAsk.text, /\$2,550/);
-  assert.match(caseBAsk.text, /rents minus cash expenses \/ 12/);
+  assert.match(caseBAsk.text, /I’m suggesting/);
+  assert.doesNotMatch(caseBAsk.text, /rents minus cash expenses \/ 12/);
   assert.match(caseBAsk.text, /Suggested rental cash flow · not underwritten/);
   assert.match(caseBAsk.text, /Use this/);
   assert.ok((caseBAsk.actions ?? []).some((item) => item.label === "Use this"));

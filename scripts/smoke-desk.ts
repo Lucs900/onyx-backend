@@ -1765,7 +1765,7 @@ const incomeUseAfterAddress = dropResolvedAddressConfirmChips(
     {
       id: "income-confirm",
       role: "fox" as const,
-      text: "I’m suggesting $8,000 a month from W-2. Suggested qualifying income · not underwritten. Use this?",
+      text: "I’m suggesting $8,000 a month. Suggested qualifying income · not underwritten. Use this?",
       actions: leftoverAddressUse[0].actions,
     },
   ],
@@ -6201,7 +6201,8 @@ assert.equal(structureFixPrompt("employer"), null);
 assert.equal(structureFixPrompt("pay"), null);
 const paystubAsk = nextFoxAsk(paystubReady);
 assert.match(paystubAsk.text, /Got the paystub/);
-assert.match(paystubAsk.text, /monthly period × 12 \/ 12/);
+assert.match(paystubAsk.text, /I’m suggesting \$7,200 a month/);
+assert.doesNotMatch(paystubAsk.text, /monthly period × 12 \/ 12/);
 assert.ok((paystubAsk.actions ?? []).some((item) => item.label === "Use this"));
 assert.ok((paystubAsk.actions ?? []).some((item) => item.label === "Change"));
 assertIncomeChipsHoldOverQueue(paystubReady, /7,200/);
@@ -6231,7 +6232,8 @@ assert.equal(acmeReady.facts?.hire_date, undefined);
 const acmeAsk = nextFoxAsk(acmeReady);
 assert.match(acmeAsk.text, /Got the paystub/);
 assert.match(acmeAsk.text, /9,167/);
-assert.match(acmeAsk.text, /biweekly period × 26 \/ 12/);
+assert.match(acmeAsk.text, /I’m suggesting/);
+assert.doesNotMatch(acmeAsk.text, /biweekly period × 26 \/ 12/);
 assert.match(acmeAsk.text, /Suggested qualifying income · not underwritten/);
 assert.ok((acmeAsk.actions ?? []).some((item) => item.label === "Use this"));
 assert.ok((acmeAsk.actions ?? []).some((item) => item.label === "Change"));
@@ -6245,7 +6247,7 @@ assertAnswerThenRestore(acmeQualifyAsk, /Not ready yet —/, {
   text: /9,167/,
   labels: ["Use this", "Change"],
 });
-assert.match(acmeQualifyAsk?.text ?? "", /biweekly period × 26 \/ 12/);
+assert.doesNotMatch(acmeQualifyAsk?.text ?? "", /biweekly period × 26 \/ 12/);
 assert.match(acmeQualifyAsk?.text ?? "", /A W-2 is still missing/);
 assert.doesNotMatch(stripReadinessAnswer(acmeQualifyAsk?.text ?? ""), /you qualify|you are approved|you don’t qualify/i);
 assert.equal(resolveProposal(acmeReady, "accept").facts?.qualifying_income?.value, "9167");
@@ -6264,7 +6266,8 @@ const acmeStaleWrite = applyExtractedFields(afterLooks, {
 });
 assert.equal(acmeStaleWrite.draft.awaitingPayFrequency, false);
 assert.equal(acmeStaleWrite.draft.pendingProposal?.value, "8462");
-assert.match(nextFoxAsk(acmeStaleWrite.draft).text, /semi-monthly period × 24 \/ 12/);
+assert.match(nextFoxAsk(acmeStaleWrite.draft).text, /I’m suggesting \$8,462 a month/);
+assert.doesNotMatch(nextFoxAsk(acmeStaleWrite.draft).text, /semi-monthly period × 24 \/ 12/);
 
 const typedIncome = draft({
   ...afterLooks,
@@ -7536,7 +7539,8 @@ assert.doesNotMatch(seAsk, /1084|\bDU\b|approved|eligible|you qualify|don’t qu
 const seLiveAsk = workspacePromptCopy("confirm-proposal", seReturn.draft);
 assert.match(seLiveAsk.text, /Got the 2024 return/);
 assert.match(seLiveAsk.text, /\$9,000/);
-assert.match(seLiveAsk.text, /Schedule C one-year/);
+assert.match(seLiveAsk.text, /I’m suggesting/);
+assert.doesNotMatch(seLiveAsk.text, /Schedule C one-year|ordinary \/ 12/);
 assert.match(seLiveAsk.text, /Suggested qualifying income · not underwritten/);
 assert.match(seLiveAsk.text, /Use this/);
 const seQualifyAsk = workspaceReply("will i qualify", seReturn.draft);
@@ -8212,7 +8216,8 @@ const entityAsk = workspacePromptCopy("confirm-proposal", entityOrdinary.draft);
 assert.match(entityAsk.text, /Got the 2024 K-1/);
 assert.doesNotMatch(entityAsk.text, /Got the 2024 return/);
 assert.match(entityAsk.text, /3,333/);
-assert.match(entityAsk.text, /ordinary \/ 12/);
+assert.match(entityAsk.text, /I’m suggesting/);
+assert.doesNotMatch(entityAsk.text, /ordinary \/ 12/);
 assert.match(entityAsk.text, /Ordinary is not confirmed cash flow/);
 assert.ok((entityAsk.actions ?? []).some((action) => action.label === "Use this"));
 assert.ok((entityAsk.actions ?? []).some((action) => action.label === "Change"));
@@ -8492,9 +8497,8 @@ assert.equal(combinedWrite.draft.pendingProposal?.note, SUGGESTED_INCOME_NOTE);
 assert.match(combinedWrite.draft.pendingProposal?.methodNote ?? "", /combined wage \+ Schedule C/);
 const combinedAsk = nextFoxAsk(combinedWrite.draft);
 assert.match(combinedAsk.text, /18,167/);
-assert.match(combinedAsk.text, /combined wage \+ Schedule C/);
-assert.match(combinedAsk.text, /biweekly period × 26 \/ 12/);
-assert.match(combinedAsk.text, /Schedule C one-year/);
+assert.match(combinedAsk.text, /wages and the Schedule C/);
+assert.doesNotMatch(combinedAsk.text, /combined wage \+ Schedule C|biweekly period × 26 \/ 12|Schedule C one-year/);
 assert.match(combinedAsk.text, /Suggested qualifying income · not underwritten/);
 assert.ok((combinedAsk.actions ?? []).some((item) => item.label === "Use this"));
 assert.ok((combinedAsk.actions ?? []).some((item) => item.label === "Change"));
@@ -8546,8 +8550,8 @@ const walkOtStub = applyExtractedFields(afterLooks, {
 assert.equal(walkOtStub.draft.awaitingPayFrequency, true);
 const walkOtMonthly = applyPayFrequencyAnswer(walkOtStub.draft, "monthly");
 assert.equal(walkOtMonthly.pendingProposal?.value, "7000");
-assert.match(nextFoxAsk(walkOtMonthly).text, /monthly period × 12 \/ 12/);
-assert.doesNotMatch(nextFoxAsk(walkOtMonthly).text, /two-year OT average/);
+assert.match(nextFoxAsk(walkOtMonthly).text, /I’m suggesting \$7,000 a month/);
+assert.doesNotMatch(nextFoxAsk(walkOtMonthly).text, /monthly period × 12 \/ 12|two-year OT average/);
 assert.ok(!(walkOtMonthly.pendingProposal?.extras ?? []).some((item) => item.field === "ytd_gross"));
 const walkOtAccepted = draft({
   ...resolveProposal(walkOtMonthly, "accept"),
@@ -8625,7 +8629,8 @@ assert.equal(printedOtStub!.fields.ytd_gross, undefined);
 assert.ok(!Object.prototype.hasOwnProperty.call(printedOtStub!.fields, "ytd_gross"));
 const harborStubBiweekly = applyPayFrequencyAnswer(harborStubAsk.draft, "biweekly");
 assert.equal(harborStubBiweekly.pendingProposal?.value, "15167");
-assert.match(nextFoxAsk(harborStubBiweekly).text, /biweekly period × 26 \/ 12/);
+assert.match(nextFoxAsk(harborStubBiweekly).text, /I’m suggesting \$15,167 a month/);
+assert.doesNotMatch(nextFoxAsk(harborStubBiweekly).text, /biweekly period × 26 \/ 12/);
 assert.ok(!(harborStubBiweekly.pendingProposal?.extras ?? []).some((item) => item.field === "ytd_gross"));
 const harborStubAccepted = resolveProposal(harborStubBiweekly, "accept");
 const harborBoth = applyExtractedFields(harborStubAccepted, {
@@ -8895,7 +8900,7 @@ assert.notEqual(harborAdd.draft.facts?.gross_period?.value, "400");
 const harborAsk = nextFoxAsk(harborAdd.draft);
 assert.equal(
   harborAsk.text,
-  "Got the paystub. I’m suggesting $1,600 a month from monthly period × 12 / 12 plus second job. Second-job history is thin. Suggested qualifying income · not underwritten. Use this?",
+  "Got the paystub. I’m suggesting $1,600 a month. That changes the monthly number. Second-job history is thin. Suggested qualifying income · not underwritten. Use this?",
 );
 assert.ok((harborAsk.actions ?? []).some((item) => item.label === "Use this"));
 assert.ok((harborAsk.actions ?? []).some((item) => item.label === "Change"));

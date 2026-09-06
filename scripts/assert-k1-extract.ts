@@ -15,8 +15,9 @@ import { applyExtractedFields, nextDocInvite } from "../components/fox/fileWrite
 import { applyLooksRightMotion, applyProceedMotion, applyUploadMoreMotion } from "../components/fox/motion";
 import { applyExtractWrite, emptyDraft, loadIntakeDraft, receiveDocument } from "../components/fox/store";
 import { monthlyQualifyingFromExtract } from "../components/fox/qualifyingIncome";
+import { resolveProposal } from "../components/fox/completeness";
 import { K1_ORDINARY_NOTE, SUGGESTED_INCOME_NOTE } from "../lib/income/suggest";
-import { workspacePromptCopy } from "../components/fox/workspace";
+import { previewFacts, workspacePromptCopy } from "../components/fox/workspace";
 import type { FoxIntakeDraft } from "../components/fox/types";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -277,6 +278,7 @@ async function main() {
   assert.match(liveAsk.text, /\$3,333/);
   assert.match(liveAsk.text, /Ordinary is not confirmed cash flow/);
   assert.match(liveAsk.text, /Suggested qualifying income · not underwritten/);
+  assert.doesNotMatch(liveAsk.text, /ordinary \/ 12|rents minus cash|8825 rental/);
   assert.ok((liveAsk.actions ?? []).some((item) => item.label === "Use this"));
   const couponAsk = workspacePromptCopy("confirm-proposal", {
     ...liveWrite.draft,
@@ -320,7 +322,96 @@ async function main() {
   assert.notEqual(kindOnly.draft.pendingProposal?.field, "qualifying_income");
   assert.ok(!kindOnly.draft.facts?.qualifying_income);
 
-  console.log("assert-k1-extract: 13=$3,333 · 15=$4,000 · cover writes nothing");
+  const usedC = resolveProposal(
+    applyExtractedFields(seSketch(), {
+      extractClass: "tax_return",
+      confidence: 0.94,
+      fields: ten.fields,
+    }).draft,
+    "accept",
+  );
+  assert.equal(usedC.facts?.qualifying_income?.confirmed, true);
+  const lockedC = usedC.facts?.qualifying_income?.value;
+  assert.ok(lockedC);
+
+  const afterK1 = applyExtractedFields(usedC, {
+    extractClass: "tax_return",
+    confidence: 0.94,
+    fields: thirteen.fields,
+  });
+  assert.equal(afterK1.draft.pendingProposal?.field, "qualifying_income");
+  assert.notEqual(afterK1.draft.pendingProposal?.value, lockedC);
+  assert.equal(afterK1.draft.facts?.qualifying_income?.value, lockedC);
+  const afterK1Ask = workspacePromptCopy("confirm-proposal", afterK1.draft);
+  assert.match(afterK1Ask.text, /I’m suggesting/);
+  assert.match(afterK1Ask.text, /a month/);
+  assert.match(afterK1Ask.text, /That includes the K-1/);
+  assert.doesNotMatch(afterK1Ask.text, /ordinary \/ 12|combined Schedule C \+ K-1|Box 1 monthly plus/);
+  assert.ok((afterK1Ask.actions ?? []).some((item) => item.label === "Use this"));
+  assert.ok(
+    previewFacts(afterK1.draft).some(
+      (fact) => fact.id === "qualifying" && /ordinary \/ 12|Schedule C|K-1/.test(fact.value),
+    ),
+  );
+
+  const twentyOne = await classifyAndExtract(
+    load("21-1065-2024-bay-street.pdf"),
+    "application/pdf",
+    deadVision,
+  );
+  const after1065 = applyExtractedFields(usedC, {
+    extractClass: "tax_return",
+    confidence: 0.94,
+    fields: twentyOne.fields,
+  });
+  assert.equal(after1065.draft.pendingProposal?.field, "qualifying_income");
+  assert.notEqual(after1065.draft.pendingProposal?.value, lockedC);
+  assert.equal(after1065.draft.facts?.qualifying_income?.value, lockedC);
+  assert.doesNotMatch(
+    workspacePromptCopy("confirm-proposal", after1065.draft).text,
+    /ordinary \/ 12|8825 rental|GP to Hale/,
+  );
+
+  const seventeen = await classifyAndExtract(
+    load("17-schedule-e-2025-sanchez-rental.pdf"),
+    "application/pdf",
+    deadVision,
+  );
+  const afterE = applyExtractedFields(usedC, {
+    extractClass: "tax_return",
+    confidence: 0.94,
+    fields: seventeen.fields,
+  });
+  assert.equal(afterE.draft.pendingProposal?.field, "qualifying_income");
+  assert.equal(afterE.draft.pendingProposal?.value, "2550");
+  assert.equal(afterE.draft.facts?.qualifying_income?.value, lockedC);
+  assert.doesNotMatch(
+    workspacePromptCopy("confirm-proposal", afterE.draft).text,
+    /rents minus cash expenses \/ 12/,
+  );
+
+  const coverAfterC = applyExtractedFields(usedC, {
+    extractClass: cover.extractClass,
+    confidence: cover.confidence,
+    fields: cover.fields,
+  });
+  assert.notEqual(coverAfterC.draft.pendingProposal?.field, "qualifying_income");
+  assert.equal(coverAfterC.draft.facts?.qualifying_income?.value, lockedC);
+
+  const twenty = await classifyAndExtract(
+    load("20-1040-cover-2025-jordan-hale.pdf"),
+    "application/pdf",
+    deadVision,
+  );
+  const twentyAfterC = applyExtractedFields(usedC, {
+    extractClass: twenty.extractClass,
+    confidence: twenty.confidence,
+    fields: twenty.fields,
+  });
+  assert.notEqual(twentyAfterC.draft.pendingProposal?.field, "qualifying_income");
+  assert.equal(twentyAfterC.draft.facts?.qualifying_income?.value, lockedC);
+
+  console.log("assert-k1-extract: 13=$3,333 · 15=$4,000 · cover writes nothing · C does not block later money");
 }
 
 main().catch((error) => {

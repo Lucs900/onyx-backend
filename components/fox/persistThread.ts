@@ -56,22 +56,18 @@ function isIntentionalIncomingThread(stored: FoxMessage[], incoming: FoxMessage[
  * Keep stored only for that stale prefix — not for a price rewrite or wait-line settle.
  */
 export function isScheduleEConfirmAskText(text?: string) {
-  return /rents minus cash expenses \/ 12/i.test(text ?? "") && /Use this/i.test(text ?? "");
+  const t = text ?? "";
+  return /Use this/i.test(t) && /Schedule E/i.test(t) && /I’m suggesting/i.test(t);
 }
 
 export function isEntityConfirmAskText(text?: string) {
-  return (
-    /Use this/i.test(text ?? "") &&
-    (/8825 rental/i.test(text ?? "") || /ordinary \+ dep/i.test(text ?? "") || /GP to Hale/i.test(text ?? ""))
-  );
+  const t = text ?? "";
+  return /Use this/i.test(t) && /I’m suggesting/i.test(t) && (/Form 1065/i.test(t) || /Form 1120-S/i.test(t));
 }
 
 export function isSameBusinessConfirmAskText(text?: string) {
-  return (
-    /Use this/i.test(text ?? "") &&
-    /W-2 wages/i.test(text ?? "") &&
-    (/entity cash flow/i.test(text ?? "") || /K-1 ordinary/i.test(text ?? ""))
-  );
+  const t = text ?? "";
+  return /Use this/i.test(t) && /same business/i.test(t);
 }
 
 export function shouldKeepStoredFoxThread(

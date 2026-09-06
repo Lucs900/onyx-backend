@@ -139,8 +139,8 @@ async function main() {
   assertSameBusinessPropose(plus15.draft, "7000", "4000");
   const ask15 = workspacePromptCopy("confirm-proposal", plus15.draft);
   assert.match(ask15.text, /\$7,000/);
-  assert.match(ask15.text, /W-2 wages/i);
-  assert.match(ask15.text, /K-1 ordinary/i);
+  assert.match(ask15.text, /same business/i);
+  assert.doesNotMatch(ask15.text, /W-2 wages|K-1 ordinary|entity cash flow/i);
   assert.doesNotMatch(ask15.text, /Raise|Second job|Overtime/i);
   const usedCombo15 = resolveProposal(plus15.draft, "accept");
   assert.equal(usedCombo15.facts?.qualifying_income?.value, "7000");
@@ -168,8 +168,8 @@ async function main() {
   assertSameBusinessPropose(plus23.draft, "7617", "4617");
   const ask23 = workspacePromptCopy("confirm-proposal", plus23.draft);
   assert.match(ask23.text, /\$7,617/);
-  assert.match(ask23.text, /W-2 wages/i);
-  assert.match(ask23.text, /entity cash flow/i);
+  assert.match(ask23.text, /same business/i);
+  assert.doesNotMatch(ask23.text, /W-2 wages|K-1 ordinary|entity cash flow/i);
   assert.doesNotMatch(ask23.text, /Raise|Second job|Overtime/i);
   const usedCombo23 = resolveProposal(plus23.draft, "accept");
   assert.equal(usedCombo23.facts?.qualifying_income?.value, "7617");

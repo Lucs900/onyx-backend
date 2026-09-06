@@ -87,6 +87,7 @@ export {
 export type { BothMonthlyReason, QualifyingMethod, RaiseWhen, ScheduleCYearInput, WageSuggestInput, WageYearInput };
 
 export const QUALIFYING_INCOME_FIELD = "qualifying_income";
+export const QUALIFYING_METHOD_FIELD = "qualifying_method";
 export const TAX_CASHFLOWS_FIELD = "tax_cashflows";
 
 export type TaxReturnKind = "schedule_c" | "schedule_e" | "k1" | "1065" | "1120s" | "1120" | "";
@@ -995,6 +996,25 @@ export function monthlyQualifyingFromExtract(
   if (incomingEntity != null && incoming) {
     return maybeCombine(draft, entityResultFromRow(incoming, incomingEntity), years, fields);
   }
+  const incomingK1Ordinary =
+    incoming && !incoming.entity_ordinary_income
+      ? parseExtractMoney(incoming.k1_ordinary_income)
+      : null;
+  if (incomingK1Ordinary != null) {
+    const monthly = k1OrdinaryMonthly(incomingK1Ordinary);
+    return maybeCombine(
+      draft,
+      {
+        monthly,
+        basis: "k1",
+        methodNote: "ordinary / 12",
+        caution: K1_ORDINARY_NOTE,
+        parts: { k1: monthly },
+      },
+      years,
+      fields,
+    );
+  }
   const scheduleC = suggestScheduleCIncome(scheduleCYearsFromCashflows(years));
   if (scheduleC != null) {
     return maybeCombine(
@@ -1088,9 +1108,10 @@ function writeBothMonthlies(
 }
 
 function clearQualifyingIncome(draft: FoxIntakeDraft): FoxIntakeDraft {
-  if (!draft.facts?.[QUALIFYING_INCOME_FIELD]) return draft;
+  if (!draft.facts?.[QUALIFYING_INCOME_FIELD] && !draft.facts?.[QUALIFYING_METHOD_FIELD]) return draft;
   const facts = { ...draft.facts };
   delete facts[QUALIFYING_INCOME_FIELD];
+  delete facts[QUALIFYING_METHOD_FIELD];
   return { ...draft, facts };
 }
 
@@ -1488,18 +1509,19 @@ export function maybeProposeQualifyingFromTaxFile(draft: FoxIntakeDraft): FoxInt
   if (!computed || computed.needsFrequency || computed.needsBothReason || computed.monthly === 0) {
     return draft;
   }
-  if (
-    computed.basis !== "schedule_e" &&
-    computed.basis !== "entity" &&
-    existingMonthlyIncome(draft)?.via === QUALIFYING_INCOME_FIELD
-  ) {
-    if (
+  const existing = existingMonthlyIncome(draft);
+  if (existing?.via === QUALIFYING_INCOME_FIELD) {
+    const laterSource =
+      computed.basis === "schedule_e" ||
+      computed.basis === "entity" ||
+      computed.basis === "k1" ||
+      computed.basis === "combined";
+    const laterC =
+      computed.basis === "schedule_c" && !valuesMatch(existing.value, String(computed.monthly));
+    const bothCombined =
       draft.incomeType.value === "both" &&
-      (computed.basis === "combined" || computed.basis === "schedule_c")
-    ) {
-      return withQualifyingIncomeProposal(draft, computed, "tax_return");
-    }
-    return draft;
+      (computed.basis === "combined" || computed.basis === "schedule_c");
+    if (!laterSource && !laterC && !bothCombined) return draft;
   }
   return withQualifyingIncomeProposal(draft, computed, "tax_return");
 }
@@ -1626,14 +1648,7 @@ export function qualifyingIncomeNote(draft: FoxIntakeDraft): string | undefined 
 
 function structureQualifyingValue(amount: string, methodNote?: string) {
   if (!methodNote) return amount;
-  if (
-    methodNote.includes(W2_BOX1_MONTHLY_NOTE) ||
-    methodNote.includes("W-2 Box 1") ||
-    methodNote.includes("Paystub $")
-  ) {
-    return `${amount} · ${methodNote}`;
-  }
-  return amount;
+  return `${amount} · ${methodNote}`;
 }
 
 export function qualifyingIncomeDisplay(draft: FoxIntakeDraft): { value: string; note: string } | null {
@@ -1654,8 +1669,9 @@ export function qualifyingIncomeDisplay(draft: FoxIntakeDraft): { value: string;
   const stored = factValue(draft, QUALIFYING_INCOME_FIELD);
   if (stored && draft.facts?.[QUALIFYING_INCOME_FIELD]?.confirmed) {
     const pair = bothMonthlyDisplay(draft);
+    const method = factValue(draft, QUALIFYING_METHOD_FIELD) || pair || undefined;
     return {
-      value: pair ? structureQualifyingValue(displayMoney(stored), pair) : displayMoney(stored),
+      value: method ? structureQualifyingValue(displayMoney(stored), method) : displayMoney(stored),
       note:
         hasScheduleECashflow(draft) && !hasScheduleCCashflow(draft) && !hasK1Ordinary(draft)
           ? SUGGESTED_RENTAL_CASH_FLOW_NOTE
