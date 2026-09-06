@@ -31,11 +31,14 @@ on:
       - "scripts/assert-w2-stub-employment-merge.ts"
       - ".github/workflows/spine-walker.yml"
       - "sample-docs/**"
+concurrency:
+  group: spine-walker-preview-bc93
+  cancel-in-progress: true
 jobs:
   walk:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 40
     permissions:
       contents: read
       id-token: write

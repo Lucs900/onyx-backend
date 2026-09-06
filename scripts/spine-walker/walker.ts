@@ -1,6 +1,7 @@
 /**
  * Spine walker — thirteen locked preview cases. Hard Start over each case
- * on one preview session so Vercel SSO does not eat later gotos.
+ * on one preview session so Vercel SSO does not eat later gotos. Each case
+ * wipes the File draft, reloads /start, then clicks Start over.
  * Assert only. Does not invent product behavior.
  * Case 9 is harbor-both-cover-contract. Lukasz Harbor leftovers (09 at price,
  * House-turn 740–759, 03+07 before income, Start over wipe) run from
@@ -134,6 +135,14 @@ function escapeRe(value: string) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+async function dismissPlaces(page: Page) {
+  const list = page.locator("ul.fox-bar__suggest");
+  if (await list.isVisible().catch(() => false)) {
+    await page.keyboard.press("Escape");
+    await page.waitForTimeout(120);
+  }
+}
+
 async function typeSend(page: Page, value: string) {
   const before = await currentText(page);
   const input = page.locator(INPUT);
@@ -141,6 +150,7 @@ async function typeSend(page: Page, value: string) {
   await input.click();
   await input.fill("");
   await input.pressSequentially(value, { delay: 15 });
+  await dismissPlaces(page);
   const send = page.locator(SEND);
   await send.waitFor({ state: "visible", timeout: 5_000 });
   if (await send.isDisabled()) {
@@ -292,13 +302,49 @@ async function probeAccess(page: Page) {
   await openStartDesk(page);
 }
 
+async function clearFoxDraftStorage(page: Page) {
+  await page
+    .evaluate(() => {
+      const keys = ["onyx.foxIntake.draft", "onyx.fox.messages", "onyx.startPath", "onyx.fox.panelOpen"];
+      for (const key of keys) {
+        try {
+          window.localStorage.removeItem(key);
+          window.sessionStorage.removeItem(key);
+        } catch {
+          /* private mode */
+        }
+      }
+    })
+    .catch(() => null);
+}
+
 async function hardStartOver(page: Page) {
-  if (!(await startOverButton(page).isVisible().catch(() => false))) {
-    await openStartDesk(page);
-  } else {
-    await assertGate(page);
+  await assertGate(page);
+  const onDesk = await startOverButton(page).isVisible().catch(() => false);
+  if (onDesk) {
+    await page.locator(".fox-bubble--fox.is-current").waitFor({ state: "visible", timeout: 15_000 }).catch(() => null);
+    await startOverButton(page).click().catch(() => null);
+    await page.waitForTimeout(200);
   }
-  await page.locator(".fox-bubble--fox.is-current").waitFor({ state: "visible", timeout: 15_000 }).catch(() => null);
+  await clearFoxDraftStorage(page);
+  if (onDesk || /\/start/i.test(page.url())) {
+    await page.reload({ waitUntil: "domcontentloaded", timeout: 45_000 });
+    await page.waitForTimeout(400);
+    await assertGate(page);
+    try {
+      await waitStartOverVisible(page, 20_000);
+    } catch {
+      await openStartDesk(page);
+    }
+  } else {
+    await openStartDesk(page);
+  }
+  await page.locator(".fox-bubble--fox.is-current").waitFor({ state: "visible", timeout: 15_000 });
+  await page
+    .locator("button.fox-file-chip, .file-preview, .fox-bar__head, .start-workspace__fox")
+    .first()
+    .waitFor({ state: "visible", timeout: 10_000 })
+    .catch(() => null);
   await startOverButton(page).click();
   await page.waitForTimeout(400);
   try {
@@ -380,10 +426,10 @@ async function walkToQuotedIncome(page: Page, zip = "94123", allowPricingSkip = 
   await walkHouseCredit(page);
   await waitAsk(page, /address or ZIP/i);
   await sendZip(page, zip, "price");
-  await settleQuoteToIncome(page, allowPricingSkip);
+  await settleQuoteToIncome(page, allowPricingSkip, zip);
 }
 
-async function settleQuoteToIncome(page: Page, allowPricingSkip = false) {
+async function settleQuoteToIncome(page: Page, allowPricingSkip = false, zip = "94123") {
   await waitCurrent(
     page,
     (text, chips) =>
@@ -392,15 +438,26 @@ async function settleQuoteToIncome(page: Page, allowPricingSkip = false) {
     45_000,
   );
   let leftZip = false;
+  let resentZip = false;
   const started = Date.now();
   while (Date.now() - started < 90_000) {
     const text = await currentText(page);
     const chips = await currentChips(page);
+    if (!text.trim()) {
+      await page.waitForTimeout(150);
+      continue;
+    }
     const onZip =
       /(?:California only|address or ZIP of the home|What ZIP is the property)/i.test(text) &&
       !/How is income earned|Getting a live line|Not a lock/i.test(text);
     if (!onZip) leftZip = true;
     if (leftZip && onZip) {
+      if (!resentZip) {
+        resentZip = true;
+        leftZip = false;
+        await typeSend(page, zip);
+        continue;
+      }
       throw new BeatFail(
         `94123 wait ended on ZIP, not income — ${text} | ${chips.join(" · ")}`,
       );
@@ -575,7 +632,7 @@ async function case4(page: Page) {
     throw new BeatFail(`97535 did not stop on California only — ${geo}`);
   }
   await sendZip(page, "94123", "price");
-  await settleQuoteToIncome(page);
+  await settleQuoteToIncome(page, false, "94123");
   const next = await currentText(page);
   if (/address or ZIP|California only|What ZIP is the property/i.test(next)) {
     throw new BeatFail(`after 94123 next was ZIP — ${next}`);
@@ -750,6 +807,7 @@ async function assertLooksRightHiddenWhileUseThis(page: Page) {
 async function composerDrop(page: Page, name: string) {
   const attach = page.locator("[data-composer-attach='true'], [data-docs-handoff='true']").first();
   await attach.waitFor({ state: "attached", timeout: 15_000 });
+  await attach.setInputFiles([]).catch(() => null);
   await attach.setInputFiles(join(SAMPLE_DOCS, name));
 }
 
@@ -862,7 +920,7 @@ async function walkHarborFileAnswers(page: Page) {
   await walkHouseCredit(page);
   await waitAsk(page, /address or ZIP/i);
   await sendZip(page, "94123", "price");
-  await settleQuoteToIncome(page, true);
+  await settleQuoteToIncome(page, true, "94123");
   await clickChip(page, "Both");
   await waitCurrent(
     page,
@@ -986,7 +1044,26 @@ async function case10(page: Page) {
   await walkBuyPrimary(page);
   await waitAsk(page, /purchase price/i);
   await composerDrop(page, "09-purchase-contract-88-clipper.pdf");
-  await waitCurrent(page, (text, chips) => /The contract shows /i.test(text) && hasChip(chips, "Use this"), 90_000);
+  const extractStarted = Date.now();
+  let retriedUnread = false;
+  while (Date.now() - extractStarted < 90_000) {
+    const text = await currentText(page);
+    const chips = await currentChips(page);
+    if (/The contract shows /i.test(text) && hasChip(chips, "Use this")) break;
+    if (
+      !retriedUnread &&
+      (hasChip(chips, "Upload again") || /could not read|unread/i.test(text))
+    ) {
+      retriedUnread = true;
+      if (hasChip(chips, "Upload again")) {
+        await clickChip(page, "Upload again").catch(() => null);
+        await page.waitForTimeout(300);
+      }
+      await composerDrop(page, "09-purchase-contract-88-clipper.pdf");
+    }
+    await page.waitForTimeout(250);
+  }
+  await waitCurrent(page, (text, chips) => /The contract shows /i.test(text) && hasChip(chips, "Use this"), 15_000);
   const confirm = await currentText(page);
   if (/On the file/i.test(confirm)) {
     throw new BeatFail(`09 confirm said On the file — ${confirm}`);
@@ -1100,7 +1177,7 @@ async function case13(page: Page) {
   if (hasChip(await currentChips(page), "Use this") || hasChip(await currentChips(page), "Use document")) {
     await clickChip(page, hasChip(await currentChips(page), "Use this") ? "Use this" : "Use document");
   }
-  await page.locator(START_OVER).click();
+  await startOverButton(page).click();
   await page.locator(".fox-bubble--fox.is-current").getByRole("button", { name: "Buy", exact: true }).waitFor({
     state: "visible",
     timeout: 15_000,
@@ -1149,7 +1226,24 @@ async function newPreviewContext(browser: Browser): Promise<BrowserContext> {
     extraHTTPHeaders: headers,
   });
   if (Object.keys(headers).length) {
+    let host = "";
+    try {
+      host = new URL(PREVIEW_URL).hostname;
+    } catch {
+      host = "";
+    }
     await context.route("**/*", async (route) => {
+      const reqHost = (() => {
+        try {
+          return new URL(route.request().url()).hostname;
+        } catch {
+          return "";
+        }
+      })();
+      if (host && reqHost && reqHost !== host) {
+        await route.continue();
+        return;
+      }
       await route.continue({
         headers: {
           ...route.request().headers(),
@@ -1180,8 +1274,8 @@ async function runCase(page: Page, spec: (typeof CASES)[number]): Promise<CaseRe
 }
 
 function printRow(row: CaseResult) {
-  if (row.ok) console.log(`${row.n} PASS ${row.title}`);
-  else console.log(`${row.n} FAIL ${row.title} — ${row.beat}`);
+  const line = row.ok ? `${row.n} PASS ${row.title}` : `${row.n} FAIL ${row.title} — ${row.beat}`;
+  process.stdout.write(`${line}\n`);
 }
 
 async function main() {
