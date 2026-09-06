@@ -1,5 +1,6 @@
 /**
- * Spine walker — thirteen locked preview cases. Hard Start over each case.
+ * Spine walker — thirteen locked preview cases. Hard Start over each case
+ * on one preview session so Vercel SSO does not eat later gotos.
  * Assert only. Does not invent product behavior.
  * Case 9 is harbor-both-cover-contract. Lukasz Harbor leftovers (09 at price,
  * House-turn 740–759, 03+07 before income, Start over wipe) run from
@@ -235,6 +236,19 @@ function assertCopyChips(text: string, chips: string[]) {
   }
 }
 
+function startOverButton(page: Page) {
+  return page.getByRole("button", { name: /^Start over$/i }).or(page.locator(START_OVER));
+}
+
+async function pageBlob(page: Page) {
+  const url = page.url();
+  const body = ((await page.locator("body").innerText().catch(() => "")) ?? "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 240);
+  return `url ${url} — ${body || "(empty)"}`;
+}
+
 async function assertGate(page: Page) {
   const url = page.url();
   const body = ((await page.locator("body").innerText().catch(() => "")) ?? "").slice(0, 800);
@@ -248,29 +262,53 @@ async function assertGate(page: Page) {
       "Vercel SSO / Deployment Protection — set VERCEL_AUTOMATION_BYPASS_SECRET or VERCEL_OIDC_TOKEN",
     );
   }
-  if (!(await page.locator(START_OVER).count())) {
-    throw new BeatFail(`Start over missing after load — url ${url}`);
+}
+
+async function waitStartOverVisible(page: Page, timeout = 20_000) {
+  const fox = page.locator("#fox-panel, .fox-bar__head, .start-workspace__fox, .fox-stage--workspace");
+  await fox.first().waitFor({ state: "visible", timeout }).catch(() => null);
+  try {
+    await startOverButton(page).waitFor({ state: "visible", timeout });
+  } catch {
+    throw new BeatFail(`Start over timeout — ${await pageBlob(page)}`);
+  }
+}
+
+async function openStartDesk(page: Page) {
+  await page.goto(startUrl(), { waitUntil: "domcontentloaded", timeout: 45_000 });
+  await page.waitForTimeout(400);
+  await assertGate(page);
+  try {
+    await waitStartOverVisible(page, 20_000);
+  } catch {
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await page.waitForTimeout(400);
+    await assertGate(page);
+    await waitStartOverVisible(page, 15_000);
   }
 }
 
 async function probeAccess(page: Page) {
-  await page.goto(startUrl(), { waitUntil: "domcontentloaded", timeout: 30_000 });
-  await page.waitForTimeout(800);
-  await assertGate(page);
-  await page.locator(START_OVER).waitFor({ state: "visible", timeout: 20_000 });
+  await openStartDesk(page);
 }
 
 async function hardStartOver(page: Page) {
-  await page.goto(startUrl(), { waitUntil: "domcontentloaded", timeout: 45_000 });
-  await page.locator(START_OVER).waitFor({ state: "visible", timeout: 30_000 });
-  await page.locator(".fox-bubble--fox.is-current").waitFor({ state: "visible", timeout: 15_000 });
-  await assertGate(page);
-  await page.locator(START_OVER).click();
-  await page.waitForTimeout(500);
-  await page.locator(".fox-bubble--fox.is-current").getByRole("button", { name: "Buy", exact: true }).waitFor({
-    state: "visible",
-    timeout: 15_000,
-  });
+  if (!(await startOverButton(page).isVisible().catch(() => false))) {
+    await openStartDesk(page);
+  } else {
+    await assertGate(page);
+  }
+  await page.locator(".fox-bubble--fox.is-current").waitFor({ state: "visible", timeout: 15_000 }).catch(() => null);
+  await startOverButton(page).click();
+  await page.waitForTimeout(400);
+  try {
+    await page.locator(".fox-bubble--fox.is-current").getByRole("button", { name: "Buy", exact: true }).waitFor({
+      state: "visible",
+      timeout: 15_000,
+    });
+  } catch {
+    throw new BeatFail(`Start over did not restore Buy — ${await pageBlob(page)}`);
+  }
 }
 
 async function walkBuyPrimary(page: Page) {
@@ -1127,12 +1165,7 @@ function oneLine(value: string) {
   return value.replace(/\s+/g, " ").trim();
 }
 
-async function runCase(
-  browser: Browser,
-  spec: (typeof CASES)[number],
-): Promise<CaseResult> {
-  const context = await newPreviewContext(browser);
-  const page = await context.newPage();
+async function runCase(page: Page, spec: (typeof CASES)[number]): Promise<CaseResult> {
   try {
     await spec.run(page);
     return { n: spec.n, title: spec.title, ok: true };
@@ -1143,8 +1176,6 @@ async function runCase(
       if (fox) beat = `${beat} — ${fox}`;
     }
     return { n: spec.n, title: spec.title, ok: false, beat: oneLine(beat) };
-  } finally {
-    await context.close();
   }
 }
 
@@ -1161,14 +1192,13 @@ async function main() {
     if (kind === "oidc") console.error("spine-walker: sending x-vercel-trusted-oidc-idp-token");
     else if (kind === "bypass") console.error("spine-walker: sending x-vercel-protection-bypass");
     else console.error("spine-walker: no OIDC or automation-bypass token — preview will SSO");
-    const probeContext = await newPreviewContext(browser);
-    const probe = await probeContext.newPage();
+    const context = await newPreviewContext(browser);
+    const page = await context.newPage();
     try {
-      await probeAccess(probe);
+      await probeAccess(page);
     } catch (error) {
       const beat =
         error instanceof BeatFail ? error.beat : error instanceof Error ? oneLine(error.message) : String(error);
-      await probeContext.close();
       for (const spec of CASES) {
         const row = { n: spec.n, title: spec.title, ok: false, beat };
         results.push(row);
@@ -1177,7 +1207,6 @@ async function main() {
       process.exitCode = 1;
       return;
     }
-    await probeContext.close();
     const only = new Set(
       (process.env.SPINE_WALKER_ONLY ?? "")
         .split(",")
@@ -1186,7 +1215,7 @@ async function main() {
     );
     for (const spec of CASES) {
       if (only.size && !only.has(spec.n)) continue;
-      const row = await runCase(browser, spec);
+      const row = await runCase(page, spec);
       results.push(row);
       printRow(row);
     }
