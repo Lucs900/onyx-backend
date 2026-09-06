@@ -2031,7 +2031,7 @@ export function taxReturnInviteCopy(draft: FoxIntakeDraft) {
     const next = nextCoverPageInviteCopy(draft);
     if (next) return next;
   }
-  return `I need your ${recent} Form 1040 — the first pages.`;
+  return `I need your ${recent} federal tax return — Form 1040, all pages.`;
 }
 
 export function priorYearReturnInviteCopy(draft: FoxIntakeDraft) {
@@ -2040,12 +2040,12 @@ export function priorYearReturnInviteCopy(draft: FoxIntakeDraft) {
   const name = spokenScheduleCName(draft);
   const have = scheduleCYearsOnFile(draft);
   if (have.includes(recent)) {
-    return `I have ${recent} ${name}. I need the ${prior} Schedule C next.`;
+    return `I have ${recent} ${name}. I need the ${prior} return next — Form 1040, all pages.`;
   }
   if (have.length) {
-    return `I have ${have[have.length - 1]} ${name}. I need the ${recent} Schedule C next.`;
+    return `I have ${have[have.length - 1]} ${name}. I need the ${recent} return next — Form 1040, all pages.`;
   }
-  return `I have ${recent} ${name}. I need the ${prior} Schedule C next.`;
+  return `I have ${recent} ${name}. I need the ${prior} return next — Form 1040, all pages.`;
 }
 
 export function docInviteAskCopy(draft: FoxIntakeDraft, invite: DocInviteKind) {
@@ -2274,19 +2274,20 @@ export function hasCoverOnFile(draft: FoxIntakeDraft) {
 
 export function nextCoverPageInviteCopy(draft: FoxIntakeDraft) {
   const recent = mostRecentFederalYear(draft);
+  const listed = (form: string) => `The 1040 lists a ${form}. I still need that ${recent} ${form}.`;
   const ids = coverSchedulesOnFile(draft);
   if (ids.includes("schedule_c") && !hasScheduleCOnFile(draft)) {
-    return `Next is the ${recent} Schedule C.`;
+    return listed("Schedule C");
   }
   const next = speakCoverScheduleLabels(nextCoverScheduleLabels(draft))[0];
   if (!next) return "";
-  if (next === "Schedule C") return `Next is the ${recent} Schedule C.`;
-  if (next === "K-1 / 1065" || next === "K-1") return `Next is the ${recent} K-1.`;
-  if (next === "1065") return `Next is the ${recent} Form 1065.`;
-  if (next === "1120-S") return `Next is the ${recent} Form 1120-S.`;
-  if (next === "Schedule E") return `Next is the ${recent} Schedule E.`;
-  if (next === "Schedule F") return `Next is the ${recent} Schedule F.`;
-  return `Next is the ${recent} ${next}.`;
+  if (next === "Schedule C") return listed("Schedule C");
+  if (next === "K-1 / 1065" || next === "K-1") return listed("K-1");
+  if (next === "1065") return listed("Form 1065");
+  if (next === "1120-S") return listed("Form 1120-S");
+  if (next === "Schedule E") return listed("Schedule E");
+  if (next === "Schedule F") return listed("Schedule F");
+  return listed(next);
 }
 
 function wageGroceryExtractClass(id: string) {
@@ -3040,8 +3041,8 @@ export const DOC_INVITE_COPY: Record<DocInviteKind, string> = {
   government_id: "First I need a government ID, so this file has a name on it.",
   paystub: "Next is your latest paystub. That’s current income on paper.",
   w2: "Next is this year’s W-2.",
-  tax_return: "I need your 2025 Form 1040 — the first pages.",
-  prior_year_return: "I have 2025 Hale Design. I need the 2024 Schedule C next.",
+  tax_return: "I need your 2025 federal tax return — Form 1040, all pages.",
+  prior_year_return: "I have 2025 Hale Design. I need the 2024 return next — Form 1040, all pages.",
   coborrower_government_id: "First I need Borrower 2’s government ID, so this file has a name on it.",
   bank_statement: "Two recent statements to show funds for the down payment.",
   second_bank_statement: "A second recent statement helps. Skip is fine.",

@@ -5808,7 +5808,7 @@ const seAfterId = skipCurrentInvite(seAfterLooksRight);
 assert.equal(workspacePromptCopy("documents", seAfterId).text, DOC_INVITE_COPY.tax_return);
 const whyReturn = workspaceReply("Why do you need that?", seAfterId);
 assert.match(whyReturn?.text ?? "", /qualifying income|not underwritten/i);
-assert.match(whyReturn?.text ?? "", /2025 Form 1040|first pages|qualifying income|not underwritten/i);
+assert.match(whyReturn?.text ?? "", /2025 federal tax return|Form 1040, all pages|qualifying income|not underwritten/i);
 assert.doesNotMatch(whyReturn?.text ?? "", /prior-year/i);
 assert.deepEqual(
   (whyReturn?.actions ?? []).map((item) => item.label),
