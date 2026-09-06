@@ -1549,10 +1549,7 @@ export function withQualifyingIncomeProposal(
     return {
       ...draft,
       pendingConflict: null,
-      pendingProposal:
-        draft.pendingProposal?.field === QUALIFYING_INCOME_FIELD
-          ? qualifyingIncomeProposal(computed)
-          : draft.pendingProposal,
+      pendingProposal: draft.pendingProposal,
     };
   }
   if (existing?.via === QUALIFYING_INCOME_FIELD) {
@@ -2406,9 +2403,21 @@ export function canSpeakStubExtract(
 export function shouldProposeStubExtract(
   draft: FoxIntakeDraft,
   extractClass?: ExtractClass,
+  fields?: Record<string, string>,
 ): boolean {
   if (extractClass && extractClass !== "paystub" && extractClass !== "other") return false;
-  return stubExtractAskOpen(draft);
+  if (!stubExtractAskOpen(draft)) return false;
+  const existing = existingMonthlyIncome(draft);
+  if (existing?.via !== QUALIFYING_INCOME_FIELD) return true;
+  if (!fields) return false;
+  const stub = parseExtractMoney(fields.gross_period) ?? parseExtractMoney(fields.paystub_amount);
+  const frequency = speakPayFrequency(fields.pay_frequency);
+  const monthly = stub != null && frequency ? conventionalStubMonthly(stub, frequency) : null;
+  if (monthly != null && monthly > 0 && !valuesMatch(existing.value, String(monthly))) return true;
+  const employer = stubEmployerName(fields, draft);
+  const fileEmployer = factValue(draft, "employer_name");
+  if (employer && fileEmployer && !valuesMatch(employer, fileEmployer)) return true;
+  return false;
 }
 
 export function proposeStubExtract(
@@ -2460,7 +2469,7 @@ export function maybeProposeStubExtract(
   fields?: Record<string, string>,
   extractClass?: ExtractClass,
 ): FoxIntakeDraft {
-  if (!shouldProposeStubExtract(draft, extractClass)) return draft;
+  if (!shouldProposeStubExtract(draft, extractClass, fields)) return draft;
   const stub = parseExtractMoney(fields?.gross_period) ?? parseExtractMoney(fields?.paystub_amount);
   const frequency = speakPayFrequency(fields?.pay_frequency);
   const employer = stubEmployerName(fields, draft);

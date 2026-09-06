@@ -164,6 +164,7 @@ import {
   DOC_INTAKE_EVENT,
   conflictActions,
   conflictAskCopy,
+  conflictAlreadySpoken,
   hasPurchaseContractDoc,
   needsPurchaseSplitAsk,
   missingAskActions,
@@ -185,7 +186,7 @@ import {
   isScheduleECashFlowProposal,
   maybeProposeQualifyingFromTaxFile,
 } from "./qualifyingIncome";
-import { canLooksRight, draftHasOpenConfirmCard } from "./completeness";
+import { canLooksRight, draftHasOpenConfirmCard, shouldSpeakPendingConfirm } from "./completeness";
 import { governmentIdSkipped, ID_UNREAD_ASK, isBorrowerNameConfirmPending } from "./borrowerName";
 import { isUnreadNote } from "@/lib/docs/accept";
 import { fileExists, finishLineActions, inQueueEnding, reviewIsSitting } from "./motion";
@@ -1049,12 +1050,13 @@ export function AlwaysOnFox({
             });
           }
           const reaction = docReactionAsk(intakeDraft, "government_id");
-          const ask = intakeDraft.pendingConflict
-            ? {
-                text: conflictAskCopy(intakeDraft.pendingConflict),
-                actions: conflictActions(intakeDraft.pendingConflict),
-              }
-            : reaction ?? workspacePromptCopy("confirm-proposal", intakeDraft);
+          const ask =
+            intakeDraft.pendingConflict && !conflictAlreadySpoken(intakeDraft)
+              ? {
+                  text: conflictAskCopy(intakeDraft.pendingConflict),
+                  actions: conflictActions(intakeDraft.pendingConflict),
+                }
+              : reaction ?? nextFoxAsk(intakeDraft);
           return applyFoxAsk(next, ask);
         }
         if (detail.emptyRead) {
@@ -1112,7 +1114,7 @@ export function AlwaysOnFox({
         if (scheduleEAsk) {
           return applyFoxAsk(next, scheduleEAsk);
         }
-        if (detail.conflict) {
+        if (detail.conflict && !conflictAlreadySpoken(getFoxDraft(), detail.conflict)) {
           next.push(
             foxAskMessage({
               text: conflictAskCopy(detail.conflict),
@@ -1120,8 +1122,8 @@ export function AlwaysOnFox({
             }),
           );
         } else if (
-          getFoxDraft().pendingProposal ||
-          getFoxDraft().pendingConflict ||
+          (getFoxDraft().pendingProposal && shouldSpeakPendingConfirm(getFoxDraft())) ||
+          (getFoxDraft().pendingConflict && !conflictAlreadySpoken(getFoxDraft())) ||
           getFoxDraft().awaitingPayFrequency ||
           getFoxDraft().awaitingBothMonthlyReason ||
           getFoxDraft().awaitingRaiseWhen ||
@@ -1129,12 +1131,13 @@ export function AlwaysOnFox({
         ) {
           const live = getFoxDraft();
           const reaction = docReactionAsk(live, detail.extractClass);
-          const ask = live.pendingConflict
-            ? {
-                text: conflictAskCopy(live.pendingConflict),
-                actions: conflictActions(live.pendingConflict),
-              }
-            : reaction ?? workspacePromptCopy("confirm-proposal", live);
+          const ask =
+            live.pendingConflict && !conflictAlreadySpoken(live)
+              ? {
+                  text: conflictAskCopy(live.pendingConflict),
+                  actions: conflictActions(live.pendingConflict),
+                }
+              : reaction ?? nextFoxAsk(live);
           const painted = applyFoxAsk(next, ask);
           if (
             detail.refreshStillUseful &&
@@ -1255,7 +1258,7 @@ export function AlwaysOnFox({
     const prompt = isStart ? workspacePrompt(live) : currentPrompt(live);
     const ask = isStart
       ? isBorrowerNameConfirmPending(live)
-        ? docReactionAsk(live, "government_id") ?? workspacePromptCopy("confirm-proposal", live)
+        ? docReactionAsk(live, "government_id") ?? nextFoxAsk(live)
         : workspacePromptCopy(prompt, live)
       : promptCopy(prompt, live);
     const mustShowReview =

@@ -136,6 +136,17 @@ import { writeCurrentEmploymentHistory } from "./fileHistory";
 
 export { REJECT_LINE, LIMIT_LINE, LIMIT_LINE_REPEAT };
 
+export function conflictKey(conflict: { field: string; fileValue: string; documentValue: string }) {
+  return `${conflict.field}:${String(conflict.fileValue).trim()}:${String(conflict.documentValue).trim()}`;
+}
+
+export function conflictAlreadySpoken(
+  draft: FoxIntakeDraft,
+  conflict: FoxIntakeDraft["pendingConflict"] = draft.pendingConflict,
+) {
+  return Boolean(conflict && draft.lastSpokenConflictKey === conflictKey(conflict));
+}
+
 export function leftoverCapSpeech(draft: FoxIntakeDraft) {
   if (draft.documents.length < MAX_DOC_COUNT) return null;
   if (draft.docCapSpoken) return null;
@@ -1858,6 +1869,10 @@ export function applyExtractedFields(
   if (conflict && !next.pendingConflict) {
     next = { ...next, pendingConflict: conflict };
   }
+  if (conflict && conflictAlreadySpoken(next, conflict)) {
+    conflict = null;
+    next = { ...next, pendingConflict: null };
+  }
   next = attachExtractClass(next, extractClass);
   const cautionFacts = { ...(next.facts ?? {}) };
   for (const [key, value] of Object.entries(fields)) {
@@ -2000,6 +2015,7 @@ export function resolveFactConflict(
       ...draft,
       facts,
       pendingConflict: null,
+      lastSpokenConflictKey: conflictKey(conflict),
       unresolvedConflict: true,
     };
   }
@@ -2009,7 +2025,13 @@ export function resolveFactConflict(
     if (current) {
       facts[conflict.field] = { ...current, confirmed: true, confirmedAt: now };
     }
-    return { ...draft, facts, pendingConflict: null, unresolvedConflict: false };
+    return {
+      ...draft,
+      facts,
+      pendingConflict: null,
+      lastSpokenConflictKey: conflictKey(conflict),
+      unresolvedConflict: false,
+    };
   }
   const withValue = writeField(draft, conflict.field, conflict.documentValue, now);
   const facts = { ...(withValue.facts ?? {}) };
@@ -2021,7 +2043,13 @@ export function resolveFactConflict(
       confirmedAt: now,
     };
   }
-  const resolved = { ...withValue, facts, pendingConflict: null, unresolvedConflict: false };
+  const resolved = {
+    ...withValue,
+    facts,
+    pendingConflict: null,
+    lastSpokenConflictKey: conflictKey(conflict),
+    unresolvedConflict: false,
+  };
   if (
     hasPurchaseContractDoc(resolved) &&
     (conflict.field === "purchase_price" || isPropertyAddressField(conflict.field))
@@ -3520,8 +3548,15 @@ export function proposalFromLastPurchaseContract(draft: FoxIntakeDraft): FactPro
       const shown = displayedSubjectAddress(draft);
       if (shown && !isZipOnlyFileAddress(shown, draft.propertyZip)) continue;
     }
-    if (field === "purchase_price" && draft.facts?.purchase_price?.confirmed && factValue(draft, "purchase_price")) {
-      continue;
+    if (field === "purchase_price") {
+      const filePrice = draft.propertyValueAmount;
+      const docPrice = moneyNumber(value);
+      if (filePrice != null && filePrice > 0 && docPrice != null && !valuesMatch(String(filePrice), String(docPrice))) {
+        continue;
+      }
+      if (draft.facts?.purchase_price?.confirmed && factValue(draft, "purchase_price")) {
+        continue;
+      }
     }
     if (field === "close_date" && draft.facts?.close_date?.confirmed && factValue(draft, "close_date")) {
       continue;

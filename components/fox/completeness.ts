@@ -53,6 +53,10 @@ import {
   isWageExtractProposal,
   isStubExtractProposal,
   isStubJobProposal,
+  isScheduleECashFlowProposal,
+  isEntityCashFlowProposal,
+  isSameBusinessWageEntityProposal,
+  parseExtractMoney,
   stubExtractAskOpen,
   isWageW2OnlyProposal,
   stubExtractConfirmCopy,
@@ -378,6 +382,71 @@ export function sketchAmountsReady(draft: FoxIntakeDraft) {
     return hasLoanAmount(draft) || hasPropertyValue(draft);
   }
   return false;
+}
+
+export function qualifyingIncomeOnFile(draft?: FoxIntakeDraft | null) {
+  if (!draft) return false;
+  return parseExtractMoney(factValue(draft, QUALIFYING_INCOME_FIELD)) != null;
+}
+
+/** Required notepad line whose File value is empty. Pending chips do not count as filled. */
+export function firstEmptyRequiredLine(draft?: FoxIntakeDraft | null): RequiredLine | null {
+  if (!draft) return null;
+  const onFile = { ...draft, pendingProposal: null, pendingConflict: null };
+  for (const line of requiredStructureLines(onFile)) {
+    if (!requiredLineValue(onFile, line).filled) return line;
+  }
+  return null;
+}
+
+function incomeProposalUpgrades(
+  draft: FoxIntakeDraft,
+  proposal: NonNullable<FoxIntakeDraft["pendingProposal"]>,
+) {
+  const existing = factValue(draft, QUALIFYING_INCOME_FIELD);
+  if (existing && proposal.value && !valuesMatch(existing, proposal.value)) return true;
+  if (
+    isScheduleECashFlowProposal(proposal) ||
+    isEntityCashFlowProposal(proposal) ||
+    isSameBusinessWageEntityProposal(proposal)
+  ) {
+    return true;
+  }
+  const method = proposal.methodNote ?? "";
+  if (/combined |later year|Schedule C|K-1|1065|1120|Schedule E/i.test(method)) return true;
+  const extraEmployer = (proposal.extras ?? []).find((item) => item.field === "employer_name")?.value ?? "";
+  const fileEmployer = factValue(draft, "employer_name");
+  if (extraEmployer && fileEmployer && !valuesMatch(extraEmployer, fileEmployer)) return true;
+  return false;
+}
+
+/** Speak a pending chip only when this turn upgrades, conflicts, or fills an empty File line. */
+export function shouldSpeakPendingConfirm(draft: FoxIntakeDraft) {
+  const proposal = draft.pendingProposal;
+  if (!proposal) return false;
+  if (isFundsPairProposal(proposal) || isPurchaseSplitReconcileProposal(proposal)) return true;
+  if (isWageExtractProposal(proposal)) return !qualifyingIncomeOnFile(draft);
+  if (isStubExtractProposal(proposal) || isStubJobProposal(proposal)) {
+    return !qualifyingIncomeOnFile(draft) || incomeProposalUpgrades(draft, proposal);
+  }
+  if (proposal.field === QUALIFYING_INCOME_FIELD) {
+    return !qualifyingIncomeOnFile(draft) || incomeProposalUpgrades(draft, proposal);
+  }
+  if (proposal.field === "purchase_price" || proposal.field === "propertyValue") {
+    if ((draft.propertyValueAmount ?? 0) > 0) {
+      const writes = remainderProposalWrites(proposal);
+      return writes.some((item) => item.field !== "purchase_price" && item.field !== "propertyValue");
+    }
+    return true;
+  }
+  if (
+    proposal.field === STATED_TIME_ON_JOB_FIELD ||
+    proposal.field === STATED_CURRENT_HOUSING_FIELD ||
+    proposal.field === STATED_OTHER_REO_FIELD
+  ) {
+    return !firstEmptyRequiredLine(draft) && !nextDocInvite(draft);
+  }
+  return true;
 }
 
 export function requiredStructureLines(draft?: FoxIntakeDraft | null): RequiredLine[] {
@@ -1789,19 +1858,22 @@ export function timelineFilled(draft: FoxIntakeDraft) {
 }
 
 export function wageDocsAskNeeded(draft: FoxIntakeDraft) {
-  if (employmentOnFile(draft) || returnOnFile(draft)) return false;
+  if (employmentOnFile(draft) || returnOnFile(draft) || qualifyingIncomeOnFile(draft)) return false;
   return wageThreadOpen(draft) && !draft.sampleAccepted && !draft.wageDocsAsked;
 }
 
 export function wageBox5AskNeeded(draft: FoxIntakeDraft) {
+  if (employmentOnFile(draft) || qualifyingIncomeOnFile(draft)) return false;
   return wageThreadOpen(draft) && Boolean(draft.wageDocsAsked) && !draft.wageBox5Asked;
 }
 
 export function wageFrequencyAskNeeded(draft: FoxIntakeDraft) {
+  if (employmentOnFile(draft) || qualifyingIncomeOnFile(draft)) return false;
   return wageThreadOpen(draft) && Boolean(draft.wageBox5Asked) && !draft.wageFrequencyAsked;
 }
 
 export function wageStubAskNeeded(draft: FoxIntakeDraft) {
+  if (employmentOnFile(draft) || qualifyingIncomeOnFile(draft)) return false;
   return (
     wageThreadOpen(draft) &&
     Boolean(draft.wageBox5Asked) &&

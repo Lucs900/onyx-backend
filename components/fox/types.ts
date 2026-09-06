@@ -468,6 +468,8 @@ export type FoxIntakeDraft = {
     variablePay?: boolean;
   } | null;
   pendingConflict?: FactConflict | null;
+  /** Same field + file + document values already asked once. Leftover attach stays silent. */
+  lastSpokenConflictKey?: string;
   unresolvedConflict?: boolean;
   pendingProposal?: FactProposal | null;
   skippedClasses?: ExtractClass[];

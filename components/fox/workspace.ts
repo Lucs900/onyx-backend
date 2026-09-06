@@ -98,6 +98,7 @@ import {
   firstNameFromDraft,
   lastExtractedClass,
   lastExtractIsCover,
+  conflictAlreadySpoken,
   coverMapAskCopy,
   nextCoverPageInviteCopy,
   shouldSpeakCoverMap,
@@ -156,6 +157,7 @@ import {
   refiLoanAskNeeded,
   requiredLineValue,
   requiredStructureLines,
+  shouldSpeakPendingConfirm,
   QUALIFYING_INCOME_FIELD,
   isFundsPairProposal,
   resolveProposal,
@@ -2287,13 +2289,15 @@ export function docReactionAsk(
 } | null {
   const cls = extractClass ?? lastExtractedClass(draft);
   if (!cls) return null;
-  if (draft.pendingConflict) {
+  if (draft.pendingConflict && !conflictAlreadySpoken(draft)) {
     return {
       text: conflictAskCopy(draft.pendingConflict),
       actions: conflictActions(draft.pendingConflict),
     };
   }
-  if (draft.pendingProposal) return liveProposalAsk(draft, draft.pendingProposal, cls);
+  if (draft.pendingProposal && shouldSpeakPendingConfirm(draft)) {
+    return liveProposalAsk(draft, draft.pendingProposal, cls);
+  }
   if (cls === "government_id") {
     const unreadId = [...draft.documents].reverse().find(
       (doc) => doc.extractClass === "government_id" || doc.slot === "id",
@@ -3233,7 +3237,12 @@ export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
   if (notepadEdit) return notepadEdit;
   if (isFundsPairProposal(draft.pendingProposal)) return "confirm-proposal";
   if (fundsAskNeeded(draft)) return "amount";
-  if (draft.pendingConflict || draft.pendingProposal || draft.pendingAddress || draft.pendingLiveCoupon) {
+  if (draft.pendingConflict && !conflictAlreadySpoken(draft)) return "confirm-proposal";
+  if (
+    (draft.pendingProposal && shouldSpeakPendingConfirm(draft)) ||
+    draft.pendingAddress ||
+    draft.pendingLiveCoupon
+  ) {
     return "confirm-proposal";
   }
   if (draft.correcting === "path-switch") return "path-switch";

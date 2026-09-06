@@ -5,7 +5,13 @@
  */
 import assert from "node:assert/strict";
 import { emptyDraft, loadIntakeDraft, startOverWorkspace } from "../components/fox/store";
-import { applyExtractedFields, leftoverCapSpeech, LIMIT_LINE, stillUsefulSection } from "../components/fox/fileWrite";
+import {
+  applyExtractedFields,
+  leftoverCapSpeech,
+  LIMIT_LINE,
+  resolveFactConflict,
+  stillUsefulSection,
+} from "../components/fox/fileWrite";
 import { resolveProposal, wageDocsAskNeeded } from "../components/fox/completeness";
 import { incomeAskOpen, nextFoxAsk, previewFacts } from "../components/fox/workspace";
 import { WAGE_DOCS_ASK } from "../components/fox/qualifyingIncome";
@@ -97,6 +103,88 @@ function main() {
   const usedReturn = resolveProposal(afterReturn, "accept");
   assert.equal(usedReturn.facts?.qualifying_income?.value, "9000");
   assertNotIncomeReplay(nextFoxAsk(usedReturn).text);
+
+  const stubReady = {
+    ...sketch("w2"),
+    wageDocsAsked: true,
+    wageBox5Asked: true,
+    wageFrequencyAsked: true,
+    wageStubAsked: true,
+    facts: {
+      employer_name: {
+        field: "employer_name",
+        value: "Acme",
+        source: "document",
+        confirmed: true,
+      },
+    },
+    employmentHistory: [{ label: "Acme" }],
+  };
+  const stubFields = {
+    employer_name: "Acme",
+    gross_period: "10000",
+    pay_frequency: "monthly",
+  };
+  const firstStub = applyExtractedFields(stubReady, {
+    extractClass: "paystub",
+    confidence: 0.94,
+    fields: stubFields,
+  }).draft;
+  assert.equal(firstStub.pendingProposal?.field, "qualifying_income");
+  assert.match(nextFoxAsk(firstStub).text, /10,000/);
+  assert.ok((nextFoxAsk(firstStub).actions ?? []).some((item) => item.label === "Use this"));
+  const usedStub = resolveProposal(firstStub, "accept");
+  assert.equal(usedStub.facts?.qualifying_income?.value, "10000");
+  assert.doesNotMatch(nextFoxAsk(usedStub).text, /Got the paystub|I’m suggesting/i);
+  const sameStubAgain = applyExtractedFields(usedStub, {
+    extractClass: "paystub",
+    confidence: 0.94,
+    fields: stubFields,
+  }).draft;
+  assert.notEqual(sameStubAgain.pendingProposal?.field, "qualifying_income");
+  assert.doesNotMatch(nextFoxAsk(sameStubAgain).text, /Got the paystub|I’m suggesting/i);
+
+  const secondJob = applyExtractedFields(usedStub, {
+    extractClass: "paystub",
+    confidence: 0.94,
+    fields: {
+      employer_name: "Night Shift Co",
+      gross_period: "1600",
+      pay_frequency: "monthly",
+    },
+  }).draft;
+  assert.equal(secondJob.pendingProposal?.field, "qualifying_income");
+  assert.match(nextFoxAsk(secondJob).text, /1,600/);
+  assert.ok((nextFoxAsk(secondJob).actions ?? []).some((item) => item.label === "Use this"));
+
+  const priced = { ...sketch("w2"), propertyValueAmount: 1_000_000 };
+  const priceConflict = applyExtractedFields(priced, {
+    extractClass: "purchase_contract",
+    confidence: 0.94,
+    fields: {
+      property_address: "100 Main St, San Francisco, CA 94123",
+      purchase_price: "850000",
+      close_date: "10/15/2026",
+    },
+  });
+  assert.equal(priceConflict.conflict?.field, "purchase_price");
+  assert.match(nextFoxAsk(priceConflict.draft).text, /Which should I keep/);
+  assert.match(nextFoxAsk(priceConflict.draft).text, /1,000,000/);
+  assert.match(nextFoxAsk(priceConflict.draft).text, /850,000/);
+  const keptPrice = resolveFactConflict(priceConflict.draft, "file");
+  assert.equal(keptPrice.propertyValueAmount, 1_000_000);
+  assert.doesNotMatch(nextFoxAsk(keptPrice).text, /Which should I keep/);
+  const leftoverContract = applyExtractedFields(keptPrice, {
+    extractClass: "purchase_contract",
+    confidence: 0.94,
+    fields: {
+      property_address: "100 Main St, San Francisco, CA 94123",
+      purchase_price: "850000",
+      close_date: "10/15/2026",
+    },
+  });
+  assert.equal(leftoverContract.conflict, null);
+  assert.doesNotMatch(nextFoxAsk(leftoverContract.draft).text, /Which should I keep/);
 
   const ten: FoxIntakeDraft = {
     ...sketch("w2"),
