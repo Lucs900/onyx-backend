@@ -166,6 +166,7 @@ import {
   conflictAskCopy,
   conflictAlreadySpoken,
   hasPurchaseContractDoc,
+  isPurchaseContractConfirmPending,
   needsPurchaseSplitAsk,
   missingAskActions,
   missingAskCopy,
@@ -1847,6 +1848,8 @@ export function AlwaysOnFox({
       const pendingEdit = editPromptFromPendingField(draft.pendingProposal?.field);
       const addressPending =
         isSubjectAddressConfirmPending(draft) || Boolean(draft.pendingAddress?.line);
+      const contractConfirm =
+        capture.field === "accept-proposal" && isPurchaseContractConfirmPending(draft);
       applyCapture(capture);
       skipPromptSync.current = true;
       const live = getFoxDraft();
@@ -1855,7 +1858,7 @@ export function AlwaysOnFox({
         return;
       }
       if (capture.field === "accept-proposal" && addressPending && fileAddressLine(live)) {
-        if (needsPurchaseSplitAsk(live)) {
+        if (needsPurchaseSplitAsk(live) || contractConfirm) {
           appendReply(action.label, nextFoxAsk(live));
           return;
         }

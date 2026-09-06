@@ -6221,7 +6221,7 @@ export function workspaceReply(
       /yes that.?s me|use this/.test(lower)
     ) {
       const nextDraft = resolveProposal(draft, "accept");
-      if (needsPurchaseSplitAsk(nextDraft)) {
+      if (needsPurchaseSplitAsk(nextDraft) || isPurchaseContractConfirmPending(draft)) {
         return {
           ...nextFoxAsk(nextDraft),
           capture: { field: "accept-proposal" },
