@@ -410,7 +410,9 @@ export function box5FromPrintedText(text: string): string {
   const collapsed = blob.replace(/\s+/g, " ");
   const afterBox5 = collapsed.match(/box\s*5\s+(?:of\s+w-?2|medicare)([\s\S]{0,600})/i);
   if (afterBox5?.[1]) {
-    for (const item of afterBox5[1].matchAll(/(\d{1,3}(?:,\d{3})+\.\d{2}|\d{4,}\.\d{2})/g)) {
+    const money = /(\d{1,3}(?:,\d{3})+\.\d{2}|\d{4,}\.\d{2})/g;
+    let item: RegExpExecArray | null;
+    while ((item = money.exec(afterBox5[1]))) {
       const digits = moneyDigits(item[1]);
       if (!digits) continue;
       const n = Number(digits);

@@ -373,10 +373,12 @@ export const grokExtractAdapter: DocumentExtractAdapter = {
   },
 };
 
-function lockW2PageFields(fields: Record<string, string>): Record<string, string> {
+function lockW2PageFields(
+  fields?: Record<string, string | null | undefined> | null,
+): Record<string, string> {
   const next: Record<string, string> = {};
   for (const key of W2_LOCKED_SCHEMA_KEYS) {
-    const value = String(fields[key] ?? "").trim();
+    const value = String(fields?.[key] ?? "").trim();
     if (!value || isBoxNumberAsDollars(value)) continue;
     next[key] = value;
   }
