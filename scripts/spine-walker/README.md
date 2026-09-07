@@ -52,7 +52,7 @@ Stdout is one line per case: `N PASS …` or `N FAIL …` plus the adjacent beat
 
 Optional: `SPINE_WALKER_ONLY=1,8` runs a subset. One preview session. Each case waits for the File draft, then clicks **Start over** on the live desk (`button.fox-bar__start-over` must stay on screen after case 1). Do not reload after the first open — later navigations hit Vercel SSO.
 
-Harbor extract POSTs fulfill leftover-proven local `classifyAndExtract` of the same `sample-docs` PDF so composer-drop settles to Use this / Got the cover / propose. The paperclip UI path stays. Preview `/api` (quote, upload) still goes through Playwright + OIDC. FICO skip (case 11) is not accepted until cases 10–13 are green on the same tip.
+Harbor extract POSTs fulfill leftover-proven local `classifyAndExtract` of the same `sample-docs` PDF so composer-drop settles to Use this / Got the cover / propose. The paperclip UI path stays. Preview `/api` (quote, upload) still goes through Playwright + OIDC. Combined 09-at-price + House-turn Credit (cases 10–11) is the FICO gate. Split typed-price House-turn is not that walk.
 
 ## Locked cases (assert only)
 
@@ -65,8 +65,8 @@ Harbor extract POSTs fulfill leftover-proven local `classifyAndExtract` of the s
 7. 2–4 asks rent. Skip rent allowed.
 8. Mid-ask sideways question. Answer, then the same next chip.
 9. harbor-both-cover-contract. Both → years 2 → debts Skip → composer-drop 03, 07, 01, 10, 19, 05, `09-purchase-contract-88-clipper.pdf`. One Harbor Employment row. Combined wage + Schedule C. Cover 19 maps K-1 / 1065 / Sch E. Clipper 94114, Filbert stays residence. Looks right hidden while Use this is open. No citizenship after Looks right.
-10. 09 at the price ask. Confirm once. Use this writes Clipper / $850,000 / close / seller credit. Next is funds. No second price ask. No On the file.
-11. On the House turn, type 740–759. Credit writes on Structure. Next Fox line is not the FICO ask.
+10. 09 at the price ask, then House-turn type 760+. Clipper writes. Credit 760+ on File. Rate may print. Next Fox line is not FICO.
+11. Same combined path with 740–759. Credit on File. Next Fox line is not FICO.
 12. 03+07 before income type. No empty income quiz.
 13. Start over clears income, Docs, Note, Still useful.
 

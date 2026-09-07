@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Spine walker — thirteen locked preview cases. Hard Start over each case.
 # Case 9 harbor-both-cover-contract. Lukasz Harbor leftovers run before Playwright:
-# 09 at price, House-turn 740–759, 03+07 before income, Start over wipe.
+# 09 at price + House-turn Credit, 03+07 before income, Start over wipe.
 # CI fail = red.
 #
 # Preferred (OIDC, after vercel login / VERCEL_TOKEN):
@@ -119,9 +119,11 @@ if leftover_wanted 9; then
 fi
 if leftover_wanted 10; then
   run_leftover assert-contract-at-price.ts
+  run_leftover assert-contract-house-credit.ts
 fi
 if leftover_wanted 11; then
   run_leftover assert-house-credit-band.ts
+  run_leftover assert-contract-house-credit.ts
 fi
 if leftover_wanted 12; then
   run_leftover assert-w2-stub-employment-merge.ts

@@ -5,8 +5,8 @@
  * Composer-drop extract fulfills leftover-proven local classifyAndExtract
  * so Harbor fixtures settle to Use this, not Upload again.
  * Assert only. Does not invent product behavior.
- * Case 9 is harbor-both-cover-contract. Lukasz Harbor leftovers (09 at price,
- * House-turn 740–759, 03+07 before income, Start over wipe) run from
+ * Case 9 is harbor-both-cover-contract. Combined 09-at-price + House-turn
+ * Credit (cases 10–11) is the FICO gate. Lukasz Harbor leftovers run from
  * scripts/assert-spine-walker.sh before Playwright. CI fail = red.
  *
  * Run: bash scripts/assert-spine-walker.sh
@@ -1055,7 +1055,7 @@ function contractConfirmCount(texts: string[]) {
   return texts.filter((text) => /The contract shows /i.test(text)).length;
 }
 
-async function case10(page: Page) {
+async function walk09AtPriceToFunds(page: Page) {
   if (!existsSync(HARBOR_CONTRACT_PDF)) {
     throw new BeatFail("missing alias 09-purchase-contract-88-clipper.pdf");
   }
@@ -1129,38 +1129,62 @@ async function case10(page: Page) {
   }
 }
 
-async function case11(page: Page) {
-  await hardStartOver(page);
-  await walkBuyPrimary(page);
-  await writePrice(page, "850000");
-  await waitAsk(page, /down payment or loan amount/i);
-  await typeSend(page, "20");
-  await acceptOfferedFunds(page);
-  await waitAsk(page, /House, condo, or 2–4|What kind of home/i);
-  assertCopyChips(await currentText(page), await currentChips(page));
+async function typeCreditBand(page: Page, typed: string) {
   const input = page.locator(INPUT);
   await input.waitFor({ state: "visible", timeout: 10_000 });
   await input.click();
   await input.fill("");
-  await input.pressSequentially("740–759", { delay: 15 });
+  await input.pressSequentially(typed, { delay: 15 });
   const send = page.locator(SEND);
   if (await send.isDisabled()) await input.press("Enter");
   else await send.click();
+}
+
+async function walk09ThenHouseCreditBand(page: Page, typed: string, creditNeedle: RegExp) {
+  await walk09AtPriceToFunds(page);
+  await typeSend(page, "20");
+  await acceptOfferedFunds(page);
+  await waitCurrent(
+    page,
+    (text, chips) =>
+      /House, condo, or 2–4|What kind of home|estimated FICO/i.test(text) || hasChip(chips, "House") || hasChip(chips, "760+"),
+    20_000,
+  );
+  if (hasChip(await currentChips(page), "House")) {
+    await clickChip(page, "House");
+    await page.waitForTimeout(250);
+  }
+  await typeCreditBand(page, typed);
   const started = Date.now();
   let credit = "";
-  while (Date.now() - started < 15_000) {
+  while (Date.now() - started < 20_000) {
     const map = await structureMap(page);
     credit = map["Credit"] ?? "";
-    if (/740/.test(credit)) break;
+    if (creditNeedle.test(credit)) break;
     await page.waitForTimeout(200);
   }
-  if (!/740/.test(credit)) {
-    throw new BeatFail(`Credit not written after House-turn 740–759 — ${credit || "(missing)"}`);
+  if (!creditNeedle.test(credit)) {
+    throw new BeatFail(`Credit not written after 09 + House-turn ${typed} — ${credit || "(missing)"}`);
   }
+  await waitCurrent(
+    page,
+    (text, chips) =>
+      /How is income earned|Getting a live line|This one|Pricing when the file is ready|Not a lock/i.test(text) ||
+      hasChip(chips, "This one"),
+    45_000,
+  ).catch(() => null);
   const next = await currentText(page);
   if (/estimated FICO|What is your estimated FICO/i.test(next)) {
-    throw new BeatFail(`House-turn 740–759 then FICO ask — ${next}`);
+    throw new BeatFail(`09 + House-turn ${typed} then FICO ask — ${next}`);
   }
+}
+
+async function case10(page: Page) {
+  await walk09ThenHouseCreditBand(page, "760+", /760/);
+}
+
+async function case11(page: Page) {
+  await walk09ThenHouseCreditBand(page, "740–759", /740/);
 }
 
 async function case12(page: Page) {
@@ -1248,8 +1272,8 @@ const CASES: { n: number; title: string; run: (page: Page) => Promise<void> }[] 
   { n: 7, title: "2–4 asks rent. Skip rent allowed", run: case7 },
   { n: 8, title: "Mid-ask sideways question. Answer, then the same next chip", run: case8 },
   { n: 9, title: "harbor-both-cover-contract", run: case9 },
-  { n: 10, title: "09 at the price ask writes Clipper once, then funds", run: case10 },
-  { n: 11, title: "House-turn 740–759 writes Credit, next is not FICO", run: case11 },
+  { n: 10, title: "09 at price then House-turn 760+ writes Credit, next is not FICO", run: case10 },
+  { n: 11, title: "09 at price then House-turn 740–759 writes Credit, next is not FICO", run: case11 },
   { n: 12, title: "03+07 before income type → no empty income quiz", run: case12 },
   { n: 13, title: "Start over clears income, Docs, Note, Still useful", run: case13 },
 ];

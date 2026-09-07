@@ -2901,9 +2901,16 @@ function lastOpenFileAsk(messages: FoxMessage[]): FoxMessage | undefined {
   return undefined;
 }
 
+function isFicoAskText(text?: string | null) {
+  const value = String(text ?? "").trim();
+  return value === CREDIT_RANGE_ASK || /estimated FICO/i.test(value);
+}
+
 function shouldRestoreAskAfterLiveQuote(draft: FoxIntakeDraft, ask?: FoxMessage) {
   if (!ask) return false;
   if (ask.text === LIVE_QUOTE_INCOME_ASK) return false;
+  // Credit on File — never reopen FICO after the rate line.
+  if (isFicoAskText(ask.text) && creditAnswered(draft)) return false;
   // A rate line landing must not reopen ZIP / address / California-only.
   if (isZipOrAddressAskText(ask.text)) return false;
   if (isYearsInBusinessAskText(ask.text)) {
@@ -3525,7 +3532,7 @@ function workspaceAskCopy(
     };
   }
   if (prompt === "credit") {
-    if (draft.creditBand) {
+    if (creditAnswered(draft)) {
       const settled = { ...draft, creditAsked: true as const };
       const next = workspacePrompt(settled);
       if (next !== "credit") return workspaceAskCopy(next, settled);
