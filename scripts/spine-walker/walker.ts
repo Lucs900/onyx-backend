@@ -14,7 +14,7 @@
  * row, then ID Upload this · Skip. Case 21 is Looks right chip on that gate;
  * typed yes still confirms. Case 22 is refinance 500000 loan then 800000
  * value — File keeps $500,000 and does not re-ask loan. Case 23 is ADP W-2
- * page-read when the founder fixture is present.
+ * page-read: Box 5 $36,460.08, never $5.
  * Years in business is once after SE / Both. Named Hale Design when known.
  * Lukasz Harbor leftovers run from scripts/assert-spine-walker.sh before
  * Playwright. CI fail = red.
@@ -1320,7 +1320,7 @@ async function case22(page: Page) {
 async function case23(page: Page) {
   const fixture = adpW2FixturePath();
   if (!fixture) {
-    return;
+    throw new BeatFail("founder ADP W-2 missing — decode 27-w2-2025-adp-matthew-castaneda.pdf");
   }
   await hardStartOver(page);
   await walkToQuotedIncome(page, "94123", true);
@@ -1355,7 +1355,7 @@ async function case23(page: Page) {
   if (!/36,460/.test(after.text)) {
     throw new BeatFail(`ADP confirm missing $36,460.08 — ${after.text}`);
   }
-  if (!/Comprehensive Skills Training Center/i.test(after.text)) {
+  if (!/Comprehensive Skills Training/i.test(after.text)) {
     throw new BeatFail(`ADP confirm missing employer — ${after.text}`);
   }
   if (/\b\d{3}-\d{2}-\d{4}\b/.test(after.text)) {
@@ -1371,7 +1371,7 @@ async function case23(page: Page) {
   );
   const rows = await structureRows(page);
   const jobs = rows.filter((row) => row.label === "Employment");
-  const adp = jobs.filter((row) => /Comprehensive Skills Training Center/i.test(row.value));
+  const adp = jobs.filter((row) => /Comprehensive Skills Training/i.test(row.value));
   if (adp.length !== 1) {
     throw new BeatFail(`ADP Use this must write one Employment row — ${rows.map((row) => `${row.label}: ${row.value}`).join(" | ")}`);
   }

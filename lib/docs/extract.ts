@@ -630,7 +630,19 @@ export async function classifyAndExtract(
         }
       }
       const stubFields = fieldsFromPrintedLines("paystub", layer);
-      if (hasLockedSuggestion("paystub", stubFields)) {
+      const w2Fields = fieldsFromPrintedLines("w2", layer);
+      const w2Page =
+        hint === "w2" ||
+        /\bw2\b|w-2/i.test(filename ?? "") ||
+        (/\bw-?2\b/i.test(blob) && /medicare\s*wages/i.test(blob));
+      if (w2Page && hasLockedSuggestion("w2", w2Fields)) {
+        return printedResult({
+          extractClass: "w2",
+          confidence: 0.94,
+          fields: w2Fields,
+        }, textLayerChars);
+      }
+      if (!w2Page && hasLockedSuggestion("paystub", stubFields)) {
         return printedResult({
           extractClass: "paystub",
           confidence: 0.94,

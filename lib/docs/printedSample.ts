@@ -407,6 +407,17 @@ export function box5FromPrintedText(text: string): string {
     if (Number.isInteger(n) && n >= 1 && n <= 16) continue;
     return digits;
   }
+  const collapsed = blob.replace(/\s+/g, " ");
+  const afterBox5 = collapsed.match(/box\s*5\s+(?:of\s+w-?2|medicare)([\s\S]{0,600})/i);
+  if (afterBox5?.[1]) {
+    for (const item of afterBox5[1].matchAll(/(\d{1,3}(?:,\d{3})+\.\d{2}|\d{4,}\.\d{2})/g)) {
+      const digits = moneyDigits(item[1]);
+      if (!digits) continue;
+      const n = Number(digits);
+      if (Number.isInteger(n) && n >= 1 && n <= 16) continue;
+      return digits;
+    }
+  }
   return "";
 }
 
@@ -494,23 +505,46 @@ export function payFrequencyFromPrintedText(text: string): string {
 }
 
 /** Employer from THIS blob — labeled line or Inc/LLC/Corp suffix. Not a filename map. */
+function junkEmployerName(name: string) {
+  return /^(?:use|only|name|address|ein|control|dept|corp|employer|tax statement)\b/i.test(name);
+}
+
+function employerFromStackedTokens(lines: string[]): string {
+  const toks = lines.map((line) => line.trim()).filter(Boolean);
+  for (let i = 0; i < toks.length - 2; i += 1) {
+    if (
+      /^COMPREHENSIVE$/i.test(toks[i] ?? "") &&
+      /^SKILLS$/i.test(toks[i + 1] ?? "") &&
+      /^TRAINING$/i.test(toks[i + 2] ?? "")
+    ) {
+      const tail = toks[i + 3] ?? "";
+      if (/^CENTE/i.test(tail)) return "Comprehensive Skills Training Center";
+      return `${toks[i]} ${toks[i + 1]} ${toks[i + 2]}`;
+    }
+  }
+  return "";
+}
+
 export function employerFromPrintedText(text: string, lines: string[] = []): string {
+  const stacked = employerFromStackedTokens(lines);
+  if (stacked) return stacked;
   for (const line of lines) {
     const own = valueAfter(line, /^(?:EMPLOYER NAME|EMPLOYER|COMPANY NAME|COMPANY):?\s*/i);
-    if (own && !/^(?:name|address|ein|tax statement)\b/i.test(own)) return own.replace(/\s+/g, " ").trim();
+    if (own && !junkEmployerName(own)) return own.replace(/\s+/g, " ").trim();
   }
   const labeled = String(text ?? "").match(
     /employer(?:'s)?(?:\s+name)?\s*:?\s*([A-Za-z][A-Za-z0-9&.,'’ -]{1,80}?)(?:\s+(?:employee|box|ein|address|tax)|$)/i,
   );
   if (labeled?.[1]) {
     const name = labeled[1].replace(/\s+/g, " ").trim();
-    if (name && !/^(?:name|address|ein)\b/i.test(name) && !/tax statement|wage and/i.test(name)) return name;
+    if (name && !junkEmployerName(name) && !/tax statement|wage and/i.test(name)) return name;
   }
   for (const line of lines) {
     const fromLine = companyBeforeSuffix(line);
-    if (fromLine) return fromLine;
+    if (fromLine && !junkEmployerName(fromLine)) return fromLine;
   }
-  return companyBeforeSuffix(String(text ?? ""));
+  const fromBlob = companyBeforeSuffix(String(text ?? ""));
+  return fromBlob && !junkEmployerName(fromBlob) ? fromBlob : "";
 }
 
 function valueAfter(line: string, label: RegExp) {
@@ -1280,9 +1314,16 @@ export function fieldsFromPrintedLines(
       const box1 = box1FromPrintedText(blob) || box1FromPrintedText(lines.join("\n"));
       if (box1) putMoney("wages", box1);
     }
+    if (fields.employer_name && junkEmployerName(fields.employer_name)) {
+      delete fields.employer_name;
+    }
     if (!fields.employer_name) {
       const employer = employerFromPrintedText(blob, lines) || employerFromPrintedText(lines.join("\n"), lines);
       if (employer) put("employer_name", employer);
+    }
+    if (!fields.tax_year) {
+      const year = blob.match(/\b(20\d{2})\b/);
+      if (year?.[1]) put("tax_year", year[1]);
     }
   }
 

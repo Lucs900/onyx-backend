@@ -5,11 +5,10 @@
  * Harbor 03/07 stay on printed text — they are not this proof.
  *
  * Founder fixture: scripts/fixtures/27-w2-2025-adp-matthew-castaneda.pdf
- * decoded from .b64. Do not invent that PDF. PLACEHOLDER_LOAD_FROM_FILE
- * is not the founder page.
+ * decoded from the exact .b64 / chunk dir. Do not invent that PDF.
  */
 import assert from "node:assert/strict";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -29,32 +28,50 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 
 export const ADP_W2_PDF_REL = "scripts/fixtures/27-w2-2025-adp-matthew-castaneda.pdf";
 export const ADP_W2_B64_REL = "scripts/fixtures/27-w2-2025-adp-matthew-castaneda.pdf.b64";
+export const ADP_W2_B64_DIR_REL = "scripts/fixtures/27-w2-2025-adp-matthew-castaneda.pdf.b64.d";
 
 export const ADP_W2_FIXTURE_CANDIDATES = [
   ADP_W2_PDF_REL,
   ADP_W2_B64_REL,
-  "scripts/fixtures/adp-w2-2025-matthew-castaneda.pdf",
-  "sample-docs/adp-w2-2025-matthew-castaneda.pdf",
-  "scripts/fixtures/w2-adp-2025-matthew-castaneda.pdf",
-  "sample-docs/w2-adp-2025-matthew-castaneda.pdf",
+  ADP_W2_B64_DIR_REL,
 ];
 
 function isPdfBytes(bytes: Uint8Array) {
   return bytes.length > 80 && bytes[0] === 0x25 && bytes[1] === 0x50 && bytes[2] === 0x44 && bytes[3] === 0x46;
 }
 
-/** Decode founder .b64 to the PDF path. Never writes a substitute. */
+function placeholderB64(text: string) {
+  const t = text.trim();
+  return !t || t === "PLACEHOLDER_LOAD_FROM_FILE" || t.startsWith("FILE_CONTENT_FROM_");
+}
+
+function assembleFounderB64(): string | null {
+  const dir = join(root, ADP_W2_B64_DIR_REL);
+  if (existsSync(dir)) {
+    const parts = readdirSync(dir)
+      .filter((name) => /^\d+$/.test(name))
+      .sort();
+    if (parts.length) {
+      const text = parts.map((name) => readFileSync(join(dir, name), "utf8")).join("");
+      if (!placeholderB64(text) && /^[A-Za-z0-9+/=\s]+$/.test(text)) return text;
+    }
+  }
+  const b64Path = join(root, ADP_W2_B64_REL);
+  if (!existsSync(b64Path)) return null;
+  const text = readFileSync(b64Path, "utf8");
+  if (placeholderB64(text) || !/^[A-Za-z0-9+/=\s]+$/.test(text)) return null;
+  return text;
+}
+
+/** Decode founder .b64 / chunk dir to the PDF path. Never writes a substitute. */
 export function decodeAdpW2Fixture(): string | null {
   const pdfPath = join(root, ADP_W2_PDF_REL);
   if (existsSync(pdfPath)) {
     const bytes = readFileSync(pdfPath);
     if (isPdfBytes(bytes)) return pdfPath;
   }
-  const b64Path = join(root, ADP_W2_B64_REL);
-  if (!existsSync(b64Path)) return null;
-  const text = readFileSync(b64Path, "utf8").trim();
-  if (!text || text === "PLACEHOLDER_LOAD_FROM_FILE") return null;
-  if (!/^[A-Za-z0-9+/=\s]+$/.test(text)) return null;
+  const text = assembleFounderB64();
+  if (!text) return null;
   const buf = Buffer.from(text.replace(/\s+/g, ""), "base64");
   if (!isPdfBytes(buf)) return null;
   writeFileSync(pdfPath, buf);
@@ -209,27 +226,19 @@ function main() {
     assert.match(w2.fields.employer_name ?? "", /Harbor Pacific Design Inc/i);
 
     const adp = adpW2FixturePath();
-    if (!adp) {
-      console.log(
-        "assert-w2-page-read: rails green; TODO founder ADP PDF missing — " +
-          `${ADP_W2_B64_REL} is PLACEHOLDER_LOAD_FROM_FILE or absent`,
-      );
-      return;
-    }
+    assert.ok(adp, "founder ADP W-2 missing — decode scripts/fixtures/27-w2-2025-adp-matthew-castaneda.pdf");
     return classifyAndExtract(readFileSync(adp), "application/pdf", deadVision, "w2", adp.split("/").pop()).then(
       (extracted) => {
+        assert.notEqual(extracted.failed, true, "ADP W-2 unread");
+        assert.equal(extracted.extractClass, "w2");
         const wages = extracted.fields.medicare_wages ?? extracted.fields.box5 ?? "";
         assert.ok(!isBoxNumberAsDollars(wages), `ADP Box 5 was box number — ${wages}`);
         assert.notEqual(wages, "5");
         assert.notEqual(wages, "5.00");
-        if (extracted.failed || !wages) {
-          console.log(
-            "assert-w2-page-read: fixture present; printed miss — walker case 23 does Grok page-read — " + adp,
-          );
-          return;
-        }
-        assert.match(extracted.fields.employer_name ?? "", /Comprehensive Skills Training Center/i);
-        assert.match(wages, /36460/);
+        assert.match(wages, /36460\.08/);
+        assert.match(extracted.fields.employer_name ?? "", /Comprehensive Skills Training/i);
+        assert.equal(extracted.fields.tax_year, "2025");
+        assert.equal(extracted.fields.ssn, undefined);
         console.log("assert-w2-page-read: ADP Castaneda Box 5 is $36,460.08, not $5");
       },
     );
