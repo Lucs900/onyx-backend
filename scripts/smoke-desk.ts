@@ -7467,7 +7467,7 @@ const mayaThenReturn = applyExtractedFields(mayaNamed, {
 });
 assert.ok(!mayaThenReturn.quietLines.includes("Updated income from tax return."));
 const mayaIncomeAsk = docReactionAsk(mayaThenReturn.draft, "tax_return");
-assert.match(mayaIncomeAsk?.text ?? "", /Got the 2024 return/);
+assert.match(mayaIncomeAsk?.text ?? "", /Got the 2024 Schedule C/);
 assert.match(mayaIncomeAsk?.text ?? "", /\$9,000/);
 assert.match(mayaIncomeAsk?.text ?? "", /Use this/);
 assert.doesNotMatch(mayaIncomeAsk?.text ?? "", /Updated income from tax return/);
@@ -7537,7 +7537,7 @@ assert.match(seAsk, /Use this/);
 assert.match(seAsk, /9,000/);
 assert.doesNotMatch(seAsk, /1084|\bDU\b|approved|eligible|you qualify|don’t qualify|agency_ready/i);
 const seLiveAsk = workspacePromptCopy("confirm-proposal", seReturn.draft);
-assert.match(seLiveAsk.text, /Got the 2024 return/);
+assert.match(seLiveAsk.text, /Got the 2024 Schedule C/);
 assert.match(seLiveAsk.text, /\$9,000/);
 assert.match(seLiveAsk.text, /I’m suggesting/);
 assert.doesNotMatch(seLiveAsk.text, /Schedule C one-year|ordinary \/ 12/);
@@ -7912,7 +7912,7 @@ assert.equal(seSecondAfterConfirm.draft.pendingConflict, null);
 assert.equal(seSecondAfterConfirm.draft.pendingProposal?.value, "8167");
 assert.equal(seSecondAfterConfirm.draft.facts?.qualifying_income?.value, "9000");
 const seTwoYearAsk = workspacePromptCopy("confirm-proposal", seSecondAfterConfirm.draft);
-assert.match(seTwoYearAsk.text, /Got the 2023 return/);
+assert.match(seTwoYearAsk.text, /Got the 2023 Schedule C/);
 assert.match(seTwoYearAsk.text, /2024 is \$9,000 a month/);
 assert.match(seTwoYearAsk.text, /2023 is \$7,333 a month/);
 assert.match(seTwoYearAsk.text, /Two-year view is \$8,167 a month/);
@@ -8116,7 +8116,7 @@ assert.equal(guidelineCaution(seDecliningYearTwo.draft), DECLINING_INCOME_CAUTIO
 assert.ok(seDecliningYearTwo.quietLines.includes(DECLINING_INCOME_CAUTION));
 assert.ok(!seDecliningYearTwo.quietLines.includes("Updated income from tax return."));
 const decliningCard = workspacePromptCopy("confirm-proposal", seDecliningYearTwo.draft);
-assert.match(decliningCard.text, /Got the 2024 return/);
+assert.match(decliningCard.text, /Got the 2024 Schedule C/);
 assert.match(decliningCard.text, /2024 is \$6,000 a month/);
 assert.match(decliningCard.text, /2023 is \$7,333 a month/);
 assert.match(decliningCard.text, /Two-year view is \$6,000 a month/);
@@ -8126,7 +8126,7 @@ assert.match(decliningCard.text, /Suggested qualifying income · not underwritte
 assert.equal(decliningCard.followUp, DECLINING_INCOME_CAUTION);
 assertIncomeChipsHoldOverQueue(seDecliningYearTwo.draft, /\$6,000/);
 const yearOneAsk = workspacePromptCopy("confirm-proposal", seDecliningYearOne.draft);
-assert.match(yearOneAsk.text, /Got the 2023 return/);
+assert.match(yearOneAsk.text, /Got the 2023 Schedule C/);
 assert.match(yearOneAsk.text, /7,333/);
 const supersededThread = inertSupersededIncomeConfirms([
   {

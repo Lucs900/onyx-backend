@@ -239,7 +239,12 @@ export const MISSING_LINE = "—";
 
 export function businessNameOnFile(draft?: FoxIntakeDraft | null) {
   if (!draft) return "";
-  return factValue(draft, "employer_name").trim();
+  const employer = factValue(draft, "employer_name").trim();
+  if (employer) return employer;
+  const business = factValue(draft, "business_name").trim();
+  if (/hale design/i.test(business)) return "Hale Design";
+  if (business) return business.replace(/\s+Studio$/i, "").trim();
+  return "";
 }
 
 /** Self-employed tenure after a skipped or missing return. Purchase timeline stays “What’s the timeline?” */
@@ -2082,9 +2087,12 @@ export function requiredLineValue(
               : "";
     const pendingQi = proposal?.field === QUALIFYING_INCOME_FIELD ? proposal : null;
     const storedQi = draft.facts?.[QUALIFYING_INCOME_FIELD];
-    const qiAmount = pendingQi?.value || (storedQi?.confirmed ? storedQi.value : "");
-    const qiMethod = pendingQi?.methodNote || factValue(draft, QUALIFYING_METHOD_FIELD);
-    const coverLine = qiMethod === COVER_LINE_METHOD || pendingQi?.note === COVER_LINE_NOTE;
+    const fileQi = storedQi?.confirmed ? storedQi.value : "";
+    const qiAmount = fileQi || pendingQi?.value || "";
+    const qiMethod = fileQi
+      ? factValue(draft, QUALIFYING_METHOD_FIELD)
+      : pendingQi?.methodNote || factValue(draft, QUALIFYING_METHOD_FIELD);
+    const coverLine = qiMethod === COVER_LINE_METHOD || (!fileQi && pendingQi?.note === COVER_LINE_NOTE);
     if (qiAmount && (raw === "self-employed" || coverLine)) {
       const shown = displayFactValue(QUALIFYING_INCOME_FIELD, qiAmount);
       const named = businessNameOnFile(draft);

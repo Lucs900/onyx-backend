@@ -3,7 +3,7 @@
  * 1040 cover may write thin Sch 1 / C / 12 when that is all we have.
  * 20 → $9,000 · 19 → $7,333 · Cover line · Suggested · not underwritten.
  * No Sch E / Sch F / add-backs from the cover.
- * 11 / 10 upgrade the same Hale Design row to the 1084 method.
+ * 11 / 10 upgrade the same Hale Design row to the Schedule C 1084 method.
  * Skip on the C ask is once. Second cover does not freeze or steal.
  * Same-value second drop of 20 keeps — no second Use this. Next is 2025 Schedule C.
  */
@@ -257,8 +257,16 @@ async function main() {
     extractHintFromDraft(used20, "11-1040-schedule-c-2025-hale-design.pdf"),
   );
   assert.notEqual(eleven.failed, true);
+  assert.equal(eleven.class, "tax_return");
+  assert.equal(eleven.fields?.return_kind, "schedule_c");
+  assert.equal(eleven.fields?.tax_year, "2025");
+  assert.equal(eleven.fields?.business_name, "Hale Design Studio");
   assert.equal(eleven.fields?.schedule_c_net_profit, "108000");
+  assert.equal(eleven.fields?.nonrecurring_other_income, "4000");
+  assert.equal(eleven.fields?.depletion, "500");
   assert.equal(eleven.fields?.depreciation, "12000");
+  assert.equal(eleven.fields?.business_use_of_home, "3000");
+  assert.equal(eleven.fields?.amortization, undefined);
   const after11 = writeLive(
     used20,
     "11-1040-schedule-c-2025-hale-design.pdf",
@@ -270,12 +278,34 @@ async function main() {
   assert.equal(after11.pendingProposal?.value, "9958");
   assert.notEqual(after11.pendingProposal?.methodNote, COVER_LINE_METHOD);
   assert.match(after11.pendingProposal?.methodNote ?? "", /Schedule C/);
-  assert.ok(!after11.facts?.qualifying_income?.confirmed || after11.facts?.qualifying_income?.value === "9000");
+  assert.equal(after11.facts?.qualifying_income?.value, "9000");
+  assert.equal(after11.facts?.qualifying_income?.confirmed, true);
+  const incomeBefore = requiredLineValue(after11, incomeLine);
+  assert.match(incomeBefore.value, /\$9,000/);
+  assert.doesNotMatch(incomeBefore.value, /\$9,958/);
+  assert.match(incomeBefore.note ?? "", /Cover line/);
   const upgrade = nextFoxAsk(after11);
-  assert.match(upgrade.text, /\$9,958/);
+  const upgradeBlob = `${upgrade.text} ${upgrade.followUp ?? ""}`;
+  assert.match(upgradeBlob, /2025 Schedule C/);
+  assert.match(upgradeBlob, /Hale Design/);
+  assert.match(upgradeBlob, /\$9,958/);
+  assert.match(upgradeBlob, /same Hale Design row|Use this/);
   assert.ok((upgrade.actions ?? []).some((item) => item.label === "Use this"));
+  assert.doesNotMatch(upgradeBlob, /Got the 2025 return\b/);
+  assert.doesNotMatch(upgradeBlob, /I need (?:your )?the 2025 (?:federal )?tax return|Form 1040, all pages/i);
   const used11 = resolveProposal(after11, "accept");
   assert.equal(used11.facts?.qualifying_income?.value, "9958");
+  const incomeAfter = requiredLineValue(used11, incomeLine);
+  assert.match(incomeAfter.value, /Hale Design/);
+  assert.match(incomeAfter.value, /\$9,958/);
+  assert.doesNotMatch(incomeAfter.value, /\$9,000/);
+  assert.ok(
+    previewFacts(used11).filter((fact) => /\$9,/.test(fact.value) && (fact.id === "income" || fact.id === "qualifying"))
+      .length <= 2,
+    `11 minted a second income row — ${previewFacts(used11)
+      .map((fact) => `${fact.label}:${fact.value}`)
+      .join(" · ")}`,
+  );
 
   const after19Alone = writeLive(
     seAtIncome(),

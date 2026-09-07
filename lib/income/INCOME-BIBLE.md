@@ -19,7 +19,7 @@ A Form 1040 cover **may write thin income when that is all we have**. The old li
 
 ## Schedule C upgrade (1084 method)
 
-Fixtures **11** (2025) and **10** (2024) upgrade the same Hale Design row from the cover line to the 1084 method (net + extracted add-backs − nonrecurring) / 12. Confirm before write. Still useful still names the matching Schedule C until that C is on File — C is first among cover pages so the visible 1–3 list cannot hide it behind Schedule E / K-1 / Schedule F.
+Fixtures **11** (2025) and **10** (2024) upgrade the **same Hale Design / SE row** from the cover line to the Schedule C 1084 method (v1: net − nonrecurring + depletion + depreciation + home office / 12). Confirm before write. File stays Cover $9,000 until Use this. Fox names **2025 Schedule C** (Hale Design) — not a generic “2025 return.” After cover is on File, the next doc ask stays that year’s Schedule C — never re-open the all-pages 1040 ask. Still useful still names the matching Schedule C until that C is on File — C is first among cover pages so the visible 1–3 list cannot hide it behind Schedule E / K-1 / Schedule F. Meals / amort stay parked.
 
 ## Cover follow-up
 

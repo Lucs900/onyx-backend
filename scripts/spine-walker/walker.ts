@@ -7,7 +7,7 @@
  * Assert only. Does not invent product behavior.
  * Case 9 is harbor-both-cover-contract. Combined 09-at-price + House-turn
  * Credit (cases 10–11) is the FICO gate. Cases 14–16 are SE cover income
- * (20 → $9,000 Structure write · second 20 keeps, next is 2025 Sch C · 20 then 11 upgrades · 20 then 19 does not hang).
+ * (20 → $9,000 Structure write · second 20 keeps, next is 2025 Sch C · 20 then 11 upgrades the same Hale Design row · 20 then 19 does not hang).
  * Years in business is once after SE / Both.
  * Lukasz Harbor leftovers run from scripts/assert-spine-walker.sh before
  * Playwright. CI fail = red.
@@ -1305,7 +1305,18 @@ async function dropSeCoverOrC(page: Page, name: string, kind: "cover-card" | "up
       }
     }
     if (kind === "upgrade") {
-      if (/\$9,958/i.test(text) && hasChip(chips, "Use this")) {
+      if (/I need the 2025 return — Form 1040, all pages/i.test(text)) {
+        throw new BeatFail(`11 reprinted 1040 all-pages — ${text}`);
+      }
+      if (/Got the 2025 return/i.test(text) && !/Schedule C/i.test(text)) {
+        throw new BeatFail(`11 spoken as a generic 2025 return — ${text}`);
+      }
+      if (
+        /2025 Schedule C/i.test(text) &&
+        /Hale Design/i.test(text) &&
+        /\$9,958/i.test(text) &&
+        hasChip(chips, "Use this")
+      ) {
         return;
       }
     }
@@ -1387,8 +1398,39 @@ async function case15(page: Page) {
   await waitCurrent(page, (next) => !/I’m suggesting \$9,000 a month/i.test(next) || /Schedule C/i.test(next), 20_000);
   await dropSeCoverOrC(page, "11-1040-schedule-c-2025-hale-design.pdf", "upgrade");
   const text = await currentText(page);
-  if (!/\$9,958/i.test(text) || !hasChip(await currentChips(page), "Use this")) {
-    throw new BeatFail(`20 then 11 did not upgrade — ${text} | ${(await currentChips(page)).join(" · ")}`);
+  const chips = await currentChips(page);
+  if (/Got the 2025 return/i.test(text) && !/Schedule C/i.test(text)) {
+    throw new BeatFail(`20 then 11 spoke a generic 2025 return — ${text}`);
+  }
+  if (/I need the 2025 return — Form 1040, all pages/i.test(text)) {
+    throw new BeatFail(`20 then 11 reprinted 1040 all-pages — ${text}`);
+  }
+  if (!/2025 Schedule C/i.test(text) || !/Hale Design/i.test(text) || !/\$9,958/i.test(text) || !hasChip(chips, "Use this")) {
+    throw new BeatFail(`20 then 11 did not upgrade Hale Design on Schedule C 1084 — ${text} | ${chips.join(" · ")}`);
+  }
+  const before = await structureMap(page);
+  const beforeIncome = `${before["Income"] ?? ""} ${before["Qualifying income"] ?? ""}`;
+  if (/\$9,958/.test(beforeIncome)) {
+    throw new BeatFail(`11 wrote $9,958 before Use this — ${beforeIncome}`);
+  }
+  if (!/\$9,000/.test(beforeIncome)) {
+    throw new BeatFail(`11 lost Cover $9,000 before Use this — ${beforeIncome}`);
+  }
+  await clickChip(page, "Use this");
+  const started = Date.now();
+  let afterMap: Record<string, string> = {};
+  while (Date.now() - started < 20_000) {
+    afterMap = await structureMap(page);
+    const blob = `${afterMap["Income"] ?? ""} ${afterMap["Qualifying income"] ?? ""}`;
+    if (/Hale Design/i.test(blob) && /\$9,958/.test(blob)) break;
+    await page.waitForTimeout(200);
+  }
+  const afterIncome = `${afterMap["Income"] ?? ""} ${afterMap["Qualifying income"] ?? ""}`;
+  if (!/Hale Design/i.test(afterIncome) || !/\$9,958/.test(afterIncome)) {
+    throw new BeatFail(`11 Use this did not upgrade the Hale Design row — ${afterIncome}`);
+  }
+  if (/\$9,000/.test(afterIncome) && /\$9,958/.test(afterIncome)) {
+    throw new BeatFail(`11 minted a second income row — ${afterIncome}`);
   }
 }
 
@@ -1466,7 +1508,7 @@ const CASES: { n: number; title: string; run: (page: Page) => Promise<void> }[] 
   { n: 12, title: "03+07 before income type → no empty income quiz", run: case12 },
   { n: 13, title: "Start over clears income, Docs, Note, Still useful", run: case13 },
   { n: 14, title: "20 → $9,000 Structure write; second 20 keeps, next is 2025 Sch C", run: case14 },
-  { n: 15, title: "20 then 11 upgrades Hale Design to 1084", run: case15 },
+  { n: 15, title: "20 then 11 upgrades the same Hale Design row to Schedule C 1084", run: case15 },
   { n: 16, title: "20 then 19 does not hang", run: case16 },
 ];
 

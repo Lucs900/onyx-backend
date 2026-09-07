@@ -243,7 +243,9 @@ import {
   isSameBusinessWageEntityProposal,
   isScheduleECashFlowProposal,
   isCoverLineProposal,
+  COVER_LINE_METHOD,
   COVER_LINE_NOTE,
+  QUALIFYING_METHOD_FIELD,
   K1_MONTHLY_FIELD,
   qualifyingIncomeDisplay,
   raiseYtdFarAskCopy,
@@ -1586,6 +1588,27 @@ function landedTaxYear(draft: FoxIntakeDraft): string {
   return last ? String(last.year) : "";
 }
 
+function lastExtractIsScheduleC(draft: FoxIntakeDraft): boolean {
+  for (let i = (draft.documents ?? []).length - 1; i >= 0; i -= 1) {
+    const doc = draft.documents[i];
+    if (doc.status !== "extracted") continue;
+    if (/schedule.?c/i.test(doc.name ?? "")) return true;
+    return factValue(draft, "return_kind") === "schedule_c" || scheduleCYearViews(draft).length > 0;
+  }
+  return factValue(draft, "return_kind") === "schedule_c" || scheduleCYearViews(draft).length > 0;
+}
+
+function scheduleCReturnAck(draft: FoxIntakeDraft): string {
+  const year = landedTaxYear(draft);
+  const raw = factValue(draft, "business_name").trim();
+  const named = /hale design/i.test(raw)
+    ? "Hale Design"
+    : raw.replace(/\s+Studio$/i, "").trim();
+  const form = year ? `${year} Schedule C` : "Schedule C";
+  if (named) return `Got the ${form} for ${named}.`;
+  return `Got the ${form}.`;
+}
+
 function nextDocSpoken(invite: ReturnType<typeof nextDocInvite>, draft?: FoxIntakeDraft): string {
   if (invite === "tax_return" || invite === "prior_year_return") {
     return draft ? docInviteAskCopy(draft, invite) : DOC_INVITE_COPY[invite];
@@ -1649,6 +1672,12 @@ function incomeStoryLine(
     return "";
   }
   if (!changed) return "";
+  if (
+    factValue(draft, QUALIFYING_METHOD_FIELD) === COVER_LINE_METHOD &&
+    /Schedule C/i.test(proposal.methodNote ?? "")
+  ) {
+    return "That upgrades the same Hale Design row.";
+  }
   if (isScheduleECashFlowProposal(proposal)) return "That includes the rental.";
   if (isEntityCashFlowProposal(proposal)) return "That includes the 1065.";
   if (hasK1Ordinary(draft)) return "That includes the K-1.";
@@ -1675,9 +1704,12 @@ function incomeReactionAsk(draft: FoxIntakeDraft, proposal: NonNullable<FoxIntak
   actions?: FoxAction[];
 } {
   const shown = displayFactValue(proposal.field, proposal.value);
-  const year = landedTaxYear(draft);
   const years = scheduleCYearViews(draft);
-  const ack = year ? `Got the ${year} return.` : "Got the return.";
+  const ack = lastExtractIsScheduleC(draft)
+    ? scheduleCReturnAck(draft)
+    : landedTaxYear(draft)
+      ? `Got the ${landedTaxYear(draft)} return.`
+      : "Got the return.";
   if (years.length < 2) {
     return {
       text: incomeSuggestSpeech({
