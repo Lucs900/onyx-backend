@@ -79,5 +79,6 @@ Harbor extract POSTs fulfill leftover-proven local `classifyAndExtract` of the s
 21. Looks right gate shows a Looks right chip. Typed yes still confirms. Still useful after that stays Government ID + how-earned.
 22. Refinance: type 500000 loan then 800000 value. File keeps $500,000. Do not re-ask loan.
 23. ADP 2025 W-2 (founder fixture): Matthew Castaneda, Comprehensive Skills Training Center, Box 5 $36,460.08. Reading $5 is a FAIL.
+24. First-session page-read leftover (ID · W-2 · stub · bank · contract · tax). PAY MATT CSTC 260422 is a hook until the founder drops it.
 
 FAIL if copy and chips disagree. FAIL if Structure and chat disagree. FAIL if a write did not kill the old number. FAIL if Credit is on File and Fox asks FICO.

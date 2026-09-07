@@ -1,11 +1,11 @@
 import { generateText } from "ai";
 import { createOpenAI } from "@ai-sdk/openai";
 import {
-  EXTRACT_SCHEMA_KEYS,
+  FIRST_SESSION_LOCKED_KEYS,
   LOW_EXTRACT_CONFIDENCE,
-  W2_LOCKED_SCHEMA_KEYS,
   hasLockedSuggestion,
-  isBoxNumberAsDollars,
+  isFirstSessionClass,
+  lockFirstSessionFields,
   looksLikeBankFields,
   preferFilenameClass,
   promoteExtractClass,
@@ -276,7 +276,7 @@ function extractFieldsPrompt(extractClass: ExtractClass, keys: readonly string[]
   }
   if (extractClass === "paystub") {
     extra =
-      " pay_frequency is weekly, biweekly, semimonthly, monthly, or empty. overtime, bonus, and commission only when clearly printed as their own period or annual amounts. overtime_ytd / bonus_ytd / commission_ytd when the stub prints YTD overtime, bonus, or commission. hire_date only when a hire date, start date, or date of hire is clearly printed on the page. Empty otherwise; never invent.";
+      " Locked schema only: employer_name, pay_period_end (period or pay date), gross_period (gross this period), pay_frequency if printed (weekly, biweekly, semimonthly, monthly), ytd_gross if printed. Empty otherwise. Never invent. Never output SSN or a full account number.";
   }
   if (extractClass === "w2") {
     extra =
@@ -288,7 +288,7 @@ function extractFieldsPrompt(extractClass: ExtractClass, keys: readonly string[]
   }
   if (extractClass === "government_id") {
     extra =
-      " present_address is the printed residential address on the ID (street, city, state, ZIP) only when clearly printed. Empty otherwise; never invent.";
+      " Locked schema only: full_name (first and last as printed). Never output a driver license number, DL, DAQ, SSN, or date of birth. Empty otherwise; never invent.";
   }
   if (extractClass === "purchase_contract") {
     extra =
@@ -348,7 +348,10 @@ export const grokExtractAdapter: DocumentExtractAdapter = {
   },
 
   async extract(bytes, mediaType, extractClass) {
-    const keys = EXTRACT_SCHEMA_KEYS[extractClass];
+    if (!isFirstSessionClass(extractClass)) {
+      return { fields: {}, warnings: ["received"] };
+    }
+    const keys = FIRST_SESSION_LOCKED_KEYS[extractClass];
     if (!keys.length) {
       return { fields: {}, warnings: ["Class is other. No numbers invented."] };
     }
@@ -367,23 +370,11 @@ export const grokExtractAdapter: DocumentExtractAdapter = {
     }
     const fields = sanitizeExtractedFields(extractClass, raw);
     return {
-      fields: extractClass === "w2" ? lockW2PageFields(fields) : fields,
-      warnings: [],
+      fields: lockFirstSessionFields(extractClass, fields),
+      warnings: isFirstSessionClass(extractClass) ? [] : ["received"],
     };
   },
 };
-
-function lockW2PageFields(
-  fields?: Record<string, string | null | undefined> | null,
-): Record<string, string> {
-  const next: Record<string, string> = {};
-  for (const key of W2_LOCKED_SCHEMA_KEYS) {
-    const value = String(fields?.[key] ?? "").trim();
-    if (!value || isBoxNumberAsDollars(value)) continue;
-    next[key] = value;
-  }
-  return next;
-}
 
 function printedResult(
   printed: NonNullable<ReturnType<typeof readPrintedSample>>,
@@ -516,7 +507,7 @@ async function grokPageRead(
   if (!image) return null;
   const page = await classifyAndExtractPage(image.bytes, image.mediaType, adapter, hint);
   const extractClass = preferFilenameClass(page.extractClass, filename ?? "");
-  const fields = extractClass === "w2" ? lockW2PageFields(page.fields) : page.fields;
+  const fields = lockFirstSessionFields(extractClass, page.fields);
   if (page.failed) return { ...page, extractClass, fields };
   const bankLocked = extractClass === "bank_statement" || hint === "bank_statement";
   const locked = bankLocked
@@ -718,29 +709,28 @@ export async function classifyAndExtract(
     return unreadResult(grok?.extractClass ?? "other", filename, "no-text-layer", textLayerChars);
   }
   const page = await classifyAndExtractPage(bytes, mediaType, adapter, hint);
-  const bankHint = hint === "bank_statement" || page.extractClass === "bank_statement";
+  const lockedPage = {
+    ...page,
+    fields: lockFirstSessionFields(page.extractClass, page.fields),
+  };
+  const bankHint = hint === "bank_statement" || lockedPage.extractClass === "bank_statement";
   if (
-    !page.failed &&
-    (
-      page.extractClass === "government_id" ||
-      page.extractClass === "paystub" ||
-      page.extractClass === "w2" ||
-      bankHint
-    ) &&
+    !lockedPage.failed &&
+    (isFirstSessionClass(lockedPage.extractClass) || bankHint) &&
     !(bankHint
-      ? looksLikeBankFields(page.fields)
-      : hasLockedSuggestion(page.extractClass, page.fields))
+      ? looksLikeBankFields(lockedPage.fields)
+      : hasLockedSuggestion(lockedPage.extractClass, lockedPage.fields))
   ) {
     return withTextChars(
       {
-        ...page,
-        extractClass: bankHint ? "bank_statement" : page.extractClass,
+        ...lockedPage,
+        extractClass: bankHint ? "bank_statement" : lockedPage.extractClass,
         failed: true,
-        warnings: [...page.warnings, "failed"],
+        warnings: [...lockedPage.warnings, "failed"],
       },
       bytes,
       mediaType,
     );
   }
-  return withTextChars(page, bytes, mediaType);
+  return withTextChars(lockedPage, bytes, mediaType);
 }

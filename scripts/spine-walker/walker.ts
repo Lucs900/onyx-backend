@@ -14,7 +14,8 @@
  * row, then ID Upload this · Skip. Case 21 is Looks right chip on that gate;
  * typed yes still confirms. Case 22 is refinance 500000 loan then 800000
  * value — File keeps $500,000 and does not re-ask loan. Case 23 is ADP W-2
- * page-read: Box 5 $36,460.08, never $5.
+ * page-read: Box 5 $36,460.08, never $5. Case 24 is first-session
+ * page-read leftover plus PAY MATT CSTC 260422 when that PDF lands.
  * Years in business is once after SE / Both. Named Hale Design when known.
  * Lukasz Harbor leftovers run from scripts/assert-spine-walker.sh before
  * Playwright. CI fail = red.
@@ -29,6 +30,7 @@ import { classifyAndExtract } from "../../lib/docs/extract";
 import { isBoxNumberAsDollars } from "../../components/fox/fileWrite";
 import type { ExtractClass } from "../../components/fox/types";
 import { adpW2FixturePath } from "../assert-w2-page-read";
+import { mattCstcPaystubPath } from "../assert-first-session-page-read";
 
 const PREVIEW_URL =
   process.env.SPINE_WALKER_URL ??
@@ -1391,6 +1393,40 @@ async function case23(page: Page) {
   }
 }
 
+async function case24(page: Page) {
+  const fixture = mattCstcPaystubPath();
+  if (!fixture) {
+    return;
+  }
+  await hardStartOver(page);
+  await walkToQuotedIncome(page, "94123", true);
+  await waitAsk(page, /How is income earned/i);
+  await clickChip(page, "W-2");
+  const afterW2 = await waitCurrent(
+    page,
+    (text, chips) =>
+      /other monthly debts|Drop last year|government ID|latest paystub|W-2/i.test(text) ||
+      hasChip(chips, "Skip"),
+    20_000,
+  );
+  if (/other monthly debts/i.test(afterW2.text) && hasChip(afterW2.chips, "Skip")) {
+    await clickChip(page, "Skip");
+    await waitCurrent(page, (text) => !/other monthly debts/i.test(text), 15_000);
+  }
+  await composerDropPath(page, fixture);
+  const after = await waitCurrent(
+    page,
+    (text, chips) =>
+      hasChip(chips, "Use this") ||
+      hasChip(chips, "Use document") ||
+      /could not read|unread/i.test(text),
+    90_000,
+  );
+  if (/could not read|unread/i.test(after.text) && !hasChip(after.chips, "Use this")) {
+    throw new BeatFail(`PAY MATT CSTC 260422 unread — ${after.text}`);
+  }
+}
+
 async function foxTexts(page: Page): Promise<string[]> {
   const loc = page.locator(".fox-bubble--fox");
   const n = await loc.count();
@@ -1977,6 +2013,7 @@ const CASES: { n: number; title: string; run: (page: Page) => Promise<void> }[] 
   { n: 21, title: "Looks right gate shows Looks right chip; typed yes still confirms", run: case21 },
   { n: 22, title: "Refinance 500000 then 800000 keeps $500,000 loan", run: case22 },
   { n: 23, title: "ADP W-2 page-read: Box 5 is $36,460.08, never $5", run: case23 },
+  { n: 24, title: "PAY MATT CSTC 260422 paystub proposes current pay when founder drops it", run: case24 },
 ];
 
 async function openBrowser() {

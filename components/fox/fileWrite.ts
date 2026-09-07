@@ -515,6 +515,52 @@ export const W2_LOCKED_SCHEMA_KEYS = [
   "wages",
 ] as const;
 
+/** First-session classes Grok may write. Everything else is received only. */
+export const FIRST_SESSION_CLASSES = [
+  "government_id",
+  "w2",
+  "paystub",
+  "bank_statement",
+  "purchase_contract",
+  "tax_return",
+] as const;
+
+export type FirstSessionClass = (typeof FIRST_SESSION_CLASSES)[number];
+
+/** Locked schema only. Wrong class does not keep another form’s fields. */
+export const FIRST_SESSION_LOCKED_KEYS: Record<FirstSessionClass, readonly string[]> = {
+  government_id: ["full_name"],
+  w2: W2_LOCKED_SCHEMA_KEYS,
+  paystub: ["employer_name", "pay_period_end", "gross_period", "pay_frequency", "ytd_gross"],
+  bank_statement: ["institution", "account_last4", "ending_balance"],
+  purchase_contract: ["property_address", "purchase_price", "close_date", "seller_credit"],
+  tax_return: EXTRACT_SCHEMA_KEYS.tax_return,
+};
+
+export function isFirstSessionClass(value: string | null | undefined): value is FirstSessionClass {
+  return (FIRST_SESSION_CLASSES as readonly string[]).includes(String(value ?? ""));
+}
+
+export function lockFirstSessionFields(
+  extractClass: ExtractClass,
+  fields?: Record<string, string | null | undefined> | null,
+): Record<string, string> {
+  if (!isFirstSessionClass(extractClass)) return {};
+  const next: Record<string, string> = {};
+  for (const key of FIRST_SESSION_LOCKED_KEYS[extractClass]) {
+    const value = String(fields?.[key] ?? "").trim();
+    if (!value) continue;
+    if (
+      (key === "medicare_wages" || key === "box5" || key === "wages") &&
+      isBoxNumberAsDollars(value)
+    ) {
+      continue;
+    }
+    next[key] = value;
+  }
+  return next;
+}
+
 /** Box labels 1–16 are not dollars. Reading Box 5 as $5 is a FAIL. */
 export function isBoxNumberAsDollars(value: string | null | undefined): boolean {
   const raw = String(value ?? "")

@@ -25,6 +25,7 @@ on:
       - "scripts/assert-looks-right-chip.ts"
       - "scripts/assert-refi-loan-then-value.ts"
       - "scripts/assert-w2-page-read.ts"
+      - "scripts/assert-first-session-page-read.ts"
       - ".github/workflows/spine-walker.yml"
       - "sample-docs/**"
   pull_request:
@@ -51,6 +52,7 @@ on:
       - "scripts/assert-looks-right-chip.ts"
       - "scripts/assert-refi-loan-then-value.ts"
       - "scripts/assert-w2-page-read.ts"
+      - "scripts/assert-first-session-page-read.ts"
       - ".github/workflows/spine-walker.yml"
       - "sample-docs/**"
 concurrency:
