@@ -16,6 +16,8 @@ import {
 } from "../components/fox/completeness";
 import { emptyDraft } from "../components/fox/store";
 import {
+  dedupeYearsInBusinessAsk,
+  isYearsInBusinessAskText,
   messagesWithLiveQuoteSpeech,
   nextFoxAsk,
   workspacePrompt,
@@ -174,6 +176,22 @@ assert.equal(
 assert.doesNotMatch(afterReprice[afterReprice.length - 1]?.text ?? "", /How long have you had/);
 assert.notEqual(workspacePrompt(reprice), "years-in-business");
 assert.doesNotMatch(nextFoxAsk(reprice).text, /How long have you had/);
+
+const seReplyThread: FoxMessage[] = [
+  yearsAskMessage("years-first"),
+  { id: "you-se", role: "you", text: "Self-employed" },
+  yearsAskMessage("years-reprint"),
+];
+assert.equal(
+  dedupeYearsInBusinessAsk(seReplyThread).filter((item) => isYearsInBusinessAskText(item.text)).length,
+  1,
+);
+const doubledQuote = messagesWithLiveQuoteSpeech(seReplyThread, openYearsQuoted, openYearsQuoted.liveQuote!);
+assert.equal(
+  doubledQuote.filter((item) => isYearsInBusinessAskText(item.text)).length,
+  1,
+);
+assert.equal(nextFoxAsk(afterSE).text, YEARS_IN_BUSINESS_ASK);
 
 const crawl6: FoxIntakeDraft = {
   ...sketch(),

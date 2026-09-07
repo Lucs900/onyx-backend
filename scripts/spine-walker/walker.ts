@@ -7,7 +7,8 @@
  * Assert only. Does not invent product behavior.
  * Case 9 is harbor-both-cover-contract. Combined 09-at-price + House-turn
  * Credit (cases 10–11) is the FICO gate. Cases 14–16 are SE cover income
- * (20 → $9,000 · 20 then 11 upgrades · 20 then 19 does not hang).
+ * (20 → $9,000 Structure write · 20 then 11 upgrades · 20 then 19 does not hang).
+ * Years in business is once after SE / Both.
  * Lukasz Harbor leftovers run from scripts/assert-spine-walker.sh before
  * Playwright. CI fail = red.
  *
@@ -929,9 +930,11 @@ async function walkHarborFileAnswers(page: Page) {
     20_000,
   );
   if (/How long have you had|years in business/i.test(await currentText(page))) {
+    await assertYearsAskedOnce(page, "after Both");
     await typeSend(page, "2");
   }
   await waitAsk(page, /other monthly debts/i, 20_000);
+  await assertYearsAskedOnce(page, "after Both years answered");
   assertCopyChips(await currentText(page), await currentChips(page));
   await clickChip(page, "Skip");
   await waitCurrent(page, (text) => !/other monthly debts/i.test(text), 15_000);
@@ -1055,6 +1058,17 @@ async function foxTexts(page: Page): Promise<string[]> {
 
 function contractConfirmCount(texts: string[]) {
   return texts.filter((text) => /The contract shows /i.test(text)).length;
+}
+
+function yearsAskCount(texts: string[]) {
+  return texts.filter((text) => /How long have you had/i.test(text)).length;
+}
+
+async function assertYearsAskedOnce(page: Page, when: string) {
+  const n = yearsAskCount(await foxTexts(page));
+  if (n > 1) {
+    throw new BeatFail(`years in business printed ${n} times ${when}`);
+  }
 }
 
 async function walk09AtPriceToFunds(page: Page) {
@@ -1240,12 +1254,14 @@ async function walkSeToIncomeDocs(page: Page) {
     20_000,
   );
   if (/How long have you had|years in business/i.test(await currentText(page))) {
+    await assertYearsAskedOnce(page, "after Self-employed");
     await typeSend(page, "2");
     await waitCurrent(
       page,
       (text) => !/How long have you had|years in business/i.test(text),
       15_000,
     );
+    await assertYearsAskedOnce(page, "after years answered");
   }
   await waitCurrent(
     page,
@@ -1336,6 +1352,7 @@ async function case14(page: Page) {
       `20 Use this did not write $9,000 on Structure — Income=${map["Income"] ?? "(none)"} Qualifying=${map["Qualifying income"] ?? "(none)"}`,
     );
   }
+  await assertYearsAskedOnce(page, "after 20 Use this");
   if (!/Income/.test(Object.keys(map).join(" ")) && !/Qualifying income/.test(Object.keys(map).join(" "))) {
     throw new BeatFail(`20 Use this left notepad type-only — ${written}`);
   }

@@ -2864,8 +2864,23 @@ export function liveQuoteThreadCopy(
 
 const LIVE_QUOTE_INCOME_ASK = "How is income earned?";
 
-function isYearsInBusinessAskText(text: string) {
+export function isYearsInBusinessAskText(text: string) {
   return /^How long have you had /i.test(text.trim());
+}
+
+/** One years-in-business Fox line. A second paint is a reprint. */
+export function dedupeYearsInBusinessAsk(messages: FoxMessage[]): FoxMessage[] {
+  let keep = -1;
+  for (let i = 0; i < messages.length; i += 1) {
+    if (messages[i]?.role === "fox" && isYearsInBusinessAskText(messages[i]?.text ?? "")) {
+      keep = i;
+    }
+  }
+  if (keep < 0) return messages;
+  return messages.filter((item, index) => {
+    if (item.role !== "fox" || !isYearsInBusinessAskText(item.text)) return true;
+    return index === keep;
+  });
 }
 
 function isIncomeAskText(text: string) {
@@ -2972,20 +2987,22 @@ function withRestoredAskAfterQuote(
   if (!openAsk || !shouldRestoreAskAfterLiveQuote(draft, openAsk)) return thread;
   const last = thread[thread.length - 1];
   if (last && last.text === openAsk.text && !last.id.startsWith("live-quote:")) {
-    return thread.map((item, index) =>
-      index === thread.length - 1
-        ? {
-            ...item,
-            actions: isYearsInBusinessAskText(openAsk.text)
-              ? yearsInBusinessSkipActions()
-              : isMonthlyDebtsAskText(openAsk.text)
-                ? monthlyDebtsSkipActions()
-                : openAsk.actions,
-          }
-        : item,
+    return dedupeYearsInBusinessAsk(
+      thread.map((item, index) =>
+        index === thread.length - 1
+          ? {
+              ...item,
+              actions: isYearsInBusinessAskText(openAsk.text)
+                ? yearsInBusinessSkipActions()
+                : isMonthlyDebtsAskText(openAsk.text)
+                  ? monthlyDebtsSkipActions()
+                  : openAsk.actions,
+            }
+          : item,
+      ),
     );
   }
-  return [...thread, restoredAskAfterLiveQuote(openAsk)];
+  return dedupeYearsInBusinessAsk([...thread, restoredAskAfterLiveQuote(openAsk)]);
 }
 
 /** Two quote lines on one Fox bubble, with coupon chips, before income. */
@@ -3019,7 +3036,7 @@ export function messagesWithLiveQuoteSpeech(
         ),
       draft,
     );
-    return withRestoredAskAfterQuote(withLiveCouponChips(held, draft), draft, openAsk);
+    return dedupeYearsInBusinessAsk(withRestoredAskAfterQuote(withLiveCouponChips(held, draft), draft, openAsk));
   }
   const without = withoutLiveQuoteSpeech(messages).filter(
     (item) => item.id !== openAsk?.id && !isPrematureFileAskAfterQuote(item),
@@ -3040,10 +3057,12 @@ export function messagesWithLiveQuoteSpeech(
     ...(lines[1] ? { followUp: lines[1] } : {}),
     actions: liveCouponActions(draft),
   };
-  return withRestoredAskAfterQuote(
-    withLiveCouponChips([...cleared, speech], draft),
-    draft,
-    openAsk,
+  return dedupeYearsInBusinessAsk(
+    withRestoredAskAfterQuote(
+      withLiveCouponChips([...cleared, speech], draft),
+      draft,
+      openAsk,
+    ),
   );
 }
 

@@ -148,6 +148,7 @@ import {
   workspacePrompt,
   workspacePromptCopy,
   workspaceUpdateCopy,
+  isYearsInBusinessAskText,
   threadThroughEditedTurn,
   findClientEditMessageId,
   replaceClientTurn,
@@ -431,6 +432,12 @@ function applyFoxAsk(
   if (last && sameFoxAsk(last, ask)) return freezeUsedFoxTurns(messages);
   if (last && isLookupWaitLine(last.text) && ask.text === "How is income earned?") {
     return freezeUsedFoxTurns(messages);
+  }
+  if (isYearsInBusinessAskText(ask.text)) {
+    const withoutYears = messages.filter(
+      (item) => !(item.role === "fox" && isYearsInBusinessAskText(item.text)),
+    );
+    return freezeUsedFoxTurns([...withoutYears, foxAskMessage(ask)]);
   }
   return freezeUsedFoxTurns([...messages, foxAskMessage(ask)]);
 }
@@ -1624,7 +1631,14 @@ export function AlwaysOnFox({
         { id: newId(), role: "client", text: clientText, edit, editLine },
       ];
       if (!fox.text.trim() && !(fox.followUp ?? "").trim()) return next;
+      if (isYearsInBusinessAskText(fox.text)) {
+        const withoutYears = next.filter(
+          (item) => !(item.role === "fox" && isYearsInBusinessAskText(item.text)),
+        );
+        return freezeUsedFoxTurns([...withoutYears, foxAskMessage(fox)]);
+      }
       return freezeUsedFoxTurns([...next, foxAskMessage(fox)]);
+    });
     });
   };
 
