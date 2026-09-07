@@ -1088,6 +1088,46 @@ async function case9(page: Page) {
   }
 }
 
+async function case19(page: Page) {
+  await hardStartOver(page);
+  await walkToQuotedIncome(page, "94123", true);
+  await waitAsk(page, /How is income earned/i);
+  if (!hasChip(await currentChips(page), "Skip")) {
+    throw new BeatFail(`income ask missing Skip — ${await currentText(page)} | ${(await currentChips(page)).join(" · ")}`);
+  }
+  await clickChip(page, "Skip");
+  const afterSkip = await waitCurrent(
+    page,
+    (text, chips) =>
+      hasChip(chips, "Looks right") ||
+      /Looks right|other monthly debts|government ID|statement|purchase contract/i.test(text),
+    20_000,
+  );
+  if (/How is income earned/i.test(afterSkip.text) && !hasChip(afterSkip.chips, "Looks right")) {
+    throw new BeatFail(`Income Skip did not leave how-earned — ${afterSkip.text}`);
+  }
+  if (/other monthly debts/i.test(afterSkip.text) && hasChip(afterSkip.chips, "Skip")) {
+    await clickChip(page, "Skip");
+    await waitCurrent(page, (text) => !/other monthly debts/i.test(text), 15_000);
+  }
+  if (!hasChip(await currentChips(page), "Looks right")) {
+    await waitCurrent(page, (_text, chips) => hasChip(chips, "Looks right"), 20_000);
+  }
+  await clickChip(page, "Looks right");
+  await waitCurrent(page, (text) => !/Looks right, or change a line/i.test(text), 15_000).catch(() => null);
+  const useful = await stillUsefulLabels(page);
+  const blob = useful.join(" · ");
+  if (useful.some((item) => /paystub|W-2|tax return|latest return|prior-year return/i.test(item))) {
+    throw new BeatFail(`Income Skip invented income docs on Still useful — ${blob || "(none)"}`);
+  }
+  if (!useful.some((item) => /government ID/i.test(item))) {
+    throw new BeatFail(`Income Skip Still useful missing Government ID — ${blob || "(none)"}`);
+  }
+  if (!useful.some((item) => /how income is earned/i.test(item))) {
+    throw new BeatFail(`Income Skip Still useful missing how-earned — ${blob || "(none)"}`);
+  }
+}
+
 async function foxTexts(page: Page): Promise<string[]> {
   const loc = page.locator(".fox-bubble--fox");
   const n = await loc.count();
@@ -1669,6 +1709,7 @@ const CASES: { n: number; title: string; run: (page: Page) => Promise<void> }[] 
   { n: 16, title: "20 then 19 does not hang", run: case16 },
   { n: 17, title: "Years asks How long have you had Hale Design once after 11", run: case17 },
   { n: 18, title: "11 then 19 keeps $9,958 and next is 2024 Schedule C", run: case18 },
+  { n: 19, title: "Income Skip → after Looks right, Still useful is ID + how-earned, not W-2 docs", run: case19 },
 ];
 
 async function openBrowser() {

@@ -662,7 +662,7 @@ export function askClassLabel(extractClass: ExtractClass) {
 
 export function incomeRequestedClasses(income?: string | null): ExtractClass[] {
   const out: ExtractClass[] = ["government_id"];
-  if (income === "w2" || income === "both" || !income) {
+  if (income === "w2" || income === "both") {
     out.push("paystub", "w2");
   }
   if (income === "self-employed" || income === "other" || income === "both") {
@@ -2903,6 +2903,28 @@ export function stillUsefulVisible(draft: FoxIntakeDraft) {
   return Boolean(draft.path && draft.productIntent && (draft.incomeType.value || draft.incomeAsked));
 }
 
+/** Empty / skipped how-earned does not invent a W-2 or SE grocery list. */
+function isInventedIncomeDoc(draft: FoxIntakeDraft, id: string) {
+  if (draft.incomeType.value) return false;
+  return (
+    id === "paystub" ||
+    id === "w2" ||
+    id === "second-year-w2" ||
+    id === "tax_return" ||
+    id === "prior-year-return" ||
+    id === "k1-distributions" ||
+    id === "ytd-pnl"
+  );
+}
+
+function howEarnedStillUsefulItem(): StillUsefulItem {
+  return layer2Item(
+    "how-earned",
+    "How income is earned",
+    "How income is earned still helps this file.",
+  );
+}
+
 function isWageGroceryBeforeLooksRight(draft: FoxIntakeDraft, id: string) {
   if (draft.sampleAccepted) return false;
   if (!wageThreadOpen(draft)) return false;
@@ -3022,6 +3044,7 @@ export function layer2Plan(draft: FoxIntakeDraft): StillUsefulItem[] {
     .filter((id) => !(id === "mortgage_statement" && purchaseLikeFile(draft)))
     .filter((id) => !isWageGroceryBeforeLooksRight(draft, id))
     .filter((id) => !dropWageAfterLooksRightExtra(draft, id))
+    .filter((id) => !isInventedIncomeDoc(draft, id))
     .flatMap((id) => {
     if (id === "mortgage_statement" && draft.statedOtherReo === "yes") {
       return [layer2Item(id, OTHER_REO_MORTGAGE_STATEMENTS, OTHER_REO_MORTGAGE_STATEMENTS)];
@@ -3029,13 +3052,7 @@ export function layer2Plan(draft: FoxIntakeDraft): StillUsefulItem[] {
     const wageCopy =
       draft.sampleAccepted && wageThreadOpen(draft) ? wageStillUsefulCopy(id) : null;
     if (wageCopy === null && id === "second-year-w2" && wageThreadOpen(draft)) return [];
-    const skippedIncomeCopy =
-      !draft.incomeType.value && id === "paystub"
-        ? { label: "Latest paystub", ask: "A recent paystub still helps this file." }
-        : !draft.incomeType.value && id === "w2"
-          ? { label: "W-2", ask: "A W-2 still helps this file." }
-          : null;
-    const copy = wageCopy ?? skippedIncomeCopy ?? namedYearLayer2Copy(draft, id) ?? LAYER2_COPY[id];
+    const copy = wageCopy ?? namedYearLayer2Copy(draft, id) ?? LAYER2_COPY[id];
     if (!copy) return [];
     return [layer2Item(id, copy.label, copy.ask)];
   });
@@ -3070,6 +3087,15 @@ export function layer2Plan(draft: FoxIntakeDraft): StillUsefulItem[] {
       ),
     );
   items.unshift(...coverItems);
+  if (
+    !draft.incomeType.value &&
+    (draft.incomeAsked || stillUsefulVisible(draft)) &&
+    !items.some((item) => item.id === "how-earned" || item.label === "How income is earned")
+  ) {
+    const idAt = items.findIndex((item) => item.id === "government_id");
+    if (idAt >= 0) items.splice(idAt + 1, 0, howEarnedStillUsefulItem());
+    else items.unshift(howEarnedStillUsefulItem());
+  }
   if (
     addressHistoryRemainder(draft) &&
     !items.some((item) => item.id === "prior-address" || item.label === "Prior address")

@@ -17,6 +17,10 @@ on:
       - "scripts/assert-w2-stub-employment-merge.ts"
       - "scripts/assert-se-cover-income.ts"
       - "scripts/assert-years-in-business.ts"
+      - "scripts/assert-looks-right-after-statement.ts"
+      - "scripts/assert-home-type-chips.ts"
+      - "scripts/assert-income-skip-still-useful.ts"
+      - "scripts/assert-still-useful-skip-income.ts"
       - ".github/workflows/spine-walker.yml"
       - "sample-docs/**"
   pull_request:
@@ -35,6 +39,10 @@ on:
       - "scripts/assert-w2-stub-employment-merge.ts"
       - "scripts/assert-se-cover-income.ts"
       - "scripts/assert-years-in-business.ts"
+      - "scripts/assert-looks-right-after-statement.ts"
+      - "scripts/assert-home-type-chips.ts"
+      - "scripts/assert-income-skip-still-useful.ts"
+      - "scripts/assert-still-useful-skip-income.ts"
       - ".github/workflows/spine-walker.yml"
       - "sample-docs/**"
 concurrency:

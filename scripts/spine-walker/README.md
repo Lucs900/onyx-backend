@@ -1,6 +1,6 @@
 # Spine walker
 
-Playwright walk of the sixteen locked preview cases. Not a product slice. Hard **Start over** each case. A handwritten walk is not PASS. A Manager PASS with a red walker is FAIL. Case 9 also runs `scripts/assert-harbor-acceptance-file.ts`. Cases 10–13 also run the Lukasz Harbor leftovers (`assert-contract-at-price`, `assert-house-credit-band`, `assert-w2-stub-employment-merge`, `assert-file-next-ask`) from the spine-walker script before Playwright. CI fail = red.
+Playwright walk of the locked preview cases. Not a product slice. Hard **Start over** each case. A handwritten walk is not PASS. A Manager PASS with a red walker is FAIL. Case 9 also runs `scripts/assert-harbor-acceptance-file.ts`. Cases 10–13 also run the Lukasz Harbor leftovers (`assert-contract-at-price`, `assert-house-credit-band`, `assert-w2-stub-employment-merge`, `assert-file-next-ask`) from the spine-walker script before Playwright. Case 19 is Income Skip Still useful. CI fail = red.
 
 ## Preview
 
@@ -72,5 +72,8 @@ Harbor extract POSTs fulfill leftover-proven local `classifyAndExtract` of the s
 14. Self-employed at income. Composer-drop 20. $9,000 Cover line card. Use this writes $9,000 on Structure Income (or Hale Design). Years asked once. Still useful names Schedule C.
 15. 20 Use this, then 11 upgrades the same Hale Design row to 2025 Schedule C 1084 ($9,958 from page lines). File stays Cover $9,000 until Use this. Not a generic 2025 return. No 1040 all-pages reprint.
 16. 20 then 19 does not hang or steal the 2025 Form 1040 all-pages ask.
+17. Years asks How long have you had Hale Design once after 11.
+18. 11 then 19 keeps $9,958 and next is 2024 Schedule C.
+19. Income Skip → Looks right. Still useful is Government ID + how income is earned. No paystub / W-2 / tax return until how-earned is answered.
 
 FAIL if copy and chips disagree. FAIL if Structure and chat disagree. FAIL if a write did not kill the old number. FAIL if Credit is on File and Fox asks FICO.

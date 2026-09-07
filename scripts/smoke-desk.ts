@@ -4071,6 +4071,12 @@ const founderSkipLooks = applyLooksRightMotion(founderIncomeSkipped);
 assert.equal(workspacePrompt(founderSkipLooks), "documents");
 assert.equal(nextDocInvite(founderSkipLooks), "government_id");
 assert.notEqual(workspacePrompt(founderSkipLooks), "other-reo");
+assert.ok(stillUsefulSection(founderSkipLooks)?.items.some((item) => item.label === "Government ID"));
+assert.ok(stillUsefulSection(founderSkipLooks)?.items.some((item) => item.label === "How income is earned"));
+assert.ok(
+  !stillUsefulSection(founderSkipLooks)?.items.some((item) => /paystub|W-2|tax return|latest return|prior-year return/i.test(item.label)),
+  "Income Skip must not invent a W-2 or SE doc list",
+);
 const founderW2AfterLooks = draft({
   ...founderPurchaseW2Draft,
   sampleAccepted: true,
@@ -5901,6 +5907,9 @@ assert.ok(bothRequest.labels.includes("W-2"));
 
 const otherRequest = docsRequestForIncome("other");
 assert.deepEqual(otherRequest.labels, ["government ID", "tax return"]);
+const skippedIncomeRequest = docsRequestForIncome(undefined);
+assert.deepEqual(skippedIncomeRequest.labels, ["government ID"]);
+assert.ok(!skippedIncomeRequest.labels.some((item) => /paystub|W-2|tax return/i.test(item)));
 assert.match(otherRequest.text, /government ID and tax return/i);
 assert.doesNotMatch(otherRequest.text, /drop what you have|latest paystub/i);
 const otherDraft = withIncome(afterCredit, "other");

@@ -1,7 +1,7 @@
 /**
  * Income Skip + ID Skip + one statement → Proceed in_queue.
- * Still useful: ID, W-2/paystub, second statement, purchase contract.
- * No tax return. Next 1–3 only. No sketch · X of 32 on the File.
+ * Still useful: Government ID and how income is earned. No invented W-2 / tax return.
+ * Purchase contract / second statement may sit. No sketch · X of 32 on the File.
  */
 import assert from "node:assert/strict";
 import { emptyDraft } from "../components/fox/store";
@@ -86,24 +86,23 @@ const draft = skipIncomeProceedDraft();
 const section = stillUsefulSection(draft);
 assert.ok(section);
 assert.equal(section.empty, false);
-assert.ok(section.items.length >= 1 && section.items.length <= 3, "Still useful shows next 1–3 only");
 const labels = section.items.map((item) => item.label);
 const blob = labels.join(" · ");
-assert.doesNotMatch(blob, /tax return|latest return|prior-year return|return/i);
+assert.doesNotMatch(blob, /paystub|W-2|tax return|latest return|prior-year return/i);
 assert.ok(labels.some((label) => /government ID/i.test(label)), blob);
-assert.ok(labels.some((label) => /paystub|W-2/i.test(label)), blob);
+assert.ok(labels.some((label) => /how income is earned/i.test(label)), blob);
 
 const pool = documentedStillUsefulIds("buy", completenessFileFromDraft(draft)).concat(
   storeCompleteness("buy", completenessFileFromDraft(draft)).stillUseful,
 );
 const poolText = [...section.items.map((item) => `${item.id} ${item.label}`), ...pool].join(" · ");
-assert.doesNotMatch(poolText, /tax_return|latest return|prior-year return|tax return/i);
+assert.doesNotMatch(poolText, /tax_return|latest return|prior-year return|tax return|paystub|W-2/i);
 assert.ok(pool.includes("government_id") || labels.some((label) => /government ID/i.test(label)));
-assert.ok(pool.includes("paystub") || pool.includes("w2") || /paystub|W-2/i.test(blob));
 assert.ok(pool.includes("purchase_contract"));
+assert.ok(layer2Plan(draft).some((item) => item.id === "how-earned" || /how income is earned/i.test(item.label)));
 assert.ok(layer2Plan(draft).some((item) => item.id === "second-bank-statement" || /second bank statement/i.test(item.label)));
 assert.ok(layer2Plan(draft).some((item) => item.id === "purchase_contract"));
-assert.ok(!layer2Plan(draft).some((item) => /return/i.test(`${item.id} ${item.label}`)));
+assert.ok(!layer2Plan(draft).some((item) => /paystub|W-2|return/i.test(`${item.id} ${item.label}`)));
 
 const facts = previewFacts(draft);
 assert.ok(facts.every((fact) => fact.id !== "file"));
