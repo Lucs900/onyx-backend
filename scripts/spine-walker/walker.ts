@@ -1343,8 +1343,7 @@ async function case23(page: Page) {
   const after = await waitCurrent(
     page,
     (text, chips) =>
-      hasChip(chips, "Use this") ||
-      hasChip(chips, "Use document") ||
+      (/36,460/.test(text) && (hasChip(chips, "Use this") || hasChip(chips, "Use document"))) ||
       /could not read|unread/i.test(text),
     90_000,
   );
@@ -1417,8 +1416,7 @@ async function case24(page: Page) {
   const after = await waitCurrent(
     page,
     (text, chips) =>
-      hasChip(chips, "Use this") ||
-      hasChip(chips, "Use document") ||
+      (/1,?806\.67/.test(text) && (hasChip(chips, "Use this") || hasChip(chips, "Use document"))) ||
       /could not read|unread/i.test(text),
     90_000,
   );

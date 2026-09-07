@@ -308,7 +308,7 @@ export function pdfTextLayerCharCount(bytes: Uint8Array): number {
 export function readPdfTextLayer(bytes: Uint8Array): string[] | null {
   if (!isPdf(bytes)) return null;
   const cleaned = collectPdfTextLines(bytes);
-  return meaningfulText(cleaned) ? cleaned : cleaned.length ? cleaned : null;
+  return meaningfulText(cleaned) ? cleaned : null;
 }
 
 function crc32(data: Uint8Array) {
@@ -406,17 +406,27 @@ function grayToRgb(gray: Uint8Array): Uint8Array {
   return rgb;
 }
 
+function channelsFromDecoded(width: number, height: number, decodedLength: number) {
+  if (decodedLength === width * height) return { channels: 1, predictor: false };
+  if (decodedLength === width * height * 3) return { channels: 3, predictor: false };
+  if (decodedLength === height * (1 + width)) return { channels: 1, predictor: true };
+  if (decodedLength === height * (1 + width * 3)) return { channels: 3, predictor: true };
+  return null;
+}
+
 function flateImagePng(dict: string, decoded: Uint8Array): Uint8Array | null {
   const width = dictNum(dict, "Width");
   const height = dictNum(dict, "Height");
   const bits = dictNum(dict, "BitsPerComponent") || 8;
   if (bits !== 8 || width < 1 || height < 1 || width * height > 20_000_000) return null;
   const space = dictName(dict, "ColorSpace");
-  const channels = space === "DeviceGray" ? 1 : space === "DeviceRGB" ? 3 : 0;
+  const named = space === "DeviceGray" ? 1 : space === "DeviceRGB" ? 3 : 0;
+  const inferred = channelsFromDecoded(width, height, decoded.length);
+  const channels = named || inferred?.channels || 0;
   if (!channels) return null;
-  const predictor = dictNum(dict, "Predictor");
+  const predictor = dictNum(dict, "Predictor") >= 10 || inferred?.predictor;
   let pixels = decoded;
-  if (predictor >= 10) {
+  if (predictor) {
     const rows = unfilterPngRows(decoded, width, channels);
     if (!rows) return null;
     pixels = rows;
@@ -447,10 +457,43 @@ export function readPdfEmbeddedImages(bytes: Uint8Array): PdfEmbeddedImage[] {
   return images;
 }
 
-/** First page as an image Fox can send to Grok. Embedded page first; pdftoppm if present. */
+function looksLikePagePhoto(image: PdfEmbeddedImage) {
+  // Indexed / 1-bit masks compress tiny and stay nearly black. Grok needs the drawn page.
+  return image.bytes.length >= 40_000;
+}
+
+async function renderWithPdfJs(bytes: Uint8Array): Promise<PdfEmbeddedImage | null> {
+  try {
+    const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
+    const { createCanvas } = await import("@napi-rs/canvas");
+    const doc = await pdfjs.getDocument({
+      data: new Uint8Array(bytes),
+      disableWorker: true,
+      isEvalSupported: false,
+      useSystemFonts: true,
+    } as Parameters<typeof pdfjs.getDocument>[0]).promise;
+    const page = await doc.getPage(1);
+    const viewport = page.getViewport({ scale: 1.5 });
+    const canvas = createCanvas(Math.max(1, Math.ceil(viewport.width)), Math.max(1, Math.ceil(viewport.height)));
+    const canvasContext = canvas.getContext("2d");
+    await page.render({ canvasContext, viewport } as unknown as Parameters<typeof page.render>[0]).promise;
+    const png = canvas.toBuffer("image/png");
+    if (png.length < 80) return null;
+    return { bytes: png, mediaType: "image/png" };
+  } catch {
+    return null;
+  }
+}
+
+/** First page as an image Fox can send to Grok. Drawn page first; skip 1-bit masks. */
 export async function renderPdfFirstPage(bytes: Uint8Array): Promise<PdfEmbeddedImage | null> {
-  const embedded = readPdfEmbeddedImages(bytes);
-  if (embedded[0]) return embedded[0];
+  const drawn = await renderWithPdfJs(bytes);
+  if (drawn && looksLikePagePhoto(drawn)) return drawn;
+  if (drawn) return drawn;
+  const embedded = readPdfEmbeddedImages(bytes).filter(looksLikePagePhoto);
+  if (embedded.length) {
+    return embedded.reduce((best, image) => (image.bytes.length > best.bytes.length ? image : best));
+  }
   try {
     const { execFile } = await import("node:child_process");
     const { promisify } = await import("node:util");

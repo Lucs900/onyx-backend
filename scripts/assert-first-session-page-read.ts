@@ -18,6 +18,7 @@ import {
 import { resolveProposal } from "../components/fox/completeness";
 import { emptyDraft } from "../components/fox/store";
 import { classifyAndExtract, FOX_GROK_MODEL } from "../lib/docs/extract";
+import { renderPdfFirstPage } from "../lib/docs/pdfText";
 import type { ExtractClass, FoxIntakeDraft } from "../components/fox/types";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -276,6 +277,8 @@ async function main() {
     assert.equal(printedMatt.failed, true, "PAY MATT CSTC 260422 printed layer must stay unread");
     assert.deepEqual(printedMatt.fields, {});
     noSecrets(printedMatt.fields);
+    const pageImage = await renderPdfFirstPage(readFileSync(matt));
+    assert.ok(pageImage && pageImage.bytes.length > 40_000, "PAY MATT CSTC 260422 page image missing");
     console.log(
       "assert-first-session-page-read: PAY MATT CSTC 260422 on disk — printed unread, walker Grok page-read is the proof",
     );
