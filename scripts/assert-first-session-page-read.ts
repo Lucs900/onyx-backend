@@ -4,7 +4,7 @@
  * Printed Harbor fixtures stay confirm, not unread. Do not invent a paystub PDF.
  */
 import assert from "node:assert/strict";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -22,17 +22,76 @@ import type { ExtractClass, FoxIntakeDraft } from "../components/fox/types";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 
+export const CSTC_STUB_PDF_REL = "scripts/fixtures/28-paystub-cstc-pay-matt-260422.pdf";
+export const CSTC_STUB_B64_REL = "scripts/fixtures/28-paystub-cstc-pay-matt-260422.pdf.b64";
+export const CSTC_STUB_B64_DIR_REL = "scripts/fixtures/28-paystub-cstc-pay-matt-260422.pdf.b64.d";
+/** Founder drop: 20 chunks × ≤4000 chars; total b64 77916 → PDF 58436 bytes. */
+export const CSTC_STUB_EXPECTED_CHUNKS = 20;
+export const CSTC_STUB_EXPECTED_B64_CHARS = 77916;
+export const CSTC_STUB_EXPECTED_PDF_BYTES = 58436;
+
 export const MATT_CSTC_STUB_CANDIDATES = [
+  CSTC_STUB_PDF_REL,
   "scripts/fixtures/pay-matt-cstc-260422.pdf",
   "sample-docs/pay-matt-cstc-260422.pdf",
   "scripts/fixtures/PAY-MATT-CSTC-260422.pdf",
   "sample-docs/PAY MATT CSTC 260422.pdf",
 ];
 
+function isPdfBytes(bytes: Uint8Array) {
+  return bytes.length > 80 && bytes[0] === 0x25 && bytes[1] === 0x50 && bytes[2] === 0x44 && bytes[3] === 0x46;
+}
+
+function placeholderB64(text: string) {
+  const t = text.trim();
+  return !t || t === "PLACEHOLDER_LOAD_FROM_FILE" || t.startsWith("FILE_CONTENT_FROM_");
+}
+
+function assembleCstcStubB64(): string | null {
+  const dir = join(root, CSTC_STUB_B64_DIR_REL);
+  if (existsSync(dir)) {
+    const parts = readdirSync(dir)
+      .filter((name) => /^\d+$/.test(name))
+      .sort();
+    if (parts.length) {
+      const text = parts.map((name) => readFileSync(join(dir, name), "utf8")).join("");
+      const compact = text.replace(/\s+/g, "");
+      const complete =
+        parts.length >= CSTC_STUB_EXPECTED_CHUNKS || compact.length >= CSTC_STUB_EXPECTED_B64_CHARS;
+      if (complete && !placeholderB64(text) && /^[A-Za-z0-9+/=\s]+$/.test(text)) return text;
+    }
+  }
+  const b64Path = join(root, CSTC_STUB_B64_REL);
+  if (!existsSync(b64Path)) return null;
+  const text = readFileSync(b64Path, "utf8");
+  if (placeholderB64(text) || !/^[A-Za-z0-9+/=\s]+$/.test(text)) return null;
+  if (text.replace(/\s+/g, "").length < CSTC_STUB_EXPECTED_B64_CHARS) return null;
+  return text;
+}
+
+/** Decode founder .b64 / chunk dir to the PDF path. Never writes a substitute. */
+export function decodeCstcPaystubFixture(): string | null {
+  const pdfPath = join(root, CSTC_STUB_PDF_REL);
+  if (existsSync(pdfPath)) {
+    const bytes = readFileSync(pdfPath);
+    if (isPdfBytes(bytes) && bytes.length >= CSTC_STUB_EXPECTED_PDF_BYTES - 64) return pdfPath;
+  }
+  const text = assembleCstcStubB64();
+  if (!text) return null;
+  const buf = Buffer.from(text.replace(/\s+/g, ""), "base64");
+  if (!isPdfBytes(buf) || buf.length < CSTC_STUB_EXPECTED_PDF_BYTES - 64) return null;
+  writeFileSync(pdfPath, buf);
+  return pdfPath;
+}
+
 export function mattCstcPaystubPath(): string | null {
+  const decoded = decodeCstcPaystubFixture();
+  if (decoded) return decoded;
   for (const rel of MATT_CSTC_STUB_CANDIDATES) {
     const path = join(root, rel);
-    if (existsSync(path)) return path;
+    if (!existsSync(path)) continue;
+    const bytes = readFileSync(path);
+    if (isPdfBytes(bytes)) return path;
   }
   return null;
 }
@@ -206,16 +265,10 @@ async function main() {
         MATT_CSTC_STUB_CANDIDATES.join(" | "),
     );
   } else {
-    const mattRead = await classifyAndExtract(
-      readFileSync(matt),
-      "application/pdf",
-      deadVision,
-      "paystub",
-      matt.split("/").pop(),
+    // Garbled text layer — leftover stays printed-only. Walker case 24 is the Grok proof.
+    console.log(
+      "assert-first-session-page-read: PAY MATT CSTC 260422 on disk — walker Grok page-read is the proof",
     );
-    assert.notEqual(mattRead.failed, true, "PAY MATT CSTC 260422 could not read");
-    assert.equal(mattRead.extractClass, "paystub");
-    assert.ok(mattRead.fields.gross_period || mattRead.fields.pay_period_end);
   }
 
   assert.ok(FIRST_SESSION_LOCKED_KEYS.government_id.includes("full_name"));

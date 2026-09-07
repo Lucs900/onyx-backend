@@ -1425,6 +1425,15 @@ async function case24(page: Page) {
   if (/could not read|unread/i.test(after.text) && !hasChip(after.chips, "Use this")) {
     throw new BeatFail(`PAY MATT CSTC 260422 unread — ${after.text}`);
   }
+  if (!hasChip(after.chips, "Use this") && !hasChip(after.chips, "Use document")) {
+    throw new BeatFail(`PAY MATT CSTC 260422 no confirm — ${after.text}`);
+  }
+  if (!/1,?806\.67/.test(after.text)) {
+    throw new BeatFail(`PAY MATT CSTC 260422 must propose current pay $1,806.67 — ${after.text}`);
+  }
+  if (!/Comprehensive Skills|CSTC/i.test(after.text)) {
+    throw new BeatFail(`PAY MATT CSTC 260422 must name the employer — ${after.text}`);
+  }
 }
 
 async function foxTexts(page: Page): Promise<string[]> {
@@ -2036,6 +2045,10 @@ function sampleOnDisk(name: string | null) {
   if (adp && (name === adp.split("/").pop() || adp.endsWith(`/${name}`))) {
     return { name, path: adp };
   }
+  const stub = mattCstcPaystubPath();
+  if (stub && (name === stub.split("/").pop() || stub.endsWith(`/${name}`))) {
+    return { name, path: stub };
+  }
   return null;
 }
 
@@ -2059,6 +2072,8 @@ function extractHint(name: string): ExtractClass | null {
 }
 
 async function localExtractBody(name: string) {
+  // Founder CSTC stub text layer is garbled — Grok page-read on preview is the proof.
+  if (/pay-matt|cstc-pay-matt|28-paystub-cstc/i.test(name)) return null;
   const sample = sampleOnDisk(name);
   if (!sample) return null;
   const extracted = await classifyAndExtract(
