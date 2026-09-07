@@ -423,7 +423,11 @@ async function classifyAndExtractPage(
   try {
     classified = normalizeClassifyResult(await adapter.classify(bytes, mediaType));
     const hinted = hint && hint !== "other" ? hint : undefined;
-    if (classified.readable === false && hinted !== "bank_statement") {
+    if (
+      classified.readable === false &&
+      hinted !== "bank_statement" &&
+      !(hinted && isFirstSessionClass(hinted))
+    ) {
       return {
         extractClass: classified.class,
         confidence: classified.confidence,
@@ -435,8 +439,8 @@ async function classifyAndExtractPage(
     const confident =
       classified.class !== "other" && classified.confidence >= LOW_EXTRACT_CONFIDENCE;
     const extractAs =
-      hinted === "bank_statement"
-        ? "bank_statement"
+      hinted && (hinted === "bank_statement" || isFirstSessionClass(hinted))
+        ? hinted
         : confident
           ? classified.class
           : hinted;

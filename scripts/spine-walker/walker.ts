@@ -2136,19 +2136,31 @@ async function proxyApiThroughPlaywright(page: Page) {
                 headers: oidc,
                 multipart: {
                   file: {
-                    name: "pay-matt-cstc-260422.png",
+                    name: "28-paystub-cstc-pay-matt-260422.png",
                     mimeType: pageImage.mediaType,
                     buffer: Buffer.from(pageImage.bytes),
                   },
-                  name: "pay-matt-cstc-260422.png",
+                  name: "28-paystub-cstc-pay-matt-260422.png",
                   type: pageImage.mediaType,
                   hint: "paystub",
                 },
                 timeout: 60_000,
                 failOnStatusCode: false,
               });
-              console.error(`spine-walker: CSTC grok ${response.status()}`);
-              await route.fulfill({ response });
+              const grokBody = (await response.json().catch(() => ({}))) as {
+                failed?: boolean;
+                class?: string;
+                fields?: Record<string, string>;
+                warnings?: string[];
+              };
+              console.error(
+                `spine-walker: CSTC grok ${response.status()} class=${grokBody.class ?? ""} failed=${String(grokBody.failed ?? "")} fields=${Object.keys(grokBody.fields ?? {}).join(",") || "(none)"} warnings=${(grokBody.warnings ?? []).join(",")}`,
+              );
+              await route.fulfill({
+                status: response.status(),
+                contentType: "application/json",
+                body: JSON.stringify(grokBody),
+              });
               return;
             }
             console.error("spine-walker: CSTC page image missing");
