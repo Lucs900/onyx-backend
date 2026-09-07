@@ -321,7 +321,7 @@ async function hardStartOver(page: Page) {
     .first()
     .waitFor({ state: "visible", timeout: 10_000 })
     .catch(() => null);
-  await startOverButton(page).click();
+  await startOverButton(page).click({ timeout: 15_000 });
   await page.waitForTimeout(400);
   try {
     await waitBuyChip(page);
@@ -1210,19 +1210,41 @@ async function newPreviewContext(browser: Browser): Promise<BrowserContext> {
     extraHTTPHeaders: headers,
   });
   if (Object.keys(headers).length) {
-    await context.route("**/*", async (route) => {
-      const reqHeaders = route.request().headers();
-      delete reqHeaders["content-length"];
-      delete reqHeaders["Content-Length"];
-      await route.continue({
+    await context.route("**/api/**", async (route) => {
+      const response = await route.fetch({
         headers: {
-          ...reqHeaders,
+          ...route.request().headers(),
           ...headers,
         },
       });
+      await route.fulfill({ response });
     });
   }
   return context;
+}
+
+async function patchPageFetch(page: Page) {
+  const oidc = process.env.VERCEL_OIDC_TOKEN?.trim() ?? "";
+  const bypass = process.env.VERCEL_AUTOMATION_BYPASS_SECRET?.trim() ?? "";
+  if (!oidc && !bypass) return;
+  await page.evaluate(
+    ({ oidc: token, bypass: secret }) => {
+      const box = window as Window & { __onyxWalkerFetchPatched?: boolean };
+      if (box.__onyxWalkerFetchPatched) return;
+      box.__onyxWalkerFetchPatched = true;
+      const orig = window.fetch.bind(window);
+      window.fetch = (input, init = {}) => {
+        const headers = new Headers(init.headers);
+        if (token) headers.set("x-vercel-trusted-oidc-idp-token", token);
+        if (secret) {
+          headers.set("x-vercel-protection-bypass", secret);
+          headers.set("x-vercel-set-bypass-cookie", "true");
+        }
+        return orig(input, { ...init, headers });
+      };
+    },
+    { oidc, bypass },
+  );
 }
 
 function oneLine(value: string) {
@@ -1262,12 +1284,24 @@ async function main() {
       const url = response.url();
       if (!/\/api\/(rateflow-quote|docs\/extract)\b/.test(url)) return;
       const status = response.status();
-      if (status >= 400) {
-        console.error(`spine-walker: ${status} ${url.split("?")[0]}`);
-      }
+      void response
+        .json()
+        .then((data: { failed?: boolean; code?: string; error?: string }) => {
+          const extra =
+            data?.failed || data?.code || data?.error
+              ? ` failed=${String(data.failed ?? "")} code=${data.code ?? ""} error=${String(data.error ?? "").slice(0, 80)}`
+              : "";
+          if (status >= 400 || extra) {
+            console.error(`spine-walker: ${status} ${url.split("?")[0]}${extra}`);
+          }
+        })
+        .catch(() => {
+          if (status >= 400) console.error(`spine-walker: ${status} ${url.split("?")[0]}`);
+        });
     });
     try {
       await probeAccess(page);
+      await patchPageFetch(page);
     } catch (error) {
       const beat =
         error instanceof BeatFail ? error.beat : error instanceof Error ? oneLine(error.message) : String(error);
