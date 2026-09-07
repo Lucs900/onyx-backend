@@ -23,6 +23,8 @@ on:
       - "scripts/assert-still-useful-skip-income.ts"
       - "scripts/assert-w2-paystub-before-id.ts"
       - "scripts/assert-looks-right-chip.ts"
+      - "scripts/assert-refi-loan-then-value.ts"
+      - "scripts/assert-w2-page-read.ts"
       - ".github/workflows/spine-walker.yml"
       - "sample-docs/**"
   pull_request:
@@ -47,6 +49,8 @@ on:
       - "scripts/assert-still-useful-skip-income.ts"
       - "scripts/assert-w2-paystub-before-id.ts"
       - "scripts/assert-looks-right-chip.ts"
+      - "scripts/assert-refi-loan-then-value.ts"
+      - "scripts/assert-w2-page-read.ts"
       - ".github/workflows/spine-walker.yml"
       - "sample-docs/**"
 concurrency:

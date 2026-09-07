@@ -3,7 +3,9 @@ import { createOpenAI } from "@ai-sdk/openai";
 import {
   EXTRACT_SCHEMA_KEYS,
   LOW_EXTRACT_CONFIDENCE,
+  W2_LOCKED_SCHEMA_KEYS,
   hasLockedSuggestion,
+  isBoxNumberAsDollars,
   looksLikeBankFields,
   preferFilenameClass,
   promoteExtractClass,
@@ -11,7 +13,13 @@ import {
   type ExtractApplyInput,
 } from "@/components/fox/fileWrite";
 import type { ExtractClass } from "@/components/fox/types";
-import { isPdf, pdfTextLayerCharCount, readPdfEmbeddedImages, readPdfTextLayer } from "@/lib/docs/pdfText";
+import {
+  isPdf,
+  pdfTextLayerCharCount,
+  readPdfEmbeddedImages,
+  readPdfTextLayer,
+  renderPdfFirstPage,
+} from "@/lib/docs/pdfText";
 import {
   fieldsFromPrintedLines,
   loudContractFromPrintedLines,
@@ -63,6 +71,8 @@ const CLASSES: ExtractClass[] = [
   "other",
 ];
 
+/** Same Grok model Fox chat already uses. Vision fallbacks stay for page images. */
+export const FOX_GROK_MODEL = "grok-3";
 export const VISION_MODEL = "grok-2-vision-1212";
 const VISION_MODEL_FALLBACKS = ["grok-2-vision", "grok-4"];
 
@@ -139,7 +149,7 @@ async function readXaiError(response: Response) {
 
 async function grokChatCompletions(prompt: string, dataUrl: string): Promise<string> {
   const apiKey = grokApiKey();
-  const models = [VISION_MODEL, ...VISION_MODEL_FALLBACKS];
+  const models = [FOX_GROK_MODEL, VISION_MODEL, ...VISION_MODEL_FALLBACKS];
   let lastError: Error | null = null;
   for (const model of models) {
     const response = await fetch("https://api.x.ai/v1/chat/completions", {
@@ -270,7 +280,7 @@ function extractFieldsPrompt(extractClass: ExtractClass, keys: readonly string[]
   }
   if (extractClass === "w2") {
     extra =
-      " medicare_wages / box5 is Box 5 Medicare wages and tips when clearly printed — prefer that over Box 1 wages. overtime, bonus, and commission only when clearly printed on the W-2; empty otherwise; never invent. hire_date only when a hire date, start date, or date of hire is clearly printed on the page. Empty otherwise; never invent.";
+      " Locked schema only: employer_name, tax_year, medicare_wages / box5 (Box 5 Medicare wages and tips), wages optional (Box 1). medicare_wages is the dollar amount printed in Box 5 — never the box number 5, never $5 because the label is 5. Prefer Box 5 over Box 1. Never output SSN. overtime, bonus, and commission only when clearly printed; empty otherwise; never invent.";
   }
   if (extractClass === "bank_statement") {
     extra =
@@ -355,21 +365,33 @@ export const grokExtractAdapter: DocumentExtractAdapter = {
     for (const key of keys) {
       if (raw[key] == null) raw[key] = "";
     }
+    const fields = sanitizeExtractedFields(extractClass, raw);
     return {
-      fields: sanitizeExtractedFields(extractClass, raw),
+      fields: extractClass === "w2" ? lockW2PageFields(fields) : fields,
       warnings: [],
     };
   },
 };
 
+function lockW2PageFields(fields: Record<string, string>): Record<string, string> {
+  const next: Record<string, string> = {};
+  for (const key of W2_LOCKED_SCHEMA_KEYS) {
+    const value = String(fields[key] ?? "").trim();
+    if (!value || isBoxNumberAsDollars(value)) continue;
+    next[key] = value;
+  }
+  return next;
+}
+
 function printedResult(
   printed: NonNullable<ReturnType<typeof readPrintedSample>>,
   textLayerChars?: number,
 ): ClassifyExtractResult {
+  const sanitized = sanitizeExtractedFields(printed.extractClass, printed.fields);
   return {
     extractClass: printed.extractClass,
     confidence: printed.confidence,
-    fields: printed.fields,
+    fields: sanitized,
     warnings: [],
     ...(textLayerChars != null ? { textLayerChars } : {}),
   };
@@ -463,6 +485,71 @@ function withTextChars(
   mediaType: string,
 ): ClassifyExtractResult {
   return { ...result, textLayerChars: result.textLayerChars ?? textLayerCharCountOf(bytes, mediaType) };
+}
+
+async function pageImageForGrok(
+  bytes: Uint8Array,
+  mediaType: string,
+): Promise<{ bytes: Uint8Array; mediaType: string } | null> {
+  if (mediaType.startsWith("image/") && !/heic|heif/i.test(mediaType)) {
+    return { bytes, mediaType: mediaType === "image/jpg" ? "image/jpeg" : mediaType };
+  }
+  if (isPdf(bytes) || mediaType === "application/pdf") {
+    const page = await renderPdfFirstPage(bytes);
+    if (page) return page;
+    const embedded = readPdfEmbeddedImages(bytes);
+    if (embedded[0]) return embedded[0];
+  }
+  return null;
+}
+
+async function grokPageRead(
+  bytes: Uint8Array,
+  mediaType: string,
+  adapter: DocumentExtractAdapter,
+  hint?: ExtractClass | null,
+  filename?: string | null,
+): Promise<ClassifyExtractResult | null> {
+  const image = await pageImageForGrok(bytes, mediaType);
+  if (!image) return null;
+  const page = await classifyAndExtractPage(image.bytes, image.mediaType, adapter, hint);
+  const extractClass = preferFilenameClass(page.extractClass, filename ?? "");
+  const fields = extractClass === "w2" ? lockW2PageFields(page.fields) : page.fields;
+  if (page.failed) return { ...page, extractClass, fields };
+  const bankLocked = extractClass === "bank_statement" || hint === "bank_statement";
+  const locked = bankLocked
+    ? looksLikeBankFields(fields)
+    : hasLockedSuggestion(extractClass, fields);
+  if (!locked) {
+    return {
+      extractClass: bankLocked ? "bank_statement" : extractClass,
+      confidence: page.confidence,
+      fields: {},
+      warnings: ["failed"],
+      failed: true,
+    };
+  }
+  return {
+    ...page,
+    extractClass: bankLocked ? "bank_statement" : extractClass,
+    fields,
+  };
+}
+
+async function unreadOrGrokPage(
+  bytes: Uint8Array,
+  mediaType: string,
+  adapter: DocumentExtractAdapter,
+  hint: ExtractClass | null | undefined,
+  filename: string | null | undefined,
+  extraWarning: string,
+  textLayerChars?: number,
+): Promise<ClassifyExtractResult> {
+  const page = await grokPageRead(bytes, mediaType, adapter, hint, filename);
+  if (page && !page.failed && hasLockedSuggestion(page.extractClass, page.fields)) {
+    return { ...page, textLayerChars };
+  }
+  return unreadResult(page?.extractClass ?? "other", filename, extraWarning, textLayerChars);
 }
 
 export async function classifyAndExtract(
@@ -581,11 +668,27 @@ export async function classifyAndExtract(
       if (collapsedCover) return printedResult(collapsedCover, textLayerChars);
       const collapsedContract = loudContractFromPrintedLines(collapsed);
       if (collapsedContract) return printedResult(collapsedContract, textLayerChars);
-      return unreadResult(printed?.extractClass ?? "other", filename, "unmapped-text", textLayerChars);
+      return unreadOrGrokPage(
+        bytes,
+        mediaType,
+        adapter,
+        hint,
+        filename,
+        "unmapped-text",
+        textLayerChars,
+      );
     }
     const charCount = pdfTextLayerCharCount(bytes);
     if (charCount > 0) {
-      return unreadResult(printed?.extractClass ?? "other", filename, "unmapped-text", charCount);
+      return unreadOrGrokPage(
+        bytes,
+        mediaType,
+        adapter,
+        hint,
+        filename,
+        "unmapped-text",
+        charCount,
+      );
     }
     const images = readPdfEmbeddedImages(bytes);
     for (const image of images) {
@@ -594,19 +697,11 @@ export async function classifyAndExtract(
         return printedResult(fromPixels, textLayerChars);
       }
     }
-    if (images[0]) {
-      const page = await classifyAndExtractPage(images[0].bytes, images[0].mediaType, adapter, hint);
-      const extractClass = preferFilenameClass(page.extractClass, filename ?? "");
-      const bankLocked = extractClass === "bank_statement" || hint === "bank_statement";
-      const locked = bankLocked
-        ? looksLikeBankFields(page.fields)
-        : hasLockedSuggestion(extractClass, page.fields);
-      if (page.failed || !locked) {
-        return unreadResult(bankLocked ? "bank_statement" : extractClass, filename, "no-text-layer", textLayerChars);
-      }
-      return { ...page, extractClass: bankLocked ? "bank_statement" : extractClass, textLayerChars };
+    const grok = await grokPageRead(bytes, mediaType, adapter, hint, filename);
+    if (grok && !grok.failed && hasLockedSuggestion(grok.extractClass, grok.fields)) {
+      return { ...grok, textLayerChars };
     }
-    return unreadResult("other", filename, "no-text-layer", textLayerChars);
+    return unreadResult(grok?.extractClass ?? "other", filename, "no-text-layer", textLayerChars);
   }
   const page = await classifyAndExtractPage(bytes, mediaType, adapter, hint);
   const bankHint = hint === "bank_statement" || page.extractClass === "bank_statement";

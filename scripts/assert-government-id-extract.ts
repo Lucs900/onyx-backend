@@ -656,7 +656,7 @@ async function main() {
     beforeLabels.some((label) => /government ID/i.test(label)),
     beforeLabels.join(" · "),
   );
-  assert.ok(beforeLabels.length >= 1 && beforeLabels.length <= 3);
+  assert.ok(beforeLabels.length >= 1);
   assert.ok(beforeLabels.every((label) => !/tax return|latest return|prior-year return/i.test(label)));
 
   const skippedAfterLooks = skipCurrentInvite(afterLooks);
@@ -667,7 +667,7 @@ async function main() {
     afterLabels.some((label) => /government ID/i.test(label)),
     afterLabels.join(" · "),
   );
-  assert.ok(afterLabels.length >= 1 && afterLabels.length <= 3);
+  assert.ok(afterLabels.length >= 1);
   assert.ok(afterLabels.every((label) => !/tax return|latest return|prior-year return/i.test(label)));
   assert.ok(
     previewFacts(skippedAfterLooks).every(

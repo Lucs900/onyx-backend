@@ -271,6 +271,8 @@ const MONEY_KEYS = new Set([
   "ytd_gross",
   "net_period",
   "wages",
+  "medicare_wages",
+  "box5",
   "federal_withheld",
   "agi",
   "ending_balance",
@@ -504,6 +506,27 @@ export function looksLikeContractFields(
   return Boolean(value("property_address") || value("purchase_price") || value("close_date") || value("seller_credit"));
 }
 
+/** W-2 page-read lock: employer, tax year, Box 5 Medicare wages. Box 1 optional. */
+export const W2_LOCKED_SCHEMA_KEYS = [
+  "employer_name",
+  "tax_year",
+  "medicare_wages",
+  "box5",
+  "wages",
+] as const;
+
+/** Box labels 1–16 are not dollars. Reading Box 5 as $5 is a FAIL. */
+export function isBoxNumberAsDollars(value: string | null | undefined): boolean {
+  const raw = String(value ?? "")
+    .trim()
+    .replace(/^\$/, "")
+    .replace(/,/g, "");
+  if (!raw) return false;
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return false;
+  return Number.isInteger(n) && n >= 1 && n <= 16;
+}
+
 export function hasLockedSuggestion(
   extractClass: ExtractClass,
   fields?: Record<string, string | null | undefined> | null,
@@ -522,12 +545,10 @@ export function hasLockedSuggestion(
     );
   }
   if (extractClass === "w2") {
-    return Boolean(
-      value("employer_name") ||
-        value("medicare_wages") ||
-        value("box5") ||
-        value("wages"),
-    );
+    const box5 = isBoxNumberAsDollars(value("medicare_wages") || value("box5"))
+      ? ""
+      : value("medicare_wages") || value("box5");
+    return Boolean(value("employer_name") && box5);
   }
   if (extractClass === "purchase_contract") return looksLikeContractFields(fields);
   if (extractClass === "tax_return") {
@@ -960,6 +981,12 @@ export function sanitizeExtractedFields(
     }
     if (CA_DL_NUMBER_RE.test(value.replace(/\s+/g, ""))) continue;
     if (SSN_RE.test(value)) continue;
+    if (
+      (key === "medicare_wages" || key === "box5" || key === "wages") &&
+      isBoxNumberAsDollars(value)
+    ) {
+      continue;
+    }
     if (
       LONG_ACCOUNT_RE.test(value.replace(/[\s-]/g, "")) &&
       !MONEY_KEYS.has(key) &&

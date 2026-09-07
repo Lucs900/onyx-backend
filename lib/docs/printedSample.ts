@@ -402,7 +402,10 @@ export function box5FromPrintedText(text: string): string {
     const match = blob.match(pattern);
     if (!match?.[1]) continue;
     const digits = moneyDigits(match[1]);
-    if (digits) return digits;
+    if (!digits) continue;
+    const n = Number(digits);
+    if (Number.isInteger(n) && n >= 1 && n <= 16) continue;
+    return digits;
   }
   return "";
 }

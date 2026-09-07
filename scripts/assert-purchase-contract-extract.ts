@@ -267,7 +267,8 @@ async function main() {
     },
   };
   assert.equal(nextDocInvite(zipOnlyPreLooks), "purchase_contract");
-  assert.equal(canLooksRight(zipOnlyPreLooks), false);
+  // 3bdc3c3: after W-2 + stub, contract invite does not block Looks right.
+  assert.equal(canLooksRight(zipOnlyPreLooks), true);
   assert.equal(workspacePrompt(zipOnlyPreLooks), "documents");
   assert.equal(nextFoxAsk(zipOnlyPreLooks).text, DOC_INVITE_COPY.purchase_contract);
   assert.doesNotMatch(nextFoxAsk(zipOnlyPreLooks).text, /What’s a good email|email/i);

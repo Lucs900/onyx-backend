@@ -986,7 +986,7 @@ function clearDependentFunds(draft: FoxIntakeDraft): FoxIntakeDraft {
   };
 }
 
-/** Price write clears dependent down/loan and live rate. Reconfirm down/loan. FICO, occupancy, income, citizenship, ZIP, and docs stay. */
+/** Price write clears dependent down/loan and live rate. Reconfirm down/loan. FICO, occupancy, income, citizenship, ZIP, and docs stay. Refinance keeps a loan already on File. */
 export function writePurchasePrice(draft: FoxIntakeDraft, price: number): FoxIntakeDraft {
   const facts = draft.facts?.purchase_price
     ? {
@@ -997,13 +997,28 @@ export function writePurchasePrice(draft: FoxIntakeDraft, price: number): FoxInt
         },
       }
     : draft.facts;
-  return clearDependentFunds({
+  const next = {
     ...draft,
     propertyValueAmount: price,
     valueAsked: true,
     correcting: null,
     correctingLine: null,
     facts,
+  };
+  if (isRefiLike(draft) && hasLoanAmount(draft)) {
+    return {
+      ...next,
+      ...clearLiveQuote(),
+      scenario: draft.scenario
+        ? {
+            ...draft.scenario,
+            propertyValue: price,
+          }
+        : draft.scenario,
+    };
+  }
+  return clearDependentFunds({
+    ...next,
     scenario: draft.scenario
       ? {
           ...draft.scenario,

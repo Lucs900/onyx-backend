@@ -446,3 +446,33 @@ export function readPdfEmbeddedImages(bytes: Uint8Array): PdfEmbeddedImage[] {
   }
   return images;
 }
+
+/** First page as an image Fox can send to Grok. Embedded page first; pdftoppm if present. */
+export async function renderPdfFirstPage(bytes: Uint8Array): Promise<PdfEmbeddedImage | null> {
+  const embedded = readPdfEmbeddedImages(bytes);
+  if (embedded[0]) return embedded[0];
+  try {
+    const { execFile } = await import("node:child_process");
+    const { promisify } = await import("node:util");
+    const { mkdtemp, readFile, rm, writeFile } = await import("node:fs/promises");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const exec = promisify(execFile);
+    const dir = await mkdtemp(join(tmpdir(), "onyx-page-"));
+    const pdfPath = join(dir, "page.pdf");
+    const prefix = join(dir, "out");
+    await writeFile(pdfPath, Buffer.from(bytes));
+    try {
+      await exec("pdftoppm", ["-png", "-f", "1", "-l", "1", "-singlefile", "-r", "150", pdfPath, prefix], {
+        timeout: 15_000,
+      });
+      const png = await readFile(`${prefix}.png`);
+      if (png.length > 80) return { bytes: png, mediaType: "image/png" };
+    } finally {
+      await rm(dir, { recursive: true, force: true }).catch(() => undefined);
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}

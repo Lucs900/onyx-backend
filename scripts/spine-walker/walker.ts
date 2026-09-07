@@ -12,7 +12,9 @@
  * no freeze, keep $9,958, next is 2024 Schedule C. Case 19 is Income Skip
  * Still useful. Case 20 is 03 Use this → latest paystub, then 07 same Harbor
  * row, then ID Upload this · Skip. Case 21 is Looks right chip on that gate;
- * typed yes still confirms.
+ * typed yes still confirms. Case 22 is refinance 500000 loan then 800000
+ * value — File keeps $500,000 and does not re-ask loan. Case 23 is ADP W-2
+ * page-read when the founder fixture is present.
  * Years in business is once after SE / Both. Named Hale Design when known.
  * Lukasz Harbor leftovers run from scripts/assert-spine-walker.sh before
  * Playwright. CI fail = red.
@@ -24,7 +26,9 @@ import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { classifyAndExtract } from "../../lib/docs/extract";
+import { isBoxNumberAsDollars } from "../../components/fox/fileWrite";
 import type { ExtractClass } from "../../components/fox/types";
+import { adpW2FixturePath } from "../assert-w2-page-read";
 
 const PREVIEW_URL =
   process.env.SPINE_WALKER_URL ??
@@ -856,6 +860,15 @@ async function composerDrop(page: Page, name: string) {
   await attach.setInputFiles(join(SAMPLE_DOCS, name));
 }
 
+async function composerDropPath(page: Page, path: string) {
+  const name = path.split("/").pop() ?? path;
+  lastDroppedSample = name;
+  const attach = page.locator("[data-composer-attach='true'], [data-docs-handoff='true']").first();
+  await attach.waitFor({ state: "attached", timeout: 15_000 });
+  await attach.setInputFiles([]).catch(() => null);
+  await attach.setInputFiles(path);
+}
+
 async function skipHarborSideAsk(page: Page): Promise<boolean> {
   const text = await currentText(page);
   const chips = await currentChips(page);
@@ -1255,6 +1268,126 @@ async function case21(page: Page) {
   }
   if (!useful.some((item) => /how income is earned/i.test(item))) {
     throw new BeatFail(`typed yes Still useful missing how-earned — ${blob || "(none)"}`);
+  }
+}
+
+async function case22(page: Page) {
+  await hardStartOver(page);
+  await clickChip(page, "Refinance");
+  await waitAsk(page, /How will the property be used/i);
+  await clickChip(page, "Primary");
+  const afterOcc = await waitCurrent(
+    page,
+    (text) =>
+      /loan or payoff amount|What’s the loan amount|property value|timeline|kind of home/i.test(text),
+    20_000,
+  );
+  if (/timeline/i.test(afterOcc.text) && hasChip(afterOcc.chips, "Skip")) {
+    await clickChip(page, "Skip");
+  }
+  const loanAsk = await waitAsk(page, /loan or payoff amount|What’s the loan amount/i);
+  if (/property value/i.test(loanAsk.text) && !/loan/i.test(loanAsk.text)) {
+    throw new BeatFail(`refinance asked value before loan — ${loanAsk.text}`);
+  }
+  await typeSend(page, "500000");
+  const valueAsk = await waitCurrent(
+    page,
+    (text) => /property value|kind of home|loan or payoff/i.test(text),
+    20_000,
+  );
+  if (/loan or payoff amount|What’s the approximate loan/i.test(valueAsk.text) && !/property value/i.test(valueAsk.text)) {
+    throw new BeatFail(`re-asked loan after 500000 — ${valueAsk.text}`);
+  }
+  if (!/property value/i.test(valueAsk.text)) {
+    throw new BeatFail(`after loan expected property value — ${valueAsk.text}`);
+  }
+  await typeSend(page, "800000");
+  const afterValue = await waitCurrent(
+    page,
+    (text) => !/property value/i.test(text) || /kind of home|estimated FICO|address/i.test(text),
+    20_000,
+  );
+  if (/loan or payoff amount|What’s the approximate loan/i.test(afterValue.text)) {
+    throw new BeatFail(`re-asked loan after value — ${afterValue.text}`);
+  }
+  const map = await structureMap(page);
+  const loan = moneyOf(map, "Loan amount");
+  if (loan !== "$500,000") {
+    throw new BeatFail(`loan was not $500,000 after value — ${loan || "(missing)"}`);
+  }
+}
+
+async function case23(page: Page) {
+  const fixture = adpW2FixturePath();
+  if (!fixture) {
+    return;
+  }
+  await hardStartOver(page);
+  await walkToQuotedIncome(page, "94123", true);
+  await waitAsk(page, /How is income earned/i);
+  await clickChip(page, "W-2");
+  const afterW2 = await waitCurrent(
+    page,
+    (text, chips) =>
+      /other monthly debts|Drop last year|government ID|latest paystub|W-2/i.test(text) ||
+      hasChip(chips, "Skip"),
+    20_000,
+  );
+  if (/other monthly debts/i.test(afterW2.text) && hasChip(afterW2.chips, "Skip")) {
+    await clickChip(page, "Skip");
+    await waitCurrent(page, (text) => !/other monthly debts/i.test(text), 15_000);
+  }
+  await composerDropPath(page, fixture);
+  const after = await waitCurrent(
+    page,
+    (text, chips) =>
+      hasChip(chips, "Use this") ||
+      hasChip(chips, "Use document") ||
+      /could not read|unread/i.test(text),
+    90_000,
+  );
+  if (/could not read|unread/i.test(after.text) && !hasChip(after.chips, "Use this")) {
+    throw new BeatFail(`ADP W-2 unread — ${after.text}`);
+  }
+  if (/\$5(?!\d)|Box 5 \$5\b/.test(after.text) && !/36,460/.test(after.text)) {
+    throw new BeatFail(`ADP Box 5 read as $5 — ${after.text}`);
+  }
+  if (!/36,460/.test(after.text)) {
+    throw new BeatFail(`ADP confirm missing $36,460.08 — ${after.text}`);
+  }
+  if (!/Comprehensive Skills Training Center/i.test(after.text)) {
+    throw new BeatFail(`ADP confirm missing employer — ${after.text}`);
+  }
+  if (/\b\d{3}-\d{2}-\d{4}\b/.test(after.text)) {
+    throw new BeatFail(`ADP printed SSN — ${after.text}`);
+  }
+  await assertLooksRightHiddenWhileUseThis(page);
+  await clickChip(page, hasChip(after.chips, "Use this") ? "Use this" : "Use document");
+  const written = await waitCurrent(
+    page,
+    (text, chips) =>
+      /latest paystub|government ID/i.test(text) || hasChip(chips, "Upload this") || hasChip(chips, "Skip"),
+    20_000,
+  );
+  const rows = await structureRows(page);
+  const jobs = rows.filter((row) => row.label === "Employment");
+  const adp = jobs.filter((row) => /Comprehensive Skills Training Center/i.test(row.value));
+  if (adp.length !== 1) {
+    throw new BeatFail(`ADP Use this must write one Employment row — ${rows.map((row) => `${row.label}: ${row.value}`).join(" | ")}`);
+  }
+  if (!/Box 5 \$36,460/.test(adp[0].value)) {
+    throw new BeatFail(`ADP Use this lost Box 5 $36,460.08 — ${adp[0].value}`);
+  }
+  if (/Box 5 \$5\b/.test(adp[0].value) && !/36,460/.test(adp[0].value)) {
+    throw new BeatFail(`ADP wrote Box 5 as $5 — ${adp[0].value}`);
+  }
+  const map = await structureMap(page);
+  const blob = `${written.text} ${rows.map((row) => row.value).join(" ")} ${Object.values(map).join(" ")}`;
+  if (/\b\d{3}-\d{2}-\d{4}\b/.test(blob) || /\bssn\b/i.test(blob)) {
+    throw new BeatFail(`ADP SSN landed on File — ${blob}`);
+  }
+  if (/government ID/i.test(written.text) && !/paystub/i.test(written.text)) {
+    throw new BeatFail(`ADP Use this jumped to ID — ${written.text}`);
   }
 }
 
@@ -1842,6 +1975,8 @@ const CASES: { n: number; title: string; run: (page: Page) => Promise<void> }[] 
   { n: 19, title: "Income Skip → after Looks right, Still useful is ID + how-earned, not W-2 docs", run: case19 },
   { n: 20, title: "03 Use this → latest paystub; 07 upgrades same Harbor row; then ID Upload this · Skip", run: case20 },
   { n: 21, title: "Looks right gate shows Looks right chip; typed yes still confirms", run: case21 },
+  { n: 22, title: "Refinance 500000 then 800000 keeps $500,000 loan", run: case22 },
+  { n: 23, title: "ADP W-2 page-read: Box 5 is $36,460.08, never $5", run: case23 },
 ];
 
 async function openBrowser() {
@@ -1859,7 +1994,12 @@ async function newPreviewContext(browser: Browser): Promise<BrowserContext> {
 function sampleOnDisk(name: string | null) {
   if (!name) return null;
   const path = join(SAMPLE_DOCS, name);
-  return existsSync(path) ? { name, path } : null;
+  if (existsSync(path)) return { name, path };
+  const adp = adpW2FixturePath();
+  if (adp && (name === adp.split("/").pop() || adp.endsWith(`/${name}`))) {
+    return { name, path: adp };
+  }
+  return null;
 }
 
 const deadVision = {
@@ -1891,7 +2031,11 @@ async function localExtractBody(name: string) {
     extractHint(name),
     name,
   );
-  const failed = Boolean(extracted.failed || extracted.warnings.includes("failed"));
+  const adpBox5 = extracted.fields.medicare_wages ?? extracted.fields.box5 ?? "";
+  const adpMiss =
+    /adp|castaneda|27-w2-2025-adp/i.test(name) &&
+    (!/36460/.test(adpBox5) || isBoxNumberAsDollars(adpBox5));
+  const failed = Boolean(extracted.failed || extracted.warnings.includes("failed") || adpMiss);
   return {
     class: extracted.extractClass,
     confidence: extracted.confidence,
