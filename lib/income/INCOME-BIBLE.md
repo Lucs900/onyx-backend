@@ -10,6 +10,9 @@ A Form 1040 cover **may write thin income when that is all we have**. The old li
 - Fixture **20** (2025): $108,000 → **$9,000** / mo.
 - Fixture **19** (2024): $88,000 → **$7,333** / mo.
 - Label: **Cover line · Suggested · not underwritten**. Use this.
+- Use this writes **$9,000** on the same Hale Design / SE Income row. Notepad is not type-only.
+- After that write, next is the next empty required line only (notepad-driven).
+- Years in business: ask **once** after Self-employed. No reprint.
 - Do **not** add Sch E or Sch F from the cover.
 - Do **not** invent add-backs from the cover.
 - Do **not** overwrite wages, a real Schedule C, K-1, or an open income card. Thin cover writes only when that is all we have.

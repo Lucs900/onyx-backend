@@ -1920,6 +1920,12 @@ export function applyExtractedFields(
     quietLines.push(EMPLOYER_MISMATCH_LINE);
   }
   if (!coverReturn) next = maybeProposeQualifyingFromTaxFile(next);
+  if (
+    next.awaitingYearsInBusiness &&
+    (coverReturn || next.pendingProposal?.field === "qualifying_income")
+  ) {
+    next = { ...next, awaitingYearsInBusiness: false, yearsInBusinessAsked: true };
+  }
   const holdLooksRight =
     !coverReturn || Boolean(next.pendingProposal || conflict || next.pendingConflict);
   return {

@@ -21,9 +21,13 @@ import {
   stillUsefulSection,
 } from "../components/fox/fileWrite";
 import { applyExtractWrite, emptyDraft, loadIntakeDraft, receiveDocument } from "../components/fox/store";
-import { resolveProposal } from "../components/fox/completeness";
-import { nextFoxAsk } from "../components/fox/workspace";
-import { isCoverLineProposal } from "../components/fox/qualifyingIncome";
+import {
+  requiredLineValue,
+  requiredStructureLines,
+  resolveProposal,
+} from "../components/fox/completeness";
+import { nextFoxAsk, previewFacts } from "../components/fox/workspace";
+import { isCoverLineProposal, SE_MONTHLY_FIELD } from "../components/fox/qualifyingIncome";
 import type { ExtractClass, FoxIntakeDraft } from "../components/fox/types";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -161,10 +165,46 @@ async function main() {
 
   const used20 = resolveProposal(after20, "accept");
   assert.equal(used20.facts?.qualifying_income?.value, "9000");
+  assert.equal(used20.facts?.[SE_MONTHLY_FIELD]?.value, "9000");
+  assert.equal(used20.awaitingYearsInBusiness, false);
+  const incomeLine = requiredStructureLines(used20).find((line) => line.id === "income");
+  assert.ok(incomeLine);
+  const incomeShown = requiredLineValue(used20, incomeLine);
+  assert.match(incomeShown.value, /\$9,000/);
+  assert.match(incomeShown.note ?? "", /Cover line/);
+  assert.ok(
+    previewFacts(used20).some(
+      (fact) =>
+        (fact.id === "income" || fact.id === "qualifying") &&
+        /\$9,000/.test(fact.value) &&
+        /Cover line/.test(`${fact.value} ${fact.note ?? ""}`),
+    ),
+    `Structure hid $9,000 after Use this — ${previewFacts(used20)
+      .map((fact) => `${fact.label}:${fact.value}`)
+      .join(" · ")}`,
+  );
   const afterUse20 = nextFoxAsk(used20);
+  assert.doesNotMatch(`${afterUse20.text} ${afterUse20.followUp ?? ""}`, /How long have you had/);
   assert.match(`${afterUse20.text} ${afterUse20.followUp ?? ""}`, /2025 Schedule C/);
   assert.equal((`${afterUse20.text} ${afterUse20.followUp ?? ""}`.match(/Got the cover/g) ?? []).length <= 1, true);
   assert.equal(nextCoverPageInviteCopy(used20), "The 1040 lists a Schedule C. I still need that 2025 Schedule C.");
+
+  const yearsOpen20 = writeLive(
+    {
+      ...seAtIncome(),
+      awaitingYearsInBusiness: true,
+      yearsInBusinessAsked: false,
+    },
+    "20-1040-cover-2025-jordan-hale.pdf",
+    "tax_return",
+    twenty.fields ?? {},
+    "2026-09-07T16:00:30.000Z",
+  ).draft;
+  assert.equal(yearsOpen20.awaitingYearsInBusiness, false);
+  assert.doesNotMatch(nextFoxAsk(yearsOpen20).text, /How long have you had/);
+  const usedYearsOpen20 = resolveProposal(yearsOpen20, "accept");
+  assert.match(requiredLineValue(usedYearsOpen20, incomeLine).value, /\$9,000/);
+  assert.doesNotMatch(nextFoxAsk(usedYearsOpen20).text, /How long have you had/);
 
   const skippedC = skipCurrentInvite(used20);
   assert.doesNotMatch(askBlob(skippedC), /Got the cover/i);

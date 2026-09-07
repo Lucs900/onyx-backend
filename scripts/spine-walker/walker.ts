@@ -1241,6 +1241,11 @@ async function walkSeToIncomeDocs(page: Page) {
   );
   if (/How long have you had|years in business/i.test(await currentText(page))) {
     await typeSend(page, "2");
+    await waitCurrent(
+      page,
+      (text) => !/How long have you had|years in business/i.test(text),
+      15_000,
+    );
   }
   await waitCurrent(
     page,
@@ -1310,6 +1315,29 @@ async function case14(page: Page) {
   }
   if (!hasChip(chips, "Use this")) {
     throw new BeatFail(`20 card missing Use this — ${text} | ${chips.join(" · ")}`);
+  }
+  await clickChip(page, "Use this");
+  const started = Date.now();
+  let map: Record<string, string> = {};
+  let after = "";
+  while (Date.now() - started < 20_000) {
+    after = await currentText(page);
+    if (/How long have you had|years in business/i.test(after)) {
+      throw new BeatFail(`20 Use this reprinted years — ${after}`);
+    }
+    map = await structureMap(page);
+    const blob = `${map["Income"] ?? ""} ${map["Qualifying income"] ?? ""} ${map["Employment"] ?? ""}`;
+    if (/\$9,000/.test(blob)) break;
+    await page.waitForTimeout(200);
+  }
+  const written = `${map["Income"] ?? ""} ${map["Qualifying income"] ?? ""} ${map["Employment"] ?? ""}`;
+  if (!/\$9,000/.test(written)) {
+    throw new BeatFail(
+      `20 Use this did not write $9,000 on Structure — Income=${map["Income"] ?? "(none)"} Qualifying=${map["Qualifying income"] ?? "(none)"}`,
+    );
+  }
+  if (!/Income/.test(Object.keys(map).join(" ")) && !/Qualifying income/.test(Object.keys(map).join(" "))) {
+    throw new BeatFail(`20 Use this left notepad type-only — ${written}`);
   }
   const useful = await stillUsefulLabels(page);
   if (!useful.some((label) => /Schedule C/i.test(label))) {
@@ -1403,7 +1431,7 @@ const CASES: { n: number; title: string; run: (page: Page) => Promise<void> }[] 
   { n: 11, title: "09 at price then House-turn 740–759 writes Credit, next is not FICO", run: case11 },
   { n: 12, title: "03+07 before income type → no empty income quiz", run: case12 },
   { n: 13, title: "Start over clears income, Docs, Note, Still useful", run: case13 },
-  { n: 14, title: "20 → $9,000 cover-line card", run: case14 },
+  { n: 14, title: "20 → $9,000 cover-line writes Structure Income", run: case14 },
   { n: 15, title: "20 then 11 upgrades Hale Design to 1084", run: case15 },
   { n: 16, title: "20 then 19 does not hang", run: case16 },
 ];

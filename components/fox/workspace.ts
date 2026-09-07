@@ -159,6 +159,7 @@ import {
   requiredStructureLines,
   shouldSpeakPendingConfirm,
   QUALIFYING_INCOME_FIELD,
+  qualifyingIncomeOnFile,
   isFundsPairProposal,
   resolveProposal,
   shouldAskYearsInBusiness,
@@ -1512,7 +1513,11 @@ function documentsAskText(draft: FoxIntakeDraft): string {
   if (isBorrowerNameConfirmPending(draft) && draft.pendingProposal?.value) {
     return borrowerNameExtractCopy(draft.pendingProposal.value);
   }
-  if (draft.awaitingYearsInBusiness && !yearsInBusinessValue(draft)) {
+  if (
+    draft.awaitingYearsInBusiness &&
+    !yearsInBusinessValue(draft) &&
+    !qualifyingIncomeOnFile(draft)
+  ) {
     return yearsInBusinessAskCopy(draft);
   }
   if (
@@ -3224,7 +3229,8 @@ export function nextFoxAsk(draft: FoxIntakeDraft): {
     wantsYearsInBusinessAsk(draft) &&
     !draft.pendingProposal &&
     !draft.pendingConflict &&
-    !draft.pendingAddress
+    !draft.pendingAddress &&
+    !qualifyingIncomeOnFile(draft)
   ) {
     return { text: yearsInBusinessAskCopy(draft), actions: yearsInBusinessSkipActions() };
   }
@@ -3361,7 +3367,13 @@ export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
   if (propertyAddressNeededForQuote(draft)) return "property-address";
   if (propertyZipAskNeeded(draft)) return "property-zip";
   if (!incomeSettled(draft)) return "income";
-  if (!draft.sampleAccepted && !yearsInBusinessSettled(draft)) return "years-in-business";
+  if (
+    !draft.sampleAccepted &&
+    !yearsInBusinessSettled(draft) &&
+    !qualifyingIncomeOnFile(draft)
+  ) {
+    return "years-in-business";
+  }
   if (!draft.sampleAccepted && shouldAskMonthlyDebts(draft)) return "debts";
   if (needsDeclarationTiming(draft)) return "declaration-timing";
   if (!draft.sampleAccepted && wageDocsAskNeeded(draft)) return "wage-docs";
@@ -3658,7 +3670,11 @@ function workspaceAskCopy(
     };
   }
   if (prompt === "documents") {
-    if (draft.awaitingYearsInBusiness && !yearsInBusinessValue(draft)) {
+    if (
+      draft.awaitingYearsInBusiness &&
+      !yearsInBusinessValue(draft) &&
+      !qualifyingIncomeOnFile(draft)
+    ) {
       return { text: yearsInBusinessAskCopy(draft), actions: yearsInBusinessSkipActions() };
     }
     if (

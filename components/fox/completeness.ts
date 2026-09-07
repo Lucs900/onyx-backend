@@ -38,6 +38,8 @@ import {
   QUALIFYING_INCOME_FIELD,
   QUALIFYING_METHOD_FIELD,
   SUGGESTED_INCOME_NOTE,
+  COVER_LINE_METHOD,
+  COVER_LINE_NOTE,
   STUB_MONTHLY_NOTE,
   W2_BOX5_MONTHLY_NOTE,
   WAGE_MONTHLY_FIELD,
@@ -1655,12 +1657,16 @@ export function resolveProposal(
     if (note) {
       next = writeConfirmedFact(next, QUALIFYING_METHOD_FIELD, note, source);
     }
+    if (note === COVER_LINE_METHOD && !proposal.parts?.scheduleC) {
+      next = writeConfirmedFact(next, SE_MONTHLY_FIELD, proposal.value, source);
+    }
     if (note === W2_BOX5_MONTHLY_NOTE || /box 5/i.test(note)) {
       next = { ...next, wageBox5Asked: true };
     }
     if (note === STUB_MONTHLY_NOTE || /stub monthly/i.test(note)) {
       next = { ...next, wageStubAsked: true };
     }
+    next = { ...next, awaitingYearsInBusiness: false, yearsInBusinessAsked: true };
   }
   const cleared = { ...next, pendingProposal: null, pendingAddress: undefined };
   const flushed = flushPendingOtherReo(flushPendingCurrentHousing(flushPendingHireDate(cleared)));
@@ -2060,6 +2066,21 @@ export function requiredLineValue(
             : raw === "other"
               ? "Other"
               : "";
+    const pendingQi = proposal?.field === QUALIFYING_INCOME_FIELD ? proposal : null;
+    const storedQi = draft.facts?.[QUALIFYING_INCOME_FIELD];
+    const qiAmount = pendingQi?.value || (storedQi?.confirmed ? storedQi.value : "");
+    const qiMethod = pendingQi?.methodNote || factValue(draft, QUALIFYING_METHOD_FIELD);
+    const coverLine = qiMethod === COVER_LINE_METHOD || pendingQi?.note === COVER_LINE_NOTE;
+    if (qiAmount && (raw === "self-employed" || coverLine)) {
+      const shown = displayFactValue(QUALIFYING_INCOME_FIELD, qiAmount);
+      const named = businessNameOnFile(draft);
+      const bits = [named || label, shown].filter(Boolean);
+      return {
+        value: bits.join(" · "),
+        note: coverLine ? COVER_LINE_NOTE : (pendingQi?.note ?? SUGGESTED_INCOME_NOTE),
+        filled: Boolean(label || storedQi?.confirmed),
+      };
+    }
     const rental =
       draft.facts?.[SUGGESTED_NET_RENTAL_FIELD] ?? draft.facts?.[RENTAL_INCOME_FIELD];
     if (rental?.confirmed && rental.value) {

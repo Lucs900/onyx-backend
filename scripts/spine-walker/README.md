@@ -69,7 +69,7 @@ Harbor extract POSTs fulfill leftover-proven local `classifyAndExtract` of the s
 11. Same combined path with 740–759. Credit on File. Next Fox line is not FICO.
 12. 03+07 before income type. No empty income quiz.
 13. Start over clears income, Docs, Note, Still useful.
-14. Self-employed at income. Composer-drop 20. $9,000 Cover line card. Still useful names Schedule C.
+14. Self-employed at income. Composer-drop 20. $9,000 Cover line card. Use this writes $9,000 on Structure Income (or Hale Design). Years asked once. Still useful names Schedule C.
 15. 20 Use this, then 11 upgrades the same Hale Design row to $9,958. Confirm before write.
 16. 20 then 19 does not hang or steal the 2025 Form 1040 all-pages ask.
 

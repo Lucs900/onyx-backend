@@ -987,11 +987,13 @@ export function monthlyQualifyingFromExtract(
     if (hasBetterIncomeThanCover(draft)) return null;
     const net = parseExtractMoney(fields.schedule_c_net_profit);
     if (net == null) return null;
+    const monthly = monthlyFromAnnual(net);
     return {
-      monthly: monthlyFromAnnual(net),
+      monthly,
       basis: "schedule_c",
       method: "one-year",
       methodNote: COVER_LINE_METHOD,
+      parts: { scheduleC: monthly },
     };
   }
   const incoming = cashflowFromExtract(fields);
@@ -1717,9 +1719,11 @@ export function qualifyingIncomeDisplay(draft: FoxIntakeDraft): { value: string;
     return {
       value: method ? structureQualifyingValue(displayMoney(stored), method) : displayMoney(stored),
       note:
-        hasScheduleECashflow(draft) && !hasScheduleCCashflow(draft) && !hasK1Ordinary(draft)
-          ? SUGGESTED_RENTAL_CASH_FLOW_NOTE
-          : SUGGESTED_INCOME_NOTE,
+        method === COVER_LINE_METHOD
+          ? COVER_LINE_NOTE
+          : hasScheduleECashflow(draft) && !hasScheduleCCashflow(draft) && !hasK1Ordinary(draft)
+            ? SUGGESTED_RENTAL_CASH_FLOW_NOTE
+            : SUGGESTED_INCOME_NOTE,
     };
   }
   return null;
