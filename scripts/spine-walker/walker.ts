@@ -992,16 +992,28 @@ async function case9(page: Page) {
   await dropHarborDoc(page, HARBOR_DROPS[5], "confirm");
   await dropHarborDoc(page, HARBOR_DROPS[6], "confirm");
   await settleHarborSideAsks(page, 12_000);
+  const keepLoan = (await currentChips(page)).find((chip) => /^Keep /i.test(chip) && /loan/i.test(chip));
+  if (keepLoan) {
+    await clickChip(page, keepLoan);
+    await settleHarborSideAsks(page);
+  }
   const incomeAfterContract = (await structureRows(page)).find((row) => row.label === "Qualifying income")?.value ?? "";
   if (incomeAfterContract !== incomeAfterC) {
     throw new BeatFail(`contract walk changed combined income — ${incomeAfterC} → ${incomeAfterContract}`);
   }
   await assertHarborFileAfterContract(page);
-  await waitCurrent(
-    page,
-    (_text, chips) => hasChip(chips, "Looks right") || hasChip(chips, "Use this"),
-    20_000,
-  ).catch(() => null);
+  const untilLooks = Date.now();
+  while (Date.now() - untilLooks < 20_000) {
+    const chips = await currentChips(page);
+    if (hasChip(chips, "Looks right") || hasChip(chips, "Use this") || hasChip(chips, "Use document")) break;
+    const keep = chips.find((chip) => /^Keep /i.test(chip) && /loan/i.test(chip));
+    if (keep) {
+      await clickChip(page, keep);
+      await settleHarborSideAsks(page);
+      continue;
+    }
+    await page.waitForTimeout(200);
+  }
   if (hasChip(await currentChips(page), "Use this") || hasChip(await currentChips(page), "Use document")) {
     await assertLooksRightHiddenWhileUseThis(page);
     await clickChip(page, hasChip(await currentChips(page), "Use this") ? "Use this" : "Use document");
