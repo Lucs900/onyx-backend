@@ -157,7 +157,7 @@ import {
   writeBorrowerName,
 } from "./borrowerName";
 import {
-  historyGapNeeded,
+  employmentGapNeeded,
   writeCurrentEmploymentHistory,
   writeCurrentEmploymentStart,
   writePresentAddressHistory,
@@ -1995,7 +1995,7 @@ export function canLooksRight(draft: FoxIntakeDraft) {
   return (
     sketchAssembled(draft) &&
     currentAskIdle(draft) &&
-    !historyGapNeeded(draft) &&
+    !employmentGapNeeded(draft) &&
     propertyTypeSettled(draft) &&
     propertyAddressSettled(draft)
   );

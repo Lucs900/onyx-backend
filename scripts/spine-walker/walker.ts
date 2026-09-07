@@ -675,13 +675,33 @@ async function case5(page: Page) {
   }
   assertCopyChips(confirm, await currentChips(page));
   await clickChip(page, "Use this");
-  const second = await waitAsk(page, /second recent statement/i, 20_000);
-  if (!hasChip(second.chips, "Skip") || !hasChip(second.chips, "Upload this")) {
-    throw new BeatFail(`second statement chips ${second.chips.join(" · ") || "(none)"} — ${second.text}`);
+  const afterFirst = await waitCurrent(
+    page,
+    (text, chips) =>
+      /Where did you live before this/i.test(text) ||
+      /second recent statement/i.test(text) ||
+      hasChip(chips, "Looks right") ||
+      /purchase contract/i.test(text),
+    20_000,
+  );
+  if (/Where did you live before this/i.test(afterFirst.text)) {
+    throw new BeatFail(`prior address live after one statement — ${afterFirst.text}`);
   }
-  assertCopyChips(second.text, second.chips);
+  if (hasChip(afterFirst.chips, "Looks right")) {
+    return;
+  }
+  if (!/second recent statement/i.test(afterFirst.text)) {
+    throw new BeatFail(`after one statement expected Looks right or second statement — ${afterFirst.text}`);
+  }
+  if (!hasChip(afterFirst.chips, "Skip") || !hasChip(afterFirst.chips, "Upload this")) {
+    throw new BeatFail(`second statement chips ${afterFirst.chips.join(" · ") || "(none)"} — ${afterFirst.text}`);
+  }
+  assertCopyChips(afterFirst.text, afterFirst.chips);
   await clickChip(page, "Skip");
   const contract = await waitAsk(page, /purchase contract/i, 20_000);
+  if (/Where did you live before this/i.test(contract.text)) {
+    throw new BeatFail(`prior address live after statement Skip — ${contract.text}`);
+  }
   if (!/purchase contract/i.test(contract.text)) {
     throw new BeatFail(`Skip second did not open contract — ${contract.text}`);
   }
@@ -825,10 +845,15 @@ async function skipHarborSideAsk(page: Page): Promise<boolean> {
     await clickChip(page, "Same job");
     return true;
   }
-  if (
-    /Who did you work for before|Where did you live before/i.test(text) &&
-    hasChip(chips, "Skip")
-  ) {
+  if (/Where did you live before this/i.test(text) && hasChip(chips, "Skip")) {
+    const useful = await stillUsefulLabels(page);
+    if (useful.some((item) => /statement|Prior address/i.test(item))) {
+      throw new BeatFail(`prior address live after a statement — ${text} | ${useful.join(" · ")}`);
+    }
+    await clickChip(page, "Skip");
+    return true;
+  }
+  if (/Who did you work for before/i.test(text) && hasChip(chips, "Skip")) {
     await clickChip(page, "Skip");
     return true;
   }

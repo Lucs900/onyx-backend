@@ -138,7 +138,7 @@ import {
   proposeExtractedOtherPropertyPayment,
   proposeExtractedOtherReo,
 } from "./otherReo";
-import { writeCurrentEmploymentHistory } from "./fileHistory";
+import { addressHistoryRemainder, writeCurrentEmploymentHistory } from "./fileHistory";
 
 export { REJECT_LINE, LIMIT_LINE, LIMIT_LINE_REPEAT };
 
@@ -3070,6 +3070,18 @@ export function layer2Plan(draft: FoxIntakeDraft): StillUsefulItem[] {
       ),
     );
   items.unshift(...coverItems);
+  if (
+    addressHistoryRemainder(draft) &&
+    !items.some((item) => item.id === "prior-address" || item.label === "Prior address")
+  ) {
+    items.push(
+      layer2Item(
+        "prior-address",
+        "Prior address",
+        "Where you lived before this still helps this file.",
+      ),
+    );
+  }
   return items;
 }
 
@@ -3110,7 +3122,7 @@ export function stillUsefulSection(draft: FoxIntakeDraft): {
     (item) => item.label !== OTHER_REO_MORTGAGE_STATEMENTS || draft.statedOtherReo === "yes",
   );
   storeCompleteness(draft.productIntent ?? "", completenessFileFromDraft(draft));
-  return { items: items.slice(0, 3), empty: items.length === 0 };
+  return { items, empty: items.length === 0 };
 }
 
 function otherReoStillUsefulItems(draft: FoxIntakeDraft): StillUsefulItem[] {

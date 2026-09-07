@@ -15791,6 +15791,31 @@ assert.ok(
 assert.equal(workspacePrompt(harborStatementUsed), "review");
 assert.equal(canLooksRight(harborStatementUsed), true);
 assert.ok((nextFoxAsk(harborStatementUsed).actions ?? []).some((item) => item.label === "Looks right"));
+assert.doesNotMatch(nextFoxAsk(harborStatementUsed).text, /Where did you live before this/);
+const harborStatementPresent = draft({
+  ...harborStatementUsed,
+  facts: {
+    ...(harborStatementUsed.facts ?? {}),
+    present_address: {
+      field: "present_address",
+      value: "4419 Filbert St",
+      source: "document",
+      confirmed: true,
+    },
+  },
+  addressHistory: [{ label: "4419 Filbert St", to: "present" }],
+});
+assert.equal(workspacePrompt(harborStatementPresent), "review");
+assert.equal(canLooksRight(harborStatementPresent), true);
+assert.doesNotMatch(nextFoxAsk(harborStatementPresent).text, /Where did you live before this/);
+assert.ok((nextFoxAsk(harborStatementPresent).actions ?? []).some((item) => item.label === "Looks right"));
+assert.ok(stillUsefulSection(harborStatementPresent)?.items.some((item) => item.label === "Prior address"));
+const harborStatementSkipped = skipCurrentInvite(harborPreLooksCitizen);
+assert.doesNotMatch(nextFoxAsk(harborStatementSkipped).text, /Where did you live before this/);
+assert.ok(
+  workspacePrompt(harborStatementSkipped) === "review" ||
+    /Looks right|Proceed|statement|contract/i.test(nextFoxAsk(harborStatementSkipped).text),
+);
 assert.notEqual(nextFoxAsk(harborStatementUsed).text, BANK_STATEMENT_ASK);
 assert.ok(
   stillUsefulSection(harborStatementUsed)?.items.some((item) => item.label === "Second bank statement"),

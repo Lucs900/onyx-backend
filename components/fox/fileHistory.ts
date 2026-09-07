@@ -132,16 +132,31 @@ export function employmentGapNeeded(draft: FoxIntakeDraft) {
   return true;
 }
 
-export function addressGapNeeded(draft: FoxIntakeDraft) {
+function sessionOneStatementSettled(draft: FoxIntakeDraft) {
+  if ((draft.skippedClasses ?? []).includes("bank_statement")) return true;
+  return (draft.documents ?? []).some((doc) => {
+    if (doc.status !== "extracted") return false;
+    return doc.extractClass === "bank_statement" || doc.slot === "bank";
+  });
+}
+
+/** 2-year housing remainder. Not a live Fox ask before Looks right. */
+export function addressHistoryRemainder(draft: FoxIntakeDraft) {
   if (draft.motion === "in_queue" || draft.motion === "escalated") return false;
   if (incomeConfirmStillOpen(draft)) return false;
   if (!qualifyingIncomeWritten(draft)) return false;
   if (draft.formerAddressAsked || draft.formerHistoryAsked) return false;
-  if (employmentGapNeeded(draft)) return false;
   if (hasFormerAddress(draft)) return false;
   if (addressCoversTwoYears(draft)) return false;
   if (!currentPresentAddress(draft) && !sawResidencePaper(draft)) return false;
   return true;
+}
+
+export function addressGapNeeded(draft: FoxIntakeDraft) {
+  if (draft.sampleAccepted) return false;
+  if (sessionOneStatementSettled(draft)) return false;
+  if (employmentGapNeeded(draft)) return false;
+  return addressHistoryRemainder(draft);
 }
 
 export function historyGapNeeded(draft: FoxIntakeDraft) {

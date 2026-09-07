@@ -60,7 +60,7 @@ Harbor extract POSTs fulfill leftover-proven local `classifyAndExtract` of the s
 2. Price 500000 then 1000000 → conflict → Down payment → 20 → Use this → 100000 / 400000, no second conflict.
 3. No Not sure on price, down, or loan. “I don’t know” restores the same ask.
 4. 97535 → California only → 94123 writes and prices → next is income, not ZIP.
-5. First statement Use this → second offered → Skip → contract.
+5. First statement Use this → second offered → Skip → contract. After one statement, live gate is Looks right (or second/contract) — never “Where did you live before this?”. Prior address may sit on Still useful.
 6. Skip ID. Skip stated debts. File still moves.
 7. 2–4 asks rent. Skip rent allowed.
 8. Mid-ask sideways question. Answer, then the same next chip.
