@@ -466,6 +466,17 @@ async function renderWithPdfJs(bytes: Uint8Array): Promise<PdfEmbeddedImage | nu
   try {
     const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
     const { createCanvas } = await import("@napi-rs/canvas");
+    const { createRequire } = await import("node:module");
+    const { pathToFileURL } = await import("node:url");
+    try {
+      const require = createRequire(import.meta.url);
+      pdfjs.GlobalWorkerOptions.workerSrc = pathToFileURL(
+        require.resolve("pdfjs-dist/legacy/build/pdf.worker.mjs"),
+      ).href;
+    } catch {
+      pdfjs.GlobalWorkerOptions.workerSrc =
+        "https://unpkg.com/pdfjs-dist@4.10.38/legacy/build/pdf.worker.min.mjs";
+    }
     const doc = await pdfjs.getDocument({
       data: new Uint8Array(bytes),
       disableWorker: true,
@@ -480,7 +491,9 @@ async function renderWithPdfJs(bytes: Uint8Array): Promise<PdfEmbeddedImage | nu
     const png = canvas.toBuffer("image/png");
     if (png.length < 80) return null;
     return { bytes: png, mediaType: "image/png" };
-  } catch {
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error("[docs/pdf] page render failed:", message);
     return null;
   }
 }

@@ -2,6 +2,13 @@
 const nextConfig = {
   experimental: {
     serverComponentsExternalPackages: ["@napi-rs/canvas", "pdfjs-dist"],
+    outputFileTracingIncludes: {
+      "/api/docs/extract": [
+        "./node_modules/@napi-rs/canvas/**/*",
+        "./node_modules/@napi-rs/canvas-linux-x64-gnu/**/*",
+        "./node_modules/pdfjs-dist/**/*",
+      ],
+    },
   },
   async redirects() {
     return [

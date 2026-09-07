@@ -29,6 +29,7 @@ import { fileURLToPath } from "node:url";
 import { classifyAndExtract } from "../../lib/docs/extract";
 import { isBoxNumberAsDollars } from "../../components/fox/fileWrite";
 import type { ExtractClass } from "../../components/fox/types";
+import { renderPdfFirstPage } from "../../lib/docs/pdfText";
 import { adpW2FixturePath } from "../assert-w2-page-read";
 import { mattCstcPaystubPath } from "../assert-first-session-page-read";
 
@@ -2125,6 +2126,34 @@ async function proxyApiThroughPlaywright(page: Page) {
         console.error(
           `spine-walker: extract-local miss ${lastDroppedSample} failed=${String(local?.failed)}`,
         );
+        if (/28-paystub-cstc|pay-matt/i.test(lastDroppedSample) && Object.keys(oidc).length) {
+          const fixture = mattCstcPaystubPath();
+          if (fixture) {
+            const pageImage = await renderPdfFirstPage(new Uint8Array(readFileSync(fixture)));
+            if (pageImage) {
+              console.error(`spine-walker: CSTC page image ${pageImage.bytes.length} → preview Grok`);
+              const response = await page.request.post(url, {
+                headers: oidc,
+                multipart: {
+                  file: {
+                    name: "pay-matt-cstc-260422.png",
+                    mimeType: pageImage.mediaType,
+                    buffer: Buffer.from(pageImage.bytes),
+                  },
+                  name: "pay-matt-cstc-260422.png",
+                  type: pageImage.mediaType,
+                  hint: "paystub",
+                },
+                timeout: 60_000,
+                failOnStatusCode: false,
+              });
+              console.error(`spine-walker: CSTC grok ${response.status()}`);
+              await route.fulfill({ response });
+              return;
+            }
+            console.error("spine-walker: CSTC page image missing");
+          }
+        }
       }
       if (!Object.keys(oidc).length) {
         await route.fallback();
@@ -2215,10 +2244,10 @@ async function main() {
       const status = response.status();
       void response
         .json()
-        .then((data: { failed?: boolean; code?: string; error?: string }) => {
+        .then((data: { failed?: boolean; code?: string; error?: string; warnings?: string[] }) => {
           const extra =
-            data?.failed || data?.code || data?.error
-              ? ` failed=${String(data.failed ?? "")} code=${data.code ?? ""} error=${String(data.error ?? "").slice(0, 80)}`
+            data?.failed || data?.code || data?.error || data?.warnings?.length
+              ? ` failed=${String(data.failed ?? "")} code=${data.code ?? ""} error=${String(data.error ?? "").slice(0, 80)} warnings=${(data.warnings ?? []).join(",")}`
               : "";
           if (status >= 400 || extra) {
             console.error(`spine-walker: ${status} ${url.split("?")[0]}${extra}`);
