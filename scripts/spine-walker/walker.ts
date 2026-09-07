@@ -1203,12 +1203,35 @@ async function openBrowser() {
   return chromium.launch({ headless: true });
 }
 
-async function newPreviewContext(browser: Browser): Promise<BrowserContext> {
+async function newPreviewContext(browser: Browser): Promise<{
+  context: BrowserContext;
+  releaseProtectionHeader: () => void;
+}> {
   const headers = protectionHeaders();
-  return browser.newContext({
+  const context = await browser.newContext({
     viewport: { width: 1400, height: 900 },
-    extraHTTPHeaders: headers,
   });
+  let attachProtection = Object.keys(headers).length > 0;
+  if (attachProtection) {
+    await context.route("**/*", async (route) => {
+      if (!attachProtection) {
+        await route.continue();
+        return;
+      }
+      await route.continue({
+        headers: {
+          ...route.request().headers(),
+          ...headers,
+        },
+      });
+    });
+  }
+  return {
+    context,
+    releaseProtectionHeader: () => {
+      attachProtection = false;
+    },
+  };
 }
 
 function oneLine(value: string) {
@@ -1242,7 +1265,7 @@ async function main() {
     if (kind === "oidc") console.error("spine-walker: sending x-vercel-trusted-oidc-idp-token");
     else if (kind === "bypass") console.error("spine-walker: sending x-vercel-protection-bypass");
     else console.error("spine-walker: no OIDC or automation-bypass token — preview will SSO");
-    const context = await newPreviewContext(browser);
+    const { context, releaseProtectionHeader } = await newPreviewContext(browser);
     const page = await context.newPage();
     page.on("response", (response) => {
       const url = response.url();
@@ -1254,6 +1277,8 @@ async function main() {
     });
     try {
       await probeAccess(page);
+      releaseProtectionHeader();
+      console.error("spine-walker: desk open — later requests use the Vercel session cookie");
     } catch (error) {
       const beat =
         error instanceof BeatFail ? error.beat : error instanceof Error ? oneLine(error.message) : String(error);
