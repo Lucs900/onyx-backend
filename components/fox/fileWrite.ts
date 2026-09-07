@@ -2398,6 +2398,8 @@ export function nextCoverScheduleLabels(draft: FoxIntakeDraft): StillUsefulLabel
   const take = (label: StillUsefulLabel) => {
     if (!labels.includes(label)) labels.push(label);
   };
+  // Matching C first so the visible 1–3 Still useful list names it. E / K-1 / F stay later.
+  if (ids.includes("schedule_c") && !coverSchedulePresent(draft, "schedule_c")) take("Schedule C");
   if (ids.includes("schedule_e") && !coverSchedulePresent(draft, "schedule_e")) take("Schedule E");
   if ((ids.includes("k1") || ids.includes("1065") || ids.includes("1120s")) && !coverSchedulePresent(draft, "k1")) {
     const entities = coverK1Entities(draft);
@@ -2413,7 +2415,6 @@ export function nextCoverScheduleLabels(draft: FoxIntakeDraft): StillUsefulLabel
     }
   }
   if (ids.includes("schedule_f") && !coverSchedulePresent(draft, "schedule_f")) take("Schedule F");
-  if (ids.includes("schedule_c") && !coverSchedulePresent(draft, "schedule_c")) take("Schedule C");
   if (ids.includes("1120s") && !ids.includes("k1") && !coverSchedulePresent(draft, "1120s")) take("1120-S");
   return labels.slice(0, 6);
 }

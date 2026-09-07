@@ -16,7 +16,7 @@ A Form 1040 cover **may write thin income when that is all we have**. The old li
 
 ## Schedule C upgrade (1084 method)
 
-Fixtures **11** (2025) and **10** (2024) upgrade the same Hale Design row from the cover line to the 1084 method (net + extracted add-backs − nonrecurring) / 12. Confirm before write. Still useful still names the matching Schedule C until that C is on File.
+Fixtures **11** (2025) and **10** (2024) upgrade the same Hale Design row from the cover line to the 1084 method (net + extracted add-backs − nonrecurring) / 12. Confirm before write. Still useful still names the matching Schedule C until that C is on File — C is first among cover pages so the visible 1–3 list cannot hide it behind Schedule E / K-1 / Schedule F.
 
 ## Cover follow-up
 

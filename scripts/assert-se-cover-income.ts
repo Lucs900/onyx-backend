@@ -18,6 +18,7 @@ import {
   nextCoverScheduleLabels,
   skipCurrentInvite,
   stillUsefulLabels,
+  stillUsefulSection,
 } from "../components/fox/fileWrite";
 import { applyExtractWrite, emptyDraft, loadIntakeDraft, receiveDocument } from "../components/fox/store";
 import { resolveProposal } from "../components/fox/completeness";
@@ -150,8 +151,13 @@ async function main() {
   assert.match(card20.text, /Use this/);
   assert.doesNotMatch(card20.text, /Schedule E|Schedule F|add-back|depreciation|Got the cover/i);
   assert.ok((card20.actions ?? []).some((item) => item.label === "Use this"));
-  assert.ok(nextCoverScheduleLabels(after20).includes("Schedule C"));
+  assert.equal(nextCoverScheduleLabels(after20)[0], "Schedule C");
   assert.ok(stillUsefulLabels(after20).includes("Schedule C"));
+  const visible20 = stillUsefulSection(after20)?.items.map((item) => item.label) ?? [];
+  assert.ok(
+    visible20.some((label) => /Schedule C/i.test(label)),
+    `visible Still useful hid Schedule C — ${visible20.join(" · ") || "(none)"}`,
+  );
 
   const used20 = resolveProposal(after20, "accept");
   assert.equal(used20.facts?.qualifying_income?.value, "9000");
