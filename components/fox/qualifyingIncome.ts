@@ -2276,6 +2276,29 @@ export function maybeProposeWageExtract(
   if (box5 != null && box5 > 0 && employer) {
     return proposeWageW2Extract(held, box5, employer);
   }
+  const stubOnly = readStubAmount(held, fields);
+  if (stubOnly != null && stubOnly > 0 && employer && !held.pendingProposal) {
+    const period = String(fields?.pay_period_end ?? "").trim();
+    const ytd = String(fields?.ytd_gross ?? "").trim();
+    const frequency = String(fields?.pay_frequency ?? "").trim();
+    const periodPay = String(fields?.gross_period ?? fields?.paystub_amount ?? stubOnly).trim();
+    return {
+      ...held,
+      pendingProposal: {
+        field: "gross_period",
+        value: periodPay,
+        label: "period pay",
+        kind: "computed",
+        extras: [
+          { field: "employer_name", value: employer, label: "employer" },
+          ...(period ? [{ field: "pay_period_end", value: period, label: "pay period end" }] : []),
+          ...(frequency ? [{ field: "pay_frequency", value: frequency, label: "pay frequency" }] : []),
+          ...(ytd ? [{ field: "ytd_gross", value: ytd, label: "ytd gross" }] : []),
+        ],
+        note: SUGGESTED_INCOME_NOTE,
+      },
+    };
+  }
   return held;
 }
 

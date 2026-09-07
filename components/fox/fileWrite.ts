@@ -1860,6 +1860,15 @@ export function applyExtractedFields(
       }
     }
   }
+  if (payConfirmWrites.length && !next.pendingProposal && !next.pendingConflict) {
+    const payProposal = remainderProposalFromWrites(extractClass, payConfirmWrites);
+    if (payProposal) {
+      next = {
+        ...next,
+        pendingProposal: { ...payProposal, note: SUGGESTED_BORROWER_NOTE },
+      };
+    }
+  }
   if (
     extractClass === "mortgage_statement" &&
     isOtherPropertyMortgageExtract(next, {

@@ -259,6 +259,20 @@ async function main() {
   assert.equal(unread.failed, true);
   assert.deepEqual(unread.fields, {});
 
+  const stubConfirm = applyExtractedFields(sketch(), {
+    extractClass: "paystub",
+    confidence: 0.94,
+    fields: {
+      employer_name: "Comprehensive Skills Training Center",
+      pay_period_end: "04/22/2026",
+      gross_period: "1806.67",
+      ytd_gross: "14453.36",
+    },
+  });
+  assert.ok(stubConfirm.draft.pendingProposal, "paystub File stays empty until Use this");
+  assert.match(JSON.stringify(stubConfirm.draft.pendingProposal), /1806\.67/);
+  assert.notEqual(stubConfirm.draft.facts?.gross_period?.confirmed, true);
+
   const matt = mattCstcPaystubPath();
   if (!matt) {
     console.log(
