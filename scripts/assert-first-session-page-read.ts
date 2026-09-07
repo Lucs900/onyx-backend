@@ -265,9 +265,19 @@ async function main() {
         MATT_CSTC_STUB_CANDIDATES.join(" | "),
     );
   } else {
-    // Garbled text layer — leftover stays printed-only. Walker case 24 is the Grok proof.
+    const printedMatt = await classifyAndExtract(
+      readFileSync(matt),
+      "application/pdf",
+      deadVision,
+      "paystub",
+      matt.split("/").pop(),
+    );
+    // Garbled text layer — leftover must not invent. Walker case 24 is the Grok proof.
+    assert.equal(printedMatt.failed, true, "PAY MATT CSTC 260422 printed layer must stay unread");
+    assert.deepEqual(printedMatt.fields, {});
+    noSecrets(printedMatt.fields);
     console.log(
-      "assert-first-session-page-read: PAY MATT CSTC 260422 on disk — walker Grok page-read is the proof",
+      "assert-first-session-page-read: PAY MATT CSTC 260422 on disk — printed unread, walker Grok page-read is the proof",
     );
   }
 
