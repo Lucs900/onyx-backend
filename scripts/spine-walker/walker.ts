@@ -1205,24 +1205,10 @@ async function openBrowser() {
 
 async function newPreviewContext(browser: Browser): Promise<BrowserContext> {
   const headers = protectionHeaders();
-  const context = await browser.newContext({
+  return browser.newContext({
     viewport: { width: 1400, height: 900 },
+    extraHTTPHeaders: headers,
   });
-  if (Object.keys(headers).length) {
-    await context.route("**/*", async (route) => {
-      if (route.request().resourceType() === "document") {
-        await route.continue({
-          headers: {
-            ...route.request().headers(),
-            ...headers,
-          },
-        });
-        return;
-      }
-      await route.continue();
-    });
-  }
-  return context;
 }
 
 function oneLine(value: string) {
