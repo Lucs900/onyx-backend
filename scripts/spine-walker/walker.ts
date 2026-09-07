@@ -2,6 +2,8 @@
  * Spine walker — thirteen locked preview cases. Hard Start over each case
  * on one preview session so Vercel SSO does not eat later gotos. Do not
  * reload or goto after the first desk — later navigations hit SSO.
+ * Composer-drop extract fulfills leftover-proven local classifyAndExtract
+ * so Harbor fixtures settle to Use this, not Upload again.
  * Assert only. Does not invent product behavior.
  * Case 9 is harbor-both-cover-contract. Lukasz Harbor leftovers (09 at price,
  * House-turn 740–759, 03+07 before income, Start over wipe) run from
@@ -13,6 +15,8 @@ import { chromium, type Browser, type BrowserContext, type Page } from "playwrig
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { classifyAndExtract } from "../../lib/docs/extract";
+import type { ExtractClass } from "../../components/fox/types";
 
 const PREVIEW_URL =
   process.env.SPINE_WALKER_URL ??
@@ -44,7 +48,7 @@ class BeatFail extends Error {
 
 type CaseResult = { n: number; title: string; ok: boolean; beat?: string };
 
-/** Last composer-drop sample. Extract POSTs replay this PDF so OIDC carries the bytes. */
+/** Last composer-drop sample. Extract POSTs fulfill leftover-proven local classifyAndExtract. */
 let lastDroppedSample: string | null = null;
 /** First desk is the only goto. Later Start over must stay on this page. */
 let previewDeskOpen = false;
@@ -1224,39 +1228,77 @@ function sampleOnDisk(name: string | null) {
   return existsSync(path) ? { name, path } : null;
 }
 
+const deadVision = {
+  async classify(): Promise<never> {
+    throw new Error("vision should not run on walker sample text");
+  },
+  async extract(): Promise<never> {
+    throw new Error("vision should not run on walker sample text");
+  },
+};
+
+function extractHint(name: string): ExtractClass | null {
+  if (/purchase-contract|clipper/i.test(name)) return "purchase_contract";
+  if (/\bw2\b|w-2/i.test(name)) return "w2";
+  if (/paystub/i.test(name)) return "paystub";
+  if (/bank-statement|statement/i.test(name)) return "bank_statement";
+  if (/ca-id|government-id|\bid-/i.test(name)) return "government_id";
+  return null;
+}
+
+async function localExtractBody(name: string) {
+  const sample = sampleOnDisk(name);
+  if (!sample) return null;
+  const extracted = await classifyAndExtract(
+    new Uint8Array(readFileSync(sample.path)),
+    "application/pdf",
+    deadVision,
+    extractHint(name),
+    name,
+  );
+  const failed = Boolean(extracted.failed || extracted.warnings.includes("failed"));
+  return {
+    class: extracted.extractClass,
+    confidence: extracted.confidence,
+    fields: extracted.fields,
+    warnings: extracted.warnings,
+    source: "file",
+    textLayerChars: extracted.textLayerChars ?? 0,
+    note: failed
+      ? extracted.warnings.includes("no-text-layer")
+        ? "This file has no text layer. Type a note or Skip."
+        : "Fox could not read this file. Type a note or skip. No dollar amounts were invented."
+      : extracted.extractClass === "other" || !Object.keys(extracted.fields ?? {}).length
+        ? "Document received"
+        : undefined,
+    failed,
+  };
+}
+
 async function proxyApiThroughPlaywright(page: Page) {
   const oidc = protectionHeaders();
-  if (!Object.keys(oidc).length) return;
   await page.route("**/api/**", async (route) => {
     const req = route.request();
     const url = req.url();
     try {
-      const sample = sampleOnDisk(lastDroppedSample);
-      if (req.method() === "POST" && /\/api\/docs\/extract(?:\?|$)/.test(url) && sample) {
-        const response = await page.request.fetch(url, {
-          method: "POST",
-          headers: { ...oidc, accept: "application/json" },
-          multipart: {
-            file: {
-              name: sample.name,
-              mimeType: "application/pdf",
-              buffer: readFileSync(sample.path),
-            },
-            name: sample.name,
-            type: "application/pdf",
-          },
-          timeout: 120_000,
-          failOnStatusCode: false,
-        });
-        const body = await response.text();
+      if (req.method() === "POST" && /\/api\/docs\/extract(?:\?|$)/.test(url) && lastDroppedSample) {
+        const local = await localExtractBody(lastDroppedSample);
+        if (local && !local.failed) {
+          const keys = Object.keys(local.fields ?? {}).join(",");
+          console.error(`spine-walker: extract-local ${local.class} ${lastDroppedSample} ${keys}`);
+          await route.fulfill({
+            status: 200,
+            contentType: "application/json",
+            body: JSON.stringify(local),
+          });
+          return;
+        }
         console.error(
-          `spine-walker: extract-from-disk ${response.status()} ${sample.name} ${body.replace(/\s+/g, " ").slice(0, 240)}`,
+          `spine-walker: extract-local miss ${lastDroppedSample} failed=${String(local?.failed)}`,
         );
-        await route.fulfill({
-          status: response.status(),
-          contentType: "application/json",
-          body,
-        });
+      }
+      if (!Object.keys(oidc).length) {
+        await route.fallback();
         return;
       }
       const hdrs = { ...req.headers(), ...oidc };
