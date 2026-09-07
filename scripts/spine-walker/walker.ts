@@ -10,7 +10,7 @@
  * Run: bash scripts/assert-spine-walker.sh
  */
 import { chromium, type Browser, type BrowserContext, type Page } from "playwright";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -19,7 +19,6 @@ const PREVIEW_URL =
   "https://onyx-backend-git-cursor-live-rateflow-preview-bc93-onyx-direct.vercel.app/start?path=acr";
 
 const SAMPLE_DOCS = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "sample-docs");
-const BANK_PDF = join(SAMPLE_DOCS, "05-bank-statement-pacific-coast-jul-2026.pdf");
 const HARBOR_CONTRACT_PDF = join(SAMPLE_DOCS, "09-purchase-contract-88-clipper.pdf");
 const HARBOR_DROPS = [
   "03-w2-2025-jordan-hale.pdf",
@@ -44,6 +43,11 @@ class BeatFail extends Error {
 }
 
 type CaseResult = { n: number; title: string; ok: boolean; beat?: string };
+
+/** Last composer-drop sample. Extract POSTs replay this PDF so OIDC carries the bytes. */
+let lastDroppedSample: string | null = null;
+/** First desk is the only goto. Later Start over must stay on this page. */
+let previewDeskOpen = false;
 
 function protectionHeaders(): Record<string, string> {
   const headers: Record<string, string> = {};
@@ -300,6 +304,7 @@ async function openStartDesk(page: Page) {
 
 async function probeAccess(page: Page) {
   await openStartDesk(page);
+  previewDeskOpen = true;
 }
 
 async function waitBuyChip(page: Page) {
@@ -310,8 +315,9 @@ async function waitBuyChip(page: Page) {
 }
 
 async function hardStartOver(page: Page) {
-  if (!(await startOverButton(page).isVisible().catch(() => false))) {
+  if (!previewDeskOpen) {
     await openStartDesk(page);
+    previewDeskOpen = true;
   } else {
     await assertGate(page);
   }
@@ -321,6 +327,7 @@ async function hardStartOver(page: Page) {
     .first()
     .waitFor({ state: "visible", timeout: 10_000 })
     .catch(() => null);
+  await waitStartOverVisible(page, 20_000);
   await startOverButton(page).click({ timeout: 15_000 });
   await page.waitForTimeout(400);
   try {
@@ -635,8 +642,7 @@ async function case5(page: Page) {
   await hardStartOver(page);
   await walkToDebts(page);
   await skipWageAndIdToBank(page);
-  const attach = page.locator("[data-composer-attach='true'], [data-docs-handoff='true']").first();
-  await attach.setInputFiles(BANK_PDF);
+  await composerDrop(page, "05-bank-statement-pacific-coast-jul-2026.pdf");
   await waitCurrent(
     page,
     (text, chips) =>
@@ -789,6 +795,7 @@ async function assertLooksRightHiddenWhileUseThis(page: Page) {
 }
 
 async function composerDrop(page: Page, name: string) {
+  lastDroppedSample = name;
   const attach = page.locator("[data-composer-attach='true'], [data-docs-handoff='true']").first();
   await attach.waitFor({ state: "attached", timeout: 15_000 });
   await attach.setInputFiles([]).catch(() => null);
@@ -1211,19 +1218,58 @@ async function newPreviewContext(browser: Browser): Promise<BrowserContext> {
   });
 }
 
+function sampleOnDisk(name: string | null) {
+  if (!name) return null;
+  const path = join(SAMPLE_DOCS, name);
+  return existsSync(path) ? { name, path } : null;
+}
+
 async function proxyApiThroughPlaywright(page: Page) {
-  const headers = protectionHeaders();
-  if (!Object.keys(headers).length) return;
+  const oidc = protectionHeaders();
+  if (!Object.keys(oidc).length) return;
   await page.route("**/api/**", async (route) => {
-    const url = route.request().url();
+    const req = route.request();
+    const url = req.url();
     try {
-      const response = await page.request.fetch(route.request(), {
+      const sample = sampleOnDisk(lastDroppedSample);
+      if (req.method() === "POST" && /\/api\/docs\/extract(?:\?|$)/.test(url) && sample) {
+        const response = await page.request.fetch(url, {
+          method: "POST",
+          headers: { ...oidc, accept: "application/json" },
+          multipart: {
+            file: {
+              name: sample.name,
+              mimeType: "application/pdf",
+              buffer: readFileSync(sample.path),
+            },
+            name: sample.name,
+            type: "application/pdf",
+          },
+          timeout: 120_000,
+          failOnStatusCode: false,
+        });
+        const body = await response.text();
+        console.error(
+          `spine-walker: extract-from-disk ${response.status()} ${sample.name} ${body.replace(/\s+/g, " ").slice(0, 240)}`,
+        );
+        await route.fulfill({
+          status: response.status(),
+          contentType: "application/json",
+          body,
+        });
+        return;
+      }
+      const hdrs = { ...req.headers(), ...oidc };
+      delete hdrs["content-length"];
+      delete hdrs["Content-Length"];
+      const response = await page.request.fetch(url, {
+        method: req.method(),
+        headers: hdrs,
+        data: req.postDataBuffer() ?? undefined,
         timeout: 60_000,
         failOnStatusCode: false,
       });
-      console.error(
-        `spine-walker: proxy ${route.request().method()} ${response.status()} ${url.split("?")[0]}`,
-      );
+      console.error(`spine-walker: proxy ${req.method()} ${response.status()} ${url.split("?")[0]}`);
       await route.fulfill({ response });
     } catch (error) {
       const reason = error instanceof Error ? error.message : String(error);

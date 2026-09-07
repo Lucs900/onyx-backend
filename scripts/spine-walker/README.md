@@ -50,7 +50,9 @@ SPINE_WALKER_URL='https://onyx-backend-git-cursor-live-rateflow-preview-bc93-ony
 
 Stdout is one line per case: `N PASS …` or `N FAIL …` plus the adjacent beat on FAIL.
 
-Optional: `SPINE_WALKER_ONLY=1,8` runs a subset. One preview session. Each case waits for the File draft, then clicks **Start over** on the live desk. Do not reload after the first open — later navigations hit Vercel SSO.
+Optional: `SPINE_WALKER_ONLY=1,8` runs a subset. One preview session. Each case waits for the File draft, then clicks **Start over** on the live desk (`button.fox-bar__start-over` must stay on screen after case 1). Do not reload after the first open — later navigations hit Vercel SSO.
+
+Harbor extract POSTs are replayed from the same `sample-docs` PDF through Playwright’s API request so OIDC carries the file bytes. The paperclip UI path stays. FICO skip (case 11) is not accepted until cases 10–13 are green on the same tip.
 
 ## Locked cases (assert only)
 
