@@ -1218,13 +1218,12 @@ async function proxyApiThroughPlaywright(page: Page) {
     const url = route.request().url();
     try {
       const response = await page.request.fetch(route.request(), {
-        headers: {
-          ...route.request().headers(),
-          ...headers,
-        },
         timeout: 60_000,
         failOnStatusCode: false,
       });
+      console.error(
+        `spine-walker: proxy ${route.request().method()} ${response.status()} ${url.split("?")[0]}`,
+      );
       await route.fulfill({ response });
     } catch (error) {
       const reason = error instanceof Error ? error.message : String(error);
@@ -1317,6 +1316,17 @@ async function main() {
       await patchPageFetch(page);
       const cookieNames = (await context.cookies()).map((item) => item.name).join(",");
       console.error(`spine-walker: page fetch patched; cookies ${cookieNames || "(none)"}`);
+      try {
+        const quoteProbe = await page.request.post(new URL("/api/rateflow-quote", startUrl()).href, {
+          data: {},
+          timeout: 20_000,
+          failOnStatusCode: false,
+        });
+        console.error(`spine-walker: node quote probe ${quoteProbe.status()}`);
+      } catch (error) {
+        const reason = error instanceof Error ? error.message : String(error);
+        console.error(`spine-walker: node quote probe fail ${reason.slice(0, 160)}`);
+      }
     } catch (error) {
       const beat =
         error instanceof BeatFail ? error.beat : error instanceof Error ? oneLine(error.message) : String(error);
