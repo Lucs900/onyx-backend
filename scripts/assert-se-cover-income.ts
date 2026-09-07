@@ -28,7 +28,7 @@ import {
   resolveProposal,
 } from "../components/fox/completeness";
 import { docReactionAsk, nextFoxAsk, previewFacts } from "../components/fox/workspace";
-import { isCoverLineProposal, SE_MONTHLY_FIELD } from "../components/fox/qualifyingIncome";
+import { isCoverLineProposal, qualifyingIncomeDisplay, SE_MONTHLY_FIELD } from "../components/fox/qualifyingIncome";
 import type { ExtractClass, FoxIntakeDraft } from "../components/fox/types";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -284,6 +284,8 @@ async function main() {
   assert.match(incomeBefore.value, /\$9,000/);
   assert.doesNotMatch(incomeBefore.value, /\$9,958/);
   assert.match(incomeBefore.note ?? "", /Cover line/);
+  assert.match(qualifyingIncomeDisplay(after11)?.value ?? "", /\$9,000/);
+  assert.doesNotMatch(qualifyingIncomeDisplay(after11)?.value ?? "", /\$9,958/);
   const upgrade = nextFoxAsk(after11);
   const upgradeBlob = `${upgrade.text} ${upgrade.followUp ?? ""}`;
   assert.match(upgradeBlob, /2025 Schedule C/);

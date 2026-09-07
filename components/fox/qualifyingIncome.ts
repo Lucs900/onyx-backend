@@ -1705,8 +1705,11 @@ export function qualifyingIncomeDisplay(draft: FoxIntakeDraft): { value: string;
   if (draft.awaitingBothMonthlyReason || draft.awaitingRaiseWhen || draft.awaitingRaiseYtdFar) return null;
   const proposal =
     draft.pendingProposal?.field === QUALIFYING_INCOME_FIELD ? draft.pendingProposal : null;
+  const stored = factValue(draft, QUALIFYING_INCOME_FIELD);
+  const confirmed = Boolean(stored && draft.facts?.[QUALIFYING_INCOME_FIELD]?.confirmed);
   if (
     proposal &&
+    !confirmed &&
     !isScheduleECashFlowProposal(proposal) &&
     !isEntityCashFlowProposal(proposal) &&
     !isSameBusinessWageEntityProposal(proposal)
@@ -1716,8 +1719,7 @@ export function qualifyingIncomeDisplay(draft: FoxIntakeDraft): { value: string;
       note: proposal.note ?? SUGGESTED_INCOME_NOTE,
     };
   }
-  const stored = factValue(draft, QUALIFYING_INCOME_FIELD);
-  if (stored && draft.facts?.[QUALIFYING_INCOME_FIELD]?.confirmed) {
+  if (stored && confirmed) {
     const pair = bothMonthlyDisplay(draft);
     const method = factValue(draft, QUALIFYING_METHOD_FIELD) || pair || undefined;
     return {
