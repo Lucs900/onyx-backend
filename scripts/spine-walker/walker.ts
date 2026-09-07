@@ -460,9 +460,11 @@ async function settleQuoteToIncome(page: Page, allowPricingSkip = false, zip = "
           .locator(".fox-bubble--fox.is-current")
           .getByRole("button", { name: "Skip", exact: true })
           .click();
-        await waitAsk(page, /How is income earned/i, 20_000);
-        return;
+      } else {
+        await typeSend(page, "Skip");
       }
+      await waitAsk(page, /How is income earned/i, 20_000);
+      return;
     }
     await page.waitForTimeout(250);
   }
@@ -1203,10 +1205,24 @@ async function openBrowser() {
 
 async function newPreviewContext(browser: Browser): Promise<BrowserContext> {
   const headers = protectionHeaders();
-  return browser.newContext({
+  const context = await browser.newContext({
     viewport: { width: 1400, height: 900 },
-    extraHTTPHeaders: headers,
   });
+  if (Object.keys(headers).length) {
+    await context.route("**/*", async (route) => {
+      if (route.request().resourceType() === "document") {
+        await route.continue({
+          headers: {
+            ...route.request().headers(),
+            ...headers,
+          },
+        });
+        return;
+      }
+      await route.continue();
+    });
+  }
+  return context;
 }
 
 function oneLine(value: string) {
@@ -1242,6 +1258,14 @@ async function main() {
     else console.error("spine-walker: no OIDC or automation-bypass token — preview will SSO");
     const context = await newPreviewContext(browser);
     const page = await context.newPage();
+    page.on("response", (response) => {
+      const url = response.url();
+      if (!/\/api\/(rateflow-quote|docs\/extract)\b/.test(url)) return;
+      const status = response.status();
+      if (status >= 400) {
+        console.error(`spine-walker: ${status} ${url.split("?")[0]}`);
+      }
+    });
     try {
       await probeAccess(page);
     } catch (error) {
