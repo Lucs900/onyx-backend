@@ -19,6 +19,7 @@ import {
   withIncomeTypeYearsAsk,
   writeYearsInBusiness,
 } from "../components/fox/completeness";
+import { paintedFoxActions } from "../components/fox/liveCoupon";
 import { emptyDraft } from "../components/fox/store";
 import {
   dedupeYearsInBusinessAsk,
@@ -122,6 +123,20 @@ const haleNamed: FoxIntakeDraft = {
 assert.equal(yearsInBusinessAskCopy(haleNamed), "How long have you had Hale Design?");
 assert.equal(nextFoxAsk(haleNamed).text, "How long have you had Hale Design?");
 assert.deepEqual((nextFoxAsk(haleNamed).actions ?? []).map((item) => item.label), ["Skip"]);
+assert.deepEqual(
+  (
+    paintedFoxActions(
+      {
+        id: "years-hale",
+        role: "fox",
+        text: "How long have you had Hale Design?",
+        actions: yearsInBusinessSkipActions(),
+      },
+      haleNamed,
+    ) ?? []
+  ).map((item) => item.label),
+  ["Skip"],
+);
 assert.doesNotMatch(nextFoxAsk(haleNamed).text, /this business/);
 
 const haleWritten = writeYearsInBusiness(haleNamed, "2");

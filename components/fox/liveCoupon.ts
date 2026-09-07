@@ -11,7 +11,12 @@ import {
 } from "@/lib/rateflow/quote";
 import { isPurchaseContractConfirmPending, nextDocInvite, needsPurchaseSplitAsk } from "./fileWrite";
 import { ID_UNREAD_ASK, isBorrowerNameConfirmPending } from "./borrowerName";
-import { isFundsPairProposal, isPurchaseLike, loanExceedsPurchasePrice } from "./completeness";
+import {
+  isFundsPairProposal,
+  isPurchaseLike,
+  loanExceedsPurchasePrice,
+  yearsInBusinessSkipActions,
+} from "./completeness";
 import { isLookupWaitLine, isLookupWaitMessage } from "./lookupWait";
 import {
   isMonthlyDebtsAskText,
@@ -713,7 +718,14 @@ export function leftoverUseThisPaintedOnOnFile(
 }
 
 /** Invite-only rows stay Upload this · Skip. ID confirm keeps Use this on the same row. */
+function isYearsInBusinessAskText(text: string) {
+  return /^How long have you had /i.test(text.trim());
+}
+
 export function paintThreadActions(actions: FoxAction[]): FoxAction[] {
+  if (actions.some((action) => action.capture?.field === "skip-years-in-business")) {
+    return yearsInBusinessSkipActions();
+  }
   if (actions.some((action) => action.capture?.field === "skip-monthly-debts")) {
     return paintedMonthlyDebtsActions(actions);
   }
@@ -739,6 +751,7 @@ export function paintedFoxActions(
   if (isLookupWaitMessage(message) || isLookupWaitLine(message.text)) return undefined;
   if (isOnFileAddressLine(message) || hideAddressUseThisOnBubble(message, draft)) return undefined;
   if (!current) return undefined;
+  if (isYearsInBusinessAskText(message.text)) return yearsInBusinessSkipActions();
   if (isMonthlyDebtsAskText(message.text)) return paintedMonthlyDebtsActions(message.actions);
   const shown = visibleFoxActions(message, draft);
   if (!shown?.length) return undefined;
