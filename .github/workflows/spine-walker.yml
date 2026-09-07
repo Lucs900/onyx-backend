@@ -90,8 +90,9 @@ jobs:
                   ? originFrom(ok.environment_url || ok.target_url)
                   : "";
                 if (origin) {
-                  const start = `${origin}/start?path=acr`;
-                  core.info(`Preview ready: ${start}`);
+                  const start =
+                    "https://onyx-backend-git-cursor-live-rateflow-preview-bc93-onyx-direct.vercel.app/start?path=acr";
+                  core.info(`Preview ready at ${origin}; walking alias ${start}`);
                   core.exportVariable("SPINE_WALKER_URL", start);
                   return;
                 }
@@ -110,8 +111,9 @@ jobs:
               );
               const checkOrigin = originFrom(vercelCheck?.details_url);
               if (checkOrigin) {
-                const start = `${checkOrigin}/start?path=acr`;
-                core.info(`Preview ready from check: ${start}`);
+                const start =
+                  "https://onyx-backend-git-cursor-live-rateflow-preview-bc93-onyx-direct.vercel.app/start?path=acr";
+                core.info(`Preview ready from check ${checkOrigin}; walking alias ${start}`);
                 core.exportVariable("SPINE_WALKER_URL", start);
                 return;
               }

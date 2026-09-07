@@ -1205,22 +1205,10 @@ async function openBrowser() {
 
 async function newPreviewContext(browser: Browser): Promise<BrowserContext> {
   const headers = protectionHeaders();
-  const context = await browser.newContext({
+  return browser.newContext({
     viewport: { width: 1400, height: 900 },
     extraHTTPHeaders: headers,
   });
-  if (Object.keys(headers).length) {
-    await context.route("**/api/**", async (route) => {
-      const response = await route.fetch({
-        headers: {
-          ...route.request().headers(),
-          ...headers,
-        },
-      });
-      await route.fulfill({ response });
-    });
-  }
-  return context;
 }
 
 async function patchPageFetch(page: Page) {
@@ -1302,6 +1290,7 @@ async function main() {
     try {
       await probeAccess(page);
       await patchPageFetch(page);
+      console.error("spine-walker: page fetch patched for extract and quote");
     } catch (error) {
       const beat =
         error instanceof BeatFail ? error.beat : error instanceof Error ? oneLine(error.message) : String(error);
