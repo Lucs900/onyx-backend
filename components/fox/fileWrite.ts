@@ -40,6 +40,7 @@ import {
   maybeProposeStubExtract,
   shouldProposeStubExtract,
   stubExtractAskOpen,
+  wageW2ExtractAccepted,
   canSpeakStubExtract,
   employersClose,
   wageExtractFailedRead,
@@ -2256,6 +2257,12 @@ function selfEmployedCoverPageNext(draft: FoxIntakeDraft) {
 export function docInviteAskCopy(draft: FoxIntakeDraft, invite: DocInviteKind) {
   if (invite === "tax_return") return taxReturnInviteCopy(draft);
   if (invite === "prior_year_return") return priorYearReturnInviteCopy(draft);
+  if (invite === "paystub") {
+    const employer = String(draft.facts?.employer_name?.value ?? "").trim();
+    if (employer) {
+      return `Next is your latest paystub for ${employer}. That’s current income on paper.`;
+    }
+  }
   return DOC_INVITE_COPY[invite];
 }
 
@@ -3522,7 +3529,6 @@ function wageSketchBlocksDocInvite(draft: FoxIntakeDraft): boolean {
   if (!draft.wageDocsAsked) return true;
   if (!draft.wageBox5Asked) return true;
   if (!draft.wageFrequencyAsked) return true;
-  if (!draft.wageStubAsked) return true;
   return false;
 }
 
@@ -3549,11 +3555,23 @@ function lockedFileDocInvites(draft: FoxIntakeDraft): DocInviteKind[] {
   return kinds;
 }
 
+/** After W-2 Use this, the employer stub is next — not government ID. */
+function employerStubRemainderOpen(draft: FoxIntakeDraft) {
+  const income = draft.incomeType.value;
+  if (income !== "w2" && income !== "both") return false;
+  if (draft.sampleAccepted) return false;
+  if (inviteSatisfied(draft, "paystub")) return false;
+  if (draft.wageStubAsked || draft.stubExtractAccepted) return false;
+  if (readStubAmount(draft)) return false;
+  return wageW2ExtractAccepted(draft) || classSuccessfullyRead(draft, "w2");
+}
+
 export function nextDocInvite(draft: FoxIntakeDraft): DocInviteKind | null {
   if (!draft.incomeType.value && !draft.incomeAsked) return null;
   /** Empty / skipped how-earned: no invented W-2 pack, and no ID invite until Looks right. */
   if (!draft.incomeType.value && !draft.sampleAccepted) return null;
   if (draft.pendingProposal || draft.pendingConflict) return null;
+  if (employerStubRemainderOpen(draft)) return "paystub";
   if (wageSketchBlocksDocInvite(draft)) return null;
   const income = draft.incomeType.value;
   if (income === "self-employed" || income === "other" || income === "both") {
@@ -3568,6 +3586,20 @@ export function nextDocInvite(draft: FoxIntakeDraft): DocInviteKind | null {
     if (!inviteSatisfied(draft, kind)) return kind;
   }
   return null;
+}
+
+/** Paystub remainder blocks Looks right. ID / bank / contract after a confirmed W-2 stub do not. */
+export function docInviteBlocksLooksRight(draft: FoxIntakeDraft) {
+  const invite = nextDocInvite(draft);
+  if (!invite) return false;
+  if (employerStubRemainderOpen(draft) || invite === "paystub") return true;
+  if (
+    wageW2ExtractAccepted(draft) &&
+    (draft.stubExtractAccepted || draft.wageStubAsked || inviteSatisfied(draft, "paystub"))
+  ) {
+    return false;
+  }
+  return true;
 }
 
 /** Composer extract hint. Dropped filename wins so 08 at the ID ask is government_id, not leftover bank/other. */
@@ -3884,6 +3916,7 @@ export function skipCurrentInvite(draft: FoxIntakeDraft): FoxIntakeDraft {
   const next = {
     ...draft,
     skippedClasses: skipped,
+    wageStubAsked: kind === "paystub" ? true : draft.wageStubAsked,
     docsOpen: false,
     correcting: null,
   };

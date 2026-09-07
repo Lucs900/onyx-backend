@@ -27,6 +27,7 @@ import {
   queuePurchaseContractRemainder,
   queuePurchaseSketchReconcile,
   nextDocInvite,
+  docInviteBlocksLooksRight,
   employmentOnFile,
   returnOnFile,
   incomeEvidenceOnFile,
@@ -1944,7 +1945,7 @@ export function currentAskIdle(draft: FoxIntakeDraft) {
   ) {
     return false;
   }
-  if (nextDocInvite(draft)) return false;
+  if (docInviteBlocksLooksRight(draft)) return false;
   if (draft.looksRightHold) return false;
   if (shouldAskMonthlyDebts(draft)) return false;
   return true;
@@ -1981,7 +1982,7 @@ export function wageIncomeSketchOpen(draft: FoxIntakeDraft) {
 export function canLooksRight(draft: FoxIntakeDraft) {
   if (draftHasOpenConfirmCard(draft)) return false;
   if (wageIncomeSketchOpen(draft)) return false;
-  if (nextDocInvite(draft)) return false;
+  if (docInviteBlocksLooksRight(draft)) return false;
   if (loanExceedsPurchasePrice(draft)) return false;
   if (!incomeNumberReady(draft)) return false;
   if (

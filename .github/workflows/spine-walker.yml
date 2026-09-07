@@ -21,6 +21,7 @@ on:
       - "scripts/assert-home-type-chips.ts"
       - "scripts/assert-income-skip-still-useful.ts"
       - "scripts/assert-still-useful-skip-income.ts"
+      - "scripts/assert-w2-paystub-before-id.ts"
       - ".github/workflows/spine-walker.yml"
       - "sample-docs/**"
   pull_request:
@@ -43,6 +44,7 @@ on:
       - "scripts/assert-home-type-chips.ts"
       - "scripts/assert-income-skip-still-useful.ts"
       - "scripts/assert-still-useful-skip-income.ts"
+      - "scripts/assert-w2-paystub-before-id.ts"
       - ".github/workflows/spine-walker.yml"
       - "sample-docs/**"
 concurrency:

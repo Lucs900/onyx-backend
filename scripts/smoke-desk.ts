@@ -3089,19 +3089,26 @@ assert.equal(
 );
 assert.ok(!previewFacts(loudW2Used).some((fact) => /84,?000|Box 1/i.test(fact.value)));
 assert.ok(!previewFacts(loudW2Used).some((fact) => fact.id === "originator"));
-assert.equal(workspacePrompt(loudW2Used), "paystub-monthly");
-assert.equal(workspacePromptCopy("paystub-monthly", loudW2Used).text, WAGE_STUB_DROP_ASK);
+assert.equal(workspacePrompt(loudW2Used), "documents");
+assert.equal(nextDocInvite(loudW2Used), "paystub");
+assert.match(workspacePromptCopy("documents", loudW2Used).text, /latest paystub for Harbor Pacific Design Inc/i);
 assert.deepEqual(
-  (workspacePromptCopy("paystub-monthly", loudW2Used).actions ?? []).map((item) => item.label),
-  ["Upload", "Skip"],
+  (workspacePromptCopy("documents", loudW2Used).actions ?? []).map((item) => item.label),
+  ["Upload this", "Skip"],
 );
 assert.ok(!canLooksRight(loudW2Used));
-assert.ok(!(workspacePromptCopy("paystub-monthly", loudW2Used).actions ?? []).some((item) => item.label === "Looks right"));
+assert.ok(!(workspacePromptCopy("documents", loudW2Used).actions ?? []).some((item) => item.label === "Looks right"));
+assert.doesNotMatch(workspacePromptCopy("documents", loudW2Used).text, /government ID/i);
 assert.equal(loudW2Used.facts?.[PAYSTUB_AMOUNT_FIELD], undefined);
-const loudW2StubSkipped = skipWageStub(loudW2Used);
-assert.ok(canLooksRight(loudW2StubSkipped));
-assert.equal(workspacePrompt(loudW2StubSkipped), "review");
-assert.ok((workspacePromptCopy("review", loudW2StubSkipped).actions ?? []).some((item) => item.label === "Looks right"));
+const loudW2StubSkipped = skipCurrentInvite(loudW2Used);
+assert.equal(nextDocInvite(loudW2StubSkipped), "government_id");
+assert.equal(workspacePrompt(loudW2StubSkipped), "documents");
+assert.equal(workspacePromptCopy("documents", loudW2StubSkipped).text, DOC_INVITE_COPY.government_id);
+assert.deepEqual(
+  (workspacePromptCopy("documents", loudW2StubSkipped).actions ?? []).map((item) => item.label),
+  ["Upload this", "Skip"],
+);
+assert.ok(!canLooksRight(loudW2StubSkipped));
 assert.equal(loudW2StubSkipped.facts?.[PAYSTUB_AMOUNT_FIELD], undefined);
 assert.ok(!previewFacts(loudW2StubSkipped).some((fact) => fact.id === "originator"));
 assert.equal(nextDocInvite(loudW2StubSkipped), null);
@@ -3304,14 +3311,19 @@ assert.equal(
 assert.equal(monthlyFromAnnual(118400), 9867);
 assert.ok(box5StubMonthlyGapRatio(9999.99, 9867) < BOX5_STUB_MATERIAL_RATIO);
 assert.ok(!loudStubUsed.awaitingBothMonthlyReason);
-assert.equal(workspacePrompt(loudStubUsed), "review");
+assert.equal(workspacePrompt(loudStubUsed), "documents");
+assert.equal(nextDocInvite(loudStubUsed), "government_id");
+assert.equal(workspacePromptCopy("documents", loudStubUsed).text, DOC_INVITE_COPY.government_id);
+assert.deepEqual(
+  (workspacePromptCopy("documents", loudStubUsed).actions ?? []).map((item) => item.label),
+  ["Upload this", "Skip"],
+);
 assert.ok(canLooksRight(loudStubUsed));
-assert.ok((workspacePromptCopy("review", loudStubUsed).actions ?? []).some((item) => item.label === "Looks right"));
-assert.ok(!(workspacePromptCopy("review", loudStubUsed).actions ?? []).some((item) => /^(Raise|OT|Second job)$/.test(item.label)));
+assert.ok(!(workspacePromptCopy("documents", loudStubUsed).actions ?? []).some((item) => /^(Raise|OT|Second job)$/.test(item.label)));
 assert.ok(!(nextFoxAsk(loudStubUsed).actions ?? []).some((item) => /^(Raise|OT|Second job)$/.test(item.label)));
 assert.doesNotMatch(nextFoxAsk(loudStubUsed).text, /Last year and this stub are close, not the same month/);
 assert.doesNotMatch(
-  `${workspacePromptCopy("review", loudStubUsed).text} ${workspacePromptCopy("review", loudStubUsed).followUp ?? ""}`,
+  `${workspacePromptCopy("documents", loudStubUsed).text} ${workspacePromptCopy("documents", loudStubUsed).followUp ?? ""}`,
   /Last year and this stub are close, not the same month|qualifying|Box 5\/12|9,867/,
 );
 assert.equal(loudStubUsed.facts?.income_caution, undefined);

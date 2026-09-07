@@ -9,7 +9,9 @@
  * Credit (cases 10–11) is the FICO gate. Cases 14–16 are SE cover income
  * (20 → $9,000 Structure write · second 20 keeps, next is 2025 Sch C · 20 then 11 upgrades the same Hale Design row · 20 then 19 does not hang).
  * Case 17 is years-with-business-name after 11. Case 18 is 11 then 19:
- * no freeze, keep $9,958, next is 2024 Schedule C.
+ * no freeze, keep $9,958, next is 2024 Schedule C. Case 19 is Income Skip
+ * Still useful. Case 20 is 03 Use this → latest paystub, then 07 same Harbor
+ * row, then ID Upload this · Skip.
  * Years in business is once after SE / Both. Named Hale Design when known.
  * Lukasz Harbor leftovers run from scripts/assert-spine-walker.sh before
  * Playwright. CI fail = red.
@@ -1131,6 +1133,79 @@ async function case19(page: Page) {
   }
 }
 
+async function case20(page: Page) {
+  await hardStartOver(page);
+  await walkToQuotedIncome(page, "94123", true);
+  await waitAsk(page, /How is income earned/i);
+  await clickChip(page, "W-2");
+  const afterW2Chip = await waitCurrent(
+    page,
+    (text, chips) =>
+      /other monthly debts|Drop last year|government ID|latest paystub/i.test(text) ||
+      hasChip(chips, "Upload this") ||
+      hasChip(chips, "Upload") ||
+      hasChip(chips, "Skip"),
+    20_000,
+  );
+  if (/How is income earned/i.test(afterW2Chip.text) && !hasChip(afterW2Chip.chips, "W-2")) {
+    throw new BeatFail(`W-2 did not leave how-earned — ${afterW2Chip.text}`);
+  }
+  if (/other monthly debts/i.test(afterW2Chip.text) && hasChip(afterW2Chip.chips, "Skip")) {
+    await clickChip(page, "Skip");
+    await waitCurrent(page, (text) => !/other monthly debts/i.test(text), 15_000);
+  }
+  await dropHarborDoc(page, "03-w2-2025-jordan-hale.pdf", "confirm");
+  const after03 = await waitCurrent(
+    page,
+    (text, chips) =>
+      /latest paystub|government ID/i.test(text) || hasChip(chips, "Upload this") || hasChip(chips, "Skip"),
+    20_000,
+  );
+  const rows03 = await structureRows(page);
+  const jobs03 = rows03.filter((row) => row.label === "Employment");
+  const harbor03 = jobs03.filter((row) => /Harbor Pacific Design Inc/i.test(row.value));
+  if (harbor03.length !== 1) {
+    throw new BeatFail(
+      `03 Use this must write one Harbor Pacific row — ${rows03.map((row) => `${row.label}: ${row.value}`).join(" | ")}`,
+    );
+  }
+  if (!/Box 5 \$118,400/.test(harbor03[0].value)) {
+    throw new BeatFail(`03 Use this lost Box 5 $118,400 — ${harbor03[0].value}`);
+  }
+  if (/government ID/i.test(after03.text) && !/paystub/i.test(after03.text)) {
+    throw new BeatFail(`03 Use this jumped to ID — ${after03.text} | ${after03.chips.join(" · ")}`);
+  }
+  if (!/latest paystub/i.test(after03.text)) {
+    throw new BeatFail(`03 Use this next ask was not latest paystub — ${after03.text} | ${after03.chips.join(" · ")}`);
+  }
+  if (!hasChip(after03.chips, "Upload this") || !hasChip(after03.chips, "Skip")) {
+    throw new BeatFail(`paystub ask missing Upload this · Skip — ${after03.chips.join(" · ")}`);
+  }
+  await dropHarborDoc(page, "07-paystub-biweekly-loud.pdf", "confirm");
+  const after07 = await waitCurrent(
+    page,
+    (text, chips) => /government ID/i.test(text) || hasChip(chips, "Upload this"),
+    20_000,
+  );
+  const rows07 = await structureRows(page);
+  const jobs07 = rows07.filter((row) => row.label === "Employment");
+  const harbor07 = jobs07.filter((row) => /Harbor Pacific Design Inc/i.test(row.value));
+  if (harbor07.length !== 1 || jobs07.length !== 1) {
+    throw new BeatFail(
+      `07 must upgrade the same Harbor row — ${rows07.map((row) => `${row.label}: ${row.value}`).join(" | ")}`,
+    );
+  }
+  if (!/Box 5 \$118,400/.test(harbor07[0].value) || !/month/i.test(harbor07[0].value)) {
+    throw new BeatFail(`07 did not add stub monthly on the Harbor row — ${harbor07[0].value}`);
+  }
+  if (!/government ID/i.test(after07.text)) {
+    throw new BeatFail(`after stub, next ask was not ID — ${after07.text} | ${after07.chips.join(" · ")}`);
+  }
+  if (!hasChip(after07.chips, "Upload this") || !hasChip(after07.chips, "Skip")) {
+    throw new BeatFail(`ID ask missing Upload this · Skip — ${after07.chips.join(" · ")}`);
+  }
+}
+
 async function foxTexts(page: Page): Promise<string[]> {
   const loc = page.locator(".fox-bubble--fox");
   const n = await loc.count();
@@ -1713,6 +1788,7 @@ const CASES: { n: number; title: string; run: (page: Page) => Promise<void> }[] 
   { n: 17, title: "Years asks How long have you had Hale Design once after 11", run: case17 },
   { n: 18, title: "11 then 19 keeps $9,958 and next is 2024 Schedule C", run: case18 },
   { n: 19, title: "Income Skip → after Looks right, Still useful is ID + how-earned, not W-2 docs", run: case19 },
+  { n: 20, title: "03 Use this → latest paystub; 07 upgrades same Harbor row; then ID Upload this · Skip", run: case20 },
 ];
 
 async function openBrowser() {
