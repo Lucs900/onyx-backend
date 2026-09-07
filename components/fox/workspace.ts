@@ -341,6 +341,8 @@ import {
   propertyAddressSettled,
   subjectAddressSuggestion,
   propertyTypeAskCopy,
+  propertyTypeAskActions,
+  isPropertyTypeAskText,
   propertyTypeChosen,
   propertyTypeSettled,
   propertyTypeSkipped,
@@ -3002,7 +3004,9 @@ function restoredAskAfterLiveQuote(ask: FoxMessage): FoxMessage {
       ? yearsInBusinessSkipActions()
       : isMonthlyDebtsAskText(ask.text)
         ? monthlyDebtsSkipActions()
-        : ask.actions,
+        : isPropertyTypeAskText(ask.text)
+          ? propertyTypeAskActions()
+          : ask.actions,
   };
 }
 
@@ -3035,7 +3039,9 @@ function withRestoredAskAfterQuote(
                 ? yearsInBusinessSkipActions()
                 : isMonthlyDebtsAskText(openAsk.text)
                   ? monthlyDebtsSkipActions()
-                  : openAsk.actions,
+                  : isPropertyTypeAskText(openAsk.text)
+                    ? propertyTypeAskActions()
+                    : openAsk.actions,
             }
           : item,
       ),

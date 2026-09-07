@@ -25,7 +25,9 @@ import {
 import {
   addressOnFileCopy,
   fileAddressLine,
+  isPropertyTypeAskText,
   isSubjectAddressConfirmPending,
+  propertyTypeAskActions,
   shouldShowAddressUseThis,
 } from "./propertyType";
 import type { Capture, FoxAction, FoxIntakeDraft, FoxMessage } from "./types";
@@ -753,6 +755,7 @@ export function paintedFoxActions(
   if (!current) return undefined;
   if (isYearsInBusinessAskText(message.text)) return yearsInBusinessSkipActions();
   if (isMonthlyDebtsAskText(message.text)) return paintedMonthlyDebtsActions(message.actions);
+  if (isPropertyTypeAskText(message.text)) return propertyTypeAskActions();
   const shown = visibleFoxActions(message, draft);
   if (!shown?.length) return undefined;
   const idNameConfirm = /The ID shows /i.test(foxBlob(message));

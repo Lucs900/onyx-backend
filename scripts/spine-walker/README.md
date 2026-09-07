@@ -56,13 +56,13 @@ Harbor extract POSTs fulfill leftover-proven local `classifyAndExtract` of the s
 
 ## Locked cases (assert only)
 
-1. 20 on a known price → down and loan write, Use this once.
+1. 20 on a known price → down and loan write, Use this once. After funds, home-type chips are House · Condo · 2–4 · Skip.
 2. Price 500000 then 1000000 → conflict → Down payment → 20 → Use this → 100000 / 400000, no second conflict.
 3. No Not sure on price, down, or loan. “I don’t know” restores the same ask.
 4. 97535 → California only → 94123 writes and prices → next is income, not ZIP.
 5. First statement Use this → second offered → Skip → contract. After one statement, live gate is Looks right (or second/contract) — never “Where did you live before this?”. Prior address may sit on Still useful.
 6. Skip ID. Skip stated debts. File still moves.
-7. 2–4 asks rent. Skip rent allowed.
+7. Home-type chips House · Condo · 2–4 · Skip. 2–4 asks rent. Skip rent allowed.
 8. Mid-ask sideways question. Answer, then the same next chip.
 9. harbor-both-cover-contract. Both → years 2 → debts Skip → composer-drop 03, 07, 01, 10, 19, 05, `09-purchase-contract-88-clipper.pdf`. One Harbor Employment row. Combined wage + Schedule C. Cover 19 maps K-1 / 1065 / Sch E. Clipper 94114, Filbert stays residence. Looks right hidden while Use this is open. No citizenship after Looks right.
 10. 09 at the price ask, then House-turn type 760+. Clipper writes. Credit 760+ on File. Rate may print. Next Fox line is not FICO.

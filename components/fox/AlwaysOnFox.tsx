@@ -84,9 +84,11 @@ import { shouldKeepStoredFoxThread, withoutTrailingSealedFoxLines } from "./pers
 import {
   californiaZipOnFile,
   fileAddressLine,
+  isPropertyTypeAskText,
   isSkipPropertyAddressText,
   isSubjectAddressConfirmPending,
   parseVolunteeredAddress,
+  propertyTypeAskActions,
 } from "./propertyType";
 import {
   applyCapture,
@@ -323,7 +325,9 @@ function foxAskMessage(ask: {
       ? undefined
       : isMonthlyDebtsAskText(ask.text)
         ? monthlyDebtsSkipActions()
-        : ask.actions,
+        : isPropertyTypeAskText(ask.text)
+          ? propertyTypeAskActions()
+          : ask.actions,
   };
 }
 
@@ -405,6 +409,13 @@ function applyFoxAsk(
   }
   if (last && /The ID shows /i.test(last.text) && !/The ID shows /i.test(ask.text)) {
     return freezeOthers(last.id, foxAskMessage(ask));
+  }
+  if (last && isPropertyTypeAskText(last.text) && isPropertyTypeAskText(ask.text)) {
+    return freezeOthers(last.id, {
+      ...last,
+      text: ask.text,
+      actions: propertyTypeAskActions(),
+    });
   }
   if (isContractExtractAskText(ask.text)) {
     const held = withoutDuplicateContractConfirm(messages);
@@ -560,15 +571,17 @@ export function FoxLauncher() {
 }
 
 function foxTurnAlreadyUsed(thread: FoxMessage[], index: number) {
+  const fox = thread[index];
   for (let i = index + 1; i < thread.length; i += 1) {
     const item = thread[i];
     if (item.role === "fox") return true;
-    if (
-      item.role === "client" &&
-      /^(This one|Use this|Looks right|Skip)$/i.test(item.text.trim())
-    ) {
+    if (item.role !== "client") continue;
+    const spoken = item.text.trim();
+    if (/^(This one|Use this|Looks right)$/i.test(spoken)) {
+      if (fox && isPropertyTypeAskText(fox.text)) continue;
       return true;
     }
+    if (/^Skip$/i.test(spoken)) return true;
   }
   return false;
 }

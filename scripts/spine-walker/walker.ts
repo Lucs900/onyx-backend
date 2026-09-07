@@ -406,8 +406,15 @@ async function assertFundsWrite(page: Page, price = "$500,000") {
 }
 
 async function walkHouseCredit(page: Page) {
-  await waitAsk(page, /House, condo, or 2–4|What kind of home/i);
-  assertCopyChips(await currentText(page), await currentChips(page));
+  const home = await waitAsk(page, /House, condo, or 2–4|What kind of home/i);
+  assertCopyChips(home.text, home.chips);
+  const need = ["House", "Condo", "2–4", "Skip"];
+  const missing = need.filter((label) => !hasChip(home.chips, label));
+  if (missing.length) {
+    throw new BeatFail(
+      `home-type chips missing ${missing.join(" · ")} — ${home.chips.join(" · ") || "(none)"}`,
+    );
+  }
   await clickChip(page, "House");
   await waitAsk(page, /estimated FICO|credit/i);
   await clickChip(page, "760+");
@@ -759,7 +766,15 @@ async function case7(page: Page) {
   await waitAsk(page, /down payment or loan amount/i);
   await typeSend(page, "20");
   await acceptFundsTwenty(page);
-  await waitAsk(page, /kind of home|House, condo, or 2–4/i);
+  const home = await waitAsk(page, /kind of home|House, condo, or 2–4/i);
+  assertCopyChips(home.text, home.chips);
+  const need = ["House", "Condo", "2–4", "Skip"];
+  const missing = need.filter((label) => !hasChip(home.chips, label));
+  if (missing.length) {
+    throw new BeatFail(
+      `home-type chips missing ${missing.join(" · ")} — ${home.chips.join(" · ") || "(none)"}`,
+    );
+  }
   await clickChip(page, "2–4");
   const rent = await waitAsk(page, /lease or rent/i);
   if (!/Skip is fine/i.test(rent.text) && !hasChip(rent.chips, "Skip")) {

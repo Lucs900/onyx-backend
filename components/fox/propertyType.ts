@@ -9,6 +9,11 @@ export const PROPERTY_ADDRESS_FACT = "property_address";
 export const SUGGESTED_PROPERTY_NOTE = "Suggested · not underwritten";
 export const PROPERTY_TYPE_ASK =
   "What kind of home is this? House, condo, or 2–4 unit is enough. Skip is fine.";
+
+export function isPropertyTypeAskText(text?: string | null) {
+  const value = String(text ?? "").trim();
+  return value === PROPERTY_TYPE_ASK || /^What kind of home is this\?/i.test(value);
+}
 export const PROPERTY_ADDRESS_ASK = "What is the property address or ZIP?";
 export const PURCHASE_ADDRESS_ASK = "What is the address or ZIP of the home you are buying?";
 export const REFI_ADDRESS_ASK = "What is the address or ZIP of the home?";

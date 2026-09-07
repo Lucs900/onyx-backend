@@ -6889,6 +6889,14 @@ assert.equal(workspaceReply("can I do this on my phone", fundsConfirm)?.text?.st
 
 const typeChips = (workspacePromptCopy("property-type", afterFunds).actions ?? []).map((item) => item.label);
 assert.deepEqual(typeChips, ["House", "Condo", "2–4", "Skip"]);
+assert.deepEqual(
+  (paintedFoxActions(
+    { id: "home-type-bare", role: "fox", text: PROPERTY_TYPE_ASK },
+    afterFunds,
+    true,
+  ) ?? []).map((item) => item.label),
+  ["House", "Condo", "2–4", "Skip"],
+);
 assertAnswerThenRestore(workspaceReply("will i qualify", afterFunds), /This file is still thin\./, {
   labels: typeChips,
 });
