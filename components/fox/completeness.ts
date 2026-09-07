@@ -1979,6 +1979,17 @@ export function wageIncomeSketchOpen(draft: FoxIntakeDraft) {
   );
 }
 
+export function isLooksRightAskText(text?: string | null) {
+  return /the file looks like this|looks right, or change a line/i.test(String(text ?? "").trim());
+}
+
+export function looksRightAskActions(): FoxAction[] {
+  return [
+    { id: "looks-right", label: "Looks right", event: "bubble", capture: { field: "confirm-draft" } },
+    { id: "needs-fix", label: "Needs a correction", event: "bubble", capture: { field: "needs-correction" } },
+  ];
+}
+
 export function canLooksRight(draft: FoxIntakeDraft) {
   if (draftHasOpenConfirmCard(draft)) return false;
   if (wageIncomeSketchOpen(draft)) return false;

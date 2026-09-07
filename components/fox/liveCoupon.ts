@@ -13,8 +13,10 @@ import { isPurchaseContractConfirmPending, nextDocInvite, needsPurchaseSplitAsk 
 import { ID_UNREAD_ASK, isBorrowerNameConfirmPending } from "./borrowerName";
 import {
   isFundsPairProposal,
+  isLooksRightAskText,
   isPurchaseLike,
   loanExceedsPurchasePrice,
+  looksRightAskActions,
   yearsInBusinessSkipActions,
 } from "./completeness";
 import { isLookupWaitLine, isLookupWaitMessage } from "./lookupWait";
@@ -756,6 +758,17 @@ export function paintedFoxActions(
   if (isYearsInBusinessAskText(message.text)) return yearsInBusinessSkipActions();
   if (isMonthlyDebtsAskText(message.text)) return paintedMonthlyDebtsActions(message.actions);
   if (isPropertyTypeAskText(message.text)) return propertyTypeAskActions();
+  if (isLooksRightAskText(message.text)) {
+    if (
+      draft.pendingProposal ||
+      draft.pendingConflict ||
+      draft.pendingAddress ||
+      messageHasOpenUseThisConfirm(message)
+    ) {
+      return undefined;
+    }
+    return looksRightAskActions();
+  }
   const shown = visibleFoxActions(message, draft);
   if (!shown?.length) return undefined;
   const idNameConfirm = /The ID shows /i.test(foxBlob(message));
@@ -827,6 +840,7 @@ export function visibleFoxActions(message: FoxMessage, draft: FoxIntakeDraft) {
     if (
       looksRightDocAskOpen(draft) &&
       (isLeftoverConfirmChip(action) || isLooksRightChip(action)) &&
+      !isLooksRightAskText(message.text) &&
       !(/The ID shows /i.test(foxBlob(message)) && isBorrowerNameConfirmPending(draft)) &&
       !(
         isFundsPairProposal(draft.pendingProposal) &&

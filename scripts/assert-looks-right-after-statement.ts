@@ -83,6 +83,12 @@ function assertLooksRightGate(draft: FoxIntakeDraft, label: string) {
       /Looks right|Proceed/i.test(ask.text),
     `${label} next was not Looks right / Proceed — ${ask.text}`,
   );
+  if (workspacePrompt(draft) === "review") {
+    assert.ok(
+      (ask.actions ?? []).some((item) => item.label === "Looks right"),
+      `${label} Looks right gate missing chip — ${ask.text} | ${(ask.actions ?? []).map((item) => item.label).join(" · ")}`,
+    );
+  }
 }
 
 function main() {

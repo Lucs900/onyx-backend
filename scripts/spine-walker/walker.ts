@@ -11,7 +11,8 @@
  * Case 17 is years-with-business-name after 11. Case 18 is 11 then 19:
  * no freeze, keep $9,958, next is 2024 Schedule C. Case 19 is Income Skip
  * Still useful. Case 20 is 03 Use this → latest paystub, then 07 same Harbor
- * row, then ID Upload this · Skip.
+ * row, then ID Upload this · Skip. Case 21 is Looks right chip on that gate;
+ * typed yes still confirms.
  * Years in business is once after SE / Both. Named Hale Design when known.
  * Lukasz Harbor leftovers run from scripts/assert-spine-walker.sh before
  * Playwright. CI fail = red.
@@ -1206,6 +1207,57 @@ async function case20(page: Page) {
   }
 }
 
+async function case21(page: Page) {
+  await hardStartOver(page);
+  await walkToQuotedIncome(page, "94123", true);
+  await waitAsk(page, /How is income earned/i);
+  if (!hasChip(await currentChips(page), "Skip")) {
+    throw new BeatFail(`income ask missing Skip — ${await currentText(page)} | ${(await currentChips(page)).join(" · ")}`);
+  }
+  await clickChip(page, "Skip");
+  const afterSkip = await waitCurrent(
+    page,
+    (text, chips) =>
+      hasChip(chips, "Looks right") ||
+      /Looks right|other monthly debts/i.test(text),
+    20_000,
+  );
+  if (/government ID/i.test(afterSkip.text) && !hasChip(afterSkip.chips, "Looks right")) {
+    throw new BeatFail(`Income Skip opened ID before Looks right — ${afterSkip.text}`);
+  }
+  if (/other monthly debts/i.test(afterSkip.text) && hasChip(afterSkip.chips, "Skip")) {
+    await clickChip(page, "Skip");
+    await waitCurrent(page, (text) => !/other monthly debts/i.test(text), 15_000);
+  }
+  const gate = hasChip(await currentChips(page), "Looks right")
+    ? { text: await currentText(page), chips: await currentChips(page) }
+    : await waitCurrent(page, (_text, chips) => hasChip(chips, "Looks right"), 20_000);
+  if (!/Looks right, or change a line/i.test(gate.text) && !hasChip(gate.chips, "Looks right")) {
+    throw new BeatFail(`Looks right gate missing — ${gate.text} | ${gate.chips.join(" · ")}`);
+  }
+  if (!hasChip(gate.chips, "Looks right")) {
+    throw new BeatFail(`Looks right gate missing chip — ${gate.text} | ${gate.chips.join(" · ")}`);
+  }
+  await typeSend(page, "yes");
+  const afterYes = await waitCurrent(page, (text) => !/Looks right, or change a line/i.test(text), 15_000).catch(
+    async () => ({ text: await currentText(page), chips: await currentChips(page) }),
+  );
+  if (/Looks right, or change a line/i.test(afterYes.text) && hasChip(afterYes.chips, "Looks right")) {
+    throw new BeatFail(`typed yes did not leave Looks right — ${afterYes.text}`);
+  }
+  const useful = await stillUsefulLabels(page);
+  const blob = useful.join(" · ");
+  if (useful.some((item) => /paystub|W-2|tax return|latest return|prior-year return/i.test(item))) {
+    throw new BeatFail(`typed yes invented income docs on Still useful — ${blob || "(none)"}`);
+  }
+  if (!useful.some((item) => /government ID/i.test(item))) {
+    throw new BeatFail(`typed yes Still useful missing Government ID — ${blob || "(none)"}`);
+  }
+  if (!useful.some((item) => /how income is earned/i.test(item))) {
+    throw new BeatFail(`typed yes Still useful missing how-earned — ${blob || "(none)"}`);
+  }
+}
+
 async function foxTexts(page: Page): Promise<string[]> {
   const loc = page.locator(".fox-bubble--fox");
   const n = await loc.count();
@@ -1789,6 +1841,7 @@ const CASES: { n: number; title: string; run: (page: Page) => Promise<void> }[] 
   { n: 18, title: "11 then 19 keeps $9,958 and next is 2024 Schedule C", run: case18 },
   { n: 19, title: "Income Skip → after Looks right, Still useful is ID + how-earned, not W-2 docs", run: case19 },
   { n: 20, title: "03 Use this → latest paystub; 07 upgrades same Harbor row; then ID Upload this · Skip", run: case20 },
+  { n: 21, title: "Looks right gate shows Looks right chip; typed yes still confirms", run: case21 },
 ];
 
 async function openBrowser() {

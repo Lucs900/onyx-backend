@@ -177,6 +177,8 @@ import {
   writeYearsInBusiness,
   yearsInBusinessAskCopy,
   YEARS_IN_BUSINESS_FIELD,
+  isLooksRightAskText,
+  looksRightAskActions,
 } from "./completeness";
 import { conventionalFileFacts } from "./conventionalFile";
 import {
@@ -1648,10 +1650,7 @@ function identityReactionAsk(draft: FoxIntakeDraft): {
     actions: invite
       ? documentInviteActions(draft)
       : canLooksRight(draft)
-        ? [
-            { id: "looks-right", label: "Looks right", event: "bubble", capture: { field: "confirm-draft" } },
-            { id: "needs-fix", label: "Needs a correction", event: "bubble", capture: { field: "needs-correction" } },
-          ]
+        ? looksRightAskActions()
         : undefined,
   };
 }
@@ -3006,7 +3005,9 @@ function restoredAskAfterLiveQuote(ask: FoxMessage): FoxMessage {
         ? monthlyDebtsSkipActions()
         : isPropertyTypeAskText(ask.text)
           ? propertyTypeAskActions()
-          : ask.actions,
+          : isLooksRightAskText(ask.text)
+            ? looksRightAskActions()
+            : ask.actions,
   };
 }
 
@@ -3041,7 +3042,9 @@ function withRestoredAskAfterQuote(
                   ? monthlyDebtsSkipActions()
                   : isPropertyTypeAskText(openAsk.text)
                     ? propertyTypeAskActions()
-                    : openAsk.actions,
+                    : isLooksRightAskText(openAsk.text)
+                      ? looksRightAskActions()
+                      : openAsk.actions,
             }
           : item,
       ),
@@ -3787,10 +3790,7 @@ function workspaceAskCopy(
     }
     return {
       text: looksRightAskCopy(draft),
-      actions: [
-        { id: "looks-right", label: "Looks right", event: "bubble", capture: { field: "confirm-draft" } },
-        { id: "needs-fix", label: "Needs a correction", event: "bubble", capture: { field: "needs-correction" } },
-      ],
+      actions: looksRightAskActions(),
     };
   }
   if (prompt === "correct") {

@@ -76,5 +76,6 @@ Harbor extract POSTs fulfill leftover-proven local `classifyAndExtract` of the s
 18. 11 then 19 keeps $9,958 and next is 2024 Schedule C.
 19. Income Skip → Looks right. Still useful is Government ID + how income is earned. No paystub / W-2 / tax return until how-earned is answered.
 20. W-2 03 Use this → latest paystub (Upload this · Skip). 07 upgrades the same Harbor Pacific row with monthly. Then ID with Upload this · Skip.
+21. Looks right gate shows a Looks right chip. Typed yes still confirms. Still useful after that stays Government ID + how-earned.
 
 FAIL if copy and chips disagree. FAIL if Structure and chat disagree. FAIL if a write did not kill the old number. FAIL if Credit is on File and Fox asks FICO.

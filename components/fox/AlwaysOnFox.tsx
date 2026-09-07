@@ -194,7 +194,13 @@ import {
   isScheduleECashFlowProposal,
   maybeProposeQualifyingFromTaxFile,
 } from "./qualifyingIncome";
-import { canLooksRight, draftHasOpenConfirmCard, shouldSpeakPendingConfirm } from "./completeness";
+import {
+  canLooksRight,
+  draftHasOpenConfirmCard,
+  isLooksRightAskText,
+  looksRightAskActions,
+  shouldSpeakPendingConfirm,
+} from "./completeness";
 import { governmentIdSkipped, ID_UNREAD_ASK, isBorrowerNameConfirmPending } from "./borrowerName";
 import { isUnreadNote } from "@/lib/docs/accept";
 import { fileExists, finishLineActions, inQueueEnding, reviewIsSitting } from "./motion";
@@ -327,7 +333,9 @@ function foxAskMessage(ask: {
         ? monthlyDebtsSkipActions()
         : isPropertyTypeAskText(ask.text)
           ? propertyTypeAskActions()
-          : ask.actions,
+          : isLooksRightAskText(ask.text)
+            ? looksRightAskActions()
+            : ask.actions,
   };
 }
 
@@ -415,6 +423,13 @@ function applyFoxAsk(
       ...last,
       text: ask.text,
       actions: propertyTypeAskActions(),
+    });
+  }
+  if (last && isLooksRightAskText(last.text) && isLooksRightAskText(ask.text)) {
+    return freezeOthers(last.id, {
+      ...last,
+      text: ask.text,
+      actions: looksRightAskActions(),
     });
   }
   if (isContractExtractAskText(ask.text)) {
@@ -577,7 +592,7 @@ function foxTurnAlreadyUsed(thread: FoxMessage[], index: number) {
     if (item.role === "fox") return true;
     if (item.role !== "client") continue;
     const spoken = item.text.trim();
-    if (/^(This one|Use this|Looks right)$/i.test(spoken)) {
+    if (/^(This one|Use this|Looks right|yes)$/i.test(spoken)) {
       if (fox && isPropertyTypeAskText(fox.text)) continue;
       return true;
     }
@@ -1326,7 +1341,13 @@ export function AlwaysOnFox({
       }
     }
     commitMessages((prev) => {
-      if (mustShowReview && hasReviewAsk(prev)) return prev;
+      if (mustShowReview && hasReviewAsk(prev)) {
+        return prev.map((message) =>
+          message.role === "fox" && isLooksRightAskText(message.text)
+            ? { ...message, actions: looksRightAskActions() }
+            : message,
+        );
+      }
       if (
         isStart &&
         shouldDeferStillUsefulAsk(live) &&
