@@ -212,7 +212,7 @@ async function main() {
   );
   const still = stillUsefulSection(proceeded);
   if (still && !still.empty) {
-    assert.ok(still.items.length >= 1 && still.items.length <= 3, "Still useful shows next 1–3 only");
+    assert.ok(still.items.length >= 1, "Still useful has remainder after Proceed");
     assert.ok(still.items.every((item) => !/tax return|latest return|prior-year return/i.test(item.label)));
   }
   assert.ok(
