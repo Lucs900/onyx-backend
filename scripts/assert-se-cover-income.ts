@@ -6,6 +6,8 @@
  * 11 / 10 upgrade the same Hale Design row to the Schedule C 1084 method.
  * Skip on the C ask is once. Second cover does not freeze or steal.
  * Same-value second drop of 20 keeps — no second Use this. Next is 2025 Schedule C.
+ * 11 then 19 keeps $9,958. Next is 2024 Schedule C. Cover must not hang.
+ * Years eaten by a return come back once after Use this when Hale Design is known.
  */
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -26,6 +28,8 @@ import {
   requiredLineValue,
   requiredStructureLines,
   resolveProposal,
+  skipYearsInBusiness,
+  writeYearsInBusiness,
 } from "../components/fox/completeness";
 import { docReactionAsk, nextFoxAsk, previewFacts } from "../components/fox/workspace";
 import { isCoverLineProposal, qualifyingIncomeDisplay, SE_MONTHLY_FIELD } from "../components/fox/qualifyingIncome";
@@ -245,6 +249,7 @@ async function main() {
   const usedYearsOpen20 = resolveProposal(yearsOpen20, "accept");
   assert.match(requiredLineValue(usedYearsOpen20, incomeLine).value, /\$9,000/);
   assert.doesNotMatch(nextFoxAsk(usedYearsOpen20).text, /How long have you had/);
+  assert.equal(usedYearsOpen20.yearsInBusinessAsked, false);
 
   const skippedC = skipCurrentInvite(used20);
   assert.doesNotMatch(askBlob(skippedC), /Got the cover/i);
@@ -297,6 +302,7 @@ async function main() {
   assert.doesNotMatch(upgradeBlob, /I need (?:your )?the 2025 (?:federal )?tax return|Form 1040, all pages/i);
   const used11 = resolveProposal(after11, "accept");
   assert.equal(used11.facts?.qualifying_income?.value, "9958");
+  assert.doesNotMatch(nextFoxAsk(used11).text, /How long have you had/);
   const incomeAfter = requiredLineValue(used11, incomeLine);
   assert.match(incomeAfter.value, /Hale Design/);
   assert.match(incomeAfter.value, /\$9,958/);
@@ -308,6 +314,33 @@ async function main() {
       .map((fact) => `${fact.label}:${fact.value}`)
       .join(" · ")}`,
   );
+
+  const after11Eaten = writeLive(
+    usedYearsOpen20,
+    "11-1040-schedule-c-2025-hale-design.pdf",
+    "tax_return",
+    eleven.fields ?? {},
+    "2026-09-07T16:01:20.000Z",
+  ).draft;
+  assert.doesNotMatch(nextFoxAsk(after11Eaten).text, /How long have you had/);
+  const used11Eaten = resolveProposal(after11Eaten, "accept");
+  assert.equal(used11Eaten.facts?.qualifying_income?.value, "9958");
+  assert.equal(nextFoxAsk(used11Eaten).text, "How long have you had Hale Design?");
+  assert.deepEqual((nextFoxAsk(used11Eaten).actions ?? []).map((item) => item.label), ["Skip"]);
+  const skippedNamedYears = skipYearsInBusiness(used11Eaten);
+  assert.doesNotMatch(nextFoxAsk(skippedNamedYears).text, /How long have you had/);
+  const writtenBefore11 = writeYearsInBusiness(usedYearsOpen20, "2");
+  const used11YearsOnFile = resolveProposal(
+    writeLive(
+      writtenBefore11,
+      "11-1040-schedule-c-2025-hale-design.pdf",
+      "tax_return",
+      eleven.fields ?? {},
+      "2026-09-07T16:01:40.000Z",
+    ).draft,
+    "accept",
+  );
+  assert.doesNotMatch(nextFoxAsk(used11YearsOnFile).text, /How long have you had/);
 
   const after19Alone = writeLive(
     seAtIncome(),
@@ -353,7 +386,33 @@ async function main() {
   assert.doesNotMatch(askBlob(skipAfter19), /I need the 2025 return — Form 1040, all pages/i);
   assert.notEqual(askBlob(skipAfter19).trim(), "");
 
-  console.log("assert-se-cover-income: 20=$9,000 · 19=$7,333 · 11 upgrades · 19 does not hang · second 20 keeps");
+  const nineteenAfterUsed11 = writeLive(
+    structuredClone(used11),
+    "19-1040-cover-2024-jordan-hale.pdf",
+    "tax_return",
+    nineteen.fields ?? {},
+    "2026-09-07T16:05:00.000Z",
+  ).draft;
+  assert.equal(nineteenAfterUsed11.facts?.qualifying_income?.value, "9958");
+  assert.notEqual(nineteenAfterUsed11.pendingProposal?.value, "7333");
+  assert.match(requiredLineValue(nineteenAfterUsed11, incomeLine).value, /Hale Design/);
+  assert.match(requiredLineValue(nineteenAfterUsed11, incomeLine).value, /\$9,958/);
+  assert.doesNotMatch(requiredLineValue(nineteenAfterUsed11, incomeLine).value, /\$7,333/);
+  const after11Then19 = askBlob(nineteenAfterUsed11);
+  assert.notEqual(after11Then19.trim(), "");
+  assert.match(after11Then19, /2024 Schedule C/);
+  assert.doesNotMatch(after11Then19, /Got the cover/i);
+  assert.doesNotMatch(after11Then19, /I’m suggesting \$7,333/);
+  assert.doesNotMatch(after11Then19, /I need (?:your )?the 2025 (?:federal )?tax return|I need the 202[45] return — Form 1040, all pages/i);
+  assert.ok(
+    stillUsefulLabels(nineteenAfterUsed11).some((label) => /2024 Schedule C/i.test(label)),
+    `11 then 19 Still useful hid 2024 Schedule C — ${stillUsefulLabels(nineteenAfterUsed11).join(" · ") || "(none)"}`,
+  );
+  const skipAfter11Then19 = skipCurrentInvite(nineteenAfterUsed11);
+  assert.notEqual(askBlob(skipAfter11Then19).trim(), "");
+  assert.doesNotMatch(askBlob(skipAfter11Then19), /I need the 2025 return — Form 1040, all pages/i);
+
+  console.log("assert-se-cover-income: 20=$9,000 · 19=$7,333 · 11 upgrades · 11 then 19 keeps $9,958 · years Hale Design once");
 }
 
 main().catch((error) => {

@@ -1,5 +1,5 @@
 /**
- * Spine walker — sixteen locked preview cases. Hard Start over each case
+ * Spine walker — eighteen locked preview cases. Hard Start over each case
  * on one preview session so Vercel SSO does not eat later gotos. Do not
  * reload or goto after the first desk — later navigations hit SSO.
  * Composer-drop extract fulfills leftover-proven local classifyAndExtract
@@ -8,7 +8,9 @@
  * Case 9 is harbor-both-cover-contract. Combined 09-at-price + House-turn
  * Credit (cases 10–11) is the FICO gate. Cases 14–16 are SE cover income
  * (20 → $9,000 Structure write · second 20 keeps, next is 2025 Sch C · 20 then 11 upgrades the same Hale Design row · 20 then 19 does not hang).
- * Years in business is once after SE / Both.
+ * Case 17 is years-with-business-name after 11. Case 18 is 11 then 19:
+ * no freeze, keep $9,958, next is 2024 Schedule C.
+ * Years in business is once after SE / Both. Named Hale Design when known.
  * Lukasz Harbor leftovers run from scripts/assert-spine-walker.sh before
  * Playwright. CI fail = red.
  *
@@ -1277,7 +1279,11 @@ async function walkSeToIncomeDocs(page: Page) {
   }
 }
 
-async function dropSeCoverOrC(page: Page, name: string, kind: "cover-card" | "upgrade" | "second-cover" | "same-cover-keep") {
+async function dropSeCoverOrC(
+  page: Page,
+  name: string,
+  kind: "cover-card" | "upgrade" | "second-cover" | "same-cover-keep" | "prior-cover-keep",
+) {
   const before = await currentText(page);
   await composerDrop(page, name);
   const started = Date.now();
@@ -1331,6 +1337,20 @@ async function dropSeCoverOrC(page: Page, name: string, kind: "cover-card" | "up
         return;
       }
       if (text !== before && /I’m suggesting/i.test(text) && hasChip(chips, "Use this")) {
+        return;
+      }
+    }
+    if (kind === "prior-cover-keep") {
+      if (/I’m suggesting \$7,333/i.test(text) && hasChip(chips, "Use this")) {
+        throw new BeatFail(`11 then 19 stole $7,333 — ${text} | ${chips.join(" · ")}`);
+      }
+      if (/I need the 2025 return — Form 1040, all pages/i.test(text)) {
+        throw new BeatFail(`11 then 19 stole the 2025 ask — ${text}`);
+      }
+      if (/I need the 2024 return — Form 1040, all pages/i.test(text)) {
+        throw new BeatFail(`11 then 19 hung on 2024 all-pages — ${text}`);
+      }
+      if (/2024 Schedule C/i.test(text) && !hasChip(chips, "Use this")) {
         return;
       }
     }
@@ -1456,6 +1476,103 @@ async function case16(page: Page) {
   }
 }
 
+async function case17(page: Page) {
+  await hardStartOver(page);
+  await walkToQuotedIncome(page, "94123", true);
+  await waitAsk(page, /How is income earned/i);
+  await clickChip(page, "Self-employed");
+  await waitCurrent(page, (text) => /How long have you had/i.test(text), 20_000);
+  await assertYearsAskedOnce(page, "after Self-employed");
+  const firstYears = await currentText(page);
+  if (!/How long have you had/i.test(firstYears)) {
+    throw new BeatFail(`years did not ask after Self-employed — ${firstYears}`);
+  }
+  await dropSeCoverOrC(page, "20-1040-cover-2025-jordan-hale.pdf", "cover-card");
+  await clickChip(page, "Use this");
+  const after20Started = Date.now();
+  while (Date.now() - after20Started < 20_000) {
+    const after20 = await currentText(page);
+    if (/How long have you had Hale Design/i.test(after20)) {
+      throw new BeatFail(`20 Use this named years before 11 — ${after20}`);
+    }
+    if (/How long have you had this business/i.test(after20)) {
+      throw new BeatFail(`20 Use this reprinted generic years — ${after20}`);
+    }
+    if (/other monthly debts/i.test(after20)) {
+      await clickChip(page, "Skip");
+      await waitCurrent(page, (text) => !/other monthly debts/i.test(text), 15_000);
+      continue;
+    }
+    if (/2025 Schedule C/i.test(after20)) break;
+    await page.waitForTimeout(200);
+  }
+  await assertYearsAskedOnce(page, "after 20 Use this left years paused");
+  await dropSeCoverOrC(page, "11-1040-schedule-c-2025-hale-design.pdf", "upgrade");
+  await clickChip(page, "Use this");
+  const named = await waitCurrent(page, (text) => /How long have you had Hale Design/i.test(text), 20_000);
+  if (!/How long have you had Hale Design/i.test(named.text)) {
+    throw new BeatFail(`11 Use this did not ask Hale Design years — ${named.text}`);
+  }
+  if (!hasChip(named.chips, "Skip")) {
+    throw new BeatFail(`Hale Design years missing Skip — ${named.text} | ${named.chips.join(" · ")}`);
+  }
+  await assertYearsAskedOnce(page, "after 11 Use this named years");
+  await clickChip(page, "Skip");
+  await waitCurrent(page, (text) => !/How long have you had/i.test(text), 15_000);
+  await assertYearsAskedOnce(page, "after Hale Design years skip");
+  if (/How long have you had/i.test(await currentText(page))) {
+    throw new BeatFail(`years reprinted after Skip — ${await currentText(page)}`);
+  }
+}
+
+async function case18(page: Page) {
+  await hardStartOver(page);
+  await walkSeToIncomeDocs(page);
+  await dropSeCoverOrC(page, "20-1040-cover-2025-jordan-hale.pdf", "cover-card");
+  await clickChip(page, "Use this");
+  await waitCurrent(page, (next) => !/I’m suggesting \$9,000 a month/i.test(next) || /Schedule C/i.test(next), 20_000);
+  await dropSeCoverOrC(page, "11-1040-schedule-c-2025-hale-design.pdf", "upgrade");
+  await clickChip(page, "Use this");
+  const started = Date.now();
+  let afterMap: Record<string, string> = {};
+  while (Date.now() - started < 20_000) {
+    afterMap = await structureMap(page);
+    const blob = `${afterMap["Income"] ?? ""} ${afterMap["Qualifying income"] ?? ""}`;
+    if (/Hale Design/i.test(blob) && /\$9,958/.test(blob)) break;
+    await page.waitForTimeout(200);
+  }
+  const afterIncome = `${afterMap["Income"] ?? ""} ${afterMap["Qualifying income"] ?? ""}`;
+  if (!/Hale Design/i.test(afterIncome) || !/\$9,958/.test(afterIncome)) {
+    throw new BeatFail(`11 Use this did not write $9,958 before 19 — ${afterIncome}`);
+  }
+  await dropSeCoverOrC(page, "19-1040-cover-2024-jordan-hale.pdf", "prior-cover-keep");
+  const text = await currentText(page);
+  const chips = await currentChips(page);
+  if (!text.trim()) {
+    throw new BeatFail("11 then 19 hung — empty Fox line");
+  }
+  if (/I’m suggesting \$7,333/i.test(text) && hasChip(chips, "Use this")) {
+    throw new BeatFail(`11 then 19 stole $7,333 — ${text}`);
+  }
+  if (/I need the 2025 return — Form 1040, all pages/i.test(text)) {
+    throw new BeatFail(`11 then 19 stole the 2025 ask — ${text}`);
+  }
+  if (/I need the 2024 return — Form 1040, all pages/i.test(text)) {
+    throw new BeatFail(`11 then 19 hung on 2024 all-pages — ${text}`);
+  }
+  if (!/2024 Schedule C/i.test(text)) {
+    throw new BeatFail(`11 then 19 next was not 2024 Schedule C — ${text} | ${chips.join(" · ")}`);
+  }
+  const kept = await structureMap(page);
+  const keptIncome = `${kept["Income"] ?? ""} ${kept["Qualifying income"] ?? ""}`;
+  if (!/Hale Design/i.test(keptIncome) || !/\$9,958/.test(keptIncome)) {
+    throw new BeatFail(`11 then 19 lost $9,958 — ${keptIncome}`);
+  }
+  if (/\$7,333/.test(keptIncome)) {
+    throw new BeatFail(`11 then 19 wrote $7,333 over Hale Design — ${keptIncome}`);
+  }
+}
+
 async function case13(page: Page) {
   await hardStartOver(page);
   await walkToQuotedIncome(page, "94123", true);
@@ -1510,6 +1627,8 @@ const CASES: { n: number; title: string; run: (page: Page) => Promise<void> }[] 
   { n: 14, title: "20 → $9,000 Structure write; second 20 keeps, next is 2025 Sch C", run: case14 },
   { n: 15, title: "20 then 11 upgrades the same Hale Design row to Schedule C 1084", run: case15 },
   { n: 16, title: "20 then 19 does not hang", run: case16 },
+  { n: 17, title: "Years asks How long have you had Hale Design once after 11", run: case17 },
+  { n: 18, title: "11 then 19 keeps $9,958 and next is 2024 Schedule C", run: case18 },
 ];
 
 async function openBrowser() {

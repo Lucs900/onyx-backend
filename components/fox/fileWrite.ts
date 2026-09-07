@@ -1929,7 +1929,7 @@ export function applyExtractedFields(
     next.awaitingYearsInBusiness &&
     (coverReturn || next.pendingProposal?.field === "qualifying_income")
   ) {
-    next = { ...next, awaitingYearsInBusiness: false, yearsInBusinessAsked: true };
+    next = { ...next, awaitingYearsInBusiness: false };
   }
   const holdLooksRight =
     !coverReturn || Boolean(next.pendingProposal || conflict || next.pendingConflict);
@@ -2235,6 +2235,10 @@ export function taxReturnInviteCopy(draft: FoxIntakeDraft) {
 }
 
 export function priorYearReturnInviteCopy(draft: FoxIntakeDraft) {
+  if (selfEmployedCoverPageNext(draft)) {
+    const next = nextCoverPageInviteCopy(draft);
+    if (next) return next;
+  }
   const recent = mostRecentFederalYear(draft);
   const prior = String(Number(recent) - 1);
   const have = scheduleCYearsOnFile(draft);
@@ -2242,6 +2246,11 @@ export function priorYearReturnInviteCopy(draft: FoxIntakeDraft) {
     return `I need the ${recent} return — Form 1040, all pages.`;
   }
   return `I need the ${prior} return — Form 1040, all pages.`;
+}
+
+function selfEmployedCoverPageNext(draft: FoxIntakeDraft) {
+  const income = draft.incomeType.value;
+  return (income === "self-employed" || income === "other") && lastExtractIsCover(draft);
 }
 
 export function docInviteAskCopy(draft: FoxIntakeDraft, invite: DocInviteKind) {
@@ -2608,7 +2617,9 @@ export function stillUsefulLabels(draft: FoxIntakeDraft): StillUsefulLabel[] {
     const recent = mostRecentFederalYear(draft);
     const prior = String(Number(recent) - 1);
     if (hasScheduleCOnFile(draft) && !scheduleCYearsOnFile(draft).includes(prior)) {
-      const yearLabel = `${prior} return` as StillUsefulLabel;
+      const yearLabel = (
+        hasCoverDocForYear(draft, prior) ? `${prior} Schedule C` : `${prior} return`
+      ) as StillUsefulLabel;
       if (!labels.includes(yearLabel)) labels.push(yearLabel);
     }
     return labels;

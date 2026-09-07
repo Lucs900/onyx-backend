@@ -1,6 +1,8 @@
 /**
  * Years in business: ask once after Self-employed. Skip only. Typed 2 writes and dies.
+ * Use the business name when known — Hale Design, not a third generic reprint.
  * A live rate line must not start years or reprint Skip · Not yet.
+ * Structure-written years never reprint. A return drop may pause; come back once.
  */
 import assert from "node:assert/strict";
 import {
@@ -9,6 +11,9 @@ import {
 } from "../components/fox/fileWrite";
 import {
   YEARS_IN_BUSINESS_ASK,
+  restoreYearsAfterIncomeWrite,
+  skipYearsInBusiness,
+  yearsInBusinessAskCopy,
   yearsInBusinessSkipActions,
   yearsInBusinessValue,
   withIncomeTypeYearsAsk,
@@ -94,7 +99,56 @@ const afterSE = withIncomeTypeYearsAsk({
 assert.equal(afterSE.awaitingYearsInBusiness, true);
 assert.equal(workspacePrompt(afterSE), "years-in-business");
 assert.equal(nextFoxAsk(afterSE).text, YEARS_IN_BUSINESS_ASK);
+assert.equal(yearsInBusinessAskCopy(afterSE), YEARS_IN_BUSINESS_ASK);
 assert.deepEqual((nextFoxAsk(afterSE).actions ?? []).map((item) => item.label), ["Skip"]);
+
+const haleNamed: FoxIntakeDraft = {
+  ...afterSE,
+  facts: {
+    business_name: {
+      field: "business_name",
+      value: "Hale Design Studio",
+      source: "document",
+      confirmed: true,
+    },
+    qualifying_income: {
+      field: "qualifying_income",
+      value: "9958",
+      source: "suggested",
+      confirmed: true,
+    },
+  },
+};
+assert.equal(yearsInBusinessAskCopy(haleNamed), "How long have you had Hale Design?");
+assert.equal(nextFoxAsk(haleNamed).text, "How long have you had Hale Design?");
+assert.deepEqual((nextFoxAsk(haleNamed).actions ?? []).map((item) => item.label), ["Skip"]);
+assert.doesNotMatch(nextFoxAsk(haleNamed).text, /this business/);
+
+const haleWritten = writeYearsInBusiness(haleNamed, "2");
+assert.equal(yearsInBusinessValue(haleWritten), "2");
+assert.doesNotMatch(nextFoxAsk(haleWritten).text, /How long have you had/);
+assert.equal(restoreYearsAfterIncomeWrite(haleWritten).awaitingYearsInBusiness, false);
+
+const haleSkipped = skipYearsInBusiness(haleNamed);
+assert.equal(haleSkipped.yearsInBusinessAsked, true);
+assert.doesNotMatch(nextFoxAsk(haleSkipped).text, /How long have you had/);
+assert.equal(restoreYearsAfterIncomeWrite(haleSkipped).awaitingYearsInBusiness, false);
+
+const eatenPaused = restoreYearsAfterIncomeWrite({
+  ...afterSE,
+  awaitingYearsInBusiness: false,
+  yearsInBusinessAsked: false,
+  facts: haleNamed.facts,
+});
+assert.equal(eatenPaused.awaitingYearsInBusiness, true);
+assert.equal(nextFoxAsk(eatenPaused).text, "How long have you had Hale Design?");
+const eatenAgain = restoreYearsAfterIncomeWrite({
+  ...eatenPaused,
+  yearsInBusinessAsked: true,
+  awaitingYearsInBusiness: false,
+});
+assert.equal(eatenAgain.awaitingYearsInBusiness, false);
+assert.doesNotMatch(nextFoxAsk(eatenAgain).text, /How long have you had/);
 
 const typed = workspaceReply("2", afterSE);
 assert.equal(typed?.capture?.field, "yearsInBusiness");

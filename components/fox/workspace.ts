@@ -1517,11 +1517,7 @@ function documentsAskText(draft: FoxIntakeDraft): string {
   if (isBorrowerNameConfirmPending(draft) && draft.pendingProposal?.value) {
     return borrowerNameExtractCopy(draft.pendingProposal.value);
   }
-  if (
-    draft.awaitingYearsInBusiness &&
-    !yearsInBusinessValue(draft) &&
-    !qualifyingIncomeOnFile(draft)
-  ) {
+  if (draft.awaitingYearsInBusiness && !yearsInBusinessValue(draft)) {
     return yearsInBusinessAskCopy(draft);
   }
   if (
@@ -1546,7 +1542,12 @@ function documentsAskText(draft: FoxIntakeDraft): string {
   if (coverAsk && shouldSpeakCoverMap(draft)) {
     return coverAsk;
   }
-  if (matchingCoverLineOnFile(draft) || sameThinCoverRepeat(draft)) {
+  if (
+    matchingCoverLineOnFile(draft) ||
+    sameThinCoverRepeat(draft) ||
+    ((draft.incomeType.value === "self-employed" || draft.incomeType.value === "other") &&
+      lastExtractIsCover(draft))
+  ) {
     const nextPage = nextCoverPageInviteCopy(draft);
     if (nextPage) return nextPage;
   }
@@ -3286,8 +3287,7 @@ export function nextFoxAsk(draft: FoxIntakeDraft): {
     wantsYearsInBusinessAsk(draft) &&
     !draft.pendingProposal &&
     !draft.pendingConflict &&
-    !draft.pendingAddress &&
-    !qualifyingIncomeOnFile(draft)
+    !draft.pendingAddress
   ) {
     return { text: yearsInBusinessAskCopy(draft), actions: yearsInBusinessSkipActions() };
   }
@@ -3424,11 +3424,7 @@ export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
   if (propertyAddressNeededForQuote(draft)) return "property-address";
   if (propertyZipAskNeeded(draft)) return "property-zip";
   if (!incomeSettled(draft)) return "income";
-  if (
-    !draft.sampleAccepted &&
-    !yearsInBusinessSettled(draft) &&
-    !qualifyingIncomeOnFile(draft)
-  ) {
+  if (!draft.sampleAccepted && !yearsInBusinessSettled(draft)) {
     return "years-in-business";
   }
   if (!draft.sampleAccepted && shouldAskMonthlyDebts(draft)) return "debts";
@@ -3727,11 +3723,7 @@ function workspaceAskCopy(
     };
   }
   if (prompt === "documents") {
-    if (
-      draft.awaitingYearsInBusiness &&
-      !yearsInBusinessValue(draft) &&
-      !qualifyingIncomeOnFile(draft)
-    ) {
+    if (draft.awaitingYearsInBusiness && !yearsInBusinessValue(draft)) {
       return { text: yearsInBusinessAskCopy(draft), actions: yearsInBusinessSkipActions() };
     }
     if (

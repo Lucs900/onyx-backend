@@ -1685,7 +1685,7 @@ export function resolveProposal(
     if (note === STUB_MONTHLY_NOTE || /stub monthly/i.test(note)) {
       next = { ...next, wageStubAsked: true };
     }
-    next = { ...next, awaitingYearsInBusiness: false, yearsInBusinessAsked: true };
+    next = restoreYearsAfterIncomeWrite(next);
   }
   const cleared = { ...next, pendingProposal: null, pendingAddress: undefined };
   const flushed = flushPendingOtherReo(flushPendingCurrentHousing(flushPendingHireDate(cleared)));
@@ -1826,6 +1826,17 @@ export function writeYearsInBusiness(draft: FoxIntakeDraft, years: string): FoxI
 
 export function skipYearsInBusiness(draft: FoxIntakeDraft): FoxIntakeDraft {
   return { ...draft, awaitingYearsInBusiness: false, yearsInBusinessAsked: true };
+}
+
+/** Return drop may pause years. After Use this, come back once when the business name is known. */
+export function restoreYearsAfterIncomeWrite(draft: FoxIntakeDraft): FoxIntakeDraft {
+  if (yearsInBusinessValue(draft) || draft.yearsInBusinessAsked || !wantsYearsInBusinessAsk(draft)) {
+    return { ...draft, awaitingYearsInBusiness: false };
+  }
+  if (factValue(draft, "business_name").trim()) {
+    return { ...draft, awaitingYearsInBusiness: true };
+  }
+  return { ...draft, awaitingYearsInBusiness: false };
 }
 
 export function writeQualifyingIncome(draft: FoxIntakeDraft, monthly: string): FoxIntakeDraft {

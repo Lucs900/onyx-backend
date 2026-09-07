@@ -16,6 +16,7 @@ on:
       - "scripts/assert-file-next-ask.ts"
       - "scripts/assert-w2-stub-employment-merge.ts"
       - "scripts/assert-se-cover-income.ts"
+      - "scripts/assert-years-in-business.ts"
       - ".github/workflows/spine-walker.yml"
       - "sample-docs/**"
   pull_request:
@@ -33,6 +34,7 @@ on:
       - "scripts/assert-file-next-ask.ts"
       - "scripts/assert-w2-stub-employment-merge.ts"
       - "scripts/assert-se-cover-income.ts"
+      - "scripts/assert-years-in-business.ts"
       - ".github/workflows/spine-walker.yml"
       - "sample-docs/**"
 concurrency:
