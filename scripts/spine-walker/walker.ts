@@ -1211,6 +1211,29 @@ async function newPreviewContext(browser: Browser): Promise<BrowserContext> {
   });
 }
 
+async function proxyApiThroughPlaywright(page: Page) {
+  const headers = protectionHeaders();
+  if (!Object.keys(headers).length) return;
+  await page.route("**/api/**", async (route) => {
+    const url = route.request().url();
+    try {
+      const response = await page.request.fetch(route.request(), {
+        headers: {
+          ...route.request().headers(),
+          ...headers,
+        },
+        timeout: 60_000,
+        failOnStatusCode: false,
+      });
+      await route.fulfill({ response });
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      console.error(`spine-walker: proxy fail ${url.split("?")[0]} — ${reason.slice(0, 180)}`);
+      await route.fallback();
+    }
+  });
+}
+
 async function patchPageFetch(page: Page) {
   const oidc = process.env.VERCEL_OIDC_TOKEN?.trim() ?? "";
   const bypass = process.env.VERCEL_AUTOMATION_BYPASS_SECRET?.trim() ?? "";
@@ -1255,6 +1278,7 @@ async function runCase(page: Page, spec: (typeof CASES)[number]): Promise<CaseRe
 
 function printRow(row: CaseResult) {
   const line = row.ok ? `${row.n} PASS ${row.title}` : `${row.n} FAIL ${row.title} — ${row.beat}`;
+  console.error(line);
   process.stdout.write(`${line}\n`);
 }
 
@@ -1268,6 +1292,7 @@ async function main() {
     else console.error("spine-walker: no OIDC or automation-bypass token — preview will SSO");
     const context = await newPreviewContext(browser);
     const page = await context.newPage();
+    await proxyApiThroughPlaywright(page);
     page.on("response", (response) => {
       const url = response.url();
       if (!/\/api\/(rateflow-quote|docs\/extract)\b/.test(url)) return;
@@ -1290,7 +1315,8 @@ async function main() {
     try {
       await probeAccess(page);
       await patchPageFetch(page);
-      console.error("spine-walker: page fetch patched for extract and quote");
+      const cookieNames = (await context.cookies()).map((item) => item.name).join(",");
+      console.error(`spine-walker: page fetch patched; cookies ${cookieNames || "(none)"}`);
     } catch (error) {
       const beat =
         error instanceof BeatFail ? error.beat : error instanceof Error ? oneLine(error.message) : String(error);
