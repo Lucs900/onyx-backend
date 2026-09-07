@@ -11,6 +11,7 @@ import {
   FIRST_SESSION_CLASSES,
   FIRST_SESSION_LOCKED_KEYS,
   applyExtractedFields,
+  displayFactValue,
   isBoxNumberAsDollars,
   isFirstSessionClass,
   lockFirstSessionFields,
@@ -271,6 +272,7 @@ async function main() {
   });
   assert.ok(stubConfirm.draft.pendingProposal, "paystub File stays empty until Use this");
   assert.match(JSON.stringify(stubConfirm.draft.pendingProposal), /1806\.67/);
+  assert.equal(displayFactValue("gross_period", "1806.67"), "$1,806.67");
   assert.notEqual(stubConfirm.draft.facts?.gross_period?.confirmed, true);
 
   const matt = mattCstcPaystubPath();

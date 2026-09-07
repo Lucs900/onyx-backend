@@ -1091,6 +1091,23 @@ export function displayFactValue(field: string, value: string) {
     const spoken = spokenCloseDate(value);
     if (spoken) return spoken;
   }
+  if (
+    field === "gross_period" ||
+    field === "ytd_gross" ||
+    field === "medicare_wages" ||
+    field === "box5" ||
+    field === "w2_box5" ||
+    field === "paystub_amount"
+  ) {
+    const n = moneyNumber(value);
+    if (n != null) {
+      const shown = Math.abs(n).toLocaleString("en-US", {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      });
+      return n < 0 ? `-$${shown}` : `$${shown}`;
+    }
+  }
   if (MONEY_KEYS.has(field)) {
     const n = moneyNumber(value);
     if (n != null) {
