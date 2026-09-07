@@ -2,6 +2,18 @@
 
 Playwright walk of the locked preview cases. Not a product slice. Hard **Start over** each case. A handwritten walk is not PASS. A Manager PASS with a red walker is FAIL. Case 9 also runs `scripts/assert-harbor-acceptance-file.ts`. Cases 10–13 also run the Lukasz Harbor leftovers (`assert-contract-at-price`, `assert-house-credit-band`, `assert-w2-stub-employment-merge`, `assert-file-next-ask`) from the spine-walker script before Playwright. Case 19 is Income Skip Still useful. CI fail = red.
 
+## Founder attach QC bar
+
+Doctrine: `docs/qc-founder-paperclip-accept.md`.
+
+**ACCEPT (only READY):** Founder paperclip on `/start`. Filename appears. Fox answers from the page. Use this writes. That shot is the only READY.
+
+**VOID (do not report PASS):** Walker / CI drop that bypasses the composer. Harbor-only. Fixture path that founder cannot see. Hidden PNG / local extract stand-in for a founder PDF.
+
+**FAIL:** `a6092a5` paperclip on CSTC stub — nothing. No filename. No unread. No pay. Silent drop is a fail. W-2 $36,460.08 and loan $500,000 do not clear a dead stub attach.
+
+**Manager rule:** If walker says green and founder has silence → report **FAIL**. That is the job.
+
 ## Preview
 
 https://onyx-backend-git-cursor-live-rateflow-preview-bc93-onyx-direct.vercel.app/start?path=acr
@@ -79,6 +91,6 @@ Harbor extract POSTs fulfill leftover-proven local `classifyAndExtract` of the s
 21. Looks right gate shows a Looks right chip. Typed yes still confirms. Still useful after that stays Government ID + how-earned.
 22. Refinance: type 500000 loan then 800000 value. File keeps $500,000. Do not re-ask loan.
 23. ADP 2025 W-2 (founder fixture): Matthew Castaneda, Comprehensive Skills Training Center, Box 5 $36,460.08. Reading $5 is a FAIL.
-24. First-session page-read leftover (ID · W-2 · stub · bank · contract · tax). PAY MATT CSTC 260422 is a hook until the founder drops it.
+24. Composer **paperclip click** on PAY MATT CSTC 260422: filename · received, then preview Grok proposes current pay **$1,806.67** (Use this). Forward the real PDF. A PNG intercept, vault `#docs-handoff`, or local extract stand-in is VOID. Walker green with founder silence is FAIL.
 
-FAIL if copy and chips disagree. FAIL if Structure and chat disagree. FAIL if a write did not kill the old number. FAIL if Credit is on File and Fox asks FICO.
+FAIL if copy and chips disagree. FAIL if Structure and chat disagree. FAIL if a write did not kill the old number. FAIL if Credit is on File and Fox asks FICO. FAIL if walker is green and the founder paperclip is silent.

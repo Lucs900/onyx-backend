@@ -1,7 +1,16 @@
 /**
  * Manager crawl 1–6. File identity and first-quote chips stay locked.
+ *
+ * Founder attach QC bar (docs/qc-founder-paperclip-accept.md):
+ * ACCEPT (only READY): founder paperclip on /start → filename → Fox from the page → Use this writes.
+ * VOID: walker/CI drop that bypasses the composer; Harbor-only; fixture path founder cannot see.
+ * FAIL: a6092a5 paperclip silent on CSTC stub. W-2 $36,460.08 and loan $500k do not clear it.
+ * Manager rule: if walker says green and founder has silence → report FAIL. That is the job.
  */
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { canLooksRight } from "../components/fox/completeness";
 import { skipFormerHistory } from "../components/fox/fileHistory";
 import {
@@ -223,5 +232,22 @@ assert.equal(workspacePrompt(afterIdSkip), "documents");
 const afterTaxSkip = skipCurrentInvite(afterIdSkip);
 assert.equal(nextDocInvite(afterTaxSkip), "prior_year_return");
 assert.equal(canLooksRight(afterTaxSkip), false);
+
+const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+const doctrine = readFileSync(join(root, "docs/qc-founder-paperclip-accept.md"), "utf8");
+const walkerReadme = readFileSync(join(root, "scripts/spine-walker/README.md"), "utf8");
+const walker = readFileSync(join(root, "scripts/spine-walker/walker.ts"), "utf8");
+const drop = readFileSync(join(root, "components/fox/DocumentDrop.tsx"), "utf8");
+assert.match(doctrine, /If walker says green and founder has silence/);
+assert.match(doctrine, /That shot is the only READY/);
+assert.match(doctrine, /VOID/);
+assert.match(walkerReadme, /If walker says green and founder has silence/);
+assert.match(walkerReadme, /paperclip click/);
+assert.match(walker, /waitForEvent\("filechooser"/);
+assert.match(walker, /data-composer-attach-button/);
+assert.doesNotMatch(walker, /28-paystub-cstc-pay-matt-260422\.png/);
+assert.match(drop, /emitDocIntake\(\{ received: emptyRead \}\)/);
+assert.match(drop, /data-composer-attach-button/);
+assert.match(drop, /<label/);
 
 console.log("qc-crawl PASS");

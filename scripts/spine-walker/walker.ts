@@ -15,7 +15,8 @@
  * typed yes still confirms. Case 22 is refinance 500000 loan then 800000
  * value — File keeps $500,000 and does not re-ask loan. Case 23 is ADP W-2
  * page-read: Box 5 $36,460.08, never $5. Case 24 is composer paperclip
- * → real PDF bytes → preview Grok of PAY MATT CSTC 260422. Not a PNG intercept.
+ * → real PDF bytes → preview Grok of PAY MATT CSTC 260422. Paperclip click
+ * (filechooser). Not a PNG intercept. Walker green + founder silence = FAIL.
  * Years in business is once after SE / Both. Named Hale Design when known.
  * Lukasz Harbor leftovers run from scripts/assert-spine-walker.sh before
  * Playwright. CI fail = red.
@@ -903,6 +904,21 @@ async function composerDropPath(page: Page, path: string) {
   await attach.setInputFiles(path);
 }
 
+/** Founder shot: click the visible paperclip. setInputFiles on a hidden input is VOID. */
+async function composerPaperclipPick(page: Page, path: string) {
+  const name = path.split("/").pop() ?? path;
+  lastDroppedSample = name;
+  const paperclip = page.locator("[data-composer-attach-button='true']").first();
+  await paperclip.waitFor({ state: "visible", timeout: 15_000 });
+  const chooserWait = page.waitForEvent("filechooser", { timeout: 10_000 });
+  await paperclip.click();
+  const chooser = await chooserWait.catch(() => null);
+  if (!chooser) {
+    throw new BeatFail(`composer paperclip did not open a file picker — silent drop`);
+  }
+  await chooser.setFiles(path);
+}
+
 async function skipHarborSideAsk(page: Page): Promise<boolean> {
   const text = await currentText(page);
   const chips = await currentChips(page);
@@ -1444,7 +1460,7 @@ async function case24(page: Page) {
     await clickChip(page, "Skip");
     await waitCurrent(page, (text) => !/other monthly debts/i.test(text), 15_000);
   }
-  await composerDropPath(page, fixture);
+  await composerPaperclipPick(page, fixture);
   await waitSystem(
     page,
     (texts) => texts.some((text) => /28-paystub-cstc-pay-matt-260422.*received|\.pdf · received/i.test(text)),
@@ -2067,7 +2083,7 @@ const CASES: { n: number; title: string; run: (page: Page) => Promise<void> }[] 
   { n: 21, title: "Looks right gate shows Looks right chip; typed yes still confirms", run: case21 },
   { n: 22, title: "Refinance 500000 then 800000 keeps $500,000 loan", run: case22 },
   { n: 23, title: "ADP W-2 page-read: Box 5 is $36,460.08, never $5", run: case23 },
-  { n: 24, title: "PAY MATT CSTC 260422 paystub proposes current pay when founder drops it", run: case24 },
+  { n: 24, title: "composer paperclip CSTC stub: filename/received then $1,806.67 Use this", run: case24 },
 ];
 
 async function openBrowser() {
