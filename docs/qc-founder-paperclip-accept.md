@@ -17,6 +17,15 @@ Founder paperclip on `/start`. Filename appears. Fox answers from the page. Use 
 
 Walker fixture green does **not** count as READY.
 
+## Walker / CI = smoke only
+
+May say: site loads, chips render, no 500.
+
+May **not** say READY, PASS, or green on a document.
+
+A document is green **only** after founder paperclip on `/start`.
+If walker used a fixture path founder cannot see → report is **void**.
+
 ## FAIL THIS SHA
 
 `a6092a5` — paperclip on CSTC stub: nothing. No filename. No unread. No pay.
@@ -33,6 +42,11 @@ Composer paperclip uploads **bytes**. Same Grok page-read as W-2 / stub / ID / b
 - Refinance loan **$500,000** stays. Do not reprint the loan question after it is written
 - No staff notes on the borrower notepad (APN, title profile, a–m holdable)
 - Do not invent fixtures. Gift / retirement parked. No FHA. No new OCR vendor.
+
+## This SHA
+
+Do **not** rebuild the walker.
+**Fix composer attach first.**
 
 Do not open a new gate. Do not merge. Preview only.
 
