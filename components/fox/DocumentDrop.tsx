@@ -256,7 +256,7 @@ export function ComposerAttach() {
       <input
         id={COMPOSER_ATTACH_ID}
         data-composer-attach="true"
-        className="visually-hidden"
+        className="fox-bar__attach-input"
         type="file"
         multiple
         accept={ACCEPT_ATTR}

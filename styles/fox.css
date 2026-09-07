@@ -219,6 +219,7 @@
 }
 
 .fox-bar__attach {
+  position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -227,6 +228,7 @@
   height: 40px;
   padding: 0;
   margin: 0;
+  overflow: hidden;
   border: 0;
   border-radius: 50%;
   background: transparent;
@@ -234,8 +236,17 @@
   cursor: pointer;
 }
 
-.fox-bar__attach input {
-  pointer-events: none;
+.fox-bar__attach-input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  opacity: 0;
+  cursor: pointer;
+  font-size: 0;
+  border: 0;
 }
 
 .fox-bar__attach:hover,

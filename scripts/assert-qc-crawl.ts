@@ -248,6 +248,7 @@ assert.match(walker, /data-composer-attach-button/);
 assert.doesNotMatch(walker, /28-paystub-cstc-pay-matt-260422\.png/);
 assert.match(drop, /emitDocIntake\(\{ received: emptyRead \}\)/);
 assert.match(drop, /data-composer-attach-button/);
+assert.match(drop, /fox-bar__attach-input/);
 assert.match(drop, /<label/);
 
 console.log("qc-crawl PASS");
