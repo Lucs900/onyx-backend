@@ -865,21 +865,17 @@ async function dropHarborDoc(page: Page, name: string, kind: "confirm" | "cover"
       continue;
     }
     if (kind === "cover") {
-      if (text === before) {
-        await page.waitForTimeout(250);
-        continue;
-      }
       const useful = await stillUsefulLabels(page);
       const usefulText = useful.join(" · ");
       const blob = `${text} ${usefulText}`;
-      const named = /K-1|1065|Schedule E|Sch E/i.test(blob);
+      const mapped = /K-1|1065|Schedule E|Sch E/i.test(usefulText) || /^Got the cover/i.test(text);
       if (/Schedule C/i.test(usefulText)) {
         throw new BeatFail(`cover still useful named another C — ${blob}`);
       }
-      if (/Two recent statements/i.test(text) && !named) {
+      if (/Two recent statements/i.test(text) && !mapped) {
         throw new BeatFail(`bank-first after a cover — ${text}`);
       }
-      if (named && (/cover|Still useful/i.test(blob) || /K-1|1065|Schedule E|Sch E/i.test(text))) {
+      if (mapped) {
         if (hasChip(chips, "Use this") || hasChip(chips, "Use document")) {
           await assertLooksRightHiddenWhileUseThis(page);
           await clickChip(page, hasChip(chips, "Use this") ? "Use this" : "Use document");
