@@ -1013,7 +1013,10 @@ async function case9(page: Page) {
       await settleHarborSideAsks(page);
       continue;
     }
-    if (/I need the \d{4} return — Form 1040, all pages/i.test(text) && hasChip(chips, "Skip")) {
+    if (
+      hasChip(chips, "Skip") &&
+      (/I need the \d{4} return — Form 1040, all pages/i.test(text) || /second recent statement/i.test(text))
+    ) {
       await clickChip(page, "Skip");
       await settleHarborSideAsks(page);
       continue;
