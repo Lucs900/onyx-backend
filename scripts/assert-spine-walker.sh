@@ -107,32 +107,39 @@ run_leftover() {
   (cd "$ROOT" && npx --yes tsx "scripts/${script}")
 }
 
-if leftover_wanted 9 || leftover_wanted 10 || leftover_wanted 11 || leftover_wanted 12 || leftover_wanted 13 || leftover_wanted 14 || leftover_wanted 15 || leftover_wanted 16; then
-  if [[ ! -d "$ROOT/node_modules/next" ]]; then
-    echo "spine-walker: npm install (harbor leftover)" >&2
-    (cd "$ROOT" && npm install)
+if [[ "${SPINE_WALKER_SKIP_LEFTOVERS:-}" != "1" ]]; then
+  if leftover_wanted 9 || leftover_wanted 10 || leftover_wanted 11 || leftover_wanted 12 || leftover_wanted 13 || leftover_wanted 14 || leftover_wanted 15 || leftover_wanted 16; then
+    if [[ ! -d "$ROOT/node_modules/next" ]]; then
+      echo "spine-walker: npm install (harbor leftover)" >&2
+      (cd "$ROOT" && npm install)
+    fi
+  fi
+
+  if leftover_wanted 9; then
+    run_leftover assert-harbor-acceptance-file.ts
+  fi
+  if leftover_wanted 10; then
+    run_leftover assert-contract-at-price.ts
+    run_leftover assert-contract-house-credit.ts
+  fi
+  if leftover_wanted 11; then
+    run_leftover assert-house-credit-band.ts
+    run_leftover assert-contract-house-credit.ts
+  fi
+  if leftover_wanted 12; then
+    run_leftover assert-w2-stub-employment-merge.ts
+  fi
+  if leftover_wanted 12 || leftover_wanted 13; then
+    run_leftover assert-file-next-ask.ts
+  fi
+  if leftover_wanted 14 || leftover_wanted 15 || leftover_wanted 16; then
+    run_leftover assert-se-cover-income.ts
   fi
 fi
 
-if leftover_wanted 9; then
-  run_leftover assert-harbor-acceptance-file.ts
-fi
-if leftover_wanted 10; then
-  run_leftover assert-contract-at-price.ts
-  run_leftover assert-contract-house-credit.ts
-fi
-if leftover_wanted 11; then
-  run_leftover assert-house-credit-band.ts
-  run_leftover assert-contract-house-credit.ts
-fi
-if leftover_wanted 12; then
-  run_leftover assert-w2-stub-employment-merge.ts
-fi
-if leftover_wanted 12 || leftover_wanted 13; then
-  run_leftover assert-file-next-ask.ts
-fi
-if leftover_wanted 14 || leftover_wanted 15 || leftover_wanted 16; then
-  run_leftover assert-se-cover-income.ts
+if [[ "${SPINE_WALKER_LEFTOVERS_ONLY:-}" == "1" ]]; then
+  echo "spine-walker: leftovers only"
+  exit 0
 fi
 
 exec npx tsx walker.ts "$@"
