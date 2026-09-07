@@ -7,7 +7,7 @@
  * Assert only. Does not invent product behavior.
  * Case 9 is harbor-both-cover-contract. Combined 09-at-price + House-turn
  * Credit (cases 10–11) is the FICO gate. Cases 14–16 are SE cover income
- * (20 → $9,000 Structure write · 20 then 11 upgrades · 20 then 19 does not hang).
+ * (20 → $9,000 Structure write · second 20 keeps, next is 2025 Sch C · 20 then 11 upgrades · 20 then 19 does not hang).
  * Years in business is once after SE / Both.
  * Lukasz Harbor leftovers run from scripts/assert-spine-walker.sh before
  * Playwright. CI fail = red.
@@ -1277,7 +1277,7 @@ async function walkSeToIncomeDocs(page: Page) {
   }
 }
 
-async function dropSeCoverOrC(page: Page, name: string, kind: "cover-card" | "upgrade" | "second-cover") {
+async function dropSeCoverOrC(page: Page, name: string, kind: "cover-card" | "upgrade" | "second-cover" | "same-cover-keep") {
   const before = await currentText(page);
   await composerDrop(page, name);
   const started = Date.now();
@@ -1293,6 +1293,14 @@ async function dropSeCoverOrC(page: Page, name: string, kind: "cover-card" | "up
     }
     if (kind === "cover-card") {
       if (/I’m suggesting \$9,000 a month/i.test(text) && /Cover line/i.test(text) && hasChip(chips, "Use this")) {
+        return;
+      }
+    }
+    if (kind === "same-cover-keep") {
+      if (/I’m suggesting \$9,000 a month/i.test(text) && hasChip(chips, "Use this")) {
+        throw new BeatFail(`second 20 reprinted Use this — ${text} | ${chips.join(" · ")}`);
+      }
+      if (/2025 Schedule C/i.test(text) && !hasChip(chips, "Use this")) {
         return;
       }
     }
@@ -1359,6 +1367,15 @@ async function case14(page: Page) {
   const useful = await stillUsefulLabels(page);
   if (!useful.some((label) => /Schedule C/i.test(label))) {
     throw new BeatFail(`20 Still useful missing Schedule C — ${useful.join(" · ") || "(none)"}`);
+  }
+  await dropSeCoverOrC(page, "20-1040-cover-2025-jordan-hale.pdf", "same-cover-keep");
+  const second = await currentText(page);
+  const secondChips = await currentChips(page);
+  if (/I’m suggesting \$9,000 a month/i.test(second) && hasChip(secondChips, "Use this")) {
+    throw new BeatFail(`second 20 reprinted $9,000 Use this — ${second}`);
+  }
+  if (!/2025 Schedule C/i.test(second)) {
+    throw new BeatFail(`second 20 next was not 2025 Schedule C — ${second} | ${secondChips.join(" · ")}`);
   }
 }
 
@@ -1448,7 +1465,7 @@ const CASES: { n: number; title: string; run: (page: Page) => Promise<void> }[] 
   { n: 11, title: "09 at price then House-turn 740–759 writes Credit, next is not FICO", run: case11 },
   { n: 12, title: "03+07 before income type → no empty income quiz", run: case12 },
   { n: 13, title: "Start over clears income, Docs, Note, Still useful", run: case13 },
-  { n: 14, title: "20 → $9,000 cover-line writes Structure Income", run: case14 },
+  { n: 14, title: "20 → $9,000 Structure write; second 20 keeps, next is 2025 Sch C", run: case14 },
   { n: 15, title: "20 then 11 upgrades Hale Design to 1084", run: case15 },
   { n: 16, title: "20 then 19 does not hang", run: case16 },
 ];

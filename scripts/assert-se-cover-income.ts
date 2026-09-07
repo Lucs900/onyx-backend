@@ -5,6 +5,7 @@
  * No Sch E / Sch F / add-backs from the cover.
  * 11 / 10 upgrade the same Hale Design row to the 1084 method.
  * Skip on the C ask is once. Second cover does not freeze or steal.
+ * Same-value second drop of 20 keeps — no second Use this. Next is 2025 Schedule C.
  */
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -26,7 +27,7 @@ import {
   requiredStructureLines,
   resolveProposal,
 } from "../components/fox/completeness";
-import { nextFoxAsk, previewFacts } from "../components/fox/workspace";
+import { docReactionAsk, nextFoxAsk, previewFacts } from "../components/fox/workspace";
 import { isCoverLineProposal, SE_MONTHLY_FIELD } from "../components/fox/qualifyingIncome";
 import type { ExtractClass, FoxIntakeDraft } from "../components/fox/types";
 
@@ -189,6 +190,45 @@ async function main() {
   assert.equal((`${afterUse20.text} ${afterUse20.followUp ?? ""}`.match(/Got the cover/g) ?? []).length <= 1, true);
   assert.equal(nextCoverPageInviteCopy(used20), "The 1040 lists a Schedule C. I still need that 2025 Schedule C.");
 
+  const second20 = writeLive(
+    structuredClone(used20),
+    "20-1040-cover-2025-jordan-hale.pdf",
+    "tax_return",
+    twenty.fields ?? {},
+    "2026-09-07T16:00:15.000Z",
+  ).draft;
+  assert.equal(second20.facts?.qualifying_income?.value, "9000");
+  assert.notEqual(second20.pendingProposal?.value, "9000");
+  assert.equal(isCoverLineProposal(second20.pendingProposal), false);
+  const second20Ask = nextFoxAsk(second20);
+  const second20Blob = `${second20Ask.text} ${second20Ask.followUp ?? ""}`;
+  assert.doesNotMatch(second20Blob, /I’m suggesting \$9,000/);
+  assert.doesNotMatch(second20Blob, /Use this/);
+  assert.doesNotMatch(second20Blob, /Got the cover/i);
+  assert.match(second20Blob, /2025 Schedule C/);
+  assert.ok(!(second20Ask.actions ?? []).some((item) => item.label === "Use this"));
+  const second20Reaction = docReactionAsk(second20, "tax_return");
+  assert.ok(
+    !second20Reaction || !/I’m suggesting \$9,000|Use this/i.test(`${second20Reaction.text} ${second20Reaction.followUp ?? ""}`),
+    `second 20 after File $9k reprinted Use this — ${second20Reaction?.text ?? "(none)"}`,
+  );
+
+  const secondOnOpen20 = writeLive(
+    structuredClone(after20),
+    "20-1040-cover-2025-jordan-hale.pdf",
+    "tax_return",
+    twenty.fields ?? {},
+    "2026-09-07T16:00:20.000Z",
+  ).draft;
+  assert.notEqual(secondOnOpen20.pendingProposal?.value, "7333");
+  const openSecondAsk = nextFoxAsk(secondOnOpen20);
+  const openSecondBlob = `${openSecondAsk.text} ${openSecondAsk.followUp ?? ""}`;
+  assert.doesNotMatch(openSecondBlob, /I’m suggesting \$9,000/);
+  assert.doesNotMatch(openSecondBlob, /Use this/);
+  assert.doesNotMatch(openSecondBlob, /Got the cover/i);
+  assert.match(openSecondBlob, /2025 Schedule C/);
+  assert.ok(!(openSecondAsk.actions ?? []).some((item) => item.label === "Use this"));
+
   const yearsOpen20 = writeLive(
     {
       ...seAtIncome(),
@@ -281,7 +321,7 @@ async function main() {
   assert.doesNotMatch(askBlob(skipAfter19), /I need the 2025 return — Form 1040, all pages/i);
   assert.notEqual(askBlob(skipAfter19).trim(), "");
 
-  console.log("assert-se-cover-income: 20=$9,000 · 19=$7,333 · 11 upgrades · 19 does not hang");
+  console.log("assert-se-cover-income: 20=$9,000 · 19=$7,333 · 11 upgrades · 19 does not hang · second 20 keeps");
 }
 
 main().catch((error) => {

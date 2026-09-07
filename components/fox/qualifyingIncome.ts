@@ -1519,6 +1519,10 @@ export function qualifyingIncomeProposal(computed: QualifyingIncomeResult): Fact
 function existingMonthlyIncome(draft: FoxIntakeDraft): { value: string; via: "qualifying_income" | "income" } | null {
   const suggested = factValue(draft, QUALIFYING_INCOME_FIELD);
   if (suggested) return { value: suggested, via: "qualifying_income" };
+  const seMonthly = factValue(draft, SE_MONTHLY_FIELD);
+  if (seMonthly && parseExtractMoney(seMonthly) != null) {
+    return { value: seMonthly, via: "qualifying_income" };
+  }
   const typed = factValue(draft, "income");
   if (typed && parseExtractMoney(typed) != null) return { value: typed, via: "income" };
   return null;

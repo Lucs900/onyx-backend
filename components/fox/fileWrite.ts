@@ -19,14 +19,19 @@ import type {
 } from "./types";
 import {
   applyQualifyingIncomeFromExtract,
+  COVER_LINE_METHOD,
   decliningIncomeCaution,
   hasScheduleCCashflow,
   hasScheduleECashflow,
   hasTwoYearWageHistory,
   k1OrdinaryMissingDistributions,
   maybeProposeQualifyingFromTaxFile,
+  isCoverLineProposal,
   isCoverReturnFields,
   hasK1Ordinary,
+  QUALIFYING_INCOME_FIELD,
+  QUALIFYING_METHOD_FIELD,
+  SE_MONTHLY_FIELD,
   isWageExtractFirstPath,
   isWageExtractProposal,
   isStubExtractProposal,
@@ -2117,11 +2122,31 @@ function extractedCoverCount(draft: FoxIntakeDraft) {
   return count;
 }
 
+/** Same thin cover already wrote or suggested this monthly. Do not reprint Use this. */
+export function matchingCoverLineOnFile(draft: FoxIntakeDraft) {
+  const method = factValue(draft, QUALIFYING_METHOD_FIELD);
+  if (method !== COVER_LINE_METHOD && !isCoverLineProposal(draft.pendingProposal)) return false;
+  return (
+    parseExtractMoney(factValue(draft, QUALIFYING_INCOME_FIELD)) != null ||
+    parseExtractMoney(factValue(draft, SE_MONTHLY_FIELD)) != null
+  );
+}
+
+/** Second drop of the same-year thin cover. Next is that year’s Schedule C, not another cover card. */
+export function sameThinCoverRepeat(draft: FoxIntakeDraft) {
+  if (!lastExtractIsCover(draft)) return false;
+  const year = lastCoverYear(draft);
+  if (!year) return false;
+  return extractedCoverCountForYear(draft, year) > 1;
+}
+
 export function shouldSpeakCoverMap(draft: FoxIntakeDraft) {
   if (!lastExtractIsCover(draft)) return false;
   if (nextDocInvite(draft) === "prior_year_return") return false;
   if (draft.priorYearSkipped) return false;
   if ((draft.skippedClasses ?? []).includes("tax_return")) return false;
+  if (matchingCoverLineOnFile(draft)) return false;
+  if (sameThinCoverRepeat(draft)) return false;
   if (extractedCoverCount(draft) > 1) return false;
   const year = lastCoverYear(draft);
   if (year && extractedCoverCountForYear(draft, year) > 1) return false;

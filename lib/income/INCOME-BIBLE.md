@@ -25,6 +25,7 @@ Fixtures **11** (2025) and **10** (2024) upgrade the same Hale Design row from t
 
 - Skip on the listed Schedule C ask is **once**. Do not reprint “Got the cover.”
 - A second cover must **not freeze or steal** (no 2025 Form 1040 all-pages replay after 20 is mapped; next is that year’s C or the open card).
+- Same-value keep: if Structure already has Self-employed · $9,000 (or the matching cover suggest), a second drop of the same thin cover does **not** reprint Use this. Next is that year’s Schedule C. Different amount uses the existing confirm-before-write path only.
 
 ## Holds
 

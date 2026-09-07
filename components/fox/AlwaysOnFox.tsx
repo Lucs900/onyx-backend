@@ -178,12 +178,15 @@ import {
   layer2AskActions,
   intakeIsCoverDrop,
   intakeIsIdDrop,
+  matchingCoverLineOnFile,
+  sameThinCoverRepeat,
   type DocIntakeDetail,
 } from "./fileWrite";
 import {
   DECLINING_INCOME_CAUTION,
   WAGE_DOCS_ASK,
   WAGE_STUB_DROP_ASK,
+  isCoverLineProposal,
   isEntityCashFlowProposal,
   isSameBusinessWageEntityProposal,
   isScheduleECashFlowProposal,
@@ -424,7 +427,8 @@ function applyFoxAsk(
   }
   if (
     last &&
-    /\ba month\. Use this\?$/.test(last.text) &&
+    ((/I’m suggesting/.test(last.text) && /Use this\?$/.test(last.text)) ||
+      /\ba month\. Use this\?$/.test(last.text)) &&
     ask.text !== last.text
   ) {
     return freezeOthers(last.id, foxAskMessage(ask));
@@ -1056,7 +1060,13 @@ export function AlwaysOnFox({
         const coverDrop = intakeIsCoverDrop(intakeDraft, detail);
         if (coverDrop) {
           const kept = next.filter((message) => !isUnreadNote(message.text) && message.text !== ID_UNREAD_ASK);
-          const coverAsk = docReactionAsk(intakeDraft, "tax_return") ?? workspacePromptCopy(workspacePrompt(intakeDraft), intakeDraft);
+          const reaction = docReactionAsk(intakeDraft, "tax_return");
+          const keptCover =
+            isCoverLineProposal(intakeDraft.pendingProposal) &&
+            (matchingCoverLineOnFile(intakeDraft) || sameThinCoverRepeat(intakeDraft));
+          const coverAsk = keptCover
+            ? nextFoxAsk(intakeDraft)
+            : reaction ?? workspacePromptCopy(workspacePrompt(intakeDraft), intakeDraft);
           return applyFoxAsk(kept, coverAsk);
         }
         const idDrop =

@@ -100,7 +100,9 @@ import {
   lastExtractIsCover,
   conflictAlreadySpoken,
   coverMapAskCopy,
+  matchingCoverLineOnFile,
   nextCoverPageInviteCopy,
+  sameThinCoverRepeat,
   shouldSpeakCoverMap,
   nextCoverScheduleLabels,
   nextDocInvite,
@@ -1541,6 +1543,10 @@ function documentsAskText(draft: FoxIntakeDraft): string {
   const coverAsk = nextCoverScheduleLabels(draft).length ? coverMapAskCopy(draft) : "";
   if (coverAsk && shouldSpeakCoverMap(draft)) {
     return coverAsk;
+  }
+  if (matchingCoverLineOnFile(draft) || sameThinCoverRepeat(draft)) {
+    const nextPage = nextCoverPageInviteCopy(draft);
+    if (nextPage) return nextPage;
   }
   if (invite) return docInviteAskCopy(draft, invite);
   if (draft.sampleAccepted) {
@@ -8732,10 +8738,11 @@ function sanitizeRestoredFoxText(text: string): string {
 function isQualifyingIncomeConfirm(message: FoxMessage) {
   if (message.role !== "fox") return false;
   const blob = `${message.text}\n${message.followUp ?? ""}`;
+  if (/I’m suggesting/i.test(blob) && /Cover line/i.test(blob) && /Use this/i.test(blob)) return true;
   if (/Suggested qualifying income/i.test(blob)) return true;
   if (/Suggested rental cash flow/i.test(blob)) return true;
   return (message.actions ?? []).some((action) => action.capture?.field === "accept-proposal")
-    && /qualifying income|rental cash flow/i.test(blob);
+    && /qualifying income|rental cash flow|Cover line/i.test(blob);
 }
 
 function dropProposalActions(message: FoxMessage): FoxMessage {

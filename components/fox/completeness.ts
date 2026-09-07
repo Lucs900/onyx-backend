@@ -30,7 +30,9 @@ import {
   employmentOnFile,
   returnOnFile,
   incomeEvidenceOnFile,
+  matchingCoverLineOnFile,
   remainderProposalWrites,
+  sameThinCoverRepeat,
   valuesMatch,
   wageNumberPathSettled,
 } from "./fileWrite";
@@ -52,6 +54,7 @@ import {
   acceptStubExtract,
   changeWageExtract,
   changeStubExtract,
+  isCoverLineProposal,
   isWageExtractProposal,
   isStubExtractProposal,
   isStubJobProposal,
@@ -406,6 +409,9 @@ function incomeProposalUpgrades(
   proposal: NonNullable<FoxIntakeDraft["pendingProposal"]>,
 ) {
   const existing = factValue(draft, QUALIFYING_INCOME_FIELD);
+  if (isCoverLineProposal(proposal) && existing && valuesMatch(existing, proposal.value)) {
+    return false;
+  }
   if (existing && proposal.value && !valuesMatch(existing, proposal.value)) return true;
   if (
     isScheduleECashFlowProposal(proposal) ||
@@ -432,6 +438,14 @@ export function shouldSpeakPendingConfirm(draft: FoxIntakeDraft) {
     return !qualifyingIncomeOnFile(draft) || incomeProposalUpgrades(draft, proposal);
   }
   if (proposal.field === QUALIFYING_INCOME_FIELD) {
+    if (isCoverLineProposal(proposal)) {
+      const fileValue = factValue(draft, QUALIFYING_INCOME_FIELD) || factValue(draft, SE_MONTHLY_FIELD);
+      if (fileValue && valuesMatch(fileValue, proposal.value)) return false;
+      if (matchingCoverLineOnFile(draft) && valuesMatch(fileValue || proposal.value, proposal.value)) {
+        return false;
+      }
+      if (sameThinCoverRepeat(draft)) return false;
+    }
     return !qualifyingIncomeOnFile(draft) || incomeProposalUpgrades(draft, proposal);
   }
   if (proposal.field === "purchase_price" || proposal.field === "propertyValue") {
