@@ -185,31 +185,38 @@ async function sendZip(page: Page, zip: string, expect: "geo" | "price") {
 }
 
 async function structureRows(page: Page): Promise<{ label: string; value: string; note: string }[]> {
-  const desktop = page.locator(".file-preview__desktop .file-preview__row");
-  const sheet = page.locator(".file-sheet .file-preview__row");
-  let rows = desktop;
-  if ((await desktop.count()) === 0) {
+  const read = (root: string) =>
+    page.evaluate((sel) => {
+      const box = document.querySelector(sel);
+      if (!box) return [] as { label: string; value: string; note: string }[];
+      return [...box.querySelectorAll(":scope > .file-preview__row")]
+        .map((row) => {
+          const label = (row.querySelector(".file-preview__label")?.textContent ?? "")
+            .replace(/\s+/g, " ")
+            .trim();
+          const value = (row.querySelector(".file-preview__value > span")?.textContent ?? "")
+            .replace(/\s+/g, " ")
+            .trim();
+          const note = (row.querySelector(".file-preview__value small")?.textContent ?? "")
+            .replace(/\s+/g, " ")
+            .trim();
+          return { label, value, note };
+        })
+        .filter((row) => row.label);
+    }, root);
+
+  let out = await read(".file-preview__desktop > .file-preview__rows");
+  if (out.length === 0) {
     const fileChip = page.locator("button.fox-file-chip");
     if ((await fileChip.count()) > 0) {
       await fileChip.first().click();
       await page.locator(".file-sheet").waitFor({ state: "visible", timeout: 5_000 });
     }
-    rows = sheet;
-  }
-  const n = await rows.count();
-  const out: { label: string; value: string; note: string }[] = [];
-  for (let i = 0; i < n; i++) {
-    const row = rows.nth(i);
-    const label = ((await row.locator(".file-preview__label").innerText()) ?? "").trim();
-    const value = ((await row.locator(".file-preview__value > span").first().innerText()) ?? "").trim();
-    const note = ((await row.locator(".file-preview__value small").first().innerText().catch(() => "")) ?? "")
-      .replace(/\s+/g, " ")
-      .trim();
-    if (label) out.push({ label, value, note });
-  }
-  const close = page.locator(".file-sheet__close");
-  if ((await close.count()) > 0 && (await close.isVisible().catch(() => false))) {
-    await close.click();
+    out = await read(".file-sheet__panel > .file-preview__rows");
+    const close = page.locator(".file-sheet__close");
+    if ((await close.count()) > 0 && (await close.isVisible().catch(() => false))) {
+      await close.click();
+    }
   }
   return out;
 }
@@ -1145,15 +1152,35 @@ async function case12(page: Page) {
   await waitAsk(page, /How is income earned/i);
   await dropHarborDoc(page, "03-w2-2025-jordan-hale.pdf", "confirm");
   await dropHarborDoc(page, "07-paystub-biweekly-loud.pdf", "confirm");
-  const after = await currentText(page);
-  const chips = await currentChips(page);
-  if (/How is income earned/i.test(after) && chips.some((chip) => /W-2|Self-employed|Both|Other/i.test(chip))) {
-    throw new BeatFail(`empty income quiz after 03+07 — ${after} | ${chips.join(" · ")}`);
+  if (hasChip(await currentChips(page), "Use this") || hasChip(await currentChips(page), "Use document")) {
+    await clickChip(page, hasChip(await currentChips(page), "Use this") ? "Use this" : "Use document");
+    await page.waitForTimeout(300);
   }
-  const map = await structureMap(page);
-  const income = `${map["Income"] ?? ""} ${map["Employment"] ?? ""} ${map["Qualifying income"] ?? ""}`;
-  if (!/Harbor|W-2|\$/.test(income)) {
-    throw new BeatFail(`03+07 did not write income — ${income || "(empty)"}`);
+  const quiz = async () => {
+    const text = await currentText(page);
+    const chips = await currentChips(page);
+    return /How is income earned/i.test(text) && chips.some((chip) => /W-2|Self-employed|Both|Other/i.test(chip));
+  };
+  if (await quiz()) {
+    throw new BeatFail(`empty income quiz after 03+07 — ${await currentText(page)} | ${(await currentChips(page)).join(" · ")}`);
+  }
+  const started = Date.now();
+  let employment = "";
+  let blob = "";
+  while (Date.now() - started < 20_000) {
+    const map = await structureMap(page);
+    employment = map["Employment"] ?? "";
+    blob = `${map["Income"] ?? ""} ${employment} ${map["Qualifying income"] ?? ""}`;
+    if (/Harbor/i.test(employment)) break;
+    await page.waitForTimeout(200);
+  }
+  if (await quiz()) {
+    throw new BeatFail(`empty income quiz after 03+07 — ${await currentText(page)} | ${(await currentChips(page)).join(" · ")}`);
+  }
+  if (!/Harbor/i.test(employment)) {
+    throw new BeatFail(
+      `03+07 did not write Harbor Employment — ${blob || "(empty)"} | ${await currentText(page)} | ${(await currentChips(page)).join(" · ")}`,
+    );
   }
 }
 
