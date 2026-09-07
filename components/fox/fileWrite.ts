@@ -3551,6 +3551,8 @@ function lockedFileDocInvites(draft: FoxIntakeDraft): DocInviteKind[] {
 
 export function nextDocInvite(draft: FoxIntakeDraft): DocInviteKind | null {
   if (!draft.incomeType.value && !draft.incomeAsked) return null;
+  /** Empty / skipped how-earned: no invented W-2 pack, and no ID invite until Looks right. */
+  if (!draft.incomeType.value && !draft.sampleAccepted) return null;
   if (draft.pendingProposal || draft.pendingConflict) return null;
   if (wageSketchBlocksDocInvite(draft)) return null;
   const income = draft.incomeType.value;

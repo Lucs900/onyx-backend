@@ -1100,11 +1100,14 @@ async function case19(page: Page) {
     page,
     (text, chips) =>
       hasChip(chips, "Looks right") ||
-      /Looks right|other monthly debts|government ID|statement|purchase contract/i.test(text),
+      /Looks right|other monthly debts/i.test(text),
     20_000,
   );
   if (/How is income earned/i.test(afterSkip.text) && !hasChip(afterSkip.chips, "Looks right")) {
     throw new BeatFail(`Income Skip did not leave how-earned — ${afterSkip.text}`);
+  }
+  if (/government ID/i.test(afterSkip.text) && !hasChip(afterSkip.chips, "Looks right")) {
+    throw new BeatFail(`Income Skip opened ID before Looks right — ${afterSkip.text}`);
   }
   if (/other monthly debts/i.test(afterSkip.text) && hasChip(afterSkip.chips, "Skip")) {
     await clickChip(page, "Skip");

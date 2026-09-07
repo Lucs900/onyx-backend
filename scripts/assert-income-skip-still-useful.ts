@@ -5,8 +5,9 @@
 import assert from "node:assert/strict";
 import { emptyDraft } from "../components/fox/store";
 import { applyLooksRightMotion } from "../components/fox/motion";
-import { skipIncomeAsk } from "../components/fox/workspace";
-import { stillUsefulSection } from "../components/fox/fileWrite";
+import { skipIncomeAsk, workspacePrompt } from "../components/fox/workspace";
+import { canLooksRight } from "../components/fox/completeness";
+import { nextDocInvite, stillUsefulSection } from "../components/fox/fileWrite";
 import type { FoxIntakeDraft } from "../components/fox/types";
 
 function sketch(): FoxIntakeDraft {
@@ -50,7 +51,12 @@ function main() {
   const skipped = skipIncomeAsk(sketch());
   assert.equal(skipped.incomeAsked, true);
   assert.ok(!skipped.incomeType.value);
+  assert.equal(nextDocInvite(skipped), null);
+  assert.ok(canLooksRight(skipped), "Income Skip must keep Looks right");
+  assert.equal(workspacePrompt(skipped), "review");
   const looks = applyLooksRightMotion(skipped);
+  assert.equal(looks.sampleAccepted, true);
+  assert.equal(nextDocInvite(looks), "government_id");
   const items = stillUsefulSection(looks)?.items ?? [];
   const labels = items.map((item) => item.label);
   assert.ok(labels.some((item) => item === "Government ID"), `missing Government ID — ${labels.join(" · ")}`);
