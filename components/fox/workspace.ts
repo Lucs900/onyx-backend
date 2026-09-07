@@ -1082,9 +1082,10 @@ export function amountAskText(draft: FoxIntakeDraft) {
     return "What’s the purchase price?";
   }
   if (intent === "refinance" || (intent === "jumbo" && jumboPurposeOf(draft) === "refinance")) {
-    return hasLoanAmount(draft) && !hasPropertyValue(draft)
-      ? "What’s the property value?"
-      : "What’s the approximate loan or payoff amount?";
+    if (hasLoanAmount(draft)) {
+      return "What’s the property value?";
+    }
+    return "What’s the approximate loan or payoff amount?";
   }
   if (intent === "heloc") return "What line or cash do you need?";
   if (intent === "other") {
@@ -3425,6 +3426,7 @@ export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
   if (propertyValueAskNeeded(draft)) return "value";
   if (needsOverPriceCheck(draft)) return "over-price";
   if (!sketchNumberReady(draft)) {
+    if (isRefiLike(draft) && hasLoanAmount(draft)) return "value";
     return draftUsesPurchasePrice(draft) && !hasPropertyValue(draft) ? "value" : "amount";
   }
   if (!propertyTypeSettled(draft)) return "property-type";

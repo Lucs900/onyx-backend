@@ -3,7 +3,7 @@
 import { upload } from "@vercel/blob/client";
 import { useEffect, useRef, useState } from "react";
 import { ACCEPT_ATTR, FAILED_READ_NOTE, RECEIVED_NOTE, dropBatchCap, isUnreadNote, mediaTypeOf } from "@/lib/docs/accept";
-export { unreadDropBytesCopy } from "@/lib/docs/accept";
+export { receivedDropCopy, unreadDropBytesCopy } from "@/lib/docs/accept";
 import {
   applyExtractWrite,
   applyCapture,
@@ -127,6 +127,7 @@ export async function ingestDroppedFiles(files: File[]) {
       (doc) => doc.receivedAt === receivedAt && doc.name === file.name,
       { status: "reading" },
     );
+    emitDocIntake({ received: emptyRead });
 
     try {
       const hint = extractHintFromDraft(getFoxDraft(), file.name);
@@ -240,9 +241,8 @@ export async function ingestDroppedFiles(files: File[]) {
   }
 }
 
-/** Visible composer attach. Posts the chosen File through ingestDroppedFiles. */
+/** Visible composer attach. Native label → file input → ingestDroppedFiles. */
 export function ComposerAttach() {
-  const inputRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
 
   const onFiles = (files: FileList | null) => {
@@ -252,9 +252,8 @@ export function ComposerAttach() {
   };
 
   return (
-    <>
+    <label className="fox-bar__attach" data-composer-attach-button="true" aria-label="Attach">
       <input
-        ref={inputRef}
         id={COMPOSER_ATTACH_ID}
         data-composer-attach="true"
         className="visually-hidden"
@@ -267,24 +266,16 @@ export function ComposerAttach() {
           event.target.value = "";
         }}
       />
-      <button
-        type="button"
-        className="fox-bar__attach"
-        aria-label="Attach"
-        disabled={busy}
-        onClick={() => inputRef.current?.click()}
-      >
-        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-          <path
-            d="M13.2 8.15 8.02 13.33a3.3 3.3 0 0 1-4.67-4.67l5.18-5.18a2.2 2.2 0 1 1 3.11 3.11L6.46 11.77a1.1 1.1 0 1 1-1.56-1.56l4.8-4.8"
-            stroke="currentColor"
-            strokeWidth="1.4"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        </svg>
-      </button>
-    </>
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+        <path
+          d="M13.2 8.15 8.02 13.33a3.3 3.3 0 0 1-4.67-4.67l5.18-5.18a2.2 2.2 0 1 1 3.11 3.11L6.46 11.77a1.1 1.1 0 1 1-1.56-1.56l4.8-4.8"
+          stroke="currentColor"
+          strokeWidth="1.4"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      </svg>
+    </label>
   );
 }
 

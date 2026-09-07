@@ -429,7 +429,6 @@ export function conventionalFileFacts(draft: FoxIntakeDraft): {
         address,
         file.otherProperties.length ? `${file.otherProperties.length} other propert${file.otherProperties.length === 1 ? "y" : "ies"}` : "",
       ]),
-      note: "APN, legal, year built, taxes, HOA wait for a title profile",
     },
     {
       id: "file-assets",
@@ -468,7 +467,6 @@ export function conventionalFileFacts(draft: FoxIntakeDraft): {
       id: "file-declarations",
       label: "Declarations",
       value: dashJoin(declarationBits) || "—",
-      note: "a–m holdable · late · not a first-session ask",
     },
     ...historyRows,
   ];

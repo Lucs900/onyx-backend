@@ -410,7 +410,7 @@ import {
 } from "../components/fox/staffExport";
 import { scrollDeltaToClearAsk, scrollDeltaToFollowLastLine } from "../components/fox/askReveal";
 import { subjectMortgagePayment } from "../components/fox/monthlyDebts";
-import { FAILED_READ_NOTE, unreadDropBytesCopy } from "../lib/docs/accept";
+import { FAILED_READ_NOTE, receivedDropCopy, unreadDropBytesCopy } from "../lib/docs/accept";
 import { classifyAndExtract, imageDataUrl, visionChatBody } from "../lib/docs/extract";
 import {
   CREDIT_WORKSPACE_BUBBLES,
@@ -2917,6 +2917,10 @@ assert.equal(loudStubPrinted?.fields.full_name, "Jordan Hale");
 assert.equal(wageExtractConfirmCopy(118400, 4615.38, "biweekly"), "Box 5 $118,400. Stub $4,615.38 biweekly. Use this?");
 assert.equal(wageW2ConfirmCopy(118400, "Harbor Pacific Design Inc"), "Box 5 $118,400. Harbor Pacific Design Inc. Use this?");
 assert.equal(unreadDropBytesCopy("06-w2-2025-box5-loud.pdf", 12345), "06-w2-2025-box5-loud.pdf · 12,345 bytes");
+assert.equal(
+  receivedDropCopy("28-paystub-cstc-pay-matt-260422.pdf"),
+  "28-paystub-cstc-pay-matt-260422.pdf · received",
+);
 const jordanHalePath = join(dirname(fileURLToPath(import.meta.url)), "..", "sample-docs", "03-w2-2025-jordan-hale.pdf");
 assert.equal(existsSync(jordanHalePath), true);
 const jordanHaleDisk = readFileSync(jordanHalePath);
@@ -13217,6 +13221,15 @@ assert.ok(!dropSource.includes("fileToBase64"));
 assert.ok(dropSource.includes("quietLines: [FAILED_READ_NOTE]"));
 assert.ok(!dropSource.includes("textEmpty ? emptyRead"));
 assert.ok(dropSource.includes("spokeUnread ? { emptyRead }"));
+assert.ok(dropSource.includes("emitDocIntake({ received: emptyRead })"));
+assert.ok(dropSource.includes("data-composer-attach-button"));
+assert.ok(dropSource.includes("<label"));
+assert.ok(!dropSource.includes("htmlFor={COMPOSER_ATTACH_ID}"));
+const walkerSource = readFileSync(join(root, "scripts/spine-walker/walker.ts"), "utf8");
+assert.ok(walkerSource.includes("data-composer-attach-button"));
+assert.ok(!walkerSource.includes("28-paystub-cstc-pay-matt-260422.png"));
+assert.ok(walkerSource.includes("forwarding live bytes"));
+assert.ok(walkerSource.includes(".pdf · received"));
 assert.ok(dropSource.includes("getAsFile"));
 assert.ok(dropSource.includes('kind === "file"'));
 assert.ok(dropSource.includes('aria-label="Upload"'));
@@ -13232,6 +13245,8 @@ const rateflowClient = readFileSync(join(root, "components/fox/rateflowClient.ts
 assert.ok(alwaysOn.includes("ingestDroppedFiles"));
 assert.ok(alwaysOn.includes("data-composer-drop"));
 assert.ok(alwaysOn.includes("ComposerAttach"));
+assert.ok(alwaysOn.includes("receivedDropCopy"));
+assert.ok(alwaysOn.includes("detail.received"));
 assert.ok(alwaysOn.includes('document.addEventListener("drop"'));
 assert.ok(alwaysOn.includes("filesFromDataTransfer"));
 assert.ok(alwaysOn.includes("void ingestDroppedFiles(files)"));
@@ -14482,6 +14497,7 @@ assert.doesNotMatch(
 );
 const w2FileFacts = previewFacts(conventionalW2Walk);
 assert.ok(w2FileFacts.some((fact) => fact.id === "file-property" && /Primary/.test(fact.value) && /address —/.test(fact.value)));
+assert.ok(w2FileFacts.every((fact) => !/APN|title profile|a–m holdable|a-m holdable/i.test(fact.note ?? "")));
 assert.ok(w2FileFacts.some((fact) => fact.id === "file-assets" && fact.value === "" && !/institution —|balance —|last4/.test(fact.value)));
 assert.ok(w2FileFacts.some((fact) => fact.id === "file-liabilities" && fact.value === "Credit report later"));
 assert.ok(w2FileFacts.some((fact) => fact.id === "file-declarations" && fact.value === "—"));
@@ -14565,6 +14581,7 @@ assert.match(fileCompleteness(conventionalRefiWalk)?.copy ?? "", new RegExp(`^sk
 const conventionalSrc = readFileSync(join(root, "components/fox/conventionalFile.ts"), "utf8");
 assert.doesNotMatch(conventionalSrc, /ask for APN|legal description quiz|year-built form|HOA dues line|liability worksheet|1003 maze|citizenship quiz/i);
 assert.doesNotMatch(conventionalSrc, /you qualify|credit pull now|full account number|SSN capture/i);
+assert.doesNotMatch(conventionalSrc, /title profile|a–m holdable|a-m holdable/);
 
 assert.equal(
   storeFlags({ statedCreditBand: "680-719", occupancy: "investment", purposeHint: "cash_out" }).caution,

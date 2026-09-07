@@ -14,8 +14,8 @@
  * row, then ID Upload this · Skip. Case 21 is Looks right chip on that gate;
  * typed yes still confirms. Case 22 is refinance 500000 loan then 800000
  * value — File keeps $500,000 and does not re-ask loan. Case 23 is ADP W-2
- * page-read: Box 5 $36,460.08, never $5. Case 24 is first-session
- * page-read leftover plus PAY MATT CSTC 260422 when that PDF lands.
+ * page-read: Box 5 $36,460.08, never $5. Case 24 is composer paperclip
+ * → real PDF bytes → preview Grok of PAY MATT CSTC 260422. Not a PNG intercept.
  * Years in business is once after SE / Both. Named Hale Design when known.
  * Lukasz Harbor leftovers run from scripts/assert-spine-walker.sh before
  * Playwright. CI fail = red.
@@ -29,7 +29,6 @@ import { fileURLToPath } from "node:url";
 import { classifyAndExtract } from "../../lib/docs/extract";
 import { isBoxNumberAsDollars } from "../../components/fox/fileWrite";
 import type { ExtractClass } from "../../components/fox/types";
-import { renderPdfFirstPage } from "../../lib/docs/pdfText";
 import { adpW2FixturePath } from "../assert-w2-page-read";
 import { mattCstcPaystubPath } from "../assert-first-session-page-read";
 
@@ -855,10 +854,43 @@ async function assertLooksRightHiddenWhileUseThis(page: Page) {
   }
 }
 
+async function systemTexts(page: Page): Promise<string[]> {
+  const loc = page.locator(".fox-bubble--system");
+  const n = await loc.count();
+  const out: string[] = [];
+  for (let i = 0; i < n; i += 1) {
+    out.push(((await loc.nth(i).innerText()) ?? "").replace(/\s+/g, " ").trim());
+  }
+  return out;
+}
+
+async function waitSystem(
+  page: Page,
+  test: (texts: string[]) => boolean,
+  timeout = 20_000,
+): Promise<string[]> {
+  const started = Date.now();
+  let last = "";
+  while (Date.now() - started < timeout) {
+    const texts = await systemTexts(page);
+    last = texts.join(" | ");
+    if (test(texts)) return texts;
+    await page.waitForTimeout(150);
+  }
+  throw new BeatFail(`waited for system line — last: ${last || "(none)"}`);
+}
+
+async function composerAttachInput(page: Page) {
+  const paperclip = page.locator("[data-composer-attach-button='true'], label.fox-bar__attach").first();
+  await paperclip.waitFor({ state: "attached", timeout: 15_000 });
+  const attach = page.locator("#composer-attach, [data-composer-attach='true']").first();
+  await attach.waitFor({ state: "attached", timeout: 15_000 });
+  return attach;
+}
+
 async function composerDrop(page: Page, name: string) {
   lastDroppedSample = name;
-  const attach = page.locator("[data-composer-attach='true'], [data-docs-handoff='true']").first();
-  await attach.waitFor({ state: "attached", timeout: 15_000 });
+  const attach = await composerAttachInput(page);
   await attach.setInputFiles([]).catch(() => null);
   await attach.setInputFiles(join(SAMPLE_DOCS, name));
 }
@@ -866,8 +898,7 @@ async function composerDrop(page: Page, name: string) {
 async function composerDropPath(page: Page, path: string) {
   const name = path.split("/").pop() ?? path;
   lastDroppedSample = name;
-  const attach = page.locator("[data-composer-attach='true'], [data-docs-handoff='true']").first();
-  await attach.waitFor({ state: "attached", timeout: 15_000 });
+  const attach = await composerAttachInput(page);
   await attach.setInputFiles([]).catch(() => null);
   await attach.setInputFiles(path);
 }
@@ -1414,6 +1445,17 @@ async function case24(page: Page) {
     await waitCurrent(page, (text) => !/other monthly debts/i.test(text), 15_000);
   }
   await composerDropPath(page, fixture);
+  await waitSystem(
+    page,
+    (texts) => texts.some((text) => /28-paystub-cstc-pay-matt-260422.*received|\.pdf · received/i.test(text)),
+    20_000,
+  ).catch(async () => {
+    const now = await currentText(page);
+    const systems = await systemTexts(page);
+    throw new BeatFail(
+      `PAY MATT CSTC 260422 paperclip silent — no filename/received — ${now} | ${systems.join(" | ") || "(no system lines)"}`,
+    );
+  });
   const after = await waitCurrent(
     page,
     (text, chips) =>
@@ -1432,6 +1474,10 @@ async function case24(page: Page) {
   }
   if (!/Comprehensive Skills|CSTC/i.test(after.text)) {
     throw new BeatFail(`PAY MATT CSTC 260422 must name the employer — ${after.text}`);
+  }
+  const systems = await systemTexts(page);
+  if (!systems.some((text) => /28-paystub-cstc-pay-matt-260422.*received|\.pdf · received/i.test(text))) {
+    throw new BeatFail(`PAY MATT CSTC 260422 missing filename/received line — ${systems.join(" | ")}`);
   }
 }
 
@@ -2124,48 +2170,8 @@ async function proxyApiThroughPlaywright(page: Page) {
           return;
         }
         console.error(
-          `spine-walker: extract-local miss ${lastDroppedSample} failed=${String(local?.failed)}`,
+          `spine-walker: extract-local miss ${lastDroppedSample} failed=${String(local?.failed)} — forwarding live bytes`,
         );
-        if (/28-paystub-cstc|pay-matt/i.test(lastDroppedSample) && Object.keys(oidc).length) {
-          const fixture = mattCstcPaystubPath();
-          if (fixture) {
-            const pageImage = await renderPdfFirstPage(new Uint8Array(readFileSync(fixture)));
-            if (pageImage) {
-              console.error(`spine-walker: CSTC page image ${pageImage.bytes.length} → preview Grok`);
-              const response = await page.request.post(url, {
-                headers: oidc,
-                multipart: {
-                  file: {
-                    name: "28-paystub-cstc-pay-matt-260422.png",
-                    mimeType: pageImage.mediaType,
-                    buffer: Buffer.from(pageImage.bytes),
-                  },
-                  name: "28-paystub-cstc-pay-matt-260422.png",
-                  type: pageImage.mediaType,
-                  hint: "paystub",
-                },
-                timeout: 60_000,
-                failOnStatusCode: false,
-              });
-              const grokBody = (await response.json().catch(() => ({}))) as {
-                failed?: boolean;
-                class?: string;
-                fields?: Record<string, string>;
-                warnings?: string[];
-              };
-              console.error(
-                `spine-walker: CSTC grok ${response.status()} class=${grokBody.class ?? ""} failed=${String(grokBody.failed ?? "")} fields=${Object.keys(grokBody.fields ?? {}).join(",") || "(none)"} warnings=${(grokBody.warnings ?? []).join(",")}`,
-              );
-              await route.fulfill({
-                status: response.status(),
-                contentType: "application/json",
-                body: JSON.stringify(grokBody),
-              });
-              return;
-            }
-            console.error("spine-walker: CSTC page image missing");
-          }
-        }
       }
       if (!Object.keys(oidc).length) {
         await route.fallback();

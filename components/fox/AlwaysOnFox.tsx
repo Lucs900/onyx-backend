@@ -162,7 +162,7 @@ import {
   ingestDroppedFiles,
   requestFoxPickFile,
 } from "./DocumentDrop";
-import { unreadDropBytesCopy } from "@/lib/docs/accept";
+import { receivedDropCopy, unreadDropBytesCopy } from "@/lib/docs/accept";
 import { WorkspaceFileDock } from "./FilePreview";
 import {
   DOC_INTAKE_EVENT,
@@ -1073,6 +1073,13 @@ export function AlwaysOnFox({
       skipPromptSync.current = true;
       commitMessages((prev) => {
         const next = [...prev];
+        if (detail.received && !detail.emptyRead && !detail.extractClass && !(detail.quietLines ?? []).length) {
+          const name = String(detail.received.name ?? "").trim();
+          if (name) {
+            next.push({ id: newId(), role: "system", text: receivedDropCopy(name) });
+          }
+          return next;
+        }
         if (detail.reject) {
           next.push({ id: newId(), role: "system", text: detail.reject });
           if (!detail.extractClass && !detail.emptyRead && !(detail.quietLines ?? []).length) {

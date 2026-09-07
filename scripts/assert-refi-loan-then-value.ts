@@ -6,6 +6,7 @@ import assert from "node:assert/strict";
 import { emptyDraft } from "../components/fox/store";
 import { hasLoanAmount } from "../components/fox/completeness";
 import {
+  amountAskText,
   nextFoxAsk,
   previewFacts,
   workspacePrompt,
@@ -56,6 +57,8 @@ function main() {
   assert.equal(hasLoanAmount(written), true);
   assert.notEqual(workspacePrompt(written), "amount");
   assert.doesNotMatch(nextFoxAsk(written).text, /loan or payoff amount|What’s the loan amount/i);
+  assert.doesNotMatch(amountAskText(written), /loan or payoff amount|What’s the loan amount/i);
+  assert.doesNotMatch(amountAskText(withLoan), /loan or payoff amount/i);
   const loan = loanLine(written);
   assert.ok(loan, "Loan amount missing from File");
   assert.match(loan?.value ?? "", /\$500,000/);

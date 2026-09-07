@@ -41,6 +41,12 @@ export function isUnreadNote(note?: string | null) {
   return note === FAILED_READ_NOTE || note === NO_TEXT_LAYER_NOTE;
 }
 
+/** Thread line the moment composer attach lands bytes. Before Grok. */
+export function receivedDropCopy(name: string) {
+  const shown = String(name ?? "").trim() || "file";
+  return `${shown} · received`;
+}
+
 /** Thread line when the dropped file’s text layer is empty. No dollars. */
 export function unreadDropBytesCopy(name: string, size: number) {
   const shown = String(name ?? "").trim() || "file";

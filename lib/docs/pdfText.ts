@@ -4,6 +4,7 @@
  * OCR is a separate path — this module never invents glyphs or numbers.
  */
 
+import { createCanvas } from "@napi-rs/canvas";
 import { deflateSync, inflateSync } from "node:zlib";
 
 export type PdfEmbeddedImage = {
@@ -465,7 +466,6 @@ function looksLikePagePhoto(image: PdfEmbeddedImage) {
 async function renderWithPdfJs(bytes: Uint8Array): Promise<PdfEmbeddedImage | null> {
   try {
     const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
-    const { createCanvas } = await import("@napi-rs/canvas");
     const { createRequire } = await import("node:module");
     const { pathToFileURL } = await import("node:url");
     try {
