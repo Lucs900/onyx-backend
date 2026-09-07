@@ -289,14 +289,14 @@ async function main() {
       "paystub",
       matt.split("/").pop(),
     );
-    // Garbled text layer — leftover must not invent. Walker case 24 is the Grok proof.
+    // Garbled text layer — leftover must not invent. Founder paperclip on /start is the Grok proof.
     assert.equal(printedMatt.failed, true, "PAY MATT CSTC 260422 printed layer must stay unread");
     assert.deepEqual(printedMatt.fields, {});
     noSecrets(printedMatt.fields);
     const pageImage = await renderPdfFirstPage(readFileSync(matt));
     assert.ok(pageImage && pageImage.bytes.length > 40_000, "PAY MATT CSTC 260422 page image missing");
     console.log(
-      "assert-first-session-page-read: PAY MATT CSTC 260422 on disk — printed unread, walker Grok page-read is the proof",
+      "assert-first-session-page-read: PAY MATT CSTC 260422 on disk — printed unread, live Grok page-read is the proof",
     );
   }
 

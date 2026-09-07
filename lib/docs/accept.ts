@@ -41,15 +41,21 @@ export function isUnreadNote(note?: string | null) {
   return note === FAILED_READ_NOTE || note === NO_TEXT_LAYER_NOTE;
 }
 
+/** Strip a repeated last extension so `stub.pdf.pdf` shows as `stub.pdf`. */
+export function displayIncomingFileName(name: string) {
+  let shown = String(name ?? "").trim() || "file";
+  shown = shown.replace(/(\.[A-Za-z0-9]{2,8})(\1)+$/i, "$1");
+  return shown;
+}
+
 /** Thread line the moment composer attach lands bytes. Before Grok. */
 export function receivedDropCopy(name: string) {
-  const shown = String(name ?? "").trim() || "file";
-  return `${shown} · received`;
+  return `${displayIncomingFileName(name)} · received`;
 }
 
 /** Thread line when the dropped file’s text layer is empty. No dollars. */
 export function unreadDropBytesCopy(name: string, size: number) {
-  const shown = String(name ?? "").trim() || "file";
+  const shown = displayIncomingFileName(name);
   const bytes = Number.isFinite(size) ? Math.max(0, Math.round(size)) : 0;
   return `${shown} · ${bytes.toLocaleString("en-US")} bytes`;
 }

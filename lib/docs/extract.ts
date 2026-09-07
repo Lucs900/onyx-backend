@@ -149,7 +149,8 @@ async function readXaiError(response: Response) {
 
 async function grokChatCompletions(prompt: string, dataUrl: string): Promise<string> {
   const apiKey = grokApiKey();
-  const models = [FOX_GROK_MODEL, VISION_MODEL, ...VISION_MODEL_FALLBACKS];
+  // Page images need a vision model. grok-3 first can 200 with no page and skip vision.
+  const models = [VISION_MODEL, ...VISION_MODEL_FALLBACKS, FOX_GROK_MODEL];
   let lastError: Error | null = null;
   for (const model of models) {
     const response = await fetch("https://api.x.ai/v1/chat/completions", {
@@ -169,12 +170,17 @@ async function grokChatCompletions(prompt: string, dataUrl: string): Promise<str
         lastError = new Error(`xAI ${model} returned empty content`);
         continue;
       }
+      if (!parseJsonObject(text)) {
+        lastError = new Error(`xAI ${model} returned non-JSON`);
+        logVisionError(`chat/completions ${model}`, lastError);
+        continue;
+      }
       return text;
     }
     const detail = await readXaiError(response);
     lastError = new Error(detail);
     logVisionError(`chat/completions ${model}`, lastError);
-    if (response.status !== 404 && !/model/i.test(detail)) break;
+    if (response.status === 401 || response.status === 403) break;
   }
   throw lastError ?? new Error("xAI chat/completions failed");
 }
@@ -420,9 +426,30 @@ async function classifyAndExtractPage(
   hint?: ExtractClass | null,
 ): Promise<ClassifyExtractResult> {
   let classified: ClassifyResult | null = null;
+  const hinted = hint && hint !== "other" ? hint : undefined;
+  if (hinted && (hinted === "bank_statement" || isFirstSessionClass(hinted))) {
+    try {
+      const extracted = await adapter.extract(bytes, mediaType, hinted);
+      const extractClass = promoteExtractClass(hinted, extracted.fields);
+      const fields = lockFirstSessionFields(extractClass, extracted.fields);
+      const locked =
+        extractClass === "bank_statement" || hinted === "bank_statement"
+          ? looksLikeBankFields(fields)
+          : hasLockedSuggestion(extractClass, fields);
+      if (locked) {
+        return {
+          extractClass: hinted === "bank_statement" ? "bank_statement" : extractClass,
+          confidence: 0.94,
+          fields,
+          warnings: extracted.warnings,
+        };
+      }
+    } catch (error) {
+      logVisionError("hintedExtract", error);
+    }
+  }
   try {
     classified = normalizeClassifyResult(await adapter.classify(bytes, mediaType));
-    const hinted = hint && hint !== "other" ? hint : undefined;
     if (
       classified.readable === false &&
       hinted !== "bank_statement" &&
@@ -511,10 +538,21 @@ async function grokPageRead(
   filename?: string | null,
 ): Promise<ClassifyExtractResult | null> {
   const image = await pageImageForGrok(bytes, mediaType);
+  console.info("[docs/extract] page-read", {
+    filename: filename ?? "",
+    imageBytes: image?.bytes.length ?? 0,
+    hint: hint ?? null,
+  });
   if (!image) return null;
   const page = await classifyAndExtractPage(image.bytes, image.mediaType, adapter, hint);
   const extractClass = preferFilenameClass(page.extractClass, filename ?? "");
   const fields = lockFirstSessionFields(extractClass, page.fields);
+  console.info("[docs/extract] page-read result", {
+    filename: filename ?? "",
+    extractClass,
+    failed: Boolean(page.failed),
+    keys: Object.keys(fields),
+  });
   if (page.failed) return { ...page, extractClass, fields };
   const bankLocked = extractClass === "bank_statement" || hint === "bank_statement";
   const locked = bankLocked

@@ -2921,6 +2921,14 @@ assert.equal(
   receivedDropCopy("28-paystub-cstc-pay-matt-260422.pdf"),
   "28-paystub-cstc-pay-matt-260422.pdf · received",
 );
+assert.equal(
+  receivedDropCopy("28-paystub-cstc-pay-matt-260422.pdf.pdf"),
+  "28-paystub-cstc-pay-matt-260422.pdf · received",
+);
+assert.equal(
+  unreadDropBytesCopy("27-w2-2025-adp-matthew-castaneda.pdf.pdf", 18549),
+  "27-w2-2025-adp-matthew-castaneda.pdf · 18,549 bytes",
+);
 const jordanHalePath = join(dirname(fileURLToPath(import.meta.url)), "..", "sample-docs", "03-w2-2025-jordan-hale.pdf");
 assert.equal(existsSync(jordanHalePath), true);
 const jordanHaleDisk = readFileSync(jordanHalePath);

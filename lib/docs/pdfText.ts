@@ -305,7 +305,9 @@ function collectPdfTextLines(bytes: Uint8Array): string[] {
 /** Non-whitespace characters from the visible text layer. 0 means no text layer. */
 export function pdfTextLayerCharCount(bytes: Uint8Array): number {
   if (!isPdf(bytes)) return 0;
-  return collectPdfTextLines(bytes).join("").replace(/\s+/g, "").length;
+  const cleaned = collectPdfTextLines(bytes);
+  if (!meaningfulText(cleaned)) return 0;
+  return cleaned.join("").replace(/\s+/g, "").length;
 }
 
 /** Visible text operators only. Empty when the page has no text layer. */
@@ -468,22 +470,35 @@ function looksLikePagePhoto(image: PdfEmbeddedImage) {
 
 async function resolvePdfWorkerSrc(): Promise<string | null> {
   const { createRequire } = await import("node:module");
-  const { existsSync } = await import("node:fs");
+  const { existsSync, readFileSync, writeFileSync } = await import("node:fs");
   const { join } = await import("node:path");
   const { pathToFileURL } = await import("node:url");
-  try {
-    const require = createRequire(import.meta.url);
-    return pathToFileURL(require.resolve("pdfjs-dist/legacy/build/pdf.worker.mjs")).href;
-  } catch {
-    const fallbacks = [
-      join(process.cwd(), "node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs"),
-      join(process.cwd(), "node_modules/pdfjs-dist/build/pdf.worker.mjs"),
-    ];
-    for (const path of fallbacks) {
-      if (existsSync(path)) return pathToFileURL(path).href;
+  const candidates: string[] = [];
+  for (const base of [join(process.cwd(), "package.json"), typeof import.meta.url === "string" ? import.meta.url : ""]) {
+    if (!base) continue;
+    try {
+      candidates.push(createRequire(base).resolve("pdfjs-dist/legacy/build/pdf.worker.mjs"));
+    } catch {
+      /* try the next resolver */
     }
-    return null;
   }
+  candidates.push(
+    join(process.cwd(), "node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs"),
+    join(process.cwd(), "node_modules/pdfjs-dist/build/pdf.worker.mjs"),
+    "/var/task/node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs",
+    "/var/task/node_modules/pdfjs-dist/build/pdf.worker.mjs",
+  );
+  for (const path of candidates) {
+    if (!path || !existsSync(path)) continue;
+    try {
+      const tmp = "/tmp/onyx-pdf.worker.mjs";
+      writeFileSync(tmp, readFileSync(path));
+      return pathToFileURL(tmp).href;
+    } catch {
+      return pathToFileURL(path).href;
+    }
+  }
+  return null;
 }
 
 async function renderWithPdfJs(bytes: Uint8Array): Promise<PdfEmbeddedImage | null> {

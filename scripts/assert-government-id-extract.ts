@@ -518,7 +518,7 @@ async function main() {
 
   const dropSource = readFileSync(join(root, "components/fox/DocumentDrop.tsx"), "utf8");
   assert.match(dropSource, /form\.append\("file", keep/);
-  assert.match(dropSource, /extractHintFromDraft\(getFoxDraft\(\), file\.name\)/);
+  assert.match(dropSource, /extractHintFromDraft\(getFoxDraft\(\), name\)/);
   assert.doesNotMatch(dropSource, /form\.append\("file", snapshot/);
   const alwaysOn = readFileSync(join(root, "components/fox/AlwaysOnFox.tsx"), "utf8");
   assert.match(alwaysOn, /isGovernmentIdInviteLine\(last\.text\)/);

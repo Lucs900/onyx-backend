@@ -2,7 +2,7 @@
 
 import { upload } from "@vercel/blob/client";
 import { useEffect, useRef, useState } from "react";
-import { ACCEPT_ATTR, FAILED_READ_NOTE, RECEIVED_NOTE, dropBatchCap, isUnreadNote, mediaTypeOf } from "@/lib/docs/accept";
+import { ACCEPT_ATTR, FAILED_READ_NOTE, RECEIVED_NOTE, displayIncomingFileName, dropBatchCap, isUnreadNote, mediaTypeOf } from "@/lib/docs/accept";
 export { receivedDropCopy, unreadDropBytesCopy } from "@/lib/docs/accept";
 import {
   applyExtractWrite,
@@ -91,25 +91,26 @@ export async function ingestDroppedFiles(files: File[]) {
     emitDocIntake({ reject: speech });
   }
   for (const file of keep) {
-    const type = mediaTypeOf(file.name, file.type);
-    const blocked = rejectIncomingFile(getFoxDraft(), file.name, type, file.size);
+    const name = displayIncomingFileName(file.name);
+    const type = mediaTypeOf(name, file.type);
+    const blocked = rejectIncomingFile(getFoxDraft(), name, type, file.size);
     if (blocked) {
       emitDocIntake({ reject: blocked });
       continue;
     }
     const receivedAt = new Date().toISOString();
-    const slot = slotFromFilename(file.name);
-    const emptyRead = { name: file.name, size: file.size };
+    const slot = slotFromFilename(name);
+    const emptyRead = { name, size: file.size };
     if (file.size < 32) {
       receiveDocument({
         slot,
-        name: file.name,
+        name,
         type,
         size: file.size,
         receivedAt,
       });
       patchReceivedDoc(
-        (doc) => doc.receivedAt === receivedAt && doc.name === file.name,
+        (doc) => doc.receivedAt === receivedAt && doc.name === name,
         { status: "received", note: FAILED_READ_NOTE },
       );
       emitFailedRead(emptyRead);
@@ -118,25 +119,25 @@ export async function ingestDroppedFiles(files: File[]) {
 
     receiveDocument({
       slot,
-      name: file.name,
+      name,
       type,
       size: file.size,
       receivedAt,
     });
     patchReceivedDoc(
-      (doc) => doc.receivedAt === receivedAt && doc.name === file.name,
+      (doc) => doc.receivedAt === receivedAt && doc.name === name,
       { status: "reading" },
     );
     emitDocIntake({ received: emptyRead });
 
     try {
-      const hint = extractHintFromDraft(getFoxDraft(), file.name);
+      const hint = extractHintFromDraft(getFoxDraft(), name);
       const snapshot = new Blob([await file.arrayBuffer()], { type });
-      const keep = new File([snapshot], file.name, { type });
+      const keep = new File([snapshot], name, { type });
       const postExtract = async () => {
         const form = new FormData();
-        form.append("file", keep, file.name);
-        form.append("name", file.name);
+        form.append("file", keep, name);
+        form.append("name", name);
         form.append("type", type);
         if (hint) form.append("hint", hint);
         return fetch("/api/docs/extract", {
@@ -167,14 +168,14 @@ export async function ingestDroppedFiles(files: File[]) {
       void storeBytes(keep)
         .then((bytesRef) => {
           patchReceivedDoc(
-            (doc) => doc.receivedAt === receivedAt && doc.name === file.name,
+            (doc) => doc.receivedAt === receivedAt && doc.name === name,
             { bytesRef },
           );
         })
         .catch(() => undefined);
       if (!response.ok) {
         patchReceivedDoc(
-          (doc) => doc.receivedAt === receivedAt && doc.name === file.name,
+          (doc) => doc.receivedAt === receivedAt && doc.name === name,
           {
             status: "received",
             note: data.code === "STORAGE_BLOCKED" ? data.error : FAILED_READ_NOTE,
@@ -185,7 +186,7 @@ export async function ingestDroppedFiles(files: File[]) {
       }
       const applied = applyExtractWrite(
         receivedAt,
-        file.name,
+        name,
         {
           extractClass: (data.class as ExtractClass) ?? "other",
           confidence: typeof data.confidence === "number" ? data.confidence : 0,
@@ -221,10 +222,10 @@ export async function ingestDroppedFiles(files: File[]) {
     } catch {
       try {
         const snapshot = new Blob([await file.arrayBuffer()], { type: file.type || type });
-        void storeBytes(new File([snapshot], file.name, { type: file.type || type }))
+        void storeBytes(new File([snapshot], name, { type: file.type || type }))
           .then((bytesRef) => {
             patchReceivedDoc(
-              (doc) => doc.receivedAt === receivedAt && doc.name === file.name,
+              (doc) => doc.receivedAt === receivedAt && doc.name === name,
               { bytesRef },
             );
           })
@@ -233,7 +234,7 @@ export async function ingestDroppedFiles(files: File[]) {
         /* keep the received row even if bytes cannot be re-read */
       }
       patchReceivedDoc(
-        (doc) => doc.receivedAt === receivedAt && doc.name === file.name,
+        (doc) => doc.receivedAt === receivedAt && doc.name === name,
         { status: "received", note: FAILED_READ_NOTE },
       );
       emitFailedRead(emptyRead);
