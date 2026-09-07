@@ -291,7 +291,9 @@ async function main() {
   assert.match(collapsedCover?.fields.cover_schedules ?? "", /schedule_e/);
   assert.match(collapsedCover?.fields.cover_schedules ?? "", /k1/);
   assert.match(collapsedCover?.fields.cover_schedules ?? "", /schedule_f/);
-  assert.equal(collapsedCover?.fields.schedule_c_net_profit, undefined);
+  assert.equal(collapsedCover?.fields.schedule_c_net_profit, "88000");
+  assert.equal(collapsedCover?.fields.schedule_e_rents_received, undefined);
+  assert.equal(collapsedCover?.fields.depreciation, undefined);
   assert.equal(loudWageFromPrintedLines(layer19), null);
   assert.equal(loudWageFromPrintedLines(collapsed19), null);
 
@@ -313,7 +315,8 @@ async function main() {
     assert.equal(routed19.fields?.return_kind, "cover");
     assert.equal(routed19.fields?.tax_year, "2024");
     assert.match(routed19.fields?.cover_schedules ?? "", /schedule_e/);
-    assert.equal(routed19.fields?.schedule_c_net_profit, undefined);
+    assert.equal(routed19.fields?.schedule_c_net_profit, "88000");
+    assert.equal(routed19.fields?.schedule_e_rents_received, undefined);
     assert.equal(routed19.fields?.k1_ordinary_income, undefined);
     assert.doesNotMatch(routed19.fields?.property_address ?? "", /Filbert|94123/);
   }

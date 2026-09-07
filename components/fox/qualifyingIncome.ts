@@ -4,6 +4,8 @@ import {
   DECLINING_INCOME_CAUTION,
   DECLINING_YEAR_RATIO,
   SUGGESTED_INCOME_NOTE,
+  COVER_LINE_METHOD,
+  COVER_LINE_NOTE,
   W2_BOX1_MONTHLY_NOTE,
   BOTH_MONTHLY_SKIP_NOTE,
   BOTH_MONTHLY_RAISE_NOTE,
@@ -51,6 +53,8 @@ export {
   DECLINING_INCOME_CAUTION,
   DECLINING_YEAR_RATIO,
   SUGGESTED_INCOME_NOTE,
+  COVER_LINE_METHOD,
+  COVER_LINE_NOTE,
   W2_BOX1_MONTHLY_NOTE,
   BOTH_MONTHLY_SKIP_NOTE,
   BOTH_MONTHLY_RAISE_NOTE,
@@ -314,7 +318,7 @@ export function readTaxCashflows(draft: FoxIntakeDraft): TaxYearCashflow[] {
 }
 
 export function cashflowFromExtract(fields: Record<string, string>): TaxYearCashflow | null {
-  if (isCoverReturnFields(fields)) return null;
+  if (isCoverReturnFields(fields)) return null; // thin cover is /12 only — not a Schedule C cashflow row
   const tax_year = String(fields.tax_year ?? "").trim();
   const schedule_c_net_profit = String(fields.schedule_c_net_profit ?? "").trim();
   const k1_ordinary_income = String(fields.k1_ordinary_income ?? "").trim();
@@ -979,6 +983,17 @@ export function monthlyQualifyingFromExtract(
     );
   }
   if (extractClass !== "tax_return") return null;
+  if (isCoverReturnFields(fields)) {
+    if (hasBetterIncomeThanCover(draft)) return null;
+    const net = parseExtractMoney(fields.schedule_c_net_profit);
+    if (net == null) return null;
+    return {
+      monthly: monthlyFromAnnual(net),
+      basis: "schedule_c",
+      method: "one-year",
+      methodNote: COVER_LINE_METHOD,
+    };
+  }
   const incoming = cashflowFromExtract(fields);
   const years = mergeTaxCashflows(readTaxCashflows(draft), incoming);
   const incomingRental =
@@ -1453,13 +1468,45 @@ function serializeParts(parts?: { wage?: number; scheduleC?: number; k1?: number
   return next.wage || next.scheduleC || next.k1 ? next : undefined;
 }
 
+export function isCoverLineProposal(proposal?: FactProposal | null): boolean {
+  if (!proposal || proposal.field !== QUALIFYING_INCOME_FIELD) return false;
+  return proposal.methodNote === COVER_LINE_METHOD || proposal.note === COVER_LINE_NOTE;
+}
+
+function hasBetterIncomeThanCover(draft: FoxIntakeDraft): boolean {
+  if (draft.pendingProposal?.field === QUALIFYING_INCOME_FIELD) return true;
+  if (existingMonthlyIncome(draft)) return true;
+  if (hasScheduleCCashflow(draft)) return true;
+  if (hasK1Ordinary(draft)) return true;
+  if (parseExtractMoney(factValue(draft, WAGE_MONTHLY_FIELD))) return true;
+  if (parseExtractMoney(factValue(draft, W2_MONTHLY_FIELD))) return true;
+  if (parseExtractMoney(factValue(draft, PAYSTUB_MONTHLY_FIELD))) return true;
+  if (parseExtractMoney(factValue(draft, "wages"))) return true;
+  return false;
+}
+
+export function shouldProposeCoverLineIncome(
+  draft: FoxIntakeDraft,
+  fields: Record<string, string>,
+  computed: QualifyingIncomeResult | null,
+): boolean {
+  if (!isCoverReturnFields(fields)) return false;
+  if (!computed || computed.methodNote !== COVER_LINE_METHOD) return false;
+  return !hasBetterIncomeThanCover(draft);
+}
+
 export function qualifyingIncomeProposal(computed: QualifyingIncomeResult): FactProposal {
+  const coverLine = computed.methodNote === COVER_LINE_METHOD;
   return {
     field: QUALIFYING_INCOME_FIELD,
     value: String(computed.monthly),
     label: computed.basis === "schedule_e" ? "rental cash flow" : "qualifying income",
     kind: "computed",
-    note: computed.basis === "schedule_e" ? SUGGESTED_RENTAL_CASH_FLOW_NOTE : SUGGESTED_INCOME_NOTE,
+    note: coverLine
+      ? COVER_LINE_NOTE
+      : computed.basis === "schedule_e"
+        ? SUGGESTED_RENTAL_CASH_FLOW_NOTE
+        : SUGGESTED_INCOME_NOTE,
     methodNote: computed.methodNote,
     caution: computed.caution,
     partialNotes: computed.partialNotes,

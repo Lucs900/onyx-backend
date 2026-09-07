@@ -68,7 +68,7 @@ W-2 $36,000 is wage. Combined names both methods. Do not fold W-2 into K-1.
 
 - 17-schedule-e-2025-sanchez-rental.pdf — 2 units, rents 42,000. Other property, not Clipper.
 - 18-schedule-f-2025-hale-farm.pdf — classify as farm. Thin.
-- 19-1040-cover-2024-jordan-hale.pdf / 20-1040-cover-2025-jordan-hale.pdf — pointers only.
+- 19-1040-cover-2024-jordan-hale.pdf / 20-1040-cover-2025-jordan-hale.pdf — Sch 1 / C thin line when that is all we have (19 → $7,333 · 20 → $9,000). No Sch E / Sch F / add-backs from the cover. See lib/income/INCOME-BIBLE.md.
 
 ## Form 1065 — Bay Street Partners LLC · Hale 40%
 

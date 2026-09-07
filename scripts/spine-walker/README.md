@@ -1,6 +1,6 @@
 # Spine walker
 
-Playwright walk of the thirteen locked preview cases. Not a product slice. Hard **Start over** each case. A handwritten walk is not PASS. A Manager PASS with a red walker is FAIL. Case 9 also runs `scripts/assert-harbor-acceptance-file.ts`. Cases 10–13 also run the Lukasz Harbor leftovers (`assert-contract-at-price`, `assert-house-credit-band`, `assert-w2-stub-employment-merge`, `assert-file-next-ask`) from the spine-walker script before Playwright. CI fail = red.
+Playwright walk of the sixteen locked preview cases. Not a product slice. Hard **Start over** each case. A handwritten walk is not PASS. A Manager PASS with a red walker is FAIL. Case 9 also runs `scripts/assert-harbor-acceptance-file.ts`. Cases 10–13 also run the Lukasz Harbor leftovers (`assert-contract-at-price`, `assert-house-credit-band`, `assert-w2-stub-employment-merge`, `assert-file-next-ask`) from the spine-walker script before Playwright. CI fail = red.
 
 ## Preview
 
@@ -69,5 +69,8 @@ Harbor extract POSTs fulfill leftover-proven local `classifyAndExtract` of the s
 11. Same combined path with 740–759. Credit on File. Next Fox line is not FICO.
 12. 03+07 before income type. No empty income quiz.
 13. Start over clears income, Docs, Note, Still useful.
+14. Self-employed at income. Composer-drop 20. $9,000 Cover line card. Still useful names Schedule C.
+15. 20 Use this, then 11 upgrades the same Hale Design row to $9,958. Confirm before write.
+16. 20 then 19 does not hang or steal the 2025 Form 1040 all-pages ask.
 
 FAIL if copy and chips disagree. FAIL if Structure and chat disagree. FAIL if a write did not kill the old number. FAIL if Credit is on File and Fox asks FICO.

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Spine walker — thirteen locked preview cases. Hard Start over each case.
+# Spine walker — sixteen locked preview cases. Hard Start over each case.
 # Case 9 harbor-both-cover-contract. Lukasz Harbor leftovers run before Playwright:
 # 09 at price + House-turn Credit, 03+07 before income, Start over wipe.
 # CI fail = red.
@@ -107,7 +107,7 @@ run_leftover() {
   (cd "$ROOT" && npx --yes tsx "scripts/${script}")
 }
 
-if leftover_wanted 9 || leftover_wanted 10 || leftover_wanted 11 || leftover_wanted 12 || leftover_wanted 13; then
+if leftover_wanted 9 || leftover_wanted 10 || leftover_wanted 11 || leftover_wanted 12 || leftover_wanted 13 || leftover_wanted 14 || leftover_wanted 15 || leftover_wanted 16; then
   if [[ ! -d "$ROOT/node_modules/next" ]]; then
     echo "spine-walker: npm install (harbor leftover)" >&2
     (cd "$ROOT" && npm install)
@@ -130,6 +130,9 @@ if leftover_wanted 12; then
 fi
 if leftover_wanted 12 || leftover_wanted 13; then
   run_leftover assert-file-next-ask.ts
+fi
+if leftover_wanted 14 || leftover_wanted 15 || leftover_wanted 16; then
+  run_leftover assert-se-cover-income.ts
 fi
 
 exec npx tsx walker.ts "$@"

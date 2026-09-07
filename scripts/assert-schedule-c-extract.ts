@@ -95,8 +95,11 @@ const cover = await classifyAndExtract(
   "application/pdf",
   deadVision,
 );
-assert.notEqual(cover.fields.schedule_c_net_profit, "88000");
-assert.ok(!cover.fields.schedule_c_net_profit);
+assert.equal(cover.fields.return_kind, "cover");
+assert.equal(cover.fields.schedule_c_net_profit, "88000");
+assert.equal(cover.fields.schedule_e_rents_received, undefined);
+assert.equal(cover.fields.depreciation, undefined);
+assert.equal(cover.fields.nonrecurring_other_income, undefined);
 
 const farm = await classifyAndExtract(
   load("18-schedule-f-2025-hale-farm.pdf"),

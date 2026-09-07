@@ -1,13 +1,15 @@
 /**
- * Spine walker — thirteen locked preview cases. Hard Start over each case
+ * Spine walker — sixteen locked preview cases. Hard Start over each case
  * on one preview session so Vercel SSO does not eat later gotos. Do not
  * reload or goto after the first desk — later navigations hit SSO.
  * Composer-drop extract fulfills leftover-proven local classifyAndExtract
  * so Harbor fixtures settle to Use this, not Upload again.
  * Assert only. Does not invent product behavior.
  * Case 9 is harbor-both-cover-contract. Combined 09-at-price + House-turn
- * Credit (cases 10–11) is the FICO gate. Lukasz Harbor leftovers run from
- * scripts/assert-spine-walker.sh before Playwright. CI fail = red.
+ * Credit (cases 10–11) is the FICO gate. Cases 14–16 are SE cover income
+ * (20 → $9,000 · 20 then 11 upgrades · 20 then 19 does not hang).
+ * Lukasz Harbor leftovers run from scripts/assert-spine-walker.sh before
+ * Playwright. CI fail = red.
  *
  * Run: bash scripts/assert-spine-walker.sh
  */
@@ -1225,6 +1227,131 @@ async function case12(page: Page) {
   }
 }
 
+async function walkSeToIncomeDocs(page: Page) {
+  await walkToQuotedIncome(page, "94123", true);
+  await waitAsk(page, /How is income earned/i);
+  await clickChip(page, "Self-employed");
+  await waitCurrent(
+    page,
+    (text, chips) =>
+      /How long have you had|years in business|other monthly debts|government ID|1040|Schedule C|I’m suggesting/i.test(
+        text,
+      ) || hasChip(chips, "Skip") || hasChip(chips, "Use this"),
+    20_000,
+  );
+  if (/How long have you had|years in business/i.test(await currentText(page))) {
+    await typeSend(page, "2");
+  }
+  await waitCurrent(
+    page,
+    (text, chips) =>
+      /other monthly debts|government ID|1040|Schedule C|I’m suggesting/i.test(text) ||
+      hasChip(chips, "Skip") ||
+      hasChip(chips, "Use this"),
+    20_000,
+  );
+  if (/other monthly debts/i.test(await currentText(page))) {
+    await clickChip(page, "Skip");
+    await waitCurrent(page, (text) => !/other monthly debts/i.test(text), 15_000);
+  }
+}
+
+async function dropSeCoverOrC(page: Page, name: string, kind: "cover-card" | "upgrade" | "second-cover") {
+  const before = await currentText(page);
+  await composerDrop(page, name);
+  const started = Date.now();
+  while (Date.now() - started < 90_000) {
+    const text = await currentText(page);
+    const chips = await currentChips(page);
+    if (/could not read|unreadable/i.test(text)) {
+      throw new BeatFail(`${name} unread — ${text}`);
+    }
+    if (await skipHarborSideAsk(page)) {
+      await page.waitForTimeout(200);
+      continue;
+    }
+    if (kind === "cover-card") {
+      if (/I’m suggesting \$9,000 a month/i.test(text) && /Cover line/i.test(text) && hasChip(chips, "Use this")) {
+        return;
+      }
+    }
+    if (kind === "upgrade") {
+      if (/\$9,958/i.test(text) && hasChip(chips, "Use this")) {
+        return;
+      }
+    }
+    if (kind === "second-cover") {
+      if (/I’m suggesting \$9,000 a month/i.test(text) && hasChip(chips, "Use this")) {
+        return;
+      }
+      if (/2024 Schedule C/i.test(text) && !/I need the 2025 return — Form 1040, all pages/i.test(text)) {
+        return;
+      }
+      if (hasChip(chips, "Looks right") && !/I need the 2025 return — Form 1040, all pages/i.test(text)) {
+        return;
+      }
+      if (text !== before && /I’m suggesting/i.test(text) && hasChip(chips, "Use this")) {
+        return;
+      }
+    }
+    await page.waitForTimeout(250);
+  }
+  throw new BeatFail(`${name} ${kind} never settled — ${await currentText(page)} | ${(await currentChips(page)).join(" · ")}`);
+}
+
+async function case14(page: Page) {
+  await hardStartOver(page);
+  await walkSeToIncomeDocs(page);
+  await dropSeCoverOrC(page, "20-1040-cover-2025-jordan-hale.pdf", "cover-card");
+  const text = await currentText(page);
+  const chips = await currentChips(page);
+  if (!/I’m suggesting \$9,000 a month/i.test(text) || !/Cover line/i.test(text)) {
+    throw new BeatFail(`20 did not paint $9,000 Cover line card — ${text}`);
+  }
+  if (!hasChip(chips, "Use this")) {
+    throw new BeatFail(`20 card missing Use this — ${text} | ${chips.join(" · ")}`);
+  }
+  const useful = await stillUsefulLabels(page);
+  if (!useful.some((label) => /Schedule C/i.test(label))) {
+    throw new BeatFail(`20 Still useful missing Schedule C — ${useful.join(" · ") || "(none)"}`);
+  }
+}
+
+async function case15(page: Page) {
+  await hardStartOver(page);
+  await walkSeToIncomeDocs(page);
+  await dropSeCoverOrC(page, "20-1040-cover-2025-jordan-hale.pdf", "cover-card");
+  await clickChip(page, "Use this");
+  await waitCurrent(page, (next) => !/I’m suggesting \$9,000 a month/i.test(next) || /Schedule C/i.test(next), 20_000);
+  await dropSeCoverOrC(page, "11-1040-schedule-c-2025-hale-design.pdf", "upgrade");
+  const text = await currentText(page);
+  if (!/\$9,958/i.test(text) || !hasChip(await currentChips(page), "Use this")) {
+    throw new BeatFail(`20 then 11 did not upgrade — ${text} | ${(await currentChips(page)).join(" · ")}`);
+  }
+}
+
+async function case16(page: Page) {
+  await hardStartOver(page);
+  await walkSeToIncomeDocs(page);
+  await dropSeCoverOrC(page, "20-1040-cover-2025-jordan-hale.pdf", "cover-card");
+  await dropSeCoverOrC(page, "19-1040-cover-2024-jordan-hale.pdf", "second-cover");
+  const text = await currentText(page);
+  const chips = await currentChips(page);
+  if (!text.trim()) {
+    throw new BeatFail("20 then 19 hung — empty Fox line");
+  }
+  if (/I need the 2025 return — Form 1040, all pages/i.test(text)) {
+    throw new BeatFail(`20 then 19 stole the 2025 ask — ${text}`);
+  }
+  const moving =
+    hasChip(chips, "Use this") ||
+    hasChip(chips, "Looks right") ||
+    /2024 Schedule C|I’m suggesting \$9,000 a month/i.test(text);
+  if (!moving) {
+    throw new BeatFail(`20 then 19 did not hang-or-move — ${text} | ${chips.join(" · ")}`);
+  }
+}
+
 async function case13(page: Page) {
   await hardStartOver(page);
   await walkToQuotedIncome(page, "94123", true);
@@ -1276,6 +1403,9 @@ const CASES: { n: number; title: string; run: (page: Page) => Promise<void> }[] 
   { n: 11, title: "09 at price then House-turn 740–759 writes Credit, next is not FICO", run: case11 },
   { n: 12, title: "03+07 before income type → no empty income quiz", run: case12 },
   { n: 13, title: "Start over clears income, Docs, Note, Still useful", run: case13 },
+  { n: 14, title: "20 → $9,000 cover-line card", run: case14 },
+  { n: 15, title: "20 then 11 upgrades Hale Design to 1084", run: case15 },
+  { n: 16, title: "20 then 19 does not hang", run: case16 },
 ];
 
 async function openBrowser() {
@@ -1311,6 +1441,7 @@ function extractHint(name: string): ExtractClass | null {
   if (/paystub/i.test(name)) return "paystub";
   if (/bank-statement|statement/i.test(name)) return "bank_statement";
   if (/ca-id|government-id|\bid-/i.test(name)) return "government_id";
+  if (/1040-cover|schedule-c|schedule.?c/i.test(name)) return "tax_return";
   return null;
 }
 

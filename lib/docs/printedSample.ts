@@ -598,6 +598,15 @@ export function looksLike1040CoverWorksheet(lines: string[]) {
   return /COVER PAGE|SCHEDULES ARE SEPARATE|POINTERS, NOT THE CASH-FLOW|A 1040 COVER IS NOT ENOUGH/.test(blob);
 }
 
+/** Sch 1 / C business income only. Never Sch 1 / E, Sch 1 / F, or add-backs. */
+export function coverSch1CNetFromPrintedLines(lines: string[]): string {
+  const blob = flattenPrintedLines(lines).join("\n").replace(/\u00a0/g, " ");
+  const match = blob.match(
+    /sch(?:edule)?\s*1\s*\/\s*c\b[\s\S]{0,160}?business income[\s\S]{0,80}?([\d,]{1,3}(?:,\d{3})+(?:\.\d+)?)/i,
+  );
+  return match?.[1] ? moneyDigits(match[1]) : "";
+}
+
 export function coverSchedulesFromPrintedLines(lines: string[]): string[] {
   const blob = flattenPrintedLines(lines).join("\n").replace(/\u00a0/g, " ");
   const named: string[] = [];
@@ -1319,11 +1328,21 @@ export function fieldsFromPrintedLines(
       if (named.length) put("cover_schedules", named.join(";"));
       const k1Names = scheduleEPart2NamesFromPrintedText(flattenPrintedLines(lines).join("\n"));
       if (k1Names) put("cover_k1_names", k1Names);
-      delete fields.schedule_c_net_profit;
+      const coverC = coverSch1CNetFromPrintedLines(lines);
+      if (coverC) putMoney("schedule_c_net_profit", coverC);
       delete fields.k1_ordinary_income;
+      delete fields.k1_distributions;
       delete fields.schedule_e_rents_received;
       delete fields.schedule_e_cash_expenses;
       delete fields.entity_ordinary_income;
+      delete fields.entity_taxable_income;
+      delete fields.depreciation;
+      delete fields.depletion;
+      delete fields.business_use_of_home;
+      delete fields.nonrecurring_other_income;
+      delete fields.amortization;
+      delete fields.casualty_loss;
+      delete fields.mileage_depreciation;
       delete fields.wages;
       delete fields.property_address;
       delete fields.present_address;
@@ -1577,24 +1596,32 @@ function sellerCreditFromContractLines(lines: string[]): string {
   return "";
 }
 
-/** 1040 cover pointers only. Invents no income. Filbert is residence, not subject. */
+/** 1040 cover. Thin Sch 1 / C only. No Sch E, Sch F, K-1, or invented add-backs. Filbert is residence. */
 export function loudCoverFromPrintedLines(lines: string[]): PrintedSample | null {
   if (!looksLike1040CoverWorksheet(lines)) return null;
   const fields = fieldsFromPrintedLines("tax_return", lines);
-  delete fields.schedule_c_net_profit;
   delete fields.k1_ordinary_income;
   delete fields.k1_distributions;
   delete fields.schedule_e_rents_received;
   delete fields.schedule_e_cash_expenses;
   delete fields.entity_ordinary_income;
   delete fields.entity_taxable_income;
+  delete fields.depreciation;
+  delete fields.depletion;
+  delete fields.business_use_of_home;
+  delete fields.nonrecurring_other_income;
+  delete fields.amortization;
+  delete fields.casualty_loss;
+  delete fields.mileage_depreciation;
   delete fields.wages;
   delete fields.medicare_wages;
   delete fields.box5;
   delete fields.property_address;
   delete fields.present_address;
   delete fields.subjectAddress;
-  if (!fields.tax_year && !fields.cover_schedules) return null;
+  const coverC = coverSch1CNetFromPrintedLines(lines);
+  if (coverC) fields.schedule_c_net_profit = coverC;
+  if (!fields.tax_year && !fields.cover_schedules && !fields.schedule_c_net_profit) return null;
   return {
     extractClass: "tax_return",
     confidence: 0.94,

@@ -15,6 +15,7 @@ on:
       - "scripts/assert-house-credit-band.ts"
       - "scripts/assert-file-next-ask.ts"
       - "scripts/assert-w2-stub-employment-merge.ts"
+      - "scripts/assert-se-cover-income.ts"
       - ".github/workflows/spine-walker.yml"
       - "sample-docs/**"
   pull_request:
@@ -31,6 +32,7 @@ on:
       - "scripts/assert-house-credit-band.ts"
       - "scripts/assert-file-next-ask.ts"
       - "scripts/assert-w2-stub-employment-merge.ts"
+      - "scripts/assert-se-cover-income.ts"
       - ".github/workflows/spine-walker.yml"
       - "sample-docs/**"
 concurrency:

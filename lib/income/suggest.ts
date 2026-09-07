@@ -3,6 +3,11 @@
  * Fox calls this. No 1084 UI. Borrower never sees a form.
  * W-2 is part of this module — do not keep a parallel wage engine on Fox.
  *
+ * Doctrine: lib/income/INCOME-BIBLE.md
+ * 1040 cover may write thin Sch 1 / C / 12 when that is all we have.
+ * Cover never adds Sch E, Sch F, or invented add-backs.
+ * A real Schedule C upgrades the same row to the 1084 method.
+ *
  * Schedule C monthly = (net + depreciation + depletion + home office − nonrecurring
  *            + any extracted add-backs) / 12
  */
@@ -10,6 +15,8 @@
 import { conventionalIncomeRules } from "@/lib/guidelines/conventional";
 
 export const SUGGESTED_INCOME_NOTE = "Suggested qualifying income · not underwritten";
+export const COVER_LINE_METHOD = "Cover line";
+export const COVER_LINE_NOTE = "Cover line · Suggested · not underwritten";
 export const W2_BOX1_MONTHLY_NOTE = "Box 1 monthly";
 export const BOTH_MONTHLY_SKIP_NOTE = "Using W-2 Box 1 until we know why they differ.";
 export const BOTH_MONTHLY_RAISE_NOTE = "Using the current paystub. Last year’s W-2 is lower.";

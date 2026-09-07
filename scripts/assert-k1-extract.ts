@@ -148,8 +148,10 @@ async function main() {
     "application/pdf",
     deadVision,
   );
-  assert.ok(!cover.fields.schedule_c_net_profit);
+  assert.equal(cover.fields.return_kind, "cover");
+  assert.equal(cover.fields.schedule_c_net_profit, "88000");
   assert.ok(!cover.fields.k1_ordinary_income);
+  assert.ok(!cover.fields.schedule_e_rents_received);
 
   const ten = await classifyAndExtract(
     load("10-1040-schedule-c-2024-hale-design.pdf"),
@@ -202,8 +204,10 @@ async function main() {
     confidence: cover.confidence,
     fields: cover.fields,
   });
-  assert.notEqual(coverWrite.draft.pendingProposal?.field, "qualifying_income");
-  assert.ok(!coverWrite.draft.facts?.qualifying_income);
+  assert.equal(coverWrite.draft.pendingProposal?.field, "qualifying_income");
+  assert.equal(coverWrite.draft.pendingProposal?.value, "7333");
+  assert.match(coverWrite.draft.pendingProposal?.note ?? "", /Cover line/);
+  assert.ok(!coverWrite.draft.facts?.qualifying_income?.confirmed);
 
   const wageOnFile = applyExtractedFields(
     {
@@ -411,7 +415,7 @@ async function main() {
   assert.notEqual(twentyAfterC.draft.pendingProposal?.field, "qualifying_income");
   assert.equal(twentyAfterC.draft.facts?.qualifying_income?.value, lockedC);
 
-  console.log("assert-k1-extract: 13=$3,333 · 15=$4,000 · cover writes nothing · C does not block later money");
+  console.log("assert-k1-extract: 13=$3,333 · 15=$4,000 · cover thin Sch 1 / C · C does not block later money");
 }
 
 main().catch((error) => {

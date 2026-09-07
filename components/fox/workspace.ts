@@ -239,6 +239,8 @@ import {
   isEntityCashFlowProposal,
   isSameBusinessWageEntityProposal,
   isScheduleECashFlowProposal,
+  isCoverLineProposal,
+  COVER_LINE_NOTE,
   K1_MONTHLY_FIELD,
   qualifyingIncomeDisplay,
   raiseYtdFarAskCopy,
@@ -2201,6 +2203,13 @@ function liveProposalAsk(
     };
   }
   if (proposal.field === QUALIFYING_INCOME_FIELD) {
+    if (isCoverLineProposal(proposal)) {
+      const shown = displayFactValue(proposal.field, proposal.value);
+      return {
+        text: `I’m suggesting ${shown} a month. ${COVER_LINE_NOTE}. Use this?`,
+        actions: incomeConfirmActions(),
+      };
+    }
     if (isSameBusinessWageEntityProposal(proposal)) return sameBusinessReactionAsk(draft, proposal);
     if (combinedParts(proposal) || proposal.methodNote?.startsWith("combined ")) {
       return combinedReactionAsk(draft, proposal);

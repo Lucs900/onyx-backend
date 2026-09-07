@@ -39,6 +39,7 @@ import {
   employersClose,
   wageExtractFailedRead,
   monthlyQualifyingFromExtract,
+  shouldProposeCoverLineIncome,
   normalizeReturnKind,
   parseExtractMoney,
   readStubAmount,
@@ -1541,7 +1542,7 @@ export function applyExtractedFields(
         conflict = next.pendingConflict ?? conflict;
       }
     }
-  } else if (!coverReturn) {
+  } else if (!coverReturn || shouldProposeCoverLineIncome(draft, fields, computed)) {
     next = applyQualifyingIncomeFromExtract(
       { ...next, pendingConflict: conflict },
       extractClass,
@@ -2114,6 +2115,7 @@ export function shouldSpeakCoverMap(draft: FoxIntakeDraft) {
   if (!lastExtractIsCover(draft)) return false;
   if (nextDocInvite(draft) === "prior_year_return") return false;
   if (draft.priorYearSkipped) return false;
+  if ((draft.skippedClasses ?? []).includes("tax_return")) return false;
   if (extractedCoverCount(draft) > 1) return false;
   const year = lastCoverYear(draft);
   if (year && extractedCoverCountForYear(draft, year) > 1) return false;
@@ -2449,13 +2451,19 @@ function federalReturnYearsDone(draft: FoxIntakeDraft) {
 }
 
 export function nextCoverPageInviteCopy(draft: FoxIntakeDraft) {
-  if (lastExtractIsCover(draft) && (draft.priorYearSkipped || extractedCoverCount(draft) > 1)) {
+  if (lastExtractIsCover(draft) && draft.priorYearSkipped) {
     return "";
   }
-  const recent = mostRecentFederalYear(draft);
-  const listed = (form: string) => `The 1040 lists a ${form}. I still need that ${recent} ${form}.`;
+  if ((draft.skippedClasses ?? []).includes("tax_return") && lastExtractIsCover(draft)) {
+    return "";
+  }
+  const year = lastCoverYear(draft) || mostRecentFederalYear(draft);
+  const listed = (form: string) => `The 1040 lists a ${form}. I still need that ${year} ${form}.`;
   const ids = coverSchedulesOnFile(draft);
-  if (ids.includes("schedule_c") && !hasScheduleCOnFile(draft)) {
+  if (ids.includes("schedule_c") && !hasScheduleCDocForYear(draft, year) && !hasScheduleCOnFile(draft)) {
+    return listed("Schedule C");
+  }
+  if (ids.includes("schedule_c") && lastExtractIsCover(draft) && !hasScheduleCDocForYear(draft, year)) {
     return listed("Schedule C");
   }
   if (!federalReturnYearsDone(draft)) return "";
@@ -3705,6 +3713,19 @@ export function isPurchaseContractConfirmPending(draft: FoxIntakeDraft) {
 }
 
 export function skipCurrentInvite(draft: FoxIntakeDraft): FoxIntakeDraft {
+  if (nextCoverPageInviteCopy(draft) && lastExtractIsCover(draft) && !draft.pendingProposal) {
+    const skipped = Array.from(new Set([...(draft.skippedClasses ?? []), "tax_return" as ExtractClass]));
+    const next = {
+      ...draft,
+      skippedClasses: skipped,
+      docsOpen: false,
+      correcting: null,
+    };
+    return {
+      ...next,
+      documentsSkipped: draft.documents.length === 0 && !hasRemainingPrimaryInvites(next),
+    };
+  }
   if (isPurchaseContractConfirmPending(draft)) {
     const skipped = Array.from(
       new Set([...(draft.skippedClasses ?? []), "purchase_contract" as ExtractClass]),
