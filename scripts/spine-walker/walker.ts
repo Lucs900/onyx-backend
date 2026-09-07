@@ -1004,11 +1004,17 @@ async function case9(page: Page) {
   await assertHarborFileAfterContract(page);
   const untilLooks = Date.now();
   while (Date.now() - untilLooks < 20_000) {
+    const text = await currentText(page);
     const chips = await currentChips(page);
     if (hasChip(chips, "Looks right") || hasChip(chips, "Use this") || hasChip(chips, "Use document")) break;
     const keep = chips.find((chip) => /^Keep /i.test(chip) && /loan/i.test(chip));
     if (keep) {
       await clickChip(page, keep);
+      await settleHarborSideAsks(page);
+      continue;
+    }
+    if (/I need the \d{4} return — Form 1040, all pages/i.test(text) && hasChip(chips, "Skip")) {
+      await clickChip(page, "Skip");
       await settleHarborSideAsks(page);
       continue;
     }
