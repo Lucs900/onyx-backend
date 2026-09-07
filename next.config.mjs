@@ -1,13 +1,17 @@
+const canvasTrace = [
+  "./node_modules/@napi-rs/canvas/**/*",
+  "./node_modules/@napi-rs/canvas-linux-x64-gnu/**/*",
+  "./node_modules/pdfjs-dist/**/*",
+];
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  serverExternalPackages: ["@napi-rs/canvas", "pdfjs-dist"],
   experimental: {
     serverComponentsExternalPackages: ["@napi-rs/canvas", "pdfjs-dist"],
     outputFileTracingIncludes: {
-      "/api/docs/extract": [
-        "./node_modules/@napi-rs/canvas/**/*",
-        "./node_modules/@napi-rs/canvas-linux-x64-gnu/**/*",
-        "./node_modules/pdfjs-dist/**/*",
-      ],
+      "/api/docs/extract": canvasTrace,
+      "/app/api/docs/extract/route": canvasTrace,
     },
   },
   async redirects() {

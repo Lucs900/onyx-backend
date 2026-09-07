@@ -170,8 +170,11 @@ function piecesToLines(pieces: { text: string; breakAfter?: boolean }[]) {
 }
 
 function meaningfulText(lines: string[]) {
-  const blob = lines.join("").replace(/[^A-Za-z0-9]/g, "");
-  return blob.length >= 6;
+  const printable = lines.join(" ").replace(/[^\x09\x0A\x0D\x20-\x7E]/g, " ");
+  const words = printable.match(/[A-Za-z]{3,}/g) ?? [];
+  const alnum = printable.replace(/[^A-Za-z0-9]/g, "");
+  // Type3 junk can still count letters. Grok needs the drawn page, not that noise.
+  return words.length >= 4 && alnum.length >= 12;
 }
 
 function dictHas(dict: string, key: string) {
@@ -463,25 +466,41 @@ function looksLikePagePhoto(image: PdfEmbeddedImage) {
   return image.bytes.length >= 40_000;
 }
 
+async function resolvePdfWorkerSrc(): Promise<string | null> {
+  const { createRequire } = await import("node:module");
+  const { existsSync } = await import("node:fs");
+  const { join } = await import("node:path");
+  const { pathToFileURL } = await import("node:url");
+  try {
+    const require = createRequire(import.meta.url);
+    return pathToFileURL(require.resolve("pdfjs-dist/legacy/build/pdf.worker.mjs")).href;
+  } catch {
+    const fallbacks = [
+      join(process.cwd(), "node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs"),
+      join(process.cwd(), "node_modules/pdfjs-dist/build/pdf.worker.mjs"),
+    ];
+    for (const path of fallbacks) {
+      if (existsSync(path)) return pathToFileURL(path).href;
+    }
+    return null;
+  }
+}
+
 async function renderWithPdfJs(bytes: Uint8Array): Promise<PdfEmbeddedImage | null> {
   try {
     const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
-    const { createRequire } = await import("node:module");
-    const { pathToFileURL } = await import("node:url");
-    try {
-      const require = createRequire(import.meta.url);
-      pdfjs.GlobalWorkerOptions.workerSrc = pathToFileURL(
-        require.resolve("pdfjs-dist/legacy/build/pdf.worker.mjs"),
-      ).href;
-    } catch {
-      pdfjs.GlobalWorkerOptions.workerSrc =
-        "https://unpkg.com/pdfjs-dist@4.10.38/legacy/build/pdf.worker.min.mjs";
+    const workerSrc = await resolvePdfWorkerSrc();
+    if (!workerSrc) {
+      console.error("[docs/pdf] page render failed: pdf.worker.mjs missing");
+      return null;
     }
+    pdfjs.GlobalWorkerOptions.workerSrc = workerSrc;
     const doc = await pdfjs.getDocument({
       data: new Uint8Array(bytes),
       disableWorker: true,
       isEvalSupported: false,
       useSystemFonts: true,
+      useWorkerFetch: false,
     } as Parameters<typeof pdfjs.getDocument>[0]).promise;
     const page = await doc.getPage(1);
     const viewport = page.getViewport({ scale: 1.5 });
@@ -490,6 +509,7 @@ async function renderWithPdfJs(bytes: Uint8Array): Promise<PdfEmbeddedImage | nu
     await page.render({ canvasContext, viewport } as unknown as Parameters<typeof page.render>[0]).promise;
     const png = canvas.toBuffer("image/png");
     if (png.length < 80) return null;
+    console.info("[docs/pdf] page render ok", png.length);
     return { bytes: png, mediaType: "image/png" };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

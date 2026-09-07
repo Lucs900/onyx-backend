@@ -493,9 +493,12 @@ async function pageImageForGrok(
   }
   if (isPdf(bytes) || mediaType === "application/pdf") {
     const page = await renderPdfFirstPage(bytes);
+    if (page && page.bytes.length >= 40_000) return page;
+    const embedded = readPdfEmbeddedImages(bytes).filter((image) => image.bytes.length >= 40_000);
+    if (embedded[0]) {
+      return embedded.reduce((best, image) => (image.bytes.length > best.bytes.length ? image : best));
+    }
     if (page) return page;
-    const embedded = readPdfEmbeddedImages(bytes);
-    if (embedded[0]) return embedded[0];
   }
   return null;
 }

@@ -1,4 +1,8 @@
+import { createCanvas } from "@napi-rs/canvas";
 import { NextResponse } from "next/server";
+
+// Static import so Vercel traces the native canvas binary onto the extract lambda.
+void createCanvas;
 import { slotForExtractClass } from "@/components/fox/fileWrite";
 import { FAILED_READ_NOTE, NO_TEXT_LAYER_NOTE, RECEIVED_NOTE, mediaTypeOf } from "@/lib/docs/accept";
 import { classifyAndExtract, extractHintOf, grokExtractAdapter } from "@/lib/docs/extract";
