@@ -1639,7 +1639,6 @@ export function AlwaysOnFox({
       }
       return freezeUsedFoxTurns([...next, foxAskMessage(fox)]);
     });
-    });
   };
 
   const skipPropertyAddressFromComposer = (spoken: string) => {
