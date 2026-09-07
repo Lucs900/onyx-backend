@@ -1211,9 +1211,12 @@ async function newPreviewContext(browser: Browser): Promise<BrowserContext> {
   });
   if (Object.keys(headers).length) {
     await context.route("**/*", async (route) => {
+      const reqHeaders = route.request().headers();
+      delete reqHeaders["content-length"];
+      delete reqHeaders["Content-Length"];
       await route.continue({
         headers: {
-          ...route.request().headers(),
+          ...reqHeaders,
           ...headers,
         },
       });
