@@ -79,6 +79,8 @@ import {
   leftoverSkipOnReceivedLines,
   leftoverUseThisOnOlderTurns,
   liveSkipChipRows,
+  sealStoredFoxThread,
+  splitLeftoverOfferWithLaterFollowUp,
   withoutDuplicateHistoryInvite,
   withoutDuplicateReceivedLine,
   withoutDuplicateTranscriptAsk,
@@ -801,10 +803,11 @@ async function main() {
   assert.notEqual(nextDocInvite(alamedaAfterId), "bank_statement");
   const alamedaReturnAsk = nextFoxAsk(alamedaAfterId);
   assert.equal(alamedaReturnAsk.text, LAST_YEAR_FEDERAL_RETURN_ASK);
-  assert.match(alamedaReturnAsk.text, /other income/);
-  assert.match(alamedaReturnAsk.text, /other property/);
-  assert.match(alamedaReturnAsk.text, /household size/);
-  assert.doesNotMatch(alamedaReturnAsk.text, /declaration|Form 1040|dependent names|named dependents/i);
+  assert.equal(alamedaReturnAsk.text, "Last year’s Form 1040.");
+  assert.doesNotMatch(
+    alamedaReturnAsk.text,
+    /other income|other property|household size|declaration|dependent names|named dependents/i,
+  );
   assert.doesNotMatch(alamedaReturnAsk.text, /two recent statements|bank statement/i);
   assert.deepEqual(
     (alamedaReturnAsk.actions ?? []).map((item) => item.label),
@@ -826,7 +829,7 @@ async function main() {
     (item) => item.label,
   );
   assert.ok(
-    usefulAfterReturnSkip.some((label) => /return/i.test(label)),
+    usefulAfterReturnSkip.some((label) => /return|Form 1040/i.test(label)),
     `Still useful keeps the return after Skip — ${usefulAfterReturnSkip.join(" · ")}`,
   );
   assert.ok(
@@ -1039,36 +1042,43 @@ async function main() {
     1,
   );
   const returnAskLine = LAST_YEAR_FEDERAL_RETURN_ASK;
+  const oldReturnAskLine =
+    "Last year’s federal return. One file can show other income, other property, and household size.";
+  const lastYearAsk = (text: string) => /Last year.?s (?:federal return|Form 1040)/i.test(text);
   const returnSkipRow = {
     id: "t-return",
     role: "fox" as const,
     text: returnAskLine,
     actions: [receivedSkip, receivedSkip, receivedSkip, receivedSkip, receivedSkip],
   };
-  const dirtyReturn = freezeUsedFoxTurns([
+  const dirtyReturnStored: FoxMessage[] = [
+    { ...returnSkipRow, id: "ret-old", text: oldReturnAskLine },
     { ...returnSkipRow, id: "ret-1" },
     { ...returnSkipRow, id: "ret-2" },
     { ...returnSkipRow, id: "ret-3" },
-    { ...returnSkipRow, id: "ret-4" },
-    { ...returnSkipRow, id: "ret-5" },
     { id: "received-2", role: "system", text: receivedLine },
     { id: "t-live", role: "fox", ...transcriptBlock },
     { ...returnSkipRow, id: "ret-after" },
-  ]);
+  ];
+  assert.ok(
+    leftoverSkipOnAskText(dirtyReturnStored, combesStamped, lastYearAsk) >= 3,
+    "stored leftover Skips on last-year return are visible before seal",
+  );
+  const dirtyReturn = sealStoredFoxThread(dirtyReturnStored);
   assert.equal(
-    dirtyReturn.filter((item) => item.text === returnAskLine).length,
+    dirtyReturn.filter((item) => lastYearAsk(item.text ?? "")).length,
     1,
     "one last-year return offer — reprints die",
   );
   assert.equal(
-    dirtyReturn.find((item) => item.text === returnAskLine)?.actions,
+    dirtyReturn.find((item) => lastYearAsk(item.text ?? ""))?.actions,
     undefined,
-    "Last year’s federal return is history text",
+    "named-paper last-year line is history text",
   );
   assert.equal(
-    leftoverSkipOnAskText(dirtyReturn, combesStamped, (text) => /Last year.?s federal return/i.test(text)),
+    leftoverSkipOnAskText(dirtyReturn, combesStamped, lastYearAsk),
     0,
-    "five leftover Skips on last-year return die",
+    "leftover Skips on last-year return die in stored actions",
   );
   assert.equal(leftoverSkipOnOlderTurns(dirtyReturn, combesStamped), 0);
   assert.equal(liveSkipChipRows(dirtyReturn, combesStamped), 1, "one chip row on the last Fox line");
@@ -1102,9 +1112,53 @@ async function main() {
     { id: "ret-again", role: "fox", text: returnAskLine, actions: [receivedSkip] },
   ]);
   assert.equal(
-    leftoverSkipOnAskText(afterSecondSkip, skipOnce, (text) => /Last year.?s federal return/i.test(text)),
+    leftoverSkipOnAskText(afterSecondSkip, skipOnce, lastYearAsk),
     0,
     "second Skip adds no chip on last-year return",
+  );
+  const stuckOfferFollowUp: FoxMessage[] = [
+    {
+      id: "ret-follow",
+      role: "fox",
+      text: oldReturnAskLine,
+      followUp: combesAskLine,
+      actions: [receivedSkip, receivedSkip, receivedSkip],
+    },
+  ];
+  assert.ok(
+    leftoverSkipOnAskText(stuckOfferFollowUp, combesStamped, lastYearAsk) >= 3,
+    "Skip stack on last-year offer+followUp is stored leftover",
+  );
+  const splitOffer = splitLeftoverOfferWithLaterFollowUp(stuckOfferFollowUp);
+  assert.equal(splitOffer[0]?.actions, undefined, "offer line loses chips at write time");
+  assert.equal(splitOffer[0]?.followUp, undefined);
+  assert.equal(splitOffer[1]?.text, combesAskLine);
+  const sealedOffer = sealStoredFoxThread(stuckOfferFollowUp);
+  assert.equal(
+    leftoverSkipOnAskText(sealedOffer, combesStamped, lastYearAsk),
+    0,
+    "Last year’s Form 1040 has zero Skip chips once a later Fox line is live",
+  );
+  assert.equal(sealedOffer.find((item) => lastYearAsk(item.text ?? ""))?.actions, undefined);
+  assert.equal(liveSkipChipRows(sealedOffer, combesStamped), 1, "only the last line has one Skip");
+  assert.equal(
+    (sealedOffer.find((item) => item.text === combesAskLine)?.actions ?? []).filter(
+      (action) => action.label === "Skip",
+    ).length,
+    1,
+  );
+  const reappendAfterTranscript = sealStoredFoxThread([
+    { ...returnSkipRow, id: "ret-before", actions: [receivedSkip, receivedSkip, receivedSkip] },
+    { id: "t-live-2", role: "fox", ...transcriptBlock },
+    { ...returnSkipRow, id: "ret-reappend", actions: [receivedSkip, receivedSkip, receivedSkip] },
+  ]);
+  assert.equal(reappendAfterTranscript.find((item) => lastYearAsk(item.text ?? ""))?.actions, undefined);
+  assert.equal(leftoverSkipOnAskText(reappendAfterTranscript, combesStamped, lastYearAsk), 0);
+  assert.equal(
+    (reappendAfterTranscript.find((item) => item.text === "Tax return transcript · 2023")?.actions ?? []).filter(
+      (action) => action.label === "Skip",
+    ).length,
+    1,
   );
   assert.equal(docInviteBlocksLooksRight(combesProposed.draft), true);
   assert.equal(canLooksRight(combesProposed.draft), false);

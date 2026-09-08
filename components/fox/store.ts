@@ -232,6 +232,7 @@ import {
   keepPendingLiveCoupon,
   normalizeLiveQuoteRows,
   normalizePendingLiveCoupon,
+  sealStoredFoxThread,
 } from "./liveCoupon";
 
 function numberOrUndefined(value: unknown): number | undefined {
@@ -1110,7 +1111,9 @@ function persistMessages(messages: FoxMessage[]) {
 }
 
 function persistMigratedMessages(messages: FoxMessage[]) {
-  foxMessages = dropResolvedAddressConfirmChips(migrateRestoredFoxMessages(messages), current);
+  foxMessages = sealStoredFoxThread(
+    dropResolvedAddressConfirmChips(migrateRestoredFoxMessages(messages), current),
+  );
   messagesHydrated = true;
   persistMessages(foxMessages);
   return foxMessages;

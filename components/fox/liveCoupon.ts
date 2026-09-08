@@ -379,7 +379,29 @@ export function isLastYearReturnAskText(text?: string | null) {
   const value = String(text ?? "").trim();
   if (!value) return false;
   if (value === LAST_YEAR_FEDERAL_RETURN_ASK) return true;
-  return /^Last year.?s federal return\b/i.test(value);
+  return /^Last year.?s (?:federal return|Form 1040)\b/i.test(value);
+}
+
+/** 1040 + schedule ask parked as follow-up after a transcript. */
+export function isTranscriptFollowUpAskText(text?: string | null) {
+  const value = String(text ?? "").trim();
+  if (!value) return false;
+  return /^I need the (?:(?:19|20)\d{2} )?Form 1040\b/i.test(value);
+}
+
+function isLaterFoxAfterLastYearOffer(message: FoxMessage) {
+  if (message.role !== "fox") return false;
+  if (isTranscriptSignalAskText(message.text) || isTranscriptFollowUpAskText(message.text)) {
+    return true;
+  }
+  return isTranscriptFollowUpAskText(message.followUp);
+}
+
+function historyOfferKey(text?: string | null) {
+  if (isLastYearReturnAskText(text)) return "offer:last-year-return";
+  if (isReceivedStatusLine(text)) return "offer:received";
+  if (!isHistoryDocInviteText(text)) return null;
+  return `offer:${String(text ?? "").trim()}`;
 }
 
 /** Older doc offers. History once a later Fox line exists. */
@@ -431,26 +453,93 @@ export function withoutLeftoverDocInvitesAfterTranscript(messages: FoxMessage[])
   });
 }
 
-/** One copy of each history offer. Later reprints are leftover paint. */
+/** One copy of each history offer. Old and new last-year copy are the same offer. */
 export function withoutDuplicateHistoryInvite(messages: FoxMessage[]): FoxMessage[] {
   const seen = new Set<string>();
   return messages.filter((message) => {
-    if (message.role !== "fox" || !isHistoryDocInviteText(message.text)) return true;
-    const key = message.text.trim();
+    if (message.role !== "fox") return true;
+    const key = historyOfferKey(message.text);
+    if (!key) return true;
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
   });
 }
 
-/** Skip chips still live on a named history/offer line. */
+/** Later Fox line stuck as followUp on a prior offer — offer becomes text, later line is last. */
+export function splitLeftoverOfferWithLaterFollowUp(messages: FoxMessage[]): FoxMessage[] {
+  const next: FoxMessage[] = [];
+  for (const message of messages) {
+    const later = String(message.followUp ?? "").trim();
+    if (
+      message.role !== "fox" ||
+      !isHistoryDocInviteText(message.text) ||
+      !(isTranscriptSignalAskText(later) || isTranscriptFollowUpAskText(later))
+    ) {
+      next.push(message);
+      continue;
+    }
+    next.push({ ...message, followUp: undefined, actions: undefined });
+    const actions = oneDocChipSet(message.actions);
+    next.push({
+      id: `${message.id}:later`,
+      role: "fox",
+      text: later,
+      followUp: undefined,
+      actions: actions.length ? actions : undefined,
+    });
+  }
+  return next;
+}
+
+/** Leftover last-year / history offer appended after a later Fox line — move it back. */
+export function promoteLaterFoxPastLeftoverOffers(messages: FoxMessage[]): FoxMessage[] {
+  const last = lastFoxIndex(messages);
+  if (last < 0) return messages;
+  const lastMsg = messages[last];
+  if (!lastMsg || lastMsg.role !== "fox" || !isHistoryDocInviteText(lastMsg.text)) {
+    return messages;
+  }
+  let later = -1;
+  for (let i = 0; i < last; i += 1) {
+    if (isLaterFoxAfterLastYearOffer(messages[i])) later = i;
+  }
+  if (later < 0) return messages;
+  const leftover = { ...lastMsg, actions: undefined };
+  const without = messages.filter((_, index) => index !== last);
+  return [...without.slice(0, later), leftover, ...without.slice(later)];
+}
+
+/** Persist primitive: prior offers store `actions: undefined` once a later Fox line is live. */
+export function sealStoredFoxThread(messages: FoxMessage[]): FoxMessage[] {
+  const frozen = freezeUsedFoxTurns(messages);
+  const last = lastFoxIndex(frozen);
+  return frozen.map((message, index) => {
+    if (message.role !== "fox") {
+      return message.actions?.length ? { ...message, actions: undefined } : message;
+    }
+    if (index === last) {
+      const actions = oneDocChipSet(message.actions);
+      if (actions.length === (message.actions?.length ?? 0)) return message;
+      return { ...message, actions: actions.length ? actions : undefined };
+    }
+    if (!isHistoryDocInviteText(message.text) || !message.actions?.length) return message;
+    return { ...message, actions: undefined };
+  });
+}
+
+/** Skip chips still live on a named history/offer line. Stored actions count — not only paint. */
 export function leftoverSkipOnAskText(
   messages: FoxMessage[],
   draft: FoxIntakeDraft,
   match: (text: string) => boolean,
 ) {
-  const thread = dropResolvedAddressConfirmChips(messages, draft);
   let count = 0;
+  for (const message of messages) {
+    if (!match(message.text ?? "")) continue;
+    count += leftoverChipCount(message.actions, "skip");
+  }
+  const thread = dropResolvedAddressConfirmChips(messages, draft);
   for (let i = 0; i < thread.length; i += 1) {
     const message = thread[i];
     if (!match(message.text ?? "")) continue;
@@ -586,7 +675,9 @@ export function inertUsedConfirmText(text?: string | null) {
 export function freezeUsedFoxTurns(messages: FoxMessage[]): FoxMessage[] {
   const sealed = withoutDuplicateHistoryInvite(
     withoutLeftoverDocInvitesAfterTranscript(
-      withoutDuplicateReceivedLine(messages).map(sealReceivedStatusLine),
+      withoutDuplicateReceivedLine(
+        promoteLaterFoxPastLeftoverOffers(splitLeftoverOfferWithLaterFollowUp(messages)),
+      ).map(sealReceivedStatusLine),
     ),
   );
   const current = lastFoxIndex(sealed);

@@ -49,8 +49,10 @@ import {
   withoutDuplicateTranscriptAsk,
   applyTranscriptSignalAsk,
   isHistoryDocInviteText,
+  isLastYearReturnAskText,
   isReceivedStatusLine,
   isTranscriptSignalAskText,
+  sealStoredFoxThread,
   stripLooksRightWhileUseThisOpen,
   dropLeftoverAmountAsksForOpenUseThis,
   shouldHoldDocInviteForOpenUseThis,
@@ -188,7 +190,6 @@ import {
   layer2AskActions,
   intakeIsCoverDrop,
   intakeIsIdDrop,
-  LAST_YEAR_FEDERAL_RETURN_ASK,
   isTranscriptOnFile,
   canSpeakDocStamp,
   docSpeakKeyFromName,
@@ -408,7 +409,7 @@ function applyFoxAsk(
   },
 ): FoxMessage[] {
   const last = lastFoxTurn(messages);
-  if (ask.text === LAST_YEAR_FEDERAL_RETURN_ASK && lastFoxIsUnread(messages)) {
+  if (isLastYearReturnAskText(ask.text) && lastFoxIsUnread(messages)) {
     return freezeUsedFoxTurns(messages);
   }
   if (isTranscriptSignalAskText(ask.text)) {
@@ -678,7 +679,7 @@ function FoxThread({
   onEdit?: (prompt: FoxPrompt, line?: string, messageId?: string) => void;
 }) {
   const [editOpenId, setEditOpenId] = useState<string | null>(null);
-  const thread = freezeUsedFoxTurns(
+  const thread = sealStoredFoxThread(
     dropStreetSuggestChips(
       dropAbandonedAddressConfirm(
         dropResolvedAddressConfirmChips(withoutDuplicateTranscriptAsk(messages), draft),
@@ -705,12 +706,7 @@ function FoxThread({
           !isReceivedStatusLine(message.text) &&
           !(
             isHistoryDocInviteText(message.text) &&
-            thread.some(
-              (item, itemIndex) =>
-                itemIndex > index &&
-                item.role === "fox" &&
-                isTranscriptSignalAskText(item.text),
-            )
+            thread.some((item, itemIndex) => itemIndex > index && item.role === "fox")
           );
         const tone = current ? " is-current" : " is-prior";
         const rawActions = current
@@ -961,7 +957,7 @@ export function AlwaysOnFox({
       })
     ) {
       return alignThreadEmployerName(
-        freezeUsedFoxTurns(
+        sealStoredFoxThread(
           dropStreetSuggestChips(
             dropAbandonedAddressConfirm(
               dropResolvedAddressConfirmChips(
@@ -979,7 +975,7 @@ export function AlwaysOnFox({
       );
     }
     const held = alignThreadEmployerName(
-      freezeUsedFoxTurns(
+      sealStoredFoxThread(
         dropStreetSuggestChips(
           dropAbandonedAddressConfirm(dropResolvedAddressConfirmChips(resolved, live), live),
         ),
@@ -1012,7 +1008,7 @@ export function AlwaysOnFox({
     if (!shouldResumeWorkspaceEntry(live, stored) || !stored.length) return;
     if (isIdExtractPath(live)) return;
     if (live.documents.some((doc) => doc.status === "reading")) return;
-    setMessages(dropResolvedAddressConfirmChips(stored, live));
+    setMessages(sealStoredFoxThread(dropResolvedAddressConfirmChips(stored, live)));
   }, [isStart, draft.motion, draft.updatedAt]);
 
   useEffect(() => {
@@ -1782,14 +1778,14 @@ export function AlwaysOnFox({
         ...held,
         { id: newId(), role: "client", text: clientText, edit, editLine },
       ];
-      if (!fox.text.trim() && !(fox.followUp ?? "").trim()) return freezeUsedFoxTurns(next);
+      if (!fox.text.trim() && !(fox.followUp ?? "").trim()) return sealStoredFoxThread(next);
       if (isYearsInBusinessAskText(fox.text)) {
         const withoutYears = next.filter(
           (item) => !(item.role === "fox" && isYearsInBusinessAskText(item.text)),
         );
-        return freezeUsedFoxTurns([...withoutYears, foxAskMessage(fox)]);
+        return applyFoxAsk(withoutYears, fox);
       }
-      return freezeUsedFoxTurns([...next, foxAskMessage(fox)]);
+      return applyFoxAsk(next, fox);
     });
   };
 
