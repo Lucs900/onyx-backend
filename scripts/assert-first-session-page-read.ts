@@ -129,7 +129,8 @@ export function mattCstcPaystubPath(): string | null {
 
 /** Same bytes Lukasz paperclipped. Do not invent a substitute stub. */
 export const ALAMEDA_STUB_SHA256 =
-  "4d09d5ffd8a85bfda32a94f8f5350ef5ae543e42a1fd9220197a8f8ecc1c2303";
+  "e1a59410473c0a6d78d663ccc84a2175d4dd55f83f9b46f21fe70bbad86c028b";
+export const ALAMEDA_STUB_EXPECTED_PDF_BYTES = 143369;
 export const ALAMEDA_STUB_PDF_REL = "scripts/fixtures/Jan 2 2026 Alameda Health System Pay Stub.pdf";
 export const ALAMEDA_STUB_ALIAS_REL = "scripts/fixtures/29-paystub-alameda-health-jan-2-2026.pdf";
 export const ALAMEDA_STUB_CANDIDATES = [ALAMEDA_STUB_PDF_REL, ALAMEDA_STUB_ALIAS_REL];
@@ -139,7 +140,7 @@ export function alamedaPaystubPath(): string | null {
     const path = join(root, rel);
     if (!existsSync(path)) continue;
     const bytes = readFileSync(path);
-    if (!isPdfBytes(bytes)) continue;
+    if (!isPdfBytes(bytes) || bytes.length !== ALAMEDA_STUB_EXPECTED_PDF_BYTES) continue;
     const digest = createHash("sha256").update(bytes).digest("hex");
     if (digest === ALAMEDA_STUB_SHA256) return path;
   }
@@ -589,9 +590,13 @@ async function main() {
     alamedaPdf,
     "Alameda fixture missing or sha256 mismatch — " + ALAMEDA_STUB_CANDIDATES.join(" | "),
   );
-  assert.equal(
-    createHash("sha256").update(readFileSync(alamedaPdf)).digest("hex"),
-    ALAMEDA_STUB_SHA256,
+  const alamedaBytes = readFileSync(alamedaPdf);
+  assert.equal(alamedaBytes.length, ALAMEDA_STUB_EXPECTED_PDF_BYTES);
+  assert.equal(createHash("sha256").update(alamedaBytes).digest("hex"), ALAMEDA_STUB_SHA256);
+  assert.notEqual(
+    createHash("sha256").update(alamedaBytes).digest("hex"),
+    "4d09d5ffd8a85bfda32a94f8f5350ef5ae543e42a1fd9220197a8f8ecc1c2303",
+    "Alameda fixture must not be the CSTC stub bytes",
   );
   const unreadAfterSkip = applyExtractedFields(skippedW2, {
     extractClass: "paystub",

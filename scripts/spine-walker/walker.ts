@@ -1521,7 +1521,7 @@ async function case25(page: Page) {
   const fixture = alamedaPaystubPath();
   if (!fixture) {
     throw new BeatFail(
-      "missing Jan 2 2026 Alameda Health System Pay Stub.pdf (sha256 4d09d5ffd8a85bfda32a94f8f5350ef5ae543e42a1fd9220197a8f8ecc1c2303)",
+      "missing Jan 2 2026 Alameda Health System Pay Stub.pdf (sha256 e1a59410473c0a6d78d663ccc84a2175d4dd55f83f9b46f21fe70bbad86c028b)",
     );
   }
   await hardStartOver(page);
