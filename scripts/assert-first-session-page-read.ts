@@ -921,7 +921,7 @@ async function main() {
       "tax_return",
       combesPdf.split("/").pop(),
     );
-    assert.equal(printedCombes.failed, false);
+    assert.ok(!printedCombes.failed, "exact Combes transcript locks from pdf.js text, not Grok");
     assert.equal(printedCombes.extractClass, "tax_return");
     assert.equal(printedCombes.fields.tax_year, "2023");
     assert.equal(printedCombes.fields.filing_status, "Married filing jointly");
