@@ -3344,6 +3344,13 @@ export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
   if (draft.awaitingRaiseYtdFar) return "raise-ytd-far";
   const notepadEdit = notepadEditPrompt(draft);
   if (notepadEdit) return notepadEdit;
+  if (
+    isStubExtractProposal(draft.pendingProposal) ||
+    isStubJobProposal(draft.pendingProposal) ||
+    isWageExtractProposal(draft.pendingProposal)
+  ) {
+    return "confirm-proposal";
+  }
   if (isFundsPairProposal(draft.pendingProposal)) return "confirm-proposal";
   if (fundsAskNeeded(draft)) return "amount";
   if (draft.pendingConflict && !conflictAlreadySpoken(draft)) return "confirm-proposal";

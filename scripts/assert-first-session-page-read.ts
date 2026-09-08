@@ -49,6 +49,7 @@ import {
   applyIdExtractAsk,
   freezeUsedFoxTurns,
   leftoverUseThisOnOlderTurns,
+  shouldHoldAskForOpenUseThis,
   shouldHoldDocInviteForOpenUseThis,
 } from "../components/fox/liveCoupon";
 import type { ExtractClass, FoxAction, FoxIntakeDraft, FoxMessage } from "../components/fox/types";
@@ -585,13 +586,42 @@ async function main() {
   assert.equal((alamedaAfterSkip.draft.employmentHistory ?? []).length, 0);
   assert.notEqual(alamedaAfterSkip.draft.facts?.gross_period?.confirmed, true);
   assert.equal(alamedaAfterSkip.draft.facts?.employer_name?.confirmed, undefined);
+  assert.equal(wageEmploymentFileLine(alamedaAfterSkip.draft), "");
+  assert.ok(
+    previewFacts(alamedaAfterSkip.draft).every(
+      (fact) =>
+        (fact.label !== "Employment" && fact.label !== "Employer") ||
+        (!/Period/.test(fact.value) && !/\bOT\b/.test(fact.value)),
+    ),
+    "File must stay empty until Use this",
+  );
+  assert.ok(!previewFacts(alamedaAfterSkip.draft).some((fact) => /OT \$/.test(fact.value)));
+  const refiWhileConfirm = {
+    ...alamedaAfterSkip.draft,
+    productIntent: "refinance" as const,
+    loanAmountValue: 500_000,
+    propertyValueAmount: undefined,
+    valueAsked: false,
+  };
+  assert.equal(workspacePrompt(refiWhileConfirm), "confirm-proposal");
+  assert.equal(nextFoxAsk(refiWhileConfirm).text, "Alameda Health System. Period $16,824.30. Use this?");
+  assert.doesNotMatch(nextFoxAsk(refiWhileConfirm).text, /property value/i);
+  assert.equal(
+    shouldHoldAskForOpenUseThis(
+      nextFoxAsk(refiWhileConfirm).text,
+      nextFoxAsk(refiWhileConfirm).actions,
+      "What’s the property value?",
+    ),
+    true,
+  );
   const alamedaUsed = resolveProposal(alamedaAfterSkip.draft, "accept");
   assert.equal((alamedaUsed.employmentHistory ?? []).length, 1, "Use this writes one Employment row");
   assert.match(alamedaUsed.employmentHistory?.[0]?.label ?? "", /Alameda Health System/);
   assert.equal(
     wageEmploymentFileLine(alamedaUsed),
-    "Alameda Health System, Period $16,824.30, OT $850",
+    "Alameda Health System, Period $16,824.30",
   );
+  assert.doesNotMatch(wageEmploymentFileLine(alamedaUsed), /\bOT\b/);
   assert.equal(alamedaUsed.facts?.gross_period?.confirmed, true);
   assert.equal(alamedaUsed.facts?.gross_period?.value, "16824.30");
   assert.equal(alamedaUsed.awaitingPayFrequency, false);

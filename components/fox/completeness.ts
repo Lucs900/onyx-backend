@@ -1856,18 +1856,22 @@ export function acceptComputedAmounts(draft: FoxIntakeDraft): FoxIntakeDraft {
 }
 
 export function fundsAskNeeded(draft: FoxIntakeDraft) {
+  if (draftHasOpenConfirmCard(draft)) return false;
   return isPurchaseLike(draft) && hasPropertyValue(draft) && !hasDownPayment(draft) && !hasLoanAmount(draft);
 }
 
 export function propertyValueAskNeeded(draft: FoxIntakeDraft) {
+  if (draftHasOpenConfirmCard(draft)) return false;
   return isRefiLike(draft) && hasLoanAmount(draft) && !hasPropertyValue(draft);
 }
 
 export function purchasePriceAskNeeded(draft: FoxIntakeDraft) {
+  if (draftHasOpenConfirmCard(draft)) return false;
   return isPurchaseLike(draft) && !hasPropertyValue(draft);
 }
 
 export function refiLoanAskNeeded(draft: FoxIntakeDraft) {
+  if (draftHasOpenConfirmCard(draft)) return false;
   return isRefiLike(draft) && !hasLoanAmount(draft);
 }
 

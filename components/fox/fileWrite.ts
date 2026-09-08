@@ -40,6 +40,7 @@ import {
   maybeProposeStubExtract,
   shouldProposeStubExtract,
   stubExtractAskOpen,
+  stubPeriodConfirmOpen,
   wageW2ExtractAccepted,
   canSpeakStubExtract,
   employersClose,
@@ -1357,7 +1358,9 @@ export function applyExtractedFields(
   const holdWageFileWrites =
     wageThreadOpen(draft) &&
     !draft.sampleAccepted &&
-    (extractClass === "w2" || extractClass === "paystub");
+    (extractClass === "w2" ||
+      extractClass === "paystub" ||
+      (extractClass === "other" && stubPeriodConfirmOpen(draft)));
   let next = draft;
   let conflict: FactConflict | null = draft.pendingConflict ?? null;
   let remainderWrites: { field: string; value: string }[] = [];
@@ -1837,6 +1840,7 @@ export function applyExtractedFields(
   const extractedEmployer = String(fields.employer_name ?? "").trim();
   if (
     !wageExtractFirst &&
+    !stubPeriodConfirmOpen(draft) &&
     !isWageExtractProposal(next.pendingProposal) &&
     !isStubExtractProposal(next.pendingProposal) &&
     !isStubJobProposal(next.pendingProposal) &&

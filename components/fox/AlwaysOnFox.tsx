@@ -479,6 +479,9 @@ function applyFoxAsk(
     );
     return freezeUsedFoxTurns([...withoutYears, foxAskMessage(ask)]);
   }
+  if (last && shouldHoldDocInviteForOpenUseThis(last.text, last.actions, ask.text)) {
+    return freezeUsedFoxTurns(messages);
+  }
   return freezeUsedFoxTurns([...messages, foxAskMessage(ask)]);
 }
 

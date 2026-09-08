@@ -426,10 +426,20 @@ export function shouldHoldDocInviteForOpenUseThis(
   lastActions?: FoxAction[] | null,
   askText?: string | null,
 ) {
+  return shouldHoldAskForOpenUseThis(lastText, lastActions, askText);
+}
+
+/** No new question while Use this is still live — value, ID, or anything else waits. */
+export function shouldHoldAskForOpenUseThis(
+  lastText?: string | null,
+  lastActions?: FoxAction[] | null,
+  askText?: string | null,
+) {
   if (!isUseThisConfirmText(lastText)) return false;
   if (!lastActions?.length) return false;
   const ask = String(askText ?? "").trim();
-  return isIdExtractAskText(ask) || /government ID/i.test(ask);
+  if (!ask) return false;
+  return ask !== String(lastText ?? "").trim();
 }
 
 /** After Looks right, older Fox turns are text. Chips live only on the latest ask. */

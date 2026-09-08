@@ -1874,26 +1874,33 @@ export function wageW2ConfirmCopy(box5: number, employer: string): string {
   return `Box 5 ${speakWageMoney(box5)}. ${name}. Use this?`;
 }
 
+function confirmedWageFact(draft: FoxIntakeDraft, field: string): string {
+  const fact = draft.facts?.[field];
+  if (!fact?.confirmed || !String(fact.value ?? "").trim()) return "";
+  return String(fact.value).trim();
+}
+
 /** File Employment after Use this: employer and Box 5. Stub Use this adds pay on the same row. Not Box 1. */
 export function wageEmploymentFileLine(draft: FoxIntakeDraft): string {
+  if (wageEmploymentUnconfirmed(draft)) return "";
   if (isWageExtractProposal(draft.pendingProposal) || isStubExtractProposal(draft.pendingProposal)) {
     return "";
   }
   const w2Accepted = wageW2ExtractAccepted(draft);
   const stubAccepted = Boolean(draft.stubExtractAccepted);
   if (!w2Accepted && !stubAccepted) return "";
-  const employer = factValue(draft, "employer_name").trim();
+  const employer = confirmedWageFact(draft, "employer_name") || factValue(draft, "employer_name").trim();
   const box5 = readWageBox5(draft);
   const stub =
-    parseExtractMoney(factValue(draft, PAYSTUB_AMOUNT_FIELD)) ??
-    parseExtractMoney(factValue(draft, "gross_period"));
-  const frequency = speakPayFrequency(factValue(draft, "pay_frequency"));
-  const monthly = parseExtractMoney(factValue(draft, PAYSTUB_MONTHLY_FIELD));
-  const overtime = parseExtractMoney(factValue(draft, "overtime"));
+    parseExtractMoney(confirmedWageFact(draft, PAYSTUB_AMOUNT_FIELD)) ??
+    parseExtractMoney(confirmedWageFact(draft, "gross_period"));
+  const frequency = speakPayFrequency(confirmedWageFact(draft, "pay_frequency"));
+  const monthly = parseExtractMoney(confirmedWageFact(draft, PAYSTUB_MONTHLY_FIELD));
+  const overtime = parseExtractMoney(confirmedWageFact(draft, "overtime"));
   const otBit =
     overtime != null && overtime > 0
       ? `OT ${speakWageMoney(overtime)}`
-      : moneyOnPage(factValue(draft, "overtime_ytd"))
+      : moneyOnPage(confirmedWageFact(draft, "overtime_ytd"))
         ? "OT"
         : "";
   const stubReady =
@@ -2011,11 +2018,11 @@ export function stubTwoJobsOnFile(draft: FoxIntakeDraft): boolean {
 
 /** File Employment / Employer stay empty until Use this or Change. */
 export function wageEmploymentUnconfirmed(draft: FoxIntakeDraft): boolean {
-  return (
-    wageThreadOpen(draft) &&
-    !draft.sampleAccepted &&
-    (isWageExtractProposal(draft.pendingProposal) || isStubExtractProposal(draft.pendingProposal))
-  );
+  if (!wageThreadOpen(draft) || draft.sampleAccepted) return false;
+  if (isWageExtractProposal(draft.pendingProposal) || isStubExtractProposal(draft.pendingProposal)) {
+    return true;
+  }
+  return stubPeriodConfirmOpen(draft) && !draft.stubExtractAccepted && !wageW2ExtractAccepted(draft);
 }
 
 export function isWageW2OnlyProposal(proposal?: { field?: string; extras?: { field: string; value: string }[] } | null): boolean {
@@ -2767,17 +2774,25 @@ function writeStubPayLine(
       confirmedAt: now,
     };
   }
-  for (const key of VARIABLE_PAY_KEYS) {
-    const raw = extras.find((item) => item.field === key)?.value;
-    const amount = parseExtractMoney(raw);
-    if (amount == null || amount <= 0) continue;
-    facts[key] = {
-      field: key,
-      value: moneyFieldValue(amount),
-      source: "document",
-      confirmed: true,
-      confirmedAt: now,
-    };
+  const confirmCopy = stubExtractConfirmCopy(
+    employer || parts.employer,
+    parts.stub,
+    parts.frequency,
+    parts.monthly,
+  );
+  if (/\bOT\b/.test(confirmCopy)) {
+    for (const key of VARIABLE_PAY_KEYS) {
+      const raw = extras.find((item) => item.field === key)?.value;
+      const amount = parseExtractMoney(raw);
+      if (amount == null || amount <= 0) continue;
+      facts[key] = {
+        field: key,
+        value: moneyFieldValue(amount),
+        source: "document",
+        confirmed: true,
+        confirmedAt: now,
+      };
+    }
   }
   let next: FoxIntakeDraft = {
     ...draft,
