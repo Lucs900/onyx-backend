@@ -2489,6 +2489,23 @@ export function conventionalStubMonthly(stub: number, frequency: string): number
   return Math.round((stub * periods * 100) / 12) / 100;
 }
 
+/** Page ALL CAPS → spoken title case. Mixed-case names (CSTC Center) stay. */
+export function speakEmployerName(raw: string): string {
+  const name = String(raw ?? "").replace(/\s+/g, " ").trim();
+  if (!name) return "";
+  const letters = name.replace(/[^A-Za-z]/g, "");
+  if (!letters || letters !== letters.toUpperCase()) return name;
+  const words = name.split(" ");
+  if (words.length === 1) return name;
+  return words
+    .map((word) => {
+      if (!/[A-Za-z]/.test(word)) return word;
+      if (word.length <= 3 && /^[A-Z0-9&./-]+$/.test(word)) return word;
+      return `${word.charAt(0).toUpperCase()}${word.slice(1).toLowerCase()}`;
+    })
+    .join(" ");
+}
+
 export function stubExtractConfirmCopy(
   employer: string,
   stub: number,
@@ -2496,7 +2513,7 @@ export function stubExtractConfirmCopy(
   monthly: number,
   _employee?: string,
 ): string {
-  const name = String(employer ?? "").trim();
+  const name = speakEmployerName(employer);
   const spoken = speakPayFrequency(frequency) || String(frequency ?? "").trim().toLowerCase();
   if (!spoken) {
     return `${name}. Period ${speakWageMoney(stub)}. Use this?`;
@@ -2514,11 +2531,13 @@ function stubEmployeeName(fields?: Record<string, string>, draft?: FoxIntakeDraf
 }
 
 function stubEmployerName(fields?: Record<string, string>, draft?: FoxIntakeDraft): string {
-  return String(
-    fields?.employer_name ??
-      draft?.pendingWageExtract?.employer ??
-      (draft ? factValue(draft, "employer_name") : ""),
-  ).trim();
+  return speakEmployerName(
+    String(
+      fields?.employer_name ??
+        draft?.pendingWageExtract?.employer ??
+        (draft ? factValue(draft, "employer_name") : ""),
+    ).trim(),
+  );
 }
 
 /** After W-2 Use this, waiting for the employer stub drop. Skip W-2 does not keep this invite open. */

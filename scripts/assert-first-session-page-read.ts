@@ -27,6 +27,8 @@ import {
   replaceTruncatedEmployerName,
   shouldProposeStubExtract,
   skipWageDocs,
+  speakEmployerName,
+  stubExtractConfirmCopy,
   stubPeriodConfirmOpen,
   WAGE_DOCS_ASK,
   WAGE_STUB_DROP_ASK,
@@ -565,6 +567,16 @@ async function main() {
   assert.ok(alamedaAfterSkip.draft.pendingProposal, "Skip W-2 still proposes Period");
   assert.equal(shouldSpeakPendingConfirm(alamedaAfterSkip.draft), true);
   assert.equal(workspacePrompt(alamedaAfterSkip.draft), "confirm-proposal");
+  assert.equal(speakEmployerName("ALAMEDA HEALTH SYSTEM"), "Alameda Health System");
+  assert.equal(speakEmployerName("Alameda Health System"), "Alameda Health System");
+  assert.equal(
+    speakEmployerName("Comprehensive Skills Training Center"),
+    "Comprehensive Skills Training Center",
+  );
+  assert.equal(
+    stubExtractConfirmCopy("ALAMEDA HEALTH SYSTEM", 16824.3, "", 0),
+    "Alameda Health System. Period $16,824.30. Use this?",
+  );
   assert.equal(
     nextFoxAsk(alamedaAfterSkip.draft).text,
     "Alameda Health System. Period $16,824.30. Use this?",
