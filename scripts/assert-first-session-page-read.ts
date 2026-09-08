@@ -1160,6 +1160,38 @@ async function main() {
     ).length,
     1,
   );
+  const afterAlamedaUseThis = sealStoredFoxThread([
+    {
+      id: "alameda-period",
+      role: "fox",
+      text: "Alameda Health System. Period $16,824.30. Use this?",
+      actions: [
+        { id: "accept-proposal", label: "Use this", event: "bubble", capture: { field: "accept-proposal" } },
+        { id: "change-proposal", label: "Change", event: "bubble", capture: { field: "change-proposal" } },
+      ],
+    },
+    { id: "you-use", role: "client", text: "Use this" },
+    {
+      id: "id-next",
+      role: "fox",
+      text: DOC_INVITE_COPY.government_id,
+      actions: [
+        { id: "upload-this", label: "Upload this", event: "open-docs", capture: { field: "open-docs" } },
+        { id: "skip-docs", label: "Skip", event: "bubble", capture: { field: "skip-docs" } },
+      ],
+    },
+  ]);
+  assert.equal(
+    afterAlamedaUseThis.find((item) => item.id === "alameda-period")?.actions,
+    undefined,
+    "Period Use this is history after the tap",
+  );
+  assert.equal(afterAlamedaUseThis[afterAlamedaUseThis.length - 1]?.text, DOC_INVITE_COPY.government_id);
+  assert.deepEqual(
+    (afterAlamedaUseThis[afterAlamedaUseThis.length - 1]?.actions ?? []).map((item) => item.label),
+    ["Upload this", "Skip"],
+    "ID ask stays current after Alameda Use this — do not replace it under the client tap",
+  );
   assert.equal(docInviteBlocksLooksRight(combesProposed.draft), true);
   assert.equal(canLooksRight(combesProposed.draft), false);
   assert.equal(

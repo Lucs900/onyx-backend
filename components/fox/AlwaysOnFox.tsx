@@ -1783,9 +1783,9 @@ export function AlwaysOnFox({
         const withoutYears = next.filter(
           (item) => !(item.role === "fox" && isYearsInBusinessAskText(item.text)),
         );
-        return applyFoxAsk(withoutYears, fox);
+        return sealStoredFoxThread([...withoutYears, foxAskMessage(fox)]);
       }
-      return applyFoxAsk(next, fox);
+      return sealStoredFoxThread([...next, foxAskMessage(fox)]);
     });
   };
 
