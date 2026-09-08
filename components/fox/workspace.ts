@@ -134,6 +134,7 @@ import {
   wageStubAskNeeded,
   sketchAssembled,
   completenessExplainCopy,
+  draftHasOpenConfirmCard,
   factsFromDraft,
   guidelineCaution,
   fundsAskNeeded,
@@ -1033,6 +1034,14 @@ export function writePurchasePrice(draft: FoxIntakeDraft, price: number): FoxInt
 
 export function amountAskText(draft: FoxIntakeDraft) {
   if (
+    isStubExtractProposal(draft.pendingProposal) ||
+    isStubJobProposal(draft.pendingProposal) ||
+    isWageExtractProposal(draft.pendingProposal) ||
+    (draftHasOpenConfirmCard(draft) && !draft.correcting && !draft.correctingLine)
+  ) {
+    return "";
+  }
+  if (
     (draft.correctingLine === "price" || draft.correcting === "value") &&
     draft.correctingLine !== "home"
   ) {
@@ -1080,13 +1089,15 @@ export function amountAskText(draft: FoxIntakeDraft) {
   if (purchasePriceAskNeeded(draft)) return "What’s the purchase price?";
   const intent = draft.productIntent;
   if (intent === "buy" || (intent === "jumbo" && jumboPurposeOf(draft) !== "refinance")) {
+    if (hasPropertyValue(draft) && !editingPurchasePrice(draft) && draft.correcting !== "value") {
+      return fundsAskNeeded(draft) ? "What’s the down payment or loan amount?" : "";
+    }
     return "What’s the purchase price?";
   }
   if (intent === "refinance" || (intent === "jumbo" && jumboPurposeOf(draft) === "refinance")) {
-    if (hasLoanAmount(draft)) {
-      return "What’s the property value?";
-    }
-    return "What’s the approximate loan or payoff amount?";
+    if (!hasLoanAmount(draft)) return "What’s the approximate loan or payoff amount?";
+    if (!hasPropertyValue(draft)) return "What’s the property value?";
+    return "";
   }
   if (intent === "heloc") return "What line or cash do you need?";
   if (intent === "other") {
@@ -3342,15 +3353,16 @@ export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
   if (draft.awaitingBothMonthlyReason) return "both-monthly-reason";
   if (draft.awaitingRaiseWhen) return "raise-when";
   if (draft.awaitingRaiseYtdFar) return "raise-ytd-far";
-  const notepadEdit = notepadEditPrompt(draft);
-  if (notepadEdit) return notepadEdit;
   if (
     isStubExtractProposal(draft.pendingProposal) ||
     isStubJobProposal(draft.pendingProposal) ||
-    isWageExtractProposal(draft.pendingProposal)
+    isWageExtractProposal(draft.pendingProposal) ||
+    (draft.pendingProposal && shouldSpeakPendingConfirm(draft))
   ) {
     return "confirm-proposal";
   }
+  const notepadEdit = notepadEditPrompt(draft);
+  if (notepadEdit) return notepadEdit;
   if (isFundsPairProposal(draft.pendingProposal)) return "confirm-proposal";
   if (fundsAskNeeded(draft)) return "amount";
   if (draft.pendingConflict && !conflictAlreadySpoken(draft)) return "confirm-proposal";
@@ -7961,6 +7973,11 @@ export function previewFacts(draft: FoxIntakeDraft): PreviewFact[] {
 
   const hideWageEmployment = wageEmploymentUnconfirmed(draft);
   const wageEmploymentLine = hideWageEmployment ? "" : wageEmploymentFileLine(draft);
+  const hidePendingStubPaint =
+    hideWageEmployment ||
+    isStubExtractProposal(draft.pendingProposal) ||
+    isStubJobProposal(draft.pendingProposal) ||
+    draft.pendingProposal?.field === "gross_period";
 
   const required = requiredStructureLines(draft);
   const requiredIds = new Set(required.map((line) => line.id));
@@ -8308,7 +8325,7 @@ export function previewFacts(draft: FoxIntakeDraft): PreviewFact[] {
   facts.push(
     ...conventionalFileFacts(draft).filter((fact) => {
       if (!String(fact.id).startsWith("history-employment")) return true;
-      if (hideWageEmployment) return false;
+      if (hidePendingStubPaint) return false;
       const jobLabel = fact.value.replace(/\s+[–-].*$/, "").trim();
       if (wageEmploymentLine) {
         if (jobLabel.toLowerCase() === employerOnFile.toLowerCase()) return false;
@@ -8338,7 +8355,7 @@ export function previewFacts(draft: FoxIntakeDraft): PreviewFact[] {
   const alreadyEmployment = facts.some(
     (fact) => fact.id === "history-employment" || fact.label === "Employment",
   );
-  if (hideWageEmployment) {
+  if (hidePendingStubPaint) {
     // Employer / Employment stay empty until Use this or Change.
   } else if (wageEmploymentLine) {
     if (!alreadyEmployment) {
@@ -8417,7 +8434,9 @@ export function previewFacts(draft: FoxIntakeDraft): PreviewFact[] {
       ? draft.pendingProposal.value
       : draft.pendingProposal?.extras?.find((item) => item.field === field)?.value ?? "";
   const hideStubPay =
-    isStubExtractProposal(draft.pendingProposal) || isStubJobProposal(draft.pendingProposal);
+    hidePendingStubPaint ||
+    isStubExtractProposal(draft.pendingProposal) ||
+    isStubJobProposal(draft.pendingProposal);
   const periodPay = hideStubPay ? "" : factValue(draft, "gross_period") || pendingExtra("gross_period");
   const ytdPay = hideStubPay ? "" : factValue(draft, "ytd_gross") || pendingExtra("ytd_gross");
   const wages = hideStubPay ? "" : factValue(draft, "wages") || pendingExtra("wages");
@@ -8430,7 +8449,7 @@ export function previewFacts(draft: FoxIntakeDraft): PreviewFact[] {
     !periodPay && !ytdPay && wages ? `Wages ${displayFactValue("wages", wages)}` : "",
     !periodPay && !ytdPay && !wages && agi ? `AGI ${displayFactValue("agi", agi)}` : "",
   ].filter(Boolean);
-  if (payBits.length && !hideWageEmployment && !wageEmploymentLine) {
+  if (payBits.length && !hidePendingStubPaint && !wageEmploymentLine) {
     facts.push({ id: "pay", label: "Pay", value: payBits.join(" · ") });
   }
 
@@ -8526,6 +8545,15 @@ export function previewFacts(draft: FoxIntakeDraft): PreviewFact[] {
         note: caution === HIGH_LTV_CAUTION ? LTV_NOT_A_DECISION : undefined,
       });
     }
+  }
+
+  if (hidePendingStubPaint) {
+    return facts.filter((fact) => {
+      if (fact.label === "Employment" || fact.label === "Employer" || fact.label === "Pay") {
+        return false;
+      }
+      return !/Period \$/.test(fact.value) || /Box 5/.test(fact.value);
+    });
   }
 
   return facts;

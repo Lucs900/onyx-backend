@@ -38,6 +38,7 @@ import { FAILED_READ_NOTE } from "../lib/docs/accept";
 import { classifyAndExtract, FOX_GROK_MODEL } from "../lib/docs/extract";
 import { renderPdfFirstPage } from "../lib/docs/pdfText";
 import {
+  amountAskText,
   DOC_INVITE_COPY,
   nextFoxAsk,
   previewFacts,
@@ -47,6 +48,7 @@ import {
 } from "../components/fox/workspace";
 import {
   applyIdExtractAsk,
+  dropLeftoverAmountAsksForOpenUseThis,
   freezeUsedFoxTurns,
   leftoverUseThisOnOlderTurns,
   shouldHoldAskForOpenUseThis,
@@ -584,18 +586,23 @@ async function main() {
   );
   assert.doesNotMatch(nextFoxAsk(alamedaAfterSkip.draft).text, /How often|paycheck|two-year OT/i);
   assert.equal((alamedaAfterSkip.draft.employmentHistory ?? []).length, 0);
-  assert.notEqual(alamedaAfterSkip.draft.facts?.gross_period?.confirmed, true);
-  assert.equal(alamedaAfterSkip.draft.facts?.employer_name?.confirmed, undefined);
+  assert.equal(alamedaAfterSkip.draft.facts?.employer_name, undefined);
+  assert.equal(alamedaAfterSkip.draft.facts?.gross_period, undefined);
   assert.equal(wageEmploymentFileLine(alamedaAfterSkip.draft), "");
+  const alamedaPreview = previewFacts(alamedaAfterSkip.draft);
   assert.ok(
-    previewFacts(alamedaAfterSkip.draft).every(
+    alamedaPreview.every(
       (fact) =>
-        (fact.label !== "Employment" && fact.label !== "Employer") ||
-        (!/Period/.test(fact.value) && !/\bOT\b/.test(fact.value)),
+        !/Alameda/i.test(fact.value) &&
+        !/Period \$16,824\.30/.test(fact.value) &&
+        fact.label !== "Employment" &&
+        fact.label !== "Employer" &&
+        fact.label !== "Pay",
     ),
-    "File must stay empty until Use this",
+    "File must stay empty until Use this — " +
+      alamedaPreview.map((fact) => `${fact.label}=${fact.value}`).join(" · "),
   );
-  assert.ok(!previewFacts(alamedaAfterSkip.draft).some((fact) => /OT \$/.test(fact.value)));
+  assert.ok(!alamedaPreview.some((fact) => /OT \$/.test(fact.value)));
   const refiWhileConfirm = {
     ...alamedaAfterSkip.draft,
     productIntent: "refinance" as const,
@@ -606,6 +613,7 @@ async function main() {
   assert.equal(workspacePrompt(refiWhileConfirm), "confirm-proposal");
   assert.equal(nextFoxAsk(refiWhileConfirm).text, "Alameda Health System. Period $16,824.30. Use this?");
   assert.doesNotMatch(nextFoxAsk(refiWhileConfirm).text, /property value/i);
+  assert.equal(amountAskText(refiWhileConfirm), "");
   assert.equal(
     shouldHoldAskForOpenUseThis(
       nextFoxAsk(refiWhileConfirm).text,
@@ -614,6 +622,36 @@ async function main() {
     ),
     true,
   );
+  const refiValueOnFile = {
+    ...alamedaAfterSkip.draft,
+    productIntent: "refinance" as const,
+    loanAmountValue: 320_000,
+    propertyValueAmount: 400_000,
+    valueAsked: true,
+    amountAsked: true,
+    correcting: null,
+    correctingLine: null,
+  };
+  assert.equal(workspacePrompt(refiValueOnFile), "confirm-proposal");
+  assert.equal(nextFoxAsk(refiValueOnFile).text, "Alameda Health System. Period $16,824.30. Use this?");
+  assert.doesNotMatch(nextFoxAsk(refiValueOnFile).text, /property value/i);
+  assert.equal(amountAskText(refiValueOnFile), "");
+  assert.doesNotMatch(amountAskText({ ...refiValueOnFile, pendingProposal: null }), /property value/i);
+  const leftoverValueAsk: FoxMessage[] = [
+    {
+      id: "value-ask",
+      role: "fox",
+      text: "What’s the property value?",
+    },
+    {
+      id: "stub-confirm",
+      role: "fox",
+      text: nextFoxAsk(refiValueOnFile).text,
+      actions: nextFoxAsk(refiValueOnFile).actions,
+    },
+  ];
+  assert.equal(dropLeftoverAmountAsksForOpenUseThis(leftoverValueAsk).length, 1);
+  assert.match(dropLeftoverAmountAsksForOpenUseThis(leftoverValueAsk)[0]?.text ?? "", /Use this\?/);
   const alamedaUsed = resolveProposal(alamedaAfterSkip.draft, "accept");
   assert.equal((alamedaUsed.employmentHistory ?? []).length, 1, "Use this writes one Employment row");
   assert.match(alamedaUsed.employmentHistory?.[0]?.label ?? "", /Alameda Health System/);

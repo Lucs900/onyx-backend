@@ -2018,11 +2018,17 @@ export function stubTwoJobsOnFile(draft: FoxIntakeDraft): boolean {
 
 /** File Employment / Employer stay empty until Use this or Change. */
 export function wageEmploymentUnconfirmed(draft: FoxIntakeDraft): boolean {
-  if (!wageThreadOpen(draft) || draft.sampleAccepted) return false;
-  if (isWageExtractProposal(draft.pendingProposal) || isStubExtractProposal(draft.pendingProposal)) {
+  if (draft.sampleAccepted || draft.stubExtractAccepted) return false;
+  if (
+    isWageExtractProposal(draft.pendingProposal) ||
+    isStubExtractProposal(draft.pendingProposal) ||
+    isStubJobProposal(draft.pendingProposal) ||
+    draft.pendingProposal?.field === "gross_period"
+  ) {
     return true;
   }
-  return stubPeriodConfirmOpen(draft) && !draft.stubExtractAccepted && !wageW2ExtractAccepted(draft);
+  if (!wageThreadOpen(draft)) return false;
+  return stubPeriodConfirmOpen(draft) && !wageW2ExtractAccepted(draft);
 }
 
 export function isWageW2OnlyProposal(proposal?: { field?: string; extras?: { field: string; value: string }[] } | null): boolean {

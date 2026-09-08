@@ -442,6 +442,19 @@ export function shouldHoldAskForOpenUseThis(
   return ask !== String(lastText ?? "").trim();
 }
 
+/** Leftover price / value / funds asks must not sit beside a live Use this confirm. */
+export function isStructureAmountAskText(text?: string | null) {
+  return /What’s the property value\?|What’s the purchase price\?|What’s the approximate loan or payoff amount\?|What’s the down payment/.test(
+    String(text ?? ""),
+  );
+}
+
+export function dropLeftoverAmountAsksForOpenUseThis(messages: FoxMessage[]): FoxMessage[] {
+  return messages.filter(
+    (message) => !(message.role === "fox" && isStructureAmountAskText(message.text)),
+  );
+}
+
 /** After Looks right, older Fox turns are text. Chips live only on the latest ask. */
 function dropLeftoverConfirmChipsOnLooksRightDocAsk(
   messages: FoxMessage[],

@@ -47,6 +47,7 @@ import {
   freezeUsedFoxTurns,
   withoutDuplicateContractConfirm,
   stripLooksRightWhileUseThisOpen,
+  dropLeftoverAmountAsksForOpenUseThis,
   shouldHoldDocInviteForOpenUseThis,
   threadHasOpenUseThisConfirm,
   isIdExtractAskText,
@@ -461,15 +462,21 @@ function applyFoxAsk(
     last &&
     ((/I’m suggesting/.test(last.text) && /Use this\?$/.test(last.text)) ||
       /\ba month\. Use this\?$/.test(last.text) ||
-      /\bPeriod \$.+\. Use this\?$/.test(last.text)) &&
+      /\bPeriod \$.+\. Use this\?$/.test(last.text) ||
+      /Use this\?$/.test(last.text.trim())) &&
     ask.text !== last.text
   ) {
-    if (shouldHoldDocInviteForOpenUseThis(last.text, last.actions, ask.text)) {
+    if (last.actions?.length || shouldHoldDocInviteForOpenUseThis(last.text, last.actions, ask.text)) {
       return freezeUsedFoxTurns(messages);
     }
-    return freezeOthers(last.id, foxAskMessage(ask));
   }
   if (last && sameFoxAsk(last, ask)) return freezeUsedFoxTurns(messages);
+  if (/Use this\?$/.test(ask.text.trim()) && ask.actions?.length) {
+    const cut = dropLeftoverAmountAsksForOpenUseThis(messages);
+    const lastCut = lastFoxTurn(cut);
+    if (lastCut && sameFoxAsk(lastCut, ask)) return freezeUsedFoxTurns(cut);
+    return freezeUsedFoxTurns([...cut, foxAskMessage(ask)]);
+  }
   if (last && isLookupWaitLine(last.text) && ask.text === "How is income earned?") {
     return freezeUsedFoxTurns(messages);
   }

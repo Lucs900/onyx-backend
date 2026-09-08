@@ -1358,8 +1358,19 @@ export function applyExtractedFields(
   const holdWageFileWrites =
     wageThreadOpen(draft) &&
     !draft.sampleAccepted &&
-    (extractClass === "w2" || extractClass === "paystub");
+    (extractClass === "w2" || extractClass === "paystub" || stubPeriodConfirmOpen(draft));
   let next = draft;
+  if (
+    extractClass === "paystub" &&
+    (shouldProposeStubExtract(draft, extractClass, fields) ||
+      (stubPeriodConfirmOpen(draft) && canSpeakStubExtract(draft, fields)))
+  ) {
+    next = maybeProposeStubExtract(
+      { ...next, pendingConflict: null, awaitingPayFrequency: false },
+      fields,
+      extractClass,
+    );
+  }
   let conflict: FactConflict | null = draft.pendingConflict ?? null;
   let remainderWrites: { field: string; value: string }[] = [];
   const payConfirmWrites: { field: string; value: string }[] = [];
