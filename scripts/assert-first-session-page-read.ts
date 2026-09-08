@@ -15,15 +15,24 @@ import {
   isBoxNumberAsDollars,
   isFirstSessionClass,
   lockFirstSessionFields,
+  nextDocInvite,
 } from "../components/fox/fileWrite";
-import { resolveProposal } from "../components/fox/completeness";
+import { resolveProposal, shouldSpeakPendingConfirm } from "../components/fox/completeness";
 import { emptyDraft } from "../components/fox/store";
-import { canSpeakStubExtract } from "../components/fox/qualifyingIncome";
+import { canSpeakStubExtract, wageEmploymentFileLine } from "../components/fox/qualifyingIncome";
 import { FAILED_READ_NOTE } from "../lib/docs/accept";
 import { classifyAndExtract, FOX_GROK_MODEL } from "../lib/docs/extract";
 import { renderPdfFirstPage } from "../lib/docs/pdfText";
-import { unreadDocActions, workspacePromptCopy } from "../components/fox/workspace";
-import type { ExtractClass, FoxIntakeDraft } from "../components/fox/types";
+import {
+  DOC_INVITE_COPY,
+  nextFoxAsk,
+  previewFacts,
+  unreadDocActions,
+  workspacePrompt,
+  workspacePromptCopy,
+} from "../components/fox/workspace";
+import { applyIdExtractAsk, leftoverUseThisOnOlderTurns } from "../components/fox/liveCoupon";
+import type { ExtractClass, FoxAction, FoxIntakeDraft, FoxMessage } from "../components/fox/types";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -308,10 +317,70 @@ async function main() {
   assert.ok(stubAfterW2.draft.pendingProposal, "after W-2, period pay confirms without frequency");
   assert.match(JSON.stringify(stubAfterW2.draft.pendingProposal), /1806\.67/);
   assert.notEqual(stubAfterW2.draft.facts?.gross_period?.confirmed, true);
+  assert.equal(shouldSpeakPendingConfirm(stubAfterW2.draft), true);
+  assert.equal(nextDocInvite(stubAfterW2.draft), null);
+  assert.equal(workspacePrompt(stubAfterW2.draft), "confirm-proposal");
+  const stubConfirmAsk = nextFoxAsk(stubAfterW2.draft);
+  assert.match(stubConfirmAsk.text, /Period \$1,806\.67/);
+  assert.doesNotMatch(stubConfirmAsk.text, /government ID/i);
+  assert.deepEqual(
+    (stubConfirmAsk.actions ?? []).map((item) => item.label),
+    ["Use this", "Change"],
+  );
   const stubUsed = resolveProposal(stubAfterW2.draft, "accept");
   assert.equal((stubUsed.employmentHistory ?? []).length, 1, "Use this must keep one CSTC Employment row");
   assert.match(stubUsed.employmentHistory?.[0]?.label ?? "", /Comprehensive Skills Training Center/);
+  assert.doesNotMatch(stubUsed.employmentHistory?.[0]?.label ?? "", /Cente$/);
+  assert.equal(stubUsed.facts?.employer_name?.value, "Comprehensive Skills Training Center");
   assert.equal(stubUsed.facts?.gross_period?.confirmed, true);
+  assert.equal(stubUsed.facts?.gross_period?.value, "1806.67");
+  assert.match(wageEmploymentFileLine(afterW2), /Box 5 \$36,460\.08/);
+  assert.doesNotMatch(wageEmploymentFileLine(afterW2), /Period/);
+  assert.equal(
+    wageEmploymentFileLine(stubUsed),
+    "Comprehensive Skills Training Center, Box 5 $36,460.08, Period $1,806.67",
+  );
+  assert.ok(
+    previewFacts(stubUsed).some(
+      (fact) =>
+        fact.label === "Employment" &&
+        /Comprehensive Skills Training Center/.test(fact.value) &&
+        /Box 5 \$36,460\.08/.test(fact.value) &&
+        /Period \$1,806\.67/.test(fact.value),
+    ),
+  );
+  const useThisChips: FoxAction[] = [
+    { id: "accept-proposal", label: "Use this", event: "bubble", capture: { field: "accept-proposal" } },
+    { id: "change-proposal", label: "Change", event: "bubble", capture: { field: "change-proposal" } },
+  ];
+  const stubConfirmThread: FoxMessage[] = [
+    {
+      id: "w2",
+      role: "fox",
+      text: "Box 5 $36,460.08. Comprehensive Skills Training Center. Use this?",
+      actions: useThisChips,
+    },
+    {
+      id: "stub",
+      role: "fox",
+      text: stubConfirmAsk.text,
+      actions: useThisChips,
+    },
+  ];
+  assert.doesNotMatch(nextFoxAsk(stubUsed).text, /Period \$1,806\.67/);
+  const idAfterStub = applyIdExtractAsk(stubConfirmThread, {
+    id: "id",
+    role: "fox",
+    text: DOC_INVITE_COPY.government_id,
+    actions: [{ id: "upload-id", label: "Upload this", event: "open-docs", capture: { field: "open-docs" } }],
+  });
+  assert.match(idAfterStub[idAfterStub.length - 1]?.text ?? "", /government ID/i);
+  assert.equal(leftoverUseThisOnOlderTurns(idAfterStub, stubUsed), 0);
+  const usedW2 = idAfterStub.find((item) => item.id === "w2");
+  const usedStub = idAfterStub.find((item) => item.id === "stub");
+  assert.equal(usedW2?.actions, undefined);
+  assert.equal(usedStub?.actions, undefined);
+  assert.match(usedStub?.text ?? "", /Period \$1,806\.67/);
 
   const unreadStubAsk = workspacePromptCopy("documents", {
     ...afterW2,

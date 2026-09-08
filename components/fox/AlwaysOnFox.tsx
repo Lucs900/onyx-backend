@@ -455,7 +455,8 @@ function applyFoxAsk(
   if (
     last &&
     ((/I’m suggesting/.test(last.text) && /Use this\?$/.test(last.text)) ||
-      /\ba month\. Use this\?$/.test(last.text)) &&
+      /\ba month\. Use this\?$/.test(last.text) ||
+      /\bPeriod \$.+\. Use this\?$/.test(last.text)) &&
     ask.text !== last.text
   ) {
     return freezeOthers(last.id, foxAskMessage(ask));
@@ -878,21 +879,25 @@ export function AlwaysOnFox({
         idExtractAsk: resolved.some((message) => isIdExtractAskText(message.text)),
       })
     ) {
-      return dropStreetSuggestChips(
-        dropAbandonedAddressConfirm(
-          dropResolvedAddressConfirmChips(
-            stripLooksRightWhileUseThisOpen(
-              ensureIncomeConfirmChips(inertSupersededIncomeConfirms(stored), live),
+      return freezeUsedFoxTurns(
+        dropStreetSuggestChips(
+          dropAbandonedAddressConfirm(
+            dropResolvedAddressConfirmChips(
+              stripLooksRightWhileUseThisOpen(
+                ensureIncomeConfirmChips(inertSupersededIncomeConfirms(stored), live),
+                live,
+              ),
               live,
             ),
             live,
           ),
-          live,
         ),
       );
     }
-    const held = dropStreetSuggestChips(
-      dropAbandonedAddressConfirm(dropResolvedAddressConfirmChips(resolved, live), live),
+    const held = freezeUsedFoxTurns(
+      dropStreetSuggestChips(
+        dropAbandonedAddressConfirm(dropResolvedAddressConfirmChips(resolved, live), live),
+      ),
     );
     setFoxMessages(held);
     return held;

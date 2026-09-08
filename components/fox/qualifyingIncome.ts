@@ -1887,7 +1887,7 @@ export function wageEmploymentFileLine(draft: FoxIntakeDraft): string {
   const monthly = parseExtractMoney(factValue(draft, PAYSTUB_MONTHLY_FIELD));
   const stubReady =
     Boolean(draft.stubExtractAccepted) &&
-    ((stub != null && stub > 0 && Boolean(frequency)) || (monthly != null && monthly > 0));
+    ((stub != null && stub > 0) || (monthly != null && monthly > 0));
   if (stubReady) {
     if (stubTwoJobsOnFile(draft)) {
       if (!employer || box5 == null || box5 <= 0) return "";
@@ -1897,9 +1897,11 @@ export function wageEmploymentFileLine(draft: FoxIntakeDraft): string {
     const stubBit =
       stub != null && stub > 0 && frequency
         ? `${frequency}, ${speakWageMoney(stub)}${monthlyBit}`
-        : monthly != null && monthly > 0
-          ? `${speakWageMoney(monthly)} a month`
-          : "";
+        : stub != null && stub > 0
+          ? `Period ${speakWageMoney(stub)}${monthlyBit}`
+          : monthly != null && monthly > 0
+            ? `${speakWageMoney(monthly)} a month`
+            : "";
     if (employer && box5 != null && box5 > 0) {
       return stubBit ? `${employer}, Box 5 ${speakWageMoney(box5)}, ${stubBit}` : `${employer}, Box 5 ${speakWageMoney(box5)}`;
     }
@@ -1940,6 +1942,16 @@ export function employersClose(left?: string | null, right?: string | null): boo
   const rightTokens = b.split(/\s+/).filter((token) => token.length > 2);
   const shared = leftTokens.filter((token) => rightTokens.includes(token));
   return shared.length >= 2;
+}
+
+/** Same employer: keep the fuller label (Center over truncated Cente). */
+export function preferredEmployerLabel(left?: string | null, right?: string | null): string {
+  const a = String(left ?? "").trim();
+  const b = String(right ?? "").trim();
+  if (!a) return b;
+  if (!b) return a;
+  if (!employersClose(a, b)) return a;
+  return a.length >= b.length ? a : b;
 }
 
 export function stubTwoJobsOnFile(draft: FoxIntakeDraft): boolean {
@@ -2611,10 +2623,12 @@ function writeStubPayLine(
   const now = new Date().toISOString();
   const facts = { ...(draft.facts ?? {}) };
   const fileEmployer = factValue(draft, "employer_name").trim();
-  if (mode === "only" && parts.employer && !fileEmployer) {
+  const employer =
+    mode === "two" ? parts.employer.trim() : preferredEmployerLabel(fileEmployer, parts.employer);
+  if (employer && employer !== fileEmployer) {
     facts.employer_name = {
       field: "employer_name",
-      value: parts.employer,
+      value: employer,
       source: "document",
       confirmed: true,
       confirmedAt: now,
@@ -2664,8 +2678,8 @@ function writeStubPayLine(
   };
   if (mode === "two") {
     next = writeCurrentEmploymentHistory(next, parts.employer);
-  } else if (mode === "only" && parts.employer && !fileEmployer) {
-    next = writeCurrentEmploymentHistory(next, parts.employer);
+  } else if (employer) {
+    next = writeCurrentEmploymentHistory(next, employer);
   }
   const decision = wageExtractAfterStubDecision(next, parts.monthly, mode);
   if (decision.kind === "chips") {

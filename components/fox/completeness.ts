@@ -441,7 +441,8 @@ export function shouldSpeakPendingConfirm(draft: FoxIntakeDraft) {
   if (isFundsPairProposal(proposal) || isPurchaseSplitReconcileProposal(proposal)) return true;
   if (isWageExtractProposal(proposal)) return !qualifyingIncomeOnFile(draft);
   if (isStubExtractProposal(proposal) || isStubJobProposal(proposal)) {
-    return !qualifyingIncomeOnFile(draft) || incomeProposalUpgrades(draft, proposal);
+    // Stub confirm stays spoken until Use this or Skip. Do not jump to ID.
+    return true;
   }
   if (proposal.field === QUALIFYING_INCOME_FIELD) {
     if (isCoverLineProposal(proposal)) {

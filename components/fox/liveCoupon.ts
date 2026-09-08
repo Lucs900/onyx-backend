@@ -514,6 +514,11 @@ export function isIdExtractAskText(text?: string | null) {
   );
 }
 
+/** Spoken confirm still waiting on Use this. Used chips freeze; only the latest Fox line keeps chips. */
+export function isUseThisConfirmText(text?: string | null) {
+  return /Use this\?$/.test(String(text ?? "").trim());
+}
+
 function isIdExtractThreadText(blob: string) {
   return isIdExtractAskText(blob);
 }
@@ -537,7 +542,8 @@ export function applyIdExtractAsk(messages: FoxMessage[], ask: FoxMessage): FoxM
       cleaned.map((message, index) => (index === last ? { ...ask, id: lastMsg.id } : message)),
     );
   }
-  return [...freezeUsedFoxTurns(cleaned), ask];
+  // Freeze after append so a just-used Period / Box 5 Use this becomes text.
+  return freezeUsedFoxTurns([...cleaned, ask]);
 }
 
 function isPricingFailSpeech(message: FoxMessage) {
