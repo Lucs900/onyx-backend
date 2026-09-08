@@ -628,6 +628,59 @@ function looksLikeK1Worksheet(lines: string[]) {
   return k1WorksheetKind(lines) != null;
 }
 
+/** IRS Form 1040 tax return transcript. Not a full packet, not a cover pointer page. */
+export function looksLike1040Transcript(lines: string[]) {
+  if (looksLikeScheduleCWorksheet(lines) || looksLikeScheduleEWorksheet(lines)) return false;
+  if (looksLikeEntityReturnWorksheet(lines) || looksLikeK1Worksheet(lines)) return false;
+  if (looksLike1040CoverWorksheet(lines)) return false;
+  const blob = flattenPrintedLines(lines).join("\n").toUpperCase().replace(/\u00a0/g, " ");
+  if (/TAX RETURN TRANSCRIPT|FORM 1040 TAX RETURN TRANSCRIPT|ACCOUNT TRANSCRIPT/.test(blob)) {
+    return true;
+  }
+  return (
+    /FORM 1040|U\.?S\.?\s*INDIVIDUAL INCOME TAX RETURN/.test(blob) &&
+    /TAX PERIOD ENDING|FILING STATUS/.test(blob) &&
+    !/COVER PAGE|SCHEDULES ARE SEPARATE/.test(blob)
+  );
+}
+
+function filingStatusFromPrintedText(text: string) {
+  const blob = String(text ?? "").replace(/\u00a0/g, " ");
+  if (/married filing joint/i.test(blob)) return "Married filing jointly";
+  if (/married filing separate/i.test(blob)) return "Married filing separately";
+  if (/head of household/i.test(blob)) return "Head of household";
+  if (/\bqualifying surviving spouse\b|\bqualifying widow/i.test(blob)) return "Qualifying surviving spouse";
+  if (/\bsingle\b/i.test(blob) && /filing status/i.test(blob)) return "Single";
+  return "";
+}
+
+function taxYearFromPeriodEnding(text: string) {
+  const match = String(text ?? "").match(/tax period ending\s*:?\s*(\d{1,2})[-/](\d{1,2})[-/](\d{2,4})/i);
+  if (!match?.[3]) return "";
+  const year = match[3].length === 2 ? `20${match[3]}` : match[3];
+  return /^\d{4}$/.test(year) ? year : "";
+}
+
+function dependentCountFromTranscript(lines: string[]) {
+  const blob = flattenPrintedLines(lines).join("\n").replace(/\u00a0/g, " ");
+  const labeled =
+    blob.match(/number of dependents\s*:?\s*(\d{1,2})/i) ||
+    blob.match(/dependents?\s*:?\s*(\d{1,2})\b/i);
+  if (labeled?.[1]) return labeled[1];
+  const named = blob.match(/dependents?\s*(?:listed|claimed)?\s*[:\n]/i);
+  if (!named) return "";
+  const after = blob.slice(named.index ?? 0);
+  const rows = after.split(/\n/).slice(1, 12);
+  let count = 0;
+  for (const row of rows) {
+    const line = row.trim();
+    if (!line) continue;
+    if (/^exemption|filing status|tax period|adjusted gross|agi\b|wages\b/i.test(line)) break;
+    if (/[A-Za-z]{2,}/.test(line)) count += 1;
+  }
+  return count > 0 ? String(count) : "";
+}
+
 /** Form 1040 cover / pointer page. Not Schedule C, E, K-1, or a W-2. */
 export function looksLike1040CoverWorksheet(lines: string[]) {
   if (looksLikeScheduleCWorksheet(lines) || looksLikeScheduleEWorksheet(lines)) return false;
@@ -782,6 +835,7 @@ function classifyPrintedLines(lines: string[]): ExtractClass | null {
   if (looksLikeEntityReturnWorksheet(lines)) return "tax_return";
   if (looksLikeK1Worksheet(lines)) return "tax_return";
   if (looksLike1040CoverWorksheet(lines)) return "tax_return";
+  if (looksLike1040Transcript(lines)) return "tax_return";
   if (
     /\bPAYSTUB\b|\bPAY STUB\b|EARNINGS STATEMENT|PAY STATEMENT/.test(blob) ||
     (/\bBI[\s-]?WEEKLY\b|\bSEMI[\s-]?MONTHLY\b|\bWEEKLY\b|\bMONTHLY\b/.test(blob) &&
@@ -1346,7 +1400,30 @@ export function fieldsFromPrintedLines(
     }
   }
 
-  if ((extractClass === "tax_return" || extractClass === "other") && !looksLike1040CoverWorksheet(lines)) {
+  if (looksLike1040Transcript(lines) && (extractClass === "tax_return" || extractClass === "other")) {
+    const blob = flattenPrintedLines(lines).join("\n");
+    const year =
+      taxYearFromPeriodEnding(blob) ||
+      stackedLabelValue(flattenPrintedLines(lines), /^TAX YEAR:?\s*/i) ||
+      blob.match(/tax period ending[^\n]{0,40}?(20\d{2})/i)?.[1] ||
+      "";
+    if (year) put("tax_year", year.replace(/\D/g, "").slice(0, 4));
+    const status = filingStatusFromPrintedText(blob);
+    if (status) put("filing_status", status);
+    const agi =
+      moneyDigits(emptyIfNotShown(stackedLabelValue(flattenPrintedLines(lines), /^ADJUSTED GROSS INCOME:?\s*/i))) ||
+      blob.match(/adjusted gross income\s*:?\s*\$?\s*([\d,]+\.?\d*)/i)?.[1];
+    if (agi) putMoney("agi", moneyDigits(agi) || agi);
+    const wages =
+      moneyDigits(emptyIfNotShown(stackedLabelValue(flattenPrintedLines(lines), /^WAGES[, ]*SALARIES[, ]*AND TIPS:?\s*/i))) ||
+      blob.match(/wages[, ]*salaries[, ]*(?:and|&)\s*tips\s*:?\s*\$?\s*([\d,]+\.?\d*)/i)?.[1];
+    if (wages) putMoney("wages", moneyDigits(wages) || wages);
+    const deps = dependentCountFromTranscript(lines);
+    if (deps) put("dependent_count", deps);
+    put("return_kind", "transcript");
+  }
+
+  if ((extractClass === "tax_return" || extractClass === "other") && !looksLike1040CoverWorksheet(lines) && !looksLike1040Transcript(lines)) {
     applyScheduleCWorksheetFields(lines, put, putMoney);
     applyScheduleEWorksheetFields(lines, put, putMoney);
     if (!entityReturnKind(lines)) {
@@ -1640,6 +1717,25 @@ function sellerCreditFromContractLines(lines: string[]): string {
     if (digits && Number(digits) > 0) return digits;
   }
   return "";
+}
+
+/** Form 1040 tax return transcript. Period year, filing status, AGI/wages/dependent count when printed. Never names. */
+export function loudTranscriptFromPrintedLines(lines: string[]): PrintedSample | null {
+  const stacked = flattenPrintedLines(lines);
+  if (!looksLike1040Transcript(lines) && !looksLike1040Transcript(stacked)) return null;
+  const fields = fieldsFromPrintedLines("tax_return", stacked.length ? stacked : lines);
+  delete fields.full_name;
+  delete fields.employer_name;
+  delete fields.present_address;
+  delete fields.property_address;
+  delete fields.subjectAddress;
+  if (!fields.tax_year) return null;
+  if (!fields.filing_status && !fields.agi && !fields.wages && !fields.dependent_count) return null;
+  return {
+    extractClass: "tax_return",
+    confidence: 0.94,
+    fields: { ...fields, return_kind: fields.return_kind || "transcript" },
+  };
 }
 
 /** 1040 cover. Thin Sch 1 / C only. No Sch E, Sch F, K-1, or invented add-backs. Filbert is residence. */

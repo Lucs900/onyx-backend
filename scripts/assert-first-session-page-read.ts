@@ -15,15 +15,26 @@ import {
   applyExtractedFields,
   displayFactValue,
   docInviteBlocksLooksRight,
+  federalReturnConfirmCopy,
+  hasLockedSuggestion,
   isBoxNumberAsDollars,
   isFirstSessionClass,
   lockFirstSessionFields,
+  looksLikeFederalReturnFields,
+  looksLikeTaxReturnFields,
   nextDocInvite,
   skipCurrentInvite,
+  skipUnreadDoc,
   stillUsefulSection,
+  unreadDocOpen,
 } from "../components/fox/fileWrite";
-import { canLooksRight, resolveProposal, shouldSpeakPendingConfirm } from "../components/fox/completeness";
-import { emptyDraft } from "../components/fox/store";
+import { canLooksRight, proposalAskCopy, resolveProposal, shouldSpeakPendingConfirm } from "../components/fox/completeness";
+import { applyExtractWrite, emptyDraft, loadIntakeDraft, receiveDocument } from "../components/fox/store";
+import {
+  fieldsFromPrintedLines,
+  looksLike1040Transcript,
+  loudTranscriptFromPrintedLines,
+} from "../lib/docs/printedSample";
 import {
   alignThreadEmployerName,
   canSpeakStubExtract,
@@ -144,6 +155,38 @@ export const ALAMEDA_STUB_EXPECTED_PDF_BYTES = 143369;
 export const ALAMEDA_STUB_PDF_REL = "scripts/fixtures/Jan 2 2026 Alameda Health System Pay Stub.pdf";
 export const ALAMEDA_STUB_ALIAS_REL = "scripts/fixtures/29-paystub-alameda-health-jan-2-2026.pdf";
 export const ALAMEDA_STUB_CANDIDATES = [ALAMEDA_STUB_PDF_REL, ALAMEDA_STUB_ALIAS_REL];
+
+/** Founder paperclip. Byte-exact only — do not invent a substitute transcript. */
+export const COMBES_RETURN_SHA256 =
+  "7c81b8fd413719e4dfbd71b5f67e356dd2c76367cfc3abab5546d8aaf617ae8b";
+export const COMBES_RETURN_EXPECTED_PDF_BYTES = 21319;
+export const COMBES_RETURN_PDF_REL = "scripts/fixtures/30-1040-2024-tax-return-combes.pdf";
+export const COMBES_RETURN_CANDIDATES = [
+  COMBES_RETURN_PDF_REL,
+  "scripts/fixtures/2024 Tax Return Combes.pdf",
+  "onyx-fixtures/30-1040-2024-tax-return-combes.pdf",
+];
+
+export function combesReturnPath(): string | null {
+  for (const rel of COMBES_RETURN_CANDIDATES) {
+    const path = join(root, rel);
+    if (!existsSync(path)) continue;
+    const bytes = readFileSync(path);
+    if (!isPdfBytes(bytes) || bytes.length !== COMBES_RETURN_EXPECTED_PDF_BYTES) continue;
+    const digest = createHash("sha256").update(bytes).digest("hex");
+    if (digest === COMBES_RETURN_SHA256) return path;
+  }
+  return null;
+}
+
+/** Founder-stated printed text. Not a substitute PDF. Exemption 06 is not a dependent count. */
+export const COMBES_TRANSCRIPT_LINES = [
+  "Form 1040 Tax Return Transcript",
+  "ALLA & REN ARIA COMB",
+  "Tax Period Ending 12-31-2023",
+  "Filing status Married Filing Joint",
+  "Exemption number 06",
+];
 
 export function alamedaPaystubPath(): string | null {
   for (const rel of ALAMEDA_STUB_CANDIDATES) {
@@ -765,6 +808,113 @@ async function main() {
   );
   assert.ok(canLooksRight(alamedaAfterReturnSkip) || workspacePrompt(alamedaAfterReturnSkip) === "review");
   noSecrets(alamedaFields);
+
+  assert.equal(looksLike1040Transcript(COMBES_TRANSCRIPT_LINES), true);
+  const combesLoud = loudTranscriptFromPrintedLines(COMBES_TRANSCRIPT_LINES);
+  assert.ok(combesLoud, "transcript printed lines must lock");
+  assert.equal(combesLoud.extractClass, "tax_return");
+  assert.equal(combesLoud.fields.tax_year, "2023");
+  assert.equal(combesLoud.fields.filing_status, "Married filing jointly");
+  assert.equal(combesLoud.fields.return_kind, "transcript");
+  assert.equal(combesLoud.fields.dependent_count, undefined);
+  assert.equal(combesLoud.fields.full_name, undefined);
+  const combesMapped = fieldsFromPrintedLines("tax_return", COMBES_TRANSCRIPT_LINES);
+  assert.equal(combesMapped.dependent_count, undefined, "Exemption number 06 is not a dependent count");
+  assert.equal(hasLockedSuggestion("tax_return", combesLoud.fields), true);
+  assert.equal(looksLikeFederalReturnFields(combesLoud.fields), true);
+  assert.equal(looksLikeTaxReturnFields(combesLoud.fields), true);
+  const combesBlob = JSON.stringify(combesLoud.fields);
+  assert.doesNotMatch(combesBlob, /ALLA|REN ARIA|COMB\b/i);
+  const combesProposed = applyExtractedFields(alamedaAfterId, {
+    extractClass: "tax_return",
+    confidence: 0.94,
+    fields: combesLoud.fields,
+  });
+  assert.ok(combesProposed.draft.pendingProposal, "1040/transcript confirm-before-write");
+  assert.equal(combesProposed.draft.facts?.tax_year, undefined);
+  assert.equal(combesProposed.draft.facts?.filing_status, undefined);
+  assert.equal(combesProposed.draft.pendingProposal?.field, "tax_year");
+  assert.equal(combesProposed.draft.pendingProposal?.value, "2023");
+  const combesConfirm = proposalAskCopy(combesProposed.draft.pendingProposal!);
+  assert.match(combesConfirm, /2023 return/);
+  assert.match(combesConfirm, /Married filing jointly/);
+  assert.match(combesConfirm, /Use this\?/);
+  assert.doesNotMatch(combesConfirm, /ALLA|REN ARIA|COMB\b|Exemption|dependent names/i);
+  assert.equal(federalReturnConfirmCopy(combesLoud.fields), "2023 return. Married filing jointly.");
+  assert.equal(shouldSpeakPendingConfirm(combesProposed.draft), true);
+  assert.equal(workspacePrompt(combesProposed.draft), "confirm-proposal");
+  const combesUsed = resolveProposal(combesProposed.draft, "accept");
+  assert.equal(combesUsed.facts?.tax_year?.value, "2023");
+  assert.equal(combesUsed.facts?.filing_status?.value, "Married filing jointly");
+  assert.equal(combesUsed.facts?.dependent_count, undefined);
+  assert.doesNotMatch(JSON.stringify(combesUsed.facts ?? {}), /ALLA|REN ARIA|COMB\b/i);
+
+  const unreadReturnAt = "2026-09-08T19:00:00.000Z";
+  loadIntakeDraft({
+    ...alamedaAfterId,
+    documents: [
+      ...alamedaAfterId.documents,
+      {
+        slot: "other",
+        name: "2024 Tax Return Combes.pdf",
+        type: "application/pdf",
+        size: COMBES_RETURN_EXPECTED_PDF_BYTES,
+        receivedAt: unreadReturnAt,
+        status: "received",
+        extractClass: "tax_return",
+      },
+    ],
+  });
+  const unreadReturn = applyExtractWrite(unreadReturnAt, "2024 Tax Return Combes.pdf", {
+    extractClass: "tax_return",
+    confidence: 0.2,
+    fields: {},
+  });
+  assert.ok(unreadReturn.quietLines.includes(FAILED_READ_NOTE), "empty 1040/transcript is unread once");
+  assert.ok(!unreadReturn.draft.pendingProposal);
+  assert.equal(unreadReturn.draft.facts?.tax_year, undefined);
+  assert.ok(unreadDocOpen(unreadReturn.draft));
+  assert.equal(nextFoxAsk(unreadReturn.draft).text, FAILED_READ_NOTE);
+  assert.notEqual(nextFoxAsk(unreadReturn.draft).text, LAST_YEAR_FEDERAL_RETURN_ASK);
+  assert.deepEqual(
+    (nextFoxAsk(unreadReturn.draft).actions ?? []).map((item) => item.label),
+    ["Upload again", "Type a note", "Skip"],
+  );
+  const unreadReturnSkip = skipUnreadDoc(unreadReturn.draft);
+  assert.ok(!unreadDocOpen(unreadReturnSkip), "Skip clears unread return");
+  assert.notEqual(nextDocInvite(unreadReturnSkip), "tax_return");
+  assert.notEqual(nextDocInvite(unreadReturnSkip), "bank_statement");
+  assert.notEqual(nextFoxAsk(unreadReturnSkip).text, LAST_YEAR_FEDERAL_RETURN_ASK);
+  assert.doesNotMatch(nextFoxAsk(unreadReturnSkip).text, /two recent statements/i);
+  assert.equal(docInviteBlocksLooksRight(unreadReturnSkip), false);
+  assert.ok(canLooksRight(unreadReturnSkip) || workspacePrompt(unreadReturnSkip) === "review");
+
+  const combesPdf = combesReturnPath();
+  if (!combesPdf) {
+    console.log(
+      "assert-first-session-page-read: Combes 1040 transcript not on disk — hook only " +
+        COMBES_RETURN_CANDIDATES.join(" | "),
+    );
+  } else {
+    const combesBytes = readFileSync(combesPdf);
+    assert.equal(combesBytes.length, COMBES_RETURN_EXPECTED_PDF_BYTES);
+    assert.equal(createHash("sha256").update(combesBytes).digest("hex"), COMBES_RETURN_SHA256);
+    const printedCombes = await classifyAndExtract(
+      combesBytes,
+      "application/pdf",
+      deadVision,
+      "tax_return",
+      combesPdf.split("/").pop(),
+    );
+    assert.equal(printedCombes.failed, false);
+    assert.equal(printedCombes.extractClass, "tax_return");
+    assert.equal(printedCombes.fields.tax_year, "2023");
+    assert.equal(printedCombes.fields.filing_status, "Married filing jointly");
+    assert.equal(printedCombes.fields.return_kind, "transcript");
+    assert.notEqual(printedCombes.fields.dependent_count, "6");
+    assert.doesNotMatch(JSON.stringify(printedCombes.fields), /ALLA|REN ARIA|COMB\b/i);
+    noSecrets(printedCombes.fields);
+  }
   const alamedaPdf = alamedaPaystubPath();
   assert.ok(
     alamedaPdf,

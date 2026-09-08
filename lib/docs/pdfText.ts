@@ -518,7 +518,8 @@ async function renderWithPdfJs(bytes: Uint8Array): Promise<PdfEmbeddedImage | nu
       useWorkerFetch: false,
     } as Parameters<typeof pdfjs.getDocument>[0]).promise;
     const page = await doc.getPage(1);
-    const viewport = page.getViewport({ scale: 1.5 });
+    const scale = bytes.length > 0 && bytes.length < 40_000 ? 2.25 : 1.5;
+    const viewport = page.getViewport({ scale });
     const canvas = createCanvas(Math.max(1, Math.ceil(viewport.width)), Math.max(1, Math.ceil(viewport.height)));
     const canvasContext = canvas.getContext("2d");
     await page.render({ canvasContext, viewport } as unknown as Parameters<typeof page.render>[0]).promise;

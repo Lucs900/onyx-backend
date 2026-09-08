@@ -183,6 +183,7 @@ import {
   layer2AskActions,
   intakeIsCoverDrop,
   intakeIsIdDrop,
+  LAST_YEAR_FEDERAL_RETURN_ASK,
   matchingCoverLineOnFile,
   sameThinCoverRepeat,
   type DocIntakeDetail,
@@ -374,6 +375,16 @@ function sameFoxAsk(
   return leftActions === rightActions;
 }
 
+function lastFoxIsUnread(messages: FoxMessage[]) {
+  const last = lastFoxTurn(messages);
+  if (!last) return false;
+  return (
+    last.text === FAILED_READ_NOTE ||
+    last.text === RECEIVED_UNREAD_ASK ||
+    last.text.startsWith("Unread — ")
+  );
+}
+
 function applyFoxAsk(
   messages: FoxMessage[],
   ask: {
@@ -384,6 +395,9 @@ function applyFoxAsk(
   },
 ): FoxMessage[] {
   const last = lastFoxTurn(messages);
+  if (ask.text === LAST_YEAR_FEDERAL_RETURN_ASK && lastFoxIsUnread(messages)) {
+    return freezeUsedFoxTurns(messages);
+  }
   const liveActions = lastFoxTurn(freezeUsedFoxTurns(messages))?.actions;
   const freezeOthers = (keepId: string, replacement: FoxMessage) =>
     freezeUsedFoxTurns(

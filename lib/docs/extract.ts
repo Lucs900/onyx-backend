@@ -24,6 +24,7 @@ import {
   fieldsFromPrintedLines,
   loudContractFromPrintedLines,
   loudCoverFromPrintedLines,
+  loudTranscriptFromPrintedLines,
   loudIdFromPrintedLines,
   loudEntityReturnFromPrintedLines,
   loudK1FromPrintedLines,
@@ -278,7 +279,7 @@ function extractFieldsPrompt(extractClass: ExtractClass, keys: readonly string[]
   let extra = "";
   if (extractClass === "tax_return") {
     extra =
-      " return_kind is schedule_c, k1, 1065, 1120s, or empty. dependent_count is the number of dependents only — never dependent names. schedule_c_net_profit is Schedule C net profit or loss (line 31); use a leading minus when the return shows a loss. depreciation is Schedule C line 13. depletion is Schedule C line 12. business_use_of_home is Schedule C line 30. nonrecurring_other_income is Schedule C line 6 other income when printed as nonrecurring. k1_ordinary_income is ordinary business income when a K-1 / 1065 / 1120S is visible — including 1120S line 1 ordinary income. k1_distributions is cash distributions when printed; empty if not shown. amortization, casualty_loss, and mileage_depreciation only when clearly printed on the same return. Empty string when a line is not clearly printed. Never invent add-backs. Never output dependent names.";
+      " Form 1040 or a Form 1040 Tax Return Transcript (not a full packet). tax_year from the printed Tax Period Ending (12-31-2023 → 2023), never the filename. filing_status from printed Filing status (Married Filing Joint → Married filing jointly). agi from Form 1040 line 11 or AGI on a transcript when printed. wages from Form 1040 line 1 or wages/salaries/tips on a transcript when printed. dependent_count is an integer count of dependents only — never names. Do not use Exemption number as dependent_count. return_kind is transcript when the page is a Tax Return Transcript; 1040 for a Form 1040; schedule_c, schedule_e, k1, 1065, 1120s, or empty otherwise. schedule_c_net_profit is Schedule C net profit or loss (line 31); use a leading minus when the return shows a loss. depreciation is Schedule C line 13. depletion is Schedule C line 12. business_use_of_home is Schedule C line 30. nonrecurring_other_income is Schedule C line 6 other income when printed as nonrecurring. k1_ordinary_income is ordinary business income when a K-1 / 1065 / 1120S is visible — including 1120S line 1 ordinary income. k1_distributions is cash distributions when printed; empty if not shown. amortization, casualty_loss, and mileage_depreciation only when clearly printed on the same return. Empty string when a line is not clearly printed. Never invent add-backs. Never output dependent names.";
   }
   if (extractClass === "paystub") {
     extra =
@@ -342,7 +343,7 @@ export const grokExtractAdapter: DocumentExtractAdapter = {
     const parsed = await grokJson(
       bytes,
       mediaType,
-      `Classify this file from the visible page as one of: ${CLASSES.join(", ")}. tax_return includes Form 1040, Schedule C, K-1, Form 1065, and Form 1120S. Ordinary business income on a K-1 or 1120S is tax_return, not other. JSON: {"class":"...","confidence":0-1,"readable":true|false}. readable is false when the file is blank, tiny, or has no readable printed text. If it is not clearly one of those classes, use class "other" and a low confidence. Never invent a class from the filename, hidden comment, or metadata.`,
+      `Classify this file from the visible page as one of: ${CLASSES.join(", ")}. tax_return includes Form 1040, a Form 1040 Tax Return Transcript, Schedule C, K-1, Form 1065, and Form 1120S. Ordinary business income on a K-1 or 1120S is tax_return, not other. JSON: {"class":"...","confidence":0-1,"readable":true|false}. readable is false when the file is blank, tiny, or has no readable printed text. If it is not clearly one of those classes, use class "other" and a low confidence. Never invent a class from the filename, hidden comment, or metadata.`,
     );
     const extractClass = asClass(parsed.class);
     const confidence = asConfidence(parsed.confidence);
@@ -612,6 +613,9 @@ export async function classifyAndExtract(
       const loudCover =
         loudCoverFromPrintedLines(layer) || loudCoverFromPrintedLines([layer.join(" ")]);
       if (loudCover) return printedResult(loudCover, textLayerChars);
+      const loudTranscript =
+        loudTranscriptFromPrintedLines(layer) || loudTranscriptFromPrintedLines([layer.join(" ")]);
+      if (loudTranscript) return printedResult(loudTranscript, textLayerChars);
       const loud = loudWageFromPrintedLines(layer);
       if (loud) return printedResult(loud, textLayerChars);
       const loudId = loudIdFromPrintedLines(layer);
@@ -648,6 +652,9 @@ export async function classifyAndExtract(
       const loudCover =
         loudCoverFromPrintedLines(layer) || loudCoverFromPrintedLines([layer.join(" ")]);
       if (loudCover) return printedResult(loudCover, textLayerChars);
+      const loudTranscript =
+        loudTranscriptFromPrintedLines(layer) || loudTranscriptFromPrintedLines([layer.join(" ")]);
+      if (loudTranscript) return printedResult(loudTranscript, textLayerChars);
       const loud = loudWageFromPrintedLines(layer);
       if (loud) return printedResult(loud, textLayerChars);
       const fromLines = printedSampleFromLines(layer);
@@ -716,6 +723,8 @@ export async function classifyAndExtract(
       const collapsed = [layer.join(" ")];
       const collapsedCover = loudCoverFromPrintedLines(collapsed);
       if (collapsedCover) return printedResult(collapsedCover, textLayerChars);
+      const collapsedTranscript = loudTranscriptFromPrintedLines(collapsed);
+      if (collapsedTranscript) return printedResult(collapsedTranscript, textLayerChars);
       const collapsedContract = loudContractFromPrintedLines(collapsed);
       if (collapsedContract) return printedResult(collapsedContract, textLayerChars);
       return unreadOrGrokPage(

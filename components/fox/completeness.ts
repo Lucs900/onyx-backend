@@ -33,6 +33,7 @@ import {
   incomeEvidenceOnFile,
   matchingCoverLineOnFile,
   remainderProposalWrites,
+  federalReturnConfirmCopy,
   sameThinCoverRepeat,
   valuesMatch,
   wageNumberPathSettled,
@@ -1079,6 +1080,14 @@ export function proposalAskCopy(proposal: FactProposal) {
   const shown = displayFactValue(proposal.field, proposal.value);
   if (proposal.field === QUALIFYING_INCOME_FIELD) {
     return qualifyingIncomeConfirmCopy(Number(proposal.value) || 0);
+  }
+  if (proposal.field === "tax_year") {
+    const fields = Object.fromEntries([
+      [proposal.field, proposal.value],
+      ...(proposal.extras ?? []).map((item) => [item.field, item.value]),
+    ]);
+    const copy = federalReturnConfirmCopy(fields);
+    if (copy) return `${copy} Use this?`;
   }
   if (isRemainderConfirmField(proposal.field) || proposal.extras?.length) {
     return remainderAskCopy(proposal);

@@ -58,6 +58,7 @@ import {
   scheduleECashFlowMissingFromExtract,
   looksLikeBankFields,
   looksLikeContractFields,
+  looksLikeTaxReturnFields,
   isPurchaseContractConfirmPending,
   looksLikePaystubFields,
   preferFilenameClass,
@@ -1582,17 +1583,15 @@ export function applyExtractWrite(
   const idWageLocked =
     extractedClass === "government_id" || extractedClass === "paystub" || extractedClass === "w2";
   const lockedSuggestion = hasLockedSuggestion(extractedClass, input.fields);
+  const emptyForClass =
+    idWageLocked ||
+    (extractedClass === "purchase_contract" && !looksLikeContractFields(input.fields)) ||
+    ((bankInvite || extractedClass === "bank_statement") &&
+      !looksLikeBankFields(input.fields) &&
+      !looksLikeContractFields(input.fields)) ||
+    (extractedClass === "tax_return" && !looksLikeTaxReturnFields(input.fields));
   const unreadEmpty =
-    !failed &&
-    !lockedSuggestion &&
-    !isCoverReturnFields(input.fields) &&
-    (idWageLocked
-      ? true
-      : extractedClass === "purchase_contract"
-        ? !looksLikeContractFields(input.fields)
-        : (bankInvite || extractedClass === "bank_statement") &&
-            !looksLikeBankFields(input.fields) &&
-            !looksLikeContractFields(input.fields));
+    !failed && !lockedSuggestion && !isCoverReturnFields(input.fields) && emptyForClass;
   const k1Unread = !failed && k1OrdinaryMissingFromExtract(input.fields, name);
   const scheduleEUnread = !failed && scheduleECashFlowMissingFromExtract(input.fields);
   const box5Read = Boolean(

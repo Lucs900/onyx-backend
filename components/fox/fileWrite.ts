@@ -236,6 +236,7 @@ export const EXTRACT_SCHEMA_KEYS: Record<ExtractClass, readonly string[]> = {
     "business_name",
     "cover_schedules",
     "cover_k1_names",
+    "wages",
   ],
   bank_statement: ["institution", "period_end", "ending_balance", "account_type", "account_last4", "present_address"],
   purchase_contract: [
@@ -395,6 +396,8 @@ const YEARLY_TAX_KEYS = new Set([
   "entity_taxable_income",
   "entity_name",
   "cover_schedules",
+  "dependent_count",
+  "wages",
 ]);
 
 const DROP_FIELD_KEYS =
@@ -477,7 +480,91 @@ export function looksLikeTaxReturnFields(
   if (String(fields.entity_ordinary_income ?? "").trim()) return true;
   if (String(fields.schedule_c_net_profit ?? "").trim()) return true;
   if (String(fields.schedule_e_rents_received ?? "").trim()) return true;
-  return false;
+  return looksLikeFederalReturnFields(fields);
+}
+
+/** Form 1040 / tax return transcript. Year plus status, AGI, wages, or dependent count. */
+export function looksLikeFederalReturnFields(
+  fields?: Record<string, string | null | undefined> | null,
+): boolean {
+  if (!fields || isCoverReturnFields(fields)) return false;
+  const kind = normalizeReturnKind(String(fields.return_kind ?? ""));
+  if (
+    kind === "k1" ||
+    kind === "1065" ||
+    kind === "1120s" ||
+    kind === "1120" ||
+    kind === "schedule_c" ||
+    kind === "schedule_e"
+  ) {
+    return false;
+  }
+  const year = String(fields.tax_year ?? "").replace(/\D/g, "").slice(0, 4);
+  if (!/^(19|20)\d{2}$/.test(year)) return false;
+  const status = String(fields.filing_status ?? "").trim();
+  const agi = String(fields.agi ?? "").replace(/[^\d.]/g, "");
+  const wages = String(fields.wages ?? "").replace(/[^\d.]/g, "");
+  const deps = String(fields.dependent_count ?? "").replace(/\D/g, "");
+  return Boolean(status || Number(agi) > 0 || Number(wages) > 0 || deps !== "");
+}
+
+const FEDERAL_RETURN_HOLD = new Set([
+  "tax_year",
+  "filing_status",
+  "agi",
+  "wages",
+  "dependent_count",
+  "return_kind",
+]);
+
+function federalReturnConfirmParts(fields: Record<string, string>) {
+  const year = String(fields.tax_year ?? "").replace(/\D/g, "").slice(0, 4);
+  const status = String(fields.filing_status ?? "").trim();
+  const agi = String(fields.agi ?? "").replace(/[^\d.]/g, "");
+  const deps = String(fields.dependent_count ?? "").replace(/\D/g, "");
+  const parts: string[] = [];
+  if (year) parts.push(`${year} return`);
+  if (status) parts.push(status.replace(/\.$/, ""));
+  if (Number(agi) > 0) parts.push(`AGI $${Number(agi).toLocaleString("en-US")}`);
+  if (deps) {
+    const n = Number(deps);
+    parts.push(n === 1 ? "1 dependent" : `${n} dependents`);
+  }
+  return { year, status, agi, deps, parts };
+}
+
+/** Confirm-before-write for a 1040 / transcript. Count dependents only — never names. */
+export function maybeProposeFederalReturn(
+  draft: FoxIntakeDraft,
+  fields: Record<string, string>,
+): FoxIntakeDraft | null {
+  if (!looksLikeFederalReturnFields(fields) || isCoverReturnFields(fields)) return null;
+  if (draft.pendingProposal || draft.pendingConflict) return null;
+  const { year, status, agi, deps, parts } = federalReturnConfirmParts(fields);
+  if (!parts.length) return null;
+  const extras: { field: string; value: string; label: string }[] = [];
+  if (status) extras.push({ field: "filing_status", value: status, label: "filing status" });
+  if (Number(agi) > 0) extras.push({ field: "agi", value: agi, label: "AGI" });
+  const wages = String(fields.wages ?? "").replace(/[^\d.]/g, "");
+  if (Number(wages) > 0) extras.push({ field: "wages", value: wages, label: "wages" });
+  if (deps) extras.push({ field: "dependent_count", value: deps, label: "dependents" });
+  const kind = String(fields.return_kind ?? "").trim();
+  if (kind) extras.push({ field: "return_kind", value: kind, label: "return kind" });
+  return {
+    ...draft,
+    pendingProposal: {
+      field: "tax_year",
+      value: year,
+      label: "tax year",
+      kind: "computed",
+      extras,
+    },
+  };
+}
+
+export function federalReturnConfirmCopy(fields: Record<string, string>) {
+  const { parts } = federalReturnConfirmParts(fields);
+  return parts.length ? `${parts.join(". ")}.` : "";
 }
 
 export function looksLikeMortgageFields(
@@ -626,6 +713,7 @@ export function hasLockedSuggestion(
         String(fields?.k1_ordinary_income ?? "").trim() || String(fields?.entity_ordinary_income ?? "").trim(),
       );
     }
+    if (looksLikeFederalReturnFields(fields)) return true;
   }
   return Object.values(fields ?? {}).some((item) => String(item ?? "").trim());
 }
@@ -1396,6 +1484,7 @@ export function applyExtractedFields(
     "paystub_amount",
   ]);
   const coverReturn = isCoverReturnFields(fields);
+  const holdFederalReturn = looksLikeFederalReturnFields(fields);
   for (const field of EXTRACT_SCHEMA_KEYS[extractClass]) {
     const value = fields[field];
     if (!value) continue;
@@ -1416,6 +1505,7 @@ export function applyExtractedFields(
     ) {
       continue;
     }
+    if (holdFederalReturn && FEDERAL_RETURN_HOLD.has(field)) continue;
     if ((wageExtractFirst || holdWageFileWrites) && WAGE_EXTRACT_HOLD_KEYS.has(field)) continue;
     if (
       extractClass === "w2" &&
@@ -2048,6 +2138,9 @@ export function applyExtractedFields(
     !quietLines.includes(EMPLOYER_MISMATCH_LINE)
   ) {
     quietLines.push(EMPLOYER_MISMATCH_LINE);
+  }
+  if (holdFederalReturn && !next.pendingProposal && !next.pendingConflict) {
+    next = maybeProposeFederalReturn(next, fields) ?? next;
   }
   if (!coverReturn) next = maybeProposeQualifyingFromTaxFile(next);
   if (
@@ -3536,12 +3629,19 @@ export function inviteSequence(draft: FoxIntakeDraft): DocInviteKind[] {
 
 export function unreadDocOpen(draft: FoxIntakeDraft): ReceivedDoc | null {
   const docs = [...(draft.documents ?? [])].reverse();
-  const unread = docs.find(
-    (doc) =>
-      isUnreadNote(doc.note) ||
-      doc.status === "failed" ||
-      doc.status === "needs better copy",
-  );
+  const skipped = new Set(draft.skippedClasses ?? []);
+  const unread = docs.find((doc) => {
+    if (
+      !isUnreadNote(doc.note) &&
+      doc.status !== "failed" &&
+      doc.status !== "needs better copy"
+    ) {
+      return false;
+    }
+    const cls = receivedClassOf(doc) ?? doc.extractClass;
+    if (cls && skipped.has(cls)) return false;
+    return true;
+  });
   if (unread) return unread;
   if (!wageExtractFailedRead(draft)) return null;
   return (
@@ -4125,6 +4225,9 @@ export function skipUnreadDoc(draft: FoxIntakeDraft): FoxIntakeDraft {
   }
   if (!draft.sampleAccepted && kind === "paystub") {
     return skipWageStub(next);
+  }
+  if (kind === "tax_return" || nextDocInvite(draft) === "tax_return") {
+    return skipCurrentInvite(next);
   }
   return next;
 }
