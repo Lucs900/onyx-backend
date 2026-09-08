@@ -2437,6 +2437,12 @@ export function stubExtractConfirmCopy(
 ): string {
   const name = String(employer ?? "").trim();
   const spoken = speakPayFrequency(frequency) || String(frequency ?? "").trim().toLowerCase();
+  if (!spoken) {
+    return `${name}. Period ${speakWageMoney(stub)}. Use this?`;
+  }
+  if (!(monthly > 0)) {
+    return `${name}. ${speakWageMoney(stub)} ${spoken}. Use this?`;
+  }
   return `${name}. ${speakWageMoney(stub)} ${spoken}. ${speakWageMoney(monthly)} a month. Use this?`;
 }
 
@@ -2470,14 +2476,14 @@ export function canSpeakStubExtract(
     parseExtractMoney(fields?.gross_period) ??
     parseExtractMoney(fields?.paystub_amount) ??
     parseExtractMoney(String(fields?.gross_period ?? ""));
-  const frequency = speakPayFrequency(String(fields?.pay_frequency ?? ""));
   const employer = stubEmployerName(
     {
       employer_name: String(fields?.employer_name ?? ""),
     },
     draft,
   );
-  return stub != null && stub > 0 && Boolean(frequency) && Boolean(employer);
+  // Employer + period pay is enough. Frequency is optional when the page printed pay.
+  return stub != null && stub > 0 && Boolean(employer);
 }
 
 export function shouldProposeStubExtract(
@@ -2509,9 +2515,9 @@ export function proposeStubExtract(
   variablePay?: boolean,
 ): FoxIntakeDraft {
   const spoken = speakPayFrequency(frequency);
-  const monthly = conventionalStubMonthly(stub, spoken || frequency);
+  const monthly = spoken ? conventionalStubMonthly(stub, spoken) : null;
   const name = String(employer ?? "").trim();
-  if (!spoken || monthly == null || monthly <= 0 || stub <= 0 || !name) return draft;
+  if (stub <= 0 || !name) return draft;
   const who = String(employee ?? "").trim();
   const variable = Boolean(variablePay || draft.pendingWageExtract?.variablePay);
   return {
@@ -2521,24 +2527,26 @@ export function proposeStubExtract(
     pendingWageExtract: {
       ...(draft.pendingWageExtract ?? {}),
       stub,
-      frequency: spoken,
+      ...(spoken ? { frequency: spoken } : {}),
       employer: name,
       ...(who ? { employee: who } : {}),
-      monthly,
+      ...(monthly != null && monthly > 0 ? { monthly } : {}),
       stubIn: true,
       ...(variable ? { variablePay: true } : {}),
     },
     pendingProposal: {
       field: STUB_EXTRACT_FIELD,
-      value: moneyFieldValue(monthly),
+      value: moneyFieldValue(monthly != null && monthly > 0 ? monthly : stub),
       label: "stub extract",
       kind: "computed",
       extras: [
         { field: "employer_name", value: name, label: "employer" },
         ...(who ? [{ field: "full_name", value: who, label: "employee" }] : []),
         { field: PAYSTUB_AMOUNT_FIELD, value: moneyFieldValue(stub), label: "stub amount" },
-        { field: "pay_frequency", value: spoken, label: "pay frequency" },
-        { field: PAYSTUB_MONTHLY_FIELD, value: moneyFieldValue(monthly), label: "stub monthly" },
+        ...(spoken ? [{ field: "pay_frequency", value: spoken, label: "pay frequency" }] : []),
+        ...(monthly != null && monthly > 0
+          ? [{ field: PAYSTUB_MONTHLY_FIELD, value: moneyFieldValue(monthly), label: "stub monthly" }]
+          : []),
       ],
     },
   };
@@ -2554,7 +2562,7 @@ export function maybeProposeStubExtract(
   const frequency = speakPayFrequency(fields?.pay_frequency);
   const employer = stubEmployerName(fields, draft);
   const employee = stubEmployeeName(fields, draft);
-  if (stub == null || stub <= 0 || !frequency || !employer) return draft;
+  if (stub == null || stub <= 0 || !employer) return draft;
   return proposeStubExtract(draft, stub, frequency, employer, employee, fieldsHaveVariablePay(fields));
 }
 
@@ -2589,9 +2597,9 @@ function stubExtractParts(draft: FoxIntakeDraft): {
   const monthly =
     Number(extras.find((item) => item.field === PAYSTUB_MONTHLY_FIELD)?.value ?? 0) ||
     draft.pendingWageExtract?.monthly ||
-    conventionalStubMonthly(stub, spoken || frequency) ||
+    (spoken ? conventionalStubMonthly(stub, spoken) : null) ||
     0;
-  if (stub <= 0 || !spoken || monthly <= 0 || !employer) return null;
+  if (stub <= 0 || !employer) return null;
   return { stub, frequency: spoken, employer, employee, monthly };
 }
 
@@ -2626,20 +2634,24 @@ function writeStubPayLine(
     confirmed: true,
     confirmedAt: now,
   };
-  facts.pay_frequency = {
-    field: "pay_frequency",
-    value: parts.frequency,
-    source: "document",
-    confirmed: true,
-    confirmedAt: now,
-  };
-  facts[PAYSTUB_MONTHLY_FIELD] = {
-    field: PAYSTUB_MONTHLY_FIELD,
-    value: moneyFieldValue(parts.monthly),
-    source: "document",
-    confirmed: true,
-    confirmedAt: now,
-  };
+  if (parts.frequency) {
+    facts.pay_frequency = {
+      field: "pay_frequency",
+      value: parts.frequency,
+      source: "document",
+      confirmed: true,
+      confirmedAt: now,
+    };
+  }
+  if (parts.monthly > 0) {
+    facts[PAYSTUB_MONTHLY_FIELD] = {
+      field: PAYSTUB_MONTHLY_FIELD,
+      value: moneyFieldValue(parts.monthly),
+      source: "document",
+      confirmed: true,
+      confirmedAt: now,
+    };
+  }
   let next: FoxIntakeDraft = {
     ...draft,
     wageDocsAsked: true,

@@ -135,6 +135,7 @@ import {
   shouldHoldAskForLiveLine,
   isBankUnreadAsk,
   RECEIVED_UNREAD_ASK,
+  unreadDocActions,
   unreadRestoreActions,
   retainWageDocsLine,
   isContractExtractAskText,
@@ -162,7 +163,7 @@ import {
   ingestDroppedFiles,
   requestFoxPickFile,
 } from "./DocumentDrop";
-import { receivedDropCopy, unreadDropBytesCopy } from "@/lib/docs/accept";
+import { FAILED_READ_NOTE, receivedDropCopy, unreadDropBytesCopy } from "@/lib/docs/accept";
 import { WorkspaceFileDock } from "./FilePreview";
 import {
   DOC_INTAKE_EVENT,
@@ -1152,11 +1153,9 @@ export function AlwaysOnFox({
           !getFoxDraft().awaitingRaiseYtdFar
         ) {
           const live = getFoxDraft();
-          const ask = workspacePromptCopy(workspacePrompt(live), live);
           return applyFoxAsk(next, {
-            text: ask.text,
-            followUp: ask.followUp,
-            actions: unreadRestoreActions(live),
+            text: isBankUnreadAsk(live) ? RECEIVED_UNREAD_ASK : FAILED_READ_NOTE,
+            actions: unreadDocActions(),
           });
         }
         const scheduleEDraft = (() => {

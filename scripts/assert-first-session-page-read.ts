@@ -18,8 +18,11 @@ import {
 } from "../components/fox/fileWrite";
 import { resolveProposal } from "../components/fox/completeness";
 import { emptyDraft } from "../components/fox/store";
+import { canSpeakStubExtract } from "../components/fox/qualifyingIncome";
+import { FAILED_READ_NOTE } from "../lib/docs/accept";
 import { classifyAndExtract, FOX_GROK_MODEL } from "../lib/docs/extract";
 import { renderPdfFirstPage } from "../lib/docs/pdfText";
+import { unreadDocActions, workspacePromptCopy } from "../components/fox/workspace";
 import type { ExtractClass, FoxIntakeDraft } from "../components/fox/types";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -274,6 +277,63 @@ async function main() {
   assert.match(JSON.stringify(stubConfirm.draft.pendingProposal), /1806\.67/);
   assert.equal(displayFactValue("gross_period", "1806.67"), "$1,806.67");
   assert.notEqual(stubConfirm.draft.facts?.gross_period?.confirmed, true);
+
+  const afterW2 = resolveProposal(
+    applyExtractedFields(sketch(), {
+      extractClass: "w2",
+      confidence: 0.94,
+      fields: {
+        employer_name: "Comprehensive Skills Training Center",
+        tax_year: "2025",
+        medicare_wages: "36460.08",
+        box5: "36460.08",
+      },
+    }).draft,
+    "accept",
+  );
+  assert.equal((afterW2.employmentHistory ?? []).length, 1);
+  assert.match(afterW2.employmentHistory?.[0]?.label ?? "", /Comprehensive Skills Training Center/);
+  const stubFields = {
+    employer_name: "Comprehensive Skills Training Cente",
+    pay_period_end: "04/22/2026",
+    gross_period: "1806.67",
+    ytd_gross: "14453.36",
+  };
+  assert.equal(canSpeakStubExtract(afterW2, stubFields), true);
+  const stubAfterW2 = applyExtractedFields(afterW2, {
+    extractClass: "paystub",
+    confidence: 0.94,
+    fields: stubFields,
+  });
+  assert.ok(stubAfterW2.draft.pendingProposal, "after W-2, period pay confirms without frequency");
+  assert.match(JSON.stringify(stubAfterW2.draft.pendingProposal), /1806\.67/);
+  assert.notEqual(stubAfterW2.draft.facts?.gross_period?.confirmed, true);
+  const stubUsed = resolveProposal(stubAfterW2.draft, "accept");
+  assert.equal((stubUsed.employmentHistory ?? []).length, 1, "Use this must keep one CSTC Employment row");
+  assert.match(stubUsed.employmentHistory?.[0]?.label ?? "", /Comprehensive Skills Training Center/);
+  assert.equal(stubUsed.facts?.gross_period?.confirmed, true);
+
+  const unreadStubAsk = workspacePromptCopy("documents", {
+    ...afterW2,
+    documents: [
+      {
+        slot: "paystubs",
+        name: "28-paystub-cstc-pay-matt-260422.pdf",
+        type: "application/pdf",
+        size: 58436,
+        receivedAt: "2026-09-08T00:00:00.000Z",
+        status: "received",
+        extractClass: "paystub",
+        note: FAILED_READ_NOTE,
+      },
+    ],
+  });
+  assert.equal(unreadStubAsk.text, FAILED_READ_NOTE);
+  assert.deepEqual(
+    (unreadStubAsk.actions ?? []).map((item) => item.label),
+    unreadDocActions().map((item) => item.label),
+  );
+  assert.ok((unreadStubAsk.actions ?? []).some((item) => item.label === "Skip"));
 
   const matt = mattCstcPaystubPath();
   if (!matt) {

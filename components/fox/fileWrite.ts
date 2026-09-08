@@ -1601,7 +1601,7 @@ export function applyExtractedFields(
     Boolean(readStubAmount(draft)) ||
     Boolean(draft.wageFrequencyAsked) ||
     Boolean(draft.awaitingPayFrequency);
-  if (shouldProposeStubExtract(draft, extractClass)) {
+  if (shouldProposeStubExtract(draft, extractClass, fields)) {
     const employee = String(input.fields.full_name ?? input.fields.employee_name ?? "").trim();
     next = maybeProposeStubExtract(
       { ...next, pendingConflict: null, awaitingPayFrequency: false },

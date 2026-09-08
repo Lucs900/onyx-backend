@@ -15,6 +15,26 @@ function trimLabel(value?: string | null) {
   return (value ?? "").trim();
 }
 
+function employerTokens(value?: string | null) {
+  return String(value ?? "")
+    .toLowerCase()
+    .replace(/\b(inc|llc|l\.l\.c|corp|corporation|ltd|limited|company|co)\b\.?/g, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function sameEmployer(left?: string | null, right?: string | null) {
+  const a = employerTokens(left);
+  const b = employerTokens(right);
+  if (!a || !b) return false;
+  if (a === b) return true;
+  if (a.includes(b) || b.includes(a)) return true;
+  const leftTokens = a.split(/\s+/).filter((token) => token.length > 2);
+  const rightTokens = b.split(/\s+/).filter((token) => token.length > 2);
+  const shared = leftTokens.filter((token) => rightTokens.includes(token));
+  return shared.length >= 2;
+}
+
 function historyRows(
   draft: FoxIntakeDraft,
   key: "addressHistory" | "employmentHistory",
@@ -218,8 +238,19 @@ export function writeCurrentEmploymentHistory(draft: FoxIntakeDraft, employer: s
   const label = employer.trim();
   if (!label) return draft;
   const existing = draft.employmentHistory ?? [];
-  if (existing.some((item) => (item.label ?? "").trim().toLowerCase() === label.toLowerCase())) {
-    return draft;
+  const index = existing.findIndex((item) => {
+    const have = (item.label ?? "").trim();
+    return have.toLowerCase() === label.toLowerCase() || sameEmployer(have, label);
+  });
+  if (index >= 0) {
+    const jobs = [...existing];
+    const have = (jobs[index]?.label ?? "").trim();
+    jobs[index] = {
+      ...jobs[index],
+      label: have.length >= label.length ? have : label,
+      to: jobs[index]?.to || "present",
+    };
+    return { ...draft, employmentHistory: jobs };
   }
   return {
     ...draft,

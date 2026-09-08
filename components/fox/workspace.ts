@@ -12,7 +12,7 @@ import {
   type Timeline,
 } from "@/components/products/scenario";
 import { pathFromHomeChoice } from "./homeIdle";
-import { isUnreadNote } from "@/lib/docs/accept";
+import { FAILED_READ_NOTE, isUnreadNote } from "@/lib/docs/accept";
 import {
   addressConfirmPending,
   conventionalReadyHoldsReadyLine,
@@ -1926,9 +1926,9 @@ export function unreadDocActions(): FoxAction[] {
   ];
 }
 
-/** After Looks right, or while ID / statements are open, unread keeps Upload this · Skip. */
+/** Unread on this drop: Skip. Do not reprint Upload this / the stub ask. */
 export function unreadRestoreActions(draft: FoxIntakeDraft): FoxAction[] {
-  if (unreadDocOpen(draft)) return unreadDocActions();
+  if (unreadDocOpen(draft) || wageExtractFailedRead(draft)) return unreadDocActions();
   if (draft.sampleAccepted || nextDocInvite(draft)) return documentInviteActions(draft);
   return unreadDocActions();
 }
@@ -3773,8 +3773,8 @@ function workspaceAskCopy(
     const invite = nextDocInvite(draft);
     if (unreadDocOpen(draft)) {
       return {
-        text: isBankUnreadAsk(draft) ? RECEIVED_UNREAD_ASK : documentsAskText(draft),
-        actions: unreadRestoreActions(draft),
+        text: isBankUnreadAsk(draft) ? RECEIVED_UNREAD_ASK : FAILED_READ_NOTE,
+        actions: unreadDocActions(),
       };
     }
     if (invite === "coborrower_government_id") {
