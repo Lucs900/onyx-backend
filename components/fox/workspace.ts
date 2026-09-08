@@ -3754,12 +3754,14 @@ function workspaceAskCopy(
     };
   }
   if (prompt === "documents") {
+    const pendingConfirm = draft.pendingProposal;
     if (
-      isWageExtractProposal(draft.pendingProposal) ||
-      isStubExtractProposal(draft.pendingProposal) ||
-      isStubJobProposal(draft.pendingProposal)
+      pendingConfirm &&
+      (isWageExtractProposal(pendingConfirm) ||
+        isStubExtractProposal(pendingConfirm) ||
+        isStubJobProposal(pendingConfirm))
     ) {
-      return liveProposalAsk(draft, draft.pendingProposal);
+      return liveProposalAsk(draft, pendingConfirm);
     }
     if (draft.awaitingYearsInBusiness && !yearsInBusinessValue(draft)) {
       return { text: yearsInBusinessAskCopy(draft), actions: yearsInBusinessSkipActions() };
