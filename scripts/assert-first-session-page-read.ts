@@ -870,6 +870,19 @@ async function main() {
   assert.equal(federalReturnConfirmCopy(combesLoud.fields), "Tax return transcript · 2023");
   const combesAsk = nextFoxAsk(combesProposed.draft);
   const combesReaction = docReactionAsk(combesProposed.draft, "tax_return");
+  const combesAskLine = "I need the 2023 Form 1040 and Schedule E.";
+  assert.equal(combesAsk.text, "Tax return transcript · 2023");
+  assert.equal(combesAsk.followUp, combesAskLine);
+  assert.equal(combesReaction?.text, "Tax return transcript · 2023");
+  assert.equal(combesReaction?.followUp, combesAskLine);
+  assert.doesNotMatch(combesAsk.text, /1040|Schedule E|I need/i);
+  assert.doesNotMatch(combesReaction?.text ?? "", /1040|Schedule E|I need/i);
+  const combesPainted = `${combesAsk.text}\n${combesAsk.followUp ?? ""}`;
+  assert.equal(
+    (combesPainted.match(/I need the 2023 Form 1040 and Schedule E\./g) ?? []).length,
+    1,
+    "1040 + Schedule E ask is one line",
+  );
   const combesSpoken = `${combesAsk.text} ${combesAsk.followUp ?? ""} ${combesReaction?.text ?? ""} ${combesReaction?.followUp ?? ""}`;
   assert.match(combesSpoken, /tax return transcript/i);
   assert.match(combesSpoken, /2023/);

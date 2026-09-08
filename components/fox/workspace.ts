@@ -1547,7 +1547,7 @@ function incomeFromText(text: string) {
 function documentsAskText(draft: FoxIntakeDraft): string {
   const transcriptFollow = transcriptFollowUpAsk(draft);
   if (transcriptFollow) {
-    return `${transcriptSignalCopy(draft)}\n\n${transcriptFollow}`;
+    return transcriptSignalCopy(draft);
   }
   if (isCoborrowerNameConfirmPending(draft) && draft.pendingProposal?.value) {
     return coborrowerExtractCopy(draft.pendingProposal.value, draft);
@@ -2404,7 +2404,7 @@ export function docReactionAsk(
   if (cls === "tax_return" && isTranscriptOnFile(draft) && !draft.pendingProposal) {
     const follow = transcriptFollowUpAsk(draft);
     return {
-      text: follow ? `${transcriptSignalCopy(draft)}\n\n${follow}` : transcriptSignalCopy(draft),
+      text: transcriptSignalCopy(draft),
       followUp: follow || undefined,
       actions: follow ? documentInviteActions(draft) : undefined,
     };
