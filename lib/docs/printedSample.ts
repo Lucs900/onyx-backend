@@ -664,8 +664,13 @@ function taxYearFromPeriodEnding(text: string) {
 function dependentCountFromTranscript(lines: string[]) {
   const blob = flattenPrintedLines(lines).join("\n").replace(/\u00a0/g, " ");
   // Count Dependent 1…N rows. Exemption number is not a dependent count.
-  const numbered = [...blob.matchAll(/\bdependent\s*([1-9]\d?)\b/gi)].map((match) => Number(match[1]));
-  if (numbered.length) return String(Math.max(...numbered));
+  const numbered: number[] = [];
+  const dependentRow = /\bdependent\s*([1-9]\d?)\b/gi;
+  let row: RegExpExecArray | null;
+  while ((row = dependentRow.exec(blob))) {
+    numbered.push(Number(row[1]));
+  }
+  if (numbered.length) return String(Math.max.apply(null, numbered));
   const labeled = blob.match(/number of dependents\s*:?\s*(\d{1,2})/i);
   if (labeled?.[1]) return labeled[1];
   const named = blob.match(/dependents?\s*(?:listed|claimed)\s*[:\n]/i);
