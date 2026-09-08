@@ -183,9 +183,16 @@ export function combesReturnPath(): string | null {
 export const COMBES_TRANSCRIPT_LINES = [
   "Form 1040 Tax Return Transcript",
   "ALLA & REN ARIA COMB",
-  "Tax Period Ending 12-31-2023",
-  "Filing status Married Filing Joint",
-  "Exemption number 06",
+  "Report for Tax Period Ending: 12-31-2023",
+  "Filing status: Married Taxpayer Filing Joint Return",
+  "Dependent 1 Name control: COMB SSN: XXX-XX-3571",
+  "Dependent 2 Name control: COMB SSN: XXX-XX-2759",
+  "Dependent 3 Name control: COMB SSN: XXX-XX-0886",
+  "Dependent 4 Name control: COMB SSN: XXX-XX-4586",
+  "Exemption number: 06",
+  "Total wages: $356,636.00",
+  "Form W-2 wages: $356,636.00",
+  "Taxable pension/annuity amount: $45,617.00",
 ];
 
 export function alamedaPaystubPath(): string | null {
@@ -816,15 +823,19 @@ async function main() {
   assert.equal(combesLoud.fields.tax_year, "2023");
   assert.equal(combesLoud.fields.filing_status, "Married filing jointly");
   assert.equal(combesLoud.fields.return_kind, "transcript");
-  assert.equal(combesLoud.fields.dependent_count, undefined);
+  assert.equal(combesLoud.fields.dependent_count, "4");
   assert.equal(combesLoud.fields.full_name, undefined);
+  assert.equal(combesLoud.fields.wages, undefined);
+  assert.equal(combesLoud.fields.agi, undefined);
   const combesMapped = fieldsFromPrintedLines("tax_return", COMBES_TRANSCRIPT_LINES);
-  assert.equal(combesMapped.dependent_count, undefined, "Exemption number 06 is not a dependent count");
+  assert.equal(combesMapped.dependent_count, "4");
+  assert.notEqual(combesMapped.dependent_count, "6", "Exemption number 06 is not a dependent count");
   assert.equal(hasLockedSuggestion("tax_return", combesLoud.fields), true);
+  assert.equal(hasLockedSuggestion("tax_return", { tax_year: "2023", return_kind: "transcript" }), false);
   assert.equal(looksLikeFederalReturnFields(combesLoud.fields), true);
   assert.equal(looksLikeTaxReturnFields(combesLoud.fields), true);
   const combesBlob = JSON.stringify(combesLoud.fields);
-  assert.doesNotMatch(combesBlob, /ALLA|REN ARIA|COMB\b/i);
+  assert.doesNotMatch(combesBlob, /ALLA|REN ARIA|COMB\b|XXX-XX-|8051|3571|SSN/i);
   const combesProposed = applyExtractedFields(alamedaAfterId, {
     extractClass: "tax_return",
     confidence: 0.94,
@@ -836,18 +847,22 @@ async function main() {
   assert.equal(combesProposed.draft.pendingProposal?.field, "tax_year");
   assert.equal(combesProposed.draft.pendingProposal?.value, "2023");
   const combesConfirm = proposalAskCopy(combesProposed.draft.pendingProposal!);
-  assert.match(combesConfirm, /2023 return/);
-  assert.match(combesConfirm, /Married filing jointly/);
+  assert.match(combesConfirm, /Tax return transcript/);
+  assert.match(combesConfirm, /2023/);
+  assert.match(combesConfirm, /4 dependents/);
   assert.match(combesConfirm, /Use this\?/);
-  assert.doesNotMatch(combesConfirm, /ALLA|REN ARIA|COMB\b|Exemption|dependent names/i);
-  assert.equal(federalReturnConfirmCopy(combesLoud.fields), "2023 return. Married filing jointly.");
+  assert.doesNotMatch(combesConfirm, /ALLA|REN ARIA|COMB\b|Exemption|356,636|45,617|AGI|W-2 wages|pension|SSN/i);
+  assert.equal(federalReturnConfirmCopy(combesLoud.fields), "Tax return transcript. 2023. 4 dependents.");
   assert.equal(shouldSpeakPendingConfirm(combesProposed.draft), true);
   assert.equal(workspacePrompt(combesProposed.draft), "confirm-proposal");
   const combesUsed = resolveProposal(combesProposed.draft, "accept");
   assert.equal(combesUsed.facts?.tax_year?.value, "2023");
   assert.equal(combesUsed.facts?.filing_status?.value, "Married filing jointly");
-  assert.equal(combesUsed.facts?.dependent_count, undefined);
-  assert.doesNotMatch(JSON.stringify(combesUsed.facts ?? {}), /ALLA|REN ARIA|COMB\b/i);
+  assert.equal(combesUsed.facts?.dependent_count?.value, "4");
+  assert.equal(combesUsed.facts?.return_kind?.value, "transcript");
+  assert.equal(combesUsed.facts?.wages, undefined);
+  assert.equal(combesUsed.facts?.agi, undefined);
+  assert.doesNotMatch(JSON.stringify(combesUsed.facts ?? {}), /ALLA|REN ARIA|COMB\b|356636|45617|SSN/i);
 
   const unreadReturnAt = "2026-09-08T19:00:00.000Z";
   loadIntakeDraft({
@@ -911,8 +926,11 @@ async function main() {
     assert.equal(printedCombes.fields.tax_year, "2023");
     assert.equal(printedCombes.fields.filing_status, "Married filing jointly");
     assert.equal(printedCombes.fields.return_kind, "transcript");
+    assert.equal(printedCombes.fields.dependent_count, "4");
     assert.notEqual(printedCombes.fields.dependent_count, "6");
-    assert.doesNotMatch(JSON.stringify(printedCombes.fields), /ALLA|REN ARIA|COMB\b/i);
+    assert.equal(printedCombes.fields.wages, undefined);
+    assert.equal(printedCombes.fields.agi, undefined);
+    assert.doesNotMatch(JSON.stringify(printedCombes.fields), /ALLA|REN ARIA|COMB\b|XXX-XX-|SSN/i);
     noSecrets(printedCombes.fields);
   }
   const alamedaPdf = alamedaPaystubPath();

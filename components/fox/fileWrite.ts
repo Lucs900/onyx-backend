@@ -517,12 +517,31 @@ const FEDERAL_RETURN_HOLD = new Set([
   "return_kind",
 ]);
 
+export function isTranscriptReturnFields(
+  fields?: Record<string, string | null | undefined> | null,
+) {
+  const raw = String(fields?.return_kind ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/[\s_-]+/g, "");
+  return raw === "transcript" || raw.includes("returntranscript");
+}
+
 function federalReturnConfirmParts(fields: Record<string, string>) {
   const year = String(fields.tax_year ?? "").replace(/\D/g, "").slice(0, 4);
   const status = String(fields.filing_status ?? "").trim();
   const agi = String(fields.agi ?? "").replace(/[^\d.]/g, "");
   const deps = String(fields.dependent_count ?? "").replace(/\D/g, "");
   const parts: string[] = [];
+  if (isTranscriptReturnFields(fields)) {
+    parts.push("Tax return transcript");
+    if (year) parts.push(year);
+    if (deps) {
+      const n = Number(deps);
+      parts.push(n === 1 ? "1 dependent" : `${n} dependents`);
+    }
+    return { year, status, agi: "", deps, parts };
+  }
   if (year) parts.push(`${year} return`);
   if (status) parts.push(status.replace(/\.$/, ""));
   if (Number(agi) > 0) parts.push(`AGI $${Number(agi).toLocaleString("en-US")}`);
@@ -544,9 +563,10 @@ export function maybeProposeFederalReturn(
   if (!parts.length) return null;
   const extras: { field: string; value: string; label: string }[] = [];
   if (status) extras.push({ field: "filing_status", value: status, label: "filing status" });
-  if (Number(agi) > 0) extras.push({ field: "agi", value: agi, label: "AGI" });
+  const transcript = isTranscriptReturnFields(fields);
+  if (!transcript && Number(agi) > 0) extras.push({ field: "agi", value: agi, label: "AGI" });
   const wages = String(fields.wages ?? "").replace(/[^\d.]/g, "");
-  if (Number(wages) > 0) extras.push({ field: "wages", value: wages, label: "wages" });
+  if (!transcript && Number(wages) > 0) extras.push({ field: "wages", value: wages, label: "wages" });
   if (deps) extras.push({ field: "dependent_count", value: deps, label: "dependents" });
   const kind = String(fields.return_kind ?? "").trim();
   if (kind) extras.push({ field: "return_kind", value: kind, label: "return kind" });
@@ -699,8 +719,11 @@ export function hasLockedSuggestion(
   if (extractClass === "purchase_contract") return looksLikeContractFields(fields);
   if (extractClass === "tax_return") {
     const kind = normalizeReturnKind(String(fields?.return_kind ?? ""));
-    if (kind === "schedule_e") {
+    if (kind === "schedule_e" || (value("schedule_e_rents_received") && value("schedule_e_cash_expenses"))) {
       return Boolean(value("schedule_e_rents_received") && value("schedule_e_cash_expenses"));
+    }
+    if (kind === "schedule_c" || value("schedule_c_net_profit")) {
+      return Boolean(value("schedule_c_net_profit"));
     }
     if (kind === "1120") {
       return Boolean(String(fields?.return_kind ?? "").trim());
@@ -708,12 +731,17 @@ export function hasLockedSuggestion(
     if (isCoverReturnFields(fields)) {
       return Boolean(value("tax_year") || value("cover_schedules"));
     }
-    if (kind === "k1" || kind === "1065" || kind === "1120s") {
-      return Boolean(
-        String(fields?.k1_ordinary_income ?? "").trim() || String(fields?.entity_ordinary_income ?? "").trim(),
-      );
+    if (
+      kind === "k1" ||
+      kind === "1065" ||
+      kind === "1120s" ||
+      value("k1_ordinary_income") ||
+      value("entity_ordinary_income")
+    ) {
+      return Boolean(value("k1_ordinary_income") || value("entity_ordinary_income"));
     }
     if (looksLikeFederalReturnFields(fields)) return true;
+    return false;
   }
   return Object.values(fields ?? {}).some((item) => String(item ?? "").trim());
 }
@@ -2142,7 +2170,7 @@ export function applyExtractedFields(
   if (holdFederalReturn && !next.pendingProposal && !next.pendingConflict) {
     next = maybeProposeFederalReturn(next, fields) ?? next;
   }
-  if (!coverReturn) next = maybeProposeQualifyingFromTaxFile(next);
+  if (!coverReturn && !isTranscriptReturnFields(fields)) next = maybeProposeQualifyingFromTaxFile(next);
   if (
     next.awaitingYearsInBusiness &&
     (coverReturn || next.pendingProposal?.field === "qualifying_income")

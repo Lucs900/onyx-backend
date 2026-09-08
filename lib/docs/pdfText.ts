@@ -468,6 +468,63 @@ function looksLikePagePhoto(image: PdfEmbeddedImage) {
   return image.bytes.length >= 40_000;
 }
 
+/** IRS Get Transcript and similar files use Standard encryption with an empty user password. */
+export function pdfLooksEncrypted(bytes: Uint8Array) {
+  return /\/Encrypt\s+\d+\s+\d+\s+R/.test(latin1(bytes));
+}
+
+function pdfJsOpenOptions(bytes: Uint8Array) {
+  return {
+    data: new Uint8Array(bytes),
+    password: "",
+    disableWorker: true,
+    isEvalSupported: false,
+    useSystemFonts: true,
+    useWorkerFetch: false,
+  };
+}
+
+/** Visible glyphs via pdf.js. Empty-password Standard files (Form 1040 transcripts) need this. */
+export async function readPdfJsTextLayer(bytes: Uint8Array): Promise<string[] | null> {
+  if (!isPdf(bytes)) return null;
+  try {
+    const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
+    const workerSrc = await resolvePdfWorkerSrc();
+    if (!workerSrc) return null;
+    pdfjs.GlobalWorkerOptions.workerSrc = workerSrc;
+    const doc = await pdfjs.getDocument(
+      pdfJsOpenOptions(bytes) as Parameters<typeof pdfjs.getDocument>[0],
+    ).promise;
+    const lines: string[] = [];
+    const last = Math.min(doc.numPages, 3);
+    for (let i = 1; i <= last; i += 1) {
+      const page = await doc.getPage(i);
+      const content = await page.getTextContent();
+      let current = "";
+      let lastY: number | null = null;
+      for (const item of content.items) {
+        const row = item as { str?: string; transform?: number[] };
+        const text = String(row.str ?? "").replace(/\s+/g, " ").trim();
+        if (!text) continue;
+        const y = Array.isArray(row.transform) ? row.transform[5] : null;
+        if (lastY != null && y != null && Math.abs(lastY - y) > 2 && current) {
+          lines.push(current.trim());
+          current = text;
+        } else {
+          current = current ? `${current} ${text}` : text;
+        }
+        if (y != null) lastY = y;
+      }
+      if (current.trim()) lines.push(current.trim());
+    }
+    return meaningfulText(lines) ? lines : null;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error("[docs/pdf] text layer failed:", message);
+    return null;
+  }
+}
+
 async function resolvePdfWorkerSrc(): Promise<string | null> {
   const { createRequire } = await import("node:module");
   const { existsSync, readFileSync, writeFileSync } = await import("node:fs");
@@ -510,13 +567,9 @@ async function renderWithPdfJs(bytes: Uint8Array): Promise<PdfEmbeddedImage | nu
       return null;
     }
     pdfjs.GlobalWorkerOptions.workerSrc = workerSrc;
-    const doc = await pdfjs.getDocument({
-      data: new Uint8Array(bytes),
-      disableWorker: true,
-      isEvalSupported: false,
-      useSystemFonts: true,
-      useWorkerFetch: false,
-    } as Parameters<typeof pdfjs.getDocument>[0]).promise;
+    const doc = await pdfjs.getDocument(
+      pdfJsOpenOptions(bytes) as Parameters<typeof pdfjs.getDocument>[0],
+    ).promise;
     const page = await doc.getPage(1);
     const scale = bytes.length > 0 && bytes.length < 40_000 ? 2.25 : 1.5;
     const viewport = page.getViewport({ scale });

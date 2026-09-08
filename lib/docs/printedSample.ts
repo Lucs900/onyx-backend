@@ -646,8 +646,8 @@ export function looksLike1040Transcript(lines: string[]) {
 
 function filingStatusFromPrintedText(text: string) {
   const blob = String(text ?? "").replace(/\u00a0/g, " ");
-  if (/married filing joint/i.test(blob)) return "Married filing jointly";
-  if (/married filing separate/i.test(blob)) return "Married filing separately";
+  if (/married(?:\s+taxpayer)?\s+filing\s+joint/i.test(blob)) return "Married filing jointly";
+  if (/married(?:\s+taxpayer)?\s+filing\s+separate/i.test(blob)) return "Married filing separately";
   if (/head of household/i.test(blob)) return "Head of household";
   if (/\bqualifying surviving spouse\b|\bqualifying widow/i.test(blob)) return "Qualifying surviving spouse";
   if (/\bsingle\b/i.test(blob) && /filing status/i.test(blob)) return "Single";
@@ -663,11 +663,12 @@ function taxYearFromPeriodEnding(text: string) {
 
 function dependentCountFromTranscript(lines: string[]) {
   const blob = flattenPrintedLines(lines).join("\n").replace(/\u00a0/g, " ");
-  const labeled =
-    blob.match(/number of dependents\s*:?\s*(\d{1,2})/i) ||
-    blob.match(/dependents?\s*:?\s*(\d{1,2})\b/i);
+  // Count Dependent 1…N rows. Exemption number is not a dependent count.
+  const numbered = [...blob.matchAll(/\bdependent\s*([1-9]\d?)\b/gi)].map((match) => Number(match[1]));
+  if (numbered.length) return String(Math.max(...numbered));
+  const labeled = blob.match(/number of dependents\s*:?\s*(\d{1,2})/i);
   if (labeled?.[1]) return labeled[1];
-  const named = blob.match(/dependents?\s*(?:listed|claimed)?\s*[:\n]/i);
+  const named = blob.match(/dependents?\s*(?:listed|claimed)\s*[:\n]/i);
   if (!named) return "";
   const after = blob.slice(named.index ?? 0);
   const rows = after.split(/\n/).slice(1, 12);
@@ -1410,14 +1411,6 @@ export function fieldsFromPrintedLines(
     if (year) put("tax_year", year.replace(/\D/g, "").slice(0, 4));
     const status = filingStatusFromPrintedText(blob);
     if (status) put("filing_status", status);
-    const agi =
-      moneyDigits(emptyIfNotShown(stackedLabelValue(flattenPrintedLines(lines), /^ADJUSTED GROSS INCOME:?\s*/i))) ||
-      blob.match(/adjusted gross income\s*:?\s*\$?\s*([\d,]+\.?\d*)/i)?.[1];
-    if (agi) putMoney("agi", moneyDigits(agi) || agi);
-    const wages =
-      moneyDigits(emptyIfNotShown(stackedLabelValue(flattenPrintedLines(lines), /^WAGES[, ]*SALARIES[, ]*AND TIPS:?\s*/i))) ||
-      blob.match(/wages[, ]*salaries[, ]*(?:and|&)\s*tips\s*:?\s*\$?\s*([\d,]+\.?\d*)/i)?.[1];
-    if (wages) putMoney("wages", moneyDigits(wages) || wages);
     const deps = dependentCountFromTranscript(lines);
     if (deps) put("dependent_count", deps);
     put("return_kind", "transcript");
