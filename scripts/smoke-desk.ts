@@ -49,6 +49,7 @@ import {
   leftoverThisOneOnOlderTurns,
   leftoverUseThisOnOlderTurns,
   leftoverUseThisPaintedOnOnFile,
+  inertUsedConfirmText,
   liveCouponActions,
   paintedFoxActions,
   withLiveCouponChips,
@@ -3506,10 +3507,12 @@ assert.equal(leftoverLooksRightOnOlderTurns(harborSkipIdThread, harborAfterIdSki
 assert.ok(stillUsefulSection(harborAfterIdSkip)?.items.some((item) => item.label === "Government ID"));
 assert.equal(harborAfterIdSkip.statedAvailableAssets, undefined);
 for (const spoken of [harborW2Spoken, harborStubSpoken, harborReviewSpoken, DOC_INVITE_COPY.government_id]) {
+  const kept = inertUsedConfirmText(spoken);
   assert.ok(
-    harborSkipIdPainted.some((item) => item.role === "fox" && item.text === spoken),
+    harborSkipIdPainted.some((item) => item.role === "fox" && item.text === kept),
     `spoken line was stripped: ${spoken}`,
   );
+  assert.doesNotMatch(kept, /Use this\?/);
 }
 const harborAddressPainted = harborSkipIdPainted.find((item) => item.id === "address");
 assert.ok(harborAddressPainted?.text);
@@ -3521,6 +3524,7 @@ for (const older of harborSkipIdPainted.filter((item) => item.role === "fox" && 
   const painted = paintedFoxActions(older, harborAfterIdSkip, false);
   assert.equal(painted, undefined, `${older.id} still has live chips above the statements ask`);
   assert.equal(older.actions, undefined, `${older.id} leftover chips stayed stored`);
+  assert.doesNotMatch(older.text, /Use this\?/, `${older.id} leftover Use this? stayed painted`);
 }
 function persistLiveFoxThread(messages: typeof harborSkipIdThread, draft: typeof harborAfterIdSkip) {
   return withLiveCouponChips(
@@ -3628,14 +3632,17 @@ assert.equal(leftoverConfirmChipsLiveOnLatest(harborUsedWalkPainted, harborAfter
 assert.ok(stillUsefulSection(harborAfterIdSkip)?.items.some((item) => item.label === "Government ID"));
 assert.equal(harborAfterIdSkip.statedAvailableAssets, undefined);
 for (const spoken of [harborW2Spoken, harborStubSpoken, harborReviewSpoken, DOC_INVITE_COPY.government_id]) {
+  const kept = inertUsedConfirmText(spoken);
   assert.ok(
-    harborUsedWalkPainted.some((item) => item.role === "fox" && item.text === spoken),
+    harborUsedWalkPainted.some((item) => item.role === "fox" && item.text === kept),
     `used-walk spoken line was stripped: ${spoken}`,
   );
+  assert.doesNotMatch(kept, /Use this\?/);
 }
 for (const older of harborUsedWalkPainted.filter((item) => item.role === "fox" && item.id !== harborUsedWalkLatest?.id)) {
   assert.equal(paintedFoxActions(older, harborAfterIdSkip, false), undefined, `${older.id} used chips stayed live`);
   assert.equal(older.actions, undefined, `${older.id} used chips stayed stored`);
+  assert.doesNotMatch(older.text, /Use this\?/, `${older.id} leftover Use this? stayed painted`);
 }
 const harborSkipIdStatementPending = applyExtractedFields(
   {

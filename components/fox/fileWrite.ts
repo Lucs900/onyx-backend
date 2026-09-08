@@ -3696,16 +3696,12 @@ function zipOnlySubject(draft: FoxIntakeDraft) {
   return Boolean(zip || /^\d{5}$/.test(line) || /,\s*CA\s+\d{5}$/i.test(line));
 }
 
-/** ID, then statements — unless they skipped W-2 and wrote a stub, then last year’s return. */
+/** ID, then statements. Last year’s return stay parked until founder says go. */
 function lockedFileDocInvites(draft: FoxIntakeDraft): DocInviteKind[] {
   const kinds: DocInviteKind[] = [];
   if (!inviteSatisfied(draft, "government_id")) kinds.push("government_id");
-  if (skippedW2StubPath(draft)) {
-    if (!inviteSatisfied(draft, "tax_return")) kinds.push("tax_return");
-  } else {
-    if (!inviteSatisfied(draft, "bank_statement")) kinds.push("bank_statement");
-    if (secondBankStatementInviteNeeded(draft)) kinds.push("second_bank_statement");
-  }
+  if (!inviteSatisfied(draft, "bank_statement")) kinds.push("bank_statement");
+  if (secondBankStatementInviteNeeded(draft)) kinds.push("second_bank_statement");
   if (
     purchaseLikeFile(draft) &&
     !inviteSatisfied(draft, "purchase_contract") &&

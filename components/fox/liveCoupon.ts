@@ -367,12 +367,16 @@ function leftoverChipCount(actions: FoxAction[] | undefined, kind: "use-this" | 
   }).length;
 }
 
+function leftoverUseThisPaint(text?: string | null) {
+  return /\bUse this\??\b/i.test(String(text ?? ""));
+}
+
 function leftoverOnOlderTurns(
   messages: FoxMessage[],
   draft: FoxIntakeDraft,
   kind: "use-this" | "looks-right" | "this-one",
 ) {
-  const thread = dropResolvedAddressConfirmChips(messages, draft);
+  const thread = freezeUsedFoxTurns(dropResolvedAddressConfirmChips(messages, draft));
   const last = lastFoxIndex(thread);
   let count = 0;
   for (let i = 0; i < thread.length; i += 1) {
@@ -380,6 +384,8 @@ function leftoverOnOlderTurns(
     if (message.role !== "fox" || i === last) continue;
     count += leftoverChipCount(paintedFoxActions(message, draft, false), kind);
     count += leftoverChipCount(message.actions, kind);
+    if (kind === "use-this" && leftoverUseThisPaint(message.text)) count += 1;
+    if (kind === "use-this" && leftoverUseThisPaint(message.followUp)) count += 1;
   }
   return count;
 }
@@ -409,14 +415,26 @@ function foxTurnHasLaterUsedReply(messages: FoxMessage[], index: number) {
   return false;
 }
 
-/** After a chip is used, that Fox turn is text. Quick replies live only on the latest Fox line. */
+/** Used confirms are history — not a button. Drop the trailing Use this? so chips cannot fire. */
+export function inertUsedConfirmText(text?: string | null) {
+  return String(text ?? "")
+    .replace(/\s*Use this\?\s*$/i, "")
+    .trim();
+}
+
+/** After a chip is used, that Fox turn is inert text. Quick replies live only on the latest Fox line. */
 export function freezeUsedFoxTurns(messages: FoxMessage[]): FoxMessage[] {
   const current = lastFoxIndex(messages);
   return messages.map((message, index) => {
-    if (message.role !== "fox" || !message.actions?.length) return message;
+    if (message.role !== "fox") return message;
     const used = index !== current || foxTurnHasLaterUsedReply(messages, index);
     if (!used) return message;
-    return { ...message, text: message.text, followUp: message.followUp, facts: message.facts, actions: undefined };
+    const text = inertUsedConfirmText(message.text);
+    const followUp = message.followUp ? inertUsedConfirmText(message.followUp) : message.followUp;
+    if (!message.actions?.length && text === message.text && followUp === message.followUp) {
+      return message;
+    }
+    return { ...message, text, followUp, facts: message.facts, actions: undefined };
   });
 }
 

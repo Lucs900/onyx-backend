@@ -1,7 +1,7 @@
 /**
  * Liabilities v1: one stated monthly-debts ask after years (SE) or income (W-2),
- * before Looks right. Skip leaves the line empty. $800 writes after Use this.
- * in_queue 800 is not the write. Years leftover stays accepted.
+ * before Looks right. Skip leaves the line empty. $800 writes on the answer.
+ * No Use this on typed debts. in_queue 800 is not the write. Years leftover stays accepted.
  */
 import assert from "node:assert/strict";
 import {
@@ -20,7 +20,6 @@ import {
   MONTHLY_DEBTS_ASK,
   monthlyDebtsConfirmCopy,
   monthlyDebtsSkipActions,
-  proposeStatedMonthlyDebts,
   skipMonthlyDebts,
   writeStatedMonthlyDebts,
 } from "../components/fox/monthlyDebts";
@@ -170,18 +169,13 @@ assert.equal(skipReply?.capture?.field, "skip-monthly-debts");
 assert.notEqual(skipReply?.text, MONTHLY_DEBTS_ASK);
 
 const eight = workspaceReply("800", afterYears);
-assert.equal(eight?.capture?.field, "propose-monthly-debts");
+assert.equal(eight?.capture?.field, "statedMonthlyDebts");
 assert.equal(eight?.capture?.value, "800");
-assert.equal(eight?.text, monthlyDebtsConfirmCopy(800));
-assert.ok((eight?.actions ?? []).some((item) => item.label === "Use this"));
+assert.notEqual(eight?.text, monthlyDebtsConfirmCopy(800));
+assert.notEqual(eight?.text, MONTHLY_DEBTS_ASK);
+assert.ok(!(eight?.actions ?? []).some((item) => item.label === "Use this"));
 assert.ok(!(eight?.actions ?? []).some((item) => item.label === "Not yet"));
-assert.doesNotMatch(eight?.text ?? "", /DTI|credit pull|Proceed|close date/i);
-
-const pending = proposeStatedMonthlyDebts(afterYears, 800);
-assert.equal(workspacePrompt(pending), "confirm-proposal");
-const useThis = workspaceReply("Use this", pending);
-assert.equal(useThis?.capture?.field, "accept-proposal");
-assert.notEqual(useThis?.text, MONTHLY_DEBTS_ASK);
+assert.doesNotMatch(eight?.text ?? "", /Use this|Still right|DTI|credit pull|Proceed|close date/i);
 
 const written = writeStatedMonthlyDebts(afterYears, 800);
 assert.equal(written.statedMonthlyDebts, 800);

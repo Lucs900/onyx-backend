@@ -291,7 +291,6 @@ import {
   mortgageSubtractActions,
   mortgageSubtractAsk,
   parseMonthlyDebtAmount,
-  proposeStatedMonthlyDebts,
   shouldAskMonthlyDebts,
   skipMonthlyDebts,
   writeStatedMonthlyDebts,
@@ -7088,11 +7087,10 @@ export function workspaceReply(
         capture: { field: "include-mortgage-debts", value: String(amount) },
       };
     }
-    const nextDraft = proposeStatedMonthlyDebts(draft, amount);
+    const nextDraft = writeStatedMonthlyDebts(draft, amount);
     return {
-      text: monthlyDebtsConfirmCopy(amount),
-      actions: monthlyDebtsConfirmActions(),
-      capture: { field: "propose-monthly-debts", value: String(amount) },
+      ...nextFoxAsk(nextDraft),
+      capture: { field: "statedMonthlyDebts", value: String(amount) },
     };
   }
 

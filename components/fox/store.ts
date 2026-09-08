@@ -143,7 +143,6 @@ import { parseSubjectLeaseAmount, proposeTypedLeaseRental, skipSubjectLease } fr
 import {
   applyMortgageSubtract,
   parseMonthlyDebtAmount,
-  proposeStatedMonthlyDebts,
   skipMonthlyDebts,
   subjectMortgagePayment,
   writeStatedMonthlyDebts,
@@ -1900,7 +1899,7 @@ function applyCaptureBody(capture: Capture) {
   if (capture.field === "propose-monthly-debts") {
     const amount = parseMonthlyDebtAmount(capture.value);
     if (amount == null) return current;
-    return commit(proposeStatedMonthlyDebts(current, amount));
+    return commit(writeStatedMonthlyDebts(current, amount));
   }
   if (capture.field === "include-mortgage-debts") {
     const included = parseMonthlyDebtAmount(capture.value);
@@ -1950,7 +1949,7 @@ function applyCaptureBody(capture: Capture) {
   if (capture.field === "propose-property-type") {
     const value = parsePropertyType(capture.value);
     if (!value) return current;
-    return commit(proposePropertyType(current, value));
+    return commit(writePropertyType(current, value));
   }
   if (capture.field === "propertyType") {
     const value = parsePropertyType(capture.value);

@@ -636,8 +636,10 @@ function FoxThread({
   onEdit?: (prompt: FoxPrompt, line?: string, messageId?: string) => void;
 }) {
   const [editOpenId, setEditOpenId] = useState<string | null>(null);
-  const thread = dropStreetSuggestChips(
-    dropAbandonedAddressConfirm(dropResolvedAddressConfirmChips(messages, draft), draft),
+  const thread = freezeUsedFoxTurns(
+    dropStreetSuggestChips(
+      dropAbandonedAddressConfirm(dropResolvedAddressConfirmChips(messages, draft), draft),
+    ),
   );
   const currentFox = thread.reduce((index, message, i) => (message.role === "fox" ? i : index), -1);
 
@@ -709,7 +711,10 @@ function FoxThread({
                           ? "btn btn--secondary fox-chip is-quiet"
                           : "btn btn--secondary fox-chip"
                       }
-                      onClick={() => onAction(action)}
+                      onClick={() => {
+                        if (!current) return;
+                        onAction(action);
+                      }}
                     >
                       {action.label}
                     </button>
@@ -1774,6 +1779,15 @@ export function AlwaysOnFox({
   };
 
   const runAction = (action: FoxAction) => {
+    const liveIds = new Set(
+      (lastFoxTurn(freezeUsedFoxTurns(getFoxMessages()))?.actions ?? []).map((item) => item.id),
+    );
+    if (
+      (action.id === "accept-proposal" || action.id === "change-proposal") &&
+      !liveIds.has(action.id)
+    ) {
+      return;
+    }
     if (action.capture?.field === "skip-property-address") {
       skipPropertyAddressFromComposer(action.label);
       return;
