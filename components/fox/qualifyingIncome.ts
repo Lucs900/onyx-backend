@@ -2804,6 +2804,7 @@ function writeStubPayLine(
     ...draft,
     wageDocsAsked: true,
     wageStubAsked: true,
+    wageFrequencyAsked: true,
     stubExtractAccepted: true,
     awaitingPayFrequency: false,
     pendingProposal: null,

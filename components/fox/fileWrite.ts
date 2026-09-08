@@ -208,6 +208,7 @@ export const EXTRACT_SCHEMA_KEYS: Record<ExtractClass, readonly string[]> = {
     "tax_year",
     "filing_status",
     "agi",
+    "dependent_count",
     "return_kind",
     "schedule_c_net_profit",
     "depreciation",
@@ -2349,7 +2350,12 @@ export function spokenScheduleCName(draft: FoxIntakeDraft) {
   return hasScheduleCOnFile(draft) ? "Hale Design" : "";
 }
 
+/** W-2 path after a skipped W-2: one file, not a declarations maze. Dependents are a count only. */
+export const LAST_YEAR_FEDERAL_RETURN_ASK =
+  "Last year’s federal return. One file can show other income, other property, and household size.";
+
 export function taxReturnInviteCopy(draft: FoxIntakeDraft) {
+  if (draft.incomeType.value === "w2") return LAST_YEAR_FEDERAL_RETURN_ASK;
   const recent = mostRecentFederalYear(draft);
   if (hasCoverOnFile(draft)) {
     const next = nextCoverPageInviteCopy(draft);
@@ -2662,11 +2668,12 @@ function wageGroceryExtractClass(id: string) {
   );
 }
 
-/** W-2 after Looks right: one of each. Do not invent a return or a second year. */
+/** W-2 after Looks right: one of each. Skip-W-2 keeps last year’s return. */
 function dropWageAfterLooksRightExtra(draft: FoxIntakeDraft, id: string) {
   if (!draft.sampleAccepted || !wageThreadOpen(draft)) return false;
   if (id === "second-year-w2") return true;
   if (draft.incomeType.value === "w2") {
+    if (id === "tax_return" && wantsW2RemainderReturn(draft)) return false;
     if (
       id === "tax_return" ||
       id === "prior-year-return" ||
@@ -2694,9 +2701,10 @@ function wageAskClassLabel(draft: FoxIntakeDraft, extractClass: ExtractClass): S
 
 function wantsW2RemainderReturn(draft: FoxIntakeDraft) {
   const income = draft.incomeType.value;
-  if (income !== "w2") return false;
-  if (wageThreadOpen(draft)) return false;
+  if (income !== "w2" && income !== "both") return false;
   if (receivedTaxReturnCount(draft) >= 1) return false;
+  if (skippedW2StubPath(draft)) return true;
+  if (wageThreadOpen(draft)) return false;
   if ((draft.skippedClasses ?? []).includes("tax_return")) return false;
   return primaryInviteSequence(draft).every((kind) => inviteSatisfied(draft, kind));
 }
@@ -3070,6 +3078,7 @@ function isWageGroceryBeforeLooksRight(draft: FoxIntakeDraft, id: string) {
   if (id === "w2" && (draft.skippedClasses ?? []).includes("w2")) {
     return false;
   }
+  if (id === "tax_return" && skippedW2StubPath(draft)) return false;
   if (id === "prior-year-return" && hasScheduleCOnFile(draft)) return false;
   return wageGroceryExtractClass(id);
 }
@@ -3080,6 +3089,9 @@ function wageStillUsefulCopy(id: string): { label: string; ask: string } | null 
   }
   if (id === "w2") {
     return { label: "This year’s W-2", ask: "This year’s W-2 still helps this file." };
+  }
+  if (id === "tax_return") {
+    return { label: "Last year’s federal return", ask: LAST_YEAR_FEDERAL_RETURN_ASK };
   }
   if (id === "second-year-w2") return null;
   return null;
@@ -3190,7 +3202,9 @@ export function layer2Plan(draft: FoxIntakeDraft): StillUsefulItem[] {
     }
     const wageCopy =
       wageThreadOpen(draft) &&
-      (draft.sampleAccepted || (id === "w2" && (draft.skippedClasses ?? []).includes("w2")))
+      (draft.sampleAccepted ||
+        (id === "w2" && (draft.skippedClasses ?? []).includes("w2")) ||
+        (id === "tax_return" && skippedW2StubPath(draft)))
         ? wageStillUsefulCopy(id)
         : null;
     if (wageCopy === null && id === "second-year-w2" && wageThreadOpen(draft)) return [];
@@ -3650,6 +3664,13 @@ export function wageExtractOnFile(draft: FoxIntakeDraft) {
   return classSuccessfullyRead(draft, "w2") && classSuccessfullyRead(draft, "paystub");
 }
 
+/** Skip W-2, then Period Use this. ID is next; last year’s return follows. Not bank. */
+export function skippedW2StubPath(draft: FoxIntakeDraft) {
+  if (!wageThreadOpen(draft)) return false;
+  if (!(draft.skippedClasses ?? []).includes("w2")) return false;
+  return Boolean(draft.stubExtractAccepted);
+}
+
 /** W-2 drop / Box 5 / frequency / stub confirm still live — ID wait. */
 function wageSketchBlocksDocInvite(draft: FoxIntakeDraft): boolean {
   if (draft.sampleAccepted || !wageThreadOpen(draft)) return false;
@@ -3661,6 +3682,7 @@ function wageSketchBlocksDocInvite(draft: FoxIntakeDraft): boolean {
     return true;
   }
   if (stubExtractAskOpen(draft)) return true;
+  if (draft.stubExtractAccepted) return false;
   if (!draft.wageDocsAsked) return true;
   if (!draft.wageBox5Asked) return true;
   if (!draft.wageFrequencyAsked) return true;
@@ -3674,12 +3696,16 @@ function zipOnlySubject(draft: FoxIntakeDraft) {
   return Boolean(zip || /^\d{5}$/.test(line) || /,\s*CA\s+\d{5}$/i.test(line));
 }
 
-/** ID, then statements. ZIP-only purchase asks for the contract before Looks right. After Looks right, a missing contract is still next. */
+/** ID, then statements — unless they skipped W-2 and wrote a stub, then last year’s return. */
 function lockedFileDocInvites(draft: FoxIntakeDraft): DocInviteKind[] {
   const kinds: DocInviteKind[] = [];
   if (!inviteSatisfied(draft, "government_id")) kinds.push("government_id");
-  if (!inviteSatisfied(draft, "bank_statement")) kinds.push("bank_statement");
-  if (secondBankStatementInviteNeeded(draft)) kinds.push("second_bank_statement");
+  if (skippedW2StubPath(draft)) {
+    if (!inviteSatisfied(draft, "tax_return")) kinds.push("tax_return");
+  } else {
+    if (!inviteSatisfied(draft, "bank_statement")) kinds.push("bank_statement");
+    if (secondBankStatementInviteNeeded(draft)) kinds.push("second_bank_statement");
+  }
   if (
     purchaseLikeFile(draft) &&
     !inviteSatisfied(draft, "purchase_contract") &&
@@ -3727,10 +3753,13 @@ export function nextDocInvite(draft: FoxIntakeDraft): DocInviteKind | null {
   return null;
 }
 
-/** Paystub remainder blocks Looks right. ID / bank / contract after a confirmed W-2 stub do not. */
+/** Paystub remainder blocks Looks right. Skip-W-2 last year’s return does not gate Proceed. */
 export function docInviteBlocksLooksRight(draft: FoxIntakeDraft) {
   const invite = nextDocInvite(draft);
   if (!invite) return false;
+  if ((invite === "tax_return" || invite === "prior_year_return") && skippedW2StubPath(draft)) {
+    return false;
+  }
   if (employerStubRemainderOpen(draft) || invite === "paystub") return true;
   if (
     wageW2ExtractAccepted(draft) &&

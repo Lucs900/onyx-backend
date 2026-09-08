@@ -7060,6 +7060,9 @@ assertAnswerThenRestore(afterProceedAsk, /in queue|I stay the interface|licensed
 assert.doesNotMatch(afterProceedAsk?.text ?? "", /will contact you|we’ll be in touch|your lo has the file/i);
 
 assert.ok(EXTRACT_SCHEMA_KEYS.tax_return.includes("schedule_c_net_profit"));
+assert.ok(EXTRACT_SCHEMA_KEYS.tax_return.includes("dependent_count"));
+assert.ok(!EXTRACT_SCHEMA_KEYS.tax_return.includes("dependent_name"));
+assert.ok(!EXTRACT_SCHEMA_KEYS.tax_return.includes("dependent_names"));
 assert.ok(EXTRACT_SCHEMA_KEYS.tax_return.includes("return_kind"));
 assert.ok(EXTRACT_SCHEMA_KEYS.tax_return.includes("depreciation"));
 assert.ok(EXTRACT_SCHEMA_KEYS.tax_return.includes("depletion"));

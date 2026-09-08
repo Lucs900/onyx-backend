@@ -384,6 +384,7 @@ function applyFoxAsk(
   },
 ): FoxMessage[] {
   const last = lastFoxTurn(messages);
+  const liveActions = lastFoxTurn(freezeUsedFoxTurns(messages))?.actions;
   const freezeOthers = (keepId: string, replacement: FoxMessage) =>
     freezeUsedFoxTurns(
       messages.map((message) => (message.id === keepId ? replacement : message)),
@@ -408,7 +409,7 @@ function applyFoxAsk(
     return freezeOthers(last.id, foxAskMessage(ask));
   }
   if (isIdExtractAskText(ask.text)) {
-    if (shouldHoldDocInviteForOpenUseThis(last?.text, last?.actions, ask.text)) {
+    if (shouldHoldDocInviteForOpenUseThis(last?.text, liveActions, ask.text)) {
       return freezeUsedFoxTurns(messages);
     }
     return applyIdExtractAsk(messages, foxAskMessage(ask));
@@ -466,7 +467,7 @@ function applyFoxAsk(
       /Use this\?$/.test(last.text.trim())) &&
     ask.text !== last.text
   ) {
-    if (last.actions?.length || shouldHoldDocInviteForOpenUseThis(last.text, last.actions, ask.text)) {
+    if (liveActions?.length || shouldHoldDocInviteForOpenUseThis(last.text, liveActions, ask.text)) {
       return freezeUsedFoxTurns(messages);
     }
   }
@@ -486,7 +487,7 @@ function applyFoxAsk(
     );
     return freezeUsedFoxTurns([...withoutYears, foxAskMessage(ask)]);
   }
-  if (last && shouldHoldDocInviteForOpenUseThis(last.text, last.actions, ask.text)) {
+  if (last && shouldHoldDocInviteForOpenUseThis(last.text, liveActions, ask.text)) {
     return freezeUsedFoxTurns(messages);
   }
   return freezeUsedFoxTurns([...messages, foxAskMessage(ask)]);
@@ -1433,9 +1434,10 @@ export function AlwaysOnFox({
         }
         return [...cut, foxAskMessage(ask)];
       }
-      const lastFox = lastFoxTurn(prev);
+      const painted = freezeUsedFoxTurns(prev);
+      const lastFox = lastFoxTurn(painted);
       if (lastFox && shouldHoldDocInviteForOpenUseThis(lastFox.text, lastFox.actions, ask.text)) {
-        return prev;
+        return painted;
       }
       if (lastFox && sameFoxAsk(lastFox, ask)) return prev;
       if (isOnFileAddressLine({ id: lastFox?.id ?? "on-file", role: "fox", text: ask.text })) {
@@ -1712,7 +1714,7 @@ export function AlwaysOnFox({
         ...held,
         { id: newId(), role: "client", text: clientText, edit, editLine },
       ];
-      if (!fox.text.trim() && !(fox.followUp ?? "").trim()) return next;
+      if (!fox.text.trim() && !(fox.followUp ?? "").trim()) return freezeUsedFoxTurns(next);
       if (isYearsInBusinessAskText(fox.text)) {
         const withoutYears = next.filter(
           (item) => !(item.role === "fox" && isYearsInBusinessAskText(item.text)),

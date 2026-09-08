@@ -2831,7 +2831,9 @@ function documentQuestionAnswer(draft: FoxIntakeDraft) {
     return conventionalGuidelinePattern("docs", "government_id", "A government ID puts a name on this file.");
   }
   if (invite === "tax_return") {
-    if (draft.incomeType.value === "both") return docInviteAskCopy(draft, "tax_return");
+    if (draft.incomeType.value === "w2" || draft.incomeType.value === "both") {
+      return docInviteAskCopy(draft, "tax_return");
+    }
     return `${docInviteAskCopy(draft, "tax_return")} That’s how I estimate qualifying income. Suggested, not underwritten.`;
   }
   if (invite === "prior_year_return") {
