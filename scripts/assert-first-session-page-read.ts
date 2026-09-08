@@ -4,6 +4,7 @@
  * Printed Harbor fixtures stay confirm, not unread. Do not invent a paystub PDF.
  */
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -27,6 +28,8 @@ import {
   shouldProposeStubExtract,
   skipWageDocs,
   stubPeriodConfirmOpen,
+  WAGE_DOCS_ASK,
+  WAGE_STUB_DROP_ASK,
   wageEmploymentFileLine,
 } from "../components/fox/qualifyingIncome";
 import { FAILED_READ_NOTE } from "../lib/docs/accept";
@@ -122,6 +125,34 @@ export function mattCstcPaystubPath(): string | null {
     if (isPdfBytes(bytes)) return path;
   }
   return null;
+}
+
+/** Same bytes Lukasz paperclipped. Do not invent a substitute stub. */
+export const ALAMEDA_STUB_SHA256 =
+  "4d09d5ffd8a85bfda32a94f8f5350ef5ae543e42a1fd9220197a8f8ecc1c2303";
+export const ALAMEDA_STUB_PDF_REL = "scripts/fixtures/Jan 2 2026 Alameda Health System Pay Stub.pdf";
+export const ALAMEDA_STUB_ALIAS_REL = "scripts/fixtures/29-paystub-alameda-health-jan-2-2026.pdf";
+export const ALAMEDA_STUB_CANDIDATES = [ALAMEDA_STUB_PDF_REL, ALAMEDA_STUB_ALIAS_REL];
+
+export function alamedaPaystubPath(): string | null {
+  for (const rel of ALAMEDA_STUB_CANDIDATES) {
+    const path = join(root, rel);
+    if (!existsSync(path)) continue;
+    const bytes = readFileSync(path);
+    if (!isPdfBytes(bytes)) continue;
+    const digest = createHash("sha256").update(bytes).digest("hex");
+    if (digest === ALAMEDA_STUB_SHA256) return path;
+  }
+  return null;
+}
+
+export function isBundledWageDocsAsk(text: string) {
+  const value = String(text ?? "").replace(/\s+/g, " ").trim();
+  return (
+    /last year.?s W-2 and a (recent )?paystub/i.test(value) ||
+    /W-2 and a (recent )?paystub/i.test(value) ||
+    (/W-2/i.test(value) && /paystub/i.test(value) && /Skip if you want to type it/i.test(value))
+  );
 }
 
 const deadVision = {
@@ -492,6 +523,16 @@ async function main() {
     propertyTypeAsked: true,
   };
   assert.equal(workspacePrompt(wageDocsSketch), "wage-docs");
+  assert.equal(WAGE_DOCS_ASK, "Drop last year’s W-2. Skip if you want to type it.");
+  assert.doesNotMatch(WAGE_DOCS_ASK, /paystub/i);
+  assert.doesNotMatch(WAGE_STUB_DROP_ASK, /W-2/i);
+  assert.equal(isBundledWageDocsAsk(WAGE_DOCS_ASK), false, "W-2 ask must be one file, not W-2+stub");
+  assert.equal(
+    isBundledWageDocsAsk("Drop last year’s W-2 and a recent paystub. Skip if you want to type it."),
+    true,
+  );
+  assert.equal(workspacePromptCopy("wage-docs", wageDocsSketch).text, WAGE_DOCS_ASK);
+  assert.equal(isBundledWageDocsAsk(workspacePromptCopy("wage-docs", wageDocsSketch).text), false);
   assert.ok(
     (workspacePromptCopy("wage-docs", wageDocsSketch).actions ?? []).some(
       (item) => item.capture?.field === "skip-wage-docs",
@@ -503,7 +544,9 @@ async function main() {
   assert.equal(nextDocInvite(skippedW2), "paystub");
   assert.equal(workspacePrompt(skippedW2), "documents");
   assert.match(nextFoxAsk(skippedW2).text, /paystub/i);
+  assert.doesNotMatch(nextFoxAsk(skippedW2).text, /W-2/i);
   assert.doesNotMatch(nextFoxAsk(skippedW2).text, /government ID/i);
+  assert.equal(isBundledWageDocsAsk(nextFoxAsk(skippedW2).text), false);
   const usefulAfterSkipW2 = (stillUsefulSection(skippedW2)?.items ?? []).map((item) => item.label);
   assert.ok(
     usefulAfterSkipW2.some((label) => /W-2/i.test(label)),
@@ -541,6 +584,15 @@ async function main() {
   assert.equal(alamedaUsed.awaitingPayFrequency, false);
   assert.doesNotMatch(nextFoxAsk(alamedaUsed).text, /How often|paycheck/i);
   noSecrets(alamedaFields);
+  const alamedaPdf = alamedaPaystubPath();
+  assert.ok(
+    alamedaPdf,
+    "Alameda fixture missing or sha256 mismatch — " + ALAMEDA_STUB_CANDIDATES.join(" | "),
+  );
+  assert.equal(
+    createHash("sha256").update(readFileSync(alamedaPdf)).digest("hex"),
+    ALAMEDA_STUB_SHA256,
+  );
   const unreadAfterSkip = applyExtractedFields(skippedW2, {
     extractClass: "paystub",
     confidence: 0.94,

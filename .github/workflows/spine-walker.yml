@@ -28,6 +28,7 @@ on:
       - "scripts/assert-first-session-page-read.ts"
       - ".github/workflows/spine-walker.yml"
       - "sample-docs/**"
+      - "scripts/fixtures/**"
   pull_request:
     paths:
       - "app/(marketing)/start/**"
@@ -55,6 +56,7 @@ on:
       - "scripts/assert-first-session-page-read.ts"
       - ".github/workflows/spine-walker.yml"
       - "sample-docs/**"
+      - "scripts/fixtures/**"
 concurrency:
   group: spine-walker-preview-bc93
   cancel-in-progress: true
@@ -285,8 +287,13 @@ jobs:
               picked = secondOk || !firstOk ? second : first;
             }
             core.exportVariable("VERCEL_OIDC_TOKEN", picked.token);
+      - name: Founder Alameda walk
+        run: SPINE_WALKER_ONLY=25 SPINE_WALKER_SKIP_LEFTOVERS=1 bash scripts/assert-spine-walker.sh
+        env:
+          SPINE_WALKER_URL: ${{ env.SPINE_WALKER_URL }}
+          VERCEL_OIDC_TOKEN: ${{ env.VERCEL_OIDC_TOKEN }}
       - name: Run spine walker
-        run: SPINE_WALKER_SKIP_LEFTOVERS=1 bash scripts/assert-spine-walker.sh
+        run: SPINE_WALKER_SKIP=25 SPINE_WALKER_SKIP_LEFTOVERS=1 bash scripts/assert-spine-walker.sh
         env:
           SPINE_WALKER_URL: ${{ env.SPINE_WALKER_URL }}
           VERCEL_OIDC_TOKEN: ${{ env.VERCEL_OIDC_TOKEN }}

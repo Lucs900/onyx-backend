@@ -9,7 +9,7 @@ const CONTAMINATION =
   /presidio|\bp37\b|candle|\bwax\b|label[- ]pack|label\s*5|this\s+is\s+it/i;
 
 const MORTGAGE_SAMPLE =
-  /paystub|w-?2|\bid\b|license|\breturn\b|\bentity\b|tax[-_ ]?return|bank[-_ ]?statement|purchase[-_ ]?contract|mortgage[-_ ]?statement/i;
+  /pay[-_ ]?stub|w-?2|\bid\b|license|\breturn\b|\bentity\b|tax[-_ ]?return|bank[-_ ]?statement|purchase[-_ ]?contract|mortgage[-_ ]?statement/i;
 
 const DOC_EXT = /\.(png|jpe?g|webp|heic|pdf|gif|tiff?)$/i;
 
@@ -122,6 +122,14 @@ export function assertOnyxFixtures() {
     "expected scripts/fixtures/government-id-jordan.pdf",
   );
   assert.ok(paths.some((path) => /paystub-acme\.pdf$/.test(path)), "expected scripts/fixtures/paystub-acme.pdf");
+  assert.ok(
+    paths.some((path) => /Jan 2 2026 Alameda Health System Pay Stub\.pdf$/.test(path)),
+    "expected scripts/fixtures/Jan 2 2026 Alameda Health System Pay Stub.pdf",
+  );
+  assert.ok(
+    paths.some((path) => /29-paystub-alameda-health-jan-2-2026\.pdf$/.test(path)),
+    "expected scripts/fixtures/29-paystub-alameda-health-jan-2-2026.pdf",
+  );
   assert.ok(
     paths.some((path) => /paystub-ot-bonus-2026\.pdf$/.test(path)),
     "expected scripts/fixtures/paystub-ot-bonus-2026.pdf",

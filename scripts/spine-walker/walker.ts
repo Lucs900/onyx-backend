@@ -17,6 +17,12 @@
  * page-read: Box 5 $36,460.08, never $5. Case 24 is composer paperclip
  * → real PDF bytes → preview Grok of PAY MATT CSTC 260422. Paperclip click
  * (filechooser). Not a PNG intercept. Walker green + founder silence = FAIL.
+ * Case 25 is the founder Alameda walk: hard refresh /start?path=acr → Start
+ * over → Refinance/Buy until W-2 → one file per ask. Bundled W-2+stub one
+ * Skip is a fail. Skip W-2 only; stub ask stays; paperclip
+ * `Jan 2 2026 Alameda Health System Pay Stub.pdf` (filechooser, same bytes);
+ * Fox must say Alameda Health System. Period $16,824.30. Use this?; Use this
+ * writes one Employment row, never before. Local extract stand-in is VOID.
  * Years in business is once after SE / Both. Named Hale Design when known.
  * Lukasz Harbor leftovers run from scripts/assert-spine-walker.sh before
  * Playwright. CI fail = red.
@@ -31,7 +37,7 @@ import { classifyAndExtract } from "../../lib/docs/extract";
 import { isBoxNumberAsDollars } from "../../components/fox/fileWrite";
 import type { ExtractClass } from "../../components/fox/types";
 import { adpW2FixturePath } from "../assert-w2-page-read";
-import { mattCstcPaystubPath } from "../assert-first-session-page-read";
+import { alamedaPaystubPath, isBundledWageDocsAsk, mattCstcPaystubPath } from "../assert-first-session-page-read";
 
 const PREVIEW_URL =
   process.env.SPINE_WALKER_URL ??
@@ -1497,6 +1503,142 @@ async function case24(page: Page) {
   }
 }
 
+async function skipDebtsIfOpen(page: Page) {
+  const afterW2 = await waitCurrent(
+    page,
+    (text, chips) =>
+      /other monthly debts|Drop last year|government ID|latest paystub|W-2|paystub/i.test(text) ||
+      hasChip(chips, "Skip"),
+    20_000,
+  );
+  if (/other monthly debts/i.test(afterW2.text) && hasChip(afterW2.chips, "Skip")) {
+    await clickChip(page, "Skip");
+    await waitCurrent(page, (text) => !/other monthly debts/i.test(text), 15_000);
+  }
+}
+
+async function case25(page: Page) {
+  const fixture = alamedaPaystubPath();
+  if (!fixture) {
+    throw new BeatFail(
+      "missing Jan 2 2026 Alameda Health System Pay Stub.pdf (sha256 4d09d5ffd8a85bfda32a94f8f5350ef5ae543e42a1fd9220197a8f8ecc1c2303)",
+    );
+  }
+  await hardStartOver(page);
+  await walkToQuotedIncome(page, "94123", true);
+  await waitAsk(page, /How is income earned/i);
+  await clickChip(page, "W-2");
+  await skipDebtsIfOpen(page);
+  const wageAsk = await waitCurrent(
+    page,
+    (text, chips) =>
+      /Drop last year|W-2|paystub|government ID/i.test(text) || hasChip(chips, "Skip"),
+    20_000,
+  );
+  if (isBundledWageDocsAsk(wageAsk.text)) {
+    throw new BeatFail(`step 4 bundled W-2+stub one-line Skip — ${wageAsk.text}`);
+  }
+  if (/paystub/i.test(wageAsk.text) && /W-2/i.test(wageAsk.text)) {
+    throw new BeatFail(`step 4 one Skip for two files — ${wageAsk.text}`);
+  }
+  if (!/W-2/i.test(wageAsk.text)) {
+    throw new BeatFail(`step 4 expected W-2-only ask — ${wageAsk.text}`);
+  }
+  if (/government ID/i.test(wageAsk.text) && !/W-2/i.test(wageAsk.text)) {
+    throw new BeatFail(`step 4 jumped to ID — ${wageAsk.text}`);
+  }
+  if (!hasChip(wageAsk.chips, "Skip")) {
+    throw new BeatFail(`step 4 missing Skip on W-2 ask — ${wageAsk.chips.join(" · ") || "(none)"}`);
+  }
+  await clickChip(page, "Skip");
+  const stubAsk = await waitCurrent(
+    page,
+    (text, chips) =>
+      /paystub|government ID|Box 5|How often|W-2/i.test(text) || hasChip(chips, "Skip"),
+    20_000,
+  );
+  if (isBundledWageDocsAsk(stubAsk.text)) {
+    throw new BeatFail(`Skip W-2 still one Skip for two files — ${stubAsk.text}`);
+  }
+  if (/government ID/i.test(stubAsk.text) && !/paystub/i.test(stubAsk.text)) {
+    throw new BeatFail(`Skip W-2 closed the stub ask — ${stubAsk.text}`);
+  }
+  if (!/paystub/i.test(stubAsk.text)) {
+    throw new BeatFail(`Skip W-2 must leave the paystub ask — ${stubAsk.text}`);
+  }
+  if (/W-2/i.test(stubAsk.text) && /paystub/i.test(stubAsk.text)) {
+    throw new BeatFail(`after Skip W-2 still asking both files — ${stubAsk.text}`);
+  }
+  await composerPaperclipPick(page, fixture);
+  await waitSystem(
+    page,
+    (texts) =>
+      texts.some((text) => /Jan 2 2026 Alameda Health System Pay Stub.*received|\.pdf · received/i.test(text)),
+    20_000,
+  ).catch(async () => {
+    const now = await currentText(page);
+    const systems = await systemTexts(page);
+    throw new BeatFail(
+      `Alameda paperclip silent — no filename/received — ${now} | ${systems.join(" | ") || "(no system lines)"}`,
+    );
+  });
+  const after = await waitCurrent(
+    page,
+    (text, chips) =>
+      (/16,?824\.30/.test(text) && (hasChip(chips, "Use this") || hasChip(chips, "Use document"))) ||
+      /could not read|unread/i.test(text) ||
+      /How often are you paid/i.test(text),
+    90_000,
+  );
+  if (/could not read|unread/i.test(after.text) && !hasChip(after.chips, "Use this")) {
+    throw new BeatFail(`Alameda stub unread — ${after.text}`);
+  }
+  if (/How often are you paid/i.test(after.text) && !/16,?824\.30/.test(after.text)) {
+    throw new BeatFail(`Alameda asked frequency before Period — ${after.text}`);
+  }
+  if (!hasChip(after.chips, "Use this") && !hasChip(after.chips, "Use document")) {
+    throw new BeatFail(`Alameda no confirm — ${after.text}`);
+  }
+  if (!/Alameda Health System\. Period \$16,824\.30\. Use this\?/.test(after.text)) {
+    throw new BeatFail(`Alameda must say Period $16,824.30 Use this — ${after.text}`);
+  }
+  const beforeRows = await structureRows(page);
+  const beforeJobs = beforeRows.filter(
+    (row) => row.label === "Employment" && /Alameda Health System/i.test(row.value),
+  );
+  if (beforeJobs.length) {
+    throw new BeatFail(
+      `Alameda wrote Employment before Use this — ${beforeJobs.map((row) => row.value).join(" | ")}`,
+    );
+  }
+  await assertLooksRightHiddenWhileUseThis(page);
+  await clickChip(page, hasChip(after.chips, "Use this") ? "Use this" : "Use document");
+  await waitCurrent(
+    page,
+    (text, chips) =>
+      !/Alameda Health System\. Period \$16,824\.30\. Use this\?/.test(text) ||
+      /government ID|How often|Looks right/i.test(text) ||
+      hasChip(chips, "Upload this") ||
+      hasChip(chips, "Skip"),
+    20_000,
+  );
+  const rows = await structureRows(page);
+  const jobs = rows.filter((row) => row.label === "Employment");
+  const alameda = jobs.filter((row) => /Alameda Health System/i.test(row.value));
+  if (alameda.length !== 1) {
+    throw new BeatFail(
+      `Alameda Use this must write one Employment row — ${rows.map((row) => `${row.label}: ${row.value}`).join(" | ")}`,
+    );
+  }
+  if (!/16,?824/.test(alameda[0].value)) {
+    throw new BeatFail(`Alameda Use this lost Period $16,824.30 — ${alameda[0].value}`);
+  }
+  const blob = `${rows.map((row) => row.value).join(" ")}`;
+  if (/\b\d{3}-\d{2}-\d{4}\b/.test(blob) || /\bssn\b/i.test(blob)) {
+    throw new BeatFail(`Alameda SSN landed on File — ${blob}`);
+  }
+}
+
 async function foxTexts(page: Page): Promise<string[]> {
   const loc = page.locator(".fox-bubble--fox");
   const n = await loc.count();
@@ -2084,6 +2226,12 @@ const CASES: { n: number; title: string; run: (page: Page) => Promise<void> }[] 
   { n: 22, title: "Refinance 500000 then 800000 keeps $500,000 loan", run: case22 },
   { n: 23, title: "ADP W-2 page-read: Box 5 is $36,460.08, never $5", run: case23 },
   { n: 24, title: "composer paperclip CSTC stub: filename/received then $1,806.67 Use this", run: case24 },
+  {
+    n: 25,
+    title:
+      "founder Alameda walk: split W-2 ask, Skip W-2, paperclip Period $16,824.30 Use this",
+    run: case25,
+  },
 ];
 
 async function openBrowser() {
@@ -2110,6 +2258,10 @@ function sampleOnDisk(name: string | null) {
   if (stub && (name === stub.split("/").pop() || stub.endsWith(`/${name}`))) {
     return { name, path: stub };
   }
+  const alameda = alamedaPaystubPath();
+  if (alameda && (name === alameda.split("/").pop() || alameda.endsWith(`/${name}`))) {
+    return { name, path: alameda };
+  }
   return null;
 }
 
@@ -2133,8 +2285,9 @@ function extractHint(name: string): ExtractClass | null {
 }
 
 async function localExtractBody(name: string) {
-  // Founder CSTC stub text layer is garbled — Grok page-read on preview is the proof.
+  // Founder CSTC / Alameda stubs — Grok page-read on preview is the proof.
   if (/pay-matt|cstc-pay-matt|28-paystub-cstc/i.test(name)) return null;
+  if (/alameda|jan 2 2026 alameda health/i.test(name)) return null;
   const sample = sampleOnDisk(name);
   if (!sample) return null;
   const extracted = await classifyAndExtract(
@@ -2324,8 +2477,15 @@ async function main() {
         .map((item) => Number(item.trim()))
         .filter((n) => Number.isFinite(n) && n > 0),
     );
+    const skip = new Set(
+      (process.env.SPINE_WALKER_SKIP ?? "")
+        .split(",")
+        .map((item) => Number(item.trim()))
+        .filter((n) => Number.isFinite(n) && n > 0),
+    );
     for (const spec of CASES) {
       if (only.size && !only.has(spec.n)) continue;
+      if (skip.has(spec.n)) continue;
       const row = await runCase(page, spec);
       results.push(row);
       printRow(row);

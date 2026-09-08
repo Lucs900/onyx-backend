@@ -92,5 +92,6 @@ Harbor extract POSTs fulfill leftover-proven local `classifyAndExtract` of the s
 22. Refinance: type 500000 loan then 800000 value. File keeps $500,000. Do not re-ask loan.
 23. ADP 2025 W-2 (founder fixture): Matthew Castaneda, Comprehensive Skills Training Center, Box 5 $36,460.08. Reading $5 is a FAIL.
 24. Composer **paperclip click** on PAY MATT CSTC 260422: filename · received, then preview Grok proposes current pay **$1,806.67** (Use this). Forward the real PDF. A PNG intercept, vault `#docs-handoff`, or local extract stand-in is VOID. Walker green with founder silence is FAIL.
+25. Founder Alameda walk (CI red if step 4 is still one Skip for two files). Hard refresh `/start?path=acr` → Start over → Refinance or Buy until W-2. W-2 ask is one file. Skip W-2 only; paystub ask stays. Composer **paperclip click** of `Jan 2 2026 Alameda Health System Pay Stub.pdf` (same sha256 bytes). Fox: **Alameda Health System. Period $16,824.30. Use this?** Use this writes one Employment row. No write before Use this. Local extract stand-in is VOID.
 
 FAIL if copy and chips disagree. FAIL if Structure and chat disagree. FAIL if a write did not kill the old number. FAIL if Credit is on File and Fox asks FICO. FAIL if walker is green and the founder paperclip is silent.
