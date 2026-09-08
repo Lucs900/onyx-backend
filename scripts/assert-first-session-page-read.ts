@@ -74,12 +74,15 @@ import {
   applyTranscriptSignalAsk,
   dropLeftoverAmountAsksForOpenUseThis,
   freezeUsedFoxTurns,
+  leftoverSkipOnAskText,
   leftoverSkipOnOlderTurns,
   leftoverSkipOnReceivedLines,
   leftoverUseThisOnOlderTurns,
   liveSkipChipRows,
+  withoutDuplicateHistoryInvite,
   withoutDuplicateReceivedLine,
   withoutDuplicateTranscriptAsk,
+  withoutLeftoverDocInvitesAfterTranscript,
   paintThreadActions,
   paintedFoxActions,
   shouldHoldAskForOpenUseThis,
@@ -1034,6 +1037,74 @@ async function main() {
       { id: "c", role: "system", text: receivedLine },
     ]).length,
     1,
+  );
+  const returnAskLine = LAST_YEAR_FEDERAL_RETURN_ASK;
+  const returnSkipRow = {
+    id: "t-return",
+    role: "fox" as const,
+    text: returnAskLine,
+    actions: [receivedSkip, receivedSkip, receivedSkip, receivedSkip, receivedSkip],
+  };
+  const dirtyReturn = freezeUsedFoxTurns([
+    { ...returnSkipRow, id: "ret-1" },
+    { ...returnSkipRow, id: "ret-2" },
+    { ...returnSkipRow, id: "ret-3" },
+    { ...returnSkipRow, id: "ret-4" },
+    { ...returnSkipRow, id: "ret-5" },
+    { id: "received-2", role: "system", text: receivedLine },
+    { id: "t-live", role: "fox", ...transcriptBlock },
+    { ...returnSkipRow, id: "ret-after" },
+  ]);
+  assert.equal(
+    dirtyReturn.filter((item) => item.text === returnAskLine).length,
+    1,
+    "one last-year return offer — reprints die",
+  );
+  assert.equal(
+    dirtyReturn.find((item) => item.text === returnAskLine)?.actions,
+    undefined,
+    "Last year’s federal return is history text",
+  );
+  assert.equal(
+    leftoverSkipOnAskText(dirtyReturn, combesStamped, (text) => /Last year.?s federal return/i.test(text)),
+    0,
+    "five leftover Skips on last-year return die",
+  );
+  assert.equal(leftoverSkipOnOlderTurns(dirtyReturn, combesStamped), 0);
+  assert.equal(liveSkipChipRows(dirtyReturn, combesStamped), 1, "one chip row on the last Fox line");
+  assert.equal(
+    dirtyReturn.filter((item) => (item.actions ?? []).some((action) => action.label === "Skip")).length,
+    1,
+  );
+  assert.equal(
+    (dirtyReturn.find((item) => item.text === "Tax return transcript · 2023")?.actions ?? []).filter(
+      (action) => action.label === "Skip",
+    ).length,
+    1,
+  );
+  assert.equal(
+    withoutLeftoverDocInvitesAfterTranscript([
+      { id: "t", role: "fox", ...transcriptBlock },
+      { id: "after", role: "fox", text: returnAskLine, actions: [receivedSkip] },
+    ]).some((item) => item.text === returnAskLine),
+    false,
+  );
+  assert.equal(
+    withoutDuplicateHistoryInvite([
+      { id: "a", role: "fox", text: returnAskLine, actions: [receivedSkip] },
+      { id: "b", role: "fox", text: returnAskLine, actions: [receivedSkip] },
+    ]).length,
+    1,
+  );
+  const afterSecondSkip = freezeUsedFoxTurns([
+    ...dirtyReturn,
+    { id: "skip-2", role: "client", text: "Skip" },
+    { id: "ret-again", role: "fox", text: returnAskLine, actions: [receivedSkip] },
+  ]);
+  assert.equal(
+    leftoverSkipOnAskText(afterSecondSkip, skipOnce, (text) => /Last year.?s federal return/i.test(text)),
+    0,
+    "second Skip adds no chip on last-year return",
   );
   assert.equal(docInviteBlocksLooksRight(combesProposed.draft), true);
   assert.equal(canLooksRight(combesProposed.draft), false);

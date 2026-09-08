@@ -15,6 +15,8 @@ import {
   needsPurchaseSplitAsk,
   canSpeakDocStamp,
   transcriptSpeakKey,
+  LAST_YEAR_FEDERAL_RETURN_ASK,
+  DOC_INVITE_COPY,
 } from "./fileWrite";
 import { ID_UNREAD_ASK, isBorrowerNameConfirmPending } from "./borrowerName";
 import {
@@ -373,6 +375,91 @@ export function isReceivedStatusLine(text?: string | null) {
   return /· received\.?$/i.test(String(text ?? "").trim());
 }
 
+export function isLastYearReturnAskText(text?: string | null) {
+  const value = String(text ?? "").trim();
+  if (!value) return false;
+  if (value === LAST_YEAR_FEDERAL_RETURN_ASK) return true;
+  return /^Last year.?s federal return\b/i.test(value);
+}
+
+/** Older doc offers. History once a later Fox line exists. */
+export function isHistoryDocInviteText(text?: string | null) {
+  const value = String(text ?? "").trim();
+  if (!value) return false;
+  if (isLastYearReturnAskText(value) || isReceivedStatusLine(value)) return true;
+  if (isTranscriptSignalAskText(value)) return false;
+  if (Object.values(DOC_INVITE_COPY).some((line) => line === value)) return true;
+  return (
+    /^First I need a government ID/i.test(value) ||
+    /^Next is a government ID/i.test(value) ||
+    /^Next is your latest paystub\b/i.test(value) ||
+    /^Next is this year.?s W-2\b/i.test(value) ||
+    /^Drop last year.?s W-2\b/i.test(value) ||
+    /^I need your (?:19|20)\d{2} federal tax return/i.test(value) ||
+    /^I need the (?:19|20)\d{2} return\b/i.test(value) ||
+    /^Two recent statements\b/i.test(value)
+  );
+}
+
+/** One Upload this · one Skip. Extra copies on the same row die. */
+export function oneDocChipSet(actions: FoxAction[] | undefined): FoxAction[] {
+  if (!actions?.length) return [];
+  const seen = new Set<string>();
+  const next: FoxAction[] = [];
+  for (const action of actions) {
+    const key = `${action.label}:${action.capture?.field ?? action.event ?? ""}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    next.push(action);
+  }
+  return next;
+}
+
+/** Leftover last-year-return / ID / W-2 offers after the live transcript die. */
+export function withoutLeftoverDocInvitesAfterTranscript(messages: FoxMessage[]): FoxMessage[] {
+  let lastTranscript = -1;
+  for (let i = 0; i < messages.length; i += 1) {
+    if (messages[i]?.role === "fox" && isTranscriptSignalAskText(messages[i]?.text)) {
+      lastTranscript = i;
+    }
+  }
+  if (lastTranscript < 0) return messages;
+  return messages.filter((message, index) => {
+    if (index <= lastTranscript) return true;
+    if (message.role === "fox" && isHistoryDocInviteText(message.text)) return false;
+    return true;
+  });
+}
+
+/** One copy of each history offer. Later reprints are leftover paint. */
+export function withoutDuplicateHistoryInvite(messages: FoxMessage[]): FoxMessage[] {
+  const seen = new Set<string>();
+  return messages.filter((message) => {
+    if (message.role !== "fox" || !isHistoryDocInviteText(message.text)) return true;
+    const key = message.text.trim();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+/** Skip chips still live on a named history/offer line. */
+export function leftoverSkipOnAskText(
+  messages: FoxMessage[],
+  draft: FoxIntakeDraft,
+  match: (text: string) => boolean,
+) {
+  const thread = dropResolvedAddressConfirmChips(messages, draft);
+  let count = 0;
+  for (let i = 0; i < thread.length; i += 1) {
+    const message = thread[i];
+    if (!match(message.text ?? "")) continue;
+    count += leftoverChipCount(message.actions, "skip");
+    count += leftoverChipCount(paintedFoxActions(message, draft, i === lastFoxIndex(thread)), "skip");
+  }
+  return count;
+}
+
 function leftoverChipCount(
   actions: FoxAction[] | undefined,
   kind: "use-this" | "looks-right" | "this-one" | "skip",
@@ -497,13 +584,23 @@ export function inertUsedConfirmText(text?: string | null) {
 
 /** After a chip is used, that Fox turn is inert text. Quick replies live only on the latest Fox line. */
 export function freezeUsedFoxTurns(messages: FoxMessage[]): FoxMessage[] {
-  const sealed = withoutDuplicateReceivedLine(messages).map(sealReceivedStatusLine);
+  const sealed = withoutDuplicateHistoryInvite(
+    withoutLeftoverDocInvitesAfterTranscript(
+      withoutDuplicateReceivedLine(messages).map(sealReceivedStatusLine),
+    ),
+  );
   const current = lastFoxIndex(sealed);
   return sealed.map((message, index) => {
     if (isReceivedStatusLine(message.text)) return sealReceivedStatusLine(message);
-    if (message.role !== "fox") return message;
+    if (message.role !== "fox") {
+      return message.actions?.length ? { ...message, actions: undefined } : message;
+    }
     const used = index !== current || foxTurnHasLaterUsedReply(sealed, index);
-    if (!used) return message;
+    if (!used) {
+      const actions = oneDocChipSet(message.actions);
+      if (actions.length === (message.actions?.length ?? 0)) return message;
+      return { ...message, actions: actions.length ? actions : undefined };
+    }
     const text = inertUsedConfirmText(message.text);
     const followUp = message.followUp ? inertUsedConfirmText(message.followUp) : message.followUp;
     if (!message.actions?.length && text === message.text && followUp === message.followUp) {
@@ -917,23 +1014,24 @@ function isYearsInBusinessAskText(text: string) {
 }
 
 export function paintThreadActions(actions: FoxAction[]): FoxAction[] {
-  if (actions.some((action) => action.capture?.field === "skip-years-in-business")) {
+  const unique = oneDocChipSet(actions);
+  if (unique.some((action) => action.capture?.field === "skip-years-in-business")) {
     return yearsInBusinessSkipActions();
   }
-  if (actions.some((action) => action.capture?.field === "skip-monthly-debts")) {
-    return paintedMonthlyDebtsActions(actions);
+  if (unique.some((action) => action.capture?.field === "skip-monthly-debts")) {
+    return paintedMonthlyDebtsActions(unique);
   }
   if (
-    actions.some((action) => action.label === "Upload this") &&
-    actions.some((action) => action.label === "Skip" && action.capture?.field === "skip-docs")
+    unique.some((action) => action.label === "Upload this") &&
+    unique.some((action) => action.label === "Skip" && action.capture?.field === "skip-docs")
   ) {
-    return actions.filter(
+    return unique.filter(
       (action) =>
         action.label === "Upload this" ||
         (action.label === "Skip" && action.capture?.field === "skip-docs"),
     );
   }
-  return actions;
+  return unique;
 }
 
 /** Visible chips on a bubble — leftover score is the painted button, not a DOM count. */

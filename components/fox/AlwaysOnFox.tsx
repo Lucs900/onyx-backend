@@ -48,6 +48,7 @@ import {
   withoutDuplicateContractConfirm,
   withoutDuplicateTranscriptAsk,
   applyTranscriptSignalAsk,
+  isHistoryDocInviteText,
   isReceivedStatusLine,
   isTranscriptSignalAskText,
   stripLooksRightWhileUseThisOpen,
@@ -419,6 +420,12 @@ function applyFoxAsk(
     }
     return painted;
   }
+  if (
+    isHistoryDocInviteText(ask.text) &&
+    messages.some((message) => message.role === "fox" && isTranscriptSignalAskText(message.text))
+  ) {
+    return freezeUsedFoxTurns(messages);
+  }
   const liveActions = lastFoxTurn(freezeUsedFoxTurns(messages))?.actions;
   const freezeOthers = (keepId: string, replacement: FoxMessage) =>
     freezeUsedFoxTurns(
@@ -695,7 +702,16 @@ function FoxThread({
           message.role === "fox" &&
           index === currentFox &&
           !foxTurnAlreadyUsed(thread, index) &&
-          !isReceivedStatusLine(message.text);
+          !isReceivedStatusLine(message.text) &&
+          !(
+            isHistoryDocInviteText(message.text) &&
+            thread.some(
+              (item, itemIndex) =>
+                itemIndex > index &&
+                item.role === "fox" &&
+                isTranscriptSignalAskText(item.text),
+            )
+          );
         const tone = current ? " is-current" : " is-prior";
         const rawActions = current
           ? (paintedFoxActions(message, draft, true) ?? []).filter(
