@@ -128,7 +128,7 @@ import {
   skipWageStub,
   acceptStubJob,
   writeWagePayFrequency,
-  stubExtractAskOpen,
+  stubPeriodConfirmOpen,
   canSpeakStubExtract,
   maybeProposeStubExtract,
   isStubExtractProposal,
@@ -1602,9 +1602,9 @@ export function applyExtractWrite(
   const stubRead = Boolean(
     String(input.fields?.gross_period ?? "").trim() && String(input.fields?.pay_frequency ?? "").trim(),
   );
-  const stubAskOpen = stubExtractAskOpen(current);
+  const stubPeriodOpen = stubPeriodConfirmOpen(current);
   const stubCanSpeak = canSpeakStubExtract(current, input.fields);
-  const silentStubReceive = stubAskOpen && !stubCanSpeak && !box5Read;
+  const silentStubReceive = stubPeriodOpen && !stubCanSpeak && !box5Read;
   const treatFailed =
     (Boolean(failed || unreadEmpty || k1Unread || scheduleEUnread) && !box5Read && !stubRead) ||
     silentStubReceive;
@@ -1612,7 +1612,7 @@ export function applyExtractWrite(
     treatFailed || extractedClass === "other"
       ? preferFilenameClass(extractedClass, name)
       : extractedClass;
-  const applyClass = stubAskOpen && stubCanSpeak ? "paystub" : extractedClass;
+  const applyClass = stubPeriodOpen && stubCanSpeak ? "paystub" : extractedClass;
   let applied = treatFailed
     ? {
         draft: { ...current, looksRightHold: true },
@@ -1623,7 +1623,7 @@ export function applyExtractWrite(
     : applyExtractedFields(current, { ...input, extractClass: applyClass });
   if (
     !treatFailed &&
-    stubAskOpen &&
+    stubPeriodOpen &&
     stubCanSpeak &&
     !isStubExtractProposal(applied.draft.pendingProposal)
   ) {

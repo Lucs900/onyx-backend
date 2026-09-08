@@ -1876,8 +1876,12 @@ export function wageW2ConfirmCopy(box5: number, employer: string): string {
 
 /** File Employment after Use this: employer and Box 5. Stub Use this adds pay on the same row. Not Box 1. */
 export function wageEmploymentFileLine(draft: FoxIntakeDraft): string {
-  if (!wageW2ExtractAccepted(draft)) return "";
-  if (isWageExtractProposal(draft.pendingProposal)) return "";
+  if (isWageExtractProposal(draft.pendingProposal) || isStubExtractProposal(draft.pendingProposal)) {
+    return "";
+  }
+  const w2Accepted = wageW2ExtractAccepted(draft);
+  const stubAccepted = Boolean(draft.stubExtractAccepted);
+  if (!w2Accepted && !stubAccepted) return "";
   const employer = factValue(draft, "employer_name").trim();
   const box5 = readWageBox5(draft);
   const stub =
@@ -1885,9 +1889,15 @@ export function wageEmploymentFileLine(draft: FoxIntakeDraft): string {
     parseExtractMoney(factValue(draft, "gross_period"));
   const frequency = speakPayFrequency(factValue(draft, "pay_frequency"));
   const monthly = parseExtractMoney(factValue(draft, PAYSTUB_MONTHLY_FIELD));
+  const overtime = parseExtractMoney(factValue(draft, "overtime"));
+  const otBit =
+    overtime != null && overtime > 0
+      ? `OT ${speakWageMoney(overtime)}`
+      : moneyOnPage(factValue(draft, "overtime_ytd"))
+        ? "OT"
+        : "";
   const stubReady =
-    Boolean(draft.stubExtractAccepted) &&
-    ((stub != null && stub > 0) || (monthly != null && monthly > 0));
+    stubAccepted && ((stub != null && stub > 0) || (monthly != null && monthly > 0));
   if (stubReady) {
     if (stubTwoJobsOnFile(draft)) {
       if (!employer || box5 == null || box5 <= 0) return "";
@@ -1902,13 +1912,14 @@ export function wageEmploymentFileLine(draft: FoxIntakeDraft): string {
           : monthly != null && monthly > 0
             ? `${speakWageMoney(monthly)} a month`
             : "";
+    const named = [stubBit, otBit].filter(Boolean).join(", ");
     if (employer && box5 != null && box5 > 0) {
-      return stubBit ? `${employer}, Box 5 ${speakWageMoney(box5)}, ${stubBit}` : `${employer}, Box 5 ${speakWageMoney(box5)}`;
+      return named ? `${employer}, Box 5 ${speakWageMoney(box5)}, ${named}` : `${employer}, Box 5 ${speakWageMoney(box5)}`;
     }
-    return stubBit ? `${employer}, ${stubBit}` : employer;
+    return named ? `${employer}, ${named}` : employer;
   }
   if (!employer || box5 == null || box5 <= 0) return "";
-  return `${employer}, Box 5 ${speakWageMoney(box5)}`;
+  return otBit ? `${employer}, Box 5 ${speakWageMoney(box5)}, ${otBit}` : `${employer}, Box 5 ${speakWageMoney(box5)}`;
 }
 
 export function isWageExtractProposal(proposal?: { field?: string } | null): boolean {
@@ -2000,7 +2011,11 @@ export function stubTwoJobsOnFile(draft: FoxIntakeDraft): boolean {
 
 /** File Employment / Employer stay empty until Use this or Change. */
 export function wageEmploymentUnconfirmed(draft: FoxIntakeDraft): boolean {
-  return wageThreadOpen(draft) && !draft.sampleAccepted && isWageExtractProposal(draft.pendingProposal);
+  return (
+    wageThreadOpen(draft) &&
+    !draft.sampleAccepted &&
+    (isWageExtractProposal(draft.pendingProposal) || isStubExtractProposal(draft.pendingProposal))
+  );
 }
 
 export function isWageW2OnlyProposal(proposal?: { field?: string; extras?: { field: string; value: string }[] } | null): boolean {
@@ -2505,9 +2520,17 @@ function stubEmployerName(fields?: Record<string, string>, draft?: FoxIntakeDraf
   ).trim();
 }
 
-/** After W-2 Use this / Skip W-2, waiting for stub confirm. Not extract-first. */
+/** After W-2 Use this, waiting for the employer stub drop. Skip W-2 does not keep this invite open. */
 export function stubExtractAskOpen(draft: FoxIntakeDraft): boolean {
   if (draft.sampleAccepted || draft.wageStubAsked || draft.stubExtractAccepted) return false;
+  if (!wageThreadOpen(draft)) return false;
+  if (isWageExtractFirstPath(draft)) return false;
+  return wageW2ExtractAccepted(draft) || Boolean(draft.wageDocsAsked);
+}
+
+/** After W-2 Use this or Skip W-2: a readable stub still proposes Period. Skip W-2 does not close that. */
+export function stubPeriodConfirmOpen(draft: FoxIntakeDraft): boolean {
+  if (draft.sampleAccepted || draft.stubExtractAccepted) return false;
   if (!wageThreadOpen(draft)) return false;
   if (isWageExtractFirstPath(draft)) return false;
   return wageW2ExtractAccepted(draft) || Boolean(draft.wageDocsAsked);
@@ -2537,7 +2560,10 @@ export function shouldProposeStubExtract(
   fields?: Record<string, string>,
 ): boolean {
   if (extractClass && extractClass !== "paystub" && extractClass !== "other") return false;
-  if (!stubExtractAskOpen(draft)) return false;
+  if (!stubPeriodConfirmOpen(draft)) return false;
+  const printedFrequency = speakPayFrequency(fields?.pay_frequency);
+  const fileEmployer = factValue(draft, "employer_name");
+  if (draft.wageStubAsked && fileEmployer && printedFrequency) return false;
   const existing = existingMonthlyIncome(draft);
   if (existing?.via !== QUALIFYING_INCOME_FIELD) return true;
   if (!fields) return false;
@@ -2546,7 +2572,6 @@ export function shouldProposeStubExtract(
   const monthly = stub != null && frequency ? conventionalStubMonthly(stub, frequency) : null;
   if (monthly != null && monthly > 0 && !valuesMatch(existing.value, String(monthly))) return true;
   const employer = stubEmployerName(fields, draft);
-  const fileEmployer = factValue(draft, "employer_name");
   if (employer && fileEmployer && !valuesMatch(employer, fileEmployer)) return true;
   return false;
 }
@@ -2608,7 +2633,29 @@ export function maybeProposeStubExtract(
   const employer = stubEmployerName(fields, draft);
   const employee = stubEmployeeName(fields, draft);
   if (stub == null || stub <= 0 || !employer) return draft;
-  return proposeStubExtract(draft, stub, frequency, employer, employee, fieldsHaveVariablePay(fields));
+  const proposed = proposeStubExtract(
+    draft,
+    stub,
+    frequency,
+    employer,
+    employee,
+    fieldsHaveVariablePay(fields),
+  );
+  if (!proposed.pendingProposal) return proposed;
+  const extras = [...(proposed.pendingProposal.extras ?? [])];
+  for (const key of VARIABLE_PAY_KEYS) {
+    const amount = parseExtractMoney(fields?.[key]);
+    if (amount == null || amount <= 0) continue;
+    extras.push({
+      field: key,
+      value: moneyFieldValue(amount),
+      label: key === "overtime" || key === "overtime_ytd" ? "OT" : key.replace(/_/g, " "),
+    });
+  }
+  return {
+    ...proposed,
+    pendingProposal: { ...proposed.pendingProposal, extras },
+  };
 }
 
 function stubExtractParts(draft: FoxIntakeDraft): {
@@ -2654,6 +2701,7 @@ function writeStubPayLine(
   mode: "same" | "two" | "only",
 ): FoxIntakeDraft {
   const now = new Date().toISOString();
+  const extras = draft.pendingProposal?.extras ?? [];
   const facts = { ...(draft.facts ?? {}) };
   const fileEmployer = factValue(draft, "employer_name").trim();
   const employer =
@@ -2694,6 +2742,18 @@ function writeStubPayLine(
     facts[PAYSTUB_MONTHLY_FIELD] = {
       field: PAYSTUB_MONTHLY_FIELD,
       value: moneyFieldValue(parts.monthly),
+      source: "document",
+      confirmed: true,
+      confirmedAt: now,
+    };
+  }
+  for (const key of VARIABLE_PAY_KEYS) {
+    const raw = extras.find((item) => item.field === key)?.value;
+    const amount = parseExtractMoney(raw);
+    if (amount == null || amount <= 0) continue;
+    facts[key] = {
+      field: key,
+      value: moneyFieldValue(amount),
       source: "document",
       confirmed: true,
       confirmedAt: now,

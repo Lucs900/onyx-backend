@@ -282,7 +282,7 @@ function extractFieldsPrompt(extractClass: ExtractClass, keys: readonly string[]
   }
   if (extractClass === "paystub") {
     extra =
-      " Locked schema only: employer_name, pay_period_end (period or pay date), gross_period (gross this period), pay_frequency if printed (weekly, biweekly, semimonthly, monthly), ytd_gross if printed. Empty otherwise. Never invent. Never output SSN or a full account number.";
+      " Locked schema only: employer_name, pay_period_end (period or pay date), gross_period (gross this period), pay_frequency only when the word weekly / biweekly / semimonthly / monthly is printed — never from hours. ytd_gross if printed. overtime, overtime_ytd, bonus, and commission only when clearly printed; empty otherwise. Never invent two-year OT. Never invent. Never output SSN, routing, or a full account number.";
   }
   if (extractClass === "w2") {
     extra =

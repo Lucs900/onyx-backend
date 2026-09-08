@@ -531,7 +531,17 @@ export type FirstSessionClass = (typeof FIRST_SESSION_CLASSES)[number];
 export const FIRST_SESSION_LOCKED_KEYS: Record<FirstSessionClass, readonly string[]> = {
   government_id: ["full_name"],
   w2: W2_LOCKED_SCHEMA_KEYS,
-  paystub: ["employer_name", "pay_period_end", "gross_period", "pay_frequency", "ytd_gross"],
+  paystub: [
+    "employer_name",
+    "pay_period_end",
+    "gross_period",
+    "pay_frequency",
+    "ytd_gross",
+    "overtime",
+    "overtime_ytd",
+    "bonus",
+    "commission",
+  ],
   bank_statement: ["institution", "account_last4", "ending_balance"],
   purchase_contract: ["property_address", "purchase_price", "close_date", "seller_credit"],
   tax_return: EXTRACT_SCHEMA_KEYS.tax_return,

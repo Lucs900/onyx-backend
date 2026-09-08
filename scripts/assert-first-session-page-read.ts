@@ -23,6 +23,9 @@ import {
   alignThreadEmployerName,
   canSpeakStubExtract,
   replaceTruncatedEmployerName,
+  shouldProposeStubExtract,
+  skipWageDocs,
+  stubPeriodConfirmOpen,
   wageEmploymentFileLine,
 } from "../components/fox/qualifyingIncome";
 import { FAILED_READ_NOTE } from "../lib/docs/accept";
@@ -474,6 +477,53 @@ async function main() {
   );
   assert.ok((unreadStubAsk.actions ?? []).some((item) => item.label === "Skip"));
 
+  const alamedaFields = {
+    employer_name: "Alameda Health System",
+    pay_period_end: "08/15/2026",
+    gross_period: "16824.30",
+    overtime: "850.00",
+  };
+  const skippedW2 = skipWageDocs(sketch());
+  assert.equal(stubPeriodConfirmOpen(skippedW2), true, "Skip W-2 must keep the readable stub Period path");
+  assert.equal(canSpeakStubExtract(skippedW2, alamedaFields), true);
+  assert.equal(shouldProposeStubExtract(skippedW2, "paystub", alamedaFields), true);
+  const alamedaAfterSkip = applyExtractedFields(skippedW2, {
+    extractClass: "paystub",
+    confidence: 0.94,
+    fields: alamedaFields,
+  });
+  assert.equal(alamedaAfterSkip.draft.awaitingPayFrequency, false, "readable stub must not ask frequency first");
+  assert.ok(alamedaAfterSkip.draft.pendingProposal, "Skip W-2 still proposes Period");
+  assert.equal(shouldSpeakPendingConfirm(alamedaAfterSkip.draft), true);
+  assert.equal(workspacePrompt(alamedaAfterSkip.draft), "confirm-proposal");
+  assert.equal(
+    nextFoxAsk(alamedaAfterSkip.draft).text,
+    "Alameda Health System. Period $16,824.30. Use this?",
+  );
+  assert.doesNotMatch(nextFoxAsk(alamedaAfterSkip.draft).text, /How often|paycheck|two-year OT/i);
+  assert.equal((alamedaAfterSkip.draft.employmentHistory ?? []).length, 0);
+  assert.notEqual(alamedaAfterSkip.draft.facts?.gross_period?.confirmed, true);
+  assert.equal(alamedaAfterSkip.draft.facts?.employer_name?.confirmed, undefined);
+  const alamedaUsed = resolveProposal(alamedaAfterSkip.draft, "accept");
+  assert.equal((alamedaUsed.employmentHistory ?? []).length, 1, "Use this writes one Employment row");
+  assert.match(alamedaUsed.employmentHistory?.[0]?.label ?? "", /Alameda Health System/);
+  assert.equal(
+    wageEmploymentFileLine(alamedaUsed),
+    "Alameda Health System, Period $16,824.30, OT $850",
+  );
+  assert.equal(alamedaUsed.facts?.gross_period?.confirmed, true);
+  assert.equal(alamedaUsed.facts?.gross_period?.value, "16824.30");
+  assert.equal(alamedaUsed.awaitingPayFrequency, false);
+  assert.doesNotMatch(nextFoxAsk(alamedaUsed).text, /How often|paycheck/i);
+  noSecrets(alamedaFields);
+  const unreadAfterSkip = applyExtractedFields(skippedW2, {
+    extractClass: "paystub",
+    confidence: 0.94,
+    fields: {},
+  });
+  assert.ok(!unreadAfterSkip.draft.pendingProposal);
+  assert.equal(unreadAfterSkip.draft.awaitingPayFrequency, false);
+
   const matt = mattCstcPaystubPath();
   if (!matt) {
     console.log(
@@ -501,6 +551,8 @@ async function main() {
 
   assert.ok(FIRST_SESSION_LOCKED_KEYS.government_id.includes("full_name"));
   assert.ok(!FIRST_SESSION_LOCKED_KEYS.government_id.includes("id_last4"));
+  assert.ok(FIRST_SESSION_LOCKED_KEYS.paystub.includes("overtime"));
+  assert.ok(!FIRST_SESSION_LOCKED_KEYS.paystub.includes("ssn"));
   console.log("assert-first-session-page-read: ID · W-2 · stub · bank · contract · tax locked; unread invents nothing");
 }
 
