@@ -3696,12 +3696,16 @@ function zipOnlySubject(draft: FoxIntakeDraft) {
   return Boolean(zip || /^\d{5}$/.test(line) || /,\s*CA\s+\d{5}$/i.test(line));
 }
 
-/** ID, then statements. Last year’s return stay parked until founder says go. */
+/** ID, then last year’s return on Skip-W-2 + stub. Bank is not next on that path. */
 function lockedFileDocInvites(draft: FoxIntakeDraft): DocInviteKind[] {
   const kinds: DocInviteKind[] = [];
   if (!inviteSatisfied(draft, "government_id")) kinds.push("government_id");
-  if (!inviteSatisfied(draft, "bank_statement")) kinds.push("bank_statement");
-  if (secondBankStatementInviteNeeded(draft)) kinds.push("second_bank_statement");
+  if (skippedW2StubPath(draft)) {
+    if (!inviteSatisfied(draft, "tax_return")) kinds.push("tax_return");
+  } else {
+    if (!inviteSatisfied(draft, "bank_statement")) kinds.push("bank_statement");
+    if (secondBankStatementInviteNeeded(draft)) kinds.push("second_bank_statement");
+  }
   if (
     purchaseLikeFile(draft) &&
     !inviteSatisfied(draft, "purchase_contract") &&
@@ -3749,12 +3753,12 @@ export function nextDocInvite(draft: FoxIntakeDraft): DocInviteKind | null {
   return null;
 }
 
-/** Paystub remainder blocks Looks right. Skip-W-2 last year’s return does not gate Proceed. */
+/** Paystub remainder and Skip-W-2 last year’s return both hold Looks right. */
 export function docInviteBlocksLooksRight(draft: FoxIntakeDraft) {
   const invite = nextDocInvite(draft);
   if (!invite) return false;
   if ((invite === "tax_return" || invite === "prior_year_return") && skippedW2StubPath(draft)) {
-    return false;
+    return true;
   }
   if (employerStubRemainderOpen(draft) || invite === "paystub") return true;
   if (

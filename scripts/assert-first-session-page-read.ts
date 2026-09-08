@@ -11,6 +11,7 @@ import { fileURLToPath } from "node:url";
 import {
   FIRST_SESSION_CLASSES,
   FIRST_SESSION_LOCKED_KEYS,
+  LAST_YEAR_FEDERAL_RETURN_ASK,
   applyExtractedFields,
   displayFactValue,
   docInviteBlocksLooksRight,
@@ -22,7 +23,6 @@ import {
   stillUsefulSection,
 } from "../components/fox/fileWrite";
 import { canLooksRight, resolveProposal, shouldSpeakPendingConfirm } from "../components/fox/completeness";
-import { applyProceedMotion } from "../components/fox/motion";
 import { emptyDraft } from "../components/fox/store";
 import {
   alignThreadEmployerName,
@@ -54,6 +54,8 @@ import {
   dropLeftoverAmountAsksForOpenUseThis,
   freezeUsedFoxTurns,
   leftoverUseThisOnOlderTurns,
+  paintThreadActions,
+  paintedFoxActions,
   shouldHoldAskForOpenUseThis,
   shouldHoldDocInviteForOpenUseThis,
 } from "../components/fox/liveCoupon";
@@ -703,49 +705,65 @@ async function main() {
   assert.equal(alamedaAfterTap.find((item) => item.id === "alameda-confirm")?.actions, undefined);
   assert.doesNotMatch(alamedaAfterTap.find((item) => item.id === "alameda-confirm")?.text ?? "", /Use this\?/);
   assert.equal(alamedaAfterTap[alamedaAfterTap.length - 1]?.text, DOC_INVITE_COPY.government_id);
-  assert.ok(
-    (alamedaAfterTap[alamedaAfterTap.length - 1]?.actions ?? []).some((item) => item.label === "Upload this"),
-  );
-  const alamedaAfterId = skipCurrentInvite(alamedaUsed);
-  assert.equal(nextDocInvite(alamedaAfterId), "bank_statement");
-  const alamedaBankAsk = nextFoxAsk(alamedaAfterId);
-  assert.equal(alamedaBankAsk.text, DOC_INVITE_COPY.bank_statement);
-  assert.doesNotMatch(alamedaBankAsk.text, /federal return|other income|other property|household size/i);
-  assert.doesNotMatch(alamedaBankAsk.text, /declaration|Form 1040|dependent names|named dependents/i);
   assert.deepEqual(
-    (alamedaBankAsk.actions ?? []).map((item) => item.label),
+    (alamedaAfterTap[alamedaAfterTap.length - 1]?.actions ?? []).map((item) => item.label),
     ["Upload this", "Skip"],
   );
+  assert.ok(
+    !(alamedaAfterTap[alamedaAfterTap.length - 1]?.actions ?? []).some((item) => item.label === "Use this"),
+  );
+  const leftoverStubPaint = paintedFoxActions(
+    alamedaAfterTap.find((item) => item.id === "alameda-confirm")!,
+    alamedaUsed,
+    false,
+  );
+  assert.equal(leftoverStubPaint, undefined);
+  assert.deepEqual(
+    paintThreadActions([
+      { id: "accept-proposal", label: "Use this", event: "bubble", capture: { field: "accept-proposal" } },
+      { id: "upload-id", label: "Upload this", event: "open-docs", capture: { field: "open-docs" } },
+      { id: "skip-docs", label: "Skip", event: "bubble", capture: { field: "skip-docs" } },
+    ]).map((item) => item.label),
+    ["Upload this", "Skip"],
+  );
+  const alamedaAfterId = skipCurrentInvite(alamedaUsed);
+  assert.equal(nextDocInvite(alamedaAfterId), "tax_return");
+  assert.notEqual(nextDocInvite(alamedaAfterId), "bank_statement");
+  const alamedaReturnAsk = nextFoxAsk(alamedaAfterId);
+  assert.equal(alamedaReturnAsk.text, LAST_YEAR_FEDERAL_RETURN_ASK);
+  assert.match(alamedaReturnAsk.text, /other income/);
+  assert.match(alamedaReturnAsk.text, /other property/);
+  assert.match(alamedaReturnAsk.text, /household size/);
+  assert.doesNotMatch(alamedaReturnAsk.text, /declaration|Form 1040|dependent names|named dependents/i);
+  assert.doesNotMatch(alamedaReturnAsk.text, /two recent statements|bank statement/i);
+  assert.deepEqual(
+    (alamedaReturnAsk.actions ?? []).map((item) => item.label),
+    ["Upload this", "Skip"],
+  );
+  assert.equal(docInviteBlocksLooksRight(alamedaAfterId), true, "Looks right waits on the return ask");
+  assert.equal(canLooksRight(alamedaAfterId), false, "Looks right stays after the return ask");
   const usefulAfterId = (stillUsefulSection(alamedaAfterId)?.items ?? []).map((item) => item.label);
   assert.ok(
     usefulAfterId.some((label) => /W-2/i.test(label)),
     `Still useful must keep skipped W-2 — ${usefulAfterId.join(" · ")}`,
   );
-  assert.ok(
-    usefulAfterId.some((label) => /return/i.test(label)),
-    `Still useful must keep the return — ${usefulAfterId.join(" · ")}`,
-  );
-  assert.equal(
-    applyProceedMotion({ ...alamedaAfterId, sampleAccepted: true, motion: "ready" }).motion,
-    "in_queue",
-    "Proceed must not wait on the return",
-  );
-  const alamedaAfterBankSkip = skipCurrentInvite(alamedaAfterId);
-  assert.notEqual(nextDocInvite(alamedaAfterBankSkip), "tax_return");
-  assert.equal(docInviteBlocksLooksRight(alamedaAfterBankSkip), false, "Proceed must not wait on the return");
-  const usefulAfterBankSkip = (stillUsefulSection(alamedaAfterBankSkip)?.items ?? []).map(
+  const alamedaAfterReturnSkip = skipCurrentInvite(alamedaAfterId);
+  assert.notEqual(nextDocInvite(alamedaAfterReturnSkip), "bank_statement");
+  assert.notEqual(nextFoxAsk(alamedaAfterReturnSkip).text, DOC_INVITE_COPY.bank_statement);
+  assert.doesNotMatch(nextFoxAsk(alamedaAfterReturnSkip).text, /two recent statements/i);
+  assert.equal(docInviteBlocksLooksRight(alamedaAfterReturnSkip), false);
+  const usefulAfterReturnSkip = (stillUsefulSection(alamedaAfterReturnSkip)?.items ?? []).map(
     (item) => item.label,
   );
   assert.ok(
-    usefulAfterBankSkip.some((label) => /return/i.test(label)),
-    `Still useful keeps the return after Skip — ${usefulAfterBankSkip.join(" · ")}`,
+    usefulAfterReturnSkip.some((label) => /return/i.test(label)),
+    `Still useful keeps the return after Skip — ${usefulAfterReturnSkip.join(" · ")}`,
   );
   assert.ok(
-    usefulAfterBankSkip.some((label) => /W-2/i.test(label)),
-    `Still useful keeps skipped W-2 after bank Skip — ${usefulAfterBankSkip.join(" · ")}`,
+    usefulAfterReturnSkip.some((label) => /W-2/i.test(label)),
+    `Still useful keeps skipped W-2 after return Skip — ${usefulAfterReturnSkip.join(" · ")}`,
   );
-  assert.doesNotMatch(nextFoxAsk(alamedaAfterBankSkip).text, /federal return/i);
-  assert.ok(canLooksRight(alamedaAfterBankSkip) || workspacePrompt(alamedaAfterBankSkip) === "review");
+  assert.ok(canLooksRight(alamedaAfterReturnSkip) || workspacePrompt(alamedaAfterReturnSkip) === "review");
   noSecrets(alamedaFields);
   const alamedaPdf = alamedaPaystubPath();
   assert.ok(

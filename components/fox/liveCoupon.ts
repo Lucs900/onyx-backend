@@ -806,7 +806,7 @@ export function paintThreadActions(actions: FoxAction[]): FoxAction[] {
   }
   if (
     actions.some((action) => action.label === "Upload this") &&
-    !actions.some((action) => action.label === "Use this")
+    actions.some((action) => action.label === "Skip" && action.capture?.field === "skip-docs")
   ) {
     return actions.filter(
       (action) =>
@@ -852,6 +852,19 @@ export function paintedFoxActions(
     }
     if (idNameConfirm) {
       return isBorrowerNameConfirmPending(draft) && isIdConfirmChip(action);
+    }
+    if (
+      isIdExtractAskText(message.text) &&
+      (action.label === "Use this" || action.label === "Change")
+    ) {
+      return false;
+    }
+    if (
+      (action.label === "Use this" || action.label === "Change") &&
+      !isUseThisConfirmText(message.text) &&
+      !isUseThisConfirmText(message.followUp)
+    ) {
+      return false;
     }
     if (
       current &&
