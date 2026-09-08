@@ -184,6 +184,7 @@ import {
   intakeIsCoverDrop,
   intakeIsIdDrop,
   LAST_YEAR_FEDERAL_RETURN_ASK,
+  isTranscriptOnFile,
   matchingCoverLineOnFile,
   sameThinCoverRepeat,
   type DocIntakeDetail,
@@ -1209,6 +1210,7 @@ export function AlwaysOnFox({
         }
         const scheduleEDraft = (() => {
           const current = getFoxDraft();
+          if (isTranscriptOnFile(current)) return current;
           if (
             isScheduleECashFlowProposal(current.pendingProposal) ||
             isEntityCashFlowProposal(current.pendingProposal) ||

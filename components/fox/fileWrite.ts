@@ -210,6 +210,8 @@ export const EXTRACT_SCHEMA_KEYS: Record<ExtractClass, readonly string[]> = {
     "agi",
     "dependent_count",
     "return_kind",
+    "schedule_c_present",
+    "schedule_e_present",
     "schedule_c_net_profit",
     "depreciation",
     "depletion",
@@ -372,6 +374,8 @@ const YEARLY_TAX_KEYS = new Set([
   "filing_status",
   "agi",
   "return_kind",
+  "schedule_c_present",
+  "schedule_e_present",
   "schedule_c_net_profit",
   "depreciation",
   "depletion",
@@ -483,7 +487,7 @@ export function looksLikeTaxReturnFields(
   return looksLikeFederalReturnFields(fields);
 }
 
-/** Form 1040 / tax return transcript. Year plus status, AGI, wages, or dependent count. */
+/** Form 1040 / tax return transcript. Year plus status, dependents, or C/E present. Transcripts are not AGI/wages. */
 export function looksLikeFederalReturnFields(
   fields?: Record<string, string | null | undefined> | null,
 ): boolean {
@@ -501,6 +505,16 @@ export function looksLikeFederalReturnFields(
   }
   const year = String(fields.tax_year ?? "").replace(/\D/g, "").slice(0, 4);
   if (!/^(19|20)\d{2}$/.test(year)) return false;
+  if (isTranscriptReturnFields(fields)) {
+    const status = String(fields.filing_status ?? "").trim();
+    const deps = String(fields.dependent_count ?? "").replace(/\D/g, "");
+    return Boolean(
+      status ||
+        deps !== "" ||
+        String(fields.schedule_c_present ?? "").trim().toLowerCase() === "yes" ||
+        String(fields.schedule_e_present ?? "").trim().toLowerCase() === "yes",
+    );
+  }
   const status = String(fields.filing_status ?? "").trim();
   const agi = String(fields.agi ?? "").replace(/[^\d.]/g, "");
   const wages = String(fields.wages ?? "").replace(/[^\d.]/g, "");
@@ -517,6 +531,26 @@ const FEDERAL_RETURN_HOLD = new Set([
   "return_kind",
 ]);
 
+const TRANSCRIPT_FILE_KEYS = new Set([
+  "tax_year",
+  "dependent_count",
+  "return_kind",
+  "schedule_c_present",
+  "schedule_e_present",
+]);
+
+const TRANSCRIPT_STRIP_KEYS = [
+  "wages",
+  "agi",
+  "pension",
+  "taxable_pension",
+  "schedule_c_net_profit",
+  "schedule_e_rents_received",
+  "schedule_e_cash_expenses",
+  "depreciation",
+  "depletion",
+] as const;
+
 export function isTranscriptReturnFields(
   fields?: Record<string, string | null | undefined> | null,
 ) {
@@ -525,6 +559,33 @@ export function isTranscriptReturnFields(
     .toLowerCase()
     .replace(/[\s_-]+/g, "");
   return raw === "transcript" || raw.includes("returntranscript");
+}
+
+function taxYearFromSource(
+  source: FoxIntakeDraft | Record<string, string | null | undefined>,
+) {
+  if (source && typeof source === "object" && "facts" in source) {
+    return String((source as FoxIntakeDraft).facts?.tax_year?.value ?? "")
+      .replace(/\D/g, "")
+      .slice(0, 4);
+  }
+  return String((source as Record<string, string>).tax_year ?? "")
+    .replace(/\D/g, "")
+    .slice(0, 4);
+}
+
+/** Chat names class + tax year only. Never dependents, AGI, wages, or pension. */
+export function transcriptSignalCopy(
+  source: FoxIntakeDraft | Record<string, string | null | undefined>,
+) {
+  const year = taxYearFromSource(source);
+  return year ? `Tax return transcript · ${year}` : "Tax return transcript";
+}
+
+export function isTranscriptOnFile(draft: FoxIntakeDraft) {
+  return isTranscriptReturnFields({
+    return_kind: String(draft.facts?.return_kind?.value ?? ""),
+  });
 }
 
 function federalReturnConfirmParts(fields: Record<string, string>) {
@@ -536,11 +597,7 @@ function federalReturnConfirmParts(fields: Record<string, string>) {
   if (isTranscriptReturnFields(fields)) {
     parts.push("Tax return transcript");
     if (year) parts.push(year);
-    if (deps) {
-      const n = Number(deps);
-      parts.push(n === 1 ? "1 dependent" : `${n} dependents`);
-    }
-    return { year, status, agi: "", deps, parts };
+    return { year, status: "", agi: "", deps: "", parts };
   }
   if (year) parts.push(`${year} return`);
   if (status) parts.push(status.replace(/\.$/, ""));
@@ -552,11 +609,12 @@ function federalReturnConfirmParts(fields: Record<string, string>) {
   return { year, status, agi, deps, parts };
 }
 
-/** Confirm-before-write for a 1040 / transcript. Count dependents only — never names. */
+/** Confirm-before-write for a 1040. Transcripts write quietly — no Use this. */
 export function maybeProposeFederalReturn(
   draft: FoxIntakeDraft,
   fields: Record<string, string>,
 ): FoxIntakeDraft | null {
+  if (isTranscriptReturnFields(fields)) return null;
   if (!looksLikeFederalReturnFields(fields) || isCoverReturnFields(fields)) return null;
   if (draft.pendingProposal || draft.pendingConflict) return null;
   const { year, status, agi, deps, parts } = federalReturnConfirmParts(fields);
@@ -583,6 +641,7 @@ export function maybeProposeFederalReturn(
 }
 
 export function federalReturnConfirmCopy(fields: Record<string, string>) {
+  if (isTranscriptReturnFields(fields)) return transcriptSignalCopy(fields);
   const { parts } = federalReturnConfirmParts(fields);
   return parts.length ? `${parts.join(". ")}.` : "";
 }
@@ -1182,6 +1241,9 @@ export function sanitizeExtractedFields(
       delete next.property_address;
     }
   }
+  if (isTranscriptReturnFields(next) || isTranscriptReturnFields(fields)) {
+    for (const key of TRANSCRIPT_STRIP_KEYS) delete next[key];
+  }
   return next;
 }
 
@@ -1512,7 +1574,8 @@ export function applyExtractedFields(
     "paystub_amount",
   ]);
   const coverReturn = isCoverReturnFields(fields);
-  const holdFederalReturn = looksLikeFederalReturnFields(fields);
+  const transcriptReturn = isTranscriptReturnFields(fields);
+  const holdFederalReturn = looksLikeFederalReturnFields(fields) && !transcriptReturn;
   for (const field of EXTRACT_SCHEMA_KEYS[extractClass]) {
     const value = fields[field];
     if (!value) continue;
@@ -1534,6 +1597,7 @@ export function applyExtractedFields(
       continue;
     }
     if (holdFederalReturn && FEDERAL_RETURN_HOLD.has(field)) continue;
+    if (transcriptReturn && !TRANSCRIPT_FILE_KEYS.has(field)) continue;
     if ((wageExtractFirst || holdWageFileWrites) && WAGE_EXTRACT_HOLD_KEYS.has(field)) continue;
     if (
       extractClass === "w2" &&
@@ -2170,15 +2234,16 @@ export function applyExtractedFields(
   if (holdFederalReturn && !next.pendingProposal && !next.pendingConflict) {
     next = maybeProposeFederalReturn(next, fields) ?? next;
   }
-  if (!coverReturn && !isTranscriptReturnFields(fields)) next = maybeProposeQualifyingFromTaxFile(next);
+  if (!coverReturn && !transcriptReturn) next = maybeProposeQualifyingFromTaxFile(next);
   if (
     next.awaitingYearsInBusiness &&
     (coverReturn || next.pendingProposal?.field === "qualifying_income")
   ) {
     next = { ...next, awaitingYearsInBusiness: false };
   }
-  const holdLooksRight =
-    !coverReturn || Boolean(next.pendingProposal || conflict || next.pendingConflict);
+  const holdLooksRight = transcriptReturn
+    ? Boolean(transcriptFollowUpAsk(next))
+    : !coverReturn || Boolean(next.pendingProposal || conflict || next.pendingConflict);
   return {
     draft: { ...next, looksRightHold: holdLooksRight },
     writes,
@@ -3881,8 +3946,45 @@ export function nextDocInvite(draft: FoxIntakeDraft): DocInviteKind | null {
   return null;
 }
 
-/** Paystub remainder and Skip-W-2 last year’s return both hold Looks right. */
+function hasNamedScheduleDoc(draft: FoxIntakeDraft, letter: "c" | "e") {
+  const re = letter === "c" ? /schedule.?c/i : /schedule.?e/i;
+  return (draft.documents ?? []).some((doc) => {
+    if (doc.status !== "extracted") return false;
+    if (isUnreadNote(doc.note)) return false;
+    return re.test(String(doc.name ?? ""));
+  });
+}
+
+/** After a transcript: 1040 + present schedule, else this year’s W-2 on a W-2 file. */
+export function transcriptFollowUpAsk(draft: FoxIntakeDraft): string {
+  if (draft.transcriptFollowUpSkipped) return "";
+  if (!isTranscriptOnFile(draft)) return "";
+  const year = String(draft.facts?.tax_year?.value ?? "").replace(/\D/g, "").slice(0, 4);
+  const presentC = String(draft.facts?.schedule_c_present?.value ?? "").trim().toLowerCase() === "yes";
+  const presentE = String(draft.facts?.schedule_e_present?.value ?? "").trim().toLowerCase() === "yes";
+  const needC = presentC && !hasNamedScheduleDoc(draft, "c");
+  const needE = presentE && !hasNamedScheduleDoc(draft, "e");
+  if (needC && needE) {
+    return year
+      ? `I need the ${year} Form 1040 and Schedule C and Schedule E.`
+      : "I need the Form 1040 and Schedule C and Schedule E.";
+  }
+  if (needC) {
+    return year ? `I need the ${year} Form 1040 and Schedule C.` : "I need the Form 1040 and Schedule C.";
+  }
+  if (needE) {
+    return year ? `I need the ${year} Form 1040 and Schedule E.` : "I need the Form 1040 and Schedule E.";
+  }
+  const income = draft.incomeType.value;
+  if ((income === "w2" || income === "both") && !classSuccessfullyRead(draft, "w2") && !wageW2ExtractAccepted(draft)) {
+    return DOC_INVITE_COPY.w2;
+  }
+  return "";
+}
+
+/** Paystub remainder, Skip-W-2 last year’s return, and transcript follow-up hold Looks right. */
 export function docInviteBlocksLooksRight(draft: FoxIntakeDraft) {
+  if (transcriptFollowUpAsk(draft)) return true;
   const invite = nextDocInvite(draft);
   if (!invite) return false;
   if ((invite === "tax_return" || invite === "prior_year_return") && skippedW2StubPath(draft)) {
@@ -4124,6 +4226,15 @@ export function isPurchaseContractConfirmPending(draft: FoxIntakeDraft) {
 }
 
 export function skipCurrentInvite(draft: FoxIntakeDraft): FoxIntakeDraft {
+  if (transcriptFollowUpAsk(draft)) {
+    return {
+      ...draft,
+      transcriptFollowUpSkipped: true,
+      looksRightHold: false,
+      docsOpen: false,
+      correcting: null,
+    };
+  }
   if (nextCoverPageInviteCopy(draft) && lastExtractIsCover(draft) && !draft.pendingProposal) {
     const skipped = Array.from(new Set([...(draft.skippedClasses ?? []), "tax_return" as ExtractClass]));
     const next = {

@@ -444,6 +444,7 @@ export type FoxIntakeDraft = {
   docsStarted?: boolean;
   docsHeld?: boolean;
   priorYearSkipped?: boolean;
+  transcriptFollowUpSkipped?: boolean;
   yearsInBusinessAsked?: boolean;
   awaitingYearsInBusiness?: boolean;
   awaitingMonthlyDebts?: boolean;

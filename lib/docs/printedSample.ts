@@ -661,6 +661,33 @@ function taxYearFromPeriodEnding(text: string) {
   return /^\d{4}$/.test(year) ? year : "";
 }
 
+/** First labeled Schedule C / E amount on a transcript. Skips PER COMPUTER. Never stores the dollars. */
+function transcriptScheduleAmount(blob: string, schedule: "c" | "e") {
+  const labeled =
+    schedule === "c"
+      ? /business income or loss\s*\(\s*schedule c\s*\)\s*:?\s*/i
+      : /rent\/royalty\/partnership\/estate\s*\(\s*schedule e\s*\)\s*:?\s*/i;
+  const fallback = schedule === "c" ? /schedule c\s*:?\s*/i : /schedule e\s*:?\s*/i;
+  for (const label of [labeled, fallback]) {
+    const match = blob.match(label);
+    if (!match) continue;
+    const start = (match.index ?? 0) + match[0].length;
+    const after = blob.slice(start, start + 160).replace(/per\s+computer/gi, " ");
+    const money = after.match(/-?\s*\$?\s*[\d,]+(?:\.\d+)?|\(\s*\$?\s*[\d,]+(?:\.\d+)?\s*\)/);
+    if (!money?.[0]) continue;
+    const digits = moneyDigits(money[0]);
+    if (digits) return digits;
+  }
+  return "";
+}
+
+function transcriptSchedulePresent(blob: string, schedule: "c" | "e") {
+  const amount = transcriptScheduleAmount(blob, schedule);
+  if (!amount) return false;
+  const n = Number(amount);
+  return Number.isFinite(n) && n !== 0;
+}
+
 function dependentCountFromTranscript(lines: string[]) {
   const blob = flattenPrintedLines(lines).join("\n").replace(/\u00a0/g, " ");
   // Count Dependent 1…N rows. Exemption number is not a dependent count.
@@ -1419,6 +1446,14 @@ export function fieldsFromPrintedLines(
     const deps = dependentCountFromTranscript(lines);
     if (deps) put("dependent_count", deps);
     put("return_kind", "transcript");
+    if (transcriptSchedulePresent(blob, "c")) put("schedule_c_present", "yes");
+    if (transcriptSchedulePresent(blob, "e")) put("schedule_e_present", "yes");
+    delete fields.wages;
+    delete fields.agi;
+    delete fields.pension;
+    delete fields.schedule_c_net_profit;
+    delete fields.schedule_e_rents_received;
+    delete fields.schedule_e_cash_expenses;
   }
 
   if ((extractClass === "tax_return" || extractClass === "other") && !looksLike1040CoverWorksheet(lines) && !looksLike1040Transcript(lines)) {
@@ -1717,7 +1752,7 @@ function sellerCreditFromContractLines(lines: string[]): string {
   return "";
 }
 
-/** Form 1040 tax return transcript. Period year, filing status, AGI/wages/dependent count when printed. Never names. */
+/** Form 1040 tax return transcript. Year, dependents, C/E present. Never wages, AGI, pension, or schedule dollars. */
 export function loudTranscriptFromPrintedLines(lines: string[]): PrintedSample | null {
   const stacked = flattenPrintedLines(lines);
   if (!looksLike1040Transcript(lines) && !looksLike1040Transcript(stacked)) return null;
@@ -1727,8 +1762,21 @@ export function loudTranscriptFromPrintedLines(lines: string[]): PrintedSample |
   delete fields.present_address;
   delete fields.property_address;
   delete fields.subjectAddress;
+  delete fields.wages;
+  delete fields.agi;
+  delete fields.pension;
+  delete fields.schedule_c_net_profit;
+  delete fields.schedule_e_rents_received;
+  delete fields.schedule_e_cash_expenses;
   if (!fields.tax_year) return null;
-  if (!fields.filing_status && !fields.agi && !fields.wages && !fields.dependent_count) return null;
+  if (
+    !fields.filing_status &&
+    !fields.dependent_count &&
+    fields.schedule_c_present !== "yes" &&
+    fields.schedule_e_present !== "yes"
+  ) {
+    return null;
+  }
   return {
     extractClass: "tax_return",
     confidence: 0.94,

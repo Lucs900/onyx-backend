@@ -107,6 +107,9 @@ import {
   nextCoverScheduleLabels,
   nextDocInvite,
   offeringDocStart,
+  transcriptFollowUpAsk,
+  transcriptSignalCopy,
+  isTranscriptOnFile,
   thisBorrowerPrimaryPackageDone,
   readyForHouseholdAsk,
   skipCurrentInvite,
@@ -1542,6 +1545,10 @@ function incomeFromText(text: string) {
 }
 
 function documentsAskText(draft: FoxIntakeDraft): string {
+  const transcriptFollow = transcriptFollowUpAsk(draft);
+  if (transcriptFollow) {
+    return `${transcriptSignalCopy(draft)}\n\n${transcriptFollow}`;
+  }
   if (isCoborrowerNameConfirmPending(draft) && draft.pendingProposal?.value) {
     return coborrowerExtractCopy(draft.pendingProposal.value, draft);
   }
@@ -2394,6 +2401,14 @@ export function docReactionAsk(
   if (draft.awaitingBothMonthlyReason) return bothMonthlyReasonAsk(draft);
   if (draft.awaitingRaiseWhen) return raiseWhenAsk();
   if (draft.awaitingRaiseYtdFar) return raiseYtdFarAsk(draft);
+  if (cls === "tax_return" && isTranscriptOnFile(draft) && !draft.pendingProposal) {
+    const follow = transcriptFollowUpAsk(draft);
+    return {
+      text: follow ? `${transcriptSignalCopy(draft)}\n\n${follow}` : transcriptSignalCopy(draft),
+      followUp: follow || undefined,
+      actions: follow ? documentInviteActions(draft) : undefined,
+    };
+  }
   if (cls === "tax_return" && shouldSpeakCoverMap(draft)) {
     const coverAsk = coverMapAskCopy(draft);
     if (coverAsk) {
@@ -3485,6 +3500,7 @@ export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
   if (!draft.sampleAccepted && wageFrequencyAskNeeded(draft)) return "w2-pay-frequency";
   if (!draft.sampleAccepted && wageStubAskNeeded(draft)) return "paystub-monthly";
   if (!draft.sampleAccepted && nextDocInvite(draft)) return "documents";
+  if (!draft.sampleAccepted && transcriptFollowUpAsk(draft)) return "documents";
   if (!draft.sampleAccepted && incomeNumberReady(draft) && canLooksRight(draft)) {
     return "review";
   }
@@ -3805,6 +3821,7 @@ function workspaceAskCopy(
       };
     }
     const invite = nextDocInvite(draft);
+    const transcriptFollow = transcriptFollowUpAsk(draft);
     if (unreadDocOpen(draft)) {
       return {
         text: isBankUnreadAsk(draft) ? RECEIVED_UNREAD_ASK : FAILED_READ_NOTE,
@@ -3820,12 +3837,17 @@ function workspaceAskCopy(
     }
     return {
       text: documentsAskText(draft),
-      followUp: shouldSpeakCoverMap(draft) ? nextCoverPageInviteCopy(draft) || undefined : undefined,
-      actions: invite
-        ? documentInviteActions(draft)
-        : draft.sampleAccepted
-          ? finishLineActions(draft)
+      followUp: transcriptFollow
+        ? transcriptFollow
+        : shouldSpeakCoverMap(draft)
+          ? nextCoverPageInviteCopy(draft) || undefined
           : undefined,
+      actions:
+        invite || transcriptFollow
+          ? documentInviteActions(draft)
+          : draft.sampleAccepted
+            ? finishLineActions(draft)
+            : undefined,
     };
   }
   if (prompt === "preparing") {
