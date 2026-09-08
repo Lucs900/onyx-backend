@@ -48,7 +48,19 @@ function secretsReady() {
   );
 }
 
+function vercelBuild() {
+  return present("VERCEL") || present("VERCEL_ENV");
+}
+
+function abortName(error: unknown) {
+  return error && typeof error === "object" && "name" in error ? String(error.name) : "";
+}
+
 async function main() {
+  if (vercelBuild()) {
+    console.log("harbor-refi-book: skipped (vercel build)");
+    return;
+  }
   if (!secretsReady()) {
     console.log("harbor-refi-book: skipped (secrets not present)");
     return;
@@ -85,7 +97,6 @@ async function main() {
         location: { state: "CA", zipcode: HARBOR_REFI.zipcode },
       }),
       signal: ac.signal,
-      cache: "no-store",
     });
     if (!response.ok) {
       console.log(`harbor-refi-book: bbHttpStatus ${response.status}`);
@@ -111,9 +122,17 @@ async function main() {
     writeFileSync(fixturePath, `${JSON.stringify(fixture, null, 2)}\n`);
     console.log(`HARBOR_REFI_CONV30_BOOK ${JSON.stringify(book)}`);
     console.log(`HARBOR_REFI_CONV30_LEAD ${JSON.stringify(lead)}`);
+  } catch (error) {
+    console.log(
+      abortName(error) === "AbortError"
+        ? "harbor-refi-book: aborted"
+        : "harbor-refi-book: fetch failed",
+    );
   } finally {
     clearTimeout(timer);
   }
 }
 
-void main();
+void main().catch(() => {
+  console.log("harbor-refi-book: skipped (uncaught)");
+});

@@ -1358,9 +1358,7 @@ export function applyExtractedFields(
   const holdWageFileWrites =
     wageThreadOpen(draft) &&
     !draft.sampleAccepted &&
-    (extractClass === "w2" ||
-      extractClass === "paystub" ||
-      (extractClass === "other" && stubPeriodConfirmOpen(draft)));
+    (extractClass === "w2" || extractClass === "paystub");
   let next = draft;
   let conflict: FactConflict | null = draft.pendingConflict ?? null;
   let remainderWrites: { field: string; value: string }[] = [];
