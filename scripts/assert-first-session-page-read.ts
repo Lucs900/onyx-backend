@@ -19,7 +19,12 @@ import {
 } from "../components/fox/fileWrite";
 import { resolveProposal, shouldSpeakPendingConfirm } from "../components/fox/completeness";
 import { emptyDraft } from "../components/fox/store";
-import { canSpeakStubExtract, wageEmploymentFileLine } from "../components/fox/qualifyingIncome";
+import {
+  alignThreadEmployerName,
+  canSpeakStubExtract,
+  replaceTruncatedEmployerName,
+  wageEmploymentFileLine,
+} from "../components/fox/qualifyingIncome";
 import { FAILED_READ_NOTE } from "../lib/docs/accept";
 import { classifyAndExtract, FOX_GROK_MODEL } from "../lib/docs/extract";
 import { renderPdfFirstPage } from "../lib/docs/pdfText";
@@ -31,7 +36,12 @@ import {
   workspacePrompt,
   workspacePromptCopy,
 } from "../components/fox/workspace";
-import { applyIdExtractAsk, leftoverUseThisOnOlderTurns } from "../components/fox/liveCoupon";
+import {
+  applyIdExtractAsk,
+  freezeUsedFoxTurns,
+  leftoverUseThisOnOlderTurns,
+  shouldHoldDocInviteForOpenUseThis,
+} from "../components/fox/liveCoupon";
 import type { ExtractClass, FoxAction, FoxIntakeDraft, FoxMessage } from "../components/fox/types";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -322,10 +332,23 @@ async function main() {
   assert.equal(workspacePrompt(stubAfterW2.draft), "confirm-proposal");
   const stubConfirmAsk = nextFoxAsk(stubAfterW2.draft);
   assert.match(stubConfirmAsk.text, /Period \$1,806\.67/);
+  assert.match(stubConfirmAsk.text, /Comprehensive Skills Training Center/);
+  assert.doesNotMatch(stubConfirmAsk.text, /Cente\./);
   assert.doesNotMatch(stubConfirmAsk.text, /government ID/i);
   assert.deepEqual(
     (stubConfirmAsk.actions ?? []).map((item) => item.label),
     ["Use this", "Change"],
+  );
+  const idWhileOpen = workspacePromptCopy("documents", stubAfterW2.draft);
+  assert.match(idWhileOpen.text, /Period \$1,806\.67/);
+  assert.doesNotMatch(idWhileOpen.text, /government ID/i);
+  assert.equal(
+    shouldHoldDocInviteForOpenUseThis(
+      stubConfirmAsk.text,
+      stubConfirmAsk.actions,
+      DOC_INVITE_COPY.government_id,
+    ),
+    true,
   );
   const stubUsed = resolveProposal(stubAfterW2.draft, "accept");
   assert.equal((stubUsed.employmentHistory ?? []).length, 1, "Use this must keep one CSTC Employment row");
@@ -381,6 +404,53 @@ async function main() {
   assert.equal(usedW2?.actions, undefined);
   assert.equal(usedStub?.actions, undefined);
   assert.match(usedStub?.text ?? "", /Period \$1,806\.67/);
+  const usedAfterClient = freezeUsedFoxTurns([
+    {
+      id: "w2",
+      role: "fox",
+      text: "Box 5 $36,460.08. Comprehensive Skills Training Center. Use this?",
+      actions: useThisChips,
+    },
+    { id: "you-w2", role: "client", text: "Use this" },
+    {
+      id: "stub",
+      role: "fox",
+      text: stubConfirmAsk.text,
+      actions: useThisChips,
+    },
+    { id: "you-stub", role: "client", text: "Use this" },
+  ]);
+  assert.equal(usedAfterClient.find((item) => item.id === "w2")?.actions, undefined);
+  assert.equal(usedAfterClient.find((item) => item.id === "stub")?.actions, undefined);
+  assert.equal(
+    shouldHoldDocInviteForOpenUseThis(
+      usedAfterClient.find((item) => item.id === "stub")?.text,
+      usedAfterClient.find((item) => item.id === "stub")?.actions,
+      DOC_INVITE_COPY.government_id,
+    ),
+    false,
+    "leftover: ID still held after Use this closed the stub confirm",
+  );
+  assert.equal(
+    replaceTruncatedEmployerName(
+      "Comprehensive Skills Training Cente. Period $1,806.67. Use this?",
+      "Comprehensive Skills Training Center",
+    ),
+    "Comprehensive Skills Training Center. Period $1,806.67. Use this?",
+  );
+  const aligned = alignThreadEmployerName(
+    [
+      {
+        id: "cente",
+        role: "fox",
+        text: "Comprehensive Skills Training Cente. Period $1,806.67. Use this?",
+        actions: useThisChips,
+      },
+    ],
+    stubUsed,
+  );
+  assert.match(aligned[0]?.text ?? "", /Comprehensive Skills Training Center/);
+  assert.doesNotMatch(aligned[0]?.text ?? "", /Cente\./);
 
   const unreadStubAsk = workspacePromptCopy("documents", {
     ...afterW2,

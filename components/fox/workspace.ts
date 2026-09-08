@@ -229,6 +229,7 @@ import {
   STUB_JOB_ASK,
   stubExtractConfirmCopy,
   employersClose,
+  preferredEmployerLabel,
   wageEmploymentUnconfirmed,
   wageEmploymentFileLine,
   readStubAmount,
@@ -2110,9 +2111,11 @@ function liveProposalAsk(
     const frequency =
       proposal.extras?.find((item) => item.field === "pay_frequency")?.value ||
       readWageFrequency(draft);
-    const employer =
+    const employer = preferredEmployerLabel(
+      factValue(draft, "employer_name"),
       proposal.extras?.find((item) => item.field === "employer_name")?.value ||
-      String(draft.pendingWageExtract?.employer ?? "").trim();
+        String(draft.pendingWageExtract?.employer ?? "").trim(),
+    );
     return {
       text: isWageW2OnlyProposal(proposal)
         ? wageW2ConfirmCopy(box5, employer)
@@ -2128,9 +2131,11 @@ function liveProposalAsk(
     const frequency =
       proposal.extras?.find((item) => item.field === "pay_frequency")?.value ||
       readWageFrequency(draft);
-    const employer =
+    const employer = preferredEmployerLabel(
+      factValue(draft, "employer_name"),
       proposal.extras?.find((item) => item.field === "employer_name")?.value ||
-      String(draft.pendingWageExtract?.employer ?? "").trim();
+        String(draft.pendingWageExtract?.employer ?? "").trim(),
+    );
     const employee = proposal.extras?.find((item) => item.field === "full_name")?.value ?? "";
     const monthly =
       Number(proposal.extras?.find((item) => item.field === PAYSTUB_MONTHLY_FIELD)?.value) ||
@@ -3749,6 +3754,13 @@ function workspaceAskCopy(
     };
   }
   if (prompt === "documents") {
+    if (
+      isWageExtractProposal(draft.pendingProposal) ||
+      isStubExtractProposal(draft.pendingProposal) ||
+      isStubJobProposal(draft.pendingProposal)
+    ) {
+      return liveProposalAsk(draft, draft.pendingProposal);
+    }
     if (draft.awaitingYearsInBusiness && !yearsInBusinessValue(draft)) {
       return { text: yearsInBusinessAskCopy(draft), actions: yearsInBusinessSkipActions() };
     }

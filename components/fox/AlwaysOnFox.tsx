@@ -47,6 +47,7 @@ import {
   freezeUsedFoxTurns,
   withoutDuplicateContractConfirm,
   stripLooksRightWhileUseThisOpen,
+  shouldHoldDocInviteForOpenUseThis,
   threadHasOpenUseThisConfirm,
   isIdExtractAskText,
   isIdExtractPath,
@@ -186,6 +187,7 @@ import {
   type DocIntakeDetail,
 } from "./fileWrite";
 import {
+  alignThreadEmployerName,
   DECLINING_INCOME_CAUTION,
   WAGE_DOCS_ASK,
   WAGE_STUB_DROP_ASK,
@@ -405,6 +407,9 @@ function applyFoxAsk(
     return freezeOthers(last.id, foxAskMessage(ask));
   }
   if (isIdExtractAskText(ask.text)) {
+    if (shouldHoldDocInviteForOpenUseThis(last?.text, last?.actions, ask.text)) {
+      return freezeUsedFoxTurns(messages);
+    }
     return applyIdExtractAsk(messages, foxAskMessage(ask));
   }
   if (isOnFileAddressLine({ id: last?.id ?? "on-file", role: "fox", text: ask.text })) {
@@ -459,6 +464,9 @@ function applyFoxAsk(
       /\bPeriod \$.+\. Use this\?$/.test(last.text)) &&
     ask.text !== last.text
   ) {
+    if (shouldHoldDocInviteForOpenUseThis(last.text, last.actions, ask.text)) {
+      return freezeUsedFoxTurns(messages);
+    }
     return freezeOthers(last.id, foxAskMessage(ask));
   }
   if (last && sameFoxAsk(last, ask)) return freezeUsedFoxTurns(messages);
@@ -879,25 +887,31 @@ export function AlwaysOnFox({
         idExtractAsk: resolved.some((message) => isIdExtractAskText(message.text)),
       })
     ) {
-      return freezeUsedFoxTurns(
-        dropStreetSuggestChips(
-          dropAbandonedAddressConfirm(
-            dropResolvedAddressConfirmChips(
-              stripLooksRightWhileUseThisOpen(
-                ensureIncomeConfirmChips(inertSupersededIncomeConfirms(stored), live),
+      return alignThreadEmployerName(
+        freezeUsedFoxTurns(
+          dropStreetSuggestChips(
+            dropAbandonedAddressConfirm(
+              dropResolvedAddressConfirmChips(
+                stripLooksRightWhileUseThisOpen(
+                  ensureIncomeConfirmChips(inertSupersededIncomeConfirms(stored), live),
+                  live,
+                ),
                 live,
               ),
               live,
             ),
-            live,
           ),
         ),
+        live,
       );
     }
-    const held = freezeUsedFoxTurns(
-      dropStreetSuggestChips(
-        dropAbandonedAddressConfirm(dropResolvedAddressConfirmChips(resolved, live), live),
+    const held = alignThreadEmployerName(
+      freezeUsedFoxTurns(
+        dropStreetSuggestChips(
+          dropAbandonedAddressConfirm(dropResolvedAddressConfirmChips(resolved, live), live),
+        ),
       ),
+      live,
     );
     setFoxMessages(held);
     return held;
@@ -1410,6 +1424,9 @@ export function AlwaysOnFox({
         return [...cut, foxAskMessage(ask)];
       }
       const lastFox = lastFoxTurn(prev);
+      if (lastFox && shouldHoldDocInviteForOpenUseThis(lastFox.text, lastFox.actions, ask.text)) {
+        return prev;
+      }
       if (lastFox && sameFoxAsk(lastFox, ask)) return prev;
       if (isOnFileAddressLine({ id: lastFox?.id ?? "on-file", role: "fox", text: ask.text })) {
         return isIdExtractPath(live) ? dropOnFileAddressLines(prev) : prev;

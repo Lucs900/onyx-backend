@@ -399,13 +399,37 @@ export function leftoverThisOneOnOlderTurns(messages: FoxMessage[], draft: FoxIn
   return leftoverOnOlderTurns(messages, draft, "this-one");
 }
 
+function foxTurnHasLaterUsedReply(messages: FoxMessage[], index: number) {
+  for (let i = index + 1; i < messages.length; i += 1) {
+    const item = messages[i];
+    if (item.role === "fox") return true;
+    if (item.role !== "client") continue;
+    if (/^(This one|Use this|Looks right|yes|Skip)$/i.test(item.text.trim())) return true;
+  }
+  return false;
+}
+
 /** After a chip is used, that Fox turn is text. Quick replies live only on the latest Fox line. */
 export function freezeUsedFoxTurns(messages: FoxMessage[]): FoxMessage[] {
   const current = lastFoxIndex(messages);
   return messages.map((message, index) => {
-    if (message.role !== "fox" || index === current || !message.actions?.length) return message;
+    if (message.role !== "fox" || !message.actions?.length) return message;
+    const used = index !== current || foxTurnHasLaterUsedReply(messages, index);
+    if (!used) return message;
     return { ...message, text: message.text, followUp: message.followUp, facts: message.facts, actions: undefined };
   });
+}
+
+/** ID / Upload this · Skip must not sit beside a live Use this confirm. */
+export function shouldHoldDocInviteForOpenUseThis(
+  lastText?: string | null,
+  lastActions?: FoxAction[] | null,
+  askText?: string | null,
+) {
+  if (!isUseThisConfirmText(lastText)) return false;
+  if (!lastActions?.length) return false;
+  const ask = String(askText ?? "").trim();
+  return isIdExtractAskText(ask) || /government ID/i.test(ask);
 }
 
 /** After Looks right, older Fox turns are text. Chips live only on the latest ask. */

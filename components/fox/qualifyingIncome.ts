@@ -1,4 +1,4 @@
-import type { ExtractClass, FactProposal, FieldSource, FoxIntakeDraft } from "./types";
+import type { ExtractClass, FactProposal, FieldSource, FoxIntakeDraft, FoxMessage } from "./types";
 import { writeCurrentEmploymentHistory } from "./fileHistory";
 import {
   DECLINING_INCOME_CAUTION,
@@ -1952,6 +1952,39 @@ export function preferredEmployerLabel(left?: string | null, right?: string | nu
   if (!b) return a;
   if (!employersClose(a, b)) return a;
   return a.length >= b.length ? a : b;
+}
+
+/** Thread employer matches File — Center, not a truncated Cente. */
+export function replaceTruncatedEmployerName(text: string, fullName: string): string {
+  const spoken = String(text ?? "");
+  const full = String(fullName ?? "").trim();
+  if (!spoken || !full || spoken.includes(full)) return spoken;
+  const words = full.split(/\s+/).filter(Boolean);
+  const last = words[words.length - 1] ?? "";
+  if (last.length < 4) return spoken;
+  for (let n = last.length - 1; n >= 3; n -= 1) {
+    const truncated = [...words.slice(0, -1), last.slice(0, n)].join(" ");
+    if (truncated && spoken.includes(truncated)) return spoken.split(truncated).join(full);
+  }
+  return spoken;
+}
+
+export function alignThreadEmployerName(
+  messages: FoxMessage[],
+  draft: FoxIntakeDraft,
+): FoxMessage[] {
+  const full = preferredEmployerLabel(
+    factValue(draft, "employer_name"),
+    draft.pendingWageExtract?.employer,
+  );
+  if (!full) return messages;
+  return messages.map((message) => {
+    if (message.role !== "fox") return message;
+    const text = replaceTruncatedEmployerName(message.text, full);
+    const followUp = replaceTruncatedEmployerName(message.followUp ?? "", full);
+    if (text === message.text && followUp === (message.followUp ?? "")) return message;
+    return { ...message, text, followUp: followUp || undefined };
+  });
 }
 
 export function stubTwoJobsOnFile(draft: FoxIntakeDraft): boolean {
