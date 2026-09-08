@@ -12,6 +12,7 @@ import {
   INTAKE_DRAFT_VERSION,
   INTAKE_STORAGE_KEY,
   type Capture,
+  type DocSpeakRow,
   type DocSlot,
   type DocStatus,
   type DraftField,
@@ -428,6 +429,8 @@ export function emptyDraft(): FoxIntakeDraft {
     docsHeld: false,
     priorYearSkipped: false,
     transcriptFollowUpSkipped: false,
+    docSpeak: {},
+    lastDocSpeakKey: "",
     secondBankStatementSkipped: false,
     yearsInBusinessAsked: false,
     awaitingYearsInBusiness: false,
@@ -742,6 +745,8 @@ function normalize(value: unknown): FoxIntakeDraft {
       : [],
     priorYearSkipped: Boolean(raw.priorYearSkipped),
     transcriptFollowUpSkipped: Boolean(raw.transcriptFollowUpSkipped),
+    docSpeak: normalizeDocSpeak(raw.docSpeak),
+    lastDocSpeakKey: typeof raw.lastDocSpeakKey === "string" ? raw.lastDocSpeakKey : "",
     secondBankStatementSkipped: Boolean(raw.secondBankStatementSkipped),
     yearsInBusinessAsked: Boolean(raw.yearsInBusinessAsked),
     awaitingYearsInBusiness: Boolean(raw.awaitingYearsInBusiness),
@@ -767,6 +772,21 @@ function normalize(value: unknown): FoxIntakeDraft {
     missingAskKey: typeof raw.missingAskKey === "string" ? raw.missingAskKey : "",
     sections: { ...base.sections, ...raw.sections },
   };
+}
+
+function normalizeDocSpeak(value: FoxIntakeDraft["docSpeak"]): Record<string, DocSpeakRow> {
+  if (!value || typeof value !== "object") return {};
+  const next: Record<string, DocSpeakRow> = {};
+  for (const [key, row] of Object.entries(value)) {
+    if (!key || !row || typeof row !== "object") continue;
+    next[key] = {
+      received: Boolean(row.received),
+      named: Boolean(row.named),
+      offered: Boolean(row.offered),
+      done: Boolean(row.done),
+    };
+  }
+  return next;
 }
 
 function normalizeFacts(value: FoxIntakeDraft["facts"]): Record<string, DraftField> {

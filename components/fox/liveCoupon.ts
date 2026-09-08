@@ -9,7 +9,13 @@ import {
   sameCouponNumbers,
   type SafeCouponRow,
 } from "@/lib/rateflow/quote";
-import { isPurchaseContractConfirmPending, nextDocInvite, needsPurchaseSplitAsk } from "./fileWrite";
+import {
+  isPurchaseContractConfirmPending,
+  nextDocInvite,
+  needsPurchaseSplitAsk,
+  canSpeakDocStamp,
+  transcriptSpeakKey,
+} from "./fileWrite";
 import { ID_UNREAD_ASK, isBorrowerNameConfirmPending } from "./borrowerName";
 import {
   isFundsPairProposal,
@@ -730,7 +736,20 @@ export function withoutDuplicateTranscriptAsk(messages: FoxMessage[]): FoxMessag
 }
 
 /** Replace stacked transcript asks with one live block. Stale Skip chips die. */
-export function applyTranscriptSignalAsk(messages: FoxMessage[], ask: FoxMessage): FoxMessage[] {
+export function applyTranscriptSignalAsk(
+  messages: FoxMessage[],
+  ask: FoxMessage,
+  draft?: FoxIntakeDraft,
+): FoxMessage[] {
+  const key = draft ? transcriptSpeakKey(draft) : "";
+  if (
+    draft &&
+    key &&
+    !canSpeakDocStamp(draft, key, "named") &&
+    !canSpeakDocStamp(draft, key, "offered")
+  ) {
+    return freezeUsedFoxTurns(withoutDuplicateTranscriptAsk(messages));
+  }
   const prior = [...messages]
     .reverse()
     .find((message) => message.role === "fox" && isTranscriptSignalAskText(message.text));

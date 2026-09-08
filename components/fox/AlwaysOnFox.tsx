@@ -188,6 +188,13 @@ import {
   intakeIsIdDrop,
   LAST_YEAR_FEDERAL_RETURN_ASK,
   isTranscriptOnFile,
+  canSpeakDocStamp,
+  docSpeakKeyFromName,
+  markDocStamp,
+  transcriptSpeakKey,
+  transcriptFollowUpAsk,
+  transcriptOfferDone,
+  withTranscriptSpoken,
   matchingCoverLineOnFile,
   sameThinCoverRepeat,
   type DocIntakeDetail,
@@ -403,7 +410,13 @@ function applyFoxAsk(
     return freezeUsedFoxTurns(messages);
   }
   if (isTranscriptSignalAskText(ask.text)) {
-    return applyTranscriptSignalAsk(messages, foxAskMessage(ask));
+    const live = getFoxDraft();
+    const key = transcriptSpeakKey(live);
+    const painted = applyTranscriptSignalAsk(messages, foxAskMessage(ask), live);
+    if (canSpeakDocStamp(live, key, "named") || canSpeakDocStamp(live, key, "offered")) {
+      loadIntakeDraft(withTranscriptSpoken(live));
+    }
+    return painted;
   }
   const liveActions = lastFoxTurn(freezeUsedFoxTurns(messages))?.actions;
   const freezeOthers = (keepId: string, replacement: FoxMessage) =>
@@ -1136,7 +1149,12 @@ export function AlwaysOnFox({
         if (detail.received && !detail.emptyRead && !detail.extractClass && !(detail.quietLines ?? []).length) {
           const name = String(detail.received.name ?? "").trim();
           if (name) {
-            next.push({ id: newId(), role: "system", text: receivedDropCopy(name) });
+            const live = getFoxDraft();
+            const key = docSpeakKeyFromName(live, name);
+            if (canSpeakDocStamp(live, key, "received")) {
+              next.push({ id: newId(), role: "system", text: receivedDropCopy(name) });
+              loadIntakeDraft(markDocStamp(live, key, "received"));
+            }
           }
           return next;
         }
@@ -2016,9 +2034,18 @@ export function AlwaysOnFox({
         capture.field === "accept-proposal" &&
         (isPurchaseContractConfirmPending(draft) ||
           isContractExtractAskText(lastFoxTurn(getFoxMessages())?.text));
+      const followWasOpen = Boolean(transcriptFollowUpAsk(getFoxDraft()));
+      const offerAlreadyDone = transcriptOfferDone(getFoxDraft());
       applyCapture(capture);
       skipPromptSync.current = true;
       const live = getFoxDraft();
+      if (capture.field === "skip-docs" && offerAlreadyDone && !followWasOpen) {
+        return;
+      }
+      if (capture.field === "skip-docs" && followWasOpen && transcriptOfferDone(live)) {
+        appendReply(action.label, { text: "" });
+        return;
+      }
       if (editing) {
         appendStructureFix(action.label, capture);
         return;

@@ -19,6 +19,11 @@ import {
   hasLockedSuggestion,
   transcriptFollowUpAsk,
   transcriptSignalCopy,
+  canSpeakDocStamp,
+  hasDocStamp,
+  transcriptSpeakKey,
+  transcriptOfferDone,
+  withTranscriptSpoken,
   isBoxNumberAsDollars,
   isFirstSessionClass,
   lockFirstSessionFields,
@@ -935,6 +940,39 @@ async function main() {
   assert.equal(frozenRestack.find((item) => item.id === "t3")?.actions?.some((action) => action.label === "Skip"), true);
   assert.equal(frozenRestack.find((item) => item.id === "t1"), undefined);
   assert.equal(frozenRestack.find((item) => item.id === "t2"), undefined);
+  assert.equal(combesProposed.draft.incomeType.value, "w2", "transcript does not start another income type");
+  const combesKey = transcriptSpeakKey(combesProposed.draft);
+  assert.ok(combesKey);
+  assert.equal(canSpeakDocStamp(combesProposed.draft, combesKey, "named"), true);
+  assert.equal(canSpeakDocStamp(combesProposed.draft, combesKey, "offered"), true);
+  const combesStamped = withTranscriptSpoken(combesProposed.draft);
+  assert.equal(hasDocStamp(combesStamped, combesKey, "received"), true);
+  assert.equal(hasDocStamp(combesStamped, combesKey, "named"), true);
+  assert.equal(hasDocStamp(combesStamped, combesKey, "offered"), true);
+  assert.equal(canSpeakDocStamp(combesStamped, combesKey, "named"), false);
+  assert.equal(canSpeakDocStamp(combesStamped, combesKey, "offered"), false);
+  assert.equal(docReactionAsk(combesStamped, "tax_return"), null, "same stamp already on File — do not print again");
+  const afterSpokenAsk = applyTranscriptSignalAsk(
+    [{ id: "t1", role: "fox", ...transcriptBlock }],
+    { id: "t2", role: "fox", ...transcriptBlock },
+    combesStamped,
+  );
+  assert.equal(
+    afterSpokenAsk.filter((item) => item.role === "fox" && item.text === "Tax return transcript · 2023").length,
+    1,
+    "one Combes drop → one transcript line",
+  );
+  assert.equal(afterSpokenAsk[afterSpokenAsk.length - 1]?.id, "t1", "already spoken — do not restack a new line");
+  const skipOnce = skipCurrentInvite(combesStamped);
+  assert.equal(skipOnce.transcriptFollowUpSkipped, true);
+  assert.equal(transcriptOfferDone(skipOnce), true);
+  assert.equal(hasDocStamp(skipOnce, combesKey, "done"), true);
+  assert.equal(transcriptFollowUpAsk(skipOnce), "");
+  const skipTwice = skipCurrentInvite(skipOnce);
+  assert.deepEqual(skipTwice.skippedClasses, skipOnce.skippedClasses);
+  assert.equal(skipTwice.transcriptFollowUpSkipped, true);
+  assert.equal(skipTwice.incomeType.value, "w2");
+  assert.equal(JSON.stringify(skipTwice.docSpeak), JSON.stringify(skipOnce.docSpeak));
   assert.equal(docInviteBlocksLooksRight(combesProposed.draft), true);
   assert.equal(canLooksRight(combesProposed.draft), false);
   assert.equal(

@@ -46,6 +46,10 @@ export type DocStatus =
   | "needs better copy"
   | "failed";
 
+export type DocSpeakStamp = "received" | "named" | "offered" | "done";
+
+export type DocSpeakRow = Partial<Record<DocSpeakStamp, boolean>>;
+
 export type ReceivedDoc = {
   slot: DocSlot;
   name: string;
@@ -445,6 +449,9 @@ export type FoxIntakeDraft = {
   docsHeld?: boolean;
   priorYearSkipped?: boolean;
   transcriptFollowUpSkipped?: boolean;
+  /** received → named → offered → done. Same stamp on File = do not print that line again. */
+  docSpeak?: Record<string, DocSpeakRow>;
+  lastDocSpeakKey?: string;
   yearsInBusinessAsked?: boolean;
   awaitingYearsInBusiness?: boolean;
   awaitingMonthlyDebts?: boolean;

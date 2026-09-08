@@ -112,6 +112,8 @@ import {
   transcriptFollowUpAsk,
   transcriptSignalCopy,
   isTranscriptOnFile,
+  canSpeakDocStamp,
+  transcriptSpeakKey,
   thisBorrowerPrimaryPackageDone,
   readyForHouseholdAsk,
   skipCurrentInvite,
@@ -2405,6 +2407,10 @@ export function docReactionAsk(
   if (draft.awaitingRaiseYtdFar) return raiseYtdFarAsk(draft);
   if (cls === "tax_return" && isTranscriptOnFile(draft) && !draft.pendingProposal) {
     const follow = transcriptFollowUpAsk(draft);
+    const key = transcriptSpeakKey(draft);
+    const speakNamed = canSpeakDocStamp(draft, key, "named");
+    const speakOffered = Boolean(follow) && canSpeakDocStamp(draft, key, "offered");
+    if (!speakNamed && !speakOffered) return null;
     return {
       text: transcriptSignalCopy(draft),
       followUp: follow || undefined,

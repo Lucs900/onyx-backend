@@ -8,6 +8,8 @@ import {
 } from "@/lib/docs/accept";
 import type {
   DocSlot,
+  DocSpeakRow,
+  DocSpeakStamp,
   DraftField,
   ExtractClass,
   FactConflict,
@@ -588,6 +590,69 @@ export function isTranscriptOnFile(draft: FoxIntakeDraft) {
   });
 }
 
+export function docSpeakKeyFromName(draft: FoxIntakeDraft, name: string) {
+  const shown = String(name ?? "").trim();
+  if (!shown) return "";
+  const doc = [...(draft.documents ?? [])]
+    .reverse()
+    .find((item) => item.name === shown);
+  if (doc) return `doc:${doc.receivedAt}:${doc.name}`;
+  return `doc:${shown}`;
+}
+
+export function transcriptSpeakKey(draft: FoxIntakeDraft) {
+  const doc = [...(draft.documents ?? [])].reverse().find((item) => {
+    const cls = receivedClassOf(item);
+    return cls === "tax_return" || /transcript|1040|tax return/i.test(item.name ?? "");
+  });
+  if (doc) return `doc:${doc.receivedAt}:${doc.name}`;
+  const year = String(draft.facts?.tax_year?.value ?? "").replace(/\D/g, "").slice(0, 4);
+  if (isTranscriptOnFile(draft)) return year ? `doc:transcript:${year}` : "doc:transcript";
+  return "";
+}
+
+export function hasDocStamp(draft: FoxIntakeDraft, key: string, stamp: DocSpeakStamp) {
+  if (!key) return false;
+  return Boolean(draft.docSpeak?.[key]?.[stamp]);
+}
+
+export function canSpeakDocStamp(draft: FoxIntakeDraft, key: string, stamp: DocSpeakStamp) {
+  if (!key) return true;
+  if (hasDocStamp(draft, key, "done") && stamp !== "done") return false;
+  return !hasDocStamp(draft, key, stamp);
+}
+
+export function markDocStamp(
+  draft: FoxIntakeDraft,
+  key: string,
+  stamp: DocSpeakStamp | readonly DocSpeakStamp[],
+): FoxIntakeDraft {
+  if (!key) return draft;
+  const stamps: readonly DocSpeakStamp[] = typeof stamp === "string" ? [stamp] : stamp;
+  const row: DocSpeakRow = { ...(draft.docSpeak?.[key] ?? {}) };
+  for (const item of stamps) row[item] = true;
+  return {
+    ...draft,
+    docSpeak: { ...(draft.docSpeak ?? {}), [key]: row },
+    lastDocSpeakKey: key,
+  };
+}
+
+/** Stamp named + offered after Fox speaks the transcript block once. */
+export function withTranscriptSpoken(draft: FoxIntakeDraft): FoxIntakeDraft {
+  const key = transcriptSpeakKey(draft);
+  if (!key) return draft;
+  const stamps: DocSpeakStamp[] = ["received", "named"];
+  if (transcriptFollowUpAsk(draft)) stamps.push("offered");
+  return markDocStamp(draft, key, stamps);
+}
+
+export function transcriptOfferDone(draft: FoxIntakeDraft) {
+  if (draft.transcriptFollowUpSkipped) return true;
+  const key = transcriptSpeakKey(draft);
+  return Boolean(key && hasDocStamp(draft, key, "done"));
+}
+
 function federalReturnConfirmParts(fields: Record<string, string>) {
   const year = String(fields.tax_year ?? "").replace(/\D/g, "").slice(0, 4);
   const status = String(fields.filing_status ?? "").trim();
@@ -976,6 +1041,9 @@ export function withFileIncomeHygiene(
   extractClass?: ExtractClass,
   fields: Record<string, string> = {},
 ): FoxIntakeDraft {
+  if (isTranscriptReturnFields(fields)) {
+    return draft.incomeType.value ? { ...draft, incomeAsked: true } : draft;
+  }
   const employed = employmentOnFile(draft) || (extractClass ? incomingEmployment(extractClass, fields) : false);
   const returned = returnOnFile(draft) || (extractClass ? incomingReturn(extractClass) : false);
   if (!employed && !returned) return draft;
@@ -4227,13 +4295,21 @@ export function isPurchaseContractConfirmPending(draft: FoxIntakeDraft) {
 
 export function skipCurrentInvite(draft: FoxIntakeDraft): FoxIntakeDraft {
   if (transcriptFollowUpAsk(draft)) {
-    return {
-      ...draft,
-      transcriptFollowUpSkipped: true,
-      looksRightHold: false,
-      docsOpen: false,
-      correcting: null,
-    };
+    const key = transcriptSpeakKey(draft);
+    return markDocStamp(
+      {
+        ...draft,
+        transcriptFollowUpSkipped: true,
+        looksRightHold: false,
+        docsOpen: false,
+        correcting: null,
+      },
+      key,
+      "done",
+    );
+  }
+  if (transcriptOfferDone(draft)) {
+    return draft;
   }
   if (nextCoverPageInviteCopy(draft) && lastExtractIsCover(draft) && !draft.pendingProposal) {
     const skipped = Array.from(new Set([...(draft.skippedClasses ?? []), "tax_return" as ExtractClass]));
