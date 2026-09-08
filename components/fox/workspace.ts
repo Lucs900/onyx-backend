@@ -42,6 +42,8 @@ import {
   dropResolvedAddressConfirmChips,
   isOnFileAddressLine,
   isLiveRateSpeech,
+  isTranscriptSignalAskText,
+  withoutDuplicateTranscriptAsk,
   liveCouponActions,
   liveCouponConfirmCopy,
   liveQuoteReady,
@@ -3007,6 +3009,7 @@ function isFileQuestionSpeech(message: FoxMessage) {
   if (message.text === LIVE_QUOTE_INCOME_ASK) return false;
   const text = message.text.trim();
   if (!text) return false;
+  if (isTranscriptSignalAskText(text)) return true;
   if (message.actions?.length) return true;
   return /\?/.test(text) || isYearsInBusinessAskText(text);
 }
@@ -3076,29 +3079,35 @@ function withRestoredAskAfterQuote(
   draft: FoxIntakeDraft,
   openAsk?: FoxMessage,
 ): FoxMessage[] {
-  if (!openAsk || !shouldRestoreAskAfterLiveQuote(draft, openAsk)) return thread;
+  if (!openAsk || !shouldRestoreAskAfterLiveQuote(draft, openAsk)) {
+    return withoutDuplicateTranscriptAsk(thread);
+  }
   const last = thread[thread.length - 1];
   if (last && last.text === openAsk.text && !last.id.startsWith("live-quote:")) {
-    return dedupeYearsInBusinessAsk(
-      thread.map((item, index) =>
-        index === thread.length - 1
-          ? {
-              ...item,
-              actions: isYearsInBusinessAskText(openAsk.text)
-                ? yearsInBusinessSkipActions()
-                : isMonthlyDebtsAskText(openAsk.text)
-                  ? monthlyDebtsSkipActions()
-                  : isPropertyTypeAskText(openAsk.text)
-                    ? propertyTypeAskActions()
-                    : isLooksRightAskText(openAsk.text)
-                      ? looksRightAskActions()
-                      : openAsk.actions,
-            }
-          : item,
+    return withoutDuplicateTranscriptAsk(
+      dedupeYearsInBusinessAsk(
+        thread.map((item, index) =>
+          index === thread.length - 1
+            ? {
+                ...item,
+                actions: isYearsInBusinessAskText(openAsk.text)
+                  ? yearsInBusinessSkipActions()
+                  : isMonthlyDebtsAskText(openAsk.text)
+                    ? monthlyDebtsSkipActions()
+                    : isPropertyTypeAskText(openAsk.text)
+                      ? propertyTypeAskActions()
+                      : isLooksRightAskText(openAsk.text)
+                        ? looksRightAskActions()
+                        : openAsk.actions,
+              }
+            : item,
+        ),
       ),
     );
   }
-  return dedupeYearsInBusinessAsk([...thread, restoredAskAfterLiveQuote(openAsk)]);
+  return withoutDuplicateTranscriptAsk(
+    dedupeYearsInBusinessAsk([...thread, restoredAskAfterLiveQuote(openAsk)]),
+  );
 }
 
 /** Two quote lines on one Fox bubble, with coupon chips, before income. */

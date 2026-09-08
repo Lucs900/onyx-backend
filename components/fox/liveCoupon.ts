@@ -709,6 +709,37 @@ function holdPurchaseContractConfirm(message: FoxMessage): FoxMessage {
   };
 }
 
+/** Chat signal line only. Do not change this wording. */
+export function isTranscriptSignalAskText(text?: string | null) {
+  return /^Tax return transcript · (?:19|20)\d{2}$/i.test(String(text ?? "").trim());
+}
+
+/** One drop = one two-line transcript block. Prior copies are history, not live chips. */
+export function withoutDuplicateTranscriptAsk(messages: FoxMessage[]): FoxMessage[] {
+  let keep = -1;
+  for (let i = 0; i < messages.length; i += 1) {
+    if (messages[i]?.role === "fox" && isTranscriptSignalAskText(messages[i]?.text)) {
+      keep = i;
+    }
+  }
+  if (keep < 0) return messages;
+  return messages.filter((message, index) => {
+    if (message.role !== "fox" || !isTranscriptSignalAskText(message.text)) return true;
+    return index === keep;
+  });
+}
+
+/** Replace stacked transcript asks with one live block. Stale Skip chips die. */
+export function applyTranscriptSignalAsk(messages: FoxMessage[], ask: FoxMessage): FoxMessage[] {
+  const prior = [...messages]
+    .reverse()
+    .find((message) => message.role === "fox" && isTranscriptSignalAskText(message.text));
+  const others = messages.filter(
+    (message) => !(message.role === "fox" && isTranscriptSignalAskText(message.text)),
+  );
+  return freezeUsedFoxTurns([...others, { ...ask, id: prior?.id ?? ask.id }]);
+}
+
 /** One “The contract shows …” bubble. Prompt-sync must not append a second copy. */
 export function withoutDuplicateContractConfirm(messages: FoxMessage[]): FoxMessage[] {
   let seen = false;

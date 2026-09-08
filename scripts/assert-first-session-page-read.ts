@@ -66,9 +66,11 @@ import {
 } from "../components/fox/workspace";
 import {
   applyIdExtractAsk,
+  applyTranscriptSignalAsk,
   dropLeftoverAmountAsksForOpenUseThis,
   freezeUsedFoxTurns,
   leftoverUseThisOnOlderTurns,
+  withoutDuplicateTranscriptAsk,
   paintThreadActions,
   paintedFoxActions,
   shouldHoldAskForOpenUseThis,
@@ -894,6 +896,45 @@ async function main() {
     false,
   );
   assert.equal(transcriptFollowUpAsk(combesProposed.draft), "I need the 2023 Form 1040 and Schedule E.");
+  const transcriptChips: FoxAction[] = [
+    { id: "upload-this", label: "Upload this", event: "open-docs", capture: { field: "open-docs" } },
+    { id: "skip-docs", label: "Skip", event: "bubble", capture: { field: "skip-docs" } },
+  ];
+  const transcriptBlock = {
+    text: "Tax return transcript · 2023",
+    followUp: combesAskLine,
+    actions: transcriptChips,
+  };
+  const restacked = applyTranscriptSignalAsk(
+    [
+      { id: "t1", role: "fox", ...transcriptBlock },
+      { id: "received", role: "system", text: "Received 2024 Tax Return Combes.pdf" },
+      { id: "t2", role: "fox", ...transcriptBlock },
+    ],
+    { id: "t3", role: "fox", ...transcriptBlock },
+  );
+  const restackCopies = restacked.filter(
+    (item) => item.role === "fox" && item.text === "Tax return transcript · 2023",
+  );
+  assert.equal(restackCopies.length, 1, "one drop = one two-line transcript block");
+  assert.equal(restackCopies[0]?.followUp, combesAskLine);
+  assert.equal(
+    restacked.filter((item) => (item.actions ?? []).some((action) => action.label === "Skip")).length,
+    1,
+    "Skip chips live only on the current transcript ask",
+  );
+  const frozenRestack = freezeUsedFoxTurns(withoutDuplicateTranscriptAsk([
+    { id: "t1", role: "fox", ...transcriptBlock },
+    { id: "t2", role: "fox", ...transcriptBlock },
+    { id: "t3", role: "fox", ...transcriptBlock },
+  ]));
+  assert.equal(
+    frozenRestack.filter((item) => item.role === "fox" && item.text === "Tax return transcript · 2023").length,
+    1,
+  );
+  assert.equal(frozenRestack.find((item) => item.id === "t3")?.actions?.some((action) => action.label === "Skip"), true);
+  assert.equal(frozenRestack.find((item) => item.id === "t1"), undefined);
+  assert.equal(frozenRestack.find((item) => item.id === "t2"), undefined);
   assert.equal(docInviteBlocksLooksRight(combesProposed.draft), true);
   assert.equal(canLooksRight(combesProposed.draft), false);
   assert.equal(

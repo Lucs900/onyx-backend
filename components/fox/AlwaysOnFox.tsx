@@ -46,6 +46,9 @@ import {
   dropResolvedAddressConfirmChips,
   freezeUsedFoxTurns,
   withoutDuplicateContractConfirm,
+  withoutDuplicateTranscriptAsk,
+  applyTranscriptSignalAsk,
+  isTranscriptSignalAskText,
   stripLooksRightWhileUseThisOpen,
   dropLeftoverAmountAsksForOpenUseThis,
   shouldHoldDocInviteForOpenUseThis,
@@ -399,6 +402,9 @@ function applyFoxAsk(
   if (ask.text === LAST_YEAR_FEDERAL_RETURN_ASK && lastFoxIsUnread(messages)) {
     return freezeUsedFoxTurns(messages);
   }
+  if (isTranscriptSignalAskText(ask.text)) {
+    return applyTranscriptSignalAsk(messages, foxAskMessage(ask));
+  }
   const liveActions = lastFoxTurn(freezeUsedFoxTurns(messages))?.actions;
   const freezeOthers = (keepId: string, replacement: FoxMessage) =>
     freezeUsedFoxTurns(
@@ -653,7 +659,10 @@ function FoxThread({
   const [editOpenId, setEditOpenId] = useState<string | null>(null);
   const thread = freezeUsedFoxTurns(
     dropStreetSuggestChips(
-      dropAbandonedAddressConfirm(dropResolvedAddressConfirmChips(messages, draft), draft),
+      dropAbandonedAddressConfirm(
+        dropResolvedAddressConfirmChips(withoutDuplicateTranscriptAsk(messages), draft),
+        draft,
+      ),
     ),
   );
   const currentFox = thread.reduce((index, message, i) => (message.role === "fox" ? i : index), -1);
