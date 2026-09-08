@@ -16,6 +16,7 @@ import {
   isFirstSessionClass,
   lockFirstSessionFields,
   nextDocInvite,
+  stillUsefulSection,
 } from "../components/fox/fileWrite";
 import { resolveProposal, shouldSpeakPendingConfirm } from "../components/fox/completeness";
 import { emptyDraft } from "../components/fox/store";
@@ -483,7 +484,31 @@ async function main() {
     gross_period: "16824.30",
     overtime: "850.00",
   };
-  const skippedW2 = skipWageDocs(sketch());
+  const wageDocsSketch = {
+    ...sketch(),
+    yearsInBusinessAsked: true,
+    monthlyDebtsAsked: true,
+    propertyType: "house",
+    propertyTypeAsked: true,
+  };
+  assert.equal(workspacePrompt(wageDocsSketch), "wage-docs");
+  assert.ok(
+    (workspacePromptCopy("wage-docs", wageDocsSketch).actions ?? []).some(
+      (item) => item.capture?.field === "skip-wage-docs",
+    ),
+  );
+  const skippedW2 = skipWageDocs(wageDocsSketch);
+  assert.equal(skippedW2.wageStubAsked, false, "Skip W-2 must not skip the stub");
+  assert.ok((skippedW2.skippedClasses ?? []).includes("w2"));
+  assert.equal(nextDocInvite(skippedW2), "paystub");
+  assert.equal(workspacePrompt(skippedW2), "documents");
+  assert.match(nextFoxAsk(skippedW2).text, /paystub/i);
+  assert.doesNotMatch(nextFoxAsk(skippedW2).text, /government ID/i);
+  const usefulAfterSkipW2 = (stillUsefulSection(skippedW2)?.items ?? []).map((item) => item.label);
+  assert.ok(
+    usefulAfterSkipW2.some((label) => /W-2/i.test(label)),
+    `Still useful must keep skipped W-2 — ${usefulAfterSkipW2.join(" · ")}`,
+  );
   assert.equal(stubPeriodConfirmOpen(skippedW2), true, "Skip W-2 must keep the readable stub Period path");
   assert.equal(canSpeakStubExtract(skippedW2, alamedaFields), true);
   assert.equal(shouldProposeStubExtract(skippedW2, "paystub", alamedaFields), true);

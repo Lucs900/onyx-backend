@@ -51,6 +51,7 @@ import {
   readStubAmount,
   readTaxCashflows,
   skipWageDocs,
+  skipWageStub,
   wageIncomeCaution,
   wageThreadOpen,
 } from "./qualifyingIncome";
@@ -2668,6 +2669,9 @@ function dropWageAfterLooksRightExtra(draft: FoxIntakeDraft, id: string) {
 }
 
 function wageAskClassLabel(draft: FoxIntakeDraft, extractClass: ExtractClass): StillUsefulLabel {
+  if (extractClass === "w2" && (draft.skippedClasses ?? []).includes("w2")) {
+    return "This year’s W-2";
+  }
   if (draft.sampleAccepted && wageThreadOpen(draft)) {
     if (extractClass === "paystub") return "latest paystub";
     if (extractClass === "w2") return "This year’s W-2";
@@ -2718,7 +2722,10 @@ export function stillUsefulLabels(draft: FoxIntakeDraft): StillUsefulLabel[] {
   const groceryBeforeLooksRight = wageThreadOpen(draft) && !draft.sampleAccepted;
   const labels: StillUsefulLabel[] = missingExtractClasses(draft)
     .filter((item) => item !== "tax_return" || taxReturns < 1)
-    .filter((item) => !groceryBeforeLooksRight || !wageGroceryExtractClass(item))
+    .filter((item) => {
+      if (!groceryBeforeLooksRight || !wageGroceryExtractClass(item)) return true;
+      return item === "w2" && (draft.skippedClasses ?? []).includes("w2");
+    })
     .filter((item) => !dropWageAfterLooksRightExtra(draft, item))
     .map((item) => wageAskClassLabel(draft, item));
   if (wantsW2RemainderReturn(draft) && !labels.includes(askClassLabel("tax_return") as StillUsefulLabel)) {
@@ -3047,6 +3054,9 @@ function isWageGroceryBeforeLooksRight(draft: FoxIntakeDraft, id: string) {
   if (id === "government_id" && (draft.skippedClasses ?? []).includes("government_id")) {
     return false;
   }
+  if (id === "w2" && (draft.skippedClasses ?? []).includes("w2")) {
+    return false;
+  }
   if (id === "prior-year-return" && hasScheduleCOnFile(draft)) return false;
   return wageGroceryExtractClass(id);
 }
@@ -3166,7 +3176,10 @@ export function layer2Plan(draft: FoxIntakeDraft): StillUsefulItem[] {
       return [layer2Item(id, OTHER_REO_MORTGAGE_STATEMENTS, OTHER_REO_MORTGAGE_STATEMENTS)];
     }
     const wageCopy =
-      draft.sampleAccepted && wageThreadOpen(draft) ? wageStillUsefulCopy(id) : null;
+      wageThreadOpen(draft) &&
+      (draft.sampleAccepted || (id === "w2" && (draft.skippedClasses ?? []).includes("w2")))
+        ? wageStillUsefulCopy(id)
+        : null;
     if (wageCopy === null && id === "second-year-w2" && wageThreadOpen(draft)) return [];
     const copy = wageCopy ?? namedYearLayer2Copy(draft, id) ?? LAYER2_COPY[id];
     if (!copy) return [];
@@ -3672,7 +3685,11 @@ function employerStubRemainderOpen(draft: FoxIntakeDraft) {
   if (inviteSatisfied(draft, "paystub")) return false;
   if (draft.wageStubAsked || draft.stubExtractAccepted) return false;
   if (readStubAmount(draft)) return false;
-  return wageW2ExtractAccepted(draft) || classSuccessfullyRead(draft, "w2");
+  return (
+    wageW2ExtractAccepted(draft) ||
+    classSuccessfullyRead(draft, "w2") ||
+    (Boolean(draft.wageDocsAsked) && (draft.skippedClasses ?? []).includes("w2"))
+  );
 }
 
 export function nextDocInvite(draft: FoxIntakeDraft): DocInviteKind | null {
@@ -4061,8 +4078,11 @@ export function skipUnreadDoc(draft: FoxIntakeDraft): FoxIntakeDraft {
   const unread = unreadDocOpen(draft);
   const next: FoxIntakeDraft = { ...draft, looksRightHold: undefined, awaitingUnreadNote: false };
   const kind = unread ? receivedClassOf(unread) ?? unread.extractClass : null;
-  if (!draft.sampleAccepted && (kind === "w2" || kind === "paystub")) {
+  if (!draft.sampleAccepted && kind === "w2") {
     return skipWageDocs(next);
+  }
+  if (!draft.sampleAccepted && kind === "paystub") {
+    return skipWageStub(next);
   }
   return next;
 }

@@ -1738,7 +1738,7 @@ export function qualifyingIncomeDisplay(draft: FoxIntakeDraft): { value: string;
 export const W2_BOX5_ASK =
   "What is Box 5 on that W-2? Medicare wages and tips. That is last year’s gross.";
 export const W2_PAY_FREQUENCY_ASK = "How often are you paid?";
-export const WAGE_DOCS_ASK = "Drop last year’s W-2 and a recent paystub. Skip if you want to type it.";
+export const WAGE_DOCS_ASK = "Drop last year’s W-2. Skip if you want to type it.";
 export const WAGE_STUB_DROP_ASK = "Drop a recent paystub. Skip if you want to type it.";
 export const PAYSTUB_MONTHLY_ASK = "What's the amount on the latest stub?";
 export const PAYSTUB_AMOUNT_FIELD = "paystub_amount";
@@ -2122,17 +2122,18 @@ export function wageThreadOpen(draft: FoxIntakeDraft) {
 }
 
 export function skipWageDocs(draft: FoxIntakeDraft): FoxIntakeDraft {
+  const skipped = Array.from(new Set([...(draft.skippedClasses ?? []), "w2" as const]));
   return {
     ...draft,
     wageDocsAsked: true,
     wageBox5Asked: true,
-    wageFrequencyAsked: true,
-    wageStubAsked: true,
+    wageStubAsked: false,
     awaitingPayFrequency: false,
     pendingProposal: isWageExtractProposal(draft.pendingProposal) ? null : draft.pendingProposal,
     pendingWageExtract: undefined,
     looksRightHold: false,
     awaitingUnreadNote: false,
+    skippedClasses: skipped,
   };
 }
 

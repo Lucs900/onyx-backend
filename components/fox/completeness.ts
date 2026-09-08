@@ -64,6 +64,7 @@ import {
   isSameBusinessWageEntityProposal,
   parseExtractMoney,
   stubExtractAskOpen,
+  stubPeriodConfirmOpen,
   isWageW2OnlyProposal,
   stubExtractConfirmCopy,
   wageExtractConfirmCopy,
@@ -1907,11 +1908,13 @@ export function wageBox5AskNeeded(draft: FoxIntakeDraft) {
 
 export function wageFrequencyAskNeeded(draft: FoxIntakeDraft) {
   if (employmentOnFile(draft) || qualifyingIncomeOnFile(draft)) return false;
+  if (stubExtractAskOpen(draft) || stubPeriodConfirmOpen(draft)) return false;
   return wageThreadOpen(draft) && Boolean(draft.wageBox5Asked) && !draft.wageFrequencyAsked;
 }
 
 export function wageStubAskNeeded(draft: FoxIntakeDraft) {
   if (employmentOnFile(draft) || qualifyingIncomeOnFile(draft)) return false;
+  if (stubExtractAskOpen(draft) || stubPeriodConfirmOpen(draft)) return false;
   return (
     wageThreadOpen(draft) &&
     Boolean(draft.wageBox5Asked) &&
