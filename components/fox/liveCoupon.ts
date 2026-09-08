@@ -364,11 +364,24 @@ export function stripLooksRightWhileUseThisOpen(
   });
 }
 
-function leftoverChipCount(actions: FoxAction[] | undefined, kind: "use-this" | "looks-right" | "this-one") {
+function isSkipDocChip(action: FoxAction) {
+  return action.label === "Skip" && action.capture?.field === "skip-docs";
+}
+
+/** Filename · received. History text — never a chip row. */
+export function isReceivedStatusLine(text?: string | null) {
+  return /· received\.?$/i.test(String(text ?? "").trim());
+}
+
+function leftoverChipCount(
+  actions: FoxAction[] | undefined,
+  kind: "use-this" | "looks-right" | "this-one" | "skip",
+) {
   if (!actions?.length) return 0;
   return actions.filter((action) => {
     if (kind === "looks-right") return isLooksRightChip(action);
     if (kind === "this-one") return action.label === "This one";
+    if (kind === "skip") return isSkipDocChip(action) || action.label === "Skip";
     return action.label === "Use this";
   }).length;
 }
@@ -380,7 +393,7 @@ function leftoverUseThisPaint(text?: string | null) {
 function leftoverOnOlderTurns(
   messages: FoxMessage[],
   draft: FoxIntakeDraft,
-  kind: "use-this" | "looks-right" | "this-one",
+  kind: "use-this" | "looks-right" | "this-one" | "skip",
 ) {
   const thread = freezeUsedFoxTurns(dropResolvedAddressConfirmChips(messages, draft));
   const last = lastFoxIndex(thread);
@@ -411,6 +424,60 @@ export function leftoverThisOneOnOlderTurns(messages: FoxMessage[], draft: FoxIn
   return leftoverOnOlderTurns(messages, draft, "this-one");
 }
 
+/** Leftover Skip still live on older Fox turns after a used chip. */
+export function leftoverSkipOnOlderTurns(messages: FoxMessage[], draft: FoxIntakeDraft) {
+  return leftoverOnOlderTurns(messages, draft, "skip");
+}
+
+/** Skip chips parked on a filename · received line. Those die. */
+export function leftoverSkipOnReceivedLines(messages: FoxMessage[], draft: FoxIntakeDraft) {
+  const thread = dropResolvedAddressConfirmChips(messages, draft);
+  let count = 0;
+  for (const message of thread) {
+    if (!isReceivedStatusLine(message.text)) continue;
+    count += leftoverChipCount(message.actions, "skip");
+    count += leftoverChipCount(paintedFoxActions(message, draft, true), "skip");
+  }
+  return count;
+}
+
+/** One live chip row = one Skip on the last Fox line. */
+export function liveSkipChipRows(messages: FoxMessage[], draft: FoxIntakeDraft) {
+  const thread = dropResolvedAddressConfirmChips(messages, draft);
+  const last = lastFoxIndex(thread);
+  if (last < 0) return 0;
+  const message = thread[last]!;
+  if (isReceivedStatusLine(message.text)) return 0;
+  return leftoverChipCount(paintedFoxActions(message, draft, true), "skip") > 0 ? 1 : 0;
+}
+
+/** One drop = one received line. Extra copies are leftover paint. */
+export function withoutDuplicateReceivedLine(messages: FoxMessage[]): FoxMessage[] {
+  let keep = -1;
+  for (let i = 0; i < messages.length; i += 1) {
+    if (isReceivedStatusLine(messages[i]?.text)) {
+      keep = i;
+      break;
+    }
+  }
+  if (keep < 0) return messages;
+  return messages.filter((message, index) => {
+    if (!isReceivedStatusLine(message.text)) return true;
+    return index === keep;
+  });
+}
+
+function sealReceivedStatusLine(message: FoxMessage): FoxMessage {
+  if (!isReceivedStatusLine(message.text)) return message;
+  if (message.role === "system" && !message.actions?.length && !message.followUp) return message;
+  return {
+    ...message,
+    role: message.role === "client" ? message.role : "system",
+    followUp: undefined,
+    actions: undefined,
+  };
+}
+
 function foxTurnHasLaterUsedReply(messages: FoxMessage[], index: number) {
   for (let i = index + 1; i < messages.length; i += 1) {
     const item = messages[i];
@@ -430,10 +497,12 @@ export function inertUsedConfirmText(text?: string | null) {
 
 /** After a chip is used, that Fox turn is inert text. Quick replies live only on the latest Fox line. */
 export function freezeUsedFoxTurns(messages: FoxMessage[]): FoxMessage[] {
-  const current = lastFoxIndex(messages);
-  return messages.map((message, index) => {
+  const sealed = withoutDuplicateReceivedLine(messages).map(sealReceivedStatusLine);
+  const current = lastFoxIndex(sealed);
+  return sealed.map((message, index) => {
+    if (isReceivedStatusLine(message.text)) return sealReceivedStatusLine(message);
     if (message.role !== "fox") return message;
-    const used = index !== current || foxTurnHasLaterUsedReply(messages, index);
+    const used = index !== current || foxTurnHasLaterUsedReply(sealed, index);
     if (!used) return message;
     const text = inertUsedConfirmText(message.text);
     const followUp = message.followUp ? inertUsedConfirmText(message.followUp) : message.followUp;
@@ -873,6 +942,7 @@ export function paintedFoxActions(
   draft: FoxIntakeDraft,
   current = true,
 ): FoxAction[] | undefined {
+  if (isReceivedStatusLine(message.text)) return undefined;
   if (isLookupWaitMessage(message) || isLookupWaitLine(message.text)) return undefined;
   if (isOnFileAddressLine(message) || hideAddressUseThisOnBubble(message, draft)) return undefined;
   if (!current) return undefined;
@@ -953,6 +1023,7 @@ function hideAddressUseThisOnBubble(message: FoxMessage, draft: FoxIntakeDraft) 
 }
 
 export function visibleFoxActions(message: FoxMessage, draft: FoxIntakeDraft) {
+  if (isReceivedStatusLine(message.text)) return undefined;
   if (isLookupWaitMessage(message) || isLookupWaitLine(message.text)) return undefined;
   if (isOnFileAddressLine(message) || hideAddressUseThisOnBubble(message, draft)) return undefined;
   const actions = message.actions;

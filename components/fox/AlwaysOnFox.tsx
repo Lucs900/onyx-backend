@@ -48,6 +48,7 @@ import {
   withoutDuplicateContractConfirm,
   withoutDuplicateTranscriptAsk,
   applyTranscriptSignalAsk,
+  isReceivedStatusLine,
   isTranscriptSignalAskText,
   stripLooksRightWhileUseThisOpen,
   dropLeftoverAmountAsksForOpenUseThis,
@@ -691,7 +692,10 @@ function FoxThread({
           );
         }
         const current =
-          message.role === "fox" && index === currentFox && !foxTurnAlreadyUsed(thread, index);
+          message.role === "fox" &&
+          index === currentFox &&
+          !foxTurnAlreadyUsed(thread, index) &&
+          !isReceivedStatusLine(message.text);
         const tone = current ? " is-current" : " is-prior";
         const rawActions = current
           ? (paintedFoxActions(message, draft, true) ?? []).filter(

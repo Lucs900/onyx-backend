@@ -74,7 +74,11 @@ import {
   applyTranscriptSignalAsk,
   dropLeftoverAmountAsksForOpenUseThis,
   freezeUsedFoxTurns,
+  leftoverSkipOnOlderTurns,
+  leftoverSkipOnReceivedLines,
   leftoverUseThisOnOlderTurns,
+  liveSkipChipRows,
+  withoutDuplicateReceivedLine,
   withoutDuplicateTranscriptAsk,
   paintThreadActions,
   paintedFoxActions,
@@ -913,7 +917,7 @@ async function main() {
   const restacked = applyTranscriptSignalAsk(
     [
       { id: "t1", role: "fox", ...transcriptBlock },
-      { id: "received", role: "system", text: "Received 2024 Tax Return Combes.pdf" },
+      { id: "received", role: "system", text: "2024 Tax Return Combes.pdf · received" },
       { id: "t2", role: "fox", ...transcriptBlock },
     ],
     { id: "t3", role: "fox", ...transcriptBlock },
@@ -973,6 +977,64 @@ async function main() {
   assert.equal(skipTwice.transcriptFollowUpSkipped, true);
   assert.equal(skipTwice.incomeType.value, "w2");
   assert.equal(JSON.stringify(skipTwice.docSpeak), JSON.stringify(skipOnce.docSpeak));
+  const receivedLine = "2024 Tax Return Combes.pdf · received";
+  const receivedSkip = {
+    id: "skip-docs",
+    label: "Skip",
+    event: "bubble" as const,
+    capture: { field: "skip-docs" as const },
+  };
+  const dirtyReceived = applyTranscriptSignalAsk(
+    [
+      {
+        id: "r1",
+        role: "fox",
+        text: receivedLine,
+        actions: [receivedSkip],
+      },
+      {
+        id: "r2",
+        role: "fox",
+        text: receivedLine,
+        actions: [receivedSkip],
+      },
+      {
+        id: "r3",
+        role: "system",
+        text: receivedLine,
+        actions: [receivedSkip, receivedSkip, receivedSkip],
+      },
+      { id: "t1", role: "fox", ...transcriptBlock },
+    ],
+    { id: "t2", role: "fox", ...transcriptBlock },
+    combesStamped,
+  );
+  const receivedCopies = dirtyReceived.filter((item) => item.text === receivedLine);
+  assert.equal(receivedCopies.length, 1, "one Combes drop → one received line");
+  assert.equal(receivedCopies[0]?.role, "system");
+  assert.equal(receivedCopies[0]?.actions, undefined, "received line is text");
+  assert.equal(leftoverSkipOnReceivedLines(dirtyReceived, combesStamped), 0);
+  assert.equal(leftoverSkipOnOlderTurns(dirtyReceived, combesStamped), 0);
+  assert.equal(liveSkipChipRows(dirtyReceived, combesStamped), 1, "one chip row on the last Fox line");
+  assert.equal(
+    dirtyReceived.filter((item) => (item.actions ?? []).some((action) => action.label === "Skip")).length,
+    1,
+    "Upload this · Skip lives only on the last Fox line",
+  );
+  const secondSkipThread = freezeUsedFoxTurns([
+    ...dirtyReceived,
+    { id: "skip-1", role: "client", text: "Skip" },
+  ]);
+  assert.equal(leftoverSkipOnReceivedLines(secondSkipThread, skipOnce), 0);
+  assert.equal(liveSkipChipRows(secondSkipThread, skipOnce), 0, "second Skip adds no fourth chip");
+  assert.equal(
+    withoutDuplicateReceivedLine([
+      { id: "a", role: "system", text: receivedLine },
+      { id: "b", role: "fox", text: receivedLine, actions: [receivedSkip] },
+      { id: "c", role: "system", text: receivedLine },
+    ]).length,
+    1,
+  );
   assert.equal(docInviteBlocksLooksRight(combesProposed.draft), true);
   assert.equal(canLooksRight(combesProposed.draft), false);
   assert.equal(
