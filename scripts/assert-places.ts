@@ -238,9 +238,13 @@ assert.match(fox, /withWaitLine\(\s*prev,\s*"places"\s*\)/);
 const foxCss = readFileSync(join(root, "styles/fox.css"), "utf8");
 assert.ok(foxCss.includes("fox-bar__suggest"));
 assert.doesNotMatch(foxCss, /\.fox-bar__suggest\s*\{[^}]*position:\s*absolute/);
-const foxThread = fox.slice(fox.indexOf("function FoxThread"), fox.indexOf("export function AlwaysOnFox"));
+const foxThread = fox.slice(fox.indexOf("function FoxThread"), fox.indexOf("function FoxLiveStrip"));
 assert.doesNotMatch(foxThread, /streetSuggestions|fox-bar__suggest/);
-assert.match(foxThread, /isStreetSuggestChipLabel/);
+assert.doesNotMatch(foxThread, /fox-bubble__actions|fox-chip|onAction/);
+assert.match(fox, /function FoxLiveStrip/);
+assert.match(fox, /liveComposerStripActions/);
+assert.match(fox, /fox-bar__strip/);
+assert.ok(foxCss.includes("fox-bar__strip"));
 
 const marinaChip = "801 Marina Boulevard, San Francisco, CA";
 const waitBubble = {

@@ -630,7 +630,7 @@ export function leftoverSkipOnReceivedLines(messages: FoxMessage[], draft: FoxIn
   return count;
 }
 
-/** One live chip row = one Skip on the last Fox line. */
+/** One live chip row = one Skip on the composer strip. */
 export function liveSkipChipRows(messages: FoxMessage[], draft: FoxIntakeDraft) {
   const thread = dropResolvedAddressConfirmChips(messages, draft);
   const last = lastFoxIndex(thread);
@@ -1161,7 +1161,25 @@ export function paintThreadActions(actions: FoxAction[]): FoxAction[] {
   return unique;
 }
 
-/** Visible chips on a bubble — leftover score is the painted button, not a DOM count. */
+/** The only live chips. History bubbles never paint these. */
+export function liveComposerStripActions(
+  messages: FoxMessage[],
+  draft: FoxIntakeDraft,
+): FoxAction[] {
+  const thread = withoutDuplicateTranscriptAsk(messages);
+  const live = lastFoxIndex(thread);
+  if (live < 0 || !isLiveFoxTurn(thread, live)) return [];
+  const message = thread[live]!;
+  if (isReceivedStatusLine(message.text)) return [];
+  const raw = (paintedFoxActions(message, draft, true) ?? []).filter(
+    (action) =>
+      action.capture?.field !== "propose-place-address" &&
+      !isStreetSuggestChipLabel(action.label),
+  );
+  return paintThreadActions(raw);
+}
+
+/** Action source for the live composer strip. History bubbles never paint these. */
 export function paintedFoxActions(
   message: FoxMessage,
   draft: FoxIntakeDraft,

@@ -158,6 +158,31 @@
   width: 100%;
 }
 
+.fox-bar__strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0 0 8px;
+}
+
+.fox-bar__strip .fox-chip:hover,
+.fox-bar__strip .fox-chip:focus-visible,
+.fox-bar__strip .fox-chip:active {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--paper-elevated);
+  box-shadow: none;
+}
+
+.fox-bar__strip .fox-chip.is-quiet:hover,
+.fox-bar__strip .fox-chip.is-quiet:focus-visible,
+.fox-bar__strip .fox-chip.is-quiet:active {
+  background: var(--secondary-hover);
+  border-color: transparent;
+  color: var(--ink-2);
+  box-shadow: none;
+}
+
 /* Places list lives in the composer dock, in flow. Never overlay the thread. */
 .fox-bar__compose.is-suggesting {
   background: var(--paper-elevated);

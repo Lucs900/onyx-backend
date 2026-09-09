@@ -56,7 +56,7 @@ const HARBOR_DROPS = [
 ] as const;
 
 const CURRENT = ".fox-bubble--fox.is-current";
-const CHIP = ".fox-bubble--fox.is-current button.fox-chip, .fox-bubble--fox.is-current a.fox-chip";
+const CHIP = ".fox-bar__strip button.fox-chip, .fox-bar__strip a.fox-chip";
 const START_OVER = "button.fox-bar__start-over";
 const INPUT = "input.fox-bar__input";
 const SEND = "button.fox-bar__send";
@@ -113,8 +113,16 @@ async function currentChips(page: Page): Promise<string[]> {
 const PRIOR_CHIP =
   ".fox-bubble--fox.is-prior button.fox-chip, .fox-bubble--fox.is-prior a.fox-chip";
 
-/** Engine rule: older Fox turns are text. Paint shows zero chips. */
+/** History is speech + paper received. Chips live only on the composer strip. */
 async function assertPriorFoxTurnsHaveNoChips(page: Page, when: string) {
+  const historyChips = page.locator(
+    ".fox-panel__thread button.fox-chip, .fox-panel__thread a.fox-chip",
+  );
+  const historyCount = await historyChips.count();
+  if (historyCount > 0) {
+    const labels = (await historyChips.allTextContents()).map((item) => item.replace(/\s+/g, " ").trim());
+    throw new BeatFail(`history still has chips ${when} — ${labels.join(" · ") || historyCount}`);
+  }
   const priorChips = page.locator(PRIOR_CHIP);
   const count = await priorChips.count();
   if (count > 0) {
@@ -163,7 +171,7 @@ function hasChip(chips: string[], label: string | RegExp) {
 async function clickChip(page: Page, label: string | RegExp) {
   const chip =
     typeof label === "string"
-      ? page.locator(".fox-bubble--fox.is-current").getByRole("button", { name: label, exact: true })
+      ? page.locator(".fox-bar__strip").getByRole("button", { name: label, exact: true })
       : page.locator(CHIP).filter({ hasText: label });
   if ((await chip.count()) === 0) {
     const chips = await currentChips(page);
@@ -363,7 +371,7 @@ async function probeAccess(page: Page) {
 }
 
 async function waitBuyChip(page: Page) {
-  await page.locator(".fox-bubble--fox.is-current").getByRole("button", { name: "Buy", exact: true }).waitFor({
+  await page.locator(".fox-bar__strip").getByRole("button", { name: "Buy", exact: true }).waitFor({
     state: "visible",
     timeout: 15_000,
   });
@@ -526,7 +534,7 @@ async function settleQuoteToIncome(page: Page, allowPricingSkip = false, zip = "
       }
       if (hasChip(chips, "Skip")) {
         await page
-          .locator(".fox-bubble--fox.is-current")
+          .locator(".fox-bar__strip")
           .getByRole("button", { name: "Skip", exact: true })
           .click();
       } else {
@@ -2204,7 +2212,7 @@ async function case13(page: Page) {
     await clickChip(page, hasChip(await currentChips(page), "Use this") ? "Use this" : "Use document");
   }
   await startOverButton(page).click();
-  await page.locator(".fox-bubble--fox.is-current").getByRole("button", { name: "Buy", exact: true }).waitFor({
+  await page.locator(".fox-bar__strip").getByRole("button", { name: "Buy", exact: true }).waitFor({
     state: "visible",
     timeout: 15_000,
   });

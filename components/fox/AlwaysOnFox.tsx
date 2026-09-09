@@ -61,9 +61,7 @@ import {
   isIdExtractAskText,
   isIdExtractPath,
   isOnFileAddressLine,
-  isStreetSuggestChipLabel,
-  paintedFoxActions,
-  paintThreadActions,
+  liveComposerStripActions,
   shouldDeferNextAskForLiveCoupon,
 } from "./liveCoupon";
 import {
@@ -654,13 +652,11 @@ function FoxThread({
   messages,
   draft,
   listRef,
-  onAction,
   onEdit,
 }: {
   messages: FoxMessage[];
   draft: FoxIntakeDraft;
   listRef: { current: HTMLDivElement | null };
-  onAction: (action: FoxAction) => void;
   onEdit?: (prompt: FoxPrompt, line?: string, messageId?: string) => void;
 }) {
   const [editOpenId, setEditOpenId] = useState<string | null>(null);
@@ -687,14 +683,6 @@ function FoxThread({
           isLiveFoxTurn(thread, index) &&
           !isReceivedStatusLine(message.text);
         const tone = current ? " is-current" : " is-prior";
-        const rawActions = current
-          ? (paintedFoxActions(message, draft, true) ?? []).filter(
-              (action) =>
-                action.capture?.field !== "propose-place-address" &&
-                !isStreetSuggestChipLabel(action.label),
-            )
-          : [];
-        const paintActions = paintThreadActions(rawActions);
         const canEdit = message.role === "client" && Boolean(message.edit) && Boolean(onEdit);
         return (
           <article
@@ -716,43 +704,6 @@ function FoxThread({
           >
             <p>{message.text}</p>
             {message.followUp ? <p>{message.followUp}</p> : null}
-            {paintActions.length > 0 &&
-            (message.text.trim() || (message.followUp ?? "").trim()) ? (
-              <div className="fox-bubble__actions">
-                {paintActions.map((action) =>
-                  action.href ? (
-                    <Link
-                      key={action.id}
-                      href={action.href}
-                      className={
-                        action.quiet
-                          ? "btn btn--secondary fox-chip is-quiet"
-                          : "btn btn--secondary fox-chip"
-                      }
-                      onClick={() => persistPathFromHref(action.href as string)}
-                    >
-                      {action.label}
-                    </Link>
-                  ) : (
-                    <button
-                      key={action.id}
-                      type="button"
-                      className={
-                        action.quiet
-                          ? "btn btn--secondary fox-chip is-quiet"
-                          : "btn btn--secondary fox-chip"
-                      }
-                      onClick={() => {
-                        if (!current) return;
-                        onAction(action);
-                      }}
-                    >
-                      {action.label}
-                    </button>
-                  ),
-                )}
-              </div>
-            ) : null}
             {canEdit ? (
               <button
                 type="button"
@@ -768,6 +719,48 @@ function FoxThread({
           </article>
         );
       })}
+    </div>
+  );
+}
+
+function FoxLiveStrip({
+  messages,
+  draft,
+  onAction,
+}: {
+  messages: FoxMessage[];
+  draft: FoxIntakeDraft;
+  onAction: (action: FoxAction) => void;
+}) {
+  const actions = liveComposerStripActions(messages, draft);
+  if (!actions.length) return null;
+  return (
+    <div className="fox-bar__strip" role="toolbar" aria-label="Live actions">
+      {actions.map((action) =>
+        action.href ? (
+          <Link
+            key={action.id}
+            href={action.href}
+            className={
+              action.quiet ? "btn btn--secondary fox-chip is-quiet" : "btn btn--secondary fox-chip"
+            }
+            onClick={() => persistPathFromHref(action.href as string)}
+          >
+            {action.label}
+          </Link>
+        ) : (
+          <button
+            key={action.id}
+            type="button"
+            className={
+              action.quiet ? "btn btn--secondary fox-chip is-quiet" : "btn btn--secondary fox-chip"
+            }
+            onClick={() => onAction(action)}
+          >
+            {action.label}
+          </button>
+        ),
+      )}
     </div>
   );
 }
@@ -805,7 +798,6 @@ function FoxWorkspace({
   draft,
   listRef,
   onClose,
-  onAction,
   onEdit,
   composer,
   hideClose,
@@ -817,7 +809,6 @@ function FoxWorkspace({
   draft: FoxIntakeDraft;
   listRef: { current: HTMLDivElement | null };
   onClose: () => void;
-  onAction: (action: FoxAction) => void;
   onEdit?: (prompt: FoxPrompt, line?: string, messageId?: string) => void;
   composer?: ReactNode;
   hideClose?: boolean;
@@ -855,7 +846,7 @@ function FoxWorkspace({
           </button>
         )}
       </div>
-      <FoxThread messages={messages} draft={draft} listRef={listRef} onAction={onAction} onEdit={onEdit} />
+      <FoxThread messages={messages} draft={draft} listRef={listRef} onEdit={onEdit} />
       {composer}
     </div>
   );
@@ -2320,6 +2311,7 @@ export function AlwaysOnFox({
 
   const desk = (
     <div className={streetSuggestions.length ? "fox-bar__compose is-suggesting" : "fox-bar__compose"}>
+      <FoxLiveStrip messages={messages} draft={draft} onAction={runAction} />
       {streetSuggestions.length > 0 ? (
         <ul id={suggestId} className="fox-bar__suggest" role="listbox">
           {streetSuggestions.map((item) => (
@@ -2406,7 +2398,6 @@ export function AlwaysOnFox({
       draft={draft}
       listRef={listRef}
       onClose={() => setOpen(false)}
-      onAction={runAction}
       onEdit={isStart ? editThreadTurn : undefined}
       composer={
         isStart ? (

@@ -78,6 +78,7 @@ import {
   leftoverSkipOnOlderTurns,
   leftoverSkipOnReceivedLines,
   leftoverUseThisOnOlderTurns,
+  liveComposerStripActions,
   liveSkipChipRows,
   sealStoredFoxThread,
   splitLeftoverOfferWithLaterFollowUp,
@@ -1181,6 +1182,54 @@ async function main() {
     ).length,
     1,
   );
+  const stripFromPrior = liveComposerStripActions(enginePrior, combesStamped);
+  assert.deepEqual(
+    stripFromPrior.map((item) => item.label),
+    ["Upload this", "Skip"],
+    "live strip is the later Fox ask — last-year chips do not stay",
+  );
+  const lastYearOnlyStrip = liveComposerStripActions(
+    [
+      {
+        id: "prior-offer",
+        role: "fox",
+        text: LAST_YEAR_FEDERAL_RETURN_ASK,
+        actions: transcriptChips,
+      },
+    ],
+    combesStamped,
+  );
+  assert.deepEqual(lastYearOnlyStrip.map((item) => item.label), ["Upload this", "Skip"]);
+  const afterNewAskStrip = liveComposerStripActions(
+    [
+      {
+        id: "old-ask",
+        role: "fox",
+        text: LAST_YEAR_FEDERAL_RETURN_ASK,
+        actions: [receivedSkip, receivedSkip, receivedSkip],
+      },
+      { id: "live-offer", role: "fox", ...transcriptBlock },
+    ],
+    combesStamped,
+  );
+  assert.deepEqual(
+    afterNewAskStrip.map((item) => item.label),
+    ["Upload this", "Skip"],
+    "a new Fox question replaces the strip",
+  );
+  assert.equal(
+    liveComposerStripActions(secondSkipThread, skipOnce).filter((item) => item.label === "Skip").length,
+    0,
+    "second Skip on the live strip adds nothing",
+  );
+  const foxSource = readFileSync(join(root, "components/fox/AlwaysOnFox.tsx"), "utf8");
+  const foxThreadSource = foxSource.slice(
+    foxSource.indexOf("function FoxThread"),
+    foxSource.indexOf("function FoxLiveStrip"),
+  );
+  assert.doesNotMatch(foxThreadSource, /fox-bubble__actions|fox-chip/);
+  assert.match(foxSource, /function FoxLiveStrip/);
+  assert.match(foxSource, /liveComposerStripActions/);
   const afterAlamedaUseThis = sealStoredFoxThread([
     {
       id: "alameda-period",
