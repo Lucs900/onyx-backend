@@ -865,10 +865,28 @@ async function main() {
   assert.equal(docInviteBlocksLooksRight(alamedaAfterMonthly), false, "Do not hold Looks right for 1040s");
   assert.equal(canLooksRight(alamedaAfterMonthly), true, "Looks right after the income story is on the notepad");
   assert.equal(workspacePrompt(alamedaAfterMonthly), "review");
+  const alamedaReview = nextFoxAsk(alamedaAfterMonthly);
+  assert.match(alamedaReview.text, /These numbers look right\?/);
+  assert.deepEqual(
+    (alamedaReview.actions ?? []).map((item) => item.label),
+    ["These numbers look right?", "Needs a correction"],
+  );
+  assert.ok(
+    !(alamedaReview.actions ?? []).some((item) => /^(Proceed|Not yet|Upload more)$/.test(item.label)),
+    "Notepad check is not a finish",
+  );
   const alamedaLooks = applyLooksRightMotion(alamedaAfterMonthly);
   assert.equal(nextDocInvite(alamedaLooks), "government_id");
   assert.match(nextFoxAsk(alamedaLooks).text, /government ID/i);
   assert.match(nextFoxAsk(alamedaLooks).text, /name on it/);
+  assert.deepEqual(
+    (nextFoxAsk(alamedaLooks).actions ?? []).map((item) => item.label),
+    ["Upload this", "Skip"],
+  );
+  assert.ok(
+    !(nextFoxAsk(alamedaLooks).actions ?? []).some((item) => /^(Proceed|Not yet|Upload more)$/.test(item.label)),
+    "ID invite is not a finish",
+  );
   const alamedaAfterIdSkip = skipCurrentInvite(alamedaLooks);
   assert.equal(nextDocInvite(alamedaAfterIdSkip), "tax_return");
   assert.notEqual(nextDocInvite(alamedaAfterIdSkip), "prior_year_return");
@@ -884,6 +902,14 @@ async function main() {
   assert.ok(
     usefulAfterId.some((label) => /return|Form 1040/i.test(label)),
     `Still useful holds last year’s 1040 — ${usefulAfterId.join(" · ")}`,
+  );
+  assert.deepEqual(
+    (nextFoxAsk(alamedaAfterIdSkip).actions ?? []).map((item) => item.label),
+    ["Upload this", "Skip"],
+  );
+  assert.ok(
+    !(nextFoxAsk(alamedaAfterIdSkip).actions ?? []).some((item) => /^(Proceed|Not yet|Upload more)$/.test(item.label)),
+    "1040 invite is not a finish",
   );
   const alamedaAfterReturnSkip = skipCurrentInvite(alamedaAfterIdSkip);
   assert.notEqual(nextDocInvite(alamedaAfterReturnSkip), "tax_return");
@@ -904,6 +930,10 @@ async function main() {
     usefulAfterReturnSkip.some((label) => /W-2/i.test(label)),
     `Still useful keeps skipped W-2 after return Skip — ${usefulAfterReturnSkip.join(" · ")}`,
   );
+  const alamedaFinishLabels = (nextFoxAsk(alamedaAfterReturnSkip).actions ?? []).map((item) => item.label);
+  assert.ok(alamedaFinishLabels.includes("Proceed"), `finish after Skip both — ${alamedaFinishLabels.join(" · ")}`);
+  assert.ok(alamedaFinishLabels.includes("Not yet"), `finish after Skip both — ${alamedaFinishLabels.join(" · ")}`);
+  assert.ok(alamedaFinishLabels.includes("Upload more"), `finish after Skip both — ${alamedaFinishLabels.join(" · ")}`);
   noSecrets(alamedaFields);
 
   assert.equal(looksLike1040Transcript(COMBES_TRANSCRIPT_LINES), true);

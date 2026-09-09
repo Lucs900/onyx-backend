@@ -58,11 +58,11 @@ function main() {
   assert.equal(ask.text, LOOKS_RIGHT_COMPLETE_ASK);
   assert.deepEqual(
     (ask.actions ?? []).map((item) => item.label),
-    ["Looks right", "Needs a correction"],
+    ["These numbers look right?", "Needs a correction"],
   );
   assert.deepEqual(
     looksRightAskActions().map((item) => item.label),
-    ["Looks right", "Needs a correction"],
+    ["These numbers look right?", "Needs a correction"],
   );
 
   const bare: FoxMessage = {
@@ -72,7 +72,7 @@ function main() {
   };
   assert.deepEqual(
     (paintedFoxActions(bare, skipped, true) ?? []).map((item) => item.label),
-    ["Looks right", "Needs a correction"],
+    ["These numbers look right?", "Needs a correction"],
     "Looks right chips restore when the stored turn has no actions",
   );
 
@@ -82,7 +82,7 @@ function main() {
     text: LOOKS_RIGHT_COMPLETE_ASK,
     actions: [
       { id: "accept-proposal", label: "Use this", event: "bubble", capture: { field: "accept-proposal" } },
-      { id: "looks-right", label: "Looks right", event: "bubble", capture: { field: "confirm-draft" } },
+      { id: "looks-right", label: "These numbers look right?", event: "bubble", capture: { field: "confirm-draft" } },
     ],
   };
   assert.ok(
@@ -100,7 +100,7 @@ function main() {
         },
         true,
       ) ?? []
-    ).some((item) => item.label === "Looks right"),
+    ).some((item) => item.label === "These numbers look right?" || item.label === "Looks right"),
     "Looks right must stay hidden while Use this is open",
   );
 
@@ -113,7 +113,7 @@ function main() {
   assert.ok(useful.includes("How income is earned"));
   assert.ok(!useful.some((item) => /paystub|W-2|tax return|latest return/i.test(item)));
 
-  const typedChip = workspaceReply("Looks right", skipped);
+  const typedChip = workspaceReply("These numbers look right?", skipped);
   assert.equal(typedChip?.capture?.field, "confirm-draft");
 
   const w2AfterConfirm = {
@@ -146,7 +146,7 @@ function main() {
   };
   assert.equal(nextDocInvite(w2AfterConfirm), "paystub");
   assert.notEqual(workspacePrompt(w2AfterConfirm), "review");
-  assert.doesNotMatch(nextFoxAsk(w2AfterConfirm).text, /Looks right, or change a line/i);
+  assert.doesNotMatch(nextFoxAsk(w2AfterConfirm).text, /Looks right, or change a line|These numbers look right/i);
 
   console.log("assert-looks-right-chip: Looks right chip on the gate; typed yes still works");
 }

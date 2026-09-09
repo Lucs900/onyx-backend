@@ -879,7 +879,7 @@ async function stillUsefulLabels(page: Page): Promise<string[]> {
 }
 
 async function looksRightVisible(page: Page): Promise<boolean> {
-  const buttons = page.getByRole("button", { name: /^Looks right$/i });
+  const buttons = page.getByRole("button", { name: /^(Looks right|These numbers look right\?)$/i });
   const n = await buttons.count();
   for (let i = 0; i < n; i += 1) {
     if (await buttons.nth(i).isVisible().catch(() => false)) return true;
@@ -894,7 +894,11 @@ async function assertLooksRightHiddenWhileUseThis(page: Page) {
     hasChip(chips, "Use document") ||
     hasChip(chips, /^Change$/);
   if (!useOpen) return;
-  if (hasChip(chips, "Looks right") || (await looksRightVisible(page))) {
+  if (
+    hasChip(chips, "Looks right") ||
+    hasChip(chips, "These numbers look right?") ||
+    (await looksRightVisible(page))
+  ) {
     throw new BeatFail(
       `Looks right visible while Use this is open — ${await currentText(page)} | ${chips.join(" · ")}`,
     );

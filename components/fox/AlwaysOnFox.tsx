@@ -525,6 +525,7 @@ function hasReviewAsk(messages: FoxMessage[]) {
         /notepad looks complete/i.test(message.text) ||
         /the file looks like this/i.test(message.text) ||
         /looks right, or change a line/i.test(message.text) ||
+        /these numbers look right/i.test(message.text) ||
         /does it look right/i.test(message.text)),
   );
 }

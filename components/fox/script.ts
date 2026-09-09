@@ -301,9 +301,9 @@ export function promptCopy(prompt: FoxPrompt, draft?: FoxIntakeDraft): { text: s
   }
   if (prompt === "review") {
     return {
-      text: "The file looks like this. Looks right, or change a line.",
+      text: "The file looks like this. These numbers look right?",
       actions: [
-        { id: "looks-right", label: "Looks right", event: "bubble", capture: { field: "confirm-draft" } },
+        { id: "looks-right", label: "These numbers look right?", event: "bubble", capture: { field: "confirm-draft" } },
         { id: "needs-fix", label: "Needs a correction", event: "bubble", capture: { field: "needs-correction" } },
       ],
     };
@@ -489,10 +489,14 @@ function captureForPrompt(
     }
   }
   if (prompt === "review") {
-    if (/(correction|fix|wrong|no|edit)/i.test(raw) && !/looks right/.test(raw)) {
+    if (/(correction|fix|wrong|no|edit)/i.test(raw) && !/looks? right/.test(raw)) {
       return { ...promptCopy("correct"), capture: { field: "needs-correction" } };
     }
-    if (/(looks right|confirm|yes|correct|good)/i.test(raw) && !/correction/.test(raw)) {
+    if (
+      (/^(looks right|these numbers look right\??)$/i.test(raw.trim()) ||
+        /(looks right|confirm|yes|correct|good)/i.test(raw)) &&
+      !/correction/.test(raw)
+    ) {
       return { ...promptCopy("done"), capture: { field: "confirm-draft" } };
     }
   }

@@ -2006,13 +2006,22 @@ export function wageIncomeSketchOpen(draft: FoxIntakeDraft) {
   );
 }
 
+export const LOOKS_RIGHT_CHIP_LABEL = "These numbers look right?";
+
 export function isLooksRightAskText(text?: string | null) {
-  return /the file looks like this|looks right, or change a line/i.test(String(text ?? "").trim());
+  return /the file looks like this|looks right, or change a line|these numbers look right/i.test(
+    String(text ?? "").trim(),
+  );
 }
 
 export function looksRightAskActions(): FoxAction[] {
   return [
-    { id: "looks-right", label: "Looks right", event: "bubble", capture: { field: "confirm-draft" } },
+    {
+      id: "looks-right",
+      label: LOOKS_RIGHT_CHIP_LABEL,
+      event: "bubble",
+      capture: { field: "confirm-draft" },
+    },
     { id: "needs-fix", label: "Needs a correction", event: "bubble", capture: { field: "needs-correction" } },
   ];
 }

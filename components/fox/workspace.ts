@@ -1485,8 +1485,8 @@ function bubbles(
 }
 
 export const LOOKS_RIGHT_COMPLETE_ASK =
-  "The file looks like this. Looks right, or change a line.";
-export const LOOKS_RIGHT_MOVE_ASK = "The file looks like this. Looks right, or change a line.";
+  "The file looks like this. These numbers look right?";
+export const LOOKS_RIGHT_MOVE_ASK = "The file looks like this. These numbers look right?";
 
 /** Harbor W-2+stub Use this (or a written monthly). Income Skip / doc Skip stay incomplete. */
 export function incomeFilledForLooksRight(draft: FoxIntakeDraft) {
@@ -2699,7 +2699,9 @@ function canOpenCorrectionMenu(draft: FoxIntakeDraft) {
 
 function dismissesCorrectionMenu(text: string) {
   if (wantsCorrectionMenu(text)) return false;
-  return /^(looks right|looks good|still right|confirm|yes|ok|okay|good)$/i.test(text.trim());
+  return /^(looks right|these numbers look right\??|looks good|still right|confirm|yes|ok|okay|good)$/i.test(
+    text.trim(),
+  );
 }
 
 function draftAfterDismissCorrection(draft: FoxIntakeDraft): FoxIntakeDraft {
@@ -2719,12 +2721,17 @@ function documentInviteActions(_draft: FoxIntakeDraft): FoxAction[] {
 
 function looksLikeQuestion(text: string) {
   const trimmed = text.trim();
+  if (isLooksRightConfirmText(trimmed)) return false;
   return (
     /\?$/.test(trimmed) ||
     /^(why|what|how|when|who|where|can i|can you|could i|could you|do i|will i|am i|should i|is this|is there|are there)\b/i.test(
       trimmed,
     )
   );
+}
+
+function isLooksRightConfirmText(text: string) {
+  return /^(looks right|these numbers look right\??)$/i.test(text.trim());
 }
 
 export const COST_COPY = COST_LINE;
@@ -5215,7 +5222,9 @@ export function parseWorkspaceEdit(
     /\b(change|edit|update|set|switch|actually|should be|make it|correction)\b/.test(lower) ||
     (namedField && /\b(is|to|as|=)\b/.test(lower));
   if (!spokenFix) return parseRefiDocumentsBareValue(q, draft);
-  if (/^(needs a correction|looks right)$/i.test(lower) || wantsCorrectionMenu(q)) return null;
+  if (/^(needs a correction|looks right|these numbers look right\??)$/i.test(lower) || wantsCorrectionMenu(q)) {
+    return null;
+  }
   if (looksLikeQuestion(q) && !/\b(change|edit|update|set|switch|actually)\b/.test(lower)) {
     return null;
   }
@@ -6209,7 +6218,7 @@ export function workspaceReply(
   const notepadEdit = notepadEditPrompt(draft);
 
   if (
-    /^looks right$/i.test(q) &&
+    /^(looks right|these numbers look right\??)$/i.test(q) &&
     !draft.sampleAccepted &&
     (draft.pendingProposal || draft.pendingConflict)
   ) {
@@ -6722,6 +6731,7 @@ export function workspaceReply(
 
   if (
     isFreeTextAtGate(q) &&
+    !isLooksRightConfirmText(q) &&
     !wantsCorrectionMenu(q) &&
     !(inQueueEnding(draft) && /what happens next/.test(lower))
   ) {
@@ -7787,10 +7797,13 @@ export function workspaceReply(
   }
 
   if (prompt === "review") {
-    if (/(correction|fix|wrong|no|edit)/i.test(lower) && !/looks right/.test(lower)) {
+    if (/(correction|fix|wrong|no|edit)/i.test(lower) && !/looks? right/.test(lower)) {
       return { ...workspacePromptCopy("correct", draft), capture: { field: "needs-correction" } };
     }
-    if (/(looks right|confirm|yes|correct|good)/i.test(lower) && !/correction/.test(lower)) {
+    if (
+      (isLooksRightConfirmText(q) || /(looks right|confirm|yes|correct|good)/i.test(lower)) &&
+      !/correction/.test(lower)
+    ) {
       if (needsOverPriceCheck(draft)) {
         return {
           text: loanOverPriceCopy(draft),

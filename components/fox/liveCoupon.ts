@@ -327,6 +327,7 @@ function isOverPriceChip(action: FoxAction) {
 function isLooksRightChip(action: FoxAction) {
   return (
     action.label === "Looks right" ||
+    action.label === "These numbers look right?" ||
     action.label === "Needs a correction" ||
     action.capture?.field === "confirm-draft" ||
     action.capture?.field === "needs-correction"
@@ -701,7 +702,9 @@ function foxTurnHasLaterUsedReply(messages: FoxMessage[], index: number) {
     const item = messages[i];
     if (item.role === "fox") return true;
     if (item.role !== "client") continue;
-    if (/^(This one|Use this|Looks right|yes|Skip)$/i.test(item.text.trim())) return true;
+    if (/^(This one|Use this|Looks right|These numbers look right\?|yes|Skip)$/i.test(item.text.trim())) {
+      return true;
+    }
   }
   return false;
 }

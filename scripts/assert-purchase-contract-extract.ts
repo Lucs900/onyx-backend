@@ -14,6 +14,7 @@ import { printedSampleFromLines, readPrintedSample } from "../lib/docs/printedSa
 import {
   applyExtractedFields,
   DOC_INVITE_COPY,
+  LAST_YEAR_FEDERAL_RETURN_ASK,
   extractHintFromDraft,
   nextDocInvite,
   resolveFactConflict,
@@ -632,11 +633,11 @@ async function main() {
   assert.ok(purchaseFileAddsUp(clipperUsed));
   assert.ok(canLooksRight(clipperUsed));
   assert.equal(workspacePrompt(clipperUsed), "review");
-  assert.equal(nextFoxAsk(clipperUsed).text, "The file looks like this. Looks right, or change a line.");
+  assert.equal(nextFoxAsk(clipperUsed).text, "The file looks like this. These numbers look right?");
   assert.doesNotMatch(nextFoxAsk(clipperUsed).text, /94123|On the file|file can move|I can send this to review/);
   assert.deepEqual(
     (nextFoxAsk(clipperUsed).actions ?? []).map((item) => item.label),
-    ["Looks right", "Needs a correction"],
+    ["These numbers look right?", "Needs a correction"],
   );
   assert.equal(rateflowBlockedReason(clipperUsed), null);
   assert.equal(rateflowClientBodyFromDraft(clipperUsed)?.loan_amount, 400_000);
@@ -980,7 +981,7 @@ async function main() {
   const looksTurn: FoxMessage = {
     id: "looks-1",
     role: "fox",
-    text: "The file looks like this. Looks right, or change a line.",
+    text: "The file looks like this. These numbers look right?",
   };
   const storedFileThread: FoxMessage[] = [
     { id: "hello", role: "fox", text: "Let’s start the file." },
@@ -1045,19 +1046,31 @@ async function main() {
   assert.equal(creditSaved.loanAmountValue, 400_000);
 
   const clipperLooks = applyLooksRightMotion(clipperUsed);
+  assert.equal(nextDocInvite(clipperLooks), "tax_return");
   const clipperLooksAsk = nextFoxAsk(clipperLooks);
-  assert.match(clipperLooksAsk.text, /I can send this to review/);
-  assert.doesNotMatch(clipperLooksAsk.text, /file can move|Looks right, or change a line/);
-  assert.ok((clipperLooksAsk.actions ?? []).some((item) => item.label === "Proceed"));
-  assert.ok((clipperLooksAsk.actions ?? []).some((item) => item.label === "Not yet"));
-  assert.ok(!(clipperLooksAsk.actions ?? []).some((item) => item.label === "Looks right"));
-  if (/Still useful:/.test(clipperLooksAsk.text)) {
-    assert.match(clipperLooksAsk.text, /Skip is fine/);
-    const named = clipperLooksAsk.text.match(/Still useful:\s*(.+?)\s*Skip is fine/)?.[1] ?? "";
+  assert.equal(clipperLooksAsk.text, LAST_YEAR_FEDERAL_RETURN_ASK);
+  assert.doesNotMatch(clipperLooksAsk.text, /file can move|Looks right, or change a line|These numbers look right/);
+  assert.deepEqual(
+    (clipperLooksAsk.actions ?? []).map((item) => item.label),
+    ["Upload this", "Skip"],
+  );
+  assert.ok(
+    !(clipperLooksAsk.actions ?? []).some((item) => /^(Proceed|Not yet|Upload more)$/.test(item.label)),
+    "1040 invite is not a finish",
+  );
+  const clipperAfterReturn = skipCurrentInvite(clipperLooks);
+  const clipperFinishAsk = nextFoxAsk(clipperAfterReturn);
+  assert.match(clipperFinishAsk.text, /I can send this to review/);
+  assert.ok((clipperFinishAsk.actions ?? []).some((item) => item.label === "Proceed"));
+  assert.ok((clipperFinishAsk.actions ?? []).some((item) => item.label === "Not yet"));
+  assert.ok((clipperFinishAsk.actions ?? []).some((item) => item.label === "Upload more"));
+  if (/Still useful:/.test(clipperFinishAsk.text)) {
+    assert.match(clipperFinishAsk.text, /Skip is fine/);
+    const named = clipperFinishAsk.text.match(/Still useful:\s*(.+?)\s*Skip is fine/)?.[1] ?? "";
     assert.ok(named.split(/,| and /).filter(Boolean).length <= 3, named);
   }
   const clipperProceed = applyProceedMotion({
-    ...clipperLooks,
+    ...clipperAfterReturn,
     emailSkipped: false,
     contact: {
       ...clipperLooks.contact,
@@ -1076,7 +1089,7 @@ async function main() {
     ["Ask Fox", "Upload more", "Request human"],
   );
   const clipperHold = applyNotYetMotion({
-    ...clipperLooks,
+    ...clipperAfterReturn,
     emailSkipped: false,
     contact: {
       ...clipperLooks.contact,

@@ -5,6 +5,7 @@ import {
   missingListCopy,
   nextDocInvite,
   receivedTaxReturnCount,
+  w2FinishDocsReady,
   stillUsefulLabels,
   stillUsefulSection,
 } from "./fileWrite";
@@ -434,6 +435,7 @@ function inQueueActions(draft: FoxIntakeDraft): FoxAction[] {
 }
 
 export function finishLineActions(draft: FoxIntakeDraft): FoxAction[] {
+  if (!w2FinishDocsReady(draft)) return [];
   const motion = motionOf(draft);
   if (inQueueEnding(draft)) return inQueueActions(draft);
   if (draft.pendingFinish && emailFinishGateOpen(draft)) {
@@ -453,6 +455,12 @@ export function finishLineActions(draft: FoxIntakeDraft): FoxAction[] {
   return [
     { id: "proceed", label: "Proceed", event: "bubble", capture: { field: "proceed" } },
     { id: "not-yet", label: "Not yet", event: "bubble", capture: { field: "not-yet" } },
+    {
+      id: "upload-more",
+      label: "Upload more",
+      event: "open-docs",
+      capture: { field: "upload-more" },
+    },
     ...sideDoorActions(draft),
   ];
 }

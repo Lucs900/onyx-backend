@@ -3855,6 +3855,12 @@ function classSuccessfullyRead(draft: FoxIntakeDraft, kind: DocInviteKind): bool
   });
 }
 
+/** W-2 finish chips only after ID and last-year 1040 are on File or skipped. */
+export function w2FinishDocsReady(draft: FoxIntakeDraft): boolean {
+  if (draft.incomeType.value !== "w2") return true;
+  return inviteSatisfied(draft, "government_id") && inviteSatisfied(draft, "tax_return");
+}
+
 function inviteSatisfied(draft: FoxIntakeDraft, kind: DocInviteKind): boolean {
   if (kind === "coborrower_government_id") {
     if (draft.coborrowerIdSkipped) return true;
