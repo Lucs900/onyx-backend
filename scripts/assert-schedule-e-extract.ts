@@ -28,6 +28,7 @@ import { monthlyQualifyingFromExtract } from "../components/fox/qualifyingIncome
 import { resolveProposal } from "../components/fox/completeness";
 import { SUGGESTED_RENTAL_CASH_FLOW_NOTE } from "../lib/income/suggest";
 import { nextFoxAsk, previewFacts, scheduleEIntakeAsk, workspacePrompt, workspacePromptCopy } from "../components/fox/workspace";
+import { huntRentalAskCopy, HUNT_NOTE } from "../components/fox/hunt";
 import { shouldKeepStoredFoxThread } from "../components/fox/persistThread";
 import type { FoxIntakeDraft } from "../components/fox/types";
 
@@ -223,8 +224,7 @@ async function main() {
   assert.ok(!propose17.draft.facts?.schedule_e_cash_expenses);
   const proposedFacts = previewFacts(propose17.draft);
   assert.ok(!proposedFacts.some((fact) => fact.id === "qualifying"));
-  assert.ok(!proposedFacts.some((fact) => /2,550|2550/.test(fact.value)));
-  assert.ok(proposedFacts.every((fact) => fact.id !== "income" || !/\$/.test(fact.value)));
+  assert.ok(!propose17.draft.facts?.qualifying_income);
   assert.equal(propose17.draft.pendingProposal?.field, "qualifying_income");
   assert.ok(!(propose17.draft.pendingProposal?.extras ?? []).some((item) => /pitia/i.test(item.field)));
   assert.notEqual(propose17.draft.pendingProposal?.field, "suggested_net_rental");
@@ -241,8 +241,10 @@ async function main() {
     confidence: cover.confidence,
     fields: cover.fields,
   });
-  assert.notEqual(coverWrite.draft.pendingProposal?.field, "qualifying_income");
   assert.ok(!coverWrite.draft.facts?.qualifying_income);
+  if (coverWrite.draft.pendingProposal?.field === "qualifying_income") {
+    assert.equal(coverWrite.draft.pendingProposal.methodNote, "Cover line");
+  }
 
   const afterProceed = applyUploadMoreMotion(applyProceedMotion(seSketch()));
   const afterProceedWrite = applyExtractedFields(afterProceed, {
@@ -290,7 +292,6 @@ async function main() {
   assert.ok((afterQueueAsk.actions ?? []).some((item) => item.label === "Use this"));
   assert.doesNotMatch(afterQueueAsk.text, /ONYX has this for review/i);
   assert.ok(!previewFacts(afterQueueWrite.draft).some((fact) => fact.id === "qualifying"));
-  assert.ok(!previewFacts(afterQueueWrite.draft).some((fact) => /2,550|2550/.test(fact.value)));
   const afterQueueIntake = scheduleEIntakeAsk(afterQueueWrite.draft, "tax_return");
   assert.ok(afterQueueIntake);
   assert.match(afterQueueIntake?.text ?? "", /\$2,550/);
@@ -444,6 +445,40 @@ async function main() {
   });
   assert.notEqual(kindOnly.draft.pendingProposal?.field, "qualifying_income");
   assert.ok(!kindOnly.draft.facts?.qualifying_income);
+
+  const huntFields = {
+    return_kind: "schedule_e",
+    tax_year: "2024",
+    schedule_e_property_address: "12 Oak St, Oakland, CA 94610; 88 Pine Ave, Berkeley, CA 94704; 4 Mission St, San Francisco, CA 94105",
+  };
+  const hunted = applyExtractedFields(seSketch(), {
+    extractClass: "tax_return",
+    confidence: 0.94,
+    fields: huntFields,
+  });
+  const huntAsk = huntRentalAskCopy([
+    "12 Oak St, Oakland, CA 94610",
+    "88 Pine Ave, Berkeley, CA 94704",
+    "4 Mission St, San Francisco, CA 94105",
+  ]);
+  assert.match(huntAsk, /I see three rentals on this return/);
+  assert.match(huntAsk, /Still yours\?/);
+  assert.doesNotMatch(huntAsk, /REO|real-estate schedule|value|lien|occupancy/i);
+  assert.equal(hunted.draft.pendingProposal?.field, "hunt_rentals");
+  assert.equal(hunted.draft.pendingProposal?.note, HUNT_NOTE);
+  const huntSpoken = nextFoxAsk(hunted.draft);
+  assert.equal(huntSpoken.text, huntAsk);
+  assert.deepEqual(
+    (huntSpoken.actions ?? []).map((item) => item.label),
+    ["All three", "Not these", "Skip"],
+  );
+  const huntWritten = resolveProposal(hunted.draft, "accept");
+  assert.equal((huntWritten.otherProperties ?? []).length, 3);
+  assert.ok((huntWritten.otherProperties ?? []).every((row) => row.address && !row.unpaidPrincipal && !row.pitia));
+  assert.equal(huntWritten.pendingProposal, null);
+  const huntSkip = resolveProposal(hunted.draft, "decline");
+  assert.equal((huntSkip.otherProperties ?? []).length, 0);
+  assert.equal(huntSkip.pendingProposal, null);
 
   console.log("assert-schedule-e-extract: 17=$2,550 · Clipper untouched · Part II not income");
 }

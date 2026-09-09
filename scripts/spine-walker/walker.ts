@@ -1653,15 +1653,25 @@ async function case25(page: Page) {
   }
   await assertLooksRightHiddenWhileUseThis(page);
   await clickChip(page, hasChip(after.chips, "Use this") ? "Use this" : "Use document");
-  await waitCurrent(
+  const afterWrite = await waitCurrent(
     page,
     (text, chips) =>
       !/Alameda Health System\. Period \$16,824\.30/.test(text) ||
-      /government ID|How often|Looks right/i.test(text) ||
-      hasChip(chips, "Upload this") ||
-      hasChip(chips, "Skip"),
+      /How often is this paycheck|prior paystub|another paystub|last two paystubs/i.test(text) ||
+      hasChip(chips, "Weekly") ||
+      hasChip(chips, "Biweekly"),
     20_000,
   );
+  if (/government ID/i.test(afterWrite.text)) {
+    throw new BeatFail(`Alameda next must be prior stub or frequency, not ID — ${afterWrite.text}`);
+  }
+  if (
+    !/How often is this paycheck|prior paystub|another paystub|last two paystubs/i.test(afterWrite.text) &&
+    !hasChip(afterWrite.chips, "Weekly") &&
+    !hasChip(afterWrite.chips, "Biweekly")
+  ) {
+    throw new BeatFail(`Alameda next must be frequency or prior stub — ${afterWrite.text}`);
+  }
   const rows = await structureRows(page);
   const jobs = rows.filter((row) => row.label === "Employment");
   const alameda = jobs.filter((row) => /Alameda Health System/i.test(row.value));

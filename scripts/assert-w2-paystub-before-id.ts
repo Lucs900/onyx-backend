@@ -122,8 +122,11 @@ async function main() {
   assert.equal(docInviteAskCopy(usedW2, "paystub"), stubAsk.text);
 
   const skippedStub = skipCurrentInvite(usedW2);
-  assert.equal(nextDocInvite(skippedStub), "government_id");
-  const idAfterSkip = workspacePromptCopy(workspacePrompt(skippedStub), skippedStub);
+  assert.notEqual(nextDocInvite(skippedStub), "government_id");
+  assert.equal(workspacePrompt(skippedStub), "review");
+  const looksAfterSkip = applyLooksRightMotion(skippedStub);
+  assert.equal(nextDocInvite(looksAfterSkip), "government_id");
+  const idAfterSkip = workspacePromptCopy(workspacePrompt(looksAfterSkip), looksAfterSkip);
   assert.equal(idAfterSkip.text, DOC_INVITE_COPY.government_id);
   assert.deepEqual(
     (idAfterSkip.actions ?? []).map((item) => item.label),
@@ -159,8 +162,11 @@ async function main() {
     "Harbor Pacific Design Inc, Box 5 $118,400, biweekly, $4,615.38, $9,999.99 a month",
   );
   assert.equal(jobs(usedStub).length, 1, jobs(usedStub).map((row) => row.value).join(" · "));
-  assert.equal(nextDocInvite(usedStub), "government_id");
-  const idAfterStub = workspacePromptCopy(workspacePrompt(usedStub), usedStub);
+  assert.notEqual(nextDocInvite(usedStub), "government_id");
+  assert.equal(workspacePrompt(usedStub), "review");
+  const looksAfterStub = applyLooksRightMotion(usedStub);
+  assert.equal(nextDocInvite(looksAfterStub), "government_id");
+  const idAfterStub = workspacePromptCopy(workspacePrompt(looksAfterStub), looksAfterStub);
   assert.equal(idAfterStub.text, DOC_INVITE_COPY.government_id);
   assert.deepEqual(
     (idAfterStub.actions ?? []).map((item) => item.label),
@@ -179,7 +185,7 @@ async function main() {
   assert.ok(!useful.some((item) => /paystub|W-2|tax return|latest return/i.test(item)));
   assert.ok(inviteChips(usedW2).includes("Upload this"));
 
-  console.log("assert-w2-paystub-before-id: stub after 03 Use this; ID after stub; one Harbor row");
+  console.log("assert-w2-paystub-before-id: stub after 03 Use this; ID after Looks right; one Harbor row");
 }
 
 main();

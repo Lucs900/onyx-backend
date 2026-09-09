@@ -36,6 +36,7 @@ import {
   unreadDocOpen,
 } from "../components/fox/fileWrite";
 import { canLooksRight, resolveProposal, shouldSpeakPendingConfirm } from "../components/fox/completeness";
+import { applyLooksRightMotion } from "../components/fox/motion";
 
 import { applyExtractWrite, emptyDraft, loadIntakeDraft, receiveDocument } from "../components/fox/store";
 import {
@@ -48,6 +49,7 @@ import {
   canSpeakStubExtract,
   replaceTruncatedEmployerName,
   shouldProposeStubExtract,
+  applyPayFrequencyAnswer,
   skipWageDocs,
   speakEmployerName,
   stubExtractConfirmCopy,
@@ -64,6 +66,7 @@ import {
   deskStripActions,
   DOC_INVITE_COPY,
   nextFoxAsk,
+  payFrequencyAsk,
   docReactionAsk,
   previewFacts,
   unreadDocActions,
@@ -511,6 +514,8 @@ async function main() {
     },
   ];
   assert.doesNotMatch(nextFoxAsk(stubUsed).text, /Period \$1,806\.67/);
+  assert.match(nextFoxAsk(stubUsed).text, /How often is this paycheck/i);
+  assert.doesNotMatch(nextFoxAsk(stubUsed).text, /government ID/i);
   const idAfterStub = applyIdExtractAsk(stubConfirmThread, {
     id: "id",
     role: "fox",
@@ -745,17 +750,17 @@ async function main() {
   assert.doesNotMatch(wageEmploymentFileLine(alamedaUsed), /\bOT\b/);
   assert.equal(alamedaUsed.facts?.gross_period?.confirmed, true);
   assert.equal(alamedaUsed.facts?.gross_period?.value, "16824.30");
-  assert.equal(alamedaUsed.awaitingPayFrequency, false);
-  assert.doesNotMatch(nextFoxAsk(alamedaUsed).text, /How often|paycheck/i);
-  assert.equal(nextDocInvite(alamedaUsed), "government_id");
-  assert.equal(workspacePrompt(alamedaUsed), "documents");
-  const alamedaIdAsk = nextFoxAsk(alamedaUsed);
-  assert.equal(alamedaIdAsk.text, DOC_INVITE_COPY.government_id);
-  assert.match(alamedaIdAsk.text, /government ID/i);
-  assert.match(alamedaIdAsk.text, /name on it/);
+  assert.equal(alamedaUsed.awaitingPayFrequency, true, "one stub without printed frequency asks once");
+  assert.equal(alamedaUsed.facts?.pay_frequency, undefined);
+  const alamedaFreqAsk = nextFoxAsk(alamedaUsed);
+  assert.equal(alamedaFreqAsk.text, payFrequencyAsk().text);
+  assert.match(alamedaFreqAsk.text, /How often is this paycheck/i);
+  assert.doesNotMatch(alamedaFreqAsk.text, /government ID/i);
+  assert.equal(nextDocInvite(alamedaUsed), null);
+  assert.equal(workspacePrompt(alamedaUsed), "pay-frequency");
   assert.deepEqual(
-    (alamedaIdAsk.actions ?? []).map((item) => item.label),
-    ["Upload this", "Skip"],
+    (alamedaFreqAsk.actions ?? []).map((item) => item.label),
+    ["Weekly", "Biweekly", "Semi-monthly", "Monthly"],
   );
   const alamedaConfirmThread: FoxMessage[] = [
     {
@@ -770,18 +775,18 @@ async function main() {
     { id: "you-alameda", role: "client", text: "Use this" },
   ];
   const alamedaAfterTap = applyIdExtractAsk(alamedaConfirmThread, {
-    id: "id",
+    id: "freq",
     role: "fox",
-    text: alamedaIdAsk.text,
-    actions: alamedaIdAsk.actions,
+    text: alamedaFreqAsk.text,
+    actions: alamedaFreqAsk.actions,
   });
   assert.equal(leftoverUseThisOnOlderTurns(alamedaAfterTap, alamedaUsed), 0);
   assert.equal(alamedaAfterTap.find((item) => item.id === "alameda-confirm")?.actions, undefined);
   assert.doesNotMatch(alamedaAfterTap.find((item) => item.id === "alameda-confirm")?.text ?? "", /Use this\?/);
-  assert.equal(alamedaAfterTap[alamedaAfterTap.length - 1]?.text, DOC_INVITE_COPY.government_id);
+  assert.equal(alamedaAfterTap[alamedaAfterTap.length - 1]?.text, payFrequencyAsk().text);
   assert.deepEqual(
     (alamedaAfterTap[alamedaAfterTap.length - 1]?.actions ?? []).map((item) => item.label),
-    ["Upload this", "Skip"],
+    ["Weekly", "Biweekly", "Semi-monthly", "Monthly"],
   );
   assert.ok(
     !(alamedaAfterTap[alamedaAfterTap.length - 1]?.actions ?? []).some((item) => item.label === "Use this"),
@@ -800,28 +805,36 @@ async function main() {
     ]).map((item) => item.label),
     ["Upload this", "Skip"],
   );
-  const alamedaAfterId = skipCurrentInvite(alamedaUsed);
-  assert.equal(nextDocInvite(alamedaAfterId), "tax_return");
-  assert.notEqual(nextDocInvite(alamedaAfterId), "bank_statement");
-  const alamedaReturnAsk = nextFoxAsk(alamedaAfterId);
-  assert.equal(alamedaReturnAsk.text, LAST_YEAR_FEDERAL_RETURN_ASK);
-  assert.equal(alamedaReturnAsk.text, "Last year’s tax return (Form 1040).");
-  assert.doesNotMatch(
-    alamedaReturnAsk.text,
-    /other income|other property|household size|declaration|dependent names|named dependents/i,
-  );
-  assert.doesNotMatch(alamedaReturnAsk.text, /^Last year’s Form 1040\.?$/);
-  assert.doesNotMatch(alamedaReturnAsk.text, /two recent statements|bank statement/i);
-  assert.deepEqual(
-    (alamedaReturnAsk.actions ?? []).map((item) => item.label),
-    ["Upload this", "Skip"],
-  );
-  assert.equal(docInviteBlocksLooksRight(alamedaAfterId), true, "Looks right waits on the return ask");
-  assert.equal(canLooksRight(alamedaAfterId), false, "Looks right stays after the return ask");
+  assert.equal(docInviteBlocksLooksRight(alamedaUsed), true, "Looks right waits on frequency");
+  assert.equal(canLooksRight(alamedaUsed), false);
+  const alamedaAfterFreq = applyPayFrequencyAnswer(alamedaUsed, "monthly");
+  assert.equal(alamedaAfterFreq.awaitingPayFrequency, false);
+  assert.equal(alamedaAfterFreq.facts?.pay_frequency?.value, "monthly");
+  assert.equal(alamedaAfterFreq.incomeType.value, "w2", "frequency write does not flip income type");
+  assert.equal(nextDocInvite(alamedaAfterFreq), null);
+  assert.notEqual(nextDocInvite(alamedaAfterFreq), "government_id");
+  assert.notEqual(nextDocInvite(alamedaAfterFreq), "bank_statement");
+  assert.doesNotMatch(nextFoxAsk(alamedaAfterFreq).text, /government ID/i);
+  const alamedaAfterMonthly =
+    alamedaAfterFreq.pendingProposal?.field === "qualifying_income"
+      ? resolveProposal(alamedaAfterFreq, "accept")
+      : alamedaAfterFreq;
+  assert.equal(docInviteBlocksLooksRight(alamedaAfterMonthly), false, "Do not hold Looks right for 1040s");
+  assert.equal(canLooksRight(alamedaAfterMonthly), true, "Looks right after the income story is on the notepad");
+  assert.equal(workspacePrompt(alamedaAfterMonthly), "review");
+  const alamedaLooks = applyLooksRightMotion(alamedaAfterMonthly);
+  assert.equal(nextDocInvite(alamedaLooks), "government_id");
+  assert.match(nextFoxAsk(alamedaLooks).text, /government ID/i);
+  assert.match(nextFoxAsk(alamedaLooks).text, /name on it/);
+  const alamedaAfterId = alamedaAfterMonthly;
   const usefulAfterId = (stillUsefulSection(alamedaAfterId)?.items ?? []).map((item) => item.label);
   assert.ok(
     usefulAfterId.some((label) => /W-2/i.test(label)),
     `Still useful must keep skipped W-2 — ${usefulAfterId.join(" · ")}`,
+  );
+  assert.ok(
+    usefulAfterId.some((label) => /return|Form 1040/i.test(label)),
+    `Still useful holds last year’s 1040 — ${usefulAfterId.join(" · ")}`,
   );
   const alamedaAfterReturnSkip = skipCurrentInvite(alamedaAfterId);
   assert.notEqual(nextDocInvite(alamedaAfterReturnSkip), "bank_statement");
@@ -1242,13 +1255,10 @@ async function main() {
     },
     { id: "you-use", role: "client", text: "Use this" },
     {
-      id: "id-next",
+      id: "freq-next",
       role: "fox",
-      text: DOC_INVITE_COPY.government_id,
-      actions: [
-        { id: "upload-this", label: "Upload this", event: "open-docs", capture: { field: "open-docs" } },
-        { id: "skip-docs", label: "Skip", event: "bubble", capture: { field: "skip-docs" } },
-      ],
+      text: payFrequencyAsk().text,
+      actions: payFrequencyAsk().actions,
     },
   ]);
   assert.equal(
@@ -1256,19 +1266,29 @@ async function main() {
     undefined,
     "Period Use this is history after the tap",
   );
-  assert.equal(afterAlamedaUseThis[afterAlamedaUseThis.length - 1]?.text, DOC_INVITE_COPY.government_id);
+  assert.equal(afterAlamedaUseThis[afterAlamedaUseThis.length - 1]?.text, payFrequencyAsk().text);
   assert.equal(
     afterAlamedaUseThis[afterAlamedaUseThis.length - 1]?.actions,
     undefined,
-    "ID ask stores no chips after Alameda Use this",
+    "frequency ask stores no chips after Alameda Use this",
   );
   assert.deepEqual(
     deskStripActions(afterAlamedaUseThis, alamedaUsed).map((item) => item.label),
-    ["Upload this", "Skip"],
-    "ID ask stays current on the strip after Alameda Use this",
+    ["Weekly", "Biweekly", "Semi-monthly", "Monthly"],
+    "frequency chips stay current on the strip after Alameda Use this",
   );
-  assert.equal(docInviteBlocksLooksRight(combesProposed.draft), true);
-  assert.equal(canLooksRight(combesProposed.draft), false);
+  assert.equal(docInviteBlocksLooksRight(combesProposed.draft), false, "Do not hold Looks right for 1040s");
+  assert.equal(combesProposed.draft.pendingProposal, null, "transcript does not open income Use this");
+  assert.equal(
+    combesProposed.draft.facts?.qualifying_income?.value,
+    "16824",
+    "transcript loss must not overwrite the stub monthly",
+  );
+  assert.doesNotMatch(
+    String(combesProposed.draft.facts?.tax_cashflows?.value ?? ""),
+    /45617|294564|schedule_e_rents_received":"[1-9]/,
+    "transcript does not write a schedule loss as cash flow",
+  );
   assert.equal(
     canLooksRight({
       ...combesProposed.draft,

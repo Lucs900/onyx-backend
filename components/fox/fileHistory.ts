@@ -141,6 +141,8 @@ function incomeConfirmStillOpen(draft: FoxIntakeDraft) {
 
 export function employmentGapNeeded(draft: FoxIntakeDraft) {
   if (draft.motion === "in_queue" || draft.motion === "escalated") return false;
+  /** Prior-employer remainder is Still useful — not a live ask before Looks right. */
+  if (!draft.sampleAccepted) return false;
   if (incomeConfirmStillOpen(draft)) return false;
   if (!qualifyingIncomeWritten(draft)) return false;
   if (draft.formerEmploymentAsked || draft.formerHistoryAsked) return false;

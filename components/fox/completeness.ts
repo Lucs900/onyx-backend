@@ -71,6 +71,7 @@ import {
   wageExtractConfirmCopy,
   wageW2ConfirmCopy,
 } from "./qualifyingIncome";
+import { acceptHuntRentals } from "./hunt";
 import {
   STATED_MONTHLY_DEBTS_FIELD,
   SUGGESTED_DEBTS_NOTE,
@@ -1568,6 +1569,10 @@ export function resolveProposal(
     if (winner === "accept") return acceptStubExtract(draft);
     return changeStubExtract(draft);
   }
+  if (proposal.field === "hunt_rentals") {
+    if (winner === "accept") return acceptHuntRentals(draft);
+    return { ...draft, pendingProposal: null };
+  }
   if (winner === "decline") {
     if (proposal.field === ESTIMATED_HOUSING_FIELD) {
       return skipEstimatedHousing({ ...draft, pendingProposal: null });
@@ -1622,6 +1627,8 @@ export function resolveProposal(
       isCoborrowerNameField(proposal.field) ||
       proposal.field === STATED_OTHER_REO_FIELD ||
       isFileNetField(proposal.field) ||
+      proposal.field === "hunt_rentals" ||
+      (proposal.field === "present_address" && /Suggested · not underwritten/i.test(proposal.note ?? "")) ||
       proposal.kind === "public"
       ? "suggested"
       : isRemainderConfirmField(proposal.field)

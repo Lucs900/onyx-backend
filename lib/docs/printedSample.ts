@@ -662,12 +662,15 @@ function taxYearFromPeriodEnding(text: string) {
 }
 
 /** First labeled Schedule C / E amount on a transcript. Skips PER COMPUTER. Never stores the dollars. */
-function transcriptScheduleAmount(blob: string, schedule: "c" | "e") {
+function transcriptScheduleAmount(blob: string, schedule: "c" | "e" | "f") {
   const labeled =
     schedule === "c"
       ? /business income or loss\s*\(\s*schedule c\s*\)\s*:?\s*/i
-      : /rent\/royalty\/partnership\/estate\s*\(\s*schedule e\s*\)\s*:?\s*/i;
-  const fallback = schedule === "c" ? /schedule c\s*:?\s*/i : /schedule e\s*:?\s*/i;
+      : schedule === "e"
+        ? /rent\/royalty\/partnership\/estate\s*\(\s*schedule e\s*\)\s*:?\s*/i
+        : /farm income or loss\s*\(\s*schedule f\s*\)\s*:?\s*/i;
+  const fallback =
+    schedule === "c" ? /schedule c\s*:?\s*/i : schedule === "e" ? /schedule e\s*:?\s*/i : /schedule f\s*:?\s*/i;
   for (const label of [labeled, fallback]) {
     const match = blob.match(label);
     if (!match) continue;
@@ -681,10 +684,22 @@ function transcriptScheduleAmount(blob: string, schedule: "c" | "e") {
   return "";
 }
 
-function transcriptSchedulePresent(blob: string, schedule: "c" | "e") {
+function transcriptSchedulePresent(blob: string, schedule: "c" | "e" | "f") {
   const amount = transcriptScheduleAmount(blob, schedule);
   if (!amount) return false;
   const n = Number(amount);
+  return Number.isFinite(n) && n !== 0;
+}
+
+function transcriptK1Present(blob: string) {
+  if (!/schedule\s*k-?1|form\s*k-?1/i.test(blob)) return false;
+  const labeled = /(?:schedule\s*k-?1|form\s*k-?1)[^\n]{0,80}:?\s*/i;
+  const match = blob.match(labeled);
+  if (!match) return /k-?1/.test(blob) && /-?\s*\$?\s*[\d,]+/.test(blob);
+  const after = blob.slice((match.index ?? 0) + match[0].length, (match.index ?? 0) + match[0].length + 160);
+  const money = after.match(/-?\s*\$?\s*[\d,]+(?:\.\d+)?|\(\s*\$?\s*[\d,]+(?:\.\d+)?\s*\)/);
+  if (!money?.[0]) return false;
+  const n = Number(String(money[0]).replace(/[^\d.-]/g, ""));
   return Number.isFinite(n) && n !== 0;
 }
 
@@ -1448,6 +1463,8 @@ export function fieldsFromPrintedLines(
     put("return_kind", "transcript");
     if (transcriptSchedulePresent(blob, "c")) put("schedule_c_present", "yes");
     if (transcriptSchedulePresent(blob, "e")) put("schedule_e_present", "yes");
+    if (transcriptSchedulePresent(blob, "f")) put("schedule_f_present", "yes");
+    if (transcriptK1Present(blob)) put("k1_present", "yes");
     delete fields.wages;
     delete fields.agi;
     delete fields.pension;

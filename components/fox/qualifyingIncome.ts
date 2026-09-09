@@ -942,6 +942,13 @@ export function monthlyQualifyingFromExtract(
   extractClass: ExtractClass,
   fields: Record<string, string>,
 ): QualifyingIncomeResult | null {
+  const incomingKind = String(fields.return_kind ?? draft.facts?.return_kind?.value ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/[\s_-]+/g, "");
+  if (incomingKind === "transcript" || incomingKind.includes("returntranscript")) {
+    return null;
+  }
   if (extractClass === "paystub" || extractClass === "w2") {
     const wage = suggestWageIncome(wageSuggestInput(draft, fields));
     if (wage == null) return null;
@@ -1393,6 +1400,7 @@ export function applyPayFrequencyAnswer(draft: FoxIntakeDraft, raw: string): Fox
   const next: FoxIntakeDraft = {
     ...draft,
     awaitingPayFrequency: false,
+    wageFrequencyAsked: true,
     pendingProposal: null,
     facts: {
       ...(draft.facts ?? {}),
@@ -1553,7 +1561,16 @@ export function isSameBusinessWageEntityProposal(proposal?: FactProposal | null)
   return /W-2 wages/i.test(method) && (/entity cash flow/i.test(method) || /K-1 ordinary/i.test(method));
 }
 
+function taxFileIsTranscript(draft: FoxIntakeDraft) {
+  const kind = String(draft.facts?.return_kind?.value ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/[\s_-]+/g, "");
+  return kind === "transcript" || kind.includes("returntranscript");
+}
+
 export function maybeProposeQualifyingFromTaxFile(draft: FoxIntakeDraft): FoxIntakeDraft {
+  if (taxFileIsTranscript(draft)) return draft;
   if (draft.pendingProposal?.field === QUALIFYING_INCOME_FIELD) return draft;
   if (draft.pendingProposal && draft.pendingProposal.field !== QUALIFYING_INCOME_FIELD) {
     return draft;
@@ -2155,7 +2172,7 @@ export function skipWageBox5(draft: FoxIntakeDraft): FoxIntakeDraft {
 }
 
 export function skipWageFrequency(draft: FoxIntakeDraft): FoxIntakeDraft {
-  return { ...draft, wageFrequencyAsked: true };
+  return { ...draft, wageFrequencyAsked: true, awaitingPayFrequency: false };
 }
 
 export function skipWageStub(draft: FoxIntakeDraft): FoxIntakeDraft {
@@ -2164,7 +2181,7 @@ export function skipWageStub(draft: FoxIntakeDraft): FoxIntakeDraft {
 
 export function writeWagePayFrequency(draft: FoxIntakeDraft, raw: string): FoxIntakeDraft {
   const value = String(raw ?? "").trim().toLowerCase();
-  if (!value) return { ...draft, wageFrequencyAsked: true };
+  if (!value) return { ...draft, wageFrequencyAsked: true, awaitingPayFrequency: false };
   const now = new Date().toISOString();
   return {
     ...draft,
@@ -2179,6 +2196,33 @@ export function writeWagePayFrequency(draft: FoxIntakeDraft, raw: string): FoxIn
         confirmed: true,
         confirmedAt: now,
       },
+    },
+  };
+}
+
+/** Two stubs that agree write frequency. One stub without a printed frequency asks once. */
+export function maybeWriteAgreedStubFrequency(
+  draft: FoxIntakeDraft,
+  fields: Record<string, string>,
+): FoxIntakeDraft {
+  if (!draft.stubExtractAccepted) return draft;
+  const incoming = speakPayFrequency(fields.pay_frequency);
+  if (!incoming) return draft;
+  const existing = speakPayFrequency(String(draft.facts?.pay_frequency?.value ?? ""));
+  if (!existing) return writeWagePayFrequency(draft, incoming);
+  if (existing === incoming) {
+    return { ...draft, awaitingPayFrequency: false, wageFrequencyAsked: true };
+  }
+  if (draft.pendingConflict || draft.pendingProposal) return draft;
+  return {
+    ...draft,
+    awaitingPayFrequency: false,
+    pendingConflict: {
+      field: "pay_frequency",
+      fileValue: existing,
+      documentValue: incoming,
+      label: "pay frequency",
+      kind: "document",
     },
   };
 }
@@ -2800,13 +2844,15 @@ function writeStubPayLine(
       };
     }
   }
+  const hasFrequency = Boolean(parts.frequency);
+  const alreadyConfirmed = Boolean(String(draft.facts?.pay_frequency?.value ?? "").trim());
   let next: FoxIntakeDraft = {
     ...draft,
     wageDocsAsked: true,
     wageStubAsked: true,
-    wageFrequencyAsked: true,
+    wageFrequencyAsked: hasFrequency || alreadyConfirmed || Boolean(draft.wageFrequencyAsked),
     stubExtractAccepted: true,
-    awaitingPayFrequency: false,
+    awaitingPayFrequency: !hasFrequency && !alreadyConfirmed,
     pendingProposal: null,
     looksRightHold: false,
     facts,

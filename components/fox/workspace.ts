@@ -141,6 +141,14 @@ import {
   secondBankStatementInviteCopy,
 } from "./fileWrite";
 import {
+  huntRentalActions,
+  huntRentalAskCopy,
+  huntResidenceAskCopy,
+  isHuntRentalsProposal,
+  isHuntResidenceProposal,
+  parseHuntAddresses,
+} from "./hunt";
+import {
   SUGGESTED_NOTE,
   canLooksRight,
   incomeNumberReady,
@@ -1607,7 +1615,7 @@ function documentsAskText(draft: FoxIntakeDraft): string {
   if (draft.sampleAccepted) {
     return afterLooksRightAskCopy(draft);
   }
-  return DOC_INVITE_COPY.government_id;
+  return looksRightAskCopy(draft);
 }
 
 export const DESK_RELATIONSHIP_LINE =
@@ -2124,6 +2132,23 @@ function liveProposalAsk(
   followUp?: string;
   actions?: FoxAction[];
 } {
+  if (isHuntRentalsProposal(proposal)) {
+    const addresses = parseHuntAddresses(proposal.value);
+    return {
+      text: huntRentalAskCopy(addresses),
+      followUp: proposal.note,
+      actions: huntRentalActions(addresses.length),
+    };
+  }
+  if (isHuntResidenceProposal(proposal)) {
+    return {
+      text: huntResidenceAskCopy(proposal.value),
+      actions: [
+        { id: "accept-proposal", label: "Use this", event: "bubble", capture: { field: "accept-proposal" } },
+        { id: "decline-proposal", label: "Skip", event: "bubble", capture: { field: "decline-proposal" } },
+      ],
+    };
+  }
   if (isPurchaseSplitReconcileProposal(proposal)) {
     return {
       text: proposalAskCopy(proposal),

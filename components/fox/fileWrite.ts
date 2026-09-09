@@ -40,6 +40,7 @@ import {
   isStubJobProposal,
   maybeProposeWageExtract,
   maybeProposeStubExtract,
+  maybeWriteAgreedStubFrequency,
   shouldProposeStubExtract,
   stubExtractAskOpen,
   stubPeriodConfirmOpen,
@@ -58,6 +59,7 @@ import {
   wageIncomeCaution,
   wageThreadOpen,
 } from "./qualifyingIncome";
+import { maybeProposeHunt } from "./hunt";
 import { bankEndingBalanceAmount } from "@/lib/docs/bankBalance";
 import { safeAccountLast4 } from "@/lib/docs/bankLast4";
 import {
@@ -214,6 +216,9 @@ export const EXTRACT_SCHEMA_KEYS: Record<ExtractClass, readonly string[]> = {
     "return_kind",
     "schedule_c_present",
     "schedule_e_present",
+    "schedule_f_present",
+    "k1_present",
+    "present_address",
     "schedule_c_net_profit",
     "depreciation",
     "depletion",
@@ -514,7 +519,9 @@ export function looksLikeFederalReturnFields(
       status ||
         deps !== "" ||
         String(fields.schedule_c_present ?? "").trim().toLowerCase() === "yes" ||
-        String(fields.schedule_e_present ?? "").trim().toLowerCase() === "yes",
+        String(fields.schedule_e_present ?? "").trim().toLowerCase() === "yes" ||
+        String(fields.schedule_f_present ?? "").trim().toLowerCase() === "yes" ||
+        String(fields.k1_present ?? "").trim().toLowerCase() === "yes",
     );
   }
   const status = String(fields.filing_status ?? "").trim();
@@ -539,6 +546,8 @@ const TRANSCRIPT_FILE_KEYS = new Set([
   "return_kind",
   "schedule_c_present",
   "schedule_e_present",
+  "schedule_f_present",
+  "k1_present",
 ]);
 
 const TRANSCRIPT_STRIP_KEYS = [
@@ -1666,6 +1675,9 @@ export function applyExtractedFields(
     }
     if (holdFederalReturn && FEDERAL_RETURN_HOLD.has(field)) continue;
     if (transcriptReturn && !TRANSCRIPT_FILE_KEYS.has(field)) continue;
+    if (extractClass === "tax_return" && (field === "present_address" || field === "property_address")) {
+      continue;
+    }
     if ((wageExtractFirst || holdWageFileWrites) && WAGE_EXTRACT_HOLD_KEYS.has(field)) continue;
     if (
       extractClass === "w2" &&
@@ -2302,7 +2314,14 @@ export function applyExtractedFields(
   if (holdFederalReturn && !next.pendingProposal && !next.pendingConflict) {
     next = maybeProposeFederalReturn(next, fields) ?? next;
   }
+  if (extractClass === "paystub" && next.stubExtractAccepted) {
+    next = maybeWriteAgreedStubFrequency(next, fields);
+    conflict = next.pendingConflict ?? conflict;
+  }
   if (!coverReturn && !transcriptReturn) next = maybeProposeQualifyingFromTaxFile(next);
+  if (!next.pendingProposal && !next.pendingConflict && !conflict) {
+    next = maybeProposeHunt(next, extractClass, fields);
+  }
   if (
     next.awaitingYearsInBusiness &&
     (coverReturn || next.pendingProposal?.field === "qualifying_income")
@@ -2310,7 +2329,7 @@ export function applyExtractedFields(
     next = { ...next, awaitingYearsInBusiness: false };
   }
   const holdLooksRight = transcriptReturn
-    ? Boolean(transcriptFollowUpAsk(next))
+    ? false
     : !coverReturn || Boolean(next.pendingProposal || conflict || next.pendingConflict);
   return {
     draft: { ...next, looksRightHold: holdLooksRight },
@@ -3924,7 +3943,7 @@ export function wageExtractOnFile(draft: FoxIntakeDraft) {
   return classSuccessfullyRead(draft, "w2") && classSuccessfullyRead(draft, "paystub");
 }
 
-/** Skip W-2, then Period Use this. ID is next; last year’s return follows. Not bank. */
+/** Skip W-2, then Period Use this. Frequency or prior stub is next; ID waits for Looks right. */
 export function skippedW2StubPath(draft: FoxIntakeDraft) {
   if (!wageThreadOpen(draft)) return false;
   if (!(draft.skippedClasses ?? []).includes("w2")) return false;
@@ -3942,6 +3961,7 @@ function wageSketchBlocksDocInvite(draft: FoxIntakeDraft): boolean {
     return true;
   }
   if (stubExtractAskOpen(draft)) return true;
+  if (draft.awaitingPayFrequency) return true;
   if (draft.stubExtractAccepted) return false;
   if (!draft.wageDocsAsked) return true;
   if (!draft.wageBox5Asked) return true;
@@ -3956,13 +3976,14 @@ function zipOnlySubject(draft: FoxIntakeDraft) {
   return Boolean(zip || /^\d{5}$/.test(line) || /,\s*CA\s+\d{5}$/i.test(line));
 }
 
-/** ID, then last year’s return on Skip-W-2 + stub. Bank is not next on that path. */
+/** ID after Looks right. Last two 1040s on Skip-W-2 + stub. Statements stay on assets. */
 function lockedFileDocInvites(draft: FoxIntakeDraft): DocInviteKind[] {
   const kinds: DocInviteKind[] = [];
-  if (!inviteSatisfied(draft, "government_id")) kinds.push("government_id");
-  if (skippedW2StubPath(draft)) {
+  if (draft.sampleAccepted && !inviteSatisfied(draft, "government_id")) kinds.push("government_id");
+  if (draft.sampleAccepted && skippedW2StubPath(draft)) {
     if (!inviteSatisfied(draft, "tax_return")) kinds.push("tax_return");
-  } else {
+    if (!inviteSatisfied(draft, "prior_year_return")) kinds.push("prior_year_return");
+  } else if (draft.sampleAccepted) {
     if (!inviteSatisfied(draft, "bank_statement")) kinds.push("bank_statement");
     if (secondBankStatementInviteNeeded(draft)) kinds.push("second_bank_statement");
   }
@@ -4001,6 +4022,7 @@ export function nextDocInvite(draft: FoxIntakeDraft): DocInviteKind | null {
   const income = draft.incomeType.value;
   if (income === "self-employed" || income === "other" || income === "both") {
     for (const kind of primaryInviteSequence(draft)) {
+      if (kind === "government_id" && !draft.sampleAccepted) continue;
       if (!inviteSatisfied(draft, kind)) return kind;
     }
     for (const kind of remainderInviteSequence(draft)) {
@@ -4013,8 +4035,15 @@ export function nextDocInvite(draft: FoxIntakeDraft): DocInviteKind | null {
   return null;
 }
 
-function hasNamedScheduleDoc(draft: FoxIntakeDraft, letter: "c" | "e") {
-  const re = letter === "c" ? /schedule.?c/i : /schedule.?e/i;
+function hasNamedScheduleDoc(draft: FoxIntakeDraft, letter: "c" | "e" | "f" | "k1") {
+  const re =
+    letter === "c"
+      ? /schedule.?c/i
+      : letter === "e"
+        ? /schedule.?e/i
+        : letter === "f"
+          ? /schedule.?f/i
+          : /k-?1/i;
   return (draft.documents ?? []).some((doc) => {
     if (doc.status !== "extracted") return false;
     if (isUnreadNote(doc.note)) return false;
@@ -4022,25 +4051,32 @@ function hasNamedScheduleDoc(draft: FoxIntakeDraft, letter: "c" | "e") {
   });
 }
 
-/** After a transcript: 1040 + present schedule, else this year’s W-2 on a W-2 file. */
+function joinScheduleAsk(names: string[]) {
+  if (!names.length) return "";
+  if (names.length === 1) return names[0];
+  if (names.length === 2) return `${names[0]} and ${names[1]}`;
+  return `${names.slice(0, -1).join(", ")}, and ${names[names.length - 1]}`;
+}
+
+/** After a transcript: 1040 + present schedule, else W-2 paper on a wages-only file. */
 export function transcriptFollowUpAsk(draft: FoxIntakeDraft): string {
   if (draft.transcriptFollowUpSkipped) return "";
   if (!isTranscriptOnFile(draft)) return "";
   const year = String(draft.facts?.tax_year?.value ?? "").replace(/\D/g, "").slice(0, 4);
   const presentC = String(draft.facts?.schedule_c_present?.value ?? "").trim().toLowerCase() === "yes";
   const presentE = String(draft.facts?.schedule_e_present?.value ?? "").trim().toLowerCase() === "yes";
-  const needC = presentC && !hasNamedScheduleDoc(draft, "c");
-  const needE = presentE && !hasNamedScheduleDoc(draft, "e");
-  if (needC && needE) {
+  const presentF = String(draft.facts?.schedule_f_present?.value ?? "").trim().toLowerCase() === "yes";
+  const presentK1 = String(draft.facts?.k1_present?.value ?? "").trim().toLowerCase() === "yes";
+  const needed: string[] = [];
+  if (presentC && !hasNamedScheduleDoc(draft, "c")) needed.push("Schedule C");
+  if (presentE && !hasNamedScheduleDoc(draft, "e")) needed.push("Schedule E");
+  if (presentF && !hasNamedScheduleDoc(draft, "f")) needed.push("Schedule F");
+  if (presentK1 && !hasNamedScheduleDoc(draft, "k1")) needed.push("Schedule K-1");
+  if (needed.length) {
+    const schedules = joinScheduleAsk(needed);
     return year
-      ? `I need the ${year} Form 1040 and Schedule C and Schedule E.`
-      : "I need the Form 1040 and Schedule C and Schedule E.";
-  }
-  if (needC) {
-    return year ? `I need the ${year} Form 1040 and Schedule C.` : "I need the Form 1040 and Schedule C.";
-  }
-  if (needE) {
-    return year ? `I need the ${year} Form 1040 and Schedule E.` : "I need the Form 1040 and Schedule E.";
+      ? `I need the ${year} Form 1040 and ${schedules}.`
+      : `I need the Form 1040 and ${schedules}.`;
   }
   const income = draft.incomeType.value;
   if ((income === "w2" || income === "both") && !classSuccessfullyRead(draft, "w2") && !wageW2ExtractAccepted(draft)) {
@@ -4049,22 +4085,13 @@ export function transcriptFollowUpAsk(draft: FoxIntakeDraft): string {
   return "";
 }
 
-/** Paystub remainder, Skip-W-2 last year’s return, and transcript follow-up hold Looks right. */
+/** First stub remainder and open frequency hold Looks right. 1040s and ID do not. */
 export function docInviteBlocksLooksRight(draft: FoxIntakeDraft) {
-  if (transcriptFollowUpAsk(draft)) return true;
+  if (draft.awaitingPayFrequency) return true;
+  if (employerStubRemainderOpen(draft)) return true;
   const invite = nextDocInvite(draft);
-  if (!invite) return false;
-  if ((invite === "tax_return" || invite === "prior_year_return") && skippedW2StubPath(draft)) {
-    return true;
-  }
-  if (employerStubRemainderOpen(draft) || invite === "paystub") return true;
-  if (
-    wageW2ExtractAccepted(draft) &&
-    (draft.stubExtractAccepted || draft.wageStubAsked || inviteSatisfied(draft, "paystub"))
-  ) {
-    return false;
-  }
-  return true;
+  if (invite === "paystub" && !draft.stubExtractAccepted && !draft.wageStubAsked) return true;
+  return false;
 }
 
 /** Composer extract hint. Dropped filename wins so 08 at the ID ask is government_id, not leftover bank/other. */
@@ -4399,6 +4426,7 @@ export function skipCurrentInvite(draft: FoxIntakeDraft): FoxIntakeDraft {
     ...draft,
     skippedClasses: skipped,
     wageStubAsked: kind === "paystub" ? true : draft.wageStubAsked,
+    looksRightHold: kind === "paystub" ? false : draft.looksRightHold,
     docsOpen: false,
     correcting: null,
   };
@@ -4441,7 +4469,8 @@ export function skipUnreadDoc(draft: FoxIntakeDraft): FoxIntakeDraft {
     return skipWageStub(next);
   }
   if (kind === "tax_return" || nextDocInvite(draft) === "tax_return") {
-    return skipCurrentInvite(next);
+    const skipped = Array.from(new Set([...(next.skippedClasses ?? []), "tax_return" as ExtractClass]));
+    return skipCurrentInvite({ ...next, skippedClasses: skipped });
   }
   return next;
 }
