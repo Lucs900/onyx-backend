@@ -433,7 +433,10 @@ async function acceptFundsTwenty(page: Page, expected = /\$100,000 down · \$400
 }
 
 async function acceptOfferedFunds(page: Page) {
-  await waitAsk(page, /down · .+ loan\. Use this\?/i);
+  await waitCurrent(
+    page,
+    (text, chips) => /down · .+ loan/i.test(text) && hasChip(chips, "Use this"),
+  );
   assertCopyChips(await currentText(page), await currentChips(page));
   await clickChip(page, "Use this");
 }
@@ -1636,7 +1639,7 @@ async function case25(page: Page) {
   if (!hasChip(after.chips, "Use this") && !hasChip(after.chips, "Use document")) {
     throw new BeatFail(`Alameda no confirm — ${after.text}`);
   }
-  if (!/Alameda Health System\. Period \$16,824\.30\. Use this\?/.test(after.text)) {
+  if (!/Alameda Health System\. Period \$16,824\.30/.test(after.text)) {
     throw new BeatFail(`Alameda must say Period $16,824.30 Use this — ${after.text}`);
   }
   const beforeRows = await structureRows(page);
@@ -1653,7 +1656,7 @@ async function case25(page: Page) {
   await waitCurrent(
     page,
     (text, chips) =>
-      !/Alameda Health System\. Period \$16,824\.30\. Use this\?/.test(text) ||
+      !/Alameda Health System\. Period \$16,824\.30/.test(text) ||
       /government ID|How often|Looks right/i.test(text) ||
       hasChip(chips, "Upload this") ||
       hasChip(chips, "Skip"),
