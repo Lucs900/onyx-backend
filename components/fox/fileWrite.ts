@@ -2604,8 +2604,8 @@ export function spokenScheduleCName(draft: FoxIntakeDraft) {
   return hasScheduleCOnFile(draft) ? "Hale Design" : "";
 }
 
-/** W-2 path after a skipped W-2: name the paper. Stop. Why stays on ID, not here. */
-export const LAST_YEAR_FEDERAL_RETURN_ASK = "Last year’s Form 1040.";
+/** W-2 path after a skipped W-2: name the paper in borrower words. Why stays on ID. */
+export const LAST_YEAR_FEDERAL_RETURN_ASK = "Last year’s tax return (Form 1040).";
 
 export function taxReturnInviteCopy(draft: FoxIntakeDraft) {
   if (draft.incomeType.value === "w2") return LAST_YEAR_FEDERAL_RETURN_ASK;
@@ -3344,7 +3344,7 @@ function wageStillUsefulCopy(id: string): { label: string; ask: string } | null 
     return { label: "This year’s W-2", ask: "This year’s W-2 still helps this file." };
   }
   if (id === "tax_return") {
-    return { label: "Last year’s Form 1040", ask: LAST_YEAR_FEDERAL_RETURN_ASK };
+    return { label: "Last year’s tax return", ask: LAST_YEAR_FEDERAL_RETURN_ASK };
   }
   if (id === "second-year-w2") return null;
   return null;

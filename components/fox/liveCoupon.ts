@@ -308,6 +308,11 @@ function lastFoxIndex(messages: FoxMessage[]) {
   return last;
 }
 
+/** Latest Fox turn index. Chips attach only here. */
+export function liveFoxTurnIndex(messages: FoxMessage[]) {
+  return lastFoxIndex(messages);
+}
+
 function isOverPriceChip(action: FoxAction) {
   const field = action.capture?.field;
   return (
@@ -379,7 +384,7 @@ export function isLastYearReturnAskText(text?: string | null) {
   const value = String(text ?? "").trim();
   if (!value) return false;
   if (value === LAST_YEAR_FEDERAL_RETURN_ASK) return true;
-  return /^Last year.?s (?:federal return|Form 1040)\b/i.test(value);
+  return /^Last year.?s (?:tax return|federal return|Form 1040)\b/i.test(value);
 }
 
 /** 1040 + schedule ask parked as follow-up after a transcript. */
@@ -466,15 +471,24 @@ export function withoutDuplicateHistoryInvite(messages: FoxMessage[]): FoxMessag
   });
 }
 
-/** Later Fox line stuck as followUp on a prior offer — offer becomes text, later line is last. */
-export function splitLeftoverOfferWithLaterFollowUp(messages: FoxMessage[]): FoxMessage[] {
+function isFoxOfferLine(text?: string | null) {
+  const value = String(text ?? "").trim();
+  if (!value) return false;
+  if (isTranscriptSignalAskText(value) || isTranscriptFollowUpAskText(value)) return true;
+  return isHistoryDocInviteText(value);
+}
+
+/** Follow-up that is itself a later offer becomes its own Fox turn. Transcript block stays one turn. */
+export function splitFoxFollowUpTurns(messages: FoxMessage[]): FoxMessage[] {
   const next: FoxMessage[] = [];
   for (const message of messages) {
     const later = String(message.followUp ?? "").trim();
     if (
       message.role !== "fox" ||
-      !isHistoryDocInviteText(message.text) ||
-      !(isTranscriptSignalAskText(later) || isTranscriptFollowUpAskText(later))
+      !later ||
+      isTranscriptSignalAskText(message.text) ||
+      !isFoxOfferLine(message.text) ||
+      !isFoxOfferLine(later)
     ) {
       next.push(message);
       continue;
@@ -492,17 +506,25 @@ export function splitLeftoverOfferWithLaterFollowUp(messages: FoxMessage[]): Fox
   return next;
 }
 
-/** Leftover last-year / history offer appended after a later Fox line — move it back. */
-export function promoteLaterFoxPastLeftoverOffers(messages: FoxMessage[]): FoxMessage[] {
+export function splitLeftoverOfferWithLaterFollowUp(messages: FoxMessage[]): FoxMessage[] {
+  return splitFoxFollowUpTurns(messages);
+}
+
+/** A reprinted last Fox line after a different later ask is leftover — move it back. */
+export function promoteReprintedFoxAsk(messages: FoxMessage[]): FoxMessage[] {
   const last = lastFoxIndex(messages);
   if (last < 0) return messages;
   const lastMsg = messages[last];
-  if (!lastMsg || lastMsg.role !== "fox" || !isHistoryDocInviteText(lastMsg.text)) {
-    return messages;
-  }
+  if (!lastMsg || lastMsg.role !== "fox") return messages;
+  const key = lastMsg.text.trim();
+  if (!key) return messages;
+  const reprint = messages.some(
+    (message, index) => index < last && message.role === "fox" && message.text.trim() === key,
+  );
+  if (!reprint) return messages;
   let later = -1;
   for (let i = 0; i < last; i += 1) {
-    if (isLaterFoxAfterLastYearOffer(messages[i])) later = i;
+    if (messages[i]?.role === "fox" && messages[i].text.trim() !== key) later = i;
   }
   if (later < 0) return messages;
   const leftover = { ...lastMsg, actions: undefined };
@@ -510,22 +532,13 @@ export function promoteLaterFoxPastLeftoverOffers(messages: FoxMessage[]): FoxMe
   return [...without.slice(0, later), leftover, ...without.slice(later)];
 }
 
-/** Persist primitive: prior offers store `actions: undefined` once a later Fox line is live. */
+export function promoteLaterFoxPastLeftoverOffers(messages: FoxMessage[]): FoxMessage[] {
+  return promoteReprintedFoxAsk(messages);
+}
+
+/** Persist primitive: only the live Fox turn index may store buttons. */
 export function sealStoredFoxThread(messages: FoxMessage[]): FoxMessage[] {
-  const frozen = freezeUsedFoxTurns(messages);
-  const last = lastFoxIndex(frozen);
-  return frozen.map((message, index) => {
-    if (message.role !== "fox") {
-      return message.actions?.length ? { ...message, actions: undefined } : message;
-    }
-    if (index === last) {
-      const actions = oneDocChipSet(message.actions);
-      if (actions.length === (message.actions?.length ?? 0)) return message;
-      return { ...message, actions: actions.length ? actions : undefined };
-    }
-    if (!isHistoryDocInviteText(message.text) || !message.actions?.length) return message;
-    return { ...message, actions: undefined };
-  });
+  return withChipsOnlyOnLiveFoxTurn(freezeUsedFoxTurns(messages));
 }
 
 /** Skip chips still live on a named history/offer line. Stored actions count — not only paint. */
@@ -544,7 +557,7 @@ export function leftoverSkipOnAskText(
     const message = thread[i];
     if (!match(message.text ?? "")) continue;
     count += leftoverChipCount(message.actions, "skip");
-    count += leftoverChipCount(paintedFoxActions(message, draft, i === lastFoxIndex(thread)), "skip");
+    count += leftoverChipCount(paintedFoxActions(message, draft, isLiveFoxTurn(thread, i)), "skip");
   }
   return count;
 }
@@ -664,6 +677,29 @@ function foxTurnHasLaterUsedReply(messages: FoxMessage[], index: number) {
   return false;
 }
 
+/** Chips attach only to the latest unused Fox turn index. */
+export function isLiveFoxTurn(messages: FoxMessage[], index: number) {
+  if (index < 0 || messages[index]?.role !== "fox") return false;
+  if (foxTurnHasLaterUsedReply(messages, index)) return false;
+  return index === lastFoxIndex(messages);
+}
+
+/** Persist/render engine: every older Fox turn stores no buttons. */
+export function withChipsOnlyOnLiveFoxTurn(messages: FoxMessage[]): FoxMessage[] {
+  return messages.map((message, index) => {
+    if (message.role !== "fox") {
+      return message.actions?.length ? { ...message, actions: undefined } : message;
+    }
+    if (isLiveFoxTurn(messages, index)) {
+      const actions = oneDocChipSet(message.actions);
+      if (actions.length === (message.actions?.length ?? 0)) return message;
+      return { ...message, actions: actions.length ? actions : undefined };
+    }
+    if (!message.actions?.length) return message;
+    return { ...message, actions: undefined };
+  });
+}
+
 /** Used confirms are history — not a button. Drop the trailing Use this? so chips cannot fire. */
 export function inertUsedConfirmText(text?: string | null) {
   return String(text ?? "")
@@ -676,7 +712,7 @@ export function freezeUsedFoxTurns(messages: FoxMessage[]): FoxMessage[] {
   const sealed = withoutDuplicateHistoryInvite(
     withoutLeftoverDocInvitesAfterTranscript(
       withoutDuplicateReceivedLine(
-        promoteLaterFoxPastLeftoverOffers(splitLeftoverOfferWithLaterFollowUp(messages)),
+        promoteReprintedFoxAsk(splitFoxFollowUpTurns(messages)),
       ).map(sealReceivedStatusLine),
     ),
   );

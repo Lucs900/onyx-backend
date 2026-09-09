@@ -110,6 +110,29 @@ async function currentChips(page: Page): Promise<string[]> {
   );
 }
 
+const PRIOR_CHIP =
+  ".fox-bubble--fox.is-prior button.fox-chip, .fox-bubble--fox.is-prior a.fox-chip";
+
+/** Engine rule: older Fox turns are text. Paint shows zero chips. */
+async function assertPriorFoxTurnsHaveNoChips(page: Page, when: string) {
+  const priorChips = page.locator(PRIOR_CHIP);
+  const count = await priorChips.count();
+  if (count > 0) {
+    const labels = (await priorChips.allTextContents()).map((item) => item.replace(/\s+/g, " ").trim());
+    throw new BeatFail(`prior Fox turn still has chips ${when} — ${labels.join(" · ") || count}`);
+  }
+  const priorReturn = page.locator(".fox-bubble--fox.is-prior").filter({
+    hasText: /Last year.?s tax return|Last year.?s Form 1040|Last year.?s federal return/i,
+  });
+  const n = await priorReturn.count();
+  for (let i = 0; i < n; i += 1) {
+    const chips = await priorReturn.nth(i).locator("button.fox-chip, a.fox-chip").count();
+    if (chips > 0) {
+      throw new BeatFail(`prior last-year return still has ${chips} chip(s) ${when}`);
+    }
+  }
+}
+
 async function waitCurrent(
   page: Page,
   test: (text: string, chips: string[]) => boolean,
@@ -1637,6 +1660,7 @@ async function case25(page: Page) {
   if (/\b\d{3}-\d{2}-\d{4}\b/.test(blob) || /\bssn\b/i.test(blob)) {
     throw new BeatFail(`Alameda SSN landed on File — ${blob}`);
   }
+  await assertPriorFoxTurnsHaveNoChips(page, "after Alameda Use this");
 }
 
 async function foxTexts(page: Page): Promise<string[]> {

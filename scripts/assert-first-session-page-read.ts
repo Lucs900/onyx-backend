@@ -81,6 +81,7 @@ import {
   liveSkipChipRows,
   sealStoredFoxThread,
   splitLeftoverOfferWithLaterFollowUp,
+  withChipsOnlyOnLiveFoxTurn,
   withoutDuplicateHistoryInvite,
   withoutDuplicateReceivedLine,
   withoutDuplicateTranscriptAsk,
@@ -803,11 +804,12 @@ async function main() {
   assert.notEqual(nextDocInvite(alamedaAfterId), "bank_statement");
   const alamedaReturnAsk = nextFoxAsk(alamedaAfterId);
   assert.equal(alamedaReturnAsk.text, LAST_YEAR_FEDERAL_RETURN_ASK);
-  assert.equal(alamedaReturnAsk.text, "Last year’s Form 1040.");
+  assert.equal(alamedaReturnAsk.text, "Last year’s tax return (Form 1040).");
   assert.doesNotMatch(
     alamedaReturnAsk.text,
     /other income|other property|household size|declaration|dependent names|named dependents/i,
   );
+  assert.doesNotMatch(alamedaReturnAsk.text, /^Last year’s Form 1040\.?$/);
   assert.doesNotMatch(alamedaReturnAsk.text, /two recent statements|bank statement/i);
   assert.deepEqual(
     (alamedaReturnAsk.actions ?? []).map((item) => item.label),
@@ -1044,7 +1046,7 @@ async function main() {
   const returnAskLine = LAST_YEAR_FEDERAL_RETURN_ASK;
   const oldReturnAskLine =
     "Last year’s federal return. One file can show other income, other property, and household size.";
-  const lastYearAsk = (text: string) => /Last year.?s (?:federal return|Form 1040)/i.test(text);
+  const lastYearAsk = (text: string) => /Last year.?s (?:tax return|federal return|Form 1040)/i.test(text);
   const returnSkipRow = {
     id: "t-return",
     role: "fox" as const,
@@ -1137,7 +1139,7 @@ async function main() {
   assert.equal(
     leftoverSkipOnAskText(sealedOffer, combesStamped, lastYearAsk),
     0,
-    "Last year’s Form 1040 has zero Skip chips once a later Fox line is live",
+    "Last year’s tax return has zero Skip chips once a later Fox line is live",
   );
   assert.equal(sealedOffer.find((item) => lastYearAsk(item.text ?? ""))?.actions, undefined);
   assert.equal(liveSkipChipRows(sealedOffer, combesStamped), 1, "only the last line has one Skip");
@@ -1156,6 +1158,25 @@ async function main() {
   assert.equal(leftoverSkipOnAskText(reappendAfterTranscript, combesStamped, lastYearAsk), 0);
   assert.equal(
     (reappendAfterTranscript.find((item) => item.text === "Tax return transcript · 2023")?.actions ?? []).filter(
+      (action) => action.label === "Skip",
+    ).length,
+    1,
+  );
+  const enginePrior = withChipsOnlyOnLiveFoxTurn([
+    {
+      id: "prior-offer",
+      role: "fox",
+      text: LAST_YEAR_FEDERAL_RETURN_ASK,
+      actions: [receivedSkip, receivedSkip, receivedSkip],
+    },
+    { id: "live-offer", role: "fox", ...transcriptBlock },
+  ]);
+  const priorOffer = enginePrior.find((item) => item.id === "prior-offer");
+  assert.equal(priorOffer?.actions, undefined, "engine: older Fox turn stores no buttons");
+  assert.equal(paintedFoxActions(priorOffer!, combesStamped, false), undefined);
+  assert.equal(leftoverSkipOnAskText(enginePrior, combesStamped, lastYearAsk), 0);
+  assert.equal(
+    (enginePrior.find((item) => item.id === "live-offer")?.actions ?? []).filter(
       (action) => action.label === "Skip",
     ).length,
     1,

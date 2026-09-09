@@ -50,6 +50,7 @@ import {
   applyTranscriptSignalAsk,
   isHistoryDocInviteText,
   isLastYearReturnAskText,
+  isLiveFoxTurn,
   isReceivedStatusLine,
   isTranscriptSignalAskText,
   sealStoredFoxThread,
@@ -649,22 +650,6 @@ export function FoxLauncher() {
   );
 }
 
-function foxTurnAlreadyUsed(thread: FoxMessage[], index: number) {
-  const fox = thread[index];
-  for (let i = index + 1; i < thread.length; i += 1) {
-    const item = thread[i];
-    if (item.role === "fox") return true;
-    if (item.role !== "client") continue;
-    const spoken = item.text.trim();
-    if (/^(This one|Use this|Looks right|yes)$/i.test(spoken)) {
-      if (fox && isPropertyTypeAskText(fox.text)) continue;
-      return true;
-    }
-    if (/^Skip$/i.test(spoken)) return true;
-  }
-  return false;
-}
-
 function FoxThread({
   messages,
   draft,
@@ -687,8 +672,6 @@ function FoxThread({
       ),
     ),
   );
-  const currentFox = thread.reduce((index, message, i) => (message.role === "fox" ? i : index), -1);
-
   return (
     <div className="fox-panel__thread" ref={listRef} aria-live="polite">
       {thread.map((message, index) => {
@@ -701,13 +684,8 @@ function FoxThread({
         }
         const current =
           message.role === "fox" &&
-          index === currentFox &&
-          !foxTurnAlreadyUsed(thread, index) &&
-          !isReceivedStatusLine(message.text) &&
-          !(
-            isHistoryDocInviteText(message.text) &&
-            thread.some((item, itemIndex) => itemIndex > index && item.role === "fox")
-          );
+          isLiveFoxTurn(thread, index) &&
+          !isReceivedStatusLine(message.text);
         const tone = current ? " is-current" : " is-prior";
         const rawActions = current
           ? (paintedFoxActions(message, draft, true) ?? []).filter(
