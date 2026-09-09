@@ -19,7 +19,8 @@ import {
 import { applyLooksRightMotion } from "../components/fox/motion";
 import { resolveProposal } from "../components/fox/completeness";
 import { emptyDraft } from "../components/fox/store";
-import { skipIncomeAsk, previewFacts, workspacePrompt, workspacePromptCopy } from "../components/fox/workspace";
+import { skipIncomeAsk, previewFacts, priorStubAsk, workspacePrompt, workspacePromptCopy } from "../components/fox/workspace";
+import { skipPriorStub } from "../components/fox/qualifyingIncome";
 import { wageEmploymentFileLine } from "../components/fox/qualifyingIncome";
 import type { FoxIntakeDraft } from "../components/fox/types";
 
@@ -163,8 +164,15 @@ async function main() {
   );
   assert.equal(jobs(usedStub).length, 1, jobs(usedStub).map((row) => row.value).join(" · "));
   assert.notEqual(nextDocInvite(usedStub), "government_id");
-  assert.equal(workspacePrompt(usedStub), "review");
-  const looksAfterStub = applyLooksRightMotion(usedStub);
+  assert.equal(workspacePrompt(usedStub), "prior-stub");
+  assert.equal(workspacePromptCopy("prior-stub", usedStub).text, priorStubAsk().text);
+  assert.deepEqual(
+    (workspacePromptCopy("prior-stub", usedStub).actions ?? []).map((item) => item.label),
+    ["Upload this", "Skip"],
+  );
+  const skippedPrior = skipPriorStub(usedStub);
+  assert.equal(workspacePrompt(skippedPrior), "review");
+  const looksAfterStub = applyLooksRightMotion(skippedPrior);
   assert.equal(nextDocInvite(looksAfterStub), "government_id");
   const idAfterStub = workspacePromptCopy(workspacePrompt(looksAfterStub), looksAfterStub);
   assert.equal(idAfterStub.text, DOC_INVITE_COPY.government_id);

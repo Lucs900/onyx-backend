@@ -56,6 +56,8 @@ import {
   readTaxCashflows,
   skipWageDocs,
   skipWageStub,
+  skipPriorStub,
+  priorStubAskNeeded,
   wageIncomeCaution,
   wageThreadOpen,
 } from "./qualifyingIncome";
@@ -2315,7 +2317,10 @@ export function applyExtractedFields(
     next = maybeProposeFederalReturn(next, fields) ?? next;
   }
   if (extractClass === "paystub" && next.stubExtractAccepted) {
-    next = maybeWriteAgreedStubFrequency(next, fields);
+    next = maybeWriteAgreedStubFrequency(
+      { ...next, priorStubAsked: true },
+      fields,
+    );
     conflict = next.pendingConflict ?? conflict;
   }
   if (!coverReturn && !transcriptReturn) next = maybeProposeQualifyingFromTaxFile(next);
@@ -4085,8 +4090,9 @@ export function transcriptFollowUpAsk(draft: FoxIntakeDraft): string {
   return "";
 }
 
-/** First stub remainder and open frequency hold Looks right. 1040s and ID do not. */
+/** First stub remainder, prior stub, and open frequency hold Looks right. 1040s and ID do not. */
 export function docInviteBlocksLooksRight(draft: FoxIntakeDraft) {
+  if (priorStubAskNeeded(draft)) return true;
   if (draft.awaitingPayFrequency) return true;
   if (employerStubRemainderOpen(draft)) return true;
   const invite = nextDocInvite(draft);
@@ -4320,6 +4326,9 @@ export function isPurchaseContractConfirmPending(draft: FoxIntakeDraft) {
 }
 
 export function skipCurrentInvite(draft: FoxIntakeDraft): FoxIntakeDraft {
+  if (priorStubAskNeeded(draft)) {
+    return skipPriorStub({ ...draft, docsOpen: false, correcting: null });
+  }
   if (transcriptFollowUpAsk(draft)) {
     const key = transcriptSpeakKey(draft);
     return markDocStamp(

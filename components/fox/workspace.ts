@@ -243,8 +243,11 @@ import {
   PAYSTUB_MONTHLY_ASK,
   PAYSTUB_AMOUNT_FIELD,
   PAYSTUB_MONTHLY_FIELD,
+  PRIOR_STUB_ASK,
   WAGE_DOCS_ASK,
   WAGE_STUB_DROP_ASK,
+  priorStubAskNeeded,
+  skipPriorStub,
   changeWageExtract,
   changeStubExtract,
   acceptStubJob,
@@ -1937,6 +1940,19 @@ function combinedReactionAsk(
   };
 }
 
+export function priorStubAsk(): {
+  text: string;
+  actions: FoxAction[];
+} {
+  return {
+    text: PRIOR_STUB_ASK,
+    actions: [
+      { id: "upload-prior-stub", label: "Upload this", event: "open-docs", capture: { field: "open-docs" } },
+      { id: "skip-prior-stub", label: "Skip", event: "bubble", capture: { field: "skip-prior-stub" } },
+    ],
+  };
+}
+
 export function payFrequencyAsk(): {
   text: string;
   actions: FoxAction[];
@@ -2436,6 +2452,7 @@ export function docReactionAsk(
     if (unreadId && isUnreadNote(unreadId.note)) return null;
     return identityReactionAsk(draft);
   }
+  if (priorStubAskNeeded(draft)) return priorStubAsk();
   if (draft.awaitingPayFrequency) return payFrequencyAsk();
   if (draft.awaitingBothMonthlyReason) return bothMonthlyReasonAsk(draft);
   if (draft.awaitingRaiseWhen) return raiseWhenAsk();
@@ -3342,6 +3359,7 @@ export function shouldDeferStillUsefulAsk(draft: FoxIntakeDraft): boolean {
   return (
     isQualifyingIncomeConfirmPending(draft) ||
     isRentalIncomeConfirmPending(draft) ||
+    priorStubAskNeeded(draft) ||
     Boolean(draft.awaitingPayFrequency) ||
     Boolean(draft.awaitingBothMonthlyReason) ||
     Boolean(draft.awaitingRaiseWhen) ||
@@ -3507,6 +3525,7 @@ export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
   if (!draft.path) return "intent";
   if (draft.pendingOffer === "jumbo") return "offer-jumbo";
   if (draft.pendingOffer === "heloc") return "offer-heloc";
+  if (priorStubAskNeeded(draft)) return "prior-stub";
   if (draft.awaitingPayFrequency) return "pay-frequency";
   if (draft.awaitingBothMonthlyReason) return "both-monthly-reason";
   if (draft.awaitingRaiseWhen) return "raise-when";
@@ -4011,6 +4030,9 @@ function workspaceAskCopy(
   if (prompt === "correct") {
     return correctionAsk(draft);
   }
+  if (prompt === "prior-stub") {
+    return priorStubAsk();
+  }
   if (prompt === "pay-frequency") {
     return payFrequencyAsk();
   }
@@ -4129,6 +4151,7 @@ export function workspaceGreeting(draft: FoxIntakeDraft): {
     prompt === "offer-heloc" ||
     prompt === "geo-stop" ||
     prompt === "confirm-proposal" ||
+    prompt === "prior-stub" ||
     prompt === "pay-frequency" ||
     prompt === "wage-docs" ||
     prompt === "w2-box5" ||
@@ -4771,6 +4794,7 @@ export function editPromptFromCapture(capture?: Capture): FoxPrompt | undefined 
   if (capture.field === "termYears" || capture.field === "skip-term") return "term";
   if (capture.field === "incomeType" || capture.field === "skip-income") return "income";
   if (capture.field === "skip-wage-docs") return "wage-docs";
+  if (capture.field === "skip-prior-stub") return "prior-stub";
   if (
     capture.field === "retry-unread-doc" ||
     capture.field === "note-unread-doc" ||
@@ -5050,6 +5074,7 @@ export function workspaceUpdateCopy(capture: Capture, draft: FoxIntakeDraft) {
   }
   if (capture.field === "skip-income") return "Updated. Income: Skip.";
   if (capture.field === "skip-wage-docs") return "Updated. W-2 left for later.";
+  if (capture.field === "skip-prior-stub") return "Updated. Prior paystub skipped.";
   if (capture.field === "skip-monthly-debts") return "Updated. Monthly debts left blank.";
   if (capture.field === "propose-monthly-debts" || capture.field === "include-mortgage-debts") {
     return "Updated.";
@@ -5759,6 +5784,7 @@ function draftAfterCaptureBody(draft: FoxIntakeDraft, capture: Capture): FoxInta
   }
   if (capture.field === "payFrequency") return applyPayFrequencyAnswer(next, capture.value);
   if (capture.field === "skip-wage-docs") return skipWageDocs(next);
+  if (capture.field === "skip-prior-stub") return skipPriorStub(next);
   if (capture.field === "retry-rateflow") return { ...next, ...retryLiveQuote() };
   if (capture.field === "retry-unread-doc") return retryUnreadDoc(next);
   if (capture.field === "note-unread-doc") return { ...next, awaitingUnreadNote: true };
@@ -6355,7 +6381,11 @@ export function workspaceReply(
     }
   }
 
-  if (prompt === "pay-frequency" || draft.awaitingPayFrequency) {
+  if (
+    (prompt === "pay-frequency" || draft.awaitingPayFrequency) &&
+    prompt !== "prior-stub" &&
+    !priorStubAskNeeded(draft)
+  ) {
     if (isFreeTextAtGate(q)) return answerThenRestore(q, draft);
     if (/\bbi-?weekly\b/i.test(lower)) {
       const nextDraft = applyPayFrequencyAnswer(draft, "biweekly");
@@ -6412,6 +6442,17 @@ export function workspaceReply(
     if (/^(skip|later|not sure|idk|pass|not yet)\b/i.test(lower)) {
       const nextDraft = skipUnreadDoc(draft);
       return { ...nextFoxAsk(nextDraft), capture: { field: "skip-unread-doc" } };
+    }
+  }
+
+  if (prompt === "prior-stub") {
+    if (isFreeTextAtGate(q)) return answerThenRestore(q, draft);
+    if (/^upload$/i.test(lower)) {
+      return { ...priorStubAsk(), capture: { field: "open-docs" } };
+    }
+    if (/^(skip|later|not sure|idk|pass|not yet)\b/i.test(lower)) {
+      const nextDraft = skipPriorStub(draft);
+      return { ...nextFoxAsk(nextDraft), capture: { field: "skip-prior-stub" } };
     }
   }
 

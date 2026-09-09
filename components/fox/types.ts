@@ -302,6 +302,8 @@ export type FoxIntakeDraft = {
   wageStubAsked?: boolean;
   /** Stub extract Use this wrote pay onto Employment. Not the combined W-2+stub extract. */
   stubExtractAccepted?: boolean;
+  /** Last two stubs: prior/second stub asked or skipped after the latest stub write. */
+  priorStubAsked?: boolean;
   /** Failed-read note: next typed line stays on that unread item. */
   awaitingUnreadNote?: boolean;
   statedMonthlyDebts?: number;
@@ -562,6 +564,7 @@ export type FoxPrompt =
   | "geo-stop"
   | "confirm-proposal"
   | "pay-frequency"
+  | "prior-stub"
   | "wage-docs"
   | "w2-box5"
   | "w2-pay-frequency"
@@ -673,6 +676,7 @@ export type Capture =
   | { field: "keep-live-coupon" }
   | { field: "payFrequency"; value: string }
   | { field: "skip-wage-docs" }
+  | { field: "skip-prior-stub" }
   | { field: "retry-unread-doc" }
   | { field: "note-unread-doc" }
   | { field: "skip-unread-doc" }

@@ -50,6 +50,8 @@ import {
   replaceTruncatedEmployerName,
   shouldProposeStubExtract,
   applyPayFrequencyAnswer,
+  PRIOR_STUB_ASK,
+  skipPriorStub,
   skipWageDocs,
   speakEmployerName,
   stubExtractConfirmCopy,
@@ -67,6 +69,7 @@ import {
   DOC_INVITE_COPY,
   nextFoxAsk,
   payFrequencyAsk,
+  priorStubAsk,
   docReactionAsk,
   previewFacts,
   unreadDocActions,
@@ -514,15 +517,15 @@ async function main() {
     },
   ];
   assert.doesNotMatch(nextFoxAsk(stubUsed).text, /Period \$1,806\.67/);
-  assert.match(nextFoxAsk(stubUsed).text, /How often is this paycheck/i);
-  assert.doesNotMatch(nextFoxAsk(stubUsed).text, /government ID/i);
+  assert.match(nextFoxAsk(stubUsed).text, /prior paystub/i);
+  assert.doesNotMatch(nextFoxAsk(stubUsed).text, /government ID|Form 1040|How often is this paycheck/i);
   const idAfterStub = applyIdExtractAsk(stubConfirmThread, {
-    id: "id",
+    id: "prior",
     role: "fox",
-    text: DOC_INVITE_COPY.government_id,
-    actions: [{ id: "upload-id", label: "Upload this", event: "open-docs", capture: { field: "open-docs" } }],
+    text: priorStubAsk().text,
+    actions: priorStubAsk().actions,
   });
-  assert.match(idAfterStub[idAfterStub.length - 1]?.text ?? "", /government ID/i);
+  assert.match(idAfterStub[idAfterStub.length - 1]?.text ?? "", /prior paystub/i);
   assert.equal(leftoverUseThisOnOlderTurns(idAfterStub, stubUsed), 0);
   const usedW2 = idAfterStub.find((item) => item.id === "w2");
   const usedStub = idAfterStub.find((item) => item.id === "stub");
@@ -752,15 +755,17 @@ async function main() {
   assert.equal(alamedaUsed.facts?.gross_period?.value, "16824.30");
   assert.equal(alamedaUsed.awaitingPayFrequency, true, "one stub without printed frequency asks once");
   assert.equal(alamedaUsed.facts?.pay_frequency, undefined);
-  const alamedaFreqAsk = nextFoxAsk(alamedaUsed);
-  assert.equal(alamedaFreqAsk.text, payFrequencyAsk().text);
-  assert.match(alamedaFreqAsk.text, /How often is this paycheck/i);
-  assert.doesNotMatch(alamedaFreqAsk.text, /government ID/i);
+  const alamedaPriorAsk = nextFoxAsk(alamedaUsed);
+  assert.equal(alamedaPriorAsk.text, PRIOR_STUB_ASK);
+  assert.equal(alamedaPriorAsk.text, priorStubAsk().text);
+  assert.match(alamedaPriorAsk.text, /prior paystub/i);
+  assert.match(alamedaPriorAsk.text, /how often you are paid/i);
+  assert.doesNotMatch(alamedaPriorAsk.text, /government ID|Form 1040|How often is this paycheck/i);
   assert.equal(nextDocInvite(alamedaUsed), null);
-  assert.equal(workspacePrompt(alamedaUsed), "pay-frequency");
+  assert.equal(workspacePrompt(alamedaUsed), "prior-stub");
   assert.deepEqual(
-    (alamedaFreqAsk.actions ?? []).map((item) => item.label),
-    ["Weekly", "Biweekly", "Semi-monthly", "Monthly"],
+    (alamedaPriorAsk.actions ?? []).map((item) => item.label),
+    ["Upload this", "Skip"],
   );
   const alamedaConfirmThread: FoxMessage[] = [
     {
@@ -775,18 +780,18 @@ async function main() {
     { id: "you-alameda", role: "client", text: "Use this" },
   ];
   const alamedaAfterTap = applyIdExtractAsk(alamedaConfirmThread, {
-    id: "freq",
+    id: "prior",
     role: "fox",
-    text: alamedaFreqAsk.text,
-    actions: alamedaFreqAsk.actions,
+    text: alamedaPriorAsk.text,
+    actions: alamedaPriorAsk.actions,
   });
   assert.equal(leftoverUseThisOnOlderTurns(alamedaAfterTap, alamedaUsed), 0);
   assert.equal(alamedaAfterTap.find((item) => item.id === "alameda-confirm")?.actions, undefined);
   assert.doesNotMatch(alamedaAfterTap.find((item) => item.id === "alameda-confirm")?.text ?? "", /Use this\?/);
-  assert.equal(alamedaAfterTap[alamedaAfterTap.length - 1]?.text, payFrequencyAsk().text);
+  assert.equal(alamedaAfterTap[alamedaAfterTap.length - 1]?.text, PRIOR_STUB_ASK);
   assert.deepEqual(
     (alamedaAfterTap[alamedaAfterTap.length - 1]?.actions ?? []).map((item) => item.label),
-    ["Weekly", "Biweekly", "Semi-monthly", "Monthly"],
+    ["Upload this", "Skip"],
   );
   assert.ok(
     !(alamedaAfterTap[alamedaAfterTap.length - 1]?.actions ?? []).some((item) => item.label === "Use this"),
@@ -805,9 +810,20 @@ async function main() {
     ]).map((item) => item.label),
     ["Upload this", "Skip"],
   );
-  assert.equal(docInviteBlocksLooksRight(alamedaUsed), true, "Looks right waits on frequency");
+  assert.equal(docInviteBlocksLooksRight(alamedaUsed), true, "Looks right waits on the prior stub");
   assert.equal(canLooksRight(alamedaUsed), false);
-  const alamedaAfterFreq = applyPayFrequencyAnswer(alamedaUsed, "monthly");
+  const alamedaAfterSkipPrior = skipPriorStub(alamedaUsed);
+  assert.equal(alamedaAfterSkipPrior.priorStubAsked, true);
+  assert.equal(workspacePrompt(alamedaAfterSkipPrior), "pay-frequency");
+  const alamedaFreqAsk = nextFoxAsk(alamedaAfterSkipPrior);
+  assert.equal(alamedaFreqAsk.text, payFrequencyAsk().text);
+  assert.match(alamedaFreqAsk.text, /How often is this paycheck/i);
+  assert.doesNotMatch(alamedaFreqAsk.text, /government ID|Form 1040/i);
+  assert.deepEqual(
+    (alamedaFreqAsk.actions ?? []).map((item) => item.label),
+    ["Weekly", "Biweekly", "Semi-monthly", "Monthly"],
+  );
+  const alamedaAfterFreq = applyPayFrequencyAnswer(alamedaAfterSkipPrior, "monthly");
   assert.equal(alamedaAfterFreq.awaitingPayFrequency, false);
   assert.equal(alamedaAfterFreq.facts?.pay_frequency?.value, "monthly");
   assert.equal(alamedaAfterFreq.incomeType.value, "w2", "frequency write does not flip income type");
@@ -1255,10 +1271,10 @@ async function main() {
     },
     { id: "you-use", role: "client", text: "Use this" },
     {
-      id: "freq-next",
+      id: "prior-next",
       role: "fox",
-      text: payFrequencyAsk().text,
-      actions: payFrequencyAsk().actions,
+      text: priorStubAsk().text,
+      actions: priorStubAsk().actions,
     },
   ]);
   assert.equal(
@@ -1266,16 +1282,16 @@ async function main() {
     undefined,
     "Period Use this is history after the tap",
   );
-  assert.equal(afterAlamedaUseThis[afterAlamedaUseThis.length - 1]?.text, payFrequencyAsk().text);
+  assert.equal(afterAlamedaUseThis[afterAlamedaUseThis.length - 1]?.text, priorStubAsk().text);
   assert.equal(
     afterAlamedaUseThis[afterAlamedaUseThis.length - 1]?.actions,
     undefined,
-    "frequency ask stores no chips after Alameda Use this",
+    "prior-stub ask stores no chips after Alameda Use this",
   );
   assert.deepEqual(
     deskStripActions(afterAlamedaUseThis, alamedaUsed).map((item) => item.label),
-    ["Weekly", "Biweekly", "Semi-monthly", "Monthly"],
-    "frequency chips stay current on the strip after Alameda Use this",
+    ["Upload this", "Skip"],
+    "prior-stub chips stay current on the strip after Alameda Use this",
   );
   assert.equal(docInviteBlocksLooksRight(combesProposed.draft), false, "Do not hold Looks right for 1040s");
   assert.equal(combesProposed.draft.pendingProposal, null, "transcript does not open income Use this");

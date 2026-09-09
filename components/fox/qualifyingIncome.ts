@@ -1757,6 +1757,9 @@ export const W2_BOX5_ASK =
 export const W2_PAY_FREQUENCY_ASK = "How often are you paid?";
 export const WAGE_DOCS_ASK = "Drop last year’s W-2. Skip if you want to type it.";
 export const WAGE_STUB_DROP_ASK = "Drop a recent paystub. Skip if you want to type it.";
+/** After the latest stub Use this: last two, so frequency is on paper. */
+export const PRIOR_STUB_ASK =
+  "A prior paystub too — last two, so I can see how often you are paid. Skip is fine.";
 export const PAYSTUB_MONTHLY_ASK = "What's the amount on the latest stub?";
 export const PAYSTUB_AMOUNT_FIELD = "paystub_amount";
 export const WAGE_EXTRACT_FIELD = "wage_extract";
@@ -2177,6 +2180,33 @@ export function skipWageFrequency(draft: FoxIntakeDraft): FoxIntakeDraft {
 
 export function skipWageStub(draft: FoxIntakeDraft): FoxIntakeDraft {
   return { ...draft, wageStubAsked: true, pendingProposal: null, looksRightHold: false };
+}
+
+export function paystubExtractedCount(draft: FoxIntakeDraft): number {
+  return (draft.documents ?? []).filter((doc) => doc.extractClass === "paystub" || doc.slot === "paystubs")
+    .length;
+}
+
+/** After latest stub Use this: ask the prior stub before frequency, ID, or a 1040. */
+export function priorStubAskNeeded(draft: FoxIntakeDraft): boolean {
+  if (draft.sampleAccepted || draft.priorStubAsked) return false;
+  if (!draft.stubExtractAccepted || !wageThreadOpen(draft)) return false;
+  return paystubExtractedCount(draft) < 2;
+}
+
+export function skipPriorStub(draft: FoxIntakeDraft): FoxIntakeDraft {
+  const hasFrequency = Boolean(
+    speakPayFrequency(String(draft.facts?.pay_frequency?.value ?? "")),
+  );
+  return {
+    ...draft,
+    priorStubAsked: true,
+    awaitingPayFrequency:
+      Boolean(draft.awaitingPayFrequency) ||
+      (!hasFrequency && Boolean(draft.stubExtractAccepted) && !draft.wageFrequencyAsked),
+    docsOpen: false,
+    looksRightHold: false,
+  };
 }
 
 export function writeWagePayFrequency(draft: FoxIntakeDraft, raw: string): FoxIntakeDraft {
@@ -2852,6 +2882,7 @@ function writeStubPayLine(
     wageStubAsked: true,
     wageFrequencyAsked: hasFrequency || alreadyConfirmed || Boolean(draft.wageFrequencyAsked),
     stubExtractAccepted: true,
+    priorStubAsked: Boolean(draft.stubExtractAccepted || draft.priorStubAsked),
     awaitingPayFrequency: !hasFrequency && !alreadyConfirmed,
     pendingProposal: null,
     looksRightHold: false,

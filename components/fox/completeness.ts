@@ -66,6 +66,7 @@ import {
   parseExtractMoney,
   stubExtractAskOpen,
   stubPeriodConfirmOpen,
+  priorStubAskNeeded,
   isWageW2OnlyProposal,
   stubExtractConfirmCopy,
   wageExtractConfirmCopy,
@@ -1956,6 +1957,7 @@ export function draftHasOpenConfirmCard(draft: FoxIntakeDraft) {
 /** Looks right waits until the current doc/chip ask is idle. */
 export function currentAskIdle(draft: FoxIntakeDraft) {
   if (draftHasOpenConfirmCard(draft)) return false;
+  if (priorStubAskNeeded(draft)) return false;
   if (draft.awaitingPayFrequency) return false;
   if (draft.awaitingBothMonthlyReason) return false;
   if (draft.awaitingRaiseWhen) return false;
@@ -1995,6 +1997,7 @@ export function wageIncomeSketchOpen(draft: FoxIntakeDraft) {
     return true;
   }
   return (
+    priorStubAskNeeded(draft) ||
     wageDocsAskNeeded(draft) ||
     wageBox5AskNeeded(draft) ||
     wageFrequencyAskNeeded(draft) ||

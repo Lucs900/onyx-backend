@@ -125,6 +125,8 @@ import {
   writeWageBox5,
   writeTypedStubMonthly,
   skipWageDocs,
+  skipPriorStub,
+  priorStubAskNeeded,
   skipWageBox5,
   skipWageFrequency,
   skipWageStub,
@@ -442,6 +444,7 @@ export function emptyDraft(): FoxIntakeDraft {
     wageFrequencyAsked: false,
     wageStubAsked: false,
     stubExtractAccepted: false,
+    priorStubAsked: false,
     awaitingUnreadNote: false,
     awaitingPayFrequency: false,
     awaitingBothMonthlyReason: false,
@@ -757,6 +760,7 @@ function normalize(value: unknown): FoxIntakeDraft {
     wageFrequencyAsked: Boolean(raw.wageFrequencyAsked),
     wageStubAsked: Boolean(raw.wageStubAsked),
     stubExtractAccepted: Boolean(raw.stubExtractAccepted),
+    priorStubAsked: Boolean(raw.priorStubAsked),
     awaitingUnreadNote: Boolean(raw.awaitingUnreadNote),
     awaitingPayFrequency: Boolean(raw.awaitingPayFrequency),
     awaitingBothMonthlyReason: Boolean(raw.awaitingBothMonthlyReason),
@@ -2209,6 +2213,9 @@ function applyCaptureBody(capture: Capture) {
     return commit(proposed ?? { ...current, subjectLeaseAsked: true });
   }
   if (capture.field === "skip-docs") {
+    if (priorStubAskNeeded(current)) {
+      return commit(skipPriorStub(current));
+    }
     if (
       isBorrowerNameConfirmPending(current) ||
       isPurchaseContractConfirmPending(current) ||
@@ -2254,6 +2261,9 @@ function applyCaptureBody(capture: Capture) {
   }
   if (capture.field === "skip-wage-docs") {
     return commit(skipWageDocs(current));
+  }
+  if (capture.field === "skip-prior-stub") {
+    return commit(skipPriorStub(current));
   }
   if (capture.field === "retry-unread-doc") {
     return commit(retryUnreadDoc(current));
