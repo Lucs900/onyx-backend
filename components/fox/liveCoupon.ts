@@ -625,6 +625,28 @@ export function leftoverSkipOnOlderTurns(messages: FoxMessage[], draft: FoxIntak
   return leftoverOnOlderTurns(messages, draft, "skip");
 }
 
+const LIVE_LEFTOVER_CHIP = /^(Skip|Use this|Upload this|Proceed)$/;
+
+function isLiveLeftoverChip(action: FoxAction) {
+  return LIVE_LEFTOVER_CHIP.test(action.label);
+}
+
+/**
+ * A prior Fox node that still owns a live Skip / Use this / Upload this / Proceed.
+ * Frozen answer-column stamps and Edit are not chips. The live strip on the
+ * last unused Fox turn is not leftover.
+ */
+export function leftoverLiveChipsOnPriorNodes(messages: FoxMessage[]) {
+  const last = lastFoxIndex(messages);
+  let count = 0;
+  for (let i = 0; i < messages.length; i += 1) {
+    const message = messages[i];
+    if (message.role !== "fox" || i === last) continue;
+    count += (message.actions ?? []).filter(isLiveLeftoverChip).length;
+  }
+  return count;
+}
+
 /** Skip chips parked on a filename · received line. Those die. */
 export function leftoverSkipOnReceivedLines(messages: FoxMessage[], draft: FoxIntakeDraft) {
   const thread = dropResolvedAddressConfirmChips(messages, draft);

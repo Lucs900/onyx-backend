@@ -116,6 +116,7 @@ if [[ "${SPINE_WALKER_SKIP_LEFTOVERS:-}" != "1" ]]; then
   fi
 
   run_leftover assert-live-strip.ts
+  run_leftover assert-use-this-employment.ts
   if leftover_wanted 1 || leftover_wanted 7 || leftover_wanted 10 || leftover_wanted 11; then
     run_leftover assert-home-type-chips.ts
   fi

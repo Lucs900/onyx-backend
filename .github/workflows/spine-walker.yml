@@ -27,6 +27,7 @@ on:
       - "scripts/assert-w2-page-read.ts"
       - "scripts/assert-first-session-page-read.ts"
       - "scripts/assert-live-strip.ts"
+      - "scripts/assert-use-this-employment.ts"
       - ".github/workflows/spine-walker.yml"
       - "sample-docs/**"
       - "scripts/fixtures/**"
@@ -56,6 +57,7 @@ on:
       - "scripts/assert-w2-page-read.ts"
       - "scripts/assert-first-session-page-read.ts"
       - "scripts/assert-live-strip.ts"
+      - "scripts/assert-use-this-employment.ts"
       - ".github/workflows/spine-walker.yml"
       - "sample-docs/**"
       - "scripts/fixtures/**"
@@ -63,7 +65,7 @@ concurrency:
   group: spine-walker-preview-bc93
   cancel-in-progress: true
 jobs:
-  strip:
+  leftover:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -74,10 +76,25 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
-      - name: Live strip — leftover chips + Use this write
+      - name: Planted live leftover chip on a prior node
         run: |
           if [[ ! -d node_modules/next ]]; then npm install; fi
           npx --yes tsx scripts/assert-live-strip.ts
+  write:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Committed Harbor stub Use this writes Employment
+        run: |
+          if [[ ! -d node_modules/next ]]; then npm install; fi
+          npx --yes tsx scripts/assert-use-this-employment.ts
   walk:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
