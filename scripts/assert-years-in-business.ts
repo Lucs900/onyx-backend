@@ -268,11 +268,14 @@ const crawl6: FoxIntakeDraft = {
   incomeType: { ...emptyDraft().incomeType, value: "self-employed" },
 };
 assert.equal(crawl6.awaitingYearsInBusiness, false);
-assert.equal(nextDocInvite(crawl6), "government_id");
-const afterIdSkip = skipCurrentInvite(crawl6);
-assert.equal(nextDocInvite(afterIdSkip), "tax_return");
-assert.equal(workspacePrompt(afterIdSkip), "documents");
-assert.notEqual(workspacePrompt(afterIdSkip), "years-in-business");
-assert.doesNotMatch(nextFoxAsk(afterIdSkip).text, /How long have you had/);
+assert.equal(nextDocInvite(crawl6), "tax_return");
+assert.notEqual(nextDocInvite(crawl6), "government_id");
+assert.equal(workspacePrompt(crawl6), "documents");
+assert.notEqual(workspacePrompt(crawl6), "years-in-business");
+assert.doesNotMatch(nextFoxAsk(crawl6).text, /How long have you had/);
+const afterReturnSkip = skipCurrentInvite(crawl6);
+assert.notEqual(nextDocInvite(afterReturnSkip), "government_id");
+assert.notEqual(workspacePrompt(afterReturnSkip), "years-in-business");
+assert.doesNotMatch(nextFoxAsk(afterReturnSkip).text, /How long have you had/);
 
 console.log("years-in-business PASS");

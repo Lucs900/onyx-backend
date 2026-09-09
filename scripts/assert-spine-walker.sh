@@ -126,6 +126,11 @@ if [[ "${SPINE_WALKER_SKIP_LEFTOVERS:-}" != "1" ]]; then
 
   run_leftover assert-live-strip.ts
   run_leftover assert-use-this-employment.ts
+  # leftovers-only is leftover + write. Extra case leftovers stay on the walker cases.
+  if [[ "${SPINE_WALKER_LEFTOVERS_ONLY:-}" == "1" ]]; then
+    echo "spine-walker: leftovers only"
+    exit 0
+  fi
   if leftover_wanted 1 || leftover_wanted 7 || leftover_wanted 10 || leftover_wanted 11; then
     run_leftover assert-home-type-chips.ts
   fi
