@@ -85,10 +85,19 @@ if [[ ! -d node_modules/playwright ]]; then
   npm install
 fi
 
-if [[ "${CI:-}" == "true" ]]; then
-  npx playwright install --with-deps chromium
+install_chromium() {
+  if npx playwright install --with-deps chromium; then
+    return 0
+  fi
+  echo "spine-walker: --with-deps failed, retrying chromium only" >&2
+  sleep 4
+  npx playwright install chromium
+}
+
+if [[ "${CI:-}" == "true" && "${SPINE_WALKER_LEFTOVERS_ONLY:-}" != "1" ]]; then
+  install_chromium
   touch .browser-ok
-elif [[ ! -f .browser-ok ]]; then
+elif [[ "${CI:-}" != "true" && ! -f .browser-ok ]]; then
   npx playwright install chromium
   touch .browser-ok
 fi
