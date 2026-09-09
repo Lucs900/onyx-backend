@@ -823,18 +823,45 @@ async function main() {
     (alamedaFreqAsk.actions ?? []).map((item) => item.label),
     ["Weekly", "Biweekly", "Semi-monthly", "Monthly"],
   );
-  const alamedaAfterFreq = applyPayFrequencyAnswer(alamedaAfterSkipPrior, "monthly");
+  const alamedaAfterFreq = applyPayFrequencyAnswer(alamedaAfterSkipPrior, "biweekly");
   assert.equal(alamedaAfterFreq.awaitingPayFrequency, false);
-  assert.equal(alamedaAfterFreq.facts?.pay_frequency?.value, "monthly");
+  assert.equal(alamedaAfterFreq.facts?.pay_frequency?.value, "biweekly");
   assert.equal(alamedaAfterFreq.incomeType.value, "w2", "frequency write does not flip income type");
+  assert.equal(alamedaAfterFreq.pendingProposal?.field, "qualifying_income");
+  assert.equal(alamedaAfterFreq.pendingProposal?.value, "36453");
+  assert.equal(alamedaAfterFreq.facts?.qualifying_income, undefined, "QI stays off File until Use this");
+  assert.equal(alamedaAfterFreq.facts?.paystub_monthly, undefined, "monthly stays off File until Use this");
+  assert.doesNotMatch(wageEmploymentFileLine(alamedaAfterFreq), /36,453|36453/);
+  assert.ok(
+    previewFacts(alamedaAfterFreq).every(
+      (fact) => !/36,453|36453/.test(fact.value) && fact.label !== "Qualifying income",
+    ),
+    "Structure empty of $36,453 until Use this — " +
+      previewFacts(alamedaAfterFreq)
+        .map((fact) => `${fact.label}=${fact.value}`)
+        .join(" · "),
+  );
+  const alamedaQiAsk = nextFoxAsk(alamedaAfterFreq);
+  assert.match(alamedaQiAsk.text, /\$36,453/);
+  assert.deepEqual(
+    (alamedaQiAsk.actions ?? []).map((item) => item.label),
+    ["Use this", "Change"],
+  );
   assert.equal(nextDocInvite(alamedaAfterFreq), null);
   assert.notEqual(nextDocInvite(alamedaAfterFreq), "government_id");
   assert.notEqual(nextDocInvite(alamedaAfterFreq), "bank_statement");
-  assert.doesNotMatch(nextFoxAsk(alamedaAfterFreq).text, /government ID/i);
-  const alamedaAfterMonthly =
-    alamedaAfterFreq.pendingProposal?.field === "qualifying_income"
-      ? resolveProposal(alamedaAfterFreq, "accept")
-      : alamedaAfterFreq;
+  assert.doesNotMatch(alamedaQiAsk.text, /government ID/i);
+  const alamedaAfterMonthly = resolveProposal(alamedaAfterFreq, "accept");
+  assert.equal(alamedaAfterMonthly.facts?.qualifying_income?.value, "36453");
+  assert.ok(
+    previewFacts(alamedaAfterMonthly).some(
+      (fact) => fact.label === "Qualifying income" && /36,453/.test(fact.value),
+    ),
+    "Use this writes QI — " +
+      previewFacts(alamedaAfterMonthly)
+        .map((fact) => `${fact.label}=${fact.value}`)
+        .join(" · "),
+  );
   assert.equal(docInviteBlocksLooksRight(alamedaAfterMonthly), false, "Do not hold Looks right for 1040s");
   assert.equal(canLooksRight(alamedaAfterMonthly), true, "Looks right after the income story is on the notepad");
   assert.equal(workspacePrompt(alamedaAfterMonthly), "review");
@@ -1297,7 +1324,7 @@ async function main() {
   assert.equal(combesProposed.draft.pendingProposal, null, "transcript does not open income Use this");
   assert.equal(
     combesProposed.draft.facts?.qualifying_income?.value,
-    "16824",
+    "36453",
     "transcript loss must not overwrite the stub monthly",
   );
   assert.doesNotMatch(

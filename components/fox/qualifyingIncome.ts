@@ -1428,17 +1428,33 @@ export function applyPayFrequencyAnswer(draft: FoxIntakeDraft, raw: string): Fox
   if (computed.monthly === 0) {
     return heldPay.length ? { ...next, pendingProposal: draft.pendingProposal } : next;
   }
-  const proposed = withQualifyingIncomeProposal(writeBothMonthlies(next, computed), computed, lastWageClass(next));
-  if (proposed.pendingProposal && heldPay.length) {
-    return {
-      ...proposed,
-      pendingProposal: {
-        ...proposed.pendingProposal,
-        extras: [...(proposed.pendingProposal.extras ?? []), ...heldPay],
-      },
-    };
+  const proposed = withQualifyingIncomeProposal(next, computed, lastWageClass(next));
+  if (!proposed.pendingProposal) return proposed;
+  const extras = [...(proposed.pendingProposal.extras ?? [])];
+  if (
+    computed.stubMonthly != null &&
+    !extras.some((item) => item.field === PAYSTUB_MONTHLY_FIELD)
+  ) {
+    extras.push({
+      field: PAYSTUB_MONTHLY_FIELD,
+      value: String(computed.stubMonthly),
+      label: "stub monthly",
+    });
   }
-  return proposed;
+  if (computed.w2Monthly != null && !extras.some((item) => item.field === W2_MONTHLY_FIELD)) {
+    extras.push({
+      field: W2_MONTHLY_FIELD,
+      value: String(computed.w2Monthly),
+      label: "w2 monthly",
+    });
+  }
+  for (const item of heldPay) {
+    if (!extras.some((extra) => extra.field === item.field)) extras.push(item);
+  }
+  return {
+    ...proposed,
+    pendingProposal: { ...proposed.pendingProposal, extras },
+  };
 }
 
 function lastWageClass(draft: FoxIntakeDraft): ExtractClass {
@@ -1724,17 +1740,8 @@ export function qualifyingIncomeDisplay(draft: FoxIntakeDraft): { value: string;
     draft.pendingProposal?.field === QUALIFYING_INCOME_FIELD ? draft.pendingProposal : null;
   const stored = factValue(draft, QUALIFYING_INCOME_FIELD);
   const confirmed = Boolean(stored && draft.facts?.[QUALIFYING_INCOME_FIELD]?.confirmed);
-  if (
-    proposal &&
-    !confirmed &&
-    !isScheduleECashFlowProposal(proposal) &&
-    !isEntityCashFlowProposal(proposal) &&
-    !isSameBusinessWageEntityProposal(proposal)
-  ) {
-    return {
-      value: structureQualifyingValue(displayMoney(proposal.value), proposal.methodNote),
-      note: proposal.note ?? SUGGESTED_INCOME_NOTE,
-    };
+  if (proposal && !confirmed) {
+    return null;
   }
   if (stored && confirmed) {
     const pair = bothMonthlyDisplay(draft);
