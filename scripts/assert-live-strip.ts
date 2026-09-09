@@ -175,5 +175,19 @@ assert.deepEqual(
   ["Upload this", "Skip"],
   "Use this leaves the strip after the write",
 );
+assert.deepEqual(
+  deskStripActions(
+    [
+      {
+        id: "rate",
+        role: "fox",
+        text: "This loan right now: 6.500%. P&I $4,298. -0.129 pts. Not a lock. As of 6:17 PM PT.",
+      },
+    ],
+    { ...draft, liveCouponSettled: false },
+  ).map((item) => item.label),
+  ["This one", "Lower payment"],
+  "live rate speech puts coupon chips on the strip, not the message",
+);
 
 console.log("assert-live-strip: leftover Skip detector red; Alameda Use this writes Employment");

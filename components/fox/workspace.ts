@@ -45,6 +45,7 @@ import {
   isTranscriptSignalAskText,
   withoutDuplicateTranscriptAsk,
   liveCouponActions,
+  liveCouponConfirmActions,
   liveCouponConfirmCopy,
   liveQuoteReady,
   withLiveCouponChips,
@@ -3419,6 +3420,22 @@ export function deskStripActions(
   if (live < 0 || !isLiveFoxTurn(thread, live)) return [];
   const message = thread[live]!;
   if (isReceivedStatusLine(message.text) || isLookupWaitLine(message.text)) return [];
+
+  if (
+    isLiveRateSpeech(message.text) ||
+    isLiveRateSpeech(message.followUp) ||
+    message.text === COUPON_UNRESOLVED
+  ) {
+    if (draft.pendingLiveCoupon) {
+      return stripStreetSuggest(liveCouponConfirmActions(draft));
+    }
+    if (!draft.liveCouponSettled) {
+      return stripStreetSuggest(liveCouponActions(draft));
+    }
+  }
+  if (message.text === PRICING_WHEN_READY || isPricingWhenReadySpeech(message)) {
+    return stripStreetSuggest(pricingFailedActions());
+  }
 
   if (
     isUseThisConfirmText(message.text) &&
