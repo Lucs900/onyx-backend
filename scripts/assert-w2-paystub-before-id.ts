@@ -180,6 +180,15 @@ async function main() {
     (idAfterStub.actions ?? []).map((item) => item.label),
     ["Upload this", "Skip"],
   );
+  const afterIdSkip = skipCurrentInvite(looksAfterStub);
+  assert.equal(nextDocInvite(afterIdSkip), "tax_return");
+  assert.notEqual(nextDocInvite(afterIdSkip), "bank_statement");
+  assert.notEqual(nextDocInvite(afterIdSkip), "prior_year_return");
+  assert.match(workspacePromptCopy(workspacePrompt(afterIdSkip), afterIdSkip).text, /Last year.?s tax return \(Form 1040\)/);
+  assert.doesNotMatch(
+    workspacePromptCopy(workspacePrompt(afterIdSkip), afterIdSkip).text,
+    /two recent statements/i,
+  );
 
   const skippedIncome = skipIncomeAsk({
     ...wageSketch(),

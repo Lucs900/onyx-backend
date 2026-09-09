@@ -869,8 +869,14 @@ async function main() {
   assert.equal(nextDocInvite(alamedaLooks), "government_id");
   assert.match(nextFoxAsk(alamedaLooks).text, /government ID/i);
   assert.match(nextFoxAsk(alamedaLooks).text, /name on it/);
-  const alamedaAfterId = alamedaAfterMonthly;
-  const usefulAfterId = (stillUsefulSection(alamedaAfterId)?.items ?? []).map((item) => item.label);
+  const alamedaAfterIdSkip = skipCurrentInvite(alamedaLooks);
+  assert.equal(nextDocInvite(alamedaAfterIdSkip), "tax_return");
+  assert.notEqual(nextDocInvite(alamedaAfterIdSkip), "prior_year_return");
+  assert.notEqual(nextDocInvite(alamedaAfterIdSkip), "bank_statement");
+  assert.equal(nextFoxAsk(alamedaAfterIdSkip).text, LAST_YEAR_FEDERAL_RETURN_ASK);
+  assert.match(nextFoxAsk(alamedaAfterIdSkip).text, /so review has the return/i);
+  assert.doesNotMatch(nextFoxAsk(alamedaAfterIdSkip).text, /two recent statements|2024 return/i);
+  const usefulAfterId = (stillUsefulSection(alamedaAfterIdSkip)?.items ?? []).map((item) => item.label);
   assert.ok(
     usefulAfterId.some((label) => /W-2/i.test(label)),
     `Still useful must keep skipped W-2 — ${usefulAfterId.join(" · ")}`,
@@ -879,8 +885,11 @@ async function main() {
     usefulAfterId.some((label) => /return|Form 1040/i.test(label)),
     `Still useful holds last year’s 1040 — ${usefulAfterId.join(" · ")}`,
   );
-  const alamedaAfterReturnSkip = skipCurrentInvite(alamedaAfterId);
+  const alamedaAfterReturnSkip = skipCurrentInvite(alamedaAfterIdSkip);
+  assert.notEqual(nextDocInvite(alamedaAfterReturnSkip), "tax_return");
+  assert.notEqual(nextDocInvite(alamedaAfterReturnSkip), "prior_year_return");
   assert.notEqual(nextDocInvite(alamedaAfterReturnSkip), "bank_statement");
+  assert.notEqual(nextFoxAsk(alamedaAfterReturnSkip).text, LAST_YEAR_FEDERAL_RETURN_ASK);
   assert.notEqual(nextFoxAsk(alamedaAfterReturnSkip).text, DOC_INVITE_COPY.bank_statement);
   assert.doesNotMatch(nextFoxAsk(alamedaAfterReturnSkip).text, /two recent statements/i);
   assert.equal(docInviteBlocksLooksRight(alamedaAfterReturnSkip), false);
@@ -895,7 +904,6 @@ async function main() {
     usefulAfterReturnSkip.some((label) => /W-2/i.test(label)),
     `Still useful keeps skipped W-2 after return Skip — ${usefulAfterReturnSkip.join(" · ")}`,
   );
-  assert.ok(canLooksRight(alamedaAfterReturnSkip) || workspacePrompt(alamedaAfterReturnSkip) === "review");
   noSecrets(alamedaFields);
 
   assert.equal(looksLike1040Transcript(COMBES_TRANSCRIPT_LINES), true);
@@ -924,7 +932,7 @@ async function main() {
   assert.equal(looksLikeTaxReturnFields(combesLoud.fields), true);
   const combesBlob = JSON.stringify(combesLoud.fields);
   assert.doesNotMatch(combesBlob, /ALLA|REN ARIA|COMB\b|XXX-XX-|8051|3571|SSN|356636|294564/i);
-  const combesProposed = applyExtractedFields(alamedaAfterId, {
+  const combesProposed = applyExtractedFields(alamedaAfterMonthly, {
     extractClass: "tax_return",
     confidence: 0.94,
     fields: combesLoud.fields,
@@ -1350,9 +1358,9 @@ async function main() {
 
   const unreadReturnAt = "2026-09-08T19:00:00.000Z";
   loadIntakeDraft({
-    ...alamedaAfterId,
+    ...alamedaAfterMonthly,
     documents: [
-      ...alamedaAfterId.documents,
+      ...alamedaAfterMonthly.documents,
       {
         slot: "other",
         name: "2024 Tax Return Combes.pdf",

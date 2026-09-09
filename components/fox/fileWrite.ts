@@ -2628,8 +2628,9 @@ export function spokenScheduleCName(draft: FoxIntakeDraft) {
   return hasScheduleCOnFile(draft) ? "Hale Design" : "";
 }
 
-/** W-2 path after a skipped W-2: name the paper in borrower words. Why stays on ID. */
-export const LAST_YEAR_FEDERAL_RETURN_ASK = "Last year’s tax return (Form 1040).";
+/** W-2 path after Looks right: one last-year 1040. Completeness, not wage engine. */
+export const LAST_YEAR_FEDERAL_RETURN_ASK =
+  "Last year’s tax return (Form 1040), so review has the return.";
 
 export function taxReturnInviteCopy(draft: FoxIntakeDraft) {
   if (draft.incomeType.value === "w2") return LAST_YEAR_FEDERAL_RETURN_ASK;
@@ -3981,10 +3982,14 @@ function zipOnlySubject(draft: FoxIntakeDraft) {
   return Boolean(zip || /^\d{5}$/.test(line) || /,\s*CA\s+\d{5}$/i.test(line));
 }
 
-/** ID after Looks right. Last two 1040s on Skip-W-2 + stub. Statements stay on assets. */
+/** W-2 after Looks right: ID, then one last-year 1040. Bank / second 1040 / contract are not this ask. */
 function lockedFileDocInvites(draft: FoxIntakeDraft): DocInviteKind[] {
   const kinds: DocInviteKind[] = [];
   if (draft.sampleAccepted && !inviteSatisfied(draft, "government_id")) kinds.push("government_id");
+  if (draft.sampleAccepted && draft.incomeType.value === "w2") {
+    if (!inviteSatisfied(draft, "tax_return")) kinds.push("tax_return");
+    return kinds;
+  }
   if (draft.sampleAccepted && skippedW2StubPath(draft)) {
     if (!inviteSatisfied(draft, "tax_return")) kinds.push("tax_return");
     if (!inviteSatisfied(draft, "prior_year_return")) kinds.push("prior_year_return");
