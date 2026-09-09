@@ -696,6 +696,18 @@ export function withChipsOnlyOnLiveFoxTurn(messages: FoxMessage[]): FoxMessage[]
   return withoutStoredChipActions(messages);
 }
 
+/**
+ * Chip verbs belong on the composer strip. History — including the live last
+ * line — paints speech only. Engine/storage may still keep the cue so the
+ * strip can match; FoxThread must never print it.
+ */
+export function historyBubbleSpeech(text?: string | null) {
+  return String(text ?? "")
+    .replace(/\s*Skip if you want to type it\.?/gi, "")
+    .replace(/\s*Use this\?\s*$/i, "")
+    .trim();
+}
+
 /** Used confirms are history — not a button. Drop the trailing Use this? so chips cannot fire. */
 export function inertUsedConfirmText(text?: string | null) {
   return String(text ?? "")

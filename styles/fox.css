@@ -44,14 +44,28 @@
 
 .fox-bar__desk {
   display: flex;
-  align-items: center;
-  gap: 12px;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
   min-height: 56px;
   padding: 6px 6px 6px 14px;
   background: var(--paper-elevated);
   border: 1px solid var(--fox-hairline);
   border-radius: 999px;
   box-shadow: var(--fox-lift);
+}
+
+.fox-bar__desk-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  min-height: 44px;
+}
+
+.fox-bar__desk:has(.fox-bar__strip) {
+  border-radius: 20px;
+  padding-top: 10px;
 }
 
 .fox-bar__desk:hover {
@@ -86,6 +100,14 @@
   border: 1px solid var(--fox-hairline) !important;
   border-radius: 999px !important;
   box-shadow: none !important;
+}
+
+.fox-stage--workspace .fox-bar__desk:has(.fox-bar__strip),
+.fox-bar.is-open .fox-stage--workspace .fox-bar__desk:has(.fox-bar__strip),
+.fox-bar__desk--plain:has(.fox-bar__strip) {
+  min-height: 0;
+  border-radius: 20px !important;
+  padding-top: 10px;
 }
 
 .fox-bar__mark {
@@ -162,7 +184,7 @@
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  margin: 0 0 8px;
+  margin: 0;
 }
 
 .fox-bar__strip .fox-chip:hover,
@@ -234,6 +256,11 @@
   border: 0 !important;
   border-radius: 0 0 999px 999px !important;
   box-shadow: none !important;
+}
+
+.fox-bar__compose.is-suggesting .fox-bar__desk:has(.fox-bar__strip),
+.fox-bar__compose.is-suggesting .fox-bar__desk--plain:has(.fox-bar__strip) {
+  border-radius: 0 0 20px 20px !important;
 }
 
 .fox-stage--workspace .fox-bar__input:focus,
@@ -503,8 +530,12 @@
   line-height: 16px;
 }
 
-.fox-bubble__actions {
-  display: none;
+.fox-bubble__actions,
+.fox-panel__thread .fox-chip,
+.fox-panel__thread .fox-bubble__actions,
+.fox-panel__thread button.fox-chip,
+.fox-panel__thread a.fox-chip {
+  display: none !important;
 }
 
 .fox-chip {
@@ -690,6 +721,14 @@
     border: 1px solid var(--fox-hairline) !important;
     border-radius: 999px !important;
     box-shadow: none !important;
+  }
+
+  .fox-bar__desk:has(.fox-bar__strip),
+  .fox-stage--workspace .fox-bar__desk:has(.fox-bar__strip),
+  .fox-bar__desk--plain:has(.fox-bar__strip) {
+    min-height: 0;
+    border-radius: 20px !important;
+    padding-top: 10px;
   }
 
   .fox-bar__send {

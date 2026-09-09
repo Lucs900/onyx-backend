@@ -45,6 +45,7 @@ import {
   dropOnFileAddressLines,
   dropResolvedAddressConfirmChips,
   freezeUsedFoxTurns,
+  historyBubbleSpeech,
   withoutDuplicateContractConfirm,
   withoutDuplicateTranscriptAsk,
   applyTranscriptSignalAsk,
@@ -627,6 +628,7 @@ export function FoxLauncher() {
   );
 }
 
+/** History is speech. This function must never mount chip buttons on a message node. */
 function FoxThread({
   messages,
   draft,
@@ -648,12 +650,12 @@ function FoxThread({
     ),
   );
   return (
-    <div className="fox-panel__thread" ref={listRef} aria-live="polite">
+    <div className="fox-panel__thread" ref={listRef} aria-live="polite" data-history="speech">
       {thread.map((message, index) => {
         if (message.role === "system") {
           return (
             <p key={message.id} className="fox-bubble fox-bubble--system">
-              {message.text}
+              {historyBubbleSpeech(message.text)}
             </p>
           );
         }
@@ -663,6 +665,8 @@ function FoxThread({
           !isReceivedStatusLine(message.text);
         const tone = current ? " is-current" : " is-prior";
         const canEdit = message.role === "client" && Boolean(message.edit) && Boolean(onEdit);
+        const speech = historyBubbleSpeech(message.text);
+        const followUp = message.followUp ? historyBubbleSpeech(message.followUp) : "";
         return (
           <article
             key={`${message.id}:${current ? "live" : "text"}`}
@@ -681,8 +685,8 @@ function FoxThread({
                 : undefined
             }
           >
-            <p>{message.text}</p>
-            {message.followUp ? <p>{message.followUp}</p> : null}
+            <p>{speech}</p>
+            {followUp ? <p>{followUp}</p> : null}
             {canEdit ? (
               <button
                 type="button"
@@ -2292,7 +2296,6 @@ export function AlwaysOnFox({
 
   const desk = (
     <div className={streetSuggestions.length ? "fox-bar__compose is-suggesting" : "fox-bar__compose"}>
-      <FoxLiveStrip messages={messages} draft={draft} onAction={runAction} />
       {streetSuggestions.length > 0 ? (
         <ul id={suggestId} className="fox-bar__suggest" role="listbox">
           {streetSuggestions.map((item) => (
@@ -2318,50 +2321,53 @@ export function AlwaysOnFox({
         onDrop={onComposerFileDrop}
         onPaste={onComposerFilePaste}
       >
-        <span className={lookupWait ? "fox-bar__mark is-waiting" : "fox-bar__mark"}>
-          <AdvisorMark size={20} />
-        </span>
-        <label className="visually-hidden" htmlFor={fieldId}>
-          Message Fox
-        </label>
-        <input
-          key={composerMode}
-          ref={inputRef}
-          id={fieldId}
-          className="fox-bar__input"
-          type="text"
-          value={input}
-          onChange={onComposerChange}
-          onFocus={() => {
-            setOpen(true);
-            window.dispatchEvent(new Event(FOX_KEYBOARD_EVENT));
-          }}
-          onBlur={onComposerBlur}
-          placeholder=""
-          inputMode={composerMode}
-          autoFocus={needsTyping}
-          autoComplete="off"
-          aria-autocomplete="list"
-          aria-expanded={streetSuggestions.length > 0}
-          aria-controls={streetSuggestions.length > 0 ? suggestId : undefined}
-        />
-        {workspaceSurface ? <ComposerAttach /> : null}
-        <button
-          type="submit"
-          className="fox-bar__send"
-          disabled={!input.trim()}
-          aria-label="Send"
-        >
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-            <path
-              d="M3 8h9M8.5 3.5 13 8l-4.5 4.5"
-              stroke="currentColor"
-              strokeWidth="1.4"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
-        </button>
+        <FoxLiveStrip messages={messages} draft={draft} onAction={runAction} />
+        <div className="fox-bar__desk-row">
+          <span className={lookupWait ? "fox-bar__mark is-waiting" : "fox-bar__mark"}>
+            <AdvisorMark size={20} />
+          </span>
+          <label className="visually-hidden" htmlFor={fieldId}>
+            Message Fox
+          </label>
+          <input
+            key={composerMode}
+            ref={inputRef}
+            id={fieldId}
+            className="fox-bar__input"
+            type="text"
+            value={input}
+            onChange={onComposerChange}
+            onFocus={() => {
+              setOpen(true);
+              window.dispatchEvent(new Event(FOX_KEYBOARD_EVENT));
+            }}
+            onBlur={onComposerBlur}
+            placeholder=""
+            inputMode={composerMode}
+            autoFocus={needsTyping}
+            autoComplete="off"
+            aria-autocomplete="list"
+            aria-expanded={streetSuggestions.length > 0}
+            aria-controls={streetSuggestions.length > 0 ? suggestId : undefined}
+          />
+          {workspaceSurface ? <ComposerAttach /> : null}
+          <button
+            type="submit"
+            className="fox-bar__send"
+            disabled={!input.trim()}
+            aria-label="Send"
+          >
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+              <path
+                d="M3 8h9M8.5 3.5 13 8l-4.5 4.5"
+                stroke="currentColor"
+                strokeWidth="1.4"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </button>
+        </div>
       </form>
     </div>
   );
