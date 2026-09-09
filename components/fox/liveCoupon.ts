@@ -536,9 +536,16 @@ export function promoteLaterFoxPastLeftoverOffers(messages: FoxMessage[]): FoxMe
   return promoteReprintedFoxAsk(messages);
 }
 
-/** Persist primitive: only the live Fox turn index may store buttons. */
+/** History is speech. Chip actions are never stored on a message. */
+export function withoutStoredChipActions(messages: FoxMessage[]): FoxMessage[] {
+  return messages.map((message) =>
+    message.actions?.length ? { ...message, actions: undefined } : message,
+  );
+}
+
+/** Persist primitive: the thread is text. The live strip recomputes chips. */
 export function sealStoredFoxThread(messages: FoxMessage[]): FoxMessage[] {
-  return withChipsOnlyOnLiveFoxTurn(freezeUsedFoxTurns(messages));
+  return withoutStoredChipActions(withChipsOnlyOnLiveFoxTurn(freezeUsedFoxTurns(messages)));
 }
 
 /** Skip chips still live on a named history/offer line. Stored actions count — not only paint. */
@@ -684,20 +691,9 @@ export function isLiveFoxTurn(messages: FoxMessage[], index: number) {
   return index === lastFoxIndex(messages);
 }
 
-/** Persist/render engine: every older Fox turn stores no buttons. */
+/** Persist/render engine: Fox turns store no buttons. The strip owns chips. */
 export function withChipsOnlyOnLiveFoxTurn(messages: FoxMessage[]): FoxMessage[] {
-  return messages.map((message, index) => {
-    if (message.role !== "fox") {
-      return message.actions?.length ? { ...message, actions: undefined } : message;
-    }
-    if (isLiveFoxTurn(messages, index)) {
-      const actions = oneDocChipSet(message.actions);
-      if (actions.length === (message.actions?.length ?? 0)) return message;
-      return { ...message, actions: actions.length ? actions : undefined };
-    }
-    if (!message.actions?.length) return message;
-    return { ...message, actions: undefined };
-  });
+  return withoutStoredChipActions(messages);
 }
 
 /** Used confirms are history — not a button. Drop the trailing Use this? so chips cannot fire. */
@@ -753,7 +749,6 @@ export function shouldHoldAskForOpenUseThis(
   askText?: string | null,
 ) {
   if (!isUseThisConfirmText(lastText)) return false;
-  if (!lastActions?.length) return false;
   const ask = String(askText ?? "").trim();
   if (!ask) return false;
   return ask !== String(lastText ?? "").trim();
@@ -1161,7 +1156,7 @@ export function paintThreadActions(actions: FoxAction[]): FoxAction[] {
   return unique;
 }
 
-/** The only live chips. History bubbles never paint these. */
+/** The only live chips. History bubbles never paint these. Prefer deskStripActions. */
 export function liveComposerStripActions(
   messages: FoxMessage[],
   draft: FoxIntakeDraft,

@@ -61,6 +61,7 @@ import { classifyAndExtract, FOX_GROK_MODEL } from "../lib/docs/extract";
 import { renderPdfFirstPage } from "../lib/docs/pdfText";
 import {
   amountAskText,
+  deskStripActions,
   DOC_INVITE_COPY,
   nextFoxAsk,
   docReactionAsk,
@@ -78,7 +79,6 @@ import {
   leftoverSkipOnOlderTurns,
   leftoverSkipOnReceivedLines,
   leftoverUseThisOnOlderTurns,
-  liveComposerStripActions,
   liveSkipChipRows,
   sealStoredFoxThread,
   splitLeftoverOfferWithLaterFollowUp,
@@ -1084,16 +1084,15 @@ async function main() {
     "leftover Skips on last-year return die in stored actions",
   );
   assert.equal(leftoverSkipOnOlderTurns(dirtyReturn, combesStamped), 0);
-  assert.equal(liveSkipChipRows(dirtyReturn, combesStamped), 1, "one chip row on the last Fox line");
   assert.equal(
     dirtyReturn.filter((item) => (item.actions ?? []).some((action) => action.label === "Skip")).length,
-    1,
+    0,
+    "sealed thread stores no Skip",
   );
-  assert.equal(
-    (dirtyReturn.find((item) => item.text === "Tax return transcript · 2023")?.actions ?? []).filter(
-      (action) => action.label === "Skip",
-    ).length,
-    1,
+  assert.deepEqual(
+    deskStripActions(dirtyReturn, combesStamped).map((item) => item.label),
+    ["Upload this", "Skip"],
+    "one chip row lives on the strip",
   );
   assert.equal(
     withoutLeftoverDocInvitesAfterTranscript([
@@ -1143,12 +1142,15 @@ async function main() {
     "Last year’s tax return has zero Skip chips once a later Fox line is live",
   );
   assert.equal(sealedOffer.find((item) => lastYearAsk(item.text ?? ""))?.actions, undefined);
-  assert.equal(liveSkipChipRows(sealedOffer, combesStamped), 1, "only the last line has one Skip");
   assert.equal(
-    (sealedOffer.find((item) => item.text === combesAskLine)?.actions ?? []).filter(
-      (action) => action.label === "Skip",
-    ).length,
-    1,
+    (sealedOffer.find((item) => item.text === combesAskLine)?.actions ?? []).length,
+    0,
+    "later Fox speech stores no Skip",
+  );
+  assert.deepEqual(
+    deskStripActions(sealedOffer, combesStamped).map((item) => item.label),
+    ["Upload this", "Skip"],
+    "only the strip has one Skip",
   );
   const reappendAfterTranscript = sealStoredFoxThread([
     { ...returnSkipRow, id: "ret-before", actions: [receivedSkip, receivedSkip, receivedSkip] },
@@ -1158,10 +1160,9 @@ async function main() {
   assert.equal(reappendAfterTranscript.find((item) => lastYearAsk(item.text ?? ""))?.actions, undefined);
   assert.equal(leftoverSkipOnAskText(reappendAfterTranscript, combesStamped, lastYearAsk), 0);
   assert.equal(
-    (reappendAfterTranscript.find((item) => item.text === "Tax return transcript · 2023")?.actions ?? []).filter(
-      (action) => action.label === "Skip",
-    ).length,
-    1,
+    (reappendAfterTranscript.find((item) => item.text === "Tax return transcript · 2023")?.actions ?? []).length,
+    0,
+    "history stores no Skip — the strip recomputes",
   );
   const enginePrior = withChipsOnlyOnLiveFoxTurn([
     {
@@ -1177,18 +1178,17 @@ async function main() {
   assert.equal(paintedFoxActions(priorOffer!, combesStamped, false), undefined);
   assert.equal(leftoverSkipOnAskText(enginePrior, combesStamped, lastYearAsk), 0);
   assert.equal(
-    (enginePrior.find((item) => item.id === "live-offer")?.actions ?? []).filter(
-      (action) => action.label === "Skip",
-    ).length,
-    1,
+    (enginePrior.find((item) => item.id === "live-offer")?.actions ?? []).length,
+    0,
+    "live Fox speech stores no buttons",
   );
-  const stripFromPrior = liveComposerStripActions(enginePrior, combesStamped);
+  const stripFromPrior = deskStripActions(enginePrior, combesStamped);
   assert.deepEqual(
     stripFromPrior.map((item) => item.label),
     ["Upload this", "Skip"],
     "live strip is the later Fox ask — last-year chips do not stay",
   );
-  const lastYearOnlyStrip = liveComposerStripActions(
+  const lastYearOnlyStrip = deskStripActions(
     [
       {
         id: "prior-offer",
@@ -1200,7 +1200,7 @@ async function main() {
     combesStamped,
   );
   assert.deepEqual(lastYearOnlyStrip.map((item) => item.label), ["Upload this", "Skip"]);
-  const afterNewAskStrip = liveComposerStripActions(
+  const afterNewAskStrip = deskStripActions(
     [
       {
         id: "old-ask",
@@ -1218,7 +1218,7 @@ async function main() {
     "a new Fox question replaces the strip",
   );
   assert.equal(
-    liveComposerStripActions(secondSkipThread, skipOnce).filter((item) => item.label === "Skip").length,
+    deskStripActions(secondSkipThread, skipOnce).filter((item) => item.label === "Skip").length,
     0,
     "second Skip on the live strip adds nothing",
   );
@@ -1229,7 +1229,7 @@ async function main() {
   );
   assert.doesNotMatch(foxThreadSource, /fox-bubble__actions|fox-chip/);
   assert.match(foxSource, /function FoxLiveStrip/);
-  assert.match(foxSource, /liveComposerStripActions/);
+  assert.match(foxSource, /deskStripActions/);
   const afterAlamedaUseThis = sealStoredFoxThread([
     {
       id: "alameda-period",
@@ -1257,10 +1257,15 @@ async function main() {
     "Period Use this is history after the tap",
   );
   assert.equal(afterAlamedaUseThis[afterAlamedaUseThis.length - 1]?.text, DOC_INVITE_COPY.government_id);
+  assert.equal(
+    afterAlamedaUseThis[afterAlamedaUseThis.length - 1]?.actions,
+    undefined,
+    "ID ask stores no chips after Alameda Use this",
+  );
   assert.deepEqual(
-    (afterAlamedaUseThis[afterAlamedaUseThis.length - 1]?.actions ?? []).map((item) => item.label),
+    deskStripActions(afterAlamedaUseThis, alamedaUsed).map((item) => item.label),
     ["Upload this", "Skip"],
-    "ID ask stays current after Alameda Use this — do not replace it under the client tap",
+    "ID ask stays current on the strip after Alameda Use this",
   );
   assert.equal(docInviteBlocksLooksRight(combesProposed.draft), true);
   assert.equal(canLooksRight(combesProposed.draft), false);

@@ -61,13 +61,8 @@ import {
   isIdExtractAskText,
   isIdExtractPath,
   isOnFileAddressLine,
-  liveComposerStripActions,
   shouldDeferNextAskForLiveCoupon,
 } from "./liveCoupon";
-import {
-  isMonthlyDebtsAskText,
-  monthlyDebtsSkipActions,
-} from "./monthlyDebts";
 import {
   dropStreetSuggestChips,
   parseSafePlaceAddress,
@@ -96,7 +91,6 @@ import {
   isSkipPropertyAddressText,
   isSubjectAddressConfirmPending,
   parseVolunteeredAddress,
-  propertyTypeAskActions,
 } from "./propertyType";
 import {
   applyCapture,
@@ -140,6 +134,7 @@ import {
   nextDocInvite,
   incomeAskOpen,
   nextFoxAsk,
+  deskStripActions,
   shouldHoldAskForLiveLine,
   isBankUnreadAsk,
   RECEIVED_UNREAD_ASK,
@@ -216,7 +211,6 @@ import {
   canLooksRight,
   draftHasOpenConfirmCard,
   isLooksRightAskText,
-  looksRightAskActions,
   shouldSpeakPendingConfirm,
 } from "./completeness";
 import { governmentIdSkipped, ID_UNREAD_ASK, isBorrowerNameConfirmPending } from "./borrowerName";
@@ -345,15 +339,6 @@ function foxAskMessage(ask: {
     text: ask.text,
     followUp: onFile ? undefined : ask.followUp,
     facts: ask.facts,
-    actions: onFile
-      ? undefined
-      : isMonthlyDebtsAskText(ask.text)
-        ? monthlyDebtsSkipActions()
-        : isPropertyTypeAskText(ask.text)
-          ? propertyTypeAskActions()
-          : isLooksRightAskText(ask.text)
-            ? looksRightAskActions()
-            : ask.actions,
   };
 }
 
@@ -363,10 +348,6 @@ function dropFoxActions(messages: FoxMessage[]) {
       ? { ...message, actions: undefined }
       : message,
   );
-}
-
-function actionKey(action: FoxAction) {
-  return `${action.id}:${action.label}:${action.capture?.field ?? ""}`;
 }
 
 function sameFoxAsk(
@@ -383,9 +364,7 @@ function sameFoxAsk(
   const left = (last.facts ?? []).map((fact) => `${fact.id}:${fact.value}`).join("\n");
   const right = (ask.facts ?? []).map((fact) => `${fact.id}:${fact.value}`).join("\n");
   if (left !== right) return false;
-  const leftActions = (last.actions ?? []).map(actionKey).join("|");
-  const rightActions = (ask.actions ?? []).map(actionKey).join("|");
-  return leftActions === rightActions;
+  return true;
 }
 
 function lastFoxIsUnread(messages: FoxMessage[]) {
@@ -436,7 +415,7 @@ function applyFoxAsk(
       ...last,
       followUp: ask.followUp,
       facts: ask.facts,
-      actions: ask.actions,
+      actions: undefined,
     });
   }
   if (last && last.text === WAGE_DOCS_ASK && ask.text !== WAGE_DOCS_ASK) {
@@ -472,14 +451,14 @@ function applyFoxAsk(
     return freezeOthers(last.id, {
       ...last,
       text: ask.text,
-      actions: propertyTypeAskActions(),
+      actions: undefined,
     });
   }
   if (last && isLooksRightAskText(last.text) && isLooksRightAskText(ask.text)) {
     return freezeOthers(last.id, {
       ...last,
       text: ask.text,
-      actions: looksRightAskActions(),
+      actions: undefined,
     });
   }
   if (isContractExtractAskText(ask.text)) {
@@ -491,7 +470,7 @@ function applyFoxAsk(
           message.id === existing.id
             ? {
                 ...existing,
-                actions: existing.actions?.length ? existing.actions : ask.actions,
+                actions: undefined,
               }
             : message,
         ),
@@ -572,7 +551,7 @@ function withUpdatedStillUsefulAsk(messages: FoxMessage[], live: FoxIntakeDraft)
   if (index < 0) return [...messages, ask];
   const at = messages.length - 1 - index;
   return messages.map((message, idx) =>
-    idx === at ? { ...message, text: ask.text, actions: ask.actions } : message,
+    idx === at ? { ...message, text: ask.text, actions: undefined } : message,
   );
 }
 
@@ -732,7 +711,7 @@ function FoxLiveStrip({
   draft: FoxIntakeDraft;
   onAction: (action: FoxAction) => void;
 }) {
-  const actions = liveComposerStripActions(messages, draft);
+  const actions = deskStripActions(messages, draft);
   if (!actions.length) return null;
   return (
     <div className="fox-bar__strip" role="toolbar" aria-label="Live actions">
@@ -1413,7 +1392,7 @@ export function AlwaysOnFox({
       if (mustShowReview && hasReviewAsk(prev)) {
         return prev.map((message) =>
           message.role === "fox" && isLooksRightAskText(message.text)
-            ? { ...message, actions: looksRightAskActions() }
+            ? { ...message, actions: undefined }
             : message,
         );
       }
@@ -1807,12 +1786,14 @@ export function AlwaysOnFox({
   };
 
   const runAction = (action: FoxAction) => {
-    const liveIds = new Set(
-      (lastFoxTurn(freezeUsedFoxTurns(getFoxMessages()))?.actions ?? []).map((item) => item.id),
-    );
+    const liveDraft = getFoxDraft();
+    const stripIds = new Set(deskStripActions(getFoxMessages(), liveDraft).map((item) => item.id));
     if (
       (action.id === "accept-proposal" || action.id === "change-proposal") &&
-      !liveIds.has(action.id)
+      !stripIds.has(action.id) &&
+      !liveDraft.pendingProposal &&
+      !liveDraft.pendingConflict &&
+      !liveDraft.pendingAddress
     ) {
       return;
     }

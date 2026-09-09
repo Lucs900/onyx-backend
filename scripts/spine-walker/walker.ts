@@ -105,6 +105,12 @@ async function currentText(page: Page): Promise<string> {
 }
 
 async function currentChips(page: Page): Promise<string[]> {
+  const history = page.locator(".fox-panel__thread button.fox-chip, .fox-panel__thread a.fox-chip");
+  const leftover = await history.count();
+  if (leftover > 0) {
+    const labels = (await history.allTextContents()).map((item) => item.replace(/\s+/g, " ").trim());
+    throw new BeatFail(`leftover chips in history — ${labels.join(" · ") || leftover}`);
+  }
   return page.locator(CHIP).allTextContents().then((items) =>
     items.map((item) => item.replace(/\s+/g, " ").trim()).filter(Boolean),
   );

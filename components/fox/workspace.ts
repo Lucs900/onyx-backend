@@ -48,6 +48,15 @@ import {
   liveCouponConfirmCopy,
   liveQuoteReady,
   withLiveCouponChips,
+  isLiveFoxTurn,
+  isReceivedStatusLine,
+  isUseThisConfirmText,
+  isHistoryDocInviteText,
+  isLastYearReturnAskText,
+  isIdExtractAskText,
+  isTranscriptFollowUpAskText,
+  isStreetSuggestChipLabel,
+  paintThreadActions,
   type CouponChoice,
 } from "./liveCoupon";
 import { RATEFLOW_WAIT_LINE, isLookupWaitLine, pricingFailedActions } from "./lookupWait";
@@ -3016,6 +3025,9 @@ function isFileQuestionSpeech(message: FoxMessage) {
   const text = message.text.trim();
   if (!text) return false;
   if (isTranscriptSignalAskText(text)) return true;
+  if (isHistoryDocInviteText(text) || isLastYearReturnAskText(text) || isIdExtractAskText(text)) {
+    return true;
+  }
   if (message.actions?.length) return true;
   return /\?/.test(text) || isYearsInBusinessAskText(text);
 }
@@ -3373,6 +3385,79 @@ export function nextFoxAsk(draft: FoxIntakeDraft): {
     return { text: MONTHLY_DEBTS_ASK, actions: monthlyDebtsSkipActions() };
   }
   return workspacePromptCopy(workspacePrompt(draft), draft);
+}
+
+function stripStreetSuggest(actions: FoxAction[]): FoxAction[] {
+  return paintThreadActions(
+    actions.filter(
+      (action) =>
+        action.capture?.field !== "propose-place-address" &&
+        !isStreetSuggestChipLabel(action.label),
+    ),
+  );
+}
+
+/** Confirm-before-write lives on the File tool, not on a chat message. */
+export function writeConfirmActions(draft: FoxIntakeDraft): FoxAction[] {
+  if (!draft.pendingProposal && !draft.pendingConflict && !draft.pendingAddress) return [];
+  return stripStreetSuggest(workspacePromptCopy("confirm-proposal", draft).actions ?? []);
+}
+
+/**
+ * The only live chips. History messages never store or paint these.
+ * A new Fox question replaces this set.
+ */
+export function deskStripActions(
+  messages: FoxMessage[],
+  draft: FoxIntakeDraft,
+): FoxAction[] {
+  const thread = withoutDuplicateTranscriptAsk(messages);
+  let live = -1;
+  for (let i = 0; i < thread.length; i += 1) {
+    if (thread[i]?.role === "fox") live = i;
+  }
+  if (live < 0 || !isLiveFoxTurn(thread, live)) return [];
+  const message = thread[live]!;
+  if (isReceivedStatusLine(message.text) || isLookupWaitLine(message.text)) return [];
+
+  if (
+    isUseThisConfirmText(message.text) &&
+    (draft.pendingProposal || draft.pendingConflict || draft.pendingAddress)
+  ) {
+    return writeConfirmActions(draft);
+  }
+
+  const next = nextFoxAsk(draft);
+  if (next.text === message.text) {
+    return stripStreetSuggest(next.actions ?? []);
+  }
+
+  if (isYearsInBusinessAskText(message.text)) return yearsInBusinessSkipActions();
+  if (isMonthlyDebtsAskText(message.text)) return monthlyDebtsSkipActions();
+  if (isPropertyTypeAskText(message.text)) return propertyTypeAskActions();
+  if (
+    isLooksRightAskText(message.text) &&
+    !draft.pendingProposal &&
+    !draft.pendingConflict &&
+    !draft.pendingAddress
+  ) {
+    return looksRightAskActions();
+  }
+  if (
+    isHistoryDocInviteText(message.text) ||
+    isLastYearReturnAskText(message.text) ||
+    isTranscriptFollowUpAskText(message.text) ||
+    isTranscriptSignalAskText(message.text) ||
+    (isIdExtractAskText(message.text) && /government ID/i.test(message.text))
+  ) {
+    return stripStreetSuggest(docInviteActions());
+  }
+
+  const greet = workspaceGreeting(draft);
+  if (greet.text === message.text) {
+    return stripStreetSuggest(greet.actions ?? []);
+  }
+  return [];
 }
 
 export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {

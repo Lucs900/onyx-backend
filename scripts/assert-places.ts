@@ -242,7 +242,7 @@ const foxThread = fox.slice(fox.indexOf("function FoxThread"), fox.indexOf("func
 assert.doesNotMatch(foxThread, /streetSuggestions|fox-bar__suggest/);
 assert.doesNotMatch(foxThread, /fox-bubble__actions|fox-chip|onAction/);
 assert.match(fox, /function FoxLiveStrip/);
-assert.match(fox, /liveComposerStripActions/);
+assert.match(fox, /deskStripActions/);
 assert.match(fox, /fox-bar__strip/);
 assert.ok(foxCss.includes("fox-bar__strip"));
 

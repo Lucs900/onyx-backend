@@ -26,6 +26,7 @@ on:
       - "scripts/assert-refi-loan-then-value.ts"
       - "scripts/assert-w2-page-read.ts"
       - "scripts/assert-first-session-page-read.ts"
+      - "scripts/assert-live-strip.ts"
       - ".github/workflows/spine-walker.yml"
       - "sample-docs/**"
       - "scripts/fixtures/**"
@@ -54,6 +55,7 @@ on:
       - "scripts/assert-refi-loan-then-value.ts"
       - "scripts/assert-w2-page-read.ts"
       - "scripts/assert-first-session-page-read.ts"
+      - "scripts/assert-live-strip.ts"
       - ".github/workflows/spine-walker.yml"
       - "sample-docs/**"
       - "scripts/fixtures/**"
@@ -61,6 +63,21 @@ concurrency:
   group: spine-walker-preview-bc93
   cancel-in-progress: true
 jobs:
+  strip:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Live strip — leftover chips + Use this write
+        run: |
+          if [[ ! -d node_modules/next ]]; then npm install; fi
+          npx --yes tsx scripts/assert-live-strip.ts
   walk:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
