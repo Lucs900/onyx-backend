@@ -180,7 +180,7 @@ export function huntResidenceAskCopy(street: string) {
 
 export function acceptHuntRentals(draft: FoxIntakeDraft): FoxIntakeDraft {
   const proposal = draft.pendingProposal;
-  if (!isHuntRentalsProposal(proposal)) return { ...draft, pendingProposal: null };
+  if (!proposal || !isHuntRentalsProposal(proposal)) return { ...draft, pendingProposal: null };
   const extras = proposal.extras ?? [];
   const addresses = extras
     .filter((item) => item.field === "rental_address")
