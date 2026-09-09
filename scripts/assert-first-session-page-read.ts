@@ -866,10 +866,11 @@ async function main() {
   assert.equal(canLooksRight(alamedaAfterMonthly), true, "Looks right after the income story is on the notepad");
   assert.equal(workspacePrompt(alamedaAfterMonthly), "review");
   const alamedaReview = nextFoxAsk(alamedaAfterMonthly);
-  assert.match(alamedaReview.text, /These numbers look right\?/);
+  assert.equal(alamedaReview.text, "These numbers look right?");
+  assert.doesNotMatch(alamedaReview.text, /The file looks like this/);
   assert.deepEqual(
     (alamedaReview.actions ?? []).map((item) => item.label),
-    ["These numbers look right?", "Needs a correction"],
+    ["Looks right", "Needs a correction"],
   );
   assert.ok(
     !(alamedaReview.actions ?? []).some((item) => /^(Proceed|Not yet|Upload more)$/.test(item.label)),

@@ -1484,9 +1484,8 @@ function bubbles(
   }));
 }
 
-export const LOOKS_RIGHT_COMPLETE_ASK =
-  "The file looks like this. These numbers look right?";
-export const LOOKS_RIGHT_MOVE_ASK = "The file looks like this. These numbers look right?";
+export const LOOKS_RIGHT_COMPLETE_ASK = "These numbers look right?";
+export const LOOKS_RIGHT_MOVE_ASK = "These numbers look right?";
 
 /** Harbor W-2+stub Use this (or a written monthly). Income Skip / doc Skip stay incomplete. */
 export function incomeFilledForLooksRight(draft: FoxIntakeDraft) {

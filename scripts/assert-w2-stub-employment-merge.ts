@@ -169,7 +169,7 @@ async function main() {
 
   assert.ok(canLooksRight(used));
   assert.ok(
-    (workspacePromptCopy("review", used).actions ?? []).some((item) => item.label === "These numbers look right?"),
+    (workspacePromptCopy("review", used).actions ?? []).some((item) => item.label === "Looks right"),
   );
   const looks = applyLooksRightMotion(used);
   assert.notEqual(workspacePrompt(looks), "former-history");

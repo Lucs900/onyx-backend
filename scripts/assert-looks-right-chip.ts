@@ -58,11 +58,11 @@ function main() {
   assert.equal(ask.text, LOOKS_RIGHT_COMPLETE_ASK);
   assert.deepEqual(
     (ask.actions ?? []).map((item) => item.label),
-    ["These numbers look right?", "Needs a correction"],
+    ["Looks right", "Needs a correction"],
   );
   assert.deepEqual(
     looksRightAskActions().map((item) => item.label),
-    ["These numbers look right?", "Needs a correction"],
+    ["Looks right", "Needs a correction"],
   );
 
   const bare: FoxMessage = {
@@ -72,7 +72,7 @@ function main() {
   };
   assert.deepEqual(
     (paintedFoxActions(bare, skipped, true) ?? []).map((item) => item.label),
-    ["These numbers look right?", "Needs a correction"],
+    ["Looks right", "Needs a correction"],
     "Looks right chips restore when the stored turn has no actions",
   );
 
@@ -82,7 +82,7 @@ function main() {
     text: LOOKS_RIGHT_COMPLETE_ASK,
     actions: [
       { id: "accept-proposal", label: "Use this", event: "bubble", capture: { field: "accept-proposal" } },
-      { id: "looks-right", label: "These numbers look right?", event: "bubble", capture: { field: "confirm-draft" } },
+      { id: "looks-right", label: "Looks right", event: "bubble", capture: { field: "confirm-draft" } },
     ],
   };
   assert.ok(
@@ -113,8 +113,10 @@ function main() {
   assert.ok(useful.includes("How income is earned"));
   assert.ok(!useful.some((item) => /paystub|W-2|tax return|latest return/i.test(item)));
 
-  const typedChip = workspaceReply("These numbers look right?", skipped);
+  const typedChip = workspaceReply("Looks right", skipped);
   assert.equal(typedChip?.capture?.field, "confirm-draft");
+  const typedProse = workspaceReply("These numbers look right?", skipped);
+  assert.equal(typedProse?.capture?.field, "confirm-draft");
 
   const w2AfterConfirm = {
     ...sketch(),

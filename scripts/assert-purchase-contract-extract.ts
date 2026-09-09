@@ -633,11 +633,11 @@ async function main() {
   assert.ok(purchaseFileAddsUp(clipperUsed));
   assert.ok(canLooksRight(clipperUsed));
   assert.equal(workspacePrompt(clipperUsed), "review");
-  assert.equal(nextFoxAsk(clipperUsed).text, "The file looks like this. These numbers look right?");
-  assert.doesNotMatch(nextFoxAsk(clipperUsed).text, /94123|On the file|file can move|I can send this to review/);
+  assert.equal(nextFoxAsk(clipperUsed).text, "These numbers look right?");
+  assert.doesNotMatch(nextFoxAsk(clipperUsed).text, /94123|On the file|file can move|I can send this to review|The file looks like this/);
   assert.deepEqual(
     (nextFoxAsk(clipperUsed).actions ?? []).map((item) => item.label),
-    ["These numbers look right?", "Needs a correction"],
+    ["Looks right", "Needs a correction"],
   );
   assert.equal(rateflowBlockedReason(clipperUsed), null);
   assert.equal(rateflowClientBodyFromDraft(clipperUsed)?.loan_amount, 400_000);
@@ -981,7 +981,7 @@ async function main() {
   const looksTurn: FoxMessage = {
     id: "looks-1",
     role: "fox",
-    text: "The file looks like this. These numbers look right?",
+    text: "These numbers look right?",
   };
   const storedFileThread: FoxMessage[] = [
     { id: "hello", role: "fox", text: "Let’s start the file." },

@@ -2006,7 +2006,7 @@ export function wageIncomeSketchOpen(draft: FoxIntakeDraft) {
   );
 }
 
-export const LOOKS_RIGHT_CHIP_LABEL = "These numbers look right?";
+export const LOOKS_RIGHT_CHIP_LABEL = "Looks right";
 
 export function isLooksRightAskText(text?: string | null) {
   return /the file looks like this|looks right, or change a line|these numbers look right/i.test(
