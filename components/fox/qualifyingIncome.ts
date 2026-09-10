@@ -1585,6 +1585,14 @@ function taxFileIsTranscript(draft: FoxIntakeDraft) {
   return kind === "transcript" || kind.includes("returntranscript");
 }
 
+function taxFileIsCover(draft: FoxIntakeDraft) {
+  const kind = String(draft.facts?.return_kind?.value ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/[\s_-]+/g, "");
+  return kind === "cover" || kind.includes("1040cover");
+}
+
 export function maybeProposeQualifyingFromTaxFile(draft: FoxIntakeDraft): FoxIntakeDraft {
   if (taxFileIsTranscript(draft)) return draft;
   if (draft.pendingProposal?.field === QUALIFYING_INCOME_FIELD) return draft;
@@ -1597,13 +1605,18 @@ export function maybeProposeQualifyingFromTaxFile(draft: FoxIntakeDraft): FoxInt
   }
   const existing = existingMonthlyIncome(draft);
   if (existing?.via === QUALIFYING_INCOME_FIELD) {
+    const coverLine =
+      computed.methodNote === COVER_LINE_METHOD || taxFileIsCover(draft);
+    if (draft.incomeType.value === "w2" && coverLine) return draft;
     const laterSource =
       computed.basis === "schedule_e" ||
       computed.basis === "entity" ||
       computed.basis === "k1" ||
       computed.basis === "combined";
     const laterC =
-      computed.basis === "schedule_c" && !valuesMatch(existing.value, String(computed.monthly));
+      computed.basis === "schedule_c" &&
+      !coverLine &&
+      !valuesMatch(existing.value, String(computed.monthly));
     const bothCombined =
       draft.incomeType.value === "both" &&
       (computed.basis === "combined" || computed.basis === "schedule_c");

@@ -213,6 +213,7 @@ export const EXTRACT_SCHEMA_KEYS: Record<ExtractClass, readonly string[]> = {
   ],
   tax_return: [
     "tax_year",
+    "full_name",
     "filing_status",
     "agi",
     "dependent_count",
@@ -490,6 +491,7 @@ export function looksLikeTaxReturnFields(
     return true;
   }
   if (isCoverReturnFields(fields)) return true;
+  if (String(fields.tax_year ?? "").trim() && String(fields.full_name ?? "").trim()) return true;
   if (String(fields.k1_ordinary_income ?? "").trim()) return true;
   if (String(fields.entity_ordinary_income ?? "").trim()) return true;
   if (String(fields.schedule_c_net_profit ?? "").trim()) return true;
@@ -793,6 +795,20 @@ export const FIRST_SESSION_LOCKED_KEYS: Record<FirstSessionClass, readonly strin
   tax_return: EXTRACT_SCHEMA_KEYS.tax_return,
 };
 
+/** Grok first-page 1040. Printed / loud schedule extract keeps the full schema. */
+export const TAX_RETURN_PAGE_READ_KEYS = ["tax_year", "full_name"] as const;
+
+export function lockTaxReturnPageReadFields(
+  fields?: Record<string, string | null | undefined> | null,
+): Record<string, string> {
+  const next: Record<string, string> = {};
+  for (const key of TAX_RETURN_PAGE_READ_KEYS) {
+    const value = String(fields?.[key] ?? "").trim();
+    if (value) next[key] = value;
+  }
+  return next;
+}
+
 export function isFirstSessionClass(value: string | null | undefined): value is FirstSessionClass {
   return (FIRST_SESSION_CLASSES as readonly string[]).includes(String(value ?? ""));
 }
@@ -854,6 +870,16 @@ export function hasLockedSuggestion(
   }
   if (extractClass === "purchase_contract") return looksLikeContractFields(fields);
   if (extractClass === "tax_return") {
+    if (
+      value("tax_year") &&
+      value("full_name") &&
+      !value("agi") &&
+      !value("wages") &&
+      !value("schedule_c_net_profit") &&
+      !value("k1_ordinary_income")
+    ) {
+      return true;
+    }
     const kind = normalizeReturnKind(String(fields?.return_kind ?? ""));
     if (kind === "schedule_e" || (value("schedule_e_rents_received") && value("schedule_e_cash_expenses"))) {
       return Boolean(value("schedule_e_rents_received") && value("schedule_e_cash_expenses"));
@@ -2714,10 +2740,17 @@ export function intakeIsIdDrop(
   return latest.extractClass === "government_id" || latest.slot === "id";
 }
 
+function docIsRealExtract(doc: ReceivedDoc) {
+  if (!COUNTED_DOC_STATUSES.has(doc.status)) return false;
+  if (isUnreadNote(doc.note)) return false;
+  if (doc.status === "failed" || doc.status === "needs better copy") return false;
+  return true;
+}
+
 export function receivedTaxReturnCount(draft: FoxIntakeDraft): number {
   let fromDocs = 0;
   for (const doc of draft.documents) {
-    if (!COUNTED_DOC_STATUSES.has(doc.status)) continue;
+    if (!docIsRealExtract(doc)) continue;
     if (receivedClassOf(doc) === "tax_return" && !isCoverReturnDoc(doc)) fromDocs += 1;
   }
   const years = new Set<string>();
@@ -2731,7 +2764,7 @@ export function receivedTaxReturnCount(draft: FoxIntakeDraft): number {
 export function receivedExtractClasses(draft: FoxIntakeDraft): Set<ExtractClass> {
   const set = new Set<ExtractClass>(draft.skippedClasses ?? []);
   for (const doc of draft.documents) {
-    if (!COUNTED_DOC_STATUSES.has(doc.status)) continue;
+    if (!docIsRealExtract(doc)) continue;
     const received = receivedClassOf(doc);
     if (received) set.add(received);
   }
@@ -3270,6 +3303,7 @@ export function completenessFileFromDraft(draft: FoxIntakeDraft): CompletenessFi
       display !== "government_id" &&
       display !== "purchase_contract"
     ) {
+      if (display === "tax_return" && !docIsRealExtract(doc)) continue;
       received.add(display);
     }
   }
@@ -3937,10 +3971,34 @@ function classSuccessfullyRead(draft: FoxIntakeDraft, kind: DocInviteKind): bool
   });
 }
 
-/** W-2 finish chips only after ID and last-year 1040 are on File or skipped. */
+/** W-2 finish chips only after ID and last-year 1040 are on File or skipped. Unread 1040 keeps finish chips. */
 export function w2FinishDocsReady(draft: FoxIntakeDraft): boolean {
   if (draft.incomeType.value !== "w2") return true;
-  return inviteSatisfied(draft, "government_id") && inviteSatisfied(draft, "tax_return");
+  return (
+    inviteSatisfied(draft, "government_id") &&
+    (inviteSatisfied(draft, "tax_return") || unreadReturnFinishOpen(draft))
+  );
+}
+
+/** Unread 1040 after Looks right + ID — finish chips stay; Still useful keeps Form 1040. */
+export function unreadTaxReturnOpen(draft: FoxIntakeDraft): boolean {
+  return draft.documents.some((doc) => {
+    const cls = receivedClassOf(doc) ?? doc.extractClass;
+    if (cls !== "tax_return") return false;
+    return (
+      isUnreadNote(doc.note) ||
+      doc.status === "failed" ||
+      doc.status === "needs better copy"
+    );
+  });
+}
+
+export function unreadReturnFinishOpen(draft: FoxIntakeDraft): boolean {
+  return (
+    Boolean(draft.sampleAccepted) &&
+    inviteSatisfied(draft, "government_id") &&
+    unreadTaxReturnOpen(draft)
+  );
 }
 
 function inviteSatisfied(draft: FoxIntakeDraft, kind: DocInviteKind): boolean {

@@ -12,6 +12,8 @@ import {
   FIRST_SESSION_CLASSES,
   FIRST_SESSION_LOCKED_KEYS,
   LAST_YEAR_FEDERAL_RETURN_ASK,
+  LAST_YEAR_RETURN_STILL_USEFUL,
+  TAX_RETURN_PAGE_READ_KEYS,
   applyExtractedFields,
   displayFactValue,
   docInviteBlocksLooksRight,
@@ -59,6 +61,7 @@ import {
   WAGE_DOCS_ASK,
   WAGE_STUB_DROP_ASK,
   wageEmploymentFileLine,
+  maybeProposeQualifyingFromTaxFile,
 } from "../components/fox/qualifyingIncome";
 import { FAILED_READ_NOTE } from "../lib/docs/accept";
 import { classifyAndExtract, FOX_GROK_MODEL } from "../lib/docs/extract";
@@ -912,6 +915,65 @@ async function main() {
     !(nextFoxAsk(alamedaAfterIdSkip).actions ?? []).some((item) => /^(Proceed|Not yet|Upload more)$/.test(item.label)),
     "1040 invite is not a finish",
   );
+
+  const unread1040At = "2026-09-10T21:00:00.000Z";
+  const unread1040Name = "2025 1040 - Combes Allan and Renz.pdf";
+  loadIntakeDraft({
+    ...alamedaAfterIdSkip,
+    documents: [
+      ...alamedaAfterIdSkip.documents,
+      {
+        slot: "other",
+        name: unread1040Name,
+        type: "application/pdf",
+        size: 223455,
+        receivedAt: unread1040At,
+        status: "received",
+        extractClass: "tax_return",
+      },
+    ],
+  });
+  const unreadAfterLooks = applyExtractWrite(unread1040At, unread1040Name, {
+    extractClass: "tax_return",
+    confidence: 0.2,
+    fields: {},
+  });
+  assert.ok(unreadAfterLooks.quietLines.includes(FAILED_READ_NOTE), "unread 1040 invents nothing");
+  assert.ok(!unreadAfterLooks.draft.pendingProposal);
+  assert.equal(unreadAfterLooks.draft.facts?.qualifying_income?.value, "36453");
+  assert.equal(unreadAfterLooks.draft.facts?.tax_year, undefined);
+  assert.ok(unreadDocOpen(unreadAfterLooks.draft));
+  assert.equal(nextFoxAsk(unreadAfterLooks.draft).text, FAILED_READ_NOTE);
+  assert.deepEqual(
+    (nextFoxAsk(unreadAfterLooks.draft).actions ?? []).map((item) => item.label),
+    ["Skip", "Proceed", "Not yet", "Upload more", "Request human"],
+    "After unread 1040, finish chips stay",
+  );
+  const usefulUnread1040 = (stillUsefulSection(unreadAfterLooks.draft)?.items ?? []).map(
+    (item) => item.label,
+  );
+  assert.ok(
+    usefulUnread1040.includes(LAST_YEAR_RETURN_STILL_USEFUL),
+    `Unread 1040 must not clear Form 1040 — ${usefulUnread1040.join(" · ")}`,
+  );
+  const coverOnW2 = maybeProposeQualifyingFromTaxFile({
+    ...unreadAfterLooks.draft,
+    facts: {
+      ...unreadAfterLooks.draft.facts,
+      return_kind: {
+        field: "return_kind",
+        value: "cover",
+        source: "document",
+        confirmed: false,
+      },
+    },
+  });
+  assert.equal(coverOnW2.facts?.qualifying_income?.value, "36453");
+  assert.ok(
+    !coverOnW2.pendingProposal || coverOnW2.pendingProposal.value === "36453",
+    "W-2 QI is not overwritten from a 1040 cover",
+  );
+
   const alamedaAfterReturnSkip = skipCurrentInvite(alamedaAfterIdSkip);
   assert.notEqual(nextDocInvite(alamedaAfterReturnSkip), "tax_return");
   assert.notEqual(nextDocInvite(alamedaAfterReturnSkip), "prior_year_return");
@@ -1512,6 +1574,17 @@ async function main() {
   assert.ok(FIRST_SESSION_LOCKED_KEYS.tax_return.includes("dependent_count"));
   assert.ok(!FIRST_SESSION_LOCKED_KEYS.tax_return.includes("dependent_name"));
   assert.ok(!FIRST_SESSION_LOCKED_KEYS.tax_return.includes("dependent_names"));
+  assert.deepEqual([...TAX_RETURN_PAGE_READ_KEYS], ["tax_year", "full_name"]);
+  assert.ok(!(TAX_RETURN_PAGE_READ_KEYS as readonly string[]).includes("ssn"));
+  assert.equal(
+    hasLockedSuggestion("tax_return", { tax_year: "2025", full_name: "Allan Combes" }),
+    true,
+  );
+  assert.equal(hasLockedSuggestion("tax_return", { tax_year: "2025" }), false, "filename year only is not a lock");
+  const extractSrc = readFileSync(join(root, "lib/docs/extract.ts"), "utf8");
+  assert.match(extractSrc, /TAX_RETURN_PAGE_READ_KEYS/);
+  assert.match(extractSrc, /First pages of Form 1040 only/);
+  assert.match(extractSrc, /Never output SSN/);
   console.log("assert-first-session-page-read: ID · W-2 · stub · bank · contract · tax locked; unread invents nothing");
 }
 

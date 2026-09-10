@@ -130,6 +130,7 @@ import {
   skipUnreadDoc,
   retryUnreadDoc,
   unreadDocOpen,
+  unreadReturnFinishOpen,
   writeUnreadNote,
   holdDocuments,
   layer2Open,
@@ -1981,9 +1982,20 @@ export function unreadDocActions(): FoxAction[] {
   ];
 }
 
+/** After Looks right + ID, unread 1040 keeps Skip + finish. Earlier unread stays Upload again · Type a note · Skip. */
+export function unreadAskActions(draft: FoxIntakeDraft): FoxAction[] {
+  if (unreadReturnFinishOpen(draft)) {
+    return [
+      { id: "skip-unread-doc", label: "Skip", event: "bubble", capture: { field: "skip-unread-doc" } },
+      ...finishLineActions(draft),
+    ];
+  }
+  return unreadDocActions();
+}
+
 /** Unread on this drop: Skip. Do not reprint Upload this / the stub ask. */
 export function unreadRestoreActions(draft: FoxIntakeDraft): FoxAction[] {
-  if (unreadDocOpen(draft) || wageExtractFailedRead(draft)) return unreadDocActions();
+  if (unreadDocOpen(draft) || wageExtractFailedRead(draft)) return unreadAskActions(draft);
   if (draft.sampleAccepted || nextDocInvite(draft)) return documentInviteActions(draft);
   return unreadDocActions();
 }
@@ -3992,7 +4004,7 @@ function workspaceAskCopy(
     if (unreadDocOpen(draft)) {
       return {
         text: isBankUnreadAsk(draft) ? RECEIVED_UNREAD_ASK : FAILED_READ_NOTE,
-        actions: unreadDocActions(),
+        actions: unreadAskActions(draft),
       };
     }
     if (invite === "coborrower_government_id") {

@@ -139,7 +139,7 @@ import {
   shouldHoldAskForLiveLine,
   isBankUnreadAsk,
   RECEIVED_UNREAD_ASK,
-  unreadDocActions,
+  unreadAskActions,
   unreadRestoreActions,
   retainWageDocsLine,
   isContractExtractAskText,
@@ -1201,7 +1201,7 @@ export function AlwaysOnFox({
           const live = getFoxDraft();
           return applyFoxAsk(next, {
             text: isBankUnreadAsk(live) ? RECEIVED_UNREAD_ASK : FAILED_READ_NOTE,
-            actions: unreadDocActions(),
+            actions: unreadAskActions(live),
           });
         }
         const scheduleEDraft = (() => {

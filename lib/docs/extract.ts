@@ -3,9 +3,11 @@ import { createOpenAI } from "@ai-sdk/openai";
 import {
   FIRST_SESSION_LOCKED_KEYS,
   LOW_EXTRACT_CONFIDENCE,
+  TAX_RETURN_PAGE_READ_KEYS,
   hasLockedSuggestion,
   isFirstSessionClass,
   lockFirstSessionFields,
+  lockTaxReturnPageReadFields,
   looksLikeBankFields,
   preferFilenameClass,
   promoteExtractClass,
@@ -280,8 +282,12 @@ async function grokJson(
 function extractFieldsPrompt(extractClass: ExtractClass, keys: readonly string[]) {
   let extra = "";
   if (extractClass === "tax_return") {
-    extra =
-      " Form 1040 or a Form 1040 Tax Return Transcript (not a full packet). tax_year from the printed Tax Period Ending / Report for Tax Period Ending (12-31-2023 → 2023), never the filename. filing_status from printed Filing status (Married Taxpayer Filing Joint Return or Married Filing Joint → Married filing jointly). On a Tax Return Transcript: return_kind is transcript; dependent_count is an integer count of Dependent 1, Dependent 2, … rows only — never names, never SSN, never Exemption number; schedule_c_present, schedule_e_present, schedule_f_present, and k1_present are yes only when the printed Schedule C, Schedule E, Schedule F, or K-1 amount is not zero; never output wages, AGI, pension, Schedule C dollars, or Schedule E dollars. On a Form 1040 (not a transcript): return_kind is 1040; schedule_c, schedule_e, k1, 1065, 1120s, or empty otherwise. present_address is the taxpayer street on a Form 1040 only — never a transcript, never the purchase subject. schedule_c_net_profit is Schedule C net profit or loss (line 31); use a leading minus when the return shows a loss. depreciation is Schedule C line 13. depletion is Schedule C line 12. business_use_of_home is Schedule C line 30. nonrecurring_other_income is Schedule C line 6 other income when printed as nonrecurring. k1_ordinary_income is ordinary business income when a K-1 / 1065 / 1120S is visible — including 1120S line 1 ordinary income. k1_distributions is cash distributions when printed; empty if not shown. amortization, casualty_loss, and mileage_depreciation only when clearly printed on the same return. Empty string when a line is not clearly printed. Never invent add-backs. Never output dependent names.";
+    const pageReadOnly =
+      keys.length === TAX_RETURN_PAGE_READ_KEYS.length &&
+      TAX_RETURN_PAGE_READ_KEYS.every((key) => keys.includes(key));
+    extra = pageReadOnly
+      ? " First pages of Form 1040 only. tax_year from the printed tax year on the return, never the filename. full_name from the taxpayer name as printed. Never output SSN, wages, AGI, or schedule dollars. Empty string if not clearly printed. Never invent."
+      : " Form 1040 or a Form 1040 Tax Return Transcript (not a full packet). tax_year from the printed Tax Period Ending / Report for Tax Period Ending (12-31-2023 → 2023), never the filename. filing_status from printed Filing status (Married Taxpayer Filing Joint Return or Married Filing Joint → Married filing jointly). On a Tax Return Transcript: return_kind is transcript; dependent_count is an integer count of Dependent 1, Dependent 2, … rows only — never names, never SSN, never Exemption number; schedule_c_present, schedule_e_present, schedule_f_present, and k1_present are yes only when the printed Schedule C, Schedule E, Schedule F, or K-1 amount is not zero; never output wages, AGI, pension, Schedule C dollars, or Schedule E dollars. On a Form 1040 (not a transcript): return_kind is 1040; schedule_c, schedule_e, k1, 1065, 1120s, or empty otherwise. present_address is the taxpayer street on a Form 1040 only — never a transcript, never the purchase subject. schedule_c_net_profit is Schedule C net profit or loss (line 31); use a leading minus when the return shows a loss. depreciation is Schedule C line 13. depletion is Schedule C line 12. business_use_of_home is Schedule C line 30. nonrecurring_other_income is Schedule C line 6 other income when printed as nonrecurring. k1_ordinary_income is ordinary business income when a K-1 / 1065 / 1120S is visible — including 1120S line 1 ordinary income. k1_distributions is cash distributions when printed; empty if not shown. amortization, casualty_loss, and mileage_depreciation only when clearly printed on the same return. Empty string when a line is not clearly printed. Never invent add-backs. Never output dependent names.";
   }
   if (extractClass === "paystub") {
     extra =
@@ -360,7 +366,10 @@ export const grokExtractAdapter: DocumentExtractAdapter = {
     if (!isFirstSessionClass(extractClass)) {
       return { fields: {}, warnings: ["received"] };
     }
-    const keys = FIRST_SESSION_LOCKED_KEYS[extractClass];
+    const keys =
+      extractClass === "tax_return"
+        ? TAX_RETURN_PAGE_READ_KEYS
+        : FIRST_SESSION_LOCKED_KEYS[extractClass];
     if (!keys.length) {
       return { fields: {}, warnings: ["Class is other. No numbers invented."] };
     }
@@ -379,7 +388,10 @@ export const grokExtractAdapter: DocumentExtractAdapter = {
     }
     const fields = sanitizeExtractedFields(extractClass, raw);
     return {
-      fields: lockFirstSessionFields(extractClass, fields),
+      fields:
+        extractClass === "tax_return"
+          ? lockTaxReturnPageReadFields(fields)
+          : lockFirstSessionFields(extractClass, fields),
       warnings: isFirstSessionClass(extractClass) ? [] : ["received"],
     };
   },
@@ -561,7 +573,10 @@ async function grokPageRead(
   if (!image) return null;
   const page = await classifyAndExtractPage(image.bytes, image.mediaType, adapter, hint);
   const extractClass = preferFilenameClass(page.extractClass, filename ?? "");
-  const fields = lockFirstSessionFields(extractClass, page.fields);
+  const fields =
+    extractClass === "tax_return"
+      ? lockTaxReturnPageReadFields(page.fields)
+      : lockFirstSessionFields(extractClass, page.fields);
   console.info("[docs/extract] page-read result", {
     filename: filename ?? "",
     extractClass,
@@ -779,7 +794,10 @@ export async function classifyAndExtract(
   const page = await classifyAndExtractPage(bytes, mediaType, adapter, hint);
   const lockedPage = {
     ...page,
-    fields: lockFirstSessionFields(page.extractClass, page.fields),
+    fields:
+      page.extractClass === "tax_return"
+        ? lockTaxReturnPageReadFields(page.fields)
+        : lockFirstSessionFields(page.extractClass, page.fields),
   };
   const bankHint = hint === "bank_statement" || lockedPage.extractClass === "bank_statement";
   if (
