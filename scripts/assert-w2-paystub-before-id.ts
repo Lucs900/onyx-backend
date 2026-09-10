@@ -12,6 +12,8 @@ import {
   applyExtractedFields,
   DOC_INVITE_COPY,
   docInviteAskCopy,
+  LAST_YEAR_RETURN_STILL_USEFUL,
+  LAST_YEAR_W2_STILL_USEFUL,
   nextDocInvite,
   skipCurrentInvite,
   stillUsefulSection,
@@ -190,6 +192,86 @@ async function main() {
     /two recent statements/i,
   );
 
+  const usefulAfterThisW2 = (stillUsefulSection(looksAfterStub)?.items ?? []).map((item) => item.label);
+  assert.deepEqual(
+    usefulAfterThisW2.slice(0, 3),
+    ["Government ID", LAST_YEAR_W2_STILL_USEFUL, LAST_YEAR_RETURN_STILL_USEFUL],
+    `Still useful after this year’s W-2 — ${usefulAfterThisW2.join(" · ")}`,
+  );
+  assert.ok(
+    !usefulAfterThisW2.some((label) => /This year.?s W-2/i.test(label)),
+    `Do not invent This year’s W-2 — ${usefulAfterThisW2.join(" · ")}`,
+  );
+  const usefulAfterSkipStub = (stillUsefulSection(looksAfterSkip)?.items ?? []).map((item) => item.label);
+  assert.deepEqual(
+    usefulAfterSkipStub.slice(0, 3),
+    ["Government ID", LAST_YEAR_W2_STILL_USEFUL, LAST_YEAR_RETURN_STILL_USEFUL],
+    `Still useful after 03 + stub Skip — ${usefulAfterSkipStub.join(" · ")}`,
+  );
+  const afterReturnSkip = skipCurrentInvite(afterIdSkip);
+  const usefulAfterReturnSkip = (stillUsefulSection(afterReturnSkip)?.items ?? []).map((item) => item.label);
+  assert.ok(
+    usefulAfterReturnSkip.includes(LAST_YEAR_RETURN_STILL_USEFUL),
+    `Do not drop Form 1040 after Skip — ${usefulAfterReturnSkip.join(" · ")}`,
+  );
+  const refiLooks = applyLooksRightMotion({
+    ...skippedPrior,
+    productIntent: "refinance",
+    cashOut: false,
+  });
+  const usefulRefi = (stillUsefulSection(refiLooks)?.items ?? []).map((item) => item.label);
+  assert.equal(usefulRefi[0], "Government ID");
+  assert.equal(usefulRefi[1], LAST_YEAR_W2_STILL_USEFUL);
+  assert.ok(
+    usefulRefi[2] === LAST_YEAR_RETURN_STILL_USEFUL || usefulRefi[2] === "Mortgage statement",
+    `Refi third is 1040 or mortgage — ${usefulRefi.join(" · ")}`,
+  );
+  assert.ok(
+    usefulRefi.includes(LAST_YEAR_RETURN_STILL_USEFUL),
+    `Refi still names the 1040 — ${usefulRefi.join(" · ")}`,
+  );
+  assert.ok(!usefulRefi.some((label) => /This year.?s W-2/i.test(label)));
+
+  const afterLooksNoW2 = {
+    ...wageSketch(),
+    sampleAccepted: true,
+    wageDocsAsked: true,
+    wageBox5Asked: true,
+    wageFrequencyAsked: true,
+    wageStubAsked: true,
+  };
+  const usefulNoW2 = (stillUsefulSection(afterLooksNoW2)?.items ?? []).map((item) => item.label);
+  assert.deepEqual(usefulNoW2.slice(0, 3), [
+    "Government ID",
+    LAST_YEAR_W2_STILL_USEFUL,
+    LAST_YEAR_RETURN_STILL_USEFUL,
+  ]);
+  assert.ok(!usefulNoW2.some((label) => /This year.?s W-2/i.test(label)));
+
+  const lastYearOnly = {
+    ...wageSketch(),
+    sampleAccepted: true,
+    wageDocsAsked: true,
+    wageBox5Asked: true,
+    wageFrequencyAsked: true,
+    wageStubAsked: true,
+    documents: [
+      {
+        slot: "w2",
+        name: "w2-2024.pdf",
+        type: "application/pdf",
+        size: 4000,
+        receivedAt: "2026-09-07T00:00:00.000Z",
+        status: "extracted",
+        extractClass: "w2",
+      },
+    ],
+  };
+  const usefulLastYear = (stillUsefulSection(lastYearOnly)?.items ?? []).map((item) => item.label);
+  assert.ok(usefulLastYear.includes(LAST_YEAR_RETURN_STILL_USEFUL));
+  assert.ok(!usefulLastYear.includes(LAST_YEAR_W2_STILL_USEFUL));
+  assert.ok(!usefulLastYear.some((label) => /This year.?s W-2/i.test(label)));
+
   const skippedIncome = skipIncomeAsk({
     ...wageSketch(),
     incomeAsked: false,
@@ -202,7 +284,9 @@ async function main() {
   assert.ok(!useful.some((item) => /paystub|W-2|tax return|latest return/i.test(item)));
   assert.ok(inviteChips(usedW2).includes("Upload this"));
 
-  console.log("assert-w2-paystub-before-id: stub after 03 Use this; ID after Looks right; one Harbor row");
+  console.log(
+    "assert-w2-paystub-before-id: stub after 03 Use this; ID after Looks right; last-year W-2 + 1040 on Still useful",
+  );
 }
 
 main();

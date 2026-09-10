@@ -4120,7 +4120,7 @@ assert.deepEqual(
   (stillUsefulSection(founderW2AfterLooks)?.items ?? []).map((item) => item.label).filter((label) =>
     /ID|paystub|W-2|return|mortgage|citizenship/i.test(label),
   ),
-  ["Government ID", "Latest paystub", "This year’s W-2"],
+  ["Government ID", "Last year’s W-2", "Last year’s tax return (Form 1040)", "Latest paystub"],
 );
 assert.ok(!stillUsefulSection(founderPurchaseW2Draft)?.items.some((item) => /paystub|W-2|government ID|latest return/i.test(item.label)));
 assert.equal(nextDocInvite(founderW2AfterLooks), "government_id");
@@ -5653,7 +5653,9 @@ assert.ok(!stillUsefulSection(afterIncome)?.items.some((item) => /paystub|W-2|go
 assert.ok(stillUsefulSection(afterLooks));
 assert.ok(stillUsefulSection(afterLooks)?.items.some((item) => item.label === "Government ID"));
 assert.ok(stillUsefulSection(afterLooks)?.items.some((item) => item.label === "Latest paystub"));
-assert.ok(stillUsefulSection(afterLooks)?.items.some((item) => item.label === "This year’s W-2"));
+assert.ok(stillUsefulSection(afterLooks)?.items.some((item) => item.label === "Last year’s W-2"));
+assert.ok(stillUsefulSection(afterLooks)?.items.some((item) => item.label === "Last year’s tax return (Form 1040)"));
+assert.ok(!stillUsefulSection(afterLooks)?.items.some((item) => item.label === "This year’s W-2"));
 assert.ok(!stillUsefulSection(afterLooks)?.items.some((item) => item.label === "Latest two paystubs"));
 assert.ok(!stillUsefulSection(afterLooks)?.items.some((item) => item.label === "W-2 most recent two years"));
 assert.ok(!stillUsefulSection(afterLooks)?.items.some((item) => item.label === "Latest return"));
@@ -6453,9 +6455,29 @@ assert.ok(!missingExtractClasses(w2AfterLooks).includes("w2"));
 assert.equal(fileStillUsefulNote(w2AfterLooks), undefined);
 assert.ok(stillUsefulSection(w2AfterLooks)?.items.some((item) => item.label === "Government ID"));
 assert.ok(stillUsefulSection(w2AfterLooks)?.items.some((item) => item.label === "Latest paystub"));
+assert.ok(stillUsefulSection(w2AfterLooks)?.items.some((item) => item.label === "Last year’s W-2"));
+assert.ok(stillUsefulSection(w2AfterLooks)?.items.some((item) => item.label === "Last year’s tax return (Form 1040)"));
 assert.ok(!stillUsefulSection(w2AfterLooks)?.items.some((item) => item.label === "This year’s W-2"));
 assert.ok(!stillUsefulSection(w2AfterLooks)?.items.some((item) => item.label === "W-2 most recent two years"));
 assert.ok(!stillUsefulSection(w2AfterLooks)?.items.some((item) => item.label === "Latest return"));
+const lastYearW2Only = draft({
+  ...w2AfterLooks,
+  documents: [
+    {
+      slot: "w2",
+      name: "w2-2024.pdf",
+      type: "application/pdf",
+      size: 8000,
+      receivedAt: "2026-08-20T00:00:00.000Z",
+      status: "extracted",
+      extractClass: "w2",
+    },
+  ],
+});
+assert.ok(stillUsefulSection(lastYearW2Only)?.items.some((item) => item.label === "Government ID"));
+assert.ok(stillUsefulSection(lastYearW2Only)?.items.some((item) => item.label === "Last year’s tax return (Form 1040)"));
+assert.ok(!stillUsefulSection(lastYearW2Only)?.items.some((item) => item.label === "Last year’s W-2"));
+assert.ok(!stillUsefulSection(lastYearW2Only)?.items.some((item) => item.label === "This year’s W-2"));
 assert.doesNotMatch(gatheringList(w2AfterLooks), /W-2 most recent two years|latest two paystubs/i);
 assert.equal(gatheringCopy(w2AfterLooks), MOTION_COPY.ready);
 assert.ok(
@@ -6522,8 +6544,9 @@ assert.deepEqual(
   buySection.items.map((item) => item.label),
   [
     "Government ID",
+    "Last year’s W-2",
+    "Last year’s tax return (Form 1040)",
     "Latest paystub",
-    "This year’s W-2",
     "Property address",
     "Purchase contract",
     "Bank statement",
@@ -6558,9 +6581,11 @@ const withId = afterProceed(afterIncome, {
     },
   ],
 });
-assert.equal(stillUsefulSection(withId)?.items[0]?.label, "Latest paystub");
+assert.equal(stillUsefulSection(withId)?.items[0]?.label, "Last year’s W-2");
 assert.ok(!stillUsefulSection(withId)?.items.some((item) => item.label === "Government ID"));
 assert.ok(stillUsefulSection(withId)?.items.some((item) => item.label === "Latest paystub"));
+assert.ok(stillUsefulSection(withId)?.items.some((item) => item.label === "Last year’s tax return (Form 1040)"));
+assert.ok(!stillUsefulSection(withId)?.items.some((item) => item.label === "This year’s W-2"));
 const buyDocsIn = afterProceed(afterIncome, {
   documents: [
     {
@@ -6611,8 +6636,10 @@ const buyDocsIn = afterProceed(afterIncome, {
 });
 assert.deepEqual(
   stillUsefulSection(buyDocsIn)?.items.map((item) => item.label),
-  ["Property address", "Purchase contract", "Bank statement"],
+  ["Last year’s tax return (Form 1040)", "Property address", "Purchase contract", "Bank statement"],
 );
+assert.ok(!stillUsefulSection(buyDocsIn)?.items.some((item) => item.label === "This year’s W-2"));
+assert.ok(!stillUsefulSection(buyDocsIn)?.items.some((item) => item.label === "Last year’s W-2"));
 const seProceed = afterProceed(withIncome(afterCredit, "self-employed"));
 assert.deepEqual(
   stillUsefulSection(seProceed)?.items.map((item) => item.label),
@@ -6757,7 +6784,9 @@ assert.equal(nextDocInvite(walkSkip), "paystub");
 assert.equal(workspacePrompt(walkSkip), "documents");
 assert.ok(stillUsefulSection(walkSkip)?.items.some((item) => item.label === "Government ID"));
 assert.ok(stillUsefulSection(walkSkip)?.items.some((item) => item.label === "Latest paystub"));
-assert.ok(stillUsefulSection(walkSkip)?.items.some((item) => item.label === "This year’s W-2"));
+assert.ok(stillUsefulSection(walkSkip)?.items.some((item) => item.label === "Last year’s W-2"));
+assert.ok(stillUsefulSection(walkSkip)?.items.some((item) => item.label === "Last year’s tax return (Form 1040)"));
+assert.ok(!stillUsefulSection(walkSkip)?.items.some((item) => item.label === "This year’s W-2"));
 assert.ok(!stillUsefulSection(walkSkip)?.items.some((item) => item.label === "Latest two paystubs"));
 assert.ok(!stillUsefulSection(walkSkip)?.items.some((item) => item.label === "W-2 most recent two years"));
 assert.ok(stillUsefulSection(walkSkip)?.items.some((item) => item.label === "Property address"));

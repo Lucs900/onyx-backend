@@ -8,12 +8,20 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { classifyAndExtract } from "../lib/docs/extract";
-import { applyExtractedFields, DOC_INVITE_COPY, nextDocInvite, stillUsefulSection } from "../components/fox/fileWrite";
+import {
+  applyExtractedFields,
+  LAST_YEAR_FEDERAL_RETURN_ASK,
+  LAST_YEAR_RETURN_STILL_USEFUL,
+  LAST_YEAR_W2_STILL_USEFUL,
+  nextDocInvite,
+  skipCurrentInvite,
+  stillUsefulSection,
+} from "../components/fox/fileWrite";
 import { canLooksRight, resolveProposal } from "../components/fox/completeness";
 import { applyLooksRightMotion, applyProceedMotion } from "../components/fox/motion";
 import { emptyDraft } from "../components/fox/store";
 import { nextFoxAsk, previewFacts, workspacePrompt, workspacePromptCopy } from "../components/fox/workspace";
-import { wageEmploymentFileLine } from "../components/fox/qualifyingIncome";
+import { skipPriorStub, wageEmploymentFileLine } from "../components/fox/qualifyingIncome";
 import type { FoxIntakeDraft } from "../components/fox/types";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -167,11 +175,12 @@ async function main() {
     "no Income: W-2 without dollars",
   );
 
-  assert.ok(canLooksRight(used));
+  const ready = skipPriorStub(used);
+  assert.ok(canLooksRight(ready));
   assert.ok(
-    (workspacePromptCopy("review", used).actions ?? []).some((item) => item.label === "Looks right"),
+    (workspacePromptCopy("review", ready).actions ?? []).some((item) => item.label === "Looks right"),
   );
-  const looks = applyLooksRightMotion(used);
+  const looks = applyLooksRightMotion(ready);
   assert.notEqual(workspacePrompt(looks), "former-history");
   assert.notEqual(workspacePrompt(looks), "citizenship");
   assert.notEqual(workspacePrompt(looks), "years-in-business");
@@ -182,10 +191,14 @@ async function main() {
   assert.match(afterLooksJobs[0]?.value ?? "", /Harbor Pacific Design Inc/);
   assert.match(afterLooksJobs[0]?.value ?? "", /Box 5 \$118,400/);
   assert.match(afterLooksJobs[0]?.value ?? "", /\$9,999\.99 a month/);
-  assert.equal(nextDocInvite(looks), "purchase_contract");
+  assert.equal(nextDocInvite(looks), "tax_return");
   assert.equal(workspacePrompt(looks), "documents");
   const afterLooksAsk = workspacePromptCopy(workspacePrompt(looks), looks);
-  assert.equal(afterLooksAsk.text, DOC_INVITE_COPY.purchase_contract);
+  assert.equal(afterLooksAsk.text, LAST_YEAR_FEDERAL_RETURN_ASK);
+  const usefulLooks = (stillUsefulSection(looks)?.items ?? []).map((item) => item.label);
+  assert.ok(usefulLooks.includes(LAST_YEAR_W2_STILL_USEFUL), usefulLooks.join(" · "));
+  assert.ok(usefulLooks.includes(LAST_YEAR_RETURN_STILL_USEFUL), usefulLooks.join(" · "));
+  assert.ok(!usefulLooks.some((label) => /This year.?s W-2/i.test(label)));
   assert.deepEqual(
     (afterLooksAsk.actions ?? []).map((item) => item.label),
     ["Upload this", "Skip"],
@@ -193,11 +206,18 @@ async function main() {
   assert.ok(!(afterLooksAsk.actions ?? []).some((item) => item.label === "Proceed"));
   assert.doesNotMatch(afterLooksAsk.text, /What’s a good email|email/i);
 
+  const afterReturnSkip = skipCurrentInvite(looks);
+  assert.notEqual(nextDocInvite(afterReturnSkip), "tax_return");
+  const usefulAfterReturnSkip = (stillUsefulSection(afterReturnSkip)?.items ?? []).map((item) => item.label);
+  assert.ok(
+    usefulAfterReturnSkip.includes(LAST_YEAR_RETURN_STILL_USEFUL),
+    `1040 stays after Skip — ${usefulAfterReturnSkip.join(" · ")}`,
+  );
   const proceeded = applyProceedMotion({
-    ...looks,
+    ...afterReturnSkip,
     emailSkipped: false,
     contact: {
-      ...looks.contact,
+      ...afterReturnSkip.contact,
       email: { field: "email", value: "", source: "client", confirmed: false },
     },
   });
@@ -215,7 +235,9 @@ async function main() {
   const still = stillUsefulSection(proceeded);
   if (still && !still.empty) {
     assert.ok(still.items.length >= 1, "Still useful has remainder after Proceed");
-    assert.ok(still.items.every((item) => !/tax return|latest return|prior-year return/i.test(item.label)));
+    assert.ok(still.items.some((item) => item.label === LAST_YEAR_RETURN_STILL_USEFUL));
+    assert.ok(still.items.some((item) => item.label === LAST_YEAR_W2_STILL_USEFUL));
+    assert.ok(still.items.every((item) => !/This year.?s W-2|latest return|prior-year return/i.test(item.label)));
   }
   assert.ok(
     previewFacts(proceeded).every(

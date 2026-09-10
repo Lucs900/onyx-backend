@@ -58,6 +58,7 @@ import {
   skipWageStub,
   skipPriorStub,
   priorStubAskNeeded,
+  readWageJobs,
   wageIncomeCaution,
   wageThreadOpen,
 } from "./qualifyingIncome";
@@ -2631,6 +2632,8 @@ export function spokenScheduleCName(draft: FoxIntakeDraft) {
 /** W-2 path after Looks right: one last-year 1040. Completeness, not wage engine. */
 export const LAST_YEAR_FEDERAL_RETURN_ASK =
   "Last year’s tax return (Form 1040), so review has the return.";
+export const LAST_YEAR_W2_STILL_USEFUL = "Last year’s W-2";
+export const LAST_YEAR_RETURN_STILL_USEFUL = "Last year’s tax return (Form 1040)";
 
 export function taxReturnInviteCopy(draft: FoxIntakeDraft) {
   if (draft.incomeType.value === "w2") return LAST_YEAR_FEDERAL_RETURN_ASK;
@@ -2765,7 +2768,8 @@ export function deepenStillUseful(draft: FoxIntakeDraft) {
 export type StillUsefulLabel =
   | ReturnType<typeof askClassLabel>
   | "W-2 most recent two years"
-  | "This year’s W-2"
+  | "Last year’s W-2"
+  | "Last year’s tax return (Form 1040)"
   | "latest paystub"
   | "second-year W-2"
   | "prior-year return"
@@ -2946,7 +2950,37 @@ function wageGroceryExtractClass(id: string) {
   );
 }
 
-/** W-2 after Looks right: one of each. Skip-W-2 keeps last year’s return. */
+function w2YearsOnFile(draft: FoxIntakeDraft): string[] {
+  const years = new Set<string>();
+  for (const row of readWageJobs(draft)) {
+    const year = String(row.tax_year ?? "").replace(/\D/g, "").slice(0, 4);
+    if (/^20\d{2}$/.test(year)) years.add(year);
+  }
+  for (const doc of draft.documents ?? []) {
+    if (!COUNTED_DOC_STATUSES.has(doc.status)) continue;
+    if (receivedClassOf(doc) !== "w2") continue;
+    const named = String(doc.name ?? "").match(/20\d{2}/);
+    if (named) years.add(named[0]);
+  }
+  return Array.from(years);
+}
+
+function lastYearW2Year(draft: FoxIntakeDraft) {
+  return String(Number(mostRecentFederalYear(draft)) - 1);
+}
+
+/** 2025 W-2 is this year on the file clock. Last year is 2024. Do not invent this year’s. */
+function hasLastYearW2OnFile(draft: FoxIntakeDraft) {
+  if (hasTwoYearWageHistory(draft)) return true;
+  return w2YearsOnFile(draft).includes(lastYearW2Year(draft));
+}
+
+function needsLastYearW2StillUseful(draft: FoxIntakeDraft) {
+  if (!wageThreadOpen(draft)) return false;
+  return !hasLastYearW2OnFile(draft);
+}
+
+/** W-2 after Looks right: last year’s W-2 until that year is on File. Skip-W-2 keeps last year’s return. */
 function dropWageAfterLooksRightExtra(draft: FoxIntakeDraft, id: string) {
   if (!draft.sampleAccepted || !wageThreadOpen(draft)) return false;
   if (id === "second-year-w2") return true;
@@ -2962,17 +2996,17 @@ function dropWageAfterLooksRightExtra(draft: FoxIntakeDraft, id: string) {
     }
   }
   if (id === "paystub" && receivedClassCount(draft, "paystub") >= 1) return true;
-  if (id === "w2" && receivedClassCount(draft, "w2") >= 1) return true;
+  if (id === "w2" && !needsLastYearW2StillUseful(draft)) return true;
   return false;
 }
 
 function wageAskClassLabel(draft: FoxIntakeDraft, extractClass: ExtractClass): StillUsefulLabel {
   if (extractClass === "w2" && (draft.skippedClasses ?? []).includes("w2")) {
-    return "This year’s W-2";
+    return LAST_YEAR_W2_STILL_USEFUL;
   }
   if (draft.sampleAccepted && wageThreadOpen(draft)) {
     if (extractClass === "paystub") return "latest paystub";
-    if (extractClass === "w2") return "This year’s W-2";
+    if (extractClass === "w2") return LAST_YEAR_W2_STILL_USEFUL;
   }
   return askClassLabel(extractClass);
 }
@@ -2982,9 +3016,42 @@ function wantsW2RemainderReturn(draft: FoxIntakeDraft) {
   if (income !== "w2" && income !== "both") return false;
   if (receivedTaxReturnCount(draft) >= 1) return false;
   if (skippedW2StubPath(draft)) return true;
+  // After Looks right the 1040 is completeness. Keep it when skipped or still asked.
+  if (draft.sampleAccepted) return true;
   if (wageThreadOpen(draft)) return false;
   if ((draft.skippedClasses ?? []).includes("tax_return")) return false;
   return primaryInviteSequence(draft).every((kind) => inviteSatisfied(draft, kind));
+}
+
+function pinWageCompletenessHead<T extends { id: string }>(items: T[]): T[] {
+  const id = items.find((item) => item.id === "government_id");
+  const w2 = items.find((item) => item.id === "w2");
+  const ret = items.find((item) => item.id === "tax_return");
+  const rest = items.filter(
+    (item) => item.id !== "government_id" && item.id !== "w2" && item.id !== "tax_return",
+  );
+  return [...(id ? [id] : []), ...(w2 ? [w2] : []), ...(ret ? [ret] : []), ...rest];
+}
+
+function pinWageCompletenessLabels(labels: StillUsefulLabel[]): StillUsefulLabel[] {
+  const id = labels.find((label) => /government ID/i.test(label));
+  const w2 = labels.find((label) => label === LAST_YEAR_W2_STILL_USEFUL);
+  const ret = labels.find(
+    (label) => label === LAST_YEAR_RETURN_STILL_USEFUL || label === "tax return",
+  );
+  const rest = labels.filter(
+    (label) =>
+      label !== id &&
+      label !== LAST_YEAR_W2_STILL_USEFUL &&
+      label !== LAST_YEAR_RETURN_STILL_USEFUL &&
+      label !== "tax return",
+  );
+  const pinned: StillUsefulLabel[] = [];
+  if (id) pinned.push(id);
+  if (w2) pinned.push(w2);
+  if (ret) pinned.push(ret);
+  pinned.push(...rest);
+  return pinned;
 }
 
 const SCHEDULE_E_NAMED_K1S = [
@@ -3027,8 +3094,22 @@ export function stillUsefulLabels(draft: FoxIntakeDraft): StillUsefulLabel[] {
     })
     .filter((item) => !dropWageAfterLooksRightExtra(draft, item))
     .map((item) => wageAskClassLabel(draft, item));
-  if (wantsW2RemainderReturn(draft) && !labels.includes(askClassLabel("tax_return") as StillUsefulLabel)) {
-    labels.push(askClassLabel("tax_return") as StillUsefulLabel);
+  if (needsLastYearW2StillUseful(draft) && !labels.includes(LAST_YEAR_W2_STILL_USEFUL)) {
+    labels.push(LAST_YEAR_W2_STILL_USEFUL);
+  }
+  if (wantsW2RemainderReturn(draft)) {
+    const returnLabel = (
+      draft.sampleAccepted && wageThreadOpen(draft)
+        ? LAST_YEAR_RETURN_STILL_USEFUL
+        : askClassLabel("tax_return")
+    ) as StillUsefulLabel;
+    if (!labels.includes(returnLabel) && !labels.includes("tax return" as StillUsefulLabel)) {
+      labels.push(returnLabel);
+    }
+  }
+  if (draft.sampleAccepted && wageThreadOpen(draft)) {
+    const pinned = pinWageCompletenessLabels(labels);
+    labels.splice(0, labels.length, ...pinned);
   }
   if (!deepenStillUseful(draft)) {
     const namedK1 = nextScheduleENamedK1Label(draft);
@@ -3366,10 +3447,10 @@ function wageStillUsefulCopy(id: string): { label: string; ask: string } | null 
     return { label: "Latest paystub", ask: "Your latest paystub still helps this file." };
   }
   if (id === "w2") {
-    return { label: "This year’s W-2", ask: "This year’s W-2 still helps this file." };
+    return { label: LAST_YEAR_W2_STILL_USEFUL, ask: "Last year’s W-2 still helps this file." };
   }
   if (id === "tax_return") {
-    return { label: "Last year’s tax return", ask: LAST_YEAR_FEDERAL_RETURN_ASK };
+    return { label: LAST_YEAR_RETURN_STILL_USEFUL, ask: LAST_YEAR_FEDERAL_RETURN_ASK };
   }
   if (id === "second-year-w2") return null;
   return null;
@@ -3542,6 +3623,7 @@ export function layer2Plan(draft: FoxIntakeDraft): StillUsefulItem[] {
       ),
     );
   }
+  if (draft.sampleAccepted && wageThreadOpen(draft)) return pinWageCompletenessHead(items);
   return items;
 }
 
