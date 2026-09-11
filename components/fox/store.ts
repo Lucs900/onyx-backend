@@ -64,6 +64,7 @@ import {
   looksLikePaystubFields,
   preferFilenameClass,
   promoteExtractClass,
+  factValue,
   resolveFactConflict,
   resolveReceivedSlot,
   nextDocInvite,
@@ -1588,6 +1589,22 @@ export function patchReceivedDoc(
   });
 }
 
+/** Period Use this already wrote this stub. A late empty page-read must not stamp unread. */
+function paystubAlreadyWritten(draft: FoxIntakeDraft, doc?: ReceivedDoc) {
+  if (!doc) return false;
+  const isStub =
+    doc.extractClass === "paystub" ||
+    doc.slot === "paystubs" ||
+    preferFilenameClass(doc.extractClass ?? "other", doc.name) === "paystub";
+  if (!isStub) return false;
+  if (doc.status !== "extracted" || isUnreadNote(doc.note)) return false;
+  return Boolean(
+    draft.stubExtractAccepted ||
+      factValue(draft, "gross_period") ||
+      factValue(draft, "paystub_amount"),
+  );
+}
+
 export function applyExtractWrite(
   receivedAt: string,
   name: string,
@@ -1635,6 +1652,19 @@ export function applyExtractWrite(
   const treatFailed =
     (Boolean(failed || unreadEmpty || k1Unread || scheduleEUnread) && !box5Read && !stubRead) ||
     silentStubReceive;
+  const matchingDoc = current.documents.find(
+    (doc) => doc.receivedAt === receivedAt && doc.name === name,
+  );
+  /** Period already wrote this stub. A late empty page-read is not unread. */
+  if (treatFailed && paystubAlreadyWritten(current, matchingDoc)) {
+    return {
+      draft: current,
+      writes: [],
+      conflict: null,
+      quietLines: [],
+      extractClass: matchingDoc?.extractClass ?? "paystub",
+    };
+  }
   const displayClass =
     treatFailed || extractedClass === "other"
       ? preferFilenameClass(extractedClass, name)

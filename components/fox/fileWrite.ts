@@ -3060,10 +3060,21 @@ function pinWageCompletenessHead<T extends { id: string }>(items: T[]): T[] {
   const id = items.find((item) => item.id === "government_id");
   const w2 = items.find((item) => item.id === "w2");
   const ret = items.find((item) => item.id === "tax_return");
+  const mortgage = items.find((item) => item.id === "mortgage_statement");
   const rest = items.filter(
-    (item) => item.id !== "government_id" && item.id !== "w2" && item.id !== "tax_return",
+    (item) =>
+      item.id !== "government_id" &&
+      item.id !== "w2" &&
+      item.id !== "tax_return" &&
+      item.id !== "mortgage_statement",
   );
-  return [...(id ? [id] : []), ...(w2 ? [w2] : []), ...(ret ? [ret] : []), ...rest];
+  return [
+    ...(id ? [id] : []),
+    ...(w2 ? [w2] : []),
+    ...(ret ? [ret] : []),
+    ...rest,
+    ...(mortgage ? [mortgage] : []),
+  ];
 }
 
 function pinWageCompletenessLabels(labels: StillUsefulLabel[]): StillUsefulLabel[] {
@@ -3072,18 +3083,21 @@ function pinWageCompletenessLabels(labels: StillUsefulLabel[]): StillUsefulLabel
   const ret = labels.find(
     (label) => label === LAST_YEAR_RETURN_STILL_USEFUL || label === "tax return",
   );
+  const mortgage = labels.find((label) => /^mortgage statement$/i.test(label));
   const rest = labels.filter(
     (label) =>
       label !== id &&
       label !== LAST_YEAR_W2_STILL_USEFUL &&
       label !== LAST_YEAR_RETURN_STILL_USEFUL &&
-      label !== "tax return",
+      label !== "tax return" &&
+      !/^mortgage statement$/i.test(label),
   );
   const pinned: StillUsefulLabel[] = [];
   if (id) pinned.push(id);
   if (w2) pinned.push(w2);
   if (ret) pinned.push(ret);
   pinned.push(...rest);
+  if (mortgage) pinned.push(mortgage);
   return pinned;
 }
 
@@ -4617,7 +4631,7 @@ export function writeUnreadNote(draft: FoxIntakeDraft, text: string): FoxIntakeD
   };
 }
 
-/** Skip on a received-unread item. Upload again stays. Do not auto-advance the invite. */
+/** Skip on a received-unread item. Skip ≠ extract — do not clear last year’s Form 1040. */
 export function skipUnreadDoc(draft: FoxIntakeDraft): FoxIntakeDraft {
   const unread = unreadDocOpen(draft);
   const next: FoxIntakeDraft = { ...draft, looksRightHold: undefined, awaitingUnreadNote: false };

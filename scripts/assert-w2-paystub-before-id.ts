@@ -222,13 +222,15 @@ async function main() {
   const usefulRefi = (stillUsefulSection(refiLooks)?.items ?? []).map((item) => item.label);
   assert.equal(usefulRefi[0], "Government ID");
   assert.equal(usefulRefi[1], LAST_YEAR_W2_STILL_USEFUL);
-  assert.ok(
-    usefulRefi[2] === LAST_YEAR_RETURN_STILL_USEFUL || usefulRefi[2] === "Mortgage statement",
-    `Refi third is 1040 or mortgage — ${usefulRefi.join(" · ")}`,
-  );
+  assert.equal(usefulRefi[2], LAST_YEAR_RETURN_STILL_USEFUL, `Refi third is Form 1040 — ${usefulRefi.join(" · ")}`);
   assert.ok(
     usefulRefi.includes(LAST_YEAR_RETURN_STILL_USEFUL),
     `Refi still names the 1040 — ${usefulRefi.join(" · ")}`,
+  );
+  const mortgageAt = usefulRefi.indexOf("Mortgage statement");
+  assert.ok(
+    mortgageAt < 0 || mortgageAt > 2,
+    `Mortgage statement waits behind ID · last year’s W-2 · Form 1040 — ${usefulRefi.join(" · ")}`,
   );
   assert.ok(!usefulRefi.some((label) => /This year.?s W-2/i.test(label)));
 

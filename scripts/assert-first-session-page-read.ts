@@ -13,6 +13,7 @@ import {
   FIRST_SESSION_LOCKED_KEYS,
   LAST_YEAR_FEDERAL_RETURN_ASK,
   LAST_YEAR_RETURN_STILL_USEFUL,
+  LAST_YEAR_W2_STILL_USEFUL,
   TAX_RETURN_PAGE_READ_KEYS,
   applyExtractedFields,
   displayFactValue,
@@ -63,7 +64,7 @@ import {
   wageEmploymentFileLine,
   maybeProposeQualifyingFromTaxFile,
 } from "../components/fox/qualifyingIncome";
-import { FAILED_READ_NOTE } from "../lib/docs/accept";
+import { FAILED_READ_NOTE, isUnreadNote } from "../lib/docs/accept";
 import { classifyAndExtract, FOX_GROK_MODEL } from "../lib/docs/extract";
 import { renderPdfFirstPage } from "../lib/docs/pdfText";
 import {
@@ -756,6 +757,47 @@ async function main() {
   assert.doesNotMatch(wageEmploymentFileLine(alamedaUsed), /\bOT\b/);
   assert.equal(alamedaUsed.facts?.gross_period?.confirmed, true);
   assert.equal(alamedaUsed.facts?.gross_period?.value, "16824.30");
+  const writtenStubAt = "2026-09-11T18:00:00.000Z";
+  const writtenStubName = "Jan 2 2026 Alameda Health System Pay Stub.pdf";
+  loadIntakeDraft({
+    ...alamedaUsed,
+    documents: [
+      ...(alamedaUsed.documents ?? []),
+      {
+        slot: "paystubs",
+        name: writtenStubName,
+        type: "application/pdf",
+        size: 10000,
+        receivedAt: writtenStubAt,
+        status: "extracted",
+        extractClass: "paystub",
+      },
+    ],
+  });
+  const lateEmptyStub = applyExtractWrite(writtenStubAt, writtenStubName, {
+    extractClass: "paystub",
+    confidence: 0.2,
+    fields: {},
+  });
+  assert.ok(
+    !lateEmptyStub.quietLines.includes(FAILED_READ_NOTE),
+    "Stub already written must not stamp could not read after Period wrote",
+  );
+  assert.equal(lateEmptyStub.draft.facts?.gross_period?.value, "16824.30");
+  assert.equal(
+    wageEmploymentFileLine(lateEmptyStub.draft),
+    "Alameda Health System, Period $16,824.30",
+  );
+  assert.ok(
+    !previewFacts(lateEmptyStub.draft).some((fact) => /could not read/i.test(fact.value)),
+    "Written stub Docs must not say could not read — " +
+      previewFacts(lateEmptyStub.draft)
+        .map((fact) => `${fact.label}=${fact.value}`)
+        .join(" · "),
+  );
+  const writtenStub = lateEmptyStub.draft.documents.find((doc) => doc.name === writtenStubName);
+  assert.equal(writtenStub?.status, "extracted");
+  assert.ok(!isUnreadNote(writtenStub?.note));
   assert.equal(alamedaUsed.awaitingPayFrequency, true, "one stub without printed frequency asks once");
   assert.equal(alamedaUsed.facts?.pay_frequency, undefined);
   const alamedaPriorAsk = nextFoxAsk(alamedaUsed);
@@ -955,6 +997,38 @@ async function main() {
   assert.ok(
     usefulUnread1040.includes(LAST_YEAR_RETURN_STILL_USEFUL),
     `Unread 1040 must not clear Form 1040 — ${usefulUnread1040.join(" · ")}`,
+  );
+  const unread1040Skip = skipUnreadDoc(unreadAfterLooks.draft);
+  assert.ok(!unreadDocOpen(unread1040Skip), "Skip dismisses unread");
+  const usefulUnreadSkip = (stillUsefulSection(unread1040Skip)?.items ?? []).map(
+    (item) => item.label,
+  );
+  assert.ok(
+    usefulUnreadSkip.includes(LAST_YEAR_RETURN_STILL_USEFUL),
+    `Skip on unread must keep Form 1040 — ${usefulUnreadSkip.join(" · ")}`,
+  );
+  assert.equal(unread1040Skip.facts?.qualifying_income?.value, "36453");
+  assert.deepEqual(
+    (nextFoxAsk(unread1040Skip).actions ?? []).map((item) => item.label),
+    ["Proceed", "Not yet", "Upload more", "Request human"],
+    "After Skip on unread, finish chips stay",
+  );
+  const refiAfterId = applyLooksRightMotion({
+    ...alamedaAfterMonthly,
+    productIntent: "refinance",
+    cashOut: false,
+  });
+  const usefulRefi = (stillUsefulSection(refiAfterId)?.items ?? []).map((item) => item.label);
+  const idAt = usefulRefi.indexOf("Government ID");
+  const w2At = usefulRefi.indexOf(LAST_YEAR_W2_STILL_USEFUL);
+  const retAt = usefulRefi.indexOf(LAST_YEAR_RETURN_STILL_USEFUL);
+  const mortgageAt = usefulRefi.indexOf("Mortgage statement");
+  assert.ok(idAt === 0, `Refi head is Government ID — ${usefulRefi.join(" · ")}`);
+  assert.ok(w2At === 1, `Last year’s W-2 waits after ID — ${usefulRefi.join(" · ")}`);
+  assert.ok(retAt === 2, `Form 1040 waits after last year’s W-2 — ${usefulRefi.join(" · ")}`);
+  assert.ok(
+    mortgageAt < 0 || (mortgageAt > idAt && mortgageAt > w2At && mortgageAt > retAt),
+    `Mortgage statement waits behind ID · last year’s W-2 · Form 1040 — ${usefulRefi.join(" · ")}`,
   );
   const coverOnW2 = maybeProposeQualifyingFromTaxFile({
     ...unreadAfterLooks.draft,
