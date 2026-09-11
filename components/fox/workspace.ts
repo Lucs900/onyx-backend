@@ -123,6 +123,7 @@ import {
   transcriptSignalCopy,
   isTranscriptOnFile,
   taxReturnWrittenOnFile,
+  taxReturnStructureValue,
   canSpeakDocStamp,
   transcriptSpeakKey,
   thisBorrowerPrimaryPackageDone,
@@ -8747,6 +8748,15 @@ export function previewFacts(draft: FoxIntakeDraft): PreviewFact[] {
         draft.motion === "in_queue" || draft.motion === "escalated"
           ? "Licensed originator assigned"
           : "Fox is the desk",
+    });
+  }
+
+  const taxReturnLine = taxReturnStructureValue(draft);
+  if (taxReturnLine) {
+    facts.push({
+      id: "tax-return",
+      label: "Return",
+      value: taxReturnLine,
     });
   }
 

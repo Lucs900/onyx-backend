@@ -35,6 +35,8 @@ import {
   looksLikeTaxReturnFields,
   looksLikeTaxReturnPageReadFields,
   taxReturnWrittenOnFile,
+  taxReturnStructureValue,
+  TAX_RETURN_NAME_FIELD,
   nextDocInvite,
   skipCurrentInvite,
   skipUnreadDoc,
@@ -244,6 +246,25 @@ export function combesReturnPath(): string | null {
     if (!isPdfBytes(bytes) || bytes.length !== COMBES_RETURN_EXPECTED_PDF_BYTES) continue;
     const digest = createHash("sha256").update(bytes).digest("hex");
     if (digest === COMBES_RETURN_SHA256) return path;
+  }
+  return null;
+}
+
+/** Founder walk Form 1040. Byte-exact only — do not invent a substitute 1040. */
+export const COMBES_WALK_1040_EXPECTED_PDF_BYTES = 223455;
+export const COMBES_WALK_1040_CANDIDATES = [
+  "scripts/fixtures/2025 1040 - Combes Allan and Renz.pdf",
+  "sample-docs/2025 1040 - Combes Allan and Renz.pdf",
+  "onyx-fixtures/2025 1040 - Combes Allan and Renz.pdf",
+];
+
+export function combesWalk1040Path(): string | null {
+  for (const rel of COMBES_WALK_1040_CANDIDATES) {
+    const path = join(root, rel);
+    if (!existsSync(path)) continue;
+    const bytes = readFileSync(path);
+    if (!isPdfBytes(bytes) || bytes.length !== COMBES_WALK_1040_EXPECTED_PDF_BYTES) continue;
+    return path;
   }
   return null;
 }
@@ -1788,6 +1809,7 @@ async function main() {
   const liveConfirm = proposalAskCopy(pageOnW2.draft.pendingProposal!);
   assert.match(liveConfirm, /2025 return/);
   assert.match(liveConfirm, /Allan Combes/);
+  assert.doesNotMatch(liveConfirm, /Renz/i, "Allan-only extract does not invent Renz");
   assert.match(liveConfirm, /Use this/i);
   assert.ok(
     !pageOnW2.draft.pendingProposal || pageOnW2.draft.pendingProposal.field === "tax_year",
@@ -1858,6 +1880,74 @@ async function main() {
     .map((fact) => fact.value)
     .join(" · ");
   assert.match(docsAfterUse, /Tax return in/);
+  assert.equal(pageUsed.facts?.[TAX_RETURN_NAME_FIELD]?.value, "Allan Combes");
+  assert.equal(taxReturnStructureValue(pageUsed), "2025 return · Allan Combes");
+  const returnRow = previewFacts(pageUsed).find((fact) => fact.id === "tax-return" || fact.label === "Return");
+  assert.ok(returnRow, "Use this writes a Return row");
+  assert.equal(returnRow?.value, "2025 return · Allan Combes");
+  assert.doesNotMatch(returnRow?.value ?? "", /Renz/i, "Allan-only extract does not invent Renz on Structure");
+  const usefulAfterUse = (stillUsefulSection(pageUsed)?.items ?? []).map((item) => item.label);
+  assert.ok(
+    !usefulAfterUse.includes(LAST_YEAR_RETURN_STILL_USEFUL),
+    `1040 off Still useful after Use this — ${usefulAfterUse.join(" · ")}`,
+  );
+  const finishAfterUse = (nextFoxAsk(pageUsed).actions ?? []).map((item) => item.label);
+  assert.ok(finishAfterUse.includes("Proceed"), `finish chips after Use this — ${finishAfterUse.join(" · ")}`);
+  assert.ok(finishAfterUse.includes("Not yet"), `finish chips after Use this — ${finishAfterUse.join(" · ")}`);
+  assert.ok(finishAfterUse.includes("Upload more"), `finish chips after Use this — ${finishAfterUse.join(" · ")}`);
+
+  loadIntakeDraft({
+    ...alamedaAfterIdSkip,
+    documents: [
+      ...alamedaAfterIdSkip.documents,
+      {
+        slot: "other",
+        name: pageReadName,
+        type: "application/pdf",
+        size: 223455,
+        receivedAt: pageReadAt,
+        status: "received",
+        extractClass: "tax_return",
+      },
+    ],
+  });
+  const jointFields = { tax_year: "2025", full_name: "ALLAN COMBES and RENZ COMBES" };
+  const jointWrite = applyExtractWrite(pageReadAt, pageReadName, {
+    extractClass: "tax_return",
+    confidence: 0.94,
+    fields: jointFields,
+  });
+  assert.equal(jointWrite.draft.facts?.qualifying_income?.value, "36453");
+  const jointConfirm = nextFoxAsk(jointWrite.draft);
+  assert.match(jointConfirm.text, /2025 return/);
+  assert.match(jointConfirm.text, /ALLAN COMBES/);
+  assert.match(jointConfirm.text, /RENZ COMBES|Renz/i);
+  assert.deepEqual(
+    (jointConfirm.actions ?? []).map((item) => item.label),
+    ["Use this", "Change"],
+  );
+  const jointUsed = resolveProposal(jointWrite.draft, "accept");
+  assert.equal(jointUsed.facts?.qualifying_income?.value, "36453", "QI stays on joint Use this write");
+  assert.equal(jointUsed.facts?.wages, undefined);
+  assert.equal(jointUsed.facts?.ssn, undefined);
+  assert.notEqual(jointUsed.facts?.full_name?.confirmed, true);
+  assert.equal(jointUsed.facts?.[TAX_RETURN_NAME_FIELD]?.value, "ALLAN COMBES and RENZ COMBES");
+  assert.match(taxReturnStructureValue(jointUsed), /2025 return/);
+  assert.match(taxReturnStructureValue(jointUsed), /RENZ COMBES|Renz/i);
+  const jointRow = previewFacts(jointUsed).find((fact) => fact.id === "tax-return" || fact.label === "Return");
+  assert.ok(jointRow, "joint Use this writes a Return row");
+  assert.match(jointRow?.value ?? "", /RENZ COMBES|Renz/i);
+  const jointDocs = previewFacts(jointUsed)
+    .filter((fact) => fact.label === "Docs")
+    .map((fact) => fact.value)
+    .join(" · ");
+  assert.match(jointDocs, /Tax return in/);
+  const jointUseful = (stillUsefulSection(jointUsed)?.items ?? []).map((item) => item.label);
+  assert.ok(
+    !jointUseful.includes(LAST_YEAR_RETURN_STILL_USEFUL),
+    `1040 off Still useful after joint Use this — ${jointUseful.join(" · ")}`,
+  );
+
   const scheduleUpgrade = applyExtractedFields(alamedaAfterMonthly, {
     extractClass: "tax_return",
     confidence: 0.94,
@@ -1875,6 +1965,8 @@ async function main() {
   const pdfSrc = readFileSync(join(root, "lib/docs/pdfText.ts"), "utf8");
   assert.match(extractSrc, /TAX_RETURN_PAGE_READ_KEYS/);
   assert.match(extractSrc, /First pages of Form 1040 only/);
+  assert.match(extractSrc, /both taxpayers as printed/);
+  assert.match(extractSrc, /Never invent a spouse from the filename/);
   assert.match(extractSrc, /Never output SSN/);
   assert.match(extractSrc, /lockTaxReturnPageReadFields/);
   assert.match(extractSrc, /pageImageForGrok/);

@@ -117,7 +117,7 @@ run_leftover() {
 }
 
 if [[ "${SPINE_WALKER_SKIP_LEFTOVERS:-}" != "1" ]]; then
-  if leftover_wanted 1 || leftover_wanted 5 || leftover_wanted 6 || leftover_wanted 7 || leftover_wanted 9 || leftover_wanted 10 || leftover_wanted 11 || leftover_wanted 12 || leftover_wanted 13 || leftover_wanted 14 || leftover_wanted 15 || leftover_wanted 16 || leftover_wanted 17 || leftover_wanted 18 || leftover_wanted 19 || leftover_wanted 20 || leftover_wanted 21 || leftover_wanted 22 || leftover_wanted 23 || leftover_wanted 24 || leftover_wanted 25; then
+  if leftover_wanted 1 || leftover_wanted 5 || leftover_wanted 6 || leftover_wanted 7 || leftover_wanted 9 || leftover_wanted 10 || leftover_wanted 11 || leftover_wanted 12 || leftover_wanted 13 || leftover_wanted 14 || leftover_wanted 15 || leftover_wanted 16 || leftover_wanted 17 || leftover_wanted 18 || leftover_wanted 19 || leftover_wanted 20 || leftover_wanted 21 || leftover_wanted 22 || leftover_wanted 23 || leftover_wanted 24 || leftover_wanted 25 || leftover_wanted 26; then
     if [[ ! -d "$ROOT/node_modules/next" ]]; then
       echo "spine-walker: npm install (harbor leftover)" >&2
       (cd "$ROOT" && npm install)
@@ -176,7 +176,7 @@ if [[ "${SPINE_WALKER_SKIP_LEFTOVERS:-}" != "1" ]]; then
     run_leftover assert-w2-page-read.ts
     run_leftover assert-refi-loan-then-value.ts
   fi
-  if leftover_wanted 25; then
+  if leftover_wanted 25 || leftover_wanted 26; then
     run_leftover assert-first-session-page-read.ts
   fi
   if leftover_wanted 12 || leftover_wanted 13; then

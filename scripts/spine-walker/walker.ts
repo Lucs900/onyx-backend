@@ -23,6 +23,9 @@
  * `Jan 2 2026 Alameda Health System Pay Stub.pdf` (filechooser, same bytes);
  * Fox must say Alameda Health System. Period $16,824.30. Use this?; Use this
  * writes one Employment row, never before. Local extract stand-in is VOID.
+ * Case 26 is leftover smoke for the Combes 1040 walk PDF (223,455 bytes) +
+ * gold File after Use this: QI $36,453, Tax return in, Form 1040 off Still
+ * useful. Missing walk PDF skips Playwright. Founder paperclip is ACCEPT.
  * Years in business is once after SE / Both. Named Hale Design when known.
  * Lukasz Harbor leftovers run from scripts/assert-spine-walker.sh before
  * Playwright. CI fail = red.
@@ -37,7 +40,12 @@ import { classifyAndExtract } from "../../lib/docs/extract";
 import { isBoxNumberAsDollars } from "../../components/fox/fileWrite";
 import type { ExtractClass } from "../../components/fox/types";
 import { adpW2FixturePath } from "../assert-w2-page-read";
-import { alamedaPaystubPath, isBundledWageDocsAsk, mattCstcPaystubPath } from "../assert-first-session-page-read";
+import {
+  alamedaPaystubPath,
+  combesWalk1040Path,
+  isBundledWageDocsAsk,
+  mattCstcPaystubPath,
+} from "../assert-first-session-page-read";
 
 const PREVIEW_URL =
   process.env.SPINE_WALKER_URL ??
@@ -1694,6 +1702,99 @@ async function case25(page: Page) {
   await assertPriorFoxTurnsHaveNoChips(page, "after Alameda Use this");
 }
 
+/** Walker smoke. Missing 223,455-byte walk PDF skips. Founder paperclip is ACCEPT. */
+async function case26(page: Page) {
+  const fixture = combesWalk1040Path();
+  if (!fixture) {
+    return;
+  }
+  await hardStartOver(page);
+  await walkToQuotedIncome(page, "94123", true);
+  await waitAsk(page, /How is income earned/i);
+  await clickChip(page, "W-2");
+  await skipDebtsIfOpen(page);
+  for (let step = 0; step < 8; step += 1) {
+    const now = await waitCurrent(
+      page,
+      (text, chips) =>
+        /Form 1040|last year.?s? (federal )?return|so review has the return/i.test(text) ||
+        hasChip(chips, "Skip") ||
+        hasChip(chips, "Looks right") ||
+        hasChip(chips, "These numbers look right?"),
+      20_000,
+    );
+    if (/Form 1040|last year.?s? (federal )?return|so review has the return/i.test(now.text)) break;
+    if (hasChip(now.chips, "Looks right") || hasChip(now.chips, "These numbers look right?")) {
+      await clickChip(page, hasChip(now.chips, "Looks right") ? "Looks right" : "These numbers look right?");
+      continue;
+    }
+    if (hasChip(now.chips, "Skip")) {
+      await clickChip(page, "Skip");
+      continue;
+    }
+    break;
+  }
+  await composerPaperclipPick(page, fixture);
+  await waitSystem(
+    page,
+    (texts) => texts.some((text) => /1040|Combes|\.pdf · received/i.test(text)),
+    20_000,
+  ).catch(async () => {
+    const now = await currentText(page);
+    const systems = await systemTexts(page);
+    throw new BeatFail(
+      `Combes 1040 paperclip silent — no filename/received — ${now} | ${systems.join(" | ") || "(no system lines)"}`,
+    );
+  });
+  const after = await waitCurrent(
+    page,
+    (text, chips) =>
+      (/2025 return/i.test(text) && (hasChip(chips, "Use this") || hasChip(chips, "Use document"))) ||
+      /could not read|unread/i.test(text),
+    90_000,
+  );
+  if (/could not read|unread/i.test(after.text) && !hasChip(after.chips, "Use this")) {
+    throw new BeatFail(`Combes 1040 unread — ${after.text}`);
+  }
+  if (!/2025 return/i.test(after.text)) {
+    throw new BeatFail(`Combes 1040 confirm missing 2025 return — ${after.text}`);
+  }
+  if (!/COMBES|Combes/i.test(after.text)) {
+    throw new BeatFail(`Combes 1040 confirm missing name — ${after.text}`);
+  }
+  if (/\b\d{3}-\d{2}-\d{4}\b/.test(after.text)) {
+    throw new BeatFail(`Combes 1040 printed SSN — ${after.text}`);
+  }
+  await assertLooksRightHiddenWhileUseThis(page);
+  await clickChip(page, hasChip(after.chips, "Use this") ? "Use this" : "Use document");
+  await waitCurrent(
+    page,
+    (text, chips) =>
+      !hasChip(chips, "Use this") ||
+      hasChip(chips, "Proceed") ||
+      hasChip(chips, "Not yet") ||
+      hasChip(chips, "Upload more"),
+    20_000,
+  );
+  const map = await structureMap(page);
+  const blob = Object.entries(map)
+    .map(([label, value]) => `${label}: ${value}`)
+    .join(" | ");
+  if (!/Tax return in/i.test(map.Docs ?? "")) {
+    throw new BeatFail(`Combes Use this must stamp Tax return in — ${blob}`);
+  }
+  if (!/2025 return/i.test(map.Return ?? "") || !/Combes/i.test(map.Return ?? "")) {
+    throw new BeatFail(`Combes Use this must write Return year + name — ${blob}`);
+  }
+  const useful = await stillUsefulLabels(page);
+  if (useful.some((item) => /Form 1040/i.test(item))) {
+    throw new BeatFail(`Form 1040 still on Still useful after Use this — ${useful.join(" · ")}`);
+  }
+  if (/\b\d{3}-\d{2}-\d{4}\b/.test(blob) || /\bssn\b/i.test(blob)) {
+    throw new BeatFail(`Combes SSN landed on File — ${blob}`);
+  }
+}
+
 async function foxTexts(page: Page): Promise<string[]> {
   const loc = page.locator(".fox-bubble--fox");
   const n = await loc.count();
@@ -2287,6 +2388,12 @@ const CASES: { n: number; title: string; run: (page: Page) => Promise<void> }[] 
       "founder Alameda walk: split W-2 ask, Skip W-2, paperclip Period $16,824.30 Use this",
     run: case25,
   },
+  {
+    n: 26,
+    title:
+      "Combes 1040 walk PDF: Use this writes Return year + name, Tax return in, 1040 off Still useful",
+    run: case26,
+  },
 ];
 
 async function openBrowser() {
@@ -2343,6 +2450,7 @@ async function localExtractBody(name: string) {
   // Founder CSTC / Alameda stubs — Grok page-read on preview is the proof.
   if (/pay-matt|cstc-pay-matt|28-paystub-cstc/i.test(name)) return null;
   if (/alameda|jan 2 2026 alameda health/i.test(name)) return null;
+  if (/combes allan and renz|2025 1040 - combes/i.test(name)) return null;
   const sample = sampleOnDisk(name);
   if (!sample) return null;
   const extracted = await classifyAndExtract(

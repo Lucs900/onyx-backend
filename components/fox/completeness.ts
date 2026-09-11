@@ -37,6 +37,7 @@ import {
   sameThinCoverRepeat,
   valuesMatch,
   wageNumberPathSettled,
+  TAX_RETURN_NAME_FIELD,
 } from "./fileWrite";
 import {
   QUALIFYING_INCOME_FIELD,
@@ -1684,7 +1685,11 @@ export function resolveProposal(
     ) {
       continue;
     }
-    if (proposal.field === "tax_year" && extra.field === "full_name") continue;
+    if (proposal.field === "tax_year" && extra.field === "full_name") {
+      const name = extra.value.trim();
+      if (name) next = writeConfirmedFact(next, TAX_RETURN_NAME_FIELD, name, source);
+      continue;
+    }
     next = writeConfirmedFact(next, extra.field, extra.value, source);
   }
   if (proposal.field === QUALIFYING_INCOME_FIELD && proposal.parts) {

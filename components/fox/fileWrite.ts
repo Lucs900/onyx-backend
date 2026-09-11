@@ -824,6 +824,9 @@ export const FIRST_SESSION_LOCKED_KEYS: Record<FirstSessionClass, readonly strin
 /** Grok first-page 1040. Printed / loud schedule extract keeps the full schema. */
 export const TAX_RETURN_PAGE_READ_KEYS = ["tax_year", "full_name"] as const;
 
+/** Completeness notepad name after Use this. Not an ID write. */
+export const TAX_RETURN_NAME_FIELD = "tax_return_name";
+
 export function lockTaxReturnPageReadFields(
   fields?: Record<string, string | null | undefined> | null,
 ): Record<string, string> {
@@ -3078,6 +3081,15 @@ function wageAskClassLabel(draft: FoxIntakeDraft, extractClass: ExtractClass): S
 export function taxReturnWrittenOnFile(draft: FoxIntakeDraft) {
   if (isTranscriptOnFile(draft)) return true;
   return /^(19|20)\d{2}$/.test(String(draft.facts?.tax_year?.value ?? "").replace(/\D/g, "").slice(0, 4));
+}
+
+/** Structure row after Use this. Year + printed name. Not wages. */
+export function taxReturnStructureValue(draft: FoxIntakeDraft) {
+  if (!taxReturnWrittenOnFile(draft)) return "";
+  const year = String(draft.facts?.tax_year?.value ?? "").replace(/\D/g, "").slice(0, 4);
+  const name = String(draft.facts?.[TAX_RETURN_NAME_FIELD]?.value ?? "").trim();
+  if (!year || !name) return "";
+  return `${year} return · ${name}`;
 }
 
 function wantsW2RemainderReturn(draft: FoxIntakeDraft) {
