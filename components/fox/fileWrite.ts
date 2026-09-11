@@ -1729,6 +1729,8 @@ export function applyExtractedFields(
     if (keepPrimaryPay && PRIMARY_PAY_KEYS.has(field)) continue;
     if (field === HIRE_DATE_FIELD) continue;
     if (extractClass === "government_id" && (field === "full_name" || field === "date_of_birth" || field === "dob")) continue;
+    /** Grok 1040 page-read name is not an ID write. Government ID stays on Still useful. */
+    if (extractClass === "tax_return" && field === "full_name") continue;
     if (extractClass === "government_id" && field === "present_address") {
       idAddress = value;
       continue;

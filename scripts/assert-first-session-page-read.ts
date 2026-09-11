@@ -30,6 +30,7 @@ import {
   isBoxNumberAsDollars,
   isFirstSessionClass,
   lockFirstSessionFields,
+  lockTaxReturnPageReadFields,
   looksLikeFederalReturnFields,
   looksLikeTaxReturnFields,
   nextDocInvite,
@@ -1007,6 +1008,15 @@ async function main() {
     usefulUnreadSkip.includes(LAST_YEAR_RETURN_STILL_USEFUL),
     `Skip on unread must keep Form 1040 — ${usefulUnreadSkip.join(" · ")}`,
   );
+  assert.deepEqual(
+    usefulUnreadSkip.slice(0, 3),
+    ["Government ID", LAST_YEAR_W2_STILL_USEFUL, LAST_YEAR_RETURN_STILL_USEFUL],
+    `Skip-on-unread Still useful head — ${usefulUnreadSkip.join(" · ")}`,
+  );
+  assert.ok(
+    !usefulUnreadSkip.slice(0, 3).includes("Mortgage statement"),
+    `Mortgage waits behind the head — ${usefulUnreadSkip.join(" · ")}`,
+  );
   assert.equal(unread1040Skip.facts?.qualifying_income?.value, "36453");
   assert.deepEqual(
     (nextFoxAsk(unread1040Skip).actions ?? []).map((item) => item.label),
@@ -1655,10 +1665,84 @@ async function main() {
     true,
   );
   assert.equal(hasLockedSuggestion("tax_return", { tax_year: "2025" }), false, "filename year only is not a lock");
+  const leakedCombes = {
+    tax_year: "2023",
+    full_name: "Allan Combes",
+    ssn: "123-45-6789",
+    agi: "356636",
+    wages: "356636",
+    schedule_c_net_profit: "88000",
+    schedule_e_rents_received: "294564",
+  };
+  assert.deepEqual(lockTaxReturnPageReadFields(leakedCombes), {
+    tax_year: "2023",
+    full_name: "Allan Combes",
+  });
+  const leakyGrok = {
+    async classify() {
+      return { class: "tax_return" as const, confidence: 0.94, readable: true };
+    },
+    async extract() {
+      return { fields: leakedCombes, warnings: [] };
+    },
+  };
+  const png1x1 = Buffer.from(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+    "base64",
+  );
+  const grokCombes = await classifyAndExtract(
+    png1x1,
+    "image/png",
+    leakyGrok,
+    "tax_return",
+    "2024 Tax Return Combes.pdf",
+  );
+  assert.equal(grokCombes.extractClass, "tax_return");
+  assert.notEqual(grokCombes.failed, true, "year + name is a page-read lock");
+  assert.deepEqual(Object.keys(grokCombes.fields).sort(), ["full_name", "tax_year"]);
+  assert.equal(grokCombes.fields.tax_year, "2023");
+  assert.equal(grokCombes.fields.full_name, "Allan Combes");
+  assert.equal(grokCombes.fields.ssn, undefined);
+  assert.equal(grokCombes.fields.agi, undefined);
+  assert.equal(grokCombes.fields.wages, undefined);
+  noSecrets(grokCombes.fields);
+  const pageOnW2 = applyExtractedFields(alamedaAfterMonthly, {
+    extractClass: "tax_return",
+    confidence: 0.94,
+    fields: grokCombes.fields,
+  });
+  assert.equal(pageOnW2.draft.facts?.qualifying_income?.value, "36453");
+  assert.ok(
+    !pageOnW2.draft.pendingProposal || pageOnW2.draft.pendingProposal.value === "36453",
+    "Grok 1040 page-read does not overwrite W-2 QI",
+  );
+  assert.equal(pageOnW2.draft.facts?.ssn, undefined);
+  assert.notEqual(pageOnW2.draft.facts?.full_name?.confirmed, true, "page-read name is not an ID write");
+  const usefulPage = (stillUsefulSection({ ...pageOnW2.draft, sampleAccepted: true })?.items ?? []).map(
+    (item) => item.label,
+  );
+  assert.ok(
+    usefulPage.includes("Government ID"),
+    `Page-read name must not clear Government ID — ${usefulPage.join(" · ")}`,
+  );
+  const scheduleUpgrade = applyExtractedFields(alamedaAfterMonthly, {
+    extractClass: "tax_return",
+    confidence: 0.94,
+    fields: {
+      tax_year: "2024",
+      return_kind: "schedule_c",
+      schedule_c_net_profit: "88000",
+    },
+  });
+  assert.equal(scheduleUpgrade.draft.facts?.qualifying_income?.value, "36453", "File QI stays until Use this");
+  assert.equal(scheduleUpgrade.draft.pendingProposal?.field, "qualifying_income");
+  assert.ok(scheduleUpgrade.draft.pendingProposal, "schedule extract is CFBW / Use this");
+  assert.notEqual(scheduleUpgrade.draft.pendingProposal?.value, "36453");
   const extractSrc = readFileSync(join(root, "lib/docs/extract.ts"), "utf8");
   assert.match(extractSrc, /TAX_RETURN_PAGE_READ_KEYS/);
   assert.match(extractSrc, /First pages of Form 1040 only/);
   assert.match(extractSrc, /Never output SSN/);
+  assert.match(extractSrc, /lockTaxReturnPageReadFields/);
   console.log("assert-first-session-page-read: ID · W-2 · stub · bank · contract · tax locked; unread invents nothing");
 }
 

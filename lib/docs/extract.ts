@@ -446,7 +446,10 @@ async function classifyAndExtractPage(
     try {
       const extracted = await adapter.extract(bytes, mediaType, hinted);
       const extractClass = promoteExtractClass(hinted, extracted.fields);
-      const fields = lockFirstSessionFields(extractClass, extracted.fields);
+      const fields =
+        extractClass === "tax_return" || hinted === "tax_return"
+          ? lockTaxReturnPageReadFields(extracted.fields)
+          : lockFirstSessionFields(extractClass, extracted.fields);
       const locked =
         extractClass === "bank_statement" || hinted === "bank_statement"
           ? looksLikeBankFields(fields)
