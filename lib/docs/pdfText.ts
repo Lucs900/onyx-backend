@@ -468,19 +468,73 @@ function looksLikePagePhoto(image: PdfEmbeddedImage) {
   return image.bytes.length >= 40_000;
 }
 
+/** White letter page with no glyphs. Helvetica/Times fail without standardFontDataUrl. */
+export function drawnPageHasInk(image: PdfEmbeddedImage | null | undefined) {
+  return Boolean(image && image.bytes.length >= 20_000);
+}
+
+function largestEmbeddedPhoto(bytes: Uint8Array) {
+  const embedded = readPdfEmbeddedImages(bytes).filter(looksLikePagePhoto);
+  if (!embedded.length) return null;
+  return embedded.reduce((best, image) => (image.bytes.length > best.bytes.length ? image : best));
+}
+
 /** IRS Get Transcript and similar files use Standard encryption with an empty user password. */
 export function pdfLooksEncrypted(bytes: Uint8Array) {
   return /\/Encrypt\s+\d+\s+\d+\s+R/.test(latin1(bytes));
 }
 
-function pdfJsOpenOptions(bytes: Uint8Array) {
+type PdfJsAssets = {
+  standardFontDataUrl: string;
+  cMapUrl: string;
+};
+
+let pdfJsAssets: PdfJsAssets | null | undefined;
+
+async function resolvePdfJsAssets(): Promise<PdfJsAssets | null> {
+  if (pdfJsAssets !== undefined) return pdfJsAssets;
+  const { createRequire } = await import("node:module");
+  const { existsSync } = await import("node:fs");
+  const { dirname, join } = await import("node:path");
+  const roots: string[] = [];
+  for (const base of [join(process.cwd(), "package.json"), typeof import.meta.url === "string" ? import.meta.url : ""]) {
+    if (!base) continue;
+    try {
+      roots.push(dirname(createRequire(base).resolve("pdfjs-dist/package.json")));
+    } catch {
+      /* try the next resolver */
+    }
+  }
+  roots.push(join(process.cwd(), "node_modules/pdfjs-dist"), "/var/task/node_modules/pdfjs-dist");
+  for (const root of roots) {
+    const fonts = join(root, "standard_fonts");
+    const cmaps = join(root, "cmaps");
+    if (existsSync(join(fonts, "LiberationSans-Regular.ttf")) && existsSync(cmaps)) {
+      pdfJsAssets = {
+        standardFontDataUrl: fonts.endsWith("/") ? fonts : `${fonts}/`,
+        cMapUrl: cmaps.endsWith("/") ? cmaps : `${cmaps}/`,
+      };
+      return pdfJsAssets;
+    }
+  }
+  pdfJsAssets = null;
+  return null;
+}
+
+async function pdfJsOpenOptions(bytes: Uint8Array) {
+  const assets = await resolvePdfJsAssets();
   return {
     data: new Uint8Array(bytes),
     password: "",
     disableWorker: true,
     isEvalSupported: false,
-    useSystemFonts: true,
+    // Node canvas has no Helvetica face. LiberationSans from pdfjs-dist draws the glyphs Grok reads.
+    useSystemFonts: false,
     useWorkerFetch: false,
+    cMapPacked: true,
+    ...(assets
+      ? { standardFontDataUrl: assets.standardFontDataUrl, cMapUrl: assets.cMapUrl }
+      : {}),
   };
 }
 
@@ -493,7 +547,7 @@ export async function readPdfJsTextLayer(bytes: Uint8Array): Promise<string[] | 
     if (!workerSrc) return null;
     pdfjs.GlobalWorkerOptions.workerSrc = workerSrc;
     const doc = await pdfjs.getDocument(
-      pdfJsOpenOptions(bytes) as Parameters<typeof pdfjs.getDocument>[0],
+      (await pdfJsOpenOptions(bytes)) as Parameters<typeof pdfjs.getDocument>[0],
     ).promise;
     const lines: string[] = [];
     const last = Math.min(doc.numPages, 3);
@@ -568,7 +622,7 @@ async function renderWithPdfJs(bytes: Uint8Array): Promise<PdfEmbeddedImage | nu
     }
     pdfjs.GlobalWorkerOptions.workerSrc = workerSrc;
     const doc = await pdfjs.getDocument(
-      pdfJsOpenOptions(bytes) as Parameters<typeof pdfjs.getDocument>[0],
+      (await pdfJsOpenOptions(bytes)) as Parameters<typeof pdfjs.getDocument>[0],
     ).promise;
     const page = await doc.getPage(1);
     const scale = bytes.length > 0 && bytes.length < 40_000 ? 2.25 : 1.5;
@@ -587,15 +641,13 @@ async function renderWithPdfJs(bytes: Uint8Array): Promise<PdfEmbeddedImage | nu
   }
 }
 
-/** First page as an image Fox can send to Grok. Drawn page first; skip 1-bit masks. */
+/** First page as an image Fox can send to Grok. Drawn glyphs first; skip blank Helvetica pages and 1-bit masks. */
 export async function renderPdfFirstPage(bytes: Uint8Array): Promise<PdfEmbeddedImage | null> {
   const drawn = await renderWithPdfJs(bytes);
-  if (drawn && looksLikePagePhoto(drawn)) return drawn;
+  if (drawn && drawnPageHasInk(drawn)) return drawn;
+  const embedded = largestEmbeddedPhoto(bytes);
+  if (embedded) return embedded;
   if (drawn) return drawn;
-  const embedded = readPdfEmbeddedImages(bytes).filter(looksLikePagePhoto);
-  if (embedded.length) {
-    return embedded.reduce((best, image) => (image.bytes.length > best.bytes.length ? image : best));
-  }
   try {
     const { execFile } = await import("node:child_process");
     const { promisify } = await import("node:util");

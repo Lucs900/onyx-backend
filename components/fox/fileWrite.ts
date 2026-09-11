@@ -667,11 +667,32 @@ export function transcriptOfferDone(draft: FoxIntakeDraft) {
   return Boolean(key && hasDocStamp(draft, key, "done"));
 }
 
+/** Grok first-page 1040: tax year + name only. Not a transcript, cover, or schedule dollar lock. */
+export function looksLikeTaxReturnPageReadFields(
+  fields?: Record<string, string | null | undefined> | null,
+): boolean {
+  if (!fields || isCoverReturnFields(fields) || isTranscriptReturnFields(fields)) return false;
+  const year = String(fields.tax_year ?? "").replace(/\D/g, "").slice(0, 4);
+  const name = String(fields.full_name ?? "").trim();
+  if (!/^(19|20)\d{2}$/.test(year) || !name) return false;
+  if (
+    String(fields.agi ?? "").trim() ||
+    String(fields.wages ?? "").trim() ||
+    String(fields.schedule_c_net_profit ?? "").trim() ||
+    String(fields.k1_ordinary_income ?? "").trim() ||
+    String(fields.schedule_e_rents_received ?? "").trim()
+  ) {
+    return false;
+  }
+  return true;
+}
+
 function federalReturnConfirmParts(fields: Record<string, string>) {
   const year = String(fields.tax_year ?? "").replace(/\D/g, "").slice(0, 4);
   const status = String(fields.filing_status ?? "").trim();
   const agi = String(fields.agi ?? "").replace(/[^\d.]/g, "");
   const deps = String(fields.dependent_count ?? "").replace(/\D/g, "");
+  const name = String(fields.full_name ?? "").trim();
   const parts: string[] = [];
   if (isTranscriptReturnFields(fields)) {
     parts.push("Tax return transcript");
@@ -679,6 +700,7 @@ function federalReturnConfirmParts(fields: Record<string, string>) {
     return { year, status: "", agi: "", deps: "", parts };
   }
   if (year) parts.push(`${year} return`);
+  if (looksLikeTaxReturnPageReadFields(fields) && name) parts.push(name);
   if (status) parts.push(status.replace(/\.$/, ""));
   if (Number(agi) > 0) parts.push(`AGI $${Number(agi).toLocaleString("en-US")}`);
   if (deps) {
@@ -694,7 +716,9 @@ export function maybeProposeFederalReturn(
   fields: Record<string, string>,
 ): FoxIntakeDraft | null {
   if (isTranscriptReturnFields(fields)) return null;
-  if (!looksLikeFederalReturnFields(fields) || isCoverReturnFields(fields)) return null;
+  if (isCoverReturnFields(fields)) return null;
+  const pageRead = looksLikeTaxReturnPageReadFields(fields);
+  if (!pageRead && !looksLikeFederalReturnFields(fields)) return null;
   if (draft.pendingProposal || draft.pendingConflict) return null;
   const { year, status, agi, deps, parts } = federalReturnConfirmParts(fields);
   if (!parts.length) return null;
@@ -1681,7 +1705,9 @@ export function applyExtractedFields(
   ]);
   const coverReturn = isCoverReturnFields(fields);
   const transcriptReturn = isTranscriptReturnFields(fields);
-  const holdFederalReturn = looksLikeFederalReturnFields(fields) && !transcriptReturn;
+  const pageReadReturn = looksLikeTaxReturnPageReadFields(fields);
+  const holdFederalReturn =
+    (looksLikeFederalReturnFields(fields) || pageReadReturn) && !transcriptReturn;
   for (const field of EXTRACT_SCHEMA_KEYS[extractClass]) {
     const value = fields[field];
     if (!value) continue;

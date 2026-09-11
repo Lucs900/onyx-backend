@@ -16,6 +16,7 @@ import {
 } from "@/components/fox/fileWrite";
 import type { ExtractClass } from "@/components/fox/types";
 import {
+  drawnPageHasInk,
   isPdf,
   pdfLooksEncrypted,
   pdfTextLayerCharCount,
@@ -333,6 +334,18 @@ export function extractHintOf(value: unknown): ExtractClass | null {
   return next === "other" ? null : next;
 }
 
+/** Walk file `2025 1040 - Combes Allan and Renz.pdf` is tax_return. Filename year is not a lock. */
+export function taxReturnPageHint(
+  hint?: ExtractClass | null,
+  filename?: string | null,
+): ExtractClass | null {
+  const name = String(filename ?? "");
+  if (/\b1040\b|form\s*1040|tax\s*return/i.test(name) && !/w-?2|pay.?stub/i.test(name)) {
+    return "tax_return";
+  }
+  return hint && hint !== "other" ? hint : null;
+}
+
 function asConfidence(value: unknown) {
   const n = typeof value === "number" ? value : Number(value);
   if (!Number.isFinite(n)) return 0;
@@ -541,7 +554,8 @@ function withTextChars(
   return { ...result, textLayerChars: result.textLayerChars ?? textLayerCharCountOf(bytes, mediaType) };
 }
 
-async function pageImageForGrok(
+/** PDF first page → PNG/JPEG for Grok. Same W-2 vision path. Never send application/pdf. */
+export async function pageImageForGrok(
   bytes: Uint8Array,
   mediaType: string,
 ): Promise<{ bytes: Uint8Array; mediaType: string } | null> {
@@ -550,11 +564,12 @@ async function pageImageForGrok(
   }
   if (isPdf(bytes) || mediaType === "application/pdf") {
     const page = await renderPdfFirstPage(bytes);
-    if (page && page.bytes.length >= 4_000) return page;
+    if (page && drawnPageHasInk(page)) return page;
     const embedded = readPdfEmbeddedImages(bytes).filter((image) => image.bytes.length >= 4_000);
     if (embedded[0]) {
       return embedded.reduce((best, image) => (image.bytes.length > best.bytes.length ? image : best));
     }
+    if (page && page.bytes.length >= 4_000) return page;
     if (page) return page;
   }
   return null;
@@ -630,6 +645,7 @@ export async function classifyAndExtract(
   hint?: ExtractClass | null,
   filename?: string | null,
 ): Promise<ClassifyExtractResult> {
+  hint = taxReturnPageHint(hint, filename);
   const textLayerChars = textLayerCharCountOf(bytes, mediaType);
   if (isPdf(bytes) || mediaType === "application/pdf") {
     const layer = await printedLinesForExtract(bytes, mediaType);

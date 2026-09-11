@@ -33,6 +33,7 @@ import {
   lockTaxReturnPageReadFields,
   looksLikeFederalReturnFields,
   looksLikeTaxReturnFields,
+  looksLikeTaxReturnPageReadFields,
   nextDocInvite,
   skipCurrentInvite,
   skipUnreadDoc,
@@ -66,8 +67,8 @@ import {
   maybeProposeQualifyingFromTaxFile,
 } from "../components/fox/qualifyingIncome";
 import { FAILED_READ_NOTE, isUnreadNote } from "../lib/docs/accept";
-import { classifyAndExtract, FOX_GROK_MODEL } from "../lib/docs/extract";
-import { renderPdfFirstPage } from "../lib/docs/pdfText";
+import { classifyAndExtract, FOX_GROK_MODEL, pageImageForGrok, taxReturnPageHint } from "../lib/docs/extract";
+import { drawnPageHasInk, renderPdfFirstPage } from "../lib/docs/pdfText";
 import {
   amountAskText,
   deskStripActions,
@@ -125,6 +126,40 @@ export const MATT_CSTC_STUB_CANDIDATES = [
 
 function isPdfBytes(bytes: Uint8Array) {
   return bytes.length > 80 && bytes[0] === 0x25 && bytes[1] === 0x50 && bytes[2] === 0x44 && bytes[3] === 0x46;
+}
+
+/** Helvetica Form 1040 first page. Same path as the 223,455-byte Combes walk — not a 1×1 PNG. */
+function form1040PagePdf(lines: string[]) {
+  const commands = ["BT", "/F1 12 Tf", "72 720 Td"];
+  for (const [index, line] of lines.entries()) {
+    if (index) commands.push("0 -18 Td");
+    commands.push(`(${line.replace(/[()\\]/g, "\\$&")}) Tj`);
+  }
+  commands.push("ET");
+  const stream = commands.join("\n");
+  const objects = [
+    "<< /Type /Catalog /Pages 2 0 R >>",
+    "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+    "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>",
+    `<< /Length ${Buffer.byteLength(stream)} >>\nstream\n${stream}\nendstream`,
+    "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+  ];
+  const chunks: Buffer[] = [Buffer.from("%PDF-1.4\n")];
+  const offsets = [0];
+  objects.forEach((body, index) => {
+    offsets.push(chunks.reduce((sum, part) => sum + part.length, 0));
+    chunks.push(Buffer.from(`${index + 1} 0 obj\n${body}\nendobj\n`));
+  });
+  const xrefAt = chunks.reduce((sum, part) => sum + part.length, 0);
+  let xref = `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
+  for (const offset of offsets.slice(1)) {
+    xref += `${String(offset).padStart(10, "0")} 00000 n \n`;
+  }
+  chunks.push(Buffer.from(xref));
+  chunks.push(
+    Buffer.from(`trailer << /Root 1 0 R /Size ${objects.length + 1} >>\nstartxref\n${xrefAt}\n%%EOF\n`),
+  );
+  return Buffer.concat(chunks);
 }
 
 function placeholderB64(text: string) {
@@ -1665,8 +1700,15 @@ async function main() {
     true,
   );
   assert.equal(hasLockedSuggestion("tax_return", { tax_year: "2025" }), false, "filename year only is not a lock");
+  assert.equal(looksLikeTaxReturnPageReadFields({ tax_year: "2025", full_name: "Allan Combes" }), true);
+  assert.equal(looksLikeTaxReturnPageReadFields({ tax_year: "2025" }), false);
+  assert.equal(
+    taxReturnPageHint("w2", "2025 1040 - Combes Allan and Renz.pdf"),
+    "tax_return",
+    "1040 in the walk name is tax_return, not the W-2 invite",
+  );
   const leakedCombes = {
-    tax_year: "2023",
+    tax_year: "2025",
     full_name: "Allan Combes",
     ssn: "123-45-6789",
     agi: "356636",
@@ -1675,32 +1717,56 @@ async function main() {
     schedule_e_rents_received: "294564",
   };
   assert.deepEqual(lockTaxReturnPageReadFields(leakedCombes), {
-    tax_year: "2023",
+    tax_year: "2025",
     full_name: "Allan Combes",
   });
+  const combesWalkPdf = form1040PagePdf([
+    "Form 1040",
+    "U.S. Individual Income Tax Return",
+    "2025",
+    "Filing Status",
+    "Married filing jointly",
+    "Your first name and middle initial Allan",
+    "Last name Combes",
+    "Spouse Renz Combes",
+  ]);
+  assert.ok(isPdfBytes(combesWalkPdf));
+  const drawn1040 = await renderPdfFirstPage(combesWalkPdf);
+  assert.ok(drawn1040 && drawnPageHasInk(drawn1040), "Helvetica 1040 first page must have ink for Grok");
+  const grokImage = await pageImageForGrok(combesWalkPdf, "application/pdf");
+  assert.ok(grokImage?.mediaType.startsWith("image/"), "page-read sends an image, not the PDF");
+  assert.ok(drawnPageHasInk(grokImage), "blank Helvetica render is not a page-read");
+  const pageCalls: { mediaType: string; bytes: number; extractClass?: string }[] = [];
   const leakyGrok = {
-    async classify() {
+    async classify(bytes: Uint8Array, mediaType: string) {
+      pageCalls.push({ mediaType, bytes: bytes.length });
       return { class: "tax_return" as const, confidence: 0.94, readable: true };
     },
-    async extract() {
+    async extract(bytes: Uint8Array, mediaType: string, extractClass: ExtractClass) {
+      pageCalls.push({ mediaType, bytes: bytes.length, extractClass });
       return { fields: leakedCombes, warnings: [] };
     },
   };
-  const png1x1 = Buffer.from(
-    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
-    "base64",
-  );
   const grokCombes = await classifyAndExtract(
-    png1x1,
-    "image/png",
+    combesWalkPdf,
+    "application/pdf",
     leakyGrok,
-    "tax_return",
-    "2024 Tax Return Combes.pdf",
+    "w2",
+    "2025 1040 - Combes Allan and Renz.pdf",
+  );
+  assert.ok(pageCalls.length, "page → image → Grok must fire on the Combes 1040 PDF");
+  assert.ok(
+    pageCalls.every((call) => call.mediaType.startsWith("image/")),
+    `Grok must receive a first-page image — ${pageCalls.map((call) => call.mediaType).join(",")}`,
+  );
+  assert.ok(
+    pageCalls.some((call) => call.extractClass === "tax_return"),
+    "1040 walk name locks tax year + name, not W-2 Box 5",
   );
   assert.equal(grokCombes.extractClass, "tax_return");
   assert.notEqual(grokCombes.failed, true, "year + name is a page-read lock");
   assert.deepEqual(Object.keys(grokCombes.fields).sort(), ["full_name", "tax_year"]);
-  assert.equal(grokCombes.fields.tax_year, "2023");
+  assert.equal(grokCombes.fields.tax_year, "2025");
   assert.equal(grokCombes.fields.full_name, "Allan Combes");
   assert.equal(grokCombes.fields.ssn, undefined);
   assert.equal(grokCombes.fields.agi, undefined);
@@ -1712,8 +1778,13 @@ async function main() {
     fields: grokCombes.fields,
   });
   assert.equal(pageOnW2.draft.facts?.qualifying_income?.value, "36453");
+  assert.equal(pageOnW2.draft.facts?.tax_year, undefined, "tax year waits for Use this");
+  assert.equal(pageOnW2.draft.pendingProposal?.field, "tax_year");
+  assert.equal(pageOnW2.draft.pendingProposal?.value, "2025");
+  assert.match(federalReturnConfirmCopy(grokCombes.fields), /2025 return/);
+  assert.match(federalReturnConfirmCopy(grokCombes.fields), /Allan Combes/);
   assert.ok(
-    !pageOnW2.draft.pendingProposal || pageOnW2.draft.pendingProposal.value === "36453",
+    !pageOnW2.draft.pendingProposal || pageOnW2.draft.pendingProposal.field === "tax_year",
     "Grok 1040 page-read does not overwrite W-2 QI",
   );
   assert.equal(pageOnW2.draft.facts?.ssn, undefined);
@@ -1739,10 +1810,14 @@ async function main() {
   assert.ok(scheduleUpgrade.draft.pendingProposal, "schedule extract is CFBW / Use this");
   assert.notEqual(scheduleUpgrade.draft.pendingProposal?.value, "36453");
   const extractSrc = readFileSync(join(root, "lib/docs/extract.ts"), "utf8");
+  const pdfSrc = readFileSync(join(root, "lib/docs/pdfText.ts"), "utf8");
   assert.match(extractSrc, /TAX_RETURN_PAGE_READ_KEYS/);
   assert.match(extractSrc, /First pages of Form 1040 only/);
   assert.match(extractSrc, /Never output SSN/);
   assert.match(extractSrc, /lockTaxReturnPageReadFields/);
+  assert.match(extractSrc, /pageImageForGrok/);
+  assert.match(pdfSrc, /standardFontDataUrl/);
+  assert.match(pdfSrc, /LiberationSans-Regular/);
   console.log("assert-first-session-page-read: ID · W-2 · stub · bank · contract · tax locked; unread invents nothing");
 }
 
