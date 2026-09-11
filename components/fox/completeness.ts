@@ -1684,6 +1684,7 @@ export function resolveProposal(
     ) {
       continue;
     }
+    if (proposal.field === "tax_year" && extra.field === "full_name") continue;
     next = writeConfirmedFact(next, extra.field, extra.value, source);
   }
   if (proposal.field === QUALIFYING_INCOME_FIELD && proposal.parts) {

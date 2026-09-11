@@ -723,6 +723,8 @@ export function maybeProposeFederalReturn(
   const { year, status, agi, deps, parts } = federalReturnConfirmParts(fields);
   if (!parts.length) return null;
   const extras: { field: string; value: string; label: string }[] = [];
+  const name = String(fields.full_name ?? "").trim();
+  if (pageRead && name) extras.push({ field: "full_name", value: name, label: "name" });
   if (status) extras.push({ field: "filing_status", value: status, label: "filing status" });
   const transcript = isTranscriptReturnFields(fields);
   if (!transcript && Number(agi) > 0) extras.push({ field: "agi", value: agi, label: "AGI" });
@@ -3072,10 +3074,16 @@ function wageAskClassLabel(draft: FoxIntakeDraft, extractClass: ExtractClass): S
   return askClassLabel(extractClass);
 }
 
+/** Tax year written — or a transcript already on File. Extracted-unread / CFBW page-read is not in. */
+export function taxReturnWrittenOnFile(draft: FoxIntakeDraft) {
+  if (isTranscriptOnFile(draft)) return true;
+  return /^(19|20)\d{2}$/.test(String(draft.facts?.tax_year?.value ?? "").replace(/\D/g, "").slice(0, 4));
+}
+
 function wantsW2RemainderReturn(draft: FoxIntakeDraft) {
   const income = draft.incomeType.value;
   if (income !== "w2" && income !== "both") return false;
-  if (receivedTaxReturnCount(draft) >= 1) return false;
+  if (taxReturnWrittenOnFile(draft)) return false;
   if (skippedW2StubPath(draft)) return true;
   // After Looks right the 1040 is completeness. Keep it when skipped or still asked.
   if (draft.sampleAccepted) return true;
@@ -3346,6 +3354,7 @@ export function completenessFileFromDraft(draft: FoxIntakeDraft): CompletenessFi
       display !== "purchase_contract"
     ) {
       if (display === "tax_return" && !docIsRealExtract(doc)) continue;
+      if (display === "tax_return" && !taxReturnWrittenOnFile(draft)) continue;
       received.add(display);
     }
   }

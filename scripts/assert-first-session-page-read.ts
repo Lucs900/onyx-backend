@@ -34,13 +34,14 @@ import {
   looksLikeFederalReturnFields,
   looksLikeTaxReturnFields,
   looksLikeTaxReturnPageReadFields,
+  taxReturnWrittenOnFile,
   nextDocInvite,
   skipCurrentInvite,
   skipUnreadDoc,
   stillUsefulSection,
   unreadDocOpen,
 } from "../components/fox/fileWrite";
-import { canLooksRight, resolveProposal, shouldSpeakPendingConfirm } from "../components/fox/completeness";
+import { canLooksRight, proposalAskCopy, resolveProposal, shouldSpeakPendingConfirm } from "../components/fox/completeness";
 import { applyLooksRightMotion } from "../components/fox/motion";
 
 import { applyExtractWrite, emptyDraft, loadIntakeDraft, receiveDocument } from "../components/fox/store";
@@ -1781,8 +1782,13 @@ async function main() {
   assert.equal(pageOnW2.draft.facts?.tax_year, undefined, "tax year waits for Use this");
   assert.equal(pageOnW2.draft.pendingProposal?.field, "tax_year");
   assert.equal(pageOnW2.draft.pendingProposal?.value, "2025");
+  assert.equal(pageOnW2.draft.pendingProposal?.extras?.find((item) => item.field === "full_name")?.value, "Allan Combes");
   assert.match(federalReturnConfirmCopy(grokCombes.fields), /2025 return/);
   assert.match(federalReturnConfirmCopy(grokCombes.fields), /Allan Combes/);
+  const liveConfirm = proposalAskCopy(pageOnW2.draft.pendingProposal!);
+  assert.match(liveConfirm, /2025 return/);
+  assert.match(liveConfirm, /Allan Combes/);
+  assert.match(liveConfirm, /Use this/i);
   assert.ok(
     !pageOnW2.draft.pendingProposal || pageOnW2.draft.pendingProposal.field === "tax_year",
     "Grok 1040 page-read does not overwrite W-2 QI",
@@ -1796,6 +1802,62 @@ async function main() {
     usefulPage.includes("Government ID"),
     `Page-read name must not clear Government ID — ${usefulPage.join(" · ")}`,
   );
+
+  const pageReadAt = "2026-09-11T21:00:00.000Z";
+  const pageReadName = "2025 1040 - Combes Allan and Renz.pdf";
+  loadIntakeDraft({
+    ...alamedaAfterIdSkip,
+    documents: [
+      ...alamedaAfterIdSkip.documents,
+      {
+        slot: "other",
+        name: pageReadName,
+        type: "application/pdf",
+        size: 223455,
+        receivedAt: pageReadAt,
+        status: "received",
+        extractClass: "tax_return",
+      },
+    ],
+  });
+  const pageWrite = applyExtractWrite(pageReadAt, pageReadName, {
+    extractClass: "tax_return",
+    confidence: 0.94,
+    fields: grokCombes.fields,
+  });
+  assert.equal(pageWrite.draft.facts?.qualifying_income?.value, "36453");
+  assert.equal(pageWrite.draft.facts?.tax_year, undefined, "year stays off File until Use this");
+  assert.equal(taxReturnWrittenOnFile(pageWrite.draft), false);
+  assert.equal(pageWrite.draft.pendingProposal?.field, "tax_year");
+  const walkConfirm = nextFoxAsk(pageWrite.draft);
+  assert.match(walkConfirm.text, /2025 return/);
+  assert.match(walkConfirm.text, /Allan Combes/);
+  assert.deepEqual(
+    (walkConfirm.actions ?? []).map((item) => item.label),
+    ["Use this", "Change"],
+  );
+  const usefulBeforeUse = (stillUsefulSection(pageWrite.draft)?.items ?? []).map((item) => item.label);
+  assert.ok(
+    usefulBeforeUse.includes(LAST_YEAR_RETURN_STILL_USEFUL),
+    `Still useful keeps Form 1040 until Use this — ${usefulBeforeUse.join(" · ")}`,
+  );
+  const docsBeforeUse = previewFacts(pageWrite.draft)
+    .filter((fact) => fact.label === "Docs")
+    .map((fact) => fact.value)
+    .join(" · ");
+  assert.doesNotMatch(docsBeforeUse, /Tax return in/, `Docs must not stamp Tax return in before Use this — ${docsBeforeUse}`);
+  const pageUsed = resolveProposal(pageWrite.draft, "accept");
+  assert.equal(pageUsed.facts?.tax_year?.value, "2025");
+  assert.equal(pageUsed.facts?.qualifying_income?.value, "36453", "QI stays on Use this write");
+  assert.equal(pageUsed.facts?.wages, undefined, "cover wages do not overwrite");
+  assert.equal(pageUsed.facts?.ssn, undefined);
+  assert.notEqual(pageUsed.facts?.full_name?.confirmed, true);
+  assert.equal(taxReturnWrittenOnFile(pageUsed), true);
+  const docsAfterUse = previewFacts(pageUsed)
+    .filter((fact) => fact.label === "Docs")
+    .map((fact) => fact.value)
+    .join(" · ");
+  assert.match(docsAfterUse, /Tax return in/);
   const scheduleUpgrade = applyExtractedFields(alamedaAfterMonthly, {
     extractClass: "tax_return",
     confidence: 0.94,

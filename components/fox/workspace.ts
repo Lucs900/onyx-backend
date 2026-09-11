@@ -122,6 +122,7 @@ import {
   transcriptFollowUpAsk,
   transcriptSignalCopy,
   isTranscriptOnFile,
+  taxReturnWrittenOnFile,
   canSpeakDocStamp,
   transcriptSpeakKey,
   thisBorrowerPrimaryPackageDone,
@@ -8093,6 +8094,9 @@ function docsFact(draft: FoxIntakeDraft): PreviewFact | null {
               wageW2ExtractAccepted(draft) &&
               !stubWritten
             ) {
+              return "";
+            }
+            if (wageLabel === "Tax return" && !taxReturnWrittenOnFile(draft)) {
               return "";
             }
             return `${wageLabel} in`;
