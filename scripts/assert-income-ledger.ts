@@ -18,6 +18,7 @@ import {
 } from "../components/fox/qualifyingIncome";
 import { SUGGESTED_INCOME_NOTE, SUGGESTED_RENTAL_CASH_FLOW_NOTE } from "../lib/income/suggest";
 import { resolveProposal } from "../components/fox/completeness";
+import { FAILED_READ_NOTE } from "../lib/docs/accept";
 import { applyExtractWrite, emptyDraft, loadIntakeDraft, receiveDocument } from "../components/fox/store";
 import { coverWageGapAsk, nextFoxAsk, previewFacts } from "../components/fox/workspace";
 import {
@@ -494,7 +495,7 @@ async function main() {
   assert.equal(packetRead.fields.k1_ordinary_income, "-294564");
   assert.ok(hasRealIncomeLedgerDollars(packetRead.fields));
 
-  const unreadPacket = multiPagePdf([
+  const labelOnlyPacket = multiPagePdf([
     [
       "Form 1040",
       "U.S. Individual Income Tax Return",
@@ -510,24 +511,38 @@ async function main() {
       "5 Cash expenses (ex-depreciation)",
     ],
   ]);
-  const unreadRead = await classifyAndExtract(
-    unreadPacket,
+  const keepNames = await classifyAndExtract(
+    labelOnlyPacket,
     "application/pdf",
     namesOnly,
     "tax_return",
     "2025 1040 - Combes Allan and Renz.pdf",
   );
-  assert.equal(unreadRead.failed, true, "Sch E lines with no real dollars are unread, not names-only");
-  assert.deepEqual(unreadRead.fields, {});
+  assert.notEqual(keepNames.failed, true, "do not unread a 1040 packet as invent-nothing success");
+  assert.equal(keepNames.fields.tax_year, "2025");
+  assert.match(keepNames.fields.full_name ?? "", /COMBES/i);
 
+  const scanPacket = multiPagePdf([
+    [
+      "Form 1040",
+      "U.S. Individual Income Tax Return",
+      "2025",
+      "Your first name and middle initial Allan",
+      "Last name Combes",
+    ],
+    ["Continued"],
+  ]);
+  let ledgerPages = 0;
   const recovered = await classifyAndExtract(
-    unreadPacket,
+    scanPacket,
     "application/pdf",
     {
       ...namesOnly,
       async extractLedger() {
+        ledgerPages += 1;
         return {
           fields: {
+            wages: "520000",
             schedule_e_rents_received: "42000",
             schedule_e_cash_expenses: "11400",
             k1_ordinary_income: "-294564",
@@ -539,13 +554,63 @@ async function main() {
     "tax_return",
     "2025 1040 - Combes Allan and Renz.pdf",
   );
+  assert.ok(ledgerPages >= 1, "later packet pages go to Grok like a W-2 page image");
   assert.notEqual(recovered.failed, true);
   assert.equal(recovered.fields.full_name, "ALLAN COMBES and RENZ COMBES");
+  assert.equal(recovered.fields.wages, "520000");
   assert.equal(recovered.fields.schedule_e_rents_received, "42000");
   assert.equal(recovered.fields.k1_ordinary_income, "-294564");
+  const recoveredRows = incomeLedgerRowsFromFields(recovered.fields);
+  assert.ok(recoveredRows.some((row) => row.kind === "schedule_e"));
+  assert.ok(recoveredRows.some((row) => row.kind === "named_loss" && Number(row.monthly) < 0));
+
+  const stubAt = "2026-09-12T12:00:00.000Z";
+  const returnAt = "2026-09-12T12:05:00.000Z";
+  loadIntakeDraft({
+    ...wageQiDraft(),
+    documents: [
+      {
+        slot: "paystubs",
+        name: "Jan 2 2026 Alameda Health System Pay Stub.pdf",
+        type: "application/pdf",
+        size: 143369,
+        receivedAt: stubAt,
+        status: "extracted",
+        extractClass: "paystub",
+      },
+      {
+        slot: "other",
+        name: "2025 1040 - Combes Allan and Renz.pdf",
+        type: "application/pdf",
+        size: 223455,
+        receivedAt: returnAt,
+        status: "received",
+        extractClass: "tax_return",
+      },
+    ],
+  });
+  const unreadReturn = applyExtractWrite(returnAt, "2025 1040 - Combes Allan and Renz.pdf", {
+    extractClass: "tax_return",
+    confidence: 0.2,
+    fields: {},
+  });
+  assert.ok(unreadReturn.quietLines.includes(FAILED_READ_NOTE));
+  assert.equal(unreadReturn.draft.facts?.qualifying_income?.value, "36453");
+  const docs = previewFacts(unreadReturn.draft).find((fact) => fact.id === "docs")?.value ?? "";
+  assert.match(docs, /Paystubs in/);
+  assert.match(docs, /Tax return/);
+  assert.match(docs, /could not read/);
+  assert.doesNotMatch(
+    docs,
+    /^Paystubs in · received · could not read$/,
+    "unread line belongs to the return, not the written stub",
+  );
+  const stubDoc = unreadReturn.draft.documents.find((doc) => doc.slot === "paystubs");
+  assert.equal(stubDoc?.status, "extracted");
+  assert.ok(!/could not read/i.test(stubDoc?.note ?? ""));
 
   console.log(
-    "assert-income-ledger: stub QI stays · Sch E / partnership own rows · loss does not net · cover wages held · gap once · gross not QI · no invented $2 · QI label stays stub · no fixture K-1 · 1040 packet reads Sch E/K-1 or unread",
+    "assert-income-ledger: stub QI stays · Sch E / partnership own rows · loss does not net · cover wages held · gap once · gross not QI · no invented $2 · QI label stays stub · no fixture K-1 · packet page images → Grok · unread is the return",
   );
 }
 

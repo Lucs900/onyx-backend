@@ -934,6 +934,7 @@ export function hasLockedSuggestion(
 export function scheduleECashFlowMissingFromExtract(
   fields?: Record<string, string | null | undefined> | null,
 ) {
+  if (looksLikeTaxReturnPageReadFields(fields)) return false;
   const kind = normalizeReturnKind(String(fields?.return_kind ?? ""));
   if (kind !== "schedule_e") return false;
   return (
@@ -946,6 +947,7 @@ export function k1OrdinaryMissingFromExtract(
   fields?: Record<string, string | null | undefined> | null,
   name?: string,
 ) {
+  if (looksLikeTaxReturnPageReadFields(fields)) return false;
   if (isCoverReturnFields(fields)) return false;
   const kind = normalizeReturnKind(String(fields?.return_kind ?? ""));
   const namedK1 = kind === "k1" || kind === "1065" || kind === "1120s";

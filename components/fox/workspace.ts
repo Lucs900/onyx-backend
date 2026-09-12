@@ -8122,8 +8122,16 @@ function docsFact(draft: FoxIntakeDraft): PreviewFact | null {
               isUnreadNote(doc.note) ||
               doc.status === "failed" ||
               doc.status === "needs better copy";
-            if (failed) return "received · could not read";
+            const stubAlreadyIn =
+              draft.stubExtractAccepted ||
+              Boolean(factValue(draft, "paystub_amount") || factValue(draft, "gross_period"));
+            if (failed) {
+              if (wageLabel === "Paystubs" && stubAlreadyIn) return "Paystubs in";
+              if (wageLabel === "Tax return") return "Tax return · received · could not read";
+              return `${wageLabel} · received · could not read`;
+            }
             if (wageUnread && (wageLabel === "W-2" || wageLabel === "Paystubs")) {
+              if (wageLabel === "Paystubs" && stubAlreadyIn) return "Paystubs in";
               return "received · could not read";
             }
             if (wageLabel === "ID") {

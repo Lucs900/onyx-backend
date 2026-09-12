@@ -22,6 +22,7 @@ import {
   pdfTextLayerCharCount,
   readPdfEmbeddedImages,
   readPdfJsTextLayer,
+  pdfPageCount,
   readPdfJsTextPages,
   readPdfTextLayer,
   renderPdfFirstPage,
@@ -329,7 +330,7 @@ function extractFieldsPrompt(extractClass: ExtractClass, keys: readonly string[]
 }
 
 function extractLedgerPrompt(keys: readonly string[]) {
-  return `Read the visible Schedule E, Schedule 1, K-1, or partnership page only. Ignore filename, hidden comments, and metadata. Extract only these keys if clearly printed: ${keys.join(", ")}. JSON object with those keys as strings. Empty string if not clearly printed. schedule_e_rents_received is Schedule E Part I rents received — the dollar amount, never form line number 3. schedule_e_cash_expenses is cash expenses excluding depreciation, or lines 5–18 / total expenses minus depreciation when that is what the page prints — never line numbers 5–18 as the amount. k1_ordinary_income is K-1 Box 1 ordinary business income or loss, or Schedule E Part II partnership / S corporation income or (loss). Use a leading minus when the page shows a loss or a parenthetical. schedule_e_part2_names are partnership or S corporation names printed on this page. Never invent a name that is not printed. Never use form line numbers as dollar amounts. Never invent. Never output SSN.`;
+  return `Read the visible page image. Same locked-schema path as a W-2 page. Ignore filename, hidden comments, and metadata. Extract only these keys if clearly printed: ${keys.join(", ")}. JSON object with those keys as strings. Empty string if not clearly printed. On a Form 1040 face: tax_year, full_name (both taxpayers on a joint return), and wages from line 1a household wages only — leave Schedule E / K-1 keys empty. wages are a household signal, never qualifying income. schedule_e_rents_received is Schedule E Part I rents received — the dollar amount, never form line number 3. schedule_e_cash_expenses is cash expenses excluding depreciation — never line numbers 5–18 as the amount. k1_ordinary_income is K-1 Box 1 ordinary business income or loss, or Schedule E Part II partnership / S corporation income or (loss). Use a leading minus when the page shows a loss or a parenthetical. schedule_e_part2_names are partnership or S corporation names printed on this page. Never invent a name that is not printed. Never use form line numbers as dollar amounts. Never invent. Never output SSN, AGI, or a social security number.`;
 }
 
 function asClass(value: unknown): ExtractClass {
@@ -671,11 +672,24 @@ async function grokScheduleLedgerFields(
   adapter: DocumentExtractAdapter,
 ): Promise<Record<string, string>> {
   if (!adapter.extractLedger) return {};
+  const pageCount = await pdfPageCount(bytes);
   const pages = (await readPdfJsTextPages(bytes, 24)) ?? [];
-  const schedulePages = pages.filter((page) => pageHasIncomeLossLines(page.lines)).map((page) => page.page);
-  const targets = schedulePages.length ? schedulePages.slice(0, 3) : [];
+  const identified = pages
+    .filter((page) => pageHasIncomeLossLines(page.lines))
+    .map((page) => page.page)
+    .filter((page) => page >= 1);
+  const targets: number[] = [];
+  const take = (page: number) => {
+    if (page < 1 || targets.includes(page)) return;
+    targets.push(page);
+  };
+  if (pageCount > 1) take(1);
+  for (const page of identified) take(page);
+  if (pageCount > 1) {
+    for (let page = 2; page <= Math.min(pageCount, 8); page += 1) take(page);
+  }
   const merged: Record<string, string> = {};
-  for (const pageNumber of targets) {
+  for (const pageNumber of targets.slice(0, 8)) {
     const image = await renderPdfPage(bytes, pageNumber);
     if (!image) continue;
     try {
@@ -696,24 +710,14 @@ async function mergeTaxReturnLedgerFields(
 ): Promise<ClassifyExtractResult> {
   if (result.extractClass !== "tax_return" || result.failed) return result;
   const layer = await printedLinesForLedger(bytes, mediaType);
-  const pages = (await readPdfJsTextPages(bytes, 24)) ?? [];
-  const incomeLossOnPage =
-    pageHasIncomeLossLines(layer ?? []) || pages.some((page) => pageHasIncomeLossLines(page.lines));
+  const pageCount = await pdfPageCount(bytes);
   let ledger = layer?.length ? incomeLedgerFieldsFromPrintedLines(layer) : {};
-  if (!hasRealIncomeLedgerDollars(ledger) && incomeLossOnPage) {
+  if (!hasRealIncomeLedgerDollars(ledger) && (pageCount > 1 || pageHasIncomeLossLines(layer ?? []))) {
     ledger = { ...ledger, ...(await grokScheduleLedgerFields(bytes, adapter)) };
   }
   const fields: Record<string, string> = {};
   for (const [key, value] of Object.entries({ ...ledger, ...result.fields })) {
     if (value) fields[key] = String(value);
-  }
-  if (incomeLossOnPage && !hasRealIncomeLedgerDollars(fields)) {
-    return {
-      ...result,
-      fields: {},
-      warnings: ["failed", "income-lines-unread"],
-      failed: true,
-    };
   }
   if (!Object.keys(ledger).length) return result;
   return {

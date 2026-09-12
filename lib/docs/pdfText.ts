@@ -625,6 +625,23 @@ async function pdfJsTextPagesFromDoc(
   return pages;
 }
 
+/** Page count for packet Grok. 0 when this is not a PDF. */
+export async function pdfPageCount(bytes: Uint8Array): Promise<number> {
+  if (!isPdf(bytes)) return 0;
+  try {
+    const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
+    const workerSrc = await resolvePdfWorkerSrc();
+    if (!workerSrc) return 0;
+    pdfjs.GlobalWorkerOptions.workerSrc = workerSrc;
+    const doc = await pdfjs.getDocument(
+      (await pdfJsOpenOptions(bytes)) as Parameters<typeof pdfjs.getDocument>[0],
+    ).promise;
+    return doc.numPages;
+  } catch {
+    return 0;
+  }
+}
+
 /** Per-page glyphs via pdf.js. Classify stays on the first three pages; ledger may read further. */
 export async function readPdfJsTextPages(
   bytes: Uint8Array,

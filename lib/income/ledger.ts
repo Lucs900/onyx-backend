@@ -290,6 +290,8 @@ function moneyNearLabel(blob: string, pattern: RegExp): string | undefined {
 
 export const TAX_RETURN_LEDGER_READ_KEYS = [
   "tax_year",
+  "full_name",
+  "wages",
   "return_kind",
   "schedule_e_rents_received",
   "schedule_e_cash_expenses",
@@ -312,7 +314,8 @@ export function sanitizeLedgerExtractFields(fields: Record<string, string>): Rec
       key === "k1_ordinary_income" ||
       key === "schedule_c_net_profit" ||
       key === "gross_receipts" ||
-      key === "entity_ordinary_income"
+      key === "entity_ordinary_income" ||
+      key === "wages"
     ) {
       const n = realLedgerMoney(raw);
       if (n == null) continue;
