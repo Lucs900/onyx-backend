@@ -4127,11 +4127,16 @@ function workspaceAskCopy(
   if (prompt === "cover-wage-gap") {
     return coverWageGapAsk();
   }
-  if (prompt === "household-wages" && draft.pendingProposal?.field === "household_wages") {
-    return {
-      text: householdWagesAskCopy(Number(draft.pendingProposal.value) || 0),
-      actions: incomeConfirmActions(),
-    };
+  if (prompt === "household-wages") {
+    const annual =
+      Number(draft.pendingProposal?.field === "household_wages" ? draft.pendingProposal.value : "") ||
+      Number(String(draft.pendingCoverWages ?? "").replace(/[^\d.]/g, ""));
+    if (annual > 0) {
+      return {
+        text: householdWagesAskCopy(annual),
+        actions: incomeConfirmActions(),
+      };
+    }
   }
   if (prompt === "packet-read") {
     return { text: PACKET_READING_LINE };

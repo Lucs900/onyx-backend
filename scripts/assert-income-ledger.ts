@@ -323,10 +323,26 @@ async function main() {
   assert.equal(afterYear.facts?.qualifying_income?.value, "36453", "QI stays on year Use this");
   assert.equal(afterYear.facts?.tax_year?.value, "2025");
   assert.equal(afterYear.facts?.wages, undefined);
-  assert.equal(taxReturnPacketNeedsRead(afterYear), true, "after name write, keep reading page 1");
+  assert.equal(taxReturnPacketNeedsRead(afterYear), true, "after name write, keep reading later pages");
   assert.ok(!afterYear.awaitingCoverWageGap);
-  assert.equal(afterYear.pendingProposal, null);
+  assert.equal(
+    isHouseholdWagesProposal(afterYear.pendingProposal),
+    true,
+    "names Use this offers page-1 household wages immediately",
+  );
   assert.equal(coverWageGapAsk().text, COVER_WAGE_GAP_ASK);
+  const wageAsk = nextFoxAsk(afterYear);
+  assert.match(wageAsk.text, /household wages of \$600,000/i);
+  assert.match(wageAsk.text, /not qualifying income/i);
+  assert.match(wageAsk.text, /Use this/i);
+  assert.deepEqual(
+    (wageAsk.actions ?? []).map((item) => item.label),
+    ["Use this", "Change"],
+  );
+  assert.ok(
+    !(wageAsk.actions ?? []).some((item) => item.label === "Proceed"),
+    "do not jump to finish chips over household-wages Use this",
+  );
 
   loadIntakeDraft(afterYear);
   const afterPage1 = applyExtractWrite(pageReadAt, pageReadName, {
@@ -343,14 +359,6 @@ async function main() {
   assert.equal(afterPage1.draft.facts?.qualifying_income?.value, "36453", "household wages do not overwrite QI");
   assert.equal(afterPage1.draft.facts?.wages, undefined, "cover wages stay off File wages");
   assert.equal(isHouseholdWagesProposal(afterPage1.draft.pendingProposal), true);
-  const wageAsk = nextFoxAsk(afterPage1.draft);
-  assert.match(wageAsk.text, /household wages of \$600,000/i);
-  assert.match(wageAsk.text, /not qualifying income/i);
-  assert.match(wageAsk.text, /Use this/i);
-  assert.deepEqual(
-    (wageAsk.actions ?? []).map((item) => item.label),
-    ["Use this", "Change"],
-  );
 
   const afterHousehold = resolveProposal(afterPage1.draft, "accept");
   assert.equal(afterHousehold.facts?.qualifying_income?.value, "36453");
@@ -865,6 +873,8 @@ async function main() {
   assert.match(extractSrc, /extractTaxReturnPacket|packet_read/);
   assert.match(extractSrc, /line 1z \(Wages, salaries, tips, etc\.\)/);
   assert.match(extractSrc, /Never line 1b household employee wages/);
+  assert.match(extractSrc, /PAGE1_HOUSEHOLD_WAGES_PROMPT|line 1z \(Wages, salaries, tips, etc\. Add lines 1a/);
+  assert.match(extractSrc, /taxReturnPagesToGrok|schedule\\s\*e\\b/);
   assert.match(extractSrc, /assignLedgerKeepFirst/);
   assert.match(routeSrc, /maxDuration = 300/);
   assert.doesNotMatch(routeSrc, /maxDuration = 60/);

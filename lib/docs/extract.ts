@@ -332,6 +332,10 @@ function extractLedgerPrompt(keys: readonly string[]) {
   return `Read the visible page image. Same locked-schema path as a W-2 page. Ignore filename, hidden comments, and metadata. Extract only these keys if clearly printed: ${keys.join(", ")}. JSON object with those keys as strings. Empty string if not clearly printed. On a Form 1040 face: tax_year, full_name (both taxpayers on a joint return), and wages from line 1z (Wages, salaries, tips, etc.) or line 1a (Total amount from Form(s) W-2, box 1) when printed. Never line 1b household employee wages. wages are the household-total wage signal, never qualifying income. Leave Schedule E / K-1 keys empty on the 1040 face. schedule_e_rents_received is Schedule E Part I rents received — the dollar amount, never form line number 3. schedule_e_cash_expenses is cash expenses excluding depreciation — never line numbers 5–18 as the amount. k1_ordinary_income is K-1 Box 1 ordinary business income or loss, or Schedule E Part II partnership / S corporation income or (loss). Use a leading minus when the page shows a loss or a parenthetical. schedule_e_part2_names are partnership or S corporation names printed on this page. Never invent a name that is not printed. Never use form line numbers as dollar amounts. Never invent. Never output SSN, AGI, or a social security number.`;
 }
 
+const PAGE1_HOUSEHOLD_WAGES_PROMPT = `Read this Form 1040 page image only. JSON object with one key: wages.
+wages is the dollar amount printed on line 1z (Wages, salaries, tips, etc. Add lines 1a through 1h) or, if 1z is blank, line 1a (Total amount from Form(s) W-2, box 1).
+Never line 1b Household employee wages. Never a form line number. Never invent. Empty string if that dollar amount is not clearly printed.`;
+
 function asClass(value: unknown): ExtractClass {
   const raw = String(value ?? "")
     .trim()
@@ -704,7 +708,7 @@ async function printedLinesForLedger(
   return printedLinesForExtract(bytes, mediaType);
 }
 
-const TAX_RETURN_PACKET_GROK_PAGE_CAP = 6;
+const TAX_RETURN_PACKET_GROK_PAGE_CAP = 8;
 
 async function printedLayerLooksLikeIrsTranscript(
   bytes: Uint8Array,
@@ -718,6 +722,60 @@ async function printedLayerLooksLikeIrsTranscript(
   if (bytes.length > 80_000) return false;
   const pages = await readPdfJsTextPages(bytes, 3);
   return blobLooksLikeIrsTranscript(pages?.flatMap((page) => page.lines).join("\n") ?? "");
+}
+
+async function grokPage1HouseholdWages(
+  bytes: Uint8Array,
+  adapter: DocumentExtractAdapter,
+): Promise<Record<string, string>> {
+  const image = await renderPdfPage(bytes, 1);
+  if (!image?.mediaType.startsWith("image/")) return {};
+  let cleaned: Record<string, string> = {};
+  if (adapter.extractLedger) {
+    try {
+      const extracted = await adapter.extractLedger(image.bytes, image.mediaType);
+      cleaned = sanitizeLedgerExtractFields(extracted.fields ?? {});
+    } catch (error) {
+      logVisionError("page1HouseholdWagesLedger", error);
+    }
+  }
+  if (cleaned.wages || adapter !== grokExtractAdapter) return cleaned;
+  try {
+    const parsed = await grokJson(image.bytes, image.mediaType, PAGE1_HOUSEHOLD_WAGES_PROMPT);
+    return {
+      ...cleaned,
+      ...sanitizeLedgerExtractFields({ wages: String(parsed.wages ?? "") }),
+    };
+  } catch (error) {
+    logVisionError("page1HouseholdWages", error);
+    return cleaned;
+  }
+}
+
+async function taxReturnPagesToGrok(bytes: Uint8Array): Promise<number[]> {
+  const pageCount = await pdfPageCount(bytes);
+  const last = pageCount > 1 ? Math.min(pageCount, 24) : 1;
+  const printed = await readPdfJsTextPages(bytes, last);
+  const targets: number[] = [];
+  const take = (page: number) => {
+    if (page < 1 || (pageCount > 0 && page > pageCount) || targets.includes(page)) return;
+    targets.push(page);
+  };
+  take(1);
+  if (printed?.length) {
+    printed.forEach((page, index) => {
+      const blob = page.lines.join("\n");
+      if (/schedule\s*e\b|supplemental income and loss/i.test(blob)) take(index + 1);
+      if (/\bform\s*k-?1\b|\bschedule\s*k-?1\b/i.test(blob) && /ordinary/i.test(blob)) {
+        take(index + 1);
+      }
+    });
+  }
+  if (targets.length === 1) {
+    const fallbackLast = pageCount > 1 ? Math.min(pageCount, TAX_RETURN_PACKET_GROK_PAGE_CAP) : 1;
+    for (let page = 2; page <= fallbackLast; page += 1) take(page);
+  }
+  return targets.slice(0, TAX_RETURN_PACKET_GROK_PAGE_CAP);
 }
 
 /** Page 1 wages / year / names win. Later pages add Sch E / K-1. Never overwrite with empty. */
@@ -735,17 +793,9 @@ async function grokScheduleLedgerFields(
   adapter: DocumentExtractAdapter,
 ): Promise<Record<string, string>> {
   if (!adapter.extractLedger) return {};
-  const pageCount = await pdfPageCount(bytes);
-  const last = pageCount > 1 ? Math.min(pageCount, TAX_RETURN_PACKET_GROK_PAGE_CAP) : 1;
-  const targets: number[] = [];
-  const take = (page: number) => {
-    if (page < 1 || targets.includes(page)) return;
-    targets.push(page);
-  };
-  take(1);
-  for (let page = 2; page <= last; page += 1) take(page);
+  const targets = await taxReturnPagesToGrok(bytes);
   const merged: Record<string, string> = {};
-  for (const pageNumber of targets.slice(0, TAX_RETURN_PACKET_GROK_PAGE_CAP)) {
+  for (const pageNumber of targets) {
     const image = await renderPdfPage(bytes, pageNumber);
     if (!image?.mediaType.startsWith("image/")) continue;
     try {
@@ -767,10 +817,7 @@ async function mergeTaxReturnLedgerFields(
   if (result.extractClass !== "tax_return" || result.failed) return result;
   try {
     if (await printedLayerLooksLikeIrsTranscript(bytes, mediaType)) return result;
-    let ledger: Record<string, string> = {};
-    if (adapter.extractLedger) {
-      ledger = await grokScheduleLedgerFields(bytes, adapter);
-    }
+    let ledger = await grokPage1HouseholdWages(bytes, adapter);
     const layer = await printedLinesForLedger(bytes, mediaType);
     if (layer?.length && !blobLooksLikeIrsTranscript(layer.join("\n"))) {
       ledger = { ...incomeLedgerFieldsFromPrintedLines(layer), ...ledger };
@@ -807,9 +854,9 @@ async function extractTaxReturnPacket(
         textLayerChars,
       };
     }
-    let ledger: Record<string, string> = {};
+    let ledger = await grokPage1HouseholdWages(bytes, adapter);
     if (adapter.extractLedger) {
-      ledger = await grokScheduleLedgerFields(bytes, adapter);
+      assignLedgerKeepFirst(ledger, await grokScheduleLedgerFields(bytes, adapter));
     }
     const layer = await printedLinesForLedger(bytes, mediaType);
     if (layer?.length && !blobLooksLikeIrsTranscript(layer.join("\n"))) {

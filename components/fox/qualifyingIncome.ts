@@ -1717,11 +1717,14 @@ export function incomeLedgerProposal(row: IncomeLedgerRow): FactProposal {
 
 export function promoteIncomeLedger(draft: FoxIntakeDraft): FoxIntakeDraft {
   if (draft.pendingProposal || draft.pendingConflict) return draft;
-  if (draft.taxReturnPacketRead === "pending" || draft.taxReturnPacketRead === "reading") {
-    return draft;
-  }
   const household = maybeProposeHouseholdWages(draft);
   if (household.pendingProposal) return household;
+  if (
+    (draft.taxReturnPacketRead === "pending" || draft.taxReturnPacketRead === "reading") &&
+    !pendingIncomeLedgerRows(draft.incomeLedger).length
+  ) {
+    return draft;
+  }
   if (draft.awaitingCoverWageGap) return draft;
   if (draft.coverWageGap && !draft.coverWageGapAsked) {
     return { ...draft, awaitingCoverWageGap: true };
