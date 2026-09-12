@@ -10,7 +10,8 @@ import type { ExtractClass } from "@/components/fox/types";
 import { readPrivateBytes, storageStatus, STORAGE_BLOCKED } from "@/lib/docs/storage";
 
 export const runtime = "nodejs";
-export const maxDuration = 60;
+/** Page-image Grok on a 1040 packet (year+name, then Sch E / K-1 pages) needs more than 60s. */
+export const maxDuration = 300;
 
 const INLINE_BYTES_MAX = 4_000_000;
 

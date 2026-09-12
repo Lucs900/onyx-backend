@@ -70,7 +70,7 @@ import {
   maybeProposeQualifyingFromTaxFile,
 } from "../components/fox/qualifyingIncome";
 import { FAILED_READ_NOTE, isUnreadNote } from "../lib/docs/accept";
-import { classifyAndExtract, FOX_GROK_MODEL, pageImageForGrok, taxReturnPageHint } from "../lib/docs/extract";
+import { classifyAndExtract, FOX_GROK_MODEL, pageImageForGrok, shouldGrokTaxReturnPagesFirst, taxReturnPageHint } from "../lib/docs/extract";
 import { drawnPageHasInk, renderPdfFirstPage } from "../lib/docs/pdfText";
 import {
   amountAskText,
@@ -1982,6 +1982,25 @@ async function main() {
   assert.match(extractSrc, /Never output SSN/);
   assert.match(extractSrc, /lockTaxReturnPageReadFields/);
   assert.match(extractSrc, /pageImageForGrok/);
+  assert.match(extractSrc, /shouldGrokTaxReturnPagesFirst/);
+  assert.match(extractSrc, /Castaneda page→image→Grok/);
+  const classifyAt = extractSrc.indexOf("export async function classifyAndExtract");
+  const grokFirstAt = extractSrc.indexOf("shouldGrokTaxReturnPagesFirst(hint, filename)", classifyAt);
+  const printedAt = extractSrc.indexOf("printedLinesForExtract", classifyAt);
+  assert.ok(
+    classifyAt > 0 && grokFirstAt > classifyAt && printedAt > grokFirstAt,
+    "1040-named walk Groks page images before printed-line classify",
+  );
+  assert.equal(shouldGrokTaxReturnPagesFirst("w2", "2025 1040 Combes Allan and Renz.pdf"), true);
+  assert.equal(shouldGrokTaxReturnPagesFirst("w2", "1040-cover-with-w2.pdf"), false);
+  assert.equal(
+    shouldGrokTaxReturnPagesFirst("tax_return", "17-schedule-e-2025-sanchez-rental.pdf"),
+    false,
+    "Schedule E leftover filename is not the 1040 packet door",
+  );
+  const routeSrc = readFileSync(join(root, "app/api/docs/extract/route.ts"), "utf8");
+  assert.match(routeSrc, /maxDuration = 300/);
+  assert.doesNotMatch(routeSrc, /maxDuration = 60/);
   assert.match(pdfSrc, /standardFontDataUrl/);
   assert.match(pdfSrc, /LiberationSans-Regular/);
   console.log("assert-first-session-page-read: ID · W-2 · stub · bank · contract · tax locked; unread invents nothing");

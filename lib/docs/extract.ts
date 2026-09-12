@@ -45,7 +45,6 @@ import {
   readPrintedSample,
 } from "@/lib/docs/printedSample";
 import {
-  hasRealIncomeLedgerDollars,
   incomeLedgerFieldsFromPrintedLines,
   sanitizeLedgerExtractFields,
   TAX_RETURN_LEDGER_READ_KEYS,
@@ -362,6 +361,37 @@ export function taxReturnPageHint(
   return hint && hint !== "other" ? hint : null;
 }
 
+/** Castaneda page→image→Grok before printed pdf.js / 1040-face-as-transcript steal. */
+export function shouldGrokTaxReturnPagesFirst(
+  hint?: ExtractClass | null,
+  filename?: string | null,
+): boolean {
+  const name = String(filename ?? "");
+  return /\b1040\b|form\s*1040|tax\s*return/i.test(name) && !/w-?2|pay.?stub/i.test(name);
+}
+
+function printedLocksTaxReturnWithoutVision(lines: string[] | null): boolean {
+  if (!lines?.length) return false;
+  if (blobLooksLikeIrsTranscript(lines.join("\n")) && loudTranscriptFromPrintedLines(lines)) {
+    return true;
+  }
+  return Boolean(
+    loudScheduleCFromPrintedLines(lines) ||
+      loudScheduleEFromPrintedLines(lines) ||
+      loudEntityReturnFromPrintedLines(lines) ||
+      loudK1FromPrintedLines(lines) ||
+      loudCoverFromPrintedLines(lines) ||
+      loudCoverFromPrintedLines([lines.join(" ")]),
+  );
+}
+
+const IRS_TRANSCRIPT_MARK =
+  /TAX RETURN TRANSCRIPT|FORM 1040 TAX RETURN TRANSCRIPT|ACCOUNT TRANSCRIPT|TAX PERIOD ENDING/i;
+
+function blobLooksLikeIrsTranscript(text: string) {
+  return IRS_TRANSCRIPT_MARK.test(String(text ?? ""));
+}
+
 function asConfidence(value: unknown) {
   const n = typeof value === "number" ? value : Number(value);
   if (!Number.isFinite(n)) return 0;
@@ -667,31 +697,40 @@ async function printedLinesForLedger(
   return printedLinesForExtract(bytes, mediaType);
 }
 
+const TAX_RETURN_PACKET_GROK_PAGE_CAP = 6;
+
+async function printedLayerLooksLikeIrsTranscript(
+  bytes: Uint8Array,
+  mediaType: string,
+): Promise<boolean> {
+  const sync = !(isPdf(bytes) || mediaType === "application/pdf") || pdfLooksEncrypted(bytes)
+    ? null
+    : readPdfTextLayer(bytes);
+  if (sync?.length && blobLooksLikeIrsTranscript(sync.join("\n"))) return true;
+  // Walk packet is 223k. Tiny IRS transcripts still need pdf.js when the sync layer is empty.
+  if (bytes.length > 80_000) return false;
+  const pages = await readPdfJsTextPages(bytes, 3);
+  return blobLooksLikeIrsTranscript(pages?.flatMap((page) => page.lines).join("\n") ?? "");
+}
+
 async function grokScheduleLedgerFields(
   bytes: Uint8Array,
   adapter: DocumentExtractAdapter,
 ): Promise<Record<string, string>> {
   if (!adapter.extractLedger) return {};
   const pageCount = await pdfPageCount(bytes);
-  const pages = (await readPdfJsTextPages(bytes, 24)) ?? [];
-  const identified = pages
-    .filter((page) => pageHasIncomeLossLines(page.lines))
-    .map((page) => page.page)
-    .filter((page) => page >= 1);
+  const last = pageCount > 1 ? Math.min(pageCount, TAX_RETURN_PACKET_GROK_PAGE_CAP) : 1;
   const targets: number[] = [];
   const take = (page: number) => {
     if (page < 1 || targets.includes(page)) return;
     targets.push(page);
   };
-  if (pageCount > 1) take(1);
-  for (const page of identified) take(page);
-  if (pageCount > 1) {
-    for (let page = 2; page <= Math.min(pageCount, 8); page += 1) take(page);
-  }
+  take(1);
+  for (let page = 2; page <= last; page += 1) take(page);
   const merged: Record<string, string> = {};
-  for (const pageNumber of targets.slice(0, 8)) {
+  for (const pageNumber of targets.slice(0, TAX_RETURN_PACKET_GROK_PAGE_CAP)) {
     const image = await renderPdfPage(bytes, pageNumber);
-    if (!image) continue;
+    if (!image?.mediaType.startsWith("image/")) continue;
     try {
       const extracted = await adapter.extractLedger(image.bytes, image.mediaType);
       Object.assign(merged, sanitizeLedgerExtractFields(extracted.fields ?? {}));
@@ -709,21 +748,48 @@ async function mergeTaxReturnLedgerFields(
   adapter: DocumentExtractAdapter,
 ): Promise<ClassifyExtractResult> {
   if (result.extractClass !== "tax_return" || result.failed) return result;
-  const layer = await printedLinesForLedger(bytes, mediaType);
-  const pageCount = await pdfPageCount(bytes);
-  let ledger = layer?.length ? incomeLedgerFieldsFromPrintedLines(layer) : {};
-  if (!hasRealIncomeLedgerDollars(ledger) && (pageCount > 1 || pageHasIncomeLossLines(layer ?? []))) {
-    ledger = { ...ledger, ...(await grokScheduleLedgerFields(bytes, adapter)) };
+  try {
+    if (await printedLayerLooksLikeIrsTranscript(bytes, mediaType)) return result;
+    let ledger: Record<string, string> = {};
+    if (adapter.extractLedger) {
+      ledger = await grokScheduleLedgerFields(bytes, adapter);
+    }
+    const layer = await printedLinesForLedger(bytes, mediaType);
+    if (layer?.length && !blobLooksLikeIrsTranscript(layer.join("\n"))) {
+      ledger = { ...incomeLedgerFieldsFromPrintedLines(layer), ...ledger };
+    }
+    const fields: Record<string, string> = {};
+    for (const [key, value] of Object.entries({ ...ledger, ...result.fields })) {
+      if (value) fields[key] = String(value);
+    }
+    if (!Object.keys(ledger).length) return result;
+    return {
+      ...result,
+      fields,
+    };
+  } catch (error) {
+    logVisionError("mergeTaxReturnLedgerFields", error);
+    return result;
   }
-  const fields: Record<string, string> = {};
-  for (const [key, value] of Object.entries({ ...ledger, ...result.fields })) {
-    if (value) fields[key] = String(value);
+}
+
+async function grokTaxReturnPacketPages(
+  bytes: Uint8Array,
+  mediaType: string,
+  adapter: DocumentExtractAdapter,
+  hint: ExtractClass | null | undefined,
+  filename: string | null | undefined,
+  textLayerChars?: number,
+): Promise<ClassifyExtractResult | null> {
+  try {
+    const page = await grokPageRead(bytes, mediaType, adapter, hint, filename);
+    if (page && !page.failed && hasLockedSuggestion(page.extractClass, page.fields)) {
+      return { ...page, textLayerChars };
+    }
+  } catch (error) {
+    logVisionError("taxReturnPacketGrok", error);
   }
-  if (!Object.keys(ledger).length) return result;
-  return {
-    ...result,
-    fields,
-  };
+  return null;
 }
 
 async function unreadOrGrokPage(
@@ -751,6 +817,23 @@ export async function classifyAndExtract(
 ): Promise<ClassifyExtractResult> {
   hint = taxReturnPageHint(hint, filename);
   const textLayerChars = textLayerCharCountOf(bytes, mediaType);
+  if (
+    shouldGrokTaxReturnPagesFirst(hint, filename) &&
+    (isPdf(bytes) || mediaType === "application/pdf")
+  ) {
+    const syncLayer = pdfLooksEncrypted(bytes) ? null : readPdfTextLayer(bytes);
+    if (!printedLocksTaxReturnWithoutVision(syncLayer)) {
+      const packet = await grokTaxReturnPacketPages(
+        bytes,
+        mediaType,
+        adapter,
+        hint,
+        filename,
+        textLayerChars,
+      );
+      if (packet) return packet;
+    }
+  }
   if (isPdf(bytes) || mediaType === "application/pdf") {
     const layer = await printedLinesForExtract(bytes, mediaType);
     if (layer?.length) {

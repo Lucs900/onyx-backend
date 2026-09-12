@@ -32,8 +32,12 @@ import {
   incomeLedgerFieldsFromPrintedLines,
   incomeLedgerRowsFromFields,
 } from "../lib/income/ledger";
-import { classifyAndExtract } from "../lib/docs/extract";
-import type { FoxIntakeDraft } from "../components/fox/types";
+import { classifyAndExtract, shouldGrokTaxReturnPagesFirst } from "../lib/docs/extract";
+import { loudTranscriptFromPrintedLines } from "../lib/docs/printedSample";
+import type { ExtractClass, FoxIntakeDraft } from "../components/fox/types";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 function multiPagePdf(pages: string[][]) {
   const kids: string[] = [];
@@ -564,6 +568,122 @@ async function main() {
   assert.ok(recoveredRows.some((row) => row.kind === "schedule_e"));
   assert.ok(recoveredRows.some((row) => row.kind === "named_loss" && Number(row.monthly) < 0));
 
+  const walkName = "2025 1040 Combes Allan and Renz.pdf";
+  assert.equal(shouldGrokTaxReturnPagesFirst("w2", walkName), true);
+
+  const stealLines = [
+    "Form 1040",
+    "U.S. Individual Income Tax Return",
+    "Tax year: 2025",
+    "Filing Status",
+    "Married Taxpayer Filing Joint Return",
+    "Your first name and middle initial Allan",
+    "Last name Combes",
+    "Spouse Renz Combes",
+  ];
+  const stealPrinted = loudTranscriptFromPrintedLines(stealLines);
+  assert.ok(stealPrinted, "printed 1040 + Filing Status used to steal the packet as a transcript");
+  assert.equal(stealPrinted?.fields.full_name, undefined, "transcript steal drops both names");
+  const stealPdf = multiPagePdf([stealLines]);
+  const stealCalls: { mediaType: string; extractClass?: ExtractClass; ledger?: boolean }[] = [];
+  const stealRead = await classifyAndExtract(
+    stealPdf,
+    "application/pdf",
+    {
+      async classify(bytes, mediaType) {
+        stealCalls.push({ mediaType });
+        return { class: "tax_return", confidence: 0.94, readable: true };
+      },
+      async extract(bytes, mediaType, extractClass) {
+        stealCalls.push({ mediaType, extractClass });
+        return { fields: { tax_year: "2025", full_name: "ALLAN COMBES and RENZ COMBES" }, warnings: [] };
+      },
+      async extractLedger(bytes, mediaType) {
+        stealCalls.push({ mediaType, ledger: true });
+        return {
+          fields: {
+            wages: "520000",
+            schedule_e_rents_received: "42000",
+            schedule_e_cash_expenses: "11400",
+            k1_ordinary_income: "-294564",
+          },
+          warnings: [],
+        };
+      },
+    },
+    "w2",
+    walkName,
+  );
+  assert.ok(
+    stealCalls.some((call) => call.extractClass === "tax_return"),
+    "page-image Grok must fire on the walk 1040 — not the printed transcript steal",
+  );
+  assert.ok(
+    stealCalls.every((call) => call.mediaType.startsWith("image/")),
+    `Grok must receive page images — ${stealCalls.map((call) => call.mediaType).join(",")}`,
+  );
+  assert.ok(
+    stealCalls.some((call) => call.ledger),
+    "same W-2 page-image look must run the locked ledger schema on this page",
+  );
+  assert.notEqual(stealRead.failed, true);
+  assert.equal(stealRead.fields.tax_year, "2025");
+  assert.match(stealRead.fields.full_name ?? "", /ALLAN COMBES/i);
+  assert.match(stealRead.fields.full_name ?? "", /RENZ COMBES/i);
+  assert.equal(stealRead.fields.wages, "520000");
+  assert.equal(stealRead.fields.schedule_e_rents_received, "42000");
+  assert.equal(stealRead.fields.k1_ordinary_income, "-294564");
+
+  let onePageLedger = 0;
+  const onePage = await classifyAndExtract(
+    multiPagePdf([
+      [
+        "Form 1040",
+        "U.S. Individual Income Tax Return",
+        "2025",
+        "Your first name and middle initial Allan",
+        "Last name Combes",
+      ],
+    ]),
+    "application/pdf",
+    {
+      ...namesOnly,
+      async extractLedger(bytes, mediaType) {
+        onePageLedger += 1;
+        assert.ok(mediaType.startsWith("image/"), `ledger Grok got ${mediaType}`);
+        return {
+          fields: {
+            wages: "520000",
+            schedule_e_rents_received: "42000",
+            schedule_e_cash_expenses: "11400",
+            k1_ordinary_income: "-294564",
+          },
+          warnings: [],
+        };
+      },
+    },
+    "tax_return",
+    walkName,
+  );
+  assert.ok(onePageLedger >= 1, "pageCount 1 still sends the page image to Grok ledger");
+  assert.equal(onePage.fields.wages, "520000");
+  assert.equal(onePage.fields.schedule_e_rents_received, "42000");
+
+  const extractSrc = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "..", "lib/docs/extract.ts"), "utf8");
+  const routeSrc = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "..", "app/api/docs/extract/route.ts"), "utf8");
+  const classifyAt = extractSrc.indexOf("export async function classifyAndExtract");
+  assert.ok(classifyAt > 0);
+  const grokFirstAt = extractSrc.indexOf("shouldGrokTaxReturnPagesFirst(hint, filename)", classifyAt);
+  const printedAt = extractSrc.indexOf("printedLinesForExtract", classifyAt);
+  assert.ok(
+    grokFirstAt > classifyAt && printedAt > grokFirstAt,
+    "1040-named packet Groks page images before printed pdf.js",
+  );
+  assert.match(extractSrc, /Castaneda page→image→Grok/);
+  assert.match(extractSrc, /take\(1\)/);
+  assert.match(routeSrc, /maxDuration = 300/);
+  assert.doesNotMatch(routeSrc, /maxDuration = 60/);
+
   const stubAt = "2026-09-12T12:00:00.000Z";
   const returnAt = "2026-09-12T12:05:00.000Z";
   loadIntakeDraft({
@@ -610,7 +730,7 @@ async function main() {
   assert.ok(!/could not read/i.test(stubDoc?.note ?? ""));
 
   console.log(
-    "assert-income-ledger: stub QI stays · Sch E / partnership own rows · loss does not net · cover wages held · gap once · gross not QI · no invented $2 · QI label stays stub · no fixture K-1 · packet page images → Grok · unread is the return",
+    "assert-income-ledger: stub QI stays · Sch E / partnership own rows · loss does not net · cover wages held · gap once · gross not QI · no invented $2 · QI label stays stub · no fixture K-1 · packet page images → Grok · 1040-face steal cannot skip Grok · unread is the return",
   );
 }
 
