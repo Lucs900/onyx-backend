@@ -4,7 +4,7 @@ import {
   taxReturnPacketDoc,
   taxReturnPacketNeedsRead,
 } from "./fileWrite";
-import { applyExtractWrite, commit, getFoxDraft } from "./store";
+import { applyExtractWrite, getFoxDraft, loadIntakeDraft } from "./store";
 import type { ExtractClass } from "./types";
 
 /** After cover Use this, Grok the same stored 1040 pages for Sch E / K-1 / wages. */
@@ -13,7 +13,7 @@ export async function continueTaxReturnPacketRead() {
   if (!taxReturnPacketNeedsRead(draft)) return;
   const doc = taxReturnPacketDoc(draft);
   if (!doc?.bytesRef) return;
-  commit({ ...getFoxDraft(), taxReturnPacketRead: "reading" });
+  loadIntakeDraft({ ...getFoxDraft(), taxReturnPacketRead: "reading" });
   try {
     const form = new FormData();
     form.append("bytesRef", doc.bytesRef);
