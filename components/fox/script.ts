@@ -153,6 +153,7 @@ export function taskContext(stage: FoxStage, draft: FoxIntakeDraft) {
     "cover-wage-gap": "Asking: 1040 wages vs File W-2s",
     "household-wages": "Asking: household wages",
     "packet-read": "Reading the rest of the return",
+    "packet-close": "Rest of the return",
     "raise-when": "Asking: raise date",
     "raise-ytd-far": "Asking: raise YTD",
     qualifying: "Asking: qualifying income",

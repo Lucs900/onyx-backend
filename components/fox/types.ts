@@ -474,6 +474,8 @@ export type FoxIntakeDraft = {
   /** After cover Use this, keep reading the same 1040 pages for Sch E / K-1 / wages. */
   taxReturnPacketRead?: "pending" | "reading" | "done";
   taxReturnPacketSpoken?: boolean;
+  /** After a written Sch E, close the rest of the return once. Stay until finish. */
+  taxReturnPacketCloseAsk?: boolean;
   awaitingRaiseWhen?: boolean;
   awaitingRaiseYtdFar?: boolean;
   raiseWhenRaw?: string;
@@ -587,6 +589,7 @@ export type FoxPrompt =
   | "cover-wage-gap"
   | "household-wages"
   | "packet-read"
+  | "packet-close"
   | "raise-when"
   | "raise-ytd-far"
   | "qualifying"

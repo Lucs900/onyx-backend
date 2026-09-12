@@ -455,6 +455,7 @@ export function emptyDraft(): FoxIntakeDraft {
     householdWagesAsked: false,
     incomeLedger: [],
     taxReturnPacketSpoken: false,
+    taxReturnPacketCloseAsk: false,
     awaitingRaiseWhen: false,
     awaitingRaiseYtdFar: false,
     facts: {},
@@ -801,6 +802,7 @@ function normalize(value: unknown): FoxIntakeDraft {
         ? raw.taxReturnPacketRead
         : undefined,
     taxReturnPacketSpoken: Boolean(raw.taxReturnPacketSpoken),
+    taxReturnPacketCloseAsk: Boolean(raw.taxReturnPacketCloseAsk),
     awaitingRaiseWhen: Boolean(raw.awaitingRaiseWhen),
     awaitingRaiseYtdFar: Boolean(raw.awaitingRaiseYtdFar),
     raiseWhenRaw: typeof raw.raiseWhenRaw === "string" ? raw.raiseWhenRaw : undefined,

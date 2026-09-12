@@ -190,12 +190,52 @@ export function incomeLedgerRowsFromFields(fields: Record<string, string>): Inco
   return rows;
 }
 
+function ledgerYearKey(year?: string) {
+  return String(year ?? "").replace(/\D/g, "").slice(0, 4);
+}
+
+export function scheduleEWrittenOnLedger(
+  rows: IncomeLedgerRow[] | undefined,
+  scheduleEMonthlyConfirmed = false,
+) {
+  return Boolean(
+    scheduleEMonthlyConfirmed ||
+      (rows ?? []).some((row) => row.kind === "schedule_e" && row.status === "confirmed"),
+  );
+}
+
+export function pendingNewIncomeLedgerRows(
+  rows: IncomeLedgerRow[] | undefined,
+  writtenScheduleE = false,
+) {
+  return (rows ?? []).filter((row) => {
+    if (row.status !== "suggested") return false;
+    if (row.kind === "schedule_e" && writtenScheduleE) return false;
+    return true;
+  });
+}
+
 export function mergeIncomeLedger(
   existing: IncomeLedgerRow[] | undefined,
   incoming: IncomeLedgerRow[],
 ): IncomeLedgerRow[] {
   const next = [...(existing ?? [])];
+  const writtenScheduleE = scheduleEWrittenOnLedger(next);
   for (const row of incoming) {
+    if (row.kind === "schedule_e") {
+      const year = ledgerYearKey(row.year);
+      const existingAt = next.findIndex(
+        (item) => item.kind === "schedule_e" && ledgerYearKey(item.year) === year,
+      );
+      if (existingAt >= 0) {
+        const current = next[existingAt];
+        if (current.status === "suggested" && row.businessName && !current.businessName) {
+          next[existingAt] = { ...current, businessName: row.businessName };
+        }
+        continue;
+      }
+      if (writtenScheduleE) continue;
+    }
     const at = next.findIndex((item) => item.id === row.id);
     if (at < 0) {
       next.push(row);

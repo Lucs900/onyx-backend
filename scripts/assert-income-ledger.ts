@@ -18,6 +18,7 @@ import {
   HOUSEHOLD_WAGES_FIELD,
   incomeLedgerAskCopy,
   isHouseholdWagesProposal,
+  promoteIncomeLedger,
   QUALIFYING_INCOME_FIELD,
   qualifyingIncomeDisplay,
 } from "../components/fox/qualifyingIncome";
@@ -30,7 +31,7 @@ import {
 import { resolveProposal } from "../components/fox/completeness";
 import { FAILED_READ_NOTE } from "../lib/docs/accept";
 import { applyExtractWrite, emptyDraft, loadIntakeDraft, receiveDocument } from "../components/fox/store";
-import { coverWageGapAsk, nextFoxAsk, previewFacts } from "../components/fox/workspace";
+import { coverWageGapAsk, nextFoxAsk, previewFacts, TIMELINE_COPY, workspaceReply } from "../components/fox/workspace";
 import {
   COVER_WAGE_GAP_ASK,
   GROSS_RECEIPTS_FIELD,
@@ -41,6 +42,7 @@ import {
   hasRealIncomeLedgerDollars,
   incomeLedgerFieldsFromPrintedLines,
   incomeLedgerRowsFromFields,
+  mergeIncomeLedger,
   scheduleEStreetNames,
 } from "../lib/income/ledger";
 import { classifyAndExtract, shouldGrokTaxReturnPagesFirst } from "../lib/docs/extract";
@@ -48,10 +50,13 @@ import { classifyPageByFormHeader } from "../lib/docs/formHeader";
 import { loudTranscriptFromPrintedLines } from "../lib/docs/printedSample";
 import {
   PACKET_LINES_MISSING_LINE,
+  PACKET_NO_K1_C_LINE,
+  PACKET_READING_LINE,
   PACKET_SCHEDULES_MISSING_LINE,
   PACKET_WAGES_UNREAD_LINE,
   taxReturnPacketHoldAsk,
   taxReturnPacketNeedsRead,
+  taxReturnPacketSettled,
 } from "../components/fox/fileWrite";
 import type { ExtractClass, FoxIntakeDraft } from "../components/fox/types";
 import { readFileSync } from "node:fs";
@@ -388,6 +393,11 @@ async function main() {
     previewFacts(usedE).some((fact) => /Schedule E/i.test(fact.label) && fact.value.includes("$")),
     "Schedule E writes its own File row",
   );
+  const nextAfterWrittenE = nextFoxAsk(usedE);
+  assert.match(nextAfterWrittenE.text, /loss/i, "name the next schedule once — do not reprint Sch E");
+  assert.doesNotMatch(nextAfterWrittenE.text, /Reading the rest of the return/);
+  assert.doesNotMatch(nextAfterWrittenE.text, /I didn’t see a K-1 or Schedule C/);
+  assert.ok((nextAfterWrittenE.actions ?? []).some((item) => item.label === "Use this"));
 
   const afterLeaveLoss = resolveProposal(usedE, "decline");
   assert.equal(afterLeaveLoss.facts?.qualifying_income?.value, "36453", "leaving a loss blank does not net QI");
@@ -1073,9 +1083,80 @@ async function main() {
   );
   const usedGoldE = resolveProposal(afterGoldWages, "accept");
   assert.equal(usedGoldE.facts?.qualifying_income?.value, "36453", "Sch E cash does not write QI");
+  assert.equal(usedGoldE.facts?.[HOUSEHOLD_WAGES_FIELD]?.value, "455802");
   assert.equal(usedGoldE.facts?.schedule_e_monthly?.value, "7292");
   assert.notEqual(usedGoldE.facts?.schedule_e_monthly?.value, "-3554");
   assert.notEqual(usedGoldE.facts?.qualifying_income?.value, "-3554");
+  assert.ok(
+    previewFacts(usedGoldE).some(
+      (fact) => fact.label === "2025 · Schedule E" && /\$7,292/.test(fact.value),
+    ),
+    "Structure keeps 2025 · Schedule E $7,292 after Use this",
+  );
+  assert.equal(usedGoldE.pendingProposal, null, "do not reopen the written Sch E card");
+  assert.equal(taxReturnPacketSettled(usedGoldE), true);
+  assert.equal(taxReturnPacketHoldAsk(usedGoldE), false);
+  assert.equal(usedGoldE.taxReturnPacketRead, "done");
+  assert.equal(usedGoldE.taxReturnPacketCloseAsk, true);
+
+  const leftoverReady: FoxIntakeDraft = {
+    ...usedGoldE,
+    skippedClasses: [...new Set([...(usedGoldE.skippedClasses ?? []), "government_id"])],
+  };
+  const goldCloseAsk = nextFoxAsk(leftoverReady);
+  assert.equal(goldCloseAsk.text, PACKET_NO_K1_C_LINE);
+  assert.doesNotMatch(goldCloseAsk.text, /7,292|Use this|Reading the rest|No close date yet/);
+  assert.ok(!(goldCloseAsk.actions ?? []).some((item) => item.label === "Use this"));
+  assert.deepEqual(
+    (goldCloseAsk.actions ?? [])
+      .map((item) => item.label)
+      .filter((label) => label === "Proceed" || label === "Not yet" || label === "Upload more"),
+    ["Proceed", "Not yet", "Upload more"],
+  );
+
+  const leftoverQ = workspaceReply("What else did you see on that return?", leftoverReady);
+  assert.ok(leftoverQ);
+  assert.equal(leftoverQ.text, PACKET_NO_K1_C_LINE);
+  assert.doesNotMatch(leftoverQ.text ?? "", /7,292|Use this|Reading the rest/);
+  assert.notEqual(leftoverQ.text, TIMELINE_COPY);
+  assert.ok(!(leftoverQ.actions ?? []).some((item) => item.label === "Use this"));
+
+  const reprintRows = incomeLedgerRowsFromFields({
+    tax_year: "2025",
+    schedule_e_rents_received: "113613",
+    schedule_e_cash_expenses: "26111",
+    schedule_e_property_address: "956-958 Hacienda Ave Campbell; 3710 Smith St Union City",
+  });
+  const mergedReprint = mergeIncomeLedger(usedGoldE.incomeLedger, reprintRows);
+  assert.equal(mergedReprint.filter((row) => row.kind === "schedule_e").length, 1);
+  assert.ok(!mergedReprint.some((row) => row.kind === "schedule_e" && row.status === "suggested"));
+  const promotedReprint = promoteIncomeLedger({
+    ...usedGoldE,
+    pendingProposal: null,
+    incomeLedger: mergedReprint,
+  });
+  assert.equal(promotedReprint.pendingProposal, null, "packet streets do not reprint a written Sch E");
+  assert.equal(nextFoxAsk(promotedReprint).text, PACKET_NO_K1_C_LINE);
+
+  const readingGold: FoxIntakeDraft = {
+    ...afterGoldWages,
+    taxReturnPacketRead: "reading",
+    documents: (afterGoldWages.documents ?? []).map((doc) =>
+      doc.extractClass === "tax_return" ? { ...doc, bytesRef: "packet-bytes" } : doc,
+    ),
+  };
+  assert.equal(taxReturnPacketHoldAsk(readingGold), true, "unread packet still holds before Sch E is written");
+  assert.equal(nextFoxAsk(readingGold).text, PACKET_READING_LINE);
+  const afterReadingWrite = resolveProposal(readingGold, "accept");
+  assert.equal(taxReturnPacketHoldAsk(afterReadingWrite), false, "written Sch E closes Reading the rest");
+  assert.equal(afterReadingWrite.taxReturnPacketRead, "done");
+  assert.equal(afterReadingWrite.taxReturnPacketCloseAsk, true);
+  const afterReadingAsk = nextFoxAsk({
+    ...afterReadingWrite,
+    skippedClasses: [...new Set([...(afterReadingWrite.skippedClasses ?? []), "government_id"])],
+  });
+  assert.equal(afterReadingAsk.text, PACKET_NO_K1_C_LINE);
+  assert.doesNotMatch(afterReadingAsk.text, /7,292|Use this|Reading the rest/);
 
   const goldWalkPdf = multiPagePdf([
     [

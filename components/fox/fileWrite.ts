@@ -682,6 +682,7 @@ export function transcriptOfferDone(draft: FoxIntakeDraft) {
 /** After cover Use this, keep reading the same PDF. Say once when schedules are not on the pages. */
 export const PACKET_READING_LINE = "Reading the rest of the return.";
 export const PACKET_SCHEDULES_MISSING_LINE = "I didn’t see Schedule E or a K-1 on these pages.";
+export const PACKET_NO_K1_C_LINE = "I didn’t see a K-1 or Schedule C on these pages.";
 export const PACKET_LINES_MISSING_LINE =
   "I didn’t see cover wages, Schedule E, or a K-1 on these pages.";
 export const PACKET_WAGES_UNREAD_LINE =
@@ -700,7 +701,34 @@ export function taxReturnPacketNeedsRead(draft: FoxIntakeDraft) {
   return draft.taxReturnPacketRead === "pending" && taxReturnWrittenOnFile(draft);
 }
 
+export function scheduleEWrittenOnFile(draft: FoxIntakeDraft) {
+  return Boolean(
+    draft.facts?.schedule_e_monthly?.confirmed ||
+      (draft.incomeLedger ?? []).some((row) => row.kind === "schedule_e" && row.status === "confirmed"),
+  );
+}
+
+function packetLedgerKind(draft: FoxIntakeDraft) {
+  return draft.pendingProposal?.extras?.find((item) => item.field === "ledger_kind")?.value ?? "";
+}
+
+/** Written Sch E, no new schedule card left. A reprint of that Sch E is not “next.” */
+export function taxReturnPacketSettled(draft: FoxIntakeDraft) {
+  if (!scheduleEWrittenOnFile(draft)) return false;
+  if (draft.pendingProposal?.field === "household_wages") return false;
+  if (draft.pendingProposal?.field === "income_ledger") {
+    const kind = packetLedgerKind(draft);
+    if (kind && kind !== "schedule_e") return false;
+  }
+  return !(draft.incomeLedger ?? []).some((row) => row.status === "suggested" && row.kind !== "schedule_e");
+}
+
+export function taxReturnPacketCloseAskOpen(draft: FoxIntakeDraft) {
+  return Boolean(draft.taxReturnPacketCloseAsk) && taxReturnPacketSettled(draft);
+}
+
 export function taxReturnPacketHoldAsk(draft: FoxIntakeDraft) {
+  if (taxReturnPacketSettled(draft)) return false;
   if (draft.taxReturnPacketRead !== "pending" && draft.taxReturnPacketRead !== "reading") {
     return false;
   }

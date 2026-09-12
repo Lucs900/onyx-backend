@@ -124,7 +124,9 @@ import {
   isTranscriptOnFile,
   taxReturnWrittenOnFile,
   taxReturnPacketHoldAsk,
+  taxReturnPacketCloseAskOpen,
   PACKET_READING_LINE,
+  PACKET_NO_K1_C_LINE,
   taxReturnStructureValue,
   canSpeakDocStamp,
   transcriptSpeakKey,
@@ -2526,6 +2528,9 @@ export function docReactionAsk(
   if (draft.awaitingBothMonthlyReason) return bothMonthlyReasonAsk(draft);
   if (draft.awaitingCoverWageGap) return coverWageGapAsk();
   if (taxReturnPacketHoldAsk(draft)) return { text: PACKET_READING_LINE };
+  if (taxReturnPacketCloseAskOpen(draft)) {
+    return { text: PACKET_NO_K1_C_LINE, actions: finishLineActions(draft) };
+  }
   if (draft.awaitingRaiseWhen) return raiseWhenAsk();
   if (draft.awaitingRaiseYtdFar) return raiseYtdFarAsk(draft);
   if (cls === "tax_return" && isTranscriptOnFile(draft) && !draft.pendingProposal) {
@@ -2890,6 +2895,14 @@ function restoreQueueActions(draft: FoxIntakeDraft) {
 
 function restoredAsk(answer: string, draft: FoxIntakeDraft) {
   const ask = nextFoxAsk(draft);
+  if (!answer || answer === ask.text) {
+    return {
+      text: ask.text,
+      followUp: ask.followUp,
+      facts: ask.facts,
+      actions: ask.actions,
+    };
+  }
   if (ask.text === HOLD_DOCS_COPY) {
     return {
       text: answer,
@@ -2973,6 +2986,8 @@ function unmatchedSideAnswer(draft: FoxIntakeDraft) {
   const prompt = workspacePrompt(draft);
   if (prompt === "product") return "I can take Buy, Refinance, HELOC, Jumbo, or Other.";
   if (prompt === "correct") return "That’s so I can fix one line on the sketch.";
+  if (prompt === "packet-close" || taxReturnPacketCloseAskOpen(draft)) return PACKET_NO_K1_C_LINE;
+  if (isIncomeLedgerProposal(draft.pendingProposal)) return "";
   if (prompt === "done" || draft.sampleAccepted) return TIMELINE_COPY;
   return FILE_ANSWER_COPY;
 }
@@ -3008,6 +3023,10 @@ function documentQuestionAnswer(draft: FoxIntakeDraft) {
     return conventionalGuidelinePattern("docs", "purchase_contract", "The purchase contract is the property on paper.");
   }
   if (draft.correcting === "correct") return "That’s so I can fix one line on the sketch.";
+  if (workspacePrompt(draft) === "packet-close" || taxReturnPacketCloseAskOpen(draft)) {
+    return PACKET_NO_K1_C_LINE;
+  }
+  if (isIncomeLedgerProposal(draft.pendingProposal)) return "";
   if (draft.sampleAccepted) return TIMELINE_COPY;
   return FILE_ANSWER_COPY;
 }
@@ -3613,6 +3632,7 @@ export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
   if (draft.awaitingCoverWageGap) return "cover-wage-gap";
   if (isHouseholdWagesProposal(draft.pendingProposal)) return "household-wages";
   if (taxReturnPacketHoldAsk(draft)) return "packet-read";
+  if (taxReturnPacketCloseAskOpen(draft)) return "packet-close";
   if (draft.awaitingRaiseWhen) return "raise-when";
   if (draft.awaitingRaiseYtdFar) return "raise-ytd-far";
   if (
@@ -4140,6 +4160,12 @@ function workspaceAskCopy(
   }
   if (prompt === "packet-read") {
     return { text: PACKET_READING_LINE };
+  }
+  if (prompt === "packet-close") {
+    return {
+      text: PACKET_NO_K1_C_LINE,
+      actions: finishLineActions(draft),
+    };
   }
   if (prompt === "raise-when") {
     return raiseWhenAsk();

@@ -64,8 +64,9 @@ import {
   ledgerProposalNote,
   mergeIncomeLedger,
   parseLedgerMoney,
-  pendingIncomeLedgerRows,
+  pendingNewIncomeLedgerRows,
   scheduleEStreetNames,
+  scheduleEWrittenOnLedger,
   type CoverWageGapAnswer,
   type IncomeLedgerRow,
 } from "@/lib/income/ledger";
@@ -1719,24 +1720,54 @@ export function incomeLedgerProposal(row: IncomeLedgerRow): FactProposal {
   };
 }
 
+function scheduleEWrittenOnDraft(draft: FoxIntakeDraft) {
+  return scheduleEWrittenOnLedger(draft.incomeLedger, Boolean(draft.facts?.schedule_e_monthly?.confirmed));
+}
+
+export function maybeCloseTaxReturnPacket(draft: FoxIntakeDraft): FoxIntakeDraft {
+  if (isHouseholdWagesProposal(draft.pendingProposal)) return draft;
+  if (isIncomeLedgerProposal(draft.pendingProposal)) {
+    const kind = draft.pendingProposal?.extras?.find((item) => item.field === "ledger_kind")?.value;
+    if (kind && kind !== "schedule_e") return draft;
+  }
+  if (!scheduleEWrittenOnDraft(draft)) return draft;
+  if (pendingNewIncomeLedgerRows(draft.incomeLedger, true).length) return draft;
+  const reprint =
+    isIncomeLedgerProposal(draft.pendingProposal) &&
+    draft.pendingProposal?.extras?.find((item) => item.field === "ledger_kind")?.value === "schedule_e";
+  return {
+    ...draft,
+    pendingProposal: reprint ? null : draft.pendingProposal,
+    taxReturnPacketRead:
+      draft.taxReturnPacketRead === "pending" || draft.taxReturnPacketRead === "reading"
+        ? "done"
+        : draft.taxReturnPacketRead ?? "done",
+    taxReturnPacketCloseAsk: true,
+  };
+}
+
 export function promoteIncomeLedger(draft: FoxIntakeDraft): FoxIntakeDraft {
-  if (draft.pendingProposal || draft.pendingConflict) return draft;
+  if (draft.pendingConflict) return draft;
+  if (draft.pendingProposal) return maybeCloseTaxReturnPacket(draft);
   const household = maybeProposeHouseholdWages(draft);
   if (household.pendingProposal) return household;
+  const writtenScheduleE = scheduleEWrittenOnDraft(draft);
+  const pending = pendingNewIncomeLedgerRows(draft.incomeLedger, writtenScheduleE);
   if (
     (draft.taxReturnPacketRead === "pending" || draft.taxReturnPacketRead === "reading") &&
-    !pendingIncomeLedgerRows(draft.incomeLedger).length
+    !pending.length
   ) {
-    return draft;
+    return maybeCloseTaxReturnPacket(draft);
   }
   if (draft.awaitingCoverWageGap) return draft;
   if (draft.coverWageGap && !draft.coverWageGapAsked) {
     return { ...draft, awaitingCoverWageGap: true };
   }
-  const nextRow = pendingIncomeLedgerRows(draft.incomeLedger)[0];
-  if (!nextRow) return draft;
+  const nextRow = pending[0];
+  if (!nextRow) return maybeCloseTaxReturnPacket(draft);
   return {
     ...draft,
+    taxReturnPacketCloseAsk: false,
     pendingProposal: incomeLedgerProposal(nextRow),
   };
 }
