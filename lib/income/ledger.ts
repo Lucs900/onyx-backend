@@ -272,30 +272,21 @@ export function incomeLedgerFieldsFromPrintedLines(lines: string[]): Record<stri
   if (wages) putMoney("wages", wages);
 
   const schC =
-    blob.match(
-      /business income or \(?loss\)?\s*\(\s*schedule c\s*\)\s*:?\s*(-?\$?\s*[\d,]+(?:\.\d+)?|\(\s*\$?\s*[\d,]+(?:\.\d+)?\s*\))/i,
-    )?.[1] ||
-    blob.match(
-      /(?:^|\n)\s*3\s+business income[^\n]{0,80}?(-?\$?\s*[\d,]+(?:\.\d+)?|\(\s*\$?\s*[\d,]+(?:\.\d+)?\s*\))/i,
-    )?.[1];
+    blob.match(new RegExp(`business income or \\(?loss\\)?\\s*\\(\\s*schedule c\\s*\\)\\s*:?\\s*${money}`, "i"))?.[1] ||
+    blob.match(new RegExp(`(?:^|\\n)\\s*3\\s+business income[^\\n]{0,80}?${money}`, "i"))?.[1];
   if (schC) putMoney("schedule_c_net_profit", schC);
 
   const schE =
     blob.match(
-      /rent\/royalty\/partnership\/estate\s*\(\s*schedule e\s*\)\s*:?\s*(-?\$?\s*[\d,]+(?:\.\d+)?|\(\s*\$?\s*[\d,]+(?:\.\d+)?\s*\))/i,
+      new RegExp(
+        `rent\\/royalty\\/partnership\\/estate\\s*\\(\\s*schedule e\\s*\\)\\s*:?\\s*${money}`,
+        "i",
+      ),
     )?.[1] ||
-    blob.match(
-      /rental real estate[^\n]{0,80}?(-?\$?\s*[\d,]+(?:\.\d+)?|\(\s*\$?\s*[\d,]+(?:\.\d+)?\s*\))/i,
-    )?.[1] ||
-    blob.match(
-      /(?:^|\n)\s*5\s+rental[^\n]{0,80}?(-?\$?\s*[\d,]+(?:\.\d+)?|\(\s*\$?\s*[\d,]+(?:\.\d+)?\s*\))/i,
-    )?.[1] ||
-    blob.match(
-      /attach schedule e[^\n]{0,40}?(-?\$?\s*[\d,]+(?:\.\d+)?|\(\s*\$?\s*[\d,]+(?:\.\d+)?\s*\))/i,
-    )?.[1] ||
-    blob.match(
-      /(?:schedule e|sch(?:edule)?\s*e)\s*:?\s*(-?\$?\s*[\d,]+(?:\.\d+)?|\(\s*\$?\s*[\d,]+(?:\.\d+)?\s*\))/i,
-    )?.[1];
+    blob.match(new RegExp(`rental real estate[^\\n]{0,120}?${money}`, "i"))?.[1] ||
+    blob.match(new RegExp(`(?:^|\\n)\\s*5\\s+rental[^\\n]{0,120}?${money}`, "i"))?.[1] ||
+    blob.match(new RegExp(`attach schedule e[^\\n]{0,40}?${money}`, "i"))?.[1] ||
+    blob.match(new RegExp(`(?:schedule e|sch(?:edule)?\\s*e)\\s*:?\\s*${money}`, "i"))?.[1];
   if (schE) {
     const n = parseLedgerMoney(schE);
     if (n != null && n !== 0) {
@@ -305,12 +296,8 @@ export function incomeLedgerFieldsFromPrintedLines(lines: string[]): Record<stri
   }
 
   const partnership =
-    blob.match(
-      /(?:partnership|k-?1)\s+(?:ordinary|income|loss)[^\n]{0,60}?(-?\$?\s*[\d,]+(?:\.\d+)?|\(\s*\$?\s*[\d,]+(?:\.\d+)?\s*\))/i,
-    )?.[1] ||
-    blob.match(
-      /ordinary business income[^\n]{0,60}?(-?\$?\s*[\d,]+(?:\.\d+)?|\(\s*\$?\s*[\d,]+(?:\.\d+)?\s*\))/i,
-    )?.[1];
+    blob.match(new RegExp(`(?:partnership|k-?1)\\s+(?:ordinary|income|loss)[^\\n]{0,60}?${money}`, "i"))?.[1] ||
+    blob.match(new RegExp(`ordinary business income[^\\n]{0,60}?${money}`, "i"))?.[1];
   if (partnership) putMoney("k1_ordinary_income", partnership);
 
   const names: string[] = [];
@@ -324,9 +311,7 @@ export function incomeLedgerFieldsFromPrintedLines(lines: string[]): Record<stri
   if (gross) putMoney("gross_receipts", gross);
 
   const farm =
-    blob.match(
-      /farm income or loss\s*\(\s*schedule f\s*\)\s*:?\s*(-?\$?\s*[\d,]+(?:\.\d+)?|\(\s*\$?\s*[\d,]+(?:\.\d+)?\s*\))/i,
-    )?.[1];
+    blob.match(new RegExp(`farm income or loss\\s*\\(\\s*schedule f\\s*\\)\\s*:?\\s*${money}`, "i"))?.[1];
   if (farm) putMoney("schedule_f_net_profit", farm);
 
   const used = LEDGER_FIELD_KEYS.some((key) => key !== "tax_year" && key !== "return_kind" && fields[key]);
