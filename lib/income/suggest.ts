@@ -269,14 +269,27 @@ export function looksLikeFormLineNumber(value: number): boolean {
   return Number.isInteger(value) && value >= 0 && value <= 31;
 }
 
-/** Schedule E Part I: rents received minus cash expenses ex-depreciation, /12. Not 75%. Not PITIA. */
+/** Fox line-21 / 12 on Combes A+B. Mortgage interest is inside that. Dead. */
+export const DEAD_SCHEDULE_E_LINE21_MONTHLY = -3554;
+
+export function isDeadScheduleELine21Monthly(monthly: number): boolean {
+  return Math.round(monthly) === DEAD_SCHEDULE_E_LINE21_MONTHLY;
+}
+
+/**
+ * Locked Sch E cash: (rents − cash operating expenses) / 12.
+ * Cash operating excludes mortgage interest, taxes, insurance, HOA, depreciation.
+ * Not line 21. Not line 26. Not 75%. Not PITIA.
+ */
 export function scheduleECashFlowMonthly(rentsReceived: number, cashExpenses: number): number | null {
   if (!Number.isFinite(rentsReceived) || !Number.isFinite(cashExpenses)) return null;
+  if (rentsReceived < 0) return null;
   if (looksLikeFormLineNumber(Math.abs(rentsReceived)) || looksLikeFormLineNumber(Math.abs(cashExpenses))) {
     return null;
   }
   const monthly = monthlyFromAnnual(rentsReceived - cashExpenses);
   if (monthly === 0) return null;
+  if (isDeadScheduleELine21Monthly(monthly)) return null;
   if (Math.abs(monthly) < 25 && Math.abs(rentsReceived) < 1000 && Math.abs(cashExpenses) < 1000) {
     return null;
   }

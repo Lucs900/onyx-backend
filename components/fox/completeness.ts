@@ -1104,6 +1104,7 @@ export function proposalAskCopy(proposal: FactProposal) {
       monthly: proposal.value,
       method: proposal.methodNote ?? "",
       status: "suggested",
+      businessName: proposal.extras?.find((item) => item.field === "ledger_streets")?.value,
     });
   }
   if (proposal.field === "tax_year") {

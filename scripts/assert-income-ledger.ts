@@ -16,11 +16,17 @@ import {
 import {
   applyCoverWageGapAnswer,
   HOUSEHOLD_WAGES_FIELD,
+  incomeLedgerAskCopy,
   isHouseholdWagesProposal,
   QUALIFYING_INCOME_FIELD,
   qualifyingIncomeDisplay,
 } from "../components/fox/qualifyingIncome";
-import { SUGGESTED_INCOME_NOTE, SUGGESTED_RENTAL_CASH_FLOW_NOTE } from "../lib/income/suggest";
+import {
+  DEAD_SCHEDULE_E_LINE21_MONTHLY,
+  SUGGESTED_INCOME_NOTE,
+  SUGGESTED_RENTAL_CASH_FLOW_NOTE,
+  scheduleECashFlowMonthly,
+} from "../lib/income/suggest";
 import { resolveProposal } from "../components/fox/completeness";
 import { FAILED_READ_NOTE } from "../lib/docs/accept";
 import { applyExtractWrite, emptyDraft, loadIntakeDraft, receiveDocument } from "../components/fox/store";
@@ -35,6 +41,7 @@ import {
   hasRealIncomeLedgerDollars,
   incomeLedgerFieldsFromPrintedLines,
   incomeLedgerRowsFromFields,
+  scheduleEStreetNames,
 } from "../lib/income/ledger";
 import { classifyAndExtract, shouldGrokTaxReturnPagesFirst } from "../lib/docs/extract";
 import { classifyPageByFormHeader } from "../lib/docs/formHeader";
@@ -975,6 +982,144 @@ async function main() {
   assert.match(headerEAsk.text, /Schedule E/i);
   assert.match(headerEAsk.text, /Use this/i);
 
+  assert.equal(scheduleECashFlowMonthly(55693 + 57920, 24719 + 1392), 7292);
+  assert.equal(scheduleECashFlowMonthly(55693 + 57920, 24719 + 1392), Math.round(87502 / 12));
+  assert.equal(scheduleECashFlowMonthly(-42648, 0), null, "line 21 A+B is not cash");
+  assert.equal(DEAD_SCHEDULE_E_LINE21_MONTHLY, -3554);
+  assert.equal(
+    scheduleEStreetNames("956-958 Hacienda Ave Campbell; 3710 Smith St Union City"),
+    "Hacienda Ave and Smith St",
+  );
+  const goldPrinted = incomeLedgerFieldsFromPrintedLines([
+    "Schedule E (Form 1040) 2025",
+    "Supplemental Income and Loss",
+    "Part I Income or Loss From Rental Real Estate",
+    "A 956-958 Hacienda Ave Campbell",
+    "B 3710 Smith St Union City",
+    "3 Rents received  55,693.00  57,920.00",
+    "21 Income or (loss) from rental real estate  (12,345.00)  (30,303.00)",
+    "Cash operating expenses  24,719.00  1,392.00",
+  ]);
+  assert.equal(goldPrinted.schedule_e_rents_received, "113613");
+  assert.equal(goldPrinted.schedule_e_cash_expenses, "26111");
+  assert.match(goldPrinted.schedule_e_property_address ?? "", /Hacienda/i);
+  assert.match(goldPrinted.schedule_e_property_address ?? "", /Smith/i);
+  assert.notEqual(goldPrinted.schedule_e_rents_received, "-42648");
+  const goldRows = incomeLedgerRowsFromFields({
+    tax_year: "2025",
+    schedule_e_rents_received: "113613",
+    schedule_e_cash_expenses: "26111",
+    schedule_e_property_address: "956-958 Hacienda Ave Campbell; 3710 Smith St Union City",
+  });
+  assert.equal(goldRows.length, 1);
+  assert.equal(goldRows[0]?.kind, "schedule_e");
+  assert.equal(goldRows[0]?.monthly, "7292");
+  assert.notEqual(goldRows[0]?.monthly, "-3554");
+  const goldAsk = incomeLedgerAskCopy(goldRows[0]);
+  assert.match(goldAsk, /Suggested rental cash flow · not underwritten/);
+  assert.match(goldAsk, /Hacienda Ave/);
+  assert.match(goldAsk, /Smith St/);
+  assert.match(goldAsk, /\$7,292/);
+  assert.doesNotMatch(goldAsk, /3,554|−\$3,554|-\$3,554/);
+  const deadLine21 = incomeLedgerRowsFromFields({
+    tax_year: "2025",
+    schedule_e_rents_received: "-42648",
+  });
+  assert.ok(
+    !deadLine21.some((row) => row.monthly === "-3554" || row.kind === "schedule_e"),
+    "line 21 / 12 is not a rental row",
+  );
+  const deadTotalExp = incomeLedgerRowsFromFields({
+    tax_year: "2025",
+    schedule_e_rents_received: "113613",
+    schedule_e_cash_expenses: "156261",
+  });
+  assert.ok(!deadTotalExp.some((row) => row.monthly === "-3554"), "total expenses / line 21 is dead");
+
+  const goldAt = "2026-09-12T18:00:00.000Z";
+  const goldCover = writeLive(
+    wageQiDraft(),
+    walkName,
+    {
+      tax_year: "2025",
+      full_name: "ALLAN COMBES and RENZ ARIANE COMBES",
+      wages: "455802",
+      schedule_e_rents_received: "113613",
+      schedule_e_cash_expenses: "26111",
+      schedule_e_property_address: "956-958 Hacienda Ave Campbell; 3710 Smith St Union City",
+    },
+    goldAt,
+  );
+  const afterGoldNames = resolveProposal(goldCover.draft, "accept");
+  assert.equal(afterGoldNames.facts?.qualifying_income?.value, "36453");
+  assert.equal(isHouseholdWagesProposal(afterGoldNames.pendingProposal), true);
+  assert.equal(afterGoldNames.pendingProposal?.value, "455802");
+  const afterGoldWages = resolveProposal(afterGoldNames, "accept");
+  assert.equal(afterGoldWages.facts?.[HOUSEHOLD_WAGES_FIELD]?.value, "455802");
+  assert.equal(afterGoldWages.facts?.qualifying_income?.value, "36453");
+  assert.equal(afterGoldWages.pendingProposal?.field, INCOME_LEDGER_FIELD);
+  assert.equal(afterGoldWages.pendingProposal?.value, "7292");
+  assert.notEqual(afterGoldWages.pendingProposal?.value, "-3554");
+  assert.equal(afterGoldWages.pendingProposal?.note, SUGGESTED_RENTAL_CASH_FLOW_NOTE);
+  const goldEAsk = nextFoxAsk(afterGoldWages);
+  assert.match(goldEAsk.text, /Suggested rental cash flow · not underwritten/);
+  assert.match(goldEAsk.text, /Hacienda Ave/);
+  assert.match(goldEAsk.text, /Smith St/);
+  assert.match(goldEAsk.text, /\$7,292/);
+  assert.doesNotMatch(goldEAsk.text, /3,554/);
+  assert.deepEqual(
+    (goldEAsk.actions ?? []).map((item) => item.label),
+    ["Use this", "Change"],
+  );
+  const usedGoldE = resolveProposal(afterGoldWages, "accept");
+  assert.equal(usedGoldE.facts?.qualifying_income?.value, "36453", "Sch E cash does not write QI");
+  assert.equal(usedGoldE.facts?.schedule_e_monthly?.value, "7292");
+  assert.notEqual(usedGoldE.facts?.schedule_e_monthly?.value, "-3554");
+  assert.notEqual(usedGoldE.facts?.qualifying_income?.value, "-3554");
+
+  const goldWalkPdf = multiPagePdf([
+    [
+      "Form 8879",
+      "IRS e-file Signature Authorization",
+      "2025",
+      "ALLAN COMBES",
+      "RENZ ARIANE COMBES",
+    ],
+    [
+      "Form 1040",
+      "U.S. Individual Income Tax Return",
+      "2025",
+      "Your first name and middle initial Allan",
+      "Last name Combes",
+      "Spouse Renz Ariane Combes",
+      "1a Total amount from Form(s) W-2, box 1          455,802.00",
+      "1z Wages, salaries, tips, etc. Add lines 1a through 1h          455,802.00",
+    ],
+    [
+      "Schedule E (Form 1040) 2025",
+      "Supplemental Income and Loss",
+      "Part I Income or Loss From Rental Real Estate",
+      "A 956-958 Hacienda Ave Campbell",
+      "B 3710 Smith St Union City",
+      "3 Rents received  55,693.00  57,920.00",
+      "21 Income or (loss) from rental real estate  (12,345.00)  (30,303.00)",
+      "Cash operating expenses  24,719.00  1,392.00",
+    ],
+  ]);
+  const goldWalk = await classifyAndExtract(
+    goldWalkPdf,
+    "application/pdf",
+    namesOnly,
+    "tax_return",
+    walkName,
+  );
+  assert.equal(goldWalk.fields.wages, "455802");
+  assert.equal(goldWalk.fields.schedule_e_rents_received, "113613");
+  assert.equal(goldWalk.fields.schedule_e_cash_expenses, "26111");
+  assert.match(goldWalk.fields.schedule_e_property_address ?? "", /Hacienda/i);
+  assert.match(goldWalk.fields.schedule_e_property_address ?? "", /Smith/i);
+  assert.notEqual(goldWalk.fields.schedule_e_rents_received, "-42648");
+
   const only8879At = "2026-09-12T17:20:00.000Z";
   const only8879Cover = writeLive(
     wageQiDraft(),
@@ -1016,6 +1161,15 @@ async function main() {
   assert.match(extractSrc, /FORM_1040_HOUSEHOLD_WAGES_PROMPT|line 1z \(Wages, salaries, tips, etc\. Add lines 1a/);
   assert.match(extractSrc, /taxReturnPagesToGrok|schedule_e/);
   assert.match(extractSrc, /assignLedgerKeepFirst/);
+  assert.match(extractSrc, /Never use line 21 Income or \(loss\)/);
+  assert.match(extractSrc, /Never use line 26/);
+  assert.match(extractSrc, /mortgage interest \(line 12\)/);
+  assert.match(extractSrc, /cash operating expenses/);
+  assert.match(extractSrc, /SCHEDULE_E_PART1_PROMPT|flattenScheduleEPart1/);
+  const suggestSrc = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "..", "lib/income/suggest.ts"), "utf8");
+  assert.match(suggestSrc, /DEAD_SCHEDULE_E_LINE21_MONTHLY/);
+  assert.match(suggestSrc, /-3554/);
+  assert.doesNotMatch(suggestSrc, /line 21 A \+ line 21 B/);
   const fileWriteSrc = readFileSync(
     join(dirname(fileURLToPath(import.meta.url)), "..", "components/fox/fileWrite.ts"),
     "utf8",

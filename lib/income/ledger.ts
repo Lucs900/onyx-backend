@@ -5,7 +5,12 @@
  * Gross receipts is a File fact labeled not qualifying income.
  */
 
-import { looksLikeFormLineNumber, monthlyFromAnnual, scheduleECashFlowMonthly } from "./suggest";
+import {
+  isDeadScheduleELine21Monthly,
+  looksLikeFormLineNumber,
+  monthlyFromAnnual,
+  scheduleECashFlowMonthly,
+} from "./suggest";
 
 export const INCOME_LEDGER_FIELD = "income_ledger";
 export const SCHEDULE_E_MONTHLY_FIELD = "schedule_e_monthly";
@@ -128,10 +133,17 @@ export function incomeLedgerRowsFromFields(fields: Record<string, string>): Inco
     } else if (monthly != null) {
       pushRow(rows, "schedule_e", monthly, year, fields.schedule_e_property_address);
     }
-  } else if (rents != null && expenses == null && !looksLikeFormLineNumber(Math.abs(rents)) && Math.abs(rents) >= 100) {
+  } else if (
+    rents != null &&
+    expenses == null &&
+    rents < 0 &&
+    !looksLikeFormLineNumber(Math.abs(rents)) &&
+    Math.abs(rents) >= 100
+  ) {
     const monthly = monthlyFromAnnual(rents);
-    if (monthly < 0) pushRow(rows, "named_loss", monthly, year, "Schedule E");
-    else if (monthly !== 0) pushRow(rows, "schedule_e", monthly, year, fields.schedule_e_property_address);
+    if (monthly < 0 && !isDeadScheduleELine21Monthly(monthly)) {
+      pushRow(rows, "named_loss", monthly, year, "Schedule E");
+    }
   }
 
   const partnership = parseLedgerMoney(fields.k1_ordinary_income);
@@ -302,6 +314,7 @@ export const TAX_RETURN_LEDGER_READ_KEYS = [
   "return_kind",
   "schedule_e_rents_received",
   "schedule_e_cash_expenses",
+  "schedule_e_property_address",
   "k1_ordinary_income",
   "schedule_e_part2_names",
   "schedule_c_net_profit",
@@ -332,10 +345,20 @@ export function sanitizeLedgerExtractFields(fields: Record<string, string>): Rec
       ) {
         continue;
       }
+      if (key === "schedule_e_rents_received" && n < 0) continue;
       next[key] = String(n);
       continue;
     }
     next[key] = raw;
+  }
+  const rents = parseLedgerMoney(next.schedule_e_rents_received);
+  const cash = parseLedgerMoney(next.schedule_e_cash_expenses);
+  if (rents != null && cash != null) {
+    const rawMonthly = monthlyFromAnnual(rents - cash);
+    if (isDeadScheduleELine21Monthly(rawMonthly)) {
+      delete next.schedule_e_rents_received;
+      delete next.schedule_e_cash_expenses;
+    }
   }
   return next;
 }
@@ -382,30 +405,33 @@ export function incomeLedgerFieldsFromPrintedLines(lines: string[]): Record<stri
     blob.match(new RegExp(`(?:^|\\n)\\s*3\\s+business income[^\\n]{0,80}?${money}`, "i"))?.[1];
   if (schC) putMoney("schedule_c_net_profit", schC);
 
-  const rents =
-    moneyNearLabel(blob, /rents received\s*:?\s*/i) ||
-    blob.match(new RegExp(`rents received[^\\n]{0,80}?${money}`, "i"))?.[1];
+  const rents = sumScheduleEColumnMoney(blob, /rents received[ \t]*:?[ \t]*/i);
   if (rents) putMoney("schedule_e_rents_received", rents);
 
   const expenses =
-    moneyNearLabel(blob, /cash expenses(?:\s*\(\s*ex-?depreciation\s*\))?\s*:?\s*/i) ||
-    moneyNearLabel(blob, /add lines\s*5\s+through\s*18\b/i);
+    sumScheduleEColumnMoney(blob, /cash operating expenses[ \t]*:?[ \t]*/i) ||
+    sumScheduleEColumnMoney(blob, /cash expenses(?:[ \t]*\([ \t]*ex-?depreciation[ \t]*\))?[ \t]*:?[ \t]*/i);
   if (expenses) putMoney("schedule_e_cash_expenses", expenses);
 
-  const schE =
-    blob.match(
-      new RegExp(
-        `rent\\/royalty\\/partnership\\/estate\\s*\\(\\s*schedule e\\s*\\)\\s*:?\\s*${money}`,
-        "i",
-      ),
-    )?.[1] ||
-    blob.match(new RegExp(`rental real estate[^\\n]{0,120}?${money}`, "i"))?.[1] ||
-    blob.match(new RegExp(`(?:^|\\n)\\s*5\\s+rental[^\\n]{0,120}?${money}`, "i"))?.[1] ||
-    blob.match(new RegExp(`attach schedule e[^\\n]{0,40}?${money}`, "i"))?.[1] ||
-    blob.match(new RegExp(`(?:schedule e|sch(?:edule)?\\s*e)\\s*:?\\s*${money}`, "i"))?.[1];
-  if (!fields.schedule_e_rents_received && schE) {
-    const n = realLedgerMoney(schE);
-    if (n != null && Math.abs(n) >= 100) {
+  const streets = scheduleEStreetsFromBlob(blob);
+  if (streets) fields.schedule_e_property_address = streets;
+
+  if (!fields.schedule_e_rents_received && !/\bPart I\b/i.test(blob)) {
+    const schedule1E =
+      blob.match(
+        new RegExp(
+          `rent\\/royalty\\/partnership\\/estate\\s*\\(\\s*schedule e\\s*\\)\\s*:?\\s*${money}`,
+          "i",
+        ),
+      )?.[1] ||
+      blob.match(
+        new RegExp(
+          `(?:^|\\n)\\s*5\\s+rental real estate, royalties, partnerships[^\\n]{0,160}?${money}`,
+          "i",
+        ),
+      )?.[1];
+    const n = realLedgerMoney(schedule1E);
+    if (n != null && n < 0 && Math.abs(n) >= 100) {
       putMoney("schedule_e_rents_received", String(n));
     }
   }
@@ -454,4 +480,79 @@ export function ledgerProposalNote(kind: IncomeLedgerKind) {
   if (kind === "schedule_e") return "Suggested rental cash flow · not underwritten";
   if (kind === "named_loss") return NAMED_LOSS_NOTE;
   return "Suggested qualifying income · not underwritten";
+}
+
+const STREET_SUFFIX =
+  /(?:Avenue|Ave|Street|Blvd|Boulevard|Drive|Lane|Court|Road|Way|Dr|Rd|Ln|Ct|St)\b/i;
+
+function scheduleEStreetShortName(part: string): string {
+  const match = String(part ?? "").match(
+    /\d[\d-]*\s+(.+?\s+(?:Avenue|Ave|Street|Blvd|Boulevard|Drive|Lane|Court|Road|Way|Dr|Rd|Ln|Ct|St))\b/i,
+  );
+  if (match?.[1]) return match[1].replace(/\s+/g, " ").trim();
+  const named = String(part ?? "").match(
+    /\b([A-Z][A-Za-z0-9.'-]*\s+(?:Avenue|Ave|Street|Blvd|Boulevard|Drive|Lane|Court|Road|Way|Dr|Rd|Ln|Ct|St))\b/i,
+  );
+  return named?.[1]?.replace(/\s+/g, " ").trim() ?? "";
+}
+
+/** Hacienda Ave and Smith St — streets only, never line 21. */
+export function scheduleEStreetNames(address?: string | null): string {
+  const parts = String(address ?? "")
+    .split(/[;|/]+/)
+    .map((part) => part.replace(/\s+/g, " ").trim())
+    .filter(Boolean);
+  const named = parts.map(scheduleEStreetShortName).filter(Boolean);
+  const unique: string[] = [];
+  for (const item of named) {
+    if (!unique.some((row) => row.toLowerCase() === item.toLowerCase())) unique.push(item);
+  }
+  if (!unique.length) return "";
+  if (unique.length === 1) return unique[0];
+  if (unique.length === 2) return `${unique[0]} and ${unique[1]}`;
+  return `${unique.slice(0, -1).join(", ")}, and ${unique[unique.length - 1]}`;
+}
+
+function scheduleEStreetsFromBlob(blob: string): string {
+  const found: string[] = [];
+  const re = new RegExp(
+    String.raw`\b(\d{1,6}(?:-\d{1,6})?\s+[A-Z][A-Za-z0-9.'-]*(?:\s+[A-Z][A-Za-z0-9.']*){0,3}\s+${STREET_SUFFIX.source}(?:\s+[A-Z][A-Za-z]+){0,2})`,
+    "gi",
+  );
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(blob))) {
+    const raw = String(match[1] ?? "").replace(/\s+/g, " ").trim();
+    if (!raw || /clipper|filbert/i.test(raw)) continue;
+    if (!found.some((item) => item.toLowerCase() === raw.toLowerCase())) found.push(raw);
+  }
+  return found.join("; ");
+}
+
+function sumScheduleEColumnMoney(blob: string, label: RegExp): string | undefined {
+  const match = blob.match(label);
+  if (!match || match.index == null) return undefined;
+  const after = blob.slice(match.index + match[0].length);
+  const lineEnd = after.search(/\n/);
+  const afterSameLine = after.slice(0, lineEnd < 0 ? after.length : lineEnd);
+  const nextAt = afterSameLine.search(
+    /cash (?:operating )?expenses|advertising|income or \(loss\)|total expenses|depreciation|(?:^|\b)(?:line\s*)?(?:4|5|9|12|16|18|20|21|26)\b/i,
+  );
+  const window = afterSameLine.slice(0, nextAt >= 0 ? nextAt : afterSameLine.length);
+  const lineStart = blob.lastIndexOf("\n", match.index) + 1;
+  const before = blob.slice(lineStart, match.index).slice(-48);
+  const moneyRe = /(-?\$?\s*\d[\d,]*(?:\.\d+)?|\(\s*\$?\s*\d[\d,]*(?:\.\d+)?\s*\))/g;
+  let total = 0;
+  let count = 0;
+  let moneyMatch: RegExpExecArray | null;
+  const afterHas = new RegExp(moneyRe.source).test(window);
+  const span = afterHas ? window : `${window} ${before}`;
+  while ((moneyMatch = moneyRe.exec(span))) {
+    const n = realLedgerMoney(moneyMatch[1]);
+    if (n == null) continue;
+    if (Math.abs(n) < 100 && !/,/.test(String(moneyMatch[1] ?? ""))) continue;
+    total += n;
+    count += 1;
+  }
+  if (!count) return moneyNearLabel(blob, label);
+  return String(total);
 }

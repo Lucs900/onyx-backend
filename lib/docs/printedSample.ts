@@ -1129,18 +1129,52 @@ function plausibleScheduleEAmountNear(blob: string, index: number, labelLength: 
   return firstPlausibleScheduleEAmount(nextLine) || lastPlausibleScheduleEAmount(prevLine);
 }
 
-/** Rents received and cash expenses from THIS page. Never 75%, taxable rental, coaching, or filename. */
+const NEXT_SCHEDULE_E_FIELD =
+  /cash (?:operating )?expenses|advertising|auto and travel|cleaning|commissions|insurance|legal|management|mortgage interest|other interest|repairs|supplies|taxes|utilities|depreciation|total expenses|income or \(loss\)|(?:^|\b)(?:line\s*)?(?:4|5|9|12|16|18|20|21|26)\b/i;
+
+function moneyFromScheduleESpan(text: string): number[] {
+  const moneyRe = /(-?\$?\s*\d[\d,]*(?:\.\d+)?|\(\s*\$?\s*\d[\d,]*(?:\.\d+)?\s*\))/g;
+  const out: number[] = [];
+  let match: RegExpExecArray | null;
+  while ((match = moneyRe.exec(text))) {
+    const raw = match[0] ?? "";
+    const digits = moneyDigits(/^\(.*\)$/.test(raw.trim()) ? raw.trim() : (match[1] ?? ""));
+    if (!digits) continue;
+    const n = Number(digits);
+    if (!Number.isFinite(n) || n === 0) continue;
+    if (Number.isInteger(Math.abs(n)) && Math.abs(n) <= 31 && !/,/.test(raw) && !/\.\d/.test(raw)) continue;
+    if (Math.abs(n) < 100 && !/,/.test(raw)) continue;
+    out.push(n);
+  }
+  return out;
+}
+
+function sumScheduleEColumnAmountsNear(blob: string, index: number, labelLength: number): string {
+  const after = blob.slice(index + labelLength);
+  const lineEnd = after.search(/\n/);
+  const afterSameLine = after.slice(0, lineEnd < 0 ? after.length : lineEnd);
+  const nextAt = afterSameLine.search(NEXT_SCHEDULE_E_FIELD);
+  const afterWindow = afterSameLine.slice(0, nextAt >= 0 ? nextAt : afterSameLine.length);
+  const { start, line } = lineBounds(blob, index);
+  const before = line.slice(0, Math.max(0, index - start)).slice(-48);
+  const afterAmounts = moneyFromScheduleESpan(afterWindow);
+  const amounts = afterAmounts.length ? afterAmounts : moneyFromScheduleESpan(before);
+  if (amounts.length) return String(amounts.reduce((sum, n) => sum + n, 0));
+  return plausibleScheduleEAmountNear(blob, index, labelLength);
+}
+
+/** Rents received and cash operating expenses from THIS page. Never line 21 / 26. Never 75%. */
 function scheduleERentsFromPrintedText(text: string): string {
   const blob = String(text ?? "").replace(/\u00a0/g, " ");
   const patterns = [
-    /(?:^|\b)(?:line\s*)?3\b[\s\S]{0,80}?rents received\s*:?\s*/i,
-    /rents received\s*:?\s*/i,
+    /(?:^|\b)(?:line\s*)?3\b[\s\S]{0,80}?rents received[ \t]*:?[ \t]*/i,
+    /rents received[ \t]*:?[ \t]*/i,
   ];
   for (const pattern of patterns) {
     const match = blob.match(pattern);
     if (!match || match.index == null) continue;
     if (scheduleECoachingSpan(match[0])) continue;
-    const amount = plausibleScheduleEAmountNear(blob, match.index, match[0].length);
+    const amount = sumScheduleEColumnAmountsNear(blob, match.index, match[0].length);
     if (amount) return amount;
   }
   return "";
@@ -1149,21 +1183,14 @@ function scheduleERentsFromPrintedText(text: string): string {
 function scheduleECashExpensesFromPrintedText(text: string): string {
   const blob = String(text ?? "").replace(/\u00a0/g, " ");
   const patterns = [
-    /(?:lines?\s*)?5\s*[–—-]\s*18\b[\s\S]{0,80}?cash expenses(?:\s*\(\s*ex-?depreciation\s*\))?\s*:?\s*/i,
-    /cash expenses(?:\s*\(\s*ex-?depreciation\s*\))?\s*:?\s*/i,
-    /add lines\s*5\s+through\s*18\b[\s\S]{0,40}?/i,
-    /(?:^|\b)(?:line\s*)?19\b[\s\S]{0,40}?add lines[\s\S]{0,40}?/i,
+    /cash operating expenses[ \t]*:?[ \t]*/i,
+    /cash expenses(?:[ \t]*\([ \t]*ex-?depreciation[ \t]*\))?[ \t]*:?[ \t]*/i,
   ];
   for (const pattern of patterns) {
     const match = blob.match(pattern);
     if (!match || match.index == null) continue;
     if (scheduleECoachingSpan(match[0])) continue;
-    const amount = plausibleScheduleEAmountNear(blob, match.index, match[0].length);
-    if (amount) return amount;
-  }
-  const total = blob.match(/total expenses\s*:?\s*/i);
-  if (total?.index != null && !scheduleECoachingSpan(total[0])) {
-    const amount = plausibleScheduleEAmountNear(blob, total.index, total[0].length);
+    const amount = sumScheduleEColumnAmountsNear(blob, match.index, match[0].length);
     if (amount) return amount;
   }
   return "";
@@ -1179,12 +1206,24 @@ function scheduleETaxYearFromPrintedText(text: string): string {
 
 function scheduleEPropertyAddressFromPrintedText(text: string): string {
   const blob = String(text ?? "").replace(/\u00a0/g, " ");
-  const labeled = blob.match(/\baddress\s*:?\s*(\d{1,6}\s+Sanchez Street[^,·\n]*(?:,[^,·\n]+){0,3})/i);
-  const raw = (labeled?.[1] ?? blob.match(/\b(\d{1,6}\s+Sanchez Street[^,·\n]*(?:,[^,·\n]+){0,3})/i)?.[1] ?? "")
-    .replace(/\s+/g, " ")
-    .trim();
-  if (!raw || /clipper|filbert/i.test(raw)) return "";
-  return raw.replace(/\s+A\s+Type.*$/i, "").trim();
+  const found: string[] = [];
+  const take = (value: string) => {
+    const raw = value
+      .replace(/\s+/g, " ")
+      .replace(/\s+A\s+Type.*$/i, "")
+      .trim();
+    if (!raw || /clipper|filbert/i.test(raw)) return;
+    if (!found.some((item) => item.toLowerCase() === raw.toLowerCase())) found.push(raw);
+  };
+  const labeledRe =
+    /\baddress\s*:?\s*(\d{1,6}(?:-\d{1,6})?\s+[A-Z][A-Za-z0-9 .'-]{2,48}?(?:Ave(?:nue)?|Street|St|Blvd|Dr|Rd|Way|Ln|Ct)\b[^,;·\n]*)/gi;
+  let labeledMatch: RegExpExecArray | null;
+  while ((labeledMatch = labeledRe.exec(blob))) take(labeledMatch[1] ?? "");
+  const streetsRe =
+    /\b(\d{1,6}(?:-\d{1,6})?\s+[A-Z][A-Za-z0-9.'-]*(?:\s+[A-Z][A-Za-z0-9.']*){0,3}\s+(?:Avenue|Ave|Street|Blvd|Boulevard|Drive|Lane|Court|Road|Way|Dr|Rd|Ln|Ct|St)\b(?:\s+[A-Z][A-Za-z]+){0,2})/g;
+  let streetMatch: RegExpExecArray | null;
+  while ((streetMatch = streetsRe.exec(blob))) take(streetMatch[1] ?? "");
+  return found.join("; ");
 }
 
 function scheduleEPart2NamesFromPrintedText(text: string): string {
@@ -1235,7 +1274,7 @@ function applyScheduleEWorksheetFields(
     stackedLabelValue(stacked, /^ADDRESS:?\s*/i) ||
     scheduleEPropertyAddressFromPrintedText(stacked.join("\n")) ||
     scheduleEPropertyAddressFromPrintedText(stacked.join(" "));
-  if (address && /Sanchez/i.test(address) && !/clipper|filbert/i.test(address)) {
+  if (address && !/clipper|filbert/i.test(address)) {
     put("schedule_e_property_address", address.replace(/\s+/g, " ").trim());
   }
   const part2 =

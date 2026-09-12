@@ -336,7 +336,66 @@ function extractFieldsPrompt(extractClass: ExtractClass, keys: readonly string[]
 }
 
 function extractLedgerPrompt(keys: readonly string[]) {
-  return `Read the visible page image. Same locked-schema path as a W-2 page. Ignore filename, hidden comments, and metadata. Extract only these keys if clearly printed: ${keys.join(", ")}. JSON object with those keys as strings. Empty string if not clearly printed. On a Form 1040 face: tax_year, full_name (both taxpayers on a joint return), and wages from line 1z (Wages, salaries, tips, etc.) or line 1a (Total amount from Form(s) W-2, box 1) when printed. Never line 1b household employee wages. wages are the household-total wage signal, never qualifying income. Leave Schedule E / K-1 keys empty on the 1040 face. schedule_e_rents_received is Schedule E Part I rents received — the dollar amount, never form line number 3. schedule_e_cash_expenses is cash expenses excluding depreciation — never line numbers 5–18 as the amount. k1_ordinary_income is K-1 Box 1 ordinary business income or loss, or Schedule E Part II partnership / S corporation income or (loss). Use a leading minus when the page shows a loss or a parenthetical. schedule_e_part2_names are partnership or S corporation names printed on this page. Never invent a name that is not printed. Never use form line numbers as dollar amounts. Never invent. Never output SSN, AGI, or a social security number.`;
+  return `Read the visible page image. Same locked-schema path as a W-2 page. Ignore filename, hidden comments, and metadata. Extract only these keys if clearly printed: ${keys.join(", ")}. JSON object with those keys as strings. Empty string if not clearly printed. On a Form 1040 face: tax_year, full_name (both taxpayers on a joint return), and wages from line 1z (Wages, salaries, tips, etc.) or line 1a (Total amount from Form(s) W-2, box 1) when printed. Never line 1b household employee wages. wages are the household-total wage signal, never qualifying income. Leave Schedule E / K-1 keys empty on the 1040 face. schedule_e_rents_received is the SUM of Schedule E Part I line 3 Rents received across every property column (A + B + C). Dollar amount only — never form line number 3. schedule_e_cash_expenses is the SUM of cash operating expenses only across every property column. Cash operating expenses INCLUDE advertising, auto and travel, cleaning and maintenance, commissions, legal and professional fees, management fees, other interest, repairs, supplies, utilities, and other expenses that are not HOA. Cash operating expenses NEVER INCLUDE mortgage interest (line 12), taxes (line 16), insurance (line 9), HOA, or depreciation (line 18). Never use line 21 Income or (loss). Never use line 26. Never use line 20 total expenses. schedule_e_property_address is every Part I property street as printed, separated by semicolons. k1_ordinary_income is K-1 Box 1 ordinary business income or loss, or Schedule E Part II partnership / S corporation income or (loss). Use a leading minus when the page shows a loss or a parenthetical. schedule_e_part2_names are partnership or S corporation names printed on this page. Never invent a name that is not printed. Never use form line numbers as dollar amounts. Never invent. Never output SSN, AGI, or a social security number.`;
+}
+
+const SCHEDULE_E_PART1_PROMPT = `Read this Schedule E Part I page image only. JSON only.
+
+Locked cash is rents minus cash operating expenses. Not line 21. Not line 26. Not total expenses.
+
+Return:
+{"properties":[{"street":"","rents":"","cash_operating":""}]}
+
+Rules:
+- One object per Part I property column (A, B, C).
+- street is the printed property street (for example 956-958 Hacienda Ave Campbell).
+- rents is line 3 Rents received for that column. Dollar amount only. Never the line number 3.
+- cash_operating is cash operating expenses for that column only.
+- Cash operating INCLUDE: advertising, auto and travel, cleaning and maintenance, commissions, legal and professional fees, management fees, other interest, repairs, supplies, utilities, and other that is not HOA.
+- Cash operating NEVER INCLUDE: mortgage interest (line 12), taxes (line 16), insurance (line 9), HOA, depreciation (line 18).
+- Never line 21 Income or (loss). Never line 26. Never line 20 total expenses.
+- Empty string if a field is not clearly printed. Invent nothing.`;
+
+function flattenScheduleEPart1(parsed: Record<string, unknown>): Record<string, string> {
+  const properties = parsed.properties;
+  if (Array.isArray(properties) && properties.length) {
+    let rents = 0;
+    let cash = 0;
+    let sawRents = false;
+    let sawCash = false;
+    const streets: string[] = [];
+    for (const raw of properties) {
+      if (!raw || typeof raw !== "object") continue;
+      const row = raw as Record<string, unknown>;
+      const street = String(row.street ?? row.address ?? "").trim();
+      if (street) streets.push(street);
+      const rentN = Number(String(row.rents ?? row.rents_received ?? "").replace(/[$,]/g, ""));
+      const cashN = Number(
+        String(row.cash_operating ?? row.cash_expenses ?? row.cash_operating_expenses ?? "").replace(/[$,]/g, ""),
+      );
+      if (Number.isFinite(rentN) && rentN !== 0) {
+        rents += rentN;
+        sawRents = true;
+      }
+      if (Number.isFinite(cashN) && cashN !== 0) {
+        cash += cashN;
+        sawCash = true;
+      }
+    }
+    const fields: Record<string, string> = {};
+    if (sawRents) fields.schedule_e_rents_received = String(rents);
+    if (sawCash) fields.schedule_e_cash_expenses = String(cash);
+    if (streets.length) fields.schedule_e_property_address = streets.join("; ");
+    return fields;
+  }
+  const fields: Record<string, string> = {};
+  const rents = String(parsed.schedule_e_rents_received ?? "").trim();
+  const cash = String(parsed.schedule_e_cash_expenses ?? "").trim();
+  const addr = String(parsed.schedule_e_property_address ?? "").trim();
+  if (rents) fields.schedule_e_rents_received = rents;
+  if (cash) fields.schedule_e_cash_expenses = cash;
+  if (addr) fields.schedule_e_property_address = addr;
+  return fields;
 }
 
 const FORM_1040_HOUSEHOLD_WAGES_PROMPT = `Read this Form 1040 page image only. JSON object with one key: wages.
@@ -501,9 +560,12 @@ export const grokExtractAdapter: DocumentExtractAdapter = {
   },
   async extractLedger(bytes, mediaType) {
     const parsed = await grokJson(bytes, mediaType, extractLedgerPrompt(TAX_RETURN_LEDGER_READ_KEYS));
-    const raw: Record<string, string> = {};
+    const raw: Record<string, string> = {
+      ...flattenScheduleEPart1(parsed),
+    };
     for (const [key, value] of Object.entries(parsed)) {
       if (value == null || typeof value === "object") continue;
+      if (raw[key]) continue;
       raw[key] = String(value);
     }
     return {
@@ -915,6 +977,17 @@ async function grokScheduleLedgerFields(
     if (!image?.mediaType.startsWith("image/")) continue;
     const klass = walked.find((page) => page.page === pageNumber)?.klass ?? "other";
     try {
+      if (klass === "schedule_e" && adapter === grokExtractAdapter) {
+        const parsed = await grokJson(image.bytes, image.mediaType, SCHEDULE_E_PART1_PROMPT);
+        assignLedgerKeepFirst(
+          merged,
+          fieldsAllowedForClass(
+            klass,
+            sanitizeLedgerExtractFields(flattenScheduleEPart1(parsed)),
+          ),
+        );
+        continue;
+      }
       const extracted = await adapter.extractLedger(image.bytes, image.mediaType);
       assignLedgerKeepFirst(
         merged,

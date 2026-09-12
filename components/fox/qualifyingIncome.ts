@@ -65,6 +65,7 @@ import {
   mergeIncomeLedger,
   parseLedgerMoney,
   pendingIncomeLedgerRows,
+  scheduleEStreetNames,
   type CoverWageGapAnswer,
   type IncomeLedgerRow,
 } from "@/lib/income/ledger";
@@ -1711,6 +1712,9 @@ export function incomeLedgerProposal(row: IncomeLedgerRow): FactProposal {
     extras: [
       { field: "ledger_id", value: row.id, label: "ledger row" },
       { field: "ledger_kind", value: row.kind, label: "ledger kind" },
+      ...(row.businessName
+        ? [{ field: "ledger_streets", value: row.businessName, label: "streets" }]
+        : []),
     ],
   };
 }
@@ -1798,7 +1802,9 @@ export function incomeLedgerAskCopy(row: IncomeLedgerRow): string {
     return `This return shows a ${signed} loss. I’m not netting that into qualifying income. ${NAMED_LOSS_NOTE}. Use this?`;
   }
   if (row.kind === "schedule_e") {
-    return `This return shows Schedule E. I’m suggesting ${signed} a month. ${ledgerProposalNote(row.kind)}. Use this?`;
+    const streets = scheduleEStreetNames(row.businessName);
+    const where = streets ? ` on ${streets}` : "";
+    return `This return shows Schedule E${where}. I’m suggesting ${signed} a month. ${ledgerProposalNote(row.kind)}. Use this?`;
   }
   if (row.kind === "k1") {
     return `This return shows a K-1. I’m suggesting ${signed} a month. ${ledgerProposalNote(row.kind)}. Use this?`;
