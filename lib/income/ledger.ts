@@ -268,7 +268,13 @@ function moneyNearLabel(blob: string, pattern: RegExp): string | undefined {
   const before = line.slice(0, local);
   const money = /(-?\$?\s*\d[\d,]*(?:\.\d+)?|\(\s*\$?\s*\d[\d,]*(?:\.\d+)?\s*\))/;
   const afterAmt = after.match(money)?.[1];
-  const beforeAmts = [...before.matchAll(new RegExp(money, "g"))].map((item) => item[1]).reverse();
+  const beforeAmts: string[] = [];
+  const beforeRe = new RegExp(money.source, "g");
+  let beforeMatch: RegExpExecArray | null;
+  while ((beforeMatch = beforeRe.exec(before))) {
+    if (beforeMatch[1]) beforeAmts.push(beforeMatch[1]);
+  }
+  beforeAmts.reverse();
   const pick = (raw?: string) => {
     const n = realLedgerMoney(raw);
     if (n == null) return undefined;
@@ -397,11 +403,10 @@ export function incomeLedgerFieldsFromPrintedLines(lines: string[]): Record<stri
   const names: string[] = [];
   if (/Bay Street Partners LLC/i.test(blob)) names.push("Bay Street Partners LLC");
   if (/Harbor Studio Inc/i.test(blob)) names.push("Harbor Studio Inc");
-  const generic = blob.matchAll(
-    /\b([A-Z][A-Za-z0-9 .&'-]{2,48}?(?:LLC|L\.L\.C\.|Inc\.?|Partners|LP|LLP))\b/g,
-  );
-  for (const match of generic) {
-    const named = String(match[1] ?? "").replace(/\s+/g, " ").trim();
+  const genericRe = /\b([A-Z][A-Za-z0-9 .&'-]{2,48}?(?:LLC|L\.L\.C\.|Inc\.?|Partners|LP|LLP))\b/g;
+  let genericMatch: RegExpExecArray | null;
+  while ((genericMatch = genericRe.exec(blob))) {
+    const named = String(genericMatch[1] ?? "").replace(/\s+/g, " ").trim();
     if (!named || /schedule|form|ordinary|rental/i.test(named)) continue;
     if (!names.some((item) => item.toLowerCase() === named.toLowerCase())) names.push(named);
   }

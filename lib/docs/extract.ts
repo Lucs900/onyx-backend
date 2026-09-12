@@ -703,7 +703,10 @@ async function mergeTaxReturnLedgerFields(
   if (!hasRealIncomeLedgerDollars(ledger) && incomeLossOnPage) {
     ledger = { ...ledger, ...(await grokScheduleLedgerFields(bytes, adapter)) };
   }
-  const fields = { ...ledger, ...result.fields };
+  const fields: Record<string, string> = {};
+  for (const [key, value] of Object.entries({ ...ledger, ...result.fields })) {
+    if (value) fields[key] = String(value);
+  }
   if (incomeLossOnPage && !hasRealIncomeLedgerDollars(fields)) {
     return {
       ...result,
