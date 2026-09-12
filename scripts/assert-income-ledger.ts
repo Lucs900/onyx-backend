@@ -27,10 +27,54 @@ import {
   INCOME_LEDGER_FIELD,
   NAMED_LOSS_FIELD,
   coverWagesFarAboveFileW2s,
+  hasRealIncomeLedgerDollars,
   incomeLedgerFieldsFromPrintedLines,
   incomeLedgerRowsFromFields,
 } from "../lib/income/ledger";
+import { classifyAndExtract } from "../lib/docs/extract";
 import type { FoxIntakeDraft } from "../components/fox/types";
+
+function multiPagePdf(pages: string[][]) {
+  const kids: string[] = [];
+  const objects: string[] = ["<< /Type /Catalog /Pages 2 0 R >>"];
+  const pageObjects: string[] = [];
+  const contentObjects: string[] = [];
+  for (const [index, lines] of pages.entries()) {
+    const commands = ["BT", "/F1 12 Tf", "72 720 Td"];
+    for (const [lineIndex, line] of lines.entries()) {
+      if (lineIndex) commands.push("0 -18 Td");
+      commands.push(`(${line.replace(/[()\\]/g, "\\$&")}) Tj`);
+    }
+    commands.push("ET");
+    const stream = commands.join("\n");
+    contentObjects.push(`<< /Length ${Buffer.byteLength(stream)} >>\nstream\n${stream}\nendstream`);
+    const pageObj = 3 + index;
+    const contentObj = 3 + pages.length + index;
+    kids.push(`${pageObj} 0 R`);
+    pageObjects.push(
+      `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents ${contentObj} 0 R /Resources << /Font << /F1 ${3 + pages.length * 2} 0 R >> >> >>`,
+    );
+  }
+  objects.push(`<< /Type /Pages /Kids [${kids.join(" ")}] /Count ${pages.length} >>`);
+  objects.push(...pageObjects, ...contentObjects);
+  objects.push("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>");
+  const chunks: Buffer[] = [Buffer.from("%PDF-1.4\n")];
+  const offsets = [0];
+  objects.forEach((body, index) => {
+    offsets.push(chunks.reduce((sum, part) => sum + part.length, 0));
+    chunks.push(Buffer.from(`${index + 1} 0 obj\n${body}\nendobj\n`));
+  });
+  const xrefAt = chunks.reduce((sum, part) => sum + part.length, 0);
+  let xref = `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
+  for (const offset of offsets.slice(1)) {
+    xref += `${String(offset).padStart(10, "0")} 00000 n \n`;
+  }
+  chunks.push(Buffer.from(xref));
+  chunks.push(
+    Buffer.from(`trailer << /Root 1 0 R /Size ${objects.length + 1} >>\nstartxref\n${xrefAt}\n%%EOF\n`),
+  );
+  return Buffer.concat(chunks);
+}
 
 function wageQiDraft(): FoxIntakeDraft {
   const now = "2026-09-11T20:00:00.000Z";
@@ -129,7 +173,7 @@ function writeLive(draft: FoxIntakeDraft, name: string, fields: Record<string, s
   });
 }
 
-function main() {
+async function main() {
   assert.equal(coverWagesFarAboveFileW2s(600000, 437436), true);
   assert.equal(coverWagesFarAboveFileW2s(437436, 437436), false);
   assert.equal(coverWagesFarAboveFileW2s(400000, 437436), false);
@@ -158,6 +202,28 @@ function main() {
   assert.equal(schedule1.k1_ordinary_income, "18000");
   assert.equal(schedule1.gross_receipts, "1200000");
   assert.equal(schedule1.schedule_c_net_profit, undefined, "zero Schedule 1 C is not a row");
+  const fromSchedule1 = incomeLedgerRowsFromFields(schedule1);
+  assert.ok(
+    fromSchedule1.some((row) => row.kind === "named_loss" && Number(row.monthly) < 0),
+    "Schedule 1 partnership/Sch E net is a named loss, not ignored",
+  );
+  assert.ok(hasRealIncomeLedgerDollars(schedule1));
+
+  const columnar = incomeLedgerFieldsFromPrintedLines([
+    "U.S. Individual Income Tax Return",
+    "Form 1040 2025",
+    "Schedule E Supplemental Income and Loss",
+    "Part I Income or Loss From Rental Real Estate",
+    "42000  3 Rents received",
+    "11400  Cash expenses (ex-depreciation)",
+    "Income or (loss) from partnerships and S corporations  (294,564)",
+  ]);
+  assert.equal(columnar.schedule_e_rents_received, "42000");
+  assert.equal(columnar.schedule_e_cash_expenses, "11400");
+  assert.equal(columnar.k1_ordinary_income, "-294564");
+  const columnarRows = incomeLedgerRowsFromFields(columnar);
+  assert.ok(columnarRows.some((row) => row.kind === "schedule_e" && row.monthly === "2550"));
+  assert.ok(columnarRows.some((row) => row.kind === "named_loss" && Number(row.monthly) < 0));
   const fromFields = incomeLedgerRowsFromFields({
     tax_year: "2025",
     full_name: "Allan Combes",
@@ -387,9 +453,103 @@ function main() {
     "tiny Schedule E net is not a rental suggest",
   );
 
+  const packet = multiPagePdf([
+    [
+      "Form 1040",
+      "U.S. Individual Income Tax Return",
+      "2025",
+      "Your first name and middle initial Allan",
+      "Last name Combes",
+      "Spouse Renz Combes",
+    ],
+    [
+      "Schedule E (Form 1040) 2025",
+      "Supplemental Income and Loss",
+      "Part I Income or Loss From Rental Real Estate",
+      "42000  3 Rents received",
+      "11400  Cash expenses (ex-depreciation)",
+      "Income or (loss) from partnerships and S corporations  (294,564)",
+    ],
+  ]);
+  const namesOnly = {
+    async classify() {
+      return { class: "tax_return" as const, confidence: 0.94, readable: true };
+    },
+    async extract() {
+      return { fields: { tax_year: "2025", full_name: "ALLAN COMBES and RENZ COMBES" }, warnings: [] };
+    },
+  };
+  const packetRead = await classifyAndExtract(
+    packet,
+    "application/pdf",
+    namesOnly,
+    "tax_return",
+    "2025 1040 - Combes Allan and Renz.pdf",
+  );
+  assert.notEqual(packetRead.failed, true, "1040 + Sch E lines must not unread when dollars are on the page");
+  assert.equal(packetRead.fields.tax_year, "2025");
+  assert.match(packetRead.fields.full_name ?? "", /COMBES/i);
+  assert.equal(packetRead.fields.schedule_e_rents_received, "42000");
+  assert.equal(packetRead.fields.schedule_e_cash_expenses, "11400");
+  assert.equal(packetRead.fields.k1_ordinary_income, "-294564");
+  assert.ok(hasRealIncomeLedgerDollars(packetRead.fields));
+
+  const unreadPacket = multiPagePdf([
+    [
+      "Form 1040",
+      "U.S. Individual Income Tax Return",
+      "2025",
+      "Your first name and middle initial Allan",
+      "Last name Combes",
+    ],
+    [
+      "Schedule E (Form 1040) 2025",
+      "Supplemental Income and Loss",
+      "Part I Income or Loss From Rental Real Estate",
+      "3 Rents received",
+      "5 Cash expenses (ex-depreciation)",
+    ],
+  ]);
+  const unreadRead = await classifyAndExtract(
+    unreadPacket,
+    "application/pdf",
+    namesOnly,
+    "tax_return",
+    "2025 1040 - Combes Allan and Renz.pdf",
+  );
+  assert.equal(unreadRead.failed, true, "Sch E lines with no real dollars are unread, not names-only");
+  assert.deepEqual(unreadRead.fields, {});
+
+  const recovered = await classifyAndExtract(
+    unreadPacket,
+    "application/pdf",
+    {
+      ...namesOnly,
+      async extractLedger() {
+        return {
+          fields: {
+            schedule_e_rents_received: "42000",
+            schedule_e_cash_expenses: "11400",
+            k1_ordinary_income: "-294564",
+          },
+          warnings: [],
+        };
+      },
+    },
+    "tax_return",
+    "2025 1040 - Combes Allan and Renz.pdf",
+  );
+  assert.notEqual(recovered.failed, true);
+  assert.equal(recovered.fields.full_name, "ALLAN COMBES and RENZ COMBES");
+  assert.equal(recovered.fields.schedule_e_rents_received, "42000");
+  assert.equal(recovered.fields.k1_ordinary_income, "-294564");
+
   console.log(
-    "assert-income-ledger: stub QI stays · Sch E / partnership own rows · loss does not net · cover wages held · gap once · gross not QI · no invented $2 · QI label stays stub · no fixture K-1",
+    "assert-income-ledger: stub QI stays · Sch E / partnership own rows · loss does not net · cover wages held · gap once · gross not QI · no invented $2 · QI label stays stub · no fixture K-1 · 1040 packet reads Sch E/K-1 or unread",
   );
 }
 
-main();
+main().catch((error) => {
+  console.error(error);
+  process.exit(1);
+});

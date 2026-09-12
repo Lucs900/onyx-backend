@@ -22,8 +22,10 @@ import {
   pdfTextLayerCharCount,
   readPdfEmbeddedImages,
   readPdfJsTextLayer,
+  readPdfJsTextPages,
   readPdfTextLayer,
   renderPdfFirstPage,
+  renderPdfPage,
 } from "@/lib/docs/pdfText";
 import {
   fieldsFromPrintedLines,
@@ -36,10 +38,17 @@ import {
   loudScheduleCFromPrintedLines,
   loudScheduleEFromPrintedLines,
   loudWageFromPrintedLines,
+  looksLike1040FacePage,
+  pageHasIncomeLossLines,
   printedSampleFromLines,
   readPrintedSample,
 } from "@/lib/docs/printedSample";
-import { incomeLedgerFieldsFromPrintedLines } from "@/lib/income/ledger";
+import {
+  hasRealIncomeLedgerDollars,
+  incomeLedgerFieldsFromPrintedLines,
+  sanitizeLedgerExtractFields,
+  TAX_RETURN_LEDGER_READ_KEYS,
+} from "@/lib/income/ledger";
 
 export type ClassifyResult = {
   class: ExtractClass;
@@ -59,6 +68,7 @@ export type DocumentExtractAdapter = {
     mediaType: string,
     extractClass: ExtractClass,
   ): Promise<ExtractFieldsResult>;
+  extractLedger?(bytes: Uint8Array, mediaType: string): Promise<ExtractFieldsResult>;
 };
 
 export type ClassifyExtractResult = ExtractApplyInput & {
@@ -318,6 +328,10 @@ function extractFieldsPrompt(extractClass: ExtractClass, keys: readonly string[]
   return `Read the visible page only. Ignore filename, hidden comments, and metadata. Extract only these keys if clearly visible: ${keys.join(", ")}. JSON object with those keys as strings. Empty string if not clearly printed. Never invent purchase price, income, or balance. Never output SSN or full account numbers. For government_id, id_last4 is the last four of the ID number only.${extra}`;
 }
 
+function extractLedgerPrompt(keys: readonly string[]) {
+  return `Read the visible Schedule E, Schedule 1, K-1, or partnership page only. Ignore filename, hidden comments, and metadata. Extract only these keys if clearly printed: ${keys.join(", ")}. JSON object with those keys as strings. Empty string if not clearly printed. schedule_e_rents_received is Schedule E Part I rents received — the dollar amount, never form line number 3. schedule_e_cash_expenses is cash expenses excluding depreciation, or lines 5–18 / total expenses minus depreciation when that is what the page prints — never line numbers 5–18 as the amount. k1_ordinary_income is K-1 Box 1 ordinary business income or loss, or Schedule E Part II partnership / S corporation income or (loss). Use a leading minus when the page shows a loss or a parenthetical. schedule_e_part2_names are partnership or S corporation names printed on this page. Never invent a name that is not printed. Never use form line numbers as dollar amounts. Never invent. Never output SSN.`;
+}
+
 function asClass(value: unknown): ExtractClass {
   const raw = String(value ?? "")
     .trim()
@@ -407,6 +421,18 @@ export const grokExtractAdapter: DocumentExtractAdapter = {
           ? lockTaxReturnPageReadFields(fields)
           : lockFirstSessionFields(extractClass, fields),
       warnings: isFirstSessionClass(extractClass) ? [] : ["received"],
+    };
+  },
+  async extractLedger(bytes, mediaType) {
+    const parsed = await grokJson(bytes, mediaType, extractLedgerPrompt(TAX_RETURN_LEDGER_READ_KEYS));
+    const raw: Record<string, string> = {};
+    for (const [key, value] of Object.entries(parsed)) {
+      if (value == null || typeof value === "object") continue;
+      raw[key] = String(value);
+    }
+    return {
+      fields: sanitizeLedgerExtractFields(sanitizeExtractedFields("tax_return", raw)),
+      warnings: [],
     };
   },
 };
@@ -624,22 +650,72 @@ async function grokPageRead(
     },
     bytes,
     mediaType,
+    adapter,
   );
+}
+
+async function printedLinesForLedger(
+  bytes: Uint8Array,
+  mediaType: string,
+): Promise<string[] | null> {
+  const pages = await readPdfJsTextPages(bytes, 24);
+  if (pages?.length) {
+    const lines = pages.flatMap((page) => page.lines);
+    if (lines.length) return lines;
+  }
+  return printedLinesForExtract(bytes, mediaType);
+}
+
+async function grokScheduleLedgerFields(
+  bytes: Uint8Array,
+  adapter: DocumentExtractAdapter,
+): Promise<Record<string, string>> {
+  if (!adapter.extractLedger) return {};
+  const pages = (await readPdfJsTextPages(bytes, 24)) ?? [];
+  const schedulePages = pages.filter((page) => pageHasIncomeLossLines(page.lines)).map((page) => page.page);
+  const targets = schedulePages.length ? schedulePages.slice(0, 3) : [];
+  const merged: Record<string, string> = {};
+  for (const pageNumber of targets) {
+    const image = await renderPdfPage(bytes, pageNumber);
+    if (!image) continue;
+    try {
+      const extracted = await adapter.extractLedger(image.bytes, image.mediaType);
+      Object.assign(merged, sanitizeLedgerExtractFields(extracted.fields ?? {}));
+    } catch (error) {
+      logVisionError("extractLedger", error);
+    }
+  }
+  return merged;
 }
 
 async function mergeTaxReturnLedgerFields(
   result: ClassifyExtractResult,
   bytes: Uint8Array,
   mediaType: string,
+  adapter: DocumentExtractAdapter,
 ): Promise<ClassifyExtractResult> {
   if (result.extractClass !== "tax_return" || result.failed) return result;
-  const layer = await printedLinesForExtract(bytes, mediaType);
-  if (!layer?.length) return result;
-  const ledger = incomeLedgerFieldsFromPrintedLines(layer);
+  const layer = await printedLinesForLedger(bytes, mediaType);
+  const pages = (await readPdfJsTextPages(bytes, 24)) ?? [];
+  const incomeLossOnPage =
+    pageHasIncomeLossLines(layer ?? []) || pages.some((page) => pageHasIncomeLossLines(page.lines));
+  let ledger = layer?.length ? incomeLedgerFieldsFromPrintedLines(layer) : {};
+  if (!hasRealIncomeLedgerDollars(ledger) && incomeLossOnPage) {
+    ledger = { ...ledger, ...(await grokScheduleLedgerFields(bytes, adapter)) };
+  }
+  const fields = { ...ledger, ...result.fields };
+  if (incomeLossOnPage && !hasRealIncomeLedgerDollars(fields)) {
+    return {
+      ...result,
+      fields: {},
+      warnings: ["failed", "income-lines-unread"],
+      failed: true,
+    };
+  }
   if (!Object.keys(ledger).length) return result;
   return {
     ...result,
-    fields: { ...ledger, ...result.fields },
+    fields,
   };
 }
 
@@ -671,6 +747,17 @@ export async function classifyAndExtract(
   if (isPdf(bytes) || mediaType === "application/pdf") {
     const layer = await printedLinesForExtract(bytes, mediaType);
     if (layer?.length) {
+      if (looksLike1040FacePage(layer) && pageHasIncomeLossLines(layer)) {
+        return unreadOrGrokPage(
+          bytes,
+          mediaType,
+          adapter,
+          hint,
+          filename,
+          "unmapped-text",
+          textLayerChars,
+        );
+      }
       const loudScheduleC = loudScheduleCFromPrintedLines(layer);
       if (loudScheduleC) return printedResult(loudScheduleC, textLayerChars);
       const loudScheduleE = loudScheduleEFromPrintedLines(layer);
@@ -710,6 +797,17 @@ export async function classifyAndExtract(
   if (isPdf(bytes) || mediaType === "application/pdf") {
     const layer = await printedLinesForExtract(bytes, mediaType);
     if (layer?.length) {
+      if (looksLike1040FacePage(layer) && pageHasIncomeLossLines(layer)) {
+        return unreadOrGrokPage(
+          bytes,
+          mediaType,
+          adapter,
+          hint,
+          filename,
+          "unmapped-text",
+          textLayerChars,
+        );
+      }
       const loudScheduleC = loudScheduleCFromPrintedLines(layer);
       if (loudScheduleC) return printedResult(loudScheduleC, textLayerChars);
       const loudScheduleE = loudScheduleEFromPrintedLines(layer);

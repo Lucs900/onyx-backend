@@ -10,6 +10,7 @@ Not first-source-wins. Not “we already qualify on W-2.”
 - Wage method = W-2 Box 5 + stub. 1040 wages = household total only.
 - Sch C, Sch E Part I, Sch F, K-1, 1065, 1120-S each own a row with a locked method. Use this writes that row. Leave blank keeps it off QI.
 - Read the actual Schedule E / partnership dollars. Form line numbers and tiny nets are not a suggest. Invent nothing.
+- When Schedule E / K-1 / partnership lines are on the page, extract those dollars as their own rows or say unread. Year + name is not a substitute.
 - Confirmed wage QI keeps the stub method label until a new row is confirmed via Use this.
 - Still useful names only what this File printed. No fixture K-1 names.
 - Loss = named loss. Do not net a K-1 hole into W-2 QI on the sketch.

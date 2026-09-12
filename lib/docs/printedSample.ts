@@ -603,15 +603,16 @@ function flattenPrintedLines(lines: string[]): string[] {
 function k1OrdinaryFromPrintedText(text: string): string {
   const blob = String(text ?? "").replace(/\u00a0/g, " ");
   const patterns = [
-    /box\s*1\b[\s\S]{0,160}?ordinary business income(?:\s*\(\s*loss\s*\))?\s*:?\s*\$?\s*([\d,]+(?:\.\d+)?)/i,
-    /ordinary business income(?:\s*\(\s*loss\s*\))?\s*:?\s*\$?\s*([\d,]+(?:\.\d+)?)/i,
+    /box\s*1\b[\s\S]{0,160}?ordinary business income(?:\s*\(\s*loss\s*\))?\s*:?\s*/i,
+    /ordinary business income(?:\s*\(\s*loss\s*\))?\s*:?\s*/i,
+    /income or \(loss\) from partnerships(?:\s+and\s+s corporations)?\s*:?\s*/i,
   ];
   for (const pattern of patterns) {
     const match = blob.match(pattern);
-    if (!match?.[1]) continue;
+    if (!match || match.index == null) continue;
     if (/expected 1084|ordinary alone|suggested monthly/i.test(match[0])) continue;
-    const digits = moneyDigits(match[1]);
-    if (digits) return digits;
+    const nearby = plausibleScheduleEAmountNear(blob, match.index, match[0].length);
+    if (nearby) return nearby;
   }
   return "";
 }
@@ -626,6 +627,31 @@ function k1TaxYearFromPrintedText(text: string): string {
 
 function looksLikeK1Worksheet(lines: string[]) {
   return k1WorksheetKind(lines) != null;
+}
+
+/** Form 1040 face — not Schedule E (Form 1040) alone, not a transcript. */
+export function looksLike1040FacePage(lines: string[]): boolean {
+  const blob = flattenPrintedLines(lines).join("\n").replace(/\u00a0/g, " ");
+  if (/TAX RETURN TRANSCRIPT|FORM 1040 TAX RETURN TRANSCRIPT|ACCOUNT TRANSCRIPT/i.test(blob)) {
+    return false;
+  }
+  return /u\.?s\.?\s*individual income tax return/i.test(blob);
+}
+
+/** Schedule E / K-1 / partnership dollar lines are on this page. Cover checkboxes are not enough. */
+export function pageHasIncomeLossLines(lines: string[]): boolean {
+  if (!lines.length || looksLike1040Transcript(lines)) return false;
+  if (looksLikeScheduleEWorksheet(lines) || looksLikeK1Worksheet(lines)) return true;
+  const blob = flattenPrintedLines(lines).join("\n").replace(/\u00a0/g, " ");
+  if (/rents received/i.test(blob) && /schedule e|rental real estate/i.test(blob)) return true;
+  if (/ordinary business income/i.test(blob) && /k-?1|partnership|1065|1120/i.test(blob)) return true;
+  if (
+    /rental real estate[^.\n]{0,80}schedule e/i.test(blob) &&
+    /\(?\s*\$?\s*\d[\d,]{2,}(?:\.\d+)?\s*\)?/.test(blob)
+  ) {
+    return true;
+  }
+  return false;
 }
 
 /** IRS Form 1040 tax return transcript. Not a full packet, not a cover pointer page. */
@@ -1049,19 +1075,58 @@ function worksheetBoxBlock(lines: string[], boxNo: string) {
 }
 
 function firstPlausibleScheduleEAmount(after: string): string {
-  const re = /\$?\s*([\d,]+(?:\.\d+)?)/g;
+  const re = /\(?\s*\$?\s*([\d,]+(?:\.\d+)?)\s*\)?/g;
   let match: RegExpExecArray | null;
   while ((match = re.exec(after))) {
-    const raw = match[1] ?? "";
-    const digits = moneyDigits(raw);
+    const raw = match[0] ?? "";
+    const digits = moneyDigits(/^\(.*\)$/.test(raw.trim()) ? raw.trim() : (match[1] ?? ""));
     if (!digits) continue;
     const n = Number(digits);
     if (!Number.isFinite(n) || n === 0) continue;
-    if (Number.isInteger(n) && n <= 31 && !/,/.test(raw) && !/\.\d/.test(raw)) continue;
+    if (Number.isInteger(Math.abs(n)) && Math.abs(n) <= 31 && !/,/.test(raw) && !/\.\d/.test(raw)) continue;
     if (Math.abs(n) < 100 && !/,/.test(raw)) continue;
     return digits;
   }
   return "";
+}
+
+function lastPlausibleScheduleEAmount(before: string): string {
+  const window = String(before ?? "").slice(-120);
+  const re = /\(?\s*\$?\s*([\d,]+(?:\.\d+)?)\s*\)?/g;
+  let match: RegExpExecArray | null;
+  let last = "";
+  while ((match = re.exec(window))) {
+    const raw = match[0] ?? "";
+    const digits = moneyDigits(/^\(.*\)$/.test(raw.trim()) ? raw.trim() : (match[1] ?? ""));
+    if (!digits) continue;
+    const n = Number(digits);
+    if (!Number.isFinite(n) || n === 0) continue;
+    if (Number.isInteger(Math.abs(n)) && Math.abs(n) <= 31 && !/,/.test(raw) && !/\.\d/.test(raw)) continue;
+    if (Math.abs(n) < 100 && !/,/.test(raw)) continue;
+    last = digits;
+  }
+  return last;
+}
+
+function lineBounds(blob: string, index: number) {
+  const start = blob.lastIndexOf("\n", index) + 1;
+  const endAt = blob.indexOf("\n", index);
+  const end = endAt < 0 ? blob.length : endAt;
+  return { start, end, line: blob.slice(start, end) };
+}
+
+function plausibleScheduleEAmountNear(blob: string, index: number, labelLength: number): string {
+  const { start, end, line } = lineBounds(blob, index);
+  const local = index - start;
+  const sameAfter = firstPlausibleScheduleEAmount(line.slice(local + labelLength));
+  const sameBefore = lastPlausibleScheduleEAmount(line.slice(0, local));
+  if (sameAfter) return sameAfter;
+  if (sameBefore) return sameBefore;
+  const nextEnd = blob.indexOf("\n", end + 1);
+  const nextLine = blob.slice(end + 1, nextEnd < 0 ? end + 80 : nextEnd);
+  const prevStart = blob.lastIndexOf("\n", start - 2) + 1;
+  const prevLine = start > 0 ? blob.slice(prevStart, start - 1) : "";
+  return firstPlausibleScheduleEAmount(nextLine) || lastPlausibleScheduleEAmount(prevLine);
 }
 
 /** Rents received and cash expenses from THIS page. Never 75%, taxable rental, coaching, or filename. */
@@ -1075,7 +1140,7 @@ function scheduleERentsFromPrintedText(text: string): string {
     const match = blob.match(pattern);
     if (!match || match.index == null) continue;
     if (scheduleECoachingSpan(match[0])) continue;
-    const amount = firstPlausibleScheduleEAmount(blob.slice(match.index + match[0].length));
+    const amount = plausibleScheduleEAmountNear(blob, match.index, match[0].length);
     if (amount) return amount;
   }
   return "";
@@ -1086,12 +1151,19 @@ function scheduleECashExpensesFromPrintedText(text: string): string {
   const patterns = [
     /(?:lines?\s*)?5\s*[–—-]\s*18\b[\s\S]{0,80}?cash expenses(?:\s*\(\s*ex-?depreciation\s*\))?\s*:?\s*/i,
     /cash expenses(?:\s*\(\s*ex-?depreciation\s*\))?\s*:?\s*/i,
+    /add lines\s*5\s+through\s*18\b[\s\S]{0,40}?/i,
+    /(?:^|\b)(?:line\s*)?19\b[\s\S]{0,40}?add lines[\s\S]{0,40}?/i,
   ];
   for (const pattern of patterns) {
     const match = blob.match(pattern);
     if (!match || match.index == null) continue;
     if (scheduleECoachingSpan(match[0])) continue;
-    const amount = firstPlausibleScheduleEAmount(blob.slice(match.index + match[0].length));
+    const amount = plausibleScheduleEAmountNear(blob, match.index, match[0].length);
+    if (amount) return amount;
+  }
+  const total = blob.match(/total expenses\s*:?\s*/i);
+  if (total?.index != null && !scheduleECoachingSpan(total[0])) {
+    const amount = plausibleScheduleEAmountNear(blob, total.index, total[0].length);
     if (amount) return amount;
   }
   return "";

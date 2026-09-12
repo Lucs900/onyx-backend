@@ -549,28 +549,8 @@ export async function readPdfJsTextLayer(bytes: Uint8Array): Promise<string[] | 
     const doc = await pdfjs.getDocument(
       (await pdfJsOpenOptions(bytes)) as Parameters<typeof pdfjs.getDocument>[0],
     ).promise;
-    const lines: string[] = [];
-    const last = Math.min(doc.numPages, 3);
-    for (let i = 1; i <= last; i += 1) {
-      const page = await doc.getPage(i);
-      const content = await page.getTextContent();
-      let current = "";
-      let lastY: number | null = null;
-      for (const item of content.items) {
-        const row = item as { str?: string; transform?: number[] };
-        const text = String(row.str ?? "").replace(/\s+/g, " ").trim();
-        if (!text) continue;
-        const y = Array.isArray(row.transform) ? row.transform[5] : null;
-        if (lastY != null && y != null && Math.abs(lastY - y) > 2 && current) {
-          lines.push(current.trim());
-          current = text;
-        } else {
-          current = current ? `${current} ${text}` : text;
-        }
-        if (y != null) lastY = y;
-      }
-      if (current.trim()) lines.push(current.trim());
-    }
+    const pages = await pdfJsTextPagesFromDoc(doc, 3);
+    const lines = pages.flatMap((page) => page.lines);
     return meaningfulText(lines) ? lines : null;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -612,7 +592,63 @@ async function resolvePdfWorkerSrc(): Promise<string | null> {
   return null;
 }
 
-async function renderWithPdfJs(bytes: Uint8Array): Promise<PdfEmbeddedImage | null> {
+export type PdfTextPage = { page: number; lines: string[] };
+
+async function pdfJsTextPagesFromDoc(
+  doc: { numPages: number; getPage: (n: number) => Promise<{ getTextContent: () => Promise<{ items: unknown[] }> }> },
+  maxPages: number,
+): Promise<PdfTextPage[]> {
+  const last = Math.min(doc.numPages, maxPages);
+  const pages: PdfTextPage[] = [];
+  for (let i = 1; i <= last; i += 1) {
+    const page = await doc.getPage(i);
+    const content = await page.getTextContent();
+    const lines: string[] = [];
+    let current = "";
+    let lastY: number | null = null;
+    for (const item of content.items) {
+      const row = item as { str?: string; transform?: number[] };
+      const text = String(row.str ?? "").replace(/\s+/g, " ").trim();
+      if (!text) continue;
+      const y = Array.isArray(row.transform) ? row.transform[5] : null;
+      if (lastY != null && y != null && Math.abs(lastY - y) > 2 && current) {
+        lines.push(current.trim());
+        current = text;
+      } else {
+        current = current ? `${current} ${text}` : text;
+      }
+      if (y != null) lastY = y;
+    }
+    if (current.trim()) lines.push(current.trim());
+    pages.push({ page: i, lines });
+  }
+  return pages;
+}
+
+/** Per-page glyphs via pdf.js. Classify stays on the first three pages; ledger may read further. */
+export async function readPdfJsTextPages(
+  bytes: Uint8Array,
+  maxPages = 24,
+): Promise<PdfTextPage[] | null> {
+  if (!isPdf(bytes)) return null;
+  try {
+    const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
+    const workerSrc = await resolvePdfWorkerSrc();
+    if (!workerSrc) return null;
+    pdfjs.GlobalWorkerOptions.workerSrc = workerSrc;
+    const doc = await pdfjs.getDocument(
+      (await pdfJsOpenOptions(bytes)) as Parameters<typeof pdfjs.getDocument>[0],
+    ).promise;
+    const pages = await pdfJsTextPagesFromDoc(doc, maxPages);
+    return pages.some((page) => meaningfulText(page.lines)) ? pages : null;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error("[docs/pdf] text pages failed:", message);
+    return null;
+  }
+}
+
+async function renderWithPdfJs(bytes: Uint8Array, pageNumber = 1): Promise<PdfEmbeddedImage | null> {
   try {
     const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
     const workerSrc = await resolvePdfWorkerSrc();
@@ -624,7 +660,7 @@ async function renderWithPdfJs(bytes: Uint8Array): Promise<PdfEmbeddedImage | nu
     const doc = await pdfjs.getDocument(
       (await pdfJsOpenOptions(bytes)) as Parameters<typeof pdfjs.getDocument>[0],
     ).promise;
-    const page = await doc.getPage(1);
+    const page = await doc.getPage(Math.max(1, Math.min(pageNumber, doc.numPages)));
     const scale = bytes.length > 0 && bytes.length < 40_000 ? 2.25 : 1.5;
     const viewport = page.getViewport({ scale });
     const canvas = createCanvas(Math.max(1, Math.ceil(viewport.width)), Math.max(1, Math.ceil(viewport.height)));
@@ -641,12 +677,17 @@ async function renderWithPdfJs(bytes: Uint8Array): Promise<PdfEmbeddedImage | nu
   }
 }
 
-/** First page as an image Fox can send to Grok. Drawn glyphs first; skip blank Helvetica pages and 1-bit masks. */
-export async function renderPdfFirstPage(bytes: Uint8Array): Promise<PdfEmbeddedImage | null> {
-  const drawn = await renderWithPdfJs(bytes);
+/** One PDF page as an image Fox can send to Grok. */
+export async function renderPdfPage(
+  bytes: Uint8Array,
+  pageNumber = 1,
+): Promise<PdfEmbeddedImage | null> {
+  const drawn = await renderWithPdfJs(bytes, pageNumber);
   if (drawn && drawnPageHasInk(drawn)) return drawn;
-  const embedded = largestEmbeddedPhoto(bytes);
-  if (embedded) return embedded;
+  if (pageNumber === 1) {
+    const embedded = largestEmbeddedPhoto(bytes);
+    if (embedded) return embedded;
+  }
   if (drawn) return drawn;
   try {
     const { execFile } = await import("node:child_process");
@@ -660,9 +701,11 @@ export async function renderPdfFirstPage(bytes: Uint8Array): Promise<PdfEmbedded
     const prefix = join(dir, "out");
     await writeFile(pdfPath, Buffer.from(bytes));
     try {
-      await exec("pdftoppm", ["-png", "-f", "1", "-l", "1", "-singlefile", "-r", "150", pdfPath, prefix], {
-        timeout: 15_000,
-      });
+      await exec(
+        "pdftoppm",
+        ["-png", "-f", String(pageNumber), "-l", String(pageNumber), "-singlefile", "-r", "150", pdfPath, prefix],
+        { timeout: 15_000 },
+      );
       const png = await readFile(`${prefix}.png`);
       if (png.length > 80) return { bytes: png, mediaType: "image/png" };
     } finally {
@@ -672,4 +715,9 @@ export async function renderPdfFirstPage(bytes: Uint8Array): Promise<PdfEmbedded
     return null;
   }
   return null;
+}
+
+/** First page as an image Fox can send to Grok. Drawn glyphs first; skip blank Helvetica pages and 1-bit masks. */
+export async function renderPdfFirstPage(bytes: Uint8Array): Promise<PdfEmbeddedImage | null> {
+  return renderPdfPage(bytes, 1);
 }

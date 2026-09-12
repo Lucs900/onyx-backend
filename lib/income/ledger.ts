@@ -126,6 +126,10 @@ export function incomeLedgerRowsFromFields(fields: Record<string, string>): Inco
     } else if (monthly != null) {
       pushRow(rows, "schedule_e", monthly, year, fields.schedule_e_property_address);
     }
+  } else if (rents != null && expenses == null && !looksLikeFormLineNumber(Math.abs(rents)) && Math.abs(rents) >= 100) {
+    const monthly = monthlyFromAnnual(rents);
+    if (monthly < 0) pushRow(rows, "named_loss", monthly, year, "Schedule E");
+    else if (monthly !== 0) pushRow(rows, "schedule_e", monthly, year, fields.schedule_e_property_address);
   }
 
   const partnership = parseLedgerMoney(fields.k1_ordinary_income);
@@ -246,6 +250,84 @@ const LEDGER_FIELD_KEYS = [
   "tax_year",
 ] as const;
 
+function realLedgerMoney(raw?: string | null): number | null {
+  const n = parseLedgerMoney(raw);
+  if (n == null || n === 0) return null;
+  if (looksLikeFormLineNumber(Math.abs(n))) return null;
+  return n;
+}
+
+function moneyNearLabel(blob: string, pattern: RegExp): string | undefined {
+  const match = blob.match(pattern);
+  if (!match || match.index == null) return undefined;
+  const lineStart = blob.lastIndexOf("\n", match.index) + 1;
+  const lineEndAt = blob.indexOf("\n", match.index);
+  const line = blob.slice(lineStart, lineEndAt < 0 ? undefined : lineEndAt);
+  const local = match.index - lineStart;
+  const after = line.slice(local + match[0].length);
+  const before = line.slice(0, local);
+  const money = /(-?\$?\s*\d[\d,]*(?:\.\d+)?|\(\s*\$?\s*\d[\d,]*(?:\.\d+)?\s*\))/;
+  const afterAmt = after.match(money)?.[1];
+  const beforeAmts = [...before.matchAll(new RegExp(money, "g"))].map((item) => item[1]).reverse();
+  const pick = (raw?: string) => {
+    const n = realLedgerMoney(raw);
+    if (n == null) return undefined;
+    if (Math.abs(n) < 100 && !/,/.test(String(raw ?? ""))) return undefined;
+    return String(n);
+  };
+  for (const raw of [afterAmt, ...beforeAmts]) {
+    const got = pick(raw);
+    if (got) return got;
+  }
+  return undefined;
+}
+
+export const TAX_RETURN_LEDGER_READ_KEYS = [
+  "tax_year",
+  "return_kind",
+  "schedule_e_rents_received",
+  "schedule_e_cash_expenses",
+  "k1_ordinary_income",
+  "schedule_e_part2_names",
+  "schedule_c_net_profit",
+  "gross_receipts",
+  "business_name",
+  "entity_name",
+] as const;
+
+export function sanitizeLedgerExtractFields(fields: Record<string, string>): Record<string, string> {
+  const next: Record<string, string> = {};
+  for (const [key, value] of Object.entries(fields)) {
+    const raw = String(value ?? "").trim();
+    if (!raw) continue;
+    if (
+      key === "schedule_e_rents_received" ||
+      key === "schedule_e_cash_expenses" ||
+      key === "k1_ordinary_income" ||
+      key === "schedule_c_net_profit" ||
+      key === "gross_receipts" ||
+      key === "entity_ordinary_income"
+    ) {
+      const n = realLedgerMoney(raw);
+      if (n == null) continue;
+      if (
+        (key === "schedule_e_rents_received" || key === "schedule_e_cash_expenses") &&
+        Math.abs(n) < 100
+      ) {
+        continue;
+      }
+      next[key] = String(n);
+      continue;
+    }
+    next[key] = raw;
+  }
+  return next;
+}
+
+export function hasRealIncomeLedgerDollars(fields?: Record<string, string> | null): boolean {
+  return incomeLedgerRowsFromFields(fields ?? {}).length > 0;
+}
+
 /** Printed 1040 / packet lines → ledger fields. Never a transcript dump. */
 export function incomeLedgerFieldsFromPrintedLines(lines: string[]): Record<string, string> {
   const blob = lines.join("\n").replace(/\u00a0/g, " ");
@@ -254,14 +336,15 @@ export function incomeLedgerFieldsFromPrintedLines(lines: string[]): Record<stri
   }
   const fields: Record<string, string> = {};
   const putMoney = (key: string, raw?: string) => {
-    const n = parseLedgerMoney(raw);
-    if (n == null || n === 0) return;
+    const n = realLedgerMoney(raw);
+    if (n == null) return;
     fields[key] = String(n);
   };
   const year =
     blob.match(/tax year\s*:?\s*(20\d{2})/i)?.[1] ||
     blob.match(/\b(20\d{2})\b\s+(?:form\s*)?1040/i)?.[1] ||
     blob.match(/form\s*1040[^\n]{0,40}?(20\d{2})/i)?.[1] ||
+    blob.match(/schedule e[^\n]{0,40}?(20\d{2})/i)?.[1] ||
     "";
   if (year) fields.tax_year = year;
 
@@ -276,6 +359,16 @@ export function incomeLedgerFieldsFromPrintedLines(lines: string[]): Record<stri
     blob.match(new RegExp(`(?:^|\\n)\\s*3\\s+business income[^\\n]{0,80}?${money}`, "i"))?.[1];
   if (schC) putMoney("schedule_c_net_profit", schC);
 
+  const rents =
+    moneyNearLabel(blob, /rents received\s*:?\s*/i) ||
+    blob.match(new RegExp(`rents received[^\\n]{0,80}?${money}`, "i"))?.[1];
+  if (rents) putMoney("schedule_e_rents_received", rents);
+
+  const expenses =
+    moneyNearLabel(blob, /cash expenses(?:\s*\(\s*ex-?depreciation\s*\))?\s*:?\s*/i) ||
+    moneyNearLabel(blob, /add lines\s*5\s+through\s*18\b/i);
+  if (expenses) putMoney("schedule_e_cash_expenses", expenses);
+
   const schE =
     blob.match(
       new RegExp(
@@ -287,14 +380,16 @@ export function incomeLedgerFieldsFromPrintedLines(lines: string[]): Record<stri
     blob.match(new RegExp(`(?:^|\\n)\\s*5\\s+rental[^\\n]{0,120}?${money}`, "i"))?.[1] ||
     blob.match(new RegExp(`attach schedule e[^\\n]{0,40}?${money}`, "i"))?.[1] ||
     blob.match(new RegExp(`(?:schedule e|sch(?:edule)?\\s*e)\\s*:?\\s*${money}`, "i"))?.[1];
-  if (schE) {
-    const n = parseLedgerMoney(schE);
-    if (n != null && Math.abs(n) >= 100 && !looksLikeFormLineNumber(Math.abs(n))) {
+  if (!fields.schedule_e_rents_received && schE) {
+    const n = realLedgerMoney(schE);
+    if (n != null && Math.abs(n) >= 100) {
       putMoney("schedule_e_rents_received", String(n));
     }
   }
 
   const partnership =
+    moneyNearLabel(blob, /ordinary business income(?:\s*\(\s*loss\s*\))?\s*:?\s*/i) ||
+    moneyNearLabel(blob, /income or \(loss\) from partnerships(?:\s+and\s+s corporations)?\s*:?\s*/i) ||
     blob.match(new RegExp(`(?:partnership|k-?1)\\s+(?:ordinary|income|loss)[^\\n]{0,60}?${money}`, "i"))?.[1] ||
     blob.match(new RegExp(`ordinary business income[^\\n]{0,60}?${money}`, "i"))?.[1];
   if (partnership) putMoney("k1_ordinary_income", partnership);
@@ -302,6 +397,14 @@ export function incomeLedgerFieldsFromPrintedLines(lines: string[]): Record<stri
   const names: string[] = [];
   if (/Bay Street Partners LLC/i.test(blob)) names.push("Bay Street Partners LLC");
   if (/Harbor Studio Inc/i.test(blob)) names.push("Harbor Studio Inc");
+  const generic = blob.matchAll(
+    /\b([A-Z][A-Za-z0-9 .&'-]{2,48}?(?:LLC|L\.L\.C\.|Inc\.?|Partners|LP|LLP))\b/g,
+  );
+  for (const match of generic) {
+    const named = String(match[1] ?? "").replace(/\s+/g, " ").trim();
+    if (!named || /schedule|form|ordinary|rental/i.test(named)) continue;
+    if (!names.some((item) => item.toLowerCase() === named.toLowerCase())) names.push(named);
+  }
   if (names.length) fields.schedule_e_part2_names = names.join(";");
 
   const gross =
