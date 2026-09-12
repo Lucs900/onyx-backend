@@ -2,7 +2,8 @@
  * Income-as-ledger leftover.
  * Stub QI stays. Schedule E / partnership are their own CFBW rows.
  * Losses do not net into W-2 QI. Cover wages do not overwrite QI.
- * Page-1 household wages CFBW. Do not invent Sch E. Gross is a File fact, not QI.
+ * Walk all pages. Classify by form header. 8879 is not a 1040.
+ * Household wages CFBW from the Form 1040 page. Do not invent Sch E. Gross is a File fact, not QI.
  */
 import assert from "node:assert/strict";
 import {
@@ -36,6 +37,7 @@ import {
   incomeLedgerRowsFromFields,
 } from "../lib/income/ledger";
 import { classifyAndExtract, shouldGrokTaxReturnPagesFirst } from "../lib/docs/extract";
+import { classifyPageByFormHeader } from "../lib/docs/formHeader";
 import { loudTranscriptFromPrintedLines } from "../lib/docs/printedSample";
 import {
   PACKET_LINES_MISSING_LINE,
@@ -199,7 +201,7 @@ async function main() {
     "1b Household employee wages not reported on Form(s) W-2",
     "1z Wages, salaries, tips, etc. Add lines 1a through 1h          87,432.00",
   ]);
-  assert.equal(face2025.wages, "87432", "page 1 line 1z / 1a W-2 total is household wages");
+  assert.equal(face2025.wages, "87432", "Form 1040 line 1z / 1a W-2 total is household wages");
   assert.notEqual(face2025.wages, "1");
   assert.notEqual(face2025.wages, "2");
 
@@ -582,7 +584,13 @@ async function main() {
       "Your first name and middle initial Allan",
       "Last name Combes",
     ],
-    ["Continued"],
+    [
+      "Schedule E (Form 1040) 2025",
+      "Supplemental Income and Loss",
+      "Part I Income or Loss From Rental Real Estate",
+      "42000  3 Rents received",
+      "11400  Cash expenses (ex-depreciation)",
+    ],
   ]);
   let ledgerPages = 0;
   const recovered = await classifyAndExtract(
@@ -679,8 +687,12 @@ async function main() {
   assert.match(stealRead.fields.full_name ?? "", /ALLAN COMBES/i);
   assert.match(stealRead.fields.full_name ?? "", /RENZ COMBES/i);
   assert.equal(stealRead.fields.wages, "520000");
-  assert.equal(stealRead.fields.schedule_e_rents_received, "42000");
-  assert.equal(stealRead.fields.k1_ordinary_income, "-294564");
+  assert.equal(
+    stealRead.fields.schedule_e_rents_received,
+    undefined,
+    "do not take Schedule E from a Form 1040 face",
+  );
+  assert.equal(stealRead.fields.k1_ordinary_income, undefined, "do not invent a K-1 from a 1040 face");
 
   let onePageLedger = 0;
   const onePage = await classifyAndExtract(
@@ -715,7 +727,11 @@ async function main() {
   );
   assert.ok(onePageLedger >= 1, "pageCount 1 still sends the page image to Grok ledger");
   assert.equal(onePage.fields.wages, "520000");
-  assert.equal(onePage.fields.schedule_e_rents_received, "42000");
+  assert.equal(
+    onePage.fields.schedule_e_rents_received,
+    undefined,
+    "a Form 1040 face is not a Schedule E page",
+  );
 
   const coverOnlyAt = "2026-09-12T16:00:00.000Z";
   const coverOnly = writeLive(
@@ -749,7 +765,7 @@ async function main() {
   assert.equal(afterPacket.draft.facts?.qualifying_income?.value, "36453", "packet read does not overwrite QI");
   assert.equal(afterPacket.draft.facts?.wages, undefined, "cover wages stay off File");
   assert.equal(afterPacket.draft.taxReturnPacketRead, "done");
-  assert.equal(isHouseholdWagesProposal(afterPacket.draft.pendingProposal), true, "page 1 wages are household CFBW");
+  assert.equal(isHouseholdWagesProposal(afterPacket.draft.pendingProposal), true, "Form 1040 wages are household CFBW");
   assert.ok(
     (afterPacket.draft.incomeLedger ?? []).some((row) => row.kind === "schedule_e" && row.status === "suggested"),
   );
@@ -776,10 +792,10 @@ async function main() {
   const emptyPacket = applyExtractWrite(emptyCoverAt, walkName, {
     extractClass: "tax_return",
     confidence: 0.94,
-    fields: { packet_read: "empty" },
+    fields: { packet_read: "empty", form_1040: "1" },
   });
   assert.equal(emptyPacket.draft.facts?.qualifying_income?.value, "36453");
-  assert.ok(emptyPacket.quietLines.includes(PACKET_WAGES_UNREAD_LINE), "1040 face with unread line 1 is not “not on these pages”");
+  assert.ok(emptyPacket.quietLines.includes(PACKET_WAGES_UNREAD_LINE), "1040 face with unread 1z/1a is not “not on these pages”");
   assert.ok(!emptyPacket.quietLines.includes(PACKET_LINES_MISSING_LINE));
   assert.ok(!emptyPacket.quietLines.includes(FAILED_READ_NOTE));
   assert.equal(emptyPacket.draft.taxReturnPacketSpoken, true);
@@ -787,9 +803,9 @@ async function main() {
   const emptyAgain = applyExtractWrite(emptyCoverAt, walkName, {
     extractClass: "tax_return",
     confidence: 0.94,
-    fields: { packet_read: "empty" },
+    fields: { packet_read: "empty", form_1040: "1" },
   });
-  assert.ok(!emptyAgain.quietLines.includes(PACKET_WAGES_UNREAD_LINE), "unread page-1 wages is spoken once");
+  assert.ok(!emptyAgain.quietLines.includes(PACKET_WAGES_UNREAD_LINE), "unread Form 1040 wages is spoken once");
   assert.ok(!emptyAgain.quietLines.includes(PACKET_LINES_MISSING_LINE));
   assert.ok(!emptyAgain.quietLines.includes(PACKET_SCHEDULES_MISSING_LINE));
 
@@ -857,9 +873,130 @@ async function main() {
   assert.equal(packetPhase.fields.schedule_e_rents_received, "42000");
   assert.notEqual(packetPhase.failed, true);
 
+  assert.equal(
+    classifyPageByFormHeader("Form 8879 IRS e-file Signature Authorization 2025 ALLAN COMBES"),
+    "form_8879",
+  );
+  assert.notEqual(
+    classifyPageByFormHeader("Form 8879 IRS e-file Signature Authorization — Form 1040"),
+    "form_1040",
+    "8879 is not a 1040",
+  );
+  assert.equal(
+    classifyPageByFormHeader(
+      "Form 1040 U.S. Individual Income Tax Return 1z Wages, salaries, tips 455,802.00",
+    ),
+    "form_1040",
+  );
+  assert.equal(
+    classifyPageByFormHeader("Schedule E (Form 1040) 2025 Supplemental Income and Loss Part I"),
+    "schedule_e",
+  );
+
+  const headerWalkPdf = multiPagePdf([
+    [
+      "Form 8879",
+      "IRS e-file Signature Authorization",
+      "2025",
+      "ALLAN COMBES",
+      "RENZ ARIANE COMBES",
+    ],
+    [
+      "Form 1040",
+      "U.S. Individual Income Tax Return",
+      "2025",
+      "Your first name and middle initial Allan",
+      "Last name Combes",
+      "Spouse Renz Ariane Combes",
+      "1a Total amount from Form(s) W-2, box 1          455,802.00",
+      "1b Household employee wages not reported on Form(s) W-2",
+      "1z Wages, salaries, tips, etc. Add lines 1a through 1h          455,802.00",
+    ],
+    [
+      "Schedule E (Form 1040) 2025",
+      "Supplemental Income and Loss",
+      "Part I Income or Loss From Rental Real Estate",
+      "42000  3 Rents received",
+      "11400  Cash expenses (ex-depreciation)",
+    ],
+  ]);
+  const headerWalk = await classifyAndExtract(
+    headerWalkPdf,
+    "application/pdf",
+    namesOnly,
+    "tax_return",
+    walkName,
+  );
+  assert.notEqual(headerWalk.failed, true);
+  assert.equal(headerWalk.fields.wages, "455802", "wages live on the Form 1040 page, not the 8879 cover");
+  assert.equal(headerWalk.fields.schedule_e_rents_received, "42000");
+  assert.equal(headerWalk.fields.schedule_e_cash_expenses, "11400");
+  const headerPacket = await classifyAndExtract(
+    headerWalkPdf,
+    "application/pdf",
+    namesOnly,
+    "tax_return",
+    walkName,
+    "packet",
+  );
+  assert.equal(headerPacket.fields.form_1040, "1");
+  assert.equal(headerPacket.fields.wages, "455802");
+  const headerAt = "2026-09-12T17:00:00.000Z";
+  const headerCover = writeLive(
+    wageQiDraft(),
+    walkName,
+    {
+      tax_year: "2025",
+      full_name: "ALLAN COMBES and RENZ ARIANE COMBES",
+      wages: "455802",
+      schedule_e_rents_received: "42000",
+      schedule_e_cash_expenses: "11400",
+    },
+    headerAt,
+  );
+  assert.equal(headerCover.draft.pendingProposal?.field, "tax_year");
+  const afterHeaderNames = resolveProposal(headerCover.draft, "accept");
+  assert.equal(afterHeaderNames.facts?.qualifying_income?.value, "36453", "cover wages do not overwrite QI");
+  assert.equal(isHouseholdWagesProposal(afterHeaderNames.pendingProposal), true);
+  assert.equal(afterHeaderNames.pendingProposal?.value, "455802");
+  const headerWagesAsk = nextFoxAsk(afterHeaderNames);
+  assert.match(headerWagesAsk.text, /\$455,802/);
+  assert.match(headerWagesAsk.text, /Use this/);
+  assert.ok(
+    (headerWagesAsk.actions ?? []).some((action) => /use this/i.test(action.label)),
+    "wages card is Use this · Change, not finish chips",
+  );
+  assert.ok(!(headerWagesAsk.actions ?? []).some((action) => /proceed/i.test(action.label)));
+  const afterHeaderWages = resolveProposal(afterHeaderNames, "accept");
+  assert.equal(afterHeaderWages.facts?.[HOUSEHOLD_WAGES_FIELD]?.value, "455802");
+  assert.equal(afterHeaderWages.facts?.qualifying_income?.value, "36453");
+  assert.equal(afterHeaderWages.pendingProposal?.field, INCOME_LEDGER_FIELD);
+  const headerEAsk = nextFoxAsk(afterHeaderWages);
+  assert.match(headerEAsk.text, /Schedule E/i);
+  assert.match(headerEAsk.text, /Use this/i);
+
+  const only8879At = "2026-09-12T17:20:00.000Z";
+  const only8879Cover = writeLive(
+    wageQiDraft(),
+    walkName,
+    { tax_year: "2025", full_name: "ALLAN COMBES and RENZ ARIANE COMBES" },
+    only8879At,
+  );
+  const only8879Written = resolveProposal(only8879Cover.draft, "accept");
+  loadIntakeDraft(only8879Written);
+  const only8879Packet = applyExtractWrite(only8879At, walkName, {
+    extractClass: "tax_return",
+    confidence: 0.94,
+    fields: { packet_read: "empty" },
+  });
+  assert.ok(
+    !only8879Packet.quietLines.includes(PACKET_WAGES_UNREAD_LINE),
+    "missing 1040 on page 1 is not a missing 1040 in the packet",
+  );
+
   const extractSrc = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "..", "lib/docs/extract.ts"), "utf8");
   const routeSrc = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "..", "app/api/docs/extract/route.ts"), "utf8");
-  const classifyAt = extractSrc.indexOf("export async function classifyAndExtract");
+  const classifyAt = extractSrc.indexOf("async function classifyAndExtractUnmerged");
   assert.ok(classifyAt > 0);
   const grokFirstAt = extractSrc.indexOf("shouldGrokTaxReturnPagesFirst(hint, filename)", classifyAt);
   const printedAt = extractSrc.indexOf("printedLinesForExtract", classifyAt);
@@ -868,14 +1005,22 @@ async function main() {
     "1040-named packet Groks page images before printed pdf.js",
   );
   assert.match(extractSrc, /Castaneda page→image→Grok/);
-  assert.match(extractSrc, /take\(1\)/);
+  assert.doesNotMatch(extractSrc, /take\(1\)/);
+  assert.doesNotMatch(extractSrc, /grokPage1HouseholdWages|PAGE1_HOUSEHOLD_WAGES_PROMPT/);
+  assert.match(extractSrc, /classifyPageByFormHeader|classifyTaxReturnPages/);
+  assert.match(extractSrc, /8879 is not a 1040/);
   assert.match(extractSrc, /phase === "packet"/);
   assert.match(extractSrc, /extractTaxReturnPacket|packet_read/);
   assert.match(extractSrc, /line 1z \(Wages, salaries, tips, etc\.\)/);
   assert.match(extractSrc, /Never line 1b household employee wages/);
-  assert.match(extractSrc, /PAGE1_HOUSEHOLD_WAGES_PROMPT|line 1z \(Wages, salaries, tips, etc\. Add lines 1a/);
-  assert.match(extractSrc, /taxReturnPagesToGrok|schedule\\s\*e\\b/);
+  assert.match(extractSrc, /FORM_1040_HOUSEHOLD_WAGES_PROMPT|line 1z \(Wages, salaries, tips, etc\. Add lines 1a/);
+  assert.match(extractSrc, /taxReturnPagesToGrok|schedule_e/);
   assert.match(extractSrc, /assignLedgerKeepFirst/);
+  const fileWriteSrc = readFileSync(
+    join(dirname(fileURLToPath(import.meta.url)), "..", "components/fox/fileWrite.ts"),
+    "utf8",
+  );
+  assert.doesNotMatch(fileWriteSrc, /wages on page 1/);
   assert.match(routeSrc, /maxDuration = 300/);
   assert.doesNotMatch(routeSrc, /maxDuration = 60/);
 
@@ -925,7 +1070,7 @@ async function main() {
   assert.ok(!/could not read/i.test(stubDoc?.note ?? ""));
 
   console.log(
-    "assert-income-ledger: stub QI stays · page-1 household wages CFBW · Sch E / partnership own rows · loss does not net · cover wages held · gross not QI · no invented $2 · QI label stays stub · no fixture K-1 · packet page images → Grok · cover write then keep reading · unread is the return",
+    "assert-income-ledger: stub QI stays · form-header walk · 8879 is not a 1040 · household wages CFBW · Sch E / partnership own rows · loss does not net · cover wages held · gross not QI · no invented $2 · QI label stays stub · no fixture K-1 · packet page images → Grok · cover write then keep reading · unread is the return",
   );
 }
 

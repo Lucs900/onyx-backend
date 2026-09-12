@@ -1989,7 +1989,7 @@ async function main() {
   assert.match(extractSrc, /shouldGrokTaxReturnPagesFirst/);
   assert.match(extractSrc, /Castaneda page→image→Grok/);
   assert.match(extractSrc, /phase === "packet"/);
-  const classifyAt = extractSrc.indexOf("export async function classifyAndExtract");
+  const classifyAt = extractSrc.indexOf("async function classifyAndExtractUnmerged");
   const grokFirstAt = extractSrc.indexOf("shouldGrokTaxReturnPagesFirst(hint, filename)", classifyAt);
   const printedAt = extractSrc.indexOf("printedLinesForExtract", classifyAt);
   assert.ok(

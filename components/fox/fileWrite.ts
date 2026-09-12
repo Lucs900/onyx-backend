@@ -684,7 +684,8 @@ export const PACKET_READING_LINE = "Reading the rest of the return.";
 export const PACKET_SCHEDULES_MISSING_LINE = "I didn’t see Schedule E or a K-1 on these pages.";
 export const PACKET_LINES_MISSING_LINE =
   "I didn’t see cover wages, Schedule E, or a K-1 on these pages.";
-export const PACKET_WAGES_UNREAD_LINE = "I couldn’t read the wages on page 1.";
+export const PACKET_WAGES_UNREAD_LINE =
+  "I couldn’t read household wages on the Form 1040 in this file.";
 
 export function taxReturnPacketDoc(draft: FoxIntakeDraft) {
   return [...draft.documents].reverse().find(
@@ -716,20 +717,24 @@ export function packetSchedulesMissingLine(fields?: Record<string, string | null
   return Number(wages) > 0 ? PACKET_SCHEDULES_MISSING_LINE : PACKET_LINES_MISSING_LINE;
 }
 
-/** Line 1 on a 1040 face is not “not on these pages.” */
+function packetSawForm1040(fields?: Record<string, string | null | undefined> | null) {
+  return /^(1|true|yes)$/i.test(String(fields?.form_1040 ?? "").trim());
+}
+
+/** A Form 1040 face with unread 1z/1a is not “not on these pages.” 8879 is not a 1040. */
 export function packetEmptySpeakLine(
   draft: FoxIntakeDraft,
   fields?: Record<string, string | null | undefined> | null,
 ) {
   const wages = String(fields?.wages ?? "").replace(/[^\d.]/g, "");
   if (Number(wages) > 0) return PACKET_SCHEDULES_MISSING_LINE;
-  if (taxReturnWrittenOnFile(draft) && !isTranscriptOnFile(draft)) {
+  if (taxReturnWrittenOnFile(draft) && !isTranscriptOnFile(draft) && packetSawForm1040(fields)) {
     return PACKET_WAGES_UNREAD_LINE;
   }
   return PACKET_LINES_MISSING_LINE;
 }
 
-/** Grok first-page 1040: tax year + name confirm. Ledger extras do not steal that confirm. */
+/** Grok Form 1040 page: tax year + name confirm. Ledger extras do not steal that confirm. */
 export function looksLikeTaxReturnPageReadFields(
   fields?: Record<string, string | null | undefined> | null,
 ): boolean {
@@ -875,7 +880,7 @@ export const FIRST_SESSION_LOCKED_KEYS: Record<FirstSessionClass, readonly strin
   tax_return: EXTRACT_SCHEMA_KEYS.tax_return,
 };
 
-/** Grok first-page 1040. Printed / loud schedule extract keeps the full schema. */
+/** Grok Form 1040 year + name. Printed / loud schedule extract keeps the full schema. */
 export const TAX_RETURN_PAGE_READ_KEYS = ["tax_year", "full_name"] as const;
 
 /** Completeness notepad name after Use this. Not an ID write. */
@@ -2460,7 +2465,11 @@ export function applyExtractedFields(
     const hasRows = (next.incomeLedger ?? []).some((row) => row.status === "suggested");
     const printedWages = Number(String(fields.wages ?? "").replace(/[^\d.]/g, ""));
     if (!next.taxReturnPacketSpoken && !offeredWages && printedWages <= 0) {
-      if (taxReturnWrittenOnFile(next) && !isTranscriptOnFile(next)) {
+      if (
+        taxReturnWrittenOnFile(next) &&
+        !isTranscriptOnFile(next) &&
+        packetSawForm1040(input.fields)
+      ) {
         next = { ...next, taxReturnPacketSpoken: true };
         quietLines.push(PACKET_WAGES_UNREAD_LINE);
       } else if (!hasRows && !next.awaitingCoverWageGap && !next.coverWageGap) {
