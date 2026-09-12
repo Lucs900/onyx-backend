@@ -72,7 +72,12 @@ import {
   stubExtractConfirmCopy,
   wageExtractConfirmCopy,
   wageW2ConfirmCopy,
+  isIncomeLedgerProposal,
+  promoteIncomeLedger,
+  settleIncomeLedgerProposal,
+  incomeLedgerAskCopy,
 } from "./qualifyingIncome";
+import { INCOME_LEDGER_FIELD } from "@/lib/income/ledger";
 import { acceptHuntRentals } from "./hunt";
 import {
   STATED_MONTHLY_DEBTS_FIELD,
@@ -1084,6 +1089,17 @@ export function proposalAskCopy(proposal: FactProposal) {
   if (proposal.field === QUALIFYING_INCOME_FIELD) {
     return qualifyingIncomeConfirmCopy(Number(proposal.value) || 0);
   }
+  if (proposal.field === INCOME_LEDGER_FIELD) {
+    const kind = proposal.extras?.find((item) => item.field === "ledger_kind")?.value ?? "";
+    return incomeLedgerAskCopy({
+      id: proposal.extras?.find((item) => item.field === "ledger_id")?.value ?? "",
+      kind: (kind || "schedule_e") as import("@/lib/income/ledger").IncomeLedgerKind,
+      label: proposal.label,
+      monthly: proposal.value,
+      method: proposal.methodNote ?? "",
+      status: "suggested",
+    });
+  }
   if (proposal.field === "tax_year") {
     const fields = Object.fromEntries([
       [proposal.field, proposal.value],
@@ -1571,6 +1587,9 @@ export function resolveProposal(
     if (winner === "accept") return acceptStubExtract(draft);
     return changeStubExtract(draft);
   }
+  if (isIncomeLedgerProposal(proposal)) {
+    return settleIncomeLedgerProposal(draft, proposal, winner === "accept" ? "confirmed" : "skipped");
+  }
   if (proposal.field === "hunt_rentals") {
     if (winner === "accept") return acceptHuntRentals(draft);
     return { ...draft, pendingProposal: null };
@@ -1613,7 +1632,10 @@ export function resolveProposal(
       return skipOtherReoFileNet({ ...draft, pendingProposal: null });
     }
     const declined = { ...draft, pendingProposal: null };
-    return flushPendingOtherReo(flushPendingCurrentHousing(flushPendingHireDate(declined)));
+    const flushed = flushPendingOtherReo(flushPendingCurrentHousing(flushPendingHireDate(declined)));
+    return proposal.field === "tax_year" || isIncomeLedgerProposal(proposal)
+      ? promoteIncomeLedger(flushed)
+      : flushed;
   }
   const source =
     proposal.field === QUALIFYING_INCOME_FIELD ||
@@ -1736,7 +1758,11 @@ export function resolveProposal(
   if (winner === "accept" && isFundsPairProposal(proposal)) {
     return { ...afterContract, overPriceConfirmed: false, looksRightHold: false };
   }
-  return { ...afterContract, looksRightHold: winner === "accept" ? false : afterContract.looksRightHold };
+  const afterLedger =
+    proposal.field === "tax_year" || isIncomeLedgerProposal(proposal)
+      ? promoteIncomeLedger(afterContract)
+      : afterContract;
+  return { ...afterLedger, looksRightHold: winner === "accept" ? false : afterLedger.looksRightHold };
 }
 
 function flushPendingHireDate(draft: FoxIntakeDraft): FoxIntakeDraft {
@@ -1966,6 +1992,7 @@ export function currentAskIdle(draft: FoxIntakeDraft) {
   if (priorStubAskNeeded(draft)) return false;
   if (draft.awaitingPayFrequency) return false;
   if (draft.awaitingBothMonthlyReason) return false;
+  if (draft.awaitingCoverWageGap) return false;
   if (draft.awaitingRaiseWhen) return false;
   if (draft.awaitingRaiseYtdFar) return false;
   if (

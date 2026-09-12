@@ -50,6 +50,8 @@ import {
   wageExtractFailedRead,
   monthlyQualifyingFromExtract,
   shouldProposeCoverLineIncome,
+  attachIncomeLedgerFromExtract,
+  promoteIncomeLedger,
   normalizeReturnKind,
   parseExtractMoney,
   readStubAmount,
@@ -250,6 +252,8 @@ export const EXTRACT_SCHEMA_KEYS: Record<ExtractClass, readonly string[]> = {
     "cover_schedules",
     "cover_k1_names",
     "wages",
+    "gross_receipts",
+    "schedule_f_net_profit",
   ],
   bank_statement: ["institution", "period_end", "ending_balance", "account_type", "account_last4", "present_address"],
   purchase_contract: [
@@ -328,6 +332,11 @@ const MONEY_KEYS = new Set([
   "entity_taxable_income",
   "schedule_e_rents_received",
   "schedule_e_cash_expenses",
+  "gross_receipts",
+  "schedule_f_net_profit",
+  "schedule_e_monthly",
+  "named_loss",
+  "income_ledger",
   "overtime",
   "bonus",
   "commission",
@@ -667,7 +676,7 @@ export function transcriptOfferDone(draft: FoxIntakeDraft) {
   return Boolean(key && hasDocStamp(draft, key, "done"));
 }
 
-/** Grok first-page 1040: tax year + name only. Not a transcript, cover, or schedule dollar lock. */
+/** Grok first-page 1040: tax year + name confirm. Ledger extras do not steal that confirm. */
 export function looksLikeTaxReturnPageReadFields(
   fields?: Record<string, string | null | undefined> | null,
 ): boolean {
@@ -675,13 +684,7 @@ export function looksLikeTaxReturnPageReadFields(
   const year = String(fields.tax_year ?? "").replace(/\D/g, "").slice(0, 4);
   const name = String(fields.full_name ?? "").trim();
   if (!/^(19|20)\d{2}$/.test(year) || !name) return false;
-  if (
-    String(fields.agi ?? "").trim() ||
-    String(fields.wages ?? "").trim() ||
-    String(fields.schedule_c_net_profit ?? "").trim() ||
-    String(fields.k1_ordinary_income ?? "").trim() ||
-    String(fields.schedule_e_rents_received ?? "").trim()
-  ) {
+  if (String(fields.agi ?? "").trim() || String(fields.filing_status ?? "").trim()) {
     return false;
   }
   return true;
@@ -727,10 +730,8 @@ export function maybeProposeFederalReturn(
   if (pageRead && name) extras.push({ field: "full_name", value: name, label: "name" });
   if (status) extras.push({ field: "filing_status", value: status, label: "filing status" });
   const transcript = isTranscriptReturnFields(fields);
-  if (!transcript && Number(agi) > 0) extras.push({ field: "agi", value: agi, label: "AGI" });
-  const wages = String(fields.wages ?? "").replace(/[^\d.]/g, "");
-  if (!transcript && Number(wages) > 0) extras.push({ field: "wages", value: wages, label: "wages" });
-  if (deps) extras.push({ field: "dependent_count", value: deps, label: "dependents" });
+  if (!transcript && Number(agi) > 0 && !pageRead) extras.push({ field: "agi", value: agi, label: "AGI" });
+  if (deps && !pageRead) extras.push({ field: "dependent_count", value: deps, label: "dependents" });
   const kind = String(fields.return_kind ?? "").trim();
   if (kind) extras.push({ field: "return_kind", value: kind, label: "return kind" });
   return {
@@ -899,14 +900,7 @@ export function hasLockedSuggestion(
   }
   if (extractClass === "purchase_contract") return looksLikeContractFields(fields);
   if (extractClass === "tax_return") {
-    if (
-      value("tax_year") &&
-      value("full_name") &&
-      !value("agi") &&
-      !value("wages") &&
-      !value("schedule_c_net_profit") &&
-      !value("k1_ordinary_income")
-    ) {
+    if (value("tax_year") && value("full_name") && !value("agi") && !value("filing_status")) {
       return true;
     }
     const kind = normalizeReturnKind(String(fields?.return_kind ?? ""));
@@ -1222,6 +1216,11 @@ export function factLabel(field: string) {
   if (field === "schedule_e_part2_names") return "Schedule E Part II names";
   if (field === "schedule_e_property_address") return "Schedule E property";
   if (field === "qualifying_income") return "qualifying income";
+  if (field === "income_ledger") return "income row";
+  if (field === "gross_receipts") return "gross receipts";
+  if (field === "named_loss") return "named loss";
+  if (field === "schedule_e_monthly") return "Schedule E";
+  if (field === "schedule_f_monthly") return "Schedule F";
   if (field === "paystub_monthly") return "paystub monthly";
   if (field === "w2_monthly") return "W-2 monthly";
   if (field === "income_caution") return "income caution";
@@ -2373,8 +2372,14 @@ export function applyExtractedFields(
   ) {
     quietLines.push(EMPLOYER_MISMATCH_LINE);
   }
+  if (extractClass === "tax_return") {
+    next = attachIncomeLedgerFromExtract(next, fields);
+  }
   if (holdFederalReturn && !next.pendingProposal && !next.pendingConflict) {
     next = maybeProposeFederalReturn(next, fields) ?? next;
+  }
+  if (!next.pendingProposal && !next.pendingConflict && extractClass === "tax_return") {
+    next = promoteIncomeLedger(next);
   }
   if (extractClass === "paystub" && next.stubExtractAccepted) {
     next = maybeWriteAgreedStubFrequency(

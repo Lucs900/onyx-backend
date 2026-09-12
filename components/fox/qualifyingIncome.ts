@@ -48,6 +48,24 @@ import {
   type WageSuggestInput,
   type WageYearInput,
 } from "@/lib/income/suggest";
+import {
+  COVER_WAGE_GAP_ASK,
+  GROSS_RECEIPTS_FIELD,
+  GROSS_RECEIPTS_NOTE,
+  INCOME_LEDGER_FIELD,
+  NAMED_LOSS_NOTE,
+  coverWagesFarAboveFileW2s,
+  fileW2AnnualFromFacts,
+  grossReceiptsFromFields,
+  incomeLedgerRowsFromFields,
+  ledgerFileField,
+  ledgerProposalNote,
+  mergeIncomeLedger,
+  parseLedgerMoney,
+  pendingIncomeLedgerRows,
+  type CoverWageGapAnswer,
+  type IncomeLedgerRow,
+} from "@/lib/income/ledger";
 
 export {
   DECLINING_INCOME_CAUTION,
@@ -867,6 +885,8 @@ function maybeCombine(
   years: TaxYearCashflow[],
   fields: Record<string, string> = {},
 ): QualifyingIncomeResult {
+  if (confirmedWageQi(draft) && incoming.basis !== "wage") return incoming;
+  if (confirmedWageQi(draft) && incoming.monthly < 0) return incoming;
   const cashYears = years.length ? years : readTaxCashflows(draft);
   const wage =
     incoming.basis === "wage"
@@ -1518,7 +1538,194 @@ export function shouldProposeCoverLineIncome(
 ): boolean {
   if (!isCoverReturnFields(fields)) return false;
   if (!computed || computed.methodNote !== COVER_LINE_METHOD) return false;
+  if (confirmedWageQi(draft) || existingMonthlyIncome(draft)?.via === QUALIFYING_INCOME_FIELD) {
+    return false;
+  }
   return !hasBetterIncomeThanCover(draft);
+}
+
+export function confirmedWageQi(draft: FoxIntakeDraft): boolean {
+  const stored = draft.facts?.[QUALIFYING_INCOME_FIELD];
+  if (!stored?.confirmed || !parseExtractMoney(stored.value)) return false;
+  const method = factValue(draft, QUALIFYING_METHOD_FIELD);
+  if (/box 5|stub|w-2|period-frequency|ytd|w2-annual|combined/i.test(method)) return true;
+  if (parseExtractMoney(factValue(draft, WAGE_MONTHLY_FIELD))) return true;
+  if (parseExtractMoney(factValue(draft, W2_MONTHLY_FIELD))) return true;
+  if (parseExtractMoney(factValue(draft, PAYSTUB_MONTHLY_FIELD))) return true;
+  return draft.incomeType.value === "w2" || draft.incomeType.value === "both";
+}
+
+export function isIncomeLedgerProposal(proposal?: FactProposal | null): boolean {
+  return Boolean(proposal && proposal.field === INCOME_LEDGER_FIELD);
+}
+
+function writeGrossReceiptsFact(draft: FoxIntakeDraft, fields: Record<string, string>): FoxIntakeDraft {
+  const gross = grossReceiptsFromFields(fields);
+  if (gross == null) return draft;
+  const now = new Date().toISOString();
+  const business =
+    String(fields.business_name ?? "").trim() ||
+    String(fields.entity_name ?? "").trim() ||
+    "";
+  return {
+    ...draft,
+    facts: {
+      ...(draft.facts ?? {}),
+      [GROSS_RECEIPTS_FIELD]: {
+        field: GROSS_RECEIPTS_FIELD,
+        value: String(Math.round(gross)),
+        source: "document",
+        confirmed: true,
+        confirmedAt: now,
+      },
+      ...(business
+        ? {
+            business_name: {
+              field: "business_name",
+              value: business,
+              source: "document" as const,
+              confirmed: true,
+              confirmedAt: now,
+            },
+          }
+        : {}),
+    },
+  };
+}
+
+export function attachIncomeLedgerFromExtract(
+  draft: FoxIntakeDraft,
+  fields: Record<string, string>,
+): FoxIntakeDraft {
+  let next = writeGrossReceiptsFact(draft, fields);
+  const incoming = incomeLedgerRowsFromFields(fields);
+  if (incoming.length && confirmedWageQi(next)) {
+    next = { ...next, incomeLedger: mergeIncomeLedger(next.incomeLedger, incoming) };
+  }
+  return markCoverWageGap(next, fields);
+}
+
+function markCoverWageGap(draft: FoxIntakeDraft, fields: Record<string, string>): FoxIntakeDraft {
+  if (draft.coverWageGapAsked || draft.coverWageGap) return draft;
+  const coverWages = parseLedgerMoney(fields.wages);
+  const fileW2 = fileW2AnnualFromFacts(draft.facts);
+  if (!coverWagesFarAboveFileW2s(coverWages, fileW2)) return draft;
+  return {
+    ...draft,
+    coverWageGap: { coverAnnual: coverWages as number, fileW2Annual: fileW2 as number },
+  };
+}
+
+export function incomeLedgerProposal(row: IncomeLedgerRow): FactProposal {
+  return {
+    field: INCOME_LEDGER_FIELD,
+    value: row.monthly,
+    label: row.label,
+    kind: "computed",
+    note: ledgerProposalNote(row.kind),
+    methodNote: row.method,
+    extras: [
+      { field: "ledger_id", value: row.id, label: "ledger row" },
+      { field: "ledger_kind", value: row.kind, label: "ledger kind" },
+    ],
+  };
+}
+
+export function promoteIncomeLedger(draft: FoxIntakeDraft): FoxIntakeDraft {
+  if (draft.pendingProposal || draft.pendingConflict) return draft;
+  if (draft.awaitingCoverWageGap) return draft;
+  if (draft.coverWageGap && !draft.coverWageGapAsked) {
+    return { ...draft, awaitingCoverWageGap: true };
+  }
+  const nextRow = pendingIncomeLedgerRows(draft.incomeLedger)[0];
+  if (!nextRow) return draft;
+  return {
+    ...draft,
+    pendingProposal: incomeLedgerProposal(nextRow),
+  };
+}
+
+export function applyCoverWageGapAnswer(
+  draft: FoxIntakeDraft,
+  raw: string,
+): FoxIntakeDraft {
+  const value = String(raw ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/[\s_]+/g, "-");
+  const answer: CoverWageGapAnswer =
+    value === "another-job" || value === "spouse" || value === "skip" ? value : "skip";
+  const settled: FoxIntakeDraft = {
+    ...draft,
+    awaitingCoverWageGap: false,
+    coverWageGapAsked: true,
+    coverWageGap: draft.coverWageGap,
+    coverWageAnotherJob: answer === "another-job" ? true : draft.coverWageAnotherJob,
+  };
+  return promoteIncomeLedger(settled);
+}
+
+export function settleIncomeLedgerProposal(
+  draft: FoxIntakeDraft,
+  proposal: FactProposal,
+  status: "confirmed" | "skipped",
+): FoxIntakeDraft {
+  const id = proposal.extras?.find((item) => item.field === "ledger_id")?.value ?? "";
+  const kind = proposal.extras?.find((item) => item.field === "ledger_kind")?.value ?? "";
+  const rows = (draft.incomeLedger ?? []).map((row) =>
+    row.id === id ? { ...row, status } : row,
+  );
+  let next: FoxIntakeDraft = { ...draft, incomeLedger: rows, pendingProposal: null };
+  if (status === "confirmed") {
+    const row = rows.find((item) => item.id === id);
+    const field = kind ? ledgerFileField(kind as IncomeLedgerRow["kind"]) : "";
+    if (row && field) {
+      const now = new Date().toISOString();
+      next = {
+        ...next,
+        facts: {
+          ...(next.facts ?? {}),
+          [field]: {
+            field,
+            value: row.monthly,
+            source: "suggested",
+            confirmed: true,
+            confirmedAt: now,
+          },
+        },
+      };
+    }
+  }
+  return promoteIncomeLedger(next);
+}
+
+export function incomeLedgerAskCopy(row: IncomeLedgerRow): string {
+  const amount = Math.round(Math.abs(Number(row.monthly) || 0)).toLocaleString("en-US");
+  const signed = Number(row.monthly) < 0 ? `-$${amount}` : `$${amount}`;
+  if (row.kind === "named_loss") {
+    return `This return shows a ${signed} loss. I’m not netting that into qualifying income. ${NAMED_LOSS_NOTE}. Use this?`;
+  }
+  if (row.kind === "schedule_e") {
+    return `This return shows Schedule E. I’m suggesting ${signed} a month. ${ledgerProposalNote(row.kind)}. Use this?`;
+  }
+  if (row.kind === "k1") {
+    return `This return shows a K-1. I’m suggesting ${signed} a month. ${ledgerProposalNote(row.kind)}. Use this?`;
+  }
+  if (row.kind === "schedule_c") {
+    return `This return shows Schedule C. I’m suggesting ${signed} a month. ${ledgerProposalNote(row.kind)}. Use this?`;
+  }
+  if (row.kind === "schedule_f") {
+    return `This return shows Schedule F. I’m suggesting ${signed} a month. ${ledgerProposalNote(row.kind)}. Use this?`;
+  }
+  if (row.kind === "entity_1065" || row.kind === "entity_1120s") {
+    const form = row.kind === "entity_1120s" ? "Form 1120-S" : "Form 1065";
+    return `This return shows a ${form}. I’m suggesting ${signed} a month. ${ledgerProposalNote(row.kind)}. Use this?`;
+  }
+  return `I’m suggesting ${signed} a month. ${ledgerProposalNote(row.kind)}. Use this?`;
+}
+
+export function coverWageGapAskCopy() {
+  return COVER_WAGE_GAP_ASK;
 }
 
 export function qualifyingIncomeProposal(computed: QualifyingIncomeResult): FactProposal {
@@ -1595,10 +1802,12 @@ function taxFileIsCover(draft: FoxIntakeDraft) {
 
 export function maybeProposeQualifyingFromTaxFile(draft: FoxIntakeDraft): FoxIntakeDraft {
   if (taxFileIsTranscript(draft)) return draft;
+  if (taxFileIsCover(draft) && (confirmedWageQi(draft) || existingMonthlyIncome(draft))) return draft;
   if (draft.pendingProposal?.field === QUALIFYING_INCOME_FIELD) return draft;
   if (draft.pendingProposal && draft.pendingProposal.field !== QUALIFYING_INCOME_FIELD) {
     return draft;
   }
+  if (confirmedWageQi(draft)) return promoteIncomeLedger(draft);
   const computed = monthlyQualifyingFromExtract(draft, "tax_return", {});
   if (!computed || computed.needsFrequency || computed.needsBothReason || computed.monthly === 0) {
     return draft;
@@ -1689,6 +1898,8 @@ export function applyQualifyingIncomeFromExtract(
   let next = draft;
   if (extractClass === "tax_return") {
     next = writeTaxCashflows(next, mergeTaxCashflows(readTaxCashflows(next), cashflowFromExtract(fields)));
+    next = attachIncomeLedgerFromExtract(next, fields);
+    if (confirmedWageQi(next)) return next;
   }
   if (extractClass === "paystub" || extractClass === "w2") {
     next = writeWageJobs(next, mergeWageJobs(readWageJobs(next), jobFromExtract(fields)));

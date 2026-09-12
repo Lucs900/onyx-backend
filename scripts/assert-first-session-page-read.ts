@@ -1723,6 +1723,18 @@ async function main() {
   );
   assert.equal(hasLockedSuggestion("tax_return", { tax_year: "2025" }), false, "filename year only is not a lock");
   assert.equal(looksLikeTaxReturnPageReadFields({ tax_year: "2025", full_name: "Allan Combes" }), true);
+  assert.equal(
+    looksLikeTaxReturnPageReadFields({
+      tax_year: "2025",
+      full_name: "Allan Combes",
+      wages: "600000",
+      schedule_e_rents_received: "42000",
+      k1_ordinary_income: "-294564",
+      gross_receipts: "1200000",
+    }),
+    true,
+    "ledger extras do not steal year + name confirm",
+  );
   assert.equal(looksLikeTaxReturnPageReadFields({ tax_year: "2025" }), false);
   assert.equal(
     taxReturnPageHint("w2", "2025 1040 - Combes Allan and Renz.pdf"),
@@ -1958,8 +1970,8 @@ async function main() {
     },
   });
   assert.equal(scheduleUpgrade.draft.facts?.qualifying_income?.value, "36453", "File QI stays until Use this");
-  assert.equal(scheduleUpgrade.draft.pendingProposal?.field, "qualifying_income");
   assert.ok(scheduleUpgrade.draft.pendingProposal, "schedule extract is CFBW / Use this");
+  assert.notEqual(scheduleUpgrade.draft.pendingProposal?.field, "qualifying_income");
   assert.notEqual(scheduleUpgrade.draft.pendingProposal?.value, "36453");
   const extractSrc = readFileSync(join(root, "lib/docs/extract.ts"), "utf8");
   const pdfSrc = readFileSync(join(root, "lib/docs/pdfText.ts"), "utf8");

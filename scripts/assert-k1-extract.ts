@@ -225,10 +225,11 @@ async function main() {
       fields: fifteen.fields,
     },
   );
-  assert.equal(wageOnFile.draft.pendingProposal?.parts?.k1, "4000");
-  assert.match(wageOnFile.draft.pendingProposal?.methodNote ?? "", /combined wage \+ K-1/i);
-  assert.notEqual(wageOnFile.draft.pendingProposal?.value, "4000");
-  assert.notEqual(wageOnFile.draft.pendingProposal?.parts?.k1, "7000");
+  assert.equal(wageOnFile.draft.facts?.qualifying_income?.value, "3000");
+  assert.equal(wageOnFile.draft.pendingProposal?.field, "income_ledger");
+  assert.equal(wageOnFile.draft.pendingProposal?.value, "4000");
+  assert.match(wageOnFile.draft.pendingProposal?.methodNote ?? "", /ordinary \/ 12/i);
+  assert.notEqual(wageOnFile.draft.pendingProposal?.value, "7000");
 
   const afterProceed = applyUploadMoreMotion(applyProceedMotion(seSketch()));
   const afterProceedWrite = applyExtractedFields(afterProceed, {

@@ -449,6 +449,9 @@ export function emptyDraft(): FoxIntakeDraft {
     awaitingUnreadNote: false,
     awaitingPayFrequency: false,
     awaitingBothMonthlyReason: false,
+    awaitingCoverWageGap: false,
+    coverWageGapAsked: false,
+    incomeLedger: [],
     awaitingRaiseWhen: false,
     awaitingRaiseYtdFar: false,
     facts: {},
@@ -765,6 +768,24 @@ function normalize(value: unknown): FoxIntakeDraft {
     awaitingUnreadNote: Boolean(raw.awaitingUnreadNote),
     awaitingPayFrequency: Boolean(raw.awaitingPayFrequency),
     awaitingBothMonthlyReason: Boolean(raw.awaitingBothMonthlyReason),
+    awaitingCoverWageGap: Boolean(raw.awaitingCoverWageGap),
+    coverWageGapAsked: Boolean(raw.coverWageGapAsked),
+    coverWageAnotherJob: Boolean(raw.coverWageAnotherJob),
+    coverWageGap:
+      raw.coverWageGap &&
+      typeof raw.coverWageGap.coverAnnual === "number" &&
+      typeof raw.coverWageGap.fileW2Annual === "number"
+        ? {
+            coverAnnual: raw.coverWageGap.coverAnnual,
+            fileW2Annual: raw.coverWageGap.fileW2Annual,
+          }
+        : undefined,
+    incomeLedger: Array.isArray(raw.incomeLedger)
+      ? raw.incomeLedger.filter(
+          (row): row is NonNullable<FoxIntakeDraft["incomeLedger"]>[number] =>
+            Boolean(row && typeof row === "object" && typeof row.id === "string" && typeof row.kind === "string"),
+        )
+      : [],
     awaitingRaiseWhen: Boolean(raw.awaitingRaiseWhen),
     awaitingRaiseYtdFar: Boolean(raw.awaitingRaiseYtdFar),
     raiseWhenRaw: typeof raw.raiseWhenRaw === "string" ? raw.raiseWhenRaw : undefined,

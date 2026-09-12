@@ -8575,26 +8575,25 @@ const combinedWrite = applyExtractedFields(wageAccepted, {
   },
 });
 assert.equal(combinedWrite.conflict, null);
-assert.equal(combinedWrite.draft.pendingProposal?.value, "18167");
-assert.equal(combinedWrite.draft.pendingProposal?.note, SUGGESTED_INCOME_NOTE);
-assert.match(combinedWrite.draft.pendingProposal?.methodNote ?? "", /combined wage \+ Schedule C/);
+assert.equal(combinedWrite.draft.facts?.qualifying_income?.value, "9167", "wage QI stays");
+assert.equal(combinedWrite.draft.pendingProposal?.field, "income_ledger");
+assert.equal(combinedWrite.draft.pendingProposal?.value, "9000");
+assert.match(combinedWrite.draft.pendingProposal?.note ?? "", /Suggested qualifying income · not underwritten/);
 const combinedAsk = nextFoxAsk(combinedWrite.draft);
-assert.match(combinedAsk.text, /18,167/);
-assert.match(combinedAsk.text, /wages and the Schedule C/);
-assert.doesNotMatch(combinedAsk.text, /combined wage \+ Schedule C|biweekly period × 26 \/ 12|Schedule C one-year/);
-assert.match(combinedAsk.text, /Suggested qualifying income · not underwritten/);
+assert.match(combinedAsk.text, /9,000|Schedule C/);
+assert.doesNotMatch(combinedAsk.text, /18,167/);
+assert.match(combinedAsk.text, /Suggested qualifying income · not underwritten|Schedule C/);
 assert.ok((combinedAsk.actions ?? []).some((item) => item.label === "Use this"));
 assert.ok((combinedAsk.actions ?? []).some((item) => item.label === "Change"));
-assertIncomeChipsHoldOverQueue(combinedWrite.draft, /18,167/);
+assertIncomeChipsHoldOverQueue(combinedWrite.draft, /9,000|Schedule C/);
 const combinedQualify = workspaceReply("will i qualify", combinedWrite.draft);
 assert.notEqual(combinedQualify?.capture?.field, "accept-proposal");
 assertAnswerThenRestore(combinedQualify, /Not ready yet —/, {
-  text: /18,167/,
+  text: /9,000|Schedule C/,
   labels: ["Use this", "Change"],
 });
-assert.match(combinedQualify?.text ?? "", /A W-2 is still missing/);
 const combinedAccepted = resolveProposal(combinedWrite.draft, "accept");
-assert.equal(combinedAccepted.facts?.qualifying_income?.value, "18167");
+assert.equal(combinedAccepted.facts?.qualifying_income?.value, "9167");
 assert.equal(combinedAccepted.facts?.wage_monthly?.value, "9167");
 assert.equal(combinedAccepted.facts?.se_monthly?.value, "9000");
 

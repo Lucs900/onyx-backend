@@ -1,5 +1,6 @@
 import type { CreditRange, ExplorerScenario } from "@/components/products/scenario";
 import type { SafeCouponRow } from "@/lib/rateflow/quote";
+import type { IncomeLedgerRow } from "@/lib/income/ledger";
 
 export const INTAKE_STORAGE_KEY = "onyx.foxIntake.draft";
 export const INTAKE_DRAFT_VERSION = 2;
@@ -460,6 +461,13 @@ export type FoxIntakeDraft = {
   awaitingPayFrequency?: boolean;
   awaitingBothMonthlyReason?: boolean;
   bothMonthlyReason?: "raise" | "overtime-bonus" | "second-job" | "skip";
+  /** Cover Line 1 wages far above File W-2s. Ask once: another job · spouse · Skip. */
+  awaitingCoverWageGap?: boolean;
+  coverWageGapAsked?: boolean;
+  coverWageAnotherJob?: boolean;
+  coverWageGap?: { coverAnnual: number; fileW2Annual: number } | null;
+  /** Income ledger. Each source is its own row. File empty until Use this. */
+  incomeLedger?: IncomeLedgerRow[];
   awaitingRaiseWhen?: boolean;
   awaitingRaiseYtdFar?: boolean;
   raiseWhenRaw?: string;
@@ -570,6 +578,7 @@ export type FoxPrompt =
   | "w2-pay-frequency"
   | "paystub-monthly"
   | "both-monthly-reason"
+  | "cover-wage-gap"
   | "raise-when"
   | "raise-ytd-far"
   | "qualifying"
@@ -688,6 +697,7 @@ export type Capture =
   | { field: "skip-paystub-monthly" }
   | { field: "stubJob"; value: "same" | "two" }
   | { field: "bothMonthlyReason"; value: string }
+  | { field: "coverWageGap"; value: string }
   | { field: "raiseWhen"; value: string }
   | { field: "yearsInBusiness"; value: string }
   | { field: "skip-years-in-business" }

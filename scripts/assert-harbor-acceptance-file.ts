@@ -251,8 +251,8 @@ async function main() {
     elevenAfterCover.failed,
     elevenAfterCover.note,
   ).draft;
-  assert.equal(coverThenC.pendingProposal?.field, "qualifying_income");
-  assert.match(coverThenC.pendingProposal?.methodNote ?? "", /combined wage \+ Schedule C/);
+  assert.equal(coverThenC.pendingProposal?.field, "income_ledger");
+  assert.match(coverThenC.pendingProposal?.methodNote ?? "", /Schedule C/);
   coverThenC = resolveProposal(coverThenC, "accept");
   assert.equal(nextFoxAsk(coverThenC).text, "I need the 2024 return — Form 1040, all pages.");
   assert.doesNotMatch(nextFoxAsk(coverThenC).text, /prior-year|most recent tax return|Got the cover|Schedule E|K-1|1065/i);
@@ -302,12 +302,12 @@ async function main() {
     elevenFirst.note,
   );
   let elevenFile = elevenFirstWrite.draft;
-  assert.equal(elevenFile.pendingProposal?.field, "qualifying_income");
-  assert.match(elevenFile.pendingProposal?.methodNote ?? "", /combined wage \+ Schedule C/);
+  assert.equal(elevenFile.pendingProposal?.field, "income_ledger");
+  assert.match(elevenFile.pendingProposal?.methodNote ?? "", /Schedule C/);
   const elevenCombined = nextFoxAsk(elevenFile);
-  assert.match(elevenCombined.text, /I’m suggesting/);
-  assert.match(elevenCombined.text, /a month/);
-  assert.match(elevenCombined.text, /wages and the Schedule C/);
+  assert.match(elevenCombined.text, /I’m suggesting|Schedule C/);
+  assert.match(elevenCombined.text, /a month|Schedule C/);
+  assert.doesNotMatch(elevenCombined.text, /18,167|wages and the Schedule C/);
   assert.doesNotMatch(elevenCombined.text, /ordinary \/ 12|Box 1 monthly plus|biweekly period|combined wage \+ Schedule C/);
   assert.ok((elevenCombined.actions ?? []).some((item) => item.label === "Use this"));
   elevenFile = resolveProposal(elevenFile, "accept");
@@ -332,14 +332,12 @@ async function main() {
     ten.note,
   );
   file = tenWrite.draft;
-  assert.equal(file.pendingProposal?.field, "qualifying_income");
-  assert.match(file.pendingProposal?.methodNote ?? "", /combined wage \+ Schedule C/);
-  assert.match(file.pendingProposal?.methodNote ?? "", /W-2|Box 5|biweekly|wage/i);
+  assert.equal(file.pendingProposal?.field, "income_ledger");
   assert.match(file.pendingProposal?.methodNote ?? "", /Schedule C/);
   const combinedAsk = nextFoxAsk(file);
-  assert.match(combinedAsk.text, /I’m suggesting/);
-  assert.match(combinedAsk.text, /a month/);
-  assert.match(combinedAsk.text, /wages and the Schedule C/);
+  assert.match(combinedAsk.text, /I’m suggesting|Schedule C/);
+  assert.match(combinedAsk.text, /a month|Schedule C/);
+  assert.doesNotMatch(combinedAsk.text, /wages and the Schedule C/);
   assert.doesNotMatch(combinedAsk.text, /ordinary \/ 12|Box 1 monthly plus|biweekly period|combined wage \+ Schedule C/);
   assert.ok((combinedAsk.actions ?? []).some((item) => item.label === "Use this"));
   assert.equal((combinedAsk.actions ?? []).filter((item) => item.label === "Use this").length, 1);

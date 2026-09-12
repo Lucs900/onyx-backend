@@ -39,6 +39,7 @@ import {
   printedSampleFromLines,
   readPrintedSample,
 } from "@/lib/docs/printedSample";
+import { incomeLedgerFieldsFromPrintedLines } from "@/lib/income/ledger";
 
 export type ClassifyResult = {
   class: ExtractClass;
@@ -615,10 +616,30 @@ async function grokPageRead(
       failed: true,
     };
   }
+  return mergeTaxReturnLedgerFields(
+    {
+      ...page,
+      extractClass: bankLocked ? "bank_statement" : extractClass,
+      fields,
+    },
+    bytes,
+    mediaType,
+  );
+}
+
+async function mergeTaxReturnLedgerFields(
+  result: ClassifyExtractResult,
+  bytes: Uint8Array,
+  mediaType: string,
+): Promise<ClassifyExtractResult> {
+  if (result.extractClass !== "tax_return" || result.failed) return result;
+  const layer = await printedLinesForExtract(bytes, mediaType);
+  if (!layer?.length) return result;
+  const ledger = incomeLedgerFieldsFromPrintedLines(layer);
+  if (!Object.keys(ledger).length) return result;
   return {
-    ...page,
-    extractClass: bankLocked ? "bank_statement" : extractClass,
-    fields,
+    ...result,
+    fields: { ...ledger, ...result.fields },
   };
 }
 

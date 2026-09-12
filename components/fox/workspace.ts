@@ -295,7 +295,16 @@ import {
   writeWagePayFrequency,
   W2_BOX5_ASK,
   W2_PAY_FREQUENCY_ASK,
+  applyCoverWageGapAnswer,
+  coverWageGapAskCopy,
+  isIncomeLedgerProposal,
 } from "./qualifyingIncome";
+import {
+  GROSS_RECEIPTS_FIELD,
+  GROSS_RECEIPTS_NOTE,
+  INCOME_LEDGER_FIELD,
+  confirmedIncomeLedgerRows,
+} from "@/lib/income/ledger";
 import {
   isRentalIncomeField,
   isSkipSubjectLeaseText,
@@ -2393,12 +2402,47 @@ function liveProposalAsk(
       return wageReactionAsk(draft, proposal, cls ?? "paystub");
     }
   }
+  if (isIncomeLedgerProposal(proposal)) {
+    return {
+      text: proposalAskCopy(proposal),
+      actions: incomeConfirmActions(),
+    };
+  }
   const caution =
     proposal.field === QUALIFYING_INCOME_FIELD ? decliningIncomeCaution(draft) : undefined;
   return {
     text: caution ?? proposalAskCopy(proposal),
     followUp: caution ? proposalAskCopy(proposal) : undefined,
     actions: proposal.field === QUALIFYING_INCOME_FIELD ? incomeConfirmActions() : proposalActions(proposal.kind),
+  };
+}
+
+export function coverWageGapAsk(): {
+  text: string;
+  actions: FoxAction[];
+} {
+  return {
+    text: coverWageGapAskCopy(),
+    actions: [
+      {
+        id: "cover-wage-another-job",
+        label: "Another job",
+        event: "bubble",
+        capture: { field: "coverWageGap", value: "another-job" },
+      },
+      {
+        id: "cover-wage-spouse",
+        label: "Spouse",
+        event: "bubble",
+        capture: { field: "coverWageGap", value: "spouse" },
+      },
+      {
+        id: "cover-wage-skip",
+        label: "Skip",
+        event: "bubble",
+        capture: { field: "coverWageGap", value: "skip" },
+      },
+    ],
   };
 }
 
@@ -2468,6 +2512,7 @@ export function docReactionAsk(
   if (priorStubAskNeeded(draft)) return priorStubAsk();
   if (draft.awaitingPayFrequency) return payFrequencyAsk();
   if (draft.awaitingBothMonthlyReason) return bothMonthlyReasonAsk(draft);
+  if (draft.awaitingCoverWageGap) return coverWageGapAsk();
   if (draft.awaitingRaiseWhen) return raiseWhenAsk();
   if (draft.awaitingRaiseYtdFar) return raiseYtdFarAsk(draft);
   if (cls === "tax_return" && isTranscriptOnFile(draft) && !draft.pendingProposal) {
@@ -3366,7 +3411,10 @@ export function previewRateFact(draft: FoxIntakeDraft): PreviewFact | null {
 }
 
 export function isQualifyingIncomeConfirmPending(draft: FoxIntakeDraft): boolean {
-  return draft.pendingProposal?.field === QUALIFYING_INCOME_FIELD;
+  return (
+    draft.pendingProposal?.field === QUALIFYING_INCOME_FIELD ||
+    isIncomeLedgerProposal(draft.pendingProposal)
+  );
 }
 
 export function isRentalIncomeConfirmPending(draft: FoxIntakeDraft): boolean {
@@ -3382,6 +3430,7 @@ export function shouldDeferStillUsefulAsk(draft: FoxIntakeDraft): boolean {
     priorStubAskNeeded(draft) ||
     Boolean(draft.awaitingPayFrequency) ||
     Boolean(draft.awaitingBothMonthlyReason) ||
+    Boolean(draft.awaitingCoverWageGap) ||
     Boolean(draft.awaitingRaiseWhen) ||
     Boolean(draft.awaitingRaiseYtdFar) ||
     Boolean(draft.pendingProposal && isRemainderConfirmField(draft.pendingProposal.field)) ||
@@ -3548,6 +3597,7 @@ export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
   if (priorStubAskNeeded(draft)) return "prior-stub";
   if (draft.awaitingPayFrequency) return "pay-frequency";
   if (draft.awaitingBothMonthlyReason) return "both-monthly-reason";
+  if (draft.awaitingCoverWageGap) return "cover-wage-gap";
   if (draft.awaitingRaiseWhen) return "raise-when";
   if (draft.awaitingRaiseYtdFar) return "raise-ytd-far";
   if (
@@ -4058,6 +4108,9 @@ function workspaceAskCopy(
   }
   if (prompt === "both-monthly-reason") {
     return bothMonthlyReasonAsk(draft);
+  }
+  if (prompt === "cover-wage-gap") {
+    return coverWageGapAsk();
   }
   if (prompt === "raise-when") {
     return raiseWhenAsk();
@@ -5829,6 +5882,7 @@ function draftAfterCaptureBody(draft: FoxIntakeDraft, capture: Capture): FoxInta
       : next;
   }
   if (capture.field === "bothMonthlyReason") return applyBothMonthlyReasonAnswer(next, capture.value);
+  if (capture.field === "coverWageGap") return applyCoverWageGapAnswer(next, capture.value);
   if (capture.field === "raiseWhen") {
     return draft.awaitingRaiseYtdFar ? applyRaiseYtdFarAnswer(next, capture.value) : applyRaiseWhenAnswer(next, capture.value);
   }
@@ -6567,6 +6621,22 @@ export function workspaceReply(
       return { ...nextFoxAsk(nextDraft), capture: { field: "bothMonthlyReason", value: reason } };
     }
     return { ...bothMonthlyReasonAsk(draft) };
+  }
+
+  if (prompt === "cover-wage-gap" || draft.awaitingCoverWageGap) {
+    if (isFreeTextAtGate(q)) return answerThenRestore(q, draft);
+    const gap = /another job|second job|other job/i.test(lower)
+      ? "another-job"
+      : /\bspouse\b|partner|wife|husband/i.test(lower)
+        ? "spouse"
+        : /^(skip|later|not sure|idk|pass|not yet)\b/i.test(lower)
+          ? "skip"
+          : "";
+    if (gap) {
+      const nextDraft = applyCoverWageGapAnswer(draft, gap);
+      return { ...nextFoxAsk(nextDraft), capture: { field: "coverWageGap", value: gap } };
+    }
+    return { ...coverWageGapAsk() };
   }
 
   if (prompt === "raise-when" || draft.awaitingRaiseWhen) {
@@ -8645,6 +8715,24 @@ export function previewFacts(draft: FoxIntakeDraft): PreviewFact[] {
       note: qualifying.note,
     });
   }
+  for (const row of confirmedIncomeLedgerRows(draft.incomeLedger)) {
+    facts.push({
+      id: `ledger-${row.id}`,
+      label: row.label,
+      value: displayFactValue(INCOME_LEDGER_FIELD, row.monthly),
+      note: row.kind === "named_loss" ? "Named loss" : row.method,
+    });
+  }
+  const gross = factValue(draft, GROSS_RECEIPTS_FIELD);
+  if (gross) {
+    const named = factValue(draft, "business_name");
+    facts.push({
+      id: "gross-receipts",
+      label: named ? `${named} · Gross receipts` : "Gross receipts",
+      value: displayFactValue(GROSS_RECEIPTS_FIELD, gross),
+      note: GROSS_RECEIPTS_NOTE,
+    });
+  }
   const incomeCaution =
     (draft.facts?.[INCOME_CAUTION_FIELD]?.value ?? "").trim() ||
     (draft.pendingProposal?.field === QUALIFYING_INCOME_FIELD ? draft.pendingProposal.caution : undefined);
@@ -9080,6 +9168,8 @@ function isQualifyingIncomeConfirm(message: FoxMessage) {
   if (/I’m suggesting/i.test(blob) && /Cover line/i.test(blob) && /Use this/i.test(blob)) return true;
   if (/Suggested qualifying income/i.test(blob)) return true;
   if (/Suggested rental cash flow/i.test(blob)) return true;
+  if (/Named loss/i.test(blob) && /Use this/i.test(blob)) return true;
+  if (/This return shows/i.test(blob) && /Use this/i.test(blob)) return true;
   return (message.actions ?? []).some((action) => action.capture?.field === "accept-proposal")
     && /qualifying income|rental cash flow|Cover line/i.test(blob);
 }

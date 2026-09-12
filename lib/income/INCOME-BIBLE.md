@@ -2,30 +2,32 @@
 
 Locked founder doctrine for qualifying income. Preview product. Suggested · not underwritten. Confirm before write.
 
+## Income is a ledger of rows
+
+Not first-source-wins. Not “we already qualify on W-2.”
+
+- Classify the page. Extract every useful income or loss. Suggest. Confirm-before-write. File empty on that line until Use this.
+- Wage method = W-2 Box 5 + stub. 1040 wages = household total only.
+- Sch C, Sch E Part I, Sch F, K-1, 1065, 1120-S each own a row with a locked method. Use this writes that row. Leave blank keeps it off QI.
+- Loss = named loss. Do not net a K-1 hole into W-2 QI on the sketch.
+- Years stay separate (2023 transcript ≠ replace 2025 1040).
+- Looks right and Proceed work with holes. Skip is an answer.
+
 ## Cover line (1040)
 
-A Form 1040 cover **may write thin income when that is all we have**. The old line “cover writes no income” is dead.
+Cover totals never write QI on top of a wage row. Cover wages do not overwrite QI.
 
-- **Thin line only:** Sch 1 / C business income ÷ 12.
-- Fixture **20** (2025): $108,000 → **$9,000** / mo.
-- Fixture **19** (2024): $88,000 → **$7,333** / mo.
-- Label: **Cover line · Suggested · not underwritten**. Use this.
-- Use this writes **$9,000** on the same Hale Design / SE Income row. Notepad is not type-only.
-- After that write, next is the next empty required line only (notepad-driven).
-- Years in business: ask **once** after Self-employed. No reprint.
-- Do **not** add Sch E or Sch F from the cover.
-- Do **not** invent add-backs from the cover.
-- Do **not** overwrite wages, a real Schedule C, K-1, or an open income card. Thin cover writes only when that is all we have.
+- If cover wages are far above File W-2s → ask once: another job · spouse · Skip. Do not invent a second job. Do not overwrite the stub.
+- Fox may name “this return shows Schedule C / E / a K-1” and ask for that page. No Schedule 1 dump into QI.
+- Thin cover (Sch 1 / C ÷ 12) still confirms only when that is all we have — never over a File W-2 / stub QI.
+
+## Gross receipts
+
+Gross receipts on a page is a File fact on that business row, labeled **not qualifying income**. Never add into QI. Do not offer another product from gross.
 
 ## Schedule C upgrade (1084 method)
 
-Fixtures **11** (2025) and **10** (2024) upgrade the **same Hale Design / SE row** from the cover line to the Schedule C 1084 method (v1: net − nonrecurring + depletion + depreciation + home office / 12). Confirm before write. File stays Cover $9,000 until Use this. Fox names **2025 Schedule C** (Hale Design) — not a generic “2025 return.” After cover is on File, the next doc ask stays that year’s Schedule C — never re-open the all-pages 1040 ask. Still useful still names the matching Schedule C until that C is on File — C is first among cover pages so the visible 1–3 list cannot hide it behind Schedule E / K-1 / Schedule F. Meals / amort stay parked.
-
-## Cover follow-up
-
-- Skip on the listed Schedule C ask is **once**. Do not reprint “Got the cover.”
-- A second cover must **not freeze or steal** (no 2025 Form 1040 all-pages replay after 20 is mapped; next is that year’s C or the open card).
-- Same-value keep: if Structure already has Self-employed · $9,000 (or the matching cover suggest), a second drop of the same thin cover does **not** reprint Use this. Next is that year’s Schedule C. Different amount uses the existing confirm-before-write path only.
+Fixtures **11** (2025) and **10** (2024) upgrade the **same Hale Design / SE row** from a thin cover to the Schedule C 1084 method when cover was the only income. Confirm before write. After a wage QI is on File, Schedule C is its own ledger row.
 
 ## Holds
 
