@@ -1,0 +1,12 @@
+{
+  "name": "spine-walker",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "npx tsx walker.ts"
+  },
+  "devDependencies": {
+    "playwright": "^1.55.1",
+    "tsx": "^4.20.5"
+  }
+}

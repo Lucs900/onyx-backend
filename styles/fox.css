@@ -44,14 +44,28 @@
 
 .fox-bar__desk {
   display: flex;
-  align-items: center;
-  gap: 12px;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
   min-height: 56px;
   padding: 6px 6px 6px 14px;
   background: var(--paper-elevated);
   border: 1px solid var(--fox-hairline);
   border-radius: 999px;
   box-shadow: var(--fox-lift);
+}
+
+.fox-bar__desk-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  min-height: 44px;
+}
+
+.fox-bar__desk:has(.fox-bar__strip) {
+  border-radius: 20px;
+  padding-top: 10px;
 }
 
 .fox-bar__desk:hover {
@@ -88,6 +102,14 @@
   box-shadow: none !important;
 }
 
+.fox-stage--workspace .fox-bar__desk:has(.fox-bar__strip),
+.fox-bar.is-open .fox-stage--workspace .fox-bar__desk:has(.fox-bar__strip),
+.fox-bar__desk--plain:has(.fox-bar__strip) {
+  min-height: 0;
+  border-radius: 20px !important;
+  padding-top: 10px;
+}
+
 .fox-bar__mark {
   position: relative;
   display: grid;
@@ -102,6 +124,21 @@
 
 .fox-bar__mark .advisor-mark__facet {
   fill: var(--sunset);
+}
+
+@keyframes fox-mark-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.42;
+  }
+}
+
+/* Places / Rateflow wait: opacity pulse only. No bounce, spinner, or sunset ring. */
+.fox-bar__mark.is-waiting {
+  animation: fox-mark-pulse 1.15s ease-in-out infinite;
 }
 
 .fox-bar__prompt,
@@ -135,11 +172,143 @@
   color: var(--muted);
 }
 
+.fox-bar__compose {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-width: 0;
+  width: 100%;
+}
+
+.fox-bar__strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+}
+
+.fox-bar__strip .fox-chip:hover,
+.fox-bar__strip .fox-chip:focus-visible,
+.fox-bar__strip .fox-chip:active {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--paper-elevated);
+  box-shadow: none;
+}
+
+.fox-bar__strip .fox-chip.is-quiet:hover,
+.fox-bar__strip .fox-chip.is-quiet:focus-visible,
+.fox-bar__strip .fox-chip.is-quiet:active {
+  background: var(--secondary-hover);
+  border-color: transparent;
+  color: var(--ink-2);
+  box-shadow: none;
+}
+
+/* Places list lives in the composer dock, in flow. Never overlay the thread. */
+.fox-bar__compose.is-suggesting {
+  background: var(--paper-elevated);
+  border: 1px solid var(--fox-hairline);
+  border-radius: 20px;
+}
+
+.fox-bar__suggest {
+  position: static;
+  z-index: auto;
+  margin: 0;
+  padding: 6px 6px 0;
+  list-style: none;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  max-height: min(200px, 28vh);
+  overflow: auto;
+}
+
+.fox-bar__suggest-row {
+  display: block;
+  width: 100%;
+  padding: 8px 12px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--ink);
+  font-family: var(--font-ui);
+  font-size: 14px;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+}
+
+.fox-bar__suggest-row:hover,
+.fox-bar__suggest-row:focus-visible {
+  background: color-mix(in srgb, var(--ink) 8%, var(--paper-elevated));
+}
+
+.fox-stage.fox-stage--workspace .fox-bar__compose.is-suggesting .fox-bar__desk,
+.fox-stage--workspace .fox-bar__compose.is-suggesting .fox-bar__desk,
+.fox-bar__compose.is-suggesting .fox-bar__desk,
+.fox-bar__compose.is-suggesting .fox-bar__desk--plain,
+.fox-bar__compose.is-suggesting .fox-bar__desk--plain:hover,
+.fox-bar__compose.is-suggesting .fox-bar__desk--plain:focus-within {
+  margin-top: 0 !important;
+  border: 0 !important;
+  border-radius: 0 0 999px 999px !important;
+  box-shadow: none !important;
+}
+
+.fox-bar__compose.is-suggesting .fox-bar__desk:has(.fox-bar__strip),
+.fox-bar__compose.is-suggesting .fox-bar__desk--plain:has(.fox-bar__strip) {
+  border-radius: 0 0 20px 20px !important;
+}
+
 .fox-stage--workspace .fox-bar__input:focus,
 .fox-stage--workspace .fox-bar__input:focus-visible,
 .fox-bar__desk--plain .fox-bar__input:focus,
 .fox-bar__desk--plain .fox-bar__input:focus-visible {
   outline: none;
+}
+
+.fox-bar__attach {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  margin: 0;
+  overflow: hidden;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.fox-bar__attach-input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  opacity: 0;
+  cursor: pointer;
+  font-size: 0;
+  border: 0;
+}
+
+.fox-bar__attach:hover,
+.fox-bar__attach:focus-visible {
+  background: color-mix(in srgb, var(--ink) 8%, transparent);
+}
+
+.fox-bar__attach:disabled {
+  opacity: 0.28;
+  cursor: default;
 }
 
 .fox-bar__send {
@@ -361,11 +530,12 @@
   line-height: 16px;
 }
 
-.fox-bubble__actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-top: 6px;
+.fox-bubble__actions,
+.fox-panel__thread .fox-chip,
+.fox-panel__thread .fox-bubble__actions,
+.fox-panel__thread button.fox-chip,
+.fox-panel__thread a.fox-chip {
+  display: none !important;
 }
 
 .fox-chip {
@@ -551,6 +721,14 @@
     border: 1px solid var(--fox-hairline) !important;
     border-radius: 999px !important;
     box-shadow: none !important;
+  }
+
+  .fox-bar__desk:has(.fox-bar__strip),
+  .fox-stage--workspace .fox-bar__desk:has(.fox-bar__strip),
+  .fox-bar__desk--plain:has(.fox-bar__strip) {
+    min-height: 0;
+    border-radius: 20px !important;
+    padding-top: 10px;
   }
 
   .fox-bar__send {

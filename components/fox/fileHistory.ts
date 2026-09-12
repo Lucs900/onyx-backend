@@ -15,6 +15,26 @@ function trimLabel(value?: string | null) {
   return (value ?? "").trim();
 }
 
+function employerTokens(value?: string | null) {
+  return String(value ?? "")
+    .toLowerCase()
+    .replace(/\b(inc|llc|l\.l\.c|corp|corporation|ltd|limited|company|co)\b\.?/g, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function sameEmployer(left?: string | null, right?: string | null) {
+  const a = employerTokens(left);
+  const b = employerTokens(right);
+  if (!a || !b) return false;
+  if (a === b) return true;
+  if (a.includes(b) || b.includes(a)) return true;
+  const leftTokens = a.split(/\s+/).filter((token) => token.length > 2);
+  const rightTokens = b.split(/\s+/).filter((token) => token.length > 2);
+  const shared = leftTokens.filter((token) => rightTokens.includes(token));
+  return shared.length >= 2;
+}
+
 function historyRows(
   draft: FoxIntakeDraft,
   key: "addressHistory" | "employmentHistory",
@@ -121,6 +141,8 @@ function incomeConfirmStillOpen(draft: FoxIntakeDraft) {
 
 export function employmentGapNeeded(draft: FoxIntakeDraft) {
   if (draft.motion === "in_queue" || draft.motion === "escalated") return false;
+  /** Prior-employer remainder is Still useful — not a live ask before Looks right. */
+  if (!draft.sampleAccepted) return false;
   if (incomeConfirmStillOpen(draft)) return false;
   if (!qualifyingIncomeWritten(draft)) return false;
   if (draft.formerEmploymentAsked || draft.formerHistoryAsked) return false;
@@ -132,16 +154,31 @@ export function employmentGapNeeded(draft: FoxIntakeDraft) {
   return true;
 }
 
-export function addressGapNeeded(draft: FoxIntakeDraft) {
+function sessionOneStatementSettled(draft: FoxIntakeDraft) {
+  if ((draft.skippedClasses ?? []).includes("bank_statement")) return true;
+  return (draft.documents ?? []).some((doc) => {
+    if (doc.status !== "extracted") return false;
+    return doc.extractClass === "bank_statement" || doc.slot === "bank";
+  });
+}
+
+/** 2-year housing remainder. Not a live Fox ask before Looks right. */
+export function addressHistoryRemainder(draft: FoxIntakeDraft) {
   if (draft.motion === "in_queue" || draft.motion === "escalated") return false;
   if (incomeConfirmStillOpen(draft)) return false;
   if (!qualifyingIncomeWritten(draft)) return false;
   if (draft.formerAddressAsked || draft.formerHistoryAsked) return false;
-  if (employmentGapNeeded(draft)) return false;
   if (hasFormerAddress(draft)) return false;
   if (addressCoversTwoYears(draft)) return false;
   if (!currentPresentAddress(draft) && !sawResidencePaper(draft)) return false;
   return true;
+}
+
+export function addressGapNeeded(draft: FoxIntakeDraft) {
+  if (draft.sampleAccepted) return false;
+  if (sessionOneStatementSettled(draft)) return false;
+  if (employmentGapNeeded(draft)) return false;
+  return addressHistoryRemainder(draft);
 }
 
 export function historyGapNeeded(draft: FoxIntakeDraft) {
@@ -176,12 +213,11 @@ export function isSkipFormerHistoryText(text: string) {
 }
 
 export function skipFormerHistory(draft: FoxIntakeDraft): FoxIntakeDraft {
-  const kind = historyGapKind(draft);
   return {
     ...draft,
-    formerEmploymentAsked: Boolean(draft.formerEmploymentAsked || kind === "employment" || !kind),
-    formerAddressAsked: Boolean(draft.formerAddressAsked || kind === "address" || !kind),
-    formerHistoryAsked: kind ? draft.formerHistoryAsked : true,
+    formerEmploymentAsked: true,
+    formerAddressAsked: true,
+    formerHistoryAsked: true,
     correcting: null,
     correctingLine: null,
   };
@@ -204,8 +240,19 @@ export function writeCurrentEmploymentHistory(draft: FoxIntakeDraft, employer: s
   const label = employer.trim();
   if (!label) return draft;
   const existing = draft.employmentHistory ?? [];
-  if (existing.some((item) => (item.label ?? "").trim().toLowerCase() === label.toLowerCase())) {
-    return draft;
+  const index = existing.findIndex((item) => {
+    const have = (item.label ?? "").trim();
+    return have.toLowerCase() === label.toLowerCase() || sameEmployer(have, label);
+  });
+  if (index >= 0) {
+    const jobs = [...existing];
+    const have = (jobs[index]?.label ?? "").trim();
+    jobs[index] = {
+      ...jobs[index],
+      label: have.length >= label.length ? have : label,
+      to: jobs[index]?.to || "present",
+    };
+    return { ...draft, employmentHistory: jobs };
   }
   return {
     ...draft,

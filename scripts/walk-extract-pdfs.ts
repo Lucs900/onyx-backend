@@ -5,10 +5,12 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { classifyAndExtract } from "../lib/docs/extract";
 import { pdfTextLayerCharCount, readPdfTextLayer } from "../lib/docs/pdfText";
+import { conventionalFileFromDraft } from "../components/fox/conventionalFile";
 import { applyExtractedFields, stillUsefulSection } from "../components/fox/fileWrite";
 import { resolveProposal } from "../components/fox/completeness";
-import { previewFacts } from "../components/fox/workspace";
+import { nextFoxAsk, previewFacts } from "../components/fox/workspace";
 import { emptyDraft } from "../components/fox/store";
+import { printedSampleFromLines, readPrintedSample } from "../lib/docs/printedSample";
 import type { ExtractClass, FoxIntakeDraft } from "../components/fox/types";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -40,6 +42,32 @@ function structureWrote(draft: FoxIntakeDraft) {
 
 function stillUsefulLabels(draft: FoxIntakeDraft) {
   return stillUsefulSection(draft)?.items.map((item) => item.label) ?? [];
+}
+
+function statementsSketch(): FoxIntakeDraft {
+  return {
+    ...emptyDraft(),
+    path: "acr",
+    productIntent: "buy",
+    occupancyAsked: true,
+    occupancyChoice: { ...emptyDraft().occupancyChoice, value: "primary" },
+    timelineAsked: true,
+    timelineChoice: { ...emptyDraft().timelineChoice, value: "ready-now" },
+    incomeAsked: true,
+    incomeType: { ...emptyDraft().incomeType, value: "w2" },
+    creditAsked: true,
+    creditBand: "760+",
+    propertyValueAmount: 1_200_000,
+    loanAmountValue: 960_000,
+    valueAsked: true,
+    amountAsked: true,
+    otherReoAsked: true,
+    statedOtherReo: "none",
+    subjectAddress: "14 Oak Street",
+    subjectAddressAsked: true,
+    citizenshipAsked: true,
+    agencyDeclarations: { citizenship: "us_citizen" },
+  };
 }
 
 function w2Sketch(): FoxIntakeDraft {
@@ -121,13 +149,10 @@ async function main() {
       assert.equal((draft.addressHistory ?? []).length, 0);
     }
     if (/w2-ot-bonus-2025|w2-bonus-2025|paystub-ot-bonus-2026|paystub-bonus-declining-2026/.test(rel)) {
+      assert.equal(draft.facts?.employer_name, undefined, `${rel} holds employer until Use this`);
       assert.ok(
-        (draft.employmentHistory ?? []).some((item) => /HARBOR STEEL/i.test(item.label ?? "") && !item.from),
-        `${rel} should write Harbor Steel with no invented start date`,
-      );
-      assert.ok(
-        previewFacts(draft).some((fact) => fact.label === "Employment" && /HARBOR STEEL/i.test(fact.value) && !/[–-]/.test(fact.value)),
-        `${rel} History should show employer row without invented dates`,
+        !(draft.employmentHistory ?? []).some((item) => /HARBOR STEEL/i.test(item.label ?? "")),
+        `${rel} must not write Harbor Steel before Use this`,
       );
     }
   }
@@ -165,6 +190,119 @@ async function main() {
   assert.equal(pdfTextLayerCharCount(readFileSync(join(root, "scripts/fixtures/government-id-no-text-layer.pdf"))), 0);
   assert.ok(emptyLayer.warnings.includes("no-text-layer"));
   assert.equal(emptyLayer.extractClass, "government_id");
+
+  const dateLineBank = printedSampleFromLines([
+    "PACIFIC COAST BANK",
+    "BANK STATEMENT",
+    "Ending balance 07/31/2026 → $84,220.15",
+    "RESIDENTIAL ADDRESS: 1847 Filbert St, San Francisco, CA 94123",
+  ]);
+  assert.equal(dateLineBank?.extractClass, "bank_statement");
+  assert.equal(dateLineBank?.fields.institution, "PACIFIC COAST BANK");
+  assert.equal(dateLineBank?.fields.ending_balance, "84220.15");
+  assert.notEqual(dateLineBank?.fields.ending_balance, "7");
+  assert.notEqual(dateLineBank?.fields.ending_balance, "07");
+  const dateOnlyBank = printedSampleFromLines([
+    "PACIFIC COAST BANK",
+    "BANK STATEMENT",
+    "Ending balance 07/31/2026",
+  ]);
+  assert.equal(dateOnlyBank?.fields.ending_balance, undefined);
+
+  const officialBankBytes = readFileSync(join(root, "sample-docs/05-bank-statement-pacific-coast-jul-2026.pdf"));
+  assert.ok(readPdfTextLayer(officialBankBytes)?.length, "sample-docs official bank has no text layer");
+  const officialLines = readPdfTextLayer(officialBankBytes) ?? [];
+  assert.ok(
+    officialLines.some((line) => /07\/31\/2026/.test(line)) &&
+      officialLines.some((line) => /84,220\.15/.test(line)),
+    "official fixture must print Ending balance 07/31/2026 and $84,220.15",
+  );
+  assert.ok(
+    !(readPdfTextLayer(officialBankBytes) ?? []).some((line) => /^ENDING BALANCE:\s*\$84,220\.15$/i.test(line)),
+    "official fixture is not the thin ENDING BALANCE: $84,220.15 stub",
+  );
+  const officialPrinted = readPrintedSample(officialBankBytes);
+  assert.equal(officialPrinted?.extractClass, "bank_statement");
+  assert.match(officialPrinted?.fields.institution ?? "", /Pacific Coast Bank/i);
+  assert.equal(officialPrinted?.fields.ending_balance, "84220.15");
+  assert.notEqual(officialPrinted?.fields.ending_balance, "7");
+  assert.equal(officialPrinted?.fields.account_last4, "4419");
+  assert.equal(officialPrinted?.fields.asset_accounts, undefined);
+  assert.match(officialPrinted?.fields.present_address ?? "", /1847 Filbert/);
+  assert.equal(officialPrinted?.fields.property_address, undefined);
+  const officialBank = await classifyAndExtract(
+    officialBankBytes,
+    "application/pdf",
+    deadVision,
+    "bank_statement",
+    "05-bank-statement-pacific-coast-jul-2026.pdf",
+  );
+  assert.notEqual(officialBank.failed, true, `official bank failed: ${officialBank.warnings.join(" | ")}`);
+  assert.equal(officialBank.extractClass, "bank_statement");
+  assert.match(officialBank.fields.institution ?? "", /Pacific Coast Bank/i);
+  assert.equal(officialBank.fields.ending_balance, "84220.15");
+  assert.notEqual(officialBank.fields.ending_balance, "7");
+  assert.equal(officialBank.fields.account_last4, "4419");
+  assert.doesNotMatch(JSON.stringify(officialBank.fields), /2281/);
+  assert.equal(officialBank.fields.property_address, undefined);
+  const sevenRejected = applyExtractedFields(statementsSketch(), {
+    extractClass: "bank_statement",
+    confidence: 0.94,
+    fields: { institution: "Pacific Coast Bank", ending_balance: "7" },
+  });
+  assert.notEqual(sevenRejected.draft.pendingProposal?.value, "7");
+  assert.notEqual(sevenRejected.draft.statedAvailableAssets, 7);
+  const officialPending = applyExtractedFields(statementsSketch(), officialBank);
+  assert.equal(officialPending.draft.facts?.institution, undefined);
+  assert.equal(officialPending.draft.facts?.ending_balance, undefined);
+  assert.equal(officialPending.draft.statedAvailableAssets, undefined);
+  assert.equal(officialPending.draft.pendingProposal?.field, "statedAvailableAssets");
+  assert.equal(officialPending.draft.pendingProposal?.value, "84220.15");
+  assert.notEqual(officialPending.draft.pendingProposal?.value, "7");
+  assert.ok(
+    (officialPending.draft.pendingProposal?.extras ?? []).some(
+      (item) => item.field === "account_last4" && item.value === "4419",
+    ),
+  );
+  assert.ok(
+    !(officialPending.draft.pendingProposal?.extras ?? []).some(
+      (item) => item.field === "present_address" || item.field === "property_address" || item.field === "asset_accounts",
+    ),
+  );
+  const officialAsk = nextFoxAsk(officialPending.draft);
+  assert.match(officialAsk.text, /Pacific Coast Bank/);
+  assert.match(officialAsk.text, /\$84,220\.15/);
+  assert.match(officialAsk.text, /Use this/);
+  assert.ok((officialAsk.actions ?? []).some((item) => item.label === "Use this"));
+  assert.ok((officialAsk.actions ?? []).some((item) => item.label === "Change"));
+  assert.match(officialAsk.text, /4419/);
+  assert.doesNotMatch(officialAsk.text, /Filbert|2281|4419 · 2281|account number|routing/i);
+  const officialUsed = resolveProposal(officialPending.draft, "accept");
+  assert.equal(officialUsed.facts?.institution?.value, "Pacific Coast Bank");
+  assert.equal(officialUsed.facts?.ending_balance?.value, "84220.15");
+  assert.equal(officialUsed.facts?.account_last4?.value, "4419");
+  assert.equal(officialUsed.assetAccounts?.length ?? 1, 1);
+  assert.equal(officialUsed.statedAvailableAssets, 84220.15);
+  assert.equal(officialUsed.subjectAddress, "14 Oak Street");
+  assert.doesNotMatch(`${officialUsed.subjectAddress} ${officialUsed.facts?.property_address?.value ?? ""}`, /Filbert/i);
+  assert.equal(conventionalFileFromDraft(officialUsed).assets.institution, "Pacific Coast Bank");
+  assert.equal(conventionalFileFromDraft(officialUsed).assets.suggestedBalance, "84220.15");
+  assert.equal(conventionalFileFromDraft(officialUsed).assets.last4, "4419");
+  assert.equal(conventionalFileFromDraft(officialUsed).property.address, "14 Oak Street");
+  assert.ok(
+    previewFacts(officialUsed).every(
+      (fact) =>
+        (fact.id !== "file-assets" || (/4419/.test(fact.value) && !/2281|Filbert/i.test(fact.value))) &&
+        fact.id !== "file-assets-1",
+    ),
+  );
+  const officialSkipped = resolveProposal(officialPending.draft, "decline");
+  assert.equal(officialSkipped.facts?.institution, undefined);
+  assert.equal(officialSkipped.facts?.ending_balance, undefined);
+  assert.equal(officialSkipped.statedAvailableAssets, undefined);
+  assert.equal(conventionalFileFromDraft(officialSkipped).assets.institution, undefined);
+  assert.equal(conventionalFileFromDraft(officialSkipped).assets.suggestedBalance, undefined);
+  assert.equal(officialSkipped.subjectAddress, "14 Oak Street");
 }
 
 main().catch((error) => {

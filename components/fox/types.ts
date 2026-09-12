@@ -1,4 +1,6 @@
 import type { CreditRange, ExplorerScenario } from "@/components/products/scenario";
+import type { SafeCouponRow } from "@/lib/rateflow/quote";
+import type { IncomeLedgerRow } from "@/lib/income/ledger";
 
 export const INTAKE_STORAGE_KEY = "onyx.foxIntake.draft";
 export const INTAKE_DRAFT_VERSION = 2;
@@ -44,6 +46,10 @@ export type DocStatus =
   | "extracted"
   | "needs better copy"
   | "failed";
+
+export type DocSpeakStamp = "received" | "named" | "offered" | "done";
+
+export type DocSpeakRow = Partial<Record<DocSpeakStamp, boolean>>;
 
 export type ReceivedDoc = {
   slot: DocSlot;
@@ -264,6 +270,8 @@ export type FoxIntakeDraft = {
   resumeAfterEdit?: FoxPrompt;
   scenario: ExplorerScenario | null;
   path?: IntakePath;
+  /** Stable browser File identity. Minted once; Start over is the only remint. */
+  fileId?: string;
   productIntent?: ProductIntent;
   jumboPurpose?: JumboPurpose;
   jumboOffered?: boolean;
@@ -285,6 +293,20 @@ export type FoxIntakeDraft = {
   creditBand?: string;
   creditAsked?: boolean;
   incomeAsked?: boolean;
+  /** W-2 thread: drop last year’s W-2 + stub asked or skipped. Typed path only after this. */
+  wageDocsAsked?: boolean;
+  /** W-2 thread: Box 5 asked or skipped. Not a File field. */
+  wageBox5Asked?: boolean;
+  /** W-2 thread: pay frequency asked or skipped. Not extract-time frequency. */
+  wageFrequencyAsked?: boolean;
+  /** W-2 thread: stub amount asked or skipped. Not a File field. */
+  wageStubAsked?: boolean;
+  /** Stub extract Use this wrote pay onto Employment. Not the combined W-2+stub extract. */
+  stubExtractAccepted?: boolean;
+  /** Last two stubs: prior/second stub asked or skipped after the latest stub write. */
+  priorStubAsked?: boolean;
+  /** Failed-read note: next typed line stays on that unread item. */
+  awaitingUnreadNote?: boolean;
   statedMonthlyDebts?: number;
   monthlyDebtsAsked?: boolean;
   estimatedHousing?: number;
@@ -310,10 +332,33 @@ export type FoxIntakeDraft = {
   availableAssetsAsked?: boolean;
   /** Late-walk bank-statement line after citizenship was skipped or written. */
   bankStatementAsked?: boolean;
+  /** One-shot second-statement invite was skipped. Still useful keeps the second statement. */
+  secondBankStatementSkipped?: boolean;
   propertyType?: "sfr" | "condo" | "two_to_four";
   propertyTypeAsked?: boolean;
+  /** Five-digit ZIP for Rateflow. Never invent 94115. */
+  propertyZip?: string;
+  propertyZipAsked?: boolean;
+  /** Address ZIP we already offered in “Use this?”. Ask that later ZIP once. */
+  addressZipOffered?: string;
   subjectAddress?: string;
   subjectAddressAsked?: boolean;
+  /** Last purchase-contract extract. Use this / Use document write from this, not a leftover ZIP place. */
+  lastPurchaseContractFields?: Record<string, string>;
+  /** Places / typed street waiting for Use this. Not File. Not Rateflow. */
+  pendingAddress?: {
+    line: string;
+    street: string;
+    city: string;
+    state: "CA";
+    zip: string;
+    county?: string;
+  };
+  /** Places street only. Never invent. */
+  subjectStreet?: string;
+  subjectCity?: string;
+  subjectState?: "CA";
+  subjectCounty?: string;
   statedTimeOnJob?: number;
   /** Exact borrower-typed label. Do not invent "years" until guidelines own that. */
   statedTimeOnJobLabel?: string;
@@ -377,6 +422,7 @@ export type FoxIntakeDraft = {
   };
   addressHistory?: { label?: string; from?: string; to?: string }[];
   employmentHistory?: { label?: string; from?: string; to?: string }[];
+  assetAccounts?: { institution?: string; last4?: string; balance?: string; type?: string }[];
   pendingOtherReo?: boolean | null;
   fileExport?: FileExportMark | null;
   docsOpen?: boolean;
@@ -400,19 +446,54 @@ export type FoxIntakeDraft = {
   notes: string[];
   documents: ReceivedDoc[];
   documentsSkipped: boolean;
+  /** Ten-file cap spoken once. Leftover attaches stay silent. */
+  docCapSpoken?: boolean;
   docsStarted?: boolean;
   docsHeld?: boolean;
   priorYearSkipped?: boolean;
+  transcriptFollowUpSkipped?: boolean;
+  /** received → named → offered → done. Same stamp on File = do not print that line again. */
+  docSpeak?: Record<string, DocSpeakRow>;
+  lastDocSpeakKey?: string;
   yearsInBusinessAsked?: boolean;
   awaitingYearsInBusiness?: boolean;
+  awaitingMonthlyDebts?: boolean;
   awaitingPayFrequency?: boolean;
   awaitingBothMonthlyReason?: boolean;
   bothMonthlyReason?: "raise" | "overtime-bonus" | "second-job" | "skip";
+  /** Cover Line 1 wages far above File W-2s. Ask once: another job · spouse · Skip. */
+  awaitingCoverWageGap?: boolean;
+  coverWageGapAsked?: boolean;
+  coverWageAnotherJob?: boolean;
+  coverWageGap?: { coverAnnual: number; fileW2Annual: number } | null;
+  /** 1040 line 1z / 1a household-total wages. CFBW. Never QI. */
+  pendingCoverWages?: string;
+  householdWagesAsked?: boolean;
+  /** Income ledger. Each source is its own row. File empty until Use this. */
+  incomeLedger?: IncomeLedgerRow[];
+  /** After cover Use this, keep reading the same 1040 pages for Sch E / K-1 / wages. */
+  taxReturnPacketRead?: "pending" | "reading" | "done";
+  taxReturnPacketSpoken?: boolean;
   awaitingRaiseWhen?: boolean;
   awaitingRaiseYtdFar?: boolean;
   raiseWhenRaw?: string;
   facts?: Record<string, DraftField>;
+  /** W-2 extract hold. Not File. Confirm speaks this; Use this writes File. */
+  pendingWageExtract?: {
+    box5?: number;
+    stub?: number;
+    frequency?: string;
+    employer?: string;
+    employee?: string;
+    monthly?: number;
+    w2In?: boolean;
+    stubIn?: boolean;
+    /** OT / bonus / commission printed on the stub. Not a File field. */
+    variablePay?: boolean;
+  } | null;
   pendingConflict?: FactConflict | null;
+  /** Same field + file + document values already asked once. Leftover attach stays silent. */
+  lastSpokenConflictKey?: string;
   unresolvedConflict?: boolean;
   pendingProposal?: FactProposal | null;
   skippedClasses?: ExtractClass[];
@@ -423,6 +504,29 @@ export type FoxIntakeDraft = {
   status?: typeof CONFIRMED_STATUS;
   loStatus?: LoMark;
   previewSample?: boolean;
+  /** Last Rateflow search key. Reuse unless amounts, type, occupancy, or FICO change. */
+  liveQuoteKey?: string;
+  liveQuoteStatus?: "ready" | "unavailable";
+  /** Bumps the live-line effect after Try again. */
+  liveQuoteRetryAt?: number;
+  liveQuote?: {
+    key: string;
+    rate: number;
+    asOf: string;
+    principalAndInterest?: number;
+    pts?: number;
+    term?: number;
+  };
+  /** Same-search conventional 30 rows. Never shown as a rate table. */
+  liveQuoteRows?: SafeCouponRow[];
+  liveCouponSettled?: boolean;
+  pendingLiveCoupon?: {
+    choice: "lower" | "nocost";
+    rate: number;
+    asOf: string;
+    principalAndInterest?: number;
+    pts?: number;
+  };
   updatedAt: string;
 };
 
@@ -452,6 +556,7 @@ export type FoxPrompt =
   | "debts"
   | "assets"
   | "property-type"
+  | "property-zip"
   | "property-address"
   | "time-on-job"
   | "current-housing"
@@ -473,7 +578,15 @@ export type FoxPrompt =
   | "geo-stop"
   | "confirm-proposal"
   | "pay-frequency"
+  | "prior-stub"
+  | "wage-docs"
+  | "w2-box5"
+  | "w2-pay-frequency"
+  | "paystub-monthly"
   | "both-monthly-reason"
+  | "cover-wage-gap"
+  | "household-wages"
+  | "packet-read"
   | "raise-when"
   | "raise-ytd-far"
   | "qualifying"
@@ -489,6 +602,7 @@ export type Capture =
   | { field: "fullName" | "email" | "phone" | "preferredContact"; value: string }
   | { field: "preferred-asked"; value: string }
   | { field: "incomeType"; value: string }
+  | { field: "skip-income" }
   | { field: "skip-monthly-debts" }
   | { field: "propose-monthly-debts"; value: string }
   | { field: "include-mortgage-debts"; value: string }
@@ -502,8 +616,12 @@ export type Capture =
   | { field: "skip-property-type" }
   | { field: "propose-property-type"; value: string }
   | { field: "propertyType"; value: string }
+  | { field: "skip-property-zip" }
+  | { field: "keep-property-zip" }
+  | { field: "propertyZip"; value: string }
   | { field: "propose-rental-lease"; value: string }
   | { field: "propose-subject-address"; value: string }
+  | { field: "propose-place-address"; value: string }
   | { field: "subjectAddress"; value: string }
   | { field: "skip-property-address" }
   | { field: "change-property-address" }
@@ -569,8 +687,25 @@ export type Capture =
   | { field: "accept-proposal" }
   | { field: "change-proposal" }
   | { field: "decline-proposal" }
+  | { field: "couponChoice"; value: "this" | "lower" | "nocost" | "skip" }
+  | { field: "retry-rateflow" }
+  | { field: "accept-live-coupon" }
+  | { field: "keep-live-coupon" }
   | { field: "payFrequency"; value: string }
+  | { field: "skip-wage-docs" }
+  | { field: "skip-prior-stub" }
+  | { field: "retry-unread-doc" }
+  | { field: "note-unread-doc" }
+  | { field: "skip-unread-doc" }
+  | { field: "w2Box5"; value: string }
+  | { field: "skip-w2-box5" }
+  | { field: "wagePayFrequency"; value: string }
+  | { field: "skip-w2-pay-frequency" }
+  | { field: "paystubMonthly"; value: string }
+  | { field: "skip-paystub-monthly" }
+  | { field: "stubJob"; value: "same" | "two" }
   | { field: "bothMonthlyReason"; value: string }
+  | { field: "coverWageGap"; value: string }
   | { field: "raiseWhen"; value: string }
   | { field: "yearsInBusiness"; value: string }
   | { field: "skip-years-in-business" }
@@ -727,7 +862,6 @@ export const TERM_BUBBLES = [
 ] as const;
 
 export const AMOUNT_HELPER_BUBBLES = [
-  { id: "not-sure", label: "Not sure" },
   { id: "skip", label: "Skip for now" },
 ] as const;
 

@@ -35,7 +35,7 @@
   min-height: 0;
   max-height: none !important;
   overflow: visible;
-  padding-bottom: 12px;
+  padding-bottom: 20px;
   scroll-padding-bottom: 16px;
 }
 
@@ -58,13 +58,29 @@
   box-shadow: none !important;
 }
 
+.fox-stage--workspace .fox-bar__desk:has(.fox-bar__strip),
+.fox-bar__desk--plain:has(.fox-bar__strip),
+.fox-stage.fox-stage--workspace .fox-bar__desk:has(.fox-bar__strip),
+.fox-bar.is-open .fox-stage--workspace .fox-bar__desk:has(.fox-bar__strip) {
+  min-height: 0;
+  border-radius: 20px !important;
+  padding-top: 10px;
+}
+
+.fox-stage--workspace .fox-bar__desk-row,
+.fox-bar__desk--plain .fox-bar__desk-row {
+  min-height: 36px;
+}
+
 .fox-stage--workspace .fox-bar__input,
 .fox-bar__desk--plain .fox-bar__input {
   height: 36px;
 }
 
 .fox-stage--workspace .fox-bar__send,
-.fox-bar__desk--plain .fox-bar__send {
+.fox-bar__desk--plain .fox-bar__send,
+.fox-stage--workspace .fox-bar__attach,
+.fox-bar__desk--plain .fox-bar__attach {
   width: 36px;
   height: 36px;
 }
@@ -113,21 +129,32 @@
   font-weight: 500;
 }
 
-.fox-stage--workspace .fox-bubble--client {
+.fox-stage--workspace .fox-bubble--client,
+.fox-stage--workspace .fox-bubble--client.is-used {
   align-self: flex-end;
   max-width: 80%;
-  background: color-mix(in srgb, var(--ink) 7%, var(--paper-elevated));
-  border-color: color-mix(in srgb, var(--ink) 14%, var(--line));
+  padding: 0;
+  background: transparent;
+  border: 0;
+  border-color: transparent;
   box-shadow: none;
   opacity: 1;
 }
 
-.fox-stage--workspace .fox-bubble--client p {
-  color: var(--ink);
-  font-weight: 500;
+.fox-stage--workspace .fox-bubble--client p,
+.fox-stage--workspace .fox-bubble--client.is-used p {
+  color: color-mix(in srgb, var(--muted) 72%, var(--paper));
+  font-size: 13px;
+  line-height: 18px;
+  font-weight: 400;
 }
 
-.fox-stage--workspace .fox-bubble__edit {
+.fox-stage--workspace .fox-bubble--fox .fox-bubble__edit {
+  display: none;
+}
+
+.fox-stage--workspace .fox-bubble--client .fox-bubble__edit {
+  display: none;
   margin-top: 6px;
   padding: 0;
   border: 0;
@@ -140,8 +167,18 @@
   cursor: pointer;
 }
 
-.fox-stage--workspace .fox-bubble__edit:hover,
-.fox-stage--workspace .fox-bubble__edit:focus-visible {
+@media (hover: hover) and (pointer: fine) {
+  .fox-stage--workspace .fox-bubble--client:hover .fox-bubble__edit {
+    display: inline-flex;
+  }
+}
+
+.fox-stage--workspace .fox-bubble--client.is-edit-open .fox-bubble__edit {
+  display: inline-flex;
+}
+
+.fox-stage--workspace .fox-bubble--client .fox-bubble__edit:hover,
+.fox-stage--workspace .fox-bubble--client .fox-bubble__edit:focus-visible {
   color: var(--ink);
 }
 
@@ -217,10 +254,16 @@
   cursor: pointer;
 }
 
+.fox-workspace-dock__row .fox-bar__compose,
 .fox-workspace-dock__row .fox-bar__desk {
   flex: 1 1 auto;
   min-width: 0;
   width: 100%;
+}
+
+.fox-workspace-dock,
+.fox-workspace-dock__row {
+  overflow: visible;
 }
 
 .fox-structure-peek,

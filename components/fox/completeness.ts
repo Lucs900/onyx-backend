@@ -17,49 +17,111 @@ import {
   displayFactValue,
   factLabel,
   factValue,
+  applyPurchaseContractAccept,
+  hasPurchaseContractDoc,
+  isPurchaseContractConfirmPending,
+  isPurchaseSplitReconcileProposal,
   isRemainderConfirmField,
+  proposalFromLastPurchaseContract,
+  purchaseContractStreetFromDraft,
+  queuePurchaseContractRemainder,
+  queuePurchaseSketchReconcile,
   nextDocInvite,
+  docInviteBlocksLooksRight,
+  employmentOnFile,
+  returnOnFile,
+  incomeEvidenceOnFile,
+  matchingCoverLineOnFile,
   remainderProposalWrites,
+  federalReturnConfirmCopy,
+  sameThinCoverRepeat,
   valuesMatch,
+  wageNumberPathSettled,
+  TAX_RETURN_NAME_FIELD,
 } from "./fileWrite";
 import {
   QUALIFYING_INCOME_FIELD,
+  QUALIFYING_METHOD_FIELD,
   SUGGESTED_INCOME_NOTE,
+  COVER_LINE_METHOD,
+  COVER_LINE_NOTE,
+  STUB_MONTHLY_NOTE,
+  W2_BOX5_MONTHLY_NOTE,
   WAGE_MONTHLY_FIELD,
   SE_MONTHLY_FIELD,
   K1_MONTHLY_FIELD,
   decliningIncomeCaution,
-  hasScheduleCCashflow,
   wageIncomeCaution,
+  wageThreadOpen,
+  acceptWageExtract,
+  acceptStubExtract,
+  changeWageExtract,
+  changeStubExtract,
+  isCoverLineProposal,
+  isWageExtractProposal,
+  isStubExtractProposal,
+  isStubJobProposal,
+  isScheduleECashFlowProposal,
+  isEntityCashFlowProposal,
+  isSameBusinessWageEntityProposal,
+  parseExtractMoney,
+  stubExtractAskOpen,
+  stubPeriodConfirmOpen,
+  priorStubAskNeeded,
+  isWageW2OnlyProposal,
+  stubExtractConfirmCopy,
+  wageExtractConfirmCopy,
+  wageW2ConfirmCopy,
+  isIncomeLedgerProposal,
+  isHouseholdWagesProposal,
+  promoteIncomeLedger,
+  settleHouseholdWagesProposal,
+  settleIncomeLedgerProposal,
+  incomeLedgerAskCopy,
+  householdWagesAskCopy,
 } from "./qualifyingIncome";
+import { HOUSEHOLD_WAGES_FIELD, INCOME_LEDGER_FIELD } from "@/lib/income/ledger";
+import { acceptHuntRentals } from "./hunt";
 import {
   STATED_MONTHLY_DEBTS_FIELD,
   SUGGESTED_DEBTS_NOTE,
   monthlyDebtsConfirmCopy,
+  shouldAskMonthlyDebts,
   skipMonthlyDebts,
 } from "./monthlyDebts";
 import {
   STATED_AVAILABLE_ASSETS_FIELD,
   SUGGESTED_ASSETS_NOTE,
-  assetsSettled,
   availableAssetsConfirmCopy,
   availableAssetsExtractCopy,
   isLateWalkBankStatementAsk,
+  proposalBankLast4,
   skipAvailableAssets,
+  writeAssetAccount,
 } from "./availableAssets";
+import { parseAssetAccounts, safeAccountLast4 } from "@/lib/docs/bankLast4";
 import {
   PROPERTY_ADDRESS_FACT,
   PROPERTY_TYPE_FIELD,
   SUGGESTED_PROPERTY_NOTE,
   contractAddressConfirmCopy,
+  isPlaceAddressProposal,
+  isPropertyAddressField,
   isPropertyTypeValue,
   parsePropertyType,
   propertyAddressSettled,
+  propertyTypeSettled,
   propertyTypeConfirmCopy,
+  adoptReuseZip,
+  adoptStreetOverZipOnly,
+  isZipOnlyFileAddress,
   skipPropertyType,
+  skipQuoteAddress,
   typedAddressConfirmCopy,
+  writePlaceAddress,
+  writePropertyZip,
 } from "./propertyType";
-import { citizenshipSettled } from "./citizenship";
+import { parsePlaceAddress } from "@/lib/places/address";
 import {
   STATED_TIME_ON_JOB_FIELD,
   SUGGESTED_TIME_ON_JOB_NOTE,
@@ -109,7 +171,7 @@ import {
   writeBorrowerName,
 } from "./borrowerName";
 import {
-  historyGapNeeded,
+  employmentGapNeeded,
   writeCurrentEmploymentHistory,
   writeCurrentEmploymentStart,
   writePresentAddressHistory,
@@ -191,7 +253,12 @@ export const MISSING_LINE = "—";
 
 export function businessNameOnFile(draft?: FoxIntakeDraft | null) {
   if (!draft) return "";
-  return factValue(draft, "employer_name").trim();
+  const employer = factValue(draft, "employer_name").trim();
+  if (employer) return employer;
+  const business = factValue(draft, "business_name").trim();
+  if (/hale design/i.test(business)) return "Hale Design";
+  if (business) return business.replace(/\s+Studio$/i, "").trim();
+  return "";
 }
 
 /** Self-employed tenure after a skipped or missing return. Purchase timeline stays “What’s the timeline?” */
@@ -275,14 +342,36 @@ export function hasHelocLine(draft?: FoxIntakeDraft | null) {
   return isHelocFile(draft) && hasLoanAmount(draft);
 }
 
-/** Confirmed down ÷ price. Used to re-propose the pair when price changes. */
+/** Confirmed down ÷ price. Not the price Edit door. */
 export function lockedDownShare(draft?: FoxIntakeDraft | null): number | null {
-  if (!draft || !isPurchaseLike(draft) || !hasPropertyValue(draft) || !hasDownPayment(draft)) {
-    return null;
+  if (!draft || !isPurchaseLike(draft) || !hasPropertyValue(draft)) return null;
+  const price = draft.propertyValueAmount!;
+  if (hasDownPayment(draft)) {
+    const share = draft.downPaymentAmount! / price;
+    if (Number.isFinite(share) && share > 0 && share < 1) return share;
   }
-  const share = draft.downPaymentAmount! / draft.propertyValueAmount!;
-  if (!Number.isFinite(share) || share <= 0 || share >= 1) return null;
-  return share;
+  if (hasLoanAmount(draft) && draft.loanAmountValue! < price) {
+    const share = (price - draft.loanAmountValue!) / price;
+    if (Number.isFinite(share) && share > 0 && share < 1) return share;
+  }
+  return null;
+}
+
+/** Price, down, and loan already close the triangle. */
+export function purchaseFileAddsUp(draft?: FoxIntakeDraft | null) {
+  if (!draft || !isPurchaseLike(draft)) return false;
+  const price = draft.propertyValueAmount;
+  const down = draft.downPaymentAmount;
+  const loan = draft.loanAmountValue;
+  if (price == null || down == null || loan == null) return false;
+  if (price <= 0 || down <= 0 || loan <= 0) return false;
+  return Math.abs(down + loan - price) <= 1;
+}
+
+export function isFundsPairProposal(proposal?: { field?: string; companion?: { field?: string } } | null) {
+  if (!proposal?.companion) return false;
+  const fields = [proposal.field, proposal.companion.field];
+  return fields.includes("downPayment") && fields.includes("loanAmount");
 }
 
 export function impliedLoanAmount(price?: number | null, down?: number | null) {
@@ -317,6 +406,83 @@ export function sketchAmountsReady(draft: FoxIntakeDraft) {
     return hasLoanAmount(draft) || hasPropertyValue(draft);
   }
   return false;
+}
+
+export function qualifyingIncomeOnFile(draft?: FoxIntakeDraft | null) {
+  if (!draft) return false;
+  return parseExtractMoney(factValue(draft, QUALIFYING_INCOME_FIELD)) != null;
+}
+
+/** Required notepad line whose File value is empty. Pending chips do not count as filled. */
+export function firstEmptyRequiredLine(draft?: FoxIntakeDraft | null): RequiredLine | null {
+  if (!draft) return null;
+  const onFile = { ...draft, pendingProposal: null, pendingConflict: null };
+  for (const line of requiredStructureLines(onFile)) {
+    if (!requiredLineValue(onFile, line).filled) return line;
+  }
+  return null;
+}
+
+function incomeProposalUpgrades(
+  draft: FoxIntakeDraft,
+  proposal: NonNullable<FoxIntakeDraft["pendingProposal"]>,
+) {
+  const existing = factValue(draft, QUALIFYING_INCOME_FIELD);
+  if (isCoverLineProposal(proposal) && existing && valuesMatch(existing, proposal.value)) {
+    return false;
+  }
+  if (existing && proposal.value && !valuesMatch(existing, proposal.value)) return true;
+  if (
+    isScheduleECashFlowProposal(proposal) ||
+    isEntityCashFlowProposal(proposal) ||
+    isSameBusinessWageEntityProposal(proposal)
+  ) {
+    return true;
+  }
+  const method = proposal.methodNote ?? "";
+  if (/combined |later year|Schedule C|K-1|1065|1120|Schedule E/i.test(method)) return true;
+  const extraEmployer = (proposal.extras ?? []).find((item) => item.field === "employer_name")?.value ?? "";
+  const fileEmployer = factValue(draft, "employer_name");
+  if (extraEmployer && fileEmployer && !valuesMatch(extraEmployer, fileEmployer)) return true;
+  return false;
+}
+
+/** Speak a pending chip only when this turn upgrades, conflicts, or fills an empty File line. */
+export function shouldSpeakPendingConfirm(draft: FoxIntakeDraft) {
+  const proposal = draft.pendingProposal;
+  if (!proposal) return false;
+  if (isFundsPairProposal(proposal) || isPurchaseSplitReconcileProposal(proposal)) return true;
+  if (isWageExtractProposal(proposal)) return !qualifyingIncomeOnFile(draft);
+  if (isStubExtractProposal(proposal) || isStubJobProposal(proposal)) {
+    // Stub confirm stays spoken until Use this or Skip. Do not jump to ID.
+    return true;
+  }
+  if (proposal.field === QUALIFYING_INCOME_FIELD) {
+    if (isCoverLineProposal(proposal)) {
+      const fileValue = factValue(draft, QUALIFYING_INCOME_FIELD) || factValue(draft, SE_MONTHLY_FIELD);
+      if (fileValue && valuesMatch(fileValue, proposal.value)) return false;
+      if (matchingCoverLineOnFile(draft) && valuesMatch(fileValue || proposal.value, proposal.value)) {
+        return false;
+      }
+      if (sameThinCoverRepeat(draft)) return false;
+    }
+    return !qualifyingIncomeOnFile(draft) || incomeProposalUpgrades(draft, proposal);
+  }
+  if (proposal.field === "purchase_price" || proposal.field === "propertyValue") {
+    if ((draft.propertyValueAmount ?? 0) > 0) {
+      const writes = remainderProposalWrites(proposal);
+      return writes.some((item) => item.field !== "purchase_price" && item.field !== "propertyValue");
+    }
+    return true;
+  }
+  if (
+    proposal.field === STATED_TIME_ON_JOB_FIELD ||
+    proposal.field === STATED_CURRENT_HOUSING_FIELD ||
+    proposal.field === STATED_OTHER_REO_FIELD
+  ) {
+    return !firstEmptyRequiredLine(draft) && !nextDocInvite(draft);
+  }
+  return true;
 }
 
 export function requiredStructureLines(draft?: FoxIntakeDraft | null): RequiredLine[] {
@@ -510,6 +676,8 @@ export function sketchedPurchaseLtv(draft?: FoxIntakeDraft | null): number | nul
 }
 
 export function loanExceedsPurchasePrice(draft?: FoxIntakeDraft | null) {
+  if (purchaseFileAddsUp(draft)) return false;
+  if (isFundsPairProposal(draft?.pendingProposal)) return false;
   const ltv = sketchedPurchaseLtv(draft);
   return ltv != null && ltv > 1;
 }
@@ -766,14 +934,21 @@ function fundsMoneyShown(field: string, value: string) {
 }
 
 export function remainderAskCopy(proposal: FactProposal) {
-  const writes = remainderProposalWrites(proposal);
+  const writes = remainderProposalWrites(proposal).filter((item) => item.field !== "asset_accounts");
   const named = writes
     .map((item) => `${item.label} ${displayFactValue(item.field, item.value)}`)
     .join(", ");
   if (writes.some((item) => item.field === "ending_balance" || item.field === "institution")) {
     return `The bank statement has ${named}. Use this?`;
   }
-  if (writes.some((item) => item.field === "purchase_price" || item.field === "close_date")) {
+  if (
+    writes.some(
+      (item) =>
+        item.field === "purchase_price" ||
+        item.field === "close_date" ||
+        item.field === "seller_credit",
+    )
+  ) {
     return `The purchase contract has ${named}. Use this?`;
   }
   if (writes.some((item) => item.field === "servicer" || item.field === "unpaid_principal")) {
@@ -797,7 +972,68 @@ export function remainderAskCopy(proposal: FactProposal) {
   return `The document has ${named}. Use this?`;
 }
 
+export function purchaseSplitAskCopy(proposal: FactProposal) {
+  const extra = (field: string) => proposal.extras?.find((item) => item.field === field)?.value ?? "";
+  const price = extra("purchase_price") || proposal.value;
+  const oldLoan = extra("oldLoan") || proposal.companion?.value || "";
+  const sketch = extra("sketch");
+  const close = extra("close_date");
+  const credit = extra("seller_credit");
+  const nextDown = proposal.field === "downPayment" ? proposal.value : extra("nextDown");
+  const loanShown = fundsMoneyShown("loanAmount", oldLoan);
+  const bits = [`Purchase is ${fundsMoneyShown("purchase_price", price)}.`];
+  if (close) bits.push(`Close ${displayFactValue("close_date", close)}.`);
+  if (credit) bits.push(`Seller credit ${fundsMoneyShown("seller_credit", credit)}.`);
+  bits.push(`The loan is still ${loanShown} from the old ${fundsMoneyShown("purchase_price", sketch)} sketch.`);
+  bits.push(`Keep the ${loanShown} loan? Down becomes ${fundsMoneyShown("downPayment", nextDown)}.`);
+  bits.push("Or type a new down or loan.");
+  return bits.join(" ");
+}
+
+export function purchaseSplitActions(proposal?: FactProposal | null): FoxAction[] {
+  const loan =
+    proposal?.companion?.value ||
+    proposal?.extras?.find((item) => item.field === "oldLoan")?.value ||
+    "";
+  return [
+    {
+      id: "accept-proposal",
+      label: `Keep ${fundsMoneyShown("loanAmount", loan)} loan`,
+      event: "bubble",
+      capture: { field: "accept-proposal" },
+    },
+    {
+      id: "change-split",
+      label: "Change down or loan",
+      event: "bubble",
+      capture: { field: "correct", value: "amount", line: "down-or-loan" },
+    },
+  ];
+}
+
 export function proposalAskCopy(proposal: FactProposal) {
+  if (isPurchaseSplitReconcileProposal(proposal)) {
+    return purchaseSplitAskCopy(proposal);
+  }
+  if (isWageExtractProposal(proposal)) {
+    const box5 = Number(proposal.extras?.find((item) => item.field === "w2_box5")?.value ?? 0);
+    const stub = Number(
+      proposal.extras?.find((item) => item.field === "paystub_amount")?.value ?? 0,
+    );
+    const frequency = proposal.extras?.find((item) => item.field === "pay_frequency")?.value ?? "";
+    const employer = proposal.extras?.find((item) => item.field === "employer_name")?.value ?? "";
+    if (isWageW2OnlyProposal(proposal)) return wageW2ConfirmCopy(box5, employer);
+    return wageExtractConfirmCopy(box5, stub, frequency);
+  }
+  if (isStubExtractProposal(proposal)) {
+    const stub = Number(proposal.extras?.find((item) => item.field === "paystub_amount")?.value ?? 0);
+    const frequency = proposal.extras?.find((item) => item.field === "pay_frequency")?.value ?? "";
+    const employer = proposal.extras?.find((item) => item.field === "employer_name")?.value ?? "";
+    const employee = proposal.extras?.find((item) => item.field === "full_name")?.value ?? "";
+    const monthly = Number(proposal.extras?.find((item) => item.field === "paystub_monthly")?.value ?? 0);
+    return stubExtractConfirmCopy(employer, stub, frequency, monthly, employee);
+  }
+  if (isStubJobProposal(proposal)) return "Same job or two jobs?";
   if (proposal.field === PROPERTY_TYPE_FIELD && isPropertyTypeValue(proposal.value)) {
     return propertyTypeConfirmCopy(proposal.value);
   }
@@ -820,9 +1056,8 @@ export function proposalAskCopy(proposal: FactProposal) {
     return householdConfirmCopy(proposal.value);
   }
   if (isBorrowerNameField(proposal.field)) {
-    const address = proposal.extras?.find((item) => item.field === "present_address")?.value;
     return proposal.extras
-      ? borrowerNameExtractCopy(proposal.value, address)
+      ? borrowerNameExtractCopy(proposal.value)
       : borrowerNameConfirmCopy(proposal.value);
   }
   if (isCoborrowerNameField(proposal.field)) {
@@ -841,7 +1076,8 @@ export function proposalAskCopy(proposal: FactProposal) {
     return otherReoConfirmCopy(proposal.value);
   }
   if (proposal.field === PROPERTY_ADDRESS_FACT || proposal.field === "subjectAddress") {
-    return proposal.note === SUGGESTED_PROPERTY_NOTE && !proposal.extras?.length
+    return proposal.note === SUGGESTED_PROPERTY_NOTE &&
+      (!proposal.extras?.length || isPlaceAddressProposal(proposal))
       ? typedAddressConfirmCopy(proposal.value)
       : contractAddressConfirmCopy(proposal.value);
   }
@@ -849,12 +1085,34 @@ export function proposalAskCopy(proposal: FactProposal) {
     const amount = Number(proposal.value) || 0;
     const institution = proposal.extras?.find((item) => item.field === "institution")?.value;
     return proposal.extras?.length
-      ? availableAssetsExtractCopy(amount, institution)
+      ? availableAssetsExtractCopy(amount, institution, proposalBankLast4(proposal))
       : availableAssetsConfirmCopy(amount);
   }
   const shown = displayFactValue(proposal.field, proposal.value);
   if (proposal.field === QUALIFYING_INCOME_FIELD) {
     return qualifyingIncomeConfirmCopy(Number(proposal.value) || 0);
+  }
+  if (proposal.field === HOUSEHOLD_WAGES_FIELD) {
+    return householdWagesAskCopy(Number(proposal.value) || 0);
+  }
+  if (proposal.field === INCOME_LEDGER_FIELD) {
+    const kind = proposal.extras?.find((item) => item.field === "ledger_kind")?.value ?? "";
+    return incomeLedgerAskCopy({
+      id: proposal.extras?.find((item) => item.field === "ledger_id")?.value ?? "",
+      kind: (kind || "schedule_e") as import("@/lib/income/ledger").IncomeLedgerKind,
+      label: proposal.label,
+      monthly: proposal.value,
+      method: proposal.methodNote ?? "",
+      status: "suggested",
+    });
+  }
+  if (proposal.field === "tax_year") {
+    const fields = Object.fromEntries([
+      [proposal.field, proposal.value],
+      ...(proposal.extras ?? []).map((item) => [item.field, item.value]),
+    ]);
+    const copy = federalReturnConfirmCopy(fields);
+    if (copy) return `${copy} Use this?`;
   }
   if (isRemainderConfirmField(proposal.field) || proposal.extras?.length) {
     return remainderAskCopy(proposal);
@@ -945,10 +1203,50 @@ export function makeFundsPairProposal(down: number, loan: number): FactProposal 
 }
 
 export function proposeFundsPair(draft: FoxIntakeDraft, down: number, loan: number): FoxIntakeDraft {
+  const price = draft.propertyValueAmount ?? 0;
+  const staleLoan = price > 0 && (draft.loanAmountValue ?? 0) > price;
   return {
     ...draft,
+    ...(staleLoan
+      ? {
+          loanAmountValue: undefined,
+          amountAsked: false,
+          overPriceConfirmed: false,
+        }
+      : {}),
     pendingProposal: makeFundsPairProposal(down, loan),
   };
+}
+
+/** Locked-percent pair. Price Edit does not use this — it clears down/loan and re-asks. */
+export function applyPriceKeepDownShare(draft: FoxIntakeDraft, price: number): FoxIntakeDraft | null {
+  const share = lockedDownShare(draft);
+  if (share == null || price <= 0) return null;
+  const down = Math.round(price * share);
+  const loan = impliedLoanAmount(price, down);
+  if (loan == null) return null;
+  return proposeFundsPair(
+    {
+      ...draft,
+      propertyValueAmount: price,
+      valueAsked: true,
+      correcting: null,
+      correctingLine: null,
+      loanAmountValue: undefined,
+      downPaymentAmount: undefined,
+      overPriceConfirmed: false,
+      scenario: draft.scenario
+        ? {
+            ...draft.scenario,
+            propertyValue: price,
+            loanAmount: undefined,
+            downPayment: undefined,
+          }
+        : draft.scenario,
+    },
+    down,
+    loan,
+  );
 }
 
 function writeConfirmedFact(
@@ -965,6 +1263,20 @@ function writeConfirmedFact(
     field === "social" ||
     field === "social_security"
   ) {
+    return draft;
+  }
+  if (field === "asset_accounts") {
+    const facts = { ...(draft.facts ?? {}) };
+    delete facts.asset_accounts;
+    const first = parseAssetAccounts(value)[0];
+    return first ? writeAssetAccount({ ...draft, facts }, first) : { ...draft, facts };
+  }
+  if (field === "account_last4") {
+    const last4 = safeAccountLast4(value);
+    if (!last4) return draft;
+    value = last4;
+  }
+  if (field === "account_number") {
     return draft;
   }
   const now = new Date().toISOString();
@@ -1042,6 +1354,7 @@ function writeConfirmedFact(
       ...next,
       statedMonthlyDebts: amount,
       monthlyDebtsAsked: true,
+      awaitingMonthlyDebts: false,
       pendingDebtMortgage: null,
       facts,
     };
@@ -1055,6 +1368,18 @@ function writeConfirmedFact(
       looksRightHold: isLateWalkBankStatementAsk(draft) ? false : draft.looksRightHold,
       facts,
     };
+  }
+  if (field === "institution" && value.trim()) {
+    next = writeAssetAccount(next, { institution: value });
+  }
+  if (field === "account_last4" && value.trim()) {
+    next = writeAssetAccount(next, { last4: value });
+  }
+  if (field === "ending_balance" && value.trim()) {
+    next = writeAssetAccount(next, { balance: value });
+  }
+  if (field === "account_type" && value.trim()) {
+    next = writeAssetAccount(next, { type: value });
   }
   if (field === PROPERTY_TYPE_FIELD && isPropertyTypeValue(value)) {
     next = {
@@ -1098,7 +1423,30 @@ function writeConfirmedFact(
       confirmed: true,
       confirmedAt: now,
     };
-    next = { ...next, subjectAddress: value, subjectAddressAsked: true, facts };
+    next = adoptReuseZip(
+      adoptStreetOverZipOnly(draft, {
+        ...next,
+        subjectAddress: value,
+        subjectAddressAsked: true,
+        pendingAddress: undefined,
+        facts,
+      }),
+    );
+  }
+  if (field === "city" && value.trim() && !/\d/.test(value)) {
+    next = { ...next, subjectCity: value.trim(), facts };
+  }
+  if (field === "state" && value.trim().toUpperCase() === "CA") {
+    next = { ...next, subjectState: "CA", facts };
+  }
+  if (field === "county" && value.trim()) {
+    next = { ...next, subjectCounty: value.trim(), facts };
+  }
+  if (field === "street" && value.trim()) {
+    next = { ...next, subjectStreet: value.trim(), facts };
+  }
+  if ((field === "zip" || field === "propertyZip") && /^\d{5}$/.test(value.trim())) {
+    next = writePropertyZip({ ...next, facts }, value.trim());
   }
   if (field === "year_built") next = { ...next, propertyYearBuilt: value, facts };
   if (field === "units") next = { ...next, propertyUnits: value, facts };
@@ -1162,13 +1510,17 @@ export function withComputedCompanion(
 ): FoxIntakeDraft {
   if (!isPurchaseLike(draft) || draft.pendingProposal || draft.pendingConflict) return draft;
   const price = draft.propertyValueAmount;
+  if ((price == null || price <= 0) && hasDownPayment(draft) && hasLoanAmount(draft)) {
+    const nextPrice = Math.round(draft.downPaymentAmount! + draft.loanAmountValue!);
+    return nextPrice > 0 ? { ...draft, propertyValueAmount: nextPrice, valueAsked: true } : draft;
+  }
   if (price == null || price <= 0) return draft;
   const proposeLoan = hasDownPayment(draft) && (!hasLoanAmount(draft) || force === "down");
   if (proposeLoan) {
     const loan = impliedLoanAmount(price, draft.downPaymentAmount);
     if (loan == null) return draft;
     if (draft.loanAmountValue === loan) return draft;
-    if (force === "down" && hasLoanAmount(draft)) {
+    if (force === "down") {
       return { ...draft, loanAmountValue: loan, amountAsked: true };
     }
     return {
@@ -1181,6 +1533,9 @@ export function withComputedCompanion(
     const down = impliedDownPayment(price, draft.loanAmountValue);
     if (down == null) return draft;
     if (draft.downPaymentAmount === down) return draft;
+    if (force === "loan") {
+      return { ...draft, downPaymentAmount: down, downAsked: true };
+    }
     return {
       ...draft,
       pendingProposal: makeProposal("downPayment", String(down), "computed", "down payment"),
@@ -1193,8 +1548,61 @@ export function resolveProposal(
   draft: FoxIntakeDraft,
   winner: "accept" | "decline",
 ): FoxIntakeDraft {
+  if (winner === "accept" && purchaseContractStreetFromDraft(draft) && hasPurchaseContractDoc(draft)) {
+    const placeLike =
+      isPlaceAddressProposal(draft.pendingProposal) ||
+      isZipOnlyFileAddress(draft.pendingProposal?.value ?? "", draft.propertyZip) ||
+      Boolean(draft.pendingAddress?.line && !draft.pendingProposal);
+    if (placeLike) {
+      const contractProposal = proposalFromLastPurchaseContract(draft);
+      draft = {
+        ...draft,
+        pendingProposal: contractProposal ?? draft.pendingProposal,
+        pendingAddress: undefined,
+      };
+    }
+  }
+  if (
+    winner === "accept" &&
+    !isPurchaseContractConfirmPending(draft) &&
+    !purchaseContractStreetFromDraft(draft) &&
+    draft.pendingAddress?.line &&
+    draft.pendingAddress.zip &&
+    draft.pendingAddress.city
+  ) {
+    const place = parsePlaceAddress(draft.pendingAddress);
+    if (place) {
+      const cleared = { ...writePlaceAddress(draft, place), pendingProposal: null };
+      return flushPendingOtherReo(flushPendingCurrentHousing(flushPendingHireDate(cleared)));
+    }
+  }
   const proposal = draft.pendingProposal;
-  if (!proposal) return draft;
+  if (!proposal) {
+    if (winner === "decline" && draft.pendingAddress) return skipQuoteAddress(draft);
+    return draft;
+  }
+  if (isWageExtractProposal(proposal)) {
+    if (winner === "accept") return acceptWageExtract(draft);
+    return changeWageExtract(draft);
+  }
+  if (isStubExtractProposal(proposal)) {
+    if (winner === "accept") return acceptStubExtract(draft);
+    return changeStubExtract(draft);
+  }
+  if (isStubJobProposal(proposal)) {
+    if (winner === "accept") return acceptStubExtract(draft);
+    return changeStubExtract(draft);
+  }
+  if (isIncomeLedgerProposal(proposal)) {
+    return settleIncomeLedgerProposal(draft, proposal, winner === "accept" ? "confirmed" : "skipped");
+  }
+  if (isHouseholdWagesProposal(proposal)) {
+    return settleHouseholdWagesProposal(draft, winner === "accept" ? "confirmed" : "skipped");
+  }
+  if (proposal.field === "hunt_rentals") {
+    if (winner === "accept") return acceptHuntRentals(draft);
+    return { ...draft, pendingProposal: null };
+  }
   if (winner === "decline") {
     if (proposal.field === ESTIMATED_HOUSING_FIELD) {
       return skipEstimatedHousing({ ...draft, pendingProposal: null });
@@ -1233,7 +1641,12 @@ export function resolveProposal(
       return skipOtherReoFileNet({ ...draft, pendingProposal: null });
     }
     const declined = { ...draft, pendingProposal: null };
-    return flushPendingOtherReo(flushPendingCurrentHousing(flushPendingHireDate(declined)));
+    const flushed = flushPendingOtherReo(flushPendingCurrentHousing(flushPendingHireDate(declined)));
+    return proposal.field === "tax_year" ||
+      isIncomeLedgerProposal(proposal) ||
+      isHouseholdWagesProposal(proposal)
+      ? promoteIncomeLedger(flushed)
+      : flushed;
   }
   const source =
     proposal.field === QUALIFYING_INCOME_FIELD ||
@@ -1249,6 +1662,8 @@ export function resolveProposal(
       isCoborrowerNameField(proposal.field) ||
       proposal.field === STATED_OTHER_REO_FIELD ||
       isFileNetField(proposal.field) ||
+      proposal.field === "hunt_rentals" ||
+      (proposal.field === "present_address" && /Suggested · not underwritten/i.test(proposal.note ?? "")) ||
       proposal.kind === "public"
       ? "suggested"
       : isRemainderConfirmField(proposal.field)
@@ -1256,11 +1671,58 @@ export function resolveProposal(
         : proposal.kind === "computed"
           ? "computed"
           : "document";
+  if (isPlaceAddressProposal(proposal) && !purchaseContractStreetFromDraft(draft)) {
+    const extras = Object.fromEntries((proposal.extras ?? []).map((item) => [item.field, item.value]));
+    const place = parsePlaceAddress({
+      line: proposal.value,
+      street: extras.street,
+      city: extras.city,
+      state: extras.state,
+      zip: extras.zip,
+      county: extras.county,
+    });
+    if (place) {
+      let placed = writePlaceAddress(draft, place);
+      for (const extra of proposal.extras ?? []) {
+        if (
+          extra.field === "street" ||
+          extra.field === "city" ||
+          extra.field === "state" ||
+          extra.field === "zip" ||
+          extra.field === "county" ||
+          extra.field === "propertyZip"
+        ) {
+          continue;
+        }
+        placed = writeConfirmedFact(placed, extra.field, extra.value, source);
+      }
+      const cleared = { ...placed, pendingProposal: null, pendingAddress: undefined };
+      const flushed = flushPendingOtherReo(flushPendingCurrentHousing(flushPendingHireDate(cleared)));
+      return flushed;
+    }
+  }
   let next = writeConfirmedFact(draft, proposal.field, proposal.value, source);
   if (proposal.companion) {
     next = writeConfirmedFact(next, proposal.companion.field, proposal.companion.value, source);
   }
   for (const extra of proposal.extras ?? []) {
+    if (
+      isBorrowerNameField(proposal.field) &&
+      (isPropertyAddressField(extra.field) ||
+        extra.field === "subjectAddress" ||
+        extra.field === "street" ||
+        extra.field === "city" ||
+        extra.field === "state" ||
+        extra.field === "zip" ||
+        extra.field === "propertyZip")
+    ) {
+      continue;
+    }
+    if (proposal.field === "tax_year" && extra.field === "full_name") {
+      const name = extra.value.trim();
+      if (name) next = writeConfirmedFact(next, TAX_RETURN_NAME_FIELD, name, source);
+      continue;
+    }
     next = writeConfirmedFact(next, extra.field, extra.value, source);
   }
   if (proposal.field === QUALIFYING_INCOME_FIELD && proposal.parts) {
@@ -1268,7 +1730,23 @@ export function resolveProposal(
     if (proposal.parts.scheduleC) next = writeConfirmedFact(next, SE_MONTHLY_FIELD, proposal.parts.scheduleC, source);
     if (proposal.parts.k1) next = writeConfirmedFact(next, K1_MONTHLY_FIELD, proposal.parts.k1, source);
   }
-  const cleared = { ...next, pendingProposal: null };
+  if (proposal.field === QUALIFYING_INCOME_FIELD) {
+    const note = proposal.methodNote ?? "";
+    if (note) {
+      next = writeConfirmedFact(next, QUALIFYING_METHOD_FIELD, note, source);
+    }
+    if (note === COVER_LINE_METHOD && !proposal.parts?.scheduleC) {
+      next = writeConfirmedFact(next, SE_MONTHLY_FIELD, proposal.value, source);
+    }
+    if (note === W2_BOX5_MONTHLY_NOTE || /box 5/i.test(note)) {
+      next = { ...next, wageBox5Asked: true };
+    }
+    if (note === STUB_MONTHLY_NOTE || /stub monthly/i.test(note)) {
+      next = { ...next, wageStubAsked: true };
+    }
+    next = restoreYearsAfterIncomeWrite(next);
+  }
+  const cleared = { ...next, pendingProposal: null, pendingAddress: undefined };
   const flushed = flushPendingOtherReo(flushPendingCurrentHousing(flushPendingHireDate(cleared)));
   const afterNet =
     winner === "accept" &&
@@ -1276,10 +1754,39 @@ export function resolveProposal(
       ? syncCalculatorDraft(flushed)
       : flushed;
   const afterFileNet = winner === "accept" ? maybeProposeOtherReoFileNet(afterNet) : afterNet;
-  if (winner === "accept" && shouldAskYearsInBusiness(afterFileNet)) {
-    return withYearsInBusinessAsk(afterFileNet);
+  const afterContract =
+    winner === "accept" &&
+    (isPurchaseContractConfirmPending(draft) || Boolean(draft.lastPurchaseContractFields))
+      ? queuePurchaseSketchReconcile(
+          queuePurchaseContractRemainder({
+            ...applyPurchaseContractAccept(afterFileNet, draft.pendingProposal),
+            looksRightHold: false,
+          }),
+        )
+      : hasPurchaseContractDoc(afterFileNet) || afterFileNet.lastPurchaseContractFields
+        ? queuePurchaseSketchReconcile(afterFileNet)
+        : afterFileNet;
+  if (winner === "accept" && isFundsPairProposal(proposal)) {
+    return { ...afterContract, overPriceConfirmed: false, looksRightHold: false };
   }
-  return afterFileNet;
+  const pageReadCover =
+    winner === "accept" &&
+    proposal.field === "tax_year" &&
+    (proposal.extras ?? []).some((item) => item.field === "full_name") &&
+    afterContract.taxReturnPacketRead !== "done";
+  const afterCover = pageReadCover
+    ? { ...afterContract, taxReturnPacketRead: "pending" as const }
+    : afterContract;
+  const afterLedger =
+    proposal.field === "tax_year" ||
+    isIncomeLedgerProposal(proposal) ||
+    isHouseholdWagesProposal(proposal)
+      ? promoteIncomeLedger(afterCover)
+      : afterCover;
+  return {
+    ...afterLedger,
+    looksRightHold: winner === "accept" ? false : afterLedger.looksRightHold,
+  };
 }
 
 function flushPendingHireDate(draft: FoxIntakeDraft): FoxIntakeDraft {
@@ -1310,6 +1817,9 @@ function flushPendingOtherReo(draft: FoxIntakeDraft): FoxIntakeDraft {
   if (!draft.pendingOtherReo || draft.statedOtherReo) {
     return { ...draft, pendingOtherReo: null };
   }
+  if (otherReoInterviewBlocked(draft)) {
+    return { ...draft, pendingOtherReo: null };
+  }
   return proposeExtractedOtherReo({ ...draft, pendingOtherReo: null });
 }
 
@@ -1323,9 +1833,11 @@ export function wantsYearsInBusinessAsk(draft: FoxIntakeDraft) {
 }
 
 export function yearsInBusinessSettled(draft: FoxIntakeDraft) {
-  if (draft.correcting === "years-in-business" || draft.awaitingYearsInBusiness) return false;
+  if (draft.correcting === "years-in-business") return false;
+  if (yearsInBusinessValue(draft)) return true;
   if (!wantsYearsInBusinessAsk(draft)) return true;
-  return Boolean(yearsInBusinessValue(draft) || draft.yearsInBusinessAsked);
+  if (draft.awaitingYearsInBusiness) return false;
+  return true;
 }
 
 export function yearsInBusinessSkipActions(): FoxAction[] {
@@ -1336,22 +1848,33 @@ export function yearsInBusinessSkipActions(): FoxAction[] {
       event: "bubble",
       capture: { field: "skip-years-in-business" },
     },
-    {
-      id: "hold-years-in-business",
-      label: "Not yet",
-      event: "bubble",
-      capture: { field: "skip-years-in-business" },
-    },
   ];
 }
 
 export function shouldAskYearsInBusiness(draft: FoxIntakeDraft) {
   return (
-    hasScheduleCCashflow(draft) &&
+    wantsYearsInBusinessAsk(draft) &&
     !yearsInBusinessValue(draft) &&
-    !draft.yearsInBusinessAsked &&
-    !draft.awaitingYearsInBusiness
+    Boolean(draft.awaitingYearsInBusiness)
   );
+}
+
+/** Open years once after SE/Both. Always open the one debts ask unless already settled. */
+export function withIncomeTypeYearsAsk(draft: FoxIntakeDraft): FoxIntakeDraft {
+  const income = draft.incomeType.value;
+  let next: FoxIntakeDraft = { ...draft };
+  if (income === "self-employed" || income === "both") {
+    next =
+      yearsInBusinessValue(next) || next.yearsInBusinessAsked
+        ? { ...next, awaitingYearsInBusiness: false }
+        : { ...next, awaitingYearsInBusiness: true };
+  } else {
+    next = { ...next, awaitingYearsInBusiness: false };
+  }
+  if (income && !next.monthlyDebtsAsked && next.statedMonthlyDebts == null) {
+    return { ...next, awaitingMonthlyDebts: true };
+  }
+  return { ...next, awaitingMonthlyDebts: false };
 }
 
 export function withYearsInBusinessAsk(draft: FoxIntakeDraft): FoxIntakeDraft {
@@ -1381,6 +1904,17 @@ export function skipYearsInBusiness(draft: FoxIntakeDraft): FoxIntakeDraft {
   return { ...draft, awaitingYearsInBusiness: false, yearsInBusinessAsked: true };
 }
 
+/** Return drop may pause years. After Use this, come back once when the business name is known. */
+export function restoreYearsAfterIncomeWrite(draft: FoxIntakeDraft): FoxIntakeDraft {
+  if (yearsInBusinessValue(draft) || draft.yearsInBusinessAsked || !wantsYearsInBusinessAsk(draft)) {
+    return { ...draft, awaitingYearsInBusiness: false };
+  }
+  if (factValue(draft, "business_name").trim()) {
+    return { ...draft, awaitingYearsInBusiness: true };
+  }
+  return { ...draft, awaitingYearsInBusiness: false };
+}
+
 export function writeQualifyingIncome(draft: FoxIntakeDraft, monthly: string): FoxIntakeDraft {
   return {
     ...writeConfirmedFact(draft, QUALIFYING_INCOME_FIELD, monthly, "suggested"),
@@ -1395,18 +1929,22 @@ export function acceptComputedAmounts(draft: FoxIntakeDraft): FoxIntakeDraft {
 }
 
 export function fundsAskNeeded(draft: FoxIntakeDraft) {
+  if (draftHasOpenConfirmCard(draft)) return false;
   return isPurchaseLike(draft) && hasPropertyValue(draft) && !hasDownPayment(draft) && !hasLoanAmount(draft);
 }
 
 export function propertyValueAskNeeded(draft: FoxIntakeDraft) {
+  if (draftHasOpenConfirmCard(draft)) return false;
   return isRefiLike(draft) && hasLoanAmount(draft) && !hasPropertyValue(draft);
 }
 
 export function purchasePriceAskNeeded(draft: FoxIntakeDraft) {
+  if (draftHasOpenConfirmCard(draft)) return false;
   return isPurchaseLike(draft) && !hasPropertyValue(draft);
 }
 
 export function refiLoanAskNeeded(draft: FoxIntakeDraft) {
+  if (draftHasOpenConfirmCard(draft)) return false;
   return isRefiLike(draft) && !hasLoanAmount(draft);
 }
 
@@ -1435,27 +1973,136 @@ export function timelineFilled(draft: FoxIntakeDraft) {
   return Boolean(factValue(draft, "close_date"));
 }
 
+export function wageDocsAskNeeded(draft: FoxIntakeDraft) {
+  if (employmentOnFile(draft) || returnOnFile(draft) || qualifyingIncomeOnFile(draft)) return false;
+  return wageThreadOpen(draft) && !draft.sampleAccepted && !draft.wageDocsAsked;
+}
+
+export function wageBox5AskNeeded(draft: FoxIntakeDraft) {
+  if (employmentOnFile(draft) || qualifyingIncomeOnFile(draft)) return false;
+  return wageThreadOpen(draft) && Boolean(draft.wageDocsAsked) && !draft.wageBox5Asked;
+}
+
+export function wageFrequencyAskNeeded(draft: FoxIntakeDraft) {
+  if (employmentOnFile(draft) || qualifyingIncomeOnFile(draft)) return false;
+  if (stubExtractAskOpen(draft) || stubPeriodConfirmOpen(draft)) return false;
+  return wageThreadOpen(draft) && Boolean(draft.wageBox5Asked) && !draft.wageFrequencyAsked;
+}
+
+export function wageStubAskNeeded(draft: FoxIntakeDraft) {
+  if (employmentOnFile(draft) || qualifyingIncomeOnFile(draft)) return false;
+  if (stubExtractAskOpen(draft) || stubPeriodConfirmOpen(draft)) return false;
+  return (
+    wageThreadOpen(draft) &&
+    Boolean(draft.wageBox5Asked) &&
+    Boolean(draft.wageFrequencyAsked) &&
+    !draft.wageStubAsked
+  );
+}
+
+/** Purchase W-2 / Both: Other REO is Still useful only — never an interview. */
+export function otherReoInterviewBlocked(draft: FoxIntakeDraft) {
+  return isPurchaseLike(draft) && wageThreadOpen(draft);
+}
+
+/** Use this / Use document / Change confirm still live on File. Looks right must wait. */
+export function draftHasOpenConfirmCard(draft: FoxIntakeDraft) {
+  return Boolean(draft.pendingProposal || draft.pendingConflict || draft.pendingAddress);
+}
+
 /** Looks right waits until the current doc/chip ask is idle. */
 export function currentAskIdle(draft: FoxIntakeDraft) {
-  if (draft.pendingProposal || draft.pendingConflict) return false;
+  if (draftHasOpenConfirmCard(draft)) return false;
+  if (priorStubAskNeeded(draft)) return false;
   if (draft.awaitingPayFrequency) return false;
   if (draft.awaitingBothMonthlyReason) return false;
+  if (draft.awaitingCoverWageGap) return false;
   if (draft.awaitingRaiseWhen) return false;
   if (draft.awaitingRaiseYtdFar) return false;
-  if (nextDocInvite(draft)) return false;
+  if (
+    wageDocsAskNeeded(draft) ||
+    wageBox5AskNeeded(draft) ||
+    wageFrequencyAskNeeded(draft) ||
+    wageStubAskNeeded(draft) ||
+    stubExtractAskOpen(draft)
+  ) {
+    return false;
+  }
+  if (docInviteBlocksLooksRight(draft)) return false;
   if (draft.looksRightHold) return false;
+  if (shouldAskMonthlyDebts(draft)) return false;
   return true;
 }
 
+/** Number on File, skipped type, SE/Other (no invented monthly), or skipped W-2 number path. */
+export function incomeNumberReady(draft: FoxIntakeDraft) {
+  const type = draft.incomeType.value;
+  if (!type) return Boolean(draft.incomeAsked);
+  if (type === "self-employed" || type === "other") return true;
+  if (type === "w2" || type === "both") return wageNumberPathSettled(draft);
+  return Boolean(draft.incomeAsked);
+}
+
+/** Drop invite / Box 5 / stub confirm still live. Looks right must not fire. */
+export function wageIncomeSketchOpen(draft: FoxIntakeDraft) {
+  if (draft.sampleAccepted || !wageThreadOpen(draft)) return false;
+  if (
+    isWageExtractProposal(draft.pendingProposal) ||
+    isStubExtractProposal(draft.pendingProposal) ||
+    isStubJobProposal(draft.pendingProposal)
+  ) {
+    return true;
+  }
+  return (
+    priorStubAskNeeded(draft) ||
+    wageDocsAskNeeded(draft) ||
+    wageBox5AskNeeded(draft) ||
+    wageFrequencyAskNeeded(draft) ||
+    wageStubAskNeeded(draft) ||
+    stubExtractAskOpen(draft)
+  );
+}
+
+export const LOOKS_RIGHT_CHIP_LABEL = "Looks right";
+
+export function isLooksRightAskText(text?: string | null) {
+  return /the file looks like this|looks right, or change a line|these numbers look right/i.test(
+    String(text ?? "").trim(),
+  );
+}
+
+export function looksRightAskActions(): FoxAction[] {
+  return [
+    {
+      id: "looks-right",
+      label: LOOKS_RIGHT_CHIP_LABEL,
+      event: "bubble",
+      capture: { field: "confirm-draft" },
+    },
+    { id: "needs-fix", label: "Needs a correction", event: "bubble", capture: { field: "needs-correction" } },
+  ];
+}
+
 export function canLooksRight(draft: FoxIntakeDraft) {
+  if (draftHasOpenConfirmCard(draft)) return false;
+  if (wageIncomeSketchOpen(draft)) return false;
+  if (docInviteBlocksLooksRight(draft)) return false;
+  if (loanExceedsPurchasePrice(draft)) return false;
+  if (!incomeNumberReady(draft)) return false;
+  if (
+    isPurchaseLike(draft) &&
+    hasDownPayment(draft) &&
+    hasLoanAmount(draft) &&
+    !purchaseFileAddsUp(draft)
+  ) {
+    return false;
+  }
   return (
     sketchAssembled(draft) &&
-    timelineFilled(draft) &&
     currentAskIdle(draft) &&
-    !historyGapNeeded(draft) &&
-    propertyAddressSettled(draft) &&
-    citizenshipSettled(draft) &&
-    assetsSettled(draft)
+    !employmentGapNeeded(draft) &&
+    propertyTypeSettled(draft) &&
+    propertyAddressSettled(draft)
   );
 }
 
@@ -1554,12 +2201,36 @@ export function requiredLineValue(
             : raw === "other"
               ? "Other"
               : "";
+    const pendingQi = proposal?.field === QUALIFYING_INCOME_FIELD ? proposal : null;
+    const storedQi = draft.facts?.[QUALIFYING_INCOME_FIELD];
+    const fileQi = storedQi?.confirmed ? storedQi.value : "";
+    const qiAmount = fileQi || pendingQi?.value || "";
+    const qiMethod = fileQi
+      ? factValue(draft, QUALIFYING_METHOD_FIELD)
+      : pendingQi?.methodNote || factValue(draft, QUALIFYING_METHOD_FIELD);
+    const coverLine = qiMethod === COVER_LINE_METHOD || (!fileQi && pendingQi?.note === COVER_LINE_NOTE);
+    if (qiAmount && (raw === "self-employed" || coverLine)) {
+      const shown = displayFactValue(QUALIFYING_INCOME_FIELD, qiAmount);
+      const named = businessNameOnFile(draft);
+      const bits = [named || label, shown].filter(Boolean);
+      return {
+        value: bits.join(" · "),
+        note: coverLine ? COVER_LINE_NOTE : (pendingQi?.note ?? SUGGESTED_INCOME_NOTE),
+        filled: Boolean(label || storedQi?.confirmed),
+      };
+    }
     const rental =
       draft.facts?.[SUGGESTED_NET_RENTAL_FIELD] ?? draft.facts?.[RENTAL_INCOME_FIELD];
     if (rental?.confirmed && rental.value) {
       const shown = displayFactValue(rental.field, rental.value);
       const bits = [label, shown].filter(Boolean);
       return { value: bits.join(" · "), filled: true };
+    }
+    if (!label && draft.incomeAsked) {
+      return { value: "Skip", filled: true };
+    }
+    if (!label && incomeEvidenceOnFile(draft)) {
+      return { value: employmentOnFile(draft) ? "W-2" : "Return", filled: true };
     }
     return { value: label || MISSING_LINE, filled: Boolean(label) };
   }
@@ -1590,7 +2261,10 @@ export function requiredLineValue(
 export function completenessExplainCopy(draft: FoxIntakeDraft) {
   const map = fileCompleteness(draft);
   if (!map) return "This file stays thin. No agency completeness score.";
-  return `File is ${map.copy}. I cannot approve, lock, or commit to lend.`;
+  if (map.state === "documented") {
+    return "This file has the documented minimums. I cannot approve, lock, or commit to lend.";
+  }
+  return "This file is still a sketch. I cannot approve, lock, or commit to lend.";
 }
 
 export function intentUsesPurchasePrice(

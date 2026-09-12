@@ -1,32 +1,73 @@
 import {
   REJECT_LINE,
   LIMIT_LINE,
+  LIMIT_LINE_REPEAT,
   MAX_DOC_COUNT,
   isAcceptedFile,
   isUnreadNote,
 } from "@/lib/docs/accept";
 import type {
   DocSlot,
+  DocSpeakRow,
+  DocSpeakStamp,
   DraftField,
   ExtractClass,
   FactConflict,
   FactProposal,
+  FactWrite,
   FoxAction,
   FoxIntakeDraft,
   ReceivedDoc,
 } from "./types";
 import {
   applyQualifyingIncomeFromExtract,
+  COVER_LINE_METHOD,
   decliningIncomeCaution,
   hasScheduleCCashflow,
+  hasScheduleECashflow,
   hasTwoYearWageHistory,
   k1OrdinaryMissingDistributions,
+  maybeProposeQualifyingFromTaxFile,
+  isCoverLineProposal,
+  isCoverReturnFields,
+  hasK1Ordinary,
+  QUALIFYING_INCOME_FIELD,
+  QUALIFYING_METHOD_FIELD,
+  SE_MONTHLY_FIELD,
+  isWageExtractFirstPath,
+  isWageExtractProposal,
+  isStubExtractProposal,
+  isStubJobProposal,
+  maybeProposeWageExtract,
+  maybeProposeStubExtract,
+  maybeWriteAgreedStubFrequency,
+  shouldProposeStubExtract,
+  stubExtractAskOpen,
+  stubPeriodConfirmOpen,
+  wageW2ExtractAccepted,
+  canSpeakStubExtract,
+  employersClose,
+  wageExtractFailedRead,
   monthlyQualifyingFromExtract,
+  shouldProposeCoverLineIncome,
+  attachIncomeLedgerFromExtract,
+  isHouseholdWagesProposal,
+  promoteIncomeLedger,
   normalizeReturnKind,
   parseExtractMoney,
+  readStubAmount,
   readTaxCashflows,
+  skipWageDocs,
+  skipWageStub,
+  skipPriorStub,
+  priorStubAskNeeded,
+  readWageJobs,
   wageIncomeCaution,
+  wageThreadOpen,
 } from "./qualifyingIncome";
+import { maybeProposeHunt } from "./hunt";
+import { bankEndingBalanceAmount } from "@/lib/docs/bankBalance";
+import { safeAccountLast4 } from "@/lib/docs/bankLast4";
 import {
   applyRentalIncomeFromExtract,
   draftHasLease,
@@ -53,6 +94,7 @@ import {
   STATED_AVAILABLE_ASSETS_FIELD,
   SUGGESTED_ASSETS_EXTRACT_NOTE,
   availableAssetsConflictActions,
+  displayInstitution,
   proposeExtractedAvailableAssets,
   statementExtractConfirmed,
 } from "./availableAssets";
@@ -62,6 +104,10 @@ import {
   isPropertyAddressField,
   parsePropertyType,
   propertyAddressConflictActions,
+  adoptStreetOverZipOnly,
+  displayedSubjectAddress,
+  isPlaceAddressProposal,
+  isZipOnlyFileAddress,
 } from "./propertyType";
 import {
   HIRE_DATE_FIELD,
@@ -84,6 +130,8 @@ import {
   borrowerNameConflictActions,
   borrowerNameSettled,
   displayBorrowerName,
+  governmentIdSkipped,
+  isBorrowerNameConfirmPending,
   isBorrowerNameField,
   proposeExtractedBorrowerName,
   SUGGESTED_BORROWER_NOTE,
@@ -100,13 +148,28 @@ import {
   isOtherPropertyMortgageExtract,
   maybeProposeOtherReoFileNet,
   otherReoFileNetNeedsStatement,
-  otherReoSettled,
   proposeExtractedOtherPropertyPayment,
   proposeExtractedOtherReo,
 } from "./otherReo";
-import { writeCurrentEmploymentHistory } from "./fileHistory";
+import { addressHistoryRemainder, writeCurrentEmploymentHistory } from "./fileHistory";
 
-export { REJECT_LINE, LIMIT_LINE };
+export { REJECT_LINE, LIMIT_LINE, LIMIT_LINE_REPEAT };
+
+export function conflictKey(conflict: { field: string; fileValue: string; documentValue: string }) {
+  return `${conflict.field}:${String(conflict.fileValue).trim()}:${String(conflict.documentValue).trim()}`;
+}
+
+export function conflictAlreadySpoken(
+  draft: FoxIntakeDraft,
+  conflict: FoxIntakeDraft["pendingConflict"] = draft.pendingConflict,
+) {
+  return Boolean(conflict && draft.lastSpokenConflictKey === conflictKey(conflict));
+}
+
+export function leftoverCapSpeech(batchCount: number, spoken = false) {
+  if (spoken || batchCount <= MAX_DOC_COUNT) return null;
+  return LIMIT_LINE;
+}
 
 export const LOW_EXTRACT_CONFIDENCE = 0.55;
 
@@ -138,12 +201,31 @@ export const EXTRACT_SCHEMA_KEYS: Record<ExtractClass, readonly string[]> = {
     "tax_year",
     "hire_date",
   ],
-  w2: ["tax_year", "employer_name", "wages", "federal_withheld", "overtime", "bonus", "commission", "second_employer_name", "hire_date"],
+  w2: [
+    "tax_year",
+    "employer_name",
+    "wages",
+    "medicare_wages",
+    "box5",
+    "federal_withheld",
+    "overtime",
+    "bonus",
+    "commission",
+    "second_employer_name",
+    "hire_date",
+  ],
   tax_return: [
     "tax_year",
+    "full_name",
     "filing_status",
     "agi",
+    "dependent_count",
     "return_kind",
+    "schedule_c_present",
+    "schedule_e_present",
+    "schedule_f_present",
+    "k1_present",
+    "present_address",
     "schedule_c_net_profit",
     "depreciation",
     "depletion",
@@ -154,12 +236,36 @@ export const EXTRACT_SCHEMA_KEYS: Record<ExtractClass, readonly string[]> = {
     "mileage_depreciation",
     "k1_ordinary_income",
     "k1_distributions",
+    "schedule_e_rents_received",
+    "schedule_e_cash_expenses",
+    "schedule_e_part2_names",
+    "schedule_e_property_address",
+    "entity_ordinary_income",
+    "entity_8825_rental",
+    "entity_depreciation",
+    "entity_amortization",
+    "entity_te",
+    "entity_guaranteed_payments",
+    "ownership_percent",
+    "entity_taxable_income",
+    "entity_name",
+    "business_name",
+    "cover_schedules",
+    "cover_k1_names",
+    "wages",
+    "gross_receipts",
+    "schedule_f_net_profit",
   ],
   bank_statement: ["institution", "period_end", "ending_balance", "account_type", "account_last4", "present_address"],
   purchase_contract: [
     "property_address",
     "purchase_price",
     "close_date",
+    "seller_credit",
+    "inspection_contingency",
+    "loan_contingency",
+    "appraisal_contingency",
+    "addenda",
     "property_type",
     "year_built",
     "units",
@@ -187,10 +293,14 @@ const MONEY_KEYS = new Set([
   "ytd_gross",
   "net_period",
   "wages",
+  "household_wages",
+  "medicare_wages",
+  "box5",
   "federal_withheld",
   "agi",
   "ending_balance",
   "purchase_price",
+  "seller_credit",
   "unpaid_principal",
   "current_pi",
   "income",
@@ -215,6 +325,20 @@ const MONEY_KEYS = new Set([
   "mileage_depreciation",
   "k1_ordinary_income",
   "k1_distributions",
+  "entity_ordinary_income",
+  "entity_8825_rental",
+  "entity_depreciation",
+  "entity_amortization",
+  "entity_te",
+  "entity_guaranteed_payments",
+  "entity_taxable_income",
+  "schedule_e_rents_received",
+  "schedule_e_cash_expenses",
+  "gross_receipts",
+  "schedule_f_net_profit",
+  "schedule_e_monthly",
+  "named_loss",
+  "income_ledger",
   "overtime",
   "bonus",
   "commission",
@@ -272,6 +396,8 @@ const YEARLY_TAX_KEYS = new Set([
   "filing_status",
   "agi",
   "return_kind",
+  "schedule_c_present",
+  "schedule_e_present",
   "schedule_c_net_profit",
   "depreciation",
   "depletion",
@@ -282,10 +408,27 @@ const YEARLY_TAX_KEYS = new Set([
   "mileage_depreciation",
   "k1_ordinary_income",
   "k1_distributions",
+  "schedule_e_rents_received",
+  "schedule_e_cash_expenses",
+  "schedule_e_part2_names",
+  "schedule_e_property_address",
+  "entity_ordinary_income",
+  "entity_8825_rental",
+  "entity_depreciation",
+  "entity_amortization",
+  "entity_te",
+  "entity_guaranteed_payments",
+  "ownership_percent",
+  "entity_taxable_income",
+  "entity_name",
+  "cover_schedules",
+  "dependent_count",
+  "wages",
 ]);
 
 const DROP_FIELD_KEYS =
-  /^(ssn|social|social_security|account|account_number|routing|routing_number|card|cin|dl_number|license_number|full_ssn|full_account|date_of_birth|dob)$/i;
+  /^(ssn|social|social_security|account|account_number|routing|routing_number|card|cin|dl|dl_number|daq|license|license_number|full_ssn|full_account|date_of_birth|dob)$/i;
+const CA_DL_NUMBER_RE = /^[A-Z]\d{7}$/i;
 const SSN_RE = /\b\d{3}[-\s]?\d{2}[-\s]?\d{4}\b/;
 const LONG_ACCOUNT_RE = /\b\d{8,17}\b/;
 const DATE_KEYS = new Set([
@@ -295,6 +438,9 @@ const DATE_KEYS = new Set([
   "close_date",
   "tax_year",
   "hire_date",
+  "inspection_contingency",
+  "loan_contingency",
+  "appraisal_contingency",
 ]);
 
 export function slotForExtractClass(extractClass: ExtractClass): DocSlot {
@@ -309,7 +455,9 @@ export function slotFromFilename(name: string): DocSlot {
   const lower = name.toLowerCase();
   if (/w-?2/.test(lower)) return "w2";
   if (/pay.?stub|payslip/.test(lower)) return "paystubs";
-  if (/tax|1099|k-?1|schedule.?c|profit|business|\bentity\b|\breturn\b/.test(lower)) return "other";
+  if (/1040.?cover|cover.?page|tax|1099|k-?1|schedule.?c|profit|business|\bentity\b|\breturn\b/.test(lower)) {
+    return "other";
+  }
   if (/bank|statement/.test(lower)) return "bank";
   if (/\bid\b|license|passport|driver/.test(lower)) return "id";
   return "other";
@@ -324,6 +472,8 @@ export function extractClassFromSlot(slot: DocSlot): ExtractClass | null {
 }
 
 export function extractClassFromFilename(name: string): ExtractClass | null {
+  if (/purchase.?contract|purchase.?agree|\bpsa\b/i.test(name)) return "purchase_contract";
+  if (/1040.?cover|cover.?page/i.test(name)) return "tax_return";
   return extractClassFromSlot(slotFromFilename(name));
 }
 
@@ -348,10 +498,316 @@ export function looksLikeTaxReturnFields(
 ): boolean {
   if (!fields) return false;
   const kind = normalizeReturnKind(String(fields.return_kind ?? ""));
-  if (kind === "k1" || kind === "1065" || kind === "1120s" || kind === "schedule_c") return true;
+  if (kind === "k1" || kind === "1065" || kind === "1120s" || kind === "1120" || kind === "schedule_c" || kind === "schedule_e") {
+    return true;
+  }
+  if (isCoverReturnFields(fields)) return true;
+  if (String(fields.tax_year ?? "").trim() && String(fields.full_name ?? "").trim()) return true;
   if (String(fields.k1_ordinary_income ?? "").trim()) return true;
+  if (String(fields.entity_ordinary_income ?? "").trim()) return true;
   if (String(fields.schedule_c_net_profit ?? "").trim()) return true;
-  return false;
+  if (String(fields.schedule_e_rents_received ?? "").trim()) return true;
+  if (packetReadPhase(fields)) return true;
+  return looksLikeFederalReturnFields(fields);
+}
+
+/** Form 1040 / tax return transcript. Year plus status, dependents, or C/E present. Transcripts are not AGI/wages. */
+export function looksLikeFederalReturnFields(
+  fields?: Record<string, string | null | undefined> | null,
+): boolean {
+  if (!fields || isCoverReturnFields(fields)) return false;
+  const kind = normalizeReturnKind(String(fields.return_kind ?? ""));
+  if (
+    kind === "k1" ||
+    kind === "1065" ||
+    kind === "1120s" ||
+    kind === "1120" ||
+    kind === "schedule_c" ||
+    kind === "schedule_e"
+  ) {
+    return false;
+  }
+  const year = String(fields.tax_year ?? "").replace(/\D/g, "").slice(0, 4);
+  if (!/^(19|20)\d{2}$/.test(year)) return false;
+  if (isTranscriptReturnFields(fields)) {
+    const status = String(fields.filing_status ?? "").trim();
+    const deps = String(fields.dependent_count ?? "").replace(/\D/g, "");
+    return Boolean(
+      status ||
+        deps !== "" ||
+        String(fields.schedule_c_present ?? "").trim().toLowerCase() === "yes" ||
+        String(fields.schedule_e_present ?? "").trim().toLowerCase() === "yes" ||
+        String(fields.schedule_f_present ?? "").trim().toLowerCase() === "yes" ||
+        String(fields.k1_present ?? "").trim().toLowerCase() === "yes",
+    );
+  }
+  const status = String(fields.filing_status ?? "").trim();
+  const agi = String(fields.agi ?? "").replace(/[^\d.]/g, "");
+  const wages = String(fields.wages ?? "").replace(/[^\d.]/g, "");
+  const deps = String(fields.dependent_count ?? "").replace(/\D/g, "");
+  return Boolean(status || Number(agi) > 0 || Number(wages) > 0 || deps !== "");
+}
+
+const FEDERAL_RETURN_HOLD = new Set([
+  "tax_year",
+  "filing_status",
+  "agi",
+  "wages",
+  "dependent_count",
+  "return_kind",
+]);
+
+const TRANSCRIPT_FILE_KEYS = new Set([
+  "tax_year",
+  "dependent_count",
+  "return_kind",
+  "schedule_c_present",
+  "schedule_e_present",
+  "schedule_f_present",
+  "k1_present",
+]);
+
+const TRANSCRIPT_STRIP_KEYS = [
+  "wages",
+  "agi",
+  "pension",
+  "taxable_pension",
+  "schedule_c_net_profit",
+  "schedule_e_rents_received",
+  "schedule_e_cash_expenses",
+  "depreciation",
+  "depletion",
+] as const;
+
+export function isTranscriptReturnFields(
+  fields?: Record<string, string | null | undefined> | null,
+) {
+  const raw = String(fields?.return_kind ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/[\s_-]+/g, "");
+  return raw === "transcript" || raw.includes("returntranscript");
+}
+
+function taxYearFromSource(
+  source: FoxIntakeDraft | Record<string, string | null | undefined>,
+) {
+  if (source && typeof source === "object" && "facts" in source) {
+    return String((source as FoxIntakeDraft).facts?.tax_year?.value ?? "")
+      .replace(/\D/g, "")
+      .slice(0, 4);
+  }
+  return String((source as Record<string, string>).tax_year ?? "")
+    .replace(/\D/g, "")
+    .slice(0, 4);
+}
+
+/** Chat names class + tax year only. Never dependents, AGI, wages, or pension. */
+export function transcriptSignalCopy(
+  source: FoxIntakeDraft | Record<string, string | null | undefined>,
+) {
+  const year = taxYearFromSource(source);
+  return year ? `Tax return transcript · ${year}` : "Tax return transcript";
+}
+
+export function isTranscriptOnFile(draft: FoxIntakeDraft) {
+  return isTranscriptReturnFields({
+    return_kind: String(draft.facts?.return_kind?.value ?? ""),
+  });
+}
+
+export function docSpeakKeyFromName(draft: FoxIntakeDraft, name: string) {
+  const shown = String(name ?? "").trim();
+  if (!shown) return "";
+  const doc = [...(draft.documents ?? [])]
+    .reverse()
+    .find((item) => item.name === shown);
+  if (doc) return `doc:${doc.receivedAt}:${doc.name}`;
+  return `doc:${shown}`;
+}
+
+export function transcriptSpeakKey(draft: FoxIntakeDraft) {
+  const doc = [...(draft.documents ?? [])].reverse().find((item) => {
+    const cls = receivedClassOf(item);
+    return cls === "tax_return" || /transcript|1040|tax return/i.test(item.name ?? "");
+  });
+  if (doc) return `doc:${doc.receivedAt}:${doc.name}`;
+  const year = String(draft.facts?.tax_year?.value ?? "").replace(/\D/g, "").slice(0, 4);
+  if (isTranscriptOnFile(draft)) return year ? `doc:transcript:${year}` : "doc:transcript";
+  return "";
+}
+
+export function hasDocStamp(draft: FoxIntakeDraft, key: string, stamp: DocSpeakStamp) {
+  if (!key) return false;
+  return Boolean(draft.docSpeak?.[key]?.[stamp]);
+}
+
+export function canSpeakDocStamp(draft: FoxIntakeDraft, key: string, stamp: DocSpeakStamp) {
+  if (!key) return true;
+  if (hasDocStamp(draft, key, "done") && stamp !== "done") return false;
+  return !hasDocStamp(draft, key, stamp);
+}
+
+export function markDocStamp(
+  draft: FoxIntakeDraft,
+  key: string,
+  stamp: DocSpeakStamp | readonly DocSpeakStamp[],
+): FoxIntakeDraft {
+  if (!key) return draft;
+  const stamps: readonly DocSpeakStamp[] = typeof stamp === "string" ? [stamp] : stamp;
+  const row: DocSpeakRow = { ...(draft.docSpeak?.[key] ?? {}) };
+  for (const item of stamps) row[item] = true;
+  return {
+    ...draft,
+    docSpeak: { ...(draft.docSpeak ?? {}), [key]: row },
+    lastDocSpeakKey: key,
+  };
+}
+
+/** Stamp named + offered after Fox speaks the transcript block once. */
+export function withTranscriptSpoken(draft: FoxIntakeDraft): FoxIntakeDraft {
+  const key = transcriptSpeakKey(draft);
+  if (!key) return draft;
+  const stamps: DocSpeakStamp[] = ["received", "named"];
+  if (transcriptFollowUpAsk(draft)) stamps.push("offered");
+  return markDocStamp(draft, key, stamps);
+}
+
+export function transcriptOfferDone(draft: FoxIntakeDraft) {
+  if (draft.transcriptFollowUpSkipped) return true;
+  const key = transcriptSpeakKey(draft);
+  return Boolean(key && hasDocStamp(draft, key, "done"));
+}
+
+/** After cover Use this, keep reading the same PDF. Say once when schedules are not on the pages. */
+export const PACKET_READING_LINE = "Reading the rest of the return.";
+export const PACKET_SCHEDULES_MISSING_LINE = "I didn’t see Schedule E or a K-1 on these pages.";
+export const PACKET_LINES_MISSING_LINE =
+  "I didn’t see cover wages, Schedule E, or a K-1 on these pages.";
+export const PACKET_WAGES_UNREAD_LINE =
+  "I couldn’t read household wages on the Form 1040 in this file.";
+
+export function taxReturnPacketDoc(draft: FoxIntakeDraft) {
+  return [...draft.documents].reverse().find(
+    (doc) =>
+      doc.extractClass === "tax_return" &&
+      doc.status !== "failed" &&
+      !isUnreadNote(doc.note),
+  );
+}
+
+export function taxReturnPacketNeedsRead(draft: FoxIntakeDraft) {
+  return draft.taxReturnPacketRead === "pending" && taxReturnWrittenOnFile(draft);
+}
+
+export function taxReturnPacketHoldAsk(draft: FoxIntakeDraft) {
+  if (draft.taxReturnPacketRead !== "pending" && draft.taxReturnPacketRead !== "reading") {
+    return false;
+  }
+  return Boolean(taxReturnPacketDoc(draft)?.bytesRef);
+}
+
+export function packetReadPhase(fields?: Record<string, string | null | undefined> | null) {
+  const raw = String(fields?.packet_read ?? "").trim().toLowerCase();
+  return raw === "empty" || raw === "schedules" ? raw : "";
+}
+
+export function packetSchedulesMissingLine(fields?: Record<string, string | null | undefined> | null) {
+  const wages = String(fields?.wages ?? "").replace(/[^\d.]/g, "");
+  return Number(wages) > 0 ? PACKET_SCHEDULES_MISSING_LINE : PACKET_LINES_MISSING_LINE;
+}
+
+function packetSawForm1040(fields?: Record<string, string | null | undefined> | null) {
+  return /^(1|true|yes)$/i.test(String(fields?.form_1040 ?? "").trim());
+}
+
+/** A Form 1040 face with unread 1z/1a is not “not on these pages.” 8879 is not a 1040. */
+export function packetEmptySpeakLine(
+  draft: FoxIntakeDraft,
+  fields?: Record<string, string | null | undefined> | null,
+) {
+  const wages = String(fields?.wages ?? "").replace(/[^\d.]/g, "");
+  if (Number(wages) > 0) return PACKET_SCHEDULES_MISSING_LINE;
+  if (taxReturnWrittenOnFile(draft) && !isTranscriptOnFile(draft) && packetSawForm1040(fields)) {
+    return PACKET_WAGES_UNREAD_LINE;
+  }
+  return PACKET_LINES_MISSING_LINE;
+}
+
+/** Grok Form 1040 page: tax year + name confirm. Ledger extras do not steal that confirm. */
+export function looksLikeTaxReturnPageReadFields(
+  fields?: Record<string, string | null | undefined> | null,
+): boolean {
+  if (!fields || isCoverReturnFields(fields) || isTranscriptReturnFields(fields)) return false;
+  const year = String(fields.tax_year ?? "").replace(/\D/g, "").slice(0, 4);
+  const name = String(fields.full_name ?? "").trim();
+  if (!/^(19|20)\d{2}$/.test(year) || !name) return false;
+  if (String(fields.agi ?? "").trim() || String(fields.filing_status ?? "").trim()) {
+    return false;
+  }
+  return true;
+}
+
+function federalReturnConfirmParts(fields: Record<string, string>) {
+  const year = String(fields.tax_year ?? "").replace(/\D/g, "").slice(0, 4);
+  const status = String(fields.filing_status ?? "").trim();
+  const agi = String(fields.agi ?? "").replace(/[^\d.]/g, "");
+  const deps = String(fields.dependent_count ?? "").replace(/\D/g, "");
+  const name = String(fields.full_name ?? "").trim();
+  const parts: string[] = [];
+  if (isTranscriptReturnFields(fields)) {
+    parts.push("Tax return transcript");
+    if (year) parts.push(year);
+    return { year, status: "", agi: "", deps: "", parts };
+  }
+  if (year) parts.push(`${year} return`);
+  if (looksLikeTaxReturnPageReadFields(fields) && name) parts.push(name);
+  if (status) parts.push(status.replace(/\.$/, ""));
+  if (Number(agi) > 0) parts.push(`AGI $${Number(agi).toLocaleString("en-US")}`);
+  if (deps) {
+    const n = Number(deps);
+    parts.push(n === 1 ? "1 dependent" : `${n} dependents`);
+  }
+  return { year, status, agi, deps, parts };
+}
+
+/** Confirm-before-write for a 1040. Transcripts write quietly — no Use this. */
+export function maybeProposeFederalReturn(
+  draft: FoxIntakeDraft,
+  fields: Record<string, string>,
+): FoxIntakeDraft | null {
+  if (isTranscriptReturnFields(fields)) return null;
+  if (isCoverReturnFields(fields)) return null;
+  const pageRead = looksLikeTaxReturnPageReadFields(fields);
+  if (!pageRead && !looksLikeFederalReturnFields(fields)) return null;
+  if (draft.pendingProposal || draft.pendingConflict) return null;
+  const { year, status, agi, deps, parts } = federalReturnConfirmParts(fields);
+  if (!parts.length) return null;
+  const extras: { field: string; value: string; label: string }[] = [];
+  const name = String(fields.full_name ?? "").trim();
+  if (pageRead && name) extras.push({ field: "full_name", value: name, label: "name" });
+  if (status) extras.push({ field: "filing_status", value: status, label: "filing status" });
+  const transcript = isTranscriptReturnFields(fields);
+  if (!transcript && Number(agi) > 0 && !pageRead) extras.push({ field: "agi", value: agi, label: "AGI" });
+  if (deps && !pageRead) extras.push({ field: "dependent_count", value: deps, label: "dependents" });
+  const kind = String(fields.return_kind ?? "").trim();
+  if (kind) extras.push({ field: "return_kind", value: kind, label: "return kind" });
+  return {
+    ...draft,
+    pendingProposal: {
+      field: "tax_year",
+      value: year,
+      label: "tax year",
+      kind: "computed",
+      extras,
+    },
+  };
+}
+
+export function federalReturnConfirmCopy(fields: Record<string, string>) {
+  if (isTranscriptReturnFields(fields)) return transcriptSignalCopy(fields);
+  const { parts } = federalReturnConfirmParts(fields);
+  return parts.length ? `${parts.join(". ")}.` : "";
 }
 
 export function looksLikeMortgageFields(
@@ -368,12 +824,124 @@ export function looksLikeIdFields(
   return Boolean(fields && String(fields.full_name ?? "").trim());
 }
 
+/** Institution or ending balance — last4 alone is not a lock. */
+export function looksLikeBankFields(
+  fields?: Record<string, string | null | undefined> | null,
+): boolean {
+  const value = (key: string) => String(fields?.[key] ?? "").trim();
+  return Boolean(value("institution") || value("ending_balance"));
+}
+
+export function looksLikeContractFields(
+  fields?: Record<string, string | null | undefined> | null,
+): boolean {
+  const value = (key: string) => String(fields?.[key] ?? "").trim();
+  return Boolean(value("property_address") || value("purchase_price") || value("close_date") || value("seller_credit"));
+}
+
+/** W-2 page-read lock: employer, tax year, Box 5 Medicare wages. Box 1 optional. */
+export const W2_LOCKED_SCHEMA_KEYS = [
+  "employer_name",
+  "tax_year",
+  "medicare_wages",
+  "box5",
+  "wages",
+] as const;
+
+/** First-session classes Grok may write. Everything else is received only. */
+export const FIRST_SESSION_CLASSES = [
+  "government_id",
+  "w2",
+  "paystub",
+  "bank_statement",
+  "purchase_contract",
+  "tax_return",
+] as const;
+
+export type FirstSessionClass = (typeof FIRST_SESSION_CLASSES)[number];
+
+/** Locked schema only. Wrong class does not keep another form’s fields. */
+export const FIRST_SESSION_LOCKED_KEYS: Record<FirstSessionClass, readonly string[]> = {
+  government_id: ["full_name"],
+  w2: W2_LOCKED_SCHEMA_KEYS,
+  paystub: [
+    "employer_name",
+    "pay_period_end",
+    "gross_period",
+    "pay_frequency",
+    "ytd_gross",
+    "overtime",
+    "overtime_ytd",
+    "bonus",
+    "commission",
+  ],
+  bank_statement: ["institution", "account_last4", "ending_balance"],
+  purchase_contract: ["property_address", "purchase_price", "close_date", "seller_credit"],
+  tax_return: EXTRACT_SCHEMA_KEYS.tax_return,
+};
+
+/** Grok Form 1040 year + name. Printed / loud schedule extract keeps the full schema. */
+export const TAX_RETURN_PAGE_READ_KEYS = ["tax_year", "full_name"] as const;
+
+/** Completeness notepad name after Use this. Not an ID write. */
+export const TAX_RETURN_NAME_FIELD = "tax_return_name";
+
+export function lockTaxReturnPageReadFields(
+  fields?: Record<string, string | null | undefined> | null,
+): Record<string, string> {
+  const next: Record<string, string> = {};
+  for (const key of TAX_RETURN_PAGE_READ_KEYS) {
+    const value = String(fields?.[key] ?? "").trim();
+    if (value) next[key] = value;
+  }
+  return next;
+}
+
+export function isFirstSessionClass(value: string | null | undefined): value is FirstSessionClass {
+  return (FIRST_SESSION_CLASSES as readonly string[]).includes(String(value ?? ""));
+}
+
+export function lockFirstSessionFields(
+  extractClass: ExtractClass,
+  fields?: Record<string, string | null | undefined> | null,
+): Record<string, string> {
+  if (!isFirstSessionClass(extractClass)) return {};
+  const next: Record<string, string> = {};
+  for (const key of FIRST_SESSION_LOCKED_KEYS[extractClass]) {
+    const value = String(fields?.[key] ?? "").trim();
+    if (!value) continue;
+    if (
+      (key === "medicare_wages" || key === "box5" || key === "wages") &&
+      isBoxNumberAsDollars(value)
+    ) {
+      continue;
+    }
+    next[key] = value;
+  }
+  return next;
+}
+
+/** Box labels 1–16 are not dollars. Reading Box 5 as $5 is a FAIL. */
+export function isBoxNumberAsDollars(value: string | null | undefined): boolean {
+  const raw = String(value ?? "")
+    .trim()
+    .replace(/^\$/, "")
+    .replace(/,/g, "");
+  if (!raw) return false;
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return false;
+  return Number.isInteger(n) && n >= 1 && n <= 16;
+}
+
 export function hasLockedSuggestion(
   extractClass: ExtractClass,
   fields?: Record<string, string | null | undefined> | null,
 ): boolean {
   const value = (key: string) => String(fields?.[key] ?? "").trim();
-  if (extractClass === "government_id") return Boolean(value("full_name") || value("present_address"));
+  if (isCoverReturnFields(fields)) {
+    return Boolean(value("tax_year") || value("cover_schedules"));
+  }
+  if (extractClass === "government_id") return Boolean(value("full_name"));
   if (extractClass === "bank_statement") {
     return Boolean(value("institution") || value("ending_balance") || value("present_address"));
   }
@@ -382,18 +950,92 @@ export function hasLockedSuggestion(
       value("employer_name") || value("gross_period") || value("ytd_gross") || value("pay_period_end"),
     );
   }
-  if (extractClass === "w2") return Boolean(value("employer_name") || value("wages"));
+  if (extractClass === "w2") {
+    const box5 = isBoxNumberAsDollars(value("medicare_wages") || value("box5"))
+      ? ""
+      : value("medicare_wages") || value("box5");
+    return Boolean(value("employer_name") && box5);
+  }
+  if (extractClass === "purchase_contract") return looksLikeContractFields(fields);
+  if (extractClass === "tax_return") {
+    if (value("tax_year") && value("full_name") && !value("agi") && !value("filing_status")) {
+      return true;
+    }
+    const kind = normalizeReturnKind(String(fields?.return_kind ?? ""));
+    if (kind === "schedule_e" || (value("schedule_e_rents_received") && value("schedule_e_cash_expenses"))) {
+      return Boolean(value("schedule_e_rents_received") && value("schedule_e_cash_expenses"));
+    }
+    if (kind === "schedule_c" || value("schedule_c_net_profit")) {
+      return Boolean(value("schedule_c_net_profit"));
+    }
+    if (kind === "1120") {
+      return Boolean(String(fields?.return_kind ?? "").trim());
+    }
+    if (isCoverReturnFields(fields)) {
+      return Boolean(value("tax_year") || value("cover_schedules"));
+    }
+    if (
+      kind === "k1" ||
+      kind === "1065" ||
+      kind === "1120s" ||
+      value("k1_ordinary_income") ||
+      value("entity_ordinary_income")
+    ) {
+      return Boolean(value("k1_ordinary_income") || value("entity_ordinary_income"));
+    }
+    if (looksLikeFederalReturnFields(fields)) return true;
+    return false;
+  }
   return Object.values(fields ?? {}).some((item) => String(item ?? "").trim());
+}
+
+export function scheduleECashFlowMissingFromExtract(
+  fields?: Record<string, string | null | undefined> | null,
+) {
+  if (packetReadPhase(fields) || looksLikeTaxReturnPageReadFields(fields)) return false;
+  const kind = normalizeReturnKind(String(fields?.return_kind ?? ""));
+  if (kind !== "schedule_e") return false;
+  return (
+    !String(fields?.schedule_e_rents_received ?? "").trim() ||
+    !String(fields?.schedule_e_cash_expenses ?? "").trim()
+  );
+}
+
+export function k1OrdinaryMissingFromExtract(
+  fields?: Record<string, string | null | undefined> | null,
+  name?: string,
+) {
+  if (packetReadPhase(fields) || looksLikeTaxReturnPageReadFields(fields)) return false;
+  if (isCoverReturnFields(fields)) return false;
+  const kind = normalizeReturnKind(String(fields?.return_kind ?? ""));
+  const namedK1 = kind === "k1" || kind === "1065" || kind === "1120s";
+  const filenameK1 = /k-?1/i.test(name ?? "");
+  if (String(fields?.entity_ordinary_income ?? "").trim() || kind === "1120") return false;
+  if (!namedK1 && !filenameK1) return false;
+  return !String(fields?.k1_ordinary_income ?? "").trim();
+}
+
+export function looksLikePaystubFields(
+  fields?: Record<string, string | null | undefined> | null,
+): boolean {
+  const value = (key: string) => String(fields?.[key] ?? "").trim();
+  if (value("gross_period") && value("pay_frequency")) return true;
+  if (value("employer_name") && value("gross_period")) return true;
+  return Boolean(value("gross_period") && value("pay_period_end"));
 }
 
 export function promoteExtractClass(
   extractClass: ExtractClass,
   fields?: Record<string, string | null | undefined> | null,
 ): ExtractClass {
+  if (isCoverReturnFields(fields)) return "tax_return";
   if (extractClass !== "other") return extractClass;
   if (looksLikeTaxReturnFields(fields)) return "tax_return";
   if (looksLikeMortgageFields(fields)) return "mortgage_statement";
+  if (looksLikePaystubFields(fields)) return "paystub";
   if (looksLikeIdFields(fields)) return "government_id";
+  if (looksLikeBankFields(fields)) return "bank_statement";
+  if (looksLikeContractFields(fields)) return "purchase_contract";
   return extractClass;
 }
 
@@ -434,6 +1076,7 @@ export function docsDisplayLabel(doc: {
   if (extractClass === "government_id") return "ID";
   if (extractClass === "bank_statement") return "Bank statements";
   if (extractClass === "tax_return") return "Tax return";
+  if (extractClass === "purchase_contract") return "Purchase contract";
   const slot = resolveReceivedSlot(doc.slot, doc.name, extractClass);
   if (slot === "paystubs") return "Paystubs";
   if (slot === "w2") return "W-2";
@@ -464,16 +1107,87 @@ export function incomeRequestedClasses(income?: string | null): ExtractClass[] {
   if (income === "w2" || income === "both") {
     out.push("paystub", "w2");
   }
-  if (income === "self-employed" || income === "other" || income === "both" || !income) {
-    if (income !== "w2") out.push("tax_return");
+  if (income === "self-employed" || income === "other" || income === "both") {
+    out.push("tax_return");
   }
   return out;
+}
+
+function docPresentOnFile(doc: ReceivedDoc) {
+  return doc.status === "extracted" || doc.status === "received" || doc.status === "reading";
+}
+
+/** W-2, paystub, or a named job already on File. */
+export function employmentOnFile(draft: FoxIntakeDraft) {
+  if ((draft.employmentHistory ?? []).some((row) => String(row.label ?? "").trim())) return true;
+  if (String(draft.facts?.employer_name?.value ?? "").trim()) return true;
+  if (isWageExtractProposal(draft.pendingProposal) || isStubExtractProposal(draft.pendingProposal)) {
+    return true;
+  }
+  return draft.documents.some(
+    (doc) =>
+      (doc.extractClass === "w2" ||
+        doc.extractClass === "paystub" ||
+        doc.slot === "w2" ||
+        doc.slot === "paystubs") &&
+      docPresentOnFile(doc),
+  );
+}
+
+/** A 1040 / Schedule C / K-1 / 1065 / Schedule E already on File. */
+export function returnOnFile(draft: FoxIntakeDraft) {
+  if (hasScheduleCCashflow(draft) || hasScheduleECashflow(draft) || hasK1Ordinary(draft)) return true;
+  return draft.documents.some((doc) => doc.extractClass === "tax_return" && docPresentOnFile(doc));
+}
+
+export function incomeEvidenceOnFile(draft: FoxIntakeDraft) {
+  return employmentOnFile(draft) || returnOnFile(draft);
+}
+
+function incomingEmployment(extractClass: ExtractClass, fields: Record<string, string>) {
+  return (
+    extractClass === "w2" ||
+    extractClass === "paystub" ||
+    Boolean(String(fields.employer_name ?? "").trim() || String(fields.wages ?? "").trim())
+  );
+}
+
+function incomingReturn(extractClass: ExtractClass) {
+  return extractClass === "tax_return";
+}
+
+/** File already has Employment or a return — do not replay How is income earned / drop W-2. */
+export function withFileIncomeHygiene(
+  draft: FoxIntakeDraft,
+  extractClass?: ExtractClass,
+  fields: Record<string, string> = {},
+): FoxIntakeDraft {
+  if (isTranscriptReturnFields(fields)) {
+    return draft.incomeType.value ? { ...draft, incomeAsked: true } : draft;
+  }
+  const employed = employmentOnFile(draft) || (extractClass ? incomingEmployment(extractClass, fields) : false);
+  const returned = returnOnFile(draft) || (extractClass ? incomingReturn(extractClass) : false);
+  if (!employed && !returned) return draft;
+  const inferred = employed && returned ? "both" : returned ? "self-employed" : "w2";
+  if (draft.incomeType.value) {
+    return { ...draft, incomeAsked: true };
+  }
+  return {
+    ...draft,
+    incomeAsked: true,
+    incomeType: { ...draft.incomeType, value: inferred, source: "document", confirmed: false },
+  };
 }
 
 export const REMAINDER_CONFIRM_FIELDS = new Set([
   "property_address",
   "purchase_price",
   "close_date",
+  "seller_credit",
+  "inspection_contingency",
+  "loan_contingency",
+  "appraisal_contingency",
+  "addenda",
   "institution",
   "period_end",
   "ending_balance",
@@ -494,10 +1208,18 @@ export function isRemainderConfirmField(field: string) {
 }
 
 export function remainderProposalFromWrites(
-  _extractClass: ExtractClass,
+  extractClass: ExtractClass,
   writes: { field: string; value: string }[],
 ): FactProposal | null {
-  const usable = writes.filter((item) => item.field && item.value);
+  let usable = writes.filter((item) => item.field && item.value);
+  if (extractClass === "purchase_contract") {
+    const rank = ["property_address", "purchase_price", "close_date", "seller_credit"];
+    usable = [...usable].sort((a, b) => {
+      const ai = rank.indexOf(a.field);
+      const bi = rank.indexOf(b.field);
+      return (ai < 0 ? 99 : ai) - (bi < 0 ? 99 : bi);
+    });
+  }
   if (!usable.length) return null;
   const [first, ...rest] = usable;
   return {
@@ -533,6 +1255,7 @@ export function factLabel(field: string) {
   if (field === "net_period") return "net pay";
   if (field === "tax_year") return "tax year";
   if (field === "wages") return "wages";
+  if (field === "household_wages") return "household wages";
   if (field === "federal_withheld") return "federal withheld";
   if (field === "pay_frequency") return "pay frequency";
   if (field === "second_employer_name") return "second employer";
@@ -549,7 +1272,16 @@ export function factLabel(field: string) {
   if (field === "mileage_depreciation") return "mileage depreciation";
   if (field === "k1_ordinary_income") return "K-1 ordinary income";
   if (field === "k1_distributions") return "K-1 distributions";
+  if (field === "schedule_e_rents_received") return "Schedule E rents received";
+  if (field === "schedule_e_cash_expenses") return "Schedule E cash expenses";
+  if (field === "schedule_e_part2_names") return "Schedule E Part II names";
+  if (field === "schedule_e_property_address") return "Schedule E property";
   if (field === "qualifying_income") return "qualifying income";
+  if (field === "income_ledger") return "income row";
+  if (field === "gross_receipts") return "gross receipts";
+  if (field === "named_loss") return "named loss";
+  if (field === "schedule_e_monthly") return "Schedule E";
+  if (field === "schedule_f_monthly") return "Schedule F";
   if (field === "paystub_monthly") return "paystub monthly";
   if (field === "w2_monthly") return "W-2 monthly";
   if (field === "income_caution") return "income caution";
@@ -574,6 +1306,11 @@ export function factLabel(field: string) {
   if (field === "occupancy") return "occupancy";
   if (field === "purchase_price") return "purchase price";
   if (field === "close_date") return "close date";
+  if (field === "seller_credit") return "seller credit";
+  if (field === "inspection_contingency") return "inspection contingency";
+  if (field === "loan_contingency") return "loan contingency";
+  if (field === "appraisal_contingency") return "appraisal contingency";
+  if (field === "addenda") return "addenda";
   if (field === "servicer") return "servicer";
   if (field === "unpaid_principal") return "unpaid principal";
   if (field === "current_pi") return "current P&I";
@@ -599,6 +1336,13 @@ export function last4Only(value: string) {
   return digits.slice(-4);
 }
 
+function looksLikeContractStreet(value: string) {
+  const t = value.trim();
+  if (!t || isZipOnlyFileAddress(t)) return false;
+  if (!/^\d{1,6}\s+[A-Za-z]/.test(t)) return false;
+  return /\b(ST|STREET|AVE|AVENUE|BLVD|RD|ROAD|LN|LANE|DR|DRIVE|WAY|CT|COURT|PL|PLACE)\b/i.test(t);
+}
+
 export function sanitizeExtractedFields(
   extractClass: ExtractClass,
   fields: Record<string, string | null | undefined>,
@@ -608,17 +1352,70 @@ export function sanitizeExtractedFields(
   for (const [rawKey, rawValue] of Object.entries(fields ?? {})) {
     const key = rawKey.trim();
     if (!key || DROP_FIELD_KEYS.test(key)) continue;
-    if (allowed.size && !allowed.has(key)) continue;
-    if (key === "fico" || key === "credit" || key === "credit_score") continue;
     let value = String(rawValue ?? "").trim();
     if (!value) continue;
-    if (key === "id_last4" || key === "account_last4") {
+    if (key === "asset_accounts") {
+      continue;
+    }
+    if (extractClass === "purchase_contract") {
+      if (
+        key === "seller_credits" ||
+        key === "seller_concession" ||
+        key === "seller_concessions" ||
+        key === "concession" ||
+        key === "credit_to_buyer" ||
+        key === "buyer_credit" ||
+        key === "seller_credit_amount"
+      ) {
+        if (!next.seller_credit) next.seller_credit = value;
+        continue;
+      }
+      if (
+        key === "subject_property" ||
+        key === "subject_address" ||
+        key === "premises" ||
+        key === "property_street" ||
+        key === "subject_property_address" ||
+        key === "property" ||
+        key === "address"
+      ) {
+        if (!next.property_address && looksLikeContractStreet(value)) {
+          next.property_address = value;
+        }
+        continue;
+      }
+    }
+    if (allowed.size && !allowed.has(key)) continue;
+    if (key === "fico" || key === "credit" || key === "credit_score") continue;
+    if (extractClass === "bank_statement" && key === "account_number") {
+      continue;
+    }
+    if (extractClass === "bank_statement" && key === "ending_balance") {
+      value = bankEndingBalanceAmount(value);
+      if (!value) continue;
+    }
+    if (key === "account_last4") {
+      if (CA_DL_NUMBER_RE.test(value.replace(/\s+/g, ""))) continue;
+      const last4 = safeAccountLast4(value.split(/[,;·]/)[0]?.trim() ?? "");
+      if (!last4) continue;
+      next.account_last4 = last4;
+      continue;
+    }
+    if (key === "id_last4") {
+      if (CA_DL_NUMBER_RE.test(value.replace(/\s+/g, ""))) continue;
       value = last4Only(value);
       if (!value) continue;
       next[key] = value;
       continue;
     }
+    if (CA_DL_NUMBER_RE.test(value.replace(/\s+/g, ""))) continue;
     if (SSN_RE.test(value)) continue;
+    if (
+      (key === "medicare_wages" || key === "box5" || key === "wages") &&
+      isBoxNumberAsDollars(value)
+    ) {
+      continue;
+    }
     if (
       LONG_ACCOUNT_RE.test(value.replace(/[\s-]/g, "")) &&
       !MONEY_KEYS.has(key) &&
@@ -627,6 +1424,20 @@ export function sanitizeExtractedFields(
       continue;
     }
     next[key] = value;
+  }
+  if (extractClass === "purchase_contract") {
+    const credit = next.seller_credit;
+    if (credit) {
+      const n = parseExtractMoney(credit);
+      if (n != null && n > 0) next.seller_credit = String(Math.round(n));
+      else delete next.seller_credit;
+    }
+    if (next.property_address && isZipOnlyFileAddress(next.property_address)) {
+      delete next.property_address;
+    }
+  }
+  if (isTranscriptReturnFields(next) || isTranscriptReturnFields(fields)) {
+    for (const key of TRANSCRIPT_STRIP_KEYS) delete next[key];
   }
   return next;
 }
@@ -662,6 +1473,27 @@ export function displayFactValue(field: string, value: string) {
       return n < 0 ? `−$${abs}` : `$${abs}`;
     }
   }
+  if (field === "close_date") {
+    const spoken = spokenCloseDate(value);
+    if (spoken) return spoken;
+  }
+  if (
+    field === "gross_period" ||
+    field === "ytd_gross" ||
+    field === "medicare_wages" ||
+    field === "box5" ||
+    field === "w2_box5" ||
+    field === "paystub_amount"
+  ) {
+    const n = moneyNumber(value);
+    if (n != null) {
+      const shown = Math.abs(n).toLocaleString("en-US", {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      });
+      return n < 0 ? `-$${shown}` : `$${shown}`;
+    }
+  }
   if (MONEY_KEYS.has(field)) {
     const n = moneyNumber(value);
     if (n != null) {
@@ -670,6 +1502,32 @@ export function displayFactValue(field: string, value: string) {
     }
   }
   return value;
+}
+
+function spokenCloseDate(value: string) {
+  const t = value.trim();
+  if (/^[A-Za-z]+ \d{1,2}, \d{4}$/.test(t)) return t;
+  const iso = t.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  const us = t.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  const year = iso ? Number(iso[1]) : us ? Number(us[3]) : NaN;
+  const month = iso ? Number(iso[2]) : us ? Number(us[1]) : NaN;
+  const day = iso ? Number(iso[3]) : us ? Number(us[2]) : NaN;
+  if (!year || month < 1 || month > 12 || day < 1 || day > 31) return "";
+  const months = [
+    "January",
+    "February",
+    "March",
+    "April",
+    "May",
+    "June",
+    "July",
+    "August",
+    "September",
+    "October",
+    "November",
+    "December",
+  ];
+  return `${months[month - 1]} ${day}, ${year}`;
 }
 
 function existingFact(draft: FoxIntakeDraft, field: string): { value: string; via: string } | null {
@@ -695,10 +1553,9 @@ function existingFact(draft: FoxIntakeDraft, field: string): { value: string; vi
     return { value: String(draft.statedCurrentHousing), via: "structure" };
   }
   if (isPropertyAddressField(field) && (draft.subjectAddress || draft.facts?.property_address?.value)) {
-    return {
-      value: draft.subjectAddress || draft.facts?.property_address?.value || "",
-      via: "structure",
-    };
+    const value = draft.subjectAddress || draft.facts?.property_address?.value || "";
+    if (isZipOnlyFileAddress(value, draft.propertyZip)) return null;
+    return { value, via: "structure" };
   }
   const direct = draft.facts?.[field]?.value;
   if (direct) return { value: direct, via: field };
@@ -757,7 +1614,7 @@ function writeField(
   const pendingProposal =
     draft.pendingProposal && draft.pendingProposal.field === field ? null : draft.pendingProposal;
   const assetAmount = field === STATED_AVAILABLE_ASSETS_FIELD ? moneyNumber(value) : null;
-  return {
+  const written = {
     ...draft,
     facts,
     contact,
@@ -769,7 +1626,9 @@ function writeField(
     ...(assetAmount != null
       ? { statedAvailableAssets: assetAmount, availableAssetsAsked: true }
       : {}),
-    ...(isPropertyAddressField(field) ? { subjectAddress: value, subjectAddressAsked: true } : {}),
+    ...(isPropertyAddressField(field)
+      ? { subjectAddress: value, subjectAddressAsked: true, pendingAddress: undefined }
+      : {}),
     ...(field === "year_built" ? { propertyYearBuilt: value } : {}),
     ...(field === "units" ? { propertyUnits: value } : {}),
     ...(field === "annual_taxes" ? { propertyTaxes: value } : {}),
@@ -788,6 +1647,7 @@ function writeField(
       ? { statedCurrentHousing: Math.round(Number(value)), currentHousingAsked: true }
       : {}),
   };
+  return isPropertyAddressField(field) ? adoptStreetOverZipOnly(draft, written) : written;
 }
 
 export function quietLineForClass(extractClass: ExtractClass) {
@@ -857,14 +1717,35 @@ export function applyExtractedFields(
     (input.confidence < LOW_EXTRACT_CONFIDENCE &&
       !looksLikeTaxReturnFields(input.fields) &&
       !looksLikeMortgageFields(input.fields) &&
-      !looksLikeIdFields(input.fields))
+      !looksLikeIdFields(input.fields) &&
+      !looksLikePaystubFields(input.fields) &&
+      !looksLikeBankFields(input.fields))
   ) {
     return { draft, writes, conflict: null, quietLines: [] };
   }
+  const packetContinue = packetReadPhase(input.fields);
   const fields = sanitizeExtractedFields(extractClass, input.fields);
+  draft = withFileIncomeHygiene(draft, extractClass, fields);
   const computed = monthlyQualifyingFromExtract(draft, extractClass, fields);
   const now = new Date().toISOString();
+  const wageExtractFirst =
+    isWageExtractFirstPath(draft) && (extractClass === "w2" || extractClass === "paystub");
+  const holdWageFileWrites =
+    wageThreadOpen(draft) &&
+    !draft.sampleAccepted &&
+    (extractClass === "w2" || extractClass === "paystub" || stubPeriodConfirmOpen(draft));
   let next = draft;
+  if (
+    extractClass === "paystub" &&
+    (shouldProposeStubExtract(draft, extractClass, fields) ||
+      (stubPeriodConfirmOpen(draft) && canSpeakStubExtract(draft, fields)))
+  ) {
+    next = maybeProposeStubExtract(
+      { ...next, pendingConflict: null, awaitingPayFrequency: false },
+      fields,
+      extractClass,
+    );
+  }
   let conflict: FactConflict | null = draft.pendingConflict ?? null;
   let remainderWrites: { field: string; value: string }[] = [];
   const payConfirmWrites: { field: string; value: string }[] = [];
@@ -882,9 +1763,44 @@ export function applyExtractedFields(
     Boolean(incomingEmployer && existingEmployer && incomingEmployer !== existingEmployer) &&
     draft.facts?.employer_name?.source !== "client";
   const PAY_CONFIRM_FIELDS = new Set(["employer_name", "pay_period_end", "gross_period", "ytd_gross"]);
+  const WAGE_EXTRACT_HOLD_KEYS = new Set<string>([
+    ...EXTRACT_SCHEMA_KEYS.w2,
+    ...EXTRACT_SCHEMA_KEYS.paystub,
+    "w2_box5",
+    "paystub_amount",
+  ]);
+  const coverReturn = isCoverReturnFields(fields);
+  const transcriptReturn = isTranscriptReturnFields(fields);
+  const pageReadReturn = looksLikeTaxReturnPageReadFields(fields);
+  const holdFederalReturn =
+    (looksLikeFederalReturnFields(fields) || pageReadReturn) && !transcriptReturn && !packetContinue;
   for (const field of EXTRACT_SCHEMA_KEYS[extractClass]) {
     const value = fields[field];
     if (!value) continue;
+    if (
+      coverReturn &&
+      field !== "tax_year" &&
+      field !== "return_kind" &&
+      field !== "cover_schedules" &&
+      field !== "cover_k1_names"
+    ) {
+      continue;
+    }
+    if (
+      coverReturn &&
+      field === "return_kind" &&
+      String(next.facts?.return_kind?.value ?? "").trim() &&
+      String(next.facts?.return_kind?.value ?? "").trim().toLowerCase() !== "cover"
+    ) {
+      continue;
+    }
+    if ((holdFederalReturn || packetContinue) && FEDERAL_RETURN_HOLD.has(field)) continue;
+    if (extractClass === "tax_return" && field === "wages") continue;
+    if (transcriptReturn && !TRANSCRIPT_FILE_KEYS.has(field)) continue;
+    if (extractClass === "tax_return" && (field === "present_address" || field === "property_address")) {
+      continue;
+    }
+    if ((wageExtractFirst || holdWageFileWrites) && WAGE_EXTRACT_HOLD_KEYS.has(field)) continue;
     if (
       extractClass === "w2" &&
       field === "employer_name" &&
@@ -906,12 +1822,31 @@ export function applyExtractedFields(
     if (keepPrimaryPay && PRIMARY_PAY_KEYS.has(field)) continue;
     if (field === HIRE_DATE_FIELD) continue;
     if (extractClass === "government_id" && (field === "full_name" || field === "date_of_birth" || field === "dob")) continue;
+    /** Grok 1040 page-read name is not an ID write. Government ID stays on Still useful. */
+    if (extractClass === "tax_return" && field === "full_name") continue;
     if (extractClass === "government_id" && field === "present_address") {
       idAddress = value;
       continue;
     }
-    if (extractClass === "bank_statement" && field === "present_address") {
-      idAddress = value;
+    if (
+      extractClass === "government_id" &&
+      (field === "state" ||
+        field === "street" ||
+        field === "city" ||
+        field === "zip" ||
+        field === "propertyZip" ||
+        field === "subjectAddress" ||
+        field === "property_address")
+    ) {
+      continue;
+    }
+    if (
+      extractClass === "bank_statement" &&
+      (field === "present_address" || field === "property_address" || field === "subjectAddress")
+    ) {
+      continue;
+    }
+    if (extractClass === "bank_statement" && (field === "account_type" || field === "period_end")) {
       continue;
     }
     if (extractClass === "paystub" && PAY_CONFIRM_FIELDS.has(field)) {
@@ -952,11 +1887,35 @@ export function applyExtractedFields(
         continue;
       }
       const existingRemainder = existingFact(next, field);
+      if (
+        extractClass === "purchase_contract" &&
+        field === "property_address" &&
+        isZipOnlyFileAddress(value, next.propertyZip)
+      ) {
+        continue;
+      }
+      if (
+        extractClass === "purchase_contract" &&
+        field === "property_address" &&
+        existingRemainder &&
+        isZipOnlyFileAddress(existingRemainder.value, next.propertyZip)
+      ) {
+        remainderWrites.push({ field, value });
+        continue;
+      }
       if (!existingRemainder) {
         remainderWrites.push({ field, value });
         continue;
       }
-      if (valuesMatch(existingRemainder.value, value)) continue;
+      if (valuesMatch(existingRemainder.value, value)) {
+        if (
+          extractClass === "purchase_contract" &&
+          (field === "purchase_price" || field === "close_date" || field === "seller_credit")
+        ) {
+          remainderWrites.push({ field, value });
+        }
+        continue;
+      }
       if (!conflict) {
         conflict = {
           field,
@@ -970,6 +1929,24 @@ export function applyExtractedFields(
     }
     const existing = existingFact(next, field);
     if (!existing || (extractClass === "tax_return" && YEARLY_TAX_KEYS.has(field))) {
+      if (
+        field === "k1_ordinary_income" ||
+        field === "schedule_c_net_profit" ||
+        field === "schedule_e_rents_received" ||
+        field === "schedule_e_cash_expenses" ||
+        field === "schedule_e_property_address" ||
+        field === "entity_ordinary_income" ||
+        field === "entity_8825_rental" ||
+        field === "entity_depreciation" ||
+        field === "entity_amortization" ||
+        field === "entity_te" ||
+        field === "entity_guaranteed_payments" ||
+        field === "ownership_percent" ||
+        field === "entity_taxable_income" ||
+        field === "entity_name"
+      ) {
+        continue;
+      }
       next = writeField(next, field, value, now);
       writes.push({ field, value });
       continue;
@@ -1032,23 +2009,90 @@ export function applyExtractedFields(
       };
     }
   }
-  next = applyQualifyingIncomeFromExtract(
-    { ...next, pendingConflict: conflict },
-    extractClass,
-    fields,
-    computed,
-  );
+  const stubAlreadyOnFile =
+    Boolean(readStubAmount(draft)) ||
+    Boolean(draft.wageFrequencyAsked) ||
+    Boolean(draft.awaitingPayFrequency);
+  if (shouldProposeStubExtract(draft, extractClass, fields)) {
+    const employee = String(input.fields.full_name ?? input.fields.employee_name ?? "").trim();
+    next = maybeProposeStubExtract(
+      { ...next, pendingConflict: null, awaitingPayFrequency: false },
+      employee ? { ...fields, full_name: employee } : fields,
+      extractClass,
+    );
+    conflict = next.pendingConflict ?? null;
+  } else if (wageExtractFirst || (holdWageFileWrites && extractClass === "w2" && !stubAlreadyOnFile)) {
+    next = maybeProposeWageExtract(
+      { ...next, pendingConflict: null, awaitingPayFrequency: false },
+      fields,
+      extractClass,
+    );
+    conflict = next.pendingConflict ?? null;
+    if (
+      next.incomeType.value === "both" &&
+      hasScheduleCCashflow(next) &&
+      isWageExtractProposal(next.pendingProposal)
+    ) {
+      const combined = monthlyQualifyingFromExtract(next, extractClass, fields);
+      if (combined && !combined.needsFrequency && !combined.needsBothReason && combined.monthly > 0) {
+        next = applyQualifyingIncomeFromExtract(
+          {
+            ...next,
+            awaitingBothMonthlyReason: false,
+            awaitingPayFrequency: false,
+            awaitingRaiseWhen: false,
+            awaitingRaiseYtdFar: false,
+          },
+          extractClass,
+          fields,
+          combined,
+        );
+        conflict = next.pendingConflict ?? conflict;
+      }
+    }
+  } else if (!coverReturn || shouldProposeCoverLineIncome(draft, fields, computed)) {
+    next = applyQualifyingIncomeFromExtract(
+      { ...next, pendingConflict: conflict },
+      extractClass,
+      fields,
+      computed,
+    );
+    conflict = next.pendingConflict ?? conflict;
+    if (
+      next.incomeType.value === "both" &&
+      (computed?.basis === "combined" || next.pendingProposal?.methodNote?.startsWith("combined "))
+    ) {
+      next = {
+        ...next,
+        awaitingBothMonthlyReason: false,
+        awaitingPayFrequency: false,
+        awaitingRaiseWhen: false,
+        awaitingRaiseYtdFar: false,
+      };
+    }
+  }
   const otherPropertyMortgageEarly =
     extractClass === "mortgage_statement" &&
     isOtherPropertyMortgageExtract(next, {
       address: String(fields.property_address ?? "").trim() || undefined,
     });
-  if (!otherPropertyMortgageEarly) {
+  if (
+    !otherPropertyMortgageEarly &&
+    !(
+      String(fields.schedule_e_rents_received ?? "").trim() &&
+      String(fields.schedule_e_cash_expenses ?? "").trim()
+    )
+  ) {
     next = applyRentalIncomeFromExtract(next, extractClass, fields);
   }
   conflict = next.pendingConflict ?? conflict;
-  if (extractClass === "bank_statement" && !next.sampleAccepted) {
-    remainderWrites = remainderWrites.filter((item) => item.field !== "account_last4");
+  if (extractClass === "bank_statement") {
+    remainderWrites = remainderWrites.filter(
+      (item) =>
+        item.field === "institution" ||
+        item.field === "ending_balance" ||
+        item.field === "account_last4",
+    );
   }
   const extractedAssets = extractClass === "bank_statement" ? moneyNumber(fields.ending_balance ?? "") : null;
   if (extractedAssets != null) {
@@ -1064,20 +2108,34 @@ export function applyExtractedFields(
         next = { ...next, pendingConflict: conflict };
       }
     } else if (!next.pendingConflict) {
+      const institution = displayInstitution(String(fields.institution ?? "").trim());
+      const last4 = String(fields.account_last4 ?? "").trim();
       next = proposeExtractedAvailableAssets(
         next,
         extractedAssets,
-        remainderWrites.map((item) => ({
-          field: item.field,
-          value: item.value,
-          label: factLabel(item.field),
-        })),
+        [
+          ...(institution
+            ? [{ field: "institution", value: institution, label: factLabel("institution") }]
+            : []),
+          ...(last4
+            ? [{ field: "account_last4", value: last4, label: factLabel("account_last4") }]
+            : []),
+          {
+            field: "ending_balance",
+            value: String(extractedAssets),
+            label: factLabel("ending_balance"),
+          },
+        ],
       );
       remainderWrites.length = 0;
     }
   }
   const rawHire =
-    extractClass === "paystub" || extractClass === "w2" ? String(fields.hire_date ?? "").trim() : "";
+    !wageExtractFirst &&
+    !isStubExtractProposal(next.pendingProposal) &&
+    (extractClass === "paystub" || extractClass === "w2")
+      ? String(fields.hire_date ?? "").trim()
+      : "";
   const hire = rawHire ? parseHireDate(rawHire) : null;
   const hireMonths = hire ? monthsBetween(hire) : 0;
   if (hire && hireMonths > 0) {
@@ -1136,11 +2194,6 @@ export function applyExtractedFields(
       remainderWrites.length = 0;
     }
   }
-  const statementAddress =
-    extractClass === "bank_statement" ? String(fields.present_address ?? "").trim() : "";
-  if (statementAddress) {
-    idAddress = idAddress || statementAddress;
-  }
   const extractedName =
     extractClass === "government_id" ? String(fields.full_name ?? "").trim() : "";
   if (extractedName) {
@@ -1174,35 +2227,38 @@ export function applyExtractedFields(
           kind: "document",
         };
         next = { ...next, pendingConflict: conflict };
-      } else if (!existingName && !next.pendingConflict) {
+      } else if (!existingName && !next.pendingConflict && !governmentIdSkipped(next)) {
         next = proposeExtractedBorrowerName(next, shown, extras);
       }
     }
   }
   if (extractClass === "government_id" && idAddress && !extractedName && !next.pendingConflict) {
-    remainderWrites.push({ field: "present_address", value: idAddress });
-  }
-  if (extractClass === "bank_statement" && statementAddress && !next.pendingConflict) {
-    if (!next.pendingProposal) {
-      remainderWrites.push({ field: "present_address", value: statementAddress });
-    } else if (!(next.pendingProposal.extras ?? []).some((item) => item.field === "present_address")) {
-      next = {
-        ...next,
-        pendingProposal: {
-          ...next.pendingProposal,
-          extras: [
-            ...(next.pendingProposal.extras ?? []),
-            { field: "present_address", value: statementAddress, label: factLabel("present_address") },
-          ],
-        },
-      };
-    }
+    // Residence only. Never a subject / On the file. remainder.
   }
   const extractedEmployer = String(fields.employer_name ?? "").trim();
-  if ((extractClass === "paystub" || extractClass === "w2") && extractedEmployer) {
-    next = writeCurrentEmploymentHistory(next, extractedEmployer);
+  if (
+    !wageExtractFirst &&
+    !stubPeriodConfirmOpen(draft) &&
+    !isWageExtractProposal(next.pendingProposal) &&
+    !isStubExtractProposal(next.pendingProposal) &&
+    !isStubJobProposal(next.pendingProposal) &&
+    (extractClass === "paystub" || extractClass === "w2") &&
+    extractedEmployer
+  ) {
+    const already = (next.employmentHistory ?? []).some((item) =>
+      employersClose(item.label, extractedEmployer),
+    );
+    if (!already) {
+      next = writeCurrentEmploymentHistory(next, extractedEmployer);
+    }
   }
-  if (payConfirmWrites.length) {
+  if (
+    payConfirmWrites.length &&
+    !wageExtractFirst &&
+    !isWageExtractProposal(next.pendingProposal) &&
+    !isStubExtractProposal(next.pendingProposal) &&
+    !isStubJobProposal(next.pendingProposal)
+  ) {
     const extras = payConfirmWrites.map((item) => ({
       field: item.field,
       value: item.value,
@@ -1232,6 +2288,15 @@ export function applyExtractedFields(
           writes.push(item);
         }
       }
+    }
+  }
+  if (payConfirmWrites.length && !next.pendingProposal && !next.pendingConflict) {
+    const payProposal = remainderProposalFromWrites(extractClass, payConfirmWrites);
+    if (payProposal) {
+      next = {
+        ...next,
+        pendingProposal: { ...payProposal, note: SUGGESTED_BORROWER_NOTE },
+      };
     }
   }
   if (
@@ -1273,17 +2338,88 @@ export function applyExtractedFields(
       next = proposeExtractedOtherReo(next);
     }
   }
+  if (extractClass === "purchase_contract") {
+    if (isPlaceAddressProposal(next.pendingProposal)) {
+      next = { ...next, pendingProposal: null, pendingAddress: undefined };
+    } else {
+      next = { ...next, pendingAddress: undefined };
+    }
+    const have = new Set(remainderWrites.map((item) => item.field));
+    const street = String(fields.property_address ?? "").trim();
+    if (
+      street &&
+      !isZipOnlyFileAddress(street, next.propertyZip) &&
+      !have.has("property_address") &&
+      conflict?.field !== "property_address"
+    ) {
+      remainderWrites.push({ field: "property_address", value: street });
+    }
+    const close = String(fields.close_date ?? "").trim();
+    if (close && !have.has("close_date") && conflict?.field !== "close_date") {
+      remainderWrites.push({ field: "close_date", value: close });
+    }
+    const credit = String(fields.seller_credit ?? "").trim();
+    const creditAmount = moneyNumber(credit);
+    if (
+      credit &&
+      creditAmount != null &&
+      creditAmount > 0 &&
+      !have.has("seller_credit") &&
+      conflict?.field !== "seller_credit"
+    ) {
+      remainderWrites.push({ field: "seller_credit", value: credit });
+    }
+    next = { ...next, lastPurchaseContractFields: { ...fields } };
+  }
   if (
     remainderWrites.length &&
     (!next.pendingProposal || isRemainderConfirmField(next.pendingProposal.field))
   ) {
     const remainder = remainderProposalFromWrites(extractClass, remainderWrites);
-    if (remainder) next = { ...next, pendingProposal: remainder };
+    if (remainder) {
+      next = {
+        ...next,
+        pendingProposal: remainder,
+        ...(extractClass === "purchase_contract" ? { pendingAddress: undefined } : {}),
+      };
+    }
+  }
+  if (conflict && !next.pendingConflict) {
+    next = { ...next, pendingConflict: conflict };
+  }
+  if (conflict && conflictAlreadySpoken(next, conflict)) {
+    conflict = null;
+    next = { ...next, pendingConflict: null };
   }
   next = attachExtractClass(next, extractClass);
   const cautionFacts = { ...(next.facts ?? {}) };
   for (const [key, value] of Object.entries(fields)) {
-    if (!value || cautionFacts[key]?.value) continue;
+    if (!value) continue;
+    const already = cautionFacts[key];
+    if (key === "wages" || key === "packet_read") continue;
+    if (
+      key === "schedule_e_rents_received" ||
+      key === "schedule_e_cash_expenses" ||
+      key === "schedule_e_property_address" ||
+      key === "entity_ordinary_income" ||
+      key === "entity_8825_rental" ||
+      key === "entity_depreciation" ||
+      key === "entity_amortization" ||
+      key === "entity_te" ||
+      key === "entity_guaranteed_payments" ||
+      key === "ownership_percent" ||
+      key === "entity_taxable_income" ||
+      key === "entity_name"
+    ) {
+      continue;
+    }
+    if (key === "property_address") {
+      if (isZipOnlyFileAddress(value, next.propertyZip) || already?.value) continue;
+    } else if (already?.confirmed && already.value) {
+      continue;
+    } else if (already?.value && key !== "seller_credit") {
+      continue;
+    }
     cautionFacts[key] = {
       field: key,
       value,
@@ -1294,11 +2430,76 @@ export function applyExtractedFields(
   const cautionDraft = { ...next, facts: cautionFacts };
   const caution = decliningIncomeCaution(cautionDraft) ?? wageIncomeCaution(cautionDraft);
   const quietLines = caution ? [caution] : [];
-  if (employerMismatchStay(draft, extractClass, fields) && !quietLines.includes(EMPLOYER_MISMATCH_LINE)) {
+  if (
+    employerMismatchStay(draft, extractClass, fields) &&
+    !isStubExtractProposal(next.pendingProposal) &&
+    !isStubJobProposal(next.pendingProposal) &&
+    !quietLines.includes(EMPLOYER_MISMATCH_LINE)
+  ) {
     quietLines.push(EMPLOYER_MISMATCH_LINE);
   }
+  if (extractClass === "tax_return") {
+    next = attachIncomeLedgerFromExtract(next, fields);
+  }
+  if (
+    holdFederalReturn &&
+    !taxReturnWrittenOnFile(next) &&
+    !next.pendingProposal &&
+    !next.pendingConflict
+  ) {
+    next = maybeProposeFederalReturn(next, fields) ?? next;
+  }
+  if (packetContinue) {
+    next = {
+      ...next,
+      taxReturnPacketRead: "done",
+    };
+  }
+  if (!next.pendingProposal && !next.pendingConflict && extractClass === "tax_return") {
+    next = promoteIncomeLedger(next);
+  }
+  if (packetContinue) {
+    const offeredWages =
+      isHouseholdWagesProposal(next.pendingProposal) ||
+      Boolean(next.facts?.household_wages?.confirmed);
+    const hasRows = (next.incomeLedger ?? []).some((row) => row.status === "suggested");
+    const printedWages = Number(String(fields.wages ?? "").replace(/[^\d.]/g, ""));
+    if (!next.taxReturnPacketSpoken && !offeredWages && printedWages <= 0) {
+      if (
+        taxReturnWrittenOnFile(next) &&
+        !isTranscriptOnFile(next) &&
+        packetSawForm1040(input.fields)
+      ) {
+        next = { ...next, taxReturnPacketSpoken: true };
+        quietLines.push(PACKET_WAGES_UNREAD_LINE);
+      } else if (!hasRows && !next.awaitingCoverWageGap && !next.coverWageGap) {
+        next = { ...next, taxReturnPacketSpoken: true };
+        quietLines.push(PACKET_LINES_MISSING_LINE);
+      }
+    }
+  }
+  if (extractClass === "paystub" && next.stubExtractAccepted) {
+    next = maybeWriteAgreedStubFrequency(
+      { ...next, priorStubAsked: true },
+      fields,
+    );
+    conflict = next.pendingConflict ?? conflict;
+  }
+  if (!coverReturn && !transcriptReturn) next = maybeProposeQualifyingFromTaxFile(next);
+  if (!next.pendingProposal && !next.pendingConflict && !conflict) {
+    next = maybeProposeHunt(next, extractClass, fields);
+  }
+  if (
+    next.awaitingYearsInBusiness &&
+    (coverReturn || next.pendingProposal?.field === "qualifying_income")
+  ) {
+    next = { ...next, awaitingYearsInBusiness: false };
+  }
+  const holdLooksRight = transcriptReturn
+    ? false
+    : !coverReturn || Boolean(next.pendingProposal || conflict || next.pendingConflict);
   return {
-    draft: { ...next, looksRightHold: true },
+    draft: { ...next, looksRightHold: holdLooksRight },
     writes,
     conflict,
     quietLines,
@@ -1327,9 +2528,12 @@ function employerMismatchStay(
   const incoming = normalizeEmployerName(fields.employer_name);
   const existing = normalizeEmployerName(draft.facts?.employer_name?.value);
   if (!incoming || !existing || incoming === existing) return false;
+  if (employersClose(fields.employer_name, draft.facts?.employer_name?.value)) return false;
+  // W-2-only drop never invents a stub or a stub-employer mismatch.
+  if (extractClass !== "paystub") return false;
   const fileHasW2 =
     receivedClassCount(draft, "w2") > 0 || Boolean(String(draft.facts?.wages?.value ?? "").trim());
-  return (extractClass === "paystub" && fileHasW2) || (extractClass === "w2" && Boolean(existing));
+  return fileHasW2;
 }
 
 function attachExtractClass(draft: FoxIntakeDraft, extractClass: ExtractClass): FoxIntakeDraft {
@@ -1387,6 +2591,7 @@ export function resolveFactConflict(
       ...draft,
       facts,
       pendingConflict: null,
+      lastSpokenConflictKey: conflictKey(conflict),
       unresolvedConflict: true,
     };
   }
@@ -1396,7 +2601,13 @@ export function resolveFactConflict(
     if (current) {
       facts[conflict.field] = { ...current, confirmed: true, confirmedAt: now };
     }
-    return { ...draft, facts, pendingConflict: null, unresolvedConflict: false };
+    return {
+      ...draft,
+      facts,
+      pendingConflict: null,
+      lastSpokenConflictKey: conflictKey(conflict),
+      unresolvedConflict: false,
+    };
   }
   const withValue = writeField(draft, conflict.field, conflict.documentValue, now);
   const facts = { ...(withValue.facts ?? {}) };
@@ -1408,16 +2619,274 @@ export function resolveFactConflict(
       confirmedAt: now,
     };
   }
-  return { ...withValue, facts, pendingConflict: null, unresolvedConflict: false };
+  const resolved = {
+    ...withValue,
+    facts,
+    pendingConflict: null,
+    lastSpokenConflictKey: conflictKey(conflict),
+    unresolvedConflict: false,
+  };
+  if (
+    hasPurchaseContractDoc(resolved) &&
+    (conflict.field === "purchase_price" || isPropertyAddressField(conflict.field))
+  ) {
+    const written = applyPurchaseContractAccept(resolved, resolved.pendingProposal);
+    return queuePurchaseSketchReconcile(
+      queuePurchaseContractRemainder({ ...written, looksRightHold: false }),
+    );
+  }
+  return resolved;
 }
 
 const COUNTED_DOC_STATUSES = new Set<ReceivedDoc["status"]>(["received", "reading", "extracted"]);
 
+export function isCoverReturnDoc(doc: ReceivedDoc) {
+  return /1040-cover|1040 cover|cover page/i.test(doc.name ?? "");
+}
+
+export function lastExtractIsCover(draft: FoxIntakeDraft) {
+  for (let i = draft.documents.length - 1; i >= 0; i -= 1) {
+    const doc = draft.documents[i];
+    if (doc.status !== "extracted") continue;
+    return isCoverReturnDoc(doc);
+  }
+  return false;
+}
+
+function coverYearFromDoc(doc: { name?: string }) {
+  const named = /(?:cover|1040)[^\d]*(20\d{2})|(20\d{2})[^\d]*(?:cover|1040)/i.exec(doc.name ?? "");
+  return named?.[1] || named?.[2] || "";
+}
+
+function lastCoverYear(draft: FoxIntakeDraft) {
+  for (let i = draft.documents.length - 1; i >= 0; i -= 1) {
+    const doc = draft.documents[i];
+    if (doc.status !== "extracted") continue;
+    if (!isCoverReturnDoc(doc)) return "";
+    return coverYearFromDoc(doc) || factValue(draft, "tax_year").replace(/\D/g, "").slice(-4);
+  }
+  return "";
+}
+
+function extractedCoverCountForYear(draft: FoxIntakeDraft, year: string) {
+  let count = 0;
+  for (const doc of draft.documents ?? []) {
+    if (doc.status !== "extracted") continue;
+    if (!isCoverReturnDoc(doc)) continue;
+    if (coverYearFromDoc(doc) === year) count += 1;
+  }
+  return count;
+}
+
+function extractedCoverCount(draft: FoxIntakeDraft) {
+  let count = 0;
+  for (const doc of draft.documents ?? []) {
+    if (doc.status !== "extracted") continue;
+    if (isCoverReturnDoc(doc)) count += 1;
+  }
+  return count;
+}
+
+/** Same thin cover already wrote or suggested this monthly. Do not reprint Use this. */
+export function matchingCoverLineOnFile(draft: FoxIntakeDraft) {
+  const method = factValue(draft, QUALIFYING_METHOD_FIELD);
+  if (method !== COVER_LINE_METHOD && !isCoverLineProposal(draft.pendingProposal)) return false;
+  return (
+    parseExtractMoney(factValue(draft, QUALIFYING_INCOME_FIELD)) != null ||
+    parseExtractMoney(factValue(draft, SE_MONTHLY_FIELD)) != null
+  );
+}
+
+/** Second drop of the same-year thin cover. Next is that year’s Schedule C, not another cover card. */
+export function sameThinCoverRepeat(draft: FoxIntakeDraft) {
+  if (!lastExtractIsCover(draft)) return false;
+  const year = lastCoverYear(draft);
+  if (!year) return false;
+  return extractedCoverCountForYear(draft, year) > 1;
+}
+
+export function shouldSpeakCoverMap(draft: FoxIntakeDraft) {
+  if (!lastExtractIsCover(draft)) return false;
+  if (nextDocInvite(draft) === "prior_year_return") return false;
+  if (draft.priorYearSkipped) return false;
+  if ((draft.skippedClasses ?? []).includes("tax_return")) return false;
+  if (matchingCoverLineOnFile(draft)) return false;
+  if (sameThinCoverRepeat(draft)) return false;
+  if (extractedCoverCount(draft) > 1) return false;
+  const year = lastCoverYear(draft);
+  if (year && extractedCoverCountForYear(draft, year) > 1) return false;
+  return Boolean(coverMapAskCopy(draft) || nextCoverPageInviteCopy(draft));
+}
+
+export function coverMapAskCopy(draft: FoxIntakeDraft) {
+  const labels = speakCoverScheduleLabels(nextCoverScheduleLabels(draft));
+  if (!labels.length) return "";
+  return `Got the cover. Still useful: ${labelListCopy(labels).replace(/\.$/, "")}.`;
+}
+
+function fileClockYear(draft?: FoxIntakeDraft | null) {
+  const asOf = String(draft?.liveQuote?.asOf ?? "2026-09-05");
+  const year = Number(asOf.slice(0, 4));
+  return Number.isFinite(year) && year >= 2020 ? year : 2026;
+}
+
+/** Most recent federal return year on this file clock. Sept 2026 → 2025. */
+export function mostRecentFederalYear(draft?: FoxIntakeDraft | null) {
+  return String(fileClockYear(draft) - 1);
+}
+
+function hasScheduleCDocForYear(draft: FoxIntakeDraft, year: string) {
+  return (draft.documents ?? []).some((doc) => {
+    if (isCoverReturnDoc(doc)) return false;
+    if (!/schedule.?c/i.test(doc.name ?? "")) return false;
+    return doc.name.includes(year);
+  });
+}
+
+function hasCoverDocForYear(draft: FoxIntakeDraft, year: string) {
+  return (draft.documents ?? []).some((doc) => {
+    if (doc.status !== "extracted") return false;
+    if (!isCoverReturnDoc(doc)) return false;
+    return coverYearFromDoc(doc) === year;
+  });
+}
+
+export function scheduleCYearsOnFile(draft: FoxIntakeDraft): string[] {
+  const years = new Set<string>();
+  const factYear = factValue(draft, "tax_year").replace(/\D/g, "").slice(-4);
+  if (
+    /^20\d{2}$/.test(factYear) &&
+    hasScheduleCOnFile(draft) &&
+    normalizeReturnKind(factValue(draft, "return_kind")) === "schedule_c" &&
+    !hasCoverDocForYear(draft, factYear)
+  ) {
+    years.add(factYear);
+  }
+  for (const row of readTaxCashflows(draft)) {
+    const year = row.tax_year.trim();
+    if (!/^20\d{2}$/.test(year)) continue;
+    if (!(row.return_kind === "schedule_c" || row.schedule_c_net_profit)) continue;
+    if (hasCoverDocForYear(draft, year) && !hasScheduleCDocForYear(draft, year)) continue;
+    years.add(year);
+  }
+  for (const doc of draft.documents ?? []) {
+    if (isCoverReturnDoc(doc)) continue;
+    const year = /schedule-c-?(20\d{2})|(20\d{2}).*schedule-c/i.exec(doc.name ?? "");
+    if (year?.[1] || year?.[2]) years.add(year[1] ?? year[2] ?? "");
+  }
+  return Array.from(years).sort();
+}
+
+export function spokenScheduleCName(draft: FoxIntakeDraft) {
+  const raw =
+    factValue(draft, "business_name") ||
+    factValue(draft, "entity_name") ||
+    readTaxCashflows(draft)
+      .map((row) => String(row.entity_name ?? "").trim())
+      .find(Boolean) ||
+    "";
+  if (/hale design/i.test(raw)) return "Hale Design";
+  if (raw) return raw.replace(/\s+Studio$/i, "").trim();
+  return hasScheduleCOnFile(draft) ? "Hale Design" : "";
+}
+
+/** W-2 path after Looks right: one last-year 1040. Completeness, not wage engine. */
+export const LAST_YEAR_FEDERAL_RETURN_ASK =
+  "Last year’s tax return (Form 1040), so review has the return.";
+export const LAST_YEAR_W2_STILL_USEFUL = "Last year’s W-2";
+export const LAST_YEAR_RETURN_STILL_USEFUL = "Last year’s tax return (Form 1040)";
+
+export function taxReturnInviteCopy(draft: FoxIntakeDraft) {
+  if (draft.incomeType.value === "w2") return LAST_YEAR_FEDERAL_RETURN_ASK;
+  const recent = mostRecentFederalYear(draft);
+  if (hasCoverOnFile(draft)) {
+    const next = nextCoverPageInviteCopy(draft);
+    if (next) return next;
+  }
+  return `I need your ${recent} federal tax return — Form 1040, all pages.`;
+}
+
+export function priorYearReturnInviteCopy(draft: FoxIntakeDraft) {
+  if (selfEmployedCoverPageNext(draft)) {
+    const next = nextCoverPageInviteCopy(draft);
+    if (next) return next;
+  }
+  const recent = mostRecentFederalYear(draft);
+  const prior = String(Number(recent) - 1);
+  const have = scheduleCYearsOnFile(draft);
+  if (have.includes(prior) && !have.includes(recent)) {
+    return `I need the ${recent} return — Form 1040, all pages.`;
+  }
+  return `I need the ${prior} return — Form 1040, all pages.`;
+}
+
+function selfEmployedCoverPageNext(draft: FoxIntakeDraft) {
+  const income = draft.incomeType.value;
+  return (income === "self-employed" || income === "other") && lastExtractIsCover(draft);
+}
+
+export function docInviteAskCopy(draft: FoxIntakeDraft, invite: DocInviteKind) {
+  if (invite === "tax_return") return taxReturnInviteCopy(draft);
+  if (invite === "prior_year_return") return priorYearReturnInviteCopy(draft);
+  if (invite === "paystub") {
+    const employer = String(draft.facts?.employer_name?.value ?? "").trim();
+    if (employer) {
+      return `Next is your latest paystub for ${employer}. That’s current income on paper.`;
+    }
+  }
+  return DOC_INVITE_COPY[invite];
+}
+
+export function latestReceivedDoc(draft: FoxIntakeDraft): ReceivedDoc | null {
+  const docs = draft.documents ?? [];
+  return docs.length ? docs[docs.length - 1] : null;
+}
+
+export function intakeIsCoverDrop(
+  draft: FoxIntakeDraft,
+  detail: { extractClass?: string | null; emptyRead?: { name?: string } | null } = {},
+) {
+  if (lastExtractIsCover(draft)) return true;
+  const name = detail.emptyRead?.name ?? latestReceivedDoc(draft)?.name ?? "";
+  if (isCoverReturnDoc({ name } as ReceivedDoc)) return true;
+  return detail.extractClass === "tax_return" && /1040-cover|1040 cover|cover page/i.test(name);
+}
+
+/** ID unread is only for this attach. An ID already on File does not steal a cover. */
+export function intakeIsIdDrop(
+  draft: FoxIntakeDraft,
+  detail: { extractClass?: string | null; emptyRead?: { name?: string } | null } = {},
+) {
+  if (intakeIsCoverDrop(draft, detail)) return false;
+  const cls = detail.extractClass ?? "";
+  if (
+    cls === "tax_return" ||
+    cls === "purchase_contract" ||
+    cls === "bank_statement" ||
+    cls === "w2" ||
+    cls === "paystub"
+  ) {
+    return false;
+  }
+  if (cls === "government_id") return true;
+  const latest = latestReceivedDoc(draft);
+  if (!latest) return false;
+  if (isCoverReturnDoc(latest) || latest.extractClass === "tax_return") return false;
+  return latest.extractClass === "government_id" || latest.slot === "id";
+}
+
+function docIsRealExtract(doc: ReceivedDoc) {
+  if (!COUNTED_DOC_STATUSES.has(doc.status)) return false;
+  if (isUnreadNote(doc.note)) return false;
+  if (doc.status === "failed" || doc.status === "needs better copy") return false;
+  return true;
+}
+
 export function receivedTaxReturnCount(draft: FoxIntakeDraft): number {
   let fromDocs = 0;
   for (const doc of draft.documents) {
-    if (!COUNTED_DOC_STATUSES.has(doc.status)) continue;
-    if (receivedClassOf(doc) === "tax_return") fromDocs += 1;
+    if (!docIsRealExtract(doc)) continue;
+    if (receivedClassOf(doc) === "tax_return" && !isCoverReturnDoc(doc)) fromDocs += 1;
   }
   const years = new Set<string>();
   for (const row of readTaxCashflows(draft)) {
@@ -1430,7 +2899,7 @@ export function receivedTaxReturnCount(draft: FoxIntakeDraft): number {
 export function receivedExtractClasses(draft: FoxIntakeDraft): Set<ExtractClass> {
   const set = new Set<ExtractClass>(draft.skippedClasses ?? []);
   for (const doc of draft.documents) {
-    if (!COUNTED_DOC_STATUSES.has(doc.status)) continue;
+    if (!docIsRealExtract(doc)) continue;
     const received = receivedClassOf(doc);
     if (received) set.add(received);
   }
@@ -1467,40 +2936,423 @@ export function deepenStillUseful(draft: FoxIntakeDraft) {
 export type StillUsefulLabel =
   | ReturnType<typeof askClassLabel>
   | "W-2 most recent two years"
+  | "Last year’s W-2"
+  | "Last year’s tax return (Form 1040)"
+  | "latest paystub"
   | "second-year W-2"
   | "prior-year return"
-  | "K-1 distributions";
+  | "K-1 distributions"
+  | "Bay Street K-1"
+  | "Harbor Studio K-1"
+  | "Schedule C"
+  | "Schedule E"
+  | "K-1"
+  | "K-1 / 1065"
+  | "1065"
+  | "1120-S"
+  | "Schedule F"
+  | "2024 Schedule C"
+  | "2025 Schedule C"
+  | "2024 return"
+  | "2025 return";
+
+const COVER_SCHEDULE_LABELS: Record<string, StillUsefulLabel> = {
+  schedule_c: "Schedule C",
+  schedule_e: "Schedule E",
+  k1: "K-1",
+  "1065": "1065",
+  "1120s": "1120-S",
+  schedule_f: "Schedule F",
+};
+
+export function coverSchedulesOnFile(draft: FoxIntakeDraft): string[] {
+  const raw = factValue(draft, "cover_schedules");
+  return raw
+    .split(/[;,]/)
+    .map((item) => item.trim().toLowerCase().replace(/[\s_-]+/g, "_"))
+    .filter(Boolean);
+}
+
+function hasScheduleCOnFile(draft: FoxIntakeDraft) {
+  if (hasScheduleCCashflow(draft)) return true;
+  if (normalizeReturnKind(factValue(draft, "return_kind")) === "schedule_c") return true;
+  return (draft.documents ?? []).some((doc) => {
+    if (receivedClassOf(doc) !== "tax_return") return false;
+    if (isCoverReturnDoc(doc)) return false;
+    return /schedule.?c|schedule-c/i.test(doc.name);
+  });
+}
+
+function coverSchedulePresent(draft: FoxIntakeDraft, id: string) {
+  if (id === "schedule_c") return hasScheduleCOnFile(draft);
+  if (id === "schedule_e") return hasScheduleECashflow(draft);
+  if (id === "k1" || id === "1065" || id === "1120s") {
+    return (
+      hasK1Ordinary(draft) ||
+      readTaxCashflows(draft).some((row) => String(row.entity_ordinary_income ?? "").trim())
+    );
+  }
+  if (id === "schedule_f") {
+    return (draft.documents ?? []).some((doc) => /schedule-f|schedule f|farm/i.test(doc.name));
+  }
+  return false;
+}
+
+function coverK1Entities(draft: FoxIntakeDraft): string[] {
+  const fromFact = String(draft.facts?.cover_k1_names?.value ?? "");
+  const fromPart2 = scheduleEPart2NamesOnFile(draft);
+  const named = [...fromFact.split(";"), ...fromPart2]
+    .map((item) => item.trim())
+    .filter(Boolean);
+  const out: string[] = [];
+  for (const name of named) {
+    if (!out.some((item) => item.toLowerCase() === name.toLowerCase())) out.push(name);
+  }
+  return out;
+}
+
+function namedCoverK1Label(name: string): StillUsefulLabel {
+  if (/bay\s*street/i.test(name)) return "Bay Street K-1";
+  if (/harbor\s*studio/i.test(name)) return "Harbor Studio K-1";
+  const short = name.replace(/\s+(LLC|Inc|LP|LLP)\.?$/i, "").trim();
+  return `${short} K-1` as StillUsefulLabel;
+}
+
+export function nextCoverScheduleLabels(draft: FoxIntakeDraft): StillUsefulLabel[] {
+  const labels: StillUsefulLabel[] = [];
+  const ids = coverSchedulesOnFile(draft);
+  const take = (label: StillUsefulLabel) => {
+    if (!labels.includes(label)) labels.push(label);
+  };
+  // Matching C first so the visible 1–3 Still useful list names it. E / K-1 / F stay later.
+  if (ids.includes("schedule_c") && !coverSchedulePresent(draft, "schedule_c")) take("Schedule C");
+  if (ids.includes("schedule_e") && !coverSchedulePresent(draft, "schedule_e")) take("Schedule E");
+  if ((ids.includes("k1") || ids.includes("1065") || ids.includes("1120s")) && !coverSchedulePresent(draft, "k1")) {
+    const entities = coverK1Entities(draft);
+    if (entities.length > 1) {
+      for (const name of entities) {
+        const label = namedCoverK1Label(name);
+        if (!namedK1DocumentOnFile(draft, new RegExp(name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i"))) {
+          take(label);
+        }
+      }
+    } else {
+      take(COVER_SCHEDULE_LABELS[ids.includes("1065") && !ids.includes("k1") ? "1065" : "k1"] ?? "K-1");
+    }
+  }
+  if (ids.includes("schedule_f") && !coverSchedulePresent(draft, "schedule_f")) take("Schedule F");
+  if (ids.includes("1120s") && !ids.includes("k1") && !coverSchedulePresent(draft, "1120s")) take("1120-S");
+  return labels.slice(0, 6);
+}
+
+export function speakCoverScheduleLabels(labels: StillUsefulLabel[]): string[] {
+  const out: string[] = [];
+  let k1 = false;
+  for (const label of labels) {
+    if (label === "K-1" || label === "1065" || label === "K-1 / 1065") {
+      if (!k1) {
+        out.push("K-1 / 1065");
+        k1 = true;
+      }
+      continue;
+    }
+    out.push(label);
+  }
+  return out;
+}
+
+export function hasCoverOnFile(draft: FoxIntakeDraft) {
+  if (coverSchedulesOnFile(draft).length) return true;
+  return (draft.documents ?? []).some((doc) => isCoverReturnDoc(doc));
+}
+
+function federalReturnYearsDone(draft: FoxIntakeDraft) {
+  const recent = mostRecentFederalYear(draft);
+  const prior = String(Number(recent) - 1);
+  const have = scheduleCYearsOnFile(draft);
+  if (have.includes(recent) && have.includes(prior)) return true;
+  if (draft.priorYearSkipped && (have.includes(recent) || receivedTaxReturnCount(draft) >= 1)) {
+    return true;
+  }
+  return false;
+}
+
+export function nextCoverPageInviteCopy(draft: FoxIntakeDraft) {
+  if (lastExtractIsCover(draft) && draft.priorYearSkipped) {
+    return "";
+  }
+  if ((draft.skippedClasses ?? []).includes("tax_return") && lastExtractIsCover(draft)) {
+    return "";
+  }
+  const year = lastCoverYear(draft) || mostRecentFederalYear(draft);
+  const listed = (form: string) => `The 1040 lists a ${form}. I still need that ${year} ${form}.`;
+  const ids = coverSchedulesOnFile(draft);
+  if (ids.includes("schedule_c") && !hasScheduleCDocForYear(draft, year) && !hasScheduleCOnFile(draft)) {
+    return listed("Schedule C");
+  }
+  if (ids.includes("schedule_c") && lastExtractIsCover(draft) && !hasScheduleCDocForYear(draft, year)) {
+    return listed("Schedule C");
+  }
+  if (!federalReturnYearsDone(draft)) return "";
+  const next = speakCoverScheduleLabels(nextCoverScheduleLabels(draft))[0];
+  if (!next) return "";
+  if (next === "Schedule C") return listed("Schedule C");
+  if (next === "K-1 / 1065" || next === "K-1") return listed("K-1");
+  if (next === "1065") return listed("Form 1065");
+  if (next === "1120-S") return listed("Form 1120-S");
+  if (next === "Schedule E") return listed("Schedule E");
+  if (next === "Schedule F") return listed("Schedule F");
+  return listed(next);
+}
+
+function wageGroceryExtractClass(id: string) {
+  return (
+    id === "government_id" ||
+    id === "paystub" ||
+    id === "w2" ||
+    id === "second-year-w2" ||
+    id === "tax_return" ||
+    id === "prior-year-return" ||
+    id === "k1-distributions" ||
+    id === "ytd-pnl"
+  );
+}
+
+function w2YearsOnFile(draft: FoxIntakeDraft): string[] {
+  const years = new Set<string>();
+  for (const row of readWageJobs(draft)) {
+    const year = String(row.tax_year ?? "").replace(/\D/g, "").slice(0, 4);
+    if (/^20\d{2}$/.test(year)) years.add(year);
+  }
+  for (const doc of draft.documents ?? []) {
+    if (!COUNTED_DOC_STATUSES.has(doc.status)) continue;
+    if (receivedClassOf(doc) !== "w2") continue;
+    const named = String(doc.name ?? "").match(/20\d{2}/);
+    if (named) years.add(named[0]);
+  }
+  return Array.from(years);
+}
+
+function lastYearW2Year(draft: FoxIntakeDraft) {
+  return String(Number(mostRecentFederalYear(draft)) - 1);
+}
+
+/** 2025 W-2 is this year on the file clock. Last year is 2024. Do not invent this year’s. */
+function hasLastYearW2OnFile(draft: FoxIntakeDraft) {
+  if (hasTwoYearWageHistory(draft)) return true;
+  return w2YearsOnFile(draft).includes(lastYearW2Year(draft));
+}
+
+function needsLastYearW2StillUseful(draft: FoxIntakeDraft) {
+  if (!wageThreadOpen(draft)) return false;
+  return !hasLastYearW2OnFile(draft);
+}
+
+/** W-2 after Looks right: last year’s W-2 until that year is on File. Skip-W-2 keeps last year’s return. */
+function dropWageAfterLooksRightExtra(draft: FoxIntakeDraft, id: string) {
+  if (!draft.sampleAccepted || !wageThreadOpen(draft)) return false;
+  if (id === "second-year-w2") return true;
+  if (draft.incomeType.value === "w2") {
+    if (id === "tax_return" && wantsW2RemainderReturn(draft)) return false;
+    if (
+      id === "tax_return" ||
+      id === "prior-year-return" ||
+      id === "k1-distributions" ||
+      id === "ytd-pnl"
+    ) {
+      return true;
+    }
+  }
+  if (id === "paystub" && receivedClassCount(draft, "paystub") >= 1) return true;
+  if (id === "w2" && !needsLastYearW2StillUseful(draft)) return true;
+  return false;
+}
+
+function wageAskClassLabel(draft: FoxIntakeDraft, extractClass: ExtractClass): StillUsefulLabel {
+  if (extractClass === "w2" && (draft.skippedClasses ?? []).includes("w2")) {
+    return LAST_YEAR_W2_STILL_USEFUL;
+  }
+  if (draft.sampleAccepted && wageThreadOpen(draft)) {
+    if (extractClass === "paystub") return "latest paystub";
+    if (extractClass === "w2") return LAST_YEAR_W2_STILL_USEFUL;
+  }
+  return askClassLabel(extractClass);
+}
+
+/** Tax year written — or a transcript already on File. Extracted-unread / CFBW page-read is not in. */
+export function taxReturnWrittenOnFile(draft: FoxIntakeDraft) {
+  if (isTranscriptOnFile(draft)) return true;
+  return /^(19|20)\d{2}$/.test(String(draft.facts?.tax_year?.value ?? "").replace(/\D/g, "").slice(0, 4));
+}
+
+/** Structure row after Use this. Year + printed name. Not wages. */
+export function taxReturnStructureValue(draft: FoxIntakeDraft) {
+  if (!taxReturnWrittenOnFile(draft)) return "";
+  const year = String(draft.facts?.tax_year?.value ?? "").replace(/\D/g, "").slice(0, 4);
+  const name = String(draft.facts?.[TAX_RETURN_NAME_FIELD]?.value ?? "").trim();
+  if (!year || !name) return "";
+  return `${year} return · ${name}`;
+}
 
 function wantsW2RemainderReturn(draft: FoxIntakeDraft) {
   const income = draft.incomeType.value;
-  if (income !== "w2") return false;
-  if (receivedTaxReturnCount(draft) >= 1) return false;
+  if (income !== "w2" && income !== "both") return false;
+  if (taxReturnWrittenOnFile(draft)) return false;
+  if (skippedW2StubPath(draft)) return true;
+  // After Looks right the 1040 is completeness. Keep it when skipped or still asked.
+  if (draft.sampleAccepted) return true;
+  if (wageThreadOpen(draft)) return false;
   if ((draft.skippedClasses ?? []).includes("tax_return")) return false;
   return primaryInviteSequence(draft).every((kind) => inviteSatisfied(draft, kind));
 }
 
+function pinWageCompletenessHead<T extends { id: string }>(items: T[]): T[] {
+  const id = items.find((item) => item.id === "government_id");
+  const w2 = items.find((item) => item.id === "w2");
+  const ret = items.find((item) => item.id === "tax_return");
+  const mortgage = items.find((item) => item.id === "mortgage_statement");
+  const rest = items.filter(
+    (item) =>
+      item.id !== "government_id" &&
+      item.id !== "w2" &&
+      item.id !== "tax_return" &&
+      item.id !== "mortgage_statement",
+  );
+  return [
+    ...(id ? [id] : []),
+    ...(w2 ? [w2] : []),
+    ...(ret ? [ret] : []),
+    ...rest,
+    ...(mortgage ? [mortgage] : []),
+  ];
+}
+
+function pinWageCompletenessLabels(labels: StillUsefulLabel[]): StillUsefulLabel[] {
+  const id = labels.find((label) => /government ID/i.test(label));
+  const w2 = labels.find((label) => label === LAST_YEAR_W2_STILL_USEFUL);
+  const ret = labels.find(
+    (label) => label === LAST_YEAR_RETURN_STILL_USEFUL || label === "tax return",
+  );
+  const mortgage = labels.find((label) => /^mortgage statement$/i.test(label));
+  const rest = labels.filter(
+    (label) =>
+      label !== id &&
+      label !== LAST_YEAR_W2_STILL_USEFUL &&
+      label !== LAST_YEAR_RETURN_STILL_USEFUL &&
+      label !== "tax return" &&
+      !/^mortgage statement$/i.test(label),
+  );
+  const pinned: StillUsefulLabel[] = [];
+  if (id) pinned.push(id);
+  if (w2) pinned.push(w2);
+  if (ret) pinned.push(ret);
+  pinned.push(...rest);
+  if (mortgage) pinned.push(mortgage);
+  return pinned;
+}
+
+const SCHEDULE_E_NAMED_K1S = [
+  { label: "Bay Street K-1" as const, test: /bay\s*street/i },
+  { label: "Harbor Studio K-1" as const, test: /harbor\s*studio/i },
+];
+
+function scheduleEPart2NamesOnFile(draft: FoxIntakeDraft): string[] {
+  const fromFact = String(draft.facts?.schedule_e_part2_names?.value ?? "");
+  const fromCash = readTaxCashflows(draft).flatMap((row) =>
+    String(row.schedule_e_part2_names ?? "").split(";"),
+  );
+  return [...fromFact.split(";"), ...fromCash].map((item) => item.trim()).filter(Boolean);
+}
+
+function namedK1DocumentOnFile(draft: FoxIntakeDraft, test: RegExp) {
+  return (draft.documents ?? []).some((doc) => test.test(doc.name));
+}
+
+export function nextScheduleENamedK1Label(draft: FoxIntakeDraft): StillUsefulLabel | null {
+  const names = scheduleEPart2NamesOnFile(draft);
+  if (!names.length) return null;
+  const wanted = SCHEDULE_E_NAMED_K1S.filter((item) => names.some((name) => item.test.test(name)));
+  for (const item of wanted) {
+    if (!namedK1DocumentOnFile(draft, item.test)) return item.label;
+  }
+  return null;
+}
+
 export function stillUsefulLabels(draft: FoxIntakeDraft): StillUsefulLabel[] {
   const taxReturns = receivedTaxReturnCount(draft);
+  const groceryBeforeLooksRight = wageThreadOpen(draft) && !draft.sampleAccepted;
   const labels: StillUsefulLabel[] = missingExtractClasses(draft)
     .filter((item) => item !== "tax_return" || taxReturns < 1)
-    .map(askClassLabel);
-  if (wantsW2RemainderReturn(draft) && !labels.includes(askClassLabel("tax_return") as StillUsefulLabel)) {
-    labels.push(askClassLabel("tax_return") as StillUsefulLabel);
+    .filter((item) => {
+      if (!groceryBeforeLooksRight || !wageGroceryExtractClass(item)) return true;
+      return item === "w2" && (draft.skippedClasses ?? []).includes("w2");
+    })
+    .filter((item) => !dropWageAfterLooksRightExtra(draft, item))
+    .map((item) => wageAskClassLabel(draft, item));
+  if (needsLastYearW2StillUseful(draft) && !labels.includes(LAST_YEAR_W2_STILL_USEFUL)) {
+    labels.push(LAST_YEAR_W2_STILL_USEFUL);
   }
-  if (!deepenStillUseful(draft)) return labels;
+  if (wantsW2RemainderReturn(draft)) {
+    const returnLabel = (
+      draft.sampleAccepted && wageThreadOpen(draft)
+        ? LAST_YEAR_RETURN_STILL_USEFUL
+        : askClassLabel("tax_return")
+    ) as StillUsefulLabel;
+    if (!labels.includes(returnLabel) && !labels.includes("tax return" as StillUsefulLabel)) {
+      labels.push(returnLabel);
+    }
+  }
+  if (draft.sampleAccepted && wageThreadOpen(draft)) {
+    const pinned = pinWageCompletenessLabels(labels);
+    labels.splice(0, labels.length, ...pinned);
+  }
+  if (!deepenStillUseful(draft)) {
+    const namedK1 = nextScheduleENamedK1Label(draft);
+    if (namedK1 && !labels.includes(namedK1)) labels.push(namedK1);
+    for (const cover of nextCoverScheduleLabels(draft)) {
+      if (!labels.includes(cover)) labels.push(cover);
+    }
+    const recent = mostRecentFederalYear(draft);
+    const prior = String(Number(recent) - 1);
+    if (hasScheduleCOnFile(draft) && !scheduleCYearsOnFile(draft).includes(prior)) {
+      const yearLabel = (
+        hasCoverDocForYear(draft, prior) ? `${prior} Schedule C` : `${prior} return`
+      ) as StillUsefulLabel;
+      if (!labels.includes(yearLabel)) labels.push(yearLabel);
+    }
+    return labels;
+  }
   const income = draft.incomeType.value;
-  if ((income === "w2" || income === "both") && receivedClassCount(draft, "w2") < 2) {
+  if ((income === "w2" || income === "both") && !wageThreadOpen(draft) && receivedClassCount(draft, "w2") < 2) {
     if (!labels.includes("W-2 most recent two years")) labels.push("W-2 most recent two years");
   }
   if (
     (income === "self-employed" || income === "both" || income === "other") &&
     taxReturns === 1
   ) {
+    const namedK1 = nextScheduleENamedK1Label(draft);
+    const recent = mostRecentFederalYear(draft);
+    const prior = String(Number(recent) - 1);
+    const haveYears = scheduleCYearsOnFile(draft);
+    const nextYearLabel: StillUsefulLabel | null = haveYears.includes(recent)
+      ? (`${prior} Schedule C` as StillUsefulLabel)
+      : haveYears.length
+        ? (`${recent} Schedule C` as StillUsefulLabel)
+        : null;
+    const namedYearFallback = (`${haveYears.includes(recent) ? prior : recent} Schedule C`) as StillUsefulLabel;
     labels.push(
-      k1OrdinaryMissingDistributions(draft) && !hasScheduleCCashflow(draft)
-        ? "K-1 distributions"
-        : "prior-year return",
+      namedK1 ??
+        (k1OrdinaryMissingDistributions(draft) && !hasScheduleCCashflow(draft)
+          ? "K-1 distributions"
+          : nextYearLabel ??
+            (income === "both" || haveYears.includes(recent) ? namedYearFallback : "prior-year return")),
     );
+  } else {
+    const namedK1 = nextScheduleENamedK1Label(draft);
+    if (namedK1 && !labels.includes(namedK1)) labels.push(namedK1);
+  }
+  for (const cover of nextCoverScheduleLabels(draft)) {
+    if (!labels.includes(cover)) labels.push(cover);
   }
   return taxReturns >= 2
     ? labels.filter(
@@ -1538,8 +3390,10 @@ export function missingListCopy(classes: ExtractClass[]) {
 }
 
 export function stillUsefulAskCopy(draft: FoxIntakeDraft) {
+  const cover = nextCoverScheduleLabels(draft);
+  if (cover.length) return labelListCopy(speakCoverScheduleLabels(cover));
   if (stillUsefulVisible(draft)) return layer2AskCopy(draft);
-  return labelListCopy(stillUsefulLabels(draft));
+  return labelListCopy(stillUsefulLabels(draft).map((label) => (label === "K-1" || label === "1065" ? "K-1 / 1065" : label)));
 }
 
 export function stillUsefulAskKey(draft: FoxIntakeDraft) {
@@ -1589,14 +3443,30 @@ export function completenessFileFromDraft(draft: FoxIntakeDraft): CompletenessFi
   for (const doc of draft.documents ?? []) {
     const display = preferFilenameClass(doc.extractClass ?? "other", doc.name, doc.slot);
     if (display === "government_id" || doc.slot === "id" || docsDisplayLabel(doc) === "ID") {
-      received.add("government_id");
+      const named = Boolean(
+        draft.borrowerName || draft.contact.fullName.value || draft.facts?.full_name?.value,
+      );
+      if (doc.status === "extracted" && !isUnreadNote(doc.note) && named) {
+        received.add("government_id");
+      }
+    }
+    if (display === "purchase_contract") {
+      const written = Boolean(
+        (draft.facts?.purchase_price?.confirmed && draft.facts.purchase_price.value) ||
+          (draft.facts?.close_date?.confirmed && draft.facts.close_date.value) ||
+          (draft.subjectAddress && draft.facts?.property_address?.confirmed),
+      );
+      if (written) received.add("purchase_contract");
     }
     if (
       (doc.status === "extracted" || doc.status === "received" || doc.status === "reading") &&
       display &&
       display !== "other" &&
-      display !== "government_id"
+      display !== "government_id" &&
+      display !== "purchase_contract"
     ) {
+      if (display === "tax_return" && !docIsRealExtract(doc)) continue;
+      if (display === "tax_return" && !taxReturnWrittenOnFile(draft)) continue;
       received.add(display);
     }
   }
@@ -1728,9 +3598,59 @@ export function layer2Open(draft: FoxIntakeDraft) {
   );
 }
 
-/** Remainder board after the sketch exists. Skip does not hide an item; received does. */
+/** Remainder board after the sketch exists. Income Skip still shows the board. */
 export function stillUsefulVisible(draft: FoxIntakeDraft) {
-  return Boolean(draft.path && draft.productIntent && draft.incomeType.value);
+  return Boolean(draft.path && draft.productIntent && (draft.incomeType.value || draft.incomeAsked));
+}
+
+/** Empty / skipped how-earned does not invent a W-2 or SE grocery list. */
+function isInventedIncomeDoc(draft: FoxIntakeDraft, id: string) {
+  if (draft.incomeType.value) return false;
+  return (
+    id === "paystub" ||
+    id === "w2" ||
+    id === "second-year-w2" ||
+    id === "tax_return" ||
+    id === "prior-year-return" ||
+    id === "k1-distributions" ||
+    id === "ytd-pnl"
+  );
+}
+
+function howEarnedStillUsefulItem(): StillUsefulItem {
+  return layer2Item(
+    "how-earned",
+    "How income is earned",
+    "How income is earned still helps this file.",
+  );
+}
+
+function isWageGroceryBeforeLooksRight(draft: FoxIntakeDraft, id: string) {
+  if (draft.sampleAccepted) return false;
+  if (!wageThreadOpen(draft)) return false;
+  if (id === "government_id" && (draft.skippedClasses ?? []).includes("government_id")) {
+    return false;
+  }
+  if (id === "w2" && (draft.skippedClasses ?? []).includes("w2")) {
+    return false;
+  }
+  if (id === "tax_return" && skippedW2StubPath(draft)) return false;
+  if (id === "prior-year-return" && hasScheduleCOnFile(draft)) return false;
+  return wageGroceryExtractClass(id);
+}
+
+function wageStillUsefulCopy(id: string): { label: string; ask: string } | null {
+  if (id === "paystub") {
+    return { label: "Latest paystub", ask: "Your latest paystub still helps this file." };
+  }
+  if (id === "w2") {
+    return { label: LAST_YEAR_W2_STILL_USEFUL, ask: "Last year’s W-2 still helps this file." };
+  }
+  if (id === "tax_return") {
+    return { label: LAST_YEAR_RETURN_STILL_USEFUL, ask: LAST_YEAR_FEDERAL_RETURN_ASK };
+  }
+  if (id === "second-year-w2") return null;
+  return null;
 }
 
 function incomeDocsPhrase(draft: FoxIntakeDraft) {
@@ -1774,10 +3694,24 @@ export function shortListSpeak(draft: FoxIntakeDraft): string {
     labels.push(draft.statedOtherReo === "yes" ? OTHER_REO_MORTGAGE_STATEMENTS.replace(/\.$/, "") : "mortgage statement");
     if (draft.cashOut) labels.push("bank statement");
   }
-  if (draft.statedOtherReo === "yes" && purchaseLikeFile(draft)) {
-    labels.push(OTHER_REO_MORTGAGE_STATEMENTS.replace(/\.$/, ""));
-  }
   return labelListCopy(labels);
+}
+
+function namedYearLayer2Copy(draft: FoxIntakeDraft, id: string): { label: string; ask: string } | null {
+  const income = draft.incomeType.value;
+  const have = scheduleCYearsOnFile(draft);
+  const recent = mostRecentFederalYear(draft);
+  const knownRecent = have.includes(recent);
+  if (income !== "both" && !knownRecent) return null;
+  if (id === "tax_return") {
+    return { label: `${recent} federal return`, ask: taxReturnInviteCopy(draft) };
+  }
+  if (id === "prior-year-return") {
+    const prior = String(Number(recent) - 1);
+    const year = have.includes(recent) ? prior : recent;
+    return { label: `${year} return`, ask: priorYearReturnInviteCopy(draft) };
+  }
+  return null;
 }
 
 const LAYER2_COPY: Record<DocumentedStillUsefulId, { label: string; ask: string }> = {
@@ -1814,16 +3748,27 @@ export function layer2Plan(draft: FoxIntakeDraft): StillUsefulItem[] {
   const skipped = new Set(draft.skippedStillUseful ?? []);
   const items = ids
     .filter((id) => !skipped.has(id))
-    .map((id) => {
+    .filter((id) => !(id === "mortgage_statement" && purchaseLikeFile(draft)))
+    .filter((id) => !isWageGroceryBeforeLooksRight(draft, id))
+    .filter((id) => !dropWageAfterLooksRightExtra(draft, id))
+    .filter((id) => !isInventedIncomeDoc(draft, id))
+    .flatMap((id) => {
     if (id === "mortgage_statement" && draft.statedOtherReo === "yes") {
-      return layer2Item(id, OTHER_REO_MORTGAGE_STATEMENTS, OTHER_REO_MORTGAGE_STATEMENTS);
+      return [layer2Item(id, OTHER_REO_MORTGAGE_STATEMENTS, OTHER_REO_MORTGAGE_STATEMENTS)];
     }
-    const copy = LAYER2_COPY[id];
-    return layer2Item(id, copy.label, copy.ask);
+    const wageCopy =
+      wageThreadOpen(draft) &&
+      (draft.sampleAccepted ||
+        (id === "w2" && (draft.skippedClasses ?? []).includes("w2")) ||
+        (id === "tax_return" && skippedW2StubPath(draft)))
+        ? wageStillUsefulCopy(id)
+        : null;
+    if (wageCopy === null && id === "second-year-w2" && wageThreadOpen(draft)) return [];
+    const copy = wageCopy ?? namedYearLayer2Copy(draft, id) ?? LAYER2_COPY[id];
+    if (!copy) return [];
+    return [layer2Item(id, copy.label, copy.ask)];
   });
-  const bankDocs = (draft.documents ?? []).filter(
-    (document) => document.extractClass === "bank_statement" || document.slot === "bank",
-  ).length;
+  const bankDocs = bankStatementDocCount(draft);
   if (statementExtractConfirmed(draft) && bankDocs < 2) {
     items.push(
       layer2Item(
@@ -1833,7 +3778,60 @@ export function layer2Plan(draft: FoxIntakeDraft): StillUsefulItem[] {
       ),
     );
   }
+  const namedK1 = nextScheduleENamedK1Label(draft);
+  if (namedK1 && !items.some((item) => item.label === namedK1)) {
+    items.push(
+      layer2Item(
+        namedK1 === "Harbor Studio K-1" ? "harbor-studio-k1" : "bay-street-k1",
+        namedK1,
+        `The ${namedK1} still helps this file.`,
+      ),
+    );
+  }
+  const coverItems = nextCoverScheduleLabels(draft)
+    .filter((label) => !skipped.has(coverLayer2Id(label)))
+    .filter((label) => !items.some((item) => item.label === label))
+    .map((label) =>
+      layer2Item(
+        coverLayer2Id(label),
+        label,
+        `The ${label} named on the 1040 cover still helps this file.`,
+      ),
+    );
+  items.unshift(...coverItems);
+  if (
+    !draft.incomeType.value &&
+    (draft.incomeAsked || stillUsefulVisible(draft)) &&
+    !items.some((item) => item.id === "how-earned" || item.label === "How income is earned")
+  ) {
+    const idAt = items.findIndex((item) => item.id === "government_id");
+    if (idAt >= 0) items.splice(idAt + 1, 0, howEarnedStillUsefulItem());
+    else items.unshift(howEarnedStillUsefulItem());
+  }
+  if (
+    addressHistoryRemainder(draft) &&
+    !items.some((item) => item.id === "prior-address" || item.label === "Prior address")
+  ) {
+    items.push(
+      layer2Item(
+        "prior-address",
+        "Prior address",
+        "Where you lived before this still helps this file.",
+      ),
+    );
+  }
+  if (draft.sampleAccepted && wageThreadOpen(draft)) return pinWageCompletenessHead(items);
   return items;
+}
+
+function coverLayer2Id(label: StillUsefulLabel) {
+  if (label === "Schedule C") return "cover-schedule-c";
+  if (label === "Schedule E") return "cover-schedule-e";
+  if (label === "K-1") return "cover-k1";
+  if (label === "1065") return "cover-1065";
+  if (label === "1120-S") return "cover-1120s";
+  if (label === "Schedule F") return "cover-schedule-f";
+  return `cover-${label.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
 }
 
 export function nextStillUsefulItem(draft: FoxIntakeDraft): StillUsefulItem | undefined {
@@ -1936,6 +3934,8 @@ function guidelineStillUsefulItems(draft: FoxIntakeDraft): StillUsefulItem[] {
 }
 
 export function layer2AskCopy(draft: FoxIntakeDraft) {
+  const cover = nextCoverScheduleLabels(draft);
+  if (cover.length) return labelListCopy(speakCoverScheduleLabels(cover));
   const labels = layer2Plan(draft).map((item) => item.label);
   return labels.length ? labelListCopy(labels) : NOTHING_URGENT;
 }
@@ -1957,17 +3957,34 @@ export function layer2AskActions(draft: FoxIntakeDraft): FoxAction[] | undefined
   ];
 }
 
+function stillUsefulSkipClass(id: string): ExtractClass | null {
+  if (id === "government_id") return "government_id";
+  if (id === "purchase_contract") return "purchase_contract";
+  if (id === "bank_statement") return "bank_statement";
+  if (id === "paystub") return "paystub";
+  if (id === "w2") return "w2";
+  if (id === "tax_return") return "tax_return";
+  return null;
+}
+
 export function skipCurrentStillUseful(draft: FoxIntakeDraft): FoxIntakeDraft {
   const next = nextStillUsefulItem(draft);
-  const skipAddress = next?.id === "property-address";
+  if (!next) return { ...draft, docsHeld: false };
+  const docKind = stillUsefulSkipClass(next.id);
+  if (docKind) {
+    return {
+      ...draft,
+      docsHeld: false,
+      skippedClasses: Array.from(new Set([...(draft.skippedClasses ?? []), docKind])),
+    };
+  }
+  const skipId = next.id;
   return {
     ...draft,
     docsHeld: false,
-    skippedStillUseful: skipAddress
-      ? (draft.skippedStillUseful ?? []).includes("property-address")
-        ? draft.skippedStillUseful
-        : [...(draft.skippedStillUseful ?? []), "property-address"]
-      : draft.skippedStillUseful,
+    skippedStillUseful: (draft.skippedStillUseful ?? []).includes(skipId)
+      ? draft.skippedStillUseful
+      : [...(draft.skippedStillUseful ?? []), skipId],
   };
 }
 
@@ -2004,17 +4021,43 @@ export type DocInviteKind =
   | "w2"
   | "tax_return"
   | "prior_year_return"
-  | "coborrower_government_id";
+  | "coborrower_government_id"
+  | "bank_statement"
+  | "second_bank_statement"
+  | "purchase_contract";
 
 export const DOC_INVITE_COPY: Record<DocInviteKind, string> = {
   government_id: "First I need a government ID, so this file has a name on it.",
   paystub: "Next is your latest paystub. That’s current income on paper.",
-  w2: "Next is your most recent W-2.",
-  tax_return:
-    "Next is your most recent tax return. That’s how I estimate qualifying income. Suggested, not underwritten.",
-  prior_year_return: "A prior-year return helps me see if last year was stable. Have one?",
+  w2: "Next is this year’s W-2.",
+  tax_return: "I need your 2025 federal tax return — Form 1040, all pages.",
+  prior_year_return: "I need the 2024 return — Form 1040, all pages.",
   coborrower_government_id: "First I need Borrower 2’s government ID, so this file has a name on it.",
+  bank_statement: "Two recent statements to show funds for the down payment.",
+  second_bank_statement: "A second recent statement helps. Skip is fine.",
+  purchase_contract: "The purchase contract is the property on paper. Skip is fine.",
 };
+
+export function bankStatementDocCount(draft: FoxIntakeDraft) {
+  return (draft.documents ?? []).filter(
+    (document) => document.extractClass === "bank_statement" || document.slot === "bank",
+  ).length;
+}
+
+/** After the first statement writes Assets, offer a second statement once. */
+export function secondBankStatementInviteNeeded(draft: FoxIntakeDraft) {
+  if (draft.secondBankStatementSkipped) return false;
+  if (!statementExtractConfirmed(draft)) return false;
+  return bankStatementDocCount(draft) < 2;
+}
+
+export function secondBankStatementInviteCopy(draft: FoxIntakeDraft) {
+  const who =
+    displayInstitution(
+      String(draft.facts?.institution?.value ?? draft.assetAccounts?.[0]?.institution ?? ""),
+    ) || "That statement";
+  return `${who} is in. A second recent statement helps. Skip is fine.`;
+}
 
 /** ID + this borrower’s income package. Prior-year / second-year sit on remainder. */
 export function primaryInviteSequence(draft: FoxIntakeDraft): DocInviteKind[] {
@@ -2048,6 +4091,79 @@ export function inviteSequence(draft: FoxIntakeDraft): DocInviteKind[] {
   return [...primaryInviteSequence(draft), ...coborrowerInviteSequence(draft), ...remainderInviteSequence(draft)];
 }
 
+export function unreadDocOpen(draft: FoxIntakeDraft): ReceivedDoc | null {
+  const docs = [...(draft.documents ?? [])].reverse();
+  const skipped = new Set(draft.skippedClasses ?? []);
+  const unread = docs.find((doc) => {
+    if (
+      !isUnreadNote(doc.note) &&
+      doc.status !== "failed" &&
+      doc.status !== "needs better copy"
+    ) {
+      return false;
+    }
+    const cls = receivedClassOf(doc) ?? doc.extractClass;
+    if (cls && skipped.has(cls)) return false;
+    return true;
+  });
+  if (unread) return unread;
+  if (!wageExtractFailedRead(draft)) return null;
+  return (
+    docs.find((doc) => {
+      const cls = receivedClassOf(doc) ?? doc.extractClass;
+      return cls === "w2" || cls === "paystub" || doc.slot === "w2" || doc.slot === "paystubs";
+    }) ?? null
+  );
+}
+
+function classSuccessfullyRead(draft: FoxIntakeDraft, kind: DocInviteKind): boolean {
+  return (draft.documents ?? []).some((doc) => {
+    if (doc.status !== "extracted") return false;
+    if (isUnreadNote(doc.note)) return false;
+    if ((kind === "tax_return" || kind === "prior_year_return") && isCoverReturnDoc(doc)) return false;
+    if (kind === "government_id") {
+      if (doc.party === "coborrower") return false;
+      const received = receivedClassOf(doc);
+      return (
+        received === "government_id" ||
+        doc.extractClass === "government_id" ||
+        doc.slot === "id"
+      );
+    }
+    return receivedClassOf(doc) === kind;
+  });
+}
+
+/** W-2 finish chips only after ID and last-year 1040 are on File or skipped. Unread 1040 keeps finish chips. */
+export function w2FinishDocsReady(draft: FoxIntakeDraft): boolean {
+  if (draft.incomeType.value !== "w2") return true;
+  return (
+    inviteSatisfied(draft, "government_id") &&
+    (inviteSatisfied(draft, "tax_return") || unreadReturnFinishOpen(draft))
+  );
+}
+
+/** Unread 1040 after Looks right + ID — finish chips stay; Still useful keeps Form 1040. */
+export function unreadTaxReturnOpen(draft: FoxIntakeDraft): boolean {
+  return draft.documents.some((doc) => {
+    const cls = receivedClassOf(doc) ?? doc.extractClass;
+    if (cls !== "tax_return") return false;
+    return (
+      isUnreadNote(doc.note) ||
+      doc.status === "failed" ||
+      doc.status === "needs better copy"
+    );
+  });
+}
+
+export function unreadReturnFinishOpen(draft: FoxIntakeDraft): boolean {
+  return (
+    Boolean(draft.sampleAccepted) &&
+    inviteSatisfied(draft, "government_id") &&
+    unreadTaxReturnOpen(draft)
+  );
+}
+
 function inviteSatisfied(draft: FoxIntakeDraft, kind: DocInviteKind): boolean {
   if (kind === "coborrower_government_id") {
     if (draft.coborrowerIdSkipped) return true;
@@ -2064,30 +4180,21 @@ function inviteSatisfied(draft: FoxIntakeDraft, kind: DocInviteKind): boolean {
   }
   if (kind === "government_id") {
     if ((draft.skippedClasses ?? []).includes("government_id")) return true;
-    return draft.documents.some((doc) => {
-      if (doc.party === "coborrower") return false;
-      const received = receivedClassOf(doc);
-      const isId =
-        received === "government_id" ||
-        doc.extractClass === "government_id" ||
-        doc.slot === "id";
-      if (!isId) return false;
-      if (doc.status === "reading") return false;
-      return (
-        doc.status === "extracted" ||
-        doc.status === "received" ||
-        doc.status === "failed" ||
-        doc.status === "needs better copy" ||
-        isUnreadNote(doc.note)
-      );
-    });
+    return classSuccessfullyRead(draft, "government_id");
+  }
+  if (kind === "bank_statement") {
+    if ((draft.skippedClasses ?? []).includes("bank_statement")) return true;
+    return statementExtractConfirmed(draft);
+  }
+  if (kind === "second_bank_statement") {
+    return !secondBankStatementInviteNeeded(draft);
   }
   if (kind === "prior_year_return") {
     if (draft.priorYearSkipped) return true;
     let extracted = 0;
     for (const doc of draft.documents) {
       if (doc.status !== "extracted") continue;
-      if (receivedClassOf(doc) === "tax_return") extracted += 1;
+      if (receivedClassOf(doc) === "tax_return" && !isCoverReturnDoc(doc)) extracted += 1;
     }
     const years = new Set<string>();
     for (const row of readTaxCashflows(draft)) {
@@ -2100,8 +4207,9 @@ function inviteSatisfied(draft: FoxIntakeDraft, kind: DocInviteKind): boolean {
     }
     return false;
   }
-  if (receivedExtractClasses(draft).has(kind)) return true;
-  return (draft.skippedClasses ?? []).includes(kind);
+  if (classSuccessfullyRead(draft, kind)) return true;
+  if ((draft.skippedClasses ?? []).includes(kind)) return true;
+  return false;
 }
 
 /** This borrower’s ID + income package received, ready, or skipped. Hold / Looks right do not count. */
@@ -2110,21 +4218,16 @@ export function thisBorrowerPrimaryPackageDone(draft: FoxIntakeDraft) {
   return primaryInviteSequence(draft).every((kind) => inviteSatisfied(draft, kind));
 }
 
-function b1RemainderOutstanding(draft: FoxIntakeDraft): boolean {
-  return remainderInviteSequence(draft).some((kind) => !inviteSatisfied(draft, kind));
-}
-
 /**
  * Household / coborrower only after Looks right — never after a mid-docs Skip.
  * Skip on paystub / W-2 / tax return stays on Borrower 1.
+ * Prior-year return sits on Still useful — not a gate.
  */
 export function readyForHouseholdAsk(draft: FoxIntakeDraft): boolean {
   if (!draft.path || !draft.productIntent) return false;
   if (!draft.occupancyChoice.value && !draft.occupancyAsked) return false;
   if (!draft.incomeType.value && !draft.incomeAsked) return false;
-  if (!otherReoSettled(draft)) return false;
   if (!thisBorrowerPrimaryPackageDone(draft)) return false;
-  if (b1RemainderOutstanding(draft)) return false;
   return Boolean(draft.sampleAccepted);
 }
 
@@ -2140,25 +4243,195 @@ export function primaryDocPassFinished(draft: FoxIntakeDraft) {
   return thisBorrowerPrimaryPackageDone(draft);
 }
 
-export function offeringDocStart(draft: FoxIntakeDraft) {
+/** Pre-Looks-right ID / statements use Upload this · Skip, not Start with ID. */
+export function offeringDocStart(_draft: FoxIntakeDraft) {
+  return false;
+}
+
+/** Box 5, pay frequency, and stub monthly asked or skipped. No invented monthly. */
+export function wageNumberPathSettled(draft: FoxIntakeDraft) {
+  return Boolean(draft.wageBox5Asked && draft.wageFrequencyAsked && draft.wageStubAsked);
+}
+
+/** Extracted W-2 + stub on the file — not a skip-only package. */
+export function wageExtractOnFile(draft: FoxIntakeDraft) {
+  return classSuccessfullyRead(draft, "w2") && classSuccessfullyRead(draft, "paystub");
+}
+
+/** Skip W-2, then Period Use this. Frequency or prior stub is next; ID waits for Looks right. */
+export function skippedW2StubPath(draft: FoxIntakeDraft) {
+  if (!wageThreadOpen(draft)) return false;
+  if (!(draft.skippedClasses ?? []).includes("w2")) return false;
+  return Boolean(draft.stubExtractAccepted);
+}
+
+/** W-2 drop / Box 5 / frequency / stub confirm still live — ID wait. */
+function wageSketchBlocksDocInvite(draft: FoxIntakeDraft): boolean {
+  if (draft.sampleAccepted || !wageThreadOpen(draft)) return false;
+  if (
+    isWageExtractProposal(draft.pendingProposal) ||
+    isStubExtractProposal(draft.pendingProposal) ||
+    isStubJobProposal(draft.pendingProposal)
+  ) {
+    return true;
+  }
+  if (stubExtractAskOpen(draft)) return true;
+  if (draft.awaitingPayFrequency) return true;
+  if (draft.stubExtractAccepted) return false;
+  if (!draft.wageDocsAsked) return true;
+  if (!draft.wageBox5Asked) return true;
+  if (!draft.wageFrequencyAsked) return true;
+  return false;
+}
+
+function zipOnlySubject(draft: FoxIntakeDraft) {
+  const line = String(draft.subjectAddress || draft.facts?.property_address?.value || "").trim();
+  const zip = String(draft.propertyZip || "").trim();
+  if (line && !isZipOnlyFileAddress(line, zip || undefined)) return false;
+  return Boolean(zip || /^\d{5}$/.test(line) || /,\s*CA\s+\d{5}$/i.test(line));
+}
+
+/** W-2 after Looks right: ID, then one last-year 1040. Bank / second 1040 / contract are not this ask. */
+function lockedFileDocInvites(draft: FoxIntakeDraft): DocInviteKind[] {
+  const kinds: DocInviteKind[] = [];
+  if (draft.sampleAccepted && !inviteSatisfied(draft, "government_id")) kinds.push("government_id");
+  if (draft.sampleAccepted && draft.incomeType.value === "w2") {
+    if (!inviteSatisfied(draft, "tax_return")) kinds.push("tax_return");
+    return kinds;
+  }
+  if (draft.sampleAccepted && skippedW2StubPath(draft)) {
+    if (!inviteSatisfied(draft, "tax_return")) kinds.push("tax_return");
+    if (!inviteSatisfied(draft, "prior_year_return")) kinds.push("prior_year_return");
+  } else if (draft.sampleAccepted) {
+    if (!inviteSatisfied(draft, "bank_statement")) kinds.push("bank_statement");
+    if (secondBankStatementInviteNeeded(draft)) kinds.push("second_bank_statement");
+  }
+  if (
+    purchaseLikeFile(draft) &&
+    !inviteSatisfied(draft, "purchase_contract") &&
+    (draft.sampleAccepted || zipOnlySubject(draft))
+  ) {
+    kinds.push("purchase_contract");
+  }
+  return kinds;
+}
+
+/** After W-2 Use this, the employer stub is next — not government ID. */
+function employerStubRemainderOpen(draft: FoxIntakeDraft) {
+  const income = draft.incomeType.value;
+  if (income !== "w2" && income !== "both") return false;
+  if (draft.sampleAccepted) return false;
+  if (inviteSatisfied(draft, "paystub")) return false;
+  if (draft.wageStubAsked || draft.stubExtractAccepted) return false;
+  if (readStubAmount(draft)) return false;
   return (
-    !draft.docsStarted &&
-    !draft.sampleAccepted &&
-    draft.documents.length === 0 &&
-    nextDocInvite(draft) === "government_id"
+    wageW2ExtractAccepted(draft) ||
+    classSuccessfullyRead(draft, "w2") ||
+    (Boolean(draft.wageDocsAsked) && (draft.skippedClasses ?? []).includes("w2"))
   );
 }
 
 export function nextDocInvite(draft: FoxIntakeDraft): DocInviteKind | null {
   if (!draft.incomeType.value && !draft.incomeAsked) return null;
-  if (!borrowerNameSettled(draft)) return null;
-  if (!otherReoSettled(draft)) return null;
+  /** Empty / skipped how-earned: no invented W-2 pack, and no ID invite until Looks right. */
+  if (!draft.incomeType.value && !draft.sampleAccepted) return null;
   if (draft.pendingProposal || draft.pendingConflict) return null;
-  // Looks right closes Borrower 1 invites. Borrower 2’s ID can still open after Yes.
-  const kinds = draft.sampleAccepted ? coborrowerInviteSequence(draft) : inviteSequence(draft);
-  for (const kind of kinds) {
+  if (employerStubRemainderOpen(draft)) return "paystub";
+  if (wageSketchBlocksDocInvite(draft)) return null;
+  const income = draft.incomeType.value;
+  if (income === "self-employed" || income === "other" || income === "both") {
+    for (const kind of primaryInviteSequence(draft)) {
+      if (kind === "government_id" && !draft.sampleAccepted) continue;
+      if (!inviteSatisfied(draft, kind)) return kind;
+    }
+    for (const kind of remainderInviteSequence(draft)) {
+      if (!inviteSatisfied(draft, kind)) return kind;
+    }
+  }
+  for (const kind of lockedFileDocInvites(draft)) {
     if (!inviteSatisfied(draft, kind)) return kind;
   }
+  return null;
+}
+
+function hasNamedScheduleDoc(draft: FoxIntakeDraft, letter: "c" | "e" | "f" | "k1") {
+  const re =
+    letter === "c"
+      ? /schedule.?c/i
+      : letter === "e"
+        ? /schedule.?e/i
+        : letter === "f"
+          ? /schedule.?f/i
+          : /k-?1/i;
+  return (draft.documents ?? []).some((doc) => {
+    if (doc.status !== "extracted") return false;
+    if (isUnreadNote(doc.note)) return false;
+    return re.test(String(doc.name ?? ""));
+  });
+}
+
+function joinScheduleAsk(names: string[]) {
+  if (!names.length) return "";
+  if (names.length === 1) return names[0];
+  if (names.length === 2) return `${names[0]} and ${names[1]}`;
+  return `${names.slice(0, -1).join(", ")}, and ${names[names.length - 1]}`;
+}
+
+/** After a transcript: 1040 + present schedule, else W-2 paper on a wages-only file. */
+export function transcriptFollowUpAsk(draft: FoxIntakeDraft): string {
+  if (draft.transcriptFollowUpSkipped) return "";
+  if (!isTranscriptOnFile(draft)) return "";
+  const year = String(draft.facts?.tax_year?.value ?? "").replace(/\D/g, "").slice(0, 4);
+  const presentC = String(draft.facts?.schedule_c_present?.value ?? "").trim().toLowerCase() === "yes";
+  const presentE = String(draft.facts?.schedule_e_present?.value ?? "").trim().toLowerCase() === "yes";
+  const presentF = String(draft.facts?.schedule_f_present?.value ?? "").trim().toLowerCase() === "yes";
+  const presentK1 = String(draft.facts?.k1_present?.value ?? "").trim().toLowerCase() === "yes";
+  const needed: string[] = [];
+  if (presentC && !hasNamedScheduleDoc(draft, "c")) needed.push("Schedule C");
+  if (presentE && !hasNamedScheduleDoc(draft, "e")) needed.push("Schedule E");
+  if (presentF && !hasNamedScheduleDoc(draft, "f")) needed.push("Schedule F");
+  if (presentK1 && !hasNamedScheduleDoc(draft, "k1")) needed.push("Schedule K-1");
+  if (needed.length) {
+    const schedules = joinScheduleAsk(needed);
+    return year
+      ? `I need the ${year} Form 1040 and ${schedules}.`
+      : `I need the Form 1040 and ${schedules}.`;
+  }
+  const income = draft.incomeType.value;
+  if ((income === "w2" || income === "both") && !classSuccessfullyRead(draft, "w2") && !wageW2ExtractAccepted(draft)) {
+    return DOC_INVITE_COPY.w2;
+  }
+  return "";
+}
+
+/** First stub remainder, prior stub, and open frequency hold Looks right. 1040s and ID do not. */
+export function docInviteBlocksLooksRight(draft: FoxIntakeDraft) {
+  if (priorStubAskNeeded(draft)) return true;
+  if (draft.awaitingPayFrequency) return true;
+  if (employerStubRemainderOpen(draft)) return true;
+  const invite = nextDocInvite(draft);
+  if (invite === "paystub" && !draft.stubExtractAccepted && !draft.wageStubAsked) return true;
+  return false;
+}
+
+/** Composer extract hint. Dropped filename wins so 08 at the ID ask is government_id, not leftover bank/other. */
+export function extractHintFromDraft(draft: FoxIntakeDraft, name?: string): ExtractClass | null {
+  if (name) {
+    const fromName = extractClassFromFilename(name);
+    if (fromName && fromName !== "other") return fromName;
+    const slot = slotFromFilename(name);
+    if (slot === "id") return "government_id";
+    if (slot === "bank") return "bank_statement";
+    if (slot === "w2") return "w2";
+    if (slot === "paystubs") return "paystub";
+  }
+  const invite = nextDocInvite(draft);
+  if (invite === "bank_statement" || invite === "second_bank_statement") return "bank_statement";
+  if (invite === "government_id" || invite === "coborrower_government_id") return "government_id";
+  if (invite === "paystub") return "paystub";
+  if (invite === "w2") return "w2";
+  if (invite === "tax_return" || invite === "prior_year_return") return "tax_return";
+  if (invite === "purchase_contract") return "purchase_contract";
   return null;
 }
 
@@ -2166,7 +4439,279 @@ function hasRemainingPrimaryInvites(draft: FoxIntakeDraft) {
   return primaryInviteSequence(draft).some((kind) => !inviteSatisfied(draft, kind));
 }
 
+const PURCHASE_CONTRACT_ACCEPT_FIELDS = [
+  "property_address",
+  "purchase_price",
+  "close_date",
+  "seller_credit",
+] as const;
+
+export function hasPurchaseContractDoc(draft: FoxIntakeDraft) {
+  return (draft.documents ?? []).some(
+    (doc) =>
+      (doc.extractClass === "purchase_contract" || /purchase.?contract|purchase.?agree|\bpsa\b/i.test(doc.name)) &&
+      (doc.status === "extracted" || doc.status === "received"),
+  );
+}
+
+export function purchaseContractFieldsFromDraft(draft: FoxIntakeDraft): Record<string, string> {
+  const next: Record<string, string> = { ...(draft.lastPurchaseContractFields ?? {}) };
+  if (draft.pendingProposal) {
+    for (const item of remainderProposalWrites(draft.pendingProposal)) {
+      if (item.field && item.value && !next[item.field]) next[item.field] = item.value.trim();
+    }
+  }
+  return next;
+}
+
+export function purchaseContractStreetFromDraft(draft: FoxIntakeDraft) {
+  const street = String(draft.lastPurchaseContractFields?.property_address ?? "").trim();
+  if (!street || isZipOnlyFileAddress(street, draft.propertyZip)) return "";
+  if (!looksLikeContractStreet(street) && !/^\d{1,6}\s+/.test(street)) return "";
+  return street;
+}
+
+export function proposalFromLastPurchaseContract(draft: FoxIntakeDraft): FactProposal | null {
+  const fields = purchaseContractFieldsFromDraft(draft);
+  const writes: { field: string; value: string }[] = [];
+  for (const field of PURCHASE_CONTRACT_ACCEPT_FIELDS) {
+    const value = String(fields[field] ?? "").trim();
+    if (!value) continue;
+    if (field === "property_address") {
+      if (isZipOnlyFileAddress(value, draft.propertyZip)) continue;
+      const shown = displayedSubjectAddress(draft);
+      if (shown && !isZipOnlyFileAddress(shown, draft.propertyZip)) continue;
+    }
+    if (field === "purchase_price") {
+      const filePrice = draft.propertyValueAmount;
+      const docPrice = moneyNumber(value);
+      if (filePrice != null && filePrice > 0 && docPrice != null && !valuesMatch(String(filePrice), String(docPrice))) {
+        continue;
+      }
+      if (draft.facts?.purchase_price?.confirmed && factValue(draft, "purchase_price")) {
+        continue;
+      }
+    }
+    if (field === "close_date" && draft.facts?.close_date?.confirmed && factValue(draft, "close_date")) {
+      continue;
+    }
+    if (field === "seller_credit") {
+      const amount = moneyNumber(value);
+      if (amount == null || amount <= 0) continue;
+      if (draft.facts?.seller_credit?.confirmed && factValue(draft, "seller_credit")) continue;
+      writes.push({ field, value: String(amount) });
+      continue;
+    }
+    writes.push({ field, value });
+  }
+  return remainderProposalFromWrites("purchase_contract", writes);
+}
+
+/** After Use document on price, keep the contract street / close / credit queued for Use this. */
+export function queuePurchaseContractRemainder(draft: FoxIntakeDraft): FoxIntakeDraft {
+  const remainder = proposalFromLastPurchaseContract(draft);
+  if (!remainder) {
+    return { ...draft, pendingAddress: undefined };
+  }
+  return { ...draft, pendingProposal: remainder, pendingAddress: undefined };
+}
+
+export const PURCHASE_SPLIT_RECONCILE_NOTE = "purchase-split-reconcile";
+
+export function isPurchaseSplitReconcileProposal(proposal?: FactProposal | null) {
+  return (
+    proposal?.note === PURCHASE_SPLIT_RECONCILE_NOTE &&
+    proposal.field === "downPayment" &&
+    proposal.companion?.field === "loanAmount"
+  );
+}
+
+/** Price wrote. Down + loan still add to the old sketch. */
+export function purchaseSketchMismatch(draft?: FoxIntakeDraft | null) {
+  if (!draft || draft.productIntent !== "buy") return null;
+  const price = draft.propertyValueAmount;
+  const down = draft.downPaymentAmount;
+  const loan = draft.loanAmountValue;
+  if (price == null || down == null || loan == null) return null;
+  if (price <= 0 || down <= 0 || loan <= 0) return null;
+  if (Math.abs(down + loan - price) <= 1) return null;
+  if (loan >= price) return null;
+  const nextDown = Math.round(price - loan);
+  if (nextDown <= 0 || nextDown >= price) return null;
+  return {
+    price,
+    down,
+    loan,
+    sketch: Math.round(down + loan),
+    nextDown,
+    keepLoan: loan,
+  };
+}
+
+export function needsPurchaseSplitAsk(draft?: FoxIntakeDraft | null) {
+  return Boolean(isPurchaseSplitReconcileProposal(draft?.pendingProposal) || purchaseSketchMismatch(draft));
+}
+
+/** After contract write, ask before rewriting down to keep the loan. */
+export function queuePurchaseSketchReconcile(draft: FoxIntakeDraft): FoxIntakeDraft {
+  const mismatch = purchaseSketchMismatch(draft);
+  if (!mismatch) return draft;
+  if (proposalFromLastPurchaseContract(draft)) return draft;
+  const extras: FactWrite[] = [
+    { field: "purchase_price", value: String(mismatch.price), label: "purchase price" },
+    { field: "oldDown", value: String(mismatch.down), label: "old down" },
+    { field: "oldLoan", value: String(mismatch.loan), label: "old loan" },
+    { field: "sketch", value: String(mismatch.sketch), label: "sketch" },
+  ];
+  const close = factValue(draft, "close_date");
+  if (close) extras.push({ field: "close_date", value: close, label: "close date" });
+  const credit = factValue(draft, "seller_credit");
+  if (credit) extras.push({ field: "seller_credit", value: credit, label: "seller credit" });
+  return {
+    ...draft,
+    pendingProposal: {
+      field: "downPayment",
+      value: String(mismatch.nextDown),
+      label: "down payment",
+      kind: "computed",
+      note: PURCHASE_SPLIT_RECONCILE_NOTE,
+      companion: {
+        field: "loanAmount",
+        value: String(mismatch.keepLoan),
+        label: "loan amount",
+      },
+      extras,
+    },
+    pendingAddress: undefined,
+  };
+}
+
+/** After Use this, write the contract street and seller credit even if the chip was a leftover ZIP place. */
+export function applyPurchaseContractAccept(
+  draft: FoxIntakeDraft,
+  proposal?: FactProposal | null,
+): FoxIntakeDraft {
+  const fields = purchaseContractFieldsFromDraft({ ...draft, pendingProposal: proposal ?? draft.pendingProposal });
+  const now = new Date().toISOString();
+  let next: FoxIntakeDraft = { ...draft, pendingAddress: undefined };
+  for (const field of PURCHASE_CONTRACT_ACCEPT_FIELDS) {
+    const incoming = String(fields[field] ?? "").trim();
+    if (!incoming) continue;
+    if (field === "property_address") {
+      if (isZipOnlyFileAddress(incoming, next.propertyZip)) continue;
+      const shown = displayedSubjectAddress(next);
+      const present = factValue(next, "present_address");
+      const shownIsResidence =
+        Boolean(shown && present) &&
+        shown.replace(/\s+/g, " ").trim().toLowerCase() === present.replace(/\s+/g, " ").trim().toLowerCase();
+      if (shown && !isZipOnlyFileAddress(shown, next.propertyZip) && !shownIsResidence) continue;
+      next = writeField(next, field, incoming, now);
+      continue;
+    }
+    if (field === "seller_credit") {
+      const amount = moneyNumber(incoming);
+      if (amount == null || amount <= 0) continue;
+      if (next.facts?.seller_credit?.confirmed && factValue(next, "seller_credit")) continue;
+      next = writeField(next, field, String(amount), now);
+      continue;
+    }
+    if (field === "close_date") {
+      if (next.facts?.close_date?.confirmed && factValue(next, "close_date")) continue;
+      next = writeField(next, field, incoming, now);
+      continue;
+    }
+    if (field === "purchase_price") {
+      if (next.propertyValueAmount != null && next.propertyValueAmount > 0) continue;
+      next = writeField(next, field, incoming, now);
+    }
+  }
+  return { ...next, pendingAddress: undefined };
+}
+
+export function isPurchaseContractConfirmPending(draft: FoxIntakeDraft) {
+  if (!hasPurchaseContractDoc(draft) && !draft.lastPurchaseContractFields) return false;
+  const proposal = draft.pendingProposal;
+  if (isPurchaseSplitReconcileProposal(proposal)) return false;
+  if (proposal && isRemainderConfirmField(proposal.field)) return true;
+  if (purchaseContractStreetFromDraft(draft) || String(draft.lastPurchaseContractFields?.seller_credit ?? "").trim()) {
+    return Boolean(proposal || draft.pendingAddress);
+  }
+  return false;
+}
+
 export function skipCurrentInvite(draft: FoxIntakeDraft): FoxIntakeDraft {
+  if (priorStubAskNeeded(draft)) {
+    return skipPriorStub({ ...draft, docsOpen: false, correcting: null });
+  }
+  if (transcriptFollowUpAsk(draft)) {
+    const key = transcriptSpeakKey(draft);
+    return markDocStamp(
+      {
+        ...draft,
+        transcriptFollowUpSkipped: true,
+        looksRightHold: false,
+        docsOpen: false,
+        correcting: null,
+      },
+      key,
+      "done",
+    );
+  }
+  if (transcriptOfferDone(draft)) {
+    return draft;
+  }
+  if (nextCoverPageInviteCopy(draft) && lastExtractIsCover(draft) && !draft.pendingProposal) {
+    const skipped = Array.from(new Set([...(draft.skippedClasses ?? []), "tax_return" as ExtractClass]));
+    const next = {
+      ...draft,
+      skippedClasses: skipped,
+      docsOpen: false,
+      correcting: null,
+    };
+    return {
+      ...next,
+      documentsSkipped: draft.documents.length === 0 && !hasRemainingPrimaryInvites(next),
+    };
+  }
+  if (isPurchaseContractConfirmPending(draft)) {
+    const skipped = Array.from(
+      new Set([...(draft.skippedClasses ?? []), "purchase_contract" as ExtractClass]),
+    );
+    const next = {
+      ...draft,
+      skippedClasses: skipped,
+      docsOpen: false,
+      correcting: null,
+      correctingLine: null,
+      pendingProposal: null,
+    };
+    return {
+      ...next,
+      documentsSkipped: draft.documents.length === 0 && !hasRemainingPrimaryInvites(next),
+    };
+  }
+  if (isBorrowerNameConfirmPending(draft)) {
+    const facts = { ...(draft.facts ?? {}) };
+    delete facts[BORROWER_NAME_FIELD];
+    const skipped = Array.from(
+      new Set([...(draft.skippedClasses ?? []), "government_id" as ExtractClass]),
+    );
+    const next = {
+      ...draft,
+      borrowerName: undefined,
+      skippedClasses: skipped,
+      docsOpen: false,
+      correcting: null,
+      correctingLine: null,
+      pendingProposal: null,
+      pendingConflict: null,
+      facts,
+    };
+    return {
+      ...next,
+      documentsSkipped: draft.documents.length === 0 && !hasRemainingPrimaryInvites(next),
+    };
+  }
   const kind = nextDocInvite(draft);
   if (!kind) {
     return {
@@ -2191,12 +4736,66 @@ export function skipCurrentInvite(draft: FoxIntakeDraft): FoxIntakeDraft {
       documentsSkipped: draft.documents.length === 0 && !hasRemainingPrimaryInvites(next),
     };
   }
+  if (kind === "second_bank_statement") {
+    return {
+      ...draft,
+      secondBankStatementSkipped: true,
+      docsOpen: false,
+      correcting: null,
+    };
+  }
   const skipped = Array.from(new Set([...(draft.skippedClasses ?? []), kind]));
-  const next = { ...draft, skippedClasses: skipped, docsOpen: false, correcting: null };
+  const next = {
+    ...draft,
+    skippedClasses: skipped,
+    wageStubAsked: kind === "paystub" ? true : draft.wageStubAsked,
+    looksRightHold: kind === "paystub" ? false : draft.looksRightHold,
+    docsOpen: false,
+    correcting: null,
+  };
   return {
     ...next,
     documentsSkipped: draft.documents.length === 0 && !hasRemainingPrimaryInvites(next),
   };
+}
+
+export function retryUnreadDoc(draft: FoxIntakeDraft): FoxIntakeDraft {
+  return { ...draft, awaitingUnreadNote: false };
+}
+
+export function writeUnreadNote(draft: FoxIntakeDraft, text: string): FoxIntakeDraft {
+  const unread = unreadDocOpen(draft);
+  const note = text.trim();
+  if (!unread || !note) return { ...draft, awaitingUnreadNote: false };
+  return {
+    ...draft,
+    awaitingUnreadNote: false,
+    looksRightHold: true,
+    notes: [...(draft.notes ?? []), note],
+    documents: draft.documents.map((doc) =>
+      doc.receivedAt === unread.receivedAt && doc.name === unread.name
+        ? { ...doc, note }
+        : doc,
+    ),
+  };
+}
+
+/** Skip on a received-unread item. Skip ≠ extract — do not clear last year’s Form 1040. */
+export function skipUnreadDoc(draft: FoxIntakeDraft): FoxIntakeDraft {
+  const unread = unreadDocOpen(draft);
+  const next: FoxIntakeDraft = { ...draft, looksRightHold: undefined, awaitingUnreadNote: false };
+  const kind = unread ? receivedClassOf(unread) ?? unread.extractClass : null;
+  if (!draft.sampleAccepted && kind === "w2") {
+    return skipWageDocs(next);
+  }
+  if (!draft.sampleAccepted && kind === "paystub") {
+    return skipWageStub(next);
+  }
+  if (kind === "tax_return" || nextDocInvite(draft) === "tax_return") {
+    const skipped = Array.from(new Set([...(next.skippedClasses ?? []), "tax_return" as ExtractClass]));
+    return skipCurrentInvite({ ...next, skippedClasses: skipped });
+  }
+  return next;
 }
 
 export function holdDocuments(draft: FoxIntakeDraft): FoxIntakeDraft {
@@ -2217,12 +4816,11 @@ export function skipRemainingClasses(draft: FoxIntakeDraft): FoxIntakeDraft {
 }
 
 export function rejectIncomingFile(
-  draft: FoxIntakeDraft,
+  _draft: FoxIntakeDraft,
   name: string,
   type: string,
   size: number,
 ): string | null {
-  if (draft.documents.length >= MAX_DOC_COUNT) return LIMIT_LINE;
   if (!isAcceptedFile(name, type, size)) return REJECT_LINE;
   return null;
 }
@@ -2273,6 +4871,8 @@ export type DocIntakeDetail = {
   missing?: ExtractClass[];
   refreshStillUseful?: boolean;
   extractClass?: ExtractClass;
+  emptyRead?: { name: string; size: number };
+  received?: { name: string; size: number };
 };
 
 export function emitDocIntake(detail: DocIntakeDetail) {
