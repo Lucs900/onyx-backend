@@ -151,6 +151,7 @@ export function taskContext(stage: FoxStage, draft: FoxIntakeDraft) {
     "paystub-monthly": "Asking: stub monthly",
     "both-monthly-reason": "Asking: paystub and W-2",
     "cover-wage-gap": "Asking: 1040 wages vs File W-2s",
+    "household-wages": "Asking: household wages",
     "packet-read": "Reading the rest of the return",
     "raise-when": "Asking: raise date",
     "raise-ytd-far": "Asking: raise YTD",

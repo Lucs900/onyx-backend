@@ -51,6 +51,7 @@ import {
   monthlyQualifyingFromExtract,
   shouldProposeCoverLineIncome,
   attachIncomeLedgerFromExtract,
+  isHouseholdWagesProposal,
   promoteIncomeLedger,
   normalizeReturnKind,
   parseExtractMoney,
@@ -292,6 +293,7 @@ const MONEY_KEYS = new Set([
   "ytd_gross",
   "net_period",
   "wages",
+  "household_wages",
   "medicare_wages",
   "box5",
   "federal_withheld",
@@ -682,6 +684,7 @@ export const PACKET_READING_LINE = "Reading the rest of the return.";
 export const PACKET_SCHEDULES_MISSING_LINE = "I didn’t see Schedule E or a K-1 on these pages.";
 export const PACKET_LINES_MISSING_LINE =
   "I didn’t see cover wages, Schedule E, or a K-1 on these pages.";
+export const PACKET_WAGES_UNREAD_LINE = "I couldn’t read the wages on page 1.";
 
 export function taxReturnPacketDoc(draft: FoxIntakeDraft) {
   return [...draft.documents].reverse().find(
@@ -711,6 +714,19 @@ export function packetReadPhase(fields?: Record<string, string | null | undefine
 export function packetSchedulesMissingLine(fields?: Record<string, string | null | undefined> | null) {
   const wages = String(fields?.wages ?? "").replace(/[^\d.]/g, "");
   return Number(wages) > 0 ? PACKET_SCHEDULES_MISSING_LINE : PACKET_LINES_MISSING_LINE;
+}
+
+/** Line 1 on a 1040 face is not “not on these pages.” */
+export function packetEmptySpeakLine(
+  draft: FoxIntakeDraft,
+  fields?: Record<string, string | null | undefined> | null,
+) {
+  const wages = String(fields?.wages ?? "").replace(/[^\d.]/g, "");
+  if (Number(wages) > 0) return PACKET_SCHEDULES_MISSING_LINE;
+  if (taxReturnWrittenOnFile(draft) && !isTranscriptOnFile(draft)) {
+    return PACKET_WAGES_UNREAD_LINE;
+  }
+  return PACKET_LINES_MISSING_LINE;
 }
 
 /** Grok first-page 1040: tax year + name confirm. Ledger extras do not steal that confirm. */
@@ -1234,6 +1250,7 @@ export function factLabel(field: string) {
   if (field === "net_period") return "net pay";
   if (field === "tax_year") return "tax year";
   if (field === "wages") return "wages";
+  if (field === "household_wages") return "household wages";
   if (field === "federal_withheld") return "federal withheld";
   if (field === "pay_frequency") return "pay frequency";
   if (field === "second_employer_name") return "second employer";
@@ -2427,23 +2444,29 @@ export function applyExtractedFields(
   ) {
     next = maybeProposeFederalReturn(next, fields) ?? next;
   }
-  if (!next.pendingProposal && !next.pendingConflict && extractClass === "tax_return") {
-    next = promoteIncomeLedger(next);
-  }
   if (packetContinue) {
     next = {
       ...next,
       taxReturnPacketRead: "done",
     };
+  }
+  if (!next.pendingProposal && !next.pendingConflict && extractClass === "tax_return") {
+    next = promoteIncomeLedger(next);
+  }
+  if (packetContinue) {
+    const offeredWages =
+      isHouseholdWagesProposal(next.pendingProposal) ||
+      Boolean(next.facts?.household_wages?.confirmed);
     const hasRows = (next.incomeLedger ?? []).some((row) => row.status === "suggested");
-    if (
-      !hasRows &&
-      !next.awaitingCoverWageGap &&
-      !next.coverWageGap &&
-      !next.taxReturnPacketSpoken
-    ) {
-      next = { ...next, taxReturnPacketSpoken: true };
-      quietLines.push(packetSchedulesMissingLine(fields));
+    const printedWages = Number(String(fields.wages ?? "").replace(/[^\d.]/g, ""));
+    if (!next.taxReturnPacketSpoken && !offeredWages && printedWages <= 0) {
+      if (taxReturnWrittenOnFile(next) && !isTranscriptOnFile(next)) {
+        next = { ...next, taxReturnPacketSpoken: true };
+        quietLines.push(PACKET_WAGES_UNREAD_LINE);
+      } else if (!hasRows && !next.awaitingCoverWageGap && !next.coverWageGap) {
+        next = { ...next, taxReturnPacketSpoken: true };
+        quietLines.push(PACKET_LINES_MISSING_LINE);
+      }
     }
   }
   if (extractClass === "paystub" && next.stubExtractAccepted) {

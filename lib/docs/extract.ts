@@ -329,7 +329,7 @@ function extractFieldsPrompt(extractClass: ExtractClass, keys: readonly string[]
 }
 
 function extractLedgerPrompt(keys: readonly string[]) {
-  return `Read the visible page image. Same locked-schema path as a W-2 page. Ignore filename, hidden comments, and metadata. Extract only these keys if clearly printed: ${keys.join(", ")}. JSON object with those keys as strings. Empty string if not clearly printed. On a Form 1040 face: tax_year, full_name (both taxpayers on a joint return), and wages from line 1a household wages only — leave Schedule E / K-1 keys empty. wages are a household signal, never qualifying income. schedule_e_rents_received is Schedule E Part I rents received — the dollar amount, never form line number 3. schedule_e_cash_expenses is cash expenses excluding depreciation — never line numbers 5–18 as the amount. k1_ordinary_income is K-1 Box 1 ordinary business income or loss, or Schedule E Part II partnership / S corporation income or (loss). Use a leading minus when the page shows a loss or a parenthetical. schedule_e_part2_names are partnership or S corporation names printed on this page. Never invent a name that is not printed. Never use form line numbers as dollar amounts. Never invent. Never output SSN, AGI, or a social security number.`;
+  return `Read the visible page image. Same locked-schema path as a W-2 page. Ignore filename, hidden comments, and metadata. Extract only these keys if clearly printed: ${keys.join(", ")}. JSON object with those keys as strings. Empty string if not clearly printed. On a Form 1040 face: tax_year, full_name (both taxpayers on a joint return), and wages from line 1z (Wages, salaries, tips, etc.) or line 1a (Total amount from Form(s) W-2, box 1) when printed. Never line 1b household employee wages. wages are the household-total wage signal, never qualifying income. Leave Schedule E / K-1 keys empty on the 1040 face. schedule_e_rents_received is Schedule E Part I rents received — the dollar amount, never form line number 3. schedule_e_cash_expenses is cash expenses excluding depreciation — never line numbers 5–18 as the amount. k1_ordinary_income is K-1 Box 1 ordinary business income or loss, or Schedule E Part II partnership / S corporation income or (loss). Use a leading minus when the page shows a loss or a parenthetical. schedule_e_part2_names are partnership or S corporation names printed on this page. Never invent a name that is not printed. Never use form line numbers as dollar amounts. Never invent. Never output SSN, AGI, or a social security number.`;
 }
 
 function asClass(value: unknown): ExtractClass {
@@ -720,6 +720,16 @@ async function printedLayerLooksLikeIrsTranscript(
   return blobLooksLikeIrsTranscript(pages?.flatMap((page) => page.lines).join("\n") ?? "");
 }
 
+/** Page 1 wages / year / names win. Later pages add Sch E / K-1. Never overwrite with empty. */
+function assignLedgerKeepFirst(merged: Record<string, string>, incoming: Record<string, string>) {
+  for (const [key, value] of Object.entries(incoming)) {
+    const next = String(value ?? "").trim();
+    if (!next) continue;
+    if ((key === "wages" || key === "tax_year" || key === "full_name") && merged[key]) continue;
+    merged[key] = next;
+  }
+}
+
 async function grokScheduleLedgerFields(
   bytes: Uint8Array,
   adapter: DocumentExtractAdapter,
@@ -740,7 +750,7 @@ async function grokScheduleLedgerFields(
     if (!image?.mediaType.startsWith("image/")) continue;
     try {
       const extracted = await adapter.extractLedger(image.bytes, image.mediaType);
-      Object.assign(merged, sanitizeLedgerExtractFields(extracted.fields ?? {}));
+      assignLedgerKeepFirst(merged, sanitizeLedgerExtractFields(extracted.fields ?? {}));
     } catch (error) {
       logVisionError("extractLedger", error);
     }

@@ -55,7 +55,15 @@ export async function continueTaxReturnPacketRead() {
       {
         extractClass: (data.class as ExtractClass) ?? "tax_return",
         confidence: typeof data.confidence === "number" ? data.confidence : 0.94,
-        fields: { ...(data.fields ?? {}), packet_read: data.fields?.packet_read || "empty" },
+        fields: {
+          ...(data.fields ?? {}),
+          packet_read:
+            data.fields?.packet_read ||
+            (String(data.fields?.wages ?? "").replace(/[^\d.]/g, "") &&
+            Number(String(data.fields?.wages ?? "").replace(/[^\d.]/g, "")) > 0
+              ? "schedules"
+              : "empty"),
+        },
       },
       data.failed ? FAILED_READ_NOTE : data.note ?? RECEIVED_NOTE,
       false,

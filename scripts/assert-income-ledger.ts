@@ -2,7 +2,7 @@
  * Income-as-ledger leftover.
  * Stub QI stays. Schedule E / partnership are their own CFBW rows.
  * Losses do not net into W-2 QI. Cover wages do not overwrite QI.
- * Cover wages far above File W-2s ask once. Gross is a File fact, not QI.
+ * Page-1 household wages CFBW. Do not invent Sch E. Gross is a File fact, not QI.
  */
 import assert from "node:assert/strict";
 import {
@@ -14,6 +14,8 @@ import {
 } from "../components/fox/fileWrite";
 import {
   applyCoverWageGapAnswer,
+  HOUSEHOLD_WAGES_FIELD,
+  isHouseholdWagesProposal,
   QUALIFYING_INCOME_FIELD,
   qualifyingIncomeDisplay,
 } from "../components/fox/qualifyingIncome";
@@ -38,6 +40,7 @@ import { loudTranscriptFromPrintedLines } from "../lib/docs/printedSample";
 import {
   PACKET_LINES_MISSING_LINE,
   PACKET_SCHEDULES_MISSING_LINE,
+  PACKET_WAGES_UNREAD_LINE,
   taxReturnPacketHoldAsk,
   taxReturnPacketNeedsRead,
 } from "../components/fox/fileWrite";
@@ -190,6 +193,16 @@ async function main() {
   assert.equal(coverWagesFarAboveFileW2s(437436, 437436), false);
   assert.equal(coverWagesFarAboveFileW2s(400000, 437436), false);
 
+  const face2025 = incomeLedgerFieldsFromPrintedLines([
+    "Form 1040 2025",
+    "1a Total amount from Form(s) W-2, box 1          87,432.00",
+    "1b Household employee wages not reported on Form(s) W-2",
+    "1z Wages, salaries, tips, etc. Add lines 1a through 1h          87,432.00",
+  ]);
+  assert.equal(face2025.wages, "87432", "page 1 line 1z / 1a W-2 total is household wages");
+  assert.notEqual(face2025.wages, "1");
+  assert.notEqual(face2025.wages, "2");
+
   const printed = incomeLedgerFieldsFromPrintedLines([
     "Form 1040 2025",
     "1a Wages, salaries, tips $520,000.00",
@@ -310,28 +323,48 @@ async function main() {
   assert.equal(afterYear.facts?.qualifying_income?.value, "36453", "QI stays on year Use this");
   assert.equal(afterYear.facts?.tax_year?.value, "2025");
   assert.equal(afterYear.facts?.wages, undefined);
-  assert.equal(afterYear.awaitingCoverWageGap, true, "cover wages far above File W-2s ask once");
-  const gapAsk = nextFoxAsk(afterYear);
-  assert.equal(gapAsk.text, COVER_WAGE_GAP_ASK);
-  assert.deepEqual(
-    (gapAsk.actions ?? []).map((item) => item.label),
-    ["Another job", "Spouse", "Skip"],
-  );
+  assert.equal(taxReturnPacketNeedsRead(afterYear), true, "after name write, keep reading page 1");
+  assert.ok(!afterYear.awaitingCoverWageGap);
+  assert.equal(afterYear.pendingProposal, null);
   assert.equal(coverWageGapAsk().text, COVER_WAGE_GAP_ASK);
 
-  const afterSkipGap = applyCoverWageGapAnswer(afterYear, "skip");
-  assert.equal(afterSkipGap.coverWageGapAsked, true);
-  assert.equal(afterSkipGap.awaitingCoverWageGap, false);
-  assert.equal(afterSkipGap.facts?.qualifying_income?.value, "36453");
-  assert.equal(afterSkipGap.pendingProposal?.field, INCOME_LEDGER_FIELD);
-  assert.equal(afterSkipGap.facts?.schedule_e_monthly, undefined, "File empty on Schedule E until Use this");
-  const eAsk = nextFoxAsk(afterSkipGap);
+  loadIntakeDraft(afterYear);
+  const afterPage1 = applyExtractWrite(pageReadAt, pageReadName, {
+    extractClass: "tax_return",
+    confidence: 0.94,
+    fields: {
+      packet_read: "schedules",
+      wages: "600000",
+      schedule_e_rents_received: "42000",
+      schedule_e_cash_expenses: "11400",
+      k1_ordinary_income: "-294564",
+    },
+  });
+  assert.equal(afterPage1.draft.facts?.qualifying_income?.value, "36453", "household wages do not overwrite QI");
+  assert.equal(afterPage1.draft.facts?.wages, undefined, "cover wages stay off File wages");
+  assert.equal(isHouseholdWagesProposal(afterPage1.draft.pendingProposal), true);
+  const wageAsk = nextFoxAsk(afterPage1.draft);
+  assert.match(wageAsk.text, /household wages of \$600,000/i);
+  assert.match(wageAsk.text, /not qualifying income/i);
+  assert.match(wageAsk.text, /Use this/i);
+  assert.deepEqual(
+    (wageAsk.actions ?? []).map((item) => item.label),
+    ["Use this", "Change"],
+  );
+
+  const afterHousehold = resolveProposal(afterPage1.draft, "accept");
+  assert.equal(afterHousehold.facts?.qualifying_income?.value, "36453");
+  assert.equal(afterHousehold.facts?.wages, undefined);
+  assert.equal(afterHousehold.facts?.[HOUSEHOLD_WAGES_FIELD]?.value, "600000");
+  assert.equal(afterHousehold.pendingProposal?.field, INCOME_LEDGER_FIELD);
+  assert.equal(afterHousehold.facts?.schedule_e_monthly, undefined, "File empty on Schedule E until Use this");
+  const eAsk = nextFoxAsk(afterHousehold);
   assert.match(eAsk.text, /Schedule E/i);
   assert.match(eAsk.text, /Use this/i);
   assert.ok((eAsk.actions ?? []).some((item) => item.label === "Use this"));
   assert.doesNotMatch(eAsk.text, /36,453/);
 
-  const usedE = resolveProposal(afterSkipGap, "accept");
+  const usedE = resolveProposal(afterHousehold, "accept");
   assert.equal(usedE.facts?.qualifying_income?.value, "36453", "Schedule E Use this does not replace QI");
   assert.ok(usedE.facts?.schedule_e_monthly?.confirmed);
   assert.ok(
@@ -421,7 +454,7 @@ async function main() {
   const useful = (stillUsefulSection({ ...afterYear, sampleAccepted: true })?.items ?? []).map((item) => item.label);
   assert.ok(useful.length >= 0);
 
-  const secondGap = applyCoverWageGapAnswer(afterSkipGap, "another-job");
+  const secondGap = applyCoverWageGapAnswer(afterHousehold, "another-job");
   assert.equal(secondGap.coverWageGapAsked, true);
   assert.equal(secondGap.awaitingCoverWageGap, false);
 
@@ -708,16 +741,18 @@ async function main() {
   assert.equal(afterPacket.draft.facts?.qualifying_income?.value, "36453", "packet read does not overwrite QI");
   assert.equal(afterPacket.draft.facts?.wages, undefined, "cover wages stay off File");
   assert.equal(afterPacket.draft.taxReturnPacketRead, "done");
-  assert.equal(afterPacket.draft.awaitingCoverWageGap, true);
+  assert.equal(isHouseholdWagesProposal(afterPacket.draft.pendingProposal), true, "page 1 wages are household CFBW");
   assert.ok(
     (afterPacket.draft.incomeLedger ?? []).some((row) => row.kind === "schedule_e" && row.status === "suggested"),
   );
   assert.ok(
     (afterPacket.draft.incomeLedger ?? []).some((row) => row.kind === "named_loss" && row.status === "suggested"),
   );
-  const afterPacketGap = applyCoverWageGapAnswer(afterPacket.draft, "skip");
-  assert.equal(afterPacketGap.pendingProposal?.field, INCOME_LEDGER_FIELD);
-  const packetEAsk = nextFoxAsk(afterPacketGap);
+  const afterPacketWages = resolveProposal(afterPacket.draft, "accept");
+  assert.equal(afterPacketWages.facts?.qualifying_income?.value, "36453");
+  assert.equal(afterPacketWages.facts?.[HOUSEHOLD_WAGES_FIELD]?.value, "600000");
+  assert.equal(afterPacketWages.pendingProposal?.field, INCOME_LEDGER_FIELD);
+  const packetEAsk = nextFoxAsk(afterPacketWages);
   assert.match(packetEAsk.text, /Schedule E/i);
   assert.match(packetEAsk.text, /Use this/i);
 
@@ -736,7 +771,8 @@ async function main() {
     fields: { packet_read: "empty" },
   });
   assert.equal(emptyPacket.draft.facts?.qualifying_income?.value, "36453");
-  assert.ok(emptyPacket.quietLines.includes(PACKET_LINES_MISSING_LINE));
+  assert.ok(emptyPacket.quietLines.includes(PACKET_WAGES_UNREAD_LINE), "1040 face with unread line 1 is not “not on these pages”");
+  assert.ok(!emptyPacket.quietLines.includes(PACKET_LINES_MISSING_LINE));
   assert.ok(!emptyPacket.quietLines.includes(FAILED_READ_NOTE));
   assert.equal(emptyPacket.draft.taxReturnPacketSpoken, true);
   assert.doesNotMatch(emptyPacket.draft.documents.find((doc) => doc.name === walkName)?.note ?? "", /could not read/i);
@@ -745,8 +781,35 @@ async function main() {
     confidence: 0.94,
     fields: { packet_read: "empty" },
   });
-  assert.ok(!emptyAgain.quietLines.includes(PACKET_LINES_MISSING_LINE), "missing schedules is spoken once");
+  assert.ok(!emptyAgain.quietLines.includes(PACKET_WAGES_UNREAD_LINE), "unread page-1 wages is spoken once");
+  assert.ok(!emptyAgain.quietLines.includes(PACKET_LINES_MISSING_LINE));
   assert.ok(!emptyAgain.quietLines.includes(PACKET_SCHEDULES_MISSING_LINE));
+
+  const wagesOnlyAt = "2026-09-12T16:20:00.000Z";
+  const wagesOnlyCover = writeLive(
+    wageQiDraft(),
+    walkName,
+    { tax_year: "2025", full_name: "ALLAN COMBES and RENZ ARIANE COMBES" },
+    wagesOnlyAt,
+  );
+  const wagesOnlyWritten = resolveProposal(wagesOnlyCover.draft, "accept");
+  loadIntakeDraft(wagesOnlyWritten);
+  const wagesOnlyPacket = applyExtractWrite(wagesOnlyAt, walkName, {
+    extractClass: "tax_return",
+    confidence: 0.94,
+    fields: { packet_read: "schedules", wages: "87432" },
+  });
+  assert.equal(wagesOnlyPacket.draft.facts?.qualifying_income?.value, "36453");
+  assert.equal(isHouseholdWagesProposal(wagesOnlyPacket.draft.pendingProposal), true);
+  assert.equal(
+    (wagesOnlyPacket.draft.incomeLedger ?? []).some((row) => row.kind === "schedule_e"),
+    false,
+    "do not invent Schedule E",
+  );
+  const wagesOnlyUsed = resolveProposal(wagesOnlyPacket.draft, "accept");
+  assert.equal(wagesOnlyUsed.facts?.[HOUSEHOLD_WAGES_FIELD]?.value, "87432");
+  assert.equal(wagesOnlyUsed.facts?.qualifying_income?.value, "36453");
+  assert.notEqual(wagesOnlyUsed.pendingProposal?.field, INCOME_LEDGER_FIELD);
 
   let packetPhaseLedger = 0;
   const packetPhase = await classifyAndExtract(
@@ -800,6 +863,9 @@ async function main() {
   assert.match(extractSrc, /take\(1\)/);
   assert.match(extractSrc, /phase === "packet"/);
   assert.match(extractSrc, /extractTaxReturnPacket|packet_read/);
+  assert.match(extractSrc, /line 1z \(Wages, salaries, tips, etc\.\)/);
+  assert.match(extractSrc, /Never line 1b household employee wages/);
+  assert.match(extractSrc, /assignLedgerKeepFirst/);
   assert.match(routeSrc, /maxDuration = 300/);
   assert.doesNotMatch(routeSrc, /maxDuration = 60/);
 
@@ -849,7 +915,7 @@ async function main() {
   assert.ok(!/could not read/i.test(stubDoc?.note ?? ""));
 
   console.log(
-    "assert-income-ledger: stub QI stays · Sch E / partnership own rows · loss does not net · cover wages held · gap once · gross not QI · no invented $2 · QI label stays stub · no fixture K-1 · packet page images → Grok · cover write then keep reading · unread is the return",
+    "assert-income-ledger: stub QI stays · page-1 household wages CFBW · Sch E / partnership own rows · loss does not net · cover wages held · gross not QI · no invented $2 · QI label stays stub · no fixture K-1 · packet page images → Grok · cover write then keep reading · unread is the return",
   );
 }
 

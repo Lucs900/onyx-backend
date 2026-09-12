@@ -17,6 +17,8 @@ export const NAMED_LOSS_NOTE = "Named loss · not underwritten";
 export const COVER_WAGE_GAP_RATIO = 0.2;
 export const COVER_WAGE_GAP_ASK =
   "The 1040 wages are higher than the W-2s on File. Another job, a spouse, or Skip.";
+export const HOUSEHOLD_WAGES_FIELD = "household_wages";
+export const HOUSEHOLD_WAGES_NOTE = "Household signal · not qualifying income";
 
 export type IncomeLedgerKind =
   | "schedule_c"
@@ -267,7 +269,12 @@ function moneyNearLabel(blob: string, pattern: RegExp): string | undefined {
   const after = line.slice(local + match[0].length);
   const before = line.slice(0, local);
   const money = /(-?\$?\s*\d[\d,]*(?:\.\d+)?|\(\s*\$?\s*\d[\d,]*(?:\.\d+)?\s*\))/;
-  const afterAmt = after.match(money)?.[1];
+  const afterAmts: string[] = [];
+  const afterRe = new RegExp(money.source, "g");
+  let afterMatch: RegExpExecArray | null;
+  while ((afterMatch = afterRe.exec(after))) {
+    if (afterMatch[1]) afterAmts.push(afterMatch[1]);
+  }
   const beforeAmts: string[] = [];
   const beforeRe = new RegExp(money.source, "g");
   let beforeMatch: RegExpExecArray | null;
@@ -281,7 +288,7 @@ function moneyNearLabel(blob: string, pattern: RegExp): string | undefined {
     if (Math.abs(n) < 100 && !/,/.test(String(raw ?? ""))) return undefined;
     return String(n);
   };
-  for (const raw of [afterAmt, ...beforeAmts]) {
+  for (const raw of [...afterAmts, ...beforeAmts]) {
     const got = pick(raw);
     if (got) return got;
   }
@@ -358,10 +365,17 @@ export function incomeLedgerFieldsFromPrintedLines(lines: string[]): Record<stri
   if (year) fields.tax_year = year;
 
   const money = "(-?\\$?\\s*\\d[\\d,]*(?:\\.\\d+)?|\\(\\s*\\$?\\s*\\d[\\d,]*(?:\\.\\d+)?\\s*\\))";
+  const wageMoney =
+    "(-?\\$?\\s*\\d{1,3}(?:,\\d{3})+(?:\\.\\d+)?|-?\\$?\\s*\\d{3,}(?:\\.\\d+)?|\\(\\s*\\$?\\s*\\d{1,3}(?:,\\d{3})+(?:\\.\\d+)?\\s*\\))";
   const wages =
-    blob.match(new RegExp(`1a\\s+wages[^\\n]{0,80}?${money}`, "i"))?.[1] ||
-    blob.match(new RegExp(`wages,?\\s*salaries,?\\s*tips[^\\n]{0,80}?${money}`, "i"))?.[1];
-  if (wages) putMoney("wages", wages);
+    moneyNearLabel(blob, /1z\s+wages,?\s*salaries,?\s*tips/i) ||
+    moneyNearLabel(blob, /1a\s+total amount from form\(s\)\s*w-?2/i) ||
+    moneyNearLabel(blob, /1a\s+wages,?\s*salaries,?\s*tips/i) ||
+    blob.match(new RegExp(`1z\\s+wages[^\\n]{0,160}?${wageMoney}`, "i"))?.[1] ||
+    blob.match(new RegExp(`1a\\s+total amount from form[^\\n]{0,120}?${wageMoney}`, "i"))?.[1] ||
+    blob.match(new RegExp(`1a\\s+wages[^\\n]{0,80}?${wageMoney}`, "i"))?.[1] ||
+    blob.match(new RegExp(`(?<!1b.{0,60})wages,?\\s*salaries,?\\s*tips[^\\n]{0,80}?${wageMoney}`, "i"))?.[1];
+  if (wages && !/household employee wages/i.test(String(wages))) putMoney("wages", wages);
 
   const schC =
     blob.match(new RegExp(`business income or \\(?loss\\)?\\s*\\(\\s*schedule c\\s*\\)\\s*:?\\s*${money}`, "i"))?.[1] ||

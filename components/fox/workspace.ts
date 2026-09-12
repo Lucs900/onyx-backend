@@ -299,11 +299,15 @@ import {
   W2_PAY_FREQUENCY_ASK,
   applyCoverWageGapAnswer,
   coverWageGapAskCopy,
+  householdWagesAskCopy,
+  isHouseholdWagesProposal,
   isIncomeLedgerProposal,
 } from "./qualifyingIncome";
 import {
   GROSS_RECEIPTS_FIELD,
   GROSS_RECEIPTS_NOTE,
+  HOUSEHOLD_WAGES_FIELD,
+  HOUSEHOLD_WAGES_NOTE,
   INCOME_LEDGER_FIELD,
   confirmedIncomeLedgerRows,
 } from "@/lib/income/ledger";
@@ -2404,6 +2408,12 @@ function liveProposalAsk(
       return wageReactionAsk(draft, proposal, cls ?? "paystub");
     }
   }
+  if (isHouseholdWagesProposal(proposal)) {
+    return {
+      text: householdWagesAskCopy(Number(proposal.value) || 0),
+      actions: incomeConfirmActions(),
+    };
+  }
   if (isIncomeLedgerProposal(proposal)) {
     return {
       text: proposalAskCopy(proposal),
@@ -3601,6 +3611,7 @@ export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
   if (draft.awaitingPayFrequency) return "pay-frequency";
   if (draft.awaitingBothMonthlyReason) return "both-monthly-reason";
   if (draft.awaitingCoverWageGap) return "cover-wage-gap";
+  if (isHouseholdWagesProposal(draft.pendingProposal)) return "household-wages";
   if (taxReturnPacketHoldAsk(draft)) return "packet-read";
   if (draft.awaitingRaiseWhen) return "raise-when";
   if (draft.awaitingRaiseYtdFar) return "raise-ytd-far";
@@ -4115,6 +4126,12 @@ function workspaceAskCopy(
   }
   if (prompt === "cover-wage-gap") {
     return coverWageGapAsk();
+  }
+  if (prompt === "household-wages" && draft.pendingProposal?.field === "household_wages") {
+    return {
+      text: householdWagesAskCopy(Number(draft.pendingProposal.value) || 0),
+      actions: incomeConfirmActions(),
+    };
   }
   if (prompt === "packet-read") {
     return { text: PACKET_READING_LINE };
@@ -8728,6 +8745,15 @@ export function previewFacts(draft: FoxIntakeDraft): PreviewFact[] {
       label: "Qualifying income",
       value: qualifying.value,
       note: qualifying.note,
+    });
+  }
+  const householdWages = factValue(draft, HOUSEHOLD_WAGES_FIELD);
+  if (householdWages) {
+    facts.push({
+      id: "household-wages",
+      label: "Household wages",
+      value: displayFactValue(HOUSEHOLD_WAGES_FIELD, householdWages),
+      note: HOUSEHOLD_WAGES_NOTE,
     });
   }
   for (const row of confirmedIncomeLedgerRows(draft.incomeLedger)) {

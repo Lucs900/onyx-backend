@@ -52,6 +52,8 @@ import {
   COVER_WAGE_GAP_ASK,
   GROSS_RECEIPTS_FIELD,
   GROSS_RECEIPTS_NOTE,
+  HOUSEHOLD_WAGES_FIELD,
+  HOUSEHOLD_WAGES_NOTE,
   INCOME_LEDGER_FIELD,
   NAMED_LOSS_NOTE,
   coverWagesFarAboveFileW2s,
@@ -111,6 +113,7 @@ export type { BothMonthlyReason, QualifyingMethod, RaiseWhen, ScheduleCYearInput
 export const QUALIFYING_INCOME_FIELD = "qualifying_income";
 export const QUALIFYING_METHOD_FIELD = "qualifying_method";
 export const TAX_CASHFLOWS_FIELD = "tax_cashflows";
+export { HOUSEHOLD_WAGES_FIELD, HOUSEHOLD_WAGES_NOTE };
 
 export type TaxReturnKind = "schedule_c" | "schedule_e" | "k1" | "1065" | "1120s" | "1120" | "";
 export type QualifyingBasis = "schedule_c" | "schedule_e" | "wage" | "k1" | "entity" | "combined";
@@ -1559,6 +1562,81 @@ export function isIncomeLedgerProposal(proposal?: FactProposal | null): boolean 
   return Boolean(proposal && proposal.field === INCOME_LEDGER_FIELD);
 }
 
+export function isHouseholdWagesProposal(proposal?: FactProposal | null): boolean {
+  return Boolean(proposal && proposal.field === HOUSEHOLD_WAGES_FIELD);
+}
+
+export function householdWagesAskCopy(annual: number) {
+  const shown = Math.round(Math.abs(annual)).toLocaleString("en-US");
+  return `This return shows household wages of $${shown}. Household signal only — not qualifying income. Use this?`;
+}
+
+export function householdWagesProposal(annual: number): FactProposal {
+  return {
+    field: HOUSEHOLD_WAGES_FIELD,
+    value: String(Math.round(annual)),
+    label: "household wages",
+    kind: "computed",
+    note: HOUSEHOLD_WAGES_NOTE,
+  };
+}
+
+function coverWagesPendingOf(
+  draft: FoxIntakeDraft,
+  fields?: Record<string, string> | null,
+): number | null {
+  const fromFields = parseLedgerMoney(fields?.wages);
+  if (fromFields != null && fromFields > 0) return fromFields;
+  const held = parseLedgerMoney(draft.pendingCoverWages);
+  return held != null && held > 0 ? held : null;
+}
+
+export function maybeProposeHouseholdWages(
+  draft: FoxIntakeDraft,
+  fields?: Record<string, string> | null,
+): FoxIntakeDraft {
+  if (draft.pendingProposal || draft.pendingConflict) return draft;
+  if (draft.householdWagesAsked || draft.facts?.[HOUSEHOLD_WAGES_FIELD]?.confirmed) return draft;
+  const wages = coverWagesPendingOf(draft, fields);
+  if (wages == null) return draft;
+  return {
+    ...draft,
+    pendingCoverWages: String(wages),
+    pendingProposal: householdWagesProposal(wages),
+  };
+}
+
+export function settleHouseholdWagesProposal(
+  draft: FoxIntakeDraft,
+  status: "confirmed" | "skipped",
+): FoxIntakeDraft {
+  const annual = parseLedgerMoney(draft.pendingProposal?.value) ?? parseLedgerMoney(draft.pendingCoverWages);
+  const now = new Date().toISOString();
+  let next: FoxIntakeDraft = {
+    ...draft,
+    pendingProposal: null,
+    householdWagesAsked: true,
+    coverWageGapAsked: true,
+    awaitingCoverWageGap: false,
+  };
+  if (status === "confirmed" && annual != null && annual > 0) {
+    next = {
+      ...next,
+      facts: {
+        ...(next.facts ?? {}),
+        [HOUSEHOLD_WAGES_FIELD]: {
+          field: HOUSEHOLD_WAGES_FIELD,
+          value: String(Math.round(annual)),
+          source: "suggested",
+          confirmed: true,
+          confirmedAt: now,
+        },
+      },
+    };
+  }
+  return promoteIncomeLedger(next);
+}
+
 function writeGrossReceiptsFact(draft: FoxIntakeDraft, fields: Record<string, string>): FoxIntakeDraft {
   const gross = grossReceiptsFromFields(fields);
   if (gross == null) return draft;
@@ -1606,8 +1684,14 @@ export function attachIncomeLedgerFromExtract(
 }
 
 function markCoverWageGap(draft: FoxIntakeDraft, fields: Record<string, string>): FoxIntakeDraft {
-  if (draft.coverWageGapAsked || draft.coverWageGap) return draft;
   const coverWages = parseLedgerMoney(fields.wages);
+  if (coverWages != null && coverWages > 0) {
+    return {
+      ...draft,
+      pendingCoverWages: String(coverWages),
+    };
+  }
+  if (draft.coverWageGapAsked || draft.coverWageGap) return draft;
   const fileW2 = fileW2AnnualFromFacts(draft.facts);
   if (!coverWagesFarAboveFileW2s(coverWages, fileW2)) return draft;
   return {
@@ -1633,6 +1717,11 @@ export function incomeLedgerProposal(row: IncomeLedgerRow): FactProposal {
 
 export function promoteIncomeLedger(draft: FoxIntakeDraft): FoxIntakeDraft {
   if (draft.pendingProposal || draft.pendingConflict) return draft;
+  if (draft.taxReturnPacketRead === "pending" || draft.taxReturnPacketRead === "reading") {
+    return draft;
+  }
+  const household = maybeProposeHouseholdWages(draft);
+  if (household.pendingProposal) return household;
   if (draft.awaitingCoverWageGap) return draft;
   if (draft.coverWageGap && !draft.coverWageGapAsked) {
     return { ...draft, awaitingCoverWageGap: true };

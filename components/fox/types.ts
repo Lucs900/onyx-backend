@@ -466,6 +466,9 @@ export type FoxIntakeDraft = {
   coverWageGapAsked?: boolean;
   coverWageAnotherJob?: boolean;
   coverWageGap?: { coverAnnual: number; fileW2Annual: number } | null;
+  /** 1040 line 1z / 1a household-total wages. CFBW. Never QI. */
+  pendingCoverWages?: string;
+  householdWagesAsked?: boolean;
   /** Income ledger. Each source is its own row. File empty until Use this. */
   incomeLedger?: IncomeLedgerRow[];
   /** After cover Use this, keep reading the same 1040 pages for Sch E / K-1 / wages. */
@@ -582,6 +585,7 @@ export type FoxPrompt =
   | "paystub-monthly"
   | "both-monthly-reason"
   | "cover-wage-gap"
+  | "household-wages"
   | "packet-read"
   | "raise-when"
   | "raise-ytd-far"

@@ -452,6 +452,7 @@ export function emptyDraft(): FoxIntakeDraft {
     awaitingBothMonthlyReason: false,
     awaitingCoverWageGap: false,
     coverWageGapAsked: false,
+    householdWagesAsked: false,
     incomeLedger: [],
     taxReturnPacketSpoken: false,
     awaitingRaiseWhen: false,
@@ -772,6 +773,11 @@ function normalize(value: unknown): FoxIntakeDraft {
     awaitingBothMonthlyReason: Boolean(raw.awaitingBothMonthlyReason),
     awaitingCoverWageGap: Boolean(raw.awaitingCoverWageGap),
     coverWageGapAsked: Boolean(raw.coverWageGapAsked),
+    householdWagesAsked: Boolean(raw.householdWagesAsked),
+    pendingCoverWages:
+      typeof raw.pendingCoverWages === "string" && raw.pendingCoverWages.trim()
+        ? raw.pendingCoverWages.trim()
+        : undefined,
     coverWageAnotherJob: Boolean(raw.coverWageAnotherJob),
     coverWageGap:
       raw.coverWageGap &&

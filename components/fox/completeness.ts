@@ -73,11 +73,14 @@ import {
   wageExtractConfirmCopy,
   wageW2ConfirmCopy,
   isIncomeLedgerProposal,
+  isHouseholdWagesProposal,
   promoteIncomeLedger,
+  settleHouseholdWagesProposal,
   settleIncomeLedgerProposal,
   incomeLedgerAskCopy,
+  householdWagesAskCopy,
 } from "./qualifyingIncome";
-import { INCOME_LEDGER_FIELD } from "@/lib/income/ledger";
+import { HOUSEHOLD_WAGES_FIELD, INCOME_LEDGER_FIELD } from "@/lib/income/ledger";
 import { acceptHuntRentals } from "./hunt";
 import {
   STATED_MONTHLY_DEBTS_FIELD,
@@ -1089,6 +1092,9 @@ export function proposalAskCopy(proposal: FactProposal) {
   if (proposal.field === QUALIFYING_INCOME_FIELD) {
     return qualifyingIncomeConfirmCopy(Number(proposal.value) || 0);
   }
+  if (proposal.field === HOUSEHOLD_WAGES_FIELD) {
+    return householdWagesAskCopy(Number(proposal.value) || 0);
+  }
   if (proposal.field === INCOME_LEDGER_FIELD) {
     const kind = proposal.extras?.find((item) => item.field === "ledger_kind")?.value ?? "";
     return incomeLedgerAskCopy({
@@ -1590,6 +1596,9 @@ export function resolveProposal(
   if (isIncomeLedgerProposal(proposal)) {
     return settleIncomeLedgerProposal(draft, proposal, winner === "accept" ? "confirmed" : "skipped");
   }
+  if (isHouseholdWagesProposal(proposal)) {
+    return settleHouseholdWagesProposal(draft, winner === "accept" ? "confirmed" : "skipped");
+  }
   if (proposal.field === "hunt_rentals") {
     if (winner === "accept") return acceptHuntRentals(draft);
     return { ...draft, pendingProposal: null };
@@ -1633,7 +1642,9 @@ export function resolveProposal(
     }
     const declined = { ...draft, pendingProposal: null };
     const flushed = flushPendingOtherReo(flushPendingCurrentHousing(flushPendingHireDate(declined)));
-    return proposal.field === "tax_year" || isIncomeLedgerProposal(proposal)
+    return proposal.field === "tax_year" ||
+      isIncomeLedgerProposal(proposal) ||
+      isHouseholdWagesProposal(proposal)
       ? promoteIncomeLedger(flushed)
       : flushed;
   }
@@ -1758,18 +1769,22 @@ export function resolveProposal(
   if (winner === "accept" && isFundsPairProposal(proposal)) {
     return { ...afterContract, overPriceConfirmed: false, looksRightHold: false };
   }
-  const afterLedger =
-    proposal.field === "tax_year" || isIncomeLedgerProposal(proposal)
-      ? promoteIncomeLedger(afterContract)
-      : afterContract;
   const pageReadCover =
     winner === "accept" &&
     proposal.field === "tax_year" &&
     (proposal.extras ?? []).some((item) => item.field === "full_name") &&
-    afterLedger.taxReturnPacketRead !== "done";
+    afterContract.taxReturnPacketRead !== "done";
+  const afterCover = pageReadCover
+    ? { ...afterContract, taxReturnPacketRead: "pending" as const }
+    : afterContract;
+  const afterLedger =
+    proposal.field === "tax_year" ||
+    isIncomeLedgerProposal(proposal) ||
+    isHouseholdWagesProposal(proposal)
+      ? promoteIncomeLedger(afterCover)
+      : afterCover;
   return {
     ...afterLedger,
-    ...(pageReadCover ? { taxReturnPacketRead: "pending" as const } : {}),
     looksRightHold: winner === "accept" ? false : afterLedger.looksRightHold,
   };
 }
