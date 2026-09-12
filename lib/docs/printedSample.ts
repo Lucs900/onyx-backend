@@ -1048,19 +1048,35 @@ function worksheetBoxBlock(lines: string[], boxNo: string) {
   return [];
 }
 
+function firstPlausibleScheduleEAmount(after: string): string {
+  const re = /\$?\s*([\d,]+(?:\.\d+)?)/g;
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(after))) {
+    const raw = match[1] ?? "";
+    const digits = moneyDigits(raw);
+    if (!digits) continue;
+    const n = Number(digits);
+    if (!Number.isFinite(n) || n === 0) continue;
+    if (Number.isInteger(n) && n <= 31 && !/,/.test(raw) && !/\.\d/.test(raw)) continue;
+    if (Math.abs(n) < 100 && !/,/.test(raw)) continue;
+    return digits;
+  }
+  return "";
+}
+
 /** Rents received and cash expenses from THIS page. Never 75%, taxable rental, coaching, or filename. */
 function scheduleERentsFromPrintedText(text: string): string {
   const blob = String(text ?? "").replace(/\u00a0/g, " ");
   const patterns = [
-    /(?:^|\b)(?:line\s*)?3\b[\s\S]{0,80}?rents received\s*:?\s*\$?\s*([\d,]+(?:\.\d+)?)/i,
-    /rents received\s*:?\s*\$?\s*([\d,]+(?:\.\d+)?)/i,
+    /(?:^|\b)(?:line\s*)?3\b[\s\S]{0,80}?rents received\s*:?\s*/i,
+    /rents received\s*:?\s*/i,
   ];
   for (const pattern of patterns) {
     const match = blob.match(pattern);
-    if (!match?.[1] || match.index == null) continue;
+    if (!match || match.index == null) continue;
     if (scheduleECoachingSpan(match[0])) continue;
-    const digits = moneyDigits(match[1]);
-    if (digits) return digits;
+    const amount = firstPlausibleScheduleEAmount(blob.slice(match.index + match[0].length));
+    if (amount) return amount;
   }
   return "";
 }
@@ -1068,15 +1084,15 @@ function scheduleERentsFromPrintedText(text: string): string {
 function scheduleECashExpensesFromPrintedText(text: string): string {
   const blob = String(text ?? "").replace(/\u00a0/g, " ");
   const patterns = [
-    /(?:lines?\s*)?5\s*[–—-]\s*18\b[\s\S]{0,80}?cash expenses(?:\s*\(\s*ex-?depreciation\s*\))?\s*:?\s*\$?\s*([\d,]+(?:\.\d+)?)/i,
-    /cash expenses(?:\s*\(\s*ex-?depreciation\s*\))?\s*:?\s*\$?\s*([\d,]+(?:\.\d+)?)/i,
+    /(?:lines?\s*)?5\s*[–—-]\s*18\b[\s\S]{0,80}?cash expenses(?:\s*\(\s*ex-?depreciation\s*\))?\s*:?\s*/i,
+    /cash expenses(?:\s*\(\s*ex-?depreciation\s*\))?\s*:?\s*/i,
   ];
   for (const pattern of patterns) {
     const match = blob.match(pattern);
-    if (!match?.[1]) continue;
+    if (!match || match.index == null) continue;
     if (scheduleECoachingSpan(match[0])) continue;
-    const digits = moneyDigits(match[1]);
-    if (digits) return digits;
+    const amount = firstPlausibleScheduleEAmount(blob.slice(match.index + match[0].length));
+    if (amount) return amount;
   }
   return "";
 }

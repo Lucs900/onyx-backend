@@ -7,9 +7,16 @@
 import assert from "node:assert/strict";
 import {
   applyExtractedFields,
+  nextScheduleENamedK1Label,
+  stillUsefulLabels,
   stillUsefulSection,
 } from "../components/fox/fileWrite";
-import { applyCoverWageGapAnswer, QUALIFYING_INCOME_FIELD } from "../components/fox/qualifyingIncome";
+import {
+  applyCoverWageGapAnswer,
+  QUALIFYING_INCOME_FIELD,
+  qualifyingIncomeDisplay,
+} from "../components/fox/qualifyingIncome";
+import { SUGGESTED_INCOME_NOTE, SUGGESTED_RENTAL_CASH_FLOW_NOTE } from "../lib/income/suggest";
 import { resolveProposal } from "../components/fox/completeness";
 import { applyExtractWrite, emptyDraft, loadIntakeDraft, receiveDocument } from "../components/fox/store";
 import { coverWageGapAsk, nextFoxAsk, previewFacts } from "../components/fox/workspace";
@@ -340,8 +347,48 @@ function main() {
   assert.equal(secondGap.coverWageGapAsked, true);
   assert.equal(secondGap.awaitingCoverWageGap, false);
 
+  const lineNumberE = applyExtractedFields(wageQiDraft(), {
+    extractClass: "tax_return",
+    confidence: 0.94,
+    fields: {
+      tax_year: "2025",
+      return_kind: "schedule_e",
+      schedule_e_rents_received: "3",
+      schedule_e_cash_expenses: "5",
+    },
+  });
+  assert.equal(lineNumberE.draft.facts?.qualifying_income?.value, "36453", "Alameda QI held");
+  assert.ok(
+    !(lineNumberE.draft.incomeLedger ?? []).some((row) => row.kind === "schedule_e" && row.monthly === "2"),
+    "line numbers are not a $2 rental row",
+  );
+  assert.notEqual(lineNumberE.draft.pendingProposal?.value, "2");
+  const painted = qualifyingIncomeDisplay(lineNumberE.draft);
+  assert.ok(painted, "wage QI stays on File");
+  assert.doesNotMatch(painted?.note ?? "", /rental cash flow/i);
+  assert.match(painted?.note ?? "", /qualifying income/i);
+  assert.notEqual(painted?.note, SUGGESTED_RENTAL_CASH_FLOW_NOTE);
+  assert.equal(painted?.note, SUGGESTED_INCOME_NOTE);
+  assert.ok(!previewFacts(lineNumberE.draft).some((fact) => /rental cash flow/i.test(fact.note ?? "")));
+  assert.equal(nextScheduleENamedK1Label(lineNumberE.draft), null);
+  assert.ok(
+    !stillUsefulLabels(lineNumberE.draft).includes("Bay Street K-1"),
+    "Still useful does not invent Bay Street K-1",
+  );
+
+  const tinyNet = incomeLedgerRowsFromFields({
+    tax_year: "2025",
+    return_kind: "schedule_e",
+    schedule_e_rents_received: "24",
+    schedule_e_cash_expenses: "0",
+  });
+  assert.ok(
+    !tinyNet.some((row) => row.kind === "schedule_e"),
+    "tiny Schedule E net is not a rental suggest",
+  );
+
   console.log(
-    "assert-income-ledger: stub QI stays · Sch E / partnership own rows · loss does not net · cover wages held · gap once · gross not QI",
+    "assert-income-ledger: stub QI stays · Sch E / partnership own rows · loss does not net · cover wages held · gap once · gross not QI · no invented $2 · QI label stays stub · no fixture K-1",
   );
 }
 

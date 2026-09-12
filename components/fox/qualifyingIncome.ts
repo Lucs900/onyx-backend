@@ -1970,12 +1970,13 @@ export function qualifyingIncomeDisplay(draft: FoxIntakeDraft): { value: string;
   if (stored && confirmed) {
     const pair = bothMonthlyDisplay(draft);
     const method = factValue(draft, QUALIFYING_METHOD_FIELD) || pair || undefined;
+    const rentalMethod = /rents minus cash expenses|schedule e|rental cash flow/i.test(method ?? "");
     return {
       value: method ? structureQualifyingValue(displayMoney(stored), method) : displayMoney(stored),
       note:
         method === COVER_LINE_METHOD
           ? COVER_LINE_NOTE
-          : hasScheduleECashflow(draft) && !hasScheduleCCashflow(draft) && !hasK1Ordinary(draft)
+          : rentalMethod
             ? SUGGESTED_RENTAL_CASH_FLOW_NOTE
             : SUGGESTED_INCOME_NOTE,
     };

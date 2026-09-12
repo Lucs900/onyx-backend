@@ -264,10 +264,23 @@ export function entityCashFlowMethodNote(input: {
   return `(ordinary + 8825 rental + dep + amort − T&E) × ${pct} + GP to Hale / 12`;
 }
 
+/** Form 1040 Schedule E line numbers are not rents or expenses. */
+export function looksLikeFormLineNumber(value: number): boolean {
+  return Number.isInteger(value) && value >= 0 && value <= 31;
+}
+
 /** Schedule E Part I: rents received minus cash expenses ex-depreciation, /12. Not 75%. Not PITIA. */
 export function scheduleECashFlowMonthly(rentsReceived: number, cashExpenses: number): number | null {
   if (!Number.isFinite(rentsReceived) || !Number.isFinite(cashExpenses)) return null;
-  return monthlyFromAnnual(rentsReceived - cashExpenses);
+  if (looksLikeFormLineNumber(Math.abs(rentsReceived)) || looksLikeFormLineNumber(Math.abs(cashExpenses))) {
+    return null;
+  }
+  const monthly = monthlyFromAnnual(rentsReceived - cashExpenses);
+  if (monthly === 0) return null;
+  if (Math.abs(monthly) < 25 && Math.abs(rentsReceived) < 1000 && Math.abs(cashExpenses) < 1000) {
+    return null;
+  }
+  return monthly;
 }
 
 export function periodsPerYear(raw?: string | null): number | null {

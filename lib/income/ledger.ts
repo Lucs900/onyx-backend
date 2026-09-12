@@ -5,7 +5,7 @@
  * Gross receipts is a File fact labeled not qualifying income.
  */
 
-import { monthlyFromAnnual } from "./suggest";
+import { looksLikeFormLineNumber, monthlyFromAnnual, scheduleECashFlowMonthly } from "./suggest";
 
 export const INCOME_LEDGER_FIELD = "income_ledger";
 export const SCHEDULE_E_MONTHLY_FIELD = "schedule_e_monthly";
@@ -120,16 +120,16 @@ export function incomeLedgerRowsFromFields(fields: Record<string, string>): Inco
   const rents = parseLedgerMoney(fields.schedule_e_rents_received);
   const expenses = parseLedgerMoney(fields.schedule_e_cash_expenses);
   if (rents != null && expenses != null) {
-    const monthly = monthlyFromAnnual(rents - expenses);
-    if (monthly < 0) {
+    const monthly = scheduleECashFlowMonthly(rents, expenses);
+    if (monthly != null && monthly < 0) {
       pushRow(rows, "named_loss", monthly, year, "Schedule E");
-    } else {
+    } else if (monthly != null) {
       pushRow(rows, "schedule_e", monthly, year, fields.schedule_e_property_address);
     }
   }
 
   const partnership = parseLedgerMoney(fields.k1_ordinary_income);
-  if (partnership != null && partnership !== 0) {
+  if (partnership != null && partnership !== 0 && !looksLikeFormLineNumber(Math.abs(partnership))) {
     const monthly = monthlyFromAnnual(partnership);
     const names = String(fields.schedule_e_part2_names ?? fields.entity_name ?? "")
       .split(";")
@@ -289,9 +289,8 @@ export function incomeLedgerFieldsFromPrintedLines(lines: string[]): Record<stri
     blob.match(new RegExp(`(?:schedule e|sch(?:edule)?\\s*e)\\s*:?\\s*${money}`, "i"))?.[1];
   if (schE) {
     const n = parseLedgerMoney(schE);
-    if (n != null && n !== 0) {
+    if (n != null && Math.abs(n) >= 100 && !looksLikeFormLineNumber(Math.abs(n))) {
       putMoney("schedule_e_rents_received", String(n));
-      if (!fields.schedule_e_cash_expenses) fields.schedule_e_cash_expenses = "0";
     }
   }
 

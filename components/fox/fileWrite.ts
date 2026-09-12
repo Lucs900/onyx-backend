@@ -3172,11 +3172,9 @@ function namedK1DocumentOnFile(draft: FoxIntakeDraft, test: RegExp) {
 }
 
 export function nextScheduleENamedK1Label(draft: FoxIntakeDraft): StillUsefulLabel | null {
-  if (!hasScheduleECashflow(draft) && !scheduleEPart2NamesOnFile(draft).length) return null;
   const names = scheduleEPart2NamesOnFile(draft);
-  const wanted = names.length
-    ? SCHEDULE_E_NAMED_K1S.filter((item) => names.some((name) => item.test.test(name)))
-    : SCHEDULE_E_NAMED_K1S;
+  if (!names.length) return null;
+  const wanted = SCHEDULE_E_NAMED_K1S.filter((item) => names.some((name) => item.test.test(name)));
   for (const item of wanted) {
     if (!namedK1DocumentOnFile(draft, item.test)) return item.label;
   }

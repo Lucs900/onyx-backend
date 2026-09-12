@@ -9,6 +9,9 @@ Not first-source-wins. Not “we already qualify on W-2.”
 - Classify the page. Extract every useful income or loss. Suggest. Confirm-before-write. File empty on that line until Use this.
 - Wage method = W-2 Box 5 + stub. 1040 wages = household total only.
 - Sch C, Sch E Part I, Sch F, K-1, 1065, 1120-S each own a row with a locked method. Use this writes that row. Leave blank keeps it off QI.
+- Read the actual Schedule E / partnership dollars. Form line numbers and tiny nets are not a suggest. Invent nothing.
+- Confirmed wage QI keeps the stub method label until a new row is confirmed via Use this.
+- Still useful names only what this File printed. No fixture K-1 names.
 - Loss = named loss. Do not net a K-1 hole into W-2 QI on the sketch.
 - Years stay separate (2023 transcript ≠ replace 2025 1040).
 - Looks right and Proceed work with holes. Skip is an answer.
