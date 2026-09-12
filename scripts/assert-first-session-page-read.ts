@@ -35,6 +35,8 @@ import {
   looksLikeTaxReturnFields,
   looksLikeTaxReturnPageReadFields,
   taxReturnWrittenOnFile,
+  taxReturnPacketHoldAsk,
+  taxReturnPacketNeedsRead,
   taxReturnStructureValue,
   TAX_RETURN_NAME_FIELD,
   nextDocInvite,
@@ -1887,6 +1889,8 @@ async function main() {
   assert.equal(pageUsed.facts?.ssn, undefined);
   assert.notEqual(pageUsed.facts?.full_name?.confirmed, true);
   assert.equal(taxReturnWrittenOnFile(pageUsed), true);
+  assert.equal(taxReturnPacketNeedsRead(pageUsed), true, "cover write keeps reading the same 1040");
+  assert.equal(taxReturnPacketHoldAsk(pageUsed), false, "leftover cover write keeps finish chips");
   const docsAfterUse = previewFacts(pageUsed)
     .filter((fact) => fact.label === "Docs")
     .map((fact) => fact.value)
@@ -1984,6 +1988,7 @@ async function main() {
   assert.match(extractSrc, /pageImageForGrok/);
   assert.match(extractSrc, /shouldGrokTaxReturnPagesFirst/);
   assert.match(extractSrc, /Castaneda page→image→Grok/);
+  assert.match(extractSrc, /phase === "packet"/);
   const classifyAt = extractSrc.indexOf("export async function classifyAndExtract");
   const grokFirstAt = extractSrc.indexOf("shouldGrokTaxReturnPagesFirst(hint, filename)", classifyAt);
   const printedAt = extractSrc.indexOf("printedLinesForExtract", classifyAt);

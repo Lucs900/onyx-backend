@@ -60,6 +60,7 @@ import {
   looksLikeBankFields,
   looksLikeContractFields,
   looksLikeTaxReturnFields,
+  packetReadPhase,
   isPurchaseContractConfirmPending,
   looksLikePaystubFields,
   preferFilenameClass,
@@ -452,6 +453,7 @@ export function emptyDraft(): FoxIntakeDraft {
     awaitingCoverWageGap: false,
     coverWageGapAsked: false,
     incomeLedger: [],
+    taxReturnPacketSpoken: false,
     awaitingRaiseWhen: false,
     awaitingRaiseYtdFar: false,
     facts: {},
@@ -786,6 +788,13 @@ function normalize(value: unknown): FoxIntakeDraft {
             Boolean(row && typeof row === "object" && typeof row.id === "string" && typeof row.kind === "string"),
         )
       : [],
+    taxReturnPacketRead:
+      raw.taxReturnPacketRead === "pending" ||
+      raw.taxReturnPacketRead === "reading" ||
+      raw.taxReturnPacketRead === "done"
+        ? raw.taxReturnPacketRead
+        : undefined,
+    taxReturnPacketSpoken: Boolean(raw.taxReturnPacketSpoken),
     awaitingRaiseWhen: Boolean(raw.awaitingRaiseWhen),
     awaitingRaiseYtdFar: Boolean(raw.awaitingRaiseYtdFar),
     raiseWhenRaw: typeof raw.raiseWhenRaw === "string" ? raw.raiseWhenRaw : undefined,
@@ -1657,8 +1666,13 @@ export function applyExtractWrite(
       !looksLikeBankFields(input.fields) &&
       !looksLikeContractFields(input.fields)) ||
     (extractedClass === "tax_return" && !looksLikeTaxReturnFields(input.fields));
+  const packetContinue = Boolean(packetReadPhase(input.fields));
   const unreadEmpty =
-    !failed && !lockedSuggestion && !isCoverReturnFields(input.fields) && emptyForClass;
+    !failed &&
+    !lockedSuggestion &&
+    !isCoverReturnFields(input.fields) &&
+    emptyForClass &&
+    !packetContinue;
   const k1Unread = !failed && k1OrdinaryMissingFromExtract(input.fields, name);
   const scheduleEUnread = !failed && scheduleECashFlowMissingFromExtract(input.fields);
   const box5Read = Boolean(

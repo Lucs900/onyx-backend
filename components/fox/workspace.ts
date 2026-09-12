@@ -123,6 +123,8 @@ import {
   transcriptSignalCopy,
   isTranscriptOnFile,
   taxReturnWrittenOnFile,
+  taxReturnPacketHoldAsk,
+  PACKET_READING_LINE,
   taxReturnStructureValue,
   canSpeakDocStamp,
   transcriptSpeakKey,
@@ -2513,6 +2515,7 @@ export function docReactionAsk(
   if (draft.awaitingPayFrequency) return payFrequencyAsk();
   if (draft.awaitingBothMonthlyReason) return bothMonthlyReasonAsk(draft);
   if (draft.awaitingCoverWageGap) return coverWageGapAsk();
+  if (taxReturnPacketHoldAsk(draft)) return { text: PACKET_READING_LINE };
   if (draft.awaitingRaiseWhen) return raiseWhenAsk();
   if (draft.awaitingRaiseYtdFar) return raiseYtdFarAsk(draft);
   if (cls === "tax_return" && isTranscriptOnFile(draft) && !draft.pendingProposal) {
@@ -3598,6 +3601,7 @@ export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
   if (draft.awaitingPayFrequency) return "pay-frequency";
   if (draft.awaitingBothMonthlyReason) return "both-monthly-reason";
   if (draft.awaitingCoverWageGap) return "cover-wage-gap";
+  if (taxReturnPacketHoldAsk(draft)) return "packet-read";
   if (draft.awaitingRaiseWhen) return "raise-when";
   if (draft.awaitingRaiseYtdFar) return "raise-ytd-far";
   if (
@@ -4111,6 +4115,9 @@ function workspaceAskCopy(
   }
   if (prompt === "cover-wage-gap") {
     return coverWageGapAsk();
+  }
+  if (prompt === "packet-read") {
+    return { text: PACKET_READING_LINE };
   }
   if (prompt === "raise-when") {
     return raiseWhenAsk();

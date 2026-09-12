@@ -5,7 +5,7 @@ import { NextResponse } from "next/server";
 void createCanvas;
 import { slotForExtractClass } from "@/components/fox/fileWrite";
 import { FAILED_READ_NOTE, NO_TEXT_LAYER_NOTE, RECEIVED_NOTE, mediaTypeOf } from "@/lib/docs/accept";
-import { classifyAndExtract, extractHintOf, grokExtractAdapter } from "@/lib/docs/extract";
+import { classifyAndExtract, extractHintOf, extractPhaseOf, grokExtractAdapter } from "@/lib/docs/extract";
 import type { ExtractClass } from "@/components/fox/types";
 import { readPrivateBytes, storageStatus, STORAGE_BLOCKED } from "@/lib/docs/storage";
 
@@ -40,6 +40,7 @@ async function bytesFromMultipart(request: Request): Promise<{
   type: string;
   source: "file" | "blob";
   hint: ExtractClass | null;
+  phase: ReturnType<typeof extractPhaseOf>;
 } | null> {
   const form = await request.formData();
   const uploaded = form.get("file");
@@ -47,6 +48,7 @@ async function bytesFromMultipart(request: Request): Promise<{
   const type = String(form.get("type") ?? (uploaded instanceof File ? uploaded.type : "")).trim();
   const bytesRef = String(form.get("bytesRef") ?? "").trim();
   const hint = extractHintOf(form.get("hint"));
+  const phase = extractPhaseOf(form.get("phase"));
   if (uploaded instanceof Blob && uploaded.size > 0) {
     return {
       bytes: new Uint8Array(await uploaded.arrayBuffer()),
@@ -54,6 +56,7 @@ async function bytesFromMultipart(request: Request): Promise<{
       type,
       source: "file",
       hint,
+      phase,
     };
   }
   if (isBlobRef(bytesRef)) {
@@ -64,6 +67,7 @@ async function bytesFromMultipart(request: Request): Promise<{
       type: type || stored.contentType,
       source: "blob",
       hint,
+      phase,
     };
   }
   return null;
@@ -75,19 +79,22 @@ async function bytesFromJson(body: {
   type?: string;
   bytes?: string;
   hint?: string;
+  phase?: string;
 }): Promise<{
   bytes: Uint8Array;
   name: string;
   type: string;
   source: "file" | "inline" | "blob";
   hint: ExtractClass | null;
+  phase: ReturnType<typeof extractPhaseOf>;
 } | null> {
   const inline = decodeInlineBytes(body.bytes);
   const name = typeof body.name === "string" ? body.name : "";
   const type = typeof body.type === "string" ? body.type : "";
   const hint = extractHintOf(body.hint);
+  const phase = extractPhaseOf(body.phase);
   if (inline) {
-    return { bytes: inline, name, type, source: "inline", hint };
+    return { bytes: inline, name, type, source: "inline", hint, phase };
   }
   const bytesRef = typeof body.bytesRef === "string" ? body.bytesRef.trim() : "";
   if (!isBlobRef(bytesRef)) return null;
@@ -98,6 +105,7 @@ async function bytesFromJson(body: {
     type: type || stored.contentType,
     source: "blob",
     hint,
+    phase,
   };
 }
 
@@ -135,11 +143,12 @@ export async function POST(request: Request) {
       type: string;
       source: "file" | "inline" | "blob";
       hint: ExtractClass | null;
+      phase: ReturnType<typeof extractPhaseOf>;
     } | null = null;
     if (contentType.includes("multipart/form-data")) {
       loaded = await bytesFromMultipart(request);
     } else {
-      let body: { bytesRef?: string; name?: string; type?: string; bytes?: string; hint?: string };
+      let body: { bytesRef?: string; name?: string; type?: string; bytes?: string; hint?: string; phase?: string };
       try {
         body = (await request.json()) as {
           bytesRef?: string;
@@ -147,6 +156,7 @@ export async function POST(request: Request) {
           type?: string;
           bytes?: string;
           hint?: string;
+          phase?: string;
         };
       } catch {
         return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
@@ -171,6 +181,7 @@ export async function POST(request: Request) {
       grokExtractAdapter,
       loaded.hint,
       loaded.name,
+      loaded.phase,
     );
     return NextResponse.json(extractJson(extracted, loaded.source));
   } catch (error) {

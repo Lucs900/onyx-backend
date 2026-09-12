@@ -349,6 +349,13 @@ export function extractHintOf(value: unknown): ExtractClass | null {
   return next === "other" ? null : next;
 }
 
+export type ExtractPhase = "cover" | "packet";
+
+export function extractPhaseOf(value: unknown): ExtractPhase | null {
+  const raw = String(value ?? "").trim().toLowerCase();
+  return raw === "packet" ? "packet" : raw === "cover" ? "cover" : null;
+}
+
 /** Walk file `2025 1040 - Combes Allan and Renz.pdf` is tax_return. Filename year is not a lock. */
 export function taxReturnPageHint(
   hint?: ExtractClass | null,
@@ -773,6 +780,56 @@ async function mergeTaxReturnLedgerFields(
   }
 }
 
+async function extractTaxReturnPacket(
+  bytes: Uint8Array,
+  mediaType: string,
+  adapter: DocumentExtractAdapter,
+  filename?: string | null,
+  textLayerChars?: number,
+): Promise<ClassifyExtractResult> {
+  try {
+    if (await printedLayerLooksLikeIrsTranscript(bytes, mediaType)) {
+      return {
+        extractClass: "tax_return",
+        confidence: 0.94,
+        fields: { packet_read: "empty" },
+        warnings: ["packet-empty"],
+        textLayerChars,
+      };
+    }
+    let ledger: Record<string, string> = {};
+    if (adapter.extractLedger) {
+      ledger = await grokScheduleLedgerFields(bytes, adapter);
+    }
+    const layer = await printedLinesForLedger(bytes, mediaType);
+    if (layer?.length && !blobLooksLikeIrsTranscript(layer.join("\n"))) {
+      ledger = { ...incomeLedgerFieldsFromPrintedLines(layer), ...ledger };
+    }
+    const fields = sanitizeLedgerExtractFields(ledger);
+    const hasRows =
+      Boolean(fields.wages) ||
+      Boolean(fields.schedule_e_rents_received) ||
+      Boolean(fields.k1_ordinary_income) ||
+      Boolean(fields.schedule_c_net_profit);
+    return {
+      extractClass: preferFilenameClass("tax_return", filename ?? ""),
+      confidence: 0.94,
+      fields: { ...fields, packet_read: hasRows ? "schedules" : "empty" },
+      warnings: hasRows ? [] : ["packet-empty"],
+      textLayerChars,
+    };
+  } catch (error) {
+    logVisionError("taxReturnPacket", error);
+    return {
+      extractClass: preferFilenameClass("tax_return", filename ?? ""),
+      confidence: 0.94,
+      fields: { packet_read: "empty" },
+      warnings: ["packet-empty"],
+      textLayerChars,
+    };
+  }
+}
+
 async function grokTaxReturnPacketPages(
   bytes: Uint8Array,
   mediaType: string,
@@ -814,9 +871,13 @@ export async function classifyAndExtract(
   adapter: DocumentExtractAdapter = grokExtractAdapter,
   hint?: ExtractClass | null,
   filename?: string | null,
+  phase?: ExtractPhase | null,
 ): Promise<ClassifyExtractResult> {
   hint = taxReturnPageHint(hint, filename);
   const textLayerChars = textLayerCharCountOf(bytes, mediaType);
+  if (phase === "packet" && (isPdf(bytes) || mediaType === "application/pdf")) {
+    return extractTaxReturnPacket(bytes, mediaType, adapter, filename, textLayerChars);
+  }
   if (
     shouldGrokTaxReturnPagesFirst(hint, filename) &&
     (isPdf(bytes) || mediaType === "application/pdf")

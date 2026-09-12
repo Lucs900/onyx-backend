@@ -167,6 +167,7 @@ import {
   ingestDroppedFiles,
   requestFoxPickFile,
 } from "./DocumentDrop";
+import { continueTaxReturnPacketRead } from "./taxReturnPacket";
 import { FAILED_READ_NOTE, receivedDropCopy, unreadDropBytesCopy } from "@/lib/docs/accept";
 import { WorkspaceFileDock } from "./FilePreview";
 import {
@@ -2008,6 +2009,9 @@ export function AlwaysOnFox({
       const followWasOpen = Boolean(transcriptFollowUpAsk(getFoxDraft()));
       const offerAlreadyDone = transcriptOfferDone(getFoxDraft());
       applyCapture(capture);
+      if (capture.field === "accept-proposal") {
+        void continueTaxReturnPacketRead();
+      }
       skipPromptSync.current = true;
       const live = getFoxDraft();
       if (capture.field === "skip-docs" && offerAlreadyDone && !followWasOpen) {

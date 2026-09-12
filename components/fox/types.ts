@@ -468,6 +468,9 @@ export type FoxIntakeDraft = {
   coverWageGap?: { coverAnnual: number; fileW2Annual: number } | null;
   /** Income ledger. Each source is its own row. File empty until Use this. */
   incomeLedger?: IncomeLedgerRow[];
+  /** After cover Use this, keep reading the same 1040 pages for Sch E / K-1 / wages. */
+  taxReturnPacketRead?: "pending" | "reading" | "done";
+  taxReturnPacketSpoken?: boolean;
   awaitingRaiseWhen?: boolean;
   awaitingRaiseYtdFar?: boolean;
   raiseWhenRaw?: string;
@@ -579,6 +582,7 @@ export type FoxPrompt =
   | "paystub-monthly"
   | "both-monthly-reason"
   | "cover-wage-gap"
+  | "packet-read"
   | "raise-when"
   | "raise-ytd-far"
   | "qualifying"

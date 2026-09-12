@@ -505,6 +505,7 @@ export function looksLikeTaxReturnFields(
   if (String(fields.entity_ordinary_income ?? "").trim()) return true;
   if (String(fields.schedule_c_net_profit ?? "").trim()) return true;
   if (String(fields.schedule_e_rents_received ?? "").trim()) return true;
+  if (packetReadPhase(fields)) return true;
   return looksLikeFederalReturnFields(fields);
 }
 
@@ -674,6 +675,42 @@ export function transcriptOfferDone(draft: FoxIntakeDraft) {
   if (draft.transcriptFollowUpSkipped) return true;
   const key = transcriptSpeakKey(draft);
   return Boolean(key && hasDocStamp(draft, key, "done"));
+}
+
+/** After cover Use this, keep reading the same PDF. Say once when schedules are not on the pages. */
+export const PACKET_READING_LINE = "Reading the rest of the return.";
+export const PACKET_SCHEDULES_MISSING_LINE = "I didn’t see Schedule E or a K-1 on these pages.";
+export const PACKET_LINES_MISSING_LINE =
+  "I didn’t see cover wages, Schedule E, or a K-1 on these pages.";
+
+export function taxReturnPacketDoc(draft: FoxIntakeDraft) {
+  return [...draft.documents].reverse().find(
+    (doc) =>
+      doc.extractClass === "tax_return" &&
+      doc.status !== "failed" &&
+      !isUnreadNote(doc.note),
+  );
+}
+
+export function taxReturnPacketNeedsRead(draft: FoxIntakeDraft) {
+  return draft.taxReturnPacketRead === "pending" && taxReturnWrittenOnFile(draft);
+}
+
+export function taxReturnPacketHoldAsk(draft: FoxIntakeDraft) {
+  if (draft.taxReturnPacketRead !== "pending" && draft.taxReturnPacketRead !== "reading") {
+    return false;
+  }
+  return Boolean(taxReturnPacketDoc(draft)?.bytesRef);
+}
+
+export function packetReadPhase(fields?: Record<string, string | null | undefined> | null) {
+  const raw = String(fields?.packet_read ?? "").trim().toLowerCase();
+  return raw === "empty" || raw === "schedules" ? raw : "";
+}
+
+export function packetSchedulesMissingLine(fields?: Record<string, string | null | undefined> | null) {
+  const wages = String(fields?.wages ?? "").replace(/[^\d.]/g, "");
+  return Number(wages) > 0 ? PACKET_SCHEDULES_MISSING_LINE : PACKET_LINES_MISSING_LINE;
 }
 
 /** Grok first-page 1040: tax year + name confirm. Ledger extras do not steal that confirm. */
@@ -934,7 +971,7 @@ export function hasLockedSuggestion(
 export function scheduleECashFlowMissingFromExtract(
   fields?: Record<string, string | null | undefined> | null,
 ) {
-  if (looksLikeTaxReturnPageReadFields(fields)) return false;
+  if (packetReadPhase(fields) || looksLikeTaxReturnPageReadFields(fields)) return false;
   const kind = normalizeReturnKind(String(fields?.return_kind ?? ""));
   if (kind !== "schedule_e") return false;
   return (
@@ -947,7 +984,7 @@ export function k1OrdinaryMissingFromExtract(
   fields?: Record<string, string | null | undefined> | null,
   name?: string,
 ) {
-  if (looksLikeTaxReturnPageReadFields(fields)) return false;
+  if (packetReadPhase(fields) || looksLikeTaxReturnPageReadFields(fields)) return false;
   if (isCoverReturnFields(fields)) return false;
   const kind = normalizeReturnKind(String(fields?.return_kind ?? ""));
   const namedK1 = kind === "k1" || kind === "1065" || kind === "1120s";
@@ -1664,6 +1701,7 @@ export function applyExtractedFields(
   ) {
     return { draft, writes, conflict: null, quietLines: [] };
   }
+  const packetContinue = packetReadPhase(input.fields);
   const fields = sanitizeExtractedFields(extractClass, input.fields);
   draft = withFileIncomeHygiene(draft, extractClass, fields);
   const computed = monthlyQualifyingFromExtract(draft, extractClass, fields);
@@ -1713,7 +1751,7 @@ export function applyExtractedFields(
   const transcriptReturn = isTranscriptReturnFields(fields);
   const pageReadReturn = looksLikeTaxReturnPageReadFields(fields);
   const holdFederalReturn =
-    (looksLikeFederalReturnFields(fields) || pageReadReturn) && !transcriptReturn;
+    (looksLikeFederalReturnFields(fields) || pageReadReturn) && !transcriptReturn && !packetContinue;
   for (const field of EXTRACT_SCHEMA_KEYS[extractClass]) {
     const value = fields[field];
     if (!value) continue;
@@ -1734,7 +1772,8 @@ export function applyExtractedFields(
     ) {
       continue;
     }
-    if (holdFederalReturn && FEDERAL_RETURN_HOLD.has(field)) continue;
+    if ((holdFederalReturn || packetContinue) && FEDERAL_RETURN_HOLD.has(field)) continue;
+    if (extractClass === "tax_return" && field === "wages") continue;
     if (transcriptReturn && !TRANSCRIPT_FILE_KEYS.has(field)) continue;
     if (extractClass === "tax_return" && (field === "present_address" || field === "property_address")) {
       continue;
@@ -1869,6 +1908,8 @@ export function applyExtractedFields(
     const existing = existingFact(next, field);
     if (!existing || (extractClass === "tax_return" && YEARLY_TAX_KEYS.has(field))) {
       if (
+        field === "k1_ordinary_income" ||
+        field === "schedule_c_net_profit" ||
         field === "schedule_e_rents_received" ||
         field === "schedule_e_cash_expenses" ||
         field === "schedule_e_property_address" ||
@@ -2333,6 +2374,7 @@ export function applyExtractedFields(
   for (const [key, value] of Object.entries(fields)) {
     if (!value) continue;
     const already = cautionFacts[key];
+    if (key === "wages" || key === "packet_read") continue;
     if (
       key === "schedule_e_rents_received" ||
       key === "schedule_e_cash_expenses" ||
@@ -2377,11 +2419,32 @@ export function applyExtractedFields(
   if (extractClass === "tax_return") {
     next = attachIncomeLedgerFromExtract(next, fields);
   }
-  if (holdFederalReturn && !next.pendingProposal && !next.pendingConflict) {
+  if (
+    holdFederalReturn &&
+    !taxReturnWrittenOnFile(next) &&
+    !next.pendingProposal &&
+    !next.pendingConflict
+  ) {
     next = maybeProposeFederalReturn(next, fields) ?? next;
   }
   if (!next.pendingProposal && !next.pendingConflict && extractClass === "tax_return") {
     next = promoteIncomeLedger(next);
+  }
+  if (packetContinue) {
+    next = {
+      ...next,
+      taxReturnPacketRead: "done",
+    };
+    const hasRows = (next.incomeLedger ?? []).some((row) => row.status === "suggested");
+    if (
+      !hasRows &&
+      !next.awaitingCoverWageGap &&
+      !next.coverWageGap &&
+      !next.taxReturnPacketSpoken
+    ) {
+      next = { ...next, taxReturnPacketSpoken: true };
+      quietLines.push(packetSchedulesMissingLine(fields));
+    }
   }
   if (extractClass === "paystub" && next.stubExtractAccepted) {
     next = maybeWriteAgreedStubFrequency(

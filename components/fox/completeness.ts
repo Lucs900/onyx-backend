@@ -1762,7 +1762,16 @@ export function resolveProposal(
     proposal.field === "tax_year" || isIncomeLedgerProposal(proposal)
       ? promoteIncomeLedger(afterContract)
       : afterContract;
-  return { ...afterLedger, looksRightHold: winner === "accept" ? false : afterLedger.looksRightHold };
+  const pageReadCover =
+    winner === "accept" &&
+    proposal.field === "tax_year" &&
+    (proposal.extras ?? []).some((item) => item.field === "full_name") &&
+    afterLedger.taxReturnPacketRead !== "done";
+  return {
+    ...afterLedger,
+    ...(pageReadCover ? { taxReturnPacketRead: "pending" as const } : {}),
+    looksRightHold: winner === "accept" ? false : afterLedger.looksRightHold,
+  };
 }
 
 function flushPendingHireDate(draft: FoxIntakeDraft): FoxIntakeDraft {

@@ -10,6 +10,7 @@ import {
   nextScheduleENamedK1Label,
   stillUsefulLabels,
   stillUsefulSection,
+  TAX_RETURN_NAME_FIELD,
 } from "../components/fox/fileWrite";
 import {
   applyCoverWageGapAnswer,
@@ -34,6 +35,12 @@ import {
 } from "../lib/income/ledger";
 import { classifyAndExtract, shouldGrokTaxReturnPagesFirst } from "../lib/docs/extract";
 import { loudTranscriptFromPrintedLines } from "../lib/docs/printedSample";
+import {
+  PACKET_LINES_MISSING_LINE,
+  PACKET_SCHEDULES_MISSING_LINE,
+  taxReturnPacketHoldAsk,
+  taxReturnPacketNeedsRead,
+} from "../components/fox/fileWrite";
 import type { ExtractClass, FoxIntakeDraft } from "../components/fox/types";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -669,6 +676,116 @@ async function main() {
   assert.equal(onePage.fields.wages, "520000");
   assert.equal(onePage.fields.schedule_e_rents_received, "42000");
 
+  const coverOnlyAt = "2026-09-12T16:00:00.000Z";
+  const coverOnly = writeLive(
+    wageQiDraft(),
+    walkName,
+    { tax_year: "2025", full_name: "ALLAN COMBES and RENZ ARIANE COMBES" },
+    coverOnlyAt,
+  );
+  assert.equal(coverOnly.draft.pendingProposal?.field, "tax_year");
+  const afterCoverWrite = resolveProposal(coverOnly.draft, "accept");
+  assert.equal(afterCoverWrite.facts?.qualifying_income?.value, "36453");
+  assert.equal(afterCoverWrite.facts?.tax_year?.value, "2025");
+  assert.match(String(afterCoverWrite.facts?.[TAX_RETURN_NAME_FIELD]?.value ?? ""), /RENZ ARIANE COMBES/);
+  assert.equal(taxReturnPacketNeedsRead(afterCoverWrite), true, "cover write keeps reading the same PDF");
+  assert.equal(taxReturnPacketHoldAsk(afterCoverWrite), false, "no bytesRef — leftovers keep finish chips");
+  assert.equal(afterCoverWrite.pendingProposal, null);
+  assert.equal((afterCoverWrite.incomeLedger ?? []).length, 0);
+
+  loadIntakeDraft(afterCoverWrite);
+  const afterPacket = applyExtractWrite(coverOnlyAt, walkName, {
+    extractClass: "tax_return",
+    confidence: 0.94,
+    fields: {
+      packet_read: "schedules",
+      wages: "600000",
+      schedule_e_rents_received: "42000",
+      schedule_e_cash_expenses: "11400",
+      k1_ordinary_income: "-294564",
+    },
+  });
+  assert.equal(afterPacket.draft.facts?.qualifying_income?.value, "36453", "packet read does not overwrite QI");
+  assert.equal(afterPacket.draft.facts?.wages, undefined, "cover wages stay off File");
+  assert.equal(afterPacket.draft.taxReturnPacketRead, "done");
+  assert.equal(afterPacket.draft.awaitingCoverWageGap, true);
+  assert.ok(
+    (afterPacket.draft.incomeLedger ?? []).some((row) => row.kind === "schedule_e" && row.status === "suggested"),
+  );
+  assert.ok(
+    (afterPacket.draft.incomeLedger ?? []).some((row) => row.kind === "named_loss" && row.status === "suggested"),
+  );
+  const afterPacketGap = applyCoverWageGapAnswer(afterPacket.draft, "skip");
+  assert.equal(afterPacketGap.pendingProposal?.field, INCOME_LEDGER_FIELD);
+  const packetEAsk = nextFoxAsk(afterPacketGap);
+  assert.match(packetEAsk.text, /Schedule E/i);
+  assert.match(packetEAsk.text, /Use this/i);
+
+  const emptyCoverAt = "2026-09-12T16:10:00.000Z";
+  const emptyCover = writeLive(
+    wageQiDraft(),
+    walkName,
+    { tax_year: "2025", full_name: "ALLAN COMBES and RENZ ARIANE COMBES" },
+    emptyCoverAt,
+  );
+  const emptyWritten = resolveProposal(emptyCover.draft, "accept");
+  loadIntakeDraft(emptyWritten);
+  const emptyPacket = applyExtractWrite(emptyCoverAt, walkName, {
+    extractClass: "tax_return",
+    confidence: 0.94,
+    fields: { packet_read: "empty" },
+  });
+  assert.equal(emptyPacket.draft.facts?.qualifying_income?.value, "36453");
+  assert.ok(emptyPacket.quietLines.includes(PACKET_LINES_MISSING_LINE));
+  assert.ok(!emptyPacket.quietLines.includes(FAILED_READ_NOTE));
+  assert.equal(emptyPacket.draft.taxReturnPacketSpoken, true);
+  assert.doesNotMatch(emptyPacket.draft.documents.find((doc) => doc.name === walkName)?.note ?? "", /could not read/i);
+  const emptyAgain = applyExtractWrite(emptyCoverAt, walkName, {
+    extractClass: "tax_return",
+    confidence: 0.94,
+    fields: { packet_read: "empty" },
+  });
+  assert.ok(!emptyAgain.quietLines.includes(PACKET_LINES_MISSING_LINE), "missing schedules is spoken once");
+  assert.ok(!emptyAgain.quietLines.includes(PACKET_SCHEDULES_MISSING_LINE));
+
+  let packetPhaseLedger = 0;
+  const packetPhase = await classifyAndExtract(
+    multiPagePdf([
+      ["Form 1040", "2025", "Allan Combes"],
+      ["Schedule E (Form 1040) 2025", "42000  3 Rents received", "11400  Cash expenses (ex-depreciation)"],
+    ]),
+    "application/pdf",
+    {
+      async classify() {
+        throw new Error("packet phase must not classify");
+      },
+      async extract() {
+        throw new Error("packet phase is ledger Grok, not year+name extract");
+      },
+      async extractLedger(bytes, mediaType) {
+        packetPhaseLedger += 1;
+        assert.ok(mediaType.startsWith("image/"));
+        return {
+          fields: {
+            wages: "520000",
+            schedule_e_rents_received: "42000",
+            schedule_e_cash_expenses: "11400",
+            k1_ordinary_income: "-294564",
+          },
+          warnings: [],
+        };
+      },
+    },
+    "tax_return",
+    walkName,
+    "packet",
+  );
+  assert.ok(packetPhaseLedger >= 1, "phase=packet Groks page images with the locked ledger schema");
+  assert.equal(packetPhase.fields.packet_read, "schedules");
+  assert.equal(packetPhase.fields.wages, "520000");
+  assert.equal(packetPhase.fields.schedule_e_rents_received, "42000");
+  assert.notEqual(packetPhase.failed, true);
+
   const extractSrc = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "..", "lib/docs/extract.ts"), "utf8");
   const routeSrc = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "..", "app/api/docs/extract/route.ts"), "utf8");
   const classifyAt = extractSrc.indexOf("export async function classifyAndExtract");
@@ -681,6 +798,8 @@ async function main() {
   );
   assert.match(extractSrc, /Castaneda page→image→Grok/);
   assert.match(extractSrc, /take\(1\)/);
+  assert.match(extractSrc, /phase === "packet"/);
+  assert.match(extractSrc, /extractTaxReturnPacket|packet_read/);
   assert.match(routeSrc, /maxDuration = 300/);
   assert.doesNotMatch(routeSrc, /maxDuration = 60/);
 
@@ -730,7 +849,7 @@ async function main() {
   assert.ok(!/could not read/i.test(stubDoc?.note ?? ""));
 
   console.log(
-    "assert-income-ledger: stub QI stays · Sch E / partnership own rows · loss does not net · cover wages held · gap once · gross not QI · no invented $2 · QI label stays stub · no fixture K-1 · packet page images → Grok · 1040-face steal cannot skip Grok · unread is the return",
+    "assert-income-ledger: stub QI stays · Sch E / partnership own rows · loss does not net · cover wages held · gap once · gross not QI · no invented $2 · QI label stays stub · no fixture K-1 · packet page images → Grok · cover write then keep reading · unread is the return",
   );
 }
 

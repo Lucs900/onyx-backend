@@ -22,6 +22,7 @@ import {
   stillUsefulRefreshKey,
 } from "./fileWrite";
 import { fileExists } from "./motion";
+import { continueTaxReturnPacketRead } from "./taxReturnPacket";
 
 export { slotFromFilename };
 
@@ -171,6 +172,7 @@ export async function ingestDroppedFiles(files: File[]) {
             (doc) => doc.receivedAt === receivedAt && doc.name === name,
             { bytesRef },
           );
+          void continueTaxReturnPacketRead();
         })
         .catch(() => undefined);
       if (!response.ok) {
