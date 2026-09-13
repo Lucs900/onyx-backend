@@ -1,6 +1,7 @@
 /**
  * Composer-drop Form 1065 / 1120-S / 1120 entity returns 21 / 23 / 25.
  * Ownership × entity totals + GP named to Hale. K-1 ordinary-only upgrades on one row.
+ * Harbor 23 / 24 are smoke only — not founder 1120-S ACCEPT (docs/13-1120s-entity-return.md).
  */
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";

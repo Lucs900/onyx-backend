@@ -1,10 +1,14 @@
 /**
- * Founder 1120-S entity return — not Harbor fixture 23, not a paystub.
+ * Founder 1120-S gold numbers from docs/13-1120s-entity-return.md.
+ * No founder PDF bytes on the VM. Harbor 23/24 are smoke only — not ACCEPT.
  * Disclaimer / 8879 / “express or implied” never become Employer.
  * Ordinary is line 21 / Schedule K line 1. Officer wages stay outside ordinary.
  * Skip-1040 on SE still asks for the business return.
  */
 import assert from "node:assert/strict";
+import { existsSync, readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { classifyAndExtract } from "../lib/docs/extract";
 import { classifyPageByFormHeader } from "../lib/docs/formHeader";
 import { junkEmployerName, loudEntityReturnFromPrintedLines, loudWageFromPrintedLines } from "../lib/docs/printedSample";
@@ -85,6 +89,7 @@ const FOUNDER_1120S_PAGES = [
     "2024",
     "Name of corporation HO & SOY INC",
     "7 Compensation of officers                         96,000",
+    "14 Depreciation                                    8,000",
     "21 Ordinary business income (loss)                 52,702",
   ],
   [
@@ -125,6 +130,11 @@ function seSketch(): FoxIntakeDraft {
 }
 
 async function main() {
+  const doctrine = join(dirname(fileURLToPath(import.meta.url)), "..", "docs", "13-1120s-entity-return.md");
+  assert.equal(existsSync(doctrine), true, "docs/13-1120s-entity-return.md");
+  assert.match(readFileSync(doctrine, "utf8"), /\$4,392/);
+  assert.match(readFileSync(doctrine, "utf8"), /Harbor 23 \/ 24 — smoke only/);
+
   assert.equal(
     classifyPageByFormHeader("Form 8879-S IRS e-file Signature Authorization for Form 1120-S EXPRESS OR IMPLIED"),
     "form_8879",
@@ -185,6 +195,22 @@ async function main() {
   assert.doesNotMatch(computed?.methodNote ?? "", /ordinary \+ dep/);
   assert.equal(computed?.officerCompensation, "96000");
   assert.equal(computed?.entityName, "HO & SOY INC");
+  assert.notEqual(extracted.fields.entity_ordinary_income, extracted.fields.officer_compensation);
+  assert.notEqual(extracted.fields.entity_depreciation, "8000", "line 14 Depreciation is not a 1084 add-back");
+
+  const strayDep = monthlyQualifyingFromExtract(seSketch(), "tax_return", {
+    ...extracted.fields,
+    entity_depreciation: "8000",
+  });
+  assert.equal(strayDep?.monthly, 4392, "stray 1120-S depreciation must not steal household ordinary");
+  assert.match(strayDep?.methodNote ?? "", /household ordinary/);
+
+  const half = monthlyQualifyingFromExtract(seSketch(), "tax_return", {
+    ...extracted.fields,
+    ownership_percent: "50",
+  });
+  assert.equal(half?.monthly, 2196);
+  assert.match(half?.methodNote ?? "", /per 50% owner/);
 
   const proposed = applyExtractedFields(seSketch(), {
     extractClass: "tax_return",

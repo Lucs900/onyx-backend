@@ -403,9 +403,10 @@ const FORM_1120S_PROMPT = `Read this Form 1120-S page image only. JSON object wi
 tax_year, entity_name, entity_ordinary_income, officer_compensation, ownership_percent, return_kind.
 return_kind is 1120s.
 entity_name is the Name of corporation as printed (for example HO & SOY INC). Never a disclaimer, PIN, 8879, footer, or “express or implied”.
-entity_ordinary_income is Form 1120-S line 21 Ordinary business income (loss), or Schedule K line 1. Never officer compensation.
+entity_ordinary_income is Form 1120-S line 21 Ordinary business income (loss), or Schedule K line 1. Never officer compensation. Never line 14 Depreciation.
 officer_compensation is line 7 Compensation of officers. Named as wages. Never add it into ordinary.
 ownership_percent only when a shareholder percentage is clearly printed. Empty otherwise.
+Do not return depreciation, T&E, or other 1084 add-backs from a real 1120-S face. Household ordinary is line 21 / 12.
 Never invent. Empty string if a dollar or name is not clearly printed.`;
 
 const FORM_1040_HOUSEHOLD_WAGES_PROMPT = `Read this Form 1040 page image only. JSON object with one key: wages.
@@ -792,7 +793,7 @@ async function grokPageRead(
 ): Promise<ClassifyExtractResult | null> {
   const walked =
     isPdf(bytes) || mediaType === "application/pdf"
-      ? await classifyTaxReturnPages(bytes, adapter)
+      ? await classifyTaxReturnPages(bytes, adapter, filename)
       : [];
   const entityPage = pickForm1120sPage(walked);
   const namePage = entityPage ?? pickNameYearPage(walked);
@@ -807,9 +808,14 @@ async function grokPageRead(
   if (!image) return null;
   let page = await classifyAndExtractPage(image.bytes, image.mediaType, adapter, hint);
   let extractClass = preferFilenameClass(page.extractClass, filename ?? "");
+  const entityFields = Boolean(
+    entityPage || String(page.fields?.entity_ordinary_income ?? "").trim(),
+  );
   let fields =
     extractClass === "tax_return"
-      ? lockTaxReturnPageReadFields(page.fields)
+      ? entityFields
+        ? page.fields
+        : lockTaxReturnPageReadFields(page.fields)
       : lockFirstSessionFields(extractClass, page.fields);
   const yearNameLocked = extractClass === "tax_return" && hasLockedSuggestion(extractClass, fields);
   if (!yearNameLocked && namePage?.klass === "form_1040") {
@@ -862,6 +868,7 @@ async function grokPageRead(
     mediaType,
     adapter,
     walked,
+    filename,
   );
 }
 
@@ -882,24 +889,35 @@ async function printedLayerLooksLikeIrsTranscript(
 }
 
 const TAX_RETURN_WALK_PAGE_CAP = 24;
+const TAX_RETURN_1120S_WALK_PAGE_CAP = 40;
 const taxReturnWalkCache = new WeakMap<Uint8Array, Promise<ClassifiedTaxPage[]>>();
+
+function taxReturnWalkPageCap(filename?: string | null) {
+  return filenameLooksLike1120s(filename) ? TAX_RETURN_1120S_WALK_PAGE_CAP : TAX_RETURN_WALK_PAGE_CAP;
+}
 
 async function classifyTaxReturnPages(
   bytes: Uint8Array,
   adapter: DocumentExtractAdapter,
+  filename?: string | null,
 ): Promise<ClassifiedTaxPage[]> {
-  const cached = taxReturnWalkCache.get(bytes);
-  if (cached) return cached;
-  const pending = classifyTaxReturnPagesUncached(bytes, adapter);
-  taxReturnWalkCache.set(bytes, pending);
-  return pending;
+  if (!filenameLooksLike1120s(filename)) {
+    const cached = taxReturnWalkCache.get(bytes);
+    if (cached) return cached;
+    const pending = classifyTaxReturnPagesUncached(bytes, adapter, filename);
+    taxReturnWalkCache.set(bytes, pending);
+    return pending;
+  }
+  return classifyTaxReturnPagesUncached(bytes, adapter, filename);
 }
 
 async function classifyTaxReturnPagesUncached(
   bytes: Uint8Array,
   adapter: DocumentExtractAdapter,
+  filename?: string | null,
 ): Promise<ClassifiedTaxPage[]> {
-  const printed = await readPdfJsTextPages(bytes, TAX_RETURN_WALK_PAGE_CAP);
+  const cap = taxReturnWalkPageCap(filename);
+  const printed = await readPdfJsTextPages(bytes, cap);
   const slots: Array<{ page: number; lines: string[]; text: string }> = printed?.length
     ? printed.map((page) => ({
         page: page.page,
@@ -907,10 +925,11 @@ async function classifyTaxReturnPagesUncached(
         text: page.lines.join("\n"),
       }))
     : Array.from(
-        { length: Math.max(1, Math.min((await pdfPageCount(bytes)) || 1, TAX_RETURN_WALK_PAGE_CAP)) },
+        { length: Math.max(1, Math.min((await pdfPageCount(bytes)) || 1, cap)) },
         (_, index) => ({ page: index + 1, lines: [] as string[], text: "" }),
       );
   const walked: ClassifiedTaxPage[] = [];
+  let found1120s = false;
   for (const slot of slots) {
     let klass = classifyPageByFormHeader(slot.text);
     if (klass === "other" && !slot.text.trim() && adapter === grokExtractAdapter) {
@@ -925,6 +944,12 @@ async function classifyTaxReturnPagesUncached(
       }
     }
     walked.push({ ...slot, klass });
+    if (klass === "form_1120s") {
+      if (found1120s && filenameLooksLike1120s(filename)) break;
+      found1120s = true;
+    } else if (found1120s && filenameLooksLike1120s(filename)) {
+      break;
+    }
   }
   return walked;
 }
@@ -1067,8 +1092,9 @@ async function ledgerFieldsFromWalk(
   mediaType: string,
   adapter: DocumentExtractAdapter,
   walked?: ClassifiedTaxPage[],
+  filename?: string | null,
 ): Promise<Record<string, string>> {
-  const pages = walked ?? (await classifyTaxReturnPages(bytes, adapter));
+  const pages = walked ?? (await classifyTaxReturnPages(bytes, adapter, filename));
   const ledger = printedLedgerFromWalked(pages);
   if (!ledger.wages) {
     assignLedgerKeepFirst(ledger, await householdWagesFromWalk(bytes, pages, adapter));
@@ -1085,19 +1111,30 @@ async function mergeTaxReturnLedgerFields(
   mediaType: string,
   adapter: DocumentExtractAdapter,
   walked?: ClassifiedTaxPage[],
+  filename?: string | null,
 ): Promise<ClassifyExtractResult> {
-  if (result.extractClass !== "tax_return" || result.failed) return result;
+  const entityFilename = filenameLooksLike1120s(filename);
+  if (!entityFilename && (result.extractClass !== "tax_return" || result.failed)) return result;
   try {
     if (await printedLayerLooksLikeIrsTranscript(bytes, mediaType)) return result;
-    const ledger = await ledgerFieldsFromWalk(bytes, mediaType, adapter, walked);
+    const ledger = await ledgerFieldsFromWalk(bytes, mediaType, adapter, walked, filename);
     const fields: Record<string, string> = {};
-    for (const [key, value] of Object.entries({ ...ledger, ...result.fields })) {
+    const ordinary = String(ledger.entity_ordinary_income ?? "").trim();
+    const merged = ordinary ? { ...result.fields, ...ledger } : { ...ledger, ...result.fields };
+    for (const [key, value] of Object.entries(merged)) {
       if (value) fields[key] = String(value);
     }
     if (!Object.keys(ledger).length) return result;
+    if (ordinary) {
+      fields.return_kind = ledger.return_kind || fields.return_kind || "1120s";
+    }
     return {
       ...result,
+      extractClass: "tax_return",
+      failed: ordinary ? false : result.failed,
+      confidence: ordinary ? 0.94 : result.confidence,
       fields,
+      warnings: ordinary ? (result.warnings ?? []).filter((item) => item !== "failed") : result.warnings,
     };
   } catch (error) {
     logVisionError("mergeTaxReturnLedgerFields", error);
@@ -1122,9 +1159,9 @@ async function extractTaxReturnPacket(
         textLayerChars,
       };
     }
-    const walked = await classifyTaxReturnPages(bytes, adapter);
+    const walked = await classifyTaxReturnPages(bytes, adapter, filename);
     const ledger = sanitizeLedgerExtractFields(
-      await ledgerFieldsFromWalk(bytes, mediaType, adapter, walked),
+      await ledgerFieldsFromWalk(bytes, mediaType, adapter, walked, filename),
     );
     const saw1040 = Boolean(pickForm1040Page(walked));
     const saw1120s = Boolean(pickForm1120sPage(walked));
@@ -1169,6 +1206,13 @@ async function grokTaxReturnPacketPages(
   try {
     const page = await grokPageRead(bytes, mediaType, adapter, hint, filename);
     if (page && !page.failed && hasLockedSuggestion(page.extractClass, page.fields)) {
+      if (
+        filenameLooksLike1120s(filename) &&
+        !String(page.fields?.entity_ordinary_income ?? "").trim()
+      ) {
+        // 8879 / disclaimer / year-name is not the entity return.
+        return null;
+      }
       return { ...page, textLayerChars };
     }
   } catch (error) {
@@ -1460,5 +1504,5 @@ export async function classifyAndExtract(
   );
   const blocked = rejectPaystubForEntityReturn(result, filename);
   if (phase === "packet") return blocked;
-  return mergeTaxReturnLedgerFields(blocked, bytes, mediaType, adapter);
+  return mergeTaxReturnLedgerFields(blocked, bytes, mediaType, adapter, undefined, filename);
 }

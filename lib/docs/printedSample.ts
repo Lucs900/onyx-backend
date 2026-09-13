@@ -890,8 +890,8 @@ function applyEntityReturnFields(
     moneyAfter(/net rental real estate(?:\s*\(\s*form 8825\s*\))?\s*\$?\s*([\d,]+(?:\.\d+)?)/i);
   if (rental) putMoney("entity_8825_rental", rental);
   const dep =
-    moneyDigits(emptyIfNotShown(stackedLabelValue(stacked, /^DEPRECIATION(?:\s*\(\s*FORM 4562[^)]*\))?:?\s*/i))) ||
-    moneyAfter(/depreciation(?:\s*\(\s*form 4562[^)]*\))?\s*\$?\s*([\d,]+(?:\.\d+)?)/i);
+    moneyDigits(emptyIfNotShown(stackedLabelValue(stacked, /^DEPRECIATION\s*\(\s*FORM 4562[^)]*\):?\s*/i))) ||
+    moneyAfter(/depreciation\s*\(\s*form 4562[^)]*\)\s*\$?\s*([\d,]+(?:\.\d+)?)/i);
   if (dep) putMoney("entity_depreciation", dep);
   const amort =
     moneyDigits(emptyIfNotShown(stackedLabelValue(stacked, /^AMORTIZATION(?:\s*\/\s*CASUALTY)?:?\s*/i))) ||

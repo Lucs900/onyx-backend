@@ -468,12 +468,29 @@ function scheduleEMonthly(years: TaxYearCashflow[]): number | null {
 }
 
 function entityHas1084Addbacks(row: TaxYearCashflow) {
-  return Boolean(
+  const partnership = Boolean(
     parseExtractMoney(row.entity_8825_rental) != null ||
-      parseExtractMoney(row.entity_depreciation) != null ||
       parseExtractMoney(row.entity_amortization) != null ||
-      parseExtractMoney(row.entity_te) != null ||
       parseExtractMoney(row.entity_guaranteed_payments) != null,
+  );
+  if (row.return_kind === "1065" || partnership) {
+    return Boolean(
+      partnership ||
+        parseExtractMoney(row.entity_depreciation) != null ||
+        parseExtractMoney(row.entity_te) != null,
+    );
+  }
+  // Harbor 23/24 smoke: labeled dep + T&E + ownership. A real 1120-S line 14 is not 1084.
+  if (row.return_kind === "1120s") {
+    return (
+      parseExtractMoney(row.ownership_percent) != null &&
+      parseExtractMoney(row.entity_depreciation) != null &&
+      parseExtractMoney(row.entity_te) != null
+    );
+  }
+  return Boolean(
+    parseExtractMoney(row.entity_depreciation) != null ||
+      parseExtractMoney(row.entity_te) != null,
   );
 }
 
