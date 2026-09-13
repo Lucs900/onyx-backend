@@ -47,7 +47,10 @@ Founder wording may say “line 21” for company ordinary. On this packet line 
 - Disclaimer / PIN / 8879 / “express or implied” / “including but not limited” / Paperwork Reduction footer is never Employer.
 - Unreadable invents nothing.
 - File empty on qualifying income until Use this.
-- Skip-1040 on self-employed still asks for the **business return**. After classify, name **1120-S**. Do not jump to Looks right.
+- Skip-1040 on self-employed still asks for the **business return**. After classify, name **1120-S**. Do not jump to Looks right. Skip 1040 is an answer — do not reprint Form 1040 after the business return / Box 1 write.
+- Use this writes Employment **HO & SOY INC**. Income type stays Self-employed. Not officer wages as QI.
+- After this packet’s two K-1s, do not ask for another K-1 or whether that person is on this loan.
+- After Box 1 write, drop **K-1 distributions** from Still useful.
 
 ## Harbor 23 / 24 — smoke only
 

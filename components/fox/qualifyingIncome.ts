@@ -588,7 +588,41 @@ function k1Monthly(years: TaxYearCashflow[]): number | null {
   return k1OrdinaryMonthly(latest.ordinary);
 }
 
+/** 1120-S face + K-1 Box 1 on this packet. Two K-1s are already in. */
+export function entityK1Box1OnFile(draft: FoxIntakeDraft): boolean {
+  const rows = readTaxCashflows(draft);
+  const has1120s = rows.some(
+    (row) => row.return_kind === "1120s" && String(row.entity_ordinary_income ?? "").trim(),
+  );
+  const hasK1 = rows.some((row) => String(row.k1_ordinary_income ?? "").trim());
+  return has1120s && hasK1;
+}
+
+export function entityNameFromDraft(
+  draft: FoxIntakeDraft,
+  proposal?: FactProposal | null,
+): string {
+  return (
+    proposal?.extras?.find((item) => item.field === "entity_name")?.value ||
+    factValue(draft, "entity_name") ||
+    readTaxCashflows(draft)
+      .map((row) => String(row.entity_name ?? "").trim())
+      .find(Boolean) ||
+    ""
+  ).trim();
+}
+
+export function writeEntityEmployment(
+  draft: FoxIntakeDraft,
+  proposal?: FactProposal | null,
+): FoxIntakeDraft {
+  const name = entityNameFromDraft(draft, proposal ?? draft.pendingProposal);
+  if (!name) return draft;
+  return writeCurrentEmploymentHistory(draft, name);
+}
+
 export function k1OrdinaryMissingDistributions(draft: FoxIntakeDraft): boolean {
+  if (entityK1Box1OnFile(draft)) return false;
   return readTaxCashflows(draft).some(
     (row) => String(row.k1_ordinary_income ?? "").trim() && !String(row.k1_distributions ?? "").trim(),
   );

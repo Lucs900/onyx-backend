@@ -8376,9 +8376,9 @@ assert.equal(entityWalkWrite.draft.pendingProposal?.note, SUGGESTED_INCOME_NOTE)
 assert.equal(entityWalkWrite.draft.facts?.qualifying_income, undefined);
 assert.equal(entityWalkWrite.draft.facts?.k1_ordinary_income?.value, "40000");
 assert.ok(!missingExtractClasses(entityWalkWrite.draft).includes("tax_return"));
-assert.ok(stillUsefulLabels(entityWalkWrite.draft).includes("K-1 distributions"));
+assert.ok(!stillUsefulLabels(entityWalkWrite.draft).includes("K-1 distributions"));
 assert.ok(!stillUsefulLabels(entityWalkWrite.draft).includes("tax return"));
-assert.match(stillUsefulAskCopy(entityWalkWrite.draft), /K-1 distributions/i);
+assert.doesNotMatch(stillUsefulAskCopy(entityWalkWrite.draft), /K-1 distributions/i);
 assert.ok(previewFacts(entityWalkWrite.draft).some((fact) => fact.id === "docs" && /Tax return in/.test(fact.value)));
 assert.ok(previewFacts(entityWalkWrite.draft).every((fact) => fact.id !== "docs" || !/Other in/.test(fact.value)));
 assert.equal(fileCompleteness(entityWalkWrite.draft)?.groups.income.documented, false);

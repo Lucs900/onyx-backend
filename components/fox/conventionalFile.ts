@@ -192,7 +192,11 @@ export function conventionalFileFromDraft(draft: FoxIntakeDraft): ConventionalFi
     (draft.incomeType.value === "self-employed" || draft.incomeType.value === "both") &&
     years
   ) {
-    employmentHistory.push({ label: "Self-employed", from: years });
+    const named =
+      draft.facts?.qualifying_income?.confirmed
+        ? factValue(draft, "entity_name") || factValue(draft, "business_name")
+        : "";
+    employmentHistory.push({ label: named || "Self-employed", from: years });
   }
 
   const stored = draft.agencyDeclarations ?? {};

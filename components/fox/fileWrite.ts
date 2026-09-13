@@ -27,6 +27,7 @@ import {
   hasScheduleECashflow,
   hasTwoYearWageHistory,
   k1OrdinaryMissingDistributions,
+  entityK1Box1OnFile,
   maybeProposeQualifyingFromTaxFile,
   isCoverLineProposal,
   isCoverReturnFields,
@@ -3100,7 +3101,11 @@ export function nextCoverScheduleLabels(draft: FoxIntakeDraft): StillUsefulLabel
   // Matching C first so the visible 1–3 Still useful list names it. E / K-1 / F stay later.
   if (ids.includes("schedule_c") && !coverSchedulePresent(draft, "schedule_c")) take("Schedule C");
   if (ids.includes("schedule_e") && !coverSchedulePresent(draft, "schedule_e")) take("Schedule E");
-  if ((ids.includes("k1") || ids.includes("1065") || ids.includes("1120s")) && !coverSchedulePresent(draft, "k1")) {
+  if (
+    (ids.includes("k1") || ids.includes("1065") || ids.includes("1120s")) &&
+    !coverSchedulePresent(draft, "k1") &&
+    !entityK1Box1OnFile(draft)
+  ) {
     const entities = coverK1Entities(draft);
     if (entities.length > 1) {
       for (const name of entities) {
@@ -3342,6 +3347,7 @@ function namedK1DocumentOnFile(draft: FoxIntakeDraft, test: RegExp) {
 }
 
 export function nextScheduleENamedK1Label(draft: FoxIntakeDraft): StillUsefulLabel | null {
+  if (entityK1Box1OnFile(draft)) return null;
   const names = scheduleEPart2NamesOnFile(draft);
   if (!names.length) return null;
   const wanted = SCHEDULE_E_NAMED_K1S.filter((item) => names.some((name) => item.test.test(name)));
@@ -3401,7 +3407,9 @@ export function stillUsefulLabels(draft: FoxIntakeDraft): StillUsefulLabel[] {
   }
   if (
     (income === "self-employed" || income === "both" || income === "other") &&
-    taxReturns === 1
+    taxReturns === 1 &&
+    !entityK1Box1OnFile(draft) &&
+    !(draft.federalReturnSkipped && entityReturnOnFile(draft))
   ) {
     const namedK1 = nextScheduleENamedK1Label(draft);
     const recent = mostRecentFederalYear(draft);
@@ -3598,6 +3606,8 @@ export function completenessFileFromDraft(draft: FoxIntakeDraft): CompletenessFi
     ),
     hasPnl: received.has("ytd_pnl"),
     k1OrdinaryOnly: k1OrdinaryMissingDistributions(draft),
+    entityK1Box1: entityK1Box1OnFile(draft),
+    federalReturnSkipped: Boolean(draft.federalReturnSkipped),
     hasScheduleC: hasScheduleCCashflow(draft),
     fundsInPlay: Boolean(
       draft.cashOut || factValue(draft, "cash_to_close") || factValue(draft, "reserves"),
@@ -4262,8 +4272,14 @@ function inviteSatisfied(draft: FoxIntakeDraft, kind: DocInviteKind): boolean {
   if (kind === "second_bank_statement") {
     return !secondBankStatementInviteNeeded(draft);
   }
+  if (kind === "tax_return") {
+    if (draft.federalReturnSkipped && entityReturnOnFile(draft)) return true;
+    if (entityK1Box1OnFile(draft)) return true;
+  }
   if (kind === "prior_year_return") {
     if (draft.priorYearSkipped) return true;
+    if (draft.federalReturnSkipped) return true;
+    if (entityK1Box1OnFile(draft)) return true;
     let extracted = 0;
     for (const doc of draft.documents) {
       if (doc.status !== "extracted") continue;

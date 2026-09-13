@@ -239,6 +239,8 @@ export type CompletenessFile = FileFacts & {
   variableExtracted?: boolean;
   hasPnl?: boolean;
   k1OrdinaryOnly?: boolean;
+  entityK1Box1?: boolean;
+  federalReturnSkipped?: boolean;
   hasScheduleC?: boolean;
   fundsInPlay?: boolean;
 };
@@ -1164,7 +1166,9 @@ function documentedIncomeItems(file: CompletenessFile, received: Set<string>): D
   if (se) {
     if (taxReturns < 1) items.push("tax_return");
     if (taxReturns === 1) {
-      if (file.k1OrdinaryOnly && !file.hasScheduleC) items.push("k1-distributions");
+      if (file.entityK1Box1 || file.federalReturnSkipped) {
+        // 1120-S Box 1 write, or Skip 1040 — do not reprint 1040 / K-1 distributions.
+      } else if (file.k1OrdinaryOnly && !file.hasScheduleC) items.push("k1-distributions");
       else items.push("prior-year-return");
     }
     if (taxReturns >= 1 && !file.hasPnl && !received.has("ytd_pnl")) items.push("ytd-pnl");

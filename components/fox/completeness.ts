@@ -50,6 +50,7 @@ import {
   WAGE_MONTHLY_FIELD,
   SE_MONTHLY_FIELD,
   K1_MONTHLY_FIELD,
+  writeEntityEmployment,
   decliningIncomeCaution,
   wageIncomeCaution,
   wageThreadOpen,
@@ -258,6 +259,8 @@ export function businessNameOnFile(draft?: FoxIntakeDraft | null) {
   const business = factValue(draft, "business_name").trim();
   if (/hale design/i.test(business)) return "Hale Design";
   if (business) return business.replace(/\s+Studio$/i, "").trim();
+  const entity = factValue(draft, "entity_name").trim();
+  if (entity) return entity;
   return "";
 }
 
@@ -1728,7 +1731,18 @@ export function resolveProposal(
       if (name) next = writeConfirmedFact(next, TAX_RETURN_NAME_FIELD, name, source);
       continue;
     }
+    if (
+      proposal.field === QUALIFYING_INCOME_FIELD &&
+      (extra.field === "officer_compensation" ||
+        extra.field === "company_ordinary" ||
+        extra.field === "owner_share_monthly")
+    ) {
+      continue;
+    }
     next = writeConfirmedFact(next, extra.field, extra.value, source);
+  }
+  if (proposal.field === QUALIFYING_INCOME_FIELD) {
+    next = writeEntityEmployment(next, proposal);
   }
   if (proposal.field === QUALIFYING_INCOME_FIELD && proposal.parts) {
     if (proposal.parts.wage) next = writeConfirmedFact(next, WAGE_MONTHLY_FIELD, proposal.parts.wage, source);

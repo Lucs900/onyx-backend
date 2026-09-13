@@ -24,7 +24,10 @@ import {
   BUSINESS_RETURN_ASK,
   docInviteBlocksLooksRight,
   extractClassFromFilename,
+  nextDocInvite,
   skipCurrentInvite,
+  stillUsefulAskCopy,
+  stillUsefulLabels,
 } from "../components/fox/fileWrite";
 import { canLooksRight, resolveProposal } from "../components/fox/completeness";
 import { emptyDraft } from "../components/fox/store";
@@ -152,6 +155,32 @@ function seSketch(): FoxIntakeDraft {
     yearsInBusinessAsked: true,
     monthlyDebtsAsked: true,
     skippedClasses: ["government_id"],
+    facts: {
+      years_in_business: {
+        field: "years_in_business",
+        value: "5",
+        source: "client",
+        confirmed: true,
+        confirmedAt: "2026-09-13T00:00:00.000Z",
+      },
+    },
+  };
+}
+
+function withEntityDoc(draft: FoxIntakeDraft): FoxIntakeDraft {
+  return {
+    ...draft,
+    documents: [
+      {
+        slot: "other",
+        name: "Ho Soy Inc 2024 Tax returns 1120S.pdf",
+        type: "application/pdf",
+        size: 8000,
+        receivedAt: "2026-09-13T00:00:00.000Z",
+        status: "extracted",
+        extractClass: "tax_return",
+      },
+    ],
   };
 }
 
@@ -349,6 +378,7 @@ async function main() {
   assert.ok((ownedAsk.actions ?? []).some((item) => item.label === "Use this"));
   const ownedUsed = resolveProposal(owned, "accept");
   assert.equal(ownedUsed.facts?.qualifying_income?.value, "4392");
+  assert.ok((ownedUsed.employmentHistory ?? []).some((row) => /HO & SOY INC/i.test(row.label ?? "")));
 
   const proposed = applyExtractedFields(seSketch(), {
     extractClass: "tax_return",
@@ -387,6 +417,28 @@ async function main() {
   const used = resolveProposal(proposed.draft, "accept");
   assert.equal(used.facts?.qualifying_income?.value, "2196");
   assert.equal(used.facts?.qualifying_income?.confirmed, true);
+  assert.notEqual(used.facts?.qualifying_income?.value, "8000");
+  assert.ok(!used.facts?.officer_compensation, "officer wages are not QI");
+  assert.ok((used.employmentHistory ?? []).some((row) => /HO & SOY INC/i.test(row.label ?? "")));
+  assert.ok(
+    previewFacts(used).some(
+      (fact) => fact.label === "Employment" && /HO & SOY INC/i.test(fact.value),
+    ),
+    "Employment writes HO & SOY INC",
+  );
+  assert.ok(
+    !previewFacts(used).some(
+      (fact) => fact.label === "Employment" && /^Self-employed\b/i.test(fact.value),
+    ),
+    "Employment must not stay Self-employed",
+  );
+  assert.equal(used.incomeType.value, "self-employed");
+  assert.ok(!stillUsefulLabels(used).includes("K-1 distributions"));
+  assert.ok(!stillUsefulLabels(used).some((label) => /prior-year|Form 1040|Harbor Studio K-1|Bay Street K-1|K-1$/i.test(label)));
+  assert.doesNotMatch(stillUsefulAskCopy(used), /K-1 distributions|Form 1040|other K-1|on this loan/i);
+  assert.doesNotMatch(nextFoxAsk(used).text, /Form 1040|other K-1|on this loan|Harbor Studio K-1|Bay Street K-1/i);
+  assert.notEqual(nextDocInvite(used), "tax_return");
+  assert.notEqual(nextDocInvite(used), "prior_year_return");
 
   const leftoverThread: FoxMessage[] = sealStoredFoxThread([
     { id: "card", role: "fox", text: ask.text, actions: ask.actions },
@@ -405,7 +457,39 @@ async function main() {
   const skipBusiness = skipCurrentInvite(skip1040);
   assert.ok((skipBusiness.skippedClasses ?? []).includes("tax_return"));
 
-  console.log("assert-1120s-entity-return: HO & SOY INC company ordinary $4,392 · K-1 Box 1 $2,196 Use this");
+  const afterSkipDrop = applyExtractedFields(withEntityDoc(skip1040), {
+    extractClass: "tax_return",
+    confidence: 0.94,
+    fields: extracted.fields,
+  });
+  const afterSkipUsed = resolveProposal(afterSkipDrop.draft, "accept");
+  assert.equal(afterSkipUsed.facts?.qualifying_income?.value, "2196");
+  assert.ok((afterSkipUsed.employmentHistory ?? []).some((row) => /HO & SOY INC/i.test(row.label ?? "")));
+  assert.doesNotMatch(nextFoxAsk(afterSkipUsed).text, /Form 1040|other K-1|on this loan/i);
+  assert.notEqual(nextDocInvite(afterSkipUsed), "tax_return");
+  assert.notEqual(nextDocInvite(afterSkipUsed), "prior_year_return");
+  assert.ok(!stillUsefulLabels(afterSkipUsed).includes("K-1 distributions"));
+  assert.ok(!stillUsefulLabels(afterSkipUsed).some((label) => /Form 1040|prior-year/i.test(label)));
+  assert.doesNotMatch(
+    `${nextFoxAsk(afterSkipUsed).text} ${stillUsefulAskCopy(afterSkipUsed)}`,
+    /other K-1|is that person on this loan|Harbor Studio K-1|Bay Street K-1/i,
+  );
+
+  const twoK1Names = applyExtractedFields(withEntityDoc(skip1040), {
+    extractClass: "tax_return",
+    confidence: 0.94,
+    fields: {
+      ...extracted.fields,
+      cover_k1_names: "HO; SOY",
+      schedule_e_part2_names: "HO; SOY",
+    },
+  });
+  const twoK1Used = resolveProposal(twoK1Names.draft, "accept");
+  assert.equal(twoK1Used.facts?.qualifying_income?.value, "2196");
+  assert.doesNotMatch(nextFoxAsk(twoK1Used).text, /other K-1|on this loan|HO K-1|SOY K-1/i);
+  assert.ok(!stillUsefulLabels(twoK1Used).some((label) => /HO K-1|SOY K-1|other K-1/i.test(label)));
+
+  console.log("assert-1120s-entity-return: HO & SOY INC $2,196 · Employment · Skip 1040 · no other-K-1");
 }
 
 main().catch((error) => {
