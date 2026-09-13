@@ -431,7 +431,8 @@ const YEARLY_TAX_KEYS = new Set([
 ]);
 
 const DROP_FIELD_KEYS =
-  /^(ssn|social|social_security|account|account_number|routing|routing_number|card|cin|dl|dl_number|daq|license|license_number|full_ssn|full_account|date_of_birth|dob)$/i;
+  /^(ssn|social|social_security|ein|fein|employer_ein|employer_identification|employer_identification_number|account|account_number|routing|routing_number|card|cin|dl|dl_number|daq|license|license_number|full_ssn|full_account|date_of_birth|dob)$/i;
+const EIN_RE = /\b\d{2}-\d{7,8}\b/;
 const CA_DL_NUMBER_RE = /^[A-Z]\d{7}$/i;
 const SSN_RE = /\b\d{3}[-\s]?\d{2}[-\s]?\d{4}\b/;
 const LONG_ACCOUNT_RE = /\b\d{8,17}\b/;
@@ -1450,6 +1451,7 @@ export function sanitizeExtractedFields(
     }
     if (CA_DL_NUMBER_RE.test(value.replace(/\s+/g, ""))) continue;
     if (SSN_RE.test(value)) continue;
+    if (EIN_RE.test(value) && !MONEY_KEYS.has(key)) continue;
     if (
       (key === "medicare_wages" || key === "box5" || key === "wages") &&
       isBoxNumberAsDollars(value)
@@ -1987,7 +1989,8 @@ export function applyExtractedFields(
         field === "ownership_percent" ||
         field === "entity_taxable_income" ||
         field === "entity_name" ||
-        field === "officer_compensation"
+        field === "officer_compensation" ||
+        field === "owner_share_monthly"
       ) {
         continue;
       }
@@ -2454,7 +2457,8 @@ export function applyExtractedFields(
       key === "ownership_percent" ||
       key === "entity_taxable_income" ||
       key === "entity_name" ||
-      key === "officer_compensation"
+      key === "officer_compensation" ||
+      key === "owner_share_monthly"
     ) {
       continue;
     }

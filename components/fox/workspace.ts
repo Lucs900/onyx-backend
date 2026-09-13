@@ -1877,10 +1877,16 @@ function entityReactionAsk(draft: FoxIntakeDraft, proposal: NonNullable<FoxIntak
     "";
   const named = entity ? ` for ${entity}` : "";
   const ack = year ? `Got the ${year} ${form}${named}.` : `Got the ${form}${named}.`;
-  const share = /per 50% owner/i.test(method)
+  const ownerShare = proposal.extras?.find((item) => item.field === "owner_share_monthly")?.value ?? "";
+  const ownerN = Number(String(ownerShare).replace(/[^\d.]/g, ""));
+  const ownerShown =
+    Number.isFinite(ownerN) && ownerN > 0 ? `$${Math.round(ownerN).toLocaleString("en-US")}` : "";
+  const share = /per 50% owner/i.test(method) && !/household ordinary/i.test(method)
     ? "That’s per 50% owner."
     : /household ordinary/i.test(method)
-      ? "That’s household ordinary."
+      ? ownerShown
+        ? `That’s household ordinary. ${ownerShown} per 50% owner.`
+        : "That’s household ordinary."
       : "";
   const officer = proposal.extras?.find((item) => item.field === "officer_compensation")?.value ?? "";
   const officerN = Number(String(officer).replace(/[^\d.]/g, ""));

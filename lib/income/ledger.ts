@@ -483,6 +483,8 @@ export function incomeLedgerFieldsFromPrintedLines(lines: string[]): Record<stri
       /\bname of corporation\b/i.test(blob) ||
       /\bschedule\s+k\b/i.test(blob));
   const entityOrdinary =
+    moneyNearLabel(blob, /(?:^|\n)\s*22\s+ordinary business income(?:\s*\(\s*loss\s*\))?/i) ||
+    moneyNearLabel(blob, /ordinary business income(?:\s*\(\s*loss\s*\))?\s*\(\s*page\s*1,?\s*line\s*22\s*\)/i) ||
     moneyNearLabel(blob, /(?:^|\n)\s*21\s+ordinary business income(?:\s*\(\s*loss\s*\))?/i) ||
     moneyNearLabel(blob, /ordinary business income(?:\s*\(\s*loss\s*\))?\s*\(\s*page\s*1,?\s*line\s*21\s*\)/i) ||
     (is1120sFace

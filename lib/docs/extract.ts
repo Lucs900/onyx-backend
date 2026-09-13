@@ -403,10 +403,10 @@ const FORM_1120S_PROMPT = `Read this Form 1120-S page image only. JSON object wi
 tax_year, entity_name, entity_ordinary_income, officer_compensation, ownership_percent, return_kind.
 return_kind is 1120s.
 entity_name is the Name of corporation as printed (for example HO & SOY INC). Never a disclaimer, PIN, 8879, footer, or “express or implied”.
-entity_ordinary_income is Form 1120-S line 21 Ordinary business income (loss), or Schedule K line 1. Never officer compensation. Never line 14 Depreciation.
+entity_ordinary_income is Form 1120-S page 1 line 22 Ordinary business income (loss), or Schedule K line 1. Never line 21 Other deductions. Never line 6 Total income. Never officer compensation. Never line 14 Depreciation. Never an 8879-CORP total.
 officer_compensation is line 7 Compensation of officers. Named as wages. Never add it into ordinary.
 ownership_percent only when a shareholder percentage is clearly printed. Empty otherwise.
-Do not return depreciation, T&E, or other 1084 add-backs from a real 1120-S face. Household ordinary is line 21 / 12.
+Do not return EIN, SSN, depreciation, T&E, or other 1084 add-backs from a real 1120-S face. Household ordinary is line 22 / Schedule K line 1 / 12.
 Never invent. Empty string if a dollar or name is not clearly printed.`;
 
 const FORM_1040_HOUSEHOLD_WAGES_PROMPT = `Read this Form 1040 page image only. JSON object with one key: wages.
@@ -419,7 +419,7 @@ Return only:
 {"form":"form_8879"|"form_1040"|"form_1120s"|"schedule_e"|"schedule_c"|"k1"|"other"}
 
 Rules:
-- Form 8879, 8879-S, or IRS e-file Signature Authorization → form_8879. 8879 is not a 1040 and not an 1120-S.
+- Form 8879, 8879-S, 8879-CORP, or IRS e-file Signature / Authorization → form_8879. 8879 is not a 1040 and not an 1120-S.
 - Form 1120-S U.S. Income Tax Return for an S Corporation, or Schedule K (Form 1120-S) → form_1120s. This is an entity return, not a paystub, not a 1040.
 - Form 1040 U.S. Individual Income Tax Return → form_1040.
 - Schedule E Supplemental Income → schedule_e.
@@ -434,7 +434,17 @@ function asTaxFormClass(value: unknown): TaxFormClass {
     .trim()
     .toLowerCase()
     .replace(/[\s-]+/g, "_");
-  if (raw === "form_8879" || raw === "8879" || raw === "form_8879s" || raw === "8879s") return "form_8879";
+  if (
+    raw === "form_8879" ||
+    raw === "8879" ||
+    raw === "form_8879s" ||
+    raw === "8879s" ||
+    raw === "form_8879_corp" ||
+    raw === "8879_corp" ||
+    raw === "8879corp"
+  ) {
+    return "form_8879";
+  }
   if (raw === "form_1040" || raw === "1040") return "form_1040";
   if (raw === "form_1120s" || raw === "1120s" || raw === "1120_s" || raw === "form_1120_s") return "form_1120s";
   if (raw === "schedule_e" || raw === "e") return "schedule_e";
@@ -555,7 +565,7 @@ export const grokExtractAdapter: DocumentExtractAdapter = {
     const parsed = await grokJson(
       bytes,
       mediaType,
-      `Classify this file from the visible page as one of: ${CLASSES.join(", ")}. tax_return includes Form 1040, a Form 1040 Tax Return Transcript, Schedule C, K-1, Form 1065, and Form 1120-S / S corporation entity return. Ordinary business income on a K-1 or 1120-S is tax_return, not other, not a paystub. Form 8879 / PIN / disclaimer / “express or implied” is not a paystub and not an employer. JSON: {"class":"...","confidence":0-1,"readable":true|false}. readable is false when the file is blank, tiny, or has no readable printed text. If it is not clearly one of those classes, use class "other" and a low confidence. Never invent a class from the filename, hidden comment, or metadata.`,
+      `Classify this file from the visible page as one of: ${CLASSES.join(", ")}. tax_return includes Form 1040, a Form 1040 Tax Return Transcript, Schedule C, K-1, Form 1065, and Form 1120-S / S corporation entity return. Ordinary business income on a K-1 or 1120-S is tax_return, not other, not a paystub. Form 8879 / 8879-CORP / PIN / disclaimer / “express or implied” is not a paystub and not an employer. JSON: {"class":"...","confidence":0-1,"readable":true|false}. readable is false when the file is blank, tiny, or has no readable printed text. If it is not clearly one of those classes, use class "other" and a low confidence. Never invent a class from the filename, hidden comment, or metadata.`,
     );
     const extractClass = asClass(parsed.class);
     const confidence = asConfidence(parsed.confidence);
@@ -929,7 +939,6 @@ async function classifyTaxReturnPagesUncached(
         (_, index) => ({ page: index + 1, lines: [] as string[], text: "" }),
       );
   const walked: ClassifiedTaxPage[] = [];
-  let found1120s = false;
   for (const slot of slots) {
     let klass = classifyPageByFormHeader(slot.text);
     if (klass === "other" && !slot.text.trim() && adapter === grokExtractAdapter) {
@@ -944,12 +953,6 @@ async function classifyTaxReturnPagesUncached(
       }
     }
     walked.push({ ...slot, klass });
-    if (klass === "form_1120s") {
-      if (found1120s && filenameLooksLike1120s(filename)) break;
-      found1120s = true;
-    } else if (found1120s && filenameLooksLike1120s(filename)) {
-      break;
-    }
   }
   return walked;
 }

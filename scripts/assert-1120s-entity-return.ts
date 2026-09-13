@@ -1,9 +1,10 @@
 /**
  * Founder 1120-S gold numbers from docs/13-1120s-entity-return.md.
  * No founder PDF bytes on the VM. Harbor 23/24 are smoke only — not ACCEPT.
- * Disclaimer / 8879 / “express or implied” never become Employer.
- * Ordinary is line 21 / Schedule K line 1. Officer wages stay outside ordinary.
- * Skip-1040 on SE still asks for the business return.
+ * 8879-CORP is not the entity return. Line 21 on this 1120-S is deductions.
+ * Ordinary is page 1 line 22 / Schedule K line 1 = $52,702.
+ * Two 50% K-1s at $26,351. Use this is household $4,392. Card names $2,196 too.
+ * EIN / SSN stay off File. Skip-1040 on SE still asks for the business return.
  */
 import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
@@ -11,7 +12,12 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { classifyAndExtract } from "../lib/docs/extract";
 import { classifyPageByFormHeader } from "../lib/docs/formHeader";
-import { junkEmployerName, loudEntityReturnFromPrintedLines, loudWageFromPrintedLines } from "../lib/docs/printedSample";
+import {
+  junkEmployerName,
+  loudEntityReturnFromPrintedLines,
+  loudK1FromPrintedLines,
+  loudWageFromPrintedLines,
+} from "../lib/docs/printedSample";
 import {
   applyExtractedFields,
   BUSINESS_RETURN_ASK,
@@ -75,29 +81,48 @@ function multiPagePdf(pages: string[][]) {
   return new Uint8Array(Buffer.from(body));
 }
 
-const FOUNDER_1120S_PAGES = [
-  [
-    "Form 8879-S",
-    "IRS e-file Signature Authorization for Form 1120-S",
-    "2024",
-    "WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED",
-    "PIN 12345",
-  ],
-  [
-    "Form 1120-S",
-    "U.S. Income Tax Return for an S Corporation",
-    "2024",
-    "Name of corporation HO & SOY INC",
-    "7 Compensation of officers                         96,000",
-    "14 Depreciation                                    8,000",
-    "21 Ordinary business income (loss)                 52,702",
-  ],
-  [
-    "Schedule K (Form 1120-S)",
-    "Shareholders' Pro Rata Share Items",
-    "1 Ordinary business income (loss) (page 1, line 21)   52,702",
-  ],
+const FOUNDER_8879_PAGE = [
+  "Form 8879-CORP",
+  "E-file Authorization for Corporations",
+  "2024",
+  "Name of corporation HO & SOY INC",
+  "Employer identification number 92-30339499",
+  "3 Total income (Form 1120-S, line 6)               360,572",
+  "WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED",
+  "PIN 92300",
 ];
+
+const FOUNDER_1120S_FACE = [
+  "Form 1120-S",
+  "U.S. Income Tax Return for an S Corporation",
+  "2024",
+  "Name of corporation HO & SOY INC",
+  "Employer identification number 92-30339499",
+  "1c Gross receipts or sales                         535,394",
+  "6 Total income (loss). Add lines 3 through 5       360,572",
+  "7 Compensation of officers                         96,000",
+  "14 Depreciation not claimed on Form 1125-A         3,180",
+  "21 Other deductions (attach statement)             99,936",
+  "22 Ordinary business income (loss)                 52,702",
+];
+
+const FOUNDER_SCHEDULE_K = [
+  "Schedule K (Form 1120-S)",
+  "Shareholders' Pro Rata Share Items",
+  "1 Ordinary business income (loss) (page 1, line 22)   52,702",
+];
+
+const FOUNDER_K1_PAGE = [
+  "Schedule K-1 (Form 1120-S) 2024",
+  "Shareholder's Share of Income, Deductions, Credits, etc.",
+  "Corporation HO & SOY INC",
+  "Shareholder identifying number 566-79-1312",
+  "Current year allocation percentage 50%",
+  "1 Ordinary business income (loss)                  26,351",
+];
+
+const FOUNDER_ENTITY_PAGES = [FOUNDER_8879_PAGE, FOUNDER_1120S_FACE, FOUNDER_SCHEDULE_K];
+const FOUNDER_PACKET_PAGES = [...FOUNDER_ENTITY_PAGES, FOUNDER_K1_PAGE, FOUNDER_K1_PAGE];
 
 function seSketch(): FoxIntakeDraft {
   return {
@@ -132,18 +157,32 @@ function seSketch(): FoxIntakeDraft {
 async function main() {
   const doctrine = join(dirname(fileURLToPath(import.meta.url)), "..", "docs", "13-1120s-entity-return.md");
   assert.equal(existsSync(doctrine), true, "docs/13-1120s-entity-return.md");
-  assert.match(readFileSync(doctrine, "utf8"), /\$4,392/);
-  assert.match(readFileSync(doctrine, "utf8"), /Harbor 23 \/ 24 — smoke only/);
+  const doctrineText = readFileSync(doctrine, "utf8");
+  assert.match(doctrineText, /\$4,392/);
+  assert.match(doctrineText, /line 22/);
+  assert.match(doctrineText, /8879-CORP/);
+  assert.match(doctrineText, /\$2,196/);
+  assert.match(doctrineText, /Harbor 23 \/ 24 — smoke only/);
 
   assert.equal(
-    classifyPageByFormHeader("Form 8879-S IRS e-file Signature Authorization for Form 1120-S EXPRESS OR IMPLIED"),
+    classifyPageByFormHeader("Form 8879-CORP E-file Authorization for Corporations EXPRESS OR IMPLIED"),
     "form_8879",
+  );
+  assert.notEqual(
+    classifyPageByFormHeader("Form 8879-CORP E-file Authorization for Corporations Form 1120-S, line 6 360,572"),
+    "form_1120s",
   );
   assert.equal(
     classifyPageByFormHeader(
-      "Form 1120-S U.S. Income Tax Return for an S Corporation Name of corporation HO & SOY INC 21 Ordinary business income 52702",
+      "Form 1120-S U.S. Income Tax Return for an S Corporation Name of corporation HO & SOY INC 22 Ordinary business income 52702",
     ),
     "form_1120s",
+  );
+  assert.equal(
+    classifyPageByFormHeader(
+      "Schedule K-1 (Form 1120-S) 2024 Shareholder's Share Current year allocation percentage 50% 1 Ordinary business income 26351",
+    ),
+    "k1",
   );
   assert.notEqual(
     classifyPageByFormHeader("Form 1120-S U.S. Income Tax Return for an S Corporation"),
@@ -158,19 +197,49 @@ async function main() {
   assert.equal(junkEmployerName("INCLUDING BUT NOT LIMITED"), true);
   assert.equal(junkEmployerName("HO & SOY INC"), false);
 
-  const lines = FOUNDER_1120S_PAGES.flat();
-  assert.equal(loudWageFromPrintedLines(lines), null, "1120-S is not a paystub");
-  const loud = loudEntityReturnFromPrintedLines(lines);
+  assert.equal(loudEntityReturnFromPrintedLines(FOUNDER_8879_PAGE), null, "8879-CORP is not the entity return");
+  assert.equal(loudWageFromPrintedLines(FOUNDER_8879_PAGE), null, "8879-CORP is not a paystub");
+
+  const faceLines = FOUNDER_ENTITY_PAGES.flat();
+  assert.equal(loudWageFromPrintedLines(faceLines), null, "1120-S is not a paystub");
+  const loud = loudEntityReturnFromPrintedLines(faceLines);
   assert.ok(loud, "loud 1120-S extract");
   assert.equal(loud?.extractClass, "tax_return");
   assert.equal(loud?.fields.return_kind, "1120s");
   assert.equal(loud?.fields.entity_name, "HO & SOY INC");
   assert.equal(loud?.fields.entity_ordinary_income, "52702");
   assert.equal(loud?.fields.officer_compensation, "96000");
+  assert.notEqual(loud?.fields.entity_ordinary_income, "360572");
+  assert.notEqual(loud?.fields.entity_ordinary_income, "99936");
+  assert.notEqual(loud?.fields.entity_ordinary_income, "26351");
+  assert.notEqual(loud?.fields.entity_ordinary_income, "96000");
+  assert.equal(loud?.fields.ein, undefined);
+  assert.equal(loud?.fields.ssn, undefined);
   assert.notEqual(loud?.fields.employer_name, "EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED");
   assert.equal(loud?.fields.employer_name, undefined);
 
-  const bytes = multiPagePdf(FOUNDER_1120S_PAGES);
+  const packetLines = FOUNDER_PACKET_PAGES.flat();
+  const loudPacket = loudEntityReturnFromPrintedLines(packetLines);
+  assert.ok(loudPacket, "1120-S face still wins when K-1 pages follow");
+  assert.equal(loudPacket?.fields.entity_ordinary_income, "52702");
+  assert.notEqual(loudPacket?.fields.entity_ordinary_income, "26351");
+
+  const k1 = loudK1FromPrintedLines(FOUNDER_K1_PAGE);
+  assert.ok(k1, "loud K-1 extract");
+  assert.equal(k1?.fields.k1_ordinary_income, "26351");
+  assert.equal(k1?.fields.ownership_percent, "50");
+  assert.notEqual(k1?.fields.k1_ordinary_income, "52702");
+  const k1Only = monthlyQualifyingFromExtract(seSketch(), "tax_return", {
+    tax_year: "2024",
+    return_kind: "k1",
+    k1_ordinary_income: "26351",
+    ownership_percent: "50",
+    entity_name: "HO & SOY INC",
+  });
+  assert.equal(k1Only?.monthly, 2196, "K-1-only is $2,196 per 50% owner");
+  assert.equal(k1Only?.basis, "k1");
+
+  const bytes = multiPagePdf(FOUNDER_PACKET_PAGES);
   const extracted = await classifyAndExtract(
     bytes,
     "application/pdf",
@@ -184,9 +253,17 @@ async function main() {
   assert.equal(extracted.fields.entity_name, "HO & SOY INC");
   assert.equal(extracted.fields.entity_ordinary_income, "52702");
   assert.equal(extracted.fields.officer_compensation, "96000");
+  assert.notEqual(extracted.fields.entity_ordinary_income, "360572");
+  assert.notEqual(extracted.fields.entity_ordinary_income, "99936");
+  assert.notEqual(extracted.fields.entity_ordinary_income, "26351");
+  assert.notEqual(extracted.fields.entity_ordinary_income, "96000");
+  assert.notEqual(extracted.fields.entity_ordinary_income, "535394");
   assert.notEqual(extracted.fields.employer_name, "EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED");
   assert.equal(extracted.fields.employer_name, undefined);
-  assert.notEqual(extracted.fields.entity_ordinary_income, "96000");
+  assert.equal(extracted.fields.ein, undefined);
+  assert.equal(extracted.fields.fein, undefined);
+  assert.equal(extracted.fields.ssn, undefined);
+  assert.doesNotMatch(JSON.stringify(extracted.fields), /92-30339499|566-79-1312/);
 
   const computed = monthlyQualifyingFromExtract(seSketch(), "tax_return", extracted.fields);
   assert.equal(computed?.monthly, 4392);
@@ -196,11 +273,11 @@ async function main() {
   assert.equal(computed?.officerCompensation, "96000");
   assert.equal(computed?.entityName, "HO & SOY INC");
   assert.notEqual(extracted.fields.entity_ordinary_income, extracted.fields.officer_compensation);
-  assert.notEqual(extracted.fields.entity_depreciation, "8000", "line 14 Depreciation is not a 1084 add-back");
+  assert.equal(extracted.fields.entity_depreciation, undefined, "line 14 Depreciation is not a 1084 add-back");
 
   const strayDep = monthlyQualifyingFromExtract(seSketch(), "tax_return", {
     ...extracted.fields,
-    entity_depreciation: "8000",
+    entity_depreciation: "3180",
   });
   assert.equal(strayDep?.monthly, 4392, "stray 1120-S depreciation must not steal household ordinary");
   assert.match(strayDep?.methodNote ?? "", /household ordinary/);
@@ -209,13 +286,18 @@ async function main() {
     ...extracted.fields,
     ownership_percent: "50",
   });
-  assert.equal(half?.monthly, 2196);
-  assert.match(half?.methodNote ?? "", /per 50% owner/);
+  assert.equal(half?.monthly, 4392, "50% K-1 must not cut household Use this");
+  assert.equal(half?.ownerShareMonthly, 2196);
+  assert.match(half?.methodNote ?? "", /household ordinary/);
+  assert.doesNotMatch(half?.methodNote ?? "", /ordinary \+ dep/);
 
   const proposed = applyExtractedFields(seSketch(), {
     extractClass: "tax_return",
     confidence: 0.94,
-    fields: extracted.fields,
+    fields: {
+      ...extracted.fields,
+      ownership_percent: extracted.fields.ownership_percent || "50",
+    },
   });
   assert.equal(proposed.draft.pendingProposal?.field, "qualifying_income");
   assert.equal(proposed.draft.pendingProposal?.value, "4392");
@@ -223,6 +305,10 @@ async function main() {
   assert.ok(!proposed.draft.facts?.qualifying_income, "File empty until Use this");
   assert.ok(!proposed.draft.facts?.entity_ordinary_income);
   assert.ok(!proposed.draft.facts?.employer_name);
+  assert.ok(!proposed.draft.facts?.ein);
+  assert.ok(!proposed.draft.facts?.ssn);
+  assert.ok(!proposed.draft.facts?.owner_share_monthly, "per-owner extra is not a File write");
+  assert.doesNotMatch(JSON.stringify(proposed.draft.facts ?? {}), /92-30339499|566-79-1312/);
   assert.ok(
     !previewFacts(proposed.draft).some((fact) => fact.id === "qualifying" && /4,392|4392/.test(fact.value)),
     "qualifying File line stays empty until Use this",
@@ -233,10 +319,13 @@ async function main() {
   assert.match(ask.text, /Form 1120-S/);
   assert.match(ask.text, /HO & SOY INC/);
   assert.match(ask.text, /household ordinary/i);
+  assert.match(ask.text, /\$2,196/);
+  assert.match(ask.text, /per 50% owner/i);
   assert.match(ask.text, /\$96,000/);
   assert.match(ask.text, /wages, not inside ordinary/i);
   assert.match(ask.text, /Suggested qualifying income · not underwritten/);
   assert.doesNotMatch(ask.text, /EXPRESS OR IMPLIED|INCLUDING BUT NOT LIMITED/i);
+  assert.doesNotMatch(ask.text, /92-30339499|566-79-1312/);
   assert.ok((ask.actions ?? []).some((item) => item.label === "Use this"));
   assert.ok((ask.actions ?? []).some((item) => item.label === "Change"));
 
@@ -261,7 +350,7 @@ async function main() {
   const skipBusiness = skipCurrentInvite(skip1040);
   assert.ok((skipBusiness.skippedClasses ?? []).includes("tax_return"));
 
-  console.log("assert-1120s-entity-return: HO & SOY INC $4,392 household ordinary · officer $96,000 wages");
+  console.log("assert-1120s-entity-return: HO & SOY INC line 22 $52,702 · household $4,392 · $2,196 per 50% owner");
 }
 
 main().catch((error) => {

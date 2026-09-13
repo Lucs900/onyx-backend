@@ -175,6 +175,7 @@ export type QualifyingIncomeResult = {
   parts?: { wage?: number; scheduleC?: number; k1?: number };
   entityName?: string;
   officerCompensation?: string;
+  ownerShareMonthly?: number;
 };
 
 const ENTITY_KINDS = new Set<TaxReturnKind>(["k1", "1065", "1120s"]);
@@ -510,6 +511,7 @@ function entityRowMonthly(row: TaxYearCashflow): number | null {
       ownershipPercent: ownership,
     });
   }
+  if (row.return_kind === "1120s") return monthlyFromAnnual(ordinary);
   if (ownership === 50) return monthlyFromAnnual(ordinary * 0.5);
   return monthlyFromAnnual(ordinary);
 }
@@ -532,6 +534,9 @@ function entityMonthly(years: TaxYearCashflow[]): { monthly: number; row: TaxYea
 function entityResultFromRow(row: TaxYearCashflow, monthly: number): QualifyingIncomeResult {
   const ownership = parseExtractMoney(row.ownership_percent);
   const household = !entityHas1084Addbacks(row);
+  const ordinary = parseExtractMoney(row.entity_ordinary_income);
+  const ownerShareMonthly =
+    household && ownership === 50 && ordinary != null ? monthlyFromAnnual(ordinary * 0.5) : undefined;
   return {
     monthly,
     basis: "entity",
@@ -539,12 +544,13 @@ function entityResultFromRow(row: TaxYearCashflow, monthly: number): QualifyingI
       kind: row.return_kind,
       ownershipPercent: ownership,
       guaranteedPayments: parseExtractMoney(row.entity_guaranteed_payments),
-      householdOrdinary: household && ownership !== 50,
-      ownerShare: household && ownership === 50,
+      householdOrdinary: household && (row.return_kind === "1120s" || ownership !== 50),
+      ownerShare: household && ownership === 50 && row.return_kind !== "1120s",
     }),
     parts: { k1: monthly },
     entityName: String(row.entity_name ?? "").trim() || undefined,
     officerCompensation: String(row.officer_compensation ?? "").trim() || undefined,
+    ownerShareMonthly,
   };
 }
 
@@ -1925,6 +1931,9 @@ export function qualifyingIncomeProposal(computed: QualifyingIncomeResult): Fact
         : []),
       ...(computed.officerCompensation
         ? [{ field: "officer_compensation", value: computed.officerCompensation, label: "officer wages" }]
+        : []),
+      ...(computed.ownerShareMonthly
+        ? [{ field: "owner_share_monthly", value: String(computed.ownerShareMonthly), label: "per 50% owner" }]
         : []),
     ],
   };

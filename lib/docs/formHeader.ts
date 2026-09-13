@@ -42,6 +42,7 @@ const K1_KEYS = new Set([
   "entity_name",
   "business_name",
   "schedule_e_part2_names",
+  "ownership_percent",
 ]);
 const FORM_1120S_KEYS = new Set([
   "tax_year",
@@ -61,7 +62,12 @@ export function classifyPageByFormHeader(text: string): TaxFormClass {
     .trim();
   if (!t) return "other";
 
-  if (/\bForm\s*8879(?:-S)?\b/i.test(t) || /\bIRS\s+e-?file\s+Signature\s+Authorization\b/i.test(t)) {
+  if (
+    /\bForm\s*8879(?:-\s*(?:S|C|CORP))?\b/i.test(t) ||
+    /\b8879-CORP\b/i.test(t) ||
+    /\bIRS\s+e-?file\s+Signature\s+Authorization\b/i.test(t) ||
+    /\bE-?file\s+Authorization\s+for\s+Corporations\b/i.test(t)
+  ) {
     return "form_8879";
   }
 
@@ -146,7 +152,7 @@ export function pickForm1040Page(walked: readonly ClassifiedTaxPage[]): Classifi
   return walked.find((page) => page.klass === "form_1040");
 }
 
-/** Form 1120-S face / Schedule K. 8879-S and disclaimer pages are not the entity return. */
+/** Form 1120-S face / Schedule K. 8879-CORP / 8879-S and disclaimer pages are not the entity return. */
 export function pickForm1120sPage(walked: readonly ClassifiedTaxPage[]): ClassifiedTaxPage | undefined {
   return walked.find((page) => page.klass === "form_1120s");
 }

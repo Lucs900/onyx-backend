@@ -792,24 +792,23 @@ export function entityReturnKind(lines: string[]): "1065" | "1120s" | "1120" | n
     return null;
   }
   const blob = flattenPrintedLines(lines).join("\n").toUpperCase().replace(/\u00a0/g, " ");
-  if (/SCHEDULE K-1/.test(blob)) return null;
+  // Face / worksheet first. A later Schedule K-1 in the same packet is not the entity return.
   if (/FORM 1120-?S WORKSHEET|1120-S WORKSHEET|S CORPORATION RETURN/.test(blob)) return "1120s";
   if (/U\.?S\.?\s+INCOME TAX RETURN FOR AN S CORPORATION/.test(blob)) return "1120s";
-  if (/FORM 1065 WORKSHEET|1065 WORKSHEET|PARTNERSHIP RETURN/.test(blob) && /FORM 1065/.test(blob)) {
+  if (/\bFORM 1120-?S\b/.test(blob) && /COMPENSATION OF OFFICERS/.test(blob)) return "1120s";
+  if (/FORM 1065 WORKSHEET|1065 WORKSHEET|PARTNERSHIP RETURN/.test(blob) && /FORM 1065/.test(blob) && !/SCHEDULE K-1/.test(blob)) {
     return "1065";
   }
-  if (/C CORPORATION RETURN|FORM 1120 WORKSHEET/.test(blob) && /TAXABLE INCOME/.test(blob) && !/1120-?S/.test(blob)) {
+  if (/C CORPORATION RETURN|FORM 1120 WORKSHEET/.test(blob) && /TAXABLE INCOME/.test(blob) && !/1120-?S/.test(blob) && !/SCHEDULE K-1/.test(blob)) {
     return "1120";
   }
   if (/\bFORM 1120-?S\b/.test(blob) && /ORDINARY BUSINESS INCOME/.test(blob) && !/SCHEDULE K-1/.test(blob)) {
     return "1120s";
   }
-  if (/\bFORM 1120-?S\b/.test(blob) && /COMPENSATION OF OFFICERS/.test(blob) && !/SCHEDULE K-1/.test(blob)) {
-    return "1120s";
-  }
   if (/\bFORM 1065\b/.test(blob) && /ORDINARY BUSINESS INCOME/.test(blob) && !/SCHEDULE K-1/.test(blob)) {
     return "1065";
   }
+  if (/SCHEDULE K-1/.test(blob)) return null;
   return null;
 }
 
@@ -835,7 +834,8 @@ function ownershipPercentFromPrintedText(text: string): string {
     blob.match(/partner share is\s*(\d{1,3})\s*%/i) ||
     blob.match(/shareholder is\s*(\d{1,3})\s*%/i) ||
     blob.match(/jordan hale\s*·\s*(\d{1,3})\s*%/i) ||
-    blob.match(/this (?:partner|shareholder)[\s\S]{0,80}?(\d{1,3})\s*%/i);
+    blob.match(/this (?:partner|shareholder)[\s\S]{0,80}?(\d{1,3})\s*%/i) ||
+    blob.match(/current year allocation percentage[^\d]{0,40}?(\d{1,3})\s*%/i);
   if (!match?.[1]) return "";
   const pct = Number(match[1]);
   if (!Number.isFinite(pct) || pct <= 0 || pct > 100) return "";
@@ -870,15 +870,24 @@ function applyEntityReturnFields(
   const sourceBlob = stacked.join("\n");
   const moneyAfter = (pattern: RegExp) => {
     const match = sourceBlob.match(pattern);
-    if (!match?.[1] || /expected 1084|suggested monthly|ordinary alone/i.test(match[0])) return "";
+    if (
+      !match?.[1] ||
+      /expected 1084|suggested monthly|ordinary alone|other deductions|form 1120-s,?\s*line\s*6|total income/i.test(
+        match[0],
+      )
+    ) {
+      return "";
+    }
     return moneyDigits(match[1]) || "";
   };
   const ordinary =
     moneyDigits(emptyIfNotShown(stackedLabelValue(stacked, /^ORDINARY BUSINESS INCOME(?:\s*\(\s*PAGE\s*1\s*\))?:?\s*/i))) ||
     moneyAfter(/ordinary business income(?:\s*\(\s*page\s*1\s*\))?\s*\$?\s*([\d,]+(?:\.\d+)?)/i) ||
+    moneyAfter(/(?:^|\n)\s*22\s+ordinary business income(?:\s*\(\s*loss\s*\))?[^\n]{0,80}?\$?\s*([\d,]+(?:\.\d+)?)/i) ||
+    moneyAfter(/ordinary business income(?:\s*\(\s*loss\s*\))?\s*\(\s*page\s*1,?\s*line\s*22\s*\)[^\n]{0,80}?\$?\s*([\d,]+(?:\.\d+)?)/i) ||
     moneyAfter(/ordinary business income(?:\s*\(\s*loss\s*\))?(?:\s*\(\s*page\s*1\s*,?\s*line\s*21\s*\))?\s*\$?\s*([\d,]+(?:\.\d+)?)/i) ||
     moneyAfter(/(?:^|\n)\s*21\s+ordinary business income(?:\s*\(\s*loss\s*\))?[^\n]{0,80}?\$?\s*([\d,]+(?:\.\d+)?)/i) ||
-    moneyAfter(/(?:^|\n)\s*1\s+ordinary business income(?:\s*\(\s*loss\s*\))?(?:\s*\(\s*page\s*1,?\s*line\s*21\s*\))?[^\n]{0,80}?\$?\s*([\d,]+(?:\.\d+)?)/i);
+    moneyAfter(/(?:^|\n)\s*1\s+ordinary business income(?:\s*\(\s*loss\s*\))?(?:\s*\(\s*page\s*1,?\s*line\s*2[12]\s*\))?[^\n]{0,80}?\$?\s*([\d,]+(?:\.\d+)?)/i);
   if (ordinary) putMoney("entity_ordinary_income", ordinary);
   const officer =
     moneyDigits(emptyIfNotShown(stackedLabelValue(stacked, /^COMPENSATION OF OFFICERS:?\s*/i))) ||
@@ -1348,6 +1357,10 @@ function applyK1WorksheetFields(
       k1OrdinaryFromPrintedText(normalized.join("\n")) || k1OrdinaryFromPrintedText(normalized.join(" "));
   }
   if (ordinary) putMoney("k1_ordinary_income", ordinary);
+  const ownership =
+    ownershipPercentFromPrintedText(normalized.join("\n")) ||
+    ownershipPercentFromPrintedText(normalized.join(" "));
+  if (ownership) put("ownership_percent", ownership);
 }
 
 /** Map labeled page lines onto extract keys. Absent keys stay empty. */
