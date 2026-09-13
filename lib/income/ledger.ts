@@ -87,7 +87,7 @@ function rowMethod(kind: IncomeLedgerKind) {
   if (kind === "schedule_c") return "Schedule C one-year";
   if (kind === "k1") return "ordinary / 12";
   if (kind === "entity_1065") return "entity cash flow";
-  if (kind === "entity_1120s") return "household ordinary / 12";
+  if (kind === "entity_1120s") return "company ordinary / 12";
   return "named loss";
 }
 
@@ -183,8 +183,20 @@ export function incomeLedgerRowsFromFields(fields: Record<string, string>): Inco
     const monthly = monthlyFromAnnual(entity);
     const entityKind: IncomeLedgerKind =
       kind.includes("1120s") || kind.includes("scorp") ? "entity_1120s" : "entity_1065";
-    if (monthly < 0) pushRow(rows, "named_loss", monthly, year, business || "Entity");
-    else pushRow(rows, entityKind, monthly, year, business);
+    const ownership = parseLedgerMoney(fields.ownership_percent);
+    const harbor1120s =
+      entityKind === "entity_1120s" &&
+      ownership != null &&
+      parseLedgerMoney(fields.entity_depreciation) != null &&
+      parseLedgerMoney(fields.entity_te) != null;
+    const ownsAll1120s = entityKind === "entity_1120s" && ownership === 100;
+    if (entityKind === "entity_1120s" && !harbor1120s && !ownsAll1120s) {
+      // Company ordinary is not this borrower's QI until K-1 Box 1 or own-all.
+    } else if (monthly < 0) {
+      pushRow(rows, "named_loss", monthly, year, business || "Entity");
+    } else {
+      pushRow(rows, entityKind, monthly, year, business);
+    }
   }
 
   return rows;

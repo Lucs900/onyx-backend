@@ -1990,7 +1990,8 @@ export function applyExtractedFields(
         field === "entity_taxable_income" ||
         field === "entity_name" ||
         field === "officer_compensation" ||
-        field === "owner_share_monthly"
+        field === "owner_share_monthly" ||
+        field === "company_ordinary"
       ) {
         continue;
       }
@@ -2458,7 +2459,8 @@ export function applyExtractedFields(
       key === "entity_taxable_income" ||
       key === "entity_name" ||
       key === "officer_compensation" ||
-      key === "owner_share_monthly"
+      key === "owner_share_monthly" ||
+      key === "company_ordinary"
     ) {
       continue;
     }

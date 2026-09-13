@@ -139,6 +139,7 @@ import {
   maybeProposeStubExtract,
   isStubExtractProposal,
   isCoverReturnFields,
+  applyOwnAllEntity,
 } from "./qualifyingIncome";
 import {
   skipEstimatedHousing,
@@ -2395,6 +2396,9 @@ function applyCaptureBody(capture: Capture) {
   }
   if (capture.field === "keep-live-coupon") {
     return commit(keepPendingLiveCoupon(current));
+  }
+  if (capture.field === "own-all-entity") {
+    return commit(applyOwnAllEntity(current));
   }
   if (capture.field === "accept-proposal") {
     return commit(withWorkspaceScenario(resolveProposal(current, "accept")));

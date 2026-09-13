@@ -3,7 +3,8 @@
  * No founder PDF bytes on the VM. Harbor 23/24 are smoke only — not ACCEPT.
  * 8879-CORP is not the entity return. Line 21 on this 1120-S is deductions.
  * Ordinary is page 1 line 22 / Schedule K line 1 = $52,702.
- * Two 50% K-1s at $26,351. Use this is household $4,392. Card names $2,196 too.
+ * Two 50% K-1s at $26,351. $4,392 is company ordinary, not this borrower’s QI.
+ * Use this waits for K-1 Box 1 ($2,196) or own-all.
  * EIN / SSN stay off File. Skip-1040 on SE still asks for the business return.
  */
 import assert from "node:assert/strict";
@@ -29,7 +30,7 @@ import { canLooksRight, resolveProposal } from "../components/fox/completeness";
 import { emptyDraft } from "../components/fox/store";
 import { leftoverUseThisOnOlderTurns, sealStoredFoxThread } from "../components/fox/liveCoupon";
 import { nextFoxAsk, previewFacts, workspacePromptCopy } from "../components/fox/workspace";
-import { monthlyQualifyingFromExtract } from "../components/fox/qualifyingIncome";
+import { applyOwnAllEntity, monthlyQualifyingFromExtract } from "../components/fox/qualifyingIncome";
 import { SUGGESTED_INCOME_NOTE } from "../lib/income/suggest";
 import type { FoxIntakeDraft, FoxMessage } from "../components/fox/types";
 
@@ -159,10 +160,12 @@ async function main() {
   assert.equal(existsSync(doctrine), true, "docs/13-1120s-entity-return.md");
   const doctrineText = readFileSync(doctrine, "utf8");
   assert.match(doctrineText, /\$4,392/);
+  assert.match(doctrineText, /company ordinary/);
   assert.match(doctrineText, /line 22/);
   assert.match(doctrineText, /8879-CORP/);
   assert.match(doctrineText, /\$2,196/);
   assert.match(doctrineText, /Harbor 23 \/ 24 — smoke only/);
+  assert.doesNotMatch(doctrineText, /Use this on this packet is household/);
 
   assert.equal(
     classifyPageByFormHeader("Form 8879-CORP E-file Authorization for Corporations EXPRESS OR IMPLIED"),
@@ -265,72 +268,124 @@ async function main() {
   assert.equal(extracted.fields.ssn, undefined);
   assert.doesNotMatch(JSON.stringify(extracted.fields), /92-30339499|566-79-1312/);
 
+  assert.equal(extracted.fields.k1_ordinary_income, "26351");
   const computed = monthlyQualifyingFromExtract(seSketch(), "tax_return", extracted.fields);
-  assert.equal(computed?.monthly, 4392);
-  assert.equal(computed?.basis, "entity");
-  assert.match(computed?.methodNote ?? "", /household ordinary/);
+  assert.equal(computed?.monthly, 2196);
+  assert.equal(computed?.basis, "k1");
+  assert.equal(computed?.companyOrdinaryMonthly, 4392);
+  assert.match(computed?.methodNote ?? "", /K-1 Box 1/);
+  assert.doesNotMatch(computed?.methodNote ?? "", /household ordinary/);
   assert.doesNotMatch(computed?.methodNote ?? "", /ordinary \+ dep/);
   assert.equal(computed?.officerCompensation, "96000");
   assert.equal(computed?.entityName, "HO & SOY INC");
   assert.notEqual(extracted.fields.entity_ordinary_income, extracted.fields.officer_compensation);
   assert.equal(extracted.fields.entity_depreciation, undefined, "line 14 Depreciation is not a 1084 add-back");
 
+  const faceOnly = monthlyQualifyingFromExtract(seSketch(), "tax_return", {
+    tax_year: "2024",
+    return_kind: "1120s",
+    entity_name: "HO & SOY INC",
+    entity_ordinary_income: "52702",
+    officer_compensation: "96000",
+  });
+  assert.equal(faceOnly?.needsOwnership, true, "1120-S header has no ownership");
+  assert.equal(faceOnly?.monthly, 0);
+  assert.equal(faceOnly?.companyOrdinaryMonthly, 4392);
+  assert.match(faceOnly?.methodNote ?? "", /company ordinary/);
+
   const strayDep = monthlyQualifyingFromExtract(seSketch(), "tax_return", {
-    ...extracted.fields,
+    tax_year: "2024",
+    return_kind: "1120s",
+    entity_name: "HO & SOY INC",
+    entity_ordinary_income: "52702",
+    officer_compensation: "96000",
     entity_depreciation: "3180",
   });
-  assert.equal(strayDep?.monthly, 4392, "stray 1120-S depreciation must not steal household ordinary");
-  assert.match(strayDep?.methodNote ?? "", /household ordinary/);
+  assert.equal(strayDep?.needsOwnership, true, "stray 1120-S depreciation must not steal company ordinary");
+  assert.equal(strayDep?.companyOrdinaryMonthly, 4392);
 
   const half = monthlyQualifyingFromExtract(seSketch(), "tax_return", {
-    ...extracted.fields,
+    tax_year: "2024",
+    return_kind: "1120s",
+    entity_name: "HO & SOY INC",
+    entity_ordinary_income: "52702",
+    officer_compensation: "96000",
     ownership_percent: "50",
   });
-  assert.equal(half?.monthly, 4392, "50% K-1 must not cut household Use this");
-  assert.equal(half?.ownerShareMonthly, 2196);
-  assert.match(half?.methodNote ?? "", /household ordinary/);
-  assert.doesNotMatch(half?.methodNote ?? "", /ordinary \+ dep/);
+  assert.equal(half?.needsOwnership, true, "50% on the header is still not this borrower’s QI");
+  assert.equal(half?.monthly, 0);
+  assert.equal(half?.companyOrdinaryMonthly, 4392);
+
+  const hold = applyExtractedFields(seSketch(), {
+    extractClass: "tax_return",
+    confidence: 0.94,
+    fields: {
+      tax_year: "2024",
+      return_kind: "1120s",
+      entity_name: "HO & SOY INC",
+      entity_ordinary_income: "52702",
+      officer_compensation: "96000",
+    },
+  });
+  assert.equal(hold.draft.pendingProposal?.field, "company_ordinary");
+  assert.equal(hold.draft.pendingProposal?.value, "4392");
+  assert.ok(!hold.draft.facts?.qualifying_income, "File empty until Use this");
+  const holdAsk = workspacePromptCopy("confirm-proposal", hold.draft);
+  assert.match(holdAsk.text, /Form 1120-S/);
+  assert.match(holdAsk.text, /HO & SOY INC/);
+  assert.match(holdAsk.text, /Company ordinary is \$4,392/i);
+  assert.match(holdAsk.text, /I need the K-1, or confirm you own all of it/i);
+  assert.match(holdAsk.text, /\$96,000/);
+  assert.doesNotMatch(holdAsk.text, /household/i);
+  assert.ok(!(holdAsk.actions ?? []).some((item) => item.label === "Use this"), "no Use this before K-1 or own-all");
+  assert.ok((holdAsk.actions ?? []).some((item) => item.label === "I own all of it"));
+
+  const owned = applyOwnAllEntity(hold.draft);
+  assert.equal(owned.pendingProposal?.field, "qualifying_income");
+  assert.equal(owned.pendingProposal?.value, "4392");
+  const ownedAsk = workspacePromptCopy("confirm-proposal", owned);
+  assert.match(ownedAsk.text, /Company ordinary is \$4,392/i);
+  assert.match(ownedAsk.text, /You own all of it/);
+  assert.ok((ownedAsk.actions ?? []).some((item) => item.label === "Use this"));
+  const ownedUsed = resolveProposal(owned, "accept");
+  assert.equal(ownedUsed.facts?.qualifying_income?.value, "4392");
 
   const proposed = applyExtractedFields(seSketch(), {
     extractClass: "tax_return",
     confidence: 0.94,
-    fields: {
-      ...extracted.fields,
-      ownership_percent: extracted.fields.ownership_percent || "50",
-    },
+    fields: extracted.fields,
   });
   assert.equal(proposed.draft.pendingProposal?.field, "qualifying_income");
-  assert.equal(proposed.draft.pendingProposal?.value, "4392");
+  assert.equal(proposed.draft.pendingProposal?.value, "2196");
   assert.equal(proposed.draft.pendingProposal?.note, SUGGESTED_INCOME_NOTE);
   assert.ok(!proposed.draft.facts?.qualifying_income, "File empty until Use this");
   assert.ok(!proposed.draft.facts?.entity_ordinary_income);
   assert.ok(!proposed.draft.facts?.employer_name);
   assert.ok(!proposed.draft.facts?.ein);
   assert.ok(!proposed.draft.facts?.ssn);
-  assert.ok(!proposed.draft.facts?.owner_share_monthly, "per-owner extra is not a File write");
+  assert.ok(!proposed.draft.facts?.company_ordinary, "company ordinary extra is not a File write");
   assert.doesNotMatch(JSON.stringify(proposed.draft.facts ?? {}), /92-30339499|566-79-1312/);
   assert.ok(
-    !previewFacts(proposed.draft).some((fact) => fact.id === "qualifying" && /4,392|4392/.test(fact.value)),
+    !previewFacts(proposed.draft).some((fact) => fact.id === "qualifying" && /2,196|2196|4,392|4392/.test(fact.value)),
     "qualifying File line stays empty until Use this",
   );
 
   const ask = workspacePromptCopy("confirm-proposal", proposed.draft);
-  assert.match(ask.text, /\$4,392/);
   assert.match(ask.text, /Form 1120-S/);
   assert.match(ask.text, /HO & SOY INC/);
-  assert.match(ask.text, /household ordinary/i);
-  assert.match(ask.text, /\$2,196/);
-  assert.match(ask.text, /per 50% owner/i);
+  assert.match(ask.text, /Company ordinary is \$4,392/i);
+  assert.match(ask.text, /K-1 Box 1 is \$2,196/i);
   assert.match(ask.text, /\$96,000/);
   assert.match(ask.text, /wages, not inside ordinary/i);
   assert.match(ask.text, /Suggested qualifying income · not underwritten/);
+  assert.doesNotMatch(ask.text, /household/i);
   assert.doesNotMatch(ask.text, /EXPRESS OR IMPLIED|INCLUDING BUT NOT LIMITED/i);
   assert.doesNotMatch(ask.text, /92-30339499|566-79-1312/);
   assert.ok((ask.actions ?? []).some((item) => item.label === "Use this"));
   assert.ok((ask.actions ?? []).some((item) => item.label === "Change"));
 
   const used = resolveProposal(proposed.draft, "accept");
-  assert.equal(used.facts?.qualifying_income?.value, "4392");
+  assert.equal(used.facts?.qualifying_income?.value, "2196");
   assert.equal(used.facts?.qualifying_income?.confirmed, true);
 
   const leftoverThread: FoxMessage[] = sealStoredFoxThread([
@@ -350,7 +405,7 @@ async function main() {
   const skipBusiness = skipCurrentInvite(skip1040);
   assert.ok((skipBusiness.skippedClasses ?? []).includes("tax_return"));
 
-  console.log("assert-1120s-entity-return: HO & SOY INC line 22 $52,702 · household $4,392 · $2,196 per 50% owner");
+  console.log("assert-1120s-entity-return: HO & SOY INC company ordinary $4,392 · K-1 Box 1 $2,196 Use this");
 }
 
 main().catch((error) => {

@@ -176,7 +176,13 @@ export type QualifyingIncomeResult = {
   entityName?: string;
   officerCompensation?: string;
   ownerShareMonthly?: number;
+  companyOrdinaryMonthly?: number;
+  needsOwnership?: boolean;
 };
+
+export const COMPANY_ORDINARY_FIELD = "company_ordinary";
+export const COMPANY_ORDINARY_METHOD = "company ordinary / 12";
+export const K1_BOX1_METHOD = "K-1 Box 1 / 12";
 
 const ENTITY_KINDS = new Set<TaxReturnKind>(["k1", "1065", "1120s"]);
 
@@ -495,6 +501,17 @@ function entityHas1084Addbacks(row: TaxYearCashflow) {
   );
 }
 
+function ownsAll1120s(row: TaxYearCashflow) {
+  return parseExtractMoney(row.ownership_percent) === 100;
+}
+
+function companyOrdinaryMonthlyFromRow(row: TaxYearCashflow): number | null {
+  if (row.return_kind !== "1120s") return null;
+  const ordinary = parseExtractMoney(row.entity_ordinary_income);
+  if (ordinary == null) return null;
+  return monthlyFromAnnual(ordinary);
+}
+
 function entityRowMonthly(row: TaxYearCashflow): number | null {
   const ordinary = parseExtractMoney(row.entity_ordinary_income);
   if (ordinary == null) return null;
@@ -511,7 +528,10 @@ function entityRowMonthly(row: TaxYearCashflow): number | null {
       ownershipPercent: ownership,
     });
   }
-  if (row.return_kind === "1120s") return monthlyFromAnnual(ordinary);
+  if (row.return_kind === "1120s") {
+    if (!ownsAll1120s(row)) return null;
+    return monthlyFromAnnual(ordinary);
+  }
   if (ownership === 50) return monthlyFromAnnual(ordinary * 0.5);
   return monthlyFromAnnual(ordinary);
 }
@@ -534,9 +554,7 @@ function entityMonthly(years: TaxYearCashflow[]): { monthly: number; row: TaxYea
 function entityResultFromRow(row: TaxYearCashflow, monthly: number): QualifyingIncomeResult {
   const ownership = parseExtractMoney(row.ownership_percent);
   const household = !entityHas1084Addbacks(row);
-  const ordinary = parseExtractMoney(row.entity_ordinary_income);
-  const ownerShareMonthly =
-    household && ownership === 50 && ordinary != null ? monthlyFromAnnual(ordinary * 0.5) : undefined;
+  const companyOrdinaryMonthly = companyOrdinaryMonthlyFromRow(row) ?? undefined;
   return {
     monthly,
     basis: "entity",
@@ -544,13 +562,14 @@ function entityResultFromRow(row: TaxYearCashflow, monthly: number): QualifyingI
       kind: row.return_kind,
       ownershipPercent: ownership,
       guaranteedPayments: parseExtractMoney(row.entity_guaranteed_payments),
-      householdOrdinary: household && (row.return_kind === "1120s" || ownership !== 50),
+      companyOrdinary: household && row.return_kind === "1120s",
+      householdOrdinary: household && row.return_kind !== "1120s" && ownership !== 50,
       ownerShare: household && ownership === 50 && row.return_kind !== "1120s",
     }),
     parts: { k1: monthly },
     entityName: String(row.entity_name ?? "").trim() || undefined,
     officerCompensation: String(row.officer_compensation ?? "").trim() || undefined,
-    ownerShareMonthly,
+    companyOrdinaryMonthly,
   };
 }
 
@@ -1095,24 +1114,37 @@ export function monthlyQualifyingFromExtract(
   if (incomingEntity != null && incoming) {
     return maybeCombine(draft, entityResultFromRow(incoming, incomingEntity), years, fields);
   }
-  const incomingK1Ordinary =
-    incoming && !incoming.entity_ordinary_income
-      ? parseExtractMoney(incoming.k1_ordinary_income)
-      : null;
+  const incomingK1Ordinary = incoming ? parseExtractMoney(incoming.k1_ordinary_income) : null;
   if (incomingK1Ordinary != null) {
     const monthly = k1OrdinaryMonthly(incomingK1Ordinary);
+    const companyOrdinaryMonthly = incoming ? companyOrdinaryMonthlyFromRow(incoming) : null;
     return maybeCombine(
       draft,
       {
         monthly,
         basis: "k1",
-        methodNote: "ordinary / 12",
+        methodNote: companyOrdinaryMonthly != null ? K1_BOX1_METHOD : "ordinary / 12",
         caution: K1_ORDINARY_NOTE,
         parts: { k1: monthly },
+        entityName: String(incoming?.entity_name ?? "").trim() || undefined,
+        officerCompensation: String(incoming?.officer_compensation ?? "").trim() || undefined,
+        companyOrdinaryMonthly: companyOrdinaryMonthly ?? undefined,
       },
       years,
       fields,
     );
+  }
+  const companyHold = incoming ? companyOrdinaryMonthlyFromRow(incoming) : null;
+  if (companyHold != null && incoming) {
+    return {
+      monthly: 0,
+      basis: "entity",
+      methodNote: COMPANY_ORDINARY_METHOD,
+      needsOwnership: true,
+      companyOrdinaryMonthly: companyHold,
+      entityName: String(incoming.entity_name ?? "").trim() || undefined,
+      officerCompensation: String(incoming.officer_compensation ?? "").trim() || undefined,
+    };
   }
   const scheduleC = suggestScheduleCIncome(scheduleCYearsFromCashflows(years));
   if (scheduleC != null) {
@@ -1143,18 +1175,36 @@ export function monthlyQualifyingFromExtract(
   }
   const entity = k1Monthly(years);
   if (entity != null) {
+    const companyRow = [...years].reverse().find((row) => companyOrdinaryMonthlyFromRow(row) != null);
+    const companyOrdinaryMonthly = companyRow ? companyOrdinaryMonthlyFromRow(companyRow) : null;
     return maybeCombine(
       draft,
       {
         monthly: entity,
         basis: "k1",
-        methodNote: "ordinary / 12",
+        methodNote: companyOrdinaryMonthly != null ? K1_BOX1_METHOD : "ordinary / 12",
         caution: K1_ORDINARY_NOTE,
         parts: { k1: entity },
+        entityName: String(companyRow?.entity_name ?? "").trim() || undefined,
+        officerCompensation: String(companyRow?.officer_compensation ?? "").trim() || undefined,
+        companyOrdinaryMonthly: companyOrdinaryMonthly ?? undefined,
       },
       years,
       fields,
     );
+  }
+  const companyRow = [...years].reverse().find((row) => companyOrdinaryMonthlyFromRow(row) != null);
+  const fileCompany = companyRow ? companyOrdinaryMonthlyFromRow(companyRow) : null;
+  if (fileCompany != null && companyRow) {
+    return {
+      monthly: 0,
+      basis: "entity",
+      methodNote: COMPANY_ORDINARY_METHOD,
+      needsOwnership: true,
+      companyOrdinaryMonthly: fileCompany,
+      entityName: String(companyRow.entity_name ?? "").trim() || undefined,
+      officerCompensation: String(companyRow.officer_compensation ?? "").trim() || undefined,
+    };
   }
   const fileRental = scheduleEMonthly(years);
   if (fileRental != null) {
@@ -1899,7 +1949,7 @@ export function incomeLedgerAskCopy(row: IncomeLedgerRow): string {
   if (row.kind === "entity_1065" || row.kind === "entity_1120s") {
     const form = row.kind === "entity_1120s" ? "Form 1120-S" : "Form 1065";
     const named = row.businessName ? ` for ${row.businessName}` : "";
-    const share = row.kind === "entity_1120s" ? " household ordinary" : "";
+    const share = row.kind === "entity_1120s" ? " company ordinary" : "";
     return `This return shows a ${form}${named}. I’m suggesting ${signed} a month${share}. ${ledgerProposalNote(row.kind)}. Use this?`;
   }
   return `I’m suggesting ${signed} a month. ${ledgerProposalNote(row.kind)}. Use this?`;
@@ -1935,8 +1985,67 @@ export function qualifyingIncomeProposal(computed: QualifyingIncomeResult): Fact
       ...(computed.ownerShareMonthly
         ? [{ field: "owner_share_monthly", value: String(computed.ownerShareMonthly), label: "per 50% owner" }]
         : []),
+      ...(computed.companyOrdinaryMonthly
+        ? [{ field: COMPANY_ORDINARY_FIELD, value: String(computed.companyOrdinaryMonthly), label: "company ordinary" }]
+        : []),
     ],
   };
+}
+
+export function isCompanyOrdinaryHold(proposal?: FactProposal | null) {
+  return proposal?.field === COMPANY_ORDINARY_FIELD;
+}
+
+export function companyOrdinaryProposal(computed: QualifyingIncomeResult): FactProposal {
+  return {
+    field: COMPANY_ORDINARY_FIELD,
+    value: String(computed.companyOrdinaryMonthly ?? computed.monthly),
+    label: "company ordinary",
+    kind: "computed",
+    methodNote: COMPANY_ORDINARY_METHOD,
+    extras: [
+      ...(computed.entityName
+        ? [{ field: "entity_name", value: computed.entityName, label: "entity" }]
+        : []),
+      ...(computed.officerCompensation
+        ? [{ field: "officer_compensation", value: computed.officerCompensation, label: "officer wages" }]
+        : []),
+      ...(computed.companyOrdinaryMonthly
+        ? [{ field: COMPANY_ORDINARY_FIELD, value: String(computed.companyOrdinaryMonthly), label: "company ordinary" }]
+        : []),
+    ],
+  };
+}
+
+export function withCompanyOrdinaryHold(
+  draft: FoxIntakeDraft,
+  computed: QualifyingIncomeResult,
+): FoxIntakeDraft {
+  return {
+    ...draft,
+    pendingConflict: null,
+    pendingProposal: companyOrdinaryProposal(computed),
+  };
+}
+
+export function applyOwnAllEntity(draft: FoxIntakeDraft): FoxIntakeDraft {
+  if (!isCompanyOrdinaryHold(draft.pendingProposal)) return draft;
+  const years = readTaxCashflows(draft).map((row) =>
+    row.return_kind === "1120s" && String(row.entity_ordinary_income ?? "").trim()
+      ? { ...row, ownership_percent: "100" }
+      : row,
+  );
+  const next = writeTaxCashflows({ ...draft, pendingProposal: null }, years);
+  const row = [...years].reverse().find((item) => item.return_kind === "1120s" && item.entity_ordinary_income);
+  const computed = monthlyQualifyingFromExtract(next, "tax_return", {
+    tax_year: String(row?.tax_year ?? ""),
+    return_kind: "1120s",
+    entity_ordinary_income: String(row?.entity_ordinary_income ?? ""),
+    officer_compensation: String(row?.officer_compensation ?? ""),
+    entity_name: String(row?.entity_name ?? ""),
+    ownership_percent: "100",
+  });
+  return withQualifyingIncomeProposal(next, computed, "tax_return");
 }
 
 function existingMonthlyIncome(draft: FoxIntakeDraft): { value: string; via: "qualifying_income" | "income" } | null {
@@ -1961,6 +2070,7 @@ export function isScheduleECashFlowProposal(proposal?: FactProposal | null): boo
 }
 
 export function isEntityCashFlowProposal(proposal?: FactProposal | null): boolean {
+  if (isCompanyOrdinaryHold(proposal)) return true;
   if (!proposal || proposal.field !== QUALIFYING_INCOME_FIELD) return false;
   const method = proposal.methodNote ?? "";
   return (
@@ -1968,6 +2078,8 @@ export function isEntityCashFlowProposal(proposal?: FactProposal | null): boolea
     /ordinary \+ dep/i.test(method) ||
     /GP to Hale/i.test(method) ||
     /household ordinary/i.test(method) ||
+    /company ordinary/i.test(method) ||
+    /K-1 Box 1/i.test(method) ||
     /per 50% owner/i.test(method)
   );
 }
@@ -2003,6 +2115,9 @@ export function maybeProposeQualifyingFromTaxFile(draft: FoxIntakeDraft): FoxInt
   }
   if (confirmedWageQi(draft)) return promoteIncomeLedger(draft);
   const computed = monthlyQualifyingFromExtract(draft, "tax_return", {});
+  if (computed?.needsOwnership) {
+    return withCompanyOrdinaryHold(draft, computed);
+  }
   if (!computed || computed.needsFrequency || computed.needsBothReason || computed.monthly === 0) {
     return draft;
   }
@@ -2075,7 +2190,7 @@ export function withQualifyingIncomeProposal(
   }
   if (existing) return draft;
   if (draft.pendingProposal && draft.pendingProposal.field !== QUALIFYING_INCOME_FIELD) {
-    return draft;
+    if (!isCompanyOrdinaryHold(draft.pendingProposal)) return draft;
   }
   return {
     ...draft,
@@ -2097,6 +2212,9 @@ export function applyQualifyingIncomeFromExtract(
   }
   if (extractClass === "paystub" || extractClass === "w2") {
     next = writeWageJobs(next, mergeWageJobs(readWageJobs(next), jobFromExtract(fields)));
+  }
+  if (computed?.needsOwnership) {
+    return withCompanyOrdinaryHold(next, computed);
   }
   if (computed?.needsFrequency) {
     if (next.pendingConflict) return next;

@@ -6,7 +6,7 @@ No `Ho Soy Inc 2024 Tax returns 1120S.pdf` bytes in git, walker fixtures, or ony
 
 ## ACCEPT (only READY)
 
-Founder paperclips that same real PDF on clean `/start` ACR. Filename appears. Fox answers from the page. Use this writes.
+Founder paperclips that same real PDF on clean `/start` ACR. Filename appears. Fox answers from the page. Use this writes the **borrower** number.
 
 **That shot is the only READY.**
 
@@ -16,6 +16,8 @@ Cover / transmittal → **Form 8879-CORP** (≈p5) → **Form 1120-S** (≈p7) �
 
 Same all-pages-by-header rule. **8879 ≠ entity return.** 8879-CORP is not a paystub and not Form 1120-S.
 
+Pre-drop ask stays **business return**. After classify, name **1120-S**.
+
 ## Gold numbers (locked)
 
 | Printed | Value |
@@ -23,23 +25,29 @@ Same all-pages-by-header rule. **8879 ≠ entity return.** 8879-CORP is not a pa
 | Form | **1120-S / entity return** — not a paystub, not a 1040, not 8879-CORP |
 | Name of corporation | **HO & SOY INC** |
 | EIN | may be on the page — **do not paint SSN/EIN into File** |
-| 1120-S page 1 **line 22** ordinary | **$52,702** |
+| 1120-S page 1 **line 22** ordinary | **$52,702** — **company ordinary** |
 | 1120-S page 1 **line 21** | Other deductions — **not ordinary** |
 | 1120-S page 1 **line 6** / 8879 total income | **$360,572** — not ordinary |
 | Schedule K line 1 | **$52,702** (equals page 1 line 22) |
 | Line 7 Compensation of officers | **$96,000** — wages, **not** inside ordinary |
-| Two 50% K-1s, each box 1 | **$26,351** |
-| Household ordinary | **$4,392 / mo** (`52702 / 12`) |
-| Per 50% owner | **$2,196 / mo** (`26351 / 12`) |
+| Two 50% K-1s, each Box 1 | **$26,351** |
+| Company ordinary | **$4,392 / mo** (`52702 / 12`) — not this borrower’s QI |
+| Per owner from K-1 Box 1 | **$2,196 / mo** (`26351 / 12`) |
 
-Card must **name which**: household **$4,392** vs per 50% owner **$2,196**. Use this on this packet is household ordinary **$4,392**.
+Ownership is **not** on the 1120-S header. Do not write company ordinary as this borrower’s QI.
+
+Borrower’s number waits for **K-1 Box 1**, or they confirm they own all of it. **Use this** writes only after that.
+
+On this packet the K-1s are present: Use this is **$2,196**. Card names **company ordinary $4,392** and **K-1 Box 1 $2,196**.
+
+Founder wording may say “line 21” for company ordinary. On this packet line 21 is other deductions — keep **$52,702** from line 22 / Schedule K line 1, labeled **company ordinary**.
 
 ## Guards
 
 - Disclaimer / PIN / 8879 / “express or implied” / “including but not limited” / Paperwork Reduction footer is never Employer.
 - Unreadable invents nothing.
 - File empty on qualifying income until Use this.
-- Skip-1040 on self-employed still asks for the **business return** (Form 1120-S or the entity return). Do not jump to Looks right.
+- Skip-1040 on self-employed still asks for the **business return**. After classify, name **1120-S**. Do not jump to Looks right.
 
 ## Harbor 23 / 24 — smoke only
 
@@ -55,6 +63,8 @@ Harbor worksheets may still say “line 21 ordinary.” On this real 1120-S, lin
 - Harbor-only
 - Fixture path founder cannot see
 - Hidden PNG / local extract stand-in committed as the founder PDF
+- Card that says **household** for company ordinary
+- Use this that writes **$4,392** as this borrower’s QI before K-1 or own-all
 
 ## Out of scope
 

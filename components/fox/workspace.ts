@@ -280,6 +280,8 @@ import {
   wageThreadOpen,
   writeWageBox5,
   writeTypedStubMonthly,
+  applyOwnAllEntity,
+  isCompanyOrdinaryHold,
   isEntityCashFlowProposal,
   isSameBusinessWageEntityProposal,
   isScheduleECashFlowProposal,
@@ -1868,7 +1870,7 @@ function entityReactionAsk(draft: FoxIntakeDraft, proposal: NonNullable<FoxIntak
   const shown = displayFactValue(proposal.field, proposal.value);
   const year = landedTaxYear(draft);
   const method = proposal.methodNote ?? "";
-  const form = /1120-?s|ordinary \+ dep|household ordinary|per 50% owner/i.test(method) && !/8825|GP to Hale/i.test(method)
+  const form = /1120-?s|ordinary \+ dep|household ordinary|company ordinary|K-1 Box 1|per 50% owner/i.test(method) && !/8825|GP to Hale/i.test(method)
     ? "Form 1120-S"
     : "Form 1065";
   const entity =
@@ -1877,28 +1879,53 @@ function entityReactionAsk(draft: FoxIntakeDraft, proposal: NonNullable<FoxIntak
     "";
   const named = entity ? ` for ${entity}` : "";
   const ack = year ? `Got the ${year} ${form}${named}.` : `Got the ${form}${named}.`;
-  const ownerShare = proposal.extras?.find((item) => item.field === "owner_share_monthly")?.value ?? "";
-  const ownerN = Number(String(ownerShare).replace(/[^\d.]/g, ""));
-  const ownerShown =
-    Number.isFinite(ownerN) && ownerN > 0 ? `$${Math.round(ownerN).toLocaleString("en-US")}` : "";
-  const share = /per 50% owner/i.test(method) && !/household ordinary/i.test(method)
-    ? "That’s per 50% owner."
-    : /household ordinary/i.test(method)
-      ? ownerShown
-        ? `That’s household ordinary. ${ownerShown} per 50% owner.`
-        : "That’s household ordinary."
-      : "";
+  const companyRaw =
+    proposal.extras?.find((item) => item.field === "company_ordinary")?.value ||
+    (/company ordinary/i.test(method) ? proposal.value : "");
+  const companyN = Number(String(companyRaw).replace(/[^\d.]/g, ""));
+  const companyShown =
+    Number.isFinite(companyN) && companyN > 0 ? `$${Math.round(companyN).toLocaleString("en-US")}` : "";
+  const companyLine = companyShown ? `Company ordinary is ${companyShown} a month.` : "";
   const officer = proposal.extras?.find((item) => item.field === "officer_compensation")?.value ?? "";
   const officerN = Number(String(officer).replace(/[^\d.]/g, ""));
   const officerLine =
     Number.isFinite(officerN) && officerN > 0
       ? `Officer wages $${Math.round(officerN).toLocaleString("en-US")} named as wages, not inside ordinary.`
       : "";
+  if (proposal.field === "company_ordinary") {
+    return {
+      text: [
+        ack,
+        companyLine,
+        officerLine,
+        "Ownership isn’t on this page — I need the K-1, or confirm you own all of it.",
+      ]
+        .filter(Boolean)
+        .join(" "),
+      actions: [
+        {
+          id: "own-all-entity",
+          label: "I own all of it",
+          event: "bubble",
+          capture: { field: "own-all-entity" },
+        },
+      ],
+    };
+  }
+  const share = /K-1 Box 1/i.test(method)
+    ? `Your K-1 Box 1 is ${shown} a month.`
+    : /company ordinary/i.test(method)
+      ? "You own all of it."
+      : /per 50% owner/i.test(method) && !/household ordinary/i.test(method)
+        ? "That’s per 50% owner."
+        : /household ordinary/i.test(method)
+          ? "That’s household ordinary."
+          : "";
   return {
     text: incomeSuggestSpeech({
       ack,
       monthly: shown,
-      story: [share, incomeStoryLine(draft, proposal), officerLine].filter(Boolean).join(" "),
+      story: [companyLine, share, incomeStoryLine(draft, proposal), officerLine].filter(Boolean).join(" "),
       note: SUGGESTED_INCOME_NOTE,
     }),
     actions: incomeConfirmActions(),
@@ -2393,6 +2420,9 @@ function liveProposalAsk(
       text: rentalConfirmAsk(proposal.methodNote, Number(proposal.value), complete),
       actions: incomeConfirmActions(),
     };
+  }
+  if (isCompanyOrdinaryHold(proposal) || isEntityCashFlowProposal(proposal) && proposal.field === "company_ordinary") {
+    return entityReactionAsk(draft, proposal);
   }
   if (proposal.field === QUALIFYING_INCOME_FIELD) {
     if (isCoverLineProposal(proposal)) {
@@ -3488,6 +3518,7 @@ export function previewRateFact(draft: FoxIntakeDraft): PreviewFact | null {
 export function isQualifyingIncomeConfirmPending(draft: FoxIntakeDraft): boolean {
   return (
     draft.pendingProposal?.field === QUALIFYING_INCOME_FIELD ||
+    isCompanyOrdinaryHold(draft.pendingProposal) ||
     isIncomeLedgerProposal(draft.pendingProposal)
   );
 }
@@ -5984,6 +6015,7 @@ function draftAfterCaptureBody(draft: FoxIntakeDraft, capture: Capture): FoxInta
   if (capture.field === "raiseWhen") {
     return draft.awaitingRaiseYtdFar ? applyRaiseYtdFarAnswer(next, capture.value) : applyRaiseWhenAnswer(next, capture.value);
   }
+  if (capture.field === "own-all-entity") return applyOwnAllEntity(next);
   if (capture.field === "accept-proposal") return resolveProposal(next, "accept");
   if (capture.field === "change-proposal") return changePendingProposal(next);
   if (capture.field === "decline-proposal") return resolveProposal(next, "decline");
@@ -6761,6 +6793,13 @@ export function workspaceReply(
   }
 
   if (draft.pendingProposal || prompt === "confirm-proposal") {
+    if (isCompanyOrdinaryHold(draft.pendingProposal) && /own all of it/i.test(lower)) {
+      const nextDraft = applyOwnAllEntity(draft);
+      return {
+        ...workspacePromptCopy("confirm-proposal", nextDraft),
+        capture: { field: "own-all-entity" },
+      };
+    }
     if (isSubjectAddressConfirmPending(draft) && isSkipPropertyAddressText(q)) {
       const nextDraft = skipQuoteAddress(draft);
       return {

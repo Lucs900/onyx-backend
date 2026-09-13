@@ -691,6 +691,7 @@ export type Capture =
   | { field: "skip-term" }
   | { field: "accept-proposal" }
   | { field: "change-proposal" }
+  | { field: "own-all-entity" }
   | { field: "decline-proposal" }
   | { field: "couponChoice"; value: "this" | "lower" | "nocost" | "skip" }
   | { field: "retry-rateflow" }

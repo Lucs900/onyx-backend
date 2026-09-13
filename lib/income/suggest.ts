@@ -258,10 +258,12 @@ export function entityCashFlowMethodNote(input: {
   ownershipPercent?: number | null;
   guaranteedPayments?: number | null;
   householdOrdinary?: boolean;
+  companyOrdinary?: boolean;
   ownerShare?: boolean;
 }): string {
   const kind = String(input.kind ?? "").toLowerCase();
   if (input.ownerShare) return "per 50% owner · household ordinary / 2";
+  if (input.companyOrdinary) return "company ordinary / 12";
   if (input.householdOrdinary) return "household ordinary / 12";
   if (kind === "1120s" || kind === "1120-s") return "ordinary + dep − T&E / 12";
   const pct = input.ownershipPercent != null && input.ownershipPercent > 0 ? `${input.ownershipPercent}%` : "ownership";

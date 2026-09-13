@@ -457,6 +457,7 @@ export function shouldSpeakPendingConfirm(draft: FoxIntakeDraft) {
     // Stub confirm stays spoken until Use this or Skip. Do not jump to ID.
     return true;
   }
+  if (proposal.field === "company_ordinary") return true;
   if (proposal.field === QUALIFYING_INCOME_FIELD) {
     if (isCoverLineProposal(proposal)) {
       const fileValue = factValue(draft, QUALIFYING_INCOME_FIELD) || factValue(draft, SE_MONTHLY_FIELD);
@@ -1603,6 +1604,9 @@ export function resolveProposal(
   if (proposal.field === "hunt_rentals") {
     if (winner === "accept") return acceptHuntRentals(draft);
     return { ...draft, pendingProposal: null };
+  }
+  if (proposal.field === "company_ordinary") {
+    return { ...draft, pendingProposal: winner === "accept" ? draft.pendingProposal : null };
   }
   if (winner === "decline") {
     if (proposal.field === ESTIMATED_HOUSING_FIELD) {
