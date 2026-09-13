@@ -68,7 +68,7 @@ import {
 import { maybeProposeHunt } from "./hunt";
 import { bankEndingBalanceAmount } from "@/lib/docs/bankBalance";
 import { safeAccountLast4 } from "@/lib/docs/bankLast4";
-import { junkEmployerName } from "@/lib/docs/printedSample";
+import { junkEmployerName } from "@/lib/docs/junkEmployer";
 import {
   applyRentalIncomeFromExtract,
   draftHasLease,

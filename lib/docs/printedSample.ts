@@ -12,7 +12,10 @@ import {
   isDateFragmentAmount,
 } from "@/lib/docs/bankBalance";
 import { isTransferCounterpartyLine, safeAccountLast4, statementAccountLast4 } from "@/lib/docs/bankLast4";
+import { junkEmployerName } from "@/lib/docs/junkEmployer";
 import { readPdfTextLayer } from "@/lib/docs/pdfText";
+
+export { junkEmployerName };
 
 export type PrintedSample = {
   extractClass: ExtractClass;
@@ -502,22 +505,6 @@ export function payFrequencyFromPrintedText(text: string): string {
   if (/weekly/.test(compact)) return "weekly";
   if (/month/.test(compact)) return "monthly";
   return "";
-}
-
-/** Employer from THIS blob — labeled line or Inc/LLC/Corp suffix. Not a filename map. */
-export function junkEmployerName(name: string) {
-  const raw = String(name ?? "").trim();
-  if (!raw) return true;
-  if (
-    /express or implied|including but not limited|without warranty|warranty of|pin\b|form\s*8879|signature authorization|irs e-?file|under penalties of perjury|does not constitute|for disclosure|privacy act|paperwork reduction/i.test(
-      raw,
-    )
-  ) {
-    return true;
-  }
-  return /^(?:use|only|name|address|ein|control|dept|corp|employer|tax statement|including|express|implied|limited|warranty|disclaimer|pin)\b/i.test(
-    raw,
-  );
 }
 
 function employerFromStackedTokens(lines: string[]): string {
