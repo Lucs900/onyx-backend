@@ -33,6 +33,7 @@ import { canLooksRight, resolveProposal } from "../components/fox/completeness";
 import { emptyDraft } from "../components/fox/store";
 import { leftoverUseThisOnOlderTurns, sealStoredFoxThread } from "../components/fox/liveCoupon";
 import { nextFoxAsk, previewFacts, workspacePromptCopy } from "../components/fox/workspace";
+import { OTHER_K1_LOAN_ASK } from "../components/fox/household";
 import { applyOwnAllEntity, monthlyQualifyingFromExtract } from "../components/fox/qualifyingIncome";
 import { SUGGESTED_INCOME_NOTE } from "../lib/income/suggest";
 import type { FoxIntakeDraft, FoxMessage } from "../components/fox/types";
@@ -379,6 +380,7 @@ async function main() {
   const ownedUsed = resolveProposal(owned, "accept");
   assert.equal(ownedUsed.facts?.qualifying_income?.value, "4392");
   assert.ok((ownedUsed.employmentHistory ?? []).some((row) => /HO & SOY INC/i.test(row.label ?? "")));
+  assert.doesNotMatch(nextFoxAsk(ownedUsed).text, /other K-1|on this loan/i, "own-all is not the two-K-1 ask");
 
   const proposed = applyExtractedFields(seSketch(), {
     extractClass: "tax_return",
@@ -434,11 +436,15 @@ async function main() {
   );
   assert.equal(used.incomeType.value, "self-employed");
   assert.ok(!stillUsefulLabels(used).includes("K-1 distributions"));
-  assert.ok(!stillUsefulLabels(used).some((label) => /prior-year|Form 1040|Harbor Studio K-1|Bay Street K-1|K-1$/i.test(label)));
-  assert.doesNotMatch(stillUsefulAskCopy(used), /K-1 distributions|Form 1040|other K-1|on this loan/i);
-  assert.doesNotMatch(nextFoxAsk(used).text, /Form 1040|other K-1|on this loan|Harbor Studio K-1|Bay Street K-1/i);
+  assert.ok(!stillUsefulLabels(used).some((label) => /prior-year|Form 1040|Harbor Studio K-1|Bay Street K-1/i.test(label)));
+  assert.doesNotMatch(stillUsefulAskCopy(used), /K-1 distributions|Form 1040/i);
+  assert.equal(nextFoxAsk(used).text, OTHER_K1_LOAN_ASK);
+  assert.match(nextFoxAsk(used).text, /other K-1/i);
+  assert.match(nextFoxAsk(used).text, /is that person on this loan/i);
+  assert.doesNotMatch(nextFoxAsk(used).text, /Form 1040|Harbor Studio K-1|Bay Street K-1/i);
   assert.notEqual(nextDocInvite(used), "tax_return");
   assert.notEqual(nextDocInvite(used), "prior_year_return");
+  assert.doesNotMatch(nextFoxAsk(proposed.draft).text, /other K-1|on this loan/i, "QI card first");
 
   const leftoverThread: FoxMessage[] = sealStoredFoxThread([
     { id: "card", role: "fox", text: ask.text, actions: ask.actions },
@@ -465,15 +471,12 @@ async function main() {
   const afterSkipUsed = resolveProposal(afterSkipDrop.draft, "accept");
   assert.equal(afterSkipUsed.facts?.qualifying_income?.value, "2196");
   assert.ok((afterSkipUsed.employmentHistory ?? []).some((row) => /HO & SOY INC/i.test(row.label ?? "")));
-  assert.doesNotMatch(nextFoxAsk(afterSkipUsed).text, /Form 1040|other K-1|on this loan/i);
+  assert.equal(nextFoxAsk(afterSkipUsed).text, OTHER_K1_LOAN_ASK);
+  assert.doesNotMatch(nextFoxAsk(afterSkipUsed).text, /Form 1040/i);
   assert.notEqual(nextDocInvite(afterSkipUsed), "tax_return");
   assert.notEqual(nextDocInvite(afterSkipUsed), "prior_year_return");
   assert.ok(!stillUsefulLabels(afterSkipUsed).includes("K-1 distributions"));
   assert.ok(!stillUsefulLabels(afterSkipUsed).some((label) => /Form 1040|prior-year/i.test(label)));
-  assert.doesNotMatch(
-    `${nextFoxAsk(afterSkipUsed).text} ${stillUsefulAskCopy(afterSkipUsed)}`,
-    /other K-1|is that person on this loan|Harbor Studio K-1|Bay Street K-1/i,
-  );
 
   const twoK1Names = applyExtractedFields(withEntityDoc(skip1040), {
     extractClass: "tax_return",
@@ -486,10 +489,10 @@ async function main() {
   });
   const twoK1Used = resolveProposal(twoK1Names.draft, "accept");
   assert.equal(twoK1Used.facts?.qualifying_income?.value, "2196");
-  assert.doesNotMatch(nextFoxAsk(twoK1Used).text, /other K-1|on this loan|HO K-1|SOY K-1/i);
-  assert.ok(!stillUsefulLabels(twoK1Used).some((label) => /HO K-1|SOY K-1|other K-1/i.test(label)));
+  assert.equal(nextFoxAsk(twoK1Used).text, OTHER_K1_LOAN_ASK);
+  assert.ok(!stillUsefulLabels(twoK1Used).some((label) => /HO K-1|SOY K-1/i.test(label)));
 
-  console.log("assert-1120s-entity-return: HO & SOY INC $2,196 · Employment · Skip 1040 · no other-K-1");
+  console.log("assert-1120s-entity-return: HO & SOY INC $2,196 · Employment · Skip 1040 · other K-1 ask");
 }
 
 main().catch((error) => {

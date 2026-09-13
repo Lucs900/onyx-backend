@@ -243,6 +243,7 @@ import {
   decliningIncomeCaution,
   formatIncomeMoney,
   hasK1Ordinary,
+  otherK1LoanAskNeeded,
   INCOME_CAUTION_FIELD,
   K1_ORDINARY_NOTE,
   monthlyFromAnnual,
@@ -502,9 +503,12 @@ import {
   isHouseholdConfirmPending,
   isSkipHouseholdText,
   isStatedHousehold,
+  otherK1LoanAskCopy,
   parseHousehold,
   proposeStatedHousehold,
   skipHousehold,
+  skipOtherK1Loan,
+  writeOtherK1Loan,
   writeStatedHousehold,
 } from "./household";
 import {
@@ -3717,6 +3721,7 @@ export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
   ) {
     return "confirm-proposal";
   }
+  if (otherK1LoanAskNeeded(draft)) return "other-k1-loan";
   const notepadEdit = notepadEditPrompt(draft);
   if (notepadEdit) return notepadEdit;
   if (isFundsPairProposal(draft.pendingProposal)) return "confirm-proposal";
@@ -4100,6 +4105,9 @@ function workspaceAskCopy(
   }
   if (prompt === "household") {
     return householdAskCopy(draft);
+  }
+  if (prompt === "other-k1-loan") {
+    return otherK1LoanAskCopy();
   }
   if (prompt === "coborrower-name") {
     return coborrowerNameAskCopy(draft);
@@ -5083,6 +5091,9 @@ export function editPromptFromCapture(capture?: Capture): FoxPrompt | undefined 
   ) {
     return "household";
   }
+  if (capture.field === "other-k1-loan" || capture.field === "skip-other-k1-loan") {
+    return "other-k1-loan";
+  }
   if (capture.field === "skip-citizenship" || capture.field === "citizenship") {
     return "citizenship";
   }
@@ -5343,6 +5354,12 @@ export function workspaceUpdateCopy(capture: Capture, draft: FoxIntakeDraft) {
   }
   if (capture.field === "skip-household") return "Updated. Household left blank.";
   if (capture.field === "propose-household") return "Updated.";
+  if (capture.field === "skip-other-k1-loan") return "Updated. Other K-1 left blank.";
+  if (capture.field === "other-k1-loan") {
+    return capture.value === "yes"
+      ? "Updated. The other K-1 person is on this loan."
+      : "Updated. The other K-1 person is not on this loan.";
+  }
   if (capture.field === "statedHousehold") {
     return isStatedHousehold(capture.value)
       ? `Updated household to ${householdLabel(capture.value)}.`
@@ -5888,6 +5905,11 @@ function draftAfterCaptureBody(draft: FoxIntakeDraft, capture: Capture): FoxInta
   if (capture.field === "statedHousehold" && isStatedHousehold(capture.value)) {
     return writeStatedHousehold(next, capture.value);
   }
+  if (capture.field === "other-k1-loan") {
+    if (capture.value !== "yes" && capture.value !== "no") return next;
+    return writeOtherK1Loan(next, capture.value === "yes");
+  }
+  if (capture.field === "skip-other-k1-loan") return skipOtherK1Loan(next);
   if (capture.field === "skip-coborrower-name") return skipCoborrowerName(next);
   if (capture.field === "propose-coborrower-name") {
     const name = parseCoborrowerName(capture.value) ?? capture.value.trim();
@@ -7787,6 +7809,23 @@ export function workspaceReply(
     return {
       ...nextFoxAsk(nextDraft),
       capture: { field: "statedHousehold", value },
+    };
+  }
+
+  if (prompt === "other-k1-loan") {
+    if (isSkipHouseholdText(q)) {
+      const nextDraft = skipOtherK1Loan(draft);
+      return {
+        ...nextFoxAsk(nextDraft),
+        capture: { field: "skip-other-k1-loan" },
+      };
+    }
+    const value = parseHousehold(q, { allowBare: true });
+    if (!value) return answerThenRestore(q, draft);
+    const nextDraft = writeOtherK1Loan(draft, value === "with_someone");
+    return {
+      ...nextFoxAsk(nextDraft),
+      capture: { field: "other-k1-loan", value: value === "with_someone" ? "yes" : "no" },
     };
   }
 

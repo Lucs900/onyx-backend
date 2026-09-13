@@ -378,6 +378,8 @@ export type FoxIntakeDraft = {
   declarationTimingAsked?: boolean;
   statedHousehold?: "alone" | "with_someone";
   householdAsked?: boolean;
+  /** Two 50% K-1s — asked whether the other K-1 person is on this loan. */
+  otherK1LoanAsked?: boolean;
   coborrowerName?: string;
   coborrowerNameAsked?: boolean;
   workingOnCoborrower?: boolean;
@@ -567,6 +569,7 @@ export type FoxPrompt =
   | "declarations"
   | "declaration-timing"
   | "household"
+  | "other-k1-loan"
   | "coborrower-name"
   | "borrower-name"
   | "other-reo"
@@ -644,6 +647,8 @@ export type Capture =
   | { field: "skip-household" }
   | { field: "propose-household"; value: string }
   | { field: "statedHousehold"; value: string }
+  | { field: "other-k1-loan"; value: string }
+  | { field: "skip-other-k1-loan" }
   | { field: "skip-coborrower-name" }
   | { field: "propose-coborrower-name"; value: string }
   | { field: "coborrowerName"; value: string }

@@ -3,6 +3,7 @@ import type { FactProposal, FoxAction, FoxIntakeDraft } from "./types";
 export const STATED_HOUSEHOLD_FIELD = "statedHousehold";
 export const SUGGESTED_HOUSEHOLD_NOTE = "Suggested · not underwritten";
 export const HOUSEHOLD_ASK = "Is there another borrower on this file?";
+export const OTHER_K1_LOAN_ASK = "Other K-1 — is that person on this loan?";
 
 export type StatedHousehold = "alone" | "with_someone";
 
@@ -185,5 +186,52 @@ export function householdAskCopy(draft: FoxIntakeDraft): {
   return {
     text: HOUSEHOLD_ASK,
     actions: householdAskActions(),
+  };
+}
+
+export function otherK1LoanAskActions(): FoxAction[] {
+  return [
+    {
+      id: "other-k1-loan-yes",
+      label: "Yes",
+      event: "bubble",
+      capture: { field: "other-k1-loan", value: "yes" },
+    },
+    {
+      id: "other-k1-loan-no",
+      label: "No",
+      event: "bubble",
+      capture: { field: "other-k1-loan", value: "no" },
+    },
+    {
+      id: "skip-other-k1-loan",
+      label: "Skip",
+      event: "bubble",
+      capture: { field: "skip-other-k1-loan" },
+    },
+  ];
+}
+
+export function otherK1LoanAskCopy(): {
+  text: string;
+  actions?: FoxAction[];
+} {
+  return {
+    text: OTHER_K1_LOAN_ASK,
+    actions: otherK1LoanAskActions(),
+  };
+}
+
+export function writeOtherK1Loan(draft: FoxIntakeDraft, onLoan: boolean): FoxIntakeDraft {
+  return writeStatedHousehold({ ...draft, otherK1LoanAsked: true }, onLoan ? "with_someone" : "alone");
+}
+
+export function skipOtherK1Loan(draft: FoxIntakeDraft): FoxIntakeDraft {
+  return {
+    ...draft,
+    otherK1LoanAsked: true,
+    pendingProposal: null,
+    correcting: null,
+    correctingLine: null,
   };
 }

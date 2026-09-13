@@ -598,6 +598,22 @@ export function entityK1Box1OnFile(draft: FoxIntakeDraft): boolean {
   return has1120s && hasK1;
 }
 
+/** This packet’s two 50% K-1s. Own-all / a single 100% K-1 is not this ask. */
+export function twoK1OwnersOnFile(draft: FoxIntakeDraft): boolean {
+  if (!entityK1Box1OnFile(draft)) return false;
+  return readTaxCashflows(draft).some((row) => {
+    const pct = parseExtractMoney(row.ownership_percent);
+    return pct === 50 && String(row.k1_ordinary_income ?? "").trim();
+  });
+}
+
+export function otherK1LoanAskNeeded(draft: FoxIntakeDraft): boolean {
+  if (draft.otherK1LoanAsked) return false;
+  if (draft.pendingProposal || draft.pendingConflict) return false;
+  if (!draft.facts?.[QUALIFYING_INCOME_FIELD]?.confirmed) return false;
+  return twoK1OwnersOnFile(draft);
+}
+
 export function entityNameFromDraft(
   draft: FoxIntakeDraft,
   proposal?: FactProposal | null,

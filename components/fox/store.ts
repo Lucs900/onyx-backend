@@ -203,6 +203,8 @@ import {
   isStatedHousehold,
   proposeStatedHousehold,
   skipHousehold,
+  skipOtherK1Loan,
+  writeOtherK1Loan,
   writeStatedHousehold,
 } from "./household";
 import {
@@ -455,6 +457,7 @@ export function emptyDraft(): FoxIntakeDraft {
     awaitingCoverWageGap: false,
     coverWageGapAsked: false,
     householdWagesAsked: false,
+    otherK1LoanAsked: false,
     incomeLedger: [],
     taxReturnPacketSpoken: false,
     taxReturnPacketCloseAsk: false,
@@ -657,6 +660,7 @@ function normalize(value: unknown): FoxIntakeDraft {
         ? raw.statedHousehold
         : undefined,
     householdAsked: Boolean(raw.householdAsked || raw.statedHousehold),
+    otherK1LoanAsked: Boolean(raw.otherK1LoanAsked),
     coborrowerName:
       typeof raw.coborrowerName === "string" && raw.coborrowerName.trim()
         ? raw.coborrowerName.trim()
@@ -2160,6 +2164,13 @@ function applyCaptureBody(capture: Capture) {
   if (capture.field === "statedHousehold") {
     if (!isStatedHousehold(capture.value)) return current;
     return commit(writeStatedHousehold(current, capture.value));
+  }
+  if (capture.field === "other-k1-loan") {
+    if (capture.value !== "yes" && capture.value !== "no") return current;
+    return commit(writeOtherK1Loan(current, capture.value === "yes"));
+  }
+  if (capture.field === "skip-other-k1-loan") {
+    return commit(skipOtherK1Loan(current));
   }
   if (capture.field === "skip-coborrower-name") {
     return commit(skipCoborrowerName(current));
