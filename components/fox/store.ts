@@ -433,6 +433,7 @@ export function emptyDraft(): FoxIntakeDraft {
     docsStarted: false,
     docsHeld: false,
     priorYearSkipped: false,
+    federalReturnSkipped: false,
     transcriptFollowUpSkipped: false,
     docSpeak: {},
     lastDocSpeakKey: "",
@@ -756,6 +757,7 @@ function normalize(value: unknown): FoxIntakeDraft {
       ? raw.skippedStillUseful.filter((item): item is string => typeof item === "string" && item.length > 0)
       : [],
     priorYearSkipped: Boolean(raw.priorYearSkipped),
+    federalReturnSkipped: Boolean(raw.federalReturnSkipped),
     transcriptFollowUpSkipped: Boolean(raw.transcriptFollowUpSkipped),
     docSpeak: normalizeDocSpeak(raw.docSpeak),
     lastDocSpeakKey: typeof raw.lastDocSpeakKey === "string" ? raw.lastDocSpeakKey : "",

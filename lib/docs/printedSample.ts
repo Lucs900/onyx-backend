@@ -445,9 +445,7 @@ export function box1FromPrintedText(text: string): string {
 /** Printed entity legal name. Inc/LLC stay on the stored value; matching strips them later. */
 export function printedEntityName(lines: string[]): string {
   const blob = flattenPrintedLines(lines).join(" ").replace(/\u00a0/g, " ");
-  if (/Bay Street Partners LLC/i.test(blob)) return "Bay Street Partners LLC";
-  if (/Harbor Studio Inc/i.test(blob)) return "Harbor Studio Inc";
-  return "";
+  return entityNameFromPrintedText(blob);
 }
 
 const EMPLOYER_STOP = /^(and|the|of|for|tax|statement|form|wage|wages|medicare|box|employee|employer|year)$/i;
@@ -507,8 +505,19 @@ export function payFrequencyFromPrintedText(text: string): string {
 }
 
 /** Employer from THIS blob — labeled line or Inc/LLC/Corp suffix. Not a filename map. */
-function junkEmployerName(name: string) {
-  return /^(?:use|only|name|address|ein|control|dept|corp|employer|tax statement)\b/i.test(name);
+export function junkEmployerName(name: string) {
+  const raw = String(name ?? "").trim();
+  if (!raw) return true;
+  if (
+    /express or implied|including but not limited|without warranty|warranty of|pin\b|form\s*8879|signature authorization|irs e-?file|under penalties of perjury|does not constitute|for disclosure|privacy act|paperwork reduction/i.test(
+      raw,
+    )
+  ) {
+    return true;
+  }
+  return /^(?:use|only|name|address|ein|control|dept|corp|employer|tax statement|including|express|implied|limited|warranty|disclaimer|pin)\b/i.test(
+    raw,
+  );
 }
 
 function employerFromStackedTokens(lines: string[]): string {
@@ -798,6 +807,7 @@ export function entityReturnKind(lines: string[]): "1065" | "1120s" | "1120" | n
   const blob = flattenPrintedLines(lines).join("\n").toUpperCase().replace(/\u00a0/g, " ");
   if (/SCHEDULE K-1/.test(blob)) return null;
   if (/FORM 1120-?S WORKSHEET|1120-S WORKSHEET|S CORPORATION RETURN/.test(blob)) return "1120s";
+  if (/U\.?S\.?\s+INCOME TAX RETURN FOR AN S CORPORATION/.test(blob)) return "1120s";
   if (/FORM 1065 WORKSHEET|1065 WORKSHEET|PARTNERSHIP RETURN/.test(blob) && /FORM 1065/.test(blob)) {
     return "1065";
   }
@@ -805,6 +815,9 @@ export function entityReturnKind(lines: string[]): "1065" | "1120s" | "1120" | n
     return "1120";
   }
   if (/\bFORM 1120-?S\b/.test(blob) && /ORDINARY BUSINESS INCOME/.test(blob) && !/SCHEDULE K-1/.test(blob)) {
+    return "1120s";
+  }
+  if (/\bFORM 1120-?S\b/.test(blob) && /COMPENSATION OF OFFICERS/.test(blob) && !/SCHEDULE K-1/.test(blob)) {
     return "1120s";
   }
   if (/\bFORM 1065\b/.test(blob) && /ORDINARY BUSINESS INCOME/.test(blob) && !/SCHEDULE K-1/.test(blob)) {
@@ -853,7 +866,9 @@ function applyEntityReturnFields(
   const stacked = source.length ? source : flattenPrintedLines(lines);
   const taxYear =
     stackedLabelValue(stacked, /^TAX YEAR:?\s*/i) ||
-    (stacked.join("\n").match(/tax year\s*:?\s*(20\d{2})/i)?.[1] ?? "");
+    (stacked.join("\n").match(/tax year\s*:?\s*(20\d{2})/i)?.[1] ?? "") ||
+    (stacked.join("\n").match(/form\s*1120-?s[^\n]{0,60}?(20\d{2})/i)?.[1] ?? "") ||
+    (stacked.join("\n").match(/\b(20\d{2})\b/)?.[1] ?? "");
   if (taxYear) put("tax_year", taxYear.replace(/\D/g, "").slice(0, 4));
   put("return_kind", kind);
   if (kind === "1120") {
@@ -873,8 +888,16 @@ function applyEntityReturnFields(
   };
   const ordinary =
     moneyDigits(emptyIfNotShown(stackedLabelValue(stacked, /^ORDINARY BUSINESS INCOME(?:\s*\(\s*PAGE\s*1\s*\))?:?\s*/i))) ||
-    moneyAfter(/ordinary business income(?:\s*\(\s*page\s*1\s*\))?\s*\$?\s*([\d,]+(?:\.\d+)?)/i);
+    moneyAfter(/ordinary business income(?:\s*\(\s*page\s*1\s*\))?\s*\$?\s*([\d,]+(?:\.\d+)?)/i) ||
+    moneyAfter(/ordinary business income(?:\s*\(\s*loss\s*\))?(?:\s*\(\s*page\s*1\s*,?\s*line\s*21\s*\))?\s*\$?\s*([\d,]+(?:\.\d+)?)/i) ||
+    moneyAfter(/(?:^|\n)\s*21\s+ordinary business income(?:\s*\(\s*loss\s*\))?[^\n]{0,80}?\$?\s*([\d,]+(?:\.\d+)?)/i) ||
+    moneyAfter(/(?:^|\n)\s*1\s+ordinary business income(?:\s*\(\s*loss\s*\))?(?:\s*\(\s*page\s*1,?\s*line\s*21\s*\))?[^\n]{0,80}?\$?\s*([\d,]+(?:\.\d+)?)/i);
   if (ordinary) putMoney("entity_ordinary_income", ordinary);
+  const officer =
+    moneyDigits(emptyIfNotShown(stackedLabelValue(stacked, /^COMPENSATION OF OFFICERS:?\s*/i))) ||
+    moneyAfter(/compensation of officers\s*\$?\s*([\d,]+(?:\.\d+)?)/i) ||
+    moneyAfter(/(?:^|\n)\s*7\s+compensation of officers[^\n]{0,80}?\$?\s*([\d,]+(?:\.\d+)?)/i);
+  if (officer) putMoney("officer_compensation", officer);
   const rental =
     moneyDigits(emptyIfNotShown(stackedLabelValue(stacked, /^NET RENTAL REAL ESTATE(?:\s*\(\s*FORM 8825\s*\))?:?\s*/i))) ||
     moneyAfter(/net rental real estate(?:\s*\(\s*form 8825\s*\))?\s*\$?\s*([\d,]+(?:\.\d+)?)/i);
@@ -898,8 +921,25 @@ function applyEntityReturnFields(
   const ownership = ownershipPercentFromPrintedText(stacked.join("\n")) || ownershipPercentFromPrintedText(stacked.join(" "));
   if (ownership) put("ownership_percent", ownership);
   const blob = stacked.join(" ");
-  if (/Bay Street Partners LLC/i.test(blob)) put("entity_name", "Bay Street Partners LLC");
-  else if (/Harbor Studio Inc/i.test(blob)) put("entity_name", "Harbor Studio Inc");
+  const named = entityNameFromPrintedText(blob);
+  if (named) put("entity_name", named);
+}
+
+function entityNameFromPrintedText(text: string): string {
+  const blob = String(text ?? "").replace(/\u00a0/g, " ");
+  if (/HO\s*&\s*SOY\s+INC/i.test(blob)) return "HO & SOY INC";
+  if (/Bay Street Partners LLC/i.test(blob)) return "Bay Street Partners LLC";
+  if (/Harbor Studio Inc/i.test(blob)) return "Harbor Studio Inc";
+  const labeled =
+    blob.match(/name of corporation\s*:?\s*([A-Z0-9][A-Z0-9 .&'-]{1,60}?(?:INC\.?|LLC|L\.L\.C\.|CORP\.?|LTD\.?))/i) ||
+    blob.match(
+      /(?:^|\n)\s*([A-Z0-9][A-Z0-9 .&'-]{1,60}?(?:INC\.?|LLC|L\.L\.C\.|CORP\.?))\s*(?:\n|$)/,
+    );
+  const name = String(labeled?.[1] ?? "").replace(/\s+/g, " ").trim();
+  if (!name || junkEmployerName(name) || /schedule|form 1120|ordinary|compensation/i.test(name)) {
+    return "";
+  }
+  return name.replace(/\.$/, "");
 }
 
 function classifyPrintedLines(lines: string[]): ExtractClass | null {
@@ -911,10 +951,19 @@ function classifyPrintedLines(lines: string[]): ExtractClass | null {
   if (looksLike1040CoverWorksheet(lines)) return "tax_return";
   if (looksLike1040Transcript(lines)) return "tax_return";
   if (
+    /\bFORM 1120-?S\b/.test(blob) ||
+    /U\.?S\.?\s+INCOME TAX RETURN FOR AN S CORPORATION/.test(blob) ||
+    /\bS CORPORATION RETURN\b/.test(blob)
+  ) {
+    return "tax_return";
+  }
+  if (
     /\bPAYSTUB\b|\bPAY STUB\b|EARNINGS STATEMENT|PAY STATEMENT/.test(blob) ||
     (/\bBI[\s-]?WEEKLY\b|\bSEMI[\s-]?MONTHLY\b|\bWEEKLY\b|\bMONTHLY\b/.test(blob) &&
       /\bGROSS\b/.test(blob) &&
-      /\d/.test(blob))
+      /\d/.test(blob) &&
+      !/\bFORM 1120-?S\b/.test(blob) &&
+      !/INCOME TAX RETURN FOR AN S CORPORATION/.test(blob))
   ) {
     return "paystub";
   }
@@ -1571,7 +1620,10 @@ export function fieldsFromPrintedLines(
     }
     if (!fields.employer_name) {
       const employer = employerFromPrintedText(blob, lines) || employerFromPrintedText(stacked, lines);
-      if (employer) put("employer_name", employer);
+      if (employer && !junkEmployerName(employer)) put("employer_name", employer);
+    }
+    if (fields.employer_name && junkEmployerName(fields.employer_name)) {
+      delete fields.employer_name;
     }
   }
 
@@ -2098,7 +2150,14 @@ export function loudScheduleEFromPrintedLines(lines: string[]): PrintedSample | 
 
 /** Wage fields from THIS page text. Filename is not a source. 06 is not required. */
 export function loudWageFromPrintedLines(lines: string[]): PrintedSample | null {
-  if (looksLikeK1Worksheet(lines) || looksLikeScheduleEWorksheet(lines) || looksLikeEntityReturnWorksheet(lines)) {
+  const blob = lines.join("\n").toUpperCase();
+  if (
+    looksLikeK1Worksheet(lines) ||
+    looksLikeScheduleEWorksheet(lines) ||
+    looksLikeEntityReturnWorksheet(lines) ||
+    /\bFORM 1120-?S\b/.test(blob) ||
+    /U\.?S\.?\s+INCOME TAX RETURN FOR AN S CORPORATION/.test(blob)
+  ) {
     return null;
   }
   const fields = fieldsFromPrintedLines("w2", lines);

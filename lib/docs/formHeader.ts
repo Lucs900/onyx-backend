@@ -7,6 +7,7 @@
 export type TaxFormClass =
   | "form_8879"
   | "form_1040"
+  | "form_1120s"
   | "schedule_e"
   | "schedule_c"
   | "k1"
@@ -42,6 +43,15 @@ const K1_KEYS = new Set([
   "business_name",
   "schedule_e_part2_names",
 ]);
+const FORM_1120S_KEYS = new Set([
+  "tax_year",
+  "entity_name",
+  "business_name",
+  "entity_ordinary_income",
+  "officer_compensation",
+  "ownership_percent",
+  "return_kind",
+]);
 
 /** Printed first. 8879 before any 1040 match — 8879 can mention Form 1040. */
 export function classifyPageByFormHeader(text: string): TaxFormClass {
@@ -51,8 +61,23 @@ export function classifyPageByFormHeader(text: string): TaxFormClass {
     .trim();
   if (!t) return "other";
 
-  if (/\bForm\s*8879\b/i.test(t) || /\bIRS\s+e-?file\s+Signature\s+Authorization\b/i.test(t)) {
+  if (/\bForm\s*8879(?:-S)?\b/i.test(t) || /\bIRS\s+e-?file\s+Signature\s+Authorization\b/i.test(t)) {
     return "form_8879";
+  }
+
+  if (
+    /\bForm\s+1120-?S\b/i.test(t) &&
+    (/\bU\.?S\.?\s+Income\s+Tax\s+Return\s+for\s+an\s+S\s+Corporation\b/i.test(t) ||
+      /\bS\s+Corporation\s+Return\b/i.test(t) ||
+      /\bOrdinary\s+business\s+income\b/i.test(t) ||
+      /\bCompensation\s+of\s+officers\b/i.test(t) ||
+      /\bName\s+of\s+corporation\b/i.test(t) ||
+      /\bSchedule\s+K\b/i.test(t))
+  ) {
+    if (!/\bSchedule\s+K-?1\b/i.test(t)) return "form_1120s";
+  }
+  if (/\bU\.?S\.?\s+Income\s+Tax\s+Return\s+for\s+an\s+S\s+Corporation\b/i.test(t)) {
+    return "form_1120s";
   }
 
   if (/\bSchedule\s+K-?1\b/i.test(t) || (/\bForm\s+1065\b/i.test(t) && /\bPartner'?s\s+Share\b/i.test(t))) {
@@ -66,7 +91,13 @@ export function classifyPageByFormHeader(text: string): TaxFormClass {
   if (/\bSchedule\s+E\s*\(\s*Form\s+1040\s*\)/i.test(t) || (/\bSchedule\s+E\b/i.test(t) && /\bSupplemental\s+Income\b/i.test(t))) {
     return "schedule_e";
   }
-  if (/\bSchedule\s+E\b/i.test(t) && !/\bU\.?S\.?\s+Individual\s+Income\s+Tax\s+Return\b/i.test(t) && !/\b1z\b/.test(t)) {
+  if (
+    /\bSchedule\s+E\b/i.test(t) &&
+    !/\bU\.?S\.?\s+Individual\s+Income\s+Tax\s+Return\b/i.test(t) &&
+    !/\b1z\b/.test(t) &&
+    !/\bForm\s+1065\b/i.test(t) &&
+    !/\bForm\s+1120-?S\b/i.test(t)
+  ) {
     return "schedule_e";
   }
 
@@ -98,7 +129,9 @@ export function fieldsAllowedForClass(
             ? SCHEDULE_C_KEYS
             : klass === "k1"
               ? K1_KEYS
-              : null;
+              : klass === "form_1120s"
+                ? FORM_1120S_KEYS
+                : null;
   if (!allow) return {};
   const next: Record<string, string> = {};
   for (const [key, value] of Object.entries(fields)) {
@@ -111,6 +144,11 @@ export function fieldsAllowedForClass(
 
 export function pickForm1040Page(walked: readonly ClassifiedTaxPage[]): ClassifiedTaxPage | undefined {
   return walked.find((page) => page.klass === "form_1040");
+}
+
+/** Form 1120-S face / Schedule K. 8879-S and disclaimer pages are not the entity return. */
+export function pickForm1120sPage(walked: readonly ClassifiedTaxPage[]): ClassifiedTaxPage | undefined {
+  return walked.find((page) => page.klass === "form_1120s");
 }
 
 /** Year + both names: Form 1040 face first. 8879 is names/year fallback only. */

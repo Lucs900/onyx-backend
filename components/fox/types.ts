@@ -451,6 +451,8 @@ export type FoxIntakeDraft = {
   docsStarted?: boolean;
   docsHeld?: boolean;
   priorYearSkipped?: boolean;
+  /** SE skipped the 1040 invite. Still need the business return — do not jump to Looks right. */
+  federalReturnSkipped?: boolean;
   transcriptFollowUpSkipped?: boolean;
   /** received → named → offered → done. Same stamp on File = do not print that line again. */
   docSpeak?: Record<string, DocSpeakRow>;

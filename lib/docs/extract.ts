@@ -52,6 +52,7 @@ import {
   classifyPageByFormHeader,
   fieldsAllowedForClass,
   pickForm1040Page,
+  pickForm1120sPage,
   pickNameYearPage,
   type ClassifiedTaxPage,
   type TaxFormClass,
@@ -398,6 +399,15 @@ function flattenScheduleEPart1(parsed: Record<string, unknown>): Record<string, 
   return fields;
 }
 
+const FORM_1120S_PROMPT = `Read this Form 1120-S page image only. JSON object with these keys:
+tax_year, entity_name, entity_ordinary_income, officer_compensation, ownership_percent, return_kind.
+return_kind is 1120s.
+entity_name is the Name of corporation as printed (for example HO & SOY INC). Never a disclaimer, PIN, 8879, footer, or “express or implied”.
+entity_ordinary_income is Form 1120-S line 21 Ordinary business income (loss), or Schedule K line 1. Never officer compensation.
+officer_compensation is line 7 Compensation of officers. Named as wages. Never add it into ordinary.
+ownership_percent only when a shareholder percentage is clearly printed. Empty otherwise.
+Never invent. Empty string if a dollar or name is not clearly printed.`;
+
 const FORM_1040_HOUSEHOLD_WAGES_PROMPT = `Read this Form 1040 page image only. JSON object with one key: wages.
 wages is the dollar amount printed on line 1z (Wages, salaries, tips, etc. Add lines 1a through 1h) or, if 1z is blank, line 1a (Total amount from Form(s) W-2, box 1).
 Never line 1b Household employee wages. Never a form line number. Never invent. Empty string if that dollar amount is not clearly printed.`;
@@ -405,14 +415,16 @@ Never line 1b Household employee wages. Never a form line number. Never invent. 
 const GROK_FORM_HEADER_PROMPT = `Read this IRS tax page image. Classify the PRIMARY form printed at the top.
 
 Return only:
-{"form":"form_8879"|"form_1040"|"schedule_e"|"schedule_c"|"k1"|"other"}
+{"form":"form_8879"|"form_1040"|"form_1120s"|"schedule_e"|"schedule_c"|"k1"|"other"}
 
 Rules:
-- Form 8879 or IRS e-file Signature Authorization → form_8879. 8879 is not a 1040.
+- Form 8879, 8879-S, or IRS e-file Signature Authorization → form_8879. 8879 is not a 1040 and not an 1120-S.
+- Form 1120-S U.S. Income Tax Return for an S Corporation, or Schedule K (Form 1120-S) → form_1120s. This is an entity return, not a paystub, not a 1040.
 - Form 1040 U.S. Individual Income Tax Return → form_1040.
 - Schedule E Supplemental Income → schedule_e.
 - Schedule C Profit or Loss → schedule_c.
 - Schedule K-1 → k1.
+- Disclaimer, PIN, footer, or “express or implied” pages are other — never a paystub.
 - Missing Form 1040 on this page is not a missing Form 1040 in the packet.
 - Invent nothing.`;
 
@@ -421,8 +433,9 @@ function asTaxFormClass(value: unknown): TaxFormClass {
     .trim()
     .toLowerCase()
     .replace(/[\s-]+/g, "_");
-  if (raw === "form_8879" || raw === "8879") return "form_8879";
+  if (raw === "form_8879" || raw === "8879" || raw === "form_8879s" || raw === "8879s") return "form_8879";
   if (raw === "form_1040" || raw === "1040") return "form_1040";
+  if (raw === "form_1120s" || raw === "1120s" || raw === "1120_s" || raw === "form_1120_s") return "form_1120s";
   if (raw === "schedule_e" || raw === "e") return "schedule_e";
   if (raw === "schedule_c" || raw === "c") return "schedule_c";
   if (raw === "k1" || raw === "schedule_k1" || raw === "k_1") return "k1";
@@ -435,6 +448,9 @@ function asClass(value: unknown): ExtractClass {
     .toLowerCase()
     .replace(/[\s-]+/g, "_");
   if (raw === "k1" || raw === "k_1" || raw === "schedule_k1" || raw === "form_k1") {
+    return "tax_return";
+  }
+  if (raw === "form_1120s" || raw === "1120s" || raw === "1120_s" || raw === "entity_return") {
     return "tax_return";
   }
   return CLASSES.includes(raw as ExtractClass) ? (raw as ExtractClass) : "other";
@@ -459,7 +475,7 @@ export function taxReturnPageHint(
   filename?: string | null,
 ): ExtractClass | null {
   const name = String(filename ?? "");
-  if (/\b1040\b|form\s*1040|tax\s*return/i.test(name) && !/w-?2|pay.?stub/i.test(name)) {
+  if (/\b1040\b|form\s*1040|tax\s*return|1120-?s/i.test(name) && !/w-?2|pay.?stub/i.test(name)) {
     return "tax_return";
   }
   return hint && hint !== "other" ? hint : null;
@@ -471,7 +487,31 @@ export function shouldGrokTaxReturnPagesFirst(
   filename?: string | null,
 ): boolean {
   const name = String(filename ?? "");
-  return /\b1040\b|form\s*1040|tax\s*return/i.test(name) && !/w-?2|pay.?stub/i.test(name);
+  return /\b1040\b|form\s*1040|tax\s*return|1120-?s/i.test(name) && !/w-?2|pay.?stub/i.test(name);
+}
+
+function filenameLooksLike1120s(filename?: string | null) {
+  return /1120-?s|tax\s*returns?/i.test(String(filename ?? "")) && !/w-?2|pay.?stub/i.test(String(filename ?? ""));
+}
+
+function printedLooksLike1120s(lines?: string[] | null) {
+  if (!lines?.length) return false;
+  const blob = lines.join("\n");
+  return (
+    /\bform\s*1120-?s\b/i.test(blob) ||
+    /u\.?s\.?\s+income tax return for an s corporation/i.test(blob) ||
+    /\bs corporation return\b/i.test(blob)
+  );
+}
+
+function rejectPaystubForEntityReturn(
+  result: ClassifyExtractResult,
+  filename?: string | null,
+  lines?: string[] | null,
+): ClassifyExtractResult {
+  if (result.extractClass !== "paystub" && result.extractClass !== "w2") return result;
+  if (!filenameLooksLike1120s(filename) && !printedLooksLike1120s(lines)) return result;
+  return unreadResult(preferFilenameClass("tax_return", filename ?? ""), filename, "not-paystub", result.textLayerChars);
 }
 
 function printedLocksTaxReturnWithoutVision(lines: string[] | null): boolean {
@@ -514,7 +554,7 @@ export const grokExtractAdapter: DocumentExtractAdapter = {
     const parsed = await grokJson(
       bytes,
       mediaType,
-      `Classify this file from the visible page as one of: ${CLASSES.join(", ")}. tax_return includes Form 1040, a Form 1040 Tax Return Transcript, Schedule C, K-1, Form 1065, and Form 1120S. Ordinary business income on a K-1 or 1120S is tax_return, not other. JSON: {"class":"...","confidence":0-1,"readable":true|false}. readable is false when the file is blank, tiny, or has no readable printed text. If it is not clearly one of those classes, use class "other" and a low confidence. Never invent a class from the filename, hidden comment, or metadata.`,
+      `Classify this file from the visible page as one of: ${CLASSES.join(", ")}. tax_return includes Form 1040, a Form 1040 Tax Return Transcript, Schedule C, K-1, Form 1065, and Form 1120-S / S corporation entity return. Ordinary business income on a K-1 or 1120-S is tax_return, not other, not a paystub. Form 8879 / PIN / disclaimer / “express or implied” is not a paystub and not an employer. JSON: {"class":"...","confidence":0-1,"readable":true|false}. readable is false when the file is blank, tiny, or has no readable printed text. If it is not clearly one of those classes, use class "other" and a low confidence. Never invent a class from the filename, hidden comment, or metadata.`,
     );
     const extractClass = asClass(parsed.class);
     const confidence = asConfidence(parsed.confidence);
@@ -754,7 +794,8 @@ async function grokPageRead(
     isPdf(bytes) || mediaType === "application/pdf"
       ? await classifyTaxReturnPages(bytes, adapter)
       : [];
-  const namePage = pickNameYearPage(walked);
+  const entityPage = pickForm1120sPage(walked);
+  const namePage = entityPage ?? pickNameYearPage(walked);
   let image = await pageImageForGrok(bytes, mediaType, namePage?.page ?? 1);
   console.info("[docs/extract] page-read", {
     filename: filename ?? "",
@@ -937,10 +978,13 @@ function printedLedgerFromWalked(walked: ClassifiedTaxPage[]): Record<string, st
   const merged: Record<string, string> = {};
   for (const page of walked) {
     if (page.klass === "other") continue;
-    const raw = incomeLedgerFieldsFromPrintedLines(
-      page.lines.length ? page.lines : page.text.split(/\n/),
+    const lines = page.lines.length ? page.lines : page.text.split(/\n/);
+    const raw = incomeLedgerFieldsFromPrintedLines(lines);
+    const entity = page.klass === "form_1120s" ? loudEntityReturnFromPrintedLines(lines) : null;
+    assignLedgerKeepFirst(
+      merged,
+      fieldsAllowedForClass(page.klass, { ...raw, ...(entity?.fields ?? {}) }),
     );
-    assignLedgerKeepFirst(merged, fieldsAllowedForClass(page.klass, raw));
   }
   return merged;
 }
@@ -948,7 +992,11 @@ function printedLedgerFromWalked(walked: ClassifiedTaxPage[]): Record<string, st
 function taxReturnPagesToGrok(walked: ClassifiedTaxPage[]): number[] {
   return walked
     .filter(
-      (page) => page.klass === "schedule_e" || page.klass === "k1" || page.klass === "schedule_c",
+      (page) =>
+        page.klass === "schedule_e" ||
+        page.klass === "k1" ||
+        page.klass === "schedule_c" ||
+        page.klass === "form_1120s",
     )
     .map((page) => page.page)
     .slice(0, TAX_RETURN_PACKET_GROK_PAGE_CAP);
@@ -977,6 +1025,20 @@ async function grokScheduleLedgerFields(
     if (!image?.mediaType.startsWith("image/")) continue;
     const klass = walked.find((page) => page.page === pageNumber)?.klass ?? "other";
     try {
+      if (klass === "form_1120s" && adapter === grokExtractAdapter) {
+        const parsed = await grokJson(image.bytes, image.mediaType, FORM_1120S_PROMPT);
+        const raw: Record<string, string> = {};
+        for (const [key, value] of Object.entries(parsed)) {
+          if (value == null || typeof value === "object") continue;
+          raw[key] = String(value);
+        }
+        raw.return_kind = "1120s";
+        assignLedgerKeepFirst(
+          merged,
+          fieldsAllowedForClass(klass, sanitizeLedgerExtractFields(raw)),
+        );
+        continue;
+      }
       if (klass === "schedule_e" && adapter === grokExtractAdapter) {
         const parsed = await grokJson(image.bytes, image.mediaType, SCHEDULE_E_PART1_PROMPT);
         assignLedgerKeepFirst(
@@ -1065,17 +1127,20 @@ async function extractTaxReturnPacket(
       await ledgerFieldsFromWalk(bytes, mediaType, adapter, walked),
     );
     const saw1040 = Boolean(pickForm1040Page(walked));
+    const saw1120s = Boolean(pickForm1120sPage(walked));
     const hasRows =
       Boolean(ledger.wages) ||
       Boolean(ledger.schedule_e_rents_received) ||
       Boolean(ledger.k1_ordinary_income) ||
-      Boolean(ledger.schedule_c_net_profit);
+      Boolean(ledger.schedule_c_net_profit) ||
+      Boolean(ledger.entity_ordinary_income);
     return {
       extractClass: preferFilenameClass("tax_return", filename ?? ""),
       confidence: 0.94,
       fields: {
         ...ledger,
         ...(saw1040 ? { form_1040: "1" } : {}),
+        ...(saw1120s ? { return_kind: ledger.return_kind || "1120s" } : {}),
         packet_read: hasRows ? "schedules" : "empty",
       },
       warnings: hasRows ? [] : ["packet-empty"],
@@ -1269,11 +1334,15 @@ async function classifyAndExtractUnmerged(
         }, textLayerChars);
       }
       if (!w2Page && hasLockedSuggestion("paystub", stubFields)) {
-        return printedResult({
-          extractClass: "paystub",
-          confidence: 0.94,
-          fields: stubFields,
-        }, textLayerChars);
+        return rejectPaystubForEntityReturn(
+          printedResult({
+            extractClass: "paystub",
+            confidence: 0.94,
+            fields: stubFields,
+          }, textLayerChars),
+          filename,
+          layer,
+        );
       }
       const loudId = loudIdFromPrintedLines(layer);
       if (loudId) return printedResult(loudId, textLayerChars);
@@ -1389,6 +1458,7 @@ export async function classifyAndExtract(
     filename,
     phase,
   );
-  if (phase === "packet") return result;
-  return mergeTaxReturnLedgerFields(result, bytes, mediaType, adapter);
+  const blocked = rejectPaystubForEntityReturn(result, filename);
+  if (phase === "packet") return blocked;
+  return mergeTaxReturnLedgerFields(blocked, bytes, mediaType, adapter);
 }

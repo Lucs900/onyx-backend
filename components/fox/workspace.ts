@@ -1868,15 +1868,31 @@ function entityReactionAsk(draft: FoxIntakeDraft, proposal: NonNullable<FoxIntak
   const shown = displayFactValue(proposal.field, proposal.value);
   const year = landedTaxYear(draft);
   const method = proposal.methodNote ?? "";
-  const form = /1120-?s|ordinary \+ dep/i.test(method) && !/8825|GP to Hale/i.test(method)
+  const form = /1120-?s|ordinary \+ dep|household ordinary|per 50% owner/i.test(method) && !/8825|GP to Hale/i.test(method)
     ? "Form 1120-S"
     : "Form 1065";
-  const ack = year ? `Got the ${year} ${form}.` : `Got the ${form}.`;
+  const entity =
+    proposal.extras?.find((item) => item.field === "entity_name")?.value ||
+    factValue(draft, "entity_name") ||
+    "";
+  const named = entity ? ` for ${entity}` : "";
+  const ack = year ? `Got the ${year} ${form}${named}.` : `Got the ${form}${named}.`;
+  const share = /per 50% owner/i.test(method)
+    ? "That’s per 50% owner."
+    : /household ordinary/i.test(method)
+      ? "That’s household ordinary."
+      : "";
+  const officer = proposal.extras?.find((item) => item.field === "officer_compensation")?.value ?? "";
+  const officerN = Number(String(officer).replace(/[^\d.]/g, ""));
+  const officerLine =
+    Number.isFinite(officerN) && officerN > 0
+      ? `Officer wages $${Math.round(officerN).toLocaleString("en-US")} named as wages, not inside ordinary.`
+      : "";
   return {
     text: incomeSuggestSpeech({
       ack,
       monthly: shown,
-      story: incomeStoryLine(draft, proposal),
+      story: [share, incomeStoryLine(draft, proposal), officerLine].filter(Boolean).join(" "),
       note: SUGGESTED_INCOME_NOTE,
     }),
     actions: incomeConfirmActions(),

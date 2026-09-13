@@ -2202,21 +2202,17 @@ export function requiredLineValue(
             : raw === "other"
               ? "Other"
               : "";
-    const pendingQi = proposal?.field === QUALIFYING_INCOME_FIELD ? proposal : null;
     const storedQi = draft.facts?.[QUALIFYING_INCOME_FIELD];
     const fileQi = storedQi?.confirmed ? storedQi.value : "";
-    const qiAmount = fileQi || pendingQi?.value || "";
-    const qiMethod = fileQi
-      ? factValue(draft, QUALIFYING_METHOD_FIELD)
-      : pendingQi?.methodNote || factValue(draft, QUALIFYING_METHOD_FIELD);
-    const coverLine = qiMethod === COVER_LINE_METHOD || (!fileQi && pendingQi?.note === COVER_LINE_NOTE);
-    if (qiAmount && (raw === "self-employed" || coverLine)) {
-      const shown = displayFactValue(QUALIFYING_INCOME_FIELD, qiAmount);
+    const qiMethod = fileQi ? factValue(draft, QUALIFYING_METHOD_FIELD) : "";
+    const coverLine = qiMethod === COVER_LINE_METHOD;
+    if (fileQi && (raw === "self-employed" || coverLine)) {
+      const shown = displayFactValue(QUALIFYING_INCOME_FIELD, fileQi);
       const named = businessNameOnFile(draft);
       const bits = [named || label, shown].filter(Boolean);
       return {
         value: bits.join(" · "),
-        note: coverLine ? COVER_LINE_NOTE : (pendingQi?.note ?? SUGGESTED_INCOME_NOTE),
+        note: coverLine ? COVER_LINE_NOTE : SUGGESTED_INCOME_NOTE,
         filled: Boolean(label || storedQi?.confirmed),
       };
     }

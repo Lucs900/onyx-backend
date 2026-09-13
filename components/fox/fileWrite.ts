@@ -68,6 +68,7 @@ import {
 import { maybeProposeHunt } from "./hunt";
 import { bankEndingBalanceAmount } from "@/lib/docs/bankBalance";
 import { safeAccountLast4 } from "@/lib/docs/bankLast4";
+import { junkEmployerName } from "@/lib/docs/printedSample";
 import {
   applyRentalIncomeFromExtract,
   draftHasLease,
@@ -249,6 +250,7 @@ export const EXTRACT_SCHEMA_KEYS: Record<ExtractClass, readonly string[]> = {
     "ownership_percent",
     "entity_taxable_income",
     "entity_name",
+    "officer_compensation",
     "business_name",
     "cover_schedules",
     "cover_k1_names",
@@ -332,6 +334,7 @@ const MONEY_KEYS = new Set([
   "entity_te",
   "entity_guaranteed_payments",
   "entity_taxable_income",
+  "officer_compensation",
   "schedule_e_rents_received",
   "schedule_e_cash_expenses",
   "gross_receipts",
@@ -421,6 +424,7 @@ const YEARLY_TAX_KEYS = new Set([
   "ownership_percent",
   "entity_taxable_income",
   "entity_name",
+  "officer_compensation",
   "cover_schedules",
   "dependent_count",
   "wages",
@@ -474,11 +478,12 @@ export function extractClassFromSlot(slot: DocSlot): ExtractClass | null {
 export function extractClassFromFilename(name: string): ExtractClass | null {
   if (/purchase.?contract|purchase.?agree|\bpsa\b/i.test(name)) return "purchase_contract";
   if (/1040.?cover|cover.?page/i.test(name)) return "tax_return";
+  if (/1120-?s|tax\s*returns?/i.test(name) && !/w-?2|pay.?stub/i.test(name)) return "tax_return";
   return extractClassFromSlot(slotFromFilename(name));
 }
 
 /** return-2024.png / entity-ordinary-2024.png / tax / 1099 / K-1 / Schedule C. Does not need "schedule-c" in the name. */
-const TAX_RETURN_FILENAME = /\breturn\b|\bentity\b|tax|1099|k-?1|schedule.?c/;
+const TAX_RETURN_FILENAME = /\breturn\b|\bentity\b|tax|1099|k-?1|schedule.?c|1120-?s/;
 
 export function taxReturnFilename(name: string) {
   return TAX_RETURN_FILENAME.test(name.toLowerCase());
@@ -1458,6 +1463,9 @@ export function sanitizeExtractedFields(
     ) {
       continue;
     }
+    if ((key === "employer_name" || key === "second_employer_name") && junkEmployerName(value)) {
+      continue;
+    }
     next[key] = value;
   }
   if (extractClass === "purchase_contract") {
@@ -1978,7 +1986,8 @@ export function applyExtractedFields(
         field === "entity_guaranteed_payments" ||
         field === "ownership_percent" ||
         field === "entity_taxable_income" ||
-        field === "entity_name"
+        field === "entity_name" ||
+        field === "officer_compensation"
       ) {
         continue;
       }
@@ -2444,7 +2453,8 @@ export function applyExtractedFields(
       key === "entity_guaranteed_payments" ||
       key === "ownership_percent" ||
       key === "entity_taxable_income" ||
-      key === "entity_name"
+      key === "entity_name" ||
+      key === "officer_compensation"
     ) {
       continue;
     }
@@ -2831,8 +2841,30 @@ export const LAST_YEAR_FEDERAL_RETURN_ASK =
 export const LAST_YEAR_W2_STILL_USEFUL = "Last year’s W-2";
 export const LAST_YEAR_RETURN_STILL_USEFUL = "Last year’s tax return (Form 1040)";
 
+export const BUSINESS_RETURN_ASK =
+  "I still need the business return — Form 1120-S or the entity return.";
+
+function selfEmployedIncome(draft: FoxIntakeDraft) {
+  const income = draft.incomeType.value;
+  return income === "self-employed" || income === "other" || income === "both";
+}
+
+export function entityReturnOnFile(draft: FoxIntakeDraft) {
+  if (readTaxCashflows(draft).some((row) => String(row.entity_ordinary_income ?? "").trim())) {
+    return true;
+  }
+  return (draft.documents ?? []).some((doc) => {
+    if (doc.status !== "extracted") return false;
+    if (isUnreadNote(doc.note)) return false;
+    return /1120-?s|1065|entity/i.test(String(doc.name ?? ""));
+  });
+}
+
 export function taxReturnInviteCopy(draft: FoxIntakeDraft) {
   if (draft.incomeType.value === "w2") return LAST_YEAR_FEDERAL_RETURN_ASK;
+  if (draft.federalReturnSkipped && selfEmployedIncome(draft) && !entityReturnOnFile(draft)) {
+    return BUSINESS_RETURN_ASK;
+  }
   const recent = mostRecentFederalYear(draft);
   if (hasCoverOnFile(draft)) {
     const next = nextCoverPageInviteCopy(draft);
@@ -4446,6 +4478,14 @@ export function docInviteBlocksLooksRight(draft: FoxIntakeDraft) {
   if (employerStubRemainderOpen(draft)) return true;
   const invite = nextDocInvite(draft);
   if (invite === "paystub" && !draft.stubExtractAccepted && !draft.wageStubAsked) return true;
+  if (
+    selfEmployedIncome(draft) &&
+    draft.federalReturnSkipped &&
+    !entityReturnOnFile(draft) &&
+    invite === "tax_return"
+  ) {
+    return true;
+  }
   return false;
 }
 
@@ -4777,6 +4817,21 @@ export function skipCurrentInvite(draft: FoxIntakeDraft): FoxIntakeDraft {
       secondBankStatementSkipped: true,
       docsOpen: false,
       correcting: null,
+    };
+  }
+  if (
+    kind === "tax_return" &&
+    selfEmployedIncome(draft) &&
+    !draft.sampleAccepted &&
+    !draft.federalReturnSkipped &&
+    !entityReturnOnFile(draft)
+  ) {
+    return {
+      ...draft,
+      federalReturnSkipped: true,
+      docsOpen: false,
+      correcting: null,
+      looksRightHold: true,
     };
   }
   const skipped = Array.from(new Set([...(draft.skippedClasses ?? []), kind]));

@@ -87,7 +87,7 @@ function rowMethod(kind: IncomeLedgerKind) {
   if (kind === "schedule_c") return "Schedule C one-year";
   if (kind === "k1") return "ordinary / 12";
   if (kind === "entity_1065") return "entity cash flow";
-  if (kind === "entity_1120s") return "entity cash flow";
+  if (kind === "entity_1120s") return "household ordinary / 12";
   return "named loss";
 }
 
@@ -289,6 +289,7 @@ const LEDGER_FIELD_KEYS = [
   "schedule_e_part2_names",
   "schedule_e_property_address",
   "entity_ordinary_income",
+  "officer_compensation",
   "entity_name",
   "business_name",
   "gross_receipts",
@@ -344,6 +345,10 @@ export const TAX_RETURN_LEDGER_READ_KEYS = [
   "full_name",
   "wages",
   "return_kind",
+  "entity_ordinary_income",
+  "officer_compensation",
+  "entity_name",
+  "ownership_percent",
   "schedule_e_rents_received",
   "schedule_e_cash_expenses",
   "schedule_e_property_address",
@@ -352,7 +357,6 @@ export const TAX_RETURN_LEDGER_READ_KEYS = [
   "schedule_c_net_profit",
   "gross_receipts",
   "business_name",
-  "entity_name",
 ] as const;
 
 export function sanitizeLedgerExtractFields(fields: Record<string, string>): Record<string, string> {
@@ -367,6 +371,7 @@ export function sanitizeLedgerExtractFields(fields: Record<string, string>): Rec
       key === "schedule_c_net_profit" ||
       key === "gross_receipts" ||
       key === "entity_ordinary_income" ||
+      key === "officer_compensation" ||
       key === "wages"
     ) {
       const n = realLedgerMoney(raw);
@@ -415,6 +420,8 @@ export function incomeLedgerFieldsFromPrintedLines(lines: string[]): Record<stri
     blob.match(/tax year\s*:?\s*(20\d{2})/i)?.[1] ||
     blob.match(/\b(20\d{2})\b\s+(?:form\s*)?1040/i)?.[1] ||
     blob.match(/form\s*1040[^\n]{0,40}?(20\d{2})/i)?.[1] ||
+    blob.match(/form\s*1120-?s[^\n]{0,40}?(20\d{2})/i)?.[1] ||
+    blob.match(/\b(20\d{2})\b[^\n]{0,40}form\s*1120-?s/i)?.[1] ||
     blob.match(/schedule e[^\n]{0,40}?(20\d{2})/i)?.[1] ||
     "";
   if (year) fields.tax_year = year;
@@ -468,14 +475,43 @@ export function incomeLedgerFieldsFromPrintedLines(lines: string[]): Record<stri
     }
   }
 
+  const is1120sFace =
+    /\bform\s*1120-?s\b/i.test(blob) &&
+    !/\bschedule\s+k-?1\b/i.test(blob) &&
+    (/\bu\.?s\.?\s+income tax return for an s corporation\b/i.test(blob) ||
+      /\bcompensation of officers\b/i.test(blob) ||
+      /\bname of corporation\b/i.test(blob) ||
+      /\bschedule\s+k\b/i.test(blob));
+  const entityOrdinary =
+    moneyNearLabel(blob, /(?:^|\n)\s*21\s+ordinary business income(?:\s*\(\s*loss\s*\))?/i) ||
+    moneyNearLabel(blob, /ordinary business income(?:\s*\(\s*loss\s*\))?\s*\(\s*page\s*1,?\s*line\s*21\s*\)/i) ||
+    (is1120sFace
+      ? moneyNearLabel(blob, /ordinary business income(?:\s*\(\s*loss\s*\))?\s*:?\s*/i)
+      : undefined);
+  if (entityOrdinary) {
+    putMoney("entity_ordinary_income", entityOrdinary);
+    fields.return_kind = "1120s";
+  }
+  const officer =
+    moneyNearLabel(blob, /(?:^|\n)\s*7\s+compensation of officers/i) ||
+    moneyNearLabel(blob, /compensation of officers\s*:?\s*/i);
+  if (officer && is1120sFace) putMoney("officer_compensation", officer);
+
   const partnership =
     moneyNearLabel(blob, /ordinary business income(?:\s*\(\s*loss\s*\))?\s*:?\s*/i) ||
     moneyNearLabel(blob, /income or \(loss\) from partnerships(?:\s+and\s+s corporations)?\s*:?\s*/i) ||
     blob.match(new RegExp(`(?:partnership|k-?1)\\s+(?:ordinary|income|loss)[^\\n]{0,60}?${money}`, "i"))?.[1] ||
     blob.match(new RegExp(`ordinary business income[^\\n]{0,60}?${money}`, "i"))?.[1];
-  if (partnership) putMoney("k1_ordinary_income", partnership);
+  const entityFace =
+    is1120sFace ||
+    (/\bform\s*1065\b/i.test(blob) && /ordinary business income/i.test(blob) && !/\bschedule\s+k-?1\b/i.test(blob));
+  if (partnership && !entityOrdinary && !entityFace) putMoney("k1_ordinary_income", partnership);
 
   const names: string[] = [];
+  if (/HO\s*&\s*SOY\s+INC/i.test(blob)) {
+    names.push("HO & SOY INC");
+    fields.entity_name = "HO & SOY INC";
+  }
   if (/Bay Street Partners LLC/i.test(blob)) names.push("Bay Street Partners LLC");
   if (/Harbor Studio Inc/i.test(blob)) names.push("Harbor Studio Inc");
   const genericRe = /\b([A-Z][A-Za-z0-9 .&'-]{2,48}?(?:LLC|L\.L\.C\.|Inc\.?|Partners|LP|LLP))\b/g;

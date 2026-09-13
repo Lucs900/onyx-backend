@@ -154,6 +154,7 @@ export type TaxYearCashflow = {
   ownership_percent: string;
   entity_taxable_income: string;
   entity_name: string;
+  officer_compensation: string;
 };
 
 export type QualifyingIncomeResult = {
@@ -172,6 +173,8 @@ export type QualifyingIncomeResult = {
   weightNote?: string;
   partialNotes?: string[];
   parts?: { wage?: number; scheduleC?: number; k1?: number };
+  entityName?: string;
+  officerCompensation?: string;
 };
 
 const ENTITY_KINDS = new Set<TaxReturnKind>(["k1", "1065", "1120s"]);
@@ -332,6 +335,7 @@ export function readTaxCashflows(draft: FoxIntakeDraft): TaxYearCashflow[] {
           ownership_percent: String(row.ownership_percent ?? ""),
           entity_taxable_income: String(row.entity_taxable_income ?? ""),
           entity_name: String(row.entity_name ?? ""),
+          officer_compensation: String(row.officer_compensation ?? ""),
         },
       ];
     });
@@ -387,6 +391,7 @@ export function cashflowFromExtract(fields: Record<string, string>): TaxYearCash
     ownership_percent: String(fields.ownership_percent ?? "").trim(),
     entity_taxable_income,
     entity_name: String(fields.entity_name ?? "").trim(),
+    officer_compensation: String(fields.officer_compensation ?? "").trim(),
   };
 }
 
@@ -395,6 +400,8 @@ export function inferReturnKind(fields: Record<string, string>): TaxReturnKind {
   if (named) return named;
   if (String(fields.schedule_e_rents_received ?? "").trim()) return "schedule_e";
   if (String(fields.entity_ordinary_income ?? "").trim()) {
+    if (/1120-?s|scorp/i.test(String(fields.return_kind ?? ""))) return "1120s";
+    if (String(fields.officer_compensation ?? "").trim()) return "1120s";
     return String(fields.ownership_percent ?? "") === "100" ? "1120s" : "1065";
   }
   if (String(fields.entity_taxable_income ?? "").trim()) return "1120";
@@ -460,20 +467,34 @@ function scheduleEMonthly(years: TaxYearCashflow[]): number | null {
   return scheduleECashFlowMonthly(latest.rents, latest.cash);
 }
 
+function entityHas1084Addbacks(row: TaxYearCashflow) {
+  return Boolean(
+    parseExtractMoney(row.entity_8825_rental) != null ||
+      parseExtractMoney(row.entity_depreciation) != null ||
+      parseExtractMoney(row.entity_amortization) != null ||
+      parseExtractMoney(row.entity_te) != null ||
+      parseExtractMoney(row.entity_guaranteed_payments) != null,
+  );
+}
+
 function entityRowMonthly(row: TaxYearCashflow): number | null {
   const ordinary = parseExtractMoney(row.entity_ordinary_income);
   if (ordinary == null) return null;
   const ownership = parseExtractMoney(row.ownership_percent);
-  if (ownership == null) return null;
-  return entityCashFlowMonthly({
-    ordinary,
-    rental8825: parseExtractMoney(row.entity_8825_rental),
-    depreciation: parseExtractMoney(row.entity_depreciation),
-    amortization: parseExtractMoney(row.entity_amortization),
-    te: parseExtractMoney(row.entity_te),
-    guaranteedPayments: parseExtractMoney(row.entity_guaranteed_payments),
-    ownershipPercent: ownership,
-  });
+  if (entityHas1084Addbacks(row)) {
+    if (ownership == null) return null;
+    return entityCashFlowMonthly({
+      ordinary,
+      rental8825: parseExtractMoney(row.entity_8825_rental),
+      depreciation: parseExtractMoney(row.entity_depreciation),
+      amortization: parseExtractMoney(row.entity_amortization),
+      te: parseExtractMoney(row.entity_te),
+      guaranteedPayments: parseExtractMoney(row.entity_guaranteed_payments),
+      ownershipPercent: ownership,
+    });
+  }
+  if (ownership === 50) return monthlyFromAnnual(ordinary * 0.5);
+  return monthlyFromAnnual(ordinary);
 }
 
 function entityMonthly(years: TaxYearCashflow[]): { monthly: number; row: TaxYearCashflow } | null {
@@ -492,15 +513,21 @@ function entityMonthly(years: TaxYearCashflow[]): { monthly: number; row: TaxYea
 }
 
 function entityResultFromRow(row: TaxYearCashflow, monthly: number): QualifyingIncomeResult {
+  const ownership = parseExtractMoney(row.ownership_percent);
+  const household = !entityHas1084Addbacks(row);
   return {
     monthly,
     basis: "entity",
     methodNote: entityCashFlowMethodNote({
       kind: row.return_kind,
-      ownershipPercent: parseExtractMoney(row.ownership_percent),
+      ownershipPercent: ownership,
       guaranteedPayments: parseExtractMoney(row.entity_guaranteed_payments),
+      householdOrdinary: household && ownership !== 50,
+      ownerShare: household && ownership === 50,
     }),
     parts: { k1: monthly },
+    entityName: String(row.entity_name ?? "").trim() || undefined,
+    officerCompensation: String(row.officer_compensation ?? "").trim() || undefined,
   };
 }
 
@@ -1848,7 +1875,9 @@ export function incomeLedgerAskCopy(row: IncomeLedgerRow): string {
   }
   if (row.kind === "entity_1065" || row.kind === "entity_1120s") {
     const form = row.kind === "entity_1120s" ? "Form 1120-S" : "Form 1065";
-    return `This return shows a ${form}. I’m suggesting ${signed} a month. ${ledgerProposalNote(row.kind)}. Use this?`;
+    const named = row.businessName ? ` for ${row.businessName}` : "";
+    const share = row.kind === "entity_1120s" ? " household ordinary" : "";
+    return `This return shows a ${form}${named}. I’m suggesting ${signed} a month${share}. ${ledgerProposalNote(row.kind)}. Use this?`;
   }
   return `I’m suggesting ${signed} a month. ${ledgerProposalNote(row.kind)}. Use this?`;
 }
@@ -1873,6 +1902,14 @@ export function qualifyingIncomeProposal(computed: QualifyingIncomeResult): Fact
     caution: computed.caution,
     partialNotes: computed.partialNotes,
     parts: serializeParts(computed.parts),
+    extras: [
+      ...(computed.entityName
+        ? [{ field: "entity_name", value: computed.entityName, label: "entity" }]
+        : []),
+      ...(computed.officerCompensation
+        ? [{ field: "officer_compensation", value: computed.officerCompensation, label: "officer wages" }]
+        : []),
+    ],
   };
 }
 
@@ -1903,7 +1940,9 @@ export function isEntityCashFlowProposal(proposal?: FactProposal | null): boolea
   return (
     /8825 rental/i.test(method) ||
     /ordinary \+ dep/i.test(method) ||
-    /GP to Hale/i.test(method)
+    /GP to Hale/i.test(method) ||
+    /household ordinary/i.test(method) ||
+    /per 50% owner/i.test(method)
   );
 }
 

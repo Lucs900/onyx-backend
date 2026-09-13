@@ -9,6 +9,7 @@ Not first-source-wins. Not “we already qualify on W-2.”
 - Classify the page. Extract every useful income or loss. Suggest. Confirm-before-write. File empty on that line until Use this.
 - Wage method = W-2 Box 5 + stub. 1040 wages = household total only.
 - Sch C, Sch E Part I, Sch F, K-1, 1065, 1120-S each own a row with a locked method. Use this writes that row. Leave blank keeps it off QI.
+- Form 1120-S / entity return is not a paystub and not a 1040. Name from the 1120-S header. Ordinary is line 21 / Schedule K line 1. Household ordinary is ordinary / 12, or per 50% owner when that share is printed — name which on the card. Officer compensation is wages, not inside ordinary. Disclaimer / PIN / 8879 / “express or implied” is never Employer. Skip-1040 on SE still asks for the business return.
 - Read the actual Schedule E / partnership dollars. Form line numbers and tiny nets are not a suggest. Invent nothing.
 - 1040 packet uses the W-2 path: page images → Grok → locked schema → confirm-before-write. Year + both names, cover wages as household signal only, Schedule E Part I and K-1 ordinary as their own rows, named losses that do not net into W-2 QI. Unread on that drop belongs to the return, never the written stub.
 - Confirmed wage QI keeps the stub method label until a new row is confirmed via Use this.
