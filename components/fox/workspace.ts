@@ -125,6 +125,8 @@ import {
   taxReturnWrittenOnFile,
   taxReturnPacketHoldAsk,
   taxReturnPacketCloseAskOpen,
+  taxReturnPacketSettled,
+  asksWhatElseOnReturn,
   PACKET_READING_LINE,
   PACKET_NO_K1_C_LINE,
   taxReturnStructureValue,
@@ -2514,6 +2516,12 @@ export function docReactionAsk(
     };
   }
   if (draft.pendingProposal && shouldSpeakPendingConfirm(draft)) {
+    if (taxReturnPacketSettled(draft) && isIncomeLedgerProposal(draft.pendingProposal)) {
+      const kind = draft.pendingProposal.extras?.find((item) => item.field === "ledger_kind")?.value;
+      if (!kind || kind === "schedule_e") {
+        return { text: PACKET_NO_K1_C_LINE, actions: finishLineActions(draft) };
+      }
+    }
     return liveProposalAsk(draft, draft.pendingProposal, cls);
   }
   if (cls === "government_id") {
@@ -2893,8 +2901,21 @@ function restoreQueueActions(draft: FoxIntakeDraft) {
   return [...extra, ...finish.filter((item) => !seen.has(item.label))];
 }
 
+function packetCloseOnlyReply(draft: FoxIntakeDraft) {
+  if (!taxReturnPacketSettled(draft)) return null;
+  return {
+    text: PACKET_NO_K1_C_LINE,
+    actions: finishLineActions(draft),
+  };
+}
+
 function restoredAsk(answer: string, draft: FoxIntakeDraft) {
+  const closed = packetCloseOnlyReply(draft);
+  if (closed && (answer === PACKET_NO_K1_C_LINE || !answer || /Use this\?/i.test(nextFoxAsk(draft).text))) {
+    return closed;
+  }
   const ask = nextFoxAsk(draft);
+  if (closed && ask.text !== PACKET_NO_K1_C_LINE) return closed;
   if (!answer || answer === ask.text) {
     return {
       text: ask.text,
@@ -2986,13 +3007,16 @@ function unmatchedSideAnswer(draft: FoxIntakeDraft) {
   const prompt = workspacePrompt(draft);
   if (prompt === "product") return "I can take Buy, Refinance, HELOC, Jumbo, or Other.";
   if (prompt === "correct") return "That’s so I can fix one line on the sketch.";
-  if (prompt === "packet-close" || taxReturnPacketCloseAskOpen(draft)) return PACKET_NO_K1_C_LINE;
+  if (prompt === "packet-close" || taxReturnPacketSettled(draft)) return PACKET_NO_K1_C_LINE;
   if (isIncomeLedgerProposal(draft.pendingProposal)) return "";
   if (prompt === "done" || draft.sampleAccepted) return TIMELINE_COPY;
   return FILE_ANSWER_COPY;
 }
 
 function documentQuestionAnswer(draft: FoxIntakeDraft) {
+  if (workspacePrompt(draft) === "packet-close" || taxReturnPacketSettled(draft)) {
+    return PACKET_NO_K1_C_LINE;
+  }
   const invite = nextDocInvite(draft);
   if (invite === "government_id") {
     return conventionalGuidelinePattern("docs", "government_id", "A government ID puts a name on this file.");
@@ -3023,9 +3047,6 @@ function documentQuestionAnswer(draft: FoxIntakeDraft) {
     return conventionalGuidelinePattern("docs", "purchase_contract", "The purchase contract is the property on paper.");
   }
   if (draft.correcting === "correct") return "That’s so I can fix one line on the sketch.";
-  if (workspacePrompt(draft) === "packet-close" || taxReturnPacketCloseAskOpen(draft)) {
-    return PACKET_NO_K1_C_LINE;
-  }
   if (isIncomeLedgerProposal(draft.pendingProposal)) return "";
   if (draft.sampleAccepted) return TIMELINE_COPY;
   return FILE_ANSWER_COPY;
@@ -3632,7 +3653,7 @@ export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
   if (draft.awaitingCoverWageGap) return "cover-wage-gap";
   if (isHouseholdWagesProposal(draft.pendingProposal)) return "household-wages";
   if (taxReturnPacketHoldAsk(draft)) return "packet-read";
-  if (taxReturnPacketCloseAskOpen(draft)) return "packet-close";
+  if (taxReturnPacketSettled(draft)) return "packet-close";
   if (draft.awaitingRaiseWhen) return "raise-when";
   if (draft.awaitingRaiseYtdFar) return "raise-ytd-far";
   if (
@@ -6337,6 +6358,12 @@ export function workspaceReply(
   const q = text.trim();
   const lower = q.toLowerCase();
   const prompt = workspacePrompt(draft);
+  if (asksWhatElseOnReturn(q) && taxReturnPacketSettled(draft)) {
+    return {
+      text: PACKET_NO_K1_C_LINE,
+      actions: finishLineActions(draft),
+    };
+  }
   const notepadEdit = notepadEditPrompt(draft);
 
   if (

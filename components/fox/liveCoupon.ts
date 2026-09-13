@@ -17,6 +17,7 @@ import {
   transcriptSpeakKey,
   LAST_YEAR_FEDERAL_RETURN_ASK,
   DOC_INVITE_COPY,
+  PACKET_NO_K1_C_LINE,
 } from "./fileWrite";
 import { ID_UNREAD_ASK, isBorrowerNameConfirmPending } from "./borrowerName";
 import {
@@ -517,6 +518,7 @@ export function promoteReprintedFoxAsk(messages: FoxMessage[]): FoxMessage[] {
   if (last < 0) return messages;
   const lastMsg = messages[last];
   if (!lastMsg || lastMsg.role !== "fox") return messages;
+  if (lastMsg.text.trim() === PACKET_NO_K1_C_LINE) return messages;
   const key = lastMsg.text.trim();
   if (!key) return messages;
   const reprint = messages.some(

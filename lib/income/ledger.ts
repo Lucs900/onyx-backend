@@ -190,10 +190,6 @@ export function incomeLedgerRowsFromFields(fields: Record<string, string>): Inco
   return rows;
 }
 
-function ledgerYearKey(year?: string) {
-  return String(year ?? "").replace(/\D/g, "").slice(0, 4);
-}
-
 export function scheduleEWrittenOnLedger(
   rows: IncomeLedgerRow[] | undefined,
   scheduleEMonthlyConfirmed = false,
@@ -223,18 +219,14 @@ export function mergeIncomeLedger(
   const writtenScheduleE = scheduleEWrittenOnLedger(next);
   for (const row of incoming) {
     if (row.kind === "schedule_e") {
-      const year = ledgerYearKey(row.year);
-      const existingAt = next.findIndex(
-        (item) => item.kind === "schedule_e" && ledgerYearKey(item.year) === year,
-      );
-      if (existingAt >= 0) {
-        const current = next[existingAt];
-        if (current.status === "suggested" && row.businessName && !current.businessName) {
+      const existingAt = next.findIndex((item) => item.kind === "schedule_e");
+      if (existingAt >= 0 || writtenScheduleE) {
+        const current = existingAt >= 0 ? next[existingAt] : undefined;
+        if (current?.status === "suggested" && row.businessName && !current.businessName) {
           next[existingAt] = { ...current, businessName: row.businessName };
         }
         continue;
       }
-      if (writtenScheduleE) continue;
     }
     const at = next.findIndex((item) => item.id === row.id);
     if (at < 0) {

@@ -683,6 +683,13 @@ export function transcriptOfferDone(draft: FoxIntakeDraft) {
 export const PACKET_READING_LINE = "Reading the rest of the return.";
 export const PACKET_SCHEDULES_MISSING_LINE = "I didn’t see Schedule E or a K-1 on these pages.";
 export const PACKET_NO_K1_C_LINE = "I didn’t see a K-1 or Schedule C on these pages.";
+
+export function asksWhatElseOnReturn(text: string) {
+  return (
+    /\b(what else|anything else|what did you (see|find|read)|did you see|else did you see)\b/i.test(text) &&
+    /\b(return|1040|schedule|pages?)\b/i.test(text)
+  );
+}
 export const PACKET_LINES_MISSING_LINE =
   "I didn’t see cover wages, Schedule E, or a K-1 on these pages.";
 export const PACKET_WAGES_UNREAD_LINE =
@@ -724,7 +731,7 @@ export function taxReturnPacketSettled(draft: FoxIntakeDraft) {
 }
 
 export function taxReturnPacketCloseAskOpen(draft: FoxIntakeDraft) {
-  return Boolean(draft.taxReturnPacketCloseAsk) && taxReturnPacketSettled(draft);
+  return taxReturnPacketSettled(draft);
 }
 
 export function taxReturnPacketHoldAsk(draft: FoxIntakeDraft) {

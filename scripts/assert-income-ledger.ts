@@ -31,7 +31,7 @@ import {
 import { resolveProposal } from "../components/fox/completeness";
 import { FAILED_READ_NOTE } from "../lib/docs/accept";
 import { applyExtractWrite, emptyDraft, loadIntakeDraft, receiveDocument } from "../components/fox/store";
-import { coverWageGapAsk, nextFoxAsk, previewFacts, TIMELINE_COPY, workspaceReply } from "../components/fox/workspace";
+import { coverWageGapAsk, deskStripActions, nextFoxAsk, previewFacts, TIMELINE_COPY, workspaceReply } from "../components/fox/workspace";
 import {
   COVER_WAGE_GAP_ASK,
   GROSS_RECEIPTS_FIELD,
@@ -58,7 +58,8 @@ import {
   taxReturnPacketNeedsRead,
   taxReturnPacketSettled,
 } from "../components/fox/fileWrite";
-import type { ExtractClass, FoxIntakeDraft } from "../components/fox/types";
+import type { ExtractClass, FoxIntakeDraft, FoxMessage } from "../components/fox/types";
+import { leftoverUseThisOnOlderTurns, sealStoredFoxThread } from "../components/fox/liveCoupon";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -1117,9 +1118,61 @@ async function main() {
   const leftoverQ = workspaceReply("What else did you see on that return?", leftoverReady);
   assert.ok(leftoverQ);
   assert.equal(leftoverQ.text, PACKET_NO_K1_C_LINE);
-  assert.doesNotMatch(leftoverQ.text ?? "", /7,292|Use this|Reading the rest/);
+  assert.doesNotMatch(leftoverQ.text ?? "", /7,292|Use this|Reading the rest|Schedule E/);
   assert.notEqual(leftoverQ.text, TIMELINE_COPY);
   assert.ok(!(leftoverQ.actions ?? []).some((item) => item.label === "Use this"));
+
+  const leftoverOnOpenId = workspaceReply("What else did you see on that return?", usedGoldE);
+  assert.equal(leftoverOnOpenId?.text, PACKET_NO_K1_C_LINE, "close line once — do not restore ID or Sch E");
+  assert.doesNotMatch(leftoverOnOpenId?.text ?? "", /7,292|Use this|Schedule E|government ID/);
+
+  const hangingReprint: FoxIntakeDraft = {
+    ...usedGoldE,
+    taxReturnPacketCloseAsk: false,
+    pendingProposal: afterGoldWages.pendingProposal,
+  };
+  const leftoverHanging = workspaceReply("What else did you see on that return?", hangingReprint);
+  assert.equal(leftoverHanging?.text, PACKET_NO_K1_C_LINE, "a hanging Sch E proposal is not next");
+  assert.doesNotMatch(leftoverHanging?.text ?? "", /7,292|Use this|Schedule E/);
+  assert.ok(!(leftoverHanging?.actions ?? []).some((item) => item.label === "Use this"));
+  assert.equal(nextFoxAsk(hangingReprint).text, PACKET_NO_K1_C_LINE);
+
+  const leftoverThread: FoxMessage[] = sealStoredFoxThread([
+    {
+      id: "sch-e",
+      role: "fox",
+      text: goldEAsk.text,
+      actions: goldEAsk.actions,
+    },
+    { id: "used-e", role: "client", text: "Use this" },
+    {
+      id: "close-1",
+      role: "fox",
+      text: PACKET_NO_K1_C_LINE,
+      actions: goldCloseAsk.actions,
+    },
+    { id: "leftover-q", role: "client", text: "What else did you see on that return?" },
+    {
+      id: "close-2",
+      role: "fox",
+      text: leftoverQ.text ?? "",
+      actions: leftoverQ.actions,
+    },
+  ]);
+  assert.equal(
+    leftoverThread.filter((item) => item.role === "fox" && item.text === PACKET_NO_K1_C_LINE).length,
+    2,
+    "close line can repeat as the leftover answer — never a second Sch E card",
+  );
+  assert.ok(
+    !leftoverThread.some((item) => item.role === "fox" && /Use this\?/i.test(item.text)),
+    "history speech drops Use this?",
+  );
+  assert.equal(leftoverUseThisOnOlderTurns(leftoverThread, leftoverReady), 0);
+  assert.ok(
+    !deskStripActions(leftoverThread, leftoverReady).some((item) => item.label === "Use this"),
+    "Use this is live-strip only — leftover close has finish chips",
+  );
 
   const reprintRows = incomeLedgerRowsFromFields({
     tax_year: "2025",
