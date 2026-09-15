@@ -93,10 +93,12 @@ const FOUNDER_1065_FACE = [
   "Name of partnership Parass Foods LLC",
   "Employer identification number 88-1234567",
   "1c Gross receipts or sales                         980,000",
+  "8 Total income (loss)                              619,857",
   "9 Salaries and wages (other than to partners)      365,050",
-  "21 Other deductions (attach statement)             48,000",
-  "22 Total deductions                                900,000",
-  "23 Ordinary business income (loss)                 (172,428)",
+  "16a Depreciation (if required, attach Form 4562)    22,451",
+  "21 Other deductions (attach statement)             237,473",
+  "22 Total deductions                                792,285",
+  "23 Ordinary business income (loss). Subtract line 22 from line 8    23 (172,428)",
 ];
 
 const FOUNDER_K1_90 = [
@@ -104,8 +106,14 @@ const FOUNDER_K1_90 = [
   "Partner's Share of Income, Deductions, Credits, etc.",
   "Partnership Parass Foods LLC",
   "Partner identifying number 999-00-0001",
-  "Current year allocation percentage 90%",
+  "J Partner's share of profit, loss, and capital (see instructions):",
+  "Beginning Ending",
+  "Profit 90.0000000 % 90.0000000 %",
+  "Loss 90.0000000 % 90.0000000 %",
+  "Capital 90.0000000 % 90.0000000 %",
   "1 Ordinary business income (loss)                  (155,185)",
+  "14 Self-employment earnings (loss)",
+  "C 557,087",
 ];
 
 const FOUNDER_K1_10 = [
@@ -113,8 +121,14 @@ const FOUNDER_K1_10 = [
   "Partner's Share of Income, Deductions, Credits, etc.",
   "Partnership Parass Foods LLC",
   "Partner identifying number 999-00-0002",
-  "Current year allocation percentage 10%",
+  "J Partner's share of profit, loss, and capital (see instructions):",
+  "Beginning Ending",
+  "Profit 10.0000000 % 10.0000000 %",
+  "Loss 10.0000000 % 10.0000000 %",
+  "Capital 10.0000000 % 10.0000000 %",
   "1 Ordinary business income (loss)                  (17,243)",
+  "14 Self-employment earnings (loss)",
+  "C 61,899",
 ];
 
 const FOUNDER_ENTITY_PAGES = [FOUNDER_1065_FACE];
@@ -201,7 +215,7 @@ async function main() {
   );
   assert.equal(
     classifyPageByFormHeader(
-      "Schedule K-1 (Form 1065) 2024 Partner's Share Current year allocation percentage 90% 1 Ordinary business income (loss) (155,185)",
+      "Schedule K-1 (Form 1065) 2024 Partner's Share of Income J Partner's share of profit, loss, and capital Profit 90.0000000 % 1 Ordinary business income (loss) (155,185)",
     ),
     "k1",
   );
@@ -220,8 +234,10 @@ async function main() {
   assert.equal(loud?.fields.entity_name, "Parass Foods LLC");
   assert.equal(loud?.fields.entity_ordinary_income, "-172428");
   assert.notEqual(loud?.fields.entity_ordinary_income, "365050");
-  assert.notEqual(loud?.fields.entity_ordinary_income, "900000");
-  assert.notEqual(loud?.fields.entity_ordinary_income, "48000");
+  assert.notEqual(loud?.fields.entity_ordinary_income, "619857");
+  assert.notEqual(loud?.fields.entity_ordinary_income, "792285");
+  assert.notEqual(loud?.fields.entity_ordinary_income, "237473");
+  assert.notEqual(loud?.fields.entity_ordinary_income, "22451");
   assert.equal(loud?.fields.wages, undefined);
   assert.equal(loud?.fields.ein, undefined);
   assert.equal(loud?.fields.ssn, undefined);
@@ -236,8 +252,13 @@ async function main() {
   const k1 = loudK1FromPrintedLines(FOUNDER_K1_90);
   assert.ok(k1, "loud 90% K-1 extract");
   assert.equal(k1?.fields.k1_ordinary_income, "-155185");
-  assert.equal(k1?.fields.ownership_percent, "90");
+  assert.equal(k1?.fields.ownership_percent, "90", "Item J 90.0000000 % is 90");
   assert.notEqual(k1?.fields.k1_ordinary_income, "-172428");
+  assert.notEqual(k1?.fields.k1_ordinary_income, "557087");
+  const k1Ten = loudK1FromPrintedLines(FOUNDER_K1_10);
+  assert.equal(k1Ten?.fields.k1_ordinary_income, "-17243");
+  assert.equal(k1Ten?.fields.ownership_percent, "10", "Item J 10.0000000 % is 10");
+  assert.notEqual(k1Ten?.fields.k1_ordinary_income, "61899");
   const k1Only = monthlyQualifyingFromExtract(seSketch(), "tax_return", {
     tax_year: "2024",
     return_kind: "k1",
@@ -266,7 +287,9 @@ async function main() {
   assert.equal(extracted.fields.other_k1_ordinary_income, "-17243");
   assert.notEqual(extracted.fields.k1_ordinary_income, "-17243");
   assert.notEqual(extracted.fields.entity_ordinary_income, "365050");
-  assert.notEqual(extracted.fields.entity_ordinary_income, "900000");
+  assert.notEqual(extracted.fields.entity_ordinary_income, "619857");
+  assert.notEqual(extracted.fields.entity_ordinary_income, "792285");
+  assert.notEqual(extracted.fields.k1_ordinary_income, "557087");
   assert.equal(extracted.fields.wages, undefined);
   assert.equal(extracted.fields.employer_name, undefined);
   assert.equal(extracted.fields.ein, undefined);

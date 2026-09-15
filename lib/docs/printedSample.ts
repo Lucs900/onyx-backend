@@ -833,18 +833,22 @@ function entitySourceLines(lines: string[]): string[] {
 
 function ownershipPercentFromPrintedText(text: string): string {
   const blob = String(text ?? "").replace(/\u00a0/g, " ");
+  const pct = "(\\d{1,3}(?:\\.\\d+)?)\\s*%";
   const match =
-    blob.match(/partner share is\s*(\d{1,3})\s*%/i) ||
-    blob.match(/shareholder is\s*(\d{1,3})\s*%/i) ||
-    blob.match(/jordan hale\s*·\s*(\d{1,3})\s*%/i) ||
-    blob.match(/this (?:partner|shareholder)[\s\S]{0,80}?(\d{1,3})\s*%/i) ||
-    blob.match(/current year allocation percentage[^\d]{0,40}?(\d{1,3})\s*%/i) ||
-    blob.match(/partner'?s share of (?:profit|income|loss)[^\d%]{0,40}(\d{1,3})\s*%/i) ||
-    blob.match(/profit(?:\s*,\s*loss,\s*and\s*capital)?[^\d%]{0,24}(\d{1,3})\s*%/i);
+    blob.match(new RegExp(`partner share is\\s*${pct}`, "i")) ||
+    blob.match(new RegExp(`shareholder is\\s*${pct}`, "i")) ||
+    blob.match(new RegExp(`jordan hale\\s*·\\s*${pct}`, "i")) ||
+    blob.match(new RegExp(`this (?:partner|shareholder)[\\s\\S]{0,80}?${pct}`, "i")) ||
+    blob.match(new RegExp(`current year allocation percentage[^\\d]{0,40}?${pct}`, "i")) ||
+    blob.match(new RegExp(`shareholder'?s percentage of stock[^\\d%]{0,60}${pct}`, "i")) ||
+    blob.match(new RegExp(`partner'?s share of (?:profit|income|loss)[\\s\\S]{0,220}?\\bprofit\\b[^\\d%]{0,40}${pct}`, "i")) ||
+    blob.match(new RegExp(`(?:^|\\n)\\s*profit\\b[^\\d%]{0,40}${pct}`, "im")) ||
+    blob.match(new RegExp(`partner'?s share of (?:profit|income|loss)[^\\d%]{0,80}${pct}`, "i")) ||
+    blob.match(new RegExp(`profit(?:\\s*,\\s*loss,\\s*and\\s*capital)?[^\\d%]{0,40}${pct}`, "i"));
   if (!match?.[1]) return "";
-  const pct = Number(match[1]);
-  if (!Number.isFinite(pct) || pct <= 0 || pct > 100) return "";
-  return String(pct);
+  const n = Number(match[1]);
+  if (!Number.isFinite(n) || n <= 0 || n > 100) return "";
+  return String(n);
 }
 
 function applyEntityReturnFields(
@@ -887,9 +891,16 @@ function applyEntityReturnFields(
     }
     return moneyDigits(match[1]) || "";
   };
+  const ordinary1065Row = sourceBlob.match(
+    /(?:^|\n)\s*23\s*ordinary business income(?:\s*\(\s*loss\s*\))?[^\n]{0,200}/i,
+  )?.[0] ?? "";
+  const ordinary1065Paren = ordinary1065Row.match(/\(\s*\$?\s*([\d,]{3,}(?:\.\d+)?)\s*\)/);
+  const ordinary1065Last = [...ordinary1065Row.matchAll(/\$?\s*(\d{1,3}(?:,\d{3})+(?:\.\d+)?)/g)].pop()?.[1];
   const ordinaryFromKind =
     kind === "1065"
-      ? moneyAfter(new RegExp(`(?:^|\\n)\\s*23\\s+ordinary business income(?:\\s*\\(\\s*loss\\s*\\))?:?[^\\n]{0,80}?${moneyToken}`, "i")) ||
+      ? (ordinary1065Paren?.[1] ? moneyDigits(`(${ordinary1065Paren[1]})`) : "") ||
+        (ordinary1065Last ? moneyDigits(ordinary1065Last) : "") ||
+        moneyAfter(new RegExp(`(?:^|\\n)\\s*23\\s+ordinary business income(?:\\s*\\(\\s*loss\\s*\\))?:?[^\\n]{0,80}?${moneyToken}`, "i")) ||
         moneyAfter(new RegExp(`ordinary business income(?:\\s*\\(\\s*loss\\s*\\))?\\s*\\(\\s*page\\s*1,?\\s*line\\s*23\\s*\\)[^\\n]{0,80}?${moneyToken}`, "i"))
       : "";
   const ordinary =

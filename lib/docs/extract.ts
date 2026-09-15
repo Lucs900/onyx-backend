@@ -419,6 +419,13 @@ ownership_percent only when a partner percentage is clearly printed on this page
 Do not return EIN, SSN, line 9 wages, or invented K-1 dollars. Company ordinary is not one partner’s qualifying income.
 Never invent. Empty string if a dollar or name is not clearly printed.`;
 
+const FORM_K1_PROMPT = `Read this Schedule K-1 page image only. JSON object with these keys:
+tax_year, entity_name, k1_ordinary_income, ownership_percent.
+k1_ordinary_income is Box 1 Ordinary business income (loss). Keep the printed sign. A loss in parentheses is negative. Never Box 14 self-employment earnings. Never capital-account current year net income unless Box 1 is blank. Never guaranteed payments (Box 4) as Box 1. Never distributions.
+ownership_percent is the partner’s Item J ending profit percent, or the shareholder’s current year allocation / stock-ownership percent. 90.0000000 % is 90. 10.0000000 % is 10. Empty if no percent is printed.
+entity_name is the partnership or S corporation name. Never a partner name. Never SSN. Never EIN.
+Never invent. Empty string if a dollar or name is not clearly printed.`;
+
 const FORM_1040_HOUSEHOLD_WAGES_PROMPT = `Read this Form 1040 page image only. JSON object with one key: wages.
 wages is the dollar amount printed on line 1z (Wages, salaries, tips, etc. Add lines 1a through 1h) or, if 1z is blank, line 1a (Total amount from Form(s) W-2, box 1).
 Never line 1b Household employee wages. Never a form line number. Never invent. Empty string if that dollar amount is not clearly printed.`;
@@ -1111,7 +1118,19 @@ function assignLedgerKeepFirst(merged: Record<string, string>, incoming: Record<
   for (const [key, value] of Object.entries(incoming)) {
     const next = String(value ?? "").trim();
     if (!next) continue;
-    if ((key === "wages" || key === "tax_year" || key === "full_name") && merged[key]) continue;
+    if (
+      (key === "wages" ||
+        key === "tax_year" ||
+        key === "full_name" ||
+        key === "entity_ordinary_income" ||
+        key === "k1_ordinary_income" ||
+        key === "ownership_percent" ||
+        key === "other_k1_ordinary_income" ||
+        key === "other_k1_ownership_percent") &&
+      merged[key]
+    ) {
+      continue;
+    }
     merged[key] = next;
   }
 }
@@ -1124,6 +1143,15 @@ async function grokScheduleLedgerFields(
   if (!adapter.extractLedger) return {};
   const targets = taxReturnPagesToGrok(walked);
   const merged: Record<string, string> = {};
+  const k1s: Record<string, string>[] = [];
+  const take = (klass: TaxFormClass, raw: Record<string, string>) => {
+    const allowed = fieldsAllowedForClass(klass, sanitizeLedgerExtractFields(raw));
+    if (klass === "k1" && allowed.k1_ordinary_income) {
+      k1s.push(allowed);
+      return;
+    }
+    assignLedgerKeepFirst(merged, allowed);
+  };
   for (const pageNumber of targets) {
     const image = await renderPdfPage(bytes, pageNumber);
     if (!image?.mediaType.startsWith("image/")) continue;
@@ -1137,10 +1165,7 @@ async function grokScheduleLedgerFields(
           raw[key] = String(value);
         }
         raw.return_kind = "1120s";
-        assignLedgerKeepFirst(
-          merged,
-          fieldsAllowedForClass(klass, sanitizeLedgerExtractFields(raw)),
-        );
+        take(klass, raw);
         continue;
       }
       if (klass === "form_1065" && adapter === grokExtractAdapter) {
@@ -1151,32 +1176,30 @@ async function grokScheduleLedgerFields(
           raw[key] = String(value);
         }
         raw.return_kind = "1065";
-        assignLedgerKeepFirst(
-          merged,
-          fieldsAllowedForClass(klass, sanitizeLedgerExtractFields(raw)),
-        );
+        take(klass, raw);
+        continue;
+      }
+      if (klass === "k1" && adapter === grokExtractAdapter) {
+        const parsed = await grokJson(image.bytes, image.mediaType, FORM_K1_PROMPT);
+        const raw: Record<string, string> = {};
+        for (const [key, value] of Object.entries(parsed)) {
+          if (value == null || typeof value === "object") continue;
+          raw[key] = String(value);
+        }
+        take(klass, raw);
         continue;
       }
       if (klass === "schedule_e" && adapter === grokExtractAdapter) {
-        const parsed = await grokJson(image.bytes, image.mediaType, SCHEDULE_E_PART1_PROMPT);
-        assignLedgerKeepFirst(
-          merged,
-          fieldsAllowedForClass(
-            klass,
-            sanitizeLedgerExtractFields(flattenScheduleEPart1(parsed)),
-          ),
-        );
+        take(klass, flattenScheduleEPart1(await grokJson(image.bytes, image.mediaType, SCHEDULE_E_PART1_PROMPT)));
         continue;
       }
       const extracted = await adapter.extractLedger(image.bytes, image.mediaType);
-      assignLedgerKeepFirst(
-        merged,
-        fieldsAllowedForClass(klass, sanitizeLedgerExtractFields(extracted.fields ?? {})),
-      );
+      take(klass, extracted.fields ?? {});
     } catch (error) {
       logVisionError("extractLedger", error);
     }
   }
+  assignPrimaryOtherK1(merged, k1s);
   return merged;
 }
 

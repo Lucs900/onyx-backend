@@ -20,8 +20,11 @@ Pre-drop ask stays **business return** only. After classify, name **1065**.
 | 1065 page 1 **line 23** ordinary | **loss $172,428** — **company ordinary** |
 | 1065 page 1 **line 9** | Salaries and wages **$365,050** — employee wages, **not** partner income |
 | Guaranteed payments | **none** |
+| 90% K-1 Item J ending profit | **90.0000000 %** — not “current year allocation percentage” |
 | 90% K-1 Box 1 | **−$155,185** → **−$12,932 / mo** |
+| 10% K-1 Item J ending profit | **10.0000000 %** |
 | 10% K-1 Box 1 | **−$17,243** → **−$1,437 / mo** |
+| K-1 Box 14 C | self-employment — **not** Box 1 |
 | Company ordinary | **−$14,369 / mo** (`172428 / 12`) — not this borrower’s QI |
 
 Company ordinary is **not** one person’s QI. Suggest the **90%** K-1 Box 1 first: **−$12,932** · named **loss** · Suggested · not underwritten. Use this stays live.
