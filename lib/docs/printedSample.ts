@@ -895,7 +895,12 @@ function applyEntityReturnFields(
     /(?:^|\n)\s*23\s*ordinary business income(?:\s*\(\s*loss\s*\))?[^\n]{0,200}/i,
   )?.[0] ?? "";
   const ordinary1065Paren = ordinary1065Row.match(/\(\s*\$?\s*([\d,]{3,}(?:\.\d+)?)\s*\)/);
-  const ordinary1065Last = [...ordinary1065Row.matchAll(/\$?\s*(\d{1,3}(?:,\d{3})+(?:\.\d+)?)/g)].pop()?.[1];
+  let ordinary1065Last = "";
+  const ordinary1065Money = /\$?\s*(\d{1,3}(?:,\d{3})+(?:\.\d+)?)/g;
+  let ordinary1065Hit: RegExpExecArray | null;
+  while ((ordinary1065Hit = ordinary1065Money.exec(ordinary1065Row))) {
+    ordinary1065Last = ordinary1065Hit[1] ?? "";
+  }
   const ordinaryFromKind =
     kind === "1065"
       ? (ordinary1065Paren?.[1] ? moneyDigits(`(${ordinary1065Paren[1]})`) : "") ||
