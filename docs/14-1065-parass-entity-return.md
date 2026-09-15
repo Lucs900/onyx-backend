@@ -1,8 +1,8 @@
-# 14 — Form 1065 partnership return (founder gold)
+# 14 — Parass Foods Form 1065 (founder gold)
 
 Preview only. Suggested · not underwritten. Confirm before write.
 
-No Parass Foods founder PDF bytes in git, walker fixtures, or onyx-fixtures. Private drop pages are read-only proof. Do not commit them.
+No Parass Foods founder PDF bytes in git, walker fixtures, or onyx-fixtures. Implement from this gold. If a private drop later lands under `/workspace/private-drops/`, read it — **do not commit**.
 
 ## Packet
 
@@ -42,7 +42,7 @@ Do **not** invent a monthly number that is not on the page.
 
 ## Harbor 21 — smoke only
 
-`21-1065-2024-bay-street.pdf` is a Harbor worksheet. Useful for 1084 add-back smoke.
+`21-1065-2024-bay-street.pdf` is a Harbor worksheet. Useful for classify / filename guards (a `2024 1120 - …` name must still read as 1065).
 
 **Not ACCEPT proof.** Do not substitute it for the founder paperclip. Do not invent Harbor numbers on this Parass slice.
 

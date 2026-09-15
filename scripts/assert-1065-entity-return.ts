@@ -1,5 +1,5 @@
 /**
- * Founder 1065 gold numbers from docs/14-1065-entity-return.md.
+ * Founder 1065 gold numbers from docs/14-1065-parass-entity-return.md.
  * No founder PDF bytes on the VM. Harbor 21 is smoke only — not ACCEPT.
  * Classify from the page, not the filename “2024 1120 - …”.
  * Line 23 ordinary is a loss $172,428. Company ordinary is not one person’s QI.
@@ -178,8 +178,9 @@ function withEntityDoc(draft: FoxIntakeDraft): FoxIntakeDraft {
 }
 
 async function main() {
-  const doctrine = join(dirname(fileURLToPath(import.meta.url)), "..", "docs", "14-1065-entity-return.md");
-  assert.equal(existsSync(doctrine), true, "docs/14-1065-entity-return.md");
+  const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+  const doctrine = join(root, "docs", "14-1065-parass-entity-return.md");
+  assert.equal(existsSync(doctrine), true, "docs/14-1065-parass-entity-return.md");
   const doctrineText = readFileSync(doctrine, "utf8");
   assert.match(doctrineText, /Parass Foods LLC/);
   assert.match(doctrineText, /\$172,428/);
@@ -272,6 +273,22 @@ async function main() {
   assert.equal(extracted.fields.fein, undefined);
   assert.equal(extracted.fields.ssn, undefined);
   assert.doesNotMatch(JSON.stringify(extracted.fields), /999-00-0001|999-00-0002|88-1234567|725/);
+
+  const harbor21 = join(root, "sample-docs", "21-1065-2024-bay-street.pdf");
+  if (existsSync(harbor21)) {
+    const harborMisnamed = await classifyAndExtract(
+      new Uint8Array(readFileSync(harbor21)),
+      "application/pdf",
+      deadVision,
+      null,
+      "2024 1120 - bay-street.pdf",
+    );
+    assert.equal(harborMisnamed.fields.return_kind, "1065", "Harbor 21 page stays 1065 under a 1120 filename");
+    assert.notEqual(harborMisnamed.fields.return_kind, "1120s");
+    assert.notEqual(harborMisnamed.fields.entity_ordinary_income, "-172428", "Harbor smoke is not Parass gold");
+    assert.notEqual(harborMisnamed.fields.k1_ordinary_income, "-155185");
+    assert.notEqual(harborMisnamed.fields.entity_name, "Parass Foods LLC");
+  }
 
   const computed = monthlyQualifyingFromExtract(seSketch(), "tax_return", extracted.fields);
   assert.equal(computed?.monthly, -12932);
@@ -451,7 +468,7 @@ async function main() {
   assert.notEqual(nextDocInvite(afterSkipUsed), "tax_return");
   assert.ok(!stillUsefulLabels(afterSkipUsed).includes("K-1 distributions"));
 
-  console.log("assert-1065-entity-return: Parass Foods LLC −$12,932 · named loss · other K-1 Yes/No/Skip");
+  console.log("assert-1065-entity-return: Parass gold −$12,932 · page not filename · Harbor 21 filename smoke only");
 }
 
 main().catch((error) => {
