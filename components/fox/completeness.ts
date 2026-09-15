@@ -79,6 +79,7 @@ import {
   namedTwoK1WhoAskPending,
   OTHER_K1_BOX1_FIELD,
   promoteIncomeLedger,
+  sealK1WhoWrite,
   writeOtherK1Box1,
   settleHouseholdWagesProposal,
   settleIncomeLedgerProposal,
@@ -1747,7 +1748,8 @@ export function resolveProposal(
       proposal.field === QUALIFYING_INCOME_FIELD &&
       (extra.field === "officer_compensation" ||
         extra.field === "company_ordinary" ||
-        extra.field === "owner_share_monthly")
+        extra.field === "owner_share_monthly" ||
+        extra.field === "k1_who")
     ) {
       continue;
     }
@@ -1814,9 +1816,13 @@ export function resolveProposal(
     isHouseholdWagesProposal(proposal)
       ? promoteIncomeLedger(afterCover)
       : afterCover;
+  const afterWho =
+    winner === "accept" && proposal.field === QUALIFYING_INCOME_FIELD
+      ? sealK1WhoWrite(afterLedger)
+      : afterLedger;
   return {
-    ...afterLedger,
-    looksRightHold: winner === "accept" ? false : afterLedger.looksRightHold,
+    ...afterWho,
+    looksRightHold: winner === "accept" ? false : afterWho.looksRightHold,
   };
 }
 

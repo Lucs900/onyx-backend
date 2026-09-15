@@ -142,7 +142,6 @@ import {
   applyOwnAllEntity,
   namedTwoK1WhoAskPending,
   selectK1WhoOnLoan,
-  writeOtherK1Box1,
 } from "./qualifyingIncome";
 import {
   skipEstimatedHousing,
@@ -463,6 +462,7 @@ export function emptyDraft(): FoxIntakeDraft {
     otherK1LoanAsked: false,
     otherK1LoanAnswer: undefined,
     otherK1OnLoan: false,
+    k1WhoChoice: undefined,
     incomeLedger: [],
     taxReturnPacketSpoken: false,
     taxReturnPacketCloseAsk: false,
@@ -671,6 +671,10 @@ function normalize(value: unknown): FoxIntakeDraft {
         ? raw.otherK1LoanAnswer
         : undefined,
     otherK1OnLoan: Boolean(raw.otherK1OnLoan),
+    k1WhoChoice:
+      raw.k1WhoChoice === "primary" || raw.k1WhoChoice === "other" || raw.k1WhoChoice === "both"
+        ? raw.k1WhoChoice
+        : undefined,
     coborrowerName:
       typeof raw.coborrowerName === "string" && raw.coborrowerName.trim()
         ? raw.coborrowerName.trim()
@@ -2181,17 +2185,11 @@ function applyCaptureBody(capture: Capture) {
         ? capture.value
         : undefined;
     if (!who) return current;
-    const selected = selectK1WhoOnLoan(current, who);
-    const written = resolveProposal(selected, "accept");
-    return commit(who === "both" ? writeOtherK1Box1(written) : written);
+    return commit(selectK1WhoOnLoan(current, who));
   }
   if (capture.field === "other-k1-loan") {
     if (namedTwoK1WhoAskPending(current)) {
-      const who = capture.value === "yes" ? "both" : capture.value === "no" ? "primary" : undefined;
-      if (!who) return current;
-      const selected = selectK1WhoOnLoan(current, who);
-      const written = resolveProposal(selected, "accept");
-      return commit(who === "both" ? writeOtherK1Box1(written) : written);
+      return current;
     }
     if (capture.value !== "yes" && capture.value !== "no") return current;
     return commit(writeOtherK1Loan(current, capture.value === "yes"));

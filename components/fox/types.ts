@@ -384,6 +384,8 @@ export type FoxIntakeDraft = {
   otherK1LoanAnswer?: "yes" | "no" | "skip";
   /** Other 50% K-1 Box 1 is on this loan — second $2,196 row. Not a co-borrower. */
   otherK1OnLoan?: boolean;
+  /** Parass two-K-1 who chip. File empty until Use this. */
+  k1WhoChoice?: "primary" | "other" | "both";
   coborrowerName?: string;
   coborrowerNameAsked?: boolean;
   workingOnCoborrower?: boolean;

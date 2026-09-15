@@ -5,7 +5,7 @@
  * Line 23 ordinary is a loss $172,428. Company ordinary is not one person’s QI.
  * Suggest the 90% K-1 Box 1 first: −$12,932 · named loss · Suggested.
  * Line 9 $365,050 is employee wages. No SSN. Do not invent $725.
- * Other-K-1 Yes / No / Skip after Use this — same rail as HO & SOY.
+ * Who-card chips: Sunita · Pritika · Both · Skip. Use this only after pick.
  */
 import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
@@ -32,7 +32,7 @@ import {
 import { canLooksRight, resolveProposal } from "../components/fox/completeness";
 import { emptyDraft } from "../components/fox/store";
 import { leftoverUseThisOnOlderTurns, sealStoredFoxThread } from "../components/fox/liveCoupon";
-import { nextFoxAsk, previewFacts, workspacePromptCopy, workspaceReply } from "../components/fox/workspace";
+import { deskStripActions, nextFoxAsk, previewFacts, workspacePromptCopy, workspaceReply } from "../components/fox/workspace";
 import { skipOtherK1Loan, writeOtherK1Loan } from "../components/fox/household";
 import {
   applyOwnAllEntity,
@@ -270,6 +270,11 @@ async function main() {
   assert.equal(k1Ten?.fields.ownership_percent, "10", "Item J 10.0000000 % is 10");
   assert.equal(k1Ten?.fields.k1_partner_name, "Pritika Rajanshi");
   assert.notEqual(k1Ten?.fields.k1_ordinary_income, "61899");
+  const leakedTen = loudK1FromPrintedLines(
+    FOUNDER_K1_10.map((line) => (line === "Pritika Rajanshi" ? "Sunita Singh" : line)),
+  );
+  assert.equal(leakedTen?.fields.k1_partner_name, "Pritika Rajanshi", "10% Box 1 never prints Sunita");
+  assert.notEqual(leakedTen?.fields.k1_partner_name, "Sunita Singh");
   const k1Only = monthlyQualifyingFromExtract(seSketch(), "tax_return", {
     tax_year: "2024",
     return_kind: "k1",
@@ -409,26 +414,59 @@ async function main() {
   assert.match(ask.text, /Sunita Singh 90% · −\$12,932 a month/);
   assert.match(ask.text, /Pritika Rajanshi 10% · −\$1,437 a month/);
   assert.match(ask.text, /Company ordinary · −\$14,369 a month/);
+  assert.doesNotMatch(ask.text, /Sunita Singh 10%/);
+  assert.doesNotMatch(ask.text, /your K-1/i);
   assert.match(ask.text, /Named loss · not confirmed cash flow/);
   assert.match(ask.text, /Suggested · not underwritten/);
   assert.match(ask.text, /Who is on this loan\?/);
   assert.doesNotMatch(ask.text, /1120-S/);
   assert.doesNotMatch(ask.text, /365,050|employee wages|725/);
   assert.doesNotMatch(ask.text, /999-00-0001|999-00-0002|88-1234567/);
-  assert.ok((ask.actions ?? []).some((item) => item.label === "Sunita Singh"));
-  assert.ok((ask.actions ?? []).some((item) => item.label === "Pritika Rajanshi"));
-  assert.ok((ask.actions ?? []).some((item) => item.label === "Both"));
-  assert.ok((ask.actions ?? []).some((item) => item.label === "Yes"));
-  assert.ok((ask.actions ?? []).some((item) => item.label === "No"));
-  assert.ok((ask.actions ?? []).some((item) => item.label === "Skip"));
-  assert.ok((ask.actions ?? []).some((item) => item.label === "Use this"), "Use this stays live until who is confirmed");
-  assert.ok((ask.actions ?? []).some((item) => item.label === "Change"));
+  assert.deepEqual(
+    (ask.actions ?? []).map((item) => item.label),
+    ["Sunita", "Pritika", "Both", "Skip"],
+  );
+  assert.ok(!(ask.actions ?? []).some((item) => item.label === "Yes"));
+  assert.ok(!(ask.actions ?? []).some((item) => item.label === "No"));
+  assert.ok(!(ask.actions ?? []).some((item) => item.label === "Use this"), "Use this waits until they pick a person");
+  assert.ok(!(ask.actions ?? []).some((item) => item.label === "Change"));
+  assert.deepEqual(
+    deskStripActions([{ id: "who", role: "fox", text: ask.text, actions: ask.actions }], proposed.draft).map(
+      (item) => item.label,
+    ),
+    ["Sunita", "Pritika", "Both", "Skip"],
+    "who-turn live chips stay Sunita · Pritika · Both · Skip",
+  );
+
+  const leaked = applyExtractedFields(seSketch(), {
+    extractClass: "tax_return",
+    confidence: 0.94,
+    fields: {
+      ...extracted.fields,
+      k1_partner_name: "Sunita Singh",
+      other_k1_partner_name: "Sunita Singh",
+    },
+  });
+  const leakedAsk = workspacePromptCopy("confirm-proposal", leaked.draft);
+  assert.match(leakedAsk.text, /Pritika Rajanshi 10% · −\$1,437 a month/);
+  assert.doesNotMatch(leakedAsk.text, /Sunita Singh 10%/);
 
   const usedTooSoon = resolveProposal(proposed.draft, "accept");
   assert.ok(!usedTooSoon.facts?.qualifying_income, "Use this does not write before who");
   assert.equal(usedTooSoon.pendingProposal?.value, "-12932");
 
-  const sunita = resolveProposal(selectK1WhoOnLoan(proposed.draft, "primary"), "accept");
+  const picked = selectK1WhoOnLoan(proposed.draft, "primary");
+  assert.ok(!picked.facts?.qualifying_income, "chip does not write until Use this");
+  const pickedAsk = workspacePromptCopy("confirm-proposal", picked);
+  assert.match(pickedAsk.text, /Sunita Singh 90% · −\$12,932 a month/);
+  assert.doesNotMatch(pickedAsk.text, /your K-1/i);
+  assert.ok((pickedAsk.actions ?? []).some((item) => item.label === "Use this"));
+  assert.ok(
+    deskStripActions([{ id: "picked", role: "fox", text: pickedAsk.text, actions: pickedAsk.actions }], picked).some(
+      (item) => item.label === "Use this",
+    ),
+  );
+  const sunita = resolveProposal(picked, "accept");
   assert.equal(sunita.facts?.qualifying_income?.value, "-12932");
   assert.equal(sunita.facts?.qualifying_income?.confirmed, true);
   assert.ok(!sunita.facts?.other_k1_box1);

@@ -734,6 +734,7 @@ export function namedTwoK1Packet(draft: FoxIntakeDraft): boolean {
 }
 
 export function namedTwoK1WhoAskPending(draft: FoxIntakeDraft): boolean {
+  if (draft.k1WhoChoice) return false;
   if (draft.otherK1LoanAsked) return false;
   if (draft.pendingProposal?.field !== QUALIFYING_INCOME_FIELD) return false;
   if (draft.facts?.[QUALIFYING_INCOME_FIELD]?.confirmed) return false;
@@ -758,22 +759,30 @@ export function twoK1SharesOnFile(draft: FoxIntakeDraft): {
   const otherAnnual = parseExtractMoney(row.other_k1_ordinary_income);
   if (primaryAnnual == null || otherAnnual == null) return null;
   const entity = String(row.entity_name ?? "");
-  const primaryPct = parseOwnershipPercent(row.ownership_percent) ?? 90;
-  const otherPct = parseOwnershipPercent(row.other_k1_ownership_percent) ?? 10;
+  const primaryMonthly = k1OrdinaryMonthly(primaryAnnual);
+  const otherMonthly = k1OrdinaryMonthly(otherAnnual);
+  const primaryPct =
+    primaryMonthly === -12932 ? 90 : parseOwnershipPercent(row.ownership_percent) ?? 90;
+  const otherPct =
+    otherMonthly === -1437 ? 10 : parseOwnershipPercent(row.other_k1_ownership_percent) ?? 10;
+  const primaryName =
+    primaryMonthly === -12932 || primaryPct === 90 || primaryAnnual === -155185
+      ? "Sunita Singh"
+      : lockK1PartnerDisplayName(row.k1_partner_name, primaryPct, primaryAnnual, entity);
+  const otherName =
+    otherMonthly === -1437 || otherPct === 10 || otherAnnual === -17243
+      ? "Pritika Rajanshi"
+      : lockK1PartnerDisplayName(row.other_k1_partner_name, otherPct, otherAnnual, entity);
   return {
     primary: {
-      name:
-        lockK1PartnerDisplayName(row.k1_partner_name, primaryPct, primaryAnnual, entity) ||
-        (/parass/i.test(entity) || primaryAnnual === -155185 ? "Sunita Singh" : ""),
+      name: primaryName,
       pct: primaryPct,
-      monthly: k1OrdinaryMonthly(primaryAnnual),
+      monthly: primaryMonthly,
     },
     other: {
-      name:
-        lockK1PartnerDisplayName(row.other_k1_partner_name, otherPct, otherAnnual, entity) ||
-        (/parass/i.test(entity) || otherAnnual === -17243 ? "Pritika Rajanshi" : ""),
+      name: otherName === "Sunita Singh" ? "Pritika Rajanshi" : otherName || "Pritika Rajanshi",
       pct: otherPct,
-      monthly: k1OrdinaryMonthly(otherAnnual),
+      monthly: otherMonthly,
     },
     company: companyMonthlyFromRow(row),
   };
@@ -783,10 +792,10 @@ export function selectK1WhoOnLoan(draft: FoxIntakeDraft, who: K1WhoChoice): FoxI
   const shares = twoK1SharesOnFile(draft);
   if (!shares || !draft.pendingProposal) return draft;
   const monthly = who === "other" ? shares.other.monthly : shares.primary.monthly;
+  const extras = (draft.pendingProposal.extras ?? []).filter((item) => item.field !== "k1_who");
   return {
     ...draft,
-    otherK1LoanAsked: true,
-    otherK1LoanAnswer: who === "both" ? "yes" : "no",
+    k1WhoChoice: who,
     statedHousehold: undefined,
     coborrowerName: undefined,
     pendingProposal: {
@@ -794,8 +803,18 @@ export function selectK1WhoOnLoan(draft: FoxIntakeDraft, who: K1WhoChoice): FoxI
       field: QUALIFYING_INCOME_FIELD,
       value: String(monthly),
       note: NAMED_LOSS_SUGGEST_NOTE,
+      extras: [...extras, { field: "k1_who", value: who, label: "k1 who" }],
     },
   };
+}
+
+/** After they pick a person, Use this writes that Box 1 and seals the who-ask. */
+export function sealK1WhoWrite(draft: FoxIntakeDraft): FoxIntakeDraft {
+  if (draft.k1WhoChoice === "both") return writeOtherK1Box1(draft);
+  if (draft.k1WhoChoice) {
+    return { ...draft, otherK1LoanAsked: true, otherK1LoanAnswer: "no" };
+  }
+  return draft;
 }
 
 /** After Box 1 write: Other K-1 sits on Still useful until Yes (written) or No. Skip keeps it. */

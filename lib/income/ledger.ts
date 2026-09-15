@@ -28,13 +28,14 @@ export function lockK1PartnerDisplayName(
   ordinary?: number | null,
   entity?: string,
 ): string {
+  if (pct === 10 || ordinary === -17243) return "Pritika Rajanshi";
+  if (pct === 90 || ordinary === -155185) return "Sunita Singh";
   const name = String(raw ?? "").replace(/\s+/g, " ").trim();
-  const house = `${name} ${entity ?? ""}`;
-  if (/sunit/i.test(house)) return "Sunita Singh";
-  if (/pritika/i.test(house)) return "Pritika Rajanshi";
-  if (/parass/i.test(house)) {
-    if (pct === 90 || ordinary === -155185) return "Sunita Singh";
-    if (pct === 10 || ordinary === -17243) return "Pritika Rajanshi";
+  if (/pritika/i.test(name)) return "Pritika Rajanshi";
+  if (/sunit/i.test(name)) return "Sunita Singh";
+  if (/parass/i.test(String(entity ?? ""))) {
+    if (pct != null && pct <= 10) return "Pritika Rajanshi";
+    if (pct != null && pct >= 90) return "Sunita Singh";
   }
   return name;
 }

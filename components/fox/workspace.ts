@@ -251,7 +251,6 @@ import {
   namedTwoK1Packet,
   namedTwoK1WhoAskPending,
   selectK1WhoOnLoan,
-  writeOtherK1Box1,
   INCOME_CAUTION_FIELD,
   K1_ORDINARY_NOTE,
   monthlyFromAnnual,
@@ -511,6 +510,7 @@ import {
   isHouseholdConfirmPending,
   isSkipHouseholdText,
   isStatedHousehold,
+  k1WhoConfirmCopy,
   k1WhoLoanAskCopy,
   otherK1Box1ConfirmCopy,
   otherK1LoanAskCopy,
@@ -1948,8 +1948,17 @@ function entityReactionAsk(draft: FoxIntakeDraft, proposal: NonNullable<FoxIntak
       actions: who.actions,
     };
   }
+  if (draft.k1WhoChoice) {
+    const confirm = k1WhoConfirmCopy(draft);
+    if (confirm) {
+      return {
+        text: [ack, confirm.text].filter(Boolean).join(" "),
+        actions: confirm.actions,
+      };
+    }
+  }
   const share = /K-1 Box 1/i.test(method)
-    ? `Your K-1 Box 1 is ${shown} a month.`
+    ? `K-1 Box 1 is ${shown} a month.`
     : /company ordinary/i.test(method)
       ? "You own all of it."
       : /per 50% owner/i.test(method) && !/household ordinary/i.test(method)
@@ -3659,6 +3668,7 @@ function stripStreetSuggest(actions: FoxAction[]): FoxAction[] {
 /** Confirm-before-write lives on the File tool, not on a chat message. */
 export function writeConfirmActions(draft: FoxIntakeDraft): FoxAction[] {
   if (!draft.pendingProposal && !draft.pendingConflict && !draft.pendingAddress) return [];
+  if (namedTwoK1WhoAskPending(draft)) return [];
   return stripStreetSuggest(workspacePromptCopy("confirm-proposal", draft).actions ?? []);
 }
 
@@ -4964,6 +4974,15 @@ export function promptForProposalField(field?: string | null): FoxPrompt | undef
 }
 
 export function changePendingProposal(draft: FoxIntakeDraft): FoxIntakeDraft {
+  if (draft.k1WhoChoice && namedTwoK1Packet(draft)) {
+    return {
+      ...draft,
+      k1WhoChoice: undefined,
+      pendingConflict: null,
+      correcting: null,
+      correctingLine: null,
+    };
+  }
   if (isWageExtractProposal(draft.pendingProposal)) return changeWageExtract(draft);
   if (isStubExtractProposal(draft.pendingProposal) || isStubJobProposal(draft.pendingProposal)) {
     return changeStubExtract(draft);
@@ -5952,17 +5971,11 @@ function draftAfterCaptureBody(draft: FoxIntakeDraft, capture: Capture): FoxInta
         ? capture.value
         : undefined;
     if (!who) return next;
-    const selected = selectK1WhoOnLoan(next, who);
-    const written = resolveProposal(selected, "accept");
-    return who === "both" ? writeOtherK1Box1(written) : written;
+    return selectK1WhoOnLoan(next, who);
   }
   if (capture.field === "other-k1-loan") {
     if (namedTwoK1WhoAskPending(next)) {
-      const who = capture.value === "yes" ? "both" : capture.value === "no" ? "primary" : undefined;
-      if (!who) return next;
-      const selected = selectK1WhoOnLoan(next, who);
-      const written = resolveProposal(selected, "accept");
-      return who === "both" ? writeOtherK1Box1(written) : written;
+      return next;
     }
     if (capture.value !== "yes" && capture.value !== "no") return next;
     return writeOtherK1Loan(next, capture.value === "yes");
@@ -6096,7 +6109,9 @@ function draftAfterCaptureBody(draft: FoxIntakeDraft, capture: Capture): FoxInta
     return draft.awaitingRaiseYtdFar ? applyRaiseYtdFarAnswer(next, capture.value) : applyRaiseWhenAnswer(next, capture.value);
   }
   if (capture.field === "own-all-entity") return applyOwnAllEntity(next);
-  if (capture.field === "accept-proposal") return resolveProposal(next, "accept");
+  if (capture.field === "accept-proposal") {
+    return resolveProposal(next, "accept");
+  }
   if (capture.field === "change-proposal") return changePendingProposal(next);
   if (capture.field === "decline-proposal") return resolveProposal(next, "decline");
   if (capture.field === "yearsInBusiness") return writeYearsInBusiness(next, capture.value);
@@ -6883,9 +6898,7 @@ export function workspaceReply(
       }
       const who = parseK1WhoChoice(q);
       if (who) {
-        const selected = selectK1WhoOnLoan(draft, who);
-        const written = resolveProposal(selected, "accept");
-        const nextDraft = who === "both" ? writeOtherK1Box1(written) : written;
+        const nextDraft = selectK1WhoOnLoan(draft, who);
         return {
           ...nextFoxAsk(nextDraft),
           capture: { field: "k1-who", value: who },
@@ -6941,6 +6954,9 @@ export function workspaceReply(
       /^(yes|that.?s me|yes that.?s me|use this|use it|confirm|ok|okay)$/i.test(lower) ||
       /yes that.?s me|use this/.test(lower)
     ) {
+      if (namedTwoK1WhoAskPending(draft)) {
+        return { ...k1WhoLoanAskCopy(draft) };
+      }
       const nextDraft = resolveProposal(draft, "accept");
       if (needsPurchaseSplitAsk(nextDraft) || isPurchaseContractConfirmPending(draft)) {
         return {
@@ -7899,9 +7915,7 @@ export function workspaceReply(
     }
     const who = parseK1WhoChoice(q);
     if (who && namedTwoK1Packet(draft) && draft.pendingProposal) {
-      const selected = selectK1WhoOnLoan(draft, who);
-      const written = resolveProposal(selected, "accept");
-      const nextDraft = who === "both" ? writeOtherK1Box1(written) : written;
+      const nextDraft = selectK1WhoOnLoan(draft, who);
       return {
         ...nextFoxAsk(nextDraft),
         capture: { field: "k1-who", value: who },

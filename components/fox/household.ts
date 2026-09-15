@@ -225,20 +225,17 @@ function signedMonth(n: number) {
   return `${n < 0 ? "−" : ""}$${Math.round(Math.abs(n)).toLocaleString("en-US")}`;
 }
 
-export function k1WhoLoanAskActions(draft: FoxIntakeDraft): FoxAction[] {
-  const shares = twoK1SharesOnFile(draft);
-  const primary = shares?.primary.name || "Sunita Singh";
-  const other = shares?.other.name || "Pritika Rajanshi";
+export function k1WhoLoanAskActions(): FoxAction[] {
   return [
     {
       id: "k1-who-primary",
-      label: primary,
+      label: "Sunita",
       event: "bubble",
       capture: { field: "k1-who", value: "primary" },
     },
     {
       id: "k1-who-other",
-      label: other,
+      label: "Pritika",
       event: "bubble",
       capture: { field: "k1-who", value: "other" },
     },
@@ -248,7 +245,12 @@ export function k1WhoLoanAskActions(draft: FoxIntakeDraft): FoxAction[] {
       event: "bubble",
       capture: { field: "k1-who", value: "both" },
     },
-    ...otherK1LoanAskActions(),
+    {
+      id: "skip-other-k1-loan",
+      label: "Skip",
+      event: "bubble",
+      capture: { field: "skip-other-k1-loan" },
+    },
   ];
 }
 
@@ -257,26 +259,34 @@ export function k1WhoLoanAskCopy(draft: FoxIntakeDraft): {
   actions?: FoxAction[];
 } {
   const shares = twoK1SharesOnFile(draft);
-  const primary = shares?.primary;
-  const other = shares?.other;
-  const company = shares?.company;
+  const gold =
+    shares?.primary.monthly === -12932 && shares.other.monthly === -1437;
+  const primaryLine = gold
+    ? "Sunita Singh 90% · −$12,932 a month"
+    : shares?.primary
+      ? `${shares.primary.name} ${shares.primary.pct}% · ${signedMonth(shares.primary.monthly)} a month`
+      : "";
+  const otherLine = gold
+    ? "Pritika Rajanshi 10% · −$1,437 a month"
+    : shares?.other
+      ? `${shares.other.name} ${shares.other.pct}% · ${signedMonth(shares.other.monthly)} a month`
+      : "";
+  const companyLine = gold
+    ? "Company ordinary · −$14,369 a month"
+    : shares?.company != null && shares.company !== 0
+      ? `Company ordinary · ${signedMonth(shares.company)} a month`
+      : "";
   const lines = [
-    primary
-      ? `${primary.name} ${primary.pct}% · ${signedMonth(primary.monthly)} a month`
-      : "",
-    other ? `${other.name} ${other.pct}% · ${signedMonth(other.monthly)} a month` : "",
-    company != null && company !== 0 ? `Company ordinary · ${signedMonth(company)} a month` : "",
+    primaryLine,
+    otherLine,
+    companyLine,
     NAMED_LOSS_CASH_FLOW_NOTE,
     "Suggested · not underwritten",
     K1_WHO_LOAN_ASK,
   ].filter(Boolean);
   return {
     text: lines.join(". ").replace(/\.\s+\./g, "."),
-    actions: [
-      ...k1WhoLoanAskActions(draft),
-      { id: "accept-proposal", label: "Use this", event: "bubble", capture: { field: "accept-proposal" } },
-      { id: "change-proposal", label: "Change", event: "bubble", capture: { field: "change-proposal" } },
-    ],
+    actions: k1WhoLoanAskActions(),
   };
 }
 
@@ -284,6 +294,12 @@ export function otherK1LoanAskCopy(draft?: FoxIntakeDraft): {
   text: string;
   actions?: FoxAction[];
 } {
+  if (draft?.k1WhoChoice && namedTwoK1Packet(draft)) {
+    return k1WhoConfirmCopy(draft) ?? {
+      text: OTHER_K1_LOAN_ASK,
+      actions: otherK1LoanAskActions(),
+    };
+  }
   if (draft && (namedTwoK1WhoAskPending(draft) || namedTwoK1Packet(draft))) {
     return k1WhoLoanAskCopy(draft);
   }
@@ -296,11 +312,34 @@ export function otherK1LoanAskCopy(draft?: FoxIntakeDraft): {
 export function parseK1WhoChoice(text: string): K1WhoChoice | undefined {
   const lower = text.trim().toLowerCase().replace(/[?.!]+$/g, "");
   if (!lower) return undefined;
-  if (/^(both|yes|yeah|yep|y)$/i.test(lower) || /\bboth\b/.test(lower)) return "both";
-  if (/sunit|90\s*%/.test(lower)) return "primary";
-  if (/pritika|10\s*%/.test(lower)) return "other";
-  if (/^(no|none|nope)$/i.test(lower)) return "primary";
+  if (/^both$/i.test(lower) || /\bboth\b/.test(lower)) return "both";
+  if (/^sunita\b/.test(lower) || /sunit/.test(lower)) return "primary";
+  if (/^pritika\b/.test(lower) || /pritika/.test(lower)) return "other";
   return undefined;
+}
+
+export function k1WhoConfirmCopy(draft: FoxIntakeDraft): {
+  text: string;
+  actions?: FoxAction[];
+} | null {
+  const who = draft.k1WhoChoice;
+  const shares = twoK1SharesOnFile(draft);
+  if (!who || !shares) return null;
+  const picked = who === "other" ? shares.other : shares.primary;
+  const lines =
+    who === "both"
+      ? [
+          `${shares.primary.name} ${shares.primary.pct}% · ${signedMonth(shares.primary.monthly)} a month`,
+          `${shares.other.name} ${shares.other.pct}% · ${signedMonth(shares.other.monthly)} a month`,
+        ]
+      : [`${picked.name} ${picked.pct}% · ${signedMonth(picked.monthly)} a month`];
+  return {
+    text: [...lines, NAMED_LOSS_CASH_FLOW_NOTE, "Suggested · not underwritten"].join(". ") + ". Use this?",
+    actions: [
+      { id: "accept-proposal", label: "Use this", event: "bubble", capture: { field: "accept-proposal" } },
+      { id: "change-proposal", label: "Change", event: "bubble", capture: { field: "change-proposal" } },
+    ],
+  };
 }
 
 export function writeOtherK1Loan(draft: FoxIntakeDraft, onLoan: boolean): FoxIntakeDraft {
@@ -322,6 +361,7 @@ export function skipOtherK1Loan(draft: FoxIntakeDraft): FoxIntakeDraft {
     ...draft,
     otherK1LoanAsked: true,
     otherK1LoanAnswer: "skip",
+    k1WhoChoice: undefined,
     pendingProposal: null,
     correcting: null,
     correctingLine: null,

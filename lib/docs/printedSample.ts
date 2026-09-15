@@ -14,7 +14,7 @@ import {
 import { isTransferCounterpartyLine, safeAccountLast4, statementAccountLast4 } from "@/lib/docs/bankLast4";
 import { junkEmployerName } from "@/lib/docs/junkEmployer";
 import { readPdfTextLayer } from "@/lib/docs/pdfText";
-import { lockK1PartnerDisplayName } from "@/lib/income/ledger";
+import { lockK1PartnerDisplayName, parseLedgerMoney } from "@/lib/income/ledger";
 
 export { junkEmployerName };
 
@@ -624,7 +624,13 @@ function k1PartnerNameFromPrintedText(text: string): string {
   if (!raw || /parass|partnership|instructions|address|schedule|ordinary|hancock|fremont/i.test(raw)) {
     return "";
   }
-  return lockK1PartnerDisplayName(raw);
+  const pctRaw = ownershipPercentFromPrintedText(blob);
+  const ordinaryRaw = k1OrdinaryFromPrintedText(blob);
+  return lockK1PartnerDisplayName(
+    raw,
+    pctRaw ? Number(pctRaw) : null,
+    parseLedgerMoney(ordinaryRaw),
+  );
 }
 
 function k1TaxYearFromPrintedText(text: string): string {

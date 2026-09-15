@@ -29,7 +29,7 @@ Pre-drop ask stays **business return** only. After classify, name **1065**.
 | K-1 Box 14 C | self-employment — **not** Box 1 |
 | Company ordinary | **−$14,369 / mo** (`172428 / 12`) — not this borrower’s QI |
 
-Company ordinary is **not** one person’s QI. The first card names both K-1s and asks **Who is on this loan?** Label: **Named loss · not confirmed cash flow**. Suggested · not underwritten still stands. Use this stays live until founder confirms who.
+Company ordinary is **not** one person’s QI. The first card names both K-1s and asks **Who is on this loan?** Label: **Named loss · not confirmed cash flow**. Suggested · not underwritten still stands. Chips on that turn: **Sunita · Pritika · Both · Skip**. Use this only after they pick a person.
 
 Do **not** invent a monthly number that is not on the page.
 
@@ -39,12 +39,12 @@ Do **not** invent a monthly number that is not on the page.
 - Skip-1040 on self-employed still asks for the **business return**. After classify, name **1065**. Do not jump to Looks right.
 - File empty on qualifying income until who is confirmed.
 - Employee wages stay out of QI. No SSN / EIN on File.
-- First card lists **Sunita Singh 90% · −$12,932**, **Pritika Rajanshi 10% · −$1,437**, and **Company ordinary · −$14,369**. Ask **Who is on this loan?** Own-all does not ask. Do not invent a co-borrower.
-- **Sunita Singh** / **No** → write **−$12,932** only.
-- **Pritika Rajanshi** → write **−$1,437** only.
-- **Both** / **Yes** → write **−$12,932** and **−$1,437**. Combined ordinary **−$14,369**. Not company ordinary as one person’s QI.
+- First card lists **Sunita Singh 90% · −$12,932 a month**, **Pritika Rajanshi 10% · −$1,437 a month**, and **Company ordinary · −$14,369 a month**. Do not print Sunita on the 10% line. Ask **Who is on this loan?** Chips: **Sunita · Pritika · Both · Skip**. No Yes · No · Use this · Change on that turn. Own-all does not ask. Do not invent a co-borrower. No “your K-1.”
+- **Sunita** → then Use this writes **−$12,932** only.
+- **Pritika** → then Use this writes **−$1,437** only.
+- **Both** → then Use this writes **−$12,932** and **−$1,437**. Combined ordinary **−$14,369**. Not company ordinary as one person’s QI.
 - **Skip** → File empty. Other K-1 **stays** on Still useful.
-- **Use this** before who does not write.
+- **Use this** only after they pick a person.
 - After Box 1 write, drop **K-1 distributions** from Still useful.
 
 ## Harbor 21 — smoke only
