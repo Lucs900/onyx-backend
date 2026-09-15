@@ -239,6 +239,8 @@ export type CompletenessFile = FileFacts & {
   variableExtracted?: boolean;
   hasPnl?: boolean;
   k1OrdinaryOnly?: boolean;
+  entityK1Box1?: boolean;
+  federalReturnSkipped?: boolean;
   hasScheduleC?: boolean;
   fundsInPlay?: boolean;
 };
@@ -1154,18 +1156,19 @@ function documentedIncomeItems(file: CompletenessFile, received: Set<string>): D
   const items: DocumentedStillUsefulId[] = [];
   const w2 = wageLike(file.incomeType);
   const se = seLike(file.incomeType);
-  const unknown = !file.incomeType;
   const w2Count = file.w2Count ?? (received.has("w2") ? 1 : 0);
   const paystubCount = file.paystubCount ?? (received.has("paystub") ? 1 : 0);
   const taxReturns = file.taxReturnCount ?? (received.has("tax_return") ? 1 : 0);
-  if (w2 || unknown) {
+  if (w2) {
     if (paystubCount < 2) items.push("paystub");
     if (w2Count < 2) items.push("w2");
   }
-  if (se || (unknown && !w2)) {
+  if (se) {
     if (taxReturns < 1) items.push("tax_return");
     if (taxReturns === 1) {
-      if (file.k1OrdinaryOnly && !file.hasScheduleC) items.push("k1-distributions");
+      if (file.entityK1Box1 || file.federalReturnSkipped) {
+        // 1120-S Box 1 write, or Skip 1040 — do not reprint 1040 / K-1 distributions.
+      } else if (file.k1OrdinaryOnly && !file.hasScheduleC) items.push("k1-distributions");
       else items.push("prior-year-return");
     }
     if (taxReturns >= 1 && !file.hasPnl && !received.has("ytd_pnl")) items.push("ytd-pnl");

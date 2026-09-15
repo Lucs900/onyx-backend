@@ -1,0 +1,334 @@
+name: Spine walker
+on:
+  workflow_dispatch: {}
+  push:
+    paths:
+      - "app/(marketing)/start/**"
+      - "components/fox/**"
+      - "lib/**"
+      - "app/api/**"
+      - "scripts/spine-walker/**"
+      - "scripts/assert-spine-walker.sh"
+      - "scripts/assert-harbor-acceptance-file.ts"
+      - "scripts/assert-contract-at-price.ts"
+      - "scripts/assert-contract-house-credit.ts"
+      - "scripts/assert-house-credit-band.ts"
+      - "scripts/assert-file-next-ask.ts"
+      - "scripts/assert-w2-stub-employment-merge.ts"
+      - "scripts/assert-se-cover-income.ts"
+      - "scripts/assert-years-in-business.ts"
+      - "scripts/assert-looks-right-after-statement.ts"
+      - "scripts/assert-home-type-chips.ts"
+      - "scripts/assert-income-skip-still-useful.ts"
+      - "scripts/assert-still-useful-skip-income.ts"
+      - "scripts/assert-w2-paystub-before-id.ts"
+      - "scripts/assert-looks-right-chip.ts"
+      - "scripts/assert-refi-loan-then-value.ts"
+      - "scripts/assert-w2-page-read.ts"
+      - "scripts/assert-first-session-page-read.ts"
+      - "scripts/assert-live-strip.ts"
+      - "scripts/assert-use-this-employment.ts"
+      - ".github/workflows/spine-walker.yml"
+      - "sample-docs/**"
+      - "scripts/fixtures/**"
+  pull_request:
+    paths:
+      - "app/(marketing)/start/**"
+      - "components/fox/**"
+      - "lib/**"
+      - "app/api/**"
+      - "scripts/spine-walker/**"
+      - "scripts/assert-spine-walker.sh"
+      - "scripts/assert-harbor-acceptance-file.ts"
+      - "scripts/assert-contract-at-price.ts"
+      - "scripts/assert-contract-house-credit.ts"
+      - "scripts/assert-house-credit-band.ts"
+      - "scripts/assert-file-next-ask.ts"
+      - "scripts/assert-w2-stub-employment-merge.ts"
+      - "scripts/assert-se-cover-income.ts"
+      - "scripts/assert-years-in-business.ts"
+      - "scripts/assert-looks-right-after-statement.ts"
+      - "scripts/assert-home-type-chips.ts"
+      - "scripts/assert-income-skip-still-useful.ts"
+      - "scripts/assert-still-useful-skip-income.ts"
+      - "scripts/assert-w2-paystub-before-id.ts"
+      - "scripts/assert-looks-right-chip.ts"
+      - "scripts/assert-refi-loan-then-value.ts"
+      - "scripts/assert-w2-page-read.ts"
+      - "scripts/assert-first-session-page-read.ts"
+      - "scripts/assert-live-strip.ts"
+      - "scripts/assert-use-this-employment.ts"
+      - ".github/workflows/spine-walker.yml"
+      - "sample-docs/**"
+      - "scripts/fixtures/**"
+concurrency:
+  group: spine-walker-preview-bc93
+  cancel-in-progress: true
+jobs:
+  leftover:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Planted live leftover chip on a prior node
+        run: |
+          if [[ ! -d node_modules/next ]]; then npm install; fi
+          npx --yes tsx scripts/assert-live-strip.ts
+  write:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Committed Harbor stub Use this writes Employment
+        run: |
+          if [[ ! -d node_modules/next ]]; then npm install; fi
+          npx --yes tsx scripts/assert-use-this-employment.ts
+  walk:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    permissions:
+      contents: read
+      id-token: write
+      deployments: read
+      checks: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Wait for this SHA preview
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const sha = context.payload.pull_request?.head?.sha || context.sha;
+            const { owner, repo } = context.repo;
+            core.info(`Waiting for Vercel preview of ${sha}`);
+            const deadline = Date.now() + 12 * 60 * 1000;
+            const originFrom = (raw) => {
+              try {
+                const url = new URL(String(raw || ""));
+                if (!/\.vercel\.app$/i.test(url.hostname)) return "";
+                return url.origin;
+              } catch {
+                return "";
+              }
+            };
+            while (Date.now() < deadline) {
+              const deployments = await github.rest.repos.listDeployments({
+                owner,
+                repo,
+                sha,
+                per_page: 20,
+              });
+              for (const deployment of deployments.data) {
+                if (!/preview/i.test(deployment.environment || "")) continue;
+                const statuses = await github.rest.repos.listDeploymentStatuses({
+                  owner,
+                  repo,
+                  deployment_id: deployment.id,
+                  per_page: 10,
+                });
+                const ok = statuses.data.find(
+                  (item) =>
+                    item.state === "success" &&
+                    originFrom(item.environment_url || item.target_url),
+                );
+                const origin = ok
+                  ? originFrom(ok.environment_url || ok.target_url)
+                  : "";
+                if (origin) {
+                  const start =
+                    "https://onyx-backend-git-cursor-live-rateflow-preview-bc93-onyx-direct.vercel.app/start?path=acr";
+                  core.info(`Preview ready at ${origin}; walking alias ${start}`);
+                  core.exportVariable("SPINE_WALKER_URL", start);
+                  return;
+                }
+              }
+              const checks = await github.rest.checks.listForRef({
+                owner,
+                repo,
+                ref: sha,
+                per_page: 50,
+              });
+              const vercelCheck = checks.data.check_runs.find(
+                (item) =>
+                  /vercel/i.test(item.name || "") &&
+                  item.status === "completed" &&
+                  item.conclusion === "success",
+              );
+              const checkOrigin = originFrom(vercelCheck?.details_url);
+              if (checkOrigin) {
+                const start =
+                  "https://onyx-backend-git-cursor-live-rateflow-preview-bc93-onyx-direct.vercel.app/start?path=acr";
+                core.info(`Preview ready from check ${checkOrigin}; walking alias ${start}`);
+                core.exportVariable("SPINE_WALKER_URL", start);
+                return;
+              }
+              await new Promise((resolve) => setTimeout(resolve, 10000));
+            }
+            core.setFailed(`No Vercel preview success for ${sha} within 12m`);
+      - name: GitHub OIDC for Vercel Trusted Sources
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require("fs");
+            const { spawnSync } = require("child_process");
+            const decodePayload = (jwt) =>
+              JSON.parse(Buffer.from(jwt.split(".")[1], "base64url").toString("utf8"));
+            const audOf = (payload) =>
+              (Array.isArray(payload.aud) ? payload.aud : [payload.aud]).filter(Boolean);
+            const probe = (token) => {
+              const url = process.env.SPINE_WALKER_URL;
+              if (!url) return { status: "no-url", host: "-" };
+              const headerFile = "/tmp/oidc-probe-headers.txt";
+              const result = spawnSync(
+                "curl",
+                [
+                  "-sS",
+                  "-D",
+                  headerFile,
+                  "-o",
+                  "/dev/null",
+                  "-w",
+                  "%{http_code}",
+                  "--max-redirs",
+                  "0",
+                  "-H",
+                  `x-vercel-trusted-oidc-idp-token: ${token}`,
+                  url,
+                ],
+                { encoding: "utf8" },
+              );
+              const status = String(result.stdout || "").trim() || "curl-error";
+              let host = "-";
+              try {
+                const loc = fs
+                  .readFileSync(headerFile, "utf8")
+                  .split(/\r?\n/)
+                  .find((line) => /^location:/i.test(line));
+                if (loc) host = new URL(loc.slice(loc.indexOf(":") + 1).trim()).hostname;
+              } catch {
+                host = "unparsed";
+              }
+              return { status, host };
+            };
+            const take = async (audience) => {
+              const token = audience ? await core.getIDToken(audience) : await core.getIDToken();
+              core.setSecret(token);
+              const payload = decodePayload(token);
+              const label = audience ? `audience=${audience}` : "default";
+              core.info(
+                `OIDC ${label} aud=${audOf(payload).join(",")} iss=${payload.iss || ""} repository=${payload.repository || ""}`,
+              );
+              const hit = probe(token);
+              core.info(`OIDC preview probe status=${hit.status} location_host=${hit.host}`);
+              return { token, payload, hit };
+            };
+            const want = "https://github.com/";
+            const first = await take();
+            let picked = first;
+            if (!audOf(first.payload).includes(want)) {
+              const second = await take(want);
+              const firstOk = /^2/.test(first.hit.status);
+              const secondOk = /^2/.test(second.hit.status);
+              picked = secondOk || !firstOk ? second : first;
+            }
+            if (!/^2/.test(picked.hit.status) && /vercel\.com$/i.test(picked.hit.host)) {
+              core.info("OIDC token still redirected to Vercel SSO — walker will treat this as SSO, not a product fail");
+            }
+            core.exportVariable("VERCEL_OIDC_TOKEN", picked.token);
+      - name: Harbor leftovers and browser
+        run: SPINE_WALKER_LEFTOVERS_ONLY=1 bash scripts/assert-spine-walker.sh
+        env:
+          SPINE_WALKER_URL: ${{ env.SPINE_WALKER_URL }}
+      - name: Fresh OIDC for Playwright
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require("fs");
+            const { spawnSync } = require("child_process");
+            const decodePayload = (jwt) =>
+              JSON.parse(Buffer.from(jwt.split(".")[1], "base64url").toString("utf8"));
+            const audOf = (payload) =>
+              (Array.isArray(payload.aud) ? payload.aud : [payload.aud]).filter(Boolean);
+            const probe = (token) => {
+              const url = process.env.SPINE_WALKER_URL;
+              if (!url) return { status: "no-url", host: "-" };
+              const headerFile = "/tmp/oidc-probe-headers-fresh.txt";
+              const result = spawnSync(
+                "curl",
+                [
+                  "-sS",
+                  "-D",
+                  headerFile,
+                  "-o",
+                  "/dev/null",
+                  "-w",
+                  "%{http_code}",
+                  "--max-redirs",
+                  "0",
+                  "-H",
+                  `x-vercel-trusted-oidc-idp-token: ${token}`,
+                  url,
+                ],
+                { encoding: "utf8" },
+              );
+              const status = String(result.stdout || "").trim() || "curl-error";
+              let host = "-";
+              try {
+                const loc = fs
+                  .readFileSync(headerFile, "utf8")
+                  .split(/\r?\n/)
+                  .find((line) => /^location:/i.test(line));
+                if (loc) host = new URL(loc.slice(loc.indexOf(":") + 1).trim()).hostname;
+              } catch {
+                host = "unparsed";
+              }
+              return { status, host };
+            };
+            const take = async (audience) => {
+              const token = audience ? await core.getIDToken(audience) : await core.getIDToken();
+              core.setSecret(token);
+              const payload = decodePayload(token);
+              const label = audience ? `audience=${audience}` : "default";
+              core.info(
+                `fresh OIDC ${label} aud=${audOf(payload).join(",")} iss=${payload.iss || ""}`,
+              );
+              const hit = probe(token);
+              core.info(`fresh OIDC probe status=${hit.status} location_host=${hit.host}`);
+              return { token, payload, hit };
+            };
+            const want = "https://github.com/";
+            const first = await take();
+            let picked = first;
+            if (!audOf(first.payload).includes(want)) {
+              const second = await take(want);
+              const firstOk = /^2/.test(first.hit.status);
+              const secondOk = /^2/.test(second.hit.status);
+              picked = secondOk || !firstOk ? second : first;
+            }
+            core.exportVariable("VERCEL_OIDC_TOKEN", picked.token);
+      - name: Founder Alameda walk
+        run: SPINE_WALKER_ONLY=25 SPINE_WALKER_SKIP_LEFTOVERS=1 bash scripts/assert-spine-walker.sh
+        env:
+          SPINE_WALKER_URL: ${{ env.SPINE_WALKER_URL }}
+          VERCEL_OIDC_TOKEN: ${{ env.VERCEL_OIDC_TOKEN }}
+      - name: Run spine walker
+        continue-on-error: true
+        run: SPINE_WALKER_SKIP=25 SPINE_WALKER_SKIP_LEFTOVERS=1 bash scripts/assert-spine-walker.sh
+        env:
+          SPINE_WALKER_URL: ${{ env.SPINE_WALKER_URL }}
+          VERCEL_OIDC_TOKEN: ${{ env.VERCEL_OIDC_TOKEN }}

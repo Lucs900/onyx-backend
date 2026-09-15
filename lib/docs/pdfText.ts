@@ -4,6 +4,7 @@
  * OCR is a separate path — this module never invents glyphs or numbers.
  */
 
+import { createCanvas } from "@napi-rs/canvas";
 import { deflateSync, inflateSync } from "node:zlib";
 
 export type PdfEmbeddedImage = {
@@ -169,8 +170,11 @@ function piecesToLines(pieces: { text: string; breakAfter?: boolean }[]) {
 }
 
 function meaningfulText(lines: string[]) {
-  const blob = lines.join("").replace(/[^A-Za-z0-9]/g, "");
-  return blob.length >= 6;
+  const printable = lines.join(" ").replace(/[^\x09\x0A\x0D\x20-\x7E]/g, " ");
+  const words = printable.match(/[A-Za-z]{3,}/g) ?? [];
+  const alnum = printable.replace(/[^A-Za-z0-9]/g, "");
+  // Type3 junk can still count letters. Grok needs the drawn page, not that noise.
+  return words.length >= 4 && alnum.length >= 12;
 }
 
 function dictHas(dict: string, key: string) {
@@ -301,14 +305,16 @@ function collectPdfTextLines(bytes: Uint8Array): string[] {
 /** Non-whitespace characters from the visible text layer. 0 means no text layer. */
 export function pdfTextLayerCharCount(bytes: Uint8Array): number {
   if (!isPdf(bytes)) return 0;
-  return collectPdfTextLines(bytes).join("").replace(/\s+/g, "").length;
+  const cleaned = collectPdfTextLines(bytes);
+  if (!meaningfulText(cleaned)) return 0;
+  return cleaned.join("").replace(/\s+/g, "").length;
 }
 
 /** Visible text operators only. Empty when the page has no text layer. */
 export function readPdfTextLayer(bytes: Uint8Array): string[] | null {
   if (!isPdf(bytes)) return null;
   const cleaned = collectPdfTextLines(bytes);
-  return meaningfulText(cleaned) ? cleaned : cleaned.length ? cleaned : null;
+  return meaningfulText(cleaned) ? cleaned : null;
 }
 
 function crc32(data: Uint8Array) {
@@ -406,17 +412,27 @@ function grayToRgb(gray: Uint8Array): Uint8Array {
   return rgb;
 }
 
+function channelsFromDecoded(width: number, height: number, decodedLength: number) {
+  if (decodedLength === width * height) return { channels: 1, predictor: false };
+  if (decodedLength === width * height * 3) return { channels: 3, predictor: false };
+  if (decodedLength === height * (1 + width)) return { channels: 1, predictor: true };
+  if (decodedLength === height * (1 + width * 3)) return { channels: 3, predictor: true };
+  return null;
+}
+
 function flateImagePng(dict: string, decoded: Uint8Array): Uint8Array | null {
   const width = dictNum(dict, "Width");
   const height = dictNum(dict, "Height");
   const bits = dictNum(dict, "BitsPerComponent") || 8;
   if (bits !== 8 || width < 1 || height < 1 || width * height > 20_000_000) return null;
   const space = dictName(dict, "ColorSpace");
-  const channels = space === "DeviceGray" ? 1 : space === "DeviceRGB" ? 3 : 0;
+  const named = space === "DeviceGray" ? 1 : space === "DeviceRGB" ? 3 : 0;
+  const inferred = channelsFromDecoded(width, height, decoded.length);
+  const channels = named || inferred?.channels || 0;
   if (!channels) return null;
-  const predictor = dictNum(dict, "Predictor");
+  const predictor = dictNum(dict, "Predictor") >= 10 || inferred?.predictor;
   let pixels = decoded;
-  if (predictor >= 10) {
+  if (predictor) {
     const rows = unfilterPngRows(decoded, width, channels);
     if (!rows) return null;
     pixels = rows;
@@ -445,4 +461,280 @@ export function readPdfEmbeddedImages(bytes: Uint8Array): PdfEmbeddedImage[] {
     }
   }
   return images;
+}
+
+function looksLikePagePhoto(image: PdfEmbeddedImage) {
+  // Indexed / 1-bit masks compress tiny and stay nearly black. Grok needs the drawn page.
+  return image.bytes.length >= 40_000;
+}
+
+/** White letter page with no glyphs. Helvetica/Times fail without standardFontDataUrl. */
+export function drawnPageHasInk(image: PdfEmbeddedImage | null | undefined) {
+  return Boolean(image && image.bytes.length >= 20_000);
+}
+
+function largestEmbeddedPhoto(bytes: Uint8Array) {
+  const embedded = readPdfEmbeddedImages(bytes).filter(looksLikePagePhoto);
+  if (!embedded.length) return null;
+  return embedded.reduce((best, image) => (image.bytes.length > best.bytes.length ? image : best));
+}
+
+/** IRS Get Transcript and similar files use Standard encryption with an empty user password. */
+export function pdfLooksEncrypted(bytes: Uint8Array) {
+  return /\/Encrypt\s+\d+\s+\d+\s+R/.test(latin1(bytes));
+}
+
+type PdfJsAssets = {
+  standardFontDataUrl: string;
+  cMapUrl: string;
+};
+
+let pdfJsAssets: PdfJsAssets | null | undefined;
+
+async function resolvePdfJsAssets(): Promise<PdfJsAssets | null> {
+  if (pdfJsAssets !== undefined) return pdfJsAssets;
+  const { createRequire } = await import("node:module");
+  const { existsSync } = await import("node:fs");
+  const { dirname, join } = await import("node:path");
+  const roots: string[] = [];
+  for (const base of [join(process.cwd(), "package.json"), typeof import.meta.url === "string" ? import.meta.url : ""]) {
+    if (!base) continue;
+    try {
+      roots.push(dirname(createRequire(base).resolve("pdfjs-dist/package.json")));
+    } catch {
+      /* try the next resolver */
+    }
+  }
+  roots.push(join(process.cwd(), "node_modules/pdfjs-dist"), "/var/task/node_modules/pdfjs-dist");
+  for (const root of roots) {
+    const fonts = join(root, "standard_fonts");
+    const cmaps = join(root, "cmaps");
+    if (existsSync(join(fonts, "LiberationSans-Regular.ttf")) && existsSync(cmaps)) {
+      pdfJsAssets = {
+        standardFontDataUrl: fonts.endsWith("/") ? fonts : `${fonts}/`,
+        cMapUrl: cmaps.endsWith("/") ? cmaps : `${cmaps}/`,
+      };
+      return pdfJsAssets;
+    }
+  }
+  pdfJsAssets = null;
+  return null;
+}
+
+async function pdfJsOpenOptions(bytes: Uint8Array) {
+  const assets = await resolvePdfJsAssets();
+  return {
+    data: new Uint8Array(bytes),
+    password: "",
+    disableWorker: true,
+    isEvalSupported: false,
+    // Node canvas has no Helvetica face. LiberationSans from pdfjs-dist draws the glyphs Grok reads.
+    useSystemFonts: false,
+    useWorkerFetch: false,
+    cMapPacked: true,
+    ...(assets
+      ? { standardFontDataUrl: assets.standardFontDataUrl, cMapUrl: assets.cMapUrl }
+      : {}),
+  };
+}
+
+/** Visible glyphs via pdf.js. Empty-password Standard files (Form 1040 transcripts) need this. */
+export async function readPdfJsTextLayer(bytes: Uint8Array): Promise<string[] | null> {
+  if (!isPdf(bytes)) return null;
+  try {
+    const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
+    const workerSrc = await resolvePdfWorkerSrc();
+    if (!workerSrc) return null;
+    pdfjs.GlobalWorkerOptions.workerSrc = workerSrc;
+    const doc = await pdfjs.getDocument(
+      (await pdfJsOpenOptions(bytes)) as Parameters<typeof pdfjs.getDocument>[0],
+    ).promise;
+    const pages = await pdfJsTextPagesFromDoc(doc, 3);
+    const lines = pages.flatMap((page) => page.lines);
+    return meaningfulText(lines) ? lines : null;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error("[docs/pdf] text layer failed:", message);
+    return null;
+  }
+}
+
+async function resolvePdfWorkerSrc(): Promise<string | null> {
+  const { createRequire } = await import("node:module");
+  const { existsSync, readFileSync, writeFileSync } = await import("node:fs");
+  const { join } = await import("node:path");
+  const { pathToFileURL } = await import("node:url");
+  const candidates: string[] = [];
+  for (const base of [join(process.cwd(), "package.json"), typeof import.meta.url === "string" ? import.meta.url : ""]) {
+    if (!base) continue;
+    try {
+      candidates.push(createRequire(base).resolve("pdfjs-dist/legacy/build/pdf.worker.mjs"));
+    } catch {
+      /* try the next resolver */
+    }
+  }
+  candidates.push(
+    join(process.cwd(), "node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs"),
+    join(process.cwd(), "node_modules/pdfjs-dist/build/pdf.worker.mjs"),
+    "/var/task/node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs",
+    "/var/task/node_modules/pdfjs-dist/build/pdf.worker.mjs",
+  );
+  for (const path of candidates) {
+    if (!path || !existsSync(path)) continue;
+    try {
+      const tmp = "/tmp/onyx-pdf.worker.mjs";
+      writeFileSync(tmp, readFileSync(path));
+      return pathToFileURL(tmp).href;
+    } catch {
+      return pathToFileURL(path).href;
+    }
+  }
+  return null;
+}
+
+export type PdfTextPage = { page: number; lines: string[] };
+
+async function pdfJsTextPagesFromDoc(
+  doc: { numPages: number; getPage: (n: number) => Promise<{ getTextContent: () => Promise<{ items: unknown[] }> }> },
+  maxPages: number,
+): Promise<PdfTextPage[]> {
+  const last = Math.min(doc.numPages, maxPages);
+  const pages: PdfTextPage[] = [];
+  for (let i = 1; i <= last; i += 1) {
+    const page = await doc.getPage(i);
+    const content = await page.getTextContent();
+    const lines: string[] = [];
+    let current = "";
+    let lastY: number | null = null;
+    for (const item of content.items) {
+      const row = item as { str?: string; transform?: number[] };
+      const text = String(row.str ?? "").replace(/\s+/g, " ").trim();
+      if (!text) continue;
+      const y = Array.isArray(row.transform) ? row.transform[5] : null;
+      if (lastY != null && y != null && Math.abs(lastY - y) > 2 && current) {
+        lines.push(current.trim());
+        current = text;
+      } else {
+        current = current ? `${current} ${text}` : text;
+      }
+      if (y != null) lastY = y;
+    }
+    if (current.trim()) lines.push(current.trim());
+    pages.push({ page: i, lines });
+  }
+  return pages;
+}
+
+/** Page count for packet Grok. 0 when this is not a PDF. */
+export async function pdfPageCount(bytes: Uint8Array): Promise<number> {
+  if (!isPdf(bytes)) return 0;
+  try {
+    const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
+    const workerSrc = await resolvePdfWorkerSrc();
+    if (!workerSrc) return 0;
+    pdfjs.GlobalWorkerOptions.workerSrc = workerSrc;
+    const doc = await pdfjs.getDocument(
+      (await pdfJsOpenOptions(bytes)) as Parameters<typeof pdfjs.getDocument>[0],
+    ).promise;
+    return doc.numPages;
+  } catch {
+    return 0;
+  }
+}
+
+/** Per-page glyphs via pdf.js. Classify stays on the first three pages; ledger may read further. */
+export async function readPdfJsTextPages(
+  bytes: Uint8Array,
+  maxPages = 24,
+): Promise<PdfTextPage[] | null> {
+  if (!isPdf(bytes)) return null;
+  try {
+    const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
+    const workerSrc = await resolvePdfWorkerSrc();
+    if (!workerSrc) return null;
+    pdfjs.GlobalWorkerOptions.workerSrc = workerSrc;
+    const doc = await pdfjs.getDocument(
+      (await pdfJsOpenOptions(bytes)) as Parameters<typeof pdfjs.getDocument>[0],
+    ).promise;
+    const pages = await pdfJsTextPagesFromDoc(doc, maxPages);
+    return pages.some((page) => meaningfulText(page.lines)) ? pages : null;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error("[docs/pdf] text pages failed:", message);
+    return null;
+  }
+}
+
+async function renderWithPdfJs(bytes: Uint8Array, pageNumber = 1): Promise<PdfEmbeddedImage | null> {
+  try {
+    const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
+    const workerSrc = await resolvePdfWorkerSrc();
+    if (!workerSrc) {
+      console.error("[docs/pdf] page render failed: pdf.worker.mjs missing");
+      return null;
+    }
+    pdfjs.GlobalWorkerOptions.workerSrc = workerSrc;
+    const doc = await pdfjs.getDocument(
+      (await pdfJsOpenOptions(bytes)) as Parameters<typeof pdfjs.getDocument>[0],
+    ).promise;
+    const page = await doc.getPage(Math.max(1, Math.min(pageNumber, doc.numPages)));
+    const scale = bytes.length > 0 && bytes.length < 40_000 ? 2.25 : 1.5;
+    const viewport = page.getViewport({ scale });
+    const canvas = createCanvas(Math.max(1, Math.ceil(viewport.width)), Math.max(1, Math.ceil(viewport.height)));
+    const canvasContext = canvas.getContext("2d");
+    await page.render({ canvasContext, viewport } as unknown as Parameters<typeof page.render>[0]).promise;
+    const png = canvas.toBuffer("image/png");
+    if (png.length < 80) return null;
+    console.info("[docs/pdf] page render ok", png.length);
+    return { bytes: png, mediaType: "image/png" };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error("[docs/pdf] page render failed:", message);
+    return null;
+  }
+}
+
+/** One PDF page as an image Fox can send to Grok. */
+export async function renderPdfPage(
+  bytes: Uint8Array,
+  pageNumber = 1,
+): Promise<PdfEmbeddedImage | null> {
+  const drawn = await renderWithPdfJs(bytes, pageNumber);
+  if (drawn && drawnPageHasInk(drawn)) return drawn;
+  if (pageNumber === 1) {
+    const embedded = largestEmbeddedPhoto(bytes);
+    if (embedded) return embedded;
+  }
+  if (drawn) return drawn;
+  try {
+    const { execFile } = await import("node:child_process");
+    const { promisify } = await import("node:util");
+    const { mkdtemp, readFile, rm, writeFile } = await import("node:fs/promises");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const exec = promisify(execFile);
+    const dir = await mkdtemp(join(tmpdir(), "onyx-page-"));
+    const pdfPath = join(dir, "page.pdf");
+    const prefix = join(dir, "out");
+    await writeFile(pdfPath, Buffer.from(bytes));
+    try {
+      await exec(
+        "pdftoppm",
+        ["-png", "-f", String(pageNumber), "-l", String(pageNumber), "-singlefile", "-r", "150", pdfPath, prefix],
+        { timeout: 15_000 },
+      );
+      const png = await readFile(`${prefix}.png`);
+      if (png.length > 80) return { bytes: png, mediaType: "image/png" };
+    } finally {
+      await rm(dir, { recursive: true, force: true }).catch(() => undefined);
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
+
+/** First page as an image Fox can send to Grok. Drawn glyphs first; skip blank Helvetica pages and 1-bit masks. */
+export async function renderPdfFirstPage(bytes: Uint8Array): Promise<PdfEmbeddedImage | null> {
+  return renderPdfPage(bytes, 1);
 }

@@ -1,0 +1,198 @@
+#!/usr/bin/env bash
+# Spine walker — eighteen locked preview cases. Hard Start over each case.
+# Case 9 harbor-both-cover-contract. Lukasz Harbor leftovers run before Playwright:
+# 09 at price + House-turn Credit, 03+07 before income, Start over wipe.
+# CI fail = red.
+#
+# Preferred (OIDC, after vercel login / VERCEL_TOKEN):
+#   npx vercel env run -- bash scripts/assert-spine-walker.sh
+#   npx vercel env pull .env.local --yes && bash scripts/assert-spine-walker.sh
+#
+# Fallback: set VERCEL_AUTOMATION_BYPASS_SECRET (do not commit it).
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+DIR="$ROOT/scripts/spine-walker"
+cd "$DIR"
+
+# Recursion guard for `vercel env run -- this-script`
+ALREADY_WRAPPED="${SPINE_WALKER_AUTH_WRAPPED:-0}"
+
+source_env_file() {
+  local file="$1"
+  if [[ -f "$file" ]]; then
+    set -a
+    # shellcheck disable=SC1090
+    source "$file"
+    set +a
+  fi
+}
+
+have_preview_auth() {
+  [[ -n "${VERCEL_OIDC_TOKEN:-}" || -n "${VERCEL_AUTOMATION_BYPASS_SECRET:-}" ]]
+}
+
+vercel_logged_in() {
+  [[ -n "${VERCEL_TOKEN:-}" ]] || timeout 12 npx --yes vercel whoami >/dev/null 2>&1
+}
+
+ensure_vercel_link() {
+  if [[ -f "$ROOT/.vercel/project.json" ]]; then
+    return 0
+  fi
+  mkdir -p "$ROOT/.vercel"
+  # Public identifiers from the Vercel GitHub comment on PR 18 (not a secret).
+  cat > "$ROOT/.vercel/project.json" <<'JSON'
+{
+  "projectId": "prj_fwzNdthu8kInqmXMWVU9uc5fNUXT",
+  "orgId": "team_j7nbpQaQOtI5nb5yLbx7wjjD",
+  "projectName": "onyx-backend"
+}
+JSON
+}
+
+pull_oidc_env() {
+  local pulled
+  pulled="$(mktemp)"
+  if npx --yes vercel env pull "$pulled" --yes --environment development --cwd "$ROOT" >/dev/null 2>&1; then
+    source_env_file "$pulled"
+  fi
+  rm -f "$pulled"
+}
+
+source_env_file "$ROOT/.env.local"
+
+if ! have_preview_auth && [[ "$ALREADY_WRAPPED" != "1" ]] && vercel_logged_in; then
+  ensure_vercel_link
+  pull_oidc_env
+  if ! have_preview_auth; then
+    export SPINE_WALKER_AUTH_WRAPPED=1
+    exec npx --yes vercel env run --cwd "$ROOT" --scope onyx-direct -- bash "$ROOT/scripts/assert-spine-walker.sh" "$@"
+  fi
+fi
+
+if ! have_preview_auth; then
+  echo "spine-walker: no VERCEL_OIDC_TOKEN or VERCEL_AUTOMATION_BYPASS_SECRET in the environment." >&2
+  echo "Manager (OIDC, preferred):" >&2
+  echo "  npx vercel login" >&2
+  echo "  npx vercel link --yes --project onyx-backend --scope onyx-direct" >&2
+  echo "  npx vercel env pull .env.local --yes && bash scripts/assert-spine-walker.sh" >&2
+  echo "  # or: npx vercel env run -- bash scripts/assert-spine-walker.sh" >&2
+  echo "Fallback: set VERCEL_AUTOMATION_BYPASS_SECRET from Vercel → Project → Settings → Deployment Protection → Protection Bypass for Automation. Do not commit it." >&2
+fi
+
+if [[ ! -d node_modules/playwright ]]; then
+  npm install
+fi
+
+install_chromium() {
+  if npx playwright install --with-deps chromium; then
+    return 0
+  fi
+  echo "spine-walker: --with-deps failed, retrying chromium only" >&2
+  sleep 4
+  npx playwright install chromium
+}
+
+if [[ "${CI:-}" == "true" && "${SPINE_WALKER_LEFTOVERS_ONLY:-}" != "1" ]]; then
+  install_chromium
+  touch .browser-ok
+elif [[ "${CI:-}" != "true" && ! -f .browser-ok ]]; then
+  npx playwright install chromium
+  touch .browser-ok
+fi
+
+leftover_wanted() {
+  local n="$1"
+  if [[ -z "${SPINE_WALKER_ONLY:-}" ]]; then
+    return 0
+  fi
+  [[ ",${SPINE_WALKER_ONLY}," == *",${n},"* ]]
+}
+
+run_leftover() {
+  local script="$1"
+  echo "spine-walker: leftover ${script}"
+  (cd "$ROOT" && npx --yes tsx "scripts/${script}")
+}
+
+if [[ "${SPINE_WALKER_SKIP_LEFTOVERS:-}" != "1" ]]; then
+  if leftover_wanted 1 || leftover_wanted 5 || leftover_wanted 6 || leftover_wanted 7 || leftover_wanted 9 || leftover_wanted 10 || leftover_wanted 11 || leftover_wanted 12 || leftover_wanted 13 || leftover_wanted 14 || leftover_wanted 15 || leftover_wanted 16 || leftover_wanted 17 || leftover_wanted 18 || leftover_wanted 19 || leftover_wanted 20 || leftover_wanted 21 || leftover_wanted 22 || leftover_wanted 23 || leftover_wanted 24 || leftover_wanted 25 || leftover_wanted 26; then
+    if [[ ! -d "$ROOT/node_modules/next" ]]; then
+      echo "spine-walker: npm install (harbor leftover)" >&2
+      (cd "$ROOT" && npm install)
+    fi
+  fi
+
+  run_leftover assert-live-strip.ts
+  run_leftover assert-use-this-employment.ts
+  # leftovers-only is leftover + write. Extra case leftovers stay on the walker cases.
+  if [[ "${SPINE_WALKER_LEFTOVERS_ONLY:-}" == "1" ]]; then
+    echo "spine-walker: leftovers only"
+    exit 0
+  fi
+  if leftover_wanted 1 || leftover_wanted 7 || leftover_wanted 10 || leftover_wanted 11; then
+    run_leftover assert-home-type-chips.ts
+  fi
+  if leftover_wanted 6 || leftover_wanted 19; then
+    run_leftover assert-income-skip-still-useful.ts
+    run_leftover assert-still-useful-skip-income.ts
+  fi
+  if leftover_wanted 5 || leftover_wanted 6 || leftover_wanted 9; then
+    run_leftover assert-looks-right-after-statement.ts
+  fi
+  if leftover_wanted 9; then
+    run_leftover assert-harbor-acceptance-file.ts
+  fi
+  if leftover_wanted 10; then
+    run_leftover assert-contract-at-price.ts
+    run_leftover assert-contract-house-credit.ts
+  fi
+  if leftover_wanted 11; then
+    run_leftover assert-house-credit-band.ts
+    run_leftover assert-contract-house-credit.ts
+  fi
+  if leftover_wanted 12; then
+    run_leftover assert-w2-stub-employment-merge.ts
+  fi
+  if leftover_wanted 20; then
+    run_leftover assert-w2-paystub-before-id.ts
+    run_leftover assert-income-skip-still-useful.ts
+  fi
+  if leftover_wanted 21; then
+    run_leftover assert-looks-right-chip.ts
+    run_leftover assert-income-skip-still-useful.ts
+    run_leftover assert-looks-right-after-statement.ts
+  fi
+  if leftover_wanted 22; then
+    run_leftover assert-refi-loan-then-value.ts
+  fi
+  if leftover_wanted 23; then
+    run_leftover assert-w2-page-read.ts
+    run_leftover assert-w2-paystub-before-id.ts
+  fi
+  if leftover_wanted 24; then
+    run_leftover assert-first-session-page-read.ts
+    run_leftover assert-w2-page-read.ts
+    run_leftover assert-refi-loan-then-value.ts
+  fi
+  if leftover_wanted 25 || leftover_wanted 26; then
+    run_leftover assert-first-session-page-read.ts
+  fi
+  if leftover_wanted 12 || leftover_wanted 13; then
+    run_leftover assert-file-next-ask.ts
+  fi
+  if leftover_wanted 14 || leftover_wanted 15 || leftover_wanted 16 || leftover_wanted 17 || leftover_wanted 18; then
+    run_leftover assert-se-cover-income.ts
+  fi
+  if leftover_wanted 17; then
+    run_leftover assert-years-in-business.ts
+  fi
+fi
+
+if [[ "${SPINE_WALKER_LEFTOVERS_ONLY:-}" == "1" ]]; then
+  echo "spine-walker: leftovers only"
+  exit 0
+fi
+
+exec npx tsx walker.ts "$@"

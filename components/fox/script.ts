@@ -122,12 +122,14 @@ export function taskContext(stage: FoxStage, draft: FoxIntakeDraft) {
     debts: "Asking: monthly debts",
     assets: "Asking: available funds",
     "property-type": "Asking: property type",
+    "property-zip": "Asking: property ZIP",
     "property-address": "Asking: property address",
     "time-on-job": "Asking: time on job",
     "current-housing": "Asking: current housing",
     declarations: "Asking: declarations",
     "declaration-timing": "Asking: event timing",
     household: "Asking: household",
+    "other-k1-loan": "Asking: other K-1",
     "coborrower-name": "Asking: Borrower 2",
     "borrower-name": "Asking: borrower name",
     "other-reo": "Asking: other real estate",
@@ -143,7 +145,16 @@ export function taskContext(stage: FoxStage, draft: FoxIntakeDraft) {
     "geo-stop": "California only",
     "confirm-proposal": "Confirm suggestion",
     "pay-frequency": "Asking: pay frequency",
+    "prior-stub": "Asking: prior paystub",
+    "wage-docs": "Asking: W-2 and paystub",
+    "w2-box5": "Asking: W-2 Box 5",
+    "w2-pay-frequency": "Asking: pay frequency",
+    "paystub-monthly": "Asking: stub monthly",
     "both-monthly-reason": "Asking: paystub and W-2",
+    "cover-wage-gap": "Asking: 1040 wages vs File W-2s",
+    "household-wages": "Asking: household wages",
+    "packet-read": "Reading the rest of the return",
+    "packet-close": "Rest of the return",
     "raise-when": "Asking: raise date",
     "raise-ytd-far": "Asking: raise YTD",
     qualifying: "Asking: qualifying income",
@@ -295,7 +306,7 @@ export function promptCopy(prompt: FoxPrompt, draft?: FoxIntakeDraft): { text: s
   }
   if (prompt === "review") {
     return {
-      text: "Does this look right?",
+      text: "These numbers look right?",
       actions: [
         { id: "looks-right", label: "Looks right", event: "bubble", capture: { field: "confirm-draft" } },
         { id: "needs-fix", label: "Needs a correction", event: "bubble", capture: { field: "needs-correction" } },
@@ -483,10 +494,14 @@ function captureForPrompt(
     }
   }
   if (prompt === "review") {
-    if (/(correction|fix|wrong|no|edit)/i.test(raw) && !/looks right/.test(raw)) {
+    if (/(correction|fix|wrong|no|edit)/i.test(raw) && !/looks? right/.test(raw)) {
       return { ...promptCopy("correct"), capture: { field: "needs-correction" } };
     }
-    if (/(looks right|confirm|yes|correct|good)/i.test(raw) && !/correction/.test(raw)) {
+    if (
+      (/^(looks right|these numbers look right\??)$/i.test(raw.trim()) ||
+        /(looks right|confirm|yes|correct|good)/i.test(raw)) &&
+      !/correction/.test(raw)
+    ) {
       return { ...promptCopy("done"), capture: { field: "confirm-draft" } };
     }
   }

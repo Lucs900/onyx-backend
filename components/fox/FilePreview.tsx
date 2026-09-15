@@ -114,7 +114,7 @@ export function StillUsefulSection({
 export function WorkspaceFileDock({ children }: { children: ReactNode }) {
   const draft = useSyncExternalStore(subscribeFoxDraft, getFoxDraft, getServerDraft);
   const facts = previewFacts(draft);
-  const showVault = Boolean(draft.docsOpen) && Boolean(draft.sampleAccepted);
+  const showVault = false;
   const [sheetOpen, setSheetOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
 
