@@ -1879,9 +1879,21 @@ function entityReactionAsk(draft: FoxIntakeDraft, proposal: NonNullable<FoxIntak
   const shown = displayFactValue(proposal.field, proposal.value);
   const year = landedTaxYear(draft);
   const method = proposal.methodNote ?? "";
-  const form = /1120-?s|ordinary \+ dep|household ordinary|company ordinary|K-1 Box 1|per 50% owner/i.test(method) && !/8825|GP to Hale/i.test(method)
+  const kindRaw =
+    proposal.extras?.find((item) => item.field === "return_kind")?.value ||
+    factValue(draft, "return_kind") ||
+    "";
+  const form = /1120-?s/i.test(kindRaw)
     ? "Form 1120-S"
-    : "Form 1065";
+    : /1065|partnership/i.test(kindRaw)
+      ? "Form 1065"
+      : /ordinary \+ dep/i.test(method)
+        ? "Form 1120-S"
+        : /8825|GP to Hale/i.test(method)
+          ? "Form 1065"
+          : /1120-?s/i.test(method)
+            ? "Form 1120-S"
+            : "Form 1065";
   const entity =
     proposal.extras?.find((item) => item.field === "entity_name")?.value ||
     factValue(draft, "entity_name") ||
@@ -1891,9 +1903,11 @@ function entityReactionAsk(draft: FoxIntakeDraft, proposal: NonNullable<FoxIntak
   const companyRaw =
     proposal.extras?.find((item) => item.field === "company_ordinary")?.value ||
     (/company ordinary/i.test(method) ? proposal.value : "");
-  const companyN = Number(String(companyRaw).replace(/[^\d.]/g, ""));
+  const companyN = parseExtractMoney(companyRaw);
   const companyShown =
-    Number.isFinite(companyN) && companyN > 0 ? `$${Math.round(companyN).toLocaleString("en-US")}` : "";
+    companyN != null && companyN !== 0
+      ? `${companyN < 0 ? "−" : ""}$${Math.round(Math.abs(companyN)).toLocaleString("en-US")}`
+      : "";
   const companyLine = companyShown ? `Company ordinary is ${companyShown} a month.` : "";
   const officer = proposal.extras?.find((item) => item.field === "officer_compensation")?.value ?? "";
   const officerN = Number(String(officer).replace(/[^\d.]/g, ""));
@@ -1935,7 +1949,7 @@ function entityReactionAsk(draft: FoxIntakeDraft, proposal: NonNullable<FoxIntak
       ack,
       monthly: shown,
       story: [companyLine, share, incomeStoryLine(draft, proposal), officerLine].filter(Boolean).join(" "),
-      note: SUGGESTED_INCOME_NOTE,
+      note: proposal.note || SUGGESTED_INCOME_NOTE,
     }),
     actions: incomeConfirmActions(),
   };
@@ -8933,7 +8947,7 @@ export function previewFacts(draft: FoxIntakeDraft): PreviewFact[] {
           ),
         )
       : "");
-  if (combinedOrdinary && Number(combinedOrdinary) > 0) {
+  if (combinedOrdinary && Number(combinedOrdinary) !== 0) {
     facts.push({
       id: "combined-ordinary",
       label: "Combined ordinary",

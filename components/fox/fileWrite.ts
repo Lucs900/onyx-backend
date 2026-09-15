@@ -238,6 +238,8 @@ export const EXTRACT_SCHEMA_KEYS: Record<ExtractClass, readonly string[]> = {
     "casualty_loss",
     "mileage_depreciation",
     "k1_ordinary_income",
+    "other_k1_ordinary_income",
+    "other_k1_ownership_percent",
     "k1_distributions",
     "schedule_e_rents_received",
     "schedule_e_cash_expenses",
@@ -330,8 +332,10 @@ const MONEY_KEYS = new Set([
   "casualty_loss",
   "mileage_depreciation",
   "k1_ordinary_income",
+  "other_k1_ordinary_income",
   "k1_distributions",
   "entity_ordinary_income",
+  "company_ordinary",
   "entity_8825_rental",
   "entity_depreciation",
   "entity_amortization",
@@ -483,7 +487,7 @@ export function extractClassFromSlot(slot: DocSlot): ExtractClass | null {
 export function extractClassFromFilename(name: string): ExtractClass | null {
   if (/purchase.?contract|purchase.?agree|\bpsa\b/i.test(name)) return "purchase_contract";
   if (/1040.?cover|cover.?page/i.test(name)) return "tax_return";
-  if (/1120-?s|tax\s*returns?/i.test(name) && !/w-?2|pay.?stub/i.test(name)) return "tax_return";
+  if (/1120-?s?|\b1065\b|tax\s*returns?/i.test(name) && !/w-?2|pay.?stub/i.test(name)) return "tax_return";
   return extractClassFromSlot(slotFromFilename(name));
 }
 
@@ -1549,7 +1553,7 @@ export function displayFactValue(field: string, value: string) {
     const n = moneyNumber(value);
     if (n != null) {
       const shown = `$${Math.round(Math.abs(n)).toLocaleString("en-US")}`;
-      return n < 0 ? `-${shown}` : shown;
+      return n < 0 ? `−${shown}` : shown;
     }
   }
   return value;
@@ -2853,8 +2857,7 @@ export const LAST_YEAR_FEDERAL_RETURN_ASK =
 export const LAST_YEAR_W2_STILL_USEFUL = "Last year’s W-2";
 export const LAST_YEAR_RETURN_STILL_USEFUL = "Last year’s tax return (Form 1040)";
 
-export const BUSINESS_RETURN_ASK =
-  "I still need the business return — Form 1120-S or the entity return.";
+export const BUSINESS_RETURN_ASK = "I still need the business return.";
 
 function selfEmployedIncome(draft: FoxIntakeDraft) {
   const income = draft.incomeType.value;

@@ -799,6 +799,9 @@ export function entityReturnKind(lines: string[]): "1065" | "1120s" | "1120" | n
   if (/FORM 1065 WORKSHEET|1065 WORKSHEET|PARTNERSHIP RETURN/.test(blob) && /FORM 1065/.test(blob) && !/SCHEDULE K-1/.test(blob)) {
     return "1065";
   }
+  if (/U\.?S\.?\s+RETURN OF PARTNERSHIP INCOME/.test(blob)) return "1065";
+  if (/\bFORM 1065\b/.test(blob) && /NAME OF PARTNERSHIP/.test(blob)) return "1065";
+  if (/\bFORM 1065\b/.test(blob) && /(?:^|\n)\s*23\s+ORDINARY BUSINESS INCOME/.test(blob)) return "1065";
   if (/C CORPORATION RETURN|FORM 1120 WORKSHEET/.test(blob) && /TAXABLE INCOME/.test(blob) && !/1120-?S/.test(blob) && !/SCHEDULE K-1/.test(blob)) {
     return "1120";
   }
@@ -835,7 +838,9 @@ function ownershipPercentFromPrintedText(text: string): string {
     blob.match(/shareholder is\s*(\d{1,3})\s*%/i) ||
     blob.match(/jordan hale\s*·\s*(\d{1,3})\s*%/i) ||
     blob.match(/this (?:partner|shareholder)[\s\S]{0,80}?(\d{1,3})\s*%/i) ||
-    blob.match(/current year allocation percentage[^\d]{0,40}?(\d{1,3})\s*%/i);
+    blob.match(/current year allocation percentage[^\d]{0,40}?(\d{1,3})\s*%/i) ||
+    blob.match(/partner'?s share of (?:profit|income|loss)[^\d%]{0,40}(\d{1,3})\s*%/i) ||
+    blob.match(/profit(?:\s*,\s*loss,\s*and\s*capital)?[^\d%]{0,24}(\d{1,3})\s*%/i);
   if (!match?.[1]) return "";
   const pct = Number(match[1]);
   if (!Number.isFinite(pct) || pct <= 0 || pct > 100) return "";
@@ -855,6 +860,7 @@ function applyEntityReturnFields(
     stackedLabelValue(stacked, /^TAX YEAR:?\s*/i) ||
     (stacked.join("\n").match(/tax year\s*:?\s*(20\d{2})/i)?.[1] ?? "") ||
     (stacked.join("\n").match(/form\s*1120-?s[^\n]{0,60}?(20\d{2})/i)?.[1] ?? "") ||
+    (stacked.join("\n").match(/form\s*1065[^\n]{0,60}?(20\d{2})/i)?.[1] ?? "") ||
     (stacked.join("\n").match(/\b(20\d{2})\b/)?.[1] ?? "");
   if (taxYear) put("tax_year", taxYear.replace(/\D/g, "").slice(0, 4));
   put("return_kind", kind);
@@ -868,11 +874,12 @@ function applyEntityReturnFields(
     return;
   }
   const sourceBlob = stacked.join("\n");
+  const moneyToken = "(-?\\$?\\s*[\\d,]+(?:\\.\\d+)?|\\(\\s*\\$?\\s*[\\d,]+(?:\\.\\d+)?\\s*\\))";
   const moneyAfter = (pattern: RegExp) => {
     const match = sourceBlob.match(pattern);
     if (
       !match?.[1] ||
-      /expected 1084|suggested monthly|ordinary alone|other deductions|form 1120-s,?\s*line\s*6|total income/i.test(
+      /expected 1084|suggested monthly|ordinary alone|other deductions|form 1120-s,?\s*line\s*6|total income|total deductions|salaries and wages/i.test(
         match[0],
       )
     ) {
@@ -880,14 +887,22 @@ function applyEntityReturnFields(
     }
     return moneyDigits(match[1]) || "";
   };
+  const ordinaryFromKind =
+    kind === "1065"
+      ? moneyAfter(new RegExp(`(?:^|\\n)\\s*23\\s+ordinary business income(?:\\s*\\(\\s*loss\\s*\\))?:?[^\\n]{0,80}?${moneyToken}`, "i")) ||
+        moneyAfter(new RegExp(`ordinary business income(?:\\s*\\(\\s*loss\\s*\\))?\\s*\\(\\s*page\\s*1,?\\s*line\\s*23\\s*\\)[^\\n]{0,80}?${moneyToken}`, "i"))
+      : "";
   const ordinary =
+    ordinaryFromKind ||
     moneyDigits(emptyIfNotShown(stackedLabelValue(stacked, /^ORDINARY BUSINESS INCOME(?:\s*\(\s*PAGE\s*1\s*\))?:?\s*/i))) ||
-    moneyAfter(/ordinary business income(?:\s*\(\s*page\s*1\s*\))?\s*\$?\s*([\d,]+(?:\.\d+)?)/i) ||
-    moneyAfter(/(?:^|\n)\s*22\s+ordinary business income(?:\s*\(\s*loss\s*\))?[^\n]{0,80}?\$?\s*([\d,]+(?:\.\d+)?)/i) ||
-    moneyAfter(/ordinary business income(?:\s*\(\s*loss\s*\))?\s*\(\s*page\s*1,?\s*line\s*22\s*\)[^\n]{0,80}?\$?\s*([\d,]+(?:\.\d+)?)/i) ||
-    moneyAfter(/ordinary business income(?:\s*\(\s*loss\s*\))?(?:\s*\(\s*page\s*1\s*,?\s*line\s*21\s*\))?\s*\$?\s*([\d,]+(?:\.\d+)?)/i) ||
-    moneyAfter(/(?:^|\n)\s*21\s+ordinary business income(?:\s*\(\s*loss\s*\))?[^\n]{0,80}?\$?\s*([\d,]+(?:\.\d+)?)/i) ||
-    moneyAfter(/(?:^|\n)\s*1\s+ordinary business income(?:\s*\(\s*loss\s*\))?(?:\s*\(\s*page\s*1,?\s*line\s*2[12]\s*\))?[^\n]{0,80}?\$?\s*([\d,]+(?:\.\d+)?)/i);
+    moneyAfter(new RegExp(`ordinary business income(?:\\s*\\(\\s*page\\s*1\\s*\\))?:?\\s*${moneyToken}`, "i")) ||
+    moneyAfter(new RegExp(`(?:^|\\n)\\s*22\\s+ordinary business income(?:\\s*\\(\\s*loss\\s*\\))?:?[^\\n]{0,80}?${moneyToken}`, "i")) ||
+    moneyAfter(new RegExp(`ordinary business income(?:\\s*\\(\\s*loss\\s*\\))?\\s*\\(\\s*page\\s*1,?\\s*line\\s*22\\s*\\)[^\\n]{0,80}?${moneyToken}`, "i")) ||
+    (kind === "1065"
+      ? ""
+      : moneyAfter(new RegExp(`ordinary business income(?:\\s*\\(\\s*loss\\s*\\))?(?:\\s*\\(\\s*page\\s*1\\s*,?\\s*line\\s*21\\s*\\))?:?\\s*${moneyToken}`, "i")) ||
+        moneyAfter(new RegExp(`(?:^|\\n)\\s*21\\s+ordinary business income(?:\\s*\\(\\s*loss\\s*\\))?:?[^\\n]{0,80}?${moneyToken}`, "i"))) ||
+    moneyAfter(new RegExp(`(?:^|\\n)\\s*1\\s+ordinary business income(?:\\s*\\(\\s*loss\\s*\\))?(?:\\s*\\(\\s*page\\s*1,?\\s*line\\s*2[123]\\s*\\))?:?[^\\n]{0,80}?${moneyToken}`, "i"));
   if (ordinary) putMoney("entity_ordinary_income", ordinary);
   const officer =
     moneyDigits(emptyIfNotShown(stackedLabelValue(stacked, /^COMPENSATION OF OFFICERS:?\s*/i))) ||
@@ -924,10 +939,11 @@ function applyEntityReturnFields(
 function entityNameFromPrintedText(text: string): string {
   const blob = String(text ?? "").replace(/\u00a0/g, " ");
   if (/HO\s*&\s*SOY\s+INC/i.test(blob)) return "HO & SOY INC";
+  if (/Parass\s+Foods\s+LLC/i.test(blob)) return "Parass Foods LLC";
   if (/Bay Street Partners LLC/i.test(blob)) return "Bay Street Partners LLC";
   if (/Harbor Studio Inc/i.test(blob)) return "Harbor Studio Inc";
   const labeled =
-    blob.match(/name of corporation\s*:?\s*([A-Z0-9][A-Z0-9 .&'-]{1,60}?(?:INC\.?|LLC|L\.L\.C\.|CORP\.?|LTD\.?))/i) ||
+    blob.match(/name of (?:corporation|partnership)\s*:?\s*([A-Z0-9][A-Z0-9 .&'-]{1,60}?(?:INC\.?|LLC|L\.L\.C\.|CORP\.?|LTD\.?))/i) ||
     blob.match(
       /(?:^|\n)\s*([A-Z0-9][A-Z0-9 .&'-]{1,60}?(?:INC\.?|LLC|L\.L\.C\.|CORP\.?))\s*(?:\n|$)/,
     );
@@ -949,7 +965,10 @@ function classifyPrintedLines(lines: string[]): ExtractClass | null {
   if (
     /\bFORM 1120-?S\b/.test(blob) ||
     /U\.?S\.?\s+INCOME TAX RETURN FOR AN S CORPORATION/.test(blob) ||
-    /\bS CORPORATION RETURN\b/.test(blob)
+    /\bS CORPORATION RETURN\b/.test(blob) ||
+    /\bFORM 1065\b/.test(blob) ||
+    /U\.?S\.?\s+RETURN OF PARTNERSHIP INCOME/.test(blob) ||
+    /\bPARTNERSHIP RETURN\b/.test(blob)
   ) {
     return "tax_return";
   }
@@ -964,7 +983,7 @@ function classifyPrintedLines(lines: string[]): ExtractClass | null {
     return "paystub";
   }
   if (/\bW-?2\b/.test(blob) || /WAGE AND TAX STATEMENT/.test(blob)) return "w2";
-  if (/K-?1|1120-?S|FORM 1040|SCHEDULE C/.test(blob)) return "tax_return";
+  if (/K-?1|1120-?S|FORM 1065|FORM 1040|SCHEDULE C/.test(blob)) return "tax_return";
   if (
     /BANK STATEMENT|ACCOUNT STATEMENT/.test(blob) ||
     (/\bBANK\b/.test(blob) && /ENDING BALANCE|ENDING BAL\b/.test(blob) && !/\bPAYSTUB\b|\bW-?2\b/.test(blob))
@@ -1044,6 +1063,11 @@ function firstMoneyInBlock(texts: string[]) {
     if (/expected 1084|suggested monthly|method:|ordinary alone/i.test(text)) continue;
     const own = moneyDigits(text.replace(/^\$\s*/, ""));
     if (own) return own;
+    const loss = text.match(/\(\s*\$?\s*([\d,]+(?:\.\d+)?)\s*\)/) || text.match(/-\s*\$?\s*([\d,]+(?:\.\d+)?)/);
+    if (loss?.[1]) {
+      const digits = moneyDigits(loss[0].includes("(") ? `(${loss[1]})` : `-${loss[1]}`);
+      if (digits) return digits;
+    }
     const tail = text.match(/\$\s*([\d,]+(?:\.\d+)?)/);
     if (tail?.[1]) {
       const digits = moneyDigits(tail[1]);

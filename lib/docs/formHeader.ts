@@ -8,6 +8,7 @@ export type TaxFormClass =
   | "form_8879"
   | "form_1040"
   | "form_1120s"
+  | "form_1065"
   | "schedule_e"
   | "schedule_c"
   | "k1"
@@ -53,6 +54,14 @@ const FORM_1120S_KEYS = new Set([
   "ownership_percent",
   "return_kind",
 ]);
+const FORM_1065_KEYS = new Set([
+  "tax_year",
+  "entity_name",
+  "business_name",
+  "entity_ordinary_income",
+  "ownership_percent",
+  "return_kind",
+]);
 
 /** Printed first. 8879 before any 1040 match — 8879 can mention Form 1040. */
 export function classifyPageByFormHeader(text: string): TaxFormClass {
@@ -88,6 +97,20 @@ export function classifyPageByFormHeader(text: string): TaxFormClass {
 
   if (/\bSchedule\s+K-?1\b/i.test(t) || (/\bForm\s+1065\b/i.test(t) && /\bPartner'?s\s+Share\b/i.test(t))) {
     return "k1";
+  }
+
+  if (
+    /\bForm\s+1065\b/i.test(t) &&
+    (/\bU\.?S\.?\s+Return\s+of\s+Partnership\s+Income\b/i.test(t) ||
+      /\bPartnership\s+Return\b/i.test(t) ||
+      /\bName\s+of\s+partnership\b/i.test(t) ||
+      /\bOrdinary\s+business\s+income\b/i.test(t) ||
+      /\bSchedule\s+K\b/i.test(t))
+  ) {
+    return "form_1065";
+  }
+  if (/\bU\.?S\.?\s+Return\s+of\s+Partnership\s+Income\b/i.test(t)) {
+    return "form_1065";
   }
 
   if (/\bSchedule\s+C\b/i.test(t) && /\bProfit\s+or\s+Loss\b/i.test(t)) {
@@ -137,7 +160,9 @@ export function fieldsAllowedForClass(
               ? K1_KEYS
               : klass === "form_1120s"
                 ? FORM_1120S_KEYS
-                : null;
+                : klass === "form_1065"
+                  ? FORM_1065_KEYS
+                  : null;
   if (!allow) return {};
   const next: Record<string, string> = {};
   for (const [key, value] of Object.entries(fields)) {
@@ -155,6 +180,11 @@ export function pickForm1040Page(walked: readonly ClassifiedTaxPage[]): Classifi
 /** Form 1120-S face / Schedule K. 8879-CORP / 8879-S and disclaimer pages are not the entity return. */
 export function pickForm1120sPage(walked: readonly ClassifiedTaxPage[]): ClassifiedTaxPage | undefined {
   return walked.find((page) => page.klass === "form_1120s");
+}
+
+/** Form 1065 face / Schedule K. Schedule K-1 is not the partnership return. */
+export function pickForm1065Page(walked: readonly ClassifiedTaxPage[]): ClassifiedTaxPage | undefined {
+  return walked.find((page) => page.klass === "form_1065");
 }
 
 /** Year + both names: Form 1040 face first. 8879 is names/year fallback only. */

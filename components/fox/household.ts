@@ -252,9 +252,11 @@ export function otherK1Box1ConfirmCopy(monthly: number): {
   text: string;
   actions?: FoxAction[];
 } {
-  const shown = `$${Math.round(Math.abs(monthly)).toLocaleString("en-US")}`;
+  const shown = `${monthly < 0 ? "−" : ""}$${Math.round(Math.abs(monthly)).toLocaleString("en-US")}`;
   return {
-    text: `K-1 Box 1 is ${shown}. Suggested qualifying income · not underwritten. Use this?`,
+    text: `K-1 Box 1 is ${shown}. ${
+      monthly < 0 ? "Named loss · Suggested · not underwritten" : "Suggested qualifying income · not underwritten"
+    }. Use this?`,
     actions: [
       { id: "accept-proposal", label: "Use this", event: "bubble", capture: { field: "accept-proposal" } },
       { id: "change-proposal", label: "Change", event: "bubble", capture: { field: "change-proposal" } },

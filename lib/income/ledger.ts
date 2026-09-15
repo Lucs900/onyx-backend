@@ -19,6 +19,7 @@ export const NAMED_LOSS_FIELD = "named_loss";
 export const GROSS_RECEIPTS_FIELD = "gross_receipts";
 export const GROSS_RECEIPTS_NOTE = "not qualifying income";
 export const NAMED_LOSS_NOTE = "Named loss · not underwritten";
+export const NAMED_LOSS_SUGGEST_NOTE = "Named loss · Suggested · not underwritten";
 export const COVER_WAGE_GAP_RATIO = 0.2;
 export const COVER_WAGE_GAP_ASK =
   "The 1040 wages are higher than the W-2s on File. Another job, a spouse, or Skip.";
@@ -296,6 +297,8 @@ const LEDGER_FIELD_KEYS = [
   "schedule_c_net_profit",
   "schedule_f_net_profit",
   "k1_ordinary_income",
+  "other_k1_ordinary_income",
+  "other_k1_ownership_percent",
   "schedule_e_rents_received",
   "schedule_e_cash_expenses",
   "schedule_e_part2_names",
@@ -365,6 +368,8 @@ export const TAX_RETURN_LEDGER_READ_KEYS = [
   "schedule_e_cash_expenses",
   "schedule_e_property_address",
   "k1_ordinary_income",
+  "other_k1_ordinary_income",
+  "other_k1_ownership_percent",
   "schedule_e_part2_names",
   "schedule_c_net_profit",
   "gross_receipts",
@@ -380,6 +385,7 @@ export function sanitizeLedgerExtractFields(fields: Record<string, string>): Rec
       key === "schedule_e_rents_received" ||
       key === "schedule_e_cash_expenses" ||
       key === "k1_ordinary_income" ||
+      key === "other_k1_ordinary_income" ||
       key === "schedule_c_net_profit" ||
       key === "gross_receipts" ||
       key === "entity_ordinary_income" ||
@@ -494,17 +500,27 @@ export function incomeLedgerFieldsFromPrintedLines(lines: string[]): Record<stri
       /\bcompensation of officers\b/i.test(blob) ||
       /\bname of corporation\b/i.test(blob) ||
       /\bschedule\s+k\b/i.test(blob));
-  const entityOrdinary =
-    moneyNearLabel(blob, /(?:^|\n)\s*22\s+ordinary business income(?:\s*\(\s*loss\s*\))?/i) ||
-    moneyNearLabel(blob, /ordinary business income(?:\s*\(\s*loss\s*\))?\s*\(\s*page\s*1,?\s*line\s*22\s*\)/i) ||
-    moneyNearLabel(blob, /(?:^|\n)\s*21\s+ordinary business income(?:\s*\(\s*loss\s*\))?/i) ||
-    moneyNearLabel(blob, /ordinary business income(?:\s*\(\s*loss\s*\))?\s*\(\s*page\s*1,?\s*line\s*21\s*\)/i) ||
-    (is1120sFace
-      ? moneyNearLabel(blob, /ordinary business income(?:\s*\(\s*loss\s*\))?\s*:?\s*/i)
-      : undefined);
+  const is1065Face =
+    /\bform\s*1065\b/i.test(blob) &&
+    !/\bschedule\s+k-?1\b/i.test(blob) &&
+    (/\bu\.?s\.?\s+return of partnership income\b/i.test(blob) ||
+      /\bname of partnership\b/i.test(blob) ||
+      /(?:^|\n)\s*23\s+ordinary business income/i.test(blob) ||
+      /\bpartnership return\b/i.test(blob));
+  const entityOrdinary = is1065Face
+    ? moneyNearLabel(blob, /(?:^|\n)\s*23\s+ordinary business income(?:\s*\(\s*loss\s*\))?/i) ||
+      moneyNearLabel(blob, /ordinary business income(?:\s*\(\s*loss\s*\))?\s*\(\s*page\s*1,?\s*line\s*23\s*\)/i) ||
+      moneyNearLabel(blob, /ordinary business income(?:\s*\(\s*loss\s*\))?\s*:?\s*/i)
+    : moneyNearLabel(blob, /(?:^|\n)\s*22\s+ordinary business income(?:\s*\(\s*loss\s*\))?/i) ||
+      moneyNearLabel(blob, /ordinary business income(?:\s*\(\s*loss\s*\))?\s*\(\s*page\s*1,?\s*line\s*22\s*\)/i) ||
+      moneyNearLabel(blob, /(?:^|\n)\s*21\s+ordinary business income(?:\s*\(\s*loss\s*\))?/i) ||
+      moneyNearLabel(blob, /ordinary business income(?:\s*\(\s*loss\s*\))?\s*\(\s*page\s*1,?\s*line\s*21\s*\)/i) ||
+      (is1120sFace
+        ? moneyNearLabel(blob, /ordinary business income(?:\s*\(\s*loss\s*\))?\s*:?\s*/i)
+        : undefined);
   if (entityOrdinary) {
     putMoney("entity_ordinary_income", entityOrdinary);
-    fields.return_kind = "1120s";
+    fields.return_kind = is1065Face ? "1065" : is1120sFace ? "1120s" : fields.return_kind || "";
   }
   const officer =
     moneyNearLabel(blob, /(?:^|\n)\s*7\s+compensation of officers/i) ||
@@ -518,6 +534,7 @@ export function incomeLedgerFieldsFromPrintedLines(lines: string[]): Record<stri
     blob.match(new RegExp(`ordinary business income[^\\n]{0,60}?${money}`, "i"))?.[1];
   const entityFace =
     is1120sFace ||
+    is1065Face ||
     (/\bform\s*1065\b/i.test(blob) && /ordinary business income/i.test(blob) && !/\bschedule\s+k-?1\b/i.test(blob));
   if (partnership && !entityOrdinary && !entityFace) putMoney("k1_ordinary_income", partnership);
 
@@ -525,6 +542,10 @@ export function incomeLedgerFieldsFromPrintedLines(lines: string[]): Record<stri
   if (/HO\s*&\s*SOY\s+INC/i.test(blob)) {
     names.push("HO & SOY INC");
     fields.entity_name = "HO & SOY INC";
+  }
+  if (/Parass\s+Foods\s+LLC/i.test(blob)) {
+    names.push("Parass Foods LLC");
+    fields.entity_name = "Parass Foods LLC";
   }
   if (/Bay Street Partners LLC/i.test(blob)) names.push("Bay Street Partners LLC");
   if (/Harbor Studio Inc/i.test(blob)) names.push("Harbor Studio Inc");
