@@ -240,6 +240,8 @@ export const EXTRACT_SCHEMA_KEYS: Record<ExtractClass, readonly string[]> = {
     "k1_ordinary_income",
     "other_k1_ordinary_income",
     "other_k1_ownership_percent",
+    "k1_partner_name",
+    "other_k1_partner_name",
     "k1_distributions",
     "schedule_e_rents_received",
     "schedule_e_cash_expenses",
@@ -418,6 +420,8 @@ const YEARLY_TAX_KEYS = new Set([
   "casualty_loss",
   "mileage_depreciation",
   "k1_ordinary_income",
+  "k1_partner_name",
+  "other_k1_partner_name",
   "k1_distributions",
   "schedule_e_rents_received",
   "schedule_e_cash_expenses",
@@ -1879,6 +1883,7 @@ export function applyExtractedFields(
     if (extractClass === "government_id" && (field === "full_name" || field === "date_of_birth" || field === "dob")) continue;
     /** Grok 1040 page-read name is not an ID write. Government ID stays on Still useful. */
     if (extractClass === "tax_return" && field === "full_name") continue;
+    if (extractClass === "tax_return" && (field === "k1_partner_name" || field === "other_k1_partner_name")) continue;
     if (extractClass === "government_id" && field === "present_address") {
       idAddress = value;
       continue;

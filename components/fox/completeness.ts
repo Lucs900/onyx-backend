@@ -76,6 +76,7 @@ import {
   isIncomeLedgerProposal,
   isHouseholdWagesProposal,
   isOtherK1Box1Proposal,
+  namedTwoK1WhoAskPending,
   OTHER_K1_BOX1_FIELD,
   promoteIncomeLedger,
   writeOtherK1Box1,
@@ -1588,6 +1589,9 @@ export function resolveProposal(
   const proposal = draft.pendingProposal;
   if (!proposal) {
     if (winner === "decline" && draft.pendingAddress) return skipQuoteAddress(draft);
+    return draft;
+  }
+  if (winner === "accept" && namedTwoK1WhoAskPending(draft) && proposal.field === QUALIFYING_INCOME_FIELD) {
     return draft;
   }
   if (isWageExtractProposal(proposal)) {

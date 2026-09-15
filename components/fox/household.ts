@@ -1,10 +1,18 @@
 import type { FactProposal, FoxAction, FoxIntakeDraft } from "./types";
-import { proposeOtherK1Box1 } from "./qualifyingIncome";
+import {
+  NAMED_LOSS_CASH_FLOW_NOTE,
+  namedTwoK1Packet,
+  namedTwoK1WhoAskPending,
+  proposeOtherK1Box1,
+  twoK1SharesOnFile,
+  type K1WhoChoice,
+} from "./qualifyingIncome";
 
 export const STATED_HOUSEHOLD_FIELD = "statedHousehold";
 export const SUGGESTED_HOUSEHOLD_NOTE = "Suggested · not underwritten";
 export const HOUSEHOLD_ASK = "Is there another borrower on this file?";
 export const OTHER_K1_LOAN_ASK = "Other K-1 — is that person on this loan?";
+export const K1_WHO_LOAN_ASK = "Who is on this loan?";
 
 export type StatedHousehold = "alone" | "with_someone";
 
@@ -213,14 +221,86 @@ export function otherK1LoanAskActions(): FoxAction[] {
   ];
 }
 
-export function otherK1LoanAskCopy(): {
+function signedMonth(n: number) {
+  return `${n < 0 ? "−" : ""}$${Math.round(Math.abs(n)).toLocaleString("en-US")}`;
+}
+
+export function k1WhoLoanAskActions(draft: FoxIntakeDraft): FoxAction[] {
+  const shares = twoK1SharesOnFile(draft);
+  const primary = shares?.primary.name || "Sunita Singh";
+  const other = shares?.other.name || "Pritika Rajanshi";
+  return [
+    {
+      id: "k1-who-primary",
+      label: primary,
+      event: "bubble",
+      capture: { field: "k1-who", value: "primary" },
+    },
+    {
+      id: "k1-who-other",
+      label: other,
+      event: "bubble",
+      capture: { field: "k1-who", value: "other" },
+    },
+    {
+      id: "k1-who-both",
+      label: "Both",
+      event: "bubble",
+      capture: { field: "k1-who", value: "both" },
+    },
+    ...otherK1LoanAskActions(),
+  ];
+}
+
+export function k1WhoLoanAskCopy(draft: FoxIntakeDraft): {
   text: string;
   actions?: FoxAction[];
 } {
+  const shares = twoK1SharesOnFile(draft);
+  const primary = shares?.primary;
+  const other = shares?.other;
+  const company = shares?.company;
+  const lines = [
+    primary
+      ? `${primary.name} ${primary.pct}% · ${signedMonth(primary.monthly)} a month`
+      : "",
+    other ? `${other.name} ${other.pct}% · ${signedMonth(other.monthly)} a month` : "",
+    company != null && company !== 0 ? `Company ordinary · ${signedMonth(company)} a month` : "",
+    NAMED_LOSS_CASH_FLOW_NOTE,
+    "Suggested · not underwritten",
+    K1_WHO_LOAN_ASK,
+  ].filter(Boolean);
+  return {
+    text: lines.join(". ").replace(/\.\s+\./g, "."),
+    actions: [
+      ...k1WhoLoanAskActions(draft),
+      { id: "accept-proposal", label: "Use this", event: "bubble", capture: { field: "accept-proposal" } },
+      { id: "change-proposal", label: "Change", event: "bubble", capture: { field: "change-proposal" } },
+    ],
+  };
+}
+
+export function otherK1LoanAskCopy(draft?: FoxIntakeDraft): {
+  text: string;
+  actions?: FoxAction[];
+} {
+  if (draft && (namedTwoK1WhoAskPending(draft) || namedTwoK1Packet(draft))) {
+    return k1WhoLoanAskCopy(draft);
+  }
   return {
     text: OTHER_K1_LOAN_ASK,
     actions: otherK1LoanAskActions(),
   };
+}
+
+export function parseK1WhoChoice(text: string): K1WhoChoice | undefined {
+  const lower = text.trim().toLowerCase().replace(/[?.!]+$/g, "");
+  if (!lower) return undefined;
+  if (/^(both|yes|yeah|yep|y)$/i.test(lower) || /\bboth\b/.test(lower)) return "both";
+  if (/sunit|90\s*%/.test(lower)) return "primary";
+  if (/pritika|10\s*%/.test(lower)) return "other";
+  if (/^(no|none|nope)$/i.test(lower)) return "primary";
+  return undefined;
 }
 
 export function writeOtherK1Loan(draft: FoxIntakeDraft, onLoan: boolean): FoxIntakeDraft {

@@ -40,6 +40,7 @@ const SCHEDULE_C_KEYS = new Set([
 const K1_KEYS = new Set([
   "tax_year",
   "k1_ordinary_income",
+  "k1_partner_name",
   "entity_name",
   "business_name",
   "schedule_e_part2_names",

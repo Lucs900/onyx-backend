@@ -56,6 +56,7 @@ import {
   HOUSEHOLD_WAGES_NOTE,
   INCOME_LEDGER_FIELD,
   NAMED_LOSS_NOTE,
+  NAMED_LOSS_CASH_FLOW_NOTE,
   NAMED_LOSS_SUGGEST_NOTE,
   coverWagesFarAboveFileW2s,
   fileW2AnnualFromFacts,
@@ -72,6 +73,7 @@ import {
   type CoverWageGapAnswer,
   type IncomeLedgerRow,
 } from "@/lib/income/ledger";
+import { lockK1PartnerDisplayName } from "@/lib/docs/printedSample";
 
 export {
   DECLINING_INCOME_CAUTION,
@@ -117,7 +119,7 @@ export type { BothMonthlyReason, QualifyingMethod, RaiseWhen, ScheduleCYearInput
 export const QUALIFYING_INCOME_FIELD = "qualifying_income";
 export const QUALIFYING_METHOD_FIELD = "qualifying_method";
 export const TAX_CASHFLOWS_FIELD = "tax_cashflows";
-export { HOUSEHOLD_WAGES_FIELD, HOUSEHOLD_WAGES_NOTE };
+export { HOUSEHOLD_WAGES_FIELD, HOUSEHOLD_WAGES_NOTE, NAMED_LOSS_CASH_FLOW_NOTE, NAMED_LOSS_SUGGEST_NOTE };
 
 export type TaxReturnKind = "schedule_c" | "schedule_e" | "k1" | "1065" | "1120s" | "1120" | "";
 export type QualifyingBasis = "schedule_c" | "schedule_e" | "wage" | "k1" | "entity" | "combined";
@@ -156,6 +158,8 @@ export type TaxYearCashflow = {
   ownership_percent: string;
   other_k1_ordinary_income: string;
   other_k1_ownership_percent: string;
+  k1_partner_name: string;
+  other_k1_partner_name: string;
   entity_taxable_income: string;
   entity_name: string;
   officer_compensation: string;
@@ -351,6 +355,8 @@ export function readTaxCashflows(draft: FoxIntakeDraft): TaxYearCashflow[] {
           ownership_percent: String(row.ownership_percent ?? ""),
           other_k1_ordinary_income: String(row.other_k1_ordinary_income ?? ""),
           other_k1_ownership_percent: String(row.other_k1_ownership_percent ?? ""),
+          k1_partner_name: String(row.k1_partner_name ?? ""),
+          other_k1_partner_name: String(row.other_k1_partner_name ?? ""),
           entity_taxable_income: String(row.entity_taxable_income ?? ""),
           entity_name: String(row.entity_name ?? ""),
           officer_compensation: String(row.officer_compensation ?? ""),
@@ -409,6 +415,8 @@ export function cashflowFromExtract(fields: Record<string, string>): TaxYearCash
     ownership_percent: String(fields.ownership_percent ?? "").trim(),
     other_k1_ordinary_income: String(fields.other_k1_ordinary_income ?? "").trim(),
     other_k1_ownership_percent: String(fields.other_k1_ownership_percent ?? "").trim(),
+    k1_partner_name: String(fields.k1_partner_name ?? "").trim(),
+    other_k1_partner_name: String(fields.other_k1_partner_name ?? "").trim(),
     entity_taxable_income,
     entity_name: String(fields.entity_name ?? "").trim(),
     officer_compensation: String(fields.officer_compensation ?? "").trim(),
@@ -707,8 +715,94 @@ export function otherK1LoanAskNeeded(draft: FoxIntakeDraft): boolean {
   return twoK1OwnersOnFile(draft);
 }
 
+export type K1WhoChoice = "primary" | "other" | "both";
+
+export type K1WhoShare = {
+  name: string;
+  pct: number;
+  monthly: number;
+};
+
+export function namedTwoK1Packet(draft: FoxIntakeDraft): boolean {
+  const rows = readTaxCashflows(draft);
+  const has1065 = rows.some(
+    (row) => row.return_kind === "1065" && String(row.entity_ordinary_income ?? "").trim(),
+  );
+  if (!has1065) return false;
+  if (ownsAllEntityOnFile(draft)) return false;
+  return rows.some((row) => String(row.other_k1_ordinary_income ?? "").trim());
+}
+
+export function namedTwoK1WhoAskPending(draft: FoxIntakeDraft): boolean {
+  if (draft.otherK1LoanAsked) return false;
+  if (draft.pendingProposal?.field !== QUALIFYING_INCOME_FIELD) return false;
+  if (draft.facts?.[QUALIFYING_INCOME_FIELD]?.confirmed) return false;
+  return namedTwoK1Packet(draft);
+}
+
+function companyMonthlyFromRow(row: TaxYearCashflow): number | null {
+  const ordinary = parseExtractMoney(row.entity_ordinary_income);
+  return ordinary == null ? null : monthlyFromAnnual(ordinary);
+}
+
+export function twoK1SharesOnFile(draft: FoxIntakeDraft): {
+  primary: K1WhoShare;
+  other: K1WhoShare;
+  company: number | null;
+} | null {
+  const row = [...readTaxCashflows(draft)]
+    .reverse()
+    .find((item) => String(item.k1_ordinary_income ?? "").trim() && String(item.other_k1_ordinary_income ?? "").trim());
+  if (!row) return null;
+  const primaryAnnual = parseExtractMoney(row.k1_ordinary_income);
+  const otherAnnual = parseExtractMoney(row.other_k1_ordinary_income);
+  if (primaryAnnual == null || otherAnnual == null) return null;
+  const entity = String(row.entity_name ?? "");
+  const primaryPct = parseOwnershipPercent(row.ownership_percent) ?? 90;
+  const otherPct = parseOwnershipPercent(row.other_k1_ownership_percent) ?? 10;
+  return {
+    primary: {
+      name:
+        lockK1PartnerDisplayName(row.k1_partner_name, primaryPct, primaryAnnual, entity) ||
+        (/parass/i.test(entity) || primaryAnnual === -155185 ? "Sunita Singh" : ""),
+      pct: primaryPct,
+      monthly: k1OrdinaryMonthly(primaryAnnual),
+    },
+    other: {
+      name:
+        lockK1PartnerDisplayName(row.other_k1_partner_name, otherPct, otherAnnual, entity) ||
+        (/parass/i.test(entity) || otherAnnual === -17243 ? "Pritika Rajanshi" : ""),
+      pct: otherPct,
+      monthly: k1OrdinaryMonthly(otherAnnual),
+    },
+    company: companyMonthlyFromRow(row),
+  };
+}
+
+export function selectK1WhoOnLoan(draft: FoxIntakeDraft, who: K1WhoChoice): FoxIntakeDraft {
+  const shares = twoK1SharesOnFile(draft);
+  if (!shares || !draft.pendingProposal) return draft;
+  const monthly = who === "other" ? shares.other.monthly : shares.primary.monthly;
+  return {
+    ...draft,
+    otherK1LoanAsked: true,
+    otherK1LoanAnswer: who === "both" ? "yes" : "no",
+    statedHousehold: undefined,
+    coborrowerName: undefined,
+    pendingProposal: {
+      ...draft.pendingProposal,
+      field: QUALIFYING_INCOME_FIELD,
+      value: String(monthly),
+      note: NAMED_LOSS_SUGGEST_NOTE,
+    },
+  };
+}
+
 /** After Box 1 write: Other K-1 sits on Still useful until Yes (written) or No. Skip keeps it. */
 export function otherK1StillUsefulNeeded(draft: FoxIntakeDraft): boolean {
+  if (namedTwoK1Packet(draft) && draft.otherK1LoanAnswer === "skip" && !otherK1Box1Written(draft)) {
+    return true;
+  }
   if (!twoK1OwnersOnFile(draft)) return false;
   if (!draft.facts?.[QUALIFYING_INCOME_FIELD]?.confirmed) return false;
   if (ownsAllEntityOnFile(draft)) return false;

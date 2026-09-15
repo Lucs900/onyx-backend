@@ -420,9 +420,10 @@ Do not return EIN, SSN, line 9 wages, or invented K-1 dollars. Company ordinary 
 Never invent. Empty string if a dollar or name is not clearly printed.`;
 
 const FORM_K1_PROMPT = `Read this Schedule K-1 page image only. JSON object with these keys:
-tax_year, entity_name, k1_ordinary_income, ownership_percent.
+tax_year, entity_name, k1_ordinary_income, ownership_percent, k1_partner_name.
 k1_ordinary_income is Box 1 Ordinary business income (loss). Keep the printed sign. A loss in parentheses is negative. Never Box 14 self-employment earnings. Never capital-account current year net income unless Box 1 is blank. Never guaranteed payments (Box 4) as Box 1. Never distributions.
 ownership_percent is the partner’s Item J ending profit percent, or the shareholder’s current year allocation / stock-ownership percent. 90.0000000 % is 90. 10.0000000 % is 10. Empty if no percent is printed.
+k1_partner_name is the partner or shareholder name in Part II (for example Sunita Singh). Never SSN. Never EIN. Never the partnership name.
 entity_name is the partnership or S corporation name. Never a partner name. Never SSN. Never EIN.
 Never invent. Empty string if a dollar or name is not clearly printed.`;
 
@@ -1070,6 +1071,7 @@ function assignPrimaryOtherK1(merged: Record<string, string>, k1s: Record<string
   if (!other?.k1_ordinary_income) return;
   merged.other_k1_ordinary_income = other.k1_ordinary_income;
   if (other.ownership_percent) merged.other_k1_ownership_percent = other.ownership_percent;
+  if (other.k1_partner_name) merged.other_k1_partner_name = other.k1_partner_name;
 }
 
 function printedLedgerFromWalked(walked: ClassifiedTaxPage[]): Record<string, string> {
@@ -1126,7 +1128,9 @@ function assignLedgerKeepFirst(merged: Record<string, string>, incoming: Record<
         key === "k1_ordinary_income" ||
         key === "ownership_percent" ||
         key === "other_k1_ordinary_income" ||
-        key === "other_k1_ownership_percent") &&
+        key === "other_k1_ownership_percent" ||
+        key === "k1_partner_name" ||
+        key === "other_k1_partner_name") &&
       merged[key]
     ) {
       continue;

@@ -653,6 +653,7 @@ export type Capture =
   | { field: "statedHousehold"; value: string }
   | { field: "other-k1-loan"; value: string }
   | { field: "skip-other-k1-loan" }
+  | { field: "k1-who"; value: string }
   | { field: "skip-coborrower-name" }
   | { field: "propose-coborrower-name"; value: string }
   | { field: "coborrowerName"; value: string }

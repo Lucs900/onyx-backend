@@ -248,6 +248,10 @@ import {
   isOtherK1Box1Proposal,
   otherK1Box1Monthly,
   otherK1LoanAskNeeded,
+  namedTwoK1Packet,
+  namedTwoK1WhoAskPending,
+  selectK1WhoOnLoan,
+  writeOtherK1Box1,
   INCOME_CAUTION_FIELD,
   K1_ORDINARY_NOTE,
   monthlyFromAnnual,
@@ -507,9 +511,11 @@ import {
   isHouseholdConfirmPending,
   isSkipHouseholdText,
   isStatedHousehold,
+  k1WhoLoanAskCopy,
   otherK1Box1ConfirmCopy,
   otherK1LoanAskCopy,
   parseHousehold,
+  parseK1WhoChoice,
   proposeStatedHousehold,
   skipHousehold,
   skipOtherK1Loan,
@@ -1935,6 +1941,13 @@ function entityReactionAsk(draft: FoxIntakeDraft, proposal: NonNullable<FoxIntak
       ],
     };
   }
+  if (namedTwoK1WhoAskPending(draft)) {
+    const who = k1WhoLoanAskCopy(draft);
+    return {
+      text: [ack, "This packet has two K-1s.", who.text].filter(Boolean).join(" "),
+      actions: who.actions,
+    };
+  }
   const share = /K-1 Box 1/i.test(method)
     ? `Your K-1 Box 1 is ${shown} a month.`
     : /company ordinary/i.test(method)
@@ -2587,7 +2600,7 @@ export function docReactionAsk(
 } | null {
   const cls = extractClass ?? lastExtractedClass(draft);
   if (!cls) return null;
-  if (otherK1LoanAskNeeded(draft)) return otherK1LoanAskCopy();
+  if (otherK1LoanAskNeeded(draft)) return otherK1LoanAskCopy(draft);
   if (draft.pendingConflict && !conflictAlreadySpoken(draft)) {
     return {
       text: conflictAskCopy(draft.pendingConflict),
@@ -4130,7 +4143,7 @@ function workspaceAskCopy(
     return householdAskCopy(draft);
   }
   if (prompt === "other-k1-loan") {
-    return otherK1LoanAskCopy();
+    return otherK1LoanAskCopy(draft);
   }
   if (prompt === "coborrower-name") {
     return coborrowerNameAskCopy(draft);
@@ -5114,7 +5127,7 @@ export function editPromptFromCapture(capture?: Capture): FoxPrompt | undefined 
   ) {
     return "household";
   }
-  if (capture.field === "other-k1-loan" || capture.field === "skip-other-k1-loan") {
+  if (capture.field === "other-k1-loan" || capture.field === "skip-other-k1-loan" || capture.field === "k1-who") {
     return "other-k1-loan";
   }
   if (capture.field === "skip-citizenship" || capture.field === "citizenship") {
@@ -5378,6 +5391,11 @@ export function workspaceUpdateCopy(capture: Capture, draft: FoxIntakeDraft) {
   if (capture.field === "skip-household") return "Updated. Household left blank.";
   if (capture.field === "propose-household") return "Updated.";
   if (capture.field === "skip-other-k1-loan") return "Updated. Other K-1 left blank.";
+  if (capture.field === "k1-who") {
+    return capture.value === "both"
+      ? "Updated. Both K-1 partners are on this loan."
+      : "Updated. That K-1 partner is on this loan.";
+  }
   if (capture.field === "other-k1-loan") {
     return capture.value === "yes"
       ? "Updated. The other K-1 person is on this loan."
@@ -5928,7 +5946,24 @@ function draftAfterCaptureBody(draft: FoxIntakeDraft, capture: Capture): FoxInta
   if (capture.field === "statedHousehold" && isStatedHousehold(capture.value)) {
     return writeStatedHousehold(next, capture.value);
   }
+  if (capture.field === "k1-who") {
+    const who =
+      capture.value === "primary" || capture.value === "other" || capture.value === "both"
+        ? capture.value
+        : undefined;
+    if (!who) return next;
+    const selected = selectK1WhoOnLoan(next, who);
+    const written = resolveProposal(selected, "accept");
+    return who === "both" ? writeOtherK1Box1(written) : written;
+  }
   if (capture.field === "other-k1-loan") {
+    if (namedTwoK1WhoAskPending(next)) {
+      const who = capture.value === "yes" ? "both" : capture.value === "no" ? "primary" : undefined;
+      if (!who) return next;
+      const selected = selectK1WhoOnLoan(next, who);
+      const written = resolveProposal(selected, "accept");
+      return who === "both" ? writeOtherK1Box1(written) : written;
+    }
     if (capture.value !== "yes" && capture.value !== "no") return next;
     return writeOtherK1Loan(next, capture.value === "yes");
   }
@@ -6838,6 +6873,25 @@ export function workspaceReply(
   }
 
   if (draft.pendingProposal || prompt === "confirm-proposal") {
+    if (namedTwoK1WhoAskPending(draft)) {
+      if (isSkipHouseholdText(q)) {
+        const nextDraft = skipOtherK1Loan(draft);
+        return {
+          ...nextFoxAsk(nextDraft),
+          capture: { field: "skip-other-k1-loan" },
+        };
+      }
+      const who = parseK1WhoChoice(q);
+      if (who) {
+        const selected = selectK1WhoOnLoan(draft, who);
+        const written = resolveProposal(selected, "accept");
+        const nextDraft = who === "both" ? writeOtherK1Box1(written) : written;
+        return {
+          ...nextFoxAsk(nextDraft),
+          capture: { field: "k1-who", value: who },
+        };
+      }
+    }
     if (isCompanyOrdinaryHold(draft.pendingProposal) && /own all of it/i.test(lower)) {
       const nextDraft = applyOwnAllEntity(draft);
       return {
@@ -7841,6 +7895,16 @@ export function workspaceReply(
       return {
         ...nextFoxAsk(nextDraft),
         capture: { field: "skip-other-k1-loan" },
+      };
+    }
+    const who = parseK1WhoChoice(q);
+    if (who && namedTwoK1Packet(draft) && draft.pendingProposal) {
+      const selected = selectK1WhoOnLoan(draft, who);
+      const written = resolveProposal(selected, "accept");
+      const nextDraft = who === "both" ? writeOtherK1Box1(written) : written;
+      return {
+        ...nextFoxAsk(nextDraft),
+        capture: { field: "k1-who", value: who },
       };
     }
     const value = parseHousehold(q, { allowBare: true });

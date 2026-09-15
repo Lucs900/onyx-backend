@@ -140,6 +140,9 @@ import {
   isStubExtractProposal,
   isCoverReturnFields,
   applyOwnAllEntity,
+  namedTwoK1WhoAskPending,
+  selectK1WhoOnLoan,
+  writeOtherK1Box1,
 } from "./qualifyingIncome";
 import {
   skipEstimatedHousing,
@@ -2172,7 +2175,24 @@ function applyCaptureBody(capture: Capture) {
     if (!isStatedHousehold(capture.value)) return current;
     return commit(writeStatedHousehold(current, capture.value));
   }
+  if (capture.field === "k1-who") {
+    const who =
+      capture.value === "primary" || capture.value === "other" || capture.value === "both"
+        ? capture.value
+        : undefined;
+    if (!who) return current;
+    const selected = selectK1WhoOnLoan(current, who);
+    const written = resolveProposal(selected, "accept");
+    return commit(who === "both" ? writeOtherK1Box1(written) : written);
+  }
   if (capture.field === "other-k1-loan") {
+    if (namedTwoK1WhoAskPending(current)) {
+      const who = capture.value === "yes" ? "both" : capture.value === "no" ? "primary" : undefined;
+      if (!who) return current;
+      const selected = selectK1WhoOnLoan(current, who);
+      const written = resolveProposal(selected, "accept");
+      return commit(who === "both" ? writeOtherK1Box1(written) : written);
+    }
     if (capture.value !== "yes" && capture.value !== "no") return current;
     return commit(writeOtherK1Loan(current, capture.value === "yes"));
   }

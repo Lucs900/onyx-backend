@@ -21,13 +21,15 @@ Pre-drop ask stays **business return** only. After classify, name **1065**.
 | 1065 page 1 **line 9** | Salaries and wages **$365,050** — employee wages, **not** partner income |
 | Guaranteed payments | **none** |
 | 90% K-1 Item J ending profit | **90.0000000 %** — not “current year allocation percentage” |
+| 90% K-1 partner | **Sunita Singh** |
 | 90% K-1 Box 1 | **−$155,185** → **−$12,932 / mo** |
 | 10% K-1 Item J ending profit | **10.0000000 %** |
+| 10% K-1 partner | **Pritika Rajanshi** |
 | 10% K-1 Box 1 | **−$17,243** → **−$1,437 / mo** |
 | K-1 Box 14 C | self-employment — **not** Box 1 |
 | Company ordinary | **−$14,369 / mo** (`172428 / 12`) — not this borrower’s QI |
 
-Company ordinary is **not** one person’s QI. Suggest the **90%** K-1 Box 1 first: **−$12,932** · named **loss** · Suggested · not underwritten. Use this stays live.
+Company ordinary is **not** one person’s QI. The first card names both K-1s and asks **Who is on this loan?** Label: **Named loss · not confirmed cash flow**. Suggested · not underwritten still stands. Use this stays live until founder confirms who.
 
 Do **not** invent a monthly number that is not on the page.
 
@@ -35,12 +37,14 @@ Do **not** invent a monthly number that is not on the page.
 
 - Classify from the printed header. A filename with `1120` is not Form 1120-S.
 - Skip-1040 on self-employed still asks for the **business return**. After classify, name **1065**. Do not jump to Looks right.
-- File empty on qualifying income until Use this.
+- File empty on qualifying income until who is confirmed.
 - Employee wages stay out of QI. No SSN / EIN on File.
-- After this packet’s two K-1s and Box 1 Use this, ask **Other K-1 — is that person on this loan?** before purchase contract. Own-all does not ask. Do not invent a co-borrower.
-- **Yes** → confirm their Box 1, then write **−$1,437** on a second row. Combined ordinary **−$14,369**. Not company ordinary as one person’s QI.
-- **No** → keep **−$12,932**. Other K-1 **off** Still useful.
-- **Skip** → keep **−$12,932**. Other K-1 **stays** on Still useful.
+- First card lists **Sunita Singh 90% · −$12,932**, **Pritika Rajanshi 10% · −$1,437**, and **Company ordinary · −$14,369**. Ask **Who is on this loan?** Own-all does not ask. Do not invent a co-borrower.
+- **Sunita Singh** / **No** → write **−$12,932** only.
+- **Pritika Rajanshi** → write **−$1,437** only.
+- **Both** / **Yes** → write **−$12,932** and **−$1,437**. Combined ordinary **−$14,369**. Not company ordinary as one person’s QI.
+- **Skip** → File empty. Other K-1 **stays** on Still useful.
+- **Use this** before who does not write.
 - After Box 1 write, drop **K-1 distributions** from Still useful.
 
 ## Harbor 21 — smoke only

@@ -20,6 +20,7 @@ export const GROSS_RECEIPTS_FIELD = "gross_receipts";
 export const GROSS_RECEIPTS_NOTE = "not qualifying income";
 export const NAMED_LOSS_NOTE = "Named loss · not underwritten";
 export const NAMED_LOSS_SUGGEST_NOTE = "Named loss · Suggested · not underwritten";
+export const NAMED_LOSS_CASH_FLOW_NOTE = "Named loss · not confirmed cash flow";
 export const COVER_WAGE_GAP_RATIO = 0.2;
 export const COVER_WAGE_GAP_ASK =
   "The 1040 wages are higher than the W-2s on File. Another job, a spouse, or Skip.";
@@ -370,6 +371,8 @@ export const TAX_RETURN_LEDGER_READ_KEYS = [
   "k1_ordinary_income",
   "other_k1_ordinary_income",
   "other_k1_ownership_percent",
+  "k1_partner_name",
+  "other_k1_partner_name",
   "schedule_e_part2_names",
   "schedule_c_net_profit",
   "gross_receipts",
