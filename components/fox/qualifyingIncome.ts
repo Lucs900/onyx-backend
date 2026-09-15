@@ -58,6 +58,7 @@ import {
   NAMED_LOSS_NOTE,
   NAMED_LOSS_CASH_FLOW_NOTE,
   NAMED_LOSS_SUGGEST_NOTE,
+  lockK1PartnerDisplayName,
   coverWagesFarAboveFileW2s,
   fileW2AnnualFromFacts,
   grossReceiptsFromFields,
@@ -73,7 +74,6 @@ import {
   type CoverWageGapAnswer,
   type IncomeLedgerRow,
 } from "@/lib/income/ledger";
-import { lockK1PartnerDisplayName } from "@/lib/docs/printedSample";
 
 export {
   DECLINING_INCOME_CAUTION,

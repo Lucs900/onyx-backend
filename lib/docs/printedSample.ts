@@ -14,6 +14,7 @@ import {
 import { isTransferCounterpartyLine, safeAccountLast4, statementAccountLast4 } from "@/lib/docs/bankLast4";
 import { junkEmployerName } from "@/lib/docs/junkEmployer";
 import { readPdfTextLayer } from "@/lib/docs/pdfText";
+import { lockK1PartnerDisplayName } from "@/lib/income/ledger";
 
 export { junkEmployerName };
 
@@ -624,18 +625,6 @@ function k1PartnerNameFromPrintedText(text: string): string {
     return "";
   }
   return lockK1PartnerDisplayName(raw);
-}
-
-export function lockK1PartnerDisplayName(raw: string, pct?: number | null, ordinary?: number | null, entity?: string): string {
-  const name = String(raw ?? "").replace(/\s+/g, " ").trim();
-  const house = `${name} ${entity ?? ""}`;
-  if (/sunit/i.test(house)) return "Sunita Singh";
-  if (/pritika/i.test(house)) return "Pritika Rajanshi";
-  if (/parass/i.test(house)) {
-    if (pct === 90 || ordinary === -155185) return "Sunita Singh";
-    if (pct === 10 || ordinary === -17243) return "Pritika Rajanshi";
-  }
-  return name;
 }
 
 function k1TaxYearFromPrintedText(text: string): string {
