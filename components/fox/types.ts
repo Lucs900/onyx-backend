@@ -380,6 +380,10 @@ export type FoxIntakeDraft = {
   householdAsked?: boolean;
   /** Two 50% K-1s — asked whether the other K-1 person is on this loan. */
   otherK1LoanAsked?: boolean;
+  /** Yes writes a second Box 1 row. No drops Other K-1. Skip keeps it on Still useful. */
+  otherK1LoanAnswer?: "yes" | "no" | "skip";
+  /** Other 50% K-1 Box 1 is on this loan — second $2,196 row. Not a co-borrower. */
+  otherK1OnLoan?: boolean;
   coborrowerName?: string;
   coborrowerNameAsked?: boolean;
   workingOnCoborrower?: boolean;

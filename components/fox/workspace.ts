@@ -243,6 +243,10 @@ import {
   decliningIncomeCaution,
   formatIncomeMoney,
   hasK1Ordinary,
+  COMBINED_ORDINARY_FIELD,
+  OTHER_K1_BOX1_FIELD,
+  isOtherK1Box1Proposal,
+  otherK1Box1Monthly,
   otherK1LoanAskNeeded,
   INCOME_CAUTION_FIELD,
   K1_ORDINARY_NOTE,
@@ -503,6 +507,7 @@ import {
   isHouseholdConfirmPending,
   isSkipHouseholdText,
   isStatedHousehold,
+  otherK1Box1ConfirmCopy,
   otherK1LoanAskCopy,
   parseHousehold,
   proposeStatedHousehold,
@@ -2233,6 +2238,9 @@ function liveProposalAsk(
   followUp?: string;
   actions?: FoxAction[];
 } {
+  if (isOtherK1Box1Proposal(proposal)) {
+    return otherK1Box1ConfirmCopy(Number(proposal.value) || otherK1Box1Monthly(draft));
+  }
   if (isHuntRentalsProposal(proposal)) {
     const addresses = parseHuntAddresses(proposal.value);
     return {
@@ -2565,6 +2573,7 @@ export function docReactionAsk(
 } | null {
   const cls = extractClass ?? lastExtractedClass(draft);
   if (!cls) return null;
+  if (otherK1LoanAskNeeded(draft)) return otherK1LoanAskCopy();
   if (draft.pendingConflict && !conflictAlreadySpoken(draft)) {
     return {
       text: conflictAskCopy(draft.pendingConflict),
@@ -6986,7 +6995,7 @@ export function workspaceReply(
     return answerThenRestore(q, draft);
   }
 
-  if (layer2Open(draft) && /^skip\b/.test(lower)) {
+  if (layer2Open(draft) && prompt !== "other-k1-loan" && /^skip\b/.test(lower)) {
     return {
       text: inQueueEnding(draft) ? MOTION_COPY.in_queue : layer2AskCopy(draft),
       actions: restoreQueueActions(draft),
@@ -8903,6 +8912,32 @@ export function previewFacts(draft: FoxIntakeDraft): PreviewFact[] {
       label: "Qualifying income",
       value: qualifying.value,
       note: qualifying.note,
+    });
+  }
+  const otherK1Box1 = factValue(draft, OTHER_K1_BOX1_FIELD);
+  if (otherK1Box1 && draft.facts?.[OTHER_K1_BOX1_FIELD]?.confirmed) {
+    facts.push({
+      id: "other-k1-box1",
+      label: "K-1 Box 1",
+      value: displayFactValue(OTHER_K1_BOX1_FIELD, otherK1Box1),
+      note: "K-1 Box 1 / 12",
+    });
+  }
+  const combinedOrdinary =
+    factValue(draft, COMBINED_ORDINARY_FIELD) ||
+    (otherK1Box1 && draft.facts?.[OTHER_K1_BOX1_FIELD]?.confirmed
+      ? String(
+          Math.round(
+            (parseExtractMoney(factValue(draft, QUALIFYING_INCOME_FIELD)) ?? 0) +
+              (parseExtractMoney(otherK1Box1) ?? 0),
+          ),
+        )
+      : "");
+  if (combinedOrdinary && Number(combinedOrdinary) > 0) {
+    facts.push({
+      id: "combined-ordinary",
+      label: "Combined ordinary",
+      value: displayFactValue(COMBINED_ORDINARY_FIELD, combinedOrdinary),
     });
   }
   const householdWages = factValue(draft, HOUSEHOLD_WAGES_FIELD);

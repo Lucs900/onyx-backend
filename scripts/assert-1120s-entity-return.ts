@@ -32,8 +32,8 @@ import {
 import { canLooksRight, resolveProposal } from "../components/fox/completeness";
 import { emptyDraft } from "../components/fox/store";
 import { leftoverUseThisOnOlderTurns, sealStoredFoxThread } from "../components/fox/liveCoupon";
-import { nextFoxAsk, previewFacts, workspacePromptCopy } from "../components/fox/workspace";
-import { OTHER_K1_LOAN_ASK } from "../components/fox/household";
+import { nextFoxAsk, previewFacts, workspacePromptCopy, workspaceReply } from "../components/fox/workspace";
+import { OTHER_K1_LOAN_ASK, skipOtherK1Loan, writeOtherK1Loan } from "../components/fox/household";
 import { applyOwnAllEntity, monthlyQualifyingFromExtract } from "../components/fox/qualifyingIncome";
 import { SUGGESTED_INCOME_NOTE } from "../lib/income/suggest";
 import type { FoxIntakeDraft, FoxMessage } from "../components/fox/types";
@@ -381,6 +381,7 @@ async function main() {
   assert.equal(ownedUsed.facts?.qualifying_income?.value, "4392");
   assert.ok((ownedUsed.employmentHistory ?? []).some((row) => /HO & SOY INC/i.test(row.label ?? "")));
   assert.doesNotMatch(nextFoxAsk(ownedUsed).text, /other K-1|on this loan/i, "own-all is not the two-K-1 ask");
+  assert.ok(!stillUsefulLabels(ownedUsed).includes("Other K-1"), "own-all does not park Other K-1");
 
   const proposed = applyExtractedFields(seSketch(), {
     extractClass: "tax_return",
@@ -441,10 +442,77 @@ async function main() {
   assert.equal(nextFoxAsk(used).text, OTHER_K1_LOAN_ASK);
   assert.match(nextFoxAsk(used).text, /other K-1/i);
   assert.match(nextFoxAsk(used).text, /is that person on this loan/i);
+  assert.doesNotMatch(nextFoxAsk(used).text, /purchase contract/i, "ask before purchase contract");
   assert.doesNotMatch(nextFoxAsk(used).text, /Form 1040|Harbor Studio K-1|Bay Street K-1/i);
+  assert.ok(stillUsefulLabels(used).includes("Other K-1"), "Other K-1 sits on Still useful until Yes or No");
+  assert.ok(!used.statedHousehold, "Use this does not invent a co-borrower");
   assert.notEqual(nextDocInvite(used), "tax_return");
   assert.notEqual(nextDocInvite(used), "prior_year_return");
   assert.doesNotMatch(nextFoxAsk(proposed.draft).text, /other K-1|on this loan/i, "QI card first");
+
+  const yesAsk = workspaceReply("Yes", used);
+  assert.match(yesAsk?.text ?? "", /K-1 Box 1 is \$2,196/);
+  assert.doesNotMatch(yesAsk?.text ?? "", /purchase contract/i);
+  const yes = writeOtherK1Loan(used, true);
+  assert.equal(yes.statedHousehold, undefined, "Yes does not invent a co-borrower");
+  assert.ok(!yes.coborrowerName);
+  assert.ok(!yes.workingOnCoborrower);
+  assert.equal(yes.pendingProposal?.field, "other_k1_box1");
+  assert.equal(yes.pendingProposal?.value, "2196");
+  assert.match(nextFoxAsk(yes).text, /K-1 Box 1 is \$2,196/);
+  const yesUsed = resolveProposal(yes, "accept");
+  assert.equal(yesUsed.facts?.qualifying_income?.value, "2196", "first row stays this borrower’s Box 1");
+  assert.equal(yesUsed.facts?.other_k1_box1?.value, "2196", "second row is the other Box 1");
+  assert.equal(yesUsed.facts?.combined_ordinary?.value, "4392");
+  assert.ok(!yesUsed.facts?.officer_compensation, "officer wages stay out until a W-2");
+  assert.equal(yesUsed.statedHousehold, undefined, "Yes write still invents no co-borrower");
+  assert.ok(
+    previewFacts(yesUsed).some((fact) => fact.label === "Qualifying income" && /2,196/.test(fact.value)),
+  );
+  assert.ok(
+    previewFacts(yesUsed).some((fact) => fact.label === "K-1 Box 1" && /2,196/.test(fact.value)),
+    "second $2,196 row",
+  );
+  assert.ok(
+    previewFacts(yesUsed).some((fact) => fact.label === "Combined ordinary" && /4,392/.test(fact.value)),
+  );
+  assert.ok(
+    !previewFacts(yesUsed).some((fact) => fact.label === "Qualifying income" && /4,392/.test(fact.value)),
+    "do not write company ordinary as one person’s QI",
+  );
+  assert.ok(!stillUsefulLabels(yesUsed).includes("Other K-1"));
+  assert.doesNotMatch(nextFoxAsk(yesUsed).text, /other K-1 — is that person on this loan/i);
+
+  const no = writeOtherK1Loan(used, false);
+  assert.equal(no.facts?.qualifying_income?.value, "2196");
+  assert.ok(!no.facts?.other_k1_box1);
+  assert.equal(no.statedHousehold, undefined, "No does not invent a co-borrower");
+  assert.ok(!stillUsefulLabels(no).includes("Other K-1"), "No takes Other K-1 off Still useful");
+  assert.doesNotMatch(nextFoxAsk(no).text, /other K-1 — is that person on this loan/i);
+
+  const skipped = skipOtherK1Loan(used);
+  assert.equal(skipped.facts?.qualifying_income?.value, "2196");
+  assert.ok(stillUsefulLabels(skipped).includes("Other K-1"), "Skip keeps Other K-1 on Still useful");
+  assert.doesNotMatch(nextFoxAsk(skipped).text, /other K-1 — is that person on this loan/i);
+
+  const noPctFields = { ...extracted.fields };
+  delete noPctFields.ownership_percent;
+  const noPct = applyExtractedFields(seSketch(), {
+    extractClass: "tax_return",
+    confidence: 0.94,
+    fields: noPctFields,
+  });
+  const noPctUsed = resolveProposal(noPct.draft, "accept");
+  assert.equal(noPctUsed.facts?.qualifying_income?.value, "2196");
+  assert.equal(nextFoxAsk(noPctUsed).text, OTHER_K1_LOAN_ASK, "two 50% K-1s without a printed 50 still ask");
+  assert.doesNotMatch(nextFoxAsk(noPctUsed).text, /purchase contract/i);
+
+  const pctMark = applyExtractedFields(seSketch(), {
+    extractClass: "tax_return",
+    confidence: 0.94,
+    fields: { ...extracted.fields, ownership_percent: "50%" },
+  });
+  assert.equal(nextFoxAsk(resolveProposal(pctMark.draft, "accept")).text, OTHER_K1_LOAN_ASK);
 
   const leftoverThread: FoxMessage[] = sealStoredFoxThread([
     { id: "card", role: "fox", text: ask.text, actions: ask.actions },
@@ -492,7 +560,7 @@ async function main() {
   assert.equal(nextFoxAsk(twoK1Used).text, OTHER_K1_LOAN_ASK);
   assert.ok(!stillUsefulLabels(twoK1Used).some((label) => /HO K-1|SOY K-1/i.test(label)));
 
-  console.log("assert-1120s-entity-return: HO & SOY INC $2,196 · Employment · Skip 1040 · other K-1 ask");
+  console.log("assert-1120s-entity-return: HO & SOY INC $2,196 · other K-1 Yes/No/Skip before purchase contract");
 }
 
 main().catch((error) => {

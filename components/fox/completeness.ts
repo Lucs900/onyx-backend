@@ -75,7 +75,10 @@ import {
   wageW2ConfirmCopy,
   isIncomeLedgerProposal,
   isHouseholdWagesProposal,
+  isOtherK1Box1Proposal,
+  OTHER_K1_BOX1_FIELD,
   promoteIncomeLedger,
+  writeOtherK1Box1,
   settleHouseholdWagesProposal,
   settleIncomeLedgerProposal,
   incomeLedgerAskCopy,
@@ -461,6 +464,7 @@ export function shouldSpeakPendingConfirm(draft: FoxIntakeDraft) {
     return true;
   }
   if (proposal.field === "company_ordinary") return true;
+  if (proposal.field === OTHER_K1_BOX1_FIELD) return true;
   if (proposal.field === QUALIFYING_INCOME_FIELD) {
     if (isCoverLineProposal(proposal)) {
       const fileValue = factValue(draft, QUALIFYING_INCOME_FIELD) || factValue(draft, SE_MONTHLY_FIELD);
@@ -1610,6 +1614,10 @@ export function resolveProposal(
   }
   if (proposal.field === "company_ordinary") {
     return { ...draft, pendingProposal: winner === "accept" ? draft.pendingProposal : null };
+  }
+  if (isOtherK1Box1Proposal(proposal)) {
+    if (winner === "accept") return writeOtherK1Box1({ ...draft, pendingProposal: null });
+    return { ...draft, pendingProposal: null };
   }
   if (winner === "decline") {
     if (proposal.field === ESTIMATED_HOUSING_FIELD) {

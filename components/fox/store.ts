@@ -458,6 +458,8 @@ export function emptyDraft(): FoxIntakeDraft {
     coverWageGapAsked: false,
     householdWagesAsked: false,
     otherK1LoanAsked: false,
+    otherK1LoanAnswer: undefined,
+    otherK1OnLoan: false,
     incomeLedger: [],
     taxReturnPacketSpoken: false,
     taxReturnPacketCloseAsk: false,
@@ -661,6 +663,11 @@ function normalize(value: unknown): FoxIntakeDraft {
         : undefined,
     householdAsked: Boolean(raw.householdAsked || raw.statedHousehold),
     otherK1LoanAsked: Boolean(raw.otherK1LoanAsked),
+    otherK1LoanAnswer:
+      raw.otherK1LoanAnswer === "yes" || raw.otherK1LoanAnswer === "no" || raw.otherK1LoanAnswer === "skip"
+        ? raw.otherK1LoanAnswer
+        : undefined,
+    otherK1OnLoan: Boolean(raw.otherK1OnLoan),
     coborrowerName:
       typeof raw.coborrowerName === "string" && raw.coborrowerName.trim()
         ? raw.coborrowerName.trim()

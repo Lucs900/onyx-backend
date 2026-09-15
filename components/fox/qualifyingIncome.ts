@@ -62,6 +62,7 @@ import {
   incomeLedgerRowsFromFields,
   ledgerFileField,
   ledgerProposalNote,
+  ledgerRowId,
   mergeIncomeLedger,
   parseLedgerMoney,
   pendingNewIncomeLedgerRows,
@@ -183,6 +184,10 @@ export type QualifyingIncomeResult = {
 export const COMPANY_ORDINARY_FIELD = "company_ordinary";
 export const COMPANY_ORDINARY_METHOD = "company ordinary / 12";
 export const K1_BOX1_METHOD = "K-1 Box 1 / 12";
+export const OTHER_K1_BOX1_FIELD = "other_k1_box1";
+export const COMBINED_ORDINARY_FIELD = "combined_ordinary";
+export const OTHER_K1_ON_LOAN_LABEL = "K-1 Box 1";
+export const OTHER_K1_LEDGER_NAME = "other-on-loan";
 
 const ENTITY_KINDS = new Set<TaxReturnKind>(["k1", "1065", "1120s"]);
 
@@ -502,7 +507,7 @@ function entityHas1084Addbacks(row: TaxYearCashflow) {
 }
 
 function ownsAll1120s(row: TaxYearCashflow) {
-  return parseExtractMoney(row.ownership_percent) === 100;
+  return parseOwnershipPercent(row.ownership_percent) === 100;
 }
 
 function companyOrdinaryMonthlyFromRow(row: TaxYearCashflow): number | null {
@@ -588,30 +593,210 @@ function k1Monthly(years: TaxYearCashflow[]): number | null {
   return k1OrdinaryMonthly(latest.ordinary);
 }
 
+/** Printed ownership, including `50%` from a live K-1 extract. */
+export function parseOwnershipPercent(value?: string | null): number | null {
+  const cleaned = String(value ?? "")
+    .replace(/%/g, "")
+    .replace(/,/g, "")
+    .trim();
+  const n = parseExtractMoney(cleaned);
+  if (n == null || n <= 0 || n > 100) return null;
+  return n;
+}
+
+function rowLooksLike1120s(row: TaxYearCashflow) {
+  return (
+    row.return_kind === "1120s" ||
+    Boolean(String(row.officer_compensation ?? "").trim()) ||
+    (Boolean(String(row.entity_ordinary_income ?? "").trim()) &&
+      Boolean(String(row.k1_ordinary_income ?? "").trim()))
+  );
+}
+
 /** 1120-S face + K-1 Box 1 on this packet. Two K-1s are already in. */
 export function entityK1Box1OnFile(draft: FoxIntakeDraft): boolean {
   const rows = readTaxCashflows(draft);
   const has1120s = rows.some(
-    (row) => row.return_kind === "1120s" && String(row.entity_ordinary_income ?? "").trim(),
+    (row) => rowLooksLike1120s(row) && String(row.entity_ordinary_income ?? "").trim(),
   );
   const hasK1 = rows.some((row) => String(row.k1_ordinary_income ?? "").trim());
   return has1120s && hasK1;
 }
 
+export function ownsAllEntityOnFile(draft: FoxIntakeDraft): boolean {
+  return readTaxCashflows(draft).some((row) => parseOwnershipPercent(row.ownership_percent) === 100);
+}
+
+function k1OwnerNamesOnFile(draft: FoxIntakeDraft): string[] {
+  const fromFact = [
+    String(draft.facts?.cover_k1_names?.value ?? ""),
+    String(draft.facts?.schedule_e_part2_names?.value ?? ""),
+  ].join(";");
+  const fromCash = readTaxCashflows(draft).flatMap((row) =>
+    String(row.schedule_e_part2_names ?? "").split(";"),
+  );
+  const out: string[] = [];
+  for (const raw of [...fromFact.split(";"), ...fromCash]) {
+    const name = raw.trim();
+    if (!name) continue;
+    if (!out.some((item) => item.toLowerCase() === name.toLowerCase())) out.push(name);
+  }
+  return out;
+}
+
+export function companyOrdinaryMonthlyOnFile(draft: FoxIntakeDraft): number | null {
+  const rows = readTaxCashflows(draft);
+  for (let i = rows.length - 1; i >= 0; i -= 1) {
+    const monthly = companyOrdinaryMonthlyFromRow(rows[i]);
+    if (monthly != null) return monthly;
+    const ordinary = parseExtractMoney(rows[i]?.entity_ordinary_income);
+    if (ordinary != null) return monthlyFromAnnual(ordinary);
+  }
+  return null;
+}
+
+export function k1Box1MonthlyOnFile(draft: FoxIntakeDraft): number | null {
+  const written = parseExtractMoney(factValue(draft, QUALIFYING_INCOME_FIELD));
+  if (written != null && written > 0) return written;
+  return k1Monthly(readTaxCashflows(draft));
+}
+
+function twoEqualK1SharesOnFile(draft: FoxIntakeDraft): boolean {
+  const company = companyOrdinaryMonthlyOnFile(draft);
+  const k1 = k1Box1MonthlyOnFile(draft);
+  if (company == null || k1 == null || k1 <= 0) return false;
+  return Math.abs(company - k1 * 2) <= 1;
+}
+
 /** This packet’s two 50% K-1s. Own-all / a single 100% K-1 is not this ask. */
 export function twoK1OwnersOnFile(draft: FoxIntakeDraft): boolean {
   if (!entityK1Box1OnFile(draft)) return false;
-  return readTaxCashflows(draft).some((row) => {
-    const pct = parseExtractMoney(row.ownership_percent);
-    return pct === 50 && String(row.k1_ordinary_income ?? "").trim();
-  });
+  if (ownsAllEntityOnFile(draft)) return false;
+  if (
+    readTaxCashflows(draft).some((row) => {
+      const pct = parseOwnershipPercent(row.ownership_percent);
+      return pct === 50 && String(row.k1_ordinary_income ?? "").trim();
+    })
+  ) {
+    return true;
+  }
+  if (twoEqualK1SharesOnFile(draft)) return true;
+  return k1OwnerNamesOnFile(draft).length >= 2;
+}
+
+export function otherK1Box1Written(draft: FoxIntakeDraft): boolean {
+  if (draft.otherK1OnLoan) return true;
+  return Boolean(String(factValue(draft, OTHER_K1_BOX1_FIELD) ?? "").trim());
 }
 
 export function otherK1LoanAskNeeded(draft: FoxIntakeDraft): boolean {
   if (draft.otherK1LoanAsked) return false;
   if (draft.pendingProposal || draft.pendingConflict) return false;
   if (!draft.facts?.[QUALIFYING_INCOME_FIELD]?.confirmed) return false;
+  if (ownsAllEntityOnFile(draft)) return false;
   return twoK1OwnersOnFile(draft);
+}
+
+/** After Box 1 write: Other K-1 sits on Still useful until Yes (written) or No. Skip keeps it. */
+export function otherK1StillUsefulNeeded(draft: FoxIntakeDraft): boolean {
+  if (!twoK1OwnersOnFile(draft)) return false;
+  if (!draft.facts?.[QUALIFYING_INCOME_FIELD]?.confirmed) return false;
+  if (ownsAllEntityOnFile(draft)) return false;
+  if (otherK1Box1Written(draft)) return false;
+  if (draft.otherK1LoanAnswer === "no") return false;
+  return true;
+}
+
+export function otherK1Box1Monthly(draft: FoxIntakeDraft): number {
+  return k1Box1MonthlyOnFile(draft) ?? 2196;
+}
+
+export function combinedOrdinaryMonthly(draft: FoxIntakeDraft): number | null {
+  const first = parseExtractMoney(factValue(draft, QUALIFYING_INCOME_FIELD));
+  const other = parseExtractMoney(factValue(draft, OTHER_K1_BOX1_FIELD));
+  if (first == null || other == null) return null;
+  return Math.round(first + other);
+}
+
+export function isOtherK1Box1Proposal(proposal?: FactProposal | null): boolean {
+  return proposal?.field === OTHER_K1_BOX1_FIELD;
+}
+
+export function proposeOtherK1Box1(draft: FoxIntakeDraft): FoxIntakeDraft {
+  const monthly = otherK1Box1Monthly(draft);
+  const proposal: FactProposal = {
+    field: OTHER_K1_BOX1_FIELD,
+    value: String(monthly),
+    label: OTHER_K1_ON_LOAN_LABEL,
+    kind: "computed",
+    note: SUGGESTED_INCOME_NOTE,
+    methodNote: K1_BOX1_METHOD,
+    extras: [
+      ...(entityNameFromDraft(draft)
+        ? [{ field: "entity_name", value: entityNameFromDraft(draft), label: "entity" }]
+        : []),
+    ],
+  };
+  return {
+    ...draft,
+    otherK1LoanAsked: true,
+    otherK1LoanAnswer: "yes",
+    pendingProposal: proposal,
+    pendingConflict: null,
+    correcting: null,
+    correctingLine: null,
+  };
+}
+
+export function writeOtherK1Box1(draft: FoxIntakeDraft): FoxIntakeDraft {
+  const monthly = otherK1Box1Monthly(draft);
+  const year =
+    readTaxCashflows(draft)
+      .map((row) => String(row.tax_year ?? "").replace(/\D/g, "").slice(0, 4))
+      .find((item) => /^(19|20)\d{2}$/.test(item)) || "";
+  const row: IncomeLedgerRow = {
+    id: ledgerRowId("k1", year, OTHER_K1_LEDGER_NAME),
+    kind: "k1",
+    year,
+    label: OTHER_K1_ON_LOAN_LABEL,
+    monthly: String(monthly),
+    method: K1_BOX1_METHOD,
+    status: "confirmed",
+    businessName: OTHER_K1_LEDGER_NAME,
+  };
+  const ledger = mergeIncomeLedger(draft.incomeLedger, [row]).map((item) =>
+    item.id === row.id ? { ...item, ...row, status: "confirmed" as const } : item,
+  );
+  const now = new Date().toISOString();
+  const combined = Math.round((parseExtractMoney(factValue(draft, QUALIFYING_INCOME_FIELD)) ?? monthly) + monthly);
+  return {
+    ...draft,
+    otherK1LoanAsked: true,
+    otherK1LoanAnswer: "yes",
+    otherK1OnLoan: true,
+    pendingProposal: null,
+    pendingConflict: null,
+    correcting: null,
+    correctingLine: null,
+    incomeLedger: ledger,
+    facts: {
+      ...(draft.facts ?? {}),
+      [OTHER_K1_BOX1_FIELD]: {
+        field: OTHER_K1_BOX1_FIELD,
+        value: String(monthly),
+        source: "suggested",
+        confirmed: true,
+        confirmedAt: now,
+      },
+      [COMBINED_ORDINARY_FIELD]: {
+        field: COMBINED_ORDINARY_FIELD,
+        value: String(combined),
+        source: "suggested",
+        confirmed: true,
+        confirmedAt: now,
+      },
+    },
+  };
 }
 
 export function entityNameFromDraft(

@@ -1,4 +1,5 @@
 import type { FactProposal, FoxAction, FoxIntakeDraft } from "./types";
+import { proposeOtherK1Box1 } from "./qualifyingIncome";
 
 export const STATED_HOUSEHOLD_FIELD = "statedHousehold";
 export const SUGGESTED_HOUSEHOLD_NOTE = "Suggested · not underwritten";
@@ -223,15 +224,40 @@ export function otherK1LoanAskCopy(): {
 }
 
 export function writeOtherK1Loan(draft: FoxIntakeDraft, onLoan: boolean): FoxIntakeDraft {
-  return writeStatedHousehold({ ...draft, otherK1LoanAsked: true }, onLoan ? "with_someone" : "alone");
+  if (onLoan) return proposeOtherK1Box1(draft);
+  return {
+    ...draft,
+    otherK1LoanAsked: true,
+    otherK1LoanAnswer: "no",
+    otherK1OnLoan: false,
+    pendingProposal: null,
+    pendingConflict: null,
+    correcting: null,
+    correctingLine: null,
+  };
 }
 
 export function skipOtherK1Loan(draft: FoxIntakeDraft): FoxIntakeDraft {
   return {
     ...draft,
     otherK1LoanAsked: true,
+    otherK1LoanAnswer: "skip",
     pendingProposal: null,
     correcting: null,
     correctingLine: null,
+  };
+}
+
+export function otherK1Box1ConfirmCopy(monthly: number): {
+  text: string;
+  actions?: FoxAction[];
+} {
+  const shown = `$${Math.round(Math.abs(monthly)).toLocaleString("en-US")}`;
+  return {
+    text: `K-1 Box 1 is ${shown}. Suggested qualifying income · not underwritten. Use this?`,
+    actions: [
+      { id: "accept-proposal", label: "Use this", event: "bubble", capture: { field: "accept-proposal" } },
+      { id: "change-proposal", label: "Change", event: "bubble", capture: { field: "change-proposal" } },
+    ],
   };
 }

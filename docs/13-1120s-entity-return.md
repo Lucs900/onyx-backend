@@ -49,7 +49,10 @@ Founder wording may say “line 21” for company ordinary. On this packet line 
 - File empty on qualifying income until Use this.
 - Skip-1040 on self-employed still asks for the **business return**. After classify, name **1120-S**. Do not jump to Looks right. Skip 1040 is an answer — do not reprint Form 1040 after the business return / Box 1 write.
 - Use this writes Employment **HO & SOY INC**. Income type stays Self-employed. Not officer wages as QI.
-- After this packet’s two K-1s and Box 1 Use this, ask **other K-1 / is that person on this loan?** Own-all does not ask.
+- After this packet’s two K-1s and Box 1 Use this, ask **Other K-1 — is that person on this loan?** before purchase contract. Own-all does not ask. Do not invent a co-borrower.
+- **Yes** → confirm their Box 1, then write **$2,196** on a second row. Combined ordinary **$4,392**. Not company ordinary as one person’s QI.
+- **No** → keep **$2,196**. Other K-1 **off** Still useful.
+- **Skip** → keep **$2,196**. Other K-1 **stays** on Still useful.
 - After Box 1 write, drop **K-1 distributions** from Still useful.
 
 ## Harbor 23 / 24 — smoke only

@@ -28,6 +28,7 @@ import {
   hasTwoYearWageHistory,
   k1OrdinaryMissingDistributions,
   entityK1Box1OnFile,
+  otherK1StillUsefulNeeded,
   maybeProposeQualifyingFromTaxFile,
   isCoverLineProposal,
   isCoverReturnFields,
@@ -308,6 +309,8 @@ const MONEY_KEYS = new Set([
   "current_pi",
   "income",
   "qualifying_income",
+  "other_k1_box1",
+  "combined_ordinary",
   "paystub_monthly",
   "w2_monthly",
   "rental_income",
@@ -1319,6 +1322,8 @@ export function factLabel(field: string) {
   if (field === "schedule_e_part2_names") return "Schedule E Part II names";
   if (field === "schedule_e_property_address") return "Schedule E property";
   if (field === "qualifying_income") return "qualifying income";
+  if (field === "other_k1_box1") return "K-1 Box 1";
+  if (field === "combined_ordinary") return "combined ordinary";
   if (field === "income_ledger") return "income row";
   if (field === "gross_receipts") return "gross receipts";
   if (field === "named_loss") return "named loss";
@@ -3016,6 +3021,7 @@ export type StillUsefulLabel =
   | "second-year W-2"
   | "prior-year return"
   | "K-1 distributions"
+  | "Other K-1"
   | "Bay Street K-1"
   | "Harbor Studio K-1"
   | "Schedule C"
@@ -3384,6 +3390,9 @@ export function stillUsefulLabels(draft: FoxIntakeDraft): StillUsefulLabel[] {
   if (draft.sampleAccepted && wageThreadOpen(draft)) {
     const pinned = pinWageCompletenessLabels(labels);
     labels.splice(0, labels.length, ...pinned);
+  }
+  if (otherK1StillUsefulNeeded(draft) && !labels.includes("Other K-1")) {
+    labels.push("Other K-1");
   }
   if (!deepenStillUseful(draft)) {
     const namedK1 = nextScheduleENamedK1Label(draft);
@@ -3860,6 +3869,12 @@ export function layer2Plan(draft: FoxIntakeDraft): StillUsefulItem[] {
         "A second recent bank statement still helps this file.",
       ),
     );
+  }
+  if (otherK1StillUsefulNeeded(draft) && !items.some((item) => item.id === "other-k1" || item.label === "Other K-1")) {
+    const otherK1 = layer2Item("other-k1", "Other K-1", "The other K-1 still helps this file.");
+    const contractAt = items.findIndex((item) => item.id === "purchase_contract");
+    if (contractAt >= 0) items.splice(contractAt, 0, otherK1);
+    else items.unshift(otherK1);
   }
   const namedK1 = nextScheduleENamedK1Label(draft);
   if (namedK1 && !items.some((item) => item.label === namedK1)) {
