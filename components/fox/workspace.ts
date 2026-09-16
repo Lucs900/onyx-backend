@@ -160,6 +160,7 @@ import {
 import {
   SUGGESTED_NOTE,
   canLooksRight,
+  namedLossWritten,
   incomeNumberReady,
   otherReoInterviewBlocked,
   wageDocsAskNeeded,
@@ -2901,8 +2902,33 @@ function docInviteActions(): FoxAction[] {
   ];
 }
 
-function documentInviteActions(_draft: FoxIntakeDraft): FoxAction[] {
+function documentInviteActions(draft: FoxIntakeDraft): FoxAction[] {
+  if (canLooksRight(draft) && !draft.sampleAccepted) {
+    return [
+      ...docInviteActions(),
+      looksRightAskActions()[0]!,
+    ];
+  }
   return docInviteActions();
+}
+
+function openLooksRightFinish(draft: FoxIntakeDraft) {
+  const nextDraft = applyLooksRightMotion(draft);
+  if (namedLossWritten(nextDraft)) {
+    return {
+      ...workspacePromptCopy("done", nextDraft),
+      capture: { field: "confirm-draft" as const },
+    };
+  }
+  const nextPrompt = workspacePrompt(nextDraft);
+  const shown =
+    nextPrompt === "review" || nextPrompt === "housing" || nextPrompt === "debts"
+      ? "done"
+      : nextPrompt;
+  return {
+    ...workspacePromptCopy(shown, nextDraft),
+    capture: { field: "confirm-draft" as const },
+  };
 }
 
 function looksLikeQuestion(text: string) {
@@ -3885,6 +3911,7 @@ export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
   if (draft.sampleAccepted && (draft.motion === "in_queue" || draft.motion === "escalated")) {
     return "done";
   }
+  if (draft.sampleAccepted && namedLossWritten(draft)) return "done";
   if (draft.sampleAccepted && nextDocInvite(draft)) return "documents";
   if (propertyZipConfirmNeeded(draft)) return "property-zip";
   if (propertyAddressNeededForQuote(draft)) return "property-address";
@@ -6531,6 +6558,16 @@ export function workspaceReply(
   ) {
     return workspacePromptCopy(prompt === "confirm-proposal" ? "confirm-proposal" : prompt, draft);
   }
+  if (
+    isLooksRightConfirmText(q) &&
+    !draft.sampleAccepted &&
+    canLooksRight(draft) &&
+    !draft.pendingProposal &&
+    !draft.pendingConflict &&
+    !draft.pendingAddress
+  ) {
+    return openLooksRightFinish(draft);
+  }
 
   if (notepadEdit === "value") {
     return replyToPropertyValueAsk(q, draft);
@@ -8190,16 +8227,7 @@ export function workspaceReply(
           text: missingAmountAsk(draft) || "I still need a required amount on this file.",
         };
       }
-      const nextDraft = applyLooksRightMotion(draft);
-      const nextPrompt = workspacePrompt(nextDraft);
-      const shown =
-        nextPrompt === "review" || nextPrompt === "housing" || nextPrompt === "debts"
-          ? "done"
-          : nextPrompt;
-      return {
-        ...workspacePromptCopy(shown, nextDraft),
-        capture: { field: "confirm-draft" },
-      };
+      return openLooksRightFinish(draft);
     }
     return answerThenRestore(q, draft);
   }

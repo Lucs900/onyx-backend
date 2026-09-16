@@ -508,11 +508,27 @@ async function main() {
     );
   }
   assert.equal(canLooksRight(sunita), true, "Looks right stays available on a named loss");
+  assert.ok(sunitaNextLabels.includes("Looks right"), "Looks right chip on the latest Fox turn after the write");
+  assert.ok(!asksWillIQualify("Looks right"));
+  assert.ok(!asksWillIQualify("looks right"));
+  const typedLooks = workspaceReply("Looks right", sunita);
+  assert.equal(typedLooks?.capture?.field, "confirm-draft");
+  assert.doesNotMatch(
+    typedLooks?.text ?? "",
+    /I can answer from this file|I won.t invent a number|This is a named loss on the file/i,
+  );
+  const looksLabels = (typedLooks?.actions ?? []).map((item) => item.label);
+  assert.deepEqual(looksLabels.slice(0, 3), ["Proceed", "Not yet", "Upload more"]);
+  assert.equal(looksLabels[looksLabels.length - 1], "Request human");
   const afterLooks = applyLooksRightMotion(sunita);
-  const afterLooksAsk = nextFoxAsk(afterLooks);
+  assert.equal(afterLooks.facts?.qualifying_income?.value, "-12932", "QI held through Looks right");
+  assert.ok((afterLooks.employmentHistory ?? []).some((row) => /Parass Foods LLC/i.test(row.label ?? "")));
+  assert.deepEqual(
+    (nextFoxAsk(afterLooks).actions ?? []).map((item) => item.label).slice(0, 3),
+    ["Proceed", "Not yet", "Upload more"],
+  );
   const qualifyAfterLooks = workspaceReply("will I qualify", afterLooks);
   assert.equal(qualifyAfterLooks?.text, READINESS_NAMED_LOSS);
-  assert.equal(qualifyAfterLooks?.followUp, afterLooksAsk.text);
   assert.doesNotMatch(qualifyAfterLooks?.text ?? "", /purchase contract|occupancy|Not ready yet/i);
   assert.ok(qualifyAfterLooks?.followUp !== qualifyAfterLooks?.text);
   const proceeded = applyProceedMotion(afterLooks);
@@ -590,7 +606,7 @@ async function main() {
   assert.notEqual(nextDocInvite(afterSkipUsed), "tax_return");
   assert.ok(!stillUsefulLabels(afterSkipUsed).includes("K-1 distributions"));
 
-  console.log("assert-1065-entity-return: Parass named-loss qualify beat · next ask own line");
+  console.log("assert-1065-entity-return: Parass named-loss qualify · Looks right finish");
 }
 
 main().catch((error) => {

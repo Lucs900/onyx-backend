@@ -2127,6 +2127,12 @@ export function looksRightAskActions(): FoxAction[] {
   ];
 }
 
+/** Written K-1 / Schedule C / 1065 loss. Looks right opens finish, not a canned file answer. */
+export function namedLossWritten(draft: FoxIntakeDraft) {
+  const monthly = parseExtractMoney(draft.facts?.[QUALIFYING_INCOME_FIELD]?.value ?? "");
+  return Boolean(draft.facts?.[QUALIFYING_INCOME_FIELD]?.confirmed && monthly != null && monthly < 0);
+}
+
 export function canLooksRight(draft: FoxIntakeDraft) {
   if (draftHasOpenConfirmCard(draft)) return false;
   if (wageIncomeSketchOpen(draft)) return false;
