@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import { emptyDraft } from "../components/fox/store";
 import { applyExtractedFields } from "../components/fox/fileWrite";
 import { factsFromDraft, resolveProposal } from "../components/fox/completeness";
-import { workspaceReply } from "../components/fox/workspace";
+import { nextFoxAsk, workspaceReply } from "../components/fox/workspace";
 import { asksWillIQualify } from "../lib/guidelines/answer";
 import { READINESS_NAMED_LOSS, READINESS_STRONG, readinessFromFile } from "../lib/guidelines/conventional";
 import type { FoxIntakeDraft } from "../components/fox/types";
@@ -130,11 +130,22 @@ assert.equal(readinessFromFile(factsFromDraft(seLossUsed)).kind, "uw_review");
 assert.equal(readinessFromFile(factsFromDraft(seLossUsed)).line, READINESS_NAMED_LOSS);
 const seLossQualify = workspaceReply("will I qualify", seLossUsed);
 assert.equal(seLossQualify?.text, READINESS_NAMED_LOSS);
-assert.doesNotMatch(seLossQualify?.text ?? "", /purchase contract|occupancy|Not ready yet/i);
+assert.doesNotMatch(seLossQualify?.text ?? "", /I can answer from this file|purchase contract|occupancy|Not ready yet/i);
 assert.notEqual(seLossQualify?.followUp, seLossQualify?.text);
 assert.doesNotMatch(
   workspaceReply("does this work", seLossUsed)?.text ?? "",
-  /you qualify|you don.t qualify|this file cannot proceed|conventionally strong|purchase contract/i,
+  /you qualify|you don.t qualify|this file cannot proceed|conventionally strong|purchase contract|I can answer from this file/i,
 );
+const zipOnlyLoss = {
+  ...seLossUsed,
+  subjectAddress: "",
+  propertyZip: "94110",
+  propertyZipAsked: true,
+  skippedClasses: [...new Set([...(seLossUsed.skippedClasses ?? []), "government_id", "prior_year_return"])],
+};
+const zipOnlyQualify = workspaceReply("will I qualify", zipOnlyLoss);
+assert.equal(zipOnlyQualify?.text, READINESS_NAMED_LOSS);
+assert.equal(zipOnlyQualify?.followUp, nextFoxAsk(zipOnlyLoss).text);
+assert.doesNotMatch(zipOnlyQualify?.text ?? "", /I can answer from this file|purchase contract/i);
 
 console.log("assert-named-loss-readiness: named-loss qualify beat · next ask own line");

@@ -3000,6 +3000,9 @@ export function persistGuidelineNote(draft: FoxIntakeDraft, text: string): FoxIn
 
 function freeTextAnswer(input: string, draft: FoxIntakeDraft) {
   if (asksStaffExport(input)) return STAFF_EXPORT_BORROWER_COPY;
+  if (asksWillIQualify(input) && namedLossWritten(draft)) {
+    return READINESS_NAMED_LOSS;
+  }
   const answered = foxAnswer(input, factsFromDraft(draft));
   if (answered) return answered.text;
   if (isGreeting(input)) return HELLO_COPY;
@@ -3038,24 +3041,24 @@ function packetCloseOnlyReply(draft: FoxIntakeDraft) {
 }
 
 function restoredAsk(answer: string, draft: FoxIntakeDraft) {
+  const ask = nextFoxAsk(draft);
+  if (answer === READINESS_NAMED_LOSS) {
+    return {
+      text: answer,
+      followUp: ask.text === answer ? ask.followUp : ask.text,
+      facts: ask.facts,
+      actions: ask.actions,
+    };
+  }
   const closed = packetCloseOnlyReply(draft);
-  if (closed && (answer === PACKET_NO_K1_C_LINE || !answer || /Use this\?/i.test(nextFoxAsk(draft).text))) {
+  if (closed && (answer === PACKET_NO_K1_C_LINE || !answer || /Use this\?/i.test(ask.text))) {
     return closed;
   }
-  const ask = nextFoxAsk(draft);
   if (closed && ask.text !== PACKET_NO_K1_C_LINE) return closed;
   if (!answer || answer === ask.text) {
     return {
       text: ask.text,
       followUp: ask.followUp,
-      facts: ask.facts,
-      actions: ask.actions,
-    };
-  }
-  if (answer === READINESS_NAMED_LOSS) {
-    return {
-      text: answer,
-      followUp: ask.text,
       facts: ask.facts,
       actions: ask.actions,
     };
@@ -6548,6 +6551,9 @@ export function workspaceReply(
       text: PACKET_NO_K1_C_LINE,
       actions: finishLineActions(draft),
     };
+  }
+  if (asksWillIQualify(q)) {
+    return answerThenRestore(q, draft);
   }
   const notepadEdit = notepadEditPrompt(draft);
 

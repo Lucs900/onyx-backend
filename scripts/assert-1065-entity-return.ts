@@ -32,7 +32,8 @@ import {
 import { canLooksRight, resolveProposal } from "../components/fox/completeness";
 import { emptyDraft } from "../components/fox/store";
 import { leftoverUseThisOnOlderTurns, sealStoredFoxThread } from "../components/fox/liveCoupon";
-import { deskStripActions, nextFoxAsk, previewFacts, workspacePromptCopy, workspaceReply } from "../components/fox/workspace";
+import { deskStripActions, nextFoxAsk, previewFacts, workspacePrompt, workspacePromptCopy, workspaceReply } from "../components/fox/workspace";
+import { replyToMessage } from "../components/fox/script";
 import { skipOtherK1Loan, writeOtherK1Loan } from "../components/fox/household";
 import {
   applyOwnAllEntity,
@@ -183,6 +184,16 @@ function seSketch(): FoxIntakeDraft {
         confirmedAt: "2026-09-15T00:00:00.000Z",
       },
     },
+  };
+}
+
+function founderLiveFile(draft: FoxIntakeDraft): FoxIntakeDraft {
+  return {
+    ...draft,
+    subjectAddress: "",
+    propertyZip: draft.propertyZip || "94110",
+    propertyZipAsked: true,
+    skippedClasses: [...new Set([...(draft.skippedClasses ?? []), "government_id"])],
   };
 }
 
@@ -491,28 +502,38 @@ async function main() {
   assert.ok(asksWillIQualify("will I qualify"));
   assert.ok(asksWillIQualify("does this work"));
   assert.ok(asksWillIQualify("can I still proceed"));
-  const sunitaNext = nextFoxAsk(sunita);
-  const sunitaNextLabels = (sunitaNext.actions ?? []).map((item) => item.label);
+  const live = founderLiveFile(sunita);
+  assert.equal(live.facts?.qualifying_income?.value, "-12932", "QI held on the live file");
+  assert.ok((live.employmentHistory ?? []).some((row) => /Parass Foods LLC/i.test(row.label ?? "")));
+  assert.equal(workspacePrompt(live), "documents", "live next step is the purchase-contract invite");
+  const liveNext = nextFoxAsk(live);
+  assert.match(liveNext.text, /purchase contract is the property on paper/i);
+  const liveNextLabels = (liveNext.actions ?? []).map((item) => item.label);
   for (const ask of ["will I qualify", "does this work", "can I still proceed"] as const) {
-    const reply = workspaceReply(ask, sunita);
+    const reply = workspaceReply(ask, live);
     assert.equal(reply?.text, READINESS_NAMED_LOSS, `${ask} is one qualify beat`);
-    assert.equal(reply?.followUp, sunitaNext.text, `${ask} restores the next ask on its own line`);
+    assert.equal(reply?.followUp, liveNext.text, `${ask} restores the next ask on its own line`);
     assert.doesNotMatch(
       reply?.text ?? "",
-      /purchase contract|occupancy|Not ready yet|I can run this past underwriting|you qualify|you don.t qualify|this file cannot proceed|conventionally strong/i,
+      /I can answer from this file|I won.t invent a number|purchase contract|occupancy|Not ready yet|I can run this past underwriting|you qualify|you don.t qualify|this file cannot proceed|conventionally strong/i,
     );
     assert.deepEqual(
       (reply?.actions ?? []).map((item) => item.label),
-      sunitaNextLabels,
+      liveNextLabels,
       `${ask} keeps the same next chips`,
     );
+    const spoken = replyToMessage(ask, "start", live, null);
+    assert.equal(spoken.text, READINESS_NAMED_LOSS, `${ask} live composer is the same qualify beat`);
+    assert.equal(spoken.followUp, liveNext.text, `${ask} live composer keeps the next ask on its own line`);
+    assert.doesNotMatch(spoken.text, /I can answer from this file|purchase contract/i);
   }
-  assert.equal(canLooksRight(sunita), true, "Looks right stays available on a named loss");
-  assert.ok(sunitaNextLabels.includes("Looks right"), "Looks right chip on the latest Fox turn after the write");
+  assert.equal(canLooksRight(live), true, "Looks right stays available on a named loss");
+  assert.ok(liveNextLabels.includes("Looks right"), "Looks right chip on the latest Fox turn after the write");
   assert.ok(!asksWillIQualify("Looks right"));
   assert.ok(!asksWillIQualify("looks right"));
-  const typedLooks = workspaceReply("Looks right", sunita);
+  const typedLooks = workspaceReply("Looks right", live);
   assert.equal(typedLooks?.capture?.field, "confirm-draft");
+  assert.match(typedLooks?.text ?? "", /I can send this to review/i);
   assert.doesNotMatch(
     typedLooks?.text ?? "",
     /I can answer from this file|I won.t invent a number|This is a named loss on the file/i,
@@ -520,7 +541,7 @@ async function main() {
   const looksLabels = (typedLooks?.actions ?? []).map((item) => item.label);
   assert.deepEqual(looksLabels.slice(0, 3), ["Proceed", "Not yet", "Upload more"]);
   assert.equal(looksLabels[looksLabels.length - 1], "Request human");
-  const afterLooks = applyLooksRightMotion(sunita);
+  const afterLooks = applyLooksRightMotion(live);
   assert.equal(afterLooks.facts?.qualifying_income?.value, "-12932", "QI held through Looks right");
   assert.ok((afterLooks.employmentHistory ?? []).some((row) => /Parass Foods LLC/i.test(row.label ?? "")));
   assert.deepEqual(
@@ -529,7 +550,10 @@ async function main() {
   );
   const qualifyAfterLooks = workspaceReply("will I qualify", afterLooks);
   assert.equal(qualifyAfterLooks?.text, READINESS_NAMED_LOSS);
-  assert.doesNotMatch(qualifyAfterLooks?.text ?? "", /purchase contract|occupancy|Not ready yet/i);
+  assert.doesNotMatch(
+    qualifyAfterLooks?.text ?? "",
+    /I can answer from this file|purchase contract|occupancy|Not ready yet/i,
+  );
   assert.ok(qualifyAfterLooks?.followUp !== qualifyAfterLooks?.text);
   const proceeded = applyProceedMotion(afterLooks);
   const proceedAsk = workspaceReply("Proceed", afterLooks);
