@@ -785,6 +785,12 @@ export function factsFromDraft(draft: FoxIntakeDraft): CompletenessFile {
   }
   const debts = namedDebtsFromDraft(draft);
   const suggestedMonthlyIncome = moneyNumber(draft.facts?.[QUALIFYING_INCOME_FIELD]?.value ?? "");
+  const writtenMonthly = parseExtractMoney(draft.facts?.[QUALIFYING_INCOME_FIELD]?.value ?? "");
+  const namedLoss = Boolean(
+    draft.facts?.[QUALIFYING_INCOME_FIELD]?.confirmed &&
+      writtenMonthly != null &&
+      writtenMonthly < 0,
+  );
   const computedDti =
     draft.statedDti ??
     statedDti(
@@ -842,6 +848,7 @@ export function factsFromDraft(draft: FoxIntakeDraft): CompletenessFile {
       ? { rentalNeedsStatement: true }
       : {}),
     ...(suggestedMonthlyIncome != null ? { suggestedMonthlyIncome } : {}),
+    ...(namedLoss ? { namedLoss: true } : {}),
     docsSkipped: Boolean(
       draft.documentsSkipped || draft.docsHeld || (draft.skippedClasses?.length ?? 0) > 0,
     ),

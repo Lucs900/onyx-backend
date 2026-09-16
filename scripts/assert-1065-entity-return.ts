@@ -40,7 +40,10 @@ import {
   selectK1WhoOnLoan,
   writeOtherK1Box1,
 } from "../components/fox/qualifyingIncome";
-import { NAMED_LOSS_SUGGEST_NOTE } from "../lib/income/ledger";
+import { applyLooksRightMotion, applyProceedMotion, MOTION_COPY } from "../components/fox/motion";
+import { asksWillIQualify } from "../lib/guidelines/answer";
+import { READINESS_UW_REVIEW } from "../lib/guidelines/conventional";
+import { NAMED_LOSS_CASH_FLOW_NOTE, NAMED_LOSS_SUGGEST_NOTE } from "../lib/income/ledger";
 import type { FoxIntakeDraft, FoxMessage } from "../components/fox/types";
 
 const deadVision = {
@@ -476,6 +479,46 @@ async function main() {
   assert.ok((sunita.employmentHistory ?? []).some((row) => /Parass Foods LLC/i.test(row.label ?? "")));
   assert.ok(!stillUsefulLabels(sunita).includes("Other K-1"), "Sunita only drops Other K-1");
   assert.doesNotMatch(nextFoxAsk(sunita).text, /Who is on this loan|other K-1 — is that person/i);
+  assert.ok(
+    previewFacts(sunita).some(
+      (fact) =>
+        fact.id === "qualifying" &&
+        /12,932/.test(fact.value) &&
+        fact.note === NAMED_LOSS_CASH_FLOW_NOTE,
+    ),
+    "written loss stays named loss · not confirmed cash flow",
+  );
+  assert.ok(asksWillIQualify("will I qualify"));
+  assert.ok(asksWillIQualify("does this work"));
+  assert.ok(asksWillIQualify("can I still proceed"));
+  const sunitaNext = nextFoxAsk(sunita);
+  const sunitaNextLabels = (sunitaNext.actions ?? []).map((item) => item.label);
+  for (const ask of ["will I qualify", "does this work", "can I still proceed"] as const) {
+    const reply = workspaceReply(ask, sunita);
+    assert.match(reply?.text ?? "", new RegExp(READINESS_UW_REVIEW.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+    assert.doesNotMatch(
+      reply?.text ?? "",
+      /you qualify|you don.t qualify|this file cannot proceed|I can keep preparing|conventionally strong|prepare a file/i,
+    );
+    assert.deepEqual(
+      (reply?.actions ?? []).map((item) => item.label),
+      sunitaNextLabels,
+      `${ask} keeps the same next chips`,
+    );
+  }
+  assert.equal(canLooksRight(sunita), true, "Looks right stays available on a named loss");
+  const afterLooks = applyLooksRightMotion(sunita);
+  const proceeded = applyProceedMotion(afterLooks);
+  const proceedAsk = workspaceReply("Proceed", afterLooks);
+  assert.equal(proceeded.motion, "in_queue");
+  assert.equal(proceedAsk?.text, MOTION_COPY.in_queue);
+  assert.equal(MOTION_COPY.in_queue, "ONYX has this for review. I’m still here.");
+  assert.deepEqual(
+    (proceedAsk?.actions ?? []).map((item) => item.label),
+    ["Ask Fox", "Upload more", "Request human"],
+  );
+  assert.equal(proceeded.facts?.qualifying_income?.value, "-12932", "QI held through Proceed");
+  assert.ok((proceeded.employmentHistory ?? []).some((row) => /Parass Foods LLC/i.test(row.label ?? "")));
 
   const pritika = resolveProposal(selectK1WhoOnLoan(proposed.draft, "other"), "accept");
   assert.equal(pritika.facts?.qualifying_income?.value, "-1437");
@@ -540,7 +583,7 @@ async function main() {
   assert.notEqual(nextDocInvite(afterSkipUsed), "tax_return");
   assert.ok(!stillUsefulLabels(afterSkipUsed).includes("K-1 distributions"));
 
-  console.log("assert-1065-entity-return: Parass two named K-1s · Who is on this loan");
+  console.log("assert-1065-entity-return: Parass named loss · UW-review · Proceed in_queue");
 }
 
 main().catch((error) => {

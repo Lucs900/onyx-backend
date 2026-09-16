@@ -15,7 +15,7 @@ Not first-source-wins. Not “we already qualify on W-2.”
 - 1040 packet uses the W-2 path: page images → Grok → locked schema → confirm-before-write. Year + both names, cover wages as household signal only, Schedule E Part I and K-1 ordinary as their own rows, named losses that do not net into W-2 QI. Unread on that drop belongs to the return, never the written stub.
 - Confirmed wage QI keeps the stub method label until a new row is confirmed via Use this.
 - Still useful names only what this File printed. No fixture K-1 names.
-- Loss = named loss. Do not net a K-1 hole into W-2 QI on the sketch.
+- Loss = named loss. Do not net a K-1 hole into W-2 QI on the sketch. A written K-1 / Schedule C / 1065 loss is not a dead file and not a denial. will I qualify / does this work / can I still proceed use the UW-review line only. Looks right and Proceed stay available. Do not zero QI because it is negative.
 - Years stay separate (2023 transcript ≠ replace 2025 1040).
 - Looks right and Proceed work with holes. Skip is an answer.
 

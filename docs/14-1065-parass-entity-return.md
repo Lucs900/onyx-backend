@@ -46,6 +46,7 @@ Do **not** invent a monthly number that is not on the page.
 - **Skip** → File empty. Other K-1 **stays** on Still useful.
 - **Use this** only after they pick a person.
 - After Box 1 write, drop **K-1 distributions** from Still useful.
+- After the named-loss write, **will I qualify / does this work / can I still proceed** uses the UW-review line only. The loss stays suggested, not confirmed cash flow. The file can still move. Looks right and Proceed stay available. Licensed review decides. Do not zero QI. Do not block Proceed because QI is negative.
 
 ## Harbor 21 — smoke only
 

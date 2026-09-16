@@ -219,6 +219,8 @@ export type FileFacts = {
   borrowerName?: string;
   statedOtherReo?: "none" | "yes";
   suggestedMonthlyIncome?: number;
+  /** Written K-1 / Schedule C / 1065 loss. Suggested, not confirmed cash flow. */
+  namedLoss?: boolean;
   docsSkipped?: boolean;
   obviousHighDti?: boolean;
   estimatedHousing?: number;
@@ -1442,6 +1444,7 @@ function strongEligible(file: CompletenessFile) {
   if (file.namedGovvie || file.govProgram) return false;
   if (file.namedDistress || file.statedDeclaration === "event") return false;
   if (file.unsupportedRental) return false;
+  if (namedLossOnFile(file)) return false;
   if (file.unresolvedConflict) return false;
   if (loanExceedsPrice(file)) return false;
   const ltv = sketchedLtvFromFacts(file);
@@ -1454,6 +1457,12 @@ function strongEligible(file: CompletenessFile) {
 function flagAsNotReadyReason(file: FileFacts): string | undefined {
   const flagged = flags(file).caution;
   return flagged;
+}
+
+/** Written K-1 / Schedule C / 1065 loss. Not a dead file. Not a denial. */
+export function namedLossOnFile(file: FileFacts) {
+  if (file.namedLoss) return true;
+  return file.suggestedMonthlyIncome != null && file.suggestedMonthlyIncome < 0;
 }
 
 /** File-based will-I-qualify / readiness pick. Three shapes only. Never recalculates income. */
@@ -1473,6 +1482,10 @@ export function readinessFromFile(file: FileFacts): ReadinessRead {
   const mismatch = productMismatchReason(file);
   if (mismatch) {
     return { kind: "not_ready", line: notReadyLine(mismatch), reason: mismatch };
+  }
+
+  if (namedLossOnFile(file)) {
+    return { kind: "uw_review", line: READINESS_UW_REVIEW, reason: "named-loss" };
   }
 
   if (!layer1SketchPresent(complete)) {

@@ -8105,6 +8105,15 @@ assert.equal(seLoss.draft.pendingProposal?.value, "-2000");
 assert.equal(seLoss.draft.pendingProposal?.note, SUGGESTED_INCOME_NOTE);
 assert.match(proposalAskCopy(seLoss.draft.pendingProposal!), /-\$2,000/);
 assert.equal(seLoss.draft.facts?.qualifying_income, undefined);
+const seLossUsed = resolveProposal(seLoss.draft, "accept");
+assert.equal(seLossUsed.facts?.qualifying_income?.value, "-2000");
+assert.equal(readinessFromFile(factsFromDraft(seLossUsed)).kind, "uw_review");
+assert.equal(readinessFromFile(factsFromDraft(seLossUsed)).line, READINESS_UW_REVIEW);
+assert.match(workspaceReply("will i qualify", seLossUsed)?.text ?? "", new RegExp(READINESS_UW_REVIEW.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+assert.doesNotMatch(
+  workspaceReply("will i qualify", seLossUsed)?.text ?? "",
+  /you qualify|you don.t qualify|this file cannot proceed|conventionally strong/i,
+);
 
 const seZero = applyExtractedFields(seAfterLooks, {
   extractClass: "tax_return",
@@ -9842,6 +9851,43 @@ assert.equal(
   }).line,
   READINESS_STRONG,
 );
+assert.equal(
+  readinessFromFile({
+    product: "buy",
+    purposeHint: "purchase",
+    occupancy: "primary",
+    state: "CA",
+    purchasePrice: 850000,
+    downPayment: 170000,
+    loanAmount: 680000,
+    statedCreditBand: "760+",
+    incomeType: "se_schedule_c",
+    received: ["tax_return"],
+    taxReturnCount: 1,
+    namedLoss: true,
+    suggestedMonthlyIncome: -12932,
+  }).kind,
+  "uw_review",
+);
+assert.equal(
+  readinessFromFile({
+    product: "buy",
+    purposeHint: "purchase",
+    occupancy: "primary",
+    state: "CA",
+    purchasePrice: 850000,
+    downPayment: 170000,
+    loanAmount: 680000,
+    statedCreditBand: "760+",
+    incomeType: "se_schedule_c",
+    received: ["tax_return"],
+    taxReturnCount: 1,
+    namedLoss: true,
+    suggestedMonthlyIncome: -12932,
+  }).line,
+  READINESS_UW_REVIEW,
+);
+assert.doesNotMatch(READINESS_UW_REVIEW, /you qualify|you don.t qualify|cannot proceed|keep preparing/i);
 assert.match(READINESS_STRONG, /Final underwriting still decides/);
 assert.equal(
   readinessFromFile({

@@ -2665,6 +2665,7 @@ export function qualifyingIncomeDisplay(draft: FoxIntakeDraft): { value: string;
     const pair = bothMonthlyDisplay(draft);
     const method = factValue(draft, QUALIFYING_METHOD_FIELD) || pair || undefined;
     const rentalMethod = /rents minus cash expenses|schedule e|rental cash flow/i.test(method ?? "");
+    const monthly = parseExtractMoney(stored);
     return {
       value: method ? structureQualifyingValue(displayMoney(stored), method) : displayMoney(stored),
       note:
@@ -2672,7 +2673,9 @@ export function qualifyingIncomeDisplay(draft: FoxIntakeDraft): { value: string;
           ? COVER_LINE_NOTE
           : rentalMethod
             ? SUGGESTED_RENTAL_CASH_FLOW_NOTE
-            : SUGGESTED_INCOME_NOTE,
+            : monthly != null && monthly < 0
+              ? NAMED_LOSS_CASH_FLOW_NOTE
+              : SUGGESTED_INCOME_NOTE,
     };
   }
   return null;
