@@ -1,6 +1,6 @@
 /**
  * Written K-1 / Schedule C / 1065 loss is not a dead file and not a denial.
- * will I qualify / does this work / can I still proceed → UW-review only.
+ * will I qualify is one beat. Next ask restores on its own line.
  */
 import assert from "node:assert/strict";
 import { emptyDraft } from "../components/fox/store";
@@ -8,7 +8,7 @@ import { applyExtractedFields } from "../components/fox/fileWrite";
 import { factsFromDraft, resolveProposal } from "../components/fox/completeness";
 import { workspaceReply } from "../components/fox/workspace";
 import { asksWillIQualify } from "../lib/guidelines/answer";
-import { READINESS_STRONG, READINESS_UW_REVIEW, readinessFromFile } from "../lib/guidelines/conventional";
+import { READINESS_NAMED_LOSS, READINESS_STRONG, readinessFromFile } from "../lib/guidelines/conventional";
 import type { FoxIntakeDraft } from "../components/fox/types";
 
 function seSketch(): FoxIntakeDraft {
@@ -101,9 +101,13 @@ assert.equal(
     namedLoss: true,
     suggestedMonthlyIncome: -12932,
   }).line,
-  READINESS_UW_REVIEW,
+  READINESS_NAMED_LOSS,
 );
-assert.doesNotMatch(READINESS_UW_REVIEW, /you qualify|you don.t qualify|cannot proceed|keep preparing/i);
+assert.equal(
+  READINESS_NAMED_LOSS,
+  "This is a named loss on the file. Suggested, not confirmed cash flow. The file can still move. Underwriting reviews it.",
+);
+assert.doesNotMatch(READINESS_NAMED_LOSS, /purchase contract|occupancy|Not ready yet|you qualify|cannot proceed/i);
 assert.ok(asksWillIQualify("will I qualify"));
 assert.ok(asksWillIQualify("does this work"));
 assert.ok(asksWillIQualify("can I still proceed"));
@@ -123,14 +127,14 @@ const seLoss = applyExtractedFields(seSketch(), {
 const seLossUsed = resolveProposal(seLoss.draft, "accept");
 assert.equal(seLossUsed.facts?.qualifying_income?.value, "-2000");
 assert.equal(readinessFromFile(factsFromDraft(seLossUsed)).kind, "uw_review");
-assert.equal(readinessFromFile(factsFromDraft(seLossUsed)).line, READINESS_UW_REVIEW);
-assert.match(
-  workspaceReply("will I qualify", seLossUsed)?.text ?? "",
-  new RegExp(READINESS_UW_REVIEW.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")),
-);
+assert.equal(readinessFromFile(factsFromDraft(seLossUsed)).line, READINESS_NAMED_LOSS);
+const seLossQualify = workspaceReply("will I qualify", seLossUsed);
+assert.equal(seLossQualify?.text, READINESS_NAMED_LOSS);
+assert.doesNotMatch(seLossQualify?.text ?? "", /purchase contract|occupancy|Not ready yet/i);
+assert.notEqual(seLossQualify?.followUp, seLossQualify?.text);
 assert.doesNotMatch(
   workspaceReply("does this work", seLossUsed)?.text ?? "",
-  /you qualify|you don.t qualify|this file cannot proceed|conventionally strong/i,
+  /you qualify|you don.t qualify|this file cannot proceed|conventionally strong|purchase contract/i,
 );
 
-console.log("assert-named-loss-readiness: UW-review on written loss · profit stays strong");
+console.log("assert-named-loss-readiness: named-loss qualify beat · next ask own line");

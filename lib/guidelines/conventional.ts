@@ -303,6 +303,8 @@ export const RENTAL_NET_COST_CAUTION =
 export const READINESS_STRONG =
   "This file looks conventionally strong enough to keep moving. Final underwriting still decides.";
 export const READINESS_UW_REVIEW = "I can run this past underwriting before we go further.";
+export const READINESS_NAMED_LOSS =
+  "This is a named loss on the file. Suggested, not confirmed cash flow. The file can still move. Underwriting reviews it.";
 export const READINESS_THIN_PREFIX = "This file is still thin. ";
 export const READINESS_NOT_READY_PREFIX = "Not ready yet — ";
 export const LOAN_OVER_PRICE_LINE =
@@ -1485,7 +1487,7 @@ export function readinessFromFile(file: FileFacts): ReadinessRead {
   }
 
   if (namedLossOnFile(file)) {
-    return { kind: "uw_review", line: READINESS_UW_REVIEW, reason: "named-loss" };
+    return { kind: "uw_review", line: READINESS_NAMED_LOSS, reason: "named-loss" };
   }
 
   if (!layer1SketchPresent(complete)) {

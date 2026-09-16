@@ -42,7 +42,7 @@ import {
 } from "../components/fox/qualifyingIncome";
 import { applyLooksRightMotion, applyProceedMotion, MOTION_COPY } from "../components/fox/motion";
 import { asksWillIQualify } from "../lib/guidelines/answer";
-import { READINESS_UW_REVIEW } from "../lib/guidelines/conventional";
+import { READINESS_NAMED_LOSS } from "../lib/guidelines/conventional";
 import { NAMED_LOSS_CASH_FLOW_NOTE, NAMED_LOSS_SUGGEST_NOTE } from "../lib/income/ledger";
 import type { FoxIntakeDraft, FoxMessage } from "../components/fox/types";
 
@@ -495,10 +495,11 @@ async function main() {
   const sunitaNextLabels = (sunitaNext.actions ?? []).map((item) => item.label);
   for (const ask of ["will I qualify", "does this work", "can I still proceed"] as const) {
     const reply = workspaceReply(ask, sunita);
-    assert.match(reply?.text ?? "", new RegExp(READINESS_UW_REVIEW.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+    assert.equal(reply?.text, READINESS_NAMED_LOSS, `${ask} is one qualify beat`);
+    assert.equal(reply?.followUp, sunitaNext.text, `${ask} restores the next ask on its own line`);
     assert.doesNotMatch(
       reply?.text ?? "",
-      /you qualify|you don.t qualify|this file cannot proceed|I can keep preparing|conventionally strong|prepare a file/i,
+      /purchase contract|occupancy|Not ready yet|I can run this past underwriting|you qualify|you don.t qualify|this file cannot proceed|conventionally strong/i,
     );
     assert.deepEqual(
       (reply?.actions ?? []).map((item) => item.label),
@@ -508,6 +509,12 @@ async function main() {
   }
   assert.equal(canLooksRight(sunita), true, "Looks right stays available on a named loss");
   const afterLooks = applyLooksRightMotion(sunita);
+  const afterLooksAsk = nextFoxAsk(afterLooks);
+  const qualifyAfterLooks = workspaceReply("will I qualify", afterLooks);
+  assert.equal(qualifyAfterLooks?.text, READINESS_NAMED_LOSS);
+  assert.equal(qualifyAfterLooks?.followUp, afterLooksAsk.text);
+  assert.doesNotMatch(qualifyAfterLooks?.text ?? "", /purchase contract|occupancy|Not ready yet/i);
+  assert.ok(qualifyAfterLooks?.followUp !== qualifyAfterLooks?.text);
   const proceeded = applyProceedMotion(afterLooks);
   const proceedAsk = workspaceReply("Proceed", afterLooks);
   assert.equal(proceeded.motion, "in_queue");
@@ -583,7 +590,7 @@ async function main() {
   assert.notEqual(nextDocInvite(afterSkipUsed), "tax_return");
   assert.ok(!stillUsefulLabels(afterSkipUsed).includes("K-1 distributions"));
 
-  console.log("assert-1065-entity-return: Parass named loss · UW-review · Proceed in_queue");
+  console.log("assert-1065-entity-return: Parass named-loss qualify beat · next ask own line");
 }
 
 main().catch((error) => {

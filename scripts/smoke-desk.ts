@@ -194,6 +194,7 @@ import {
   INVESTMENT_CAUTION,
   JUMBO_CEILING_LINE,
   LTV_NOT_A_DECISION,
+  READINESS_NAMED_LOSS,
   READINESS_STRONG,
   READINESS_UW_REVIEW,
   completeness as storeCompleteness,
@@ -6870,6 +6871,7 @@ function stripReadinessAnswer(text: string) {
   return text
     .replace(READINESS_STRONG, "")
     .replace(READINESS_UW_REVIEW, "")
+    .replace(READINESS_NAMED_LOSS, "")
     .replace(/This file is still thin\. [^.]*\./, "")
     .replace(/Not ready yet — [^.]*\./, "")
     .replace(/Not enough yet to tell\. Still useful: [^.]*\./, "")
@@ -8108,11 +8110,11 @@ assert.equal(seLoss.draft.facts?.qualifying_income, undefined);
 const seLossUsed = resolveProposal(seLoss.draft, "accept");
 assert.equal(seLossUsed.facts?.qualifying_income?.value, "-2000");
 assert.equal(readinessFromFile(factsFromDraft(seLossUsed)).kind, "uw_review");
-assert.equal(readinessFromFile(factsFromDraft(seLossUsed)).line, READINESS_UW_REVIEW);
-assert.match(workspaceReply("will i qualify", seLossUsed)?.text ?? "", new RegExp(READINESS_UW_REVIEW.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+assert.equal(readinessFromFile(factsFromDraft(seLossUsed)).line, READINESS_NAMED_LOSS);
+assert.equal(workspaceReply("will i qualify", seLossUsed)?.text, READINESS_NAMED_LOSS);
 assert.doesNotMatch(
   workspaceReply("will i qualify", seLossUsed)?.text ?? "",
-  /you qualify|you don.t qualify|this file cannot proceed|conventionally strong/i,
+  /you qualify|you don.t qualify|this file cannot proceed|conventionally strong|purchase contract|occupancy/i,
 );
 
 const seZero = applyExtractedFields(seAfterLooks, {
@@ -9885,9 +9887,9 @@ assert.equal(
     namedLoss: true,
     suggestedMonthlyIncome: -12932,
   }).line,
-  READINESS_UW_REVIEW,
+  READINESS_NAMED_LOSS,
 );
-assert.doesNotMatch(READINESS_UW_REVIEW, /you qualify|you don.t qualify|cannot proceed|keep preparing/i);
+assert.doesNotMatch(READINESS_NAMED_LOSS, /you qualify|you don.t qualify|cannot proceed|purchase contract|occupancy/i);
 assert.match(READINESS_STRONG, /Final underwriting still decides/);
 assert.equal(
   readinessFromFile({

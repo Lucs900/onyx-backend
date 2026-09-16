@@ -613,6 +613,7 @@ import {
   KEEP_BOTH_LINE,
   LTV_NOT_A_DECISION,
   PHONE_LINE,
+  READINESS_NAMED_LOSS,
   TIMELINE_LINE,
   conventionalGuidelinePattern,
   flags as storeFlags,
@@ -3021,6 +3022,14 @@ function restoredAsk(answer: string, draft: FoxIntakeDraft) {
     return {
       text: ask.text,
       followUp: ask.followUp,
+      facts: ask.facts,
+      actions: ask.actions,
+    };
+  }
+  if (answer === READINESS_NAMED_LOSS) {
+    return {
+      text: answer,
+      followUp: ask.text,
       facts: ask.facts,
       actions: ask.actions,
     };
