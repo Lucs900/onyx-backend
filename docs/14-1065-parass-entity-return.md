@@ -16,6 +16,7 @@ Pre-drop ask stays **business return** only. After classify, name **1065**.
 | --- | --- |
 | Form | **1065 / partnership return** — not a 1120-S, not a 1040, not a paystub |
 | Name of partnership | **Parass Foods LLC** |
+| Date business started | **05-25-2007** — **19 years** as of 2026-09-16. After Use this writes Employment, years confirm writes 19. Do not invent 2. |
 | SSN on the K-1s | may be on the page — **do not write SSN** |
 | 1065 page 1 **line 23** ordinary | **loss $172,428** — **company ordinary** |
 | 1065 page 1 **line 9** | Salaries and wages **$365,050** — employee wages, **not** partner income |

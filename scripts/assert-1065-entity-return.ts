@@ -100,6 +100,7 @@ const FOUNDER_1065_FACE = [
   "U.S. Return of Partnership Income",
   "2024",
   "Name of partnership Parass Foods LLC",
+  "E Date business started 05-25-2007",
   "Employer identification number 88-1234567",
   "1c Gross receipts or sales                         980,000",
   "8 Total income (loss)                              619,857",
@@ -175,15 +176,6 @@ function seSketch(): FoxIntakeDraft {
     yearsInBusinessAsked: true,
     monthlyDebtsAsked: true,
     skippedClasses: ["government_id"],
-    facts: {
-      years_in_business: {
-        field: "years_in_business",
-        value: "5",
-        source: "client",
-        confirmed: true,
-        confirmedAt: "2026-09-15T00:00:00.000Z",
-      },
-    },
   };
 }
 
@@ -255,6 +247,7 @@ async function main() {
   assert.equal(loud?.extractClass, "tax_return");
   assert.equal(loud?.fields.return_kind, "1065");
   assert.equal(loud?.fields.entity_name, "Parass Foods LLC");
+  assert.equal(loud?.fields.business_started, "2007-05-25");
   assert.equal(loud?.fields.entity_ordinary_income, "-172428");
   assert.notEqual(loud?.fields.entity_ordinary_income, "365050");
   assert.notEqual(loud?.fields.entity_ordinary_income, "619857");
@@ -311,6 +304,7 @@ async function main() {
   assert.equal(extracted.extractClass, "tax_return");
   assert.equal(extracted.fields.return_kind, "1065");
   assert.equal(extracted.fields.entity_name, "Parass Foods LLC");
+  assert.equal(extracted.fields.business_started, "2007-05-25");
   assert.equal(extracted.fields.entity_ordinary_income, "-172428");
   assert.equal(extracted.fields.k1_ordinary_income, "-155185");
   assert.equal(extracted.fields.ownership_percent, "90");
@@ -490,6 +484,18 @@ async function main() {
   assert.ok((sunita.employmentHistory ?? []).some((row) => /Parass Foods LLC/i.test(row.label ?? "")));
   assert.ok(!stillUsefulLabels(sunita).includes("Other K-1"), "Sunita only drops Other K-1");
   assert.doesNotMatch(nextFoxAsk(sunita).text, /Who is on this loan|other K-1 — is that person/i);
+  assert.ok(!sunita.facts?.years_in_business, "do not invent years before the confirm");
+  const yearsAsk = nextFoxAsk(sunita);
+  assert.match(yearsAsk.text, /The return shows Parass Foods LLC started May 25, 2007 — 19 years/);
+  assert.doesNotMatch(yearsAsk.text, /\b2 years\b|invent/);
+  assert.deepEqual(
+    (yearsAsk.actions ?? []).map((item) => item.label),
+    ["Use this", "Change", "Skip"],
+  );
+  const usedYears = resolveProposal(sunita, "accept");
+  assert.equal(usedYears.facts?.years_in_business?.value, "19", "Use 19 writes 19");
+  assert.notEqual(usedYears.facts?.years_in_business?.value, "2", "do not invent 2");
+  assert.doesNotMatch(nextFoxAsk(usedYears).text, /The return shows .* started May 25, 2007/);
   assert.ok(
     previewFacts(sunita).some(
       (fact) =>
@@ -502,7 +508,7 @@ async function main() {
   assert.ok(asksWillIQualify("will I qualify"));
   assert.ok(asksWillIQualify("does this work"));
   assert.ok(asksWillIQualify("can I still proceed"));
-  const live = founderLiveFile(sunita);
+  const live = founderLiveFile(usedYears);
   assert.equal(live.facts?.qualifying_income?.value, "-12932", "QI held on the live file");
   assert.ok((live.employmentHistory ?? []).some((row) => /Parass Foods LLC/i.test(row.label ?? "")));
   assert.equal(workspacePrompt(live), "documents", "live next step is the purchase-contract invite");
@@ -603,7 +609,7 @@ async function main() {
   const leftoverThread: FoxMessage[] = sealStoredFoxThread([
     { id: "card", role: "fox", text: ask.text, actions: ask.actions },
     { id: "used", role: "client", text: "Sunita Singh" },
-    { id: "next", role: "fox", text: nextFoxAsk(sunita).text, actions: nextFoxAsk(sunita).actions },
+    { id: "next", role: "fox", text: nextFoxAsk(usedYears).text, actions: nextFoxAsk(usedYears).actions },
   ]);
   assert.equal(leftoverUseThisOnOlderTurns(leftoverThread, sunita), 0);
 
@@ -626,9 +632,13 @@ async function main() {
   const afterSkipUsed = resolveProposal(selectK1WhoOnLoan(afterSkipDrop.draft, "primary"), "accept");
   assert.equal(afterSkipUsed.facts?.qualifying_income?.value, "-12932");
   assert.ok((afterSkipUsed.employmentHistory ?? []).some((row) => /Parass Foods LLC/i.test(row.label ?? "")));
+  assert.match(nextFoxAsk(afterSkipUsed).text, /started May 25, 2007 — 19 years/);
   assert.doesNotMatch(nextFoxAsk(afterSkipUsed).text, /Form 1040|1120-S/i);
-  assert.notEqual(nextDocInvite(afterSkipUsed), "tax_return");
-  assert.ok(!stillUsefulLabels(afterSkipUsed).includes("K-1 distributions"));
+  const afterSkipYears = resolveProposal(afterSkipUsed, "accept");
+  assert.equal(afterSkipYears.facts?.years_in_business?.value, "19");
+  assert.doesNotMatch(nextFoxAsk(afterSkipYears).text, /Form 1040|1120-S/i);
+  assert.notEqual(nextDocInvite(afterSkipYears), "tax_return");
+  assert.ok(!stillUsefulLabels(afterSkipYears).includes("K-1 distributions"));
 
   console.log("assert-1065-entity-return: Parass named-loss qualify · Looks right finish");
 }

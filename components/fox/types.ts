@@ -467,6 +467,14 @@ export type FoxIntakeDraft = {
   lastDocSpeakKey?: string;
   yearsInBusinessAsked?: boolean;
   awaitingYearsInBusiness?: boolean;
+  /** Once after entity-return Use this. Never reprint years-from-page. */
+  entityYearsAsked?: boolean;
+  pendingBusinessStart?: {
+    date: string;
+    years: number;
+    label: string;
+    entity?: string;
+  } | null;
   awaitingMonthlyDebts?: boolean;
   awaitingPayFrequency?: boolean;
   awaitingBothMonthlyReason?: boolean;
@@ -727,6 +735,7 @@ export type Capture =
   | { field: "raiseWhen"; value: string }
   | { field: "yearsInBusiness"; value: string }
   | { field: "skip-years-in-business" }
+  | { field: "change-entity-years" }
   | { field: "qualifyingIncome"; value: string }
   | { field: "propose-funds"; value: string }
   | { field: "skip-docs" }

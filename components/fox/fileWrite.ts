@@ -155,6 +155,13 @@ import {
   proposeExtractedOtherReo,
 } from "./otherReo";
 import { addressHistoryRemainder, writeCurrentEmploymentHistory } from "./fileHistory";
+import {
+  entityYearsConflictActions,
+  entityYearsConflictCopy,
+  holdPendingBusinessStart,
+  isEntityYearsConflict,
+  writeEntityYears,
+} from "./yearsFromEntity";
 
 export { REJECT_LINE, LIMIT_LINE, LIMIT_LINE_REPEAT };
 
@@ -257,6 +264,7 @@ export const EXTRACT_SCHEMA_KEYS: Record<ExtractClass, readonly string[]> = {
     "entity_taxable_income",
     "entity_name",
     "officer_compensation",
+    "business_started",
     "business_name",
     "cover_schedules",
     "cover_k1_names",
@@ -455,6 +463,9 @@ const DATE_KEYS = new Set([
   "close_date",
   "tax_year",
   "hire_date",
+  "business_started",
+  "date_business_started",
+  "date_incorporated",
   "inspection_contingency",
   "loan_contingency",
   "appraisal_contingency",
@@ -2006,7 +2017,8 @@ export function applyExtractedFields(
         field === "entity_name" ||
         field === "officer_compensation" ||
         field === "owner_share_monthly" ||
-        field === "company_ordinary"
+        field === "company_ordinary" ||
+        field === "business_started"
       ) {
         continue;
       }
@@ -2475,7 +2487,8 @@ export function applyExtractedFields(
       key === "entity_name" ||
       key === "officer_compensation" ||
       key === "owner_share_monthly" ||
-      key === "company_ordinary"
+      key === "company_ordinary" ||
+      key === "business_started"
     ) {
       continue;
     }
@@ -2506,6 +2519,7 @@ export function applyExtractedFields(
   }
   if (extractClass === "tax_return") {
     next = attachIncomeLedgerFromExtract(next, fields);
+    next = holdPendingBusinessStart(next, fields);
   }
   if (
     holdFederalReturn &&
@@ -2671,6 +2685,15 @@ export function resolveFactConflict(
       ...draft,
       facts,
       pendingConflict: null,
+      pendingBusinessStart: isEntityYearsConflict(conflict) ? null : draft.pendingBusinessStart,
+      entityYearsAsked: isEntityYearsConflict(conflict) ? true : draft.entityYearsAsked,
+      lastSpokenConflictKey: conflictKey(conflict),
+      unresolvedConflict: false,
+    };
+  }
+  if (isEntityYearsConflict(conflict)) {
+    return {
+      ...writeEntityYears(draft, conflict.documentValue),
       lastSpokenConflictKey: conflictKey(conflict),
       unresolvedConflict: false,
     };
@@ -4109,6 +4132,9 @@ export function conflictAskCopy(conflict: FactConflict) {
   if (isPropertyAddressField(conflict.field)) {
     return `The contract shows ${conflict.documentValue}. The file has ${conflict.fileValue} typed. ${SUGGESTED_PROPERTY_NOTE}.`;
   }
+  if (isEntityYearsConflict(conflict)) {
+    return entityYearsConflictCopy(conflict);
+  }
   if (conflict.field === STATED_TIME_ON_JOB_FIELD) {
     return `The paystub hire date is about ${displayFactValue(conflict.field, conflict.documentValue)}. The file has ${displayFactValue(conflict.field, conflict.fileValue)} typed. ${SUGGESTED_TIME_ON_JOB_NOTE}.`;
   }
@@ -4974,6 +5000,9 @@ export function conflictActions(conflict?: FactConflict | null): FoxAction[] {
   }
   if (conflict && isPropertyAddressField(conflict.field)) {
     return propertyAddressConflictActions();
+  }
+  if (isEntityYearsConflict(conflict)) {
+    return entityYearsConflictActions(conflict);
   }
   if (conflict?.field === STATED_TIME_ON_JOB_FIELD) {
     return timeOnJobConflictActions();

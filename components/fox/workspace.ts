@@ -216,6 +216,14 @@ import {
   isLooksRightAskText,
   looksRightAskActions,
 } from "./completeness";
+import {
+  changeEntityYears,
+  entityYearsConfirmActions,
+  entityYearsConfirmCopy,
+  isEntityYearsConflict,
+  isEntityYearsProposal,
+  writeEntityYears,
+} from "./yearsFromEntity";
 import { conventionalFileFacts } from "./conventionalFile";
 import {
   calculatorStructureFacts,
@@ -2285,6 +2293,15 @@ function liveProposalAsk(
       text: huntRentalAskCopy(addresses),
       followUp: proposal.note,
       actions: huntRentalActions(addresses.length),
+    };
+  }
+  if (isEntityYearsProposal(proposal)) {
+    const pending = draft.pendingBusinessStart;
+    return {
+      text: pending
+        ? entityYearsConfirmCopy(pending)
+        : proposalAskCopy(proposal),
+      actions: entityYearsConfirmActions(),
     };
   }
   if (isHuntResidenceProposal(proposal)) {
@@ -4999,6 +5016,7 @@ export function promptForProposalField(field?: string | null): FoxPrompt | undef
   if (field === STATED_AVAILABLE_ASSETS_FIELD) return "assets";
   if (field === PROPERTY_TYPE_FIELD) return "property-type";
   if (field === STATED_TIME_ON_JOB_FIELD) return "time-on-job";
+  if (field === YEARS_IN_BUSINESS_FIELD) return "years-in-business";
   if (field === STATED_CURRENT_HOUSING_FIELD) return "current-housing";
   if (field === STATED_DECLARATION_FIELD) return "declarations";
   if (field === "declarationTiming") return "declaration-timing";
@@ -5021,6 +5039,9 @@ export function changePendingProposal(draft: FoxIntakeDraft): FoxIntakeDraft {
       correcting: null,
       correctingLine: null,
     };
+  }
+  if (isEntityYearsProposal(draft.pendingProposal) || isEntityYearsConflict(draft.pendingConflict)) {
+    return changeEntityYears(draft);
   }
   if (isWageExtractProposal(draft.pendingProposal)) return changeWageExtract(draft);
   if (isStubExtractProposal(draft.pendingProposal) || isStubJobProposal(draft.pendingProposal)) {
@@ -5087,6 +5108,7 @@ export function editPromptFromCapture(capture?: Capture): FoxPrompt | undefined 
   if (
     capture.field === "accept-proposal" ||
     capture.field === "change-proposal" ||
+    capture.field === "change-entity-years" ||
     capture.field === "decline-proposal" ||
     capture.field === "accept-live-coupon" ||
     capture.field === "keep-live-coupon"
@@ -6152,6 +6174,7 @@ function draftAfterCaptureBody(draft: FoxIntakeDraft, capture: Capture): FoxInta
     return resolveProposal(next, "accept");
   }
   if (capture.field === "change-proposal") return changePendingProposal(next);
+  if (capture.field === "change-entity-years") return changeEntityYears(next);
   if (capture.field === "decline-proposal") return resolveProposal(next, "decline");
   if (capture.field === "yearsInBusiness") return writeYearsInBusiness(next, capture.value);
   if (capture.field === "skip-years-in-business") return skipYearsInBusiness(next);
@@ -6720,6 +6743,32 @@ export function workspaceReply(
   }
 
   if (draft.pendingConflict) {
+    if (isEntityYearsConflict(draft.pendingConflict)) {
+      if (/^change\b/.test(lower)) {
+        const nextDraft = changeEntityYears(draft);
+        return {
+          ...nextFoxAsk(nextDraft),
+          capture: { field: "change-entity-years" },
+        };
+      }
+      const years = parseYearsInBusiness(q);
+      if (years && years === draft.pendingConflict.documentValue) {
+        const nextDraft = writeEntityYears(draft, years);
+        return {
+          ...nextFoxAsk(nextDraft),
+          capture: { field: "use-document-fact" },
+        };
+      }
+      if (
+        (years && years === draft.pendingConflict.fileValue) ||
+        /(keep (the )?file|keep \d+|keep mine|keep the typed)/i.test(lower)
+      ) {
+        return {
+          text: "Kept the file value.",
+          capture: { field: "keep-file-fact" },
+        };
+      }
+    }
     if (/(keep both|both numbers|keep both numbers)/i.test(lower)) {
       return {
         text: KEEP_BOTH_LINE,
@@ -7059,6 +7108,16 @@ export function workspaceReply(
         ...nextFoxAsk(nextDraft),
         capture: { field: "change-proposal" },
       };
+    }
+    if (isEntityYearsProposal(draft.pendingProposal)) {
+      const years = parseYearsInBusiness(q);
+      if (years) {
+        const nextDraft = writeEntityYears(draft, years);
+        return {
+          ...nextFoxAsk(nextDraft),
+          capture: { field: "yearsInBusiness", value: years },
+        };
+      }
     }
     const otherPropertyRentalPending = typedOtherPropertyRentalReply(q, draft);
     if (otherPropertyRentalPending) return otherPropertyRentalPending;

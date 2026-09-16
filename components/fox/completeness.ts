@@ -139,6 +139,12 @@ import {
   writeStatedTimeOnJob,
 } from "./timeOnJob";
 import {
+  entityYearsConfirmCopy,
+  flushPendingBusinessStart,
+  isEntityYearsProposal,
+  writeEntityYears,
+} from "./yearsFromEntity";
+import {
   STATED_CURRENT_HOUSING_FIELD,
   SUGGESTED_HOUSING_NOTE,
   currentHousingConfirmCopy,
@@ -1054,6 +1060,14 @@ export function proposalAskCopy(proposal: FactProposal) {
   if (proposal.field === PROPERTY_TYPE_FIELD && isPropertyTypeValue(proposal.value)) {
     return propertyTypeConfirmCopy(proposal.value);
   }
+  if (isEntityYearsProposal(proposal)) {
+    return entityYearsConfirmCopy({
+      date: proposal.extras?.find((item) => item.field === "business_started")?.value ?? "",
+      years: Number(proposal.value) || 0,
+      label: proposal.hireLabel || "",
+      entity: proposal.extras?.find((item) => item.field === "entity_name")?.value,
+    });
+  }
   if (proposal.field === STATED_TIME_ON_JOB_FIELD) {
     const months = Number(proposal.value) || 0;
     return proposal.hireLabel
@@ -1647,6 +1661,9 @@ export function resolveProposal(
     if (proposal.field === STATED_TIME_ON_JOB_FIELD) {
       return skipTimeOnJob({ ...draft, pendingProposal: null });
     }
+    if (isEntityYearsProposal(proposal) || proposal.field === YEARS_IN_BUSINESS_FIELD) {
+      return skipYearsInBusiness({ ...draft, pendingProposal: null, pendingBusinessStart: null, entityYearsAsked: true });
+    }
     if (proposal.field === STATED_CURRENT_HOUSING_FIELD) {
       return skipCurrentHousing({ ...draft, pendingProposal: null, pendingCurrentHousing: null });
     }
@@ -1728,6 +1745,9 @@ export function resolveProposal(
       const flushed = flushPendingOtherReo(flushPendingCurrentHousing(flushPendingHireDate(cleared)));
       return flushed;
     }
+  }
+  if (isEntityYearsProposal(proposal) || proposal.field === YEARS_IN_BUSINESS_FIELD) {
+    return writeEntityYears({ ...draft, pendingProposal: null }, proposal.value);
   }
   let next = writeConfirmedFact(draft, proposal.field, proposal.value, source);
   if (proposal.companion) {
@@ -1827,9 +1847,13 @@ export function resolveProposal(
     winner === "accept" && proposal.field === QUALIFYING_INCOME_FIELD
       ? sealK1WhoWrite(afterLedger)
       : afterLedger;
+  const afterEntityYears =
+    winner === "accept" && proposal.field === QUALIFYING_INCOME_FIELD
+      ? flushPendingBusinessStart(afterWho)
+      : afterWho;
   return {
-    ...afterWho,
-    looksRightHold: winner === "accept" ? false : afterWho.looksRightHold,
+    ...afterEntityYears,
+    looksRightHold: winner === "accept" ? false : afterEntityYears.looksRightHold,
   };
 }
 
@@ -1927,10 +1951,16 @@ export function withYearsInBusinessAsk(draft: FoxIntakeDraft): FoxIntakeDraft {
 
 export function writeYearsInBusiness(draft: FoxIntakeDraft, years: string): FoxIntakeDraft {
   const now = new Date().toISOString();
+  const entityOpen =
+    isEntityYearsProposal(draft.pendingProposal) || draft.pendingConflict?.field === YEARS_IN_BUSINESS_FIELD;
   return {
     ...draft,
     awaitingYearsInBusiness: false,
     yearsInBusinessAsked: true,
+    entityYearsAsked: entityOpen ? true : draft.entityYearsAsked,
+    pendingBusinessStart: entityOpen ? null : draft.pendingBusinessStart,
+    pendingProposal: isEntityYearsProposal(draft.pendingProposal) ? null : draft.pendingProposal,
+    pendingConflict: draft.pendingConflict?.field === YEARS_IN_BUSINESS_FIELD ? null : draft.pendingConflict,
     facts: {
       ...(draft.facts ?? {}),
       [YEARS_IN_BUSINESS_FIELD]: {
@@ -1945,7 +1975,17 @@ export function writeYearsInBusiness(draft: FoxIntakeDraft, years: string): FoxI
 }
 
 export function skipYearsInBusiness(draft: FoxIntakeDraft): FoxIntakeDraft {
-  return { ...draft, awaitingYearsInBusiness: false, yearsInBusinessAsked: true };
+  const entityOpen =
+    isEntityYearsProposal(draft.pendingProposal) || draft.pendingConflict?.field === YEARS_IN_BUSINESS_FIELD;
+  return {
+    ...draft,
+    awaitingYearsInBusiness: false,
+    yearsInBusinessAsked: true,
+    entityYearsAsked: entityOpen ? true : draft.entityYearsAsked,
+    pendingBusinessStart: entityOpen ? null : draft.pendingBusinessStart,
+    pendingProposal: isEntityYearsProposal(draft.pendingProposal) ? null : draft.pendingProposal,
+    pendingConflict: draft.pendingConflict?.field === YEARS_IN_BUSINESS_FIELD ? null : draft.pendingConflict,
+  };
 }
 
 /** Return drop may pause years. After Use this, come back once when the business name is known. */

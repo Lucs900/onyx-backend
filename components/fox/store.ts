@@ -99,6 +99,7 @@ import {
   withMatrixAfterAmount,
   workspacePrompt,
 } from "./workspace";
+import { changeEntityYears } from "./yearsFromEntity";
 import {
   START_PATH_KEY,
   consumeHomepageFreshStart,
@@ -445,6 +446,8 @@ export function emptyDraft(): FoxIntakeDraft {
     secondBankStatementSkipped: false,
     yearsInBusinessAsked: false,
     awaitingYearsInBusiness: false,
+    entityYearsAsked: false,
+    pendingBusinessStart: null,
     awaitingMonthlyDebts: false,
     emailSkipped: false,
     wageDocsAsked: false,
@@ -783,6 +786,8 @@ function normalize(value: unknown): FoxIntakeDraft {
     secondBankStatementSkipped: Boolean(raw.secondBankStatementSkipped),
     yearsInBusinessAsked: Boolean(raw.yearsInBusinessAsked),
     awaitingYearsInBusiness: Boolean(raw.awaitingYearsInBusiness),
+    entityYearsAsked: Boolean(raw.entityYearsAsked),
+    pendingBusinessStart: normalizePendingBusinessStart(raw.pendingBusinessStart),
     awaitingMonthlyDebts: Boolean(raw.awaitingMonthlyDebts),
     wageDocsAsked: Boolean(raw.wageDocsAsked),
     wageBox5Asked: Boolean(raw.wageBox5Asked),
@@ -985,6 +990,18 @@ function normalizePendingWageExtract(
     return undefined;
   }
   return next;
+}
+
+function normalizePendingBusinessStart(
+  value: FoxIntakeDraft["pendingBusinessStart"],
+): FoxIntakeDraft["pendingBusinessStart"] {
+  if (!value || typeof value !== "object") return null;
+  const date = typeof value.date === "string" ? value.date.trim() : "";
+  const label = typeof value.label === "string" ? value.label.trim() : "";
+  const years = Number(value.years);
+  const entity = typeof value.entity === "string" ? value.entity.trim() : "";
+  if (!date || !label || !Number.isFinite(years) || years <= 0) return null;
+  return { date, years: Math.round(years), label, ...(entity ? { entity } : {}) };
 }
 
 function normalizePendingHireDate(
@@ -2135,6 +2152,9 @@ function applyCaptureBody(capture: Capture) {
   }
   if (capture.field === "change-proposal") {
     return commit(changePendingProposal(current));
+  }
+  if (capture.field === "change-entity-years") {
+    return commit(changeEntityYears(current));
   }
   if (capture.field === "skip-current-housing") {
     return commit(skipCurrentHousing(current));

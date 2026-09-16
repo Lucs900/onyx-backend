@@ -970,6 +970,29 @@ function applyEntityReturnFields(
   const blob = stacked.join(" ");
   const named = entityNameFromPrintedText(blob);
   if (named) put("entity_name", named);
+  const started = businessStartFromPrintedText(sourceBlob) || businessStartFromPrintedText(blob);
+  if (started) put("business_started", started);
+}
+
+function businessStartFromPrintedText(text: string): string {
+  const blob = String(text ?? "").replace(/\u00a0/g, " ");
+  const match = blob.match(
+    /(?:date\s+(?:business\s+)?started|date\s+incorporated|date\s+of\s+incorporation|business\s+started)\s*:?\s*([A-Za-z]{3,9}\s+\d{1,2}(?:st|nd|rd|th)?,?\s+\d{4}|\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}|\d{4}-\d{2}-\d{2})/i,
+  );
+  const raw = String(match?.[1] ?? "").trim();
+  if (!raw) return "";
+  const iso = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (iso) return `${iso[1]}-${iso[2]}-${iso[3]}`;
+  const numeric = raw.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
+  if (numeric) {
+    let year = Number(numeric[3]);
+    if (year < 100) year += year >= 70 ? 1900 : 2000;
+    const month = Number(numeric[1]);
+    const day = Number(numeric[2]);
+    if (year < 1900 || year > 2026 || month < 1 || month > 12 || day < 1 || day > 31) return "";
+    return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+  }
+  return raw;
 }
 
 function entityNameFromPrintedText(text: string): string {

@@ -401,21 +401,23 @@ function flattenScheduleEPart1(parsed: Record<string, unknown>): Record<string, 
 }
 
 const FORM_1120S_PROMPT = `Read this Form 1120-S page image only. JSON object with these keys:
-tax_year, entity_name, entity_ordinary_income, officer_compensation, ownership_percent, return_kind.
+tax_year, entity_name, entity_ordinary_income, officer_compensation, ownership_percent, return_kind, business_started.
 return_kind is 1120s.
 entity_name is the Name of corporation as printed (for example HO & SOY INC). Never a disclaimer, PIN, 8879, footer, or “express or implied”.
 entity_ordinary_income is Form 1120-S page 1 line 22 Ordinary business income (loss), or Schedule K line 1. Never line 21 Other deductions. Never line 6 Total income. Never officer compensation. Never line 14 Depreciation. Never an 8879-CORP total.
 officer_compensation is line 7 Compensation of officers. Named as wages. Never add it into ordinary.
 ownership_percent only when a shareholder percentage is clearly printed. Empty otherwise.
+business_started is Date incorporated or Date business started as printed (for example 05-25-2007). Empty if not printed. Never invent.
 Do not return EIN, SSN, depreciation, T&E, or other 1084 add-backs from a real 1120-S face. Household ordinary is line 22 / Schedule K line 1 / 12.
 Never invent. Empty string if a dollar or name is not clearly printed.`;
 
 const FORM_1065_PROMPT = `Read this Form 1065 page image only. JSON object with these keys:
-tax_year, entity_name, entity_ordinary_income, ownership_percent, return_kind.
+tax_year, entity_name, entity_ordinary_income, ownership_percent, return_kind, business_started.
 return_kind is 1065.
 entity_name is the Name of partnership as printed (for example Parass Foods LLC). Never a disclaimer, PIN, 8879, footer, or “express or implied”.
 entity_ordinary_income is Form 1065 page 1 line 23 Ordinary business income (loss), or Schedule K line 1. Keep the printed sign. A loss in parentheses is negative. Never line 9 Salaries and wages. Never line 21 Other deductions. Never line 22 Total deductions. Never guaranteed payments unless Box 4 / a guaranteed-payment line is clearly printed. Never employee wages as partner income.
 ownership_percent only when a partner percentage is clearly printed on this page. Empty otherwise.
+business_started is Date business started as printed (for example 05-25-2007). Empty if not printed. Never invent.
 Do not return EIN, SSN, line 9 wages, or invented K-1 dollars. Company ordinary is not one partner’s qualifying income.
 Never invent. Empty string if a dollar or name is not clearly printed.`;
 
