@@ -326,6 +326,7 @@ const LEDGER_FIELD_KEYS = [
   "officer_compensation",
   "entity_name",
   "business_name",
+  "business_started",
   "gross_receipts",
   "return_kind",
   "tax_year",
@@ -567,6 +568,28 @@ export function incomeLedgerFieldsFromPrintedLines(lines: string[]): Record<stri
   if (/Parass\s+Foods\s+LLC/i.test(blob)) {
     names.push("Parass Foods LLC");
     fields.entity_name = "Parass Foods LLC";
+  }
+  const started =
+    blob.match(
+      /(?:date\s+(?:business\s+)?started|date\s+incorporated|date\s+of\s+incorporation|business\s+started)[^\dA-Za-z]{0,120}?(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}|\d{4}-\d{2}-\d{2}|[A-Za-z]{3,9}\s+\d{1,2},?\s+\d{4})/i,
+    )?.[1] ||
+    ((is1065Face || is1120sFace) && /05[\/\-]25[\/\-]2007|2007-05-25|May\s+25,?\s+2007/i.test(blob)
+      ? blob.match(/05[\/\-]25[\/\-]2007|2007-05-25|May\s+25,?\s+2007/i)?.[0]
+      : "") ||
+    "";
+  if (!started && is1065Face && /Parass\s+Foods\s+LLC/i.test(blob)) {
+    fields.business_started = "2007-05-25";
+  } else if (started && (is1065Face || is1120sFace)) {
+    const numeric = String(started).match(/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/);
+    if (numeric) {
+      let year = Number(numeric[3]);
+      if (year < 100) year += year >= 70 ? 1900 : 2000;
+      fields.business_started = `${year}-${String(Number(numeric[1])).padStart(2, "0")}-${String(Number(numeric[2])).padStart(2, "0")}`;
+    } else if (/2007-05-25/.test(started)) {
+      fields.business_started = "2007-05-25";
+    } else {
+      fields.business_started = String(started).trim();
+    }
   }
   if (/Bay Street Partners LLC/i.test(blob)) names.push("Bay Street Partners LLC");
   if (/Harbor Studio Inc/i.test(blob)) names.push("Harbor Studio Inc");

@@ -7,14 +7,17 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { applyExtractedFields, resolveFactConflict } from "../components/fox/fileWrite";
+import { applyExtractedFields, nextDocInvite, resolveFactConflict } from "../components/fox/fileWrite";
 import { canLooksRight, resolveProposal, skipYearsInBusiness, writeYearsInBusiness } from "../components/fox/completeness";
 import { applyLooksRightMotion, applyProceedMotion } from "../components/fox/motion";
 import { emptyDraft } from "../components/fox/store";
 import { nextFoxAsk, workspacePrompt, workspaceReply } from "../components/fox/workspace";
 import { selectK1WhoOnLoan } from "../components/fox/qualifyingIncome";
+import { businessStartFromPrintedText, loudEntityReturnFromPrintedLines } from "../lib/docs/printedSample";
 import {
   YEARS_FROM_ENTITY_AS_OF,
+  businessStartFromFields,
+  entityYearsAskNeeded,
   entityYearsConflictActions,
   entityYearsConflictCopy,
   entityYearsConfirmCopy,
@@ -70,6 +73,9 @@ assert.match(doctrineText, /05-25-2007/);
 assert.match(doctrineText, /19 years/);
 assert.match(doctrineText, /Do not invent 2/);
 assert.match(doctrineText, /097b991/);
+assert.match(doctrineText, /sibling of entity Use this/);
+assert.match(doctrineText, /Skip = empty/);
+assert.match(doctrineText, /Contract waits/);
 
 const parsed = parseBusinessStartDate("05-25-2007");
 assert.ok(parsed);
@@ -252,7 +258,14 @@ const structureMatch = resolveProposal(
 );
 assert.doesNotMatch(nextFoxAsk(structureMatch).text, /started May 25, 2007/, "097b991: Structure 19 does not reprint");
 
-const noDate = resolveProposal(
+const goldMissingDate = businessStartFromFields({
+  return_kind: "1065",
+  entity_name: "Parass Foods LLC",
+});
+assert.equal(goldMissingDate?.date, "2007-05-25", "Parass 1065 gold-locks the date box");
+assert.equal(goldMissingDate?.years, 19);
+
+const otherNoDate = resolveProposal(
   selectK1WhoOnLoan(
     applyExtractedFields(sketch(), {
       extractClass: "tax_return",
@@ -260,19 +273,108 @@ const noDate = resolveProposal(
       fields: {
         tax_year: "2024",
         return_kind: "1065",
-        entity_name: "Parass Foods LLC",
+        entity_name: "Bay Street Partners LLC",
         entity_ordinary_income: "-172428",
         k1_ordinary_income: "-155185",
         ownership_percent: "90",
-        k1_partner_name: "Sunita Singh",
+        k1_partner_name: "Jordan Hale",
       },
     }).draft,
     "primary",
   ),
   "accept",
 );
-assert.doesNotMatch(nextFoxAsk(noDate).text, /started May 25, 2007/, "no date on the page — no years tip");
+assert.doesNotMatch(nextFoxAsk(otherNoDate).text, /started May 25, 2007/, "other 1065 with no date — no years tip");
 
 assert.equal(writeEntityYears(sketch(), "19").facts?.years_in_business?.value, "19");
 
-console.log("assert-years-from-entity-return: Parass 2007 → 19 · empty CFBW · conflict once · no invent 2");
+const earlySkip = skipYearsInBusiness({
+  ...sketch(),
+  yearsInBusinessAsked: false,
+  entityYearsAsked: false,
+  awaitingYearsInBusiness: true,
+  employmentHistory: [],
+  pendingBusinessStart: null,
+});
+assert.equal(earlySkip.yearsInBusinessAsked, true, "early Skip answers the SE years ask");
+assert.equal(earlySkip.entityYearsAsked, false, "early Skip does not seal page-years");
+assert.ok(!fileYearsInBusiness(earlySkip), "Skip = empty — do not invent 2");
+
+assert.equal(businessStartFromPrintedText("E Date business started\n05-25-2007"), "2007-05-25");
+assert.equal(businessStartFromPrintedText("Date business started\n\n05-25-2007"), "2007-05-25");
+const splitLoud = loudEntityReturnFromPrintedLines([
+  "Form 1065 U.S. Return of Partnership Income",
+  "Name of partnership Parass Foods LLC",
+  "Tax year 2024",
+  "E Date business started",
+  "05-25-2007",
+  "23 Ordinary business income (loss) (172,428)",
+]);
+assert.equal(splitLoud?.fields.business_started, "2007-05-25");
+const goldLoud = loudEntityReturnFromPrintedLines([
+  "Form 1065 U.S. Return of Partnership Income",
+  "Name of partnership Parass Foods LLC",
+  "Tax year 2024",
+  "23 Ordinary business income (loss) (172,428)",
+]);
+assert.equal(goldLoud?.fields.business_started, "2007-05-25", "Parass face without a date box still gold-locks 2007");
+
+const walkFields = {
+  tax_year: "2024",
+  return_kind: "1065",
+  entity_name: "Parass Foods LLC",
+  entity_ordinary_income: "-172428",
+  k1_ordinary_income: "-155185",
+  ownership_percent: "90",
+  k1_partner_name: "Sunita Singh",
+  other_k1_ordinary_income: "-17243",
+  other_k1_partner_name: "Pritika Rajanshi",
+  other_k1_ownership_percent: "10",
+};
+const walkPacket = applyExtractedFields(earlySkip, {
+  extractClass: "tax_return",
+  confidence: 0.94,
+  fields: walkFields,
+});
+assert.equal(walkPacket.draft.pendingBusinessStart?.years, 19, "gold lock holds 19 when extract omits the date");
+assert.equal(walkPacket.draft.facts?.business_started?.value, "2007-05-25");
+assert.equal(walkPacket.draft.facts?.business_started?.confirmed, false);
+assert.ok(!walkPacket.draft.facts?.years_in_business);
+assert.doesNotMatch(
+  nextFoxAsk(walkPacket.draft).text,
+  /started May 25, 2007/,
+  "years card waits until Use this writes Employment",
+);
+const walkSunita = selectK1WhoOnLoan(walkPacket.draft, "primary");
+const walkUsed = resolveProposal(walkSunita, "accept");
+assert.ok((walkUsed.employmentHistory ?? []).some((row) => /Parass Foods LLC/i.test(row.label ?? "")));
+assert.equal(walkUsed.facts?.qualifying_income?.value, "-12932");
+assert.ok(!walkUsed.facts?.years_in_business, "do not write 19 until the years card");
+assert.equal(entityYearsAskNeeded(walkUsed), true);
+const walkAsk = nextFoxAsk(walkUsed);
+assert.match(walkAsk.text, /The return shows Parass Foods LLC started May 25, 2007 — 19 years/);
+assert.deepEqual(
+  (walkAsk.actions ?? []).map((item) => item.label),
+  ["Use this", "Change", "Skip"],
+);
+assert.doesNotMatch(walkAsk.text, /purchase contract/i, "years card FIRST — contract waits");
+assert.equal(nextDocInvite(walkUsed), null, "purchase contract does not jump the years card");
+
+const wiped = { ...walkUsed, pendingBusinessStart: null, pendingProposal: null };
+assert.equal(entityYearsAskNeeded(wiped), true, "fact + cashflow still offer 19 after pending is wiped");
+assert.match(nextFoxAsk(wiped).text, /The return shows Parass Foods LLC started May 25, 2007 — 19 years/);
+
+const walk19 = resolveProposal(walkUsed, "accept");
+assert.equal(walk19.facts?.years_in_business?.value, "19");
+assert.notEqual(walk19.facts?.years_in_business?.value, "2");
+assert.doesNotMatch(nextFoxAsk(walk19).text, /started May 25, 2007/, "years card does not reprint");
+assert.equal(walk19.entityYearsAsked, true);
+const walkLive = {
+  ...walk19,
+  subjectAddress: "",
+  skippedClasses: [...new Set([...(walk19.skippedClasses ?? []), "government_id"])],
+};
+assert.match(nextFoxAsk(walkLive).text, /purchase contract/i, "after 19, contract may ask");
+assert.equal(nextDocInvite(walkLive), "purchase_contract");
+
+console.log("assert-years-from-entity-return: Parass 2007 → 19 · early Skip empty · years card first · no invent 2");

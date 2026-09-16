@@ -1132,7 +1132,8 @@ function assignLedgerKeepFirst(merged: Record<string, string>, incoming: Record<
         key === "other_k1_ordinary_income" ||
         key === "other_k1_ownership_percent" ||
         key === "k1_partner_name" ||
-        key === "other_k1_partner_name") &&
+        key === "other_k1_partner_name" ||
+        key === "business_started") &&
       merged[key]
     ) {
       continue;

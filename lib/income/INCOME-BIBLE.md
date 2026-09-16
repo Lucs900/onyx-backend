@@ -16,7 +16,7 @@ Not first-source-wins. Not “we already qualify on W-2.”
 - Confirmed wage QI keeps the stub method label until a new row is confirmed via Use this.
 - Still useful names only what this File printed. No fixture K-1 names.
 - Loss = named loss. Do not net a K-1 hole into W-2 QI on the sketch. A written K-1 / Schedule C / 1065 loss is not a dead file and not a denial. will I qualify is one beat: **This is a named loss on the file. Suggested, not confirmed cash flow. The file can still move. Underwriting reviews it.** Next ask restores on its own line. Do not glue the purchase contract into qualify. Looks right and Proceed stay available. Do not zero QI because it is negative.
-- Years stay separate (2023 transcript ≠ replace 2025 1040). After Use this writes Employment from a 1065 / 1120-S that has Date business started or Date incorporated on the page, years confirm writes whole years from that date — Parass 05-25-2007 is 19 as of 2026-09-16. Do not invent 2. Gold lock: `docs/16-years-from-entity-return.md`. SHA 097b991 still asks years once after SE / Skip when Structure is empty.
+- Years stay separate (2023 transcript ≠ replace 2025 1040). After Use this writes Employment from a 1065 / 1120-S, consume the page date **before** any other required-line ask. Empty Structure + page date → years card first. Contract waits. Early years Skip is empty, not a seal — empty + page date still offers 19. Parass 05-25-2007 is 19 as of 2026-09-16. Do not invent 2. Do not write 19 until Use this / Use 19 years. Gold lock: `docs/16-years-from-entity-return.md`. SHA 097b991 still asks years once after SE / Skip when Structure is empty.
 
 - Looks right and Proceed work with holes. Skip is an answer.
 

@@ -139,9 +139,12 @@ import {
   writeStatedTimeOnJob,
 } from "./timeOnJob";
 import {
+  entityYearsAskNeeded,
   entityYearsConfirmCopy,
+  entityYearsOpen,
   flushPendingBusinessStart,
   isEntityYearsProposal,
+  pageBusinessStart,
   writeEntityYears,
 } from "./yearsFromEntity";
 import {
@@ -473,6 +476,7 @@ export function shouldSpeakPendingConfirm(draft: FoxIntakeDraft) {
   }
   if (proposal.field === "company_ordinary") return true;
   if (proposal.field === OTHER_K1_BOX1_FIELD) return true;
+  if (isEntityYearsProposal(proposal)) return true;
   if (proposal.field === QUALIFYING_INCOME_FIELD) {
     if (isCoverLineProposal(proposal)) {
       const fileValue = factValue(draft, QUALIFYING_INCOME_FIELD) || factValue(draft, SE_MONTHLY_FIELD);
@@ -1610,6 +1614,13 @@ export function resolveProposal(
   }
   const proposal = draft.pendingProposal;
   if (!proposal) {
+    if (winner === "accept" && entityYearsAskNeeded(draft)) {
+      const pending = pageBusinessStart(draft);
+      if (pending) return writeEntityYears(draft, String(pending.years));
+    }
+    if (winner === "decline" && entityYearsAskNeeded(draft)) {
+      return skipYearsInBusiness({ ...draft, entityYearsAsked: true, pendingBusinessStart: null });
+    }
     if (winner === "decline" && draft.pendingAddress) return skipQuoteAddress(draft);
     return draft;
   }
@@ -1952,7 +1963,9 @@ export function withYearsInBusinessAsk(draft: FoxIntakeDraft): FoxIntakeDraft {
 export function writeYearsInBusiness(draft: FoxIntakeDraft, years: string): FoxIntakeDraft {
   const now = new Date().toISOString();
   const entityOpen =
-    isEntityYearsProposal(draft.pendingProposal) || draft.pendingConflict?.field === YEARS_IN_BUSINESS_FIELD;
+    isEntityYearsProposal(draft.pendingProposal) ||
+    draft.pendingConflict?.field === YEARS_IN_BUSINESS_FIELD ||
+    entityYearsAskNeeded(draft);
   return {
     ...draft,
     awaitingYearsInBusiness: false,
@@ -1976,7 +1989,9 @@ export function writeYearsInBusiness(draft: FoxIntakeDraft, years: string): FoxI
 
 export function skipYearsInBusiness(draft: FoxIntakeDraft): FoxIntakeDraft {
   const entityOpen =
-    isEntityYearsProposal(draft.pendingProposal) || draft.pendingConflict?.field === YEARS_IN_BUSINESS_FIELD;
+    isEntityYearsProposal(draft.pendingProposal) ||
+    draft.pendingConflict?.field === YEARS_IN_BUSINESS_FIELD ||
+    entityYearsAskNeeded(draft);
   return {
     ...draft,
     awaitingYearsInBusiness: false,

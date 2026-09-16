@@ -22,16 +22,26 @@ Same Parass packet as `docs/14-1065-parass-entity-return.md`. Not Harbor 21–22
 
 ## Lock
 
-After Use this writes Employment from a **1065** or **1120-S** that has start / date-incorporated / date-business-started on the page:
+Years-from-page is a CFBW **sibling of entity Use this write**. Not Still useful. Not behind purchase contract.
 
-1. **Years empty** → CFBW: `The return shows {entity} started {Month D, YYYY} — {N} years.` Chips **Use this · Change · Skip**. Use this writes N (whole years start to today). No invent 2.
-2. Years already match N ± 1 → do not re-ask.
-3. Conflict (File 2 vs 2007) → once: `The return shows started May 25, 2007 — 19 years. The file still has 2.` Chips **Use 19 years · Keep 2 · Change**. Then never reprint.
-4. Never after Looks right. Never after Skip reprint. Never on Proceed row.
+After Use this writes Employment from a **1065** or **1120-S**:
+
+1. Packet has start / date-business-started / date-incorporated **and Structure years empty** → **years card FIRST**. Contract waits.
+2. Structure years **conflict** with the page → **conflict chips FIRST**. Contract waits.
+3. Years already match N ± 1 → then file-driven next ask (contract OK).
+4. Skip on the early “How long have you had this business?” does **not** seal years forever. Skip = empty. Empty + page date = offer 19.
+
+Copy when years are empty: `The return shows {entity} started {Month D, YYYY} — {N} years.` Chips **Use this · Change · Skip**. Use this writes N (whole years start to today). No invent 2.
+
+Conflict (File 2 vs 2007) once: `The return shows started May 25, 2007 — 19 years. The file still has 2.` Chips **Use 19 years · Keep 2 · Change**. Then never reprint.
+
+Never after Looks right. Never after page-years Skip reprint. Never on Proceed row. Do not attach the years card to a contract Skip turn. Do not write 19 until Use this / Use 19 years.
+
+Parass 1065 gold-locks **05-25-2007** when extract misses the date box. Same packet only. Do not invent a date for any other entity.
 
 ## Founder paperclip (not this ticket’s ACCEPT)
 
-After Sunita → Use this: Employment PARASS FOODS LLC · QI −$12,932 · years confirm **2007 → 19** · Use 19 writes 19 · Looks right → Proceed · no SSN · company ordinary not one QI.
+Start over → SE → years early Skip (empty, not a seal) → Skip 1040 → Parass 1065 → Sunita → Use this → **2007/19 card live** → Use this writes Years **19** → then contract may ask. Employment PARASS FOODS LLC · QI −$12,932 · named loss · no SSN · no $725.
 
 Walker-green ≠ founder-green. Do not call ACCEPT. Do not commit founder PDF.
 

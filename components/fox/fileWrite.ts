@@ -158,6 +158,7 @@ import { addressHistoryRemainder, writeCurrentEmploymentHistory } from "./fileHi
 import {
   entityYearsConflictActions,
   entityYearsConflictCopy,
+  entityYearsOpen,
   holdPendingBusinessStart,
   isEntityYearsConflict,
   writeEntityYears,
@@ -4473,6 +4474,7 @@ export function nextDocInvite(draft: FoxIntakeDraft): DocInviteKind | null {
   if (!draft.incomeType.value && !draft.incomeAsked) return null;
   /** Empty / skipped how-earned: no invented W-2 pack, and no ID invite until Looks right. */
   if (!draft.incomeType.value && !draft.sampleAccepted) return null;
+  if (entityYearsOpen(draft)) return null;
   if (draft.pendingProposal || draft.pendingConflict) return null;
   if (employerStubRemainderOpen(draft)) return "paystub";
   if (wageSketchBlocksDocInvite(draft)) return null;

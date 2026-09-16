@@ -218,10 +218,16 @@ import {
 } from "./completeness";
 import {
   changeEntityYears,
+  entityYearsAskNeeded,
   entityYearsConfirmActions,
   entityYearsConfirmCopy,
+  entityYearsConflictActions,
+  entityYearsConflictCopy,
+  entityYearsOpen,
+  fileYearsInBusiness,
   isEntityYearsConflict,
   isEntityYearsProposal,
+  pageBusinessStart,
   writeEntityYears,
 } from "./yearsFromEntity";
 import { conventionalFileFacts } from "./conventionalFile";
@@ -2296,7 +2302,7 @@ function liveProposalAsk(
     };
   }
   if (isEntityYearsProposal(proposal)) {
-    const pending = draft.pendingBusinessStart;
+    const pending = pageBusinessStart(draft);
     return {
       text: pending
         ? entityYearsConfirmCopy(pending)
@@ -2628,6 +2634,9 @@ export function docReactionAsk(
 } | null {
   const cls = extractClass ?? lastExtractedClass(draft);
   if (!cls) return null;
+  if (entityYearsOpen(draft)) {
+    return workspacePromptCopy("confirm-proposal", draft);
+  }
   if (otherK1LoanAskNeeded(draft)) return otherK1LoanAskCopy(draft);
   if (draft.pendingConflict && !conflictAlreadySpoken(draft)) {
     return {
@@ -3687,6 +3696,9 @@ export function nextFoxAsk(draft: FoxIntakeDraft): {
   if (draft.liveQuoteStatus === "unavailable" && !draft.liveCouponSettled && !draft.liveQuote) {
     return { text: PRICING_WHEN_READY, actions: pricingFailedActions() };
   }
+  if (entityYearsOpen(draft)) {
+    return workspacePromptCopy("confirm-proposal", draft);
+  }
   if (
     !draft.sampleAccepted &&
     draft.awaitingYearsInBusiness &&
@@ -3810,6 +3822,7 @@ export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
   if (draft.awaitingBothMonthlyReason) return "both-monthly-reason";
   if (draft.awaitingCoverWageGap) return "cover-wage-gap";
   if (isHouseholdWagesProposal(draft.pendingProposal)) return "household-wages";
+  if (entityYearsOpen(draft)) return "confirm-proposal";
   if (taxReturnPacketHoldAsk(draft)) return "packet-read";
   if (taxReturnPacketSettled(draft)) return "packet-close";
   if (draft.awaitingRaiseWhen) return "raise-when";
@@ -3822,6 +3835,7 @@ export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
   ) {
     return "confirm-proposal";
   }
+  if (entityYearsOpen(draft)) return "confirm-proposal";
   if (otherK1LoanAskNeeded(draft)) return "other-k1-loan";
   const notepadEdit = notepadEditPrompt(draft);
   if (notepadEdit) return notepadEdit;
@@ -3937,6 +3951,7 @@ export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
   if (propertyAddressNeededForQuote(draft)) return "property-address";
   if (propertyZipAskNeeded(draft)) return "property-zip";
   if (!incomeSettled(draft)) return "income";
+  if (entityYearsOpen(draft)) return "confirm-proposal";
   if (!draft.sampleAccepted && !yearsInBusinessSettled(draft)) {
     return "years-in-business";
   }
@@ -4358,6 +4373,44 @@ function workspaceAskCopy(
     return raiseYtdFarAsk(draft);
   }
   if (prompt === "confirm-proposal") {
+    if (isEntityYearsConflict(draft.pendingConflict) && draft.pendingConflict) {
+      return {
+        text: entityYearsConflictCopy(draft.pendingConflict, pageBusinessStart(draft)),
+        actions: entityYearsConflictActions(draft.pendingConflict),
+      };
+    }
+    if (isEntityYearsProposal(draft.pendingProposal) && draft.pendingProposal) {
+      return liveProposalAsk(draft, draft.pendingProposal);
+    }
+    if (entityYearsAskNeeded(draft)) {
+      const pending = pageBusinessStart(draft);
+      if (pending) {
+        const file = fileYearsInBusiness(draft);
+        if (file != null && file !== pending.years) {
+          return {
+            text: entityYearsConflictCopy(
+              {
+                field: "years_in_business",
+                fileValue: String(file),
+                documentValue: String(pending.years),
+                label: pending.label,
+              },
+              pending,
+            ),
+            actions: entityYearsConflictActions({
+              field: "years_in_business",
+              fileValue: String(file),
+              documentValue: String(pending.years),
+              label: pending.label,
+            }),
+          };
+        }
+        return {
+          text: entityYearsConfirmCopy(pending),
+          actions: entityYearsConfirmActions(),
+        };
+      }
+    }
     if (isFundsPairProposal(draft.pendingProposal) && draft.pendingProposal) {
       return liveProposalAsk(draft, draft.pendingProposal);
     }

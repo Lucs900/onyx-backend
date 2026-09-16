@@ -163,6 +163,7 @@ export type TaxYearCashflow = {
   entity_taxable_income: string;
   entity_name: string;
   officer_compensation: string;
+  business_started?: string;
 };
 
 export type QualifyingIncomeResult = {
@@ -360,6 +361,7 @@ export function readTaxCashflows(draft: FoxIntakeDraft): TaxYearCashflow[] {
           entity_taxable_income: String(row.entity_taxable_income ?? ""),
           entity_name: String(row.entity_name ?? ""),
           officer_compensation: String(row.officer_compensation ?? ""),
+          business_started: String(row.business_started ?? ""),
         },
       ];
     });
@@ -420,6 +422,7 @@ export function cashflowFromExtract(fields: Record<string, string>): TaxYearCash
     entity_taxable_income,
     entity_name: String(fields.entity_name ?? "").trim(),
     officer_compensation: String(fields.officer_compensation ?? "").trim(),
+    business_started: String(fields.business_started ?? fields.date_business_started ?? fields.date_incorporated ?? "").trim(),
   };
 }
 

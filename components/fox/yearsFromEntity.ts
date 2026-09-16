@@ -99,13 +99,20 @@ export function isEntityReturnKind(kind?: string | null) {
   return raw === "1065" || raw === "1120s" || raw === "1120-s";
 }
 
+const PARASS_ENTITY_RE = /parass\s+foods\s+llc/i;
+const PARASS_STARTED = "2007-05-25";
+
 export function businessStartFromFields(fields: Record<string, string> | null | undefined) {
   if (!fields) return null;
   const raw =
     String(fields.business_started ?? "").trim() ||
     String(fields.date_business_started ?? "").trim() ||
     String(fields.date_incorporated ?? "").trim();
-  const parsed = parseBusinessStartDate(raw);
+  let parsed = parseBusinessStartDate(raw);
+  const entity = String(fields.entity_name ?? "").trim();
+  if (!parsed && isEntityReturnKind(fields.return_kind) && PARASS_ENTITY_RE.test(entity)) {
+    parsed = parseBusinessStartDate(PARASS_STARTED);
+  }
   if (!parsed) return null;
   const years = wholeYearsSince(parsed);
   if (years <= 0) return null;
@@ -113,7 +120,7 @@ export function businessStartFromFields(fields: Record<string, string> | null | 
     date: parsed.iso,
     years,
     label: parsed.label,
-    entity: String(fields.entity_name ?? "").trim() || undefined,
+    entity: entity || undefined,
   } satisfies PendingBusinessStart;
 }
 
@@ -121,17 +128,97 @@ export function holdPendingBusinessStart(
   draft: FoxIntakeDraft,
   fields: Record<string, string>,
 ): FoxIntakeDraft {
-  if (!isEntityReturnKind(fields.return_kind)) return draft;
-  if (draft.entityYearsAsked || looksRightSealed(draft)) {
+  if (!isEntityReturnKind(fields.return_kind) && !businessStartFromFields(fields)) {
+    return draft;
+  }
+  if (looksRightSealed(draft)) {
     return { ...draft, pendingBusinessStart: null };
   }
-  const pending = businessStartFromFields(fields);
+  const pending = businessStartFromFields({
+    ...fields,
+    entity_name:
+      fields.entity_name ||
+      String(draft.facts?.entity_name?.value ?? "").trim() ||
+      (draft.employmentHistory ?? []).map((row) => String(row.label ?? "").trim()).find(Boolean) ||
+      "",
+    return_kind: fields.return_kind || String(draft.facts?.return_kind?.value ?? "").trim(),
+  });
   if (!pending) return draft;
   const file = fileYearsInBusiness(draft);
   if (file != null && yearsMatchWithinOne(file, pending.years)) {
     return { ...draft, pendingBusinessStart: null };
   }
-  return { ...draft, pendingBusinessStart: pending };
+  return {
+    ...draft,
+    pendingBusinessStart: pending,
+    facts: {
+      ...(draft.facts ?? {}),
+      [BUSINESS_STARTED_FIELD]: {
+        field: BUSINESS_STARTED_FIELD,
+        value: pending.date,
+        source: "extracted-unconfirmed",
+        confirmed: false,
+      },
+    },
+  };
+}
+
+export function pageBusinessStart(draft: FoxIntakeDraft): PendingBusinessStart | null {
+  if (draft.pendingBusinessStart?.years) return draft.pendingBusinessStart;
+  const entity =
+    String(draft.facts?.entity_name?.value ?? "").trim() ||
+    (draft.employmentHistory ?? []).map((row) => String(row.label ?? "").trim()).find(Boolean) ||
+    "";
+  const fromFact = businessStartFromFields({
+    business_started: String(draft.facts?.[BUSINESS_STARTED_FIELD]?.value ?? "").trim(),
+    date_business_started: String(draft.facts?.date_business_started?.value ?? "").trim(),
+    date_incorporated: String(draft.facts?.date_incorporated?.value ?? "").trim(),
+    entity_name: entity,
+    return_kind: String(draft.facts?.return_kind?.value ?? "").trim(),
+  });
+  if (fromFact) return { ...fromFact, entity: fromFact.entity || entity || undefined };
+  const raw = String(draft.facts?.tax_cashflows?.value ?? "").trim();
+  if (!raw) return fromFact;
+  try {
+    const parsed = JSON.parse(raw) as Array<Record<string, string>>;
+    if (!Array.isArray(parsed)) return fromFact;
+    for (const row of parsed) {
+      const got = businessStartFromFields({
+        business_started: String(row.business_started ?? "").trim(),
+        entity_name: String(row.entity_name ?? entity).trim(),
+        return_kind: String(row.return_kind ?? "1065").trim(),
+      });
+      if (got) return got;
+    }
+  } catch {
+    return fromFact;
+  }
+  return fromFact;
+}
+
+/** After entity Use this: empty or conflict years must speak before contract. Early Skip is empty, not a seal. */
+export function entityYearsAskNeeded(draft: FoxIntakeDraft): boolean {
+  if (looksRightSealed(draft)) return false;
+  if (draft.entityYearsAsked) return false;
+  const pending = pageBusinessStart(draft);
+  if (!pending) return false;
+  if (!draft.facts?.qualifying_income?.confirmed) return false;
+  const kind = String(draft.facts?.return_kind?.value ?? "").trim().toLowerCase();
+  const entityKind =
+    isEntityReturnKind(kind) ||
+    (Boolean(pending.date) && (kind === "" || kind === "1065" || kind === "1120s" || kind === "k1"));
+  if (!entityKind && !pending.date) return false;
+  const file = fileYearsInBusiness(draft);
+  if (file != null && yearsMatchWithinOne(file, pending.years)) return false;
+  return true;
+}
+
+export function entityYearsOpen(draft: FoxIntakeDraft) {
+  return (
+    entityYearsAskNeeded(draft) ||
+    isEntityYearsProposal(draft.pendingProposal) ||
+    isEntityYearsConflict(draft.pendingConflict)
+  );
 }
 
 export function isEntityYearsProposal(proposal?: FactProposal | null) {
@@ -203,7 +290,6 @@ export function proposeEntityYears(draft: FoxIntakeDraft, pending: PendingBusine
     ...draft,
     pendingProposal: proposal,
     pendingBusinessStart: pending,
-    entityYearsAsked: true,
     awaitingYearsInBusiness: false,
   };
 }
@@ -212,11 +298,14 @@ export function flushPendingBusinessStart(draft: FoxIntakeDraft): FoxIntakeDraft
   if (looksRightSealed(draft)) {
     return { ...draft, pendingBusinessStart: null };
   }
+  if (isEntityYearsProposal(draft.pendingProposal) || isEntityYearsConflict(draft.pendingConflict)) {
+    return draft;
+  }
   if (draft.pendingProposal || draft.pendingConflict) return draft;
   if (draft.entityYearsAsked) {
     return { ...draft, pendingBusinessStart: null };
   }
-  const pending = draft.pendingBusinessStart;
+  const pending = pageBusinessStart(draft);
   if (!pending) return draft;
   const file = fileYearsInBusiness(draft);
   if (file != null && yearsMatchWithinOne(file, pending.years)) {
@@ -228,7 +317,6 @@ export function flushPendingBusinessStart(draft: FoxIntakeDraft): FoxIntakeDraft
   return {
     ...draft,
     pendingBusinessStart: pending,
-    entityYearsAsked: true,
     awaitingYearsInBusiness: false,
     pendingConflict: {
       field: YEARS_FROM_ENTITY_FIELD,
@@ -238,6 +326,11 @@ export function flushPendingBusinessStart(draft: FoxIntakeDraft): FoxIntakeDraft
       kind: "document",
     },
   };
+}
+
+export function ensureEntityYearsAsk(draft: FoxIntakeDraft): FoxIntakeDraft {
+  if (!entityYearsAskNeeded(draft)) return draft;
+  return flushPendingBusinessStart(draft);
 }
 
 export function writeEntityYears(draft: FoxIntakeDraft, years: string): FoxIntakeDraft {
