@@ -5001,7 +5001,7 @@ export function conflictActions(conflict?: FactConflict | null): FoxAction[] {
   if (conflict && isPropertyAddressField(conflict.field)) {
     return propertyAddressConflictActions();
   }
-  if (isEntityYearsConflict(conflict)) {
+  if (conflict && isEntityYearsConflict(conflict)) {
     return entityYearsConflictActions(conflict);
   }
   if (conflict?.field === STATED_TIME_ON_JOB_FIELD) {
