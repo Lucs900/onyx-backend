@@ -28,6 +28,7 @@ import {
   renderPdfPage,
 } from "@/lib/docs/pdfText";
 import {
+  overlayW2MedicareFromPage,
   fieldsFromPrintedLines,
   loudContractFromPrintedLines,
   loudCoverFromPrintedLines,
@@ -316,7 +317,7 @@ function extractFieldsPrompt(extractClass: ExtractClass, keys: readonly string[]
   }
   if (extractClass === "w2") {
     extra =
-      " Locked schema only: employer_name, tax_year, medicare_wages / box5 (Box 5 Medicare wages and tips), wages optional (Box 1). medicare_wages is the dollar amount printed in Box 5 — never the box number 5, never $5 because the label is 5. Prefer Box 5 over Box 1. Never output SSN. overtime, bonus, and commission only when clearly printed; empty otherwise; never invent.";
+      " Locked schema only: employer_name, tax_year, medicare_wages / box5 (Box 5 Medicare wages and tips), wages optional (Box 1). medicare_wages is the dollar amount printed in Box 5 — never the box number 5, never $5 because the label is 5. If the Box 5 cell is clipped or unreadable, hunt the SAME page for “Medicare wages” / “Medicare Wages Box 5 of W-2” / “Box 5” and use that dollar line. Never use “Reported W-2 Wages” (that is Box 1 after 401(k)). Never use Box 1 when Box 5 or Medicare wages is on the page. Prefer Box 5 over Box 1. Never output SSN. overtime, bonus, and commission only when clearly printed; empty otherwise; never invent.";
   }
   if (extractClass === "bank_statement") {
     extra =
@@ -697,11 +698,21 @@ export const grokExtractAdapter: DocumentExtractAdapter = {
   },
 };
 
+function overlayW2Fields(
+  extractClass: ExtractClass,
+  fields: Record<string, string>,
+  pageText?: string | string[] | null,
+): Record<string, string> {
+  if (extractClass !== "w2" && extractClass !== "other") return fields;
+  return overlayW2MedicareFromPage(fields, pageText);
+}
+
 function printedResult(
   printed: NonNullable<ReturnType<typeof readPrintedSample>>,
   textLayerChars?: number,
 ): ClassifyExtractResult {
-  const sanitized = sanitizeExtractedFields(printed.extractClass, printed.fields);
+  const fields = overlayW2Fields(printed.extractClass, printed.fields);
+  const sanitized = sanitizeExtractedFields(printed.extractClass, fields);
   return {
     extractClass: printed.extractClass,
     confidence: printed.confidence,
@@ -1727,6 +1738,30 @@ async function classifyAndExtractUnmerged(
   return withTextChars(lockedPage, bytes, mediaType);
 }
 
+async function withPageMedicareHunt(
+  result: ClassifyExtractResult,
+  bytes: Uint8Array,
+  mediaType: string,
+): Promise<ClassifyExtractResult> {
+  if (result.extractClass !== "w2" && result.extractClass !== "other") return result;
+  const layer =
+    isPdf(bytes) || mediaType === "application/pdf"
+      ? await printedLinesForExtract(bytes, mediaType)
+      : null;
+  if (!layer?.length) return result;
+  const rawFields = result.fields ?? {};
+  const cleaned: Record<string, string> = {};
+  for (const [key, value] of Object.entries(rawFields)) {
+    if (value == null) continue;
+    cleaned[key] = String(value);
+  }
+  const fields = overlayW2MedicareFromPage(cleaned, layer);
+  return {
+    ...result,
+    fields: sanitizeExtractedFields(result.extractClass === "other" ? "w2" : result.extractClass, fields),
+  };
+}
+
 export async function classifyAndExtract(
   bytes: Uint8Array,
   mediaType: string,
@@ -1743,7 +1778,8 @@ export async function classifyAndExtract(
     filename,
     phase,
   );
-  const blocked = rejectPaystubForEntityReturn(result, filename);
+  const hunted = await withPageMedicareHunt(result, bytes, mediaType);
+  const blocked = rejectPaystubForEntityReturn(hunted, filename);
   if (phase === "packet") return blocked;
   return mergeTaxReturnLedgerFields(blocked, bytes, mediaType, adapter, undefined, filename);
 }

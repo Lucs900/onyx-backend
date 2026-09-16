@@ -85,6 +85,7 @@ import {
   settleIncomeLedgerProposal,
   incomeLedgerAskCopy,
   householdWagesAskCopy,
+  afterUseThisSpeak,
 } from "./qualifyingIncome";
 import { HOUSEHOLD_WAGES_FIELD, INCOME_LEDGER_FIELD } from "@/lib/income/ledger";
 import { acceptHuntRentals } from "./hunt";
@@ -1966,7 +1967,7 @@ export function writeYearsInBusiness(draft: FoxIntakeDraft, years: string): FoxI
     isEntityYearsProposal(draft.pendingProposal) ||
     draft.pendingConflict?.field === YEARS_IN_BUSINESS_FIELD ||
     entityYearsAskNeeded(draft);
-  return {
+  return afterUseThisSpeak({
     ...draft,
     awaitingYearsInBusiness: false,
     yearsInBusinessAsked: true,
@@ -1984,7 +1985,7 @@ export function writeYearsInBusiness(draft: FoxIntakeDraft, years: string): FoxI
         confirmedAt: now,
       },
     },
-  };
+  });
 }
 
 export function skipYearsInBusiness(draft: FoxIntakeDraft): FoxIntakeDraft {
@@ -1992,7 +1993,7 @@ export function skipYearsInBusiness(draft: FoxIntakeDraft): FoxIntakeDraft {
     isEntityYearsProposal(draft.pendingProposal) ||
     draft.pendingConflict?.field === YEARS_IN_BUSINESS_FIELD ||
     entityYearsAskNeeded(draft);
-  return {
+  return afterUseThisSpeak({
     ...draft,
     awaitingYearsInBusiness: false,
     yearsInBusinessAsked: true,
@@ -2000,7 +2001,7 @@ export function skipYearsInBusiness(draft: FoxIntakeDraft): FoxIntakeDraft {
     pendingBusinessStart: entityOpen ? null : draft.pendingBusinessStart,
     pendingProposal: isEntityYearsProposal(draft.pendingProposal) ? null : draft.pendingProposal,
     pendingConflict: draft.pendingConflict?.field === YEARS_IN_BUSINESS_FIELD ? null : draft.pendingConflict,
-  };
+  });
 }
 
 /** Return drop may pause years. After Use this, come back once when the business name is known. */

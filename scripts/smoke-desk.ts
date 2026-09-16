@@ -2921,7 +2921,7 @@ assert.equal(loudStubPrinted?.fields.pay_frequency, "biweekly");
 assert.equal(loudStubPrinted?.fields.employer_name, "Harbor Pacific Design Inc");
 assert.equal(loudStubPrinted?.fields.full_name, "Jordan Hale");
 assert.equal(wageExtractConfirmCopy(118400, 4615.38, "biweekly"), "Box 5 $118,400. Stub $4,615.38 biweekly. Use this?");
-assert.equal(wageW2ConfirmCopy(118400, "Harbor Pacific Design Inc"), "Box 5 $118,400. Harbor Pacific Design Inc. Use this?");
+assert.equal(wageW2ConfirmCopy(118400, "Harbor Pacific Design Inc"), "Harbor Pacific Design Inc. Box 5 $118,400 → $9,867 a month. Use this?");
 assert.equal(unreadDropBytesCopy("06-w2-2025-box5-loud.pdf", 12345), "06-w2-2025-box5-loud.pdf · 12,345 bytes");
 assert.equal(
   receivedDropCopy("28-paystub-cstc-pay-matt-260422.pdf"),
@@ -3032,7 +3032,7 @@ const loudAfterW2 = applyExtractedFields(walkABase, {
 assert.equal(loudAfterW2.draft.pendingProposal?.field, WAGE_EXTRACT_FIELD);
 assert.equal(
   workspacePromptCopy("confirm-proposal", loudAfterW2.draft).text,
-  "Box 5 $118,400. Harbor Pacific Design Inc. Use this?",
+  "Harbor Pacific Design Inc. Box 5 $118,400 → $9,867 a month. Use this?",
 );
 assert.equal(loudAfterW2.draft.facts?.employer_name, undefined);
 assert.equal(loudAfterW2.draft.facts?.w2_box5, undefined);
@@ -3062,7 +3062,7 @@ assert.notEqual(workspacePrompt(loudW2Changed), "paystub-monthly");
 assert.notEqual(workspacePrompt(loudW2Changed), "review");
 assert.equal(
   workspacePromptCopy("confirm-proposal", loudW2Changed).text,
-  "Box 5 $118,400. Harbor Pacific Design Inc. Use this?",
+  "Harbor Pacific Design Inc. Box 5 $118,400 → $9,867 a month. Use this?",
 );
 assert.deepEqual(
   (workspacePromptCopy("confirm-proposal", loudW2Changed).actions ?? []).map((item) => item.label),
@@ -3441,7 +3441,7 @@ const leftoverLooksRightChips = [
 const leftoverRateChips = liveCouponActions(harborAfterIdSkip);
 const harborSkipIdAskActions = workspacePromptCopy("documents", harborAfterIdSkip).actions ?? [];
 const harborAddressSpoken = "That’s 2847 Harbor Pacific Drive, Long Beach, CA 90803. Use this?";
-const harborW2Spoken = "Box 5 $118,400. Harbor Pacific Design Inc. Use this?";
+const harborW2Spoken = "Harbor Pacific Design Inc. Box 5 $118,400 → $9,867 a month. Use this?";
 const harborStubSpoken = "Harbor Pacific Design Inc. $4,615.38 biweekly. $9,999.99 a month. Use this?";
 const harborReviewSpoken = workspacePromptCopy("review", loudStubUsed).text;
 const harborSkipIdThread = [
@@ -3969,7 +3969,7 @@ assert.equal(loudW2HeldOnly.draft.documents[0]?.bytesRef, "fox-intake/06-w2-2025
 assert.equal(loudW2HeldOnly.draft.documents[1]?.bytesRef, "fox-intake/07-paystub-biweekly-loud.pdf");
 assert.equal(
   workspacePromptCopy("confirm-proposal", loudW2HeldOnly.draft).text,
-  "Box 5 $118,400. Harbor Pacific Design Inc. Use this?",
+  "Harbor Pacific Design Inc. Box 5 $118,400 → $9,867 a month. Use this?",
 );
 assert.notEqual(workspacePrompt(loudW2HeldOnly.draft), "borrower-name");
 const loudUsed = acceptWageExtract(loudAfterStub.draft);
@@ -14020,7 +14020,7 @@ async function extractAdapterSmoke() {
   assert.equal(jordanHaleAfter.draft.facts?.qualifying_income, undefined);
   assert.equal(
     workspacePromptCopy("confirm-proposal", jordanHaleAfter.draft).text,
-    "Box 5 $118,400. Harbor Pacific Design Inc. Use this?",
+    "Harbor Pacific Design Inc. Box 5 $118,400 → $9,867 a month. Use this?",
   );
   assert.deepEqual(
     (workspacePromptCopy("confirm-proposal", jordanHaleAfter.draft).actions ?? []).map((item) => item.label),

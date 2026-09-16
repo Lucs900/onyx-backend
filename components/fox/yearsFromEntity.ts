@@ -1,4 +1,5 @@
 import type { FactConflict, FactProposal, FoxAction, FoxIntakeDraft } from "./types";
+import { afterUseThisSpeak } from "./qualifyingIncome";
 
 export const YEARS_FROM_ENTITY_FIELD = "years_in_business";
 export const YEARS_FROM_ENTITY_AS_OF = "2026-09-16";
@@ -335,7 +336,7 @@ export function ensureEntityYearsAsk(draft: FoxIntakeDraft): FoxIntakeDraft {
 
 export function writeEntityYears(draft: FoxIntakeDraft, years: string): FoxIntakeDraft {
   const now = new Date().toISOString();
-  return {
+  return afterUseThisSpeak({
     ...draft,
     awaitingYearsInBusiness: false,
     yearsInBusinessAsked: true,
@@ -353,7 +354,7 @@ export function writeEntityYears(draft: FoxIntakeDraft, years: string): FoxIntak
         confirmedAt: now,
       },
     },
-  };
+  });
 }
 
 export function changeEntityYears(draft: FoxIntakeDraft): FoxIntakeDraft {

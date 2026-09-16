@@ -155,6 +155,7 @@ export function taskContext(stage: FoxStage, draft: FoxIntakeDraft) {
     "household-wages": "Asking: household wages",
     "packet-read": "Reading the rest of the return",
     "packet-close": "Rest of the return",
+    "schedule-e-unread": "Schedule E rents unread",
     "raise-when": "Asking: raise date",
     "raise-ytd-far": "Asking: raise YTD",
     qualifying: "Asking: qualifying income",

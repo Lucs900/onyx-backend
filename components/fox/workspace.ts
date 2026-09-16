@@ -123,12 +123,14 @@ import {
   transcriptSignalCopy,
   isTranscriptOnFile,
   taxReturnWrittenOnFile,
+  federalReturnYearsOnFile,
   taxReturnPacketHoldAsk,
   taxReturnPacketCloseAskOpen,
   taxReturnPacketSettled,
   asksWhatElseOnReturn,
   PACKET_READING_LINE,
   PACKET_NO_K1_C_LINE,
+  SCHEDULE_E_RENTS_UNREAD_LINE,
   taxReturnStructureValue,
   canSpeakDocStamp,
   transcriptSpeakKey,
@@ -301,6 +303,7 @@ import {
   wageW2ConfirmCopy,
   wageExtractFailedRead,
   wageThreadOpen,
+  rentalOwnedOnFile,
   writeWageBox5,
   writeTypedStubMonthly,
   applyOwnAllEntity,
@@ -3719,7 +3722,50 @@ export function nextFoxAsk(draft: FoxIntakeDraft): {
   ) {
     return { text: MONTHLY_DEBTS_ASK, actions: monthlyDebtsSkipActions() };
   }
-  return workspacePromptCopy(workspacePrompt(draft), draft);
+  const asked = workspacePromptCopy(workspacePrompt(draft), draft);
+  return withPostWriteSpeak(asked, draft);
+}
+
+function isForm1040Ask(text: string) {
+  return /Form 1040, all pages/i.test(text);
+}
+
+/** After Use this: never empty, never reprint a stamped 1040. Sch E → unread rents → Looks right. */
+function withPostWriteSpeak(
+  asked: { text: string; followUp?: string; facts?: ReturnType<typeof workspacePromptCopy>["facts"]; actions?: FoxAction[] },
+  draft: FoxIntakeDraft,
+): { text: string; followUp?: string; facts?: ReturnType<typeof workspacePromptCopy>["facts"]; actions?: FoxAction[] } {
+  const year = asked.text.match(/((?:19|20)\d{2})/)?.[1];
+  const stampedReprint =
+    isForm1040Ask(asked.text) && Boolean(year && federalReturnYearsOnFile(draft).includes(year));
+  const rentalBlocks1040 =
+    isForm1040Ask(asked.text) &&
+    rentalOwnedOnFile(draft) &&
+    !draft.facts?.schedule_e_monthly?.confirmed;
+  if (asked.text.trim() && !stampedReprint && !rentalBlocks1040) return asked;
+  if (draft.scheduleECashUnread) {
+    return workspacePromptCopy("schedule-e-unread", draft);
+  }
+  if (rentalOwnedOnFile(draft) && !draft.scheduleECashAsked) {
+    return {
+      text: SCHEDULE_E_RENTS_UNREAD_LINE,
+      actions: [
+        {
+          id: "schedule-e-unread-skip",
+          label: "Skip",
+          event: "bubble",
+          capture: { field: "skip-schedule-e-unread" },
+        },
+      ],
+    };
+  }
+  if (!asked.text.trim() || stampedReprint || rentalBlocks1040) {
+    return {
+      text: looksRightAskCopy(draft),
+      actions: looksRightAskActions(),
+    };
+  }
+  return asked;
 }
 
 function stripStreetSuggest(actions: FoxAction[]): FoxAction[] {
@@ -3831,6 +3877,7 @@ export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
   if (isHouseholdWagesProposal(draft.pendingProposal)) return "household-wages";
   if (entityYearsOpen(draft)) return "confirm-proposal";
   if (taxReturnPacketHoldAsk(draft)) return "packet-read";
+  if (draft.scheduleECashUnread) return "schedule-e-unread";
   if (taxReturnPacketSettled(draft)) return "packet-close";
   if (draft.awaitingRaiseWhen) return "raise-when";
   if (draft.awaitingRaiseYtdFar) return "raise-ytd-far";
@@ -4366,6 +4413,19 @@ function workspaceAskCopy(
   }
   if (prompt === "packet-read") {
     return { text: PACKET_READING_LINE };
+  }
+  if (prompt === "schedule-e-unread") {
+    return {
+      text: SCHEDULE_E_RENTS_UNREAD_LINE,
+      actions: [
+        {
+          id: "schedule-e-unread-skip",
+          label: "Skip",
+          event: "bubble",
+          capture: { field: "skip-schedule-e-unread" },
+        },
+      ],
+    };
   }
   if (prompt === "packet-close") {
     return {
@@ -6226,6 +6286,9 @@ function draftAfterCaptureBody(draft: FoxIntakeDraft, capture: Capture): FoxInta
   }
   if (capture.field === "bothMonthlyReason") return applyBothMonthlyReasonAnswer(next, capture.value);
   if (capture.field === "coverWageGap") return applyCoverWageGapAnswer(next, capture.value);
+  if (capture.field === "skip-schedule-e-unread") {
+    return { ...next, scheduleECashUnread: false, scheduleECashAsked: true };
+  }
   if (capture.field === "raiseWhen") {
     return draft.awaitingRaiseYtdFar ? applyRaiseYtdFarAnswer(next, capture.value) : applyRaiseWhenAnswer(next, capture.value);
   }

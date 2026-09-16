@@ -6,6 +6,7 @@
 import type { ExtractClass, FactProposal, FoxAction, FoxIntakeDraft } from "./types";
 import { SUGGESTED_PROPERTY_NOTE } from "./propertyType";
 import { appendOtherReoRow } from "./otherReo";
+import { offerScheduleEAfterRentalConfirm } from "./qualifyingIncome";
 
 export const HUNT_RENTALS_FIELD = "hunt_rentals";
 export const HUNT_NOTE = "Suggested · not underwritten";
@@ -61,8 +62,8 @@ export function huntRentalAskCopy(addresses: string[]): string {
 }
 
 export function huntRentalActions(count: number): FoxAction[] {
-  const allLabel = count === 1 ? "This one" : count === 2 ? "Both" : count === 3 ? "All three" : "These";
-  const notLabel = count === 1 ? "Not this" : "Not these";
+  const allLabel = count === 1 ? "Yes" : count === 2 ? "Both" : count === 3 ? "All three" : "These";
+  const notLabel = count === 1 ? "No" : "Not these";
   return [
     { id: "hunt-rentals-all", label: allLabel, event: "bubble", capture: { field: "accept-proposal" } },
     { id: "hunt-rentals-not", label: notLabel, event: "bubble", capture: { field: "decline-proposal" } },
@@ -199,7 +200,7 @@ export function acceptHuntRentals(draft: FoxIntakeDraft): FoxIntakeDraft {
       ...(addresses.length === 1 && rent ? { leaseGross: rent } : {}),
     });
   }
-  return next;
+  return offerScheduleEAfterRentalConfirm(next);
 }
 
 export function skipHunt(draft: FoxIntakeDraft): FoxIntakeDraft {

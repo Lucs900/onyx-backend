@@ -1077,11 +1077,11 @@ export function jobFromExtract(fields: Record<string, string>): WageJobCashflow 
     (yearFromWageField(String(fields.pay_period_end ?? "").trim()) != null
       ? String(yearFromWageField(String(fields.pay_period_end ?? "").trim()))
       : "");
-  if (!employer_name && !fields.wages && !fields.gross_period && !fields.ytd_gross) return null;
+  if (!employer_name && !fields.wages && !fields.medicare_wages && !fields.box5 && !fields.gross_period && !fields.ytd_gross) return null;
   return {
     employer_name: employer_name || "unknown",
     tax_year,
-    wages: String(fields.wages ?? "").trim(),
+    wages: String(fields.medicare_wages || fields.box5 || fields.wages || "").trim(),
     overtime: String(fields.overtime ?? "").trim(),
     bonus: String(fields.bonus ?? "").trim(),
     commission: String(fields.commission ?? "").trim(),
@@ -1218,7 +1218,11 @@ function wageSuggestInput(draft: FoxIntakeDraft, fields: Record<string, string>)
         (incomingIsSecond ? factValue(draft, "pay_frequency") || null : pickWageField(fields, draft, "pay_frequency") || null),
       w2Wages:
         laterInput.w2Wages ??
-        parseExtractMoney(incomingIsSecond ? factValue(draft, "wages") : fields.wages || factValue(draft, "wages")),
+        parseExtractMoney(
+          incomingIsSecond
+            ? factValue(draft, "medicare_wages") || factValue(draft, "box5") || factValue(draft, "wages")
+            : fields.medicare_wages || fields.box5 || fields.wages || factValue(draft, "medicare_wages") || factValue(draft, "wages"),
+        ),
       sameStubSecondEmployer,
       secondJob,
     };
@@ -1228,7 +1232,11 @@ function wageSuggestInput(draft: FoxIntakeDraft, fields: Record<string, string>)
     grossPeriod: parseExtractMoney(incomingIsSecond ? factValue(draft, "gross_period") : pickWageField(fields, draft, "gross_period")),
     ytdGross: parseExtractMoney(incomingIsSecond ? factValue(draft, "ytd_gross") : pickWageField(fields, draft, "ytd_gross")),
     payFrequency: incomingIsSecond ? factValue(draft, "pay_frequency") || null : pickWageField(fields, draft, "pay_frequency") || null,
-    w2Wages: parseExtractMoney(incomingIsSecond ? factValue(draft, "wages") : fields.wages || factValue(draft, "wages")),
+    w2Wages: parseExtractMoney(
+      incomingIsSecond
+        ? factValue(draft, "medicare_wages") || factValue(draft, "box5") || factValue(draft, "wages")
+        : fields.medicare_wages || fields.box5 || fields.wages || factValue(draft, "medicare_wages") || factValue(draft, "wages"),
+    ),
     overtime: incomingIsSecond ? parseExtractMoney(factValue(draft, "overtime")) : parseExtractMoney(fields.overtime),
     bonus: incomingIsSecond ? parseExtractMoney(factValue(draft, "bonus")) : parseExtractMoney(fields.bonus),
     commission: incomingIsSecond ? parseExtractMoney(factValue(draft, "commission")) : parseExtractMoney(fields.commission),
@@ -2216,6 +2224,94 @@ export function maybeCloseTaxReturnPacket(draft: FoxIntakeDraft): FoxIntakeDraft
   };
 }
 
+function scheduleEFieldsFromDraft(draft: FoxIntakeDraft): Record<string, string> {
+  const rows = readTaxCashflows(draft);
+  const row =
+    rows.find(
+      (item) =>
+        String(item.schedule_e_rents_received ?? "").trim() ||
+        String(item.schedule_e_property_address ?? "").trim() ||
+        item.return_kind === "schedule_e",
+    ) ?? rows[0];
+  const year =
+    String(row?.tax_year ?? "").replace(/\D/g, "").slice(0, 4) ||
+    factValue(draft, "tax_year").replace(/\D/g, "").slice(0, 4);
+  const streets =
+    String(row?.schedule_e_property_address ?? "").trim() ||
+    (draft.otherProperties ?? [])
+      .map((item) => String(item.address ?? "").trim())
+      .filter(Boolean)
+      .join("; ");
+  return {
+    tax_year: year,
+    return_kind: row?.return_kind || "schedule_e",
+    schedule_e_rents_received: String(row?.schedule_e_rents_received ?? "").trim(),
+    schedule_e_cash_expenses: String(row?.schedule_e_cash_expenses ?? "").trim(),
+    schedule_e_property_address: streets,
+  };
+}
+
+function scheduleERentsMissingAfterConfirm(draft: FoxIntakeDraft) {
+  const hasRental = rentalOwnedOnFile(draft);
+  if (!hasRental) return false;
+  if (scheduleEWrittenOnDraft(draft)) return false;
+  const fields = scheduleEFieldsFromDraft(draft);
+  return (
+    !String(fields.schedule_e_rents_received ?? "").trim() ||
+    !String(fields.schedule_e_cash_expenses ?? "").trim()
+  );
+}
+
+export function rentalOwnedOnFile(draft: FoxIntakeDraft) {
+  if (draft.statedOtherReo === "yes") return true;
+  return (draft.otherProperties ?? []).some((row) => String(row.address ?? "").trim());
+}
+
+/** After Still yours? Yes — Sch E cash card, or name the unread rents. Invent nothing. */
+export function offerScheduleEAfterRentalConfirm(draft: FoxIntakeDraft): FoxIntakeDraft {
+  if (draft.pendingProposal) return draft;
+  if (draft.scheduleECashAsked && !scheduleERentsPresentOnFile(draft)) {
+    return { ...draft, scheduleECashUnread: false };
+  }
+  const fields = scheduleEFieldsFromDraft(draft);
+  const incoming = incomeLedgerRowsFromFields(fields);
+  let next: FoxIntakeDraft = incoming.length
+    ? { ...draft, incomeLedger: mergeIncomeLedger(draft.incomeLedger, incoming) }
+    : draft;
+  next = promoteIncomeLedger(next);
+  if (
+    isIncomeLedgerProposal(next.pendingProposal) ||
+    isScheduleECashFlowProposal(next.pendingProposal)
+  ) {
+    return { ...next, scheduleECashUnread: false, scheduleECashAsked: true };
+  }
+  next = maybeProposeQualifyingFromTaxFile(next);
+  if (next.pendingProposal) return { ...next, scheduleECashUnread: false };
+  if (scheduleERentsMissingAfterConfirm(next)) {
+    return { ...next, scheduleECashUnread: true, scheduleECashAsked: true };
+  }
+  return next;
+}
+
+function scheduleERentsPresentOnFile(draft: FoxIntakeDraft) {
+  const fields = scheduleEFieldsFromDraft(draft);
+  return Boolean(
+    String(fields.schedule_e_rents_received ?? "").trim() &&
+      String(fields.schedule_e_cash_expenses ?? "").trim(),
+  );
+}
+
+/**
+ * After Use this: rental Yes → Sch E cash or unread rents. Never hang.
+ * Looks right is spoken in nextFoxAsk when neither card applies.
+ */
+export function afterUseThisSpeak(draft: FoxIntakeDraft): FoxIntakeDraft {
+  if (draft.pendingProposal || draft.pendingConflict) return draft;
+  if (!rentalOwnedOnFile(draft)) return draft;
+  if (scheduleEWrittenOnDraft(draft)) return draft;
+  return offerScheduleEAfterRentalConfirm(draft);
+}
+
 export function promoteIncomeLedger(draft: FoxIntakeDraft): FoxIntakeDraft {
   if (draft.pendingConflict) return draft;
   if (draft.pendingProposal) return maybeCloseTaxReturnPacket(draft);
@@ -2823,7 +2919,10 @@ export function wageExtractConfirmCopy(box5: number, stub: number, frequency: st
 
 export function wageW2ConfirmCopy(box5: number, employer: string): string {
   const name = String(employer ?? "").trim();
-  return `Box 5 ${speakWageMoney(box5)}. ${name}. Use this?`;
+  const monthly = Math.round(box5 / 12);
+  const monthBit = monthly > 0 ? ` → ${speakWageMoney(monthly)} a month` : "";
+  const box = `Box 5 ${speakWageMoney(box5)}${monthBit}`;
+  return name ? `${name}. ${box}. Use this?` : `${box}. Use this?`;
 }
 
 function confirmedWageFact(draft: FoxIntakeDraft, field: string): string {
@@ -3340,7 +3439,8 @@ export function maybeProposeWageExtract(
   fields?: Record<string, string>,
   extractClass?: ExtractClass,
 ): FoxIntakeDraft {
-  if (draft.sampleAccepted || !wageThreadOpen(draft)) return draft;
+  if (draft.sampleAccepted) return draft;
+  if (!wageThreadOpen(draft) && extractClass !== "w2") return draft;
   if (wageW2ExtractAccepted(draft)) return draft;
   if (draft.pendingConflict) return draft;
   const held = mergePendingWageExtract(draft, fields, extractClass);

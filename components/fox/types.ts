@@ -494,6 +494,10 @@ export type FoxIntakeDraft = {
   taxReturnPacketSpoken?: boolean;
   /** After a written Sch E, close the rest of the return once. Stay until finish. */
   taxReturnPacketCloseAsk?: boolean;
+  /** Rental confirmed; Schedule E rents/expenses were not on the page. Invent nothing. */
+  scheduleECashUnread?: boolean;
+  /** Unread rents already spoken or skipped. Do not loop the same line. */
+  scheduleECashAsked?: boolean;
   awaitingRaiseWhen?: boolean;
   awaitingRaiseYtdFar?: boolean;
   raiseWhenRaw?: string;
@@ -609,6 +613,7 @@ export type FoxPrompt =
   | "household-wages"
   | "packet-read"
   | "packet-close"
+  | "schedule-e-unread"
   | "raise-when"
   | "raise-ytd-far"
   | "qualifying"
@@ -732,6 +737,7 @@ export type Capture =
   | { field: "stubJob"; value: "same" | "two" }
   | { field: "bothMonthlyReason"; value: string }
   | { field: "coverWageGap"; value: string }
+  | { field: "skip-schedule-e-unread" }
   | { field: "raiseWhen"; value: string }
   | { field: "yearsInBusiness"; value: string }
   | { field: "skip-years-in-business" }

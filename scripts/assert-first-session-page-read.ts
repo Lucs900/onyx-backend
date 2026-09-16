@@ -570,7 +570,7 @@ async function main() {
     {
       id: "w2",
       role: "fox",
-      text: "Box 5 $36,460.08. Comprehensive Skills Training Center. Use this?",
+      text: "Comprehensive Skills Training Center. Box 5 $36,460.08 → $3,038 a month. Use this?",
       actions: useThisChips,
     },
     {
@@ -602,7 +602,7 @@ async function main() {
     {
       id: "w2",
       role: "fox",
-      text: "Box 5 $36,460.08. Comprehensive Skills Training Center. Use this?",
+      text: "Comprehensive Skills Training Center. Box 5 $36,460.08 → $3,038 a month. Use this?",
       actions: useThisChips,
     },
     { id: "you-w2", role: "client", text: "Use this" },

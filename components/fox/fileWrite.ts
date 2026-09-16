@@ -66,6 +66,7 @@ import {
   readWageJobs,
   wageIncomeCaution,
   wageThreadOpen,
+  rentalOwnedOnFile,
 } from "./qualifyingIncome";
 import { maybeProposeHunt } from "./hunt";
 import { bankEndingBalanceAmount } from "@/lib/docs/bankBalance";
@@ -734,6 +735,11 @@ export const PACKET_LINES_MISSING_LINE =
   "I didn’t see cover wages, Schedule E, or a K-1 on these pages.";
 export const PACKET_WAGES_UNREAD_LINE =
   "I couldn’t read household wages on the Form 1040 in this file.";
+/** After rental Yes: rents/expenses were not on that page. Invent nothing. */
+export const SCHEDULE_E_RENTS_UNREAD_LINE =
+  "I didn’t get rents or cash expenses on that Schedule E page.";
+/** Named/received 1040 with unread wages — ask for a W-2, not a second 1040. */
+export const HOUSEHOLD_WAGES_W2_ASK = "A W-2 would show household wages.";
 
 export function taxReturnPacketDoc(draft: FoxIntakeDraft) {
   return [...draft.documents].reverse().find(
@@ -2116,13 +2122,31 @@ export function applyExtractedFields(
       extractClass,
     );
     conflict = next.pendingConflict ?? null;
-  } else if (wageExtractFirst || (holdWageFileWrites && extractClass === "w2" && !stubAlreadyOnFile)) {
+  } else if (
+    (extractClass === "w2" && !stubAlreadyOnFile) ||
+    wageExtractFirst ||
+    (holdWageFileWrites && extractClass === "w2" && !stubAlreadyOnFile)
+  ) {
     next = maybeProposeWageExtract(
       { ...next, pendingConflict: null, awaitingPayFrequency: false },
       fields,
-      extractClass,
+      extractClass === "w2" ? "w2" : extractClass,
     );
     conflict = next.pendingConflict ?? null;
+    if (
+      !next.pendingProposal &&
+      !next.pendingConflict &&
+      extractClass === "w2" &&
+      (!coverReturn || shouldProposeCoverLineIncome(draft, fields, computed))
+    ) {
+      next = applyQualifyingIncomeFromExtract(
+        { ...next, pendingConflict: conflict },
+        extractClass,
+        fields,
+        computed,
+      );
+      conflict = next.pendingConflict ?? conflict;
+    }
     if (
       next.incomeType.value === "both" &&
       hasScheduleCCashflow(next) &&
@@ -2938,7 +2962,64 @@ export function taxReturnInviteCopy(draft: FoxIntakeDraft) {
     const next = nextCoverPageInviteCopy(draft);
     if (next) return next;
   }
+  if (stampedFederalReturnYears(draft).has(recent)) {
+    const missing = missingFederalReturnYear(draft);
+    if (!missing || missing === recent) return "";
+    return `I need the ${missing} return — Form 1040, all pages.`;
+  }
   return `I need your ${recent} federal tax return — Form 1040, all pages.`;
+}
+
+/** Calendar years already received or named on File. Covers do not stamp a year. */
+export function federalReturnYearsOnFile(draft: FoxIntakeDraft): string[] {
+  const years = new Set<string>();
+  const named = String(draft.facts?.tax_year?.value ?? "").replace(/\D/g, "").slice(0, 4);
+  const rawKind = String(factValue(draft, "return_kind") ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/[\s_-]+/g, "");
+  if (
+    /^(19|20)\d{2}$/.test(named) &&
+    !isTranscriptOnFile(draft) &&
+    rawKind !== "cover" &&
+    !rawKind.includes("1040cover") &&
+    !rawKind.includes("transcript") &&
+    !(lastExtractIsCover(draft) && lastCoverYear(draft) === named)
+  ) {
+    years.add(named);
+  }
+  for (const row of readTaxCashflows(draft)) {
+    const kind = String(row.return_kind ?? "")
+      .trim()
+      .toLowerCase()
+      .replace(/[\s_-]+/g, "");
+    if (kind === "cover" || kind.includes("1040cover") || kind.includes("transcript")) continue;
+    const year = String(row.tax_year ?? "").replace(/\D/g, "").slice(0, 4);
+    if (/^(19|20)\d{2}$/.test(year)) years.add(year);
+  }
+  for (const doc of draft.documents ?? []) {
+    if (!docIsRealExtract(doc)) continue;
+    if (receivedClassOf(doc) !== "tax_return" && doc.extractClass !== "tax_return") continue;
+    if (isCoverReturnDoc(doc)) continue;
+    const fromName = /((?:19|20)\d{2})/.exec(String(doc.name ?? ""));
+    if (fromName?.[1]) years.add(fromName[1]);
+  }
+  return Array.from(years).sort();
+}
+
+function stampedFederalReturnYears(draft: FoxIntakeDraft): Set<string> {
+  return new Set([...scheduleCYearsOnFile(draft), ...federalReturnYearsOnFile(draft)]);
+}
+
+/** Next 1040 year not already received/named. Same-stamp: never reprint a year on File. */
+export function missingFederalReturnYear(draft: FoxIntakeDraft): string | null {
+  const recent = mostRecentFederalYear(draft);
+  const prior = String(Number(recent) - 1);
+  const have = stampedFederalReturnYears(draft);
+  if (have.has(prior) && !have.has(recent)) return recent;
+  if (have.has(recent) && !have.has(prior)) return prior;
+  if (have.has(recent) && have.has(prior)) return null;
+  return prior;
 }
 
 export function priorYearReturnInviteCopy(draft: FoxIntakeDraft) {
@@ -2946,13 +3027,9 @@ export function priorYearReturnInviteCopy(draft: FoxIntakeDraft) {
     const next = nextCoverPageInviteCopy(draft);
     if (next) return next;
   }
-  const recent = mostRecentFederalYear(draft);
-  const prior = String(Number(recent) - 1);
-  const have = scheduleCYearsOnFile(draft);
-  if (have.includes(prior) && !have.includes(recent)) {
-    return `I need the ${recent} return — Form 1040, all pages.`;
-  }
-  return `I need the ${prior} return — Form 1040, all pages.`;
+  const missing = missingFederalReturnYear(draft);
+  if (!missing) return "";
+  return `I need the ${missing} return — Form 1040, all pages.`;
 }
 
 function selfEmployedCoverPageNext(draft: FoxIntakeDraft) {
@@ -2960,9 +3037,22 @@ function selfEmployedCoverPageNext(draft: FoxIntakeDraft) {
   return (income === "self-employed" || income === "other") && lastExtractIsCover(draft);
 }
 
+export function householdWagesUnreadNeedW2(draft: FoxIntakeDraft) {
+  if (!taxReturnWrittenOnFile(draft)) return false;
+  if (!draft.taxReturnPacketSpoken) return false;
+  if (draft.facts?.household_wages?.confirmed && String(draft.facts.household_wages.value ?? "").trim()) {
+    return false;
+  }
+  if ((draft.skippedClasses ?? []).includes("w2")) return false;
+  if (classSuccessfullyRead(draft, "w2")) return false;
+  if (wageW2ExtractAccepted(draft)) return false;
+  return true;
+}
+
 export function docInviteAskCopy(draft: FoxIntakeDraft, invite: DocInviteKind) {
   if (invite === "tax_return") return taxReturnInviteCopy(draft);
   if (invite === "prior_year_return") return priorYearReturnInviteCopy(draft);
+  if (invite === "w2" && householdWagesUnreadNeedW2(draft)) return HOUSEHOLD_WAGES_W2_ASK;
   if (invite === "paystub") {
     const employer = String(draft.facts?.employer_name?.value ?? "").trim();
     if (employer) {
@@ -4354,6 +4444,7 @@ function inviteSatisfied(draft: FoxIntakeDraft, kind: DocInviteKind): boolean {
     if (draft.priorYearSkipped) return true;
     if (draft.federalReturnSkipped) return true;
     if (entityK1Box1OnFile(draft)) return true;
+    if (!missingFederalReturnYear(draft)) return true;
     let extracted = 0;
     for (const doc of draft.documents) {
       if (doc.status !== "extracted") continue;
@@ -4494,6 +4585,22 @@ function employerStubRemainderOpen(draft: FoxIntakeDraft) {
   );
 }
 
+/** Same-stamp: never reprint a year already named. Rental Yes → Sch E, not a second 1040. */
+function shouldHold1040Invite(draft: FoxIntakeDraft, kind: DocInviteKind) {
+  if (kind !== "tax_return" && kind !== "prior_year_return") return false;
+  const copy = kind === "tax_return" ? taxReturnInviteCopy(draft) : priorYearReturnInviteCopy(draft);
+  const year = copy.match(/((?:19|20)\d{2})/)?.[1];
+  if (year && stampedFederalReturnYears(draft).has(year)) return true;
+  if (
+    rentalOwnedOnFile(draft) &&
+    !scheduleEWrittenOnFile(draft) &&
+    !draft.scheduleECashAsked
+  ) {
+    return true;
+  }
+  return false;
+}
+
 export function nextDocInvite(draft: FoxIntakeDraft): DocInviteKind | null {
   if (!draft.incomeType.value && !draft.incomeAsked) return null;
   /** Empty / skipped how-earned: no invented W-2 pack, and no ID invite until Looks right. */
@@ -4502,17 +4609,21 @@ export function nextDocInvite(draft: FoxIntakeDraft): DocInviteKind | null {
   if (draft.pendingProposal || draft.pendingConflict) return null;
   if (employerStubRemainderOpen(draft)) return "paystub";
   if (wageSketchBlocksDocInvite(draft)) return null;
+  if (householdWagesUnreadNeedW2(draft)) return "w2";
   const income = draft.incomeType.value;
   if (income === "self-employed" || income === "other" || income === "both") {
     for (const kind of primaryInviteSequence(draft)) {
       if (kind === "government_id" && !draft.sampleAccepted) continue;
+      if (shouldHold1040Invite(draft, kind)) continue;
       if (!inviteSatisfied(draft, kind)) return kind;
     }
     for (const kind of remainderInviteSequence(draft)) {
+      if (shouldHold1040Invite(draft, kind)) continue;
       if (!inviteSatisfied(draft, kind)) return kind;
     }
   }
   for (const kind of lockedFileDocInvites(draft)) {
+    if (shouldHold1040Invite(draft, kind)) continue;
     if (!inviteSatisfied(draft, kind)) return kind;
   }
   return null;

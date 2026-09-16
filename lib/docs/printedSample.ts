@@ -394,10 +394,26 @@ function moneyDigits(raw: string) {
 
 const MONEY_IN_TEXT = "\\$?(\\d{1,3}(?:,\\d{3})+(?:\\.\\d+)?|\\d+(?:\\.\\d+)?)";
 
+function isReportedW2WagesPhrase(text: string) {
+  return /reported\s+w-?2\s+wages/i.test(text);
+}
+
+function isPlausibleBox5Amount(digits: string) {
+  if (!digits || /^0+\d/.test(digits)) return false;
+  const n = Number(digits);
+  if (!Number.isFinite(n) || n <= 16) return false;
+  return n >= 100;
+}
+
 /** Box 5 / Medicare wages from THIS blob. Colon optional. Never invents an amount. */
 export function box5FromPrintedText(text: string): string {
   const blob = String(text ?? "");
   const patterns = [
+    new RegExp(
+      `medicare\\s*wages\\s+box\\s*5(?:\\s+of\\s+w-?2)?[:\\s]+${MONEY_IN_TEXT}`,
+      "i",
+    ),
+    new RegExp(`box\\s*5\\s+of\\s+w-?2[:\\s]+${MONEY_IN_TEXT}`, "i"),
     new RegExp(`box\\s*5\\s*(?:medicare\\s*wages(?:\\s*(?:and\\s*)?tips)?)?[:\\s]+${MONEY_IN_TEXT}`, "i"),
     new RegExp(`medicare\\s*wages(?:\\s*(?:and\\s*)?tips)?[:\\s]+${MONEY_IN_TEXT}`, "i"),
     new RegExp(`(?:^|[^\\d])5\\s+medicare\\s*wages(?:\\s*(?:and\\s*)?tips)?[:\\s]+${MONEY_IN_TEXT}`, "i"),
@@ -405,10 +421,9 @@ export function box5FromPrintedText(text: string): string {
   for (const pattern of patterns) {
     const match = blob.match(pattern);
     if (!match?.[1]) continue;
+    if (isReportedW2WagesPhrase(match[0])) continue;
     const digits = moneyDigits(match[1]);
-    if (!digits) continue;
-    const n = Number(digits);
-    if (Number.isInteger(n) && n >= 1 && n <= 16) continue;
+    if (!isPlausibleBox5Amount(digits)) continue;
     return digits;
   }
   const collapsed = blob.replace(/\s+/g, " ");
@@ -418,13 +433,37 @@ export function box5FromPrintedText(text: string): string {
     let item: RegExpExecArray | null;
     while ((item = money.exec(afterBox5[1]))) {
       const digits = moneyDigits(item[1]);
-      if (!digits) continue;
-      const n = Number(digits);
-      if (Number.isInteger(n) && n >= 1 && n <= 16) continue;
+      if (!isPlausibleBox5Amount(digits)) continue;
       return digits;
     }
   }
   return "";
+}
+
+/** Same-page Medicare / Box 5 wins over a clipped cell or “Reported W-2 Wages”. */
+export function overlayW2MedicareFromPage(
+  fields: Record<string, string>,
+  pageText?: string | string[] | null,
+): Record<string, string> {
+  const blob = Array.isArray(pageText) ? pageText.join("\n") : String(pageText ?? "");
+  const hunted = box5FromPrintedText(blob);
+  if (!hunted) return fields;
+  const existing = String(fields.medicare_wages || fields.box5 || "").replace(/[^\d.]/g, "");
+  if (isPlausibleBox5Amount(existing) && Number(existing) > Number(hunted) && Number(hunted) < 1000) {
+    return fields;
+  }
+  const next: Record<string, string> = { ...fields, medicare_wages: hunted, box5: hunted };
+  if (isReportedW2WagesPhrase(blob) && String(next.wages ?? "").replace(/[^\d.]/g, "") === hunted) {
+    // Medicare line is not Box 1.
+  }
+  const reported = blob.match(
+    new RegExp(`reported\\s+w-?2\\s+wages[:\\s]+${MONEY_IN_TEXT}`, "i"),
+  );
+  const reportedDigits = reported?.[1] ? moneyDigits(reported[1]) : "";
+  if (reportedDigits && String(next.wages ?? "").replace(/[^\d.]/g, "") === reportedDigits) {
+    delete next.wages;
+  }
+  return next;
 }
 
 /** Box 1 wages / tips / other compensation from THIS blob. Never Box 5. Never invents an amount. */
@@ -439,7 +478,9 @@ export function box1FromPrintedText(text: string): string {
   ];
   for (const pattern of patterns) {
     const match = blob.match(pattern);
-    if (!match?.[1] || /box\s*5|medicare/i.test(match[0])) continue;
+    if (!match?.[1] || /box\s*5|medicare/i.test(match[0]) || isReportedW2WagesPhrase(match[0])) {
+      continue;
+    }
     const digits = moneyDigits(match[1]);
     if (digits) return digits;
   }
@@ -1543,16 +1584,18 @@ export function fieldsFromPrintedLines(
     if (bonus) putMoney("bonus", bonus);
     const commission = valueAfter(line, /^COMMISSION:\s*/i);
     if (commission) putMoney("commission", commission);
-    const wages = labeled(
-      line,
-      next,
-      /^(?:BOX 1 WAGES|BOX 1|WAGES, TIPS, OTHER COMPENSATION|WAGES):\s*/i,
-    );
-    if (wages) putMoney("wages", wages);
+    if (!isReportedW2WagesPhrase(line)) {
+      const wages = labeled(
+        line,
+        next,
+        /^(?:BOX 1 WAGES|BOX 1|WAGES, TIPS, OTHER COMPENSATION|WAGES):\s*/i,
+      );
+      if (wages) putMoney("wages", wages);
+    }
     const box5 = labeled(
       line,
       next,
-      /^(?:BOX 5 MEDICARE WAGES(?: AND TIPS)?|BOX 5|MEDICARE WAGES(?: AND TIPS)?):?\s*/i,
+      /^(?:MEDICARE WAGES BOX 5(?: OF W-?2)?|BOX 5 MEDICARE WAGES(?: AND TIPS)?|BOX 5 OF W-?2|BOX 5|MEDICARE WAGES(?: AND TIPS)?):?\s*/i,
     );
     if (box5) {
       putMoney("medicare_wages", box5);
@@ -1704,6 +1747,10 @@ export function fieldsFromPrintedLines(
 
   if (extractClass === "w2" || extractClass === "other") {
     const blob = lines.join(" ");
+    const overlaid = overlayW2MedicareFromPage(fields, lines);
+    if (overlaid.medicare_wages) fields.medicare_wages = overlaid.medicare_wages;
+    if (overlaid.box5) fields.box5 = overlaid.box5;
+    if (!overlaid.wages) delete fields.wages;
     if (!fields.medicare_wages && !fields.box5) {
       const box5 = box5FromPrintedText(blob) || box5FromPrintedText(lines.join("\n"));
       if (box5) {
