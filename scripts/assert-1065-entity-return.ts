@@ -492,6 +492,13 @@ async function main() {
     (yearsAsk.actions ?? []).map((item) => item.label),
     ["Use this", "Change", "Skip"],
   );
+  assert.deepEqual(
+    deskStripActions([{ id: "years-card", role: "fox", text: yearsAsk.text }], sunita).map(
+      (item) => item.label,
+    ),
+    ["Use this", "Change", "Skip"],
+    "years card live strip is Use this · Change · Skip, not Skip-only",
+  );
   const usedYears = resolveProposal(sunita, "accept");
   assert.equal(usedYears.facts?.years_in_business?.value, "19", "Use 19 writes 19");
   assert.notEqual(usedYears.facts?.years_in_business?.value, "2", "do not invent 2");

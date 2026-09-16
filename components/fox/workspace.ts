@@ -3734,6 +3734,9 @@ function stripStreetSuggest(actions: FoxAction[]): FoxAction[] {
 
 /** Confirm-before-write lives on the File tool, not on a chat message. */
 export function writeConfirmActions(draft: FoxIntakeDraft): FoxAction[] {
+  if (entityYearsOpen(draft)) {
+    return stripStreetSuggest(workspacePromptCopy("confirm-proposal", draft).actions ?? []);
+  }
   if (!draft.pendingProposal && !draft.pendingConflict && !draft.pendingAddress) return [];
   if (namedTwoK1WhoAskPending(draft)) return [];
   return stripStreetSuggest(workspacePromptCopy("confirm-proposal", draft).actions ?? []);
@@ -3770,6 +3773,10 @@ export function deskStripActions(
   }
   if (message.text === PRICING_WHEN_READY || isPricingWhenReadySpeech(message)) {
     return stripStreetSuggest(pricingFailedActions());
+  }
+
+  if (entityYearsOpen(draft)) {
+    return writeConfirmActions(draft);
   }
 
   if (

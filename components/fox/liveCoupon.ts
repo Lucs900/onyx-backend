@@ -1177,7 +1177,11 @@ function isYearsInBusinessAskText(text: string) {
 export function paintThreadActions(actions: FoxAction[]): FoxAction[] {
   const unique = oneDocChipSet(actions);
   if (unique.some((action) => action.capture?.field === "skip-years-in-business")) {
-    return yearsInBusinessSkipActions();
+    const entityConfirm = unique.some(
+      (action) =>
+        action.capture?.field === "accept-proposal" || action.capture?.field === "change-proposal",
+    );
+    if (!entityConfirm) return yearsInBusinessSkipActions();
   }
   if (unique.some((action) => action.capture?.field === "skip-monthly-debts")) {
     return paintedMonthlyDebtsActions(unique);

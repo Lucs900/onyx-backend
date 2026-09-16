@@ -8,10 +8,11 @@ import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { applyExtractedFields, nextDocInvite, resolveFactConflict } from "../components/fox/fileWrite";
-import { canLooksRight, resolveProposal, skipYearsInBusiness, writeYearsInBusiness } from "../components/fox/completeness";
+import { canLooksRight, resolveProposal, skipYearsInBusiness, writeYearsInBusiness, yearsInBusinessSkipActions } from "../components/fox/completeness";
 import { applyLooksRightMotion, applyProceedMotion } from "../components/fox/motion";
+import { paintThreadActions } from "../components/fox/liveCoupon";
 import { emptyDraft } from "../components/fox/store";
-import { nextFoxAsk, workspacePrompt, workspaceReply } from "../components/fox/workspace";
+import { deskStripActions, nextFoxAsk, workspacePrompt, workspaceReply } from "../components/fox/workspace";
 import { selectK1WhoOnLoan } from "../components/fox/qualifyingIncome";
 import { businessStartFromPrintedText, loudEntityReturnFromPrintedLines } from "../lib/docs/printedSample";
 import {
@@ -76,6 +77,8 @@ assert.match(doctrineText, /097b991/);
 assert.match(doctrineText, /sibling of entity Use this/);
 assert.match(doctrineText, /Skip = empty/);
 assert.match(doctrineText, /Contract waits/);
+assert.match(doctrineText, /same confirm-before-write chips as income/);
+assert.match(doctrineText, /Not Skip-only/);
 
 const parsed = parseBusinessStartDate("05-25-2007");
 assert.ok(parsed);
@@ -356,6 +359,24 @@ assert.match(walkAsk.text, /The return shows Parass Foods LLC started May 25, 20
 assert.deepEqual(
   (walkAsk.actions ?? []).map((item) => item.label),
   ["Use this", "Change", "Skip"],
+);
+assert.deepEqual(
+  paintThreadActions(walkAsk.actions ?? []).map((item) => item.label),
+  ["Use this", "Change", "Skip"],
+  "paint does not seal the years card to Skip-only",
+);
+assert.deepEqual(
+  deskStripActions(
+    [{ id: "years-card", role: "fox", text: walkAsk.text }],
+    walkUsed,
+  ).map((item) => item.label),
+  ["Use this", "Change", "Skip"],
+  "live composer strip is Use this · Change · Skip",
+);
+assert.deepEqual(
+  paintThreadActions(yearsInBusinessSkipActions()).map((item) => item.label),
+  ["Skip"],
+  "paper years ask stays Skip-only",
 );
 assert.doesNotMatch(walkAsk.text, /purchase contract/i, "years card FIRST — contract waits");
 assert.equal(nextDocInvite(walkUsed), null, "purchase contract does not jump the years card");

@@ -31,7 +31,7 @@ After Use this writes Employment from a **1065** or **1120-S**:
 3. Years already match N ± 1 → then file-driven next ask (contract OK).
 4. Skip on the early “How long have you had this business?” does **not** seal years forever. Skip = empty. Empty + page date = offer 19.
 
-Copy when years are empty: `The return shows {entity} started {Month D, YYYY} — {N} years.` Chips **Use this · Change · Skip**. Use this writes N (whole years start to today). No invent 2.
+Copy when years are empty: `The return shows {entity} started {Month D, YYYY} — {N} years.` Live composer strip is the **same confirm-before-write chips as income**: **Use this · Change · Skip**. Not a paper ask. Not Skip-only. Use this writes N (whole years start to today). Change they type a number. Skip leaves years empty, then file-driven next ask. Do not make the founder type 19. Do not write 19 until Use this.
 
 Conflict (File 2 vs 2007) once: `The return shows started May 25, 2007 — 19 years. The file still has 2.` Chips **Use 19 years · Keep 2 · Change**. Then never reprint.
 
@@ -41,7 +41,7 @@ Parass 1065 gold-locks **05-25-2007** when extract misses the date box. Same pac
 
 ## Founder paperclip (not this ticket’s ACCEPT)
 
-Start over → SE → years early Skip (empty, not a seal) → Skip 1040 → Parass 1065 → Sunita → Use this → **2007/19 card live** → Use this writes Years **19** → then contract may ask. Employment PARASS FOODS LLC · QI −$12,932 · named loss · no SSN · no $725.
+Start over → SE → years early Skip (empty, not a seal) → Skip 1040 → Parass 1065 → Sunita → Use this → **2007/19 card live** + **Use this · Change · Skip** on the strip → Use this writes Years **19** → then contract may ask. Employment PARASS FOODS LLC · QI −$12,932 · named loss · no SSN · no $725.
 
 Walker-green ≠ founder-green. Do not call ACCEPT. Do not commit founder PDF.
 
