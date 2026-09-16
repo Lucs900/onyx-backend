@@ -12,6 +12,7 @@ export type TaxFormClass =
   | "schedule_e"
   | "schedule_c"
   | "k1"
+  | "w2"
   | "other";
 
 export type ClassifiedTaxPage = {
@@ -63,6 +64,13 @@ const FORM_1065_KEYS = new Set([
   "ownership_percent",
   "return_kind",
 ]);
+const W2_KEYS = new Set(["tax_year", "employer_name", "medicare_wages", "box5", "wages"]);
+
+function pageLooksLikePacketCover(text: string) {
+  return /\b(bookmark|transmittal|table of contents|attached documents|see attached|index of forms)\b/i.test(
+    text,
+  );
+}
 
 /** Printed first. 8879 before any 1040 match — 8879 can mention Form 1040. */
 export function classifyPageByFormHeader(text: string): TaxFormClass {
@@ -94,6 +102,14 @@ export function classifyPageByFormHeader(text: string): TaxFormClass {
   }
   if (/\bU\.?S\.?\s+Income\s+Tax\s+Return\s+for\s+an\s+S\s+Corporation\b/i.test(t)) {
     return "form_1120s";
+  }
+
+  if (
+    (/\bForm\s+W-?2\b/i.test(t) || /\bWage and Tax Statement\b/i.test(t)) &&
+    !/\bForm\s+1040\b/i.test(t) &&
+    !/\bU\.?S\.?\s+Individual\s+Income\s+Tax\s+Return\b/i.test(t)
+  ) {
+    return "w2";
   }
 
   if (/\bSchedule\s+K-?1\b/i.test(t) || (/\bForm\s+1065\b/i.test(t) && /\bPartner'?s\s+Share\b/i.test(t))) {
@@ -138,6 +154,13 @@ export function classifyPageByFormHeader(text: string): TaxFormClass {
     return "form_1040";
   }
   if (/\bForm\s+1040\b/i.test(t) && !/\bSchedule\s+[CEF]\b/i.test(t) && !/\bSchedule\s+K-?1\b/i.test(t)) {
+    if (
+      pageLooksLikePacketCover(t) &&
+      !/\b1z\b/.test(t) &&
+      !/\bU\.?S\.?\s+Individual\s+Income\s+Tax\s+Return\b/i.test(t)
+    ) {
+      return "other";
+    }
     return "form_1040";
   }
 
@@ -161,8 +184,10 @@ export function fieldsAllowedForClass(
               ? K1_KEYS
               : klass === "form_1120s"
                 ? FORM_1120S_KEYS
-                : klass === "form_1065"
-                  ? FORM_1065_KEYS
+              : klass === "form_1065"
+                ? FORM_1065_KEYS
+                : klass === "w2"
+                  ? W2_KEYS
                   : null;
   if (!allow) return {};
   const next: Record<string, string> = {};
@@ -191,4 +216,9 @@ export function pickForm1065Page(walked: readonly ClassifiedTaxPage[]): Classifi
 /** Year + both names: Form 1040 face first. 8879 is names/year fallback only. */
 export function pickNameYearPage(walked: readonly ClassifiedTaxPage[]): ClassifiedTaxPage | undefined {
   return pickForm1040Page(walked) ?? walked.find((page) => page.klass === "form_8879");
+}
+
+/** W-2 pages inside the same packet. Same drop — not a second upload. */
+export function pickW2Pages(walked: readonly ClassifiedTaxPage[]): ClassifiedTaxPage[] {
+  return walked.filter((page) => page.klass === "w2");
 }

@@ -45,7 +45,7 @@ import {
   mergeIncomeLedger,
   scheduleEStreetNames,
 } from "../lib/income/ledger";
-import { classifyAndExtract, shouldGrokTaxReturnPagesFirst } from "../lib/docs/extract";
+import { classifyAndExtract, packetExtractIsUseful, shouldGrokTaxReturnPagesFirst } from "../lib/docs/extract";
 import { classifyPageByFormHeader } from "../lib/docs/formHeader";
 import { loudTranscriptFromPrintedLines } from "../lib/docs/printedSample";
 import {
@@ -1273,6 +1273,135 @@ async function main() {
     "missing 1040 on page 1 is not a missing 1040 in the packet",
   );
 
+  const sunitaName = "2024 Tax Return Documents (SINGH SUNITA) - filed.pdf";
+  assert.equal(
+    classifyPageByFormHeader("Bookmark sheet Tax Return Documents Form 1040 listed see attached"),
+    "other",
+    "bookmark that names Form 1040 is not a 1040 face",
+  );
+  assert.equal(
+    classifyPageByFormHeader("Form W-2 Wage and Tax Statement 2024 Box 5 Medicare wages 118000"),
+    "w2",
+  );
+  assert.notEqual(
+    classifyPageByFormHeader("Form 1040 U.S. Individual Income Tax Return 1a Total amount from Form(s) W-2"),
+    "w2",
+    "1040 line 1a is not a W-2 page",
+  );
+  assert.equal(packetExtractIsUseful("tax_return", { tax_year: "2024", full_name: "SUNITA SINGH" }), true);
+  assert.equal(packetExtractIsUseful("tax_return", { employer_name: "ACME", medicare_wages: "118000" }), true);
+  assert.equal(packetExtractIsUseful("other", {}), false);
+
+  let sunitaExtracts = 0;
+  const sunitaDeadFirst = {
+    async classify() {
+      return { class: "tax_return" as const, confidence: 0.2, readable: false };
+    },
+    async extract() {
+      sunitaExtracts += 1;
+      if (sunitaExtracts === 1) {
+        return { fields: {}, warnings: ["failed"] };
+      }
+      return { fields: { tax_year: "2024", full_name: "SUNITA SINGH" }, warnings: [] };
+    },
+  };
+  const sunitaHuntPdf = multiPagePdf([
+    [
+      "Bookmark sheet",
+      "Tax Return Documents",
+      "Form 1040 listed",
+      "See attached",
+    ],
+    [
+      "Form 1040",
+      "U.S. Individual Income Tax Return",
+      "2024",
+      "Your first name and middle initial Sunita",
+      "Last name Singh",
+      "1a Total amount from Form(s) W-2, box 1          118,000.00",
+      "1z Wages, salaries, tips, etc. Add lines 1a through 1h          118,000.00",
+    ],
+    [
+      "Form W-2 Wage and Tax Statement",
+      "2024",
+      "Employer ACME LLC",
+      "Box 5 Medicare wages and tips 118,000.00",
+    ],
+    [
+      "Schedule E (Form 1040) 2024",
+      "Supplemental Income and Loss",
+      "Part I Income or Loss From Rental Real Estate",
+      "42000  3 Rents received",
+      "11400  Cash expenses (ex-depreciation)",
+    ],
+  ]);
+  const sunitaHunt = await classifyAndExtract(
+    sunitaHuntPdf,
+    "application/pdf",
+    sunitaDeadFirst,
+    "tax_return",
+    sunitaName,
+  );
+  assert.ok(sunitaExtracts >= 2, "page-1 unread must not stop the packet hunt");
+  assert.notEqual(sunitaHunt.failed, true, "one dead page does not unread the packet");
+  assert.equal(sunitaHunt.fields.tax_year, "2024");
+  assert.match(sunitaHunt.fields.full_name ?? "", /SUNITA/i);
+  assert.equal(sunitaHunt.fields.wages, "118000");
+  assert.equal(sunitaHunt.fields.schedule_e_rents_received, "42000");
+  assert.ok(
+    sunitaHunt.fields.medicare_wages || sunitaHunt.fields.box5,
+    "W-2 Box 5 stays in the same drop",
+  );
+
+  const sunitaPrintedOnly = await classifyAndExtract(
+    sunitaHuntPdf,
+    "application/pdf",
+    {
+      async classify() {
+        return { class: "other" as const, confidence: 0.1, readable: false };
+      },
+      async extract() {
+        return { fields: {}, warnings: ["failed"] };
+      },
+    },
+    "tax_return",
+    sunitaName,
+  );
+  assert.notEqual(sunitaPrintedOnly.failed, true, "later printed 1040 / Sch E / W-2 keep the packet");
+  assert.equal(sunitaPrintedOnly.fields.wages, "118000");
+  assert.equal(sunitaPrintedOnly.fields.schedule_e_rents_received, "42000");
+  assert.ok(!sunitaPrintedOnly.warnings.includes("failed"));
+
+  const everyPageDead = await classifyAndExtract(
+    multiPagePdf([["Transmittal"], ["Blank scan"]]),
+    "application/pdf",
+    {
+      async classify() {
+        return { class: "other" as const, confidence: 0, readable: false };
+      },
+      async extract() {
+        return { fields: {}, warnings: ["failed"] };
+      },
+    },
+    "tax_return",
+    sunitaName,
+  );
+  assert.equal(everyPageDead.failed, true, "could not read only when every page failed");
+  assert.deepEqual(everyPageDead.fields, {});
+
+  const sunitaCoverAt = "2026-09-16T18:00:00.000Z";
+  const sunitaCover = writeLive(
+    wageQiDraft(),
+    sunitaName,
+    { tax_year: "2024", full_name: "SUNITA SINGH", wages: "118000" },
+    sunitaCoverAt,
+  );
+  assert.equal(sunitaCover.draft.pendingProposal?.field, "tax_year");
+  assert.equal(sunitaCover.draft.facts?.qualifying_income?.value, "36453", "cover wages do not write QI");
+  const sunitaNamed = resolveProposal(sunitaCover.draft, "accept");
+  assert.equal(sunitaNamed.facts?.qualifying_income?.value, "36453");
+  assert.match(String(sunitaNamed.facts?.[TAX_RETURN_NAME_FIELD]?.value ?? ""), /SUNITA/i);
+
   const extractSrc = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "..", "lib/docs/extract.ts"), "utf8");
   const routeSrc = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "..", "app/api/docs/extract/route.ts"), "utf8");
   const classifyAt = extractSrc.indexOf("async function classifyAndExtractUnmerged");
@@ -1295,6 +1424,14 @@ async function main() {
   assert.match(extractSrc, /FORM_1040_HOUSEHOLD_WAGES_PROMPT|line 1z \(Wages, salaries, tips, etc\. Add lines 1a/);
   assert.match(extractSrc, /taxReturnPagesToGrok|schedule_e/);
   assert.match(extractSrc, /assignLedgerKeepFirst/);
+  assert.match(extractSrc, /Hunt every page|packetExtractIsUseful|page-read hunt/);
+  assert.match(extractSrc, /Do not string-seal|Tax Return Documents/);
+  assert.match(extractSrc, /one dead page is not unread|every page failed/i);
+  assert.doesNotMatch(
+    extractSrc,
+    /function filenameLooksLikeEntityPacket[\s\S]{0,220}tax\\s\*returns\?/,
+    "Tax Return Documents is not an entity filename seal",
+  );
   assert.match(extractSrc, /Never use line 21 Income or \(loss\)/);
   assert.match(extractSrc, /Never use line 26/);
   assert.match(extractSrc, /mortgage interest \(line 12\)/);

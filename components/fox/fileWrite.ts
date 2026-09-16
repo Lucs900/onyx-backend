@@ -270,6 +270,9 @@ export const EXTRACT_SCHEMA_KEYS: Record<ExtractClass, readonly string[]> = {
     "cover_schedules",
     "cover_k1_names",
     "wages",
+    "employer_name",
+    "medicare_wages",
+    "box5",
     "gross_receipts",
     "schedule_f_net_profit",
   ],
@@ -537,6 +540,13 @@ export function looksLikeTaxReturnFields(
   if (String(fields.entity_ordinary_income ?? "").trim()) return true;
   if (String(fields.schedule_c_net_profit ?? "").trim()) return true;
   if (String(fields.schedule_e_rents_received ?? "").trim()) return true;
+  if (String(fields.medicare_wages ?? "").trim() || String(fields.box5 ?? "").trim()) return true;
+  if (
+    String(fields.wages ?? "").trim() &&
+    (String(fields.full_name ?? "").trim() || /^(1|true|yes)$/i.test(String(fields.form_1040 ?? "").trim()))
+  ) {
+    return true;
+  }
   if (packetReadPhase(fields)) return true;
   return looksLikeFederalReturnFields(fields);
 }
@@ -1049,6 +1059,10 @@ export function hasLockedSuggestion(
       return Boolean(value("k1_ordinary_income") || value("entity_ordinary_income"));
     }
     if (looksLikeFederalReturnFields(fields)) return true;
+    const box5 = isBoxNumberAsDollars(value("medicare_wages") || value("box5"))
+      ? ""
+      : value("medicare_wages") || value("box5");
+    if (value("employer_name") && box5) return true;
     return false;
   }
   return Object.values(fields ?? {}).some((item) => String(item ?? "").trim());
@@ -1866,7 +1880,12 @@ export function applyExtractedFields(
       continue;
     }
     if ((holdFederalReturn || packetContinue) && FEDERAL_RETURN_HOLD.has(field)) continue;
-    if (extractClass === "tax_return" && field === "wages") continue;
+    if (
+      extractClass === "tax_return" &&
+      (field === "wages" || field === "medicare_wages" || field === "box5" || field === "employer_name")
+    ) {
+      continue;
+    }
     if (transcriptReturn && !TRANSCRIPT_FILE_KEYS.has(field)) continue;
     if (extractClass === "tax_return" && (field === "present_address" || field === "property_address")) {
       continue;
@@ -2472,7 +2491,7 @@ export function applyExtractedFields(
   for (const [key, value] of Object.entries(fields)) {
     if (!value) continue;
     const already = cautionFacts[key];
-    if (key === "wages" || key === "packet_read") continue;
+    if (key === "wages" || key === "packet_read" || key === "medicare_wages" || key === "box5") continue;
     if (
       key === "schedule_e_rents_received" ||
       key === "schedule_e_cash_expenses" ||
@@ -2537,7 +2556,12 @@ export function applyExtractedFields(
     };
   }
   if (!next.pendingProposal && !next.pendingConflict && extractClass === "tax_return") {
-    next = promoteIncomeLedger(next);
+    if (hasLockedSuggestion("w2", fields)) {
+      next = maybeProposeWageExtract(next, fields, "w2");
+    }
+    if (!next.pendingProposal && !next.pendingConflict) {
+      next = promoteIncomeLedger(next);
+    }
   }
   if (packetContinue) {
     const offeredWages =
