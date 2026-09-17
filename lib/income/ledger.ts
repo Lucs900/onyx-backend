@@ -53,7 +53,7 @@ export function lockParass1065LedgerFields(fields: Record<string, string>): Reco
     .replace(/[\s_-]+/g, "");
   const parassReturn = kind === "1065" || kind === "k1" || Boolean(fields.entity_ordinary_income);
   if (!parassReturn) return fields;
-  const next = { ...fields, entity_name: PARASS_FOODS_ENTITY };
+  const next: Record<string, string> = { ...fields, entity_name: PARASS_FOODS_ENTITY };
   const ordinary = parseLedgerMoney(next.k1_ordinary_income);
   const other = parseLedgerMoney(next.other_k1_ordinary_income);
   const company = parseLedgerMoney(next.entity_ordinary_income);
