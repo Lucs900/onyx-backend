@@ -270,6 +270,7 @@ import {
   otherK1LoanAskNeeded,
   namedTwoK1Packet,
   namedTwoK1WhoAskPending,
+  k1WhoConfirmPending,
   selectK1WhoOnLoan,
   INCOME_CAUTION_FIELD,
   K1_ORDINARY_NOTE,
@@ -3715,6 +3716,9 @@ export function nextFoxAsk(draft: FoxIntakeDraft): {
   if (draft.liveQuoteStatus === "unavailable" && !draft.liveCouponSettled && !draft.liveQuote) {
     return { text: PRICING_WHEN_READY, actions: pricingFailedActions() };
   }
+  if (namedTwoK1WhoAskPending(draft) || k1WhoConfirmPending(draft)) {
+    return workspacePromptCopy("confirm-proposal", draft);
+  }
   if (entityYearsOpen(draft)) {
     return workspacePromptCopy("confirm-proposal", draft);
   }
@@ -3809,11 +3813,14 @@ function stripStreetSuggest(actions: FoxAction[]): FoxAction[] {
 
 /** Confirm-before-write lives on the File tool, not on a chat message. */
 export function writeConfirmActions(draft: FoxIntakeDraft): FoxAction[] {
+  if (namedTwoK1WhoAskPending(draft)) return [];
+  if (k1WhoConfirmPending(draft) && namedTwoK1Packet(draft)) {
+    return stripStreetSuggest(workspacePromptCopy("confirm-proposal", draft).actions ?? []);
+  }
   if (entityYearsOpen(draft)) {
     return stripStreetSuggest(workspacePromptCopy("confirm-proposal", draft).actions ?? []);
   }
   if (!draft.pendingProposal && !draft.pendingConflict && !draft.pendingAddress) return [];
-  if (namedTwoK1WhoAskPending(draft)) return [];
   return stripStreetSuggest(workspacePromptCopy("confirm-proposal", draft).actions ?? []);
 }
 
@@ -3850,6 +3857,9 @@ export function deskStripActions(
     return stripStreetSuggest(pricingFailedActions());
   }
 
+  if (namedTwoK1WhoAskPending(draft) || k1WhoConfirmPending(draft)) {
+    return stripStreetSuggest(workspacePromptCopy("confirm-proposal", draft).actions ?? []);
+  }
   if (entityYearsOpen(draft)) {
     return writeConfirmActions(draft);
   }
@@ -3914,7 +3924,13 @@ export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
   if (draft.awaitingBothMonthlyReason) return "both-monthly-reason";
   if (draft.awaitingCoverWageGap) return "cover-wage-gap";
   if (isHouseholdWagesProposal(draft.pendingProposal)) return "household-wages";
-  if (entityYearsOpen(draft)) return "confirm-proposal";
+  if (namedTwoK1WhoAskPending(draft) || k1WhoConfirmPending(draft)) return "confirm-proposal";
+  if (isEntityCashFlowProposal(draft.pendingProposal) && !entityYearsOpen(draft)) {
+    return "confirm-proposal";
+  }
+  if (entityYearsOpen(draft) && !namedTwoK1WhoAskPending(draft) && !k1WhoConfirmPending(draft)) {
+    return "confirm-proposal";
+  }
   if (taxReturnPacketHoldAsk(draft)) return "packet-read";
   if (draft.scheduleECashUnread) return "schedule-e-unread";
   if (taxReturnPacketSettled(draft)) return "packet-close";

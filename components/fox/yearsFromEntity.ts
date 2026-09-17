@@ -204,6 +204,21 @@ export function entityYearsAskNeeded(draft: FoxIntakeDraft): boolean {
   const pending = pageBusinessStart(draft);
   if (!pending) return false;
   if (!draft.facts?.qualifying_income?.confirmed) return false;
+  const method = String(draft.facts?.qualifying_method?.value ?? "").trim();
+  if (/rents minus cash|schedule e|rental cash/i.test(method)) return false;
+  const qi = Number(String(draft.facts.qualifying_income.value ?? "").replace(/[^\d.-]/g, ""));
+  const schE = Number(String(draft.facts?.schedule_e_monthly?.value ?? "").replace(/[^\d.-]/g, ""));
+  if (draft.facts?.schedule_e_monthly?.confirmed && Number.isFinite(qi) && qi === schE && !/K-1 Box 1/i.test(method)) {
+    return false;
+  }
+  const entityJob = (draft.employmentHistory ?? []).some((row) => {
+    const label = String(row.label ?? "").trim();
+    const entity = String(pending.entity ?? "").trim();
+    if (!label || !entity) return false;
+    return label.toLowerCase() === entity.toLowerCase() || label.toLowerCase().includes(entity.toLowerCase());
+  });
+  const entityWrite = /K-1 Box 1|company ordinary/i.test(method) || (Number.isFinite(qi) && qi < 0) || entityJob;
+  if (!entityWrite) return false;
   const kind = String(draft.facts?.return_kind?.value ?? "").trim().toLowerCase();
   const entityKind =
     isEntityReturnKind(kind) ||

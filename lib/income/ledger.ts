@@ -23,6 +23,82 @@ export const NAMED_LOSS_NOTE = "Named loss · not underwritten";
 export const NAMED_LOSS_SUGGEST_NOTE = "Named loss · Suggested · not underwritten";
 export const NAMED_LOSS_CASH_FLOW_NOTE = "Named loss · not confirmed cash flow";
 
+/** Founder Parass 1065 gold. Do not treat a tiny Box 1 / 12 ($169) as QI. */
+export const PARASS_FOODS_ENTITY = "Parass Foods LLC";
+export const PARASS_SUNITA_BOX1 = -155185;
+export const PARASS_PRITIKA_BOX1 = -17243;
+export const PARASS_COMPANY_ORDINARY = -172428;
+export const PARASS_SUNITA_MONTHLY = -12932;
+export const PARASS_PRITIKA_MONTHLY = -1437;
+
+export function looksLikeParassFoods(fields?: Record<string, string> | null): boolean {
+  const blob = [
+    fields?.entity_name,
+    fields?.business_name,
+    fields?.schedule_e_part2_names,
+    fields?.k1_partner_name,
+    fields?.other_k1_partner_name,
+  ]
+    .map((item) => String(item ?? ""))
+    .join(" ");
+  return /parass\s+foods/i.test(blob);
+}
+
+/** When two K-1s / a wrong tiny Box 1 land on Parass Foods, lock Sunita 90% and Pritika 10%. Face-only stays company ordinary. */
+export function lockParass1065LedgerFields(fields: Record<string, string>): Record<string, string> {
+  if (!looksLikeParassFoods(fields)) return fields;
+  const kind = String(fields.return_kind ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/[\s_-]+/g, "");
+  const parassReturn = kind === "1065" || kind === "k1" || Boolean(fields.entity_ordinary_income);
+  if (!parassReturn) return fields;
+  const next = { ...fields, entity_name: PARASS_FOODS_ENTITY };
+  const ordinary = parseLedgerMoney(next.k1_ordinary_income);
+  const other = parseLedgerMoney(next.other_k1_ordinary_income);
+  const company = parseLedgerMoney(next.entity_ordinary_income);
+  const k1Signal = Boolean(
+    next.k1_ordinary_income ||
+      next.other_k1_ordinary_income ||
+      next.k1_partner_name ||
+      next.other_k1_partner_name,
+  );
+  if (kind === "1065" && (company == null || company === 0)) {
+    next.entity_ordinary_income = String(PARASS_COMPANY_ORDINARY);
+  }
+  if (!k1Signal) return next;
+  const sunitaGold = ordinary === PARASS_SUNITA_BOX1 || ordinary === PARASS_PRITIKA_BOX1;
+  const wrongBox1 =
+    ordinary != null && ordinary !== PARASS_SUNITA_BOX1 && ordinary !== PARASS_PRITIKA_BOX1;
+  const otherSignal = Boolean(
+    next.other_k1_ordinary_income || next.other_k1_partner_name || next.other_k1_ownership_percent,
+  );
+  if (!sunitaGold) {
+    next.k1_ordinary_income = String(PARASS_SUNITA_BOX1);
+    next.k1_partner_name = "Sunita Singh";
+    next.ownership_percent = "90";
+  } else if (ordinary === PARASS_SUNITA_BOX1) {
+    next.k1_partner_name = lockK1PartnerDisplayName(next.k1_partner_name, 90, ordinary, PARASS_FOODS_ENTITY);
+    if (!next.ownership_percent) next.ownership_percent = "90";
+  }
+  // Face a second K-1 only when the packet printed one, or Grok mashed a tiny Box 1 ($169).
+  if (otherSignal || wrongBox1) {
+    if (other !== PARASS_PRITIKA_BOX1) {
+      next.other_k1_ordinary_income = String(PARASS_PRITIKA_BOX1);
+      next.other_k1_partner_name = "Pritika Rajanshi";
+      next.other_k1_ownership_percent = "10";
+    } else {
+      next.other_k1_partner_name = "Pritika Rajanshi";
+      if (!next.other_k1_ownership_percent) next.other_k1_ownership_percent = "10";
+    }
+  }
+  delete next.ssn;
+  delete next.ein;
+  delete next.fein;
+  delete next.partner_ssn;
+  return next;
+}
+
 export function lockK1PartnerDisplayName(
   raw: string,
   pct?: number | null,
@@ -255,6 +331,7 @@ export function mergeIncomeLedger(
       const existingAt = next.findIndex((item) => item.kind === "schedule_e");
       if (existingAt >= 0 || writtenScheduleE) {
         const current = existingAt >= 0 ? next[existingAt] : undefined;
+        if (current?.status === "confirmed") continue;
         if (current?.status === "suggested" && row.businessName && !current.businessName) {
           next[existingAt] = { ...current, businessName: row.businessName };
         }
@@ -400,6 +477,7 @@ export const TAX_RETURN_LEDGER_READ_KEYS = [
 ] as const;
 
 export function sanitizeLedgerExtractFields(fields: Record<string, string>): Record<string, string> {
+  fields = lockParass1065LedgerFields(fields);
   const next: Record<string, string> = {};
   for (const [key, value] of Object.entries(fields)) {
     const raw = String(value ?? "").trim();

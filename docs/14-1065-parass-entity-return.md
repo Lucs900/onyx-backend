@@ -38,7 +38,8 @@ Do **not** invent a monthly number that is not on the page.
 
 - Classify from the printed header. A filename with `1120` is not Form 1120-S.
 - Skip-1040 on self-employed still asks for the **business return**. After classify, name **1065**. Do not jump to Looks right.
-- File empty on qualifying income until who is confirmed.
+- File empty on qualifying income until who is confirmed. Written Schedule E rental cash is a **ledger row**. A later 1065 / K-1 **adds**. It does **not** eat Sch E Part I **$521**. Who-on-loan still fires when rental QI is already on File.
+- Do **not** treat a tiny Box 1 / 12 (**$169** from $2,028) as gold. Sunita Box 1 is **−$155,185** → **−$12,932**. Founder must not Use this on $169.
 - Employee wages stay out of QI. No SSN / EIN on File.
 - First card lists **Sunita Singh 90% · −$12,932 a month**, **Pritika Rajanshi 10% · −$1,437 a month**, and **Company ordinary · −$14,369 a month**. Do not print Sunita on the 10% line. Ask **Who is on this loan?** Chips: **Sunita · Pritika · Both · Skip**. No Yes · No · Use this · Change on that turn. Own-all does not ask. Do not invent a co-borrower. No “your K-1.”
 - **Sunita** → then Use this writes **−$12,932** only.

@@ -78,8 +78,10 @@ import {
   isOtherK1Box1Proposal,
   namedTwoK1WhoAskPending,
   OTHER_K1_BOX1_FIELD,
+  parkWrittenRentalCash,
   promoteIncomeLedger,
   sealK1WhoWrite,
+  settleEntityLedgerAfterQiWrite,
   writeOtherK1Box1,
   settleHouseholdWagesProposal,
   settleIncomeLedgerProposal,
@@ -1728,6 +1730,9 @@ export function resolveProposal(
         : proposal.kind === "computed"
           ? "computed"
           : "document";
+  if (proposal.field === QUALIFYING_INCOME_FIELD) {
+    draft = parkWrittenRentalCash(draft);
+  }
   if (isPlaceAddressProposal(proposal) && !purchaseContractStreetFromDraft(draft)) {
     const extras = Object.fromEntries((proposal.extras ?? []).map((item) => [item.field, item.value]));
     const place = parsePlaceAddress({
@@ -1796,6 +1801,7 @@ export function resolveProposal(
   }
   if (proposal.field === QUALIFYING_INCOME_FIELD) {
     next = writeEntityEmployment(next, proposal);
+    next = settleEntityLedgerAfterQiWrite(next, proposal.value);
   }
   if (proposal.field === QUALIFYING_INCOME_FIELD && proposal.parts) {
     if (proposal.parts.wage) next = writeConfirmedFact(next, WAGE_MONTHLY_FIELD, proposal.parts.wage, source);

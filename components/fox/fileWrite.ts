@@ -54,7 +54,12 @@ import {
   monthlyQualifyingFromExtract,
   shouldProposeCoverLineIncome,
   attachIncomeLedgerFromExtract,
+  isCompanyOrdinaryHold,
+  isEntityCashFlowProposal,
   isHouseholdWagesProposal,
+  namedTwoK1WhoAskPending,
+  k1WhoConfirmPending,
+  parkWrittenRentalCash,
   promoteIncomeLedger,
   normalizeReturnKind,
   parseExtractMoney,
@@ -70,6 +75,7 @@ import {
   rentalOwnedOnFile,
 } from "./qualifyingIncome";
 import { maybeProposeHunt } from "./hunt";
+import { lockParass1065LedgerFields } from "@/lib/income/ledger";
 import { bankEndingBalanceAmount } from "@/lib/docs/bankBalance";
 import { safeAccountLast4 } from "@/lib/docs/bankLast4";
 import { junkEmployerName } from "@/lib/docs/junkEmployer";
@@ -768,8 +774,13 @@ function packetLedgerKind(draft: FoxIntakeDraft) {
 
 /** Written Sch E, no new schedule card left. A reprint of that Sch E is not “next.” */
 export function taxReturnPacketSettled(draft: FoxIntakeDraft) {
+  if (namedTwoK1WhoAskPending(draft) || k1WhoConfirmPending(draft)) return false;
+  if (isEntityCashFlowProposal(draft.pendingProposal) || isCompanyOrdinaryHold(draft.pendingProposal)) {
+    return false;
+  }
   if (!scheduleEWrittenOnFile(draft)) return false;
   if (draft.pendingProposal?.field === "household_wages") return false;
+  if (draft.pendingProposal?.field === QUALIFYING_INCOME_FIELD) return false;
   if (draft.pendingProposal?.field === "income_ledger") {
     const kind = packetLedgerKind(draft);
     if (kind && kind !== "schedule_e") return false;
@@ -1656,7 +1667,19 @@ function existingFact(draft: FoxIntakeDraft, field: string): { value: string; vi
   if (field === "qualifying_income" && draft.facts?.qualifying_income?.value) {
     return { value: draft.facts.qualifying_income.value, via: "qualifying_income" };
   }
-  if (INCOME_MONEY_KEYS.has(field) && draft.facts?.qualifying_income?.value) {
+  if (
+    INCOME_MONEY_KEYS.has(field) &&
+    draft.facts?.qualifying_income?.value &&
+    field !== "k1_ordinary_income" &&
+    field !== "other_k1_ordinary_income" &&
+    field !== "schedule_c_net_profit" &&
+    field !== "schedule_e_rents_received" &&
+    field !== "schedule_e_cash_expenses" &&
+    field !== "entity_ordinary_income" &&
+    field !== "schedule_e_monthly" &&
+    field !== "named_loss" &&
+    field !== "income_ledger"
+  ) {
     return { value: draft.facts.qualifying_income.value, via: "qualifying_income" };
   }
   if (INCOME_MONEY_KEYS.has(field) && draft.facts?.income?.value) {
@@ -1818,8 +1841,14 @@ export function applyExtractedFields(
     return { draft, writes, conflict: null, quietLines: [] };
   }
   const packetContinue = packetReadPhase(input.fields);
-  const fields = sanitizeExtractedFields(extractClass, input.fields);
+  const fields =
+    extractClass === "tax_return"
+      ? lockParass1065LedgerFields(sanitizeExtractedFields(extractClass, input.fields))
+      : sanitizeExtractedFields(extractClass, input.fields);
   draft = withFileIncomeHygiene(draft, extractClass, fields);
+  if (extractClass === "tax_return") {
+    draft = parkWrittenRentalCash(draft);
+  }
   const computed = monthlyQualifyingFromExtract(draft, extractClass, fields);
   const now = new Date().toISOString();
   const wageExtractFirst =
@@ -2047,7 +2076,10 @@ export function applyExtractedFields(
         field === "officer_compensation" ||
         field === "owner_share_monthly" ||
         field === "company_ordinary" ||
-        field === "business_started"
+        field === "business_started" ||
+        field === "schedule_e_monthly" ||
+        field === "qualifying_income" ||
+        field === "qualifying_method"
       ) {
         continue;
       }
@@ -2518,7 +2550,21 @@ export function applyExtractedFields(
   for (const [key, value] of Object.entries(fields)) {
     if (!value) continue;
     const already = cautionFacts[key];
-    if (key === "wages" || key === "packet_read" || key === "medicare_wages" || key === "box5") continue;
+    if (
+      key === "wages" ||
+      key === "packet_read" ||
+      key === "medicare_wages" ||
+      key === "box5" ||
+      key === "qualifying_income" ||
+      key === "qualifying_method" ||
+      key === "k1_monthly" ||
+      key === "schedule_e_monthly" ||
+      key === "ssn" ||
+      key === "ein" ||
+      key === "fein"
+    ) {
+      continue;
+    }
     if (
       key === "schedule_e_rents_received" ||
       key === "schedule_e_cash_expenses" ||

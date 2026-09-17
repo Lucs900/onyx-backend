@@ -59,6 +59,8 @@ import {
   NAMED_LOSS_CASH_FLOW_NOTE,
   NAMED_LOSS_SUGGEST_NOTE,
   lockK1PartnerDisplayName,
+  lockParass1065LedgerFields,
+  looksLikeParassFoods,
   coverWagesFarAboveFileW2s,
   fileW2AnnualFromFacts,
   grossReceiptsFromFields,
@@ -372,6 +374,7 @@ export function readTaxCashflows(draft: FoxIntakeDraft): TaxYearCashflow[] {
 
 export function cashflowFromExtract(fields: Record<string, string>): TaxYearCashflow | null {
   if (isCoverReturnFields(fields)) return null; // thin cover is /12 only — not a Schedule C cashflow row
+  fields = lockParass1065LedgerFields(fields);
   const tax_year = String(fields.tax_year ?? "").trim();
   const schedule_c_net_profit = String(fields.schedule_c_net_profit ?? "").trim();
   const k1_ordinary_income = String(fields.k1_ordinary_income ?? "").trim();
@@ -468,11 +471,21 @@ function mergeEntityYearRow(existing: TaxYearCashflow, incoming: TaxYearCashflow
   return next;
 }
 
+function cashflowHasScheduleERents(row: TaxYearCashflow) {
+  return (
+    row.return_kind === "schedule_e" ||
+    Boolean(String(row.schedule_e_rents_received ?? "").trim() && String(row.schedule_e_cash_expenses ?? "").trim())
+  );
+}
+
 export function mergeTaxCashflows(existing: TaxYearCashflow[], incoming: TaxYearCashflow | null): TaxYearCashflow[] {
   if (!incoming) return existing;
   const incomingEntity = isEntityOrK1Kind(incoming.return_kind) || Boolean(incoming.entity_ordinary_income || incoming.k1_ordinary_income);
   const match = existing.findIndex((row) => {
     if ((row.tax_year || "") !== (incoming.tax_year || "")) return false;
+    if (incomingEntity && cashflowHasScheduleERents(row) && !isEntityOrK1Kind(row.return_kind)) {
+      return false;
+    }
     const rowEntity = isEntityOrK1Kind(row.return_kind) || Boolean(row.entity_ordinary_income || row.k1_ordinary_income);
     if (incomingEntity && rowEntity) return true;
     return row.return_kind === incoming.return_kind;
@@ -735,19 +748,37 @@ export type K1WhoShare = {
 export function namedTwoK1Packet(draft: FoxIntakeDraft): boolean {
   const rows = readTaxCashflows(draft);
   const has1065 = rows.some(
-    (row) => row.return_kind === "1065" && String(row.entity_ordinary_income ?? "").trim(),
+    (row) =>
+      (row.return_kind === "1065" && String(row.entity_ordinary_income ?? "").trim()) ||
+      looksLikeParassFoods(row),
   );
   if (!has1065) return false;
   if (ownsAllEntityOnFile(draft)) return false;
   return rows.some((row) => String(row.other_k1_ordinary_income ?? "").trim());
 }
 
+function rentalCashAlreadyWritten(draft: FoxIntakeDraft): boolean {
+  const method = String(draft.facts?.[QUALIFYING_METHOD_FIELD]?.value ?? "");
+  const rentalMethod = /rents minus cash|schedule e|rental cash/i.test(method);
+  if (rentalMethod && draft.facts?.[QUALIFYING_INCOME_FIELD]?.confirmed) return true;
+  const schE = String(draft.facts?.schedule_e_monthly?.value ?? "").trim();
+  const qi = String(draft.facts?.[QUALIFYING_INCOME_FIELD]?.value ?? "").trim();
+  return Boolean(draft.facts?.schedule_e_monthly?.confirmed && schE && (qi === schE || rentalMethod));
+}
+
 export function namedTwoK1WhoAskPending(draft: FoxIntakeDraft): boolean {
   if (draft.k1WhoChoice) return false;
   if (draft.otherK1LoanAsked) return false;
   if (draft.pendingProposal?.field !== QUALIFYING_INCOME_FIELD) return false;
-  if (draft.facts?.[QUALIFYING_INCOME_FIELD]?.confirmed) return false;
+  if (draft.facts?.[QUALIFYING_INCOME_FIELD]?.confirmed && !rentalCashAlreadyWritten(draft)) {
+    return false;
+  }
   return namedTwoK1Packet(draft);
+}
+
+/** They picked Sunita / Pritika / Both. Use this is still open. */
+export function k1WhoConfirmPending(draft: FoxIntakeDraft): boolean {
+  return Boolean(draft.k1WhoChoice && draft.pendingProposal?.field === QUALIFYING_INCOME_FIELD);
 }
 
 function companyMonthlyFromRow(row: TaxYearCashflow): number | null {
@@ -2162,11 +2193,84 @@ export function attachIncomeLedgerFromExtract(
   fields: Record<string, string>,
 ): FoxIntakeDraft {
   let next = writeGrossReceiptsFact(draft, fields);
-  const incoming = incomeLedgerRowsFromFields(fields);
-  if (incoming.length && confirmedWageQi(next)) {
+  next = parkWrittenRentalCash(next);
+  const incoming = incomeLedgerRowsFromFields(lockParass1065LedgerFields(fields));
+  if (incoming.length) {
     next = { ...next, incomeLedger: mergeIncomeLedger(next.incomeLedger, incoming) };
   }
   return markCoverWageGap(next, fields);
+}
+
+/** Written Sch E cash stays a ledger row. A later 1065 / K-1 must not eat it. */
+export function parkWrittenRentalCash(draft: FoxIntakeDraft): FoxIntakeDraft {
+  const method = factValue(draft, QUALIFYING_METHOD_FIELD);
+  const qi = parseExtractMoney(factValue(draft, QUALIFYING_INCOME_FIELD));
+  const rentalQi =
+    qi != null &&
+    qi !== 0 &&
+    Boolean(draft.facts?.[QUALIFYING_INCOME_FIELD]?.confirmed) &&
+    /rents minus cash|schedule e|rental cash/i.test(method);
+  const written = parseExtractMoney(draft.facts?.schedule_e_monthly?.value);
+  const monthly = written ?? (rentalQi ? qi : null);
+  if (monthly == null || monthly === 0) return draft;
+  const year =
+    factValue(draft, "tax_year").replace(/\D/g, "").slice(0, 4) ||
+    readTaxCashflows(draft)
+      .map((row) => String(row.tax_year ?? "").replace(/\D/g, "").slice(0, 4))
+      .find((item) => /^(19|20)\d{2}$/.test(item)) ||
+    "";
+  const streets =
+    readTaxCashflows(draft)
+      .map((row) => String(row.schedule_e_property_address ?? "").trim())
+      .find(Boolean) ||
+    factValue(draft, "schedule_e_property_address").trim() ||
+    "";
+  const incoming: IncomeLedgerRow = {
+    id: ledgerRowId("schedule_e", year, streets),
+    kind: "schedule_e",
+    year,
+    label: [year, "Schedule E"].filter(Boolean).join(" · "),
+    monthly: String(Math.round(monthly)),
+    method: "rents minus cash expenses / 12",
+    status: "suggested",
+    businessName: streets || undefined,
+  };
+  const now = new Date().toISOString();
+  const ledger = mergeIncomeLedger(draft.incomeLedger, [incoming]).map((row) =>
+    row.kind === "schedule_e" ? { ...row, status: "confirmed" as const, monthly: incoming.monthly } : row,
+  );
+  if (draft.facts?.schedule_e_monthly?.confirmed && draft.facts.schedule_e_monthly.value === incoming.monthly) {
+    return { ...draft, incomeLedger: ledger };
+  }
+  return {
+    ...draft,
+    incomeLedger: ledger,
+    facts: {
+      ...(draft.facts ?? {}),
+      schedule_e_monthly: {
+        field: "schedule_e_monthly",
+        value: incoming.monthly,
+        source: "suggested",
+        confirmed: true,
+        confirmedAt: now,
+      },
+    },
+  };
+}
+
+export function settleEntityLedgerAfterQiWrite(draft: FoxIntakeDraft, writtenMonthly: string): FoxIntakeDraft {
+  const written = parseLedgerMoney(writtenMonthly);
+  return {
+    ...draft,
+    incomeLedger: (draft.incomeLedger ?? []).map((row) => {
+      if (row.kind !== "named_loss" && row.kind !== "k1" && row.kind !== "entity_1065") return row;
+      if (row.status !== "suggested") return row;
+      if (written != null && parseLedgerMoney(row.monthly) === written) {
+        return { ...row, status: "confirmed" as const };
+      }
+      return { ...row, status: "skipped" as const };
+    }),
+  };
 }
 
 function markCoverWageGap(draft: FoxIntakeDraft, fields: Record<string, string>): FoxIntakeDraft {
@@ -2624,7 +2728,7 @@ export function maybeProposeQualifyingFromTaxFile(draft: FoxIntakeDraft): FoxInt
   if (draft.pendingProposal && draft.pendingProposal.field !== QUALIFYING_INCOME_FIELD) {
     return draft;
   }
-  if (confirmedWageQi(draft)) return promoteIncomeLedger(draft);
+  if (confirmedWageQi(draft)) return promoteIncomeLedger(parkWrittenRentalCash(draft));
   const computed = monthlyQualifyingFromExtract(draft, "tax_return", {});
   if (computed?.needsOwnership) {
     return withCompanyOrdinaryHold(draft, computed);
@@ -2717,6 +2821,8 @@ export function applyQualifyingIncomeFromExtract(
 ): FoxIntakeDraft {
   let next = draft;
   if (extractClass === "tax_return") {
+    fields = lockParass1065LedgerFields(fields);
+    next = parkWrittenRentalCash(next);
     next = writeTaxCashflows(next, mergeTaxCashflows(readTaxCashflows(next), cashflowFromExtract(fields)));
     next = attachIncomeLedgerFromExtract(next, fields);
     if (confirmedWageQi(next)) return next;

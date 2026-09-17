@@ -6,7 +6,7 @@ Locked founder doctrine for qualifying income. Preview product. Suggested · not
 
 Not first-source-wins. Not “we already qualify on W-2.”
 
-- Classify the page. Extract every useful income or loss. Suggest. Confirm-before-write. File empty on that line until Use this.
+- Classify the page. Extract every useful income or loss. Suggest. Confirm-before-write. File empty on that line until Use this. A new 1065 / K-1 row **adds**. It does **not** eat written Schedule E rental cash.
 - Wage method = W-2 Box 5 + stub. 1040 wages = household total only.
 - Sch C, Sch E Part I, Sch F, K-1, 1065, 1120-S each own a row with a locked method. Use this writes that row. Leave blank keeps it off QI. Schedule E Part I cash is (rents − cash operating including taxes, excluding mortgage interest / depreciation) / 12. Confirm-before-write. Do not /12 line 21. Do not use 75% when Part I is on the page. Unread rents only when line 3 is blank. Skip on unread must speak the next Fox line with chips in the same cycle.
 - Schedule E Part II names are a **map, not income**. Classify by header: Schedule E Part II vs Form 1065 K-1 vs 1120-S K-1. Do not /12 line 32. Do not call Part II a K-1. Do not string-seal “Got the 2024 K-1.” If only Part II landed, name the entities and ask for the K-1 / entity return. Invent no combined monthly. K-1 QI is Box 1 ordinary / 12 on a named person + named entity after Use this. Two entities = two rows if both are on this loan. Cover / Sch E totals never write QI.
