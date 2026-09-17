@@ -260,10 +260,10 @@ async function main() {
   ]);
   assert.equal(columnar.schedule_e_rents_received, "42000");
   assert.equal(columnar.schedule_e_cash_expenses, "11400");
-  assert.equal(columnar.k1_ordinary_income, "-294564");
+  assert.equal(columnar.k1_ordinary_income, undefined, "Part II / partnership total is a map, not one K-1");
   const columnarRows = incomeLedgerRowsFromFields(columnar);
   assert.ok(columnarRows.some((row) => row.kind === "schedule_e" && row.monthly === "2550"));
-  assert.ok(columnarRows.some((row) => row.kind === "named_loss" && Number(row.monthly) < 0));
+  assert.ok(!columnarRows.some((row) => row.monthly === "-24547" || row.monthly === "-294564"));
   const fromFields = incomeLedgerRowsFromFields({
     tax_year: "2025",
     full_name: "Allan Combes",
@@ -564,7 +564,11 @@ async function main() {
   assert.match(packetRead.fields.full_name ?? "", /COMBES/i);
   assert.equal(packetRead.fields.schedule_e_rents_received, "42000");
   assert.equal(packetRead.fields.schedule_e_cash_expenses, "11400");
-  assert.equal(packetRead.fields.k1_ordinary_income, "-294564");
+  assert.equal(
+    packetRead.fields.k1_ordinary_income,
+    undefined,
+    "Schedule E partnership total is not a K-1 Box 1",
+  );
   assert.ok(hasRealIncomeLedgerDollars(packetRead.fields));
 
   const labelOnlyPacket = multiPagePdf([
@@ -637,10 +641,13 @@ async function main() {
   assert.equal(recovered.fields.full_name, "ALLAN COMBES and RENZ COMBES");
   assert.equal(recovered.fields.wages, "520000");
   assert.equal(recovered.fields.schedule_e_rents_received, "42000");
-  assert.equal(recovered.fields.k1_ordinary_income, "-294564");
+  assert.equal(
+    recovered.fields.k1_ordinary_income,
+    undefined,
+    "Grok k1_ordinary on a Schedule E page is stripped — Part II is a map",
+  );
   const recoveredRows = incomeLedgerRowsFromFields(recovered.fields);
   assert.ok(recoveredRows.some((row) => row.kind === "schedule_e"));
-  assert.ok(recoveredRows.some((row) => row.kind === "named_loss" && Number(row.monthly) < 0));
 
   const walkName = "2025 1040 Combes Allan and Renz.pdf";
   assert.equal(shouldGrokTaxReturnPagesFirst("w2", walkName), true);
@@ -909,6 +916,19 @@ async function main() {
   assert.equal(
     classifyPageByFormHeader("Schedule E (Form 1040) 2025 Supplemental Income and Loss Part I"),
     "schedule_e",
+  );
+  assert.equal(
+    classifyPageByFormHeader(
+      "Schedule E (Form 1040) 2024 Supplemental Income and Loss Part II Income or Loss From Partnerships and S Corporations Caution: The IRS compares amounts reported on your tax return with amounts shown on Schedule(s) K-1. A PARASS FOODS LLC P 34311 B PARASS RESTAURANT GROUP INC S 14479 32 Total 48790",
+    ),
+    "schedule_e",
+    "Part II header is Schedule E, not a K-1",
+  );
+  assert.equal(
+    classifyPageByFormHeader(
+      "Schedule K-1 (Form 1065) 2024 Partner's Share of Income, Deductions, Credits, etc. Box 1 Ordinary business income",
+    ),
+    "k1",
   );
 
   const headerWalkPdf = multiPagePdf([
@@ -1437,6 +1457,17 @@ async function main() {
   assert.match(extractSrc, /mortgage interest \(line 12\)/);
   assert.match(extractSrc, /cash operating expenses/);
   assert.match(extractSrc, /SCHEDULE_E_PART1_PROMPT|flattenScheduleEPart1/);
+  assert.match(extractSrc, /Never treat Part II totals as k1_ordinary_income/);
+  assert.doesNotMatch(
+    extractSrc,
+    /k1_ordinary_income is K-1 Box 1 ordinary business income or loss, or Schedule E Part II/,
+  );
+  const headerSrc = readFileSync(
+    join(dirname(fileURLToPath(import.meta.url)), "..", "lib/docs/formHeader.ts"),
+    "utf8",
+  );
+  assert.match(headerSrc, /looksLikeScheduleEHeader|looksLikeK1FormHeader/);
+  assert.doesNotMatch(headerSrc, /SCHEDULE_E_KEYS[\s\S]{0,220}k1_ordinary_income/);
   const suggestSrc = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "..", "lib/income/suggest.ts"), "utf8");
   assert.match(suggestSrc, /DEAD_SCHEDULE_E_LINE21_MONTHLY/);
   assert.match(suggestSrc, /-3554/);

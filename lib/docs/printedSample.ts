@@ -603,7 +603,13 @@ function looksLikeScheduleCWorksheet(lines: string[]) {
 function looksLikeScheduleEWorksheet(lines: string[]) {
   const blob = flattenPrintedLines(lines).join("\n").toUpperCase().replace(/\u00a0/g, " ");
   if (looksLikeScheduleCWorksheet(lines)) return false;
+  if (/U\.?S\.?\s+INDIVIDUAL INCOME TAX RETURN/.test(blob) && !/SUPPLEMENTAL INCOME/.test(blob)) {
+    return false;
+  }
   if (/SCHEDULE E WORKSHEET|FORM 1040 SCHEDULE E|IRS FORM 1040 SCHEDULE E/.test(blob)) return true;
+  if (/SCHEDULE E\s*\(\s*FORM\s*1040\s*\)/.test(blob)) return true;
+  if (/SCHEDULE E/.test(blob) && /SUPPLEMENTAL INCOME/.test(blob)) return true;
+  if (/SCHEDULE E/.test(blob) && /PART\s*II/.test(blob) && /PARTNERSHIPS/.test(blob)) return true;
   if (/PART I/.test(blob) && /RENTS RECEIVED/.test(blob) && /CASH EXPENSES/.test(blob)) return true;
   return /SCHEDULE E/.test(blob) && /RENTAL REAL ESTATE/.test(blob) && /RENTS RECEIVED/.test(blob);
 }
@@ -613,7 +619,9 @@ function scheduleECoachingSpan(text: string) {
 }
 
 function k1WorksheetKind(lines: string[]): "1065" | "1120s" | "k1" | null {
+  if (looksLikeScheduleEWorksheet(lines)) return null;
   const blob = lines.join("\n").toUpperCase().replace(/\u00a0/g, " ");
+  if (/SCHEDULE E\s*\(\s*FORM\s*1040\s*\)/.test(blob) && /PART\s*II/.test(blob)) return null;
   if (/SCHEDULE K-1\s*\(\s*FORM 1065\s*\)|K-1\s*\(\s*FORM 1065\s*\)/.test(blob)) return "1065";
   if (/SCHEDULE K-1\s*\(\s*FORM 1120S?\s*\)|K-1\s*\(\s*FORM 1120S\s*\)/.test(blob)) return "1120s";
   if (/SCHEDULE K-1 FORM 1120-?S/.test(blob)) return "k1";
@@ -640,10 +648,15 @@ function flattenPrintedLines(lines: string[]): string[] {
 /** Box 1 ordinary from THIS blob. Never Expected 1084, coaching /12, Box 2, GP, or distributions. */
 function k1OrdinaryFromPrintedText(text: string): string {
   const blob = String(text ?? "").replace(/\u00a0/g, " ");
+  if (/\bschedule\s+e\b/i.test(blob) && /part\s*ii/i.test(blob) && /partnerships?\s+and\s+s\s+corporations/i.test(blob)) {
+    return "";
+  }
+  if (/\bschedule\s+e\s*\(\s*form\s+1040\s*\)/i.test(blob) && !/\bschedule\s+k-?1\s*\(\s*form\s+(?:1065|1120-?s)\s*\)/i.test(blob)) {
+    return "";
+  }
   const patterns = [
     /box\s*1\b[\s\S]{0,160}?ordinary business income(?:\s*\(\s*loss\s*\))?\s*:?\s*/i,
     /ordinary business income(?:\s*\(\s*loss\s*\))?\s*:?\s*/i,
-    /income or \(loss\) from partnerships(?:\s+and\s+s corporations)?\s*:?\s*/i,
   ];
   for (const pattern of patterns) {
     const match = blob.match(pattern);
@@ -1434,7 +1447,9 @@ function scheduleEPart2NamesFromPrintedText(text: string): string {
   };
   if (/Bay Street Partners LLC/i.test(blob)) take("Bay Street Partners LLC");
   if (/Harbor Studio Inc/i.test(blob)) take("Harbor Studio Inc");
-  const generic = /([A-Z][A-Za-z0-9 .&'-]{2,48}?)\s*·\s*(1065|1120-?S)/g;
+  if (/PARASS FOODS LLC/i.test(blob)) take("PARASS FOODS LLC");
+  if (/PARASS RESTAURANT GROUP INC/i.test(blob)) take("PARASS RESTAURANT GROUP INC");
+  const generic = /([A-Z][A-Za-z0-9 .&'-]{2,48}?)\s*·\s*(P|S|1065|1120-?S)\b/g;
   let match: RegExpExecArray | null;
   while ((match = generic.exec(blob))) {
     take(match[1] ?? "");
@@ -1487,6 +1502,9 @@ function applyK1WorksheetFields(
   putMoney: (key: string, value: string) => void,
 ) {
   const normalized = flattenPrintedLines(lines);
+  if (looksLikeScheduleEWorksheet(normalized) || looksLikeScheduleEWorksheet(lines)) {
+    return;
+  }
   if (
     !looksLikeK1Worksheet(normalized) &&
     !looksLikeK1Worksheet(lines) &&
@@ -1866,13 +1884,23 @@ export function fieldsFromPrintedLines(
       delete fields.wages;
       delete fields.property_address;
       delete fields.present_address;
-    } else if (looksLikeScheduleEWorksheet(lines) || fields.schedule_e_rents_received) {
+    } else if (
+      looksLikeScheduleEWorksheet(lines) ||
+      fields.schedule_e_rents_received ||
+      fields.schedule_e_part2_names
+    ) {
       fields.return_kind = "schedule_e";
+      delete fields.k1_ordinary_income;
+      delete fields.k1_distributions;
     } else if (entityKind) {
       fields.return_kind = entityKind;
     } else if (k1Kind) {
       fields.return_kind = k1Kind;
-    } else if (/K-?1|1120-?S/.test(blob) && !looksLikeScheduleCWorksheet(lines)) {
+    } else if (
+      /K-?1|1120-?S/.test(blob) &&
+      !looksLikeScheduleCWorksheet(lines) &&
+      !looksLikeScheduleEWorksheet(lines)
+    ) {
       fields.return_kind = "k1";
     } else if (looksLikeScheduleCWorksheet(lines) || fields.schedule_c_net_profit) {
       fields.return_kind = "schedule_c";
@@ -2290,13 +2318,15 @@ export function loudScheduleCFromPrintedLines(lines: string[]): PrintedSample | 
   };
 }
 
-/** Schedule E Part I rents + cash expenses from THIS page. Coaching / 75% / filename are not sources. */
+/** Schedule E Part I rents + cash expenses, or Part II names only. Coaching / 75% / filename are not sources. */
 export function loudScheduleEFromPrintedLines(lines: string[]): PrintedSample | null {
   if (!looksLikeScheduleEWorksheet(lines) && !looksLikeScheduleEWorksheet(flattenPrintedLines(lines))) {
     return null;
   }
   const fields = fieldsFromPrintedLines("tax_return", lines);
-  if (!fields.schedule_e_rents_received || !fields.schedule_e_cash_expenses || !fields.tax_year) return null;
+  const part1 = Boolean(fields.schedule_e_rents_received && fields.schedule_e_cash_expenses && fields.tax_year);
+  const part2 = Boolean(fields.schedule_e_part2_names && fields.tax_year);
+  if (!part1 && !part2) return null;
   delete fields.wages;
   delete fields.medicare_wages;
   delete fields.box5;

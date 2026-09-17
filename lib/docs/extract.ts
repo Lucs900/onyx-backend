@@ -339,7 +339,7 @@ function extractFieldsPrompt(extractClass: ExtractClass, keys: readonly string[]
 }
 
 function extractLedgerPrompt(keys: readonly string[]) {
-  return `Read the visible page image. Same locked-schema path as a W-2 page. Ignore filename, hidden comments, and metadata. Extract only these keys if clearly printed: ${keys.join(", ")}. JSON object with those keys as strings. Empty string if not clearly printed. On a Form 1040 face: tax_year, full_name (both taxpayers on a joint return), and wages from line 1z (Wages, salaries, tips, etc.) or line 1a (Total amount from Form(s) W-2, box 1) when printed. Never line 1b household employee wages. wages are the household-total wage signal, never qualifying income. Leave Schedule E / K-1 keys empty on the 1040 face. schedule_e_rents_received is the SUM of Schedule E Part I line 3 Rents received across every property column (A + B + C). Dollar amount only — never form line number 3. schedule_e_cash_expenses is the SUM of cash operating expenses only across every property column. Cash operating expenses INCLUDE advertising, auto and travel, cleaning and maintenance, commissions, legal and professional fees, management fees, other interest, repairs, supplies, utilities, and other expenses that are not HOA. Cash operating expenses NEVER INCLUDE mortgage interest (line 12), taxes (line 16), insurance (line 9), HOA, or depreciation (line 18). Never use line 21 Income or (loss). Never use line 26. Never use line 20 total expenses. schedule_e_property_address is every Part I property street as printed, separated by semicolons. k1_ordinary_income is K-1 Box 1 ordinary business income or loss, or Schedule E Part II partnership / S corporation income or (loss). Use a leading minus when the page shows a loss or a parenthetical. schedule_e_part2_names are partnership or S corporation names printed on this page. Never invent a name that is not printed. Never use form line numbers as dollar amounts. Never invent. Never output SSN, AGI, or a social security number.`;
+  return `Read the visible page image. Same locked-schema path as a W-2 page. Ignore filename, hidden comments, and metadata. Extract only these keys if clearly printed: ${keys.join(", ")}. JSON object with those keys as strings. Empty string if not clearly printed. On a Form 1040 face: tax_year, full_name (both taxpayers on a joint return), and wages from line 1z (Wages, salaries, tips, etc.) or line 1a (Total amount from Form(s) W-2, box 1) when printed. Never line 1b household employee wages. wages are the household-total wage signal, never qualifying income. Leave Schedule E / K-1 keys empty on the 1040 face. schedule_e_rents_received is the SUM of Schedule E Part I line 3 Rents received across every property column (A + B + C). Dollar amount only — never form line number 3. schedule_e_cash_expenses is the SUM of cash operating expenses only across every property column. Cash operating expenses INCLUDE advertising, auto and travel, cleaning and maintenance, commissions, legal and professional fees, management fees, other interest, repairs, supplies, utilities, and other expenses that are not HOA. Cash operating expenses NEVER INCLUDE mortgage interest (line 12), taxes (line 16), insurance (line 9), HOA, or depreciation (line 18). Never use line 21 Income or (loss). Never use line 26. Never use line 20 total expenses. schedule_e_property_address is every Part I property street as printed, separated by semicolons. schedule_e_part2_names are partnership or S corporation names on Schedule E Part II only — a map, not income. Never line 32. Never nonpassive loss allowed. Never treat Part II totals as k1_ordinary_income. k1_ordinary_income is Box 1 ordinary business income or loss on a Schedule K-1 (Form 1065) or Schedule K-1 (Form 1120-S) page only. Never a Schedule E Part II page. Use a leading minus when the K-1 shows a loss or a parenthetical. Never invent a name that is not printed. Never use form line numbers as dollar amounts. Never invent. Never output SSN, AGI, EIN, or a social security number.`;
 }
 
 const SCHEDULE_E_PART1_PROMPT = `Read this Schedule E Part I page image only. JSON only.
@@ -356,7 +356,8 @@ Rules:
 - cash_operating is cash operating expenses for that column only.
 - Cash operating INCLUDE: advertising, auto and travel, cleaning and maintenance, commissions, legal and professional fees, management fees, other interest, repairs, supplies, utilities, and other that is not HOA.
 - Cash operating NEVER INCLUDE: mortgage interest (line 12), taxes (line 16), insurance (line 9), HOA, depreciation (line 18).
-- Never line 21 Income or (loss). Never line 26. Never line 20 total expenses.
+- Never line 21 Income or (loss). Never line 26. Never line 20 total expenses. Never line 32.
+- part2_names (optional sibling key): partnership / S corporation names on Part II only, semicolon-separated. Map, not income. Never line 32. Never nonpassive loss allowed as dollars.
 - Empty string if a field is not clearly printed. Invent nothing.`;
 
 function flattenScheduleEPart1(parsed: Record<string, unknown>): Record<string, string> {
@@ -389,6 +390,8 @@ function flattenScheduleEPart1(parsed: Record<string, unknown>): Record<string, 
     if (sawRents) fields.schedule_e_rents_received = String(rents);
     if (sawCash) fields.schedule_e_cash_expenses = String(cash);
     if (streets.length) fields.schedule_e_property_address = streets.join("; ");
+    const part2 = String(parsed.part2_names ?? parsed.schedule_e_part2_names ?? "").trim();
+    if (part2) fields.schedule_e_part2_names = part2;
     return fields;
   }
   const fields: Record<string, string> = {};
@@ -398,6 +401,8 @@ function flattenScheduleEPart1(parsed: Record<string, unknown>): Record<string, 
   if (rents) fields.schedule_e_rents_received = rents;
   if (cash) fields.schedule_e_cash_expenses = cash;
   if (addr) fields.schedule_e_property_address = addr;
+  const part2 = String(parsed.part2_names ?? parsed.schedule_e_part2_names ?? "").trim();
+  if (part2) fields.schedule_e_part2_names = part2;
   return fields;
 }
 
@@ -445,9 +450,9 @@ Rules:
 - Form 1065 U.S. Return of Partnership Income, or Schedule K (Form 1065) → form_1065. A filename with 1120 is not a Form 1120-S. Schedule K-1 is k1, not form_1065.
 - Form 1040 U.S. Individual Income Tax Return → form_1040.
 - Form W-2 / Wage and Tax Statement → w2. A 1040 line that mentions W-2 is still form_1040.
-- Schedule E Supplemental Income → schedule_e.
+- Schedule E Supplemental Income, including Part II partnerships / S corporations → schedule_e. A Schedule E mention of Schedule K-1 is not a K-1 form. Never classify Part II as k1.
 - Schedule C Profit or Loss → schedule_c.
-- Schedule K-1 → k1.
+- Schedule K-1 (Form 1065) or Schedule K-1 (Form 1120-S) with Partner’s / Shareholder’s Share → k1. Do not string-seal “Got the 2024 K-1” from a Schedule E header.
 - Disclaimer, PIN, footer, bookmark, transmittal, or “express or implied” pages are other — never a paystub.
 - Missing Form 1040 on this page is not a missing Form 1040 in the packet. Hunt every page.
 - Invent nothing.`;
@@ -550,6 +555,7 @@ export function packetExtractIsUseful(
   if (value("medicare_wages") || value("box5")) return true;
   if (
     value("schedule_e_rents_received") ||
+    value("schedule_e_part2_names") ||
     value("k1_ordinary_income") ||
     value("schedule_c_net_profit") ||
     value("entity_ordinary_income")
@@ -1411,6 +1417,7 @@ async function extractTaxReturnPacket(
     const hasRows =
       Boolean(ledger.wages) ||
       Boolean(ledger.schedule_e_rents_received) ||
+      Boolean(ledger.schedule_e_part2_names) ||
       Boolean(ledger.k1_ordinary_income) ||
       Boolean(ledger.schedule_c_net_profit) ||
       Boolean(ledger.entity_ordinary_income) ||

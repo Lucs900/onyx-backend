@@ -1044,7 +1044,9 @@ export function hasLockedSuggestion(
     }
     const kind = normalizeReturnKind(String(fields?.return_kind ?? ""));
     if (kind === "schedule_e" || (value("schedule_e_rents_received") && value("schedule_e_cash_expenses"))) {
-      return Boolean(value("schedule_e_rents_received") && value("schedule_e_cash_expenses"));
+      if (value("schedule_e_rents_received") && value("schedule_e_cash_expenses")) return true;
+      if (value("schedule_e_part2_names")) return true;
+      return false;
     }
     if (kind === "schedule_c" || value("schedule_c_net_profit")) {
       return Boolean(value("schedule_c_net_profit"));
@@ -3491,7 +3493,27 @@ function scheduleEPart2NamesOnFile(draft: FoxIntakeDraft): string[] {
   const fromCash = readTaxCashflows(draft).flatMap((row) =>
     String(row.schedule_e_part2_names ?? "").split(";"),
   );
-  return [...fromFact.split(";"), ...fromCash].map((item) => item.trim()).filter(Boolean);
+  const out: string[] = [];
+  for (const raw of [...fromFact.split(";"), ...fromCash]) {
+    const name = raw.trim();
+    if (!name) continue;
+    if (!out.some((item) => item.toLowerCase() === name.toLowerCase())) out.push(name);
+  }
+  return out;
+}
+
+export function scheduleEPart2MapAskCopy(draft: FoxIntakeDraft): string {
+  if (hasK1Ordinary(draft) || entityK1Box1OnFile(draft)) return "";
+  const names = scheduleEPart2NamesOnFile(draft);
+  if (!names.length) return "";
+  const listed = joinScheduleAsk(names);
+  return `Schedule E Part II lists ${listed}. That’s a map, not a K-1. I need the K-1 or the entity return — no monthly from this page.`;
+}
+
+export function shouldSpeakScheduleEPart2Map(draft: FoxIntakeDraft) {
+  if (draft.pendingProposal || draft.pendingConflict) return false;
+  if (hasK1Ordinary(draft) || entityK1Box1OnFile(draft)) return false;
+  return Boolean(scheduleEPart2MapAskCopy(draft));
 }
 
 function namedK1DocumentOnFile(draft: FoxIntakeDraft, test: RegExp) {
@@ -3505,6 +3527,10 @@ export function nextScheduleENamedK1Label(draft: FoxIntakeDraft): StillUsefulLab
   const wanted = SCHEDULE_E_NAMED_K1S.filter((item) => names.some((name) => item.test.test(name)));
   for (const item of wanted) {
     if (!namedK1DocumentOnFile(draft, item.test)) return item.label;
+  }
+  for (const name of names) {
+    const re = new RegExp(name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
+    if (!namedK1DocumentOnFile(draft, re)) return namedCoverK1Label(name);
   }
   return null;
 }

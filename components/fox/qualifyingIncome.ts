@@ -430,6 +430,12 @@ export function inferReturnKind(fields: Record<string, string>): TaxReturnKind {
   const named = normalizeReturnKind(fields.return_kind);
   if (named) return named;
   if (String(fields.schedule_e_rents_received ?? "").trim()) return "schedule_e";
+  if (
+    String(fields.schedule_e_part2_names ?? "").trim() &&
+    !String(fields.k1_ordinary_income ?? "").trim()
+  ) {
+    return "schedule_e";
+  }
   if (String(fields.entity_ordinary_income ?? "").trim()) {
     if (/1120-?s|scorp/i.test(String(fields.return_kind ?? ""))) return "1120s";
     if (String(fields.officer_compensation ?? "").trim()) return "1120s";

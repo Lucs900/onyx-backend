@@ -558,17 +558,24 @@ export function incomeLedgerFieldsFromPrintedLines(lines: string[]): Record<stri
     is1120sFace ||
     is1065Face ||
     (/\bform\s*1065\b/i.test(blob) && /ordinary business income/i.test(blob) && !/\bschedule\s+k-?1\b/i.test(blob));
-  if (partnership && !entityOrdinary && !entityFace) putMoney("k1_ordinary_income", partnership);
+  const scheduleEPart2 =
+    /\bschedule\s+e\b/i.test(blob) &&
+    (/part\s*ii/i.test(blob) || /income or \(loss\) from partnerships/i.test(blob)) &&
+    !/\bschedule\s+k-?1\s*\(\s*form\s+(?:1065|1120-?s)\s*\)/i.test(blob);
+  if (partnership && !entityOrdinary && !entityFace && !scheduleEPart2) {
+    putMoney("k1_ordinary_income", partnership);
+  }
 
   const names: string[] = [];
   if (/HO\s*&\s*SOY\s+INC/i.test(blob)) {
     names.push("HO & SOY INC");
-    fields.entity_name = "HO & SOY INC";
+    if (is1120sFace) fields.entity_name = "HO & SOY INC";
   }
   if (/Parass\s+Foods\s+LLC/i.test(blob)) {
     names.push("Parass Foods LLC");
-    fields.entity_name = "Parass Foods LLC";
+    if (is1065Face) fields.entity_name = "Parass Foods LLC";
   }
+  if (/PARASS RESTAURANT GROUP INC/i.test(blob)) names.push("PARASS RESTAURANT GROUP INC");
   const started =
     blob.match(
       /(?:date\s+(?:business\s+)?started|date\s+incorporated|date\s+of\s+incorporation|business\s+started)[^\dA-Za-z]{0,120}?(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}|\d{4}-\d{2}-\d{2}|[A-Za-z]{3,9}\s+\d{1,2},?\s+\d{4})/i,

@@ -30,7 +30,6 @@ const SCHEDULE_E_KEYS = new Set([
   "schedule_e_cash_expenses",
   "schedule_e_part2_names",
   "schedule_e_property_address",
-  "k1_ordinary_income",
 ]);
 const SCHEDULE_C_KEYS = new Set([
   "tax_year",
@@ -72,6 +71,36 @@ function pageLooksLikePacketCover(text: string) {
   );
 }
 
+/** Schedule E (Form 1040), including Part II. A mention of Schedule K-1 is not a K-1 form. */
+export function looksLikeScheduleEHeader(text: string) {
+  const t = String(text ?? "").replace(/\u00a0/g, " ");
+  if (/\bSchedule\s+E\s*\(\s*Form\s+1040\s*\)/i.test(t)) return true;
+  if (/\bSchedule\s+E\b/i.test(t) && /\bSupplemental\s+Income\b/i.test(t)) return true;
+  if (
+    /\bSchedule\s+E\b/i.test(t) &&
+    /\bPart\s*II\b/i.test(t) &&
+    /partnerships?\s+and\s+S\s+corporations/i.test(t)
+  ) {
+    return true;
+  }
+  return false;
+}
+
+/** Form 1065 / 1120-S K-1 face. Schedule E Part II caution text is not this. */
+export function looksLikeK1FormHeader(text: string) {
+  const t = String(text ?? "").replace(/\u00a0/g, " ");
+  if (looksLikeScheduleEHeader(t)) return false;
+  if (/\bSchedule\s+K-?1\s*\(\s*Form\s+(?:1065|1120-?S)\s*\)/i.test(t)) return true;
+  if (
+    /\bSchedule\s+K-?1\b/i.test(t) &&
+    (/\bPartner'?s\s+Share\b/i.test(t) || /\bShareholder'?s\s+Share\b/i.test(t))
+  ) {
+    return true;
+  }
+  if (/\bForm\s+1065\b/i.test(t) && /\bPartner'?s\s+Share\b/i.test(t)) return true;
+  return false;
+}
+
 /** Printed first. 8879 before any 1040 match — 8879 can mention Form 1040. */
 export function classifyPageByFormHeader(text: string): TaxFormClass {
   const t = String(text ?? "")
@@ -98,7 +127,7 @@ export function classifyPageByFormHeader(text: string): TaxFormClass {
       /\bName\s+of\s+corporation\b/i.test(t) ||
       /\bSchedule\s+K\b/i.test(t))
   ) {
-    if (!/\bSchedule\s+K-?1\b/i.test(t)) return "form_1120s";
+    if (!looksLikeK1FormHeader(t)) return "form_1120s";
   }
   if (/\bU\.?S\.?\s+Income\s+Tax\s+Return\s+for\s+an\s+S\s+Corporation\b/i.test(t)) {
     return "form_1120s";
@@ -112,7 +141,11 @@ export function classifyPageByFormHeader(text: string): TaxFormClass {
     return "w2";
   }
 
-  if (/\bSchedule\s+K-?1\b/i.test(t) || (/\bForm\s+1065\b/i.test(t) && /\bPartner'?s\s+Share\b/i.test(t))) {
+  if (looksLikeScheduleEHeader(t)) {
+    return "schedule_e";
+  }
+
+  if (looksLikeK1FormHeader(t)) {
     return "k1";
   }
 

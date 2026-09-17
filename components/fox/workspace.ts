@@ -117,6 +117,8 @@ import {
   nextCoverPageInviteCopy,
   sameThinCoverRepeat,
   shouldSpeakCoverMap,
+  scheduleEPart2MapAskCopy,
+  shouldSpeakScheduleEPart2Map,
   nextCoverScheduleLabels,
   nextDocInvite,
   offeringDocStart,
@@ -1663,6 +1665,8 @@ function documentsAskText(draft: FoxIntakeDraft): string {
   if (coverAsk && shouldSpeakCoverMap(draft)) {
     return coverAsk;
   }
+  const part2Ask = shouldSpeakScheduleEPart2Map(draft) ? scheduleEPart2MapAskCopy(draft) : "";
+  if (part2Ask) return part2Ask;
   if (
     matchingCoverLineOnFile(draft) ||
     sameThinCoverRepeat(draft) ||
@@ -2692,6 +2696,15 @@ export function docReactionAsk(
       return {
         text: coverAsk,
         followUp: nextCoverPageInviteCopy(draft) || undefined,
+        actions: layer2AskActions(draft) ?? documentInviteActions(draft),
+      };
+    }
+  }
+  if (cls === "tax_return" && shouldSpeakScheduleEPart2Map(draft)) {
+    const part2Ask = scheduleEPart2MapAskCopy(draft);
+    if (part2Ask) {
+      return {
+        text: part2Ask,
         actions: layer2AskActions(draft) ?? documentInviteActions(draft),
       };
     }
@@ -3744,6 +3757,15 @@ function withPostWriteSpeak(
     rentalOwnedOnFile(draft) &&
     !draft.facts?.schedule_e_monthly?.confirmed;
   if (asked.text.trim() && !stampedReprint && !rentalBlocks1040) return asked;
+  if (shouldSpeakScheduleEPart2Map(draft)) {
+    const part2Ask = scheduleEPart2MapAskCopy(draft);
+    if (part2Ask) {
+      return {
+        text: part2Ask,
+        actions: documentInviteActions(draft),
+      };
+    }
+  }
   if (draft.scheduleECashUnread) {
     return workspacePromptCopy("schedule-e-unread", draft);
   }
