@@ -9,7 +9,8 @@ import { skipCurrentInvite, DOC_INVITE_COPY } from "../components/fox/fileWrite"
 import { resolveProposal, writeQualifyingIncome, writeYearsInBusiness } from "../components/fox/completeness";
 import { applyLooksRightMotion } from "../components/fox/motion";
 import { deskStripActions, nextFoxAsk, workspaceReply } from "../components/fox/workspace";
-import { QUALIFYING_INCOME_FIELD } from "../components/fox/qualifyingIncome";
+import { QUALIFYING_INCOME_FIELD, skipScheduleEUnread } from "../components/fox/qualifyingIncome";
+import { SCHEDULE_E_RENTS_UNREAD_LINE } from "../components/fox/fileWrite";
 import type { FoxIntakeDraft, FoxMessage } from "../components/fox/types";
 
 function fact(field: string, value: string) {
@@ -184,6 +185,30 @@ function main() {
     labels(proceedAsk.actions).includes("Proceed") ||
       deskStripActions(foxLine(proceedAsk.text, ready), ready).some((item) => item.label === "Proceed"),
     "Proceed strip stays after contract Skip + Looks right",
+  );
+
+  const unreadSchE = {
+    ...afterYears,
+    statedOtherReo: "yes" as const,
+    otherReoAsked: true,
+    otherProperties: [{ id: "spetti", address: "435 Spetti Drive, Fremont, CA" }],
+    scheduleECashUnread: true,
+    scheduleECashAsked: true,
+  };
+  const unreadAsk = nextFoxAsk(unreadSchE);
+  assert.equal(unreadAsk.text, SCHEDULE_E_RENTS_UNREAD_LINE);
+  const skippedUnread = skipScheduleEUnread(unreadSchE);
+  const afterUnreadSkip = nextFoxAsk(skippedUnread);
+  assert.ok(afterUnreadSkip.text.trim(), "Skip on unread Sch E cannot leave an empty composer");
+  assert.ok((afterUnreadSkip.actions ?? []).length > 0, "Skip on unread Sch E must keep a live strip");
+  assert.doesNotMatch(afterUnreadSkip.text, /I didn’t get rents/);
+  const typedUnreadSkip = workspaceReply("Skip", unreadSchE);
+  assert.ok(typedUnreadSkip?.text.trim(), "typed Skip on unread Sch E must speak");
+  assert.ok((typedUnreadSkip?.actions ?? []).length > 0, "typed Skip on unread Sch E must keep chips");
+  assert.ok(
+    deskStripActions(foxLine(typedUnreadSkip!.text, skippedUnread), skippedUnread).length > 0 ||
+      (typedUnreadSkip?.actions ?? []).length > 0,
+    "unread Sch E Skip owns a live strip",
   );
 
   assert.equal(DOC_INVITE_COPY.purchase_contract.includes("Skip is fine"), true);

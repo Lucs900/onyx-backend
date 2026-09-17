@@ -2261,11 +2261,33 @@ function scheduleERentsMissingAfterConfirm(draft: FoxIntakeDraft) {
   const hasRental = rentalOwnedOnFile(draft);
   if (!hasRental) return false;
   if (scheduleEWrittenOnDraft(draft)) return false;
+  return !scheduleERentsReceivedOnFile(draft);
+}
+
+export function scheduleERentsReceivedOnFile(draft: FoxIntakeDraft) {
   const fields = scheduleEFieldsFromDraft(draft);
-  return (
-    !String(fields.schedule_e_rents_received ?? "").trim() ||
-    !String(fields.schedule_e_cash_expenses ?? "").trim()
-  );
+  return Boolean(String(fields.schedule_e_rents_received ?? "").trim());
+}
+
+export function skipScheduleEUnread(draft: FoxIntakeDraft): FoxIntakeDraft {
+  return { ...draft, scheduleECashUnread: false, scheduleECashAsked: true };
+}
+
+export function holdTaxCashflowsFromExtract(
+  draft: FoxIntakeDraft,
+  fields: Record<string, string>,
+): FoxIntakeDraft {
+  const incoming = cashflowFromExtract(fields);
+  if (!incoming) return draft;
+  const hasScheduleE =
+    Boolean(incoming.schedule_e_rents_received) ||
+    Boolean(incoming.schedule_e_cash_expenses) ||
+    Boolean(incoming.schedule_e_property_address) ||
+    Boolean(incoming.schedule_e_part2_names);
+  if (!hasScheduleE && !incoming.k1_ordinary_income && !incoming.entity_ordinary_income) {
+    return draft;
+  }
+  return writeTaxCashflows(draft, mergeTaxCashflows(readTaxCashflows(draft), incoming));
 }
 
 export function rentalOwnedOnFile(draft: FoxIntakeDraft) {
@@ -2292,11 +2314,13 @@ export function offerScheduleEAfterRentalConfirm(draft: FoxIntakeDraft): FoxInta
     return { ...next, scheduleECashUnread: false, scheduleECashAsked: true };
   }
   next = maybeProposeQualifyingFromTaxFile(next);
-  if (next.pendingProposal) return { ...next, scheduleECashUnread: false };
+  if (next.pendingProposal) {
+    return { ...next, scheduleECashUnread: false, scheduleECashAsked: true };
+  }
   if (scheduleERentsMissingAfterConfirm(next)) {
     return { ...next, scheduleECashUnread: true, scheduleECashAsked: true };
   }
-  return next;
+  return { ...next, scheduleECashUnread: false, scheduleECashAsked: true };
 }
 
 function scheduleERentsPresentOnFile(draft: FoxIntakeDraft) {

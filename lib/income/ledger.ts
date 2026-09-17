@@ -11,6 +11,7 @@ import {
   monthlyFromAnnual,
   scheduleECashFlowMonthly,
 } from "./suggest";
+import { scheduleEPart1FromPrintedText } from "./scheduleEPart1";
 
 export const INCOME_LEDGER_FIELD = "income_ledger";
 export const SCHEDULE_E_MONTHLY_FIELD = "schedule_e_monthly";
@@ -491,6 +492,9 @@ export function incomeLedgerFieldsFromPrintedLines(lines: string[]): Record<stri
     sumScheduleEColumnMoney(blob, /cash operating expenses[ \t]*:?[ \t]*/i) ||
     sumScheduleEColumnMoney(blob, /cash expenses(?:[ \t]*\([ \t]*ex-?depreciation[ \t]*\))?[ \t]*:?[ \t]*/i);
   if (expenses) putMoney("schedule_e_cash_expenses", expenses);
+  const part1 = scheduleEPart1FromPrintedText(blob);
+  if (!fields.schedule_e_rents_received && part1.rents) putMoney("schedule_e_rents_received", part1.rents);
+  if (!fields.schedule_e_cash_expenses && part1.cash) putMoney("schedule_e_cash_expenses", part1.cash);
 
   const streets = scheduleEStreetsFromBlob(blob);
   if (streets) fields.schedule_e_property_address = streets;
@@ -689,7 +693,7 @@ function sumScheduleEColumnMoney(blob: string, label: RegExp): string | undefine
   const lineEnd = after.search(/\n/);
   const afterSameLine = after.slice(0, lineEnd < 0 ? after.length : lineEnd);
   const nextAt = afterSameLine.search(
-    /cash (?:operating )?expenses|advertising|income or \(loss\)|total expenses|depreciation|(?:^|\b)(?:line\s*)?(?:4|5|9|12|16|18|20|21|26)\b/i,
+    /cash (?:operating )?expenses|advertising|income or \(loss\)|total expenses|depreciation|(?:^|\b)(?:line\s*)?(?:4|5|9|12|16|18|20|21|26)\s+(?=[A-Za-z])/i,
   );
   const window = afterSameLine.slice(0, nextAt >= 0 ? nextAt : afterSameLine.length);
   const lineStart = blob.lastIndexOf("\n", match.index) + 1;

@@ -21,6 +21,7 @@ import type {
 } from "./types";
 import {
   applyQualifyingIncomeFromExtract,
+  holdTaxCashflowsFromExtract,
   COVER_LINE_METHOD,
   decliningIncomeCaution,
   hasScheduleCCashflow,
@@ -1043,8 +1044,8 @@ export function hasLockedSuggestion(
       return true;
     }
     const kind = normalizeReturnKind(String(fields?.return_kind ?? ""));
-    if (kind === "schedule_e" || (value("schedule_e_rents_received") && value("schedule_e_cash_expenses"))) {
-      if (value("schedule_e_rents_received") && value("schedule_e_cash_expenses")) return true;
+    if (kind === "schedule_e" || value("schedule_e_rents_received") || value("schedule_e_part2_names")) {
+      if (value("schedule_e_rents_received")) return true;
       if (value("schedule_e_part2_names")) return true;
       return false;
     }
@@ -1082,10 +1083,10 @@ export function scheduleECashFlowMissingFromExtract(
   if (packetReadPhase(fields) || looksLikeTaxReturnPageReadFields(fields)) return false;
   const kind = normalizeReturnKind(String(fields?.return_kind ?? ""));
   if (kind !== "schedule_e") return false;
-  return (
-    !String(fields?.schedule_e_rents_received ?? "").trim() ||
-    !String(fields?.schedule_e_cash_expenses ?? "").trim()
-  );
+  if (String(fields?.schedule_e_rents_received ?? "").trim()) return false;
+  if (String(fields?.schedule_e_part2_names ?? "").trim()) return false;
+  if (String(fields?.schedule_e_property_address ?? "").trim()) return false;
+  return true;
 }
 
 export function k1OrdinaryMissingFromExtract(
@@ -2564,6 +2565,7 @@ export function applyExtractedFields(
     quietLines.push(EMPLOYER_MISMATCH_LINE);
   }
   if (extractClass === "tax_return") {
+    next = holdTaxCashflowsFromExtract(next, fields);
     next = attachIncomeLedgerFromExtract(next, fields);
     next = holdPendingBusinessStart(next, fields);
   }

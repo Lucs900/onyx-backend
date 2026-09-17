@@ -15,6 +15,7 @@ import { isTransferCounterpartyLine, safeAccountLast4, statementAccountLast4 } f
 import { junkEmployerName } from "@/lib/docs/junkEmployer";
 import { readPdfTextLayer } from "@/lib/docs/pdfText";
 import { lockK1PartnerDisplayName, parseLedgerMoney } from "@/lib/income/ledger";
+import { scheduleEPart1FromPrintedText } from "@/lib/income/scheduleEPart1";
 
 export { junkEmployerName };
 
@@ -1340,7 +1341,7 @@ function plausibleScheduleEAmountNear(blob: string, index: number, labelLength: 
 }
 
 const NEXT_SCHEDULE_E_FIELD =
-  /cash (?:operating )?expenses|advertising|auto and travel|cleaning|commissions|insurance|legal|management|mortgage interest|other interest|repairs|supplies|taxes|utilities|depreciation|total expenses|income or \(loss\)|(?:^|\b)(?:line\s*)?(?:4|5|9|12|16|18|20|21|26)\b/i;
+  /cash (?:operating )?expenses|advertising|auto and travel|cleaning|commissions|insurance|legal|management|mortgage interest|other interest|repairs|supplies|taxes|utilities|depreciation|total expenses|income or \(loss\)|(?:^|\b)(?:line\s*)?(?:4|5|9|12|16|18|20|21|26)\s+(?=[A-Za-z])/i;
 
 function moneyFromScheduleESpan(text: string): number[] {
   const moneyRe = /(-?\$?\s*\d[\d,]*(?:\.\d+)?|\(\s*\$?\s*\d[\d,]*(?:\.\d+)?\s*\))/g;
@@ -1426,11 +1427,11 @@ function scheduleEPropertyAddressFromPrintedText(text: string): string {
     if (!found.some((item) => item.toLowerCase() === raw.toLowerCase())) found.push(raw);
   };
   const labeledRe =
-    /\baddress\s*:?\s*(\d{1,6}(?:-\d{1,6})?\s+[A-Z][A-Za-z0-9 .'-]{2,48}?(?:Ave(?:nue)?|Street|St|Blvd|Dr|Rd|Way|Ln|Ct)\b[^,;·\n]*)/gi;
+    /\baddress\s*:?\s*(\d{1,6}(?:-\d{1,6})?\s+[A-Z][A-Za-z0-9 .'-]{2,48}?(?:Ave(?:nue)?|Street|St|Blvd|Drive|Dr|Rd|Way|Ln|Ct)\b[^,;·\n]*)/gi;
   let labeledMatch: RegExpExecArray | null;
   while ((labeledMatch = labeledRe.exec(blob))) take(labeledMatch[1] ?? "");
   const streetsRe =
-    /\b(\d{1,6}(?:-\d{1,6})?\s+[A-Z][A-Za-z0-9.'-]*(?:\s+[A-Z][A-Za-z0-9.']*){0,3}\s+(?:Avenue|Ave|Street|Blvd|Boulevard|Drive|Lane|Court|Road|Way|Dr|Rd|Ln|Ct|St)\b(?:\s+[A-Z][A-Za-z]+){0,2})/g;
+    /\b(\d{1,6}(?:-\d{1,6})?\s+[A-Z][A-Za-z0-9.'-]*(?:\s+[A-Z][A-Za-z0-9.']*){0,3}\s+(?:Avenue|Ave|Street|Blvd|Boulevard|Drive|Lane|Court|Road|Way|Dr|Rd|Ln|Ct|St)\b(?:\s+[A-Z][A-Za-z]+){0,2})/gi;
   let streetMatch: RegExpExecArray | null;
   while ((streetMatch = streetsRe.exec(blob))) take(streetMatch[1] ?? "");
   return found.join("; ");
@@ -1472,15 +1473,23 @@ function applyScheduleEWorksheetFields(
     scheduleETaxYearFromPrintedText(stacked.join("\n")) ||
     scheduleETaxYearFromPrintedText(stacked.join(" "));
   if (taxYear) put("tax_year", taxYear.replace(/\D/g, "").slice(0, 4));
+  const part1 = scheduleEPart1FromPrintedText(stacked.join("\n"));
+  const part1Flat = scheduleEPart1FromPrintedText(stacked.join(" "));
   const rents =
     moneyDigits(emptyIfNotShown(stackedLabelValue(stacked, /^RENTS RECEIVED:?\s*/i))) ||
     scheduleERentsFromPrintedText(stacked.join("\n")) ||
-    scheduleERentsFromPrintedText(stacked.join(" "));
+    scheduleERentsFromPrintedText(stacked.join(" ")) ||
+    part1.rents ||
+    part1Flat.rents ||
+    "";
   if (rents) putMoney("schedule_e_rents_received", rents);
   const cash =
     moneyDigits(emptyIfNotShown(stackedLabelValue(stacked, /^CASH EXPENSES(?:\s*\(\s*EX-?DEPRECIATION\s*\))?:?\s*/i))) ||
     scheduleECashExpensesFromPrintedText(stacked.join("\n")) ||
-    scheduleECashExpensesFromPrintedText(stacked.join(" "));
+    scheduleECashExpensesFromPrintedText(stacked.join(" ")) ||
+    part1.cash ||
+    part1Flat.cash ||
+    "";
   if (cash) putMoney("schedule_e_cash_expenses", cash);
   const address =
     stackedLabelValue(stacked, /^ADDRESS:?\s*/i) ||
@@ -2324,7 +2333,7 @@ export function loudScheduleEFromPrintedLines(lines: string[]): PrintedSample | 
     return null;
   }
   const fields = fieldsFromPrintedLines("tax_return", lines);
-  const part1 = Boolean(fields.schedule_e_rents_received && fields.schedule_e_cash_expenses && fields.tax_year);
+  const part1 = Boolean(fields.schedule_e_rents_received && fields.tax_year);
   const part2 = Boolean(fields.schedule_e_part2_names && fields.tax_year);
   if (!part1 && !part2) return null;
   delete fields.wages;

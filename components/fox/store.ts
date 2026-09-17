@@ -143,6 +143,7 @@ import {
   applyOwnAllEntity,
   namedTwoK1WhoAskPending,
   selectK1WhoOnLoan,
+  skipScheduleEUnread,
 } from "./qualifyingIncome";
 import {
   skipEstimatedHousing,
@@ -2456,6 +2457,9 @@ function applyCaptureBody(capture: Capture) {
   }
   if (capture.field === "keep-live-coupon") {
     return commit(keepPendingLiveCoupon(current));
+  }
+  if (capture.field === "skip-schedule-e-unread") {
+    return commit(skipScheduleEUnread(current));
   }
   if (capture.field === "own-all-entity") {
     return commit(applyOwnAllEntity(current));

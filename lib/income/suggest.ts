@@ -284,8 +284,8 @@ export function isDeadScheduleELine21Monthly(monthly: number): boolean {
 
 /**
  * Locked Sch E cash: (rents − cash operating expenses) / 12.
- * Cash operating excludes mortgage interest, taxes, insurance, HOA, depreciation.
- * Not line 21. Not line 26. Not 75%. Not PITIA.
+ * Cash operating includes taxes (line 16). Excludes mortgage interest (1003 / PITIA),
+ * insurance, HOA, depreciation, line 20, and line 21. Not 75%.
  */
 export function scheduleECashFlowMonthly(rentsReceived: number, cashExpenses: number): number | null {
   if (!Number.isFinite(rentsReceived) || !Number.isFinite(cashExpenses)) return null;

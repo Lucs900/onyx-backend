@@ -307,6 +307,8 @@ import {
   wageExtractFailedRead,
   wageThreadOpen,
   rentalOwnedOnFile,
+  scheduleERentsReceivedOnFile,
+  skipScheduleEUnread,
   writeWageBox5,
   writeTypedStubMonthly,
   applyOwnAllEntity,
@@ -3766,10 +3768,14 @@ function withPostWriteSpeak(
       };
     }
   }
-  if (draft.scheduleECashUnread) {
+  if (draft.scheduleECashUnread && !scheduleERentsReceivedOnFile(draft)) {
     return workspacePromptCopy("schedule-e-unread", draft);
   }
-  if (rentalOwnedOnFile(draft) && !draft.scheduleECashAsked) {
+  if (
+    rentalOwnedOnFile(draft) &&
+    !draft.scheduleECashAsked &&
+    !scheduleERentsReceivedOnFile(draft)
+  ) {
     return {
       text: SCHEDULE_E_RENTS_UNREAD_LINE,
       actions: [
@@ -6320,7 +6326,7 @@ function draftAfterCaptureBody(draft: FoxIntakeDraft, capture: Capture): FoxInta
   if (capture.field === "bothMonthlyReason") return applyBothMonthlyReasonAnswer(next, capture.value);
   if (capture.field === "coverWageGap") return applyCoverWageGapAnswer(next, capture.value);
   if (capture.field === "skip-schedule-e-unread") {
-    return { ...next, scheduleECashUnread: false, scheduleECashAsked: true };
+    return skipScheduleEUnread(next);
   }
   if (capture.field === "raiseWhen") {
     return draft.awaitingRaiseYtdFar ? applyRaiseYtdFarAnswer(next, capture.value) : applyRaiseWhenAnswer(next, capture.value);
@@ -8303,6 +8309,21 @@ export function workspaceReply(
       ...nextFoxAsk(nextDraft),
       capture: { field: "formerHistory", value: q.trim() },
     };
+  }
+
+  if (prompt === "schedule-e-unread") {
+    if (/^(skip|later|pass|not yet)\b/i.test(lower)) {
+      const nextDraft = skipScheduleEUnread(draft);
+      const spoken = nextFoxAsk(nextDraft);
+      return {
+        text: spoken.text.trim() ? spoken.text : looksRightAskCopy(nextDraft),
+        followUp: spoken.followUp,
+        facts: spoken.facts,
+        actions: (spoken.actions ?? []).length ? spoken.actions : looksRightAskActions(),
+        capture: { field: "skip-schedule-e-unread" },
+      };
+    }
+    return answerThenRestore(q, draft);
   }
 
   if (prompt === "income") {
