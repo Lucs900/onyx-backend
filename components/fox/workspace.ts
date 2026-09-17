@@ -57,6 +57,7 @@ import {
   isIdExtractAskText,
   isTranscriptFollowUpAskText,
   isStreetSuggestChipLabel,
+  messageHasOpenUseThisConfirm,
   paintThreadActions,
   type CouponChoice,
 } from "./liveCoupon";
@@ -3833,22 +3834,21 @@ export function deskStripActions(
   }
 
   const next = nextFoxAsk(draft);
-  if (next.text === message.text) {
+  if (spokenOwnsAsk(message.text, next.text) || spokenOwnsAsk(message.followUp, next.text)) {
     return stripStreetSuggest(next.actions ?? []);
   }
 
   if (isYearsInBusinessAskText(message.text)) return yearsInBusinessSkipActions();
   if (isMonthlyDebtsAskText(message.text)) return monthlyDebtsSkipActions();
   if (isPropertyTypeAskText(message.text)) return propertyTypeAskActions();
-  if (
-    isLooksRightAskText(message.text) &&
-    !draft.pendingProposal &&
-    !draft.pendingConflict &&
-    !draft.pendingAddress
-  ) {
+  if (isLooksRightAskText(message.text)) {
+    if (draft.pendingProposal || draft.pendingConflict || messageHasOpenUseThisConfirm(message)) {
+      return writeConfirmActions(draft);
+    }
     return looksRightAskActions();
   }
   if (
+    isPurchaseContractInviteLine(message.text) ||
     isHistoryDocInviteText(message.text) ||
     isLastYearReturnAskText(message.text) ||
     isTranscriptFollowUpAskText(message.text) ||
@@ -3857,12 +3857,23 @@ export function deskStripActions(
   ) {
     return stripStreetSuggest(docInviteActions());
   }
+  if (/i can send this to review/i.test(message.text)) {
+    return stripStreetSuggest(finishLineActions(draft));
+  }
 
   const greet = workspaceGreeting(draft);
   if (greet.text === message.text) {
     return stripStreetSuggest(greet.actions ?? []);
   }
   return [];
+}
+
+function spokenOwnsAsk(spoken?: string | null, ask?: string | null) {
+  const left = String(spoken ?? "").trim();
+  const right = String(ask ?? "").trim();
+  if (!left || !right) return false;
+  if (left === right) return true;
+  return left.endsWith(right) || left.includes(right);
 }
 
 export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
@@ -6761,7 +6772,17 @@ export function workspaceReply(
       capture: { field: "retry-rateflow" },
     };
   }
-  if (draft.liveQuoteStatus === "unavailable" && !draft.liveCouponSettled && isCouponSkipText(q)) {
+  const paperAskOpen =
+    prompt === "documents" ||
+    prompt === "review" ||
+    Boolean(nextDocInvite(draft)) ||
+    isPurchaseContractConfirmPending(draft);
+  if (
+    draft.liveQuoteStatus === "unavailable" &&
+    !draft.liveCouponSettled &&
+    isCouponSkipText(q) &&
+    !paperAskOpen
+  ) {
     return couponChipReply(draft, "skip");
   }
 
@@ -6799,9 +6820,12 @@ export function workspaceReply(
     prompt !== "property-zip" &&
     prompt !== "debts" &&
     prompt !== "years-in-business" &&
+    prompt !== "documents" &&
+    prompt !== "review" &&
     !draft.pendingProposal &&
     !draft.pendingAddress &&
     !unreadDocOpen(draft) &&
+    !paperAskOpen &&
     isCouponSkipText(q)
   ) {
     return couponChipReply(draft, "skip");
@@ -6812,7 +6836,9 @@ export function workspaceReply(
     (!draft.liveCouponSettled || isLowerPaymentText(q) || isNoCostText(q))
   ) {
     const choice = couponChoiceFromText(q);
-    if (choice && (!draft.liveCouponSettled || choice === "lower" || choice === "nocost")) {
+    if (choice === "skip" && paperAskOpen) {
+      // Live paper ask owns Skip — do not steal it as a coupon skip.
+    } else if (choice && (!draft.liveCouponSettled || choice === "lower" || choice === "nocost")) {
       return couponChipReply(draft, choice);
     }
   }

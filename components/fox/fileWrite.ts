@@ -4941,7 +4941,10 @@ export function skipCurrentInvite(draft: FoxIntakeDraft): FoxIntakeDraft {
     );
   }
   if (transcriptOfferDone(draft)) {
-    return draft;
+    const liveInvite = nextDocInvite(draft);
+    if (liveInvite !== "purchase_contract" && !isPurchaseContractConfirmPending(draft)) {
+      return draft;
+    }
   }
   if (nextCoverPageInviteCopy(draft) && lastExtractIsCover(draft) && !draft.pendingProposal) {
     const skipped = Array.from(new Set([...(draft.skippedClasses ?? []), "tax_return" as ExtractClass]));

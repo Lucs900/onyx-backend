@@ -426,7 +426,8 @@ export function isHistoryDocInviteText(text?: string | null) {
     /^Drop last year.?s W-2\b/i.test(value) ||
     /^I need your (?:19|20)\d{2} federal tax return/i.test(value) ||
     /^I need the (?:19|20)\d{2} return\b/i.test(value) ||
-    /^Two recent statements\b/i.test(value)
+    /^Two recent statements\b/i.test(value) ||
+    /purchase contract is the property on paper/i.test(value)
   );
 }
 

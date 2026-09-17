@@ -2002,10 +2002,20 @@ export function AlwaysOnFox({
       const pendingEdit = editPromptFromPendingField(draft.pendingProposal?.field);
       const addressPending =
         isSubjectAddressConfirmPending(draft) || Boolean(draft.pendingAddress?.line);
+      const acceptingAddress =
+        draft.pendingProposal?.field === "property_address" ||
+        draft.pendingProposal?.field === "subjectAddress" ||
+        draft.pendingProposal?.field === "present_address" ||
+        (Boolean(draft.pendingAddress?.line) && !draft.pendingProposal);
       const contractConfirm =
         capture.field === "accept-proposal" &&
         (isPurchaseContractConfirmPending(draft) ||
           isContractExtractAskText(lastFoxTurn(getFoxMessages())?.text));
+      const lastSpoken = lastFoxTurn(getFoxMessages());
+      const livePaperSkip =
+        isPurchaseContractInviteLine(lastSpoken?.text) ||
+        isHistoryDocInviteText(lastSpoken?.text) ||
+        isGovernmentIdInviteLine(lastSpoken?.text);
       const followWasOpen = Boolean(transcriptFollowUpAsk(getFoxDraft()));
       const offerAlreadyDone = transcriptOfferDone(getFoxDraft());
       applyCapture(capture);
@@ -2014,18 +2024,21 @@ export function AlwaysOnFox({
       }
       skipPromptSync.current = true;
       const live = getFoxDraft();
-      if (capture.field === "skip-docs" && offerAlreadyDone && !followWasOpen) {
+      if (capture.field === "skip-docs" && offerAlreadyDone && !followWasOpen && !livePaperSkip) {
+        const leftoverNext = nextFoxAsk(live);
+        if (leftoverNext.text.trim()) appendReply(action.label, leftoverNext);
         return;
       }
-      if (capture.field === "skip-docs" && followWasOpen && transcriptOfferDone(live)) {
-        appendReply(action.label, { text: "" });
+      if (capture.field === "skip-docs" && followWasOpen && transcriptOfferDone(live) && !livePaperSkip) {
+        const afterTranscript = nextFoxAsk(live);
+        appendReply(action.label, afterTranscript.text.trim() ? afterTranscript : nextFoxAsk(live));
         return;
       }
       if (editing) {
         appendStructureFix(action.label, capture);
         return;
       }
-      if (capture.field === "accept-proposal" && addressPending && fileAddressLine(live)) {
+      if (capture.field === "accept-proposal" && acceptingAddress && fileAddressLine(live)) {
         if (needsPurchaseSplitAsk(live) || contractConfirm) {
           appendReply(action.label, nextFoxAsk(live));
           return;
@@ -2037,15 +2050,17 @@ export function AlwaysOnFox({
         if (!waitingForLive) {
           commitMessagesNow((prev) => {
             const held = dropResolvedAddressConfirmChips(prev, live);
+            const spoken = nextFoxAsk(live);
             const next: FoxMessage[] = [
               ...held,
               { id: newId(), role: "client", text: action.label },
             ];
+            if (spoken.text.trim()) next.push(foxAskMessage(spoken));
             return messagesWithRateOrReadySpeech(next, live);
           });
           return;
         }
-        appendReply(action.label, { text: "" });
+        appendReply(action.label, nextFoxAsk(live));
         return;
       }
       const couponResolved =
