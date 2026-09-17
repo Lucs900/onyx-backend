@@ -269,6 +269,7 @@ import {
   MOTION_COPY,
   PAYSTUB_RETURN_LINE,
   SILENT_RETURN_ERROR,
+  afterLooksRightAskCopy,
   applyLooksRightMotion,
   creditPullPermitted,
   gatheringCopy,
@@ -296,6 +297,9 @@ import {
   stillUsefulAskCopy,
   stillUsefulLabels,
   stillUsefulSection,
+  stillUsefulSpokenItems,
+  STILL_USEFUL_SPEECH_CAP,
+  labelListCopy,
   nextStillUsefulItem,
   layer2Plan,
   layer2Open,
@@ -6553,6 +6557,19 @@ assert.deepEqual(
     "Bank statement",
   ],
 );
+const buySpoken = stillUsefulSpokenItems(buyProceed);
+assert.equal(STILL_USEFUL_SPEECH_CAP, 3);
+assert.deepEqual(buySpoken.map((item) => item.label), [
+  "Government ID",
+  "Last year’s W-2",
+  "Last year’s tax return (Form 1040)",
+]);
+assert.equal(buySpoken.length, 3);
+assert.ok(buySection.items.length > 3);
+assert.equal(
+  afterLooksRightAskCopy(buyProceed),
+  `${MOTION_COPY.ready} Still useful: ${labelListCopy(buySpoken.map((item) => item.label))} Skip is fine.`,
+);
 assert.ok(!buySection.items.some((item) => item.label === "Employer"));
 assert.match(layer2AskCopy(buyProceed), /Government ID/);
 assert.match(layer2AskCopy(buyProceed), /Purchase contract/);
@@ -6796,6 +6813,11 @@ assert.ok(stillUsefulSection(walkSkip)?.items.some((item) => item.label === "Ban
 assert.ok(!stillUsefulSection(walkSkip)?.items.some((item) => item.label === "Employer"));
 assert.ok(!stillUsefulSection(walkSkip)?.items.some((item) => /years in business/i.test(item.label)));
 assert.ok((stillUsefulSection(walkSkip)?.items.length ?? 0) > 3);
+assert.ok(stillUsefulSpokenItems(walkSkip).length <= 3);
+assert.deepEqual(
+  stillUsefulSpokenItems(walkSkip).map((item) => item.label),
+  (stillUsefulSection(walkSkip)?.items ?? []).slice(0, 3).map((item) => item.label),
+);
 assert.equal(fileStillUsefulNote(walkSkip), undefined);
 assert.equal(resetWorkspaceForEntry("acr", "buy").productIntent, "buy");
 applyCapture({ field: "occupancy", value: "primary" });
@@ -13510,6 +13532,9 @@ assert.ok(filePreview.includes("NOTHING_URGENT") || filePreview.includes("Nothin
 assert.equal(NOTHING_URGENT, "Nothing urgent missing.");
 assert.ok(!filePreview.includes("helps next"));
 assert.ok(!readFileSync(join(root, "components/fox/fileWrite.ts"), "utf8").includes(".slice(0, 3)"));
+assert.ok(readFileSync(join(root, "components/fox/fileWrite.ts"), "utf8").includes("STILL_USEFUL_SPEECH_CAP"));
+assert.ok(readFileSync(join(root, "components/fox/fileWrite.ts"), "utf8").includes("stillUsefulSpokenItems"));
+assert.ok(filePreview.includes("stillUsefulSpokenItems"));
 assert.ok(filePreview.includes("requestFoxFix"));
 assert.ok(filePreview.includes("file-preview__edit"));
 assert.ok(filePreview.includes('Edit ${fact.label}') || filePreview.includes("Edit "));

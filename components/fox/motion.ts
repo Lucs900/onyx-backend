@@ -7,7 +7,7 @@ import {
   receivedTaxReturnCount,
   w2FinishDocsReady,
   stillUsefulLabels,
-  stillUsefulSection,
+  stillUsefulSpokenItems,
 } from "./fileWrite";
 import { canLooksRight, shouldEscalate } from "./completeness";
 import { maybeProposeQualifyingFromTaxFile, QUALIFYING_INCOME_FIELD } from "./qualifyingIncome";
@@ -343,7 +343,7 @@ export function gatheringCopy(draft: FoxIntakeDraft) {
 
 /** After Looks right: send-to-review. Chat names the next 1–3 only. Skip is fine. */
 export function afterLooksRightAskCopy(draft: FoxIntakeDraft) {
-  const items = (stillUsefulSection(draft)?.items ?? []).slice(0, 3);
+  const items = stillUsefulSpokenItems(draft);
   if (!items.length) return MOTION_COPY.ready;
   return `${MOTION_COPY.ready} Still useful: ${labelListCopy(items.map((item) => item.label))} Skip is fine.`;
 }

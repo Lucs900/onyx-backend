@@ -4108,6 +4108,14 @@ export function stillUsefulSection(draft: FoxIntakeDraft): {
   return { items, empty: items.length === 0 };
 }
 
+/** Fox finish speech and the File notepad Still useful block share this cap. */
+export const STILL_USEFUL_SPEECH_CAP = 3;
+
+/** Same 1–3 Fox names after Looks right. Extra remainders stay off the notepad. */
+export function stillUsefulSpokenItems(draft: FoxIntakeDraft): StillUsefulItem[] {
+  return (stillUsefulSection(draft)?.items ?? []).slice(0, STILL_USEFUL_SPEECH_CAP);
+}
+
 function otherReoStillUsefulItems(draft: FoxIntakeDraft): StillUsefulItem[] {
   if (draft.statedOtherReo !== "yes") return [];
   const received = new Set(
