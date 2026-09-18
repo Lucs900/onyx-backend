@@ -3,9 +3,13 @@
  * Say the house conflict once. Chips: change loan · change value · Skip.
  * No This one / Lower payment until value ≥ loan (or loan comes down).
  * Skip keeps both numbers and continues to income. LTV 125% stays estimated.
- * Do not invent cash-out, Non-QM, or a 125% product.
+ * Change loan writes the new refinance loan. Next is House — never purchase
+ * down-payment copy. Do not invent cash-out, Non-QM, or a 125% product.
  */
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { ESTIMATED_NOT_FINAL } from "../lib/calculators/conventional";
 import {
   conventionalReadyHoldsReadyLine,
@@ -13,7 +17,7 @@ import {
   rateflowClientBodyFromDraft,
   searchedKeyFor,
 } from "../lib/rateflow/fromDraft";
-import { emptyDraft } from "../components/fox/store";
+import { applyCapture, emptyDraft, getFoxDraft, loadIntakeDraft } from "../components/fox/store";
 import {
   loanExceedsPropertyValue,
   loanExceedsPurchasePrice,
@@ -25,15 +29,19 @@ import {
 } from "../components/fox/liveCoupon";
 import {
   LOAN_OVER_VALUE_LINE,
+  PURCHASE_PRICE_ON_FILE_LINE,
   nextFoxAsk,
   previewFacts,
   previewRateFact,
+  purchasePriceRepeatReply,
   shouldHoldAskForLiveLine,
   workspacePrompt,
   workspaceReply,
   writePurchasePrice,
 } from "../components/fox/workspace";
 import type { FoxIntakeDraft } from "../components/fox/types";
+
+const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 
 function afterPrimary(): FoxIntakeDraft {
   return {
@@ -118,28 +126,42 @@ function main() {
   assert.equal(changeLoan?.capture?.field, "correct");
   assert.equal(changeLoan?.capture && "line" in changeLoan.capture ? changeLoan.capture.line : "", "loan");
   assert.match(changeLoan?.text ?? "", /loan or payoff amount|loan amount/i);
+  assert.doesNotMatch(changeLoan?.text ?? "", /purchase price|down payment/i);
   assert.doesNotMatch(changeLoan?.text ?? "", /loan is larger than the house/i);
   assert.ok(!labels(changeLoan?.actions).includes("This one"));
 
-  const lowered = workspaceReply("400000", {
-    ...written,
-    correcting: "amount",
-    correctingLine: "loan",
-    loanAmountValue: undefined,
-    amountAsked: false,
-  });
+  loadIntakeDraft(written);
+  applyCapture({ field: "correct", value: "amount", line: "loan" });
+  const editingLoan = getFoxDraft();
+  assert.equal(editingLoan.productIntent, "refinance");
+  assert.equal(workspacePrompt(editingLoan), "amount");
+  assert.equal(purchasePriceRepeatReply(editingLoan, "400000"), null);
+  const lowered = workspaceReply("400000", editingLoan);
   assert.equal(lowered?.capture?.field, "loanAmount");
-  const afterLower: FoxIntakeDraft = {
-    ...written,
-    loanAmountValue: 400_000,
-    amountAsked: true,
-    overValueSkipped: false,
-    correcting: null,
-    correctingLine: null,
-  };
+  assert.doesNotMatch(lowered?.text ?? "", /purchase price|down payment/i);
+  assert.notEqual(lowered?.text, PURCHASE_PRICE_ON_FILE_LINE);
+  assert.match(lowered?.text ?? "", /kind of home|House, condo/i);
+  assert.ok(lowered?.capture);
+  applyCapture(lowered!.capture);
+  const afterLower = getFoxDraft();
+  assert.equal(afterLower.productIntent, "refinance");
+  assert.equal(afterLower.loanAmountValue, 400_000);
+  assert.equal(afterLower.propertyValueAmount, 400_000);
+  const afterLowerLoan = previewFacts(afterLower).find(
+    (fact) => fact.id === "loan" || fact.label === "Loan amount",
+  );
+  assert.match(afterLowerLoan?.value ?? "", /\$400,000/);
   assert.equal(loanExceedsPropertyValue(afterLower), false);
   assert.notEqual(workspacePrompt(afterLower), "over-value");
   assert.doesNotMatch(nextFoxAsk(afterLower).text, /loan is larger than the house/i);
+  assert.doesNotMatch(nextFoxAsk(afterLower).text, /purchase price|down payment/i);
+  assert.match(nextFoxAsk(afterLower).text, /kind of home|House, condo/i);
+  assert.ok(!labels(nextFoxAsk(afterLower).actions).includes("This one"));
+  assert.ok(!labels(nextFoxAsk(afterLower).actions).includes("Lower payment"));
+
+  const alwaysOn = readFileSync(join(root, "components/fox/AlwaysOnFox.tsx"), "utf8");
+  assert.ok(alwaysOn.includes("purchasePriceRepeatReply"));
+  assert.doesNotMatch(alwaysOn, /Purchase price is in the file/);
 
   const changeValue = workspaceReply("change value", written);
   assert.equal(changeValue?.capture?.field, "correct");
@@ -234,8 +256,21 @@ function main() {
     "Loan amount",
     "That’s right",
   ]);
+  const purchaseRepeat: FoxIntakeDraft = {
+    ...emptyDraft(),
+    path: "acr",
+    productIntent: "buy",
+    workspaceFlow: true,
+    occupancyAsked: true,
+    occupancyChoice: { ...emptyDraft().occupancyChoice, value: "primary" },
+    propertyValueAmount: 500_000,
+    valueAsked: true,
+  };
+  assert.equal(purchasePriceRepeatReply(purchaseRepeat, "500000"), PURCHASE_PRICE_ON_FILE_LINE);
 
-  console.log("assert-refi-loan-over-value: conflict once + change chips; Skip keeps 125% estimated; no This one");
+  console.log(
+    "assert-refi-loan-over-value: conflict once + change chips; change loan writes $400,000 then House; no purchase copy; no This one",
+  );
 }
 
 main();

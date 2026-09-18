@@ -1530,6 +1530,43 @@ async function case27(page: Page) {
   throw new BeatFail(`Skip did not reach income — ${await currentText(page)} | ${(await currentChips(page)).join(" · ")}`);
 }
 
+async function case28(page: Page) {
+  await hardStartOver(page);
+  await walkRefiToLoanValue(page, "500000", "400000");
+  await waitAsk(page, /loan is larger than the house/i);
+  await clickChip(page, "change loan");
+  const loanAsk = await waitAsk(page, /loan amount/i);
+  if (/purchase price|down payment/i.test(loanAsk.text)) {
+    throw new BeatFail(`change loan asked purchase copy — ${loanAsk.text}`);
+  }
+  await typeSend(page, "400000");
+  const after = await waitCurrent(
+    page,
+    (text) =>
+      /kind of home|House, condo|estimated FICO|address or ZIP|purchase price|down payment/i.test(text),
+    20_000,
+  );
+  if (/purchase price|down payment/i.test(after.text)) {
+    throw new BeatFail(`change loan leaked purchase copy — ${after.text}`);
+  }
+  if (/loan is larger than the house/i.test(after.text)) {
+    throw new BeatFail(`change loan to 400000 re-fired the house conflict — ${after.text}`);
+  }
+  if (!/kind of home|House, condo/i.test(after.text)) {
+    throw new BeatFail(`after change loan expected House — ${after.text}`);
+  }
+  if (hasChip(after.chips, "This one") || hasChip(after.chips, "Lower payment")) {
+    throw new BeatFail(`This one after 100% LTV change loan — ${after.chips.join(" · ")}`);
+  }
+  const map = await structureMap(page);
+  if (moneyOf(map, "Loan amount") !== "$400,000") {
+    throw new BeatFail(`change loan did not write $400,000 — ${moneyOf(map, "Loan amount") || "(missing)"}`);
+  }
+  if (moneyOf(map, "Property value") !== "$400,000") {
+    throw new BeatFail(`change loan dropped value — ${moneyOf(map, "Property value") || "(missing)"}`);
+  }
+}
+
 async function case23(page: Page) {
   const fixture = adpW2FixturePath();
   if (!fixture) {
@@ -2489,6 +2526,11 @@ const CASES: { n: number; title: string; run: (page: Page) => Promise<void> }[] 
     n: 27,
     title: "Refinance 500000 then 400000 → house conflict + change chips; Skip → income, no This one",
     run: case27,
+  },
+  {
+    n: 28,
+    title: "Refinance change loan 400000 writes $400,000; next is House, never purchase copy",
+    run: case28,
   },
   { n: 23, title: "ADP W-2 page-read: Box 5 is $36,460.08, never $5", run: case23 },
   { n: 24, title: "composer paperclip CSTC stub: filename/received then $1,806.67 Use this", run: case24 },

@@ -4741,6 +4741,22 @@ export function loanOverPriceCopy(draft: FoxIntakeDraft) {
   return answerFromFile("flags.loan_over_price", factsFromDraft(draft)).text;
 }
 
+export const PURCHASE_PRICE_ON_FILE_LINE =
+  "Purchase price is in the file. What’s the down payment or loan amount?";
+
+/** Composer typed the purchase price again. Purchase funds ask only. Never a Refinance file. */
+export function purchasePriceRepeatReply(draft: FoxIntakeDraft, text: string): string | null {
+  if (!isPurchaseLike(draft)) return null;
+  if (draft.correcting === "value" || draft.correctingLine === "price" || draft.correctingLine === "home") {
+    return null;
+  }
+  const price = draft.propertyValueAmount;
+  if (price == null || price <= 0) return null;
+  const moneyDigits = text.replace(/[$,\s]/g, "").replace(/%$/, "");
+  if (!moneyDigits || Number(moneyDigits) !== price) return null;
+  return PURCHASE_PRICE_ON_FILE_LINE;
+}
+
 export function loanOverPriceActions(): FoxAction[] {
   return [
     {
@@ -5083,7 +5099,7 @@ function replyToFundsAsk(
   }
   if (price != null && parsed.dollars === price && !parsed.asPercent) {
     return {
-      text: "Purchase price is in the file. What’s the down payment or loan amount?",
+      text: PURCHASE_PRICE_ON_FILE_LINE,
     };
   }
   const role =
@@ -6449,6 +6465,8 @@ function draftAfterCaptureBody(draft: FoxIntakeDraft, capture: Capture): FoxInta
         ...clearLiveQuote(),
         amountAsked: true,
         overValueSkipped: false,
+        correcting: null,
+        correctingLine: null,
         loanAmountValue: Number.isFinite(n) && n > 0 ? n : draft.loanAmountValue,
       }),
       hasDownPayment(draft) ? "loan" : undefined,
@@ -7989,6 +8007,8 @@ export function workspaceReply(
       loanAmountValue: amount,
       amountAsked: true,
       overValueSkipped: false,
+      correcting: null,
+      correctingLine: null,
     });
     if (pair.value && pair.value !== amount) {
       nextDraft.propertyValueAmount = pair.value;

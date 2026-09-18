@@ -154,6 +154,7 @@ import {
   workspaceGreeting,
   workspacePrompt,
   workspacePromptCopy,
+  purchasePriceRepeatReply,
   workspaceUpdateCopy,
   isYearsInBusinessAskText,
   threadThroughEditedTurn,
@@ -2120,20 +2121,12 @@ export function AlwaysOnFox({
     }
     const replyStage = stage ?? (isStart ? "start" : null);
     if (!text || !replyStage) return;
-    const moneyDigits = text.replace(/[$,\s]/g, "").replace(/%$/, "");
-    if (
-      isStart &&
-      startAsk === "amount" &&
-      draft.correcting !== "value" &&
-      draft.correctingLine !== "price" &&
-      draft.propertyValueAmount != null &&
-      Number(moneyDigits) === draft.propertyValueAmount
-    ) {
+    const repeatedPurchasePrice =
+      isStart && startAsk === "amount" ? purchasePriceRepeatReply(draft, text) : null;
+    if (repeatedPurchasePrice) {
       setOpen(true);
       setInput("");
-      appendReply(text, {
-        text: "Purchase price is in the file. What’s the down payment or loan amount?",
-      }, "amount");
+      appendReply(text, { text: repeatedPurchasePrice }, "amount");
       return;
     }
     setOpen(true);
