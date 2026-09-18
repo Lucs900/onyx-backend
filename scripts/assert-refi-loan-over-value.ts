@@ -1,6 +1,6 @@
 /**
  * Refinance loan $500,000 then value $400,000.
- * Say the house conflict once. Chips: change loan · change value · Skip.
+ * Say the house conflict once. Chips: Change loan · Change value · Skip.
  * No This one / Lower payment until value ≥ loan (or loan comes down).
  * Skip keeps both numbers and continues to income. LTV 125% stays estimated.
  * Change loan writes the new refinance loan. Next is House — never purchase
@@ -105,7 +105,7 @@ function main() {
   assert.equal(typed?.capture?.field, "propertyValue");
   assert.match(typed?.text ?? "", /loan is larger than the house/i);
   assert.doesNotMatch(typed?.text ?? "", /cash-?out|non-?qm|125\s*% product/i);
-  assert.deepEqual(labels(typed?.actions), ["change loan", "change value", "Skip"]);
+  assert.deepEqual(labels(typed?.actions), ["Change loan", "Change value", "Skip"]);
   assert.ok(!labels(typed?.actions).includes("This one"));
   assert.ok(!labels(typed?.actions).includes("Lower payment"));
 
@@ -117,14 +117,19 @@ function main() {
   assert.equal(workspacePrompt(written), "over-value");
   const conflictAsk = nextFoxAsk(written);
   assert.equal(conflictAsk.text, LOAN_OVER_VALUE_LINE);
-  assert.deepEqual(labels(conflictAsk.actions), ["change loan", "change value", "Skip"]);
+  assert.deepEqual(labels(conflictAsk.actions), ["Change loan", "Change value", "Skip"]);
+  assert.deepEqual(
+    labels(deskStripActions([{ id: "over-value", role: "fox", text: LOAN_OVER_VALUE_LINE }], written)),
+    ["Change loan", "Change value", "Skip"],
+  );
+  assert.ok(!labels(deskStripActions([{ id: "over-value", role: "fox", text: LOAN_OVER_VALUE_LINE }], written)).includes("Try again"));
 
   const ltv = ltvLine(written);
   assert.ok(ltv, "LTV missing from File");
   assert.match(ltv?.value ?? "", /125(\.0)?%/);
   assert.equal(ltv?.note, ESTIMATED_NOT_FINAL);
 
-  const changeLoan = workspaceReply("change loan", written);
+  const changeLoan = workspaceReply("Change loan", written);
   assert.equal(changeLoan?.capture?.field, "correct");
   assert.equal(changeLoan?.capture && "line" in changeLoan.capture ? changeLoan.capture.line : "", "loan");
   assert.match(changeLoan?.text ?? "", /loan or payoff amount|loan amount/i);
@@ -165,7 +170,7 @@ function main() {
   assert.ok(alwaysOn.includes("purchasePriceRepeatReply"));
   assert.doesNotMatch(alwaysOn, /Purchase price is in the file/);
 
-  const changeValue = workspaceReply("change value", written);
+  const changeValue = workspaceReply("Change value", written);
   assert.equal(changeValue?.capture?.field, "correct");
   assert.equal(changeValue?.capture && "line" in changeValue.capture ? changeValue.capture.line : "", "home");
   assert.match(changeValue?.text ?? "", /property value/i);
@@ -247,7 +252,8 @@ function main() {
   assert.doesNotMatch(nextFoxAsk(emptyBook).text, /non-?qm|fha|125\s*%|no closing/i);
   assert.ok(!labels(nextFoxAsk(emptyBook).actions).includes("This one"));
   assert.ok(!labels(nextFoxAsk(emptyBook).actions).includes("Lower payment"));
-  assert.ok(labels(nextFoxAsk(emptyBook).actions).includes("Skip"));
+  assert.ok(!labels(nextFoxAsk(emptyBook).actions).includes("Try again"));
+  assert.deepEqual(labels(nextFoxAsk(emptyBook).actions), ["Change loan", "Change value", "Skip"]);
   const emptyThread = [
     {
       id: "pricing-ready:0" as const,
@@ -255,12 +261,36 @@ function main() {
       text: NO_CONVENTIONAL_PRICE_LINE,
     },
   ];
-  assert.ok(!labels(deskStripActions(emptyThread, emptyBook)).includes("This one"));
-  assert.ok(!labels(deskStripActions(emptyThread, emptyBook)).includes("Lower payment"));
+  assert.deepEqual(labels(deskStripActions(emptyThread, emptyBook)), ["Change loan", "Change value", "Skip"]);
+  assert.ok(!labels(deskStripActions(emptyThread, emptyBook)).includes("Try again"));
   const skipEmpty = workspaceReply("Skip", emptyBook);
-  assert.equal(skipEmpty?.capture?.field, "couponChoice");
+  assert.equal(skipEmpty?.capture?.field, "skip-over-value");
   assert.match(skipEmpty?.text ?? "", /How is income earned/i);
   assert.ok(!labels(skipEmpty?.actions).includes("This one"));
+
+  loadIntakeDraft(emptyBook);
+  applyCapture({ field: "correct", value: "value", line: "home" });
+  const editingValue = getFoxDraft();
+  assert.equal(editingValue.productIntent, "refinance");
+  assert.equal(workspacePrompt(editingValue), "value");
+  const fromEmpty = workspaceReply("500000", editingValue);
+  assert.equal(fromEmpty?.capture?.field, "propertyValue");
+  applyCapture(fromEmpty!.capture);
+  const afterValueFix = getFoxDraft();
+  assert.equal(afterValueFix.productIntent, "refinance");
+  assert.equal(afterValueFix.loanAmountValue, 400_000);
+  assert.equal(afterValueFix.propertyValueAmount, 500_000);
+  assert.doesNotMatch(nextFoxAsk(afterValueFix).text, /purchase price|down payment/i);
+  const valueFixKey = searchedKeyFor(afterValueFix);
+  assert.ok(valueFixKey);
+  const valueFixQuoted: FoxIntakeDraft = {
+    ...afterValueFix,
+    liveQuote: { key: valueFixKey!, rate: 6.49, asOf: "2026-01-02", principalAndInterest: 2398 },
+    liveQuoteKey: valueFixKey,
+    liveQuoteStatus: "ready",
+    liveCouponSettled: false,
+  };
+  assert.deepEqual(labels(liveCouponActions(valueFixQuoted)), ["This one", "Lower payment"]);
 
   const canPrice = pricedReady(afterRaise);
   assert.equal(loanExceedsPropertyValue(canPrice), false);

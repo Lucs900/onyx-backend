@@ -3622,7 +3622,11 @@ export function messagesWithPricingWhenReady(
       id: "pricing-ready:0",
       role: "fox",
       text: emptyBook ? NO_CONVENTIONAL_PRICE_LINE : PRICING_WHEN_READY,
-      actions: loanExceedsPropertyValue(draft) ? undefined : pricingFailedActions(),
+      actions: loanExceedsPropertyValue(draft)
+        ? undefined
+        : isRefiEmptyBook(draft)
+          ? loanOverValueActions()
+          : pricingFailedActions(),
     },
   ];
 }
@@ -3771,7 +3775,10 @@ export function nextFoxAsk(draft: FoxIntakeDraft): {
     if (loanExceedsPropertyValue(draft)) {
       return workspacePromptCopy(workspacePrompt(draft), draft);
     }
-    return { text: NO_CONVENTIONAL_PRICE_LINE, actions: pricingFailedActions() };
+    return {
+      text: NO_CONVENTIONAL_PRICE_LINE,
+      actions: isRefiEmptyBook(draft) ? loanOverValueActions() : pricingFailedActions(),
+    };
   }
   if (namedTwoK1WhoAskPending(draft) || k1WhoConfirmPending(draft)) {
     return workspacePromptCopy("confirm-proposal", draft);
@@ -3908,11 +3915,18 @@ export function deskStripActions(
     }
   }
   if (
+    (message.text === LOAN_OVER_VALUE_LINE || needsOverValueCheck(draft)) &&
+    !draft.correcting
+  ) {
+    return stripStreetSuggest(loanOverValueActions());
+  }
+  if (
     message.text === PRICING_WHEN_READY ||
     message.text === NO_CONVENTIONAL_PRICE_LINE ||
     isPricingWhenReadySpeech(message)
   ) {
     if (loanExceedsPropertyValue(draft)) return [];
+    if (isRefiEmptyBook(draft)) return stripStreetSuggest(loanOverValueActions());
     return stripStreetSuggest(pricingFailedActions());
   }
 
@@ -4807,17 +4821,23 @@ export function loanOverValueCopy() {
   return LOAN_OVER_VALUE_LINE;
 }
 
+export function isRefiEmptyBook(draft?: FoxIntakeDraft | null) {
+  if (!draft || !isRefiLike(draft) || draft.liveCouponSettled) return false;
+  if (draft.liveQuoteStatus !== "unavailable" || draft.liveQuote) return false;
+  return hasLoanAmount(draft) && hasPropertyValue(draft);
+}
+
 export function loanOverValueActions(): FoxAction[] {
   return [
     {
       id: "over-value-loan",
-      label: "change loan",
+      label: "Change loan",
       event: "bubble",
       capture: { field: "correct", value: "amount", line: "loan" },
     },
     {
       id: "over-value-value",
-      label: "change value",
+      label: "Change value",
       event: "bubble",
       capture: { field: "correct", value: "value", line: "home" },
     },
@@ -4854,7 +4874,13 @@ function replyToOverValueAsk(
 } {
   const lower = q.trim().toLowerCase();
   if (isCouponSkipText(q) || /^skip$/.test(lower)) {
-    const nextDraft = { ...draft, overValueSkipped: true, correcting: null, correctingLine: null };
+    const nextDraft = {
+      ...draft,
+      overValueSkipped: true,
+      liveCouponSettled: draft.liveQuoteStatus === "unavailable" ? true : draft.liveCouponSettled,
+      correcting: null,
+      correctingLine: null,
+    };
     return {
       ...nextFoxAsk(nextDraft),
       capture: { field: "skip-over-value" },
@@ -6441,7 +6467,13 @@ function draftAfterCaptureBody(draft: FoxIntakeDraft, capture: Capture): FoxInta
     return applyEscalateMotion({ ...next, overPriceConfirmed: true });
   }
   if (capture.field === "skip-over-value") {
-    return { ...next, overValueSkipped: true, correcting: null, correctingLine: null };
+    return {
+      ...next,
+      overValueSkipped: true,
+      liveCouponSettled: draft.liveQuoteStatus === "unavailable" || next.liveCouponSettled,
+      correcting: null,
+      correctingLine: null,
+    };
   }
   if (capture.field === "occupancy") {
     return { ...next, occupancyChoice: { ...draft.occupancyChoice, value: capture.value }, occupancyAsked: true };
@@ -7011,6 +7043,12 @@ export function workspaceReply(
       text: RATEFLOW_WAIT_LINE,
       capture: { field: "retry-rateflow" },
     };
+  }
+  if (
+    isRefiEmptyBook(draft) &&
+    (isOverValueChangeLoanText(q) || isOverValueChangeValueText(q) || isCouponSkipText(q) || /^skip$/.test(lower))
+  ) {
+    return replyToOverValueAsk(q, draft);
   }
   const paperAskOpen =
     prompt === "documents" ||

@@ -24,6 +24,7 @@ import {
   isFundsPairProposal,
   isLooksRightAskText,
   isPurchaseLike,
+  isRefiLike,
   loanExceedsPurchasePrice,
   loanExceedsPropertyValue,
   looksRightAskActions,
@@ -1369,7 +1370,16 @@ export function visibleFoxActions(message: FoxMessage, draft: FoxIntakeDraft) {
     if (isOverPriceChip(action) && !loanExceedsPurchasePrice(draft)) {
       return false;
     }
-    if (isOverValueChip(action) && !loanExceedsPropertyValue(draft)) {
+    if (
+      isOverValueChip(action) &&
+      !loanExceedsPropertyValue(draft) &&
+      !(
+        isRefiLike(draft) &&
+        draft.liveQuoteStatus === "unavailable" &&
+        !draft.liveQuote &&
+        !draft.liveCouponSettled
+      )
+    ) {
       return false;
     }
     if (

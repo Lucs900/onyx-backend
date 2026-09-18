@@ -316,7 +316,7 @@ function assertCopyChips(text: string, chips: string[]) {
     }
   }
   if (/loan is larger than the house/.test(lower)) {
-    const need = ["change loan", "change value", "Skip"];
+    const need = ["Change loan", "Change value", "Skip"];
     const missing = need.filter((label) => !hasChip(chips, label));
     if (missing.length || hasChip(chips, "This one") || hasChip(chips, "Lower payment")) {
       throw new BeatFail(
@@ -1470,7 +1470,7 @@ async function case27(page: Page) {
   if (hasChip(conflict.chips, "This one") || hasChip(conflict.chips, "Lower payment")) {
     throw new BeatFail(`This one before LTV can price — ${conflict.chips.join(" · ")}`);
   }
-  const need = ["change loan", "change value", "Skip"];
+  const need = ["Change loan", "Change value", "Skip"];
   const missing = need.filter((label) => !hasChip(conflict.chips, label));
   if (missing.length) {
     throw new BeatFail(`conflict chips missing ${missing.join(" · ")} — ${conflict.chips.join(" · ")}`);
@@ -1534,7 +1534,7 @@ async function case28(page: Page) {
   await hardStartOver(page);
   await walkRefiToLoanValue(page, "500000", "400000");
   await waitAsk(page, /loan is larger than the house/i);
-  await clickChip(page, "change loan");
+  await clickChip(page, "Change loan");
   const loanAsk = await waitAsk(page, /loan amount/i);
   if (/purchase price|down payment/i.test(loanAsk.text)) {
     throw new BeatFail(`change loan asked purchase copy — ${loanAsk.text}`);
@@ -1570,21 +1570,28 @@ async function case28(page: Page) {
 async function case29(page: Page) {
   await hardStartOver(page);
   await walkRefiToLoanValue(page, "500000", "400000");
-  await waitAsk(page, /loan is larger than the house/i);
-  await clickChip(page, "change loan");
+  const conflict = await waitAsk(page, /loan is larger than the house/i);
+  const conflictNeed = ["Change loan", "Change value", "Skip"];
+  const conflictMissing = conflictNeed.filter((label) => !hasChip(conflict.chips, label));
+  if (conflictMissing.length) {
+    throw new BeatFail(`conflict missing ${conflictMissing.join(" · ")} — ${conflict.chips.join(" · ")}`);
+  }
+  await clickChip(page, "Change loan");
   await waitAsk(page, /loan amount/i);
   await typeSend(page, "400000");
   await waitAsk(page, /kind of home|House, condo/i);
   await walkHouseCredit(page);
   await waitAsk(page, /address or ZIP/i);
   await typeSend(page, "94123");
-  await waitCurrent(
+  const afterZip = await waitCurrent(
     page,
     (text, chips) =>
       /How is income earned|Getting a live line|Pricing when the file is ready|conventional price|Not a lock/i.test(
         text,
       ) ||
       hasChip(chips, "This one") ||
+      hasChip(chips, "Change loan") ||
+      hasChip(chips, "Change value") ||
       hasChip(chips, "Try again") ||
       hasChip(chips, "Skip"),
     45_000,
@@ -1596,20 +1603,42 @@ async function case29(page: Page) {
     if (hasChip(chips, "This one") || hasChip(chips, "Lower payment")) {
       throw new BeatFail(`This one on 400/400 empty book — ${text} | ${chips.join(" · ")}`);
     }
+    if (hasChip(chips, "Try again")) {
+      throw new BeatFail(`Try again on no-price — ${chips.join(" · ")}`);
+    }
     if (/non-?qm|fha|125\s*% product|no closing costs/i.test(text)) {
       throw new BeatFail(`invented a product on empty book — ${text}`);
     }
-    if (
-      /How is income earned|Pricing when the file is ready|don’t have a conventional price/i.test(text)
-    ) {
+    if (/don’t have a conventional price|Pricing when the file is ready/i.test(text)) {
+      const missing = ["Change loan", "Change value", "Skip"].filter((label) => !hasChip(chips, label));
+      if (missing.length) {
+        throw new BeatFail(`no-price missing ${missing.join(" · ")} — ${chips.join(" · ")}`);
+      }
       if (/purchase price|down payment/i.test(text)) {
         throw new BeatFail(`empty book leaked purchase copy — ${text}`);
       }
+      await clickChip(page, "Change value");
+      await waitAsk(page, /property value/i);
+      await typeSend(page, "500000");
+      const afterValue = await waitCurrent(
+        page,
+        (next, nextChips) =>
+          /How is income earned|Getting a live line|Not a lock|conventional price|Pricing when the file is ready/i.test(
+            next,
+          ) || hasChip(nextChips, "This one"),
+        45_000,
+      );
+      if (/purchase price|down payment/i.test(afterValue.text)) {
+        throw new BeatFail(`change value leaked purchase copy — ${afterValue.text}`);
+      }
+      return;
+    }
+    if (/How is income earned/i.test(text)) {
       return;
     }
     await page.waitForTimeout(250);
   }
-  throw new BeatFail(`400/400 after ZIP did not settle — ${await currentText(page)} | ${(await currentChips(page)).join(" · ")}`);
+  throw new BeatFail(`400/400 after ZIP did not settle — ${afterZip.text} | ${afterZip.chips.join(" · ")}`);
 }
 
 async function case23(page: Page) {

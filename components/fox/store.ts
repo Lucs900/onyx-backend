@@ -2558,6 +2558,8 @@ function applyCaptureBody(capture: Capture) {
     return commit({
       ...current,
       overValueSkipped: true,
+      liveCouponSettled:
+        current.liveQuoteStatus === "unavailable" ? true : current.liveCouponSettled,
       correcting: null,
       correctingLine: null,
     });
