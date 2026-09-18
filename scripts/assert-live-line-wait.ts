@@ -9,7 +9,6 @@ import assert from "node:assert/strict";
 import { emptyDraft } from "../components/fox/store";
 import { writePropertyZip } from "../components/fox/propertyType";
 import {
-  PRICING_WHEN_READY,
   messagesWithLiveQuoteSpeech,
   messagesWithPricingWhenReady,
   messagesWithRateOrReadySpeech,
@@ -154,7 +153,9 @@ const failed: FoxIntakeDraft = {
   liveCouponSettled: false,
 };
 assert.equal(shouldHoldAskForLiveLine(failed), false);
-assert.equal(nextFoxAsk(failed).text, PRICING_WHEN_READY);
+assert.match(nextFoxAsk(failed).text, /don’t have a conventional price|Pricing when the file is ready/i);
+assert.ok(!(nextFoxAsk(failed).actions ?? []).some((item) => item.label === "This one"));
+assert.ok(!(nextFoxAsk(failed).actions ?? []).some((item) => item.label === "Lower payment"));
 assert.deepEqual(
   (nextFoxAsk(failed).actions ?? []).map((item) => item.label),
   ["Try again", "Skip"],
@@ -166,7 +167,7 @@ assert.deepEqual(
 const failThread = messagesWithPricingWhenReady([], failed);
 const failTurn = failThread.find((item) => item.id.startsWith("pricing-ready:")) as FoxMessage;
 assert.ok(failTurn);
-assert.equal(failTurn.text, PRICING_WHEN_READY);
+assert.match(failTurn.text, /don’t have a conventional price|Pricing when the file is ready/i);
 assert.deepEqual(
   (failTurn.actions ?? []).map((item) => item.label),
   ["Try again", "Skip"],

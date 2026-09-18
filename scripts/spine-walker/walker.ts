@@ -509,7 +509,7 @@ async function settleQuoteToIncome(page: Page, allowPricingSkip = false, zip = "
   await waitCurrent(
     page,
     (text, chips) =>
-      /How is income earned|Getting a live line|This one|Pricing when the file is ready|Not a lock/i.test(text) ||
+      /How is income earned|Getting a live line|This one|Pricing when the file is ready|conventional price|Not a lock/i.test(text) ||
       hasChip(chips, "This one"),
     45_000,
   );
@@ -549,7 +549,7 @@ async function settleQuoteToIncome(page: Page, allowPricingSkip = false, zip = "
       assertCopyChips(await currentText(page), await currentChips(page));
       return;
     }
-    if (/Pricing when the file is ready/i.test(text)) {
+    if (/Pricing when the file is ready|don’t have a conventional price/i.test(text)) {
       if (hasChip(chips, "Try again") && !retriedRate) {
         retriedRate = true;
         await clickChip(page, "Try again");
@@ -1500,7 +1500,7 @@ async function case27(page: Page) {
   await waitCurrent(
     page,
     (text, chips) =>
-      /How is income earned|Getting a live line|Pricing when the file is ready/i.test(text) ||
+      /How is income earned|Getting a live line|Pricing when the file is ready|conventional price/i.test(text) ||
       hasChip(chips, "This one"),
     45_000,
   );
@@ -1565,6 +1565,51 @@ async function case28(page: Page) {
   if (moneyOf(map, "Property value") !== "$400,000") {
     throw new BeatFail(`change loan dropped value — ${moneyOf(map, "Property value") || "(missing)"}`);
   }
+}
+
+async function case29(page: Page) {
+  await hardStartOver(page);
+  await walkRefiToLoanValue(page, "500000", "400000");
+  await waitAsk(page, /loan is larger than the house/i);
+  await clickChip(page, "change loan");
+  await waitAsk(page, /loan amount/i);
+  await typeSend(page, "400000");
+  await waitAsk(page, /kind of home|House, condo/i);
+  await walkHouseCredit(page);
+  await waitAsk(page, /address or ZIP/i);
+  await typeSend(page, "94123");
+  await waitCurrent(
+    page,
+    (text, chips) =>
+      /How is income earned|Getting a live line|Pricing when the file is ready|conventional price|Not a lock/i.test(
+        text,
+      ) ||
+      hasChip(chips, "This one") ||
+      hasChip(chips, "Try again") ||
+      hasChip(chips, "Skip"),
+    45_000,
+  );
+  const started = Date.now();
+  while (Date.now() - started < 45_000) {
+    const text = await currentText(page);
+    const chips = await currentChips(page);
+    if (hasChip(chips, "This one") || hasChip(chips, "Lower payment")) {
+      throw new BeatFail(`This one on 400/400 empty book — ${text} | ${chips.join(" · ")}`);
+    }
+    if (/non-?qm|fha|125\s*% product|no closing costs/i.test(text)) {
+      throw new BeatFail(`invented a product on empty book — ${text}`);
+    }
+    if (
+      /How is income earned|Pricing when the file is ready|don’t have a conventional price/i.test(text)
+    ) {
+      if (/purchase price|down payment/i.test(text)) {
+        throw new BeatFail(`empty book leaked purchase copy — ${text}`);
+      }
+      return;
+    }
+    await page.waitForTimeout(250);
+  }
+  throw new BeatFail(`400/400 after ZIP did not settle — ${await currentText(page)} | ${(await currentChips(page)).join(" · ")}`);
 }
 
 async function case23(page: Page) {
@@ -2531,6 +2576,11 @@ const CASES: { n: number; title: string; run: (page: Page) => Promise<void> }[] 
     n: 28,
     title: "Refinance change loan 400000 writes $400,000; next is House, never purchase copy",
     run: case28,
+  },
+  {
+    n: 29,
+    title: "Refinance 400/400 after House+FICO+ZIP: no This one until a rate prints",
+    run: case29,
   },
   { n: 23, title: "ADP W-2 page-read: Box 5 is $36,460.08, never $5", run: case23 },
   { n: 24, title: "composer paperclip CSTC stub: filename/received then $1,806.67 Use this", run: case24 },

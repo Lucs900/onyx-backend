@@ -102,8 +102,14 @@ assert.notEqual(emptyBrowserLoan.fileId, afterWipeId);
 assert.equal(emptyBrowserLoan.path, "loan-only");
 
 assert.deepEqual(
-  liveCouponActions().map((item) => item.label),
+  liveCouponActions({
+    ...emptyDraft(),
+    liveQuote: { key: "q1", rate: 6.49, asOf: "2026-01-02", principalAndInterest: 4000 },
+    liveQuoteKey: "q1",
+    liveQuoteStatus: "ready",
+  }).map((item) => item.label),
   ["This one", "Lower payment"],
 );
+assert.deepEqual(liveCouponActions().map((item) => item.label), []);
 
 console.log("file-identity PASS");

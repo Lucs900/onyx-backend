@@ -66,17 +66,17 @@ function sketch(): FoxIntakeDraft {
   };
 }
 
-assert.deepEqual(
-  liveCouponActions().map((item) => item.label),
-  ["This one", "Lower payment"],
-);
-
 const lead: FoxIntakeDraft = {
   ...sketch(),
   liveQuote: { key: "q1", rate: 6.49, asOf: "2026-01-02", principalAndInterest: 4000 },
   liveQuoteKey: "q1",
   liveQuoteStatus: "ready",
 };
+assert.deepEqual(
+  liveCouponActions(lead).map((item) => item.label),
+  ["This one", "Lower payment"],
+);
+assert.deepEqual(liveCouponActions().map((item) => item.label), []);
 const lower = applyCouponChoice(lead, "lower");
 const confirm = liveCouponConfirmCopy({
   ...lower,

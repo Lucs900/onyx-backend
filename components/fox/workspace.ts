@@ -28,6 +28,7 @@ import {
 } from "@/lib/rateflow/quote";
 import {
   COUPON_UNRESOLVED,
+  NO_CONVENTIONAL_PRICE_LINE,
   acceptPendingLiveCoupon,
   applyCouponChoice,
   couponCapture,
@@ -44,6 +45,7 @@ import {
   isLiveRateSpeech,
   isTranscriptSignalAskText,
   withoutDuplicateTranscriptAsk,
+  hasPrintedLiveRate,
   liveCouponActions,
   liveCouponConfirmActions,
   liveCouponConfirmCopy,
@@ -1239,6 +1241,7 @@ export function sampleRateApplies(intent?: ProductIntent | null) {
 /** 2026 FHFA high-cost ceiling. Not the standard conforming limit. */
 export const FHFA_HIGH_COST_CEILING_2026 = STORE_HIGH_COST_CEILING;
 export const PRICING_WHEN_READY = "Pricing when the file is ready";
+export { NO_CONVENTIONAL_PRICE_LINE };
 export const GEO_STOP_COPY =
   "ONYX is California only. Type a California ZIP or address.";
 export const JUMBO_PURPOSE_ASK = "Are you buying or refinancing?";
@@ -3571,7 +3574,11 @@ export function messagesWithLiveQuoteSpeech(
 
 export function isPricingWhenReadySpeech(message: FoxMessage) {
   if (message.role !== "fox") return false;
-  return message.id.startsWith("pricing-ready:") || message.text === PRICING_WHEN_READY;
+  return (
+    message.id.startsWith("pricing-ready:") ||
+    message.text === PRICING_WHEN_READY ||
+    message.text === NO_CONVENTIONAL_PRICE_LINE
+  );
 }
 
 /** Live coupon bubble or the honest ready fallback — not the File-write ack. */
@@ -3607,12 +3614,14 @@ export function messagesWithPricingWhenReady(
   if (conventionalReadyHoldsReadyLine(draft) || (searchedKeyFor(draft) && draft.liveQuoteStatus !== "unavailable")) {
     return messages;
   }
+  const emptyBook =
+    draft.liveQuoteStatus === "unavailable" && !draft.liveQuote && !loanExceedsPropertyValue(draft);
   return [
     ...messages,
     {
       id: "pricing-ready:0",
       role: "fox",
-      text: PRICING_WHEN_READY,
+      text: emptyBook ? NO_CONVENTIONAL_PRICE_LINE : PRICING_WHEN_READY,
       actions: loanExceedsPropertyValue(draft) ? undefined : pricingFailedActions(),
     },
   ];
@@ -3762,7 +3771,7 @@ export function nextFoxAsk(draft: FoxIntakeDraft): {
     if (loanExceedsPropertyValue(draft)) {
       return workspacePromptCopy(workspacePrompt(draft), draft);
     }
-    return { text: PRICING_WHEN_READY, actions: pricingFailedActions() };
+    return { text: NO_CONVENTIONAL_PRICE_LINE, actions: pricingFailedActions() };
   }
   if (namedTwoK1WhoAskPending(draft) || k1WhoConfirmPending(draft)) {
     return workspacePromptCopy("confirm-proposal", draft);
@@ -3889,20 +3898,20 @@ export function deskStripActions(
   const message = thread[live]!;
   if (isReceivedStatusLine(message.text) || isLookupWaitLine(message.text)) return [];
 
-  if (
-    isLiveRateSpeech(message.text) ||
-    isLiveRateSpeech(message.followUp) ||
-    message.text === COUPON_UNRESOLVED
-  ) {
-    if (loanExceedsPropertyValue(draft)) {
-      // Conventional quote cannot exist until value ≥ loan.
+  if (isLiveRateSpeech(message.text) || isLiveRateSpeech(message.followUp)) {
+    if (loanExceedsPropertyValue(draft) || !hasPrintedLiveRate(draft)) {
+      // This one only when a live rate / P&I / points / as-of line exists.
     } else if (draft.pendingLiveCoupon) {
       return stripStreetSuggest(liveCouponConfirmActions(draft));
     } else if (!draft.liveCouponSettled) {
       return stripStreetSuggest(liveCouponActions(draft));
     }
   }
-  if (message.text === PRICING_WHEN_READY || isPricingWhenReadySpeech(message)) {
+  if (
+    message.text === PRICING_WHEN_READY ||
+    message.text === NO_CONVENTIONAL_PRICE_LINE ||
+    isPricingWhenReadySpeech(message)
+  ) {
     if (loanExceedsPropertyValue(draft)) return [];
     return stripStreetSuggest(pricingFailedActions());
   }

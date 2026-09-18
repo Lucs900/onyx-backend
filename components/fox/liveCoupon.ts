@@ -46,6 +46,10 @@ import type { Capture, FoxAction, FoxIntakeDraft, FoxMessage } from "./types";
 
 export const COUPON_UNRESOLVED = "Pricing when the file is ready";
 
+/** Vendor returned no conventional product. Never a fake This one. */
+export const NO_CONVENTIONAL_PRICE_LINE =
+  "I don’t have a conventional price on these numbers";
+
 export const LIVE_COUPON_FIELD = "liveCoupon";
 
 export type CouponChoice = "this" | "lower" | "nocost" | "skip";
@@ -67,6 +71,13 @@ export function liveQuoteReady(draft: FoxIntakeDraft) {
   );
 }
 
+/** A spoken coupon exists — rate and as-of. No This one on an empty book. */
+export function hasPrintedLiveRate(draft?: FoxIntakeDraft | null) {
+  if (!draft || loanExceedsPropertyValue(draft)) return false;
+  const quote = draft.liveQuote;
+  return Boolean(draft.liveQuoteStatus === "ready" && quote?.rate && quote.asOf);
+}
+
 export function shouldDeferNextAskForLiveCoupon(draft: FoxIntakeDraft) {
   if (loanExceedsPropertyValue(draft)) return false;
   if (draft.liveCouponSettled || draft.pendingLiveCoupon) return false;
@@ -78,7 +89,7 @@ export function shouldDeferNextAskForLiveCoupon(draft: FoxIntakeDraft) {
 }
 
 export function liveCouponActions(draft?: FoxIntakeDraft): FoxAction[] {
-  if (loanExceedsPropertyValue(draft)) return [];
+  if (!hasPrintedLiveRate(draft)) return [];
   return [
     {
       id: "live-coupon-this",
@@ -960,7 +971,11 @@ export function applyIdExtractAsk(messages: FoxMessage[], ask: FoxMessage): FoxM
 }
 
 function isPricingFailSpeech(message: FoxMessage) {
-  return message.id.startsWith("pricing-ready:") || message.text === "Pricing when the file is ready";
+  return (
+    message.id.startsWith("pricing-ready:") ||
+    message.text === COUPON_UNRESOLVED ||
+    message.text === NO_CONVENTIONAL_PRICE_LINE
+  );
 }
 
 function isPricingFailChip(action: FoxAction) {
@@ -1358,7 +1373,7 @@ export function visibleFoxActions(message: FoxMessage, draft: FoxIntakeDraft) {
       return false;
     }
     if (
-      loanExceedsPropertyValue(draft) &&
+      (loanExceedsPropertyValue(draft) || !hasPrintedLiveRate(draft)) &&
       (action.label === "This one" || action.label === "Lower payment" || action.label === "No cost")
     ) {
       return false;

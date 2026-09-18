@@ -167,7 +167,7 @@ if [[ "${SPINE_WALKER_SKIP_LEFTOVERS:-}" != "1" ]]; then
   if leftover_wanted 22; then
     run_leftover assert-refi-loan-then-value.ts
   fi
-  if leftover_wanted 27 || leftover_wanted 28; then
+  if leftover_wanted 27 || leftover_wanted 28 || leftover_wanted 29; then
     run_leftover assert-refi-loan-over-value.ts
   fi
   if leftover_wanted 23; then

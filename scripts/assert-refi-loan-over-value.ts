@@ -29,7 +29,9 @@ import {
 } from "../components/fox/liveCoupon";
 import {
   LOAN_OVER_VALUE_LINE,
+  NO_CONVENTIONAL_PRICE_LINE,
   PURCHASE_PRICE_ON_FILE_LINE,
+  deskStripActions,
   nextFoxAsk,
   previewFacts,
   previewRateFact,
@@ -227,12 +229,62 @@ function main() {
   assert.match(skippedReadyLtv?.value ?? "", /125(\.0)?%/);
   assert.equal(skippedReadyLtv?.note, ESTIMATED_NOT_FINAL);
 
+  const hundredReady = pricedReady(afterLower);
+  assert.equal(hundredReady.loanAmountValue, 400_000);
+  assert.equal(hundredReady.propertyValueAmount, 400_000);
+  assert.equal(loanExceedsPropertyValue(hundredReady), false);
+  assert.ok(searchedKeyFor(hundredReady));
+  const emptyBook: FoxIntakeDraft = {
+    ...hundredReady,
+    liveQuote: undefined,
+    liveQuoteKey: searchedKeyFor(hundredReady),
+    liveQuoteStatus: "unavailable",
+    liveCouponSettled: false,
+  };
+  assert.equal(liveQuoteReady(emptyBook), false);
+  assert.deepEqual(labels(liveCouponActions(emptyBook)), []);
+  assert.equal(nextFoxAsk(emptyBook).text, NO_CONVENTIONAL_PRICE_LINE);
+  assert.doesNotMatch(nextFoxAsk(emptyBook).text, /non-?qm|fha|125\s*%|no closing/i);
+  assert.ok(!labels(nextFoxAsk(emptyBook).actions).includes("This one"));
+  assert.ok(!labels(nextFoxAsk(emptyBook).actions).includes("Lower payment"));
+  assert.ok(labels(nextFoxAsk(emptyBook).actions).includes("Skip"));
+  const emptyThread = [
+    {
+      id: "pricing-ready:0" as const,
+      role: "fox" as const,
+      text: NO_CONVENTIONAL_PRICE_LINE,
+    },
+  ];
+  assert.ok(!labels(deskStripActions(emptyThread, emptyBook)).includes("This one"));
+  assert.ok(!labels(deskStripActions(emptyThread, emptyBook)).includes("Lower payment"));
+  const skipEmpty = workspaceReply("Skip", emptyBook);
+  assert.equal(skipEmpty?.capture?.field, "couponChoice");
+  assert.match(skipEmpty?.text ?? "", /How is income earned/i);
+  assert.ok(!labels(skipEmpty?.actions).includes("This one"));
+
   const canPrice = pricedReady(afterRaise);
   assert.equal(loanExceedsPropertyValue(canPrice), false);
   assert.notEqual(rateflowBlockedReason(canPrice), "ltv");
   assert.ok(rateflowClientBodyFromDraft(canPrice));
-  assert.ok(searchedKeyFor(canPrice));
-  assert.deepEqual(labels(liveCouponActions(canPrice)), ["This one", "Lower payment"]);
+  const canPriceKey = searchedKeyFor(canPrice);
+  assert.ok(canPriceKey);
+  assert.deepEqual(labels(liveCouponActions(canPrice)), []);
+  const canPriceQuoted: FoxIntakeDraft = {
+    ...canPrice,
+    liveQuote: { key: canPriceKey!, rate: 6.49, asOf: "2026-01-02", principalAndInterest: 2398 },
+    liveQuoteKey: canPriceKey,
+    liveQuoteStatus: "ready",
+  };
+  assert.equal(liveQuoteReady(canPriceQuoted), true);
+  assert.deepEqual(labels(liveCouponActions(canPriceQuoted)), ["This one", "Lower payment"]);
+  const quoteThread = [
+    {
+      id: "live-quote:ok",
+      role: "fox" as const,
+      text: "This loan right now: 6.490%. P&I $2,398. Not a lock. As of 2026-01-02 PT.",
+    },
+  ];
+  assert.ok(labels(deskStripActions(quoteThread, canPriceQuoted)).includes("This one"));
 
   const purchaseOver: FoxIntakeDraft = {
     ...emptyDraft(),
@@ -269,7 +321,7 @@ function main() {
   assert.equal(purchasePriceRepeatReply(purchaseRepeat, "500000"), PURCHASE_PRICE_ON_FILE_LINE);
 
   console.log(
-    "assert-refi-loan-over-value: conflict once + change chips; change loan writes $400,000 then House; no purchase copy; no This one",
+    "assert-refi-loan-over-value: conflict + change loan + no This one until a printed rate",
   );
 }
 
