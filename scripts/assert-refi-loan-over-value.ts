@@ -4,7 +4,8 @@
  * No This one / Lower payment until value ≥ loan (or loan comes down).
  * Skip keeps both numbers and continues to income. LTV 125% stays estimated.
  * Change loan writes the new refinance loan. Next is House — never purchase
- * down-payment copy. Do not invent cash-out, Non-QM, or a 125% product.
+ * down-payment copy. Empty Rateflow no-price uses the same strip, not Try again.
+ * Do not invent cash-out, Non-QM, or a 125% product.
  */
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
