@@ -25,6 +25,7 @@ import {
   isLooksRightAskText,
   isPurchaseLike,
   loanExceedsPurchasePrice,
+  loanExceedsPropertyValue,
   looksRightAskActions,
   yearsInBusinessSkipActions,
 } from "./completeness";
@@ -58,6 +59,7 @@ export type PendingLiveCoupon = {
 };
 
 export function liveQuoteReady(draft: FoxIntakeDraft) {
+  if (loanExceedsPropertyValue(draft)) return false;
   return Boolean(
     draft.liveQuoteStatus === "ready" &&
       draft.liveQuote &&
@@ -66,6 +68,7 @@ export function liveQuoteReady(draft: FoxIntakeDraft) {
 }
 
 export function shouldDeferNextAskForLiveCoupon(draft: FoxIntakeDraft) {
+  if (loanExceedsPropertyValue(draft)) return false;
   if (draft.liveCouponSettled || draft.pendingLiveCoupon) return false;
   if (draft.liveQuoteStatus === "unavailable") return false;
   if (draft.liveQuote && draft.liveQuoteStatus === "ready") {
@@ -74,7 +77,8 @@ export function shouldDeferNextAskForLiveCoupon(draft: FoxIntakeDraft) {
   return Boolean(searchedKeyFor(draft));
 }
 
-export function liveCouponActions(_draft?: FoxIntakeDraft): FoxAction[] {
+export function liveCouponActions(draft?: FoxIntakeDraft): FoxAction[] {
+  if (loanExceedsPropertyValue(draft)) return [];
   return [
     {
       id: "live-coupon-this",
@@ -322,6 +326,16 @@ function isOverPriceChip(action: FoxAction) {
     action.id === "over-price-down" ||
     action.id === "over-price-loan" ||
     action.id === "over-price-confirm"
+  );
+}
+
+function isOverValueChip(action: FoxAction) {
+  const field = action.capture?.field;
+  return (
+    field === "skip-over-value" ||
+    action.id === "over-value-loan" ||
+    action.id === "over-value-value" ||
+    action.id === "over-value-skip"
   );
 }
 
@@ -1338,6 +1352,15 @@ export function visibleFoxActions(message: FoxMessage, draft: FoxIntakeDraft) {
       return false;
     }
     if (isOverPriceChip(action) && !loanExceedsPurchasePrice(draft)) {
+      return false;
+    }
+    if (isOverValueChip(action) && !loanExceedsPropertyValue(draft)) {
+      return false;
+    }
+    if (
+      loanExceedsPropertyValue(draft) &&
+      (action.label === "This one" || action.label === "Lower payment" || action.label === "No cost")
+    ) {
       return false;
     }
     if (

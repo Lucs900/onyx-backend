@@ -188,6 +188,7 @@ import {
   isPurchaseLike,
   isRefiLike,
   loanExceedsPurchasePrice,
+  loanExceedsPropertyValue,
   missingAmountAsk,
   parseFundsRole,
   incomeConfirmActions,
@@ -1094,6 +1095,7 @@ export function writePurchasePrice(draft: FoxIntakeDraft, price: number): FoxInt
     ...draft,
     propertyValueAmount: price,
     valueAsked: true,
+    overValueSkipped: false,
     correcting: null,
     correctingLine: null,
     facts,
@@ -1139,6 +1141,9 @@ export function amountAskText(draft: FoxIntakeDraft) {
     return "What’s the purchase price?";
   }
   if (draft.correctingLine === "home" && hasPropertyValue(draft)) {
+    if (loanExceedsPropertyValue(draft)) {
+      return "What’s the property value?";
+    }
     const n = draft.propertyValueAmount;
     return `Property value in the file is ${formatMoney(n ?? 0)}. Still right?`;
   }
@@ -3514,6 +3519,7 @@ export function messagesWithLiveQuoteSpeech(
   ) {
     return withoutLiveQuoteSpeech(messages);
   }
+  if (loanExceedsPropertyValue(draft)) return withoutLiveQuoteSpeech(messages);
   if (!quote.rate || !quote.asOf) return messages;
   const lines = liveQuoteThreadLines(quote);
   if (!lines.length) return messages;
@@ -3607,7 +3613,7 @@ export function messagesWithPricingWhenReady(
       id: "pricing-ready:0",
       role: "fox",
       text: PRICING_WHEN_READY,
-      actions: pricingFailedActions(),
+      actions: loanExceedsPropertyValue(draft) ? undefined : pricingFailedActions(),
     },
   ];
 }
@@ -3622,6 +3628,9 @@ export function messagesWithRateOrReadySpeech(
 ): FoxMessage[] {
   if (fileNeedsCaliforniaAsk(draft)) return withoutPricingWhenReadySpeech(messages);
   const quote = draft.liveQuote;
+  if (loanExceedsPropertyValue(draft)) {
+    return messagesWithPricingWhenReady(withoutLiveQuoteSpeech(messages), draft);
+  }
   if (liveQuoteReady(draft) && quote?.rate && quote.asOf) {
     return messagesWithLiveQuoteSpeech(
       withoutPricingWhenReadySpeech(messages),
@@ -3636,11 +3645,18 @@ export function messagesWithRateOrReadySpeech(
 export function previewRateFact(draft: FoxIntakeDraft): PreviewFact | null {
   if (fileNeedsCaliforniaAsk(draft)) return null;
   const live = liveQuoteMatchesDraft(draft, draft.liveQuote) ? draft.liveQuote : null;
-  if (live) {
+  if (live && !loanExceedsPropertyValue(draft)) {
     return {
       id: "rate",
       label: "Rate",
       value: liveLoanNowCopy(live),
+    };
+  }
+  if (loanExceedsPropertyValue(draft)) {
+    return {
+      id: "rate",
+      label: "Rate",
+      value: PRICING_WHEN_READY,
     };
   }
   const intent = draft.productIntent ?? null;
@@ -3720,6 +3736,7 @@ export function shouldDeferStillUsefulAsk(draft: FoxIntakeDraft): boolean {
 
 /** ZIP / address started a live search. Do not speak income on the spinner. */
 export function shouldHoldAskForLiveLine(draft: FoxIntakeDraft) {
+  if (loanExceedsPropertyValue(draft)) return false;
   if (draft.liveCouponSettled || draft.pendingLiveCoupon) return false;
   if (draft.pendingProposal || draft.pendingConflict || draft.pendingAddress) return false;
   if (liveQuoteReady(draft)) return false;
@@ -3742,6 +3759,9 @@ export function nextFoxAsk(draft: FoxIntakeDraft): {
     return { text: RATEFLOW_WAIT_LINE };
   }
   if (draft.liveQuoteStatus === "unavailable" && !draft.liveCouponSettled && !draft.liveQuote) {
+    if (loanExceedsPropertyValue(draft)) {
+      return workspacePromptCopy(workspacePrompt(draft), draft);
+    }
     return { text: PRICING_WHEN_READY, actions: pricingFailedActions() };
   }
   if (namedTwoK1WhoAskPending(draft) || k1WhoConfirmPending(draft)) {
@@ -3874,14 +3894,16 @@ export function deskStripActions(
     isLiveRateSpeech(message.followUp) ||
     message.text === COUPON_UNRESOLVED
   ) {
-    if (draft.pendingLiveCoupon) {
+    if (loanExceedsPropertyValue(draft)) {
+      // Conventional quote cannot exist until value ≥ loan.
+    } else if (draft.pendingLiveCoupon) {
       return stripStreetSuggest(liveCouponConfirmActions(draft));
-    }
-    if (!draft.liveCouponSettled) {
+    } else if (!draft.liveCouponSettled) {
       return stripStreetSuggest(liveCouponActions(draft));
     }
   }
   if (message.text === PRICING_WHEN_READY || isPricingWhenReadySpeech(message)) {
+    if (loanExceedsPropertyValue(draft)) return [];
     return stripStreetSuggest(pricingFailedActions());
   }
 
@@ -4069,6 +4091,7 @@ export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
   if (refiLoanAskNeeded(draft) || (isHelocFile(draft) && !hasHelocLine(draft))) return "amount";
   if (propertyValueAskNeeded(draft)) return "value";
   if (needsOverPriceCheck(draft)) return "over-price";
+  if (needsOverValueCheck(draft)) return "over-value";
   if (!sketchNumberReady(draft)) {
     if (isRefiLike(draft) && hasLoanAmount(draft)) return "value";
     return draftUsesPurchasePrice(draft) && !hasPropertyValue(draft) ? "value" : "amount";
@@ -4232,6 +4255,12 @@ function workspaceAskCopy(
     return {
       text: loanOverPriceCopy(draft),
       actions: loanOverPriceActions(),
+    };
+  }
+  if (prompt === "over-value") {
+    return {
+      text: loanOverValueCopy(),
+      actions: loanOverValueActions(),
     };
   }
   if (prompt === "occupancy") {
@@ -4739,6 +4768,101 @@ export function loanOverPriceActions(): FoxAction[] {
       capture: { field: "over-price-confirm" },
     },
   ];
+}
+
+export const LOAN_OVER_VALUE_LINE = "The loan is larger than the house.";
+
+export function needsOverValueCheck(draft: FoxIntakeDraft) {
+  if (draft.pendingProposal) return false;
+  if (draft.overValueSkipped) return false;
+  return loanExceedsPropertyValue(draft) && draft.motion !== "escalated";
+}
+
+export function loanOverValueCopy() {
+  return LOAN_OVER_VALUE_LINE;
+}
+
+export function loanOverValueActions(): FoxAction[] {
+  return [
+    {
+      id: "over-value-loan",
+      label: "change loan",
+      event: "bubble",
+      capture: { field: "correct", value: "amount", line: "loan" },
+    },
+    {
+      id: "over-value-value",
+      label: "change value",
+      event: "bubble",
+      capture: { field: "correct", value: "value", line: "home" },
+    },
+    {
+      id: "over-value-skip",
+      label: "Skip",
+      event: "bubble",
+      capture: { field: "skip-over-value" },
+    },
+  ];
+}
+
+function isOverValueChangeLoanText(text: string) {
+  const lower = text.trim().toLowerCase().replace(/[’']/g, "'");
+  if (/^change loan$/.test(lower)) return true;
+  return /change( the)? loan/.test(lower) && !/value|house/.test(lower);
+}
+
+function isOverValueChangeValueText(text: string) {
+  const lower = text.trim().toLowerCase().replace(/[’']/g, "'");
+  if (/^change value$/.test(lower)) return true;
+  return /change( the)? (value|house)/.test(lower) && !/\bloan\b/.test(lower);
+}
+
+function replyToOverValueAsk(
+  q: string,
+  draft: FoxIntakeDraft,
+): {
+  text: string;
+  followUp?: string;
+  facts?: PreviewFact[];
+  actions?: FoxAction[];
+  capture?: Capture;
+} {
+  const lower = q.trim().toLowerCase();
+  if (isCouponSkipText(q) || /^skip$/.test(lower)) {
+    const nextDraft = { ...draft, overValueSkipped: true, correcting: null, correctingLine: null };
+    return {
+      ...nextFoxAsk(nextDraft),
+      capture: { field: "skip-over-value" },
+    };
+  }
+  if (isOverValueChangeLoanText(q)) {
+    const nextDraft = beginFileEdit(draft, "amount", "loan");
+    return {
+      ...workspacePromptCopy("amount", nextDraft),
+      capture: { field: "correct", value: "amount", line: "loan" },
+    };
+  }
+  if (isOverValueChangeValueText(q)) {
+    const nextDraft = {
+      ...beginFileEdit(draft, "value", "home"),
+      correctingLine: "home" as const,
+    };
+    return {
+      ...workspacePromptCopy("value", nextDraft),
+      capture: { field: "correct", value: "value", line: "home" },
+    };
+  }
+  const answered = foxAnswer(q, factsFromDraft(draft));
+  if (answered) {
+    return {
+      ...restoredAsk(answered.text, draft),
+      actions: loanOverValueActions(),
+    };
+  }
+  return {
+    text: loanOverValueCopy(),
+    actions: loanOverValueActions(),
+  };
 }
 
 /** Live composer commas. Returns null when the text is not a pure money number. */
@@ -6132,6 +6256,7 @@ export function beginFileEdit(
   return {
     ...draft,
     correcting: field,
+    correctingLine: editLine ?? draft.correctingLine,
     resumeAfterEdit: prior !== field ? prior : draft.resumeAfterEdit,
   };
 }
@@ -6290,6 +6415,9 @@ function draftAfterCaptureBody(draft: FoxIntakeDraft, capture: Capture): FoxInta
     }
     return applyEscalateMotion({ ...next, overPriceConfirmed: true });
   }
+  if (capture.field === "skip-over-value") {
+    return { ...next, overValueSkipped: true, correcting: null, correctingLine: null };
+  }
   if (capture.field === "occupancy") {
     return { ...next, occupancyChoice: { ...draft.occupancyChoice, value: capture.value }, occupancyAsked: true };
   }
@@ -6320,6 +6448,7 @@ function draftAfterCaptureBody(draft: FoxIntakeDraft, capture: Capture): FoxInta
         ...next,
         ...clearLiveQuote(),
         amountAsked: true,
+        overValueSkipped: false,
         loanAmountValue: Number.isFinite(n) && n > 0 ? n : draft.loanAmountValue,
       }),
       hasDownPayment(draft) ? "loan" : undefined,
@@ -6793,6 +6922,9 @@ export function workspaceReply(
   if (asksWillIQualify(q)) {
     return answerThenRestore(q, draft);
   }
+  if (prompt === "over-value" || (needsOverValueCheck(draft) && !draft.correcting)) {
+    return replyToOverValueAsk(q, draft);
+  }
   const notepadEdit = notepadEditPrompt(draft);
 
   if (
@@ -6816,7 +6948,7 @@ export function workspaceReply(
   if (notepadEdit === "value") {
     return replyToPropertyValueAsk(q, draft);
   }
-  if (notepadEdit === "amount") {
+  if (notepadEdit === "amount" && isPurchaseLike(draft)) {
     return replyToFundsAsk(q, draft);
   }
   if (
@@ -7856,6 +7988,7 @@ export function workspaceReply(
       ...draft,
       loanAmountValue: amount,
       amountAsked: true,
+      overValueSkipped: false,
     });
     if (pair.value && pair.value !== amount) {
       nextDraft.propertyValueAmount = pair.value;

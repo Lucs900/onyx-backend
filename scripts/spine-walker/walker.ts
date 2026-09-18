@@ -315,6 +315,15 @@ function assertCopyChips(text: string, chips: string[]) {
       );
     }
   }
+  if (/loan is larger than the house/.test(lower)) {
+    const need = ["change loan", "change value", "Skip"];
+    const missing = need.filter((label) => !hasChip(chips, label));
+    if (missing.length || hasChip(chips, "This one") || hasChip(chips, "Lower payment")) {
+      throw new BeatFail(
+        `copy/chips disagree — refinance loan>value vs chips: ${chips.join(" · ") || "(none)"}`,
+      );
+    }
+  }
   const moneyAsk =
     /what.?s the purchase price|down payment or loan amount|what.?s the down payment\b|what.?s the loan amount/i.test(
       text,
@@ -1425,6 +1434,102 @@ async function case22(page: Page) {
   }
 }
 
+async function walkRefiToLoanValue(page: Page, loan: string, value: string) {
+  await clickChip(page, "Refinance");
+  await waitAsk(page, /How will the property be used/i);
+  await clickChip(page, "Primary");
+  const afterOcc = await waitCurrent(
+    page,
+    (text) =>
+      /loan or payoff amount|What’s the loan amount|property value|timeline|kind of home/i.test(text),
+    20_000,
+  );
+  if (/timeline/i.test(afterOcc.text) && hasChip(afterOcc.chips, "Skip")) {
+    await clickChip(page, "Skip");
+  }
+  await waitAsk(page, /loan or payoff amount|What’s the loan amount/i);
+  await typeSend(page, loan);
+  const valueAsk = await waitCurrent(
+    page,
+    (text) => /property value|kind of home|loan or payoff|loan is larger/i.test(text),
+    20_000,
+  );
+  if (/loan or payoff amount|What’s the approximate loan/i.test(valueAsk.text) && !/property value/i.test(valueAsk.text)) {
+    throw new BeatFail(`re-asked loan after ${loan} — ${valueAsk.text}`);
+  }
+  if (/property value/i.test(valueAsk.text)) {
+    await typeSend(page, value);
+  }
+}
+
+async function case27(page: Page) {
+  await hardStartOver(page);
+  await walkRefiToLoanValue(page, "500000", "400000");
+  const conflict = await waitAsk(page, /loan is larger than the house/i);
+  assertCopyChips(conflict.text, conflict.chips);
+  if (hasChip(conflict.chips, "This one") || hasChip(conflict.chips, "Lower payment")) {
+    throw new BeatFail(`This one before LTV can price — ${conflict.chips.join(" · ")}`);
+  }
+  const need = ["change loan", "change value", "Skip"];
+  const missing = need.filter((label) => !hasChip(conflict.chips, label));
+  if (missing.length) {
+    throw new BeatFail(`conflict chips missing ${missing.join(" · ")} — ${conflict.chips.join(" · ")}`);
+  }
+  const map = await structureMap(page);
+  if (moneyOf(map, "Loan amount") !== "$500,000") {
+    throw new BeatFail(`loan was not $500,000 after $400,000 value — ${moneyOf(map, "Loan amount") || "(missing)"}`);
+  }
+  if (moneyOf(map, "Property value") !== "$400,000") {
+    throw new BeatFail(`value was not $400,000 — ${moneyOf(map, "Property value") || "(missing)"}`);
+  }
+  await clickChip(page, "Skip");
+  const afterSkip = await waitCurrent(
+    page,
+    (text) => !/loan is larger than the house/i.test(text),
+    15_000,
+  );
+  if (/loan is larger than the house/i.test(afterSkip.text)) {
+    throw new BeatFail(`Skip repeated the house conflict — ${afterSkip.text}`);
+  }
+  if (hasChip(afterSkip.chips, "This one") || hasChip(afterSkip.chips, "Lower payment")) {
+    throw new BeatFail(`This one after Skip — ${afterSkip.chips.join(" · ")}`);
+  }
+  await walkHouseCredit(page);
+  await waitAsk(page, /address or ZIP/i);
+  await typeSend(page, "94123");
+  await waitCurrent(
+    page,
+    (text, chips) =>
+      /How is income earned|Getting a live line|Pricing when the file is ready/i.test(text) ||
+      hasChip(chips, "This one"),
+    45_000,
+  );
+  const started = Date.now();
+  while (Date.now() - started < 45_000) {
+    const text = await currentText(page);
+    const chips = await currentChips(page);
+    if (hasChip(chips, "This one") || hasChip(chips, "Lower payment")) {
+      throw new BeatFail(`This one while LTV is 125% — ${text} | ${chips.join(" · ")}`);
+    }
+    if (/How is income earned/i.test(text)) {
+      assertCopyChips(text, chips);
+      const after = await structureMap(page);
+      if (moneyOf(after, "Loan amount") !== "$500,000" || moneyOf(after, "Property value") !== "$400,000") {
+        throw new BeatFail(
+          `Skip did not keep both numbers — loan ${moneyOf(after, "Loan amount")} value ${moneyOf(after, "Property value")}`,
+        );
+      }
+      const ltv = after["LTV"] ?? "";
+      if (ltv && !/125/.test(ltv)) {
+        throw new BeatFail(`LTV was not 125% estimated — ${ltv}`);
+      }
+      return;
+    }
+    await page.waitForTimeout(250);
+  }
+  throw new BeatFail(`Skip did not reach income — ${await currentText(page)} | ${(await currentChips(page)).join(" · ")}`);
+}
+
 async function case23(page: Page) {
   const fixture = adpW2FixturePath();
   if (!fixture) {
@@ -2380,6 +2485,11 @@ const CASES: { n: number; title: string; run: (page: Page) => Promise<void> }[] 
   { n: 20, title: "03 Use this → latest paystub; 07 upgrades same Harbor row; then ID Upload this · Skip", run: case20 },
   { n: 21, title: "Looks right gate shows Looks right chip; typed yes still confirms", run: case21 },
   { n: 22, title: "Refinance 500000 then 800000 keeps $500,000 loan", run: case22 },
+  {
+    n: 27,
+    title: "Refinance 500000 then 400000 → house conflict + change chips; Skip → income, no This one",
+    run: case27,
+  },
   { n: 23, title: "ADP W-2 page-read: Box 5 is $36,460.08, never $5", run: case23 },
   { n: 24, title: "composer paperclip CSTC stub: filename/received then $1,806.67 Use this", run: case24 },
   {

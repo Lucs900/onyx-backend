@@ -627,6 +627,35 @@ assert.equal(rateflowClientBodyFromDraft(file({ govProgram: "fha" })), null);
 assert.equal(rateflowClientBodyFromDraft(file({ govProgram: "va" })), null);
 assert.equal(rateflowClientBodyFromDraft(file({ govProgram: "usda" })), null);
 assert.equal(rateflowClientBodyFromDraft(file({ cashOut: true })), null);
+assert.equal(
+  rateflowBlockedReason(
+    file({
+      productIntent: "refinance",
+      loanAmountValue: 500_000,
+      propertyValueAmount: 400_000,
+    }),
+  ),
+  "ltv",
+);
+assert.equal(
+  rateflowClientBodyFromDraft(
+    file({
+      productIntent: "refinance",
+      loanAmountValue: 500_000,
+      propertyValueAmount: 400_000,
+    }),
+  ),
+  null,
+);
+assert.ok(
+  rateflowClientBodyFromDraft(
+    file({
+      productIntent: "refinance",
+      loanAmountValue: 500_000,
+      propertyValueAmount: 800_000,
+    }),
+  ),
+);
 assert.deepEqual(rateflowClientBodyFromDraft(file({ productIntent: "refinance" })), {
   loan_purpose: "refinance",
   residency_type: "primary_home",

@@ -161,6 +161,7 @@ export function taskContext(stage: FoxStage, draft: FoxIntakeDraft) {
     qualifying: "Asking: qualifying income",
     "years-in-business": "Asking: years in business",
     "over-price": "Checking price and loan",
+    "over-value": "Checking loan and value",
     housing: "Asking: housing payment",
     "subject-lease": "Asking: lease or rent",
     citizenship: "Asking: citizenship",

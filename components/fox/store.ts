@@ -546,6 +546,7 @@ function normalize(value: unknown): FoxIntakeDraft {
         : undefined,
     cashOut: Boolean(raw.cashOut),
     overPriceConfirmed: Boolean(raw.overPriceConfirmed),
+    overValueSkipped: Boolean(raw.overValueSkipped),
     loanAmountValue: numberOrUndefined(raw.loanAmountValue),
     propertyValueAmount: numberOrUndefined(raw.propertyValueAmount),
     downPaymentAmount: numberOrUndefined(raw.downPaymentAmount),
@@ -2553,6 +2554,14 @@ function applyCaptureBody(capture: Capture) {
       loStatus: current.loStatus ?? "in review",
     });
   }
+  if (capture.field === "skip-over-value") {
+    return commit({
+      ...current,
+      overValueSkipped: true,
+      correcting: null,
+      correctingLine: null,
+    });
+  }
   if (capture.field === "correct") {
     const field = capture.value as FoxPrompt;
     const edited = beginFileEdit(current, field, capture.line);
@@ -2700,6 +2709,7 @@ function applyCaptureBody(capture: Capture) {
             ...current,
             ...clearLiveQuote(),
             amountAsked: true,
+            overValueSkipped: false,
             correcting: null,
             correctingLine: null,
             valueAsked: hasValue ? true : current.valueAsked,

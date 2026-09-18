@@ -83,6 +83,8 @@ export function rateflowBlockedReason(draft: FoxIntakeDraft): string | null {
   if (purchaseSketchMismatch(draft)) return "purchase-split";
   const loanAmount = loanAmountFromDraft(draft);
   if (loanAmount == null) return "loan";
+  const value = listPriceFromDraft(draft);
+  if (draft.productIntent === "refinance" && value != null && loanAmount > value) return "ltv";
   if (loanAmount > FHFA_HIGH_COST_CEILING_2026) return "jumbo";
   if (!mapPropertyType(draft.propertyType, draft.propertyUnits)) return "property-type";
   if (creditScoreFloor(draft.creditBand) == null) return "credit";
@@ -162,7 +164,9 @@ export function conventionalReadyHoldsReadyLine(draft: FoxIntakeDraft): boolean 
   if (!mapPropertyType(draft.propertyType, draft.propertyUnits)) return false;
   if (creditScoreFloor(draft.creditBand) == null) return false;
   const loanAmount = loanAmountFromDraft(draft);
-  if (listPriceFromDraft(draft) == null || loanAmount == null) return false;
+  const listPrice = listPriceFromDraft(draft);
+  if (listPrice == null || loanAmount == null) return false;
+  if (draft.productIntent === "refinance" && loanAmount > listPrice) return false;
   if (loanAmount > FHFA_HIGH_COST_CEILING_2026) return false;
   return true;
 }

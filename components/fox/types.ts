@@ -282,6 +282,8 @@ export type FoxIntakeDraft = {
   creditEvent?: NamedCreditEvent;
   cashOut?: boolean;
   overPriceConfirmed?: boolean;
+  /** Refinance loan>value spoken once. Skip keeps both numbers and continues. */
+  overValueSkipped?: boolean;
   loanAmountValue?: number;
   propertyValueAmount?: number;
   downPaymentAmount?: number;
@@ -619,6 +621,7 @@ export type FoxPrompt =
   | "qualifying"
   | "years-in-business"
   | "over-price"
+  | "over-value"
   | "housing"
   | "subject-lease"
   | "citizenship"
@@ -760,6 +763,7 @@ export type Capture =
   | { field: "ask-fox" }
   | { field: "talk-originator" }
   | { field: "over-price-confirm" }
+  | { field: "skip-over-value" }
   | { field: "proceed" }
   | { field: "not-yet" }
   | { field: "skip-email" }

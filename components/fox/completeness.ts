@@ -707,6 +707,14 @@ export function loanExceedsPurchasePrice(draft?: FoxIntakeDraft | null) {
   return ltv != null && ltv > 1;
 }
 
+/** Conventional refinance only. Loan larger than the house — not a cash-out product. */
+export function loanExceedsPropertyValue(draft?: FoxIntakeDraft | null) {
+  if (!draft || draft.productIntent !== "refinance") return false;
+  const value = draft.propertyValueAmount ?? 0;
+  const loan = draft.loanAmountValue ?? 0;
+  return value > 0 && loan > value;
+}
+
 export function highPurchaseLtv(draft?: FoxIntakeDraft | null) {
   const ltv = sketchedPurchaseLtv(draft);
   return ltv != null && ltv > HIGH_PURCHASE_LTV && ltv <= 1;
