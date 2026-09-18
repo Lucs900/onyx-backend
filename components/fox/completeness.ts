@@ -38,6 +38,8 @@ import {
   valuesMatch,
   wageNumberPathSettled,
   TAX_RETURN_NAME_FIELD,
+  packetSawK1OrScheduleC,
+  withK1WriteDone,
 } from "./fileWrite";
 import {
   QUALIFYING_INCOME_FIELD,
@@ -1643,7 +1645,9 @@ export function resolveProposal(
     return changeStubExtract(draft);
   }
   if (isIncomeLedgerProposal(proposal)) {
-    return settleIncomeLedgerProposal(draft, proposal, winner === "accept" ? "confirmed" : "skipped");
+    const settled = settleIncomeLedgerProposal(draft, proposal, winner === "accept" ? "confirmed" : "skipped");
+    if (winner === "accept" && packetSawK1OrScheduleC(settled)) return withK1WriteDone(settled);
+    return settled;
   }
   if (isHouseholdWagesProposal(proposal)) {
     return settleHouseholdWagesProposal(draft, winner === "accept" ? "confirmed" : "skipped");
@@ -1802,6 +1806,7 @@ export function resolveProposal(
   if (proposal.field === QUALIFYING_INCOME_FIELD) {
     next = writeEntityEmployment(next, proposal);
     next = settleEntityLedgerAfterQiWrite(next, proposal.value);
+    if (packetSawK1OrScheduleC(next)) next = withK1WriteDone(next);
   }
   if (proposal.field === QUALIFYING_INCOME_FIELD && proposal.parts) {
     if (proposal.parts.wage) next = writeConfirmedFact(next, WAGE_MONTHLY_FIELD, proposal.parts.wage, source);

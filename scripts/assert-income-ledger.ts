@@ -60,6 +60,7 @@ import {
 } from "../components/fox/fileWrite";
 import type { ExtractClass, FoxIntakeDraft, FoxMessage } from "../components/fox/types";
 import { leftoverUseThisOnOlderTurns, sealStoredFoxThread } from "../components/fox/liveCoupon";
+import { applyProceedMotion, MOTION_COPY } from "../components/fox/motion";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -1134,6 +1135,20 @@ async function main() {
       .filter((label) => label === "Proceed" || label === "Not yet" || label === "Upload more"),
     ["Proceed", "Not yet", "Upload more"],
   );
+
+  const goldQueued = applyProceedMotion({ ...leftoverReady, emailSkipped: true });
+  const goldProceed = workspaceReply("Proceed", { ...leftoverReady, emailSkipped: true });
+  assert.equal(goldQueued.motion, "in_queue", "gold close Proceed writes in_queue");
+  assert.equal(goldProceed?.text, MOTION_COPY.in_queue);
+  assert.equal(MOTION_COPY.in_queue, "ONYX has this for review. I’m still here.");
+  assert.doesNotMatch(goldProceed?.text ?? "", /I didn’t see a K-1 or Schedule C/);
+  assert.deepEqual(
+    (goldProceed?.actions ?? []).map((item) => item.label),
+    ["Ask Fox", "Upload more", "Request human"],
+  );
+  const goldProceedAgain = workspaceReply("Proceed", goldQueued);
+  assert.equal(goldProceedAgain?.text, MOTION_COPY.in_queue, "second gold Proceed stays the queue line");
+  assert.doesNotMatch(goldProceedAgain?.text ?? "", /I didn’t see a K-1 or Schedule C/);
 
   const leftoverQ = workspaceReply("What else did you see on that return?", leftoverReady);
   assert.ok(leftoverQ);

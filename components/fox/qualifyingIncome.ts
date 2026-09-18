@@ -2318,6 +2318,21 @@ export function maybeCloseTaxReturnPacket(draft: FoxIntakeDraft): FoxIntakeDraft
     const kind = draft.pendingProposal?.extras?.find((item) => item.field === "ledger_kind")?.value;
     if (kind && kind !== "schedule_e") return draft;
   }
+  if (
+    hasK1Ordinary(draft) ||
+    hasScheduleCCashflow(draft) ||
+    (draft.incomeLedger ?? []).some(
+      (row) =>
+        (row.kind === "k1" ||
+          row.kind === "named_loss" ||
+          row.kind === "entity_1065" ||
+          row.kind === "entity_1120s" ||
+          row.kind === "schedule_c") &&
+        row.status !== "skipped",
+    )
+  ) {
+    return draft;
+  }
   if (!scheduleEWrittenOnDraft(draft)) return draft;
   if (pendingNewIncomeLedgerRows(draft.incomeLedger, true).length) return draft;
   const reprint =

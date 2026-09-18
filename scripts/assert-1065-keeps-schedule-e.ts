@@ -4,15 +4,22 @@
  * Who-on-loan before a dollar write. No $169. No SSN. Chips live.
  */
 import assert from "node:assert/strict";
-import { applyExtractedFields } from "../components/fox/fileWrite";
+import {
+  applyExtractedFields,
+  hasDocStamp,
+  k1SpeakKey,
+  PACKET_NO_K1_C_LINE,
+  taxReturnPacketSettled,
+} from "../components/fox/fileWrite";
 import { emptyDraft } from "../components/fox/store";
-import { resolveProposal, writeQualifyingIncome } from "../components/fox/completeness";
+import { canLooksRight, resolveProposal, writeQualifyingIncome } from "../components/fox/completeness";
 import {
   QUALIFYING_INCOME_FIELD,
   QUALIFYING_METHOD_FIELD,
   selectK1WhoOnLoan,
 } from "../components/fox/qualifyingIncome";
-import { deskStripActions, nextFoxAsk, previewFacts } from "../components/fox/workspace";
+import { deskStripActions, nextFoxAsk, previewFacts, workspaceReply } from "../components/fox/workspace";
+import { applyLooksRightMotion, applyProceedMotion, MOTION_COPY } from "../components/fox/motion";
 import { lockParass1065LedgerFields, mergeIncomeLedger } from "../lib/income/ledger";
 import { mergeTaxCashflows as mergeYears } from "../components/fox/qualifyingIncome";
 import type { FoxIntakeDraft } from "../components/fox/types";
@@ -342,8 +349,53 @@ function main() {
   assert.ok(after.text.trim(), "Use this leaves a next line");
   assert.ok((after.actions ?? []).length > 0, "Use this leaves chips");
   assert.match(after.text, /started May 25, 2007 — 19 years/);
+  assert.ok(hasDocStamp(used, k1SpeakKey(used), "done"), "K-1 Box 1 −$12,932 stamp is done");
 
-  console.log("assert-1065-keeps-schedule-e: $521 kept · no $169 · who-on-loan · chips live");
+  const usedYears = resolveProposal(used, "accept");
+  assert.equal(usedYears.facts?.years_in_business?.value, "19");
+  assert.equal(usedYears.facts?.qualifying_income?.value, "-12932", "years Use this does not reopen −$12,932");
+  assert.equal(usedYears.facts?.schedule_e_monthly?.value, "521", "years Use this does not reopen $521");
+  assert.ok((usedYears.employmentHistory ?? []).some((row) => /Parass Foods LLC/i.test(row.label ?? "")));
+  assert.equal(taxReturnPacketSettled(usedYears), false, "written K-1 is not packet-close unread");
+  const afterYears = nextFoxAsk(usedYears);
+  assert.doesNotMatch(afterYears.text, /I didn’t see a K-1 or Schedule C/);
+  assert.notEqual(afterYears.text, PACKET_NO_K1_C_LINE);
+  assert.ok(
+    !(afterYears.actions ?? []).some((item) => item.label === "Proceed") ||
+      !/I didn’t see a K-1/.test(afterYears.text),
+    "finish chips must not ride a false K-1 unread",
+  );
+
+  const live: FoxIntakeDraft = {
+    ...usedYears,
+    emailSkipped: true,
+    skippedClasses: [...new Set([...(usedYears.skippedClasses ?? []), "government_id"])],
+  };
+  let finish = live;
+  if (!canLooksRight(finish)) {
+    const looksAsk = nextFoxAsk(finish);
+    if (/I can send this to review/i.test(looksAsk.text)) {
+      finish = { ...finish, sampleAccepted: true };
+    }
+  }
+  const afterLooks = canLooksRight(finish) ? applyLooksRightMotion(finish) : finish;
+  const proceeded = applyProceedMotion({ ...afterLooks, emailSkipped: true });
+  const proceedAsk = workspaceReply("Proceed", { ...afterLooks, emailSkipped: true });
+  assert.equal(proceeded.motion, "in_queue", "Proceed once writes in_queue");
+  assert.equal(proceedAsk?.text, MOTION_COPY.in_queue);
+  assert.equal(MOTION_COPY.in_queue, "ONYX has this for review. I’m still here.");
+  assert.doesNotMatch(proceedAsk?.text ?? "", /I didn’t see a K-1 or Schedule C/);
+  assert.deepEqual(
+    (proceedAsk?.actions ?? []).map((item) => item.label),
+    ["Ask Fox", "Upload more", "Request human"],
+  );
+  const proceedAgain = workspaceReply("Proceed", proceeded);
+  assert.equal(proceedAgain?.text, MOTION_COPY.in_queue, "second Proceed does not reprint unread");
+  assert.doesNotMatch(proceedAgain?.text ?? "", /I didn’t see a K-1 or Schedule C/);
+  assert.equal(proceeded.facts?.qualifying_income?.value, "-12932");
+  assert.equal(proceeded.facts?.schedule_e_monthly?.value, "521");
+
+  console.log("assert-1065-keeps-schedule-e: $521 kept · no $169 · who-on-loan · chips live · no false K-1 unread · Proceed in_queue");
 }
 
 main();

@@ -772,12 +772,56 @@ function packetLedgerKind(draft: FoxIntakeDraft) {
   return draft.pendingProposal?.extras?.find((item) => item.field === "ledger_kind")?.value ?? "";
 }
 
+const PACKET_SEEN_LEDGER = new Set(["k1", "named_loss", "entity_1065", "entity_1120s", "schedule_c"]);
+
+export function k1SpeakKey(draft: FoxIntakeDraft) {
+  const year = String(draft.facts?.tax_year?.value ?? "").replace(/\D/g, "").slice(0, 4);
+  return year ? `file:k1:${year}` : "file:k1";
+}
+
+/** Stamp received → named → offered → done. Same stamp on File = do not reprint unread. */
+export function withK1WriteDone(draft: FoxIntakeDraft): FoxIntakeDraft {
+  return markDocStamp(draft, k1SpeakKey(draft), ["received", "named", "offered", "done"]);
+}
+
+function k1MethodOnFile(draft: FoxIntakeDraft) {
+  const method = String(draft.facts?.[QUALIFYING_METHOD_FIELD]?.value ?? draft.facts?.qualifying_method?.value ?? "");
+  return /K-1 Box 1|named loss|company ordinary|schedule c/i.test(method);
+}
+
+/**
+ * Employment / QI / a named K-1 or Schedule C row already on File.
+ * Do not emit “I didn’t see a K-1.”
+ */
+export function packetSawK1OrScheduleC(draft: FoxIntakeDraft): boolean {
+  if (hasDocStamp(draft, k1SpeakKey(draft), "done")) return true;
+  if (
+    (draft.incomeLedger ?? []).some(
+      (row) => PACKET_SEEN_LEDGER.has(row.kind) && row.status !== "skipped",
+    )
+  ) {
+    return true;
+  }
+  if (hasK1Ordinary(draft) || hasScheduleCCashflow(draft)) return true;
+  if (String(draft.facts?.k1_ordinary_income?.value ?? "").trim()) return true;
+  const qi = parseExtractMoney(draft.facts?.[QUALIFYING_INCOME_FIELD]?.value ?? "");
+  if (k1MethodOnFile(draft) && qi != null) return true;
+  if (
+    k1MethodOnFile(draft) &&
+    (draft.employmentHistory ?? []).some((row) => String(row.label ?? "").trim())
+  ) {
+    return true;
+  }
+  return false;
+}
+
 /** Written Sch E, no new schedule card left. A reprint of that Sch E is not “next.” */
 export function taxReturnPacketSettled(draft: FoxIntakeDraft) {
   if (namedTwoK1WhoAskPending(draft) || k1WhoConfirmPending(draft)) return false;
   if (isEntityCashFlowProposal(draft.pendingProposal) || isCompanyOrdinaryHold(draft.pendingProposal)) {
     return false;
   }
+  if (packetSawK1OrScheduleC(draft)) return false;
   if (!scheduleEWrittenOnFile(draft)) return false;
   if (draft.pendingProposal?.field === "household_wages") return false;
   if (draft.pendingProposal?.field === QUALIFYING_INCOME_FIELD) return false;

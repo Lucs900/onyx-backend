@@ -3079,10 +3079,37 @@ function restoreQueueActions(draft: FoxIntakeDraft) {
 }
 
 function packetCloseOnlyReply(draft: FoxIntakeDraft) {
+  if (inQueueEnding(draft) || draft.motion === "in_queue") return null;
   if (!taxReturnPacketSettled(draft)) return null;
   return {
     text: PACKET_NO_K1_C_LINE,
     actions: finishLineActions(draft),
+  };
+}
+
+function finishStripReply(
+  text: string,
+  draft: FoxIntakeDraft,
+  prompt: ReturnType<typeof workspacePrompt>,
+) {
+  const finish = finishCaptureFromText(text);
+  if (!finish) return null;
+  const closeOpen = prompt === "packet-close" || taxReturnPacketSettled(draft);
+  const doneOpen = prompt === "done" || draft.motion === "in_queue";
+  if (!closeOpen && !doneOpen) return null;
+  if (finish.field === "upload-more") {
+    return { text: "", capture: finish };
+  }
+  const nextDraft = finish.field === "proceed" ? applyProceedMotion(draft) : applyNotYetMotion(draft);
+  if (nextDraft.motion === "in_queue" || nextDraft.motion === "on_hold") {
+    return {
+      ...workspacePromptCopy("done", nextDraft),
+      capture: finish,
+    };
+  }
+  return {
+    ...nextFoxAsk(nextDraft),
+    capture: finish,
   };
 }
 
@@ -3192,13 +3219,14 @@ function unmatchedSideAnswer(draft: FoxIntakeDraft) {
   const prompt = workspacePrompt(draft);
   if (prompt === "product") return "I can take Buy, Refinance, HELOC, Jumbo, or Other.";
   if (prompt === "correct") return "That’s so I can fix one line on the sketch.";
+  if (inQueueEnding(draft) || prompt === "done" || draft.sampleAccepted) return TIMELINE_COPY;
   if (prompt === "packet-close" || taxReturnPacketSettled(draft)) return PACKET_NO_K1_C_LINE;
   if (isIncomeLedgerProposal(draft.pendingProposal)) return "";
-  if (prompt === "done" || draft.sampleAccepted) return TIMELINE_COPY;
   return FILE_ANSWER_COPY;
 }
 
 function documentQuestionAnswer(draft: FoxIntakeDraft) {
+  if (inQueueEnding(draft) || draft.motion === "in_queue") return MOTION_COPY.in_queue;
   if (workspacePrompt(draft) === "packet-close" || taxReturnPacketSettled(draft)) {
     return PACKET_NO_K1_C_LINE;
   }
@@ -3933,7 +3961,13 @@ export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
   }
   if (taxReturnPacketHoldAsk(draft)) return "packet-read";
   if (draft.scheduleECashUnread) return "schedule-e-unread";
-  if (taxReturnPacketSettled(draft)) return "packet-close";
+  if (
+    taxReturnPacketSettled(draft) &&
+    draft.motion !== "in_queue" &&
+    draft.motion !== "escalated"
+  ) {
+    return "packet-close";
+  }
   if (draft.awaitingRaiseWhen) return "raise-when";
   if (draft.awaitingRaiseYtdFar) return "raise-ytd-far";
   if (
@@ -3958,6 +3992,7 @@ export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
   ) {
     return "confirm-proposal";
   }
+  if (draft.motion === "in_queue") return "done";
   if (draft.correcting === "path-switch") return "path-switch";
   if (draft.correcting === "correct") return "correct";
   if (draft.correcting === "other-reo" && otherReoInterviewBlocked(draft)) {
@@ -6747,12 +6782,14 @@ export function workspaceReply(
   const q = text.trim();
   const lower = q.toLowerCase();
   const prompt = workspacePrompt(draft);
-  if (asksWhatElseOnReturn(q) && taxReturnPacketSettled(draft)) {
+  if (asksWhatElseOnReturn(q) && taxReturnPacketSettled(draft) && !inQueueEnding(draft)) {
     return {
       text: PACKET_NO_K1_C_LINE,
       actions: finishLineActions(draft),
     };
   }
+  const finishNow = finishStripReply(q, draft, prompt);
+  if (finishNow) return finishNow;
   if (asksWillIQualify(q)) {
     return answerThenRestore(q, draft);
   }
