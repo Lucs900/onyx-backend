@@ -4086,7 +4086,7 @@ export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
     if (!propertyTypeSettled(draft)) return "property-type";
     if (!creditSettled(draft)) return "credit";
   }
-  if (draft.sampleAccepted && (draft.motion === "in_queue" || draft.motion === "escalated")) {
+  if (draft.sampleAccepted && draft.motion === "escalated") {
     return "done";
   }
   if (draft.sampleAccepted && namedLossWritten(draft)) return "done";
@@ -4129,7 +4129,7 @@ export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
     if (draft.looksRightHold) return "documents";
     return "amount";
   }
-  const holdCalculatorAsk = draft.motion === "in_queue" || draft.motion === "escalated";
+  const holdCalculatorAsk = draft.motion === "escalated";
   if (!holdCalculatorAsk && subjectLeaseAskNeeded(draft)) return "subject-lease";
   if (!holdCalculatorAsk && !draft.sampleAccepted && housingConfirmNeeded(draft)) return "housing";
   if (!holdCalculatorAsk && !propertyTypeSettled(draft)) return "property-type";
