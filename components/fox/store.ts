@@ -762,6 +762,10 @@ function normalize(value: unknown): FoxIntakeDraft {
       raw.liveQuoteStatus === "ready" || raw.liveQuoteStatus === "unavailable"
         ? raw.liveQuoteStatus
         : undefined,
+    liveQuoteVendorReason:
+      typeof raw.liveQuoteVendorReason === "string" && raw.liveQuoteVendorReason.trim()
+        ? raw.liveQuoteVendorReason.trim().slice(0, 240)
+        : undefined,
     liveQuote: normalizeLiveQuote(raw.liveQuote),
     liveQuoteRows: normalizeLiveQuoteRows(raw.liveQuoteRows),
     liveCouponSettled: Boolean(raw.liveCouponSettled),
@@ -1131,6 +1135,7 @@ export function omitLiveQuoteForResume(draft: FoxIntakeDraft): FoxIntakeDraft {
   delete next.liveQuote;
   delete next.liveQuoteKey;
   delete next.liveQuoteStatus;
+  delete next.liveQuoteVendorReason;
   delete next.liveQuoteRows;
   delete next.liveCouponSettled;
   delete next.pendingLiveCoupon;
@@ -1455,15 +1460,21 @@ export function setLiveQuoteResult(
   key: string,
   quote: FoxIntakeDraft["liveQuote"] | null,
   rows?: FoxIntakeDraft["liveQuoteRows"],
+  reason?: string,
 ) {
   if (!key) return current;
+  const vendorReason =
+    typeof reason === "string" && reason.trim() ? reason.trim().slice(0, 240) : undefined;
   if (quote && current.liveQuote?.key === quote.key && current.liveQuoteStatus === "ready") {
     if (rows?.length && !current.liveQuoteRows?.length) {
-      return commit({ ...current, liveQuoteRows: rows });
+      return commit({ ...current, liveQuoteRows: rows, liveQuoteVendorReason: undefined });
     }
     return current;
   }
   if (!quote && current.liveQuoteKey === key && current.liveQuoteStatus === "unavailable") {
+    if (vendorReason && current.liveQuoteVendorReason !== vendorReason) {
+      return commit({ ...current, liveQuoteVendorReason: vendorReason });
+    }
     return current;
   }
   return commit({
@@ -1472,6 +1483,7 @@ export function setLiveQuoteResult(
     liveQuoteStatus: quote ? "ready" : "unavailable",
     liveQuote: quote ?? undefined,
     liveQuoteRows: quote ? rows ?? current.liveQuoteRows : undefined,
+    liveQuoteVendorReason: quote ? undefined : vendorReason,
     liveCouponSettled: false,
     pendingLiveCoupon: undefined,
   });

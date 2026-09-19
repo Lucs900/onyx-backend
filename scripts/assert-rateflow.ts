@@ -28,6 +28,8 @@ import {
   parseClientBody,
   parseRateflowQuoteMiss,
   parseSafeQuoteResponse,
+  rateflowCashOutRequest,
+  vendorReasonFromPayload,
   parseZipcode,
   pickConventional30LowestNoPoints,
   pickConventional30LowestRate,
@@ -637,17 +639,24 @@ assert.equal(rateflowClientBodyFromDraft(file({ govProgram: "fha" })), null);
 assert.equal(rateflowClientBodyFromDraft(file({ govProgram: "va" })), null);
 assert.equal(rateflowClientBodyFromDraft(file({ govProgram: "usda" })), null);
 assert.equal(rateflowClientBodyFromDraft(file({ cashOut: true })), null);
-assert.equal(
-  rateflowClientBodyFromDraft(
+{
+  const cashOutBody = rateflowClientBodyFromDraft(
     file({
       productIntent: "refinance",
       cashOut: true,
       loanAmountValue: 400_000,
       propertyValueAmount: 500_000,
     }),
-  )?.cash_out,
-  2001,
-);
+  );
+  const cashOutWire = rateflowCashOutRequest(400_000);
+  assert.equal(cashOutBody?.loan_purpose, "refinance");
+  assert.equal(cashOutBody?.residency_type, "primary_home");
+  assert.equal(cashOutBody?.cash_out, cashOutWire.cash_out);
+  assert.notEqual(cashOutBody?.cash_out, 2001);
+  assert.ok((cashOutBody?.cash_out ?? 0) > 2000);
+  assert.equal(cashOutBody?.loan_amount, cashOutWire.loan_amount);
+  assert.equal((cashOutBody?.loan_amount ?? 0) + (cashOutBody?.cash_out ?? 0), 400_000);
+}
 assert.equal(
   rateflowClientBodyFromDraft(
     file({
@@ -817,6 +826,14 @@ assert.equal(parseRateflowQuoteMiss({ ok: true, quote: { rate: 6.125 } }), null)
 assert.equal(parseRateflowQuoteMiss({ ok: false, empty: true }), "empty");
 assert.equal(parseRateflowQuoteMiss({ ok: false }), "retryable");
 assert.equal(parseRateflowQuoteMiss({ ok: false, retryable: true }), "retryable");
+assert.equal(
+  vendorReasonFromPayload({ ok: false, reason: "cash_out requires loan_purpose: refinance" }),
+  "cash_out requires loan_purpose: refinance",
+);
+assert.equal(vendorReasonFromPayload({ status: "error", message: "No eligible products" }), "No eligible products");
+assert.equal(vendorReasonFromPayload({ ok: false, empty: true }), undefined);
+assert.equal(vendorReasonFromPayload({ error: "error" }), undefined);
+assert.equal(vendorReasonFromPayload({ message: "x-api-key missing" }), undefined);
 assert.equal(
   pickLeadRow(
     [

@@ -17,18 +17,16 @@ import {
   searchedKeyFor,
 } from "../lib/rateflow/fromDraft";
 import {
-  RATEFLOW_CASHOUT_PURPOSE_FLAG,
+  rateflowCashOutRequest,
   pickConventional30LowestNoPoints,
   pickLeadRow,
 } from "../lib/rateflow/quote";
 import {
-  CASH_OUT_NO_PROGRAM_LINE,
   NO_CONVENTIONAL_PRICE_LINE,
   REFI_PURPOSE_ASK,
   REFI_PURPOSE_CASH_OUT,
   REFI_PURPOSE_RATE_TERM,
   cashOutNoPriceReady,
-  cashOutVendorEmpty,
   deskStripActions,
   messagesWithRateOrReadySpeech,
   needsRefiPurposeAsk,
@@ -164,9 +162,14 @@ function main() {
   assert.equal(cashOutLtvOverCap(vanilla), false);
   assert.equal(rateflowBlockedReason(vanilla), null);
   const body = rateflowClientBodyFromDraft(vanilla);
+  const cashOutWire = rateflowCashOutRequest(400_000);
   assert.equal(body?.loan_purpose, "refinance");
-  assert.equal(body?.cash_out, RATEFLOW_CASHOUT_PURPOSE_FLAG);
-  assert.equal(body?.loan_amount, 400_000);
+  assert.equal(body?.residency_type, "primary_home");
+  assert.equal(body?.cash_out, cashOutWire.cash_out);
+  assert.notEqual(body?.cash_out, 2001);
+  assert.ok((body?.cash_out ?? 0) > 2000);
+  assert.equal(body?.loan_amount, cashOutWire.loan_amount);
+  assert.equal((body?.loan_amount ?? 0) + (body?.cash_out ?? 0), 400_000);
   assert.equal(body?.list_price, 500_000);
   assert.notEqual(searchedKeyFor(vanilla), searchedKeyFor(pricedReady(skipped)));
 
@@ -194,18 +197,28 @@ function main() {
     liveQuoteKey: searchedKeyFor(zipOnly),
     liveQuoteStatus: "unavailable" as const,
   };
-  assert.equal(cashOutVendorEmpty(zipMiss), true);
   assert.equal(cashOutNoPriceReady(zipMiss), false);
-  assert.equal(nextFoxAsk(zipMiss).text, CASH_OUT_NO_PROGRAM_LINE);
+  assert.notEqual(nextFoxAsk(zipMiss).text, "Cash-out programs are not on this Rateflow book.");
   assert.deepEqual(labels(nextFoxAsk(zipMiss).actions), ["Try again", "Skip"]);
   assert.ok(!labels(nextFoxAsk(zipMiss).actions).includes("Change loan"));
   assert.ok(!labels(nextFoxAsk(zipMiss).actions).includes("This one"));
   const missThread = messagesWithRateOrReadySpeech(withoutWaitLines([]), zipMiss);
-  assert.ok(missThread.some((item) => item.text === CASH_OUT_NO_PROGRAM_LINE));
+  assert.ok(!missThread.some((item) => item.text === "Cash-out programs are not on this Rateflow book."));
   assert.deepEqual(
     labels(deskStripActions(missThread, zipMiss)),
     ["Try again", "Skip"],
   );
+
+  const zipReject = {
+    ...zipMiss,
+    liveQuoteVendorReason: "cash_out requires loan_purpose: refinance",
+  };
+  assert.equal(nextFoxAsk(zipReject).text, "cash_out requires loan_purpose: refinance");
+  assert.deepEqual(labels(nextFoxAsk(zipReject).actions), ["Try again", "Skip"]);
+  assert.ok(!labels(nextFoxAsk(zipReject).actions).includes("This one"));
+  const rejectThread = messagesWithRateOrReadySpeech(withoutWaitLines([]), zipReject);
+  assert.ok(rejectThread.some((item) => item.text === "cash_out requires loan_purpose: refinance"));
+  assert.equal(purposeFact(zipReject)?.value, REFI_PURPOSE_CASH_OUT);
 
   const pointsOnlyCashOut = [
     { rate: 7.625, pts: 0.875, loanTerm: 30, bbLoanType: "conventional", productName: "FNMA 30 Yr Fixed" },

@@ -2333,7 +2333,8 @@ assert.equal(rateflowClientBodyFromDraft({ ...founderRefiAddress, govProgram: "f
 assert.equal(rateflowClientBodyFromDraft({ ...founderRefiAddress, govProgram: "va" }), null);
 assert.equal(rateflowClientBodyFromDraft({ ...founderRefiAddress, govProgram: "usda" }), null);
 assert.equal(rateflowClientBodyFromDraft({ ...founderRefiAddress, cashOut: true })?.loan_purpose, "refinance");
-assert.equal(rateflowClientBodyFromDraft({ ...founderRefiAddress, cashOut: true })?.cash_out, 2001);
+assert.notEqual(rateflowClientBodyFromDraft({ ...founderRefiAddress, cashOut: true })?.cash_out, 2001);
+assert.ok((rateflowClientBodyFromDraft({ ...founderRefiAddress, cashOut: true })?.cash_out ?? 0) > 2000);
 assert.equal(workspacePrompt({ ...founderRefiAddress, cashOut: true }), "income");
 assert.ok(
   previewFacts({ ...founderRefiAddress, cashOut: true }).some(
@@ -2348,7 +2349,8 @@ const founderRefiCashOutFile = {
   cashOut: true,
 };
 assert.equal(rateflowClientBodyFromDraft(founderRefiCashOutFile)?.loan_purpose, "refinance");
-assert.equal(rateflowClientBodyFromDraft(founderRefiCashOutFile)?.cash_out, 2001);
+assert.notEqual(rateflowClientBodyFromDraft(founderRefiCashOutFile)?.cash_out, 2001);
+assert.ok((rateflowClientBodyFromDraft(founderRefiCashOutFile)?.cash_out ?? 0) > 2000);
 assert.equal(workspacePrompt(founderRefiCashOutFile), "income");
 const founderRefiAccepted = resolveProposal(
   proposeAddressAndAdoptZip(founderRefiReady, "500 Market St, San Francisco, CA 94105"),

@@ -12,7 +12,7 @@ import {
   mapPropertyType,
   mapResidency,
   parseClientBody,
-  RATEFLOW_CASHOUT_PURPOSE_FLAG,
+  rateflowCashOutRequest,
   rateflowScenarioKey,
   zipFromSources,
   type RateflowClientBody,
@@ -175,16 +175,17 @@ export function rateflowClientBodyFromDraft(draft: FoxIntakeDraft): RateflowClie
   const zipcode = zipFromDraft(draft);
   if (!zipcode) return null;
   const city = cityFromDraft(draft);
+  const cashOut = draft.cashOut ? rateflowCashOutRequest(loanAmount) : null;
   return parseClientBody({
     loan_purpose: purpose,
     residency_type: residency,
     property_type: propertyType,
     list_price: listPrice,
-    loan_amount: loanAmount,
+    loan_amount: cashOut ? cashOut.loan_amount : loanAmount,
     credit_score: credit,
     zipcode,
     ...(city ? { city } : {}),
-    ...(draft.cashOut ? { cash_out: RATEFLOW_CASHOUT_PURPOSE_FLAG } : {}),
+    ...(cashOut ? { cash_out: cashOut.cash_out } : {}),
   });
 }
 

@@ -45,11 +45,27 @@ export type RateflowResidency = (typeof RATEFLOW_RESIDENCY)[number];
 export type RateflowPropertyType = (typeof RATEFLOW_PROPERTY_TYPES)[number];
 
 /**
- * Rateflow `cash_out` is a dollar, not a purpose enum (`loan_purpose` is only
- * purchase | refinance). Send just over the $2,000 limited-cash-out line so
- * LoanSifter searches cash-out, not rate-term. Never write this on the File.
+ * QuoteInfo `cash_out` is a dollar (`loan_purpose` is only purchase | refinance).
+ * Limited cash-out is $2,000. Do not send a Fox-only enum (2001).
+ * Never write this dollar on the File.
+ *
+ * Refinance `loan_amount` is "loan amount or loan balance". If the vendor adds
+ * `cash_out` onto that balance, File loan 400 / value 500 at a 2001 add-on
+ * becomes 80.4% LTV and conventional cash-out returns empty. Split the File
+ * loan so loan_amount + cash_out stays the File loan.
  */
-export const RATEFLOW_CASHOUT_PURPOSE_FLAG = 2001;
+export function rateflowCashOutDollars(loanAmount: number): number {
+  const loan = Math.round(loanAmount);
+  if (!Number.isFinite(loan) || loan <= 0) return 0;
+  const slice = Math.min(50_000, Math.max(10_000, Math.round((loan * 0.05) / 1000) * 1000));
+  return Math.min(slice, Math.max(0, loan - 1_000));
+}
+
+export function rateflowCashOutRequest(loanAmount: number): { loan_amount: number; cash_out: number } {
+  const loan = Math.round(loanAmount);
+  const cash_out = rateflowCashOutDollars(loan);
+  return { loan_amount: loan - cash_out, cash_out };
+}
 
 export type RateflowClientBody = {
   loan_purpose: RateflowPurpose;
@@ -542,6 +558,36 @@ export function parseRateflowQuoteMiss(input: unknown): "empty" | "retryable" | 
   if (raw.ok === true) return null;
   if (raw.empty === true) return "empty";
   return "retryable";
+}
+
+const SECRET_LIKE = /api[_-]?key|authorization|x-api-key|bearer\s+\S+|loid|rateflow_id/i;
+
+/** Vendor reject text from Rateflow / LoanSifter. Do not invent "not on this book". */
+export function vendorReasonFromPayload(payload: unknown): string | undefined {
+  if (!isRecord(payload)) return undefined;
+  const candidates: unknown[] = [
+    payload.reason,
+    payload.message,
+    payload.error,
+    payload.detail,
+    payload.description,
+  ];
+  if (Array.isArray(payload.errors)) {
+    for (const item of payload.errors) {
+      if (typeof item === "string") candidates.push(item);
+      else if (isRecord(item)) candidates.push(item.message, item.error, item.reason);
+    }
+  }
+  for (const raw of candidates) {
+    if (typeof raw !== "string") continue;
+    const text = raw.replace(/\s+/g, " ").trim();
+    if (text.length < 3 || text.length > 240) continue;
+    if (SECRET_LIKE.test(text)) continue;
+    if (/^(ok|success|true|false|\d+)$/i.test(text)) continue;
+    if (/^(error|fail|failed|empty)$/i.test(text)) continue;
+    return text;
+  }
+  return undefined;
 }
 
 export function safeCouponRowsFromProducts(rows: RateflowProductRow[]): SafeCouponRow[] {

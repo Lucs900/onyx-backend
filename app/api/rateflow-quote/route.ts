@@ -13,6 +13,7 @@ import {
   quoteRowSample,
   safeCouponRowsFromProducts,
   safeQuoteFromRow,
+  vendorReasonFromPayload,
   type RateflowClientBody,
   type RateflowQuoteReport,
 } from "@/lib/rateflow/quote";
@@ -99,16 +100,31 @@ function logReport(report: RateflowQuoteReport) {
   console.info("[rateflow-quote]", JSON.stringify(report));
 }
 
-function retryable(report?: RateflowQuoteReport) {
+function retryable(report?: RateflowQuoteReport, reason?: string) {
   const safe = report ?? buildReport({});
   logReport(safe);
-  return NextResponse.json({ ok: false, retryable: true, report: safe }, { status: 200 });
+  return NextResponse.json(
+    { ok: false, retryable: true, ...(reason ? { reason } : {}), report: safe },
+    { status: 200 },
+  );
 }
 
-function empty(report?: RateflowQuoteReport) {
+function empty(report?: RateflowQuoteReport, reason?: string) {
   const safe = report ?? buildReport({});
   logReport(safe);
-  return NextResponse.json({ ok: false, empty: true, report: safe }, { status: 200 });
+  return NextResponse.json(
+    { ok: false, empty: true, ...(reason ? { reason } : {}), report: safe },
+    { status: 200 },
+  );
+}
+
+function rejected(report?: RateflowQuoteReport, reason?: string) {
+  const safe = report ?? buildReport({});
+  logReport(safe);
+  return NextResponse.json(
+    { ok: false, ...(reason ? { reason } : { retryable: true }), report: safe },
+    { status: 200 },
+  );
 }
 
 function bankingBridgeBody(client: RateflowClientBody) {
@@ -168,11 +184,22 @@ export async function POST(request: Request) {
       cache: "no-store",
     });
     if (!response.ok) {
-      return retryable(buildReport({ client, bbHttpStatus: response.status }));
+      let reason: string | undefined;
+      try {
+        reason = vendorReasonFromPayload(await response.json());
+      } catch {
+        reason = undefined;
+      }
+      return reason
+        ? rejected(buildReport({ client, bbHttpStatus: response.status }), reason)
+        : retryable(buildReport({ client, bbHttpStatus: response.status }));
     }
     const payload: unknown = await response.json();
+    const reason = vendorReasonFromPayload(payload);
     if (isRateflowFailure(payload)) {
-      return retryable(buildReport({ client, bbHttpStatus: response.status, resultCount: 0 }));
+      return reason
+        ? rejected(buildReport({ client, bbHttpStatus: response.status, resultCount: 0 }), reason)
+        : retryable(buildReport({ client, bbHttpStatus: response.status, resultCount: 0 }));
     }
     const rows = asProductRows(payload);
     const row =
@@ -192,6 +219,7 @@ export async function POST(request: Request) {
       book: conventional30Book(rows),
     });
     if (!quote) {
+      if (reason) return rejected(report, reason);
       return rows.length ? retryable(report) : empty(report);
     }
     logReport(report);

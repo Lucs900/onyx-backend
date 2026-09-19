@@ -537,6 +537,8 @@ export type FoxIntakeDraft = {
   /** Last Rateflow search key. Reuse unless amounts, type, occupancy, or FICO change. */
   liveQuoteKey?: string;
   liveQuoteStatus?: "ready" | "unavailable";
+  /** Rateflow / LoanSifter reject text. Print this; do not invent "not on this book". */
+  liveQuoteVendorReason?: string;
   /** Bumps the live-line effect after Try again. */
   liveQuoteRetryAt?: number;
   liveQuote?: {

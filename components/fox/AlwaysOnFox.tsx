@@ -84,7 +84,7 @@ import {
   withWaitLine,
   withoutWaitLines,
 } from "./lookupWait";
-import { requestRateflowIfNeeded, resetRateflowSearch } from "./rateflowClient";
+import { requestRateflowIfNeeded, resetRateflowSearch, takeRateflowVendorReason } from "./rateflowClient";
 import { shouldKeepStoredFoxThread, withoutTrailingSealedFoxLines } from "./persistThread";
 import {
   californiaZipOnFile,
@@ -1436,7 +1436,13 @@ export function AlwaysOnFox({
       }
       if (isStart && live.liveQuoteStatus === "unavailable" && !live.liveCouponSettled && !live.liveQuote) {
         const last = lastFoxTurn(prev);
-        if (last && isPricingWhenReadySpeech(last)) return prev;
+        if (
+          last &&
+          (isPricingWhenReadySpeech(last) ||
+            Boolean(live.liveQuoteVendorReason && last.text === live.liveQuoteVendorReason))
+        ) {
+          return prev;
+        }
         if (!last || isLookupWaitLine(last.text)) {
           const spoken = nextFoxAsk(live);
           if (spoken.text.trim()) return applyFoxAsk(withoutWaitLines(prev), spoken);
@@ -1541,7 +1547,7 @@ export function AlwaysOnFox({
         }
         if (result === "unavailable" || Date.now() - startedAt >= RATEFLOW_UI_WAIT_MS) {
           setLookupWait(null);
-          if (key) setLiveQuoteResult(key, null);
+          if (key) setLiveQuoteResult(key, null, undefined, takeRateflowVendorReason());
           const live = getFoxDraft();
           skipPromptSync.current = true;
           commitMessages((prev) =>

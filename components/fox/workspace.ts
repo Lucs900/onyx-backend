@@ -31,7 +31,6 @@ import {
 } from "@/lib/rateflow/quote";
 import {
   COUPON_UNRESOLVED,
-  CASH_OUT_NO_PROGRAM_LINE,
   NO_CONVENTIONAL_PRICE_LINE,
   acceptPendingLiveCoupon,
   applyCouponChoice,
@@ -1008,12 +1007,18 @@ function isPurchasePriceEdit(field: FoxPrompt, line?: string | null) {
 
 export function clearLiveQuote(): Pick<
   FoxIntakeDraft,
-  "liveQuote" | "liveQuoteKey" | "liveQuoteStatus" | "liveQuoteRows" | "pendingLiveCoupon"
+  | "liveQuote"
+  | "liveQuoteKey"
+  | "liveQuoteStatus"
+  | "liveQuoteVendorReason"
+  | "liveQuoteRows"
+  | "pendingLiveCoupon"
 > {
   return {
     liveQuote: undefined,
     liveQuoteKey: undefined,
     liveQuoteStatus: undefined,
+    liveQuoteVendorReason: undefined,
     liveQuoteRows: undefined,
     pendingLiveCoupon: undefined,
   };
@@ -1276,7 +1281,7 @@ export function sampleRateApplies(intent?: ProductIntent | null) {
 /** 2026 FHFA high-cost ceiling. Not the standard conforming limit. */
 export const FHFA_HIGH_COST_CEILING_2026 = STORE_HIGH_COST_CEILING;
 export const PRICING_WHEN_READY = "Pricing when the file is ready";
-export { CASH_OUT_NO_PROGRAM_LINE, NO_CONVENTIONAL_PRICE_LINE };
+export { NO_CONVENTIONAL_PRICE_LINE };
 export const GEO_STOP_COPY =
   "ONYX is California only. Type a California ZIP or address.";
 export const JUMBO_PURPOSE_ASK = "Are you buying or refinancing?";
@@ -3614,8 +3619,7 @@ export function isPricingWhenReadySpeech(message: FoxMessage) {
   return (
     message.id.startsWith("pricing-ready:") ||
     message.text === PRICING_WHEN_READY ||
-    message.text === NO_CONVENTIONAL_PRICE_LINE ||
-    message.text === CASH_OUT_NO_PROGRAM_LINE
+    message.text === NO_CONVENTIONAL_PRICE_LINE
   );
 }
 
@@ -3655,9 +3659,8 @@ export function messagesWithPricingWhenReady(
   if (conventionalReadyHoldsReadyLine(draft) || (searchedKeyFor(draft) && draft.liveQuoteStatus !== "unavailable")) {
     return messages;
   }
-  const vendorEmpty = cashOutVendorEmpty(draft);
+  const vendorReason = draft.liveQuoteVendorReason?.trim();
   const emptyBook =
-    vendorEmpty ||
     (draft.liveQuoteStatus === "unavailable" && !draft.liveQuote && !loanExceedsPropertyValue(draft)) ||
     cashOutNoPriceReady(draft);
   return [
@@ -3665,18 +3668,16 @@ export function messagesWithPricingWhenReady(
     {
       id: "pricing-ready:0",
       role: "fox",
-      text: vendorEmpty
-        ? CASH_OUT_NO_PROGRAM_LINE
+      text: vendorReason
+        ? vendorReason
         : emptyBook
           ? NO_CONVENTIONAL_PRICE_LINE
           : PRICING_WHEN_READY,
       actions: loanExceedsPropertyValue(draft)
         ? undefined
-        : vendorEmpty
-          ? pricingFailedActions()
-          : isRefiEmptyBook(draft)
-            ? loanOverValueActions()
-            : pricingFailedActions(),
+        : isRefiEmptyBook(draft)
+          ? loanOverValueActions()
+          : pricingFailedActions(),
     },
   ];
 }
@@ -3831,18 +3832,13 @@ export function nextFoxAsk(draft: FoxIntakeDraft): {
       actions: loanOverValueActions(),
     };
   }
-  if (cashOutVendorEmpty(draft)) {
-    return {
-      text: CASH_OUT_NO_PROGRAM_LINE,
-      actions: pricingFailedActions(),
-    };
-  }
   if (draft.liveQuoteStatus === "unavailable" && !draft.liveCouponSettled && !draft.liveQuote) {
     if (loanExceedsPropertyValue(draft)) {
       return workspacePromptCopy(workspacePrompt(draft), draft);
     }
+    const vendorReason = draft.liveQuoteVendorReason?.trim();
     return {
-      text: NO_CONVENTIONAL_PRICE_LINE,
+      text: vendorReason || NO_CONVENTIONAL_PRICE_LINE,
       actions: isRefiEmptyBook(draft) ? loanOverValueActions() : pricingFailedActions(),
     };
   }
@@ -5159,17 +5155,10 @@ export function loanOverValueCopy() {
 export function isRefiEmptyBook(draft?: FoxIntakeDraft | null) {
   if (!draft || !isRefiLike(draft) || draft.liveCouponSettled) return false;
   if (cashOutNoPriceReady(draft)) return true;
-  if (cashOutVendorEmpty(draft)) return false;
+  // Legal 80% cash-out is not Change loan. Print the vendor reason if they sent one.
+  if (draft.cashOut && cashOutLiveEligible(draft)) return false;
   if (draft.liveQuoteStatus !== "unavailable" || draft.liveQuote) return false;
   return hasLoanAmount(draft) && hasPropertyValue(draft);
-}
-
-/** Conventional-eligible cash-out, Rateflow returned no cash-out program. Not Change loan. */
-export function cashOutVendorEmpty(draft?: FoxIntakeDraft | null) {
-  if (!draft?.cashOut || draft.productIntent !== "refinance" || draft.liveCouponSettled) return false;
-  if (draft.liveQuote || draft.liveQuoteStatus !== "unavailable") return false;
-  if (cashOutLtvOverCap(draft) || loanExceedsPropertyValue(draft)) return false;
-  return cashOutLiveEligible(draft);
 }
 
 /** Cash-out over the conventional cap, after House + FICO + CA ZIP would otherwise price. */
