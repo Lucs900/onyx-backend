@@ -1,11 +1,14 @@
 /**
  * Refinance purpose chips after loan + value.
  * Cash out writes Purpose Cash-out and sends Rateflow as cash-out.
+ * After ZIP, Fox speaks wait / coupon / named vendor reason — never an empty composer.
  * New rate / Skip keep today’s rate-term lead. Purchase never sees the chips.
  */
 import assert from "node:assert/strict";
 import { emptyDraft } from "../components/fox/store";
 import { liveCouponActions, liveQuoteReady } from "../components/fox/liveCoupon";
+import { writePropertyZip } from "../components/fox/propertyType";
+import { RATEFLOW_WAIT_LINE, withoutWaitLines } from "../components/fox/lookupWait";
 import {
   cashOutLiveEligible,
   cashOutLtvOverCap,
@@ -13,14 +16,21 @@ import {
   rateflowClientBodyFromDraft,
   searchedKeyFor,
 } from "../lib/rateflow/fromDraft";
-import { RATEFLOW_CASHOUT_PURPOSE_FLAG } from "../lib/rateflow/quote";
 import {
+  RATEFLOW_CASHOUT_PURPOSE_FLAG,
+  pickConventional30LowestNoPoints,
+  pickLeadRow,
+} from "../lib/rateflow/quote";
+import {
+  CASH_OUT_NO_PROGRAM_LINE,
   NO_CONVENTIONAL_PRICE_LINE,
   REFI_PURPOSE_ASK,
   REFI_PURPOSE_CASH_OUT,
   REFI_PURPOSE_RATE_TERM,
   cashOutNoPriceReady,
+  cashOutVendorEmpty,
   deskStripActions,
+  messagesWithRateOrReadySpeech,
   needsRefiPurposeAsk,
   nextFoxAsk,
   previewFacts,
@@ -159,6 +169,51 @@ function main() {
   assert.equal(body?.loan_amount, 400_000);
   assert.equal(body?.list_price, 500_000);
   assert.notEqual(searchedKeyFor(vanilla), searchedKeyFor(pricedReady(skipped)));
+
+  const beforeZip = {
+    ...cashOutFile,
+    propertyType: "sfr" as const,
+    propertyTypeAsked: true,
+    creditAsked: true,
+    creditBand: "760+" as const,
+  };
+  assert.equal(purposeFact(beforeZip)?.value, REFI_PURPOSE_CASH_OUT);
+  const zipReply = workspaceReply("94123", beforeZip);
+  assert.equal(zipReply?.capture?.field, "propertyZip");
+  assert.equal(zipReply?.text, RATEFLOW_WAIT_LINE);
+  assert.ok((zipReply?.text ?? "").trim(), "ZIP write cannot leave an empty composer");
+  const zipOnly = writePropertyZip(beforeZip, "94123");
+  assert.equal(zipOnly.cashOut, true);
+  assert.equal(purposeFact(zipOnly)?.value, REFI_PURPOSE_CASH_OUT);
+  assert.equal(zipOnly.subjectAddress, undefined);
+  assert.equal(nextFoxAsk(zipOnly).text, RATEFLOW_WAIT_LINE);
+
+  const zipMiss = {
+    ...zipOnly,
+    liveQuote: undefined,
+    liveQuoteKey: searchedKeyFor(zipOnly),
+    liveQuoteStatus: "unavailable" as const,
+  };
+  assert.equal(cashOutVendorEmpty(zipMiss), true);
+  assert.equal(cashOutNoPriceReady(zipMiss), false);
+  assert.equal(nextFoxAsk(zipMiss).text, CASH_OUT_NO_PROGRAM_LINE);
+  assert.deepEqual(labels(nextFoxAsk(zipMiss).actions), ["Try again", "Skip"]);
+  assert.ok(!labels(nextFoxAsk(zipMiss).actions).includes("Change loan"));
+  assert.ok(!labels(nextFoxAsk(zipMiss).actions).includes("This one"));
+  const missThread = messagesWithRateOrReadySpeech(withoutWaitLines([]), zipMiss);
+  assert.ok(missThread.some((item) => item.text === CASH_OUT_NO_PROGRAM_LINE));
+  assert.deepEqual(
+    labels(deskStripActions(missThread, zipMiss)),
+    ["Try again", "Skip"],
+  );
+
+  const pointsOnlyCashOut = [
+    { rate: 7.625, pts: 0.875, loanTerm: 30, bbLoanType: "conventional", productName: "FNMA 30 Yr Fixed" },
+    { rate: 7.875, pts: 0.25, loanTerm: 30, bbLoanType: "conventional", productName: "FNMA 30 Yr Fixed" },
+  ];
+  assert.equal(pickConventional30LowestNoPoints(pointsOnlyCashOut), null);
+  assert.equal(pickLeadRow(pointsOnlyCashOut, "refinance", true)?.rate, 7.625);
+  assert.notEqual(pickLeadRow(pointsOnlyCashOut, "refinance", true)?.rate, 7.25);
 
   const hundred = pricedReady(writeRefiPurpose(withMoney(400_000, 400_000), "cash-out"));
   assert.equal(cashOutLiveEligible(hundred), false);

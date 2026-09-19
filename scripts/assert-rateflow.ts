@@ -30,6 +30,7 @@ import {
   parseSafeQuoteResponse,
   parseZipcode,
   pickConventional30LowestNoPoints,
+  pickConventional30LowestRate,
   pickConventional30NoCost,
   pickLeadRow,
   purchaseLeadRow,
@@ -458,6 +459,13 @@ assert.equal(pickLeadRow(harborWalkRows, "refinance")?.pts, -1.067);
 assert.notEqual(pickLeadRow(harborWalkRows, "refinance")?.rate, 6.49);
 assert.equal(pickLeadRow(harborWalkRows, "refinance", true)?.rate, pickConventional30LowestNoPoints(harborWalkRows)?.rate);
 assert.notEqual(pickLeadRow(harborWalkRows, "refinance", true)?.rate, pickLeadRow(harborWalkRows, "refinance")?.rate);
+const cashOutPointsOnly = [
+  { rate: 7.625, pts: 0.875, loanTerm: 30, bbLoanType: "conventional", productName: "FNMA 30 Yr Fixed" },
+  { rate: 7.875, pts: 0.25, loanTerm: 30, bbLoanType: "conventional", productName: "FNMA 30 Yr Fixed" },
+];
+assert.equal(pickConventional30LowestNoPoints(cashOutPointsOnly), null);
+assert.equal(pickConventional30LowestRate(cashOutPointsOnly)?.rate, 7.625);
+assert.equal(pickLeadRow(cashOutPointsOnly, "refinance", true)?.rate, 7.625);
 assert.equal(pickConventional30NoCost(harborWalkRows)?.rate, 6.75);
 assert.equal(pickLowerPaymentFromRows(safeCouponRowsFromProducts(harborWalkRows))?.rate, 6.25);
 assert.equal(pickLowerPaymentFromRows(safeCouponRowsFromProducts(harborWalkRows))?.pts, 1.044);

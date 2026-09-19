@@ -44,7 +44,11 @@ export type RateflowPurpose = (typeof RATEFLOW_PURPOSES)[number];
 export type RateflowResidency = (typeof RATEFLOW_RESIDENCY)[number];
 export type RateflowPropertyType = (typeof RATEFLOW_PROPERTY_TYPES)[number];
 
-/** LoanSifter purpose switch. Not a File cash dollar. */
+/**
+ * Rateflow `cash_out` is a dollar, not a purpose enum (`loan_purpose` is only
+ * purchase | refinance). Send just over the $2,000 limited-cash-out line so
+ * LoanSifter searches cash-out, not rate-term. Never write this on the File.
+ */
 export const RATEFLOW_CASHOUT_PURPOSE_FLAG = 2001;
 
 export type RateflowClientBody = {
@@ -506,13 +510,24 @@ export function purchaseLeadRow(rows: RateflowProductRow[]): RateflowProductRow 
   return pickConventional30LowestNoPoints(rows);
 }
 
+/** Cash-out book often has only borrower-paid points. Lowest conventional 30 still prints. */
+export function pickConventional30LowestRate(rows: RateflowProductRow[]): RateflowProductRow | null {
+  const eligible = rows.filter((row) => isConventional30(row) && Number.isFinite(Number(row.rate)));
+  if (!eligible.length) return null;
+  return [...eligible].sort((left, right) => {
+    const rateDiff = Number(left.rate) - Number(right.rate);
+    if (rateDiff !== 0) return rateDiff;
+    return (pointsFromRow(left) ?? 99) - (pointsFromRow(right) ?? 99);
+  })[0] ?? null;
+}
+
 export function pickLeadRow(
   rows: RateflowProductRow[],
   purpose: RateflowPurpose,
   cashOut = false,
 ): RateflowProductRow | null {
   if (cashOut) {
-    return pickConventional30LowestNoPoints(rows);
+    return pickConventional30LowestNoPoints(rows) ?? pickConventional30LowestRate(rows);
   }
   if (purpose === "refinance") {
     return pickConventional30NoCost(rows) ?? pickConventional30LowestNoPoints(rows);

@@ -127,6 +127,7 @@ import {
   ensureIncomeConfirmChips,
   inertSupersededIncomeConfirms,
   lastFoxTurn,
+  isPricingWhenReadySpeech,
   messagesWithLiveQuoteSpeech,
   messagesWithRateOrReadySpeech,
   withoutLiveQuoteSpeech,
@@ -1434,6 +1435,12 @@ export function AlwaysOnFox({
         return prev;
       }
       if (isStart && live.liveQuoteStatus === "unavailable" && !live.liveCouponSettled && !live.liveQuote) {
+        const last = lastFoxTurn(prev);
+        if (last && isPricingWhenReadySpeech(last)) return prev;
+        if (!last || isLookupWaitLine(last.text)) {
+          const spoken = nextFoxAsk(live);
+          if (spoken.text.trim()) return applyFoxAsk(withoutWaitLines(prev), spoken);
+        }
         return prev;
       }
       if (isStart && prompt === "done") {

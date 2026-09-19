@@ -51,6 +51,9 @@ export const COUPON_UNRESOLVED = "Pricing when the file is ready";
 export const NO_CONVENTIONAL_PRICE_LINE =
   "I don’t have a conventional price on these numbers";
 
+/** Eligible cash-out at conventional LTV, Rateflow book has no cash-out program. */
+export const CASH_OUT_NO_PROGRAM_LINE = "Cash-out programs are not on this Rateflow book.";
+
 export const LIVE_COUPON_FIELD = "liveCoupon";
 
 export type CouponChoice = "this" | "lower" | "nocost" | "skip";
