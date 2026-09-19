@@ -49,7 +49,10 @@ export function helocFirstLienAskNeeded(draft: FoxIntakeDraft) {
 }
 
 export function helocLineAskNeeded(draft: FoxIntakeDraft) {
-  return isHelocFile(draft) && hasFirstLien(draft) && !helocLineSettled(draft);
+  if (!isHelocFile(draft)) return false;
+  if (draft.sampleAccepted || draft.pendingFinish) return false;
+  if (hasHelocLineAmount(draft) && draft.correctingLine !== "line") return false;
+  return hasFirstLien(draft) && !helocLineSettled(draft);
 }
 
 export function helocShapeReady(draft?: FoxIntakeDraft | null) {

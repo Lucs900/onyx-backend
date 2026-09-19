@@ -2019,6 +2019,138 @@ async function case32(page: Page) {
   throw new BeatFail(`HELOC walk did not print or name a reason — ${afterZip.text} | ${afterZip.chips.join(" · ")}`);
 }
 
+async function walkHeloc500400100ToLooksRight(page: Page) {
+  await hardStartOver(page);
+  const product = await waitCurrent(
+    page,
+    (text, chips) => hasChip(chips, "HELOC") || /Buy, Refinance, HELOC/i.test(text),
+    20_000,
+  );
+  if (!hasChip(product.chips, "HELOC")) {
+    throw new BeatFail(`HELOC chip missing on start — ${product.chips.join(" · ")}`);
+  }
+  await clickChip(page, "HELOC");
+  await waitAsk(page, /How will the property be used/i);
+  await clickChip(page, "Primary");
+  const afterOcc = await waitCurrent(
+    page,
+    (text) => /property value|first lien|what you owe|kind of home|timeline/i.test(text),
+    20_000,
+  );
+  if (/timeline/i.test(afterOcc.text) && hasChip(afterOcc.chips, "Skip")) {
+    await clickChip(page, "Skip");
+  }
+  await waitAsk(page, /property value/i);
+  await typeSend(page, "500000");
+  await waitAsk(page, /first lien|what you owe/i);
+  await typeSend(page, "400000");
+  await waitAsk(page, /line do you want available|HELOC line/i);
+  await typeSend(page, "100000");
+  await walkHouseCredit(page);
+  await waitAsk(page, /address or ZIP/i);
+  await typeSend(page, "94123");
+  const quoted = await waitCurrent(
+    page,
+    (text, chips) =>
+      /This HELOC right now|Estimated interest-only/i.test(text) || hasChip(chips, "This one"),
+    45_000,
+  );
+  if (!/This HELOC right now/i.test(quoted.text)) {
+    throw new BeatFail(`HELOC 500/400/100 did not print a live line — ${quoted.text}`);
+  }
+  const io = quoted.text.match(/interest-only\s+\$([0-9,]+)/i)?.[1];
+  if (hasChip(quoted.chips, "This one")) {
+    await clickChip(page, "This one");
+  }
+  await waitAsk(page, /How is income earned/i, 20_000);
+  await clickChip(page, "W-2");
+  await maybeAnswerWhoOnLoanJustMe(page);
+  const started = Date.now();
+  while (Date.now() - started < 40_000) {
+    const text = await currentText(page);
+    const chips = await currentChips(page);
+    if (/What line do you want available/i.test(text)) {
+      throw new BeatFail(`HELOC reprinted line ask before Looks right — ${text}`);
+    }
+    if (hasChip(chips, "Looks right") || /look right|complete enough to move|I can send this to review/i.test(text)) {
+      return { io };
+    }
+    if (isWhoOnLoanTurn(text, chips) && hasChip(chips, "Just me")) {
+      await clickChip(page, "Just me");
+      await waitCurrent(page, (next, nextChips) => !isWhoOnLoanTurn(next, nextChips), 15_000);
+      continue;
+    }
+    if (hasAskSkip(text, chips)) {
+      await clickChip(page, "Skip");
+      await page.waitForTimeout(250);
+      continue;
+    }
+    await page.waitForTimeout(200);
+  }
+  throw new BeatFail(`HELOC 500/400/100 did not reach Looks right — ${await currentText(page)}`);
+}
+
+async function case34(page: Page) {
+  const { io } = await walkHeloc500400100ToLooksRight(page);
+  const before = await structureMap(page);
+  const lineBefore = moneyOf(before, "HELOC line") || moneyOf(before, "Line") || moneyOf(before, "Loan amount");
+  if (lineBefore !== "$100,000") {
+    throw new BeatFail(`HELOC line was not $100,000 before Looks right — ${lineBefore || "(missing)"}`);
+  }
+  const gate = await waitCurrent(
+    page,
+    (text, chips) =>
+      hasChip(chips, "Looks right") ||
+      /look right|I can send this to review/i.test(text) ||
+      /What line do you want available/i.test(text),
+    15_000,
+  );
+  if (/What line do you want available/i.test(gate.text)) {
+    throw new BeatFail(`Looks right reprinted the line ask — ${gate.text}`);
+  }
+  if (hasChip(gate.chips, "Looks right")) {
+    await clickChip(page, "Looks right");
+  } else {
+    await typeSend(page, "looks right");
+  }
+  const afterLooks = await waitCurrent(
+    page,
+    (text, chips) =>
+      hasChip(chips, "Proceed") ||
+      /I can send this to review|ONYX has this/i.test(text) ||
+      /What line do you want available/i.test(text) ||
+      (chips.length === 0 && text.trim().length > 0),
+    20_000,
+  );
+  if (/What line do you want available/i.test(afterLooks.text)) {
+    throw new BeatFail(`after Looks right reprinted line ask — ${afterLooks.text}`);
+  }
+  if (!afterLooks.text.trim()) {
+    throw new BeatFail("empty composer after Looks right");
+  }
+  if (!hasChip(afterLooks.chips, "Proceed") || !hasChip(afterLooks.chips, "Not yet") || !hasChip(afterLooks.chips, "Upload more")) {
+    throw new BeatFail(
+      `after Looks right expected Proceed · Not yet · Upload more — ${afterLooks.chips.join(" · ") || "(none)"} | ${afterLooks.text}`,
+    );
+  }
+  await typeSend(page, "Skip");
+  await page.waitForTimeout(400);
+  if (/What line do you want available/i.test(await currentText(page))) {
+    throw new BeatFail(`Skip after Looks right reprinted line — ${await currentText(page)}`);
+  }
+  const after = await structureMap(page);
+  const lineAfter = moneyOf(after, "HELOC line") || moneyOf(after, "Line") || moneyOf(after, "Loan amount");
+  if (lineAfter !== "$100,000") {
+    throw new BeatFail(`Skip after filled line changed ${lineBefore} → ${lineAfter || "(missing)"}`);
+  }
+  if (io && !new RegExp(io.replace(/,/g, ",?")).test(JSON.stringify(after) + (await currentText(page)))) {
+    const blob = `${await currentText(page)} ${Object.values(after).join(" ")}`;
+    if (!/\$713\b/.test(blob) && !new RegExp(`\\$${io}`).test(blob)) {
+      throw new BeatFail(`Skip after filled line lost IO $${io} — ${blob}`);
+    }
+  }
+}
+
 async function case33(page: Page) {
   await hardStartOver(page);
   await walkToQuotedIncome(page, "94123", true);
@@ -3104,6 +3236,11 @@ const CASES: { n: number; title: string; run: (page: Page) => Promise<void> }[] 
     n: 33,
     title: "who-on-loan once after W-2: Yes · Just me · Skip; Just me no re-ask; not Looks right",
     run: case33,
+  },
+  {
+    n: 34,
+    title: "HELOC 500/400/100 Looks right does not reprint line; Skip is no-op; Proceed strip",
+    run: case34,
   },
   { n: 23, title: "ADP W-2 page-read: Box 5 is $36,460.08, never $5", run: case23 },
   { n: 24, title: "composer paperclip CSTC stub: filename/received then $1,806.67 Use this", run: case24 },

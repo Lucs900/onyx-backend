@@ -101,7 +101,7 @@ import {
   withMatrixAfterAmount,
   workspacePrompt,
 } from "./workspace";
-import { skipHelocLine, withHelocToolQuote, writeFirstLien, writeHelocLine } from "./heloc";
+import { hasHelocLineAmount, skipHelocLine, withHelocToolQuote, writeFirstLien, writeHelocLine } from "./heloc";
 import { changeEntityYears } from "./yearsFromEntity";
 import {
   START_PATH_KEY,
@@ -2844,6 +2844,18 @@ function applyCaptureBody(capture: Capture) {
     return commit({ ...current, downAsked: true, correcting: null, correctingLine: null });
   }
   if (capture.field === "skip-amount") {
+    if (hasHelocLineAmount(current)) {
+      return commit({
+        ...current,
+        amountAsked: true,
+        helocLineAsked: true,
+        correcting: null,
+        correctingLine: null,
+      });
+    }
+    if (current.productIntent === "heloc") {
+      return commit(skipHelocLine({ ...current, pendingProposal: null }));
+    }
     return commit({
       ...current,
       amountAsked: true,

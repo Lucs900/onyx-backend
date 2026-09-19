@@ -74,6 +74,7 @@ import {
   HELOC_VALUE_ASK,
   beginHelocCorrection,
   hasFirstLien,
+  hasHelocLineAmount,
   helocFirstLienAskNeeded,
   helocLineAskActions,
   helocLineAskNeeded,
@@ -1309,13 +1310,14 @@ export function amountAskText(draft: FoxIntakeDraft) {
         ? `First lien in the file is ${formatMoney(n)}. Still right?`
         : HELOC_FIRST_LIEN_ASK;
     }
-    if (helocLineAskNeeded(draft) || draft.correctingLine === "line") {
+    if (helocLineAskNeeded(draft)) return HELOC_LINE_ASK;
+    if (draft.correctingLine === "line") {
       const n = draft.loanAmountValue;
       return n != null && n > 0
         ? `HELOC line in the file is ${formatMoney(n)}. Still right?`
         : HELOC_LINE_ASK;
     }
-    return HELOC_LINE_ASK;
+    return "";
   }
   if (intent === "other") {
     const named = structureAmountLabel(draft);
@@ -3105,7 +3107,13 @@ function openLooksRightFinish(draft: FoxIntakeDraft) {
   }
   const nextPrompt = workspacePrompt(nextDraft);
   const shown =
-    nextPrompt === "review" || nextPrompt === "housing" || nextPrompt === "debts"
+    nextPrompt === "review" ||
+    nextPrompt === "housing" ||
+    nextPrompt === "debts" ||
+    (isHelocFile(nextDraft) &&
+      (nextPrompt === "documents" ||
+        nextPrompt === "amount" ||
+        nextPrompt === "done"))
       ? "done"
       : nextPrompt;
   return {
@@ -4351,9 +4359,9 @@ export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
   if (!draft.productIntent) return "product";
   if (needsJumboPurpose(draft)) return "jumbo-purpose";
   if (!draft.occupancyAsked && !draft.occupancyChoice.value) return "occupancy";
-  if (isHelocFile(draft) && helocValueAskNeeded(draft)) return "value";
-  if (isHelocFile(draft) && helocFirstLienAskNeeded(draft)) return "first-lien";
-  if (isHelocFile(draft) && helocLineAskNeeded(draft)) return "amount";
+  if (!draft.sampleAccepted && isHelocFile(draft) && helocValueAskNeeded(draft)) return "value";
+  if (!draft.sampleAccepted && isHelocFile(draft) && helocFirstLienAskNeeded(draft)) return "first-lien";
+  if (!draft.sampleAccepted && isHelocFile(draft) && helocLineAskNeeded(draft)) return "amount";
   if (purchasePriceAskNeeded(draft)) return "value";
   if (fundsAskNeeded(draft)) return "amount";
   if (refiLoanAskNeeded(draft)) return "amount";
@@ -4383,6 +4391,7 @@ export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
     return "done";
   }
   if (draft.sampleAccepted && namedLossWritten(draft)) return "done";
+  if (draft.sampleAccepted && isHelocFile(draft)) return "done";
   if (draft.sampleAccepted && nextDocInvite(draft)) return "documents";
   if (propertyZipConfirmNeeded(draft)) return "property-zip";
   if (propertyAddressNeededForQuote(draft)) return "property-address";
@@ -4412,6 +4421,9 @@ export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
     if (assetsNeeded(draft) && !nextDocInvite(draft)) return "assets";
     if (canLooksRight(draft)) return "review";
     if (draft.looksRightHold) return "documents";
+    if (isHelocFile(draft) && !helocLineAskNeeded(draft)) {
+      return nextDocInvite(draft) ? "documents" : "review";
+    }
     return "amount";
   }
   if (nextDocInvite(draft)) return "documents";
@@ -4421,6 +4433,9 @@ export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
     if (assetsNeeded(draft)) return "assets";
     if (canLooksRight(draft)) return "review";
     if (draft.looksRightHold) return "documents";
+    if (isHelocFile(draft) && !helocLineAskNeeded(draft)) {
+      return nextDocInvite(draft) ? "documents" : "review";
+    }
     return "amount";
   }
   const holdCalculatorAsk = draft.motion === "escalated";
@@ -7226,7 +7241,13 @@ function draftAfterCaptureBody(draft: FoxIntakeDraft, capture: Capture): FoxInta
     const n = Number(capture.value);
     return { ...next, termAsked: true, termYears: Number.isFinite(n) && n > 0 ? n : draft.termYears };
   }
-  if (capture.field === "skip-amount") return { ...next, amountAsked: true, loanAmountValue: undefined };
+  if (capture.field === "skip-amount") {
+    if (isHelocFile(next) && hasHelocLineAmount(next)) {
+      return { ...next, amountAsked: true, helocLineAsked: true };
+    }
+    if (isHelocFile(next)) return skipHelocLine(next);
+    return { ...next, amountAsked: true, loanAmountValue: undefined };
+  }
   if (capture.field === "skip-value") return { ...next, valueAsked: true, propertyValueAmount: undefined };
   if (capture.field === "skip-term") return { ...next, termAsked: true, termYears: undefined };
   if (capture.field === "incomeType") return withIncomeType(next, capture.value);
@@ -8756,6 +8777,22 @@ export function workspaceReply(
       };
     }
     if (isUnknownAmount(q)) {
+      if (isHelocFile(draft) && hasHelocLineAmount(draft)) {
+        const nextDraft = {
+          ...draft,
+          amountAsked: true,
+          helocLineAsked: true,
+          correcting: null,
+          correctingLine: null,
+        };
+        return withWorkspaceGuide(
+          {
+            ...nextFoxAsk(nextDraft),
+            capture: { field: "keep-line" },
+          },
+          nextDraft,
+        );
+      }
       if (isHelocFile(draft) && helocLineAskNeeded(draft)) {
         const nextDraft = skipHelocLine(draft);
         return withWorkspaceGuide(
