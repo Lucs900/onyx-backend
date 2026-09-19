@@ -1,13 +1,12 @@
 /**
  * HELOC is a first-class Fox path. Not cash-out with a different label.
  * After Primary: value → first lien → line or Skip.
- * Live print only when Rateflow returns a HELOC program.
+ * Quote from calculateHelocQuote. Never Rateflow. Never This loan + P&I.
  */
 import assert from "node:assert/strict";
 import { emptyDraft } from "../components/fox/store";
 import { liveCouponActions, liveQuoteReady } from "../components/fox/liveCoupon";
 import { writePropertyZip } from "../components/fox/propertyType";
-import { RATEFLOW_WAIT_LINE } from "../components/fox/lookupWait";
 import {
   HELOC_FIRST_LIEN_ASK,
   HELOC_LINE_ASK,
@@ -17,22 +16,21 @@ import {
   HELOC_VALUE_ASK,
   helocLiveEligible,
   helocNoPreviewReady,
-  helocQuoteLine,
+  helocQuoteFromDraft,
   helocShapeReady,
+  liveHelocNowCopy,
+  withHelocToolQuote,
 } from "../components/fox/heloc";
 import {
   rateflowBlockedReason,
   rateflowClientBodyFromDraft,
   searchedKeyFor,
 } from "../lib/rateflow/fromDraft";
-import {
-  looksHelocProgram,
-  pickHelocProgram,
-  pickLeadRow,
-} from "../lib/rateflow/quote";
+import { calculateHelocQuote } from "../lib/calculateHelocQuote";
 import {
   amountAskText,
   deskStripActions,
+  formatLiveMoneyInput,
   nextFoxAsk,
   previewFacts,
   productIntentFromText,
@@ -55,13 +53,6 @@ function afterPrimary(): FoxIntakeDraft {
     timelineAsked: true,
     timelineChoice: { ...emptyDraft().timelineChoice, value: "ready-now" },
   };
-}
-
-function withShape(line?: number | "skip"): FoxIntakeDraft {
-  let next = writePurchasePrice(afterPrimary(), 500_000);
-  next = writeFirstLien(next, 400_000);
-  if (line === "skip" || line == null) return skipHelocLine(next);
-  return writeHelocLine(next, line);
 }
 
 function pricedReady(draft: FoxIntakeDraft): FoxIntakeDraft {
@@ -93,6 +84,11 @@ function main() {
   assert.equal(productIntentFromText("I need a HELOC"), "heloc");
   assert.notEqual(productIntentFromText("cash out"), "heloc");
   assert.equal(productIntentFromText("cash-out refinance"), "refinance");
+
+  assert.equal(formatLiveMoneyInput("400000"), "400,000");
+  assert.equal(formatLiveMoneyInput("100000"), "100,000");
+  assert.equal(formatLiveMoneyInput("$400000"), "$400,000");
+  assert.equal(formatLiveMoneyInput("500000"), "500,000");
 
   const start = workspaceReply("HELOC", {
     ...emptyDraft(),
@@ -141,12 +137,13 @@ function main() {
   assert.equal(ratios?.ltv, 0.8);
   assert.equal(ratios?.cltv, 0.8);
 
-  const typedLine = writeHelocLine(afterFirst, 50_000);
-  assert.equal(typedLine.loanAmountValue, 50_000);
+  const typedLine = writeHelocLine(afterFirst, 100_000);
+  assert.equal(typedLine.loanAmountValue, 100_000);
   const typedRatios = draftLtvCltv(typedLine);
   assert.ok(typedRatios);
   assert.equal(typedRatios?.ltv, 0.8);
-  assert.equal(Math.round((typedRatios?.cltv ?? 0) * 1000) / 1000, 0.9);
+  assert.equal(typedRatios?.cltv, 1);
+  assert.equal(fact(typedLine, "line")?.value, "$100,000");
 
   const inferred = workspaceReply("about 400000", afterValue);
   assert.notEqual(inferred?.capture?.field, "firstLien");
@@ -155,17 +152,9 @@ function main() {
 
   const vanilla = pricedReady(skipped);
   assert.equal(helocLiveEligible(vanilla), true);
-  assert.equal(rateflowBlockedReason(vanilla), null);
-  const body = rateflowClientBodyFromDraft(vanilla);
-  assert.equal(body?.heloc, true);
-  assert.equal(body?.loan_type, "heloc");
-  assert.equal(body?.loan_purpose, "refinance");
-  assert.equal(body?.cash_out, undefined);
-  assert.equal(body?.first_lien, 400_000);
-  assert.equal(body?.list_price, 500_000);
-  assert.equal(body?.loan_amount, helocQuoteLine(vanilla));
-  assert.ok((body?.loan_amount ?? 0) > 0);
-  assert.notEqual(body?.loan_amount, 400_000);
+  assert.equal(rateflowBlockedReason(vanilla), "heloc");
+  assert.equal(rateflowClientBodyFromDraft(vanilla), null);
+  assert.equal(searchedKeyFor(vanilla), undefined);
 
   const cashOutRelabel = {
     ...vanilla,
@@ -177,22 +166,6 @@ function main() {
   const cashOutBody = rateflowClientBodyFromDraft(cashOutRelabel);
   assert.notEqual(cashOutBody?.heloc, true);
   assert.ok((cashOutBody?.cash_out ?? 0) > 0);
-  assert.notEqual(searchedKeyFor(vanilla), searchedKeyFor(cashOutRelabel));
-
-  const conventionalOnly = [
-    { rate: 7.25, pts: -1.479, loanTerm: 30, bbLoanType: "conventional", productName: "FNMA 30 Yr Fixed" },
-  ];
-  assert.equal(looksHelocProgram(conventionalOnly[0]), false);
-  assert.equal(pickHelocProgram(conventionalOnly), null);
-  assert.equal(pickLeadRow(conventionalOnly, "refinance", false, true), null);
-  assert.notEqual(pickLeadRow(conventionalOnly, "refinance", true, false)?.rate, null);
-
-  const helocRows = [
-    ...conventionalOnly,
-    { rate: 8.5, pts: 0, bbLoanType: "heloc", productName: "Spring EQ HELOC" },
-  ];
-  assert.equal(pickLeadRow(helocRows, "refinance", false, true)?.rate, 8.5);
-  assert.equal(pickLeadRow(helocRows, "refinance", true, false)?.rate, 7.25);
 
   const twoToFour = { ...vanilla, propertyType: "two_to_four" as const, propertyUnits: "2" };
   assert.equal(helocLiveEligible(twoToFour), false);
@@ -219,64 +192,74 @@ function main() {
   };
   const zipReply = workspaceReply("94123", beforeZip);
   assert.equal(zipReply?.capture?.field, "propertyZip");
-  assert.equal(zipReply?.text, RATEFLOW_WAIT_LINE);
+  assert.match(zipReply?.text ?? "", /This HELOC right now:/);
+  assert.doesNotMatch(zipReply?.text ?? "", /This loan right now:/);
+  assert.doesNotMatch(zipReply?.text ?? "", /P&I/);
+  assert.match(zipReply?.text ?? "", /Estimated interest-only/);
   assert.ok((zipReply?.text ?? "").trim(), "ZIP write cannot leave an empty composer");
   const zipOnly = writePropertyZip(beforeZip, "94123");
   assert.equal(zipOnly.subjectAddress, undefined);
   assert.equal(fact(zipOnly, "purpose")?.value, HELOC_PURPOSE);
-  assert.equal(nextFoxAsk(zipOnly).text, RATEFLOW_WAIT_LINE);
+  const zipAsk = nextFoxAsk(zipOnly);
+  assert.match(zipAsk.text, /This HELOC right now:/);
+  assert.doesNotMatch(zipAsk.text, /This loan right now:|P&I/);
+  assert.deepEqual(labels(zipAsk.actions), ["This one"]);
 
-  const zipMiss = {
-    ...zipOnly,
-    liveQuote: undefined,
-    liveQuoteKey: searchedKeyFor(zipOnly),
-    liveQuoteStatus: "unavailable" as const,
-  };
-  assert.equal(nextFoxAsk(zipMiss).text, HELOC_NO_PROGRAM_LINE);
-  assert.deepEqual(labels(nextFoxAsk(zipMiss).actions), [
+  const founder = pricedReady(writeHelocLine(afterFirst, 100_000));
+  const tool = calculateHelocQuote({
+    homeValue: 500_000,
+    currentMortgage: 400_000,
+    desiredLine: 100_000,
+    fico: 760,
+    occupancy: "Primary",
+  });
+  assert.equal(helocQuoteFromDraft(founder)?.finalRate, tool.finalRate);
+  assert.equal(helocQuoteFromDraft(founder)?.monthlyPayment, tool.monthlyPayment);
+  const founderAsk = nextFoxAsk(founder);
+  assert.match(founderAsk.text, /This HELOC right now:/);
+  assert.match(founderAsk.text, new RegExp(`${tool.finalRate.toFixed(2)}%`));
+  assert.match(founderAsk.text, /Estimated interest-only/);
+  assert.doesNotMatch(founderAsk.text, /This loan right now:/);
+  assert.doesNotMatch(founderAsk.text, /P&I/);
+  assert.doesNotMatch(founderAsk.text, /6\.250%|3\.75 pts/);
+  assert.deepEqual(labels(founderAsk.actions), ["This one"]);
+  const priced = withHelocToolQuote(founder);
+  assert.equal(priced.liveQuote?.kind, "heloc");
+  assert.equal(priced.liveQuote?.principalAndInterest, undefined);
+  assert.match(liveHelocNowCopy(priced.liveQuote!), /This HELOC right now:/);
+  assert.equal(liveQuoteReady(founder), true);
+  assert.ok(labels(liveCouponActions(priced)).includes("This one"));
+  assert.ok(!labels(liveCouponActions(priced)).includes("Lower payment"));
+
+  const noRoom = pricedReady(skipHelocLine(writeFirstLien(writePurchasePrice(afterPrimary(), 500_000), 500_000)));
+  assert.equal(helocQuoteFromDraft(noRoom), null);
+  const emptyAsk = nextFoxAsk(noRoom);
+  assert.equal(emptyAsk.text, HELOC_NO_PROGRAM_LINE);
+  assert.deepEqual(labels(emptyAsk.actions), [
     "Change value",
     "Change first lien",
     "Change line",
     "Skip",
   ]);
-  assert.ok(!labels(nextFoxAsk(zipMiss).actions).includes("This one"));
-  assert.ok(!labels(nextFoxAsk(zipMiss).actions).includes("Change loan"));
+  assert.ok(!labels(emptyAsk.actions).includes("This one"));
+  assert.ok(!labels(emptyAsk.actions).includes("Change loan"));
   assert.deepEqual(
     labels(
       deskStripActions(
         [{ id: "pricing-ready:0", role: "fox", text: HELOC_NO_PROGRAM_LINE }],
-        zipMiss,
+        withHelocToolQuote(noRoom),
       ),
     ),
     ["Change value", "Change first lien", "Change line", "Skip"],
   );
-  assert.equal(liveQuoteReady(zipMiss), false);
-  const thisOne = workspaceReply("This one", zipMiss);
+  assert.equal(liveQuoteReady(noRoom), false);
+  const thisOne = workspaceReply("This one", noRoom);
   assert.notEqual(thisOne?.capture?.field, "couponChoice");
-
-  const named = {
-    ...zipMiss,
-    liveQuoteVendorReason: "loan_type heloc is not supported",
-  };
-  assert.equal(nextFoxAsk(named).text, "loan_type heloc is not supported");
-  assert.ok(!labels(nextFoxAsk(named).actions).includes("This one"));
-
-  const live = {
-    ...vanilla,
-    liveQuoteStatus: "ready" as const,
-    liveQuote: {
-      key: searchedKeyFor(vanilla) ?? "heloc",
-      rate: 8.5,
-      asOf: "2026-09-19T20:00:00.000Z",
-    },
-  };
-  assert.ok(labels(liveCouponActions(live)).includes("This one"));
-  assert.ok(!labels(liveCouponActions(live)).includes("Lower payment"));
 
   const outOfState = workspaceReply("10001", beforeZip);
   assert.match(outOfState?.text ?? nextFoxAsk({ ...beforeZip, outOfState: true, propertyZip: "10001" }).text, /California only/i);
 
-  console.log("assert-heloc-fox-path: Product HELOC; not Cash-out; HELOC program or named reason");
+  console.log("assert-heloc-fox-path: Product HELOC; not Cash-out; calculator HELOC speech or named reason");
 }
 
 main();

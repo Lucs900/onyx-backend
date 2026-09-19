@@ -553,6 +553,9 @@ export type FoxIntakeDraft = {
     principalAndInterest?: number;
     pts?: number;
     term?: number;
+    /** Calculator interest-only. HELOC only. Never amortizing P&I. */
+    interestOnly?: number;
+    kind?: "heloc";
   };
   /** Same-search conventional 30 rows. Never shown as a rate table. */
   liveQuoteRows?: SafeCouponRow[];

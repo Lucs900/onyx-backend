@@ -1682,6 +1682,7 @@ export function AlwaysOnFox({
   const moneyAsk =
     (startAsk === "amount" && !askingAmountPurpose) ||
     startAsk === "value" ||
+    startAsk === "first-lien" ||
     startAsk === "debts" ||
     (startAsk === "assets" && (draft.sampleAccepted || draft.correcting === "assets")) ||
     startAsk === "current-housing" ||

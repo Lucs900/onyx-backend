@@ -83,6 +83,9 @@ import {
   helocNoPriceActions,
   helocPurposeFileValue,
   helocValueAskNeeded,
+  isHelocLiveSpeech,
+  liveHelocNowCopy,
+  withHelocToolQuote,
   isHelocChangeFirstLienText,
   isHelocChangeLineText,
   isHelocChangeValueText,
@@ -3447,6 +3450,7 @@ export function sampleReady(draft: FoxIntakeDraft): boolean {
 export function liveQuoteThreadLines(
   quote: NonNullable<FoxIntakeDraft["liveQuote"]>,
 ): string[] {
+  if (quote.kind === "heloc") return [liveHelocNowCopy(quote)];
   return [liveLoanNowCopy(quote)];
 }
 
@@ -3767,29 +3771,31 @@ export function messagesWithRateOrReadySpeech(
   draft: FoxIntakeDraft,
 ): FoxMessage[] {
   if (fileNeedsCaliforniaAsk(draft)) return withoutPricingWhenReadySpeech(messages);
-  const quote = draft.liveQuote;
-  if (loanExceedsPropertyValue(draft)) {
-    return messagesWithPricingWhenReady(withoutLiveQuoteSpeech(messages), draft);
+  const live = isHelocFile(draft) ? withHelocToolQuote(draft) : draft;
+  const quote = live.liveQuote;
+  if (loanExceedsPropertyValue(live)) {
+    return messagesWithPricingWhenReady(withoutLiveQuoteSpeech(messages), live);
   }
-  if (liveQuoteReady(draft) && quote?.rate && quote.asOf) {
+  if (liveQuoteReady(live) && quote?.rate && quote.asOf) {
     return messagesWithLiveQuoteSpeech(
       withoutPricingWhenReadySpeech(messages),
-      draft,
+      live,
       quote,
     );
   }
-  return messagesWithPricingWhenReady(messages, draft);
+  return messagesWithPricingWhenReady(messages, live);
 }
 
 /** Ready-line only for HELOC / Jumbo / investment, or House / FICO / CA ZIP actually missing. */
 export function previewRateFact(draft: FoxIntakeDraft): PreviewFact | null {
   if (fileNeedsCaliforniaAsk(draft)) return null;
-  const live = liveQuoteMatchesDraft(draft, draft.liveQuote) ? draft.liveQuote : null;
-  if (live && !loanExceedsPropertyValue(draft)) {
+  const heloc = isHelocFile(draft) ? withHelocToolQuote(draft) : draft;
+  const live = liveQuoteMatchesDraft(heloc, heloc.liveQuote) ? heloc.liveQuote : null;
+  if (live && !loanExceedsPropertyValue(heloc)) {
     return {
       id: "rate",
       label: "Rate",
-      value: liveLoanNowCopy(live),
+      value: live.kind === "heloc" ? liveHelocNowCopy(live) : liveLoanNowCopy(live),
     };
   }
   if (loanExceedsPropertyValue(draft)) {
@@ -3893,6 +3899,7 @@ export function shouldDeferStillUsefulAsk(draft: FoxIntakeDraft): boolean {
 
 /** ZIP / address started a live search. Do not speak income on the spinner. */
 export function shouldHoldAskForLiveLine(draft: FoxIntakeDraft) {
+  if (isHelocFile(draft)) return false;
   if (loanExceedsPropertyValue(draft)) return false;
   if (cashOutNoPriceReady(draft)) return false;
   if (draft.liveCouponSettled || draft.pendingLiveCoupon) return false;
@@ -3912,6 +3919,33 @@ export function nextFoxAsk(draft: FoxIntakeDraft): {
 } {
   if (fileNeedsCaliforniaAsk(draft)) {
     return workspacePromptCopy("geo-stop", draft);
+  }
+  if (isHelocFile(draft)) {
+    const heloc = withHelocToolQuote(draft);
+    if (helocNoPreviewReady(heloc) && !heloc.liveCouponSettled) {
+      return {
+        text: HELOC_NO_PREVIEW_LINE,
+        actions: helocNoPreviewActions(),
+      };
+    }
+    if (
+      heloc.liveQuoteStatus === "ready" &&
+      heloc.liveQuote &&
+      !heloc.liveCouponSettled &&
+      !heloc.pendingProposal &&
+      !heloc.correcting
+    ) {
+      return {
+        text: liveHelocNowCopy(heloc.liveQuote),
+        actions: liveCouponActions(heloc),
+      };
+    }
+    if (heloc.liveQuoteStatus === "unavailable" && !heloc.liveCouponSettled && !heloc.liveQuote) {
+      return {
+        text: heloc.liveQuoteVendorReason?.trim() || HELOC_NO_PROGRAM_LINE,
+        actions: helocNoPriceActions(),
+      };
+    }
   }
   if (shouldHoldAskForLiveLine(draft)) {
     return { text: RATEFLOW_WAIT_LINE };

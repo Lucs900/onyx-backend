@@ -82,6 +82,7 @@ async function fetchRateflowQuote(draft: FoxIntakeDraft): Promise<RateflowFetch>
 export async function requestRateflowIfNeeded(
   draft: FoxIntakeDraft,
 ): Promise<LiveQuoteOnFile | "unavailable" | null> {
+  if (draft.productIntent === "heloc") return null;
   const body = rateflowClientBodyFromDraft(draft);
   if (!body) return null;
   const key = rateflowScenarioKey(body);

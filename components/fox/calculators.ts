@@ -378,7 +378,7 @@ export function calculatorStructureFacts(draft: FoxIntakeDraft): {
     }
   }
   const estimate = draftHousingEstimate(draft);
-  if (draft.estimatedHousing != null && estimate) {
+  if (draft.productIntent !== "heloc" && draft.estimatedHousing != null && estimate) {
     facts.push({
       id: "pi",
       label: "P&I",

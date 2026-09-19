@@ -1,6 +1,6 @@
 import type { FoxIntakeDraft, ProductIntent } from "@/components/fox/types";
 import { purchaseSketchMismatch } from "@/components/fox/fileWrite";
-import { helocLiveEligible, helocQuoteLine } from "@/components/fox/heloc";
+import { helocToolScenarioKey } from "@/components/fox/heloc";
 import {
   addressLineReadyForQuote,
   isZipOnlyFileAddress,
@@ -21,7 +21,6 @@ import {
 } from "./quote";
 
 function loanAmountFromDraft(draft: FoxIntakeDraft): number | undefined {
-  if (draft.productIntent === "heloc") return helocQuoteLine(draft);
   if (draft.loanAmountValue != null && draft.loanAmountValue > 0) {
     return draft.loanAmountValue;
   }
@@ -65,7 +64,6 @@ function loanPurposeFromDraft(draft: FoxIntakeDraft): "purchase" | "refinance" |
   if (draft.cashOut && draft.productIntent !== "refinance") return undefined;
   if (draft.productIntent === "buy") return "purchase";
   if (draft.productIntent === "refinance") return "refinance";
-  if (draft.productIntent === "heloc") return "refinance";
   return undefined;
 }
 
@@ -120,24 +118,12 @@ export function addressConfirmPending(draft: FoxIntakeDraft) {
 
 export function rateflowBlockedReason(draft: FoxIntakeDraft): string | null {
   const intent = draft.productIntent;
+  if (intent === "heloc") return "heloc";
   if (!intent || BLOCKED_INTENTS.has(intent)) return "product";
   if (draft.outOfState) return "state";
   const zip = zipFromDraft(draft);
   if (zip && !isCaliforniaZip(zip)) return "state";
   if (draft.govProgram) return "program";
-  if (intent === "heloc") {
-    if (!helocLiveEligible(draft)) {
-      if (draft.occupancyChoice.value === "investment" || draft.occupancyChoice.value === "second-home") {
-        return "heloc-occupancy";
-      }
-      if (draft.propertyType === "two_to_four") return "heloc-units";
-      if ((draft.propertyValueAmount ?? 0) <= 0) return "value";
-      if ((draft.firstLienAmount ?? 0) <= 0) return "first-lien";
-      if (helocQuoteLine(draft) == null) return "line";
-      if (draft.propertyType !== "sfr" && draft.propertyType !== "condo") return "property-type";
-      return "heloc";
-    }
-  }
   const cashOutBlock = cashOutBlockedReason(draft);
   if (cashOutBlock) return cashOutBlock;
   if (addressConfirmPending(draft)) return "address-confirm";
@@ -150,7 +136,7 @@ export function rateflowBlockedReason(draft: FoxIntakeDraft): string | null {
   if (loanAmount == null) return "loan";
   const value = listPriceFromDraft(draft);
   if (draft.productIntent === "refinance" && value != null && loanAmount > value) return "ltv";
-  if (draft.productIntent !== "heloc" && loanAmount > FHFA_HIGH_COST_CEILING_2026) return "jumbo";
+  if (loanAmount > FHFA_HIGH_COST_CEILING_2026) return "jumbo";
   if (!mapPropertyType(draft.propertyType, draft.propertyUnits)) return "property-type";
   if (creditScoreFloor(draft.creditBand) == null) return "credit";
   if (!zipFromDraft(draft)) return "zip";
@@ -191,8 +177,7 @@ export function rateflowClientBodyFromDraft(draft: FoxIntakeDraft): RateflowClie
   const zipcode = zipFromDraft(draft);
   if (!zipcode) return null;
   const city = cityFromDraft(draft);
-  const heloc = draft.productIntent === "heloc";
-  const cashOut = !heloc && draft.cashOut ? rateflowCashOutRequest(loanAmount) : null;
+  const cashOut = draft.cashOut ? rateflowCashOutRequest(loanAmount) : null;
   return parseClientBody({
     loan_purpose: purpose,
     residency_type: residency,
@@ -203,15 +188,6 @@ export function rateflowClientBodyFromDraft(draft: FoxIntakeDraft): RateflowClie
     zipcode,
     ...(city ? { city } : {}),
     ...(cashOut ? { cash_out: cashOut.cash_out } : {}),
-    ...(heloc
-      ? {
-          heloc: true,
-          loan_type: "heloc" as const,
-          ...(draft.firstLienAmount != null && draft.firstLienAmount > 0
-            ? { first_lien: Math.round(draft.firstLienAmount) }
-            : {}),
-        }
-      : {}),
   });
 }
 
@@ -219,8 +195,12 @@ export function liveQuoteMatchesDraft(
   draft: FoxIntakeDraft,
   quote?: Pick<LiveQuoteOnFile, "key"> | null,
 ): boolean {
+  if (!quote?.key) return false;
+  if (draft.productIntent === "heloc") {
+    return quote.key === helocToolScenarioKey(draft);
+  }
   const body = rateflowClientBodyFromDraft(draft);
-  if (!body || !quote?.key) return false;
+  if (!body) return false;
   return quote.key === rateflowScenarioKey(body);
 }
 
@@ -232,15 +212,10 @@ export function searchedKeyFor(draft: FoxIntakeDraft): string | undefined {
 /** House + FICO + amounts + address on File: hold the ready line until Rateflow is actually empty. */
 export function conventionalReadyHoldsReadyLine(draft: FoxIntakeDraft): boolean {
   if (draft.liveQuoteStatus === "unavailable") return false;
-  if (
-    draft.productIntent !== "buy" &&
-    draft.productIntent !== "refinance" &&
-    draft.productIntent !== "heloc"
-  ) {
+  if (draft.productIntent !== "buy" && draft.productIntent !== "refinance") {
     return false;
   }
   if (draft.govProgram || draft.outOfState) return false;
-  if (draft.productIntent === "heloc" && !helocLiveEligible(draft)) return false;
   if (draft.cashOut && !cashOutLiveEligible(draft)) return false;
   const readyZip = zipFromDraft(draft);
   if (readyZip && !isCaliforniaZip(readyZip)) return false;

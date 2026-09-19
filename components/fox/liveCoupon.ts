@@ -1,4 +1,6 @@
 import { liveQuoteMatchesDraft, searchedKeyFor } from "@/lib/rateflow/fromDraft";
+import { isHelocFile } from "./completeness";
+import { withHelocToolQuote } from "./heloc";
 import {
   liveQuoteFromCouponRow,
   formatRatePercent,
@@ -64,30 +66,35 @@ export type PendingLiveCoupon = {
 };
 
 export function liveQuoteReady(draft: FoxIntakeDraft) {
-  if (draft.ltvConfirm) return false;
-  if (loanExceedsPropertyValue(draft)) return false;
+  const live = isHelocFile(draft) ? withHelocToolQuote(draft) : draft;
+  if (live.ltvConfirm) return false;
+  if (loanExceedsPropertyValue(live)) return false;
   return Boolean(
-    draft.liveQuoteStatus === "ready" &&
-      draft.liveQuote &&
-      liveQuoteMatchesDraft(draft, draft.liveQuote),
+    live.liveQuoteStatus === "ready" &&
+      live.liveQuote &&
+      liveQuoteMatchesDraft(live, live.liveQuote),
   );
 }
 
 /** A spoken coupon exists — rate and as-of. No This one on an empty book. */
 export function hasPrintedLiveRate(draft?: FoxIntakeDraft | null) {
-  if (!draft || draft.ltvConfirm || loanExceedsPropertyValue(draft)) return false;
-  const quote = draft.liveQuote;
-  return Boolean(draft.liveQuoteStatus === "ready" && quote?.rate && quote.asOf);
+  if (!draft) return false;
+  const live = isHelocFile(draft) ? withHelocToolQuote(draft) : draft;
+  if (live.ltvConfirm || loanExceedsPropertyValue(live)) return false;
+  const quote = live.liveQuote;
+  return Boolean(live.liveQuoteStatus === "ready" && quote?.rate && quote.asOf);
 }
 
 export function shouldDeferNextAskForLiveCoupon(draft: FoxIntakeDraft) {
-  if (draft.ltvConfirm || loanExceedsPropertyValue(draft)) return false;
-  if (draft.liveCouponSettled || draft.pendingLiveCoupon) return false;
-  if (draft.liveQuoteStatus === "unavailable") return false;
-  if (draft.liveQuote && draft.liveQuoteStatus === "ready") {
-    return !draft.incomeAsked && !draft.incomeType.value;
+  const live = isHelocFile(draft) ? withHelocToolQuote(draft) : draft;
+  if (live.ltvConfirm || loanExceedsPropertyValue(live)) return false;
+  if (live.liveCouponSettled || live.pendingLiveCoupon) return false;
+  if (live.liveQuoteStatus === "unavailable") return false;
+  if (live.liveQuote && live.liveQuoteStatus === "ready") {
+    return !live.incomeAsked && !live.incomeType.value;
   }
-  return Boolean(searchedKeyFor(draft));
+  if (isHelocFile(live)) return false;
+  return Boolean(searchedKeyFor(live));
 }
 
 export function liveCouponActions(draft?: FoxIntakeDraft): FoxAction[] {
@@ -1045,6 +1052,7 @@ export function isLiveRateSpeech(text?: string) {
   if (!text) return false;
   return (
     /This loan right now:/i.test(text) ||
+    /This HELOC right now:/i.test(text) ||
     /%\s*·\s*.*Live as of/i.test(text) ||
     /Live as of .+\s*·\s*not a lock/i.test(text)
   );

@@ -101,7 +101,7 @@ import {
   withMatrixAfterAmount,
   workspacePrompt,
 } from "./workspace";
-import { skipHelocLine, writeFirstLien, writeHelocLine } from "./heloc";
+import { skipHelocLine, withHelocToolQuote, writeFirstLien, writeHelocLine } from "./heloc";
 import { changeEntityYears } from "./yearsFromEntity";
 import {
   START_PATH_KEY,
@@ -271,6 +271,7 @@ function normalizeLiveQuote(value: unknown): FoxIntakeDraft["liveQuote"] {
   const principalAndInterest = numberOrUndefined(raw.principalAndInterest);
   const pts = signedNumberOrUndefined(raw.pts);
   const term = numberOrUndefined(raw.term);
+  const interestOnly = numberOrUndefined(raw.interestOnly);
   return {
     key,
     rate,
@@ -278,6 +279,8 @@ function normalizeLiveQuote(value: unknown): FoxIntakeDraft["liveQuote"] {
     ...(principalAndInterest != null ? { principalAndInterest } : {}),
     ...(pts != null ? { pts } : {}),
     ...(term != null && term !== 30 ? { term } : {}),
+    ...(interestOnly != null ? { interestOnly } : {}),
+    ...(raw.kind === "heloc" ? { kind: "heloc" as const } : {}),
   };
 }
 
@@ -1430,7 +1433,7 @@ export function getServerDraft() {
 }
 
 function commit(next: FoxIntakeDraft) {
-  current = { ...syncCalculatorDraft(next), updatedAt: new Date().toISOString() };
+  current = { ...withHelocToolQuote(syncCalculatorDraft(next)), updatedAt: new Date().toISOString() };
   persist(current);
   emit();
   return current;

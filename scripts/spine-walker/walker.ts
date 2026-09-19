@@ -1885,7 +1885,7 @@ async function case32(page: Page) {
   const afterZip = await waitCurrent(
     page,
     (text, chips) =>
-      /Getting a live line|Not a lock|How is income earned|HELOC programs are not|California only|live HELOC quote/i.test(
+      /This HELOC right now|Estimated interest-only|Not a lock|How is income earned|HELOC calculator has no quote|California only|live HELOC quote/i.test(
         text,
       ) ||
       hasChip(chips, "This one") ||
@@ -1917,11 +1917,14 @@ async function case32(page: Page) {
   while (Date.now() - started < 45_000) {
     const text = await currentText(page);
     const chips = await currentChips(page);
-    if (hasChip(chips, "This one") && !/Not a lock|Live as of|\d\.\d{3}%/i.test(text)) {
+    if (/This loan right now|P&I/i.test(text)) {
+      throw new BeatFail(`HELOC printed a first-lien amortizing coupon — ${text}`);
+    }
+    if (hasChip(chips, "This one") && !/This HELOC right now|Estimated interest-only|Not a lock/i.test(text)) {
       throw new BeatFail(`This one without a printed HELOC line — ${text} | ${chips.join(" · ")}`);
     }
-    if (/Not a lock|Live as of/i.test(text) && /\d\.\d{3}%/.test(text)) {
-      if (/7\.250%/.test(text) && /−1\.479|-1\.479/.test(text)) {
+    if (/This HELOC right now/i.test(text) && /Not a lock/i.test(text)) {
+      if (/P&I|This loan right now/i.test(text)) {
         throw new BeatFail(`HELOC printed a first-lien cash-out coupon — ${text}`);
       }
       const after = await structureMap(page);
@@ -1931,7 +1934,7 @@ async function case32(page: Page) {
       return;
     }
     if (
-      /HELOC programs are not|loan_type|heloc is not|I don’t have a live HELOC quote/i.test(text)
+      /HELOC calculator has no quote|I don’t have a live HELOC quote/i.test(text)
     ) {
       if (hasChip(chips, "This one")) {
         throw new BeatFail(`This one on HELOC named empty — ${chips.join(" · ")}`);
