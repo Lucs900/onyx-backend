@@ -297,6 +297,29 @@ function moneyOf(map: Record<string, string>, label: string) {
   return (map[label] ?? "").replace(/\s+/g, " ").trim();
 }
 
+async function maybeAnswerWhoOnLoanJustMe(page: Page) {
+  const started = Date.now();
+  while (Date.now() - started < 8_000) {
+    const text = await currentText(page);
+    const chips = await currentChips(page);
+    assertCopyChips(text, chips);
+    if (/anyone else on this loan/i.test(text) && hasChip(chips, "Just me")) {
+      await clickChip(page, "Just me");
+      await waitCurrent(page, (next) => !/anyone else on this loan/i.test(next), 15_000);
+      return true;
+    }
+    if (
+      /other monthly debts|Drop last year|years in business|How long have you had|Looks right|government ID/i.test(
+        text,
+      )
+    ) {
+      return false;
+    }
+    await page.waitForTimeout(150);
+  }
+  return false;
+}
+
 function assertCopyChips(text: string, chips: string[]) {
   const lower = text.toLowerCase();
   if (/skip is fine/.test(lower) && !hasChip(chips, "Skip")) {
@@ -304,6 +327,13 @@ function assertCopyChips(text: string, chips: string[]) {
   }
   if (/use this\?/.test(lower) && !hasChip(chips, "Use this")) {
     throw new BeatFail(`copy/chips disagree — Use this? but chips: ${chips.join(" · ") || "(none)"}`);
+  }
+  if (/anyone else on this loan/.test(lower)) {
+    const need = ["Yes", "Just me", "Skip"];
+    const missing = need.filter((label) => !hasChip(chips, label));
+    if (missing.length) {
+      throw new BeatFail(`copy/chips disagree — who-on-loan vs chips: ${chips.join(" · ") || "(none)"}`);
+    }
   }
   if (/loan is larger than the purchase price/.test(lower)) {
     const need = ["Purchase price", "Down payment", "Loan amount"];
@@ -602,14 +632,18 @@ async function settleQuoteToIncome(page: Page, allowPricingSkip = false, zip = "
 async function walkToDebts(page: Page) {
   await walkToQuotedIncome(page, "94123", true);
   await clickChip(page, "W-2");
+  await maybeAnswerWhoOnLoanJustMe(page);
   await waitCurrent(
     page,
     (text, chips) =>
       /other monthly debts/i.test(text) ||
-      /Drop last year.?s W-2|government ID|How is income earned/i.test(text) ||
+      /Drop last year.?s W-2|government ID|How is income earned|anyone else on this loan/i.test(text) ||
       hasChip(chips, "Skip"),
     20_000,
   );
+  if (/anyone else on this loan/i.test(await currentText(page))) {
+    await maybeAnswerWhoOnLoanJustMe(page);
+  }
   if (/How is income earned/i.test(await currentText(page))) {
     throw new BeatFail(`W-2 did not leave the income ask — ${await currentText(page)}`);
   }
@@ -626,6 +660,11 @@ async function skipWageAndIdToBank(page: Page) {
     const chips = await currentChips(page);
     assertCopyChips(text, chips);
     if (/Two recent statements|second recent statement/i.test(text)) return;
+    if (/anyone else on this loan/i.test(text) && hasChip(chips, "Just me")) {
+      await clickChip(page, "Just me");
+      await page.waitForTimeout(250);
+      continue;
+    }
     if (/other monthly debts/i.test(text) && hasChip(chips, "Skip")) {
       await clickChip(page, "Skip");
       await page.waitForTimeout(250);
@@ -1123,10 +1162,12 @@ async function walkHarborFileAnswers(page: Page) {
   await sendZip(page, "94123", "price");
   await settleQuoteToIncome(page, true, "94123");
   await clickChip(page, "Both");
+  await maybeAnswerWhoOnLoanJustMe(page);
   await waitCurrent(
     page,
     (text, chips) =>
-      /How long have you had|years in business|other monthly debts/i.test(text) || hasChip(chips, "Skip"),
+      /How long have you had|years in business|other monthly debts|anyone else on this loan/i.test(text) ||
+      hasChip(chips, "Skip"),
     20_000,
   );
   if (/How long have you had|years in business/i.test(await currentText(page))) {
@@ -1294,10 +1335,11 @@ async function case20(page: Page) {
   await walkToQuotedIncome(page, "94123", true);
   await waitAsk(page, /How is income earned/i);
   await clickChip(page, "W-2");
+  await maybeAnswerWhoOnLoanJustMe(page);
   const afterW2Chip = await waitCurrent(
     page,
     (text, chips) =>
-      /other monthly debts|Drop last year|government ID|latest paystub/i.test(text) ||
+      /other monthly debts|Drop last year|government ID|latest paystub|anyone else on this loan/i.test(text) ||
       hasChip(chips, "Upload this") ||
       hasChip(chips, "Upload") ||
       hasChip(chips, "Skip"),
@@ -1956,6 +1998,59 @@ async function case32(page: Page) {
   throw new BeatFail(`HELOC walk did not print or name a reason — ${afterZip.text} | ${afterZip.chips.join(" · ")}`);
 }
 
+async function case33(page: Page) {
+  await hardStartOver(page);
+  await walkToQuotedIncome(page, "94123", true);
+  await waitAsk(page, /How is income earned/i);
+  await clickChip(page, "W-2");
+  const who = await waitAsk(page, /anyone else on this loan/i, 20_000);
+  assertCopyChips(who.text, who.chips);
+  if (hasChip(who.chips, "Looks right") || hasChip(who.chips, "Proceed")) {
+    throw new BeatFail(`who-on-loan landed on Looks right / Proceed — ${who.chips.join(" · ")}`);
+  }
+  if (!hasChip(who.chips, "Yes") || !hasChip(who.chips, "Just me") || !hasChip(who.chips, "Skip")) {
+    throw new BeatFail(`who-on-loan chips missing — ${who.chips.join(" · ")}`);
+  }
+  await clickChip(page, "Just me");
+  await waitCurrent(page, (text) => !/anyone else on this loan/i.test(text), 15_000);
+  if (/anyone else on this loan/i.test(await currentText(page))) {
+    throw new BeatFail(`Just me re-asked who-on-loan — ${await currentText(page)}`);
+  }
+  const map = await structureMap(page);
+  if (map["Borrowers"] && map["Borrowers"] !== "1") {
+    throw new BeatFail(`Just me wrote Borrowers ${map["Borrowers"]}`);
+  }
+  if (map["Borrower 2"] || /Ying/i.test(JSON.stringify(map))) {
+    throw new BeatFail(`invented coborrower before Yes+name — ${JSON.stringify(map)}`);
+  }
+  const started = Date.now();
+  while (Date.now() - started < 40_000) {
+    const text = await currentText(page);
+    const chips = await currentChips(page);
+    assertCopyChips(text, chips);
+    if (/anyone else on this loan/i.test(text)) {
+      throw new BeatFail(`who-on-loan re-asked after Just me — ${text}`);
+    }
+    if (hasChip(chips, "Looks right") || /look right|complete enough to move/i.test(text)) {
+      if (hasChip(chips, "Just me") || hasChip(chips, "Yes") && hasChip(chips, "Skip") && /anyone else/i.test(text)) {
+        throw new BeatFail(`who-on-loan chips on Looks right — ${chips.join(" · ")}`);
+      }
+      const jobs = (await structureRows(page)).filter((row) => row.label === "Employment");
+      if (jobs.length > 1) {
+        throw new BeatFail(`Just me Looks right has ${jobs.length} Employment rows`);
+      }
+      return;
+    }
+    if (hasChip(chips, "Skip")) {
+      await clickChip(page, "Skip");
+      await page.waitForTimeout(250);
+      continue;
+    }
+    await page.waitForTimeout(200);
+  }
+  throw new BeatFail(`did not reach Looks right after Just me — ${await currentText(page)}`);
+}
+
 async function case23(page: Page) {
   const fixture = adpW2FixturePath();
   if (!fixture) {
@@ -1965,11 +2060,13 @@ async function case23(page: Page) {
   await walkToQuotedIncome(page, "94123", true);
   await waitAsk(page, /How is income earned/i);
   await clickChip(page, "W-2");
+  await maybeAnswerWhoOnLoanJustMe(page);
   const afterW2 = await waitCurrent(
     page,
     (text, chips) =>
-      /other monthly debts|Drop last year|government ID|latest paystub|W-2/i.test(text) ||
-      hasChip(chips, "Skip"),
+      /other monthly debts|Drop last year|government ID|latest paystub|W-2|anyone else on this loan/i.test(
+        text,
+      ) || hasChip(chips, "Skip"),
     20_000,
   );
   if (/other monthly debts/i.test(afterW2.text) && hasChip(afterW2.chips, "Skip")) {
@@ -2038,11 +2135,13 @@ async function case24(page: Page) {
   await walkToQuotedIncome(page, "94123", true);
   await waitAsk(page, /How is income earned/i);
   await clickChip(page, "W-2");
+  await maybeAnswerWhoOnLoanJustMe(page);
   const afterW2 = await waitCurrent(
     page,
     (text, chips) =>
-      /other monthly debts|Drop last year|government ID|latest paystub|W-2/i.test(text) ||
-      hasChip(chips, "Skip"),
+      /other monthly debts|Drop last year|government ID|latest paystub|W-2|anyone else on this loan/i.test(
+        text,
+      ) || hasChip(chips, "Skip"),
     20_000,
   );
   if (/other monthly debts/i.test(afterW2.text) && hasChip(afterW2.chips, "Skip")) {
@@ -2087,14 +2186,20 @@ async function case24(page: Page) {
 }
 
 async function skipDebtsIfOpen(page: Page) {
+  await maybeAnswerWhoOnLoanJustMe(page);
   const afterW2 = await waitCurrent(
     page,
     (text, chips) =>
-      /other monthly debts|Drop last year|government ID|latest paystub|W-2|paystub/i.test(text) ||
-      hasChip(chips, "Skip"),
+      /other monthly debts|Drop last year|government ID|latest paystub|W-2|paystub|anyone else on this loan/i.test(
+        text,
+      ) || hasChip(chips, "Skip"),
     20_000,
   );
-  if (/other monthly debts/i.test(afterW2.text) && hasChip(afterW2.chips, "Skip")) {
+  if (/anyone else on this loan/i.test(afterW2.text) && hasChip(afterW2.chips, "Just me")) {
+    await clickChip(page, "Just me");
+    await waitCurrent(page, (text) => !/anyone else on this loan/i.test(text), 15_000);
+  }
+  if (/other monthly debts/i.test(await currentText(page)) && hasChip(await currentChips(page), "Skip")) {
     await clickChip(page, "Skip");
     await waitCurrent(page, (text) => !/other monthly debts/i.test(text), 15_000);
   }
@@ -2525,10 +2630,11 @@ async function walkSeToIncomeDocs(page: Page) {
   await walkToQuotedIncome(page, "94123", true);
   await waitAsk(page, /How is income earned/i);
   await clickChip(page, "Self-employed");
+  await maybeAnswerWhoOnLoanJustMe(page);
   await waitCurrent(
     page,
     (text, chips) =>
-      /How long have you had|years in business|other monthly debts|government ID|1040|Schedule C|I’m suggesting/i.test(
+      /How long have you had|years in business|other monthly debts|government ID|1040|Schedule C|I’m suggesting|anyone else on this loan/i.test(
         text,
       ) || hasChip(chips, "Skip") || hasChip(chips, "Use this"),
     20_000,
@@ -2759,6 +2865,9 @@ async function case17(page: Page) {
   await walkToQuotedIncome(page, "94123", true);
   await waitAsk(page, /How is income earned/i);
   await clickChip(page, "Self-employed");
+  await maybeAnswerWhoOnLoanJustMe(page);
+  await waitCurrent(page, (text) => /How long have you had|anyone else on this loan/i.test(text), 20_000);
+  await maybeAnswerWhoOnLoanJustMe(page);
   await waitCurrent(page, (text) => /How long have you had/i.test(text), 20_000);
   await assertYearsAskedOnce(page, "after Self-employed");
   const firstYears = await currentText(page);
@@ -2855,6 +2964,7 @@ async function case13(page: Page) {
   await hardStartOver(page);
   await walkToQuotedIncome(page, "94123", true);
   await clickChip(page, "W-2");
+  await maybeAnswerWhoOnLoanJustMe(page);
   await waitCurrent(page, (text) => !/How is income earned/i.test(text), 15_000);
   await composerDrop(page, "03-w2-2025-jordan-hale.pdf");
   await waitCurrent(
@@ -2940,6 +3050,11 @@ const CASES: { n: number; title: string; run: (page: Page) => Promise<void> }[] 
     n: 32,
     title: "HELOC Primary House 760+ 94123 value/first lien/line: Product HELOC, not Cash-out",
     run: case32,
+  },
+  {
+    n: 33,
+    title: "who-on-loan once after W-2: Yes · Just me · Skip; Just me no re-ask; not Looks right",
+    run: case33,
   },
   { n: 23, title: "ADP W-2 page-read: Box 5 is $36,460.08, never $5", run: case23 },
   { n: 24, title: "composer paperclip CSTC stub: filename/received then $1,806.67 Use this", run: case24 },

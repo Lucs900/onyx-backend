@@ -389,6 +389,15 @@ export type FoxIntakeDraft = {
   declarationTimingAsked?: boolean;
   statedHousehold?: "alone" | "with_someone";
   householdAsked?: boolean;
+  /** One-shot who-on-loan ask. just-me | yes | skip. Not household after Looks right. */
+  whoOnLoan?: "just-me" | "yes" | "skip";
+  whoOnLoanAsked?: boolean;
+  /** Live write just hit first name or income type. Constructed fixtures stay off. */
+  whoOnLoanDue?: boolean;
+  /** Yes follow-up (name them or drop paper) was answered or skipped. */
+  whoOnLoanNameAsked?: boolean;
+  /** Second name seen on a page. Not a coborrower row. */
+  pageOtherName?: string;
   /** Two 50% K-1s — asked whether the other K-1 person is on this loan. */
   otherK1LoanAsked?: boolean;
   /** Yes writes a second Box 1 row. No drops Other K-1. Skip keeps it on Still useful. */
@@ -603,6 +612,7 @@ export type FoxPrompt =
   | "declarations"
   | "declaration-timing"
   | "household"
+  | "who-on-loan"
   | "other-k1-loan"
   | "coborrower-name"
   | "borrower-name"
@@ -686,6 +696,9 @@ export type Capture =
   | { field: "skip-household" }
   | { field: "propose-household"; value: string }
   | { field: "statedHousehold"; value: string }
+  | { field: "whoOnLoan"; value: string }
+  | { field: "skip-who-on-loan" }
+  | { field: "skip-who-on-loan-name" }
   | { field: "other-k1-loan"; value: string }
   | { field: "skip-other-k1-loan" }
   | { field: "k1-who"; value: string }

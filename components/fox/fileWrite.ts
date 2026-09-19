@@ -152,6 +152,7 @@ import {
   proposeExtractedCoborrowerName,
   skipCoborrowerId,
 } from "./coborrowerName";
+import { notePageOtherName, otherBorrowerStillUsefulNeeded } from "./whoOnLoan";
 import {
   STATED_OTHER_REO_FIELD,
   appendOtherReoRow,
@@ -2497,6 +2498,15 @@ export function applyExtractedFields(
       };
     }
   }
+  const pageName = String(
+    fields.spouse_name ?? fields.coborrower_name ?? fields.employee_name ?? fields.full_name ?? "",
+  ).trim();
+  if (
+    pageName &&
+    (extractClass === "w2" || extractClass === "tax_return" || extractClass === "paystub")
+  ) {
+    next = notePageOtherName(next, pageName);
+  }
   if (
     extractClass === "mortgage_statement" &&
     isOtherPropertyMortgageExtract(next, {
@@ -3262,6 +3272,7 @@ export type StillUsefulLabel =
   | "prior-year return"
   | "K-1 distributions"
   | "Other K-1"
+  | "Other borrower"
   | "Bay Street K-1"
   | "Harbor Studio K-1"
   | "Schedule C"
@@ -3657,6 +3668,9 @@ export function stillUsefulLabels(draft: FoxIntakeDraft): StillUsefulLabel[] {
   }
   if (otherK1StillUsefulNeeded(draft) && !labels.includes("Other K-1")) {
     labels.push("Other K-1");
+  }
+  if (otherBorrowerStillUsefulNeeded(draft) && !labels.includes("Other borrower")) {
+    labels.push("Other borrower");
   }
   if (!deepenStillUseful(draft)) {
     const namedK1 = nextScheduleENamedK1Label(draft);
@@ -4133,6 +4147,9 @@ export function layer2Plan(draft: FoxIntakeDraft): StillUsefulItem[] {
         "A second recent bank statement still helps this file.",
       ),
     );
+  }
+  if (otherBorrowerStillUsefulNeeded(draft) && !items.some((item) => item.id === "other-borrower" || item.label === "Other borrower")) {
+    items.push(layer2Item("other-borrower", "Other borrower", "The other borrower still helps this file."));
   }
   if (otherK1StillUsefulNeeded(draft) && !items.some((item) => item.id === "other-k1" || item.label === "Other K-1")) {
     const otherK1 = layer2Item("other-k1", "Other K-1", "The other K-1 still helps this file.");

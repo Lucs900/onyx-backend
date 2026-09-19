@@ -41,7 +41,8 @@ export function primaryDocsInMotion(draft: FoxIntakeDraft) {
 }
 
 export function householdSettled(draft: FoxIntakeDraft) {
-  if (draft.correcting === "household") return false;
+  if (draft.correcting === "household" || draft.correcting === "who-on-loan") return false;
+  if (draft.whoOnLoanAsked || draft.whoOnLoan) return true;
   return Boolean(draft.householdAsked || draft.statedHousehold);
 }
 

@@ -583,6 +583,21 @@ import {
   writeStatedHousehold,
 } from "./household";
 import {
+  SUGGESTED_BORROWERS_NOTE,
+  WHO_ON_LOAN_ASK,
+  borrowersFileValue,
+  isWhoOnLoan,
+  parseWhoOnLoan,
+  skipWhoOnLoan,
+  skipWhoOnLoanName,
+  whoOnLoanAskCopy,
+  whoOnLoanAskNeeded,
+  whoOnLoanNameAskNeeded,
+  withWhoOnLoanDue,
+  writeWhoOnLoan,
+  writeWhoOnLoanName,
+} from "./whoOnLoan";
+import {
   SUGGESTED_COBORROWER_NOTE,
   coborrowerExtractCopy,
   coborrowerFileLabel,
@@ -2932,6 +2947,7 @@ const CORRECTION_CHIP_IDS = new Set([
   "current-housing",
   "declarations",
   "household",
+  "who-on-loan",
   "borrower-name",
   "other-reo",
 ]);
@@ -2993,6 +3009,9 @@ function extraCorrectionLines(draft: FoxIntakeDraft): { id: string; label: strin
   }
   if (draft.householdAsked || draft.statedHousehold) {
     extra.push({ id: "household", label: "Household", prompt: "household" });
+  }
+  if (draft.whoOnLoanAsked || draft.whoOnLoan) {
+    extra.push({ id: "borrowers", label: "Borrowers", prompt: "who-on-loan" });
   }
   if (draft.coborrowerNameAsked || draft.coborrowerName) {
     extra.push({ id: "coborrower-name", label: coborrowerFileLabel(draft), prompt: "coborrower-name" });
@@ -3396,11 +3415,13 @@ function sketchNumberReady(draft: FoxIntakeDraft) {
 }
 
 function withIncomeType(draft: FoxIntakeDraft, value: string): FoxIntakeDraft {
-  return withIncomeTypeYearsAsk({
-    ...draft,
-    incomeType: { ...draft.incomeType, value },
-    incomeAsked: true,
-  });
+  return withWhoOnLoanDue(
+    withIncomeTypeYearsAsk({
+      ...draft,
+      incomeType: { ...draft.incomeType, value },
+      incomeAsked: true,
+    }),
+  );
 }
 
 export const SAMPLE_NOTE = "Sample · indicative · not live";
@@ -4303,6 +4324,8 @@ export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
       (draft.sampleAccepted || (!readyForHouseholdAsk(draft) && !draft.householdAsked))
     ) {
       // Stale resume — household is not the post-Looks-right door.
+    } else if (draft.resumeAfterEdit === "who-on-loan" && draft.sampleAccepted) {
+      // Stale resume — who-on-loan is never after Looks right.
     } else if (draft.resumeAfterEdit === "housing" && draft.sampleAccepted) {
       // Stale resume — housing estimate is not the post-Looks-right door.
     } else if (draft.resumeAfterEdit === "citizenship") {
@@ -4361,6 +4384,7 @@ export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
   if (propertyZipConfirmNeeded(draft)) return "property-zip";
   if (propertyAddressNeededForQuote(draft)) return "property-address";
   if (propertyZipAskNeeded(draft)) return "property-zip";
+  if (whoOnLoanNameAskNeeded(draft) || whoOnLoanAskNeeded(draft)) return "who-on-loan";
   if (!incomeSettled(draft)) return "income";
   if (entityYearsOpen(draft)) return "confirm-proposal";
   if (!draft.sampleAccepted && !yearsInBusinessSettled(draft)) {
@@ -4660,6 +4684,9 @@ function workspaceAskCopy(
   }
   if (prompt === "household") {
     return householdAskCopy(draft);
+  }
+  if (prompt === "who-on-loan") {
+    return whoOnLoanAskCopy(draft);
   }
   if (prompt === "other-k1-loan") {
     return otherK1LoanAskCopy(draft);
@@ -6112,6 +6139,13 @@ export function editPromptFromCapture(capture?: Capture): FoxPrompt | undefined 
   ) {
     return "household";
   }
+  if (
+    capture.field === "whoOnLoan" ||
+    capture.field === "skip-who-on-loan" ||
+    capture.field === "skip-who-on-loan-name"
+  ) {
+    return "who-on-loan";
+  }
   if (capture.field === "other-k1-loan" || capture.field === "skip-other-k1-loan" || capture.field === "k1-who") {
     return "other-k1-loan";
   }
@@ -6380,6 +6414,14 @@ export function workspaceUpdateCopy(capture: Capture, draft: FoxIntakeDraft) {
       ? `Updated event timing to ${capture.value.trim()}.`
       : "Updated event timing.";
   }
+  if (capture.field === "skip-who-on-loan") return "Updated. Other borrower left blank.";
+  if (capture.field === "skip-who-on-loan-name") return "Updated. Other borrower left blank.";
+  if (capture.field === "whoOnLoan") {
+    if (capture.value === "just-me") return "Updated. Just you on this loan.";
+    if (capture.value === "yes") return "Updated. Someone else is on this loan.";
+    if (capture.value === "skip") return "Updated. Other borrower left blank.";
+    return "Updated borrowers.";
+  }
   if (capture.field === "skip-household") return "Updated. Household left blank.";
   if (capture.field === "propose-household") return "Updated.";
   if (capture.field === "skip-other-k1-loan") return "Updated. Other K-1 left blank.";
@@ -6548,6 +6590,22 @@ export function parseWorkspaceEdit(
       };
     }
     return { correct: "household", confirm: HOUSEHOLD_ASK };
+  }
+
+  if (/\b(anyone else on this loan|who is on this loan|borrowers?)\b/.test(lower)) {
+    const value = parseWhoOnLoan(q, { allowBare: true });
+    if (value) {
+      return {
+        capture: { field: "whoOnLoan", value },
+        confirm:
+          value === "just-me"
+            ? "Updated. Just you on this loan."
+            : value === "yes"
+              ? "Updated. Someone else is on this loan."
+              : "Updated. Other borrower left blank.",
+      };
+    }
+    return { correct: "who-on-loan", confirm: WHO_ON_LOAN_ASK };
   }
 
   if (/\b(borrower|\bname\b)\b/.test(lower)) {
@@ -6932,6 +6990,11 @@ function draftAfterCaptureBody(draft: FoxIntakeDraft, capture: Capture): FoxInta
   if (capture.field === "declarationTiming") {
     const timing = parseDeclarationTiming(capture.value) ?? capture.value.trim();
     return timing ? writeDeclarationTiming(next, timing) : next;
+  }
+  if (capture.field === "skip-who-on-loan") return skipWhoOnLoan(next);
+  if (capture.field === "skip-who-on-loan-name") return skipWhoOnLoanName(next);
+  if (capture.field === "whoOnLoan" && isWhoOnLoan(capture.value)) {
+    return writeWhoOnLoan(next, capture.value);
   }
   if (capture.field === "skip-household") return skipHousehold(next);
   if (capture.field === "propose-household" && isStatedHousehold(capture.value)) {
@@ -7327,6 +7390,7 @@ function matrixReply(
     volunteeredHousehold &&
     !draft.correcting &&
     prompt !== "household" &&
+    prompt !== "who-on-loan" &&
     !draft.pendingProposal &&
     !draft.pendingConflict &&
     draft.statedHousehold !== volunteeredHousehold
@@ -7727,7 +7791,7 @@ export function workspaceReply(
     }
   }
 
-  if (draft.awaitingYearsInBusiness && draft.correcting !== "qualifying") {
+  if (draft.awaitingYearsInBusiness && draft.correcting !== "qualifying" && prompt !== "who-on-loan") {
     if (isFreeTextAtGate(q)) {
       if (
         looksLikeQuestion(q) &&
@@ -8216,6 +8280,8 @@ export function workspaceReply(
 
   if (
     isFreeTextAtGate(q) &&
+    prompt !== "who-on-loan" &&
+    !parseWhoOnLoan(q, { allowBare: true }) &&
     !isLooksRightConfirmText(q) &&
     !wantsCorrectionMenu(q) &&
     !(inQueueEnding(draft) && /what happens next/.test(lower))
@@ -9118,6 +9184,39 @@ export function workspaceReply(
     };
   }
 
+  if (prompt === "who-on-loan") {
+    if (whoOnLoanNameAskNeeded(draft)) {
+      if (isSkipHouseholdText(q) || parseWhoOnLoan(q) === "skip") {
+        const nextDraft = skipWhoOnLoanName(draft);
+        return {
+          ...workspacePromptCopy(workspacePrompt(nextDraft), nextDraft),
+          capture: { field: "skip-who-on-loan-name" },
+        };
+      }
+      const name = parseBorrowerName(q);
+      if (!name) return answerThenRestore(q, draft);
+      const nextDraft = writeWhoOnLoanName(draft, name);
+      return {
+        ...nextFoxAsk(nextDraft),
+        capture: { field: "coborrowerName", value: name },
+      };
+    }
+    if (isSkipHouseholdText(q) || parseWhoOnLoan(q) === "skip") {
+      const nextDraft = skipWhoOnLoan(draft);
+      return {
+        ...workspacePromptCopy(workspacePrompt(nextDraft), nextDraft),
+        capture: { field: "skip-who-on-loan" },
+      };
+    }
+    const value = parseWhoOnLoan(q, { allowBare: true });
+    if (!value) return answerThenRestore(q, draft);
+    const nextDraft = writeWhoOnLoan(draft, value);
+    return {
+      ...nextFoxAsk(nextDraft),
+      capture: { field: "whoOnLoan", value },
+    };
+  }
+
   if (prompt === "household") {
     if (draft.statedHousehold && isKeepThisText(q)) return keepThisReply(draft);
     if (isSkipHouseholdText(q)) {
@@ -10005,7 +10104,14 @@ export function previewFacts(draft: FoxIntakeDraft): PreviewFact[] {
     });
   }
 
-  if (
+  if (draft.whoOnLoanAsked || draft.whoOnLoan) {
+    facts.push({
+      id: "borrowers",
+      label: "Borrowers",
+      value: borrowersFileValue(draft),
+      note: SUGGESTED_BORROWERS_NOTE,
+    });
+  } else if (
     draft.householdAsked ||
     draft.statedHousehold ||
     isHouseholdConfirmPending(draft)
@@ -10495,6 +10601,7 @@ export function structureFixPrompt(
   if (id === "declarations") return "declarations";
   if (id === "declaration-timing") return "declaration-timing";
   if (id === "household") return "household";
+  if (id === "borrowers" || id === "who-on-loan") return "who-on-loan";
   if (id === "coborrower-name" || id === "other-borrower") return "coborrower-name";
   if (id === "borrower" || id === "borrower-name") return "borrower-name";
   if (id === "other-reo" || id === "other-real-estate") return "other-reo";
@@ -10592,6 +10699,11 @@ export function structureExplainCopy(
   if (id === "household") {
     return {
       text: "Household. Suggested · not underwritten.",
+    };
+  }
+  if (id === "borrowers" || id === "who-on-loan") {
+    return {
+      text: "Borrowers on this loan. Suggested · not underwritten.",
     };
   }
   if (id === "borrower" || id === "borrower-name") {

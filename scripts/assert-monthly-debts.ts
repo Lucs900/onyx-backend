@@ -96,7 +96,7 @@ assert.equal(workspacePrompt(ready), "income");
 
 const seReply = workspaceReply("Self-employed", ready);
 assert.equal(seReply?.capture?.field, "incomeType");
-assert.equal(seReply?.text, YEARS_IN_BUSINESS_ASK);
+assert.equal(seReply?.text, "Is anyone else on this loan?");
 
 const afterSE = withIncomeTypeYearsAsk({
   ...ready,
@@ -106,6 +106,11 @@ const afterSE = withIncomeTypeYearsAsk({
 assert.equal(afterSE.awaitingYearsInBusiness, true);
 assert.equal(afterSE.awaitingMonthlyDebts, true);
 assert.equal(workspacePrompt(afterSE), "years-in-business");
+const seJustMe = workspaceReply("Just me", {
+  ...afterSE,
+  whoOnLoanDue: true,
+});
+assert.equal(seJustMe?.text, YEARS_IN_BUSINESS_ASK);
 
 const yearsReply = workspaceReply("2", afterSE);
 assert.equal(yearsReply?.capture?.field, "yearsInBusiness");
@@ -199,7 +204,14 @@ assert.equal(workspacePrompt(afterW2), "debts");
 assert.equal(nextFoxAsk(afterW2).text, MONTHLY_DEBTS_ASK);
 const w2Income = workspaceReply("W-2", ready);
 assert.equal(w2Income?.capture?.field, "incomeType");
-assert.equal(w2Income?.text, MONTHLY_DEBTS_ASK);
+assert.equal(w2Income?.text, "Is anyone else on this loan?");
+assert.deepEqual((w2Income?.actions ?? []).map((item) => item.label), ["Yes", "Just me", "Skip"]);
+const w2JustMe = workspaceReply("Just me", {
+  ...afterW2,
+  whoOnLoanDue: true,
+});
+assert.equal(w2JustMe?.capture?.field, "whoOnLoan");
+assert.equal(w2JustMe?.text, MONTHLY_DEBTS_ASK);
 
 const openDebtsQuoted = quote(afterYears, "q-debts", 6.875);
 const debtsAsk: FoxMessage = {

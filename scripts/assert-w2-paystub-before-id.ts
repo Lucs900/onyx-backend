@@ -22,6 +22,7 @@ import { applyLooksRightMotion } from "../components/fox/motion";
 import { resolveProposal } from "../components/fox/completeness";
 import { emptyDraft } from "../components/fox/store";
 import { skipIncomeAsk, previewFacts, priorStubAsk, workspacePrompt, workspacePromptCopy } from "../components/fox/workspace";
+import { writeWhoOnLoan } from "../components/fox/whoOnLoan";
 import { skipPriorStub } from "../components/fox/qualifyingIncome";
 import { wageEmploymentFileLine } from "../components/fox/qualifyingIncome";
 import type { FoxIntakeDraft } from "../components/fox/types";
@@ -113,8 +114,10 @@ async function main() {
   assert.match(wageEmploymentFileLine(usedW2), /Box 5 \$118,400/);
   assert.equal(jobs(usedW2).length, 1);
   assert.equal(nextDocInvite(usedW2), "paystub");
-  assert.equal(workspacePrompt(usedW2), "documents");
-  const stubAsk = workspacePromptCopy("documents", usedW2);
+  assert.equal(workspacePrompt(usedW2), "who-on-loan");
+  const afterWho = writeWhoOnLoan(usedW2, "just-me");
+  assert.equal(workspacePrompt(afterWho), "documents");
+  const stubAsk = workspacePromptCopy("documents", afterWho);
   assert.match(stubAsk.text, /latest paystub for Harbor Pacific Design Inc/i);
   assert.match(stubAsk.text, /current income on paper/i);
   assert.doesNotMatch(stubAsk.text, /government ID/i);
@@ -122,9 +125,9 @@ async function main() {
     (stubAsk.actions ?? []).map((item) => item.label),
     ["Upload this", "Skip"],
   );
-  assert.equal(docInviteAskCopy(usedW2, "paystub"), stubAsk.text);
+  assert.equal(docInviteAskCopy(afterWho, "paystub"), stubAsk.text);
 
-  const skippedStub = skipCurrentInvite(usedW2);
+  const skippedStub = skipCurrentInvite(afterWho);
   assert.notEqual(nextDocInvite(skippedStub), "government_id");
   assert.equal(workspacePrompt(skippedStub), "review");
   const looksAfterSkip = applyLooksRightMotion(skippedStub);
@@ -138,9 +141,9 @@ async function main() {
 
   const afterStub = applyExtractedFields(
     {
-      ...usedW2,
+      ...afterWho,
       documents: [
-        ...(usedW2.documents ?? []),
+        ...(afterWho.documents ?? []),
         {
           slot: "paystubs",
           name: "07-paystub-biweekly-loud.pdf",
@@ -284,7 +287,7 @@ async function main() {
   assert.ok(useful.includes("Government ID"));
   assert.ok(useful.includes("How income is earned"));
   assert.ok(!useful.some((item) => /paystub|W-2|tax return|latest return/i.test(item)));
-  assert.ok(inviteChips(usedW2).includes("Upload this"));
+  assert.ok(inviteChips(afterWho).includes("Upload this"));
 
   console.log(
     "assert-w2-paystub-before-id: stub after 03 Use this; ID after Looks right; last-year W-2 + 1040 on Still useful",

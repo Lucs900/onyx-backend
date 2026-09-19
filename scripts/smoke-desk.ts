@@ -642,6 +642,7 @@ function confirmLooksRight() {
     declarations: { field: "skip-declarations" },
     "declaration-timing": { field: "skip-declaration-timing" },
     household: { field: "skip-household" },
+    "who-on-loan": { field: "skip-who-on-loan" },
     "coborrower-name": { field: "skip-coborrower-name" },
     "borrower-name": { field: "skip-borrower-name" },
     "other-reo": { field: "skip-other-reo" },
@@ -685,6 +686,10 @@ function confirmLooksRight() {
     }
     if (prompt === "household") {
       applyCapture({ field: "skip-household" });
+      continue;
+    }
+    if (prompt === "who-on-loan") {
+      applyCapture({ field: "skip-who-on-loan" });
       continue;
     }
     if (prompt === "coborrower-name") {
@@ -2517,7 +2522,16 @@ assert.equal(founderPurchaseW2?.capture?.field, "incomeType");
 assert.equal(founderPurchaseW2?.capture && "value" in founderPurchaseW2.capture ? founderPurchaseW2.capture.value : "", "w2");
 assert.doesNotMatch(founderPurchaseW2?.text ?? "", /Looks right|I have what I need|other real estate|Do you own any other/i);
 assert.doesNotMatch(founderPurchaseW2?.text ?? "", /other real estate|Do you own any other/i);
-assert.equal(founderPurchaseW2?.text, WAGE_DOCS_ASK);
+assert.equal(founderPurchaseW2?.text, "Is anyone else on this loan?");
+assert.deepEqual((founderPurchaseW2?.actions ?? []).map((item) => item.label), ["Yes", "Just me", "Skip"]);
+const founderPurchaseJustMe = workspaceReply("Just me", {
+  ...founderPurchaseAfterThis,
+  incomeAsked: true,
+  incomeType: { ...emptyDraft().incomeType, value: "w2" as const },
+  whoOnLoanDue: true,
+});
+assert.equal(founderPurchaseJustMe?.capture?.field, "whoOnLoan");
+assert.equal(founderPurchaseJustMe?.text, WAGE_DOCS_ASK);
 assert.doesNotMatch(WAGE_DOCS_ASK, /paystub/i);
 assert.doesNotMatch(WAGE_STUB_DROP_ASK, /W-2/i);
 assert.doesNotMatch(founderPurchaseW2?.text ?? "", /W-2 and a (recent )?paystub/i);
@@ -4458,7 +4472,15 @@ assert.equal(incomeReply?.capture?.field, "incomeType");
 assert.doesNotMatch(incomeReply?.text ?? "", /^W-2\.|W-2\. Here’s a sample structure/i);
 assert.doesNotMatch(incomeReply?.text ?? "", /other real estate|Do you own any other/i);
 assert.doesNotMatch(incomeReply?.text ?? "", /Looks right|I have what I need/i);
-assert.equal(incomeReply?.text, WAGE_DOCS_ASK);
+assert.equal(incomeReply?.text, "Is anyone else on this loan?");
+assert.deepEqual((incomeReply?.actions ?? []).map((item) => item.label), ["Yes", "Just me", "Skip"]);
+const incomeJustMe = workspaceReply("Just me", {
+  ...afterCredit,
+  incomeAsked: true,
+  incomeType: { ...emptyDraft().incomeType, value: "w2" },
+  whoOnLoanDue: true,
+});
+assert.equal(incomeJustMe?.text, WAGE_DOCS_ASK);
 assert.doesNotMatch(incomeReply?.text ?? "", /purchase contract|Start with ID|other real estate|What is Box 5/i);
 assert.deepEqual((incomeReply?.actions ?? []).map((item) => item.label), ["Upload", "Skip"]);
 assert.ok(!(incomeReply?.actions ?? []).some((item) => item.label === "Upload this"));
@@ -11659,21 +11681,17 @@ assert.doesNotMatch(
   /another borrower|Is there another borrower/i,
 );
 const afterLooksRight = draft({ ...afterPrimaryPass, sampleAccepted: true });
-assert.equal(workspacePrompt(afterLooksRight), "household");
-assert.equal(workspacePromptCopy("household", afterLooksRight).text, HOUSEHOLD_ASK);
+assert.notEqual(workspacePrompt(afterLooksRight), "household");
+assert.notEqual(workspacePrompt(afterLooksRight), "who-on-loan");
+assert.doesNotMatch(nextFoxAsk(afterLooksRight).text, /anyone else on this loan|Is there another borrower on this file/i);
+assert.ok(!((nextFoxAsk(afterLooksRight).actions ?? []).map((item) => item.label).includes("Just me")));
 assert.match(HOUSEHOLD_ASK, /another borrower/i);
 assert.doesNotMatch(HOUSEHOLD_ASK, /on your own|with someone/i);
-assert.deepEqual(
-  (workspacePromptCopy("household", afterLooksRight).actions ?? []).map((item) => item.label),
-  ["Yes", "None", "Skip", "Not yet"],
-);
 
 const skipHouseholdReply = workspaceReply("Skip", afterLooksRight);
-assert.equal(skipHouseholdReply?.capture?.field, "skip-household");
-assert.match(
-  skipHouseholdReply?.text ?? "",
-  /Estimated housing|look right|government ID|Start with ID|Upload this|Still useful/i,
-);
+assert.notEqual(skipHouseholdReply?.capture?.field, "skip-household");
+assert.notEqual(skipHouseholdReply?.capture?.field, "whoOnLoan");
+assert.notEqual(skipHouseholdReply?.capture?.field, "skip-who-on-loan");
 const skippedHouseholdFile = draft({ ...afterLooksRight, householdAsked: true });
 assert.equal(skippedHouseholdFile.statedHousehold, undefined);
 assert.ok(
@@ -11710,11 +11728,8 @@ assert.ok(
 );
 
 const aloneChip = workspaceReply("None", afterLooksRight);
-assert.equal(aloneChip?.capture?.field, "statedHousehold");
-assert.match(
-  aloneChip?.text ?? "",
-  /Estimated housing|look right|government ID|Start with ID|Upload this|Still useful/i,
-);
+assert.notEqual(aloneChip?.capture?.field, "statedHousehold");
+assert.notEqual(aloneChip?.capture?.field, "whoOnLoan");
 const aloneConfirmDraft = {
   ...afterLooksRight,
   pendingProposal: {
@@ -11739,15 +11754,10 @@ assert.ok(
 );
 
 const withSomeoneChip = workspaceReply("Yes", afterLooksRight);
-assert.equal(withSomeoneChip?.capture?.field, "statedHousehold");
-assert.equal(withSomeoneChip?.text, COBORROWER_HANDOFF);
-assert.equal(withSomeoneChip?.text, "Now working on Borrower 2.");
-assert.match(withSomeoneChip?.followUp ?? "", /Borrower 2’s government ID/);
-assert.doesNotMatch(withSomeoneChip?.text ?? "", /What name should I put|What’s their name|occupancy|purchase price|estimated FICO|SSN|income type|second borrower card/i);
-assert.deepEqual(
-  (withSomeoneChip?.actions ?? []).map((item) => item.label),
-  ["Upload this", "Skip"],
-);
+assert.notEqual(withSomeoneChip?.capture?.field, "statedHousehold");
+assert.notEqual(withSomeoneChip?.capture?.field, "whoOnLoan");
+assert.notEqual(withSomeoneChip?.text, "Now working on Borrower 2.");
+assert.doesNotMatch(withSomeoneChip?.text ?? "", /Now working on Borrower 2|SSN/i);
 const withSomeoneConfirmDraft = {
   ...afterLooksRight,
   pendingProposal: {
@@ -16864,6 +16874,10 @@ for (let i = 0; i < 12; i += 1) {
     applyCapture({ field: "skip-borrower-name" });
     continue;
   }
+  if (prompt === "who-on-loan") {
+    applyCapture({ field: "skip-who-on-loan" });
+    continue;
+  }
   if (prompt === "documents" || prompt === "household" || nextDocInvite(getFoxDraft())) {
     applyCapture({ field: "skip-docs" });
     continue;
@@ -16914,6 +16928,10 @@ for (let i = 0; i < 12; i += 1) {
   }
   if (prompt === "household") {
     applyCapture({ field: "skip-household" });
+    continue;
+  }
+  if (prompt === "who-on-loan") {
+    applyCapture({ field: "skip-who-on-loan" });
     continue;
   }
   if (prompt === "coborrower-name") {

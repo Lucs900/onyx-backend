@@ -129,6 +129,7 @@ export function taskContext(stage: FoxStage, draft: FoxIntakeDraft) {
     declarations: "Asking: declarations",
     "declaration-timing": "Asking: event timing",
     household: "Asking: household",
+    "who-on-loan": "Asking: who is on this loan",
     "other-k1-loan": "Asking: other K-1",
     "coborrower-name": "Asking: Borrower 2",
     "borrower-name": "Asking: borrower name",

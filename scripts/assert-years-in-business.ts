@@ -88,9 +88,18 @@ assert.equal(workspacePrompt(ready), "income");
 const seReply = workspaceReply("Self-employed", ready);
 assert.equal(seReply?.capture?.field, "incomeType");
 assert.equal(seReply?.capture?.value, "self-employed");
-assert.equal(seReply?.text, YEARS_IN_BUSINESS_ASK);
-assert.deepEqual((seReply?.actions ?? []).map((item) => item.label), ["Skip"]);
-assert.ok(!(seReply?.actions ?? []).some((item) => item.label === "Not yet"));
+assert.equal(seReply?.text, "Is anyone else on this loan?");
+assert.deepEqual((seReply?.actions ?? []).map((item) => item.label), ["Yes", "Just me", "Skip"]);
+const seJustMe = workspaceReply("Just me", {
+  ...ready,
+  incomeAsked: true,
+  incomeType: { ...ready.incomeType, value: "self-employed" },
+  whoOnLoanDue: true,
+  awaitingYearsInBusiness: true,
+});
+assert.equal(seJustMe?.text, YEARS_IN_BUSINESS_ASK);
+assert.deepEqual((seJustMe?.actions ?? []).map((item) => item.label), ["Skip"]);
+assert.ok(!(seJustMe?.actions ?? []).some((item) => item.label === "Not yet"));
 
 const afterSE = withIncomeTypeYearsAsk({
   ...ready,

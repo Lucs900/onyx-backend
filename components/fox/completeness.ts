@@ -970,6 +970,7 @@ export function structureFieldForProposal(field: string) {
   if (field === STATED_CURRENT_HOUSING_FIELD) return "current-housing";
   if (field === STATED_DECLARATION_FIELD) return "declarations";
   if (field === STATED_HOUSEHOLD_FIELD) return "household";
+  if (field === "whoOnLoan") return "who-on-loan";
   if (isBorrowerNameField(field)) return "borrower";
   if (field === STATED_OTHER_REO_FIELD) return "other-reo";
   return field;

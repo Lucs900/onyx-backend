@@ -215,6 +215,13 @@ import {
   writeStatedHousehold,
 } from "./household";
 import {
+  isWhoOnLoan,
+  skipWhoOnLoan,
+  skipWhoOnLoanName,
+  withWhoOnLoanDue,
+  writeWhoOnLoan,
+} from "./whoOnLoan";
+import {
   parseCoborrowerName,
   proposeCoborrowerName,
   skipCoborrowerName,
@@ -683,6 +690,17 @@ function normalize(value: unknown): FoxIntakeDraft {
         ? raw.statedHousehold
         : undefined,
     householdAsked: Boolean(raw.householdAsked || raw.statedHousehold),
+    whoOnLoan:
+      raw.whoOnLoan === "just-me" || raw.whoOnLoan === "yes" || raw.whoOnLoan === "skip"
+        ? raw.whoOnLoan
+        : undefined,
+    whoOnLoanAsked: Boolean(raw.whoOnLoanAsked || raw.whoOnLoan),
+    whoOnLoanDue: Boolean(raw.whoOnLoanDue),
+    whoOnLoanNameAsked: Boolean(raw.whoOnLoanNameAsked),
+    pageOtherName:
+      typeof raw.pageOtherName === "string" && raw.pageOtherName.trim()
+        ? raw.pageOtherName.trim()
+        : undefined,
     otherK1LoanAsked: Boolean(raw.otherK1LoanAsked),
     otherK1LoanAnswer:
       raw.otherK1LoanAnswer === "yes" || raw.otherK1LoanAnswer === "no" || raw.otherK1LoanAnswer === "skip"
@@ -2217,6 +2235,16 @@ function applyCaptureBody(capture: Capture) {
     if (!timing) return current;
     return commit(writeDeclarationTiming(current, timing));
   }
+  if (capture.field === "skip-who-on-loan") {
+    return commit(skipWhoOnLoan(current));
+  }
+  if (capture.field === "skip-who-on-loan-name") {
+    return commit(skipWhoOnLoanName(current));
+  }
+  if (capture.field === "whoOnLoan") {
+    if (!isWhoOnLoan(capture.value)) return current;
+    return commit(writeWhoOnLoan(current, capture.value));
+  }
   if (capture.field === "skip-household") {
     return commit(skipHousehold(current));
   }
@@ -2317,6 +2345,7 @@ function applyCaptureBody(capture: Capture) {
   if (capture.field === "incomeType") {
     const midFile = Boolean(current.correcting);
     commit(
+      withWhoOnLoanDue(
       withIncomeTypeYearsAsk({
         ...current,
         incomeType: clientField("incomeType", capture.value),
@@ -2327,6 +2356,7 @@ function applyCaptureBody(capture: Capture) {
         status: midFile ? current.status : undefined,
         confirmedAt: midFile ? current.confirmedAt : undefined,
       }),
+      ),
     );
     return current.workspaceFlow ? current : advancePhase();
   }

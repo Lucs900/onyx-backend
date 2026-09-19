@@ -142,6 +142,8 @@ export function writeBorrowerName(draft: FoxIntakeDraft, name: string): FoxIntak
     ...draft,
     borrowerName: value,
     borrowerNameAsked: true,
+    whoOnLoanDue:
+      draft.sampleAccepted || draft.whoOnLoanAsked || draft.whoOnLoan ? draft.whoOnLoanDue : true,
     pendingProposal: null,
     pendingConflict: null,
     correcting: null,

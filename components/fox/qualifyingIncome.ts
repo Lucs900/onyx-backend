@@ -1,5 +1,6 @@
 import type { ExtractClass, FactProposal, FieldSource, FoxIntakeDraft, FoxMessage } from "./types";
 import { writeCurrentEmploymentHistory } from "./fileHistory";
+import { maybeWriteCoborrowerFromPaper, notePageOtherName, withWhoOnLoanDue } from "./whoOnLoan";
 import {
   DECLINING_INCOME_CAUTION,
   DECLINING_YEAR_RATIO,
@@ -3713,7 +3714,15 @@ export function acceptWageExtract(draft: FoxIntakeDraft): FoxIntakeDraft {
   }
   next = { ...next, facts };
   if (employer) next = writeCurrentEmploymentHistory(next, employer);
-  return next;
+  const paperName = (
+    extras.find((item) => item.field === "full_name" || item.field === "employee_name")?.value ??
+    draft.pendingWageExtract?.employee ??
+    ""
+  ).trim();
+  if (paperName) {
+    next = maybeWriteCoborrowerFromPaper(notePageOtherName(next, paperName), paperName);
+  }
+  return withWhoOnLoanDue(next);
 }
 
 export function changeWageExtract(draft: FoxIntakeDraft): FoxIntakeDraft {
