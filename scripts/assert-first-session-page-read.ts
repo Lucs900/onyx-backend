@@ -109,7 +109,14 @@ import {
   shouldHoldAskForOpenUseThis,
   shouldHoldDocInviteForOpenUseThis,
 } from "../components/fox/liveCoupon";
+import { WHO_ON_LOAN_ASK, writeWhoOnLoan } from "../components/fox/whoOnLoan";
 import type { ExtractClass, FoxAction, FoxIntakeDraft, FoxMessage } from "../components/fox/types";
+
+/** Who-on-loan is once after name/income. Open Use this wins; after write, Just me then next leftover. */
+function afterWhoOnLoanIfOpen(draft: FoxIntakeDraft): FoxIntakeDraft {
+  if (!/anyone else on this loan/i.test(nextFoxAsk(draft).text)) return draft;
+  return writeWhoOnLoan(draft, "just-me");
+}
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -581,8 +588,10 @@ async function main() {
     },
   ];
   assert.doesNotMatch(nextFoxAsk(stubUsed).text, /Period \$1,806\.67/);
-  assert.match(nextFoxAsk(stubUsed).text, /prior paystub/i);
-  assert.doesNotMatch(nextFoxAsk(stubUsed).text, /government ID|Form 1040|How often is this paycheck/i);
+  assert.equal(nextFoxAsk(stubUsed).text, WHO_ON_LOAN_ASK);
+  const stubUsedAfterWho = afterWhoOnLoanIfOpen(stubUsed);
+  assert.match(nextFoxAsk(stubUsedAfterWho).text, /prior paystub/i);
+  assert.doesNotMatch(nextFoxAsk(stubUsedAfterWho).text, /government ID|Form 1040|How often is this paycheck/i);
   const idAfterStub = applyIdExtractAsk(stubConfirmThread, {
     id: "prior",
     role: "fox",

@@ -109,6 +109,20 @@ function main() {
   assert.equal(nextFoxAsk(chipW2).text, WHO_ON_LOAN_ASK);
   assert.deepEqual(labels(nextFoxAsk(chipW2).actions), ["Yes", "Just me", "Skip"]);
 
+  const openUseThis: FoxIntakeDraft = {
+    ...chipW2,
+    pendingProposal: {
+      field: "gross_period",
+      value: "1806.67",
+      label: "Period",
+      kind: "document",
+    },
+  };
+  assert.equal(whoOnLoanAskNeeded(openUseThis), true);
+  assert.equal(workspacePrompt(openUseThis), "confirm-proposal");
+  assert.notEqual(nextFoxAsk(openUseThis).text, WHO_ON_LOAN_ASK);
+  assert.doesNotMatch(nextFoxAsk(openUseThis).text, /anyone else on this loan/i);
+
   const chipSe = withWhoOnLoanDue(
     withIncomeTypeYearsAsk({
       ...unnamed,

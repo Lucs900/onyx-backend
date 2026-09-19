@@ -4016,7 +4016,12 @@ export function nextFoxAsk(draft: FoxIntakeDraft): {
   if (entityYearsOpen(draft)) {
     return workspacePromptCopy("confirm-proposal", draft);
   }
-  if (whoOnLoanNameAskNeeded(draft) || whoOnLoanAskNeeded(draft)) {
+  if (
+    (whoOnLoanNameAskNeeded(draft) || whoOnLoanAskNeeded(draft)) &&
+    !draft.pendingProposal &&
+    !draft.pendingConflict &&
+    !draft.pendingAddress
+  ) {
     return whoOnLoanAskCopy(draft);
   }
   if (

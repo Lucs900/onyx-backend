@@ -2471,13 +2471,15 @@ async function case25(page: Page) {
   }
   await assertLooksRightHiddenWhileUseThis(page);
   await clickChip(page, hasChip(after.chips, "Use this") ? "Use this" : "Use document");
+  await maybeAnswerWhoOnLoanJustMe(page);
   const afterWrite = await waitCurrent(
     page,
     (text, chips) =>
-      (/prior paystub|last two paystubs/i.test(text) &&
+      !isWhoOnLoanTurn(text, chips) &&
+      ((/prior paystub|last two paystubs/i.test(text) &&
         hasChip(chips, "Upload this") &&
         hasChip(chips, "Skip")) ||
-      /government ID|Form 1040/i.test(text),
+        /government ID|Form 1040/i.test(text)),
     20_000,
   );
   if (/government ID|Form 1040/i.test(afterWrite.text)) {
