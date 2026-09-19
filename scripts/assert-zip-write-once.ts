@@ -51,6 +51,7 @@ function refi80(): FoxIntakeDraft {
     loanAmountValue: 400_000,
     valueAsked: true,
     propertyValueAmount: 500_000,
+    refiPurposeAsked: true,
     propertyType: "sfr",
     propertyTypeAsked: true,
     creditAsked: true,

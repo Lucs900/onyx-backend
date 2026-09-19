@@ -126,6 +126,7 @@ function bankingBridgeBody(client: RateflowClientBody) {
     residency_type: client.residency_type,
     loan_type: "conventional",
     loan_term: 30,
+    ...(client.cash_out != null && client.cash_out > 0 ? { cash_out: client.cash_out } : {}),
     property_type: client.property_type,
     // Do not send a par hint. That featured first coupon is not the
     // purchase lead (conventional 30, points <= 0, then lowest rate).
@@ -177,7 +178,7 @@ export async function POST(request: Request) {
     const row =
       client.loan_purpose === "purchase"
         ? purchaseLeadRow(rows)
-        : pickLeadRow(rows, client.loan_purpose);
+        : pickLeadRow(rows, client.loan_purpose, Boolean(client.cash_out));
     const quote = row ? safeQuoteFromRow(row) : null;
     const pickedRate = Number(row?.rate);
     const report = buildReport({

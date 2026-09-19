@@ -40,10 +40,12 @@ import {
   previewFacts,
   previewRateFact,
   purchasePriceRepeatReply,
+  REFI_PURPOSE_ASK,
   shouldHoldAskForLiveLine,
   workspacePrompt,
   workspaceReply,
   writePurchasePrice,
+  writeRefiPurpose,
 } from "../components/fox/workspace";
 import type { FoxIntakeDraft } from "../components/fox/types";
 
@@ -151,7 +153,7 @@ function main() {
   assert.equal(lowered?.capture?.field, "loanAmount");
   assert.doesNotMatch(lowered?.text ?? "", /purchase price|down payment/i);
   assert.notEqual(lowered?.text, PURCHASE_PRICE_ON_FILE_LINE);
-  assert.match(lowered?.text ?? "", /kind of home|House, condo/i);
+  assert.match(lowered?.text ?? "", /cash out — money to you at closing|kind of home|House, condo/i);
   assert.ok(lowered?.capture);
   applyCapture(lowered!.capture);
   const afterLower = getFoxDraft();
@@ -164,9 +166,12 @@ function main() {
   assert.match(afterLowerLoan?.value ?? "", /\$400,000/);
   assert.equal(loanExceedsPropertyValue(afterLower), false);
   assert.notEqual(workspacePrompt(afterLower), "over-value");
+  assert.equal(workspacePrompt(afterLower), "refi-purpose");
   assert.doesNotMatch(nextFoxAsk(afterLower).text, /loan is larger than the house/i);
   assert.doesNotMatch(nextFoxAsk(afterLower).text, /purchase price|down payment/i);
-  assert.match(nextFoxAsk(afterLower).text, /kind of home|House, condo/i);
+  assert.equal(nextFoxAsk(afterLower).text, REFI_PURPOSE_ASK);
+  const afterPurpose = writeRefiPurpose(afterLower, "skip");
+  assert.match(nextFoxAsk(afterPurpose).text, /kind of home|House, condo/i);
   assert.ok(!labels(nextFoxAsk(afterLower).actions).includes("This one"));
   assert.ok(!labels(nextFoxAsk(afterLower).actions).includes("Lower payment"));
 
@@ -210,7 +215,7 @@ function main() {
   const keptLoan = workspaceReply("Keep $500,000", afterRaise);
   assert.equal(keptLoan?.capture?.field, "keep-ltv-confirm");
   assert.doesNotMatch(keptLoan?.text ?? "", /loan is larger than the house/i);
-  assert.match(keptLoan?.text ?? "", /kind of home|House, condo/i);
+  assert.match(keptLoan?.text ?? "", /cash out — money to you at closing|kind of home|House, condo/i);
   loadIntakeDraft(afterRaise);
   applyCapture({ field: "keep-ltv-confirm" });
   const afterKeep = getFoxDraft();
@@ -219,7 +224,9 @@ function main() {
   assert.equal(afterKeep.ltvConfirm, undefined);
   assert.notEqual(workspacePrompt(afterKeep), "over-value");
   assert.notEqual(workspacePrompt(afterKeep), "ltv-confirm");
-  assert.match(nextFoxAsk(afterKeep).text, /kind of home|House, condo/i);
+  assert.equal(workspacePrompt(afterKeep), "refi-purpose");
+  assert.equal(nextFoxAsk(afterKeep).text, REFI_PURPOSE_ASK);
+  assert.match(nextFoxAsk(writeRefiPurpose(afterKeep, "skip")).text, /kind of home|House, condo/i);
 
   const stillShort = workspaceReply("450000", {
     ...written,
@@ -239,7 +246,7 @@ function main() {
   });
   assert.equal(keptShort?.capture?.field, "keep-ltv-confirm");
   assert.doesNotMatch(keptShort?.text ?? "", /loan is larger than the house/i);
-  assert.match(keptShort?.text ?? "", /kind of home|House, condo/i);
+  assert.match(keptShort?.text ?? "", /cash out — money to you at closing|kind of home|House, condo/i);
 
   const skip = workspaceReply("Skip", written);
   assert.equal(skip?.capture?.field, "skip-over-value");
@@ -286,7 +293,7 @@ function main() {
   assert.match(skippedReadyLtv?.value ?? "", /125(\.0)?%/);
   assert.equal(skippedReadyLtv?.note, ESTIMATED_NOT_FINAL);
 
-  const hundredReady = pricedReady(afterLower);
+  const hundredReady = pricedReady(writeRefiPurpose(afterLower, "skip"));
   assert.equal(hundredReady.loanAmountValue, 400_000);
   assert.equal(hundredReady.propertyValueAmount, 400_000);
   assert.equal(loanExceedsPropertyValue(hundredReady), false);
@@ -350,7 +357,7 @@ function main() {
   };
   assert.deepEqual(labels(liveCouponActions(valueFixQuoted)), ["This one", "Lower payment"]);
 
-  const canPrice = pricedReady(afterKeep);
+  const canPrice = pricedReady(writeRefiPurpose(afterKeep, "skip"));
   assert.equal(loanExceedsPropertyValue(canPrice), false);
   assert.notEqual(rateflowBlockedReason(canPrice), "ltv");
   assert.ok(rateflowClientBodyFromDraft(canPrice));

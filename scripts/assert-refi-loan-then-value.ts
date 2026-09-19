@@ -9,6 +9,7 @@ import {
   amountAskText,
   nextFoxAsk,
   previewFacts,
+  REFI_PURPOSE_ASK,
   workspacePrompt,
   workspaceReply,
   writePurchasePrice,
@@ -56,6 +57,12 @@ function main() {
   assert.equal(written.loanAmountValue, 500_000, "value write must keep the $500,000 loan");
   assert.equal(hasLoanAmount(written), true);
   assert.notEqual(workspacePrompt(written), "amount");
+  assert.equal(workspacePrompt(written), "refi-purpose");
+  assert.equal(nextFoxAsk(written).text, REFI_PURPOSE_ASK);
+  assert.deepEqual(
+    (nextFoxAsk(written).actions ?? []).map((item) => item.label),
+    ["Cash out", "New rate", "Skip"],
+  );
   assert.doesNotMatch(nextFoxAsk(written).text, /loan or payoff amount|What’s the loan amount/i);
   assert.doesNotMatch(amountAskText(written), /loan or payoff amount|What’s the loan amount/i);
   assert.doesNotMatch(amountAskText(withLoan), /loan or payoff amount/i);

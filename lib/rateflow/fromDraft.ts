@@ -5,13 +5,14 @@ import {
   isZipOnlyFileAddress,
 } from "@/components/fox/propertyType";
 import { isCaliforniaZip } from "@/components/products/scenario";
-import { FHFA_HIGH_COST_CEILING_2026 } from "@/lib/guidelines/conventional";
+import { FHFA_HIGH_COST_CEILING_2026, HIGH_PURCHASE_LTV } from "@/lib/guidelines/conventional";
 import {
   cityFromTypedAddress,
   creditScoreFloor,
   mapPropertyType,
   mapResidency,
   parseClientBody,
+  RATEFLOW_CASHOUT_PURPOSE_FLAG,
   rateflowScenarioKey,
   zipFromSources,
   type RateflowClientBody,
@@ -58,10 +59,51 @@ function listPriceFromDraft(draft: FoxIntakeDraft): number | undefined {
 }
 
 function loanPurposeFromDraft(draft: FoxIntakeDraft): "purchase" | "refinance" | undefined {
-  if (draft.cashOut || draft.govProgram) return undefined;
+  if (draft.govProgram) return undefined;
+  if (draft.cashOut && draft.productIntent !== "refinance") return undefined;
   if (draft.productIntent === "buy") return "purchase";
   if (draft.productIntent === "refinance") return "refinance";
   return undefined;
+}
+
+function sketchedRefiLtv(draft: FoxIntakeDraft): number | null {
+  const value = listPriceFromDraft(draft);
+  const loan = loanAmountFromDraft(draft);
+  if (value == null || value <= 0 || loan == null || loan <= 0) return null;
+  return loan / value;
+}
+
+/** Cash-out LTV above the conventional primary 1-unit cap (typically 80%). */
+export function cashOutLtvOverCap(draft: FoxIntakeDraft): boolean {
+  if (!draft.cashOut || draft.productIntent !== "refinance") return false;
+  const ltv = sketchedRefiLtv(draft);
+  return ltv != null && ltv > HIGH_PURCHASE_LTV;
+}
+
+function cashOutHasDistress(draft: FoxIntakeDraft): boolean {
+  return Boolean(draft.creditEvent || draft.statedDeclaration === "event");
+}
+
+/**
+ * Vanilla primary 1-unit House cash-out at conventional-eligible LTV.
+ * Investment, 2–4, government, distress, and over-cap LTV stay off the live line.
+ */
+export function cashOutLiveEligible(draft: FoxIntakeDraft): boolean {
+  if (!draft.cashOut || draft.productIntent !== "refinance") return false;
+  if (draft.govProgram || cashOutHasDistress(draft) || draft.outOfState) return false;
+  const occupancy = draft.occupancyChoice.value || draft.scenario?.occupancy;
+  if (occupancy && occupancy !== "primary") return false;
+  if (draft.propertyType !== "sfr") return false;
+  const ltv = sketchedRefiLtv(draft);
+  if (ltv == null || ltv > HIGH_PURCHASE_LTV) return false;
+  return true;
+}
+
+export function cashOutBlockedReason(draft: FoxIntakeDraft): "cash-out" | "cash-out-ltv" | null {
+  if (!draft.cashOut) return null;
+  if (cashOutLiveEligible(draft)) return null;
+  if (cashOutLtvOverCap(draft)) return "cash-out-ltv";
+  return "cash-out";
 }
 
 export function addressConfirmPending(draft: FoxIntakeDraft) {
@@ -80,7 +122,8 @@ export function rateflowBlockedReason(draft: FoxIntakeDraft): string | null {
   const zip = zipFromDraft(draft);
   if (zip && !isCaliforniaZip(zip)) return "state";
   if (draft.govProgram) return "program";
-  if (draft.cashOut) return "cash-out";
+  const cashOutBlock = cashOutBlockedReason(draft);
+  if (cashOutBlock) return cashOutBlock;
   if (addressConfirmPending(draft)) return "address-confirm";
   if (!addressLineReadyForQuote(draft)) return "address";
   if (!loanPurposeFromDraft(draft)) return "purpose";
@@ -141,6 +184,7 @@ export function rateflowClientBodyFromDraft(draft: FoxIntakeDraft): RateflowClie
     credit_score: credit,
     zipcode,
     ...(city ? { city } : {}),
+    ...(draft.cashOut ? { cash_out: RATEFLOW_CASHOUT_PURPOSE_FLAG } : {}),
   });
 }
 
@@ -162,7 +206,8 @@ export function searchedKeyFor(draft: FoxIntakeDraft): string | undefined {
 export function conventionalReadyHoldsReadyLine(draft: FoxIntakeDraft): boolean {
   if (draft.liveQuoteStatus === "unavailable") return false;
   if (draft.productIntent !== "buy" && draft.productIntent !== "refinance") return false;
-  if (draft.cashOut || draft.govProgram || draft.outOfState) return false;
+  if (draft.govProgram || draft.outOfState) return false;
+  if (draft.cashOut && !cashOutLiveEligible(draft)) return false;
   const readyZip = zipFromDraft(draft);
   if (readyZip && !isCaliforniaZip(readyZip)) return false;
   if (addressConfirmPending(draft)) return false;

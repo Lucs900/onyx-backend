@@ -547,6 +547,7 @@ function normalize(value: unknown): FoxIntakeDraft {
         ? raw.creditEvent
         : undefined,
     cashOut: Boolean(raw.cashOut),
+    refiPurposeAsked: Boolean(raw.refiPurposeAsked || raw.cashOut),
     overPriceConfirmed: Boolean(raw.overPriceConfirmed),
     overValueSkipped: Boolean(raw.overValueSkipped),
     ltvConfirm: raw.ltvConfirm === "loan" || raw.ltvConfirm === "value" ? raw.ltvConfirm : undefined,
@@ -2694,7 +2695,15 @@ function applyCaptureBody(capture: Capture) {
     return commit({ ...current, creditEvent: capture.value, correcting: null });
   }
   if (capture.field === "cashOut") {
-    return commit({ ...current, cashOut: true, correcting: null });
+    return commit({ ...current, cashOut: true, refiPurposeAsked: true, correcting: null });
+  }
+  if (capture.field === "refiPurpose") {
+    return commit({
+      ...current,
+      cashOut: capture.value === "cash-out",
+      refiPurposeAsked: true,
+      correcting: null,
+    });
   }
   if (capture.field === "amountPurpose") {
     const named = capture.value.trim();

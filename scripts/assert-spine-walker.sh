@@ -170,6 +170,9 @@ if [[ "${SPINE_WALKER_SKIP_LEFTOVERS:-}" != "1" ]]; then
   if leftover_wanted 27 || leftover_wanted 28 || leftover_wanted 29 || leftover_wanted 30; then
     run_leftover assert-refi-loan-over-value.ts
   fi
+  if leftover_wanted 31; then
+    run_leftover assert-refi-cash-out-purpose.ts
+  fi
   if leftover_wanted 23; then
     run_leftover assert-w2-page-read.ts
     run_leftover assert-w2-paystub-before-id.ts

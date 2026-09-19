@@ -456,6 +456,8 @@ const harborWalkRows = [
 assert.equal(pickLeadRow(harborWalkRows, "refinance")?.rate, 6.75);
 assert.equal(pickLeadRow(harborWalkRows, "refinance")?.pts, -1.067);
 assert.notEqual(pickLeadRow(harborWalkRows, "refinance")?.rate, 6.49);
+assert.equal(pickLeadRow(harborWalkRows, "refinance", true)?.rate, pickConventional30LowestNoPoints(harborWalkRows)?.rate);
+assert.notEqual(pickLeadRow(harborWalkRows, "refinance", true)?.rate, pickLeadRow(harborWalkRows, "refinance")?.rate);
 assert.equal(pickConventional30NoCost(harborWalkRows)?.rate, 6.75);
 assert.equal(pickLowerPaymentFromRows(safeCouponRowsFromProducts(harborWalkRows))?.rate, 6.25);
 assert.equal(pickLowerPaymentFromRows(safeCouponRowsFromProducts(harborWalkRows))?.pts, 1.044);
@@ -627,6 +629,39 @@ assert.equal(rateflowClientBodyFromDraft(file({ govProgram: "fha" })), null);
 assert.equal(rateflowClientBodyFromDraft(file({ govProgram: "va" })), null);
 assert.equal(rateflowClientBodyFromDraft(file({ govProgram: "usda" })), null);
 assert.equal(rateflowClientBodyFromDraft(file({ cashOut: true })), null);
+assert.equal(
+  rateflowClientBodyFromDraft(
+    file({
+      productIntent: "refinance",
+      cashOut: true,
+      loanAmountValue: 400_000,
+      propertyValueAmount: 500_000,
+    }),
+  )?.cash_out,
+  2001,
+);
+assert.equal(
+  rateflowClientBodyFromDraft(
+    file({
+      productIntent: "refinance",
+      cashOut: true,
+      loanAmountValue: 400_000,
+      propertyValueAmount: 400_000,
+    }),
+  ),
+  null,
+);
+assert.equal(
+  rateflowBlockedReason(
+    file({
+      productIntent: "refinance",
+      cashOut: true,
+      loanAmountValue: 400_000,
+      propertyValueAmount: 400_000,
+    }),
+  ),
+  "cash-out-ltv",
+);
 assert.equal(
   rateflowBlockedReason(
     file({

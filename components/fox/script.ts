@@ -163,6 +163,7 @@ export function taskContext(stage: FoxStage, draft: FoxIntakeDraft) {
     "over-price": "Checking price and loan",
     "over-value": "Checking loan and value",
     "ltv-confirm": "Checking loan and value",
+    "refi-purpose": "Asking: refinance purpose",
     housing: "Asking: housing payment",
     "subject-lease": "Asking: lease or rent",
     citizenship: "Asking: citizenship",

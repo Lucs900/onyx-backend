@@ -315,6 +315,15 @@ function assertCopyChips(text: string, chips: string[]) {
       );
     }
   }
+  if (/cash out — money to you at closing|new rate on what you owe/.test(lower)) {
+    const need = ["Cash out", "New rate", "Skip"];
+    const missing = need.filter((label) => !hasChip(chips, label));
+    if (missing.length || hasChip(chips, "This one")) {
+      throw new BeatFail(
+        `copy/chips disagree — refinance purpose vs chips: ${chips.join(" · ") || "(none)"}`,
+      );
+    }
+  }
   if (/loan is larger than the house/.test(lower)) {
     const need = ["Change loan", "Change value", "Skip"];
     const missing = need.filter((label) => !hasChip(chips, label));
@@ -1450,6 +1459,22 @@ async function case22(page: Page) {
   }
 }
 
+async function maybeSkipRefiPurpose(page: Page) {
+  const chips = await currentChips(page);
+  const text = await currentText(page);
+  if (!hasChip(chips, "Cash out") && !/cash out — money to you at closing/i.test(text)) {
+    return;
+  }
+  assertCopyChips(text, chips);
+  if (hasChip(chips, "Skip")) {
+    await clickChip(page, "Skip");
+    return;
+  }
+  if (hasChip(chips, "New rate")) {
+    await clickChip(page, "New rate");
+  }
+}
+
 async function walkRefiToLoanValue(page: Page, loan: string, value: string) {
   await clickChip(page, "Refinance");
   await waitAsk(page, /How will the property be used/i);
@@ -1475,6 +1500,16 @@ async function walkRefiToLoanValue(page: Page, loan: string, value: string) {
   }
   if (/property value/i.test(valueAsk.text)) {
     await typeSend(page, value);
+  }
+  const afterValue = await waitCurrent(
+    page,
+    (text, chips) =>
+      hasChip(chips, "Cash out") ||
+      /cash out — money to you at closing|kind of home|House, condo|loan is larger/i.test(text),
+    20_000,
+  ).catch(async () => ({ text: await currentText(page), chips: await currentChips(page) }));
+  if (hasChip(afterValue.chips, "Cash out") || /cash out — money to you at closing/i.test(afterValue.text)) {
+    await maybeSkipRefiPurpose(page);
   }
 }
 
@@ -1558,21 +1593,33 @@ async function case28(page: Page) {
   await typeSend(page, "400000");
   const after = await waitCurrent(
     page,
+    (text, chips) =>
+      hasChip(chips, "Cash out") ||
+      /cash out — money to you at closing|kind of home|House, condo|estimated FICO|address or ZIP|purchase price|down payment/i.test(
+        text,
+      ),
+    20_000,
+  );
+  if (hasChip(after.chips, "Cash out") || /cash out — money to you at closing/i.test(after.text)) {
+    await maybeSkipRefiPurpose(page);
+  }
+  const afterPurpose = await waitCurrent(
+    page,
     (text) =>
       /kind of home|House, condo|estimated FICO|address or ZIP|purchase price|down payment/i.test(text),
     20_000,
   );
-  if (/purchase price|down payment/i.test(after.text)) {
-    throw new BeatFail(`change loan leaked purchase copy — ${after.text}`);
+  if (/purchase price|down payment/i.test(afterPurpose.text)) {
+    throw new BeatFail(`change loan leaked purchase copy — ${afterPurpose.text}`);
   }
-  if (/loan is larger than the house/i.test(after.text)) {
-    throw new BeatFail(`change loan to 400000 re-fired the house conflict — ${after.text}`);
+  if (/loan is larger than the house/i.test(afterPurpose.text)) {
+    throw new BeatFail(`change loan to 400000 re-fired the house conflict — ${afterPurpose.text}`);
   }
-  if (!/kind of home|House, condo/i.test(after.text)) {
-    throw new BeatFail(`after change loan expected House — ${after.text}`);
+  if (!/kind of home|House, condo/i.test(afterPurpose.text)) {
+    throw new BeatFail(`after change loan expected House — ${afterPurpose.text}`);
   }
-  if (hasChip(after.chips, "This one") || hasChip(after.chips, "Lower payment")) {
-    throw new BeatFail(`This one after 100% LTV change loan — ${after.chips.join(" · ")}`);
+  if (hasChip(afterPurpose.chips, "This one") || hasChip(afterPurpose.chips, "Lower payment")) {
+    throw new BeatFail(`This one after 100% LTV change loan — ${afterPurpose.chips.join(" · ")}`);
   }
   const map = await structureMap(page);
   if (moneyOf(map, "Loan amount") !== "$400,000") {
@@ -1595,6 +1642,15 @@ async function case29(page: Page) {
   await clickChip(page, "Change loan");
   await waitAsk(page, /loan amount/i);
   await typeSend(page, "400000");
+  const afterLoan = await waitCurrent(
+    page,
+    (text, chips) =>
+      hasChip(chips, "Cash out") || /cash out — money to you at closing|kind of home|House, condo/i.test(text),
+    20_000,
+  );
+  if (hasChip(afterLoan.chips, "Cash out") || /cash out — money to you at closing/i.test(afterLoan.text)) {
+    await maybeSkipRefiPurpose(page);
+  }
   await waitAsk(page, /kind of home|House, condo/i);
   await walkHouseCredit(page);
   await waitAsk(page, /address or ZIP/i);
@@ -1691,15 +1747,102 @@ async function case30(page: Page) {
   await clickChip(page, "Keep $500,000");
   const afterKeep = await waitCurrent(
     page,
+    (text, chips) =>
+      hasChip(chips, "Cash out") ||
+      /cash out — money to you at closing|kind of home|House, condo|conventional price|loan is larger/i.test(text),
+    20_000,
+  );
+  if (hasChip(afterKeep.chips, "Cash out") || /cash out — money to you at closing/i.test(afterKeep.text)) {
+    await maybeSkipRefiPurpose(page);
+  }
+  const afterPurpose = await waitCurrent(
+    page,
     (text) => /kind of home|House, condo|conventional price|loan is larger/i.test(text),
     20_000,
   );
-  if (/loan is larger than the house/i.test(afterKeep.text)) {
-    throw new BeatFail(`Keep after Change value reprinted larger-than-house — ${afterKeep.text}`);
+  if (/loan is larger than the house/i.test(afterPurpose.text)) {
+    throw new BeatFail(`Keep after Change value reprinted larger-than-house — ${afterPurpose.text}`);
   }
-  if (!/kind of home|House, condo/i.test(afterKeep.text)) {
-    throw new BeatFail(`Keep $500,000 expected House — ${afterKeep.text}`);
+  if (!/kind of home|House, condo/i.test(afterPurpose.text)) {
+    throw new BeatFail(`Keep $500,000 expected House — ${afterPurpose.text}`);
   }
+}
+
+async function case31(page: Page) {
+  await hardStartOver(page);
+  await clickChip(page, "Refinance");
+  await waitAsk(page, /How will the property be used/i);
+  await clickChip(page, "Primary");
+  const afterOcc = await waitCurrent(
+    page,
+    (text) =>
+      /loan or payoff amount|What’s the loan amount|property value|timeline|kind of home/i.test(text),
+    20_000,
+  );
+  if (/timeline/i.test(afterOcc.text) && hasChip(afterOcc.chips, "Skip")) {
+    await clickChip(page, "Skip");
+  }
+  await waitAsk(page, /loan or payoff amount|What’s the loan amount/i);
+  await typeSend(page, "400000");
+  await waitAsk(page, /property value/i);
+  await typeSend(page, "500000");
+  const purpose = await waitAsk(page, /cash out — money to you at closing|new rate on what you owe/i);
+  assertCopyChips(purpose.text, purpose.chips);
+  if (hasChip(purpose.chips, "This one")) {
+    throw new BeatFail(`This one on purpose chips — ${purpose.chips.join(" · ")}`);
+  }
+  await clickChip(page, "Cash out");
+  const afterCash = await waitCurrent(
+    page,
+    (text) => /kind of home|House, condo/i.test(text),
+    20_000,
+  );
+  if (/about how much cash/i.test(afterCash.text)) {
+    throw new BeatFail(`asked cash dollar after Cash out — ${afterCash.text}`);
+  }
+  const map = await structureMap(page);
+  if (map["Purpose"] !== "Cash-out") {
+    throw new BeatFail(`Purpose was not Cash-out — ${map["Purpose"] || "(missing)"}`);
+  }
+  if (moneyOf(map, "Loan amount") !== "$400,000") {
+    throw new BeatFail(`Cash out changed the loan — ${moneyOf(map, "Loan amount") || "(missing)"}`);
+  }
+  await walkHouseCredit(page);
+  await waitAsk(page, /address or ZIP/i);
+  await typeSend(page, "94123");
+  const afterZip = await waitCurrent(
+    page,
+    (text, chips) =>
+      /Getting a live line|Not a lock|How is income earned|conventional price|Pricing when the file is ready/i.test(
+        text,
+      ) ||
+      hasChip(chips, "This one") ||
+      hasChip(chips, "Change loan"),
+    45_000,
+  );
+  const started = Date.now();
+  while (Date.now() - started < 45_000) {
+    const text = await currentText(page);
+    const chips = await currentChips(page);
+    if (hasChip(chips, "This one") && !/Not a lock|Live as of|\d\.\d{3}%/i.test(text)) {
+      throw new BeatFail(`This one without a printed cash-out coupon — ${text} | ${chips.join(" · ")}`);
+    }
+    if (/don’t have a conventional price/i.test(text) && hasChip(chips, "This one")) {
+      throw new BeatFail(`This one on cash-out no-price — ${chips.join(" · ")}`);
+    }
+    if (/Not a lock|Live as of/i.test(text) && /\d\.\d{3}%/.test(text)) {
+      const after = await structureMap(page);
+      if (after["Purpose"] !== "Cash-out") {
+        throw new BeatFail(`live cash-out line dropped Purpose — ${after["Purpose"] || "(missing)"}`);
+      }
+      return;
+    }
+    if (/How is income earned/i.test(text) && !hasChip(chips, "This one")) {
+      throw new BeatFail(`cash-out 80% reached income without a live coupon — ${text}`);
+    }
+    await page.waitForTimeout(250);
+  }
+  throw new BeatFail(`cash-out 80% did not print a coupon — ${afterZip.text} | ${afterZip.chips.join(" · ")}`);
 }
 
 async function case23(page: Page) {
@@ -2676,6 +2819,11 @@ const CASES: { n: number; title: string; run: (page: Page) => Promise<void> }[] 
     n: 30,
     title: "Change value 500000 confirms loan at 100% LTV; Keep → House; no larger-than-house",
     run: case30,
+  },
+  {
+    n: 31,
+    title: "Refinance 400/500 Cash out writes Purpose Cash-out and prints a cash-out coupon",
+    run: case31,
   },
   { n: 23, title: "ADP W-2 page-read: Box 5 is $36,460.08, never $5", run: case23 },
   { n: 24, title: "composer paperclip CSTC stub: filename/received then $1,806.67 Use this", run: case24 },

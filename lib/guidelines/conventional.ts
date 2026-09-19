@@ -1001,13 +1001,26 @@ export function renderStoreLine(template: string, file: FileFacts) {
   return template.replaceAll("{loanAmount}", loan).replaceAll("{purchasePrice}", price);
 }
 
+/** Vanilla primary 1-unit House cash-out at conventional-eligible LTV (typically ≤80%). */
+export function vanillaPrimaryHouseCashOut(file: FileFacts): boolean {
+  if (file.purposeHint !== "cash_out") return false;
+  if (file.occupancy && file.occupancy !== "primary") return false;
+  if (file.propertyType !== "sfr") return false;
+  if (file.namedGovvie || file.govProgram) return false;
+  if (file.namedDistress || file.statedDeclaration === "event") return false;
+  const ltv = sketchedLtvFromFacts(file);
+  return ltv != null && ltv <= HIGH_PURCHASE_LTV;
+}
+
 export function flags(file: FileFacts): { caution?: string; previewRateAllowed: boolean } {
   const ltv = sketchedLtvFromFacts(file);
   const condo = condoFlag(file);
   let caution: string | undefined;
   if (lowestCreditBand(file.statedCreditBand)) caution = LOW_CREDIT_CAUTION;
   else if (file.namedGovvie || file.govProgram) caution = GOVVIE_LINE;
-  else if (file.purposeHint === "cash_out") caution = CASH_OUT_CAUTION;
+  else if (file.purposeHint === "cash_out" && !vanillaPrimaryHouseCashOut(file)) {
+    if (!(ltv != null && ltv > HIGH_PURCHASE_LTV)) caution = CASH_OUT_CAUTION;
+  }
   else if (file.occupancy === "investment") caution = INVESTMENT_CAUTION;
   else if (file.occupancy === "second" || file.occupancy === "second-home") caution = SECOND_HOME_CAUTION;
   else if (ltv != null && ltv > HIGH_PURCHASE_LTV && ltv <= 1) caution = HIGH_LTV_CAUTION;
@@ -1025,7 +1038,7 @@ export function flags(file: FileFacts): { caution?: string; previewRateAllowed: 
   const previewRateAllowed =
     conventionalPurchaseOrRefi(file) &&
     file.occupancy !== "investment" &&
-    file.purposeHint !== "cash_out" &&
+    (file.purposeHint !== "cash_out" || vanillaPrimaryHouseCashOut(file)) &&
     !file.namedGovvie &&
     !file.govProgram &&
     !file.namedDistress &&

@@ -136,6 +136,7 @@ const base = {
   loanAmountValue: 680_000,
   amountAsked: true,
   valueAsked: true,
+  refiPurposeAsked: true,
   propertyType: "sfr" as const,
   creditAsked: true,
   creditBand: "760+",

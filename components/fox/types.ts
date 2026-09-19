@@ -281,6 +281,8 @@ export type FoxIntakeDraft = {
   govProgram?: GovProgram;
   creditEvent?: NamedCreditEvent;
   cashOut?: boolean;
+  /** One-shot refinance purpose ask was answered (Cash out, New rate, or Skip). */
+  refiPurposeAsked?: boolean;
   overPriceConfirmed?: boolean;
   /** Refinance loan>value spoken once. Skip keeps both numbers and continues. */
   overValueSkipped?: boolean;
@@ -625,6 +627,7 @@ export type FoxPrompt =
   | "over-price"
   | "over-value"
   | "ltv-confirm"
+  | "refi-purpose"
   | "housing"
   | "subject-lease"
   | "citizenship"
@@ -706,6 +709,7 @@ export type Capture =
   | { field: "govProgram"; value: GovProgram }
   | { field: "creditEvent"; value: NamedCreditEvent }
   | { field: "cashOut" }
+  | { field: "refiPurpose"; value: "cash-out" | "rate-term" | "skip" }
   | { field: "loanAmount"; value: string }
   | { field: "propertyValue"; value: string }
   | { field: "downPayment"; value: string }

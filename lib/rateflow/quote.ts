@@ -44,6 +44,9 @@ export type RateflowPurpose = (typeof RATEFLOW_PURPOSES)[number];
 export type RateflowResidency = (typeof RATEFLOW_RESIDENCY)[number];
 export type RateflowPropertyType = (typeof RATEFLOW_PROPERTY_TYPES)[number];
 
+/** LoanSifter purpose switch. Not a File cash dollar. */
+export const RATEFLOW_CASHOUT_PURPOSE_FLAG = 2001;
+
 export type RateflowClientBody = {
   loan_purpose: RateflowPurpose;
   residency_type: RateflowResidency;
@@ -53,6 +56,8 @@ export type RateflowClientBody = {
   property_type: RateflowPropertyType;
   zipcode: string;
   city?: string;
+  /** Present when File Purpose is Cash-out. Switches LoanSifter off rate-term. */
+  cash_out?: number;
 };
 
 export type RateflowProductRow = {
@@ -212,7 +217,7 @@ export function zipFromSources(input: {
 }
 
 export function rateflowScenarioKey(body: RateflowClientBody): string {
-  return [
+  const parts = [
     body.loan_purpose,
     body.residency_type,
     body.property_type,
@@ -220,7 +225,9 @@ export function rateflowScenarioKey(body: RateflowClientBody): string {
     String(body.loan_amount),
     String(body.credit_score),
     body.zipcode ?? "",
-  ].join("|");
+  ];
+  if (body.cash_out != null && body.cash_out > 0) parts.push("cashout");
+  return parts.join("|");
 }
 
 export function parseClientBody(input: unknown): RateflowClientBody | null {
@@ -242,6 +249,9 @@ export function parseClientBody(input: unknown): RateflowClientBody | null {
   if (!zip) return null;
   const cityRaw = typeof raw.city === "string" ? raw.city.replace(/\s+/g, " ").trim() : "";
   const city = cityRaw && cityRaw.length >= 2 && cityRaw.length <= 40 && !/\d/.test(cityRaw) ? cityRaw : undefined;
+  const cashOutRaw = Number(raw.cash_out);
+  const cashOut =
+    Number.isFinite(cashOutRaw) && cashOutRaw > 0 ? Math.round(cashOutRaw) : undefined;
   return {
     loan_purpose: purpose as RateflowPurpose,
     residency_type: residency as RateflowResidency,
@@ -251,6 +261,7 @@ export function parseClientBody(input: unknown): RateflowClientBody | null {
     credit_score: Math.round(credit),
     zipcode: zip,
     ...(city ? { city } : {}),
+    ...(cashOut != null ? { cash_out: cashOut } : {}),
   };
 }
 
@@ -498,7 +509,11 @@ export function purchaseLeadRow(rows: RateflowProductRow[]): RateflowProductRow 
 export function pickLeadRow(
   rows: RateflowProductRow[],
   purpose: RateflowPurpose,
+  cashOut = false,
 ): RateflowProductRow | null {
+  if (cashOut) {
+    return pickConventional30LowestNoPoints(rows);
+  }
   if (purpose === "refinance") {
     return pickConventional30NoCost(rows) ?? pickConventional30LowestNoPoints(rows);
   }

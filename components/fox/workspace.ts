@@ -15,8 +15,11 @@ import { pathFromHomeChoice } from "./homeIdle";
 import { FAILED_READ_NOTE, isUnreadNote } from "@/lib/docs/accept";
 import {
   addressConfirmPending,
+  cashOutLiveEligible,
+  cashOutLtvOverCap,
   conventionalReadyHoldsReadyLine,
   liveQuoteMatchesDraft,
+  rateflowBlockedReason,
   searchedKeyFor,
   zipFromDraft,
 } from "@/lib/rateflow/fromDraft";
@@ -1407,6 +1410,8 @@ export function applyProductChange(
     pendingOffer: undefined,
     jumboPurpose: nextIntent === "jumbo" ? draft.jumboPurpose : undefined,
     amountPurposeLabel: nextIntent === "other" ? draft.amountPurposeLabel : undefined,
+    cashOut: nextIntent === "refinance" ? draft.cashOut : undefined,
+    refiPurposeAsked: nextIntent === "refinance" ? draft.refiPurposeAsked : undefined,
     correcting: null,
   };
   if (from === "heloc" && nextIntent === "buy") {
@@ -3646,7 +3651,8 @@ export function messagesWithPricingWhenReady(
     return messages;
   }
   const emptyBook =
-    draft.liveQuoteStatus === "unavailable" && !draft.liveQuote && !loanExceedsPropertyValue(draft);
+    (draft.liveQuoteStatus === "unavailable" && !draft.liveQuote && !loanExceedsPropertyValue(draft)) ||
+    cashOutNoPriceReady(draft);
   return [
     ...messages,
     {
@@ -3781,6 +3787,7 @@ export function shouldDeferStillUsefulAsk(draft: FoxIntakeDraft): boolean {
 /** ZIP / address started a live search. Do not speak income on the spinner. */
 export function shouldHoldAskForLiveLine(draft: FoxIntakeDraft) {
   if (loanExceedsPropertyValue(draft)) return false;
+  if (cashOutNoPriceReady(draft)) return false;
   if (draft.liveCouponSettled || draft.pendingLiveCoupon) return false;
   if (draft.pendingProposal || draft.pendingConflict || draft.pendingAddress) return false;
   if (liveQuoteReady(draft)) return false;
@@ -3804,6 +3811,12 @@ export function nextFoxAsk(draft: FoxIntakeDraft): {
   }
   if (needsLtvConfirm(draft) && !draft.correcting) {
     return workspacePromptCopy("ltv-confirm", draft);
+  }
+  if (cashOutNoPriceReady(draft) && !draft.liveQuote) {
+    return {
+      text: NO_CONVENTIONAL_PRICE_LINE,
+      actions: loanOverValueActions(),
+    };
   }
   if (draft.liveQuoteStatus === "unavailable" && !draft.liveCouponSettled && !draft.liveQuote) {
     if (loanExceedsPropertyValue(draft)) {
@@ -3988,6 +4001,7 @@ export function deskStripActions(
 
   if (isYearsInBusinessAskText(message.text)) return yearsInBusinessSkipActions();
   if (isMonthlyDebtsAskText(message.text)) return monthlyDebtsSkipActions();
+  if (isRefiPurposeAskText(message.text)) return refiPurposeActions();
   if (isPropertyTypeAskText(message.text)) return propertyTypeAskActions();
   if (isLooksRightAskText(message.text)) {
     if (draft.pendingProposal || draft.pendingConflict || messageHasOpenUseThisConfirm(message)) {
@@ -4162,6 +4176,7 @@ export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
     if (isRefiLike(draft) && hasLoanAmount(draft)) return "value";
     return draftUsesPurchasePrice(draft) && !hasPropertyValue(draft) ? "value" : "amount";
   }
+  if (needsRefiPurposeAsk(draft)) return "refi-purpose";
   if (!propertyTypeSettled(draft)) return "property-type";
   if (subjectLeaseAskNeeded(draft)) return "subject-lease";
   if (
@@ -4333,6 +4348,12 @@ function workspaceAskCopy(
     return {
       text: ltvConfirmCopy(draft),
       actions: ltvConfirmActions(draft),
+    };
+  }
+  if (prompt === "refi-purpose") {
+    return {
+      text: REFI_PURPOSE_ASK,
+      actions: refiPurposeActions(),
     };
   }
   if (prompt === "occupancy") {
@@ -4860,6 +4881,109 @@ export function loanOverPriceActions(): FoxAction[] {
 
 export const LOAN_OVER_VALUE_LINE = "The loan is larger than the house.";
 
+export const REFI_PURPOSE_ASK =
+  "Is this cash out — money to you at closing — or a new rate on what you owe?";
+export const REFI_PURPOSE_CASH_OUT = "Cash-out";
+export const REFI_PURPOSE_RATE_TERM = "Rate-and-term / limited cash-out";
+
+export function needsRefiPurposeAsk(draft: FoxIntakeDraft) {
+  if (draft.sampleAccepted) return false;
+  if (draft.productIntent !== "refinance") return false;
+  if (draft.refiPurposeAsked || draft.cashOut) return false;
+  if (!hasLoanAmount(draft) || !hasPropertyValue(draft)) return false;
+  if (loanExceedsPropertyValue(draft)) return false;
+  if (needsOverValueCheck(draft) || needsLtvConfirm(draft)) return false;
+  if (draft.correcting) return false;
+  if (draft.pendingProposal || draft.pendingConflict || draft.pendingAddress) return false;
+  return true;
+}
+
+export function refiPurposeFileValue(draft?: FoxIntakeDraft | null): string | undefined {
+  if (!draft || draft.productIntent !== "refinance") return undefined;
+  if (draft.cashOut) return REFI_PURPOSE_CASH_OUT;
+  if (draft.refiPurposeAsked) return REFI_PURPOSE_RATE_TERM;
+  return undefined;
+}
+
+export function writeRefiPurpose(
+  draft: FoxIntakeDraft,
+  choice: "cash-out" | "rate-term" | "skip",
+): FoxIntakeDraft {
+  return {
+    ...draft,
+    cashOut: choice === "cash-out",
+    refiPurposeAsked: true,
+    correcting: null,
+    correctingLine: null,
+  };
+}
+
+export function refiPurposeActions(): FoxAction[] {
+  return [
+    {
+      id: "refi-purpose-cash-out",
+      label: "Cash out",
+      event: "bubble",
+      capture: { field: "refiPurpose", value: "cash-out" },
+    },
+    {
+      id: "refi-purpose-new-rate",
+      label: "New rate",
+      event: "bubble",
+      capture: { field: "refiPurpose", value: "rate-term" },
+    },
+    {
+      id: "refi-purpose-skip",
+      label: "Skip",
+      event: "bubble",
+      capture: { field: "refiPurpose", value: "skip" },
+    },
+  ];
+}
+
+export function isRefiPurposeAskText(text?: string) {
+  return /cash out — money to you at closing|new rate on what you owe/i.test(String(text ?? ""));
+}
+
+function parseRefiPurposeChoice(text: string): "cash-out" | "rate-term" | "skip" | null {
+  const lower = text.trim().toLowerCase().replace(/[’']/g, "'");
+  if (/^skip( for now)?$/.test(lower) || isCouponSkipText(text)) return "skip";
+  if (/^new rate$/.test(lower) || /^rate[-\s]?and[-\s]?term$/.test(lower)) return "rate-term";
+  if (/^cash[-\s]?out$/.test(lower) || namedCashOut(text)) return "cash-out";
+  return null;
+}
+
+function replyToRefiPurposeAsk(
+  q: string,
+  draft: FoxIntakeDraft,
+): {
+  text: string;
+  followUp?: string;
+  facts?: PreviewFact[];
+  actions?: FoxAction[];
+  capture?: Capture;
+} {
+  const choice = parseRefiPurposeChoice(q);
+  if (choice) {
+    const nextDraft = writeRefiPurpose(draft, choice);
+    return {
+      ...nextFoxAsk(nextDraft),
+      capture: { field: "refiPurpose", value: choice },
+    };
+  }
+  const answered = foxAnswer(q, factsFromDraft(draft));
+  if (answered) {
+    return {
+      ...restoredAsk(answered.text, draft),
+      actions: refiPurposeActions(),
+    };
+  }
+  return {
+    text: REFI_PURPOSE_ASK,
+    actions: refiPurposeActions(),
+  };
+}
+
 export function needsOverValueCheck(draft: FoxIntakeDraft) {
   if (draft.pendingProposal) return false;
   if (draft.overValueSkipped) return false;
@@ -5015,8 +5139,16 @@ export function loanOverValueCopy() {
 
 export function isRefiEmptyBook(draft?: FoxIntakeDraft | null) {
   if (!draft || !isRefiLike(draft) || draft.liveCouponSettled) return false;
+  if (cashOutNoPriceReady(draft)) return true;
   if (draft.liveQuoteStatus !== "unavailable" || draft.liveQuote) return false;
   return hasLoanAmount(draft) && hasPropertyValue(draft);
+}
+
+/** Cash-out over the conventional cap, after House + FICO + CA ZIP would otherwise price. */
+export function cashOutNoPriceReady(draft?: FoxIntakeDraft | null) {
+  if (!draft?.cashOut || draft.productIntent !== "refinance" || draft.liveCouponSettled) return false;
+  if (!cashOutLtvOverCap(draft) || loanExceedsPropertyValue(draft)) return false;
+  return rateflowBlockedReason({ ...draft, cashOut: false }) == null;
 }
 
 export function loanOverValueActions(): FoxAction[] {
@@ -5656,6 +5788,7 @@ export function editPromptFromCapture(capture?: Capture): FoxPrompt | undefined 
   if (capture.field === "path") return "path-switch";
   if (capture.field === "productIntent" || capture.field === "starter") return "product";
   if (capture.field === "jumboPurpose") return "jumbo-purpose";
+  if (capture.field === "refiPurpose" || capture.field === "cashOut") return "refi-purpose";
   if (
     capture.field === "accept-jumbo" ||
     capture.field === "decline-jumbo" ||
@@ -6652,7 +6785,8 @@ function draftAfterCaptureBody(draft: FoxIntakeDraft, capture: Capture): FoxInta
   if (capture.field === "statedOtherReo" && isStatedOtherReo(capture.value)) {
     return writeStatedOtherReo(next, capture.value);
   }
-  if (capture.field === "cashOut") return { ...next, cashOut: true };
+  if (capture.field === "cashOut") return { ...next, cashOut: true, refiPurposeAsked: true };
+  if (capture.field === "refiPurpose") return writeRefiPurpose(next, capture.value);
   if (capture.field === "over-price-confirm") {
     if (!loanExceedsPurchasePrice(draft)) {
       return { ...next, overPriceConfirmed: false };
@@ -6992,7 +7126,13 @@ function matrixReply(
   }
 
   if (namedCashOut(text) && !draft.cashOut && isRefiLike(draft)) {
-    const nextDraft = { ...draft, cashOut: true };
+    const nextDraft = { ...draft, cashOut: true, refiPurposeAsked: true };
+    if (cashOutLiveEligible(nextDraft) || cashOutLtvOverCap(nextDraft)) {
+      return {
+        ...nextFoxAsk(nextDraft),
+        capture: { field: "cashOut" },
+      };
+    }
     return continueAfterFlag(cashOutCopy(nextDraft), nextDraft, { field: "cashOut" });
   }
 
@@ -7187,6 +7327,16 @@ export function workspaceReply(
   }
   if (prompt === "over-value" || (needsOverValueCheck(draft) && !draft.correcting)) {
     return replyToOverValueAsk(q, draft);
+  }
+  if (
+    (isRefiEmptyBook(draft) || cashOutNoPriceReady(draft)) &&
+    nextFoxAsk(draft).text === NO_CONVENTIONAL_PRICE_LINE &&
+    (isCouponSkipText(q) || /^skip$/.test(lower))
+  ) {
+    return replyToOverValueAsk(q, draft);
+  }
+  if (prompt === "refi-purpose" || (needsRefiPurposeAsk(draft) && !draft.correcting)) {
+    return replyToRefiPurposeAsk(q, draft);
   }
   const notepadEdit = notepadEditPrompt(draft);
 
@@ -9320,6 +9470,14 @@ export function previewFacts(draft: FoxIntakeDraft): PreviewFact[] {
       value: productIntentLabel(intent),
     });
   }
+  const purpose = refiPurposeFileValue(draft);
+  if (purpose) {
+    facts.push({
+      id: "purpose",
+      label: "Purpose",
+      value: purpose,
+    });
+  }
 
   const hideWageEmployment = wageEmploymentUnconfirmed(draft);
   const wageEmploymentLine = hideWageEmployment ? "" : wageEmploymentFileLine(draft);
@@ -10175,6 +10333,7 @@ export function structureExplainCopy(
 const CHAT_SUMMARY_IDS = new Set([
   "path",
   "product",
+  "purpose",
   "occupancy",
   "timeline",
   "numbers",

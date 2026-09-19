@@ -788,6 +788,7 @@ function withRefiFunds(
     loanAmountValue: loan,
     valueAsked: true,
     propertyValueAmount: value,
+    refiPurposeAsked: true,
   });
 }
 
@@ -2197,6 +2198,7 @@ const founderRefiReady = draft({
   propertyValueAmount: 850000,
   amountAsked: true,
   loanAmountValue: 680000,
+  refiPurposeAsked: true,
   propertyType: "sfr",
   propertyTypeAsked: true,
   creditAsked: true,
@@ -2330,11 +2332,12 @@ assert.equal(rateflowClientBodyFromDraft({ ...founderRefiAddress, productIntent:
 assert.equal(rateflowClientBodyFromDraft({ ...founderRefiAddress, govProgram: "fha" }), null);
 assert.equal(rateflowClientBodyFromDraft({ ...founderRefiAddress, govProgram: "va" }), null);
 assert.equal(rateflowClientBodyFromDraft({ ...founderRefiAddress, govProgram: "usda" }), null);
-assert.equal(rateflowClientBodyFromDraft({ ...founderRefiAddress, cashOut: true }), null);
+assert.equal(rateflowClientBodyFromDraft({ ...founderRefiAddress, cashOut: true })?.loan_purpose, "refinance");
+assert.equal(rateflowClientBodyFromDraft({ ...founderRefiAddress, cashOut: true })?.cash_out, 2001);
 assert.equal(workspacePrompt({ ...founderRefiAddress, cashOut: true }), "income");
 assert.ok(
   previewFacts({ ...founderRefiAddress, cashOut: true }).some(
-    (fact) => fact.id === "rate" && fact.value === PRICING_WHEN_READY,
+    (fact) => fact.id === "purpose" && fact.value === "Cash-out",
   ),
 );
 const founderRefiCashOutFirst = workspaceReply("This is a cash-out refinance", founderRefiReady);
@@ -2344,7 +2347,8 @@ const founderRefiCashOutFile = {
   ...founderRefiAddress,
   cashOut: true,
 };
-assert.equal(rateflowClientBodyFromDraft(founderRefiCashOutFile), null);
+assert.equal(rateflowClientBodyFromDraft(founderRefiCashOutFile)?.loan_purpose, "refinance");
+assert.equal(rateflowClientBodyFromDraft(founderRefiCashOutFile)?.cash_out, 2001);
 assert.equal(workspacePrompt(founderRefiCashOutFile), "income");
 const founderRefiAccepted = resolveProposal(
   proposeAddressAndAdoptZip(founderRefiReady, "500 Market St, San Francisco, CA 94105"),
@@ -4299,6 +4303,7 @@ const harborMarinaReady = draft({
   propertyValueAmount: 1000000,
   amountAsked: true,
   loanAmountValue: 500000,
+  refiPurposeAsked: true,
   propertyType: "sfr",
   propertyTypeAsked: true,
   creditAsked: true,
