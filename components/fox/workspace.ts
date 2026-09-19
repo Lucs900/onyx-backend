@@ -4008,6 +4008,9 @@ export function nextFoxAsk(draft: FoxIntakeDraft): {
   if (entityYearsOpen(draft)) {
     return workspacePromptCopy("confirm-proposal", draft);
   }
+  if (whoOnLoanNameAskNeeded(draft) || whoOnLoanAskNeeded(draft)) {
+    return whoOnLoanAskCopy(draft);
+  }
   if (
     !draft.sampleAccepted &&
     draft.awaitingYearsInBusiness &&

@@ -2227,12 +2227,15 @@ async function skipDebtsIfOpen(page: Page) {
     if (/other monthly debts/i.test(text) && hasChip(chips, "Skip")) {
       await clickChip(page, "Skip");
       await waitCurrent(page, (next) => !/other monthly debts/i.test(next), 15_000);
-      return;
+      continue;
     }
-    if (/Drop last year|government ID|latest paystub/i.test(text)) {
+    if (/Drop last year|government ID|latest paystub/i.test(text) && !isWhoOnLoanTurn(text, chips)) {
       return;
     }
     await page.waitForTimeout(150);
+  }
+  if (isWhoOnLoanTurn(await currentText(page), await currentChips(page))) {
+    throw new BeatFail(`who-on-loan still open after Just me — ${await currentText(page)}`);
   }
 }
 

@@ -14,9 +14,11 @@ import {
   notePageOtherName,
   parseWhoOnLoan,
   whoOnLoanAskNeeded,
+  withWhoOnLoanDue,
   writeWhoOnLoan,
   writeWhoOnLoanName,
 } from "../components/fox/whoOnLoan";
+import { withIncomeTypeYearsAsk } from "../components/fox/completeness";
 import { stillUsefulLabels, stillUsefulSection } from "../components/fox/fileWrite";
 import { acceptWageExtract } from "../components/fox/qualifyingIncome";
 import { fileHasMultipleBorrowers } from "../components/fox/coborrowerName";
@@ -93,6 +95,29 @@ function main() {
   const afterHelocW2 = workspaceReply("W-2", thinHeloc());
   assert.equal(afterHelocW2?.text, WHO_ON_LOAN_ASK);
   assert.deepEqual(labels(afterHelocW2?.actions), ["Yes", "Just me", "Skip"]);
+
+  const chipW2 = withWhoOnLoanDue(
+    withIncomeTypeYearsAsk({
+      ...unnamed,
+      incomeType: { ...emptyDraft().incomeType, value: "w2" },
+      incomeAsked: true,
+    }),
+  );
+  assert.equal(chipW2.whoOnLoanDue, true);
+  assert.equal(chipW2.awaitingMonthlyDebts, true);
+  assert.equal(workspacePrompt(chipW2), "who-on-loan");
+  assert.equal(nextFoxAsk(chipW2).text, WHO_ON_LOAN_ASK);
+  assert.deepEqual(labels(nextFoxAsk(chipW2).actions), ["Yes", "Just me", "Skip"]);
+
+  const chipSe = withWhoOnLoanDue(
+    withIncomeTypeYearsAsk({
+      ...unnamed,
+      incomeType: { ...emptyDraft().incomeType, value: "self-employed" },
+      incomeAsked: true,
+    }),
+  );
+  assert.equal(chipSe.awaitingYearsInBusiness, true);
+  assert.equal(nextFoxAsk(chipSe).text, WHO_ON_LOAN_ASK);
 
   const namedFirst = writeWhoOnLoan(
     {
