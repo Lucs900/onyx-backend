@@ -3362,7 +3362,13 @@ export function skipWageFrequency(draft: FoxIntakeDraft): FoxIntakeDraft {
 }
 
 export function skipWageStub(draft: FoxIntakeDraft): FoxIntakeDraft {
-  return { ...draft, wageStubAsked: true, pendingProposal: null, looksRightHold: false };
+  return {
+    ...draft,
+    wageStubAsked: true,
+    wageFrequencyAsked: (draft.skippedClasses ?? []).includes("w2") ? true : draft.wageFrequencyAsked,
+    pendingProposal: null,
+    looksRightHold: false,
+  };
 }
 
 export function paystubExtractedCount(draft: FoxIntakeDraft): number {

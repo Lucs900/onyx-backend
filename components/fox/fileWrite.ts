@@ -4645,9 +4645,16 @@ export function offeringDocStart(_draft: FoxIntakeDraft) {
   return false;
 }
 
+/** Skip W-2 then Skip stub is an answer. Do not invent a monthly. */
+export function wageDocsSkipIsAnswer(draft: FoxIntakeDraft) {
+  if (!((draft.skippedClasses ?? []).includes("w2"))) return false;
+  return Boolean(draft.wageStubAsked || (draft.skippedClasses ?? []).includes("paystub"));
+}
+
 /** Box 5, pay frequency, and stub monthly asked or skipped. No invented monthly. */
 export function wageNumberPathSettled(draft: FoxIntakeDraft) {
-  return Boolean(draft.wageBox5Asked && draft.wageFrequencyAsked && draft.wageStubAsked);
+  if (draft.wageBox5Asked && draft.wageFrequencyAsked && draft.wageStubAsked) return true;
+  return wageDocsSkipIsAnswer(draft);
 }
 
 /** Extracted W-2 + stub on the file — not a skip-only package. */
@@ -5193,6 +5200,10 @@ export function skipCurrentInvite(draft: FoxIntakeDraft): FoxIntakeDraft {
     ...draft,
     skippedClasses: skipped,
     wageStubAsked: kind === "paystub" ? true : draft.wageStubAsked,
+    wageFrequencyAsked:
+      kind === "paystub" && (draft.skippedClasses ?? []).includes("w2")
+        ? true
+        : draft.wageFrequencyAsked,
     looksRightHold: kind === "paystub" ? false : draft.looksRightHold,
     docsOpen: false,
     correcting: null,

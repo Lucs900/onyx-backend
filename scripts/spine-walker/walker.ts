@@ -2072,6 +2072,9 @@ async function walkHeloc500400100ToLooksRight(page: Page) {
     if (/What line do you want available/i.test(text)) {
       throw new BeatFail(`HELOC reprinted line ask before Looks right — ${text}`);
     }
+    if (/required amount on this file/i.test(text)) {
+      throw new BeatFail(`HELOC required-amount loop after Skip papers — ${text}`);
+    }
     if (hasChip(chips, "Looks right") || /look right|complete enough to move|I can send this to review/i.test(text)) {
       return { io };
     }
@@ -2107,6 +2110,12 @@ async function case34(page: Page) {
   );
   if (/What line do you want available/i.test(gate.text)) {
     throw new BeatFail(`Looks right reprinted the line ask — ${gate.text}`);
+  }
+  if (/required amount on this file/i.test(gate.text) || (gate.chips.length === 0 && /required amount/i.test(gate.text))) {
+    throw new BeatFail(`Looks right gate was the required-amount loop — ${gate.text}`);
+  }
+  if (!hasChip(gate.chips, "Looks right") && !/look right|I can send this to review/i.test(gate.text)) {
+    throw new BeatFail(`after Skip W-2 + Skip stub expected Looks right chips — ${gate.chips.join(" · ") || "(none)"} | ${gate.text}`);
   }
   if (hasChip(gate.chips, "Looks right")) {
     await clickChip(page, "Looks right");

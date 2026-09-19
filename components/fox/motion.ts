@@ -9,7 +9,8 @@ import {
   stillUsefulLabels,
   stillUsefulSpokenItems,
 } from "./fileWrite";
-import { canLooksRight, shouldEscalate } from "./completeness";
+import { canLooksRight, isHelocFile, hasHelocLine, shouldEscalate } from "./completeness";
+import { wageDocsSkipIsAnswer } from "./fileWrite";
 import { maybeProposeQualifyingFromTaxFile, QUALIFYING_INCOME_FIELD } from "./qualifyingIncome";
 import type {
   Capture,
@@ -435,7 +436,7 @@ function inQueueActions(draft: FoxIntakeDraft): FoxAction[] {
 }
 
 export function finishLineActions(draft: FoxIntakeDraft): FoxAction[] {
-  if (!w2FinishDocsReady(draft)) return [];
+  if (!w2FinishDocsReady(draft) && !(isHelocFile(draft) && draft.sampleAccepted)) return [];
   const motion = motionOf(draft);
   if (inQueueEnding(draft)) return inQueueActions(draft);
   if (draft.pendingFinish && emailFinishGateOpen(draft)) {
@@ -468,7 +469,20 @@ export function finishLineActions(draft: FoxIntakeDraft): FoxAction[] {
 export function applyLooksRightMotion(draft: FoxIntakeDraft): FoxIntakeDraft {
   const held = maybeProposeQualifyingFromTaxFile(draft);
   if (held.pendingProposal?.field === QUALIFYING_INCOME_FIELD) return held;
-  if (!canLooksRight(held) && !held.sampleAccepted) return held;
+  if (!canLooksRight(held) && !held.sampleAccepted) {
+    if (
+      !(
+        isHelocFile(held) &&
+        hasHelocLine(held) &&
+        wageDocsSkipIsAnswer(held) &&
+        !held.pendingProposal &&
+        !held.pendingConflict &&
+        !held.pendingAddress
+      )
+    ) {
+      return held;
+    }
+  }
   draft = held;
   if (shouldEscalate(draft)) {
     return applyEscalateMotion(

@@ -36,6 +36,7 @@ import {
   federalReturnConfirmCopy,
   sameThinCoverRepeat,
   valuesMatch,
+  wageDocsSkipIsAnswer,
   wageNumberPathSettled,
   TAX_RETURN_NAME_FIELD,
   packetSawK1OrScheduleC,
@@ -2122,6 +2123,7 @@ export function wageBox5AskNeeded(draft: FoxIntakeDraft) {
 export function wageFrequencyAskNeeded(draft: FoxIntakeDraft) {
   if (employmentOnFile(draft) || qualifyingIncomeOnFile(draft)) return false;
   if (stubExtractAskOpen(draft) || stubPeriodConfirmOpen(draft)) return false;
+  if (wageDocsSkipIsAnswer(draft)) return false;
   return wageThreadOpen(draft) && Boolean(draft.wageBox5Asked) && !draft.wageFrequencyAsked;
 }
 

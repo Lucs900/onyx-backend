@@ -3,7 +3,8 @@
  */
 import assert from "node:assert/strict";
 import { emptyDraft } from "../components/fox/store";
-import { canLooksRight } from "../components/fox/completeness";
+import { canLooksRight, isLooksRightAskText } from "../components/fox/completeness";
+import { skipCurrentInvite } from "../components/fox/fileWrite";
 import {
   HELOC_LINE_ASK,
   hasHelocLineAmount,
@@ -13,7 +14,10 @@ import {
   writeFirstLien,
   writeHelocLine,
 } from "../components/fox/heloc";
+import { skipMonthlyDebts } from "../components/fox/monthlyDebts";
 import { applyLooksRightMotion, finishLineActions } from "../components/fox/motion";
+import { skipWageDocs } from "../components/fox/qualifyingIncome";
+import { writeWhoOnLoan } from "../components/fox/whoOnLoan";
 import {
   amountAskText,
   nextFoxAsk,
@@ -134,8 +138,41 @@ function main() {
   assert.doesNotMatch(typedLooks?.text ?? "", /What line do you want available/i);
   assert.ok((typedLooks?.text ?? "").trim(), "typed looks right cannot leave an empty composer");
 
+  let wage = {
+    ...quoted,
+    incomeAsked: true,
+    incomeType: { ...emptyDraft().incomeType, value: "w2" as const },
+    whoOnLoan: undefined,
+    whoOnLoanAsked: false,
+    householdAsked: false,
+    monthlyDebtsAsked: false,
+  };
+  wage = writeWhoOnLoan(wage, "just-me");
+  wage = skipMonthlyDebts(wage);
+  wage = skipWageDocs(wage);
+  assert.match(nextFoxAsk(wage).text, /paystub/i);
+  assert.doesNotMatch(nextFoxAsk(wage).text, /required amount on this file/i);
+  wage = skipCurrentInvite(wage);
+  assert.doesNotMatch(nextFoxAsk(wage).text, /required amount on this file/i);
+  assert.doesNotMatch(nextFoxAsk(wage).text, /What line do you want available/i);
+  assert.ok(isLooksRightAskText(nextFoxAsk(wage).text), `after Skip stub — ${nextFoxAsk(wage).text}`);
+  assert.ok(canLooksRight(wage), "Skip W-2 + Skip stub must not gate Looks right on a dollar");
+  assert.deepEqual(labels(nextFoxAsk(wage).actions), ["Looks right", "Needs a correction"]);
+  assert.equal(wage.loanAmountValue, 100_000);
+  const afterWageLooks = applyLooksRightMotion(wage);
+  assert.equal(afterWageLooks.sampleAccepted, true);
+  assert.equal(afterWageLooks.loanAmountValue, 100_000);
+  assert.equal(withHelocToolQuote(afterWageLooks).liveQuote?.interestOnly, io);
+  const finishWage = labels(nextFoxAsk(afterWageLooks).actions);
+  assert.ok(finishWage.includes("Proceed"), `after Looks right ${finishWage.join(" · ")}`);
+  assert.ok(finishWage.includes("Not yet"));
+  assert.ok(finishWage.includes("Upload more"));
+  const typedAfterSkip = workspaceReply("looks right", wage);
+  assert.doesNotMatch(typedAfterSkip?.text ?? "", /required amount on this file/i);
+  assert.ok((typedAfterSkip?.text ?? "").trim(), "typed looks right after Skip stub cannot empty the composer");
+
   console.log(
-    "assert-heloc-line-sticky: 500/400/100 Looks right does not reprint line; Skip is no-op on $100,000 / IO",
+    "assert-heloc-line-sticky: 500/400/100 Looks right does not reprint line; Skip W-2+stub is Looks right; Skip is no-op on $100,000 / IO",
   );
 }
 

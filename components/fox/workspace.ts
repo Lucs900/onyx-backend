@@ -1700,6 +1700,30 @@ export function looksRightAskCopy(draft: FoxIntakeDraft) {
   return incomeFilledForLooksRight(draft) ? LOOKS_RIGHT_COMPLETE_ASK : LOOKS_RIGHT_MOVE_ASK;
 }
 
+/** Completeness is a signal. Never reprint a written HELOC line. Never the required-amount loop. */
+function namedMissingAmountAsk(draft: FoxIntakeDraft) {
+  const missing = missingAmountAsk(draft);
+  if (!missing) return "";
+  if (isHelocFile(draft) && hasHelocLineAmount(draft) && /What line do you want available/i.test(missing)) {
+    return "";
+  }
+  return missing;
+}
+
+function reviewLooksRightSpeak(draft: FoxIntakeDraft) {
+  if (draft.pendingProposal || draft.pendingConflict || draft.pendingAddress) {
+    return workspacePromptCopy("confirm-proposal", draft);
+  }
+  if (!canLooksRight(draft)) {
+    const missing = namedMissingAmountAsk(draft);
+    if (missing) return { text: missing };
+  }
+  return {
+    text: looksRightAskCopy(draft),
+    actions: looksRightAskActions(),
+  };
+}
+
 export function incomeSettled(draft: FoxIntakeDraft) {
   return Boolean(draft.incomeAsked || draft.incomeType.value || incomeEvidenceOnFile(draft));
 }
@@ -4807,17 +4831,7 @@ function workspaceAskCopy(
     return { text: "I’m preparing your file." };
   }
   if (prompt === "review") {
-    if (!canLooksRight(draft) || draft.pendingProposal || draft.pendingConflict || draft.pendingAddress) {
-      const missing = missingAmountAsk(draft);
-      return {
-        text: missing || "I still need a required amount on this file.",
-        actions: undefined,
-      };
-    }
-    return {
-      text: looksRightAskCopy(draft),
-      actions: looksRightAskActions(),
-    };
+    return reviewLooksRightSpeak(draft);
   }
   if (prompt === "correct") {
     return correctionAsk(draft);
@@ -9567,9 +9581,8 @@ export function workspaceReply(
         };
       }
       if (!canLooksRight(draft)) {
-        return {
-          text: missingAmountAsk(draft) || "I still need a required amount on this file.",
-        };
+        const missing = namedMissingAmountAsk(draft);
+        if (missing) return { text: missing };
       }
       return openLooksRightFinish(draft);
     }
