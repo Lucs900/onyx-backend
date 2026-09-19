@@ -289,6 +289,11 @@ export type FoxIntakeDraft = {
   /** After one Structure number writes and LTV can stand, confirm the other number once. */
   ltvConfirm?: "loan" | "value";
   loanAmountValue?: number;
+  /** Existing first-lien payoff. HELOC only. Not the HELOC line. */
+  firstLienAmount?: number;
+  firstLienAsked?: boolean;
+  /** HELOC line was typed or Skip. Skip does not invent a File line. */
+  helocLineAsked?: boolean;
   propertyValueAmount?: number;
   downPaymentAmount?: number;
   amountAsked?: boolean;
@@ -630,6 +635,7 @@ export type FoxPrompt =
   | "over-value"
   | "ltv-confirm"
   | "refi-purpose"
+  | "first-lien"
   | "housing"
   | "subject-lease"
   | "citizenship"
@@ -713,6 +719,9 @@ export type Capture =
   | { field: "cashOut" }
   | { field: "refiPurpose"; value: "cash-out" | "rate-term" | "skip" }
   | { field: "loanAmount"; value: string }
+  | { field: "firstLien"; value: string }
+  | { field: "helocLine"; value: string }
+  | { field: "skip-heloc-line" }
   | { field: "propertyValue"; value: string }
   | { field: "downPayment"; value: string }
   | { field: "amountPurpose"; value: string }

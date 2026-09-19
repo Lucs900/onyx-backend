@@ -101,6 +101,7 @@ import {
   withMatrixAfterAmount,
   workspacePrompt,
 } from "./workspace";
+import { skipHelocLine, writeFirstLien, writeHelocLine } from "./heloc";
 import { changeEntityYears } from "./yearsFromEntity";
 import {
   START_PATH_KEY,
@@ -552,6 +553,9 @@ function normalize(value: unknown): FoxIntakeDraft {
     overValueSkipped: Boolean(raw.overValueSkipped),
     ltvConfirm: raw.ltvConfirm === "loan" || raw.ltvConfirm === "value" ? raw.ltvConfirm : undefined,
     loanAmountValue: numberOrUndefined(raw.loanAmountValue),
+    firstLienAmount: numberOrUndefined(raw.firstLienAmount),
+    firstLienAsked: Boolean(raw.firstLienAsked || (Number(raw.firstLienAmount) > 0)),
+    helocLineAsked: Boolean(raw.helocLineAsked),
     propertyValueAmount: numberOrUndefined(raw.propertyValueAmount),
     downPaymentAmount: numberOrUndefined(raw.downPaymentAmount),
     amountAsked: Boolean(raw.amountAsked),
@@ -2726,12 +2730,28 @@ function applyCaptureBody(capture: Capture) {
       correcting: null,
     });
   }
+  if (capture.field === "firstLien") {
+    const value = captureMoney(capture.value);
+    if (value == null) return current;
+    return commit(writeFirstLien({ ...current, pendingProposal: null }, value));
+  }
+  if (capture.field === "helocLine") {
+    const value = captureMoney(capture.value);
+    if (value == null) return current;
+    return commit(writeHelocLine({ ...current, ...clearLiveQuote(), pendingProposal: null }, value));
+  }
+  if (capture.field === "skip-heloc-line") {
+    return commit(skipHelocLine({ ...current, pendingProposal: null }));
+  }
   if (capture.field === "loanAmount") {
     const [loanRaw, valueRaw] = capture.value.split(":");
     const loan = captureMoney(loanRaw);
     const value = valueRaw ? captureMoney(valueRaw) : undefined;
     const hasLoan = loan != null;
     const hasValue = value != null;
+    if (current.productIntent === "heloc" && hasLoan) {
+      return commit(writeHelocLine({ ...current, ...clearLiveQuote() }, loan));
+    }
     return commit(
       withWorkspaceScenario(
         afterRefiLoanAmountWrite(

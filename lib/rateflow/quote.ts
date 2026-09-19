@@ -78,6 +78,10 @@ export type RateflowClientBody = {
   city?: string;
   /** Present when File Purpose is Cash-out. Switches LoanSifter off rate-term. */
   cash_out?: number;
+  /** Product HELOC. Never a cash-out first-lien coupon. */
+  heloc?: boolean;
+  first_lien?: number;
+  loan_type?: "conventional" | "heloc";
 };
 
 export type RateflowProductRow = {
@@ -247,6 +251,10 @@ export function rateflowScenarioKey(body: RateflowClientBody): string {
     body.zipcode ?? "",
   ];
   if (body.cash_out != null && body.cash_out > 0) parts.push("cashout");
+  if (body.heloc) {
+    parts.push("heloc");
+    if (body.first_lien != null && body.first_lien > 0) parts.push(String(body.first_lien));
+  }
   return parts.join("|");
 }
 
@@ -272,6 +280,10 @@ export function parseClientBody(input: unknown): RateflowClientBody | null {
   const cashOutRaw = Number(raw.cash_out);
   const cashOut =
     Number.isFinite(cashOutRaw) && cashOutRaw > 0 ? Math.round(cashOutRaw) : undefined;
+  const heloc = raw.heloc === true || raw.loan_type === "heloc";
+  const firstLienRaw = Number(raw.first_lien);
+  const firstLien =
+    Number.isFinite(firstLienRaw) && firstLienRaw > 0 ? Math.round(firstLienRaw) : undefined;
   return {
     loan_purpose: purpose as RateflowPurpose,
     residency_type: residency as RateflowResidency,
@@ -281,7 +293,9 @@ export function parseClientBody(input: unknown): RateflowClientBody | null {
     credit_score: Math.round(credit),
     zipcode: zip,
     ...(city ? { city } : {}),
-    ...(cashOut != null ? { cash_out: cashOut } : {}),
+    ...(heloc ? {} : cashOut != null ? { cash_out: cashOut } : {}),
+    ...(heloc ? { heloc: true, loan_type: "heloc" as const } : {}),
+    ...(heloc && firstLien != null ? { first_lien: firstLien } : {}),
   };
 }
 
@@ -431,6 +445,28 @@ function looksExcludedProduct(text: string): boolean {
   return /fha|va\b|usda|heloc|heloan|non-?qm|jumbo|\barm\b|adjustable/.test(text);
 }
 
+/** HELOC program only. A conventional first-lien coupon is not a HELOC print. */
+export function looksHelocProgram(row: RateflowProductRow): boolean {
+  const text = [row.bbLoanType, row.loanType, row.productName, row.label]
+    .map((part) => String(part ?? "").toLowerCase())
+    .join(" ");
+  if (!text.trim()) return false;
+  if (/\bheloan\b/.test(text) && !/\bheloc\b/.test(text)) return false;
+  return /\bheloc\b|home\s*equity\s*line|equity\s*line\s*of\s*credit/.test(text);
+}
+
+export function pickHelocProgram(rows: RateflowProductRow[]): RateflowProductRow | null {
+  const eligible = rows.filter(
+    (row) => looksHelocProgram(row) && Number.isFinite(Number(row.rate)) && Number(row.rate) > 0,
+  );
+  if (!eligible.length) return null;
+  return [...eligible].sort((left, right) => {
+    const rateDiff = Number(left.rate) - Number(right.rate);
+    if (rateDiff !== 0) return rateDiff;
+    return (pointsFromRow(left) ?? 99) - (pointsFromRow(right) ?? 99);
+  })[0] ?? null;
+}
+
 /** Years. Engines sometimes send months (360 → 30). Rateflow uses `term`. */
 export function termYearsFromRow(row: RateflowProductRow): number | undefined {
   const raw = firstNumber(row.loanTerm, row.amortizationTerm, row.term);
@@ -541,7 +577,9 @@ export function pickLeadRow(
   rows: RateflowProductRow[],
   purpose: RateflowPurpose,
   cashOut = false,
+  heloc = false,
 ): RateflowProductRow | null {
+  if (heloc) return pickHelocProgram(rows);
   if (cashOut) {
     return pickConventional30LowestNoPoints(rows) ?? pickConventional30LowestRate(rows);
   }
@@ -590,21 +628,37 @@ export function vendorReasonFromPayload(payload: unknown): string | undefined {
   return undefined;
 }
 
+function safeCouponFromProduct(row: RateflowProductRow): SafeCouponRow | null {
+  const rate = Number(row.rate);
+  if (!Number.isFinite(rate) || rate <= 0 || rate > 25) return null;
+  const pts = pointsFromRow(row);
+  const pi = Number(row.principalAndInterest);
+  const price = Number(row.price);
+  return {
+    rate,
+    ...(pts != null ? { pts } : {}),
+    ...(Number.isFinite(pi) && pi > 0 ? { principalAndInterest: pi } : {}),
+    ...(Number.isFinite(price) ? { price } : {}),
+  };
+}
+
 export function safeCouponRowsFromProducts(rows: RateflowProductRow[]): SafeCouponRow[] {
   const out: SafeCouponRow[] = [];
   for (const row of rows) {
     if (!isConventional30(row)) continue;
-    const rate = Number(row.rate);
-    if (!Number.isFinite(rate) || rate <= 0 || rate > 25) continue;
-    const pts = pointsFromRow(row);
-    const pi = Number(row.principalAndInterest);
-    const price = Number(row.price);
-    out.push({
-      rate,
-      ...(pts != null ? { pts } : {}),
-      ...(Number.isFinite(pi) && pi > 0 ? { principalAndInterest: pi } : {}),
-      ...(Number.isFinite(price) ? { price } : {}),
-    });
+    const coupon = safeCouponFromProduct(row);
+    if (coupon) out.push(coupon);
+  }
+  return out;
+}
+
+/** HELOC rows only. Never a conventional first-lien coupon. */
+export function safeHelocCouponRowsFromProducts(rows: RateflowProductRow[]): SafeCouponRow[] {
+  const out: SafeCouponRow[] = [];
+  for (const row of rows) {
+    if (!looksHelocProgram(row)) continue;
+    const coupon = safeCouponFromProduct(row);
+    if (coupon) out.push(coupon);
   }
   return out;
 }

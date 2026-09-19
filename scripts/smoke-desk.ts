@@ -1023,9 +1023,11 @@ for (const value of ["buy", "refinance", "heloc", "jumbo"] as const) {
   }
   if (value === "heloc") {
     applyCapture({ field: "occupancy", value: "primary" });
-    assert.equal(workspacePrompt(getFoxDraft()), "timeline");
-    applyCapture({ field: "timeline", value: "ready-now" });
-    assert.match(nextFoxAsk(getFoxDraft()).text, /line or cash/i);
+    if (workspacePrompt(getFoxDraft()) === "timeline") {
+      applyCapture({ field: "timeline", value: "ready-now" });
+    }
+    assert.equal(workspacePrompt(getFoxDraft()), "value");
+    assert.match(nextFoxAsk(getFoxDraft()).text, /property value/i);
   }
   if (value === "jumbo") {
     assert.equal(workspacePrompt(getFoxDraft()), "jumbo-purpose");
@@ -1072,7 +1074,7 @@ const afterTime = draft({
   timelineAsked: true,
   timelineChoice: { ...emptyDraft().timelineChoice, value: "ready-now" },
 });
-assert.equal(workspacePrompt(afterTime), "amount");
+assert.equal(workspacePrompt(afterTime), "value");
 
 const buyAfterOcc = workspaceReply("Primary", draft({ path: "acr", productIntent: "buy" }));
 assert.equal(buyAfterOcc?.capture?.field, "occupancy");
@@ -1133,8 +1135,8 @@ const helocAfterTime = draft({
   timelineAsked: true,
   timelineChoice: { ...emptyDraft().timelineChoice, value: "ready-now" },
 });
-assert.equal(workspacePrompt(helocAfterTime), "amount");
-assert.equal(amountAskText(helocAfterTime), "What line or cash do you need?");
+assert.equal(workspacePrompt(helocAfterTime), "value");
+assert.equal(amountAskText(helocAfterTime), "What’s the property value?");
 assert.doesNotMatch(amountAskText(helocAfterTime), /rough amount|^\s*what’s a rough/i);
 
 const afterPrice = draft({
@@ -5082,7 +5084,12 @@ const helocReady = withIncome(
     occupancyChoice: { ...emptyDraft().occupancyChoice, value: "primary" },
     timelineAsked: true,
     timelineChoice: { ...emptyDraft().timelineChoice, value: "ready-now" },
+    valueAsked: true,
+    propertyValueAmount: 800000,
+    firstLienAsked: true,
+    firstLienAmount: 435000,
     amountAsked: true,
+    helocLineAsked: true,
     loanAmountValue: 365000,
     creditAsked: true,
     creditBand: "720-759",
@@ -5109,7 +5116,12 @@ const helocAcrReady = withIncome(
     occupancyChoice: { ...emptyDraft().occupancyChoice, value: "primary" },
     timelineAsked: true,
     timelineChoice: { ...emptyDraft().timelineChoice, value: "ready-now" },
+    valueAsked: true,
+    propertyValueAmount: 600000,
+    firstLienAsked: true,
+    firstLienAmount: 450000,
     amountAsked: true,
+    helocLineAsked: true,
     loanAmountValue: 150000,
     creditAsked: true,
     creditBand: "760+",

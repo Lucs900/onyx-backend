@@ -12,6 +12,7 @@ import {
   purchaseLeadRow,
   quoteRowSample,
   safeCouponRowsFromProducts,
+  safeHelocCouponRowsFromProducts,
   safeQuoteFromRow,
   vendorReasonFromPayload,
   type RateflowClientBody,
@@ -58,7 +59,7 @@ function sentFromClient(client: RateflowClientBody): RateflowQuoteReport["sent"]
     property_type: client.property_type,
     loan_purpose: client.loan_purpose,
     residency_type: client.residency_type,
-    loan_type: "conventional",
+    loan_type: client.heloc ? "heloc" : "conventional",
     state: "CA",
     zip: client.zipcode,
   };
@@ -140,9 +141,14 @@ function bankingBridgeBody(client: RateflowClientBody) {
     credit_score: client.credit_score,
     loan_purpose: client.loan_purpose,
     residency_type: client.residency_type,
-    loan_type: "conventional",
-    loan_term: 30,
-    ...(client.cash_out != null && client.cash_out > 0 ? { cash_out: client.cash_out } : {}),
+    loan_type: client.heloc ? "heloc" : "conventional",
+    ...(client.heloc ? {} : { loan_term: 30 }),
+    ...(client.heloc && client.first_lien != null && client.first_lien > 0
+      ? { first_lien: client.first_lien }
+      : {}),
+    ...(!client.heloc && client.cash_out != null && client.cash_out > 0
+      ? { cash_out: client.cash_out }
+      : {}),
     property_type: client.property_type,
     // Do not send a par hint. That featured first coupon is not the
     // purchase lead (conventional 30, points <= 0, then lowest rate).
@@ -202,8 +208,9 @@ export async function POST(request: Request) {
         : retryable(buildReport({ client, bbHttpStatus: response.status, resultCount: 0 }));
     }
     const rows = asProductRows(payload);
-    const row =
-      client.loan_purpose === "purchase"
+    const row = client.heloc
+      ? pickLeadRow(rows, client.loan_purpose, false, true)
+      : client.loan_purpose === "purchase"
         ? purchaseLeadRow(rows)
         : pickLeadRow(rows, client.loan_purpose, Boolean(client.cash_out));
     const quote = row ? safeQuoteFromRow(row) : null;
@@ -219,14 +226,20 @@ export async function POST(request: Request) {
       book: conventional30Book(rows),
     });
     if (!quote) {
+      if (client.heloc) {
+        return empty(report, reason || "HELOC programs are not on this Rateflow book.");
+      }
       if (reason) return rejected(report, reason);
       return rows.length ? retryable(report) : empty(report);
     }
     logReport(report);
+    const couponRows = client.heloc
+      ? safeHelocCouponRowsFromProducts(rows)
+      : safeCouponRowsFromProducts(rows);
     return NextResponse.json({
       ok: true,
       quote,
-      rows: safeCouponRowsFromProducts(rows),
+      rows: couponRows,
       report,
     });
   } catch {

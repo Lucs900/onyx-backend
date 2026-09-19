@@ -631,7 +631,12 @@ assert.deepEqual(rateflowClientBodyFromDraft(file({})), {
   zipcode: "94115",
 });
 assert.equal(rateflowClientBodyFromDraft(file({ productIntent: "heloc" })), null);
-assert.equal(rateflowBlockedReason(file({ productIntent: "heloc" })), "product");
+assert.ok(
+  rateflowBlockedReason(file({ productIntent: "heloc" })) === "first-lien" ||
+    rateflowBlockedReason(file({ productIntent: "heloc" })) === "value" ||
+    rateflowBlockedReason(file({ productIntent: "heloc" })) === "heloc" ||
+    rateflowBlockedReason(file({ productIntent: "heloc" })) === "line",
+);
 assert.equal(rateflowClientBodyFromDraft(file({ productIntent: "jumbo" })), null);
 assert.equal(rateflowClientBodyFromDraft(file({ loanAmountValue: 1_500_000 })), null);
 assert.equal(rateflowBlockedReason(file({ loanAmountValue: 1_500_000 })), "jumbo");

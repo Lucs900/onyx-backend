@@ -361,7 +361,9 @@ export function hasDownPayment(draft?: FoxIntakeDraft | null) {
 }
 
 export function hasHelocLine(draft?: FoxIntakeDraft | null) {
-  return isHelocFile(draft) && hasLoanAmount(draft);
+  if (!isHelocFile(draft) || !draft) return false;
+  if ((draft.loanAmountValue ?? 0) > 0) return true;
+  return Boolean(draft.helocLineAsked);
 }
 
 /** Confirmed down ÷ price. Not the price Edit door. */
@@ -421,7 +423,13 @@ export function agencyMinimumsMet(draft?: FoxIntakeDraft | null) {
 }
 
 export function sketchAmountsReady(draft: FoxIntakeDraft) {
-  if (isHelocFile(draft)) return hasHelocLine(draft);
+  if (isHelocFile(draft)) {
+    return (
+      hasPropertyValue(draft) &&
+      (draft.firstLienAmount ?? 0) > 0 &&
+      hasHelocLine(draft)
+    );
+  }
   if (isPurchaseLike(draft) || isRefiLike(draft)) return agencyMinimumsMet(draft);
   if (draft.productIntent === "other") {
     if (!draft.amountPurposeLabel) return Boolean(draft.amountAsked);
@@ -519,7 +527,8 @@ export function requiredStructureLines(draft?: FoxIntakeDraft | null): RequiredL
   if (isHelocFile(draft)) {
     return [
       occupancy,
-      timeline,
+      { id: "home", label: "Property value", prompt: "value" },
+      { id: "first-lien", label: "First lien", prompt: "first-lien" },
       { id: "line", label: "HELOC line", prompt: "amount" },
       credit,
       income,
@@ -2054,6 +2063,7 @@ export function fundsAskNeeded(draft: FoxIntakeDraft) {
 
 export function propertyValueAskNeeded(draft: FoxIntakeDraft) {
   if (draftHasOpenConfirmCard(draft)) return false;
+  if (isHelocFile(draft) && !hasPropertyValue(draft)) return true;
   return isRefiLike(draft) && hasLoanAmount(draft) && !hasPropertyValue(draft);
 }
 
@@ -2072,7 +2082,13 @@ export function missingAmountAsk(draft: FoxIntakeDraft) {
   if (fundsAskNeeded(draft)) return "What’s the down payment or loan amount?";
   if (refiLoanAskNeeded(draft)) return "What’s the approximate loan or payoff amount?";
   if (propertyValueAskNeeded(draft)) return "What’s the property value?";
-  if (isHelocFile(draft) && !hasHelocLine(draft)) return "What line or cash do you need?";
+  if (isHelocFile(draft) && !hasPropertyValue(draft)) return "What’s the property value?";
+  if (isHelocFile(draft) && !((draft.firstLienAmount ?? 0) > 0)) {
+    return "What’s the first lien — what you owe on this home?";
+  }
+  if (isHelocFile(draft) && !hasHelocLine(draft)) {
+    return "What line do you want available? Skip is fine.";
+  }
   return "";
 }
 
@@ -2362,7 +2378,17 @@ export function requiredLineValue(
       filled: n != null && n > 0,
     };
   }
+  if (line.id === "first-lien") {
+    const n = draft.firstLienAmount;
+    return {
+      value: n != null && n > 0 ? `$${Math.round(n).toLocaleString("en-US")}` : MISSING_LINE,
+      filled: n != null && n > 0,
+    };
+  }
   if (line.id === "loan" || line.id === "line" || line.id === "numbers") {
+    if (line.id === "line" && isHelocFile(draft) && draft.helocLineAsked && !((draft.loanAmountValue ?? 0) > 0)) {
+      return { value: "Skip", filled: true };
+    }
     const n = draft.loanAmountValue ?? (line.id === "numbers" ? draft.propertyValueAmount : undefined);
     return {
       value: n != null && n > 0 ? `$${Math.round(n).toLocaleString("en-US")}` : MISSING_LINE,

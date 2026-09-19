@@ -66,6 +66,32 @@ import {
   paintThreadActions,
   type CouponChoice,
 } from "./liveCoupon";
+import {
+  HELOC_FIRST_LIEN_ASK,
+  HELOC_LINE_ASK,
+  HELOC_NO_PREVIEW_LINE,
+  HELOC_NO_PROGRAM_LINE,
+  HELOC_VALUE_ASK,
+  beginHelocCorrection,
+  hasFirstLien,
+  helocFirstLienAskNeeded,
+  helocLineAskActions,
+  helocLineAskNeeded,
+  helocLiveEligible,
+  helocNoPreviewActions,
+  helocNoPreviewReady,
+  helocNoPriceActions,
+  helocPurposeFileValue,
+  helocValueAskNeeded,
+  isHelocChangeFirstLienText,
+  isHelocChangeLineText,
+  isHelocChangeValueText,
+  keepHelocMoney,
+  looksInferredMoney,
+  skipHelocLine,
+  writeFirstLien,
+  writeHelocLine,
+} from "./heloc";
 import { RATEFLOW_WAIT_LINE, isLookupWaitLine, pricingFailedActions } from "./lookupWait";
 import {
   AMOUNT_PURPOSE_BUBBLES,
@@ -184,7 +210,6 @@ import {
   guidelineCaution,
   fundsAskNeeded,
   hasDownPayment,
-  hasHelocLine,
   hasLoanAmount,
   hasPropertyValue,
   impliedDownPayment,
@@ -248,6 +273,7 @@ import {
   ESTIMATED_NOT_FINAL,
   housingAskCopy,
   housingConfirmNeeded,
+  persistLtvCltv,
   skipEstimatedHousing,
   STATED_NOT_FROM_CREDIT,
   syncCalculatorDraft,
@@ -769,7 +795,14 @@ export function productIntentFromQuery(
   const token = raw.trim().toLowerCase();
   if (token === "buy" || token === "purchase") return "buy";
   if (token === "refinance" || token === "refi") return "refinance";
-  if (token === "equity" || token === "use-equity" || token === "use_equity" || token === "heloc") {
+  if (
+    token === "equity" ||
+    token === "use-equity" ||
+    token === "use_equity" ||
+    token === "heloc" ||
+    token === "line-of-credit" ||
+    token === "line_of_credit"
+  ) {
     return "heloc";
   }
   if (token === "jumbo") return "jumbo";
@@ -784,7 +817,7 @@ export function productIntentFromText(text: string): ProductIntent | null {
   if (/\bbuy\b|purchase|buying/.test(lower)) return "buy";
   if (/refinanc|rate.?term|cash.?out/.test(lower)) return "refinance";
   if (/\bjumbo\b/.test(lower)) return "jumbo";
-  if (/use equity|heloc|heloan|home equity|equity line/.test(lower)) {
+  if (/use equity|heloc|heloan|home equity|equity line|line of credit/.test(lower)) {
     return "heloc";
   }
   if (
@@ -1117,7 +1150,18 @@ export function writePurchasePrice(draft: FoxIntakeDraft, price: number): FoxInt
     facts,
   };
   const written =
-    isRefiLike(draft) && hasLoanAmount(draft)
+    isHelocFile(draft)
+      ? keepHelocMoney(draft, {
+          ...next,
+          ...clearLiveQuote(),
+          scenario: draft.scenario
+            ? {
+                ...draft.scenario,
+                propertyValue: price,
+              }
+            : draft.scenario,
+        })
+      : isRefiLike(draft) && hasLoanAmount(draft)
       ? {
           ...next,
           ...clearLiveQuote(),
@@ -1147,7 +1191,7 @@ export function writePurchasePrice(draft: FoxIntakeDraft, price: number): FoxInt
   ) {
     return { ...written, ltvConfirm: "loan" };
   }
-  return written;
+  return isHelocFile(written) ? persistLtvCltv(written) : written;
 }
 
 /** After Change loan writes and value is still short, confirm value once — do not bounce to larger-than-house. */
@@ -1237,7 +1281,24 @@ export function amountAskText(draft: FoxIntakeDraft) {
     if (!hasPropertyValue(draft)) return "What’s the property value?";
     return "";
   }
-  if (intent === "heloc") return "What line or cash do you need?";
+  if (intent === "heloc") {
+    if (helocValueAskNeeded(draft) || draft.correctingLine === "home" || draft.correcting === "value") {
+      return HELOC_VALUE_ASK;
+    }
+    if (helocFirstLienAskNeeded(draft) || draft.correcting === "first-lien" || draft.correctingLine === "first-lien") {
+      const n = draft.firstLienAmount;
+      return n != null && n > 0
+        ? `First lien in the file is ${formatMoney(n)}. Still right?`
+        : HELOC_FIRST_LIEN_ASK;
+    }
+    if (helocLineAskNeeded(draft) || draft.correctingLine === "line") {
+      const n = draft.loanAmountValue;
+      return n != null && n > 0
+        ? `HELOC line in the file is ${formatMoney(n)}. Still right?`
+        : HELOC_LINE_ASK;
+    }
+    return HELOC_LINE_ASK;
+  }
   if (intent === "other") {
     const named = structureAmountLabel(draft);
     if (!named) return "What is that number for?";
@@ -1381,7 +1442,8 @@ export function remapAmountForIntent(draft: FoxIntakeDraft): FoxIntakeDraft {
   if (
     draft.productIntent === "buy" ||
     draft.productIntent === "refinance" ||
-    draft.productIntent === "jumbo"
+    draft.productIntent === "jumbo" ||
+    draft.productIntent === "heloc"
   ) {
     return draft;
   }
@@ -1418,6 +1480,9 @@ export function applyProductChange(
     amountPurposeLabel: nextIntent === "other" ? draft.amountPurposeLabel : undefined,
     cashOut: nextIntent === "refinance" ? draft.cashOut : undefined,
     refiPurposeAsked: nextIntent === "refinance" ? draft.refiPurposeAsked : undefined,
+    firstLienAmount: nextIntent === "heloc" ? draft.firstLienAmount : undefined,
+    firstLienAsked: nextIntent === "heloc" ? draft.firstLienAsked : undefined,
+    helocLineAsked: nextIntent === "heloc" ? draft.helocLineAsked : undefined,
     correcting: null,
   };
   if (from === "heloc" && nextIntent === "buy") {
@@ -3619,7 +3684,9 @@ export function isPricingWhenReadySpeech(message: FoxMessage) {
   return (
     message.id.startsWith("pricing-ready:") ||
     message.text === PRICING_WHEN_READY ||
-    message.text === NO_CONVENTIONAL_PRICE_LINE
+    message.text === NO_CONVENTIONAL_PRICE_LINE ||
+    message.text === HELOC_NO_PROGRAM_LINE ||
+    message.text === HELOC_NO_PREVIEW_LINE
   );
 }
 
@@ -3663,6 +3730,7 @@ export function messagesWithPricingWhenReady(
   const emptyBook =
     (draft.liveQuoteStatus === "unavailable" && !draft.liveQuote && !loanExceedsPropertyValue(draft)) ||
     cashOutNoPriceReady(draft);
+  const helocEmpty = isHelocFile(draft) && (emptyBook || helocNoPreviewReady(draft));
   return [
     ...messages,
     {
@@ -3670,11 +3738,19 @@ export function messagesWithPricingWhenReady(
       role: "fox",
       text: vendorReason
         ? vendorReason
-        : emptyBook
-          ? NO_CONVENTIONAL_PRICE_LINE
-          : PRICING_WHEN_READY,
+        : helocNoPreviewReady(draft)
+          ? HELOC_NO_PREVIEW_LINE
+          : helocEmpty
+            ? HELOC_NO_PROGRAM_LINE
+          : emptyBook
+            ? NO_CONVENTIONAL_PRICE_LINE
+            : PRICING_WHEN_READY,
       actions: loanExceedsPropertyValue(draft)
         ? undefined
+        : helocNoPreviewReady(draft)
+          ? helocNoPreviewActions()
+          : isHelocFile(draft)
+            ? helocNoPriceActions()
         : isRefiEmptyBook(draft)
           ? loanOverValueActions()
           : pricingFailedActions(),
@@ -3742,7 +3818,24 @@ export function previewRateFact(draft: FoxIntakeDraft): PreviewFact | null {
     };
   }
   const occupancy = draft.occupancyChoice?.value;
-  if (intent === "heloc" || intent === "jumbo" || occupancy === "investment") {
+  if (intent === "heloc") {
+    if (helocNoPreviewReady(draft) || !helocLiveEligible(draft)) {
+      return {
+        id: "rate",
+        label: "Rate",
+        value: PRICING_WHEN_READY,
+      };
+    }
+    if (draft.liveQuoteStatus === "unavailable") {
+      return {
+        id: "rate",
+        label: "Rate",
+        value: draft.liveQuoteVendorReason?.trim() || HELOC_NO_PROGRAM_LINE,
+      };
+    }
+    return null;
+  }
+  if (intent === "jumbo" || occupancy === "investment") {
     return {
       id: "rate",
       label: "Rate",
@@ -3832,11 +3925,23 @@ export function nextFoxAsk(draft: FoxIntakeDraft): {
       actions: loanOverValueActions(),
     };
   }
+  if (helocNoPreviewReady(draft) && !draft.liveQuote && !draft.liveCouponSettled) {
+    return {
+      text: HELOC_NO_PREVIEW_LINE,
+      actions: helocNoPreviewActions(),
+    };
+  }
   if (draft.liveQuoteStatus === "unavailable" && !draft.liveCouponSettled && !draft.liveQuote) {
     if (loanExceedsPropertyValue(draft)) {
       return workspacePromptCopy(workspacePrompt(draft), draft);
     }
     const vendorReason = draft.liveQuoteVendorReason?.trim();
+    if (isHelocFile(draft)) {
+      return {
+        text: vendorReason || HELOC_NO_PROGRAM_LINE,
+        actions: helocNoPriceActions(),
+      };
+    }
     return {
       text: vendorReason || NO_CONVENTIONAL_PRICE_LINE,
       actions: isRefiEmptyBook(draft) ? loanOverValueActions() : pricingFailedActions(),
@@ -3988,9 +4093,15 @@ export function deskStripActions(
   if (
     message.text === PRICING_WHEN_READY ||
     message.text === NO_CONVENTIONAL_PRICE_LINE ||
+    message.text === HELOC_NO_PROGRAM_LINE ||
+    message.text === HELOC_NO_PREVIEW_LINE ||
     isPricingWhenReadySpeech(message)
   ) {
     if (loanExceedsPropertyValue(draft)) return [];
+    if (isHelocFile(draft) && helocNoPreviewReady(draft)) {
+      return stripStreetSuggest(helocNoPreviewActions());
+    }
+    if (isHelocFile(draft)) return stripStreetSuggest(helocNoPriceActions());
     if (isRefiEmptyBook(draft)) return stripStreetSuggest(loanOverValueActions());
     return stripStreetSuggest(pricingFailedActions());
   }
@@ -4180,9 +4291,12 @@ export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
   if (!draft.productIntent) return "product";
   if (needsJumboPurpose(draft)) return "jumbo-purpose";
   if (!draft.occupancyAsked && !draft.occupancyChoice.value) return "occupancy";
+  if (isHelocFile(draft) && helocValueAskNeeded(draft)) return "value";
+  if (isHelocFile(draft) && helocFirstLienAskNeeded(draft)) return "first-lien";
+  if (isHelocFile(draft) && helocLineAskNeeded(draft)) return "amount";
   if (purchasePriceAskNeeded(draft)) return "value";
   if (fundsAskNeeded(draft)) return "amount";
-  if (refiLoanAskNeeded(draft) || (isHelocFile(draft) && !hasHelocLine(draft))) return "amount";
+  if (refiLoanAskNeeded(draft)) return "amount";
   if (propertyValueAskNeeded(draft)) return "value";
   if (needsOverPriceCheck(draft)) return "over-price";
   if (needsLtvConfirm(draft)) return "ltv-confirm";
@@ -4407,12 +4521,21 @@ function workspaceAskCopy(
       text: amountAskText(draft),
       actions: askingPurpose
         ? bubbles([...AMOUNT_PURPOSE_BUBBLES], "amountPurpose")
-        : undefined,
+        : isHelocFile(draft) && helocLineAskNeeded(draft)
+          ? helocLineAskActions()
+          : undefined,
+    };
+  }
+  if (prompt === "first-lien") {
+    return {
+      text: amountAskText({ ...draft, correcting: "first-lien", correctingLine: "first-lien" }),
     };
   }
   if (prompt === "value") {
     return {
-      text: amountAskText({ ...draft, productIntent: draft.productIntent ?? "buy" }),
+      text: isHelocFile(draft)
+        ? amountAskText(draft)
+        : amountAskText({ ...draft, productIntent: draft.productIntent ?? "buy" }),
     };
   }
   if (prompt === "credit") {
@@ -4914,6 +5037,8 @@ export function needsRefiPurposeAsk(draft: FoxIntakeDraft) {
 }
 
 export function refiPurposeFileValue(draft?: FoxIntakeDraft | null): string | undefined {
+  const helocPurpose = helocPurposeFileValue(draft);
+  if (helocPurpose) return helocPurpose;
   if (!draft || draft.productIntent !== "refinance") return undefined;
   if (draft.cashOut) return REFI_PURPOSE_CASH_OUT;
   if (draft.refiPurposeAsked) return REFI_PURPOSE_RATE_TERM;
@@ -5376,6 +5501,9 @@ function replyToPropertyValueAsk(
     return keepThisReply(draft);
   }
   if (isUnknownAmount(q)) {
+    if (isHelocFile(draft)) {
+      return { text: `${HELOC_VALUE_ASK} A number works.` };
+    }
     if (isPurchaseLike(draft) || requiredValue || editingPurchasePrice(draft)) {
       return {
         text: `${amountAskText(draft)} A purchase price in dollars works.`,
@@ -5390,6 +5518,20 @@ function replyToPropertyValueAsk(
   const amount = parseAmountPair(q).value ?? parseLooseAmount(q);
   if (amount == null) {
     return answerThenRestore(q, draft);
+  }
+  if (isHelocFile(draft) && looksInferredMoney(q)) {
+    return {
+      text: `I have ${formatMoney(amount)} as the property value. Use this?`,
+      actions: [
+        {
+          id: "use-heloc-value",
+          label: "Use this",
+          event: "bubble",
+          capture: { field: "propertyValue", value: String(amount) },
+        },
+        { id: "change-heloc-value", label: "Change", event: "bubble", capture: { field: "change-proposal" } },
+      ],
+    };
   }
   const nextDraft = writePurchasePrice(draft, amount);
   const next = fundsAskNeeded(nextDraft)
@@ -5806,6 +5948,8 @@ export function editPromptFromCapture(capture?: Capture): FoxPrompt | undefined 
   if (capture.field === "productIntent" || capture.field === "starter") return "product";
   if (capture.field === "jumboPurpose") return "jumbo-purpose";
   if (capture.field === "refiPurpose" || capture.field === "cashOut") return "refi-purpose";
+  if (capture.field === "firstLien") return "first-lien";
+  if (capture.field === "skip-heloc-line" || capture.field === "helocLine") return "amount";
   if (
     capture.field === "accept-jumbo" ||
     capture.field === "decline-jumbo" ||
@@ -6072,13 +6216,20 @@ export function workspaceUpdateCopy(capture: Capture, draft: FoxIntakeDraft) {
       ? `Updated lease to ${formatMoney(n)}.`
       : "Updated lease.";
   }
-  if (capture.field === "loanAmount") {
+  if (capture.field === "loanAmount" || capture.field === "helocLine") {
     const n = Number(capture.value.split(":")[0].replace(/,/g, ""));
     const label = draft.productIntent === "heloc" ? "HELOC line" : "loan amount";
     return Number.isFinite(n) && n > 0
       ? `Updated ${label} to ${formatMoney(n)}.`
       : `Updated ${label}.`;
   }
+  if (capture.field === "firstLien") {
+    const n = Number(String(capture.value).replace(/,/g, ""));
+    return Number.isFinite(n) && n > 0
+      ? `Updated first lien to ${formatMoney(n)}.`
+      : "Updated first lien.";
+  }
+  if (capture.field === "skip-heloc-line") return "Updated. HELOC line left blank.";
   if (capture.field === "propertyValue") {
     const n = Number(capture.value.replace(/,/g, ""));
     const label = isRefiLike(draft) ? "property value" : "purchase price";
@@ -6804,6 +6955,19 @@ function draftAfterCaptureBody(draft: FoxIntakeDraft, capture: Capture): FoxInta
   }
   if (capture.field === "cashOut") return { ...next, cashOut: true, refiPurposeAsked: true };
   if (capture.field === "refiPurpose") return writeRefiPurpose(next, capture.value);
+  if (capture.field === "firstLien") {
+    const n = parseLooseAmount(capture.value) ?? Number(String(capture.value).replace(/[$,\s]/g, ""));
+    if (!Number.isFinite(n) || n <= 0) return next;
+    return { ...writeFirstLien(next, n), pendingProposal: null };
+  }
+  if (capture.field === "helocLine") {
+    const n = parseLooseAmount(capture.value) ?? Number(String(capture.value).replace(/[$,\s]/g, ""));
+    if (!Number.isFinite(n) || n <= 0) return next;
+    return { ...writeHelocLine({ ...next, ...clearLiveQuote() }, n), pendingProposal: null };
+  }
+  if (capture.field === "skip-heloc-line") {
+    return { ...skipHelocLine(next), pendingProposal: null };
+  }
   if (capture.field === "over-price-confirm") {
     if (!loanExceedsPurchasePrice(draft)) {
       return { ...next, overPriceConfirmed: false };
@@ -6848,6 +7012,9 @@ function draftAfterCaptureBody(draft: FoxIntakeDraft, capture: Capture): FoxInta
   }
   if (capture.field === "loanAmount") {
     const n = parseLooseAmount(capture.value.split(":")[0]) ?? Number(capture.value.split(":")[0].replace(/[$,\s]/g, ""));
+    if (isHelocFile(draft) && Number.isFinite(n) && n > 0) {
+      return writeHelocLine({ ...next, ...clearLiveQuote() }, n);
+    }
     return afterRefiLoanAmountWrite(
       draft,
       withComputedCompanion(
@@ -6924,6 +7091,17 @@ function draftAfterCaptureBody(draft: FoxIntakeDraft, capture: Capture): FoxInta
   }
   if (capture.field === "own-all-entity") return applyOwnAllEntity(next);
   if (capture.field === "accept-proposal") {
+    const pending = next.pendingProposal;
+    if (pending?.field === "first_lien" || pending?.field === "firstLien") {
+      const n = Number(pending.value);
+      if (Number.isFinite(n) && n > 0) return writeFirstLien({ ...next, pendingProposal: null }, n);
+    }
+    if (pending?.field === "heloc_line" || pending?.field === "helocLine") {
+      const n = Number(pending.value);
+      if (Number.isFinite(n) && n > 0) {
+        return writeHelocLine({ ...next, ...clearLiveQuote(), pendingProposal: null }, n);
+      }
+    }
     return resolveProposal(next, "accept");
   }
   if (capture.field === "change-proposal") return changePendingProposal(next);
@@ -7351,6 +7529,29 @@ export function workspaceReply(
     (isCouponSkipText(q) || /^skip$/.test(lower))
   ) {
     return replyToOverValueAsk(q, draft);
+  }
+  if (isHelocFile(draft) && (helocNoPreviewReady(draft) || draft.liveQuoteStatus === "unavailable")) {
+    if (isHelocChangeValueText(q)) {
+      const nextDraft = beginHelocCorrection(draft, "value");
+      return {
+        ...workspacePromptCopy("value", nextDraft),
+        capture: { field: "correct", value: "value", line: "home" },
+      };
+    }
+    if (isHelocChangeFirstLienText(q)) {
+      const nextDraft = beginHelocCorrection(draft, "first-lien");
+      return {
+        ...workspacePromptCopy("first-lien", nextDraft),
+        capture: { field: "correct", value: "first-lien", line: "first-lien" },
+      };
+    }
+    if (isHelocChangeLineText(q)) {
+      const nextDraft = beginHelocCorrection(draft, "amount");
+      return {
+        ...workspacePromptCopy("amount", nextDraft),
+        capture: { field: "correct", value: "amount", line: "line" },
+      };
+    }
   }
   if (prompt === "refi-purpose" || (needsRefiPurposeAsk(draft) && !draft.correcting)) {
     return replyToRefiPurposeAsk(q, draft);
@@ -8177,7 +8378,16 @@ export function workspaceReply(
       if (purchasePriceAskNeeded(amountDraft) || draftUsesPurchasePrice(amountDraft)) {
         return workspaceReply(q, { ...amountDraft, correcting: "value" });
       }
-      if (refiLoanAskNeeded(amountDraft) || isHelocFile(amountDraft)) {
+      if (isHelocFile(amountDraft)) {
+        if (helocValueAskNeeded(amountDraft)) {
+          return workspaceReply(q, { ...amountDraft, correcting: "value" });
+        }
+        if (helocFirstLienAskNeeded(amountDraft)) {
+          return workspaceReply(q, { ...amountDraft, correcting: "first-lien" });
+        }
+        return workspaceReply(q, { ...amountDraft, correcting: "amount" });
+      }
+      if (refiLoanAskNeeded(amountDraft)) {
         return workspaceReply(q, { ...amountDraft, correcting: "amount" });
       }
     }
@@ -8365,7 +8575,44 @@ export function workspaceReply(
     };
   }
 
+  if (prompt === "first-lien" || (isHelocFile(draft) && (draft.correcting === "first-lien" || draft.correctingLine === "first-lien"))) {
+    if (hasFirstLien(draft) && isKeepThisText(q)) return keepThisReply(draft);
+    if (isUnknownAmount(q)) {
+      return { text: `${HELOC_FIRST_LIEN_ASK} A number works.` };
+    }
+    const amount = parseLooseAmount(q);
+    if (amount == null) return answerThenRestore(q, draft);
+    if (looksInferredMoney(q)) {
+      return {
+        text: `I have ${formatMoney(amount)} as the first lien. Use this?`,
+        actions: [
+          {
+            id: "use-first-lien",
+            label: "Use this",
+            event: "bubble",
+            capture: { field: "firstLien", value: String(amount) },
+          },
+          { id: "change-first-lien", label: "Change", event: "bubble", capture: { field: "change-proposal" } },
+        ],
+      };
+    }
+    const nextDraft = writeFirstLien(draft, amount);
+    return withWorkspaceGuide(
+      {
+        ...nextFoxAsk(nextDraft),
+        capture: { field: "firstLien", value: String(amount) },
+      },
+      nextDraft,
+    );
+  }
+
   if (prompt === "amount") {
+    if (isHelocFile(draft) && (helocValueAskNeeded(draft) || draft.correctingLine === "home")) {
+      return replyToPropertyValueAsk(q, draft);
+    }
+    if (isHelocFile(draft) && (helocFirstLienAskNeeded(draft) || draft.correcting === "first-lien")) {
+      return workspaceReply(q, { ...draft, correcting: "first-lien" });
+    }
     if (editingPurchasePrice(draft)) {
       return replyToPropertyValueAsk(q, draft);
     }
@@ -8406,7 +8653,17 @@ export function workspaceReply(
       };
     }
     if (isUnknownAmount(q)) {
-      if (refiLoanAskNeeded(draft) || (isHelocFile(draft) && !hasHelocLine(draft))) {
+      if (isHelocFile(draft) && helocLineAskNeeded(draft)) {
+        const nextDraft = skipHelocLine(draft);
+        return withWorkspaceGuide(
+          {
+            ...nextFoxAsk(nextDraft),
+            capture: { field: "skip-heloc-line" },
+          },
+          nextDraft,
+        );
+      }
+      if (refiLoanAskNeeded(draft)) {
         return { text: `${amountAskText(draft)} A number works.` };
       }
       const nextDraft = { ...draft, amountAsked: true };
@@ -8419,6 +8676,30 @@ export function workspaceReply(
     const amount = pair.loan ?? parseLooseAmount(q);
     if (amount == null) {
       return answerThenRestore(q, draft);
+    }
+    if (isHelocFile(draft)) {
+      if (looksInferredMoney(q)) {
+        return {
+          text: `I have ${formatMoney(amount)} as the HELOC line. Use this?`,
+          actions: [
+            {
+              id: "use-heloc-line",
+              label: "Use this",
+              event: "bubble",
+              capture: { field: "helocLine", value: String(amount) },
+            },
+            { id: "change-heloc-line", label: "Change", event: "bubble", capture: { field: "change-proposal" } },
+          ],
+        };
+      }
+      const nextDraft = writeHelocLine({ ...draft, ...clearLiveQuote() }, amount);
+      return withWorkspaceGuide(
+        {
+          ...nextFoxAsk(nextDraft),
+          capture: { field: "helocLine", value: String(amount) },
+        },
+        nextDraft,
+      );
     }
     let nextDraft = afterRefiLoanAmountWrite(
       draft,
@@ -9426,6 +9707,10 @@ export function fileScenarioRows(draft: FoxIntakeDraft): [string, string][] {
   } else if (named && draftUsesPurchasePrice(draft) && value != null) {
     rows.push([named, formatMoney(value)]);
     if (loan != null && loan !== value) rows.push(["Loan amount", formatMoney(loan)]);
+  } else if (isHelocFile(draft)) {
+    if (value != null) rows.push(["Property value", formatMoney(value)]);
+    if (draft.firstLienAmount != null) rows.push(["First lien", formatMoney(draft.firstLienAmount)]);
+    if (loan != null) rows.push(["HELOC line", formatMoney(loan)]);
   } else if (named && loan != null) {
     rows.push([named, formatMoney(loan)]);
     if (value != null && value !== loan) rows.push(["Property value", formatMoney(value)]);
@@ -10159,6 +10444,7 @@ export function structureFixPrompt(
   }
   if (id === "price") return "value";
   if (id === "home") return "value";
+  if (id === "first-lien") return "first-lien";
   if (id === "down" || id === "loan") return "amount";
   if (id === "amount") return "amount";
   if (id === "value") return "value";

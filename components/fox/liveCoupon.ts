@@ -92,13 +92,15 @@ export function shouldDeferNextAskForLiveCoupon(draft: FoxIntakeDraft) {
 
 export function liveCouponActions(draft?: FoxIntakeDraft): FoxAction[] {
   if (!hasPrintedLiveRate(draft)) return [];
+  const thisOne: FoxAction = {
+    id: "live-coupon-this",
+    label: "This one",
+    event: "bubble",
+    capture: { field: "couponChoice", value: "this" },
+  };
+  if (draft?.productIntent === "heloc") return [thisOne];
   return [
-    {
-      id: "live-coupon-this",
-      label: "This one",
-      event: "bubble",
-      capture: { field: "couponChoice", value: "this" },
-    },
+    thisOne,
     {
       id: "live-coupon-lower",
       label: "Lower payment",

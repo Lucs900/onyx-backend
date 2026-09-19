@@ -1845,6 +1845,114 @@ async function case31(page: Page) {
   throw new BeatFail(`cash-out 80% did not print a coupon — ${afterZip.text} | ${afterZip.chips.join(" · ")}`);
 }
 
+async function case32(page: Page) {
+  await hardStartOver(page);
+  const product = await waitCurrent(
+    page,
+    (text, chips) => hasChip(chips, "HELOC") || /Buy, Refinance, HELOC/i.test(text),
+    20_000,
+  );
+  if (!hasChip(product.chips, "HELOC")) {
+    throw new BeatFail(`HELOC chip missing on start — ${product.chips.join(" · ")}`);
+  }
+  await clickChip(page, "HELOC");
+  await waitAsk(page, /How will the property be used/i);
+  await clickChip(page, "Primary");
+  const afterOcc = await waitCurrent(
+    page,
+    (text) => /property value|first lien|what you owe|kind of home|timeline/i.test(text),
+    20_000,
+  );
+  if (/timeline/i.test(afterOcc.text) && hasChip(afterOcc.chips, "Skip")) {
+    await clickChip(page, "Skip");
+  }
+  if (/cash out — money to you at closing/i.test(afterOcc.text)) {
+    throw new BeatFail(`HELOC walk opened refinance purpose — ${afterOcc.text}`);
+  }
+  await waitAsk(page, /property value/i);
+  await typeSend(page, "500000");
+  await waitAsk(page, /first lien|what you owe/i);
+  await typeSend(page, "400000");
+  const lineAsk = await waitAsk(page, /line do you want available|HELOC line/i);
+  if (hasChip(lineAsk.chips, "Skip")) {
+    await clickChip(page, "Skip");
+  } else {
+    await typeSend(page, "50000");
+  }
+  await walkHouseCredit(page);
+  await waitAsk(page, /address or ZIP/i);
+  await typeSend(page, "94123");
+  const afterZip = await waitCurrent(
+    page,
+    (text, chips) =>
+      /Getting a live line|Not a lock|How is income earned|HELOC programs are not|California only|live HELOC quote/i.test(
+        text,
+      ) ||
+      hasChip(chips, "This one") ||
+      hasChip(chips, "Change first lien") ||
+      hasChip(chips, "Change value"),
+    45_000,
+  );
+  const map = await structureMap(page);
+  if (map["Product"] !== "HELOC") {
+    throw new BeatFail(`Product was not HELOC — ${map["Product"] || "(missing)"}`);
+  }
+  if (map["Purpose"] === "Cash-out") {
+    throw new BeatFail(`HELOC walk wrote Purpose Cash-out`);
+  }
+  if (map["Purpose"] && map["Purpose"] !== "HELOC") {
+    throw new BeatFail(`Purpose was not HELOC — ${map["Purpose"]}`);
+  }
+  if (moneyOf(map, "Property value") !== "$500,000" && moneyOf(map, "Home") !== "$500,000") {
+    const value = map["Property value"] || map["Home"] || "(missing)";
+    throw new BeatFail(`HELOC value missing — ${value}`);
+  }
+  if (moneyOf(map, "First lien") !== "$400,000") {
+    throw new BeatFail(`HELOC first lien missing — ${map["First lien"] || "(missing)"}`);
+  }
+  if (!map["CLTV"] && !map["Cltv"]) {
+    throw new BeatFail(`HELOC File missing CLTV`);
+  }
+  const started = Date.now();
+  while (Date.now() - started < 45_000) {
+    const text = await currentText(page);
+    const chips = await currentChips(page);
+    if (hasChip(chips, "This one") && !/Not a lock|Live as of|\d\.\d{3}%/i.test(text)) {
+      throw new BeatFail(`This one without a printed HELOC line — ${text} | ${chips.join(" · ")}`);
+    }
+    if (/Not a lock|Live as of/i.test(text) && /\d\.\d{3}%/.test(text)) {
+      if (/7\.250%/.test(text) && /−1\.479|-1\.479/.test(text)) {
+        throw new BeatFail(`HELOC printed a first-lien cash-out coupon — ${text}`);
+      }
+      const after = await structureMap(page);
+      if (after["Purpose"] === "Cash-out") {
+        throw new BeatFail(`live HELOC line wrote Purpose Cash-out`);
+      }
+      return;
+    }
+    if (
+      /HELOC programs are not|loan_type|heloc is not|I don’t have a live HELOC quote/i.test(text)
+    ) {
+      if (hasChip(chips, "This one")) {
+        throw new BeatFail(`This one on HELOC named empty — ${chips.join(" · ")}`);
+      }
+      const need = ["Change value", "Change first lien", "Change line", "Skip"];
+      const missing = need.filter((label) => !hasChip(chips, label));
+      if (missing.length && !/live HELOC quote on this occupancy/i.test(text)) {
+        throw new BeatFail(
+          `HELOC named reason chips missing ${missing.join(" · ")} — ${chips.join(" · ")}`,
+        );
+      }
+      return;
+    }
+    if (/How is income earned/i.test(text) && !hasChip(chips, "This one")) {
+      throw new BeatFail(`HELOC reached income without a print or named reason — ${text}`);
+    }
+    await page.waitForTimeout(250);
+  }
+  throw new BeatFail(`HELOC walk did not print or name a reason — ${afterZip.text} | ${afterZip.chips.join(" · ")}`);
+}
+
 async function case23(page: Page) {
   const fixture = adpW2FixturePath();
   if (!fixture) {
@@ -2824,6 +2932,11 @@ const CASES: { n: number; title: string; run: (page: Page) => Promise<void> }[] 
     n: 31,
     title: "Refinance 400/500 Cash out writes Purpose Cash-out and prints a cash-out coupon",
     run: case31,
+  },
+  {
+    n: 32,
+    title: "HELOC Primary House 760+ 94123 value/first lien/line: Product HELOC, not Cash-out",
+    run: case32,
   },
   { n: 23, title: "ADP W-2 page-read: Box 5 is $36,460.08, never $5", run: case23 },
   { n: 24, title: "composer paperclip CSTC stub: filename/received then $1,806.67 Use this", run: case24 },
