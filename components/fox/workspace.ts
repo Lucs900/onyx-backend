@@ -1084,6 +1084,9 @@ function clearDependentFunds(draft: FoxIntakeDraft): FoxIntakeDraft {
 
 /** Price write clears dependent down/loan and live rate. Reconfirm down/loan. FICO, occupancy, income, citizenship, ZIP, and docs stay. Refinance keeps a loan already on File. */
 export function writePurchasePrice(draft: FoxIntakeDraft, price: number): FoxIntakeDraft {
+  const wasOver = loanExceedsPropertyValue(draft);
+  const editingHome =
+    isRefiLike(draft) && (draft.correctingLine === "home" || draft.correcting === "value");
   const facts = draft.facts?.purchase_price
     ? {
         ...draft.facts,
@@ -1098,33 +1101,60 @@ export function writePurchasePrice(draft: FoxIntakeDraft, price: number): FoxInt
     propertyValueAmount: price,
     valueAsked: true,
     overValueSkipped: false,
+    ltvConfirm: undefined,
     correcting: null,
     correctingLine: null,
     facts,
   };
-  if (isRefiLike(draft) && hasLoanAmount(draft)) {
-    return {
-      ...next,
-      ...clearLiveQuote(),
-      scenario: draft.scenario
-        ? {
-            ...draft.scenario,
-            propertyValue: price,
-          }
-        : draft.scenario,
-    };
-  }
-  return clearDependentFunds({
-    ...next,
-    scenario: draft.scenario
+  const written =
+    isRefiLike(draft) && hasLoanAmount(draft)
       ? {
-          ...draft.scenario,
-          propertyValue: price,
-          loanAmount: undefined,
-          downPayment: undefined,
+          ...next,
+          ...clearLiveQuote(),
+          scenario: draft.scenario
+            ? {
+                ...draft.scenario,
+                propertyValue: price,
+              }
+            : draft.scenario,
         }
-      : draft.scenario,
-  });
+      : clearDependentFunds({
+          ...next,
+          scenario: draft.scenario
+            ? {
+                ...draft.scenario,
+                propertyValue: price,
+                loanAmount: undefined,
+                downPayment: undefined,
+              }
+            : draft.scenario,
+        });
+  if (
+    isRefiLike(written) &&
+    hasLoanAmount(written) &&
+    !loanExceedsPropertyValue(written) &&
+    (wasOver || editingHome)
+  ) {
+    return { ...written, ltvConfirm: "loan" };
+  }
+  return written;
+}
+
+/** After Change loan writes and value is still short, confirm value once — do not bounce to larger-than-house. */
+export function afterRefiLoanAmountWrite(
+  before: FoxIntakeDraft,
+  next: FoxIntakeDraft,
+): FoxIntakeDraft {
+  const editingLoan = before.correcting === "amount" || before.correctingLine === "loan";
+  if (
+    editingLoan &&
+    isRefiLike(next) &&
+    hasPropertyValue(next) &&
+    loanExceedsPropertyValue(next)
+  ) {
+    return { ...next, ltvConfirm: "value" };
+  }
+  return { ...next, ltvConfirm: undefined };
 }
 
 export function amountAskText(draft: FoxIntakeDraft) {
@@ -3771,6 +3801,9 @@ export function nextFoxAsk(draft: FoxIntakeDraft): {
   if (shouldHoldAskForLiveLine(draft)) {
     return { text: RATEFLOW_WAIT_LINE };
   }
+  if (needsLtvConfirm(draft) && !draft.correcting) {
+    return workspacePromptCopy("ltv-confirm", draft);
+  }
   if (draft.liveQuoteStatus === "unavailable" && !draft.liveCouponSettled && !draft.liveQuote) {
     if (loanExceedsPropertyValue(draft)) {
       return workspacePromptCopy(workspacePrompt(draft), draft);
@@ -3914,6 +3947,9 @@ export function deskStripActions(
       return stripStreetSuggest(liveCouponActions(draft));
     }
   }
+  if ((needsLtvConfirm(draft) || isLtvConfirmSpeech(message.text)) && !draft.correcting) {
+    return stripStreetSuggest(ltvConfirmActions(draft));
+  }
   if (
     (message.text === LOAN_OVER_VALUE_LINE || needsOverValueCheck(draft)) &&
     !draft.correcting
@@ -4043,8 +4079,13 @@ export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
   if (draft.correcting === "other-reo" && otherReoInterviewBlocked(draft)) {
     // Purchase W-2: Other REO is Still useful only.
   } else if (draft.correcting) return draft.correcting;
+  if (needsLtvConfirm(draft)) return "ltv-confirm";
   if (draft.resumeAfterEdit) {
-    if (
+    if (draft.resumeAfterEdit === "over-value" && !needsOverValueCheck(draft)) {
+      // Stale resume — loan no longer exceeds value. Do not reprint larger-than-house.
+    } else if (draft.resumeAfterEdit === "ltv-confirm" && !needsLtvConfirm(draft)) {
+      // Stale resume — the pair confirm already settled.
+    } else if (
       draft.resumeAfterEdit === "declaration-timing" &&
       draft.statedDeclaration !== "event"
     ) {
@@ -4114,6 +4155,7 @@ export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
   if (refiLoanAskNeeded(draft) || (isHelocFile(draft) && !hasHelocLine(draft))) return "amount";
   if (propertyValueAskNeeded(draft)) return "value";
   if (needsOverPriceCheck(draft)) return "over-price";
+  if (needsLtvConfirm(draft)) return "ltv-confirm";
   if (needsOverValueCheck(draft)) return "over-value";
   if (!sketchNumberReady(draft)) {
     if (isRefiLike(draft) && hasLoanAmount(draft)) return "value";
@@ -4284,6 +4326,12 @@ function workspaceAskCopy(
     return {
       text: loanOverValueCopy(),
       actions: loanOverValueActions(),
+    };
+  }
+  if (prompt === "ltv-confirm") {
+    return {
+      text: ltvConfirmCopy(draft),
+      actions: ltvConfirmActions(draft),
     };
   }
   if (prompt === "occupancy") {
@@ -4814,7 +4862,150 @@ export const LOAN_OVER_VALUE_LINE = "The loan is larger than the house.";
 export function needsOverValueCheck(draft: FoxIntakeDraft) {
   if (draft.pendingProposal) return false;
   if (draft.overValueSkipped) return false;
+  if (draft.ltvConfirm) return false;
   return loanExceedsPropertyValue(draft) && draft.motion !== "escalated";
+}
+
+export function needsLtvConfirm(draft?: FoxIntakeDraft | null) {
+  return Boolean(draft && (draft.ltvConfirm === "loan" || draft.ltvConfirm === "value"));
+}
+
+export function houseLtvPercent(loan: number, value: number) {
+  if (value <= 0) return 0;
+  return Math.round((loan / value) * 100);
+}
+
+export function ltvConfirmCopy(draft: FoxIntakeDraft) {
+  const loan = draft.loanAmountValue ?? 0;
+  const value = draft.propertyValueAmount ?? 0;
+  const pct = houseLtvPercent(loan, value);
+  if (draft.ltvConfirm === "value") {
+    return `Value is still ${formatMoney(value)} — ${pct}% of the house.`;
+  }
+  return `Loan is still ${formatMoney(loan)} — ${pct}% of the house.`;
+}
+
+export function isLtvConfirmSpeech(text?: string) {
+  return /^(Loan|Value) is still \$/.test(String(text ?? "").trim());
+}
+
+export function ltvConfirmActions(draft: FoxIntakeDraft): FoxAction[] {
+  if (draft.ltvConfirm === "value") {
+    const keep = formatMoney(draft.propertyValueAmount ?? 0);
+    return [
+      {
+        id: "ltv-confirm-keep",
+        label: `Keep ${keep}`,
+        event: "bubble",
+        capture: { field: "keep-ltv-confirm" },
+      },
+      {
+        id: "ltv-confirm-value",
+        label: "Change value",
+        event: "bubble",
+        capture: { field: "correct", value: "value", line: "home" },
+      },
+      {
+        id: "ltv-confirm-skip",
+        label: "Skip",
+        event: "bubble",
+        capture: { field: "skip-over-value" },
+      },
+    ];
+  }
+  const keep = formatMoney(draft.loanAmountValue ?? 0);
+  return [
+    {
+      id: "ltv-confirm-keep",
+      label: `Keep ${keep}`,
+      event: "bubble",
+      capture: { field: "keep-ltv-confirm" },
+    },
+    {
+      id: "ltv-confirm-loan",
+      label: "Change loan",
+      event: "bubble",
+      capture: { field: "correct", value: "amount", line: "loan" },
+    },
+    {
+      id: "ltv-confirm-skip",
+      label: "Skip",
+      event: "bubble",
+      capture: { field: "skip-over-value" },
+    },
+  ];
+}
+
+export function settleLtvConfirm(draft: FoxIntakeDraft): FoxIntakeDraft {
+  return {
+    ...draft,
+    ltvConfirm: undefined,
+    overValueSkipped: loanExceedsPropertyValue(draft) ? true : draft.overValueSkipped,
+    correcting: null,
+    correctingLine: null,
+  };
+}
+
+function isKeepLtvConfirmText(text: string) {
+  const lower = text.trim().toLowerCase().replace(/[’']/g, "'");
+  if (isKeepThisText(text)) return true;
+  return /^keep\s*\$?[\d,]+/.test(lower);
+}
+
+function replyToLtvConfirmAsk(
+  q: string,
+  draft: FoxIntakeDraft,
+): {
+  text: string;
+  followUp?: string;
+  facts?: PreviewFact[];
+  actions?: FoxAction[];
+  capture?: Capture;
+} {
+  const lower = q.trim().toLowerCase();
+  if (isKeepLtvConfirmText(q)) {
+    const nextDraft = settleLtvConfirm(draft);
+    return {
+      ...nextFoxAsk(nextDraft),
+      capture: { field: "keep-ltv-confirm" },
+    };
+  }
+  if (isCouponSkipText(q) || /^skip$/.test(lower)) {
+    const nextDraft = {
+      ...settleLtvConfirm(draft),
+      overValueSkipped: true,
+      liveCouponSettled: draft.liveQuoteStatus === "unavailable" ? true : draft.liveCouponSettled,
+    };
+    return {
+      ...nextFoxAsk(nextDraft),
+      capture: { field: "skip-over-value" },
+    };
+  }
+  if (draft.ltvConfirm !== "value" && isOverValueChangeLoanText(q)) {
+    const nextDraft = beginFileEdit({ ...draft, ltvConfirm: undefined }, "amount", "loan");
+    return {
+      ...workspacePromptCopy("amount", nextDraft),
+      capture: { field: "correct", value: "amount", line: "loan" },
+    };
+  }
+  if (draft.ltvConfirm === "value" && isOverValueChangeValueText(q)) {
+    const nextDraft = beginFileEdit({ ...draft, ltvConfirm: undefined }, "value", "home");
+    return {
+      ...workspacePromptCopy("value", nextDraft),
+      capture: { field: "correct", value: "value", line: "home" },
+    };
+  }
+  const answered = foxAnswer(q, factsFromDraft(draft));
+  if (answered) {
+    return {
+      ...restoredAsk(answered.text, draft),
+      actions: ltvConfirmActions(draft),
+    };
+  }
+  return {
+    text: ltvConfirmCopy(draft),
+    actions: ltvConfirmActions(draft),
+  };
 }
 
 export function loanOverValueCopy() {
@@ -6260,6 +6451,7 @@ export function beginFileEdit(
   field: FoxPrompt,
   line?: string | null,
 ): FoxIntakeDraft {
+  draft = { ...draft, ltvConfirm: undefined };
   const editLine = line ?? draft.correctingLine;
   if (isPurchaseSplitReconcileProposal(draft.pendingProposal) && field === "amount") {
     draft = {
@@ -6466,10 +6658,14 @@ function draftAfterCaptureBody(draft: FoxIntakeDraft, capture: Capture): FoxInta
     }
     return applyEscalateMotion({ ...next, overPriceConfirmed: true });
   }
+  if (capture.field === "keep-ltv-confirm") {
+    return settleLtvConfirm(next);
+  }
   if (capture.field === "skip-over-value") {
     return {
       ...next,
       overValueSkipped: true,
+      ltvConfirm: undefined,
       liveCouponSettled: draft.liveQuoteStatus === "unavailable" || next.liveCouponSettled,
       correcting: null,
       correctingLine: null,
@@ -6500,17 +6696,21 @@ function draftAfterCaptureBody(draft: FoxIntakeDraft, capture: Capture): FoxInta
   }
   if (capture.field === "loanAmount") {
     const n = parseLooseAmount(capture.value.split(":")[0]) ?? Number(capture.value.split(":")[0].replace(/[$,\s]/g, ""));
-    return withComputedCompanion(
-      withMatrixAfterAmount({
-        ...next,
-        ...clearLiveQuote(),
-        amountAsked: true,
-        overValueSkipped: false,
-        correcting: null,
-        correctingLine: null,
-        loanAmountValue: Number.isFinite(n) && n > 0 ? n : draft.loanAmountValue,
-      }),
-      hasDownPayment(draft) ? "loan" : undefined,
+    return afterRefiLoanAmountWrite(
+      draft,
+      withComputedCompanion(
+        withMatrixAfterAmount({
+          ...next,
+          ...clearLiveQuote(),
+          amountAsked: true,
+          overValueSkipped: false,
+          ltvConfirm: undefined,
+          correcting: null,
+          correctingLine: null,
+          loanAmountValue: Number.isFinite(n) && n > 0 ? n : draft.loanAmountValue,
+        }),
+        hasDownPayment(draft) ? "loan" : undefined,
+      ),
     );
   }
   if (capture.field === "propertyValue") {
@@ -6980,6 +7180,9 @@ export function workspaceReply(
   if (finishNow) return finishNow;
   if (asksWillIQualify(q)) {
     return answerThenRestore(q, draft);
+  }
+  if (prompt === "ltv-confirm" || (needsLtvConfirm(draft) && !draft.correcting)) {
+    return replyToLtvConfirmAsk(q, draft);
   }
   if (prompt === "over-value" || (needsOverValueCheck(draft) && !draft.correcting)) {
     return replyToOverValueAsk(q, draft);
@@ -8049,14 +8252,18 @@ export function workspaceReply(
     if (amount == null) {
       return answerThenRestore(q, draft);
     }
-    let nextDraft = withMatrixAfterAmount({
-      ...draft,
-      loanAmountValue: amount,
-      amountAsked: true,
-      overValueSkipped: false,
-      correcting: null,
-      correctingLine: null,
-    });
+    let nextDraft = afterRefiLoanAmountWrite(
+      draft,
+      withMatrixAfterAmount({
+        ...draft,
+        loanAmountValue: amount,
+        amountAsked: true,
+        overValueSkipped: false,
+        ltvConfirm: undefined,
+        correcting: null,
+        correctingLine: null,
+      }),
+    );
     if (pair.value && pair.value !== amount) {
       nextDraft.propertyValueAmount = pair.value;
       nextDraft.valueAsked = true;

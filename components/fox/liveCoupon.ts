@@ -64,6 +64,7 @@ export type PendingLiveCoupon = {
 };
 
 export function liveQuoteReady(draft: FoxIntakeDraft) {
+  if (draft.ltvConfirm) return false;
   if (loanExceedsPropertyValue(draft)) return false;
   return Boolean(
     draft.liveQuoteStatus === "ready" &&
@@ -74,13 +75,13 @@ export function liveQuoteReady(draft: FoxIntakeDraft) {
 
 /** A spoken coupon exists — rate and as-of. No This one on an empty book. */
 export function hasPrintedLiveRate(draft?: FoxIntakeDraft | null) {
-  if (!draft || loanExceedsPropertyValue(draft)) return false;
+  if (!draft || draft.ltvConfirm || loanExceedsPropertyValue(draft)) return false;
   const quote = draft.liveQuote;
   return Boolean(draft.liveQuoteStatus === "ready" && quote?.rate && quote.asOf);
 }
 
 export function shouldDeferNextAskForLiveCoupon(draft: FoxIntakeDraft) {
-  if (loanExceedsPropertyValue(draft)) return false;
+  if (draft.ltvConfirm || loanExceedsPropertyValue(draft)) return false;
   if (draft.liveCouponSettled || draft.pendingLiveCoupon) return false;
   if (draft.liveQuoteStatus === "unavailable") return false;
   if (draft.liveQuote && draft.liveQuoteStatus === "ready") {
@@ -1373,6 +1374,7 @@ export function visibleFoxActions(message: FoxMessage, draft: FoxIntakeDraft) {
     if (
       isOverValueChip(action) &&
       !loanExceedsPropertyValue(draft) &&
+      !draft.ltvConfirm &&
       !(
         isRefiLike(draft) &&
         draft.liveQuoteStatus === "unavailable" &&

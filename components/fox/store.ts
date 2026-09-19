@@ -88,10 +88,12 @@ import {
   productIntentLabel,
   purposeForIntent,
   slugForIntent,
+  afterRefiLoanAmountWrite,
   beginFileEdit,
   clearLiveQuote,
   retryLiveQuote,
   parseLooseAmount,
+  settleLtvConfirm,
   writePurchasePrice,
   changePendingProposal,
   settleResumeAfterCapture,
@@ -547,6 +549,7 @@ function normalize(value: unknown): FoxIntakeDraft {
     cashOut: Boolean(raw.cashOut),
     overPriceConfirmed: Boolean(raw.overPriceConfirmed),
     overValueSkipped: Boolean(raw.overValueSkipped),
+    ltvConfirm: raw.ltvConfirm === "loan" || raw.ltvConfirm === "value" ? raw.ltvConfirm : undefined,
     loanAmountValue: numberOrUndefined(raw.loanAmountValue),
     propertyValueAmount: numberOrUndefined(raw.propertyValueAmount),
     downPaymentAmount: numberOrUndefined(raw.downPaymentAmount),
@@ -2554,10 +2557,14 @@ function applyCaptureBody(capture: Capture) {
       loStatus: current.loStatus ?? "in review",
     });
   }
+  if (capture.field === "keep-ltv-confirm") {
+    return commit(settleLtvConfirm(current));
+  }
   if (capture.field === "skip-over-value") {
     return commit({
       ...current,
       overValueSkipped: true,
+      ltvConfirm: undefined,
       liveCouponSettled:
         current.liveQuoteStatus === "unavailable" ? true : current.liveCouponSettled,
       correcting: null,
@@ -2706,12 +2713,15 @@ function applyCaptureBody(capture: Capture) {
     const hasValue = value != null;
     return commit(
       withWorkspaceScenario(
-        withComputedCompanion(
+        afterRefiLoanAmountWrite(
+          current,
+          withComputedCompanion(
           withMatrixAfterAmount({
             ...current,
             ...clearLiveQuote(),
             amountAsked: true,
             overValueSkipped: false,
+            ltvConfirm: undefined,
             correcting: null,
             correctingLine: null,
             valueAsked: hasValue ? true : current.valueAsked,
@@ -2723,6 +2733,7 @@ function applyCaptureBody(capture: Capture) {
           Boolean(current.subjectAddress?.trim())
             ? "loan"
             : undefined,
+          ),
         ),
       ),
     );

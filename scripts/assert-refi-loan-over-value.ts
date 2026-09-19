@@ -4,7 +4,9 @@
  * No This one / Lower payment until value ≥ loan (or loan comes down).
  * Skip keeps both numbers and continues to income. LTV 125% stays estimated.
  * Change loan writes the new refinance loan. Next is House — never purchase
- * down-payment copy. Empty Rateflow no-price uses the same strip, not Try again.
+ * down-payment copy. After Change value writes and loan ≤ value, confirm the
+ * loan once — never reprint larger-than-house at 500/500. Empty Rateflow
+ * no-price uses the same strip, not Try again.
  * Do not invent cash-out, Non-QM, or a 125% product.
  */
 import assert from "node:assert/strict";
@@ -33,6 +35,7 @@ import {
   NO_CONVENTIONAL_PRICE_LINE,
   PURCHASE_PRICE_ON_FILE_LINE,
   deskStripActions,
+  ltvConfirmCopy,
   nextFoxAsk,
   previewFacts,
   previewRateFact,
@@ -182,13 +185,61 @@ function main() {
     ...written,
     correcting: "value",
     correctingLine: "home",
+    resumeAfterEdit: "over-value",
   });
   assert.equal(raised?.capture?.field, "propertyValue");
-  const afterRaise = writePurchasePrice(written, 500_000);
+  assert.match(raised?.text ?? "", /Loan is still \$500,000 — 100% of the house/);
+  assert.doesNotMatch(raised?.text ?? "", /loan is larger than the house/i);
+  assert.deepEqual(labels(raised?.actions), ["Keep $500,000", "Change loan", "Skip"]);
+  const afterRaise = writePurchasePrice(
+    { ...written, correcting: "value", correctingLine: "home" },
+    500_000,
+  );
   assert.equal(afterRaise.loanAmountValue, 500_000);
   assert.equal(afterRaise.propertyValueAmount, 500_000);
+  assert.equal(afterRaise.ltvConfirm, "loan");
   assert.equal(loanExceedsPropertyValue(afterRaise), false);
-  assert.notEqual(workspacePrompt(afterRaise), "over-value");
+  assert.equal(workspacePrompt(afterRaise), "ltv-confirm");
+  assert.equal(ltvConfirmCopy(afterRaise), "Loan is still $500,000 — 100% of the house.");
+  assert.doesNotMatch(nextFoxAsk(afterRaise).text, /loan is larger than the house/i);
+  assert.deepEqual(labels(nextFoxAsk(afterRaise).actions), ["Keep $500,000", "Change loan", "Skip"]);
+  assert.deepEqual(
+    labels(deskStripActions([{ id: "ltv-confirm", role: "fox", text: nextFoxAsk(afterRaise).text }], afterRaise)),
+    ["Keep $500,000", "Change loan", "Skip"],
+  );
+  const keptLoan = workspaceReply("Keep $500,000", afterRaise);
+  assert.equal(keptLoan?.capture?.field, "keep-ltv-confirm");
+  assert.doesNotMatch(keptLoan?.text ?? "", /loan is larger than the house/i);
+  assert.match(keptLoan?.text ?? "", /kind of home|House, condo/i);
+  loadIntakeDraft(afterRaise);
+  applyCapture({ field: "keep-ltv-confirm" });
+  const afterKeep = getFoxDraft();
+  assert.equal(afterKeep.loanAmountValue, 500_000);
+  assert.equal(afterKeep.propertyValueAmount, 500_000);
+  assert.equal(afterKeep.ltvConfirm, undefined);
+  assert.notEqual(workspacePrompt(afterKeep), "over-value");
+  assert.notEqual(workspacePrompt(afterKeep), "ltv-confirm");
+  assert.match(nextFoxAsk(afterKeep).text, /kind of home|House, condo/i);
+
+  const stillShort = workspaceReply("450000", {
+    ...written,
+    correcting: "amount",
+    correctingLine: "loan",
+  });
+  assert.equal(stillShort?.capture?.field, "loanAmount");
+  assert.match(stillShort?.text ?? "", /Value is still \$400,000 — 113% of the house/);
+  assert.doesNotMatch(stillShort?.text ?? "", /loan is larger than the house/i);
+  assert.deepEqual(labels(stillShort?.actions), ["Keep $400,000", "Change value", "Skip"]);
+  const keptShort = workspaceReply("Keep $400,000", {
+    ...written,
+    loanAmountValue: 450_000,
+    ltvConfirm: "value",
+    correcting: null,
+    correctingLine: null,
+  });
+  assert.equal(keptShort?.capture?.field, "keep-ltv-confirm");
+  assert.doesNotMatch(keptShort?.text ?? "", /loan is larger than the house/i);
+  assert.match(keptShort?.text ?? "", /kind of home|House, condo/i);
 
   const skip = workspaceReply("Skip", written);
   assert.equal(skip?.capture?.field, "skip-over-value");
@@ -276,16 +327,22 @@ function main() {
   assert.equal(workspacePrompt(editingValue), "value");
   const fromEmpty = workspaceReply("500000", editingValue);
   assert.equal(fromEmpty?.capture?.field, "propertyValue");
+  assert.match(fromEmpty?.text ?? "", /Loan is still \$400,000 — 80% of the house/);
+  assert.doesNotMatch(fromEmpty?.text ?? "", /loan is larger than the house/i);
   applyCapture(fromEmpty!.capture);
   const afterValueFix = getFoxDraft();
   assert.equal(afterValueFix.productIntent, "refinance");
   assert.equal(afterValueFix.loanAmountValue, 400_000);
   assert.equal(afterValueFix.propertyValueAmount, 500_000);
-  assert.doesNotMatch(nextFoxAsk(afterValueFix).text, /purchase price|down payment/i);
-  const valueFixKey = searchedKeyFor(afterValueFix);
+  assert.equal(afterValueFix.ltvConfirm, "loan");
+  assert.doesNotMatch(nextFoxAsk(afterValueFix).text, /purchase price|down payment|loan is larger than the house/i);
+  applyCapture({ field: "keep-ltv-confirm" });
+  const afterValueKeep = getFoxDraft();
+  assert.equal(afterValueKeep.ltvConfirm, undefined);
+  const valueFixKey = searchedKeyFor(afterValueKeep);
   assert.ok(valueFixKey);
   const valueFixQuoted: FoxIntakeDraft = {
-    ...afterValueFix,
+    ...afterValueKeep,
     liveQuote: { key: valueFixKey!, rate: 6.49, asOf: "2026-01-02", principalAndInterest: 2398 },
     liveQuoteKey: valueFixKey,
     liveQuoteStatus: "ready",
@@ -293,7 +350,7 @@ function main() {
   };
   assert.deepEqual(labels(liveCouponActions(valueFixQuoted)), ["This one", "Lower payment"]);
 
-  const canPrice = pricedReady(afterRaise);
+  const canPrice = pricedReady(afterKeep);
   assert.equal(loanExceedsPropertyValue(canPrice), false);
   assert.notEqual(rateflowBlockedReason(canPrice), "ltv");
   assert.ok(rateflowClientBodyFromDraft(canPrice));
@@ -352,7 +409,7 @@ function main() {
   assert.equal(purchasePriceRepeatReply(purchaseRepeat, "500000"), PURCHASE_PRICE_ON_FILE_LINE);
 
   console.log(
-    "assert-refi-loan-over-value: conflict + change loan + no This one until a printed rate",
+    "assert-refi-loan-over-value: conflict + change loan + confirm after Change value + no This one until a printed rate",
   );
 }
 

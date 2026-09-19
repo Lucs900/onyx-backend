@@ -324,6 +324,22 @@ function assertCopyChips(text: string, chips: string[]) {
       );
     }
   }
+  if (/loan is still \$/.test(lower)) {
+    const keep = chips.find((chip) => /^Keep \$/.test(chip));
+    if (!keep || !hasChip(chips, "Change loan") || !hasChip(chips, "Skip") || hasChip(chips, "This one")) {
+      throw new BeatFail(
+        `copy/chips disagree — loan confirm vs chips: ${chips.join(" · ") || "(none)"}`,
+      );
+    }
+  }
+  if (/value is still \$/.test(lower)) {
+    const keep = chips.find((chip) => /^Keep \$/.test(chip));
+    if (!keep || !hasChip(chips, "Change value") || !hasChip(chips, "Skip") || hasChip(chips, "This one")) {
+      throw new BeatFail(
+        `copy/chips disagree — value confirm vs chips: ${chips.join(" · ") || "(none)"}`,
+      );
+    }
+  }
   const moneyAsk =
     /what.?s the purchase price|down payment or loan amount|what.?s the down payment\b|what.?s the loan amount/i.test(
       text,
@@ -1623,13 +1639,22 @@ async function case29(page: Page) {
       const afterValue = await waitCurrent(
         page,
         (next, nextChips) =>
-          /How is income earned|Getting a live line|Not a lock|conventional price|Pricing when the file is ready/i.test(
+          /Loan is still \$400,000|How is income earned|Getting a live line|Not a lock|conventional price|Pricing when the file is ready/i.test(
             next,
-          ) || hasChip(nextChips, "This one"),
+          ) ||
+          hasChip(nextChips, "This one") ||
+          hasChip(nextChips, "Keep $400,000"),
         45_000,
       );
+      if (/loan is larger than the house/i.test(afterValue.text)) {
+        throw new BeatFail(`change value reprinted larger-than-house — ${afterValue.text}`);
+      }
       if (/purchase price|down payment/i.test(afterValue.text)) {
         throw new BeatFail(`change value leaked purchase copy — ${afterValue.text}`);
+      }
+      if (/Loan is still \$400,000/.test(afterValue.text)) {
+        assertCopyChips(afterValue.text, afterValue.chips);
+        await clickChip(page, "Keep $400,000");
       }
       return;
     }
@@ -1639,6 +1664,42 @@ async function case29(page: Page) {
     await page.waitForTimeout(250);
   }
   throw new BeatFail(`400/400 after ZIP did not settle — ${afterZip.text} | ${afterZip.chips.join(" · ")}`);
+}
+
+async function case30(page: Page) {
+  await hardStartOver(page);
+  await walkRefiToLoanValue(page, "500000", "400000");
+  await waitAsk(page, /loan is larger than the house/i);
+  await clickChip(page, "Change value");
+  await waitAsk(page, /property value/i);
+  await typeSend(page, "500000");
+  const confirm = await waitAsk(page, /Loan is still \$500,000 — 100% of the house/);
+  assertCopyChips(confirm.text, confirm.chips);
+  if (/loan is larger than the house/i.test(confirm.text)) {
+    throw new BeatFail(`Change value 500000 reprinted larger-than-house — ${confirm.text}`);
+  }
+  const missing = ["Keep $500,000", "Change loan", "Skip"].filter((label) => !hasChip(confirm.chips, label));
+  if (missing.length) {
+    throw new BeatFail(`loan confirm missing ${missing.join(" · ")} — ${confirm.chips.join(" · ")}`);
+  }
+  const map = await structureMap(page);
+  if (moneyOf(map, "Loan amount") !== "$500,000" || moneyOf(map, "Property value") !== "$500,000") {
+    throw new BeatFail(
+      `Change value did not write 500/500 — loan ${moneyOf(map, "Loan amount")} value ${moneyOf(map, "Property value")}`,
+    );
+  }
+  await clickChip(page, "Keep $500,000");
+  const afterKeep = await waitCurrent(
+    page,
+    (text) => /kind of home|House, condo|conventional price|loan is larger/i.test(text),
+    20_000,
+  );
+  if (/loan is larger than the house/i.test(afterKeep.text)) {
+    throw new BeatFail(`Keep after Change value reprinted larger-than-house — ${afterKeep.text}`);
+  }
+  if (!/kind of home|House, condo/i.test(afterKeep.text)) {
+    throw new BeatFail(`Keep $500,000 expected House — ${afterKeep.text}`);
+  }
 }
 
 async function case23(page: Page) {
@@ -2610,6 +2671,11 @@ const CASES: { n: number; title: string; run: (page: Page) => Promise<void> }[] 
     n: 29,
     title: "Refinance 400/400 after House+FICO+ZIP: no This one until a rate prints",
     run: case29,
+  },
+  {
+    n: 30,
+    title: "Change value 500000 confirms loan at 100% LTV; Keep → House; no larger-than-house",
+    run: case30,
   },
   { n: 23, title: "ADP W-2 page-read: Box 5 is $36,460.08, never $5", run: case23 },
   { n: 24, title: "composer paperclip CSTC stub: filename/received then $1,806.67 Use this", run: case24 },

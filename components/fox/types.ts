@@ -284,6 +284,8 @@ export type FoxIntakeDraft = {
   overPriceConfirmed?: boolean;
   /** Refinance loan>value spoken once. Skip keeps both numbers and continues. */
   overValueSkipped?: boolean;
+  /** After one Structure number writes and LTV can stand, confirm the other number once. */
+  ltvConfirm?: "loan" | "value";
   loanAmountValue?: number;
   propertyValueAmount?: number;
   downPaymentAmount?: number;
@@ -622,6 +624,7 @@ export type FoxPrompt =
   | "years-in-business"
   | "over-price"
   | "over-value"
+  | "ltv-confirm"
   | "housing"
   | "subject-lease"
   | "citizenship"
@@ -764,6 +767,7 @@ export type Capture =
   | { field: "talk-originator" }
   | { field: "over-price-confirm" }
   | { field: "skip-over-value" }
+  | { field: "keep-ltv-confirm" }
   | { field: "proceed" }
   | { field: "not-yet" }
   | { field: "skip-email" }
