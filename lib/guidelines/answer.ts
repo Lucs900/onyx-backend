@@ -32,6 +32,8 @@ export function asksWillIQualify(text: string) {
   if (/\b(qualifying income|suggested qualifying)\b/i.test(lower)) return false;
   if (/(approv|lock|commit to lend)/i.test(lower)) return true;
   if (/\b(readiness|look ready|ready yet)\b/i.test(lower)) return true;
+  if (/\bdoes this work\b/i.test(lower)) return true;
+  if (/\bcan i still (proceed|go|move|continue)\b/i.test(lower)) return true;
   if (/\b(will i|do i|can i|am i)\s+(qualif|approved|ready)\b/i.test(lower)) return true;
   return /\b(will i|do i|can i|am i).{0,24}qualif/i.test(lower);
 }

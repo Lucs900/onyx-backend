@@ -96,6 +96,9 @@ export function calculatorPurpose(draft: FoxIntakeDraft): "purchase" | "refi" {
 }
 
 export function calculatorLoan(draft: FoxIntakeDraft): number | null {
+  if (draft.productIntent === "heloc") {
+    return draft.firstLienAmount != null && draft.firstLienAmount > 0 ? draft.firstLienAmount : null;
+  }
   if (draft.loanAmountValue != null && draft.loanAmountValue > 0) return draft.loanAmountValue;
   if (
     calculatorPurpose(draft) === "purchase" &&
@@ -115,6 +118,9 @@ export function calculatorValue(draft: FoxIntakeDraft): number | null {
 }
 
 export function calculatorSubordinate(draft: FoxIntakeDraft): number | null {
+  if (draft.productIntent === "heloc") {
+    return draft.loanAmountValue != null && draft.loanAmountValue > 0 ? draft.loanAmountValue : null;
+  }
   if (draft.subordinateBalance != null && draft.subordinateBalance > 0) return draft.subordinateBalance;
   const fromFact = moneyFact(draft, SUBORDINATE_FIELD);
   return fromFact != null && fromFact > 0 ? fromFact : null;
@@ -372,7 +378,7 @@ export function calculatorStructureFacts(draft: FoxIntakeDraft): {
     }
   }
   const estimate = draftHousingEstimate(draft);
-  if (draft.estimatedHousing != null && estimate) {
+  if (draft.productIntent !== "heloc" && draft.estimatedHousing != null && estimate) {
     facts.push({
       id: "pi",
       label: "P&I",

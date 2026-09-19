@@ -1,4 +1,4 @@
-import { calculateHelocQuoteTool } from '@/lib/calculateHelocQuote';
+import { calculateHelocQuote } from '@/lib/calculateHelocQuote';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -102,26 +102,13 @@ export async function POST(request: Request) {
     }
 
     // ---------- DIRECT CALCULATION (no Grok) ----------
-    const rawResult = await (calculateHelocQuoteTool as any).execute(
-      {
-        homeValue,
-        currentMortgage: mortgageBalance,
-        desiredLine,
-        fico,
-        occupancy,
-      },
-      {}
-    );
-
-    const result = rawResult as {
-      maxLine: number;
-      finalRate: number;
-      cltv: number;
-      occupancy: string;
-      publishedMargin: number;
-      adjustedMargin: number;
-      lineUsedForCltv: number;
-    };
+    const result = calculateHelocQuote({
+      homeValue,
+      currentMortgage: mortgageBalance,
+      desiredLine,
+      fico,
+      occupancy,
+    });
 
     const quote = {
       maxLine: result.maxLine,
@@ -129,17 +116,9 @@ export async function POST(request: Request) {
       cltv: result.cltv,
       occupancy: result.occupancy,
       drawPeriod: '3 years',
-      monthlyPayment: null as number | null,
+      monthlyPayment: result.monthlyPayment,
       desiredLine: desiredLine || null,
     };
-
-    // Calculate interest-only payment
-    const lineForPayment = desiredLine && desiredLine > 0 ? desiredLine : result.maxLine;
-    if (lineForPayment > 0 && result.finalRate) {
-      quote.monthlyPayment = Math.round(
-        (lineForPayment * (result.finalRate / 100)) / 12
-      );
-    }
 
     return Response.json(
       { success: true, quote },

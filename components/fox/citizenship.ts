@@ -28,6 +28,13 @@ export function citizenshipNeeded(draft: FoxIntakeDraft) {
   if (!propertyAddressSettled(draft)) return false;
   if (draft.sampleAccepted) return false;
   if (draft.motion === "in_queue" || draft.motion === "escalated") return false;
+  // Leftover D: never a Fox ask once docs / QI / Looks right are in motion.
+  if (draft.docsStarted || (draft.documents?.length ?? 0) > 0 || (draft.skippedClasses?.length ?? 0) > 0) {
+    return false;
+  }
+  if (draft.facts?.qualifying_income || draft.pendingProposal?.field === "qualifying_income") {
+    return false;
+  }
   return true;
 }
 

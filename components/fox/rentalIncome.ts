@@ -126,14 +126,8 @@ export function subjectHousingSkipped(draft: FoxIntakeDraft): boolean {
 function primaryResidenceBlocksSubjectNet(draft: FoxIntakeDraft): boolean {
   const occupancy = draft.occupancyChoice.value;
   if (occupancy === "investment") return false;
+  if (draft.propertyType === "two_to_four") return false;
   return occupancy === "primary" || occupancy === "primary-residence" || occupancy === "second" || occupancy === "second-home";
-}
-
-function twoToFourPrimary(draft: FoxIntakeDraft): boolean {
-  return (
-    (draft.occupancyChoice.value === "primary" || draft.occupancyChoice.value === "primary-residence") &&
-    draft.propertyType === "two_to_four"
-  );
 }
 
 export function statementPitia(draft: FoxIntakeDraft): number | null {
@@ -218,8 +212,8 @@ export function draftRentalProperties(draft: FoxIntakeDraft): RentalPropertyInpu
   const method = workingGrossMethod(draft);
   const properties: RentalPropertyInput[] = [];
   const investment = draft.occupancyChoice.value === "investment";
-  if (twoToFourPrimary(draft)) return [];
-  if (investment) {
+  const twoToFour = draft.propertyType === "two_to_four";
+  if (investment || twoToFour) {
     properties.push({
       id: "subject",
       kind: "subject",
@@ -323,7 +317,9 @@ export const SUBJECT_LEASE_ASK =
   "What’s the monthly lease or rent on this property? A number is enough. Skip is fine.";
 
 export function subjectLeaseAskNeeded(draft: FoxIntakeDraft) {
-  if (draft.occupancyChoice.value !== "investment") return false;
+  const investment = draft.occupancyChoice.value === "investment";
+  const twoToFour = draft.propertyType === "two_to_four";
+  if (!investment && !twoToFour) return false;
   if (workingGrossMonthly(draft) != null) return false;
   if (draft.facts?.[SUGGESTED_NET_RENTAL_FIELD]?.confirmed) return false;
   if (draft.subjectLeaseAsked) return false;
@@ -332,7 +328,9 @@ export function subjectLeaseAskNeeded(draft: FoxIntakeDraft) {
 
 export function subjectLeaseSettled(draft: FoxIntakeDraft) {
   if (draft.correcting === "subject-lease") return false;
-  if (draft.occupancyChoice.value !== "investment") return true;
+  const investment = draft.occupancyChoice.value === "investment";
+  const twoToFour = draft.propertyType === "two_to_four";
+  if (!investment && !twoToFour) return true;
   return Boolean(draft.subjectLeaseAsked || workingGrossMonthly(draft) != null);
 }
 
@@ -395,7 +393,7 @@ export function rentalThinCopy(reason?: RentalThinReason | null): string | null 
 
 function attachRentalNet(draft: FoxIntakeDraft): FoxIntakeDraft {
   if (draft.facts?.[SUGGESTED_NET_RENTAL_FIELD]?.confirmed) return { ...draft, rentalThinReason: undefined };
-  if (twoToFourPrimary(draft)) {
+  if (primaryResidenceBlocksSubjectNet(draft) && draft.propertyType !== "two_to_four") {
     return { ...draft, pendingProposal: draft.pendingProposal, rentalThinReason: "primary" };
   }
   const result = draftRentalNet(draft);
@@ -421,7 +419,7 @@ export function proposeTypedLeaseRental(draft: FoxIntakeDraft, text: string): Fo
   if (draft.facts?.[SUGGESTED_NET_RENTAL_FIELD]?.confirmed) return null;
   if (draft.pendingProposal && !isRentalIncomeField(draft.pendingProposal.field)) return null;
   if (draftHasUnsupportedRental(draft) || unsupportedRentalNamed(text)) return null;
-  if (twoToFourPrimary(draft)) return null;
+  if (primaryResidenceBlocksSubjectNet(draft) && draft.propertyType !== "two_to_four") return null;
   const rent = parseStatedMonthlyLease(text, { occupancy: draft.occupancyChoice.value });
   if (rent == null) return null;
   const computed = suggestLeaseRental({ grossMonthlyRent: rent });
@@ -444,6 +442,6 @@ export function applyRentalIncomeFromExtract(
   if (draft.pendingProposal && !isRentalIncomeField(draft.pendingProposal.field)) {
     return draft;
   }
-  if (twoToFourPrimary(draft)) return draft;
+  if (primaryResidenceBlocksSubjectNet(draft) && draft.propertyType !== "two_to_four") return draft;
   return attachRentalNet(withWorkingGross(draft, computed.monthly, computed.method));
 }

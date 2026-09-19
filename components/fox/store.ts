@@ -4,12 +4,15 @@ import {
   type ExplorerScenario,
 } from "@/components/products/scenario";
 import { explorerCreditFromStated } from "./types";
+import { parsePlaceAddress } from "@/lib/places/address";
 import {
   CONFIRMED_STATUS,
   FOX_MESSAGES_KEY,
+  FOX_PANEL_KEY,
   INTAKE_DRAFT_VERSION,
   INTAKE_STORAGE_KEY,
   type Capture,
+  type DocSpeakRow,
   type DocSlot,
   type DocStatus,
   type DraftField,
@@ -52,12 +55,24 @@ import { FAILED_READ_NOTE, isUnreadNote } from "@/lib/docs/accept";
 import {
   applyExtractedFields,
   hasLockedSuggestion,
+  k1OrdinaryMissingFromExtract,
+  scheduleECashFlowMissingFromExtract,
+  looksLikeBankFields,
+  looksLikeContractFields,
+  looksLikeTaxReturnFields,
+  packetReadPhase,
+  isPurchaseContractConfirmPending,
+  looksLikePaystubFields,
   preferFilenameClass,
   promoteExtractClass,
+  factValue,
   resolveFactConflict,
   resolveReceivedSlot,
   nextDocInvite,
   skipCurrentInvite,
+  skipUnreadDoc,
+  retryUnreadDoc,
+  writeUnreadNote,
   skipRemainingClasses,
   layer2Open,
   skipCurrentStillUseful,
@@ -73,35 +88,66 @@ import {
   productIntentLabel,
   purposeForIntent,
   slugForIntent,
+  afterRefiLoanAmountWrite,
   beginFileEdit,
+  clearLiveQuote,
+  retryLiveQuote,
+  parseLooseAmount,
+  settleLtvConfirm,
+  writePurchasePrice,
   changePendingProposal,
   settleResumeAfterCapture,
   persistGuidelineNote,
   withMatrixAfterAmount,
   workspacePrompt,
 } from "./workspace";
+import { skipHelocLine, withHelocToolQuote, writeFirstLien, writeHelocLine } from "./heloc";
+import { changeEntityYears } from "./yearsFromEntity";
 import {
   START_PATH_KEY,
   consumeHomepageFreshStart,
   homepageFreshEntryPending,
-  markHomepageFreshStart,
   writeStartPath,
 } from "@/components/products/startPath";
 import {
   applyStubEmployerSuggestion,
   canLooksRight,
-  sketchAssembled,
-  impliedLoanAmount,
-  lockedDownShare,
+  loanExceedsPurchasePrice,
   proposePublicSuggestion,
   proposeFundsPair,
   resolveProposal,
   skipYearsInBusiness,
   withComputedCompanion,
+  withIncomeTypeYearsAsk,
   writeQualifyingIncome,
   writeYearsInBusiness,
 } from "./completeness";
-import { applyBothMonthlyReasonAnswer, applyPayFrequencyAnswer, applyRaiseWhenAnswer, applyRaiseYtdFarAnswer } from "./qualifyingIncome";
+import {
+  applyBothMonthlyReasonAnswer,
+  applyPayFrequencyAnswer,
+  applyRaiseWhenAnswer,
+  applyRaiseYtdFarAnswer,
+  parseExtractMoney,
+  writeWageBox5,
+  writeTypedStubMonthly,
+  skipWageDocs,
+  skipPriorStub,
+  priorStubAskNeeded,
+  skipWageBox5,
+  skipWageFrequency,
+  skipWageStub,
+  acceptStubJob,
+  writeWagePayFrequency,
+  stubPeriodConfirmOpen,
+  canSpeakStubExtract,
+  maybeProposeStubExtract,
+  isStubExtractProposal,
+  isCoverReturnFields,
+  applyOwnAllEntity,
+  namedTwoK1WhoAskPending,
+  selectK1WhoOnLoan,
+  skipScheduleEUnread,
+} from "./qualifyingIncome";
 import {
   skipEstimatedHousing,
   syncCalculatorDraft,
@@ -111,7 +157,6 @@ import { parseSubjectLeaseAmount, proposeTypedLeaseRental, skipSubjectLease } fr
 import {
   applyMortgageSubtract,
   parseMonthlyDebtAmount,
-  proposeStatedMonthlyDebts,
   skipMonthlyDebts,
   subjectMortgagePayment,
   writeStatedMonthlyDebts,
@@ -127,11 +172,18 @@ import {
   parsePropertyType,
   parseVolunteeredAddress,
   proposePropertyType,
-  proposeSubjectAddress,
   skipPropertyType,
+  skipPropertyZip,
   skipSubjectAddress,
+  adoptReuseZip,
+  proposeAddressAndAdoptZip,
+  proposePlaceAddress,
+  skipQuoteAddress,
+  writeAddressAndAdoptZip,
   writePropertyType,
+  writePropertyZip,
   writeSubjectAddress,
+  keepPropertyZip,
 } from "./propertyType";
 import {
   parseTimeOnJobMonths,
@@ -158,6 +210,8 @@ import {
   isStatedHousehold,
   proposeStatedHousehold,
   skipHousehold,
+  skipOtherK1Loan,
+  writeOtherK1Loan,
   writeStatedHousehold,
 } from "./household";
 import {
@@ -167,6 +221,7 @@ import {
   writeCoborrowerName,
 } from "./coborrowerName";
 import {
+  isBorrowerNameConfirmPending,
   parseBorrowerName,
   proposeBorrowerName,
   skipBorrowerName,
@@ -184,6 +239,15 @@ import {
 import { isFileCitizenshipValue, skipCitizenship, writeCitizenship } from "./citizenship";
 import { skipFormerHistory, writeFormerHistoryNote } from "./fileHistory";
 import { markExported, type FileExportFormat } from "./staffExport";
+import {
+  acceptPendingLiveCoupon,
+  applyCouponChoice,
+  dropResolvedAddressConfirmChips,
+  keepPendingLiveCoupon,
+  normalizeLiveQuoteRows,
+  normalizePendingLiveCoupon,
+  sealStoredFoxThread,
+} from "./liveCoupon";
 
 function numberOrUndefined(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : undefined;
@@ -195,6 +259,29 @@ function signedNumberOrUndefined(value: unknown): number | undefined {
 
 function trimString(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function normalizeLiveQuote(value: unknown): FoxIntakeDraft["liveQuote"] {
+  if (!value || typeof value !== "object") return undefined;
+  const raw = value as Record<string, unknown>;
+  const key = typeof raw.key === "string" ? raw.key.trim() : "";
+  const rate = Number(raw.rate);
+  const asOf = typeof raw.asOf === "string" ? raw.asOf : "";
+  if (!key || !Number.isFinite(rate) || rate <= 0) return undefined;
+  const principalAndInterest = numberOrUndefined(raw.principalAndInterest);
+  const pts = signedNumberOrUndefined(raw.pts);
+  const term = numberOrUndefined(raw.term);
+  const interestOnly = numberOrUndefined(raw.interestOnly);
+  return {
+    key,
+    rate,
+    asOf,
+    ...(principalAndInterest != null ? { principalAndInterest } : {}),
+    ...(pts != null ? { pts } : {}),
+    ...(term != null && term !== 30 ? { term } : {}),
+    ...(interestOnly != null ? { interestOnly } : {}),
+    ...(raw.kind === "heloc" ? { kind: "heloc" as const } : {}),
+  };
 }
 
 function normalizeHistoryEntries(value: unknown): { label?: string; from?: string; to?: string }[] | undefined {
@@ -214,6 +301,27 @@ function normalizeHistoryEntries(value: unknown): { label?: string; from?: strin
     });
   }
   return entries.length ? entries : undefined;
+}
+
+function normalizeAssetAccounts(value: unknown): FoxIntakeDraft["assetAccounts"] {
+  if (!Array.isArray(value)) return undefined;
+  const rows: NonNullable<FoxIntakeDraft["assetAccounts"]> = [];
+  for (const item of value) {
+    if (!item || typeof item !== "object") continue;
+    const raw = item as { institution?: unknown; last4?: unknown; balance?: unknown; type?: unknown };
+    const institution = trimString(raw.institution);
+    const last4 = trimString(raw.last4);
+    const balance = trimString(raw.balance);
+    const type = trimString(raw.type);
+    if (!institution && !last4 && !balance) continue;
+    rows.push({
+      ...(institution ? { institution } : {}),
+      ...(last4 ? { last4 } : {}),
+      ...(balance ? { balance } : {}),
+      ...(type ? { type } : {}),
+    });
+  }
+  return rows.length ? rows : undefined;
 }
 
 function normalizeOtherProperties(value: unknown): FoxIntakeDraft["otherProperties"] {
@@ -283,6 +391,29 @@ function normalizeAgencyDeclarations(
   return Object.keys(next).length ? next : undefined;
 }
 
+function readFileId(raw: object): string | undefined {
+  const rec = raw as Record<string, unknown>;
+  const value = rec.fileId ?? rec.file_id;
+  if (typeof value !== "string") return undefined;
+  const id = value.trim();
+  return id || undefined;
+}
+
+export function mintFileId(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return `file_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
+}
+
+export function ensureFileId(draft: FoxIntakeDraft): FoxIntakeDraft {
+  const existing = draft.fileId?.trim();
+  if (existing) {
+    return existing === draft.fileId ? draft : { ...draft, fileId: existing };
+  }
+  return { ...draft, fileId: mintFileId() };
+}
+
 function emptyField(field: string, value = "", source: DraftField["source"] = "client"): DraftField {
   return { field, value, source, confirmed: false };
 }
@@ -311,18 +442,47 @@ export function emptyDraft(): FoxIntakeDraft {
     notes: [],
     documents: [],
     documentsSkipped: false,
+    docCapSpoken: false,
     docsStarted: false,
     docsHeld: false,
     priorYearSkipped: false,
+    federalReturnSkipped: false,
+    transcriptFollowUpSkipped: false,
+    docSpeak: {},
+    lastDocSpeakKey: "",
+    secondBankStatementSkipped: false,
     yearsInBusinessAsked: false,
     awaitingYearsInBusiness: false,
+    entityYearsAsked: false,
+    pendingBusinessStart: null,
+    awaitingMonthlyDebts: false,
     emailSkipped: false,
+    wageDocsAsked: false,
+    wageBox5Asked: false,
+    wageFrequencyAsked: false,
+    wageStubAsked: false,
+    stubExtractAccepted: false,
+    priorStubAsked: false,
+    awaitingUnreadNote: false,
     awaitingPayFrequency: false,
     awaitingBothMonthlyReason: false,
+    awaitingCoverWageGap: false,
+    coverWageGapAsked: false,
+    householdWagesAsked: false,
+    otherK1LoanAsked: false,
+    otherK1LoanAnswer: undefined,
+    otherK1OnLoan: false,
+    k1WhoChoice: undefined,
+    incomeLedger: [],
+    taxReturnPacketSpoken: false,
+    taxReturnPacketCloseAsk: false,
+    scheduleECashUnread: false,
+    scheduleECashAsked: false,
     awaitingRaiseWhen: false,
     awaitingRaiseYtdFar: false,
     facts: {},
     pendingConflict: null,
+    lastSpokenConflictKey: "",
     skippedClasses: [],
     skippedStillUseful: [],
     missingAskKey: "",
@@ -371,6 +531,7 @@ function normalize(value: unknown): FoxIntakeDraft {
       ? (raw.resumeAfterEdit as FoxPrompt)
       : undefined,
     path: raw.path === "acr" || raw.path === "loan-only" ? raw.path : undefined,
+    fileId: readFileId(raw),
     productIntent: normalizeProductIntent(raw.productIntent),
     jumboPurpose: raw.jumboPurpose === "buy" || raw.jumboPurpose === "refinance"
       ? raw.jumboPurpose
@@ -390,8 +551,14 @@ function normalize(value: unknown): FoxIntakeDraft {
         ? raw.creditEvent
         : undefined,
     cashOut: Boolean(raw.cashOut),
+    refiPurposeAsked: Boolean(raw.refiPurposeAsked || raw.cashOut),
     overPriceConfirmed: Boolean(raw.overPriceConfirmed),
+    overValueSkipped: Boolean(raw.overValueSkipped),
+    ltvConfirm: raw.ltvConfirm === "loan" || raw.ltvConfirm === "value" ? raw.ltvConfirm : undefined,
     loanAmountValue: numberOrUndefined(raw.loanAmountValue),
+    firstLienAmount: numberOrUndefined(raw.firstLienAmount),
+    firstLienAsked: Boolean(raw.firstLienAsked || (Number(raw.firstLienAmount) > 0)),
+    helocLineAsked: Boolean(raw.helocLineAsked),
     propertyValueAmount: numberOrUndefined(raw.propertyValueAmount),
     downPaymentAmount: numberOrUndefined(raw.downPaymentAmount),
     amountAsked: Boolean(raw.amountAsked),
@@ -453,6 +620,18 @@ function normalize(value: unknown): FoxIntakeDraft {
     ),
     propertyType: isPropertyTypeValue(String(raw.propertyType ?? "")) ? raw.propertyType : undefined,
     propertyTypeAsked: Boolean(raw.propertyTypeAsked || raw.propertyType),
+    propertyZip:
+      typeof raw.propertyZip === "string" && /^\d{5}$/.test(raw.propertyZip.trim())
+        ? raw.propertyZip.trim()
+        : undefined,
+    propertyZipAsked: Boolean(
+      raw.propertyZipAsked ||
+        (typeof raw.propertyZip === "string" && /^\d{5}$/.test(raw.propertyZip.trim())),
+    ),
+    addressZipOffered:
+      typeof raw.addressZipOffered === "string" && /^\d{5}$/.test(raw.addressZipOffered.trim())
+        ? raw.addressZipOffered.trim()
+        : undefined,
     subjectAddress:
       typeof raw.subjectAddress === "string" && raw.subjectAddress.trim()
         ? raw.subjectAddress.trim()
@@ -461,6 +640,20 @@ function normalize(value: unknown): FoxIntakeDraft {
       raw.subjectAddressAsked ||
         (typeof raw.subjectAddress === "string" && raw.subjectAddress.trim()),
     ),
+    lastPurchaseContractFields: normalizeLastPurchaseContractFields(raw.lastPurchaseContractFields),
+    subjectStreet:
+      typeof raw.subjectStreet === "string" && raw.subjectStreet.trim()
+        ? raw.subjectStreet.trim()
+        : undefined,
+    subjectCity:
+      typeof raw.subjectCity === "string" && raw.subjectCity.trim()
+        ? raw.subjectCity.trim()
+        : undefined,
+    subjectState: raw.subjectState === "CA" ? "CA" : undefined,
+    subjectCounty:
+      typeof raw.subjectCounty === "string" && raw.subjectCounty.trim()
+        ? raw.subjectCounty.trim()
+        : undefined,
     statedTimeOnJob: numberOrUndefined(raw.statedTimeOnJob),
     statedTimeOnJobLabel:
       typeof raw.statedTimeOnJobLabel === "string" && raw.statedTimeOnJobLabel.trim()
@@ -490,6 +683,16 @@ function normalize(value: unknown): FoxIntakeDraft {
         ? raw.statedHousehold
         : undefined,
     householdAsked: Boolean(raw.householdAsked || raw.statedHousehold),
+    otherK1LoanAsked: Boolean(raw.otherK1LoanAsked),
+    otherK1LoanAnswer:
+      raw.otherK1LoanAnswer === "yes" || raw.otherK1LoanAnswer === "no" || raw.otherK1LoanAnswer === "skip"
+        ? raw.otherK1LoanAnswer
+        : undefined,
+    otherK1OnLoan: Boolean(raw.otherK1OnLoan),
+    k1WhoChoice:
+      raw.k1WhoChoice === "primary" || raw.k1WhoChoice === "other" || raw.k1WhoChoice === "both"
+        ? raw.k1WhoChoice
+        : undefined,
     coborrowerName:
       typeof raw.coborrowerName === "string" && raw.coborrowerName.trim()
         ? raw.coborrowerName.trim()
@@ -520,11 +723,13 @@ function normalize(value: unknown): FoxIntakeDraft {
     agencyDeclarations: normalizeAgencyDeclarations(raw.agencyDeclarations),
     addressHistory: normalizeHistoryEntries(raw.addressHistory),
     employmentHistory: normalizeHistoryEntries(raw.employmentHistory),
+    assetAccounts: normalizeAssetAccounts(raw.assetAccounts),
     pendingOtherReo: raw.pendingOtherReo ? true : null,
     fileExport: normalizeFileExport(raw.fileExport),
     docsOpen: Boolean(raw.docsOpen),
     docsStarted: Boolean(raw.docsStarted),
     docsHeld: Boolean(raw.docsHeld),
+    docCapSpoken: Boolean(raw.docCapSpoken),
     originatorRequested: Boolean(raw.originatorRequested),
     motion: isFileMotion(raw.motion) ? raw.motion : undefined,
     nextActor: isFileNext(raw.nextActor) ? raw.nextActor : undefined,
@@ -557,6 +762,21 @@ function normalize(value: unknown): FoxIntakeDraft {
         ? raw.workspaceDraftStatus
         : undefined,
     previewSample: Boolean(raw.previewSample),
+    liveQuoteKey: typeof raw.liveQuoteKey === "string" && raw.liveQuoteKey.trim()
+      ? raw.liveQuoteKey.trim()
+      : undefined,
+    liveQuoteStatus:
+      raw.liveQuoteStatus === "ready" || raw.liveQuoteStatus === "unavailable"
+        ? raw.liveQuoteStatus
+        : undefined,
+    liveQuoteVendorReason:
+      typeof raw.liveQuoteVendorReason === "string" && raw.liveQuoteVendorReason.trim()
+        ? raw.liveQuoteVendorReason.trim().slice(0, 240)
+        : undefined,
+    liveQuote: normalizeLiveQuote(raw.liveQuote),
+    liveQuoteRows: normalizeLiveQuoteRows(raw.liveQuoteRows),
+    liveCouponSettled: Boolean(raw.liveCouponSettled),
+    pendingLiveCoupon: normalizePendingLiveCoupon(raw.pendingLiveCoupon),
     documents: (raw.documents ?? []).map((doc) => ({
       ...doc,
       status: doc.status ?? "received",
@@ -565,9 +785,12 @@ function normalize(value: unknown): FoxIntakeDraft {
       party: doc.party === "coborrower" ? "coborrower" : doc.party === "borrower" ? "borrower" : undefined,
     })),
     facts: normalizeFacts(raw.facts),
+    pendingWageExtract: normalizePendingWageExtract(raw.pendingWageExtract),
     pendingConflict: normalizeConflict(raw.pendingConflict),
+    lastSpokenConflictKey: typeof raw.lastSpokenConflictKey === "string" ? raw.lastSpokenConflictKey : "",
     unresolvedConflict: Boolean(raw.unresolvedConflict),
     pendingProposal: normalizeProposal(raw.pendingProposal),
+    pendingAddress: normalizePendingAddress(raw.pendingAddress),
     skippedClasses: Array.isArray(raw.skippedClasses)
       ? raw.skippedClasses.filter((item): item is ExtractClass => typeof item === "string")
       : [],
@@ -575,10 +798,58 @@ function normalize(value: unknown): FoxIntakeDraft {
       ? raw.skippedStillUseful.filter((item): item is string => typeof item === "string" && item.length > 0)
       : [],
     priorYearSkipped: Boolean(raw.priorYearSkipped),
+    federalReturnSkipped: Boolean(raw.federalReturnSkipped),
+    transcriptFollowUpSkipped: Boolean(raw.transcriptFollowUpSkipped),
+    docSpeak: normalizeDocSpeak(raw.docSpeak),
+    lastDocSpeakKey: typeof raw.lastDocSpeakKey === "string" ? raw.lastDocSpeakKey : "",
+    secondBankStatementSkipped: Boolean(raw.secondBankStatementSkipped),
     yearsInBusinessAsked: Boolean(raw.yearsInBusinessAsked),
     awaitingYearsInBusiness: Boolean(raw.awaitingYearsInBusiness),
+    entityYearsAsked: Boolean(raw.entityYearsAsked),
+    pendingBusinessStart: normalizePendingBusinessStart(raw.pendingBusinessStart),
+    awaitingMonthlyDebts: Boolean(raw.awaitingMonthlyDebts),
+    wageDocsAsked: Boolean(raw.wageDocsAsked),
+    wageBox5Asked: Boolean(raw.wageBox5Asked),
+    wageFrequencyAsked: Boolean(raw.wageFrequencyAsked),
+    wageStubAsked: Boolean(raw.wageStubAsked),
+    stubExtractAccepted: Boolean(raw.stubExtractAccepted),
+    priorStubAsked: Boolean(raw.priorStubAsked),
+    awaitingUnreadNote: Boolean(raw.awaitingUnreadNote),
     awaitingPayFrequency: Boolean(raw.awaitingPayFrequency),
     awaitingBothMonthlyReason: Boolean(raw.awaitingBothMonthlyReason),
+    awaitingCoverWageGap: Boolean(raw.awaitingCoverWageGap),
+    coverWageGapAsked: Boolean(raw.coverWageGapAsked),
+    householdWagesAsked: Boolean(raw.householdWagesAsked),
+    pendingCoverWages:
+      typeof raw.pendingCoverWages === "string" && raw.pendingCoverWages.trim()
+        ? raw.pendingCoverWages.trim()
+        : undefined,
+    coverWageAnotherJob: Boolean(raw.coverWageAnotherJob),
+    coverWageGap:
+      raw.coverWageGap &&
+      typeof raw.coverWageGap.coverAnnual === "number" &&
+      typeof raw.coverWageGap.fileW2Annual === "number"
+        ? {
+            coverAnnual: raw.coverWageGap.coverAnnual,
+            fileW2Annual: raw.coverWageGap.fileW2Annual,
+          }
+        : undefined,
+    incomeLedger: Array.isArray(raw.incomeLedger)
+      ? raw.incomeLedger.filter(
+          (row): row is NonNullable<FoxIntakeDraft["incomeLedger"]>[number] =>
+            Boolean(row && typeof row === "object" && typeof row.id === "string" && typeof row.kind === "string"),
+        )
+      : [],
+    taxReturnPacketRead:
+      raw.taxReturnPacketRead === "pending" ||
+      raw.taxReturnPacketRead === "reading" ||
+      raw.taxReturnPacketRead === "done"
+        ? raw.taxReturnPacketRead
+        : undefined,
+    taxReturnPacketSpoken: Boolean(raw.taxReturnPacketSpoken),
+    taxReturnPacketCloseAsk: Boolean(raw.taxReturnPacketCloseAsk),
+    scheduleECashUnread: Boolean(raw.scheduleECashUnread),
+    scheduleECashAsked: Boolean(raw.scheduleECashAsked),
     awaitingRaiseWhen: Boolean(raw.awaitingRaiseWhen),
     awaitingRaiseYtdFar: Boolean(raw.awaitingRaiseYtdFar),
     raiseWhenRaw: typeof raw.raiseWhenRaw === "string" ? raw.raiseWhenRaw : undefined,
@@ -592,6 +863,21 @@ function normalize(value: unknown): FoxIntakeDraft {
     missingAskKey: typeof raw.missingAskKey === "string" ? raw.missingAskKey : "",
     sections: { ...base.sections, ...raw.sections },
   };
+}
+
+function normalizeDocSpeak(value: FoxIntakeDraft["docSpeak"]): Record<string, DocSpeakRow> {
+  if (!value || typeof value !== "object") return {};
+  const next: Record<string, DocSpeakRow> = {};
+  for (const [key, row] of Object.entries(value)) {
+    if (!key || !row || typeof row !== "object") continue;
+    next[key] = {
+      received: Boolean(row.received),
+      named: Boolean(row.named),
+      offered: Boolean(row.offered),
+      done: Boolean(row.done),
+    };
+  }
+  return next;
 }
 
 function normalizeFacts(value: FoxIntakeDraft["facts"]): Record<string, DraftField> {
@@ -700,6 +986,45 @@ function normalizeFileExport(value: FoxIntakeDraft["fileExport"]): FoxIntakeDraf
   };
 }
 
+function normalizePendingWageExtract(
+  value: FoxIntakeDraft["pendingWageExtract"],
+): FoxIntakeDraft["pendingWageExtract"] {
+  if (!value || typeof value !== "object") return undefined;
+  const box5 = Number(value.box5);
+  const stub = Number(value.stub);
+  const frequency = typeof value.frequency === "string" ? value.frequency.trim() : "";
+  const employer = typeof value.employer === "string" ? value.employer.trim() : "";
+  const employee = typeof value.employee === "string" ? value.employee.trim() : "";
+  const monthly = Number(value.monthly);
+  const next = {
+    ...(Number.isFinite(box5) && box5 > 0 ? { box5 } : {}),
+    ...(Number.isFinite(stub) && stub > 0 ? { stub } : {}),
+    ...(frequency ? { frequency } : {}),
+    ...(employer ? { employer } : {}),
+    ...(employee ? { employee } : {}),
+    ...(Number.isFinite(monthly) && monthly > 0 ? { monthly } : {}),
+    ...(value.w2In ? { w2In: true } : {}),
+    ...(value.stubIn ? { stubIn: true } : {}),
+    ...(value.variablePay ? { variablePay: true } : {}),
+  };
+  if (!next.box5 && !next.stub && !next.frequency && !next.employer && !next.employee && !next.monthly && !next.w2In && !next.stubIn && !next.variablePay) {
+    return undefined;
+  }
+  return next;
+}
+
+function normalizePendingBusinessStart(
+  value: FoxIntakeDraft["pendingBusinessStart"],
+): FoxIntakeDraft["pendingBusinessStart"] {
+  if (!value || typeof value !== "object") return null;
+  const date = typeof value.date === "string" ? value.date.trim() : "";
+  const label = typeof value.label === "string" ? value.label.trim() : "";
+  const years = Number(value.years);
+  const entity = typeof value.entity === "string" ? value.entity.trim() : "";
+  if (!date || !label || !Number.isFinite(years) || years <= 0) return null;
+  return { date, years: Math.round(years), label, ...(entity ? { entity } : {}) };
+}
+
 function normalizePendingHireDate(
   value: FoxIntakeDraft["pendingHireDate"],
 ): FoxIntakeDraft["pendingHireDate"] {
@@ -727,6 +1052,31 @@ function normalizePendingCurrentHousing(
         }))
     : undefined;
   return { amount: Math.round(amount), ...(extras?.length ? { extras } : {}) };
+}
+
+function normalizeLastPurchaseContractFields(value: FoxIntakeDraft["lastPurchaseContractFields"]) {
+  if (!value || typeof value !== "object") return undefined;
+  const next: Record<string, string> = {};
+  for (const [key, raw] of Object.entries(value)) {
+    const field = String(key ?? "").trim();
+    const text = String(raw ?? "").trim();
+    if (!field || !text) continue;
+    next[field] = text;
+  }
+  return Object.keys(next).length ? next : undefined;
+}
+
+function normalizePendingAddress(value: FoxIntakeDraft["pendingAddress"]) {
+  const place = parsePlaceAddress(value);
+  if (!place) return undefined;
+  return {
+    line: place.line,
+    street: place.street,
+    city: place.city,
+    state: "CA" as const,
+    zip: place.zip,
+    ...(place.county ? { county: place.county } : {}),
+  };
 }
 
 function normalizeProposal(value: FoxIntakeDraft["pendingProposal"]): FactProposal | null {
@@ -776,9 +1126,9 @@ function normalizeProposal(value: FoxIntakeDraft["pendingProposal"]): FactPropos
 function readStored(): FoxIntakeDraft {
   if (typeof window === "undefined") return emptyDraft();
   try {
-    const local = window.localStorage.getItem(INTAKE_STORAGE_KEY);
     const session = window.sessionStorage.getItem(INTAKE_STORAGE_KEY);
-    const raw = local || session;
+    const local = window.localStorage.getItem(INTAKE_STORAGE_KEY);
+    const raw = session || local;
     if (!raw) return emptyDraft();
     return normalize(JSON.parse(raw) as unknown);
   } catch {
@@ -786,12 +1136,24 @@ function readStored(): FoxIntakeDraft {
   }
 }
 
+/** A new browser session must not keep an old Live as of. Same tab reuses sessionStorage. */
+export function omitLiveQuoteForResume(draft: FoxIntakeDraft): FoxIntakeDraft {
+  const next = { ...draft };
+  delete next.liveQuote;
+  delete next.liveQuoteKey;
+  delete next.liveQuoteStatus;
+  delete next.liveQuoteVendorReason;
+  delete next.liveQuoteRows;
+  delete next.liveCouponSettled;
+  delete next.pendingLiveCoupon;
+  return next;
+}
+
 function persist(draft: FoxIntakeDraft) {
   if (typeof window === "undefined") return;
-  const raw = JSON.stringify(draft);
   try {
-    window.sessionStorage.setItem(INTAKE_STORAGE_KEY, raw);
-    window.localStorage.setItem(INTAKE_STORAGE_KEY, raw);
+    window.sessionStorage.setItem(INTAKE_STORAGE_KEY, JSON.stringify(draft));
+    window.localStorage.setItem(INTAKE_STORAGE_KEY, JSON.stringify(omitLiveQuoteForResume(draft)));
   } catch {
     // Preview storage can be blocked; keep the in-memory copy.
   }
@@ -852,7 +1214,9 @@ function persistMessages(messages: FoxMessage[]) {
 }
 
 function persistMigratedMessages(messages: FoxMessage[]) {
-  foxMessages = migrateRestoredFoxMessages(messages);
+  foxMessages = sealStoredFoxThread(
+    dropResolvedAddressConfirmChips(migrateRestoredFoxMessages(messages), current),
+  );
   messagesHydrated = true;
   persistMessages(foxMessages);
   return foxMessages;
@@ -896,6 +1260,7 @@ export function shouldResumeWorkspaceEntry(
   draft: FoxIntakeDraft = current,
   messages: FoxMessage[] = getFoxMessages(),
 ) {
+  if (draft.fileId?.trim()) return true;
   if (fileExists(draft) || workspaceSessionStarted(draft, messages)) return true;
   return Boolean(
     (draft.skippedClasses && draft.skippedClasses.length > 0) ||
@@ -906,7 +1271,9 @@ export function shouldResumeWorkspaceEntry(
 
 function resumeWorkspaceEntry(path?: IntakePath | null, intent: ProductIntent | null = null) {
   markWorkspaceEntry(current.path ?? path);
-  if (!current.workspaceFlow) {
+  if (!current.fileId) {
+    commit(ensureFileId({ ...current, workspaceFlow: true }));
+  } else if (!current.workspaceFlow) {
     commit({ ...current, workspaceFlow: true });
   }
   if (path && !current.path) setDraftPath(path);
@@ -927,7 +1294,7 @@ function markWorkspaceEntry(path?: IntakePath | null) {
   hydrated = true;
 }
 
-const PREVIEW_STORAGE_KEYS = [INTAKE_STORAGE_KEY, FOX_MESSAGES_KEY, START_PATH_KEY];
+const PREVIEW_STORAGE_KEYS = [INTAKE_STORAGE_KEY, FOX_MESSAGES_KEY, START_PATH_KEY, FOX_PANEL_KEY];
 
 export function clearPreviewWorkspaceStorage() {
   if (typeof window === "undefined") return;
@@ -941,39 +1308,59 @@ export function clearPreviewWorkspaceStorage() {
   }
 }
 
-/** Explicit Start over. Same wipe as homepage CTA, plus the three preview storage keys. */
+/** Start over is the only wipe: new file_id, empty Structure, empty thread. */
 export function startOverWorkspace(path: IntakePath | null = null) {
   clearPreviewWorkspaceStorage();
   foxMessages = [];
   messagesHydrated = true;
   hydrated = false;
   workspaceEntryKey = null;
-  current = emptyDraft();
+  current = {
+    ...emptyDraft(),
+    facts: {},
+    notes: [],
+    documents: [],
+    documentsSkipped: false,
+    docCapSpoken: false,
+    pendingProposal: null,
+    pendingConflict: null,
+    lastSpokenConflictKey: "",
+    employmentHistory: [],
+    conditions: [],
+    skippedStillUseful: [],
+    skippedClasses: [],
+  };
   const next = resetWorkspaceForEntry(path, null);
   if (path) writeStartPath(path);
   return next;
 }
 
-/** Wipe the prior file. Keep the new path and honor intent without a second reset. */
+export function markDocCapSpoken() {
+  if (current.docCapSpoken) return current;
+  commit({ ...current, docCapSpoken: true });
+  return current;
+}
+
+/** Open a new File and mint file_id. Not a refresh / homepage resume. */
 export function resetWorkspaceForEntry(
   path: IntakePath | null,
   intent: ProductIntent | null = null,
 ) {
   markWorkspaceEntry(path);
-  current = {
+  current = ensureFileId({
     ...emptyDraft(),
     path: path ?? undefined,
     productIntent: intent ?? undefined,
     workspaceFlow: true,
     updatedAt: new Date().toISOString(),
-  };
+  });
   clearFoxMessages();
   persist(current);
   emit();
   return current;
 }
 
-/** Keep a live homepage thread or an in-motion File. Fresh start is homepage CTA only. */
+/** Resume this browser File. leftover ?fresh=1 must not wipe. */
 export function continueWorkspaceFromEntry(
   path: IntakePath | null,
   intent: ProductIntent | null = null,
@@ -981,11 +1368,8 @@ export function continueWorkspaceFromEntry(
 ) {
   if (!hydrated) hydrateFoxDraft();
   hydrateFoxMessages();
-  const fresh = Boolean(entry?.fresh) || homepageFreshEntryPending();
-  if (fresh) {
+  if (entry?.fresh || homepageFreshEntryPending()) {
     consumeHomepageFreshStart();
-    const next = startOverWorkspace(path);
-    return intent ? setDraftProductIntent(intent) : next;
   }
   if (shouldResumeWorkspaceEntry()) {
     return resumeWorkspaceEntry(path, intent);
@@ -1015,18 +1399,28 @@ export function hydrateFoxDraft() {
     return current;
   }
   current = readStored();
+  if (!current.fileId && shouldResumeWorkspaceEntry(current, foxMessages)) {
+    current = ensureFileId(current);
+  }
   if (!current.scenario) {
     const scenario = readScenario();
     if (scenario) current = withScenario(current, scenario);
   }
   hydrated = true;
   persist(current);
+  foxMessages = dropResolvedAddressConfirmChips(foxMessages, current);
+  persistMessages(foxMessages);
   emit();
   return current;
 }
 
 export function getFoxDraft() {
   return current;
+}
+
+/** Test / replay helper. Composer ingest still goes through applyExtractWrite. */
+export function loadIntakeDraft(next: FoxIntakeDraft) {
+  return commit(next);
 }
 
 export function subscribeFoxDraft(listener: () => void) {
@@ -1039,7 +1433,7 @@ export function getServerDraft() {
 }
 
 function commit(next: FoxIntakeDraft) {
-  current = { ...syncCalculatorDraft(next), updatedAt: new Date().toISOString() };
+  current = { ...withHelocToolQuote(syncCalculatorDraft(next)), updatedAt: new Date().toISOString() };
   persist(current);
   emit();
   return current;
@@ -1069,6 +1463,39 @@ export function setDraftPath(path: IntakePath | null) {
   return commit({ ...current, path });
 }
 
+export function setLiveQuoteResult(
+  key: string,
+  quote: FoxIntakeDraft["liveQuote"] | null,
+  rows?: FoxIntakeDraft["liveQuoteRows"],
+  reason?: string,
+) {
+  if (!key) return current;
+  const vendorReason =
+    typeof reason === "string" && reason.trim() ? reason.trim().slice(0, 240) : undefined;
+  if (quote && current.liveQuote?.key === quote.key && current.liveQuoteStatus === "ready") {
+    if (rows?.length && !current.liveQuoteRows?.length) {
+      return commit({ ...current, liveQuoteRows: rows, liveQuoteVendorReason: undefined });
+    }
+    return current;
+  }
+  if (!quote && current.liveQuoteKey === key && current.liveQuoteStatus === "unavailable") {
+    if (vendorReason && current.liveQuoteVendorReason !== vendorReason) {
+      return commit({ ...current, liveQuoteVendorReason: vendorReason });
+    }
+    return current;
+  }
+  return commit({
+    ...current,
+    liveQuoteKey: key,
+    liveQuoteStatus: quote ? "ready" : "unavailable",
+    liveQuote: quote ?? undefined,
+    liveQuoteRows: quote ? rows ?? current.liveQuoteRows : undefined,
+    liveQuoteVendorReason: quote ? undefined : vendorReason,
+    liveCouponSettled: false,
+    pendingLiveCoupon: undefined,
+  });
+}
+
 /** /start URL seed. Resume an operating File; do not treat path=acr|loan as a fresh CTA. */
 export function applyWorkspaceEntry(
   path: IntakePath | null,
@@ -1089,10 +1516,14 @@ export function applyWorkspaceEntry(
   return resetWorkspaceForEntry(path, intent);
 }
 
-/** Homepage CTA: always a new file. Return to Fox / refresh must not call this. */
+/** Homepage CTA: resume this browser File. Mint only when the browser is empty. */
 export function beginWorkspaceFromHero(path: IntakePath) {
-  markHomepageFreshStart();
-  return startOverWorkspace(path);
+  if (!hydrated) hydrateFoxDraft();
+  hydrateFoxMessages();
+  if (shouldResumeWorkspaceEntry()) {
+    return resumeWorkspaceEntry(current.path ?? path);
+  }
+  return resetWorkspaceForEntry(path, null);
 }
 
 function withProductIntent(draft: FoxIntakeDraft, intent: ProductIntent): FoxIntakeDraft {
@@ -1159,9 +1590,9 @@ function withWorkspaceScenario(draft: FoxIntakeDraft): FoxIntakeDraft {
       (draft.occupancyChoice.value as ExplorerScenario["occupancy"]) || scenario.occupancy,
     timeline:
       (draft.timelineChoice.value as ExplorerScenario["timeline"]) || scenario.timeline,
-    loanAmount: draft.loanAmountValue ?? scenario.loanAmount,
+    loanAmount: draft.loanAmountValue,
     propertyValue: draft.propertyValueAmount ?? scenario.propertyValue,
-    downPayment: draft.downPaymentAmount ?? scenario.downPayment,
+    downPayment: draft.downPaymentAmount,
     creditRange: explorerCreditFromStated(draft.creditBand) ?? scenario.creditRange,
   };
   writeScenario(next);
@@ -1200,13 +1631,19 @@ export function addNote(text: string) {
 }
 
 export function receiveDocument(input: Omit<ReceivedDoc, "status" | "note"> & { status?: DocStatus; note?: string }) {
+  const party = input.party ?? (current.workingOnCoborrower ? "coborrower" : "borrower");
+  const incomingBorrowerId =
+    party !== "coborrower" && (input.extractClass === "government_id" || input.slot === "id");
+  const skippedClasses = incomingBorrowerId
+    ? (current.skippedClasses ?? []).filter((kind) => kind !== "government_id")
+    : current.skippedClasses;
   const documents = [
     ...current.documents,
     {
       ...input,
       status: input.status ?? "received",
       note: input.note,
-      party: input.party ?? (current.workingOnCoborrower ? "coborrower" : "borrower"),
+      party,
     },
   ];
   const keepPhase =
@@ -1216,6 +1653,7 @@ export function receiveDocument(input: Omit<ReceivedDoc, "status" | "note"> & { 
     restripeGatheringOrReady({
       ...current,
       documents,
+      skippedClasses,
       documentsSkipped: false,
       docsStarted: true,
       docsOpen: false,
@@ -1256,6 +1694,22 @@ export function patchReceivedDoc(
   });
 }
 
+/** Period Use this already wrote this stub. A late empty page-read must not stamp unread. */
+function paystubAlreadyWritten(draft: FoxIntakeDraft, doc?: ReceivedDoc) {
+  if (!doc) return false;
+  const isStub =
+    doc.extractClass === "paystub" ||
+    doc.slot === "paystubs" ||
+    preferFilenameClass(doc.extractClass ?? "other", doc.name) === "paystub";
+  if (!isStub) return false;
+  if (doc.status !== "extracted" || isUnreadNote(doc.note)) return false;
+  return Boolean(
+    draft.stubExtractAccepted ||
+      factValue(draft, "gross_period") ||
+      factValue(draft, "paystub_amount"),
+  );
+}
+
 export function applyExtractWrite(
   receivedAt: string,
   name: string,
@@ -1267,24 +1721,90 @@ export function applyExtractWrite(
   if (!match) {
     return { draft: current, writes: [], conflict: null, quietLines: [], extractClass: input.extractClass };
   }
-  const extractedClass = promoteExtractClass(input.extractClass, input.fields);
+  const filenameClass = preferFilenameClass("other", name);
+  const extractedClass = promoteExtractClass(
+    filenameClass === "government_id"
+      ? "government_id"
+      : looksLikePaystubFields(input.fields) && input.extractClass === "other"
+        ? "paystub"
+        : input.extractClass,
+    input.fields,
+  );
+  const bankInvite = nextDocInvite(current) === "bank_statement";
+  const idWageLocked =
+    extractedClass === "government_id" || extractedClass === "paystub" || extractedClass === "w2";
+  const lockedSuggestion = hasLockedSuggestion(extractedClass, input.fields);
+  const emptyForClass =
+    idWageLocked ||
+    (extractedClass === "purchase_contract" && !looksLikeContractFields(input.fields)) ||
+    ((bankInvite || extractedClass === "bank_statement") &&
+      !looksLikeBankFields(input.fields) &&
+      !looksLikeContractFields(input.fields)) ||
+    (extractedClass === "tax_return" && !looksLikeTaxReturnFields(input.fields));
+  const packetContinue = Boolean(packetReadPhase(input.fields));
   const unreadEmpty =
     !failed &&
-    (extractedClass === "government_id" || extractedClass === "paystub" || extractedClass === "w2") &&
-    !hasLockedSuggestion(extractedClass, input.fields);
-  const treatFailed = Boolean(failed || unreadEmpty);
+    !lockedSuggestion &&
+    !isCoverReturnFields(input.fields) &&
+    emptyForClass &&
+    !packetContinue;
+  const k1Unread = !failed && k1OrdinaryMissingFromExtract(input.fields, name);
+  const scheduleEUnread = !failed && scheduleECashFlowMissingFromExtract(input.fields);
+  const box5Read = Boolean(
+    String(input.fields?.medicare_wages ?? "").trim() || String(input.fields?.box5 ?? "").trim(),
+  );
+  const stubRead = Boolean(
+    String(input.fields?.gross_period ?? "").trim() && String(input.fields?.pay_frequency ?? "").trim(),
+  );
+  const stubPeriodOpen = stubPeriodConfirmOpen(current);
+  const stubCanSpeak = canSpeakStubExtract(current, input.fields);
+  const silentStubReceive = stubPeriodOpen && !stubCanSpeak && !box5Read;
+  const treatFailed =
+    (Boolean(failed || unreadEmpty || k1Unread || scheduleEUnread) && !box5Read && !stubRead) ||
+    silentStubReceive;
+  const matchingDoc = current.documents.find(
+    (doc) => doc.receivedAt === receivedAt && doc.name === name,
+  );
+  /** Period already wrote this stub. A late empty page-read is not unread. */
+  if (treatFailed && paystubAlreadyWritten(current, matchingDoc)) {
+    return {
+      draft: current,
+      writes: [],
+      conflict: null,
+      quietLines: [],
+      extractClass: matchingDoc?.extractClass ?? "paystub",
+    };
+  }
   const displayClass =
     treatFailed || extractedClass === "other"
       ? preferFilenameClass(extractedClass, name)
       : extractedClass;
-  const applied = treatFailed
+  const applyClass = stubPeriodOpen && stubCanSpeak ? "paystub" : extractedClass;
+  let applied = treatFailed
     ? {
         draft: { ...current, looksRightHold: true },
         writes: [],
         conflict: null,
-        quietLines: note ? [note] : [FAILED_READ_NOTE],
+        quietLines: note && isUnreadNote(note) ? [note] : [FAILED_READ_NOTE],
       }
-    : applyExtractedFields(current, { ...input, extractClass: extractedClass });
+    : applyExtractedFields(current, { ...input, extractClass: applyClass });
+  if (
+    !treatFailed &&
+    stubPeriodOpen &&
+    stubCanSpeak &&
+    !isStubExtractProposal(applied.draft.pendingProposal)
+  ) {
+    applied = {
+      ...applied,
+      draft: maybeProposeStubExtract(
+        { ...applied.draft, pendingConflict: null, awaitingPayFrequency: false },
+        Object.fromEntries(
+          Object.entries(input.fields ?? {}).map(([key, value]) => [key, String(value ?? "")]),
+        ),
+        "paystub",
+      ),
+    };
+  }
   const nextDocs = applied.draft.documents.map((doc) => {
     if (doc.receivedAt !== receivedAt || doc.name !== name) return doc;
     const slot = resolveReceivedSlot(doc.slot, name, displayClass);
@@ -1310,8 +1830,16 @@ export function markMissingAsked(key: string) {
 }
 
 export function skipDocuments() {
+  if (
+    current.workspaceFlow &&
+    (isBorrowerNameConfirmPending(current) || isPurchaseContractConfirmPending(current) || nextDocInvite(current))
+  ) {
+    return commit(
+      restripeGatheringOrReady(skipCurrentInvite({ ...current, docsHeld: false })),
+    );
+  }
   if (current.workspaceFlow && !current.sampleAccepted) {
-    return commit(skipCurrentInvite({ ...current, docsHeld: false }));
+    return current;
   }
   const prepared =
     current.sampleAccepted ||
@@ -1498,7 +2026,12 @@ function hasUnreadReceivedDoc(draft: FoxIntakeDraft) {
 export function applyCapture(capture: Capture) {
   const before = current;
   if (current.looksRightHold) {
-    if (capture.field === "skip-docs" || !hasUnreadReceivedDoc(current)) {
+    if (
+      capture.field === "skip-docs" ||
+      capture.field === "skip-unread-doc" ||
+      capture.field === "skip-wage-docs" ||
+      !hasUnreadReceivedDoc(current)
+    ) {
       current = { ...current, looksRightHold: false };
     }
   }
@@ -1534,7 +2067,7 @@ function applyCaptureBody(capture: Capture) {
   if (capture.field === "propose-monthly-debts") {
     const amount = parseMonthlyDebtAmount(capture.value);
     if (amount == null) return current;
-    return commit(proposeStatedMonthlyDebts(current, amount));
+    return commit(writeStatedMonthlyDebts(current, amount));
   }
   if (capture.field === "include-mortgage-debts") {
     const included = parseMonthlyDebtAmount(capture.value);
@@ -1584,12 +2117,23 @@ function applyCaptureBody(capture: Capture) {
   if (capture.field === "propose-property-type") {
     const value = parsePropertyType(capture.value);
     if (!value) return current;
-    return commit(proposePropertyType(current, value));
+    return commit(writePropertyType(current, value));
   }
   if (capture.field === "propertyType") {
     const value = parsePropertyType(capture.value);
     if (!value) return current;
     return commit(writePropertyType(current, value));
+  }
+  if (capture.field === "skip-property-zip") {
+    return commit(skipPropertyZip(current));
+  }
+  if (capture.field === "keep-property-zip") {
+    return commit(keepPropertyZip(current));
+  }
+  if (capture.field === "propertyZip") {
+    const next = writePropertyZip(current, capture.value);
+    if (next === current) return current;
+    return commit(next);
   }
   if (capture.field === "propose-rental-lease") {
     const rent = Number(String(capture.value).replace(/[$,]/g, ""));
@@ -1598,7 +2142,7 @@ function applyCaptureBody(capture: Capture) {
     return next ? commit(next) : current;
   }
   if (capture.field === "skip-property-address") {
-    return commit(skipSubjectAddress(current));
+    return commit(skipQuoteAddress(current));
   }
   if (capture.field === "change-property-address") {
     return commit({
@@ -1610,12 +2154,17 @@ function applyCaptureBody(capture: Capture) {
   if (capture.field === "propose-subject-address") {
     const address = parseVolunteeredAddress(capture.value) ?? capture.value.trim();
     if (!address) return current;
-    return commit(proposeSubjectAddress(current, address));
+    return commit(proposeAddressAndAdoptZip(current, address));
+  }
+  if (capture.field === "propose-place-address") {
+    const place = parsePlaceAddress(capture.value);
+    if (!place) return current;
+    return commit(proposePlaceAddress(current, place));
   }
   if (capture.field === "subjectAddress") {
     const address = parseVolunteeredAddress(capture.value) ?? capture.value.trim();
     if (!address) return current;
-    return commit(writeSubjectAddress(current, address));
+    return commit(writeAddressAndAdoptZip(current, address));
   }
   if (capture.field === "skip-time-on-job") {
     return commit(skipTimeOnJob(current));
@@ -1632,6 +2181,9 @@ function applyCaptureBody(capture: Capture) {
   }
   if (capture.field === "change-proposal") {
     return commit(changePendingProposal(current));
+  }
+  if (capture.field === "change-entity-years") {
+    return commit(changeEntityYears(current));
   }
   if (capture.field === "skip-current-housing") {
     return commit(skipCurrentHousing(current));
@@ -1675,6 +2227,24 @@ function applyCaptureBody(capture: Capture) {
   if (capture.field === "statedHousehold") {
     if (!isStatedHousehold(capture.value)) return current;
     return commit(writeStatedHousehold(current, capture.value));
+  }
+  if (capture.field === "k1-who") {
+    const who =
+      capture.value === "primary" || capture.value === "other" || capture.value === "both"
+        ? capture.value
+        : undefined;
+    if (!who) return current;
+    return commit(selectK1WhoOnLoan(current, who));
+  }
+  if (capture.field === "other-k1-loan") {
+    if (namedTwoK1WhoAskPending(current)) {
+      return current;
+    }
+    if (capture.value !== "yes" && capture.value !== "no") return current;
+    return commit(writeOtherK1Loan(current, capture.value === "yes"));
+  }
+  if (capture.field === "skip-other-k1-loan") {
+    return commit(skipOtherK1Loan(current));
   }
   if (capture.field === "skip-coborrower-name") {
     return commit(skipCoborrowerName(current));
@@ -1736,18 +2306,28 @@ function applyCaptureBody(capture: Capture) {
   if (capture.field === "formerHistory") {
     return commit(writeFormerHistoryNote(current, capture.value));
   }
+  if (capture.field === "skip-income") {
+    return commit({
+      ...current,
+      incomeAsked: true,
+      correcting: current.correcting === "income" ? null : current.correcting,
+      correctingLine: current.correctingLine === "income" ? null : current.correctingLine,
+    });
+  }
   if (capture.field === "incomeType") {
     const midFile = Boolean(current.correcting);
-    commit({
-      ...current,
-      incomeType: clientField("incomeType", capture.value),
-      incomeAsked: true,
-      correcting: null,
-      correctingLine: null,
-      sections: { ...current.sections, income: false },
-      status: midFile ? current.status : undefined,
-      confirmedAt: midFile ? current.confirmedAt : undefined,
-    });
+    commit(
+      withIncomeTypeYearsAsk({
+        ...current,
+        incomeType: clientField("incomeType", capture.value),
+        incomeAsked: true,
+        correcting: null,
+        correctingLine: null,
+        sections: { ...current.sections, income: false },
+        status: midFile ? current.status : undefined,
+        confirmedAt: midFile ? current.confirmedAt : undefined,
+      }),
+    );
     return current.workspaceFlow ? current : advancePhase();
   }
   if (capture.field === "occupancy") {
@@ -1794,6 +2374,16 @@ function applyCaptureBody(capture: Capture) {
     return commit(proposed ?? { ...current, subjectLeaseAsked: true });
   }
   if (capture.field === "skip-docs") {
+    if (priorStubAskNeeded(current)) {
+      return commit(skipPriorStub(current));
+    }
+    if (
+      isBorrowerNameConfirmPending(current) ||
+      isPurchaseContractConfirmPending(current) ||
+      (nextDocInvite(current) && !layer2Open(current))
+    ) {
+      return commit(restripeGatheringOrReady(skipCurrentInvite({ ...current, docsHeld: false })));
+    }
     if (layer2Open(current)) {
       return commit(skipCurrentStillUseful(current));
     }
@@ -1830,6 +2420,46 @@ function applyCaptureBody(capture: Capture) {
   if (capture.field === "payFrequency") {
     return commit(applyPayFrequencyAnswer(current, capture.value));
   }
+  if (capture.field === "skip-wage-docs") {
+    return commit(skipWageDocs(current));
+  }
+  if (capture.field === "skip-prior-stub") {
+    return commit(skipPriorStub(current));
+  }
+  if (capture.field === "retry-unread-doc") {
+    return commit(retryUnreadDoc(current));
+  }
+  if (capture.field === "note-unread-doc") {
+    return commit({ ...current, awaitingUnreadNote: true });
+  }
+  if (capture.field === "skip-unread-doc") {
+    return commit(skipUnreadDoc(current));
+  }
+  if (capture.field === "w2Box5") {
+    const annual = parseExtractMoney(capture.value) ?? Number(String(capture.value).replace(/,/g, ""));
+    return commit(writeWageBox5(current, Number.isFinite(annual) ? annual : 0));
+  }
+  if (capture.field === "skip-w2-box5") {
+    return commit(skipWageBox5(current));
+  }
+  if (capture.field === "wagePayFrequency") {
+    return commit(writeWagePayFrequency(current, capture.value));
+  }
+  if (capture.field === "skip-w2-pay-frequency") {
+    return commit(skipWageFrequency(current));
+  }
+  if (capture.field === "paystubMonthly") {
+    const monthly = parseExtractMoney(capture.value) ?? Number(String(capture.value).replace(/,/g, ""));
+    return Number.isFinite(monthly) && monthly > 0 ? commit(writeTypedStubMonthly(current, monthly)) : current;
+  }
+  if (capture.field === "skip-paystub-monthly") {
+    return commit(skipWageStub(current));
+  }
+  if (capture.field === "stubJob") {
+    return capture.value === "same" || capture.value === "two"
+      ? commit(acceptStubJob(current, capture.value))
+      : current;
+  }
   if (capture.field === "bothMonthlyReason") {
     return commit(applyBothMonthlyReasonAnswer(current, capture.value));
   }
@@ -1840,8 +2470,26 @@ function applyCaptureBody(capture: Capture) {
         : applyRaiseWhenAnswer(current, capture.value),
     );
   }
+  if (capture.field === "couponChoice") {
+    return commit(applyCouponChoice(current, capture.value));
+  }
+  if (capture.field === "retry-rateflow") {
+    return commit({ ...current, ...retryLiveQuote() });
+  }
+  if (capture.field === "accept-live-coupon") {
+    return commit(acceptPendingLiveCoupon(current));
+  }
+  if (capture.field === "keep-live-coupon") {
+    return commit(keepPendingLiveCoupon(current));
+  }
+  if (capture.field === "skip-schedule-e-unread") {
+    return commit(skipScheduleEUnread(current));
+  }
+  if (capture.field === "own-all-entity") {
+    return commit(applyOwnAllEntity(current));
+  }
   if (capture.field === "accept-proposal") {
-    return commit(resolveProposal(current, "accept"));
+    return commit(withWorkspaceScenario(resolveProposal(current, "accept")));
   }
   if (capture.field === "decline-proposal") {
     return commit(resolveProposal(current, "decline"));
@@ -1860,7 +2508,7 @@ function applyCaptureBody(capture: Capture) {
       return commit({
         ...current,
         docsStarted: true,
-        docsOpen: true,
+        docsOpen: false,
         correcting: null,
       });
     }
@@ -1879,7 +2527,11 @@ function applyCaptureBody(capture: Capture) {
     return commit(applySkipEmailThenFinish(current));
   }
   if (capture.field === "confirm-draft") {
-    if (current.workspaceFlow && !canLooksRight(current) && !current.sampleAccepted) {
+    if (
+      current.workspaceFlow &&
+      !current.sampleAccepted &&
+      (!canLooksRight(current) || current.pendingProposal || current.pendingConflict || current.pendingAddress)
+    ) {
       return current;
     }
     if (current.workspaceFlow && !current.sampleAccepted) {
@@ -1887,11 +2539,7 @@ function applyCaptureBody(capture: Capture) {
         ...applyLooksRightMotion(current),
         correcting: null,
       });
-      const nextPrompt = workspacePrompt(current);
-      if (nextPrompt === "done" || nextPrompt === "housing" || nextPrompt === "debts") {
-        return confirmDraft();
-      }
-      return current;
+      return confirmDraft();
     }
     return confirmDraft();
   }
@@ -1909,18 +2557,7 @@ function applyCaptureBody(capture: Capture) {
     return commit({ ...current, correcting: null });
   }
   if (capture.field === "keep-line") {
-    let next: FoxIntakeDraft = { ...current, correcting: null, correctingLine: null };
-    if (
-      current.correcting === "correct" &&
-      !current.sampleAccepted &&
-      sketchAssembled(next) &&
-      nextDocInvite(next)
-    ) {
-      for (let i = 0; i < 8 && nextDocInvite(next); i += 1) {
-        next = { ...skipCurrentInvite(next), correcting: null, correctingLine: null };
-      }
-    }
-    return commit(next);
+    return commit({ ...current, correcting: null, correctingLine: null });
   }
   if (capture.field === "what-acr" || capture.field === "what-happens-next" || capture.field === "ask-fox") {
     return current;
@@ -1932,16 +2569,34 @@ function applyCaptureBody(capture: Capture) {
     });
   }
   if (capture.field === "over-price-confirm") {
+    if (!loanExceedsPurchasePrice(current)) {
+      return commit({ ...current, overPriceConfirmed: false });
+    }
     return commit({
       ...applyEscalateMotion({ ...current, overPriceConfirmed: true }),
       loStatus: current.loStatus ?? "in review",
     });
   }
+  if (capture.field === "keep-ltv-confirm") {
+    return commit(settleLtvConfirm(current));
+  }
+  if (capture.field === "skip-over-value") {
+    return commit({
+      ...current,
+      overValueSkipped: true,
+      ltvConfirm: undefined,
+      liveCouponSettled:
+        current.liveQuoteStatus === "unavailable" ? true : current.liveCouponSettled,
+      correcting: null,
+      correctingLine: null,
+    });
+  }
   if (capture.field === "correct") {
     const field = capture.value as FoxPrompt;
+    const edited = beginFileEdit(current, field, capture.line);
     return commit({
-      ...beginFileEdit(current, field),
-      correctingLine: capture.line ?? null,
+      ...edited,
+      correctingLine: capture.line ?? edited.correctingLine ?? null,
       sections: unsetForPrompt(current.sections, capture.value),
     });
   }
@@ -1957,6 +2612,9 @@ function applyCaptureBody(capture: Capture) {
     });
   }
   if (capture.field === "note") {
+    if (current.awaitingUnreadNote) {
+      return commit(writeUnreadNote(current, capture.value));
+    }
     return addNote(capture.value);
   }
   if (capture.field === "path") {
@@ -2056,7 +2714,15 @@ function applyCaptureBody(capture: Capture) {
     return commit({ ...current, creditEvent: capture.value, correcting: null });
   }
   if (capture.field === "cashOut") {
-    return commit({ ...current, cashOut: true, correcting: null });
+    return commit({ ...current, cashOut: true, refiPurposeAsked: true, correcting: null });
+  }
+  if (capture.field === "refiPurpose") {
+    return commit({
+      ...current,
+      cashOut: capture.value === "cash-out",
+      refiPurposeAsked: true,
+      correcting: null,
+    });
   }
   if (capture.field === "amountPurpose") {
     const named = capture.value.trim();
@@ -2067,70 +2733,79 @@ function applyCaptureBody(capture: Capture) {
       correcting: null,
     });
   }
+  if (capture.field === "firstLien") {
+    const value = captureMoney(capture.value);
+    if (value == null) return current;
+    return commit(writeFirstLien({ ...current, pendingProposal: null }, value));
+  }
+  if (capture.field === "helocLine") {
+    const value = captureMoney(capture.value);
+    if (value == null) return current;
+    return commit(writeHelocLine({ ...current, ...clearLiveQuote(), pendingProposal: null }, value));
+  }
+  if (capture.field === "skip-heloc-line") {
+    return commit(skipHelocLine({ ...current, pendingProposal: null }));
+  }
   if (capture.field === "loanAmount") {
     const [loanRaw, valueRaw] = capture.value.split(":");
-    const loan = Number(loanRaw.replace(/,/g, ""));
-    const value = valueRaw ? Number(valueRaw.replace(/,/g, "")) : undefined;
-    const hasLoan = Number.isFinite(loan) && loan > 0;
-    const hasValue = value != null && Number.isFinite(value) && value > 0;
+    const loan = captureMoney(loanRaw);
+    const value = valueRaw ? captureMoney(valueRaw) : undefined;
+    const hasLoan = loan != null;
+    const hasValue = value != null;
+    if (current.productIntent === "heloc" && hasLoan) {
+      return commit(writeHelocLine({ ...current, ...clearLiveQuote() }, loan));
+    }
     return commit(
       withWorkspaceScenario(
-        withComputedCompanion(
+        afterRefiLoanAmountWrite(
+          current,
+          withComputedCompanion(
           withMatrixAfterAmount({
             ...current,
+            ...clearLiveQuote(),
             amountAsked: true,
+            overValueSkipped: false,
+            ltvConfirm: undefined,
             correcting: null,
             correctingLine: null,
             valueAsked: hasValue ? true : current.valueAsked,
             loanAmountValue: hasLoan ? loan : current.loanAmountValue,
             propertyValueAmount: hasValue ? value : current.propertyValueAmount,
           }),
-          current.downPaymentAmount != null && current.downPaymentAmount > 0 ? "loan" : undefined,
+          (current.downPaymentAmount != null && current.downPaymentAmount > 0) ||
+          current.sampleAccepted ||
+          Boolean(current.subjectAddress?.trim())
+            ? "loan"
+            : undefined,
+          ),
         ),
       ),
     );
   }
   if (capture.field === "propertyValue") {
-    const value = Number(capture.value.replace(/,/g, ""));
-    const nextPrice = Number.isFinite(value) && value > 0 ? value : current.propertyValueAmount;
-    const share = lockedDownShare(current);
-    const next = {
-      ...current,
-      valueAsked: true,
-      correcting: null,
-      correctingLine: null,
-      propertyValueAmount: nextPrice,
-    };
-    if (
-      share != null &&
-      nextPrice != null &&
-      nextPrice > 0 &&
-      nextPrice !== current.propertyValueAmount
-    ) {
-      const down = Math.round(nextPrice * share);
-      const loan = impliedLoanAmount(nextPrice, down);
-      if (loan != null) {
-        return commit(withWorkspaceScenario(proposeFundsPair(next, down, loan)));
-      }
-    }
-    return commit(
-      withWorkspaceScenario(withComputedCompanion(withMatrixAfterAmount(next))),
-    );
+    const value = captureMoney(capture.value);
+    if (value == null) return current;
+    return commit(withWorkspaceScenario(writePurchasePrice(current, value)));
   }
   if (capture.field === "downPayment") {
-    const value = Number(capture.value.replace(/,/g, ""));
+    const value = captureMoney(capture.value);
+    if (value == null) return current;
     return commit(
       withWorkspaceScenario(
         withComputedCompanion(
           {
             ...current,
+            ...clearLiveQuote(),
             downAsked: true,
             correcting: null,
             correctingLine: null,
-            downPaymentAmount:
-              Number.isFinite(value) && value > 0 ? value : current.downPaymentAmount,
+            downPaymentAmount: value,
           },
-          current.loanAmountValue != null && current.loanAmountValue > 0 ? "down" : undefined,
+          (current.loanAmountValue != null && current.loanAmountValue > 0) ||
+          current.sampleAccepted ||
+          Boolean(current.subjectAddress?.trim())
+            ? "down"
+            : undefined,
         ),
       ),
     );
@@ -2170,12 +2845,15 @@ function applyCaptureBody(capture: Capture) {
   }
   if (capture.field === "creditRange") {
     return commit(
-      withWorkspaceScenario({
-        ...current,
-        creditBand: capture.value,
-        creditAsked: true,
-        correcting: null,
-      }),
+      adoptReuseZip(
+        withWorkspaceScenario({
+          ...current,
+          ...clearLiveQuote(),
+          creditBand: capture.value,
+          creditAsked: true,
+          correcting: null,
+        }),
+      ),
     );
   }
   if (capture.field === "termYears") {
@@ -2199,6 +2877,13 @@ function sectionToPrompt(id: SectionId): FoxPrompt {
   if (id === "occupancy") return "occupancy";
   if (id === "documents") return "documents";
   return "review";
+}
+
+function captureMoney(raw: string): number | undefined {
+  const parsed = parseLooseAmount(raw);
+  if (parsed != null && parsed > 0) return parsed;
+  const n = Number(String(raw).replace(/[$,\s]/g, ""));
+  return Number.isFinite(n) && n > 0 ? n : undefined;
 }
 
 function unsetForPrompt(
