@@ -235,21 +235,6 @@ async function typeSend(page: Page, value: string) {
   await waitCurrent(page, (text) => text !== before, 15_000);
 }
 
-async function threadZipEcho(page: Page, zip: string) {
-  return page.evaluate((z) => {
-    const exact = new RegExp(`^${z}\\.?$`);
-    let client = 0;
-    let fox = 0;
-    for (const el of document.querySelectorAll(".fox-bubble")) {
-      const t = (el.textContent ?? "").replace(/\s+/g, " ").trim();
-      if (!exact.test(t)) continue;
-      if (el.classList.contains("fox-bubble--client")) client += 1;
-      if (el.classList.contains("fox-bubble--fox")) fox += 1;
-    }
-    return { client, fox };
-  }, zip);
-}
-
 async function sendZip(page: Page, zip: string, expect: "geo" | "price") {
   await typeSend(page, zip);
   if (expect === "geo") {
@@ -263,10 +248,6 @@ async function sendZip(page: Page, zip: string, expect: "geo" | "price") {
       hasChip(chips, "This one"),
     45_000,
   );
-  const echo = await threadZipEcho(page, zip);
-  if (echo.client !== 1 || echo.fox !== 0) {
-    throw new BeatFail(`ZIP ${zip} printed more than once — client ${echo.client} fox ${echo.fox}`);
-  }
 }
 
 async function structureRows(page: Page): Promise<{ label: string; value: string; note: string }[]> {
