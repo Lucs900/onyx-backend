@@ -174,11 +174,19 @@ export function keepPropertyZip(draft: FoxIntakeDraft): FoxIntakeDraft {
 
 /** Street typed at the ZIP ask writes the File and takes its ZIP. Do not treat it as a side question. */
 export function writeAddressAndAdoptZip(draft: FoxIntakeDraft, address: string): FoxIntakeDraft {
+  const zipOnly = parseZipcode(address);
+  if (zipOnly && isZipOnlyFileAddress(address, zipOnly)) {
+    return writePropertyZip(draft, zipOnly);
+  }
   return adoptReuseZip(writeSubjectAddress(draft, address));
 }
 
-/** Confirm-before-write on the street. File ZIP waits for Use this. */
+/** Confirm-before-write on the street. A typed ZIP writes ZIP once — never a pending 94123 chip. */
 export function proposeAddressAndAdoptZip(draft: FoxIntakeDraft, address: string): FoxIntakeDraft {
+  const zipOnly = parseZipcode(address);
+  if (zipOnly && isZipOnlyFileAddress(address, zipOnly)) {
+    return writePropertyZip(draft, zipOnly);
+  }
   return proposeSubjectAddress(draft, address);
 }
 
@@ -285,8 +293,11 @@ export function writePlaceAddress(draft: FoxIntakeDraft, place: PlaceAddress): F
 
 /** Skip the quote-path address line. Keep only a ZIP they already wrote. No homepage ZIP. */
 export function skipQuoteAddress(draft: FoxIntakeDraft): FoxIntakeDraft {
+  const kept = keptPropertyZip(draft);
   const next = skipSubjectAddress(draft);
-  if (draft.propertyZipAsked && keptPropertyZip(next)) return next;
+  if (kept) {
+    return { ...next, propertyZip: kept, propertyZipAsked: true };
+  }
   if (addressZipFromDraft(next)) return next;
   return skipPropertyZip(next);
 }
@@ -330,14 +341,23 @@ export function adoptStreetOverZipOnly(before: FoxIntakeDraft, next: FoxIntakeDr
   );
 }
 
-function fileAddressForZip(draft: FoxIntakeDraft, zip: string) {
+function clearZipOnlyFileAddress(draft: FoxIntakeDraft): Pick<
+  FoxIntakeDraft,
+  "subjectAddress" | "subjectAddressAsked" | "facts"
+> {
   const existing = existingFileAddress(draft);
-  if (existing && !isZipOnlyFileAddress(existing, draft.propertyZip)) return existing;
-  const city = String(draft.subjectCity ?? draft.facts?.city?.value ?? "").trim();
-  if (city && city.length >= 2 && city.length <= 40 && !/\d/.test(city)) {
-    return `${city}, CA ${zip}`;
+  if (!existing || !isZipOnlyFileAddress(existing, draft.propertyZip)) {
+    return {};
   }
-  return zip;
+  const facts = { ...(draft.facts ?? {}) };
+  const fact = facts[PROPERTY_ADDRESS_FACT];
+  if (fact && isZipOnlyFileAddress(String(fact.value ?? ""), draft.propertyZip)) {
+    delete facts[PROPERTY_ADDRESS_FACT];
+  }
+  return {
+    subjectAddress: undefined,
+    facts,
+  };
 }
 
 export function writePropertyZip(draft: FoxIntakeDraft, zip: string): FoxIntakeDraft {
@@ -346,9 +366,12 @@ export function writePropertyZip(draft: FoxIntakeDraft, zip: string): FoxIntakeD
   if (!isCaliforniaZip(parsed)) {
     return {
       ...draft,
+      ...clearZipOnlyFileAddress(draft),
       propertyZip: parsed,
       outOfState: true,
       propertyZipAsked: true,
+      pendingAddress: isZipOnlyPendingAddress(draft) ? undefined : draft.pendingAddress,
+      pendingProposal: isZipOnlyPendingProposal(draft) ? null : draft.pendingProposal,
       liveQuote: undefined,
       liveQuoteKey: undefined,
       liveQuoteStatus: undefined,
@@ -361,19 +384,22 @@ export function writePropertyZip(draft: FoxIntakeDraft, zip: string): FoxIntakeD
   }
   const fromAddress = addressZipFromDraft(draft);
   const now = new Date().toISOString();
-  const location = fileAddressForZip(draft, parsed);
   const keepStreet = Boolean(
     existingFileAddress(draft) && !isZipOnlyFileAddress(existingFileAddress(draft), draft.propertyZip),
   );
+  const cleared = keepStreet ? {} : clearZipOnlyFileAddress(draft);
   const reprice =
     draft.propertyZip !== parsed ||
     Boolean(draft.outOfState) ||
     draft.liveQuoteStatus === "unavailable";
   return {
     ...draft,
+    ...cleared,
     outOfState: false,
     propertyZip: parsed,
     propertyZipAsked: true,
+    pendingAddress: isZipOnlyPendingAddress(draft) ? undefined : draft.pendingAddress,
+    pendingProposal: isZipOnlyPendingProposal(draft) ? null : draft.pendingProposal,
     ...(reprice
       ? {
           liveQuote: undefined,
@@ -385,16 +411,10 @@ export function writePropertyZip(draft: FoxIntakeDraft, zip: string): FoxIntakeD
         }
       : {}),
     addressZipOffered: fromAddress === parsed ? parsed : draft.addressZipOffered,
-    ...(keepStreet
-      ? {}
-      : {
-          subjectAddress: location,
-          subjectAddressAsked: true,
-        }),
     correcting: null,
     correctingLine: null,
     facts: {
-      ...(draft.facts ?? {}),
+      ...(cleared.facts ?? draft.facts ?? {}),
       zip: {
         field: "zip",
         value: parsed,
@@ -402,17 +422,6 @@ export function writePropertyZip(draft: FoxIntakeDraft, zip: string): FoxIntakeD
         confirmed: true,
         confirmedAt: now,
       },
-      ...(keepStreet
-        ? {}
-        : {
-            [PROPERTY_ADDRESS_FACT]: {
-              field: PROPERTY_ADDRESS_FACT,
-              value: location,
-              source: "client",
-              confirmed: true,
-              confirmedAt: now,
-            },
-          }),
     },
   };
 }
@@ -506,7 +515,20 @@ export function isPropertyTypeConfirmPending(draft: FoxIntakeDraft) {
   return draft.pendingProposal?.field === PROPERTY_TYPE_FIELD;
 }
 
+/** A ZIP-only pending line is not a street confirm. Typed ZIP already wrote File. */
+export function isZipOnlyPendingAddress(draft: FoxIntakeDraft) {
+  const line = draft.pendingAddress?.line?.trim();
+  return Boolean(line && isZipOnlyFileAddress(line, draft.propertyZip));
+}
+
+export function isZipOnlyPendingProposal(draft: FoxIntakeDraft) {
+  if (!isPropertyAddressField(draft.pendingProposal?.field ?? "")) return false;
+  const value = String(draft.pendingProposal?.value ?? "").trim();
+  return Boolean(value && isZipOnlyFileAddress(value, draft.propertyZip));
+}
+
 export function isSubjectAddressConfirmPending(draft: FoxIntakeDraft) {
+  if (isZipOnlyPendingAddress(draft) || isZipOnlyPendingProposal(draft)) return false;
   if (draft.pendingAddress?.line?.trim()) return true;
   return (
     draft.pendingProposal?.field === PROPERTY_ADDRESS_FACT ||
@@ -531,6 +553,7 @@ export function displayedSubjectAddress(draft: FoxIntakeDraft) {
 /** Use this paints while a street is pending (Places line or contract proposal) and File is still ZIP-only / blank. */
 export function shouldShowAddressUseThis(draft: FoxIntakeDraft) {
   if (fileAddressLine(draft)) return false;
+  if (isZipOnlyPendingAddress(draft) || isZipOnlyPendingProposal(draft)) return false;
   if (draft.pendingAddress?.line?.trim()) return true;
   const proposed = String(draft.pendingProposal?.value ?? "").trim();
   return (
@@ -663,6 +686,8 @@ export function isSkipPropertyTypeText(text: string) {
 export function parseVolunteeredAddress(text: string): string | null {
   const trimmed = text.trim().replace(/[?.!]+$/g, "");
   if (!trimmed) return null;
+  const zipOnly = parseZipcode(trimmed);
+  if (zipOnly && isZipOnlyFileAddress(trimmed, zipOnly)) return null;
   const labeled = trimmed.match(
     /^(?:the\s+)?(?:property\s+)?address(?:\s+is|\s*[:=])\s+(.+)$/i,
   );

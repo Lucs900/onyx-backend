@@ -1533,12 +1533,12 @@ const founderZipReply = workspaceReply("94115", afterFounderHouseFico);
 assert.equal(founderZipReply?.capture?.field, "propertyZip");
 assert.equal(founderZipReply?.capture && "value" in founderZipReply.capture ? founderZipReply.capture.value : "", "94115");
 assert.doesNotMatch(founderZipReply?.text ?? "", /6\.750|Live as of|Pricing when the file is ready|What ZIP is the property in/);
-assert.equal(writePropertyZip(afterFounderHouseFico, "94115").subjectAddress, "94115");
+assert.equal(writePropertyZip(afterFounderHouseFico, "94115").subjectAddress, undefined);
 const afterFounderZip = writePropertyZip(afterFounderHouseFico, "94115");
-assert.equal(afterFounderZip.subjectAddress, "94115");
+assert.equal(afterFounderZip.subjectAddress, undefined);
 assert.equal(afterFounderZip.facts?.zip?.value, "94115");
-assert.equal(afterFounderZip.facts?.property_address?.value, "94115");
-assert.equal(conventionalFileFromDraft(afterFounderZip).property.address, "94115");
+assert.equal(afterFounderZip.facts?.property_address?.value, undefined);
+assert.equal(conventionalFileFromDraft(afterFounderZip).property.address, undefined);
 assert.notEqual(workspacePrompt(afterFounderZip), "property-address");
 assert.equal(workspacePrompt(afterFounderZip), "income");
 assert.equal(rateflowClientBodyFromDraft(afterFounderZip)?.zipcode, "94115");
@@ -2288,9 +2288,9 @@ assert.equal(
   founderRefiZipOnly?.capture && "value" in founderRefiZipOnly.capture ? founderRefiZipOnly.capture.value : "",
   "94105",
 );
-assert.equal(writePropertyZip(founderRefiReady, "94105").subjectAddress, "94105");
-assert.equal(writePropertyZip(founderRefiReady, "94105").facts?.property_address?.value, "94105");
-assert.equal(conventionalFileFromDraft(writePropertyZip(founderRefiReady, "94105")).property.address, "94105");
+assert.equal(writePropertyZip(founderRefiReady, "94105").subjectAddress, undefined);
+assert.equal(writePropertyZip(founderRefiReady, "94105").facts?.property_address?.value, undefined);
+assert.equal(conventionalFileFromDraft(writePropertyZip(founderRefiReady, "94105")).property.address, undefined);
 const founderRefiStreet = workspaceReply("500 Market St, San Francisco, CA 94105", founderRefiReady);
 assert.equal(founderRefiStreet?.capture?.field, "propose-subject-address");
 assert.equal(founderRefiStreet?.text, placeAddressConfirmCopy("500 Market St, San Francisco, CA 94105"));

@@ -72,6 +72,7 @@ import {
 } from "./addressSuggest";
 import {
   encodePlaceAddress,
+  isZipOnlyQuery,
   looksLikePlaceId,
   shouldSuggestStreets,
   type PlaceSuggestion,
@@ -91,6 +92,7 @@ import {
   isPropertyTypeAskText,
   isSkipPropertyAddressText,
   isSubjectAddressConfirmPending,
+  isZipOnlyFileAddress,
   parseVolunteeredAddress,
 } from "./propertyType";
 import {
@@ -1729,10 +1731,24 @@ export function AlwaysOnFox({
       const held = addressConfirmPending(live)
         ? withoutLiveQuoteSpeech(prev)
         : dropResolvedAddressConfirmChips(prev, live);
-      const next: FoxMessage[] = [
-        ...held,
-        { id: newId(), role: "client", text: clientText, edit, editLine },
-      ];
+      const lastClient = [...held].reverse().find((item) => item.role === "client");
+      const zipOnce =
+        isZipOnlyQuery(clientText) &&
+        Boolean(lastClient?.text) &&
+        isZipOnlyFileAddress(String(lastClient?.text ?? "").trim(), clientText);
+      const foxZipEcho =
+        isZipOnlyQuery(clientText) &&
+        isZipOnlyFileAddress(
+          String(fox.text ?? "")
+            .replace(/\s*Use this\?\s*$/i, "")
+            .replace(/[.\s]+$/g, "")
+            .trim(),
+          clientText,
+        );
+      const next: FoxMessage[] = zipOnce
+        ? held
+        : [...held, { id: newId(), role: "client", text: clientText, edit, editLine }];
+      if (foxZipEcho) return sealStoredFoxThread(next);
       if (!fox.text.trim() && !(fox.followUp ?? "").trim()) return sealStoredFoxThread(next);
       if (isYearsInBusinessAskText(fox.text)) {
         const withoutYears = next.filter(
@@ -2146,6 +2162,7 @@ export function AlwaysOnFox({
       startAsk !== "former-history" &&
       workspacePrompt(draft) !== "former-history" &&
       (startAsk === "property-address" || lookupWait === "places") &&
+      !isZipOnlyQuery(text) &&
       parseVolunteeredAddress(text) &&
       !isSkipPropertyAddressText(text)
     ) {

@@ -1,6 +1,9 @@
 import type { FoxIntakeDraft, ProductIntent } from "@/components/fox/types";
 import { purchaseSketchMismatch } from "@/components/fox/fileWrite";
-import { addressLineReadyForQuote } from "@/components/fox/propertyType";
+import {
+  addressLineReadyForQuote,
+  isZipOnlyFileAddress,
+} from "@/components/fox/propertyType";
 import { isCaliforniaZip } from "@/components/products/scenario";
 import { FHFA_HIGH_COST_CEILING_2026 } from "@/lib/guidelines/conventional";
 import {
@@ -62,9 +65,12 @@ function loanPurposeFromDraft(draft: FoxIntakeDraft): "purchase" | "refinance" |
 }
 
 export function addressConfirmPending(draft: FoxIntakeDraft) {
-  if (draft.pendingAddress?.line?.trim()) return true;
+  const line = draft.pendingAddress?.line?.trim();
+  if (line && !isZipOnlyFileAddress(line, draft.propertyZip)) return true;
   const field = draft.pendingProposal?.field;
-  return field === "property_address" || field === "subjectAddress";
+  if (field !== "property_address" && field !== "subjectAddress") return false;
+  const value = String(draft.pendingProposal?.value ?? "").trim();
+  return Boolean(value && !isZipOnlyFileAddress(value, draft.propertyZip));
 }
 
 export function rateflowBlockedReason(draft: FoxIntakeDraft): string | null {

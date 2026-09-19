@@ -464,6 +464,7 @@ import {
   displayedSubjectAddress,
   fileAddressLine,
   isZipOnlyFileAddress,
+  isZipOnlyPendingAddress,
   typedAddressConfirmCopy,
   typedZipFromDraft,
   writeAddressAndAdoptZip,
@@ -4689,7 +4690,7 @@ function workspaceAskCopy(
     if (isPurchaseContractConfirmPending(draft) && draft.pendingProposal) {
       return liveProposalAsk(draft, draft.pendingProposal);
     }
-    if (draft.pendingAddress?.line) {
+    if (draft.pendingAddress?.line && !isZipOnlyPendingAddress(draft)) {
       return {
         text: typedAddressConfirmCopy(draft.pendingAddress.line),
         actions: propertyTypeConfirmActions(),
