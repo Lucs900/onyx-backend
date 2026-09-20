@@ -16,6 +16,8 @@ import { creditScoreFloor, formatAsOfPacific, formatPiMonthly } from "@/lib/rate
 
 /** Agency HELOC CLTV cap for a computed max line. First-lien LTV stays first/value. */
 export const HELOC_AGENCY_CLTV = 0.9;
+/** v1 preview print cap. Primary + House. File CLTV over this is not a program. */
+export const HELOC_PREVIEW_CLTV_CAP = HELOC_AGENCY_CLTV;
 
 export const HELOC_PURPOSE = "HELOC";
 export const HELOC_VALUE_ASK = "What’s the property value?";
@@ -92,6 +94,68 @@ export function helocCltv(draft?: FoxIntakeDraft | null): number | null {
   if (value == null || value <= 0 || first == null || first < 0) return null;
   const line = (draft.loanAmountValue ?? 0) > 0 ? draft.loanAmountValue! : 0;
   return (first + line) / value;
+}
+
+/** v1: Primary + House. Condo / 2–4 / second / investment are other tickets. */
+export function helocPreviewCltvCapApplies(draft?: FoxIntakeDraft | null) {
+  if (!isHelocFile(draft) || !draft) return false;
+  const occupancy = draft.occupancyChoice.value || draft.scenario?.occupancy;
+  if (occupancy !== "primary") return false;
+  return draft.propertyType === "sfr";
+}
+
+/** File CLTV vs cap. 90% may print. 90.1% fails the same as 100%. Do not string-seal 100%. */
+export function helocFileCltvOverCap(draft?: FoxIntakeDraft | null) {
+  if (!helocPreviewCltvCapApplies(draft)) return false;
+  const cltv = helocCltv(draft);
+  if (cltv == null) return false;
+  return cltv > HELOC_PREVIEW_CLTV_CAP;
+}
+
+export function formatHelocFileCltvPercent(draft?: FoxIntakeDraft | null) {
+  const cltv = helocCltv(draft);
+  if (cltv == null) return "";
+  const pct = Math.round(cltv * 1000) / 10;
+  return Number.isInteger(pct) ? `${pct}%` : `${pct.toFixed(1)}%`;
+}
+
+export function helocCltvCapCopy(draft?: FoxIntakeDraft | null) {
+  const shown = formatHelocFileCltvPercent(draft);
+  if (!shown) return "I don’t have a HELOC at that CLTV of the house.";
+  return `I don’t have a HELOC at ${shown} of the house.`;
+}
+
+export function isHelocCltvCapSpeech(text?: string | null) {
+  return /I don’t have a HELOC at [\d.]+% of the house/i.test(String(text ?? "").trim());
+}
+
+export function helocOverCapActions(): FoxAction[] {
+  return [
+    {
+      id: "heloc-change-line",
+      label: "Change line",
+      event: "bubble",
+      capture: { field: "correct", value: "amount", line: "line" },
+    },
+    {
+      id: "heloc-change-value",
+      label: "Change value",
+      event: "bubble",
+      capture: { field: "correct", value: "value", line: "home" },
+    },
+    {
+      id: "heloc-change-first-lien",
+      label: "Change first lien",
+      event: "bubble",
+      capture: { field: "correct", value: "first-lien", line: "first-lien" },
+    },
+    {
+      id: "heloc-skip-price",
+      label: "Skip",
+      event: "bubble",
+      capture: { field: "couponChoice", value: "skip" },
+    },
+  ];
 }
 
 export function helocOccupancyBlocksQuote(draft?: FoxIntakeDraft | null) {
@@ -326,6 +390,7 @@ export function helocToolScenarioKey(draft?: FoxIntakeDraft | null): string | un
 }
 
 export function helocQuoteFromDraft(draft?: FoxIntakeDraft | null) {
+  if (helocFileCltvOverCap(draft)) return null;
   if (!helocLiveEligible(draft) || !draft) return null;
   const occupancy = helocOccupancyForTool(draft);
   const fico = creditScoreFloor(draft.creditBand);
@@ -363,6 +428,17 @@ export function withHelocToolQuote(draft: FoxIntakeDraft): FoxIntakeDraft {
   if (!isHelocFile(draft)) return draft;
   if (draft.liveQuote && draft.liveQuote.kind !== "heloc") {
     draft = {
+      ...draft,
+      liveQuote: undefined,
+      liveQuoteKey: undefined,
+      liveQuoteStatus: undefined,
+      liveQuoteVendorReason: undefined,
+      liveQuoteRows: undefined,
+    };
+  }
+  if (helocFileCltvOverCap(draft)) {
+    if (!draft.liveQuote && !draft.liveQuoteKey && !draft.liveQuoteStatus) return draft;
+    return {
       ...draft,
       liveQuote: undefined,
       liveQuoteKey: undefined,

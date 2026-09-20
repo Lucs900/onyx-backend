@@ -14,8 +14,12 @@ import {
   HELOC_NO_PROGRAM_LINE,
   HELOC_PURPOSE,
   HELOC_VALUE_ASK,
+  beginHelocCorrection,
+  helocCltvCapCopy,
+  helocFileCltvOverCap,
   helocLiveEligible,
   helocNoPreviewReady,
+  helocOverCapActions,
   helocQuoteFromDraft,
   helocShapeReady,
   liveHelocNowCopy,
@@ -206,32 +210,68 @@ function main() {
   assert.deepEqual(labels(zipAsk.actions), ["This one"]);
 
   const founder = pricedReady(writeHelocLine(afterFirst, 100_000));
+  assert.equal(helocFileCltvOverCap(founder), true);
+  assert.equal(helocQuoteFromDraft(founder), null);
+  const founderAsk = nextFoxAsk(founder);
+  assert.equal(founderAsk.text, helocCltvCapCopy(founder));
+  assert.match(founderAsk.text, /I don’t have a HELOC at 100% of the house/);
+  assert.doesNotMatch(founderAsk.text, /This HELOC right now:|This loan right now:|P&I|approved|denied/i);
+  assert.deepEqual(labels(founderAsk.actions), labels(helocOverCapActions()));
+  assert.ok(!labels(founderAsk.actions).includes("This one"));
+  assert.equal(liveQuoteReady(founder), false);
+  assert.ok(!labels(liveCouponActions(withHelocToolQuote(founder))).includes("This one"));
+  assert.equal(withHelocToolQuote(founder).liveQuote, undefined);
+  const thisOneOver = workspaceReply("This one", founder);
+  assert.notEqual(thisOneOver?.capture?.field, "couponChoice");
+  assert.equal(fact(founder, "product")?.value, "HELOC");
+
+  const overTiny = pricedReady(writeHelocLine(afterFirst, 50_500));
+  assert.equal(helocFileCltvOverCap(overTiny), true);
+  assert.match(nextFoxAsk(overTiny).text, /I don’t have a HELOC at 90\.1% of the house/);
+
+  const under = pricedReady(writeHelocLine(afterFirst, 50_000));
+  assert.equal(helocFileCltvOverCap(under), false);
   const tool = calculateHelocQuote({
     homeValue: 500_000,
     currentMortgage: 400_000,
-    desiredLine: 100_000,
+    desiredLine: 50_000,
     fico: 760,
     occupancy: "Primary",
   });
-  assert.equal(helocQuoteFromDraft(founder)?.finalRate, tool.finalRate);
-  assert.equal(helocQuoteFromDraft(founder)?.monthlyPayment, tool.monthlyPayment);
-  const founderAsk = nextFoxAsk(founder);
-  assert.match(founderAsk.text, /This HELOC right now:/);
-  assert.match(founderAsk.text, new RegExp(`${tool.finalRate.toFixed(2)}%`));
-  assert.match(founderAsk.text, /Estimated interest-only/);
-  assert.doesNotMatch(founderAsk.text, /This loan right now:/);
-  assert.doesNotMatch(founderAsk.text, /P&I/);
-  assert.doesNotMatch(founderAsk.text, /6\.250%|3\.75 pts/);
-  assert.deepEqual(labels(founderAsk.actions), ["This one"]);
-  const priced = withHelocToolQuote(founder);
+  assert.equal(helocQuoteFromDraft(under)?.finalRate, tool.finalRate);
+  const underAsk = nextFoxAsk(under);
+  assert.match(underAsk.text, /This HELOC right now:/);
+  assert.match(underAsk.text, new RegExp(`${tool.finalRate.toFixed(2)}%`));
+  assert.match(underAsk.text, /Estimated interest-only/);
+  assert.doesNotMatch(underAsk.text, /This loan right now:|P&I/);
+  assert.deepEqual(labels(underAsk.actions), ["This one"]);
+  const priced = withHelocToolQuote(under);
   assert.equal(priced.liveQuote?.kind, "heloc");
   assert.equal(priced.liveQuote?.principalAndInterest, undefined);
   assert.match(liveHelocNowCopy(priced.liveQuote!), /This HELOC right now:/);
-  assert.equal(liveQuoteReady(founder), true);
+  assert.equal(liveQuoteReady(under), true);
   assert.ok(labels(liveCouponActions(priced)).includes("This one"));
   assert.ok(!labels(liveCouponActions(priced)).includes("Lower payment"));
 
-  const noRoom = pricedReady(skipHelocLine(writeFirstLien(writePurchasePrice(afterPrimary(), 500_000), 500_000)));
+  const changeLine = workspaceReply("Change line", founder);
+  assert.equal(changeLine?.capture?.field, "correct");
+  assert.equal(changeLine?.capture && "value" in changeLine.capture ? changeLine.capture.value : "", "amount");
+  const correcting = beginHelocCorrection(founder, "amount");
+  assert.equal(correcting.productIntent, "heloc");
+  assert.match(nextFoxAsk(correcting).text, /line do you want available|HELOC line/i);
+  const fifty = writeHelocLine(correcting, 50_000);
+  assert.equal(fifty.productIntent, "heloc");
+  assert.equal(fifty.loanAmountValue, 50_000);
+  assert.equal(helocFileCltvOverCap(fifty), false);
+  assert.match(nextFoxAsk(fifty).text, /This HELOC right now:/);
+  assert.deepEqual(labels(nextFoxAsk(fifty).actions), ["This one"]);
+  assert.equal(fact(fifty, "line")?.value, "$50,000");
+  assert.equal(fact(fifty, "product")?.value, "HELOC");
+  const skipOver = workspaceReply("Skip", founder);
+  assert.equal(skipOver?.capture && "value" in (skipOver.capture ?? {}) ? skipOver.capture.value : "", "skip");
+  assert.doesNotMatch(skipOver?.text ?? "", /cash-out|This loan right now/i);
+
+  const noRoom = pricedReady(skipHelocLine(writeFirstLien(writePurchasePrice(afterPrimary(), 500_000), 450_000)));
   assert.equal(helocQuoteFromDraft(noRoom), null);
   const emptyAsk = nextFoxAsk(noRoom);
   assert.equal(emptyAsk.text, HELOC_NO_PROGRAM_LINE);

@@ -75,6 +75,9 @@ import {
   beginHelocCorrection,
   hasFirstLien,
   hasHelocLineAmount,
+  helocCltvCapCopy,
+  helocCorrectPrompt,
+  helocFileCltvOverCap,
   helocFirstLienAskNeeded,
   helocLineAskActions,
   helocLineAskNeeded,
@@ -82,6 +85,8 @@ import {
   helocNoPreviewActions,
   helocNoPreviewReady,
   helocNoPriceActions,
+  helocOverCapActions,
+  isHelocCltvCapSpeech,
   helocPurposeFileValue,
   helocValueAskNeeded,
   isHelocLiveSpeech,
@@ -1045,7 +1050,8 @@ function notepadEditPrompt(draft: FoxIntakeDraft): FoxPrompt | null {
     draft.correcting === "amount" ||
     draft.correctingLine === "down" ||
     draft.correctingLine === "loan" ||
-    draft.correctingLine === "down-or-loan"
+    draft.correctingLine === "down-or-loan" ||
+    draft.correctingLine === "line"
   ) {
     return "amount";
   }
@@ -3975,6 +3981,12 @@ export function nextFoxAsk(draft: FoxIntakeDraft): {
   }
   if (isHelocFile(draft)) {
     const heloc = withHelocToolQuote(draft);
+    if (helocFileCltvOverCap(heloc) && !heloc.liveCouponSettled && !heloc.correcting) {
+      return {
+        text: helocCltvCapCopy(heloc),
+        actions: helocOverCapActions(),
+      };
+    }
     if (helocNoPreviewReady(heloc) && !heloc.liveCouponSettled) {
       return {
         text: HELOC_NO_PREVIEW_LINE,
@@ -4190,11 +4202,15 @@ export function deskStripActions(
     message.text === NO_CONVENTIONAL_PRICE_LINE ||
     message.text === HELOC_NO_PROGRAM_LINE ||
     message.text === HELOC_NO_PREVIEW_LINE ||
+    isHelocCltvCapSpeech(message.text) ||
     isPricingWhenReadySpeech(message)
   ) {
     if (loanExceedsPropertyValue(draft)) return [];
     if (isHelocFile(draft) && helocNoPreviewReady(draft)) {
       return stripStreetSuggest(helocNoPreviewActions());
+    }
+    if (isHelocFile(draft) && helocFileCltvOverCap(draft)) {
+      return stripStreetSuggest(helocOverCapActions());
     }
     if (isHelocFile(draft)) return stripStreetSuggest(helocNoPriceActions());
     if (isRefiEmptyBook(draft)) return stripStreetSuggest(loanOverValueActions());
@@ -4388,6 +4404,10 @@ export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
   if (!draft.productIntent) return "product";
   if (needsJumboPurpose(draft)) return "jumbo-purpose";
   if (!draft.occupancyAsked && !draft.occupancyChoice.value) return "occupancy";
+  if (!draft.sampleAccepted && isHelocFile(draft)) {
+    const helocFix = helocCorrectPrompt(draft);
+    if (helocFix) return helocFix;
+  }
   if (!draft.sampleAccepted && isHelocFile(draft) && helocValueAskNeeded(draft)) return "value";
   if (!draft.sampleAccepted && isHelocFile(draft) && helocFirstLienAskNeeded(draft)) return "first-lien";
   if (!draft.sampleAccepted && isHelocFile(draft) && helocLineAskNeeded(draft)) return "amount";
@@ -7671,7 +7691,12 @@ export function workspaceReply(
   ) {
     return replyToOverValueAsk(q, draft);
   }
-  if (isHelocFile(draft) && (helocNoPreviewReady(draft) || draft.liveQuoteStatus === "unavailable")) {
+  if (
+    isHelocFile(draft) &&
+    (helocNoPreviewReady(draft) ||
+      draft.liveQuoteStatus === "unavailable" ||
+      (helocFileCltvOverCap(draft) && !draft.liveCouponSettled))
+  ) {
     if (isHelocChangeValueText(q)) {
       const nextDraft = beginHelocCorrection(draft, "value");
       return {
@@ -7692,6 +7717,15 @@ export function workspaceReply(
         ...workspacePromptCopy("amount", nextDraft),
         capture: { field: "correct", value: "amount", line: "line" },
       };
+    }
+    if (helocFileCltvOverCap(draft) && isThisOneText(q)) {
+      return {
+        text: helocCltvCapCopy(draft),
+        actions: helocOverCapActions(),
+      };
+    }
+    if (helocFileCltvOverCap(draft) && (isCouponSkipText(q) || /^skip$/.test(lower))) {
+      return couponChipReply(draft, "skip");
     }
   }
   if (prompt === "refi-purpose" || (needsRefiPurposeAsk(draft) && !draft.correcting)) {

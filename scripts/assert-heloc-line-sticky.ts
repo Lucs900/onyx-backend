@@ -26,7 +26,6 @@ import {
   workspaceReply,
   writePurchasePrice,
 } from "../components/fox/workspace";
-import { calculateHelocQuote } from "../lib/calculateHelocQuote";
 import type { FoxIntakeDraft } from "../components/fox/types";
 
 function afterPrimary(): FoxIntakeDraft {
@@ -82,18 +81,9 @@ function main() {
   assert.notEqual(amountAskText(file), HELOC_LINE_ASK);
   assert.doesNotMatch(amountAskText(file), /What line do you want available/i);
 
-  const tool = calculateHelocQuote({
-    homeValue: 500_000,
-    currentMortgage: 400_000,
-    desiredLine: 100_000,
-    fico: 760,
-    occupancy: "Primary",
-  });
   const quoted = withHelocToolQuote(file);
-  assert.equal(quoted.liveQuote?.kind, "heloc");
-  assert.equal(quoted.liveQuote?.interestOnly, tool.monthlyPayment);
-  const io = quoted.liveQuote?.interestOnly;
-  assert.ok(io != null && io > 0);
+  assert.equal(quoted.loanAmountValue, 100_000);
+  assert.equal(quoted.liveQuote, undefined, "100% File CLTV is over the preview cap — no print");
 
   const skipOnWritten = workspaceReply("Skip", { ...quoted, liveCouponSettled: true });
   assert.notEqual(skipOnWritten?.capture?.field, "skip-heloc-line");
@@ -103,8 +93,7 @@ function main() {
   assert.equal(skipped.firstLienAmount, 400_000);
   assert.equal(skipped.propertyValueAmount, 500_000);
   assert.equal(fact(skipped, "line")?.value, "$100,000");
-  const afterSkipQuote = withHelocToolQuote(skipped);
-  assert.equal(afterSkipQuote.liveQuote?.interestOnly, io);
+  assert.equal(withHelocToolQuote(skipped).liveQuote, undefined);
   assert.doesNotMatch(skipOnWritten?.text ?? "", /What line do you want available/i);
 
   assert.equal(canLooksRight(quoted), true, "500/400/100 other-income HELOC should be Looks right");
@@ -132,7 +121,8 @@ function main() {
   assert.doesNotMatch(skipAfterLooks?.text ?? "", /What line do you want available/i);
   const skipAfterLooksDraft = skipHelocLine(afterLooks);
   assert.equal(skipAfterLooksDraft.loanAmountValue, 100_000);
-  assert.equal(withHelocToolQuote(skipAfterLooksDraft).liveQuote?.interestOnly, io);
+  assert.equal(skipAfterLooksDraft.productIntent, "heloc");
+  assert.equal(withHelocToolQuote(skipAfterLooksDraft).liveQuote, undefined);
 
   const typedLooks = workspaceReply("looks right", quoted);
   assert.doesNotMatch(typedLooks?.text ?? "", /What line do you want available/i);
@@ -162,7 +152,8 @@ function main() {
   const afterWageLooks = applyLooksRightMotion(wage);
   assert.equal(afterWageLooks.sampleAccepted, true);
   assert.equal(afterWageLooks.loanAmountValue, 100_000);
-  assert.equal(withHelocToolQuote(afterWageLooks).liveQuote?.interestOnly, io);
+  assert.equal(afterWageLooks.productIntent, "heloc");
+  assert.equal(withHelocToolQuote(afterWageLooks).liveQuote, undefined);
   const finishWage = labels(nextFoxAsk(afterWageLooks).actions);
   assert.ok(finishWage.includes("Proceed"), `after Looks right ${finishWage.join(" · ")}`);
   assert.ok(finishWage.includes("Not yet"));
@@ -172,7 +163,7 @@ function main() {
   assert.ok((typedAfterSkip?.text ?? "").trim(), "typed looks right after Skip stub cannot empty the composer");
 
   console.log(
-    "assert-heloc-line-sticky: 500/400/100 Looks right does not reprint line; Skip W-2+stub is Looks right; Skip is no-op on $100,000 / IO",
+    "assert-heloc-line-sticky: 500/400/100 Looks right does not reprint line; Skip W-2+stub is Looks right; Skip is no-op on $100,000",
   );
 }
 

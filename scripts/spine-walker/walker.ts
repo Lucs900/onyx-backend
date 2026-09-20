@@ -1996,6 +1996,17 @@ async function case32(page: Page) {
       }
       return;
     }
+    if (/I don’t have a HELOC at [\d.]+% of the house/i.test(text)) {
+      if (hasChip(chips, "This one")) {
+        throw new BeatFail(`This one on HELOC over-cap — ${chips.join(" · ")}`);
+      }
+      const need = ["Change line", "Change value", "Change first lien", "Skip"];
+      const missing = need.filter((label) => !hasChip(chips, label));
+      if (missing.length) {
+        throw new BeatFail(`HELOC over-cap chips missing ${missing.join(" · ")} — ${chips.join(" · ")}`);
+      }
+      return;
+    }
     if (
       /HELOC calculator has no quote|I don’t have a live HELOC quote/i.test(text)
     ) {
@@ -2052,16 +2063,32 @@ async function walkHeloc500400100ToLooksRight(page: Page) {
   const quoted = await waitCurrent(
     page,
     (text, chips) =>
-      /This HELOC right now|Estimated interest-only/i.test(text) || hasChip(chips, "This one"),
+      /I don’t have a HELOC at [\d.]+% of the house/i.test(text) ||
+      /This HELOC right now|Estimated interest-only/i.test(text) ||
+      hasChip(chips, "This one") ||
+      /How is income earned/i.test(text),
     45_000,
   );
-  if (!/This HELOC right now/i.test(quoted.text)) {
-    throw new BeatFail(`HELOC 500/400/100 did not print a live line — ${quoted.text}`);
+  if (/This HELOC right now/i.test(quoted.text) || hasChip(quoted.chips, "This one")) {
+    throw new BeatFail(`HELOC 500/400/100 printed This one over the CLTV cap — ${quoted.text}`);
   }
-  const io = quoted.text.match(/interest-only\s+\$([0-9,]+)/i)?.[1];
+  if (!/I don’t have a HELOC at [\d.]+% of the house/i.test(quoted.text)) {
+    throw new BeatFail(`HELOC 500/400/100 missed named over-cap — ${quoted.text}`);
+  }
   if (hasChip(quoted.chips, "This one")) {
-    await clickChip(page, "This one");
+    throw new BeatFail(`This one on 500/400/100 over-cap — ${quoted.chips.join(" · ")}`);
   }
+  for (const label of ["Change line", "Change value", "Change first lien", "Skip"]) {
+    if (!hasChip(quoted.chips, label)) {
+      throw new BeatFail(`over-cap missing ${label} — ${quoted.chips.join(" · ")}`);
+    }
+  }
+  const map = await structureMap(page);
+  if (map["Product"] !== "HELOC") {
+    throw new BeatFail(`over-cap lost Product HELOC — ${map["Product"] || "(missing)"}`);
+  }
+  await clickChip(page, "Skip");
+  const io = undefined as string | undefined;
   await waitAsk(page, /How is income earned/i, 20_000);
   await clickChip(page, "W-2");
   await maybeAnswerWhoOnLoanJustMe(page);
@@ -2157,6 +2184,106 @@ async function case34(page: Page) {
     if (!/\$713\b/.test(blob) && !new RegExp(`\\$${io}`).test(blob)) {
       throw new BeatFail(`Skip after filled line lost IO $${io} — ${blob}`);
     }
+  }
+}
+
+async function walkHelocToZip(page: Page, line: string) {
+  await hardStartOver(page);
+  const product = await waitCurrent(
+    page,
+    (text, chips) => hasChip(chips, "HELOC") || /Buy, Refinance, HELOC/i.test(text),
+    20_000,
+  );
+  if (!hasChip(product.chips, "HELOC")) {
+    throw new BeatFail(`HELOC chip missing on start — ${product.chips.join(" · ")}`);
+  }
+  await clickChip(page, "HELOC");
+  await waitAsk(page, /How will the property be used/i);
+  await clickChip(page, "Primary");
+  const afterOcc = await waitCurrent(
+    page,
+    (text) => /property value|first lien|what you owe|kind of home|timeline/i.test(text),
+    20_000,
+  );
+  if (/timeline/i.test(afterOcc.text) && hasChip(afterOcc.chips, "Skip")) {
+    await clickChip(page, "Skip");
+  }
+  await waitAsk(page, /property value/i);
+  await typeSend(page, "500000");
+  await waitAsk(page, /first lien|what you owe/i);
+  await typeSend(page, "400000");
+  await waitAsk(page, /line do you want available|HELOC line/i);
+  await typeSend(page, line);
+  await walkHouseCredit(page);
+  await waitAsk(page, /address or ZIP/i);
+  await typeSend(page, "94123");
+}
+
+async function case35(page: Page) {
+  await walkHelocToZip(page, "100000");
+  const over = await waitCurrent(
+    page,
+    (text, chips) =>
+      /I don’t have a HELOC at [\d.]+% of the house/i.test(text) ||
+      hasChip(chips, "This one") ||
+      /This HELOC right now/i.test(text),
+    45_000,
+  );
+  if (/This HELOC right now/i.test(over.text) || hasChip(over.chips, "This one")) {
+    throw new BeatFail(`500/400/100 printed over the CLTV cap — ${over.text}`);
+  }
+  if (!/I don’t have a HELOC at [\d.]+% of the house/i.test(over.text)) {
+    throw new BeatFail(`500/400/100 missed named CLTV speech — ${over.text}`);
+  }
+  for (const label of ["Change line", "Change value", "Change first lien", "Skip"]) {
+    if (!hasChip(over.chips, label)) {
+      throw new BeatFail(`over-cap missing ${label} — ${over.chips.join(" · ")}`);
+    }
+  }
+  if ((await structureMap(page))["Product"] !== "HELOC") {
+    throw new BeatFail(`over-cap lost Product HELOC`);
+  }
+  await clickChip(page, "Change line");
+  await waitAsk(page, /line do you want available|HELOC line/i);
+  await typeSend(page, "50000");
+  const printed = await waitCurrent(
+    page,
+    (text, chips) => /This HELOC right now|Estimated interest-only/i.test(text) || hasChip(chips, "This one"),
+    45_000,
+  );
+  if (!/This HELOC right now/i.test(printed.text) || !hasChip(printed.chips, "This one")) {
+    throw new BeatFail(`Change line 50k did not print This one — ${printed.text} | ${printed.chips.join(" · ")}`);
+  }
+  const after = await structureMap(page);
+  const line = moneyOf(after, "HELOC line") || moneyOf(after, "Line") || moneyOf(after, "Loan amount");
+  if (line !== "$50,000") {
+    throw new BeatFail(`Change line 50k wrote ${line || "(missing)"}`);
+  }
+  if (after["Product"] !== "HELOC") {
+    throw new BeatFail(`Change line flipped Product — ${after["Product"] || "(missing)"}`);
+  }
+  if (after["Purpose"] === "Cash-out") {
+    throw new BeatFail(`Change line wrote Purpose Cash-out`);
+  }
+  const cltv = after["CLTV"] || after["Cltv"];
+  if (cltv && !/90/.test(cltv)) {
+    throw new BeatFail(`Change line 50k CLTV was ${cltv}`);
+  }
+
+  await walkHelocToZip(page, "50000");
+  const clean = await waitCurrent(
+    page,
+    (text, chips) =>
+      /This HELOC right now|Estimated interest-only/i.test(text) ||
+      hasChip(chips, "This one") ||
+      /I don’t have a HELOC at/i.test(text),
+    45_000,
+  );
+  if (/I don’t have a HELOC at/i.test(clean.text) || !hasChip(clean.chips, "This one")) {
+    throw new BeatFail(`500/400/50 did not print — ${clean.text} | ${clean.chips.join(" · ")}`);
+  }
+  if ((await structureMap(page))["Product"] !== "HELOC") {
+    throw new BeatFail(`500/400/50 lost Product HELOC`);
   }
 }
 
@@ -3252,6 +3379,11 @@ const CASES: { n: number; title: string; run: (page: Page) => Promise<void> }[] 
     n: 34,
     title: "HELOC 500/400/100 Looks right does not reprint line; Skip is no-op; Proceed strip",
     run: case34,
+  },
+  {
+    n: 35,
+    title: "HELOC 500/400/100 over-cap: no This one; Change line 50k prints; 500/400/50 may print",
+    run: case35,
   },
   { n: 23, title: "ADP W-2 page-read: Box 5 is $36,460.08, never $5", run: case23 },
   { n: 24, title: "composer paperclip CSTC stub: filename/received then $1,806.67 Use this", run: case24 },

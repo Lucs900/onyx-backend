@@ -185,8 +185,14 @@ if [[ "${SPINE_WALKER_SKIP_LEFTOVERS:-}" != "1" ]]; then
   if leftover_wanted 25 || leftover_wanted 26; then
     run_leftover assert-first-session-page-read.ts
   fi
+  if leftover_wanted 32 || leftover_wanted 35; then
+    run_leftover assert-heloc-fox-path.ts
+  fi
   if leftover_wanted 34; then
     run_leftover assert-heloc-line-sticky.ts
+  fi
+  if leftover_wanted 35; then
+    run_leftover assert-heloc-cltv-cap.ts
   fi
   if leftover_wanted 12 || leftover_wanted 13; then
     run_leftover assert-file-next-ask.ts
