@@ -23,6 +23,14 @@ export type HelocQuoteResult = {
   monthlyPayment: number | null;
 };
 
+/**
+ * WSJ / Fed H.15 bank prime. Effective 2026-09-17.
+ * Not the fed funds target (3.75–4.00). A HELOC note is prime + margin.
+ */
+export const WSJ_H15_PRIME = 7;
+/** Existing compensation add-on on the published margin. Do not retune tonight. */
+export const HELOC_COMPENSATION_ADDON = 0.8;
+
 /** Same engine as the website HELOC calculator. Fox calls this; do not send HELOC to Rateflow. */
 export function calculateHelocQuote({
   homeValue,
@@ -37,8 +45,8 @@ export function calculateHelocQuote({
   const totalLiens = currentMortgage + lineForCltv;
   const cltv = homeValue > 0 ? (totalLiens / homeValue) * 100 : 0;
   const publishedMargin = getMarginFromTable(fico, cltv, occupancy);
-  const adjustedMargin = publishedMargin + 0.80;
-  const finalRate = 6.75 + adjustedMargin;
+  const adjustedMargin = publishedMargin + HELOC_COMPENSATION_ADDON;
+  const finalRate = WSJ_H15_PRIME + adjustedMargin;
   const lineForPayment = desiredLine && desiredLine > 0 ? desiredLine : maxLine;
   const monthlyPayment =
     lineForPayment > 0 && finalRate
@@ -90,7 +98,7 @@ export const calculateHelocQuoteTool = tool({
 
 /**
  * Margin table from Spring EQ Adjustable-Rate HELOC rate sheet (08.05.2026)
- * Values are the margin ABOVE Prime (currently 6.75%)
+ * Values are the margin ABOVE WSJ / H.15 bank prime (WSJ_H15_PRIME). Not fed funds.
  * Negative values are intentional for strong credit / low CLTV.
  */
 function getMarginFromTable(fico: number, cltv: number, occupancy: string): number {

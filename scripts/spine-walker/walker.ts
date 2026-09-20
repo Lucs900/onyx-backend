@@ -39,6 +39,7 @@ import { fileURLToPath } from "node:url";
 import { classifyAndExtract } from "../../lib/docs/extract";
 import { isBoxNumberAsDollars } from "../../components/fox/fileWrite";
 import type { ExtractClass } from "../../components/fox/types";
+import { calculateHelocQuote } from "../../lib/calculateHelocQuote";
 import { adpW2FixturePath } from "../assert-w2-page-read";
 import {
   alamedaPaystubPath,
@@ -2254,6 +2255,7 @@ async function case35(page: Page) {
   if (!/This HELOC right now/i.test(printed.text) || !hasChip(printed.chips, "This one")) {
     throw new BeatFail(`Change line 50k did not print This one — ${printed.text} | ${printed.chips.join(" · ")}`);
   }
+  assertHelocPrimePrint(printed.text, "Change line 50k");
   const after = await structureMap(page);
   const line = moneyOf(after, "HELOC line") || moneyOf(after, "Line") || moneyOf(after, "Loan amount");
   if (line !== "$50,000") {
@@ -2282,8 +2284,33 @@ async function case35(page: Page) {
   if (/I don’t have a HELOC at/i.test(clean.text) || !hasChip(clean.chips, "This one")) {
     throw new BeatFail(`500/400/50 did not print — ${clean.text} | ${clean.chips.join(" · ")}`);
   }
+  assertHelocPrimePrint(clean.text, "500/400/50");
   if ((await structureMap(page))["Product"] !== "HELOC") {
     throw new BeatFail(`500/400/50 lost Product HELOC`);
+  }
+}
+
+function assertHelocPrimePrint(text: string, label: string) {
+  const tool = calculateHelocQuote({
+    homeValue: 500_000,
+    currentMortgage: 400_000,
+    desiredLine: 50_000,
+    fico: 760,
+    occupancy: "Primary",
+  });
+  const rate = tool.finalRate.toFixed(2);
+  const io = Math.round((50_000 * (tool.finalRate / 100)) / 12);
+  if (/This HELOC right now:\s*(3\.75|4\.00)%/i.test(text)) {
+    throw new BeatFail(`${label} used fed funds as the HELOC note — ${text}`);
+  }
+  if (!new RegExp(`This HELOC right now:\\s*${rate}%`).test(text)) {
+    throw new BeatFail(`${label} missed prime+margin ${rate}% — ${text}`);
+  }
+  if (!/Estimated interest-only/i.test(text) || /P&I|This loan right now/i.test(text)) {
+    throw new BeatFail(`${label} lost interest-only speech — ${text}`);
+  }
+  if (!new RegExp(`\\$${io.toLocaleString("en-US")}`).test(text)) {
+    throw new BeatFail(`${label} missed IO $${io} — ${text}`);
   }
 }
 
