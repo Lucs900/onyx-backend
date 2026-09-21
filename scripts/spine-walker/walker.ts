@@ -32,6 +32,9 @@
  * Case 37 is who-on-loan Yes → Ying Lee CFBW Use this writes Borrowers 2;
  * next paper ask names whose W-2 or ID. Skip papers → finish chips.
  * Skip name stays Borrowers 1; Ray income unchanged; finish chips hold.
+ * Case 38 is Borrower 1 empty + Ray W-2: card names the printed employee;
+ * Use this writes Borrower 1 + Employment/Box 5; Ying unchanged. Filename
+ * is not a name. Skip keeps Borrower 1 empty. Finish chips hold.
  * Years in business is once after SE / Both. Named Hale Design when known.
  * Lukasz Harbor leftovers run from scripts/assert-spine-walker.sh before
  * Playwright. CI fail = red.
@@ -2717,6 +2720,166 @@ async function case37(page: Page) {
   }
 }
 
+async function case38(page: Page) {
+  await walkHeloc50040050ToWhoOnLoan(page);
+  await clickChip(page, "Yes");
+  await waitCurrent(page, (text) => /Who is the other person/i.test(text), 15_000);
+  await typeSend(page, "Ying Lee");
+  const yingConfirm = await waitCurrent(
+    page,
+    (text, chips) => hasChip(chips, "Use this") && /Ying Lee/i.test(text),
+    15_000,
+  );
+  if (!hasChip(yingConfirm.chips, "Use this")) {
+    throw new BeatFail(`typed Ying Lee missed Use this — ${yingConfirm.text}`);
+  }
+  await clickChip(page, "Use this");
+  await waitCurrent(
+    page,
+    (text, chips) =>
+      !hasChip(chips, "Use this") || /Last year’s W-2 —|government ID|Looks right/i.test(text),
+    20_000,
+  );
+  const beforePaper = await structureMap(page);
+  if (beforePaper["Borrower 1"] && beforePaper["Borrower 1"] !== "—") {
+    throw new BeatFail(`Borrower 1 already written before W-2 — ${beforePaper["Borrower 1"]}`);
+  }
+  if (beforePaper["Borrower 2"] !== "Ying Lee") {
+    throw new BeatFail(`lost Ying Lee before W-2 — ${beforePaper["Borrower 2"] || "(missing)"}`);
+  }
+
+  await composerDrop(page, "06-w2-2025-box5-loud.pdf");
+  const card = await waitCurrent(
+    page,
+    (text, chips) =>
+      hasChip(chips, "Use this") &&
+      /Jordan Hale/i.test(text) &&
+      /Box 5|Harbor Pacific/i.test(text),
+    90_000,
+  );
+  if (/What name should I put/i.test(card.text)) {
+    throw new BeatFail(`quizzed typed name after W-2 page — ${card.text}`);
+  }
+  if (/\bRay\b/.test(card.text) && !/Raymond/i.test(card.text)) {
+    throw new BeatFail(`invented Ray from filename — ${card.text}`);
+  }
+  const pageName = card.text.match(/\b([A-Z][a-z]+ [A-Z][a-z]+)\b/)?.[1] ?? "";
+  if (!pageName || /Ying Lee/i.test(pageName)) {
+    throw new BeatFail(`W-2 card missed printed employee — ${card.text}`);
+  }
+  if (!/Box 5/i.test(card.text)) {
+    throw new BeatFail(`W-2 card missed Box 5 — ${card.text}`);
+  }
+  const beforeWrite = await structureMap(page);
+  if (beforeWrite["Borrower 1"] && beforeWrite["Borrower 1"] !== "—") {
+    throw new BeatFail(`Borrower 1 wrote before Use this — ${beforeWrite["Borrower 1"]}`);
+  }
+  await clickChip(page, "Use this");
+  await waitCurrent(
+    page,
+    (text, chips) => !hasChip(chips, "Use this") || /Looks right|latest paystub|government ID/i.test(text),
+    20_000,
+  );
+  const afterWrite = await structureMap(page);
+  const written = afterWrite["Borrower 1"] || afterWrite["Borrower"] || "";
+  if (!/Jordan Hale/i.test(written)) {
+    throw new BeatFail(`Use this missed Borrower 1 Jordan Hale — ${written || "(missing)"}`);
+  }
+  if (/\bRay\b/.test(written) && !/Raymond/i.test(written)) {
+    throw new BeatFail(`filename invented Borrower 1 — ${written}`);
+  }
+  if (afterWrite["Borrower 2"] !== "Ying Lee") {
+    throw new BeatFail(`Use this overwrote Ying — ${afterWrite["Borrower 2"] || "(missing)"}`);
+  }
+  const jobs = (await structureRows(page)).filter((row) => row.label === "Employment");
+  if (!jobs.some((row) => /Harbor Pacific|Box 5/i.test(row.value))) {
+    throw new BeatFail(`Use this missed Employment/Box 5 on page borrower — ${jobs.map((row) => row.value).join(" | ")}`);
+  }
+  if (jobs.some((row) => /Ying/i.test(row.value))) {
+    throw new BeatFail(`copied employment onto Ying — ${jobs.map((row) => row.value).join(" | ")}`);
+  }
+
+  const started = Date.now();
+  while (Date.now() - started < 40_000) {
+    const text = await currentText(page);
+    const chips = await currentChips(page);
+    if (/What name should I put/i.test(text)) {
+      throw new BeatFail(`typed-name quiz after page write — ${text}`);
+    }
+    if (hasChip(chips, "Looks right") || /these numbers look right/i.test(text)) {
+      break;
+    }
+    if (hasAskSkip(text, chips)) {
+      await clickChip(page, "Skip");
+      await page.waitForTimeout(250);
+      continue;
+    }
+    await page.waitForTimeout(200);
+  }
+  const gate = await waitCurrent(
+    page,
+    (text, chips) => hasChip(chips, "Looks right") || /these numbers look right/i.test(text),
+    15_000,
+  );
+  assertLooksRightGateStrip(gate.text, gate.chips, "B1 from page");
+  await clickChip(page, "Looks right");
+  const afterLooks = await waitCurrent(
+    page,
+    (text, chips) => hasChip(chips, "Proceed") || /I can send this to review/i.test(text),
+    20_000,
+  );
+  assertProceedFinishStrip(afterLooks.text, afterLooks.chips, "B1 from page Looks right");
+  await clickChip(page, "Proceed");
+  const afterProceed = await waitCurrent(
+    page,
+    (text, chips) => hasChip(chips, "Ask Fox") || /ONYX has this for review/i.test(text),
+    20_000,
+  );
+  assertAskFoxStrip(afterProceed.text, afterProceed.chips, "B1 from page Proceed");
+  await assertHelocFinishFile(page, "B1 from page");
+  const finishMap = await structureMap(page);
+  if (finishMap["Borrower 2"] !== "Ying Lee") {
+    throw new BeatFail(`finish lost Ying Lee — ${JSON.stringify(finishMap)}`);
+  }
+  if (!(finishMap["Borrower 1"] || finishMap["Borrower"])) {
+    throw new BeatFail(`finish lost Borrower 1 — ${JSON.stringify(finishMap)}`);
+  }
+
+  await walkHeloc50040050ToWhoOnLoan(page);
+  await clickChip(page, "Yes");
+  await waitCurrent(page, (text) => /Who is the other person/i.test(text), 15_000);
+  await typeSend(page, "Ying Lee");
+  await waitCurrent(page, (text, chips) => hasChip(chips, "Use this") && /Ying Lee/i.test(text), 15_000);
+  await clickChip(page, "Use this");
+  await waitCurrent(
+    page,
+    (text) => /Last year’s W-2 —|government ID|Looks right/i.test(text),
+    20_000,
+  );
+  const skipStarted = Date.now();
+  while (Date.now() - skipStarted < 40_000) {
+    const text = await currentText(page);
+    const chips = await currentChips(page);
+    if (hasChip(chips, "Looks right") || /these numbers look right/i.test(text)) break;
+    if (hasAskSkip(text, chips)) {
+      await clickChip(page, "Skip");
+      await page.waitForTimeout(250);
+      continue;
+    }
+    await page.waitForTimeout(200);
+  }
+  const skipMap = await structureMap(page);
+  if (skipMap["Borrower 1"] && skipMap["Borrower 1"] !== "—") {
+    throw new BeatFail(`Skip wrote Borrower 1 — ${skipMap["Borrower 1"]}`);
+  }
+  if (/\bRay\b/i.test(JSON.stringify(skipMap))) {
+    throw new BeatFail(`Skip invented Ray — ${JSON.stringify(skipMap)}`);
+  }
+  if (skipMap["Borrower 2"] !== "Ying Lee") {
+    throw new BeatFail(`Skip lost Ying Lee — ${skipMap["Borrower 2"] || "(missing)"}`);
+  }
+}
+
 async function case23(page: Page) {
   const fixture = adpW2FixturePath();
   if (!fixture) {
@@ -3773,6 +3936,12 @@ const CASES: { n: number; title: string; run: (page: Page) => Promise<void> }[] 
     title:
       "who-on-loan Yes → Ying Lee Use this names whose paper; Skip → finish chips; Borrowers 2",
     run: case37,
+  },
+  {
+    n: 38,
+    title:
+      "B1 empty + W-2 page name CFBW writes Borrower 1 + employment; Ying held; Skip keeps B1 empty",
+    run: case38,
   },
   { n: 23, title: "ADP W-2 page-read: Box 5 is $36,460.08, never $5", run: case23 },
   { n: 24, title: "composer paperclip CSTC stub: filename/received then $1,806.67 Use this", run: case24 },

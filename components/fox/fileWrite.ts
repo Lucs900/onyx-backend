@@ -224,6 +224,8 @@ export const EXTRACT_SCHEMA_KEYS: Record<ExtractClass, readonly string[]> = {
   w2: [
     "tax_year",
     "employer_name",
+    "employee_name",
+    "full_name",
     "wages",
     "medicare_wages",
     "box5",
@@ -977,9 +979,11 @@ export function looksLikeContractFields(
   return Boolean(value("property_address") || value("purchase_price") || value("close_date") || value("seller_credit"));
 }
 
-/** W-2 page-read lock: employer, tax year, Box 5 Medicare wages. Box 1 optional. */
+/** W-2 page-read lock: employer, employee name as printed, tax year, Box 5. Box 1 optional. Filename is not a name. */
 export const W2_LOCKED_SCHEMA_KEYS = [
   "employer_name",
+  "employee_name",
+  "full_name",
   "tax_year",
   "medicare_wages",
   "box5",
@@ -2421,7 +2425,9 @@ export function applyExtractedFields(
       }
     } else {
       const existingName = (next.borrowerName || next.contact.fullName.value || "").trim();
-      if (existingName && !valuesMatch(existingName, shown) && !conflict) {
+      if (paperBorrowerParty(next, shown) === "coborrower") {
+        // Ying’s ID stays on Ying. Do not overwrite Borrower 1.
+      } else if (existingName && !valuesMatch(existingName, shown) && !conflict) {
         conflict = {
           field: BORROWER_NAME_FIELD,
           fileValue: displayBorrowerName(existingName),

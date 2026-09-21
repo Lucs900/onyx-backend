@@ -317,7 +317,7 @@ function extractFieldsPrompt(extractClass: ExtractClass, keys: readonly string[]
   }
   if (extractClass === "w2") {
     extra =
-      " Locked schema only: employer_name, tax_year, medicare_wages / box5 (Box 5 Medicare wages and tips), wages optional (Box 1). medicare_wages is the dollar amount printed in Box 5 — never the box number 5, never $5 because the label is 5. If the Box 5 cell is clipped or unreadable, hunt the SAME page for “Medicare wages” / “Medicare Wages Box 5 of W-2” / “Box 5” and use that dollar line. Never use “Reported W-2 Wages” (that is Box 1 after 401(k)). Never use Box 1 when Box 5 or Medicare wages is on the page. Prefer Box 5 over Box 1. Never output SSN. overtime, bonus, and commission only when clearly printed; empty otherwise; never invent.";
+      " Locked schema only: employer_name, employee_name / full_name (employee first and last as printed on the W-2 — Box e / employee’s name), tax_year, medicare_wages / box5 (Box 5 Medicare wages and tips), wages optional (Box 1). employee_name is the printed employee only. Never invent a name from the filename (for example 2025 W2 Ray.pdf is not Ray). Never output SSN. medicare_wages is the dollar amount printed in Box 5 — never the box number 5, never $5 because the label is 5. If the Box 5 cell is clipped or unreadable, hunt the SAME page for “Medicare wages” / “Medicare Wages Box 5 of W-2” / “Box 5” and use that dollar line. Never use “Reported W-2 Wages” (that is Box 1 after 401(k)). Never use Box 1 when Box 5 or Medicare wages is on the page. Prefer Box 5 over Box 1. overtime, bonus, and commission only when clearly printed; empty otherwise; never invent.";
   }
   if (extractClass === "bank_statement") {
     extra =

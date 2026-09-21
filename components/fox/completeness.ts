@@ -1073,7 +1073,12 @@ export function proposalAskCopy(proposal: FactProposal) {
     );
     const frequency = proposal.extras?.find((item) => item.field === "pay_frequency")?.value ?? "";
     const employer = proposal.extras?.find((item) => item.field === "employer_name")?.value ?? "";
-    if (isWageW2OnlyProposal(proposal)) return wageW2ConfirmCopy(box5, employer);
+    if (isWageW2OnlyProposal(proposal)) {
+      const employee =
+        proposal.extras?.find((item) => item.field === "employee_name" || item.field === "full_name")
+          ?.value ?? "";
+      return wageW2ConfirmCopy(box5, employer, employee || undefined);
+    }
     return wageExtractConfirmCopy(box5, stub, frequency);
   }
   if (isStubExtractProposal(proposal)) {

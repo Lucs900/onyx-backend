@@ -1711,8 +1711,14 @@ export function fieldsFromPrintedLines(
     }
     const occupancy = valueAfter(line, /^OCCUPANCY:\s*/i);
     if (occupancy) put("occupancy", occupancy.toLowerCase());
-    const fullName = labeled(line, next, /^(?:FULL NAME|EMPLOYEE NAME|NAME):\s*/i);
+    const fullName = labeled(line, next, /^(?:FULL NAME|EMPLOYEE NAME|EMPLOYEE'S NAME|NAME):\s*/i);
     if (fullName) put("full_name", fullName);
+    const employee = labeled(
+      line,
+      next,
+      /^(?:EMPLOYEE NAME|EMPLOYEE'S NAME|EMPLOYEE’S NAME|BOX E):\s*/i,
+    );
+    if (employee) put("employee_name", employee);
     const last4 = valueAfter(line, /^ID LAST 4:\s*/i);
     if (last4) put("id_last4", last4);
   }
@@ -1792,6 +1798,8 @@ export function fieldsFromPrintedLines(
     if (fields.employer_name && junkEmployerName(fields.employer_name)) {
       delete fields.employer_name;
     }
+    if (!fields.employee_name && fields.full_name) put("employee_name", fields.full_name);
+    if (!fields.full_name && fields.employee_name) put("full_name", fields.employee_name);
     if (!fields.employer_name) {
       const employer = employerFromPrintedText(blob, lines) || employerFromPrintedText(lines.join("\n"), lines);
       if (employer) put("employer_name", employer);

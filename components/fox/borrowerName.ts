@@ -76,9 +76,24 @@ export function governmentIdOutstanding(draft: FoxIntakeDraft) {
   );
 }
 
+/** Page already has a first+last. Do not quiz a typed name. */
+function pendingPrintedPageName(draft: FoxIntakeDraft) {
+  const extras = draft.pendingProposal?.extras ?? [];
+  const raw =
+    draft.pendingWageExtract?.employee ||
+    extras.find((item) => item.field === "full_name" || item.field === "employee_name")?.value ||
+    (isBorrowerNameField(draft.pendingProposal?.field ?? "") ? draft.pendingProposal?.value : "") ||
+    "";
+  const shown = parseBorrowerName(String(raw ?? ""));
+  if (!shown || shown.split(/\s+/).length < 2) return "";
+  if (/\b(w-?2|pdf|form)\b/i.test(shown)) return "";
+  return shown;
+}
+
 export function borrowerNameSettled(draft: FoxIntakeDraft) {
   if (governmentIdOutstanding(draft)) return true;
   if (draft.correcting === "borrower-name") return false;
+  if (pendingPrintedPageName(draft)) return true;
   if (draft.borrowerNameAsked || draft.borrowerName || draft.contact.fullName.value) return true;
   if (isBorrowerNameConfirmPending(draft)) return true;
   return false;
@@ -256,6 +271,13 @@ export function borrowerNameAskCopy(draft: FoxIntakeDraft): {
   text: string;
   actions?: FoxAction[];
 } {
+  const fromPage = draft.correcting === "borrower-name" ? "" : pendingPrintedPageName(draft);
+  if (fromPage) {
+    return {
+      text: borrowerNameConfirmCopy(fromPage),
+      actions: borrowerNameConfirmActions(),
+    };
+  }
   return {
     text: BORROWER_NAME_ASK,
     actions: borrowerNameSkipActions(),

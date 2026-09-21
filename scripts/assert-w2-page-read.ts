@@ -134,6 +134,8 @@ function main() {
   assert.equal(VISION_MODEL, "grok-2-vision-1212");
   assert.deepEqual([...W2_LOCKED_SCHEMA_KEYS], [
     "employer_name",
+    "employee_name",
+    "full_name",
     "tax_year",
     "medicare_wages",
     "box5",

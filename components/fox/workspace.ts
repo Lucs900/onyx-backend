@@ -601,6 +601,7 @@ import {
   skipWhoOnLoanName,
   isJointWageDocsAskText,
   jointWageDocsAskCopy,
+  pageNamePendingForPrimary,
   whoOnLoanAskCopy,
   whoOnLoanAskNeeded,
   whoOnLoanNameAskNeeded,
@@ -2532,7 +2533,12 @@ function liveProposalAsk(
     );
     return {
       text: isWageW2OnlyProposal(proposal)
-        ? wageW2ConfirmCopy(box5, employer)
+        ? wageW2ConfirmCopy(
+            box5,
+            employer,
+            proposal.extras?.find((item) => item.field === "employee_name" || item.field === "full_name")
+              ?.value,
+          )
         : wageExtractConfirmCopy(box5, stub, frequency),
       actions: incomeConfirmActions(),
     };
@@ -4421,9 +4427,10 @@ export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
       // Stale wage-thread resume after Skip or SE / Other.
     } else if (
       draft.resumeAfterEdit === "borrower-name" &&
-      (governmentIdOutstanding(draft) || draft.sampleAccepted)
+      (governmentIdOutstanding(draft) || draft.sampleAccepted || Boolean(pageNamePendingForPrimary(draft)))
     ) {
       // Stale resume — after Looks right, Skip ID goes to statements, not typed name.
+      // Page already has a name — confirm on the W-2 / ID card, do not quiz typed.
     } else if (
       draft.resumeAfterEdit === "coborrower-name" &&
       (draft.sampleAccepted ||

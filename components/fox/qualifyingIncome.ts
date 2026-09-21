@@ -1,6 +1,7 @@
 import type { ExtractClass, FactProposal, FieldSource, FoxIntakeDraft, FoxMessage } from "./types";
 import { writeCurrentEmploymentHistory } from "./fileHistory";
-import { maybeWriteCoborrowerFromPaper, notePageOtherName, paperBorrowerParty, withWhoOnLoanDue } from "./whoOnLoan";
+import { displayBorrowerName, writeBorrowerName } from "./borrowerName";
+import { maybeWriteCoborrowerFromPaper, notePageOtherName, pageNameForPrimaryBorrower, paperBorrowerParty, printedPagePersonName, withWhoOnLoanDue } from "./whoOnLoan";
 import {
   DECLINING_INCOME_CAUTION,
   DECLINING_YEAR_RATIO,
@@ -3069,12 +3070,14 @@ export function wageExtractConfirmCopy(box5: number, stub: number, frequency: st
   return `Box 5 ${speakWageMoney(box5)}. Stub ${speakWageMoney(stub)} ${spoken}. Use this?`;
 }
 
-export function wageW2ConfirmCopy(box5: number, employer: string): string {
+export function wageW2ConfirmCopy(box5: number, employer: string, employee?: string): string {
   const name = String(employer ?? "").trim();
+  const who = employee ? displayBorrowerName(employee) : "";
   const monthly = Math.round(box5 / 12);
   const monthBit = monthly > 0 ? ` → ${speakWageMoney(monthly)} a month` : "";
   const box = `Box 5 ${speakWageMoney(box5)}${monthBit}`;
-  return name ? `${name}. ${box}. Use this?` : `${box}. Use this?`;
+  const job = name ? `${name}. ${box}` : box;
+  return who ? `${who}. ${job}. Use this?` : `${job}. Use this?`;
 }
 
 function confirmedWageFact(draft: FoxIntakeDraft, field: string): string {
@@ -3282,7 +3285,7 @@ export function mergePendingWageExtract(
   const frequency =
     extractClass === "w2" ? undefined : speakPayFrequency(fields?.pay_frequency);
   const employer = String(fields?.employer_name ?? "").trim();
-  const employee = String(fields?.full_name ?? fields?.employee_name ?? "").trim();
+  const employee = printedPagePersonName(String(fields?.full_name ?? fields?.employee_name ?? ""));
   const next = {
     ...prev,
     ...(extractClass === "w2" ? { w2In: true } : {}),
@@ -3555,7 +3558,7 @@ export function proposeWageW2Extract(
 ): FoxIntakeDraft {
   const name = String(employer ?? "").trim();
   if (box5 <= 0 || !name) return draft;
-  const paperName = String(employee ?? draft.pendingWageExtract?.employee ?? "").trim();
+  const paperName = printedPagePersonName(String(employee ?? draft.pendingWageExtract?.employee ?? ""));
   return {
     ...draft,
     awaitingPayFrequency: false,
@@ -3611,9 +3614,9 @@ export function maybeProposeWageExtract(
   if (wageW2ExtractAccepted(draft)) return draft;
   if (draft.pendingConflict) return draft;
   const held = mergePendingWageExtract(draft, fields, extractClass);
-  const employee = String(
-    fields?.full_name ?? fields?.employee_name ?? held.pendingWageExtract?.employee ?? "",
-  ).trim();
+  const employee = printedPagePersonName(
+    String(fields?.full_name ?? fields?.employee_name ?? held.pendingWageExtract?.employee ?? ""),
+  );
   if (paperBorrowerParty(held, employee) === "coborrower") return held;
   if (wageExtractCanConfirm(held, fields)) {
     const box5 = readWageBox5(held, fields);
@@ -3753,6 +3756,8 @@ export function acceptWageExtract(draft: FoxIntakeDraft): FoxIntakeDraft {
     ""
   ).trim();
   if (paperName) {
+    const primaryFromPage = pageNameForPrimaryBorrower(next, paperName);
+    if (primaryFromPage) next = writeBorrowerName(next, primaryFromPage);
     next = maybeWriteCoborrowerFromPaper(notePageOtherName(next, paperName), paperName);
   }
   return withWhoOnLoanDue(next);

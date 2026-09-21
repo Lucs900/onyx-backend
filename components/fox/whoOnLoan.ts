@@ -136,6 +136,39 @@ export function paperBorrowerParty(
   return undefined;
 }
 
+/** Printed first+last only. Filename tokens (2025 W2 Ray.pdf) are not a name. */
+export function printedPagePersonName(raw: string): string {
+  const shown = parseBorrowerName(raw) ?? displayBorrowerName(raw);
+  if (!shown) return "";
+  if (shown.split(/\s+/).length < 2) return "";
+  if (/\b(w-?2|pdf|form)\b/i.test(shown)) return "";
+  return shown;
+}
+
+/** Page first+last when Borrower 1 is empty. Never Ying. Never a filename. */
+export function pageNameForPrimaryBorrower(draft: FoxIntakeDraft, raw: string): string {
+  const shown = printedPagePersonName(raw);
+  if (!shown) return "";
+  if (paperBorrowerParty(draft, shown) === "coborrower") return "";
+  if (primaryNameOnFile(draft)) return "";
+  return shown;
+}
+
+/** Pending W-2 / ID page name that can write Borrower 1. Typed quiz stays off. */
+export function pageNamePendingForPrimary(draft: FoxIntakeDraft): string {
+  const extras = draft.pendingProposal?.extras ?? [];
+  const raw =
+    draft.pendingWageExtract?.employee ||
+    extras.find((item) => item.field === "full_name" || item.field === "employee_name")?.value ||
+    (draft.pendingProposal?.field === "full_name" ||
+    draft.pendingProposal?.field === "employee_name" ||
+    draft.pendingProposal?.field === "borrowerName"
+      ? draft.pendingProposal.value
+      : "") ||
+    "";
+  return pageNameForPrimaryBorrower(draft, String(raw ?? ""));
+}
+
 export function jointWhoseFirstNames(draft: FoxIntakeDraft): string[] {
   const names: string[] = [];
   const primary = spokenFirstName(primaryNameOnFile(draft));
