@@ -1511,8 +1511,8 @@ export function setLiveQuoteResult(
     liveQuote: quote ?? undefined,
     liveQuoteRows: quote ? rows ?? current.liveQuoteRows : undefined,
     liveQuoteVendorReason: quote ? undefined : vendorReason,
-    liveCouponSettled: false,
-    pendingLiveCoupon: undefined,
+    liveCouponSettled: quote ? false : current.liveCouponSettled,
+    pendingLiveCoupon: quote ? undefined : current.pendingLiveCoupon,
   });
 }
 

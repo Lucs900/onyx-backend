@@ -1436,6 +1436,10 @@ export function AlwaysOnFox({
       }
       if (isStart && live.liveQuoteStatus === "unavailable" && !live.liveCouponSettled && !live.liveQuote) {
         const last = lastFoxTurn(prev);
+        if (workspacePrompt(live) === "who-on-loan") {
+          const spoken = nextFoxAsk(live);
+          if (spoken.text.trim()) return applyFoxAsk(withoutWaitLines(prev), spoken);
+        }
         if (
           last &&
           (isPricingWhenReadySpeech(last) ||

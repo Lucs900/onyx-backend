@@ -3776,6 +3776,7 @@ export function messagesWithPricingWhenReady(
   draft: FoxIntakeDraft,
 ): FoxMessage[] {
   if (fileNeedsCaliforniaAsk(draft)) return withoutPricingWhenReadySpeech(messages);
+  if (whoOnLoanNameAskNeeded(draft) || whoOnLoanAskNeeded(draft)) return messages;
   if (addressConfirmPending(draft) || !addressLineReadyForQuote(draft)) {
     return messages;
   }
@@ -4203,6 +4204,18 @@ export function deskStripActions(
     !draft.correcting
   ) {
     return stripStreetSuggest(loanOverValueActions());
+  }
+  if (
+    (whoOnLoanNameAskNeeded(draft) || whoOnLoanAskNeeded(draft)) &&
+    !draft.pendingProposal &&
+    !draft.pendingConflict &&
+    !draft.pendingAddress &&
+    !draft.correcting &&
+    (isPricingWhenReadySpeech(message) ||
+      message.text === NO_CONVENTIONAL_PRICE_LINE ||
+      message.text === PRICING_WHEN_READY)
+  ) {
+    return stripStreetSuggest(whoOnLoanAskCopy(draft).actions ?? []);
   }
   if (
     message.text === PRICING_WHEN_READY ||

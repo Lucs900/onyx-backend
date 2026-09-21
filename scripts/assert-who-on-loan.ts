@@ -27,6 +27,8 @@ import { stillUsefulLabels, stillUsefulSection } from "../components/fox/fileWri
 import { acceptWageExtract } from "../components/fox/qualifyingIncome";
 import { fileHasMultipleBorrowers } from "../components/fox/coborrowerName";
 import {
+  NO_CONVENTIONAL_PRICE_LINE,
+  deskStripActions,
   nextFoxAsk,
   previewFacts,
   workspacePrompt,
@@ -106,6 +108,27 @@ function main() {
   );
   assert.equal(nextFoxAsk(noPriceAfterW2).text, WHO_ON_LOAN_ASK);
   assert.doesNotMatch(nextFoxAsk(noPriceAfterW2).text, /conventional price/i);
+
+  const leftoverNoPriceAfterW2: FoxIntakeDraft = {
+    ...unnamed,
+    incomeType: { ...emptyDraft().incomeType, value: "w2" },
+    incomeAsked: true,
+    whoOnLoanDue: true,
+    liveQuoteStatus: "unavailable",
+    liveCouponSettled: false,
+    liveQuote: undefined,
+  };
+  assert.equal(whoOnLoanAskNeeded(leftoverNoPriceAfterW2), true);
+  assert.equal(nextFoxAsk(leftoverNoPriceAfterW2).text, WHO_ON_LOAN_ASK);
+  assert.deepEqual(
+    labels(
+      deskStripActions(
+        [{ id: "no-price", role: "fox", text: NO_CONVENTIONAL_PRICE_LINE }],
+        leftoverNoPriceAfterW2,
+      ),
+    ),
+    ["Yes", "Just me", "Skip"],
+  );
   assert.deepEqual(labels(afterW2?.actions), ["Yes", "Just me", "Skip"]);
   assert.doesNotMatch(afterW2?.text ?? "", /Looks right|Proceed|spouse\?|SSN/i);
 
