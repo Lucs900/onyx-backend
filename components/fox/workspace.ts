@@ -3979,7 +3979,7 @@ export function nextFoxAsk(draft: FoxIntakeDraft): {
   if (fileNeedsCaliforniaAsk(draft)) {
     return workspacePromptCopy("geo-stop", draft);
   }
-  if (isHelocFile(draft)) {
+  if (isHelocFile(draft) && !draft.sampleAccepted && !draft.pendingFinish && !inQueueEnding(draft)) {
     const heloc = withHelocToolQuote(draft);
     if (helocFileCltvOverCap(heloc) && !heloc.liveCouponSettled && !heloc.correcting) {
       return {
@@ -4175,7 +4175,12 @@ export function deskStripActions(
   for (let i = 0; i < thread.length; i += 1) {
     if (thread[i]?.role === "fox") live = i;
   }
-  if (live < 0 || !isLiveFoxTurn(thread, live)) return [];
+  if (live < 0 || !isLiveFoxTurn(thread, live)) {
+    if (inQueueEnding(draft) || draft.sampleAccepted) {
+      return stripStreetSuggest(finishLineActions(draft));
+    }
+    return [];
+  }
   const message = thread[live]!;
   if (isReceivedStatusLine(message.text) || isLookupWaitLine(message.text)) return [];
 
@@ -4229,6 +4234,20 @@ export function deskStripActions(
     (draft.pendingProposal || draft.pendingConflict || draft.pendingAddress)
   ) {
     return writeConfirmActions(draft);
+  }
+
+  if (
+    inQueueEnding(draft) ||
+    message.text === MOTION_COPY.in_queue ||
+    /ONYX has this for review/i.test(message.text)
+  ) {
+    return stripStreetSuggest(finishLineActions(draft));
+  }
+  if (
+    draft.sampleAccepted &&
+    (/i can send this to review/i.test(message.text) || motionAskText(draft) === message.text)
+  ) {
+    return stripStreetSuggest(finishLineActions(draft));
   }
 
   const next = nextFoxAsk(draft);
@@ -7743,7 +7762,7 @@ export function workspaceReply(
   if (
     isLooksRightConfirmText(q) &&
     !draft.sampleAccepted &&
-    canLooksRight(draft) &&
+    (canLooksRight(draft) || applyLooksRightMotion(draft).sampleAccepted) &&
     !draft.pendingProposal &&
     !draft.pendingConflict &&
     !draft.pendingAddress

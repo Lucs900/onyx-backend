@@ -26,6 +26,9 @@
  * Case 26 is leftover smoke for the Combes 1040 walk PDF (223,455 bytes) +
  * gold File after Use this: QI $36,453, Tax return in, Form 1040 off Still
  * useful. Missing walk PDF skips Playwright. Founder paperclip is ACCEPT.
+ * Case 36 is HELOC 500/400/50 This one → W-2 skip path → Looks right chips
+ * → Proceed strip → Proceed Ask Fox strip. Typed looks right / proceed
+ * leave the same chips. Completeness is a signal, not a gate.
  * Years in business is once after SE / Both. Named Hale Design when known.
  * Lukasz Harbor leftovers run from scripts/assert-spine-walker.sh before
  * Playwright. CI fail = red.
@@ -2290,6 +2293,186 @@ async function case35(page: Page) {
   }
 }
 
+async function walkHeloc50040050ThisOneToLooksRight(page: Page) {
+  await walkHelocToZip(page, "50000");
+  const quoted = await waitCurrent(
+    page,
+    (text, chips) =>
+      /This HELOC right now|Estimated interest-only/i.test(text) ||
+      hasChip(chips, "This one") ||
+      /I don’t have a HELOC at/i.test(text),
+    45_000,
+  );
+  if (/I don’t have a HELOC at/i.test(quoted.text) || !hasChip(quoted.chips, "This one")) {
+    throw new BeatFail(`500/400/50 did not print This one — ${quoted.text} | ${quoted.chips.join(" · ")}`);
+  }
+  assertHelocPrimePrint(quoted.text, "500/400/50");
+  await clickChip(page, "This one");
+  await waitAsk(page, /How is income earned/i, 20_000);
+  await clickChip(page, "W-2");
+  await maybeAnswerWhoOnLoanJustMe(page);
+  const started = Date.now();
+  while (Date.now() - started < 40_000) {
+    const text = await currentText(page);
+    const chips = await currentChips(page);
+    if (/What line do you want available|required amount on this file/i.test(text)) {
+      throw new BeatFail(`HELOC required-amount / line loop after Skip papers — ${text}`);
+    }
+    if (hasChip(chips, "Looks right") || /these numbers look right/i.test(text)) {
+      return;
+    }
+    if (isWhoOnLoanTurn(text, chips) && hasChip(chips, "Just me")) {
+      await clickChip(page, "Just me");
+      await waitCurrent(page, (next, nextChips) => !isWhoOnLoanTurn(next, nextChips), 15_000);
+      continue;
+    }
+    if (hasAskSkip(text, chips)) {
+      await clickChip(page, "Skip");
+      await page.waitForTimeout(250);
+      continue;
+    }
+    await page.waitForTimeout(200);
+  }
+  throw new BeatFail(`HELOC 500/400/50 did not reach Looks right — ${await currentText(page)}`);
+}
+
+function assertLooksRightGateStrip(text: string, chips: string[], when: string) {
+  if (!text.trim()) {
+    throw new BeatFail(`empty composer at Looks right gate ${when}`);
+  }
+  if (!hasChip(chips, "Looks right") || !hasChip(chips, "Needs a correction")) {
+    throw new BeatFail(
+      `${when} expected Looks right · Needs a correction — ${chips.join(" · ") || "(none)"} | ${text}`,
+    );
+  }
+}
+
+function assertProceedFinishStrip(text: string, chips: string[], when: string) {
+  if (!text.trim()) {
+    throw new BeatFail(`empty composer after Looks right ${when}`);
+  }
+  if (!/I can send this to review/i.test(text)) {
+    throw new BeatFail(`${when} missed send-to-review speech — ${text}`);
+  }
+  if (!hasChip(chips, "Proceed") || !hasChip(chips, "Not yet") || !hasChip(chips, "Upload more")) {
+    throw new BeatFail(
+      `${when} expected Proceed · Not yet · Upload more — ${chips.join(" · ") || "(none)"} | ${text}`,
+    );
+  }
+  if (chips[chips.length - 1] !== "Request human") {
+    throw new BeatFail(`${when} Request human must be last — ${chips.join(" · ") || "(none)"}`);
+  }
+}
+
+function assertAskFoxStrip(text: string, chips: string[], when: string) {
+  if (!text.trim()) {
+    throw new BeatFail(`empty composer after Proceed ${when}`);
+  }
+  if (!/ONYX has this for review/i.test(text)) {
+    throw new BeatFail(`${when} missed in-queue speech — ${text}`);
+  }
+  if (!hasChip(chips, "Ask Fox") || !hasChip(chips, "Upload more")) {
+    throw new BeatFail(`${when} expected Ask Fox · Upload more — ${chips.join(" · ") || "(none)"} | ${text}`);
+  }
+  if (chips[chips.length - 1] !== "Request human") {
+    throw new BeatFail(`${when} Request human must be last — ${chips.join(" · ") || "(none)"}`);
+  }
+}
+
+async function assertHelocFinishFile(page: Page, when: string) {
+  const map = await structureMap(page);
+  const line = moneyOf(map, "HELOC line") || moneyOf(map, "Line") || moneyOf(map, "Loan amount");
+  if (line !== "$50,000") {
+    throw new BeatFail(`${when} line was ${line || "(missing)"}`);
+  }
+  if (map["Product"] !== "HELOC") {
+    throw new BeatFail(`${when} lost Product HELOC — ${map["Product"] || "(missing)"}`);
+  }
+  if (map["Status"] && map["Status"] !== "in_queue") {
+    throw new BeatFail(`${when} Status was ${map["Status"]}`);
+  }
+  if (map["Next"] && map["Next"] !== "ONYX") {
+    throw new BeatFail(`${when} Next was ${map["Next"]}`);
+  }
+  const blob = `${await currentText(page)} ${Object.values(map).join(" ")}`;
+  if (!/\$50,000/.test(blob)) {
+    throw new BeatFail(`${when} lost $50,000 line — ${blob}`);
+  }
+  if (!/\$367\b/.test(blob)) {
+    throw new BeatFail(`${when} lost IO $367 — ${blob}`);
+  }
+}
+
+async function case36(page: Page) {
+  await walkHeloc50040050ThisOneToLooksRight(page);
+  const gate = await waitCurrent(
+    page,
+    (text, chips) => hasChip(chips, "Looks right") || /these numbers look right/i.test(text),
+    15_000,
+  );
+  assertLooksRightGateStrip(gate.text, gate.chips, "chip path");
+  await clickChip(page, "Looks right");
+  const afterLooks = await waitCurrent(
+    page,
+    (text, chips) =>
+      hasChip(chips, "Proceed") ||
+      /I can send this to review|ONYX has this/i.test(text) ||
+      (chips.length === 0 && Boolean(text.trim())),
+    20_000,
+  );
+  assertProceedFinishStrip(afterLooks.text, afterLooks.chips, "Looks right chip");
+  await clickChip(page, "Proceed");
+  const afterProceed = await waitCurrent(
+    page,
+    (text, chips) =>
+      hasChip(chips, "Ask Fox") ||
+      /ONYX has this for review/i.test(text) ||
+      (chips.length === 0 && Boolean(text.trim())),
+    20_000,
+  );
+  assertAskFoxStrip(afterProceed.text, afterProceed.chips, "Proceed chip");
+  await assertHelocFinishFile(page, "Proceed chip");
+
+  await walkHeloc50040050ThisOneToLooksRight(page);
+  const typedGate = await waitCurrent(
+    page,
+    (text, chips) => hasChip(chips, "Looks right") || /these numbers look right/i.test(text),
+    15_000,
+  );
+  assertLooksRightGateStrip(typedGate.text, typedGate.chips, "typed path");
+  await typeSend(page, "looks right");
+  const typedLooks = await waitCurrent(
+    page,
+    (text, chips) =>
+      hasChip(chips, "Proceed") ||
+      /I can send this to review|ONYX has this/i.test(text) ||
+      (chips.length === 0 && Boolean(text.trim())),
+    20_000,
+  );
+  assertProceedFinishStrip(typedLooks.text, typedLooks.chips, "typed looks right");
+  if (typedLooks.chips.join(" · ") !== afterLooks.chips.join(" · ")) {
+    throw new BeatFail(
+      `typed looks right chips ${typedLooks.chips.join(" · ")} ≠ chip ${afterLooks.chips.join(" · ")}`,
+    );
+  }
+  await typeSend(page, "proceed");
+  const typedProceed = await waitCurrent(
+    page,
+    (text, chips) =>
+      hasChip(chips, "Ask Fox") ||
+      /ONYX has this for review/i.test(text) ||
+      (chips.length === 0 && Boolean(text.trim())),
+    20_000,
+  );
+  assertAskFoxStrip(typedProceed.text, typedProceed.chips, "typed proceed");
+  if (typedProceed.chips.join(" · ") !== afterProceed.chips.join(" · ")) {
+    throw new BeatFail(
+      `typed proceed chips ${typedProceed.chips.join(" · ")} ≠ chip ${afterProceed.chips.join(" · ")}`,
+    );
+  }
+  await assertHelocFinishFile(page, "typed proceed");
+}
+
 function assertHelocPrimePrint(text: string, label: string) {
   const tool = calculateHelocQuote({
     homeValue: 500_000,
@@ -3411,6 +3594,12 @@ const CASES: { n: number; title: string; run: (page: Page) => Promise<void> }[] 
     n: 35,
     title: "HELOC 500/400/100 over-cap: no This one; Change line 50k prints; 500/400/50 may print",
     run: case35,
+  },
+  {
+    n: 36,
+    title:
+      "HELOC 500/400/50 Looks right → Proceed strip; Proceed → Ask Fox; typed looks right/proceed same chips",
+    run: case36,
   },
   { n: 23, title: "ADP W-2 page-read: Box 5 is $36,460.08, never $5", run: case23 },
   { n: 24, title: "composer paperclip CSTC stub: filename/received then $1,806.67 Use this", run: case24 },

@@ -195,6 +195,9 @@ if [[ "${SPINE_WALKER_SKIP_LEFTOVERS:-}" != "1" ]]; then
     run_leftover assert-heloc-cltv-cap.ts
     run_leftover assert-heloc-prime-source.ts
   fi
+  if leftover_wanted 36; then
+    run_leftover assert-heloc-finish-chips.ts
+  fi
   if leftover_wanted 12 || leftover_wanted 13; then
     run_leftover assert-file-next-ask.ts
   fi

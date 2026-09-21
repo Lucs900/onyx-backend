@@ -221,7 +221,7 @@ import {
 } from "./completeness";
 import { governmentIdSkipped, ID_UNREAD_ASK, isBorrowerNameConfirmPending } from "./borrowerName";
 import { isUnreadNote } from "@/lib/docs/accept";
-import { fileExists, finishLineActions, inQueueEnding, reviewIsSitting } from "./motion";
+import { applyLooksRightMotion, fileExists, finishLineActions, inQueueEnding, reviewIsSitting } from "./motion";
 import { pathFromHomeChoice } from "./homeIdle";
 import {
   FOX_DISCLOSURE,
@@ -1763,7 +1763,15 @@ export function AlwaysOnFox({
         ? held
         : [...held, { id: newId(), role: "client", text: clientText, edit, editLine }];
       if (foxZipEcho) return sealStoredFoxThread(next);
-      if (!fox.text.trim() && !(fox.followUp ?? "").trim()) return sealStoredFoxThread(next);
+      if (!fox.text.trim() && !(fox.followUp ?? "").trim()) {
+        if (fox.actions?.length) {
+          return sealStoredFoxThread([
+            ...next,
+            foxAskMessage({ ...fox, text: fox.text || "I’m here. Type below, or tap a reply." }),
+          ]);
+        }
+        return sealStoredFoxThread(next);
+      }
       if (isYearsInBusinessAskText(fox.text)) {
         const withoutYears = next.filter(
           (item) => !(item.role === "fox" && isYearsInBusinessAskText(item.text)),
@@ -2015,8 +2023,10 @@ export function AlwaysOnFox({
       if (!capture) return;
       if (capture.field === "confirm-draft") {
         const liveBefore = getFoxDraft();
+        const looksRightWouldTake = applyLooksRightMotion(liveBefore).sampleAccepted;
         if (
           !liveBefore.sampleAccepted &&
+          !looksRightWouldTake &&
           (liveBefore.pendingProposal ||
             liveBefore.pendingConflict ||
             liveBefore.pendingAddress ||

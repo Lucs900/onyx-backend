@@ -436,9 +436,9 @@ function inQueueActions(draft: FoxIntakeDraft): FoxAction[] {
 }
 
 export function finishLineActions(draft: FoxIntakeDraft): FoxAction[] {
+  if (inQueueEnding(draft)) return inQueueActions(draft);
   if (!w2FinishDocsReady(draft) && !(isHelocFile(draft) && draft.sampleAccepted)) return [];
   const motion = motionOf(draft);
-  if (inQueueEnding(draft)) return inQueueActions(draft);
   if (draft.pendingFinish && emailFinishGateOpen(draft)) {
     return emailAskActions();
   }
