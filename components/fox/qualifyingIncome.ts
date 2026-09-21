@@ -1,6 +1,6 @@
 import type { ExtractClass, FactProposal, FieldSource, FoxIntakeDraft, FoxMessage } from "./types";
 import { writeCurrentEmploymentHistory } from "./fileHistory";
-import { maybeWriteCoborrowerFromPaper, notePageOtherName, withWhoOnLoanDue } from "./whoOnLoan";
+import { maybeWriteCoborrowerFromPaper, notePageOtherName, paperBorrowerParty, withWhoOnLoanDue } from "./whoOnLoan";
 import {
   DECLINING_INCOME_CAUTION,
   DECLINING_YEAR_RATIO,
@@ -3282,6 +3282,7 @@ export function mergePendingWageExtract(
   const frequency =
     extractClass === "w2" ? undefined : speakPayFrequency(fields?.pay_frequency);
   const employer = String(fields?.employer_name ?? "").trim();
+  const employee = String(fields?.full_name ?? fields?.employee_name ?? "").trim();
   const next = {
     ...prev,
     ...(extractClass === "w2" ? { w2In: true } : {}),
@@ -3290,6 +3291,7 @@ export function mergePendingWageExtract(
     ...(stub != null && stub > 0 ? { stub } : {}),
     ...(frequency ? { frequency } : {}),
     ...(employer ? { employer } : {}),
+    ...(employee ? { employee } : {}),
   };
   if (!next.box5 && !next.stub && !next.frequency && !next.employer && !next.w2In && !next.stubIn) {
     return draft;
@@ -3545,9 +3547,15 @@ export function writeTypedStubMonthly(draft: FoxIntakeDraft, stubAmount: number)
   return next;
 }
 
-export function proposeWageW2Extract(draft: FoxIntakeDraft, box5: number, employer: string): FoxIntakeDraft {
+export function proposeWageW2Extract(
+  draft: FoxIntakeDraft,
+  box5: number,
+  employer: string,
+  employee?: string,
+): FoxIntakeDraft {
   const name = String(employer ?? "").trim();
   if (box5 <= 0 || !name) return draft;
+  const paperName = String(employee ?? draft.pendingWageExtract?.employee ?? "").trim();
   return {
     ...draft,
     awaitingPayFrequency: false,
@@ -3560,6 +3568,7 @@ export function proposeWageW2Extract(draft: FoxIntakeDraft, box5: number, employ
       extras: [
         { field: "w2_box5", value: Number.isInteger(box5) ? String(box5) : String(Math.round(box5 * 100) / 100), label: "Box 5" },
         { field: "employer_name", value: name, label: "employer" },
+        ...(paperName ? [{ field: "employee_name", value: paperName, label: "Name" }] : []),
       ],
     },
   };
@@ -3602,6 +3611,10 @@ export function maybeProposeWageExtract(
   if (wageW2ExtractAccepted(draft)) return draft;
   if (draft.pendingConflict) return draft;
   const held = mergePendingWageExtract(draft, fields, extractClass);
+  const employee = String(
+    fields?.full_name ?? fields?.employee_name ?? held.pendingWageExtract?.employee ?? "",
+  ).trim();
+  if (paperBorrowerParty(held, employee) === "coborrower") return held;
   if (wageExtractCanConfirm(held, fields)) {
     const box5 = readWageBox5(held, fields);
     const stub = readStubAmount(held, fields);
@@ -3612,7 +3625,7 @@ export function maybeProposeWageExtract(
   const box5 = readWageBox5(held, fields);
   const employer = String(fields?.employer_name ?? held.pendingWageExtract?.employer ?? "").trim();
   if (box5 != null && box5 > 0 && employer) {
-    return proposeWageW2Extract(held, box5, employer);
+    return proposeWageW2Extract(held, box5, employer, employee);
   }
   const stubOnly = readStubAmount(held, fields);
   if (stubOnly != null && stubOnly > 0 && employer && !held.pendingProposal) {
@@ -3650,6 +3663,20 @@ export function acceptWageExtract(draft: FoxIntakeDraft): FoxIntakeDraft {
       wageFrequencyAsked: true,
       wageStubAsked: true,
       pendingWageExtract: undefined,
+    };
+  }
+  const paperNameEarly = (
+    (proposal.extras ?? []).find((item) => item.field === "full_name" || item.field === "employee_name")
+      ?.value ??
+    draft.pendingWageExtract?.employee ??
+    ""
+  ).trim();
+  if (paperBorrowerParty(draft, paperNameEarly) === "coborrower") {
+    return {
+      ...draft,
+      pendingProposal: null,
+      pendingWageExtract: undefined,
+      looksRightHold: false,
     };
   }
   const now = new Date().toISOString();

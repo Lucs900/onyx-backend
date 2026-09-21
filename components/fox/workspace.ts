@@ -599,6 +599,8 @@ import {
   proposeWhoOnLoanName,
   skipWhoOnLoan,
   skipWhoOnLoanName,
+  isJointWageDocsAskText,
+  jointWageDocsAskCopy,
   whoOnLoanAskCopy,
   whoOnLoanAskNeeded,
   whoOnLoanNameAskNeeded,
@@ -614,6 +616,7 @@ import {
   coborrowerIdInviteCopy,
   coborrowerIdOutstanding,
   coborrowerIncomeInviteCopy,
+  fileHasMultipleBorrowers,
   coborrowerNameAskCopy,
   coborrowerNameOnFile,
   coborrowerSpokenIdCopy,
@@ -2322,7 +2325,7 @@ export function isBankUnreadAsk(draft: FoxIntakeDraft) {
 
 export function wageDocsAsk(draft?: FoxIntakeDraft): { text: string; actions: FoxAction[] } {
   return {
-    text: WAGE_DOCS_ASK,
+    text: (draft && jointWageDocsAskCopy(draft)) || WAGE_DOCS_ASK,
     actions:
       draft && (unreadDocOpen(draft) || wageExtractFailedRead(draft))
         ? unreadDocActions()
@@ -2333,9 +2336,15 @@ export function wageDocsAsk(draft?: FoxIntakeDraft): { text: string; actions: Fo
   };
 }
 
+export function isWageDocsAskText(text?: string | null) {
+  const value = String(text ?? "").trim();
+  if (!value) return false;
+  return value === WAGE_DOCS_ASK || isJointWageDocsAskText(value);
+}
+
 /** Same drop sentence stays one Fox line. Chips may change on that line. */
 export function retainWageDocsLine(lastText?: string | null, nextText?: string | null): boolean {
-  return lastText === WAGE_DOCS_ASK && nextText === WAGE_DOCS_ASK;
+  return isWageDocsAskText(lastText) && isWageDocsAskText(nextText);
 }
 
 /** Composer ID ask. Real drop of 08 replaces this line with The ID shows. */
@@ -4077,6 +4086,16 @@ export function nextFoxAsk(draft: FoxIntakeDraft): {
   }
   if (
     !draft.sampleAccepted &&
+    fileHasMultipleBorrowers(draft) &&
+    wageDocsAskNeeded(draft) &&
+    !draft.pendingProposal &&
+    !draft.pendingConflict &&
+    !draft.pendingAddress
+  ) {
+    return wageDocsAsk(draft);
+  }
+  if (
+    !draft.sampleAccepted &&
     shouldAskMonthlyDebts(draft) &&
     !draft.pendingProposal &&
     !draft.pendingConflict &&
@@ -4488,6 +4507,9 @@ export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
   if (entityYearsOpen(draft)) return "confirm-proposal";
   if (!draft.sampleAccepted && !yearsInBusinessSettled(draft)) {
     return "years-in-business";
+  }
+  if (!draft.sampleAccepted && fileHasMultipleBorrowers(draft) && wageDocsAskNeeded(draft)) {
+    return "wage-docs";
   }
   if (!draft.sampleAccepted && shouldAskMonthlyDebts(draft)) return "debts";
   if (needsDeclarationTiming(draft)) return "declaration-timing";
@@ -8050,14 +8072,14 @@ export function workspaceReply(
   ) {
     if (/upload again|try again|re-?upload/i.test(lower)) {
       return {
-        text: prompt === "wage-docs" ? WAGE_DOCS_ASK : documentsAskText(draft),
+        text: prompt === "wage-docs" ? wageDocsAsk(draft).text : documentsAskText(draft),
         actions: unreadRestoreActions(draft),
         capture: { field: "retry-unread-doc" },
       };
     }
     if (/^(type a note|note)$/i.test(lower)) {
       return {
-        text: prompt === "wage-docs" ? WAGE_DOCS_ASK : documentsAskText(draft),
+        text: prompt === "wage-docs" ? wageDocsAsk(draft).text : documentsAskText(draft),
         actions: unreadRestoreActions(draft),
         capture: { field: "note-unread-doc" },
       };

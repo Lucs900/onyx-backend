@@ -1,8 +1,9 @@
 import type { FoxAction, FoxIntakeDraft } from "./types";
-import { displayBorrowerName, parseBorrowerName } from "./borrowerName";
+import { displayBorrowerName, parseBorrowerName, spokenFirstName } from "./borrowerName";
 import {
   COBORROWER_NAME_FIELD,
   coborrowerFileLabel,
+  fileHasMultipleBorrowers,
   isCoborrowerNameConfirmPending,
   writeCoborrowerName,
 } from "./coborrowerName";
@@ -119,6 +120,43 @@ export function borrowersFileValue(draft: FoxIntakeDraft) {
   if (named) return "2";
   if (draft.whoOnLoan === "yes" && !draft.whoOnLoanNameAsked) return "2 unnamed";
   return "1";
+}
+
+/** Page name → that borrower only. Unmatched stays unset so a first paper can still write. */
+export function paperBorrowerParty(
+  draft: FoxIntakeDraft,
+  name: string,
+): "borrower" | "coborrower" | undefined {
+  const shown = displayBorrowerName(name);
+  if (!shown) return undefined;
+  const coborrower = (draft.coborrowerName || "").trim();
+  if (coborrower && namesMatch(shown, coborrower)) return "coborrower";
+  const primary = primaryNameOnFile(draft);
+  if (primary && namesMatch(shown, primary)) return "borrower";
+  return undefined;
+}
+
+export function jointWhoseFirstNames(draft: FoxIntakeDraft): string[] {
+  const names: string[] = [];
+  const primary = spokenFirstName(primaryNameOnFile(draft));
+  const coborrower = spokenFirstName(draft.coborrowerName || "");
+  if (primary) names.push(primary);
+  if (coborrower && coborrower.toLowerCase() !== primary.toLowerCase()) names.push(coborrower);
+  return names;
+}
+
+/** Joint file names whose W-2. Bare Drop last year’s W-2 is for one borrower. */
+export function jointWageDocsAskCopy(draft: FoxIntakeDraft): string | null {
+  if (!fileHasMultipleBorrowers(draft)) return null;
+  const names = jointWhoseFirstNames(draft);
+  if (!names.length) return null;
+  const whose = names.length === 1 ? `${names[0]}’s` : `${names[0]}’s or ${names[1]}’s`;
+  return `Last year’s W-2 — ${whose}. Drop either. Skip is fine.`;
+}
+
+export function isJointWageDocsAskText(text?: string | null) {
+  const value = String(text ?? "").trim();
+  return /^Last year’s W-2 — .+\. Drop either\. Skip is fine\.$/.test(value);
 }
 
 export function withWhoOnLoanDue(draft: FoxIntakeDraft): FoxIntakeDraft {

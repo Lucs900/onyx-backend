@@ -145,6 +145,7 @@ import {
   unreadAskActions,
   unreadRestoreActions,
   retainWageDocsLine,
+  isWageDocsAskText,
   isContractExtractAskText,
   isGovernmentIdInviteLine,
   isPurchaseContractInviteLine,
@@ -205,7 +206,6 @@ import {
 import {
   alignThreadEmployerName,
   DECLINING_INCOME_CAUTION,
-  WAGE_DOCS_ASK,
   WAGE_STUB_DROP_ASK,
   isCoverLineProposal,
   isEntityCashFlowProposal,
@@ -425,7 +425,7 @@ function applyFoxAsk(
       actions: undefined,
     });
   }
-  if (last && last.text === WAGE_DOCS_ASK && ask.text !== WAGE_DOCS_ASK) {
+  if (last && isWageDocsAskText(last.text) && !isWageDocsAskText(ask.text)) {
     return freezeOthers(last.id, foxAskMessage(ask));
   }
   if (

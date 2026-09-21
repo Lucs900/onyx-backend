@@ -1,5 +1,5 @@
 import type { FactProposal, FoxAction, FoxIntakeDraft } from "./types";
-import { displayBorrowerName, parseBorrowerName } from "./borrowerName";
+import { displayBorrowerName, parseBorrowerName, spokenFirstName } from "./borrowerName";
 
 export const COBORROWER_NAME_FIELD = "coborrowerName";
 export const COBORROWER_NAME_FACT = "coborrower_name";
@@ -32,7 +32,9 @@ export function coborrowerHandOffCopy(draft: FoxIntakeDraft): string {
 }
 
 export function coborrowerIdInviteCopy(draft: FoxIntakeDraft): string {
-  return `First I need ${borrowerSlotLabel(extraBorrowerSlot(draft))}’s government ID, so this file has a name on it.`;
+  const first = spokenFirstName(draft.coborrowerName || coborrowerNameFromFile(draft));
+  const whose = first ? `${first}’s` : `${borrowerSlotLabel(extraBorrowerSlot(draft))}’s`;
+  return `First I need ${whose} government ID, so this file has a name on it.`;
 }
 
 export function coborrowerExtractCopy(name: string, draft?: FoxIntakeDraft): string {

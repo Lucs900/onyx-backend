@@ -152,7 +152,7 @@ import {
   proposeExtractedCoborrowerName,
   skipCoborrowerId,
 } from "./coborrowerName";
-import { notePageOtherName, otherBorrowerStillUsefulNeeded } from "./whoOnLoan";
+import { notePageOtherName, otherBorrowerStillUsefulNeeded, paperBorrowerParty } from "./whoOnLoan";
 import {
   STATED_OTHER_REO_FIELD,
   appendOtherReoRow,
@@ -2194,7 +2194,11 @@ export function applyExtractedFields(
     Boolean(readStubAmount(draft)) ||
     Boolean(draft.wageFrequencyAsked) ||
     Boolean(draft.awaitingPayFrequency);
-  if (shouldProposeStubExtract(draft, extractClass, fields)) {
+  const pageEmployee = String(input.fields.full_name ?? input.fields.employee_name ?? "").trim();
+  const coborrowerPaper = paperBorrowerParty(next, pageEmployee) === "coborrower";
+  if (coborrowerPaper) {
+    conflict = next.pendingConflict ?? null;
+  } else if (shouldProposeStubExtract(draft, extractClass, fields)) {
     const employee = String(input.fields.full_name ?? input.fields.employee_name ?? "").trim();
     next = maybeProposeStubExtract(
       { ...next, pendingConflict: null, awaitingPayFrequency: false },
@@ -2442,7 +2446,8 @@ export function applyExtractedFields(
     !isStubExtractProposal(next.pendingProposal) &&
     !isStubJobProposal(next.pendingProposal) &&
     (extractClass === "paystub" || extractClass === "w2") &&
-    extractedEmployer
+    extractedEmployer &&
+    paperBorrowerParty(next, pageEmployee) !== "coborrower"
   ) {
     const already = (next.employmentHistory ?? []).some((item) =>
       employersClose(item.label, extractedEmployer),

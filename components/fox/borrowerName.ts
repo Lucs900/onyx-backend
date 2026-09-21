@@ -17,6 +17,12 @@ export function displayBorrowerName(value: string) {
     .join(" ");
 }
 
+export function spokenFirstName(value: string) {
+  const shown = displayBorrowerName(value);
+  if (!shown) return "";
+  return (shown.split(/\s+/)[0] ?? "").replace(/[.,]+$/g, "");
+}
+
 export function borrowerNameOnFile(draft: FoxIntakeDraft) {
   const raw = (draft.borrowerName || draft.contact.fullName.value || "").trim();
   return raw ? displayBorrowerName(raw) : "";

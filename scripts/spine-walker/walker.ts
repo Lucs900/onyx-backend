@@ -30,6 +30,7 @@
  * → Proceed strip → Proceed Ask Fox strip. Typed looks right / proceed
  * leave the same chips. Completeness is a signal, not a gate.
  * Case 37 is who-on-loan Yes → Ying Lee CFBW Use this writes Borrowers 2;
+ * next paper ask names whose W-2 or ID. Skip papers → finish chips.
  * Skip name stays Borrowers 1; Ray income unchanged; finish chips hold.
  * Years in business is once after SE / Both. Named Hale Design when known.
  * Lukasz Harbor leftovers run from scripts/assert-spine-walker.sh before
@@ -2621,11 +2622,20 @@ async function case37(page: Page) {
     page,
     (text, chips) =>
       !hasChip(chips, "Use this") ||
-      /other monthly debts|Drop last year|government ID|Looks right|How is income/i.test(text),
+      /Last year’s W-2 —|government ID|Looks right/i.test(text),
     20_000,
   );
   if (/anyone else on this loan/i.test(afterWrite.text)) {
     throw new BeatFail(`Use this re-asked who-on-loan — ${afterWrite.text}`);
+  }
+  if (/what does Ying make/i.test(afterWrite.text)) {
+    throw new BeatFail(`quizzed Ying income after Use this — ${afterWrite.text}`);
+  }
+  if (afterWrite.text === "Drop last year’s W-2. Skip if you want to type it.") {
+    throw new BeatFail(`bare W-2 after Ying Lee — ${afterWrite.text}`);
+  }
+  if (!/Ying|Ray/i.test(afterWrite.text) || !/W-2|government ID|\bID\b/i.test(afterWrite.text)) {
+    throw new BeatFail(`paper ask after Ying Lee did not name whose — ${afterWrite.text}`);
   }
   const map = await structureMap(page);
   if (map["Borrowers"] !== "2") {
@@ -3761,7 +3771,7 @@ const CASES: { n: number; title: string; run: (page: Page) => Promise<void> }[] 
   {
     n: 37,
     title:
-      "who-on-loan Yes → Ying Lee Use this Borrowers 2; Skip name Borrowers 1; finish chips hold",
+      "who-on-loan Yes → Ying Lee Use this names whose paper; Skip → finish chips; Borrowers 2",
     run: case37,
   },
   { n: 23, title: "ADP W-2 page-read: Box 5 is $36,460.08, never $5", run: case23 },
