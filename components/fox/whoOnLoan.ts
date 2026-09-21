@@ -1,6 +1,11 @@
 import type { FoxAction, FoxIntakeDraft } from "./types";
 import { displayBorrowerName, parseBorrowerName } from "./borrowerName";
-import { writeCoborrowerName } from "./coborrowerName";
+import {
+  COBORROWER_NAME_FIELD,
+  coborrowerFileLabel,
+  isCoborrowerNameConfirmPending,
+  writeCoborrowerName,
+} from "./coborrowerName";
 
 function firstNameOnDraft(draft: FoxIntakeDraft): string {
   const full = (draft.borrowerName || draft.contact.fullName.value || String(draft.facts?.full_name?.value ?? "")).trim();
@@ -12,7 +17,7 @@ function firstNameOnDraft(draft: FoxIntakeDraft): string {
 
 export const WHO_ON_LOAN_FIELD = "whoOnLoan";
 export const WHO_ON_LOAN_ASK = "Is anyone else on this loan?";
-export const WHO_ON_LOAN_YES_ASK = "Name them or drop their paper.";
+export const WHO_ON_LOAN_YES_ASK = "Who is the other person? First and last name.";
 export const OTHER_BORROWER_STILL_USEFUL = "Other borrower";
 export const SUGGESTED_BORROWERS_NOTE = "Suggested · not underwritten";
 
@@ -100,13 +105,14 @@ export function whoOnLoanNameAskNeeded(draft: FoxIntakeDraft) {
   if (draft.whoOnLoan !== "yes") return false;
   if (draft.coborrowerName?.trim()) return false;
   if (draft.whoOnLoanNameAsked) return false;
+  if (isCoborrowerNameConfirmPending(draft)) return false;
   return true;
 }
 
 export function borrowersFileValue(draft: FoxIntakeDraft) {
   const named = (draft.coborrowerName || "").trim();
-  if (named) return displayBorrowerName(named);
-  if (draft.whoOnLoan === "yes") return "2 unnamed";
+  if (named) return "2";
+  if (draft.whoOnLoan === "yes" && !draft.whoOnLoanNameAsked) return "2 unnamed";
   return "1";
 }
 
@@ -226,12 +232,64 @@ export function skipWhoOnLoan(draft: FoxIntakeDraft): FoxIntakeDraft {
 export function skipWhoOnLoanName(draft: FoxIntakeDraft): FoxIntakeDraft {
   return {
     ...draft,
+    whoOnLoan: draft.whoOnLoan ?? "yes",
+    whoOnLoanAsked: true,
     whoOnLoanNameAsked: true,
     workingOnCoborrower: undefined,
-    pendingProposal: null,
+    coborrowerName: undefined,
+    coborrowerNameAsked: undefined,
+    pendingProposal: isCoborrowerNameConfirmPending(draft) ? null : draft.pendingProposal,
     correcting: null,
     correctingLine: null,
   };
+}
+
+export function parseOtherBorrowerName(text: string): string | null {
+  const name = parseBorrowerName(text);
+  if (!name) return null;
+  if (name.split(/\s+/).length < 2) return null;
+  return name;
+}
+
+export function whoOnLoanNameConfirmCopy(name: string) {
+  return `I’ll use ${displayBorrowerName(name)} as the other borrower. ${SUGGESTED_BORROWERS_NOTE}. Use this?`;
+}
+
+export function proposeWhoOnLoanName(draft: FoxIntakeDraft, name: string): FoxIntakeDraft {
+  const value = parseOtherBorrowerName(name);
+  if (!value) return draft;
+  return {
+    ...draft,
+    whoOnLoan: draft.whoOnLoan ?? "yes",
+    whoOnLoanAsked: true,
+    whoOnLoanDue: false,
+    pendingProposal: {
+      field: COBORROWER_NAME_FIELD,
+      value,
+      label: coborrowerFileLabel(draft),
+      kind: "computed",
+      note: SUGGESTED_BORROWERS_NOTE,
+    },
+  };
+}
+
+export function confirmWhoOnLoanName(draft: FoxIntakeDraft, name: string): FoxIntakeDraft {
+  const value = parseOtherBorrowerName(name) ?? displayBorrowerName(name);
+  if (!value) return draft;
+  const next = writeCoborrowerName(
+    {
+      ...draft,
+      whoOnLoan: draft.whoOnLoan ?? "yes",
+      whoOnLoanAsked: true,
+      whoOnLoanDue: false,
+      whoOnLoanNameAsked: true,
+      statedHousehold: "with_someone",
+      householdAsked: true,
+      workingOnCoborrower: false,
+    },
+    value,
+  );
+  return { ...next, workingOnCoborrower: false };
 }
 
 export function writeWhoOnLoanName(draft: FoxIntakeDraft, name: string): FoxIntakeDraft {

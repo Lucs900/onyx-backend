@@ -594,6 +594,9 @@ import {
   borrowersFileValue,
   isWhoOnLoan,
   parseWhoOnLoan,
+  confirmWhoOnLoanName,
+  parseOtherBorrowerName,
+  proposeWhoOnLoanName,
   skipWhoOnLoan,
   skipWhoOnLoanName,
   whoOnLoanAskCopy,
@@ -601,7 +604,6 @@ import {
   whoOnLoanNameAskNeeded,
   withWhoOnLoanDue,
   writeWhoOnLoan,
-  writeWhoOnLoanName,
 } from "./whoOnLoan";
 import {
   SUGGESTED_COBORROWER_NOTE,
@@ -7098,11 +7100,13 @@ function draftAfterCaptureBody(draft: FoxIntakeDraft, capture: Capture): FoxInta
   if (capture.field === "skip-coborrower-name") return skipCoborrowerName(next);
   if (capture.field === "propose-coborrower-name") {
     const name = parseCoborrowerName(capture.value) ?? capture.value.trim();
-    return name ? proposeCoborrowerName(next, name) : next;
+    if (!name) return next;
+    return next.whoOnLoan === "yes" ? proposeWhoOnLoanName(next, name) : proposeCoborrowerName(next, name);
   }
   if (capture.field === "coborrowerName") {
     const name = parseCoborrowerName(capture.value) ?? capture.value.trim();
-    return name ? writeCoborrowerName(next, name) : next;
+    if (!name) return next;
+    return next.whoOnLoan === "yes" ? confirmWhoOnLoanName(next, name) : writeCoborrowerName(next, name);
   }
   if (capture.field === "skip-borrower-name") return skipBorrowerName(next);
   if (capture.field === "propose-borrower-name") {
@@ -7866,6 +7870,7 @@ export function workspaceReply(
     prompt !== "years-in-business" &&
     prompt !== "documents" &&
     prompt !== "review" &&
+    prompt !== "who-on-loan" &&
     !draft.pendingProposal &&
     !draft.pendingAddress &&
     !unreadDocOpen(draft) &&
@@ -7880,8 +7885,8 @@ export function workspaceReply(
     (!draft.liveCouponSettled || isLowerPaymentText(q) || isNoCostText(q))
   ) {
     const choice = couponChoiceFromText(q);
-    if (choice === "skip" && paperAskOpen) {
-      // Live paper ask owns Skip — do not steal it as a coupon skip.
+    if (choice === "skip" && (paperAskOpen || prompt === "who-on-loan")) {
+      // Live paper / who-on-loan ask owns Skip — do not steal it as a coupon skip.
     } else if (choice && (!draft.liveCouponSettled || choice === "lower" || choice === "nocost")) {
       return couponChipReply(draft, choice);
     }
@@ -9305,12 +9310,12 @@ export function workspaceReply(
           capture: { field: "skip-who-on-loan-name" },
         };
       }
-      const name = parseBorrowerName(q);
+      const name = parseOtherBorrowerName(q);
       if (!name) return answerThenRestore(q, draft);
-      const nextDraft = writeWhoOnLoanName(draft, name);
+      const nextDraft = proposeWhoOnLoanName(draft, name);
       return {
-        ...nextFoxAsk(nextDraft),
-        capture: { field: "coborrowerName", value: name },
+        ...workspacePromptCopy("confirm-proposal", nextDraft),
+        capture: { field: "propose-coborrower-name", value: name },
       };
     }
     if (isSkipHouseholdText(q) || parseWhoOnLoan(q) === "skip") {

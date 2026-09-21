@@ -178,11 +178,11 @@ import {
 } from "./household";
 import {
   coborrowerExtractCopy,
-  coborrowerNameConfirmCopy,
   isCoborrowerNameField,
   skipCoborrowerName,
   writeCoborrowerName,
 } from "./coborrowerName";
+import { confirmWhoOnLoanName, whoOnLoanNameConfirmCopy } from "./whoOnLoan";
 import {
   BORROWER_NAME_FIELD,
   borrowerNameConfirmCopy,
@@ -1122,7 +1122,7 @@ export function proposalAskCopy(proposal: FactProposal) {
   if (isCoborrowerNameField(proposal.field)) {
     return proposal.extras
       ? coborrowerExtractCopy(proposal.value)
-      : coborrowerNameConfirmCopy(proposal.value);
+      : whoOnLoanNameConfirmCopy(proposal.value);
   }
   if (proposal.field === OTHER_REO_PAYMENT_FIELD) {
     return otherPropertyPaymentConfirmCopy(Number(proposal.value) || 0);
@@ -1470,7 +1470,10 @@ function writeConfirmedFact(
     next = writeBorrowerName(next, value);
   }
   if (isCoborrowerNameField(field) && value.trim()) {
-    next = writeCoborrowerName(next, value);
+    next =
+      next.whoOnLoan === "yes"
+        ? confirmWhoOnLoanName(next, value)
+        : writeCoborrowerName(next, value);
   }
   if (field === STATED_OTHER_REO_FIELD && isStatedOtherReo(value)) {
     next = writeStatedOtherReo(next, value);

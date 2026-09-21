@@ -13,12 +13,16 @@ import {
   maybeWriteCoborrowerFromPaper,
   notePageOtherName,
   parseWhoOnLoan,
+  proposeWhoOnLoanName,
+  skipWhoOnLoanName,
   whoOnLoanAskNeeded,
+  whoOnLoanNameAskNeeded,
+  whoOnLoanNameConfirmCopy,
   withWhoOnLoanDue,
   writeWhoOnLoan,
   writeWhoOnLoanName,
 } from "../components/fox/whoOnLoan";
-import { withIncomeTypeYearsAsk } from "../components/fox/completeness";
+import { resolveProposal, withIncomeTypeYearsAsk } from "../components/fox/completeness";
 import { stillUsefulLabels, stillUsefulSection } from "../components/fox/fileWrite";
 import { acceptWageExtract } from "../components/fox/qualifyingIncome";
 import { fileHasMultipleBorrowers } from "../components/fox/coborrowerName";
@@ -80,7 +84,7 @@ function main() {
   assert.equal(parseWhoOnLoan("Yes", { allowBare: true }), "yes");
   assert.equal(parseWhoOnLoan("Skip"), "skip");
   assert.equal(WHO_ON_LOAN_ASK, "Is anyone else on this loan?");
-  assert.equal(WHO_ON_LOAN_YES_ASK, "Name them or drop their paper.");
+  assert.equal(WHO_ON_LOAN_YES_ASK, "Who is the other person? First and last name.");
 
   const unnamed = thinPurchase();
   assert.equal(workspacePrompt(unnamed), "income");
@@ -197,7 +201,8 @@ function main() {
   });
   assert.equal(yesAsk?.capture?.field, "whoOnLoan");
   assert.equal(yesAsk?.text, WHO_ON_LOAN_YES_ASK);
-  assert.doesNotMatch(yesAsk?.text ?? "", /1003|declarations|credit pull|Borrower 2’s government ID/i);
+  assert.match(yesAsk?.text ?? "", /Who is the other person/);
+  assert.doesNotMatch(yesAsk?.text ?? "", /1003|declarations|credit pull|Borrower 2’s government ID|Ying/i);
   assert.ok(!fileHasMultipleBorrowers({
     ...unnamed,
     whoOnLoan: "yes",
@@ -222,7 +227,8 @@ function main() {
   );
   assert.equal(named.coborrowerName, "Ying Chen");
   assert.equal(named.workingOnCoborrower, true);
-  assert.equal(borrowersFileValue(named), "Ying Chen");
+  assert.equal(borrowersFileValue(named), "2");
+  assert.equal(previewFacts(named).find((item) => item.id === "coborrower-name")?.value, "Ying Chen");
   assert.ok(fileHasMultipleBorrowers(named));
   assert.doesNotMatch(named.coborrowerName ?? "", /SSN|123-45/);
 
@@ -320,6 +326,52 @@ function main() {
     assert.doesNotMatch(nextFoxAsk(reviewDraft).text, /anyone else on this loan/i);
     assert.ok(!labels(nextFoxAsk(reviewDraft).actions).includes("Just me"));
   }
+
+  const yesNameDraft: FoxIntakeDraft = {
+    ...unnamed,
+    incomeAsked: true,
+    incomeType: { ...emptyDraft().incomeType, value: "w2" },
+    whoOnLoan: "yes",
+    whoOnLoanAsked: true,
+    borrowerName: "Ray Chen",
+    employmentHistory: [{ label: "Harbor Pacific", to: "present", note: "Box 5 $80,000" }],
+  };
+  assert.equal(whoOnLoanNameAskNeeded(yesNameDraft), true);
+  assert.equal(nextFoxAsk(yesNameDraft).text, WHO_ON_LOAN_YES_ASK);
+  assert.deepEqual(labels(nextFoxAsk(yesNameDraft).actions), ["Skip"]);
+  const typedYing = workspaceReply("Ying Lee", yesNameDraft);
+  assert.equal(typedYing?.capture?.field, "propose-coborrower-name");
+  assert.equal(typedYing?.text, whoOnLoanNameConfirmCopy("Ying Lee"));
+  assert.deepEqual(labels(typedYing?.actions).slice(0, 1), ["Use this"]);
+  assert.equal(yesNameDraft.coborrowerName, undefined);
+  assert.doesNotMatch(JSON.stringify(yesNameDraft.employmentHistory), /Ying/);
+
+  const proposed = proposeWhoOnLoanName(yesNameDraft, "Ying Lee");
+  assert.equal(proposed.coborrowerName, undefined);
+  assert.equal(proposed.pendingProposal?.value, "Ying Lee");
+  assert.equal(borrowersFileValue(proposed), "2 unnamed");
+  assert.equal(fileHasMultipleBorrowers(proposed), false);
+  const useThis = workspaceReply("Use this", proposed);
+  assert.equal(useThis?.capture?.field, "accept-proposal");
+  const afterUse = resolveProposal(proposed, "accept");
+  assert.equal(afterUse.coborrowerName, "Ying Lee");
+  assert.equal(borrowersFileValue(afterUse), "2");
+  assert.equal(fileHasMultipleBorrowers(afterUse), true);
+  assert.equal(afterUse.borrowerName, "Ray Chen");
+  assert.deepEqual(afterUse.employmentHistory, yesNameDraft.employmentHistory);
+  assert.equal(afterUse.workingOnCoborrower, false);
+  assert.doesNotMatch(JSON.stringify(afterUse.employmentHistory ?? []), /Ying/);
+  assert.equal(previewFacts(afterUse).find((item) => item.id === "coborrower-name")?.value, "Ying Lee");
+  assert.ok(!previewFacts(afterUse).some((item) => item.id === "coborrower-name" && /Box 5/i.test(item.value)));
+
+  const skipName = skipWhoOnLoanName(yesNameDraft);
+  assert.equal(skipName.coborrowerName, undefined);
+  assert.equal(borrowersFileValue(skipName), "1");
+  assert.equal(fileHasMultipleBorrowers(skipName), false);
+  assert.doesNotMatch(JSON.stringify(skipName), /Ying Lee/);
+  const skipReply = workspaceReply("Skip", yesNameDraft);
+  assert.equal(skipReply?.capture?.field, "skip-who-on-loan-name");
+  assert.doesNotMatch(skipReply?.text ?? "", /anyone else on this loan/i);
 
   const paperWithoutYes = maybeWriteCoborrowerFromPaper(
     {

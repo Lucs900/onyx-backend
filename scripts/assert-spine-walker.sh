@@ -198,6 +198,10 @@ if [[ "${SPINE_WALKER_SKIP_LEFTOVERS:-}" != "1" ]]; then
   if leftover_wanted 36; then
     run_leftover assert-heloc-finish-chips.ts
   fi
+  if leftover_wanted 33 || leftover_wanted 37; then
+    run_leftover assert-who-on-loan.ts
+    run_leftover assert-who-on-loan-yes.ts
+  fi
   if leftover_wanted 12 || leftover_wanted 13; then
     run_leftover assert-file-next-ask.ts
   fi

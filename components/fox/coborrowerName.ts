@@ -16,13 +16,7 @@ export function borrowerSlotLabel(slot: number): string {
 }
 
 export function fileHasMultipleBorrowers(draft: FoxIntakeDraft): boolean {
-  return (
-    draft.statedHousehold === "with_someone" ||
-    draft.workingOnCoborrower === true ||
-    Boolean(draft.coborrowerName?.trim()) ||
-    draft.coborrowerNameAsked === true ||
-    isCoborrowerNameConfirmPending(draft)
-  );
+  return Boolean(draft.coborrowerName?.trim());
 }
 
 export function primaryFileLabel(draft: FoxIntakeDraft): string {

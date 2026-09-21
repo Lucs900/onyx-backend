@@ -215,7 +215,9 @@ import {
   writeStatedHousehold,
 } from "./household";
 import {
+  confirmWhoOnLoanName,
   isWhoOnLoan,
+  proposeWhoOnLoanName,
   skipWhoOnLoan,
   skipWhoOnLoanName,
   withWhoOnLoanDue,
@@ -2280,12 +2282,16 @@ function applyCaptureBody(capture: Capture) {
   if (capture.field === "propose-coborrower-name") {
     const name = parseCoborrowerName(capture.value) ?? capture.value.trim();
     if (!name) return current;
-    return commit(proposeCoborrowerName(current, name));
+    return commit(
+      current.whoOnLoan === "yes" ? proposeWhoOnLoanName(current, name) : proposeCoborrowerName(current, name),
+    );
   }
   if (capture.field === "coborrowerName") {
     const name = parseCoborrowerName(capture.value) ?? capture.value.trim();
     if (!name) return current;
-    return commit(writeCoborrowerName(current, name));
+    return commit(
+      current.whoOnLoan === "yes" ? confirmWhoOnLoanName(current, name) : writeCoborrowerName(current, name),
+    );
   }
   if (capture.field === "skip-borrower-name") {
     return commit(skipBorrowerName(current));
