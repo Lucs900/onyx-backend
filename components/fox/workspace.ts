@@ -4020,6 +4020,14 @@ export function nextFoxAsk(draft: FoxIntakeDraft): {
   if (needsLtvConfirm(draft) && !draft.correcting) {
     return workspacePromptCopy("ltv-confirm", draft);
   }
+  if (
+    (whoOnLoanNameAskNeeded(draft) || whoOnLoanAskNeeded(draft)) &&
+    !draft.pendingProposal &&
+    !draft.pendingConflict &&
+    !draft.pendingAddress
+  ) {
+    return whoOnLoanAskCopy(draft);
+  }
   if (cashOutNoPriceReady(draft) && !draft.liveQuote) {
     return {
       text: NO_CONVENTIONAL_PRICE_LINE,
@@ -4053,14 +4061,6 @@ export function nextFoxAsk(draft: FoxIntakeDraft): {
   }
   if (entityYearsOpen(draft)) {
     return workspacePromptCopy("confirm-proposal", draft);
-  }
-  if (
-    (whoOnLoanNameAskNeeded(draft) || whoOnLoanAskNeeded(draft)) &&
-    !draft.pendingProposal &&
-    !draft.pendingConflict &&
-    !draft.pendingAddress
-  ) {
-    return whoOnLoanAskCopy(draft);
   }
   if (
     !draft.sampleAccepted &&

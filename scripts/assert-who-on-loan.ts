@@ -93,6 +93,19 @@ function main() {
   const afterW2 = workspaceReply("W-2", unnamed);
   assert.equal(afterW2?.capture?.field, "incomeType");
   assert.equal(afterW2?.text, WHO_ON_LOAN_ASK);
+
+  const noPriceAfterW2 = withWhoOnLoanDue(
+    withIncomeTypeYearsAsk({
+      ...unnamed,
+      incomeType: { ...emptyDraft().incomeType, value: "w2" },
+      incomeAsked: true,
+      liveQuoteStatus: "unavailable",
+      liveCouponSettled: false,
+      liveQuote: undefined,
+    }),
+  );
+  assert.equal(nextFoxAsk(noPriceAfterW2).text, WHO_ON_LOAN_ASK);
+  assert.doesNotMatch(nextFoxAsk(noPriceAfterW2).text, /conventional price/i);
   assert.deepEqual(labels(afterW2?.actions), ["Yes", "Just me", "Skip"]);
   assert.doesNotMatch(afterW2?.text ?? "", /Looks right|Proceed|spouse\?|SSN/i);
 
