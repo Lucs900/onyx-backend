@@ -602,6 +602,7 @@ import {
   whoOnLoanAskCopy,
   whoOnLoanAskNeeded,
   whoOnLoanNameAskNeeded,
+  whoOnLoanSettled,
   withWhoOnLoanDue,
   writeWhoOnLoan,
 } from "./whoOnLoan";
@@ -4206,11 +4207,14 @@ export function deskStripActions(
     return stripStreetSuggest(loanOverValueActions());
   }
   if (
-    (whoOnLoanNameAskNeeded(draft) || whoOnLoanAskNeeded(draft)) &&
+    !whoOnLoanSettled(draft) &&
+    !draft.sampleAccepted &&
+    !draft.pendingFinish &&
     !draft.pendingProposal &&
     !draft.pendingConflict &&
     !draft.pendingAddress &&
     !draft.correcting &&
+    Boolean(draft.incomeType.value) &&
     (isPricingWhenReadySpeech(message) ||
       message.text === NO_CONVENTIONAL_PRICE_LINE ||
       message.text === PRICING_WHEN_READY)

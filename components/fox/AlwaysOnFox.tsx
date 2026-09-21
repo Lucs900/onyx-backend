@@ -220,6 +220,7 @@ import {
   shouldSpeakPendingConfirm,
 } from "./completeness";
 import { governmentIdSkipped, ID_UNREAD_ASK, isBorrowerNameConfirmPending } from "./borrowerName";
+import { whoOnLoanAskCopy, whoOnLoanSettled } from "./whoOnLoan";
 import { isUnreadNote } from "@/lib/docs/accept";
 import { applyLooksRightMotion, fileExists, finishLineActions, inQueueEnding, reviewIsSitting } from "./motion";
 import { pathFromHomeChoice } from "./homeIdle";
@@ -1434,6 +1435,19 @@ export function AlwaysOnFox({
       ) {
         return prev;
       }
+      if (
+        isStart &&
+        live.incomeType.value &&
+        !whoOnLoanSettled(live) &&
+        !live.sampleAccepted &&
+        !live.pendingFinish
+      ) {
+        const last = lastFoxTurn(prev);
+        if (!last || isPricingWhenReadySpeech(last) || isLookupWaitLine(last.text)) {
+          const spoken = whoOnLoanAskCopy(live);
+          if (spoken.text.trim()) return applyFoxAsk(withoutWaitLines(prev), spoken);
+        }
+      }
       if (isStart && live.liveQuoteStatus === "unavailable" && !live.liveCouponSettled && !live.liveQuote) {
         const last = lastFoxTurn(prev);
         if (workspacePrompt(live) === "who-on-loan") {
@@ -2069,6 +2083,16 @@ export function AlwaysOnFox({
       }
       skipPromptSync.current = true;
       const live = getFoxDraft();
+      if (
+        capture.field === "incomeType" &&
+        !whoOnLoanSettled(live) &&
+        !live.sampleAccepted &&
+        !live.pendingFinish
+      ) {
+        appendReply(action.label, whoOnLoanAskCopy(live), editPromptFromCapture(capture));
+        continueHomeToDesk();
+        return;
+      }
       if (capture.field === "skip-docs" && offerAlreadyDone && !followWasOpen && !livePaperSkip) {
         const leftoverNext = nextFoxAsk(live);
         if (leftoverNext.text.trim()) appendReply(action.label, leftoverNext);
