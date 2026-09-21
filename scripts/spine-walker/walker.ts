@@ -35,6 +35,8 @@
  * Case 38 is Borrower 1 empty + Ray W-2: card names the printed employee;
  * Use this writes Borrower 1 + Employment/Box 5; Ying unchanged. Filename
  * is not a name. Skip keeps Borrower 1 empty. Finish chips hold.
+ * Case 39 is file empty until Use this: Ying name card and Ray W-2 card
+ * leave notepad empty of suggested facts; Use this writes only the card.
  * Years in business is once after SE / Both. Named Hale Design when known.
  * Lukasz Harbor leftovers run from scripts/assert-spine-walker.sh before
  * Playwright. CI fail = red.
@@ -2880,6 +2882,126 @@ async function case38(page: Page) {
   }
 }
 
+async function case39(page: Page) {
+  await walkHeloc50040050ToWhoOnLoan(page);
+  await clickChip(page, "Yes");
+  await waitCurrent(page, (text) => /Who is the other person/i.test(text), 15_000);
+  await typeSend(page, "Ying Lee");
+  const yingCard = await waitCurrent(
+    page,
+    (text, chips) => hasChip(chips, "Use this") && /Ying Lee/i.test(text),
+    15_000,
+  );
+  if (!hasChip(yingCard.chips, "Use this")) {
+    throw new BeatFail(`typed Ying Lee missed Use this — ${yingCard.text}`);
+  }
+  const beforeYing = await structureMap(page);
+  const beforeYingBlob = JSON.stringify(beforeYing);
+  if (/Ying Lee/i.test(beforeYingBlob)) {
+    throw new BeatFail(`Ying Lee on notepad before Use this — ${beforeYingBlob}`);
+  }
+  if (beforeYing["Borrowers"] === "2" || /2 unnamed/i.test(beforeYing["Borrowers"] ?? "")) {
+    throw new BeatFail(`Borrowers ${beforeYing["Borrowers"]} before Use this`);
+  }
+  if (beforeYing["Borrower 2"] && beforeYing["Borrower 2"] !== "—") {
+    throw new BeatFail(`Borrower 2 painted before Use this — ${beforeYing["Borrower 2"]}`);
+  }
+  await clickChip(page, "Use this");
+  await waitCurrent(
+    page,
+    (text, chips) =>
+      !hasChip(chips, "Use this") || /Last year’s W-2 —|government ID|Looks right/i.test(text),
+    20_000,
+  );
+  const afterYing = await structureMap(page);
+  if (afterYing["Borrowers"] !== "2") {
+    throw new BeatFail(`Use this Ying missed Borrowers 2 — ${afterYing["Borrowers"] || "(missing)"}`);
+  }
+  if (afterYing["Borrower 2"] !== "Ying Lee") {
+    throw new BeatFail(`Use this missed Borrower 2 Ying Lee — ${afterYing["Borrower 2"] || "(missing)"}`);
+  }
+
+  await composerDrop(page, "06-w2-2025-box5-loud.pdf");
+  const wageCard = await waitCurrent(
+    page,
+    (text, chips) =>
+      hasChip(chips, "Use this") && /Jordan Hale|Raymond|Box 5/i.test(text),
+    90_000,
+  );
+  if (/What name should I put/i.test(wageCard.text)) {
+    throw new BeatFail(`quizzed typed name after W-2 — ${wageCard.text}`);
+  }
+  const beforeWage = await structureMap(page);
+  const beforeWageBlob = JSON.stringify(beforeWage);
+  if (/Jordan Hale|Raymond Lee|Harbor Pacific|118,?400|120,?000/i.test(beforeWageBlob)) {
+    throw new BeatFail(`W-2 suggested facts on notepad before Use this — ${beforeWageBlob}`);
+  }
+  if (beforeWage["Borrower 1"] && beforeWage["Borrower 1"] !== "—") {
+    throw new BeatFail(`Borrower 1 painted before Use this — ${beforeWage["Borrower 1"]}`);
+  }
+  if (beforeWage["Employer"] && beforeWage["Employer"] !== "—") {
+    throw new BeatFail(`Employer painted before Use this — ${beforeWage["Employer"]}`);
+  }
+  if (/118,?400|120,?000/.test(beforeWageBlob)) {
+    throw new BeatFail(`Box 5 dollars on notepad before Use this — ${beforeWageBlob}`);
+  }
+  if (beforeWage["Qualifying income"] && beforeWage["Qualifying income"] !== "—") {
+    throw new BeatFail(`QI painted before Use this — ${beforeWage["Qualifying income"]}`);
+  }
+  await clickChip(page, "Use this");
+  await waitCurrent(
+    page,
+    (text, chips) => !hasChip(chips, "Use this") || /Looks right|latest paystub|government ID/i.test(text),
+    20_000,
+  );
+  const afterWage = await structureMap(page);
+  const written = afterWage["Borrower 1"] || afterWage["Borrower"] || "";
+  if (!/Jordan Hale|Raymond/i.test(written)) {
+    throw new BeatFail(`Use this missed Borrower 1 page name — ${written || "(missing)"}`);
+  }
+  if (afterWage["Borrower 2"] !== "Ying Lee") {
+    throw new BeatFail(`W-2 Use this overwrote Ying — ${afterWage["Borrower 2"] || "(missing)"}`);
+  }
+  const jobs = (await structureRows(page)).filter((row) => row.label === "Employment");
+  if (!jobs.some((row) => /Harbor Pacific|Box 5/i.test(row.value))) {
+    throw new BeatFail(`Use this missed Employment/Box 5 — ${jobs.map((row) => row.value).join(" | ")}`);
+  }
+
+  const started = Date.now();
+  while (Date.now() - started < 40_000) {
+    const text = await currentText(page);
+    const chips = await currentChips(page);
+    if (hasChip(chips, "Looks right") || /these numbers look right/i.test(text)) break;
+    if (hasAskSkip(text, chips)) {
+      await clickChip(page, "Skip");
+      await page.waitForTimeout(250);
+      continue;
+    }
+    await page.waitForTimeout(200);
+  }
+  const gate = await waitCurrent(
+    page,
+    (text, chips) => hasChip(chips, "Looks right") || /these numbers look right/i.test(text),
+    15_000,
+  );
+  assertLooksRightGateStrip(gate.text, gate.chips, "empty until Use this");
+  await clickChip(page, "Looks right");
+  const afterLooks = await waitCurrent(
+    page,
+    (text, chips) => hasChip(chips, "Proceed") || /I can send this to review/i.test(text),
+    20_000,
+  );
+  assertProceedFinishStrip(afterLooks.text, afterLooks.chips, "empty until Use this Looks right");
+  await clickChip(page, "Proceed");
+  const afterProceed = await waitCurrent(
+    page,
+    (text, chips) => hasChip(chips, "Ask Fox") || /ONYX has this for review/i.test(text),
+    20_000,
+  );
+  assertAskFoxStrip(afterProceed.text, afterProceed.chips, "empty until Use this Proceed");
+  await assertHelocFinishFile(page, "empty until Use this");
+}
+
 async function case23(page: Page) {
   const fixture = adpW2FixturePath();
   if (!fixture) {
@@ -3942,6 +4064,12 @@ const CASES: { n: number; title: string; run: (page: Page) => Promise<void> }[] 
     title:
       "B1 empty + W-2 page name CFBW writes Borrower 1 + employment; Ying held; Skip keeps B1 empty",
     run: case38,
+  },
+  {
+    n: 39,
+    title:
+      "notepad empty of Ying / B1 / Employer until Use this; then writes only the card; finish chips hold",
+    run: case39,
   },
   { n: 23, title: "ADP W-2 page-read: Box 5 is $36,460.08, never $5", run: case23 },
   { n: 24, title: "composer paperclip CSTC stub: filename/received then $1,806.67 Use this", run: case24 },

@@ -118,7 +118,6 @@ export function whoOnLoanNameAskNeeded(draft: FoxIntakeDraft) {
 export function borrowersFileValue(draft: FoxIntakeDraft) {
   const named = (draft.coborrowerName || "").trim();
   if (named) return "2";
-  if (draft.whoOnLoan === "yes" && !draft.whoOnLoanNameAsked) return "2 unnamed";
   return "1";
 }
 

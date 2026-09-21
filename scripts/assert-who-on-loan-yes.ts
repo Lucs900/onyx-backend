@@ -122,9 +122,10 @@ function main() {
   assert.doesNotMatch(yes?.text ?? "", /Ying|Looks right|Proceed/i);
 
   const afterYes = writeWhoOnLoan(gate, "yes");
-  assert.equal(borrowersFileValue(afterYes), "2 unnamed");
+  assert.equal(borrowersFileValue(afterYes), "1");
   assert.equal(fileHasMultipleBorrowers(afterYes), false);
-  assert.equal(fact(afterYes, "borrowers")?.value, "2 unnamed");
+  assert.notEqual(fact(afterYes, "borrowers")?.value, "2");
+  assert.doesNotMatch(JSON.stringify(previewFacts(afterYes)), /Ying Lee/);
 
   const typed = workspaceReply("Ying Lee", afterYes);
   assert.equal(typed?.capture?.field, "propose-coborrower-name");
@@ -134,6 +135,11 @@ function main() {
   assert.equal(fileHasMultipleBorrowers(afterYes), false);
 
   const proposed = proposeWhoOnLoanName(afterYes, "Ying Lee");
+  assert.equal(proposed.coborrowerName, undefined);
+  assert.equal(borrowersFileValue(proposed), "1");
+  assert.notEqual(fact(proposed, "borrowers")?.value, "2");
+  assert.equal(fact(proposed, "coborrower-name")?.value, undefined);
+  assert.doesNotMatch(JSON.stringify(previewFacts(proposed)), /Ying Lee/);
   const used = resolveProposal(proposed, "accept");
   assert.equal(used.coborrowerName, "Ying Lee");
   assert.equal(borrowersFileValue(used), "2");

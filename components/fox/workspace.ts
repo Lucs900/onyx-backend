@@ -10294,19 +10294,11 @@ export function previewFacts(draft: FoxIntakeDraft): PreviewFact[] {
     });
   }
 
-  if (
-    draft.coborrowerNameAsked ||
-    draft.coborrowerName ||
-    isCoborrowerNameConfirmPending(draft)
-  ) {
-    const pendingName = isCoborrowerNameConfirmPending(draft)
-      ? draft.pendingProposal?.value
-      : undefined;
-    const shown = draft.coborrowerName || pendingName || "—";
+  if (draft.coborrowerName?.trim()) {
     facts.push({
       id: "coborrower-name",
       label: coborrowerFileLabel(draft),
-      value: shown,
+      value: draft.coborrowerName,
       note: SUGGESTED_COBORROWER_NOTE,
     });
   }
@@ -10462,8 +10454,6 @@ export function previewFacts(draft: FoxIntakeDraft): PreviewFact[] {
   const employer = factValue(draft, "employer_name");
   const employerProposal =
     draft.pendingProposal?.field === "employer_name" ? draft.pendingProposal : null;
-  const employerExtra =
-    draft.pendingProposal?.extras?.find((item) => item.field === "employer_name")?.value ?? "";
   const alreadyEmployment = facts.some(
     (fact) => fact.id === "history-employment" || fact.label === "Employment",
   );
@@ -10477,33 +10467,12 @@ export function previewFacts(draft: FoxIntakeDraft): PreviewFact[] {
         value: wageEmploymentLine,
       });
     }
-  } else if (employer) {
+  } else if (employer && !employerProposal && !isWageExtractProposal(draft.pendingProposal)) {
     facts.push({
       id: "employer",
       label: "Employer",
       value: employer,
       note: draft.facts?.employer_name?.source === "suggested" ? SUGGESTED_NOTE : undefined,
-    });
-  } else if (employerProposal) {
-    facts.push({
-      id: "employer",
-      label: "Employer",
-      value: employerProposal.value,
-      note:
-        employerProposal.kind === "public"
-          ? SUGGESTED_NOTE
-          : employerProposal.note ?? SUGGESTED_BORROWER_NOTE,
-    });
-  } else if (
-    employerExtra &&
-    !isWageExtractProposal(draft.pendingProposal) &&
-    !isStubExtractProposal(draft.pendingProposal)
-  ) {
-    facts.push({
-      id: "employer",
-      label: "Employer",
-      value: employerExtra,
-      note: SUGGESTED_BORROWER_NOTE,
     });
   }
   const monthlies = bothMonthlyDisplay(draft);
@@ -10587,7 +10556,8 @@ export function previewFacts(draft: FoxIntakeDraft): PreviewFact[] {
     });
   }
   const yearsInBusiness = draft.facts?.years_in_business?.value;
-  if (yearsInBusiness) {
+  const yearsConfirmed = Boolean(draft.facts?.years_in_business?.confirmed);
+  if (yearsInBusiness && yearsConfirmed && !isEntityYearsProposal(draft.pendingProposal)) {
     facts.push({
       id: "years-in-business",
       label: "Years in business",

@@ -250,7 +250,7 @@ function main() {
       whoOnLoan: "yes",
       whoOnLoanAsked: true,
     }),
-    "2 unnamed",
+    "1",
   );
 
   const named = writeWhoOnLoanName(
@@ -385,7 +385,11 @@ function main() {
   const proposed = proposeWhoOnLoanName(yesNameDraft, "Ying Lee");
   assert.equal(proposed.coborrowerName, undefined);
   assert.equal(proposed.pendingProposal?.value, "Ying Lee");
-  assert.equal(borrowersFileValue(proposed), "2 unnamed");
+  assert.equal(borrowersFileValue(proposed), "1");
+  assert.doesNotMatch(
+    JSON.stringify(previewFacts(proposed)),
+    /Ying Lee/,
+  );
   assert.equal(fileHasMultipleBorrowers(proposed), false);
   const useThis = workspaceReply("Use this", proposed);
   assert.equal(useThis?.capture?.field, "accept-proposal");
