@@ -113,12 +113,12 @@ function main() {
     ...unnamed,
     incomeType: { ...emptyDraft().incomeType, value: "w2" },
     incomeAsked: true,
-    whoOnLoanDue: true,
     liveQuoteStatus: "unavailable",
     liveCouponSettled: false,
     liveQuote: undefined,
   };
   assert.equal(whoOnLoanAskNeeded(leftoverNoPriceAfterW2), true);
+  assert.equal(leftoverNoPriceAfterW2.whoOnLoanDue, undefined);
   assert.equal(nextFoxAsk(leftoverNoPriceAfterW2).text, WHO_ON_LOAN_ASK);
   assert.deepEqual(
     labels(

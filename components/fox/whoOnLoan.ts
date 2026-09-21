@@ -97,7 +97,12 @@ export function whoOnLoanAskNeeded(draft: FoxIntakeDraft) {
   const typed = Boolean(draft.incomeType.value || draft.incomeAsked);
   if (!named && !typed) return false;
   if (secondNameOnPage(draft)) return true;
-  return Boolean(draft.whoOnLoanDue);
+  if (draft.whoOnLoanDue) return true;
+  return Boolean(
+    draft.incomeType.value &&
+      draft.liveQuoteStatus === "unavailable" &&
+      !draft.liveCouponSettled,
+  );
 }
 
 export function whoOnLoanNameAskNeeded(draft: FoxIntakeDraft) {
