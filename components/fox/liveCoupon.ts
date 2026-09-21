@@ -558,6 +558,7 @@ export function promoteReprintedFoxAsk(messages: FoxMessage[]): FoxMessage[] {
   if (lastMsg.text.trim() === PACKET_NO_K1_C_LINE) return messages;
   const key = lastMsg.text.trim();
   if (!key) return messages;
+  if (foxAskFollowsUsedChip(messages, last)) return messages;
   const reprint = messages.some(
     (message, index) => index < last && message.role === "fox" && message.text.trim() === key,
   );
@@ -736,14 +737,28 @@ function sealReceivedStatusLine(message: FoxMessage): FoxMessage {
   };
 }
 
+const USED_CONFIRM_CHIP = /^(This one|Use this|Looks right|These numbers look right\?|yes|Skip)$/i;
+
 function foxTurnHasLaterUsedReply(messages: FoxMessage[], index: number) {
   for (let i = index + 1; i < messages.length; i += 1) {
     const item = messages[i];
     if (item.role === "fox") return true;
     if (item.role !== "client") continue;
-    if (/^(This one|Use this|Looks right|These numbers look right\?|yes|Skip)$/i.test(item.text.trim())) {
+    if (USED_CONFIRM_CHIP.test(item.text.trim())) {
       return true;
     }
+  }
+  return false;
+}
+
+/** Next Fox line after a used chip is live — even if the sentence already appeared. */
+function foxAskFollowsUsedChip(messages: FoxMessage[], index: number) {
+  for (let i = index - 1; i >= 0; i -= 1) {
+    const item = messages[i];
+    if (!item) continue;
+    if (item.role === "fox") return false;
+    if (item.role !== "client") continue;
+    if (USED_CONFIRM_CHIP.test(item.text.trim())) return true;
   }
   return false;
 }

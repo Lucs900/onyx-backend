@@ -52,6 +52,8 @@ import {
   isHistoryDocInviteText,
   isLastYearReturnAskText,
   isLiveFoxTurn,
+  isUseThisConfirmText,
+  liveFoxTurnIndex,
   isReceivedStatusLine,
   isTranscriptSignalAskText,
   sealStoredFoxThread,
@@ -384,6 +386,44 @@ function lastFoxIsUnread(messages: FoxMessage[]) {
   );
 }
 
+function lastFoxIsOpenUseThis(messages: FoxMessage[]) {
+  const index = liveFoxTurnIndex(messages);
+  if (index < 0 || !isUseThisConfirmText(messages[index]?.text)) return false;
+  return isLiveFoxTurn(messages, index);
+}
+
+function withNextAskIfUsedConfirm(messages: FoxMessage[], draft: FoxIntakeDraft): FoxMessage[] {
+  const index = liveFoxTurnIndex(messages);
+  if (index >= 0 && isLiveFoxTurn(messages, index)) {
+    if (historyBubbleSpeech(messages[index]?.text)) return messages;
+    const ask = nextFoxAsk(draft);
+    if (!ask.text.trim()) return messages;
+    return sealStoredFoxThread(
+      messages.map((message, i) =>
+        i === index
+          ? { ...message, text: ask.text, followUp: ask.followUp, facts: ask.facts }
+          : message,
+      ),
+    );
+  }
+  const ask = nextFoxAsk(draft);
+  if (ask.text.trim() && !isUseThisConfirmText(ask.text)) {
+    return sealStoredFoxThread([...messages, foxAskMessage(ask)]);
+  }
+  if ((ask.actions ?? []).length && ask.text.trim()) {
+    return sealStoredFoxThread([...messages, foxAskMessage(ask)]);
+  }
+  return sealStoredFoxThread([
+    ...messages,
+    foxAskMessage({
+      text: "I’m here. Type below, or tap a reply.",
+      actions: [
+        { id: "skip-docs", label: "Skip", event: "bubble", capture: { field: "skip-docs" } },
+      ],
+    }),
+  ]);
+}
+
 function applyFoxAsk(
   messages: FoxMessage[],
   ask: {
@@ -437,7 +477,7 @@ function applyFoxAsk(
     return freezeOthers(last.id, foxAskMessage(ask));
   }
   if (isIdExtractAskText(ask.text)) {
-    if (shouldHoldDocInviteForOpenUseThis(last?.text, liveActions, ask.text)) {
+    if (lastFoxIsOpenUseThis(messages) && shouldHoldDocInviteForOpenUseThis(last?.text, liveActions, ask.text)) {
       return freezeUsedFoxTurns(messages);
     }
     return applyIdExtractAsk(messages, foxAskMessage(ask));
@@ -487,17 +527,8 @@ function applyFoxAsk(
   if (last && isContractExtractAskText(last.text) && !isContractExtractAskText(ask.text)) {
     return freezeUsedFoxTurns([...messages, foxAskMessage(ask)]);
   }
-  if (
-    last &&
-    ((/I’m suggesting/.test(last.text) && /Use this\?$/.test(last.text)) ||
-      /\ba month\. Use this\?$/.test(last.text) ||
-      /\bPeriod \$.+\. Use this\?$/.test(last.text) ||
-      /Use this\?$/.test(last.text.trim())) &&
-    ask.text !== last.text
-  ) {
-    if (liveActions?.length || shouldHoldDocInviteForOpenUseThis(last.text, liveActions, ask.text)) {
-      return freezeUsedFoxTurns(messages);
-    }
+  if (last && lastFoxIsOpenUseThis(messages) && ask.text !== last.text) {
+    return freezeUsedFoxTurns(messages);
   }
   if (last && sameFoxAsk(last, ask)) return freezeUsedFoxTurns(messages);
   if (/Use this\?$/.test(ask.text.trim()) && ask.actions?.length) {
@@ -515,7 +546,7 @@ function applyFoxAsk(
     );
     return freezeUsedFoxTurns([...withoutYears, foxAskMessage(ask)]);
   }
-  if (last && shouldHoldDocInviteForOpenUseThis(last.text, liveActions, ask.text)) {
+  if (last && lastFoxIsOpenUseThis(messages) && shouldHoldDocInviteForOpenUseThis(last.text, liveActions, ask.text)) {
     return freezeUsedFoxTurns(messages);
   }
   return freezeUsedFoxTurns([...messages, foxAskMessage(ask)]);
@@ -1390,8 +1421,12 @@ export function AlwaysOnFox({
       isStart && prompt === "review" && !live.docsHeld && !live.looksRightHold && !nextDocInvite(live);
     if (skipPromptSync.current) {
       skipPromptSync.current = false;
+      const thread = getFoxMessages();
+      const liveIndex = liveFoxTurnIndex(thread);
+      const usedConfirmHole = liveIndex >= 0 && !isLiveFoxTurn(thread, liveIndex);
       if (
         !mustShowReview &&
+        !usedConfirmHole &&
         !isScheduleECashFlowProposal(live.pendingProposal) &&
         !isEntityCashFlowProposal(live.pendingProposal) &&
         !isSameBusinessWageEntityProposal(live.pendingProposal)
@@ -1783,20 +1818,23 @@ export function AlwaysOnFox({
       if (foxZipEcho) return sealStoredFoxThread(next);
       if (!fox.text.trim() && !(fox.followUp ?? "").trim()) {
         if (fox.actions?.length) {
-          return sealStoredFoxThread([
-            ...next,
-            foxAskMessage({ ...fox, text: fox.text || "I’m here. Type below, or tap a reply." }),
-          ]);
+          return withNextAskIfUsedConfirm(
+            sealStoredFoxThread([
+              ...next,
+              foxAskMessage({ ...fox, text: fox.text || "I’m here. Type below, or tap a reply." }),
+            ]),
+            live,
+          );
         }
-        return sealStoredFoxThread(next);
+        return withNextAskIfUsedConfirm(sealStoredFoxThread(next), live);
       }
       if (isYearsInBusinessAskText(fox.text)) {
         const withoutYears = next.filter(
           (item) => !(item.role === "fox" && isYearsInBusinessAskText(item.text)),
         );
-        return sealStoredFoxThread([...withoutYears, foxAskMessage(fox)]);
+        return withNextAskIfUsedConfirm(sealStoredFoxThread([...withoutYears, foxAskMessage(fox)]), live);
       }
-      return sealStoredFoxThread([...next, foxAskMessage(fox)]);
+      return withNextAskIfUsedConfirm(sealStoredFoxThread([...next, foxAskMessage(fox)]), live);
     });
   };
 

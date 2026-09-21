@@ -4208,6 +4208,16 @@ export function deskStripActions(
     if (inQueueEnding(draft) || draft.sampleAccepted) {
       return stripStreetSuggest(finishLineActions(draft));
     }
+    const usedConfirm =
+      live >= 0 &&
+      isUseThisConfirmText(thread[live]?.text) &&
+      !draft.pendingProposal &&
+      !draft.pendingConflict &&
+      !draft.pendingAddress;
+    if (usedConfirm) {
+      const next = nextFoxAsk(draft);
+      if ((next.actions ?? []).length) return stripStreetSuggest(next.actions ?? []);
+    }
     return [];
   }
   const message = thread[live]!;

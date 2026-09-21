@@ -206,6 +206,20 @@ function hasAskSkip(text: string, chips: string[]) {
   return hasChip(chips, "Skip") && !isWhoOnLoanTurn(text, chips);
 }
 
+/** After W-2 / ID Use this: a live strip, never an empty Fox beat. */
+function hasLiveFileStrip(text: string, chips: string[]) {
+  if (!text.trim() || !chips.length) return false;
+  if (hasChip(chips, "Use this")) return false;
+  if (isWhoOnLoanTurn(text, chips)) return false;
+  return (
+    hasAskSkip(text, chips) ||
+    hasChip(chips, "Upload this") ||
+    hasChip(chips, "Upload") ||
+    hasChip(chips, "Looks right") ||
+    /Looks right|latest paystub|government ID|other monthly debts/i.test(text)
+  );
+}
+
 async function clickChip(page: Page, label: string | RegExp) {
   const chip =
     typeof label === "string"
@@ -2777,11 +2791,10 @@ async function case38(page: Page) {
     throw new BeatFail(`Borrower 1 wrote before Use this — ${beforeWrite["Borrower 1"]}`);
   }
   await clickChip(page, "Use this");
-  await waitCurrent(
-    page,
-    (text, chips) => !hasChip(chips, "Use this") || /Looks right|latest paystub|government ID/i.test(text),
-    20_000,
-  );
+  const afterW2Use = await waitCurrent(page, (text, chips) => hasLiveFileStrip(text, chips), 20_000);
+  if (!afterW2Use.text.trim() || !afterW2Use.chips.length) {
+    throw new BeatFail(`empty Fox beat after W-2 Use this — ${afterW2Use.text} | chips: ${afterW2Use.chips.join(" · ")}`);
+  }
   const afterWrite = await structureMap(page);
   const written = afterWrite["Borrower 1"] || afterWrite["Borrower"] || "";
   if (!/Jordan Hale/i.test(written)) {
@@ -2949,11 +2962,10 @@ async function case39(page: Page) {
     throw new BeatFail(`QI painted before Use this — ${beforeWage["Qualifying income"]}`);
   }
   await clickChip(page, "Use this");
-  await waitCurrent(
-    page,
-    (text, chips) => !hasChip(chips, "Use this") || /Looks right|latest paystub|government ID/i.test(text),
-    20_000,
-  );
+  const afterW2Use = await waitCurrent(page, (text, chips) => hasLiveFileStrip(text, chips), 20_000);
+  if (!afterW2Use.text.trim() || !afterW2Use.chips.length) {
+    throw new BeatFail(`empty Fox beat after W-2 Use this — ${afterW2Use.text} | chips: ${afterW2Use.chips.join(" · ")}`);
+  }
   const afterWage = await structureMap(page);
   const written = afterWage["Borrower 1"] || afterWage["Borrower"] || "";
   if (!/Jordan Hale|Raymond/i.test(written)) {
@@ -4062,13 +4074,13 @@ const CASES: { n: number; title: string; run: (page: Page) => Promise<void> }[] 
   {
     n: 38,
     title:
-      "B1 empty + W-2 page name CFBW writes Borrower 1 + employment; Ying held; Skip keeps B1 empty",
+      "B1 empty + W-2 page name CFBW writes Borrower 1 + employment; next line has chips; Ying held",
     run: case38,
   },
   {
     n: 39,
     title:
-      "notepad empty of Ying / B1 / Employer until Use this; then writes only the card; finish chips hold",
+      "notepad empty until Use this; W-2 Use this writes the card then a live strip; finish chips hold",
     run: case39,
   },
   { n: 23, title: "ADP W-2 page-read: Box 5 is $36,460.08, never $5", run: case23 },

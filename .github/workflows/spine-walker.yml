@@ -37,6 +37,7 @@ on:
       - "scripts/assert-ying-papers-after-borrowers-2.ts"
       - "scripts/assert-borrower-1-name-from-page.ts"
       - "scripts/assert-file-empty-until-use-this.ts"
+      - "scripts/assert-live-chips-after-w2-use-this.ts"
       - "scripts/assert-live-strip.ts"
       - "scripts/assert-use-this-employment.ts"
       - ".github/workflows/spine-walker.yml"
@@ -78,6 +79,7 @@ on:
       - "scripts/assert-ying-papers-after-borrowers-2.ts"
       - "scripts/assert-borrower-1-name-from-page.ts"
       - "scripts/assert-file-empty-until-use-this.ts"
+      - "scripts/assert-live-chips-after-w2-use-this.ts"
       - "scripts/assert-live-strip.ts"
       - "scripts/assert-use-this-employment.ts"
       - ".github/workflows/spine-walker.yml"
@@ -117,6 +119,11 @@ jobs:
         run: |
           if [[ ! -d node_modules/next ]]; then npm install; fi
           npx --yes tsx scripts/assert-use-this-employment.ts
+      - name: Live chips after W-2 Use this
+        run: |
+          if [[ ! -d node_modules/next ]]; then npm install; fi
+          npx --yes tsx scripts/assert-live-chips-after-w2-use-this.ts
+          npx --yes tsx scripts/assert-file-empty-until-use-this.ts
   walk:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
