@@ -113,6 +113,7 @@ async function main() {
 
   const create = workspaceReply("Create account", first);
   assert.equal(create?.capture?.field, "create-account");
+  assert.equal(create?.text, "So this File can find you on another phone — not stuck in this tab.");
   assert.equal(create?.text, ACCOUNT_WHY_SENTENCE);
   assert.ok(!foxLineLeaksAccountSecret(create?.text ?? ""));
   const afterCreate = applyAccountCapture(first, { field: "create-account" });
@@ -121,10 +122,12 @@ async function main() {
 
   const login = workspaceReply("Log in", first);
   assert.equal(login?.capture?.field, "login-account");
+  assert.equal(login?.text, "Welcome back. Email or phone for a code?");
   assert.equal(login?.text, ACCOUNT_LOGIN_ASK);
   assert.ok(!foxLineLeaksAccountSecret(login?.text ?? ""));
   const afterLogin = applyAccountCapture(first, { field: "login-account" });
-  assert.equal(afterLogin.accountAsk, "code");
+  assert.equal(afterLogin.accountAsk, "channel");
+  assert.deepEqual(labels(accountSideActions(afterLogin)), ["Email", "Phone", NOT_NOW_LABEL]);
 
   const skip = workspaceReply("Not now", first);
   assert.equal(skip?.capture?.field, "skip-account");
@@ -136,6 +139,7 @@ async function main() {
   const afterEmail = applyAccountCapture(afterCreate, { field: "account-channel", value: "email" });
   assert.equal(afterEmail.accountAsk, "email");
   const emailAsk = workspaceReply("Email", afterCreate);
+  assert.equal(emailAsk?.text, "Where should I send the sign-in link?");
   assert.equal(emailAsk?.text, ACCOUNT_EMAIL_ASK);
   assert.deepEqual(labels(accountSideActions(afterEmail)), [NOT_NOW_LABEL]);
   const emailTyped = workspaceReply("borrower@example.com", afterEmail);

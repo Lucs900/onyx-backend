@@ -25,13 +25,12 @@ export const LOGIN_LABEL = "Log in";
 export const NOT_NOW_LABEL = "Not now";
 export const SAVE_THIS_FILE_LABEL = "Save this File";
 export const ACCOUNT_WHY_SENTENCE =
-  "This desk can come back — save so the File isn’t only this browser.";
+  "So this File can find you on another phone — not stuck in this tab.";
 export const ACCOUNT_CHANNEL_ASK = ACCOUNT_WHY_SENTENCE;
-export const ACCOUNT_EMAIL_ASK = "What’s a good email? I’ll send a link for this File.";
+export const ACCOUNT_EMAIL_ASK = "Where should I send the sign-in link?";
 export const ACCOUNT_PHONE_ASK = "What’s a good phone? I’ll send a code for this File.";
 export const ACCOUNT_CODE_ASK = "What’s the 6-digit code from your phone?";
-export const ACCOUNT_LOGIN_ASK =
-  "Enter the 6-digit code from your phone, or open the link we emailed.";
+export const ACCOUNT_LOGIN_ASK = "Welcome back. Email or phone for a code?";
 export const ACCOUNT_SKIPPED_LINE = "Sketch stays on this browser. Create account anytime.";
 export const ACCOUNT_SAVE_ASK =
   "Save this File so it isn’t only this browser. Then I can send it to review.";
@@ -131,7 +130,7 @@ export function applyAccountCapture(
     };
   }
   if (capture.field === "login-account") {
-    return { ...draft, accountAsk: "code", accountSkipped: false };
+    return { ...draft, accountAsk: "channel", accountSkipped: false };
   }
   if (capture.field === "skip-account") {
     return { ...draft, accountAsk: undefined, accountSkipped: true };
@@ -165,7 +164,7 @@ export function accountWorkspaceReply(
     };
   }
   if (/^log in$/i.test(q)) {
-    const next = { ...draft, accountAsk: "code" as const };
+    const next = { ...draft, accountAsk: "channel" as const };
     return {
       text: ACCOUNT_LOGIN_ASK,
       actions: accountSideActions(next),
@@ -251,8 +250,8 @@ export function lastFoxLine(messages: FoxMessage[]) {
 
 export function composerPlaceholderForAccount(draft: FoxIntakeDraft) {
   const ask = accountAskOf(draft);
-  if (ask === "email") return "Email for this File";
-  if (ask === "phone") return "Phone for this File";
+  if (ask === "email") return "";
+  if (ask === "phone") return "";
   if (ask === "code") return "6-digit code";
   return "";
 }

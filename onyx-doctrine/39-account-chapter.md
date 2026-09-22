@@ -9,8 +9,9 @@ After hub v0 spine, the File must follow the person across browsers via account 
 ## Lock
 - Account can start on the first question, not only after Proceed.
 - First-question chips: **Create account · Log in · Not now**. Product chips stay Buy · Refinance · HELOC · Jumbo · Other. Nav Log in alone is not enough.
-- Create account speaks one why-sentence: this desk can come back — save so the File isn’t only this browser. Then Email / Phone / Not now.
-- After Email, the composer is for the address. Not now = change mind (still available).
+- Create account Fox (exact): “So this File can find you on another phone — not stuck in this tab.” Then Email / Phone / Not now.
+- After Email Fox (exact): “Where should I send the sign-in link?” Composer is the address. Not now = changed my mind, not the only chip.
+- Log in Fox (exact): “Welcome back. Email or phone for a code?” Same File.
 - Email magic link or phone code. Same person, same `file_id` on a second browser. Homepage `/start` resumes that File.
 - **Never print the token, `/start?account=…`, or the raw code in the borrower thread.** Fox says check your email / enter the code.
 - Real send: Resend (`RESEND_API_KEY`, `RESEND_FROM`) or Twilio (`TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM`). Preview without those env vars still creates the File and never leaks the URL.
@@ -39,9 +40,10 @@ If the unique READY preview has no mail provider, set on the Vercel preview:
 Dense 1008, holding-page publish, referral cash, credit pull / lock desk, Google-required login, SSN login, BNTouch / public-domain cutover.
 
 ## Accept bar
-1. First question: Create account · Log in · Not now + product chips stay
-2. Create account → why-sentence → Email / Phone / Not now
-3. Email → type address in composer → real email sent (not stub URL in thread)
+1. First screen huge: Buy · Refinance · HELOC · Jumbo · Other. Quiet: Create account · Log in · Not now
+2. Create account → “So this File can find you on another phone — not stuck in this tab.” → Email / Phone / Not now
+3. Email → “Where should I send the sign-in link?” → type address in composer → real email sent (not stub URL in thread)
+3b. Log in → “Welcome back. Email or phone for a code?” Same File
 4. Second browser opens the link from email (or phone code) → same `file_id` · notepad + last Fox line match
 5. Sketch: Not now → finish → Proceed with no account → one save ask + pad Save this File; not `in_queue` until saved/accounted
 6. With account, Proceed still reaches `in_queue`
