@@ -411,7 +411,11 @@ function main() {
   assert.doesNotMatch(JSON.stringify(skipName), /Ying Lee/);
   const skipReply = workspaceReply("Skip", yesNameDraft);
   assert.equal(skipReply?.capture?.field, "skip-who-on-loan-name");
-  assert.doesNotMatch(skipReply?.text ?? "", /anyone else on this loan/i);
+  assert.doesNotMatch(skipReply?.text ?? "", /anyone else on this loan|Ying|Borrower 2/i);
+  const paperAfterSkipName = maybeWriteCoborrowerFromPaper(skipName, "Ying Lee");
+  assert.equal(paperAfterSkipName.coborrowerName, undefined);
+  assert.equal(borrowersFileValue(paperAfterSkipName), "1");
+  assert.equal(fileHasMultipleBorrowers(paperAfterSkipName), false);
 
   const paperWithoutYes = maybeWriteCoborrowerFromPaper(
     {

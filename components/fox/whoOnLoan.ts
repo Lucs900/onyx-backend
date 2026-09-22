@@ -304,7 +304,16 @@ export function skipWhoOnLoan(draft: FoxIntakeDraft): FoxIntakeDraft {
   return writeWhoOnLoan(draft, "skip");
 }
 
+/** Yes, then Skip on the name — Borrowers 1. Do not invent Borrower 2. */
+export function whoOnLoanNameWasSkipped(draft: FoxIntakeDraft) {
+  return draft.whoOnLoan === "yes" && Boolean(draft.whoOnLoanNameAsked) && !draft.coborrowerName?.trim();
+}
+
 export function skipWhoOnLoanName(draft: FoxIntakeDraft): FoxIntakeDraft {
+  const facts = { ...(draft.facts ?? {}) };
+  delete facts.coborrower_name;
+  delete facts.coborrowerName;
+  delete facts.spouse_name;
   return {
     ...draft,
     whoOnLoan: draft.whoOnLoan ?? "yes",
@@ -316,6 +325,7 @@ export function skipWhoOnLoanName(draft: FoxIntakeDraft): FoxIntakeDraft {
     pendingProposal: isCoborrowerNameConfirmPending(draft) ? null : draft.pendingProposal,
     correcting: null,
     correctingLine: null,
+    facts,
   };
 }
 
@@ -392,6 +402,8 @@ export function maybeWriteCoborrowerFromPaper(draft: FoxIntakeDraft, name: strin
   if (draft.whoOnLoan === "just-me") return notePageOtherName(draft, shown);
   if (draft.whoOnLoan !== "yes") return notePageOtherName(draft, shown);
   if (draft.coborrowerName?.trim()) return draft;
+  // Skip on the name ask left Borrowers 1. A later paper must not invent Ying / Borrower 2.
+  if (whoOnLoanNameWasSkipped(draft)) return notePageOtherName(draft, shown);
   return writeWhoOnLoanName(draft, shown);
 }
 
