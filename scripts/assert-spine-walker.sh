@@ -203,6 +203,9 @@ if [[ "${SPINE_WALKER_SKIP_LEFTOVERS:-}" != "1" ]]; then
     run_leftover assert-who-on-loan-yes.ts
     run_leftover assert-skip-on-other-person-name.ts
   fi
+  if leftover_wanted 38; then
+    run_leftover assert-processing-hub-v0.ts
+  fi
   if leftover_wanted 12 || leftover_wanted 13; then
     run_leftover assert-file-next-ask.ts
   fi

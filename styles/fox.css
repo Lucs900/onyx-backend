@@ -662,6 +662,19 @@
   gap: 6px;
 }
 
+.staff-hub-drawer summary {
+  cursor: pointer;
+  list-style: disclosure-closed;
+}
+
+.staff-hub-drawer[open] summary {
+  list-style: disclosure-open;
+}
+
+.staff-hub-loud {
+  border-color: var(--ink);
+}
+
 .intake-input {
   width: 100%;
   padding: 10px 12px;

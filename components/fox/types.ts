@@ -175,7 +175,9 @@ export type FileEventKind =
   | "nudge"
   | "return-to-fox"
   | "email"
-  | "staff-export";
+  | "staff-export"
+  | "staff-desk"
+  | "staff-note";
 
 export type FileEvent = {
   id: string;

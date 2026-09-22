@@ -39,6 +39,7 @@ on:
       - "scripts/assert-file-empty-until-use-this.ts"
       - "scripts/assert-live-chips-after-w2-use-this.ts"
       - "scripts/assert-skip-on-other-person-name.ts"
+      - "scripts/assert-processing-hub-v0.ts"
       - "scripts/assert-live-strip.ts"
       - "scripts/assert-use-this-employment.ts"
       - ".github/workflows/spine-walker.yml"
@@ -82,6 +83,7 @@ on:
       - "scripts/assert-file-empty-until-use-this.ts"
       - "scripts/assert-live-chips-after-w2-use-this.ts"
       - "scripts/assert-skip-on-other-person-name.ts"
+      - "scripts/assert-processing-hub-v0.ts"
       - "scripts/assert-live-strip.ts"
       - "scripts/assert-use-this-employment.ts"
       - ".github/workflows/spine-walker.yml"
@@ -127,6 +129,7 @@ jobs:
           npx --yes tsx scripts/assert-live-chips-after-w2-use-this.ts
           npx --yes tsx scripts/assert-file-empty-until-use-this.ts
           npx --yes tsx scripts/assert-skip-on-other-person-name.ts
+          npx --yes tsx scripts/assert-processing-hub-v0.ts
   walk:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest

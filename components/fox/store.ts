@@ -51,6 +51,7 @@ import {
   parsePreviewSla,
   restripeGatheringOrReady,
 } from "./motion";
+import { applyStaffDeskSend, type StaffDeskInput } from "./processingHub";
 import { FAILED_READ_NOTE, isUnreadNote } from "@/lib/docs/accept";
 import {
   applyExtractedFields,
@@ -1981,6 +1982,24 @@ export function returnToFox(
   input: Parameters<typeof applyReturnToFoxMotion>[1],
 ) {
   const applied = applyReturnToFoxMotion(current, input);
+  if (applied.error || !applied.threadLine) {
+    return { draft: current, threadLine: "", error: applied.error ?? "foxLine required" };
+  }
+  commit(applied.draft);
+  appendFoxThreadLine(applied.threadLine);
+  return { draft: current, threadLine: applied.threadLine };
+}
+
+/** Mint file_id on an existing File only. Empty draft stays empty. */
+export function ensureCurrentFileId() {
+  if (current.fileId?.trim()) return current;
+  if (!fileExists(current) && !workspaceSessionStarted(current, foxMessages)) return current;
+  return commit(ensureFileId(current));
+}
+
+/** Desk Send: foxLine onto /start. Keeps in_queue. Silent notes stay off the thread. */
+export function sendStaffDeskLine(input: StaffDeskInput) {
+  const applied = applyStaffDeskSend(ensureFileId(current), input);
   if (applied.error || !applied.threadLine) {
     return { draft: current, threadLine: "", error: applied.error ?? "foxLine required" };
   }
