@@ -3,7 +3,8 @@
 import { useEffect, useState, useSyncExternalStore, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { DocumentDrop } from "./DocumentDrop";
-import { requestFoxExplain, requestFoxFix } from "./AlwaysOnFox";
+import { requestFoxExplain, requestFoxFix, requestSaveThisFile } from "./AlwaysOnFox";
+import { SAVE_THIS_FILE_LABEL, accountSaveAskOpen } from "./account";
 import { FOX_KEYBOARD_EVENT } from "./askReveal";
 import { NOTHING_URGENT, stillUsefulSection, stillUsefulSpokenItems } from "./fileWrite";
 import { getFoxDraft, getServerDraft, subscribeFoxDraft } from "./store";
@@ -167,6 +168,15 @@ export function WorkspaceFileDock({ children }: { children: ReactNode }) {
                   </button>
                 </div>
                 <StructureRows facts={facts} draft={draft} />
+                {accountSaveAskOpen(draft) ? (
+                  <button
+                    type="button"
+                    className="file-preview__save"
+                    onClick={() => requestSaveThisFile()}
+                  >
+                    {SAVE_THIS_FILE_LABEL}
+                  </button>
+                ) : null}
                 <StillUsefulSection draft={draft} />
               </div>
             </div>,
@@ -195,6 +205,15 @@ export function FilePreview() {
         <p className="type-eyebrow">Structure</p>
         <h2 className="type-card-title">Live file</h2>
         <StructureRows facts={facts} draft={draft} />
+        {accountSaveAskOpen(draft) ? (
+          <button
+            type="button"
+            className="file-preview__save"
+            onClick={() => requestSaveThisFile()}
+          >
+            {SAVE_THIS_FILE_LABEL}
+          </button>
+        ) : null}
         <StillUsefulSection draft={draft} />
       </div>
       {showDocs ? <DocumentDrop draft={draft} compact /> : null}

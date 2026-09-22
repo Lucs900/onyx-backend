@@ -7,6 +7,7 @@ import { emptyDraft } from "../components/fox/store";
 import { canLooksRight, isLooksRightAskText, resolveProposal } from "../components/fox/completeness";
 import { skipCurrentInvite, stillUsefulSpokenItems } from "../components/fox/fileWrite";
 import { applyCouponChoice } from "../components/fox/liveCoupon";
+import { withLinkedAccount } from "../components/fox/account";
 import { applyLooksRightMotion, applyProceedMotion } from "../components/fox/motion";
 import { skipMonthlyDebts } from "../components/fox/monthlyDebts";
 import {
@@ -223,7 +224,7 @@ function main() {
   const looks = workspaceReply("Looks right", ready);
   assert.match(looks?.text ?? "", /I can send this to review/);
   assert.deepEqual(labels(looks?.actions).slice(0, 3), ["Proceed", "Not yet", "Upload more"]);
-  const afterLooks = applyLooksRightMotion(ready);
+  const afterLooks = withLinkedAccount(applyLooksRightMotion(ready));
   assert.ok(stillUsefulSpokenItems(afterLooks).length <= 3);
   const proceed = workspaceReply("Proceed", afterLooks);
   assert.match(proceed?.text ?? "", /ONYX has this for review/);

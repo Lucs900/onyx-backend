@@ -18,6 +18,7 @@ import {
   stillUsefulSection,
 } from "../components/fox/fileWrite";
 import { canLooksRight, resolveProposal } from "../components/fox/completeness";
+import { withLinkedAccount } from "../components/fox/account";
 import { applyLooksRightMotion, applyProceedMotion } from "../components/fox/motion";
 import { emptyDraft } from "../components/fox/store";
 import { nextFoxAsk, previewFacts, workspacePrompt, workspacePromptCopy } from "../components/fox/workspace";
@@ -213,14 +214,14 @@ async function main() {
     usefulAfterReturnSkip.includes(LAST_YEAR_RETURN_STILL_USEFUL),
     `1040 stays after Skip — ${usefulAfterReturnSkip.join(" · ")}`,
   );
-  const proceeded = applyProceedMotion({
+  const proceeded = applyProceedMotion(withLinkedAccount({
     ...afterReturnSkip,
     emailSkipped: false,
     contact: {
       ...afterReturnSkip.contact,
       email: { field: "email", value: "", source: "client", confirmed: false },
     },
-  });
+  }));
   assert.equal(proceeded.motion, "in_queue");
   assert.equal(proceeded.nextActor, "ONYX");
   assert.equal(proceeded.pendingFinish, undefined);

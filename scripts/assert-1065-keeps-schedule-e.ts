@@ -19,6 +19,7 @@ import {
   selectK1WhoOnLoan,
 } from "../components/fox/qualifyingIncome";
 import { deskStripActions, nextFoxAsk, previewFacts, workspaceReply } from "../components/fox/workspace";
+import { withLinkedAccount } from "../components/fox/account";
 import { applyLooksRightMotion, applyProceedMotion, MOTION_COPY } from "../components/fox/motion";
 import { lockParass1065LedgerFields, mergeIncomeLedger } from "../lib/income/ledger";
 import { mergeTaxCashflows as mergeYears } from "../components/fox/qualifyingIncome";
@@ -379,8 +380,8 @@ function main() {
     }
   }
   const afterLooks = canLooksRight(finish) ? applyLooksRightMotion(finish) : finish;
-  const proceeded = applyProceedMotion({ ...afterLooks, emailSkipped: true });
-  const proceedAsk = workspaceReply("Proceed", { ...afterLooks, emailSkipped: true });
+  const proceeded = applyProceedMotion(withLinkedAccount({ ...afterLooks, emailSkipped: true }));
+  const proceedAsk = workspaceReply("Proceed", withLinkedAccount({ ...afterLooks, emailSkipped: true }));
   assert.equal(proceeded.motion, "in_queue", "Proceed once writes in_queue");
   assert.equal(proceedAsk?.text, MOTION_COPY.in_queue);
   assert.equal(MOTION_COPY.in_queue, "ONYX has this for review. I’m still here.");

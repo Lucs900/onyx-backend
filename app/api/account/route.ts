@@ -4,6 +4,7 @@ import {
   persistAccountRecord,
   snapshotOf,
 } from "@/lib/account/core";
+import { accountOrigin, sendAccountChannel } from "@/lib/account/send";
 import {
   loadAccountByCode,
   loadAccountByFileId,
@@ -88,7 +89,19 @@ export async function POST(request: Request) {
       messages,
     );
     await saveAccountRecord(linked);
-    return NextResponse.json(snapshotOf(linked));
+    const sent = await sendAccountChannel({
+      channel: body.phone ? "phone" : "email",
+      email: body.email,
+      phone: body.phone,
+      token: linked.token,
+      code: linked.code,
+      origin: accountOrigin(request),
+    });
+    return NextResponse.json({
+      ...snapshotOf(linked),
+      sent: sent.sent,
+      sendProvider: sent.provider ?? null,
+    });
   } catch (error) {
     const message = error instanceof Error ? error.message : "create_failed";
     return NextResponse.json({ error: message }, { status: 400 });

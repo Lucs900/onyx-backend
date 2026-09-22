@@ -7,6 +7,7 @@ import { emptyDraft } from "../components/fox/store";
 import { canLooksRight, isLooksRightAskText, resolveProposal } from "../components/fox/completeness";
 import { skipCurrentInvite } from "../components/fox/fileWrite";
 import { applyCouponChoice } from "../components/fox/liveCoupon";
+import { withLinkedAccount } from "../components/fox/account";
 import { applyLooksRightMotion, applyProceedMotion } from "../components/fox/motion";
 import { skipMonthlyDebts } from "../components/fox/monthlyDebts";
 import { skipWageDocs } from "../components/fox/qualifyingIncome";
@@ -176,7 +177,7 @@ function main() {
   assert.deepEqual(labels(nextFoxAsk(skipReady).actions), ["Looks right", "Needs a correction"]);
   assert.equal(fact(skipReady, "borrowers")?.value, "1");
   assert.equal(fact(skipReady, "coborrower-name")?.value, undefined);
-  const skipLooks = applyLooksRightMotion(skipReady);
+  const skipLooks = withLinkedAccount(applyLooksRightMotion(skipReady));
   const skipQueued = applyProceedMotion(skipLooks);
   assert.equal(skipQueued.motion, "in_queue");
   assert.equal(borrowersFileValue(skipQueued), "1");
@@ -194,7 +195,7 @@ function main() {
   const looks = workspaceReply("Looks right", ready);
   assert.match(looks?.text ?? "", /I can send this to review/);
   assert.deepEqual(labels(looks?.actions).slice(0, 3), ["Proceed", "Not yet", "Upload more"]);
-  const afterLooks = applyLooksRightMotion(ready);
+  const afterLooks = withLinkedAccount(applyLooksRightMotion(ready));
   const proceed = workspaceReply("Proceed", afterLooks);
   assert.match(proceed?.text ?? "", /ONYX has this for review/);
   assert.deepEqual(labels(proceed?.actions).slice(0, 2), ["Ask Fox", "Upload more"]);

@@ -41,6 +41,7 @@ import {
   selectK1WhoOnLoan,
   writeOtherK1Box1,
 } from "../components/fox/qualifyingIncome";
+import { withLinkedAccount } from "../components/fox/account";
 import { applyLooksRightMotion, applyProceedMotion, MOTION_COPY } from "../components/fox/motion";
 import { asksWillIQualify } from "../lib/guidelines/answer";
 import { READINESS_NAMED_LOSS } from "../lib/guidelines/conventional";
@@ -568,8 +569,8 @@ async function main() {
     /I can answer from this file|purchase contract|occupancy|Not ready yet/i,
   );
   assert.ok(qualifyAfterLooks?.followUp !== qualifyAfterLooks?.text);
-  const proceeded = applyProceedMotion(afterLooks);
-  const proceedAsk = workspaceReply("Proceed", afterLooks);
+  const proceeded = applyProceedMotion(withLinkedAccount(afterLooks));
+  const proceedAsk = workspaceReply("Proceed", withLinkedAccount(afterLooks));
   assert.equal(proceeded.motion, "in_queue");
   assert.equal(proceedAsk?.text, MOTION_COPY.in_queue);
   assert.equal(MOTION_COPY.in_queue, "ONYX has this for review. I’m still here.");

@@ -468,6 +468,25 @@
   color: var(--muted);
 }
 
+.file-preview__save {
+  align-self: flex-start;
+  margin: 0;
+  padding: 8px 12px;
+  border: 1px solid var(--fox-hairline);
+  border-radius: 999px;
+  background: var(--paper);
+  font-family: var(--font-ui);
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.file-preview__save:hover,
+.file-preview__save:focus-visible {
+  border-color: var(--ink);
+}
+
 .workspace-docs {
   display: none;
   padding: 0 16px 16px;

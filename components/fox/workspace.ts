@@ -609,7 +609,7 @@ import {
   withWhoOnLoanDue,
   writeWhoOnLoan,
 } from "./whoOnLoan";
-import { accountWorkspaceReply } from "./account";
+import { ACCOUNT_SAVE_ASK, accountWorkspaceReply, applyAccountCapture } from "./account";
 import {
   SUGGESTED_COBORROWER_NOTE,
   coborrowerExtractCopy,
@@ -6373,7 +6373,7 @@ export function workspaceUpdateCopy(capture: Capture, draft: FoxIntakeDraft) {
     return MOTION_COPY.escalated;
   }
   if (capture.field === "proceed") {
-    return MOTION_COPY.in_queue;
+    return draft.accountSaveAsk && !draft.accountId ? ACCOUNT_SAVE_ASK : MOTION_COPY.in_queue;
   }
   if (capture.field === "not-yet") {
     return MOTION_COPY.on_hold;
@@ -7065,6 +7065,17 @@ function draftAfterCapture(draft: FoxIntakeDraft, capture: Capture): FoxIntakeDr
 }
 
 function draftAfterCaptureBody(draft: FoxIntakeDraft, capture: Capture): FoxIntakeDraft {
+  if (
+    capture.field === "create-account" ||
+    capture.field === "login-account" ||
+    capture.field === "skip-account" ||
+    capture.field === "save-this-file" ||
+    capture.field === "account-channel" ||
+    capture.field === "account-email" ||
+    capture.field === "account-phone"
+  ) {
+    return applyAccountCapture(draft, capture);
+  }
   if (capture.field === "correct") {
     return beginFileEdit(draft, capture.value as FoxPrompt, capture.line);
   }

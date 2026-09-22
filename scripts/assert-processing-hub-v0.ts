@@ -15,6 +15,7 @@ import {
   finishLineActions,
   MOTION_COPY,
 } from "../components/fox/motion";
+import { withLinkedAccount } from "../components/fox/account";
 import { skipMonthlyDebts } from "../components/fox/monthlyDebts";
 import { skipWageDocs } from "../components/fox/qualifyingIncome";
 import { borrowersFileValue, writeWhoOnLoan } from "../components/fox/whoOnLoan";
@@ -103,7 +104,7 @@ function justMeSkipProceed(file: FoxIntakeDraft): FoxIntakeDraft {
   draft = skipWageDocs(draft);
   draft = skipCurrentInvite(draft);
   const afterLooks = applyLooksRightMotion(draft);
-  return applyProceedMotion(afterLooks);
+  return applyProceedMotion(withLinkedAccount(afterLooks));
 }
 
 function main() {
@@ -135,7 +136,7 @@ function main() {
   assert.equal(workspacePrompt(ready), "review");
   assert.ok(isLooksRightAskText(nextFoxAsk(ready).text));
   assert.equal(canLooksRight(ready), true);
-  const afterLooks = applyLooksRightMotion(ready);
+  const afterLooks = withLinkedAccount(applyLooksRightMotion(ready));
   const proceed = workspaceReply("Proceed", afterLooks);
   assert.match(proceed?.text ?? "", /ONYX has this for review/);
   assert.deepEqual(labels(proceed?.actions).slice(0, 2), ["Ask Fox", "Upload more"]);

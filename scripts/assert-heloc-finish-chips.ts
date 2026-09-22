@@ -13,6 +13,7 @@ import {
   finishLineActions,
   MOTION_COPY,
 } from "../components/fox/motion";
+import { withLinkedAccount } from "../components/fox/account";
 import { skipMonthlyDebts } from "../components/fox/monthlyDebts";
 import { skipWageDocs } from "../components/fox/qualifyingIncome";
 import { writeWhoOnLoan } from "../components/fox/whoOnLoan";
@@ -119,7 +120,7 @@ function main() {
   assert.deepEqual(labels(chip?.actions).slice(0, 3), ["Proceed", "Not yet", "Upload more"]);
   assert.equal(labels(chip?.actions).at(-1), "Request human");
 
-  const afterLooks = applyLooksRightMotion(gate);
+  const afterLooks = withLinkedAccount(applyLooksRightMotion(gate));
   assert.equal(afterLooks.sampleAccepted, true);
   assert.ok((nextFoxAsk(afterLooks).text ?? "").trim());
   assert.match(nextFoxAsk(afterLooks).text, /I can send this to review/);

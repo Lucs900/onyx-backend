@@ -15,6 +15,7 @@ import {
   writeYearsInBusiness,
 } from "../components/fox/completeness";
 import { skipFormerHistory } from "../components/fox/fileHistory";
+import { withLinkedAccount } from "../components/fox/account";
 import { applyLooksRightMotion, applyProceedMotion } from "../components/fox/motion";
 import {
   MONTHLY_DEBTS_ASK,
@@ -316,7 +317,7 @@ const afterLooks = applyLooksRightMotion(skippedThenLooks);
 assert.equal(afterLooks.sampleAccepted, true);
 assert.notEqual(workspacePrompt(afterLooks), "debts");
 assert.doesNotMatch(nextFoxAsk(afterLooks).text, /other monthly debts/);
-const proceeded = applyProceedMotion(afterLooks);
+const proceeded = applyProceedMotion(withLinkedAccount(afterLooks));
 assert.equal(proceeded.motion, "in_queue");
 const lateEight = workspaceReply("800", proceeded);
 assert.notEqual(lateEight?.capture?.field, "propose-monthly-debts");

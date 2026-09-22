@@ -556,6 +556,7 @@ function normalize(value: unknown): FoxIntakeDraft {
         : undefined,
     accountChannel: raw.accountChannel === "phone" || raw.accountChannel === "email" ? raw.accountChannel : undefined,
     accountSkipped: Boolean(raw.accountSkipped) || undefined,
+    accountSaveAsk: Boolean(raw.accountSaveAsk) || undefined,
     productIntent: normalizeProductIntent(raw.productIntent),
     jumboPurpose: raw.jumboPurpose === "buy" || raw.jumboPurpose === "refinance"
       ? raw.jumboPurpose
@@ -2108,14 +2109,16 @@ export async function createLinkedAccount(input: { email?: string; phone?: strin
   };
   const token = new URL(snapshot.magicLink, "https://onyx.local").searchParams.get("account") || "";
   if (token) writeAccountSession({ token, fileId: snapshot.fileId, accountId: snapshot.accountId });
-  commit({
+  const linked = {
     ...current,
     fileId: snapshot.fileId,
     accountId: snapshot.accountId,
-    accountAsk: "sent",
+    accountAsk: input.phone ? ("code" as const) : ("sent" as const),
     accountSkipped: false,
-    accountChannel: input.phone ? "phone" : "email",
-  });
+    accountSaveAsk: false,
+    accountChannel: input.phone ? ("phone" as const) : ("email" as const),
+  };
+  commit(linked.pendingFinish === "proceed" ? applyProceedMotion(linked) : linked);
   persistLinkedAccountFile();
   return snapshot;
 }
@@ -2241,7 +2244,9 @@ export function applyCapture(capture: Capture) {
 function applyCaptureBody(capture: Capture) {
   if (
     capture.field === "create-account" ||
+    capture.field === "login-account" ||
     capture.field === "skip-account" ||
+    capture.field === "save-this-file" ||
     capture.field === "account-channel" ||
     capture.field === "account-email" ||
     capture.field === "account-phone"

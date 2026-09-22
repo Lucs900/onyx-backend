@@ -6,6 +6,7 @@
  */
 import assert from "node:assert/strict";
 import { emptyDraft } from "../components/fox/store";
+import { withLinkedAccount } from "../components/fox/account";
 import {
   applyLooksRightMotion,
   applyProceedMotion,
@@ -105,10 +106,10 @@ function assertSpeechMatchesNotepad(draft: FoxIntakeDraft, label: string) {
 
 function assertProceedDoesNotGrow(before: FoxIntakeDraft, label: string) {
   const prior = spokenLabels(before);
-  const proceeded = applyProceedMotion({
+  const proceeded = applyProceedMotion(withLinkedAccount({
     ...before,
     emailSkipped: true,
-  });
+  }));
   assert.equal(proceeded.motion, "in_queue", `${label} Proceed motion`);
   assert.equal(proceeded.nextActor, "ONYX", `${label} Proceed next`);
   const after = spokenLabels(proceeded);

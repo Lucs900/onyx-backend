@@ -9,6 +9,11 @@ import {
   stillUsefulLabels,
   stillUsefulSpokenItems,
 } from "./fileWrite";
+import {
+  ACCOUNT_SAVE_ASK,
+  applyAccountSaveAsk,
+  hasLinkedAccount,
+} from "./account";
 import { canLooksRight, isHelocFile, hasHelocLine, shouldEscalate } from "./completeness";
 import { wageDocsSkipIsAnswer } from "./fileWrite";
 import { maybeProposeQualifyingFromTaxFile, QUALIFYING_INCOME_FIELD } from "./qualifyingIncome";
@@ -372,6 +377,9 @@ export function motionAskText(draft: FoxIntakeDraft) {
   if (inQueueEnding(draft)) {
     return MOTION_COPY.in_queue;
   }
+  if (accountSaveAskOpenMotion(draft)) {
+    return ACCOUNT_SAVE_ASK;
+  }
   if (draft.pendingFinish && emailFinishGateOpen(draft)) {
     return MOTION_COPY.emailAsk;
   }
@@ -542,6 +550,10 @@ function withOutbox(
   };
 }
 
+function accountSaveAskOpenMotion(draft: FoxIntakeDraft) {
+  return Boolean(draft.accountSaveAsk) && !hasLinkedAccount(draft);
+}
+
 export function applyProceedMotion(draft: FoxIntakeDraft, now = new Date()): FoxIntakeDraft {
   const held = maybeProposeQualifyingFromTaxFile(draft);
   if (held.pendingProposal?.field === QUALIFYING_INCOME_FIELD) return held;
@@ -555,6 +567,9 @@ export function applyProceedMotion(draft: FoxIntakeDraft, now = new Date()): Fox
       correcting: null,
     };
   }
+  if (!hasLinkedAccount(draft)) {
+    return applyAccountSaveAsk(draft);
+  }
   const from = currentMotionKey(draft);
   if (!canTransition(from, "in_queue")) return draft;
   const item = openReviewWorkItem(draft) ?? openReviewItem(draft, now);
@@ -565,6 +580,7 @@ export function applyProceedMotion(draft: FoxIntakeDraft, now = new Date()): Fox
       nextActor: "ONYX",
       waitingOn: "onyx",
       pendingFinish: undefined,
+      accountSaveAsk: false,
       emailCaptureAsked: draft.emailCaptureAsked,
       docsOpen: false,
       correcting: null,

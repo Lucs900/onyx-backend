@@ -280,6 +280,8 @@ export type FoxIntakeDraft = {
   accountAsk?: "offer" | "channel" | "email" | "phone" | "sent" | "code";
   accountChannel?: "email" | "phone";
   accountSkipped?: boolean;
+  /** Proceed with no account parks here. Not in_queue until saved/accounted. */
+  accountSaveAsk?: boolean;
   productIntent?: ProductIntent;
   jumboPurpose?: JumboPurpose;
   jumboOffered?: boolean;
@@ -811,7 +813,9 @@ export type Capture =
   | { field: "not-yet" }
   | { field: "skip-email" }
   | { field: "create-account" }
+  | { field: "login-account" }
   | { field: "skip-account" }
+  | { field: "save-this-file" }
   | { field: "account-channel"; value: "email" | "phone" }
   | { field: "account-email"; value: string }
   | { field: "account-phone"; value: string }

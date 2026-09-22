@@ -123,14 +123,18 @@ import {
   subscribeFoxDraft,
 } from "./store";
 import {
-  ACCOUNT_CHANNEL_ASK,
   ACCOUNT_CODE_ASK,
   ACCOUNT_EMAIL_ASK,
+  ACCOUNT_LOGIN_ASK,
   ACCOUNT_PHONE_ASK,
   ACCOUNT_SKIPPED_LINE,
+  ACCOUNT_WHY_SENTENCE,
+  SAVE_THIS_FILE_LABEL,
   accountSentCopy,
   accountSideActions,
   accountWorkspaceReply,
+  composerPlaceholderForAccount,
+  foxLineLeaksAccountSecret,
 } from "./account";
 import {
   caretAfterMoneyFormat,
@@ -624,6 +628,10 @@ export function requestFoxFix(field: string) {
 
 export function requestFoxExplain(field: string) {
   window.dispatchEvent(new CustomEvent("onyx:fox-explain", { detail: { field } }));
+}
+
+export function requestSaveThisFile() {
+  window.dispatchEvent(new CustomEvent("onyx:fox-save-file"));
 }
 
 function clientMoneyText(text: string, capture?: { field: string }) {
@@ -1380,10 +1388,18 @@ export function AlwaysOnFox({
         prev.some((item) => item.id === message.id) ? prev : [...prev, message],
       );
     };
+    const onSaveFile = () => {
+      if (!isStart) return;
+      setOpen(true);
+      skipPromptSync.current = true;
+      applyCapture({ field: "save-this-file" });
+      appendReply(SAVE_THIS_FILE_LABEL, { text: ACCOUNT_WHY_SENTENCE });
+    };
     window.addEventListener("onyx:fox-open", onOpen);
     window.addEventListener("onyx:fox-ask", onAsk);
     window.addEventListener("onyx:fox-fix", onFix);
     window.addEventListener("onyx:fox-explain", onExplain);
+    window.addEventListener("onyx:fox-save-file", onSaveFile);
     window.addEventListener(DOC_INTAKE_EVENT, onIntake);
     window.addEventListener(FOX_THREAD_LINE_EVENT, onThreadLine);
     return () => {
@@ -1391,6 +1407,7 @@ export function AlwaysOnFox({
       window.removeEventListener("onyx:fox-ask", onAsk);
       window.removeEventListener("onyx:fox-fix", onFix);
       window.removeEventListener("onyx:fox-explain", onExplain);
+      window.removeEventListener("onyx:fox-save-file", onSaveFile);
       window.removeEventListener(DOC_INTAKE_EVENT, onIntake);
       window.removeEventListener(FOX_THREAD_LINE_EVENT, onThreadLine);
     };
@@ -1933,20 +1950,23 @@ export function AlwaysOnFox({
     const liveDraft = getFoxDraft();
     if (
       action.capture?.field === "create-account" ||
+      action.capture?.field === "login-account" ||
       action.capture?.field === "skip-account" ||
+      action.capture?.field === "save-this-file" ||
       action.capture?.field === "account-channel"
     ) {
       applyCapture(action.capture);
       skipPromptSync.current = true;
-      const next = getFoxDraft();
       const spoken =
-        action.capture.field === "create-account"
-          ? ACCOUNT_CHANNEL_ASK
-          : action.capture.field === "skip-account"
-            ? ACCOUNT_SKIPPED_LINE
-            : action.capture.value === "phone"
-              ? ACCOUNT_PHONE_ASK
-              : ACCOUNT_EMAIL_ASK;
+        action.capture.field === "create-account" || action.capture.field === "save-this-file"
+          ? ACCOUNT_WHY_SENTENCE
+          : action.capture.field === "login-account"
+            ? ACCOUNT_LOGIN_ASK
+            : action.capture.field === "skip-account"
+              ? ACCOUNT_SKIPPED_LINE
+              : action.capture.value === "phone"
+                ? ACCOUNT_PHONE_ASK
+                : ACCOUNT_EMAIL_ASK;
       appendReply(action.label, { text: spoken });
       return;
     }
@@ -2300,7 +2320,13 @@ export function AlwaysOnFox({
     setOpen(true);
     setInput("");
     const accountReply = accountWorkspaceReply(text, getFoxDraft());
-    if (accountReply?.capture?.field === "create-account" || accountReply?.capture?.field === "skip-account" || accountReply?.capture?.field === "account-channel") {
+    if (
+      accountReply?.capture?.field === "create-account" ||
+      accountReply?.capture?.field === "login-account" ||
+      accountReply?.capture?.field === "skip-account" ||
+      accountReply?.capture?.field === "save-this-file" ||
+      accountReply?.capture?.field === "account-channel"
+    ) {
       applyCapture(accountReply.capture);
       skipPromptSync.current = true;
       appendReply(text, { text: accountReply.text });
@@ -2313,14 +2339,11 @@ export function AlwaysOnFox({
         email: accountReply.capture.field === "account-email" ? accountReply.capture.value : undefined,
         phone: accountReply.capture.field === "account-phone" ? accountReply.capture.value : undefined,
       }).then((snapshot) => {
-        const spoken = snapshot
-          ? accountSentCopy({
-              channel: accountReply.capture?.field === "account-phone" ? "phone" : "email",
-              magicLink: snapshot.magicLink,
-              code: snapshot.code,
-            })
-          : accountReply.text;
-        appendReply(text, { text: spoken });
+        const spoken = accountSentCopy({
+          channel: accountReply.capture?.field === "account-phone" ? "phone" : "email",
+        });
+        void snapshot;
+        appendReply(text, { text: foxLineLeaksAccountSecret(spoken) ? ACCOUNT_EMAIL_ASK : spoken });
       });
       return;
     }
@@ -2561,7 +2584,7 @@ export function AlwaysOnFox({
               window.dispatchEvent(new Event(FOX_KEYBOARD_EVENT));
             }}
             onBlur={onComposerBlur}
-            placeholder=""
+            placeholder={composerPlaceholderForAccount(draft)}
             inputMode={composerMode}
             autoFocus={needsTyping}
             autoComplete="off"

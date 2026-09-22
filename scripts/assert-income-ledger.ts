@@ -60,6 +60,7 @@ import {
 } from "../components/fox/fileWrite";
 import type { ExtractClass, FoxIntakeDraft, FoxMessage } from "../components/fox/types";
 import { leftoverUseThisOnOlderTurns, sealStoredFoxThread } from "../components/fox/liveCoupon";
+import { withLinkedAccount } from "../components/fox/account";
 import { applyProceedMotion, MOTION_COPY } from "../components/fox/motion";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -1136,8 +1137,8 @@ async function main() {
     ["Proceed", "Not yet", "Upload more"],
   );
 
-  const goldQueued = applyProceedMotion({ ...leftoverReady, emailSkipped: true });
-  const goldProceed = workspaceReply("Proceed", { ...leftoverReady, emailSkipped: true });
+  const goldQueued = applyProceedMotion(withLinkedAccount({ ...leftoverReady, emailSkipped: true }));
+  const goldProceed = workspaceReply("Proceed", withLinkedAccount({ ...leftoverReady, emailSkipped: true }));
   assert.equal(goldQueued.motion, "in_queue", "gold close Proceed writes in_queue");
   assert.equal(goldProceed?.text, MOTION_COPY.in_queue);
   assert.equal(MOTION_COPY.in_queue, "ONYX has this for review. I’m still here.");

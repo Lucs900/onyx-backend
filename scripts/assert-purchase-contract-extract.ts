@@ -28,6 +28,7 @@ import {
   resolveProposal,
 } from "../components/fox/completeness";
 import { rateflowClientBodyFromDraft, rateflowBlockedReason, searchedKeyFor } from "../lib/rateflow/fromDraft";
+import { withLinkedAccount } from "../components/fox/account";
 import { applyLooksRightMotion, applyNotYetMotion, applyProceedMotion } from "../components/fox/motion";
 import { replyToMessage } from "../components/fox/script";
 import { applyCapture, applyExtractWrite, emptyDraft, getFoxDraft, loadIntakeDraft, receiveDocument } from "../components/fox/store";
@@ -435,14 +436,14 @@ async function main() {
     ),
   );
 
-  const proceeded = applyProceedMotion({
+  const proceeded = applyProceedMotion(withLinkedAccount({
     ...used,
     emailSkipped: false,
     contact: {
       ...used.contact,
       email: { field: "email", value: "", source: "client", confirmed: false },
     },
-  });
+  }));
   assert.equal(proceeded.motion, "in_queue");
   assert.equal(proceeded.nextActor, "ONYX");
   assert.equal(proceeded.pendingFinish, undefined);
@@ -1069,14 +1070,14 @@ async function main() {
     const named = clipperFinishAsk.text.match(/Still useful:\s*(.+?)\s*Skip is fine/)?.[1] ?? "";
     assert.ok(named.split(/,| and /).filter(Boolean).length <= 3, named);
   }
-  const clipperProceed = applyProceedMotion({
+  const clipperProceed = applyProceedMotion(withLinkedAccount({
     ...clipperAfterReturn,
     emailSkipped: false,
     contact: {
       ...clipperLooks.contact,
       email: { field: "email", value: "", source: "client", confirmed: false },
     },
-  });
+  }));
   assert.equal(clipperProceed.motion, "in_queue");
   assert.equal(clipperProceed.nextActor, "ONYX");
   assert.equal(clipperProceed.pendingFinish, undefined);
