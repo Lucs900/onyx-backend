@@ -68,6 +68,10 @@
   padding-top: 10px;
 }
 
+.fox-bar__strip--account {
+  padding-top: 0;
+}
+
 .fox-bar__desk:hover {
   border-color: var(--fox-hairline-hover);
 }

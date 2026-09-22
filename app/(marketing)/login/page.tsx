@@ -1,28 +1,24 @@
-import { MarketingArticle } from "@/components/MarketingArticle";
-import { ACR_START_HREF, LOAN_START_HREF } from "@/components/products/startPath";
+import { LoginResume } from "@/components/fox/LoginResume";
 import type { Metadata } from "next";
-import Link from "next/link";
+import { Suspense } from "react";
 
 export const metadata: Metadata = {
   title: "Log in — ONYX",
-  description: "Returning-client login is not in this preview.",
+  description: "Email link or phone code. Same File. Not a second desk.",
 };
 
 export default function LoginPage() {
   return (
-    <MarketingArticle eyebrow="Log in" title="Returning clients come later">
-      <p className="type-body">
-        Login and a member desk are not in this preview. Start a scenario to
-        prepare a draft with Fox.
-      </p>
-      <div className="prose-page__actions">
-        <Link href={ACR_START_HREF} className="btn btn--primary">
-          Start your relationship
-        </Link>
-        <Link href={LOAN_START_HREF} className="btn btn--text">
-          Just need a mortgage
-        </Link>
-      </div>
-    </MarketingArticle>
+    <Suspense
+      fallback={
+        <div className="intake page-pad">
+          <div className="page-inner intake__inner">
+            <p className="type-legal">Loading…</p>
+          </div>
+        </div>
+      }
+    >
+      <LoginResume />
+    </Suspense>
   );
 }

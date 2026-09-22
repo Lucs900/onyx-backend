@@ -609,6 +609,7 @@ import {
   withWhoOnLoanDue,
   writeWhoOnLoan,
 } from "./whoOnLoan";
+import { accountWorkspaceReply } from "./account";
 import {
   SUGGESTED_COBORROWER_NOTE,
   coborrowerExtractCopy,
@@ -7745,6 +7746,8 @@ export function workspaceReply(
 } | null {
   const q = text.trim();
   const lower = q.toLowerCase();
+  const accountNow = accountWorkspaceReply(q, draft);
+  if (accountNow) return accountNow;
   const prompt = workspacePrompt(draft);
   if (asksWhatElseOnReturn(q) && taxReturnPacketSettled(draft) && !inQueueEnding(draft)) {
     return {

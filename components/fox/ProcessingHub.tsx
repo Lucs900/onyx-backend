@@ -9,6 +9,7 @@ import {
   getFoxMessages,
   getServerDraft,
   hydrateFoxDraft,
+  resumeAccountFromQuery,
   sendStaffDeskLine,
   subscribeFoxDraft,
 } from "./store";
@@ -32,9 +33,20 @@ export function ProcessingHub() {
 
   useEffect(() => {
     hydrateFoxDraft();
-    ensureCurrentFileId();
-    setReady(true);
-  }, []);
+    const wanted = (searchParams.get("file") ?? "").trim();
+    void (async () => {
+      if (wanted) {
+        const live = getFoxDraft();
+        if (live.fileId !== wanted) {
+          const loaded = await resumeAccountFromQuery({ fileId: wanted });
+          if (!loaded) ensureCurrentFileId();
+        }
+      } else {
+        ensureCurrentFileId();
+      }
+      setReady(true);
+    })();
+  }, [searchParams]);
 
   if (!ready) {
     return (

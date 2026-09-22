@@ -7,6 +7,7 @@ export const INTAKE_DRAFT_VERSION = 2;
 export const FOX_PANEL_KEY = "onyx.fox.panelOpen";
 export const FOX_LEGAL_KEY = "onyx.fox.sawLegal";
 export const FOX_MESSAGES_KEY = "onyx.fox.messages";
+export const FOX_ACCOUNT_KEY = "onyx.fox.account";
 
 export const FOX_DISCLOSURE =
   "ONYX Fox can assist and prepare. It cannot approve, lock, or commit to lend.";
@@ -274,6 +275,11 @@ export type FoxIntakeDraft = {
   path?: IntakePath;
   /** Stable browser File identity. Minted once; Start over is the only remint. */
   fileId?: string;
+  /** Linked preview account. Same person, same File across browsers. */
+  accountId?: string;
+  accountAsk?: "offer" | "channel" | "email" | "phone" | "sent" | "code";
+  accountChannel?: "email" | "phone";
+  accountSkipped?: boolean;
   productIntent?: ProductIntent;
   jumboPurpose?: JumboPurpose;
   jumboOffered?: boolean;
@@ -804,6 +810,12 @@ export type Capture =
   | { field: "proceed" }
   | { field: "not-yet" }
   | { field: "skip-email" }
+  | { field: "create-account" }
+  | { field: "skip-account" }
+  | { field: "account-channel"; value: "email" | "phone" }
+  | { field: "account-email"; value: string }
+  | { field: "account-phone"; value: string }
+  | { field: "account-code"; value: string }
   | { field: "upload-more" }
   | { field: "correct"; value: string; line?: string }
   | { field: "note"; value: string };

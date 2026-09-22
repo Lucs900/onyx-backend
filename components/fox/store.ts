@@ -7,6 +7,7 @@ import { explorerCreditFromStated } from "./types";
 import { parsePlaceAddress } from "@/lib/places/address";
 import {
   CONFIRMED_STATUS,
+  FOX_ACCOUNT_KEY,
   FOX_MESSAGES_KEY,
   FOX_PANEL_KEY,
   INTAKE_DRAFT_VERSION,
@@ -52,6 +53,7 @@ import {
   restripeGatheringOrReady,
 } from "./motion";
 import { applyStaffDeskSend, type StaffDeskInput } from "./processingHub";
+import { applyAccountCapture } from "./account";
 import { FAILED_READ_NOTE, isUnreadNote } from "@/lib/docs/accept";
 import {
   applyExtractedFields,
@@ -542,6 +544,18 @@ function normalize(value: unknown): FoxIntakeDraft {
       : undefined,
     path: raw.path === "acr" || raw.path === "loan-only" ? raw.path : undefined,
     fileId: readFileId(raw),
+    accountId: typeof raw.accountId === "string" && raw.accountId.trim() ? raw.accountId.trim() : undefined,
+    accountAsk:
+      raw.accountAsk === "offer" ||
+      raw.accountAsk === "channel" ||
+      raw.accountAsk === "email" ||
+      raw.accountAsk === "phone" ||
+      raw.accountAsk === "sent" ||
+      raw.accountAsk === "code"
+        ? raw.accountAsk
+        : undefined,
+    accountChannel: raw.accountChannel === "phone" || raw.accountChannel === "email" ? raw.accountChannel : undefined,
+    accountSkipped: Boolean(raw.accountSkipped) || undefined,
     productIntent: normalizeProductIntent(raw.productIntent),
     jumboPurpose: raw.jumboPurpose === "buy" || raw.jumboPurpose === "refinance"
       ? raw.jumboPurpose
@@ -1191,6 +1205,7 @@ function emit() {
 }
 
 let workspaceEntryKey: string | null = null;
+let accountResumePending = false;
 
 function workspaceEntryToken(path?: IntakePath | null) {
   return path ?? "";
@@ -1315,7 +1330,7 @@ function markWorkspaceEntry(path?: IntakePath | null) {
   hydrated = true;
 }
 
-const PREVIEW_STORAGE_KEYS = [INTAKE_STORAGE_KEY, FOX_MESSAGES_KEY, START_PATH_KEY, FOX_PANEL_KEY];
+const PREVIEW_STORAGE_KEYS = [INTAKE_STORAGE_KEY, FOX_MESSAGES_KEY, START_PATH_KEY, FOX_PANEL_KEY, FOX_ACCOUNT_KEY];
 
 export function clearPreviewWorkspaceStorage() {
   if (typeof window === "undefined") return;
@@ -1381,12 +1396,22 @@ export function resetWorkspaceForEntry(
   return current;
 }
 
+export function beginAccountResume() {
+  accountResumePending = true;
+  hydrated = true;
+}
+
+export function accountResumeIsPending() {
+  return accountResumePending;
+}
+
 /** Resume this browser File. leftover ?fresh=1 must not wipe. */
 export function continueWorkspaceFromEntry(
   path: IntakePath | null,
   intent: ProductIntent | null = null,
   entry?: { fresh?: boolean },
 ) {
+  if (accountResumePending) return current;
   if (!hydrated) hydrateFoxDraft();
   hydrateFoxMessages();
   if (entry?.fresh || homepageFreshEntryPending()) {
@@ -1457,6 +1482,7 @@ function commit(next: FoxIntakeDraft) {
   current = { ...withHelocToolQuote(syncCalculatorDraft(next)), updatedAt: new Date().toISOString() };
   persist(current);
   emit();
+  if (current.accountId || readAccountSession()) persistLinkedAccountFile();
   return current;
 }
 
@@ -1975,6 +2001,7 @@ export function appendFoxThreadLine(
   if (typeof window !== "undefined") {
     window.dispatchEvent(new CustomEvent(FOX_THREAD_LINE_EVENT, { detail: message }));
   }
+  persistLinkedAccountFile();
   return message;
 }
 
@@ -2005,7 +2032,138 @@ export function sendStaffDeskLine(input: StaffDeskInput) {
   }
   commit(applied.draft);
   appendFoxThreadLine(applied.threadLine);
+  persistLinkedAccountFile();
   return { draft: current, threadLine: applied.threadLine };
+}
+
+type AccountSession = { token: string; fileId: string; accountId: string };
+
+function readAccountSession(): AccountSession | undefined {
+  if (typeof window === "undefined") return undefined;
+  try {
+    const raw = window.localStorage.getItem(FOX_ACCOUNT_KEY) || window.sessionStorage.getItem(FOX_ACCOUNT_KEY);
+    if (!raw) return undefined;
+    const parsed = JSON.parse(raw) as AccountSession;
+    if (!parsed?.token || !parsed.fileId) return undefined;
+    return parsed;
+  } catch {
+    return undefined;
+  }
+}
+
+function writeAccountSession(session: AccountSession | undefined) {
+  if (typeof window === "undefined") return;
+  try {
+    if (!session) {
+      window.localStorage.removeItem(FOX_ACCOUNT_KEY);
+      window.sessionStorage.removeItem(FOX_ACCOUNT_KEY);
+      return;
+    }
+    const raw = JSON.stringify(session);
+    window.localStorage.setItem(FOX_ACCOUNT_KEY, raw);
+    window.sessionStorage.setItem(FOX_ACCOUNT_KEY, raw);
+  } catch {
+    // Preview storage can be blocked.
+  }
+}
+
+export function getAccountSession() {
+  return readAccountSession();
+}
+
+export function applyAccountResume(draft: FoxIntakeDraft, messages: FoxMessage[], session?: AccountSession) {
+  accountResumePending = false;
+  current = ensureFileId({ ...draft, workspaceFlow: true });
+  persist(current);
+  persistMigratedMessages(messages);
+  if (session) writeAccountSession(session);
+  hydrated = true;
+  workspaceEntryKey = workspaceEntryToken(current.path);
+  emit();
+  return current;
+}
+
+export async function createLinkedAccount(input: { email?: string; phone?: string }) {
+  const draft = ensureFileId(current);
+  if (draft !== current) commit(draft);
+  const response = await fetch("/api/account", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      action: "create",
+      email: input.email,
+      phone: input.phone,
+      draft,
+      messages: getFoxMessages(),
+    }),
+  });
+  if (!response.ok) return undefined;
+  const snapshot = (await response.json()) as {
+    fileId: string;
+    accountId: string;
+    magicLink: string;
+    code?: string;
+    draft: FoxIntakeDraft;
+    messages: FoxMessage[];
+  };
+  const token = new URL(snapshot.magicLink, "https://onyx.local").searchParams.get("account") || "";
+  if (token) writeAccountSession({ token, fileId: snapshot.fileId, accountId: snapshot.accountId });
+  commit({
+    ...current,
+    fileId: snapshot.fileId,
+    accountId: snapshot.accountId,
+    accountAsk: "sent",
+    accountSkipped: false,
+    accountChannel: input.phone ? "phone" : "email",
+  });
+  persistLinkedAccountFile();
+  return snapshot;
+}
+
+export async function resumeAccountFromQuery(input: { token?: string; code?: string; fileId?: string }) {
+  const query = input.token
+    ? `account=${encodeURIComponent(input.token)}`
+    : input.code
+      ? `code=${encodeURIComponent(input.code)}`
+      : input.fileId
+        ? `file=${encodeURIComponent(input.fileId)}`
+        : "";
+  if (!query) return undefined;
+  const response = await fetch(`/api/account?${query}`);
+  if (!response.ok) return undefined;
+  const snapshot = (await response.json()) as {
+    fileId: string;
+    accountId: string;
+    magicLink: string;
+    code?: string;
+    draft: FoxIntakeDraft;
+    messages: FoxMessage[];
+  };
+  const token = new URL(snapshot.magicLink, "https://onyx.local").searchParams.get("account") || "";
+  applyAccountResume(snapshot.draft, snapshot.messages, token
+    ? { token, fileId: snapshot.fileId, accountId: snapshot.accountId }
+    : undefined);
+  return snapshot;
+}
+
+let persistAccountTimer: ReturnType<typeof setTimeout> | undefined;
+
+export function persistLinkedAccountFile() {
+  const session = readAccountSession();
+  if (!session?.token || typeof window === "undefined") return;
+  if (persistAccountTimer) window.clearTimeout(persistAccountTimer);
+  persistAccountTimer = window.setTimeout(() => {
+    void fetch("/api/account", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        action: "persist",
+        token: session.token,
+        draft: current,
+        messages: getFoxMessages(),
+      }),
+    }).catch(() => undefined);
+  }, 200);
 }
 
 export function nudgeReview(input: { force?: boolean; now?: Date } = {}) {
@@ -2081,6 +2239,15 @@ export function applyCapture(capture: Capture) {
 }
 
 function applyCaptureBody(capture: Capture) {
+  if (
+    capture.field === "create-account" ||
+    capture.field === "skip-account" ||
+    capture.field === "account-channel" ||
+    capture.field === "account-email" ||
+    capture.field === "account-phone"
+  ) {
+    return commit(applyAccountCapture(current, capture));
+  }
   if (capture.field === "fullName" || capture.field === "email" || capture.field === "phone" || capture.field === "preferredContact") {
     if (capture.field === "email" && current.workspaceFlow && (current.pendingFinish || current.sampleAccepted)) {
       if (current.pendingFinish && looksLikeEmail(capture.value)) {

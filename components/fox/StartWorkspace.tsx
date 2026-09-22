@@ -7,12 +7,14 @@ import { AlwaysOnFox } from "./AlwaysOnFox";
 import { FilePreview } from "./FilePreview";
 import {
   applyPreviewMotionControls,
+  beginAccountResume,
   continueWorkspaceFromEntry,
   getFoxDraft,
   getServerDraft,
   hydrateFoxDraft,
   prepareWorkspaceDraft,
   resetWorkspaceForEntry,
+  resumeAccountFromQuery,
   setDraftPath,
   setDraftProductIntent,
   shouldResumeWorkspaceEntry,
@@ -25,6 +27,8 @@ export function StartWorkspace() {
   const searchParams = useSearchParams();
   const queryPath = pathFromQuery(searchParams.get("path"));
   const homepageFresh = searchParams.get("fresh") === "1";
+  const accountToken = (searchParams.get("account") ?? "").trim();
+  const accountCode = (searchParams.get("code") ?? "").trim();
   if (typeof window !== "undefined") hydrateFoxDraft();
   if (queryPath) rememberStartPath(queryPath);
   const startPath =
@@ -40,12 +44,23 @@ export function StartWorkspace() {
   const booted = useRef(false);
   if (typeof window !== "undefined" && !booted.current) {
     booted.current = true;
-    continueWorkspaceFromEntry(startPath, startIntent, { fresh: homepageFresh });
+    if (accountToken || accountCode) {
+      beginAccountResume();
+    } else {
+      continueWorkspaceFromEntry(startPath, startIntent, { fresh: homepageFresh });
+    }
   }
   const draft = useSyncExternalStore(subscribeFoxDraft, getFoxDraft, getServerDraft);
 
   const lastPath = useRef(startPath);
   const previewSuggestKey = useRef("");
+  useEffect(() => {
+    if (!accountToken && !accountCode) return;
+    void resumeAccountFromQuery({
+      token: accountToken || undefined,
+      code: accountCode || undefined,
+    });
+  }, [accountCode, accountToken]);
   useEffect(() => {
     if (!homepageFresh) return;
     const next = new URLSearchParams(searchParams.toString());

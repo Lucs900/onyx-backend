@@ -98,10 +98,12 @@ import {
   parseVolunteeredAddress,
 } from "./propertyType";
 import {
+  accountResumeIsPending,
   applyCapture,
   applyPreviewMotionControls,
   beginWorkspaceFromHero,
   continueWorkspaceFromEntry,
+  createLinkedAccount,
   emptyDraft,
   FOX_THREAD_LINE_EVENT,
   getFoxDraft,
@@ -111,6 +113,7 @@ import {
   loadIntakeDraft,
   markMissingAsked,
   nudgeReview,
+  resumeAccountFromQuery,
   setDraftPath,
   setDraftScenario,
   setFoxMessages,
@@ -119,6 +122,16 @@ import {
   startOverWorkspace,
   subscribeFoxDraft,
 } from "./store";
+import {
+  ACCOUNT_CHANNEL_ASK,
+  ACCOUNT_CODE_ASK,
+  ACCOUNT_EMAIL_ASK,
+  ACCOUNT_PHONE_ASK,
+  ACCOUNT_SKIPPED_LINE,
+  accountSentCopy,
+  accountSideActions,
+  accountWorkspaceReply,
+} from "./account";
 import {
   caretAfterMoneyFormat,
   confirmedMoneyText,
@@ -261,6 +274,9 @@ function seedWorkspaceMessages(
   hydrateFoxDraft();
   const stored = getFoxMessages();
   const live = getFoxDraft();
+  if (accountResumeIsPending()) {
+    return stored;
+  }
   if (shouldResumeWorkspaceEntry(live, stored)) {
     if (stored.length) {
       const last = stored[stored.length - 1];
@@ -782,6 +798,33 @@ function FoxLiveStrip({
           </button>
         ),
       )}
+    </div>
+  );
+}
+
+function FoxAccountStrip({
+  draft,
+  onAction,
+}: {
+  draft: FoxIntakeDraft;
+  onAction: (action: FoxAction) => void;
+}) {
+  const actions = accountSideActions(draft);
+  if (!actions.length) return null;
+  return (
+    <div className="fox-bar__strip fox-bar__strip--account" role="toolbar" aria-label="Account">
+      {actions.map((action) => (
+        <button
+          key={action.id}
+          type="button"
+          className={
+            action.quiet ? "btn btn--secondary fox-chip is-quiet" : "btn btn--secondary fox-chip"
+          }
+          onClick={() => onAction(action)}
+        >
+          {action.label}
+        </button>
+      ))}
     </div>
   );
 }
@@ -1888,6 +1931,25 @@ export function AlwaysOnFox({
 
   const runAction = (action: FoxAction) => {
     const liveDraft = getFoxDraft();
+    if (
+      action.capture?.field === "create-account" ||
+      action.capture?.field === "skip-account" ||
+      action.capture?.field === "account-channel"
+    ) {
+      applyCapture(action.capture);
+      skipPromptSync.current = true;
+      const next = getFoxDraft();
+      const spoken =
+        action.capture.field === "create-account"
+          ? ACCOUNT_CHANNEL_ASK
+          : action.capture.field === "skip-account"
+            ? ACCOUNT_SKIPPED_LINE
+            : action.capture.value === "phone"
+              ? ACCOUNT_PHONE_ASK
+              : ACCOUNT_EMAIL_ASK;
+      appendReply(action.label, { text: spoken });
+      return;
+    }
     const stripIds = new Set(deskStripActions(getFoxMessages(), liveDraft).map((item) => item.id));
     if (
       (action.id === "accept-proposal" || action.id === "change-proposal") &&
@@ -2237,6 +2299,42 @@ export function AlwaysOnFox({
     }
     setOpen(true);
     setInput("");
+    const accountReply = accountWorkspaceReply(text, getFoxDraft());
+    if (accountReply?.capture?.field === "create-account" || accountReply?.capture?.field === "skip-account" || accountReply?.capture?.field === "account-channel") {
+      applyCapture(accountReply.capture);
+      skipPromptSync.current = true;
+      appendReply(text, { text: accountReply.text });
+      return;
+    }
+    if (accountReply?.capture?.field === "account-email" || accountReply?.capture?.field === "account-phone") {
+      skipPromptSync.current = true;
+      applyCapture(accountReply.capture);
+      void createLinkedAccount({
+        email: accountReply.capture.field === "account-email" ? accountReply.capture.value : undefined,
+        phone: accountReply.capture.field === "account-phone" ? accountReply.capture.value : undefined,
+      }).then((snapshot) => {
+        const spoken = snapshot
+          ? accountSentCopy({
+              channel: accountReply.capture?.field === "account-phone" ? "phone" : "email",
+              magicLink: snapshot.magicLink,
+              code: snapshot.code,
+            })
+          : accountReply.text;
+        appendReply(text, { text: spoken });
+      });
+      return;
+    }
+    if (accountReply?.capture?.field === "account-code") {
+      skipPromptSync.current = true;
+      void resumeAccountFromQuery({ code: accountReply.capture.value }).then((snapshot) => {
+        if (!snapshot) {
+          appendReply(text, { text: ACCOUNT_CODE_ASK });
+          return;
+        }
+        setMessages(getFoxMessages());
+      });
+      return;
+    }
     if (
       isStart &&
       (lookupWait === "places" ||
@@ -2442,6 +2540,7 @@ export function AlwaysOnFox({
         onPaste={onComposerFilePaste}
       >
         <FoxLiveStrip messages={messages} draft={draft} onAction={runAction} />
+        <FoxAccountStrip draft={draft} onAction={runAction} />
         <div className="fox-bar__desk-row">
           <span className={lookupWait ? "fox-bar__mark is-waiting" : "fox-bar__mark"}>
             <AdvisorMark size={20} />
