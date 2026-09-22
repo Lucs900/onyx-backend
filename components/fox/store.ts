@@ -2146,7 +2146,7 @@ export async function resumeAccountFromQuery(input: { token?: string; code?: str
   return snapshot;
 }
 
-let persistAccountTimer: ReturnType<typeof setTimeout> | undefined;
+let persistAccountTimer: ReturnType<typeof setTimeout> | number | undefined;
 
 export function persistLinkedAccountFile() {
   const session = readAccountSession();
