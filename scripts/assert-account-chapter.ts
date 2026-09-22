@@ -28,6 +28,7 @@ import {
   ACCOUNT_EMAIL_ASK,
   ACCOUNT_EMAIL_SENT,
   ACCOUNT_LOGIN_ASK,
+  ACCOUNT_SEND_FAILED,
   ACCOUNT_PHONE_SENT,
   ACCOUNT_SAVE_ASK,
   ACCOUNT_SKIPPED_LINE,
@@ -141,7 +142,9 @@ async function main() {
   const emailAsk = workspaceReply("Email", afterCreate);
   assert.equal(emailAsk?.text, "Where should I send the sign-in link?");
   assert.equal(emailAsk?.text, ACCOUNT_EMAIL_ASK);
-  assert.deepEqual(labels(accountSideActions(afterEmail)), [NOT_NOW_LABEL]);
+  assert.deepEqual(labels(accountSideActions(afterEmail)), ["Phone", NOT_NOW_LABEL]);
+  assert.ok(labels(accountSideActions(afterEmail)).includes("Phone"));
+  assert.notEqual(labels(accountSideActions(afterEmail)), [NOT_NOW_LABEL]);
   const emailTyped = workspaceReply("borrower@example.com", afterEmail);
   assert.equal(emailTyped?.capture?.field, "account-email");
   assert.equal(emailTyped?.text, ACCOUNT_EMAIL_SENT);
@@ -197,8 +200,10 @@ async function main() {
   assert.equal(typeof sendDry.sent, "boolean");
   if (!process.env.RESEND_API_KEY) {
     assert.equal(sendDry.sent, false);
-    assert.ok(sendDry.reason === "no_resend" || sendDry.reason === "no_provider");
+    assert.ok(sendDry.reason === "no_resend" || sendDry.reason === "no_provider" || sendDry.reason === "bad_from");
   }
+  assert.ok(!foxLineLeaksAccountSecret(ACCOUNT_SEND_FAILED));
+  assert.doesNotMatch(ACCOUNT_SEND_FAILED, /check your email/i);
 
   const heloc = houseReady(
     writeHelocLine(writeFirstLien(writePurchasePrice(opened.draft, 500_000), 400_000), 50_000),

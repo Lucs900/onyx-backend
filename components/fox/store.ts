@@ -2104,9 +2104,21 @@ export async function createLinkedAccount(input: { email?: string; phone?: strin
     accountId: string;
     magicLink: string;
     code?: string;
+    sent?: boolean;
+    sendReason?: string | null;
     draft: FoxIntakeDraft;
     messages: FoxMessage[];
   };
+  if (!snapshot.sent) {
+    commit({
+      ...current,
+      fileId: snapshot.fileId || current.fileId,
+      accountAsk: input.phone ? "phone" : "email",
+      accountSkipped: false,
+      accountChannel: input.phone ? "phone" : "email",
+    });
+    return snapshot;
+  }
   const token = new URL(snapshot.magicLink, "https://onyx.local").searchParams.get("account") || "";
   if (token) writeAccountSession({ token, fileId: snapshot.fileId, accountId: snapshot.accountId });
   const linked = {

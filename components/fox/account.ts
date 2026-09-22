@@ -36,6 +36,7 @@ export const ACCOUNT_SAVE_ASK =
   "Save this File so it isn’t only this browser. Then I can send it to review.";
 export const ACCOUNT_EMAIL_SENT = "Check your email for a link to this File. Open it on any browser.";
 export const ACCOUNT_PHONE_SENT = "I sent a code to your phone. Enter it here when it arrives.";
+export const ACCOUNT_SEND_FAILED = "I couldn’t send that. Try again, or pick Phone.";
 
 export function accountAskOf(draft: FoxIntakeDraft): AccountAsk | undefined {
   return draft.accountAsk;
@@ -79,8 +80,21 @@ export function accountSideActions(draft: FoxIntakeDraft): FoxAction[] {
       },
     ];
   }
-  if (ask === "email" || ask === "phone" || ask === "code") {
+  if (ask === "email") {
     return [
+      { id: "account-phone", label: "Phone", event: "bubble", capture: { field: "account-channel", value: "phone" } },
+      {
+        id: "skip-account",
+        label: NOT_NOW_LABEL,
+        event: "bubble",
+        capture: { field: "skip-account" },
+        quiet: true,
+      },
+    ];
+  }
+  if (ask === "phone" || ask === "code") {
+    return [
+      { id: "account-email", label: "Email", event: "bubble", capture: { field: "account-channel", value: "email" } },
       {
         id: "skip-account",
         label: NOT_NOW_LABEL,

@@ -7,7 +7,14 @@ import { magicLinkFor } from "./core";
 export type AccountSendResult = {
   sent: boolean;
   provider?: "resend" | "twilio";
-  reason?: "no_provider" | "no_resend" | "no_twilio" | "resend_failed" | "twilio_failed" | "missing_dest";
+  reason?:
+    | "no_provider"
+    | "no_resend"
+    | "no_twilio"
+    | "bad_from"
+    | "resend_failed"
+    | "twilio_failed"
+    | "missing_dest";
 };
 
 export function accountOrigin(request?: Request) {
@@ -33,10 +40,18 @@ export function absoluteMagicLink(token: string, origin: string) {
   return `${origin}${path}`;
 }
 
+export const ONYX_MAIL_FROM = "ONYX <james.b@example.com>";
+
+export function onyxMailFrom(value: string) {
+  return /@(?:onyxlending|onyxdirect)\.com\b/i.test(value);
+}
+
 export function accountMailEnv() {
+  const resendFrom = process.env.RESEND_FROM?.trim() || ONYX_MAIL_FROM;
   return {
     resendKey: process.env.RESEND_API_KEY?.trim() || "",
-    resendFrom: process.env.RESEND_FROM?.trim() || "ONYX <beth.t@example.com>",
+    resendFrom,
+    fromOk: onyxMailFrom(resendFrom),
     twilioSid: process.env.TWILIO_ACCOUNT_SID?.trim() || "",
     twilioToken: process.env.TWILIO_AUTH_TOKEN?.trim() || "",
     twilioFrom: process.env.TWILIO_FROM?.trim() || "",
@@ -62,8 +77,9 @@ export async function sendAccountChannel(input: {
 }
 
 async function sendResendEmail(to: string, link: string): Promise<AccountSendResult> {
-  const { resendKey, resendFrom } = accountMailEnv();
+  const { resendKey, resendFrom, fromOk } = accountMailEnv();
   if (!resendKey) return { sent: false, reason: "no_resend" };
+  if (!fromOk) return { sent: false, reason: "bad_from" };
   try {
     const response = await fetch("https://api.resend.com/emails", {
       method: "POST",

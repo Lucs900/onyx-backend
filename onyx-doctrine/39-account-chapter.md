@@ -14,7 +14,8 @@ After hub v0 spine, the File must follow the person across browsers via account 
 - Log in Fox (exact): “Welcome back. Email or phone for a code?” Same File.
 - Email magic link or phone code. Same person, same `file_id` on a second browser. Homepage `/start` resumes that File.
 - **Never print the token, `/start?account=…`, or the raw code in the borrower thread.** Fox says check your email / enter the code.
-- Real send: Resend (`RESEND_API_KEY`, `RESEND_FROM`) or Twilio (`TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM`). Preview without those env vars still creates the File and never leaks the URL.
+- Real send: Resend (`RESEND_API_KEY`, `RESEND_FROM` on an ONYX domain) or Twilio. Fox says check your email **only when send succeeded**. If the mailer is dark or fails, Fox says it couldn’t send — never a token, never a lie.
+- After Email, chips are **Phone · Not now**. Composer is the address. Not now is not the only chip.
 - Hub opens that `file_id`. foxLine already on the File is the next line when they return.
 - Proceed with no account is **not** `in_queue`. One save ask + pad **Save this File**. With an account, Proceed still reaches `in_queue`.
 - Not now still allowed (browser sketch).

@@ -4,7 +4,7 @@ import {
   persistAccountRecord,
   snapshotOf,
 } from "@/lib/account/core";
-import { accountOrigin, sendAccountChannel } from "@/lib/account/send";
+import { accountMailEnv, accountOrigin, sendAccountChannel } from "@/lib/account/send";
 import {
   loadAccountByCode,
   loadAccountByFileId,
@@ -26,6 +26,14 @@ function asMessages(value: unknown): FoxMessage[] {
 
 export async function GET(request: Request) {
   const url = new URL(request.url);
+  if (url.searchParams.get("mailer") === "1") {
+    const env = accountMailEnv();
+    return NextResponse.json({
+      emailReady: Boolean(env.resendKey && env.fromOk),
+      fromOk: env.fromOk,
+      phoneReady: Boolean(env.twilioSid && env.twilioToken && env.twilioFrom),
+    });
+  }
   const token = url.searchParams.get("account")?.trim() || "";
   const code = url.searchParams.get("code")?.trim() || "";
   const fileId = url.searchParams.get("file")?.trim() || "";
@@ -101,6 +109,7 @@ export async function POST(request: Request) {
       ...snapshotOf(linked),
       sent: sent.sent,
       sendProvider: sent.provider ?? null,
+      sendReason: sent.reason ?? null,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "create_failed";

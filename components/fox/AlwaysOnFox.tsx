@@ -128,6 +128,7 @@ import {
   ACCOUNT_LOGIN_ASK,
   ACCOUNT_PHONE_ASK,
   ACCOUNT_SKIPPED_LINE,
+  ACCOUNT_SEND_FAILED,
   ACCOUNT_WHY_SENTENCE,
   SAVE_THIS_FILE_LABEL,
   accountSentCopy,
@@ -2339,11 +2340,11 @@ export function AlwaysOnFox({
         email: accountReply.capture.field === "account-email" ? accountReply.capture.value : undefined,
         phone: accountReply.capture.field === "account-phone" ? accountReply.capture.value : undefined,
       }).then((snapshot) => {
-        const spoken = accountSentCopy({
-          channel: accountReply.capture?.field === "account-phone" ? "phone" : "email",
-        });
-        void snapshot;
-        appendReply(text, { text: foxLineLeaksAccountSecret(spoken) ? ACCOUNT_EMAIL_ASK : spoken });
+        const channel = accountReply.capture?.field === "account-phone" ? "phone" : "email";
+        const spoken = snapshot?.sent
+          ? accountSentCopy({ channel })
+          : ACCOUNT_SEND_FAILED;
+        appendReply(text, { text: foxLineLeaksAccountSecret(spoken) ? ACCOUNT_SEND_FAILED : spoken });
       });
       return;
     }
