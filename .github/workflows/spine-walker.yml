@@ -41,6 +41,7 @@ on:
       - "scripts/assert-skip-on-other-person-name.ts"
       - "scripts/assert-processing-hub-v0.ts"
       - "scripts/assert-account-chapter.ts"
+      - "scripts/assert-letter-bypass-preview.sh"
       - "scripts/assert-live-strip.ts"
       - "scripts/assert-use-this-employment.ts"
       - ".github/workflows/spine-walker.yml"
@@ -86,6 +87,7 @@ on:
       - "scripts/assert-skip-on-other-person-name.ts"
       - "scripts/assert-processing-hub-v0.ts"
       - "scripts/assert-account-chapter.ts"
+      - "scripts/assert-letter-bypass-preview.sh"
       - "scripts/assert-live-strip.ts"
       - "scripts/assert-use-this-employment.ts"
       - ".github/workflows/spine-walker.yml"
@@ -192,6 +194,7 @@ jobs:
                     "https://onyx-backend-git-cursor-live-rateflow-preview-bc93-onyx-direct.vercel.app/start?path=acr";
                   core.info(`Preview ready at ${origin}; walking alias ${start}`);
                   core.exportVariable("SPINE_WALKER_URL", start);
+                  core.exportVariable("UNIQUE_ORIGIN", origin);
                   return;
                 }
               }
@@ -213,6 +216,7 @@ jobs:
                   "https://onyx-backend-git-cursor-live-rateflow-preview-bc93-onyx-direct.vercel.app/start?path=acr";
                 core.info(`Preview ready from check ${checkOrigin}; walking alias ${start}`);
                 core.exportVariable("SPINE_WALKER_URL", start);
+                core.exportVariable("UNIQUE_ORIGIN", checkOrigin);
                 return;
               }
               await new Promise((resolve) => setTimeout(resolve, 10000));
@@ -288,6 +292,11 @@ jobs:
               core.info("OIDC token still redirected to Vercel SSO — walker will treat this as SSO, not a product fail");
             }
             core.exportVariable("VERCEL_OIDC_TOKEN", picked.token);
+      - name: Prove letter URL opens without Vercel login
+        run: bash scripts/assert-letter-bypass-preview.sh
+        env:
+          LETTER_BYPASS_ORIGIN: ${{ env.UNIQUE_ORIGIN }}
+          VERCEL_OIDC_TOKEN: ${{ env.VERCEL_OIDC_TOKEN }}
       - name: Harbor leftovers and browser
         run: SPINE_WALKER_LEFTOVERS_ONLY=1 bash scripts/assert-spine-walker.sh
         env:

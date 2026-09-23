@@ -38,14 +38,25 @@ export async function GET(request: Request) {
     const sample = origin ? letterMagicLink("probe", origin) : "";
     const letterHasBypass = letterHasProtectionBypass(sample);
     let letterOpensWithoutVercelLogin = false;
+    let probeStatus = 0;
+    let probeLocationHost = "";
     if (letterHasBypass && sample.startsWith("http")) {
       try {
-        const probe = await fetch(sample, { redirect: "manual" });
+        const probe = await fetch(sample, {
+          redirect: "manual",
+          signal: AbortSignal.timeout(8000),
+        });
+        probeStatus = probe.status;
         const loc = probe.headers.get("location") || "";
+        try {
+          probeLocationHost = loc ? new URL(loc).hostname : "";
+        } catch {
+          probeLocationHost = loc ? "unparsed" : "";
+        }
         letterOpensWithoutVercelLogin =
           probe.status !== 401 &&
           probe.status !== 403 &&
-          !/vercel\.com\/login/i.test(loc);
+          !/vercel\.com$/i.test(probeLocationHost);
       } catch {
         letterOpensWithoutVercelLogin = false;
       }
@@ -56,6 +67,8 @@ export async function GET(request: Request) {
       phoneReady: Boolean(env.twilioSid && env.twilioToken && env.twilioFrom),
       letterHasBypass,
       letterOpensWithoutVercelLogin,
+      probeStatus,
+      probeLocationHost,
     });
   }
   const token = url.searchParams.get("account")?.trim() || "";
