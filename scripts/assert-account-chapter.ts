@@ -56,7 +56,14 @@ import {
 } from "../components/fox/processingHub";
 import { skipWhoOnLoanName, whoOnLoanNameWasSkipped } from "../components/fox/whoOnLoan";
 import { memoryAccountStore, resumeFromStore } from "../lib/account/core";
-import { absoluteMagicLink, accountOrigin, sendAccountChannel } from "../lib/account/send";
+import {
+  PROTECTION_BYPASS_QUERY,
+  absoluteMagicLink,
+  accountOrigin,
+  letterHasProtectionBypass,
+  letterMagicLink,
+  sendAccountChannel,
+} from "../lib/account/send";
 import type { FoxIntakeDraft, FoxMessage } from "../components/fox/types";
 
 function labels(actions: { label: string }[] | undefined) {
@@ -212,6 +219,29 @@ async function main() {
   assert.doesNotMatch(fromOrigin, /onyx-backend-ten/);
   assert.doesNotMatch(absoluteMagicLink("tok", fromOrigin), /onyx-backend-ten/);
   assert.match(absoluteMagicLink("tok", fromOrigin), /^https:\/\/onyx-backend-cgbg9w71v-onyx-direct\.vercel\.app\/start\?account=tok$/);
+  const prevBypass = process.env.VERCEL_AUTOMATION_BYPASS_SECRET;
+  const prevBypassAlt = process.env.VERCEL_PROTECTION_BYPASS_SECRET;
+  delete process.env.VERCEL_PROTECTION_BYPASS_SECRET;
+  process.env.VERCEL_AUTOMATION_BYPASS_SECRET = "leftover-bypass-secret";
+  const letter = letterMagicLink("tok", fromOrigin);
+  assert.ok(letterHasProtectionBypass(letter));
+  assert.match(letter, new RegExp(`[?&]${PROTECTION_BYPASS_QUERY}=leftover-bypass-secret`));
+  assert.doesNotMatch(absoluteMagicLink("tok", fromOrigin), /x-vercel-protection-bypass/);
+  assert.equal(opened.snapshot.magicLink, `/start?account=${opened.record.token}`);
+  assert.doesNotMatch(opened.snapshot.magicLink, /x-vercel-protection-bypass/);
+  assert.ok(foxLineLeaksAccountSecret(letter));
+  assert.ok(foxLineLeaksAccountSecret(`Open ${letter}`));
+  assert.ok(!foxLineLeaksAccountSecret(ACCOUNT_EMAIL_SENT));
+  assert.ok(!foxLineLeaksAccountSecret(spokenEmail));
+  assert.doesNotMatch(letter, /onyx-backend-ten/);
+  delete process.env.VERCEL_AUTOMATION_BYPASS_SECRET;
+  const letterDark = letterMagicLink("tok", fromOrigin);
+  assert.equal(letterDark, absoluteMagicLink("tok", fromOrigin));
+  assert.ok(!letterHasProtectionBypass(letterDark));
+  if (prevBypass === undefined) delete process.env.VERCEL_AUTOMATION_BYPASS_SECRET;
+  else process.env.VERCEL_AUTOMATION_BYPASS_SECRET = prevBypass;
+  if (prevBypassAlt === undefined) delete process.env.VERCEL_PROTECTION_BYPASS_SECRET;
+  else process.env.VERCEL_PROTECTION_BYPASS_SECRET = prevBypassAlt;
   if (prevApp === undefined) delete process.env.NEXT_PUBLIC_APP_URL;
   else process.env.NEXT_PUBLIC_APP_URL = prevApp;
   if (prevProd === undefined) delete process.env.VERCEL_PROJECT_PRODUCTION_URL;

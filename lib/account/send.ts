@@ -62,6 +62,34 @@ export function absoluteMagicLink(token: string, origin: string) {
   return `${origin}${path}`;
 }
 
+export const PROTECTION_BYPASS_QUERY = "x-vercel-protection-bypass";
+
+export function protectionBypassSecret() {
+  return (
+    process.env.VERCEL_AUTOMATION_BYPASS_SECRET?.trim() ||
+    process.env.VERCEL_PROTECTION_BYPASS_SECRET?.trim() ||
+    ""
+  );
+}
+
+/** Letter URL only. Never speak this in the borrower thread. */
+export function letterMagicLink(token: string, origin: string) {
+  const base = absoluteMagicLink(token, origin);
+  const secret = protectionBypassSecret();
+  if (!secret || !/^https?:\/\//i.test(base)) return base;
+  const url = new URL(base);
+  url.searchParams.set(PROTECTION_BYPASS_QUERY, secret);
+  return url.toString();
+}
+
+export function letterHasProtectionBypass(link: string) {
+  try {
+    return Boolean(new URL(link).searchParams.get(PROTECTION_BYPASS_QUERY));
+  } catch {
+    return /[?&]x-vercel-protection-bypass=/i.test(link);
+  }
+}
+
 export const ONYX_MAIL_FROM = "ONYX <james.b@example.com>";
 
 export function onyxMailFrom(value: string) {
@@ -95,7 +123,7 @@ export async function sendAccountChannel(input: {
   }
   const email = input.email?.trim();
   if (!email) return { sent: false, reason: "missing_dest" };
-  return sendResendEmail(email, absoluteMagicLink(input.token, input.origin || ""));
+  return sendResendEmail(email, letterMagicLink(input.token, input.origin || ""));
 }
 
 async function sendResendEmail(to: string, link: string): Promise<AccountSendResult> {

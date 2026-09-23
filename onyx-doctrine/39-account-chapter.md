@@ -14,7 +14,8 @@ After hub v0 spine, the File must follow the person across browsers via account 
 - Log in Fox (exact): “Welcome back. Email or phone for a code?” Same File.
 - Email magic link or phone code. Same person, same `file_id` on a second browser. Homepage `/start` resumes that File.
 - Magic-link origin is the host that handled create (request Origin / Host). Never `NEXT_PUBLIC_APP_URL`, `VERCEL_PROJECT_PRODUCTION_URL`, or `onyx-backend-ten` over that request.
-- **Never print the token, `/start?account=…`, or the raw code in the borrower thread.** Fox says check your email / enter the code.
+- Desk-letter URL (email only) appends `x-vercel-protection-bypass` from `VERCEL_AUTOMATION_BYPASS_SECRET` so InPrivate opens `/start?account=…` with no Vercel account. Snapshot `magicLink` stays `/start?account=` without the query. Never speak the query, the secret, or the token.
+- **Never print the token, `/start?account=…`, the bypass query, or the raw code in the borrower thread.** Fox says check your email / enter the code.
 - Real send: Resend (`RESEND_API_KEY`, `RESEND_FROM` on an ONYX domain) or Twilio. Fox says check your email **only when send succeeded**. If the mailer is dark or fails, Fox says it couldn’t send — never a token, never a lie.
 - After Email, chips are **Phone · Not now**. Composer is the address. Not now is not the only chip.
 - Hub opens that `file_id`. foxLine already on the File is the next line when they return.
@@ -34,6 +35,7 @@ If the unique READY preview has no mail provider, set on the Vercel preview:
 - `RESEND_API_KEY`
 - `RESEND_FROM` (e.g. `ONYX <noreply@…>`)
 - Phone: `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM`
+- Letter InPrivate: `VERCEL_AUTOMATION_BYPASS_SECRET` (Protection Bypass for Automation). Query on the letter URL only. Never set-bypass-cookie.
 
 ## Keep closed
 4cc75b7 hub v0 spine, f896f95 Skip-on-name, b680d6a account spine (first-question / email / token resume / Not now), and prior File-honest locks (`1129e4b` / `529259d` / `0771262` / …).
@@ -46,7 +48,7 @@ Dense 1008, holding-page publish, referral cash, credit pull / lock desk, Google
 2. Create account → “So this File can find you on another phone — not stuck in this tab.” → Email / Phone / Not now
 3. Email → “Where should I send the sign-in link?” → type address in composer → real email sent (not stub URL in thread)
 3b. Log in → “Welcome back. Email or phone for a code?” Same File
-4. Second browser opens the link from email (or phone code) → same `file_id` · notepad + last Fox line match
+4. InPrivate / second browser opens the letter with no Vercel login → same `file_id` · notepad + last Fox line match
 5. Sketch: Not now → finish → Proceed with no account → one save ask + pad Save this File; not `in_queue` until saved/accounted
 6. With account, Proceed still reaches `in_queue`
 

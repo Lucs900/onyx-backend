@@ -4,7 +4,13 @@ import {
   persistAccountRecord,
   snapshotOf,
 } from "@/lib/account/core";
-import { accountMailEnv, accountOrigin, sendAccountChannel } from "@/lib/account/send";
+import {
+  accountMailEnv,
+  accountOrigin,
+  letterHasProtectionBypass,
+  letterMagicLink,
+  sendAccountChannel,
+} from "@/lib/account/send";
 import {
   loadAccountByCode,
   loadAccountByFileId,
@@ -28,10 +34,28 @@ export async function GET(request: Request) {
   const url = new URL(request.url);
   if (url.searchParams.get("mailer") === "1") {
     const env = accountMailEnv();
+    const origin = accountOrigin(request);
+    const sample = origin ? letterMagicLink("probe", origin) : "";
+    const letterHasBypass = letterHasProtectionBypass(sample);
+    let letterOpensWithoutVercelLogin = false;
+    if (letterHasBypass && sample.startsWith("http")) {
+      try {
+        const probe = await fetch(sample, { redirect: "manual" });
+        const loc = probe.headers.get("location") || "";
+        letterOpensWithoutVercelLogin =
+          probe.status !== 401 &&
+          probe.status !== 403 &&
+          !/vercel\.com\/login/i.test(loc);
+      } catch {
+        letterOpensWithoutVercelLogin = false;
+      }
+    }
     return NextResponse.json({
       emailReady: Boolean(env.resendKey && env.fromOk),
       fromOk: env.fromOk,
       phoneReady: Boolean(env.twilioSid && env.twilioToken && env.twilioFrom),
+      letterHasBypass,
+      letterOpensWithoutVercelLogin,
     });
   }
   const token = url.searchParams.get("account")?.trim() || "";
