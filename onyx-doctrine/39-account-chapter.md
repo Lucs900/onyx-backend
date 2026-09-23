@@ -13,6 +13,7 @@ After hub v0 spine, the File must follow the person across browsers via account 
 - After Email Fox (exact): “Where should I send the sign-in link?” Composer is the address. Not now = changed my mind, not the only chip.
 - Log in Fox (exact): “Welcome back. Email or phone for a code?” Same File.
 - Email magic link or phone code. Same person, same `file_id` on a second browser. Homepage `/start` resumes that File.
+- Magic-link origin is the host that handled create (request Origin / Host). Never `NEXT_PUBLIC_APP_URL`, `VERCEL_PROJECT_PRODUCTION_URL`, or `onyx-backend-ten` over that request.
 - **Never print the token, `/start?account=…`, or the raw code in the borrower thread.** Fox says check your email / enter the code.
 - Real send: Resend (`RESEND_API_KEY`, `RESEND_FROM` on an ONYX domain) or Twilio. Fox says check your email **only when send succeeded**. If the mailer is dark or fails, Fox says it couldn’t send — never a token, never a lie.
 - After Email, chips are **Phone · Not now**. Composer is the address. Not now is not the only chip.

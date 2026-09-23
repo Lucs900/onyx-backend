@@ -56,7 +56,7 @@ import {
 } from "../components/fox/processingHub";
 import { skipWhoOnLoanName, whoOnLoanNameWasSkipped } from "../components/fox/whoOnLoan";
 import { memoryAccountStore, resumeFromStore } from "../lib/account/core";
-import { sendAccountChannel } from "../lib/account/send";
+import { absoluteMagicLink, accountOrigin, sendAccountChannel } from "../lib/account/send";
 import type { FoxIntakeDraft, FoxMessage } from "../components/fox/types";
 
 function labels(actions: { label: string }[] | undefined) {
@@ -190,6 +190,32 @@ async function main() {
   assert.notEqual(emptySecond.fileId, opened.draft.fileId);
   const resumedEmpty = resumeFromStore(store, { token: opened.record.token });
   assert.equal(resumedEmpty?.fileId, opened.draft.fileId);
+
+  const prevApp = process.env.NEXT_PUBLIC_APP_URL;
+  const prevProd = process.env.VERCEL_PROJECT_PRODUCTION_URL;
+  process.env.NEXT_PUBLIC_APP_URL = "https://onyx-backend-ten.vercel.app";
+  process.env.VERCEL_PROJECT_PRODUCTION_URL = "onyx-backend-ten.vercel.app";
+  const uniqueHost = "https://onyx-backend-cgbg9w71v-onyx-direct.vercel.app";
+  const fromOrigin = accountOrigin(
+    new Request(`${uniqueHost}/api/account`, { headers: { origin: uniqueHost } }),
+  );
+  const fromForward = accountOrigin(
+    new Request("https://onyx-backend-ten.vercel.app/api/account", {
+      headers: {
+        "x-forwarded-host": "onyx-backend-cgbg9w71v-onyx-direct.vercel.app",
+        "x-forwarded-proto": "https",
+      },
+    }),
+  );
+  assert.equal(fromOrigin, uniqueHost);
+  assert.equal(fromForward, uniqueHost);
+  assert.doesNotMatch(fromOrigin, /onyx-backend-ten/);
+  assert.doesNotMatch(absoluteMagicLink("tok", fromOrigin), /onyx-backend-ten/);
+  assert.match(absoluteMagicLink("tok", fromOrigin), /^https:\/\/onyx-backend-cgbg9w71v-onyx-direct\.vercel\.app\/start\?account=tok$/);
+  if (prevApp === undefined) delete process.env.NEXT_PUBLIC_APP_URL;
+  else process.env.NEXT_PUBLIC_APP_URL = prevApp;
+  if (prevProd === undefined) delete process.env.VERCEL_PROJECT_PRODUCTION_URL;
+  else process.env.VERCEL_PROJECT_PRODUCTION_URL = prevProd;
 
   const sendDry = await sendAccountChannel({
     channel: "email",

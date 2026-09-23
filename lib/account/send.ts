@@ -17,21 +17,43 @@ export type AccountSendResult = {
     | "missing_dest";
 };
 
+function cleanOrigin(value: string) {
+  return value.trim().replace(/\/$/, "");
+}
+
+function originFromHost(host: string, proto = "https") {
+  const first = host.split(",")[0]?.trim();
+  if (!first) return "";
+  if (/^https?:\/\//i.test(first)) return cleanOrigin(first);
+  return `${proto}://${first.replace(/\/$/, "")}`;
+}
+
+/**
+ * Magic-link host is the host that handled create — request Origin / Host.
+ * Never prefer NEXT_PUBLIC_APP_URL, VERCEL_PROJECT_PRODUCTION_URL, or a
+ * hardcoded production alias (onyx-backend-ten) over that request.
+ */
 export function accountOrigin(request?: Request) {
-  const env =
-    process.env.NEXT_PUBLIC_APP_URL?.trim() ||
-    (process.env.VERCEL_PROJECT_PRODUCTION_URL
-      ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
-      : "") ||
-    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "");
-  if (env) return env.replace(/\/$/, "");
-  if (!request) return "";
-  const origin = request.headers.get("origin")?.trim();
-  if (origin) return origin.replace(/\/$/, "");
-  const host = request.headers.get("x-forwarded-host")?.trim() || request.headers.get("host")?.trim();
-  if (!host) return "";
-  const proto = request.headers.get("x-forwarded-proto")?.trim() || "https";
-  return `${proto}://${host.replace(/\/$/, "")}`;
+  if (request) {
+    const headerOrigin = request.headers.get("origin")?.trim();
+    if (headerOrigin && /^https?:\/\//i.test(headerOrigin) && headerOrigin.toLowerCase() !== "null") {
+      return cleanOrigin(headerOrigin);
+    }
+    const forwarded = request.headers.get("x-forwarded-host")?.trim();
+    const host = forwarded || request.headers.get("host")?.trim();
+    const proto = request.headers.get("x-forwarded-proto")?.trim() || "https";
+    if (host) {
+      const fromHost = originFromHost(host, proto);
+      if (fromHost) return fromHost;
+    }
+    try {
+      const urlOrigin = new URL(request.url).origin;
+      if (urlOrigin && urlOrigin !== "null") return cleanOrigin(urlOrigin);
+    } catch {
+      // Request.url can be relative in leftover stubs.
+    }
+  }
+  return "";
 }
 
 export function absoluteMagicLink(token: string, origin: string) {
