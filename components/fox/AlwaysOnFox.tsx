@@ -134,7 +134,7 @@ import {
   SAVE_THIS_FILE_LABEL,
   START_OVER_CONFIRM,
   accountFlowOpen,
-  accountHomeActions,
+  accountHeaderActions,
   accountSentCopy,
   accountSideActions,
   accountWorkspaceReply,
@@ -896,7 +896,7 @@ function FoxWorkspace({
   onStartOver?: () => void;
   onAction?: (action: FoxAction) => void;
 }) {
-  const homeChips = onStartOver ? accountHomeActions(draft) : [];
+  const homeChips = onStartOver ? accountHeaderActions(draft) : [];
   return (
     <div
       id="fox-panel"

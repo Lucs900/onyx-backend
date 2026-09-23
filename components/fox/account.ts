@@ -95,17 +95,35 @@ function accountOfferChips(): FoxAction[] {
   ];
 }
 
-/** Start over row · pad Save. Not on value / lien / line / address / House / Proceed. */
-export function accountHomeActions(draft: FoxIntakeDraft): FoxAction[] {
+/** Header permanent: Create account · Log in. Not now is Save-ask only. */
+export function accountHeaderActions(draft: FoxIntakeDraft): FoxAction[] {
   if (hasLinkedAccount(draft)) return [];
   const ask = accountAskOf(draft);
   if (ask === "channel" || ask === "email" || ask === "phone" || ask === "code" || ask === "sent") {
     return [];
   }
-  if (draft.accountSkipped && !accountSaveAskOpen(draft)) {
-    return accountOfferChips().filter((item) => item.id !== "skip-account");
+  return accountOfferChips().filter((item) => item.id !== "skip-account");
+}
+
+/** Start over row used to carry Not now — header does not. */
+export function accountHomeActions(draft: FoxIntakeDraft): FoxAction[] {
+  return accountHeaderActions(draft);
+}
+
+/** After Proceed on a browser-only File. Request human last. */
+export function accountSaveWallActions(draft: FoxIntakeDraft): FoxAction[] {
+  if (!accountSaveAskOpen(draft) || accountFlowOpen(draft)) return [];
+  const chips = [...accountOfferChips()];
+  if (!draft.originatorRequested && draft.motion !== "escalated") {
+    chips.push({
+      id: "request-human",
+      label: "Request human",
+      event: "bubble",
+      capture: { field: "talk-originator" },
+      quiet: true,
+    });
   }
-  return accountOfferChips();
+  return chips;
 }
 
 export function accountFlowOpen(draft: FoxIntakeDraft) {

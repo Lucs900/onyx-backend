@@ -22,10 +22,11 @@ After hub v0 spine, the File must follow the person across browsers via account 
 - e26fa4a: bypass query only (superseded by cookie set on 575fee8).
 
 ## Locks still true
-- Account chips Create account · Log in · Not now: home is Start over row or pad Save only. Not on value, lien, line, address, House, or under the Proceed strip. Composer = live Fox question only. (Founder ADD on hub dense NOT ACCEPT d475774, 23 Sep 2026.)
+- Account chips Create account · Log in · Not now: not on value, lien, line, address, House, or under a live Proceed strip. Composer = live Fox question only. (d475774 ADD → locked under ACCEPT 8fa7382.)
+- After Proceed on browser-only File: Save speech + Create account · Log in · Not now; Request human last. Drop Proceed · Not yet · Upload more off that wall. Not now = keep talking. No in_queue. Pad Save stays. After account: ONYX has this + Ask Fox · Upload more · Request human. (Founder ADD on ACCEPT 8fa7382, 23 Sep 2026.)
+- Header permanent: Create account · Log in · Start over only. Not now is chip-only on the Save ask — not a permanent header link.
 - Start over after account: wipe File, keep account, confirm first. Start over is not logout.
-- No in_queue without account. Not now = keep talking, not queue.
-- Status gathering is the Save wall, not the hub grid.
+- No in_queue without account. Status gathering is the Save wall, not the hub grid.
 - Design door: first screen huge Buy · Refinance · HELOC (+ Jumbo/Other); quiet Create account · Log in · Not now.
 - After Create account: “So this File can find you on another phone — not stuck in this tab.” Then Email · Phone · Not now.
 - After Email: “Where should I send the sign-in link?” Composer for address. Not now = change mind.
@@ -38,7 +39,7 @@ After hub v0 spine, the File must follow the person across browsers via account 
 - Production sender + cookie-less production host (no Vercel protection bypass in letter).
 
 ## Out / parked
-Holding-page publish (parked); dense 1008 in flight (NOT ACCEPT d475774), referral cash, credit pull.
+Holding-page publish (parked); dense 1008 ACCEPT 8fa7382 + Save-wall ADD open, referral cash, credit pull.
 
 ## Keep closed
 4cc75b7 hub v0 spine, f896f95 Skip-on-name, HELOC chapter. Design door locked. Queue idle.

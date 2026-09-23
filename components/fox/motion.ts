@@ -11,6 +11,8 @@ import {
 } from "./fileWrite";
 import {
   ACCOUNT_SAVE_ASK,
+  accountSaveAskOpen,
+  accountSaveWallActions,
   applyAccountSaveAsk,
   hasLinkedAccount,
 } from "./account";
@@ -444,6 +446,7 @@ function inQueueActions(draft: FoxIntakeDraft): FoxAction[] {
 }
 
 export function finishLineActions(draft: FoxIntakeDraft): FoxAction[] {
+  if (accountSaveAskOpen(draft)) return accountSaveWallActions(draft);
   if (inQueueEnding(draft)) return inQueueActions(draft);
   if (!w2FinishDocsReady(draft) && !(isHelocFile(draft) && draft.sampleAccepted)) return [];
   const motion = motionOf(draft);

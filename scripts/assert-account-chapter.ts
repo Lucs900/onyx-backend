@@ -37,8 +37,10 @@ import {
   LOGIN_LABEL,
   NOT_NOW_LABEL,
   SAVE_THIS_FILE_LABEL,
+  accountHeaderActions,
   accountHomeActions,
   accountSaveAskOpen,
+  accountSaveWallActions,
   accountSentCopy,
   accountSideActions,
   applyAccountCapture,
@@ -121,11 +123,14 @@ async function main() {
   assert.match(greet.text, /relationship file|Start a relationship|Buy/i);
   assert.deepEqual(labels(greet.actions), ["Buy", "Refinance", "HELOC", "Jumbo", "Other"]);
   assert.deepEqual(labels(accountSideActions(first)), [CREATE_ACCOUNT_LABEL, LOGIN_LABEL, NOT_NOW_LABEL]);
-  assert.deepEqual(labels(accountHomeActions(first)), [CREATE_ACCOUNT_LABEL, LOGIN_LABEL, NOT_NOW_LABEL]);
+  assert.deepEqual(labels(accountHeaderActions(first)), [CREATE_ACCOUNT_LABEL, LOGIN_LABEL]);
+  assert.deepEqual(labels(accountHomeActions(first)), [CREATE_ACCOUNT_LABEL, LOGIN_LABEL]);
+  assert.ok(!labels(accountHeaderActions(first)).includes(NOT_NOW_LABEL));
   assert.ok(!labels(deskStripActions([{ id: "g", role: "fox", text: greet.text }], first)).includes(CREATE_ACCOUNT_LABEL));
   const midWalk = houseReady(writePurchasePrice(firstQuestion(), 500_000));
   assert.deepEqual(labels(accountSideActions(midWalk)), []);
-  assert.deepEqual(labels(accountHomeActions(midWalk)), [CREATE_ACCOUNT_LABEL, LOGIN_LABEL, NOT_NOW_LABEL]);
+  assert.deepEqual(labels(accountHeaderActions(midWalk)), [CREATE_ACCOUNT_LABEL, LOGIN_LABEL]);
+  assert.ok(!labels(accountHeaderActions(midWalk)).includes(NOT_NOW_LABEL));
   assert.ok(!labels(deskStripActions([{ id: "v", role: "fox", text: "What’s the property value?" }], midWalk)).includes(CREATE_ACCOUNT_LABEL));
 
   const create = workspaceReply("Create account", first);
@@ -308,6 +313,26 @@ async function main() {
   assert.equal(accountSaveAskOpen(unsaved), true);
   assert.equal(unsaved.accountSaveAsk, true);
   assert.equal(nextFoxAsk(unsaved).text, ACCOUNT_SAVE_ASK);
+  assert.deepEqual(labels(accountSaveWallActions(unsaved)), [
+    CREATE_ACCOUNT_LABEL,
+    LOGIN_LABEL,
+    NOT_NOW_LABEL,
+    "Request human",
+  ]);
+  assert.deepEqual(labels(finishLineActions(unsaved)), [
+    CREATE_ACCOUNT_LABEL,
+    LOGIN_LABEL,
+    NOT_NOW_LABEL,
+    "Request human",
+  ]);
+  assert.deepEqual(
+    labels(deskStripActions([{ id: "save", role: "fox", text: ACCOUNT_SAVE_ASK }], unsaved)),
+    [CREATE_ACCOUNT_LABEL, LOGIN_LABEL, NOT_NOW_LABEL, "Request human"],
+  );
+  assert.ok(!labels(finishLineActions(unsaved)).includes("Proceed"));
+  assert.ok(!labels(finishLineActions(unsaved)).includes("Not yet"));
+  assert.ok(!labels(finishLineActions(unsaved)).includes("Upload more"));
+  assert.ok(!labels(accountHeaderActions(unsaved)).includes(NOT_NOW_LABEL));
   assert.ok(labels(accountSideActions(unsaved)).includes(CREATE_ACCOUNT_LABEL));
   assert.ok(labels(accountSideActions(unsaved)).includes(LOGIN_LABEL));
   assert.ok(labels(accountSideActions(unsaved)).includes(NOT_NOW_LABEL));
@@ -318,7 +343,34 @@ async function main() {
   assert.equal(SAVE_THIS_FILE_LABEL, "Save this File");
   const parked = applyAccountSaveAsk(notNow);
   assert.notEqual(parked.motion, "in_queue");
-  assert.deepEqual(labels(accountHomeActions(unsaved)), [CREATE_ACCOUNT_LABEL, LOGIN_LABEL, NOT_NOW_LABEL]);
+  assert.deepEqual(labels(accountHomeActions(unsaved)), [CREATE_ACCOUNT_LABEL, LOGIN_LABEL]);
+  const looksOnly = applyLooksRightMotion(
+    skipCurrentInvite(
+      skipWageDocs(
+        skipMonthlyDebts(
+          writeWhoOnLoan(
+            {
+              ...applyCouponChoice(
+                withHelocToolQuote(sketch),
+                "this",
+              ),
+              incomeAsked: true,
+              incomeType: { ...emptyDraft().incomeType, value: "w2" },
+            },
+            "just-me",
+          ),
+        ),
+      ),
+    ),
+  );
+  const saveReply = workspaceReply("Proceed", looksOnly);
+  assert.equal(saveReply?.text, ACCOUNT_SAVE_ASK);
+  assert.deepEqual(labels(saveReply?.actions), [
+    CREATE_ACCOUNT_LABEL,
+    LOGIN_LABEL,
+    NOT_NOW_LABEL,
+    "Request human",
+  ]);
   const keepTalking = applyAccountCapture(unsaved, { field: "skip-account" });
   assert.equal(keepTalking.accountSkipped, true);
   assert.equal(keepTalking.accountSaveAsk, false);

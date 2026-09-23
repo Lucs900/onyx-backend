@@ -609,7 +609,13 @@ import {
   withWhoOnLoanDue,
   writeWhoOnLoan,
 } from "./whoOnLoan";
-import { ACCOUNT_SAVE_ASK, accountWorkspaceReply, applyAccountCapture } from "./account";
+import {
+  ACCOUNT_SAVE_ASK,
+  accountSaveAskOpen,
+  accountSaveWallActions,
+  accountWorkspaceReply,
+  applyAccountCapture,
+} from "./account";
 import {
   SUGGESTED_COBORROWER_NOTE,
   coborrowerExtractCopy,
@@ -4200,6 +4206,10 @@ export function deskStripActions(
   messages: FoxMessage[],
   draft: FoxIntakeDraft,
 ): FoxAction[] {
+  if (accountSaveAskOpen(draft)) {
+    const wall = accountSaveWallActions(draft);
+    if (wall.length) return stripStreetSuggest(wall);
+  }
   const thread = withoutDuplicateTranscriptAsk(messages);
   let live = -1;
   for (let i = 0; i < thread.length; i += 1) {

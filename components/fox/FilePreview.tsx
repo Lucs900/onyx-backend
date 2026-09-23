@@ -4,7 +4,7 @@ import { useEffect, useState, useSyncExternalStore, type ReactNode } from "react
 import { createPortal } from "react-dom";
 import { DocumentDrop } from "./DocumentDrop";
 import { requestFoxAsk, requestFoxExplain, requestFoxFix, requestSaveThisFile } from "./AlwaysOnFox";
-import { SAVE_THIS_FILE_LABEL, accountHomeActions, accountSaveAskOpen } from "./account";
+import { SAVE_THIS_FILE_LABEL, accountSaveAskOpen, accountSaveWallActions } from "./account";
 import { FOX_KEYBOARD_EVENT } from "./askReveal";
 import { NOTHING_URGENT, stillUsefulSection, stillUsefulSpokenItems } from "./fileWrite";
 import { getFoxDraft, getServerDraft, subscribeFoxDraft } from "./store";
@@ -177,7 +177,9 @@ export function WorkspaceFileDock({ children }: { children: ReactNode }) {
                     >
                       {SAVE_THIS_FILE_LABEL}
                     </button>
-                    {accountHomeActions(draft).map((action) => (
+                    {accountSaveWallActions(draft)
+                      .filter((action) => action.id !== "request-human")
+                      .map((action) => (
                       <button
                         key={action.id}
                         type="button"
@@ -226,7 +228,9 @@ export function FilePreview() {
             >
               {SAVE_THIS_FILE_LABEL}
             </button>
-            {accountHomeActions(draft).map((action) => (
+            {accountSaveWallActions(draft)
+              .filter((action) => action.id !== "request-human")
+              .map((action) => (
               <button
                 key={action.id}
                 type="button"
