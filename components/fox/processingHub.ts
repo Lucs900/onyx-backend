@@ -3,8 +3,8 @@
  * Send posts foxLine. Silent notes stay off the borrower thread.
  * Never credit pull, lock, AU, SSN, BNTouch, LO-will-contact, green approved.
  */
-import { condoNeedsReviewPersisted, stillUsefulSpokenItems } from "./fileWrite";
-import { fileCompleteness, showsAgencyCompleteness } from "./completeness";
+import { stillUsefulSpokenItems } from "./fileWrite";
+import { HIGH_LTV_CAUTION, fileCompleteness, showsAgencyCompleteness } from "./completeness";
 import {
   appendFileEvent,
   finishLineActions,
@@ -29,12 +29,20 @@ export const STAFF_W2_FOX_LINE = "I still need last year’s W-2 when you have i
 export const SILENT_DESK_ERROR = "Send needs a foxLine the borrower can hear.";
 export const COMPLETENESS_SIGNAL_COPY = "Completeness is a signal, not a blocker.";
 
+export const HUB_EMPTY = "—";
+
 export type HubRow = {
   id: string;
   label: string;
   value: string;
   note?: string;
+  loud?: boolean;
 };
+
+export const HUB_LOUD_A_IDS = ["product", "purpose", "occupancy", "borrowers"] as const;
+export const HUB_LOUD_B_IDS = ["home", "first-lien", "line", "ltv", "cltv", "rate", "io", "credit"] as const;
+export const HUB_PAY_IDS = ["qualifying", "debts"] as const;
+export const HUB_STATE_IDS = ["status", "next"] as const;
 
 export type StaffDeskInput = {
   foxLine?: string;
@@ -56,6 +64,7 @@ export type ProcessingHubView = {
     stillUseful: string[];
     docs: { name: string; status: string }[];
     quietFlags: string[];
+    rows: HubRow[];
   };
 };
 
@@ -64,53 +73,97 @@ export function staffHubPath(fileId?: string) {
   return id ? `${STAFF_HUB_PATH}?file=${encodeURIComponent(id)}` : STAFF_HUB_PATH;
 }
 
-function factRow(
-  facts: ReturnType<typeof previewFacts>,
+function factOf(facts: ReturnType<typeof previewFacts>, ...ids: string[]) {
+  for (const id of ids) {
+    const found = facts.find((item) => item.id === id);
+    if (found) return found;
+  }
+  return undefined;
+}
+
+function cellValue(raw?: string) {
+  const value = (raw ?? "").trim();
+  return value && value !== HUB_EMPTY ? value : HUB_EMPTY;
+}
+
+function shellRow(
   id: string,
-): HubRow | undefined {
-  const found = facts.find((item) => item.id === id);
-  if (!found) return undefined;
+  label: string,
+  raw?: string,
+  note?: string,
+  loud = false,
+): HubRow {
+  const value = cellValue(raw);
   return {
-    id: found.id,
-    label: found.label,
-    value: found.value,
-    note: found.note,
+    id,
+    label,
+    value,
+    note: value === HUB_EMPTY ? undefined : note,
+    loud,
   };
 }
 
-const LOUD_IDS = [
-  "product",
-  "purpose",
-  "occupancy",
-  "property-type",
-  "home",
-  "first-lien",
-  "line",
-  "ltv",
-  "cltv",
-  "rate",
-  "borrowers",
-  "borrower",
-  "coborrower-name",
-  "credit",
-  "address",
-] as const;
+function qiShell(facts: ReturnType<typeof previewFacts>): HubRow {
+  const found = factOf(facts, "qualifying");
+  const raw = (found?.value ?? "").trim();
+  if (!raw || raw === HUB_EMPTY) return shellRow("qualifying", "QI");
+  const [amount, ...rest] = raw.split(" · ");
+  const method = rest.join(" · ").trim();
+  const methodNote = /w-?2|stub|sch(?:edule)?\s*c|k-?1|rental|box 5|cover/i.test(method)
+    ? method
+    : /w-?2|stub|sch(?:edule)?\s*c|k-?1|rental|box 5|cover/i.test(found?.note ?? "")
+      ? found?.note
+      : method || undefined;
+  return shellRow("qualifying", "QI", amount, methodNote);
+}
+
+function ioShell(draft: FoxIntakeDraft): HubRow {
+  const monthly = draft.liveQuote?.interestOnly;
+  if (monthly != null && monthly > 0) {
+    return shellRow("io", "IO", `$${Math.round(monthly).toLocaleString("en-US")}`, undefined, true);
+  }
+  if (draft.liveQuote?.principalAndInterest != null && draft.liveQuote.principalAndInterest > 0) {
+    return shellRow("io", "IO", "P&I");
+  }
+  return shellRow("io", "IO");
+}
+
+function rateShell(facts: ReturnType<typeof previewFacts>, draft: FoxIntakeDraft): HubRow {
+  const live = draft.liveQuote?.rate;
+  if (typeof live === "number" && Number.isFinite(live) && live > 0) {
+    return shellRow("rate", "RATE", `${(Math.round(live * 100) / 100).toFixed(2)}%`, undefined, true);
+  }
+  const found = factOf(facts, "rate");
+  const match = found?.value?.match(/(\d+(?:\.\d+)?%)/);
+  return shellRow("rate", "RATE", match?.[1] || found?.value, found?.note, true);
+}
 
 export function hubLoudRows(draft: FoxIntakeDraft): HubRow[] {
   const facts = previewFacts(draft);
-  const rows: HubRow[] = [];
-  for (const id of LOUD_IDS) {
-    const row = factRow(facts, id);
-    if (row) rows.push(row);
-  }
-  if (!rows.some((row) => row.id === "product") && draft.productIntent) {
-    rows.unshift({
-      id: "product",
-      label: "Product",
-      value: productIntentLabel(draft.productIntent),
-    });
-  }
-  return rows;
+  const product = factOf(facts, "product")?.value || (draft.productIntent ? productIntentLabel(draft.productIntent) : "");
+  const purpose = factOf(facts, "purpose")?.value;
+  const occupancy = factOf(facts, "occupancy")?.value;
+  const borrowers = factOf(facts, "borrowers")?.value;
+  const value = factOf(facts, "home", "price")?.value;
+  const first = factOf(facts, "first-lien")?.value || (!factOf(facts, "line") ? factOf(facts, "loan")?.value : "");
+  const line = factOf(facts, "line")?.value || factOf(facts, "down")?.value;
+  const ltv = factOf(facts, "ltv");
+  const cltv = factOf(facts, "cltv");
+  const credit = factOf(facts, "credit");
+  return [
+    shellRow("product", "PROD", product),
+    shellRow("purpose", "PURP", purpose),
+    shellRow("occupancy", "OCC", occupancy),
+    shellRow("borrowers", "BORS", borrowers),
+    shellRow("home", "VAL", value, undefined, true),
+    shellRow("first-lien", "1ST", first, undefined, true),
+    shellRow("line", "LINE", line, undefined, true),
+    shellRow("ltv", "LTV", ltv?.value, ltv?.note, true),
+    shellRow("cltv", "CLTV", cltv?.value, cltv?.note, true),
+    rateShell(facts, draft),
+    ioShell(draft),
+    shellRow("credit", "FICO", credit?.value, credit?.note),
+  ];
 }
 
 export function hubLoudText(draft: FoxIntakeDraft) {
@@ -119,34 +172,37 @@ export function hubLoudText(draft: FoxIntakeDraft) {
     .join(" · ");
 }
 
-const PAY_IDS = [
-  "qualifying",
-  "debts",
-  "current-housing",
-  "housing",
-  "suggestedNetRental",
-  "suggestedFileNet",
-] as const;
-
 export function hubPayRows(draft: FoxIntakeDraft): HubRow[] {
   const facts = previewFacts(draft);
-  const rows: HubRow[] = [];
-  for (const id of PAY_IDS) {
-    const row = factRow(facts, id);
-    if (row && row.value && row.value !== "—") rows.push(row);
-  }
-  return rows;
+  return [qiShell(facts), shellRow("debts", "DEBT", factOf(facts, "debts")?.value, factOf(facts, "debts")?.note)];
+}
+
+export function hubStateRows(draft: FoxIntakeDraft): HubRow[] {
+  return [
+    shellRow("status", "STAT", motionStatusCopy(draft), hubCompletenessWhisper(draft)),
+    shellRow("next", "NEXT", nextActorOf(draft), waitingOnOf(draft) !== nextActorOf(draft) ? waitingOnOf(draft) : undefined),
+  ];
 }
 
 export function hubQuietFlags(draft: FoxIntakeDraft): string[] {
   const flags: string[] = [];
-  if (condoNeedsReviewPersisted(draft)) flags.push("Condo needs review");
-  const caution = previewFacts(draft).find((item) => item.id === "income-caution");
-  if (caution?.value) flags.push(caution.value);
-  if (draft.outOfState) flags.push("Out of state");
-  if (draft.documentsSkipped) flags.push("Papers skipped");
-  if (draft.priorYearSkipped) flags.push("Prior-year papers skipped");
+  const facts = previewFacts(draft);
+  if (draft.occupancyChoice?.value === "investment") flags.push("INV");
+  const caution = facts.find((item) => item.id === "caution");
+  if (caution?.value === HIGH_LTV_CAUTION) flags.push("HI-MI");
+  const purpose = facts.find((item) => item.id === "purpose")?.value ?? "";
+  if (draft.cashOut || /cash-?out/i.test(purpose)) flags.push("C/O");
+  const rentalReview =
+    stillUsefulSpokenItems(draft).some((item) => /rental|lease|schedule e/i.test(item.label)) ||
+    Boolean(facts.find((item) => item.id === "suggestedNetRental" || item.id === "suggestedFileNet")?.value);
+  if (rentalReview) flags.push("RENT");
   return flags;
+}
+
+function hubCompletenessWhisper(draft: FoxIntakeDraft) {
+  const map = fileCompleteness(draft);
+  if (map) return `${map.state === "documented" ? "documented" : "sketch"} · ${map.filled} of ${map.total}`;
+  return COMPLETENESS_SIGNAL_COPY;
 }
 
 export function hubDocs(draft: FoxIntakeDraft): { name: string; status: string }[] {
@@ -180,6 +236,7 @@ export function processingHubView(draft: FoxIntakeDraft): ProcessingHubView {
         .map((item) => item.label),
       docs: hubDocs(draft),
       quietFlags: hubQuietFlags(draft),
+      rows: hubStateRows(draft),
     },
   };
 }

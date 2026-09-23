@@ -40,6 +40,7 @@ on:
       - "scripts/assert-live-chips-after-w2-use-this.ts"
       - "scripts/assert-skip-on-other-person-name.ts"
       - "scripts/assert-processing-hub-v0.ts"
+      - "scripts/assert-hub-dense-1008.ts"
       - "scripts/assert-account-chapter.ts"
       - "scripts/assert-letter-bypass-preview.sh"
       - "scripts/assert-live-strip.ts"
@@ -86,6 +87,7 @@ on:
       - "scripts/assert-live-chips-after-w2-use-this.ts"
       - "scripts/assert-skip-on-other-person-name.ts"
       - "scripts/assert-processing-hub-v0.ts"
+      - "scripts/assert-hub-dense-1008.ts"
       - "scripts/assert-account-chapter.ts"
       - "scripts/assert-letter-bypass-preview.sh"
       - "scripts/assert-live-strip.ts"
@@ -134,6 +136,7 @@ jobs:
           npx --yes tsx scripts/assert-file-empty-until-use-this.ts
           npx --yes tsx scripts/assert-skip-on-other-person-name.ts
           npx --yes tsx scripts/assert-processing-hub-v0.ts
+          npx --yes tsx scripts/assert-hub-dense-1008.ts
           npx --yes tsx scripts/assert-account-chapter.ts
   walk:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository

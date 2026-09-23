@@ -14,10 +14,13 @@ import {
   subscribeFoxDraft,
 } from "./store";
 import {
+  HUB_EMPTY,
   processingHubView,
   SILENT_DESK_ERROR,
   STAFF_HUB_PATH,
+  staffDeskKeepsFinishChips,
   staffHubPath,
+  type HubRow,
 } from "./processingHub";
 import { FOX_DISCLOSURE, TRUST_LINE } from "./types";
 
@@ -93,14 +96,7 @@ export function ProcessingHub() {
           </p>
         )}
 
-        {!hasDraft ? (
-          <section className="intake-card">
-            <p className="type-body">No File on this device yet.</p>
-            <Link href="/start?path=acr" className="btn btn--text">
-              Open the desk
-            </Link>
-          </section>
-        ) : fileMismatch ? (
+        {fileMismatch ? (
           <section className="intake-card">
             <p className="type-body">
               This device File is {draft.fileId}. The URL asked for {wanted}.
@@ -109,54 +105,57 @@ export function ProcessingHub() {
               Open this File
             </Link>
           </section>
-        ) : (
-          <>
+        ) : null}
+
+        {!hasDraft ? (
+          <p className="type-legal">
+            No File on this device yet. Shells stay.{" "}
+            <Link href="/start?path=acr" className="btn btn--text">
+              Open the desk
+            </Link>
+          </p>
+        ) : null}
+
+        <>
             <section className="intake-card staff-hub-loud">
               <h2 className="type-card-title">Loud</h2>
-              {hub.loud.length ? (
-                <dl className="scenario-echo">
-                  {hub.loud.map((row) => (
-                    <FragmentRow
-                      key={row.id}
-                      label={row.label}
-                      value={row.note ? `${row.value} · ${row.note}` : row.value}
-                    />
-                  ))}
-                </dl>
-              ) : (
-                <p className="type-body">No loud facts on this File yet.</p>
-              )}
+              <div className="staff-hub-grid staff-hub-grid--a">
+                {hub.loud.slice(0, 4).map((row) => (
+                  <HubCell key={row.id} row={row} />
+                ))}
+              </div>
+              <div className="staff-hub-grid staff-hub-grid--b">
+                {hub.loud.slice(4).map((row) => (
+                  <HubCell key={row.id} row={row} />
+                ))}
+              </div>
             </section>
 
             <section className="intake-card">
               <h2 className="type-card-title">Pay</h2>
-              {hub.pay.length ? (
-                <dl className="scenario-echo">
-                  {hub.pay.map((row) => (
-                    <FragmentRow
-                      key={row.id}
-                      label={row.label}
-                      value={row.note ? `${row.value} · ${row.note}` : row.value}
-                    />
-                  ))}
-                </dl>
-              ) : (
-                <p className="type-body">No pay facts on this File yet.</p>
-              )}
+              <div className="staff-hub-grid staff-hub-grid--c">
+                {hub.pay.map((row) => (
+                  <HubCell key={row.id} row={row} quiet />
+                ))}
+              </div>
             </section>
 
             <section className="intake-card">
               <h2 className="type-card-title">State</h2>
-              <dl className="scenario-echo">
-                <dt>Status</dt>
-                <dd>{hub.state.status}</dd>
-                <dt>Next</dt>
-                <dd>{hub.state.next}</dd>
-                <dt>Waiting on</dt>
-                <dd>{hub.state.waitingOn}</dd>
-                <dt>Completeness</dt>
-                <dd>{hub.state.completeness}</dd>
-              </dl>
+              <div className="staff-hub-grid staff-hub-grid--d">
+                {(hub.state.rows ?? []).map((row) => (
+                  <HubCell key={row.id} row={row} quiet />
+                ))}
+              </div>
+              {hub.state.quietFlags.length ? (
+                <p className="staff-hub-flags">
+                  {hub.state.quietFlags.map((flag) => (
+                    <span key={flag} className="staff-hub-flag">
+                      {flag}
+                    </span>
+                  ))}
+                </p>
+              ) : null}
               {hub.state.stillUseful.length ? (
                 <ul className="intake-note-list">
                   {hub.state.stillUseful.map((item) => (
@@ -180,13 +179,6 @@ export function ProcessingHub() {
                   {draft.documentsSkipped ? "Papers skipped." : "No docs received."}
                 </p>
               )}
-              {hub.state.quietFlags.length ? (
-                <ul className="intake-note-list">
-                  {hub.state.quietFlags.map((flag) => (
-                    <li key={flag}>{flag}</li>
-                  ))}
-                </ul>
-              ) : null}
             </section>
 
             <details className="intake-card staff-hub-drawer">
@@ -270,9 +262,11 @@ export function ProcessingHub() {
               {sentLine ? (
                 <p className="type-legal">Wrote foxLine to /start: {sentLine}</p>
               ) : null}
+              {staffDeskKeepsFinishChips(draft) ? (
+                <p className="type-legal">Ask Fox · Upload more · Request human</p>
+              ) : null}
             </section>
-          </>
-        )}
+        </>
 
         <p className="type-legal">{FOX_DISCLOSURE}</p>
         <p className="type-legal">{TRUST_LINE}</p>
@@ -284,11 +278,23 @@ export function ProcessingHub() {
   );
 }
 
-function FragmentRow({ label, value }: { label: string; value: string }) {
+function HubCell({ row, quiet = false }: { row: HubRow; quiet?: boolean }) {
+  const empty = row.value === HUB_EMPTY;
   return (
-    <>
-      <dt>{label}</dt>
-      <dd>{value}</dd>
-    </>
+    <div className={quiet ? "staff-hub-cell staff-hub-cell--quiet" : "staff-hub-cell"}>
+      <p className="staff-hub-cell__acronym">{row.label}</p>
+      <p
+        className={
+          empty
+            ? "staff-hub-cell__value is-empty"
+            : row.loud
+              ? "staff-hub-cell__value staff-hub-cell__value--loud"
+              : "staff-hub-cell__value"
+        }
+      >
+        {row.value}
+      </p>
+      {row.note ? <p className="staff-hub-cell__note">{row.note}</p> : null}
+    </div>
   );
 }
