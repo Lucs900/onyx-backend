@@ -4,6 +4,7 @@
  * Second browser resumes the same file_id. Proceed without account is not in_queue.
  */
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { emptyDraft, ensureFileId, getFoxDraft, loadIntakeDraft, startOverWorkspace } from "../components/fox/store";
 import { applyLooksRightMotion, applyProceedMotion, finishLineActions } from "../components/fox/motion";
 import { skipCurrentInvite } from "../components/fox/fileWrite";
@@ -346,6 +347,10 @@ async function main() {
   assert.equal(savePad.motion, unsaved.motion);
   assert.notEqual(savePad.motion, "in_queue");
   assert.equal(SAVE_THIS_FILE_LABEL, "Save this File");
+  const padSource = readFileSync(new URL("../components/fox/FilePreview.tsx", import.meta.url), "utf8");
+  assert.match(padSource, /SAVE_THIS_FILE_LABEL/);
+  assert.doesNotMatch(padSource, /accountSaveWallActions|CREATE_ACCOUNT_LABEL|Create account/);
+  assert.doesNotMatch(padSource, /LOGIN_LABEL|NOT_NOW_LABEL/);
   const parked = applyAccountSaveAsk(notNow);
   assert.notEqual(parked.motion, "in_queue");
   assert.deepEqual(labels(accountHomeActions(unsaved)), [CREATE_ACCOUNT_LABEL, LOGIN_LABEL]);
