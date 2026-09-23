@@ -61,14 +61,20 @@ import {
 import { skipWhoOnLoanName, whoOnLoanNameWasSkipped } from "../components/fox/whoOnLoan";
 import { memoryAccountStore, resumeFromStore } from "../lib/account/core";
 import {
+  ONYX_MAIL_FROM,
   PROTECTION_BYPASS_QUERY,
   SET_BYPASS_COOKIE_QUERY,
   SET_BYPASS_COOKIE_VALUE,
   absoluteMagicLink,
+  accountMailEnv,
   accountOrigin,
   accountTokenFromLocation,
+  isProtectedPreviewOrigin,
+  isUniquePreviewOrigin,
   letterHasProtectionBypass,
   letterMagicLink,
+  letterResumeOrigin,
+  resolveMailFrom,
   sendAccountChannel,
 } from "../lib/account/send";
 import type { FoxIntakeDraft, FoxMessage } from "../components/fox/types";
@@ -215,8 +221,13 @@ async function main() {
 
   const prevApp = process.env.NEXT_PUBLIC_APP_URL;
   const prevProd = process.env.VERCEL_PROJECT_PRODUCTION_URL;
+  const prevResume = process.env.ACCOUNT_RESUME_ORIGIN;
+  const prevResumeAlt = process.env.ONYX_RESUME_ORIGIN;
+  const prevFrom = process.env.RESEND_FROM;
   process.env.NEXT_PUBLIC_APP_URL = "https://onyx-backend-ten.vercel.app";
   process.env.VERCEL_PROJECT_PRODUCTION_URL = "onyx-backend-ten.vercel.app";
+  delete process.env.ACCOUNT_RESUME_ORIGIN;
+  delete process.env.ONYX_RESUME_ORIGIN;
   const uniqueHost = "https://onyx-backend-cgbg9w71v-onyx-direct.vercel.app";
   const fromOrigin = accountOrigin(
     new Request(`${uniqueHost}/api/account`, { headers: { origin: uniqueHost } }),
@@ -259,6 +270,24 @@ async function main() {
   assert.ok(!foxLineLeaksAccountSecret(ACCOUNT_EMAIL_SENT));
   assert.ok(!foxLineLeaksAccountSecret(spokenEmail));
   assert.doesNotMatch(letter, /onyx-backend-ten/);
+  assert.ok(isUniquePreviewOrigin(fromOrigin));
+  assert.ok(isProtectedPreviewOrigin(fromOrigin));
+  assert.equal(letterResumeOrigin(fromOrigin), fromOrigin);
+  assert.doesNotMatch(letterResumeOrigin(fromOrigin), /onyx-backend-ten/);
+  process.env.ACCOUNT_RESUME_ORIGIN = "https://desk.onyxdirect.com";
+  const publicResume = letterResumeOrigin(fromOrigin);
+  assert.equal(publicResume, "https://desk.onyxdirect.com");
+  assert.ok(!isProtectedPreviewOrigin(publicResume));
+  const publicLetter = letterMagicLink("tok", publicResume);
+  assert.equal(publicLetter, "https://desk.onyxdirect.com/start?account=tok");
+  assert.ok(!letterHasProtectionBypass(publicLetter));
+  assert.doesNotMatch(publicLetter, /x-vercel-protection-bypass|x-vercel-set-bypass-cookie|vercel\.app|onyx-backend-ten/);
+  delete process.env.ACCOUNT_RESUME_ORIGIN;
+  assert.equal(ONYX_MAIL_FROM, "ONYX Direct <lucas@onyxdirect.com>");
+  process.env.RESEND_FROM = "ONYX <james.b@example.com>";
+  assert.equal(resolveMailFrom(process.env.RESEND_FROM), ONYX_MAIL_FROM);
+  assert.equal(accountMailEnv().resendFrom, ONYX_MAIL_FROM);
+  assert.equal(resolveMailFrom("ONYX Direct <lucas@onyxdirect.com>"), ONYX_MAIL_FROM);
   delete process.env.VERCEL_AUTOMATION_BYPASS_SECRET;
   const letterDark = letterMagicLink("tok", fromOrigin);
   assert.equal(letterDark, absoluteMagicLink("tok", fromOrigin));
@@ -271,6 +300,12 @@ async function main() {
   else process.env.NEXT_PUBLIC_APP_URL = prevApp;
   if (prevProd === undefined) delete process.env.VERCEL_PROJECT_PRODUCTION_URL;
   else process.env.VERCEL_PROJECT_PRODUCTION_URL = prevProd;
+  if (prevResume === undefined) delete process.env.ACCOUNT_RESUME_ORIGIN;
+  else process.env.ACCOUNT_RESUME_ORIGIN = prevResume;
+  if (prevResumeAlt === undefined) delete process.env.ONYX_RESUME_ORIGIN;
+  else process.env.ONYX_RESUME_ORIGIN = prevResumeAlt;
+  if (prevFrom === undefined) delete process.env.RESEND_FROM;
+  else process.env.RESEND_FROM = prevFrom;
 
   const sendDry = await sendAccountChannel({
     channel: "email",

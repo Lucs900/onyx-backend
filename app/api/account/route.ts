@@ -7,8 +7,10 @@ import {
 import {
   accountMailEnv,
   accountOrigin,
+  isUniquePreviewOrigin,
   letterHasProtectionBypass,
   letterMagicLink,
+  letterResumeOrigin,
   sendAccountChannel,
 } from "@/lib/account/send";
 import {
@@ -34,13 +36,14 @@ export async function GET(request: Request) {
   const url = new URL(request.url);
   if (url.searchParams.get("mailer") === "1") {
     const env = accountMailEnv();
-    const origin = accountOrigin(request);
+    const createOrigin = accountOrigin(request);
+    const origin = letterResumeOrigin(createOrigin);
     const sample = origin ? letterMagicLink("probe", origin) : "";
     const letterHasBypass = letterHasProtectionBypass(sample);
     let letterOpensWithoutVercelLogin = false;
     let probeStatus = 0;
     let probeLocationHost = "";
-    if (letterHasBypass && sample.startsWith("http")) {
+    if (sample.startsWith("http")) {
       try {
         const probe = await fetch(sample, {
           redirect: "manual",
@@ -63,9 +66,13 @@ export async function GET(request: Request) {
     }
     return NextResponse.json({
       emailReady: Boolean(env.resendKey && env.fromOk),
+      from: env.resendFrom,
       fromOk: env.fromOk,
       phoneReady: Boolean(env.twilioSid && env.twilioToken && env.twilioFrom),
+      createOrigin,
+      letterOrigin: origin,
       letterHasBypass,
+      letterHostIsUniquePreview: isUniquePreviewOrigin(origin),
       letterOpensWithoutVercelLogin,
       probeStatus,
       probeLocationHost,
@@ -134,7 +141,8 @@ export async function POST(request: Request) {
       messages,
     );
     await saveAccountRecord(linked);
-    const letterOrigin = accountOrigin(request);
+    const createOrigin = accountOrigin(request);
+    const letterOrigin = letterResumeOrigin(createOrigin);
     const sent = await sendAccountChannel({
       channel: body.phone ? "phone" : "email",
       email: body.email,
@@ -148,7 +156,9 @@ export async function POST(request: Request) {
       sent: sent.sent,
       sendProvider: sent.provider ?? null,
       sendReason: sent.reason ?? null,
+      createOrigin,
       letterOrigin,
+      letterHasBypass: letterHasProtectionBypass(letterMagicLink(linked.token, letterOrigin)),
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "create_failed";

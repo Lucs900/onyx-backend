@@ -1,7 +1,7 @@
 # Pad Save this File only (23 Sep 2026)
 
 ## Status
-OPEN — tip Code Builder. Preview only. Do not merge. READY ≠ ACCEPT.
+ACCEPT `f845741` (founder paperclip). Preview only. Do not merge.
 Why-sentence `d0dd8ed` and Fox chips `97e6b9b` stay locked.
 
 ## Why

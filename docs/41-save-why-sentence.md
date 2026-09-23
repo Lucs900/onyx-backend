@@ -1,7 +1,7 @@
 # Save why-sentence (23 Sep 2026)
 
 ## Status
-OPEN — tip Code Builder. Preview only. Do not merge. READY ≠ ACCEPT.
+ACCEPT `d0dd8ed` (founder paperclip). Preview only. Do not merge.
 Chips wall `97e6b9b` stays locked. No hub work. No intelligence rewrite.
 
 ## Why

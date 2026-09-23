@@ -28,8 +28,18 @@ function originFromHost(host: string, proto = "https") {
   return `${proto}://${first.replace(/\/$/, "")}`;
 }
 
+function hostOf(origin: string) {
+  const raw = origin.trim();
+  if (!raw) return "";
+  try {
+    return new URL(/^https?:\/\//i.test(raw) ? raw : `https://${raw}`).hostname.toLowerCase();
+  } catch {
+    return "";
+  }
+}
+
 /**
- * Magic-link host is the host that handled create — request Origin / Host.
+ * Create-host is the host that handled Create account — request Origin / Host.
  * Never prefer NEXT_PUBLIC_APP_URL, VERCEL_PROJECT_PRODUCTION_URL, or a
  * hardcoded production alias (onyx-backend-ten) over that request.
  */
@@ -56,6 +66,50 @@ export function accountOrigin(request?: Request) {
   return "";
 }
 
+/** Explicit cookie-less resume host. Not VERCEL_PROJECT_PRODUCTION_URL / onyx-backend-ten. */
+export function configuredResumeOrigin() {
+  const raw =
+    process.env.ACCOUNT_RESUME_ORIGIN?.trim() ||
+    process.env.ONYX_RESUME_ORIGIN?.trim() ||
+    "";
+  if (!raw) return "";
+  return cleanOrigin(/^https?:\/\//i.test(raw) ? raw : `https://${raw}`);
+}
+
+export function isUniquePreviewOrigin(origin: string) {
+  const host = hostOf(origin);
+  return /^onyx-backend-[a-z0-9]+-onyx-direct\.vercel\.app$/.test(host) && !host.includes("-git-");
+}
+
+/**
+ * Vercel Authentication preview (unique, branch alias, team preview alias).
+ * A configured ACCOUNT_RESUME_ORIGIN is treated as cookie-less even if it
+ * looks like a preview host — that env is the public desk they unprotect.
+ */
+export function isProtectedPreviewOrigin(origin: string) {
+  const host = hostOf(origin);
+  if (!host) return false;
+  const configured = configuredResumeOrigin();
+  if (configured && hostOf(configured) === host) return false;
+  if (host.endsWith(".vercel.app") && host.includes("onyx-direct")) return true;
+  if (host.endsWith(".vercel.app") && host.includes("-git-")) return true;
+  if (/^onyx-backend-[a-z0-9]{6,}-/.test(host) && host.endsWith(".vercel.app")) return true;
+  return false;
+}
+
+/**
+ * Letter host for the borrower tap. Prefer a public cookie-less resume host
+ * when configured. Never auto-prefer production / onyx-backend-ten (2346d7e).
+ * Protected create-host falls through so 575fee8 can still cookie the preview.
+ */
+export function letterResumeOrigin(createOrigin = "") {
+  const configured = configuredResumeOrigin();
+  if (configured && !isProtectedPreviewOrigin(configured)) return configured;
+  const create = cleanOrigin(createOrigin);
+  if (create && !isProtectedPreviewOrigin(create)) return create;
+  return create;
+}
+
 export function absoluteMagicLink(token: string, origin: string) {
   const path = magicLinkFor(token);
   if (!origin) return path;
@@ -79,6 +133,8 @@ export function letterMagicLink(token: string, origin: string) {
   const base = absoluteMagicLink(token, origin);
   const secret = protectionBypassSecret();
   if (!secret || !/^https?:\/\//i.test(base)) return base;
+  // Public / cookie-less host: borrower tap must not carry protection-bypass.
+  if (!isProtectedPreviewOrigin(origin)) return base;
   const url = new URL(base);
   url.searchParams.set(PROTECTION_BYPASS_QUERY, secret);
   // Query, not an agent header. Vercel then cookies follow-up CSS/JS/API so
@@ -113,14 +169,23 @@ export function accountTokenFromLocation(search: string, hash = "") {
   return (new URLSearchParams(raw).get(ACCOUNT_QUERY) ?? "").trim();
 }
 
-export const ONYX_MAIL_FROM = "ONYX <james.b@example.com>";
+export const ONYX_MAIL_FROM = "ONYX Direct <lucas@onyxdirect.com>";
 
 export function onyxMailFrom(value: string) {
   return /@(?:onyxlending|onyxdirect)\.com\b/i.test(value);
 }
 
+/** Locked sender for this SHA. Old ONYX james.b@example.com does not win. */
+export function resolveMailFrom(value = "") {
+  const trimmed = value.trim();
+  if (/lucas@onyxdirect\.com\b/i.test(trimmed)) {
+    return /ONYX Direct/i.test(trimmed) ? trimmed : ONYX_MAIL_FROM;
+  }
+  return ONYX_MAIL_FROM;
+}
+
 export function accountMailEnv() {
-  const resendFrom = process.env.RESEND_FROM?.trim() || ONYX_MAIL_FROM;
+  const resendFrom = resolveMailFrom(process.env.RESEND_FROM || "");
   return {
     resendKey: process.env.RESEND_API_KEY?.trim() || "",
     resendFrom,

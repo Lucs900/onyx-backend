@@ -3,7 +3,7 @@
 ## Status
 ACCEPT `575fee8` InPrivate desk resume (founder paperclip). Preview only. Do not merge. READY ≠ ACCEPT.
 
-Save-wall chips ACCEPT 97e6b9b closed. OPEN: Save why-sentence (41-save-why-sentence.md) — tip in flight. Still parked: production sender + cookie-less production host.
+Save-wall chips ACCEPT 97e6b9b + Save why ACCEPT `d0dd8ed` + pad Save only ACCEPT `f845741` closed. OPEN: production sender + cookie-less resume (43-account-prod-sender.md). Header leftover still parked.
 
 ## Why
 After hub v0 spine, the File must follow the person across browsers via account — not “this device.” Invite-only is only a side door — do not design an invite product.
@@ -24,7 +24,8 @@ After hub v0 spine, the File must follow the person across browsers via account 
 ## Locks still true
 - Account chips Create account · Log in · Not now: not on value, lien, line, address, House, or under a live Proceed strip. Composer = live Fox question only. (d475774 ADD → locked under ACCEPT 8fa7382.)
 - After Proceed on browser-only File (ACCEPT 97e6b9b chips): Create account · Log in · Not now · Request human last. Status gathering · not in_queue. Drop Proceed · Not yet · Upload more off that wall. Not now = keep talking. Pad Save stays. After account: ONYX has this + Ask Fox · Upload more · Request human.
-- OPEN Save why-sentence (supersedes logistics-only leftover): after Proceed, before chips — “Save so this desk is yours on the next phone. Then I can send it to review.” See 41-save-why-sentence.md.
+- After Proceed Save why (ACCEPT d0dd8ed): “Save so this desk is yours on the next phone. Then I can send it to review.” then chips. See 41-save-why-sentence.md.
+- Pad Save only (ACCEPT f845741): pad keeps Save this File only while browser-only; Create account · Log in · Not now on the Fox Save line only. See 42-pad-save-only.md.
 - Header: Not now is chip-only on the Save ask — not a permanent header link. Header Log in / Start your relationship polish still parked (not this SHA).
 - Start over after account: wipe File, keep account, confirm first. Start over is not logout.
 - No in_queue without account. Status gathering is the Save wall, not the hub grid.
@@ -36,11 +37,11 @@ After hub v0 spine, the File must follow the person across browsers via account 
 - Real magic email (Resend / ONYX domain). Log in one beat. Proceed with no account → not in_queue; pad Save this File while browser-only.
 - Preview InPrivate: letter may carry protection-bypass + set-bypass-cookie so Fox+pad mount without Vercel login.
 
-## Still open (not a ticket until founder opens)
-- Production sender + cookie-less production host (no Vercel protection bypass in letter).
+## OPEN now
+- Production sender + cookie-less resume host — see 43-account-prod-sender.md. From ONYX Direct &lt;lucas@onyxdirect.com&gt;; Subject Your ONYX File; InPrivate resume without protection-bypass on borrower link; clean `/start?path=acr`.
 
 ## Out / parked
-Holding-page publish (parked); dense 1008 ACCEPT 8fa7382 + Save-wall ACCEPT 97e6b9b; Save why-sentence OPEN, referral cash, credit pull.
+Holding-page publish (parked); dense 1008 ACCEPT 8fa7382 + Save-wall ACCEPT 97e6b9b + Save why ACCEPT d0dd8ed + pad Save ACCEPT f845741 (header leftover parked), referral cash, credit pull.
 
 ## Keep closed
-4cc75b7 hub v0 spine, 8fa7382 IO, 97e6b9b chips, 575fee8 letter, f896f95 Skip-on-name, HELOC chapter. Design door locked.
+4cc75b7 hub v0 spine, 8fa7382 IO, 97e6b9b chips, d0dd8ed why, f845741 pad, 575fee8 letter-on-preview, f896f95 Skip-on-name, HELOC chapter. Design door locked.
