@@ -312,6 +312,11 @@ async function main() {
   assert.notEqual(unsaved.motion, "in_queue");
   assert.equal(accountSaveAskOpen(unsaved), true);
   assert.equal(unsaved.accountSaveAsk, true);
+  assert.equal(
+    ACCOUNT_SAVE_ASK,
+    "Save so this desk is yours on the next phone. Then I can send it to review.",
+  );
+  assert.doesNotMatch(ACCOUNT_SAVE_ASK, /isn’t only this browser|isn.t only this browser/);
   assert.equal(nextFoxAsk(unsaved).text, ACCOUNT_SAVE_ASK);
   assert.deepEqual(labels(accountSaveWallActions(unsaved)), [
     CREATE_ACCOUNT_LABEL,

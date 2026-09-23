@@ -33,7 +33,7 @@ export const ACCOUNT_CODE_ASK = "What’s the 6-digit code from your phone?";
 export const ACCOUNT_LOGIN_ASK = "Welcome back. Email or phone for a code?";
 export const ACCOUNT_SKIPPED_LINE = "Sketch stays on this browser. Create account anytime.";
 export const ACCOUNT_SAVE_ASK =
-  "Save this File so it isn’t only this browser. Then I can send it to review.";
+  "Save so this desk is yours on the next phone. Then I can send it to review.";
 export const ACCOUNT_EMAIL_SENT = "Check your email for a link to this File. Open it on any browser.";
 export const ACCOUNT_PHONE_SENT = "I sent a code to your phone. Enter it here when it arrives.";
 export const ACCOUNT_SEND_FAILED = "I couldn’t send that. Try again, or pick Phone.";

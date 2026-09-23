@@ -3,7 +3,7 @@
 ## Status
 ACCEPT `575fee8` InPrivate desk resume (founder paperclip). Preview only. Do not merge. READY ≠ ACCEPT.
 
-Account chapter still open for: production sender + cookie-less production host. Queue idle until founder opens the next hole.
+Save-wall chips ACCEPT 97e6b9b closed. OPEN: Save why-sentence (41-save-why-sentence.md) — tip in flight. Still parked: production sender + cookie-less production host.
 
 ## Why
 After hub v0 spine, the File must follow the person across browsers via account — not “this device.” Invite-only is only a side door — do not design an invite product.
@@ -23,8 +23,9 @@ After hub v0 spine, the File must follow the person across browsers via account 
 
 ## Locks still true
 - Account chips Create account · Log in · Not now: not on value, lien, line, address, House, or under a live Proceed strip. Composer = live Fox question only. (d475774 ADD → locked under ACCEPT 8fa7382.)
-- After Proceed on browser-only File: Save speech + Create account · Log in · Not now; Request human last. Drop Proceed · Not yet · Upload more off that wall. Not now = keep talking. No in_queue. Pad Save stays. After account: ONYX has this + Ask Fox · Upload more · Request human. (Founder ADD on ACCEPT 8fa7382, 23 Sep 2026.)
-- Header permanent: Create account · Log in · Start over only. Not now is chip-only on the Save ask — not a permanent header link.
+- After Proceed on browser-only File (ACCEPT 97e6b9b chips): Create account · Log in · Not now · Request human last. Status gathering · not in_queue. Drop Proceed · Not yet · Upload more off that wall. Not now = keep talking. Pad Save stays. After account: ONYX has this + Ask Fox · Upload more · Request human.
+- OPEN Save why-sentence (supersedes logistics-only leftover): after Proceed, before chips — “Save so this desk is yours on the next phone. Then I can send it to review.” See 41-save-why-sentence.md.
+- Header: Not now is chip-only on the Save ask — not a permanent header link. Header Log in / Start your relationship polish still parked (not this SHA).
 - Start over after account: wipe File, keep account, confirm first. Start over is not logout.
 - No in_queue without account. Status gathering is the Save wall, not the hub grid.
 - Design door: first screen huge Buy · Refinance · HELOC (+ Jumbo/Other); quiet Create account · Log in · Not now.
@@ -39,7 +40,7 @@ After hub v0 spine, the File must follow the person across browsers via account 
 - Production sender + cookie-less production host (no Vercel protection bypass in letter).
 
 ## Out / parked
-Holding-page publish (parked); dense 1008 ACCEPT 8fa7382 + Save-wall ADD open, referral cash, credit pull.
+Holding-page publish (parked); dense 1008 ACCEPT 8fa7382 + Save-wall ACCEPT 97e6b9b; Save why-sentence OPEN, referral cash, credit pull.
 
 ## Keep closed
-4cc75b7 hub v0 spine, f896f95 Skip-on-name, HELOC chapter. Design door locked. Queue idle.
+4cc75b7 hub v0 spine, 8fa7382 IO, 97e6b9b chips, 575fee8 letter, f896f95 Skip-on-name, HELOC chapter. Design door locked.
