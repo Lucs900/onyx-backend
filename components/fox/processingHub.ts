@@ -180,7 +180,7 @@ export function hubPayRows(draft: FoxIntakeDraft): HubRow[] {
 export function hubStateRows(draft: FoxIntakeDraft): HubRow[] {
   return [
     shellRow("status", "STAT", motionStatusCopy(draft), hubCompletenessWhisper(draft)),
-    shellRow("next", "NEXT", nextActorOf(draft), waitingOnOf(draft) !== nextActorOf(draft) ? waitingOnOf(draft) : undefined),
+    shellRow("next", "NEXT", String(nextActorOf(draft) ?? ""), String(waitingOnOf(draft) ?? "") !== String(nextActorOf(draft) ?? "") ? String(waitingOnOf(draft) ?? "") : undefined),
   ];
 }
 
