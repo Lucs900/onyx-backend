@@ -54,12 +54,63 @@ export function withLinkedAccount(draft: FoxIntakeDraft, accountId = "acct_lefto
   return draft.accountId ? draft : { ...draft, accountId };
 }
 
+export const START_OVER_CONFIRM = "Start over wipes this File. Your account stays.";
+
+export function startOverNeedsConfirm(draft: FoxIntakeDraft) {
+  return hasLinkedAccount(draft);
+}
+
 export function accountOfferOpen(draft: FoxIntakeDraft) {
   if (hasLinkedAccount(draft)) return false;
   const ask = accountAskOf(draft);
   if (accountSaveAskOpen(draft) && (!ask || ask === "offer")) return true;
   if (draft.accountSkipped) return false;
-  return !ask || ask === "offer";
+  if (ask && ask !== "offer") return false;
+  return !draft.productIntent;
+}
+
+function accountOfferChips(): FoxAction[] {
+  return [
+    {
+      id: "create-account",
+      label: CREATE_ACCOUNT_LABEL,
+      event: "bubble",
+      capture: { field: "create-account" },
+      quiet: true,
+    },
+    {
+      id: "login-account",
+      label: LOGIN_LABEL,
+      event: "bubble",
+      capture: { field: "login-account" },
+      quiet: true,
+    },
+    {
+      id: "skip-account",
+      label: NOT_NOW_LABEL,
+      event: "bubble",
+      capture: { field: "skip-account" },
+      quiet: true,
+    },
+  ];
+}
+
+/** Start over row · pad Save. Not on value / lien / line / address / House / Proceed. */
+export function accountHomeActions(draft: FoxIntakeDraft): FoxAction[] {
+  if (hasLinkedAccount(draft)) return [];
+  const ask = accountAskOf(draft);
+  if (ask === "channel" || ask === "email" || ask === "phone" || ask === "code" || ask === "sent") {
+    return [];
+  }
+  if (draft.accountSkipped && !accountSaveAskOpen(draft)) {
+    return accountOfferChips().filter((item) => item.id !== "skip-account");
+  }
+  return accountOfferChips();
+}
+
+export function accountFlowOpen(draft: FoxIntakeDraft) {
+  const ask = accountAskOf(draft);
+  return ask === "channel" || ask === "email" || ask === "phone" || ask === "code";
 }
 
 export function accountSideActions(draft: FoxIntakeDraft): FoxAction[] {
@@ -106,29 +157,7 @@ export function accountSideActions(draft: FoxIntakeDraft): FoxAction[] {
   }
   if (ask === "sent") return [];
   if (!accountOfferOpen(draft)) return [];
-  return [
-    {
-      id: "create-account",
-      label: CREATE_ACCOUNT_LABEL,
-      event: "bubble",
-      capture: { field: "create-account" },
-      quiet: true,
-    },
-    {
-      id: "login-account",
-      label: LOGIN_LABEL,
-      event: "bubble",
-      capture: { field: "login-account" },
-      quiet: true,
-    },
-    {
-      id: "skip-account",
-      label: NOT_NOW_LABEL,
-      event: "bubble",
-      capture: { field: "skip-account" },
-      quiet: true,
-    },
-  ];
+  return accountOfferChips();
 }
 
 export function applyAccountCapture(
@@ -147,7 +176,13 @@ export function applyAccountCapture(
     return { ...draft, accountAsk: "channel", accountSkipped: false };
   }
   if (capture.field === "skip-account") {
-    return { ...draft, accountAsk: undefined, accountSkipped: true };
+    return {
+      ...draft,
+      accountAsk: undefined,
+      accountSkipped: true,
+      accountSaveAsk: false,
+      pendingFinish: undefined,
+    };
   }
   if (capture.field === "account-channel") {
     const channel = capture.value === "phone" ? "phone" : "email";

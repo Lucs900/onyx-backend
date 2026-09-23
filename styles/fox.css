@@ -401,9 +401,26 @@
   cursor: pointer;
 }
 
+.fox-bar__start-over-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px 12px;
+  margin-left: auto;
+}
+
+.fox-bar__start-over-row .fox-bar__start-over {
+  margin-left: 0;
+}
+
 .fox-bar__start-over {
   text-decoration: underline;
   text-underline-offset: 2px;
+}
+
+.fox-bar__start-over--chip {
+  font-weight: 500;
 }
 
 .fox-panel__thread {

@@ -477,7 +477,8 @@ export function withHelocToolQuote(draft: FoxIntakeDraft): FoxIntakeDraft {
     draft.liveQuote?.key === key &&
     draft.liveQuoteStatus === "ready" &&
     draft.liveQuote.kind === "heloc" &&
-    draft.liveQuote.rate > 0
+    draft.liveQuote.rate > 0 &&
+    (draft.liveQuote.interestOnly ?? 0) > 0
   ) {
     return draft;
   }

@@ -119,6 +119,7 @@ import {
   setFoxMessages,
   setLiveQuoteResult,
   shouldResumeWorkspaceEntry,
+  getAccountSession,
   startOverWorkspace,
   subscribeFoxDraft,
 } from "./store";
@@ -131,11 +132,15 @@ import {
   ACCOUNT_SEND_FAILED,
   ACCOUNT_WHY_SENTENCE,
   SAVE_THIS_FILE_LABEL,
+  START_OVER_CONFIRM,
+  accountFlowOpen,
+  accountHomeActions,
   accountSentCopy,
   accountSideActions,
   accountWorkspaceReply,
   composerPlaceholderForAccount,
   foxLineLeaksAccountSecret,
+  startOverNeedsConfirm,
 } from "./account";
 import {
   caretAfterMoneyFormat,
@@ -818,6 +823,7 @@ function FoxAccountStrip({
   draft: FoxIntakeDraft;
   onAction: (action: FoxAction) => void;
 }) {
+  if (!accountFlowOpen(draft)) return null;
   const actions = accountSideActions(draft);
   if (!actions.length) return null;
   return (
@@ -876,6 +882,7 @@ function FoxWorkspace({
   hideClose,
   stickyDisclosure,
   onStartOver,
+  onAction,
 }: {
   className: string;
   messages: FoxMessage[];
@@ -887,7 +894,9 @@ function FoxWorkspace({
   hideClose?: boolean;
   stickyDisclosure?: boolean;
   onStartOver?: () => void;
+  onAction?: (action: FoxAction) => void;
 }) {
+  const homeChips = onStartOver ? accountHomeActions(draft) : [];
   return (
     <div
       id="fox-panel"
@@ -904,9 +913,23 @@ function FoxWorkspace({
           {stickyDisclosure ? <p className="fox-bar__disclosure">{FOX_DISCLOSURE}</p> : null}
         </div>
         {onStartOver ? (
-          <button type="button" className="fox-bar__start-over" onClick={onStartOver}>
-            Start over
-          </button>
+          <div className="fox-bar__start-over-row">
+            {onAction
+              ? homeChips.map((action) => (
+                  <button
+                    key={action.id}
+                    type="button"
+                    className="fox-bar__start-over fox-bar__start-over--chip"
+                    onClick={() => onAction(action)}
+                  >
+                    {action.label}
+                  </button>
+                ))
+              : null}
+            <button type="button" className="fox-bar__start-over" onClick={onStartOver}>
+              Start over
+            </button>
+          </div>
         ) : hideClose ? null : (
           <button
             type="button"
@@ -2638,9 +2661,13 @@ export function AlwaysOnFox({
       }
       hideClose={isStart || isHome}
       stickyDisclosure={isStart}
+      onAction={isStart ? runAction : undefined}
       onStartOver={
         isStart
           ? () => {
+              if (startOverNeedsConfirm(draft) || getAccountSession()) {
+                if (!window.confirm(START_OVER_CONFIRM)) return;
+              }
               const path = startPath ?? getFoxDraft().path ?? "acr";
               const fresh = startOverWorkspace(path);
               resetRateflowSearch();

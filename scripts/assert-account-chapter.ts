@@ -4,7 +4,7 @@
  * Second browser resumes the same file_id. Proceed without account is not in_queue.
  */
 import assert from "node:assert/strict";
-import { emptyDraft, ensureFileId } from "../components/fox/store";
+import { emptyDraft, ensureFileId, getFoxDraft, loadIntakeDraft, startOverWorkspace } from "../components/fox/store";
 import { applyLooksRightMotion, applyProceedMotion, finishLineActions } from "../components/fox/motion";
 import { skipCurrentInvite } from "../components/fox/fileWrite";
 import { applyCouponChoice } from "../components/fox/liveCoupon";
@@ -37,6 +37,7 @@ import {
   LOGIN_LABEL,
   NOT_NOW_LABEL,
   SAVE_THIS_FILE_LABEL,
+  accountHomeActions,
   accountSaveAskOpen,
   accountSentCopy,
   accountSideActions,
@@ -120,7 +121,12 @@ async function main() {
   assert.match(greet.text, /relationship file|Start a relationship|Buy/i);
   assert.deepEqual(labels(greet.actions), ["Buy", "Refinance", "HELOC", "Jumbo", "Other"]);
   assert.deepEqual(labels(accountSideActions(first)), [CREATE_ACCOUNT_LABEL, LOGIN_LABEL, NOT_NOW_LABEL]);
+  assert.deepEqual(labels(accountHomeActions(first)), [CREATE_ACCOUNT_LABEL, LOGIN_LABEL, NOT_NOW_LABEL]);
   assert.ok(!labels(deskStripActions([{ id: "g", role: "fox", text: greet.text }], first)).includes(CREATE_ACCOUNT_LABEL));
+  const midWalk = houseReady(writePurchasePrice(firstQuestion(), 500_000));
+  assert.deepEqual(labels(accountSideActions(midWalk)), []);
+  assert.deepEqual(labels(accountHomeActions(midWalk)), [CREATE_ACCOUNT_LABEL, LOGIN_LABEL, NOT_NOW_LABEL]);
+  assert.ok(!labels(deskStripActions([{ id: "v", role: "fox", text: "What’s the property value?" }], midWalk)).includes(CREATE_ACCOUNT_LABEL));
 
   const create = workspaceReply("Create account", first);
   assert.equal(create?.capture?.field, "create-account");
@@ -312,6 +318,20 @@ async function main() {
   assert.equal(SAVE_THIS_FILE_LABEL, "Save this File");
   const parked = applyAccountSaveAsk(notNow);
   assert.notEqual(parked.motion, "in_queue");
+  assert.deepEqual(labels(accountHomeActions(unsaved)), [CREATE_ACCOUNT_LABEL, LOGIN_LABEL, NOT_NOW_LABEL]);
+  const keepTalking = applyAccountCapture(unsaved, { field: "skip-account" });
+  assert.equal(keepTalking.accountSkipped, true);
+  assert.equal(keepTalking.accountSaveAsk, false);
+  assert.notEqual(keepTalking.motion, "in_queue");
+  const hubUnsaved = processingHubView(unsaved);
+  assert.notEqual(hubUnsaved.state.status, "gathering");
+  assert.equal(hubUnsaved.state.rows.find((row) => row.id === "status")?.value, "preparing");
+  loadIntakeDraft(withLinkedAccount(unsaved, opened.draft.accountId));
+  const oldFileId = getFoxDraft().fileId;
+  const wiped = startOverWorkspace("acr");
+  assert.equal(wiped.accountId, opened.draft.accountId);
+  assert.notEqual(wiped.fileId, oldFileId);
+  assert.equal(wiped.productIntent, undefined);
   const accounted = justMeSkipProceed(withLinkedAccount(notNow));
   assert.equal(accounted.motion, "in_queue");
 

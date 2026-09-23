@@ -1331,7 +1331,8 @@ function markWorkspaceEntry(path?: IntakePath | null) {
   hydrated = true;
 }
 
-const PREVIEW_STORAGE_KEYS = [INTAKE_STORAGE_KEY, FOX_MESSAGES_KEY, START_PATH_KEY, FOX_PANEL_KEY, FOX_ACCOUNT_KEY];
+const FILE_STORAGE_KEYS = [INTAKE_STORAGE_KEY, FOX_MESSAGES_KEY, START_PATH_KEY, FOX_PANEL_KEY];
+const PREVIEW_STORAGE_KEYS = [...FILE_STORAGE_KEYS, FOX_ACCOUNT_KEY];
 
 export function clearPreviewWorkspaceStorage() {
   if (typeof window === "undefined") return;
@@ -1345,9 +1346,23 @@ export function clearPreviewWorkspaceStorage() {
   }
 }
 
-/** Start over is the only wipe: new file_id, empty Structure, empty thread. */
+function clearFileWorkspaceStorage() {
+  if (typeof window === "undefined") return;
+  for (const key of FILE_STORAGE_KEYS) {
+    try {
+      window.localStorage.removeItem(key);
+      window.sessionStorage.removeItem(key);
+    } catch {
+      // Private mode / quota.
+    }
+  }
+}
+
+/** Start over wipes the File. Account stays. Confirm first in the desk. */
 export function startOverWorkspace(path: IntakePath | null = null) {
-  clearPreviewWorkspaceStorage();
+  const keepAccountId = current.accountId?.trim() || readAccountSession()?.accountId?.trim() || "";
+  const session = readAccountSession();
+  clearFileWorkspaceStorage();
   foxMessages = [];
   messagesHydrated = true;
   hydrated = false;
@@ -1369,7 +1384,18 @@ export function startOverWorkspace(path: IntakePath | null = null) {
   };
   const next = resetWorkspaceForEntry(path, null);
   if (path) writeStartPath(path);
-  return next;
+  if (!keepAccountId) return next;
+  current = { ...next, accountId: keepAccountId };
+  persist(current);
+  if (session && current.fileId) {
+    writeAccountSession({
+      token: session.token,
+      fileId: current.fileId,
+      accountId: session.accountId || keepAccountId,
+    });
+  }
+  persistLinkedAccountFile();
+  return current;
 }
 
 export function markDocCapSpoken() {

@@ -468,6 +468,13 @@
   color: var(--muted);
 }
 
+.file-preview__save-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
 .file-preview__save {
   align-self: flex-start;
   margin: 0;
@@ -480,6 +487,10 @@
   line-height: 18px;
   color: var(--ink);
   cursor: pointer;
+}
+
+.file-preview__save--chip {
+  font-weight: 500;
 }
 
 .file-preview__save:hover,

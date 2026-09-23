@@ -4,7 +4,9 @@
  * Never credit pull, lock, AU, SSN, BNTouch, LO-will-contact, green approved.
  */
 import { stillUsefulSpokenItems } from "./fileWrite";
-import { HIGH_LTV_CAUTION, fileCompleteness, showsAgencyCompleteness } from "./completeness";
+import { HIGH_LTV_CAUTION, fileCompleteness, isHelocFile, showsAgencyCompleteness } from "./completeness";
+import { withHelocToolQuote } from "./heloc";
+import { accountSaveAskOpen } from "./account";
 import {
   appendFileEvent,
   finishLineActions,
@@ -117,11 +119,27 @@ function qiShell(facts: ReturnType<typeof previewFacts>): HubRow {
   return shellRow("qualifying", "QI", amount, methodNote);
 }
 
-function ioShell(draft: FoxIntakeDraft): HubRow {
+function hubLiveDraft(draft: FoxIntakeDraft): FoxIntakeDraft {
+  return isHelocFile(draft) ? withHelocToolQuote(draft) : draft;
+}
+
+function moneyFromText(raw?: string) {
+  const match =
+    raw?.match(/interest-only\s+\$([\d,]+)/i) ||
+    raw?.match(/\bIO\s+\$([\d,]+)/i) ||
+    raw?.match(/\$([\d,]+)(?:\/mo)?/i);
+  if (!match) return "";
+  const amount = Number(match[1].replace(/,/g, ""));
+  return Number.isFinite(amount) && amount > 0 ? `$${Math.round(amount).toLocaleString("en-US")}` : "";
+}
+
+function ioShell(draft: FoxIntakeDraft, facts: ReturnType<typeof previewFacts>): HubRow {
   const monthly = draft.liveQuote?.interestOnly;
   if (monthly != null && monthly > 0) {
     return shellRow("io", "IO", `$${Math.round(monthly).toLocaleString("en-US")}`, undefined, true);
   }
+  const fromFact = moneyFromText([factOf(facts, "rate")?.value, factOf(facts, "rate")?.note].filter(Boolean).join(" "));
+  if (fromFact) return shellRow("io", "IO", fromFact, undefined, true);
   if (draft.liveQuote?.principalAndInterest != null && draft.liveQuote.principalAndInterest > 0) {
     return shellRow("io", "IO", "P&I");
   }
@@ -138,7 +156,15 @@ function rateShell(facts: ReturnType<typeof previewFacts>, draft: FoxIntakeDraft
   return shellRow("rate", "RATE", match?.[1] || found?.value, found?.note, true);
 }
 
+function hubStatusValue(draft: FoxIntakeDraft) {
+  if (accountSaveAskOpen(draft)) return "preparing";
+  const motion = motionStatusCopy(draft);
+  if (motion === "gathering" || motion === "confirmed") return "preparing";
+  return motion;
+}
+
 export function hubLoudRows(draft: FoxIntakeDraft): HubRow[] {
+  draft = hubLiveDraft(draft);
   const facts = previewFacts(draft);
   const product = factOf(facts, "product")?.value || (draft.productIntent ? productIntentLabel(draft.productIntent) : "");
   const purpose = factOf(facts, "purpose")?.value;
@@ -161,7 +187,7 @@ export function hubLoudRows(draft: FoxIntakeDraft): HubRow[] {
     shellRow("ltv", "LTV", ltv?.value, ltv?.note, true),
     shellRow("cltv", "CLTV", cltv?.value, cltv?.note, true),
     rateShell(facts, draft),
-    ioShell(draft),
+    ioShell(draft, facts),
     shellRow("credit", "FICO", credit?.value, credit?.note),
   ];
 }
@@ -173,13 +199,14 @@ export function hubLoudText(draft: FoxIntakeDraft) {
 }
 
 export function hubPayRows(draft: FoxIntakeDraft): HubRow[] {
+  draft = hubLiveDraft(draft);
   const facts = previewFacts(draft);
   return [qiShell(facts), shellRow("debts", "DEBT", factOf(facts, "debts")?.value, factOf(facts, "debts")?.note)];
 }
 
 export function hubStateRows(draft: FoxIntakeDraft): HubRow[] {
   return [
-    shellRow("status", "STAT", motionStatusCopy(draft), hubCompletenessWhisper(draft)),
+    shellRow("status", "STAT", hubStatusValue(draft), hubCompletenessWhisper(draft)),
     shellRow("next", "NEXT", String(nextActorOf(draft) ?? ""), String(waitingOnOf(draft) ?? "") !== String(nextActorOf(draft) ?? "") ? String(waitingOnOf(draft) ?? "") : undefined),
   ];
 }
@@ -220,6 +247,7 @@ export function hubCompletenessSignal(draft: FoxIntakeDraft) {
 }
 
 export function processingHubView(draft: FoxIntakeDraft): ProcessingHubView {
+  draft = hubLiveDraft(draft);
   return {
     fileId: draft.fileId?.trim() || undefined,
     path: staffHubPath(draft.fileId),
@@ -227,7 +255,7 @@ export function processingHubView(draft: FoxIntakeDraft): ProcessingHubView {
     loud: hubLoudRows(draft),
     pay: hubPayRows(draft),
     state: {
-      status: motionStatusCopy(draft),
+      status: hubStatusValue(draft),
       next: nextActorOf(draft),
       waitingOn: waitingOnOf(draft),
       completeness: hubCompletenessSignal(draft),

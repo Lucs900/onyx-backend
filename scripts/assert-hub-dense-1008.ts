@@ -73,6 +73,24 @@ function main() {
   assert.deepEqual(empty.state.quietFlags, []);
   assert.doesNotMatch(JSON.stringify(empty), /SSN|AU\b|lock desk|green approved/i);
 
+  const quotedFile = writeHelocLine(writeFirstLien(writePurchasePrice(houseHeloc(), 500_000), 400_000), 50_000);
+  const quotedHub = processingHubView(quotedFile);
+  assert.match(quotedHub.loud.find((row) => row.id === "rate")?.value ?? "", /8\.80%/);
+  assert.equal(quotedHub.loud.find((row) => row.id === "io")?.value, "$367");
+  const staleRate = {
+    ...quotedFile,
+    liveQuote: {
+      key: "heloc-stale-rate-only",
+      rate: 8.8,
+      asOf: "2026-09-22T00:00:00.000Z",
+      kind: "heloc" as const,
+    },
+    liveQuoteKey: "heloc-stale-rate-only",
+    liveQuoteStatus: "ready" as const,
+  };
+  assert.equal(hubLoudRows(staleRate).find((row) => row.id === "io")?.value, "$367");
+  assert.notEqual(hubStateRows(quotedFile).find((row) => row.id === "status")?.value, "gathering");
+
   const filled = ensureFileId(
     applyProceedMotion(
       withLinkedAccount(
