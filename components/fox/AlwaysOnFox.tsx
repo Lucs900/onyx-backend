@@ -919,7 +919,7 @@ function FoxWorkspace({
                   <button
                     key={action.id}
                     type="button"
-                    className="fox-bar__start-over fox-bar__start-over--chip"
+                    className="fox-bar__account-home"
                     onClick={() => onAction(action)}
                   >
                     {action.label}

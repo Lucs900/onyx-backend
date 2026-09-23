@@ -410,17 +410,27 @@
   margin-left: auto;
 }
 
-.fox-bar__start-over-row .fox-bar__start-over {
+.fox-bar__start-over-row .fox-bar__start-over,
+.fox-bar__start-over-row .fox-bar__account-home {
   margin-left: 0;
 }
 
-.fox-bar__start-over {
+.fox-bar__start-over,
+.fox-bar__account-home {
   text-decoration: underline;
   text-underline-offset: 2px;
 }
 
-.fox-bar__start-over--chip {
+.fox-bar__account-home {
+  flex: 0 0 auto;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-family: var(--font-ui);
+  font-size: 12px;
   font-weight: 500;
+  cursor: pointer;
 }
 
 .fox-panel__thread {
