@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Unique READY letter proof. OIDC opens mailer=1; the unique then no-auth GETs
-# /start?account=…&x-vercel-protection-bypass=… and must not land on vercel.com.
+# Unique create-host mailer proof. OIDC opens mailer=1 on the souvenir.
+# Borrower letter must be start.onyxdirect.com with no protection-bypass.
+# Unique /start without auth must still hit Vercel SSO (575fee8 workshop stays).
 # Never print the secret, the token, or the letter URL.
 set -euo pipefail
 
@@ -51,7 +52,11 @@ control_code="$(
     "${ORIGIN}/start?account=probe" || true
 )"
 control_host="$(location_host "$header_file")"
-echo "letter-bypass: no-auth /start?account=probe status=${control_code} location_host=${control_host}"
+echo "letter-bypass: no-auth unique /start?account=probe status=${control_code} location_host=${control_host}"
+if [[ "$control_host" != *vercel.com* && "$control_code" != "401" && "$control_code" != "403" ]]; then
+  echo "letter-bypass: unique preview is no longer Deployment Protected — do not disable protection on souvenirs" >&2
+  exit 3
+fi
 
 mailer_code="$(
   curl -sS -D "$header_file" -o "$body_file" -w '%{http_code}' --max-redirs 0 \
@@ -65,7 +70,14 @@ if [[ "$mailer_code" != "200" ]]; then
   exit 3
 fi
 
-BODY_FILE="$body_file" python3 - <<'PY'
+dns_code="$(
+  curl -sS -D "$header_file" -o /dev/null -w '%{http_code}' --max-redirs 0 \
+    "https://start.onyxdirect.com/start?path=acr" || true
+)"
+dns_host="$(location_host "$header_file")"
+echo "letter-bypass: no-auth start.onyxdirect.com/start?path=acr status=${dns_code} location_host=${dns_host:-none}"
+
+BODY_FILE="$body_file" DNS_CODE="$dns_code" DNS_HOST="$dns_host" python3 - <<'PY'
 import json
 import os
 import sys
@@ -80,14 +92,33 @@ has = bool(data.get("letterHasBypass"))
 opens = bool(data.get("letterOpensWithoutVercelLogin"))
 status = data.get("probeStatus")
 host = data.get("probeLocationHost") or "none"
+origin = str(data.get("letterOrigin") or "")
+frm = str(data.get("from") or "")
+unique = bool(data.get("letterHostIsUniquePreview"))
+dns_code = str(os.environ.get("DNS_CODE") or "")
+dns_host = str(os.environ.get("DNS_HOST") or "")
 print(
-    f"letter-bypass: letterHasBypass={has} letterOpensWithoutVercelLogin={opens} probeStatus={status} probeLocationHost={host}"
+    f"letter-bypass: letterOrigin={origin} from={frm} letterHasBypass={has} "
+    f"letterHostIsUniquePreview={unique} letterOpensWithoutVercelLogin={opens} "
+    f"probeStatus={status} probeLocationHost={host} dnsStatus={dns_code} dnsHost={dns_host}"
 )
-if not has:
-    print("letter-bypass: Preview missing VERCEL_AUTOMATION_BYPASS_SECRET — block READY", file=sys.stderr)
+if origin.rstrip("/") != "https://start.onyxdirect.com":
+    print("letter-bypass: borrower letter origin is not https://start.onyxdirect.com — block READY", file=sys.stderr)
     sys.exit(2)
-if not opens:
-    print("letter-bypass: no-auth letter GET still hit Vercel login or failed — block READY", file=sys.stderr)
+if "lucas@onyxdirect.com" not in frm.lower() or "ONYX Direct" not in frm:
+    print("letter-bypass: From is not ONYX Direct <lucas@onyxdirect.com> — block READY", file=sys.stderr)
+    sys.exit(2)
+if has:
+    print("letter-bypass: borrower letter still has protection-bypass — block READY", file=sys.stderr)
+    sys.exit(2)
+if unique:
+    print("letter-bypass: borrower letter still points at unique souvenir — block READY", file=sys.stderr)
+    sys.exit(2)
+if dns_code in {"000", "0"} or not dns_code:
+    print("letter-bypass: PASS letter shape is start.onyxdirect.com with no bypass — DNS still needed before InPrivate")
+    sys.exit(0)
+if dns_host.endswith("vercel.com") or dns_code in {"401", "403"}:
+    print("letter-bypass: start.onyxdirect.com hit Vercel login — do not disable unique protection; unprotect only this host", file=sys.stderr)
     sys.exit(3)
-print("letter-bypass: PASS no-auth letter GET is not vercel.com/login")
+print("letter-bypass: PASS borrower letter is start.onyxdirect.com, no bypass, no Vercel login")
 PY

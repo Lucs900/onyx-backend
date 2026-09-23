@@ -66,14 +66,18 @@ export function accountOrigin(request?: Request) {
   return "";
 }
 
-/** Explicit cookie-less resume host. Not VERCEL_PROJECT_PRODUCTION_URL / onyx-backend-ten. */
+/** Founder pick — one cookie-less resume host. Do not invent a second. */
+export const ACCOUNT_RESUME_ORIGIN_LOCKED = "https://start.onyxdirect.com";
+
+/** Cookie-less resume host. Not VERCEL_PROJECT_PRODUCTION_URL / onyx-backend-ten. */
 export function configuredResumeOrigin() {
   const raw =
     process.env.ACCOUNT_RESUME_ORIGIN?.trim() ||
     process.env.ONYX_RESUME_ORIGIN?.trim() ||
-    "";
-  if (!raw) return "";
-  return cleanOrigin(/^https?:\/\//i.test(raw) ? raw : `https://${raw}`);
+    ACCOUNT_RESUME_ORIGIN_LOCKED;
+  const cleaned = cleanOrigin(/^https?:\/\//i.test(raw) ? raw : `https://${raw}`);
+  if (hostOf(cleaned) === "start.onyxdirect.com") return ACCOUNT_RESUME_ORIGIN_LOCKED;
+  return ACCOUNT_RESUME_ORIGIN_LOCKED;
 }
 
 export function isUniquePreviewOrigin(origin: string) {

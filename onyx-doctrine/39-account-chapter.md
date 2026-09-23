@@ -38,7 +38,7 @@ After hub v0 spine, the File must follow the person across browsers via account 
 - Preview InPrivate: letter may carry protection-bypass + set-bypass-cookie so Fox+pad mount without Vercel login.
 
 ## OPEN now
-- Production sender + cookie-less resume host — see 43-account-prod-sender.md. From ONYX Direct &lt;lucas@onyxdirect.com&gt;; Subject Your ONYX File; InPrivate resume without protection-bypass on borrower link; clean `/start?path=acr`.
+- Production sender + cookie-less resume host — see 43-account-prod-sender.md. From ONYX Direct &lt;lucas@onyxdirect.com&gt;; Subject Your ONYX File; resume host `start.onyxdirect.com`; InPrivate without protection-bypass; clean `/start?path=acr`.
 
 ## Out / parked
 Holding-page publish (parked); dense 1008 ACCEPT 8fa7382 + Save-wall ACCEPT 97e6b9b + Save why ACCEPT d0dd8ed + pad Save ACCEPT f845741 (header leftover parked), referral cash, credit pull.

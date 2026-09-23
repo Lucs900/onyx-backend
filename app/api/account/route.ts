@@ -5,6 +5,7 @@ import {
   snapshotOf,
 } from "@/lib/account/core";
 import {
+  ACCOUNT_RESUME_ORIGIN_LOCKED,
   accountMailEnv,
   accountOrigin,
   isUniquePreviewOrigin,
@@ -71,6 +72,7 @@ export async function GET(request: Request) {
       phoneReady: Boolean(env.twilioSid && env.twilioToken && env.twilioFrom),
       createOrigin,
       letterOrigin: origin,
+      resumeOrigin: ACCOUNT_RESUME_ORIGIN_LOCKED,
       letterHasBypass,
       letterHostIsUniquePreview: isUniquePreviewOrigin(origin),
       letterOpensWithoutVercelLogin,

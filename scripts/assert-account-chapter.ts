@@ -61,6 +61,7 @@ import {
 import { skipWhoOnLoanName, whoOnLoanNameWasSkipped } from "../components/fox/whoOnLoan";
 import { memoryAccountStore, resumeFromStore } from "../lib/account/core";
 import {
+  ACCOUNT_RESUME_ORIGIN_LOCKED,
   ONYX_MAIL_FROM,
   PROTECTION_BYPASS_QUERY,
   SET_BYPASS_COOKIE_QUERY,
@@ -69,6 +70,7 @@ import {
   accountMailEnv,
   accountOrigin,
   accountTokenFromLocation,
+  configuredResumeOrigin,
   isProtectedPreviewOrigin,
   isUniquePreviewOrigin,
   letterHasProtectionBypass,
@@ -272,17 +274,20 @@ async function main() {
   assert.doesNotMatch(letter, /onyx-backend-ten/);
   assert.ok(isUniquePreviewOrigin(fromOrigin));
   assert.ok(isProtectedPreviewOrigin(fromOrigin));
-  assert.equal(letterResumeOrigin(fromOrigin), fromOrigin);
-  assert.doesNotMatch(letterResumeOrigin(fromOrigin), /onyx-backend-ten/);
+  assert.equal(ACCOUNT_RESUME_ORIGIN_LOCKED, "https://start.onyxdirect.com");
+  assert.equal(configuredResumeOrigin(), ACCOUNT_RESUME_ORIGIN_LOCKED);
+  assert.equal(letterResumeOrigin(fromOrigin), ACCOUNT_RESUME_ORIGIN_LOCKED);
+  assert.doesNotMatch(letterResumeOrigin(fromOrigin), /onyx-backend-ten|vercel\.app/);
   process.env.ACCOUNT_RESUME_ORIGIN = "https://desk.onyxdirect.com";
+  assert.equal(letterResumeOrigin(fromOrigin), ACCOUNT_RESUME_ORIGIN_LOCKED);
+  delete process.env.ACCOUNT_RESUME_ORIGIN;
   const publicResume = letterResumeOrigin(fromOrigin);
-  assert.equal(publicResume, "https://desk.onyxdirect.com");
+  assert.equal(publicResume, "https://start.onyxdirect.com");
   assert.ok(!isProtectedPreviewOrigin(publicResume));
   const publicLetter = letterMagicLink("tok", publicResume);
-  assert.equal(publicLetter, "https://desk.onyxdirect.com/start?account=tok");
+  assert.equal(publicLetter, "https://start.onyxdirect.com/start?account=tok");
   assert.ok(!letterHasProtectionBypass(publicLetter));
   assert.doesNotMatch(publicLetter, /x-vercel-protection-bypass|x-vercel-set-bypass-cookie|vercel\.app|onyx-backend-ten/);
-  delete process.env.ACCOUNT_RESUME_ORIGIN;
   assert.equal(ONYX_MAIL_FROM, "ONYX Direct <lucas@onyxdirect.com>");
   process.env.RESEND_FROM = "ONYX <james.b@example.com>";
   assert.equal(resolveMailFrom(process.env.RESEND_FROM), ONYX_MAIL_FROM);
