@@ -1402,6 +1402,12 @@ export function beginAccountResume() {
   hydrated = true;
 }
 
+export function failAccountResume() {
+  accountResumePending = false;
+  hydrated = true;
+  emit();
+}
+
 export function accountResumeIsPending() {
   return accountResumePending;
 }
@@ -2144,8 +2150,18 @@ export async function resumeAccountFromQuery(input: { token?: string; code?: str
         ? `file=${encodeURIComponent(input.fileId)}`
         : "";
   if (!query) return undefined;
-  const response = await fetch(`/api/account?${query}`);
-  if (!response.ok) return undefined;
+  let path = `/api/account?${query}`;
+  if (typeof window !== "undefined") {
+    const secret = new URL(window.location.href).searchParams.get("x-vercel-protection-bypass");
+    if (secret) {
+      path += `&x-vercel-protection-bypass=${encodeURIComponent(secret)}`;
+    }
+  }
+  const response = await fetch(path);
+  if (!response.ok) {
+    failAccountResume();
+    return undefined;
+  }
   const snapshot = (await response.json()) as {
     fileId: string;
     accountId: string;

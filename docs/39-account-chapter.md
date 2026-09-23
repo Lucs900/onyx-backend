@@ -14,7 +14,7 @@ After hub v0 spine, the File must follow the person across browsers via account 
 - Log in Fox (exact): “Welcome back. Email or phone for a code?” Same File.
 - Email magic link or phone code. Same person, same `file_id` on a second browser. Homepage `/start` resumes that File.
 - Magic-link origin is the host that handled create (request Origin / Host). Never `NEXT_PUBLIC_APP_URL`, `VERCEL_PROJECT_PRODUCTION_URL`, or `onyx-backend-ten` over that request.
-- Desk-letter URL (email only) appends `x-vercel-protection-bypass` from `VERCEL_AUTOMATION_BYPASS_SECRET` so InPrivate opens `/start?account=…` with no Vercel account. Snapshot `magicLink` stays `/start?account=` without the query. Never speak the query, the secret, or the token.
+- Desk-letter URL (email only) appends `x-vercel-protection-bypass` from `VERCEL_AUTOMATION_BYPASS_SECRET` **and** `x-vercel-set-bypass-cookie=true` so InPrivate can load Fox CSS/JS and `/api/account` after the first HTML. Bypass query alone is not a desk. Snapshot `magicLink` stays `/start?account=` without those queries. Never speak the query, the secret, or the token.
 - **Never print the token, `/start?account=…`, the bypass query, or the raw code in the borrower thread.** Fox says check your email / enter the code.
 - Real send: Resend (`RESEND_API_KEY`, `RESEND_FROM` on an ONYX domain) or Twilio. Fox says check your email **only when send succeeded**. If the mailer is dark or fails, Fox says it couldn’t send — never a token, never a lie.
 - After Email, chips are **Phone · Not now**. Composer is the address. Not now is not the only chip.
@@ -35,7 +35,7 @@ If the unique READY preview has no mail provider, set on the Vercel preview:
 - `RESEND_API_KEY`
 - `RESEND_FROM` (e.g. `ONYX <noreply@…>`)
 - Phone: `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM`
-- Letter InPrivate: `VERCEL_AUTOMATION_BYPASS_SECRET` (Protection Bypass for Automation). Query on the letter URL only. Never set-bypass-cookie.
+- Letter InPrivate: `VERCEL_AUTOMATION_BYPASS_SECRET` on the letter URL, plus `x-vercel-set-bypass-cookie=true` on that same letter (Vercel cookies follow-up assets). Agent testing still OIDC / `vercel curl` — never send set-bypass-cookie as a walker header.
 
 ## Keep closed
 4cc75b7 hub v0 spine, f896f95 Skip-on-name, b680d6a account spine (first-question / email / token resume / Not now), and prior File-honest locks (`1129e4b` / `529259d` / `0771262` / …).

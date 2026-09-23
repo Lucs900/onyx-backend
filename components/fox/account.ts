@@ -252,6 +252,7 @@ export function foxLineLeaksAccountSecret(text: string) {
     /\/start\?code=/i.test(text) ||
     /account=[a-z0-9]{8,}/i.test(text) ||
     /x-vercel-protection-bypass/i.test(text) ||
+    /x-vercel-set-bypass-cookie/i.test(text) ||
     /\bCode \d{6}\b/.test(text)
   );
 }

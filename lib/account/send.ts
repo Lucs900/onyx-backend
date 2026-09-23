@@ -2,7 +2,7 @@
  * Preview magic-link / phone-code send. Resend or Twilio when env is set.
  * Never put the token, URL, or code in the borrower thread — Fox only says check email / enter the code.
  */
-import { magicLinkFor } from "./core";
+import { ACCOUNT_QUERY, magicLinkFor } from "./core";
 
 export type AccountSendResult = {
   sent: boolean;
@@ -63,6 +63,8 @@ export function absoluteMagicLink(token: string, origin: string) {
 }
 
 export const PROTECTION_BYPASS_QUERY = "x-vercel-protection-bypass";
+export const SET_BYPASS_COOKIE_QUERY = "x-vercel-set-bypass-cookie";
+export const SET_BYPASS_COOKIE_VALUE = "true";
 
 export function protectionBypassSecret() {
   return (
@@ -79,15 +81,36 @@ export function letterMagicLink(token: string, origin: string) {
   if (!secret || !/^https?:\/\//i.test(base)) return base;
   const url = new URL(base);
   url.searchParams.set(PROTECTION_BYPASS_QUERY, secret);
+  // Query, not an agent header. Vercel then cookies follow-up CSS/JS/API so
+  // InPrivate can mount Fox. Bypass alone only lets the first HTML through.
+  url.searchParams.set(SET_BYPASS_COOKIE_QUERY, SET_BYPASS_COOKIE_VALUE);
+  url.hash = `${ACCOUNT_QUERY}=${encodeURIComponent(token)}`;
   return url.toString();
 }
 
 export function letterHasProtectionBypass(link: string) {
   try {
-    return Boolean(new URL(link).searchParams.get(PROTECTION_BYPASS_QUERY));
+    const url = new URL(link);
+    return (
+      Boolean(url.searchParams.get(PROTECTION_BYPASS_QUERY)) &&
+      url.searchParams.get(SET_BYPASS_COOKIE_QUERY) === SET_BYPASS_COOKIE_VALUE
+    );
   } catch {
-    return /[?&]x-vercel-protection-bypass=/i.test(link);
+    return (
+      /[?&]x-vercel-protection-bypass=/i.test(link) &&
+      /[?&]x-vercel-set-bypass-cookie=true(?:&|#|$)/i.test(link)
+    );
   }
+}
+
+/** account= from search or hash. Extra bypass query must not hide the token. */
+export function accountTokenFromLocation(search: string, hash = "") {
+  const query = new URLSearchParams(search.startsWith("?") ? search.slice(1) : search);
+  const fromQuery = (query.get(ACCOUNT_QUERY) ?? "").trim();
+  if (fromQuery) return fromQuery;
+  const raw = hash.startsWith("#") ? hash.slice(1) : hash;
+  if (!raw) return "";
+  return (new URLSearchParams(raw).get(ACCOUNT_QUERY) ?? "").trim();
 }
 
 export const ONYX_MAIL_FROM = "ONYX <james.b@example.com>";

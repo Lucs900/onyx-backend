@@ -58,8 +58,11 @@ import { skipWhoOnLoanName, whoOnLoanNameWasSkipped } from "../components/fox/wh
 import { memoryAccountStore, resumeFromStore } from "../lib/account/core";
 import {
   PROTECTION_BYPASS_QUERY,
+  SET_BYPASS_COOKIE_QUERY,
+  SET_BYPASS_COOKIE_VALUE,
   absoluteMagicLink,
   accountOrigin,
+  accountTokenFromLocation,
   letterHasProtectionBypass,
   letterMagicLink,
   sendAccountChannel,
@@ -226,9 +229,19 @@ async function main() {
   const letter = letterMagicLink("tok", fromOrigin);
   assert.ok(letterHasProtectionBypass(letter));
   assert.match(letter, new RegExp(`[?&]${PROTECTION_BYPASS_QUERY}=leftover-bypass-secret`));
+  assert.match(letter, new RegExp(`[?&]${SET_BYPASS_COOKIE_QUERY}=${SET_BYPASS_COOKIE_VALUE}`));
+  const letterUrl = new URL(letter);
+  assert.equal(accountTokenFromLocation(letterUrl.search, letterUrl.hash), "tok");
+  assert.equal(
+    accountTokenFromLocation("x-vercel-protection-bypass=nope&x-vercel-set-bypass-cookie=true&account=kept-token", ""),
+    "kept-token",
+  );
+  assert.equal(accountTokenFromLocation("x-vercel-protection-bypass=nope", "#account=from-hash"), "from-hash");
   assert.doesNotMatch(absoluteMagicLink("tok", fromOrigin), /x-vercel-protection-bypass/);
+  assert.doesNotMatch(absoluteMagicLink("tok", fromOrigin), /x-vercel-set-bypass-cookie/);
   assert.equal(opened.snapshot.magicLink, `/start?account=${opened.record.token}`);
   assert.doesNotMatch(opened.snapshot.magicLink, /x-vercel-protection-bypass/);
+  assert.doesNotMatch(opened.snapshot.magicLink, /x-vercel-set-bypass-cookie/);
   assert.ok(foxLineLeaksAccountSecret(letter));
   assert.ok(foxLineLeaksAccountSecret(`Open ${letter}`));
   assert.ok(!foxLineLeaksAccountSecret(ACCOUNT_EMAIL_SENT));

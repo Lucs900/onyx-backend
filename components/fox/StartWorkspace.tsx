@@ -2,6 +2,7 @@
 
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useSyncExternalStore } from "react";
+import { accountTokenFromLocation } from "@/lib/account/send";
 import { pathFromQuery, rememberStartPath } from "@/components/products/startPath";
 import { AlwaysOnFox } from "./AlwaysOnFox";
 import { FilePreview } from "./FilePreview";
@@ -9,6 +10,7 @@ import {
   applyPreviewMotionControls,
   beginAccountResume,
   continueWorkspaceFromEntry,
+  failAccountResume,
   getFoxDraft,
   getServerDraft,
   hydrateFoxDraft,
@@ -27,7 +29,10 @@ export function StartWorkspace() {
   const searchParams = useSearchParams();
   const queryPath = pathFromQuery(searchParams.get("path"));
   const homepageFresh = searchParams.get("fresh") === "1";
-  const accountToken = (searchParams.get("account") ?? "").trim();
+  const accountToken = accountTokenFromLocation(
+    searchParams.toString(),
+    typeof window !== "undefined" ? window.location.hash : "",
+  );
   const accountCode = (searchParams.get("code") ?? "").trim();
   if (typeof window !== "undefined") hydrateFoxDraft();
   if (queryPath) rememberStartPath(queryPath);
@@ -54,13 +59,27 @@ export function StartWorkspace() {
 
   const lastPath = useRef(startPath);
   const previewSuggestKey = useRef("");
+  const resumeStarted = useRef(false);
   useEffect(() => {
-    if (!accountToken && !accountCode) return;
+    const token =
+      accountToken ||
+      (typeof window !== "undefined" ? accountTokenFromLocation("", window.location.hash) : "");
+    if (!token && !accountCode) return;
+    if (resumeStarted.current) return;
+    resumeStarted.current = true;
     void resumeAccountFromQuery({
-      token: accountToken || undefined,
+      token: token || undefined,
       code: accountCode || undefined,
+    }).then((snapshot) => {
+      if (!snapshot) {
+        failAccountResume();
+        return;
+      }
+      if (typeof window === "undefined") return;
+      const path = snapshot.draft.path || "acr";
+      router.replace(`/start?path=${encodeURIComponent(path)}`, { scroll: false });
     });
-  }, [accountCode, accountToken]);
+  }, [accountCode, accountToken, router]);
   useEffect(() => {
     if (!homepageFresh) return;
     const next = new URLSearchParams(searchParams.toString());
