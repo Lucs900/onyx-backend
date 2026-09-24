@@ -9,7 +9,10 @@ import {
   looksLikeAccountEmail,
   looksLikeAccountPhone,
   magicLinkFor,
+  normalizeEmail,
+  normalizePhone,
   persistAccountRecord,
+  persistLiveAccountRecord,
   snapshotOf,
   type AccountChannel,
   type AccountRecord,
@@ -419,6 +422,32 @@ export function openAccountOnFile(
   return { draft: nextDraft, record: stored, snapshot: snapshotOf(stored) };
 }
 
+/** Same email / phone → the live File. Do not mint a second File. */
+export function attachAccountOnFile(
+  store: AccountStore,
+  draft: FoxIntakeDraft,
+  messages: FoxMessage[],
+  input: { email?: string; phone?: string },
+): { draft: FoxIntakeDraft; record: AccountRecord; snapshot: AccountSnapshot; sameFile: boolean } {
+  const email = input.email ? normalizeEmail(input.email) : undefined;
+  const phone = input.phone ? normalizePhone(input.phone) : undefined;
+  const existing = email
+    ? store.getByEmail(email)
+    : phone
+      ? store.getByPhone(phone)
+      : undefined;
+  if (existing) {
+    return {
+      draft: existing.draft,
+      record: existing,
+      snapshot: snapshotOf(existing),
+      sameFile: true,
+    };
+  }
+  const opened = openAccountOnFile(store, draft, messages, input);
+  return { ...opened, sameFile: false };
+}
+
 export function writeAccountFile(
   store: AccountStore,
   token: string,
@@ -427,7 +456,7 @@ export function writeAccountFile(
 ) {
   const existing = store.getByToken(token);
   if (!existing) return undefined;
-  const next = persistAccountRecord(existing, draft, messages);
+  const next = persistLiveAccountRecord(existing, draft, messages);
   store.put(next);
   return snapshotOf(next);
 }

@@ -1,7 +1,10 @@
 import { NextResponse } from "next/server";
 import {
   createAccountRecord,
+  normalizeEmail,
+  normalizePhone,
   persistAccountRecord,
+  persistLiveAccountRecord,
   snapshotOf,
 } from "@/lib/account/core";
 import {
@@ -16,7 +19,9 @@ import {
 } from "@/lib/account/send";
 import {
   loadAccountByCode,
+  loadAccountByEmail,
   loadAccountByFileId,
+  loadAccountByPhone,
   loadAccountByToken,
   saveAccountRecord,
 } from "@/lib/account/server";
@@ -119,7 +124,7 @@ export async function POST(request: Request) {
     if (!existing || !draft) {
       return NextResponse.json({ error: "not_found" }, { status: 404 });
     }
-    const next = persistAccountRecord(existing, draft, messages);
+    const next = persistLiveAccountRecord(existing, draft, messages);
     await saveAccountRecord(next);
     return NextResponse.json(snapshotOf(next));
   }
@@ -131,6 +136,37 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "file_id_required" }, { status: 400 });
   }
   try {
+    const email = body.email ? normalizeEmail(body.email) : undefined;
+    const phone = body.phone ? normalizePhone(body.phone) : undefined;
+    const existing = email
+      ? await loadAccountByEmail(email)
+      : phone
+        ? await loadAccountByPhone(phone)
+        : undefined;
+    if (existing) {
+      const kept = persistLiveAccountRecord(existing, draft, messages);
+      await saveAccountRecord(kept);
+      const createOrigin = accountOrigin(request);
+      const letterOrigin = letterResumeOrigin(createOrigin);
+      const sent = await sendAccountChannel({
+        channel: phone ? "phone" : "email",
+        email: body.email,
+        phone: body.phone,
+        token: kept.token,
+        code: kept.code,
+        origin: letterOrigin,
+      });
+      return NextResponse.json({
+        ...snapshotOf(kept),
+        sent: sent.sent,
+        sendProvider: sent.provider ?? null,
+        sendReason: sent.reason ?? null,
+        createOrigin,
+        letterOrigin,
+        sameFile: true,
+        letterHasBypass: letterHasProtectionBypass(letterMagicLink(kept.token, letterOrigin)),
+      });
+    }
     const record = createAccountRecord({
       draft,
       messages,
@@ -165,6 +201,7 @@ export async function POST(request: Request) {
       sendReason: sent.reason ?? null,
       createOrigin,
       letterOrigin,
+      sameFile: false,
       letterHasBypass: letterHasProtectionBypass(letterMagicLink(linked.token, letterOrigin)),
     });
   } catch (error) {

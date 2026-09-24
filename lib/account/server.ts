@@ -5,7 +5,7 @@
 import { get, put } from "@vercel/blob";
 import { serverBlobReady } from "@/lib/docs/storage";
 import type { AccountRecord, AccountStore } from "./core";
-import { memoryAccountStore } from "./core";
+import { memoryAccountStore, normalizeEmail, normalizePhone } from "./core";
 
 const memory = memoryAccountStore();
 
@@ -33,6 +33,14 @@ function filePath(fileId: string) {
   return `account/file/${fileId}.json`;
 }
 
+function emailPath(email: string) {
+  return `account/email/${encodeURIComponent(normalizeEmail(email))}.json`;
+}
+
+function phonePath(phone: string) {
+  return `account/phone/${normalizePhone(phone)}.json`;
+}
+
 async function readBlobRecord(pathname: string): Promise<AccountRecord | undefined> {
   if (!serverBlobReady()) return undefined;
   try {
@@ -53,6 +61,8 @@ async function writeBlobRecord(record: AccountRecord) {
   const opts = { access: "private" as const, addRandomSuffix: false, contentType: "application/json" };
   await put(tokenPath(record.token), body, opts);
   await put(filePath(record.fileId), body, opts);
+  if (record.email) await put(emailPath(record.email), body, opts);
+  if (record.phone) await put(phonePath(record.phone), body, opts);
   if (record.code) await put(codePath(record.code), body, opts);
 }
 
@@ -71,6 +81,18 @@ export async function loadAccountByCode(code: string) {
 
 export async function loadAccountByFileId(fileId: string) {
   return processStore().getByFileId(fileId) ?? (await readBlobRecord(filePath(fileId)));
+}
+
+export async function loadAccountByEmail(email: string) {
+  const key = normalizeEmail(email);
+  if (!key) return undefined;
+  return processStore().getByEmail(key) ?? (await readBlobRecord(emailPath(key)));
+}
+
+export async function loadAccountByPhone(phone: string) {
+  const key = normalizePhone(phone);
+  if (!key) return undefined;
+  return processStore().getByPhone(key) ?? (await readBlobRecord(phonePath(key)));
 }
 
 export function previewAccountStore(): AccountStore {

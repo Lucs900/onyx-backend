@@ -32,6 +32,8 @@ export type AccountStore = {
   getByToken(token: string): AccountRecord | undefined;
   getByCode(code: string): AccountRecord | undefined;
   getByFileId(fileId: string): AccountRecord | undefined;
+  getByEmail(email: string): AccountRecord | undefined;
+  getByPhone(phone: string): AccountRecord | undefined;
 };
 
 export const ACCOUNT_QUERY = "account";
@@ -140,14 +142,55 @@ export function persistAccountRecord(
   };
 }
 
+/** Written borrower facts — not a guest sketch or login tab. */
+export function fileHasResumeFacts(draft?: FoxIntakeDraft | null) {
+  if (!draft) return false;
+  return Boolean(
+    draft.productIntent ||
+      (draft.propertyValueAmount ?? 0) > 0 ||
+      (draft.firstLienAmount ?? 0) > 0 ||
+      (draft.loanAmountValue ?? 0) > 0 ||
+      draft.occupancyChoice?.value ||
+      draft.propertyType ||
+      draft.propertyZip ||
+      Object.keys(draft.facts ?? {}).length > 0,
+  );
+}
+
+/** Other-browser login must not replace the live File with an empty guest draft. */
+export function shouldKeepLiveAccountDraft(
+  existing: FoxIntakeDraft,
+  incoming?: FoxIntakeDraft | null,
+) {
+  if (!incoming) return true;
+  const existingId = existing.fileId?.trim();
+  const incomingId = incoming.fileId?.trim();
+  if (existingId && incomingId && existingId !== incomingId) return true;
+  return fileHasResumeFacts(existing) && !fileHasResumeFacts(incoming);
+}
+
+export function persistLiveAccountRecord(
+  record: AccountRecord,
+  draft: FoxIntakeDraft,
+  messages: FoxMessage[],
+  now = new Date(),
+): AccountRecord {
+  if (shouldKeepLiveAccountDraft(record.draft, draft)) return record;
+  return persistAccountRecord(record, draft, messages, now);
+}
+
 export function memoryAccountStore(seed: AccountRecord[] = []): AccountStore {
   const byToken = new Map<string, AccountRecord>();
   const byCode = new Map<string, AccountRecord>();
   const byFile = new Map<string, AccountRecord>();
+  const byEmail = new Map<string, AccountRecord>();
+  const byPhone = new Map<string, AccountRecord>();
   function index(record: AccountRecord) {
     byToken.set(record.token, record);
     if (record.code) byCode.set(record.code, record);
     byFile.set(record.fileId, record);
+    if (record.email) byEmail.set(record.email, record);
+    if (record.phone) byPhone.set(record.phone, record);
   }
   for (const row of seed) index(row);
   return {
@@ -155,6 +198,8 @@ export function memoryAccountStore(seed: AccountRecord[] = []): AccountStore {
       const prev = byToken.get(record.token);
       if (prev?.code && prev.code !== record.code) byCode.delete(prev.code);
       if (prev?.fileId && prev.fileId !== record.fileId) byFile.delete(prev.fileId);
+      if (prev?.email && prev.email !== record.email) byEmail.delete(prev.email);
+      if (prev?.phone && prev.phone !== record.phone) byPhone.delete(prev.phone);
       index(record);
     },
     getByToken(token) {
@@ -166,12 +211,18 @@ export function memoryAccountStore(seed: AccountRecord[] = []): AccountStore {
     getByFileId(fileId) {
       return byFile.get(fileId.trim());
     },
+    getByEmail(email) {
+      return byEmail.get(normalizeEmail(email));
+    },
+    getByPhone(phone) {
+      return byPhone.get(normalizePhone(phone));
+    },
   };
 }
 
 export function resumeFromStore(
   store: AccountStore,
-  input: { token?: string; code?: string; fileId?: string },
+  input: { token?: string; code?: string; fileId?: string; email?: string; phone?: string },
 ): AccountSnapshot | undefined {
   const record = input.token
     ? store.getByToken(input.token)
@@ -179,6 +230,10 @@ export function resumeFromStore(
       ? store.getByCode(input.code)
       : input.fileId
         ? store.getByFileId(input.fileId)
-        : undefined;
+        : input.email
+          ? store.getByEmail(input.email)
+          : input.phone
+            ? store.getByPhone(input.phone)
+            : undefined;
   return record ? snapshotOf(record) : undefined;
 }

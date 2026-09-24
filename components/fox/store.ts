@@ -2143,6 +2143,7 @@ export async function createLinkedAccount(input: { email?: string; phone?: strin
     code?: string;
     sent?: boolean;
     sendReason?: string | null;
+    sameFile?: boolean;
     draft: FoxIntakeDraft;
     messages: FoxMessage[];
   };
@@ -2154,6 +2155,9 @@ export async function createLinkedAccount(input: { email?: string; phone?: strin
       accountSkipped: false,
       accountChannel: input.phone ? "phone" : "email",
     });
+    return snapshot;
+  }
+  if (snapshot.sameFile) {
     return snapshot;
   }
   const token = new URL(snapshot.magicLink, "https://onyx.local").searchParams.get("account") || "";
@@ -2207,22 +2211,37 @@ export async function resumeAccountFromQuery(input: { token?: string; code?: str
 
 let persistAccountTimer: ReturnType<typeof setTimeout> | number | undefined;
 
+function flushPersistLinkedAccount() {
+  const session = readAccountSession();
+  if (!session?.token || typeof window === "undefined") return;
+  if (persistAccountTimer) {
+    window.clearTimeout(persistAccountTimer);
+    persistAccountTimer = undefined;
+  }
+  void fetch("/api/account", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      action: "persist",
+      token: session.token,
+      draft: current,
+      messages: getFoxMessages(),
+    }),
+  }).catch(() => undefined);
+}
+
 export function persistLinkedAccountFile() {
   const session = readAccountSession();
   if (!session?.token || typeof window === "undefined") return;
   if (persistAccountTimer) window.clearTimeout(persistAccountTimer);
   persistAccountTimer = window.setTimeout(() => {
-    void fetch("/api/account", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        action: "persist",
-        token: session.token,
-        draft: current,
-        messages: getFoxMessages(),
-      }),
-    }).catch(() => undefined);
+    persistAccountTimer = undefined;
+    flushPersistLinkedAccount();
   }, 200);
+}
+
+if (typeof window !== "undefined") {
+  window.addEventListener("pagehide", () => flushPersistLinkedAccount());
 }
 
 export function nudgeReview(input: { force?: boolean; now?: Date } = {}) {

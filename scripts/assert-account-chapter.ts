@@ -57,6 +57,7 @@ import {
   applyAccountLetterOpened,
   applyAccountSaveAsk,
   accountWorkspaceReply,
+  attachAccountOnFile,
   consumeLinkedAccountDraft,
   firstAccountOfferOpen,
   foxLineLeaksAccountSecret,
@@ -66,6 +67,7 @@ import {
   withLinkedAccount,
   writeAccountFile,
 } from "../components/fox/account";
+import { HELOC_FIRST_LIEN_ASK } from "../components/fox/heloc";
 import {
   applyStaffDeskSend,
   processingHubView,
@@ -628,6 +630,43 @@ async function main() {
 
   const notNowStore = memoryAccountStore();
   assert.equal(notNowStore.getByFileId(first.fileId ?? "none"), undefined);
+
+  const midStore = memoryAccountStore();
+  const midOpened = openAccountOnFile(midStore, first, messages, { email: "lucas@onyxlending.com" });
+  const midFile = houseReady(writePurchasePrice(applyAccountLetterOpened(midOpened.draft), 500_000));
+  const midMessages: FoxMessage[] = [
+    ...messages,
+    { id: "fox-lien", role: "fox", text: HELOC_FIRST_LIEN_ASK },
+  ];
+  const midPersisted = writeAccountFile(midStore, midOpened.record.token, midFile, midMessages);
+  assert.equal(midPersisted?.fileId, midOpened.draft.fileId);
+  assert.equal(midPersisted?.draft.propertyValueAmount, 500_000);
+  assert.equal(midPersisted?.draft.productIntent, "heloc");
+  const guestLogin = { ...emptyDraft(), path: "acr" as const, workspaceFlow: true };
+  const attached = attachAccountOnFile(midStore, guestLogin, [], { email: "lucas@onyxlending.com" });
+  assert.equal(attached.sameFile, true);
+  assert.equal(attached.record.fileId, midOpened.draft.fileId);
+  assert.equal(attached.draft.propertyValueAmount, 500_000);
+  assert.equal(attached.draft.productIntent, "heloc");
+  const byEmail = resumeFromStore(midStore, { email: "lucas@onyxlending.com" });
+  assert.equal(byEmail?.fileId, midOpened.draft.fileId);
+  assert.equal(byEmail?.draft.propertyValueAmount, 500_000);
+  const midDesk = deskLineAfterAccountConsume(applyAccountLetterOpened(attached.draft));
+  assert.equal(midDesk.text, HELOC_FIRST_LIEN_ASK);
+  assert.ok(!labels(midDesk.actions).includes("Buy"));
+  assert.ok(!labels(midDesk.actions).includes("Refinance"));
+  const pad = previewFacts(attached.draft);
+  assert.equal(pad.find((row) => row.label === "Product")?.value, "HELOC");
+  assert.match(pad.find((row) => row.label === "Property value")?.value ?? "", /\$500,000/);
+  const wipeAttempt = writeAccountFile(midStore, midOpened.record.token, guestLogin, []);
+  assert.equal(wipeAttempt?.fileId, midOpened.draft.fileId);
+  assert.equal(wipeAttempt?.draft.propertyValueAmount, 500_000);
+  assert.equal(resumeFromStore(midStore, { token: midOpened.record.token })?.draft.propertyValueAmount, 500_000);
+
+  const accountRoute = readFileSync(new URL("../app/api/account/route.ts", import.meta.url), "utf8");
+  assert.match(accountRoute, /loadAccountByEmail/);
+  assert.match(accountRoute, /sameFile: true/);
+  assert.match(accountRoute, /persistLiveAccountRecord/);
 
   console.log(
     `assert-account-chapter: turn-one offer + Create account · Log in · Not now; first why; parked save why; no token; save-ask not in_queue; with account in_queue ${opened.draft.fileId}`,
