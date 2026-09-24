@@ -15,7 +15,7 @@ import {
 } from "./store";
 import {
   HUB_EMPTY,
-  HUB_GRID_ROWS,
+  HUB_SQUARES,
   processingHubView,
   SILENT_DESK_ERROR,
   STAFF_HUB_PATH,
@@ -116,16 +116,18 @@ export function ProcessingHub() {
 
         <>
             <section className="intake-card staff-hub-processing">
-              <div className="staff-hub-grid staff-hub-grid--processing">
-                {HUB_GRID_ROWS.map((ids) => (
-                  <div
-                    key={ids.join("-")}
-                    className={`staff-hub-grid__row staff-hub-grid__row--${ids.length}`}
-                  >
-                    {ids.map((id) => {
-                      const row = hub.grid.find((item) => item.id === id);
-                      return row ? <HubCell key={row.id} row={row} /> : null;
-                    })}
+              <div className="staff-hub-squares">
+                {HUB_SQUARES.map((square) => (
+                  <div key={square.id} className="staff-hub-square">
+                    <p className="staff-hub-square__label">{square.label}</p>
+                    <div
+                      className={`staff-hub-square__facts staff-hub-square__facts--${square.ids.length}`}
+                    >
+                      {square.ids.map((id) => {
+                        const row = hub.grid.find((item) => item.id === id);
+                        return row ? <HubCell key={row.id} row={row} /> : null;
+                      })}
+                    </div>
                   </div>
                 ))}
               </div>

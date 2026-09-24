@@ -77,6 +77,9 @@ function main() {
   assert.equal(hub.grid.length, 22);
   assert.equal(HUB_GRID_ROWS[1].join(" "), "home first-lien line ltv cltv");
   assert.equal(HUB_GRID_ROWS.at(-1)?.join(" "), "zip property-type income debts");
+  const squaresPage = readFileSync(new URL("../components/fox/ProcessingHub.tsx", import.meta.url), "utf8");
+  assert.match(squaresPage, /HUB_SQUARES/);
+  assert.match(squaresPage, /staff-hub-squares/);
   assert.equal(hub.grid.find((row) => row.id === "zip")?.label, "ZIP");
   assert.equal(hub.grid.find((row) => row.id === "zip")?.value, "94123");
   assert.equal(hub.grid.find((row) => row.id === "property-type")?.label, "Type");

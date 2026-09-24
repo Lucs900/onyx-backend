@@ -119,8 +119,8 @@ function main() {
   assert.equal(stale.draft.creditBand, "760+");
 
   const hubPage = readFileSync(new URL("../components/fox/ProcessingHub.tsx", import.meta.url), "utf8");
-  assert.match(hubPage, /staff-hub-grid--processing/);
-  assert.match(hubPage, /HUB_GRID_ROWS/);
+  assert.match(hubPage, /staff-hub-squares/);
+  assert.match(hubPage, /HUB_SQUARES/);
   assert.match(hubPage, /resumeAccountFromQuery\(\{ fileId: wanted \}\)/);
   assert.doesNotMatch(hubPage, /if \(live\.fileId !== wanted\)/);
 

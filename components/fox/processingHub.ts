@@ -104,6 +104,22 @@ export const HUB_GRID_ROWS = [
   ["zip", "property-type", "income", "debts"],
 ] as const;
 
+/** Manager 56 — same 22 cells, painted as six labeled squares. Numbers stay. */
+export const HUB_SQUARES = [
+  { id: "collateral", label: "Collateral", ids: ["home", "first-lien", "line", "ltv", "cltv"] },
+  { id: "price", label: "Price", ids: ["rate", "io"] },
+  { id: "borrower", label: "Borrower", ids: ["count", "b1", "b2", "credit"] },
+  { id: "property", label: "Property", ids: ["product", "purpose", "occupancy", "property-type", "zip"] },
+  { id: "income", label: "Income", ids: ["income", "qualifying", "debts"] },
+  { id: "file", label: "File", ids: ["status", "next", "waiting"] },
+] as const;
+
+export type HubSquare = {
+  id: string;
+  label: string;
+  cells: HubRow[];
+};
+
 export const HUB_IDENTITY_IDS = ["product", "purpose", "occupancy"] as const;
 export const HUB_LOUD_STRIP_IDS = ["home", "first-lien", "line", "ltv", "cltv", "rate", "io", "credit"] as const;
 export const HUB_QUIET_IDS = ["b1", "b2", "count", "qualifying", "status", "next", "waiting"] as const;
@@ -296,6 +312,15 @@ export function hubGridRows(draft: FoxIntakeDraft): HubRow[] {
     ].map((row) => [row.id, row]),
   );
   return HUB_GRID_IDS.map((id) => byId.get(id)!);
+}
+
+export function hubSquares(draft: FoxIntakeDraft): HubSquare[] {
+  const byId = new Map(hubGridRows(draft).map((row) => [row.id, row]));
+  return HUB_SQUARES.map((square) => ({
+    id: square.id,
+    label: square.label,
+    cells: square.ids.map((id) => byId.get(id)!),
+  }));
 }
 
 export function hubLoudRows(draft: FoxIntakeDraft): HubRow[] {

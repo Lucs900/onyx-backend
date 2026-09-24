@@ -82,7 +82,9 @@ function main() {
   const start = readFileSync(new URL("../components/fox/StartWorkspace.tsx", import.meta.url), "utf8");
   assert.doesNotMatch(start, /staff-hub-grid__row--5/);
   const hubPage = readFileSync(new URL("../components/fox/ProcessingHub.tsx", import.meta.url), "utf8");
-  assert.match(hubPage, /staff-hub-grid__row--\$\{ids\.length\}/);
+  assert.match(hubPage, /HUB_SQUARES/);
+  assert.match(hubPage, /staff-hub-squares/);
+  assert.match(hubPage, /staff-hub-square__facts--\$\{square\.ids\.length\}/);
 
   console.log(
     "assert-pack-value-row: one row Value Lien Line LTV CLTV; bottom ZIP Type Income Debts; other rows closed",
