@@ -106,7 +106,9 @@ export async function GET(request: Request) {
     repairedDraft.loanAmountValue !== record.draft.loanAmountValue ||
     repairedDraft.creditBand !== record.draft.creditBand ||
     repairedDraft.whoOnLoan !== record.draft.whoOnLoan ||
-    repairedDraft.liveQuote?.rate !== record.draft.liveQuote?.rate
+    repairedDraft.liveQuote?.rate !== record.draft.liveQuote?.rate ||
+    repairedDraft.subordinateBalance !== record.draft.subordinateBalance ||
+    repairedDraft.facts?.subordinate_balance?.value !== record.draft.facts?.subordinate_balance?.value
   ) {
     const repaired = persistAccountRecord(record, repairedDraft, record.messages);
     await saveAccountRecord(repaired);

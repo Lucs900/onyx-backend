@@ -4,6 +4,7 @@
  */
 import type { FoxIntakeDraft, FoxMessage } from "./types";
 import { CREDIT_WORKSPACE_BUBBLES, INCOME_BUBBLES } from "./types";
+import { persistLtvCltv } from "./calculators";
 import {
   HELOC_FIRST_LIEN_ASK,
   HELOC_LINE_ASK,
@@ -155,5 +156,5 @@ export function writeThreadAnswersToFile(draft: FoxIntakeDraft, messages: FoxMes
       skippedClasses: Array.from(new Set([...(next.skippedClasses ?? []), "paystub" as const])),
     };
   }
-  return withHelocToolQuote(next);
+  return withHelocToolQuote(persistLtvCltv(next));
 }

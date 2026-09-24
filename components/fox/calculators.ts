@@ -117,13 +117,51 @@ export function calculatorValue(draft: FoxIntakeDraft): number | null {
     : null;
 }
 
-export function calculatorSubordinate(draft: FoxIntakeDraft): number | null {
-  if (draft.productIntent === "heloc") {
-    return draft.loanAmountValue != null && draft.loanAmountValue > 0 ? draft.loanAmountValue : null;
-  }
-  if (draft.subordinateBalance != null && draft.subordinateBalance > 0) return draft.subordinateBalance;
+function helocLineAmount(draft: FoxIntakeDraft): number | null {
+  if (draft.productIntent !== "heloc") return null;
+  return draft.loanAmountValue != null && draft.loanAmountValue > 0 ? draft.loanAmountValue : null;
+}
+
+/** Explicit other-liens only. Never the HELOC line answer. */
+export function explicitOtherLiens(draft: FoxIntakeDraft): number | null {
+  const line = helocLineAmount(draft);
+  const fromDraft = draft.subordinateBalance != null && draft.subordinateBalance > 0 ? draft.subordinateBalance : null;
   const fromFact = moneyFact(draft, SUBORDINATE_FIELD);
-  return fromFact != null && fromFact > 0 ? fromFact : null;
+  const raw = fromDraft ?? (fromFact != null && fromFact > 0 ? fromFact : null);
+  if (raw == null) return null;
+  if (line != null && raw === line) return null;
+  return raw;
+}
+
+/** Leftover: HELOC line copied onto Other loans. Strip. Do not re-ask. */
+export function stripHelocLineFromOtherLoans(draft: FoxIntakeDraft): FoxIntakeDraft {
+  const line = helocLineAmount(draft);
+  if (line == null) return draft;
+  const facts = { ...(draft.facts ?? {}) };
+  const factAmt = moneyFact(draft, SUBORDINATE_FIELD);
+  let sub = draft.subordinateBalance;
+  let changed = false;
+  if (sub === line) {
+    sub = undefined;
+    changed = true;
+  }
+  if (factAmt === line) {
+    delete facts[SUBORDINATE_FIELD];
+    changed = true;
+  }
+  if (!changed) return draft;
+  return { ...draft, facts, subordinateBalance: sub };
+}
+
+/** CLTV subordinate: HELOC line plus explicit other liens. Never count the line twice. */
+export function calculatorSubordinate(draft: FoxIntakeDraft): number | null {
+  const other = explicitOtherLiens(draft);
+  const line = helocLineAmount(draft) ?? 0;
+  if (draft.productIntent === "heloc") {
+    const total = line + (other ?? 0);
+    return total > 0 ? total : null;
+  }
+  return other;
 }
 
 export function calculatorHoaMonthly(draft: FoxIntakeDraft): number | null {
@@ -201,14 +239,16 @@ export function extractedDepositAmount(draft: FoxIntakeDraft): number | null {
 }
 
 export function persistLtvCltv(draft: FoxIntakeDraft): FoxIntakeDraft {
-  const ratios = draftLtvCltv(draft);
-  if (!ratios) return draft;
-  let next = writeFact(draft, LTV_FIELD, String(ratios.ltv));
+  let next = stripHelocLineFromOtherLoans(draft);
+  const ratios = draftLtvCltv(next);
+  if (!ratios) return next;
+  next = writeFact(next, LTV_FIELD, String(ratios.ltv));
   next = writeFact(next, CLTV_FIELD, String(ratios.cltv));
-  if (ratios.subordinateBalance > 0) {
+  const other = explicitOtherLiens(next);
+  if (other != null && other > 0) {
     next = {
-      ...writeFact(next, SUBORDINATE_FIELD, String(ratios.subordinateBalance), "client"),
-      subordinateBalance: ratios.subordinateBalance,
+      ...writeFact(next, SUBORDINATE_FIELD, String(other), "client"),
+      subordinateBalance: other,
     };
   }
   const housing = draftHousingEstimate(next);
@@ -368,12 +408,19 @@ export function calculatorStructureFacts(draft: FoxIntakeDraft): {
       value: formatRatioPercent(ratios.cltv),
       note: ESTIMATED_NOT_FINAL,
     });
-    if (ratios.subordinateBalance > 0) {
+    const other = explicitOtherLiens(draft);
+    if (other != null && other > 0) {
       facts.push({
         id: "subordinate",
         label: "Other loans on this property",
-        value: moneyShown(ratios.subordinateBalance),
+        value: moneyShown(other),
         note: STATED_NOT_FROM_CREDIT,
+      });
+    } else if (draft.productIntent === "heloc") {
+      facts.push({
+        id: "subordinate",
+        label: "Other loans on this property",
+        value: "—",
       });
     }
   }

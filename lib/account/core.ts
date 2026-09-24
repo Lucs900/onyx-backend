@@ -2,6 +2,7 @@
  * Preview account. Email magic link or phone code.
  * Same person, same file_id on a second browser. Not Google. Not SSN. Not BNTouch.
  */
+import { stripHelocLineFromOtherLoans } from "@/components/fox/calculators";
 import type { FoxIntakeDraft, FoxMessage } from "@/components/fox/types";
 
 export type AccountChannel = "email" | "phone";
@@ -198,7 +199,7 @@ export function mergeFileDraft(existing: FoxIntakeDraft, incoming: FoxIntakeDraf
   const productIntent = incoming.productIntent || existing.productIntent;
   const occupancyValue = incoming.occupancyChoice?.value || existing.occupancyChoice?.value;
   const liveQuote = incoming.liveQuote ?? existing.liveQuote;
-  return {
+  const merged: FoxIntakeDraft = {
     ...existing,
     ...incoming,
     productIntent,
@@ -226,6 +227,7 @@ export function mergeFileDraft(existing: FoxIntakeDraft, incoming: FoxIntakeDraf
     incomeType: incoming.incomeType?.value ? incoming.incomeType : existing.incomeType,
     incomeAsked: Boolean(incoming.incomeAsked || existing.incomeAsked),
   };
+  return stripHelocLineFromOtherLoans(merged);
 }
 
 export const STAFF_DESK_FACT_ID = "staff-desk";
