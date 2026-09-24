@@ -1,6 +1,6 @@
 # 50 staff hub — already-open desk refresh
 
-**Status:** FAIL `0e7ab51` → build on PR #18 → tip READY → founder paperclip ACCEPT  
+**Status:** READY `c004c1f` / `dpl_5mqdVfqcGkxeBMhBXaGBZndL2KvE` — not ACCEPT. FAIL was `0e7ab51`.  
 **Date:** 2026-09-24  
 **Host:** https://start.onyxdirect.com only  
 **PR:** #18 · branch `cursor/live-rateflow-preview-bc93`  
