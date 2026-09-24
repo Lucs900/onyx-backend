@@ -7,6 +7,7 @@ import {
   ensureCurrentFileId,
   getFoxDraft,
   getFoxMessages,
+  getResumedAccountEmail,
   getServerDraft,
   hydrateFoxDraft,
   resumeAccountFromQuery,
@@ -16,6 +17,7 @@ import {
 import {
   HUB_EMPTY,
   HUB_SQUARES,
+  hubEmailRow,
   hubNeedRow,
   processingHubView,
   SILENT_DESK_ERROR,
@@ -125,7 +127,12 @@ export function ProcessingHub() {
                       className={`staff-hub-square__facts staff-hub-square__facts--${square.ids.length}`}
                     >
                       {square.ids.map((id) => {
-                        const row = id === "need" ? hubNeedRow(draft) : hub.grid.find((item) => item.id === id);
+                        const row =
+                          id === "need"
+                            ? hubNeedRow(draft)
+                            : id === "email"
+                              ? hubEmailRow(draft, getResumedAccountEmail())
+                              : hub.grid.find((item) => item.id === id);
                         return row ? <HubCell key={row.id} row={row} /> : null;
                       })}
                     </div>

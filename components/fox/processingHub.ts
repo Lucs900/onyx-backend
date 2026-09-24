@@ -108,7 +108,7 @@ export const HUB_GRID_ROWS = [
 export const HUB_SQUARES = [
   { id: "collateral", label: "Collateral", ids: ["home", "first-lien", "line", "ltv", "cltv"] },
   { id: "price", label: "Price", ids: ["rate", "io"] },
-  { id: "borrower", label: "Borrower", ids: ["count", "b1", "b2", "credit"] },
+  { id: "borrower", label: "Borrower", ids: ["count", "b1", "b2", "credit", "email"] },
   { id: "property", label: "Property", ids: ["product", "purpose", "occupancy", "property-type", "zip"] },
   { id: "income", label: "Income", ids: ["income", "qualifying", "debts"] },
   { id: "file", label: "File", ids: ["status", "next", "waiting", "need"] },
@@ -276,6 +276,20 @@ export function hubNeedRow(draft: FoxIntakeDraft): HubRow {
   return shellRow("need", "Need", match?.label);
 }
 
+function storedEmail(raw?: string) {
+  const value = String(raw ?? "").trim();
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value) ? value : "";
+}
+
+/** Contact email first. Else the saved account email. Never invent. */
+export function hubEmailValue(draft: FoxIntakeDraft, accountEmail?: string) {
+  return storedEmail(draft.contact?.email?.value) || storedEmail(accountEmail);
+}
+
+export function hubEmailRow(draft: FoxIntakeDraft, accountEmail?: string): HubRow {
+  return shellRow("email", "Email", hubEmailValue(draft, accountEmail));
+}
+
 export function hubGridRows(draft: FoxIntakeDraft): HubRow[] {
   draft = hubLiveDraft(draft);
   const facts = previewFacts(draft);
@@ -320,12 +334,16 @@ export function hubGridRows(draft: FoxIntakeDraft): HubRow[] {
   return HUB_GRID_IDS.map((id) => byId.get(id)!);
 }
 
-export function hubSquares(draft: FoxIntakeDraft): HubSquare[] {
+export function hubSquares(draft: FoxIntakeDraft, accountEmail?: string): HubSquare[] {
   const byId = new Map(hubGridRows(draft).map((row) => [row.id, row]));
   return HUB_SQUARES.map((square) => ({
     id: square.id,
     label: square.label,
-    cells: square.ids.map((id) => (id === "need" ? hubNeedRow(draft) : byId.get(id)!)),
+    cells: square.ids.map((id) => {
+      if (id === "need") return hubNeedRow(draft);
+      if (id === "email") return hubEmailRow(draft, accountEmail);
+      return byId.get(id)!;
+    }),
   }));
 }
 

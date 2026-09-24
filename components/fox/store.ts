@@ -1437,8 +1437,15 @@ export function beginAccountResume() {
 
 export function failAccountResume() {
   accountResumePending = false;
+  resumedAccountEmail = "";
   hydrated = true;
   emit();
+}
+
+let resumedAccountEmail = "";
+
+export function getResumedAccountEmail() {
+  return resumedAccountEmail;
 }
 
 export function accountResumeIsPending() {
@@ -2220,10 +2227,13 @@ export async function resumeAccountFromQuery(input: { token?: string; code?: str
     accountId: string;
     magicLink: string;
     code?: string;
+    email?: string;
     draft: FoxIntakeDraft;
     messages: FoxMessage[];
   };
   const token = new URL(snapshot.magicLink, "https://onyx.local").searchParams.get("account") || "";
+  const saved = String(snapshot.email ?? "").trim();
+  resumedAccountEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(saved) ? saved : "";
   applyAccountResume(snapshot.draft, snapshot.messages, token
     ? { token, fileId: snapshot.fileId, accountId: snapshot.accountId }
     : undefined);

@@ -26,6 +26,7 @@ export type AccountSnapshot = {
   messages: FoxMessage[];
   magicLink: string;
   code?: string;
+  email?: string;
 };
 
 export type AccountStore = {
@@ -99,6 +100,7 @@ export function snapshotOf(record: AccountRecord): AccountSnapshot {
     messages: stripWalkTestMessages(record.messages),
     magicLink: magicLinkFor(record.token),
     code: record.code,
+    email: record.email,
   };
 }
 
