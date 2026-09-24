@@ -2106,6 +2106,16 @@ export function getAccountSession() {
   return readAccountSession();
 }
 
+/** Refresh /start without ?account= still rehydrates staff foxLine from the File. */
+export function linkedAccountRefreshQuery(): { token?: string; fileId?: string } | undefined {
+  if (typeof window === "undefined") return undefined;
+  if (!hydrated) hydrateFoxDraft();
+  const session = readAccountSession();
+  if (session?.token) return { token: session.token };
+  const fileId = current.fileId?.trim();
+  return fileId ? { fileId } : undefined;
+}
+
 export function applyAccountResume(draft: FoxIntakeDraft, messages: FoxMessage[], session?: AccountSession) {
   accountResumePending = false;
   const consumed = applyAccountLetterOpened({ ...draft, workspaceFlow: true });

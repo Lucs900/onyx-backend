@@ -3,6 +3,7 @@
  * Spine 4cc75b7 stays closed: same file_id, foxLine, finish chips, loud numbers.
  */
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { emptyDraft, ensureFileId } from "../components/fox/store";
 import { applyCouponChoice } from "../components/fox/liveCoupon";
 import { skipCurrentInvite } from "../components/fox/fileWrite";
@@ -163,6 +164,10 @@ function main() {
   assert.deepEqual(labels(finishLineActions(sent.draft)).slice(0, 2), ["Ask Fox", "Upload more"]);
   assert.equal(labels(finishLineActions(sent.draft)).at(-1), "Request human");
   assert.equal(hubHasForbidden(JSON.stringify(hub)), false);
+  const startWorkspace = readFileSync(new URL("../components/fox/StartWorkspace.tsx", import.meta.url), "utf8");
+  assert.match(startWorkspace, /linkedAccountRefreshQuery/);
+  assert.match(startWorkspace, /resumeAccountFromQuery/);
+  assert.doesNotMatch(startWorkspace, /Open \/start from hub required/);
   assert.equal(hubPayRows(emptyDraft()).length, 1);
   assert.equal(hubStateRows(emptyDraft()).length, 2);
   assert.equal(hubLoudRows(filled).length, 8);

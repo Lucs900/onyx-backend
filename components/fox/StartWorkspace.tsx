@@ -15,6 +15,7 @@ import {
   getFoxDraft,
   getServerDraft,
   hydrateFoxDraft,
+  linkedAccountRefreshQuery,
   prepareWorkspaceDraft,
   resetWorkspaceForEntry,
   resumeAccountFromQuery,
@@ -50,7 +51,7 @@ export function StartWorkspace() {
   const booted = useRef(false);
   if (typeof window !== "undefined" && !booted.current) {
     booted.current = true;
-    if (accountToken || accountCode) {
+    if (accountToken || accountCode || linkedAccountRefreshQuery()) {
       beginAccountResume();
     } else {
       continueWorkspaceFromEntry(startPath, startIntent, { fresh: homepageFresh });
@@ -65,22 +66,29 @@ export function StartWorkspace() {
     const token =
       accountToken ||
       (typeof window !== "undefined" ? accountTokenFromLocation("", window.location.hash) : "");
-    if (!token && !accountCode) return;
+    const refresh = token || accountCode ? undefined : linkedAccountRefreshQuery();
+    if (!token && !accountCode && !refresh) return;
     if (resumeStarted.current) return;
     resumeStarted.current = true;
     void resumeAccountFromQuery({
-      token: token || undefined,
+      token: token || refresh?.token || undefined,
       code: accountCode || undefined,
+      fileId: token || accountCode ? undefined : refresh?.fileId,
     }).then((snapshot) => {
       if (!snapshot) {
         failAccountResume();
+        if (!token && !accountCode) {
+          continueWorkspaceFromEntry(startPath, startIntent, { fresh: homepageFresh });
+        }
         return;
       }
       if (typeof window === "undefined") return;
-      const path = snapshot.draft.path || "acr";
-      router.replace(`/start?path=${encodeURIComponent(path)}`, { scroll: false });
+      if (token || accountCode) {
+        const path = snapshot.draft.path || "acr";
+        router.replace(`/start?path=${encodeURIComponent(path)}`, { scroll: false });
+      }
     });
-  }, [accountCode, accountToken, router]);
+  }, [accountCode, accountToken, homepageFresh, router, startIntent, startPath]);
   useEffect(() => {
     if (!homepageFresh) return;
     const next = new URLSearchParams(searchParams.toString());

@@ -1,7 +1,7 @@
 # 50 — staff hub grid
 
-**Status:** OPEN → build on PR #18 → tip READY → founder paperclip ACCEPT
-**SHA:** (pending)
+**Status:** Grid PASS `847940e`. Desk refresh FAIL → see `50-staff-hub-desk-refresh.md`.
+**SHA:** (pending refresh READY)
 **READY≠ACCEPT. Preview only. Do not merge.**
 
 ## Lock

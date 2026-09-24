@@ -672,6 +672,26 @@ async function main() {
   assert.match(accountServer, /account\/email\//);
   assert.match(accountServer, /shouldKeepLiveAccountDraft/);
 
+  const staffRefresh = "I still need the balance on the first lien.";
+  const staleDesk = [
+    ...midMessages,
+    { id: "fox-stale", role: "fox", text: HELOC_FIRST_LIEN_ASK },
+  ];
+  const serverDesk = [...staleDesk, { id: "fox-staff", role: "fox", text: staffRefresh }];
+  writeAccountFile(midStore, midOpened.record.token, midFile, serverDesk);
+  const refreshResume = resumeFromStore(midStore, { token: midOpened.record.token });
+  assert.equal(lastFoxLine(refreshResume?.messages ?? []), staffRefresh);
+  assert.ok(refreshResume?.messages.some((item) => item.text === HELOC_FIRST_LIEN_ASK));
+  const keptStaff = withDeskLineAfterAccountConsume(serverDesk, deskLineAfterAccountConsume(midFile));
+  assert.equal(lastFoxLine(keptStaff), staffRefresh);
+  const startWorkspace = readFileSync(new URL("../components/fox/StartWorkspace.tsx", import.meta.url), "utf8");
+  assert.match(startWorkspace, /linkedAccountRefreshQuery/);
+  assert.match(startWorkspace, /resumeAccountFromQuery/);
+  assert.match(startWorkspace, /refresh\?\.fileId/);
+  const storeSource = readFileSync(new URL("../components/fox/store.ts", import.meta.url), "utf8");
+  assert.match(storeSource, /export function linkedAccountRefreshQuery/);
+  assert.doesNotMatch(startWorkspace, /set-bypass-cookie/);
+
   console.log(
     `assert-account-chapter: turn-one offer + Create account · Log in · Not now; first why; parked save why; no token; save-ask not in_queue; with account in_queue ${opened.draft.fileId}`,
   );
