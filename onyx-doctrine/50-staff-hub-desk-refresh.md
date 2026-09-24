@@ -17,13 +17,16 @@
 Already-open InPrivate desk, refreshed after staff Send, still ended on the first-lien question. Staff sentence not there. Founder leftover from hub v0 ACCEPT — “refresh old tab no paint; Open /start did.” — is now the FAIL lock.
 
 ## Root
-`/start` refresh hydrated `onyx.foxIntake.draft` / `onyx.fox.messages` from this tab only. Hub Send persists the foxLine on the File. Hub → Open /start reused the hub tab’s already-resumed snapshot. An already-open desk never GET `/api/account`.
+Two holes, both required:
+
+1. `/start` refresh hydrated `onyx.foxIntake.draft` / `onyx.fox.messages` from this tab only. Hub Send persists the foxLine on the File. Hub → Open /start reused the hub tab’s already-resumed snapshot. An already-open desk never GET `/api/account`.
+2. The already-open tab’s `pagehide` persist wrote that stale thread back onto the File, wiping the staff foxLine before refresh could paint it.
 
 ## Lock
 A desk the borrower already has open must show the new foxLine after refresh. Do not make them open /start from the hub.
 
 ## Fix
-`linkedAccountRefreshQuery` + `resumeAccountFromQuery` on `/start` boot when a session token or `fileId` is present. Refresh rehydrates thread/foxLine from the File. `beginAccountResume` blocks a stale local persist before the GET returns.
+`linkedAccountRefreshQuery` + `resumeAccountFromQuery` on `/start` boot when a session token or `fileId` is present. `persistLiveAccountRecord` merges messages so a stale desk persist cannot drop a staff foxLine the File already has.
 
 ## Accept walk (all four required)
 1. Grid still PASS.

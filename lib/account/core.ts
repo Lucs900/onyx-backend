@@ -169,6 +169,20 @@ export function shouldKeepLiveAccountDraft(
   return fileHasResumeFacts(existing) && !fileHasResumeFacts(incoming);
 }
 
+function foxLineKey(message: FoxMessage) {
+  return `${message.role}:${message.text.trim()}`;
+}
+
+/** Stale desk persist on refresh must not drop a staff foxLine the File already has. */
+export function mergeAccountMessages(existing: FoxMessage[], incoming: FoxMessage[]) {
+  if (!incoming.length) return existing.map((item) => ({ ...item }));
+  if (!existing.length) return incoming.map((item) => ({ ...item }));
+  const seen = new Set(incoming.map(foxLineKey));
+  const extra = existing.filter((item) => !seen.has(foxLineKey(item)));
+  if (!extra.length) return incoming.map((item) => ({ ...item }));
+  return [...incoming, ...extra].map((item) => ({ ...item }));
+}
+
 export function persistLiveAccountRecord(
   record: AccountRecord,
   draft: FoxIntakeDraft,
@@ -176,7 +190,7 @@ export function persistLiveAccountRecord(
   now = new Date(),
 ): AccountRecord {
   if (shouldKeepLiveAccountDraft(record.draft, draft)) return record;
-  return persistAccountRecord(record, draft, messages, now);
+  return persistAccountRecord(record, draft, mergeAccountMessages(record.messages, messages), now);
 }
 
 export function memoryAccountStore(seed: AccountRecord[] = []): AccountStore {

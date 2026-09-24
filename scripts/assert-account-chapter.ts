@@ -667,6 +667,9 @@ async function main() {
   assert.match(accountRoute, /loadAccountByEmail/);
   assert.match(accountRoute, /sameFile: true/);
   assert.match(accountRoute, /persistLiveAccountRecord/);
+  const accountCore = readFileSync(new URL("../lib/account/core.ts", import.meta.url), "utf8");
+  assert.match(accountCore, /export function mergeAccountMessages/);
+  assert.match(accountCore, /mergeAccountMessages\(record\.messages, messages\)/);
   const accountServer = readFileSync(new URL("../lib/account/server.ts", import.meta.url), "utf8");
   assert.match(accountServer, /allowOverwrite:\s*true/);
   assert.match(accountServer, /account\/email\//);
@@ -681,6 +684,10 @@ async function main() {
   writeAccountFile(midStore, midOpened.record.token, midFile, serverDesk);
   const refreshResume = resumeFromStore(midStore, { token: midOpened.record.token });
   assert.equal(lastFoxLine(refreshResume?.messages ?? []), staffRefresh);
+  writeAccountFile(midStore, midOpened.record.token, midFile, staleDesk);
+  const afterStalePersist = resumeFromStore(midStore, { token: midOpened.record.token });
+  assert.equal(lastFoxLine(afterStalePersist?.messages ?? []), staffRefresh);
+  assert.ok(afterStalePersist?.messages.some((item) => item.text === staffRefresh));
   assert.ok(refreshResume?.messages.some((item) => item.text === HELOC_FIRST_LIEN_ASK));
   const keptStaff = withDeskLineAfterAccountConsume(serverDesk, deskLineAfterAccountConsume(midFile));
   assert.equal(lastFoxLine(keptStaff), staffRefresh);
