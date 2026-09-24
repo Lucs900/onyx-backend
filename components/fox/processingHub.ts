@@ -6,7 +6,6 @@
 import { stillUsefulSpokenItems } from "./fileWrite";
 import { HIGH_LTV_CAUTION, fileCompleteness, isHelocFile, showsAgencyCompleteness } from "./completeness";
 import { withHelocToolQuote } from "./heloc";
-import { accountSaveAskOpen } from "./account";
 import {
   appendFileEvent,
   finishLineActions,
@@ -41,9 +40,49 @@ export type HubRow = {
   loud?: boolean;
 };
 
-export const HUB_LOUD_A_IDS = ["product", "purpose", "occupancy", "borrowers"] as const;
-export const HUB_LOUD_B_IDS = ["home", "first-lien", "line", "ltv", "cltv", "rate", "io", "credit"] as const;
-export const HUB_PAY_IDS = ["qualifying", "debts"] as const;
+/** Manager 50 — short labels, every cell present even when empty. */
+export const HUB_GRID_LABELS = [
+  "Product",
+  "Purpose",
+  "Occupancy",
+  "Value",
+  "Lien",
+  "Line",
+  "LTV",
+  "CLTV",
+  "Rate",
+  "IO",
+  "FICO",
+  "Borrowers",
+  "QI",
+  "Status",
+  "Next",
+] as const;
+
+export const HUB_GRID_IDS = [
+  "product",
+  "purpose",
+  "occupancy",
+  "home",
+  "first-lien",
+  "line",
+  "ltv",
+  "cltv",
+  "rate",
+  "io",
+  "credit",
+  "borrowers",
+  "qualifying",
+  "status",
+  "next",
+] as const;
+
+export const HUB_IDENTITY_IDS = ["product", "purpose", "occupancy"] as const;
+export const HUB_LOUD_STRIP_IDS = ["home", "first-lien", "line", "ltv", "cltv", "rate", "io", "credit"] as const;
+export const HUB_QUIET_IDS = ["borrowers", "qualifying", "status", "next"] as const;
+export const HUB_LOUD_A_IDS = HUB_IDENTITY_IDS;
+export const HUB_LOUD_B_IDS = HUB_LOUD_STRIP_IDS;
+export const HUB_PAY_IDS = ["qualifying"] as const;
 export const HUB_STATE_IDS = ["status", "next"] as const;
 
 export type StaffDeskInput = {
@@ -56,7 +95,10 @@ export type ProcessingHubView = {
   fileId?: string;
   path: string;
   drawerOpen: false;
+  grid: HubRow[];
+  identity: HubRow[];
   loud: HubRow[];
+  quiet: HubRow[];
   pay: HubRow[];
   state: {
     status: string;
@@ -149,21 +191,18 @@ function ioShell(draft: FoxIntakeDraft, facts: ReturnType<typeof previewFacts>):
 function rateShell(facts: ReturnType<typeof previewFacts>, draft: FoxIntakeDraft): HubRow {
   const live = draft.liveQuote?.rate;
   if (typeof live === "number" && Number.isFinite(live) && live > 0) {
-    return shellRow("rate", "RATE", `${(Math.round(live * 100) / 100).toFixed(2)}%`, undefined, true);
+    return shellRow("rate", "Rate", `${(Math.round(live * 100) / 100).toFixed(2)}%`, undefined, true);
   }
   const found = factOf(facts, "rate");
   const match = found?.value?.match(/(\d+(?:\.\d+)?%)/);
-  return shellRow("rate", "RATE", match?.[1] || found?.value, found?.note, true);
+  return shellRow("rate", "Rate", match?.[1] || found?.value, found?.note, true);
 }
 
 function hubStatusValue(draft: FoxIntakeDraft) {
-  if (accountSaveAskOpen(draft)) return "preparing";
-  const motion = motionStatusCopy(draft);
-  if (motion === "gathering" || motion === "confirmed") return "preparing";
-  return motion;
+  return motionStatusCopy(draft);
 }
 
-export function hubLoudRows(draft: FoxIntakeDraft): HubRow[] {
+export function hubGridRows(draft: FoxIntakeDraft): HubRow[] {
   draft = hubLiveDraft(draft);
   const facts = previewFacts(draft);
   const product = factOf(facts, "product")?.value || (draft.productIntent ? productIntentLabel(draft.productIntent) : "");
@@ -176,20 +215,45 @@ export function hubLoudRows(draft: FoxIntakeDraft): HubRow[] {
   const ltv = factOf(facts, "ltv");
   const cltv = factOf(facts, "cltv");
   const credit = factOf(facts, "credit");
-  return [
-    shellRow("product", "PROD", product),
-    shellRow("purpose", "PURP", purpose),
-    shellRow("occupancy", "OCC", occupancy),
-    shellRow("borrowers", "BORS", borrowers),
-    shellRow("home", "VAL", value, undefined, true),
-    shellRow("first-lien", "1ST", first, undefined, true),
-    shellRow("line", "LINE", line, undefined, true),
-    shellRow("ltv", "LTV", ltv?.value, ltv?.note, true),
-    shellRow("cltv", "CLTV", cltv?.value, cltv?.note, true),
-    rateShell(facts, draft),
-    ioShell(draft, facts),
-    shellRow("credit", "FICO", credit?.value, credit?.note),
-  ];
+  const byId = new Map<string, HubRow>(
+    [
+      shellRow("product", "Product", product),
+      shellRow("purpose", "Purpose", purpose),
+      shellRow("occupancy", "Occupancy", occupancy),
+      shellRow("home", "Value", value, undefined, true),
+      shellRow("first-lien", "Lien", first, undefined, true),
+      shellRow("line", "Line", line, undefined, true),
+      shellRow("ltv", "LTV", ltv?.value, ltv?.note, true),
+      shellRow("cltv", "CLTV", cltv?.value, cltv?.note, true),
+      rateShell(facts, draft),
+      ioShell(draft, facts),
+      shellRow("credit", "FICO", credit?.value, credit?.note, true),
+      shellRow("borrowers", "Borrowers", borrowers),
+      qiShell(facts),
+      shellRow("status", "Status", hubStatusValue(draft), hubCompletenessWhisper(draft)),
+      shellRow(
+        "next",
+        "Next",
+        String(nextActorOf(draft) ?? ""),
+        String(waitingOnOf(draft) ?? "") !== String(nextActorOf(draft) ?? "")
+          ? String(waitingOnOf(draft) ?? "")
+          : undefined,
+      ),
+    ].map((row) => [row.id, row]),
+  );
+  return HUB_GRID_IDS.map((id) => byId.get(id)!);
+}
+
+export function hubLoudRows(draft: FoxIntakeDraft): HubRow[] {
+  return hubGridRows(draft).filter((row) => (HUB_LOUD_STRIP_IDS as readonly string[]).includes(row.id));
+}
+
+export function hubIdentityRows(draft: FoxIntakeDraft): HubRow[] {
+  return hubGridRows(draft).filter((row) => (HUB_IDENTITY_IDS as readonly string[]).includes(row.id));
+}
+
+export function hubQuietRows(draft: FoxIntakeDraft): HubRow[] {
+  return hubGridRows(draft).filter((row) => (HUB_QUIET_IDS as readonly string[]).includes(row.id));
 }
 
 export function hubLoudText(draft: FoxIntakeDraft) {
@@ -199,16 +263,11 @@ export function hubLoudText(draft: FoxIntakeDraft) {
 }
 
 export function hubPayRows(draft: FoxIntakeDraft): HubRow[] {
-  draft = hubLiveDraft(draft);
-  const facts = previewFacts(draft);
-  return [qiShell(facts), shellRow("debts", "DEBT", factOf(facts, "debts")?.value, factOf(facts, "debts")?.note)];
+  return hubGridRows(draft).filter((row) => (HUB_PAY_IDS as readonly string[]).includes(row.id));
 }
 
 export function hubStateRows(draft: FoxIntakeDraft): HubRow[] {
-  return [
-    shellRow("status", "STAT", hubStatusValue(draft), hubCompletenessWhisper(draft)),
-    shellRow("next", "NEXT", String(nextActorOf(draft) ?? ""), String(waitingOnOf(draft) ?? "") !== String(nextActorOf(draft) ?? "") ? String(waitingOnOf(draft) ?? "") : undefined),
-  ];
+  return hubGridRows(draft).filter((row) => (HUB_STATE_IDS as readonly string[]).includes(row.id));
 }
 
 export function hubQuietFlags(draft: FoxIntakeDraft): string[] {
@@ -248,11 +307,15 @@ export function hubCompletenessSignal(draft: FoxIntakeDraft) {
 
 export function processingHubView(draft: FoxIntakeDraft): ProcessingHubView {
   draft = hubLiveDraft(draft);
+  const grid = hubGridRows(draft);
   return {
     fileId: draft.fileId?.trim() || undefined,
     path: staffHubPath(draft.fileId),
     drawerOpen: false,
+    grid,
+    identity: hubIdentityRows(draft),
     loud: hubLoudRows(draft),
+    quiet: hubQuietRows(draft),
     pay: hubPayRows(draft),
     state: {
       status: hubStatusValue(draft),

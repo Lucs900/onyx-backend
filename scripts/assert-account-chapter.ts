@@ -524,8 +524,8 @@ async function main() {
   assert.equal(keepTalking.accountSaveAsk, false);
   assert.notEqual(keepTalking.motion, "in_queue");
   const hubUnsaved = processingHubView(unsaved);
-  assert.notEqual(hubUnsaved.state.status, "gathering");
-  assert.equal(hubUnsaved.state.rows.find((row) => row.id === "status")?.value, "preparing");
+  assert.equal(hubUnsaved.state.status, "gathering");
+  assert.equal(hubUnsaved.state.rows.find((row) => row.id === "status")?.value, "gathering");
   loadIntakeDraft(withLinkedAccount(unsaved, opened.draft.accountId));
   const oldFileId = getFoxDraft().fileId;
   const wiped = startOverWorkspace("acr");

@@ -117,33 +117,26 @@ export function ProcessingHub() {
         ) : null}
 
         <>
-            <section className="intake-card staff-hub-loud">
-              <h2 className="type-card-title">Loud</h2>
-              <div className="staff-hub-grid staff-hub-grid--a">
-                {hub.loud.slice(0, 4).map((row) => (
-                  <HubCell key={row.id} row={row} />
-                ))}
-              </div>
-              <div className="staff-hub-grid staff-hub-grid--b">
-                {hub.loud.slice(4).map((row) => (
-                  <HubCell key={row.id} row={row} />
-                ))}
-              </div>
-            </section>
-
             <section className="intake-card">
-              <h2 className="type-card-title">Pay</h2>
-              <div className="staff-hub-grid staff-hub-grid--c">
-                {hub.pay.map((row) => (
+              <div className="staff-hub-grid staff-hub-grid--identity">
+                {hub.identity.map((row) => (
                   <HubCell key={row.id} row={row} quiet />
                 ))}
               </div>
             </section>
 
+            <section className="intake-card staff-hub-loud">
+              <h2 className="type-card-title">Loud</h2>
+              <div className="staff-hub-grid staff-hub-grid--loud">
+                {hub.loud.map((row) => (
+                  <HubCell key={row.id} row={row} />
+                ))}
+              </div>
+            </section>
+
             <section className="intake-card">
-              <h2 className="type-card-title">State</h2>
-              <div className="staff-hub-grid staff-hub-grid--d">
-                {(hub.state.rows ?? []).map((row) => (
+              <div className="staff-hub-grid staff-hub-grid--quiet">
+                {hub.quiet.map((row) => (
                   <HubCell key={row.id} row={row} quiet />
                 ))}
               </div>
@@ -162,9 +155,7 @@ export function ProcessingHub() {
                     <li key={item}>{item}</li>
                   ))}
                 </ul>
-              ) : (
-                <p className="type-legal">Still useful is empty.</p>
-              )}
+              ) : null}
               {hub.state.docs.length ? (
                 <ul className="intake-note-list">
                   {hub.state.docs.map((doc) => (
@@ -174,14 +165,10 @@ export function ProcessingHub() {
                     </li>
                   ))}
                 </ul>
-              ) : (
-                <p className="type-legal">
-                  {draft.documentsSkipped ? "Papers skipped." : "No docs received."}
-                </p>
-              )}
+              ) : null}
             </section>
 
-            <details className="intake-card staff-hub-drawer">
+            <details className="intake-card staff-hub-drawer" open>
               <summary className="type-card-title">Borrower thread</summary>
               {thread.length ? (
                 <ul className="intake-note-list">
@@ -282,7 +269,7 @@ function HubCell({ row, quiet = false }: { row: HubRow; quiet?: boolean }) {
   const empty = row.value === HUB_EMPTY;
   return (
     <div className={quiet ? "staff-hub-cell staff-hub-cell--quiet" : "staff-hub-cell"}>
-      <p className="staff-hub-cell__acronym">{row.label}</p>
+      <p className="staff-hub-cell__label">{row.label}</p>
       <p
         className={
           empty

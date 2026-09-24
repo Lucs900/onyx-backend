@@ -164,15 +164,15 @@ function main() {
   const padCltv = fact(queued, "cltv")?.value ?? "";
   const padBorrowers = fact(queued, "borrowers")?.value;
   const padCredit = fact(queued, "credit");
-  assert.equal(hub.loud.find((row) => row.id === "line")?.label, "LINE");
+  assert.equal(hub.grid.find((row) => row.id === "line")?.label, "Line");
   assert.equal(hub.loud.find((row) => row.id === "line")?.value, padLine);
-  assert.equal(hub.loud.find((row) => row.id === "rate")?.label, "RATE");
+  assert.equal(hub.grid.find((row) => row.id === "rate")?.label, "Rate");
   assert.match(hub.loud.find((row) => row.id === "rate")?.value ?? "", /%/);
   assert.match(padRate, /%/);
   assert.equal(hub.loud.find((row) => row.id === "cltv")?.label, "CLTV");
   assert.equal(hub.loud.find((row) => row.id === "cltv")?.value, padCltv);
-  assert.equal(hub.loud.find((row) => row.id === "borrowers")?.label, "BORS");
-  assert.equal(hub.loud.find((row) => row.id === "borrowers")?.value, padBorrowers);
+  assert.equal(hub.grid.find((row) => row.id === "borrowers")?.label, "Borrowers");
+  assert.equal(hub.grid.find((row) => row.id === "borrowers")?.value, padBorrowers);
   assert.equal(hub.loud.find((row) => row.id === "credit")?.label, "FICO");
   assert.equal(hub.loud.find((row) => row.id === "credit")?.value, padCredit?.value);
   assert.equal(hub.loud.find((row) => row.id === "credit")?.note, CREDIT_STATED_NOTE);
@@ -180,7 +180,7 @@ function main() {
   assert.match(loud, /\$50,000/);
   assert.match(loud, /\$367/);
   assert.match(loud, /90/);
-  assert.match(loud, /BORS 1|BORS.*\b1\b/);
+  assert.match(hub.grid.map((row) => `${row.label} ${row.value}`).join(" · "), /Borrowers 1/);
   assert.match(loud, /760\+/);
   assert.match(loud, /Stated/);
   assert.equal(hub.state.status, "in_queue");

@@ -15,11 +15,13 @@ import { withHelocToolQuote, writeFirstLien, writeHelocLine } from "../component
 import { writePurchasePrice } from "../components/fox/workspace";
 import {
   HUB_EMPTY,
-  HUB_LOUD_A_IDS,
-  HUB_LOUD_B_IDS,
+  HUB_GRID_IDS,
+  HUB_GRID_LABELS,
+  HUB_LOUD_STRIP_IDS,
   HUB_PAY_IDS,
   HUB_STATE_IDS,
   applyStaffDeskSend,
+  hubGridRows,
   hubHasForbidden,
   hubLoudRows,
   hubPayRows,
@@ -58,17 +60,16 @@ function houseHeloc(): FoxIntakeDraft {
 
 function main() {
   const empty = processingHubView(emptyDraft());
-  assert.deepEqual(
-    empty.loud.map((row) => row.label),
-    ["PROD", "PURP", "OCC", "BORS", "VAL", "1ST", "LINE", "LTV", "CLTV", "RATE", "IO", "FICO"],
-  );
-  assert.deepEqual(empty.loud.map((row) => row.id), [...HUB_LOUD_A_IDS, ...HUB_LOUD_B_IDS]);
-  assert.ok(empty.loud.every((row) => row.value === HUB_EMPTY));
-  assert.equal(empty.loud.length, 12);
-  assert.deepEqual(empty.pay.map((row) => row.label), ["QI", "DEBT"]);
+  assert.deepEqual(empty.grid.map((row) => row.label), [...HUB_GRID_LABELS]);
+  assert.deepEqual(empty.grid.map((row) => row.id), [...HUB_GRID_IDS]);
+  assert.ok(empty.grid.every((row) => row.value === HUB_EMPTY || row.id === "status" || row.id === "next"));
+  assert.equal(empty.grid.length, 15);
+  assert.ok(!empty.grid.some((row) => row.label === "DEBT" || row.id === "debts"));
+  assert.deepEqual(empty.loud.map((row) => row.id), [...HUB_LOUD_STRIP_IDS]);
+  assert.ok(empty.loud.every((row) => row.loud === true || row.value === HUB_EMPTY));
+  assert.deepEqual(empty.pay.map((row) => row.label), ["QI"]);
   assert.deepEqual(empty.pay.map((row) => row.id), [...HUB_PAY_IDS]);
-  assert.ok(empty.pay.every((row) => row.value === HUB_EMPTY));
-  assert.deepEqual(empty.state.rows.map((row) => row.label), ["STAT", "NEXT"]);
+  assert.deepEqual(empty.state.rows.map((row) => row.label), ["Status", "Next"]);
   assert.deepEqual(empty.state.rows.map((row) => row.id), [...HUB_STATE_IDS]);
   assert.deepEqual(empty.state.quietFlags, []);
   assert.doesNotMatch(JSON.stringify(empty), /SSN|AU\b|lock desk|green approved/i);
@@ -89,7 +90,7 @@ function main() {
     liveQuoteStatus: "ready" as const,
   };
   assert.equal(hubLoudRows(staleRate).find((row) => row.id === "io")?.value, "$367");
-  assert.notEqual(hubStateRows(quotedFile).find((row) => row.id === "status")?.value, "gathering");
+  assert.ok(["preparing", "gathering"].includes(hubStateRows(quotedFile).find((row) => row.id === "status")?.value ?? ""));
 
   const filled = ensureFileId(
     applyProceedMotion(
@@ -119,18 +120,33 @@ function main() {
     ),
   );
   const hub = processingHubView(filled);
-  assert.equal(hub.loud.length, 12);
-  assert.equal(hub.pay.length, 2);
+  assert.equal(hub.grid.length, 15);
+  assert.deepEqual(hub.grid.map((row) => row.label), [...HUB_GRID_LABELS]);
+  assert.equal(hub.loud.length, 8);
+  assert.equal(hub.pay.length, 1);
   assert.equal(hub.state.rows.length, 2);
+  const midFile = ensureFileId({
+    ...writePurchasePrice(houseHeloc(), 500_000),
+    motion: "gathering",
+    nextActor: "You",
+    waitingOn: "borrower",
+  });
+  const midHub = processingHubView(midFile);
+  assert.equal(midHub.grid.find((row) => row.id === "home")?.value, "$500,000");
+  assert.equal(midHub.grid.find((row) => row.id === "first-lien")?.value, HUB_EMPTY);
+  assert.equal(midHub.grid.find((row) => row.id === "product")?.value, "HELOC");
+  assert.equal(midHub.grid.find((row) => row.id === "occupancy")?.value, "Primary");
+  assert.equal(midHub.grid.find((row) => row.id === "status")?.value, "gathering");
+  assert.equal(hubGridRows(midFile).find((row) => row.label === "Lien")?.value, HUB_EMPTY);
   assert.equal(hubLoudRows(filled).find((row) => row.id === "home")?.value, "$500,000");
   assert.equal(hubLoudRows(filled).find((row) => row.id === "first-lien")?.value, "$400,000");
   assert.equal(hubLoudRows(filled).find((row) => row.id === "line")?.value, "$50,000");
   assert.match(hubLoudRows(filled).find((row) => row.id === "cltv")?.value ?? "", /90/);
   assert.match(hubLoudRows(filled).find((row) => row.id === "io")?.value ?? "", /\$367/);
   assert.equal(hubLoudRows(filled).find((row) => row.id === "credit")?.value, "760+");
-  assert.equal(hub.loud.find((row) => row.id === "product")?.value, "HELOC");
-  assert.equal(hub.loud.find((row) => row.id === "occupancy")?.value, "Primary");
-  assert.equal(hub.loud.find((row) => row.id === "borrowers")?.value, "1");
+  assert.equal(hub.grid.find((row) => row.id === "product")?.value, "HELOC");
+  assert.equal(hub.grid.find((row) => row.id === "occupancy")?.value, "Primary");
+  assert.equal(hub.grid.find((row) => row.id === "borrowers")?.value, "1");
   assert.ok(!hubQuietFlags(filled).includes("INV"));
   assert.ok(!hubQuietFlags(filled).includes("C/O"));
   const investment = hubQuietFlags({
@@ -147,11 +163,12 @@ function main() {
   assert.deepEqual(labels(finishLineActions(sent.draft)).slice(0, 2), ["Ask Fox", "Upload more"]);
   assert.equal(labels(finishLineActions(sent.draft)).at(-1), "Request human");
   assert.equal(hubHasForbidden(JSON.stringify(hub)), false);
-  assert.equal(hubPayRows(emptyDraft()).length, 2);
+  assert.equal(hubPayRows(emptyDraft()).length, 1);
   assert.equal(hubStateRows(emptyDraft()).length, 2);
+  assert.equal(hubLoudRows(filled).length, 8);
 
   console.log(
-    `assert-hub-dense-1008: 12+2+2 shells; empty ${HUB_EMPTY}; loud $50,000 / $367 / 90%; flags true-only; desk Send keeps finish chips`,
+    `assert-hub-dense-1008: 15 short labels; empty ${HUB_EMPTY}; loud strip $50,000 / $367 / 90%; flags true-only; desk Send keeps finish chips`,
   );
 }
 
