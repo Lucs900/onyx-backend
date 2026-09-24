@@ -614,6 +614,7 @@ import {
   ACCOUNT_FILE_YOURS,
   ACCOUNT_SAVE_ASK,
   ACCOUNT_WHY_SENTENCE,
+  accountAskOf,
   accountSaveAskOpen,
   accountSaveWallActions,
   accountWorkspaceReply,
@@ -4366,6 +4367,30 @@ export function deskStripActions(
   return [];
 }
 
+function isParkedPostLinkLine(text: string) {
+  const line = text.trim();
+  if (!line) return true;
+  if (isAccountMailWaitLine(line)) return true;
+  if (line === ACCOUNT_SAVE_ASK || line === ACCOUNT_EMAIL_ASK || line === ACCOUNT_WHY_SENTENCE) {
+    return true;
+  }
+  if (line === MOTION_COPY.in_queue || /ONYX has this for review/i.test(line)) return true;
+  return false;
+}
+
+/** Speak the next empty Structure ask — ignore in_queue so consume is not the review wall. */
+function structureAskAfterAccountConsume(draft: FoxIntakeDraft) {
+  return nextFoxAsk({
+    ...draft,
+    motion: draft.motion === "in_queue" || draft.motion === "waiting_out" ? "gathering" : draft.motion,
+    pendingFinish: undefined,
+    workItems: (draft.workItems ?? []).filter(
+      (item) => !(item.kind === "review" && (item.state === "open" || item.state === "nudged")),
+    ),
+    reviewSlaMs: undefined,
+  });
+}
+
 /** After `/start?account=` consume. History may keep the mail-wait sentence. */
 export function deskLineAfterAccountConsume(draft: FoxIntakeDraft): {
   text: string;
@@ -4381,16 +4406,18 @@ export function deskLineAfterAccountConsume(draft: FoxIntakeDraft): {
       actions: greet.actions,
     };
   }
-  return nextFoxAsk(draft);
+  const next = nextFoxAsk(draft);
+  if (!isParkedPostLinkLine(next.text)) return next;
+  const structure = structureAskAfterAccountConsume(draft);
+  if (!isParkedPostLinkLine(structure.text)) return structure;
+  return { text: ACCOUNT_FILE_YOURS };
 }
 
 /** Consume desk line stays live. Prompt-sync must not reprint the product ask over it. */
 export function liveDeskLineOwnsPrompt(liveText: string, draft: FoxIntakeDraft) {
   const text = liveText.trim();
   if (!text) return false;
-  if (isAccountMailWaitLine(text) || text === ACCOUNT_EMAIL_ASK || text === ACCOUNT_WHY_SENTENCE) {
-    return false;
-  }
+  if (isParkedPostLinkLine(text)) return false;
   if (text === ACCOUNT_FILE_YOURS) return true;
   return text === deskLineAfterAccountConsume(draft).text.trim();
 }
@@ -4401,13 +4428,7 @@ export function withDeskLineAfterAccountConsume(
 ): FoxMessage[] {
   const last = lastFoxLine(messages);
   if (last === ask.text) return messages;
-  if (
-    last &&
-    !isAccountMailWaitLine(last) &&
-    last !== ACCOUNT_SAVE_ASK &&
-    last !== ACCOUNT_WHY_SENTENCE &&
-    last !== ACCOUNT_EMAIL_ASK
-  ) {
+  if (last && !isParkedPostLinkLine(last)) {
     return messages;
   }
   return [
@@ -9873,11 +9894,16 @@ export function workspaceReply(
         return answerThenRestore(q, draft);
       }
       if (draft.pendingFinish && looksLikeEmail(q)) {
-        const nextDraft = applyEmailThenFinish(draft, q);
-        return {
-          ...workspacePromptCopy("done", nextDraft),
-          capture: { field: "email", value: q.trim() },
-        };
+        const ask = accountAskOf(draft);
+        const accountDoor =
+          accountSaveAskOpen(draft) || ask === "channel" || ask === "email" || ask === "offer";
+        if (!accountDoor) {
+          const nextDraft = applyEmailThenFinish(draft, q);
+          return {
+            ...workspacePromptCopy("done", nextDraft),
+            capture: { field: "email", value: q.trim() },
+          };
+        }
       }
       if (draft.pendingFinish && emailMissing(draft) && !emailSkipped(draft) && /^(skip|later|pass)\b/i.test(lower)) {
         const nextDraft = applySkipEmailThenFinish(draft);

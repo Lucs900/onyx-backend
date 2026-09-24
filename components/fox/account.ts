@@ -264,6 +264,19 @@ export function accountWorkspaceReply(
       capture: { field: "skip-account" },
     };
   }
+  if (
+    looksLikeAccountEmail(q) &&
+    (ask === "email" ||
+      ask === "channel" ||
+      ask === "offer" ||
+      accountSaveAskOpen(draft) ||
+      accountOfferOpen(draft))
+  ) {
+    return {
+      text: accountSentCopy({ channel: "email" }),
+      capture: { field: "account-email", value: q.trim() },
+    };
+  }
   if (ask === "channel" && /^email$/i.test(q)) {
     return {
       text: ACCOUNT_EMAIL_ASK,
@@ -276,12 +289,6 @@ export function accountWorkspaceReply(
       text: ACCOUNT_PHONE_ASK,
       actions: accountSideActions({ ...draft, accountAsk: "phone" }),
       capture: { field: "account-channel", value: "phone" },
-    };
-  }
-  if (ask === "email" && looksLikeAccountEmail(q)) {
-    return {
-      text: accountSentCopy({ channel: "email" }),
-      capture: { field: "account-email", value: q.trim() },
     };
   }
   if (ask === "phone" && looksLikeAccountPhone(q)) {
@@ -406,13 +413,25 @@ export function applyAccountSaveAsk(draft: FoxIntakeDraft): FoxIntakeDraft {
   };
 }
 
+function withoutOpenReviewItems(draft: FoxIntakeDraft): FoxIntakeDraft {
+  const workItems = (draft.workItems ?? []).filter(
+    (item) => !(item.kind === "review" && (item.state === "open" || item.state === "nudged")),
+  );
+  return {
+    ...draft,
+    workItems,
+    reviewSlaMs: workItems.some((item) => item.kind === "review") ? draft.reviewSlaMs : undefined,
+  };
+}
+
 /** Letter sent. Keep gathering — do not auto-send the File to review. */
 export function applyAccountCreated(
   draft: FoxIntakeDraft,
   input: { fileId?: string; accountId: string; channel: "email" | "phone" },
 ): FoxIntakeDraft {
+  const cleared = withoutOpenReviewItems(draft);
   return {
-    ...draft,
+    ...cleared,
     fileId: input.fileId || draft.fileId,
     accountId: input.accountId,
     accountAsk: input.channel === "phone" ? "code" : "sent",
@@ -420,9 +439,23 @@ export function applyAccountCreated(
     accountSaveAsk: false,
     accountChannel: input.channel,
     pendingFinish: undefined,
-    motion: draft.motion === "in_queue" || draft.motion === "escalated" ? draft.motion : "gathering",
-    nextActor: draft.motion === "in_queue" || draft.motion === "escalated" ? draft.nextActor : "You",
-    waitingOn: draft.motion === "in_queue" || draft.motion === "escalated" ? draft.waitingOn : "borrower",
+    motion: "gathering",
+    nextActor: "You",
+    waitingOn: "borrower",
+  };
+}
+
+/** Magic link opened. Letter consume is the desk, not review. */
+export function applyAccountLetterOpened(draft: FoxIntakeDraft): FoxIntakeDraft {
+  const cleared = withoutOpenReviewItems(consumeLinkedAccountDraft(draft));
+  return {
+    ...cleared,
+    accountSaveAsk: false,
+    accountAsk: undefined,
+    pendingFinish: undefined,
+    motion: "gathering",
+    nextActor: "You",
+    waitingOn: "borrower",
   };
 }
 

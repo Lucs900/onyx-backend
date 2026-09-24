@@ -21,6 +21,7 @@ import {
   saveAccountRecord,
 } from "@/lib/account/server";
 import type { FoxIntakeDraft, FoxMessage } from "@/components/fox/types";
+import { applyAccountCreated } from "@/components/fox/account";
 
 export const runtime = "nodejs";
 
@@ -139,7 +140,11 @@ export async function POST(request: Request) {
     });
     const linked = persistAccountRecord(
       record,
-      { ...draft, fileId, accountId: record.accountId, accountAsk: "sent", accountSkipped: false },
+      applyAccountCreated(draft, {
+        fileId,
+        accountId: record.accountId,
+        channel: body.phone ? "phone" : "email",
+      }),
       messages,
     );
     await saveAccountRecord(linked);

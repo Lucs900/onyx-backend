@@ -53,7 +53,12 @@ import {
   restripeGatheringOrReady,
 } from "./motion";
 import { applyStaffDeskSend, type StaffDeskInput } from "./processingHub";
-import { applyAccountCapture, applyAccountCreated, consumeLinkedAccountDraft } from "./account";
+import {
+  applyAccountCapture,
+  applyAccountCreated,
+  applyAccountLetterOpened,
+  accountSaveAskOpen,
+} from "./account";
 import { FAILED_READ_NOTE, isUnreadNote } from "@/lib/docs/accept";
 import {
   applyExtractedFields,
@@ -2103,7 +2108,7 @@ export function getAccountSession() {
 
 export function applyAccountResume(draft: FoxIntakeDraft, messages: FoxMessage[], session?: AccountSession) {
   accountResumePending = false;
-  const consumed = consumeLinkedAccountDraft({ ...draft, workspaceFlow: true });
+  const consumed = applyAccountLetterOpened({ ...draft, workspaceFlow: true });
   const desk = deskLineAfterAccountConsume(consumed);
   current = ensureFileId(consumed);
   persist(current);
@@ -2306,7 +2311,12 @@ function applyCaptureBody(capture: Capture) {
   }
   if (capture.field === "fullName" || capture.field === "email" || capture.field === "phone" || capture.field === "preferredContact") {
     if (capture.field === "email" && current.workspaceFlow && (current.pendingFinish || current.sampleAccepted)) {
-      if (current.pendingFinish && looksLikeEmail(capture.value)) {
+      const accountDoor =
+        accountSaveAskOpen(current) ||
+        current.accountAsk === "channel" ||
+        current.accountAsk === "email" ||
+        current.accountAsk === "offer";
+      if (current.pendingFinish && looksLikeEmail(capture.value) && !accountDoor) {
         return commit(applyEmailThenFinish(current, capture.value));
       }
       return commit({

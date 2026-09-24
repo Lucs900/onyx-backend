@@ -51,7 +51,9 @@ import {
   accountSideActions,
   applyAccountCapture,
   applyAccountCreated,
+  applyAccountLetterOpened,
   applyAccountSaveAsk,
+  accountWorkspaceReply,
   consumeLinkedAccountDraft,
   foxLineLeaksAccountSecret,
   isAccountMailWaitLine,
@@ -519,6 +521,36 @@ async function main() {
   assert.equal(afterLetter.motion, "gathering");
   assert.equal(statusCopy(afterLetter), "gathering");
   assert.notEqual(afterLetter.motion, "in_queue");
+  const queuedThenCreated = applyAccountCreated(
+    { ...unsaved, motion: "in_queue", nextActor: "ONYX", waitingOn: "onyx" },
+    { accountId: opened.draft.accountId, channel: "email" },
+  );
+  assert.equal(queuedThenCreated.motion, "gathering");
+  assert.equal(statusCopy(queuedThenCreated), "gathering");
+  const whyEmail = accountWorkspaceReply("lucas@onyxlending.com", unsaved);
+  assert.equal(whyEmail?.capture?.field, "account-email");
+  assert.equal(whyEmail?.capture && "value" in whyEmail.capture ? whyEmail.capture.value : "", "lucas@onyxlending.com");
+  const emailOnWhy = workspaceReply("lucas@onyxlending.com", unsaved);
+  assert.notEqual(emailOnWhy?.capture?.field, "email");
+  assert.notEqual(emailOnWhy?.capture?.field, "proceed");
+  const openedLetter = applyAccountLetterOpened({
+    ...afterLetter,
+    motion: "in_queue",
+    accountAsk: "sent",
+    pendingFinish: "proceed",
+  });
+  assert.equal(openedLetter.motion, "gathering");
+  assert.equal(statusCopy(openedLetter), "gathering");
+  assert.equal(openedLetter.accountAsk, undefined);
+  const openedDesk = deskLineAfterAccountConsume(openedLetter);
+  assert.notEqual(openedDesk.text, ACCOUNT_EMAIL_SENT);
+  assert.notEqual(openedDesk.text, ACCOUNT_EMAIL_ASK);
+  assert.notEqual(openedDesk.text, ACCOUNT_SAVE_ASK);
+  assert.doesNotMatch(openedDesk.text, /ONYX has this for review/);
+  const advancedOpened = withDeskLineAfterAccountConsume(waiting, openedDesk);
+  assert.equal(lastFoxLine(advancedOpened), openedDesk.text);
+  assert.ok(advancedOpened.some((item) => item.text === ACCOUNT_EMAIL_SENT));
+  assert.ok(!labels(openedDesk.actions).includes(CREATE_ACCOUNT_LABEL));
   const sendSource = readFileSync(new URL("../lib/account/send.ts", import.meta.url), "utf8");
   assert.match(sendSource, /subject: "Your ONYX File"/);
   assert.match(sendSource, /ONYX Direct <lucas@onyxdirect\.com>/);
