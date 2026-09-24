@@ -42,6 +42,7 @@ import {
   ACCOUNT_SKIPPED_LINE,
   ACCOUNT_WHY_SENTENCE,
   CREATE_ACCOUNT_LABEL,
+  HEADER_LOGIN_HREF,
   LOGIN_LABEL,
   NOT_NOW_LABEL,
   SAVE_THIS_FILE_LABEL,
@@ -178,10 +179,20 @@ async function main() {
   assert.equal(login?.capture?.field, "login-account");
   assert.equal(login?.text, "Welcome back. Email or phone for a code?");
   assert.equal(login?.text, ACCOUNT_LOGIN_ASK);
+  assert.doesNotMatch(login?.text ?? "", /Open your File|file_id|\/start\?account=/i);
   assert.ok(!foxLineLeaksAccountSecret(login?.text ?? ""));
   const afterLogin = applyAccountCapture(first, { field: "login-account" });
   assert.equal(afterLogin.accountAsk, "channel");
+  assert.notEqual(afterLogin.motion, "in_queue");
   assert.deepEqual(labels(accountSideActions(afterLogin)), ["Email", "Phone", NOT_NOW_LABEL]);
+  assert.equal(HEADER_LOGIN_HREF, "/start?path=acr&login=1");
+  assert.doesNotMatch(HEADER_LOGIN_HREF, /\/login/);
+  const headerSource = readFileSync(new URL("../components/SiteHeader.tsx", import.meta.url), "utf8");
+  assert.match(headerSource, /HEADER_LOGIN_HREF/);
+  assert.doesNotMatch(headerSource, /href=\"\/login\"/);
+  const loginPage = readFileSync(new URL("../app/(marketing)/login/page.tsx", import.meta.url), "utf8");
+  assert.match(loginPage, /redirect\(HEADER_LOGIN_HREF\)/);
+  assert.doesNotMatch(loginPage, /LoginResume|Open your File/);
 
   const skip = workspaceReply("Not now", first);
   assert.equal(skip?.capture?.field, "skip-account");

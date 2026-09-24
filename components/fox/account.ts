@@ -42,6 +42,15 @@ export const ACCOUNT_EMAIL_SENT = "Check your email for a link to this File. Ope
 export const ACCOUNT_PHONE_SENT = "I sent a code to your phone. Enter it here when it arrives.";
 export const ACCOUNT_SEND_FAILED = "I couldn’t send that. Try again, or pick Phone.";
 export const ACCOUNT_FILE_YOURS = "This File is yours.";
+/** Site header Log in — same Fox door as the chip. Not /login Open your File. */
+export const HEADER_LOGIN_HREF = "/start?path=acr&login=1";
+export const HEADER_LOGIN_QUERY = "login";
+export const HEADER_LOGIN_EVENT = "onyx-header-login";
+
+export function dispatchHeaderLogin() {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new Event(HEADER_LOGIN_EVENT));
+}
 
 export function isAccountMailWaitLine(text: string) {
   const line = text.trim();

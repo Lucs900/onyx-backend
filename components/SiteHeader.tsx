@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { AdvisorMark } from "./AdvisorMark";
 import { HeroStartLink } from "./fox/HeroStartLink";
+import { HEADER_LOGIN_HREF } from "./fox/account";
 
 const NAV_LINKS = [
   { href: "/rates", label: "Rates" },
@@ -69,7 +70,7 @@ export function SiteHeader() {
             </nav>
 
             <div className="site-header__actions">
-              <Link href="/login" className="site-header__login">
+              <Link href={HEADER_LOGIN_HREF} className="site-header__login">
                 Log in
               </Link>
               <HeroStartLink
@@ -137,7 +138,7 @@ export function SiteHeader() {
             Just need a mortgage
           </HeroStartLink>
           <Link
-            href="/login"
+            href={HEADER_LOGIN_HREF}
             className="btn btn--text"
             onClick={() => setMenuOpen(false)}
           >

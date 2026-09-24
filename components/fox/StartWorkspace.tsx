@@ -6,6 +6,7 @@ import { accountTokenFromLocation } from "@/lib/account/send";
 import { pathFromQuery, rememberStartPath } from "@/components/products/startPath";
 import { AlwaysOnFox } from "./AlwaysOnFox";
 import { FilePreview } from "./FilePreview";
+import { HEADER_LOGIN_QUERY, dispatchHeaderLogin } from "./account";
 import {
   applyPreviewMotionControls,
   beginAccountResume,
@@ -87,6 +88,15 @@ export function StartWorkspace() {
     const qs = next.toString();
     router.replace(qs ? `/start?${qs}` : "/start", { scroll: false });
   }, [homepageFresh, router, searchParams]);
+  useEffect(() => {
+    if (searchParams.get(HEADER_LOGIN_QUERY) !== "1") return;
+    if (accountToken || accountCode) return;
+    dispatchHeaderLogin();
+    const next = new URLSearchParams(searchParams.toString());
+    next.delete(HEADER_LOGIN_QUERY);
+    const qs = next.toString();
+    router.replace(qs ? `/start?${qs}` : "/start", { scroll: false });
+  }, [accountCode, accountToken, router, searchParams]);
   useEffect(() => {
     if (lastPath.current !== startPath) {
       lastPath.current = startPath;

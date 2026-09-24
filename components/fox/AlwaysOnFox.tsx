@@ -131,6 +131,8 @@ import {
   ACCOUNT_SKIPPED_LINE,
   ACCOUNT_SEND_FAILED,
   ACCOUNT_WHY_SENTENCE,
+  HEADER_LOGIN_EVENT,
+  LOGIN_LABEL,
   SAVE_THIS_FILE_LABEL,
   START_OVER_CONFIRM,
   accountCreateWhy,
@@ -1426,11 +1428,19 @@ export function AlwaysOnFox({
       applyCapture({ field: "save-this-file" });
       appendReply(SAVE_THIS_FILE_LABEL, { text: ACCOUNT_WHY_SENTENCE });
     };
+    const onHeaderLogin = () => {
+      if (!isStart) return;
+      setOpen(true);
+      skipPromptSync.current = true;
+      applyCapture({ field: "login-account" });
+      appendReply(LOGIN_LABEL, { text: ACCOUNT_LOGIN_ASK });
+    };
     window.addEventListener("onyx:fox-open", onOpen);
     window.addEventListener("onyx:fox-ask", onAsk);
     window.addEventListener("onyx:fox-fix", onFix);
     window.addEventListener("onyx:fox-explain", onExplain);
     window.addEventListener("onyx:fox-save-file", onSaveFile);
+    window.addEventListener(HEADER_LOGIN_EVENT, onHeaderLogin);
     window.addEventListener(DOC_INTAKE_EVENT, onIntake);
     window.addEventListener(FOX_THREAD_LINE_EVENT, onThreadLine);
     return () => {
@@ -1439,6 +1449,7 @@ export function AlwaysOnFox({
       window.removeEventListener("onyx:fox-fix", onFix);
       window.removeEventListener("onyx:fox-explain", onExplain);
       window.removeEventListener("onyx:fox-save-file", onSaveFile);
+      window.removeEventListener(HEADER_LOGIN_EVENT, onHeaderLogin);
       window.removeEventListener(DOC_INTAKE_EVENT, onIntake);
       window.removeEventListener(FOX_THREAD_LINE_EVENT, onThreadLine);
     };

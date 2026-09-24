@@ -1,24 +1,12 @@
-import { LoginResume } from "@/components/fox/LoginResume";
+import { HEADER_LOGIN_HREF } from "@/components/fox/account";
 import type { Metadata } from "next";
-import { Suspense } from "react";
+import { redirect } from "next/navigation";
 
 export const metadata: Metadata = {
   title: "Log in — ONYX",
-  description: "Email link or phone code. Same File. Not a second desk.",
+  description: "Welcome back. Email or phone for a code. Same File. Not a second desk.",
 };
 
 export default function LoginPage() {
-  return (
-    <Suspense
-      fallback={
-        <div className="intake page-pad">
-          <div className="page-inner intake__inner">
-            <p className="type-legal">Loading…</p>
-          </div>
-        </div>
-      }
-    >
-      <LoginResume />
-    </Suspense>
-  );
+  redirect(HEADER_LOGIN_HREF);
 }
