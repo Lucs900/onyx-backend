@@ -4427,7 +4427,12 @@ export function withDeskLineAfterAccountConsume(
   ask: { text: string; followUp?: string; facts?: FoxMessage["facts"] },
 ): FoxMessage[] {
   const last = lastFoxLine(messages);
-  if (last === ask.text) return messages;
+  const alreadySpoken = messages.some(
+    (item) => item.role === "fox" && item.text.trim() === ask.text.trim(),
+  );
+  const text =
+    alreadySpoken && ask.text !== ACCOUNT_FILE_YOURS ? ACCOUNT_FILE_YOURS : ask.text;
+  if (last === text) return messages;
   if (last && !isParkedPostLinkLine(last)) {
     return messages;
   }
@@ -4436,9 +4441,9 @@ export function withDeskLineAfterAccountConsume(
     {
       id: `fox_desk_${Date.now().toString(36)}`,
       role: "fox",
-      text: ask.text,
-      followUp: ask.followUp,
-      facts: ask.facts,
+      text,
+      followUp: text === ask.text ? ask.followUp : undefined,
+      facts: text === ask.text ? ask.facts : undefined,
     },
   ];
 }

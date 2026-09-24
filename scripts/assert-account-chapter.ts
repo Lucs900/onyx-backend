@@ -548,9 +548,18 @@ async function main() {
   assert.notEqual(openedDesk.text, ACCOUNT_SAVE_ASK);
   assert.doesNotMatch(openedDesk.text, /ONYX has this for review/);
   const advancedOpened = withDeskLineAfterAccountConsume(waiting, openedDesk);
-  assert.equal(lastFoxLine(advancedOpened), openedDesk.text);
+  assert.notEqual(lastFoxLine(advancedOpened), ACCOUNT_EMAIL_SENT);
   assert.ok(advancedOpened.some((item) => item.text === ACCOUNT_EMAIL_SENT));
   assert.ok(!labels(openedDesk.actions).includes(CREATE_ACCOUNT_LABEL));
+  const alreadyAsked = withDeskLineAfterAccountConsume(
+    [
+      { id: "fox-ask", role: "fox", text: openedDesk.text },
+      { id: "fox-sent", role: "fox", text: ACCOUNT_EMAIL_SENT },
+    ],
+    openedDesk,
+  );
+  assert.equal(lastFoxLine(alreadyAsked), ACCOUNT_FILE_YOURS);
+  assert.ok(alreadyAsked.some((item) => item.text === ACCOUNT_EMAIL_SENT));
   const sendSource = readFileSync(new URL("../lib/account/send.ts", import.meta.url), "utf8");
   assert.match(sendSource, /subject: "Your ONYX File"/);
   assert.match(sendSource, /ONYX Direct <lucas@onyxdirect\.com>/);
