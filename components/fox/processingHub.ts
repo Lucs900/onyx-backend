@@ -22,7 +22,9 @@ import type {
   FoxMessage,
   ReceivedDoc,
 } from "./types";
-import { CREDIT_STATED_NOTE } from "./types";
+import { CREDIT_STATED_NOTE, INCOME_BUBBLES } from "./types";
+import { moneyShown } from "@/lib/calculators/conventional";
+import { propertyTypeLabel } from "./propertyType";
 import { borrowersFileValue, primaryNameOnFile, whoOnLoanSettled } from "./whoOnLoan";
 import { previewFacts, productIntentLabel } from "./workspace";
 
@@ -61,6 +63,10 @@ export const HUB_GRID_LABELS = [
   "Status",
   "Next",
   "Waiting",
+  "ZIP",
+  "Type",
+  "Income",
+  "Debts",
 ] as const;
 
 export const HUB_GRID_IDS = [
@@ -82,6 +88,10 @@ export const HUB_GRID_IDS = [
   "status",
   "next",
   "waiting",
+  "zip",
+  "property-type",
+  "income",
+  "debts",
 ] as const;
 
 export const HUB_GRID_ROWS = [
@@ -92,6 +102,7 @@ export const HUB_GRID_ROWS = [
   ["b1", "b2", "count"],
   ["qualifying", "credit"],
   ["status", "next", "waiting"],
+  ["zip", "property-type", "income", "debts"],
 ] as const;
 
 export const HUB_IDENTITY_IDS = ["product", "purpose", "occupancy"] as const;
@@ -205,6 +216,31 @@ function ioShell(draft: FoxIntakeDraft, facts: ReturnType<typeof previewFacts>):
   return shellRow("io", "IO");
 }
 
+function hubZipValue(draft: FoxIntakeDraft, facts: ReturnType<typeof previewFacts>) {
+  const stored = String(draft.propertyZip ?? "").trim();
+  if (/^\d{5}$/.test(stored)) return stored;
+  const fromFact = String(factOf(facts, "zip")?.value ?? "").trim();
+  return /^\d{5}$/.test(fromFact) ? fromFact : "";
+}
+
+function hubTypeValue(draft: FoxIntakeDraft, facts: ReturnType<typeof previewFacts>) {
+  if (draft.propertyType) return propertyTypeLabel(draft.propertyType);
+  const fromFact = String(factOf(facts, "property-type")?.value ?? "").trim();
+  return fromFact && fromFact !== HUB_EMPTY ? fromFact : "";
+}
+
+/** Stored income-type only. Never a Still useful W-2 doc suggestion. */
+function hubIncomeTypeValue(draft: FoxIntakeDraft) {
+  const raw = draft.incomeType?.value;
+  return INCOME_BUBBLES.find((item) => item.value === raw)?.label ?? "";
+}
+
+function hubDebtsValue(draft: FoxIntakeDraft) {
+  const amount = draft.statedMonthlyDebts;
+  if (amount != null && Number.isFinite(amount) && amount > 0) return moneyShown(amount);
+  return "";
+}
+
 function rateShell(facts: ReturnType<typeof previewFacts>, draft: FoxIntakeDraft): HubRow {
   const live = draft.liveQuote?.rate;
   if (typeof live === "number" && Number.isFinite(live) && live > 0) {
@@ -254,6 +290,10 @@ export function hubGridRows(draft: FoxIntakeDraft): HubRow[] {
       shellRow("status", "Status", hubStatusValue(draft), hubCompletenessWhisper(draft)),
       shellRow("next", "Next", String(nextActorOf(draft) ?? "")),
       shellRow("waiting", "Waiting", String(waitingOnOf(draft) ?? "")),
+      shellRow("zip", "ZIP", hubZipValue(draft, facts)),
+      shellRow("property-type", "Type", hubTypeValue(draft, facts)),
+      shellRow("income", "Income", hubIncomeTypeValue(draft)),
+      shellRow("debts", "Debts", hubDebtsValue(draft)),
     ].map((row) => [row.id, row]),
   );
   return HUB_GRID_IDS.map((id) => byId.get(id)!);

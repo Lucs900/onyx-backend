@@ -21,7 +21,7 @@ import {
 import { writeThreadAnswersToFile } from "../components/fox/threadAnswers";
 import { HELOC_FIRST_LIEN_ASK, HELOC_LINE_ASK, writeFirstLien, writeHelocLine } from "../components/fox/heloc";
 import { writePurchasePrice, previewFacts } from "../components/fox/workspace";
-import { HUB_EMPTY, processingHubView } from "../components/fox/processingHub";
+import { HUB_EMPTY, HUB_GRID_LABELS, processingHubView } from "../components/fox/processingHub";
 import type { FoxIntakeDraft, FoxMessage } from "../components/fox/types";
 
 function fox(text: string, id: string): FoxMessage {
@@ -150,7 +150,7 @@ function main() {
   assert.equal(otherLoansFact(explicit)?.value, "$25,000");
 
   const hub = processingHubView(written);
-  assert.equal(hub.grid.length, 18);
+  assert.equal(hub.grid.length, HUB_GRID_LABELS.length);
   assert.equal(hub.grid.find((row) => row.id === "line")?.value, "$50,000");
   assert.match(hub.grid.find((row) => row.id === "cltv")?.value ?? "", /90/);
   assert.equal(hub.grid.find((row) => row.id === "first-lien")?.value, "$400,000");

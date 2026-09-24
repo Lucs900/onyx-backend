@@ -68,8 +68,10 @@ function main() {
       (row) => row.value === HUB_EMPTY || row.id === "status" || row.id === "next" || row.id === "waiting",
     ),
   );
-  assert.equal(empty.grid.length, 18);
-  assert.ok(!empty.grid.some((row) => row.label === "DEBT" || row.id === "debts"));
+  assert.equal(empty.grid.length, HUB_GRID_LABELS.length);
+  assert.equal(empty.grid.find((row) => row.id === "debts")?.label, "Debts");
+  assert.equal(empty.grid.find((row) => row.id === "debts")?.value, HUB_EMPTY);
+  assert.ok(!empty.grid.some((row) => row.label === "DEBT"));
   assert.deepEqual(empty.loud.map((row) => row.id), [...HUB_LOUD_STRIP_IDS]);
   assert.ok(empty.loud.every((row) => row.loud === true || row.value === HUB_EMPTY));
   assert.deepEqual(empty.pay.map((row) => row.label), ["QI"]);
@@ -125,7 +127,7 @@ function main() {
     ),
   );
   const hub = processingHubView(filled);
-  assert.equal(hub.grid.length, 18);
+  assert.equal(hub.grid.length, HUB_GRID_LABELS.length);
   assert.deepEqual(hub.grid.map((row) => row.label), [...HUB_GRID_LABELS]);
   assert.equal(hub.loud.length, 8);
   assert.equal(hub.pay.length, 1);
@@ -207,7 +209,7 @@ function main() {
   }
 
   console.log(
-    `assert-hub-dense-1008: 18 short labels; empty ${HUB_EMPTY}; Occ / B1 / B2 / Count / Waiting; desk Send keeps finish chips`,
+    `assert-hub-dense-1008: ${HUB_GRID_LABELS.length} short labels; empty ${HUB_EMPTY}; Occ / B1 / B2 / Count / Waiting; desk Send keeps finish chips`,
   );
 }
 

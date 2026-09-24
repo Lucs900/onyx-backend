@@ -88,7 +88,7 @@ function main() {
 
   const hub = processingHubView(written);
   assert.deepEqual(hub.grid.map((row) => row.label), [...HUB_GRID_LABELS]);
-  assert.equal(hub.grid.length, 18);
+  assert.equal(hub.grid.length, HUB_GRID_LABELS.length);
   assert.equal(hub.grid.find((row) => row.id === "first-lien")?.value, "$400,000");
   assert.equal(hub.grid.find((row) => row.id === "line")?.value, "$50,000");
   assert.equal(hub.grid.find((row) => row.id === "credit")?.value, "760+");
