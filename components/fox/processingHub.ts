@@ -3,7 +3,7 @@
  * Send posts foxLine. Silent notes stay off the borrower thread.
  * Never credit pull, lock, AU, SSN, BNTouch, LO-will-contact, green approved.
  */
-import { stillUsefulSpokenItems } from "./fileWrite";
+import { LAST_YEAR_W2_STILL_USEFUL, stillUsefulSpokenItems } from "./fileWrite";
 import { HIGH_LTV_CAUTION, fileCompleteness, isHelocFile, showsAgencyCompleteness } from "./completeness";
 import { withHelocToolQuote } from "./heloc";
 import {
@@ -111,7 +111,7 @@ export const HUB_SQUARES = [
   { id: "borrower", label: "Borrower", ids: ["count", "b1", "b2", "credit"] },
   { id: "property", label: "Property", ids: ["product", "purpose", "occupancy", "property-type", "zip"] },
   { id: "income", label: "Income", ids: ["income", "qualifying", "debts"] },
-  { id: "file", label: "File", ids: ["status", "next", "waiting"] },
+  { id: "file", label: "File", ids: ["status", "next", "waiting", "need"] },
 ] as const;
 
 export type HubSquare = {
@@ -270,6 +270,12 @@ function hubStatusValue(draft: FoxIntakeDraft) {
   return motionStatusCopy(draft);
 }
 
+/** One open notepad item. Last year’s W-2 only when that still-useful line is already on File. */
+export function hubNeedRow(draft: FoxIntakeDraft): HubRow {
+  const match = stillUsefulSpokenItems(draft).find((item) => item.label === LAST_YEAR_W2_STILL_USEFUL);
+  return shellRow("need", "Need", match?.label);
+}
+
 export function hubGridRows(draft: FoxIntakeDraft): HubRow[] {
   draft = hubLiveDraft(draft);
   const facts = previewFacts(draft);
@@ -319,7 +325,7 @@ export function hubSquares(draft: FoxIntakeDraft): HubSquare[] {
   return HUB_SQUARES.map((square) => ({
     id: square.id,
     label: square.label,
-    cells: square.ids.map((id) => byId.get(id)!),
+    cells: square.ids.map((id) => (id === "need" ? hubNeedRow(draft) : byId.get(id)!)),
   }));
 }
 

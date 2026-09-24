@@ -16,6 +16,7 @@ import {
 import {
   HUB_EMPTY,
   HUB_SQUARES,
+  hubNeedRow,
   processingHubView,
   SILENT_DESK_ERROR,
   STAFF_HUB_PATH,
@@ -124,7 +125,7 @@ export function ProcessingHub() {
                       className={`staff-hub-square__facts staff-hub-square__facts--${square.ids.length}`}
                     >
                       {square.ids.map((id) => {
-                        const row = hub.grid.find((item) => item.id === id);
+                        const row = id === "need" ? hubNeedRow(draft) : hub.grid.find((item) => item.id === id);
                         return row ? <HubCell key={row.id} row={row} /> : null;
                       })}
                     </div>

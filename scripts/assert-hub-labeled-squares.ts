@@ -53,11 +53,11 @@ function main() {
   assert.deepEqual([...HUB_SQUARES[2].ids], ["count", "b1", "b2", "credit"]);
   assert.deepEqual([...HUB_SQUARES[3].ids], ["product", "purpose", "occupancy", "property-type", "zip"]);
   assert.deepEqual([...HUB_SQUARES[4].ids], ["income", "qualifying", "debts"]);
-  assert.deepEqual([...HUB_SQUARES[5].ids], ["status", "next", "waiting"]);
+  assert.deepEqual([...HUB_SQUARES[5].ids], ["status", "next", "waiting", "need"]);
 
   const painted = HUB_SQUARES.flatMap((square) => [...square.ids]);
-  assert.deepEqual([...painted].sort(), [...HUB_GRID_IDS].sort());
-  assert.equal(new Set(painted).size, HUB_GRID_IDS.length);
+  assert.deepEqual([...painted.filter((id) => id !== "need")].sort(), [...HUB_GRID_IDS].sort());
+  assert.equal(new Set(painted).size, HUB_GRID_IDS.length + 1);
 
   assert.deepEqual(
     [...HUB_GRID_ROWS],
@@ -106,6 +106,7 @@ function main() {
   assert.equal(bySquare.file.cells.find((cell) => cell.id === "status")?.value, "gathering");
   assert.equal(bySquare.file.cells.find((cell) => cell.id === "next")?.value, "You");
   assert.equal(bySquare.file.cells.find((cell) => cell.id === "waiting")?.value, "borrower");
+  assert.equal(bySquare.file.cells.find((cell) => cell.id === "need")?.value, HUB_EMPTY);
   assert.match(
     bySquare.file.cells.find((cell) => cell.id === "status")?.note ?? "",
     /Completeness is a signal/,
