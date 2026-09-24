@@ -711,7 +711,9 @@ async function main() {
   assert.match(startWorkspace, /event\.persisted/);
   const startPage = readFileSync(new URL("../app/(marketing)/start/page.tsx", import.meta.url), "utf8");
   assert.match(startPage, /force-dynamic/);
-  assert.match(startPage, /no-store/);
+  const nextConfig = readFileSync(new URL("../next.config.mjs", import.meta.url), "utf8");
+  assert.match(nextConfig, /no-store/);
+  assert.match(nextConfig, /source: "\/start"/);
   const storeSource = readFileSync(new URL("../components/fox/store.ts", import.meta.url), "utf8");
   assert.match(storeSource, /export function linkedAccountRefreshQuery/);
   assert.match(storeSource, /staffDeskMessageFact/);

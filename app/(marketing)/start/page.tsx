@@ -11,15 +11,6 @@ export const metadata: Metadata = {
   description: "Fox prepares your file. Not an approval.",
 };
 
-export function headers() {
-  return [
-    {
-      key: "Cache-Control",
-      value: "no-store, no-cache, must-revalidate",
-    },
-  ];
-}
-
 export default function StartPage() {
   return (
     <Suspense

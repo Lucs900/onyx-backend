@@ -23,6 +23,18 @@ const nextConfig = {
       { source: "/products/:path*", destination: "/start", permanent: false },
     ];
   },
+  async headers() {
+    return [
+      {
+        source: "/start",
+        headers: [{ key: "Cache-Control", value: "no-store, no-cache, must-revalidate" }],
+      },
+      {
+        source: "/start/:path*",
+        headers: [{ key: "Cache-Control", value: "no-store, no-cache, must-revalidate" }],
+      },
+    ];
+  },
 };
 
 export default nextConfig;
