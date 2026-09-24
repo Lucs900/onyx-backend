@@ -140,6 +140,7 @@ import {
   accountWorkspaceReply,
   composerPlaceholderForAccount,
   foxLineLeaksAccountSecret,
+  hasLinkedAccount,
   startOverNeedsConfirm,
 } from "./account";
 import {
@@ -152,6 +153,7 @@ import {
   ensureIncomeConfirmChips,
   inertSupersededIncomeConfirms,
   lastFoxTurn,
+  liveDeskLineOwnsPrompt,
   isPricingWhenReadySpeech,
   messagesWithLiveQuoteSpeech,
   messagesWithRateOrReadySpeech,
@@ -1449,6 +1451,16 @@ export function AlwaysOnFox({
       skipPromptSync.current = true;
       return;
     }
+    if (isStart && accountResumeIsPending()) {
+      greeted.current = greetKey;
+      skipPromptSync.current = true;
+      return;
+    }
+    if (isStart && hasLinkedAccount(getFoxDraft()) && getFoxMessages().length) {
+      greeted.current = greetKey;
+      skipPromptSync.current = true;
+      return;
+    }
     if (workspaceSurface && startSeeded.current && messages.length > 0) {
       greeted.current = greetKey;
       skipPromptSync.current = true;
@@ -1519,6 +1531,12 @@ export function AlwaysOnFox({
       }
     }
     commitMessages((prev) => {
+      if (isStart) {
+        const spoken = lastFoxTurn(prev);
+        if (spoken && liveDeskLineOwnsPrompt(spoken.text, getFoxDraft())) {
+          return prev;
+        }
+      }
       if (mustShowReview && hasReviewAsk(prev)) {
         return prev.map((message) =>
           message.role === "fox" && isLooksRightAskText(message.text)

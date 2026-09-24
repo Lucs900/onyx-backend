@@ -4378,6 +4378,17 @@ export function deskLineAfterAccountConsume(draft: FoxIntakeDraft): {
   return nextFoxAsk(draft);
 }
 
+/** Consume desk line stays live. Prompt-sync must not reprint the product ask over it. */
+export function liveDeskLineOwnsPrompt(liveText: string, draft: FoxIntakeDraft) {
+  const text = liveText.trim();
+  if (!text) return false;
+  if (isAccountMailWaitLine(text) || text === ACCOUNT_EMAIL_ASK || text === ACCOUNT_WHY_SENTENCE) {
+    return false;
+  }
+  if (text === ACCOUNT_FILE_YOURS) return true;
+  return text === deskLineAfterAccountConsume(draft).text.trim();
+}
+
 export function withDeskLineAfterAccountConsume(
   messages: FoxMessage[],
   ask: { text: string; followUp?: string; facts?: FoxMessage["facts"] },

@@ -20,6 +20,7 @@ import {
 import {
   deskLineAfterAccountConsume,
   deskStripActions,
+  liveDeskLineOwnsPrompt,
   nextFoxAsk,
   previewFacts,
   withDeskLineAfterAccountConsume,
@@ -240,6 +241,10 @@ async function main() {
     "Jumbo",
     "Other",
   ]);
+  assert.ok(liveDeskLineOwnsPrompt(ACCOUNT_FILE_YOURS, consumedEmpty));
+  assert.ok(!liveDeskLineOwnsPrompt(ACCOUNT_EMAIL_SENT, consumedEmpty));
+  assert.ok(!liveDeskLineOwnsPrompt(ACCOUNT_EMAIL_ASK, consumedEmpty));
+  assert.ok(!liveDeskLineOwnsPrompt(workspaceGreeting(consumedEmpty).text, consumedEmpty));
   const helocLinked = consumeLinkedAccountDraft({
     ...houseReady(writeHelocLine(writeFirstLien(writePurchasePrice(firstQuestion(), 500_000), 400_000), 50_000)),
     accountId: opened.draft.accountId,
@@ -254,6 +259,7 @@ async function main() {
   assert.notEqual(helocDesk.text, CREATE_ACCOUNT_LABEL);
   const advancedHeloc = withDeskLineAfterAccountConsume(waiting, helocDesk);
   assert.equal(lastFoxLine(advancedHeloc), helocDesk.text);
+  assert.ok(liveDeskLineOwnsPrompt(helocDesk.text, helocLinked));
   assert.ok(advancedHeloc.some((item) => item.text === ACCOUNT_EMAIL_SENT));
   assert.ok(!labels(deskStripActions(advancedHeloc, helocLinked)).includes(CREATE_ACCOUNT_LABEL));
   assert.ok(!labels(accountHeaderActions(helocLinked)).includes(CREATE_ACCOUNT_LABEL));
