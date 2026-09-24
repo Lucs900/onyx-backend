@@ -141,6 +141,7 @@ import {
   composerPlaceholderForAccount,
   foxLineLeaksAccountSecret,
   hasLinkedAccount,
+  isAccountMailWaitLine,
   startOverNeedsConfirm,
 } from "./account";
 import {
@@ -154,6 +155,8 @@ import {
   inertSupersededIncomeConfirms,
   lastFoxTurn,
   liveDeskLineOwnsPrompt,
+  deskLineAfterAccountConsume,
+  withDeskLineAfterAccountConsume,
   isPricingWhenReadySpeech,
   messagesWithLiveQuoteSpeech,
   messagesWithRateOrReadySpeech,
@@ -1533,7 +1536,12 @@ export function AlwaysOnFox({
     commitMessages((prev) => {
       if (isStart) {
         const spoken = lastFoxTurn(prev);
-        if (spoken && liveDeskLineOwnsPrompt(spoken.text, getFoxDraft())) {
+        const linked = getFoxDraft();
+        if (hasLinkedAccount(linked) && spoken && isAccountMailWaitLine(spoken.text)) {
+          const desk = deskLineAfterAccountConsume(linked);
+          return withDeskLineAfterAccountConsume(prev, desk);
+        }
+        if (spoken && liveDeskLineOwnsPrompt(spoken.text, linked)) {
           return prev;
         }
       }
@@ -1605,8 +1613,11 @@ export function AlwaysOnFox({
         return prev;
       }
       if (isStart && prompt === "done") {
-        if (hasPreparedAsk(prev)) return prev;
-        if (fileExists(getFoxDraft()) && prev[prev.length - 1]?.role === "fox") return prev;
+        const spoken = lastFoxTurn(prev);
+        if (!(spoken && isAccountMailWaitLine(spoken.text) && hasLinkedAccount(getFoxDraft()))) {
+          if (hasPreparedAsk(prev)) return prev;
+          if (fileExists(getFoxDraft()) && prev[prev.length - 1]?.role === "fox") return prev;
+        }
       }
       if (
         isStart &&
