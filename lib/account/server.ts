@@ -5,7 +5,7 @@
 import { get, put } from "@vercel/blob";
 import { serverBlobReady } from "@/lib/docs/storage";
 import type { AccountRecord, AccountStore } from "./core";
-import { memoryAccountStore, normalizeEmail, normalizePhone } from "./core";
+import { memoryAccountStore, normalizeEmail, normalizePhone, shouldKeepLiveAccountDraft } from "./core";
 
 const memory = memoryAccountStore();
 
@@ -66,8 +66,18 @@ async function writeBlobRecord(record: AccountRecord) {
   };
   await put(tokenPath(record.token), body, opts);
   await put(filePath(record.fileId), body, opts);
-  if (record.email) await put(emailPath(record.email), body, opts);
-  if (record.phone) await put(phonePath(record.phone), body, opts);
+  if (record.email) {
+    const current = await readBlobRecord(emailPath(record.email));
+    if (!current || !shouldKeepLiveAccountDraft(current.draft, record.draft)) {
+      await put(emailPath(record.email), body, opts);
+    }
+  }
+  if (record.phone) {
+    const current = await readBlobRecord(phonePath(record.phone));
+    if (!current || !shouldKeepLiveAccountDraft(current.draft, record.draft)) {
+      await put(phonePath(record.phone), body, opts);
+    }
+  }
   if (record.code) await put(codePath(record.code), body, opts);
 }
 
