@@ -75,6 +75,7 @@ function main() {
   const hub = processingHubView(written);
   assert.deepEqual(hub.grid.map((row) => row.label), [...HUB_GRID_LABELS]);
   assert.equal(hub.grid.length, 22);
+  assert.equal(HUB_GRID_ROWS[1].join(" "), "home first-lien line ltv cltv");
   assert.equal(HUB_GRID_ROWS.at(-1)?.join(" "), "zip property-type income debts");
   assert.equal(hub.grid.find((row) => row.id === "zip")?.label, "ZIP");
   assert.equal(hub.grid.find((row) => row.id === "zip")?.value, "94123");

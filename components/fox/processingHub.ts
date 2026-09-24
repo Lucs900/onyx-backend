@@ -96,8 +96,7 @@ export const HUB_GRID_IDS = [
 
 export const HUB_GRID_ROWS = [
   ["product", "purpose", "occupancy"],
-  ["home", "first-lien", "line"],
-  ["ltv", "cltv"],
+  ["home", "first-lien", "line", "ltv", "cltv"],
   ["rate", "io"],
   ["b1", "b2", "count"],
   ["qualifying", "credit"],
