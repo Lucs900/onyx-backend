@@ -23,6 +23,7 @@ import type {
   ReceivedDoc,
 } from "./types";
 import { CREDIT_STATED_NOTE } from "./types";
+import { borrowersFileValue, primaryNameOnFile, whoOnLoanSettled } from "./whoOnLoan";
 import { previewFacts, productIntentLabel } from "./workspace";
 
 export const STAFF_HUB_PATH = "/staff/hub";
@@ -40,11 +41,11 @@ export type HubRow = {
   loud?: boolean;
 };
 
-/** Manager 50 — short labels, every cell present even when empty. */
+/** Manager 51 — one processing grid. Short labels. Every slot present even when empty. */
 export const HUB_GRID_LABELS = [
   "Product",
   "Purpose",
-  "Occupancy",
+  "Occ",
   "Value",
   "Lien",
   "Line",
@@ -52,11 +53,14 @@ export const HUB_GRID_LABELS = [
   "CLTV",
   "Rate",
   "IO",
-  "FICO",
-  "Borrowers",
+  "B1",
+  "B2",
+  "Count",
   "QI",
+  "FICO",
   "Status",
   "Next",
+  "Waiting",
 ] as const;
 
 export const HUB_GRID_IDS = [
@@ -70,20 +74,33 @@ export const HUB_GRID_IDS = [
   "cltv",
   "rate",
   "io",
-  "credit",
-  "borrowers",
+  "b1",
+  "b2",
+  "count",
   "qualifying",
+  "credit",
   "status",
   "next",
+  "waiting",
+] as const;
+
+export const HUB_GRID_ROWS = [
+  ["product", "purpose", "occupancy"],
+  ["home", "first-lien", "line"],
+  ["ltv", "cltv"],
+  ["rate", "io"],
+  ["b1", "b2", "count"],
+  ["qualifying", "credit"],
+  ["status", "next", "waiting"],
 ] as const;
 
 export const HUB_IDENTITY_IDS = ["product", "purpose", "occupancy"] as const;
 export const HUB_LOUD_STRIP_IDS = ["home", "first-lien", "line", "ltv", "cltv", "rate", "io", "credit"] as const;
-export const HUB_QUIET_IDS = ["borrowers", "qualifying", "status", "next"] as const;
+export const HUB_QUIET_IDS = ["b1", "b2", "count", "qualifying", "status", "next", "waiting"] as const;
 export const HUB_LOUD_A_IDS = HUB_IDENTITY_IDS;
 export const HUB_LOUD_B_IDS = HUB_LOUD_STRIP_IDS;
 export const HUB_PAY_IDS = ["qualifying"] as const;
-export const HUB_STATE_IDS = ["status", "next"] as const;
+export const HUB_STATE_IDS = ["status", "next", "waiting"] as const;
 
 export type StaffDeskInput = {
   foxLine?: string;
@@ -208,7 +225,9 @@ export function hubGridRows(draft: FoxIntakeDraft): HubRow[] {
   const product = factOf(facts, "product")?.value || (draft.productIntent ? productIntentLabel(draft.productIntent) : "");
   const purpose = factOf(facts, "purpose")?.value;
   const occupancy = factOf(facts, "occupancy")?.value;
-  const borrowers = factOf(facts, "borrowers")?.value;
+  const borrowerOne = factOf(facts, "borrower", "borrower-name")?.value || primaryNameOnFile(draft);
+  const borrowerTwo = factOf(facts, "coborrower-name")?.value || (draft.coborrowerName ?? "").trim();
+  const count = whoOnLoanSettled(draft) ? borrowersFileValue(draft) : "";
   const value = factOf(facts, "home", "price")?.value;
   const first = factOf(facts, "first-lien")?.value || (!factOf(facts, "line") ? factOf(facts, "loan")?.value : "");
   const line = factOf(facts, "line")?.value || factOf(facts, "down")?.value;
@@ -219,7 +238,7 @@ export function hubGridRows(draft: FoxIntakeDraft): HubRow[] {
     [
       shellRow("product", "Product", product),
       shellRow("purpose", "Purpose", purpose),
-      shellRow("occupancy", "Occupancy", occupancy),
+      shellRow("occupancy", "Occ", occupancy),
       shellRow("home", "Value", value, undefined, true),
       shellRow("first-lien", "Lien", first, undefined, true),
       shellRow("line", "Line", line, undefined, true),
@@ -227,18 +246,14 @@ export function hubGridRows(draft: FoxIntakeDraft): HubRow[] {
       shellRow("cltv", "CLTV", cltv?.value, cltv?.note, true),
       rateShell(facts, draft),
       ioShell(draft, facts),
-      shellRow("credit", "FICO", credit?.value, credit?.note, true),
-      shellRow("borrowers", "Borrowers", borrowers),
+      shellRow("b1", "B1", borrowerOne),
+      shellRow("b2", "B2", borrowerTwo),
+      shellRow("count", "Count", count),
       qiShell(facts),
+      shellRow("credit", "FICO", credit?.value, credit?.note, true),
       shellRow("status", "Status", hubStatusValue(draft), hubCompletenessWhisper(draft)),
-      shellRow(
-        "next",
-        "Next",
-        String(nextActorOf(draft) ?? ""),
-        String(waitingOnOf(draft) ?? "") !== String(nextActorOf(draft) ?? "")
-          ? String(waitingOnOf(draft) ?? "")
-          : undefined,
-      ),
+      shellRow("next", "Next", String(nextActorOf(draft) ?? "")),
+      shellRow("waiting", "Waiting", String(waitingOnOf(draft) ?? "")),
     ].map((row) => [row.id, row]),
   );
   return HUB_GRID_IDS.map((id) => byId.get(id)!);

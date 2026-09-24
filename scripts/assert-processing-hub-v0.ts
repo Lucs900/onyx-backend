@@ -171,8 +171,10 @@ function main() {
   assert.match(padRate, /%/);
   assert.equal(hub.loud.find((row) => row.id === "cltv")?.label, "CLTV");
   assert.equal(hub.loud.find((row) => row.id === "cltv")?.value, padCltv);
-  assert.equal(hub.grid.find((row) => row.id === "borrowers")?.label, "Borrowers");
-  assert.equal(hub.grid.find((row) => row.id === "borrowers")?.value, padBorrowers);
+  assert.equal(hub.grid.find((row) => row.id === "count")?.label, "Count");
+  assert.equal(hub.grid.find((row) => row.id === "count")?.value, padBorrowers);
+  assert.equal(hub.grid.find((row) => row.id === "occupancy")?.label, "Occ");
+  assert.equal(hub.grid.find((row) => row.id === "waiting")?.label, "Waiting");
   assert.equal(hub.loud.find((row) => row.id === "credit")?.label, "FICO");
   assert.equal(hub.loud.find((row) => row.id === "credit")?.value, padCredit?.value);
   assert.equal(hub.loud.find((row) => row.id === "credit")?.note, CREDIT_STATED_NOTE);
@@ -180,7 +182,7 @@ function main() {
   assert.match(loud, /\$50,000/);
   assert.match(loud, /\$367/);
   assert.match(loud, /90/);
-  assert.match(hub.grid.map((row) => `${row.label} ${row.value}`).join(" · "), /Borrowers 1/);
+  assert.match(hub.grid.map((row) => `${row.label} ${row.value}`).join(" · "), /Count 1/);
   assert.match(loud, /760\+/);
   assert.match(loud, /Stated/);
   assert.equal(hub.state.status, "in_queue");
@@ -234,7 +236,7 @@ function main() {
   );
 
   console.log(
-    `assert-processing-hub-v0: hub ${staffHubPath(queued.fileId)} loud $50,000 / $367 / 90% / Borrowers 1 / 760+ Stated; Send keeps Ask Fox · Upload more · Request human`,
+    `assert-processing-hub-v0: hub ${staffHubPath(queued.fileId)} $50,000 / $367 / 90% / Count 1 / 760+ Stated; Send keeps Ask Fox · Upload more · Request human`,
   );
 }
 

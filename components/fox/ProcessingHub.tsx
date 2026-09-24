@@ -15,6 +15,7 @@ import {
 } from "./store";
 import {
   HUB_EMPTY,
+  HUB_GRID_ROWS,
   processingHubView,
   SILENT_DESK_ERROR,
   STAFF_HUB_PATH,
@@ -117,55 +118,20 @@ export function ProcessingHub() {
         ) : null}
 
         <>
-            <section className="intake-card">
-              <div className="staff-hub-grid staff-hub-grid--identity">
-                {hub.identity.map((row) => (
-                  <HubCell key={row.id} row={row} quiet />
+            <section className="intake-card staff-hub-processing">
+              <div className="staff-hub-grid staff-hub-grid--processing">
+                {HUB_GRID_ROWS.map((ids) => (
+                  <div
+                    key={ids.join("-")}
+                    className={`staff-hub-grid__row staff-hub-grid__row--${ids.length}`}
+                  >
+                    {ids.map((id) => {
+                      const row = hub.grid.find((item) => item.id === id);
+                      return row ? <HubCell key={row.id} row={row} /> : null;
+                    })}
+                  </div>
                 ))}
               </div>
-            </section>
-
-            <section className="intake-card staff-hub-loud">
-              <h2 className="type-card-title">Loud</h2>
-              <div className="staff-hub-grid staff-hub-grid--loud">
-                {hub.loud.map((row) => (
-                  <HubCell key={row.id} row={row} />
-                ))}
-              </div>
-            </section>
-
-            <section className="intake-card">
-              <div className="staff-hub-grid staff-hub-grid--quiet">
-                {hub.quiet.map((row) => (
-                  <HubCell key={row.id} row={row} quiet />
-                ))}
-              </div>
-              {hub.state.quietFlags.length ? (
-                <p className="staff-hub-flags">
-                  {hub.state.quietFlags.map((flag) => (
-                    <span key={flag} className="staff-hub-flag">
-                      {flag}
-                    </span>
-                  ))}
-                </p>
-              ) : null}
-              {hub.state.stillUseful.length ? (
-                <ul className="intake-note-list">
-                  {hub.state.stillUseful.map((item) => (
-                    <li key={item}>{item}</li>
-                  ))}
-                </ul>
-              ) : null}
-              {hub.state.docs.length ? (
-                <ul className="intake-note-list">
-                  {hub.state.docs.map((doc) => (
-                    <li key={doc.name}>
-                      {doc.name}
-                      {doc.status ? ` · ${doc.status}` : ""}
-                    </li>
-                  ))}
-                </ul>
-              ) : null}
             </section>
 
             <details className="intake-card staff-hub-drawer" open>
@@ -265,20 +231,12 @@ export function ProcessingHub() {
   );
 }
 
-function HubCell({ row, quiet = false }: { row: HubRow; quiet?: boolean }) {
+function HubCell({ row }: { row: HubRow }) {
   const empty = row.value === HUB_EMPTY;
   return (
-    <div className={quiet ? "staff-hub-cell staff-hub-cell--quiet" : "staff-hub-cell"}>
+    <div className="staff-hub-cell">
       <p className="staff-hub-cell__label">{row.label}</p>
-      <p
-        className={
-          empty
-            ? "staff-hub-cell__value is-empty"
-            : row.loud
-              ? "staff-hub-cell__value staff-hub-cell__value--loud"
-              : "staff-hub-cell__value"
-        }
-      >
+      <p className={empty ? "staff-hub-cell__value is-empty" : "staff-hub-cell__value"}>
         {row.value}
       </p>
       {row.note ? <p className="staff-hub-cell__note">{row.note}</p> : null}
