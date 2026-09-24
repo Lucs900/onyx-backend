@@ -1,6 +1,6 @@
 # 57 — File square shows the one open item already on the notepad
 
-**Status:** OPEN. Preview only. Do not merge.  
+**Status:** READY `e18c694` / `dpl_BDqQaFv3rJB7goUYJgFb9abLAizZ` — not ACCEPT.  
 **Date:** 2026-09-24  
 **Host:** https://start.onyxdirect.com only  
 **PR:** #18 · branch `cursor/live-rateflow-preview-bc93`  
@@ -22,11 +22,23 @@ Paint only from the still-useful / open-item line the File already stores on the
 - Put Collateral’s five numbers back on one line (`f3ad1db` 3-on-top + 2-below stays).
 - Fix the sticky header.
 
-## Accept walk
+## Accept walk (held)
 Refresh https://start.onyxdirect.com/staff/hub?file=afdb0ecf-a55d-4234-82f2-47e878fd14c2  
 File square shows Need · Last year’s W-2. The other five squares unchanged. Fox asked nothing new.
+
+## Need storage source
+Not a SQL table. Vercel Blob object `account/file/afdb0ecf-a55d-4234-82f2-47e878fd14c2.json`.  
+JSON key path: `draft.skippedClasses`  
+Stored value: `["w2", "paystub"]`  
+`draft.conditions` is `[]`. `draft.stillUseful` is absent. No condition was written.  
+The painted string is the notepad Still useful line `Last year’s W-2` (`stillUsefulSpokenItems` / `LAST_YEAR_W2_STILL_USEFUL`) when `draft.skippedClasses` contains `"w2"`.
 
 ## Keep closed
 `f3ad1db` · `b2c2e6e` · `ccce44c` · `5def8ba` · `ac6190c` · `c004c1f` · `0e7ab51` · `847940e` · `0c9950e` · `374e893` · `d0358f2` · `8ae44d9`
 
 No 1040. Phone parked. Rate sentence parked. “This File is yours.” 3x parked.
+
+## Tip
+SHA `e18c694` · `dpl_BDqQaFv3rJB7goUYJgFb9abLAizZ`  
+Hub: https://start.onyxdirect.com/staff/hub?file=afdb0ecf-a55d-4234-82f2-47e878fd14c2  
+READY ≠ ACCEPT. Do not merge. Do not ACCEPT.
