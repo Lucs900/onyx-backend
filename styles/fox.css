@@ -824,6 +824,10 @@
   .staff-hub-grid--loud {
     grid-template-columns: repeat(4, minmax(0, 1fr));
   }
+
+  .staff-hub-grid__row--5 {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
 }
 
 .intake-input {

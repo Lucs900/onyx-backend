@@ -72,6 +72,10 @@ function main() {
 
   const css = readFileSync(new URL("../styles/fox.css", import.meta.url), "utf8");
   assert.match(css, /staff-hub-grid__row--5 \{\n  grid-template-columns: repeat\(5, minmax\(0, 1fr\)\);/);
+  assert.match(
+    css,
+    /@media \(max-width: 960px\)[\s\S]*staff-hub-grid__row--5 \{\n    grid-template-columns: repeat\(3, minmax\(0, 1fr\)\);/,
+  );
   assert.match(css, /staff-hub-grid__row--4 \{\n  grid-template-columns: repeat\(4, minmax\(0, 1fr\)\);/);
   assert.match(css, /staff-hub-grid__row--3 \{\n  grid-template-columns: repeat\(3, minmax\(0, 1fr\)\);/);
   assert.match(css, /staff-hub-grid__row--2 \{\n  grid-template-columns: repeat\(2, minmax\(0, 1fr\)\);/);
