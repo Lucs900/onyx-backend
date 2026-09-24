@@ -1,6 +1,6 @@
 # 53 — Other loans is the HELOC line
 
-**Status:** OPEN — not READY. READY ≠ ACCEPT.  
+**Status:** READY `5def8ba` / `dpl_6rqnJ6Tm1UoCZDmTTew3un9rWWpU` — not ACCEPT.  
 **Date:** 2026-09-24  
 **Host:** https://start.onyxdirect.com only  
 **PR:** #18 · branch `cursor/live-rateflow-preview-bc93`  
@@ -25,13 +25,13 @@ Desk Live file shows **Other loans on this property $50,000**. That $50,000 is t
 - Other-loans display and persist use explicit other liens only — never the HELOC line.
 - A leftover HELOC `subordinateBalance === loanAmountValue` is the leak and is stripped on write / GET / persist.
 
-## Accept walk
+## Accept walk (held)
 Refresh on https://start.onyxdirect.com. Do not re-ask.
 
 1. Desk https://start.onyxdirect.com/start?path=acr → Other loans **—** · HELOC line **$50,000**.
 2. Hub https://start.onyxdirect.com/staff/hub?file=afdb0ecf-a55d-4234-82f2-47e878fd14c2 → Line **$50,000** · CLTV **90%**.
 
-Lien $400,000 · Value $500,000 stay. No second count of the line.
+Lien $400,000 · Value $500,000 stay. No second count of the line. GET stripped leftover `subordinateBalance` 50000 on this File.
 
 ## Parked — do not touch
 “This File is yours.” 3x · Rate sentence on desk pad · “So this File can find you on another phone.”
@@ -42,4 +42,7 @@ Lien $400,000 · Value $500,000 stay. No second count of the line.
 No 1040. Phone parked.
 
 ## Tip
-SHA · dpl on start.onyxdirect.com · root · walk. READY ≠ ACCEPT. Do not merge. Do not ACCEPT.
+SHA `5def8ba` · `dpl_6rqnJ6Tm1UoCZDmTTew3un9rWWpU`  
+Hub: https://start.onyxdirect.com/staff/hub?file=afdb0ecf-a55d-4234-82f2-47e878fd14c2  
+Desk: https://start.onyxdirect.com/start?path=acr  
+READY ≠ ACCEPT. Do not merge. Do not ACCEPT.
