@@ -667,6 +667,9 @@ async function main() {
   assert.match(accountRoute, /loadAccountByEmail/);
   assert.match(accountRoute, /sameFile: true/);
   assert.match(accountRoute, /persistLiveAccountRecord/);
+  const accountServer = readFileSync(new URL("../lib/account/server.ts", import.meta.url), "utf8");
+  assert.match(accountServer, /allowOverwrite:\s*true/);
+  assert.match(accountServer, /account\/email\//);
 
   console.log(
     `assert-account-chapter: turn-one offer + Create account · Log in · Not now; first why; parked save why; no token; save-ask not in_queue; with account in_queue ${opened.draft.fileId}`,

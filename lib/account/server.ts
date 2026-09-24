@@ -58,7 +58,12 @@ async function readBlobRecord(pathname: string): Promise<AccountRecord | undefin
 async function writeBlobRecord(record: AccountRecord) {
   if (!serverBlobReady()) return;
   const body = JSON.stringify(record);
-  const opts = { access: "private" as const, addRandomSuffix: false, contentType: "application/json" };
+  const opts = {
+    access: "private" as const,
+    addRandomSuffix: false,
+    allowOverwrite: true,
+    contentType: "application/json",
+  };
   await put(tokenPath(record.token), body, opts);
   await put(filePath(record.fileId), body, opts);
   if (record.email) await put(emailPath(record.email), body, opts);
