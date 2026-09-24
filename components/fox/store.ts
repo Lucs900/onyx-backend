@@ -1360,11 +1360,17 @@ function clearFileWorkspaceStorage() {
   }
 }
 
-/** Start over wipes the File. Account stays. Confirm first in the desk. */
+/** Start over wipes this File to a browser-only sketch. Account record stays on the server. */
 export function startOverWorkspace(path: IntakePath | null = null) {
-  const keepAccountId = current.accountId?.trim() || readAccountSession()?.accountId?.trim() || "";
-  const session = readAccountSession();
   clearFileWorkspaceStorage();
+  if (typeof window !== "undefined") {
+    try {
+      window.localStorage.removeItem(FOX_ACCOUNT_KEY);
+      window.sessionStorage.removeItem(FOX_ACCOUNT_KEY);
+    } catch {
+      // Private mode / quota.
+    }
+  }
   foxMessages = [];
   messagesHydrated = true;
   hydrated = false;
@@ -1386,18 +1392,7 @@ export function startOverWorkspace(path: IntakePath | null = null) {
   };
   const next = resetWorkspaceForEntry(path, null);
   if (path) writeStartPath(path);
-  if (!keepAccountId) return next;
-  current = { ...next, accountId: keepAccountId };
-  persist(current);
-  if (session && current.fileId) {
-    writeAccountSession({
-      token: session.token,
-      fileId: current.fileId,
-      accountId: session.accountId || keepAccountId,
-    });
-  }
-  persistLinkedAccountFile();
-  return current;
+  return next;
 }
 
 export function markDocCapSpoken() {

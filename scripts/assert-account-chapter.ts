@@ -490,9 +490,24 @@ async function main() {
   loadIntakeDraft(withLinkedAccount(unsaved, opened.draft.accountId));
   const oldFileId = getFoxDraft().fileId;
   const wiped = startOverWorkspace("acr");
-  assert.equal(wiped.accountId, opened.draft.accountId);
+  assert.ok(!wiped.accountId);
   assert.notEqual(wiped.fileId, oldFileId);
   assert.equal(wiped.productIntent, undefined);
+  const wipedHeloc = justMeSkipProceed(
+    houseReady(
+      writeHelocLine(writeFirstLien(writePurchasePrice({ ...wiped, path: "acr", workspaceFlow: true }, 500_000), 400_000), 50_000),
+    ),
+  );
+  assert.equal(wipedHeloc.motion, "gathering");
+  assert.equal(statusCopy(wipedHeloc), "gathering");
+  assert.equal(nextFoxAsk(wipedHeloc).text, ACCOUNT_SAVE_ASK);
+  assert.deepEqual(labels(nextFoxAsk(wipedHeloc).actions), [
+    CREATE_ACCOUNT_LABEL,
+    LOGIN_LABEL,
+    NOT_NOW_LABEL,
+    "Request human",
+  ]);
+  assert.ok(!labels(nextFoxAsk(wipedHeloc).actions).includes("Ask Fox"));
   const accounted = justMeSkipProceed(withLinkedAccount(notNow));
   assert.equal(accounted.motion, "in_queue");
 
