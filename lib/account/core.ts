@@ -174,14 +174,16 @@ function hasAmount(value?: number | null) {
 }
 
 function pickAmount(existing?: number | null, incoming?: number | null) {
-  if (hasAmount(incoming)) return incoming;
-  return existing;
+  if (hasAmount(incoming)) return incoming ?? undefined;
+  if (hasAmount(existing)) return existing ?? undefined;
+  return undefined;
 }
 
 function pickText(existing?: string | null, incoming?: string | null) {
   const next = incoming?.trim();
-  if (next) return incoming;
-  return existing;
+  if (next) return next;
+  const keep = existing?.trim();
+  return keep || undefined;
 }
 
 /** Stale mid-file persist must not blank Lien / Line / Credit already on the File. */
