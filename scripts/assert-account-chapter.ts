@@ -18,9 +18,11 @@ import {
   writeHelocLine,
 } from "../components/fox/heloc";
 import {
+  deskLineAfterAccountConsume,
   deskStripActions,
   nextFoxAsk,
   previewFacts,
+  withDeskLineAfterAccountConsume,
   workspaceGreeting,
   workspaceReply,
   writePurchasePrice,
@@ -28,6 +30,7 @@ import {
 import {
   ACCOUNT_EMAIL_ASK,
   ACCOUNT_EMAIL_SENT,
+  ACCOUNT_FILE_YOURS,
   ACCOUNT_LOGIN_ASK,
   ACCOUNT_SEND_FAILED,
   ACCOUNT_PHONE_SENT,
@@ -46,7 +49,9 @@ import {
   accountSideActions,
   applyAccountCapture,
   applyAccountSaveAsk,
+  consumeLinkedAccountDraft,
   foxLineLeaksAccountSecret,
+  isAccountMailWaitLine,
   lastFoxLine,
   openAccountOnFile,
   withLinkedAccount,
@@ -207,6 +212,51 @@ async function main() {
   assert.equal(second.fileId, opened.draft.fileId);
   assert.equal(JSON.stringify(previewFacts(second.draft)), JSON.stringify(previewFacts(opened.draft)));
   assert.equal(lastFoxLine(second.messages), lastFoxLine(messages));
+
+  const waiting: FoxMessage[] = [
+    ...messages,
+    { id: "fox-sent", role: "fox", text: ACCOUNT_EMAIL_SENT },
+  ];
+  assert.ok(isAccountMailWaitLine(lastFoxLine(waiting)));
+  const consumedEmpty = consumeLinkedAccountDraft(opened.draft);
+  assert.equal(consumedEmpty.accountId, opened.draft.accountId);
+  assert.equal(consumedEmpty.accountAsk, undefined);
+  assert.equal(consumedEmpty.accountSaveAsk, false);
+  const emptyDesk = deskLineAfterAccountConsume(consumedEmpty);
+  assert.equal(emptyDesk.text, ACCOUNT_FILE_YOURS);
+  assert.notEqual(emptyDesk.text, ACCOUNT_EMAIL_SENT);
+  assert.notEqual(emptyDesk.text, ACCOUNT_EMAIL_ASK);
+  assert.notEqual(emptyDesk.text, ACCOUNT_WHY_SENTENCE);
+  assert.deepEqual(labels(emptyDesk.actions), ["Buy", "Refinance", "HELOC", "Jumbo", "Other"]);
+  assert.ok(!labels(emptyDesk.actions).includes(CREATE_ACCOUNT_LABEL));
+  const advancedEmpty = withDeskLineAfterAccountConsume(waiting, emptyDesk);
+  assert.equal(lastFoxLine(waiting), ACCOUNT_EMAIL_SENT);
+  assert.equal(lastFoxLine(advancedEmpty), ACCOUNT_FILE_YOURS);
+  assert.ok(advancedEmpty.some((item) => item.text === ACCOUNT_EMAIL_SENT));
+  assert.deepEqual(labels(deskStripActions(advancedEmpty, consumedEmpty)), [
+    "Buy",
+    "Refinance",
+    "HELOC",
+    "Jumbo",
+    "Other",
+  ]);
+  const helocLinked = consumeLinkedAccountDraft({
+    ...houseReady(writeHelocLine(writeFirstLien(writePurchasePrice(firstQuestion(), 500_000), 400_000), 50_000)),
+    accountId: opened.draft.accountId,
+    accountAsk: "sent",
+    accountSaveAsk: true,
+  });
+  const helocDesk = deskLineAfterAccountConsume(helocLinked);
+  assert.ok(helocDesk.text.trim());
+  assert.notEqual(helocDesk.text, ACCOUNT_EMAIL_SENT);
+  assert.notEqual(helocDesk.text, ACCOUNT_EMAIL_ASK);
+  assert.notEqual(helocDesk.text, ACCOUNT_WHY_SENTENCE);
+  assert.notEqual(helocDesk.text, CREATE_ACCOUNT_LABEL);
+  const advancedHeloc = withDeskLineAfterAccountConsume(waiting, helocDesk);
+  assert.equal(lastFoxLine(advancedHeloc), helocDesk.text);
+  assert.ok(advancedHeloc.some((item) => item.text === ACCOUNT_EMAIL_SENT));
+  assert.ok(!labels(deskStripActions(advancedHeloc, helocLinked)).includes(CREATE_ACCOUNT_LABEL));
+  assert.ok(!labels(accountHeaderActions(helocLinked)).includes(CREATE_ACCOUNT_LABEL));
 
   const phoneStore = memoryAccountStore();
   const phone = openAccountOnFile(phoneStore, first, messages, { phone: "4155551212" });

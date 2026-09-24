@@ -1,8 +1,8 @@
 # Production sender + cookie-less resume host (23 Sep 2026)
 
 ## Status
-OPEN — founder picked `start.onyxdirect.com` after NOT READY `6fdb71e`. Preview only. Do not merge. READY ≠ ACCEPT. Not ACCEPT.
-`575fee8` letter-on-preview stays locked as the workshop (protection-bypass) path. This SHA is deliver + resume host only.
+ACCEPT `start.onyxdirect.com` resume host (founder paperclip). Preview only. Do not merge.
+`575fee8` letter-on-preview stays locked as the workshop (protection-bypass) path. OPEN: post-link desk line (44-post-link-desk-line.md).
 
 ### Founder pick (23 Sep 2026) — unlock after 6fdb71e
 - **Resume host:** `start.onyxdirect.com` (do not invent a second host).

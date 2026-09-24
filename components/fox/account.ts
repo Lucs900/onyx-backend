@@ -37,6 +37,23 @@ export const ACCOUNT_SAVE_ASK =
 export const ACCOUNT_EMAIL_SENT = "Check your email for a link to this File. Open it on any browser.";
 export const ACCOUNT_PHONE_SENT = "I sent a code to your phone. Enter it here when it arrives.";
 export const ACCOUNT_SEND_FAILED = "I couldn’t send that. Try again, or pick Phone.";
+export const ACCOUNT_FILE_YOURS = "This File is yours.";
+
+export function isAccountMailWaitLine(text: string) {
+  const line = text.trim();
+  return line === ACCOUNT_EMAIL_SENT || line === ACCOUNT_PHONE_SENT;
+}
+
+/** Magic link / code was opened. Mail-wait is no longer the live ask. */
+export function consumeLinkedAccountDraft(draft: FoxIntakeDraft): FoxIntakeDraft {
+  if (!hasLinkedAccount(draft)) return draft;
+  if (draft.accountAsk === undefined && !draft.accountSaveAsk) return draft;
+  return {
+    ...draft,
+    accountAsk: undefined,
+    accountSaveAsk: false,
+  };
+}
 
 export function accountAskOf(draft: FoxIntakeDraft): AccountAsk | undefined {
   return draft.accountAsk;

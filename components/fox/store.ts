@@ -53,7 +53,7 @@ import {
   restripeGatheringOrReady,
 } from "./motion";
 import { applyStaffDeskSend, type StaffDeskInput } from "./processingHub";
-import { applyAccountCapture } from "./account";
+import { applyAccountCapture, consumeLinkedAccountDraft } from "./account";
 import { FAILED_READ_NOTE, isUnreadNote } from "@/lib/docs/accept";
 import {
   applyExtractedFields,
@@ -103,6 +103,8 @@ import {
   persistGuidelineNote,
   withMatrixAfterAmount,
   workspacePrompt,
+  deskLineAfterAccountConsume,
+  withDeskLineAfterAccountConsume,
 } from "./workspace";
 import { hasHelocLineAmount, skipHelocLine, withHelocToolQuote, writeFirstLien, writeHelocLine } from "./heloc";
 import { changeEntityYears } from "./yearsFromEntity";
@@ -2106,12 +2108,15 @@ export function getAccountSession() {
 
 export function applyAccountResume(draft: FoxIntakeDraft, messages: FoxMessage[], session?: AccountSession) {
   accountResumePending = false;
-  current = ensureFileId({ ...draft, workspaceFlow: true });
+  const consumed = consumeLinkedAccountDraft({ ...draft, workspaceFlow: true });
+  const desk = deskLineAfterAccountConsume(consumed);
+  current = ensureFileId(consumed);
   persist(current);
-  persistMigratedMessages(messages);
+  persistMigratedMessages(withDeskLineAfterAccountConsume(messages, desk));
   if (session) writeAccountSession(session);
   hydrated = true;
   workspaceEntryKey = workspaceEntryToken(current.path);
+  persistLinkedAccountFile();
   emit();
   return current;
 }

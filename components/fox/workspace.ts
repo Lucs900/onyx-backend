@@ -610,11 +610,16 @@ import {
   writeWhoOnLoan,
 } from "./whoOnLoan";
 import {
+  ACCOUNT_EMAIL_ASK,
+  ACCOUNT_FILE_YOURS,
   ACCOUNT_SAVE_ASK,
+  ACCOUNT_WHY_SENTENCE,
   accountSaveAskOpen,
   accountSaveWallActions,
   accountWorkspaceReply,
   applyAccountCapture,
+  isAccountMailWaitLine,
+  lastFoxLine,
 } from "./account";
 import {
   SUGGESTED_COBORROWER_NOTE,
@@ -4348,7 +4353,56 @@ export function deskStripActions(
   if (greet.text === message.text) {
     return stripStreetSuggest(greet.actions ?? []);
   }
+  const desk = deskLineAfterAccountConsume(draft);
+  if (spokenOwnsAsk(message.text, desk.text) || message.text === ACCOUNT_FILE_YOURS) {
+    return stripStreetSuggest(desk.actions ?? []);
+  }
   return [];
+}
+
+/** After `/start?account=` consume. History may keep the mail-wait sentence. */
+export function deskLineAfterAccountConsume(draft: FoxIntakeDraft): {
+  text: string;
+  followUp?: string;
+  facts?: ReturnType<typeof workspacePromptCopy>["facts"];
+  actions?: FoxAction[];
+} {
+  const prompt = workspacePrompt(draft);
+  if (prompt === "product" || prompt === "intent") {
+    const greet = workspaceGreeting(draft);
+    return {
+      text: ACCOUNT_FILE_YOURS,
+      actions: greet.actions,
+    };
+  }
+  return nextFoxAsk(draft);
+}
+
+export function withDeskLineAfterAccountConsume(
+  messages: FoxMessage[],
+  ask: { text: string; followUp?: string; facts?: FoxMessage["facts"] },
+): FoxMessage[] {
+  const last = lastFoxLine(messages);
+  if (last === ask.text) return messages;
+  if (
+    last &&
+    !isAccountMailWaitLine(last) &&
+    last !== ACCOUNT_SAVE_ASK &&
+    last !== ACCOUNT_WHY_SENTENCE &&
+    last !== ACCOUNT_EMAIL_ASK
+  ) {
+    return messages;
+  }
+  return [
+    ...messages,
+    {
+      id: `fox_desk_${Date.now().toString(36)}`,
+      role: "fox",
+      text: ask.text,
+      followUp: ask.followUp,
+      facts: ask.facts,
+    },
+  ];
 }
 
 function spokenOwnsAsk(spoken?: string | null, ask?: string | null) {

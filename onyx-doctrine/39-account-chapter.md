@@ -3,7 +3,7 @@
 ## Status
 ACCEPT `575fee8` InPrivate desk resume (founder paperclip). Preview only. Do not merge. READY ≠ ACCEPT.
 
-Save-wall chips ACCEPT 97e6b9b + Save why ACCEPT `d0dd8ed` + pad Save only ACCEPT `f845741` closed. OPEN: production sender + cookie-less resume (43-account-prod-sender.md). Header leftover still parked.
+Save-wall chips ACCEPT 97e6b9b + Save why ACCEPT `d0dd8ed` + pad Save only ACCEPT `f845741` + resume host `start.onyxdirect.com` closed. OPEN: post-link desk line (44-post-link-desk-line.md). Header leftover still parked.
 
 ## Why
 After hub v0 spine, the File must follow the person across browsers via account — not “this device.” Invite-only is only a side door — do not design an invite product.
@@ -38,7 +38,7 @@ After hub v0 spine, the File must follow the person across browsers via account 
 - Preview InPrivate: letter may carry protection-bypass + set-bypass-cookie so Fox+pad mount without Vercel login.
 
 ## OPEN now
-- Production sender + cookie-less resume host — see 43-account-prod-sender.md. From ONYX Direct &lt;lucas@onyxdirect.com&gt;; Subject Your ONYX File; resume host `start.onyxdirect.com`; InPrivate without protection-bypass; clean `/start?path=acr`.
+- Post-link desk line after account consume — see 44-post-link-desk-line.md. Live Fox line is not the mail-wait prompt. Resume host `start.onyxdirect.com` stays closed.
 
 ## Out / parked
 Holding-page publish (parked); dense 1008 ACCEPT 8fa7382 + Save-wall ACCEPT 97e6b9b + Save why ACCEPT d0dd8ed + pad Save ACCEPT f845741 (header leftover parked), referral cash, credit pull.
