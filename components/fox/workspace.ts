@@ -4435,6 +4435,15 @@ export function liveDeskLineOwnsPrompt(liveText: string, draft: FoxIntakeDraft) 
   if (!text) return false;
   if (isParkedPostLinkLine(text)) return false;
   if (text === ACCOUNT_FILE_YOURS) return true;
+  if (
+    (draft.events ?? []).some(
+      (event) =>
+        event.kind === "staff-desk" &&
+        (event.text.trim() === text || (event.summary ?? "").trim() === text),
+    )
+  ) {
+    return true;
+  }
   return text === deskLineAfterAccountConsume(draft).text.trim();
 }
 

@@ -13356,6 +13356,7 @@ assert.ok(!startWorkspace.includes("useDocumentReads"));
 assert.ok(startWorkspace.includes("shouldResumeWorkspaceEntry"));
 assert.ok(startWorkspace.includes("continueWorkspaceFromEntry"));
 assert.ok(startWorkspace.includes("linkedAccountRefreshQuery"));
+assert.ok(startWorkspace.includes("pageshow"));
 assert.ok(startWorkspace.includes("applyPreviewMotionControls"));
 assert.ok(startWorkspace.includes('searchParams.get("suggest")'));
 assert.ok(startWorkspace.includes('searchParams.get("fresh")'));

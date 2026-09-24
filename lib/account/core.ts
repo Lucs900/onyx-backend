@@ -95,7 +95,7 @@ export function snapshotOf(record: AccountRecord): AccountSnapshot {
     fileId: record.fileId,
     accountId: record.accountId,
     draft: record.draft,
-    messages: record.messages,
+    messages: stripWalkTestMessages(record.messages),
     magicLink: magicLinkFor(record.token),
     code: record.code,
   };
@@ -169,18 +169,60 @@ export function shouldKeepLiveAccountDraft(
   return fileHasResumeFacts(existing) && !fileHasResumeFacts(incoming);
 }
 
+export const STAFF_DESK_FACT_ID = "staff-desk";
+
+export function staffDeskMessageFact() {
+  return { id: STAFF_DESK_FACT_ID, label: "staff", value: "desk" };
+}
+
 function foxLineKey(message: FoxMessage) {
   return `${message.role}:${message.text.trim()}`;
 }
 
-/** Stale desk persist on refresh must not drop a staff foxLine the File already has. */
-export function mergeAccountMessages(existing: FoxMessage[], incoming: FoxMessage[]) {
-  if (!incoming.length) return existing.map((item) => ({ ...item }));
-  if (!existing.length) return incoming.map((item) => ({ ...item }));
-  const seen = new Set(incoming.map(foxLineKey));
-  const extra = existing.filter((item) => !seen.has(foxLineKey(item)));
-  if (!extra.length) return incoming.map((item) => ({ ...item }));
-  return [...incoming, ...extra].map((item) => ({ ...item }));
+export function isWalkTestFoxLine(text: string) {
+  const line = text.trim();
+  if (!line) return false;
+  if (line === "Refresh must paint this staff line.") return true;
+  return /\(mufw[a-z0-9]+\)$/i.test(line);
+}
+
+export function stripWalkTestMessages(messages: FoxMessage[]) {
+  return messages.filter((item) => !isWalkTestFoxLine(item.text));
+}
+
+export function isStaffDeskMessage(message: FoxMessage, draft?: FoxIntakeDraft | null) {
+  if (message.role !== "fox") return false;
+  if (message.facts?.some((fact) => fact.id === STAFF_DESK_FACT_ID)) return true;
+  const text = message.text.trim();
+  if (!text) return false;
+  return (draft?.events ?? []).some(
+    (event) =>
+      event.kind === "staff-desk" &&
+      (event.text.trim() === text || (event.summary ?? "").trim() === text),
+  );
+}
+
+/** Stale desk persist must not drop staff foxLines. Staff lines are append-only. */
+export function mergeAccountMessages(
+  existing: FoxMessage[],
+  incoming: FoxMessage[],
+  draft?: FoxIntakeDraft | null,
+) {
+  const keptExisting = stripWalkTestMessages(existing);
+  const keptIncoming = stripWalkTestMessages(incoming);
+  if (!keptIncoming.length) return keptExisting.map((item) => ({ ...item }));
+  if (!keptExisting.length) return keptIncoming.map((item) => ({ ...item }));
+  const seenId = new Set(keptIncoming.map((item) => item.id).filter(Boolean));
+  const seenKey = new Set(keptIncoming.map(foxLineKey));
+  const extra = keptExisting.filter((item) => {
+    if (item.id && seenId.has(item.id)) return false;
+    if (seenKey.has(foxLineKey(item))) return false;
+    return true;
+  });
+  const staff = extra.filter((item) => isStaffDeskMessage(item, draft));
+  const other = extra.filter((item) => !isStaffDeskMessage(item, draft));
+  const merged = [...keptIncoming, ...other, ...staff];
+  return merged.map((item) => ({ ...item }));
 }
 
 export function persistLiveAccountRecord(
@@ -189,8 +231,17 @@ export function persistLiveAccountRecord(
   messages: FoxMessage[],
   now = new Date(),
 ): AccountRecord {
-  if (shouldKeepLiveAccountDraft(record.draft, draft)) return record;
-  return persistAccountRecord(record, draft, mergeAccountMessages(record.messages, messages), now);
+  if (shouldKeepLiveAccountDraft(record.draft, draft)) {
+    const cleaned = stripWalkTestMessages(record.messages);
+    if (cleaned.length === record.messages.length) return record;
+    return persistAccountRecord(record, record.draft, cleaned, now);
+  }
+  return persistAccountRecord(
+    record,
+    draft,
+    mergeAccountMessages(record.messages, messages, record.draft),
+    now,
+  );
 }
 
 export function memoryAccountStore(seed: AccountRecord[] = []): AccountStore {

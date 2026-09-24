@@ -54,6 +54,10 @@ import {
 } from "./motion";
 import { applyStaffDeskSend, type StaffDeskInput } from "./processingHub";
 import {
+  mergeAccountMessages,
+  staffDeskMessageFact,
+} from "@/lib/account/core";
+import {
   applyAccountCapture,
   applyAccountCreated,
   applyAccountLetterOpened,
@@ -2066,7 +2070,7 @@ export function sendStaffDeskLine(input: StaffDeskInput) {
     return { draft: current, threadLine: "", error: applied.error ?? "foxLine required" };
   }
   commit(applied.draft);
-  appendFoxThreadLine(applied.threadLine);
+  appendFoxThreadLine(applied.threadLine, { facts: [staffDeskMessageFact()] });
   persistLinkedAccountFile();
   return { draft: current, threadLine: applied.threadLine };
 }
@@ -2122,7 +2126,12 @@ export function applyAccountResume(draft: FoxIntakeDraft, messages: FoxMessage[]
   const desk = deskLineAfterAccountConsume(consumed);
   current = ensureFileId(consumed);
   persist(current);
-  persistMigratedMessages(withDeskLineAfterAccountConsume(messages, desk));
+  persistMigratedMessages(
+    withDeskLineAfterAccountConsume(
+      mergeAccountMessages(getFoxMessages(), messages, consumed),
+      desk,
+    ),
+  );
   if (session) writeAccountSession(session);
   hydrated = true;
   workspaceEntryKey = workspaceEntryToken(current.path);
@@ -2199,7 +2208,7 @@ export async function resumeAccountFromQuery(input: { token?: string; code?: str
       path += `&x-vercel-protection-bypass=${encodeURIComponent(secret)}`;
     }
   }
-  const response = await fetch(path);
+  const response = await fetch(path, { cache: "no-store" });
   if (!response.ok) {
     failAccountResume();
     return undefined;
@@ -2222,6 +2231,7 @@ export async function resumeAccountFromQuery(input: { token?: string; code?: str
 let persistAccountTimer: ReturnType<typeof setTimeout> | number | undefined;
 
 function flushPersistLinkedAccount() {
+  if (accountResumePending) return;
   const session = readAccountSession();
   if (!session?.token || typeof window === "undefined") return;
   if (persistAccountTimer) {

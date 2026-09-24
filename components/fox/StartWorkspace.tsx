@@ -63,31 +63,42 @@ export function StartWorkspace() {
   const previewSuggestKey = useRef("");
   const resumeStarted = useRef(false);
   useEffect(() => {
-    const token =
-      accountToken ||
-      (typeof window !== "undefined" ? accountTokenFromLocation("", window.location.hash) : "");
-    const refresh = token || accountCode ? undefined : linkedAccountRefreshQuery();
-    if (!token && !accountCode && !refresh) return;
-    if (resumeStarted.current) return;
-    resumeStarted.current = true;
-    void resumeAccountFromQuery({
-      token: token || refresh?.token || undefined,
-      code: accountCode || undefined,
-      fileId: token || accountCode ? undefined : refresh?.fileId,
-    }).then((snapshot) => {
-      if (!snapshot) {
-        failAccountResume();
-        if (!token && !accountCode) {
-          continueWorkspaceFromEntry(startPath, startIntent, { fresh: homepageFresh });
+    const loadFromFile = (force = false) => {
+      const token =
+        accountToken ||
+        (typeof window !== "undefined" ? accountTokenFromLocation("", window.location.hash) : "");
+      const refresh = token || accountCode ? undefined : linkedAccountRefreshQuery();
+      if (!token && !accountCode && !refresh) return;
+      if (resumeStarted.current && !force) return;
+      resumeStarted.current = true;
+      beginAccountResume();
+      void resumeAccountFromQuery({
+        token: token || refresh?.token || undefined,
+        code: accountCode || undefined,
+        fileId: token || accountCode ? undefined : refresh?.fileId,
+      }).then((snapshot) => {
+        if (!snapshot) {
+          failAccountResume();
+          if (!token && !accountCode) {
+            continueWorkspaceFromEntry(startPath, startIntent, { fresh: homepageFresh });
+          }
+          return;
         }
-        return;
-      }
-      if (typeof window === "undefined") return;
-      if (token || accountCode) {
-        const path = snapshot.draft.path || "acr";
-        router.replace(`/start?path=${encodeURIComponent(path)}`, { scroll: false });
-      }
-    });
+        if (typeof window === "undefined") return;
+        if (token || accountCode) {
+          const path = snapshot.draft.path || "acr";
+          router.replace(`/start?path=${encodeURIComponent(path)}`, { scroll: false });
+        }
+      });
+    };
+    loadFromFile(false);
+    const onPageShow = (event: PageTransitionEvent) => {
+      if (!event.persisted) return;
+      resumeStarted.current = false;
+      loadFromFile(true);
+    };
+    window.addEventListener("pageshow", onPageShow);
+    return () => window.removeEventListener("pageshow", onPageShow);
   }, [accountCode, accountToken, homepageFresh, router, startIntent, startPath]);
   useEffect(() => {
     if (!homepageFresh) return;

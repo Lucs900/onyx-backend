@@ -669,7 +669,9 @@ async function main() {
   assert.match(accountRoute, /persistLiveAccountRecord/);
   const accountCore = readFileSync(new URL("../lib/account/core.ts", import.meta.url), "utf8");
   assert.match(accountCore, /export function mergeAccountMessages/);
-  assert.match(accountCore, /mergeAccountMessages\(record\.messages, messages\)/);
+  assert.match(accountCore, /mergeAccountMessages\(record\.messages, messages, record\.draft\)/);
+  assert.match(accountCore, /stripWalkTestMessages/);
+  assert.match(accountCore, /isStaffDeskMessage/);
   const accountServer = readFileSync(new URL("../lib/account/server.ts", import.meta.url), "utf8");
   assert.match(accountServer, /allowOverwrite:\s*true/);
   assert.match(accountServer, /account\/email\//);
@@ -688,6 +690,16 @@ async function main() {
   const afterStalePersist = resumeFromStore(midStore, { token: midOpened.record.token });
   assert.equal(lastFoxLine(afterStalePersist?.messages ?? []), staffRefresh);
   assert.ok(afterStalePersist?.messages.some((item) => item.text === staffRefresh));
+  const withWalkJunk = [
+    ...serverDesk,
+    { id: "fox-walk", role: "fox" as const, text: "Refresh must paint this staff line." },
+    { id: "fox-tok", role: "fox" as const, text: "I still need the balance on the first lien. (mufwptov)" },
+  ];
+  writeAccountFile(midStore, midOpened.record.token, midFile, withWalkJunk);
+  const strippedWalk = resumeFromStore(midStore, { token: midOpened.record.token });
+  assert.ok(!strippedWalk?.messages.some((item) => item.text.includes("Refresh must paint")));
+  assert.ok(!strippedWalk?.messages.some((item) => /\(mufwptov\)/.test(item.text)));
+  assert.ok(strippedWalk?.messages.some((item) => item.text === staffRefresh));
   assert.ok(refreshResume?.messages.some((item) => item.text === HELOC_FIRST_LIEN_ASK));
   const keptStaff = withDeskLineAfterAccountConsume(serverDesk, deskLineAfterAccountConsume(midFile));
   assert.equal(lastFoxLine(keptStaff), staffRefresh);
@@ -695,8 +707,16 @@ async function main() {
   assert.match(startWorkspace, /linkedAccountRefreshQuery/);
   assert.match(startWorkspace, /resumeAccountFromQuery/);
   assert.match(startWorkspace, /refresh\?\.fileId/);
+  assert.match(startWorkspace, /pageshow/);
+  assert.match(startWorkspace, /event\.persisted/);
+  const startPage = readFileSync(new URL("../app/(marketing)/start/page.tsx", import.meta.url), "utf8");
+  assert.match(startPage, /force-dynamic/);
+  assert.match(startPage, /no-store/);
   const storeSource = readFileSync(new URL("../components/fox/store.ts", import.meta.url), "utf8");
   assert.match(storeSource, /export function linkedAccountRefreshQuery/);
+  assert.match(storeSource, /staffDeskMessageFact/);
+  assert.doesNotMatch(storeSource, /Refresh must paint this staff line/);
+  assert.doesNotMatch(storeSource, /mufwptov/);
   assert.doesNotMatch(startWorkspace, /set-bypass-cookie/);
 
   console.log(

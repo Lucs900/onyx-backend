@@ -167,7 +167,9 @@ function main() {
   const startWorkspace = readFileSync(new URL("../components/fox/StartWorkspace.tsx", import.meta.url), "utf8");
   assert.match(startWorkspace, /linkedAccountRefreshQuery/);
   assert.match(startWorkspace, /resumeAccountFromQuery/);
+  assert.match(startWorkspace, /pageshow/);
   assert.doesNotMatch(startWorkspace, /Open \/start from hub required/);
+  assert.doesNotMatch(startWorkspace, /Refresh must paint this staff line/);
   assert.equal(hubPayRows(emptyDraft()).length, 1);
   assert.equal(hubStateRows(emptyDraft()).length, 2);
   assert.equal(hubLoudRows(filled).length, 8);
