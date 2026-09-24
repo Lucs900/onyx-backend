@@ -40,11 +40,8 @@ export function ProcessingHub() {
     const wanted = (searchParams.get("file") ?? "").trim();
     void (async () => {
       if (wanted) {
-        const live = getFoxDraft();
-        if (live.fileId !== wanted) {
-          const loaded = await resumeAccountFromQuery({ fileId: wanted });
-          if (!loaded) ensureCurrentFileId();
-        }
+        const loaded = await resumeAccountFromQuery({ fileId: wanted });
+        if (!loaded) ensureCurrentFileId();
       } else {
         ensureCurrentFileId();
       }

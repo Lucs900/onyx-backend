@@ -121,6 +121,8 @@ function main() {
   const hubPage = readFileSync(new URL("../components/fox/ProcessingHub.tsx", import.meta.url), "utf8");
   assert.match(hubPage, /staff-hub-grid--processing/);
   assert.match(hubPage, /HUB_GRID_ROWS/);
+  assert.match(hubPage, /resumeAccountFromQuery\(\{ fileId: wanted \}\)/);
+  assert.doesNotMatch(hubPage, /if \(live\.fileId !== wanted\)/);
 
   console.log(
     "assert-write-thread-answers: 400k/50k/760+/8.80/$367 written from thread; stale persist keeps them; no name; layout closed",
