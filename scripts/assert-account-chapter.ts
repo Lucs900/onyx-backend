@@ -23,6 +23,7 @@ import {
   liveDeskLineOwnsPrompt,
   nextFoxAsk,
   previewFacts,
+  statusCopy,
   withDeskLineAfterAccountConsume,
   workspaceGreeting,
   workspaceReply,
@@ -407,6 +408,8 @@ async function main() {
   const notNow = applyAccountCapture(sketch, { field: "skip-account" });
   const unsaved = justMeSkipProceed(notNow);
   assert.notEqual(unsaved.motion, "in_queue");
+  assert.equal(unsaved.motion, "gathering");
+  assert.equal(statusCopy(unsaved), "gathering");
   assert.equal(accountSaveAskOpen(unsaved), true);
   assert.equal(unsaved.accountSaveAsk, true);
   assert.equal(

@@ -198,6 +198,7 @@ export function nextActorOf(draft: FoxIntakeDraft): FileNext {
 }
 
 export function motionStatusCopy(draft: FoxIntakeDraft) {
+  if (accountSaveAskOpen(draft)) return "gathering";
   const motion = motionOf(draft);
   if (motion) return motion;
   return "preparing";
@@ -368,6 +369,7 @@ export function creditPullPermitted(draft: FoxIntakeDraft) {
 }
 
 export function inQueueEnding(draft: FoxIntakeDraft) {
+  if (accountSaveAskOpen(draft)) return false;
   const motion = motionOf(draft);
   if (motion === "escalated" || motion === "needs_you" || motion === "on_hold") return false;
   if (motion === "in_queue" || motion === "waiting_out") return true;
@@ -376,11 +378,11 @@ export function inQueueEnding(draft: FoxIntakeDraft) {
 
 export function motionAskText(draft: FoxIntakeDraft) {
   const motion = motionOf(draft);
-  if (inQueueEnding(draft)) {
-    return MOTION_COPY.in_queue;
-  }
   if (accountSaveAskOpenMotion(draft)) {
     return ACCOUNT_SAVE_ASK;
+  }
+  if (inQueueEnding(draft)) {
+    return MOTION_COPY.in_queue;
   }
   if (draft.pendingFinish && emailFinishGateOpen(draft)) {
     return MOTION_COPY.emailAsk;
@@ -570,7 +572,7 @@ export function applyProceedMotion(draft: FoxIntakeDraft, now = new Date()): Fox
       correcting: null,
     };
   }
-  if (!hasLinkedAccount(draft)) {
+  if (!hasLinkedAccount(draft) || accountSaveAskOpen(draft)) {
     return applyAccountSaveAsk(draft);
   }
   const from = currentMotionKey(draft);

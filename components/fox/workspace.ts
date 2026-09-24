@@ -4043,6 +4043,12 @@ export function nextFoxAsk(draft: FoxIntakeDraft): {
       };
     }
   }
+  if (accountSaveAskOpen(draft)) {
+    return {
+      text: ACCOUNT_SAVE_ASK,
+      actions: accountSaveWallActions(draft),
+    };
+  }
   if (shouldHoldAskForLiveLine(draft)) {
     return { text: RATEFLOW_WAIT_LINE };
   }
@@ -5151,6 +5157,12 @@ function workspaceAskCopy(
     };
   }
   if (prompt === "done") {
+    if (accountSaveAskOpen(draft)) {
+      return {
+        text: ACCOUNT_SAVE_ASK,
+        actions: finishLineActions(draft),
+      };
+    }
     if (inQueueEnding(draft)) {
       return {
         text: MOTION_COPY.in_queue,
@@ -6448,7 +6460,7 @@ export function workspaceUpdateCopy(capture: Capture, draft: FoxIntakeDraft) {
     return MOTION_COPY.escalated;
   }
   if (capture.field === "proceed") {
-    return draft.accountSaveAsk && !draft.accountId ? ACCOUNT_SAVE_ASK : MOTION_COPY.in_queue;
+    return accountSaveAskOpen(draft) ? ACCOUNT_SAVE_ASK : MOTION_COPY.in_queue;
   }
   if (capture.field === "not-yet") {
     return MOTION_COPY.on_hold;

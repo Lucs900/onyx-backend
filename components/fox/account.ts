@@ -398,6 +398,9 @@ export function applyAccountSaveAsk(draft: FoxIntakeDraft): FoxIntakeDraft {
     accountSaveAsk: true,
     accountAsk: "offer",
     pendingFinish: "proceed",
+    motion: "gathering",
+    nextActor: "You",
+    waitingOn: "borrower",
     docsOpen: false,
     correcting: null,
   };
