@@ -33,6 +33,8 @@ import {
   ACCOUNT_EMAIL_ASK,
   ACCOUNT_EMAIL_SENT,
   ACCOUNT_FILE_YOURS,
+  ACCOUNT_FIRST_OFFER,
+  ACCOUNT_FIRST_WHY,
   ACCOUNT_LOGIN_ASK,
   ACCOUNT_SEND_FAILED,
   ACCOUNT_PHONE_SENT,
@@ -55,6 +57,7 @@ import {
   applyAccountSaveAsk,
   accountWorkspaceReply,
   consumeLinkedAccountDraft,
+  firstAccountOfferOpen,
   foxLineLeaksAccountSecret,
   isAccountMailWaitLine,
   lastFoxLine,
@@ -139,13 +142,21 @@ function justMeSkipProceed(file: FoxIntakeDraft): FoxIntakeDraft {
 async function main() {
   const first = firstQuestion();
   const greet = workspaceGreeting(first);
-  assert.match(greet.text, /relationship file|Start a relationship|Buy/i);
-  assert.deepEqual(labels(greet.actions), ["Buy", "Refinance", "HELOC", "Jumbo", "Other"]);
+  assert.equal(firstAccountOfferOpen(first), true);
+  assert.equal(greet.text, ACCOUNT_FIRST_OFFER);
+  assert.doesNotMatch(greet.text, /send it to review|So this File can find you on another phone/);
+  assert.deepEqual(labels(greet.actions), [CREATE_ACCOUNT_LABEL, LOGIN_LABEL, NOT_NOW_LABEL]);
+  assert.ok(!labels(greet.actions).includes("Buy"));
+  assert.ok(!labels(greet.actions).includes("HELOC"));
   assert.deepEqual(labels(accountSideActions(first)), [CREATE_ACCOUNT_LABEL, LOGIN_LABEL, NOT_NOW_LABEL]);
+  assert.deepEqual(labels(deskStripActions([{ id: "g", role: "fox", text: greet.text }], first)), [
+    CREATE_ACCOUNT_LABEL,
+    LOGIN_LABEL,
+    NOT_NOW_LABEL,
+  ]);
   assert.deepEqual(labels(accountHeaderActions(first)), [CREATE_ACCOUNT_LABEL, LOGIN_LABEL]);
   assert.deepEqual(labels(accountHomeActions(first)), [CREATE_ACCOUNT_LABEL, LOGIN_LABEL]);
   assert.ok(!labels(accountHeaderActions(first)).includes(NOT_NOW_LABEL));
-  assert.ok(!labels(deskStripActions([{ id: "g", role: "fox", text: greet.text }], first)).includes(CREATE_ACCOUNT_LABEL));
   const midWalk = houseReady(writePurchasePrice(firstQuestion(), 500_000));
   assert.deepEqual(labels(accountSideActions(midWalk)), []);
   assert.deepEqual(labels(accountHeaderActions(midWalk)), [CREATE_ACCOUNT_LABEL, LOGIN_LABEL]);
@@ -154,8 +165,10 @@ async function main() {
 
   const create = workspaceReply("Create account", first);
   assert.equal(create?.capture?.field, "create-account");
-  assert.equal(create?.text, "So this File can find you on another phone — not stuck in this tab.");
-  assert.equal(create?.text, ACCOUNT_WHY_SENTENCE);
+  assert.equal(create?.text, ACCOUNT_FIRST_WHY);
+  assert.equal(create?.text, "So this desk is yours on the next phone.");
+  assert.doesNotMatch(create?.text ?? "", /send it to review|So this File can find you on another phone/);
+  assert.notEqual(create?.text, ACCOUNT_WHY_SENTENCE);
   assert.ok(!foxLineLeaksAccountSecret(create?.text ?? ""));
   const afterCreate = applyAccountCapture(first, { field: "create-account" });
   assert.equal(afterCreate.accountAsk, "channel");
@@ -172,10 +185,16 @@ async function main() {
 
   const skip = workspaceReply("Not now", first);
   assert.equal(skip?.capture?.field, "skip-account");
-  assert.equal(skip?.text, ACCOUNT_SKIPPED_LINE);
+  assert.notEqual(skip?.text, ACCOUNT_SKIPPED_LINE);
+  assert.notEqual(skip?.text, ACCOUNT_FIRST_OFFER);
+  assert.match(skip?.text ?? "", /relationship file|We’ll keep this desk open after close/i);
+  assert.deepEqual(labels(skip?.actions), ["Buy", "Refinance", "HELOC", "Jumbo", "Other"]);
   const skipped = applyAccountCapture(first, { field: "skip-account" });
   assert.equal(skipped.accountSkipped, true);
+  assert.equal(firstAccountOfferOpen(skipped), false);
   assert.deepEqual(labels(accountSideActions(skipped)), []);
+  assert.deepEqual(labels(nextFoxAsk(skipped).actions), ["Buy", "Refinance", "HELOC", "Jumbo", "Other"]);
+  assert.ok(!labels(deskStripActions([{ id: "n", role: "fox", text: skip?.text ?? "" }], skipped)).includes(CREATE_ACCOUNT_LABEL));
 
   const afterEmail = applyAccountCapture(afterCreate, { field: "account-channel", value: "email" });
   assert.equal(afterEmail.accountAsk, "email");
@@ -475,6 +494,10 @@ async function main() {
       ),
     ),
   );
+  const saveCreate = workspaceReply("Create account", unsaved);
+  assert.equal(saveCreate?.capture?.field, "create-account");
+  assert.equal(saveCreate?.text, ACCOUNT_WHY_SENTENCE);
+  assert.notEqual(saveCreate?.text, ACCOUNT_FIRST_WHY);
   const saveReply = workspaceReply("Proceed", looksOnly);
   assert.equal(saveReply?.text, ACCOUNT_SAVE_ASK);
   assert.deepEqual(labels(saveReply?.actions), [
@@ -596,7 +619,7 @@ async function main() {
   assert.equal(notNowStore.getByFileId(first.fileId ?? "none"), undefined);
 
   console.log(
-    `assert-account-chapter: first chips Create account · Log in · Not now; why-sentence; no token in thread; save-ask not in_queue; with account in_queue ${opened.draft.fileId}`,
+    `assert-account-chapter: turn-one offer + Create account · Log in · Not now; first why; parked save why; no token; save-ask not in_queue; with account in_queue ${opened.draft.fileId}`,
   );
 }
 

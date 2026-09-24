@@ -871,8 +871,14 @@ assert.equal(greetLoan.text, starterText("loan-only"));
 assert.ok(!(greetLoan.followUp ?? "").includes(FOX_DISCLOSURE));
 
 const productAsk = workspacePromptCopy("product", withPath);
+assert.equal(productAsk.text, "You can leave and come back to this desk. Or keep going.");
 assert.deepEqual(
   (productAsk.actions ?? []).map((item) => item.label),
+  ["Create account", "Log in", "Not now"],
+);
+const productAskAfterSkip = workspacePromptCopy("product", draft({ path: "acr", accountSkipped: true }));
+assert.deepEqual(
+  (productAskAfterSkip.actions ?? []).map((item) => item.label),
   ["Buy", "Refinance", "HELOC", "Jumbo", "Other"],
 );
 

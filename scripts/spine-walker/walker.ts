@@ -498,6 +498,16 @@ async function waitBuyChip(page: Page) {
   });
 }
 
+async function dismissFirstAccountOffer(page: Page) {
+  const notNow = page.locator(".fox-bar__strip").getByRole("button", { name: "Not now", exact: true });
+  const buy = page.locator(".fox-bar__strip").getByRole("button", { name: "Buy", exact: true });
+  if (await buy.isVisible().catch(() => false)) return;
+  if (await notNow.isVisible().catch(() => false)) {
+    await notNow.click();
+    await page.waitForTimeout(250);
+  }
+}
+
 async function hardStartOver(page: Page) {
   if (!previewDeskOpen) {
     await openStartDesk(page);
@@ -515,6 +525,7 @@ async function hardStartOver(page: Page) {
   await startOverButton(page).click({ timeout: 15_000 });
   await page.waitForTimeout(400);
   try {
+    await dismissFirstAccountOffer(page);
     await waitBuyChip(page);
   } catch {
     throw new BeatFail(`Start over did not restore Buy — ${await pageBlob(page)}`);

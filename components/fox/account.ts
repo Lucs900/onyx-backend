@@ -26,6 +26,10 @@ export const NOT_NOW_LABEL = "Not now";
 export const SAVE_THIS_FILE_LABEL = "Save this File";
 export const ACCOUNT_WHY_SENTENCE =
   "So this File can find you on another phone — not stuck in this tab.";
+/** Turn-one offer on /start?path=acr. Not Design’s product sentence. */
+export const ACCOUNT_FIRST_OFFER = "You can leave and come back to this desk. Or keep going.";
+/** First-question Create account. Parked why-sentence stays on the Save wall. */
+export const ACCOUNT_FIRST_WHY = "So this desk is yours on the next phone.";
 export const ACCOUNT_CHANNEL_ASK = ACCOUNT_WHY_SENTENCE;
 export const ACCOUNT_EMAIL_ASK = "Where should I send the sign-in link?";
 export const ACCOUNT_PHONE_ASK = "What’s a good phone? I’ll send a code for this File.";
@@ -86,6 +90,22 @@ export function accountOfferOpen(draft: FoxIntakeDraft) {
   return !draft.productIntent;
 }
 
+/** Turn one on /start?path=acr — before any loan question. */
+export function firstAccountOfferOpen(draft: FoxIntakeDraft) {
+  if (draft.path !== "acr") return false;
+  if (hasLinkedAccount(draft)) return false;
+  if (accountSaveAskOpen(draft)) return false;
+  if (draft.accountSkipped) return false;
+  if (accountFlowOpen(draft)) return false;
+  const ask = accountAskOf(draft);
+  if (ask && ask !== "offer") return false;
+  return !draft.productIntent;
+}
+
+export function accountCreateWhy(draft: FoxIntakeDraft) {
+  return accountSaveAskOpen(draft) ? ACCOUNT_WHY_SENTENCE : ACCOUNT_FIRST_WHY;
+}
+
 function accountOfferChips(): FoxAction[] {
   return [
     {
@@ -110,6 +130,10 @@ function accountOfferChips(): FoxAction[] {
       quiet: true,
     },
   ];
+}
+
+export function firstAccountOfferActions() {
+  return accountOfferChips();
 }
 
 /** Header permanent: Create account · Log in. Not now is Save-ask only. */
@@ -241,10 +265,11 @@ export function accountWorkspaceReply(
   const ask = accountAskOf(draft);
   if (/^create account$/i.test(q) || /^keep this file$/i.test(q) || /^save this file$/i.test(q)) {
     const next = { ...draft, accountAsk: "channel" as const };
+    const savePad = /^save this file$/i.test(q);
     return {
-      text: ACCOUNT_WHY_SENTENCE,
+      text: savePad || accountSaveAskOpen(draft) ? ACCOUNT_WHY_SENTENCE : ACCOUNT_FIRST_WHY,
       actions: accountSideActions(next),
-      capture: /^save this file$/i.test(q) ? { field: "save-this-file" } : { field: "create-account" },
+      capture: savePad ? { field: "save-this-file" } : { field: "create-account" },
     };
   }
   if (/^log in$/i.test(q)) {

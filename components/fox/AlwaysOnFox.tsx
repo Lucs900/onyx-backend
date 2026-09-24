@@ -133,12 +133,14 @@ import {
   ACCOUNT_WHY_SENTENCE,
   SAVE_THIS_FILE_LABEL,
   START_OVER_CONFIRM,
+  accountCreateWhy,
   accountFlowOpen,
   accountHeaderActions,
   accountSentCopy,
   accountSideActions,
   accountWorkspaceReply,
   composerPlaceholderForAccount,
+  firstAccountOfferOpen,
   foxLineLeaksAccountSecret,
   hasLinkedAccount,
   isAccountMailWaitLine,
@@ -2008,11 +2010,17 @@ export function AlwaysOnFox({
       action.capture?.field === "save-this-file" ||
       action.capture?.field === "account-channel"
     ) {
+      const firstOfferSkip =
+        action.capture.field === "skip-account" && firstAccountOfferOpen(liveDraft);
       applyCapture(action.capture);
       skipPromptSync.current = true;
+      if (firstOfferSkip) {
+        appendReply(action.label, nextFoxAsk(getFoxDraft()));
+        return;
+      }
       const spoken =
         action.capture.field === "create-account" || action.capture.field === "save-this-file"
-          ? ACCOUNT_WHY_SENTENCE
+          ? accountCreateWhy(liveDraft)
           : action.capture.field === "login-account"
             ? ACCOUNT_LOGIN_ASK
             : action.capture.field === "skip-account"
@@ -2372,7 +2380,8 @@ export function AlwaysOnFox({
     }
     setOpen(true);
     setInput("");
-    const accountReply = accountWorkspaceReply(text, getFoxDraft());
+    const beforeAccount = getFoxDraft();
+    const accountReply = accountWorkspaceReply(text, beforeAccount);
     if (
       accountReply?.capture?.field === "create-account" ||
       accountReply?.capture?.field === "login-account" ||
@@ -2380,9 +2389,11 @@ export function AlwaysOnFox({
       accountReply?.capture?.field === "save-this-file" ||
       accountReply?.capture?.field === "account-channel"
     ) {
+      const firstOfferSkip =
+        accountReply.capture.field === "skip-account" && firstAccountOfferOpen(beforeAccount);
       applyCapture(accountReply.capture);
       skipPromptSync.current = true;
-      appendReply(text, { text: accountReply.text });
+      appendReply(text, firstOfferSkip ? nextFoxAsk(getFoxDraft()) : { text: accountReply.text });
       return;
     }
     if (accountReply?.capture?.field === "account-email" || accountReply?.capture?.field === "account-phone") {

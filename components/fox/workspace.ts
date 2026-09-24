@@ -612,6 +612,8 @@ import {
 import {
   ACCOUNT_EMAIL_ASK,
   ACCOUNT_FILE_YOURS,
+  ACCOUNT_FIRST_OFFER,
+  ACCOUNT_FIRST_WHY,
   ACCOUNT_SAVE_ASK,
   ACCOUNT_WHY_SENTENCE,
   accountAskOf,
@@ -619,6 +621,8 @@ import {
   accountSaveWallActions,
   accountWorkspaceReply,
   applyAccountCapture,
+  firstAccountOfferActions,
+  firstAccountOfferOpen,
   isAccountMailWaitLine,
   lastFoxLine,
 } from "./account";
@@ -4008,6 +4012,12 @@ export function nextFoxAsk(draft: FoxIntakeDraft): {
   facts?: ReturnType<typeof workspacePromptCopy>["facts"];
   actions?: FoxAction[];
 } {
+  if (firstAccountOfferOpen(draft)) {
+    return {
+      text: ACCOUNT_FIRST_OFFER,
+      actions: firstAccountOfferActions(),
+    };
+  }
   if (fileNeedsCaliforniaAsk(draft)) {
     return workspacePromptCopy("geo-stop", draft);
   }
@@ -4371,7 +4381,13 @@ function isParkedPostLinkLine(text: string) {
   const line = text.trim();
   if (!line) return true;
   if (isAccountMailWaitLine(line)) return true;
-  if (line === ACCOUNT_SAVE_ASK || line === ACCOUNT_EMAIL_ASK || line === ACCOUNT_WHY_SENTENCE) {
+  if (
+    line === ACCOUNT_SAVE_ASK ||
+    line === ACCOUNT_EMAIL_ASK ||
+    line === ACCOUNT_WHY_SENTENCE ||
+    line === ACCOUNT_FIRST_OFFER ||
+    line === ACCOUNT_FIRST_WHY
+  ) {
     return true;
   }
   if (line === MOTION_COPY.in_queue || /ONYX has this for review/i.test(line)) return true;
@@ -4735,6 +4751,12 @@ function workspaceAskCopy(
     };
   }
   if (prompt === "product") {
+    if (firstAccountOfferOpen(draft)) {
+      return {
+        text: ACCOUNT_FIRST_OFFER,
+        actions: firstAccountOfferActions(),
+      };
+    }
     const current = productIntentLabel(draft.productIntent);
     if (current && draft.correcting === "product") {
       return {
@@ -5225,6 +5247,12 @@ export function workspaceGreeting(draft: FoxIntakeDraft): {
   facts?: PreviewFact[];
   actions?: FoxAction[];
 } {
+  if (firstAccountOfferOpen(draft)) {
+    return {
+      text: ACCOUNT_FIRST_OFFER,
+      actions: firstAccountOfferActions(),
+    };
+  }
   const prompt = workspacePrompt(draft);
   if (prompt === "product" || prompt === "intent") {
     return workspacePromptCopy(prompt, draft);
@@ -7871,6 +7899,11 @@ export function workspaceReply(
   const q = text.trim();
   const lower = q.toLowerCase();
   const accountNow = accountWorkspaceReply(q, draft);
+  if (accountNow?.capture?.field === "skip-account" && firstAccountOfferOpen(draft)) {
+    const after = applyAccountCapture(draft, { field: "skip-account" });
+    const next = nextFoxAsk(after);
+    return { ...next, capture: { field: "skip-account" } };
+  }
   if (accountNow) return accountNow;
   const prompt = workspacePrompt(draft);
   if (asksWhatElseOnReturn(q) && taxReturnPacketSettled(draft) && !inQueueEnding(draft)) {
