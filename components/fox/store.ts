@@ -57,6 +57,7 @@ import {
   mergeAccountMessages,
   staffDeskMessageFact,
 } from "@/lib/account/core";
+import { writeThreadAnswersToFile } from "./threadAnswers";
 import {
   applyAccountCapture,
   applyAccountCreated,
@@ -2122,7 +2123,8 @@ export function linkedAccountRefreshQuery(): { token?: string; fileId?: string }
 
 export function applyAccountResume(draft: FoxIntakeDraft, messages: FoxMessage[], session?: AccountSession) {
   accountResumePending = false;
-  const consumed = applyAccountLetterOpened({ ...draft, workspaceFlow: true });
+  const filled = writeThreadAnswersToFile(draft, messages);
+  const consumed = applyAccountLetterOpened({ ...filled, workspaceFlow: true });
   const desk = deskLineAfterAccountConsume(consumed);
   current = ensureFileId(consumed);
   persist(current);

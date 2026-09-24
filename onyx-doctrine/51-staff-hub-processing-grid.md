@@ -1,6 +1,6 @@
 # 51 — staff hub processing grid
 
-**Status:** READY `bbb8cdf` / `dpl_5JwhfUJ7E1NaohQTuNEdNtUcKMmx` — not ACCEPT.  
+**Status:** ACCEPT `bbb8cdf` CLOSED by founder. Layout stays closed.  
 **Date:** 2026-09-24  
 **Host:** https://start.onyxdirect.com only  
 **PR:** #18 · branch `cursor/live-rateflow-preview-bc93`  

@@ -27,6 +27,7 @@ import {
 } from "@/lib/account/server";
 import type { FoxIntakeDraft, FoxMessage } from "@/components/fox/types";
 import { applyAccountCreated } from "@/components/fox/account";
+import { writeThreadAnswersToFile } from "@/components/fox/threadAnswers";
 
 export const runtime = "nodejs";
 
@@ -99,6 +100,18 @@ export async function GET(request: Request) {
   if (!record) {
     return NextResponse.json({ error: "not_found" }, { status: 404 });
   }
+  const repairedDraft = writeThreadAnswersToFile(record.draft, record.messages);
+  if (
+    repairedDraft.firstLienAmount !== record.draft.firstLienAmount ||
+    repairedDraft.loanAmountValue !== record.draft.loanAmountValue ||
+    repairedDraft.creditBand !== record.draft.creditBand ||
+    repairedDraft.whoOnLoan !== record.draft.whoOnLoan ||
+    repairedDraft.liveQuote?.rate !== record.draft.liveQuote?.rate
+  ) {
+    const repaired = persistAccountRecord(record, repairedDraft, record.messages);
+    await saveAccountRecord(repaired);
+    return NextResponse.json(snapshotOf(repaired));
+  }
   return NextResponse.json(snapshotOf(record));
 }
 
@@ -125,8 +138,10 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "not_found" }, { status: 404 });
     }
     const next = persistLiveAccountRecord(existing, draft, messages);
-    await saveAccountRecord(next);
-    return NextResponse.json(snapshotOf(next));
+    const repairedDraft = writeThreadAnswersToFile(next.draft, next.messages);
+    const repaired = persistAccountRecord(next, repairedDraft, next.messages);
+    await saveAccountRecord(repaired);
+    return NextResponse.json(snapshotOf(repaired));
   }
   if (!draft) {
     return NextResponse.json({ error: "file_required" }, { status: 400 });

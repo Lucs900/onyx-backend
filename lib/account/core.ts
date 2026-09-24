@@ -169,6 +169,63 @@ export function shouldKeepLiveAccountDraft(
   return fileHasResumeFacts(existing) && !fileHasResumeFacts(incoming);
 }
 
+function hasAmount(value?: number | null) {
+  return typeof value === "number" && Number.isFinite(value) && value > 0;
+}
+
+function pickAmount(existing?: number | null, incoming?: number | null) {
+  if (hasAmount(incoming)) return incoming;
+  return existing;
+}
+
+function pickText(existing?: string | null, incoming?: string | null) {
+  const next = incoming?.trim();
+  if (next) return incoming;
+  return existing;
+}
+
+/** Stale mid-file persist must not blank Lien / Line / Credit already on the File. */
+export function mergeFileDraft(existing: FoxIntakeDraft, incoming: FoxIntakeDraft): FoxIntakeDraft {
+  const firstLienAmount = pickAmount(existing.firstLienAmount, incoming.firstLienAmount);
+  const loanAmountValue = pickAmount(existing.loanAmountValue, incoming.loanAmountValue);
+  const propertyValueAmount = pickAmount(existing.propertyValueAmount, incoming.propertyValueAmount);
+  const creditBand = pickText(existing.creditBand, incoming.creditBand);
+  const propertyType = pickText(existing.propertyType, incoming.propertyType);
+  const propertyZip = pickText(existing.propertyZip, incoming.propertyZip);
+  const whoOnLoan = pickText(existing.whoOnLoan, incoming.whoOnLoan);
+  const productIntent = incoming.productIntent || existing.productIntent;
+  const occupancyValue = incoming.occupancyChoice?.value || existing.occupancyChoice?.value;
+  const liveQuote = incoming.liveQuote ?? existing.liveQuote;
+  return {
+    ...existing,
+    ...incoming,
+    productIntent,
+    propertyValueAmount,
+    firstLienAmount,
+    firstLienAsked: Boolean(incoming.firstLienAsked || existing.firstLienAsked || hasAmount(firstLienAmount)),
+    loanAmountValue,
+    amountAsked: Boolean(incoming.amountAsked || existing.amountAsked || hasAmount(loanAmountValue)),
+    helocLineAsked: Boolean(incoming.helocLineAsked || existing.helocLineAsked || hasAmount(loanAmountValue)),
+    creditBand,
+    creditAsked: Boolean(incoming.creditAsked || existing.creditAsked || creditBand),
+    propertyType: propertyType as FoxIntakeDraft["propertyType"],
+    propertyTypeAsked: Boolean(incoming.propertyTypeAsked || existing.propertyTypeAsked || propertyType),
+    propertyZip,
+    propertyZipAsked: Boolean(incoming.propertyZipAsked || existing.propertyZipAsked || propertyZip),
+    whoOnLoan: whoOnLoan as FoxIntakeDraft["whoOnLoan"],
+    whoOnLoanAsked: Boolean(incoming.whoOnLoanAsked || existing.whoOnLoanAsked || whoOnLoan),
+    occupancyChoice: occupancyValue
+      ? { ...(incoming.occupancyChoice ?? existing.occupancyChoice), value: occupancyValue }
+      : incoming.occupancyChoice ?? existing.occupancyChoice,
+    liveQuote,
+    liveQuoteKey: incoming.liveQuoteKey ?? existing.liveQuoteKey,
+    liveQuoteStatus: incoming.liveQuoteStatus ?? existing.liveQuoteStatus,
+    liveCouponSettled: Boolean(incoming.liveCouponSettled || existing.liveCouponSettled),
+    incomeType: incoming.incomeType?.value ? incoming.incomeType : existing.incomeType,
+    incomeAsked: Boolean(incoming.incomeAsked || existing.incomeAsked),
+  };
+}
+
 export const STAFF_DESK_FACT_ID = "staff-desk";
 
 export function staffDeskMessageFact() {
@@ -238,7 +295,7 @@ export function persistLiveAccountRecord(
   }
   return persistAccountRecord(
     record,
-    draft,
+    mergeFileDraft(record.draft, draft),
     mergeAccountMessages(record.messages, messages, record.draft),
     now,
   );
