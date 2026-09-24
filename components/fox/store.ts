@@ -53,7 +53,7 @@ import {
   restripeGatheringOrReady,
 } from "./motion";
 import { applyStaffDeskSend, type StaffDeskInput } from "./processingHub";
-import { applyAccountCapture, consumeLinkedAccountDraft } from "./account";
+import { applyAccountCapture, applyAccountCreated, consumeLinkedAccountDraft } from "./account";
 import { FAILED_READ_NOTE, isUnreadNote } from "@/lib/docs/accept";
 import {
   applyExtractedFields,
@@ -2153,16 +2153,13 @@ export async function createLinkedAccount(input: { email?: string; phone?: strin
   }
   const token = new URL(snapshot.magicLink, "https://onyx.local").searchParams.get("account") || "";
   if (token) writeAccountSession({ token, fileId: snapshot.fileId, accountId: snapshot.accountId });
-  const linked = {
-    ...current,
-    fileId: snapshot.fileId,
-    accountId: snapshot.accountId,
-    accountAsk: input.phone ? ("code" as const) : ("sent" as const),
-    accountSkipped: false,
-    accountSaveAsk: false,
-    accountChannel: input.phone ? ("phone" as const) : ("email" as const),
-  };
-  commit(linked.pendingFinish === "proceed" ? applyProceedMotion(linked) : linked);
+  commit(
+    applyAccountCreated(current, {
+      fileId: snapshot.fileId,
+      accountId: snapshot.accountId,
+      channel: input.phone ? "phone" : "email",
+    }),
+  );
   persistLinkedAccountFile();
   return snapshot;
 }

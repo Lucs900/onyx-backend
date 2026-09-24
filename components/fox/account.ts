@@ -406,4 +406,24 @@ export function applyAccountSaveAsk(draft: FoxIntakeDraft): FoxIntakeDraft {
   };
 }
 
+/** Letter sent. Keep gathering — do not auto-send the File to review. */
+export function applyAccountCreated(
+  draft: FoxIntakeDraft,
+  input: { fileId?: string; accountId: string; channel: "email" | "phone" },
+): FoxIntakeDraft {
+  return {
+    ...draft,
+    fileId: input.fileId || draft.fileId,
+    accountId: input.accountId,
+    accountAsk: input.channel === "phone" ? "code" : "sent",
+    accountSkipped: false,
+    accountSaveAsk: false,
+    accountChannel: input.channel,
+    pendingFinish: undefined,
+    motion: draft.motion === "in_queue" || draft.motion === "escalated" ? draft.motion : "gathering",
+    nextActor: draft.motion === "in_queue" || draft.motion === "escalated" ? draft.nextActor : "You",
+    waitingOn: draft.motion === "in_queue" || draft.motion === "escalated" ? draft.waitingOn : "borrower",
+  };
+}
+
 export { magicLinkFor };

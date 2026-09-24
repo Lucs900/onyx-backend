@@ -50,6 +50,7 @@ import {
   accountSentCopy,
   accountSideActions,
   applyAccountCapture,
+  applyAccountCreated,
   applyAccountSaveAsk,
   consumeLinkedAccountDraft,
   foxLineLeaksAccountSecret,
@@ -508,6 +509,20 @@ async function main() {
     "Request human",
   ]);
   assert.ok(!labels(nextFoxAsk(wipedHeloc).actions).includes("Ask Fox"));
+  const afterLetter = applyAccountCreated(unsaved, {
+    accountId: opened.draft.accountId,
+    channel: "email",
+  });
+  assert.equal(afterLetter.accountId, opened.draft.accountId);
+  assert.equal(afterLetter.accountSaveAsk, false);
+  assert.equal(afterLetter.pendingFinish, undefined);
+  assert.equal(afterLetter.motion, "gathering");
+  assert.equal(statusCopy(afterLetter), "gathering");
+  assert.notEqual(afterLetter.motion, "in_queue");
+  const sendSource = readFileSync(new URL("../lib/account/send.ts", import.meta.url), "utf8");
+  assert.match(sendSource, /subject: "Your ONYX File"/);
+  assert.match(sendSource, /ONYX Direct <lucas@onyxdirect\.com>/);
+  assert.match(sendSource, /ACCOUNT_RESUME_ORIGIN_LOCKED = "https:\/\/start\.onyxdirect\.com"/);
   const accounted = justMeSkipProceed(withLinkedAccount(notNow));
   assert.equal(accounted.motion, "in_queue");
 
