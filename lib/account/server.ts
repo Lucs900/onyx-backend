@@ -179,7 +179,7 @@ export async function locateAccountByFileId(fileId: string): Promise<AccountLoca
       if (pathname.includes(wanted)) named.add(pathname);
     }
   }
-  const listed = [...named];
+  const listed = Array.from(named);
   const docsListed = (await listPathnames("fox-intake/")).filter((pathname) => pathname.includes(wanted));
 
   for (const pathname of listed) {
