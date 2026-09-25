@@ -4,6 +4,12 @@
  * Never credit pull, lock, AU, SSN, BNTouch, LO-will-contact, green approved.
  */
 import { LAST_YEAR_W2_STILL_USEFUL, stillUsefulSpokenItems } from "./fileWrite";
+import {
+  PAYSTUB_MONTHLY_FIELD,
+  QUALIFYING_INCOME_FIELD,
+  WAGE_MONTHLY_FIELD,
+  parseExtractMoney,
+} from "./qualifyingIncome";
 import { HIGH_LTV_CAUTION, fileCompleteness, isHelocFile, showsAgencyCompleteness } from "./completeness";
 import { withHelocToolQuote } from "./heloc";
 import {
@@ -190,18 +196,33 @@ function shellRow(
   };
 }
 
-function qiShell(facts: ReturnType<typeof previewFacts>): HubRow {
-  const found = factOf(facts, "qualifying");
-  const raw = (found?.value ?? "").trim();
-  if (!raw || raw === HUB_EMPTY) return shellRow("qualifying", "QI");
-  const [amount, ...rest] = raw.split(" · ");
-  const method = rest.join(" · ").trim();
-  const methodNote = /w-?2|stub|sch(?:edule)?\s*c|k-?1|rental|box 5|cover/i.test(method)
-    ? method
-    : /w-?2|stub|sch(?:edule)?\s*c|k-?1|rental|box 5|cover/i.test(found?.note ?? "")
-      ? found?.note
-      : method || undefined;
-  return shellRow("qualifying", "QI", amount, methodNote);
+function confirmedStoredMoney(draft: FoxIntakeDraft, field: string) {
+  const fact = draft.facts?.[field];
+  if (!fact?.confirmed) return null;
+  const amount = parseExtractMoney(String(fact.value ?? ""));
+  return amount != null && amount > 0 ? amount : null;
+}
+
+function hubMoney(amount: number) {
+  return `$${Math.round(amount).toLocaleString("en-US")}`;
+}
+
+/** Written File wage only. Never pending. Never /12. Never a suggestion. */
+export function hubQiValue(draft: FoxIntakeDraft): { value: string; note?: string } {
+  for (const field of [PAYSTUB_MONTHLY_FIELD, QUALIFYING_INCOME_FIELD, WAGE_MONTHLY_FIELD]) {
+    const amount = confirmedStoredMoney(draft, field);
+    if (amount != null) return { value: `${hubMoney(amount)} / mo` };
+  }
+  for (const field of ["w2_box5", "medicare_wages"] as const) {
+    const amount = confirmedStoredMoney(draft, field);
+    if (amount != null) return { value: hubMoney(amount), note: "Box 5 · annual" };
+  }
+  return { value: "" };
+}
+
+export function hubQiRow(draft: FoxIntakeDraft): HubRow {
+  const qi = hubQiValue(draft);
+  return shellRow("qualifying", "QI", qi.value, qi.note);
 }
 
 function hubLiveDraft(draft: FoxIntakeDraft): FoxIntakeDraft {
@@ -352,7 +373,7 @@ export function hubGridRows(draft: FoxIntakeDraft): HubRow[] {
       shellRow("b1", "B1", borrowerOne),
       shellRow("b2", "B2", borrowerTwo),
       shellRow("count", "Count", count),
-      qiShell(facts),
+      hubQiRow(draft),
       shellRow("credit", "FICO", credit?.value, credit?.note, true),
       shellRow("status", "Status", hubStatusValue(draft), hubCompletenessWhisper(draft)),
       shellRow("next", "Next", String(nextActorOf(draft) ?? "")),
