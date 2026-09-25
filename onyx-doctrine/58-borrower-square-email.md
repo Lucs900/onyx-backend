@@ -1,6 +1,6 @@
 # 58 — Email cell inside the Borrower square
 
-**Status:** FAIL `ec2f00d` — Email broke inside words. OPEN wrap fix. Preview only. Do not merge.  
+**Status:** READY wrap fix `9143dd2`. FAIL `ec2f00d` closed for mid-word wrap. Preview only. Do not merge. READY ≠ ACCEPT.  
 **Date:** 2026-09-24  
 **Host:** https://start.onyxdirect.com only  
 **PR:** #18 · branch `cursor/live-rateflow-preview-bc93`  
@@ -47,6 +47,9 @@ Did not scrape the thread.
 No 1040. Phone parked. Rate sentence parked. Pay stub stays off Need.
 
 ## Tip
-SHA `ec2f00d` · `dpl_CYxsg5Tv1dqJxduGScuaHC5swWM6`  
+SHA `9143dd2` · `dpl_J3XzxdXTRNqBjnUpcsHNDJQKGzkd`  
 Hub: https://start.onyxdirect.com/staff/hub?file=afdb0ecf-a55d-4234-82f2-47e878fd14c2  
+Wrap: `<wbr>` after `@` and each dot · `.staff-hub-cell__value--email { overflow-wrap: normal; word-break: normal }` · cell `grid-column: span 2`.  
+Wide and narrow: `lucas@onyxlending.com` on one line. Never mid-word.  
+Storage unchanged: Blob `account/file/<id>.json` key `email` = `lucas@onyxlending.com`. Not `draft.contact.email`.  
 READY ≠ ACCEPT. Do not merge. Do not ACCEPT.
