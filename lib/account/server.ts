@@ -50,6 +50,14 @@ export type AccountLocateReason =
   | "not_in_blob"
   | "blob_not_ready";
 
+export type AccountWageHit = {
+  pathname: string;
+  fileId: string;
+  borrowerName?: string;
+  w2_box5?: unknown;
+  qualifying_income?: unknown;
+};
+
 export type AccountLocate = {
   record?: AccountRecord;
   exactPath: string;
@@ -60,7 +68,27 @@ export type AccountLocate = {
   storeReady: boolean;
   prefixCounts: Record<string, number>;
   listError?: string;
+  wageHits: AccountWageHit[];
 };
+
+function wageHitFrom(record: AccountRecord, pathname: string): AccountWageHit | undefined {
+  const name = String(
+    record.draft.borrowerName ??
+      record.draft.contact?.fullName?.value ??
+      record.draft.facts?.full_name?.value ??
+      "",
+  ).trim();
+  const box5 = record.draft.facts?.w2_box5;
+  const qi = record.draft.facts?.qualifying_income;
+  if (!box5 && !qi && !/raymond/i.test(name)) return undefined;
+  return {
+    pathname,
+    fileId: record.fileId,
+    borrowerName: name || undefined,
+    w2_box5: box5,
+    qualifying_income: qi,
+  };
+}
 
 function asAccountRecord(parsed: unknown, expectedFileId?: string): AccountRecord | undefined {
   if (!parsed || typeof parsed !== "object") return undefined;
@@ -157,6 +185,7 @@ export async function locateAccountByFileId(fileId: string): Promise<AccountLoca
   const exactPath = filePath(wanted);
   const storeReady = serverBlobReady();
   const prefixCounts: Record<string, number> = {};
+  const wageHits: AccountWageHit[] = [];
   const empty = (
     reason: AccountLocateReason,
     listed: string[] = [],
@@ -170,6 +199,7 @@ export async function locateAccountByFileId(fileId: string): Promise<AccountLoca
     storeReady,
     prefixCounts,
     listError,
+    wageHits,
   });
 
   const memoryHit = processStore().getByFileId(wanted);
@@ -183,6 +213,7 @@ export async function locateAccountByFileId(fileId: string): Promise<AccountLoca
       reason: "memory",
       storeReady,
       prefixCounts,
+      wageHits,
     };
   }
   if (!storeReady) return empty("blob_not_ready");
@@ -198,6 +229,7 @@ export async function locateAccountByFileId(fileId: string): Promise<AccountLoca
       reason: "exact_key",
       storeReady,
       prefixCounts,
+      wageHits,
     };
   }
 
@@ -230,29 +262,37 @@ export async function locateAccountByFileId(fileId: string): Promise<AccountLoca
         storeReady,
         prefixCounts,
         listError,
+        wageHits,
       };
     }
   }
 
+  const seenHit = new Set<string>();
   for (const prefix of ["account/email/", "account/phone/", "account/token/", "account/code/", "account/file/"]) {
     const page = await listPathnames(prefix);
     prefixCounts[prefix] = page.pathnames.length;
     if (page.error && !listError) listError = `${prefix}: ${page.error}`;
     for (const pathname of page.pathnames) {
-      if (named.has(pathname)) continue;
-      const record = await readBlobRecord(pathname, wanted);
-      if (record) {
+      const record = await readBlobRecord(pathname);
+      if (!record) continue;
+      if (record.fileId === wanted) {
         return {
           record,
           exactPath,
-          listed: listed.concat([pathname]),
+          listed: listed.concat(named.has(pathname) ? [] : [pathname]),
           docsListed,
           storedAt: pathname,
           reason: "account_scan",
           storeReady,
           prefixCounts,
           listError,
+          wageHits,
         };
+      }
+      const hit = wageHitFrom(record, pathname);
+      if (hit && !seenHit.has(hit.fileId)) {
+        seenHit.add(hit.fileId);
+        wageHits.push(hit);
       }
     }
   }

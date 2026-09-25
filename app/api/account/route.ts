@@ -117,6 +117,7 @@ export async function GET(request: Request) {
                 storeReady: located.storeReady,
                 prefixCounts: located.prefixCounts,
                 listError: located.listError ?? null,
+                wageHits: located.wageHits,
               },
             }
           : {}),

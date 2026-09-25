@@ -10,6 +10,7 @@ function main() {
   assert.match(server, /export async function locateAccountByFileId/);
   assert.match(server, /list\(\{ prefix/);
   assert.match(server, /prefixCounts/);
+  assert.match(server, /wageHits/);
   assert.match(server, /account\/file\/\$\{wanted\}/);
   assert.match(server, /account_scan/);
   assert.match(server, /function asAccountRecord/);
