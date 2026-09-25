@@ -58,6 +58,8 @@ export type AccountLocate = {
   storedAt?: string;
   reason: AccountLocateReason;
   storeReady: boolean;
+  prefixCounts: Record<string, number>;
+  listError?: string;
 };
 
 function asAccountRecord(parsed: unknown, expectedFileId?: string): AccountRecord | undefined {
@@ -81,8 +83,8 @@ function asAccountRecord(parsed: unknown, expectedFileId?: string): AccountRecor
   };
 }
 
-async function listPathnames(prefix: string): Promise<string[]> {
-  if (!serverBlobReady()) return [];
+async function listPathnames(prefix: string): Promise<{ pathnames: string[]; error?: string }> {
+  if (!serverBlobReady()) return { pathnames: [] };
   const pathnames: string[] = [];
   let cursor: string | undefined;
   try {
@@ -93,10 +95,10 @@ async function listPathnames(prefix: string): Promise<string[]> {
       }
       cursor = page.hasMore ? page.cursor : undefined;
     } while (cursor);
-  } catch {
-    return pathnames;
+  } catch (error) {
+    return { pathnames, error: error instanceof Error ? error.message : String(error) };
   }
-  return pathnames;
+  return { pathnames };
 }
 
 async function readBlobRecord(pathname: string, expectedFileId?: string): Promise<AccountRecord | undefined> {
@@ -154,60 +156,108 @@ export async function locateAccountByFileId(fileId: string): Promise<AccountLoca
   const wanted = fileId.trim();
   const exactPath = filePath(wanted);
   const storeReady = serverBlobReady();
-  const empty = (reason: AccountLocateReason, listed: string[] = [], docsListed: string[] = []): AccountLocate => ({
+  const prefixCounts: Record<string, number> = {};
+  const empty = (
+    reason: AccountLocateReason,
+    listed: string[] = [],
+    docsListed: string[] = [],
+    listError?: string,
+  ): AccountLocate => ({
     exactPath,
     listed,
     docsListed,
     reason,
     storeReady,
+    prefixCounts,
+    listError,
   });
 
   const memoryHit = processStore().getByFileId(wanted);
   if (memoryHit) {
-    return { record: memoryHit, exactPath, listed: [], docsListed: [], storedAt: "memory", reason: "memory", storeReady };
+    return {
+      record: memoryHit,
+      exactPath,
+      listed: [],
+      docsListed: [],
+      storedAt: "memory",
+      reason: "memory",
+      storeReady,
+      prefixCounts,
+    };
   }
   if (!storeReady) return empty("blob_not_ready");
 
   const exact = await readBlobRecord(exactPath, wanted);
   if (exact) {
-    return { record: exact, exactPath, listed: [exactPath], docsListed: [], storedAt: exactPath, reason: "exact_key", storeReady };
+    return {
+      record: exact,
+      exactPath,
+      listed: [exactPath],
+      docsListed: [],
+      storedAt: exactPath,
+      reason: "exact_key",
+      storeReady,
+      prefixCounts,
+    };
   }
 
   const named = new Set<string>();
+  let listError: string | undefined;
   for (const prefix of [`account/file/${wanted}`, "account/file/", "account/"]) {
-    for (const pathname of await listPathnames(prefix)) {
+    const page = await listPathnames(prefix);
+    prefixCounts[prefix] = page.pathnames.length;
+    if (page.error && !listError) listError = `${prefix}: ${page.error}`;
+    for (const pathname of page.pathnames) {
       if (pathname.includes(wanted)) named.add(pathname);
     }
   }
   const listed = Array.from(named);
-  const docsListed = (await listPathnames("fox-intake/")).filter((pathname) => pathname.includes(wanted));
+  const docsPage = await listPathnames("fox-intake/");
+  prefixCounts["fox-intake/"] = docsPage.pathnames.length;
+  if (docsPage.error && !listError) listError = `fox-intake/: ${docsPage.error}`;
+  const docsListed = docsPage.pathnames.filter((pathname) => pathname.includes(wanted));
 
   for (const pathname of listed) {
     const record = await readBlobRecord(pathname, wanted);
     if (record) {
-      return { record, exactPath, listed, docsListed, storedAt: pathname, reason: "prefix_list", storeReady };
+      return {
+        record,
+        exactPath,
+        listed,
+        docsListed,
+        storedAt: pathname,
+        reason: "prefix_list",
+        storeReady,
+        prefixCounts,
+        listError,
+      };
     }
   }
 
   for (const prefix of ["account/email/", "account/phone/", "account/token/", "account/code/", "account/file/"]) {
-    for (const pathname of await listPathnames(prefix)) {
+    const page = await listPathnames(prefix);
+    prefixCounts[prefix] = page.pathnames.length;
+    if (page.error && !listError) listError = `${prefix}: ${page.error}`;
+    for (const pathname of page.pathnames) {
       if (named.has(pathname)) continue;
       const record = await readBlobRecord(pathname, wanted);
       if (record) {
         return {
           record,
           exactPath,
-          listed: [...listed, pathname],
+          listed: listed.concat([pathname]),
           docsListed,
           storedAt: pathname,
           reason: "account_scan",
           storeReady,
+          prefixCounts,
+          listError,
         };
       }
     }
   }
 
-  return empty(listed.length ? "listed_no_parse" : "not_in_blob", listed, docsListed);
+  return empty(listed.length ? "listed_no_parse" : "not_in_blob", listed, docsListed, listError);
 }
 
 export async function loadAccountByFileId(fileId: string) {

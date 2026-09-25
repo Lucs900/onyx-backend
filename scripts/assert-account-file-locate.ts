@@ -9,6 +9,7 @@ function main() {
   const server = readFileSync(new URL("../lib/account/server.ts", import.meta.url), "utf8");
   assert.match(server, /export async function locateAccountByFileId/);
   assert.match(server, /list\(\{ prefix/);
+  assert.match(server, /prefixCounts/);
   assert.match(server, /account\/file\/\$\{wanted\}/);
   assert.match(server, /account_scan/);
   assert.match(server, /function asAccountRecord/);

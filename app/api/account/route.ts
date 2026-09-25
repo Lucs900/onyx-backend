@@ -115,6 +115,8 @@ export async function GET(request: Request) {
                 listed: located.listed,
                 docsListed: located.docsListed,
                 storeReady: located.storeReady,
+                prefixCounts: located.prefixCounts,
+                listError: located.listError ?? null,
               },
             }
           : {}),
@@ -134,6 +136,8 @@ export async function GET(request: Request) {
         listed: located.listed,
         docsListed: located.docsListed,
         storeReady: located.storeReady,
+        prefixCounts: located.prefixCounts,
+        listError: located.listError ?? null,
         hasToken: Boolean(record.token),
         borrowerName: record.draft.borrowerName ?? null,
         incomeType: record.draft.incomeType ?? null,
