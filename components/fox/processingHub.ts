@@ -281,13 +281,20 @@ function storedEmail(raw?: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value) ? value : "";
 }
 
-/** Contact email first. Else the saved account email. Never invent. */
-export function hubEmailValue(draft: FoxIntakeDraft, accountEmail?: string) {
-  return storedEmail(draft.contact?.email?.value) || storedEmail(accountEmail);
+/** Account record email only. Never draft.contact.email. Never invent. */
+export function hubEmailValue(_draft: FoxIntakeDraft, accountEmail?: string) {
+  return storedEmail(accountEmail);
 }
 
 export function hubEmailRow(draft: FoxIntakeDraft, accountEmail?: string): HubRow {
   return shellRow("email", "Email", hubEmailValue(draft, accountEmail));
+}
+
+/** Break only after @ or a dot. Never inside a word. */
+export function hubEmailWrapParts(value: string): string[] {
+  const stored = storedEmail(value);
+  if (!stored) return [];
+  return stored.split(/(?<=[@.])/).filter(Boolean);
 }
 
 export function hubGridRows(draft: FoxIntakeDraft): HubRow[] {

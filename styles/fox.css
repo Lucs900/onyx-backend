@@ -831,6 +831,15 @@
   overflow-wrap: anywhere;
 }
 
+.staff-hub-cell--email {
+  grid-column: span 2;
+}
+
+.staff-hub-cell__value--email {
+  overflow-wrap: normal;
+  word-break: normal;
+}
+
 .staff-hub-cell__value--loud {
   font-size: 22px;
   line-height: 26px;

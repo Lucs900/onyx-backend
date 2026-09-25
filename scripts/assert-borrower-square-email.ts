@@ -1,7 +1,7 @@
 /**
  * Borrower square Email is the address already saved on the File.
- * Contact email first. Else account record email. Empty = —. Do not invent.
- * Count B1 B2 FICO stay. Other squares stay. /start closed.
+ * Account record email only. Never draft.contact.email. Empty = —.
+ * Wrap only after @ or a dot. Count B1 B2 FICO stay. /start closed.
  */
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -15,6 +15,7 @@ import {
   HUB_EMPTY,
   HUB_SQUARES,
   hubEmailRow,
+  hubEmailWrapParts,
   hubNeedRow,
   hubSquares,
   processingHubView,
@@ -69,7 +70,9 @@ function main() {
       email: { ...closed.contact.email, value: "lucas@onyxlending.com" },
     },
   };
-  assert.equal(hubEmailRow(onContact).value, "lucas@onyxlending.com");
+  assert.equal(hubEmailRow(onContact).value, HUB_EMPTY);
+  assert.equal(hubEmailWrapParts("lucas@onyxlending.com").join(""), "lucas@onyxlending.com");
+  assert.deepEqual(hubEmailWrapParts("lucas@onyxlending.com"), ["lucas@", "onyxlending.", "com"]);
 
   const record = createAccountRecord({
     draft: closed,
@@ -98,14 +101,22 @@ function main() {
 
   const hubPage = readFileSync(new URL("../components/fox/ProcessingHub.tsx", import.meta.url), "utf8");
   assert.match(hubPage, /hubEmailRow\(draft, getResumedAccountEmail\(\)\)/);
+  assert.match(hubPage, /hubEmailWrapParts/);
+  assert.match(hubPage, /<wbr \/>/);
+  assert.match(hubPage, /staff-hub-cell__value--email/);
   assert.doesNotMatch(hubPage, /paystub/);
+  const css = readFileSync(new URL("../styles/fox.css", import.meta.url), "utf8");
+  assert.match(css, /staff-hub-cell__value--email \{\n  overflow-wrap: normal;\n  word-break: normal;/);
+  assert.match(css, /staff-hub-cell--email \{\n  grid-column: span 2;/);
+  assert.doesNotMatch(css, /staff-hub-cell__value--email \{[\s\S]*?(anywhere|break-all|break-word)/);
   const start = readFileSync(new URL("../components/fox/StartWorkspace.tsx", import.meta.url), "utf8");
   assert.doesNotMatch(start, /hubEmailRow/);
   assert.doesNotMatch(start, /staff-hub-squares/);
+  assert.doesNotMatch(start, /staff-hub-cell--email/);
 
   memoryAccountStore().put(record);
   console.log(
-    "assert-borrower-square-email: Email from contact or account record; empty —; Count B1 B2 FICO stay; /start closed",
+    "assert-borrower-square-email: Email from account record; wrap after @ or dot; empty —; Count B1 B2 FICO stay; /start closed",
   );
 }
 

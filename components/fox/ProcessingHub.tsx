@@ -18,6 +18,7 @@ import {
   HUB_EMPTY,
   HUB_SQUARES,
   hubEmailRow,
+  hubEmailWrapParts,
   hubNeedRow,
   processingHubView,
   SILENT_DESK_ERROR,
@@ -240,12 +241,25 @@ export function ProcessingHub() {
 
 function HubCell({ row }: { row: HubRow }) {
   const empty = row.value === HUB_EMPTY;
+  const email = row.id === "email" && !empty;
+  const emailParts = email ? hubEmailWrapParts(row.value) : [];
   return (
-    <div className="staff-hub-cell">
+    <div className={email ? "staff-hub-cell staff-hub-cell--email" : "staff-hub-cell"}>
       <p className="staff-hub-cell__label">{row.label}</p>
-      <p className={empty ? "staff-hub-cell__value is-empty" : "staff-hub-cell__value"}>
-        {row.value}
-      </p>
+      {email ? (
+        <p className="staff-hub-cell__value staff-hub-cell__value--email">
+          {emailParts.map((part, index) => (
+            <span key={`${part}-${index}`} data-email-part={part}>
+              {part}
+              {index < emailParts.length - 1 ? <wbr /> : null}
+            </span>
+          ))}
+        </p>
+      ) : (
+        <p className={empty ? "staff-hub-cell__value is-empty" : "staff-hub-cell__value"}>
+          {row.value}
+        </p>
+      )}
       {row.note ? <p className="staff-hub-cell__note">{row.note}</p> : null}
     </div>
   );

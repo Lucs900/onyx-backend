@@ -1,6 +1,6 @@
 # 58 — Email cell inside the Borrower square
 
-**Status:** READY `ec2f00d` / `dpl_CYxsg5Tv1dqJxduGScuaHC5swWM6` — not ACCEPT.  
+**Status:** FAIL `ec2f00d` — Email broke inside words. OPEN wrap fix. Preview only. Do not merge.  
 **Date:** 2026-09-24  
 **Host:** https://start.onyxdirect.com only  
 **PR:** #18 · branch `cursor/live-rateflow-preview-bc93`  
@@ -21,9 +21,18 @@ Paint only if the File already stores it. If none, show —. Do not invent an ad
 - Move or change the other five squares.
 - Add a second Need.
 
-## Accept walk (held)
+## FAIL `ec2f00d`
+Email painted `lucas@onyxlending.com` as `lucas@ony / xlending.co / m` (broken inside words). Cause: `.staff-hub-cell__value { overflow-wrap: anywhere }`.
+
+## Wrap lock
+Same stored address. Do not invent. Do not use `draft.contact.email`.
+Read `lucas@onyxlending.com` on one line, or break ONLY right after `@` or after a dot. Never inside a word.
+No `word-break: break-all`. No `overflow-wrap: anywhere` / `break-word` on that value.
+`<wbr>` after `@` and after each dot. `overflow-wrap: normal` · `word-break: normal`. Email cell may span two columns.
+
+## Accept walk
 Refresh https://start.onyxdirect.com/staff/hub?file=afdb0ecf-a55d-4234-82f2-47e878fd14c2  
-Borrower square shows Email lucas@onyxlending.com. Count, B1, B2, FICO stay. Other five unchanged. Fox asked nothing new.
+Email reads `lucas@onyxlending.com` with no mid-word break. Count, B1, B2, FICO stay. Other five unchanged. Fox asked nothing new.
 
 ## Email storage source
 Not a SQL table. Vercel Blob object `account/file/afdb0ecf-a55d-4234-82f2-47e878fd14c2.json`.  
