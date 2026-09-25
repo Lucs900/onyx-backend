@@ -1277,7 +1277,12 @@ function persistMigratedMessages(messages: FoxMessage[]) {
 }
 
 function hydrateFoxMessages() {
-  if (messagesHydrated || typeof window === "undefined") return foxMessages;
+  if (typeof window === "undefined") return foxMessages;
+  if (consumeSignOutSentinel()) {
+    wipeSignedOutBrowser();
+    return foxMessages;
+  }
+  if (messagesHydrated) return foxMessages;
   return persistMigratedMessages(readStoredMessages());
 }
 
@@ -1362,6 +1367,8 @@ export const SIGN_OUT_STORAGE_KEYS = [
 ] as const;
 /** Account session is localStorage/sessionStorage only. No cookie is set. */
 export const SIGN_OUT_COOKIE_NAMES: readonly string[] = [];
+/** Survives a same-tab persist race so the next load is a clean guest desk. */
+export const SIGN_OUT_SENTINEL_KEY = "onyx.fox.signedOut";
 
 export function clearPreviewWorkspaceStorage() {
   if (typeof window === "undefined") return;
@@ -1502,6 +1509,10 @@ export function ensureWorkspaceDraft() {
 
 export function hydrateFoxDraft() {
   if (typeof window === "undefined") return current;
+  if (consumeSignOutSentinel()) {
+    wipeSignedOutBrowser();
+    return current;
+  }
   hydrateFoxMessages();
   if (hydrated) return current;
   if (workspaceEntryKey != null) {
@@ -2331,6 +2342,49 @@ function clearSignOutBrowserState() {
   }
 }
 
+function writeSignOutSentinel() {
+  if (typeof window === "undefined") return;
+  try {
+    window.sessionStorage.setItem(SIGN_OUT_SENTINEL_KEY, "1");
+    window.localStorage.setItem(SIGN_OUT_SENTINEL_KEY, "1");
+  } catch {
+    // Private mode / quota.
+  }
+}
+
+function consumeSignOutSentinel() {
+  if (typeof window === "undefined") return false;
+  try {
+    const flagged =
+      window.sessionStorage.getItem(SIGN_OUT_SENTINEL_KEY) === "1" ||
+      window.localStorage.getItem(SIGN_OUT_SENTINEL_KEY) === "1";
+    if (!flagged) return false;
+    window.sessionStorage.removeItem(SIGN_OUT_SENTINEL_KEY);
+    window.localStorage.removeItem(SIGN_OUT_SENTINEL_KEY);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function wipeSignedOutBrowser() {
+  clearSignOutBrowserState();
+  foxMessages = [];
+  messagesHydrated = true;
+  hydrated = true;
+  workspaceEntryKey = null;
+  resumedAccountEmail = "";
+  accountResumePending = false;
+  current = {
+    ...emptyDraft(),
+    path: "acr",
+    workspaceFlow: true,
+  };
+  writeAccountSession(undefined);
+  persist(current);
+  persistMessages([]);
+}
+
 /**
  * Sign out clears this browser. Persist first. Never delete the stored File.
  * Save fail keeps the local copy.
@@ -2354,17 +2408,8 @@ export async function signOutLinkedAccount(): Promise<{
       };
     }
   }
-  clearSignOutBrowserState();
-  foxMessages = [];
-  messagesHydrated = true;
-  hydrated = false;
-  workspaceEntryKey = null;
-  resumedAccountEmail = "";
-  accountResumePending = false;
-  current = emptyDraft();
-  writeAccountSession(undefined);
-  resetWorkspaceForEntry("acr", null);
-  emit();
+  writeSignOutSentinel();
+  wipeSignedOutBrowser();
   return { ok: true, cleared: true, fileId };
 }
 

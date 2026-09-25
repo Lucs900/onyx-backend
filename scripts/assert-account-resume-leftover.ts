@@ -235,6 +235,7 @@ function main() {
   assert.match(storeSource, /onyx\.startPath/);
   assert.match(storeSource, /onyx\.homepageFresh/);
   assert.match(storeSource, /export const SIGN_OUT_COOKIE_NAMES/);
+  assert.match(storeSource, /export const SIGN_OUT_SENTINEL_KEY = "onyx\.fox\.signedOut"/);
   assert.match(storeSource, /export async function persistLinkedAccountFileNow/);
   assert.match(storeSource, /export async function signOutLinkedAccount/);
   assert.match(storeSource, /SIGN_OUT_SAVE_FAILED/);
