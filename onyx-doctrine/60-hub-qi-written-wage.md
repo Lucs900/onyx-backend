@@ -1,6 +1,6 @@
 # 60 — Hub QI shows the wage already written on the File
 
-**Status:** READY `806364f`. Preview only. Do not merge. READY ≠ ACCEPT.  
+**Status:** READY `e953133`. Preview only. Do not merge. READY ≠ ACCEPT.  
 **Date:** 2026-09-25  
 **Host:** https://start.onyxdirect.com only  
 **PR:** #18 · branch `cursor/live-rateflow-preview-bc93`  
@@ -26,12 +26,27 @@ QI inside the Income square on `/staff/hub` paints the wage already written on t
 No 1040. Phone parked. Rate sentence parked. Pay stub stays off Need.
 
 ## Wage storage
-Vercel Blob object `account/file/bd087b10-059f-4c02-9d5c-519dfac30e0f.json`.  
-Public GET `/api/account?file=` for that id returned `not_found` from this walker.  
-W-2 Use this writes WRITTEN `draft.facts.w2_box5` (confirmed, source document) and copies `draft.facts.medicare_wages`. It does not write `draft.facts.qualifying_income` or a monthly $10,000. Fox speech `$120,000 → $10,000 a month` is not storage.  
-QI paints written Box 5 as `$120,000` + `Box 5 · annual`. No /12 in the hub.
+Step 1 was done on the live Preview Blob store (`storeReady: true`, same store as `afdb0ecf-a55d-4234-82f2-47e878fd14c2`).
+
+`list({ prefix })` with the project's token:
+
+- `account/file/bd087b10-059f-4c02-9d5c-519dfac30e0f` → 0
+- `account/file/` → 30 File objects; none are this id
+- `account/` → 61 objects; scanned `account/file/`, `account/email/`, `account/token/`, `account/phone/`, `account/code/` for JSON `fileId === bd087b10` → none
+- `fox-intake/` → 4021 docs; none named with this id
+- `wageHits` → [] (no stored File has `w2_box5`, `qualifying_income`, or a Raymond name)
+
+There is no stored File JSON. `draft.facts.w2_box5` is not present. `qualifying_income` / monthly keys are not present.
+
+**Use this did not write the wage**
+
+GET `/api/account?file=bd087b10-…` `not_found` is not a wrong key and not a missing device cookie. The route does not use a cookie. The object is not in this store. `afdb0ecf` still 200s at `account/file/afdb0ecf-a55d-4234-82f2-47e878fd14c2.json`. The founder hub that shows B1 Raymond Lee · Income W-2 is the device localStorage File after resume 404.
+
+Hub read now lists prefixes and accepts draft without a token. That lookup is not the miss. The miss is: this File was never persisted.
+
+QI paints — . Miss: no stored wage keys.
 
 ## Tip
-SHA `806364f` · `dpl_GU4qoLSvtoA9aJTJHL2Kjrzk5m2A`  
+SHA `e953133` · `dpl_2x9jLVwPFdQ6WDuqJsLjhUAKTR6w`  
 Hub: https://start.onyxdirect.com/staff/hub?file=bd087b10-059f-4c02-9d5c-519dfac30e0f  
 READY ≠ ACCEPT. Do not merge. Do not ACCEPT.
