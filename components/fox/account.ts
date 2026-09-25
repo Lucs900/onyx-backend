@@ -467,6 +467,7 @@ export function applyAccountSaveAsk(draft: FoxIntakeDraft): FoxIntakeDraft {
     ...draft,
     accountSaveAsk: true,
     accountAsk: "offer",
+    guestProceeded: true,
     pendingFinish: "proceed",
     motion: "gathering",
     nextActor: "You",
@@ -475,6 +476,39 @@ export function applyAccountSaveAsk(draft: FoxIntakeDraft): FoxIntakeDraft {
     correcting: null,
   };
 }
+
+/** After Proceed + account. Last line chips. Motion stays gathering. */
+export function accountResumeLastActions(draft: FoxIntakeDraft): FoxAction[] {
+  if (!hasLinkedAccount(draft) || accountSaveAskOpen(draft)) return [];
+  if (!draft.guestProceeded) return [];
+  const chips: FoxAction[] = [
+    {
+      id: "ask-fox",
+      label: "Ask Fox",
+      event: "bubble",
+      capture: { field: "ask-fox" },
+    },
+    {
+      id: "upload-more",
+      label: "Upload more",
+      event: "open-docs",
+      capture: { field: "upload-more" },
+    },
+  ];
+  if (!draft.originatorRequested && draft.motion !== "escalated") {
+    chips.push({
+      id: "request-human",
+      label: "Request human",
+      event: "bubble",
+      capture: { field: "talk-originator" },
+      quiet: true,
+    });
+  }
+  return chips;
+}
+
+export const SIGN_OUT_SAVE_FAILED =
+  "I couldn’t save this File first. Sign out would throw that work away — I’m keeping this browser copy.";
 
 function withoutOpenReviewItems(draft: FoxIntakeDraft): FoxIntakeDraft {
   const workItems = (draft.workItems ?? []).filter(
@@ -515,6 +549,8 @@ export function applyAccountLetterOpened(draft: FoxIntakeDraft): FoxIntakeDraft 
     ...cleared,
     accountSaveAsk: false,
     accountAsk: undefined,
+    guestProceeded: draft.guestProceeded,
+    accountYoursSpoken: draft.accountYoursSpoken,
     pendingFinish: undefined,
     motion: "gathering",
     nextActor: "You",

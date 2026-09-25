@@ -594,8 +594,23 @@ async function main() {
     ],
     openedDesk,
   );
-  assert.equal(lastFoxLine(alreadyAsked), ACCOUNT_FILE_YOURS);
-  assert.ok(alreadyAsked.some((item) => item.text === ACCOUNT_EMAIL_SENT));
+  assert.equal(
+    alreadyAsked.filter((item) => item.role === "fox" && item.text === ACCOUNT_FILE_YOURS).length,
+    1,
+  );
+  assert.ok(!alreadyAsked.some((item) => item.text === ACCOUNT_WHY_SENTENCE));
+  assert.ok(labels(deskStripActions(alreadyAsked, openedLetter)).length > 0);
+  if (openedDesk.text === ACCOUNT_FILE_YOURS) {
+    assert.equal(lastFoxLine(alreadyAsked), ACCOUNT_FILE_YOURS);
+    assert.deepEqual(labels(deskStripActions(alreadyAsked, openedLetter)), [
+      "Ask Fox",
+      "Upload more",
+      "Request human",
+    ]);
+  } else {
+    assert.equal(lastFoxLine(alreadyAsked), openedDesk.text);
+  }
+  assert.ok(alreadyAsked.some((item) => item.text === ACCOUNT_EMAIL_SENT) || lastFoxLine(alreadyAsked) === ACCOUNT_FILE_YOURS);
   const sendSource = readFileSync(new URL("../lib/account/send.ts", import.meta.url), "utf8");
   assert.match(sendSource, /subject: "Your ONYX File"/);
   assert.match(sendSource, /ONYX Direct <lucas@onyxdirect\.com>/);

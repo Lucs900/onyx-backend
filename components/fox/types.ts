@@ -282,6 +282,10 @@ export type FoxIntakeDraft = {
   accountSkipped?: boolean;
   /** Proceed with no account parks here. Not in_queue until saved/accounted. */
   accountSaveAsk?: boolean;
+  /** Guest pressed Proceed. Survives letter consume so resume chips stay Ask Fox. */
+  guestProceeded?: boolean;
+  /** Stored once. Resume must not reprint “This File is yours.” */
+  accountYoursSpoken?: boolean;
   productIntent?: ProductIntent;
   jumboPurpose?: JumboPurpose;
   jumboOffered?: boolean;

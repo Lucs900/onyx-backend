@@ -130,6 +130,9 @@ import {
   ACCOUNT_PHONE_ASK,
   ACCOUNT_SKIPPED_LINE,
   ACCOUNT_SEND_FAILED,
+  ACCOUNT_FILE_YOURS,
+  ACCOUNT_FIRST_OFFER,
+  ACCOUNT_FIRST_WHY,
   ACCOUNT_WHY_SENTENCE,
   HEADER_LOGIN_EVENT,
   LOGIN_LABEL,
@@ -161,6 +164,7 @@ import {
   liveDeskLineOwnsPrompt,
   deskLineAfterAccountConsume,
   withDeskLineAfterAccountConsume,
+  withoutAccountResumeLeftovers,
   isPricingWhenReadySpeech,
   messagesWithLiveQuoteSpeech,
   messagesWithRateOrReadySpeech,
@@ -189,6 +193,7 @@ import {
   structureExplainCopy,
   structureFixPrompt,
   withWorkspaceGuide,
+  PATH_ASK_TEXT,
   workspaceGreeting,
   workspacePrompt,
   workspacePromptCopy,
@@ -721,7 +726,10 @@ function FoxThread({
   const thread = sealStoredFoxThread(
     dropStreetSuggestChips(
       dropAbandonedAddressConfirm(
-        dropResolvedAddressConfirmChips(withoutDuplicateTranscriptAsk(messages), draft),
+        dropResolvedAddressConfirmChips(
+          withoutAccountResumeLeftovers(withoutDuplicateTranscriptAsk(messages)),
+          draft,
+        ),
         draft,
       ),
     ),
@@ -1552,10 +1560,21 @@ export function AlwaysOnFox({
         const linked = getFoxDraft();
         if (hasLinkedAccount(linked) && spoken && isAccountMailWaitLine(spoken.text)) {
           const desk = deskLineAfterAccountConsume(linked);
-          return withDeskLineAfterAccountConsume(prev, desk);
+          return withoutAccountResumeLeftovers(withDeskLineAfterAccountConsume(prev, desk));
         }
         if (spoken && liveDeskLineOwnsPrompt(spoken.text, linked)) {
-          return prev;
+          return withoutAccountResumeLeftovers(prev);
+        }
+        if (hasLinkedAccount(linked)) {
+          if (
+            ask.text === PATH_ASK_TEXT ||
+            ask.text === ACCOUNT_WHY_SENTENCE ||
+            ask.text === ACCOUNT_FIRST_WHY ||
+            ask.text === ACCOUNT_FIRST_OFFER ||
+            ask.text === ACCOUNT_FILE_YOURS
+          ) {
+            return withoutAccountResumeLeftovers(prev);
+          }
         }
       }
       if (mustShowReview && hasReviewAsk(prev)) {

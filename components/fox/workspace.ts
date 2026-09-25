@@ -617,12 +617,14 @@ import {
   ACCOUNT_SAVE_ASK,
   ACCOUNT_WHY_SENTENCE,
   accountAskOf,
+  accountResumeLastActions,
   accountSaveAskOpen,
   accountSaveWallActions,
   accountWorkspaceReply,
   applyAccountCapture,
   firstAccountOfferActions,
   firstAccountOfferOpen,
+  hasLinkedAccount,
   isAccountMailWaitLine,
   lastFoxLine,
 } from "./account";
@@ -4232,7 +4234,9 @@ export function deskStripActions(
     const wall = accountSaveWallActions(draft);
     if (wall.length) return stripStreetSuggest(wall);
   }
-  const thread = withoutDuplicateTranscriptAsk(messages);
+  const resumeChips = accountResumeLastActions(draft);
+  if (resumeChips.length) return stripStreetSuggest(resumeChips);
+  const thread = withoutAccountResumeLeftovers(withoutDuplicateTranscriptAsk(messages));
   let live = -1;
   for (let i = 0; i < thread.length; i += 1) {
     if (thread[i]?.role === "fox") live = i;
@@ -4372,7 +4376,17 @@ export function deskStripActions(
   }
   const desk = deskLineAfterAccountConsume(draft);
   if (spokenOwnsAsk(message.text, desk.text) || message.text === ACCOUNT_FILE_YOURS) {
-    return stripStreetSuggest(desk.actions ?? []);
+    const spoken = desk.actions ?? [];
+    if (spoken.length) return stripStreetSuggest(spoken);
+    const resume = accountResumeLastActions(draft);
+    if (resume.length) return stripStreetSuggest(resume);
+    return [];
+  }
+  if (hasLinkedAccount(draft) && (draft.guestProceeded || draft.accountYoursSpoken)) {
+    const resume = accountResumeLastActions(draft);
+    if (resume.length && (message.text === ACCOUNT_FILE_YOURS || isParkedPostLinkLine(message.text))) {
+      return stripStreetSuggest(resume);
+    }
   }
   return [];
 }
@@ -4407,6 +4421,96 @@ function structureAskAfterAccountConsume(draft: FoxIntakeDraft) {
   });
 }
 
+export function isAccountResumeLeftoverLine(text: string) {
+  const line = text.trim();
+  return (
+    line === ACCOUNT_FILE_YOURS ||
+    line === ACCOUNT_WHY_SENTENCE ||
+    line === ACCOUNT_FIRST_WHY ||
+    line === ACCOUNT_FIRST_OFFER ||
+    line === PATH_ASK_TEXT
+  );
+}
+
+/** Render-check: keep the first yours / why / first-question; drop reprints. */
+export function withoutAccountResumeLeftovers(messages: FoxMessage[]): FoxMessage[] {
+  let seenYours = false;
+  let seenWhy = false;
+  let seenPath = false;
+  let seenOffer = false;
+  const out: FoxMessage[] = [];
+  for (const message of messages) {
+    if (message.role !== "fox") {
+      out.push(message);
+      continue;
+    }
+    const line = message.text.trim();
+    if (line === ACCOUNT_FILE_YOURS) {
+      if (seenYours) continue;
+      seenYours = true;
+      out.push(message);
+      continue;
+    }
+    if (line === ACCOUNT_WHY_SENTENCE || line === ACCOUNT_FIRST_WHY) {
+      if (seenYours || seenWhy) continue;
+      seenWhy = true;
+      out.push(message);
+      continue;
+    }
+    if (line === PATH_ASK_TEXT) {
+      if (seenYours || seenPath) continue;
+      seenPath = true;
+      out.push(message);
+      continue;
+    }
+    if (line === ACCOUNT_FIRST_OFFER) {
+      if (seenYours || seenOffer) continue;
+      seenOffer = true;
+      out.push(message);
+      continue;
+    }
+    out.push(message);
+  }
+  return out;
+}
+
+function isConsumedFinishLine(text: string, draft: FoxIntakeDraft) {
+  if (!hasLinkedAccount(draft)) return false;
+  const line = text.trim();
+  if (line === MOTION_COPY.ready || /i can send this to review/i.test(line)) return true;
+  if (line === MOTION_COPY.askFox) return true;
+  if (line === PATH_ASK_TEXT) return true;
+  return false;
+}
+
+function isRealResumeAskText(text: string) {
+  const line = text.trim();
+  if (!line) return false;
+  if (line === ACCOUNT_FILE_YOURS) return false;
+  if (isParkedPostLinkLine(line)) return false;
+  if (isAccountResumeLeftoverLine(line)) return false;
+  return true;
+}
+
+function withoutTrailingParkedAccountLines(messages: FoxMessage[]): FoxMessage[] {
+  const hasYours = messages.some(
+    (item) => item.role === "fox" && item.text.trim() === ACCOUNT_FILE_YOURS,
+  );
+  if (!hasYours) return messages;
+  let end = messages.length;
+  while (end > 0) {
+    const item = messages[end - 1];
+    if (!item || item.role !== "fox") break;
+    if (item.text.trim() === ACCOUNT_FILE_YOURS) break;
+    if (isParkedPostLinkLine(item.text)) {
+      end -= 1;
+      continue;
+    }
+    break;
+  }
+  return messages.slice(0, end);
+}
+
 /** After `/start?account=` consume. History may keep the mail-wait sentence. */
 export function deskLineAfterAccountConsume(draft: FoxIntakeDraft): {
   text: string;
@@ -4423,10 +4527,19 @@ export function deskLineAfterAccountConsume(draft: FoxIntakeDraft): {
     };
   }
   const next = nextFoxAsk(draft);
-  if (!isParkedPostLinkLine(next.text)) return next;
+  if (isRealResumeAskText(next.text) && !isConsumedFinishLine(next.text, draft)) {
+    const resume = accountResumeLastActions(draft);
+    return resume.length ? { ...next, actions: resume } : next;
+  }
   const structure = structureAskAfterAccountConsume(draft);
-  if (!isParkedPostLinkLine(structure.text)) return structure;
-  return { text: ACCOUNT_FILE_YOURS };
+  if (isRealResumeAskText(structure.text) && !isConsumedFinishLine(structure.text, draft)) {
+    const resume = accountResumeLastActions(draft);
+    return resume.length ? { ...structure, actions: resume } : structure;
+  }
+  return {
+    text: ACCOUNT_FILE_YOURS,
+    actions: accountResumeLastActions(draft),
+  };
 }
 
 /** Consume desk line stays live. Prompt-sync must not reprint the product ask over it. */
@@ -4451,26 +4564,49 @@ export function withDeskLineAfterAccountConsume(
   messages: FoxMessage[],
   ask: { text: string; followUp?: string; facts?: FoxMessage["facts"] },
 ): FoxMessage[] {
-  const last = lastFoxLine(messages);
-  const alreadySpoken = messages.some(
-    (item) => item.role === "fox" && item.text.trim() === ask.text.trim(),
+  const cleaned = withoutAccountResumeLeftovers(messages);
+  const last = lastFoxLine(cleaned);
+  const spokenYours = cleaned.some(
+    (item) => item.role === "fox" && item.text.trim() === ACCOUNT_FILE_YOURS,
   );
-  const text =
-    alreadySpoken && ask.text !== ACCOUNT_FILE_YOURS ? ACCOUNT_FILE_YOURS : ask.text;
-  if (last === text) return messages;
-  if (last && !isParkedPostLinkLine(last)) {
-    return messages;
+  const yoursMessage = (): FoxMessage => ({
+    id: `fox_yours_${Date.now().toString(36)}`,
+    role: "fox",
+    text: ACCOUNT_FILE_YOURS,
+  });
+  const realAsk = isRealResumeAskText(ask.text) ? ask : null;
+
+  if (last && !isParkedPostLinkLine(last) && last !== ACCOUNT_FILE_YOURS) {
+    if (spokenYours) return cleaned;
+    let insertAt = cleaned.length;
+    for (let i = cleaned.length - 1; i >= 0; i -= 1) {
+      if (cleaned[i]?.role === "fox") {
+        insertAt = i;
+        break;
+      }
+    }
+    return withoutAccountResumeLeftovers([
+      ...cleaned.slice(0, insertAt),
+      yoursMessage(),
+      ...cleaned.slice(insertAt),
+    ]);
   }
-  return [
-    ...messages,
-    {
-      id: `fox_desk_${Date.now().toString(36)}`,
-      role: "fox",
-      text,
-      followUp: text === ask.text ? ask.followUp : undefined,
-      facts: text === ask.text ? ask.facts : undefined,
-    },
-  ];
+
+  let next = cleaned;
+  if (!spokenYours) next = [...next, yoursMessage()];
+  if (realAsk && lastFoxLine(next) !== realAsk.text.trim()) {
+    next = [
+      ...next,
+      {
+        id: `fox_desk_${Date.now().toString(36)}`,
+        role: "fox",
+        text: realAsk.text,
+        followUp: realAsk.followUp,
+        facts: realAsk.facts,
+      },
+    ];
+  }
+  return withoutTrailingParkedAccountLines(withoutAccountResumeLeftovers(next));
 }
 
 function spokenOwnsAsk(spoken?: string | null, ask?: string | null) {

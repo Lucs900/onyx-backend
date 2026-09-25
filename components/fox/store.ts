@@ -59,6 +59,8 @@ import {
 } from "@/lib/account/core";
 import { writeThreadAnswersToFile } from "./threadAnswers";
 import {
+  ACCOUNT_FILE_YOURS,
+  SIGN_OUT_SAVE_FAILED,
   applyAccountCapture,
   applyAccountCreated,
   applyAccountLetterOpened,
@@ -115,6 +117,7 @@ import {
   workspacePrompt,
   deskLineAfterAccountConsume,
   withDeskLineAfterAccountConsume,
+  withoutAccountResumeLeftovers,
 } from "./workspace";
 import { hasHelocLineAmount, skipHelocLine, withHelocToolQuote, writeFirstLien, writeHelocLine } from "./heloc";
 import { changeEntityYears } from "./yearsFromEntity";
@@ -569,6 +572,8 @@ function normalize(value: unknown): FoxIntakeDraft {
     accountChannel: raw.accountChannel === "phone" || raw.accountChannel === "email" ? raw.accountChannel : undefined,
     accountSkipped: Boolean(raw.accountSkipped) || undefined,
     accountSaveAsk: Boolean(raw.accountSaveAsk) || undefined,
+    guestProceeded: Boolean(raw.guestProceeded) || undefined,
+    accountYoursSpoken: Boolean(raw.accountYoursSpoken) || undefined,
     productIntent: normalizeProductIntent(raw.productIntent),
     jumboPurpose: raw.jumboPurpose === "buy" || raw.jumboPurpose === "refinance"
       ? raw.jumboPurpose
@@ -1345,6 +1350,18 @@ function markWorkspaceEntry(path?: IntakePath | null) {
 
 const FILE_STORAGE_KEYS = [INTAKE_STORAGE_KEY, FOX_MESSAGES_KEY, START_PATH_KEY, FOX_PANEL_KEY];
 const PREVIEW_STORAGE_KEYS = [...FILE_STORAGE_KEYS, FOX_ACCOUNT_KEY];
+/** Browser keys Sign out clears. File on the account / Blob stays. */
+export const SIGN_OUT_STORAGE_KEYS = [
+  "onyx.foxIntake.draft",
+  "onyx.fox.messages",
+  "onyx.fox.account",
+  "onyx.fox.panelOpen",
+  "onyx.fox.sawLegal",
+  "onyx.startPath",
+  "onyx.homepageFresh",
+] as const;
+/** Account session is localStorage/sessionStorage only. No cookie is set. */
+export const SIGN_OUT_COOKIE_NAMES: readonly string[] = [];
 
 export function clearPreviewWorkspaceStorage() {
   if (typeof window === "undefined") return;
@@ -2133,14 +2150,18 @@ export function applyAccountResume(draft: FoxIntakeDraft, messages: FoxMessage[]
   const filled = writeThreadAnswersToFile(draft, messages);
   const consumed = applyAccountLetterOpened({ ...filled, workspaceFlow: true });
   const desk = deskLineAfterAccountConsume(consumed);
-  current = ensureFileId(consumed);
-  persist(current);
-  persistMigratedMessages(
+  const spoken = withoutAccountResumeLeftovers(
     withDeskLineAfterAccountConsume(
       mergeAccountMessages(getFoxMessages(), messages, consumed),
       desk,
     ),
   );
+  current = {
+    ...ensureFileId(consumed),
+    accountYoursSpoken: spoken.some((item) => item.role === "fox" && item.text.trim() === ACCOUNT_FILE_YOURS),
+  };
+  persist(current);
+  persistMigratedMessages(spoken);
   if (session) writeAccountSession(session);
   hydrated = true;
   workspaceEntryKey = workspaceEntryToken(current.path);
@@ -2270,6 +2291,81 @@ export function persistLinkedAccountFile() {
     persistAccountTimer = undefined;
     flushPersistLinkedAccount();
   }, 200);
+}
+
+/** Awaited persist for Sign out. Fire-and-forget flush must not be used to decide clear. */
+export async function persistLinkedAccountFileNow(): Promise<boolean> {
+  if (typeof window === "undefined") return false;
+  const session = readAccountSession();
+  if (!session?.token) return !current.accountId;
+  if (persistAccountTimer) {
+    window.clearTimeout(persistAccountTimer);
+    persistAccountTimer = undefined;
+  }
+  try {
+    const response = await fetch("/api/account", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        action: "persist",
+        token: session.token,
+        draft: current,
+        messages: getFoxMessages(),
+      }),
+    });
+    return response.ok;
+  } catch {
+    return false;
+  }
+}
+
+function clearSignOutBrowserState() {
+  if (typeof window === "undefined") return;
+  for (const key of SIGN_OUT_STORAGE_KEYS) {
+    try {
+      window.localStorage.removeItem(key);
+      window.sessionStorage.removeItem(key);
+    } catch {
+      // Private mode / quota.
+    }
+  }
+}
+
+/**
+ * Sign out clears this browser. Persist first. Never delete the stored File.
+ * Save fail keeps the local copy.
+ */
+export async function signOutLinkedAccount(): Promise<{
+  ok: boolean;
+  cleared: boolean;
+  message?: string;
+  fileId?: string;
+}> {
+  const session = readAccountSession();
+  const fileId = session?.fileId || current.fileId;
+  if (session?.token || current.accountId) {
+    const saved = await persistLinkedAccountFileNow();
+    if (!saved) {
+      return {
+        ok: false,
+        cleared: false,
+        message: SIGN_OUT_SAVE_FAILED,
+        fileId,
+      };
+    }
+  }
+  clearSignOutBrowserState();
+  foxMessages = [];
+  messagesHydrated = true;
+  hydrated = false;
+  workspaceEntryKey = null;
+  resumedAccountEmail = "";
+  accountResumePending = false;
+  current = emptyDraft();
+  writeAccountSession(undefined);
+  resetWorkspaceForEntry("acr", null);
+  emit();
+  return { ok: true, cleared: true, fileId };
 }
 
 if (typeof window !== "undefined") {
