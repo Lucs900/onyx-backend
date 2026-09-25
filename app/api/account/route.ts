@@ -23,6 +23,7 @@ import {
   loadAccountByFileId,
   loadAccountByPhone,
   loadAccountByToken,
+  locateAccountByFileId,
   saveAccountRecord,
 } from "@/lib/account/server";
 import type { FoxIntakeDraft, FoxMessage } from "@/components/fox/types";
@@ -90,15 +91,63 @@ export async function GET(request: Request) {
   const token = url.searchParams.get("account")?.trim() || "";
   const code = url.searchParams.get("code")?.trim() || "";
   const fileId = url.searchParams.get("file")?.trim() || "";
+  const wantLocate = url.searchParams.get("locate") === "1";
+  const located = fileId && !token && !code ? await locateAccountByFileId(fileId) : undefined;
   const record = token
     ? await loadAccountByToken(token)
     : code
       ? await loadAccountByCode(code)
-      : fileId
-        ? await loadAccountByFileId(fileId)
-        : undefined;
+      : located
+        ? located.record
+        : fileId
+          ? await loadAccountByFileId(fileId)
+          : undefined;
   if (!record) {
-    return NextResponse.json({ error: "not_found" }, { status: 404 });
+    return NextResponse.json(
+      {
+        error: "not_found",
+        ...(located
+          ? {
+              locate: {
+                exactPath: located.exactPath,
+                storedAt: located.storedAt ?? null,
+                reason: located.reason,
+                listed: located.listed,
+                docsListed: located.docsListed,
+                storeReady: located.storeReady,
+              },
+            }
+          : {}),
+      },
+      { status: 404 },
+    );
+  }
+  if (wantLocate && located) {
+    const facts = record.draft.facts ?? {};
+    const quote = (field: string) => facts[field] ?? null;
+    return NextResponse.json({
+      ...snapshotOf(record),
+      locate: {
+        exactPath: located.exactPath,
+        storedAt: located.storedAt ?? null,
+        reason: located.reason,
+        listed: located.listed,
+        docsListed: located.docsListed,
+        storeReady: located.storeReady,
+        hasToken: Boolean(record.token),
+        borrowerName: record.draft.borrowerName ?? null,
+        incomeType: record.draft.incomeType ?? null,
+        facts: {
+          w2_box5: quote("w2_box5"),
+          medicare_wages: quote("medicare_wages"),
+          qualifying_income: quote("qualifying_income"),
+          paystub_monthly: quote("paystub_monthly"),
+          wage_monthly: quote("wage_monthly"),
+          full_name: quote("full_name"),
+          employer_name: quote("employer_name"),
+        },
+      },
+    });
   }
   const repairedDraft = writeThreadAnswersToFile(record.draft, record.messages);
   if (
