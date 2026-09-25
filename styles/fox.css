@@ -765,6 +765,10 @@
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
+.staff-hub-square__facts--6 {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
 .staff-hub-grid__row {
   display: grid;
   gap: 8px;
@@ -840,6 +844,15 @@
   word-break: normal;
 }
 
+.staff-hub-cell--street {
+  grid-column: span 2;
+}
+
+.staff-hub-cell__value--street {
+  overflow-wrap: normal;
+  word-break: normal;
+}
+
 .staff-hub-cell__value--loud {
   font-size: 22px;
   line-height: 26px;
@@ -888,6 +901,7 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .staff-hub-square__facts--6,
   .staff-hub-square__facts--5,
   .staff-hub-square__facts--3 {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -899,6 +913,7 @@
     grid-template-columns: minmax(0, 1fr);
   }
 
+  .staff-hub-square__facts--6,
   .staff-hub-square__facts--5,
   .staff-hub-square__facts--4,
   .staff-hub-square__facts--3,

@@ -51,13 +51,16 @@ function main() {
   assert.deepEqual([...HUB_SQUARES[0].ids], ["home", "first-lien", "line", "ltv", "cltv"]);
   assert.deepEqual([...HUB_SQUARES[1].ids], ["rate", "io"]);
   assert.deepEqual([...HUB_SQUARES[2].ids], ["count", "b1", "b2", "credit", "email"]);
-  assert.deepEqual([...HUB_SQUARES[3].ids], ["product", "purpose", "occupancy", "property-type", "zip"]);
+  assert.deepEqual([...HUB_SQUARES[3].ids], ["product", "purpose", "occupancy", "property-type", "zip", "street"]);
   assert.deepEqual([...HUB_SQUARES[4].ids], ["income", "qualifying", "debts"]);
   assert.deepEqual([...HUB_SQUARES[5].ids], ["status", "next", "waiting", "need"]);
 
   const painted = HUB_SQUARES.flatMap((square) => [...square.ids]);
-  assert.deepEqual([...painted.filter((id) => id !== "need" && id !== "email")].sort(), [...HUB_GRID_IDS].sort());
-  assert.equal(new Set(painted).size, HUB_GRID_IDS.length + 2);
+  assert.deepEqual(
+    [...painted.filter((id) => id !== "need" && id !== "email" && id !== "street")].sort(),
+    [...HUB_GRID_IDS].sort(),
+  );
+  assert.equal(new Set(painted).size, HUB_GRID_IDS.length + 3);
 
   assert.deepEqual(
     [...HUB_GRID_ROWS],
@@ -97,7 +100,7 @@ function main() {
   );
   assert.deepEqual(
     bySquare.property.cells.map((cell) => `${cell.label} ${cell.value}`),
-    ["Product HELOC", "Purpose HELOC", "Occ Primary", "Type House", "ZIP 94123"],
+    ["Product HELOC", "Purpose HELOC", "Occ Primary", "Type House", "ZIP 94123", `Street ${HUB_EMPTY}`],
   );
   assert.deepEqual(
     bySquare.income.cells.map((cell) => `${cell.label} ${cell.value}`),

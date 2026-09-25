@@ -24,7 +24,7 @@ import type {
 } from "./types";
 import { CREDIT_STATED_NOTE, INCOME_BUBBLES } from "./types";
 import { moneyShown } from "@/lib/calculators/conventional";
-import { propertyTypeLabel } from "./propertyType";
+import { displayedSubjectAddress, isZipOnlyFileAddress, propertyTypeLabel } from "./propertyType";
 import { borrowersFileValue, primaryNameOnFile, whoOnLoanSettled } from "./whoOnLoan";
 import { previewFacts, productIntentLabel } from "./workspace";
 
@@ -109,7 +109,7 @@ export const HUB_SQUARES = [
   { id: "collateral", label: "Collateral", ids: ["home", "first-lien", "line", "ltv", "cltv"] },
   { id: "price", label: "Price", ids: ["rate", "io"] },
   { id: "borrower", label: "Borrower", ids: ["count", "b1", "b2", "credit", "email"] },
-  { id: "property", label: "Property", ids: ["product", "purpose", "occupancy", "property-type", "zip"] },
+  { id: "property", label: "Property", ids: ["product", "purpose", "occupancy", "property-type", "zip", "street"] },
   { id: "income", label: "Income", ids: ["income", "qualifying", "debts"] },
   { id: "file", label: "File", ids: ["status", "next", "waiting", "need"] },
 ] as const;
@@ -297,6 +297,31 @@ export function hubEmailWrapParts(value: string): string[] {
   return stored.split(/(?<=[@.])/).filter(Boolean);
 }
 
+/** File street only. Never ZIP. Never invent. Never pending / Places / ID. */
+function storedStreet(draft: FoxIntakeDraft) {
+  const line = displayedSubjectAddress(draft).trim();
+  if (!line) return "";
+  if (isZipOnlyFileAddress(line, draft.propertyZip)) return "";
+  if (/^\d{5}$/.test(line)) return "";
+  if (line === String(draft.propertyZip ?? "").trim()) return "";
+  return line;
+}
+
+export function hubStreetValue(draft: FoxIntakeDraft) {
+  return storedStreet(draft);
+}
+
+export function hubStreetRow(draft: FoxIntakeDraft): HubRow {
+  return shellRow("street", "Street", hubStreetValue(draft));
+}
+
+/** Break only after a comma or a space. Never inside a word. */
+export function hubStreetWrapParts(value: string): string[] {
+  const stored = String(value ?? "").trim();
+  if (!stored || isZipOnlyFileAddress(stored)) return [];
+  return stored.split(/(?<=[, ])/).filter(Boolean);
+}
+
 export function hubGridRows(draft: FoxIntakeDraft): HubRow[] {
   draft = hubLiveDraft(draft);
   const facts = previewFacts(draft);
@@ -349,6 +374,7 @@ export function hubSquares(draft: FoxIntakeDraft, accountEmail?: string): HubSqu
     cells: square.ids.map((id) => {
       if (id === "need") return hubNeedRow(draft);
       if (id === "email") return hubEmailRow(draft, accountEmail);
+      if (id === "street") return hubStreetRow(draft);
       return byId.get(id)!;
     }),
   }));

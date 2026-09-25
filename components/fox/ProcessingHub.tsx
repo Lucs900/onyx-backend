@@ -20,6 +20,8 @@ import {
   hubEmailRow,
   hubEmailWrapParts,
   hubNeedRow,
+  hubStreetRow,
+  hubStreetWrapParts,
   processingHubView,
   SILENT_DESK_ERROR,
   STAFF_HUB_PATH,
@@ -133,7 +135,9 @@ export function ProcessingHub() {
                             ? hubNeedRow(draft)
                             : id === "email"
                               ? hubEmailRow(draft, getResumedAccountEmail())
-                              : hub.grid.find((item) => item.id === id);
+                              : id === "street"
+                                ? hubStreetRow(draft)
+                                : hub.grid.find((item) => item.id === id);
                         return row ? <HubCell key={row.id} row={row} /> : null;
                       })}
                     </div>
@@ -242,9 +246,19 @@ export function ProcessingHub() {
 function HubCell({ row }: { row: HubRow }) {
   const empty = row.value === HUB_EMPTY;
   const email = row.id === "email" && !empty;
+  const street = row.id === "street" && !empty;
   const emailParts = email ? hubEmailWrapParts(row.value) : [];
+  const streetParts = street ? hubStreetWrapParts(row.value) : [];
   return (
-    <div className={email ? "staff-hub-cell staff-hub-cell--email" : "staff-hub-cell"}>
+    <div
+      className={
+        email
+          ? "staff-hub-cell staff-hub-cell--email"
+          : street
+            ? "staff-hub-cell staff-hub-cell--street"
+            : "staff-hub-cell"
+      }
+    >
       <p className="staff-hub-cell__label">{row.label}</p>
       {email ? (
         <p className="staff-hub-cell__value staff-hub-cell__value--email">
@@ -252,6 +266,15 @@ function HubCell({ row }: { row: HubRow }) {
             <span key={`${part}-${index}`} data-email-part={part}>
               {part}
               {index < emailParts.length - 1 ? <wbr /> : null}
+            </span>
+          ))}
+        </p>
+      ) : street ? (
+        <p className="staff-hub-cell__value staff-hub-cell__value--street">
+          {streetParts.map((part, index) => (
+            <span key={`${part}-${index}`} data-street-part={part}>
+              {part}
+              {index < streetParts.length - 1 ? <wbr /> : null}
             </span>
           ))}
         </p>
