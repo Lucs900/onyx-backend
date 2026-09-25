@@ -22,10 +22,12 @@ import {
   writePurchasePrice,
 } from "../components/fox/workspace";
 import {
+  ACCOUNT_EMAIL_ASK,
   ACCOUNT_EMAIL_SENT,
   ACCOUNT_FILE_YOURS,
   ACCOUNT_FIRST_OFFER,
   ACCOUNT_FIRST_WHY,
+  ACCOUNT_LOGIN_ASK,
   ACCOUNT_SAVE_ASK,
   ACCOUNT_WHY_SENTENCE,
   CREATE_ACCOUNT_LABEL,
@@ -37,6 +39,11 @@ import {
   applyAccountLetterOpened,
   hasLinkedAccount,
 } from "../components/fox/account";
+import {
+  createAccountRecord,
+  mergeAccountMessages,
+  persistLiveAccountRecord,
+} from "../lib/account/core";
 import type { FoxIntakeDraft, FoxMessage } from "../components/fox/types";
 
 function labels(actions: { label: string }[] | undefined) {
@@ -193,6 +200,47 @@ function main() {
   assert.equal(lastFox(midThread), midDesk.text);
   assert.ok(labels(deskStripActions(midThread, mid)).length > 0);
 
+  const loginPollute: FoxMessage[] = [
+    ...advanced,
+    fox("welcome", ACCOUNT_LOGIN_ASK),
+    fox("email-ask", ACCOUNT_EMAIL_ASK),
+  ];
+  const afterLogin = withDeskLineAfterAccountConsume(loginPollute, desk);
+  assert.equal(countLine(afterLogin, ACCOUNT_FILE_YOURS), 1);
+  assert.equal(countLine(afterLogin, ACCOUNT_LOGIN_ASK), 0);
+  assert.equal(countLine(afterLogin, ACCOUNT_EMAIL_ASK), 0);
+  assert.equal(lastFox(afterLogin), ACCOUNT_FILE_YOURS);
+  assert.deepEqual(labels(deskStripActions(afterLogin, opened)), [
+    "Ask Fox",
+    "Upload more",
+    "Request human",
+  ]);
+
+  const mergedLogin = mergeAccountMessages(
+    [fox("welcome-local", ACCOUNT_LOGIN_ASK), fox("email-local", ACCOUNT_EMAIL_ASK)],
+    advanced,
+    opened,
+  );
+  assert.equal(countLine(mergedLogin, ACCOUNT_LOGIN_ASK), 0);
+  assert.equal(countLine(mergedLogin, ACCOUNT_EMAIL_ASK), 0);
+  assert.equal(countLine(mergedLogin, ACCOUNT_FILE_YOURS), 1);
+
+  const liveRecord = createAccountRecord({
+    draft: opened,
+    messages: advanced,
+    fileId: "file_61_login",
+    email: "61walk@onyxlending.com",
+  });
+  const persistedLogin = persistLiveAccountRecord(liveRecord, opened, [
+    ...advanced,
+    fox("welcome-in", ACCOUNT_LOGIN_ASK),
+    fox("email-in", ACCOUNT_EMAIL_ASK),
+  ]);
+  assert.equal(countLine(persistedLogin.messages, ACCOUNT_LOGIN_ASK), 0);
+  assert.equal(countLine(persistedLogin.messages, ACCOUNT_EMAIL_ASK), 0);
+  assert.equal(persistedLogin.draft.propertyValueAmount, 500_000);
+  assert.equal(persistedLogin.draft.loanAmountValue, 50_000);
+
   const emptyLinked: FoxIntakeDraft = {
     ...emptyDraft(),
     path: "acr",
@@ -215,10 +263,15 @@ function main() {
 
   const consumeSource = readFileSync(new URL("../components/fox/workspace.ts", import.meta.url), "utf8");
   assert.match(consumeSource, /export function withoutAccountResumeLeftovers/);
+  assert.match(consumeSource, /function isLoginDoorLine/);
+  assert.match(consumeSource, /ACCOUNT_LOGIN_ASK/);
   assert.doesNotMatch(
     consumeSource,
     /alreadySpoken && ask\.text !== ACCOUNT_FILE_YOURS \? ACCOUNT_FILE_YOURS/,
   );
+  const persistSource = readFileSync(new URL("../lib/account/core.ts", import.meta.url), "utf8");
+  assert.match(persistSource, /withoutLoginDoorFoxLines/);
+  assert.match(persistSource, /Welcome back\. Email or phone for a code\?/);
 
   const accountSource = readFileSync(new URL("../components/fox/account.ts", import.meta.url), "utf8");
   assert.match(accountSource, /guestProceeded: true/);

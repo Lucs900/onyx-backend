@@ -265,19 +265,41 @@ export function isStaffDeskMessage(message: FoxMessage, draft?: FoxIntakeDraft |
   );
 }
 
+function isLoginDoorFoxLine(text: string) {
+  const line = text.trim();
+  return (
+    line === "Welcome back. Email or phone for a code?" ||
+    line === "Where should I send the sign-in link?" ||
+    line === "What’s a good phone? I’ll send a code for this File." ||
+    line === "What’s the 6-digit code from your phone?" ||
+    line === "Sketch stays on this browser. Create account anytime."
+  );
+}
+
+function withoutLoginDoorFoxLines(messages: FoxMessage[]) {
+  return messages.filter((item) => item.role !== "fox" || !isLoginDoorFoxLine(item.text));
+}
+
+function threadHasFileYours(messages: FoxMessage[]) {
+  return messages.some((item) => item.role === "fox" && item.text.trim() === "This File is yours.");
+}
+
 /** Stale desk persist must not drop staff foxLines. Staff lines are append-only. */
 export function mergeAccountMessages(
   existing: FoxMessage[],
   incoming: FoxMessage[],
   draft?: FoxIntakeDraft | null,
 ) {
+  const liveFile = fileHasResumeFacts(draft) || threadHasFileYours(existing) || threadHasFileYours(incoming);
   const keptExisting = stripWalkTestMessages(existing);
-  const keptIncoming = stripWalkTestMessages(incoming);
+  const keptIncoming = stripWalkTestMessages(
+    liveFile ? withoutLoginDoorFoxLines(incoming) : incoming,
+  );
   if (!keptIncoming.length) return keptExisting.map((item) => ({ ...item }));
   if (!keptExisting.length) return keptIncoming.map((item) => ({ ...item }));
   const seenId = new Set(keptIncoming.map((item) => item.id).filter(Boolean));
   const seenKey = new Set(keptIncoming.map(foxLineKey));
-  const extra = keptExisting.filter((item) => {
+  const extra = (liveFile ? withoutLoginDoorFoxLines(keptExisting) : keptExisting).filter((item) => {
     if (item.id && seenId.has(item.id)) return false;
     if (seenKey.has(foxLineKey(item))) return false;
     return true;

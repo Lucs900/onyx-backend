@@ -22,6 +22,7 @@ Preview only. Same branch, same PR. Do not merge. READY is not ACCEPT.
 - Sign out (from the header initial) clears this browser: the local File copy, the draft, the account/session state, and any session cookie. The next person on this browser sees a clean desk.
 - The File stays on the account. Do not delete the stored File or anything in Blob.
 - Resume is Log in only. After Sign out, nothing on this browser reopens the File without Log in.
+- Log in from a clean desk must not write "Welcome back" or the email-ask onto the stored File. Consume parks those door lines. Last line stays "This File is yours." once, with Ask Fox · Upload more · Request human.
 - If the latest answer or upload has not reached the server yet, Sign out saves it first (persist), then clears. Sign out must never throw away work. If the save fails, do not clear. Say so to the user and keep the local copy.
 
 ## Must not

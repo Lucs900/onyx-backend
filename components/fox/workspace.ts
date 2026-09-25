@@ -610,11 +610,15 @@ import {
   writeWhoOnLoan,
 } from "./whoOnLoan";
 import {
+  ACCOUNT_CODE_ASK,
   ACCOUNT_EMAIL_ASK,
   ACCOUNT_FILE_YOURS,
   ACCOUNT_FIRST_OFFER,
   ACCOUNT_FIRST_WHY,
+  ACCOUNT_LOGIN_ASK,
+  ACCOUNT_PHONE_ASK,
   ACCOUNT_SAVE_ASK,
+  ACCOUNT_SKIPPED_LINE,
   ACCOUNT_WHY_SENTENCE,
   accountAskOf,
   accountResumeLastActions,
@@ -4391,13 +4395,24 @@ export function deskStripActions(
   return [];
 }
 
+function isLoginDoorLine(text: string) {
+  const line = text.trim();
+  return (
+    line === ACCOUNT_LOGIN_ASK ||
+    line === ACCOUNT_EMAIL_ASK ||
+    line === ACCOUNT_PHONE_ASK ||
+    line === ACCOUNT_CODE_ASK ||
+    line === ACCOUNT_SKIPPED_LINE
+  );
+}
+
 function isParkedPostLinkLine(text: string) {
   const line = text.trim();
   if (!line) return true;
   if (isAccountMailWaitLine(line)) return true;
+  if (isLoginDoorLine(line)) return true;
   if (
     line === ACCOUNT_SAVE_ASK ||
-    line === ACCOUNT_EMAIL_ASK ||
     line === ACCOUNT_WHY_SENTENCE ||
     line === ACCOUNT_FIRST_OFFER ||
     line === ACCOUNT_FIRST_WHY
@@ -4469,6 +4484,7 @@ export function withoutAccountResumeLeftovers(messages: FoxMessage[]): FoxMessag
       out.push(message);
       continue;
     }
+    if (seenYours && (isLoginDoorLine(line) || line === ACCOUNT_SAVE_ASK)) continue;
     out.push(message);
   }
   return out;

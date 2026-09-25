@@ -1571,7 +1571,9 @@ export function AlwaysOnFox({
             ask.text === ACCOUNT_WHY_SENTENCE ||
             ask.text === ACCOUNT_FIRST_WHY ||
             ask.text === ACCOUNT_FIRST_OFFER ||
-            ask.text === ACCOUNT_FILE_YOURS
+            ask.text === ACCOUNT_FILE_YOURS ||
+            ask.text === ACCOUNT_LOGIN_ASK ||
+            ask.text === ACCOUNT_EMAIL_ASK
           ) {
             return withoutAccountResumeLeftovers(prev);
           }
