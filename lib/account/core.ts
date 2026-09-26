@@ -276,6 +276,14 @@ function isLoginDoorFoxLine(text: string) {
   );
 }
 
+function isSignedInThreadLeftoverFoxLine(text: string) {
+  const line = text.trim();
+  if (!line) return false;
+  if (/check your email for a link to this file/i.test(line)) return true;
+  if (/you can leave and come back/i.test(line)) return true;
+  return false;
+}
+
 function isLoginDoorClientLine(text: string) {
   const line = text.trim();
   if (!line) return false;
@@ -288,7 +296,9 @@ function isLoginDoorClientLine(text: string) {
 
 function withoutLoginDoorFoxLines(messages: FoxMessage[]) {
   return messages.filter((item) => {
-    if (item.role === "fox") return !isLoginDoorFoxLine(item.text);
+    if (item.role === "fox") {
+      return !isLoginDoorFoxLine(item.text) && !isSignedInThreadLeftoverFoxLine(item.text);
+    }
     if (item.role === "client") return !isLoginDoorClientLine(item.text);
     return true;
   });

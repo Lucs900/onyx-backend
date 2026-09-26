@@ -104,6 +104,20 @@ export function isLoginDoorUserBubble(text: string) {
   return false;
 }
 
+/** 61b — signed-in thread never reprints these door/guest leftovers. Any variant. */
+export function isSignedInThreadLeftoverLine(text: string) {
+  const line = text.trim();
+  if (!line) return false;
+  if (/check your email for a link to this file/i.test(line)) return true;
+  if (/you can leave and come back/i.test(line)) return true;
+  return false;
+}
+
+/** Save wall under Proceed: the Create account chip stays visible as past once signed in. */
+export function isSignedInPastCreateAccountLine(text: string) {
+  return text.trim() === ACCOUNT_SAVE_ASK;
+}
+
 export function accountSaveAskOpen(draft: FoxIntakeDraft) {
   return Boolean(draft.accountSaveAsk) && !hasLinkedAccount(draft);
 }
@@ -260,6 +274,12 @@ export function applyAccountCapture(
   draft: FoxIntakeDraft,
   capture: Capture,
 ): FoxIntakeDraft {
+  if (
+    hasLinkedAccount(draft) &&
+    (capture.field === "create-account" || capture.field === "save-this-file")
+  ) {
+    return draft;
+  }
   if (capture.field === "create-account" || capture.field === "save-this-file") {
     return {
       ...draft,
@@ -300,6 +320,12 @@ export function accountWorkspaceReply(
   const q = text.trim();
   const lower = q.toLowerCase();
   const ask = accountAskOf(draft);
+  if (
+    hasLinkedAccount(draft) &&
+    (/^create account$/i.test(q) || /^keep this file$/i.test(q) || /^save this file$/i.test(q))
+  ) {
+    return null;
+  }
   if (/^create account$/i.test(q) || /^keep this file$/i.test(q) || /^save this file$/i.test(q)) {
     const next = { ...draft, accountAsk: "channel" as const };
     const savePad = /^save this file$/i.test(q);

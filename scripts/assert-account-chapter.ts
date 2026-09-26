@@ -266,10 +266,10 @@ async function main() {
   assert.notEqual(emptyDesk.text, ACCOUNT_WHY_SENTENCE);
   assert.deepEqual(labels(emptyDesk.actions), ["Buy", "Refinance", "HELOC", "Jumbo", "Other"]);
   assert.ok(!labels(emptyDesk.actions).includes(CREATE_ACCOUNT_LABEL));
-  const advancedEmpty = withDeskLineAfterAccountConsume(waiting, emptyDesk);
+  const advancedEmpty = withDeskLineAfterAccountConsume(waiting, emptyDesk, consumedEmpty);
   assert.equal(lastFoxLine(waiting), ACCOUNT_EMAIL_SENT);
   assert.equal(lastFoxLine(advancedEmpty), ACCOUNT_FILE_YOURS);
-  assert.ok(advancedEmpty.some((item) => item.text === ACCOUNT_EMAIL_SENT));
+  assert.ok(!advancedEmpty.some((item) => item.text === ACCOUNT_EMAIL_SENT));
   assert.deepEqual(labels(deskStripActions(advancedEmpty, consumedEmpty)), [
     "Buy",
     "Refinance",
@@ -293,10 +293,10 @@ async function main() {
   assert.notEqual(helocDesk.text, ACCOUNT_EMAIL_ASK);
   assert.notEqual(helocDesk.text, ACCOUNT_WHY_SENTENCE);
   assert.notEqual(helocDesk.text, CREATE_ACCOUNT_LABEL);
-  const advancedHeloc = withDeskLineAfterAccountConsume(waiting, helocDesk);
+  const advancedHeloc = withDeskLineAfterAccountConsume(waiting, helocDesk, helocLinked);
   assert.equal(lastFoxLine(advancedHeloc), helocDesk.text);
   assert.ok(liveDeskLineOwnsPrompt(helocDesk.text, helocLinked));
-  assert.ok(advancedHeloc.some((item) => item.text === ACCOUNT_EMAIL_SENT));
+  assert.ok(!advancedHeloc.some((item) => item.text === ACCOUNT_EMAIL_SENT));
   assert.ok(!labels(deskStripActions(advancedHeloc, helocLinked)).includes(CREATE_ACCOUNT_LABEL));
   assert.ok(!labels(accountHeaderActions(helocLinked)).includes(CREATE_ACCOUNT_LABEL));
 
@@ -583,9 +583,9 @@ async function main() {
   assert.notEqual(openedDesk.text, ACCOUNT_EMAIL_ASK);
   assert.notEqual(openedDesk.text, ACCOUNT_SAVE_ASK);
   assert.doesNotMatch(openedDesk.text, /ONYX has this for review/);
-  const advancedOpened = withDeskLineAfterAccountConsume(waiting, openedDesk);
+  const advancedOpened = withDeskLineAfterAccountConsume(waiting, openedDesk, openedLetter);
   assert.notEqual(lastFoxLine(advancedOpened), ACCOUNT_EMAIL_SENT);
-  assert.ok(advancedOpened.some((item) => item.text === ACCOUNT_EMAIL_SENT));
+  assert.ok(!advancedOpened.some((item) => item.text === ACCOUNT_EMAIL_SENT));
   assert.ok(!labels(openedDesk.actions).includes(CREATE_ACCOUNT_LABEL));
   const alreadyAsked = withDeskLineAfterAccountConsume(
     [
@@ -593,6 +593,7 @@ async function main() {
       { id: "fox-sent", role: "fox", text: ACCOUNT_EMAIL_SENT },
     ],
     openedDesk,
+    openedLetter,
   );
   assert.equal(
     alreadyAsked.filter((item) => item.role === "fox" && item.text === ACCOUNT_FILE_YOURS).length,

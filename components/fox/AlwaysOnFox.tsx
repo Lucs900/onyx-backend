@@ -147,8 +147,11 @@ import {
   composerPlaceholderForAccount,
   firstAccountOfferOpen,
   foxLineLeaksAccountSecret,
+  CREATE_ACCOUNT_LABEL,
   hasLinkedAccount,
   isAccountMailWaitLine,
+  isSignedInPastCreateAccountLine,
+  isSignedInThreadLeftoverLine,
   startOverNeedsConfirm,
 } from "./account";
 import {
@@ -773,6 +776,15 @@ function FoxThread({
           >
             <p>{speech}</p>
             {followUp ? <p>{followUp}</p> : null}
+            {message.role === "fox" &&
+            hasLinkedAccount(draft) &&
+            isSignedInPastCreateAccountLine(message.text) ? (
+              <div className="fox-bubble__past" data-history-chip="create-account">
+                <span className="fox-chip is-past" aria-disabled="true">
+                  {CREATE_ACCOUNT_LABEL}
+                </span>
+              </div>
+            ) : null}
             {canEdit ? (
               <button
                 type="button"
@@ -1572,6 +1584,7 @@ export function AlwaysOnFox({
             ask.text === ACCOUNT_WHY_SENTENCE ||
             ask.text === ACCOUNT_FIRST_WHY ||
             ask.text === ACCOUNT_FIRST_OFFER ||
+            isSignedInThreadLeftoverLine(ask.text) ||
             ask.text === ACCOUNT_FILE_YOURS ||
             ask.text === ACCOUNT_LOGIN_ASK ||
             ask.text === ACCOUNT_EMAIL_ASK ||
@@ -2037,6 +2050,12 @@ export function AlwaysOnFox({
 
   const runAction = (action: FoxAction) => {
     const liveDraft = getFoxDraft();
+    if (
+      hasLinkedAccount(liveDraft) &&
+      (action.capture?.field === "create-account" || action.capture?.field === "save-this-file")
+    ) {
+      return;
+    }
     if (
       action.capture?.field === "create-account" ||
       action.capture?.field === "login-account" ||

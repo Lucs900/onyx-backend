@@ -631,6 +631,7 @@ import {
   hasLinkedAccount,
   isAccountMailWaitLine,
   isLoginDoorUserBubble,
+  isSignedInThreadLeftoverLine,
   lastFoxLine,
 } from "./account";
 import {
@@ -4488,6 +4489,18 @@ export function intakeAskAlreadyAnswered(text: string, draft?: FoxIntakeDraft | 
   return false;
 }
 
+/** 61b render-check: signed-in threads drop email-link and leave-and-come-back leftovers. Guest unchanged. */
+export function withoutSignedInThreadLeftovers(
+  messages: FoxMessage[],
+  draft?: FoxIntakeDraft | null,
+): FoxMessage[] {
+  if (!draft || !hasLinkedAccount(draft)) return messages;
+  return messages.filter((message) => {
+    if (message.role !== "fox") return true;
+    return !isSignedInThreadLeftoverLine(message.text);
+  });
+}
+
 /** Render-check: keep the first yours / why / first-question; drop reprints and answered intake asks. */
 export function withoutAccountResumeLeftovers(
   messages: FoxMessage[],
@@ -4541,7 +4554,7 @@ export function withoutAccountResumeLeftovers(
     prevFox = line;
     out.push(message);
   }
-  return out;
+  return withoutSignedInThreadLeftovers(out, draft);
 }
 
 function isConsumedFinishLine(text: string, draft: FoxIntakeDraft) {
@@ -4648,7 +4661,13 @@ export function withDeskLineAfterAccountConsume(
   const realAsk =
     isRealResumeAskText(ask.text) && !intakeAskAlreadyAnswered(ask.text, draft) ? ask : null;
 
-  if (last && !isParkedPostLinkLine(last) && last !== ACCOUNT_FILE_YOURS) {
+  const lastIsHistory =
+    !last ||
+    last === ACCOUNT_FILE_YOURS ||
+    isParkedPostLinkLine(last) ||
+    isAccountResumeLeftoverLine(last) ||
+    intakeAskAlreadyAnswered(last, draft);
+  if (last && !lastIsHistory) {
     if (spokenYours) return cleaned;
     let insertAt = cleaned.length;
     for (let i = cleaned.length - 1; i >= 0; i -= 1) {

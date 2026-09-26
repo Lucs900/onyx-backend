@@ -45,5 +45,12 @@ Next SHA: one source of truth for desk + initial; never reprint an answered inta
 
 ## Closed
 
-f845741 · d0dd8ed · 575fee8 · 959cf1f (host), plus e49b1ec · 9143dd2 · e18c694 · f3ad1db · b2c2e6e · ccce44c · 5def8ba · ac6190c · c004c1f and earlier.
+c2e35f1 (header / Sign out / de-dupe) · 4cc75b7 hub spine · 8fa7382 dense 1008 · 97e6b9b Save wall · d0dd8ed Save why · f845741 pad Save-only · 575fee8 · 959cf1f (host), plus e49b1ec · 9143dd2 · e18c694 · f3ad1db · b2c2e6e · ccce44c · 5def8ba · ac6190c · c004c1f and earlier.
 No 1040. Phone parked. Rate sentence parked. Pay stub off Need.
+
+## ADD 61b — signed-in thread leftovers
+
+1. A signed-in thread (account session plus File) never reprints "Check your email for a link to this File" or "You can leave and come back." (any variant). Render, persist, and resume after Log in.
+2. After resume, the last Fox line always carries Ask Fox · Upload more · Request human.
+3. The Create account chip under the Proceed / Save line is history only. Once signed in it is past: not a live chip, not tappable or focusable (no click handler, aria-disabled, muted/past style), and no new Save ask fires from it.
+Guest (not signed in) still sees Save / Create account as live. Do not change the c2e35f1 header, Sign out, or de-dupe. 60 / e953133 stays on HOLD.

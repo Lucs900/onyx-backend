@@ -569,6 +569,26 @@
   display: none !important;
 }
 
+.fox-bubble__past {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.fox-panel__thread .fox-bubble__past,
+.fox-panel__thread .fox-chip.is-past {
+  display: inline-flex !important;
+}
+
+.fox-chip.is-past {
+  align-items: center;
+  pointer-events: none;
+  opacity: 0.45;
+  cursor: default;
+  box-shadow: none;
+  color: var(--muted);
+}
+
 .fox-chip {
   height: 32px;
   padding: 0 12px;
