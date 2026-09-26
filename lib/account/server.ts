@@ -168,7 +168,9 @@ async function writeBlobRecord(record: AccountRecord) {
   await put(filePath(record.fileId), body, opts);
   if (record.email) {
     const current = await readBlobRecord(emailPath(record.email));
-    if (!current || !shouldKeepLiveAccountDraft(current.draft, record.draft)) {
+    const scanned = await scanAccountByEmail(record.email);
+    const keep = scanned ?? current;
+    if (!keep || !shouldKeepLiveAccountDraft(keep.draft, record.draft)) {
       await put(emailPath(record.email), body, opts);
     }
   }
@@ -324,10 +326,40 @@ export async function loadAccountByFileId(fileId: string) {
   return (await locateAccountByFileId(fileId)).record;
 }
 
+function preferStoredAccount(records: AccountRecord[]) {
+  const stored = records.filter((item) => accountFileHasStoredContent(item.draft));
+  const queued = stored.filter(
+    (item) =>
+      item.draft.motion === "in_queue" ||
+      (item.draft.workItems ?? []).some((work) => work.kind === "review"),
+  );
+  return queued[0] ?? stored[0] ?? records[0];
+}
+
+async function scanAccountByEmail(email: string) {
+  const key = normalizeEmail(email);
+  if (!key || !serverBlobReady()) return undefined;
+  const hits: AccountRecord[] = [];
+  const seen = new Set<string>();
+  for (const prefix of ["account/email/", "account/file/", "account/token/"]) {
+    const page = await listPathnames(prefix);
+    for (const pathname of page.pathnames) {
+      const record = await readBlobRecord(pathname);
+      if (!record?.email || normalizeEmail(record.email) !== key) continue;
+      if (seen.has(record.fileId)) continue;
+      seen.add(record.fileId);
+      hits.push(record);
+    }
+  }
+  return hits.length ? preferStoredAccount(hits) : undefined;
+}
+
 export async function loadAccountByEmail(email: string) {
   const key = normalizeEmail(email);
   if (!key) return undefined;
-  return processStore().getByEmail(key) ?? (await readBlobRecord(emailPath(key)));
+  const indexed = processStore().getByEmail(key) ?? (await readBlobRecord(emailPath(key)));
+  const scanned = await scanAccountByEmail(key);
+  return scanned ?? indexed;
 }
 
 export async function loadAccountByPhone(phone: string) {

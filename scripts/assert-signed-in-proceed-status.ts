@@ -405,6 +405,9 @@ function main() {
   const serverSource = readFileSync(new URL("../lib/account/server.ts", import.meta.url), "utf8");
   assert.match(serverSource, /accountFileHasStoredContent\(currentToken\.draft\)/);
   assert.match(serverSource, /accountFileHasStoredContent\(current\.draft\) && current\.fileId !== record\.fileId/);
+  assert.match(serverSource, /async function scanAccountByEmail/);
+  assert.match(serverSource, /function preferStoredAccount/);
+  assert.match(serverSource, /return scanned \?\? indexed/);
 
   console.log(
     "assert-signed-in-proceed-status: guest row A · attach stays gathering + Proceed · signed-in write in_queue once",
