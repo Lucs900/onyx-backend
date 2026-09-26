@@ -53,6 +53,7 @@ import {
   createAccountRecord,
   memoryAccountStore,
   accountFileHasStoredContent,
+  draftHasConfirmedFileWrite,
   mergeFileDraft,
   persistAccountRecord,
   persistLiveAccountRecord,
@@ -297,6 +298,37 @@ function main() {
   const emptyAccount = { ...emptyDraft(), path: "acr" as const, fileId: "file_empty_acct" };
   assert.equal(accountFileHasStoredContent(emptyAccount), false);
   assert.equal(shouldKeepLiveAccountDraft(emptyAccount, walkedFile), false);
+  const suggestedOnly = {
+    ...emptyDraft(),
+    path: "acr" as const,
+    fileId: "file_suggested_only",
+    pendingProposal: {
+      field: "employer_name",
+      value: "Listed employer",
+      label: "Employer",
+      kind: "public" as const,
+    },
+    facts: {
+      employer_name: {
+        field: "employer_name",
+        value: "Listed employer",
+        source: "suggested" as const,
+        confirmed: false,
+      },
+    },
+  };
+  assert.equal(accountFileHasStoredContent(suggestedOnly), false);
+  assert.equal(draftHasConfirmedFileWrite(suggestedOnly), false);
+  assert.equal(shouldKeepLiveAccountDraft(suggestedOnly, walkedFile), false);
+  const suggestedRecord = createAccountRecord({
+    draft: suggestedOnly,
+    messages: [],
+    fileId: suggestedOnly.fileId ?? "file_suggested_only",
+    email: "62suggest@onyxlending.com",
+  });
+  const boundSuggested = persistLiveAccountRecord(suggestedRecord, walkedFile, guestThread);
+  assert.equal(boundSuggested.fileId, walkedFile.fileId);
+  assert.equal(boundSuggested.draft.motion, "gathering");
   const notStolen = mergeFileDraft(staleFile, walkedFile);
   assert.equal(notStolen.fileId, walkedFile.fileId);
   assert.equal(notStolen.motion, "gathering");
@@ -365,7 +397,10 @@ function main() {
   assert.match(storeSource, /FOX_GUEST_SKETCH_KEY/);
   const coreSource = readFileSync(new URL("../lib/account/core.ts", import.meta.url), "utf8");
   assert.match(coreSource, /export function accountFileHasStoredContent/);
+  assert.match(coreSource, /export function draftHasConfirmedFileWrite/);
   assert.match(coreSource, /accountFileHasStoredContent\(existing\)/);
+  assert.match(coreSource, /draft\.motion === "in_queue"/);
+  assert.match(coreSource, /item\.kind === "review"/);
   assert.match(coreSource, /keepStoredQueue =\n    sameFile &&/s);
   const serverSource = readFileSync(new URL("../lib/account/server.ts", import.meta.url), "utf8");
   assert.match(serverSource, /accountFileHasStoredContent\(currentToken\.draft\)/);

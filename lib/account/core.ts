@@ -188,19 +188,53 @@ function sentReviewMotion(draft?: FoxIntakeDraft | null) {
   return motion === "in_queue" || motion === "escalated" || motion === "waiting_out";
 }
 
+function confirmedFactValue(draft: FoxIntakeDraft, field: string) {
+  const fact = draft.facts?.[field];
+  return Boolean(fact?.value?.trim() && fact.confirmed);
+}
+
 /**
- * Account File already has anything stored: queued, or gathering with papers / answers.
- * Log in must not move the account off this File.
- * Fields: fileHasResumeFacts (productIntent, amounts, occupancy, propertyType, zip, facts),
- * sampleAccepted, documents[], sent motion, review WorkItems.
+ * Confirmed File write after Use this or a typed/chip confirm.
+ * Fox suggested speech / pendingProposal / unconfirmed facts do not count.
+ * Fields: product, purpose, occupancy, value, lien, line, loan, address, ZIP,
+ * property type, FICO, employment, QI, debts, borrowers, years in business,
+ * Looks right (sampleAccepted).
+ */
+export function draftHasConfirmedFileWrite(draft?: FoxIntakeDraft | null) {
+  if (!draft) return false;
+  if (draft.productIntent) return true;
+  if (draft.jumboPurpose || draft.cashOut || draft.refiPurposeAsked || draft.amountPurposeLabel) {
+    return true;
+  }
+  if (draft.occupancyChoice?.value?.trim()) return true;
+  if ((draft.propertyValueAmount ?? 0) > 0) return true;
+  if ((draft.firstLienAmount ?? 0) > 0) return true;
+  if ((draft.loanAmountValue ?? 0) > 0) return true;
+  if (draft.subjectAddress?.trim() || draft.subjectStreet?.trim()) return true;
+  if (draft.propertyZip?.trim()) return true;
+  if (draft.propertyType) return true;
+  if (draft.creditBand?.trim()) return true;
+  if (draft.incomeType?.value?.trim()) return true;
+  if (confirmedFactValue(draft, "qualifying_income")) return true;
+  if (draft.statedMonthlyDebts != null || draft.monthlyDebtsAsked) return true;
+  if (draft.whoOnLoan) return true;
+  if (confirmedFactValue(draft, "years_in_business") || draft.yearsInBusinessAsked) return true;
+  if (draft.sampleAccepted) return true;
+  return Object.values(draft.facts ?? {}).some((fact) => Boolean(fact?.value?.trim() && fact.confirmed));
+}
+
+/**
+ * STORED: Log in opens this File and never rebinds off it.
+ * Any one of: in_queue, a review WorkItem, docs received, or a confirmed File write.
+ * NOT stored: empty first-question draft, or Fox suggestions before Use this.
  */
 export function accountFileHasStoredContent(draft?: FoxIntakeDraft | null) {
   if (!draft) return false;
-  if (fileHasResumeFacts(draft)) return true;
-  if (draft.sampleAccepted) return true;
+  if (draft.motion === "in_queue") return true;
+  if ((draft.workItems ?? []).some((item) => item.kind === "review")) return true;
   if ((draft.documents ?? []).length > 0) return true;
   if (sentReviewMotion(draft)) return true;
-  return (draft.workItems ?? []).some((item) => item.kind === "review");
+  return draftHasConfirmedFileWrite(draft);
 }
 
 /** Other-browser login must not replace the live File with an empty guest draft.
