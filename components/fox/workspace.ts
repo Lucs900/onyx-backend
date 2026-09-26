@@ -629,6 +629,8 @@ import {
   firstAccountOfferActions,
   firstAccountOfferOpen,
   hasLinkedAccount,
+  isLiveCreateAccountAction,
+  linkedLastLineActions,
   isAccountMailWaitLine,
   isLoginDoorUserBubble,
   isSignedInThreadLeftoverLine,
@@ -4236,6 +4238,17 @@ export function deskStripActions(
   messages: FoxMessage[],
   draft: FoxIntakeDraft,
 ): FoxAction[] {
+  const computed = deskStripActionsComputed(messages, draft);
+  if (!hasLinkedAccount(draft)) return computed;
+  const live = computed.filter((item) => !isLiveCreateAccountAction(item));
+  if (live.length) return live;
+  return stripStreetSuggest(linkedLastLineActions(draft));
+}
+
+function deskStripActionsComputed(
+  messages: FoxMessage[],
+  draft: FoxIntakeDraft,
+): FoxAction[] {
   if (accountSaveAskOpen(draft)) {
     const wall = accountSaveWallActions(draft);
     if (wall.length) return stripStreetSuggest(wall);
@@ -4422,6 +4435,8 @@ function isParkedPostLinkLine(text: string) {
     return true;
   }
   if (line === MOTION_COPY.in_queue || /ONYX has this for review/i.test(line)) return true;
+  if (line === MOTION_COPY.nudge || line === MOTION_COPY.threeNudges) return true;
+  if (/i pushed this/i.test(line)) return true;
   return false;
 }
 

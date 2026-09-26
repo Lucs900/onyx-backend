@@ -224,9 +224,7 @@ export function accountFlowOpen(draft: FoxIntakeDraft) {
 }
 
 export function accountSideActions(draft: FoxIntakeDraft): FoxAction[] {
-  if (hasLinkedAccount(draft) && accountAskOf(draft) !== "sent" && accountAskOf(draft) !== "code") {
-    return [];
-  }
+  if (hasLinkedAccount(draft)) return [];
   const ask = accountAskOf(draft);
   if (ask === "channel") {
     return [
@@ -528,10 +526,7 @@ export function applyAccountSaveAsk(draft: FoxIntakeDraft): FoxIntakeDraft {
   };
 }
 
-/** After Proceed + account. Last line chips. Motion stays gathering. */
-export function accountResumeLastActions(draft: FoxIntakeDraft): FoxAction[] {
-  if (!hasLinkedAccount(draft) || accountSaveAskOpen(draft)) return [];
-  if (!draft.guestProceeded) return [];
+function linkedDeskChips(draft: FoxIntakeDraft): FoxAction[] {
   const chips: FoxAction[] = [
     {
       id: "ask-fox",
@@ -556,6 +551,27 @@ export function accountResumeLastActions(draft: FoxIntakeDraft): FoxAction[] {
     });
   }
   return chips;
+}
+
+/** After Proceed + account. Last line chips. Motion stays gathering. */
+export function accountResumeLastActions(draft: FoxIntakeDraft): FoxAction[] {
+  if (!hasLinkedAccount(draft) || accountSaveAskOpen(draft)) return [];
+  if (!draft.guestProceeded) return [];
+  return linkedDeskChips(draft);
+}
+
+/**
+ * 61b2 — last Fox line on a linked File. Keyed on linked account, never one line.
+ * Covers pending hand-off, Request human, upload, or any other last line.
+ */
+export function linkedLastLineActions(draft: FoxIntakeDraft): FoxAction[] {
+  if (!hasLinkedAccount(draft)) return [];
+  return linkedDeskChips(draft);
+}
+
+export function isLiveCreateAccountAction(action: { capture?: { field?: string } | null } | null | undefined) {
+  const field = action?.capture?.field;
+  return field === "create-account" || field === "save-this-file";
 }
 
 export const SIGN_OUT_SAVE_FAILED =

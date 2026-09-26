@@ -54,3 +54,12 @@ No 1040. Phone parked. Rate sentence parked. Pay stub off Need.
 2. After resume, the last Fox line always carries Ask Fox · Upload more · Request human.
 3. The Create account chip under the Proceed / Save line is history only. Once signed in it is past: not a live chip, not tappable or focusable (no click handler, aria-disabled, muted/past style), and no new Save ask fires from it.
 Guest (not signed in) still sees Save / Create account as live. Do not change the c2e35f1 header, Sign out, or de-dupe. 60 / e953133 stays on HOLD.
+
+### 61b FAIL (founder walk, Fri 25 Sep 2026 7:39 PM PT) — f8e4be7
+PASS: leftover lines gone; yours once; Header A held; same HELOC File.
+FAIL: last Fox line was the pending hand-off "I pushed this. ONYX still has it — I'll bring the result back here." Empty composer, no chips. 7f8afdef ended on yours, so chips only attached to that line.
+
+## ADD 61b2 — last line chips on any linked last Fox line
+1. On a signed-in (linked) File, whatever the last Fox line is carries Ask Fox · Upload more · Request human. Includes pending hand-off, Request human, upload, or any other line. Key on last Fox line + linked account, never one specific line.
+2. On a linked File: no live Create account chip anywhere (thread, composer, panel, pad, menus), and no Save ask from any path. The greyed past-step chip (span.is-past, aria-disabled) under Proceed may stay as history.
+Guest flow unchanged. Do not touch c2e35f1 header A, Sign out, de-dupe; 575fee8 letter; 4cc75b7 spine; 8fa7382 grid; 97e6b9b / d0dd8ed / f845741 Save; /staff/hub. 60 stays on HOLD.
