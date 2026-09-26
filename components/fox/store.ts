@@ -1258,6 +1258,14 @@ function readStoredMessages(): FoxMessage[] {
 
 function persistMessages(messages: FoxMessage[]) {
   if (typeof window === "undefined") return;
+  try {
+    const signedOut =
+      window.sessionStorage.getItem(SIGN_OUT_SENTINEL_KEY) ||
+      window.localStorage.getItem(SIGN_OUT_SENTINEL_KEY);
+    if (signedOut && messages.length) return;
+  } catch {
+    // Private mode / quota.
+  }
   const raw = JSON.stringify(messages);
   try {
     window.sessionStorage.setItem(FOX_MESSAGES_KEY, raw);
@@ -2352,8 +2360,8 @@ function clearSignOutBrowserState() {
 function writeSignOutSentinel() {
   if (typeof window === "undefined") return;
   try {
-    window.sessionStorage.setItem(SIGN_OUT_SENTINEL_KEY, "1");
-    window.localStorage.setItem(SIGN_OUT_SENTINEL_KEY, "1");
+    window.sessionStorage.setItem(SIGN_OUT_SENTINEL_KEY, "2");
+    window.localStorage.setItem(SIGN_OUT_SENTINEL_KEY, "2");
   } catch {
     // Private mode / quota.
   }
@@ -2362,10 +2370,15 @@ function writeSignOutSentinel() {
 function consumeSignOutSentinel() {
   if (typeof window === "undefined") return false;
   try {
-    const flagged =
-      window.sessionStorage.getItem(SIGN_OUT_SENTINEL_KEY) === "1" ||
-      window.localStorage.getItem(SIGN_OUT_SENTINEL_KEY) === "1";
-    if (!flagged) return false;
+    const raw =
+      window.sessionStorage.getItem(SIGN_OUT_SENTINEL_KEY) ||
+      window.localStorage.getItem(SIGN_OUT_SENTINEL_KEY);
+    if (raw !== "1" && raw !== "2") return false;
+    if (raw === "2") {
+      window.sessionStorage.setItem(SIGN_OUT_SENTINEL_KEY, "1");
+      window.localStorage.setItem(SIGN_OUT_SENTINEL_KEY, "1");
+      return true;
+    }
     window.sessionStorage.removeItem(SIGN_OUT_SENTINEL_KEY);
     window.localStorage.removeItem(SIGN_OUT_SENTINEL_KEY);
     return true;
