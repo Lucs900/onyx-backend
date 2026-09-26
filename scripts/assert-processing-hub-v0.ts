@@ -138,7 +138,7 @@ function main() {
   assert.equal(canLooksRight(ready), true);
   const afterLooks = withLinkedAccount(applyLooksRightMotion(ready));
   const proceed = workspaceReply("Proceed", afterLooks);
-  assert.match(proceed?.text ?? "", /ONYX has this for review/);
+  assert.match(proceed?.text ?? "", /I pushed this/);
   assert.deepEqual(labels(proceed?.actions).slice(0, 2), ["Ask Fox", "Upload more"]);
   assert.equal(labels(proceed?.actions).at(-1), "Request human");
 

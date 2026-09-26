@@ -448,7 +448,7 @@ async function main() {
   assert.equal(proceeded.nextActor, "ONYX");
   assert.equal(proceeded.pendingFinish, undefined);
   const proceededAsk = nextFoxAsk(proceeded);
-  assert.equal(proceededAsk.text, "ONYX has this for review. I’m still here.");
+  assert.match(proceededAsk.text, /I pushed this/);
   assert.equal(proceededAsk.followUp, undefined);
   assert.doesNotMatch(proceededAsk.text, /What’s a good email|email|This is the wait|What happens next/i);
   assert.deepEqual(
@@ -1082,7 +1082,7 @@ async function main() {
   assert.equal(clipperProceed.nextActor, "ONYX");
   assert.equal(clipperProceed.pendingFinish, undefined);
   const clipperProceedAsk = nextFoxAsk(clipperProceed);
-  assert.equal(clipperProceedAsk.text, "ONYX has this for review. I’m still here.");
+  assert.match(clipperProceedAsk.text, /I pushed this/);
   assert.equal(clipperProceedAsk.followUp, undefined);
   assert.doesNotMatch(clipperProceedAsk.text, /What’s a good email|Skip email|email|This is the wait|What happens next/i);
   assert.deepEqual(

@@ -30,6 +30,8 @@ import {
   deskStripActions,
   previewFacts,
   statusCopy,
+  workspacePromptCopy,
+  workspaceUpdateCopy,
   writePurchasePrice,
 } from "../components/fox/workspace";
 import {
@@ -208,7 +210,10 @@ function main() {
   assert.equal(hub.grid.find((row) => row.id === "status")?.label, "Status");
   assert.equal(hub.grid.find((row) => row.id === "next")?.label, "Next");
   assert.equal(hub.grid.find((row) => row.id === "waiting")?.label, "Waiting");
-  const sentThread: FoxMessage[] = [fox("queue", MOTION_COPY.in_queue)];
+  assert.equal(workspacePromptCopy("done", sent).text, MOTION_COPY.nudge);
+  assert.match(workspacePromptCopy("done", sent).text, /I pushed this/);
+  assert.equal(workspaceUpdateCopy({ field: "proceed" }, sent), MOTION_COPY.nudge);
+  const sentThread: FoxMessage[] = [fox("push", MOTION_COPY.nudge)];
   assert.deepEqual(labels(deskStripActions(sentThread, sent)).slice(0, 2), ["Ask Fox", "Upload more"]);
   assert.equal(labels(deskStripActions(sentThread, sent)).at(-1), "Request human");
   assert.ok(!labels(deskStripActions(sentThread, sent)).includes("Proceed"));

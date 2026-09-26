@@ -1140,7 +1140,7 @@ async function main() {
   const goldQueued = applyProceedMotion(withLinkedAccount({ ...leftoverReady, emailSkipped: true }));
   const goldProceed = workspaceReply("Proceed", withLinkedAccount({ ...leftoverReady, emailSkipped: true }));
   assert.equal(goldQueued.motion, "in_queue", "gold close Proceed writes in_queue");
-  assert.equal(goldProceed?.text, MOTION_COPY.in_queue);
+  assert.equal(goldProceed?.text, MOTION_COPY.nudge);
   assert.equal(MOTION_COPY.in_queue, "ONYX has this for review. I’m still here.");
   assert.doesNotMatch(goldProceed?.text ?? "", /I didn’t see a K-1 or Schedule C/);
   assert.deepEqual(
@@ -1148,7 +1148,7 @@ async function main() {
     ["Ask Fox", "Upload more", "Request human"],
   );
   const goldProceedAgain = workspaceReply("Proceed", goldQueued);
-  assert.equal(goldProceedAgain?.text, MOTION_COPY.in_queue, "second gold Proceed stays the queue line");
+  assert.equal(goldProceedAgain?.text, MOTION_COPY.nudge, "second gold Proceed stays the send line");
   assert.doesNotMatch(goldProceedAgain?.text ?? "", /I didn’t see a K-1 or Schedule C/);
 
   const leftoverQ = workspaceReply("What else did you see on that return?", leftoverReady);

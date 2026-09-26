@@ -4366,7 +4366,9 @@ function deskStripActionsComputed(
   if (
     inQueueEnding(draft) ||
     message.text === MOTION_COPY.in_queue ||
-    /ONYX has this for review/i.test(message.text)
+    message.text === MOTION_COPY.nudge ||
+    /ONYX has this for review/i.test(message.text) ||
+    /I pushed this/i.test(message.text)
   ) {
     return stripStreetSuggest(finishLineActions(draft));
   }
@@ -4452,6 +4454,7 @@ function isParkedPostLinkLine(text: string) {
     return true;
   }
   if (line === MOTION_COPY.in_queue || /ONYX has this for review/i.test(line)) return true;
+  if (line === MOTION_COPY.nudge || /I pushed this/i.test(line)) return true;
   return false;
 }
 
@@ -5494,7 +5497,7 @@ function workspaceAskCopy(
     }
     if (inQueueEnding(draft)) {
       return {
-        text: MOTION_COPY.in_queue,
+        text: MOTION_COPY.nudge,
         actions: finishLineActions(draft),
       };
     }
@@ -6796,13 +6799,13 @@ export function workspaceUpdateCopy(capture: Capture, draft: FoxIntakeDraft) {
   }
   if (capture.field === "proceed") {
     if (!hasLinkedAccount(draft) || accountSaveAskOpen(draft)) return ACCOUNT_SAVE_ASK;
-    return MOTION_COPY.in_queue;
+    return MOTION_COPY.nudge;
   }
   if (capture.field === "not-yet") {
     return MOTION_COPY.on_hold;
   }
   if (capture.field === "skip-email") {
-    return draft.pendingFinish === "not-yet" ? MOTION_COPY.on_hold : MOTION_COPY.in_queue;
+    return draft.pendingFinish === "not-yet" ? MOTION_COPY.on_hold : MOTION_COPY.nudge;
   }
   if (capture.field === "start-docs") {
     return "";

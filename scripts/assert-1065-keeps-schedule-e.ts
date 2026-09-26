@@ -383,7 +383,7 @@ function main() {
   const proceeded = applyProceedMotion(withLinkedAccount({ ...afterLooks, emailSkipped: true }));
   const proceedAsk = workspaceReply("Proceed", withLinkedAccount({ ...afterLooks, emailSkipped: true }));
   assert.equal(proceeded.motion, "in_queue", "Proceed once writes in_queue");
-  assert.equal(proceedAsk?.text, MOTION_COPY.in_queue);
+  assert.equal(proceedAsk?.text, MOTION_COPY.nudge);
   assert.equal(MOTION_COPY.in_queue, "ONYX has this for review. I’m still here.");
   assert.doesNotMatch(proceedAsk?.text ?? "", /I didn’t see a K-1 or Schedule C/);
   assert.deepEqual(

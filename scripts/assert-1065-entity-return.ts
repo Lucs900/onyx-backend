@@ -572,7 +572,7 @@ async function main() {
   const proceeded = applyProceedMotion(withLinkedAccount(afterLooks));
   const proceedAsk = workspaceReply("Proceed", withLinkedAccount(afterLooks));
   assert.equal(proceeded.motion, "in_queue");
-  assert.equal(proceedAsk?.text, MOTION_COPY.in_queue);
+  assert.equal(proceedAsk?.text, MOTION_COPY.nudge);
   assert.equal(MOTION_COPY.in_queue, "ONYX has this for review. I’m still here.");
   assert.deepEqual(
     (proceedAsk?.actions ?? []).map((item) => item.label),

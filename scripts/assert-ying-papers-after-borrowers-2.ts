@@ -227,7 +227,7 @@ function main() {
   const afterLooks = withLinkedAccount(applyLooksRightMotion(ready));
   assert.ok(stillUsefulSpokenItems(afterLooks).length <= 3);
   const proceed = workspaceReply("Proceed", afterLooks);
-  assert.match(proceed?.text ?? "", /ONYX has this for review/);
+  assert.match(proceed?.text ?? "", /I pushed this/);
   assert.deepEqual(labels(proceed?.actions).slice(0, 2), ["Ask Fox", "Upload more"]);
   assert.equal(labels(proceed?.actions).at(-1), "Request human");
   const queued = applyProceedMotion(afterLooks);

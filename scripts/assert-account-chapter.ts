@@ -427,13 +427,13 @@ async function main() {
   const linked = { ...queued, accountId: opened.draft.accountId, fileId: opened.draft.fileId };
   const queueMessages: FoxMessage[] = [
     ...messages,
-    { id: "fox-q", role: "fox", text: "ONYX has this for review. I’m still here." },
+    { id: "fox-q", role: "fox", text: "I pushed this. ONYX still has it — I’ll bring the result back here." },
   ];
   const persisted = writeAccountFile(store, opened.record.token, linked, queueMessages);
   assert.equal(persisted?.fileId, opened.draft.fileId);
   const afterProceed = resumeFromStore(store, { token: opened.record.token });
   assert.equal(afterProceed?.draft.motion, "in_queue");
-  assert.equal(lastFoxLine(afterProceed?.messages ?? []), "ONYX has this for review. I’m still here.");
+  assert.equal(lastFoxLine(afterProceed?.messages ?? []), "I pushed this. ONYX still has it — I’ll bring the result back here.");
   assert.ok(staffDeskKeepsFinishChips(afterProceed!.draft));
   assert.deepEqual(labels(finishLineActions(afterProceed!.draft)).slice(0, 2), ["Ask Fox", "Upload more"]);
 
