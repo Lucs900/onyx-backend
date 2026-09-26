@@ -52,6 +52,7 @@ import {
 import {
   createAccountRecord,
   memoryAccountStore,
+  accountFileHasStoredContent,
   mergeFileDraft,
   persistAccountRecord,
   persistLiveAccountRecord,
@@ -262,12 +263,43 @@ function main() {
 
   const staleFile = { ...sent, fileId: "file_old_afdb", accountId: "acct_old_afdb" };
   const walkedFile = { ...guest, fileId: "file_walked_8c8f" };
-  assert.equal(shouldKeepLiveAccountDraft(staleFile, walkedFile), false);
+  assert.equal(accountFileHasStoredContent(staleFile), true);
+  assert.equal(accountFileHasStoredContent(emptyDraft()), false);
+  assert.equal(accountFileHasStoredContent({ ...emptyDraft(), productIntent: "heloc" }), true);
+  assert.equal(
+    accountFileHasStoredContent({
+      ...emptyDraft(),
+      documents: [
+        {
+          slot: "w2",
+          name: "w2.pdf",
+          type: "application/pdf",
+          size: 1,
+          receivedAt: "2026-09-26T00:00:00.000Z",
+          status: "received",
+        },
+      ],
+    }),
+    true,
+  );
+  assert.equal(shouldKeepLiveAccountDraft(staleFile, walkedFile), true);
   assert.equal(shouldKeepLiveAccountDraft(staleFile, emptyDraft()), true);
+  const papers = {
+    ...emptyDraft(),
+    path: "acr" as const,
+    fileId: "file_papers",
+    productIntent: "heloc" as const,
+    propertyZip: "94123",
+    motion: "gathering" as const,
+  };
+  assert.equal(accountFileHasStoredContent(papers), true);
+  assert.equal(shouldKeepLiveAccountDraft(papers, walkedFile), true);
+  const emptyAccount = { ...emptyDraft(), path: "acr" as const, fileId: "file_empty_acct" };
+  assert.equal(accountFileHasStoredContent(emptyAccount), false);
+  assert.equal(shouldKeepLiveAccountDraft(emptyAccount, walkedFile), false);
   const notStolen = mergeFileDraft(staleFile, walkedFile);
   assert.equal(notStolen.fileId, walkedFile.fileId);
   assert.equal(notStolen.motion, "gathering");
-  assert.equal(notStolen.accountId, "acct_old_afdb");
   assert.equal(reviewCount(notStolen), 0);
   const staleRecord = createAccountRecord({
     draft: staleFile,
@@ -275,20 +307,27 @@ function main() {
     fileId: staleFile.fileId ?? "file_old_afdb",
     email: "62attach@onyxlending.com",
   });
-  const rebound = persistLiveAccountRecord(staleRecord, walkedFile, guestThread);
-  assert.equal(rebound.fileId, walkedFile.fileId);
-  assert.equal(rebound.draft.fileId, walkedFile.fileId);
-  assert.equal(rebound.draft.motion, "gathering");
-  assert.equal(rebound.draft.accountId, staleRecord.accountId);
-  assert.equal(reviewCount(rebound.draft), 0);
-  assert.ok(!hasStoredReviewSend(rebound.draft));
+  const keptStored = persistLiveAccountRecord(staleRecord, walkedFile, guestThread);
+  assert.equal(keptStored.fileId, staleRecord.fileId);
+  assert.equal(keptStored.draft.fileId, staleRecord.fileId);
+  assert.equal(keptStored.draft.motion, "in_queue");
+  assert.equal(reviewCount(keptStored.draft), 1);
   const store = memoryAccountStore([staleRecord]);
   const attachedWalk = attachAccountOnFile(store, walkedFile, guestThread, {
     email: "62attach@onyxlending.com",
   });
   assert.equal(attachedWalk.sameFile, true);
-  assert.equal(attachedWalk.record.fileId, walkedFile.fileId);
-  assert.equal(attachedWalk.draft.motion, "gathering");
+  assert.equal(attachedWalk.record.fileId, staleRecord.fileId);
+  assert.equal(attachedWalk.draft.motion, "in_queue");
+  const emptyRecord = createAccountRecord({
+    draft: emptyAccount,
+    messages: [],
+    fileId: emptyAccount.fileId ?? "file_empty_acct",
+    email: "62empty@onyxlending.com",
+  });
+  const boundEmpty = persistLiveAccountRecord(emptyRecord, walkedFile, guestThread);
+  assert.equal(boundEmpty.fileId, walkedFile.fileId);
+  assert.equal(boundEmpty.draft.motion, "gathering");
   const emptyLogin = attachAccountOnFile(
     memoryAccountStore([staleRecord]),
     { ...emptyDraft(), path: "acr", workspaceFlow: true, fileId: "file_empty_guest" },
@@ -320,12 +359,17 @@ function main() {
   assert.equal(reviewCount(saveAsk), 0);
 
   const storeSource = readFileSync(new URL("../components/fox/store.ts", import.meta.url), "utf8");
-  assert.match(storeSource, /const thisDevice = Boolean\(current\.sampleAccepted \|\| current\.guestProceeded\)/);
-  assert.match(storeSource, /if \(snapshot\.sameFile && !thisDevice\)/);
-  assert.match(storeSource, /if \(attached && session\.fileId !== attached\)/);
+  assert.match(storeSource, /function stashGuestSketch/);
+  assert.match(storeSource, /function sessionOwnsCurrentFile/);
+  assert.match(storeSource, /if \(!sessionOwnsCurrentFile\(session\)\) return/);
+  assert.match(storeSource, /FOX_GUEST_SKETCH_KEY/);
   const coreSource = readFileSync(new URL("../lib/account/core.ts", import.meta.url), "utf8");
-  assert.match(coreSource, /draftIsThisDeviceFile/);
+  assert.match(coreSource, /export function accountFileHasStoredContent/);
+  assert.match(coreSource, /accountFileHasStoredContent\(existing\)/);
   assert.match(coreSource, /keepStoredQueue =\n    sameFile &&/s);
+  const serverSource = readFileSync(new URL("../lib/account/server.ts", import.meta.url), "utf8");
+  assert.match(serverSource, /accountFileHasStoredContent\(currentToken\.draft\)/);
+  assert.match(serverSource, /accountFileHasStoredContent\(current\.draft\) && current\.fileId !== record\.fileId/);
 
   console.log(
     "assert-signed-in-proceed-status: guest row A · attach stays gathering + Proceed · signed-in write in_queue once",

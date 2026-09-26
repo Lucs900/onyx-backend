@@ -5,7 +5,13 @@
 import { get, list, put } from "@vercel/blob";
 import { serverBlobReady } from "@/lib/docs/storage";
 import type { AccountRecord, AccountStore } from "./core";
-import { memoryAccountStore, normalizeEmail, normalizePhone, shouldKeepLiveAccountDraft } from "./core";
+import {
+  accountFileHasStoredContent,
+  memoryAccountStore,
+  normalizeEmail,
+  normalizePhone,
+  shouldKeepLiveAccountDraft,
+} from "./core";
 
 const memory = memoryAccountStore();
 
@@ -143,6 +149,14 @@ async function readBlobRecord(pathname: string, expectedFileId?: string): Promis
 
 async function writeBlobRecord(record: AccountRecord) {
   if (!serverBlobReady()) return;
+  const currentToken = record.token ? await readBlobRecord(tokenPath(record.token)) : undefined;
+  if (
+    currentToken &&
+    accountFileHasStoredContent(currentToken.draft) &&
+    currentToken.fileId !== record.fileId
+  ) {
+    return;
+  }
   const body = JSON.stringify(record);
   const opts = {
     access: "private" as const,
@@ -168,6 +182,12 @@ async function writeBlobRecord(record: AccountRecord) {
 }
 
 export async function saveAccountRecord(record: AccountRecord) {
+  const current =
+    (record.token ? processStore().getByToken(record.token) : undefined) ??
+    (record.token ? await loadAccountByToken(record.token) : undefined);
+  if (current && accountFileHasStoredContent(current.draft) && current.fileId !== record.fileId) {
+    return;
+  }
   processStore().put(record);
   await writeBlobRecord(record);
 }

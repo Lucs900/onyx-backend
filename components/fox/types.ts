@@ -8,6 +8,8 @@ export const FOX_PANEL_KEY = "onyx.fox.panelOpen";
 export const FOX_LEGAL_KEY = "onyx.fox.sawLegal";
 export const FOX_MESSAGES_KEY = "onyx.fox.messages";
 export const FOX_ACCOUNT_KEY = "onyx.fox.account";
+/** This-browser guest sketch left behind when Log in opens a stored account File. */
+export const FOX_GUEST_SKETCH_KEY = "onyx.fox.guestSketch";
 
 export const FOX_DISCLOSURE =
   "ONYX Fox can assist and prepare. It cannot approve, lock, or commit to lend.";

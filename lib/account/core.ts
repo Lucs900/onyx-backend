@@ -183,16 +183,40 @@ function draftIsThisDeviceFile(draft?: FoxIntakeDraft | null) {
   return Boolean(draft?.sampleAccepted || draft?.guestProceeded);
 }
 
+function sentReviewMotion(draft?: FoxIntakeDraft | null) {
+  const motion = draft?.motion;
+  return motion === "in_queue" || motion === "escalated" || motion === "waiting_out";
+}
+
+/**
+ * Account File already has anything stored: queued, or gathering with papers / answers.
+ * Log in must not move the account off this File.
+ * Fields: fileHasResumeFacts (productIntent, amounts, occupancy, propertyType, zip, facts),
+ * sampleAccepted, documents[], sent motion, review WorkItems.
+ */
+export function accountFileHasStoredContent(draft?: FoxIntakeDraft | null) {
+  if (!draft) return false;
+  if (fileHasResumeFacts(draft)) return true;
+  if (draft.sampleAccepted) return true;
+  if ((draft.documents ?? []).length > 0) return true;
+  if (sentReviewMotion(draft)) return true;
+  return (draft.workItems ?? []).some((item) => item.kind === "review");
+}
+
 /** Other-browser login must not replace the live File with an empty guest draft.
- *  Create account / Log in on this device attaches the walked file_id — never keep an older File. */
+ *  A: never move off a File that already has anything stored.
+ *  Empty account File + this-device File still binds (80f1fde). */
 export function shouldKeepLiveAccountDraft(
   existing: FoxIntakeDraft,
   incoming?: FoxIntakeDraft | null,
 ) {
   if (!incoming) return true;
-  const incomingId = incoming.fileId?.trim();
-  if (draftIsThisDeviceFile(incoming) && incomingId) return false;
   const existingId = existing.fileId?.trim();
+  const incomingId = incoming.fileId?.trim();
+  if (existingId && incomingId && existingId !== incomingId && accountFileHasStoredContent(existing)) {
+    return true;
+  }
+  if (draftIsThisDeviceFile(incoming) && incomingId) return false;
   if (existingId && incomingId && existingId !== incomingId) return true;
   return fileHasResumeFacts(existing) && !fileHasResumeFacts(incoming);
 }
