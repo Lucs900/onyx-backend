@@ -4435,8 +4435,6 @@ function isParkedPostLinkLine(text: string) {
     return true;
   }
   if (line === MOTION_COPY.in_queue || /ONYX has this for review/i.test(line)) return true;
-  if (line === MOTION_COPY.nudge || line === MOTION_COPY.threeNudges) return true;
-  if (/i pushed this/i.test(line)) return true;
   return false;
 }
 
