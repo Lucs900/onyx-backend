@@ -196,6 +196,7 @@ function confirmedFactValue(draft: FoxIntakeDraft, field: string) {
 /**
  * Confirmed File write after Use this or a typed/chip confirm.
  * Fox suggested speech / pendingProposal / unconfirmed facts do not count.
+ * Computed notes (reserves_note) and asked-only flags do not count.
  * Fields: product, purpose, occupancy, value, lien, line, loan, address, ZIP,
  * property type, FICO, employment, QI, debts, borrowers, years in business,
  * Looks right (sampleAccepted).
@@ -216,11 +217,16 @@ export function draftHasConfirmedFileWrite(draft?: FoxIntakeDraft | null) {
   if (draft.creditBand?.trim()) return true;
   if (draft.incomeType?.value?.trim()) return true;
   if (confirmedFactValue(draft, "qualifying_income")) return true;
-  if (draft.statedMonthlyDebts != null || draft.monthlyDebtsAsked) return true;
+  if (draft.statedMonthlyDebts != null) return true;
   if (draft.whoOnLoan) return true;
-  if (confirmedFactValue(draft, "years_in_business") || draft.yearsInBusinessAsked) return true;
+  if (confirmedFactValue(draft, "years_in_business")) return true;
   if (draft.sampleAccepted) return true;
-  return Object.values(draft.facts ?? {}).some((fact) => Boolean(fact?.value?.trim() && fact.confirmed));
+  return Object.values(draft.facts ?? {}).some(
+    (fact) =>
+      Boolean(fact?.value?.trim() && fact.confirmed) &&
+      fact.source !== "computed" &&
+      fact.source !== "suggested",
+  );
 }
 
 /**

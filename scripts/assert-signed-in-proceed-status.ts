@@ -320,6 +320,25 @@ function main() {
   assert.equal(accountFileHasStoredContent(suggestedOnly), false);
   assert.equal(draftHasConfirmedFileWrite(suggestedOnly), false);
   assert.equal(shouldKeepLiveAccountDraft(suggestedOnly, walkedFile), false);
+  const reservesOnly = {
+    ...emptyDraft(),
+    path: "acr" as const,
+    fileId: "file_reserves_only",
+    facts: {
+      reserves_note: {
+        field: "reserves_note",
+        value: "reserves_review",
+        source: "computed" as const,
+        confirmed: true,
+      },
+    },
+    reservesNote: "reserves_review" as const,
+    monthlyDebtsAsked: true,
+    yearsInBusinessAsked: true,
+  };
+  assert.equal(accountFileHasStoredContent(reservesOnly), false);
+  assert.equal(draftHasConfirmedFileWrite(reservesOnly), false);
+  assert.equal(shouldKeepLiveAccountDraft(reservesOnly, walkedFile), false);
   const suggestedRecord = createAccountRecord({
     draft: suggestedOnly,
     messages: [],
