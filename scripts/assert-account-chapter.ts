@@ -1,0 +1,760 @@
+/**
+ * Account chapter. Create account · Log in · Not now on the first question.
+ * Why-sentence before Email / Phone. Real send — never print token/URL in Fox speech.
+ * Second browser resumes the same file_id. Proceed without account is not in_queue.
+ */
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { emptyDraft, ensureFileId, getFoxDraft, loadIntakeDraft, startOverWorkspace } from "../components/fox/store";
+import { applyLooksRightMotion, applyProceedMotion, finishLineActions } from "../components/fox/motion";
+import { skipCurrentInvite } from "../components/fox/fileWrite";
+import { applyCouponChoice } from "../components/fox/liveCoupon";
+import { skipMonthlyDebts } from "../components/fox/monthlyDebts";
+import { skipWageDocs } from "../components/fox/qualifyingIncome";
+import { borrowersFileValue, writeWhoOnLoan } from "../components/fox/whoOnLoan";
+import {
+  withHelocToolQuote,
+  writeFirstLien,
+  writeHelocLine,
+} from "../components/fox/heloc";
+import {
+  deskLineAfterAccountConsume,
+  deskStripActions,
+  liveDeskLineOwnsPrompt,
+  nextFoxAsk,
+  previewFacts,
+  statusCopy,
+  withDeskLineAfterAccountConsume,
+  workspaceGreeting,
+  workspaceReply,
+  writePurchasePrice,
+} from "../components/fox/workspace";
+import {
+  ACCOUNT_EMAIL_ASK,
+  ACCOUNT_EMAIL_SENT,
+  ACCOUNT_FILE_YOURS,
+  ACCOUNT_FIRST_OFFER,
+  ACCOUNT_FIRST_WHY,
+  ACCOUNT_LOGIN_ASK,
+  ACCOUNT_SEND_FAILED,
+  ACCOUNT_PHONE_SENT,
+  ACCOUNT_SAVE_ASK,
+  ACCOUNT_SKIPPED_LINE,
+  ACCOUNT_WHY_SENTENCE,
+  CREATE_ACCOUNT_LABEL,
+  HEADER_LOGIN_HREF,
+  LOGIN_LABEL,
+  NOT_NOW_LABEL,
+  SAVE_THIS_FILE_LABEL,
+  accountHeaderActions,
+  accountHomeActions,
+  accountSaveAskOpen,
+  accountSaveWallActions,
+  accountSentCopy,
+  accountSideActions,
+  applyAccountCapture,
+  applyAccountCreated,
+  applyAccountLetterOpened,
+  applyAccountSaveAsk,
+  accountWorkspaceReply,
+  attachAccountOnFile,
+  consumeLinkedAccountDraft,
+  firstAccountOfferOpen,
+  foxLineLeaksAccountSecret,
+  isAccountMailWaitLine,
+  lastFoxLine,
+  openAccountOnFile,
+  withLinkedAccount,
+  writeAccountFile,
+} from "../components/fox/account";
+import { HELOC_FIRST_LIEN_ASK } from "../components/fox/heloc";
+import {
+  applyStaffDeskSend,
+  processingHubView,
+  STAFF_W2_FOX_LINE,
+  staffDeskKeepsFinishChips,
+} from "../components/fox/processingHub";
+import { skipWhoOnLoanName, whoOnLoanNameWasSkipped } from "../components/fox/whoOnLoan";
+import { memoryAccountStore, resumeFromStore } from "../lib/account/core";
+import {
+  ACCOUNT_RESUME_ORIGIN_LOCKED,
+  ONYX_MAIL_FROM,
+  PROTECTION_BYPASS_QUERY,
+  SET_BYPASS_COOKIE_QUERY,
+  SET_BYPASS_COOKIE_VALUE,
+  absoluteMagicLink,
+  accountMailEnv,
+  accountOrigin,
+  accountTokenFromLocation,
+  configuredResumeOrigin,
+  isProtectedPreviewOrigin,
+  isUniquePreviewOrigin,
+  letterHasProtectionBypass,
+  letterMagicLink,
+  letterResumeOrigin,
+  resolveMailFrom,
+  sendAccountChannel,
+} from "../lib/account/send";
+import type { FoxIntakeDraft, FoxMessage } from "../components/fox/types";
+
+function labels(actions: { label: string }[] | undefined) {
+  return (actions ?? []).map((item) => item.label);
+}
+
+function firstQuestion(): FoxIntakeDraft {
+  return {
+    ...emptyDraft(),
+    path: "acr",
+    workspaceFlow: true,
+  };
+}
+
+function houseReady(draft: FoxIntakeDraft): FoxIntakeDraft {
+  return {
+    ...draft,
+    productIntent: "heloc",
+    occupancyAsked: true,
+    occupancyChoice: { ...emptyDraft().occupancyChoice, value: "primary" },
+    timelineAsked: true,
+    timelineChoice: { ...emptyDraft().timelineChoice, value: "ready-now" },
+    propertyType: "sfr",
+    propertyTypeAsked: true,
+    creditAsked: true,
+    creditBand: "760+",
+    propertyZip: "94123",
+    propertyZipAsked: true,
+    subjectCity: "San Francisco",
+    subjectState: "CA",
+  };
+}
+
+function justMeSkipProceed(file: FoxIntakeDraft): FoxIntakeDraft {
+  let draft = applyCouponChoice(withHelocToolQuote(file), "this");
+  draft = {
+    ...draft,
+    incomeAsked: true,
+    incomeType: { ...emptyDraft().incomeType, value: "w2" },
+  };
+  draft = writeWhoOnLoan(draft, "just-me");
+  draft = skipMonthlyDebts(draft);
+  draft = skipWageDocs(draft);
+  draft = skipCurrentInvite(draft);
+  return applyProceedMotion(applyLooksRightMotion(draft));
+}
+
+async function main() {
+  const first = firstQuestion();
+  const greet = workspaceGreeting(first);
+  assert.equal(firstAccountOfferOpen(first), true);
+  assert.equal(greet.text, ACCOUNT_FIRST_OFFER);
+  assert.doesNotMatch(greet.text, /send it to review|So this File can find you on another phone/);
+  assert.deepEqual(labels(greet.actions), [CREATE_ACCOUNT_LABEL, LOGIN_LABEL, NOT_NOW_LABEL]);
+  assert.ok(!labels(greet.actions).includes("Buy"));
+  assert.ok(!labels(greet.actions).includes("HELOC"));
+  assert.deepEqual(labels(accountSideActions(first)), [CREATE_ACCOUNT_LABEL, LOGIN_LABEL, NOT_NOW_LABEL]);
+  assert.deepEqual(labels(deskStripActions([{ id: "g", role: "fox", text: greet.text }], first)), [
+    CREATE_ACCOUNT_LABEL,
+    LOGIN_LABEL,
+    NOT_NOW_LABEL,
+  ]);
+  assert.deepEqual(labels(accountHeaderActions(first)), [CREATE_ACCOUNT_LABEL, LOGIN_LABEL]);
+  assert.deepEqual(labels(accountHomeActions(first)), [CREATE_ACCOUNT_LABEL, LOGIN_LABEL]);
+  assert.ok(!labels(accountHeaderActions(first)).includes(NOT_NOW_LABEL));
+  const midWalk = houseReady(writePurchasePrice(firstQuestion(), 500_000));
+  assert.deepEqual(labels(accountSideActions(midWalk)), []);
+  assert.deepEqual(labels(accountHeaderActions(midWalk)), [CREATE_ACCOUNT_LABEL, LOGIN_LABEL]);
+  assert.ok(!labels(accountHeaderActions(midWalk)).includes(NOT_NOW_LABEL));
+  assert.ok(!labels(deskStripActions([{ id: "v", role: "fox", text: "What’s the property value?" }], midWalk)).includes(CREATE_ACCOUNT_LABEL));
+
+  const create = workspaceReply("Create account", first);
+  assert.equal(create?.capture?.field, "create-account");
+  assert.equal(create?.text, ACCOUNT_FIRST_WHY);
+  assert.equal(create?.text, "So this desk is yours on the next phone.");
+  assert.doesNotMatch(create?.text ?? "", /send it to review|So this File can find you on another phone/);
+  assert.notEqual(create?.text, ACCOUNT_WHY_SENTENCE);
+  assert.ok(!foxLineLeaksAccountSecret(create?.text ?? ""));
+  const afterCreate = applyAccountCapture(first, { field: "create-account" });
+  assert.equal(afterCreate.accountAsk, "channel");
+  assert.deepEqual(labels(accountSideActions(afterCreate)), ["Email", "Phone", NOT_NOW_LABEL]);
+
+  const login = workspaceReply("Log in", first);
+  assert.equal(login?.capture?.field, "login-account");
+  assert.equal(login?.text, "Welcome back. Email or phone for a code?");
+  assert.equal(login?.text, ACCOUNT_LOGIN_ASK);
+  assert.doesNotMatch(login?.text ?? "", /Open your File|file_id|\/start\?account=/i);
+  assert.ok(!foxLineLeaksAccountSecret(login?.text ?? ""));
+  const afterLogin = applyAccountCapture(first, { field: "login-account" });
+  assert.equal(afterLogin.accountAsk, "channel");
+  assert.notEqual(afterLogin.motion, "in_queue");
+  assert.deepEqual(labels(accountSideActions(afterLogin)), ["Email", "Phone", NOT_NOW_LABEL]);
+  assert.equal(HEADER_LOGIN_HREF, "/start?path=acr&login=1");
+  assert.doesNotMatch(HEADER_LOGIN_HREF, /\/login/);
+  const headerSource = readFileSync(new URL("../components/SiteHeader.tsx", import.meta.url), "utf8");
+  assert.match(headerSource, /HEADER_LOGIN_HREF/);
+  assert.doesNotMatch(headerSource, /href=\"\/login\"/);
+  const loginPage = readFileSync(new URL("../app/(marketing)/login/page.tsx", import.meta.url), "utf8");
+  assert.match(loginPage, /redirect\(HEADER_LOGIN_HREF\)/);
+  assert.doesNotMatch(loginPage, /LoginResume|Open your File/);
+
+  const skip = workspaceReply("Not now", first);
+  assert.equal(skip?.capture?.field, "skip-account");
+  assert.notEqual(skip?.text, ACCOUNT_SKIPPED_LINE);
+  assert.notEqual(skip?.text, ACCOUNT_FIRST_OFFER);
+  assert.match(skip?.text ?? "", /relationship file|We’ll keep this desk open after close/i);
+  assert.deepEqual(labels(skip?.actions), ["Buy", "Refinance", "HELOC", "Jumbo", "Other"]);
+  const skipped = applyAccountCapture(first, { field: "skip-account" });
+  assert.equal(skipped.accountSkipped, true);
+  assert.equal(firstAccountOfferOpen(skipped), false);
+  assert.deepEqual(labels(accountSideActions(skipped)), []);
+  assert.deepEqual(labels(nextFoxAsk(skipped).actions), ["Buy", "Refinance", "HELOC", "Jumbo", "Other"]);
+  assert.ok(!labels(deskStripActions([{ id: "n", role: "fox", text: skip?.text ?? "" }], skipped)).includes(CREATE_ACCOUNT_LABEL));
+
+  const afterEmail = applyAccountCapture(afterCreate, { field: "account-channel", value: "email" });
+  assert.equal(afterEmail.accountAsk, "email");
+  const emailAsk = workspaceReply("Email", afterCreate);
+  assert.equal(emailAsk?.text, "Where should I send the sign-in link?");
+  assert.equal(emailAsk?.text, ACCOUNT_EMAIL_ASK);
+  assert.deepEqual(labels(accountSideActions(afterEmail)), ["Phone", NOT_NOW_LABEL]);
+  assert.ok(labels(accountSideActions(afterEmail)).includes("Phone"));
+  assert.notEqual(labels(accountSideActions(afterEmail)), [NOT_NOW_LABEL]);
+  const emailTyped = workspaceReply("borrower@example.com", afterEmail);
+  assert.equal(emailTyped?.capture?.field, "account-email");
+  assert.equal(emailTyped?.text, ACCOUNT_EMAIL_SENT);
+  assert.ok(!foxLineLeaksAccountSecret(emailTyped?.text ?? ""));
+  assert.doesNotMatch(emailTyped?.text ?? "", /\/start\?account=/);
+
+  const spokenEmail = accountSentCopy({
+    channel: "email",
+    magicLink: "/start?account=secret-token-must-not-print",
+    code: "123456",
+  });
+  const spokenPhone = accountSentCopy({ channel: "phone", magicLink: "/start?account=nope", code: "654321" });
+  assert.equal(spokenEmail, ACCOUNT_EMAIL_SENT);
+  assert.equal(spokenPhone, ACCOUNT_PHONE_SENT);
+  assert.ok(!foxLineLeaksAccountSecret(spokenEmail));
+  assert.ok(!foxLineLeaksAccountSecret(spokenPhone));
+
+  const store = memoryAccountStore();
+  const messages: FoxMessage[] = [{ id: "fox-1", role: "fox", text: greet.text }];
+  const opened = openAccountOnFile(store, first, messages, { email: "borrower@example.com" });
+  assert.ok(opened.draft.fileId);
+  assert.ok(opened.draft.accountId);
+  assert.match(opened.snapshot.magicLink, /^\/start\?account=/);
+  assert.equal(opened.snapshot.fileId, opened.draft.fileId);
+  const threadAfterOpen = lastFoxLine(messages);
+  assert.ok(!foxLineLeaksAccountSecret(threadAfterOpen));
+
+  const second = resumeFromStore(store, { token: opened.record.token });
+  assert.ok(second);
+  assert.equal(second.fileId, opened.draft.fileId);
+  assert.equal(JSON.stringify(previewFacts(second.draft)), JSON.stringify(previewFacts(opened.draft)));
+  assert.equal(lastFoxLine(second.messages), lastFoxLine(messages));
+
+  const waiting: FoxMessage[] = [
+    ...messages,
+    { id: "fox-sent", role: "fox", text: ACCOUNT_EMAIL_SENT },
+  ];
+  assert.ok(isAccountMailWaitLine(lastFoxLine(waiting)));
+  const consumedEmpty = consumeLinkedAccountDraft(opened.draft);
+  assert.equal(consumedEmpty.accountId, opened.draft.accountId);
+  assert.equal(consumedEmpty.accountAsk, undefined);
+  assert.equal(consumedEmpty.accountSaveAsk, false);
+  const emptyDesk = deskLineAfterAccountConsume(consumedEmpty);
+  assert.equal(emptyDesk.text, ACCOUNT_FILE_YOURS);
+  assert.notEqual(emptyDesk.text, ACCOUNT_EMAIL_SENT);
+  assert.notEqual(emptyDesk.text, ACCOUNT_EMAIL_ASK);
+  assert.notEqual(emptyDesk.text, ACCOUNT_WHY_SENTENCE);
+  assert.deepEqual(labels(emptyDesk.actions), ["Buy", "Refinance", "HELOC", "Jumbo", "Other"]);
+  assert.ok(!labels(emptyDesk.actions).includes(CREATE_ACCOUNT_LABEL));
+  const advancedEmpty = withDeskLineAfterAccountConsume(waiting, emptyDesk, consumedEmpty);
+  assert.equal(lastFoxLine(waiting), ACCOUNT_EMAIL_SENT);
+  assert.equal(lastFoxLine(advancedEmpty), ACCOUNT_FILE_YOURS);
+  assert.ok(!advancedEmpty.some((item) => item.text === ACCOUNT_EMAIL_SENT));
+  assert.deepEqual(labels(deskStripActions(advancedEmpty, consumedEmpty)), [
+    "Buy",
+    "Refinance",
+    "HELOC",
+    "Jumbo",
+    "Other",
+  ]);
+  assert.ok(liveDeskLineOwnsPrompt(ACCOUNT_FILE_YOURS, consumedEmpty));
+  assert.ok(!liveDeskLineOwnsPrompt(ACCOUNT_EMAIL_SENT, consumedEmpty));
+  assert.ok(!liveDeskLineOwnsPrompt(ACCOUNT_EMAIL_ASK, consumedEmpty));
+  assert.ok(!liveDeskLineOwnsPrompt(workspaceGreeting(consumedEmpty).text, consumedEmpty));
+  const helocLinked = consumeLinkedAccountDraft({
+    ...houseReady(writeHelocLine(writeFirstLien(writePurchasePrice(firstQuestion(), 500_000), 400_000), 50_000)),
+    accountId: opened.draft.accountId,
+    accountAsk: "sent",
+    accountSaveAsk: true,
+  });
+  const helocDesk = deskLineAfterAccountConsume(helocLinked);
+  assert.ok(helocDesk.text.trim());
+  assert.notEqual(helocDesk.text, ACCOUNT_EMAIL_SENT);
+  assert.notEqual(helocDesk.text, ACCOUNT_EMAIL_ASK);
+  assert.notEqual(helocDesk.text, ACCOUNT_WHY_SENTENCE);
+  assert.notEqual(helocDesk.text, CREATE_ACCOUNT_LABEL);
+  const advancedHeloc = withDeskLineAfterAccountConsume(waiting, helocDesk, helocLinked);
+  assert.equal(lastFoxLine(advancedHeloc), helocDesk.text);
+  assert.ok(liveDeskLineOwnsPrompt(helocDesk.text, helocLinked));
+  assert.ok(!advancedHeloc.some((item) => item.text === ACCOUNT_EMAIL_SENT));
+  assert.ok(!labels(deskStripActions(advancedHeloc, helocLinked)).includes(CREATE_ACCOUNT_LABEL));
+  assert.ok(!labels(accountHeaderActions(helocLinked)).includes(CREATE_ACCOUNT_LABEL));
+
+  const phoneStore = memoryAccountStore();
+  const phone = openAccountOnFile(phoneStore, first, messages, { phone: "4155551212" });
+  assert.ok(phone.snapshot.code);
+  assert.match(phone.snapshot.code ?? "", /^\d{6}$/);
+  assert.ok(!foxLineLeaksAccountSecret(accountSentCopy({ channel: "phone", code: phone.snapshot.code })));
+  const byCode = resumeFromStore(phoneStore, { code: phone.snapshot.code });
+  assert.equal(byCode?.fileId, phone.draft.fileId);
+
+  const emptySecond: FoxIntakeDraft = emptyDraft();
+  assert.notEqual(emptySecond.fileId, opened.draft.fileId);
+  const resumedEmpty = resumeFromStore(store, { token: opened.record.token });
+  assert.equal(resumedEmpty?.fileId, opened.draft.fileId);
+
+  const prevApp = process.env.NEXT_PUBLIC_APP_URL;
+  const prevProd = process.env.VERCEL_PROJECT_PRODUCTION_URL;
+  const prevResume = process.env.ACCOUNT_RESUME_ORIGIN;
+  const prevResumeAlt = process.env.ONYX_RESUME_ORIGIN;
+  const prevFrom = process.env.RESEND_FROM;
+  process.env.NEXT_PUBLIC_APP_URL = "https://onyx-backend-ten.vercel.app";
+  process.env.VERCEL_PROJECT_PRODUCTION_URL = "onyx-backend-ten.vercel.app";
+  delete process.env.ACCOUNT_RESUME_ORIGIN;
+  delete process.env.ONYX_RESUME_ORIGIN;
+  const uniqueHost = "https://onyx-backend-cgbg9w71v-onyx-direct.vercel.app";
+  const fromOrigin = accountOrigin(
+    new Request(`${uniqueHost}/api/account`, { headers: { origin: uniqueHost } }),
+  );
+  const fromForward = accountOrigin(
+    new Request("https://onyx-backend-ten.vercel.app/api/account", {
+      headers: {
+        "x-forwarded-host": "onyx-backend-cgbg9w71v-onyx-direct.vercel.app",
+        "x-forwarded-proto": "https",
+      },
+    }),
+  );
+  assert.equal(fromOrigin, uniqueHost);
+  assert.equal(fromForward, uniqueHost);
+  assert.doesNotMatch(fromOrigin, /onyx-backend-ten/);
+  assert.doesNotMatch(absoluteMagicLink("tok", fromOrigin), /onyx-backend-ten/);
+  assert.match(absoluteMagicLink("tok", fromOrigin), /^https:\/\/onyx-backend-cgbg9w71v-onyx-direct\.vercel\.app\/start\?account=tok$/);
+  const prevBypass = process.env.VERCEL_AUTOMATION_BYPASS_SECRET;
+  const prevBypassAlt = process.env.VERCEL_PROTECTION_BYPASS_SECRET;
+  delete process.env.VERCEL_PROTECTION_BYPASS_SECRET;
+  process.env.VERCEL_AUTOMATION_BYPASS_SECRET = "leftover-bypass-secret";
+  const letter = letterMagicLink("tok", fromOrigin);
+  assert.ok(letterHasProtectionBypass(letter));
+  assert.match(letter, new RegExp(`[?&]${PROTECTION_BYPASS_QUERY}=leftover-bypass-secret`));
+  assert.match(letter, new RegExp(`[?&]${SET_BYPASS_COOKIE_QUERY}=${SET_BYPASS_COOKIE_VALUE}`));
+  const letterUrl = new URL(letter);
+  assert.equal(accountTokenFromLocation(letterUrl.search, letterUrl.hash), "tok");
+  assert.equal(
+    accountTokenFromLocation("x-vercel-protection-bypass=nope&x-vercel-set-bypass-cookie=true&account=kept-token", ""),
+    "kept-token",
+  );
+  assert.equal(accountTokenFromLocation("x-vercel-protection-bypass=nope", "#account=from-hash"), "from-hash");
+  assert.doesNotMatch(absoluteMagicLink("tok", fromOrigin), /x-vercel-protection-bypass/);
+  assert.doesNotMatch(absoluteMagicLink("tok", fromOrigin), /x-vercel-set-bypass-cookie/);
+  assert.equal(opened.snapshot.magicLink, `/start?account=${opened.record.token}`);
+  assert.doesNotMatch(opened.snapshot.magicLink, /x-vercel-protection-bypass/);
+  assert.doesNotMatch(opened.snapshot.magicLink, /x-vercel-set-bypass-cookie/);
+  assert.ok(foxLineLeaksAccountSecret(letter));
+  assert.ok(foxLineLeaksAccountSecret(`Open ${letter}`));
+  assert.ok(!foxLineLeaksAccountSecret(ACCOUNT_EMAIL_SENT));
+  assert.ok(!foxLineLeaksAccountSecret(spokenEmail));
+  assert.doesNotMatch(letter, /onyx-backend-ten/);
+  assert.ok(isUniquePreviewOrigin(fromOrigin));
+  assert.ok(isProtectedPreviewOrigin(fromOrigin));
+  assert.equal(ACCOUNT_RESUME_ORIGIN_LOCKED, "https://start.onyxdirect.com");
+  assert.equal(configuredResumeOrigin(), ACCOUNT_RESUME_ORIGIN_LOCKED);
+  assert.equal(letterResumeOrigin(fromOrigin), ACCOUNT_RESUME_ORIGIN_LOCKED);
+  assert.doesNotMatch(letterResumeOrigin(fromOrigin), /onyx-backend-ten|vercel\.app/);
+  process.env.ACCOUNT_RESUME_ORIGIN = "https://desk.onyxdirect.com";
+  assert.equal(letterResumeOrigin(fromOrigin), ACCOUNT_RESUME_ORIGIN_LOCKED);
+  delete process.env.ACCOUNT_RESUME_ORIGIN;
+  const publicResume = letterResumeOrigin(fromOrigin);
+  assert.equal(publicResume, "https://start.onyxdirect.com");
+  assert.ok(!isProtectedPreviewOrigin(publicResume));
+  const publicLetter = letterMagicLink("tok", publicResume);
+  assert.equal(publicLetter, "https://start.onyxdirect.com/start?account=tok");
+  assert.ok(!letterHasProtectionBypass(publicLetter));
+  assert.doesNotMatch(publicLetter, /x-vercel-protection-bypass|x-vercel-set-bypass-cookie|vercel\.app|onyx-backend-ten/);
+  assert.equal(ONYX_MAIL_FROM, "ONYX Direct <lucas@onyxdirect.com>");
+  process.env.RESEND_FROM = "ONYX <james.b@example.com>";
+  assert.equal(resolveMailFrom(process.env.RESEND_FROM), ONYX_MAIL_FROM);
+  assert.equal(accountMailEnv().resendFrom, ONYX_MAIL_FROM);
+  assert.equal(resolveMailFrom("ONYX Direct <lucas@onyxdirect.com>"), ONYX_MAIL_FROM);
+  delete process.env.VERCEL_AUTOMATION_BYPASS_SECRET;
+  const letterDark = letterMagicLink("tok", fromOrigin);
+  assert.equal(letterDark, absoluteMagicLink("tok", fromOrigin));
+  assert.ok(!letterHasProtectionBypass(letterDark));
+  if (prevBypass === undefined) delete process.env.VERCEL_AUTOMATION_BYPASS_SECRET;
+  else process.env.VERCEL_AUTOMATION_BYPASS_SECRET = prevBypass;
+  if (prevBypassAlt === undefined) delete process.env.VERCEL_PROTECTION_BYPASS_SECRET;
+  else process.env.VERCEL_PROTECTION_BYPASS_SECRET = prevBypassAlt;
+  if (prevApp === undefined) delete process.env.NEXT_PUBLIC_APP_URL;
+  else process.env.NEXT_PUBLIC_APP_URL = prevApp;
+  if (prevProd === undefined) delete process.env.VERCEL_PROJECT_PRODUCTION_URL;
+  else process.env.VERCEL_PROJECT_PRODUCTION_URL = prevProd;
+  if (prevResume === undefined) delete process.env.ACCOUNT_RESUME_ORIGIN;
+  else process.env.ACCOUNT_RESUME_ORIGIN = prevResume;
+  if (prevResumeAlt === undefined) delete process.env.ONYX_RESUME_ORIGIN;
+  else process.env.ONYX_RESUME_ORIGIN = prevResumeAlt;
+  if (prevFrom === undefined) delete process.env.RESEND_FROM;
+  else process.env.RESEND_FROM = prevFrom;
+
+  const sendDry = await sendAccountChannel({
+    channel: "email",
+    email: "borrower@example.com",
+    token: opened.record.token,
+    origin: "https://preview.example",
+  });
+  assert.equal(typeof sendDry.sent, "boolean");
+  if (!process.env.RESEND_API_KEY) {
+    assert.equal(sendDry.sent, false);
+    assert.ok(sendDry.reason === "no_resend" || sendDry.reason === "no_provider" || sendDry.reason === "bad_from");
+  }
+  assert.ok(!foxLineLeaksAccountSecret(ACCOUNT_SEND_FAILED));
+  assert.doesNotMatch(ACCOUNT_SEND_FAILED, /check your email/i);
+
+  const heloc = houseReady(
+    writeHelocLine(writeFirstLien(writePurchasePrice(opened.draft, 500_000), 400_000), 50_000),
+  );
+  const queued = justMeSkipProceed(heloc);
+  assert.equal(queued.motion, "in_queue");
+  assert.equal(borrowersFileValue(queued), "1");
+  const linked = { ...queued, accountId: opened.draft.accountId, fileId: opened.draft.fileId };
+  const queueMessages: FoxMessage[] = [
+    ...messages,
+    { id: "fox-q", role: "fox", text: "I pushed this. ONYX still has it — I’ll bring the result back here." },
+  ];
+  const persisted = writeAccountFile(store, opened.record.token, linked, queueMessages);
+  assert.equal(persisted?.fileId, opened.draft.fileId);
+  const afterProceed = resumeFromStore(store, { token: opened.record.token });
+  assert.equal(afterProceed?.draft.motion, "in_queue");
+  assert.equal(lastFoxLine(afterProceed?.messages ?? []), "I pushed this. ONYX still has it — I’ll bring the result back here.");
+  assert.ok(staffDeskKeepsFinishChips(afterProceed!.draft));
+  assert.deepEqual(labels(finishLineActions(afterProceed!.draft)).slice(0, 2), ["Ask Fox", "Upload more"]);
+
+  const sketch = houseReady(
+    writeHelocLine(writeFirstLien(writePurchasePrice(ensureFileId(firstQuestion()), 500_000), 400_000), 50_000),
+  );
+  const notNow = applyAccountCapture(sketch, { field: "skip-account" });
+  const unsaved = justMeSkipProceed(notNow);
+  assert.notEqual(unsaved.motion, "in_queue");
+  assert.equal(unsaved.motion, "gathering");
+  assert.equal(statusCopy(unsaved), "gathering");
+  assert.equal(accountSaveAskOpen(unsaved), true);
+  assert.equal(unsaved.accountSaveAsk, true);
+  assert.equal(
+    ACCOUNT_SAVE_ASK,
+    "Save so this desk is yours on the next phone. Then I can send it to review.",
+  );
+  assert.doesNotMatch(ACCOUNT_SAVE_ASK, /isn’t only this browser|isn.t only this browser/);
+  assert.equal(nextFoxAsk(unsaved).text, ACCOUNT_SAVE_ASK);
+  assert.deepEqual(labels(accountSaveWallActions(unsaved)), [
+    CREATE_ACCOUNT_LABEL,
+    LOGIN_LABEL,
+    NOT_NOW_LABEL,
+    "Request human",
+  ]);
+  assert.deepEqual(labels(finishLineActions(unsaved)), [
+    CREATE_ACCOUNT_LABEL,
+    LOGIN_LABEL,
+    NOT_NOW_LABEL,
+    "Request human",
+  ]);
+  assert.deepEqual(
+    labels(deskStripActions([{ id: "save", role: "fox", text: ACCOUNT_SAVE_ASK }], unsaved)),
+    [CREATE_ACCOUNT_LABEL, LOGIN_LABEL, NOT_NOW_LABEL, "Request human"],
+  );
+  assert.ok(!labels(finishLineActions(unsaved)).includes("Proceed"));
+  assert.ok(!labels(finishLineActions(unsaved)).includes("Not yet"));
+  assert.ok(!labels(finishLineActions(unsaved)).includes("Upload more"));
+  assert.ok(!labels(accountHeaderActions(unsaved)).includes(NOT_NOW_LABEL));
+  assert.ok(labels(accountSideActions(unsaved)).includes(CREATE_ACCOUNT_LABEL));
+  assert.ok(labels(accountSideActions(unsaved)).includes(LOGIN_LABEL));
+  assert.ok(labels(accountSideActions(unsaved)).includes(NOT_NOW_LABEL));
+  const savePad = applyAccountCapture(unsaved, { field: "save-this-file" });
+  assert.equal(savePad.accountAsk, "channel");
+  assert.equal(savePad.motion, unsaved.motion);
+  assert.notEqual(savePad.motion, "in_queue");
+  assert.equal(SAVE_THIS_FILE_LABEL, "Save this File");
+  const padSource = readFileSync(new URL("../components/fox/FilePreview.tsx", import.meta.url), "utf8");
+  assert.match(padSource, /SAVE_THIS_FILE_LABEL/);
+  assert.doesNotMatch(padSource, /accountSaveWallActions|CREATE_ACCOUNT_LABEL|Create account/);
+  assert.doesNotMatch(padSource, /LOGIN_LABEL|NOT_NOW_LABEL/);
+  const parked = applyAccountSaveAsk(notNow);
+  assert.notEqual(parked.motion, "in_queue");
+  assert.deepEqual(labels(accountHomeActions(unsaved)), [CREATE_ACCOUNT_LABEL, LOGIN_LABEL]);
+  const looksOnly = applyLooksRightMotion(
+    skipCurrentInvite(
+      skipWageDocs(
+        skipMonthlyDebts(
+          writeWhoOnLoan(
+            {
+              ...applyCouponChoice(
+                withHelocToolQuote(sketch),
+                "this",
+              ),
+              incomeAsked: true,
+              incomeType: { ...emptyDraft().incomeType, value: "w2" },
+            },
+            "just-me",
+          ),
+        ),
+      ),
+    ),
+  );
+  const saveCreate = workspaceReply("Create account", unsaved);
+  assert.equal(saveCreate?.capture?.field, "create-account");
+  assert.equal(saveCreate?.text, ACCOUNT_WHY_SENTENCE);
+  assert.notEqual(saveCreate?.text, ACCOUNT_FIRST_WHY);
+  const saveReply = workspaceReply("Proceed", looksOnly);
+  assert.equal(saveReply?.text, ACCOUNT_SAVE_ASK);
+  assert.deepEqual(labels(saveReply?.actions), [
+    CREATE_ACCOUNT_LABEL,
+    LOGIN_LABEL,
+    NOT_NOW_LABEL,
+    "Request human",
+  ]);
+  const keepTalking = applyAccountCapture(unsaved, { field: "skip-account" });
+  assert.equal(keepTalking.accountSkipped, true);
+  assert.equal(keepTalking.accountSaveAsk, false);
+  assert.notEqual(keepTalking.motion, "in_queue");
+  const hubUnsaved = processingHubView(unsaved);
+  assert.equal(hubUnsaved.state.status, "gathering");
+  assert.equal(hubUnsaved.state.rows.find((row) => row.id === "status")?.value, "gathering");
+  loadIntakeDraft(withLinkedAccount(unsaved, opened.draft.accountId));
+  const oldFileId = getFoxDraft().fileId;
+  const wiped = startOverWorkspace("acr");
+  assert.ok(!wiped.accountId);
+  assert.notEqual(wiped.fileId, oldFileId);
+  assert.equal(wiped.productIntent, undefined);
+  const wipedHeloc = justMeSkipProceed(
+    houseReady(
+      writeHelocLine(writeFirstLien(writePurchasePrice({ ...wiped, path: "acr", workspaceFlow: true }, 500_000), 400_000), 50_000),
+    ),
+  );
+  assert.equal(wipedHeloc.motion, "gathering");
+  assert.equal(statusCopy(wipedHeloc), "gathering");
+  assert.equal(nextFoxAsk(wipedHeloc).text, ACCOUNT_SAVE_ASK);
+  assert.deepEqual(labels(nextFoxAsk(wipedHeloc).actions), [
+    CREATE_ACCOUNT_LABEL,
+    LOGIN_LABEL,
+    NOT_NOW_LABEL,
+    "Request human",
+  ]);
+  assert.ok(!labels(nextFoxAsk(wipedHeloc).actions).includes("Ask Fox"));
+  const afterLetter = applyAccountCreated(unsaved, {
+    accountId: opened.draft.accountId,
+    channel: "email",
+  });
+  assert.equal(afterLetter.accountId, opened.draft.accountId);
+  assert.equal(afterLetter.accountSaveAsk, false);
+  assert.equal(afterLetter.pendingFinish, undefined);
+  assert.equal(afterLetter.motion, "gathering");
+  assert.equal(statusCopy(afterLetter), "gathering");
+  assert.notEqual(afterLetter.motion, "in_queue");
+  const queuedThenCreated = applyAccountCreated(
+    { ...unsaved, motion: "in_queue", nextActor: "ONYX", waitingOn: "onyx" },
+    { accountId: opened.draft.accountId, channel: "email" },
+  );
+  assert.equal(queuedThenCreated.motion, "gathering");
+  assert.equal(statusCopy(queuedThenCreated), "gathering");
+  const whyEmail = accountWorkspaceReply("lucas@onyxlending.com", unsaved);
+  assert.equal(whyEmail?.capture?.field, "account-email");
+  assert.equal(whyEmail?.capture && "value" in whyEmail.capture ? whyEmail.capture.value : "", "lucas@onyxlending.com");
+  const emailOnWhy = workspaceReply("lucas@onyxlending.com", unsaved);
+  assert.notEqual(emailOnWhy?.capture?.field, "email");
+  assert.notEqual(emailOnWhy?.capture?.field, "proceed");
+  const openedLetter = applyAccountLetterOpened({
+    ...afterLetter,
+    motion: "in_queue",
+    accountAsk: "sent",
+    pendingFinish: "proceed",
+  });
+  assert.equal(openedLetter.motion, "gathering");
+  assert.equal(statusCopy(openedLetter), "gathering");
+  assert.equal(openedLetter.accountAsk, undefined);
+  const openedDesk = deskLineAfterAccountConsume(openedLetter);
+  assert.notEqual(openedDesk.text, ACCOUNT_EMAIL_SENT);
+  assert.notEqual(openedDesk.text, ACCOUNT_EMAIL_ASK);
+  assert.notEqual(openedDesk.text, ACCOUNT_SAVE_ASK);
+  assert.doesNotMatch(openedDesk.text, /ONYX has this for review/);
+  const advancedOpened = withDeskLineAfterAccountConsume(waiting, openedDesk, openedLetter);
+  assert.notEqual(lastFoxLine(advancedOpened), ACCOUNT_EMAIL_SENT);
+  assert.ok(!advancedOpened.some((item) => item.text === ACCOUNT_EMAIL_SENT));
+  assert.ok(!labels(openedDesk.actions).includes(CREATE_ACCOUNT_LABEL));
+  const alreadyAsked = withDeskLineAfterAccountConsume(
+    [
+      { id: "fox-ask", role: "fox", text: openedDesk.text },
+      { id: "fox-sent", role: "fox", text: ACCOUNT_EMAIL_SENT },
+    ],
+    openedDesk,
+    openedLetter,
+  );
+  assert.equal(
+    alreadyAsked.filter((item) => item.role === "fox" && item.text === ACCOUNT_FILE_YOURS).length,
+    1,
+  );
+  assert.ok(!alreadyAsked.some((item) => item.text === ACCOUNT_WHY_SENTENCE));
+  assert.ok(labels(deskStripActions(alreadyAsked, openedLetter)).length > 0);
+  if (openedDesk.text === ACCOUNT_FILE_YOURS) {
+    assert.equal(lastFoxLine(alreadyAsked), ACCOUNT_FILE_YOURS);
+    assert.deepEqual(labels(deskStripActions(alreadyAsked, openedLetter)), [
+      "Proceed",
+      "Not yet",
+      "Upload more",
+      "Request human",
+    ]);
+  } else {
+    assert.equal(lastFoxLine(alreadyAsked), openedDesk.text);
+  }
+  assert.ok(alreadyAsked.some((item) => item.text === ACCOUNT_EMAIL_SENT) || lastFoxLine(alreadyAsked) === ACCOUNT_FILE_YOURS);
+  const sentThenOpened = applyAccountLetterOpened(
+    applyProceedMotion({
+      ...afterLetter,
+      accountAsk: "sent",
+    }),
+  );
+  assert.equal(sentThenOpened.motion, "in_queue");
+  assert.equal(statusCopy(sentThenOpened), "in_queue");
+  assert.equal(sentThenOpened.nextActor, "ONYX");
+  assert.ok(
+    (sentThenOpened.workItems ?? []).some(
+      (item) => item.kind === "review" && (item.state === "open" || item.state === "nudged"),
+    ),
+  );
+  const sendSource = readFileSync(new URL("../lib/account/send.ts", import.meta.url), "utf8");
+  assert.match(sendSource, /subject: "Your ONYX File"/);
+  assert.match(sendSource, /ONYX Direct <lucas@onyxdirect\.com>/);
+  assert.match(sendSource, /ACCOUNT_RESUME_ORIGIN_LOCKED = "https:\/\/start\.onyxdirect\.com"/);
+  const accounted = justMeSkipProceed(withLinkedAccount(notNow));
+  assert.equal(accounted.motion, "in_queue");
+
+  const sent = applyStaffDeskSend(afterProceed!.draft, { foxLine: STAFF_W2_FOX_LINE });
+  const afterSendMessages = [
+    ...queueMessages,
+    { id: "fox-w2", role: "fox", text: sent.threadLine },
+  ];
+  writeAccountFile(store, opened.record.token, sent.draft, afterSendMessages);
+  const returned = resumeFromStore(store, { token: opened.record.token });
+  assert.equal(lastFoxLine(returned?.messages ?? []), STAFF_W2_FOX_LINE);
+  const hub = processingHubView(returned!.draft);
+  assert.equal(hub.fileId, opened.draft.fileId);
+  assert.match(hub.path, new RegExp(opened.draft.fileId!));
+
+  const skipName = skipWhoOnLoanName({
+    ...heloc,
+    whoOnLoan: "yes",
+    whoOnLoanAsked: true,
+    whoOnLoanNameAsked: true,
+  });
+  assert.equal(whoOnLoanNameWasSkipped(skipName), true);
+  assert.equal(borrowersFileValue(skipName), "1");
+
+  const blob = JSON.stringify({ hub, opened: { fileId: opened.draft.fileId }, returned: { fileId: returned?.fileId } });
+  assert.doesNotMatch(blob, /Google-required|SSN login|BNTouch as source|invite-reward/i);
+  assert.doesNotMatch(spokenEmail + spokenPhone + (emailTyped?.text ?? ""), /\/start\?account=/);
+
+  const notNowStore = memoryAccountStore();
+  assert.equal(notNowStore.getByFileId(first.fileId ?? "none"), undefined);
+
+  const midStore = memoryAccountStore();
+  const midOpened = openAccountOnFile(midStore, first, messages, { email: "lucas@onyxlending.com" });
+  const midFile = houseReady(writePurchasePrice(applyAccountLetterOpened(midOpened.draft), 500_000));
+  const midMessages: FoxMessage[] = [
+    ...messages,
+    { id: "fox-lien", role: "fox", text: HELOC_FIRST_LIEN_ASK },
+  ];
+  const midPersisted = writeAccountFile(midStore, midOpened.record.token, midFile, midMessages);
+  assert.equal(midPersisted?.fileId, midOpened.draft.fileId);
+  assert.equal(midPersisted?.draft.propertyValueAmount, 500_000);
+  assert.equal(midPersisted?.draft.productIntent, "heloc");
+  const guestLogin = { ...emptyDraft(), path: "acr" as const, workspaceFlow: true };
+  const attached = attachAccountOnFile(midStore, guestLogin, [], { email: "lucas@onyxlending.com" });
+  assert.equal(attached.sameFile, true);
+  assert.equal(attached.record.fileId, midOpened.draft.fileId);
+  assert.equal(attached.draft.propertyValueAmount, 500_000);
+  assert.equal(attached.draft.productIntent, "heloc");
+  const byEmail = resumeFromStore(midStore, { email: "lucas@onyxlending.com" });
+  assert.equal(byEmail?.fileId, midOpened.draft.fileId);
+  assert.equal(byEmail?.draft.propertyValueAmount, 500_000);
+  const midDesk = deskLineAfterAccountConsume(applyAccountLetterOpened(attached.draft));
+  assert.equal(midDesk.text, HELOC_FIRST_LIEN_ASK);
+  assert.ok(!labels(midDesk.actions).includes("Buy"));
+  assert.ok(!labels(midDesk.actions).includes("Refinance"));
+  const pad = previewFacts(attached.draft);
+  assert.equal(pad.find((row) => row.label === "Product")?.value, "HELOC");
+  assert.match(pad.find((row) => row.label === "Property value")?.value ?? "", /\$500,000/);
+  const wipeAttempt = writeAccountFile(midStore, midOpened.record.token, guestLogin, []);
+  assert.equal(wipeAttempt?.fileId, midOpened.draft.fileId);
+  assert.equal(wipeAttempt?.draft.propertyValueAmount, 500_000);
+  assert.equal(resumeFromStore(midStore, { token: midOpened.record.token })?.draft.propertyValueAmount, 500_000);
+
+  const accountRoute = readFileSync(new URL("../app/api/account/route.ts", import.meta.url), "utf8");
+  assert.match(accountRoute, /loadAccountByEmail/);
+  assert.match(accountRoute, /sameFile: true/);
+  assert.match(accountRoute, /persistLiveAccountRecord/);
+  const accountCore = readFileSync(new URL("../lib/account/core.ts", import.meta.url), "utf8");
+  assert.match(accountCore, /export function mergeAccountMessages/);
+  assert.match(accountCore, /mergeAccountMessages\(record\.messages, messages, record\.draft\)/);
+  assert.match(accountCore, /stripWalkTestMessages/);
+  assert.match(accountCore, /isStaffDeskMessage/);
+  const accountServer = readFileSync(new URL("../lib/account/server.ts", import.meta.url), "utf8");
+  assert.match(accountServer, /allowOverwrite:\s*true/);
+  assert.match(accountServer, /account\/email\//);
+  assert.match(accountServer, /shouldKeepLiveAccountDraft/);
+
+  const staffRefresh = "I still need the balance on the first lien.";
+  const staleDesk = [
+    ...midMessages,
+    { id: "fox-stale", role: "fox", text: HELOC_FIRST_LIEN_ASK },
+  ];
+  const serverDesk = [...staleDesk, { id: "fox-staff", role: "fox", text: staffRefresh }];
+  writeAccountFile(midStore, midOpened.record.token, midFile, serverDesk);
+  const refreshResume = resumeFromStore(midStore, { token: midOpened.record.token });
+  assert.equal(lastFoxLine(refreshResume?.messages ?? []), staffRefresh);
+  writeAccountFile(midStore, midOpened.record.token, midFile, staleDesk);
+  const afterStalePersist = resumeFromStore(midStore, { token: midOpened.record.token });
+  assert.equal(lastFoxLine(afterStalePersist?.messages ?? []), staffRefresh);
+  assert.ok(afterStalePersist?.messages.some((item) => item.text === staffRefresh));
+  const withWalkJunk = [
+    ...serverDesk,
+    { id: "fox-walk", role: "fox" as const, text: "Refresh must paint this staff line." },
+    { id: "fox-tok", role: "fox" as const, text: "I still need the balance on the first lien. (mufwptov)" },
+  ];
+  writeAccountFile(midStore, midOpened.record.token, midFile, withWalkJunk);
+  const strippedWalk = resumeFromStore(midStore, { token: midOpened.record.token });
+  assert.ok(!strippedWalk?.messages.some((item) => item.text.includes("Refresh must paint")));
+  assert.ok(!strippedWalk?.messages.some((item) => /\(mufwptov\)/.test(item.text)));
+  assert.ok(strippedWalk?.messages.some((item) => item.text === staffRefresh));
+  assert.ok(refreshResume?.messages.some((item) => item.text === HELOC_FIRST_LIEN_ASK));
+  const keptStaff = withDeskLineAfterAccountConsume(serverDesk, deskLineAfterAccountConsume(midFile));
+  assert.equal(lastFoxLine(keptStaff), staffRefresh);
+  const startWorkspace = readFileSync(new URL("../components/fox/StartWorkspace.tsx", import.meta.url), "utf8");
+  assert.match(startWorkspace, /linkedAccountRefreshQuery/);
+  assert.match(startWorkspace, /resumeAccountFromQuery/);
+  assert.match(startWorkspace, /refresh\?\.fileId/);
+  assert.match(startWorkspace, /pageshow/);
+  assert.match(startWorkspace, /event\.persisted/);
+  const startPage = readFileSync(new URL("../app/(marketing)/start/page.tsx", import.meta.url), "utf8");
+  assert.match(startPage, /force-dynamic/);
+  const nextConfig = readFileSync(new URL("../next.config.mjs", import.meta.url), "utf8");
+  assert.match(nextConfig, /no-store/);
+  assert.match(nextConfig, /source: "\/start"/);
+  const storeSource = readFileSync(new URL("../components/fox/store.ts", import.meta.url), "utf8");
+  assert.match(storeSource, /export function linkedAccountRefreshQuery/);
+  assert.match(storeSource, /staffDeskMessageFact/);
+  assert.doesNotMatch(storeSource, /Refresh must paint this staff line/);
+  assert.doesNotMatch(storeSource, /mufwptov/);
+  assert.doesNotMatch(startWorkspace, /set-bypass-cookie/);
+
+  console.log(
+    `assert-account-chapter: turn-one offer + Create account · Log in · Not now; first why; parked save why; no token; save-ask not in_queue; with account in_queue ${opened.draft.fileId}`,
+  );
+}
+
+void main();

@@ -52,6 +52,7 @@ GLYPHS: dict[str, tuple[str, ...]] = {
     ":": ("00000", "00100", "00100", "00000", "00100", "00100", "00000"),
     "-": ("00000", "00000", "00000", "11111", "00000", "00000", "00000"),
     "/": ("00001", "00001", "00010", "00100", "01000", "10000", "10000"),
+    "*": ("00100", "10101", "01110", "11111", "01110", "10101", "00100"),
 }
 
 SCALE = 5
@@ -66,6 +67,16 @@ BANK_PAGE = [
     "INSTITUTION: FIRST NATIONAL",
     "PERIOD END: 2026-07-31",
     "ENDING BALANCE: $18,400",
+]
+
+DOC_BANK_PAGE = [
+    "BANK STATEMENT",
+    "INSTITUTION: FIRST NATIONAL BANK",
+    "ACCOUNT HOLDER: JORDAN HALE",
+    "ACCOUNT: ****4412",
+    "PERIOD END: 2026-07-31",
+    "ENDING BALANCE: $18,400.00",
+    "MORTGAGE SAMPLE - NOT A REAL STATEMENT",
 ]
 
 CONTRACT_PAGE = [
@@ -187,6 +198,7 @@ def write_sample(name: str, visible: list[str], comment: list[str] | None = None
 
 def main() -> None:
     write_sample("bank-statement-first-national.png", BANK_PAGE)
+    write_sample("doc-bank.png", DOC_BANK_PAGE)
     write_sample("purchase-contract-oak.png", CONTRACT_PAGE)
     write_sample("mortgage-statement-oak.png", MORTGAGE_PAGE)
     write_sample("mortgage-statement-oak-no-pi.png", MORTGAGE_PAGE_NO_PI)

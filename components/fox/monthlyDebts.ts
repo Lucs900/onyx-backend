@@ -4,7 +4,7 @@ import type { FactProposal, FoxAction, FoxIntakeDraft } from "./types";
 export const STATED_MONTHLY_DEBTS_FIELD = "statedMonthlyDebts";
 export const SUGGESTED_DEBTS_NOTE = "Suggested · not underwritten";
 export const MONTHLY_DEBTS_ASK =
-  "About how much do you pay each month on other debts, not counting this house?";
+  "About how much are other monthly debts, not counting this mortgage?";
 
 export type PendingDebtMortgage = {
   included: number;
@@ -25,6 +25,14 @@ function factMoney(draft: FoxIntakeDraft, field: string): number | null {
 export function debtsSettled(draft: FoxIntakeDraft) {
   if (draft.correcting === "debts") return false;
   return Boolean(draft.monthlyDebtsAsked || draft.statedMonthlyDebts != null);
+}
+
+/** One stated-monthly-total ask after income type (and after years if SE). */
+export function shouldAskMonthlyDebts(draft: FoxIntakeDraft) {
+  if (draft.sampleAccepted) return false;
+  if (!draft.awaitingMonthlyDebts) return false;
+  if (draft.monthlyDebtsAsked || draft.statedMonthlyDebts != null) return false;
+  return true;
 }
 
 export function isStatedDebtsConfirmPending(draft: FoxIntakeDraft) {
@@ -77,6 +85,7 @@ export function skipMonthlyDebts(draft: FoxIntakeDraft): FoxIntakeDraft {
     ...draft,
     statedMonthlyDebts: undefined,
     monthlyDebtsAsked: true,
+    awaitingMonthlyDebts: false,
     pendingDebtMortgage: null,
     pendingProposal:
       draft.pendingProposal?.field === STATED_MONTHLY_DEBTS_FIELD ? null : draft.pendingProposal,
@@ -93,6 +102,7 @@ export function writeStatedMonthlyDebts(draft: FoxIntakeDraft, amount: number): 
     ...draft,
     statedMonthlyDebts: Math.round(amount),
     monthlyDebtsAsked: true,
+    awaitingMonthlyDebts: false,
     pendingDebtMortgage: null,
     pendingProposal: null,
     correcting: null,
@@ -115,7 +125,7 @@ export function proposeStatedMonthlyDebts(draft: FoxIntakeDraft, amount: number)
   const proposal: FactProposal = {
     field: STATED_MONTHLY_DEBTS_FIELD,
     value,
-    label: "Monthly debts",
+    label: "Stated monthly debts",
     kind: "computed",
     note: SUGGESTED_DEBTS_NOTE,
   };
@@ -140,8 +150,29 @@ export function monthlyDebtsConfirmActions(): FoxAction[] {
 export function monthlyDebtsSkipActions(): FoxAction[] {
   return [
     { id: "skip-monthly-debts", label: "Skip", event: "bubble", capture: { field: "skip-monthly-debts" } },
-    { id: "hold-monthly-debts", label: "Not yet", event: "bubble", capture: { field: "skip-monthly-debts" } },
   ];
+}
+
+export function isMonthlyDebtsAskText(text?: string) {
+  const trimmed = (text ?? "").trim();
+  if (!trimmed) return false;
+  return (
+    trimmed === MONTHLY_DEBTS_ASK ||
+    /other monthly debts, not counting this mortgage/i.test(trimmed)
+  );
+}
+
+/** Sketch debts row: Skip only. Never Not yet / Proceed / Request human. */
+export function paintedMonthlyDebtsActions(actions?: FoxAction[]): FoxAction[] {
+  const skip = monthlyDebtsSkipActions();
+  if (!actions?.length) return skip;
+  if (
+    actions.some((action) => action.capture?.field === "skip-monthly-debts") ||
+    actions.some((action) => action.label === "Skip")
+  ) {
+    return skip;
+  }
+  return skip;
 }
 
 export function mortgageSubtractAsk(included: number, mortgage: number) {

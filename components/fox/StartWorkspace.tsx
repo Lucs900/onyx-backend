@@ -2,17 +2,23 @@
 
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useSyncExternalStore } from "react";
+import { accountTokenFromLocation } from "@/lib/account/send";
 import { pathFromQuery, rememberStartPath } from "@/components/products/startPath";
 import { AlwaysOnFox } from "./AlwaysOnFox";
 import { FilePreview } from "./FilePreview";
+import { HEADER_LOGIN_QUERY, dispatchHeaderLogin } from "./account";
 import {
   applyPreviewMotionControls,
+  beginAccountResume,
   continueWorkspaceFromEntry,
+  failAccountResume,
   getFoxDraft,
   getServerDraft,
   hydrateFoxDraft,
+  linkedAccountRefreshQuery,
   prepareWorkspaceDraft,
   resetWorkspaceForEntry,
+  resumeAccountFromQuery,
   setDraftPath,
   setDraftProductIntent,
   shouldResumeWorkspaceEntry,
@@ -25,6 +31,11 @@ export function StartWorkspace() {
   const searchParams = useSearchParams();
   const queryPath = pathFromQuery(searchParams.get("path"));
   const homepageFresh = searchParams.get("fresh") === "1";
+  const accountToken = accountTokenFromLocation(
+    searchParams.toString(),
+    typeof window !== "undefined" ? window.location.hash : "",
+  );
+  const accountCode = (searchParams.get("code") ?? "").trim();
   if (typeof window !== "undefined") hydrateFoxDraft();
   if (queryPath) rememberStartPath(queryPath);
   const startPath =
@@ -40,12 +51,55 @@ export function StartWorkspace() {
   const booted = useRef(false);
   if (typeof window !== "undefined" && !booted.current) {
     booted.current = true;
-    continueWorkspaceFromEntry(startPath, startIntent, { fresh: homepageFresh });
+    if (accountToken || accountCode || linkedAccountRefreshQuery()) {
+      beginAccountResume();
+    } else {
+      continueWorkspaceFromEntry(startPath, startIntent, { fresh: homepageFresh });
+    }
   }
   const draft = useSyncExternalStore(subscribeFoxDraft, getFoxDraft, getServerDraft);
 
   const lastPath = useRef(startPath);
   const previewSuggestKey = useRef("");
+  const resumeStarted = useRef(false);
+  useEffect(() => {
+    const loadFromFile = (force = false) => {
+      const token =
+        accountToken ||
+        (typeof window !== "undefined" ? accountTokenFromLocation("", window.location.hash) : "");
+      const refresh = token || accountCode ? undefined : linkedAccountRefreshQuery();
+      if (!token && !accountCode && !refresh) return;
+      if (resumeStarted.current && !force) return;
+      resumeStarted.current = true;
+      beginAccountResume();
+      void resumeAccountFromQuery({
+        token: token || refresh?.token || undefined,
+        code: accountCode || undefined,
+        fileId: token || accountCode ? undefined : refresh?.fileId,
+      }).then((snapshot) => {
+        if (!snapshot) {
+          failAccountResume();
+          if (!token && !accountCode) {
+            continueWorkspaceFromEntry(startPath, startIntent, { fresh: homepageFresh });
+          }
+          return;
+        }
+        if (typeof window === "undefined") return;
+        if (token || accountCode) {
+          const path = snapshot.draft.path || "acr";
+          router.replace(`/start?path=${encodeURIComponent(path)}`, { scroll: false });
+        }
+      });
+    };
+    loadFromFile(false);
+    const onPageShow = (event: PageTransitionEvent) => {
+      if (!event.persisted) return;
+      resumeStarted.current = false;
+      loadFromFile(true);
+    };
+    window.addEventListener("pageshow", onPageShow);
+    return () => window.removeEventListener("pageshow", onPageShow);
+  }, [accountCode, accountToken, homepageFresh, router, startIntent, startPath]);
   useEffect(() => {
     if (!homepageFresh) return;
     const next = new URLSearchParams(searchParams.toString());
@@ -53,6 +107,15 @@ export function StartWorkspace() {
     const qs = next.toString();
     router.replace(qs ? `/start?${qs}` : "/start", { scroll: false });
   }, [homepageFresh, router, searchParams]);
+  useEffect(() => {
+    if (searchParams.get(HEADER_LOGIN_QUERY) !== "1") return;
+    if (accountToken || accountCode) return;
+    dispatchHeaderLogin();
+    const next = new URLSearchParams(searchParams.toString());
+    next.delete(HEADER_LOGIN_QUERY);
+    const qs = next.toString();
+    router.replace(qs ? `/start?${qs}` : "/start", { scroll: false });
+  }, [accountCode, accountToken, router, searchParams]);
   useEffect(() => {
     if (lastPath.current !== startPath) {
       lastPath.current = startPath;
