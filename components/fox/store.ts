@@ -3044,7 +3044,8 @@ function applyCaptureBody(capture: Capture) {
     const next = applyProceedMotion(current);
     const becomingQueue =
       hasLinkedAccount(next) && next.motion === "in_queue" && current.motion !== "in_queue";
-    if (becomingQueue && typeof window !== "undefined" && readAccountSession()?.token) {
+    if (becomingQueue && typeof window !== "undefined") {
+      if (!readAccountSession()?.token) return current;
       const previous = current;
       commitSilent(next);
       void persistLinkedAccountFileNow().then((ok) => {
