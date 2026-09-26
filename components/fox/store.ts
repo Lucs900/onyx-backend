@@ -8,6 +8,7 @@ import { parsePlaceAddress } from "@/lib/places/address";
 import {
   CONFIRMED_STATUS,
   FOX_ACCOUNT_KEY,
+  FOX_GUEST_SKETCH_KEY,
   FOX_MESSAGES_KEY,
   FOX_PANEL_KEY,
   INTAKE_DRAFT_VERSION,
@@ -54,6 +55,7 @@ import {
 } from "./motion";
 import { applyStaffDeskSend, type StaffDeskInput } from "./processingHub";
 import {
+  accountFileHasStoredContent,
   mergeAccountMessages,
   staffDeskMessageFact,
 } from "@/lib/account/core";
@@ -1381,6 +1383,7 @@ export const SIGN_OUT_STORAGE_KEYS = [
   "onyx.foxIntake.draft",
   "onyx.fox.messages",
   "onyx.fox.account",
+  "onyx.fox.guestSketch",
   "onyx.fox.panelOpen",
   "onyx.fox.sawLegal",
   "onyx.startPath",
@@ -2153,6 +2156,17 @@ function readAccountSession(): AccountSession | undefined {
   }
 }
 
+function stashGuestSketch(draft: FoxIntakeDraft) {
+  if (typeof window === "undefined") return;
+  const fileId = draft.fileId?.trim();
+  if (!fileId) return;
+  try {
+    window.localStorage.setItem(FOX_GUEST_SKETCH_KEY, JSON.stringify({ fileId, draft }));
+  } catch {
+    // Preview storage can be blocked.
+  }
+}
+
 function writeAccountSession(session: AccountSession | undefined) {
   if (typeof window === "undefined") return;
   try {
@@ -2252,10 +2266,24 @@ export async function createLinkedAccount(input: { email?: string; phone?: strin
     return snapshot;
   }
   const thisDevice = Boolean(current.sampleAccepted || current.guestProceeded);
+  const token = new URL(snapshot.magicLink, "https://onyx.local").searchParams.get("account") || "";
+  const storedAccountFile =
+    snapshot.sameFile &&
+    accountFileHasStoredContent(snapshot.draft) &&
+    snapshot.fileId !== current.fileId?.trim();
+  if (storedAccountFile) {
+    stashGuestSketch(current);
+    if (token) {
+      writeAccountSession({ token, fileId: snapshot.fileId, accountId: snapshot.accountId });
+    }
+    applyAccountResume(snapshot.draft, snapshot.messages, token
+      ? { token, fileId: snapshot.fileId, accountId: snapshot.accountId }
+      : undefined);
+    return snapshot;
+  }
   if (snapshot.sameFile && !thisDevice) {
     return snapshot;
   }
-  const token = new URL(snapshot.magicLink, "https://onyx.local").searchParams.get("account") || "";
   const fileId = (thisDevice ? current.fileId : snapshot.fileId)?.trim() || snapshot.fileId;
   if (token) writeAccountSession({ token, fileId, accountId: snapshot.accountId });
   commit(
@@ -2302,6 +2330,13 @@ export async function resumeAccountFromQuery(input: { token?: string; code?: str
   const token = new URL(snapshot.magicLink, "https://onyx.local").searchParams.get("account") || "";
   const saved = String(snapshot.email ?? "").trim();
   resumedAccountEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(saved) ? saved : "";
+  if (
+    accountFileHasStoredContent(snapshot.draft) &&
+    snapshot.fileId !== current.fileId?.trim() &&
+    (current.guestProceeded || current.sampleAccepted || Boolean(current.fileId))
+  ) {
+    stashGuestSketch(current);
+  }
   applyAccountResume(snapshot.draft, snapshot.messages, token
     ? { token, fileId: snapshot.fileId, accountId: snapshot.accountId }
     : undefined);
@@ -2310,10 +2345,16 @@ export async function resumeAccountFromQuery(input: { token?: string; code?: str
 
 let persistAccountTimer: ReturnType<typeof setTimeout> | number | undefined;
 
+function sessionOwnsCurrentFile(session: AccountSession) {
+  const currentId = current.fileId?.trim();
+  return Boolean(session.fileId && currentId && session.fileId === currentId);
+}
+
 function flushPersistLinkedAccount() {
   if (accountResumePending) return;
   const session = readAccountSession();
   if (!session?.token || typeof window === "undefined") return;
+  if (!sessionOwnsCurrentFile(session)) return;
   if (persistAccountTimer) {
     window.clearTimeout(persistAccountTimer);
     persistAccountTimer = undefined;
@@ -2333,6 +2374,7 @@ function flushPersistLinkedAccount() {
 export function persistLinkedAccountFile() {
   const session = readAccountSession();
   if (!session?.token || typeof window === "undefined") return;
+  if (!sessionOwnsCurrentFile(session)) return;
   if (persistAccountTimer) window.clearTimeout(persistAccountTimer);
   persistAccountTimer = window.setTimeout(() => {
     persistAccountTimer = undefined;
@@ -2345,6 +2387,7 @@ export async function persistLinkedAccountFileNow(): Promise<boolean> {
   if (typeof window === "undefined") return false;
   const session = readAccountSession();
   if (!session?.token) return !current.accountId;
+  if (!sessionOwnsCurrentFile(session)) return false;
   if (persistAccountTimer) {
     window.clearTimeout(persistAccountTimer);
     persistAccountTimer = undefined;
@@ -2361,9 +2404,10 @@ export async function persistLinkedAccountFileNow(): Promise<boolean> {
       }),
     });
     if (!response.ok) return false;
-    const attached = current.fileId?.trim();
-    if (attached && session.fileId !== attached) {
-      writeAccountSession({ ...session, fileId: attached });
+    const snapshot = (await response.json().catch(() => null)) as { fileId?: string } | null;
+    const serverId = snapshot?.fileId?.trim();
+    if (serverId && session.fileId !== serverId) {
+      writeAccountSession({ ...session, fileId: serverId });
     }
     return true;
   } catch {

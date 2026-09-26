@@ -13,6 +13,7 @@ import {
   normalizePhone,
   persistAccountRecord,
   persistLiveAccountRecord,
+  accountFileHasStoredContent,
   snapshotOf,
   type AccountChannel,
   type AccountRecord,
@@ -488,7 +489,12 @@ export function attachAccountOnFile(
   if (existing) {
     const incomingId = draft.fileId?.trim();
     const thisDevice = Boolean(draft.sampleAccepted || draft.guestProceeded);
-    if (thisDevice && incomingId && incomingId !== existing.fileId) {
+    if (
+      thisDevice &&
+      incomingId &&
+      incomingId !== existing.fileId &&
+      !accountFileHasStoredContent(existing.draft)
+    ) {
       const next = persistLiveAccountRecord(existing, draft, messages);
       store.put(next);
       return {
