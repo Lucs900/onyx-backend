@@ -65,6 +65,8 @@ import {
   applyAccountCreated,
   applyAccountLetterOpened,
   accountSaveAskOpen,
+  hasLinkedAccount,
+  withoutGuestHandoffLines,
 } from "./account";
 import { FAILED_READ_NOTE, isUnreadNote } from "@/lib/docs/accept";
 import {
@@ -1277,7 +1279,10 @@ function persistMessages(messages: FoxMessage[]) {
 
 function persistMigratedMessages(messages: FoxMessage[]) {
   foxMessages = sealStoredFoxThread(
-    dropResolvedAddressConfirmChips(migrateRestoredFoxMessages(messages), current),
+    withoutGuestHandoffLines(
+      dropResolvedAddressConfirmChips(migrateRestoredFoxMessages(messages), current),
+      current,
+    ),
   );
   messagesHydrated = true;
   persistMessages(foxMessages);
@@ -1574,6 +1579,12 @@ function commit(next: FoxIntakeDraft) {
   persist(current);
   emit();
   if (current.accountId || readAccountSession()) persistLinkedAccountFile();
+  return current;
+}
+
+function commitSilent(next: FoxIntakeDraft) {
+  current = { ...withHelocToolQuote(syncCalculatorDraft(next)), updatedAt: new Date().toISOString() };
+  persist(current);
   return current;
 }
 
@@ -3030,7 +3041,19 @@ function applyCaptureBody(capture: Capture) {
     return commit(applyUploadMoreMotion(current));
   }
   if (capture.field === "proceed") {
-    return commit(applyProceedMotion(current));
+    const next = applyProceedMotion(current);
+    const becomingQueue =
+      hasLinkedAccount(next) && next.motion === "in_queue" && current.motion !== "in_queue";
+    if (becomingQueue && typeof window !== "undefined" && readAccountSession()?.token) {
+      const previous = current;
+      commitSilent(next);
+      void persistLinkedAccountFileNow().then((ok) => {
+        if (!ok) commit(previous);
+        else emit();
+      });
+      return current;
+    }
+    return commit(next);
   }
   if (capture.field === "not-yet") {
     return commit(applyNotYetMotion(current));

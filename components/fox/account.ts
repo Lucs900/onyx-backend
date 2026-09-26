@@ -588,6 +588,31 @@ function withoutOpenReviewItems(draft: FoxIntakeDraft): FoxIntakeDraft {
   };
 }
 
+/** Server already holds a signed-in Proceed on this file_id. */
+export function hasStoredReviewSend(draft: FoxIntakeDraft) {
+  if (!hasLinkedAccount(draft)) return false;
+  const motion = draft.motion;
+  if (motion !== "in_queue" && motion !== "escalated" && motion !== "waiting_out") return false;
+  const hasReview = (draft.workItems ?? []).some(
+    (item) => item.kind === "review" && (item.state === "open" || item.state === "nudged"),
+  );
+  const hasProceedEvent = (draft.events ?? []).some((event) => event.kind === "proceed");
+  return hasReview || hasProceedEvent;
+}
+
+export function isOnyxHandoffLine(text: string) {
+  const line = text.trim();
+  if (!line) return false;
+  if (/ONYX has this for review/i.test(line)) return true;
+  if (/I pushed this/i.test(line)) return true;
+  return false;
+}
+
+export function withoutGuestHandoffLines(messages: FoxMessage[], draft?: FoxIntakeDraft | null) {
+  if (draft && hasLinkedAccount(draft)) return messages;
+  return messages.filter((item) => item.role !== "fox" || !isOnyxHandoffLine(item.text));
+}
+
 /** Letter sent. Keep gathering — do not auto-send the File to review. */
 export function applyAccountCreated(
   draft: FoxIntakeDraft,
@@ -609,9 +634,23 @@ export function applyAccountCreated(
   };
 }
 
-/** Magic link opened. Letter consume is the desk, not review. */
+/** Magic link opened. Letter consume is the desk, not review — unless a signed-in send is already stored. */
 export function applyAccountLetterOpened(draft: FoxIntakeDraft): FoxIntakeDraft {
-  const cleared = withoutOpenReviewItems(consumeLinkedAccountDraft(draft));
+  const consumed = consumeLinkedAccountDraft(draft);
+  if (hasStoredReviewSend(draft)) {
+    return {
+      ...consumed,
+      accountSaveAsk: false,
+      accountAsk: undefined,
+      guestProceeded: draft.guestProceeded,
+      accountYoursSpoken: draft.accountYoursSpoken,
+      pendingFinish: undefined,
+      motion: draft.motion === "escalated" || draft.motion === "waiting_out" ? draft.motion : "in_queue",
+      nextActor: draft.nextActor === "Outside" ? "Outside" : "ONYX",
+      waitingOn: draft.waitingOn === "outside" ? "outside" : "onyx",
+    };
+  }
+  const cleared = withoutOpenReviewItems(consumed);
   return {
     ...cleared,
     accountSaveAsk: false,

@@ -629,6 +629,7 @@ import {
   firstAccountOfferActions,
   firstAccountOfferOpen,
   hasLinkedAccount,
+  hasStoredReviewSend,
   isLiveCreateAccountAction,
   linkedLastLineActions,
   isAccountMailWaitLine,
@@ -753,6 +754,7 @@ import {
   fileExists,
   finishCaptureFromText,
   finishLineActions,
+  gatheringCopy,
   inQueueEnding,
   latestOutbox,
   looksLikeEmail,
@@ -762,6 +764,7 @@ import {
   motionStatusCopy,
   nextActorOf,
   remindLine,
+  waitingOnCopy,
   waitingOnOf,
 } from "./motion";
 
@@ -3446,6 +3449,9 @@ function unmatchedSideAnswer(draft: FoxIntakeDraft) {
 }
 
 function documentQuestionAnswer(draft: FoxIntakeDraft) {
+  if (!hasLinkedAccount(draft) && (inQueueEnding(draft) || draft.motion === "in_queue")) {
+    return draft.guestProceeded ? ACCOUNT_SAVE_ASK : gatheringCopy(draft);
+  }
   if (inQueueEnding(draft) || draft.motion === "in_queue") return MOTION_COPY.in_queue;
   if (workspacePrompt(draft) === "packet-close" || taxReturnPacketSettled(draft)) {
     return PACKET_NO_K1_C_LINE;
@@ -4253,6 +4259,17 @@ function deskStripActionsComputed(
     const wall = accountSaveWallActions(draft);
     if (wall.length) return stripStreetSuggest(wall);
   }
+  if (
+    hasLinkedAccount(draft) &&
+    !hasStoredReviewSend(draft) &&
+    !accountSaveAskOpen(draft) &&
+    draft.sampleAccepted
+  ) {
+    const finish = finishLineActions(draft);
+    if (finish.some((item) => item.capture?.field === "proceed")) {
+      return stripStreetSuggest(finish);
+    }
+  }
   const resumeChips = accountResumeLastActions(draft);
   if (resumeChips.length) return stripStreetSuggest(resumeChips);
   const thread = withoutAccountResumeLeftovers(withoutDuplicateTranscriptAsk(messages), draft);
@@ -4622,6 +4639,16 @@ export function deskLineAfterAccountConsume(draft: FoxIntakeDraft): {
       actions: greet.actions,
     };
   }
+  const notSentFinish =
+    hasLinkedAccount(draft) &&
+    !hasStoredReviewSend(draft) &&
+    !accountSaveAskOpen(draft) &&
+    draft.sampleAccepted
+      ? finishLineActions(draft)
+      : [];
+  const liveFinish = notSentFinish.some((item) => item.capture?.field === "proceed")
+    ? notSentFinish
+    : null;
   const next = nextFoxAsk(draft);
   if (isRealResumeAskText(next.text) && !isConsumedFinishLine(next.text, draft)) {
     const resume = accountResumeLastActions(draft);
@@ -4634,7 +4661,7 @@ export function deskLineAfterAccountConsume(draft: FoxIntakeDraft): {
   }
   return {
     text: ACCOUNT_FILE_YOURS,
-    actions: accountResumeLastActions(draft),
+    actions: liveFinish ?? accountResumeLastActions(draft),
   };
 }
 
@@ -5456,6 +5483,12 @@ function workspaceAskCopy(
     if (accountSaveAskOpen(draft)) {
       return {
         text: ACCOUNT_SAVE_ASK,
+        actions: finishLineActions(draft),
+      };
+    }
+    if (!hasLinkedAccount(draft)) {
+      return {
+        text: motionAskText(draft),
         actions: finishLineActions(draft),
       };
     }
@@ -6762,7 +6795,8 @@ export function workspaceUpdateCopy(capture: Capture, draft: FoxIntakeDraft) {
     return MOTION_COPY.escalated;
   }
   if (capture.field === "proceed") {
-    return accountSaveAskOpen(draft) ? ACCOUNT_SAVE_ASK : MOTION_COPY.in_queue;
+    if (!hasLinkedAccount(draft) || accountSaveAskOpen(draft)) return ACCOUNT_SAVE_ASK;
+    return MOTION_COPY.in_queue;
   }
   if (capture.field === "not-yet") {
     return MOTION_COPY.on_hold;
@@ -11101,7 +11135,7 @@ export function previewFacts(draft: FoxIntakeDraft): PreviewFact[] {
     facts.push({
       id: "waiting",
       label: "Waiting on",
-      value: waitingOnOf(draft),
+      value: waitingOnCopy(draft),
     });
     const caution = guidelineCaution(draft);
     if (caution) {

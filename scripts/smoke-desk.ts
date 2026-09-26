@@ -13186,7 +13186,7 @@ assert.equal(nextActorOf(mvsQueued), "ONYX");
 assert.equal(waitingOnOf(mvsQueued), "onyx");
 assert.ok(previewFacts(mvsQueued).some((fact) => fact.id === "status" && fact.value === "in_queue"));
 assert.ok(previewFacts(mvsQueued).some((fact) => fact.id === "next" && fact.value === "ONYX"));
-assert.ok(previewFacts(mvsQueued).some((fact) => fact.id === "waiting" && fact.value === "onyx"));
+assert.ok(previewFacts(mvsQueued).some((fact) => fact.id === "waiting" && fact.value === "ONYX"));
 assert.equal(openReviewWorkItem(mvsQueued)?.kind, "review");
 assert.ok(openReviewWorkItem(mvsQueued)?.state === "open" || openReviewWorkItem(mvsQueued)?.state === "nudged");
 assert.equal((mvsQueued.workItems ?? []).filter((item) => item.kind === "review" && (item.state === "open" || item.state === "nudged")).length, 1);

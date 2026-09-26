@@ -604,7 +604,8 @@ async function main() {
   if (openedDesk.text === ACCOUNT_FILE_YOURS) {
     assert.equal(lastFoxLine(alreadyAsked), ACCOUNT_FILE_YOURS);
     assert.deepEqual(labels(deskStripActions(alreadyAsked, openedLetter)), [
-      "Ask Fox",
+      "Proceed",
+      "Not yet",
       "Upload more",
       "Request human",
     ]);
@@ -612,6 +613,20 @@ async function main() {
     assert.equal(lastFoxLine(alreadyAsked), openedDesk.text);
   }
   assert.ok(alreadyAsked.some((item) => item.text === ACCOUNT_EMAIL_SENT) || lastFoxLine(alreadyAsked) === ACCOUNT_FILE_YOURS);
+  const sentThenOpened = applyAccountLetterOpened(
+    applyProceedMotion({
+      ...afterLetter,
+      accountAsk: "sent",
+    }),
+  );
+  assert.equal(sentThenOpened.motion, "in_queue");
+  assert.equal(statusCopy(sentThenOpened), "in_queue");
+  assert.equal(sentThenOpened.nextActor, "ONYX");
+  assert.ok(
+    (sentThenOpened.workItems ?? []).some(
+      (item) => item.kind === "review" && (item.state === "open" || item.state === "nudged"),
+    ),
+  );
   const sendSource = readFileSync(new URL("../lib/account/send.ts", import.meta.url), "utf8");
   assert.match(sendSource, /subject: "Your ONYX File"/);
   assert.match(sendSource, /ONYX Direct <lucas@onyxdirect\.com>/);

@@ -130,17 +130,31 @@ export function createAccountRecord(input: {
   };
 }
 
+function withoutUnsentHandoffLines(messages: FoxMessage[], draft: FoxIntakeDraft) {
+  const sent =
+    draft.motion === "in_queue" || draft.motion === "escalated" || draft.motion === "waiting_out";
+  if (sent) return messages;
+  return messages.filter((item) => {
+    if (item.role !== "fox") return true;
+    const line = item.text.trim();
+    if (/ONYX has this for review/i.test(line)) return false;
+    if (/I pushed this/i.test(line)) return false;
+    return true;
+  });
+}
+
 export function persistAccountRecord(
   record: AccountRecord,
   draft: FoxIntakeDraft,
   messages: FoxMessage[],
   now = new Date(),
 ): AccountRecord {
+  const stored = withoutUnsentHandoffLines(messages, draft);
   return {
     ...record,
     fileId: draft.fileId?.trim() || record.fileId,
     draft: { ...draft, fileId: draft.fileId?.trim() || record.fileId },
-    messages: messages.map((item) => ({ ...item })),
+    messages: stored.map((item) => ({ ...item })),
     updatedAt: now.toISOString(),
   };
 }
@@ -201,6 +215,11 @@ export function mergeFileDraft(existing: FoxIntakeDraft, incoming: FoxIntakeDraf
   const productIntent = incoming.productIntent || existing.productIntent;
   const occupancyValue = incoming.occupancyChoice?.value || existing.occupancyChoice?.value;
   const liveQuote = incoming.liveQuote ?? existing.liveQuote;
+  const staffReturned = incoming.motion === "needs_you";
+  const keepStoredQueue =
+    !staffReturned &&
+    (existing.motion === "in_queue" || existing.motion === "escalated" || existing.motion === "waiting_out") &&
+    (incoming.motion === "gathering" || incoming.motion === "ready");
   const merged: FoxIntakeDraft = {
     ...existing,
     ...incoming,
@@ -228,6 +247,16 @@ export function mergeFileDraft(existing: FoxIntakeDraft, incoming: FoxIntakeDraf
     liveCouponSettled: Boolean(incoming.liveCouponSettled || existing.liveCouponSettled),
     incomeType: incoming.incomeType?.value ? incoming.incomeType : existing.incomeType,
     incomeAsked: Boolean(incoming.incomeAsked || existing.incomeAsked),
+    motion: keepStoredQueue ? existing.motion : incoming.motion ?? existing.motion,
+    nextActor: keepStoredQueue ? existing.nextActor : incoming.nextActor ?? existing.nextActor,
+    waitingOn: keepStoredQueue ? existing.waitingOn : incoming.waitingOn ?? existing.waitingOn,
+    workItems: keepStoredQueue
+      ? incoming.workItems?.some(
+          (item) => item.kind === "review" && (item.state === "open" || item.state === "nudged"),
+        )
+        ? incoming.workItems
+        : existing.workItems ?? incoming.workItems
+      : incoming.workItems ?? existing.workItems,
   };
   return stripHelocLineFromOtherLoans(merged);
 }

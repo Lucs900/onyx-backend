@@ -155,7 +155,8 @@ function main() {
   assert.equal(opened.nextActor, "You");
   const desk = deskLineAfterAccountConsume(opened);
   assert.equal(desk.text, ACCOUNT_FILE_YOURS);
-  assert.deepEqual(labels(desk.actions), ["Ask Fox", "Upload more", "Request human"]);
+  assert.deepEqual(labels(desk.actions), ["Proceed", "Not yet", "Upload more", "Request human"]);
+  assert.ok(labels(desk.actions).includes("Proceed"));
   assert.deepEqual(labels(accountResumeLastActions(opened)), [
     "Ask Fox",
     "Upload more",
@@ -174,7 +175,8 @@ function main() {
   assert.equal(countLine(advanced, PATH_ASK_TEXT), 1);
   assert.equal(lastFox(advanced), ACCOUNT_FILE_YOURS);
   assert.deepEqual(labels(deskStripActions(advanced, opened)), [
-    "Ask Fox",
+    "Proceed",
+    "Not yet",
     "Upload more",
     "Request human",
   ]);
@@ -221,7 +223,8 @@ function main() {
   assert.equal(countLine(afterLogin, ACCOUNT_EMAIL_ASK), 0);
   assert.equal(lastFox(afterLogin), ACCOUNT_FILE_YOURS);
   assert.deepEqual(labels(deskStripActions(afterLogin, opened)), [
-    "Ask Fox",
+    "Proceed",
+    "Not yet",
     "Upload more",
     "Request human",
   ]);
@@ -291,7 +294,8 @@ function main() {
   const afterIntake = withDeskLineAfterAccountConsume(reprintedIntake, desk, opened);
   assert.equal(lastFox(afterIntake), ACCOUNT_FILE_YOURS);
   assert.deepEqual(labels(deskStripActions(afterIntake, opened)), [
-    "Ask Fox",
+    "Proceed",
+    "Not yet",
     "Upload more",
     "Request human",
   ]);

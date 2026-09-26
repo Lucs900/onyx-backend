@@ -154,6 +154,12 @@ export function waitingOnOf(draft: FoxIntakeDraft): WaitingOn {
   return waitingOnForMotion(motionOf(draft));
 }
 
+/** Pad value only. Hub still reads waitingOnOf / draft.motion. */
+export function waitingOnCopy(draft: FoxIntakeDraft) {
+  const waiting = waitingOnOf(draft);
+  return waiting === "onyx" ? "ONYX" : waiting;
+}
+
 export function inferMotionAfterLooks(draft: FoxIntakeDraft): FileMotion {
   return nextDocInvite({ ...draft, sampleAccepted: true }) ? "gathering" : "ready";
 }
@@ -164,18 +170,10 @@ export function restripeGatheringOrReady(draft: FoxIntakeDraft): FoxIntakeDraft 
     draft.motion === "on_hold" ||
     draft.motion === "escalated" ||
     draft.motion === "needs_you" ||
-    draft.motion === "waiting_out"
+    draft.motion === "waiting_out" ||
+    draft.motion === "in_queue"
   ) {
     return draft;
-  }
-  if (draft.motion === "in_queue") {
-    if (inferMotionAfterLooks(draft) !== "gathering") return draft;
-    return {
-      ...draft,
-      motion: "gathering",
-      nextActor: nextForMotion("gathering"),
-      waitingOn: waitingOnForMotion("gathering"),
-    };
   }
   const motion = inferMotionAfterLooks(draft);
   return {
@@ -381,6 +379,9 @@ export function motionAskText(draft: FoxIntakeDraft) {
   if (accountSaveAskOpenMotion(draft)) {
     return ACCOUNT_SAVE_ASK;
   }
+  if (!hasLinkedAccount(draft) && (inQueueEnding(draft) || motion === "in_queue")) {
+    return draft.guestProceeded ? ACCOUNT_SAVE_ASK : gatheringCopy(draft);
+  }
   if (inQueueEnding(draft)) {
     return MOTION_COPY.in_queue;
   }
@@ -575,6 +576,7 @@ export function applyProceedMotion(draft: FoxIntakeDraft, now = new Date()): Fox
   if (!hasLinkedAccount(draft) || accountSaveAskOpen(draft)) {
     return applyAccountSaveAsk(draft);
   }
+  if (draft.motion === "in_queue" && openReviewWorkItem(draft)) return draft;
   const from = currentMotionKey(draft);
   if (!canTransition(from, "in_queue")) return draft;
   const item = openReviewWorkItem(draft) ?? openReviewItem(draft, now);
@@ -842,6 +844,7 @@ export function applyNudgeMotion(
   draft: FoxIntakeDraft,
   input: { force?: boolean; now?: Date } = {},
 ): { draft: FoxIntakeDraft; threadLine: string | null } {
+  if (!hasLinkedAccount(draft)) return { draft, threadLine: null };
   const now = input.now ?? new Date();
   const item = openReviewWorkItem(draft);
   if (!item) return { draft, threadLine: null };

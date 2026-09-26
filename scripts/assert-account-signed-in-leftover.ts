@@ -127,7 +127,8 @@ function main() {
   assert.equal(cleaned.some((item) => item.text === ACCOUNT_SAVE_ASK), true);
   assert.equal(lastFox(cleaned), ACCOUNT_FILE_YOURS);
   assert.deepEqual(labels(deskStripActions(cleaned, opened)), [
-    "Ask Fox",
+    "Proceed",
+    "Not yet",
     "Upload more",
     "Request human",
   ]);
@@ -142,7 +143,8 @@ function main() {
   assert.equal(resumed.some((item) => isSignedInThreadLeftoverLine(item.text)), false);
   assert.equal(lastFox(resumed), ACCOUNT_FILE_YOURS);
   assert.deepEqual(labels(deskStripActions(resumed, opened)), [
-    "Ask Fox",
+    "Proceed",
+    "Not yet",
     "Upload more",
     "Request human",
   ]);
