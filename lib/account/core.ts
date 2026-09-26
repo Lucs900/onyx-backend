@@ -150,10 +150,15 @@ export function persistAccountRecord(
   now = new Date(),
 ): AccountRecord {
   const stored = withoutUnsentHandoffLines(messages, draft);
+  const fileId = draft.fileId?.trim() || record.fileId;
   return {
     ...record,
-    fileId: draft.fileId?.trim() || record.fileId,
-    draft: { ...draft, fileId: draft.fileId?.trim() || record.fileId },
+    fileId,
+    draft: {
+      ...draft,
+      fileId,
+      accountId: draft.accountId || record.accountId,
+    },
     messages: stored.map((item) => ({ ...item })),
     updatedAt: now.toISOString(),
   };
@@ -174,14 +179,20 @@ export function fileHasResumeFacts(draft?: FoxIntakeDraft | null) {
   );
 }
 
-/** Other-browser login must not replace the live File with an empty guest draft. */
+function draftIsThisDeviceFile(draft?: FoxIntakeDraft | null) {
+  return Boolean(draft?.sampleAccepted || draft?.guestProceeded);
+}
+
+/** Other-browser login must not replace the live File with an empty guest draft.
+ *  Create account / Log in on this device attaches the walked file_id — never keep an older File. */
 export function shouldKeepLiveAccountDraft(
   existing: FoxIntakeDraft,
   incoming?: FoxIntakeDraft | null,
 ) {
   if (!incoming) return true;
-  const existingId = existing.fileId?.trim();
   const incomingId = incoming.fileId?.trim();
+  if (draftIsThisDeviceFile(incoming) && incomingId) return false;
+  const existingId = existing.fileId?.trim();
   if (existingId && incomingId && existingId !== incomingId) return true;
   return fileHasResumeFacts(existing) && !fileHasResumeFacts(incoming);
 }
@@ -216,13 +227,18 @@ export function mergeFileDraft(existing: FoxIntakeDraft, incoming: FoxIntakeDraf
   const occupancyValue = incoming.occupancyChoice?.value || existing.occupancyChoice?.value;
   const liveQuote = incoming.liveQuote ?? existing.liveQuote;
   const staffReturned = incoming.motion === "needs_you";
+  const existingId = existing.fileId?.trim();
+  const incomingId = incoming.fileId?.trim();
+  const sameFile = Boolean(existingId && incomingId && existingId === incomingId);
   const keepStoredQueue =
+    sameFile &&
     !staffReturned &&
     (existing.motion === "in_queue" || existing.motion === "escalated" || existing.motion === "waiting_out") &&
     (incoming.motion === "gathering" || incoming.motion === "ready");
   const merged: FoxIntakeDraft = {
     ...existing,
     ...incoming,
+    accountId: incoming.accountId || existing.accountId,
     productIntent,
     propertyValueAmount,
     firstLienAmount,
@@ -256,7 +272,9 @@ export function mergeFileDraft(existing: FoxIntakeDraft, incoming: FoxIntakeDraf
         )
         ? incoming.workItems
         : existing.workItems ?? incoming.workItems
-      : incoming.workItems ?? existing.workItems,
+      : sameFile
+        ? incoming.workItems ?? existing.workItems
+        : incoming.workItems,
   };
   return stripHelocLineFromOtherLoans(merged);
 }

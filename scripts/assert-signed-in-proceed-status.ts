@@ -5,6 +5,7 @@
  * Row B: Proceed on a linked File writes draft.motion = in_queue once and opens one review WorkItem.
  */
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { emptyDraft } from "../components/fox/store";
 import {
   applyLooksRightMotion,
@@ -41,13 +42,21 @@ import {
   applyAccountCreated,
   applyAccountLetterOpened,
   applyAccountSaveAsk,
+  attachAccountOnFile,
   hasLinkedAccount,
   hasStoredReviewSend,
   isOnyxHandoffLine,
   withLinkedAccount,
   withoutGuestHandoffLines,
 } from "../components/fox/account";
-import { mergeFileDraft, persistAccountRecord, createAccountRecord } from "../lib/account/core";
+import {
+  createAccountRecord,
+  memoryAccountStore,
+  mergeFileDraft,
+  persistAccountRecord,
+  persistLiveAccountRecord,
+  shouldKeepLiveAccountDraft,
+} from "../lib/account/core";
 import { processingHubView } from "../components/fox/processingHub";
 import type { FoxIntakeDraft, FoxMessage } from "../components/fox/types";
 
@@ -251,6 +260,44 @@ function main() {
   assert.equal(wiped.nextActor, "ONYX");
   assert.equal(reviewCount(wiped), 1);
 
+  const staleFile = { ...sent, fileId: "file_old_afdb", accountId: "acct_old_afdb" };
+  const walkedFile = { ...guest, fileId: "file_walked_8c8f" };
+  assert.equal(shouldKeepLiveAccountDraft(staleFile, walkedFile), false);
+  assert.equal(shouldKeepLiveAccountDraft(staleFile, emptyDraft()), true);
+  const notStolen = mergeFileDraft(staleFile, walkedFile);
+  assert.equal(notStolen.fileId, walkedFile.fileId);
+  assert.equal(notStolen.motion, "gathering");
+  assert.equal(notStolen.accountId, "acct_old_afdb");
+  assert.equal(reviewCount(notStolen), 0);
+  const staleRecord = createAccountRecord({
+    draft: staleFile,
+    messages: sentThread,
+    fileId: staleFile.fileId ?? "file_old_afdb",
+    email: "62attach@onyxlending.com",
+  });
+  const rebound = persistLiveAccountRecord(staleRecord, walkedFile, guestThread);
+  assert.equal(rebound.fileId, walkedFile.fileId);
+  assert.equal(rebound.draft.fileId, walkedFile.fileId);
+  assert.equal(rebound.draft.motion, "gathering");
+  assert.equal(rebound.draft.accountId, staleRecord.accountId);
+  assert.equal(reviewCount(rebound.draft), 0);
+  assert.ok(!hasStoredReviewSend(rebound.draft));
+  const store = memoryAccountStore([staleRecord]);
+  const attachedWalk = attachAccountOnFile(store, walkedFile, guestThread, {
+    email: "62attach@onyxlending.com",
+  });
+  assert.equal(attachedWalk.sameFile, true);
+  assert.equal(attachedWalk.record.fileId, walkedFile.fileId);
+  assert.equal(attachedWalk.draft.motion, "gathering");
+  const emptyLogin = attachAccountOnFile(
+    memoryAccountStore([staleRecord]),
+    { ...emptyDraft(), path: "acr", workspaceFlow: true, fileId: "file_empty_guest" },
+    [],
+    { email: "62attach@onyxlending.com" },
+  );
+  assert.equal(emptyLogin.sameFile, true);
+  assert.equal(emptyLogin.record.fileId, staleRecord.fileId);
+
   const persisted = persistAccountRecord(record, attached, [
     ...guestThread,
     fox("push", MOTION_COPY.nudge),
@@ -271,6 +318,14 @@ function main() {
   const saveAsk = applyAccountSaveAsk(looks);
   assert.equal(saveAsk.motion, "gathering");
   assert.equal(reviewCount(saveAsk), 0);
+
+  const storeSource = readFileSync(new URL("../components/fox/store.ts", import.meta.url), "utf8");
+  assert.match(storeSource, /const thisDevice = Boolean\(current\.sampleAccepted \|\| current\.guestProceeded\)/);
+  assert.match(storeSource, /if \(snapshot\.sameFile && !thisDevice\)/);
+  assert.match(storeSource, /if \(attached && session\.fileId !== attached\)/);
+  const coreSource = readFileSync(new URL("../lib/account/core.ts", import.meta.url), "utf8");
+  assert.match(coreSource, /draftIsThisDeviceFile/);
+  assert.match(coreSource, /keepStoredQueue =\n    sameFile &&/s);
 
   console.log(
     "assert-signed-in-proceed-status: guest row A · attach stays gathering + Proceed · signed-in write in_queue once",

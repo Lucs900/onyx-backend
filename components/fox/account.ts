@@ -486,6 +486,18 @@ export function attachAccountOnFile(
       ? store.getByPhone(phone)
       : undefined;
   if (existing) {
+    const incomingId = draft.fileId?.trim();
+    const thisDevice = Boolean(draft.sampleAccepted || draft.guestProceeded);
+    if (thisDevice && incomingId && incomingId !== existing.fileId) {
+      const next = persistLiveAccountRecord(existing, draft, messages);
+      store.put(next);
+      return {
+        draft: next.draft,
+        record: next,
+        snapshot: snapshotOf(next),
+        sameFile: true,
+      };
+    }
     return {
       draft: existing.draft,
       record: existing,
