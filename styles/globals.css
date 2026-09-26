@@ -384,7 +384,7 @@ p {
   gap: 20px;
 }
 
-.site-header__inner:has(.site-header__initial) .site-header__actions {
+.site-header--account .site-header__actions {
   display: flex;
 }
 

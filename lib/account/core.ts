@@ -276,8 +276,22 @@ function isLoginDoorFoxLine(text: string) {
   );
 }
 
+function isLoginDoorClientLine(text: string) {
+  const line = text.trim();
+  if (!line) return false;
+  if (/^log in$/i.test(line) || /^email$/i.test(line) || /^phone$/i.test(line)) return true;
+  if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(line)) return true;
+  if (/^\d{6}$/.test(line)) return true;
+  if (line.replace(/\D/g, "").length >= 10) return true;
+  return false;
+}
+
 function withoutLoginDoorFoxLines(messages: FoxMessage[]) {
-  return messages.filter((item) => item.role !== "fox" || !isLoginDoorFoxLine(item.text));
+  return messages.filter((item) => {
+    if (item.role === "fox") return !isLoginDoorFoxLine(item.text);
+    if (item.role === "client") return !isLoginDoorClientLine(item.text);
+    return true;
+  });
 }
 
 function threadHasFileYours(messages: FoxMessage[]) {

@@ -79,6 +79,31 @@ export function hasLinkedAccount(draft: FoxIntakeDraft) {
   return Boolean(draft.accountId?.trim());
 }
 
+/** One source of truth for Header A. Desk label and initial/Sign out stay together. */
+export function hasUsableAccountSession(sessionToken?: string | null) {
+  return Boolean(sessionToken?.trim());
+}
+
+export function hasAccountHeader(draft: FoxIntakeDraft, sessionToken?: string | null) {
+  return hasLinkedAccount(draft) && hasUsableAccountSession(sessionToken);
+}
+
+export function accountHeaderInitial(email?: string | null) {
+  const letter = String(email ?? "").trim().charAt(0);
+  return /[a-z]/i.test(letter) ? letter.toUpperCase() : "Y";
+}
+
+export function isLoginDoorUserBubble(text: string) {
+  const line = text.trim();
+  if (!line) return false;
+  if (/^log in$/i.test(line)) return true;
+  if (/^email$/i.test(line) || /^phone$/i.test(line)) return true;
+  if (looksLikeAccountEmail(line) || looksLikeAccountPhone(line) || looksLikeAccountCode(line)) {
+    return true;
+  }
+  return false;
+}
+
 export function accountSaveAskOpen(draft: FoxIntakeDraft) {
   return Boolean(draft.accountSaveAsk) && !hasLinkedAccount(draft);
 }

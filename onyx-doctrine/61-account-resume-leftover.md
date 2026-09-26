@@ -33,6 +33,16 @@ Preview only. Same branch, same PR. Do not merge. READY is not ACCEPT.
 - Touch `/staff/hub` or `e953133`.
 - Change host, HELOC $50k / 8.80% / IO $367 / CLTV 90%, the Save sentence, or Status gathering · Next You.
 
+## FAIL (founder, 25 Sep 2026 ~5:26 PM PT) on 29c3058
+
+Walker green is not founder green. InPrivate on a live HELOC $500k / $400k / $50k File:
+1. Header showed fox + Relationship desk only. No initial. No Sign out.
+2. After "This File is yours.", occupancy / value / first lien reprinted. De-dupe was transcript-only for yours/why/first-question.
+3. The "Log in" user bubble stayed. That is a FAIL.
+4. Sign out → clean desk → Log in could not be walked.
+
+Next SHA: one source of truth for desk + initial; never reprint an answered intake ask after yours (stored facts); drop login-door user bubbles; reproduce on an existing 500/400/50 File and the stale session states.
+
 ## Closed
 
 f845741 · d0dd8ed · 575fee8 · 959cf1f (host), plus e49b1ec · 9143dd2 · e18c694 · f3ad1db · b2c2e6e · ccce44c · 5def8ba · ac6190c · c004c1f and earlier.

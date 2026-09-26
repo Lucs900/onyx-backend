@@ -165,6 +165,7 @@ import {
   deskLineAfterAccountConsume,
   withDeskLineAfterAccountConsume,
   withoutAccountResumeLeftovers,
+  intakeAskAlreadyAnswered,
   isPricingWhenReadySpeech,
   messagesWithLiveQuoteSpeech,
   messagesWithRateOrReadySpeech,
@@ -727,7 +728,7 @@ function FoxThread({
     dropStreetSuggestChips(
       dropAbandonedAddressConfirm(
         dropResolvedAddressConfirmChips(
-          withoutAccountResumeLeftovers(withoutDuplicateTranscriptAsk(messages)),
+          withoutAccountResumeLeftovers(withoutDuplicateTranscriptAsk(messages), draft),
           draft,
         ),
         draft,
@@ -1560,10 +1561,10 @@ export function AlwaysOnFox({
         const linked = getFoxDraft();
         if (hasLinkedAccount(linked) && spoken && isAccountMailWaitLine(spoken.text)) {
           const desk = deskLineAfterAccountConsume(linked);
-          return withoutAccountResumeLeftovers(withDeskLineAfterAccountConsume(prev, desk));
+          return withoutAccountResumeLeftovers(withDeskLineAfterAccountConsume(prev, desk, linked), linked);
         }
         if (spoken && liveDeskLineOwnsPrompt(spoken.text, linked)) {
-          return withoutAccountResumeLeftovers(prev);
+          return withoutAccountResumeLeftovers(prev, linked);
         }
         if (hasLinkedAccount(linked)) {
           if (
@@ -1573,9 +1574,10 @@ export function AlwaysOnFox({
             ask.text === ACCOUNT_FIRST_OFFER ||
             ask.text === ACCOUNT_FILE_YOURS ||
             ask.text === ACCOUNT_LOGIN_ASK ||
-            ask.text === ACCOUNT_EMAIL_ASK
+            ask.text === ACCOUNT_EMAIL_ASK ||
+            intakeAskAlreadyAnswered(ask.text, linked)
           ) {
-            return withoutAccountResumeLeftovers(prev);
+            return withoutAccountResumeLeftovers(prev, linked);
           }
         }
       }

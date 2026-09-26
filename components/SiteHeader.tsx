@@ -5,8 +5,9 @@ import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { AdvisorMark } from "./AdvisorMark";
 import { HeroStartLink } from "./fox/HeroStartLink";
-import { HEADER_LOGIN_HREF, hasLinkedAccount } from "./fox/account";
+import { HEADER_LOGIN_HREF, accountHeaderInitial, hasAccountHeader } from "./fox/account";
 import {
+  getAccountSession,
   getFoxDraft,
   getResumedAccountEmail,
   getServerDraft,
@@ -20,17 +21,13 @@ const NAV_LINKS = [
   { href: "/about", label: "About" },
 ] as const;
 
-function accountInitial(email: string) {
-  const letter = email.trim().charAt(0);
-  return /[a-z]/i.test(letter) ? letter.toUpperCase() : "Y";
-}
-
 export function SiteHeader() {
   const pathname = usePathname();
   const draft = useSyncExternalStore(subscribeFoxDraft, getFoxDraft, getServerDraft);
-  const linked = hasLinkedAccount(draft);
+  const session = useSyncExternalStore(subscribeFoxDraft, getAccountSession, () => undefined);
+  const linked = hasAccountHeader(draft, session?.token);
   const email = getResumedAccountEmail() || draft.contact?.email?.value || "";
-  const initial = accountInitial(email);
+  const initial = accountHeaderInitial(email);
   const [scrolled, setScrolled] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
@@ -130,7 +127,13 @@ export function SiteHeader() {
   return (
     <>
       <header
-        className={scrolled ? "site-header site-header--scrolled" : "site-header"}
+        className={[
+          "site-header",
+          scrolled ? "site-header--scrolled" : "",
+          linked ? "site-header--account" : "",
+        ]
+          .filter(Boolean)
+          .join(" ")}
       >
         <div className="page-pad">
           <div className="page-inner site-header__inner">

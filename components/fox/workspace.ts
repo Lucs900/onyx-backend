@@ -630,6 +630,7 @@ import {
   firstAccountOfferOpen,
   hasLinkedAccount,
   isAccountMailWaitLine,
+  isLoginDoorUserBubble,
   lastFoxLine,
 } from "./account";
 import {
@@ -4240,7 +4241,7 @@ export function deskStripActions(
   }
   const resumeChips = accountResumeLastActions(draft);
   if (resumeChips.length) return stripStreetSuggest(resumeChips);
-  const thread = withoutAccountResumeLeftovers(withoutDuplicateTranscriptAsk(messages));
+  const thread = withoutAccountResumeLeftovers(withoutDuplicateTranscriptAsk(messages), draft);
   let live = -1;
   for (let i = 0; i < thread.length; i += 1) {
     if (thread[i]?.role === "fox") live = i;
@@ -4447,15 +4448,62 @@ export function isAccountResumeLeftoverLine(text: string) {
   );
 }
 
-/** Render-check: keep the first yours / why / first-question; drop reprints. */
-export function withoutAccountResumeLeftovers(messages: FoxMessage[]): FoxMessage[] {
+export function intakeAskAlreadyAnswered(text: string, draft?: FoxIntakeDraft | null) {
+  if (!draft) return false;
+  const line = text.trim();
+  if (!line) return false;
+  if (line === "How will the property be used?") {
+    return Boolean(draft.occupancyChoice?.value || draft.occupancyAsked);
+  }
+  if (line === HELOC_VALUE_ASK || line === "What’s the property value?") {
+    return (draft.propertyValueAmount ?? 0) > 0;
+  }
+  if (line === HELOC_FIRST_LIEN_ASK) {
+    return (draft.firstLienAmount ?? 0) > 0;
+  }
+  if (line === HELOC_LINE_ASK) {
+    return (draft.loanAmountValue ?? 0) > 0 || Boolean(draft.helocLineAsked);
+  }
+  if (line === PATH_ASK_TEXT) return Boolean(draft.path);
+  if (line === START_ACR_TEXT || line === START_LOAN_TEXT) return Boolean(draft.productIntent);
+  if (line === ACCOUNT_FIRST_OFFER || line === ACCOUNT_FIRST_WHY || line === ACCOUNT_WHY_SENTENCE) {
+    return true;
+  }
+  if (/What kind of home is this/i.test(line)) {
+    return Boolean(draft.propertyType || draft.propertyTypeAsked);
+  }
+  if (/estimated FICO/i.test(line)) return Boolean(draft.creditBand || draft.creditAsked);
+  if (/address or ZIP/i.test(line)) return Boolean(draft.propertyZip || draft.propertyZipAsked);
+  if (/How is income earned/i.test(line)) return Boolean(draft.incomeType?.value || draft.incomeAsked);
+  if (/anyone else on this loan/i.test(line)) return Boolean(draft.whoOnLoan || draft.whoOnLoanAsked);
+  if (/other monthly debts/i.test(line)) {
+    return Boolean(draft.monthlyDebtsAsked || draft.statedMonthlyDebts != null);
+  }
+  if (/Drop last year/i.test(line) || /latest paystub/i.test(line)) {
+    return Boolean(draft.sampleAccepted || draft.guestProceeded);
+  }
+  if (/these numbers look right/i.test(line) || /I can send this to review/i.test(line)) {
+    return Boolean(draft.sampleAccepted || draft.guestProceeded);
+  }
+  return false;
+}
+
+/** Render-check: keep the first yours / why / first-question; drop reprints and answered intake asks. */
+export function withoutAccountResumeLeftovers(
+  messages: FoxMessage[],
+  draft?: FoxIntakeDraft | null,
+): FoxMessage[] {
   let seenYours = false;
   let seenWhy = false;
   let seenPath = false;
   let seenOffer = false;
+  let prevFox = "";
   const out: FoxMessage[] = [];
   for (const message of messages) {
     if (message.role !== "fox") {
+      const line = message.text.trim();
+      if (isLoginDoorUserBubble(line)) continue;
+      if (prevFox && isLoginDoorLine(prevFox) && isLoginDoorUserBubble(line)) continue;
       out.push(message);
       continue;
     }
@@ -4463,28 +4511,34 @@ export function withoutAccountResumeLeftovers(messages: FoxMessage[]): FoxMessag
     if (line === ACCOUNT_FILE_YOURS) {
       if (seenYours) continue;
       seenYours = true;
+      prevFox = line;
       out.push(message);
       continue;
     }
     if (line === ACCOUNT_WHY_SENTENCE || line === ACCOUNT_FIRST_WHY) {
       if (seenYours || seenWhy) continue;
       seenWhy = true;
+      prevFox = line;
       out.push(message);
       continue;
     }
     if (line === PATH_ASK_TEXT) {
       if (seenYours || seenPath) continue;
       seenPath = true;
+      prevFox = line;
       out.push(message);
       continue;
     }
     if (line === ACCOUNT_FIRST_OFFER) {
       if (seenYours || seenOffer) continue;
       seenOffer = true;
+      prevFox = line;
       out.push(message);
       continue;
     }
     if (seenYours && (isLoginDoorLine(line) || line === ACCOUNT_SAVE_ASK)) continue;
+    if (seenYours && intakeAskAlreadyAnswered(line, draft)) continue;
+    prevFox = line;
     out.push(message);
   }
   return out;
@@ -4579,8 +4633,9 @@ export function liveDeskLineOwnsPrompt(liveText: string, draft: FoxIntakeDraft) 
 export function withDeskLineAfterAccountConsume(
   messages: FoxMessage[],
   ask: { text: string; followUp?: string; facts?: FoxMessage["facts"] },
+  draft?: FoxIntakeDraft | null,
 ): FoxMessage[] {
-  const cleaned = withoutAccountResumeLeftovers(messages);
+  const cleaned = withoutAccountResumeLeftovers(messages, draft);
   const last = lastFoxLine(cleaned);
   const spokenYours = cleaned.some(
     (item) => item.role === "fox" && item.text.trim() === ACCOUNT_FILE_YOURS,
@@ -4590,7 +4645,8 @@ export function withDeskLineAfterAccountConsume(
     role: "fox",
     text: ACCOUNT_FILE_YOURS,
   });
-  const realAsk = isRealResumeAskText(ask.text) ? ask : null;
+  const realAsk =
+    isRealResumeAskText(ask.text) && !intakeAskAlreadyAnswered(ask.text, draft) ? ask : null;
 
   if (last && !isParkedPostLinkLine(last) && last !== ACCOUNT_FILE_YOURS) {
     if (spokenYours) return cleaned;
@@ -4601,11 +4657,10 @@ export function withDeskLineAfterAccountConsume(
         break;
       }
     }
-    return withoutAccountResumeLeftovers([
-      ...cleaned.slice(0, insertAt),
-      yoursMessage(),
-      ...cleaned.slice(insertAt),
-    ]);
+    return withoutAccountResumeLeftovers(
+      [...cleaned.slice(0, insertAt), yoursMessage(), ...cleaned.slice(insertAt)],
+      draft,
+    );
   }
 
   let next = cleaned;
@@ -4622,7 +4677,7 @@ export function withDeskLineAfterAccountConsume(
       },
     ];
   }
-  return withoutTrailingParkedAccountLines(withoutAccountResumeLeftovers(next));
+  return withoutTrailingParkedAccountLines(withoutAccountResumeLeftovers(next, draft));
 }
 
 function spokenOwnsAsk(spoken?: string | null, ask?: string | null) {

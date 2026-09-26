@@ -2132,14 +2132,15 @@ function writeAccountSession(session: AccountSession | undefined) {
     if (!session) {
       window.localStorage.removeItem(FOX_ACCOUNT_KEY);
       window.sessionStorage.removeItem(FOX_ACCOUNT_KEY);
-      return;
+    } else {
+      const raw = JSON.stringify(session);
+      window.localStorage.setItem(FOX_ACCOUNT_KEY, raw);
+      window.sessionStorage.setItem(FOX_ACCOUNT_KEY, raw);
     }
-    const raw = JSON.stringify(session);
-    window.localStorage.setItem(FOX_ACCOUNT_KEY, raw);
-    window.sessionStorage.setItem(FOX_ACCOUNT_KEY, raw);
   } catch {
     // Preview storage can be blocked.
   }
+  emit();
 }
 
 export function getAccountSession() {
@@ -2165,7 +2166,9 @@ export function applyAccountResume(draft: FoxIntakeDraft, messages: FoxMessage[]
     withDeskLineAfterAccountConsume(
       mergeAccountMessages(getFoxMessages(), messages, consumed),
       desk,
+      consumed,
     ),
+    consumed,
   );
   current = {
     ...ensureFileId(consumed),
