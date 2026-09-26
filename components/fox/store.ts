@@ -2251,14 +2251,16 @@ export async function createLinkedAccount(input: { email?: string; phone?: strin
     });
     return snapshot;
   }
-  if (snapshot.sameFile) {
+  const thisDevice = Boolean(current.sampleAccepted || current.guestProceeded);
+  if (snapshot.sameFile && !thisDevice) {
     return snapshot;
   }
   const token = new URL(snapshot.magicLink, "https://onyx.local").searchParams.get("account") || "";
-  if (token) writeAccountSession({ token, fileId: snapshot.fileId, accountId: snapshot.accountId });
+  const fileId = (thisDevice ? current.fileId : snapshot.fileId)?.trim() || snapshot.fileId;
+  if (token) writeAccountSession({ token, fileId, accountId: snapshot.accountId });
   commit(
     applyAccountCreated(current, {
-      fileId: snapshot.fileId,
+      fileId,
       accountId: snapshot.accountId,
       channel: input.phone ? "phone" : "email",
     }),
@@ -2358,7 +2360,12 @@ export async function persistLinkedAccountFileNow(): Promise<boolean> {
         messages: getFoxMessages(),
       }),
     });
-    return response.ok;
+    if (!response.ok) return false;
+    const attached = current.fileId?.trim();
+    if (attached && session.fileId !== attached) {
+      writeAccountSession({ ...session, fileId: attached });
+    }
+    return true;
   } catch {
     return false;
   }
