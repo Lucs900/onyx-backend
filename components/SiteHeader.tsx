@@ -7,7 +7,7 @@ import { AdvisorMark } from "./AdvisorMark";
 import { HeroStartLink } from "./fox/HeroStartLink";
 import { HEADER_LOGIN_HREF, accountHeaderInitial, hasAccountHeader } from "./fox/account";
 import {
-  getAccountSession,
+  getAccountSessionToken,
   getFoxDraft,
   getResumedAccountEmail,
   getServerDraft,
@@ -24,8 +24,8 @@ const NAV_LINKS = [
 export function SiteHeader() {
   const pathname = usePathname();
   const draft = useSyncExternalStore(subscribeFoxDraft, getFoxDraft, getServerDraft);
-  const session = useSyncExternalStore(subscribeFoxDraft, getAccountSession, () => undefined);
-  const linked = hasAccountHeader(draft, session?.token);
+  const sessionToken = useSyncExternalStore(subscribeFoxDraft, getAccountSessionToken, () => "");
+  const linked = hasAccountHeader(draft, sessionToken);
   const email = getResumedAccountEmail() || draft.contact?.email?.value || "";
   const initial = accountHeaderInitial(email);
   const [scrolled, setScrolled] = useState(false);

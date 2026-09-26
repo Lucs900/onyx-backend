@@ -345,7 +345,7 @@ function main() {
   assert.match(headerSource, /Relationship desk/);
   assert.match(headerSource, /Sign out/);
   assert.match(headerSource, /hasAccountHeader/);
-  assert.match(headerSource, /getAccountSession/);
+  assert.match(headerSource, /getAccountSessionToken/);
   assert.match(headerSource, /site-header--account/);
   assert.match(headerSource, /signOutLinkedAccount/);
   assert.match(headerSource, /site-header__initial/);

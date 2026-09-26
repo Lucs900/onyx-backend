@@ -2147,6 +2147,10 @@ export function getAccountSession() {
   return readAccountSession();
 }
 
+export function getAccountSessionToken() {
+  return readAccountSession()?.token || "";
+}
+
 /** Refresh /start without ?account= still rehydrates staff foxLine from the File. */
 export function linkedAccountRefreshQuery(): { token?: string; fileId?: string } | undefined {
   if (typeof window === "undefined") return undefined;
