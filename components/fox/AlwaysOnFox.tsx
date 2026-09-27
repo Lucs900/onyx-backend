@@ -129,6 +129,7 @@ import {
   ACCOUNT_EMAIL_ASK,
   ACCOUNT_LOGIN_ASK,
   ACCOUNT_PHONE_ASK,
+  ACCOUNT_SAVE_ASK,
   ACCOUNT_SKIPPED_LINE,
   ACCOUNT_SEND_FAILED,
   ACCOUNT_FILE_YOURS,
@@ -151,6 +152,7 @@ import {
   hasLinkedAccount,
   isAccountMailWaitLine,
   isSignedInThreadLeftoverLine,
+  signedInReviewStripOpen,
   startOverNeedsConfirm,
 } from "./account";
 import {
@@ -165,6 +167,7 @@ import {
   lastFoxTurn,
   liveDeskLineOwnsPrompt,
   deskLineAfterAccountConsume,
+  isAccountResumeLeftoverLine,
   withDeskLineAfterAccountConsume,
   withoutAccountResumeLeftovers,
   intakeAskAlreadyAnswered,
@@ -1561,7 +1564,16 @@ export function AlwaysOnFox({
       if (isStart) {
         const spoken = lastFoxTurn(prev);
         const linked = getFoxDraft();
-        if (hasLinkedAccount(linked) && spoken && isAccountMailWaitLine(spoken.text)) {
+        if (
+          hasLinkedAccount(linked) &&
+          spoken &&
+          (isAccountMailWaitLine(spoken.text) ||
+            (signedInReviewStripOpen(linked) &&
+              (spoken.text.trim() === ACCOUNT_SKIPPED_LINE ||
+                spoken.text.trim() === ACCOUNT_SAVE_ASK ||
+                isAccountResumeLeftoverLine(spoken.text) ||
+                isSignedInThreadLeftoverLine(spoken.text))))
+        ) {
           const desk = deskLineAfterAccountConsume(linked);
           return withoutAccountResumeLeftovers(withDeskLineAfterAccountConsume(prev, desk, linked), linked);
         }

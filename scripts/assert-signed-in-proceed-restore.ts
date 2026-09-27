@@ -26,6 +26,8 @@ import {
   deskStripActions,
   statusCopy,
   withDeskLineAfterAccountConsume,
+  workspacePromptCopy,
+  workspaceUpdateCopy,
   writePurchasePrice,
 } from "../components/fox/workspace";
 import {
@@ -149,6 +151,9 @@ function main() {
   assert.equal(nextActorOf(sent), "ONYX");
   assert.equal(reviewCount(sent), 1);
   assert.equal(signedInReviewStripOpen(sent), false);
+  assert.equal(workspacePromptCopy("done", sent).text, MOTION_COPY.in_queue);
+  assert.match(workspacePromptCopy("done", sent).text, /ONYX has this for review/);
+  assert.equal(workspaceUpdateCopy({ field: "proceed" }, sent), MOTION_COPY.in_queue);
   const sentDesk = deskLineAfterAccountConsume(sent);
   assert.notEqual(sentDesk.text, MOTION_COPY.ready);
   assert.deepEqual(labels(deskStripActions([fox("queue", MOTION_COPY.in_queue)], sent)).slice(0, 2), [

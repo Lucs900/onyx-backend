@@ -634,6 +634,7 @@ import {
   linkedLastLineActions,
   signedInReviewStripActions,
   signedInReviewStripOpen,
+  fileHitGuestProceed,
   isAccountMailWaitLine,
   isLoginDoorUserBubble,
   isSignedInThreadLeftoverLine,
@@ -5531,7 +5532,7 @@ function workspaceAskCopy(
     }
     if (inQueueEnding(draft)) {
       return {
-        text: MOTION_COPY.nudge,
+        text: signedInProceedSpeak(draft),
         actions: finishLineActions(draft),
       };
     }
@@ -6803,6 +6804,16 @@ export function withWorkspaceGuide<
   return reply;
 }
 
+/** First signed-in send after guest Proceed is the in_queue line. Later nudges stay nudge. */
+function signedInProceedSpeak(draft: FoxIntakeDraft) {
+  if (!hasLinkedAccount(draft) || accountSaveAskOpen(draft)) return ACCOUNT_SAVE_ASK;
+  const nudged =
+    (draft.events ?? []).some((event) => event.kind === "nudge") ||
+    (draft.workItems ?? []).some((item) => item.kind === "review" && item.state === "nudged");
+  if (fileHitGuestProceed(draft) && !nudged) return MOTION_COPY.in_queue;
+  return MOTION_COPY.nudge;
+}
+
 export function workspaceUpdateCopy(capture: Capture, draft: FoxIntakeDraft) {
   if (capture.field === "path") {
     return capture.value === "loan-only"
@@ -6832,8 +6843,7 @@ export function workspaceUpdateCopy(capture: Capture, draft: FoxIntakeDraft) {
     return MOTION_COPY.escalated;
   }
   if (capture.field === "proceed") {
-    if (!hasLinkedAccount(draft) || accountSaveAskOpen(draft)) return ACCOUNT_SAVE_ASK;
-    return MOTION_COPY.nudge;
+    return signedInProceedSpeak(draft);
   }
   if (capture.field === "not-yet") {
     return MOTION_COPY.on_hold;
