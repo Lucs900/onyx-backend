@@ -3110,9 +3110,11 @@ function applyCaptureBody(capture: Capture) {
       if (!readAccountSession()?.token) return current;
       const previous = current;
       commitSilent(next);
+      // Spoken line is already optimistic. Holding the pad at gathering
+      // contradicts "ONYX has this for review." Emit now; persist rolls back.
+      emit();
       void persistLinkedAccountFileNow().then((ok) => {
         if (!ok) commit(previous);
-        else emit();
       });
       return current;
     }

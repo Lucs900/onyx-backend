@@ -419,6 +419,7 @@ function main() {
   assert.equal(reviewCount(saveAsk), 0);
 
   const storeSource = readFileSync(new URL("../components/fox/store.ts", import.meta.url), "utf8");
+  assert.match(storeSource, /commitSilent\(next\);\s*(?:\/\/[^\n]*\n\s*)*\s*emit\(\);/);
   assert.match(storeSource, /function stashGuestSketch/);
   assert.match(storeSource, /function sessionOwnsCurrentFile/);
   assert.match(storeSource, /if \(!sessionOwnsCurrentFile\(session\)\) return/);
