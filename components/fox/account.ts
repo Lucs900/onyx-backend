@@ -581,6 +581,42 @@ export function accountResumeLastActions(draft: FoxIntakeDraft): FoxAction[] {
 }
 
 /**
+ * Hit guest Proceed: File.draft.guestProceeded, set by applyAccountSaveAsk
+ * (guest applyProceedMotion) and persisted on the File, not only the browser.
+ */
+export function fileHitGuestProceed(draft?: FoxIntakeDraft | null) {
+  return Boolean(draft?.guestProceeded);
+}
+
+/** Signed-in, guest already Proceeded, still gathering — restore the review strip. */
+export function signedInReviewStripOpen(draft?: FoxIntakeDraft | null) {
+  if (!draft || !hasLinkedAccount(draft) || !fileHitGuestProceed(draft)) return false;
+  if (!draft.sampleAccepted) return false;
+  if (hasStoredReviewSend(draft)) return false;
+  const motion = draft.motion;
+  if (motion === "in_queue" || motion === "escalated" || motion === "waiting_out") return false;
+  return true;
+}
+
+/** Proceed · Not yet · Request human. No Ask Fox / Upload more until the signed-in send. */
+export function signedInReviewStripActions(draft: FoxIntakeDraft): FoxAction[] {
+  const chips: FoxAction[] = [
+    { id: "proceed", label: "Proceed", event: "bubble", capture: { field: "proceed" } },
+    { id: "not-yet", label: "Not yet", event: "bubble", capture: { field: "not-yet" } },
+  ];
+  if (!draft.originatorRequested && draft.motion !== "escalated") {
+    chips.push({
+      id: "request-human",
+      label: "Request human",
+      event: "bubble",
+      capture: { field: "talk-originator" },
+      quiet: true,
+    });
+  }
+  return chips;
+}
+
+/**
  * 61b2 — last Fox line on a linked File. Keyed on linked account, never one line.
  * Covers pending hand-off, Request human, upload, or any other last line.
  */

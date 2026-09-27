@@ -127,8 +127,8 @@ function main() {
   assert.equal(cleaned.some((item) => item.text === ACCOUNT_SAVE_ASK), true);
   assert.equal(lastFox(cleaned), ACCOUNT_FILE_YOURS);
   assert.deepEqual(labels(deskStripActions(cleaned, opened)), [
-    "Ask Fox",
-    "Upload more",
+    "Proceed",
+    "Not yet",
     "Request human",
   ]);
   assert.deepEqual(labels(accountResumeLastActions(opened)), [
@@ -140,13 +140,13 @@ function main() {
   const desk = deskLineAfterAccountConsume(opened);
   const resumed = withDeskLineAfterAccountConsume(reprints, desk, opened);
   assert.equal(resumed.some((item) => isSignedInThreadLeftoverLine(item.text)), false);
-  assert.equal(lastFox(resumed), ACCOUNT_FILE_YOURS);
+  assert.equal(lastFox(resumed), desk.text);
   assert.deepEqual(labels(deskStripActions(resumed, opened)), [
-    "Ask Fox",
-    "Upload more",
+    "Proceed",
+    "Not yet",
     "Request human",
   ]);
-  assert.ok(!labels(deskStripActions(resumed, opened)).includes("Proceed"));
+  assert.ok(labels(deskStripActions(resumed, opened)).includes("Proceed"));
   assert.ok(!labels(deskStripActions(resumed, opened)).includes(CREATE_ACCOUNT_LABEL));
 
   const persisted = mergeAccountMessages(reprints, reprints, opened);

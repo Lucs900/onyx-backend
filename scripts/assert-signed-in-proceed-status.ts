@@ -9,6 +9,7 @@ import { readFileSync } from "node:fs";
 import { emptyDraft } from "../components/fox/store";
 import {
   applyLooksRightMotion,
+  applyNotYetMotion,
   applyNudgeMotion,
   applyProceedMotion,
   finishLineActions,
@@ -177,14 +178,14 @@ function main() {
   assert.equal(waitingOnCopy(attached), "borrower");
   assert.ok(!hasStoredReviewSend(attached));
   const attachedDesk = deskLineAfterAccountConsume(attached);
-  assert.equal(attachedDesk.text, ACCOUNT_FILE_YOURS);
-  assert.deepEqual(labels(attachedDesk.actions), ["Ask Fox", "Upload more", "Request human"]);
-  assert.ok(!labels(attachedDesk.actions).includes("Proceed"));
+  assert.equal(attachedDesk.text, MOTION_COPY.ready);
+  assert.deepEqual(labels(attachedDesk.actions), ["Proceed", "Not yet", "Request human"]);
+  assert.ok(!labels(attachedDesk.actions).includes("Ask Fox"));
   assert.ok(!labels(attachedDesk.actions).includes(CREATE_ACCOUNT_LABEL));
-  const attachedThread: FoxMessage[] = [fox("yours", ACCOUNT_FILE_YOURS)];
+  const attachedThread: FoxMessage[] = [fox("yours", ACCOUNT_FILE_YOURS), fox("ready", MOTION_COPY.ready)];
   assert.deepEqual(labels(deskStripActions(attachedThread, attached)), [
-    "Ask Fox",
-    "Upload more",
+    "Proceed",
+    "Not yet",
     "Request human",
   ]);
 
@@ -196,6 +197,12 @@ function main() {
   });
   assert.equal(injected.motion, "gathering", "77111ad: letter consume without a stored send stays gathering");
   assert.ok(!hasStoredReviewSend(injected));
+
+  const held = applyNotYetMotion(attached);
+  assert.equal(held.motion, "gathering");
+  assert.equal(statusCopy(held), "gathering");
+  assert.equal(nextActorOf(held), "You");
+  assert.equal(reviewCount(held), 0);
 
   const sent = applyProceedMotion(attached);
   assert.equal(sent.fileId, attached.fileId);

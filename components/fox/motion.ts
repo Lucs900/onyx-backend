@@ -15,6 +15,7 @@ import {
   accountSaveWallActions,
   applyAccountSaveAsk,
   hasLinkedAccount,
+  signedInReviewStripOpen,
 } from "./account";
 import { canLooksRight, isHelocFile, hasHelocLine, shouldEscalate } from "./completeness";
 import { wageDocsSkipIsAnswer } from "./fileWrite";
@@ -612,6 +613,23 @@ export function applyNotYetMotion(draft: FoxIntakeDraft, now = new Date()): FoxI
       docsOpen: false,
       correcting: null,
     };
+  }
+  if (signedInReviewStripOpen(draft)) {
+    return appendFileEvent(
+      {
+        ...draft,
+        motion: "gathering",
+        nextActor: "You",
+        waitingOn: "borrower",
+        pendingFinish: undefined,
+        docsOpen: false,
+        correcting: null,
+        taxReturnPacketCloseAsk: false,
+      },
+      "not-yet",
+      "Not yet — still gathering. Same file.",
+      now.toISOString(),
+    );
   }
   const next = appendFileEvent(
     {

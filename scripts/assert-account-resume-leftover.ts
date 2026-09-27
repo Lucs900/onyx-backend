@@ -5,7 +5,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { emptyDraft } from "../components/fox/store";
-import { applyLooksRightMotion, applyProceedMotion } from "../components/fox/motion";
+import { applyLooksRightMotion, applyProceedMotion, MOTION_COPY } from "../components/fox/motion";
 import { skipCurrentInvite } from "../components/fox/fileWrite";
 import { applyCouponChoice } from "../components/fox/liveCoupon";
 import { skipMonthlyDebts } from "../components/fox/monthlyDebts";
@@ -154,9 +154,9 @@ function main() {
   assert.equal(statusCopy(opened), "gathering");
   assert.equal(opened.nextActor, "You");
   const desk = deskLineAfterAccountConsume(opened);
-  assert.equal(desk.text, ACCOUNT_FILE_YOURS);
-  assert.deepEqual(labels(desk.actions), ["Ask Fox", "Upload more", "Request human"]);
-  assert.ok(!labels(desk.actions).includes("Proceed"));
+  assert.equal(desk.text, MOTION_COPY.ready);
+  assert.deepEqual(labels(desk.actions), ["Proceed", "Not yet", "Request human"]);
+  assert.ok(!labels(desk.actions).includes("Ask Fox"));
   assert.deepEqual(labels(accountResumeLastActions(opened)), [
     "Ask Fox",
     "Upload more",
@@ -173,10 +173,10 @@ function main() {
   assert.equal(countLine(advanced, ACCOUNT_FILE_YOURS), 1);
   assert.equal(countLine(advanced, ACCOUNT_WHY_SENTENCE), 1);
   assert.equal(countLine(advanced, PATH_ASK_TEXT), 1);
-  assert.equal(lastFox(advanced), ACCOUNT_FILE_YOURS);
+  assert.equal(lastFox(advanced), MOTION_COPY.ready);
   assert.deepEqual(labels(deskStripActions(advanced, opened)), [
-    "Ask Fox",
-    "Upload more",
+    "Proceed",
+    "Not yet",
     "Request human",
   ]);
 
@@ -220,12 +220,12 @@ function main() {
   assert.equal(countLine(afterLogin, ACCOUNT_FILE_YOURS), 1);
   assert.equal(countLine(afterLogin, ACCOUNT_LOGIN_ASK), 0);
   assert.equal(countLine(afterLogin, ACCOUNT_EMAIL_ASK), 0);
-  assert.equal(lastFox(afterLogin), ACCOUNT_FILE_YOURS);
+  assert.equal(lastFox(afterLogin), MOTION_COPY.ready);
   assert.ok(afterLogin.every((item) => item.text.trim() !== ACCOUNT_EMAIL_ASK || item !== afterLogin[afterLogin.length - 1]));
   assert.notEqual(lastFox(afterLogin), ACCOUNT_EMAIL_ASK);
   assert.deepEqual(labels(deskStripActions(afterLogin, opened)), [
-    "Ask Fox",
-    "Upload more",
+    "Proceed",
+    "Not yet",
     "Request human",
   ]);
 
@@ -289,7 +289,7 @@ function main() {
   assert.equal(countLine(intakeClean, HELOC_FIRST_LIEN_ASK), 0);
   assert.ok(!intakeClean.some((item) => item.role === "client" && item.text === LOGIN_LABEL));
   assert.ok(!intakeClean.some((item) => item.role === "client" && item.text === "61walk@onyxlending.com"));
-  assert.equal(lastFox(intakeClean), ACCOUNT_FILE_YOURS);
+  assert.equal(lastFox(intakeClean), MOTION_COPY.ready);
   assert.ok(isLoginDoorUserBubble(LOGIN_LABEL));
   assert.ok(isLoginDoorUserBubble(CREATE_ACCOUNT_LABEL));
   const withCreate: FoxMessage[] = [
@@ -300,10 +300,10 @@ function main() {
   const createClean = withoutAccountResumeLeftovers(withCreate, opened);
   assert.ok(!createClean.some((item) => item.role === "client" && item.text === CREATE_ACCOUNT_LABEL));
   const afterIntake = withDeskLineAfterAccountConsume(reprintedIntake, desk, opened);
-  assert.equal(lastFox(afterIntake), ACCOUNT_FILE_YOURS);
+  assert.equal(lastFox(afterIntake), MOTION_COPY.ready);
   assert.deepEqual(labels(deskStripActions(afterIntake, opened)), [
-    "Ask Fox",
-    "Upload more",
+    "Proceed",
+    "Not yet",
     "Request human",
   ]);
 

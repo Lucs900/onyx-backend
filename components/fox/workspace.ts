@@ -632,6 +632,8 @@ import {
   hasStoredReviewSend,
   isLiveCreateAccountAction,
   linkedLastLineActions,
+  signedInReviewStripActions,
+  signedInReviewStripOpen,
   isAccountMailWaitLine,
   isLoginDoorUserBubble,
   isSignedInThreadLeftoverLine,
@@ -4275,6 +4277,9 @@ function deskStripActionsComputed(
     finishLast !== ACCOUNT_FILE_YOURS &&
     !isParkedPostLinkLine(finishLast)
   ) {
+    if (signedInReviewStripOpen(draft)) {
+      return stripStreetSuggest(signedInReviewStripActions(draft));
+    }
     const finish = finishLineActions(draft);
     if (finish.some((item) => item.capture?.field === "proceed")) {
       return stripStreetSuggest(finish);
@@ -4286,6 +4291,9 @@ function deskStripActionsComputed(
     if (thread[i]?.role === "fox") live = i;
   }
   if (live < 0 || !isLiveFoxTurn(thread, live)) {
+    if (signedInReviewStripOpen(draft)) {
+      return stripStreetSuggest(signedInReviewStripActions(draft));
+    }
     if (
       hasLinkedAccount(draft) &&
       (draft.accountYoursSpoken || finishLast === ACCOUNT_FILE_YOURS || hasStoredReviewSend(draft) || inQueueEnding(draft))
@@ -4390,6 +4398,9 @@ function deskStripActionsComputed(
     draft.sampleAccepted &&
     (/i can send this to review/i.test(message.text) || motionAskText(draft) === message.text)
   ) {
+    if (signedInReviewStripOpen(draft)) {
+      return stripStreetSuggest(signedInReviewStripActions(draft));
+    }
     return stripStreetSuggest(finishLineActions(draft));
   }
 
@@ -4419,6 +4430,9 @@ function deskStripActionsComputed(
     return stripStreetSuggest(docInviteActions());
   }
   if (/i can send this to review/i.test(message.text)) {
+    if (signedInReviewStripOpen(draft)) {
+      return stripStreetSuggest(signedInReviewStripActions(draft));
+    }
     if (hasLinkedAccount(draft) && (draft.accountYoursSpoken || hasStoredReviewSend(draft))) {
       return stripStreetSuggest(linkedLastLineActions(draft));
     }
@@ -4431,6 +4445,9 @@ function deskStripActionsComputed(
   }
   const desk = deskLineAfterAccountConsume(draft);
   if (spokenOwnsAsk(message.text, desk.text) || message.text === ACCOUNT_FILE_YOURS) {
+    if (signedInReviewStripOpen(draft) && /i can send this to review/i.test(desk.text)) {
+      return stripStreetSuggest(signedInReviewStripActions(draft));
+    }
     const spoken = desk.actions ?? [];
     if (spoken.length && !spoken.some((item) => item.capture?.field === "proceed")) {
       return stripStreetSuggest(spoken);
@@ -4440,6 +4457,9 @@ function deskStripActionsComputed(
     return [];
   }
   if (hasLinkedAccount(draft) && (draft.accountYoursSpoken || message.text === ACCOUNT_FILE_YOURS || isParkedPostLinkLine(message.text))) {
+    if (signedInReviewStripOpen(draft)) {
+      return stripStreetSuggest(signedInReviewStripActions(draft));
+    }
     const resume = accountResumeLastActions(draft);
     if (resume.length) return stripStreetSuggest(resume);
   }
@@ -4534,6 +4554,7 @@ export function intakeAskAlreadyAnswered(text: string, draft?: FoxIntakeDraft | 
     return Boolean(draft.sampleAccepted || draft.guestProceeded);
   }
   if (/these numbers look right/i.test(line) || /I can send this to review/i.test(line)) {
+    if (/i can send this to review/i.test(line) && signedInReviewStripOpen(draft)) return false;
     return Boolean(draft.sampleAccepted || draft.guestProceeded);
   }
   return false;
@@ -4610,7 +4631,9 @@ export function withoutAccountResumeLeftovers(
 function isConsumedFinishLine(text: string, draft: FoxIntakeDraft) {
   if (!hasLinkedAccount(draft)) return false;
   const line = text.trim();
-  if (line === MOTION_COPY.ready || /i can send this to review/i.test(line)) return true;
+  if (line === MOTION_COPY.ready || /i can send this to review/i.test(line)) {
+    return !signedInReviewStripOpen(draft);
+  }
   if (line === MOTION_COPY.askFox) return true;
   if (line === PATH_ASK_TEXT) return true;
   return false;
@@ -4657,6 +4680,12 @@ export function deskLineAfterAccountConsume(draft: FoxIntakeDraft): {
     return {
       text: ACCOUNT_FILE_YOURS,
       actions: greet.actions,
+    };
+  }
+  if (signedInReviewStripOpen(draft)) {
+    return {
+      text: MOTION_COPY.ready,
+      actions: signedInReviewStripActions(draft),
     };
   }
   const next = nextFoxAsk(draft);

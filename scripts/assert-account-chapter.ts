@@ -611,7 +611,11 @@ async function main() {
   } else {
     assert.equal(lastFoxLine(alreadyAsked), openedDesk.text);
   }
-  assert.ok(alreadyAsked.some((item) => item.text === ACCOUNT_EMAIL_SENT) || lastFoxLine(alreadyAsked) === ACCOUNT_FILE_YOURS);
+  assert.ok(
+    alreadyAsked.some((item) => item.text === ACCOUNT_EMAIL_SENT) ||
+      lastFoxLine(alreadyAsked) === ACCOUNT_FILE_YOURS ||
+      lastFoxLine(alreadyAsked) === openedDesk.text,
+  );
   const sentThenOpened = applyAccountLetterOpened(
     applyProceedMotion({
       ...afterLetter,

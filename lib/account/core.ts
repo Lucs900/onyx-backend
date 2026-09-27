@@ -328,6 +328,7 @@ export function mergeFileDraft(existing: FoxIntakeDraft, incoming: FoxIntakeDraf
     incomeType: incoming.incomeType?.value ? incoming.incomeType : existing.incomeType,
     incomeAsked: Boolean(incoming.incomeAsked || existing.incomeAsked),
     accountYoursSpoken: Boolean(incoming.accountYoursSpoken || existing.accountYoursSpoken) || undefined,
+    guestProceeded: Boolean(incoming.guestProceeded || existing.guestProceeded) || undefined,
     motion: keepStoredQueue ? existing.motion : incoming.motion ?? existing.motion,
     nextActor: keepStoredQueue ? existing.nextActor : incoming.nextActor ?? existing.nextActor,
     waitingOn: keepStoredQueue ? existing.waitingOn : incoming.waitingOn ?? existing.waitingOn,
