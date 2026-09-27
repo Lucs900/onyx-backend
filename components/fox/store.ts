@@ -68,6 +68,7 @@ import {
   applyAccountLetterOpened,
   accountSaveAskOpen,
   hasLinkedAccount,
+  rememberGuestProceedThread,
   withoutGuestHandoffLines,
 } from "./account";
 import { FAILED_READ_NOTE, isUnreadNote } from "@/lib/docs/accept";
@@ -1287,6 +1288,7 @@ function persistMigratedMessages(messages: FoxMessage[]) {
     ),
   );
   messagesHydrated = true;
+  rememberGuestProceedThread(foxMessages);
   persistMessages(foxMessages);
   return foxMessages;
 }
@@ -2212,7 +2214,8 @@ export function applyAccountResume(draft: FoxIntakeDraft, messages: FoxMessage[]
   const base = openingOtherFile
     ? messages
     : mergeAccountMessages(getFoxMessages(), messages, consumed);
-  const desk = deskLineAfterAccountConsume(consumed);
+  rememberGuestProceedThread(base);
+  const desk = deskLineAfterAccountConsume(consumed, base);
   const spoken = withoutAccountResumeLeftovers(
     withDeskLineAfterAccountConsume(base, desk, consumed),
     consumed,

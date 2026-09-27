@@ -4284,7 +4284,7 @@ function deskStripActionsComputed(
     finishLast !== ACCOUNT_FILE_YOURS &&
     !isParkedPostLinkLine(finishLast)
   ) {
-    if (signedInReviewStripOpen(draft)) {
+    if (signedInReviewStripOpen(draft, threadForFinish)) {
       return stripStreetSuggest(signedInReviewStripActions(draft));
     }
     const finish = finishLineActions(draft);
@@ -4298,7 +4298,7 @@ function deskStripActionsComputed(
     if (thread[i]?.role === "fox") live = i;
   }
   if (live < 0 || !isLiveFoxTurn(thread, live)) {
-    if (signedInReviewStripOpen(draft)) {
+    if (signedInReviewStripOpen(draft, thread)) {
       return stripStreetSuggest(signedInReviewStripActions(draft));
     }
     if (
@@ -4405,7 +4405,7 @@ function deskStripActionsComputed(
     draft.sampleAccepted &&
     (/i can send this to review/i.test(message.text) || motionAskText(draft) === message.text)
   ) {
-    if (signedInReviewStripOpen(draft)) {
+    if (signedInReviewStripOpen(draft, messages)) {
       return stripStreetSuggest(signedInReviewStripActions(draft));
     }
     return stripStreetSuggest(finishLineActions(draft));
@@ -4437,7 +4437,7 @@ function deskStripActionsComputed(
     return stripStreetSuggest(docInviteActions());
   }
   if (/i can send this to review/i.test(message.text)) {
-    if (signedInReviewStripOpen(draft)) {
+    if (signedInReviewStripOpen(draft, messages)) {
       return stripStreetSuggest(signedInReviewStripActions(draft));
     }
     if (hasLinkedAccount(draft) && (draft.accountYoursSpoken || hasStoredReviewSend(draft))) {
@@ -4450,9 +4450,9 @@ function deskStripActionsComputed(
   if (greet.text === message.text) {
     return stripStreetSuggest(greet.actions ?? []);
   }
-  const desk = deskLineAfterAccountConsume(draft);
+  const desk = deskLineAfterAccountConsume(draft, messages);
   if (spokenOwnsAsk(message.text, desk.text) || message.text === ACCOUNT_FILE_YOURS) {
-    if (signedInReviewStripOpen(draft) && /i can send this to review/i.test(desk.text)) {
+    if (signedInReviewStripOpen(draft, messages) && /i can send this to review/i.test(desk.text)) {
       return stripStreetSuggest(signedInReviewStripActions(draft));
     }
     const spoken = desk.actions ?? [];
@@ -4464,7 +4464,7 @@ function deskStripActionsComputed(
     return [];
   }
   if (hasLinkedAccount(draft) && (draft.accountYoursSpoken || message.text === ACCOUNT_FILE_YOURS || isParkedPostLinkLine(message.text))) {
-    if (signedInReviewStripOpen(draft)) {
+    if (signedInReviewStripOpen(draft, messages)) {
       return stripStreetSuggest(signedInReviewStripActions(draft));
     }
     const resume = accountResumeLastActions(draft);
@@ -4543,7 +4543,11 @@ export function isAccountResumeLeftoverLine(text: string) {
   );
 }
 
-export function intakeAskAlreadyAnswered(text: string, draft?: FoxIntakeDraft | null) {
+export function intakeAskAlreadyAnswered(
+  text: string,
+  draft?: FoxIntakeDraft | null,
+  messages?: FoxMessage[],
+) {
   if (!draft) return false;
   const line = text.trim();
   if (!line) return false;
@@ -4578,7 +4582,7 @@ export function intakeAskAlreadyAnswered(text: string, draft?: FoxIntakeDraft | 
     return Boolean(draft.sampleAccepted || draft.guestProceeded);
   }
   if (/these numbers look right/i.test(line) || /I can send this to review/i.test(line)) {
-    if (/i can send this to review/i.test(line) && signedInReviewStripOpen(draft)) return false;
+    if (/i can send this to review/i.test(line) && signedInReviewStripOpen(draft, messages)) return false;
     return Boolean(draft.sampleAccepted || draft.guestProceeded);
   }
   return false;
@@ -4648,7 +4652,7 @@ export function withoutAccountResumeLeftovers(
       continue;
     }
     if (seenYours && isReviewReadyLine(line) && line !== MOTION_COPY.ready) continue;
-    if (seenYours && intakeAskAlreadyAnswered(line, draft)) continue;
+    if (seenYours && intakeAskAlreadyAnswered(line, draft, messages)) continue;
     prevFox = line;
     out.push(message);
   }
@@ -4709,7 +4713,10 @@ function withoutTrailingParkedAccountLines(messages: FoxMessage[]): FoxMessage[]
 }
 
 /** After `/start?account=` consume. History may keep the mail-wait sentence. */
-export function deskLineAfterAccountConsume(draft: FoxIntakeDraft): {
+export function deskLineAfterAccountConsume(
+  draft: FoxIntakeDraft,
+  messages?: FoxMessage[],
+): {
   text: string;
   followUp?: string;
   facts?: ReturnType<typeof workspacePromptCopy>["facts"];
@@ -4723,7 +4730,7 @@ export function deskLineAfterAccountConsume(draft: FoxIntakeDraft): {
       actions: greet.actions,
     };
   }
-  if (signedInReviewStripOpen(draft)) {
+  if (signedInReviewStripOpen(draft, messages)) {
     return {
       text: MOTION_COPY.ready,
       actions: signedInReviewStripActions(draft),
@@ -4777,7 +4784,7 @@ export function withDeskLineAfterAccountConsume(
     text: ACCOUNT_FILE_YOURS,
   });
   const realAsk =
-    isRealResumeAskText(ask.text) && !intakeAskAlreadyAnswered(ask.text, draft) ? ask : null;
+    isRealResumeAskText(ask.text) && !intakeAskAlreadyAnswered(ask.text, draft, messages) ? ask : null;
 
   const lastIsHistory =
     !last ||
@@ -4786,7 +4793,7 @@ export function withDeskLineAfterAccountConsume(
     isAccountResumeLeftoverLine(last) ||
     isSignedInGuestHistoryLine(last) ||
     isReviewReadyLine(last) ||
-    intakeAskAlreadyAnswered(last, draft);
+    intakeAskAlreadyAnswered(last, draft, messages);
   if (last && !lastIsHistory) {
     if (spokenYours) return cleaned;
     let insertAt = cleaned.length;

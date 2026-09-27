@@ -40,8 +40,10 @@ import {
   fileHitGuestProceed,
   hasLinkedAccount,
   hasStoredReviewSend,
+  rememberGuestProceedThread,
   signedInReviewStripActions,
   signedInReviewStripOpen,
+  threadHasGuestProceedReply,
 } from "../components/fox/account";
 import {
   createAccountRecord,
@@ -101,6 +103,7 @@ function helocLooks(): FoxIntakeDraft {
 }
 
 function main() {
+  rememberGuestProceedThread(null);
   const looks = helocLooks();
   assert.equal(fileHitGuestProceed(looks), false);
   assert.equal(signedInReviewStripOpen(looks), false);
@@ -186,6 +189,37 @@ function main() {
   assert.notEqual(neverDesk.text, MOTION_COPY.ready);
   assert.ok(!labels(neverDesk.actions).includes("Proceed"));
 
+  const oldThread: FoxMessage[] = [
+    fox("long-ready", longReady),
+    { id: "client-proceed", role: "client", text: "Proceed" },
+    fox("save", ACCOUNT_SAVE_ASK),
+  ];
+  const oldFile = applyAccountLetterOpened(
+    applyAccountCreated(looks, { accountId: "acct_63_old", channel: "email", fileId: looks.fileId }),
+  );
+  assert.equal(oldFile.guestProceeded, undefined);
+  assert.equal(oldFile.motion, "gathering");
+  assert.equal(threadHasGuestProceedReply(oldThread), true);
+  assert.equal(fileHitGuestProceed(oldFile, oldThread), true);
+  assert.equal(fileHitGuestProceed(oldFile, []), false);
+  assert.equal(signedInReviewStripOpen(oldFile, oldThread), true);
+  const oldDesk = deskLineAfterAccountConsume(oldFile, oldThread);
+  assert.equal(oldDesk.text, MOTION_COPY.ready);
+  assert.deepEqual(labels(oldDesk.actions), ["Proceed", "Not yet", "Request human"]);
+  const neverThread: FoxMessage[] = [fox("ready-only", longReady)];
+  assert.equal(threadHasGuestProceedReply(neverThread), false);
+  assert.equal(fileHitGuestProceed(never, neverThread), false);
+  assert.equal(signedInReviewStripOpen(never, neverThread), false);
+  const oldRecord = createAccountRecord({
+    draft: oldFile,
+    messages: oldThread,
+    fileId: oldFile.fileId ?? "file_63_old",
+    email: "63old@onyxlending.com",
+  });
+  const oldPersisted = persistLiveAccountRecord(oldRecord, oldFile, oldThread);
+  assert.equal(oldPersisted.draft.guestProceeded, undefined);
+  assert.equal(fileHitGuestProceed(oldPersisted.draft, oldPersisted.messages), true);
+
   const record = createAccountRecord({
     draft: guest,
     messages: [],
@@ -200,6 +234,8 @@ function main() {
   assert.match(accountSource, /export function fileHitGuestProceed/);
   assert.match(accountSource, /guestProceeded: true/);
   assert.match(accountSource, /export function signedInReviewStripOpen/);
+  assert.match(accountSource, /export function threadHasGuestProceedReply/);
+  assert.match(accountSource, /Derive only/);
   const coreSource = readFileSync(new URL("../lib/account/core.ts", import.meta.url), "utf8");
   assert.match(coreSource, /guestProceeded: Boolean\(incoming\.guestProceeded \|\| existing\.guestProceeded\)/);
   const workspaceSource = readFileSync(new URL("../components/fox/workspace.ts", import.meta.url), "utf8");
@@ -208,6 +244,8 @@ function main() {
   const storeSource = readFileSync(new URL("../components/fox/store.ts", import.meta.url), "utf8");
   assert.match(storeSource, /if \(thisDevice\)/);
   assert.match(storeSource, /applyAccountResume\(\s*created/);
+  assert.match(storeSource, /rememberGuestProceedThread\(base\)/);
+  assert.match(storeSource, /deskLineAfterAccountConsume\(consumed, base\)/);
 }
 
 main();

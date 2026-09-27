@@ -1569,13 +1569,13 @@ export function AlwaysOnFox({
           hasLinkedAccount(linked) &&
           spoken &&
           (isAccountMailWaitLine(spoken.text) ||
-            (signedInReviewStripOpen(linked) &&
+            (signedInReviewStripOpen(linked, prev) &&
               (spoken.text.trim() === ACCOUNT_SKIPPED_LINE ||
                 spoken.text.trim() === ACCOUNT_SAVE_ASK ||
                 isAccountResumeLeftoverLine(spoken.text) ||
                 isSignedInThreadLeftoverLine(spoken.text))))
         ) {
-          const desk = deskLineAfterAccountConsume(linked);
+          const desk = deskLineAfterAccountConsume(linked, prev);
           return withoutAccountResumeLeftovers(withDeskLineAfterAccountConsume(prev, desk, linked), linked);
         }
         if (spoken && liveDeskLineOwnsPrompt(spoken.text, linked)) {
@@ -2087,7 +2087,7 @@ export function AlwaysOnFox({
       appendReply(action.label, { text: spoken });
       return;
     }
-    if (action.capture?.field === "not-yet" && signedInReviewStripOpen(liveDraft)) {
+    if (action.capture?.field === "not-yet" && signedInReviewStripOpen(liveDraft, getFoxMessages())) {
       applyCapture(action.capture);
       skipPromptSync.current = true;
       const last = lastFoxTurn(getFoxMessages())?.text?.trim() || "";
@@ -2485,7 +2485,7 @@ export function AlwaysOnFox({
           return;
         }
         const live = getFoxDraft();
-        if (hasLinkedAccount(live) && signedInReviewStripOpen(live)) {
+        if (hasLinkedAccount(live) && signedInReviewStripOpen(live, getFoxMessages())) {
           skipPromptSync.current = true;
           setMessages(getFoxMessages());
           return;

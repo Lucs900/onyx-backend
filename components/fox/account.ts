@@ -583,14 +583,55 @@ export function accountResumeLastActions(draft: FoxIntakeDraft): FoxAction[] {
 /**
  * Hit guest Proceed: File.draft.guestProceeded, set by applyAccountSaveAsk
  * (guest applyProceedMotion) and persisted on the File, not only the browser.
+ * Older Files (flag missing) still count when the stored thread has a Proceed
+ * reply to the ready line or the save-so-this-desk ask. Derive only — never
+ * write guestProceeded onto a File we only read.
  */
-export function fileHitGuestProceed(draft?: FoxIntakeDraft | null) {
-  return Boolean(draft?.guestProceeded);
+let rememberedGuestProceedThread: readonly FoxMessage[] | null = null;
+
+export function rememberGuestProceedThread(messages?: readonly FoxMessage[] | null) {
+  rememberedGuestProceedThread = messages ?? null;
+}
+
+export function isGuestProceedPrompt(text: string) {
+  const line = text.trim();
+  if (!line) return false;
+  if (/^i can send this to review/i.test(line)) return true;
+  if (line === ACCOUNT_SAVE_ASK) return true;
+  if (/save so this desk is yours on the next phone/i.test(line)) return true;
+  return false;
+}
+
+export function threadHasGuestProceedReply(messages?: readonly FoxMessage[] | null) {
+  if (!messages?.length) return false;
+  let prevFox = "";
+  for (const message of messages) {
+    if (message.role === "fox") {
+      const line = message.text.trim();
+      if (line) prevFox = line;
+      continue;
+    }
+    if (message.role !== "client") continue;
+    if (message.text.trim() !== "Proceed") continue;
+    if (isGuestProceedPrompt(prevFox)) return true;
+  }
+  return false;
+}
+
+export function fileHitGuestProceed(
+  draft?: FoxIntakeDraft | null,
+  messages?: readonly FoxMessage[] | null,
+) {
+  if (Boolean(draft?.guestProceeded)) return true;
+  return threadHasGuestProceedReply(messages ?? rememberedGuestProceedThread);
 }
 
 /** Signed-in, guest already Proceeded, still gathering — restore the review strip. */
-export function signedInReviewStripOpen(draft?: FoxIntakeDraft | null) {
-  if (!draft || !hasLinkedAccount(draft) || !fileHitGuestProceed(draft)) return false;
+export function signedInReviewStripOpen(
+  draft?: FoxIntakeDraft | null,
+  messages?: readonly FoxMessage[] | null,
+) {
+  if (!draft || !hasLinkedAccount(draft) || !fileHitGuestProceed(draft, messages)) return false;
   if (!draft.sampleAccepted) return false;
   if (hasStoredReviewSend(draft)) return false;
   const motion = draft.motion;
