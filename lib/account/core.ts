@@ -327,6 +327,7 @@ export function mergeFileDraft(existing: FoxIntakeDraft, incoming: FoxIntakeDraf
     liveCouponSettled: Boolean(incoming.liveCouponSettled || existing.liveCouponSettled),
     incomeType: incoming.incomeType?.value ? incoming.incomeType : existing.incomeType,
     incomeAsked: Boolean(incoming.incomeAsked || existing.incomeAsked),
+    accountYoursSpoken: Boolean(incoming.accountYoursSpoken || existing.accountYoursSpoken) || undefined,
     motion: keepStoredQueue ? existing.motion : incoming.motion ?? existing.motion,
     nextActor: keepStoredQueue ? existing.nextActor : incoming.nextActor ?? existing.nextActor,
     waitingOn: keepStoredQueue ? existing.waitingOn : incoming.waitingOn ?? existing.waitingOn,

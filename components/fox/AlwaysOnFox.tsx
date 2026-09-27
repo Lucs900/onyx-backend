@@ -18,6 +18,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { AdvisorMark } from "@/components/AdvisorMark";
+import { accountFileHasStoredContent } from "@/lib/account/core";
 import { FOX_KEYBOARD_EVENT, scrollDeltaToFollowLastLine } from "./askReveal";
 import { readScenario } from "@/components/products/scenario";
 import {
@@ -147,10 +148,8 @@ import {
   composerPlaceholderForAccount,
   firstAccountOfferOpen,
   foxLineLeaksAccountSecret,
-  CREATE_ACCOUNT_LABEL,
   hasLinkedAccount,
   isAccountMailWaitLine,
-  isSignedInPastCreateAccountLine,
   isSignedInThreadLeftoverLine,
   startOverNeedsConfirm,
 } from "./account";
@@ -776,15 +775,6 @@ function FoxThread({
           >
             <p>{speech}</p>
             {followUp ? <p>{followUp}</p> : null}
-            {message.role === "fox" &&
-            hasLinkedAccount(draft) &&
-            isSignedInPastCreateAccountLine(message.text) ? (
-              <div className="fox-bubble__past" data-history-chip="create-account">
-                <span className="fox-chip is-past" aria-disabled="true">
-                  {CREATE_ACCOUNT_LABEL}
-                </span>
-              </div>
-            ) : null}
             {canEdit ? (
               <button
                 type="button"
@@ -2456,6 +2446,17 @@ export function AlwaysOnFox({
         email: accountReply.capture.field === "account-email" ? accountReply.capture.value : undefined,
         phone: accountReply.capture.field === "account-phone" ? accountReply.capture.value : undefined,
       }).then((snapshot) => {
+        if (
+          snapshot &&
+          snapshot.sameFile &&
+          snapshot.fileId &&
+          snapshot.fileId !== beforeAccount.fileId?.trim() &&
+          accountFileHasStoredContent(snapshot.draft)
+        ) {
+          skipPromptSync.current = true;
+          setMessages(getFoxMessages());
+          return;
+        }
         const channel = accountReply.capture?.field === "account-phone" ? "phone" : "email";
         const spoken = snapshot?.sent
           ? accountSentCopy({ channel })

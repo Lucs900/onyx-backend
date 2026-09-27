@@ -155,8 +155,8 @@ function main() {
   assert.equal(opened.nextActor, "You");
   const desk = deskLineAfterAccountConsume(opened);
   assert.equal(desk.text, ACCOUNT_FILE_YOURS);
-  assert.deepEqual(labels(desk.actions), ["Proceed", "Not yet", "Upload more", "Request human"]);
-  assert.ok(labels(desk.actions).includes("Proceed"));
+  assert.deepEqual(labels(desk.actions), ["Ask Fox", "Upload more", "Request human"]);
+  assert.ok(!labels(desk.actions).includes("Proceed"));
   assert.deepEqual(labels(accountResumeLastActions(opened)), [
     "Ask Fox",
     "Upload more",
@@ -175,8 +175,7 @@ function main() {
   assert.equal(countLine(advanced, PATH_ASK_TEXT), 1);
   assert.equal(lastFox(advanced), ACCOUNT_FILE_YOURS);
   assert.deepEqual(labels(deskStripActions(advanced, opened)), [
-    "Proceed",
-    "Not yet",
+    "Ask Fox",
     "Upload more",
     "Request human",
   ]);
@@ -201,7 +200,7 @@ function main() {
   assert.notEqual(midDesk.text, ACCOUNT_FILE_YOURS);
   assert.notEqual(midDesk.text, PATH_ASK_TEXT);
   assert.notEqual(midDesk.text, ACCOUNT_WHY_SENTENCE);
-  assert.ok((midDesk.actions ?? []).length > 0);
+  assert.ok(midDesk.text.trim());
   const midThread = withDeskLineAfterAccountConsume(
     [fox("path", PATH_ASK_TEXT), fox("mail", ACCOUNT_EMAIL_SENT)],
     midDesk,
@@ -222,9 +221,10 @@ function main() {
   assert.equal(countLine(afterLogin, ACCOUNT_LOGIN_ASK), 0);
   assert.equal(countLine(afterLogin, ACCOUNT_EMAIL_ASK), 0);
   assert.equal(lastFox(afterLogin), ACCOUNT_FILE_YOURS);
+  assert.ok(afterLogin.every((item) => item.text.trim() !== ACCOUNT_EMAIL_ASK || item !== afterLogin[afterLogin.length - 1]));
+  assert.notEqual(lastFox(afterLogin), ACCOUNT_EMAIL_ASK);
   assert.deepEqual(labels(deskStripActions(afterLogin, opened)), [
-    "Proceed",
-    "Not yet",
+    "Ask Fox",
     "Upload more",
     "Request human",
   ]);
@@ -294,11 +294,21 @@ function main() {
   const afterIntake = withDeskLineAfterAccountConsume(reprintedIntake, desk, opened);
   assert.equal(lastFox(afterIntake), ACCOUNT_FILE_YOURS);
   assert.deepEqual(labels(deskStripActions(afterIntake, opened)), [
-    "Proceed",
-    "Not yet",
+    "Ask Fox",
     "Upload more",
     "Request human",
   ]);
+
+  const spokenOnce = { ...opened, accountYoursSpoken: true };
+  const again = withDeskLineAfterAccountConsume(advanced, desk, spokenOnce);
+  assert.equal(countLine(again, ACCOUNT_FILE_YOURS), 1);
+  const again2 = withDeskLineAfterAccountConsume(
+    [...again, fox("login-again", ACCOUNT_EMAIL_ASK)],
+    desk,
+    spokenOnce,
+  );
+  assert.equal(countLine(again2, ACCOUNT_FILE_YOURS), 1);
+  assert.notEqual(lastFox(again2), ACCOUNT_EMAIL_ASK);
 
   assert.equal(hasLinkedAccount(opened), true);
   assert.equal(hasAccountHeader(opened, undefined), false);

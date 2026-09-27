@@ -2206,18 +2206,22 @@ export function applyAccountResume(draft: FoxIntakeDraft, messages: FoxMessage[]
   accountResumePending = false;
   const filled = writeThreadAnswersToFile(draft, messages);
   const consumed = applyAccountLetterOpened({ ...filled, workspaceFlow: true });
+  const currentId = current.fileId?.trim();
+  const resumeId = consumed.fileId?.trim();
+  const openingOtherFile = Boolean(resumeId && currentId && resumeId !== currentId);
+  const base = openingOtherFile
+    ? messages
+    : mergeAccountMessages(getFoxMessages(), messages, consumed);
   const desk = deskLineAfterAccountConsume(consumed);
   const spoken = withoutAccountResumeLeftovers(
-    withDeskLineAfterAccountConsume(
-      mergeAccountMessages(getFoxMessages(), messages, consumed),
-      desk,
-      consumed,
-    ),
+    withDeskLineAfterAccountConsume(base, desk, consumed),
     consumed,
   );
   current = {
     ...ensureFileId(consumed),
-    accountYoursSpoken: spoken.some((item) => item.role === "fox" && item.text.trim() === ACCOUNT_FILE_YOURS),
+    accountYoursSpoken:
+      Boolean(consumed.accountYoursSpoken) ||
+      spoken.some((item) => item.role === "fox" && item.text.trim() === ACCOUNT_FILE_YOURS),
   };
   persist(current);
   persistMigratedMessages(spoken);

@@ -127,8 +127,7 @@ function main() {
   assert.equal(cleaned.some((item) => item.text === ACCOUNT_SAVE_ASK), true);
   assert.equal(lastFox(cleaned), ACCOUNT_FILE_YOURS);
   assert.deepEqual(labels(deskStripActions(cleaned, opened)), [
-    "Proceed",
-    "Not yet",
+    "Ask Fox",
     "Upload more",
     "Request human",
   ]);
@@ -143,11 +142,12 @@ function main() {
   assert.equal(resumed.some((item) => isSignedInThreadLeftoverLine(item.text)), false);
   assert.equal(lastFox(resumed), ACCOUNT_FILE_YOURS);
   assert.deepEqual(labels(deskStripActions(resumed, opened)), [
-    "Proceed",
-    "Not yet",
+    "Ask Fox",
     "Upload more",
     "Request human",
   ]);
+  assert.ok(!labels(deskStripActions(resumed, opened)).includes("Proceed"));
+  assert.ok(!labels(deskStripActions(resumed, opened)).includes(CREATE_ACCOUNT_LABEL));
 
   const persisted = mergeAccountMessages(reprints, reprints, opened);
   assert.equal(persisted.some((item) => isSignedInThreadLeftoverLine(item.text)), false);
@@ -158,18 +158,9 @@ function main() {
   assert.equal(afterClick.accountSaveAsk, opened.accountSaveAsk);
 
   const threadSource = readFileSync(new URL("../components/fox/AlwaysOnFox.tsx", import.meta.url), "utf8");
-  assert.match(threadSource, /isSignedInPastCreateAccountLine/);
-  assert.match(threadSource, /aria-disabled="true"/);
-  assert.match(threadSource, /fox-chip is-past/);
-  assert.match(threadSource, /data-history-chip="create-account"/);
-  assert.doesNotMatch(
-    threadSource.slice(threadSource.indexOf("isSignedInPastCreateAccountLine"), threadSource.indexOf("isSignedInPastCreateAccountLine") + 800),
-    /onClick=\{\(\) => onAction/,
-  );
-
-  const css = readFileSync(new URL("../styles/fox.css", import.meta.url), "utf8");
-  assert.match(css, /\.fox-chip\.is-past/);
-  assert.match(css, /pointer-events:\s*none/);
+  assert.doesNotMatch(threadSource, /isSignedInPastCreateAccountLine/);
+  assert.doesNotMatch(threadSource, /data-history-chip="create-account"/);
+  assert.doesNotMatch(threadSource, /fox-chip is-past/);
 
   const leftover = readFileSync(new URL("../scripts/assert-account-resume-leftover.ts", import.meta.url), "utf8");
   assert.match(leftover, /export function intakeAskAlreadyAnswered/);

@@ -604,8 +604,7 @@ async function main() {
   if (openedDesk.text === ACCOUNT_FILE_YOURS) {
     assert.equal(lastFoxLine(alreadyAsked), ACCOUNT_FILE_YOURS);
     assert.deepEqual(labels(deskStripActions(alreadyAsked, openedLetter)), [
-      "Proceed",
-      "Not yet",
+      "Ask Fox",
       "Upload more",
       "Request human",
     ]);

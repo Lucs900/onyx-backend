@@ -166,6 +166,8 @@ function main() {
   assert.equal(statusCopy(created), "gathering");
   assert.notEqual(created.motion, "in_queue");
   assert.equal(reviewCount(created), 0);
+  const createdThread: FoxMessage[] = [fox("ready", MOTION_COPY.ready)];
+  assert.ok(labels(deskStripActions(createdThread, created)).includes("Proceed"));
 
   const attached = applyAccountLetterOpened(created);
   assert.equal(attached.fileId, guest.fileId);
@@ -176,12 +178,12 @@ function main() {
   assert.ok(!hasStoredReviewSend(attached));
   const attachedDesk = deskLineAfterAccountConsume(attached);
   assert.equal(attachedDesk.text, ACCOUNT_FILE_YOURS);
-  assert.ok(labels(attachedDesk.actions).includes("Proceed"));
+  assert.deepEqual(labels(attachedDesk.actions), ["Ask Fox", "Upload more", "Request human"]);
+  assert.ok(!labels(attachedDesk.actions).includes("Proceed"));
   assert.ok(!labels(attachedDesk.actions).includes(CREATE_ACCOUNT_LABEL));
   const attachedThread: FoxMessage[] = [fox("yours", ACCOUNT_FILE_YOURS)];
   assert.deepEqual(labels(deskStripActions(attachedThread, attached)), [
-    "Proceed",
-    "Not yet",
+    "Ask Fox",
     "Upload more",
     "Request human",
   ]);

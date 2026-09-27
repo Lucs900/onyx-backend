@@ -4259,25 +4259,39 @@ function deskStripActionsComputed(
     const wall = accountSaveWallActions(draft);
     if (wall.length) return stripStreetSuggest(wall);
   }
+  const threadForFinish = withoutAccountResumeLeftovers(withoutDuplicateTranscriptAsk(messages), draft);
+  let finishLive = -1;
+  for (let i = 0; i < threadForFinish.length; i += 1) {
+    if (threadForFinish[i]?.role === "fox") finishLive = i;
+  }
+  const finishLast = finishLive >= 0 ? threadForFinish[finishLive]!.text.trim() : "";
   if (
     hasLinkedAccount(draft) &&
     !hasStoredReviewSend(draft) &&
     !accountSaveAskOpen(draft) &&
-    draft.sampleAccepted
+    draft.sampleAccepted &&
+    !draft.accountYoursSpoken &&
+    finishLast &&
+    finishLast !== ACCOUNT_FILE_YOURS &&
+    !isParkedPostLinkLine(finishLast)
   ) {
     const finish = finishLineActions(draft);
     if (finish.some((item) => item.capture?.field === "proceed")) {
       return stripStreetSuggest(finish);
     }
   }
-  const resumeChips = accountResumeLastActions(draft);
-  if (resumeChips.length) return stripStreetSuggest(resumeChips);
-  const thread = withoutAccountResumeLeftovers(withoutDuplicateTranscriptAsk(messages), draft);
+  const thread = threadForFinish;
   let live = -1;
   for (let i = 0; i < thread.length; i += 1) {
     if (thread[i]?.role === "fox") live = i;
   }
   if (live < 0 || !isLiveFoxTurn(thread, live)) {
+    if (
+      hasLinkedAccount(draft) &&
+      (draft.accountYoursSpoken || finishLast === ACCOUNT_FILE_YOURS || hasStoredReviewSend(draft) || inQueueEnding(draft))
+    ) {
+      return stripStreetSuggest(linkedLastLineActions(draft));
+    }
     if (inQueueEnding(draft) || draft.sampleAccepted) {
       return stripStreetSuggest(finishLineActions(draft));
     }
@@ -4405,6 +4419,9 @@ function deskStripActionsComputed(
     return stripStreetSuggest(docInviteActions());
   }
   if (/i can send this to review/i.test(message.text)) {
+    if (hasLinkedAccount(draft) && (draft.accountYoursSpoken || hasStoredReviewSend(draft))) {
+      return stripStreetSuggest(linkedLastLineActions(draft));
+    }
     return stripStreetSuggest(finishLineActions(draft));
   }
 
@@ -4415,16 +4432,16 @@ function deskStripActionsComputed(
   const desk = deskLineAfterAccountConsume(draft);
   if (spokenOwnsAsk(message.text, desk.text) || message.text === ACCOUNT_FILE_YOURS) {
     const spoken = desk.actions ?? [];
-    if (spoken.length) return stripStreetSuggest(spoken);
+    if (spoken.length && !spoken.some((item) => item.capture?.field === "proceed")) {
+      return stripStreetSuggest(spoken);
+    }
     const resume = accountResumeLastActions(draft);
     if (resume.length) return stripStreetSuggest(resume);
     return [];
   }
-  if (hasLinkedAccount(draft) && (draft.guestProceeded || draft.accountYoursSpoken)) {
+  if (hasLinkedAccount(draft) && (draft.accountYoursSpoken || message.text === ACCOUNT_FILE_YOURS || isParkedPostLinkLine(message.text))) {
     const resume = accountResumeLastActions(draft);
-    if (resume.length && (message.text === ACCOUNT_FILE_YOURS || isParkedPostLinkLine(message.text))) {
-      return stripStreetSuggest(resume);
-    }
+    if (resume.length) return stripStreetSuggest(resume);
   }
   return [];
 }
@@ -4642,29 +4659,17 @@ export function deskLineAfterAccountConsume(draft: FoxIntakeDraft): {
       actions: greet.actions,
     };
   }
-  const notSentFinish =
-    hasLinkedAccount(draft) &&
-    !hasStoredReviewSend(draft) &&
-    !accountSaveAskOpen(draft) &&
-    draft.sampleAccepted
-      ? finishLineActions(draft)
-      : [];
-  const liveFinish = notSentFinish.some((item) => item.capture?.field === "proceed")
-    ? notSentFinish
-    : null;
   const next = nextFoxAsk(draft);
   if (isRealResumeAskText(next.text) && !isConsumedFinishLine(next.text, draft)) {
-    const resume = accountResumeLastActions(draft);
-    return resume.length ? { ...next, actions: resume } : next;
+    return next;
   }
   const structure = structureAskAfterAccountConsume(draft);
   if (isRealResumeAskText(structure.text) && !isConsumedFinishLine(structure.text, draft)) {
-    const resume = accountResumeLastActions(draft);
-    return resume.length ? { ...structure, actions: resume } : structure;
+    return structure;
   }
   return {
     text: ACCOUNT_FILE_YOURS,
-    actions: liveFinish ?? accountResumeLastActions(draft),
+    actions: accountResumeLastActions(draft),
   };
 }
 
@@ -4693,9 +4698,9 @@ export function withDeskLineAfterAccountConsume(
 ): FoxMessage[] {
   const cleaned = withoutAccountResumeLeftovers(messages, draft);
   const last = lastFoxLine(cleaned);
-  const spokenYours = cleaned.some(
-    (item) => item.role === "fox" && item.text.trim() === ACCOUNT_FILE_YOURS,
-  );
+  const spokenYours =
+    Boolean(draft?.accountYoursSpoken) ||
+    cleaned.some((item) => item.role === "fox" && item.text.trim() === ACCOUNT_FILE_YOURS);
   const yoursMessage = (): FoxMessage => ({
     id: `fox_yours_${Date.now().toString(36)}`,
     role: "fox",

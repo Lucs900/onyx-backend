@@ -571,10 +571,9 @@ function linkedDeskChips(draft: FoxIntakeDraft): FoxAction[] {
   return chips;
 }
 
-/** After Proceed + account. Last line chips. Motion stays gathering. */
+/** Linked File last-line chips when there is no open ask. Not Proceed. */
 export function accountResumeLastActions(draft: FoxIntakeDraft): FoxAction[] {
   if (!hasLinkedAccount(draft) || accountSaveAskOpen(draft)) return [];
-  if (!draft.guestProceeded) return [];
   return linkedDeskChips(draft);
 }
 
