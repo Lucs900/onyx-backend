@@ -291,6 +291,14 @@ function main() {
   assert.ok(!intakeClean.some((item) => item.role === "client" && item.text === "61walk@onyxlending.com"));
   assert.equal(lastFox(intakeClean), ACCOUNT_FILE_YOURS);
   assert.ok(isLoginDoorUserBubble(LOGIN_LABEL));
+  assert.ok(isLoginDoorUserBubble(CREATE_ACCOUNT_LABEL));
+  const withCreate: FoxMessage[] = [
+    ...advanced,
+    client("create-chip", CREATE_ACCOUNT_LABEL),
+    fox("yours-keep", ACCOUNT_FILE_YOURS),
+  ];
+  const createClean = withoutAccountResumeLeftovers(withCreate, opened);
+  assert.ok(!createClean.some((item) => item.role === "client" && item.text === CREATE_ACCOUNT_LABEL));
   const afterIntake = withDeskLineAfterAccountConsume(reprintedIntake, desk, opened);
   assert.equal(lastFox(afterIntake), ACCOUNT_FILE_YOURS);
   assert.deepEqual(labels(deskStripActions(afterIntake, opened)), [

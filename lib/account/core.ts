@@ -400,6 +400,9 @@ function isLoginDoorClientLine(text: string) {
   const line = text.trim();
   if (!line) return false;
   if (/^log in$/i.test(line) || /^email$/i.test(line) || /^phone$/i.test(line)) return true;
+  if (/^create account$/i.test(line) || /^save this file$/i.test(line) || /^keep this file$/i.test(line)) {
+    return true;
+  }
   if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(line)) return true;
   if (/^\d{6}$/.test(line)) return true;
   if (line.replace(/\D/g, "").length >= 10) return true;

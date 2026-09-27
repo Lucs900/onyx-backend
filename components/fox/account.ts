@@ -98,6 +98,9 @@ export function isLoginDoorUserBubble(text: string) {
   const line = text.trim();
   if (!line) return false;
   if (/^log in$/i.test(line)) return true;
+  if (/^create account$/i.test(line) || /^save this file$/i.test(line) || /^keep this file$/i.test(line)) {
+    return true;
+  }
   if (/^email$/i.test(line) || /^phone$/i.test(line)) return true;
   if (looksLikeAccountEmail(line) || looksLikeAccountPhone(line) || looksLikeAccountCode(line)) {
     return true;
