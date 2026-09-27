@@ -26,6 +26,9 @@ yarn-error.log*
 .env*.local
 .env
 
+# Private founder drops — never commit
+/private-drops/
+
 # vercel
 .vercel
 

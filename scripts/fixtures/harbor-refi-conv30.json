@@ -1,0 +1,13 @@
+{
+  "scenario": {
+    "loan_purpose": "refinance",
+    "residency_type": "primary_home",
+    "list_price": 850000,
+    "loan_amount": 680000,
+    "credit_score": 760,
+    "property_type": "single_family_home",
+    "zipcode": "94105"
+  },
+  "captured": false,
+  "rows": []
+}
