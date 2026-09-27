@@ -13,8 +13,8 @@ export function pathFromQuery(raw: string | null | undefined): IntakePath | null
 export const START_PATH_KEY = "onyx.startPath";
 export const HOMEPAGE_FRESH_PARAM = "fresh";
 export const HOMEPAGE_FRESH_KEY = "onyx.homepageFresh";
-export const ACR_START_HREF = "/start?path=acr&fresh=1";
-export const LOAN_START_HREF = "/start?path=loan&fresh=1";
+export const ACR_START_HREF = "/start?path=acr";
+export const LOAN_START_HREF = "/start?path=loan";
 export const DESK_START_HREF = "/start";
 
 export function isHomepageFreshQuery(search?: string | null) {
