@@ -33,6 +33,7 @@ import {
 import {
   ACCOUNT_FILE_YOURS,
   ACCOUNT_SAVE_ASK,
+  ACCOUNT_SKIPPED_LINE,
   ACCOUNT_WHY_SENTENCE,
   applyAccountCreated,
   applyAccountLetterOpened,
@@ -126,16 +127,25 @@ function main() {
   assert.ok(!labels(desk.actions).includes("Ask Fox"));
   assert.deepEqual(labels(signedInReviewStripActions(opened)), ["Proceed", "Not yet", "Request human"]);
 
+  const longReady = `${MOTION_COPY.ready} Still useful: Government ID, Last year's W-2, and last year's tax return (Form 1040). Skip is fine.`;
   const history: FoxMessage[] = [
+    fox("long-ready", longReady),
     fox("why", ACCOUNT_WHY_SENTENCE),
     fox("save", ACCOUNT_SAVE_ASK),
     { id: "client-not-now", role: "client", text: "Not now" },
+    fox("sketch", ACCOUNT_SKIPPED_LINE),
   ];
   const resumed = withDeskLineAfterAccountConsume(history, desk, opened);
   assert.equal(resumed.filter((item) => item.role === "fox" && item.text === ACCOUNT_FILE_YOURS).length, 1);
   assert.equal(lastFox(resumed), MOTION_COPY.ready);
   assert.ok(resumed.some((item) => item.text === ACCOUNT_WHY_SENTENCE));
   assert.ok(resumed.some((item) => item.text === ACCOUNT_SAVE_ASK));
+  assert.ok(resumed.some((item) => item.text === ACCOUNT_SKIPPED_LINE));
+  const yoursAt = resumed.findIndex((item) => item.role === "fox" && item.text === ACCOUNT_FILE_YOURS);
+  const sketchAt = resumed.findIndex((item) => item.text === ACCOUNT_SKIPPED_LINE);
+  assert.ok(sketchAt >= 0 && yoursAt > sketchAt, "Sketch stays is guest history above yours");
+  assert.equal(resumed.filter((item) => item.role === "fox" && item.text === MOTION_COPY.ready).length, 1);
+  assert.equal(resumed.filter((item) => item.text === longReady).length, 1);
   assert.deepEqual(labels(deskStripActions(resumed, opened)), ["Proceed", "Not yet", "Request human"]);
 
   const notYet = applyNotYetMotion(opened);
@@ -144,6 +154,10 @@ function main() {
   assert.equal(nextActorOf(notYet), "You");
   assert.equal(reviewCount(notYet), 0);
   assert.ok(!openReviewWorkItem(notYet));
+  assert.equal(workspacePromptCopy("done", notYet).text, MOTION_COPY.ready);
+  assert.equal(workspaceUpdateCopy({ field: "not-yet" }, notYet), MOTION_COPY.ready);
+  assert.deepEqual(labels(deskStripActions(resumed, notYet)), ["Proceed", "Not yet", "Request human"]);
+  assert.equal(lastFox(resumed), MOTION_COPY.ready);
 
   const sent = applyProceedMotion(opened);
   assert.equal(sent.motion, "in_queue");
@@ -190,6 +204,10 @@ function main() {
   assert.match(coreSource, /guestProceeded: Boolean\(incoming\.guestProceeded \|\| existing\.guestProceeded\)/);
   const workspaceSource = readFileSync(new URL("../components/fox/workspace.ts", import.meta.url), "utf8");
   assert.match(workspaceSource, /signedInReviewStripOpen\(draft\)/);
+  assert.match(workspaceSource, /isSignedInGuestHistoryLine/);
+  const storeSource = readFileSync(new URL("../components/fox/store.ts", import.meta.url), "utf8");
+  assert.match(storeSource, /if \(thisDevice\)/);
+  assert.match(storeSource, /applyAccountResume\(\s*created/);
 }
 
 main();

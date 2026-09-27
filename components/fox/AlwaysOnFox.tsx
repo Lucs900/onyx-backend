@@ -152,6 +152,7 @@ import {
   hasLinkedAccount,
   isAccountMailWaitLine,
   isSignedInThreadLeftoverLine,
+  signedInReviewStripActions,
   signedInReviewStripOpen,
   startOverNeedsConfirm,
 } from "./account";
@@ -267,7 +268,7 @@ import {
 import { governmentIdSkipped, ID_UNREAD_ASK, isBorrowerNameConfirmPending } from "./borrowerName";
 import { whoOnLoanAskCopy, whoOnLoanSettled } from "./whoOnLoan";
 import { isUnreadNote } from "@/lib/docs/accept";
-import { applyLooksRightMotion, fileExists, finishLineActions, inQueueEnding, reviewIsSitting } from "./motion";
+import { applyLooksRightMotion, fileExists, finishLineActions, inQueueEnding, MOTION_COPY, reviewIsSitting } from "./motion";
 import { pathFromHomeChoice } from "./homeIdle";
 import {
   FOX_DISCLOSURE,
@@ -2086,6 +2087,20 @@ export function AlwaysOnFox({
       appendReply(action.label, { text: spoken });
       return;
     }
+    if (action.capture?.field === "not-yet" && signedInReviewStripOpen(liveDraft)) {
+      applyCapture(action.capture);
+      skipPromptSync.current = true;
+      const last = lastFoxTurn(getFoxMessages())?.text?.trim() || "";
+      if (last === MOTION_COPY.ready || /i can send this to review/i.test(last)) {
+        commitMessagesNow((prev) => [...prev, { id: newId(), role: "client", text: action.label }]);
+        return;
+      }
+      appendReply(action.label, {
+        text: MOTION_COPY.ready,
+        actions: signedInReviewStripActions(getFoxDraft()),
+      });
+      return;
+    }
     const stripIds = new Set(deskStripActions(getFoxMessages(), liveDraft).map((item) => item.id));
     if (
       (action.id === "accept-proposal" || action.id === "change-proposal") &&
@@ -2465,6 +2480,12 @@ export function AlwaysOnFox({
           snapshot.fileId !== beforeAccount.fileId?.trim() &&
           accountFileHasStoredContent(snapshot.draft)
         ) {
+          skipPromptSync.current = true;
+          setMessages(getFoxMessages());
+          return;
+        }
+        const live = getFoxDraft();
+        if (hasLinkedAccount(live) && signedInReviewStripOpen(live)) {
           skipPromptSync.current = true;
           setMessages(getFoxMessages());
           return;

@@ -4079,6 +4079,12 @@ export function nextFoxAsk(draft: FoxIntakeDraft): {
       actions: accountSaveWallActions(draft),
     };
   }
+  if (signedInReviewStripOpen(draft) && !draft.correcting && !draft.pendingProposal && !draft.pendingConflict) {
+    return {
+      text: MOTION_COPY.ready,
+      actions: signedInReviewStripActions(draft),
+    };
+  }
   if (shouldHoldAskForLiveLine(draft)) {
     return { text: RATEFLOW_WAIT_LINE };
   }
@@ -4478,6 +4484,23 @@ function isLoginDoorLine(text: string) {
   );
 }
 
+function isReviewReadyLine(text: string) {
+  return /i can send this to review/i.test(text.trim());
+}
+
+/** Guest Create account / Not now / save-wall lines. History on a signed-in File — never last live. */
+function isSignedInGuestHistoryLine(text: string) {
+  const line = text.trim();
+  if (!line) return false;
+  if (line === ACCOUNT_SKIPPED_LINE) return true;
+  if (line === ACCOUNT_SAVE_ASK) return true;
+  if (line === ACCOUNT_WHY_SENTENCE || line === ACCOUNT_FIRST_WHY) return true;
+  if (isAccountMailWaitLine(line)) return true;
+  if (isLoginDoorLine(line)) return true;
+  if (isSignedInThreadLeftoverLine(line)) return true;
+  return false;
+}
+
 function isParkedPostLinkLine(text: string) {
   const line = text.trim();
   if (!line) return true;
@@ -4621,12 +4644,29 @@ export function withoutAccountResumeLeftovers(
       out.push(message);
       continue;
     }
-    if (seenYours && (isLoginDoorLine(line) || line === ACCOUNT_SAVE_ASK)) continue;
+    if (seenYours && (isLoginDoorLine(line) || line === ACCOUNT_SAVE_ASK || isSignedInGuestHistoryLine(line))) {
+      continue;
+    }
+    if (seenYours && isReviewReadyLine(line) && line !== MOTION_COPY.ready) continue;
     if (seenYours && intakeAskAlreadyAnswered(line, draft)) continue;
     prevFox = line;
     out.push(message);
   }
-  return withoutSignedInThreadLeftovers(out, draft);
+  const cleaned = withoutSignedInThreadLeftovers(out, draft);
+  if (!draft || !hasLinkedAccount(draft)) return cleaned;
+  const hasYours = cleaned.some((item) => item.role === "fox" && item.text.trim() === ACCOUNT_FILE_YOURS);
+  if (!hasYours) return cleaned;
+  let end = cleaned.length;
+  while (end > 0) {
+    const item = cleaned[end - 1];
+    if (!item || item.role !== "fox") break;
+    if (isSignedInGuestHistoryLine(item.text)) {
+      end -= 1;
+      continue;
+    }
+    break;
+  }
+  return cleaned.slice(0, end);
 }
 
 function isConsumedFinishLine(text: string, draft: FoxIntakeDraft) {
@@ -4744,6 +4784,8 @@ export function withDeskLineAfterAccountConsume(
     last === ACCOUNT_FILE_YOURS ||
     isParkedPostLinkLine(last) ||
     isAccountResumeLeftoverLine(last) ||
+    isSignedInGuestHistoryLine(last) ||
+    isReviewReadyLine(last) ||
     intakeAskAlreadyAnswered(last, draft);
   if (last && !lastIsHistory) {
     if (spokenYours) return cleaned;
@@ -5518,6 +5560,12 @@ function workspaceAskCopy(
     };
   }
   if (prompt === "done") {
+    if (signedInReviewStripOpen(draft)) {
+      return {
+        text: MOTION_COPY.ready,
+        actions: signedInReviewStripActions(draft),
+      };
+    }
     if (accountSaveAskOpen(draft)) {
       return {
         text: ACCOUNT_SAVE_ASK,
@@ -6846,6 +6894,7 @@ export function workspaceUpdateCopy(capture: Capture, draft: FoxIntakeDraft) {
     return signedInProceedSpeak(draft);
   }
   if (capture.field === "not-yet") {
+    if (signedInReviewStripOpen(draft)) return MOTION_COPY.ready;
     return MOTION_COPY.on_hold;
   }
   if (capture.field === "skip-email") {

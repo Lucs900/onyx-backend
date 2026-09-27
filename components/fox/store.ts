@@ -2290,13 +2290,20 @@ export async function createLinkedAccount(input: { email?: string; phone?: strin
   }
   const fileId = (thisDevice ? current.fileId : snapshot.fileId)?.trim() || snapshot.fileId;
   if (token) writeAccountSession({ token, fileId, accountId: snapshot.accountId });
-  commit(
-    applyAccountCreated(current, {
-      fileId,
-      accountId: snapshot.accountId,
-      channel: input.phone ? "phone" : "email",
-    }),
-  );
+  const created = applyAccountCreated(current, {
+    fileId,
+    accountId: snapshot.accountId,
+    channel: input.phone ? "phone" : "email",
+  });
+  if (thisDevice) {
+    applyAccountResume(
+      created,
+      getFoxMessages(),
+      token ? { token, fileId, accountId: snapshot.accountId } : undefined,
+    );
+    return snapshot;
+  }
+  commit(created);
   persistLinkedAccountFile();
   return snapshot;
 }
