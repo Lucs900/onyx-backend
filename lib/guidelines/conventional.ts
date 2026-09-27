@@ -219,6 +219,8 @@ export type FileFacts = {
   borrowerName?: string;
   statedOtherReo?: "none" | "yes";
   suggestedMonthlyIncome?: number;
+  /** Written K-1 / Schedule C / 1065 loss. Suggested, not confirmed cash flow. */
+  namedLoss?: boolean;
   docsSkipped?: boolean;
   obviousHighDti?: boolean;
   estimatedHousing?: number;
@@ -239,6 +241,8 @@ export type CompletenessFile = FileFacts & {
   variableExtracted?: boolean;
   hasPnl?: boolean;
   k1OrdinaryOnly?: boolean;
+  entityK1Box1?: boolean;
+  federalReturnSkipped?: boolean;
   hasScheduleC?: boolean;
   fundsInPlay?: boolean;
 };
@@ -299,6 +303,8 @@ export const RENTAL_NET_COST_CAUTION =
 export const READINESS_STRONG =
   "This file looks conventionally strong enough to keep moving. Final underwriting still decides.";
 export const READINESS_UW_REVIEW = "I can run this past underwriting before we go further.";
+export const READINESS_NAMED_LOSS =
+  "This is a named loss on the file. Suggested, not confirmed cash flow. The file can still move. Underwriting reviews it.";
 export const READINESS_THIN_PREFIX = "This file is still thin. ";
 export const READINESS_NOT_READY_PREFIX = "Not ready yet — ";
 export const LOAN_OVER_PRICE_LINE =
@@ -995,13 +1001,26 @@ export function renderStoreLine(template: string, file: FileFacts) {
   return template.replaceAll("{loanAmount}", loan).replaceAll("{purchasePrice}", price);
 }
 
+/** Vanilla primary 1-unit House cash-out at conventional-eligible LTV (typically ≤80%). */
+export function vanillaPrimaryHouseCashOut(file: FileFacts): boolean {
+  if (file.purposeHint !== "cash_out") return false;
+  if (file.occupancy && file.occupancy !== "primary") return false;
+  if (file.propertyType !== "sfr") return false;
+  if (file.namedGovvie || file.govProgram) return false;
+  if (file.namedDistress || file.statedDeclaration === "event") return false;
+  const ltv = sketchedLtvFromFacts(file);
+  return ltv != null && ltv <= HIGH_PURCHASE_LTV;
+}
+
 export function flags(file: FileFacts): { caution?: string; previewRateAllowed: boolean } {
   const ltv = sketchedLtvFromFacts(file);
   const condo = condoFlag(file);
   let caution: string | undefined;
   if (lowestCreditBand(file.statedCreditBand)) caution = LOW_CREDIT_CAUTION;
   else if (file.namedGovvie || file.govProgram) caution = GOVVIE_LINE;
-  else if (file.purposeHint === "cash_out") caution = CASH_OUT_CAUTION;
+  else if (file.purposeHint === "cash_out" && !vanillaPrimaryHouseCashOut(file)) {
+    if (!(ltv != null && ltv > HIGH_PURCHASE_LTV)) caution = CASH_OUT_CAUTION;
+  }
   else if (file.occupancy === "investment") caution = INVESTMENT_CAUTION;
   else if (file.occupancy === "second" || file.occupancy === "second-home") caution = SECOND_HOME_CAUTION;
   else if (ltv != null && ltv > HIGH_PURCHASE_LTV && ltv <= 1) caution = HIGH_LTV_CAUTION;
@@ -1019,7 +1038,7 @@ export function flags(file: FileFacts): { caution?: string; previewRateAllowed: 
   const previewRateAllowed =
     conventionalPurchaseOrRefi(file) &&
     file.occupancy !== "investment" &&
-    file.purposeHint !== "cash_out" &&
+    (file.purposeHint !== "cash_out" || vanillaPrimaryHouseCashOut(file)) &&
     !file.namedGovvie &&
     !file.govProgram &&
     !file.namedDistress &&
@@ -1154,18 +1173,19 @@ function documentedIncomeItems(file: CompletenessFile, received: Set<string>): D
   const items: DocumentedStillUsefulId[] = [];
   const w2 = wageLike(file.incomeType);
   const se = seLike(file.incomeType);
-  const unknown = !file.incomeType;
   const w2Count = file.w2Count ?? (received.has("w2") ? 1 : 0);
   const paystubCount = file.paystubCount ?? (received.has("paystub") ? 1 : 0);
   const taxReturns = file.taxReturnCount ?? (received.has("tax_return") ? 1 : 0);
-  if (w2 || unknown) {
+  if (w2) {
     if (paystubCount < 2) items.push("paystub");
     if (w2Count < 2) items.push("w2");
   }
-  if (se || (unknown && !w2)) {
+  if (se) {
     if (taxReturns < 1) items.push("tax_return");
     if (taxReturns === 1) {
-      if (file.k1OrdinaryOnly && !file.hasScheduleC) items.push("k1-distributions");
+      if (file.entityK1Box1 || file.federalReturnSkipped) {
+        // 1120-S Box 1 write, or Skip 1040 — do not reprint 1040 / K-1 distributions.
+      } else if (file.k1OrdinaryOnly && !file.hasScheduleC) items.push("k1-distributions");
       else items.push("prior-year-return");
     }
     if (taxReturns >= 1 && !file.hasPnl && !received.has("ytd_pnl")) items.push("ytd-pnl");
@@ -1439,6 +1459,7 @@ function strongEligible(file: CompletenessFile) {
   if (file.namedGovvie || file.govProgram) return false;
   if (file.namedDistress || file.statedDeclaration === "event") return false;
   if (file.unsupportedRental) return false;
+  if (namedLossOnFile(file)) return false;
   if (file.unresolvedConflict) return false;
   if (loanExceedsPrice(file)) return false;
   const ltv = sketchedLtvFromFacts(file);
@@ -1451,6 +1472,12 @@ function strongEligible(file: CompletenessFile) {
 function flagAsNotReadyReason(file: FileFacts): string | undefined {
   const flagged = flags(file).caution;
   return flagged;
+}
+
+/** Written K-1 / Schedule C / 1065 loss. Not a dead file. Not a denial. */
+export function namedLossOnFile(file: FileFacts) {
+  if (file.namedLoss) return true;
+  return file.suggestedMonthlyIncome != null && file.suggestedMonthlyIncome < 0;
 }
 
 /** File-based will-I-qualify / readiness pick. Three shapes only. Never recalculates income. */
@@ -1470,6 +1497,10 @@ export function readinessFromFile(file: FileFacts): ReadinessRead {
   const mismatch = productMismatchReason(file);
   if (mismatch) {
     return { kind: "not_ready", line: notReadyLine(mismatch), reason: mismatch };
+  }
+
+  if (namedLossOnFile(file)) {
+    return { kind: "uw_review", line: READINESS_NAMED_LOSS, reason: "named-loss" };
   }
 
   if (!layer1SketchPresent(complete)) {

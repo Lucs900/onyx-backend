@@ -14,7 +14,24 @@ export const ACCEPTED_MEDIA = new Set([
 export const ACCEPTED_EXT = new Set(["pdf", "jpg", "jpeg", "png", "heic", "heif", "webp"]);
 
 export const REJECT_LINE = "Use a PDF, JPEG, PNG, HEIC, or WebP under 15 MB.";
-export const LIMIT_LINE = "Ten files is the limit.";
+export const LIMIT_LINE = "I have 10. I’ll read these. Drop the rest after.";
+export const LIMIT_LINE_REPEAT = "Ten files is the limit.";
+
+/** One drop/batch only. After these 10 are read, attach is open again. */
+export function dropBatchCap<T>(items: readonly T[]): {
+  keep: T[];
+  leftover: T[];
+  speech: string | null;
+} {
+  if (items.length <= MAX_DOC_COUNT) {
+    return { keep: items.slice(), leftover: [], speech: null };
+  }
+  return {
+    keep: items.slice(0, MAX_DOC_COUNT),
+    leftover: items.slice(MAX_DOC_COUNT),
+    speech: LIMIT_LINE,
+  };
+}
 export const FAILED_READ_NOTE =
   "Fox could not read this file. Type a note or skip. No dollar amounts were invented.";
 export const NO_TEXT_LAYER_NOTE = "This file has no text layer. Type a note or Skip.";
@@ -22,6 +39,25 @@ export const RECEIVED_NOTE = "Document received";
 
 export function isUnreadNote(note?: string | null) {
   return note === FAILED_READ_NOTE || note === NO_TEXT_LAYER_NOTE;
+}
+
+/** Strip a repeated last extension so `stub.pdf.pdf` shows as `stub.pdf`. */
+export function displayIncomingFileName(name: string) {
+  let shown = String(name ?? "").trim() || "file";
+  shown = shown.replace(/(\.[A-Za-z0-9]{2,8})(\1)+$/i, "$1");
+  return shown;
+}
+
+/** Thread line the moment composer attach lands bytes. Before Grok. */
+export function receivedDropCopy(name: string) {
+  return `${displayIncomingFileName(name)} · received`;
+}
+
+/** Thread line when the dropped file’s text layer is empty. No dollars. */
+export function unreadDropBytesCopy(name: string, size: number) {
+  const shown = displayIncomingFileName(name);
+  const bytes = Number.isFinite(size) ? Math.max(0, Math.round(size)) : 0;
+  return `${shown} · ${bytes.toLocaleString("en-US")} bytes`;
 }
 
 export const ACCEPT_ATTR =

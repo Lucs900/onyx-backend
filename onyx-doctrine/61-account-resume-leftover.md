@@ -1,0 +1,65 @@
+# 61 — Account resume leftover
+
+Preview only. Same branch, same PR. Do not merge. READY is not ACCEPT.
+60 (`e953133`) stays ON HOLD. Do not touch `/staff/hub` or the QI/hub-read changes.
+
+## Founder FAIL (InPrivate, desk after account resume)
+
+1. "This File is yours." printed three times. It must appear once.
+2. The why-sentence was reprinted. Never reprint it.
+3. The first question "Start a relationship, or just the loan?" was reprinted. Never reprint it.
+4. The last line had no chips. The last line must always have chips.
+5. The header still showed Log in + Start your relationship on a live File.
+
+## Lock
+
+- Guest after Proceed: the Save line appears once, with chips Create account · Log in · Not now · Request human (Request human last). Then stop.
+- Account exists: "This File is yours." appears once. The next Fox line is the File's real next ask. If they already pressed Proceed, the chips are Ask Fox · Upload more · Request human.
+- Header A: on the left, the fox mark + "Relationship desk". On the right, a small initial that opens Sign out. Once an account exists, show no Log in, no Create account, and no Start your relationship. Guest header stays Log in + Start your relationship (Start on the short breakpoint; mobile sheet also Just need a mortgage).
+
+## ADD — Sign out
+
+- Sign out (from the header initial) clears this browser: the local File copy, the draft, the account/session state, and any session cookie. The next person on this browser sees a clean desk.
+- The File stays on the account. Do not delete the stored File or anything in Blob.
+- Resume is Log in only. After Sign out, nothing on this browser reopens the File without Log in.
+- Log in from a clean desk must not write "Welcome back" or the email-ask onto the stored File. Consume parks those door lines. Last line stays "This File is yours." once, with Ask Fox · Upload more · Request human.
+- If the latest answer or upload has not reached the server yet, Sign out saves it first (persist), then clears. Sign out must never throw away work. If the save fails, do not clear. Say so to the user and keep the local copy.
+
+## Must not
+
+- Wipe guest work at Create account.
+- Change the first-screen line (guest stays in browser until Create account).
+- Save guest Files by IP or any silent guest save.
+- Touch `/staff/hub` or `e953133`.
+- Change host, HELOC $50k / 8.80% / IO $367 / CLTV 90%, the Save sentence, or Status gathering · Next You.
+
+## FAIL (founder, 25 Sep 2026 ~5:26 PM PT) on 29c3058
+
+Walker green is not founder green. InPrivate on a live HELOC $500k / $400k / $50k File:
+1. Header showed fox + Relationship desk only. No initial. No Sign out.
+2. After "This File is yours.", occupancy / value / first lien reprinted. De-dupe was transcript-only for yours/why/first-question.
+3. The "Log in" user bubble stayed. That is a FAIL.
+4. Sign out → clean desk → Log in could not be walked.
+
+Next SHA: one source of truth for desk + initial; never reprint an answered intake ask after yours (stored facts); drop login-door user bubbles; reproduce on an existing 500/400/50 File and the stale session states.
+
+## Closed
+
+c2e35f1 (header / Sign out / de-dupe) · 4cc75b7 hub spine · 8fa7382 dense 1008 · 97e6b9b Save wall · d0dd8ed Save why · f845741 pad Save-only · 575fee8 · 959cf1f (host), plus e49b1ec · 9143dd2 · e18c694 · f3ad1db · b2c2e6e · ccce44c · 5def8ba · ac6190c · c004c1f and earlier.
+No 1040. Phone parked. Rate sentence parked. Pay stub off Need.
+
+## ADD 61b — signed-in thread leftovers
+
+1. A signed-in thread (account session plus File) never reprints "Check your email for a link to this File" or "You can leave and come back." (any variant). Render, persist, and resume after Log in.
+2. After resume, the last Fox line always carries Ask Fox · Upload more · Request human.
+3. The Create account chip under the Proceed / Save line is history only. Once signed in it is past: not a live chip, not tappable or focusable (no click handler, aria-disabled, muted/past style), and no new Save ask fires from it.
+Guest (not signed in) still sees Save / Create account as live. Do not change the c2e35f1 header, Sign out, or de-dupe. 60 / e953133 stays on HOLD.
+
+### 61b FAIL (founder walk, Fri 25 Sep 2026 7:39 PM PT) — f8e4be7
+PASS: leftover lines gone; yours once; Header A held; same HELOC File.
+FAIL: last Fox line was the pending hand-off "I pushed this. ONYX still has it — I'll bring the result back here." Empty composer, no chips. 7f8afdef ended on yours, so chips only attached to that line.
+
+## ADD 61b2 — last line chips on any linked last Fox line
+1. On a signed-in (linked) File, whatever the last Fox line is carries Ask Fox · Upload more · Request human. Includes pending hand-off, Request human, upload, or any other line. Key on last Fox line + linked account, never one specific line.
+2. On a linked File: no live Create account chip anywhere (thread, composer, panel, pad, menus), and no Save ask from any path. The greyed past-step chip (span.is-past, aria-disabled) under Proceed may stay as history.
+Guest flow unchanged. Do not touch c2e35f1 header A, Sign out, de-dupe; 575fee8 letter; 4cc75b7 spine; 8fa7382 grid; 97e6b9b / d0dd8ed / f845741 Save; /staff/hub. 60 stays on HOLD.

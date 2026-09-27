@@ -1,0 +1,4 @@
+node_modules
+.browser-ok
+test-results
+*.png
