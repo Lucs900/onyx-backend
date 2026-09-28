@@ -1019,6 +1019,7 @@ export function AlwaysOnFox({
   const pendingAsk = useRef<string | null>(null);
   const skipPromptSync = useRef(workspaceSurface);
   const holdAskFoxPaint = useRef(false);
+  const paintedAskFoxText = useRef("");
   const previewControlKey = useRef("");
   const listRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -1099,6 +1100,7 @@ export function AlwaysOnFox({
 
   useLayoutEffect(() => {
     if (!isStart) return;
+    if (holdAskFoxPaint.current) return;
     hydrateFoxDraft();
     const stored = getFoxMessages();
     const live = getFoxDraft();
@@ -1556,6 +1558,10 @@ export function AlwaysOnFox({
       isStart && prompt === "review" && !live.docsHeld && !live.looksRightHold && !nextDocInvite(live);
     if (holdAskFoxPaint.current) {
       skipPromptSync.current = true;
+      const last = lastFoxTurn(getFoxMessages());
+      if (last && paintedAskFoxText.current && last.text.trim() === paintedAskFoxText.current) {
+        holdAskFoxPaint.current = false;
+      }
       return;
     }
     if (skipPromptSync.current) {
@@ -2582,26 +2588,24 @@ export function AlwaysOnFox({
       const session = getAccountSession();
       const ownedId = draft.fileId?.trim();
       const paintAskFox = (fox: { text: string; actions?: ReturnType<typeof finishLineActions> }) => {
-        try {
-          skipPromptSync.current = true;
-          const live = getFoxDraft();
-          const stored = getFoxMessages();
-          commitMessages((prev) => {
-            const base = stored.length >= prev.length ? stored : prev;
-            const held = addressConfirmPending(live)
-              ? withoutLiveQuoteSpeech(base)
-              : dropResolvedAddressConfirmChips(base, live);
-            const lastClient = [...held].reverse().find((item) => item.role === "client");
-            const withClient: FoxMessage[] =
-              lastClient?.text.trim() === text.trim()
-                ? held
-                : [...held, { id: newId(), role: "client" as const, text }];
-            return sealStoredFoxThread([...withClient, foxAskMessage(fox)]);
-          });
-        } finally {
-          holdAskFoxPaint.current = false;
-          skipPromptSync.current = true;
-        }
+        skipPromptSync.current = true;
+        holdAskFoxPaint.current = true;
+        paintedAskFoxText.current = fox.text.trim();
+        const live = getFoxDraft();
+        const stored = getFoxMessages();
+        commitMessages((prev) => {
+          const base = stored.length >= prev.length ? stored : prev;
+          const held = addressConfirmPending(live)
+            ? withoutLiveQuoteSpeech(base)
+            : dropResolvedAddressConfirmChips(base, live);
+          const lastClient = [...held].reverse().find((item) => item.role === "client");
+          const withClient: FoxMessage[] =
+            lastClient?.text.trim() === text.trim()
+              ? held
+              : [...held, { id: newId(), role: "client" as const, text }];
+          return sealStoredFoxThread([...withClient, foxAskMessage(fox)]);
+        });
+        skipPromptSync.current = true;
       };
       void (async () => {
         if (session?.token && ownedId && session.fileId === ownedId) {
