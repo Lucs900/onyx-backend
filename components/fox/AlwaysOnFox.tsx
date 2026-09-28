@@ -206,6 +206,8 @@ import {
   workspacePromptCopy,
   purchasePriceRepeatReply,
   workspaceUpdateCopy,
+  isAskFoxFreeQuestion,
+  workspaceAskFoxFileReply,
   isYearsInBusinessAskText,
   threadThroughEditedTurn,
   findClientEditMessageId,
@@ -2558,6 +2560,45 @@ export function AlwaysOnFox({
         const live = getFoxDraft();
         const next = workspacePromptCopy("confirm-proposal", live);
         appendReply(spoken, next, editPromptFromCapture(capture), editLineFromCapture(capture));
+      })();
+      return;
+    }
+    if (isAskFoxFreeQuestion(text, draft)) {
+      skipPromptSync.current = true;
+      const session = getAccountSession();
+      const ownedId = draft.fileId?.trim();
+      void (async () => {
+        if (session?.token && ownedId && session.fileId === ownedId) {
+          try {
+            const res = await fetch("/api/ask-fox", {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({
+                question: text,
+                fileId: ownedId,
+                token: session.token,
+              }),
+            });
+            if (res.ok) {
+              const body = (await res.json()) as { text?: string };
+              const spoken = String(body.text ?? "").trim();
+              if (spoken) {
+                appendReply(text, { text: spoken, actions: finishLineActions(getFoxDraft()) });
+                return;
+              }
+            }
+          } catch {
+            // Fall through to the owned in-memory File. Never another File.
+          }
+        }
+        if (session?.fileId && ownedId && session.fileId !== ownedId) {
+          appendReply(text, {
+            text: "I can only answer from this File.",
+            actions: finishLineActions(getFoxDraft()),
+          });
+          return;
+        }
+        appendReply(text, workspaceAskFoxFileReply(text, getFoxDraft()));
       })();
       return;
     }

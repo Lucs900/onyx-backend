@@ -770,6 +770,10 @@ import {
   waitingOnCopy,
   waitingOnOf,
 } from "./motion";
+import {
+  answerAskFoxFromFile,
+  isAskFoxLiveFile,
+} from "./askFoxFile";
 
 export { slotFromFilename };
 
@@ -3255,6 +3259,18 @@ function isFreeTextAtGate(text: string) {
     looksLikeQuestion(text) ||
     isTopicalSideAsk(text)
   );
+}
+
+export function isAskFoxFreeQuestion(text: string, draft: FoxIntakeDraft) {
+  return isAskFoxLiveFile(draft) && isFreeTextAtGate(text.trim());
+}
+
+export function workspaceAskFoxFileReply(text: string, draft: FoxIntakeDraft) {
+  const answered = answerAskFoxFromFile(text, draft);
+  return {
+    text: answered.text,
+    actions: finishLineActions(draft),
+  };
 }
 
 export function persistGuidelineNote(draft: FoxIntakeDraft, text: string): FoxIntakeDraft {
@@ -8299,6 +8315,9 @@ export function workspaceReply(
   }
   const finishNow = finishStripReply(q, draft, prompt);
   if (finishNow) return finishNow;
+  if (isAskFoxFreeQuestion(q, draft)) {
+    return workspaceAskFoxFileReply(q, draft);
+  }
   if (asksWillIQualify(q)) {
     return answerThenRestore(q, draft);
   }
