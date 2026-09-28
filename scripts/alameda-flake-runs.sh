@@ -9,6 +9,15 @@ DIR="$(mktemp -d)"
 : "${BASELINE_SHA:=563198fa8c460e9edc2a24448117b94f04715de1}"
 : "${REVERT_SHA:=unknown}"
 
+cd "$ROOT"
+if [[ ! -d node_modules/next || ! -d node_modules/playwright || ! -d node_modules/ai ]]; then
+  echo "alameda-flake: npm install at repo root"
+  npm install
+fi
+if [[ "${CI:-}" == "true" ]]; then
+  npx playwright install --with-deps chromium || npx playwright install chromium
+fi
+
 run_one() {
   local label="$1" sha="$2" url="$3" n="$4"
   local log="$DIR/${label}-${n}.log"
