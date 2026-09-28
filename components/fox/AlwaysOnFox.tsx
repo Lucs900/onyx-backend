@@ -2592,10 +2592,10 @@ export function AlwaysOnFox({
               ? withoutLiveQuoteSpeech(base)
               : dropResolvedAddressConfirmChips(base, live);
             const lastClient = [...held].reverse().find((item) => item.role === "client");
-            const withClient =
+            const withClient: FoxMessage[] =
               lastClient?.text.trim() === text.trim()
                 ? held
-                : [...held, { id: newId(), role: "client", text }];
+                : [...held, { id: newId(), role: "client" as const, text }];
             return sealStoredFoxThread([...withClient, foxAskMessage(fox)]);
           });
         } finally {
