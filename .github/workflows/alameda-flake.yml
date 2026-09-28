@@ -1,0 +1,101 @@
+name: Alameda flake probe
+on:
+  workflow_dispatch: {}
+  push:
+    branches:
+      - "cursor/64e-no-period-hardcode-1034"
+concurrency:
+  group: alameda-flake-probe
+  cancel-in-progress: false
+jobs:
+  alameda:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      id-token: write
+      deployments: read
+      checks: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Resolve 563198f and this-SHA preview URLs
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const originFrom = (raw) => {
+              try {
+                const url = new URL(String(raw || ""));
+                if (!/\.vercel\.app$/i.test(url.hostname)) return "";
+                return url.origin;
+              } catch {
+                return "";
+              }
+            };
+            const startOf = (origin) => `${origin}/start?path=acr`;
+            const latestPreview = async (sha) => {
+              const deployments = await github.rest.repos.listDeployments({
+                owner, repo, sha, per_page: 20,
+              });
+              for (const deployment of deployments.data) {
+                if (!/preview/i.test(deployment.environment || "")) continue;
+                const statuses = await github.rest.repos.listDeploymentStatuses({
+                  owner, repo, deployment_id: deployment.id, per_page: 10,
+                });
+                const ok = statuses.data.find(
+                  (item) => item.state === "success" && originFrom(item.environment_url || item.target_url),
+                );
+                const origin = ok ? originFrom(ok.environment_url || ok.target_url) : "";
+                if (origin) return origin;
+              }
+              return "";
+            };
+            const baselineSha = "563198fa8c460e9edc2a24448117b94f04715de1";
+            const revertSha = context.sha;
+            let baseline = await latestPreview(baselineSha);
+            if (!baseline) {
+              baseline = "https://onyx-backend-git-cursor-63d-derive-guest-proceed-1034-onyx-direct.vercel.app";
+            }
+            core.exportVariable("BASELINE_SHA", baselineSha);
+            core.exportVariable("BASELINE_URL", startOf(baseline));
+            core.info(`563198f start ${startOf(baseline)}`);
+            const deadline = Date.now() + 12 * 60 * 1000;
+            let revert = "";
+            while (Date.now() < deadline) {
+              revert = await latestPreview(revertSha);
+              if (revert) break;
+              await new Promise((resolve) => setTimeout(resolve, 10000));
+            }
+            if (!revert) core.setFailed(`No Vercel preview for ${revertSha} within 12m`);
+            core.exportVariable("REVERT_SHA", revertSha);
+            core.exportVariable("REVERT_URL", startOf(revert));
+            core.exportVariable("SPINE_WALKER_URL", startOf(revert));
+            core.info(`64-revert start ${startOf(revert)}`);
+      - name: GitHub OIDC for Vercel Trusted Sources
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const token = await core.getIDToken("https://github.com/");
+            core.setSecret(token);
+            core.exportVariable("VERCEL_OIDC_TOKEN", token);
+      - name: Six Alameda walks
+        run: |
+          chmod +x scripts/alameda-flake-runs.sh
+          mkdir -p /tmp/alameda-flake
+          export ALAMEDA_FLAKE_JSON=/tmp/alameda-flake/runs.json
+          bash scripts/alameda-flake-runs.sh
+        env:
+          BASELINE_URL: ${{ env.BASELINE_URL }}
+          REVERT_URL: ${{ env.REVERT_URL }}
+          BASELINE_SHA: ${{ env.BASELINE_SHA }}
+          REVERT_SHA: ${{ env.REVERT_SHA }}
+          VERCEL_OIDC_TOKEN: ${{ env.VERCEL_OIDC_TOKEN }}
+      - name: Upload flake JSON
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: alameda-flake-runs
+          path: /tmp/alameda-flake/runs.json

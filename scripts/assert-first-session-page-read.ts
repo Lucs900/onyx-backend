@@ -415,14 +415,7 @@ async function main() {
       gross_period: "225.80",
       ytd_gross: "16824.30",
     }).gross_period,
-    "16824.30",
-  );
-  assert.equal(
-    lockFirstSessionFields("paystub", {
-      employer_name: "ALAMEDA HEALTH SYSTEM",
-      gross_period: "225.80",
-    }).gross_period,
-    "16824.30",
+    "225.80",
   );
 
   const id = await read("01-ca-id-jordan-hale.pdf", "government_id");
@@ -740,15 +733,10 @@ async function main() {
   assert.equal(stubPeriodConfirmOpen(skippedW2), true, "Skip W-2 must keep the readable stub Period path");
   assert.equal(canSpeakStubExtract(skippedW2, alamedaFields), true);
   assert.equal(shouldProposeStubExtract(skippedW2, "paystub", alamedaFields), true);
-  const alamedaLineItem = lockFirstSessionFields("paystub", {
-    ...alamedaFields,
-    gross_period: "225.80",
-  });
-  assert.equal(alamedaLineItem.gross_period, "16824.30");
   const alamedaAfterSkip = applyExtractedFields(skippedW2, {
     extractClass: "paystub",
     confidence: 0.94,
-    fields: alamedaLineItem,
+    fields: lockFirstSessionFields("paystub", alamedaFields),
   });
   assert.equal(alamedaAfterSkip.draft.awaitingPayFrequency, false, "readable stub must not ask frequency first");
   assert.ok(alamedaAfterSkip.draft.pendingProposal, "Skip W-2 still proposes Period");
