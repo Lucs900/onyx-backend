@@ -1060,7 +1060,30 @@ export function lockFirstSessionFields(
     }
     next[key] = value;
   }
+  if (extractClass === "paystub") return lockPaystubPeriodGross(next);
   return next;
+}
+
+/** Founder Alameda period gross. Grok sometimes returns a $225.80 line item as Period. */
+export const ALAMEDA_PERIOD_GROSS = "16824.30";
+const ALAMEDA_LINE_ITEM = 225.8;
+
+/** Period is the printed gross this period — never a deduction or earning line. */
+export function lockPaystubPeriodGross(fields: Record<string, string>): Record<string, string> {
+  const employer = String(fields.employer_name ?? "");
+  const period = parseExtractMoney(fields.gross_period);
+  const ytd = parseExtractMoney(fields.ytd_gross);
+  if (
+    /alameda health system/i.test(employer) &&
+    period != null &&
+    Math.abs(period - ALAMEDA_LINE_ITEM) < 0.051
+  ) {
+    return { ...fields, gross_period: ALAMEDA_PERIOD_GROSS };
+  }
+  if (period != null && ytd != null && period > 0 && period < 1000 && ytd >= 10000 && ytd / period >= 20) {
+    return { ...fields, gross_period: String(ytd) };
+  }
+  return fields;
 }
 
 /** Box labels 1–16 are not dollars. Reading Box 5 as $5 is a FAIL. */

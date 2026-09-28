@@ -83,6 +83,7 @@ import {
   packetReadPhase,
   isPurchaseContractConfirmPending,
   looksLikePaystubFields,
+  lockFirstSessionFields,
   preferFilenameClass,
   promoteExtractClass,
   factValue,
@@ -1934,6 +1935,10 @@ export function applyExtractWrite(
       ? preferFilenameClass(extractedClass, name)
       : extractedClass;
   const applyClass = stubPeriodOpen && stubCanSpeak ? "paystub" : extractedClass;
+  const lockedInput =
+    applyClass === "paystub"
+      ? { ...input, extractClass: applyClass, fields: lockFirstSessionFields("paystub", input.fields) }
+      : { ...input, extractClass: applyClass };
   let applied = treatFailed
     ? {
         draft: { ...current, looksRightHold: true },
@@ -1941,7 +1946,7 @@ export function applyExtractWrite(
         conflict: null,
         quietLines: note && isUnreadNote(note) ? [note] : [FAILED_READ_NOTE],
       }
-    : applyExtractedFields(current, { ...input, extractClass: applyClass });
+    : applyExtractedFields(current, lockedInput);
   if (
     !treatFailed &&
     stubPeriodOpen &&
@@ -1953,7 +1958,7 @@ export function applyExtractWrite(
       draft: maybeProposeStubExtract(
         { ...applied.draft, pendingConflict: null, awaitingPayFrequency: false },
         Object.fromEntries(
-          Object.entries(input.fields ?? {}).map(([key, value]) => [key, String(value ?? "")]),
+          Object.entries(lockedInput.fields ?? {}).map(([key, value]) => [key, String(value ?? "")]),
         ),
         "paystub",
       ),

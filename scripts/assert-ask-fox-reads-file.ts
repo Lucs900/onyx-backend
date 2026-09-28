@@ -26,6 +26,7 @@ import { writeFirstLien, writeHelocLine, withHelocToolQuote } from "../component
 import {
   intakeAskAlreadyAnswered,
   isAskFoxFreeQuestion,
+  isSpineIntakeAnswer,
   withoutAccountResumeLeftovers,
   workspaceAskFoxFileReply,
   workspaceReply,
@@ -167,6 +168,16 @@ function main() {
   const q2 = "Do you still need last year's W-2 on this file?";
   assert.equal(isAskFoxFreeQuestion(q1, mirror), true);
   assert.equal(isAskFoxFreeQuestion(q2, mirror), true);
+  assert.equal(isSpineIntakeAnswer("Skip"), true);
+  assert.equal(isSpineIntakeAnswer("Use this"), true);
+  assert.equal(isSpineIntakeAnswer("Looks right"), true);
+  assert.equal(isSpineIntakeAnswer("W-2"), true);
+  assert.equal(isSpineIntakeAnswer("94123"), true);
+  assert.equal(isSpineIntakeAnswer(q1), false);
+  assert.equal(isAskFoxFreeQuestion("Skip", mirror), false);
+  assert.equal(isAskFoxFreeQuestion("Use this", mirror), false);
+  assert.equal(isAskFoxFreeQuestion("W-2", mirror), false);
+  assert.equal(isAskFoxFreeQuestion("94123", mirror), false);
 
   const need = answerAskFoxFromFile(q1, mirror);
   assert.match(need.text, /W-2/i);
@@ -339,6 +350,11 @@ function main() {
     false,
   );
   assert.equal(isAskFoxFileSpokenLine("Drop last year’s W-2. Skip if you want to type it."), false);
+  assert.equal(
+    isAskFoxFileSpokenLine("Alameda Health System. Period $16,824.30. Use this?"),
+    false,
+  );
+  assert.equal(isAskFoxFileSpokenLine("Alameda Health System. Period $225.80. Use this?"), false);
   const fileWriteSrc = readFileSync(new URL("../components/fox/fileWrite.ts", import.meta.url), "utf8");
   const completenessFn = fileWriteSrc.slice(
     fileWriteSrc.indexOf("export function completenessFileFromDraft"),

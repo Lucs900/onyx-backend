@@ -3262,8 +3262,24 @@ function isFreeTextAtGate(text: string) {
   );
 }
 
+const SPINE_INTAKE_ANSWER =
+  /^(skip|use this|use document|looks right|these numbers look right\??|proceed|not yet|not now|upload this|upload more|this one|change|yes|just me|w-2|self-employed|both|house|condo|primary|refinance|buy|second job|raise|ot)$/i;
+
+/** Chip / typed spine answers are never Ask Fox File-read. */
+export function isSpineIntakeAnswer(text: string) {
+  const trimmed = text.trim();
+  if (!trimmed) return true;
+  if (SPINE_INTAKE_ANSWER.test(trimmed)) return true;
+  if (/^\d{5}$/.test(trimmed)) return true;
+  if (/^\$?[\d,]+(\.\d{2})?$/.test(trimmed)) return true;
+  return false;
+}
+
 export function isAskFoxFreeQuestion(text: string, draft: FoxIntakeDraft) {
-  return isAskFoxLiveFile(draft) && isFreeTextAtGate(text.trim());
+  const q = text.trim();
+  if (!isAskFoxLiveFile(draft)) return false;
+  if (isSpineIntakeAnswer(q)) return false;
+  return isFreeTextAtGate(q);
 }
 
 export function workspaceAskFoxFileReply(text: string, draft: FoxIntakeDraft) {

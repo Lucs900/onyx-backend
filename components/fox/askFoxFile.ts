@@ -85,7 +85,9 @@ export function isAskFoxFileSpokenLine(text: string) {
   if (/^Interest-only is /.test(spoken) && /Not a lock\.$/.test(spoken)) return true;
   if (/^The line on this File is /.test(spoken)) return true;
   if (
-    /Got the|I'm suggesting|I still need|Use this|still helps? this file|Drop a /i.test(spoken)
+    /Got the|I'm suggesting|I still need|Use this|Period \$|still helps? this file|Drop a /i.test(
+      spoken,
+    )
   ) {
     return false;
   }
