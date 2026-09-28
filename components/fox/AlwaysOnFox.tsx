@@ -1050,7 +1050,8 @@ export function AlwaysOnFox({
         fileExists: fileExists(live),
         isIdExtractPath: isIdExtractPath(live),
         idExtractAsk: resolved.some((message) => isIdExtractAskText(message.text)),
-      })
+      }) &&
+      !resolved.some((message) => isAskFoxFileSpokenLine(message.text))
     ) {
       return alignThreadEmployerName(
         sealStoredFoxThread(

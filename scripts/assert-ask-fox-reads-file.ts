@@ -242,8 +242,7 @@ function main() {
   assert.match(alwaysSrc, /session\.fileId !== ownedId/);
   assert.match(alwaysSrc, /holdAskFoxPaint/);
   assert.match(alwaysSrc, /isAskFoxFileSpokenLine/);
-  const persistSrc = readFileSync(new URL("../components/fox/persistThread.ts", import.meta.url), "utf8");
-  assert.match(persistSrc, /isAskFoxFileSpokenLine/);
+  assert.match(alwaysSrc, /!resolved.some\(\(message\) => isAskFoxFileSpokenLine/);
   const fileWriteSrc = readFileSync(new URL("../components/fox/fileWrite.ts", import.meta.url), "utf8");
   const completenessFn = fileWriteSrc.slice(
     fileWriteSrc.indexOf("export function completenessFileFromDraft"),
