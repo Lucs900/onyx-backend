@@ -34,6 +34,7 @@ import {
   ASK_FOX_W2_OPEN_LINE,
   answerAskFoxFromFile,
   askFoxAnswerIsClean,
+  isAskFoxFileSpokenLine,
   lastStaffFoxLine,
   openPapersOnFile,
 } from "../components/fox/askFoxFile";
@@ -245,6 +246,16 @@ function main() {
   assert.match(alwaysSrc, /!resolved.some\(\(message\) => isAskFoxFileSpokenLine/);
   assert.match(alwaysSrc, /storedFileRead/);
   assert.match(alwaysSrc, /!\(resolvedFileRead && resolved.length > stored.length\)/);
+  assert.equal(isAskFoxFileSpokenLine(ASK_FOX_W2_OPEN_LINE), true);
+  assert.equal(
+    isAskFoxFileSpokenLine("Government ID, Last year's tax return (Form 1040), and Latest paystub."),
+    true,
+  );
+  assert.equal(
+    isAskFoxFileSpokenLine("Next is your latest paystub. That’s current income on paper."),
+    false,
+  );
+  assert.equal(isAskFoxFileSpokenLine("Drop last year’s W-2. Skip if you want to type it."), false);
   const fileWriteSrc = readFileSync(new URL("../components/fox/fileWrite.ts", import.meta.url), "utf8");
   const completenessFn = fileWriteSrc.slice(
     fileWriteSrc.indexOf("export function completenessFileFromDraft"),

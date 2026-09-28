@@ -90,6 +90,11 @@ export function isAskFoxFileSpokenLine(text: string) {
     return false;
   }
   if (
+    /^Next is |^First I need |^Drop |current income on paper|Still useful:/i.test(spoken)
+  ) {
+    return false;
+  }
+  if (
     /Government ID|Last year's W-2|Last year's tax return|Form 1040|Latest paystub/i.test(spoken)
   ) {
     return true;
