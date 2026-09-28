@@ -1,5 +1,6 @@
 import { isOnFileAddressLine } from "./liveCoupon";
 import { isLookupWaitMessage } from "./lookupWait";
+import { isAskFoxFileSpokenLine } from "./askFoxFile";
 import type { FoxMessage } from "./types";
 
 const FUNDS_RECONFIRM =
@@ -85,7 +86,8 @@ export function shouldKeepStoredFoxThread(
       (item) =>
         isScheduleEConfirmAskText(item.text) ||
         isEntityConfirmAskText(item.text) ||
-        isSameBusinessConfirmAskText(item.text),
+        isSameBusinessConfirmAskText(item.text) ||
+        isAskFoxFileSpokenLine(item.text),
     )
   ) {
     return false;

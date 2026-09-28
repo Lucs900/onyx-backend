@@ -2583,7 +2583,20 @@ export function AlwaysOnFox({
       const paintAskFox = (fox: { text: string; actions?: ReturnType<typeof finishLineActions> }) => {
         try {
           skipPromptSync.current = true;
-          appendReply(text, fox);
+          const live = getFoxDraft();
+          const stored = getFoxMessages();
+          commitMessages((prev) => {
+            const base = stored.length >= prev.length ? stored : prev;
+            const held = addressConfirmPending(live)
+              ? withoutLiveQuoteSpeech(base)
+              : dropResolvedAddressConfirmChips(base, live);
+            const lastClient = [...held].reverse().find((item) => item.role === "client");
+            const withClient =
+              lastClient?.text.trim() === text.trim()
+                ? held
+                : [...held, { id: newId(), role: "client", text }];
+            return sealStoredFoxThread([...withClient, foxAskMessage(fox)]);
+          });
         } finally {
           holdAskFoxPaint.current = false;
           skipPromptSync.current = true;
