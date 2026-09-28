@@ -1,4 +1,5 @@
 import { formatDollars } from "@/components/products/scenario";
+import { safeAccountLast4, type BankAssetAccount } from "@/lib/docs/bankLast4";
 import { citizenshipSettled } from "./citizenship";
 import type { FactProposal, FoxAction, FoxIntakeDraft } from "./types";
 
@@ -130,7 +131,7 @@ export function proposeExtractedAvailableAssets(
     ...draft,
     pendingProposal: {
       field: STATED_AVAILABLE_ASSETS_FIELD,
-      value: String(Math.round(amount)),
+      value: String(amount),
       label: "Stated available assets",
       kind: "computed",
       note: SUGGESTED_ASSETS_NOTE,
@@ -143,12 +144,80 @@ export function availableAssetsConfirmCopy(amount: number) {
   return `That’s ${money(amount)} in available funds. ${SUGGESTED_ASSETS_NOTE}. Use this?`;
 }
 
-export function availableAssetsExtractCopy(amount: number, institution?: string) {
-  const who = institution?.trim();
-  const shown = who
-    ? `The statement shows ${who} · ${money(amount)}.`
+/** Speak / File institution. All-caps page text becomes title case. Never last4. */
+export function displayInstitution(name?: string | null) {
+  const trimmed = String(name ?? "").trim();
+  if (!trimmed) return "";
+  if (/\b(?:4412|4419|2281)\b|\*{2,}|x{4,}/i.test(trimmed)) return "";
+  if (trimmed !== trimmed.toUpperCase()) return trimmed;
+  return trimmed
+    .toLowerCase()
+    .replace(/\b([a-z])/g, (ch) => ch.toUpperCase());
+}
+
+export function proposalBankLast4(proposal?: FactProposal | null) {
+  if (!proposal) return "";
+  return safeAccountLast4(String(proposal.extras?.find((item) => item.field === "account_last4")?.value ?? ""));
+}
+
+export function availableAssetsExtractCopy(amount: number, institution?: string, last4?: string) {
+  const who = displayInstitution(institution);
+  const shownLast4 = safeAccountLast4(String(last4 ?? "").split(/[·,;]/)[0]?.trim() ?? "");
+  const bits = [who, shownLast4, money(amount)].filter(Boolean);
+  const shown = bits.length
+    ? `The statement shows ${bits.join(" · ")}.`
     : `The statement shows about ${money(amount)}.`;
   return `${shown} ${SUGGESTED_ASSETS_NOTE}. Use this?`;
+}
+
+function accountKey(row: BankAssetAccount) {
+  return `${(row.institution || "").trim().toLowerCase()}|${(row.last4 || "").trim()}`;
+}
+
+function definedAccount(row: BankAssetAccount): BankAssetAccount {
+  return {
+    ...(row.institution?.trim() ? { institution: row.institution.trim() } : {}),
+    ...(row.last4?.trim() ? { last4: row.last4.trim() } : {}),
+    ...(row.balance?.trim() ? { balance: row.balance.trim() } : {}),
+    ...(row.type?.trim() ? { type: row.type.trim() } : {}),
+  };
+}
+
+/** Same bank + different last4 is a second row. Blank last4 updates the institution row. */
+export function writeAssetAccount(draft: FoxIntakeDraft, incoming: BankAssetAccount): FoxIntakeDraft {
+  const nextRow = definedAccount({
+    ...incoming,
+    last4: incoming.last4 ? safeAccountLast4(incoming.last4) : incoming.last4,
+    institution: incoming.institution ? displayInstitution(incoming.institution) || incoming.institution.trim() : incoming.institution,
+  });
+  if (!nextRow.institution && !nextRow.last4 && !nextRow.balance && !nextRow.type) return draft;
+  const list = [...(draft.assetAccounts ?? [])];
+  const incomingKey = accountKey(nextRow);
+  let idx = list.findIndex((row) => accountKey(row) === incomingKey);
+  if (idx < 0 && nextRow.last4) {
+    const inst = (nextRow.institution || "").trim().toLowerCase();
+    idx = list.findIndex((row) => {
+      if (row.last4) return false;
+      const rowInst = (row.institution || "").trim().toLowerCase();
+      if (inst) return rowInst === inst;
+      return list.length === 1;
+    });
+  }
+  if (idx < 0 && !nextRow.last4) {
+    const inst = (nextRow.institution || "").trim().toLowerCase();
+    if (inst) {
+      idx = list.findIndex((row) => !(row.last4) && (row.institution || "").trim().toLowerCase() === inst);
+      if (idx < 0) idx = list.findIndex((row) => (row.institution || "").trim().toLowerCase() === inst);
+    } else if (list.length === 1) {
+      idx = 0;
+    }
+  }
+  if (idx >= 0) {
+    list[idx] = definedAccount({ ...list[idx], ...nextRow });
+  } else {
+    list.push(nextRow);
+  }
+  return { ...draft, assetAccounts: list };
 }
 
 export function availableAssetsConfirmActions(): FoxAction[] {

@@ -1,0 +1,45 @@
+%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [3 0 R] /Count 1 >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>
+endobj
+4 0 obj
+<< /Length 510 >>
+stream
+BT
+/F1 12 Tf
+72 720 Td
+(FORM W-2 WAGE AND TAX STATEMENT) Tj
+0 -18 Td (TAX YEAR: 2024) Tj
+0 -18 Td (EMPLOYER: Harbor Studio Inc) Tj
+0 -18 Td (EMPLOYEE NAME: Jordan Hale) Tj
+0 -18 Td (BOX 1 WAGES TIPS OTHER COMPENSATION: 36000.00) Tj
+0 -18 Td (BOX 5 MEDICARE WAGES AND TIPS: 36000.00) Tj
+0 -18 Td (BOX 5: 36000.00) Tj
+0 -18 Td (thirty-six thousand) Tj
+0 -18 Td (ONYX FIXTURE · SAMPLE · No SSN · Not underwritten) Tj
+0 -18 Td (S-corp shareholder wages for Harbor Studio Inc · same business as K-1 / 1120-S) Tj
+ET
+endstream
+endobj
+5 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+xref
+0 6
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000115 00000 n 
+0000000241 00000 n 
+0000000801 00000 n 
+trailer
+<< /Size 6 /Root 1 0 R >>
+startxref
+871
+%%EOF
