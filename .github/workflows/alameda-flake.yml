@@ -81,12 +81,26 @@ jobs:
             const token = await core.getIDToken("https://github.com/");
             core.setSecret(token);
             core.exportVariable("VERCEL_OIDC_TOKEN", token);
+      - name: Install walker deps
+        run: |
+          npm install
+          npx playwright install --with-deps chromium || npx playwright install chromium
       - name: Six Alameda walks
         run: |
           chmod +x scripts/alameda-flake-runs.sh
           mkdir -p /tmp/alameda-flake
           export ALAMEDA_FLAKE_JSON=/tmp/alameda-flake/runs.json
           bash scripts/alameda-flake-runs.sh
+          python3 - <<'PY'
+          import json, sys
+          doc = json.load(open("/tmp/alameda-flake/runs.json", encoding="utf-8"))
+          runs = doc.get("runs") or []
+          bad = [r for r in runs if r.get("gross_period") == "unknown" or not r.get("spoken")]
+          if len(runs) != 6 or bad:
+              print("alameda-flake: incomplete", json.dumps(bad, indent=2))
+              sys.exit(1)
+          print("alameda-flake: 6 spoken Periods")
+          PY
         env:
           BASELINE_URL: ${{ env.BASELINE_URL }}
           REVERT_URL: ${{ env.REVERT_URL }}
