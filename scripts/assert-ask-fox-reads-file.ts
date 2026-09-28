@@ -246,6 +246,7 @@ function main() {
   assert.match(alwaysSrc, /!resolved.some\(\(message\) => isAskFoxFileSpokenLine/);
   assert.match(alwaysSrc, /storedFileRead/);
   assert.match(alwaysSrc, /!\(resolvedFileRead && resolved.length > stored.length\)/);
+  assert.match(alwaysSrc, /paintedAskFoxText\.current/);
   assert.equal(isAskFoxFileSpokenLine(ASK_FOX_W2_OPEN_LINE), true);
   assert.equal(
     isAskFoxFileSpokenLine("Government ID, Last year's tax return (Form 1040), and Latest paystub."),

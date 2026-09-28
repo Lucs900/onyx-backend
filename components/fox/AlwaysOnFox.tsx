@@ -1048,6 +1048,13 @@ export function AlwaysOnFox({
     const stored = getFoxMessages();
     const storedLast = lastFoxTurn(stored);
     const resolvedLast = lastFoxTurn(resolved);
+    if (
+      paintedAskFoxText.current &&
+      storedLast &&
+      storedLast.text.trim() === paintedAskFoxText.current.trim()
+    ) {
+      return stored;
+    }
     const storedFileRead = Boolean(storedLast && isAskFoxFileSpokenLine(storedLast.text));
     const resolvedFileRead = Boolean(resolvedLast && isAskFoxFileSpokenLine(resolvedLast.text));
     if (
@@ -1570,10 +1577,6 @@ export function AlwaysOnFox({
       isStart && prompt === "review" && !live.docsHeld && !live.looksRightHold && !nextDocInvite(live);
     if (holdAskFoxPaint.current) {
       skipPromptSync.current = true;
-      const last = lastFoxTurn(getFoxMessages());
-      if (last && paintedAskFoxText.current && last.text.trim() === paintedAskFoxText.current) {
-        holdAskFoxPaint.current = false;
-      }
       return;
     }
     if (skipPromptSync.current) {
