@@ -4568,6 +4568,7 @@ export function intakeAskAlreadyAnswered(
   if (!draft) return false;
   const line = text.trim();
   if (!line) return false;
+  if (isAskFoxFileSpokenLine(line)) return false;
   if (line === "How will the property be used?") {
     return Boolean(draft.occupancyChoice?.value || draft.occupancyAsked);
   }
@@ -4669,7 +4670,13 @@ export function withoutAccountResumeLeftovers(
       continue;
     }
     if (seenYours && isReviewReadyLine(line) && line !== MOTION_COPY.ready) continue;
-    if (seenYours && intakeAskAlreadyAnswered(line, draft, messages)) continue;
+    if (
+      seenYours &&
+      !isAskFoxFileSpokenLine(line) &&
+      intakeAskAlreadyAnswered(line, draft, messages)
+    ) {
+      continue;
+    }
     prevFox = line;
     out.push(message);
   }

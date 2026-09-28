@@ -13,13 +13,20 @@ import {
   MOTION_COPY,
 } from "../components/fox/motion";
 import { skipCurrentInvite, stillUsefulSpokenItems } from "../components/fox/fileWrite";
-import { applyCouponChoice } from "../components/fox/liveCoupon";
+import {
+  applyCouponChoice,
+  isLiveFoxTurn,
+  liveFoxTurnIndex,
+  sealStoredFoxThread,
+} from "../components/fox/liveCoupon";
 import { skipMonthlyDebts } from "../components/fox/monthlyDebts";
 import { skipWageDocs } from "../components/fox/qualifyingIncome";
 import { writeWhoOnLoan } from "../components/fox/whoOnLoan";
 import { writeFirstLien, writeHelocLine, withHelocToolQuote } from "../components/fox/heloc";
 import {
+  intakeAskAlreadyAnswered,
   isAskFoxFreeQuestion,
+  withoutAccountResumeLeftovers,
   workspaceAskFoxFileReply,
   workspaceReply,
   writePurchasePrice,
@@ -39,7 +46,14 @@ import {
   openPapersOnFile,
 } from "../components/fox/askFoxFile";
 import { applyStaffDeskSend, STAFF_W2_FOX_LINE } from "../components/fox/processingHub";
-import type { FoxIntakeDraft, ReceivedDoc } from "../components/fox/types";
+import type { FoxIntakeDraft, FoxMessage, ReceivedDoc } from "../components/fox/types";
+
+function foxLine(id: string, text: string): FoxMessage {
+  return { id, role: "fox", text };
+}
+function clientLine(id: string, text: string): FoxMessage {
+  return { id, role: "client", text };
+}
 
 function labels(actions: { label: string }[] | undefined) {
   return (actions ?? []).map((item) => item.label);
@@ -207,6 +221,69 @@ function main() {
   assert.match(w2Ask.text, /already on this File/);
   assert.doesNotMatch(w2Ask.text, /still open/);
 
+  const yours = "This File is yours.";
+  const q1Open = "Last year's W-2, Government ID, and Last year's tax return (Form 1040).";
+  const q1Received = afterW2.text;
+  const q2Received = w2Ask.text;
+  assert.equal(isAskFoxFileSpokenLine(q1Received), true);
+  assert.equal(intakeAskAlreadyAnswered(q1Received, received), false);
+  assert.equal(intakeAskAlreadyAnswered(q1Open, received), false);
+  assert.equal(intakeAskAlreadyAnswered(ASK_FOX_W2_OPEN_LINE, received), false);
+  assert.equal(intakeAskAlreadyAnswered("Next is your latest paystub. That’s current income on paper.", received), true);
+
+  const paintedAfterUpload = sealStoredFoxThread(
+    withoutAccountResumeLeftovers(
+      [
+        foxLine("yours", yours),
+        clientLine("c1", q1),
+        foxLine("f1", q1Open),
+        clientLine("c2", q2),
+        foxLine("f2", ASK_FOX_W2_OPEN_LINE),
+        clientLine("c3", q1),
+        foxLine("f3", q1Received),
+      ],
+      received,
+    ),
+  );
+  const liveAfterUpload = liveFoxTurnIndex(paintedAfterUpload);
+  assert.equal(paintedAfterUpload[liveAfterUpload]?.text, q1Received);
+  assert.equal(isLiveFoxTurn(paintedAfterUpload, liveAfterUpload), true);
+
+  const paintedQ2AfterUpload = sealStoredFoxThread(
+    withoutAccountResumeLeftovers(
+      [
+        foxLine("yours", yours),
+        clientLine("c1", q1),
+        foxLine("f1", q1Open),
+        clientLine("c2", q2),
+        foxLine("f2", ASK_FOX_W2_OPEN_LINE),
+        clientLine("c3", q1),
+        foxLine("f3", q1Received),
+        clientLine("c4", q2),
+        foxLine("f4", q2Received),
+      ],
+      received,
+    ),
+  );
+  assert.equal(paintedQ2AfterUpload[liveFoxTurnIndex(paintedQ2AfterUpload)]?.text, q2Received);
+  assert.doesNotMatch(paintedQ2AfterUpload[liveFoxTurnIndex(paintedQ2AfterUpload)]?.text ?? "", /still open/);
+
+  const paintedRepeatQ1 = sealStoredFoxThread(
+    withoutAccountResumeLeftovers(
+      [
+        foxLine("yours", yours),
+        clientLine("c1", q1),
+        foxLine("f1", q1Open),
+        clientLine("c2", q2),
+        foxLine("f2", ASK_FOX_W2_OPEN_LINE),
+        clientLine("c3", q1),
+        foxLine("f3", q1Open),
+      ],
+      queued,
+    ),
+  );
+  assert.equal(paintedRepeatQ1[liveFoxTurnIndex(paintedRepeatQ1)]?.text, q1Open);
+
   assert.equal(
     JSON.stringify({
       motion: mirror.motion,
@@ -247,6 +324,11 @@ function main() {
   assert.match(alwaysSrc, /storedFileRead/);
   assert.match(alwaysSrc, /!\(resolvedFileRead && resolved.length > stored.length\)/);
   assert.match(alwaysSrc, /paintedAskFoxText\.current/);
+  const leftoverSrc = readFileSync(new URL("../components/fox/workspace.ts", import.meta.url), "utf8");
+  assert.match(leftoverSrc, /if \(isAskFoxFileSpokenLine\(line\)\) return false;/);
+  assert.match(leftoverSrc, /!isAskFoxFileSpokenLine\(line\) &&/);
+  const couponSrc = readFileSync(new URL("../components/fox/liveCoupon.ts", import.meta.url), "utf8");
+  assert.match(couponSrc, /if \(isAskFoxFileSpokenLine\(lastMsg\.text\)\) return messages;/);
   assert.equal(isAskFoxFileSpokenLine(ASK_FOX_W2_OPEN_LINE), true);
   assert.equal(
     isAskFoxFileSpokenLine("Government ID, Last year's tax return (Form 1040), and Latest paystub."),
@@ -276,4 +358,4 @@ function main() {
 }
 
 main();
-console.log("assert-ask-fox-reads-file: File papers · exact W-2 yes · no mantra · received W-2 dropped · A guard closed");
+console.log("assert-ask-fox-reads-file: File papers · File-read stays last live · no mantra · received W-2 dropped · A guard closed");
