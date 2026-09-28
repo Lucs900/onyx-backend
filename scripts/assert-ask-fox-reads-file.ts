@@ -243,6 +243,8 @@ function main() {
   assert.match(alwaysSrc, /holdAskFoxPaint/);
   assert.match(alwaysSrc, /isAskFoxFileSpokenLine/);
   assert.match(alwaysSrc, /!resolved.some\(\(message\) => isAskFoxFileSpokenLine/);
+  assert.match(alwaysSrc, /storedFileRead/);
+  assert.match(alwaysSrc, /!\(resolvedFileRead && resolved.length > stored.length\)/);
   const fileWriteSrc = readFileSync(new URL("../components/fox/fileWrite.ts", import.meta.url), "utf8");
   const completenessFn = fileWriteSrc.slice(
     fileWriteSrc.indexOf("export function completenessFileFromDraft"),

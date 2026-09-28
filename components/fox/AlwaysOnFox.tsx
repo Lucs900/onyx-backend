@@ -1046,6 +1046,18 @@ export function AlwaysOnFox({
     );
     const live = getFoxDraft();
     const stored = getFoxMessages();
+    const storedLast = lastFoxTurn(stored);
+    const resolvedLast = lastFoxTurn(resolved);
+    const storedFileRead = Boolean(storedLast && isAskFoxFileSpokenLine(storedLast.text));
+    const resolvedFileRead = Boolean(resolvedLast && isAskFoxFileSpokenLine(resolvedLast.text));
+    if (
+      storedFileRead &&
+      resolvedLast &&
+      storedLast!.text.trim() !== resolvedLast.text.trim() &&
+      !(resolvedFileRead && resolved.length > stored.length)
+    ) {
+      return stored;
+    }
     if (
       shouldKeepStoredFoxThread(stored, resolved, {
         fileExists: fileExists(live),
