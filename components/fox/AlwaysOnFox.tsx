@@ -485,7 +485,9 @@ function applyFoxAsk(
 ): FoxMessage[] {
   const last = lastFoxTurn(messages);
   if (last && isAskFoxFileSpokenLine(last.text)) {
-    return freezeUsedFoxTurns(messages);
+    if (!/Use this\??$|Period \$|Got the |I'm suggesting/i.test(ask.text)) {
+      return freezeUsedFoxTurns(messages);
+    }
   }
   if (isLastYearReturnAskText(ask.text) && lastFoxIsUnread(messages)) {
     return freezeUsedFoxTurns(messages);
@@ -1048,10 +1050,18 @@ export function AlwaysOnFox({
     const stored = getFoxMessages();
     const storedLast = lastFoxTurn(stored);
     const resolvedLast = lastFoxTurn(resolved);
+    const resolvedHasReceipt = resolved.some(
+      (message) => message.role === "system" && /received/i.test(message.text),
+    );
+    const resolvedIsExtractConfirm = Boolean(
+      resolvedLast && /Use this\??$|Period \$|Got the /i.test(resolvedLast.text),
+    );
     if (
       paintedAskFoxText.current &&
       storedLast &&
-      storedLast.text.trim() === paintedAskFoxText.current.trim()
+      storedLast.text.trim() === paintedAskFoxText.current.trim() &&
+      !resolvedHasReceipt &&
+      !resolvedIsExtractConfirm
     ) {
       return stored;
     }
@@ -1061,7 +1071,9 @@ export function AlwaysOnFox({
       storedFileRead &&
       resolvedLast &&
       storedLast!.text.trim() !== resolvedLast.text.trim() &&
-      !(resolvedFileRead && resolved.length > stored.length)
+      !(resolvedFileRead && resolved.length > stored.length) &&
+      !resolvedHasReceipt &&
+      !resolvedIsExtractConfirm
     ) {
       return stored;
     }
@@ -2612,11 +2624,7 @@ export function AlwaysOnFox({
         const held = addressConfirmPending(live)
           ? withoutLiveQuoteSpeech(base)
           : dropResolvedAddressConfirmChips(base, live);
-        const lastClient = [...held].reverse().find((item) => item.role === "client");
-        const withClient: FoxMessage[] =
-          lastClient?.text.trim() === text.trim()
-            ? held
-            : [...held, { id: newId(), role: "client" as const, text }];
+        const withClient: FoxMessage[] = [...held, { id: newId(), role: "client" as const, text }];
         const painted = sealStoredFoxThread([...withClient, foxAskMessage(fox)]);
         setFoxMessages(painted);
         setMessages(painted);
@@ -2895,6 +2903,8 @@ export function AlwaysOnFox({
               const fresh = startOverWorkspace(path);
               resetRateflowSearch();
               setLookupWait(null);
+              holdAskFoxPaint.current = false;
+              paintedAskFoxText.current = "";
               skipPromptSync.current = true;
               placesSuggestFrozen.current = false;
               setStreetSuggestions([]);
