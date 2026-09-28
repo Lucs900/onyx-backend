@@ -2593,18 +2593,18 @@ export function AlwaysOnFox({
         paintedAskFoxText.current = fox.text.trim();
         const live = getFoxDraft();
         const stored = getFoxMessages();
-        commitMessages((prev) => {
-          const base = stored.length >= prev.length ? stored : prev;
-          const held = addressConfirmPending(live)
-            ? withoutLiveQuoteSpeech(base)
-            : dropResolvedAddressConfirmChips(base, live);
-          const lastClient = [...held].reverse().find((item) => item.role === "client");
-          const withClient: FoxMessage[] =
-            lastClient?.text.trim() === text.trim()
-              ? held
-              : [...held, { id: newId(), role: "client" as const, text }];
-          return sealStoredFoxThread([...withClient, foxAskMessage(fox)]);
-        });
+        const base = stored.length >= messages.length ? stored : messages;
+        const held = addressConfirmPending(live)
+          ? withoutLiveQuoteSpeech(base)
+          : dropResolvedAddressConfirmChips(base, live);
+        const lastClient = [...held].reverse().find((item) => item.role === "client");
+        const withClient: FoxMessage[] =
+          lastClient?.text.trim() === text.trim()
+            ? held
+            : [...held, { id: newId(), role: "client" as const, text }];
+        const painted = sealStoredFoxThread([...withClient, foxAskMessage(fox)]);
+        setFoxMessages(painted);
+        setMessages(painted);
         skipPromptSync.current = true;
       };
       void (async () => {
