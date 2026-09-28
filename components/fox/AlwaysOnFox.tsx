@@ -271,6 +271,7 @@ import { governmentIdSkipped, ID_UNREAD_ASK, isBorrowerNameConfirmPending } from
 import { whoOnLoanAskCopy, whoOnLoanSettled } from "./whoOnLoan";
 import { isUnreadNote } from "@/lib/docs/accept";
 import { applyLooksRightMotion, fileExists, finishLineActions, inQueueEnding, MOTION_COPY, reviewIsSitting } from "./motion";
+import { isAskFoxFileSpokenLine } from "./askFoxFile";
 import { pathFromHomeChoice } from "./homeIdle";
 import {
   FOX_DISCLOSURE,
@@ -483,6 +484,9 @@ function applyFoxAsk(
   },
 ): FoxMessage[] {
   const last = lastFoxTurn(messages);
+  if (last && isAskFoxFileSpokenLine(last.text)) {
+    return freezeUsedFoxTurns(messages);
+  }
   if (isLastYearReturnAskText(ask.text) && lastFoxIsUnread(messages)) {
     return freezeUsedFoxTurns(messages);
   }
@@ -1014,6 +1018,7 @@ export function AlwaysOnFox({
   );
   const pendingAsk = useRef<string | null>(null);
   const skipPromptSync = useRef(workspaceSurface);
+  const holdAskFoxPaint = useRef(false);
   const previewControlKey = useRef("");
   const listRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -1548,6 +1553,10 @@ export function AlwaysOnFox({
       : promptCopy(prompt, live);
     const mustShowReview =
       isStart && prompt === "review" && !live.docsHeld && !live.looksRightHold && !nextDocInvite(live);
+    if (holdAskFoxPaint.current) {
+      skipPromptSync.current = true;
+      return;
+    }
     if (skipPromptSync.current) {
       skipPromptSync.current = false;
       const thread = getFoxMessages();
@@ -1690,6 +1699,9 @@ export function AlwaysOnFox({
       }
       const painted = freezeUsedFoxTurns(prev);
       const lastFox = lastFoxTurn(painted);
+      if (lastFox && isAskFoxFileSpokenLine(lastFox.text)) {
+        return painted;
+      }
       if (lastFox && shouldHoldDocInviteForOpenUseThis(lastFox.text, lastFox.actions, ask.text)) {
         return painted;
       }
@@ -2565,8 +2577,18 @@ export function AlwaysOnFox({
     }
     if (isAskFoxFreeQuestion(text, draft)) {
       skipPromptSync.current = true;
+      holdAskFoxPaint.current = true;
       const session = getAccountSession();
       const ownedId = draft.fileId?.trim();
+      const paintAskFox = (fox: { text: string; actions?: ReturnType<typeof finishLineActions> }) => {
+        try {
+          skipPromptSync.current = true;
+          appendReply(text, fox);
+        } finally {
+          holdAskFoxPaint.current = false;
+          skipPromptSync.current = true;
+        }
+      };
       void (async () => {
         if (session?.token && ownedId && session.fileId === ownedId) {
           try {
@@ -2583,7 +2605,7 @@ export function AlwaysOnFox({
               const body = (await res.json()) as { text?: string };
               const spoken = String(body.text ?? "").trim();
               if (spoken) {
-                appendReply(text, { text: spoken, actions: finishLineActions(getFoxDraft()) });
+                paintAskFox({ text: spoken, actions: finishLineActions(getFoxDraft()) });
                 return;
               }
             }
@@ -2592,13 +2614,13 @@ export function AlwaysOnFox({
           }
         }
         if (session?.fileId && ownedId && session.fileId !== ownedId) {
-          appendReply(text, {
+          paintAskFox({
             text: "I can only answer from this File.",
             actions: finishLineActions(getFoxDraft()),
           });
           return;
         }
-        appendReply(text, workspaceAskFoxFileReply(text, getFoxDraft()));
+        paintAskFox(workspaceAskFoxFileReply(text, getFoxDraft()));
       })();
       return;
     }

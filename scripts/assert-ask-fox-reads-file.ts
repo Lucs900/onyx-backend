@@ -102,6 +102,24 @@ function receivedW2(draft: FoxIntakeDraft): FoxIntakeDraft {
   return { ...draft, documents: [...draft.documents, doc] };
 }
 
+/** Live W-2 extract writes a name. Name-only must not drop Government ID. */
+function receivedNamedW2(draft: FoxIntakeDraft): FoxIntakeDraft {
+  const next = receivedW2(draft);
+  return {
+    ...next,
+    borrowerName: "Harbor Studio",
+    contact: {
+      ...next.contact,
+      fullName: { ...next.contact.fullName, value: "Harbor Studio", confirmed: true },
+    },
+    facts: {
+      ...next.facts,
+      full_name: { field: "full_name", value: "Harbor Studio", confirmed: true, source: "document" },
+      borrowerName: { field: "borrowerName", value: "Harbor Studio", confirmed: true, source: "document" },
+    },
+  };
+}
+
 function chips(draft: FoxIntakeDraft) {
   return labels(finishLineActions(draft));
 }
@@ -174,7 +192,11 @@ function main() {
   assert.match(pay.text, /Not a lock/);
   assert.doesNotMatch(pay.text, /I pushed this|ONYX has this|review after Proceed/);
 
-  const received = receivedW2(mirror);
+  const received = receivedNamedW2(mirror);
+  const afterUseful = stillUsefulSpokenItems(received).map((item) => item.label).join(" · ");
+  assert.match(afterUseful, /Government ID/);
+  assert.match(afterUseful, /1040/);
+  assert.doesNotMatch(afterUseful, /W-2/i);
   const afterW2 = answerAskFoxFromFile(q1, received);
   assert.doesNotMatch(afterW2.text, /W-2/i);
   assert.match(afterW2.text, /Government ID/);
@@ -218,6 +240,16 @@ function main() {
   const alwaysSrc = readFileSync(new URL("../components/fox/AlwaysOnFox.tsx", import.meta.url), "utf8");
   assert.match(alwaysSrc, /\/api\/ask-fox/);
   assert.match(alwaysSrc, /session\.fileId !== ownedId/);
+  assert.match(alwaysSrc, /holdAskFoxPaint/);
+  assert.match(alwaysSrc, /isAskFoxFileSpokenLine/);
+  const fileWriteSrc = readFileSync(new URL("../components/fox/fileWrite.ts", import.meta.url), "utf8");
+  const completenessFn = fileWriteSrc.slice(
+    fileWriteSrc.indexOf("export function completenessFileFromDraft"),
+    fileWriteSrc.indexOf("if (draft.facts?.property_address?.confirmed"),
+  );
+  assert.match(completenessFn, /receivedClassCount\(draft, "government_id"\)/);
+  assert.doesNotMatch(completenessFn, /draft\.borrowerName \|\|/);
+  assert.doesNotMatch(completenessFn, /contact\.fullName\.confirmed/);
   const coreSrc = readFileSync(new URL("../lib/account/core.ts", import.meta.url), "utf8");
   assert.match(coreSrc, /export function draftHasConfirmedFileWrite/);
   assert.match(coreSrc, /export function accountFileHasStoredContent/);

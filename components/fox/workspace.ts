@@ -772,6 +772,7 @@ import {
 } from "./motion";
 import {
   answerAskFoxFromFile,
+  isAskFoxFileSpokenLine,
   isAskFoxLiveFile,
 } from "./askFoxFile";
 
@@ -4771,6 +4772,7 @@ export function liveDeskLineOwnsPrompt(liveText: string, draft: FoxIntakeDraft) 
   const text = liveText.trim();
   if (!text) return false;
   if (isParkedPostLinkLine(text)) return false;
+  if (isAskFoxFileSpokenLine(text)) return true;
   if (text === ACCOUNT_FILE_YOURS) return true;
   if (
     (draft.events ?? []).some(

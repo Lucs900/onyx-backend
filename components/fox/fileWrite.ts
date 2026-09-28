@@ -3822,10 +3822,10 @@ export function completenessFileFromDraft(draft: FoxIntakeDraft): CompletenessFi
   for (const doc of draft.documents ?? []) {
     const display = preferFilenameClass(doc.extractClass ?? "other", doc.name, doc.slot);
     if (display === "government_id" || doc.slot === "id" || docsDisplayLabel(doc) === "ID") {
-      const named = Boolean(
-        draft.borrowerName || draft.contact.fullName.value || draft.facts?.full_name?.value,
-      );
-      if (doc.status === "extracted" && !isUnreadNote(doc.note) && named) {
+      if (
+        (doc.status === "extracted" || doc.status === "received" || doc.status === "reading") &&
+        !isUnreadNote(doc.note)
+      ) {
         received.add("government_id");
       }
     }
@@ -3849,12 +3849,7 @@ export function completenessFileFromDraft(draft: FoxIntakeDraft): CompletenessFi
       received.add(display);
     }
   }
-  if (
-    draft.borrowerName ||
-    draft.contact.fullName.confirmed ||
-    draft.facts?.full_name?.confirmed ||
-    draft.facts?.borrowerName?.confirmed
-  ) {
+  if (receivedClassCount(draft, "government_id") > 0) {
     received.add("government_id");
   }
   if (draft.facts?.property_address?.confirmed && factValue(draft, "property_address")) {

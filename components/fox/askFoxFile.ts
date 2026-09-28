@@ -63,6 +63,40 @@ export function askFoxAnswerIsClean(text: string) {
   return !MANTRA_BANNED.test(text);
 }
 
+const ASK_FOX_OWNED_LINES = [
+  ASK_FOX_W2_OPEN_LINE,
+  ASK_FOX_UNKNOWN_LINE,
+  ASK_FOX_NO_CLOSE_LINE,
+  ASK_FOX_NO_APPROVAL_LINE,
+  ASK_FOX_NO_QUALIFY_LINE,
+  ASK_FOX_NO_LOCK_LINE,
+  "I can only answer from this File.",
+  "Nothing else is listed as needed on this File.",
+];
+
+/** File-read Ask Fox speech. Prompt-sync must not reprint extract over it. */
+export function isAskFoxFileSpokenLine(text: string) {
+  const spoken = text.replace(/\s+/g, " ").trim();
+  if (!spoken || !askFoxAnswerIsClean(spoken)) return false;
+  if (ASK_FOX_OWNED_LINES.includes(spoken)) return true;
+  if (/^Yes\. .+\s+is still open\.$/.test(spoken)) return true;
+  if (/^No\. .+\s+is already on this File\.$/.test(spoken)) return true;
+  if (/ isn't listed as needed on this File\.$/.test(spoken)) return true;
+  if (/^Interest-only is /.test(spoken) && /Not a lock\.$/.test(spoken)) return true;
+  if (/^The line on this File is /.test(spoken)) return true;
+  if (
+    /Got the|I'm suggesting|I still need|Use this|still helps? this file|Drop a /i.test(spoken)
+  ) {
+    return false;
+  }
+  if (
+    /Government ID|Last year's W-2|Last year's tax return|Form 1040|Latest paystub/i.test(spoken)
+  ) {
+    return true;
+  }
+  return /on this File\.$/.test(spoken);
+}
+
 function fold(text: string) {
   return text
     .normalize("NFKC")
