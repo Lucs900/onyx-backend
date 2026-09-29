@@ -161,7 +161,7 @@ function main() {
   assert.equal(strip.at(-1), "Request human");
 
   const next = nextFoxAsk(start);
-  assert.equal(next.text, MOTION_COPY.escalated);
+  assert.notEqual(next.text, MOTION_COPY.escalated);
   assert.deepEqual(labels(next.actions), THREE);
   assert.doesNotMatch(next.text, /This File is yours|Save your File/i);
   assert.doesNotMatch(next.text, /W-2 is still open|Last year's W-2 is still open/i);

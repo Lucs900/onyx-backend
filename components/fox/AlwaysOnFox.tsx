@@ -167,6 +167,9 @@ import {
   ensureIncomeConfirmChips,
   inertSupersededIncomeConfirms,
   lastFoxTurn,
+  receivedIdInviteIsStale,
+  standingLastLineAfterReceivedId,
+  withStaleIdInviteOffLastLine,
   liveDeskLineOwnsPrompt,
   deskLineAfterAccountConsume,
   isAccountResumeLeftoverLine,
@@ -322,7 +325,7 @@ function seedWorkspaceMessages(
         setFoxMessages(next);
         return next;
       }
-      return dropResolvedAddressConfirmChips(stored, live);
+      return dropResolvedAddressConfirmChips(withStaleIdInviteOffLastLine(stored, live), live);
     }
     if (fileExists(live) || live.fileId) {
       const ask = [foxAskMessage(workspacePromptCopy(workspacePrompt(live), live))];
@@ -446,6 +449,9 @@ function lastFoxIsOpenUseThis(messages: FoxMessage[]) {
 
 function withNextAskIfUsedConfirm(messages: FoxMessage[], draft: FoxIntakeDraft): FoxMessage[] {
   const index = liveFoxTurnIndex(messages);
+  if (index >= 0 && messages[index]?.text.trim() === MOTION_COPY.escalated) {
+    return messages;
+  }
   if (index >= 0 && isLiveFoxTurn(messages, index)) {
     if (historyBubbleSpeech(messages[index]?.text)) return messages;
     const ask = nextFoxAsk(draft);
@@ -497,6 +503,13 @@ function applyFoxAsk(
     }
   }
   const last = lastFoxTurn(messages);
+  if (last && receivedIdInviteIsStale(last.text, live)) {
+    const standing = standingLastLineAfterReceivedId(live, messages);
+    if (standing.text.trim() && standing.text.trim() !== last.text.trim()) {
+      return freezeUsedFoxTurns([...messages, foxAskMessage(standing)]);
+    }
+    return freezeUsedFoxTurns(messages);
+  }
   if (last && isAskFoxFileSpokenLine(last.text)) {
     if (!/Use this\??$|Period \$|Got the |I'm suggesting/i.test(ask.text)) {
       return freezeUsedFoxTurns(messages);
@@ -554,6 +567,9 @@ function applyFoxAsk(
     return freezeUsedFoxTurns(dropOnFileAddressLines(messages));
   }
   if (last && isGovernmentIdInviteLine(last.text) && ask.text !== last.text) {
+    if (governmentIdReceivedOnDocs(live) && !isBorrowerNameConfirmPending(live)) {
+      return freezeUsedFoxTurns([...messages, foxAskMessage(ask)]);
+    }
     return freezeOthers(last.id, foxAskMessage(ask));
   }
   if (last && isPurchaseContractInviteLine(last.text) && isContractExtractAskText(ask.text)) {
@@ -1052,29 +1068,36 @@ export function AlwaysOnFox({
     prev: FoxMessage[],
     next: FoxMessage[] | ((prev: FoxMessage[]) => FoxMessage[]),
   ) => {
-    const resolved = stripLooksRightWhileUseThisOpen(
-      ensureIncomeConfirmChips(
-        inertSupersededIncomeConfirms(typeof next === "function" ? next(prev) : next),
-        getFoxDraft(),
-      ),
-      getFoxDraft(),
-    );
     const live = getFoxDraft();
+    const resolved = withStaleIdInviteOffLastLine(
+      stripLooksRightWhileUseThisOpen(
+        ensureIncomeConfirmChips(
+          inertSupersededIncomeConfirms(typeof next === "function" ? next(prev) : next),
+          live,
+        ),
+        live,
+      ),
+      live,
+    );
     const stored = getFoxMessages();
     const storedLast = lastFoxTurn(stored);
     const resolvedLast = lastFoxTurn(resolved);
+    const storedStaleId = Boolean(storedLast && receivedIdInviteIsStale(storedLast.text, live));
     const resolvedHasReceipt = resolved.some(
       (message) => message.role === "system" && /received/i.test(message.text),
     );
     const resolvedIsExtractConfirm = Boolean(
       resolvedLast && /Use this\??$|Period \$|Got the /i.test(resolvedLast.text),
     );
+    const resolvedIsRequestHuman = resolvedLast?.text.trim() === MOTION_COPY.escalated;
     if (
       paintedAskFoxText.current &&
       storedLast &&
       storedLast.text.trim() === paintedAskFoxText.current.trim() &&
       !resolvedHasReceipt &&
-      !resolvedIsExtractConfirm
+      !resolvedIsExtractConfirm &&
+      !resolvedIsRequestHuman &&
+      !storedStaleId
     ) {
       return stored;
     }
@@ -1086,7 +1109,9 @@ export function AlwaysOnFox({
       storedLast!.text.trim() !== resolvedLast.text.trim() &&
       !(resolvedFileRead && resolved.length > stored.length) &&
       !resolvedHasReceipt &&
-      !resolvedIsExtractConfirm
+      !resolvedIsExtractConfirm &&
+      !resolvedIsRequestHuman &&
+      !storedStaleId
     ) {
       return stored;
     }
@@ -1149,9 +1174,13 @@ export function AlwaysOnFox({
     const stored = getFoxMessages();
     const live = getFoxDraft();
     if (!shouldResumeWorkspaceEntry(live, stored) || !stored.length) return;
-    if (isIdExtractPath(live)) return;
+    if (isIdExtractPath(live) && !governmentIdReceivedOnDocs(live)) return;
     if (live.documents.some((doc) => doc.status === "reading")) return;
-    setMessages(sealStoredFoxThread(dropResolvedAddressConfirmChips(stored, live)));
+    setMessages(
+      sealStoredFoxThread(
+        dropResolvedAddressConfirmChips(withStaleIdInviteOffLastLine(stored, live), live),
+      ),
+    );
   }, [isStart, draft.motion, draft.updatedAt]);
 
   useEffect(() => {
@@ -1723,6 +1752,9 @@ export function AlwaysOnFox({
       }
       if (isStart && prompt === "done") {
         const spoken = lastFoxTurn(prev);
+        if (spoken && receivedIdInviteIsStale(spoken.text, live)) {
+          return applyFoxAsk(prev, standingLastLineAfterReceivedId(live, prev));
+        }
         if (!(spoken && isAccountMailWaitLine(spoken.text) && hasLinkedAccount(getFoxDraft()))) {
           if (hasPreparedAsk(prev)) return prev;
           if (fileExists(getFoxDraft()) && prev[prev.length - 1]?.role === "fox") return prev;
@@ -1745,6 +1777,12 @@ export function AlwaysOnFox({
       }
       const painted = freezeUsedFoxTurns(prev);
       const lastFox = lastFoxTurn(painted);
+      if (lastFox && receivedIdInviteIsStale(lastFox.text, live)) {
+        return applyFoxAsk(painted, standingLastLineAfterReceivedId(live, painted));
+      }
+      if (lastFox && lastFox.text.trim() === MOTION_COPY.escalated) {
+        return painted;
+      }
       if (lastFox && isAskFoxFileSpokenLine(lastFox.text)) {
         return painted;
       }
@@ -2059,7 +2097,9 @@ export function AlwaysOnFox({
         );
         return withNextAskIfUsedConfirm(sealStoredFoxThread([...withoutYears, foxAskMessage(fox)]), live);
       }
-      return withNextAskIfUsedConfirm(sealStoredFoxThread([...next, foxAskMessage(fox)]), live);
+      const spoken = sealStoredFoxThread([...next, foxAskMessage(fox)]);
+      if (fox.text.trim() === MOTION_COPY.escalated) return spoken;
+      return withNextAskIfUsedConfirm(spoken, live);
     });
   };
 
@@ -2215,6 +2255,17 @@ export function AlwaysOnFox({
     }
     if (action.event === "prepare-draft") {
       router.push(DESK_START_HREF);
+      return;
+    }
+    if (action.capture?.field === "talk-originator") {
+      applyCapture(action.capture);
+      skipPromptSync.current = true;
+      paintedAskFoxText.current = "";
+      const live = getFoxDraft();
+      appendReply(action.label, {
+        text: MOTION_COPY.escalated,
+        actions: finishLineActions(live),
+      });
       return;
     }
     if (action.capture?.field === "what-happens-next" || action.capture?.field === "ask-fox") {

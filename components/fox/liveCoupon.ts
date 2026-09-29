@@ -46,6 +46,7 @@ import {
   shouldShowAddressUseThis,
 } from "./propertyType";
 import { isAskFoxFileSpokenLine } from "./askFoxFile";
+import { MOTION_COPY } from "./motion";
 import type { Capture, FoxAction, FoxIntakeDraft, FoxMessage } from "./types";
 
 export const COUPON_UNRESOLVED = "Pricing when the file is ready";
@@ -557,6 +558,8 @@ export function promoteReprintedFoxAsk(messages: FoxMessage[]): FoxMessage[] {
   const lastMsg = messages[last];
   if (!lastMsg || lastMsg.role !== "fox") return messages;
   if (lastMsg.text.trim() === PACKET_NO_K1_C_LINE) return messages;
+  if (lastMsg.text.trim() === MOTION_COPY.escalated) return messages;
+  if (lastMsg.text.trim() === MOTION_COPY.askFox) return messages;
   if (isAskFoxFileSpokenLine(lastMsg.text)) return messages;
   const key = lastMsg.text.trim();
   if (!key) return messages;

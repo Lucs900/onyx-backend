@@ -15,6 +15,7 @@ import {
   accountSaveWallActions,
   applyAccountSaveAsk,
   hasLinkedAccount,
+  hasStoredReviewSend,
   signedInReviewStripOpen,
 } from "./account";
 import { canLooksRight, isHelocFile, hasHelocLine, shouldEscalate } from "./completeness";
@@ -156,7 +157,14 @@ export function waitingOnOf(draft: FoxIntakeDraft): WaitingOn {
 }
 
 /** Pad value only. Hub still reads waitingOnOf / draft.motion. */
+/** Request human tap only. Three-nudge auto-escalate is not a human request. */
+export function humanRequested(draft: FoxIntakeDraft) {
+  return (draft.events ?? []).some((event) => event.kind === "request-human");
+}
+
 export function waitingOnCopy(draft: FoxIntakeDraft) {
+  if (hasStoredReviewSend(draft)) return "ONYX";
+  if (stillUsefulSpokenItems(draft).length > 0) return "borrower";
   const waiting = waitingOnOf(draft);
   return waiting === "onyx" ? "ONYX" : waiting;
 }
@@ -198,7 +206,9 @@ export function nextActorOf(draft: FoxIntakeDraft): FileNext {
 
 export function motionStatusCopy(draft: FoxIntakeDraft) {
   if (accountSaveAskOpen(draft)) return "gathering";
+  if (humanRequested(draft)) return "escalated";
   const motion = motionOf(draft);
+  if (motion === "escalated") return "in_queue";
   if (motion) return motion;
   return "preparing";
 }
@@ -391,7 +401,9 @@ export function motionAskText(draft: FoxIntakeDraft) {
   }
   if (motion === "on_hold") return MOTION_COPY.on_hold;
   if (motion === "waiting_out") return returnedReviewNote(draft) || MOTION_COPY.waiting_out;
-  if (motion === "escalated") return MOTION_COPY.escalated;
+  if (motion === "escalated") {
+    return humanRequested(draft) ? MOTION_COPY.askFox : MOTION_COPY.in_queue;
+  }
   if (motion === "needs_you") return needsYouCopy(draft);
   if (motion === "ready") return docsHandoffCopy(draft);
   if (motion === "gathering" || motion === "confirmed") return gatheringCopy(draft);
@@ -885,12 +897,11 @@ export function applyNudgeMotion(
   if (!input.force && !reviewIsSitting(draft, now)) return { draft, threadLine: null };
   const nudgeCount = (item.nudgeCount ?? 0) + 1;
   if (nudgeCount >= IGNORED_NUDGE_LIMIT) {
-    const escalated = replaceReviewItem(
+    const parked = replaceReviewItem(
       appendFileEvent(
         {
           ...draft,
-          originatorRequested: true,
-          motion: "escalated",
+          motion: "in_queue",
           nextActor: "ONYX",
           waitingOn: "onyx",
         },
@@ -906,7 +917,7 @@ export function applyNudgeMotion(
         nudgeCount,
       },
     );
-    return { draft: escalated, threadLine: MOTION_COPY.threeNudges };
+    return { draft: parked, threadLine: MOTION_COPY.threeNudges };
   }
   const nudged: WorkItem = {
     ...item,

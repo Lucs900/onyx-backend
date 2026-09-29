@@ -161,6 +161,7 @@ import {
   shouldSpeakScheduleEPart2Map,
   nextCoverScheduleLabels,
   nextDocInvite,
+  governmentIdReceivedOnDocs,
   offeringDocStart,
   transcriptFollowUpAsk,
   transcriptSignalCopy,
@@ -769,6 +770,7 @@ import {
   remindLine,
   waitingOnCopy,
   waitingOnOf,
+  humanRequested,
 } from "./motion";
 import {
   answerAskFoxFromFile,
@@ -1052,6 +1054,62 @@ export function lastFoxTurn<T extends { role: string }>(messages: T[]): T | unde
     if (messages[i].role === "fox") return messages[i];
   }
   return undefined;
+}
+
+/** Docs already has the ID. That invite is history — not the live last line. */
+export function receivedIdInviteIsStale(text: string | null | undefined, draft: FoxIntakeDraft) {
+  return (
+    isGovernmentIdInviteLine(text) &&
+    governmentIdReceivedOnDocs(draft) &&
+    !isBorrowerNameConfirmPending(draft)
+  );
+}
+
+function isReplacementPaperAsk(text: string) {
+  return /government ID|Form 1040|tax return|latest paystub|Next is your latest paystub|Drop a recent paystub/i.test(
+    text,
+  );
+}
+
+/** Standing last line after a received-paper invite. Do not invent 1040 / paystub / ID. */
+export function standingLastLineAfterReceivedId(
+  draft: FoxIntakeDraft,
+  _messages: FoxMessage[] = [],
+): { text: string; actions?: FoxAction[] } {
+  if (humanRequested(draft)) {
+    return { text: MOTION_COPY.escalated, actions: finishLineActions(draft) };
+  }
+  const next = nextFoxAsk(draft);
+  if (isGovernmentIdInviteLine(next.text) || isReplacementPaperAsk(next.text)) {
+    return { text: MOTION_COPY.in_queue, actions: finishLineActions(draft) };
+  }
+  return { ...next, actions: next.actions?.length ? next.actions : finishLineActions(draft) };
+}
+
+/** Keep the ID sentence as text. It must not stay last, and it must not own chips. */
+export function withStaleIdInviteOffLastLine(
+  messages: FoxMessage[],
+  draft: FoxIntakeDraft,
+): FoxMessage[] {
+  const last = lastFoxTurn(messages);
+  if (!last || !receivedIdInviteIsStale(last.text, draft)) return messages;
+  const standing = standingLastLineAfterReceivedId(draft, messages);
+  if (!standing.text.trim() || standing.text.trim() === last.text.trim()) return messages;
+  const existing = [...messages]
+    .reverse()
+    .find((item) => item.role === "fox" && item.text.trim() === standing.text.trim());
+  if (existing) {
+    return [...messages.filter((item) => item.id !== existing.id), { ...existing, actions: standing.actions }];
+  }
+  return [
+    ...messages,
+    {
+      id: "received-id-standing",
+      role: "fox",
+      text: standing.text,
+      actions: standing.actions,
+    },
+  ];
 }
 
 export function composerPlaceholder(
@@ -4380,6 +4438,12 @@ function deskStripActionsComputed(
   }
   const message = thread[live]!;
   if (isReceivedStatusLine(message.text) || isLookupWaitLine(message.text)) return [];
+  if (receivedIdInviteIsStale(message.text, draft)) {
+    return stripStreetSuggest(finishLineActions(draft));
+  }
+  if (message.text.trim() === MOTION_COPY.escalated) {
+    return stripStreetSuggest(finishLineActions(draft));
+  }
 
   if (isLiveRateSpeech(message.text) || isLiveRateSpeech(message.followUp)) {
     if (loanExceedsPropertyValue(draft) || !hasPrintedLiveRate(draft)) {
@@ -9178,6 +9242,7 @@ export function workspaceReply(
   if (/(talk to (a )?licensed originator|need (a )?licensed originator|request (a )?human|talk to (an )?originator|speak to (an? )?(lo|originator|human))/i.test(lower)) {
     return {
       text: MOTION_COPY.escalated,
+      actions: finishLineActions(draft),
       capture: { field: "talk-originator" },
     };
   }
@@ -9190,10 +9255,10 @@ export function workspaceReply(
     };
   }
 
-  if (inQueueEnding(draft) && /^ask fox$/.test(lower)) {
+  if ((inQueueEnding(draft) || motionOf(draft) === "escalated") && /^ask fox$/.test(lower)) {
     return {
       text: MOTION_COPY.askFox,
-      actions: restoreQueueActions(draft),
+      actions: finishLineActions(draft),
       capture: { field: "ask-fox" },
     };
   }

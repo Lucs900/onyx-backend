@@ -124,6 +124,7 @@ import {
   deskLineAfterAccountConsume,
   withDeskLineAfterAccountConsume,
   withoutAccountResumeLeftovers,
+  withStaleIdInviteOffLastLine,
 } from "./workspace";
 import { hasHelocLineAmount, skipHelocLine, withHelocToolQuote, writeFirstLien, writeHelocLine } from "./heloc";
 import { changeEntityYears } from "./yearsFromEntity";
@@ -1284,7 +1285,10 @@ function persistMessages(messages: FoxMessage[]) {
 function persistMigratedMessages(messages: FoxMessage[]) {
   foxMessages = sealStoredFoxThread(
     withoutGuestHandoffLines(
-      dropResolvedAddressConfirmChips(migrateRestoredFoxMessages(messages), current),
+      dropResolvedAddressConfirmChips(
+        withStaleIdInviteOffLastLine(migrateRestoredFoxMessages(messages), current),
+        current,
+      ),
       current,
     ),
   );
@@ -1556,7 +1560,10 @@ export function hydrateFoxDraft() {
   }
   hydrated = true;
   persist(current);
-  foxMessages = dropResolvedAddressConfirmChips(foxMessages, current);
+  foxMessages = dropResolvedAddressConfirmChips(
+    withStaleIdInviteOffLastLine(foxMessages, current),
+    current,
+  );
   persistMessages(foxMessages);
   emit();
   return current;

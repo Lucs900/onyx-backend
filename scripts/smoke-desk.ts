@@ -5775,8 +5775,9 @@ const afterHuman = workspacePromptCopy("done", {
   motion: "escalated",
   nextActor: "ONYX",
 });
-assert.equal(afterHuman.text, MOTION_COPY.escalated);
-assert.ok(!(afterHuman.actions ?? []).some((item) => item.label === "Request human"));
+assert.notEqual(afterHuman.text, MOTION_COPY.escalated);
+assert.ok((afterHuman.actions ?? []).some((item) => item.label === "Request human"));
+assert.equal((afterHuman.actions ?? []).at(-1)?.label, "Request human");
 assert.ok(!/I’m preparing this desk|will contact you/i.test(afterHuman.text));
 
 const loanDone = workspacePromptCopy(
@@ -13121,7 +13122,7 @@ assert.notEqual(motionOf(more), "in_queue");
 applyCapture({ field: "talk-originator" });
 assert.equal(motionOf(getFoxDraft()), "escalated");
 assert.equal(nextActorOf(getFoxDraft()), "ONYX");
-assert.equal(workspacePromptCopy("done", getFoxDraft()).text, MOTION_COPY.escalated);
+assert.notEqual(workspacePromptCopy("done", getFoxDraft()).text, MOTION_COPY.escalated);
 
 resetWorkspaceForEntry("acr", "buy");
 applyCapture({ field: "occupancy", value: "primary" });
