@@ -2211,7 +2211,7 @@ export function applyExtractedFields(
     );
     conflict = next.pendingConflict ?? null;
   } else if (
-    (extractClass === "w2" && !stubAlreadyOnFile) ||
+    (extractClass === "w2" && (!stubAlreadyOnFile || draft.sampleAccepted)) ||
     wageExtractFirst ||
     (holdWageFileWrites && extractClass === "w2" && !stubAlreadyOnFile)
   ) {
@@ -2225,6 +2225,7 @@ export function applyExtractedFields(
       !next.pendingProposal &&
       !next.pendingConflict &&
       extractClass === "w2" &&
+      !draft.sampleAccepted &&
       (!coverReturn || shouldProposeCoverLineIncome(draft, fields, computed))
     ) {
       next = applyQualifyingIncomeFromExtract(
@@ -2682,6 +2683,7 @@ export function applyExtractedFields(
   }
   if (
     holdFederalReturn &&
+    extractClass !== "w2" &&
     !taxReturnWrittenOnFile(next) &&
     !next.pendingProposal &&
     !next.pendingConflict
@@ -3483,9 +3485,10 @@ function lastYearW2Year(draft: FoxIntakeDraft) {
   return String(Number(mostRecentFederalYear(draft)) - 1);
 }
 
-/** 2025 W-2 is this year on the file clock. Last year is 2024. Do not invent this year’s. */
+/** Docs W-2 in satisfies Last year’s W-2. Do not keep the slot open after a W-2 is already on File. */
 function hasLastYearW2OnFile(draft: FoxIntakeDraft) {
   if (hasTwoYearWageHistory(draft)) return true;
+  if (receivedClassCount(draft, "w2") > 0) return true;
   return w2YearsOnFile(draft).includes(lastYearW2Year(draft));
 }
 

@@ -6507,7 +6507,7 @@ assert.ok(!missingExtractClasses(w2AfterLooks).includes("w2"));
 assert.equal(fileStillUsefulNote(w2AfterLooks), undefined);
 assert.ok(stillUsefulSection(w2AfterLooks)?.items.some((item) => item.label === "Government ID"));
 assert.ok(stillUsefulSection(w2AfterLooks)?.items.some((item) => item.label === "Latest paystub"));
-assert.ok(stillUsefulSection(w2AfterLooks)?.items.some((item) => item.label === "Last year’s W-2"));
+assert.ok(!stillUsefulSection(w2AfterLooks)?.items.some((item) => item.label === "Last year’s W-2"));
 assert.ok(stillUsefulSection(w2AfterLooks)?.items.some((item) => item.label === "Last year’s tax return (Form 1040)"));
 assert.ok(!stillUsefulSection(w2AfterLooks)?.items.some((item) => item.label === "This year’s W-2"));
 assert.ok(!stillUsefulSection(w2AfterLooks)?.items.some((item) => item.label === "W-2 most recent two years"));

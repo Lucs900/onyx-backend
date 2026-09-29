@@ -3623,15 +3623,65 @@ export function proposeWageExtract(draft: FoxIntakeDraft, box5: number, stub: nu
   };
 }
 
+function fileWageMethod(draft: FoxIntakeDraft): string {
+  return String(draft.facts?.[QUALIFYING_METHOD_FIELD]?.value ?? "").trim();
+}
+
+function pageBox5Monthly(draft: FoxIntakeDraft, fields?: Record<string, string>): number | null {
+  const box5 = wageBox5Annual(draft, fields ?? {});
+  if (box5 == null || box5 <= 0) return null;
+  const monthly = monthlyFromAnnual(box5);
+  return monthly > 0 ? monthly : null;
+}
+
+/** File already shows Box 5 monthly and the page monthly matches. Do not reprint Use this. */
+export function wageBox5MethodMatchesFile(
+  draft: FoxIntakeDraft,
+  fields?: Record<string, string>,
+): boolean {
+  const method = fileWageMethod(draft);
+  if (method !== W2_BOX5_MONTHLY_NOTE && !/box 5/i.test(method)) return false;
+  const monthly = pageBox5Monthly(draft, fields);
+  const existing = parseExtractMoney(factValue(draft, QUALIFYING_INCOME_FIELD));
+  return monthly != null && existing != null && monthly === existing;
+}
+
+/** Same W-2 on a File that still says Box 1 monthly. Confirm-before-write overwrite. */
+export function wageNeedsBox5MethodOverwrite(
+  draft: FoxIntakeDraft,
+  fields?: Record<string, string>,
+): boolean {
+  if (wageBox5MethodMatchesFile(draft, fields)) return false;
+  const monthly = pageBox5Monthly(draft, fields);
+  if (monthly == null) return false;
+  const method = fileWageMethod(draft);
+  if (!method) return false;
+  return method === W2_BOX1_MONTHLY_NOTE || /box 1/i.test(method);
+}
+
 export function maybeProposeWageExtract(
   draft: FoxIntakeDraft,
   fields?: Record<string, string>,
   extractClass?: ExtractClass,
 ): FoxIntakeDraft {
-  if (draft.sampleAccepted) return draft;
   if (!wageThreadOpen(draft)) return draft;
-  if (wageW2ExtractAccepted(draft)) return draft;
   if (draft.pendingConflict) return draft;
+  if (wageBox5MethodMatchesFile(draft, fields)) return draft;
+  if (draft.sampleAccepted) {
+    if (!wageNeedsBox5MethodOverwrite(draft, fields)) return draft;
+    const held = mergePendingWageExtract(draft, fields, extractClass);
+    const employee = printedPagePersonName(
+      String(fields?.full_name ?? fields?.employee_name ?? held.pendingWageExtract?.employee ?? ""),
+    );
+    if (paperBorrowerParty(held, employee) === "coborrower") return held;
+    const box5 = readWageBox5(held, fields);
+    const employer = String(fields?.employer_name ?? held.pendingWageExtract?.employer ?? "").trim();
+    if (box5 != null && box5 > 0 && employer) {
+      return proposeWageW2Extract(held, box5, employer, employee);
+    }
+    return held;
+  }
+  if (wageW2ExtractAccepted(draft)) return draft;
   const held = mergePendingWageExtract(draft, fields, extractClass);
   const employee = printedPagePersonName(
     String(fields?.full_name ?? fields?.employee_name ?? held.pendingWageExtract?.employee ?? ""),
