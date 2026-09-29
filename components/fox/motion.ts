@@ -431,6 +431,30 @@ function sideDoorActions(draft: FoxIntakeDraft): FoxAction[] {
   return actions;
 }
 
+function lastLineAskUploadHuman(): FoxAction[] {
+  return [
+    {
+      id: "ask-fox",
+      label: "Ask Fox",
+      event: "bubble",
+      capture: { field: "ask-fox" },
+    },
+    {
+      id: "upload-more",
+      label: "Upload more",
+      event: "open-docs",
+      capture: { field: "upload-more" },
+    },
+    {
+      id: "request-human",
+      label: "Request human",
+      event: "bubble",
+      capture: { field: "talk-originator" },
+      quiet: true,
+    },
+  ];
+}
+
 function inQueueActions(draft: FoxIntakeDraft): FoxAction[] {
   return [
     {
@@ -458,15 +482,7 @@ export function finishLineActions(draft: FoxIntakeDraft): FoxAction[] {
     return emailAskActions();
   }
   if (motion === "escalated") {
-    return [
-      {
-        id: "upload-more",
-        label: "Upload more",
-        event: "open-docs",
-        capture: { field: "upload-more" },
-      },
-      ...sideDoorActions(draft),
-    ];
+    return lastLineAskUploadHuman();
   }
   return [
     { id: "proceed", label: "Proceed", event: "bubble", capture: { field: "proceed" } },

@@ -547,8 +547,8 @@ export function applyAccountSaveAsk(draft: FoxIntakeDraft): FoxIntakeDraft {
   };
 }
 
-function linkedDeskChips(draft: FoxIntakeDraft): FoxAction[] {
-  const chips: FoxAction[] = [
+function linkedDeskChips(_draft: FoxIntakeDraft): FoxAction[] {
+  return [
     {
       id: "ask-fox",
       label: "Ask Fox",
@@ -561,17 +561,14 @@ function linkedDeskChips(draft: FoxIntakeDraft): FoxAction[] {
       event: "open-docs",
       capture: { field: "upload-more" },
     },
-  ];
-  if (!draft.originatorRequested && draft.motion !== "escalated") {
-    chips.push({
+    {
       id: "request-human",
       label: "Request human",
       event: "bubble",
       capture: { field: "talk-originator" },
       quiet: true,
-    });
-  }
-  return chips;
+    },
+  ];
 }
 
 /** Linked File last-line chips when there is no open ask. Not Proceed. */
