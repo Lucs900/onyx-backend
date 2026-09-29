@@ -1138,7 +1138,8 @@ function classifyPrintedLines(lines: string[]): ExtractClass | null {
   if (/MORTGAGE STATEMENT/.test(blob)) return "mortgage_statement";
   if (
     /\bDRIVER|PASSPORT|GOVERNMENT ID\b|IDENTIFICATION CARD|STATE ID/.test(blob) ||
-    (/\bCALIFORNIA\b/.test(blob) && /\bLN\b/.test(blob) && /\bFN\b/.test(blob))
+    (/\bCALIFORNIA\b/.test(blob) && /\bLN\b/.test(blob) && /\bFN\b/.test(blob)) ||
+    (/SOCIAL SECURITY/i.test(blob) && (/\bLN\b/.test(blob) && /\bFN\b/.test(blob)))
   ) {
     return "government_id";
   }
@@ -1743,12 +1744,17 @@ export function fieldsFromPrintedLines(
   }
 
   if (extractClass === "government_id" || extractClass === "other") {
+    const combined = combinedGovernmentIdFields(lines);
+    if (combined.full_name) fields.full_name = combined.full_name;
+    if (combined.present_address && !fields.present_address) {
+      fields.present_address = combined.present_address;
+    }
     if (!fields.full_name) {
-      const fromLnFn = nameFromCaIdLines(lines);
+      const fromLnFn = nameFromCaIdLines(licenseLinesFromIdPage(lines));
       if (fromLnFn) put("full_name", fromLnFn);
     }
     if (!fields.present_address) {
-      const residence = residenceFromIdLines(lines);
+      const residence = residenceFromIdLines(licenseLinesFromIdPage(lines));
       if (residence) put("present_address", residence);
     }
     delete fields.property_address;
@@ -1759,6 +1765,7 @@ export function fieldsFromPrintedLines(
     delete fields.license_number;
     for (const key of Object.keys(fields)) {
       if (isCaDriverLicenseNumber(fields[key] ?? "")) delete fields[key];
+      if (looksLikeSsnValue(fields[key] ?? "")) delete fields[key];
     }
   }
 
@@ -1956,6 +1963,52 @@ function lastNameFieldValue(raw: string) {
   const cut = raw.split(/\s+(?:FN|DL|EXP|DOB|SEX|MN|DAC|DAQ|DAG|CLASS)\b/i)[0] ?? raw;
   const token = (cut.trim().split(/\s+/)[0] ?? "").trim();
   return looksLikePersonNameToken(token);
+}
+
+function looksLikeSsnValue(value: string) {
+  const t = String(value ?? "").trim();
+  if (!t) return false;
+  if (/^\d{3}-\d{2}-\d{4}$/.test(t)) return true;
+  return /^\d{9}$/.test(t.replace(/[\s-]/g, "")) && !/\$/.test(t);
+}
+
+/** License object on this page. A Social Security card on the same page does not cancel it. */
+export function pageHasDriverLicense(lines: string[]): boolean {
+  const blob = lines.join("\n");
+  return (
+    /\bDRIVER|PASSPORT|GOVERNMENT ID\b|IDENTIFICATION CARD|STATE ID|CALIFORNIA DRIVER/i.test(blob) ||
+    (/\bLN\b/.test(blob) && /\bFN\b/.test(blob))
+  );
+}
+
+/** Second object on a combined ID packet. Received only — never a File field. */
+export function pageHasSocialSecurityCard(lines: string[]): boolean {
+  return /SOCIAL SECURITY(?:\s+CARD|\s+ADMINISTRATION)?/i.test(lines.join("\n"));
+}
+
+/** Hunt both objects. Name and residence come from the license half only. */
+export function licenseLinesFromIdPage(lines: string[]): string[] {
+  const socialAt = lines.findIndex((line) => /SOCIAL SECURITY/i.test(line));
+  if (socialAt <= 0) return lines;
+  const license = lines.slice(0, socialAt);
+  return license.length ? license : lines;
+}
+
+/** License name + residence. The Social Security card stays received and contributes no fields. */
+export function combinedGovernmentIdFields(lines: string[]): Record<string, string> {
+  const hunt = licenseLinesFromIdPage(lines);
+  const fields: Record<string, string> = {};
+  const name = nameFromCaIdLines(hunt);
+  if (name) fields.full_name = name;
+  const residence = residenceFromIdLines(hunt);
+  if (residence) fields.present_address = residence;
+  delete fields.property_address;
+  delete fields.subjectAddress;
+  for (const key of Object.keys(fields)) {
+    if (isCaDriverLicenseNumber(fields[key] ?? "")) delete fields[key];
+    if (looksLikeSsnValue(fields[key] ?? "")) delete fields[key];
+  }
+  return fields;
 }
 
 /** CA DL LN/FN and AAMVA name codes on THIS page. Never invents a name. */
@@ -2251,13 +2304,10 @@ export function loudIdFromPrintedLines(lines: string[]): PrintedSample | null {
   if (/\bW-?2\b|PAYSTUB|WAGE AND TAX STATEMENT|ACCOUNT STATEMENT|BANK STATEMENT/i.test(blob)) {
     return null;
   }
-  if (
-    !/\bDRIVER|PASSPORT|GOVERNMENT ID\b|IDENTIFICATION CARD|STATE ID|CALIFORNIA/i.test(blob) &&
-    !(/\bLN\b/.test(blob) && /\bFN\b/.test(blob))
-  ) {
+  if (!pageHasDriverLicense(lines) && !pageHasSocialSecurityCard(lines)) {
     return null;
   }
-  const fields = fieldsFromPrintedLines("government_id", lines);
+  const fields = combinedGovernmentIdFields(lines);
   if (!fields.full_name) return null;
   delete fields.property_address;
   delete fields.subjectAddress;

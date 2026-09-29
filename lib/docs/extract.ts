@@ -29,6 +29,7 @@ import {
 } from "@/lib/docs/pdfText";
 import {
   overlayW2MedicareFromPage,
+  combinedGovernmentIdFields,
   fieldsFromPrintedLines,
   loudContractFromPrintedLines,
   loudCoverFromPrintedLines,
@@ -325,7 +326,7 @@ function extractFieldsPrompt(extractClass: ExtractClass, keys: readonly string[]
   }
   if (extractClass === "government_id") {
     extra =
-      " Locked schema only: full_name (first and last as printed). Never output a driver license number, DL, DAQ, SSN, or date of birth. Empty otherwise; never invent.";
+      " One page may show a driver license and a Social Security card together. Hunt both objects. full_name from the license only (LN/FN or the printed name on the license — never from the Social Security card alone). The Social Security card stays received: never output the SSN, never speak it back as a number to store. Never output a driver license number, DL, DAQ, or date of birth. License street is residence (present_address) only — never the subject property. Empty otherwise; never invent.";
   }
   if (extractClass === "purchase_contract") {
     extra =
@@ -1562,7 +1563,10 @@ async function classifyAndExtractUnmerged(
         loudContractFromPrintedLines(layer) || loudContractFromPrintedLines([layer.join(" ")]);
       if (loudContract) return printedResult(loudContract, textLayerChars);
       if (hint === "government_id") {
-        const hintedId = fieldsFromPrintedLines("government_id", layer);
+        const hintedId = {
+          ...fieldsFromPrintedLines("government_id", layer),
+          ...combinedGovernmentIdFields(layer),
+        };
         if (hasLockedSuggestion("government_id", hintedId)) {
           return printedResult(
             { extractClass: "government_id", confidence: 0.94, fields: hintedId },
@@ -1662,7 +1666,10 @@ async function classifyAndExtractUnmerged(
         }
       }
       if (hint === "government_id") {
-        const hintedId = fieldsFromPrintedLines("government_id", layer);
+        const hintedId = {
+          ...fieldsFromPrintedLines("government_id", layer),
+          ...combinedGovernmentIdFields(layer),
+        };
         if (hasLockedSuggestion("government_id", hintedId)) {
           return printedResult(
             { extractClass: "government_id", confidence: 0.94, fields: hintedId },

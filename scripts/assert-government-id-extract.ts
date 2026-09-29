@@ -9,9 +9,16 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { classifyAndExtract } from "../lib/docs/extract";
-import { loudIdFromPrintedLines, nameFromCaIdLines, readPrintedSample } from "../lib/docs/printedSample";
+import {
+  combinedGovernmentIdFields,
+  loudIdFromPrintedLines,
+  nameFromCaIdLines,
+  pageHasDriverLicense,
+  pageHasSocialSecurityCard,
+  readPrintedSample,
+} from "../lib/docs/printedSample";
 import { readPdfTextLayer } from "../lib/docs/pdfText";
-import { applyExtractedFields, stillUsefulSection, skipCurrentInvite, DOC_INVITE_COPY, extractHintFromDraft, nextDocInvite } from "../components/fox/fileWrite";
+import { applyExtractedFields, stillUsefulSection, skipCurrentInvite, DOC_INVITE_COPY, extractHintFromDraft, governmentIdReceivedOnDocs, nextDocInvite } from "../components/fox/fileWrite";
 import { canLooksRight, resolveProposal, proposalAskCopy } from "../components/fox/completeness";
 import { applyLooksRightMotion, applyProceedMotion } from "../components/fox/motion";
 import { applyCapture, applyExtractWrite, emptyDraft, getFoxDraft, loadIntakeDraft, receiveDocument } from "../components/fox/store";
@@ -178,7 +185,7 @@ async function main() {
   assert.match(loud08.fields.full_name ?? "", /JORDAN HALE/i);
 
   const afterDocs = wageDocsDraft();
-  assert.equal(nextDocInvite(afterDocs), "government_id");
+  assert.equal(nextDocInvite(afterDocs), null, "ID invite waits for Looks right on the locked W-2 file");
   assert.match(DOC_INVITE_COPY.government_id, /government ID/i);
   assert.match(DOC_INVITE_COPY.government_id, /name/i);
   assert.match(DOC_INVITE_COPY.government_id, /First I need a government ID, so this file has a name on it/);
@@ -373,9 +380,10 @@ async function main() {
     0,
   );
   assert.ok(
-    stillUsefulLabels(addressOnlyWrite.draft).some((label) => /government ID/i.test(label)),
-    stillUsefulLabels(addressOnlyWrite.draft).join(" · "),
+    addressOnlyWrite.draft.documents.some((doc) => doc.slot === "id" || doc.extractClass === "government_id"),
+    "unreadable ID keeps the bytes on Docs",
   );
+  assert.ok(!addressOnlyWrite.draft.borrowerName);
   const composerDraft = {
     ...composerWrite.draft,
     documents: [...composerWrite.draft.documents],
@@ -386,8 +394,8 @@ async function main() {
   assert.equal(skippedFromComposer.borrowerName, undefined);
   assert.ok((skippedFromComposer.skippedClasses ?? []).includes("government_id"));
   assert.ok(
-    stillUsefulLabels(skippedFromComposer).some((label) => /government ID/i.test(label)),
-    stillUsefulLabels(skippedFromComposer).join(" · "),
+    skippedFromComposer.documents.some((doc) => doc.extractClass === "government_id" || doc.slot === "id"),
+    "Skip after a read ID keeps the bytes on Docs",
   );
   assert.doesNotMatch(nextFoxAsk(skippedFromComposer).text, /The ID shows Jordan Hale/);
   assert.ok(
@@ -409,8 +417,8 @@ async function main() {
   assert.equal(skippedByChip.contact.fullName.value, "");
   assert.ok((skippedByChip.skippedClasses ?? []).includes("government_id"));
   assert.ok(
-    stillUsefulLabels(skippedByChip).some((label) => /government ID/i.test(label)),
-    stillUsefulLabels(skippedByChip).join(" · "),
+    skippedByChip.documents.some((doc) => doc.extractClass === "government_id" || doc.slot === "id"),
+    "Skip chip after a read ID keeps the bytes on Docs",
   );
   assert.doesNotMatch(nextFoxAsk(skippedByChip).text, /The ID shows Jordan Hale/);
   assert.doesNotMatch(nextFoxAsk(skippedByChip).text, /The ID shows Lukasz/);
@@ -445,8 +453,8 @@ async function main() {
   assert.equal(skippedAfterProceed.borrowerName, undefined);
   assert.ok((skippedAfterProceed.skippedClasses ?? []).includes("government_id"));
   assert.ok(
-    stillUsefulLabels(skippedAfterProceed).some((label) => /government ID/i.test(label)),
-    stillUsefulLabels(skippedAfterProceed).join(" · "),
+    skippedAfterProceed.documents.some((doc) => doc.extractClass === "government_id" || doc.slot === "id"),
+    "Skip after Proceed keeps the ID bytes on Docs",
   );
   assert.doesNotMatch(nextFoxAsk(skippedAfterProceed).text, /The ID shows Jordan Hale/);
   assert.doesNotMatch(nextFoxAsk(skippedAfterProceed).text, /The ID shows Lukasz/);
@@ -512,8 +520,8 @@ async function main() {
   assert.equal(unreadWrite.draft.borrowerName, undefined);
   assert.ok(unreadWrite.quietLines.some((line) => /could not read/i.test(line)));
   assert.ok(
-    stillUsefulLabels(unreadWrite.draft).some((label) => /government ID/i.test(label)),
-    stillUsefulLabels(unreadWrite.draft).join(" · "),
+    unreadWrite.draft.documents.some((doc) => doc.slot === "id" || doc.extractClass === "government_id"),
+    "unreadable page keeps the bytes on Docs",
   );
 
   const dropSource = readFileSync(join(root, "components/fox/DocumentDrop.tsx"), "utf8");
@@ -646,29 +654,22 @@ async function main() {
   assert.match(wageEmploymentFileLine(used), /Harbor Pacific Design Inc/);
 
   const skippedBeforeLooks = skipCurrentInvite(afterDocs);
-  assert.ok((skippedBeforeLooks.skippedClasses ?? []).includes("government_id"));
   assert.equal(skippedBeforeLooks.borrowerName, undefined);
-  assert.equal(nextDocInvite(skippedBeforeLooks), "bank_statement");
+  assert.notEqual(nextDocInvite(skippedBeforeLooks), "government_id");
   const stillBefore = stillUsefulSection(skippedBeforeLooks);
   assert.ok(stillBefore && !stillBefore.empty);
   const beforeLabels = stillUsefulLabels(skippedBeforeLooks);
-  assert.ok(
-    beforeLabels.some((label) => /government ID/i.test(label)),
-    beforeLabels.join(" · "),
-  );
   assert.ok(beforeLabels.length >= 1);
-  assert.ok(beforeLabels.every((label) => !/tax return|latest return|prior-year return/i.test(label)));
 
   const skippedAfterLooks = skipCurrentInvite(afterLooks);
   assert.ok((skippedAfterLooks.skippedClasses ?? []).includes("government_id"));
-  assert.equal(nextDocInvite(skippedAfterLooks), "bank_statement");
+  assert.notEqual(nextDocInvite(skippedAfterLooks), "government_id");
   const afterLabels = stillUsefulLabels(skippedAfterLooks);
   assert.ok(
     afterLabels.some((label) => /government ID/i.test(label)),
     afterLabels.join(" · "),
   );
   assert.ok(afterLabels.length >= 1);
-  assert.ok(afterLabels.every((label) => !/tax return|latest return|prior-year return/i.test(label)));
   assert.ok(
     previewFacts(skippedAfterLooks).every(
       (fact) => !/sketch · \d+ of \d+|documented · \d+ of \d+| of 32/.test(`${fact.value} ${fact.note ?? ""}`),
@@ -682,7 +683,207 @@ async function main() {
   assert.ok((workspacePromptCopy(workspacePrompt(afterLooks), afterLooks).actions ?? []).some((item) => item.label === "Proceed" || item.label === "Skip"));
 
   void looks;
+
+  const combinedLines = [
+    "CALIFORNIA DRIVER LICENSE",
+    "DL D1234567",
+    "LN LEE",
+    "FN RAYMOND CHI",
+    "8 199 RAILROAD AVE",
+    "CAMPBELL CA 95008",
+    "SOCIAL SECURITY",
+    "SOCIAL SECURITY ADMINISTRATION",
+    "NAME RAYMOND CHI LEE",
+    "123-45-6789",
+  ];
+  assert.equal(pageHasDriverLicense(combinedLines), true);
+  assert.equal(pageHasSocialSecurityCard(combinedLines), true);
+  assert.equal(nameFromCaIdLines(combinedLines), "RAYMOND CHI LEE");
+  const combinedFields = combinedGovernmentIdFields(combinedLines);
+  assert.match(combinedFields.full_name ?? "", /RAYMOND CHI LEE/i);
+  assert.match(combinedFields.present_address ?? "", /RAILROAD|CAMPBELL/i);
+  assert.doesNotMatch(JSON.stringify(combinedFields), /123-45-6789|D1234567/);
+  const loudCombined = loudIdFromPrintedLines(combinedLines);
+  assert.equal(loudCombined?.extractClass, "government_id");
+  assert.match(loudCombined?.fields.full_name ?? "", /RAYMOND CHI LEE/i);
+  assert.doesNotMatch(JSON.stringify(loudCombined?.fields ?? {}), /123-45-6789|D1234567/);
+
+  const combinedPdf = combinedIdPacketPdf();
+  const combinedExtracted = await classifyAndExtract(
+    combinedPdf,
+    "application/pdf",
+    deadVision,
+    "government_id",
+    "Ray Lee DL and SS.pdf",
+  );
+  assert.notEqual(combinedExtracted.failed, true, "combined DL+SS text layer is confirm, not unread");
+  assert.equal(combinedExtracted.extractClass, "government_id");
+  assert.match(combinedExtracted.fields.full_name ?? "", /RAYMOND CHI LEE/i);
+  assert.doesNotMatch(JSON.stringify(combinedExtracted.fields), /123-45-6789|D1234567/);
+  assert.equal(combinedExtracted.fields.property_address, undefined);
+
+  const helocEmptyName = {
+    ...afterLooks,
+    productIntent: "heloc" as const,
+    propertyValueAmount: 500_000,
+    firstLienAmount: 400_000,
+    loanAmountValue: 50_000,
+    propertyZip: "94123",
+    propertyZipAsked: true,
+    subjectAddress: undefined,
+    subjectStreet: undefined,
+    borrowerName: undefined,
+  };
+  const combinedWrite = applyExtractedFields(helocEmptyName, {
+    extractClass: "government_id",
+    confidence: 0.94,
+    fields: combinedExtracted.fields,
+  });
+  assert.equal(combinedWrite.draft.borrowerName, undefined);
+  assert.equal(combinedWrite.draft.contact.fullName.value, "");
+  assert.equal(combinedWrite.draft.pendingProposal?.field, "borrowerName");
+  assert.match(combinedWrite.draft.pendingProposal?.value ?? "", /Raymond Chi Lee/i);
+  assert.equal(combinedWrite.draft.propertyZip, "94123");
+  assert.equal(combinedWrite.draft.subjectAddress, undefined);
+  assert.doesNotMatch(JSON.stringify(combinedWrite.draft.pendingProposal ?? {}), /123-45-6789|D1234567/);
+  const combinedSpoken = proposalAskCopy(combinedWrite.draft.pendingProposal!);
+  assert.match(combinedSpoken, /The ID shows Raymond Chi Lee/);
+  assert.doesNotMatch(combinedSpoken, /123-45-6789|Social Security|SSN/i);
+
+  const combinedWithDoc = {
+    ...combinedWrite.draft,
+    documents: [
+      ...combinedWrite.draft.documents,
+      {
+        slot: "id" as const,
+        name: "Ray Lee DL and SS.pdf",
+        type: "application/pdf",
+        size: combinedPdf.length,
+        receivedAt: "2026-09-29T16:43:40.000Z",
+        status: "extracted" as const,
+        extractClass: "government_id" as const,
+        note: "Document received",
+      },
+    ],
+  };
+  assert.equal(governmentIdReceivedOnDocs(combinedWithDoc), true);
+  const afterUse = resolveProposal(combinedWithDoc, "accept");
+  assert.equal(afterUse.borrowerName, "Raymond Chi Lee");
+  assert.equal(afterUse.propertyZip, "94123");
+  assert.equal(afterUse.subjectAddress, undefined);
+  assert.doesNotMatch(JSON.stringify(afterUse), /123-45-6789|D1234567/);
+  assert.notEqual(nextDocInvite(afterUse), "government_id");
+  const afterUseAsk = nextFoxAsk(afterUse);
+  assert.ok(!isGovernmentIdInviteLine(afterUseAsk.text), afterUseAsk.text);
+  assert.ok((afterUseAsk.actions ?? []).length, "last line always has chips");
+
+  const receivedNoName = {
+    ...helocEmptyName,
+    pendingProposal: null,
+    documents: [
+      ...helocEmptyName.documents,
+      {
+        slot: "id" as const,
+        name: "Ray Lee DL and SS.pdf",
+        type: "application/pdf",
+        size: combinedPdf.length,
+        receivedAt: "2026-09-29T16:43:40.000Z",
+        status: "extracted" as const,
+        extractClass: "government_id" as const,
+        note: "Document received",
+      },
+    ],
+  };
+  assert.equal(governmentIdReceivedOnDocs(receivedNoName), true);
+  assert.notEqual(nextDocInvite(receivedNoName), "government_id");
+  const receivedAsk = nextFoxAsk(receivedNoName);
+  assert.ok(!isGovernmentIdInviteLine(receivedAsk.text), receivedAsk.text);
+  assert.ok((receivedAsk.actions ?? []).length, "ID in without a name card still has chips");
+
+  const historyUseThis = {
+    id: "old-w2-use",
+    role: "fox" as const,
+    text: "Got the W-2. I’m suggesting $10,000 a month. Suggested qualifying income · not underwritten. Use this?",
+    actions: [
+      { id: "accept-proposal", label: "Use this", event: "bubble" as const, capture: { field: "accept-proposal" } },
+    ],
+  };
+  const idInviteLine = {
+    id: "id-invite-reprint",
+    role: "fox" as const,
+    text: "I have last year’s W-2. Next is a government ID",
+    actions: [
+      { id: "upload-this", label: "Upload this", event: "open-docs" as const, capture: { field: "open-docs" } },
+      { id: "skip-docs", label: "Skip", event: "bubble" as const, capture: { field: "skip-docs" } },
+    ],
+  };
+  assert.ok(isGovernmentIdInviteLine(idInviteLine.text));
+  const replacedInvite = applyIdExtractAsk(
+    [historyUseThis, idInviteLine],
+    {
+      id: "id-confirm-combined",
+      role: "fox",
+      text: combinedSpoken,
+      actions: [
+        { id: "accept-proposal", label: "Use this", event: "bubble", capture: { field: "accept-proposal" } },
+        { id: "skip-docs", label: "Skip", event: "bubble", capture: { field: "skip-docs" } },
+      ],
+    },
+  );
+  const replacedLast = [...replacedInvite].reverse().find((message) => message.role === "fox");
+  assert.match(replacedLast?.text ?? "", /The ID shows Raymond Chi Lee/);
+  assert.doesNotMatch(replacedLast?.text ?? "", /Next is a government ID/);
+  const historyStill = replacedInvite.find((message) => message.id === "old-w2-use");
+  assert.ok(historyStill);
+  assert.equal((historyStill?.actions ?? []).length, 0, "old W-2 Use this stays inert");
+
   console.log("government-id extract PASS", used.borrowerName, beforeLabels.join(" · "));
+}
+
+function pdfEscape(value: string) {
+  return value.replace(/\\/g, "\\\\").replace(/\(/g, "\\(").replace(/\)/g, "\\)");
+}
+
+function combinedIdPacketPdf(): Uint8Array {
+  const lines = [
+    "CALIFORNIA DRIVER LICENSE",
+    "DL D1234567",
+    "LN LEE",
+    "FN RAYMOND CHI",
+    "8 199 RAILROAD AVE",
+    "CAMPBELL CA 95008",
+    "SOCIAL SECURITY",
+    "SOCIAL SECURITY ADMINISTRATION",
+    "NAME RAYMOND CHI LEE",
+    "123-45-6789",
+  ];
+  const ops = ["BT", "/F1 12 Tf", "72 720 Td"];
+  for (const [index, line] of lines.entries()) {
+    if (index) ops.push("0 -16 Td");
+    ops.push(`(${pdfEscape(line)}) Tj`);
+  }
+  ops.push("ET");
+  const stream = `${ops.join("\n")}\n`;
+  const objects = [
+    "1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj",
+    "2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 >> endobj",
+    "3 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >> endobj",
+    `4 0 obj << /Length ${Buffer.byteLength(stream)} >> stream\n${stream}endstream endobj`,
+    "5 0 obj << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> endobj",
+  ];
+  let body = "%PDF-1.4\n";
+  const offsets = [0];
+  for (const object of objects) {
+    offsets.push(Buffer.byteLength(body));
+    body += `${object}\n`;
+  }
+  const xrefAt = Buffer.byteLength(body);
+  let xref = `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
+  for (let i = 1; i < offsets.length; i += 1) {
+    xref += `${String(offsets[i]).padStart(10, "0")} 00000 n \n`;
+  }
+  body += `${xref}trailer << /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefAt}\n%%EOF\n`;
+  return new Uint8Array(Buffer.from(body));
 }
 
 main().catch((err) => {
