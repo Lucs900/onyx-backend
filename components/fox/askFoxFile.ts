@@ -26,7 +26,7 @@ export const ASK_FOX_NO_QUALIFY_LINE = "Whether you qualify isn't known yet on t
 export const ASK_FOX_NO_LOCK_LINE = "No rate lock on this File.";
 
 const MANTRA_BANNED =
-  /I pushed this|ONYX has this for review|ONYX still has it|review after Proceed|Sketch now, documents next/i;
+  /I pushed this|ONYX has this for review|ONYX still has it|review after Proceed|Sketch now, documents next|A licensed originator is on this exception/i;
 
 export type AskFoxFactLog = {
   fileId: string;

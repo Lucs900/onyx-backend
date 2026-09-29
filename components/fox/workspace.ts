@@ -9178,6 +9178,7 @@ export function workspaceReply(
   if (/(talk to (a )?licensed originator|need (a )?licensed originator|request (a )?human|talk to (an )?originator|speak to (an? )?(lo|originator|human))/i.test(lower)) {
     return {
       text: MOTION_COPY.escalated,
+      actions: finishLineActions(draft),
       capture: { field: "talk-originator" },
     };
   }
@@ -9190,10 +9191,10 @@ export function workspaceReply(
     };
   }
 
-  if (inQueueEnding(draft) && /^ask fox$/.test(lower)) {
+  if ((inQueueEnding(draft) || motionOf(draft) === "escalated") && /^ask fox$/.test(lower)) {
     return {
       text: MOTION_COPY.askFox,
-      actions: restoreQueueActions(draft),
+      actions: finishLineActions(draft),
       capture: { field: "ask-fox" },
     };
   }
