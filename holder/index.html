@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Your mortgage desk.</title>
+<style>
+@font-face{
+  font-family:"Geist";
+  src:url("/fonts/Geist-Regular.woff2") format("woff2");
+  font-weight:400;
+  font-style:normal;
+  font-display:swap;
+}
+@font-face{
+  font-family:"Geist";
+  src:url("/fonts/Geist-Medium.woff2") format("woff2");
+  font-weight:500;
+  font-style:normal;
+  font-display:swap;
+}
+:root{
+  --paper:#F6EFE4; --paper-elev:#FFFCF6; --ink:#0B0B0C;
+  --mute:rgba(11,11,12,.58); --whisper:rgba(11,11,12,.42); --line:rgba(11,11,12,.12);
+  --sunset:#E08A4F;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{background:var(--paper);color:var(--ink);font-family:"Geist","Inter",system-ui,-apple-system,sans-serif;
+  -webkit-font-smoothing:antialiased;overflow-x:hidden}
+.page{min-height:100vh;display:flex;flex-direction:column;align-items:center;padding:0 48px}
+main{flex:1;width:100%;max-width:720px;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding-top:56px}
+.mark{display:block;color:var(--ink);width:184px;height:184px}
+h1{margin-top:48px;font-size:60px;line-height:1.08;font-weight:500;letter-spacing:-.035em}
+.invite{margin-top:16px;font-size:14px;line-height:1.4;font-weight:500;letter-spacing:.04em;color:var(--sunset)}
+.lines{margin-top:32px;font-size:18px;line-height:1.6;color:var(--mute);text-wrap:balance}
+.lines p+p{margin-top:4px}
+form{margin-top:44px;width:100%;max-width:460px;display:flex;flex-direction:row;gap:10px}
+input{flex:1 1 auto;min-width:0;height:52px;padding:0 22px;border:1px solid var(--line);border-radius:999px;background:var(--paper-elev);
+  font:inherit;font-size:15px;color:var(--ink);outline:none}
+input::placeholder{color:var(--whisper)}
+button{height:52px;padding:0 26px;border:none;border-radius:999px;background:var(--ink);color:var(--paper-elev);
+  font:inherit;font-size:15px;font-weight:500;letter-spacing:.01em;white-space:nowrap;cursor:pointer}
+button:disabled{cursor:default}
+.nw{white-space:nowrap}
+footer .nb{white-space:nowrap}
+footer{padding:36px 0;font-size:12px;line-height:1.5;color:var(--whisper);letter-spacing:.02em;text-align:center}
+@media (max-width:719px){
+  .page{padding:0 24px}
+  main{max-width:342px;padding-top:40px}
+  .mark{width:128px;height:128px}
+  h1{margin-top:36px;font-size:36px}
+  .invite{margin-top:12px;font-size:13px}
+  .lines{margin-top:24px;font-size:16px}
+  form{margin-top:32px;max-width:342px;flex-direction:column}
+  input{flex:0 0 auto;width:100%}
+  footer{padding:28px 0}
+}
+</style>
+</head>
+<body>
+<div class="page">
+  <main>
+      <svg class="mark" width="184" height="184" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Fox">
+        <!-- AdvisorMark, verbatim geometry from Lucs900/onyx-backend components/AdvisorMark.tsx (last changed 16 Aug 2026 PT). Body = currentColor (ink). Facet = sunset (the product's .fox-bar__mark treatment); default header facet is --metal #C4A574. -->
+        <polygon fill="currentColor" points="3,10 7.2,2.6 12,8.2 16.8,2.6 21,10 12,21.4"/>
+        <polygon class="advisor-mark__facet" fill="#E08A4F" points="12,8.2 16.8,2.6 15.1,10.1"/>
+      </svg>
+    <h1>Your mortgage desk.</h1>
+    <p class="invite">Invitation-only.</p>
+    <div class="lines">
+      <p>Purchase, refinance, <span class="nw">HELOC —</span> California mortgages.</p>
+      <p>A desk that stays open to learn, optimize, save, and buy the next home.</p>
+    </div>
+    <form class="row">
+      <input type="email" name="email" placeholder="Email" aria-label="Email" autocomplete="email">
+      <button type="submit">Request access</button>
+    </form>
+  </main>
+  <footer><span class="nb">ONYX Direct</span> · <span class="nb">Onyx Lending, LLC</span> · <span class="nb">NMLS # 984885</span> · <span class="nb">CFL # 60DBO-32952</span> · <span class="nb">California only</span></footer>
+</div>
+<script>
+(function () {
+  var form = document.querySelector("form");
+  var input = form.querySelector("input[type=email]");
+  var button = form.querySelector("button");
+  form.addEventListener("submit", function (event) {
+    event.preventDefault();
+    if (button.disabled) return;
+    var email = String(input.value || "").trim();
+    button.disabled = true;
+    fetch("/api/request", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ email: email })
+    }).then(function (res) {
+      if (res.ok) {
+        input.value = "";
+        return;
+      }
+      button.disabled = false;
+    }).catch(function () {
+      button.disabled = false;
+    });
+  });
+})();
+</script>
+</body>
+</html>
