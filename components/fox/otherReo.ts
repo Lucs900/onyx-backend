@@ -1,4 +1,5 @@
 import type { FactProposal, FoxAction, FoxIntakeDraft, OtherReoRow } from "./types";
+import { offerScheduleEAfterRentalConfirm } from "./qualifyingIncome";
 import {
   FILE_NET_ROLE_FIELD,
   SUGGESTED_FILE_NET_FIELD,
@@ -115,7 +116,7 @@ export function writeStatedOtherReo(draft: FoxIntakeDraft, value: StatedOtherReo
     delete facts[SUGGESTED_FILE_NET_FIELD];
     delete facts[FILE_NET_ROLE_FIELD];
   }
-  return {
+  const written: FoxIntakeDraft = {
     ...draft,
     statedOtherReo: value,
     otherReoAsked: true,
@@ -131,6 +132,7 @@ export function writeStatedOtherReo(draft: FoxIntakeDraft, value: StatedOtherReo
     correctingLine: null,
     facts,
   };
+  return value === "yes" ? offerScheduleEAfterRentalConfirm(written) : written;
 }
 
 export function proposeStatedOtherReo(draft: FoxIntakeDraft, value: StatedOtherReo): FoxIntakeDraft {

@@ -1,11 +1,17 @@
+import { createCanvas } from "@napi-rs/canvas";
 import { NextResponse } from "next/server";
+
+// Static import so Vercel traces the native canvas binary onto the extract lambda.
+void createCanvas;
 import { slotForExtractClass } from "@/components/fox/fileWrite";
 import { FAILED_READ_NOTE, NO_TEXT_LAYER_NOTE, RECEIVED_NOTE, mediaTypeOf } from "@/lib/docs/accept";
-import { classifyAndExtract, grokExtractAdapter } from "@/lib/docs/extract";
+import { classifyAndExtract, extractHintOf, extractPhaseOf, grokExtractAdapter } from "@/lib/docs/extract";
+import type { ExtractClass } from "@/components/fox/types";
 import { readPrivateBytes, storageStatus, STORAGE_BLOCKED } from "@/lib/docs/storage";
 
 export const runtime = "nodejs";
-export const maxDuration = 60;
+/** Page-image Grok on a 1040 packet (year+name, then Sch E / K-1 pages) needs more than 60s. */
+export const maxDuration = 300;
 
 const INLINE_BYTES_MAX = 4_000_000;
 
@@ -33,18 +39,24 @@ async function bytesFromMultipart(request: Request): Promise<{
   name: string;
   type: string;
   source: "file" | "blob";
+  hint: ExtractClass | null;
+  phase: ReturnType<typeof extractPhaseOf>;
 } | null> {
   const form = await request.formData();
   const uploaded = form.get("file");
   const name = String(form.get("name") ?? (uploaded instanceof File ? uploaded.name : "")).trim();
   const type = String(form.get("type") ?? (uploaded instanceof File ? uploaded.type : "")).trim();
   const bytesRef = String(form.get("bytesRef") ?? "").trim();
+  const hint = extractHintOf(form.get("hint"));
+  const phase = extractPhaseOf(form.get("phase"));
   if (uploaded instanceof Blob && uploaded.size > 0) {
     return {
       bytes: new Uint8Array(await uploaded.arrayBuffer()),
       name,
       type,
       source: "file",
+      hint,
+      phase,
     };
   }
   if (isBlobRef(bytesRef)) {
@@ -54,6 +66,8 @@ async function bytesFromMultipart(request: Request): Promise<{
       name: name || stored.pathname,
       type: type || stored.contentType,
       source: "blob",
+      hint,
+      phase,
     };
   }
   return null;
@@ -64,17 +78,23 @@ async function bytesFromJson(body: {
   name?: string;
   type?: string;
   bytes?: string;
+  hint?: string;
+  phase?: string;
 }): Promise<{
   bytes: Uint8Array;
   name: string;
   type: string;
   source: "file" | "inline" | "blob";
+  hint: ExtractClass | null;
+  phase: ReturnType<typeof extractPhaseOf>;
 } | null> {
   const inline = decodeInlineBytes(body.bytes);
   const name = typeof body.name === "string" ? body.name : "";
   const type = typeof body.type === "string" ? body.type : "";
+  const hint = extractHintOf(body.hint);
+  const phase = extractPhaseOf(body.phase);
   if (inline) {
-    return { bytes: inline, name, type, source: "inline" };
+    return { bytes: inline, name, type, source: "inline", hint, phase };
   }
   const bytesRef = typeof body.bytesRef === "string" ? body.bytesRef.trim() : "";
   if (!isBlobRef(bytesRef)) return null;
@@ -84,6 +104,8 @@ async function bytesFromJson(body: {
     name: name || stored.pathname,
     type: type || stored.contentType,
     source: "blob",
+    hint,
+    phase,
   };
 }
 
@@ -100,6 +122,7 @@ function extractJson(
     warnings: extracted.warnings,
     slot: slotForExtractClass(extractClass),
     source,
+    textLayerChars: extracted.textLayerChars ?? 0,
     note: failed
       ? extracted.warnings.includes("no-text-layer")
         ? NO_TEXT_LAYER_NOTE
@@ -114,14 +137,27 @@ function extractJson(
 export async function POST(request: Request) {
   const contentType = request.headers.get("content-type") || "";
   try {
-    let loaded: { bytes: Uint8Array; name: string; type: string; source: "file" | "inline" | "blob" } | null =
-      null;
+    let loaded: {
+      bytes: Uint8Array;
+      name: string;
+      type: string;
+      source: "file" | "inline" | "blob";
+      hint: ExtractClass | null;
+      phase: ReturnType<typeof extractPhaseOf>;
+    } | null = null;
     if (contentType.includes("multipart/form-data")) {
       loaded = await bytesFromMultipart(request);
     } else {
-      let body: { bytesRef?: string; name?: string; type?: string; bytes?: string };
+      let body: { bytesRef?: string; name?: string; type?: string; bytes?: string; hint?: string; phase?: string };
       try {
-        body = (await request.json()) as { bytesRef?: string; name?: string; type?: string; bytes?: string };
+        body = (await request.json()) as {
+          bytesRef?: string;
+          name?: string;
+          type?: string;
+          bytes?: string;
+          hint?: string;
+          phase?: string;
+        };
       } catch {
         return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
       }
@@ -136,13 +172,16 @@ export async function POST(request: Request) {
       }
       return NextResponse.json({ error: "Missing file" }, { status: 400 });
     }
-    const mediaType = mediaTypeOf(loaded.name, loaded.type);
+    const mediaType = /\.pdf$/i.test(loaded.name)
+      ? "application/pdf"
+      : mediaTypeOf(loaded.name, loaded.type);
     const extracted = await classifyAndExtract(
       loaded.bytes,
       mediaType,
       grokExtractAdapter,
-      null,
+      loaded.hint,
       loaded.name,
+      loaded.phase,
     );
     return NextResponse.json(extractJson(extracted, loaded.source));
   } catch (error) {

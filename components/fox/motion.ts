@@ -1,11 +1,25 @@
 import {
   askClassLabel,
+  labelListCopy,
   missingExtractClasses,
   missingListCopy,
+  nextDocInvite,
   receivedTaxReturnCount,
+  w2FinishDocsReady,
   stillUsefulLabels,
+  stillUsefulSpokenItems,
 } from "./fileWrite";
-import { canLooksRight, shouldEscalate } from "./completeness";
+import {
+  ACCOUNT_SAVE_ASK,
+  accountSaveAskOpen,
+  accountSaveWallActions,
+  applyAccountSaveAsk,
+  hasLinkedAccount,
+  signedInReviewStripOpen,
+} from "./account";
+import { canLooksRight, isHelocFile, hasHelocLine, shouldEscalate } from "./completeness";
+import { wageDocsSkipIsAnswer } from "./fileWrite";
+import { maybeProposeQualifyingFromTaxFile, QUALIFYING_INCOME_FIELD } from "./qualifyingIncome";
 import type {
   Capture,
   FileCondition,
@@ -40,8 +54,8 @@ export const WAITING_OUT_LINE =
 export const MOTION_COPY = {
   gatheringPrefix: "These docs help next:",
   gatheringSuffix: "Upload docs, proceed, or say not yet.",
-  ready: "This file can move. Proceed, or say not yet.",
-  in_queue: "ONYX has this.",
+  ready: "I can send this to review.",
+  in_queue: "ONYX has this for review. I’m still here.",
   whatHappensNext:
     "This is the wait. ONYX has the file for review. I stay in this thread — I’ll nudge if it sits and I’ll bring the result back here.",
   askFox: "I’m here. Type below — I stay on this file while ONYX reviews.",
@@ -141,8 +155,14 @@ export function waitingOnOf(draft: FoxIntakeDraft): WaitingOn {
   return waitingOnForMotion(motionOf(draft));
 }
 
+/** Pad value only. Hub still reads waitingOnOf / draft.motion. */
+export function waitingOnCopy(draft: FoxIntakeDraft) {
+  const waiting = waitingOnOf(draft);
+  return waiting === "onyx" ? "ONYX" : waiting;
+}
+
 export function inferMotionAfterLooks(draft: FoxIntakeDraft): FileMotion {
-  return missingExtractClasses(draft).length ? "gathering" : "ready";
+  return nextDocInvite({ ...draft, sampleAccepted: true }) ? "gathering" : "ready";
 }
 
 export function restripeGatheringOrReady(draft: FoxIntakeDraft): FoxIntakeDraft {
@@ -151,18 +171,10 @@ export function restripeGatheringOrReady(draft: FoxIntakeDraft): FoxIntakeDraft 
     draft.motion === "on_hold" ||
     draft.motion === "escalated" ||
     draft.motion === "needs_you" ||
-    draft.motion === "waiting_out"
+    draft.motion === "waiting_out" ||
+    draft.motion === "in_queue"
   ) {
     return draft;
-  }
-  if (draft.motion === "in_queue") {
-    if (inferMotionAfterLooks(draft) !== "gathering") return draft;
-    return {
-      ...draft,
-      motion: "gathering",
-      nextActor: nextForMotion("gathering"),
-      waitingOn: waitingOnForMotion("gathering"),
-    };
   }
   const motion = inferMotionAfterLooks(draft);
   return {
@@ -185,6 +197,7 @@ export function nextActorOf(draft: FoxIntakeDraft): FileNext {
 }
 
 export function motionStatusCopy(draft: FoxIntakeDraft) {
+  if (accountSaveAskOpen(draft)) return "gathering";
   const motion = motionOf(draft);
   if (motion) return motion;
   return "preparing";
@@ -202,8 +215,16 @@ export function emailSkipped(draft: FoxIntakeDraft) {
   return Boolean(draft.emailSkipped);
 }
 
+/** Parked: Proceed / Not yet do not open the email gate. */
+export const EMAIL_AFTER_PROCEED_PARKED = true;
+
+export function emailFinishGateOpen(draft: FoxIntakeDraft) {
+  if (EMAIL_AFTER_PROCEED_PARKED) return false;
+  return emailMissing(draft) && !emailSkipped(draft);
+}
+
 export function emailReadyToFinish(draft: FoxIntakeDraft) {
-  return !emailMissing(draft) || emailSkipped(draft);
+  return !emailFinishGateOpen(draft);
 }
 
 export function emailAskActions(): FoxAction[] {
@@ -328,9 +349,16 @@ export function gatheringCopy(draft: FoxIntakeDraft) {
   return docsHandoffCopy(draft);
 }
 
+/** After Looks right: send-to-review. Chat names the next 1–3 only. Skip is fine. */
+export function afterLooksRightAskCopy(draft: FoxIntakeDraft) {
+  const items = stillUsefulSpokenItems(draft);
+  if (!items.length) return MOTION_COPY.ready;
+  return `${MOTION_COPY.ready} Still useful: ${labelListCopy(items.map((item) => item.label))} Skip is fine.`;
+}
+
 /** After Looks right, Fox does not dump the vault. One-at-a-time invites happen before Looks right. */
-export function docsHandoffCopy(_draft: FoxIntakeDraft) {
-  return MOTION_COPY.ready;
+export function docsHandoffCopy(draft: FoxIntakeDraft) {
+  return afterLooksRightAskCopy(draft);
 }
 
 /** Bureau pull is allowed only after Proceed into licensed review. Never on browse, sketch, Looks right, or docs. */
@@ -340,6 +368,7 @@ export function creditPullPermitted(draft: FoxIntakeDraft) {
 }
 
 export function inQueueEnding(draft: FoxIntakeDraft) {
+  if (accountSaveAskOpen(draft)) return false;
   const motion = motionOf(draft);
   if (motion === "escalated" || motion === "needs_you" || motion === "on_hold") return false;
   if (motion === "in_queue" || motion === "waiting_out") return true;
@@ -348,19 +377,35 @@ export function inQueueEnding(draft: FoxIntakeDraft) {
 
 export function motionAskText(draft: FoxIntakeDraft) {
   const motion = motionOf(draft);
+  if (accountSaveAskOpenMotion(draft)) {
+    return ACCOUNT_SAVE_ASK;
+  }
+  if (!hasLinkedAccount(draft) && (inQueueEnding(draft) || motion === "in_queue")) {
+    return draft.guestProceeded ? ACCOUNT_SAVE_ASK : gatheringCopy(draft);
+  }
   if (inQueueEnding(draft)) {
     return MOTION_COPY.in_queue;
   }
-  if (draft.pendingFinish && emailMissing(draft) && !emailSkipped(draft)) {
+  if (draft.pendingFinish && emailFinishGateOpen(draft)) {
     return MOTION_COPY.emailAsk;
   }
   if (motion === "on_hold") return MOTION_COPY.on_hold;
   if (motion === "waiting_out") return returnedReviewNote(draft) || MOTION_COPY.waiting_out;
   if (motion === "escalated") return MOTION_COPY.escalated;
   if (motion === "needs_you") return needsYouCopy(draft);
-  if (motion === "ready") return MOTION_COPY.ready;
+  if (motion === "ready") return docsHandoffCopy(draft);
   if (motion === "gathering" || motion === "confirmed") return gatheringCopy(draft);
   return gatheringCopy(draft);
+}
+
+export function afterLooksRightDocActions(draft: FoxIntakeDraft): FoxAction[] {
+  return [
+    { id: "upload-this", label: "Upload this", event: "open-docs", capture: { field: "open-docs" } },
+    { id: "skip-docs", label: "Skip", event: "bubble", capture: { field: "skip-docs" } },
+    { id: "proceed", label: "Proceed", event: "bubble", capture: { field: "proceed" } },
+    { id: "not-yet-docs", label: "Not yet", event: "bubble", capture: { field: "hold-docs" } },
+    ...sideDoorActions(draft),
+  ];
 }
 
 function sideDoorActions(draft: FoxIntakeDraft): FoxAction[] {
@@ -386,13 +431,13 @@ function sideDoorActions(draft: FoxIntakeDraft): FoxAction[] {
   return actions;
 }
 
-function inQueueActions(draft: FoxIntakeDraft): FoxAction[] {
+function lastLineAskUploadHuman(): FoxAction[] {
   return [
     {
-      id: "what-happens-next",
-      label: "What happens next?",
+      id: "ask-fox",
+      label: "Ask Fox",
       event: "bubble",
-      capture: { field: "what-happens-next" },
+      capture: { field: "ask-fox" },
     },
     {
       id: "upload-more",
@@ -401,53 +446,89 @@ function inQueueActions(draft: FoxIntakeDraft): FoxAction[] {
       capture: { field: "upload-more" },
     },
     {
+      id: "request-human",
+      label: "Request human",
+      event: "bubble",
+      capture: { field: "talk-originator" },
+      quiet: true,
+    },
+  ];
+}
+
+function inQueueActions(draft: FoxIntakeDraft): FoxAction[] {
+  return [
+    {
       id: "ask-fox",
       label: "Ask Fox",
       event: "bubble",
       capture: { field: "ask-fox" },
     },
-    ...sideDoorActions(draft),
+    {
+      id: "upload-more",
+      label: "Upload more",
+      event: "open-docs",
+      capture: { field: "upload-more" },
+    },
+    ...sideDoorActions(draft).filter((item) => item.id === "request-human"),
   ];
 }
 
 export function finishLineActions(draft: FoxIntakeDraft): FoxAction[] {
-  const motion = motionOf(draft);
+  if (accountSaveAskOpen(draft)) return accountSaveWallActions(draft);
   if (inQueueEnding(draft)) return inQueueActions(draft);
-  if (draft.pendingFinish && emailMissing(draft) && !emailSkipped(draft)) {
+  if (!w2FinishDocsReady(draft) && !(isHelocFile(draft) && draft.sampleAccepted)) return [];
+  const motion = motionOf(draft);
+  if (draft.pendingFinish && emailFinishGateOpen(draft)) {
     return emailAskActions();
   }
   if (motion === "escalated") {
-    return [
-      {
-        id: "upload-more",
-        label: "Upload more",
-        event: "open-docs",
-        capture: { field: "upload-more" },
-      },
-      ...sideDoorActions(draft),
-    ];
+    return lastLineAskUploadHuman();
   }
   return [
     { id: "proceed", label: "Proceed", event: "bubble", capture: { field: "proceed" } },
     { id: "not-yet", label: "Not yet", event: "bubble", capture: { field: "not-yet" } },
+    {
+      id: "upload-more",
+      label: "Upload more",
+      event: "open-docs",
+      capture: { field: "upload-more" },
+    },
     ...sideDoorActions(draft),
   ];
 }
 
 export function applyLooksRightMotion(draft: FoxIntakeDraft): FoxIntakeDraft {
-  if (!canLooksRight(draft) && !draft.sampleAccepted) return draft;
+  const held = maybeProposeQualifyingFromTaxFile(draft);
+  if (held.pendingProposal?.field === QUALIFYING_INCOME_FIELD) return held;
+  if (!canLooksRight(held) && !held.sampleAccepted) {
+    if (
+      !(
+        isHelocFile(held) &&
+        hasHelocLine(held) &&
+        wageDocsSkipIsAnswer(held) &&
+        !held.pendingProposal &&
+        !held.pendingConflict &&
+        !held.pendingAddress
+      )
+    ) {
+      return held;
+    }
+  }
+  draft = held;
   if (shouldEscalate(draft)) {
     return applyEscalateMotion(
       appendFileEvent(
         {
-          ...draft,
-          sampleAccepted: true,
-          docsOpen: false,
-          pendingFinish: undefined,
-          workspaceDraftStatus: "ready",
-        },
+      ...draft,
+      sampleAccepted: true,
+      phase: "confirmed",
+      docsOpen: false,
+      pendingFinish: undefined,
+      taxReturnPacketCloseAsk: false,
+      workspaceDraftStatus: "ready",
+    },
         "looks-right",
-        "Looks right — file confirmed. Originator assigned.",
+        "Looks right — file confirmed.",
       ),
     );
   }
@@ -456,15 +537,17 @@ export function applyLooksRightMotion(draft: FoxIntakeDraft): FoxIntakeDraft {
     {
       ...draft,
       sampleAccepted: true,
+      phase: "confirmed",
       motion,
       nextActor: nextForMotion(motion),
       waitingOn: waitingOnForMotion(motion),
       docsOpen: false,
       pendingFinish: undefined,
+      taxReturnPacketCloseAsk: false,
       workspaceDraftStatus: "ready",
     },
     "looks-right",
-    "Looks right — file confirmed. Originator assigned.",
+    "Looks right — file confirmed.",
   );
 }
 
@@ -490,8 +573,15 @@ function withOutbox(
   };
 }
 
+function accountSaveAskOpenMotion(draft: FoxIntakeDraft) {
+  return Boolean(draft.accountSaveAsk) && !hasLinkedAccount(draft);
+}
+
 export function applyProceedMotion(draft: FoxIntakeDraft, now = new Date()): FoxIntakeDraft {
-  if (emailMissing(draft) && !emailSkipped(draft)) {
+  const held = maybeProposeQualifyingFromTaxFile(draft);
+  if (held.pendingProposal?.field === QUALIFYING_INCOME_FIELD) return held;
+  draft = held;
+  if (emailFinishGateOpen(draft)) {
     return {
       ...draft,
       pendingFinish: "proceed",
@@ -500,6 +590,10 @@ export function applyProceedMotion(draft: FoxIntakeDraft, now = new Date()): Fox
       correcting: null,
     };
   }
+  if (!hasLinkedAccount(draft) || accountSaveAskOpen(draft)) {
+    return applyAccountSaveAsk(draft);
+  }
+  if (draft.motion === "in_queue" && openReviewWorkItem(draft)) return draft;
   const from = currentMotionKey(draft);
   if (!canTransition(from, "in_queue")) return draft;
   const item = openReviewWorkItem(draft) ?? openReviewItem(draft, now);
@@ -510,9 +604,11 @@ export function applyProceedMotion(draft: FoxIntakeDraft, now = new Date()): Fox
       nextActor: "ONYX",
       waitingOn: "onyx",
       pendingFinish: undefined,
+      accountSaveAsk: false,
       emailCaptureAsked: draft.emailCaptureAsked,
       docsOpen: false,
       correcting: null,
+      taxReturnPacketCloseAsk: false,
       workItems: [...(draft.workItems ?? []).filter((row) => row.id !== item.id), item],
       reviewSlaMs: draft.reviewSlaMs ?? slaMsForKind(item.kind),
     },
@@ -525,7 +621,7 @@ export function applyProceedMotion(draft: FoxIntakeDraft, now = new Date()): Fox
 }
 
 export function applyNotYetMotion(draft: FoxIntakeDraft, now = new Date()): FoxIntakeDraft {
-  if (emailMissing(draft) && !emailSkipped(draft)) {
+  if (emailFinishGateOpen(draft)) {
     return {
       ...draft,
       pendingFinish: "not-yet",
@@ -533,6 +629,23 @@ export function applyNotYetMotion(draft: FoxIntakeDraft, now = new Date()): FoxI
       docsOpen: false,
       correcting: null,
     };
+  }
+  if (signedInReviewStripOpen(draft)) {
+    return appendFileEvent(
+      {
+        ...draft,
+        motion: "gathering",
+        nextActor: "You",
+        waitingOn: "borrower",
+        pendingFinish: undefined,
+        docsOpen: false,
+        correcting: null,
+        taxReturnPacketCloseAsk: false,
+      },
+      "not-yet",
+      "Not yet — still gathering. Same file.",
+      now.toISOString(),
+    );
   }
   const next = appendFileEvent(
     {
@@ -543,6 +656,7 @@ export function applyNotYetMotion(draft: FoxIntakeDraft, now = new Date()): FoxI
       pendingFinish: undefined,
       docsOpen: false,
       correcting: null,
+      taxReturnPacketCloseAsk: false,
     },
     "not-yet",
     "Not yet — holding. Same file.",
@@ -552,13 +666,14 @@ export function applyNotYetMotion(draft: FoxIntakeDraft, now = new Date()): FoxI
 }
 
 export function applyUploadMoreMotion(draft: FoxIntakeDraft): FoxIntakeDraft {
-  const held = draft.motion === "on_hold" || draft.motion === "needs_you" || draft.motion === "ready";
-  const motion: FileMotion = held || !draft.motion ? inferMotionAfterLooks(draft) : draft.motion === "in_queue" || draft.motion === "escalated"
-    ? draft.motion
+  const proposed = maybeProposeQualifyingFromTaxFile(draft);
+  const held = proposed.motion === "on_hold" || proposed.motion === "needs_you" || proposed.motion === "ready";
+  const motion: FileMotion = held || !proposed.motion ? inferMotionAfterLooks(proposed) : proposed.motion === "in_queue" || proposed.motion === "escalated"
+    ? proposed.motion
     : "gathering";
   return appendFileEvent(
     {
-      ...draft,
+      ...proposed,
       motion,
       nextActor: nextForMotion(motion),
       waitingOn: waitingOnForMotion(motion),
@@ -763,6 +878,7 @@ export function applyNudgeMotion(
   draft: FoxIntakeDraft,
   input: { force?: boolean; now?: Date } = {},
 ): { draft: FoxIntakeDraft; threadLine: string | null } {
+  if (!hasLinkedAccount(draft)) return { draft, threadLine: null };
   const now = input.now ?? new Date();
   const item = openReviewWorkItem(draft);
   if (!item) return { draft, threadLine: null };

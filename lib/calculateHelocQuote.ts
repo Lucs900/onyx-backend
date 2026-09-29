@@ -1,6 +1,84 @@
 import { tool } from 'ai';
 import { z } from 'zod';
 
+export type HelocOccupancy = 'Primary' | 'Second' | 'Investment';
+
+export type HelocQuoteInput = {
+  homeValue: number;
+  currentMortgage: number;
+  desiredLine?: number;
+  fico: number;
+  occupancy: HelocOccupancy;
+};
+
+export type HelocQuoteResult = {
+  cltv: number;
+  maxLine: number;
+  publishedMargin: number;
+  adjustedMargin: number;
+  finalRate: number;
+  occupancy: HelocOccupancy;
+  lineUsedForCltv: number;
+  /** Site calculator interest-only. Never amortizing P&I. */
+  monthlyPayment: number | null;
+};
+
+/**
+ * WSJ / Fed H.15 bank prime. Effective 2026-09-17.
+ * Not the fed funds target (3.75–4.00). A HELOC note is prime + margin.
+ */
+export const WSJ_H15_PRIME = 7;
+/** Existing compensation add-on on the published margin. Do not retune tonight. */
+export const HELOC_COMPENSATION_ADDON = 0.8;
+
+/** Same engine as the website HELOC calculator. Fox calls this; do not send HELOC to Rateflow. */
+export function calculateHelocQuote({
+  homeValue,
+  currentMortgage,
+  desiredLine,
+  fico,
+  occupancy,
+}: HelocQuoteInput): HelocQuoteResult {
+  const maxLtv = occupancy === 'Investment' ? 0.75 : 0.85;
+  const maxLine = Math.max(0, Math.round(homeValue * maxLtv - currentMortgage));
+  const lineForCltv = desiredLine && desiredLine > 0 ? Math.min(desiredLine, maxLine) : maxLine;
+  const totalLiens = currentMortgage + lineForCltv;
+  const cltv = homeValue > 0 ? (totalLiens / homeValue) * 100 : 0;
+  const publishedMargin = getMarginFromTable(fico, cltv, occupancy);
+  const adjustedMargin = publishedMargin + HELOC_COMPENSATION_ADDON;
+  const finalRate = WSJ_H15_PRIME + adjustedMargin;
+  const lineForPayment = desiredLine && desiredLine > 0 ? desiredLine : maxLine;
+  const monthlyPayment =
+    lineForPayment > 0 && finalRate
+      ? Math.round((lineForPayment * (finalRate / 100)) / 12)
+      : null;
+
+  return {
+    cltv: Math.round(cltv * 100) / 100,
+    maxLine,
+    publishedMargin: Math.round(publishedMargin * 1000) / 1000,
+    adjustedMargin: Math.round(adjustedMargin * 1000) / 1000,
+    finalRate: Math.round(finalRate * 100) / 100,
+    occupancy,
+    lineUsedForCltv: lineForCltv,
+    monthlyPayment,
+  };
+}
+
+/** Site API gate. Missing shape is not a rate. */
+export function calculateHelocQuoteOrNull(input: HelocQuoteInput): HelocQuoteResult | null {
+  if (!Number.isFinite(input.homeValue) || input.homeValue < 100000) return null;
+  if (!Number.isFinite(input.currentMortgage) || input.currentMortgage < 0) return null;
+  if (!Number.isFinite(input.fico) || input.fico < 300 || input.fico > 850) return null;
+  if (input.occupancy !== 'Primary' && input.occupancy !== 'Second' && input.occupancy !== 'Investment') {
+    return null;
+  }
+  const quote = calculateHelocQuote(input);
+  if (!quote.finalRate || quote.finalRate <= 0) return null;
+  if (quote.monthlyPayment == null) return null;
+  return quote;
+}
+
 export const calculateHelocQuoteTool = tool({
   description: 'Calculate an accurate HELOC quote including max line amount, published margin, adjusted margin after compensation, final rate, and CLTV based on the current Spring EQ rate sheet.',
   
@@ -12,39 +90,15 @@ export const calculateHelocQuoteTool = tool({
     occupancy: z.enum(['Primary', 'Second', 'Investment']).describe('Property occupancy type'),
   }),
 
-  execute: async ({ homeValue, currentMortgage, desiredLine, fico, occupancy }) => {
-    // Maximum available line
-    const maxLtv = occupancy === 'Investment' ? 0.75 : 0.85;
-    const maxLine = Math.max(0, Math.round(homeValue * maxLtv - currentMortgage));
-
-    // Use desired line for CLTV if provided, otherwise use max line
-    const lineForCltv = desiredLine && desiredLine > 0 ? Math.min(desiredLine, maxLine) : maxLine;
-
-    const totalLiens = currentMortgage + lineForCltv;
-    const cltv = homeValue > 0 ? (totalLiens / homeValue) * 100 : 0;
-
-    // Get margin from the new rate sheet table
-    let publishedMargin = getMarginFromTable(fico, cltv, occupancy);
-
-    // Standard LPC adjustment (0.80 added to margin)
-    const adjustedMargin = publishedMargin + 0.80;
-    const finalRate = 6.75 + adjustedMargin;
-
-    return {
-      cltv: Math.round(cltv * 100) / 100,
-      maxLine,
-      publishedMargin: Math.round(publishedMargin * 1000) / 1000,
-      adjustedMargin: Math.round(adjustedMargin * 1000) / 1000,
-      finalRate: Math.round(finalRate * 100) / 100,
-      occupancy,
-      lineUsedForCltv: lineForCltv,
-    };
+  execute: async (input) => {
+    const { monthlyPayment: _monthlyPayment, ...rest } = calculateHelocQuote(input);
+    return rest;
   },
 });
 
 /**
  * Margin table from Spring EQ Adjustable-Rate HELOC rate sheet (08.05.2026)
- * Values are the margin ABOVE Prime (currently 6.75%)
+ * Values are the margin ABOVE WSJ / H.15 bank prime (WSJ_H15_PRIME). Not fed funds.
  * Negative values are intentional for strong credit / low CLTV.
  */
 function getMarginFromTable(fico: number, cltv: number, occupancy: string): number {
