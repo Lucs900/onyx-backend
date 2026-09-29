@@ -9,6 +9,7 @@ import {
   COVER_LINE_METHOD,
   COVER_LINE_NOTE,
   W2_BOX1_MONTHLY_NOTE,
+  W2_BOX5_MONTHLY_NOTE,
   BOTH_MONTHLY_SKIP_NOTE,
   BOTH_MONTHLY_RAISE_NOTE,
   BOTH_MONTHLY_OT_NOTE,
@@ -86,6 +87,7 @@ export {
   COVER_LINE_METHOD,
   COVER_LINE_NOTE,
   W2_BOX1_MONTHLY_NOTE,
+  W2_BOX5_MONTHLY_NOTE,
   BOTH_MONTHLY_SKIP_NOTE,
   BOTH_MONTHLY_RAISE_NOTE,
   BOTH_MONTHLY_OT_NOTE,
@@ -1028,6 +1030,8 @@ export type WageJobCashflow = {
   employer_name: string;
   tax_year: string;
   wages: string;
+  /** Box 5 Medicare wages when the page printed them. Not Box 1. */
+  box5?: string;
   overtime: string;
   bonus: string;
   commission: string;
@@ -1117,10 +1121,12 @@ export function jobFromExtract(fields: Record<string, string>): WageJobCashflow 
       ? String(yearFromWageField(String(fields.pay_period_end ?? "").trim()))
       : "");
   if (!employer_name && !fields.wages && !fields.medicare_wages && !fields.box5 && !fields.gross_period && !fields.ytd_gross) return null;
+  const box5 = String(fields.medicare_wages || fields.box5 || "").trim();
   return {
     employer_name: employer_name || "unknown",
     tax_year,
-    wages: String(fields.medicare_wages || fields.box5 || fields.wages || "").trim(),
+    wages: String(box5 || fields.wages || "").trim(),
+    ...(box5 ? { box5 } : {}),
     overtime: String(fields.overtime ?? "").trim(),
     bonus: String(fields.bonus ?? "").trim(),
     commission: String(fields.commission ?? "").trim(),
@@ -1178,12 +1184,14 @@ function jobToPriorYear(row: WageJobCashflow): WageYearInput {
 }
 
 function jobToWageInput(row: WageJobCashflow, priorYear?: WageYearInput | null): WageSuggestInput {
+  const box5 = parseExtractMoney(row.box5);
   return {
     payPeriodEnd: row.pay_period_end || null,
     grossPeriod: parseExtractMoney(row.gross_period),
     ytdGross: parseExtractMoney(row.ytd_gross),
     payFrequency: row.pay_frequency || null,
-    w2Wages: parseExtractMoney(row.wages),
+    w2Wages: box5 ?? parseExtractMoney(row.wages),
+    w2FromBox5: box5 != null && box5 > 0,
     overtime: parseExtractMoney(row.overtime),
     bonus: parseExtractMoney(row.bonus),
     commission: parseExtractMoney(row.commission),
@@ -1210,9 +1218,23 @@ export function hasTwoYearWageHistory(draft: FoxIntakeDraft): boolean {
   return years.size >= 2;
 }
 
+function wageBox5Annual(draft: FoxIntakeDraft, fields: Record<string, string> = {}): number | null {
+  return (
+    parseExtractMoney(fields.medicare_wages) ??
+    parseExtractMoney(fields.box5) ??
+    parseExtractMoney(factValue(draft, "w2_box5")) ??
+    parseExtractMoney(factValue(draft, "medicare_wages")) ??
+    parseExtractMoney(factValue(draft, "box5")) ??
+    (draft.pendingWageExtract?.box5 && draft.pendingWageExtract.box5 > 0
+      ? draft.pendingWageExtract.box5
+      : null)
+  );
+}
+
 function wageSuggestInput(draft: FoxIntakeDraft, fields: Record<string, string>): WageSuggestInput {
   const incoming = jobFromExtract(fields);
   const jobs = mergeWageJobs(readWageJobs(draft), incoming);
+  const box5Annual = wageBox5Annual(draft, fields);
   const incomingEmployer = String(fields.employer_name ?? incoming?.employer_name ?? "").trim();
   const primaryEmployer = String(factValue(draft, "employer_name") ?? "").trim();
   const incomingIsSecond = Boolean(
@@ -1255,13 +1277,8 @@ function wageSuggestInput(draft: FoxIntakeDraft, fields: Record<string, string>)
       payFrequency:
         laterInput.payFrequency ||
         (incomingIsSecond ? factValue(draft, "pay_frequency") || null : pickWageField(fields, draft, "pay_frequency") || null),
-      w2Wages:
-        laterInput.w2Wages ??
-        parseExtractMoney(
-          incomingIsSecond
-            ? factValue(draft, "medicare_wages") || factValue(draft, "box5") || factValue(draft, "wages")
-            : fields.medicare_wages || fields.box5 || fields.wages || factValue(draft, "medicare_wages") || factValue(draft, "wages"),
-        ),
+      w2Wages: box5Annual ?? laterInput.w2Wages,
+      w2FromBox5: box5Annual != null || Boolean(laterInput.w2FromBox5),
       sameStubSecondEmployer,
       secondJob,
     };
@@ -1271,11 +1288,14 @@ function wageSuggestInput(draft: FoxIntakeDraft, fields: Record<string, string>)
     grossPeriod: parseExtractMoney(incomingIsSecond ? factValue(draft, "gross_period") : pickWageField(fields, draft, "gross_period")),
     ytdGross: parseExtractMoney(incomingIsSecond ? factValue(draft, "ytd_gross") : pickWageField(fields, draft, "ytd_gross")),
     payFrequency: incomingIsSecond ? factValue(draft, "pay_frequency") || null : pickWageField(fields, draft, "pay_frequency") || null,
-    w2Wages: parseExtractMoney(
-      incomingIsSecond
-        ? factValue(draft, "medicare_wages") || factValue(draft, "box5") || factValue(draft, "wages")
-        : fields.medicare_wages || fields.box5 || fields.wages || factValue(draft, "medicare_wages") || factValue(draft, "wages"),
-    ),
+    w2Wages:
+      box5Annual ??
+      parseExtractMoney(
+        incomingIsSecond
+          ? factValue(draft, "wages")
+          : fields.wages || factValue(draft, "wages"),
+      ),
+    w2FromBox5: box5Annual != null,
     overtime: incomingIsSecond ? parseExtractMoney(factValue(draft, "overtime")) : parseExtractMoney(fields.overtime),
     bonus: incomingIsSecond ? parseExtractMoney(factValue(draft, "bonus")) : parseExtractMoney(fields.bonus),
     commission: incomingIsSecond ? parseExtractMoney(factValue(draft, "commission")) : parseExtractMoney(fields.commission),
@@ -1420,7 +1440,7 @@ function maybeCombine(
   if (!combined) return incoming;
   const result = toQualifyingResult(combined, "combined");
   if (!sameBusinessWageAndEntity(draft, fields, cashYears)) return result;
-  const wageNote = wage?.methodNote || W2_BOX1_MONTHLY_NOTE;
+  const wageNote = wage?.methodNote || (wageBox5Annual(draft, fields) != null ? W2_BOX5_MONTHLY_NOTE : W2_BOX1_MONTHLY_NOTE);
   const useEntityCash = incoming.basis === "entity" || Boolean(fileEntity);
   if (useEntityCash) {
     const entityNote =
@@ -2947,7 +2967,6 @@ export const WAGE_EXTRACT_FIELD = "wage_extract";
 export const STUB_EXTRACT_FIELD = "stub_extract";
 export const STUB_JOB_FIELD = "stub_job";
 export const STUB_JOB_ASK = "Same job or two jobs?";
-export const W2_BOX5_MONTHLY_NOTE = "Box 5 monthly";
 export const BOTH_MONTHLY_SKIP_NOTE_BOX5 = "Using W-2 Box 5 until we know why they differ.";
 
 export function typedBox5OnFile(draft: FoxIntakeDraft): boolean {
@@ -3610,7 +3629,7 @@ export function maybeProposeWageExtract(
   extractClass?: ExtractClass,
 ): FoxIntakeDraft {
   if (draft.sampleAccepted) return draft;
-  if (!wageThreadOpen(draft) && extractClass !== "w2") return draft;
+  if (!wageThreadOpen(draft)) return draft;
   if (wageW2ExtractAccepted(draft)) return draft;
   if (draft.pendingConflict) return draft;
   const held = mergePendingWageExtract(draft, fields, extractClass);
@@ -3747,6 +3766,32 @@ export function acceptWageExtract(draft: FoxIntakeDraft): FoxIntakeDraft {
     delete facts.gross_period;
     delete facts.paystub_amount;
     delete facts.pay_frequency;
+    const annual = parseExtractMoney(box5);
+    const monthly = annual != null && annual > 0 ? monthlyFromAnnual(annual) : null;
+    if (monthly != null && monthly > 0) {
+      const monthlyValue = String(monthly);
+      facts[QUALIFYING_INCOME_FIELD] = {
+        field: QUALIFYING_INCOME_FIELD,
+        value: monthlyValue,
+        source: "suggested",
+        confirmed: true,
+        confirmedAt: now,
+      };
+      facts[WAGE_MONTHLY_FIELD] = {
+        field: WAGE_MONTHLY_FIELD,
+        value: monthlyValue,
+        source: "suggested",
+        confirmed: true,
+        confirmedAt: now,
+      };
+      facts[QUALIFYING_METHOD_FIELD] = {
+        field: QUALIFYING_METHOD_FIELD,
+        value: W2_BOX5_MONTHLY_NOTE,
+        source: "suggested",
+        confirmed: true,
+        confirmedAt: now,
+      };
+    }
   }
   next = { ...next, facts };
   if (employer) next = writeCurrentEmploymentHistory(next, employer);
