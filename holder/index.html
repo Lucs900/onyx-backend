@@ -36,13 +36,15 @@ h1{margin-top:48px;font-size:60px;line-height:1.08;font-weight:500;letter-spacin
 .lines{margin-top:32px;font-size:18px;line-height:1.6;color:var(--mute);text-wrap:balance}
 .lines p+p{margin-top:4px}
 form{margin-top:44px;width:100%;max-width:460px;display:flex;flex-direction:row;gap:10px}
+.done{display:none;width:100%;font-size:18px;line-height:1.6;color:var(--mute);text-wrap:balance}
+form.is-done input,form.is-done button{display:none}
+form.is-done .done{display:block}
 input{flex:1 1 auto;min-width:0;height:52px;padding:0 22px;border:1px solid var(--line);border-radius:999px;background:var(--paper-elev);
   font:inherit;font-size:15px;color:var(--ink);outline:none}
 input::placeholder{color:var(--whisper)}
 button{height:52px;padding:0 26px;border:none;border-radius:999px;background:var(--ink);color:var(--paper-elev);
   font:inherit;font-size:15px;font-weight:500;letter-spacing:.01em;white-space:nowrap;cursor:pointer}
 button:disabled{cursor:default}
-.nw{white-space:nowrap}
 footer .nb{white-space:nowrap}
 footer{padding:36px 0;font-size:12px;line-height:1.5;color:var(--whisper);letter-spacing:.02em;text-align:center}
 @media (max-width:719px){
@@ -54,6 +56,7 @@ footer{padding:36px 0;font-size:12px;line-height:1.5;color:var(--whisper);letter
   .lines{margin-top:24px;font-size:16px}
   form{margin-top:32px;max-width:342px;flex-direction:column}
   input{flex:0 0 auto;width:100%}
+  .done{font-size:16px}
   footer{padding:28px 0}
 }
 </style>
@@ -69,12 +72,13 @@ footer{padding:36px 0;font-size:12px;line-height:1.5;color:var(--whisper);letter
     <h1>Your mortgage desk.</h1>
     <p class="invite">Invitation-only.</p>
     <div class="lines">
-      <p>Purchase, refinance, <span class="nw">HELOC —</span> California mortgages.</p>
+      <p>Purchase, refinance, HELOC. California mortgages.</p>
       <p>A desk that stays open to learn, optimize, save, and buy the next home.</p>
     </div>
     <form class="row">
       <input type="email" name="email" placeholder="Email" aria-label="Email" autocomplete="email">
       <button type="submit">Request access</button>
+      <p class="done">Got it. We will write when a seat is open.</p>
     </form>
   </main>
   <footer><span class="nb">ONYX Direct</span> · <span class="nb">Onyx Lending, LLC</span> · <span class="nb">NMLS # 984885</span> · <span class="nb">CFL # 60DBO-32952</span> · <span class="nb">California only</span></footer>
@@ -96,6 +100,7 @@ footer{padding:36px 0;font-size:12px;line-height:1.5;color:var(--whisper);letter
     }).then(function (res) {
       if (res.ok) {
         input.value = "";
+        form.classList.add("is-done");
         return;
       }
       button.disabled = false;
