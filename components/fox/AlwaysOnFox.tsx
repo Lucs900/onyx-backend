@@ -121,6 +121,7 @@ import {
   setLiveQuoteResult,
   shouldResumeWorkspaceEntry,
   getAccountSession,
+  holdAskFoxLocalPersist,
   startOverWorkspace,
   subscribeFoxDraft,
 } from "./store";
@@ -2208,6 +2209,7 @@ export function AlwaysOnFox({
     if (action.capture?.field === "what-happens-next" || action.capture?.field === "ask-fox") {
       applyCapture(action.capture);
       skipPromptSync.current = true;
+      if (action.capture.field === "ask-fox") holdAskFoxLocalPersist();
       const live = getFoxDraft();
       if (action.capture.field === "ask-fox" && live.docsHeld && !live.sampleAccepted) {
         appendReply(action.label, holdDocsAskFox());
@@ -2612,6 +2614,7 @@ export function AlwaysOnFox({
     if (isAskFoxFreeQuestion(text, draft)) {
       skipPromptSync.current = true;
       holdAskFoxPaint.current = true;
+      holdAskFoxLocalPersist();
       const session = getAccountSession();
       const ownedId = draft.fileId?.trim();
       const paintAskFox = (fox: { text: string; actions?: ReturnType<typeof finishLineActions> }) => {

@@ -3277,8 +3277,8 @@ export function isSpineIntakeAnswer(text: string) {
 
 export function isAskFoxFreeQuestion(text: string, draft: FoxIntakeDraft) {
   const q = text.trim();
-  if (!isAskFoxLiveFile(draft)) return false;
   if (isSpineIntakeAnswer(q)) return false;
+  if (!isAskFoxLiveFile(draft) && !draft.fileId?.trim()) return false;
   return isFreeTextAtGate(q);
 }
 
@@ -3372,8 +3372,31 @@ function finishStripReply(
   };
 }
 
+function isProceedMantraText(text: string) {
+  const spoken = text.replace(/\s+/g, " ").trim();
+  if (!spoken) return false;
+  if (spoken === MOTION_COPY.nudge || spoken === MOTION_COPY.in_queue || spoken === TIMELINE_COPY) {
+    return true;
+  }
+  return /I pushed this|ONYX still has it|review after Proceed|Sketch now, documents next/i.test(
+    spoken,
+  );
+}
+
 function restoredAsk(answer: string, draft: FoxIntakeDraft) {
   const ask = nextFoxAsk(draft);
+  if (isProceedMantraText(answer)) {
+    return {
+      text: FILE_ANSWER_COPY,
+      actions: finishLineActions(draft),
+    };
+  }
+  if (isProceedMantraText(ask.text)) {
+    return {
+      text: answer,
+      actions: finishLineActions(draft),
+    };
+  }
   if (answer === READINESS_NAMED_LOSS) {
     return {
       text: answer,
@@ -9032,6 +9055,9 @@ export function workspaceReply(
     !wantsCorrectionMenu(q) &&
     !(inQueueEnding(draft) && /what happens next/.test(lower))
   ) {
+    if (isAskFoxLiveFile(draft) || draft.fileId?.trim()) {
+      return workspaceAskFoxFileReply(q, draft);
+    }
     return answerThenRestore(q, draft);
   }
 

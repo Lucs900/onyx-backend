@@ -8,6 +8,7 @@ import { readFileSync } from "node:fs";
 import { emptyDraft } from "../components/fox/store";
 import {
   applyLooksRightMotion,
+  applyNudgeMotion,
   applyProceedMotion,
   finishLineActions,
   MOTION_COPY,
@@ -43,6 +44,7 @@ import {
   answerAskFoxFromFile,
   askFoxAnswerIsClean,
   isAskFoxFileSpokenLine,
+  isAskFoxLiveFile,
   lastStaffFoxLine,
   openPapersOnFile,
 } from "../components/fox/askFoxFile";
@@ -307,6 +309,25 @@ function main() {
   );
   assert.deepEqual(chips(mirror), ["Ask Fox", "Upload more", "Request human"]);
 
+  const founderShaped = applyNudgeMotion(mirror, { force: true }).draft;
+  assert.equal(founderShaped.motion, "in_queue");
+  assert.ok((founderShaped.workItems ?? []).some((item) => item.state === "nudged"));
+  assert.equal(isAskFoxLiveFile(founderShaped), true);
+  assert.equal(isAskFoxFreeQuestion(q1, founderShaped), true);
+  const founderNeed = workspaceReply(q1, founderShaped);
+  assert.match(founderNeed?.text ?? "", /W-2/i);
+  assert.ok((founderNeed?.text ?? "").indexOf("W-2") < (founderNeed?.text ?? "").indexOf("Government ID"));
+  assert.ok((founderNeed?.text ?? "").indexOf("Government ID") < (founderNeed?.text ?? "").indexOf("1040"));
+  assert.doesNotMatch(founderNeed?.text ?? "", /I pushed this|ONYX still has it|review after Proceed|Sketch now, documents next/);
+  assert.deepEqual(labels(founderNeed?.actions).slice(0, 3), ["Ask Fox", "Upload more", "Request human"]);
+  const founderW2 = workspaceReply("Do you still need my W-2?", founderShaped);
+  assert.equal(founderW2?.text, ASK_FOX_W2_OPEN_LINE);
+  assert.doesNotMatch(founderW2?.text ?? "", /I pushed this|ONYX still has it/);
+  const founderClose = workspaceReply("When will I close?", founderShaped);
+  assert.equal(founderClose?.text, ASK_FOX_NO_CLOSE_LINE);
+  assert.doesNotMatch(founderClose?.text ?? "", /I pushed this|Sketch now, documents next|review after Proceed/);
+  assert.equal(isAskFoxLiveFile({ ...emptyDraft(), fileId: "file_only" }), true);
+
   const askFoxSrc = readFileSync(new URL("../components/fox/askFoxFile.ts", import.meta.url), "utf8");
   assert.match(askFoxSrc, /MANTRA_BANNED/);
   assert.doesNotMatch(askFoxSrc, /MOTION_COPY\.(in_queue|nudge|askFox)/);
@@ -335,6 +356,12 @@ function main() {
   assert.match(alwaysSrc, /storedFileRead/);
   assert.match(alwaysSrc, /!\(resolvedFileRead && resolved.length > stored.length\)/);
   assert.match(alwaysSrc, /paintedAskFoxText\.current/);
+  assert.match(alwaysSrc, /holdAskFoxLocalPersist/);
+  const storeSrc = readFileSync(new URL("../components/fox/store.ts", import.meta.url), "utf8");
+  assert.match(storeSrc, /export function holdAskFoxLocalPersist/);
+  assert.match(storeSrc, /if \(askFoxLocalOnly\) return;/);
+  assert.match(workspaceSrc, /function isProceedMantraText/);
+  assert.match(workspaceSrc, /workspaceAskFoxFileReply\(q, draft\)/);
   const leftoverSrc = readFileSync(new URL("../components/fox/workspace.ts", import.meta.url), "utf8");
   assert.match(leftoverSrc, /if \(isAskFoxFileSpokenLine\(line\)\) return false;/);
   assert.match(leftoverSrc, /!isAskFoxFileSpokenLine\(line\) &&/);

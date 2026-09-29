@@ -1584,6 +1584,7 @@ function commit(next: FoxIntakeDraft) {
   current = { ...withHelocToolQuote(syncCalculatorDraft(next)), updatedAt: new Date().toISOString() };
   persist(current);
   emit();
+  askFoxLocalOnly = false;
   if (current.accountId || readAccountSession()) persistLinkedAccountFile();
   return current;
 }
@@ -2369,7 +2370,15 @@ function sessionOwnsCurrentFile(session: AccountSession) {
   return Boolean(session.fileId && currentId && session.fileId === currentId);
 }
 
+/** Ask Fox paints the thread locally. Never persist that turn to the File. */
+let askFoxLocalOnly = false;
+
+export function holdAskFoxLocalPersist() {
+  askFoxLocalOnly = true;
+}
+
 function flushPersistLinkedAccount() {
+  if (askFoxLocalOnly) return;
   if (accountResumePending) return;
   const session = readAccountSession();
   if (!session?.token || typeof window === "undefined") return;
@@ -2391,6 +2400,7 @@ function flushPersistLinkedAccount() {
 }
 
 export function persistLinkedAccountFile() {
+  if (askFoxLocalOnly) return;
   const session = readAccountSession();
   if (!session?.token || typeof window === "undefined") return;
   if (!sessionOwnsCurrentFile(session)) return;

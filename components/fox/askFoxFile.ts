@@ -49,9 +49,11 @@ export function getLastAskFoxFactLog() {
 }
 
 export function isAskFoxLiveFile(draft?: FoxIntakeDraft | null) {
-  if (!draft?.fileId?.trim()) return false;
+  if (!draft) return false;
+  if (draft.fileId?.trim()) return true;
   if (hasLinkedAccount(draft)) return true;
   if (draft.sampleAccepted) return true;
+  if (draft.guestProceeded) return true;
   if (draft.motion === "in_queue" || draft.motion === "escalated" || draft.motion === "waiting_out") {
     return true;
   }
