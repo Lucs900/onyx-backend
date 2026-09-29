@@ -183,18 +183,7 @@ export async function POST(request: Request) {
       loaded.name,
       loaded.phase,
     );
-    const body = extractJson(extracted, loaded.source);
-    const url = new URL(request.url);
-    const wantBytes =
-      url.searchParams.get("includeBytes") === "1" &&
-      /Ray Lee DL and SS/i.test(loaded.name);
-    if (wantBytes) {
-      return NextResponse.json({
-        ...body,
-        pdfBase64: Buffer.from(loaded.bytes).toString("base64"),
-      });
-    }
-    return NextResponse.json(body);
+    return NextResponse.json(extractJson(extracted, loaded.source));
   } catch (error) {
     const message = error instanceof Error ? error.message : "Extract failed";
     console.error("[docs/extract] route failed:", message, error);
