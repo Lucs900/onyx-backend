@@ -18,6 +18,7 @@ export const SUGGESTED_INCOME_NOTE = "Suggested qualifying income · not underwr
 export const COVER_LINE_METHOD = "Cover line";
 export const COVER_LINE_NOTE = "Cover line · Suggested · not underwritten";
 export const W2_BOX1_MONTHLY_NOTE = "Box 1 monthly";
+export const W2_BOX5_MONTHLY_NOTE = "Box 5 monthly";
 export const BOTH_MONTHLY_SKIP_NOTE = "Using W-2 Box 1 until we know why they differ.";
 export const BOTH_MONTHLY_RAISE_NOTE = "Using the current paystub. Last year’s W-2 is lower.";
 export const BOTH_MONTHLY_OT_NOTE =
@@ -128,7 +129,10 @@ export type WageSuggestInput = {
   grossPeriod?: number | null;
   ytdGross?: number | null;
   payFrequency?: string | null;
+  /** Last-year gross. Box 5 Medicare wages when `w2FromBox5`. */
   w2Wages?: number | null;
+  /** Locked wage method: Box 5 ÷ 12. Box 1 is only later, to explain a gap. */
+  w2FromBox5?: boolean;
   overtime?: number | null;
   bonus?: number | null;
   commission?: number | null;
@@ -941,7 +945,8 @@ function secondJobExtra(input: WageSuggestInput): VariableExtra {
 
 /**
  * W-2 / paystub path. Locked monthly method:
- * 1. One W-2: Box 1 / 12 only. No two-year OT. No second-year average until a second W-2 is in.
+ * 1. One W-2: Box 5 Medicare wages / 12. Hunt Medicare wages if the Box 5 cell is clipped.
+ *    Box 1 is not this method. No two-year OT. No second-year average until a second W-2 is in.
  * 2. Paystub monthly: period × frequency after Biweekly / Semimonthly / Monthly is confirmed.
  * 3. Both in and they differ: show both. Ask why. Do not write qualifying income yet.
  * 4. YTD writes when printed. It does not replace monthly.
@@ -1004,7 +1009,8 @@ export function suggestWageIncome(input: WageSuggestInput): IncomeSuggestResult 
     };
   }
 
-  const methodBits = [W2_BOX1_MONTHLY_NOTE, ...variable.methodNotes, ...second.methodNotes].filter(
+  const annualNote = input.w2FromBox5 ? W2_BOX5_MONTHLY_NOTE : W2_BOX1_MONTHLY_NOTE;
+  const methodBits = [annualNote, ...variable.methodNotes, ...second.methodNotes].filter(
     (row): row is string => Boolean(row),
   );
   return {

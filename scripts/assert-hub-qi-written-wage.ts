@@ -1,7 +1,7 @@
 /**
  * Hub QI is the wage already written on the File.
- * W-2 Use this writes Box 5. No monthly. No /12 in the hub.
- * Pending suggestion paints —. B1 / Need / /start stay closed.
+ * W-2 Use this writes Box 5 and monthly QI from Box 5 ÷ 12.
+ * Hub reads the File. It does not invent /12. Pending suggestion paints —.
  */
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -71,10 +71,10 @@ function main() {
   assert.equal(written.facts?.w2_box5?.confirmed, true);
   assert.equal(written.facts?.w2_box5?.source, "document");
   assert.equal(written.facts?.medicare_wages?.value, "120000");
-  assert.equal(written.facts?.[QUALIFYING_INCOME_FIELD], undefined);
-  assert.equal(hubQiRow(written).value, "$120,000");
-  assert.equal(hubQiRow(written).note, "Box 5 · annual");
-  assert.doesNotMatch(hubQiRow(written).value, /10,000|\/ mo/);
+  assert.equal(written.facts?.[QUALIFYING_INCOME_FIELD]?.value, "10000");
+  assert.equal(written.facts?.[QUALIFYING_INCOME_FIELD]?.source, "suggested");
+  assert.equal(hubQiRow(written).value, "$10,000 / mo");
+  assert.doesNotMatch(hubQiRow(written).note ?? "", /Box 1/);
 
   const monthlyStored: FoxIntakeDraft = {
     ...closed,
@@ -103,15 +103,13 @@ function main() {
 
   const squares = hubSquares(written);
   const income = squares.find((square) => square.id === "income");
-  assert.equal(income?.cells.find((cell) => cell.id === "qualifying")?.value, "$120,000");
-  assert.equal(income?.cells.find((cell) => cell.id === "qualifying")?.note, "Box 5 · annual");
+  assert.equal(income?.cells.find((cell) => cell.id === "qualifying")?.value, "$10,000 / mo");
   assert.equal(income?.cells.find((cell) => cell.id === "income")?.value, "W-2");
   assert.equal(hubNeedRow(written).value, "Last year’s W-2");
   assert.deepEqual([...HUB_SQUARES[4].ids], ["income", "qualifying", "debts"]);
 
   const hub = processingHubView(written);
-  assert.equal(hub.grid.find((row) => row.id === "qualifying")?.value, "$120,000");
-  assert.equal(hub.grid.find((row) => row.id === "qualifying")?.note, "Box 5 · annual");
+  assert.equal(hub.grid.find((row) => row.id === "qualifying")?.value, "$10,000 / mo");
 
   const hubSrc = readFileSync(new URL("../components/fox/processingHub.ts", import.meta.url), "utf8");
   assert.match(hubSrc, /hubQiRow\(draft\)/);
