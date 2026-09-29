@@ -240,6 +240,7 @@ import {
   layer2AskActions,
   intakeIsCoverDrop,
   intakeIsIdDrop,
+  governmentIdReceivedOnDocs,
   isTranscriptOnFile,
   canSpeakDocStamp,
   docSpeakKeyFromName,
@@ -484,6 +485,17 @@ function applyFoxAsk(
     actions?: FoxAction[];
   },
 ): FoxMessage[] {
+  const live = getFoxDraft();
+  if (
+    isGovernmentIdInviteLine(ask.text) &&
+    governmentIdReceivedOnDocs(live) &&
+    !isBorrowerNameConfirmPending(live)
+  ) {
+    const next = nextFoxAsk(live);
+    if (next.text.trim() && !isGovernmentIdInviteLine(next.text)) {
+      ask = next;
+    }
+  }
   const last = lastFoxTurn(messages);
   if (last && isAskFoxFileSpokenLine(last.text)) {
     if (!/Use this\??$|Period \$|Got the |I'm suggesting/i.test(ask.text)) {
@@ -1335,8 +1347,7 @@ export function AlwaysOnFox({
         if (idDrop) {
           const unreadId =
             Boolean(detail.emptyRead) ||
-            (detail.quietLines ?? []).some((line) => isUnreadNote(line)) ||
-            (!intakeDraft.pendingProposal && !intakeDraft.pendingConflict);
+            (detail.quietLines ?? []).some((line) => isUnreadNote(line));
           if (
             unreadId &&
             !isBorrowerNameConfirmPending(intakeDraft) &&

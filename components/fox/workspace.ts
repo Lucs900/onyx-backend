@@ -1977,7 +1977,7 @@ function identityReactionAsk(draft: FoxIntakeDraft): {
   }
   const name = firstNameFromDraft(draft);
   const greet = name ? `Nice to meet you, ${name}.` : "Got your ID.";
-  const invite = name ? nextDocInvite(draft) : null;
+  const invite = nextDocInvite(draft);
   const next = nextDocSpoken(invite, draft);
   return {
     text: `${greet} ${DESK_RELATIONSHIP_LINE}${next ? ` ${next}` : ""}`.trim(),

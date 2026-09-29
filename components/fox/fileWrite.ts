@@ -4512,6 +4512,11 @@ export function unreadDocOpen(draft: FoxIntakeDraft): ReceivedDoc | null {
   );
 }
 
+/** Docs ID in. The invite is done even when the name card is still waiting. */
+export function governmentIdReceivedOnDocs(draft: FoxIntakeDraft): boolean {
+  return classSuccessfullyRead(draft, "government_id");
+}
+
 function classSuccessfullyRead(draft: FoxIntakeDraft, kind: DocInviteKind): boolean {
   return (draft.documents ?? []).some((doc) => {
     if (doc.status !== "extracted") return false;
