@@ -26,10 +26,11 @@ import {
   looksLikePaystubFields,
 } from "../components/fox/fileWrite";
 import { proposalAskCopy, resolveProposal } from "../components/fox/completeness";
-import { applyExtractWrite, emptyDraft, loadIntakeDraft } from "../components/fox/store";
+import { applyExtractWrite, emptyDraft, loadIntakeDraft, startOverWorkspace } from "../components/fox/store";
 import { loudWageFromPrintedLines } from "../lib/docs/printedSample";
 import { nextFoxAsk, previewFacts } from "../components/fox/workspace";
 import { readerMapOpensReturnCard } from "../lib/docs/readerMap";
+import { INCOME_BUBBLES } from "../components/fox/types";
 
 const PERSONAL = [
   "Form 1040",
@@ -303,6 +304,67 @@ function main() {
   );
   const threePay = previewFacts(threeWrite.draft).find((fact) => fact.id === "pay" || fact.label === "Pay");
   assert.ok(!threePay || !/8,919|8919/.test(threePay.value), `pad stays empty of 1g — ${threePay?.value ?? "none"}`);
+  const startOverDraft = {
+    ...emptyDraft(),
+    path: "acr" as const,
+    workspaceFlow: true,
+  };
+  loadIntakeDraft({
+    ...startOverDraft,
+    documents: [
+      {
+        slot: "other",
+        name,
+        type: "application/pdf",
+        size: 12000,
+        receivedAt,
+        status: "received",
+      },
+    ],
+  });
+  const firstDrop = applyExtractWrite(receivedAt, name, {
+    extractClass: "tax_return",
+    confidence: 0.94,
+    fields: {
+      tax_year: "2024",
+      full_name: "SICHIY HO AND VOUCH EIM SOY",
+      entity_name: "L&H VENTURES LLC",
+      wages: "8919",
+    },
+    readerMap: garbled,
+  });
+  assert.notEqual(firstDrop.draft.incomeType.value, "both", "a drop must not set Income to Both");
+  assert.ok(!firstDrop.draft.incomeType.value, "Income stays empty until the borrower chooses");
+  const firstDropAsk = nextFoxAsk(firstDrop.draft);
+  const firstDropChips = (firstDropAsk.actions ?? []).map((item) => item.label);
+  assert.deepEqual(firstDropChips, ["Use this", "Change"], `Start over then the paper first is still a card — ${firstDropAsk.text}`);
+  assert.ok(!firstDropChips.includes("Not now"));
+  assert.match(firstDropAsk.text, /Sichiv Ho/i);
+  assert.doesNotMatch(firstDropAsk.text, /SICHIY/i);
+  assert.match(firstDropAsk.text, /Schedule C under Vouch Eim Soy/i);
+  assert.match(firstDropAsk.text, /L&H VENTURES LLC/i);
+  assert.match(firstDropAsk.text, /60,343/);
+  assert.match(firstDropAsk.text, /HO\s*&\s*SOY INC/i);
+  assert.match(firstDropAsk.text, /26,351/);
+  assert.doesNotMatch(firstDropAsk.text, /8,919|8919/);
+  const firstDropPad = previewFacts(firstDrop.draft);
+  assert.ok(!firstDropPad.some((fact) => fact.id === "income" || fact.label === "Income"));
+  assert.ok(
+    !firstDropPad.some((fact) => /L&H|HO\s*&\s*SOY|Sichiv|8,919|8919|60,343|26,351/i.test(`${fact.label} ${fact.value}`)),
+    `pad stays empty of the return — ${JSON.stringify(firstDropPad)}`,
+  );
+  const firstDropSkip = resolveProposal(firstDrop.draft, "decline");
+  assert.ok(!firstDropSkip.incomeType.value);
+  assert.equal(firstDropSkip.facts?.wages, undefined);
+  assert.equal(firstDropSkip.facts?.entity_name, undefined);
+  assert.ok(INCOME_BUBBLES.some((item) => item.value === "both" && item.label === "Both"));
+  loadIntakeDraft({
+    ...firstDrop.draft,
+    incomeAsked: true,
+    incomeType: { ...emptyDraft().incomeType, value: "both" },
+  });
+  const wiped = startOverWorkspace("acr");
+  assert.ok(!wiped.incomeType.value, "Start over still clears income");
   const threeSkip = resolveProposal(threeWrite.draft, "decline");
   assert.equal(threeSkip.facts?.wages, undefined);
   assert.equal(threeSkip.facts?.entity_name, undefined);

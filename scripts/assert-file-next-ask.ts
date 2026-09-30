@@ -100,7 +100,7 @@ function main() {
   }).draft;
   assert.equal(incomeAskOpen(afterReturn), false);
   assert.equal(wageDocsAskNeeded(afterReturn), false);
-  assert.equal(afterReturn.incomeType.value, "self-employed");
+  assert.ok(!afterReturn.incomeType.value, "a return drop does not paint Income before Use this");
   assertNotIncomeReplay(nextFoxAsk(afterReturn).text);
   const usedReturn = resolveProposal(afterReturn, "accept");
   assert.equal(usedReturn.facts?.qualifying_income?.value, "9000");

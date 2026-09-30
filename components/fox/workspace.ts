@@ -4146,7 +4146,10 @@ export function nextFoxAsk(draft: FoxIntakeDraft): {
   facts?: ReturnType<typeof workspacePromptCopy>["facts"];
   actions?: FoxAction[];
 } {
-  if (firstAccountOfferOpen(draft)) {
+  if (
+    firstAccountOfferOpen(draft) &&
+    !(draft.pendingProposal && shouldSpeakPendingConfirm(draft))
+  ) {
     return {
       text: ACCOUNT_FIRST_OFFER,
       actions: firstAccountOfferActions(),
@@ -5750,7 +5753,10 @@ export function workspaceGreeting(draft: FoxIntakeDraft): {
   facts?: PreviewFact[];
   actions?: FoxAction[];
 } {
-  if (firstAccountOfferOpen(draft)) {
+  if (
+    firstAccountOfferOpen(draft) &&
+    !(draft.pendingProposal && shouldSpeakPendingConfirm(draft))
+  ) {
     return {
       text: ACCOUNT_FIRST_OFFER,
       actions: firstAccountOfferActions(),

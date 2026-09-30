@@ -1336,6 +1336,7 @@ export function incomeEvidenceOnFile(draft: FoxIntakeDraft) {
 }
 
 function incomingEmployment(extractClass: ExtractClass, fields: Record<string, string>) {
+  if (extractClass === "tax_return") return false;
   return (
     extractClass === "w2" ||
     extractClass === "paystub" ||
@@ -1359,14 +1360,17 @@ export function withFileIncomeHygiene(
   const employed = employmentOnFile(draft) || (extractClass ? incomingEmployment(extractClass, fields) : false);
   const returned = returnOnFile(draft) || (extractClass ? incomingReturn(extractClass) : false);
   if (!employed && !returned) return draft;
-  const inferred = employed && returned ? "both" : returned ? "self-employed" : "w2";
   if (draft.incomeType.value) {
+    return { ...draft, incomeAsked: true };
+  }
+  // A return drop does not paint Income. Borrower still chooses Both.
+  if (returned) {
     return { ...draft, incomeAsked: true };
   }
   return {
     ...draft,
     incomeAsked: true,
-    incomeType: { ...draft.incomeType, value: inferred, source: "document", confirmed: false },
+    incomeType: { ...draft.incomeType, value: "w2", source: "document", confirmed: false },
   };
 }
 
