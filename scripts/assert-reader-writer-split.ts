@@ -28,7 +28,7 @@ import {
 import { proposalAskCopy, resolveProposal } from "../components/fox/completeness";
 import { applyExtractWrite, emptyDraft, loadIntakeDraft, startOverWorkspace } from "../components/fox/store";
 import { loudWageFromPrintedLines } from "../lib/docs/printedSample";
-import { nextFoxAsk, previewFacts } from "../components/fox/workspace";
+import { nextFoxAsk, previewFacts, workspacePrompt } from "../components/fox/workspace";
 import { readerMapOpensReturnCard } from "../lib/docs/readerMap";
 import { INCOME_BUBBLES } from "../components/fox/types";
 
@@ -380,6 +380,54 @@ function main() {
   });
   const wiped = startOverWorkspace("acr");
   assert.ok(!wiped.incomeType.value, "Start over still clears income");
+  loadIntakeDraft({
+    ...emptyDraft(),
+    workspaceFlow: true,
+    documents: [
+      {
+        slot: "other",
+        name,
+        type: "application/pdf",
+        size: 12000,
+        receivedAt,
+        status: "received",
+      },
+    ],
+  });
+  const guestStart = applyExtractWrite(receivedAt, name, {
+    extractClass: "tax_return",
+    confidence: 0.94,
+    fields: {
+      tax_year: "2024",
+      full_name: "SICHIY HO AND VOUCH EIM SOY",
+      entity_name: "L&H VENTURES LLC",
+      wages: "8919",
+    },
+    readerMap: garbled,
+  });
+  assert.ok(!guestStart.draft.path, "guest /start has no path yet");
+  assert.equal(workspacePrompt(guestStart.draft), "confirm-proposal", "a received line is not the write — the pending card is");
+  assert.notEqual(guestStart.draft.incomeType.value, "both", "a drop must not set Income to Both");
+  assert.ok(!guestStart.draft.incomeType.value, "Income stays empty until the borrower chooses");
+  const guestAsk = nextFoxAsk(guestStart.draft);
+  const guestChips = (guestAsk.actions ?? []).map((item) => item.label);
+  assert.deepEqual(guestChips, ["Use this", "Change"], `guest /start first drop is still a card — ${guestAsk.text}`);
+  assert.ok(!guestChips.includes("Not now"));
+  assert.doesNotMatch(guestAsk.text, /received/i);
+  assert.match(guestAsk.text, /Sichiv Ho/i);
+  assert.doesNotMatch(guestAsk.text, /SICHIY/i);
+  assert.match(guestAsk.text, /Schedule C under Vouch Eim Soy/i);
+  assert.match(guestAsk.text, /L&H VENTURES LLC/i);
+  assert.match(guestAsk.text, /60,343/);
+  assert.match(guestAsk.text, /HO\s*&\s*SOY INC/i);
+  assert.match(guestAsk.text, /26,351/);
+  assert.doesNotMatch(guestAsk.text, /8,919|8919/);
+  const guestPad = previewFacts(guestStart.draft);
+  assert.ok(!guestPad.some((fact) => fact.id === "income" || fact.label === "Income"));
+  assert.ok(
+    !guestPad.some((fact) => /L&H|HO\s*&\s*SOY|Sichiv|8,919|8919|60,343|26,351/i.test(`${fact.label} ${fact.value}`)),
+    `pad stays empty of the return — ${JSON.stringify(guestPad)}`,
+  );
   const threeSkip = resolveProposal(threeWrite.draft, "decline");
   assert.equal(threeSkip.facts?.wages, undefined);
   assert.equal(threeSkip.facts?.entity_name, undefined);
@@ -445,6 +493,28 @@ function main() {
   assert.match(String(used.facts?.entity_name?.value ?? ""), /HO\s*&\s*SOY INC/i);
   assert.equal(used.facts?.wages?.value, "96000");
   assert.ok(!docsInDisplayLabels(used).includes("Paystubs in"), "personal return is not Paystubs in");
+
+  const alwaysOnSrc = readFileSync(
+    join(dirname(fileURLToPath(import.meta.url)), "..", "components/fox/AlwaysOnFox.tsx"),
+    "utf8",
+  );
+  assert.match(alwaysOnSrc, /receivedDropCopy/);
+  assert.match(alwaysOnSrc, /detail\.received/);
+  assert.match(
+    alwaysOnSrc,
+    /pendingProposal && shouldSpeakPendingConfirm/,
+    "a received line must still yield to a speakable confirm card",
+  );
+  const workspaceSrc = readFileSync(
+    join(dirname(fileURLToPath(import.meta.url)), "..", "components/fox/workspace.ts"),
+    "utf8",
+  );
+  assert.match(workspaceSrc, /if \(!draft\.path\)/);
+  assert.match(
+    workspaceSrc,
+    /pendingProposal && shouldSpeakPendingConfirm\(draft\)\) return "confirm-proposal"/,
+    "guest /start without a path still speaks the pending card",
+  );
 
   const extractSrc = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "..", "lib/docs/extract.ts"), "utf8");
   assert.match(extractSrc, /Same Grok look/);

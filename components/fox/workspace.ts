@@ -4968,7 +4968,10 @@ function spokenOwnsAsk(spoken?: string | null, ask?: string | null) {
 
 export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
   if (fileNeedsCaliforniaAsk(draft)) return "geo-stop";
-  if (!draft.path) return "intent";
+  if (!draft.path) {
+    if (draft.pendingProposal && shouldSpeakPendingConfirm(draft)) return "confirm-proposal";
+    return "intent";
+  }
   if (draft.pendingOffer === "jumbo") return "offer-jumbo";
   if (draft.pendingOffer === "heloc") return "offer-heloc";
   if (priorStubAskNeeded(draft)) return "prior-stub";

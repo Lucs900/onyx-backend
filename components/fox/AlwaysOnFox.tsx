@@ -1344,7 +1344,10 @@ export function AlwaysOnFox({
               loadIntakeDraft(markDocStamp(live, key, "received"));
             }
           }
-          return next;
+          const afterReceived = getFoxDraft();
+          if (!(afterReceived.pendingProposal && shouldSpeakPendingConfirm(afterReceived))) {
+            return next;
+          }
         }
         if (detail.reject) {
           next.push({ id: newId(), role: "system", text: detail.reject });
@@ -1640,9 +1643,7 @@ export function AlwaysOnFox({
       if (
         !mustShowReview &&
         !usedConfirmHole &&
-        !isScheduleECashFlowProposal(live.pendingProposal) &&
-        !isEntityCashFlowProposal(live.pendingProposal) &&
-        !isSameBusinessWageEntityProposal(live.pendingProposal)
+        !(live.pendingProposal && shouldSpeakPendingConfirm(live))
       ) {
         return;
       }
