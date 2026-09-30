@@ -13,6 +13,7 @@ import {
   receiveDocument,
 } from "./store";
 import type { ExtractClass, FoxIntakeDraft } from "./types";
+import type { ReaderMap } from "@/lib/docs/readerMap";
 import { shouldDeferStillUsefulAsk, slotFromFilename } from "./workspace";
 import {
   emitDocIntake,
@@ -151,6 +152,7 @@ export async function ingestDroppedFiles(files: File[]) {
         class?: string;
         confidence?: number;
         fields?: Record<string, string>;
+        readerMap?: ReaderMap;
         note?: string;
         failed?: boolean;
         code?: string;
@@ -193,6 +195,7 @@ export async function ingestDroppedFiles(files: File[]) {
           extractClass: (data.class as ExtractClass) ?? "other",
           confidence: typeof data.confidence === "number" ? data.confidence : 0,
           fields: data.fields ?? {},
+          readerMap: data.readerMap,
         },
         data.failed ? FAILED_READ_NOTE : data.note ?? RECEIVED_NOTE,
         Boolean(data.failed),

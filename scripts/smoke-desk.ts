@@ -9577,7 +9577,7 @@ confirmLooksRight();
 applyExtractWrite(
   "2026-08-20T00:00:00.000Z",
   "paystub.pdf",
-  { extractClass: "paystub", confidence: 0.9, fields: { employer_name: "Harbor Steel", gross_period: "7200" } },
+  { extractClass: "paystub", confidence: 0.9, fields: { employer_name: "Harbor Steel", pay_period_end: "2026-07-31", gross_period: "7200" } },
 );
 const noDocYet = getFoxDraft();
 assert.equal(noDocYet.facts?.employer_name, undefined);
@@ -9592,7 +9592,7 @@ receiveDocument({
 const wrote = applyExtractWrite(
   "2026-08-20T00:00:00.000Z",
   "paystub.pdf",
-  { extractClass: "paystub", confidence: 0.9, fields: { employer_name: "Harbor Steel", gross_period: "7200" } },
+  { extractClass: "paystub", confidence: 0.9, fields: { employer_name: "Harbor Steel", pay_period_end: "2026-07-31", gross_period: "7200" } },
 );
 assert.equal(wrote.draft.facts?.employer_name, undefined);
 assert.equal(wrote.draft.productIntent, "buy");
@@ -9813,7 +9813,7 @@ assert.equal(leakedOther.draft.documents[0]?.slot, "paystubs");
 assert.equal(leakedOther.draft.documents[0]?.extractClass, "paystub");
 assert.equal(leakedOther.draft.facts?.employer_name, undefined);
 assert.equal(leakedOther.draft.productIntent, "buy");
-assert.ok(previewFacts(leakedOther.draft).some((fact) => fact.id === "docs" && /Paystubs in/.test(fact.value)));
+assert.ok(!previewFacts(leakedOther.draft).some((fact) => fact.id === "docs" && /Paystubs in/.test(fact.value)));
 assert.ok(previewFacts(leakedOther.draft).every((fact) => fact.id !== "docs" || !/Other in/.test(fact.value)));
 assert.ok(previewFacts(leakedOther.draft).every((fact) => fact.id !== "product" || fact.value === "Buy"));
 

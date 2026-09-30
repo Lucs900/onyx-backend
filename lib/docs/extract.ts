@@ -61,6 +61,16 @@ import {
   type ClassifiedTaxPage,
   type TaxFormClass,
 } from "@/lib/docs/formHeader";
+import {
+  extractClassFromReaderMap,
+  paystubExtractOpens,
+  paystubFieldsLock,
+  printedLooksLikeNeverStubForm,
+  readerMapFromLook,
+  readerMapFromPrintedLines,
+  readerMapNeverOpensStub,
+  type ReaderMap,
+} from "@/lib/docs/readerMap";
 
 export type ClassifyResult = {
   class: ExtractClass;
@@ -81,12 +91,19 @@ export type DocumentExtractAdapter = {
     extractClass: ExtractClass,
   ): Promise<ExtractFieldsResult>;
   extractLedger?(bytes: Uint8Array, mediaType: string): Promise<ExtractFieldsResult>;
+  /** Same Grok look. One call returns the reader map. No second model. */
+  read?(
+    bytes: Uint8Array,
+    mediaType: string,
+    hint?: ExtractClass | null,
+  ): Promise<ClassifyExtractResult>;
 };
 
 export type ClassifyExtractResult = ExtractApplyInput & {
   warnings: string[];
   failed?: boolean;
   textLayerChars?: number;
+  readerMap?: ReaderMap;
 };
 
 const CLASSES: ExtractClass[] = [
@@ -301,6 +318,19 @@ async function grokJson(
     if (sdkParsed) return sdkParsed;
     throw new Error("Model did not return JSON");
   }
+}
+
+function readPagePrompt(hint?: ExtractClass | null) {
+  const hinted = hint && hint !== "other" ? ` Hint class: ${hint}.` : "";
+  return `Read the visible page once. Same Grok look. No second pass. Return one JSON object.${hinted}
+Keys:
+{"class":"${CLASSES.join("|")}","confidence":0-1,"readable":true|false,"forms":[],"names":[],"entities":[],"lines":[{"kind":"","value":""}],"missing":[],"employer_name":"","pay_period_end":"","check_date":"","gross_period":"","tax_year":"","full_name":"","wages":"","entity_name":"","medicare_wages":"","box5":"","pay_frequency":"","ytd_gross":""}
+Rules:
+- forms found, names, entities, lines, and what is missing. Empty string / empty array when not printed.
+- class is paystub only when employer_name, pay_period_end or check_date, and gross_period are printed on THIS page. The word paystub is not required.
+- Form 1040, 8879, 540, 7203, or K-1 is tax_return. Those forms open the map, never the stub slot.
+- Empty employer stays empty. Never invent a company. PDF font foundries are not employers.
+- Never invent numbers, names, or dates. Never output SSN.`;
 }
 
 function extractFieldsPrompt(extractClass: ExtractClass, keys: readonly string[]) {
@@ -591,6 +621,7 @@ function printedLooksLike1065(lines?: string[] | null) {
 
 function printedLooksLikePersonal1040(lines?: string[] | null) {
   if (!lines?.length) return false;
+  if (printedLooksLikeNeverStubForm(lines)) return true;
   if (looksLike1040FacePage(lines)) return true;
   const blob = lines.join("\n");
   return /\bform\s*1040\b/i.test(blob) || /u\.?s\.?\s+individual income tax return/i.test(blob);
@@ -620,7 +651,7 @@ function dropPaystubLockedOnlyByJunkEmployer(
 ): ClassifyExtractResult {
   if (result.extractClass !== "paystub") return result;
   const fields = sanitizeExtractedFields("paystub", result.fields);
-  if (looksLikePaystubFields(fields) || hasLockedSuggestion("paystub", fields)) {
+  if (paystubFieldsLock(fields)) {
     return { ...result, fields };
   }
   return unreadResult("other", filename, "not-paystub", result.textLayerChars);
@@ -661,7 +692,94 @@ function asReadable(value: unknown, extractClass: ExtractClass, confidence: numb
   return true;
 }
 
+function fieldsFromLook(parsed: Record<string, unknown>): Record<string, string> {
+  const raw: Record<string, string> = {};
+  const nested = parsed.fields;
+  if (nested && typeof nested === "object" && !Array.isArray(nested)) {
+    for (const [key, value] of Object.entries(nested as Record<string, unknown>)) {
+      if (value == null || typeof value === "object") continue;
+      raw[key] = String(value);
+    }
+  }
+  for (const [key, value] of Object.entries(parsed)) {
+    if (value == null || typeof value === "object") continue;
+    if (raw[key]) continue;
+    raw[key] = String(value);
+  }
+  return raw;
+}
+
+function applyReaderGate(
+  result: ClassifyExtractResult,
+  printed?: readonly string[] | null,
+): ClassifyExtractResult {
+  const map =
+    result.readerMap ??
+    (printed?.length ? readerMapFromPrintedLines(printed) : readerMapFromLook({
+      forms: result.extractClass === "tax_return" ? ["1040"] : [],
+    }));
+  if (readerMapNeverOpensStub(map) && (result.extractClass === "paystub" || result.extractClass === "w2")) {
+    return {
+      ...result,
+      extractClass: "tax_return",
+      fields: sanitizeExtractedFields("tax_return", result.fields),
+      readerMap: map,
+    };
+  }
+  if (result.extractClass === "paystub" && !paystubFieldsLock(result.fields)) {
+    return {
+      ...result,
+      extractClass: extractClassFromReaderMap(map) === "tax_return" ? "tax_return" : "other",
+      fields: extractClassFromReaderMap(map) === "tax_return"
+        ? sanitizeExtractedFields("tax_return", result.fields)
+        : {},
+      readerMap: map,
+    };
+  }
+  return { ...result, readerMap: map };
+}
+
 export const grokExtractAdapter: DocumentExtractAdapter = {
+  async read(bytes, mediaType, hint) {
+    const parsed = await grokJson(bytes, mediaType, readPagePrompt(hint));
+    const readerMap = readerMapFromLook(parsed);
+    const hinted = hint && hint !== "other" ? hint : undefined;
+    const fromMap = extractClassFromReaderMap(readerMap);
+    const extractClass = readerMapNeverOpensStub(readerMap)
+      ? "tax_return"
+      : fromMap === "paystub" && paystubExtractOpens(fieldsFromLook(parsed))
+        ? "paystub"
+        : hinted && isFirstSessionClass(hinted)
+          ? hinted
+          : asClass(parsed.class) !== "other"
+            ? asClass(parsed.class)
+            : fromMap;
+    const raw = fieldsFromLook(parsed);
+    const fields =
+      extractClass === "tax_return"
+        ? lockTaxReturnPageReadFields(sanitizeExtractedFields(extractClass, raw))
+        : sanitizeExtractedFields(extractClass, raw);
+    const confidence = asConfidence(parsed.confidence);
+    const readable = asReadable(parsed.readable, extractClass, confidence);
+    if (readable === false && !Object.keys(fields).length) {
+      return {
+        extractClass,
+        confidence,
+        fields: {},
+        warnings: ["failed"],
+        failed: true,
+        readerMap,
+      };
+    }
+    return applyReaderGate({
+      extractClass,
+      confidence: confidence || 0.94,
+      fields,
+      warnings: [],
+      readerMap,
+    });
+  },
+
   async classify(bytes, mediaType) {
     const parsed = await grokJson(
       bytes,
@@ -739,16 +857,20 @@ function overlayW2Fields(
 function printedResult(
   printed: NonNullable<ReturnType<typeof readPrintedSample>>,
   textLayerChars?: number,
+  lines?: readonly string[] | null,
 ): ClassifyExtractResult {
   const fields = overlayW2Fields(printed.extractClass, printed.fields);
   const sanitized = sanitizeExtractedFields(printed.extractClass, fields);
-  return {
-    extractClass: printed.extractClass,
-    confidence: printed.confidence,
-    fields: sanitized,
-    warnings: [],
-    ...(textLayerChars != null ? { textLayerChars } : {}),
-  };
+  return applyReaderGate(
+    {
+      extractClass: printed.extractClass,
+      confidence: printed.confidence,
+      fields: sanitized,
+      warnings: [],
+      ...(textLayerChars != null ? { textLayerChars } : {}),
+    },
+    lines,
+  );
 }
 
 function unreadResult(
@@ -780,6 +902,14 @@ async function classifyAndExtractPage(
   adapter: DocumentExtractAdapter,
   hint?: ExtractClass | null,
 ): Promise<ClassifyExtractResult> {
+  if (adapter.read) {
+    try {
+      return applyReaderGate(await adapter.read(bytes, mediaType, hint));
+    } catch (error) {
+      logVisionError("read", error);
+      return unreadResult(hint && hint !== "other" ? hint : "other", undefined, "failed");
+    }
+  }
   let classified: ClassifyResult | null = null;
   const hinted = hint && hint !== "other" ? hint : undefined;
   if (hinted && (hinted === "bank_statement" || isFirstSessionClass(hinted))) {
@@ -795,12 +925,12 @@ async function classifyAndExtractPage(
           ? looksLikeBankFields(fields)
           : hasLockedSuggestion(extractClass, fields);
       if (locked) {
-        return {
+        return applyReaderGate({
           extractClass: hinted === "bank_statement" ? "bank_statement" : extractClass,
           confidence: 0.94,
           fields,
           warnings: extracted.warnings,
-        };
+        });
       }
     } catch (error) {
       logVisionError("hintedExtract", error);
@@ -838,12 +968,12 @@ async function classifyAndExtractPage(
       };
     }
     const extracted = await adapter.extract(bytes, mediaType, extractAs);
-    return {
+    return applyReaderGate({
       extractClass: promoteExtractClass(extractAs, extracted.fields),
       confidence: classified.confidence,
       fields: extracted.fields,
       warnings: extracted.warnings,
-    };
+    });
   } catch (error) {
     logVisionError("classifyAndExtract", error);
     return {
@@ -1664,7 +1794,7 @@ async function classifyAndExtractUnmerged(
       }
       if (
         !w2Page &&
-        hasLockedSuggestion("paystub", stubFields) &&
+        paystubFieldsLock(stubFields) &&
         !printedLooksLikePersonal1040(layer)
       ) {
         return rejectPaystubForEntityReturn(
@@ -1821,9 +1951,12 @@ export async function classifyAndExtract(
   const hunted = await withPageMedicareHunt(result, bytes, mediaType);
   const layer =
     isPdf(bytes) || mediaType === "application/pdf" ? readPdfTextLayer(bytes) : null;
-  const blocked = dropPaystubLockedOnlyByJunkEmployer(
-    rejectPaystubForEntityReturn(hunted, filename, layer),
-    filename,
+  const blocked = applyReaderGate(
+    dropPaystubLockedOnlyByJunkEmployer(
+      rejectPaystubForEntityReturn(hunted, filename, layer),
+      filename,
+    ),
+    layer,
   );
   if (phase === "packet") return blocked;
   return mergeTaxReturnLedgerFields(blocked, bytes, mediaType, adapter, undefined, filename);

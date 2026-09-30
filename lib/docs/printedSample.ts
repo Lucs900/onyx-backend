@@ -13,6 +13,7 @@ import {
 } from "@/lib/docs/bankBalance";
 import { isTransferCounterpartyLine, safeAccountLast4, statementAccountLast4 } from "@/lib/docs/bankLast4";
 import { junkEmployerName } from "@/lib/docs/junkEmployer";
+import { paystubFieldsLock, printedLooksLikeNeverStubForm } from "@/lib/docs/readerMap";
 import { readPdfTextLayer } from "@/lib/docs/pdfText";
 import { lockK1PartnerDisplayName, parseLedgerMoney } from "@/lib/income/ledger";
 import { scheduleEPart1FromPrintedText } from "@/lib/income/scheduleEPart1";
@@ -1104,7 +1105,11 @@ function classifyPrintedLines(lines: string[]): ExtractClass | null {
   if (looksLikeK1Worksheet(lines)) return "tax_return";
   if (looksLike1040CoverWorksheet(lines)) return "tax_return";
   if (looksLike1040Transcript(lines)) return "tax_return";
+  if (printedLooksLikeNeverStubForm(lines)) return "tax_return";
   if (looksLike1040FacePage(lines) || /\bFORM 1040\b/.test(blob) || /U\.?S\.?\s+INDIVIDUAL INCOME TAX RETURN/.test(blob)) {
+    return "tax_return";
+  }
+  if (/\bFORM 8879\b/.test(blob) || /\bFORM 540\b/.test(blob) || /\bFORM 7203\b/.test(blob)) {
     return "tax_return";
   }
   if (
@@ -2134,7 +2139,7 @@ function inferPrintedClass(lines: string[]): ExtractClass | null {
     return "tax_return";
   }
   if (mapped.medicare_wages || mapped.box5) return "w2";
-  if (mapped.gross_period && mapped.pay_frequency) return "paystub";
+  if (paystubFieldsLock(mapped) && !printedLooksLikeNeverStubForm(lines)) return "paystub";
   if (mapped.current_pi || (mapped.servicer && mapped.unpaid_principal)) return "mortgage_statement";
   if (mapped.institution || mapped.ending_balance) return "bank_statement";
   if (mapped.purchase_price || mapped.seller_credit) return "purchase_contract";
@@ -2425,11 +2430,15 @@ export function loudWageFromPrintedLines(lines: string[]): PrintedSample | null 
     looksLikeK1Worksheet(lines) ||
     looksLikeScheduleEWorksheet(lines) ||
     looksLikeEntityReturnWorksheet(lines) ||
+    printedLooksLikeNeverStubForm(lines) ||
     looksLike1040FacePage(lines) ||
     looksLike1040CoverWorksheet(lines) ||
     looksLike1040Transcript(lines) ||
     /\bFORM 1040\b/.test(blob) ||
     /U\.?S\.?\s+INDIVIDUAL INCOME TAX RETURN/.test(blob) ||
+    /\bFORM 8879\b/.test(blob) ||
+    /\bFORM 540\b/.test(blob) ||
+    /\bFORM 7203\b/.test(blob) ||
     /\bFORM 1120-?S\b/.test(blob) ||
     /U\.?S\.?\s+INCOME TAX RETURN FOR AN S CORPORATION/.test(blob)
   ) {
@@ -2448,7 +2457,7 @@ export function loudWageFromPrintedLines(lines: string[]): PrintedSample | null 
     };
   }
   const stubFields = fieldsFromPrintedLines("paystub", lines);
-  if (stubFields.gross_period && stubFields.pay_frequency) {
+  if (paystubFieldsLock(stubFields)) {
     return {
       extractClass: "paystub",
       confidence: 0.94,

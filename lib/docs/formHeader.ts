@@ -7,6 +7,8 @@
 export type TaxFormClass =
   | "form_8879"
   | "form_1040"
+  | "form_540"
+  | "form_7203"
   | "form_1120s"
   | "form_1065"
   | "schedule_e"
@@ -24,6 +26,8 @@ export type ClassifiedTaxPage = {
 
 const FORM_1040_KEYS = new Set(["tax_year", "full_name", "wages"]);
 const FORM_8879_KEYS = new Set(["tax_year", "full_name"]);
+const FORM_540_KEYS = new Set(["tax_year", "full_name", "wages"]);
+const FORM_7203_KEYS = new Set(["tax_year", "full_name", "entity_name", "business_name"]);
 const SCHEDULE_E_KEYS = new Set([
   "tax_year",
   "schedule_e_rents_received",
@@ -119,6 +123,20 @@ export function classifyPageByFormHeader(text: string): TaxFormClass {
   }
 
   if (
+    /\bForm\s+7203\b/i.test(t) ||
+    /\bS\s+Corporation\s+Shareholder\s+Stock\s+and\s+Debt\s+Basis\b/i.test(t)
+  ) {
+    return "form_7203";
+  }
+
+  if (
+    (/\bForm\s+540\b/i.test(t) && /\bCalifornia\b/i.test(t)) ||
+    /\bCalifornia\s+Resident\s+Income\s+Tax\s+Return\b/i.test(t)
+  ) {
+    return "form_540";
+  }
+
+  if (
     /\bForm\s+1120-?S\b/i.test(t) &&
     (/\bU\.?S\.?\s+Income\s+Tax\s+Return\s+for\s+an\s+S\s+Corporation\b/i.test(t) ||
       /\bS\s+Corporation\s+Return\b/i.test(t) ||
@@ -209,7 +227,11 @@ export function fieldsAllowedForClass(
       ? FORM_1040_KEYS
       : klass === "form_8879"
         ? FORM_8879_KEYS
-        : klass === "schedule_e"
+        : klass === "form_540"
+          ? FORM_540_KEYS
+          : klass === "form_7203"
+            ? FORM_7203_KEYS
+            : klass === "schedule_e"
           ? SCHEDULE_E_KEYS
           : klass === "schedule_c"
             ? SCHEDULE_C_KEYS

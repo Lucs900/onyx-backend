@@ -119,6 +119,7 @@ function extractJson(
     class: extractClass,
     confidence: extracted.confidence,
     fields: extracted.fields,
+    readerMap: extracted.readerMap,
     warnings: extracted.warnings,
     slot: slotForExtractClass(extractClass),
     source,

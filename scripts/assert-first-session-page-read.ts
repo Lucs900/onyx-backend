@@ -78,6 +78,13 @@ import {
 } from "../components/fox/qualifyingIncome";
 import { FAILED_READ_NOTE, isUnreadNote } from "../lib/docs/accept";
 import { classifyAndExtract, FOX_GROK_MODEL, pageImageForGrok, shouldGrokTaxReturnPagesFirst, taxReturnPageHint } from "../lib/docs/extract";
+import {
+  extractClassFromReaderMap,
+  paystubExtractOpens,
+  readerMapFromPrintedLines,
+  readerMapNeverOpensStub,
+} from "../lib/docs/readerMap";
+import { classifyPageByFormHeader } from "../lib/docs/formHeader";
 import { drawnPageHasInk, renderPdfFirstPage } from "../lib/docs/pdfText";
 import {
   amountAskText,
@@ -2046,6 +2053,20 @@ async function main() {
   if (inventedStub.draft.pendingProposal) {
     assert.doesNotMatch(proposalAskCopy(inventedStub.draft.pendingProposal), /Agfa|Monotype|employer would be/i);
   }
+  const personalMap = readerMapFromPrintedLines(personal1040Lines);
+  assert.ok(personalMap.forms.includes("1040"));
+  assert.ok(personalMap.names.some((name) => /Sichiv Ho/i.test(name)));
+  assert.ok(personalMap.names.some((name) => /Vouch Eim Soy/i.test(name)));
+  assert.ok(personalMap.entities.some((name) => /HO\s*&\s*SOY INC/i.test(name)));
+  assert.ok(personalMap.lines.some((line) => line.kind === "wages" && line.value === "96000"));
+  assert.equal(readerMapNeverOpensStub(personalMap), true);
+  assert.equal(extractClassFromReaderMap(personalMap), "tax_return");
+  assert.equal(paystubExtractOpens({ employer_name: "Agfa Monotype Corporation" }), false);
+  assert.equal(classifyPageByFormHeader("Form 540 California Resident Income Tax Return"), "form_540");
+  assert.equal(
+    classifyPageByFormHeader("Form 7203 S Corporation Shareholder Stock and Debt Basis Limitations"),
+    "form_7203",
+  );
 
   const extractSrc = readFileSync(join(root, "lib/docs/extract.ts"), "utf8");
   const pdfSrc = readFileSync(join(root, "lib/docs/pdfText.ts"), "utf8");
@@ -2059,6 +2080,8 @@ async function main() {
   assert.match(extractSrc, /shouldGrokTaxReturnPagesFirst/);
   assert.match(extractSrc, /Castaneda page→image→Grok/);
   assert.match(extractSrc, /phase === "packet"/);
+  assert.match(extractSrc, /Same Grok look/);
+  assert.match(extractSrc, /if \(adapter\.read\)/);
   const classifyAt = extractSrc.indexOf("async function classifyAndExtractUnmerged");
   const grokFirstAt = extractSrc.indexOf("shouldGrokTaxReturnPagesFirst(hint, filename)", classifyAt);
   const printedAt = extractSrc.indexOf("printedLinesForExtract", classifyAt);

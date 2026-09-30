@@ -129,6 +129,9 @@ if [[ "${SPINE_WALKER_SKIP_LEFTOVERS:-}" != "1" ]]; then
   if leftover_wanted 72; then
     run_leftover assert-walker-case-72.ts
   fi
+  if leftover_wanted 73; then
+    run_leftover assert-reader-writer-split.ts
+  fi
   # leftovers-only is leftover + write + case 72. Other case leftovers stay on the walker cases.
   if [[ "${SPINE_WALKER_LEFTOVERS_ONLY:-}" == "1" ]]; then
     echo "spine-walker: leftovers only"
@@ -187,6 +190,9 @@ if [[ "${SPINE_WALKER_SKIP_LEFTOVERS:-}" != "1" ]]; then
   fi
   if leftover_wanted 25 || leftover_wanted 26; then
     run_leftover assert-first-session-page-read.ts
+  fi
+  if leftover_wanted 25 || leftover_wanted 73; then
+    run_leftover assert-reader-writer-split.ts
   fi
   if leftover_wanted 32 || leftover_wanted 35; then
     run_leftover assert-heloc-fox-path.ts

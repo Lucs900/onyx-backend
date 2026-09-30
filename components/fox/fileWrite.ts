@@ -80,6 +80,13 @@ import { bankEndingBalanceAmount } from "@/lib/docs/bankBalance";
 import { safeAccountLast4 } from "@/lib/docs/bankLast4";
 import { junkEmployerName } from "@/lib/docs/junkEmployer";
 import {
+  fieldsOnReaderMap,
+  paystubExtractOpens,
+  paystubFieldsLock,
+  readerMapNeverOpensStub,
+  type ReaderMap,
+} from "@/lib/docs/readerMap";
+import {
   applyRentalIncomeFromExtract,
   draftHasLease,
   draftHasScheduleE,
@@ -206,6 +213,7 @@ export const EXTRACT_SCHEMA_KEYS: Record<ExtractClass, readonly string[]> = {
   paystub: [
     "employer_name",
     "pay_period_end",
+    "check_date",
     "gross_period",
     "ytd_gross",
     "net_period",
@@ -474,6 +482,7 @@ const LONG_ACCOUNT_RE = /\b\d{8,17}\b/;
 const DATE_KEYS = new Set([
   "expiration",
   "pay_period_end",
+  "check_date",
   "period_end",
   "close_date",
   "tax_year",
@@ -1009,6 +1018,7 @@ export const FIRST_SESSION_LOCKED_KEYS: Record<FirstSessionClass, readonly strin
   paystub: [
     "employer_name",
     "pay_period_end",
+    "check_date",
     "gross_period",
     "pay_frequency",
     "ytd_gross",
@@ -1088,9 +1098,7 @@ export function hasLockedSuggestion(
     return Boolean(value("institution") || value("ending_balance") || value("present_address"));
   }
   if (extractClass === "paystub") {
-    return Boolean(
-      value("employer_name") || value("gross_period") || value("ytd_gross") || value("pay_period_end"),
-    );
+    return paystubFieldsLock(fields);
   }
   if (extractClass === "w2") {
     const box5 = isBoxNumberAsDollars(value("medicare_wages") || value("box5"))
@@ -1166,11 +1174,10 @@ export function k1OrdinaryMissingFromExtract(
 export function looksLikePaystubFields(
   fields?: Record<string, string | null | undefined> | null,
 ): boolean {
-  const value = (key: string) => String(fields?.[key] ?? "").trim();
-  if (value("gross_period") && value("pay_frequency")) return true;
-  if (value("employer_name") && value("gross_period")) return true;
-  return Boolean(value("gross_period") && value("pay_period_end"));
+  return paystubFieldsLock(fields);
 }
+
+export { paystubExtractOpens };
 
 export function promoteExtractClass(
   extractClass: ExtractClass,
@@ -1863,6 +1870,7 @@ export type ExtractApplyInput = {
   extractClass: ExtractClass;
   confidence: number;
   fields: Record<string, string | null | undefined>;
+  readerMap?: ReaderMap;
 };
 
 export type ExtractApplyResult = {
@@ -1877,23 +1885,35 @@ export function applyExtractedFields(
   input: ExtractApplyInput,
 ): ExtractApplyResult {
   const writes: { field: string; value: string }[] = [];
-  const extractClass = promoteExtractClass(input.extractClass, input.fields);
+  if (input.readerMap && readerMapNeverOpensStub(input.readerMap) && input.extractClass === "paystub") {
+    return { draft, writes, conflict: null, quietLines: [] };
+  }
+  const mappedFields = input.readerMap ? fieldsOnReaderMap(
+    Object.fromEntries(
+      Object.entries(input.fields ?? {}).flatMap(([key, value]) => {
+        const raw = String(value ?? "").trim();
+        return raw ? [[key, raw] as const] : [];
+      }),
+    ),
+    input.readerMap,
+  ) : input.fields;
+  const extractClass = promoteExtractClass(input.extractClass, mappedFields);
   if (
     extractClass === "other" ||
     (input.confidence < LOW_EXTRACT_CONFIDENCE &&
-      !looksLikeTaxReturnFields(input.fields) &&
-      !looksLikeMortgageFields(input.fields) &&
-      !looksLikeIdFields(input.fields) &&
-      !looksLikePaystubFields(input.fields) &&
-      !looksLikeBankFields(input.fields))
+      !looksLikeTaxReturnFields(mappedFields) &&
+      !looksLikeMortgageFields(mappedFields) &&
+      !looksLikeIdFields(mappedFields) &&
+      !looksLikePaystubFields(mappedFields) &&
+      !looksLikeBankFields(mappedFields))
   ) {
     return { draft, writes, conflict: null, quietLines: [] };
   }
-  const packetContinue = packetReadPhase(input.fields);
+  const packetContinue = packetReadPhase(mappedFields);
   const fields =
     extractClass === "tax_return"
-      ? lockParass1065LedgerFields(sanitizeExtractedFields(extractClass, input.fields))
-      : sanitizeExtractedFields(extractClass, input.fields);
+      ? lockParass1065LedgerFields(sanitizeExtractedFields(extractClass, mappedFields))
+      : sanitizeExtractedFields(extractClass, mappedFields);
   draft = withFileIncomeHygiene(draft, extractClass, fields);
   if (extractClass === "tax_return") {
     draft = parkWrittenRentalCash(draft);
@@ -4271,13 +4291,7 @@ export function docsInDisplayLabels(draft: FoxIntakeDraft): string[] {
           const stubWritten =
             draft.stubExtractAccepted ||
             Boolean(factValue(draft, "paystub_amount") || factValue(draft, "gross_period"));
-          if (
-            wageLabel === "Paystubs" &&
-            wageThreadOpen(draft) &&
-            !draft.sampleAccepted &&
-            wageW2ExtractAccepted(draft) &&
-            !stubWritten
-          ) {
+          if (wageLabel === "Paystubs" && !stubWritten) {
             return "";
           }
           if (wageLabel === "Tax return" && !taxReturnWrittenOnFile(draft)) {
