@@ -25,7 +25,8 @@ import {
 import { proposalAskCopy, resolveProposal } from "../components/fox/completeness";
 import { applyExtractWrite, emptyDraft, loadIntakeDraft } from "../components/fox/store";
 import { loudWageFromPrintedLines } from "../lib/docs/printedSample";
-import { nextFoxAsk } from "../components/fox/workspace";
+import { nextFoxAsk, previewFacts } from "../components/fox/workspace";
+import { readerMapOpensReturnCard } from "../lib/docs/readerMap";
 
 const PERSONAL = [
   "Form 1040",
@@ -60,6 +61,7 @@ function main() {
   assert.ok(map.missing.includes("pay_period"));
   assert.ok(map.missing.includes("period_gross"));
   assert.equal(readerMapNeverOpensStub(map), true);
+  assert.equal(readerMapOpensReturnCard(map), true);
   assert.equal(extractClassFromReaderMap(map), "tax_return");
   assert.equal(loudWageFromPrintedLines(PERSONAL), null);
   assert.doesNotMatch(JSON.stringify(map), /Agfa|Monotype/i);
@@ -146,15 +148,63 @@ function main() {
   const beforeUse = applyExtractWrite(receivedAt, name, {
     extractClass: "paystub",
     confidence: 0.9,
-    fields: { employer_name: "Agfa Monotype Corporation" },
+    fields: { employer_name: "Agfa Monotype Corporation", wages: "8919" },
     readerMap: map,
   });
   assert.equal(beforeUse.draft.facts?.employer_name, undefined);
-  assert.doesNotMatch(JSON.stringify(beforeUse.draft.pendingProposal ?? {}), /Agfa|Monotype/i);
+  assert.equal(beforeUse.draft.facts?.wages, undefined, "invented wages do not write before Use this");
+  assert.doesNotMatch(JSON.stringify(beforeUse.draft.pendingProposal ?? {}), /Agfa|Monotype|8,919|8919/i);
   assert.ok(
     !docsInDisplayLabels(beforeUse.draft).includes("Paystubs in"),
     `reader must not stamp Paystubs in — ${docsInDisplayLabels(beforeUse.draft).join(" · ")}`,
   );
+  const liveCard = proposalAskCopy(beforeUse.draft.pendingProposal);
+  assert.match(liveCard, /HO\s*&\s*SOY INC/i, `reader map must come back as a card — ${liveCard}`);
+  assert.match(liveCard, /96,000/, `card must offer the on-page wage — ${liveCard}`);
+  assert.doesNotMatch(liveCard, /8,919|8919/);
+  assert.deepEqual(
+    (nextFoxAsk(beforeUse.draft).actions ?? []).map((item) => item.label),
+    ["Use this", "Change"],
+  );
+  const payBefore = previewFacts(beforeUse.draft).find((fact) => fact.id === "pay" || fact.label === "Pay");
+  assert.ok(
+    !payBefore || !/8,919|8919/.test(payBefore.value),
+    `pad must not write Pay · Wages $8,919 — ${payBefore?.value ?? "none"}`,
+  );
+
+  const skippedLive = resolveProposal(beforeUse.draft, "decline");
+  assert.equal(skippedLive.facts?.wages, undefined);
+  assert.equal(skippedLive.facts?.entity_name, undefined);
+  assert.equal(skippedLive.facts?.tax_year, undefined);
+  assert.ok(!docsInDisplayLabels(skippedLive).includes("Paystubs in"));
+  assert.ok(!docsInDisplayLabels(skippedLive).includes("Tax return in"));
+
+  const emptyFieldsMap = applyExtractedFields(looksRightDraft(), {
+    extractClass: "w2",
+    confidence: 0.5,
+    fields: { wages: "8919" },
+    readerMap: map,
+  });
+  assert.equal(emptyFieldsMap.draft.facts?.wages, undefined);
+  const emptyMapCard = proposalAskCopy(emptyFieldsMap.draft.pendingProposal);
+  assert.match(emptyMapCard, /HO\s*&\s*SOY INC/i, `map-only extract is still a card — ${emptyMapCard}`);
+  assert.match(emptyMapCard, /96,000/);
+  assert.doesNotMatch(emptyMapCard, /8,919|8919/);
+  assert.deepEqual(
+    (nextFoxAsk(emptyFieldsMap.draft).actions ?? []).map((item) => item.label),
+    ["Use this", "Change"],
+  );
+
+  const inventedOnly = applyExtractedFields(looksRightDraft(), {
+    extractClass: "tax_return",
+    confidence: 0.94,
+    fields: { wages: "8919", form_1040: "1" },
+  });
+  assert.equal(inventedOnly.draft.facts?.wages, undefined, "a wage without a reader line does not write");
+  const inventedCopy = inventedOnly.draft.pendingProposal
+    ? proposalAskCopy(inventedOnly.draft.pendingProposal)
+    : "";
+  assert.doesNotMatch(inventedCopy, /8,919|8919|96,000/);
 
   const namesOnly = applyExtractedFields(looksRightDraft(), {
     extractClass: "tax_return",
@@ -210,6 +260,8 @@ function main() {
   assert.match(extractSrc, /Same Grok look/);
   assert.match(extractSrc, /async read\(/);
   assert.match(extractSrc, /if \(adapter\.read\)/);
+  assert.match(extractSrc, /readerMapOpensReturnCard/);
+  assert.match(extractSrc, /printedLooksLikePersonal1040\(walked\)/);
   assert.doesNotMatch(extractSrc, /hold the class until Use this/);
   const fileWriteSrc = readFileSync(
     join(dirname(fileURLToPath(import.meta.url)), "..", "components/fox/fileWrite.ts"),

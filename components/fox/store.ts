@@ -72,6 +72,7 @@ import {
   withoutGuestHandoffLines,
 } from "./account";
 import { FAILED_READ_NOTE, isUnreadNote } from "@/lib/docs/accept";
+import { readerMapOpensReturnCard } from "@/lib/docs/readerMap";
 import {
   applyExtractedFields,
   hasLockedSuggestion,
@@ -1905,12 +1906,14 @@ export function applyExtractWrite(
       !looksLikeContractFields(input.fields)) ||
     (extractedClass === "tax_return" && !looksLikeTaxReturnFields(input.fields));
   const packetContinue = Boolean(packetReadPhase(input.fields));
+  const mapOpensReturn = readerMapOpensReturnCard(input.readerMap);
   const unreadEmpty =
     !failed &&
     !lockedSuggestion &&
     !isCoverReturnFields(input.fields) &&
     emptyForClass &&
-    !packetContinue;
+    !packetContinue &&
+    !mapOpensReturn;
   const k1Unread = !failed && k1OrdinaryMissingFromExtract(input.fields, name);
   const scheduleEUnread = !failed && scheduleECashFlowMissingFromExtract(input.fields);
   const box5Read = Boolean(
@@ -1923,8 +1926,9 @@ export function applyExtractWrite(
   const stubCanSpeak = canSpeakStubExtract(current, input.fields);
   const silentStubReceive = stubPeriodOpen && !stubCanSpeak && !box5Read;
   const treatFailed =
-    (Boolean(failed || unreadEmpty || k1Unread || scheduleEUnread) && !box5Read && !stubRead) ||
-    silentStubReceive;
+    !mapOpensReturn &&
+    ((Boolean(failed || unreadEmpty || k1Unread || scheduleEUnread) && !box5Read && !stubRead) ||
+      silentStubReceive);
   const matchingDoc = current.documents.find(
     (doc) => doc.receivedAt === receivedAt && doc.name === name,
   );
@@ -1938,11 +1942,16 @@ export function applyExtractWrite(
       extractClass: matchingDoc?.extractClass ?? "paystub",
     };
   }
-  const displayClass =
-    treatFailed || extractedClass === "other"
+  const displayClass = mapOpensReturn
+    ? "tax_return"
+    : treatFailed || extractedClass === "other"
       ? preferFilenameClass(extractedClass, name)
       : extractedClass;
-  const applyClass = stubPeriodOpen && stubCanSpeak ? "paystub" : extractedClass;
+  const applyClass = mapOpensReturn
+    ? "tax_return"
+    : stubPeriodOpen && stubCanSpeak
+      ? "paystub"
+      : extractedClass;
   const lockedInput =
     applyClass === "paystub"
       ? { ...input, extractClass: applyClass, fields: lockFirstSessionFields("paystub", input.fields) }

@@ -11199,7 +11199,7 @@ export function previewFacts(draft: FoxIntakeDraft): PreviewFact[] {
     isStubJobProposal(draft.pendingProposal);
   const periodPay = hideStubPay ? "" : factValue(draft, "gross_period") || pendingExtra("gross_period");
   const ytdPay = hideStubPay ? "" : factValue(draft, "ytd_gross") || pendingExtra("ytd_gross");
-  const wages = hideStubPay ? "" : factValue(draft, "wages") || pendingExtra("wages");
+  const wages = hideStubPay ? "" : factValue(draft, "wages");
   const payDate = hideStubPay ? "" : factValue(draft, "pay_period_end") || pendingExtra("pay_period_end");
   const agi = factValue(draft, "agi");
   const payBits = [

@@ -178,6 +178,12 @@ export function readerWageLine(map?: ReaderMap | null): ReaderLine | null {
   return { ...line, value: amount, label: line.label || "wages" };
 }
 
+/** Never-stub page with a printed entity or on-page wage. Names alone are not a card. */
+export function readerMapOpensReturnCard(map?: ReaderMap | null): boolean {
+  if (!map || !readerMapNeverOpensStub(map)) return false;
+  return Boolean(readerEntityName(map) || readerWageLine(map));
+}
+
 function moneyOnLine(line: string) {
   const match = line.match(/\$?\s*(\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d{4,}(?:\.\d+)?)/);
   return match?.[1]?.replace(/,/g, "") ?? "";
@@ -327,7 +333,7 @@ export function fieldsOnReaderMap(
   if (map.names.length && !next.full_name) next.full_name = map.names.join(" and ");
   if (map.entities.length && !next.entity_name) next.entity_name = map.entities[0] ?? "";
   const wage = readerWageLine(map);
-  if (wage && !next.wages && !paystubFieldsLock(next)) next.wages = wage.value;
+  if (wage && !paystubFieldsLock(next)) next.wages = wage.value;
   return next;
 }
 

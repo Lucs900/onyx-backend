@@ -71,6 +71,7 @@ import {
   readerMapFromLook,
   readerMapFromPrintedLines,
   readerMapNeverOpensStub,
+  readerMapOpensReturnCard,
   type ReaderMap,
 } from "@/lib/docs/readerMap";
 
@@ -1134,10 +1135,6 @@ async function grokPageRead(
   if (extractClass === "paystub" || extractClass === "other") {
     fields = overlayStubPeriodFromPrinted(fields, walkedPrinted);
   }
-  const taxWalkPrinted =
-    extractClass === "tax_return" ||
-    filenameLooksLikeEntityPacket(filename) ||
-    shouldGrokTaxReturnPagesFirst(hint, filename);
   const pageWithMap = applyReaderGate(
     {
       ...page,
@@ -1145,7 +1142,7 @@ async function grokPageRead(
       fields,
       failed: false,
     },
-    taxWalkPrinted ? walkedPrinted : undefined,
+    walkedPrinted,
   );
   const merged = await mergeTaxReturnLedgerFields(
     pageWithMap,
@@ -1155,9 +1152,22 @@ async function grokPageRead(
     walked,
     filename,
   );
-  if (packetExtractIsUseful(merged.extractClass, merged.fields) || (bankLocked && looksLikeBankFields(merged.fields))) {
+  const mapOpens =
+    readerMapOpensReturnCard(merged.readerMap) &&
+    !blobLooksLikeIrsTranscript(walkedPrinted.join("\n"));
+  if (
+    packetExtractIsUseful(merged.extractClass, merged.fields) ||
+    mapOpens ||
+    (bankLocked && looksLikeBankFields(merged.fields))
+  ) {
+    const nextFields = { ...merged.fields };
+    if (mapOpens && !nextFields.full_name && merged.readerMap?.names.length) {
+      nextFields.full_name = merged.readerMap.names.join(" and ");
+    }
     return {
       ...merged,
+      extractClass: mapOpens ? "tax_return" : bankLocked ? "bank_statement" : merged.extractClass,
+      fields: nextFields,
       failed: false,
       warnings: (merged.warnings ?? []).filter((item) => item !== "failed"),
     };
@@ -1639,23 +1649,25 @@ async function grokTaxReturnPacketPages(
   textLayerChars?: number,
 ): Promise<ClassifyExtractResult | null> {
   try {
-    const page = await grokPageRead(bytes, mediaType, adapter, hint, filename);
-    if (page && !page.failed && packetExtractIsUseful(page.extractClass, page.fields)) {
-      if (
-        filenameLooksLikeEntityPacket(filename) &&
-        !String(page.fields?.entity_ordinary_income ?? "").trim() &&
-        !String(page.fields?.form_1040 ?? "").trim() &&
-        !String(page.fields?.wages ?? "").trim() &&
-        !String(page.fields?.medicare_wages ?? page.fields?.box5 ?? "").trim() &&
-        !String(page.fields?.schedule_e_rents_received ?? "").trim() &&
-        !String(page.fields?.k1_ordinary_income ?? "").trim() &&
-        !String(page.fields?.schedule_c_net_profit ?? "").trim()
-      ) {
-        // 8879 / disclaimer / year-name is not the entity return.
-        return null;
-      }
-      return { ...page, textLayerChars };
+  const page = await grokPageRead(bytes, mediaType, adapter, hint, filename);
+  const mapOpens = readerMapOpensReturnCard(page?.readerMap);
+  if (page && !page.failed && (packetExtractIsUseful(page.extractClass, page.fields) || mapOpens)) {
+    if (
+      filenameLooksLikeEntityPacket(filename) &&
+      !mapOpens &&
+      !String(page.fields?.entity_ordinary_income ?? "").trim() &&
+      !String(page.fields?.form_1040 ?? "").trim() &&
+      !String(page.fields?.wages ?? "").trim() &&
+      !String(page.fields?.medicare_wages ?? page.fields?.box5 ?? "").trim() &&
+      !String(page.fields?.schedule_e_rents_received ?? "").trim() &&
+      !String(page.fields?.k1_ordinary_income ?? "").trim() &&
+      !String(page.fields?.schedule_c_net_profit ?? "").trim()
+    ) {
+      // 8879 / disclaimer / year-name is not the entity return.
+      return null;
     }
+    return { ...page, textLayerChars };
+  }
   } catch (error) {
     logVisionError("taxReturnPacketGrok", error);
   }
@@ -1672,7 +1684,11 @@ async function unreadOrGrokPage(
   textLayerChars?: number,
 ): Promise<ClassifyExtractResult> {
   const page = await grokPageRead(bytes, mediaType, adapter, hint, filename);
-  if (page && !page.failed && packetExtractIsUseful(page.extractClass, page.fields)) {
+  if (
+    page &&
+    !page.failed &&
+    (packetExtractIsUseful(page.extractClass, page.fields) || readerMapOpensReturnCard(page.readerMap))
+  ) {
     return { ...page, textLayerChars };
   }
   return unreadResult(page?.extractClass ?? "other", filename, extraWarning, textLayerChars);
@@ -1706,6 +1722,31 @@ async function classifyAndExtractUnmerged(
         textLayerChars,
       );
       if (packet) return packet;
+    }
+  }
+  if (isPdf(bytes) || mediaType === "application/pdf") {
+    const walked = await readPdfJsTextLayer(bytes);
+    if (
+      (printedLooksLikePersonal1040(walked) || printedLooksLikeNeverStubForm(walked)) &&
+      !printedLocksTaxReturnWithoutVision(walked) &&
+      !blobLooksLikeIrsTranscript(walked.join("\n"))
+    ) {
+      const page = await unreadOrGrokPage(
+        bytes,
+        mediaType,
+        adapter,
+        hint && hint !== "other" ? hint : "tax_return",
+        filename,
+        "unmapped-text",
+        textLayerChars,
+      );
+      if (
+        page &&
+        !page.failed &&
+        (packetExtractIsUseful(page.extractClass, page.fields) || readerMapOpensReturnCard(page.readerMap))
+      ) {
+        return page;
+      }
     }
   }
   if (isPdf(bytes) || mediaType === "application/pdf") {
@@ -2019,8 +2060,18 @@ export async function classifyAndExtract(
     bytes,
     mediaType,
   );
-  const layer =
+  let layer =
     isPdf(bytes) || mediaType === "application/pdf" ? await printedLinesForExtract(bytes, mediaType) : null;
+  if (
+    (isPdf(bytes) || mediaType === "application/pdf") &&
+    !printedLooksLikePersonal1040(layer) &&
+    !printedLooksLikeNeverStubForm(layer)
+  ) {
+    const walked = await readPdfJsTextLayer(bytes);
+    if (printedLooksLikePersonal1040(walked) || printedLooksLikeNeverStubForm(walked)) {
+      layer = walked;
+    }
+  }
   const blocked = applyReaderGate(
     dropPaystubLockedOnlyByJunkEmployer(
       rejectPaystubForEntityReturn(hunted, filename, layer),

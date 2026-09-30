@@ -85,6 +85,7 @@ import {
   paystubFieldsLock,
   readerEntityName,
   readerMapNeverOpensStub,
+  readerMapOpensReturnCard,
   readerWageLine,
   type ReaderMap,
 } from "@/lib/docs/readerMap";
@@ -916,7 +917,9 @@ function federalReturnConfirmParts(fields: Record<string, string>) {
     return { year, status: "", agi: "", deps: "", parts };
   }
   if (year) parts.push(`${year} return`);
-  if (looksLikeTaxReturnPageReadFields(fields) && name) parts.push(name);
+  if (name && (looksLikeTaxReturnPageReadFields(fields) || (entity && Number(wages) > 0))) {
+    parts.push(name);
+  }
   if (entity && !junkEmployerName(entity)) parts.push(entity);
   if (Number(wages) > 0) parts.push(`${wageLabel} $${Number(wages).toLocaleString("en-US")}`);
   if (status) parts.push(status.replace(/\.$/, ""));
@@ -937,20 +940,23 @@ export function maybeProposeFederalReturn(
   if (isTranscriptReturnFields(fields)) return null;
   if (isCoverReturnFields(fields)) return null;
   const pageRead = looksLikeTaxReturnPageReadFields(fields);
-  if (!pageRead && !looksLikeFederalReturnFields(fields)) return null;
+  const mapOpens = readerMapOpensReturnCard(readerMap);
+  if (!pageRead && !looksLikeFederalReturnFields(fields) && !mapOpens) return null;
   if (draft.pendingProposal || draft.pendingConflict) return null;
   const entity = readerEntityName(readerMap);
   const wage = readerWageLine(readerMap);
+  const mapName = (readerMap?.names ?? []).filter(Boolean).join(" and ").trim();
   const cardFields = {
     ...fields,
+    ...(mapName && !String(fields.full_name ?? "").trim() ? { full_name: mapName } : {}),
     ...(entity ? { entity_name: entity } : {}),
     ...(wage ? { wages: wage.value, wage_line_label: wage.label ?? "wages" } : {}),
   };
   const { year, status, agi, deps, parts } = federalReturnConfirmParts(cardFields);
   if (!parts.length) return null;
   const extras: { field: string; value: string; label: string }[] = [];
-  const name = String(fields.full_name ?? "").trim();
-  if (pageRead && name) extras.push({ field: "full_name", value: name, label: "name" });
+  const name = String(cardFields.full_name ?? "").trim();
+  if ((pageRead || mapOpens) && name) extras.push({ field: "full_name", value: name, label: "name" });
   if (entity) extras.push({ field: "entity_name", value: entity, label: "entity" });
   if (wage) {
     extras.push({ field: "wages", value: wage.value, label: wage.label ?? "wages" });
@@ -1908,8 +1914,12 @@ export function applyExtractedFields(
   input: ExtractApplyInput,
 ): ExtractApplyResult {
   const writes: { field: string; value: string }[] = [];
-  if (input.readerMap && readerMapNeverOpensStub(input.readerMap) && input.extractClass === "paystub") {
-    return { draft, writes, conflict: null, quietLines: [] };
+  if (
+    input.readerMap &&
+    readerMapNeverOpensStub(input.readerMap) &&
+    (input.extractClass === "paystub" || input.extractClass === "w2")
+  ) {
+    input = { ...input, extractClass: "tax_return" };
   }
   const mappedFields = input.readerMap ? fieldsOnReaderMap(
     Object.fromEntries(
@@ -1933,10 +1943,25 @@ export function applyExtractedFields(
     return { draft, writes, conflict: null, quietLines: [] };
   }
   const packetContinue = packetReadPhase(mappedFields);
-  const fields =
+  let fields =
     extractClass === "tax_return"
       ? lockParass1065LedgerFields(sanitizeExtractedFields(extractClass, mappedFields))
       : sanitizeExtractedFields(extractClass, mappedFields);
+  const mapWage = readerWageLine(input.readerMap);
+  if (extractClass === "tax_return" || readerMapOpensReturnCard(input.readerMap)) {
+    if (mapWage) {
+      fields = { ...fields, wages: mapWage.value };
+    } else if (
+      !packetContinue &&
+      !looksLikeTaxReturnPageReadFields(fields) &&
+      !looksLikeFederalReturnFields(fields) &&
+      fields.wages
+    ) {
+      const nextFields = { ...fields };
+      delete nextFields.wages;
+      fields = nextFields;
+    }
+  }
   draft = withFileIncomeHygiene(draft, extractClass, fields);
   if (extractClass === "tax_return") {
     draft = parkWrittenRentalCash(draft);
@@ -2011,7 +2036,7 @@ export function applyExtractedFields(
     }
     if ((holdFederalReturn || packetContinue) && FEDERAL_RETURN_HOLD.has(field)) continue;
     if (
-      extractClass === "tax_return" &&
+      (extractClass === "tax_return" || readerMapOpensReturnCard(input.readerMap)) &&
       (field === "wages" || field === "medicare_wages" || field === "box5" || field === "employer_name")
     ) {
       continue;
@@ -2725,7 +2750,7 @@ export function applyExtractedFields(
     next = holdPendingBusinessStart(next, fields);
   }
   if (
-    holdFederalReturn &&
+    (holdFederalReturn || readerMapOpensReturnCard(input.readerMap)) &&
     extractClass !== "w2" &&
     !taxReturnWrittenOnFile(next) &&
     !next.pendingProposal &&
