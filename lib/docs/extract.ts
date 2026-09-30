@@ -752,6 +752,17 @@ function applyReaderGate(
   return { ...result, readerMap: map };
 }
 
+/** A page-built map is the card. Empty fields or a failed look do not unread it. */
+function keepReaderReturnCard(result: ClassifyExtractResult): ClassifyExtractResult {
+  if (!readerMapOpensReturnCard(result.readerMap)) return result;
+  return {
+    ...result,
+    extractClass: "tax_return",
+    failed: false,
+    warnings: (result.warnings ?? []).filter((item) => item !== "failed"),
+  };
+}
+
 export const grokExtractAdapter: DocumentExtractAdapter = {
   async read(bytes, mediaType, hint) {
     const parsed = await grokJson(bytes, mediaType, readPagePrompt(hint));
@@ -1123,7 +1134,30 @@ async function grokPageRead(
     fields = nextFields;
     if (packetExtractIsUseful(nextClass, nextFields)) break;
   }
-  if (!page) return null;
+  if (!page && adapter.read) {
+    try {
+      page = await adapter.read(bytes, mediaType, hint);
+    } catch (error) {
+      logVisionError("taxReturnLook", error);
+    }
+  }
+  const walkedPrinted = printedLinesFromWalked(walked);
+  if (!page) {
+    const fromPrinted = keepReaderReturnCard(
+      applyReaderGate(
+        {
+          extractClass: preferFilenameClass("tax_return", filename ?? ""),
+          confidence: 0.94,
+          fields: {},
+          warnings: [],
+          failed: false,
+        },
+        walkedPrinted,
+      ),
+    );
+    if (readerMapOpensReturnCard(fromPrinted.readerMap)) return fromPrinted;
+    return null;
+  }
   console.info("[docs/extract] page-read result", {
     filename: filename ?? "",
     extractClass,
@@ -1131,7 +1165,6 @@ async function grokPageRead(
     keys: Object.keys(fields),
   });
   const bankLocked = extractClass === "bank_statement" || hint === "bank_statement";
-  const walkedPrinted = printedLinesFromWalked(walked);
   if (extractClass === "paystub" || extractClass === "other") {
     fields = overlayStubPeriodFromPrinted(fields, walkedPrinted);
   }
@@ -1758,7 +1791,7 @@ async function classifyAndExtractUnmerged(
           bytes,
           mediaType,
           adapter,
-          hint,
+          hint && hint !== "other" ? hint : "tax_return",
           filename,
           "unmapped-text",
           textLayerChars,
@@ -1811,7 +1844,7 @@ async function classifyAndExtractUnmerged(
           bytes,
           mediaType,
           adapter,
-          hint,
+          hint && hint !== "other" ? hint : "tax_return",
           filename,
           "unmapped-text",
           textLayerChars,
@@ -1944,10 +1977,15 @@ async function classifyAndExtractUnmerged(
       }
     }
     const grok = await grokPageRead(bytes, mediaType, adapter, hint, filename);
-    if (grok && !grok.failed && hasLockedSuggestion(grok.extractClass, grok.fields)) {
-      return { ...grok, textLayerChars };
+    const kept = grok ? keepReaderReturnCard(grok) : null;
+    if (
+      kept &&
+      !kept.failed &&
+      (packetExtractIsUseful(kept.extractClass, kept.fields) || readerMapOpensReturnCard(kept.readerMap))
+    ) {
+      return { ...kept, textLayerChars };
     }
-    return unreadResult(grok?.extractClass ?? "other", filename, "no-text-layer", textLayerChars);
+    return unreadResult(kept?.extractClass ?? grok?.extractClass ?? "other", filename, "no-text-layer", textLayerChars);
   }
   const page = await classifyAndExtractPage(bytes, mediaType, adapter, hint);
   const lockedPage = {
@@ -2073,12 +2111,14 @@ export async function classifyAndExtract(
       layer = walked;
     }
   }
-  const blocked = applyReaderGate(
-    dropPaystubLockedOnlyByJunkEmployer(
-      rejectPaystubForEntityReturn(hunted, filename, layer),
-      filename,
+  const blocked = keepReaderReturnCard(
+    applyReaderGate(
+      dropPaystubLockedOnlyByJunkEmployer(
+        rejectPaystubForEntityReturn(hunted, filename, layer),
+        filename,
+      ),
+      layer,
     ),
-    layer,
   );
   if (phase === "packet") return blocked;
   return mergeTaxReturnLedgerFields(blocked, bytes, mediaType, adapter, undefined, filename);

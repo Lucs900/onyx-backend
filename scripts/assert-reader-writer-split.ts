@@ -28,6 +28,7 @@ import {
 import { proposalAskCopy, resolveProposal } from "../components/fox/completeness";
 import { applyExtractWrite, emptyDraft, loadIntakeDraft, startOverWorkspace } from "../components/fox/store";
 import { loudWageFromPrintedLines } from "../lib/docs/printedSample";
+import { classifyAndExtract } from "../lib/docs/extract";
 import { nextFoxAsk, previewFacts, workspacePrompt } from "../components/fox/workspace";
 import { readerMapOpensReturnCard } from "../lib/docs/readerMap";
 import { INCOME_BUBBLES } from "../components/fox/types";
@@ -62,6 +63,77 @@ const RETURN_THREE = [
   "If you did not get a Form W-2, see instructions. Household employee wages not reported on Form(s) W-2  1g  $8,919",
 ];
 
+/** Helvetica page from the leftover lines. Not a founder PDF stand-in. */
+function printedReturnPdf(lines: readonly string[]) {
+  const commands = ["BT", "/F1 12 Tf", "72 720 Td"];
+  for (const [index, line] of lines.entries()) {
+    if (index) commands.push("0 -18 Td");
+    commands.push(`(${line.replace(/[()\\]/g, "\\$&")}) Tj`);
+  }
+  commands.push("ET");
+  const stream = commands.join("\n");
+  const objects = [
+    "<< /Type /Catalog /Pages 2 0 R >>",
+    "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+    "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>",
+    `<< /Length ${Buffer.byteLength(stream)} >>\nstream\n${stream}\nendstream`,
+    "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+  ];
+  const chunks: Buffer[] = [Buffer.from("%PDF-1.4\n")];
+  const offsets = [0];
+  objects.forEach((body, index) => {
+    offsets.push(chunks.reduce((sum, part) => sum + part.length, 0));
+    chunks.push(Buffer.from(`${index + 1} 0 obj\n${body}\nendobj\n`));
+  });
+  const xrefAt = chunks.reduce((sum, part) => sum + part.length, 0);
+  let xref = `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
+  for (const offset of offsets.slice(1)) {
+    xref += `${String(offset).padStart(10, "0")} 00000 n \n`;
+  }
+  chunks.push(Buffer.from(xref));
+  chunks.push(
+    Buffer.from(`trailer << /Root 1 0 R /Size ${objects.length + 1} >>\nstartxref\n${xrefAt}\n%%EOF\n`),
+  );
+  return new Uint8Array(Buffer.concat(chunks));
+}
+
+/** Same Grok look as live. Names-only + 1g. Not the three-business card. */
+const garbledLook = {
+  async read() {
+    return {
+      extractClass: "tax_return" as const,
+      confidence: 0.94,
+      fields: {
+        tax_year: "2024",
+        full_name: "SICHIY HO AND VOUCH EIM SOY",
+        entity_name: "L&H VENTURES LLC",
+        wages: "8919",
+      },
+      warnings: [],
+      readerMap: {
+        forms: ["1040" as const],
+        names: ["SICHIY HO AND VOUCH EIM SOY"],
+        entities: ["L&H VENTURES LLC"],
+        lines: [{ kind: "wages", value: "8919", label: "If you did not g Wages from Form , line 6 … 1g" }],
+        missing: [],
+      },
+    };
+  },
+  async classify() {
+    return { class: "tax_return" as const, confidence: 0.94, readable: true };
+  },
+  async extract() {
+    return {
+      fields: {
+        tax_year: "2024",
+        full_name: "SICHIY HO AND VOUCH EIM SOY",
+        wages: "8919",
+      },
+      warnings: [],
+    };
+  },
+};
+
 function looksRightDraft() {
   return {
     ...emptyDraft(),
@@ -74,7 +146,7 @@ function looksRightDraft() {
   };
 }
 
-function main() {
+async function main() {
   const map = readerMapFromPrintedLines(PERSONAL);
   assert.ok(map.forms.includes("1040"), `forms ${map.forms.join(",")}`);
   assert.ok(map.names.some((name) => /Sichiv Ho/i.test(name)), `names ${map.names.join(" · ")}`);
@@ -146,6 +218,28 @@ function main() {
   assert.ok(
     lookBusinesses.some((line) => line.kind === "schedule_e" && line.value === "60343" && /L&H VENTURES LLC/i.test(line.label ?? "")),
     `look path Schedule E stays the on-page L&H line ${JSON.stringify(lookBusinesses)}`,
+  );
+  const lookOnly = readerMapFromLook(
+    {
+      forms: ["1040"],
+      names: ["Sichiv Ho"],
+      entities: ["HO & SOY INC", "L&H VENTURES LLC"],
+      lines: [
+        { kind: "k1", value: "26351", label: "HO & SOY INC · S corp" },
+        { kind: "k1", value: "26351", label: "HO & SOY INC · S corp" },
+        { kind: "schedule_e", value: "60343", label: "L&H VENTURES LLC · partnership · passive" },
+      ],
+    },
+    null,
+  );
+  assert.equal(
+    readerBusinessLines(lookOnly).filter((line) => line.kind === "k1" && line.value === "26351").length,
+    2,
+    "look path without printed still keeps both K-1 lines",
+  );
+  assert.equal(
+    readerBusinessLines(lookOnly).filter((line) => line.kind === "schedule_e" && line.value === "26351").length,
+    0,
   );
 
   assert.equal(paystubExtractOpens({ employer_name: "Harbor Cafe" }), false);
@@ -380,6 +474,31 @@ function main() {
   });
   const wiped = startOverWorkspace("acr");
   assert.ok(!wiped.incomeType.value, "Start over still clears income");
+  const dropped = printedReturnPdf(RETURN_THREE);
+  const extracted = await classifyAndExtract(
+    dropped,
+    "application/pdf",
+    garbledLook,
+    null,
+    name,
+  );
+  assert.notEqual(extracted.failed, true, "a real return drop is not unread");
+  assert.equal(extracted.extractClass, "tax_return");
+  assert.equal(readerMapOpensReturnCard(extracted.readerMap), true, "extract must open the card from the page");
+  const extractedBusinesses = readerBusinessLines(extracted.readerMap);
+  assert.ok(
+    extractedBusinesses.some((line) => line.kind === "schedule_c" && /Vouch Eim Soy/i.test(line.value)),
+    `extract schedule c ${JSON.stringify(extractedBusinesses)}`,
+  );
+  assert.ok(
+    extractedBusinesses.some((line) => line.kind === "schedule_e" && line.value === "60343" && /L&H VENTURES LLC/i.test(line.label ?? "")),
+    `extract schedule e ${JSON.stringify(extractedBusinesses)}`,
+  );
+  assert.equal(
+    extractedBusinesses.filter((line) => line.kind === "k1" && line.value === "26351" && /HO\s*&\s*SOY INC/i.test(line.label ?? "")).length,
+    2,
+    `extract keeps both K-1 lines ${JSON.stringify(extractedBusinesses)}`,
+  );
   loadIntakeDraft({
     ...emptyDraft(),
     workspaceFlow: true,
@@ -388,22 +507,17 @@ function main() {
         slot: "other",
         name,
         type: "application/pdf",
-        size: 12000,
+        size: dropped.byteLength,
         receivedAt,
         status: "received",
       },
     ],
   });
   const guestStart = applyExtractWrite(receivedAt, name, {
-    extractClass: "tax_return",
-    confidence: 0.94,
-    fields: {
-      tax_year: "2024",
-      full_name: "SICHIY HO AND VOUCH EIM SOY",
-      entity_name: "L&H VENTURES LLC",
-      wages: "8919",
-    },
-    readerMap: garbled,
+    extractClass: extracted.extractClass,
+    confidence: extracted.confidence,
+    fields: extracted.fields,
+    readerMap: extracted.readerMap,
   });
   assert.ok(!guestStart.draft.path, "guest /start has no path yet");
   assert.equal(workspacePrompt(guestStart.draft), "confirm-proposal", "a received line is not the write — the pending card is");
@@ -427,6 +541,50 @@ function main() {
   assert.ok(
     !guestPad.some((fact) => /L&H|HO\s*&\s*SOY|Sichiv|8,919|8919|60,343|26,351/i.test(`${fact.label} ${fact.value}`)),
     `pad stays empty of the return — ${JSON.stringify(guestPad)}`,
+  );
+
+  const blankPdf = new TextEncoder().encode("%PDF-1.4\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF\n");
+  const blankLook = {
+    async read() {
+      return {
+        extractClass: "other" as const,
+        confidence: 0.2,
+        fields: {},
+        warnings: ["failed"],
+        failed: true,
+        readerMap: {
+          forms: ["1040" as const],
+          names: ["Sichiv Ho", "Vouch Eim Soy"],
+          entities: ["L&H VENTURES LLC", "HO & SOY INC"],
+          lines: [
+            { kind: "schedule_c", value: "Vouch Eim Soy", label: "Schedule C" },
+            { kind: "schedule_e", value: "60343", label: "L&H VENTURES LLC · partnership · passive" },
+            { kind: "k1", value: "26351", label: "HO & SOY INC · S corp" },
+            { kind: "k1", value: "26351", label: "HO & SOY INC · S corp" },
+          ],
+          missing: [],
+        },
+      };
+    },
+    async classify() {
+      return { class: "other" as const, confidence: 0.2, readable: true };
+    },
+    async extract() {
+      return { fields: {}, warnings: ["failed"] };
+    },
+  };
+  const blankExtract = await classifyAndExtract(
+    blankPdf,
+    "application/pdf",
+    blankLook,
+    null,
+    name,
+  );
+  assert.notEqual(blankExtract.failed, true, "a look that opens the card is not unread");
+  assert.equal(readerMapOpensReturnCard(blankExtract.readerMap), true);
+  assert.equal(
+    readerBusinessLines(blankExtract.readerMap).filter((line) => line.kind === "k1" && line.value === "26351").length,
+    2,
   );
   const threeSkip = resolveProposal(threeWrite.draft, "decline");
   assert.equal(threeSkip.facts?.wages, undefined);
@@ -522,8 +680,12 @@ function main() {
   assert.match(extractSrc, /if \(adapter\.read\)/);
   assert.match(extractSrc, /readerMapOpensReturnCard/);
   assert.match(extractSrc, /printedLooksLikePersonal1040\(walked\)/);
+  assert.match(extractSrc, /keepReaderReturnCard/);
   assert.match(extractSrc, /household employee/);
   assert.doesNotMatch(extractSrc, /hold the class until Use this/);
+  assert.doesNotMatch(extractSrc, /Sichiv/);
+  assert.doesNotMatch(extractSrc, /L&H VENTURES/);
+  assert.doesNotMatch(extractSrc, /SICHIY/);
   const fileWriteSrc = readFileSync(
     join(dirname(fileURLToPath(import.meta.url)), "..", "components/fox/fileWrite.ts"),
     "utf8",
@@ -541,9 +703,17 @@ function main() {
     "utf8",
   );
   assert.match(walker72, /W-2 in · ID in/);
+  const leftoverSrc = readFileSync(fileURLToPath(import.meta.url), "utf8");
+  assert.match(leftoverSrc, /classifyAndExtract/);
+  assert.match(leftoverSrc, /printedReturnPdf\(RETURN_THREE\)/);
+  assert.doesNotMatch(
+    leftoverSrc,
+    /const guestStart = applyExtractWrite\([^)]*readerMap: garbled/,
+    "guest /start leftover must not hand a finished map to applyExtractWrite",
+  );
   console.log(
     "assert-reader-writer-split: map only · stub triple · 1040/8879/540/7203/K-1 never stub · Use this writes a reader line · Skip empty · no Paystubs in",
   );
 }
 
-main();
+void main();

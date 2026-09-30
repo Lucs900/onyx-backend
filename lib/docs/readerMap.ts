@@ -399,10 +399,17 @@ export function readerMapFromLook(
         return [line];
       })
     : [];
-  const lines = [...(fromPrinted?.lines ?? []), ...parsedLines].filter((line, index, all) => {
-    if (line.kind === "k1") return true;
-    return all.findIndex((other) => other.kind === line.kind && other.value === line.value) === index;
-  });
+  const printedLines = fromPrinted?.lines ?? [];
+  const printedK1s = printedLines.filter((line) => line.kind === "k1");
+  const parsedK1s = parsedLines.filter((line) => line.kind === "k1");
+  const k1s = printedK1s.length ? printedK1s : parsedK1s;
+  const lines = [
+    ...[...printedLines, ...parsedLines].filter((line, index, all) => {
+      if (line.kind === "k1") return false;
+      return all.findIndex((other) => other.kind === line.kind && other.value === line.value) === index;
+    }),
+    ...k1s,
+  ];
   const missing = unique([
     ...(Array.isArray(parsed.missing) ? parsed.missing.map((item) => String(item)) : []),
     ...(fromPrinted?.missing ?? []),
