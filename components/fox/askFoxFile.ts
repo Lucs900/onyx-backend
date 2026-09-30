@@ -1,15 +1,13 @@
 /**
- * 64 — Ask Fox reads this File.
- * Still useful + last staff foxLine + File writes. Borrower voice.
- * Never the Proceed / in_queue mantra. Never "I pushed this."
- * Derive papers from the File. Do not string-match founder questions.
- * Never write File fields.
+ * Ask Fox reads this File's rows. Payment from the pad. Papers-in from Docs.
+ * Phrase ban is not the mechanism. Never write File fields.
  */
 
 import { hasLinkedAccount } from "./account";
 import {
   LAST_YEAR_RETURN_STILL_USEFUL,
   LAST_YEAR_W2_STILL_USEFUL,
+  docsInDisplayLabels,
   docsInExtractClasses,
   labelListCopy,
   receivedClassCount,
@@ -17,6 +15,7 @@ import {
   type StillUsefulItem,
 } from "./fileWrite";
 import { isStaffDeskMessage } from "@/lib/account/core";
+import { withHelocToolQuote } from "./heloc";
 import type { ExtractClass, FoxIntakeDraft, FoxMessage } from "./types";
 
 export const ASK_FOX_W2_OPEN_LINE = "Yes. Last year's W-2 is still open.";
@@ -61,9 +60,19 @@ export function isAskFoxLiveFile(draft?: FoxIntakeDraft | null) {
   return false;
 }
 
+/** Leftover 71 property check. Not the Ask Fox mechanism. */
 export function askFoxAnswerIsClean(text: string) {
   if (!text.trim()) return false;
   return !MANTRA_BANNED.test(text);
+}
+
+const FILE_ROW_FACT =
+  /^(pad\.|docs\.in\.|documents\.|stillUseful\.|file\.closeDate\.|file\.facts\.close_date|file\.approval\.|file\.qualify\.|file\.lock\.|file\.liveQuote\.|file\.loanAmountValue|file\.unanswered)/;
+
+/** Answer was built from pad / Docs / File rows. A file.fileId stamp alone is not a File read. */
+export function askFoxAnswerFromFileRows(log?: { factsUsed?: string[]; wroteFile?: boolean } | null) {
+  if (!log || log.wroteFile !== false) return false;
+  return (log.factsUsed ?? []).some((fact) => FILE_ROW_FACT.test(fact));
 }
 
 const ASK_FOX_OWNED_LINES = [
@@ -80,7 +89,7 @@ const ASK_FOX_OWNED_LINES = [
 /** File-read Ask Fox speech. Prompt-sync must not reprint extract over it. */
 export function isAskFoxFileSpokenLine(text: string) {
   const spoken = text.replace(/\s+/g, " ").trim();
-  if (!spoken || !askFoxAnswerIsClean(spoken)) return false;
+  if (!spoken) return false;
   if (ASK_FOX_OWNED_LINES.includes(spoken)) return true;
   if (/^Yes\. .+\s+is still open\.$/.test(spoken)) return true;
   if (/^No\. .+\s+is already on this File\.$/.test(spoken)) return true;
@@ -127,13 +136,13 @@ export function lastStaffFoxLine(
   const events = [...(draft?.events ?? [])].reverse();
   const fromEvent = events.find((event) => event.kind === "staff-desk");
   const eventLine = (fromEvent?.text || fromEvent?.summary || "").trim();
-  if (eventLine && askFoxAnswerIsClean(eventLine)) return eventLine;
+  if (eventLine) return eventLine;
   if (!messages?.length) return "";
   for (let i = messages.length - 1; i >= 0; i -= 1) {
     const message = messages[i];
     if (!message || !isStaffDeskMessage(message, draft)) continue;
     const line = message.text.trim();
-    if (line && askFoxAnswerIsClean(line)) return line;
+    if (line) return line;
   }
   return "";
 }
@@ -278,8 +287,15 @@ function ratePct(rate: number) {
   return `${(Math.round(rate * 100) / 100).toFixed(2)}%`;
 }
 
+function rememberDocsRows(draft: FoxIntakeDraft, factsUsed: string[]) {
+  if (docsInDisplayLabels(draft).length && !factsUsed.includes("pad.docs")) {
+    factsUsed.push("pad.docs");
+  }
+}
+
 function onePaperAnswer(paper: FilePaper, draft: FoxIntakeDraft, factsUsed: string[]) {
   const spoken = speakLabel(paper.label);
+  rememberDocsRows(draft, factsUsed);
   if (paperReceived(draft, paper)) {
     factsUsed.push(`documents.${paper.extractClass ?? paper.id}.received`);
     if (paper.extractClass && docsInExtractClasses(draft).has(paper.extractClass)) {
@@ -300,6 +316,7 @@ function onePaperAnswer(paper: FilePaper, draft: FoxIntakeDraft, factsUsed: stri
 }
 
 function needListAnswer(draft: FoxIntakeDraft, messages: readonly FoxMessage[] | null | undefined, factsUsed: string[]) {
+  rememberDocsRows(draft, factsUsed);
   const open = openPapersOnFile(draft, messages);
   if (!open.length) {
     factsUsed.push("stillUseful.empty");
@@ -311,13 +328,40 @@ function needListAnswer(draft: FoxIntakeDraft, messages: readonly FoxMessage[] |
   return speakLabel(labelListCopy(open.map((paper) => paper.label))).replace(/\.$/, ".");
 }
 
+function closeDateOnFile(draft: FoxIntakeDraft) {
+  const raw = draft.facts?.close_date;
+  if (!raw?.confirmed) return "";
+  return String(raw.value ?? "").trim();
+}
+
+function closeDateAnswer(draft: FoxIntakeDraft, factsUsed: string[]) {
+  const close = closeDateOnFile(draft);
+  if (close) {
+    factsUsed.push("file.facts.close_date");
+    factsUsed.push("pad.close");
+    return `Close date on this File is ${close}.`;
+  }
+  factsUsed.push("file.closeDate.absent");
+  return ASK_FOX_NO_CLOSE_LINE;
+}
+
 function paymentAnswer(draft: FoxIntakeDraft, factsUsed: string[]) {
-  const line = draft.loanAmountValue ?? 0;
-  const io = draft.liveQuote?.interestOnly ?? 0;
-  const rate = draft.liveQuote?.rate ?? 0;
-  if (line > 0) factsUsed.push("file.loanAmountValue");
-  if (io > 0) factsUsed.push("file.liveQuote.interestOnly");
-  if (rate > 0) factsUsed.push("file.liveQuote.rate");
+  const pad = withHelocToolQuote(draft);
+  const line = pad.loanAmountValue ?? draft.loanAmountValue ?? 0;
+  const io = pad.liveQuote?.interestOnly ?? draft.liveQuote?.interestOnly ?? 0;
+  const rate = pad.liveQuote?.rate ?? draft.liveQuote?.rate ?? 0;
+  if (line > 0) {
+    factsUsed.push("file.loanAmountValue");
+    factsUsed.push("pad.line");
+  }
+  if (io > 0) {
+    factsUsed.push("file.liveQuote.interestOnly");
+    factsUsed.push("pad.io");
+  }
+  if (rate > 0) {
+    factsUsed.push("file.liveQuote.rate");
+    factsUsed.push("pad.rate");
+  }
   if (line > 0 && io > 0 && rate > 0) {
     return `Interest-only is ${money(io)} a month on the ${money(line)} line at ${ratePct(rate)}. Not a lock.`;
   }
@@ -337,11 +381,9 @@ function rememberLog(log: AskFoxFactLog) {
 }
 
 function finishAnswer(text: string, log: AskFoxFactLog): AskFoxFileAnswer {
-  const clean = askFoxAnswerIsClean(text) ? text.trim() : ASK_FOX_UNKNOWN_LINE;
   const next = { ...log, factsUsed: [...log.factsUsed] };
-  if (clean !== text.trim()) next.factsUsed.push("banned.stripped");
   rememberLog(next);
-  return { text: clean, log: next };
+  return { text: text.trim(), log: next };
 }
 
 /** Owned-File answer. Never writes. Papers come from this File only. */
@@ -372,8 +414,7 @@ export function answerAskFoxFromFile(
     return finishAnswer(needListAnswer(draft, messages, factsUsed), log);
   }
   if (asksClose(question)) {
-    factsUsed.push("file.closeDate.absent");
-    return finishAnswer(ASK_FOX_NO_CLOSE_LINE, log);
+    return finishAnswer(closeDateAnswer(draft, factsUsed), log);
   }
   if (asksApproval(question)) {
     factsUsed.push("file.approval.absent");

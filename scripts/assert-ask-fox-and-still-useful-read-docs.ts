@@ -1,11 +1,16 @@
 /**
- * Ticket 72. Ask Fox and Still useful read this File’s Docs.
- * File-row facts, not a canned motion line. Does not write File 38f1b63c.
- * Does not fail on “I pushed this” sitting in history.
+ * Ticket 72. Ask Fox and Still useful read File rows.
+ * Payment from the pad. Papers-in from Docs. Phrase ban is not the mechanism.
+ * Does not write File 38f1b63c. A fileId stamp is not a File read.
  */
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { emptyDraft } from "../components/fox/store";
-import { ASK_FOX_NO_CLOSE_LINE, answerAskFoxFromFile } from "../components/fox/askFoxFile";
+import {
+  ASK_FOX_NO_CLOSE_LINE,
+  answerAskFoxFromFile,
+  askFoxAnswerFromFileRows,
+} from "../components/fox/askFoxFile";
 import { hasLinkedAccount, withLinkedAccount } from "../components/fox/account";
 import { MOTION_COPY, applyEscalateMotion, finishLineActions, waitingOnCopy } from "../components/fox/motion";
 import {
@@ -31,6 +36,7 @@ import {
 import type { FoxIntakeDraft, FoxMessage, ReceivedDoc } from "../components/fox/types";
 
 const THREE = ["Ask Fox", "Upload more", "Request human"];
+const LIVE_TEACHING_FILE = "38f1b63c-4096-4a97-811e-ce7a4d63690c";
 
 const W2_DOC: ReceivedDoc = {
   slot: "w2",
@@ -77,7 +83,7 @@ function labels(actions: { label: string }[] | undefined) {
   return (actions ?? []).map((item) => item.label);
 }
 
-function teachingFile(documents: ReceivedDoc[]): FoxIntakeDraft {
+function padDocsFile(documents: ReceivedDoc[]): FoxIntakeDraft {
   let draft = writeWhoOnLoan(
     {
       ...writeHelocLine(
@@ -98,7 +104,7 @@ function teachingFile(documents: ReceivedDoc[]): FoxIntakeDraft {
               incomeAsked: true,
               incomeType: { ...emptyDraft().incomeType, value: "w2", confirmed: true },
               whoOnLoanDue: true,
-              fileId: "38f1b63c-4096-4a97-811e-ce7a4d63690c",
+              fileId: "file_72_pad_docs_rows",
               sampleAccepted: true,
               guestProceeded: true,
               looksRightHold: true,
@@ -155,7 +161,7 @@ function teachingFile(documents: ReceivedDoc[]): FoxIntakeDraft {
         motion: "escalated",
         originatorRequested: true,
       },
-      "acct_sa43sbs3dt",
+      "acct_72_pad_docs",
     ),
   );
 }
@@ -176,12 +182,39 @@ function assertPadHold(file: FoxIntakeDraft) {
   assert.equal(value("next"), "ONYX");
   assert.equal(value("waiting"), "ONYX");
   assert.equal(waitingOnCopy(file), "ONYX");
+  assert.ok(!pad.some((item) => item.id === "close"));
+}
+
+function assertNoPhraseBanMechanism() {
+  const askFoxSrc = readFileSync(new URL("../components/fox/askFoxFile.ts", import.meta.url), "utf8");
+  const finish = askFoxSrc.slice(
+    askFoxSrc.indexOf("function finishAnswer"),
+    askFoxSrc.indexOf("export function answerAskFoxFromFile"),
+  );
+  assert.doesNotMatch(finish, /askFoxAnswerIsClean/);
+  assert.doesNotMatch(finish, /banned\.stripped/);
+  assert.doesNotMatch(finish, /MANTRA_BANNED/);
+  const lastStaff = askFoxSrc.slice(
+    askFoxSrc.indexOf("export function lastStaffFoxLine"),
+    askFoxSrc.indexOf("type FilePaper"),
+  );
+  assert.doesNotMatch(lastStaff, /askFoxAnswerIsClean/);
+  const spoken = askFoxSrc.slice(
+    askFoxSrc.indexOf("export function isAskFoxFileSpokenLine"),
+    askFoxSrc.indexOf("function fold"),
+  );
+  assert.doesNotMatch(spoken, /askFoxAnswerIsClean/);
+  const alwaysSrc = readFileSync(new URL("../components/fox/AlwaysOnFox.tsx", import.meta.url), "utf8");
+  assert.doesNotMatch(alwaysSrc, /askFoxAnswerIsClean/);
+  assert.match(alwaysSrc, /askFoxAnswerFromFileRows/);
+  assert.doesNotMatch(alwaysSrc, /includes\("file\.fileId"\)/);
 }
 
 function main() {
-  const file = teachingFile([W2_DOC, ID_DOC]);
+  const file = padDocsFile([W2_DOC, ID_DOC]);
   assert.equal(hasLinkedAccount(file), true);
-  assert.equal(file.fileId, "38f1b63c-4096-4a97-811e-ce7a4d63690c");
+  assert.notEqual(file.fileId, LIVE_TEACHING_FILE);
+  assert.equal(file.facts?.close_date?.value, undefined);
 
   const docs = docsInDisplayLabels(file);
   assert.ok(docs.includes("W-2 in"));
@@ -200,22 +233,39 @@ function main() {
 
   const close = answerAskFoxFromFile("When will I close?", file);
   assert.equal(close.text, ASK_FOX_NO_CLOSE_LINE);
-  assert.equal(close.log.fileId, file.fileId);
   assert.equal(close.log.wroteFile, false);
-  assert.ok(close.log.factsUsed.includes("file.fileId"));
   assert.ok(close.log.factsUsed.includes("file.closeDate.absent"));
+  assert.ok(!close.log.factsUsed.includes("banned.stripped"));
+  assert.equal(askFoxAnswerFromFileRows(close.log), true);
+  assert.equal(
+    askFoxAnswerFromFileRows({ factsUsed: ["file.fileId"], wroteFile: false }),
+    false,
+    "a file.fileId stamp is not a File read",
+  );
   assert.notEqual(close.text, MOTION_COPY.nudge);
+  assert.doesNotMatch(close.text, /I pushed this|licensed originator is on this exception/i);
   const lastLine = workspaceAskFoxFileReply("When will I close?", file);
   assert.equal(lastLine.text, ASK_FOX_NO_CLOSE_LINE);
   assert.deepEqual(labels(lastLine.actions), THREE);
   assert.equal(labels(lastLine.actions).at(-1), "Request human");
 
+  const pay = answerAskFoxFromFile("What's my payment?", file);
+  assert.equal(pay.log.wroteFile, false);
+  assert.match(pay.text, /\$367/);
+  assert.match(pay.text, /\$50,000/);
+  assert.match(pay.text, /8\.80%/);
+  assert.ok(pay.log.factsUsed.includes("pad.line"));
+  assert.ok(pay.log.factsUsed.includes("pad.rate"));
+  assert.ok(pay.log.factsUsed.includes("pad.io"));
+  assert.equal(askFoxAnswerFromFileRows(pay.log), true);
+  assert.doesNotMatch(pay.text, /I pushed this|licensed originator is on this exception/i);
+
   const w2Ask = answerAskFoxFromFile("Do you still need last year's W-2 on this file?", file);
-  assert.equal(w2Ask.log.fileId, file.fileId);
   assert.equal(w2Ask.log.wroteFile, false);
-  assert.ok(w2Ask.log.factsUsed.includes("file.fileId"));
+  assert.ok(w2Ask.log.factsUsed.includes("pad.docs"));
   assert.ok(w2Ask.log.factsUsed.includes("documents.w2.received"));
   assert.ok(w2Ask.log.factsUsed.includes("docs.in.w2"));
+  assert.equal(askFoxAnswerFromFileRows(w2Ask.log), true);
   assert.match(w2Ask.text, /^No\./);
   assert.match(w2Ask.text, /already on this File/);
   assert.doesNotMatch(w2Ask.text, /still open/);
@@ -227,13 +277,15 @@ function main() {
   ];
   assert.deepEqual(labels(deskStripActions(history, file)), THREE);
 
-  const named = teachingFile([W2_NAME_ONLY]);
+  const named = padDocsFile([W2_NAME_ONLY]);
+  assert.notEqual(named.fileId, LIVE_TEACHING_FILE);
   assert.ok(docsInDisplayLabels(named).includes("W-2 in"));
   assert.equal(docsInExtractClasses(named).has("w2"), true);
   const namedUseful = stillUsefulSpokenItems(named).map((item) => item.label);
   assert.ok(!namedUseful.some((label) => /W-2/i.test(label)));
   const namedAsk = answerAskFoxFromFile("Do you still need last year's W-2 on this file?", named);
   assert.ok(namedAsk.log.factsUsed.includes("docs.in.w2"));
+  assert.ok(namedAsk.log.factsUsed.includes("pad.docs"));
   assert.equal(namedAsk.log.wroteFile, false);
   assert.match(namedAsk.text, /already on this File/);
   assert.doesNotMatch(namedAsk.text, /still open/);
@@ -242,9 +294,10 @@ function main() {
   assert.equal(file.facts?.[QUALIFYING_INCOME_FIELD]?.value, "10000");
   assert.match(file.employmentHistory?.[0]?.label ?? "", /INNOVATION PARTNERS LLC/);
   assert.equal(file.borrowerName, "Raymond Chi Lee");
+  assertNoPhraseBanMechanism();
 
   console.log(
-    "72 PASS Ask Fox File rows · wroteFile false · Docs-in W-2/ID not still open · Still useful 1040+paystub from Docs",
+    "72 PASS Ask Fox pad+Docs rows · no phrase ban · wroteFile false · W-2/ID not still open · Still useful 1040+paystub",
   );
 }
 
