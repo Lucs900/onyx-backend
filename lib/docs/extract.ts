@@ -30,6 +30,8 @@ import {
 } from "@/lib/docs/pdfText";
 import {
   overlayW2MedicareFromPage,
+  overlayStubPeriodFromPrinted,
+  hoursCurrentYtdGrossFromPrinted,
   combinedGovernmentIdFields,
   fieldsFromPrintedLines,
   loudContractFromPrintedLines,
@@ -330,7 +332,7 @@ Rules:
 - Form 1040, 8879, 540, 7203, or K-1 is tax_return. Those forms open the map, never the stub slot.
 - On a tax_return page: entities are printed company names (INC, LLC, CORP). Empty if none. lines include kind wages only when a wage dollar is printed on THIS page. value is that dollar. label is the printed phrase without the dollar. Never invent a wage or company.
 - class is paystub only when employer_name, pay_period_end or check_date, and gross_period are printed on THIS page. The word paystub is not required.
-- On a paystub: do not emit a wages line. Do not replace period gross with a smaller earnings line. Empty employer stays empty.
+- On a paystub: Hours | Current | Year to Date means the first number after Total Gross is hours, not money. gross_period is Current. ytd_gross is Year to Date. Do not emit a wages line. Do not replace period gross with hours or a smaller earnings line. Empty employer stays empty.
 - PDF font foundries are not employers. Never invent numbers, names, or dates. Never output SSN.`;
 }
 
@@ -1128,6 +1130,10 @@ async function grokPageRead(
     keys: Object.keys(fields),
   });
   const bankLocked = extractClass === "bank_statement" || hint === "bank_statement";
+  const walkedPrinted = printedLinesFromWalked(walked);
+  if (extractClass === "paystub" || extractClass === "other") {
+    fields = overlayStubPeriodFromPrinted(fields, walkedPrinted);
+  }
   const taxWalkPrinted =
     extractClass === "tax_return" ||
     filenameLooksLikeEntityPacket(filename) ||
@@ -1139,7 +1145,7 @@ async function grokPageRead(
       fields,
       failed: false,
     },
-    taxWalkPrinted ? printedLinesFromWalked(walked) : undefined,
+    taxWalkPrinted ? walkedPrinted : undefined,
   );
   const merged = await mergeTaxReturnLedgerFields(
     pageWithMap,
@@ -1955,6 +1961,41 @@ async function withPageMedicareHunt(
   };
 }
 
+function cleanedExtractFields(fields?: Record<string, string> | null): Record<string, string> {
+  const cleaned: Record<string, string> = {};
+  for (const [key, value] of Object.entries(fields ?? {})) {
+    if (value == null) continue;
+    cleaned[key] = String(value);
+  }
+  return cleaned;
+}
+
+/** Live page-read: Hours under Hours | Current | YTD is not period gross. Prefer pdf.js glyphs. */
+async function withPageStubPeriodHunt(
+  result: ClassifyExtractResult,
+  bytes: Uint8Array,
+  mediaType: string,
+): Promise<ClassifyExtractResult> {
+  if (result.extractClass !== "paystub" && result.extractClass !== "other") return result;
+  const cleaned = cleanedExtractFields(result.fields);
+  const syncLayer =
+    isPdf(bytes) || mediaType === "application/pdf"
+      ? await printedLinesForExtract(bytes, mediaType)
+      : null;
+  let fields = overlayStubPeriodFromPrinted(cleaned, syncLayer);
+  if (!hoursCurrentYtdGrossFromPrinted(syncLayer) && (isPdf(bytes) || mediaType === "application/pdf")) {
+    const walked = await readPdfJsTextLayer(bytes);
+    fields = overlayStubPeriodFromPrinted(fields, walked);
+  }
+  if (fields.gross_period === cleaned.gross_period && fields.ytd_gross === cleaned.ytd_gross) {
+    return result;
+  }
+  return {
+    ...result,
+    fields: sanitizeExtractedFields(result.extractClass, fields),
+  };
+}
+
 export async function classifyAndExtract(
   bytes: Uint8Array,
   mediaType: string,
@@ -1971,7 +2012,11 @@ export async function classifyAndExtract(
     filename,
     phase,
   );
-  const hunted = await withPageMedicareHunt(result, bytes, mediaType);
+  const hunted = await withPageStubPeriodHunt(
+    await withPageMedicareHunt(result, bytes, mediaType),
+    bytes,
+    mediaType,
+  );
   const layer =
     isPdf(bytes) || mediaType === "application/pdf" ? await printedLinesForExtract(bytes, mediaType) : null;
   const blocked = applyReaderGate(

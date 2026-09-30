@@ -52,11 +52,13 @@ import { applyLooksRightMotion } from "../components/fox/motion";
 import { applyExtractWrite, emptyDraft, loadIntakeDraft, receiveDocument } from "../components/fox/store";
 import {
   fieldsFromPrintedLines,
+  grossPeriodFromPrintedText,
   junkEmployerName,
   looksLike1040FacePage,
   looksLike1040Transcript,
   loudTranscriptFromPrintedLines,
   loudWageFromPrintedLines,
+  overlayStubPeriodFromPrinted,
   printedSampleFromLines,
 } from "../lib/docs/printedSample";
 import {
@@ -86,7 +88,7 @@ import {
   readerMapNeverOpensStub,
 } from "../lib/docs/readerMap";
 import { classifyPageByFormHeader } from "../lib/docs/formHeader";
-import { drawnPageHasInk, renderPdfFirstPage } from "../lib/docs/pdfText";
+import { drawnPageHasInk, readPdfJsTextLayer, renderPdfFirstPage } from "../lib/docs/pdfText";
 import {
   amountAskText,
   deskStripActions,
@@ -793,6 +795,46 @@ async function main() {
     "reader wage line is not the Alameda period",
   );
   assert.doesNotMatch(nextFoxAsk(alamedaWageLine.draft).text, /225\.80/);
+  const alamedaHoursRow = [
+    "Description Hours Current Year to Date",
+    "Total Gross 225.80 16824.30 16824.30",
+  ];
+  assert.match(grossPeriodFromPrintedText(alamedaHoursRow.join(" ")), /^225\.8/);
+  const liveHoursFields = overlayStubPeriodFromPrinted(
+    {
+      employer_name: "Alameda Health System",
+      pay_period_end: "08/15/2026",
+      gross_period: "225.80",
+    },
+    alamedaHoursRow,
+  );
+  assert.equal(
+    liveHoursFields.gross_period,
+    "16824.30",
+    "Hours is not the period; Current on the Total Gross row is",
+  );
+  assert.doesNotMatch(liveHoursFields.gross_period, /225/);
+  const liveHoursAfterSkip = applyExtractedFields(skippedW2, {
+    extractClass: "paystub",
+    confidence: 0.94,
+    fields: lockFirstSessionFields("paystub", liveHoursFields),
+  });
+  assert.equal(
+    nextFoxAsk(liveHoursAfterSkip.draft).text,
+    "Alameda Health System. Period $16,824.30. Use this?",
+    "live page-read that put hours in period still offers Current after overlay",
+  );
+  assert.doesNotMatch(nextFoxAsk(liveHoursAfterSkip.draft).text, /225\.80|\$225/);
+  assert.equal(
+    overlayStubPeriodFromPrinted({ gross_period: "4615.38" }, [
+      "Harbor Pacific Design Inc",
+      "Jordan Hale",
+      "BIWEEKLY",
+      "gross 4,615.38",
+    ]).gross_period,
+    "4615.38",
+    "unlabeled gross is not an Hours | Current | YTD row",
+  );
   assert.doesNotMatch(nextFoxAsk(alamedaAfterSkip.draft).text, /How often|paycheck|two-year OT/i);
   assert.equal((alamedaAfterSkip.draft.employmentHistory ?? []).length, 0);
   assert.equal(alamedaAfterSkip.draft.facts?.employer_name, undefined);
@@ -1731,6 +1773,16 @@ async function main() {
     "4d09d5ffd8a85bfda32a94f8f5350ef5ae543e42a1fd9220197a8f8ecc1c2303",
     "Alameda fixture must not be the CSTC stub bytes",
   );
+  const alamedaWalked = await readPdfJsTextLayer(alamedaBytes);
+  assert.ok(
+    alamedaWalked?.some((line) => /Total Gross\s+225\.80\s+16824\.30\s+16824\.30/i.test(line)),
+    "Alameda page prints Hours then Current then YTD on Total Gross",
+  );
+  assert.equal(
+    overlayStubPeriodFromPrinted({ gross_period: "225.80" }, alamedaWalked).gross_period,
+    "16824.30",
+    "live extract overlay reads Current from the walked page",
+  );
   const unreadAfterSkip = applyExtractedFields(skippedW2, {
     extractClass: "paystub",
     confidence: 0.94,
@@ -2106,6 +2158,8 @@ async function main() {
   assert.match(extractSrc, /Castaneda page→image→Grok/);
   assert.match(extractSrc, /phase === "packet"/);
   assert.match(extractSrc, /Same Grok look/);
+  assert.match(extractSrc, /overlayStubPeriodFromPrinted/);
+  assert.match(extractSrc, /Hours \| Current \| Year to Date/);
   assert.match(extractSrc, /if \(adapter\.read\)/);
   const classifyAt = extractSrc.indexOf("async function classifyAndExtractUnmerged");
   const grokFirstAt = extractSrc.indexOf("shouldGrokTaxReturnPagesFirst(hint, filename)", classifyAt);

@@ -535,6 +535,82 @@ export function grossPeriodFromPrintedText(text: string): string {
   return "";
 }
 
+const PRINTED_AMOUNT = /\$?(\d{1,3}(?:,\d{3})+\.\d{2}|\d+\.\d{2})/g;
+
+function printedAmountTokens(line: string): string[] {
+  const found: string[] = [];
+  const matcher = new RegExp(PRINTED_AMOUNT.source, "g");
+  let item: RegExpExecArray | null;
+  while ((item = matcher.exec(line))) {
+    const token = String(item[1] ?? "").replace(/,/g, "");
+    if (token) found.push(token);
+  }
+  return found;
+}
+
+function samePrintedMoney(left: string, right: string): boolean {
+  const a = Number(String(left ?? "").replace(/[$,\s]/g, ""));
+  const b = Number(String(right ?? "").replace(/[$,\s]/g, ""));
+  return Number.isFinite(a) && a === b;
+}
+
+function hasHoursCurrentYtdHeader(text: string): boolean {
+  return (
+    /\bhours\b/i.test(text) &&
+    /\bcurrent\b/i.test(text) &&
+    /\b(?:year\s*to\s*date|ytd)\b/i.test(text)
+  );
+}
+
+/**
+ * Hours | Current | Year to Date Total Gross row.
+ * First number is hours, not money. Current is the period. Never invents.
+ */
+export function hoursCurrentYtdGrossFromPrinted(
+  pageText?: string | string[] | null,
+): { hours: string; current: string; ytd: string } | null {
+  const lines = Array.isArray(pageText)
+    ? pageText.map((line) => String(line ?? ""))
+    : String(pageText ?? "")
+        .split(/\n/)
+        .map((line) => line.trim());
+  if (!lines.some((line) => line.trim()) || !hasHoursCurrentYtdHeader(lines.join("\n"))) {
+    return null;
+  }
+  const preferGross = /(?:total\s+gross|gross\s+pay|total\s+earnings|this\s+period\s+gross)/i;
+  const candidates = [
+    ...lines.filter((line) => preferGross.test(line)),
+    ...lines.filter((line) => /^total\b/i.test(line.trim()) && !preferGross.test(line)),
+  ];
+  for (const line of candidates) {
+    let amounts = printedAmountTokens(line);
+    if (amounts.length < 3) {
+      const index = lines.indexOf(line);
+      amounts = printedAmountTokens(`${line} ${lines[index + 1] ?? ""}`);
+    }
+    if (amounts.length < 3) continue;
+    const [hours, current, ytd] = amounts;
+    if (!hours || !current || !ytd) continue;
+    if (Number(hours) >= Number(current)) continue;
+    return { hours, current, ytd };
+  }
+  return null;
+}
+
+/** After the one page-read: Current under Hours | Current | YTD is period gross. Hours is not. */
+export function overlayStubPeriodFromPrinted(
+  fields: Record<string, string>,
+  pageText?: string | string[] | null,
+): Record<string, string> {
+  const row = hoursCurrentYtdGrossFromPrinted(pageText);
+  if (!row) return fields;
+  const next: Record<string, string> = { ...fields, gross_period: row.current };
+  if (!next.ytd_gross || samePrintedMoney(next.ytd_gross, row.hours)) {
+    next.ytd_gross = row.ytd;
+  }
+  return next;
+}
+
 /** Pay frequency from THIS blob. Colon optional. BIWEEKLY = biweekly. */
 export function payFrequencyFromPrintedText(text: string): string {
   const blob = String(text ?? "");
@@ -1830,6 +1906,9 @@ export function fieldsFromPrintedLines(
   if (extractClass === "paystub" || extractClass === "other") {
     const blob = lines.join(" ");
     const stacked = lines.join("\n");
+    const overlaid = overlayStubPeriodFromPrinted(fields, lines);
+    if (overlaid.gross_period) fields.gross_period = overlaid.gross_period;
+    if (overlaid.ytd_gross) fields.ytd_gross = overlaid.ytd_gross;
     if (!fields.gross_period) {
       const gross = grossPeriodFromPrintedText(blob) || grossPeriodFromPrintedText(stacked);
       if (gross) putMoney("gross_period", gross);
