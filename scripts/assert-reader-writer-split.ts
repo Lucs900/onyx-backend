@@ -474,6 +474,24 @@ async function main() {
   });
   const wiped = startOverWorkspace("acr");
   assert.ok(!wiped.incomeType.value, "Start over still clears income");
+  const receivedOnly = {
+    ...emptyDraft(),
+    workspaceFlow: true,
+    documents: [
+      {
+        slot: "other" as const,
+        name,
+        type: "application/pdf",
+        size: 12000,
+        receivedAt,
+        status: "received" as const,
+      },
+    ],
+  };
+  assert.equal(workspacePrompt(receivedOnly), "intent", "received without extract is not the card");
+  assert.doesNotMatch(nextFoxAsk(receivedOnly).text, /Schedule C under Vouch Eim Soy/i);
+  assert.doesNotMatch(nextFoxAsk(receivedOnly).text, /HO\s*&\s*SOY/i);
+
   const dropped = printedReturnPdf(RETURN_THREE);
   const extracted = await classifyAndExtract(
     dropped,
@@ -549,19 +567,17 @@ async function main() {
       return {
         extractClass: "other" as const,
         confidence: 0.2,
-        fields: {},
+        fields: {
+          tax_year: "2024",
+          full_name: "SICHIY HO AND VOUCH EIM SOY",
+        },
         warnings: ["failed"],
         failed: true,
         readerMap: {
           forms: ["1040" as const],
-          names: ["Sichiv Ho", "Vouch Eim Soy"],
-          entities: ["L&H VENTURES LLC", "HO & SOY INC"],
-          lines: [
-            { kind: "schedule_c", value: "Vouch Eim Soy", label: "Schedule C" },
-            { kind: "schedule_e", value: "60343", label: "L&H VENTURES LLC · partnership · passive" },
-            { kind: "k1", value: "26351", label: "HO & SOY INC · S corp" },
-            { kind: "k1", value: "26351", label: "HO & SOY INC · S corp" },
-          ],
+          names: ["SICHIY HO AND VOUCH EIM SOY"],
+          entities: [] as string[],
+          lines: [] as { kind: string; value: string; label?: string }[],
           missing: [],
         },
       };
@@ -580,11 +596,23 @@ async function main() {
     null,
     name,
   );
-  assert.notEqual(blankExtract.failed, true, "a look that opens the card is not unread");
-  assert.equal(readerMapOpensReturnCard(blankExtract.readerMap), true);
+  assert.equal(
+    readerMapOpensReturnCard(blankExtract.readerMap),
+    false,
+    "a names-only look on a blank PDF must not invent the three-business card",
+  );
+  assert.equal(
+    readerBusinessLines(blankExtract.readerMap).filter((line) => line.kind === "schedule_c" && /Vouch Eim Soy/i.test(line.value)).length,
+    0,
+  );
+  assert.equal(
+    readerBusinessLines(blankExtract.readerMap).filter((line) => line.kind === "schedule_e" && line.value === "60343").length,
+    0,
+  );
   assert.equal(
     readerBusinessLines(blankExtract.readerMap).filter((line) => line.kind === "k1" && line.value === "26351").length,
-    2,
+    0,
+    "blank look must not hand both K-1 lines",
   );
   const threeSkip = resolveProposal(threeWrite.draft, "decline");
   assert.equal(threeSkip.facts?.wages, undefined);
@@ -657,11 +685,16 @@ async function main() {
     "utf8",
   );
   assert.match(alwaysOnSrc, /receivedDropCopy/);
-  assert.match(alwaysOnSrc, /detail\.received/);
+  assert.match(alwaysOnSrc, /detail\.received && !detail\.emptyRead && !detail\.extractClass/);
+  assert.doesNotMatch(
+    alwaysOnSrc,
+    /detail\.received && !detail\.emptyRead && !detail\.extractClass[\s\S]{0,700}pendingProposal && shouldSpeakPendingConfirm/,
+    "received-only must not speak a card that was already pending",
+  );
   assert.match(
     alwaysOnSrc,
     /pendingProposal && shouldSpeakPendingConfirm/,
-    "a received line must still yield to a speakable confirm card",
+    "extract after the drop still speaks the confirm card",
   );
   const workspaceSrc = readFileSync(
     join(dirname(fileURLToPath(import.meta.url)), "..", "components/fox/workspace.ts"),
@@ -706,10 +739,16 @@ async function main() {
   const leftoverSrc = readFileSync(fileURLToPath(import.meta.url), "utf8");
   assert.match(leftoverSrc, /classifyAndExtract/);
   assert.match(leftoverSrc, /printedReturnPdf\(RETURN_THREE\)/);
+  assert.match(leftoverSrc, /received without extract is not the card/);
   assert.doesNotMatch(
     leftoverSrc,
     /const guestStart = applyExtractWrite\([^)]*readerMap: garbled/,
     "guest /start leftover must not hand a finished map to applyExtractWrite",
+  );
+  assert.doesNotMatch(
+    leftoverSrc,
+    /async read\(\) \{[\s\S]{0,400}kind: "schedule_c", value: "Vouch Eim Soy"/,
+    "a look adapter must not return the finished three-business card",
   );
   console.log(
     "assert-reader-writer-split: map only · stub triple · 1040/8879/540/7203/K-1 never stub · Use this writes a reader line · Skip empty · no Paystubs in",
