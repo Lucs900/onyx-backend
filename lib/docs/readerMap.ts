@@ -122,6 +122,10 @@ function formFromBlob(blob: string): ReaderForm[] {
   if (/\bschedule\s+k-?1\b/i.test(blob) && !/\bschedule\s+e\s*\(\s*form\s+1040\s*\)/i.test(blob)) {
     forms.push("k1");
   }
+  if (/\bschedule\s+c\b/i.test(blob)) forms.push("schedule_c");
+  if (/\bschedule\s+e\b/i.test(blob) || /supplemental income and loss/i.test(blob)) {
+    forms.push("schedule_e");
+  }
   if (/\bform\s*1040\b/i.test(blob) || /u\.?s\.?\s+individual income tax return/i.test(blob)) {
     forms.push("1040");
   }
@@ -170,23 +174,135 @@ export function readerEntityName(map?: ReaderMap | null) {
   return named;
 }
 
-export function readerWageLine(map?: ReaderMap | null): ReaderLine | null {
-  const line = map?.lines?.find((item) => item.kind === "wages" || item.kind === "household_wages");
-  if (!line) return null;
-  const amount = String(line.value ?? "").replace(/[^\d.]/g, "");
-  if (!amount || !Number(amount)) return null;
-  return { ...line, value: amount, label: line.label || "wages" };
+/** Form 1040 1g / household-employee instruction is not a wage to offer. A K-1 line is not a wage. */
+export function isUnofferedWageText(text?: string | null) {
+  const t = String(text ?? "");
+  if (/\b1\s*g\b/i.test(t)) return true;
+  if (/household employee/i.test(t)) return true;
+  if (/if you did not/i.test(t)) return true;
+  if (/not reported on form/i.test(t)) return true;
+  if (/wages from form/i.test(t) && /line\s*6/i.test(t)) return true;
+  if (/\b(k-?1|schedule\s*[ce]|ordinary|passive|partnership|s\s*corp|1120-?s)\b/i.test(t)) {
+    return true;
+  }
+  return false;
 }
 
-/** Never-stub page with a printed entity or on-page wage. Names alone are not a card. */
+export function wageLineIsOffered(line: ReaderLine) {
+  if (line.kind !== "wages" && line.kind !== "household_wages") return false;
+  return !isUnofferedWageText(`${line.label ?? ""} ${line.kind}`);
+}
+
+function cleanWageLabel(label?: string) {
+  const t = String(label ?? "").replace(/\s+/g, " ").trim();
+  if (!t || t.length > 40 || isUnofferedWageText(t) || /…|\.{3}/.test(t)) return "wages";
+  return t;
+}
+
+export function readerWageLine(map?: ReaderMap | null): ReaderLine | null {
+  for (const line of map?.lines ?? []) {
+    if (!wageLineIsOffered(line)) continue;
+    const amount = String(line.value ?? "").replace(/[^\d.]/g, "");
+    if (!amount || !Number(amount)) continue;
+    return { ...line, value: amount, label: cleanWageLabel(line.label) };
+  }
+  return null;
+}
+
+export function readerBusinessLines(map?: ReaderMap | null): ReaderLine[] {
+  return (map?.lines ?? []).filter((line) =>
+    line.kind === "schedule_c" || line.kind === "schedule_e" || line.kind === "k1" || line.kind === "1120s",
+  );
+}
+
+export function readerBusinessSpeech(line: ReaderLine) {
+  const amount = String(line.value ?? "").replace(/[^\d.]/g, "");
+  const money = Number(amount) > 0 ? `$${Number(amount).toLocaleString("en-US")}` : "";
+  if (line.kind === "schedule_c") {
+    const who = String(line.value ?? "").trim();
+    return who ? `Schedule C under ${who}` : "Schedule C";
+  }
+  if (line.kind === "schedule_e") {
+    const named = String(line.label ?? "").trim();
+    return ["Schedule E", named, money].filter(Boolean).join(" · ");
+  }
+  if (line.kind === "k1" || line.kind === "1120s") {
+    const named = String(line.label ?? "").trim();
+    return [named, money].filter(Boolean).join(" · ");
+  }
+  return "";
+}
+
+/** Never-stub page with a printed entity, business line, or on-page wage. Names alone are not a card. */
 export function readerMapOpensReturnCard(map?: ReaderMap | null): boolean {
   if (!map || !readerMapNeverOpensStub(map)) return false;
-  return Boolean(readerEntityName(map) || readerWageLine(map));
+  return Boolean(readerEntityName(map) || readerWageLine(map) || readerBusinessLines(map).length);
 }
 
 function moneyOnLine(line: string) {
   const match = line.match(/\$?\s*(\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d{4,}(?:\.\d+)?)/);
   return match?.[1]?.replace(/,/g, "") ?? "";
+}
+
+function businessesFromPrinted(cleaned: string[], names: string[]): ReaderLine[] {
+  const out: ReaderLine[] = [];
+  let afterC = false;
+  let afterE = false;
+  let afterK1 = false;
+  let pendingE = "";
+  let pendingK1 = "";
+  let eRole = "";
+  let k1Role = "";
+  let k1Ein = "";
+  for (const line of cleaned) {
+    if (/\bschedule\s+c\b/i.test(line)) afterC = true;
+    if (/\bschedule\s+e\b/i.test(line) || /supplemental income/i.test(line)) afterE = true;
+    if (/\bschedule\s+k-?1\b/i.test(line) || /\b1120-?s\b/i.test(line)) afterK1 = true;
+    if (/\bpartnership\b/i.test(line)) eRole = eRole || "partnership";
+    if (/\bpassive\b/i.test(line)) {
+      eRole = eRole.includes("passive") ? eRole : [eRole, "passive"].filter(Boolean).join(" · ");
+    }
+    if (/\bs\s*corp/i.test(line)) k1Role = k1Role || "S corp";
+    const ein = line.match(/\b(\d{2}-?\d{7})\b/);
+    if (ein && afterK1) k1Ein = ein[1] ?? "";
+
+    if (afterC) {
+      const who = looksLikePersonName(line)
+        ? line.replace(/\s+/g, " ").trim()
+        : names.find((name) => line.toLowerCase().includes(name.toLowerCase()));
+      if (who && !/\bschedule\s+c\b/i.test(line)) {
+        out.push({ kind: "schedule_c", value: who, label: "Schedule C" });
+        afterC = false;
+      }
+    }
+
+    const entity = looksLikeEntity(line) ? entityFromLine(line) : "";
+    if (entity && afterE && !pendingE) pendingE = entity;
+    if (entity && afterK1 && !pendingK1) pendingK1 = entity;
+
+    const amount = moneyOnLine(line);
+    if (
+      amount &&
+      afterE &&
+      pendingE &&
+      (eRole || /passive|partnership|schedule\s+e/i.test(line)) &&
+      !/wages/i.test(line)
+    ) {
+      out.push({
+        kind: "schedule_e",
+        value: amount,
+        label: [pendingE, eRole].filter(Boolean).join(" · "),
+      });
+    }
+    if (amount && afterK1 && pendingK1 && !isUnofferedWageText(line) && !/wages/i.test(line)) {
+      out.push({
+        kind: "k1",
+        value: amount,
+        label: [pendingK1, k1Role || "S corp", k1Ein ? `EIN ${k1Ein}` : ""].filter(Boolean).join(" · "),
+      });
+    }
+  }
+  return out;
 }
 
 export function readerMapFromPrintedLines(lines: readonly string[]): ReaderMap {
@@ -197,11 +313,11 @@ export function readerMapFromPrintedLines(lines: readonly string[]): ReaderMap {
   const entities = unique(cleaned.flatMap((line) => (looksLikeEntity(line) ? [entityFromLine(line)] : [])));
   const linesOut: ReaderLine[] = [];
   for (const line of cleaned) {
-    if (/wages/i.test(line)) {
-      const amount = moneyOnLine(line);
-      if (amount) linesOut.push({ kind: "wages", value: amount, label: wageLineLabel(line) });
-    }
+    if (!/wages/i.test(line) || isUnofferedWageText(line)) continue;
+    const amount = moneyOnLine(line);
+    if (amount) linesOut.push({ kind: "wages", value: amount, label: wageLineLabel(line) });
   }
+  linesOut.push(...businessesFromPrinted(cleaned, names));
   for (const name of names) linesOut.push({ kind: "name", value: name });
   for (const entity of entities) linesOut.push({ kind: "entity", value: entity });
 
@@ -243,14 +359,18 @@ export function readerMapFromLook(
       "other",
     ].includes(item),
   );
-  const names = unique([
-    ...(Array.isArray(parsed.names) ? parsed.names.map((item) => String(item)) : []),
-    ...(fromPrinted?.names ?? []),
-  ]).filter((name) => !junkEmployerName(name));
-  const entities = unique([
-    ...(Array.isArray(parsed.entities) ? parsed.entities.map((item) => String(item)) : []),
-    ...(fromPrinted?.entities ?? []),
-  ]).filter((name) => !junkEmployerName(name));
+  const parsedNames = (Array.isArray(parsed.names) ? parsed.names.map((item) => String(item)) : []).filter(
+    (name) => !junkEmployerName(name),
+  );
+  const names = unique(
+    fromPrinted?.names.length ? fromPrinted.names : parsedNames,
+  ).filter((name) => !junkEmployerName(name));
+  const parsedEntities = (Array.isArray(parsed.entities) ? parsed.entities.map((item) => String(item)) : []).filter(
+    (name) => !junkEmployerName(name),
+  );
+  const entities = unique([...(fromPrinted?.entities ?? []), ...parsedEntities]).filter(
+    (name) => !junkEmployerName(name),
+  );
   const parsedLines = Array.isArray(parsed.lines)
     ? parsed.lines.flatMap((raw) => {
         if (!raw || typeof raw !== "object") return [];
@@ -260,10 +380,12 @@ export function readerMapFromLook(
         if (!kind || !value) return [];
         if ((kind === "employer" || kind === "employer_name") && junkEmployerName(value)) return [];
         const label = String(row.label ?? "").trim();
-        return [{ kind, value, ...(label ? { label } : {}) }];
+        const line = { kind, value, ...(label ? { label } : {}) };
+        if ((kind === "wages" || kind === "household_wages") && !wageLineIsOffered(line)) return [];
+        return [line];
       })
     : [];
-  const lines = [...parsedLines, ...(fromPrinted?.lines ?? [])].filter(
+  const lines = [...(fromPrinted?.lines ?? []), ...parsedLines].filter(
     (line, index, all) =>
       all.findIndex((other) => other.kind === line.kind && other.value === line.value) === index,
   );
@@ -330,7 +452,7 @@ export function fieldsOnReaderMap(
     if (allowed.has(key) || key === "return_kind" || key === "tax_year") next[key] = value;
   }
   Object.assign(next, stubLock);
-  if (map.names.length && !next.full_name) next.full_name = map.names.join(" and ");
+  if (map.names.length) next.full_name = map.names.join(" and ");
   if (map.entities.length && !next.entity_name) next.entity_name = map.entities[0] ?? "";
   const wage = readerWageLine(map);
   if (wage && !paystubFieldsLock(next)) next.wages = wage.value;

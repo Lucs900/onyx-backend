@@ -83,6 +83,8 @@ import {
   fieldsOnReaderMap,
   paystubExtractOpens,
   paystubFieldsLock,
+  readerBusinessLines,
+  readerBusinessSpeech,
   readerEntityName,
   readerMapNeverOpensStub,
   readerMapOpensReturnCard,
@@ -917,11 +919,11 @@ function federalReturnConfirmParts(fields: Record<string, string>) {
     return { year, status: "", agi: "", deps: "", parts };
   }
   if (year) parts.push(`${year} return`);
-  if (name && (looksLikeTaxReturnPageReadFields(fields) || (entity && Number(wages) > 0))) {
-    parts.push(name);
-  }
+  if (name) parts.push(name);
   if (entity && !junkEmployerName(entity)) parts.push(entity);
-  if (Number(wages) > 0) parts.push(`${wageLabel} $${Number(wages).toLocaleString("en-US")}`);
+  if (Number(wages) > 0 && wageLabel) {
+    parts.push(`${wageLabel} $${Number(wages).toLocaleString("en-US")}`);
+  }
   if (status) parts.push(status.replace(/\.$/, ""));
   if (Number(agi) > 0) parts.push(`AGI $${Number(agi).toLocaleString("en-US")}`);
   if (deps) {
@@ -943,21 +945,26 @@ export function maybeProposeFederalReturn(
   const mapOpens = readerMapOpensReturnCard(readerMap);
   if (!pageRead && !looksLikeFederalReturnFields(fields) && !mapOpens) return null;
   if (draft.pendingProposal || draft.pendingConflict) return null;
-  const entity = readerEntityName(readerMap);
+  const businesses = readerBusinessLines(readerMap);
+  const entity = businesses.length ? "" : readerEntityName(readerMap);
   const wage = readerWageLine(readerMap);
   const mapName = (readerMap?.names ?? []).filter(Boolean).join(" and ").trim();
   const cardFields = {
     ...fields,
-    ...(mapName && !String(fields.full_name ?? "").trim() ? { full_name: mapName } : {}),
+    ...(mapName ? { full_name: mapName } : {}),
     ...(entity ? { entity_name: entity } : {}),
-    ...(wage ? { wages: wage.value, wage_line_label: wage.label ?? "wages" } : {}),
+    ...(wage ? { wages: wage.value, wage_line_label: wage.label ?? "wages" } : { wages: "", wage_line_label: "" }),
   };
   const { year, status, agi, deps, parts } = federalReturnConfirmParts(cardFields);
-  if (!parts.length) return null;
+  if (!parts.length && !businesses.length) return null;
   const extras: { field: string; value: string; label: string }[] = [];
   const name = String(cardFields.full_name ?? "").trim();
   if ((pageRead || mapOpens) && name) extras.push({ field: "full_name", value: name, label: "name" });
   if (entity) extras.push({ field: "entity_name", value: entity, label: "entity" });
+  for (const line of businesses) {
+    const spoken = readerBusinessSpeech(line);
+    if (spoken) extras.push({ field: "return_line", value: spoken, label: line.kind });
+  }
   if (wage) {
     extras.push({ field: "wages", value: wage.value, label: wage.label ?? "wages" });
     if (wage.label && wage.label !== "wages") {

@@ -12,8 +12,11 @@ import {
   extractClassFromReaderMap,
   fieldsOnReaderMap,
   paystubExtractOpens,
+  readerBusinessLines,
+  readerMapFromLook,
   readerMapFromPrintedLines,
   readerMapNeverOpensStub,
+  readerWageLine,
 } from "../lib/docs/readerMap";
 import {
   applyExtractedFields,
@@ -36,6 +39,26 @@ const PERSONAL = [
   "California wages $96,000",
   "Shareholder HO & SOY INC",
   "Agfa Monotype Corporation",
+];
+
+const RETURN_THREE = [
+  "Form 1040",
+  "U.S. Individual Income Tax Return",
+  "2024",
+  "Sichiv Ho",
+  "Vouch Eim Soy",
+  "Schedule C",
+  "Vouch Eim Soy",
+  "Schedule E Supplemental Income and Loss",
+  "L&H VENTURES LLC",
+  "partnership",
+  "$60,343 passive",
+  "Schedule K-1 (Form 1120-S)",
+  "HO & SOY INC",
+  "S corporation",
+  "26,351",
+  "26,351",
+  "If you did not get a Form W-2, see instructions. Household employee wages not reported on Form(s) W-2  1g  $8,919",
 ];
 
 function looksRightDraft() {
@@ -65,6 +88,49 @@ function main() {
   assert.equal(extractClassFromReaderMap(map), "tax_return");
   assert.equal(loudWageFromPrintedLines(PERSONAL), null);
   assert.doesNotMatch(JSON.stringify(map), /Agfa|Monotype/i);
+
+  const three = readerMapFromPrintedLines(RETURN_THREE);
+  assert.ok(three.forms.includes("1040"));
+  assert.ok(three.forms.includes("schedule_c"));
+  assert.ok(three.forms.includes("schedule_e"));
+  assert.ok(three.forms.includes("k1"));
+  assert.ok(three.names.some((name) => /Sichiv Ho/i.test(name)));
+  assert.doesNotMatch(three.names.join(" "), /SICHIY/i);
+  assert.ok(three.entities.some((name) => /L&H VENTURES LLC/i.test(name)));
+  assert.ok(three.entities.some((name) => /HO\s*&\s*SOY INC/i.test(name)));
+  const businesses = readerBusinessLines(three);
+  assert.ok(
+    businesses.some((line) => line.kind === "schedule_c" && /Vouch Eim Soy/i.test(line.value)),
+    `schedule c ${JSON.stringify(businesses)}`,
+  );
+  assert.ok(
+    businesses.some((line) => line.kind === "schedule_e" && line.value === "60343" && /L&H VENTURES LLC/i.test(line.label ?? "")),
+    `schedule e ${JSON.stringify(businesses)}`,
+  );
+  assert.equal(
+    businesses.filter((line) => line.kind === "k1" && line.value === "26351" && /HO\s*&\s*SOY INC/i.test(line.label ?? "")).length,
+    2,
+    `two K-1 lines ${JSON.stringify(businesses)}`,
+  );
+  assert.equal(readerWageLine(three), null, "1g household employee wages are not a wage to offer");
+  assert.ok(!three.lines.some((line) => line.kind === "wages" && line.value === "8919"));
+
+  const garbled = readerMapFromLook(
+    {
+      forms: ["1040"],
+      names: ["SICHIY HO AND VOUCH EIM SOY"],
+      entities: ["L&H VENTURES LLC"],
+      lines: [
+        { kind: "wages", value: "8919", label: "If you did not g Wages from Form , line 6 … 1g" },
+      ],
+    },
+    RETURN_THREE,
+  );
+  assert.ok(garbled.names.some((name) => /Sichiv Ho/i.test(name)));
+  assert.doesNotMatch(garbled.names.join(" "), /SICHIY/i);
+  assert.ok(garbled.entities.some((name) => /HO\s*&\s*SOY INC/i.test(name)));
+  assert.equal(readerWageLine(garbled), null);
+  assert.equal(readerMapOpensReturnCard(garbled), true);
 
   assert.equal(paystubExtractOpens({ employer_name: "Harbor Cafe" }), false);
   assert.equal(paystubExtractOpens({ employer_name: "Harbor Cafe", gross_period: "400" }), false);
@@ -195,6 +261,53 @@ function main() {
     ["Use this", "Change"],
   );
 
+  loadIntakeDraft({
+    ...looksRightDraft(),
+    documents: [
+      {
+        slot: "other",
+        name,
+        type: "application/pdf",
+        size: 12000,
+        receivedAt,
+        status: "received",
+      },
+    ],
+  });
+  const threeWrite = applyExtractWrite(receivedAt, name, {
+    extractClass: "tax_return",
+    confidence: 0.94,
+    fields: {
+      tax_year: "2024",
+      full_name: "SICHIY HO AND VOUCH EIM SOY",
+      entity_name: "L&H VENTURES LLC",
+      wages: "8919",
+    },
+    readerMap: garbled,
+  });
+  assert.equal(threeWrite.draft.facts?.wages, undefined);
+  assert.equal(threeWrite.draft.facts?.entity_name, undefined);
+  const threeCard = proposalAskCopy(threeWrite.draft.pendingProposal);
+  assert.match(threeCard, /Sichiv Ho/i);
+  assert.doesNotMatch(threeCard, /SICHIY/i);
+  assert.match(threeCard, /Schedule C under Vouch Eim Soy/i);
+  assert.match(threeCard, /L&H VENTURES LLC/i);
+  assert.match(threeCard, /60,343/);
+  assert.match(threeCard, /HO\s*&\s*SOY INC/i);
+  assert.match(threeCard, /26,351/);
+  assert.doesNotMatch(threeCard, /8,919|8919/);
+  assert.doesNotMatch(threeCard, /If you did not/i);
+  assert.deepEqual(
+    (nextFoxAsk(threeWrite.draft).actions ?? []).map((item) => item.label),
+    ["Use this", "Change"],
+  );
+  const threePay = previewFacts(threeWrite.draft).find((fact) => fact.id === "pay" || fact.label === "Pay");
+  assert.ok(!threePay || !/8,919|8919/.test(threePay.value), `pad stays empty of 1g — ${threePay?.value ?? "none"}`);
+  const threeSkip = resolveProposal(threeWrite.draft, "decline");
+  assert.equal(threeSkip.facts?.wages, undefined);
+  assert.equal(threeSkip.facts?.entity_name, undefined);
+  assert.ok(!docsInDisplayLabels(threeSkip).includes("Paystubs in"));
+
   const inventedOnly = applyExtractedFields(looksRightDraft(), {
     extractClass: "tax_return",
     confidence: 0.94,
@@ -262,6 +375,7 @@ function main() {
   assert.match(extractSrc, /if \(adapter\.read\)/);
   assert.match(extractSrc, /readerMapOpensReturnCard/);
   assert.match(extractSrc, /printedLooksLikePersonal1040\(walked\)/);
+  assert.match(extractSrc, /household employee/);
   assert.doesNotMatch(extractSrc, /hold the class until Use this/);
   const fileWriteSrc = readFileSync(
     join(dirname(fileURLToPath(import.meta.url)), "..", "components/fox/fileWrite.ts"),
@@ -269,7 +383,11 @@ function main() {
   );
   assert.doesNotMatch(fileWriteSrc, /HO & SOY INC/, "entity is not a hardcoded card");
   assert.doesNotMatch(fileWriteSrc, /Sichiv Ho/, "names are not a hardcoded card");
+  assert.doesNotMatch(fileWriteSrc, /L&H VENTURES/, "L&H is not a hardcoded card");
   assert.doesNotMatch(fileWriteSrc, /96,000/, "wage is not a hardcoded card");
+  assert.doesNotMatch(fileWriteSrc, /60,343/, "Schedule E dollar is not a hardcoded card");
+  assert.doesNotMatch(fileWriteSrc, /26,351/, "K-1 dollar is not a hardcoded card");
+  assert.doesNotMatch(fileWriteSrc, /SICHIY/);
 
   const walker72 = readFileSync(
     join(dirname(fileURLToPath(import.meta.url)), "assert-walker-case-72.ts"),

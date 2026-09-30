@@ -331,7 +331,7 @@ Keys:
 Rules:
 - forms found, names, entities, lines, and what is missing. Empty string / empty array when not printed.
 - Form 1040, 8879, 540, 7203, or K-1 is tax_return. Those forms open the map, never the stub slot.
-- On a tax_return page: entities are printed company names (INC, LLC, CORP). Empty if none. lines include kind wages only when a wage dollar is printed on THIS page. value is that dollar. label is the printed phrase without the dollar. Never invent a wage or company.
+- On a tax_return page: spell names as printed. Name every printed business and whose it is. Schedule C is under the printed person. Schedule E is the printed partnership / passive entity and dollar. K-1 / 1120-S / S corp is the printed entity and dollar — two printed dollars are two lines. lines kind wages only for a printed wage (1z / 1a / a labeled wages line). Never 1g household employee wages. Never a K-1, ordinary, or passive dollar as wages. Never invent a wage or company.
 - class is paystub only when employer_name, pay_period_end or check_date, and gross_period are printed on THIS page. The word paystub is not required.
 - On a paystub: Hours | Current | Year to Date means the first number after Total Gross is hours, not money. gross_period is Current. ytd_gross is Year to Date. Do not emit a wages line. Do not replace period gross with hours or a smaller earnings line. Empty employer stays empty.
 - PDF font foundries are not employers. Never invent numbers, names, or dates. Never output SSN.`;

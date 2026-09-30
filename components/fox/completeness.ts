@@ -1174,10 +1174,17 @@ export function proposalAskCopy(proposal: FactProposal) {
   if (proposal.field === "tax_year") {
     const fields = Object.fromEntries([
       [proposal.field, proposal.value],
-      ...(proposal.extras ?? []).map((item) => [item.field, item.value]),
+      ...(proposal.extras ?? [])
+        .filter((item) => item.field !== "return_line")
+        .map((item) => [item.field, item.value]),
     ]);
     const copy = federalReturnConfirmCopy(fields);
-    if (copy) return `${copy} Use this?`;
+    const more = (proposal.extras ?? [])
+      .filter((item) => item.field === "return_line")
+      .map((item) => item.value.replace(/\.$/, "").trim())
+      .filter(Boolean);
+    const spoken = [copy.replace(/\.$/, "").trim(), ...more].filter(Boolean).join(". ");
+    if (spoken) return `${spoken}. Use this?`;
   }
   if (isRemainderConfirmField(proposal.field) || proposal.extras?.length) {
     return remainderAskCopy(proposal);
@@ -1820,6 +1827,9 @@ export function resolveProposal(
       continue;
     }
     if (proposal.field === "tax_year" && extra.field === "wage_line_label") {
+      continue;
+    }
+    if (proposal.field === "tax_year" && extra.field === "return_line") {
       continue;
     }
     if (
