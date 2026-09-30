@@ -4290,7 +4290,8 @@ export function docsInDisplayLabels(draft: FoxIntakeDraft): string[] {
   );
 }
 
-/** Extract classes Docs already marks in. Source of truth for Still useful and Ask Fox papers. */
+/** Extract classes Docs already marks in. Source of truth for Still useful and Ask Fox papers.
+ *  Received / unread is not in — a received 1040 that could not be read stays off this set. */
 export function docsInExtractClasses(draft: FoxIntakeDraft): Set<ExtractClass> {
   const out = new Set<ExtractClass>();
   for (const label of docsInDisplayLabels(draft)) {
@@ -4300,9 +4301,6 @@ export function docsInExtractClasses(draft: FoxIntakeDraft): Set<ExtractClass> {
     if (label === "Tax return in") out.add("tax_return");
     if (label === "Bank statements in") out.add("bank_statement");
     if (label === "Purchase contract in") out.add("purchase_contract");
-  }
-  for (const cls of ["w2", "government_id", "paystub", "tax_return"] as ExtractClass[]) {
-    if (receivedClassCount(draft, cls) > 0) out.add(cls);
   }
   return out;
 }
