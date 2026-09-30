@@ -83,7 +83,9 @@ import {
   fieldsOnReaderMap,
   paystubExtractOpens,
   paystubFieldsLock,
+  readerEntityName,
   readerMapNeverOpensStub,
+  readerWageLine,
   type ReaderMap,
 } from "@/lib/docs/readerMap";
 import {
@@ -615,6 +617,7 @@ const FEDERAL_RETURN_HOLD = new Set([
   "wages",
   "dependent_count",
   "return_kind",
+  "entity_name",
 ]);
 
 const TRANSCRIPT_FILE_KEYS = new Set([
@@ -903,6 +906,9 @@ function federalReturnConfirmParts(fields: Record<string, string>) {
   const agi = String(fields.agi ?? "").replace(/[^\d.]/g, "");
   const deps = String(fields.dependent_count ?? "").replace(/\D/g, "");
   const name = String(fields.full_name ?? "").trim();
+  const entity = String(fields.entity_name ?? "").trim();
+  const wages = String(fields.wages ?? "").replace(/[^\d.]/g, "");
+  const wageLabel = String(fields.wage_line_label ?? "").trim() || "wages";
   const parts: string[] = [];
   if (isTranscriptReturnFields(fields)) {
     parts.push("Tax return transcript");
@@ -911,6 +917,8 @@ function federalReturnConfirmParts(fields: Record<string, string>) {
   }
   if (year) parts.push(`${year} return`);
   if (looksLikeTaxReturnPageReadFields(fields) && name) parts.push(name);
+  if (entity && !junkEmployerName(entity)) parts.push(entity);
+  if (Number(wages) > 0) parts.push(`${wageLabel} $${Number(wages).toLocaleString("en-US")}`);
   if (status) parts.push(status.replace(/\.$/, ""));
   if (Number(agi) > 0) parts.push(`AGI $${Number(agi).toLocaleString("en-US")}`);
   if (deps) {
@@ -924,17 +932,32 @@ function federalReturnConfirmParts(fields: Record<string, string>) {
 export function maybeProposeFederalReturn(
   draft: FoxIntakeDraft,
   fields: Record<string, string>,
+  readerMap?: ReaderMap | null,
 ): FoxIntakeDraft | null {
   if (isTranscriptReturnFields(fields)) return null;
   if (isCoverReturnFields(fields)) return null;
   const pageRead = looksLikeTaxReturnPageReadFields(fields);
   if (!pageRead && !looksLikeFederalReturnFields(fields)) return null;
   if (draft.pendingProposal || draft.pendingConflict) return null;
-  const { year, status, agi, deps, parts } = federalReturnConfirmParts(fields);
+  const entity = readerEntityName(readerMap);
+  const wage = readerWageLine(readerMap);
+  const cardFields = {
+    ...fields,
+    ...(entity ? { entity_name: entity } : {}),
+    ...(wage ? { wages: wage.value, wage_line_label: wage.label ?? "wages" } : {}),
+  };
+  const { year, status, agi, deps, parts } = federalReturnConfirmParts(cardFields);
   if (!parts.length) return null;
   const extras: { field: string; value: string; label: string }[] = [];
   const name = String(fields.full_name ?? "").trim();
   if (pageRead && name) extras.push({ field: "full_name", value: name, label: "name" });
+  if (entity) extras.push({ field: "entity_name", value: entity, label: "entity" });
+  if (wage) {
+    extras.push({ field: "wages", value: wage.value, label: wage.label ?? "wages" });
+    if (wage.label && wage.label !== "wages") {
+      extras.push({ field: "wage_line_label", value: wage.label, label: "wage line" });
+    }
+  }
   if (status) extras.push({ field: "filing_status", value: status, label: "filing status" });
   const transcript = isTranscriptReturnFields(fields);
   if (!transcript && Number(agi) > 0 && !pageRead) extras.push({ field: "agi", value: agi, label: "AGI" });
@@ -2708,7 +2731,7 @@ export function applyExtractedFields(
     !next.pendingProposal &&
     !next.pendingConflict
   ) {
-    next = maybeProposeFederalReturn(next, fields) ?? next;
+    next = maybeProposeFederalReturn(next, fields, input.readerMap) ?? next;
   }
   if (packetContinue) {
     next = {

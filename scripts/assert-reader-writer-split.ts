@@ -17,12 +17,14 @@ import {
 import {
   applyExtractedFields,
   docsInDisplayLabels,
+  federalReturnConfirmCopy,
   hasLockedSuggestion,
   looksLikePaystubFields,
 } from "../components/fox/fileWrite";
-import { resolveProposal } from "../components/fox/completeness";
+import { proposalAskCopy, resolveProposal } from "../components/fox/completeness";
 import { applyExtractWrite, emptyDraft, loadIntakeDraft } from "../components/fox/store";
 import { loudWageFromPrintedLines } from "../lib/docs/printedSample";
+import { nextFoxAsk } from "../components/fox/workspace";
 
 const PERSONAL = [
   "Form 1040",
@@ -135,27 +137,54 @@ function main() {
     `reader must not stamp Paystubs in — ${docsInDisplayLabels(beforeUse.draft).join(" · ")}`,
   );
 
+  const namesOnly = applyExtractedFields(looksRightDraft(), {
+    extractClass: "tax_return",
+    confidence: 0.94,
+    fields: { tax_year: "2024", full_name: "Sichiv Ho and Vouch Eim Soy" },
+  });
+  const namesOnlyCopy = proposalAskCopy(namesOnly.draft.pendingProposal);
+  assert.match(namesOnlyCopy, /2024 return/i);
+  assert.doesNotMatch(namesOnlyCopy, /96,000|96000|HO\s*&\s*SOY/i, "names-only extract does not invent a wage or entity");
+
   const proposed = applyExtractedFields(looksRightDraft(), {
     extractClass: "tax_return",
     confidence: 0.94,
     fields: {
       tax_year: "2024",
       full_name: "Sichiv Ho and Vouch Eim Soy",
-      wages: "96000",
       employer_name: "Agfa Monotype Corporation",
     },
     readerMap: map,
   });
   assert.equal(proposed.draft.facts?.employer_name, undefined);
   assert.equal(proposed.draft.facts?.tax_year, undefined);
+  assert.equal(proposed.draft.facts?.entity_name, undefined, "entity stays off File until Use this");
+  assert.equal(proposed.draft.facts?.wages, undefined, "wage stays off File until Use this");
   assert.doesNotMatch(JSON.stringify(proposed.draft.pendingProposal ?? {}), /Agfa|Monotype/i);
+  const card = proposalAskCopy(proposed.draft.pendingProposal);
+  assert.match(card, /2024 return/i);
+  assert.match(card, /Sichiv Ho/i);
+  assert.match(card, /Vouch Eim Soy/i);
+  assert.match(card, /HO\s*&\s*SOY INC/i, `card must name the entity — ${card}`);
+  assert.match(card, /96,000/, `card must offer the on-page wage — ${card}`);
+  assert.doesNotMatch(card, /Agfa|Monotype/i);
+  assert.notEqual(federalReturnConfirmCopy({ tax_year: "2024", full_name: "Sichiv Ho and Vouch Eim Soy" }).includes("96,000"), true);
+  const ask = nextFoxAsk(proposed.draft);
+  assert.deepEqual(
+    (ask.actions ?? []).map((item) => item.label),
+    ["Use this", "Change"],
+  );
   const skipped = resolveProposal(proposed.draft, "decline");
   assert.equal(skipped.facts?.tax_year, undefined);
   assert.equal(skipped.facts?.employer_name, undefined);
+  assert.equal(skipped.facts?.entity_name, undefined);
+  assert.equal(skipped.facts?.wages, undefined);
   assert.ok(!docsInDisplayLabels(skipped).includes("Paystubs in"));
 
   const used = resolveProposal(proposed.draft, "accept");
   assert.doesNotMatch(JSON.stringify(used.facts ?? {}), /Agfa|Monotype/i);
+  assert.match(String(used.facts?.entity_name?.value ?? ""), /HO\s*&\s*SOY INC/i);
+  assert.equal(used.facts?.wages?.value, "96000");
   assert.ok(!docsInDisplayLabels(used).includes("Paystubs in"), "personal return is not Paystubs in");
 
   const extractSrc = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "..", "lib/docs/extract.ts"), "utf8");
@@ -163,6 +192,13 @@ function main() {
   assert.match(extractSrc, /async read\(/);
   assert.match(extractSrc, /if \(adapter\.read\)/);
   assert.doesNotMatch(extractSrc, /hold the class until Use this/);
+  const fileWriteSrc = readFileSync(
+    join(dirname(fileURLToPath(import.meta.url)), "..", "components/fox/fileWrite.ts"),
+    "utf8",
+  );
+  assert.doesNotMatch(fileWriteSrc, /HO & SOY INC/, "entity is not a hardcoded card");
+  assert.doesNotMatch(fileWriteSrc, /Sichiv Ho/, "names are not a hardcoded card");
+  assert.doesNotMatch(fileWriteSrc, /96,000/, "wage is not a hardcoded card");
 
   const walker72 = readFileSync(
     join(dirname(fileURLToPath(import.meta.url)), "assert-walker-case-72.ts"),

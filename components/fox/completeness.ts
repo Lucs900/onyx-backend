@@ -1819,6 +1819,9 @@ export function resolveProposal(
       if (name) next = writeConfirmedFact(next, TAX_RETURN_NAME_FIELD, name, source);
       continue;
     }
+    if (proposal.field === "tax_year" && extra.field === "wage_line_label") {
+      continue;
+    }
     if (
       proposal.field === QUALIFYING_INCOME_FIELD &&
       (extra.field === "officer_compensation" ||

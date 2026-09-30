@@ -22,6 +22,7 @@ export type ReaderForm =
 export type ReaderLine = {
   kind: string;
   value: string;
+  label?: string;
 };
 
 export type ReaderMap = {
@@ -144,6 +145,39 @@ function looksLikeEntity(line: string) {
   return /\b(?:INC\.?|LLC|L\.L\.C\.|CORP\.?|LLP)\b/i.test(t) && t.length <= 60;
 }
 
+function entityFromLine(line: string) {
+  const labeled = line.match(/\b((?:[A-Z0-9][A-Z0-9 .&'-]{1,50}?)(?:INC\.?|LLC|L\.L\.C\.|CORP\.?))\b/i);
+  const name = (labeled?.[1] ?? line)
+    .replace(/\s+/g, " ")
+    .replace(/^(?:shareholder|partner|name of (?:the )?(?:corporation|partnership|company)|entity)\s+/i, "")
+    .trim()
+    .replace(/\.$/, "");
+  if (!name || junkEmployerName(name)) return "";
+  return name;
+}
+
+function wageLineLabel(line: string) {
+  const stripped = line
+    .replace(/\$?\s*\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d{4,}(?:\.\d+)?/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  return stripped || "wages";
+}
+
+export function readerEntityName(map?: ReaderMap | null) {
+  const named = String(map?.entities?.[0] ?? "").trim();
+  if (!named || junkEmployerName(named)) return "";
+  return named;
+}
+
+export function readerWageLine(map?: ReaderMap | null): ReaderLine | null {
+  const line = map?.lines?.find((item) => item.kind === "wages" || item.kind === "household_wages");
+  if (!line) return null;
+  const amount = String(line.value ?? "").replace(/[^\d.]/g, "");
+  if (!amount || !Number(amount)) return null;
+  return { ...line, value: amount, label: line.label || "wages" };
+}
+
 function moneyOnLine(line: string) {
   const match = line.match(/\$?\s*(\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d{4,}(?:\.\d+)?)/);
   return match?.[1]?.replace(/,/g, "") ?? "";
@@ -154,19 +188,12 @@ export function readerMapFromPrintedLines(lines: readonly string[]): ReaderMap {
   const blob = cleaned.join("\n");
   const forms = formFromBlob(blob);
   const names = unique(cleaned.filter(looksLikePersonName));
-  const entities = unique(
-    cleaned.flatMap((line) => {
-      if (!looksLikeEntity(line)) return [];
-      const labeled = line.match(/\b((?:[A-Z0-9][A-Z0-9 .&'-]{1,50}?)(?:INC\.?|LLC|L\.L\.C\.|CORP\.?))\b/i);
-      const name = (labeled?.[1] ?? line).replace(/\s+/g, " ").trim();
-      return name && !junkEmployerName(name) ? [name.replace(/\.$/, "")] : [];
-    }),
-  );
+  const entities = unique(cleaned.flatMap((line) => (looksLikeEntity(line) ? [entityFromLine(line)] : [])));
   const linesOut: ReaderLine[] = [];
   for (const line of cleaned) {
     if (/wages/i.test(line)) {
       const amount = moneyOnLine(line);
-      if (amount) linesOut.push({ kind: "wages", value: amount });
+      if (amount) linesOut.push({ kind: "wages", value: amount, label: wageLineLabel(line) });
     }
   }
   for (const name of names) linesOut.push({ kind: "name", value: name });
@@ -226,7 +253,8 @@ export function readerMapFromLook(
         const value = String(row.value ?? "").trim();
         if (!kind || !value) return [];
         if ((kind === "employer" || kind === "employer_name") && junkEmployerName(value)) return [];
-        return [{ kind, value }];
+        const label = String(row.label ?? "").trim();
+        return [{ kind, value, ...(label ? { label } : {}) }];
       })
     : [];
   const lines = [...parsedLines, ...(fromPrinted?.lines ?? [])].filter(
@@ -281,6 +309,8 @@ export function fieldsOnReaderMap(
   }
   if (map.names.length && !next.full_name) next.full_name = map.names.join(" and ");
   if (map.entities.length && !next.entity_name) next.entity_name = map.entities[0] ?? "";
+  const wage = readerWageLine(map);
+  if (wage && !next.wages) next.wages = wage.value;
   return next;
 }
 

@@ -324,9 +324,11 @@ function readPagePrompt(hint?: ExtractClass | null) {
   const hinted = hint && hint !== "other" ? ` Hint class: ${hint}.` : "";
   return `Read the visible page once. Same Grok look. No second pass. Return one JSON object.${hinted}
 Keys:
-{"class":"${CLASSES.join("|")}","confidence":0-1,"readable":true|false,"forms":[],"names":[],"entities":[],"lines":[{"kind":"","value":""}],"missing":[],"employer_name":"","pay_period_end":"","check_date":"","gross_period":"","tax_year":"","full_name":"","wages":"","entity_name":"","medicare_wages":"","box5":"","pay_frequency":"","ytd_gross":""}
+{"class":"${CLASSES.join("|")}","confidence":0-1,"readable":true|false,"forms":[],"names":[],"entities":[],"lines":[{"kind":"","value":"","label":""}],"missing":[],"employer_name":"","pay_period_end":"","check_date":"","gross_period":"","tax_year":"","full_name":"","wages":"","entity_name":"","medicare_wages":"","box5":"","pay_frequency":"","ytd_gross":""}
 Rules:
 - forms found, names, entities, lines, and what is missing. Empty string / empty array when not printed.
+- entities are company names printed on THIS page (INC, LLC, CORP). Empty if none. Never invent a company.
+- lines: include kind wages only when a wage dollar is printed on THIS page. value is that dollar. label is the printed phrase without the dollar. Never invent a wage.
 - class is paystub only when employer_name, pay_period_end or check_date, and gross_period are printed on THIS page. The word paystub is not required.
 - Form 1040, 8879, 540, 7203, or K-1 is tax_return. Those forms open the map, never the stub slot.
 - Empty employer stays empty. Never invent a company. PDF font foundries are not employers.
@@ -709,15 +711,24 @@ function fieldsFromLook(parsed: Record<string, unknown>): Record<string, string>
   return raw;
 }
 
+function printedLinesFromWalked(walked: ClassifiedTaxPage[]): string[] {
+  return walked.flatMap((page) => (page.lines.length ? page.lines : page.text.split(/\n/)));
+}
+
 function applyReaderGate(
   result: ClassifyExtractResult,
   printed?: readonly string[] | null,
 ): ClassifyExtractResult {
-  const map =
-    result.readerMap ??
-    (printed?.length ? readerMapFromPrintedLines(printed) : readerMapFromLook({
-      forms: result.extractClass === "tax_return" ? ["1040"] : [],
-    }));
+  const map = readerMapFromLook(
+    {
+      forms: result.readerMap?.forms ?? [],
+      names: result.readerMap?.names ?? [],
+      entities: result.readerMap?.entities ?? [],
+      lines: result.readerMap?.lines ?? [],
+      missing: result.readerMap?.missing ?? [],
+    },
+    printed,
+  );
   if (readerMapNeverOpensStub(map) && (result.extractClass === "paystub" || result.extractClass === "w2")) {
     return {
       ...result,
@@ -1118,13 +1129,17 @@ async function grokPageRead(
     keys: Object.keys(fields),
   });
   const bankLocked = extractClass === "bank_statement" || hint === "bank_statement";
-  const merged = await mergeTaxReturnLedgerFields(
+  const pageWithMap = applyReaderGate(
     {
       ...page,
       extractClass: bankLocked ? "bank_statement" : extractClass,
       fields,
       failed: false,
     },
+    printedLinesFromWalked(walked),
+  );
+  const merged = await mergeTaxReturnLedgerFields(
+    pageWithMap,
     bytes,
     mediaType,
     adapter,
@@ -1512,6 +1527,7 @@ async function mergeTaxReturnLedgerFields(
   try {
     if (await printedLayerLooksLikeIrsTranscript(bytes, mediaType)) return result;
     const pages = walked ?? (await classifyTaxReturnPages(bytes, adapter, filename));
+    const printed = printedLinesFromWalked(pages);
     const ledger = await ledgerFieldsFromWalk(bytes, mediaType, adapter, pages, filename);
     const fields: Record<string, string> = {};
     const ordinary = String(ledger.entity_ordinary_income ?? "").trim();
@@ -1521,22 +1537,26 @@ async function mergeTaxReturnLedgerFields(
     }
     if (pickForm1040Page(pages)) fields.form_1040 = fields.form_1040 || "1";
     if (!Object.keys(ledger).length) {
-      return packetExtractIsUseful(result.extractClass, result.fields)
-        ? { ...result, failed: false, warnings: (result.warnings ?? []).filter((item) => item !== "failed") }
-        : result;
+      const mapped = applyReaderGate(result, printed);
+      return packetExtractIsUseful(mapped.extractClass, mapped.fields)
+        ? { ...mapped, failed: false, warnings: (mapped.warnings ?? []).filter((item) => item !== "failed") }
+        : mapped;
     }
     if (ordinary) {
       fields.return_kind = ledger.return_kind || fields.return_kind || "";
     }
     const useful = packetExtractIsUseful("tax_return", fields);
-    return {
-      ...result,
-      extractClass: "tax_return",
-      failed: useful ? false : result.failed,
-      confidence: useful ? 0.94 : result.confidence,
-      fields,
-      warnings: useful ? (result.warnings ?? []).filter((item) => item !== "failed") : result.warnings,
-    };
+    return applyReaderGate(
+      {
+        ...result,
+        extractClass: "tax_return",
+        failed: useful ? false : result.failed,
+        confidence: useful ? 0.94 : result.confidence,
+        fields,
+        warnings: useful ? (result.warnings ?? []).filter((item) => item !== "failed") : result.warnings,
+      },
+      printed,
+    );
   } catch (error) {
     logVisionError("mergeTaxReturnLedgerFields", error);
     return result;
@@ -1950,7 +1970,7 @@ export async function classifyAndExtract(
   );
   const hunted = await withPageMedicareHunt(result, bytes, mediaType);
   const layer =
-    isPdf(bytes) || mediaType === "application/pdf" ? readPdfTextLayer(bytes) : null;
+    isPdf(bytes) || mediaType === "application/pdf" ? await printedLinesForExtract(bytes, mediaType) : null;
   const blocked = applyReaderGate(
     dropPaystubLockedOnlyByJunkEmployer(
       rejectPaystubForEntityReturn(hunted, filename, layer),
