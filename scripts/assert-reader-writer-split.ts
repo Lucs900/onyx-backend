@@ -10,6 +10,7 @@ import { fileURLToPath } from "node:url";
 import { classifyPageByFormHeader } from "../lib/docs/formHeader";
 import {
   extractClassFromReaderMap,
+  fieldsOnReaderMap,
   paystubExtractOpens,
   readerMapFromPrintedLines,
   readerMapNeverOpensStub,
@@ -83,6 +84,24 @@ function main() {
   );
   assert.equal(hasLockedSuggestion("paystub", { employer_name: "Harbor Cafe" }), false);
   assert.equal(looksLikePaystubFields({ employer_name: "Harbor Cafe", gross_period: "400" }), false);
+  assert.equal(
+    fieldsOnReaderMap(
+      {
+        employer_name: "Alameda Health System",
+        pay_period_end: "08/15/2026",
+        gross_period: "16824.30",
+      },
+      {
+        forms: ["paystub"],
+        names: ["ALAMEDA HEALTH SYSTEM"],
+        entities: [],
+        lines: [{ kind: "wages", value: "225.80", label: "Total Gross" }],
+        missing: [],
+      },
+    ).gross_period,
+    "16824.30",
+    "stub period gross stays; a wages line is not the period",
+  );
 
   assert.equal(classifyPageByFormHeader("Form 8879 IRS e-file Signature Authorization"), "form_8879");
   assert.equal(

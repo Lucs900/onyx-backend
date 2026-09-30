@@ -327,12 +327,11 @@ Keys:
 {"class":"${CLASSES.join("|")}","confidence":0-1,"readable":true|false,"forms":[],"names":[],"entities":[],"lines":[{"kind":"","value":"","label":""}],"missing":[],"employer_name":"","pay_period_end":"","check_date":"","gross_period":"","tax_year":"","full_name":"","wages":"","entity_name":"","medicare_wages":"","box5":"","pay_frequency":"","ytd_gross":""}
 Rules:
 - forms found, names, entities, lines, and what is missing. Empty string / empty array when not printed.
-- entities are company names printed on THIS page (INC, LLC, CORP). Empty if none. Never invent a company.
-- lines: include kind wages only when a wage dollar is printed on THIS page. value is that dollar. label is the printed phrase without the dollar. Never invent a wage.
-- class is paystub only when employer_name, pay_period_end or check_date, and gross_period are printed on THIS page. The word paystub is not required.
 - Form 1040, 8879, 540, 7203, or K-1 is tax_return. Those forms open the map, never the stub slot.
-- Empty employer stays empty. Never invent a company. PDF font foundries are not employers.
-- Never invent numbers, names, or dates. Never output SSN.`;
+- On a tax_return page: entities are printed company names (INC, LLC, CORP). Empty if none. lines include kind wages only when a wage dollar is printed on THIS page. value is that dollar. label is the printed phrase without the dollar. Never invent a wage or company.
+- class is paystub only when employer_name, pay_period_end or check_date, and gross_period are printed on THIS page. The word paystub is not required.
+- On a paystub: do not emit a wages line. Do not replace period gross with a smaller earnings line. Empty employer stays empty.
+- PDF font foundries are not employers. Never invent numbers, names, or dates. Never output SSN.`;
 }
 
 function extractFieldsPrompt(extractClass: ExtractClass, keys: readonly string[]) {
@@ -1129,6 +1128,10 @@ async function grokPageRead(
     keys: Object.keys(fields),
   });
   const bankLocked = extractClass === "bank_statement" || hint === "bank_statement";
+  const taxWalkPrinted =
+    extractClass === "tax_return" ||
+    filenameLooksLikeEntityPacket(filename) ||
+    shouldGrokTaxReturnPagesFirst(hint, filename);
   const pageWithMap = applyReaderGate(
     {
       ...page,
@@ -1136,7 +1139,7 @@ async function grokPageRead(
       fields,
       failed: false,
     },
-    printedLinesFromWalked(walked),
+    taxWalkPrinted ? printedLinesFromWalked(walked) : undefined,
   );
   const merged = await mergeTaxReturnLedgerFields(
     pageWithMap,

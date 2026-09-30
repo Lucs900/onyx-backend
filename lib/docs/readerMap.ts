@@ -274,11 +274,27 @@ export function readerMapFromLook(
   };
 }
 
+const STUB_LOCK_KEYS = [
+  "employer_name",
+  "pay_period_end",
+  "check_date",
+  "gross_period",
+  "pay_frequency",
+  "ytd_gross",
+] as const;
+
 export function fieldsOnReaderMap(
   fields: Record<string, string>,
   map: ReaderMap,
 ): Record<string, string> {
   if (!map.lines.length && !map.names.length && !map.entities.length) return fields;
+  const stubLock: Record<string, string> = {};
+  for (const key of STUB_LOCK_KEYS) {
+    const value = String(fields[key] ?? "").trim();
+    if (!value) continue;
+    if (key === "employer_name" && junkEmployerName(value)) continue;
+    stubLock[key] = value;
+  }
   const allowed = new Set<string>();
   for (const line of map.lines) {
     if (line.kind === "wages" || line.kind === "household_wages") allowed.add("wages");
@@ -307,10 +323,11 @@ export function fieldsOnReaderMap(
     if (key === "employer_name" && junkEmployerName(value)) continue;
     if (allowed.has(key) || key === "return_kind" || key === "tax_year") next[key] = value;
   }
+  Object.assign(next, stubLock);
   if (map.names.length && !next.full_name) next.full_name = map.names.join(" and ");
   if (map.entities.length && !next.entity_name) next.entity_name = map.entities[0] ?? "";
   const wage = readerWageLine(map);
-  if (wage && !next.wages) next.wages = wage.value;
+  if (wage && !next.wages && !paystubFieldsLock(next)) next.wages = wage.value;
   return next;
 }
 

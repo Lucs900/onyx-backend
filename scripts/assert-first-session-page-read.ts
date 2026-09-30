@@ -80,6 +80,7 @@ import { FAILED_READ_NOTE, isUnreadNote } from "../lib/docs/accept";
 import { classifyAndExtract, FOX_GROK_MODEL, pageImageForGrok, shouldGrokTaxReturnPagesFirst, taxReturnPageHint } from "../lib/docs/extract";
 import {
   extractClassFromReaderMap,
+  fieldsOnReaderMap,
   paystubExtractOpens,
   readerMapFromPrintedLines,
   readerMapNeverOpensStub,
@@ -768,6 +769,30 @@ async function main() {
     nextFoxAsk(alamedaAfterSkip.draft).text,
     "Alameda Health System. Period $16,824.30. Use this?",
   );
+  const wageLineSteal = {
+    forms: ["paystub" as const],
+    names: ["ALAMEDA HEALTH SYSTEM"],
+    entities: [],
+    lines: [{ kind: "wages", value: "225.80", label: "Total Gross" }],
+    missing: [] as string[],
+  };
+  assert.equal(
+    fieldsOnReaderMap(lockFirstSessionFields("paystub", alamedaFields), wageLineSteal).gross_period,
+    "16824.30",
+    "a wages line must not replace period gross",
+  );
+  const alamedaWageLine = applyExtractedFields(skippedW2, {
+    extractClass: "paystub",
+    confidence: 0.94,
+    fields: lockFirstSessionFields("paystub", alamedaFields),
+    readerMap: wageLineSteal,
+  });
+  assert.equal(
+    nextFoxAsk(alamedaWageLine.draft).text,
+    "Alameda Health System. Period $16,824.30. Use this?",
+    "reader wage line is not the Alameda period",
+  );
+  assert.doesNotMatch(nextFoxAsk(alamedaWageLine.draft).text, /225\.80/);
   assert.doesNotMatch(nextFoxAsk(alamedaAfterSkip.draft).text, /How often|paycheck|two-year OT/i);
   assert.equal((alamedaAfterSkip.draft.employmentHistory ?? []).length, 0);
   assert.equal(alamedaAfterSkip.draft.facts?.employer_name, undefined);
