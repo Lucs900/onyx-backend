@@ -167,6 +167,7 @@ import {
   transcriptSignalCopy,
   isTranscriptOnFile,
   taxReturnWrittenOnFile,
+  docsInDisplayLabels,
   federalReturnYearsOnFile,
   taxReturnPacketHoldAsk,
   taxReturnPacketCloseAskOpen,
@@ -10587,78 +10588,7 @@ function numbersFact(draft: FoxIntakeDraft): PreviewFact | null {
 
 function docsFact(draft: FoxIntakeDraft): PreviewFact | null {
   if (draft.documents.length) {
-    const wageUnread = wageExtractFailedRead(draft);
-    const w2Written = Boolean(factValue(draft, "w2_box5") || factValue(draft, "medicare_wages"));
-    const labels = Array.from(
-      new Set(
-        draft.documents
-          .map((doc) => {
-            const wageLabel = docsDisplayLabel(doc);
-            const failed =
-              isUnreadNote(doc.note) ||
-              doc.status === "failed" ||
-              doc.status === "needs better copy";
-            const stubAlreadyIn =
-              draft.stubExtractAccepted ||
-              Boolean(factValue(draft, "paystub_amount") || factValue(draft, "gross_period"));
-            if (failed) {
-              if (wageLabel === "Paystubs" && stubAlreadyIn) return "Paystubs in";
-              if (wageLabel === "Tax return") return "Tax return · received · could not read";
-              return `${wageLabel} · received · could not read`;
-            }
-            if (wageUnread && (wageLabel === "W-2" || wageLabel === "Paystubs")) {
-              if (wageLabel === "Paystubs" && stubAlreadyIn) return "Paystubs in";
-              return "received · could not read";
-            }
-            if (wageLabel === "ID") {
-              if (isBorrowerNameConfirmPending(draft)) return "";
-              if (
-                doc.status === "extracted" &&
-                !draft.borrowerName &&
-                !draft.contact.fullName.value
-              ) {
-                return "";
-              }
-            }
-            if (wageLabel === "Purchase contract") {
-              if (isPurchaseContractConfirmPending(draft)) return "";
-              if (
-                doc.status === "extracted" &&
-                !draft.facts?.purchase_price?.confirmed &&
-                !draft.facts?.close_date?.confirmed &&
-                !draft.subjectAddress
-              ) {
-                return "";
-              }
-            }
-            if (
-              wageLabel === "W-2" &&
-              wageThreadOpen(draft) &&
-              !draft.sampleAccepted &&
-              !w2Written
-            ) {
-              return "";
-            }
-            const stubWritten =
-              draft.stubExtractAccepted ||
-              Boolean(factValue(draft, "paystub_amount") || factValue(draft, "gross_period"));
-            if (
-              wageLabel === "Paystubs" &&
-              wageThreadOpen(draft) &&
-              !draft.sampleAccepted &&
-              wageW2ExtractAccepted(draft) &&
-              !stubWritten
-            ) {
-              return "";
-            }
-            if (wageLabel === "Tax return" && !taxReturnWrittenOnFile(draft)) {
-              return "";
-            }
-            return `${wageLabel} in`;
-          })
-          .filter(Boolean),
-      ),
-    );
+    const labels = docsInDisplayLabels(draft);
     if (!labels.length) return null;
     return {
       id: "docs",

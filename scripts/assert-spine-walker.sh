@@ -212,6 +212,9 @@ if [[ "${SPINE_WALKER_SKIP_LEFTOVERS:-}" != "1" ]]; then
   if leftover_wanted 71; then
     run_leftover assert-walker-case-71.ts
   fi
+  if leftover_wanted 72; then
+    run_leftover assert-ask-fox-and-still-useful-read-docs.ts
+  fi
   if leftover_wanted 12 || leftover_wanted 13; then
     run_leftover assert-file-next-ask.ts
   fi

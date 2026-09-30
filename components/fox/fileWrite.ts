@@ -4208,8 +4208,120 @@ export function layer2Plan(draft: FoxIntakeDraft): StillUsefulItem[] {
       ),
     );
   }
-  if (draft.sampleAccepted && wageThreadOpen(draft)) return pinWageCompletenessHead(items);
-  return items;
+  const planned =
+    draft.sampleAccepted && wageThreadOpen(draft) ? pinWageCompletenessHead(items) : items;
+  return planned.filter((item) => !stillUsefulPaperInDocs(draft, item.id, item.label));
+}
+
+/** Docs row labels that paint as “in”. Still useful and Ask Fox read this, not a second paper count. */
+export function docsInDisplayLabels(draft: FoxIntakeDraft): string[] {
+  if (!draft.documents?.length) return [];
+  const wageUnread = wageExtractFailedRead(draft);
+  const w2Written = Boolean(factValue(draft, "w2_box5") || factValue(draft, "medicare_wages"));
+  return Array.from(
+    new Set(
+      draft.documents
+        .map((doc) => {
+          const wageLabel = docsDisplayLabel(doc);
+          const failed =
+            isUnreadNote(doc.note) ||
+            doc.status === "failed" ||
+            doc.status === "needs better copy";
+          const stubAlreadyIn =
+            draft.stubExtractAccepted ||
+            Boolean(factValue(draft, "paystub_amount") || factValue(draft, "gross_period"));
+          if (failed) {
+            if (wageLabel === "Paystubs" && stubAlreadyIn) return "Paystubs in";
+            if (wageLabel === "Tax return") return "Tax return · received · could not read";
+            return `${wageLabel} · received · could not read`;
+          }
+          if (wageUnread && (wageLabel === "W-2" || wageLabel === "Paystubs")) {
+            if (wageLabel === "Paystubs" && stubAlreadyIn) return "Paystubs in";
+            return "received · could not read";
+          }
+          if (wageLabel === "ID") {
+            if (isBorrowerNameConfirmPending(draft)) return "";
+            if (
+              doc.status === "extracted" &&
+              !draft.borrowerName &&
+              !draft.contact.fullName.value
+            ) {
+              return "";
+            }
+          }
+          if (wageLabel === "Purchase contract") {
+            if (isPurchaseContractConfirmPending(draft)) return "";
+            if (
+              doc.status === "extracted" &&
+              !draft.facts?.purchase_price?.confirmed &&
+              !draft.facts?.close_date?.confirmed &&
+              !draft.subjectAddress
+            ) {
+              return "";
+            }
+          }
+          if (
+            wageLabel === "W-2" &&
+            wageThreadOpen(draft) &&
+            !draft.sampleAccepted &&
+            !w2Written
+          ) {
+            return "";
+          }
+          const stubWritten =
+            draft.stubExtractAccepted ||
+            Boolean(factValue(draft, "paystub_amount") || factValue(draft, "gross_period"));
+          if (
+            wageLabel === "Paystubs" &&
+            wageThreadOpen(draft) &&
+            !draft.sampleAccepted &&
+            wageW2ExtractAccepted(draft) &&
+            !stubWritten
+          ) {
+            return "";
+          }
+          if (wageLabel === "Tax return" && !taxReturnWrittenOnFile(draft)) {
+            return "";
+          }
+          return `${wageLabel} in`;
+        })
+        .filter(Boolean),
+    ),
+  );
+}
+
+/** Extract classes Docs already marks in. Source of truth for Still useful and Ask Fox papers. */
+export function docsInExtractClasses(draft: FoxIntakeDraft): Set<ExtractClass> {
+  const out = new Set<ExtractClass>();
+  for (const label of docsInDisplayLabels(draft)) {
+    if (label === "W-2 in") out.add("w2");
+    if (label === "ID in") out.add("government_id");
+    if (label === "Paystubs in") out.add("paystub");
+    if (label === "Tax return in") out.add("tax_return");
+    if (label === "Bank statements in") out.add("bank_statement");
+    if (label === "Purchase contract in") out.add("purchase_contract");
+  }
+  for (const cls of ["w2", "government_id", "paystub", "tax_return"] as ExtractClass[]) {
+    if (receivedClassCount(draft, cls) > 0) out.add(cls);
+  }
+  return out;
+}
+
+function stillUsefulPaperInDocs(draft: FoxIntakeDraft, id: string, label?: string) {
+  const inDocs = docsInExtractClasses(draft);
+  if (id === "w2" || id === "second-year-w2") return inDocs.has("w2");
+  if (id === "government_id") return inDocs.has("government_id");
+  if (id === "paystub") return inDocs.has("paystub");
+  if (id === "tax_return" || id === "prior-year-return") return inDocs.has("tax_return");
+  const spoken = String(label ?? "")
+    .normalize("NFKC")
+    .replace(/['’`]/g, "'")
+    .toLowerCase();
+  if (/w-?2/.test(spoken)) return inDocs.has("w2");
+  if (/government id/.test(spoken)) return inDocs.has("government_id");
+  if (/1040|tax return/.test(spoken)) return inDocs.has("tax_return");
+  if (/paystub/.test(spoken)) return inDocs.has("paystub");
+  return false;
 }
 
 function coverLayer2Id(label: StillUsefulLabel) {

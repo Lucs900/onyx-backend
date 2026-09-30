@@ -10,6 +10,7 @@ import { hasLinkedAccount } from "./account";
 import {
   LAST_YEAR_RETURN_STILL_USEFUL,
   LAST_YEAR_W2_STILL_USEFUL,
+  docsInExtractClasses,
   labelListCopy,
   receivedClassCount,
   stillUsefulSpokenItems,
@@ -126,13 +127,13 @@ export function lastStaffFoxLine(
   const events = [...(draft?.events ?? [])].reverse();
   const fromEvent = events.find((event) => event.kind === "staff-desk");
   const eventLine = (fromEvent?.text || fromEvent?.summary || "").trim();
-  if (eventLine) return eventLine;
+  if (eventLine && askFoxAnswerIsClean(eventLine)) return eventLine;
   if (!messages?.length) return "";
   for (let i = messages.length - 1; i >= 0; i -= 1) {
     const message = messages[i];
     if (!message || !isStaffDeskMessage(message, draft)) continue;
     const line = message.text.trim();
-    if (line) return line;
+    if (line && askFoxAnswerIsClean(line)) return line;
   }
   return "";
 }
@@ -157,6 +158,7 @@ function paperExtractClass(item: StillUsefulItem): ExtractClass | undefined {
 }
 
 function paperReceived(draft: FoxIntakeDraft, paper: FilePaper) {
+  if (paper.extractClass && docsInExtractClasses(draft).has(paper.extractClass)) return true;
   if (paper.extractClass && receivedClassCount(draft, paper.extractClass) > 0) return true;
   return false;
 }
@@ -280,6 +282,9 @@ function onePaperAnswer(paper: FilePaper, draft: FoxIntakeDraft, factsUsed: stri
   const spoken = speakLabel(paper.label);
   if (paperReceived(draft, paper)) {
     factsUsed.push(`documents.${paper.extractClass ?? paper.id}.received`);
+    if (paper.extractClass && docsInExtractClasses(draft).has(paper.extractClass)) {
+      factsUsed.push(`docs.in.${paper.extractClass}`);
+    }
     return `No. ${spoken} is already on this File.`;
   }
   const open = openPapersOnFile(draft);

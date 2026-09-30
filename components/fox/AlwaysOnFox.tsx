@@ -276,7 +276,7 @@ import { governmentIdSkipped, ID_UNREAD_ASK, isBorrowerNameConfirmPending } from
 import { whoOnLoanAskCopy, whoOnLoanSettled } from "./whoOnLoan";
 import { isUnreadNote } from "@/lib/docs/accept";
 import { applyLooksRightMotion, fileExists, finishLineActions, inQueueEnding, MOTION_COPY, reviewIsSitting } from "./motion";
-import { isAskFoxFileSpokenLine } from "./askFoxFile";
+import { askFoxAnswerIsClean, isAskFoxFileSpokenLine } from "./askFoxFile";
 import { pathFromHomeChoice } from "./homeIdle";
 import {
   FOX_DISCLOSURE,
@@ -2708,9 +2708,19 @@ export function AlwaysOnFox({
               }),
             });
             if (res.ok) {
-              const body = (await res.json()) as { text?: string };
+              const body = (await res.json()) as {
+                text?: string;
+                log?: { fileId?: string; factsUsed?: string[]; wroteFile?: boolean };
+              };
               const spoken = String(body.text ?? "").trim();
-              if (spoken) {
+              const log = body.log;
+              if (
+                spoken &&
+                askFoxAnswerIsClean(spoken) &&
+                log?.wroteFile === false &&
+                log.fileId === ownedId &&
+                (log.factsUsed ?? []).includes("file.fileId")
+              ) {
                 paintAskFox({ text: spoken, actions: finishLineActions(getFoxDraft()) });
                 return;
               }
