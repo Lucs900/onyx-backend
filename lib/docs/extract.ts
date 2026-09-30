@@ -1727,6 +1727,7 @@ async function classifyAndExtractUnmerged(
   if (isPdf(bytes) || mediaType === "application/pdf") {
     const walked = await readPdfJsTextLayer(bytes);
     if (
+      walked &&
       (printedLooksLikePersonal1040(walked) || printedLooksLikeNeverStubForm(walked)) &&
       !printedLocksTaxReturnWithoutVision(walked) &&
       !blobLooksLikeIrsTranscript(walked.join("\n"))
