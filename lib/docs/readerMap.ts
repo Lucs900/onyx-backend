@@ -255,9 +255,22 @@ function businessesFromPrinted(cleaned: string[], names: string[]): ReaderLine[]
   let k1Role = "";
   let k1Ein = "";
   for (const line of cleaned) {
-    if (/\bschedule\s+c\b/i.test(line)) afterC = true;
-    if (/\bschedule\s+e\b/i.test(line) || /supplemental income/i.test(line)) afterE = true;
-    if (/\bschedule\s+k-?1\b/i.test(line) || /\b1120-?s\b/i.test(line)) afterK1 = true;
+    if (/\bschedule\s+c\b/i.test(line)) {
+      afterC = true;
+      afterE = false;
+      pendingE = "";
+    }
+    if (/\bschedule\s+e\b/i.test(line) || /supplemental income/i.test(line)) {
+      afterE = true;
+      afterC = false;
+      afterK1 = false;
+    }
+    if (/\bschedule\s+k-?1\b/i.test(line) || /\b1120-?s\b/i.test(line)) {
+      afterK1 = true;
+      afterE = false;
+      pendingE = "";
+      afterC = false;
+    }
     if (/\bpartnership\b/i.test(line)) eRole = eRole || "partnership";
     if (/\bpassive\b/i.test(line)) {
       eRole = eRole.includes("passive") ? eRole : [eRole, "passive"].filter(Boolean).join(" · ");
@@ -293,6 +306,7 @@ function businessesFromPrinted(cleaned: string[], names: string[]): ReaderLine[]
         value: amount,
         label: [pendingE, eRole].filter(Boolean).join(" · "),
       });
+      afterE = false;
     }
     if (amount && afterK1 && pendingK1 && !isUnofferedWageText(line) && !/wages/i.test(line)) {
       out.push({
@@ -385,10 +399,10 @@ export function readerMapFromLook(
         return [line];
       })
     : [];
-  const lines = [...(fromPrinted?.lines ?? []), ...parsedLines].filter(
-    (line, index, all) =>
-      all.findIndex((other) => other.kind === line.kind && other.value === line.value) === index,
-  );
+  const lines = [...(fromPrinted?.lines ?? []), ...parsedLines].filter((line, index, all) => {
+    if (line.kind === "k1") return true;
+    return all.findIndex((other) => other.kind === line.kind && other.value === line.value) === index;
+  });
   const missing = unique([
     ...(Array.isArray(parsed.missing) ? parsed.missing.map((item) => String(item)) : []),
     ...(fromPrinted?.missing ?? []),

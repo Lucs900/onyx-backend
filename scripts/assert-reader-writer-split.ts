@@ -132,6 +132,21 @@ function main() {
   assert.ok(garbled.entities.some((name) => /HO\s*&\s*SOY INC/i.test(name)));
   assert.equal(readerWageLine(garbled), null);
   assert.equal(readerMapOpensReturnCard(garbled), true);
+  const lookBusinesses = readerBusinessLines(garbled);
+  assert.equal(
+    lookBusinesses.filter((line) => line.kind === "k1" && line.value === "26351" && /HO\s*&\s*SOY INC/i.test(line.label ?? "")).length,
+    2,
+    `look path keeps both K-1 lines ${JSON.stringify(lookBusinesses)}`,
+  );
+  assert.equal(
+    lookBusinesses.filter((line) => line.kind === "schedule_e" && line.value === "26351").length,
+    0,
+    `look path does not speak a K-1 dollar as Schedule E ${JSON.stringify(lookBusinesses)}`,
+  );
+  assert.ok(
+    lookBusinesses.some((line) => line.kind === "schedule_e" && line.value === "60343" && /L&H VENTURES LLC/i.test(line.label ?? "")),
+    `look path Schedule E stays the on-page L&H line ${JSON.stringify(lookBusinesses)}`,
+  );
 
   assert.equal(paystubExtractOpens({ employer_name: "Harbor Cafe" }), false);
   assert.equal(paystubExtractOpens({ employer_name: "Harbor Cafe", gross_period: "400" }), false);
