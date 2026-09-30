@@ -1961,7 +1961,9 @@ async function withPageMedicareHunt(
   };
 }
 
-function cleanedExtractFields(fields?: Record<string, string> | null): Record<string, string> {
+function cleanedExtractFields(
+  fields?: Record<string, string | null | undefined> | null,
+): Record<string, string> {
   const cleaned: Record<string, string> = {};
   for (const [key, value] of Object.entries(fields ?? {})) {
     if (value == null) continue;
