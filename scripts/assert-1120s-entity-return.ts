@@ -229,6 +229,7 @@ async function main() {
   assert.equal(junkEmployerName("EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED"), true);
   assert.equal(junkEmployerName("INCLUDING BUT NOT LIMITED"), true);
   assert.equal(junkEmployerName("HO & SOY INC"), false);
+  assert.equal(junkEmployerName("Agfa Monotype Corporation"), true);
 
   assert.equal(loudEntityReturnFromPrintedLines(FOUNDER_8879_PAGE), null, "8879-CORP is not the entity return");
   assert.equal(loudWageFromPrintedLines(FOUNDER_8879_PAGE), null, "8879-CORP is not a paystub");

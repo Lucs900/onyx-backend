@@ -1104,6 +1104,9 @@ function classifyPrintedLines(lines: string[]): ExtractClass | null {
   if (looksLikeK1Worksheet(lines)) return "tax_return";
   if (looksLike1040CoverWorksheet(lines)) return "tax_return";
   if (looksLike1040Transcript(lines)) return "tax_return";
+  if (looksLike1040FacePage(lines) || /\bFORM 1040\b/.test(blob) || /U\.?S\.?\s+INDIVIDUAL INCOME TAX RETURN/.test(blob)) {
+    return "tax_return";
+  }
   if (
     /\bFORM 1120-?S\b/.test(blob) ||
     /U\.?S\.?\s+INCOME TAX RETURN FOR AN S CORPORATION/.test(blob) ||
@@ -1120,7 +1123,9 @@ function classifyPrintedLines(lines: string[]): ExtractClass | null {
       /\bGROSS\b/.test(blob) &&
       /\d/.test(blob) &&
       !/\bFORM 1120-?S\b/.test(blob) &&
-      !/INCOME TAX RETURN FOR AN S CORPORATION/.test(blob))
+      !/INCOME TAX RETURN FOR AN S CORPORATION/.test(blob) &&
+      !/\bFORM 1040\b/.test(blob) &&
+      !/INDIVIDUAL INCOME TAX RETURN/.test(blob))
   ) {
     return "paystub";
   }
@@ -2420,6 +2425,11 @@ export function loudWageFromPrintedLines(lines: string[]): PrintedSample | null 
     looksLikeK1Worksheet(lines) ||
     looksLikeScheduleEWorksheet(lines) ||
     looksLikeEntityReturnWorksheet(lines) ||
+    looksLike1040FacePage(lines) ||
+    looksLike1040CoverWorksheet(lines) ||
+    looksLike1040Transcript(lines) ||
+    /\bFORM 1040\b/.test(blob) ||
+    /U\.?S\.?\s+INDIVIDUAL INCOME TAX RETURN/.test(blob) ||
     /\bFORM 1120-?S\b/.test(blob) ||
     /U\.?S\.?\s+INCOME TAX RETURN FOR AN S CORPORATION/.test(blob)
   ) {

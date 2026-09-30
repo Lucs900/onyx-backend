@@ -35,6 +35,7 @@ import {
   looksLikeTaxReturnFields,
   looksLikeTaxReturnPageReadFields,
   taxReturnWrittenOnFile,
+  docsInDisplayLabels,
   taxReturnPacketHoldAsk,
   taxReturnPacketNeedsRead,
   taxReturnStructureValue,
@@ -51,8 +52,12 @@ import { applyLooksRightMotion } from "../components/fox/motion";
 import { applyExtractWrite, emptyDraft, loadIntakeDraft, receiveDocument } from "../components/fox/store";
 import {
   fieldsFromPrintedLines,
+  junkEmployerName,
+  looksLike1040FacePage,
   looksLike1040Transcript,
   loudTranscriptFromPrintedLines,
+  loudWageFromPrintedLines,
+  printedSampleFromLines,
 } from "../lib/docs/printedSample";
 import {
   alignThreadEmployerName,
@@ -1994,6 +1999,54 @@ async function main() {
   assert.ok(scheduleUpgrade.draft.pendingProposal, "schedule extract is CFBW / Use this");
   assert.notEqual(scheduleUpgrade.draft.pendingProposal?.field, "qualifying_income");
   assert.notEqual(scheduleUpgrade.draft.pendingProposal?.value, "36453");
+  const personal1040Lines = [
+    "Form 1040",
+    "U.S. Individual Income Tax Return",
+    "Sichiv Ho",
+    "Vouch Eim Soy",
+    "California wages $96,000",
+    "Shareholder HO & SOY INC",
+    "Agfa Monotype Corporation",
+  ];
+  assert.equal(junkEmployerName("Agfa Monotype Corporation"), true, "font foundry is not an employer");
+  assert.equal(junkEmployerName("HO & SOY INC"), false);
+  assert.equal(looksLike1040FacePage(personal1040Lines), true);
+  assert.equal(
+    loudWageFromPrintedLines(personal1040Lines),
+    null,
+    "personal 1040 is not a paystub",
+  );
+  const personalStubFields = fieldsFromPrintedLines("paystub", personal1040Lines);
+  assert.notEqual(personalStubFields.employer_name, "Agfa Monotype Corporation");
+  assert.doesNotMatch(personalStubFields.employer_name ?? "", /Agfa|Monotype/i);
+  const personalPrinted = printedSampleFromLines(personal1040Lines);
+  assert.notEqual(personalPrinted?.extractClass, "paystub", "personal return must not classify as paystub");
+  const inventedStub = applyExtractedFields(
+    {
+      ...emptyDraft(),
+      path: "acr",
+      productIntent: "buy",
+      workspaceFlow: true,
+      sampleAccepted: true,
+      incomeAsked: true,
+      incomeType: { ...emptyDraft().incomeType, value: "w2", confirmed: true },
+    },
+    {
+      extractClass: "paystub",
+      confidence: 0.9,
+      fields: { employer_name: "Agfa Monotype Corporation" },
+    },
+  );
+  assert.equal(inventedStub.draft.facts?.employer_name, undefined);
+  assert.doesNotMatch(JSON.stringify(inventedStub.draft.pendingProposal ?? {}), /Agfa|Monotype/i);
+  assert.ok(
+    !docsInDisplayLabels(inventedStub.draft).includes("Paystubs in"),
+    `personal-return invent must not paint Paystubs in — ${docsInDisplayLabels(inventedStub.draft).join(" · ")}`,
+  );
+  if (inventedStub.draft.pendingProposal) {
+    assert.doesNotMatch(proposalAskCopy(inventedStub.draft.pendingProposal), /Agfa|Monotype|employer would be/i);
+  }
+
   const extractSrc = readFileSync(join(root, "lib/docs/extract.ts"), "utf8");
   const pdfSrc = readFileSync(join(root, "lib/docs/pdfText.ts"), "utf8");
   assert.match(extractSrc, /TAX_RETURN_PAGE_READ_KEYS/);

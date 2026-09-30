@@ -9,6 +9,7 @@ import {
   lockFirstSessionFields,
   lockTaxReturnPageReadFields,
   looksLikeBankFields,
+  looksLikePaystubFields,
   preferFilenameClass,
   promoteExtractClass,
   sanitizeExtractedFields,
@@ -588,6 +589,13 @@ function printedLooksLike1065(lines?: string[] | null) {
   );
 }
 
+function printedLooksLikePersonal1040(lines?: string[] | null) {
+  if (!lines?.length) return false;
+  if (looksLike1040FacePage(lines)) return true;
+  const blob = lines.join("\n");
+  return /\bform\s*1040\b/i.test(blob) || /u\.?s\.?\s+individual income tax return/i.test(blob);
+}
+
 function rejectPaystubForEntityReturn(
   result: ClassifyExtractResult,
   filename?: string | null,
@@ -597,11 +605,25 @@ function rejectPaystubForEntityReturn(
   if (
     !filenameLooksLikeEntityPacket(filename) &&
     !printedLooksLike1120s(lines) &&
-    !printedLooksLike1065(lines)
+    !printedLooksLike1065(lines) &&
+    !printedLooksLikePersonal1040(lines)
   ) {
     return result;
   }
   return unreadResult(preferFilenameClass("tax_return", filename ?? ""), filename, "not-paystub", result.textLayerChars);
+}
+
+/** Employer-only / font-foundry lock is not a paystub. */
+function dropPaystubLockedOnlyByJunkEmployer(
+  result: ClassifyExtractResult,
+  filename?: string | null,
+): ClassifyExtractResult {
+  if (result.extractClass !== "paystub") return result;
+  const fields = sanitizeExtractedFields("paystub", result.fields);
+  if (looksLikePaystubFields(fields) || hasLockedSuggestion("paystub", fields)) {
+    return { ...result, fields };
+  }
+  return unreadResult("other", filename, "not-paystub", result.textLayerChars);
 }
 
 function printedLocksTaxReturnWithoutVision(lines: string[] | null): boolean {
@@ -1640,7 +1662,11 @@ async function classifyAndExtractUnmerged(
           fields: w2Fields,
         }, textLayerChars);
       }
-      if (!w2Page && hasLockedSuggestion("paystub", stubFields)) {
+      if (
+        !w2Page &&
+        hasLockedSuggestion("paystub", stubFields) &&
+        !printedLooksLikePersonal1040(layer)
+      ) {
         return rejectPaystubForEntityReturn(
           printedResult({
             extractClass: "paystub",
@@ -1793,7 +1819,12 @@ export async function classifyAndExtract(
     phase,
   );
   const hunted = await withPageMedicareHunt(result, bytes, mediaType);
-  const blocked = rejectPaystubForEntityReturn(hunted, filename);
+  const layer =
+    isPdf(bytes) || mediaType === "application/pdf" ? readPdfTextLayer(bytes) : null;
+  const blocked = dropPaystubLockedOnlyByJunkEmployer(
+    rejectPaystubForEntityReturn(hunted, filename, layer),
+    filename,
+  );
   if (phase === "packet") return blocked;
   return mergeTaxReturnLedgerFields(blocked, bytes, mediaType, adapter, undefined, filename);
 }
