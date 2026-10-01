@@ -707,7 +707,7 @@ async function main() {
   );
   assert.match(
     dropSrc,
-    /applyExtractWrite[\s\S]{0,900}emitDocIntake\(\{[\s\S]{0,80}received: emptyRead/,
+    /applyExtractWrite[\s\S]{0,900}emitDocIntake\(\{[\s\S]{0,80}received: emptyRead,\s*extractClass: applied\.extractClass/,
     "the drop emits received with the extract write",
   );
   assert.doesNotMatch(

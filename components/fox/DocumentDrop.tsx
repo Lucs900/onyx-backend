@@ -207,7 +207,7 @@ export async function ingestDroppedFiles(files: File[]) {
         Boolean(data.failed) || applied.quietLines.some((line) => isUnreadNote(line));
       emitDocIntake({
         received: emptyRead,
-        extractClass: applied.extractClass,
+        extractClass: applied.extractClass, // same intake as the card, not a stamp before extract
         quietLines: applied.quietLines.length
           ? applied.quietLines
           : data.failed
