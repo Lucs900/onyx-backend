@@ -29,6 +29,7 @@ import { proposalAskCopy, resolveProposal } from "../components/fox/completeness
 import { applyExtractWrite, emptyDraft, loadIntakeDraft, startOverWorkspace } from "../components/fox/store";
 import { loudWageFromPrintedLines } from "../lib/docs/printedSample";
 import { classifyAndExtract } from "../lib/docs/extract";
+import { readPdfJsTextLayer } from "../lib/docs/pdfText";
 import { nextFoxAsk, previewFacts, workspacePrompt } from "../components/fox/workspace";
 import { readerMapOpensReturnCard } from "../lib/docs/readerMap";
 import { INCOME_BUBBLES } from "../components/fox/types";
@@ -128,6 +129,40 @@ const garbledLook = {
         tax_year: "2024",
         full_name: "SICHIY HO AND VOUCH EIM SOY",
         wages: "8919",
+      },
+      warnings: [],
+    };
+  },
+};
+
+/** Names-only look. Does not open the card. The text layer has to. */
+const namesOnlyLook = {
+  async read() {
+    return {
+      extractClass: "tax_return" as const,
+      confidence: 0.94,
+      fields: {
+        tax_year: "2024",
+        full_name: "SICHIY HO AND VOUCH EIM SOY",
+      },
+      warnings: [],
+      readerMap: {
+        forms: ["1040" as const],
+        names: ["SICHIY HO AND VOUCH EIM SOY"],
+        entities: [] as string[],
+        lines: [] as { kind: string; value: string; label?: string }[],
+        missing: [],
+      },
+    };
+  },
+  async classify() {
+    return { class: "tax_return" as const, confidence: 0.94, readable: true };
+  },
+  async extract() {
+    return {
+      fields: {
+        tax_year: "2024",
+        full_name: "SICHIY HO AND VOUCH EIM SOY",
       },
       warnings: [],
     };
@@ -493,10 +528,27 @@ async function main() {
   assert.doesNotMatch(nextFoxAsk(receivedOnly).text, /HO\s*&\s*SOY/i);
 
   const dropped = printedReturnPdf(RETURN_THREE);
+  const walkedLayer = await readPdfJsTextLayer(dropped);
+  assert.ok(walkedLayer?.some((line) => /Sichiv Ho/i.test(line)), `text layer must read Sichiv — ${walkedLayer?.join(" · ") ?? "failed"}`);
+  assert.doesNotMatch((walkedLayer ?? []).join(" "), /SICHIY/i);
+  assert.ok(walkedLayer?.some((line) => /Schedule C/i.test(line)));
+  assert.ok(walkedLayer?.some((line) => /L&H VENTURES LLC/i.test(line)));
+  assert.ok(walkedLayer?.some((line) => /HO\s*&\s*SOY INC/i.test(line)));
+  assert.equal((walkedLayer ?? []).filter((line) => /26,351|26351/.test(line)).length >= 2, true);
+  assert.equal(
+    readerMapOpensReturnCard(readerMapFromLook({
+      forms: ["1040"],
+      names: ["SICHIY HO AND VOUCH EIM SOY"],
+      entities: [],
+      lines: [],
+    })),
+    false,
+    "names-only look does not open the card",
+  );
   const extracted = await classifyAndExtract(
     dropped,
     "application/pdf",
-    garbledLook,
+    namesOnlyLook,
     null,
     name,
   );
@@ -562,6 +614,7 @@ async function main() {
   );
 
   const blankPdf = new TextEncoder().encode("%PDF-1.4\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF\n");
+  assert.equal(await readPdfJsTextLayer(blankPdf), null, "if the layer fails, say the layer failed");
   const blankLook = {
     async read() {
       return {
@@ -732,6 +785,11 @@ async function main() {
   assert.match(extractSrc, /if \(adapter\.read\)/);
   assert.match(extractSrc, /readerMapOpensReturnCard/);
   assert.match(extractSrc, /printedLooksLikePersonal1040\(walked\)/);
+  assert.match(
+    extractSrc,
+    /else if \(printedLooksLikePersonal1040\(layer\) \|\| printedLooksLikeNeverStubForm\(layer\)\) \{\s*layer = null;/,
+    "a scrape-only 1040 is not a read text layer",
+  );
   assert.match(extractSrc, /keepReaderReturnCard/);
   assert.match(extractSrc, /household employee/);
   assert.doesNotMatch(extractSrc, /hold the class until Use this/);
@@ -758,6 +816,13 @@ async function main() {
   const leftoverSrc = readFileSync(fileURLToPath(import.meta.url), "utf8");
   assert.match(leftoverSrc, /classifyAndExtract/);
   assert.match(leftoverSrc, /printedReturnPdf\(RETURN_THREE\)/);
+  assert.match(leftoverSrc, /readPdfJsTextLayer\(dropped\)/);
+  assert.match(leftoverSrc, /namesOnlyLook/);
+  assert.doesNotMatch(
+    leftoverSrc,
+    /classifyAndExtract\(\s*dropped,[\s\S]{0,80}garbledLook/,
+    "guest extract must not run against the opening look",
+  );
   assert.match(leftoverSrc, /received without extract is not the card/);
   assert.doesNotMatch(
     leftoverSrc,

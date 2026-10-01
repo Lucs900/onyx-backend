@@ -2101,14 +2101,12 @@ export async function classifyAndExtract(
   );
   let layer =
     isPdf(bytes) || mediaType === "application/pdf" ? await printedLinesForExtract(bytes, mediaType) : null;
-  if (
-    (isPdf(bytes) || mediaType === "application/pdf") &&
-    !printedLooksLikePersonal1040(layer) &&
-    !printedLooksLikeNeverStubForm(layer)
-  ) {
+  if (isPdf(bytes) || mediaType === "application/pdf") {
     const walked = await readPdfJsTextLayer(bytes);
     if (printedLooksLikePersonal1040(walked) || printedLooksLikeNeverStubForm(walked)) {
       layer = walked;
+    } else if (printedLooksLikePersonal1040(layer) || printedLooksLikeNeverStubForm(layer)) {
+      layer = null;
     }
   }
   const blocked = keepReaderReturnCard(
