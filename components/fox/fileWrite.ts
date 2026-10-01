@@ -939,10 +939,10 @@ export function maybeProposeFederalReturn(
   fields: Record<string, string>,
   readerMap?: ReaderMap | null,
 ): FoxIntakeDraft | null {
-  if (isTranscriptReturnFields(fields)) return null;
-  if (isCoverReturnFields(fields)) return null;
-  const pageRead = looksLikeTaxReturnPageReadFields(fields);
   const mapOpens = readerMapOpensReturnCard(readerMap);
+  if (isTranscriptReturnFields(fields)) return null;
+  if (isCoverReturnFields(fields) && !mapOpens) return null;
+  const pageRead = looksLikeTaxReturnPageReadFields(fields);
   if (!pageRead && !looksLikeFederalReturnFields(fields) && !mapOpens) return null;
   if (draft.pendingProposal || draft.pendingConflict) return null;
   const businesses = readerBusinessLines(readerMap);

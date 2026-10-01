@@ -1401,11 +1401,12 @@ export function AlwaysOnFox({
         }
         if (detail.emptyRead) {
           const live = getFoxDraft();
+          const unreadLine = (detail.quietLines ?? []).find((line) => isUnreadNote(line));
           return applyFoxAsk(next, {
             text: isBankUnreadAsk(live)
               ? RECEIVED_UNREAD_ASK
-              : unreadDropBytesCopy(detail.emptyRead.name, detail.emptyRead.size),
-            actions: unreadRestoreActions(live),
+              : unreadLine || unreadDropBytesCopy(detail.emptyRead.name, detail.emptyRead.size),
+            actions: unreadLine ? unreadAskActions(live) : unreadRestoreActions(live),
           });
         }
         if (
@@ -1419,8 +1420,9 @@ export function AlwaysOnFox({
           !getFoxDraft().awaitingRaiseYtdFar
         ) {
           const live = getFoxDraft();
+          const unreadLine = (detail.quietLines ?? []).find((line) => isUnreadNote(line));
           return applyFoxAsk(next, {
-            text: isBankUnreadAsk(live) ? RECEIVED_UNREAD_ASK : FAILED_READ_NOTE,
+            text: isBankUnreadAsk(live) ? RECEIVED_UNREAD_ASK : unreadLine || FAILED_READ_NOTE,
             actions: unreadAskActions(live),
           });
         }

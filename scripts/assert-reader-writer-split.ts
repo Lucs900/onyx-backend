@@ -29,6 +29,7 @@ import { proposalAskCopy, resolveProposal } from "../components/fox/completeness
 import { applyExtractWrite, emptyDraft, loadIntakeDraft, startOverWorkspace } from "../components/fox/store";
 import { loudWageFromPrintedLines } from "../lib/docs/printedSample";
 import { classifyAndExtract } from "../lib/docs/extract";
+import { NO_TEXT_LAYER_NOTE } from "../lib/docs/accept";
 import { nextFoxAsk, previewFacts, workspacePrompt } from "../components/fox/workspace";
 import { readerMapOpensReturnCard } from "../lib/docs/readerMap";
 import { INCOME_BUBBLES } from "../components/fox/types";
@@ -493,6 +494,44 @@ async function main() {
     2,
     `later page keeps both K-1 lines ${JSON.stringify(laterBusinesses)}`,
   );
+  const laterAt = "2026-09-30T04:05:00.000Z";
+  loadIntakeDraft({
+    ...emptyDraft(),
+    workspaceFlow: true,
+    documents: [
+      {
+        slot: "other",
+        name,
+        type: "application/pdf",
+        size: laterPacket.byteLength,
+        receivedAt: laterAt,
+        status: "received",
+      },
+    ],
+  });
+  const laterGuest = applyExtractWrite(laterAt, name, {
+    extractClass: later.extractClass,
+    confidence: later.confidence,
+    fields: later.fields,
+    readerMap: later.readerMap,
+  });
+  assert.ok(!laterGuest.draft.path, "guest /start has no path yet");
+  assert.equal(workspacePrompt(laterGuest.draft), "confirm-proposal");
+  assert.notEqual(laterGuest.draft.incomeType.value, "both");
+  assert.ok(!laterGuest.draft.incomeType.value, "Income stays empty until the borrower chooses");
+  const laterAsk = nextFoxAsk(laterGuest.draft);
+  assert.doesNotMatch(laterAsk.text, /received/i, "a later-page return drop is the card, not a received line");
+  assert.match(laterAsk.text, /Schedule C under Vouch Eim Soy/i);
+  assert.match(laterAsk.text, /L&H VENTURES LLC/i);
+  assert.match(laterAsk.text, /60,343/);
+  assert.match(laterAsk.text, /HO\s*&\s*SOY INC/i);
+  assert.match(laterAsk.text, /26,351/);
+  assert.deepEqual(
+    (laterAsk.actions ?? []).map((item) => item.label),
+    ["Use this", "Change"],
+  );
+  const laterPad = previewFacts(laterGuest.draft);
+  assert.ok(!laterPad.some((fact) => fact.id === "income" || fact.label === "Income"));
   const thinPacket = printedReturnPdf([thinFace, thinFace, thinFace]);
   const thinNamed = await classifyAndExtract(thinPacket, "application/pdf", namesOnlyLook, null, "thin-face.pdf");
   const thinNamedBusinesses = readerBusinessLines(thinNamed.readerMap);
@@ -527,6 +566,44 @@ async function main() {
   assert.equal(thinBusinesses.filter((line) => line.kind === "schedule_c").length, 0);
   assert.equal(thinBusinesses.filter((line) => line.kind === "schedule_e" && line.value === "60343").length, 0);
   assert.equal(thinBusinesses.filter((line) => line.kind === "k1" && line.value === "26351").length, 0);
+  const unreadFace = await classifyAndExtract(thinPacket, "application/pdf", namesOnlyLook, null, name);
+  assert.equal(unreadFace.failed, true, "a personal.pdf layer without the schedule lines is not a names-only card");
+  assert.ok((unreadFace.warnings ?? []).includes("no-text-layer"));
+  assert.equal(readerMapOpensReturnCard(unreadFace.readerMap), false);
+  const unreadAt = "2026-09-30T04:06:00.000Z";
+  loadIntakeDraft({
+    ...emptyDraft(),
+    workspaceFlow: true,
+    documents: [
+      {
+        slot: "other",
+        name,
+        type: "application/pdf",
+        size: thinPacket.byteLength,
+        receivedAt: unreadAt,
+        status: "received",
+      },
+    ],
+  });
+  const unreadWrite = applyExtractWrite(
+    unreadAt,
+    name,
+    {
+      extractClass: unreadFace.extractClass,
+      confidence: unreadFace.confidence,
+      fields: unreadFace.fields,
+      readerMap: unreadFace.readerMap,
+    },
+    NO_TEXT_LAYER_NOTE,
+    true,
+  );
+  assert.ok(!unreadWrite.draft.pendingProposal, "layer failure must not leave a names-only Use this");
+  assert.ok(unreadWrite.quietLines.includes(NO_TEXT_LAYER_NOTE));
+  assert.ok(!unreadWrite.draft.incomeType.value);
+  assert.doesNotMatch(
+    unreadWrite.draft.pendingProposal ? proposalAskCopy(unreadWrite.draft.pendingProposal) : "",
+    /Schedule C under Vouch Eim Soy|60,343|26,351/,
+  );
   const three = extracted.readerMap;
   assert.ok(three?.forms.includes("1040"));
   assert.ok(three?.forms.includes("schedule_c"));
@@ -748,6 +825,11 @@ async function main() {
     alwaysOnSrc,
     /pendingProposal && shouldSpeakPendingConfirm/,
     "extract on the same intake still speaks the confirm card",
+  );
+  assert.match(
+    alwaysOnSrc,
+    /if \(detail\.emptyRead\) \{[\s\S]{0,500}isUnreadNote\(line\)/,
+    "a failed layer speaks the unread note after received",
   );
   const dropSrc = readFileSync(
     join(dirname(fileURLToPath(import.meta.url)), "..", "components/fox/DocumentDrop.tsx"),

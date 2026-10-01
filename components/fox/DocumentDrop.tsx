@@ -196,7 +196,11 @@ export async function ingestDroppedFiles(files: File[]) {
           fields: data.fields ?? {},
           readerMap: data.readerMap,
         },
-        data.failed ? FAILED_READ_NOTE : data.note ?? RECEIVED_NOTE,
+        data.failed
+          ? isUnreadNote(data.note)
+            ? data.note
+            : FAILED_READ_NOTE
+          : data.note ?? RECEIVED_NOTE,
         Boolean(data.failed),
       );
       const after = applied.draft;

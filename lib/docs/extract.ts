@@ -1044,19 +1044,56 @@ function linesLookLikeReturn(lines?: readonly string[] | null) {
   );
 }
 
+function transcriptLayer(lines?: readonly string[] | null) {
+  if (!lines?.length) return false;
+  const page = [...lines];
+  return blobLooksLikeIrsTranscript(page.join("\n")) && Boolean(loudTranscriptFromPrintedLines(page));
+}
+
+function fieldsAreTranscript(fields?: Record<string, string | null | undefined> | null) {
+  return String(fields?.return_kind ?? "").trim().toLowerCase() === "transcript";
+}
+
+/** Schedule, entity, or K-1 already on the first pages. A cover sheet is not this lock. */
+function printedLocksReturnLine(lines: string[] | null): boolean {
+  if (!lines?.length) return false;
+  if (blobLooksLikeIrsTranscript(lines.join("\n")) && loudTranscriptFromPrintedLines(lines)) return true;
+  return Boolean(
+    loudScheduleCFromPrintedLines(lines) ||
+      loudScheduleEFromPrintedLines(lines) ||
+      loudEntityReturnFromPrintedLines(lines) ||
+      loudK1FromPrintedLines(lines),
+  );
+}
+
+/** Schedule, K-1, or entity dollars already on the extract. Names alone are not this lock. */
+function fieldsLockAReturnLine(fields?: Record<string, string | null | undefined> | null) {
+  if (!fields) return false;
+  const kind = String(fields.return_kind ?? "").trim().toLowerCase();
+  if (kind && kind !== "cover" && kind !== "1040") return true;
+  const money = (key: string) => String(fields[key] ?? "").replace(/[^\d.]/g, "");
+  return Boolean(
+    money("schedule_c_net_profit") ||
+      money("k1_ordinary_income") ||
+      money("schedule_e_rents_received") ||
+      money("entity_ordinary_income") ||
+      money("entity_taxable_income"),
+  );
+}
+
 /** pdf.js glyphs first. A scrape-only 1040 is not a read of the packet. */
 async function readReturnTextLayer(
   bytes: Uint8Array,
   mediaType: string,
   filename?: string | null,
-): Promise<string[] | null> {
-  if (!(isPdf(bytes) || mediaType === "application/pdf")) return null;
+): Promise<{ lines: string[] | null; pastFace: boolean }> {
+  if (!(isPdf(bytes) || mediaType === "application/pdf")) return { lines: null, pastFace: false };
   const head = await readPdfJsTextLayer(bytes, filename);
   if (
     head?.length &&
-    (readerMapOpensReturnCard(readerMapFromPrintedLines(head)) || printedLocksTaxReturnWithoutVision(head))
+    (readerMapOpensReturnCard(readerMapFromPrintedLines(head)) || printedLocksReturnLine(head))
   ) {
-    return head;
+    return { lines: head, pastFace: false };
   }
   const scrape = pdfLooksEncrypted(bytes) ? null : readPdfTextLayer(bytes);
   const thinHead = Boolean(head?.length) && pdfLayerChars(head) < THIN_RETURN_LAYER_CHARS;
@@ -1066,25 +1103,30 @@ async function readReturnTextLayer(
     thinHead ||
     shouldGrokTaxReturnPagesFirst(null, filename);
   const deep = deepen ? await readPdfJsTextLayer(bytes, filename, RETURN_PACKET_PAGE_CAP) : null;
+  const pastFace = Boolean(
+    deep?.length && head?.length && pdfLayerChars(deep) > pdfLayerChars(head) + 24,
+  );
   if (deep?.length && readerMapOpensReturnCard(readerMapFromPrintedLines(deep))) {
-    return deep;
+    return { lines: deep, pastFace };
   }
   if (linesLookLikeReturn(deep) || linesLookLikeReturn(head) || linesLookLikeReturn(scrape)) {
     // Later pages did not open the card. A short prefix is not that read, and the scrape is not the card.
-    const layer = (deep?.length ? deep : head) ?? null;
-    if (layer && pdfLayerChars(layer) < THIN_RETURN_LAYER_CHARS) return layer;
-    if (head?.length) return head;
-    return layer;
+    const fuller = (deep?.length ? deep : head) ?? null;
+    if (fuller && (pastFace || pdfLayerChars(fuller) < THIN_RETURN_LAYER_CHARS)) {
+      return { lines: fuller, pastFace };
+    }
+    if (head?.length) return { lines: head, pastFace: false };
+    return { lines: fuller, pastFace };
   }
-  if (head?.length) return head;
+  if (head?.length) return { lines: head, pastFace: false };
   if (
     scrape?.length &&
     !printedLooksLikePersonal1040(scrape) &&
     !printedLooksLikeNeverStubForm(scrape)
   ) {
-    return scrape;
+    return { lines: scrape, pastFace: false };
   }
-  return null;
+  return { lines: null, pastFace: false };
 }
 
 function withTextChars(
@@ -2164,7 +2206,8 @@ export async function classifyAndExtract(
     bytes,
     mediaType,
   );
-  const layer = await readReturnTextLayer(bytes, mediaType, filename);
+  const walkedLayer = await readReturnTextLayer(bytes, mediaType, filename);
+  const layer = walkedLayer.lines;
   let blocked = keepReaderReturnCard(
     applyReaderGate(
       dropPaystubLockedOnlyByJunkEmployer(
@@ -2175,16 +2218,20 @@ export async function classifyAndExtract(
     ),
   );
   const layerChars = pdfLayerChars(layer);
-  const thinReturn =
+  const layerOpens =
+    readerMapOpensReturnCard(blocked.readerMap) ||
+    readerMapOpensReturnCard(readerMapFromPrintedLines(layer ?? []));
+  // Named 1040 / 1120 / 1065 walks stay on their old page-read. A personal.pdf
+  // whose pdf.js layer never opens the card is not a names-only read.
+  const returnWithoutCard =
+    !shouldGrokTaxReturnPagesFirst(null, filename) &&
     linesLookLikeReturn(layer) &&
     layerChars > 0 &&
-    layerChars < THIN_RETURN_LAYER_CHARS &&
-    !readerMapOpensReturnCard(readerMapFromPrintedLines(layer ?? []));
-  if (
-    thinReturn &&
-    !packetExtractIsUseful(blocked.extractClass, blocked.fields) &&
-    !readerMapOpensReturnCard(blocked.readerMap)
-  ) {
+    !layerOpens &&
+    !fieldsAreTranscript(blocked.fields) &&
+    !transcriptLayer(layer) &&
+    !fieldsLockAReturnLine(blocked.fields);
+  if (returnWithoutCard) {
     blocked = unreadResult(
       preferFilenameClass("tax_return", filename ?? ""),
       filename,
