@@ -53,6 +53,25 @@ export function receivedDropCopy(name: string) {
   return `${displayIncomingFileName(name)} · received`;
 }
 
+/**
+ * A received stamp is not a read. If that stamp is still the last line, speak the
+ * card when the drop built one, otherwise the existing layer-failed note.
+ */
+export function linePastReceivedStamp(input: {
+  lastRole?: string | null;
+  lastText?: string | null;
+  receivedName?: string | null;
+  cardText?: string | null;
+}): string | null {
+  const name = String(input.receivedName ?? "").trim();
+  if (!name) return null;
+  const stamp = receivedDropCopy(name);
+  if (input.lastRole !== "system" || String(input.lastText ?? "").trim() !== stamp) return null;
+  const card = String(input.cardText ?? "").trim();
+  if (card && card !== stamp && !/· received\.?$/i.test(card)) return card;
+  return NO_TEXT_LAYER_NOTE;
+}
+
 /** Thread line when the dropped file’s text layer is empty. No dollars. */
 export function unreadDropBytesCopy(name: string, size: number) {
   const shown = displayIncomingFileName(name);

@@ -225,7 +225,7 @@ import {
   requestFoxPickFile,
 } from "./DocumentDrop";
 import { continueTaxReturnPacketRead } from "./taxReturnPacket";
-import { FAILED_READ_NOTE, receivedDropCopy, unreadDropBytesCopy } from "@/lib/docs/accept";
+import { FAILED_READ_NOTE, NO_TEXT_LAYER_NOTE, linePastReceivedStamp, receivedDropCopy, unreadDropBytesCopy } from "@/lib/docs/accept";
 import { WorkspaceFileDock } from "./FilePreview";
 import {
   DOC_INTAKE_EVENT,
@@ -388,6 +388,27 @@ function startSearchFromProps(
 
 function newId() {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+/** Received is not the last line. Card when the drop built one. Layer note when it did not. */
+function paintPastReceived(messages: FoxMessage[], detail: DocIntakeDetail): FoxMessage[] {
+  const live = getFoxDraft();
+  const cardAsk =
+    live.pendingProposal && shouldSpeakPendingConfirm(live)
+      ? docReactionAsk(live, detail.extractClass) ?? nextFoxAsk(live)
+      : null;
+  const text = linePastReceivedStamp({
+    lastRole: messages[messages.length - 1]?.role,
+    lastText: messages[messages.length - 1]?.text,
+    receivedName: detail.received?.name,
+    cardText: cardAsk?.text,
+  });
+  if (!text) return messages;
+  const ask =
+    cardAsk && text === cardAsk.text.trim()
+      ? cardAsk
+      : { text: NO_TEXT_LAYER_NOTE, actions: unreadAskActions(live) };
+  return freezeUsedFoxTurns([...messages, foxAskMessage(ask)]);
 }
 
 function foxAskMessage(ask: {
@@ -1332,7 +1353,9 @@ export function AlwaysOnFox({
       if (!isStart) return;
       const detail = (event as CustomEvent<DocIntakeDetail>).detail ?? {};
       skipPromptSync.current = true;
-      commitMessages((prev) => {
+      commitMessages((prev) =>
+        paintPastReceived(
+          (() => {
         const next = [...prev];
         if (detail.received) {
           const name = String(detail.received.name ?? "").trim();
@@ -1512,7 +1535,10 @@ export function AlwaysOnFox({
           );
         }
         return next;
-      });
+          })(),
+          detail,
+        ),
+      );
     };
     const onThreadLine = (event: Event) => {
       const message = (event as CustomEvent<FoxMessage>).detail;

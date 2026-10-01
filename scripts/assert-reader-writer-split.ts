@@ -26,11 +26,11 @@ import {
   looksLikePaystubFields,
 } from "../components/fox/fileWrite";
 import { proposalAskCopy, resolveProposal } from "../components/fox/completeness";
-import { applyExtractWrite, emptyDraft, loadIntakeDraft, startOverWorkspace } from "../components/fox/store";
+import { applyExtractWrite, emptyDraft, loadIntakeDraft, receiveDocument, startOverWorkspace } from "../components/fox/store";
 import { loudWageFromPrintedLines } from "../lib/docs/printedSample";
 import { classifyAndExtract } from "../lib/docs/extract";
-import { NO_TEXT_LAYER_NOTE } from "../lib/docs/accept";
-import { nextFoxAsk, previewFacts, workspacePrompt } from "../components/fox/workspace";
+import { NO_TEXT_LAYER_NOTE, linePastReceivedStamp, receivedDropCopy } from "../lib/docs/accept";
+import { docReactionAsk, nextFoxAsk, previewFacts, workspacePrompt } from "../components/fox/workspace";
 import { readerMapOpensReturnCard } from "../lib/docs/readerMap";
 import { INCOME_BUBBLES } from "../components/fox/types";
 
@@ -532,6 +532,37 @@ async function main() {
   );
   const laterPad = previewFacts(laterGuest.draft);
   assert.ok(!laterPad.some((fact) => fact.id === "income" || fact.label === "Income"));
+  startOverWorkspace("acr");
+  const acrAt = "2026-09-30T04:05:30.000Z";
+  receiveDocument({
+    slot: "other",
+    name,
+    type: "application/pdf",
+    size: laterPacket.byteLength,
+    receivedAt: acrAt,
+  });
+  const acrGuest = applyExtractWrite(acrAt, name, {
+    extractClass: later.extractClass,
+    confidence: later.confidence,
+    fields: later.fields,
+    readerMap: later.readerMap,
+  });
+  const acrAsk = docReactionAsk(acrGuest.draft, "tax_return") ?? nextFoxAsk(acrGuest.draft);
+  const acrLine = linePastReceivedStamp({
+    lastRole: "system",
+    lastText: receivedDropCopy(name),
+    receivedName: name,
+    cardText: acrAsk.text,
+  });
+  assert.ok(acrLine, "Start over must not leave the received stamp as the last line");
+  assert.doesNotMatch(acrLine ?? "", /· received/i);
+  assert.match(acrLine ?? "", /Schedule C under Vouch Eim Soy/i);
+  assert.match(acrLine ?? "", /L&H VENTURES LLC/i);
+  assert.match(acrLine ?? "", /60,343/);
+  assert.match(acrLine ?? "", /HO\s*&\s*SOY INC/i);
+  assert.match(acrLine ?? "", /26,351/);
+  assert.notEqual(acrGuest.draft.incomeType.value, "both");
+  assert.ok(!acrGuest.draft.incomeType.value);
   const thinPacket = printedReturnPdf([thinFace, thinFace, thinFace]);
   const thinNamed = await classifyAndExtract(thinPacket, "application/pdf", namesOnlyLook, null, "thin-face.pdf");
   const thinNamedBusinesses = readerBusinessLines(thinNamed.readerMap);
@@ -600,6 +631,15 @@ async function main() {
   assert.ok(!unreadWrite.draft.pendingProposal, "layer failure must not leave a names-only Use this");
   assert.ok(unreadWrite.quietLines.includes(NO_TEXT_LAYER_NOTE));
   assert.ok(!unreadWrite.draft.incomeType.value);
+  const unreadLine = linePastReceivedStamp({
+    lastRole: "system",
+    lastText: receivedDropCopy(name),
+    receivedName: name,
+    cardText: unreadWrite.draft.pendingProposal
+      ? proposalAskCopy(unreadWrite.draft.pendingProposal)
+      : "",
+  });
+  assert.equal(unreadLine, NO_TEXT_LAYER_NOTE, "a layer without the schedule lines cannot end on received");
   assert.doesNotMatch(
     unreadWrite.draft.pendingProposal ? proposalAskCopy(unreadWrite.draft.pendingProposal) : "",
     /Schedule C under Vouch Eim Soy|60,343|26,351/,
@@ -810,6 +850,8 @@ async function main() {
     "utf8",
   );
   assert.match(alwaysOnSrc, /receivedDropCopy/);
+  assert.match(alwaysOnSrc, /paintPastReceived\(/);
+  assert.match(alwaysOnSrc, /linePastReceivedStamp/);
   assert.match(alwaysOnSrc, /if \(detail\.received\)/);
   assert.match(
     alwaysOnSrc,
