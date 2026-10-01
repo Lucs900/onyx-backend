@@ -130,7 +130,6 @@ export async function ingestDroppedFiles(files: File[]) {
       (doc) => doc.receivedAt === receivedAt && doc.name === name,
       { status: "reading" },
     );
-    emitDocIntake({ received: emptyRead });
 
     try {
       const hint = extractHintFromDraft(getFoxDraft(), name);
@@ -207,6 +206,7 @@ export async function ingestDroppedFiles(files: File[]) {
       const spokeUnread =
         Boolean(data.failed) || applied.quietLines.some((line) => isUnreadNote(line));
       emitDocIntake({
+        received: emptyRead,
         extractClass: applied.extractClass,
         quietLines: applied.quietLines.length
           ? applied.quietLines

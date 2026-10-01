@@ -13391,7 +13391,17 @@ assert.ok(!dropSource.includes("fileToBase64"));
 assert.ok(dropSource.includes("quietLines: [FAILED_READ_NOTE]"));
 assert.ok(!dropSource.includes("textEmpty ? emptyRead"));
 assert.ok(dropSource.includes("spokeUnread ? { emptyRead }"));
-assert.ok(dropSource.includes("emitDocIntake({ received: emptyRead })"));
+assert.ok(dropSource.includes("received: emptyRead"));
+assert.match(
+  dropSource,
+  /applyExtractWrite[\s\S]{0,900}emitDocIntake\(\{[\s\S]{0,80}received: emptyRead/,
+  "received is emitted with the extract write, not before fetch",
+);
+assert.doesNotMatch(
+  dropSource,
+  /emitDocIntake\(\{ received: emptyRead \}\);\s*try \{/,
+  "do not emit received before extract returns",
+);
 assert.ok(dropSource.includes("data-composer-attach-button"));
 assert.ok(dropSource.includes("fox-bar__attach-input"));
 assert.ok(dropSource.includes("<label"));

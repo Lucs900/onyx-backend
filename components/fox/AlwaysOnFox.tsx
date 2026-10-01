@@ -1334,7 +1334,7 @@ export function AlwaysOnFox({
       skipPromptSync.current = true;
       commitMessages((prev) => {
         const next = [...prev];
-        if (detail.received && !detail.emptyRead && !detail.extractClass && !(detail.quietLines ?? []).length) {
+        if (detail.received) {
           const name = String(detail.received.name ?? "").trim();
           if (name) {
             const live = getFoxDraft();
@@ -1344,7 +1344,9 @@ export function AlwaysOnFox({
               loadIntakeDraft(markDocStamp(live, key, "received"));
             }
           }
-          return next;
+          if (!detail.extractClass && !detail.emptyRead && !(detail.quietLines ?? []).length) {
+            return next;
+          }
         }
         if (detail.reject) {
           next.push({ id: newId(), role: "system", text: detail.reject });

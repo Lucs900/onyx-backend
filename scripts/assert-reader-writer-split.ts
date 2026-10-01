@@ -685,16 +685,35 @@ async function main() {
     "utf8",
   );
   assert.match(alwaysOnSrc, /receivedDropCopy/);
-  assert.match(alwaysOnSrc, /detail\.received && !detail\.emptyRead && !detail\.extractClass/);
+  assert.match(alwaysOnSrc, /if \(detail\.received\)/);
+  assert.match(
+    alwaysOnSrc,
+    /if \(!detail\.extractClass && !detail\.emptyRead && !\(detail\.quietLines \?\? \[\]\)\.length\) \{\s*return next;/,
+    "received-only without extract still waits",
+  );
   assert.doesNotMatch(
     alwaysOnSrc,
-    /detail\.received && !detail\.emptyRead && !detail\.extractClass[\s\S]{0,700}pendingProposal && shouldSpeakPendingConfirm/,
-    "received-only must not speak a card that was already pending",
+    /if \(detail\.received\) \{[\s\S]{0,500}pendingProposal && shouldSpeakPendingConfirm/,
+    "received must not speak a card that was already pending",
   );
   assert.match(
     alwaysOnSrc,
     /pendingProposal && shouldSpeakPendingConfirm/,
-    "extract after the drop still speaks the confirm card",
+    "extract on the same intake still speaks the confirm card",
+  );
+  const dropSrc = readFileSync(
+    join(dirname(fileURLToPath(import.meta.url)), "..", "components/fox/DocumentDrop.tsx"),
+    "utf8",
+  );
+  assert.match(
+    dropSrc,
+    /applyExtractWrite[\s\S]{0,900}emitDocIntake\(\{[\s\S]{0,80}received: emptyRead/,
+    "the drop emits received with the extract write",
+  );
+  assert.doesNotMatch(
+    dropSrc,
+    /emitDocIntake\(\{ received: emptyRead \}\);\s*try \{/,
+    "do not emit received before extract returns",
   );
   const workspaceSrc = readFileSync(
     join(dirname(fileURLToPath(import.meta.url)), "..", "components/fox/workspace.ts"),
