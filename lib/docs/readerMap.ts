@@ -168,7 +168,9 @@ function looksLikeEntity(line: string) {
   if (/^(?:s\s+)?corp(?:oration)?\.?$/i.test(t)) return false;
   if (/^(?:partnership|passive|nonpassive)$/i.test(t)) return false;
   if (/form|schedule|wages|authorization|basis limitations/i.test(t)) return false;
-  return /\b(?:INC\.?|LLC|L\.L\.C\.|CORP\.?|LLP)\b/i.test(t) && t.length <= 60;
+  const named = entityFromLine(t);
+  // The row can be wider than the name. The name itself stays short.
+  return Boolean(named) && named.length <= 60 && t.length <= 160 && /\b(?:INC\.?|LLC|L\.L\.C\.|CORP\.?|LLP)\b/i.test(t);
 }
 
 function entityFromLine(line: string) {
@@ -328,6 +330,18 @@ function k1RoleLine(line: string) {
   return /^(?:s\s+corp(?:oration)?\.?|partnership)$/i.test(line.trim());
 }
 
+/** The 7-digit body of an EIN is not an income amount. */
+function isEinBody(amount: string, ein: string) {
+  const digits = ein.replace(/\D/g, "");
+  if (!digits || digits.length < 9 || !amount) return false;
+  return amount === digits || amount === digits.slice(2);
+}
+
+function qualifiedAmount(line: string, ein = "") {
+  const tokens = businessMoneyTokens(line).filter((amount) => !isEinBody(amount, ein));
+  return tokens.at(-1) ?? "";
+}
+
 /** Heading, then the income line. A nearby dollar, a year, or an EIN is not a business. */
 function businessesFromPrinted(cleaned: string[]): ReaderLine[] {
   const out: ReaderLine[] = [];
@@ -336,6 +350,7 @@ function businessesFromPrinted(cleaned: string[]): ReaderLine[] {
   let pendingE = "";
   let emittedE = false;
   let eRole = "";
+  let eEin = "";
   let pendingK1 = "";
   let k1Role = "";
   let k1Ein = "";
@@ -365,6 +380,7 @@ function businessesFromPrinted(cleaned: string[]): ReaderLine[] {
       pendingE = "";
       emittedE = false;
       eRole = "";
+      eEin = "";
     }
     if (next === "k1") {
       pendingK1 = "";
@@ -400,12 +416,23 @@ function businessesFromPrinted(cleaned: string[]): ReaderLine[] {
     }
 
     if (block === "e") {
+      if (/^p$/i.test(line.trim())) eRole = eRole || "passive";
       if (/\bpartnership\b/i.test(line)) eRole = eRole || "partnership";
+      const ein = line.match(/\b(\d{2}-\d{7})\b/);
+      if (ein) eEin = ein[1] ?? eEin;
       const entity = looksLikeEntity(line) ? entityFromLine(line) : "";
       if (entity && entity !== pendingE) {
         pendingE = entity;
         emittedE = false;
-        eRole = /\bpartnership\b/i.test(line) ? "partnership" : "";
+        if (/\bpartnership\b/i.test(line)) eRole = "partnership";
+        const onRow = qualifiedAmount(line, eEin);
+        if (onRow) {
+          const role = [eRole, /\bnonpassive\b/i.test(line) ? "nonpassive" : /\bpassive\b/i.test(line) ? "passive" : ""]
+            .filter((part, index, all) => part && all.indexOf(part) === index);
+          out.push({ kind: "schedule_e", value: onRow, label: [pendingE, ...role].join(" · ") });
+          emittedE = true;
+        }
+        continue;
       }
       const income = scheduleEIncome(line);
       if (income && pendingE && !emittedE) {
@@ -423,7 +450,7 @@ function businessesFromPrinted(cleaned: string[]): ReaderLine[] {
       const ein = line.match(/\b(\d{2}-\d{7})\b/);
       if (ein) k1Ein = ein[1] ?? k1Ein;
       if (/ordinary business income/i.test(line)) {
-        const amount = businessMoneyTokens(line).at(-1) ?? "";
+        const amount = qualifiedAmount(line, k1Ein);
         if (amount && pendingK1) {
           out.push({ kind: "k1", value: amount, label: k1Label() });
           k1TookOrdinary = true;
@@ -436,13 +463,15 @@ function businessesFromPrinted(cleaned: string[]): ReaderLine[] {
         continue;
       }
       if (wantOrdinary) {
-        const amount = businessMoneyTokens(line).at(-1) ?? "";
+        const amount = qualifiedAmount(line, k1Ein);
         if (amount && pendingK1) {
           out.push({ kind: "k1", value: amount, label: k1Label() });
           k1TookOrdinary = true;
           bare = [];
+          wantOrdinary = false;
+        } else if (/[A-Za-z]{4,}/.test(line)) {
+          wantOrdinary = false;
         }
-        wantOrdinary = false;
         k1BareClosed = true;
         continue;
       }

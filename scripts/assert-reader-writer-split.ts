@@ -131,6 +131,36 @@ const SOUP_LAYER = [
   "wages $8,919",
 ];
 
+/**
+ * Printed rows from the packet. The income amount is on the entity row and on the
+ * ordinary-income line. A header total and an EIN body are on the page and are not those lines.
+ */
+const ROW_LAYER = [
+  "Form 1040",
+  "U.S. Individual Income Tax Return",
+  "2024",
+  "Sichiv Ho",
+  "Schedule C (Form 1040)",
+  "Profit or Loss From Business",
+  "Name of proprietor",
+  "Vouch Eim Soy",
+  "Schedule E (Form 1040)",
+  "Supplemental Income and Loss",
+  "Passive income 2,563,436",
+  "L&H VENTURES LLC P 92-3033949 60,343",
+  "Schedule K-1 (Form 1120-S)",
+  "HO & SOY INC",
+  "S corporation",
+  "EIN 92-3033949",
+  "3,033,949",
+  "1 Ordinary business income (loss) 26,351",
+  "Schedule K-1 (Form 1120-S)",
+  "HO & SOY INC",
+  "EIN 92-3033949",
+  "1 Ordinary business income (loss)",
+  "26,351",
+];
+
 /** The walked card: form titles joined with and, then the entity and a collapsed wage. */
 const HEADING_AND_WAGE = [
   "Form 1040",
@@ -348,6 +378,33 @@ async function main() {
     2,
     `form layer keeps both ordinary K-1 lines ${JSON.stringify(formBusinesses)}`,
   );
+  const rowMap = readerMapFromPrintedLines(ROW_LAYER);
+  const rowBusinesses = readerBusinessLines(rowMap);
+  assert.equal(
+    rowBusinesses.filter((line) => line.kind === "schedule_c" && /Vouch Eim Soy/i.test(line.value)).length,
+    1,
+    `row schedule c ${JSON.stringify(rowBusinesses)}`,
+  );
+  assert.ok(
+    rowBusinesses.some((line) => line.kind === "schedule_e" && line.value === "60343" && /L&H VENTURES LLC/i.test(line.label ?? "")),
+    `row schedule e keeps the entity amount ${JSON.stringify(rowBusinesses)}`,
+  );
+  assert.equal(
+    rowBusinesses.filter((line) => line.kind === "schedule_e" && line.value === "2563436").length,
+    0,
+    "a passive header total is not the Schedule E line",
+  );
+  assert.equal(
+    rowBusinesses.filter((line) => line.kind === "k1" && line.value === "26351" && /HO\s*&\s*SOY INC/i.test(line.label ?? "")).length,
+    2,
+    `row keeps both ordinary K-1 lines ${JSON.stringify(rowBusinesses)}`,
+  );
+  assert.equal(
+    rowBusinesses.filter((line) => line.value === "3033949").length,
+    0,
+    "an EIN body is not a K-1 line",
+  );
+  assert.equal(readerMapOpensReturnCard(rowMap), true);
   assert.equal(readerWageLine(formMap), null);
   assert.ok(!formMap.names.some((item) => /internal revenue|yes no/i.test(item)));
   assert.equal(readerMapOpensReturnCard(formMap), true);
@@ -506,6 +563,68 @@ async function main() {
   assert.equal(workspacePrompt(receivedOnly), "intent", "received without extract is not the card");
   assert.doesNotMatch(nextFoxAsk(receivedOnly).text, /Schedule C under Vouch Eim Soy/i);
   assert.doesNotMatch(nextFoxAsk(receivedOnly).text, /HO\s*&\s*SOY/i);
+
+  const rowExtract = await classifyAndExtract(
+    printedReturnPdf(ROW_LAYER),
+    "application/pdf",
+    namesOnlyLook,
+    null,
+    name,
+  );
+  assert.notEqual(rowExtract.failed, true, "a row with the income lines is not a failed read");
+  assert.ok(!(rowExtract.warnings ?? []).includes("unmapped-text"));
+  assert.ok(!(rowExtract.warnings ?? []).includes("no-text-layer"));
+  const rowExtracted = readerBusinessLines(rowExtract.readerMap);
+  assert.ok(
+    rowExtracted.some((line) => line.kind === "schedule_c" && /Vouch Eim Soy/i.test(line.value)),
+    `extract row schedule c ${JSON.stringify(rowExtracted)}`,
+  );
+  assert.ok(
+    rowExtracted.some((line) => line.kind === "schedule_e" && line.value === "60343" && /L&H VENTURES LLC/i.test(line.label ?? "")),
+    `extract row schedule e ${JSON.stringify(rowExtracted)}`,
+  );
+  assert.equal(
+    rowExtracted.filter((line) => line.kind === "k1" && line.value === "26351").length,
+    2,
+    `extract row keeps both K-1 lines ${JSON.stringify(rowExtracted)}`,
+  );
+  assert.equal(rowExtracted.some((line) => line.value === "2563436" || line.value === "3033949"), false);
+  const rowAt = "2026-09-30T04:09:00.000Z";
+  loadIntakeDraft({
+    ...emptyDraft(),
+    workspaceFlow: true,
+    documents: [
+      {
+        slot: "other",
+        name,
+        type: "application/pdf",
+        size: 1200,
+        receivedAt: rowAt,
+        status: "received",
+      },
+    ],
+  });
+  const rowWrite = applyExtractWrite(
+    rowAt,
+    name,
+    {
+      extractClass: rowExtract.extractClass,
+      confidence: rowExtract.confidence,
+      fields: rowExtract.fields,
+      readerMap: rowExtract.readerMap,
+    },
+    undefined,
+    false,
+  );
+  const rowAsk = rowWrite.draft.pendingProposal ? proposalAskCopy(rowWrite.draft.pendingProposal) : "";
+  assert.match(rowAsk, /Schedule C under Vouch Eim Soy/i);
+  assert.match(rowAsk, /L&H VENTURES LLC/);
+  assert.match(rowAsk, /60,343/);
+  assert.match(rowAsk, /HO\s*&\s*SOY INC/);
+  assert.match(rowAsk, /26,351/);
+  assert.doesNotMatch(rowAsk, /2,563,436|3,033,949/);
+  assert.match(rowAsk, /Use this/);
+  assert.ok(!rowWrite.draft.incomeType.value);
 
   const blankPdf = new TextEncoder().encode("%PDF-1.4\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF\n");
   const blankLook = {

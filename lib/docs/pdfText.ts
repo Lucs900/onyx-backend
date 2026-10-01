@@ -612,19 +612,31 @@ async function pdfJsTextPagesFromDoc(
   for (let i = 1; i <= last; i += 1) {
     const page = await doc.getPage(i);
     const content = await page.getTextContent();
+    const glyphs = content.items.flatMap((item) => {
+      const row = item as { str?: string; transform?: number[] };
+      const text = String(row.str ?? "").replace(/\s+/g, " ").trim();
+      if (!text) return [];
+      const x = Array.isArray(row.transform) ? row.transform[4] : null;
+      const y = Array.isArray(row.transform) ? row.transform[5] : null;
+      return [{ text, x, y }];
+    });
+    // Content-stream order is not a row. A name and the amount in its row share a y.
+    glyphs.sort((a, b) => {
+      const ay = a.y ?? 0;
+      const by = b.y ?? 0;
+      if (a.y != null && b.y != null && Math.abs(ay - by) > 2) return by - ay;
+      return (a.x ?? 0) - (b.x ?? 0);
+    });
     const lines: string[] = [];
     let current = "";
     let lastY: number | null = null;
-    for (const item of content.items) {
-      const row = item as { str?: string; transform?: number[] };
-      const text = String(row.str ?? "").replace(/\s+/g, " ").trim();
-      if (!text) continue;
-      const y = Array.isArray(row.transform) ? row.transform[5] : null;
+    for (const glyph of glyphs) {
+      const y = glyph.y;
       if (lastY != null && y != null && Math.abs(lastY - y) > 2 && current) {
         lines.push(current.trim());
-        current = text;
+        current = glyph.text;
       } else {
-        current = current ? `${current} ${text}` : text;
+        current = current ? `${current} ${glyph.text}` : glyph.text;
       }
       if (y != null) lastY = y;
     }
