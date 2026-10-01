@@ -1027,6 +1027,25 @@ async function printedLinesForExtract(
   return readPdfJsTextLayer(bytes);
 }
 
+/** pdf.js glyphs first. A scrape-only 1040 is not a read of the packet. */
+async function readReturnTextLayer(
+  bytes: Uint8Array,
+  mediaType: string,
+): Promise<string[] | null> {
+  if (!(isPdf(bytes) || mediaType === "application/pdf")) return null;
+  const walked = await readPdfJsTextLayer(bytes);
+  if (walked?.length) return walked;
+  const scrape = pdfLooksEncrypted(bytes) ? null : readPdfTextLayer(bytes);
+  if (
+    scrape?.length &&
+    !printedLooksLikePersonal1040(scrape) &&
+    !printedLooksLikeNeverStubForm(scrape)
+  ) {
+    return scrape;
+  }
+  return null;
+}
+
 function withTextChars(
   result: ClassifyExtractResult,
   bytes: Uint8Array,
@@ -2099,16 +2118,7 @@ export async function classifyAndExtract(
     bytes,
     mediaType,
   );
-  let layer =
-    isPdf(bytes) || mediaType === "application/pdf" ? await printedLinesForExtract(bytes, mediaType) : null;
-  if (isPdf(bytes) || mediaType === "application/pdf") {
-    const walked = await readPdfJsTextLayer(bytes);
-    if (printedLooksLikePersonal1040(walked) || printedLooksLikeNeverStubForm(walked)) {
-      layer = walked;
-    } else if (printedLooksLikePersonal1040(layer) || printedLooksLikeNeverStubForm(layer)) {
-      layer = null;
-    }
-  }
+  const layer = await readReturnTextLayer(bytes, mediaType);
   const blocked = keepReaderReturnCard(
     applyReaderGate(
       dropPaystubLockedOnlyByJunkEmployer(

@@ -197,63 +197,6 @@ async function main() {
   assert.equal(loudWageFromPrintedLines(PERSONAL), null);
   assert.doesNotMatch(JSON.stringify(map), /Agfa|Monotype/i);
 
-  const three = readerMapFromPrintedLines(RETURN_THREE);
-  assert.ok(three.forms.includes("1040"));
-  assert.ok(three.forms.includes("schedule_c"));
-  assert.ok(three.forms.includes("schedule_e"));
-  assert.ok(three.forms.includes("k1"));
-  assert.ok(three.names.some((name) => /Sichiv Ho/i.test(name)));
-  assert.doesNotMatch(three.names.join(" "), /SICHIY/i);
-  assert.ok(three.entities.some((name) => /L&H VENTURES LLC/i.test(name)));
-  assert.ok(three.entities.some((name) => /HO\s*&\s*SOY INC/i.test(name)));
-  const businesses = readerBusinessLines(three);
-  assert.ok(
-    businesses.some((line) => line.kind === "schedule_c" && /Vouch Eim Soy/i.test(line.value)),
-    `schedule c ${JSON.stringify(businesses)}`,
-  );
-  assert.ok(
-    businesses.some((line) => line.kind === "schedule_e" && line.value === "60343" && /L&H VENTURES LLC/i.test(line.label ?? "")),
-    `schedule e ${JSON.stringify(businesses)}`,
-  );
-  assert.equal(
-    businesses.filter((line) => line.kind === "k1" && line.value === "26351" && /HO\s*&\s*SOY INC/i.test(line.label ?? "")).length,
-    2,
-    `two K-1 lines ${JSON.stringify(businesses)}`,
-  );
-  assert.equal(readerWageLine(three), null, "1g household employee wages are not a wage to offer");
-  assert.ok(!three.lines.some((line) => line.kind === "wages" && line.value === "8919"));
-
-  const garbled = readerMapFromLook(
-    {
-      forms: ["1040"],
-      names: ["SICHIY HO AND VOUCH EIM SOY"],
-      entities: ["L&H VENTURES LLC"],
-      lines: [
-        { kind: "wages", value: "8919", label: "If you did not g Wages from Form , line 6 … 1g" },
-      ],
-    },
-    RETURN_THREE,
-  );
-  assert.ok(garbled.names.some((name) => /Sichiv Ho/i.test(name)));
-  assert.doesNotMatch(garbled.names.join(" "), /SICHIY/i);
-  assert.ok(garbled.entities.some((name) => /HO\s*&\s*SOY INC/i.test(name)));
-  assert.equal(readerWageLine(garbled), null);
-  assert.equal(readerMapOpensReturnCard(garbled), true);
-  const lookBusinesses = readerBusinessLines(garbled);
-  assert.equal(
-    lookBusinesses.filter((line) => line.kind === "k1" && line.value === "26351" && /HO\s*&\s*SOY INC/i.test(line.label ?? "")).length,
-    2,
-    `look path keeps both K-1 lines ${JSON.stringify(lookBusinesses)}`,
-  );
-  assert.equal(
-    lookBusinesses.filter((line) => line.kind === "schedule_e" && line.value === "26351").length,
-    0,
-    `look path does not speak a K-1 dollar as Schedule E ${JSON.stringify(lookBusinesses)}`,
-  );
-  assert.ok(
-    lookBusinesses.some((line) => line.kind === "schedule_e" && line.value === "60343" && /L&H VENTURES LLC/i.test(line.label ?? "")),
-    `look path Schedule E stays the on-page L&H line ${JSON.stringify(lookBusinesses)}`,
-  );
   const lookOnly = readerMapFromLook(
     {
       forms: ["1040"],
@@ -406,109 +349,6 @@ async function main() {
     ["Use this", "Change"],
   );
 
-  loadIntakeDraft({
-    ...looksRightDraft(),
-    documents: [
-      {
-        slot: "other",
-        name,
-        type: "application/pdf",
-        size: 12000,
-        receivedAt,
-        status: "received",
-      },
-    ],
-  });
-  const threeWrite = applyExtractWrite(receivedAt, name, {
-    extractClass: "tax_return",
-    confidence: 0.94,
-    fields: {
-      tax_year: "2024",
-      full_name: "SICHIY HO AND VOUCH EIM SOY",
-      entity_name: "L&H VENTURES LLC",
-      wages: "8919",
-    },
-    readerMap: garbled,
-  });
-  assert.equal(threeWrite.draft.facts?.wages, undefined);
-  assert.equal(threeWrite.draft.facts?.entity_name, undefined);
-  const threeCard = proposalAskCopy(threeWrite.draft.pendingProposal);
-  assert.match(threeCard, /Sichiv Ho/i);
-  assert.doesNotMatch(threeCard, /SICHIY/i);
-  assert.match(threeCard, /Schedule C under Vouch Eim Soy/i);
-  assert.match(threeCard, /L&H VENTURES LLC/i);
-  assert.match(threeCard, /60,343/);
-  assert.match(threeCard, /HO\s*&\s*SOY INC/i);
-  assert.match(threeCard, /26,351/);
-  assert.doesNotMatch(threeCard, /8,919|8919/);
-  assert.doesNotMatch(threeCard, /If you did not/i);
-  assert.deepEqual(
-    (nextFoxAsk(threeWrite.draft).actions ?? []).map((item) => item.label),
-    ["Use this", "Change"],
-  );
-  const threePay = previewFacts(threeWrite.draft).find((fact) => fact.id === "pay" || fact.label === "Pay");
-  assert.ok(!threePay || !/8,919|8919/.test(threePay.value), `pad stays empty of 1g — ${threePay?.value ?? "none"}`);
-  const startOverDraft = {
-    ...emptyDraft(),
-    path: "acr" as const,
-    workspaceFlow: true,
-  };
-  loadIntakeDraft({
-    ...startOverDraft,
-    documents: [
-      {
-        slot: "other",
-        name,
-        type: "application/pdf",
-        size: 12000,
-        receivedAt,
-        status: "received",
-      },
-    ],
-  });
-  const firstDrop = applyExtractWrite(receivedAt, name, {
-    extractClass: "tax_return",
-    confidence: 0.94,
-    fields: {
-      tax_year: "2024",
-      full_name: "SICHIY HO AND VOUCH EIM SOY",
-      entity_name: "L&H VENTURES LLC",
-      wages: "8919",
-    },
-    readerMap: garbled,
-  });
-  assert.notEqual(firstDrop.draft.incomeType.value, "both", "a drop must not set Income to Both");
-  assert.ok(!firstDrop.draft.incomeType.value, "Income stays empty until the borrower chooses");
-  const firstDropAsk = nextFoxAsk(firstDrop.draft);
-  const firstDropChips = (firstDropAsk.actions ?? []).map((item) => item.label);
-  assert.deepEqual(firstDropChips, ["Use this", "Change"], `Start over then the paper first is still a card — ${firstDropAsk.text}`);
-  assert.ok(!firstDropChips.includes("Not now"));
-  assert.match(firstDropAsk.text, /Sichiv Ho/i);
-  assert.doesNotMatch(firstDropAsk.text, /SICHIY/i);
-  assert.match(firstDropAsk.text, /Schedule C under Vouch Eim Soy/i);
-  assert.match(firstDropAsk.text, /L&H VENTURES LLC/i);
-  assert.match(firstDropAsk.text, /60,343/);
-  assert.match(firstDropAsk.text, /HO\s*&\s*SOY INC/i);
-  assert.match(firstDropAsk.text, /26,351/);
-  assert.doesNotMatch(firstDropAsk.text, /8,919|8919/);
-  const firstDropPad = previewFacts(firstDrop.draft);
-  assert.ok(!firstDropPad.some((fact) => fact.id === "income" || fact.label === "Income"));
-  assert.ok(
-    !firstDropPad.some((fact) => /L&H|HO\s*&\s*SOY|Sichiv|8,919|8919|60,343|26,351/i.test(`${fact.label} ${fact.value}`)),
-    `pad stays empty of the return — ${JSON.stringify(firstDropPad)}`,
-  );
-  const firstDropSkip = resolveProposal(firstDrop.draft, "decline");
-  assert.ok(!firstDropSkip.incomeType.value);
-  assert.equal(firstDropSkip.facts?.wages, undefined);
-  assert.equal(firstDropSkip.facts?.entity_name, undefined);
-  assert.ok(INCOME_BUBBLES.some((item) => item.value === "both" && item.label === "Both"));
-  loadIntakeDraft({
-    ...firstDrop.draft,
-    incomeAsked: true,
-    incomeType: { ...emptyDraft().incomeType, value: "both" },
-  });
-  const wiped = startOverWorkspace("acr");
-  assert.ok(!wiped.incomeType.value, "Start over still clears income");
   const receivedOnly = {
     ...emptyDraft(),
     workspaceFlow: true,
@@ -535,6 +375,62 @@ async function main() {
   assert.ok(walkedLayer?.some((line) => /L&H VENTURES LLC/i.test(line)));
   assert.ok(walkedLayer?.some((line) => /HO\s*&\s*SOY INC/i.test(line)));
   assert.equal((walkedLayer ?? []).filter((line) => /26,351|26351/.test(line)).length >= 2, true);
+  const three = readerMapFromPrintedLines(walkedLayer ?? []);
+  assert.ok(three.forms.includes("1040"));
+  assert.ok(three.forms.includes("schedule_c"));
+  assert.ok(three.forms.includes("schedule_e"));
+  assert.ok(three.forms.includes("k1"));
+  assert.ok(three.names.some((name) => /Sichiv Ho/i.test(name)));
+  assert.doesNotMatch(three.names.join(" "), /SICHIY/i);
+  assert.ok(three.entities.some((name) => /L&H VENTURES LLC/i.test(name)));
+  assert.ok(three.entities.some((name) => /HO\s*&\s*SOY INC/i.test(name)));
+  const businesses = readerBusinessLines(three);
+  assert.ok(
+    businesses.some((line) => line.kind === "schedule_c" && /Vouch Eim Soy/i.test(line.value)),
+    `schedule c ${JSON.stringify(businesses)}`,
+  );
+  assert.ok(
+    businesses.some((line) => line.kind === "schedule_e" && line.value === "60343" && /L&H VENTURES LLC/i.test(line.label ?? "")),
+    `schedule e ${JSON.stringify(businesses)}`,
+  );
+  assert.equal(
+    businesses.filter((line) => line.kind === "k1" && line.value === "26351" && /HO\s*&\s*SOY INC/i.test(line.label ?? "")).length,
+    2,
+    `two K-1 lines ${JSON.stringify(businesses)}`,
+  );
+  assert.equal(readerWageLine(three), null, "1g household employee wages are not a wage to offer");
+  assert.ok(!three.lines.some((line) => line.kind === "wages" && line.value === "8919"));
+  const garbled = readerMapFromLook(
+    {
+      forms: ["1040"],
+      names: ["SICHIY HO AND VOUCH EIM SOY"],
+      entities: ["L&H VENTURES LLC"],
+      lines: [
+        { kind: "wages", value: "8919", label: "If you did not g Wages from Form , line 6 … 1g" },
+      ],
+    },
+    walkedLayer,
+  );
+  assert.ok(garbled.names.some((name) => /Sichiv Ho/i.test(name)));
+  assert.doesNotMatch(garbled.names.join(" "), /SICHIY/i);
+  assert.ok(garbled.entities.some((name) => /HO\s*&\s*SOY INC/i.test(name)));
+  assert.equal(readerWageLine(garbled), null);
+  assert.equal(readerMapOpensReturnCard(garbled), true);
+  const lookBusinesses = readerBusinessLines(garbled);
+  assert.equal(
+    lookBusinesses.filter((line) => line.kind === "k1" && line.value === "26351" && /HO\s*&\s*SOY INC/i.test(line.label ?? "")).length,
+    2,
+    `look path keeps both K-1 lines ${JSON.stringify(lookBusinesses)}`,
+  );
+  assert.equal(
+    lookBusinesses.filter((line) => line.kind === "schedule_e" && line.value === "26351").length,
+    0,
+    `look path does not speak a K-1 dollar as Schedule E ${JSON.stringify(lookBusinesses)}`,
+  );
+  assert.ok(
+    lookBusinesses.some((line) => line.kind === "schedule_e" && line.value === "60343" && /L&H VENTURES LLC/i.test(line.label ?? "")),
+    `look path Schedule E stays the on-page L&H line ${JSON.stringify(lookBusinesses)}`,
+  );
   assert.equal(
     readerMapOpensReturnCard(readerMapFromLook({
       forms: ["1040"],
@@ -612,6 +508,55 @@ async function main() {
     !guestPad.some((fact) => /L&H|HO\s*&\s*SOY|Sichiv|8,919|8919|60,343|26,351/i.test(`${fact.label} ${fact.value}`)),
     `pad stays empty of the return — ${JSON.stringify(guestPad)}`,
   );
+  const guestSkip = resolveProposal(guestStart.draft, "decline");
+  assert.ok(!guestSkip.incomeType.value);
+  assert.equal(guestSkip.facts?.wages, undefined);
+  assert.equal(guestSkip.facts?.entity_name, undefined);
+  assert.ok(INCOME_BUBBLES.some((item) => item.value === "both" && item.label === "Both"));
+  loadIntakeDraft({
+    ...guestStart.draft,
+    incomeAsked: true,
+    incomeType: { ...emptyDraft().incomeType, value: "both" },
+  });
+  const wiped = startOverWorkspace("acr");
+  assert.ok(!wiped.incomeType.value, "Start over still clears income");
+
+  loadIntakeDraft({
+    ...emptyDraft(),
+    workspaceFlow: true,
+    documents: [
+      {
+        slot: "other",
+        name,
+        type: "application/pdf",
+        size: dropped.byteLength,
+        receivedAt,
+        status: "received",
+      },
+    ],
+  });
+  const lookWrite = applyExtractWrite(receivedAt, name, {
+    extractClass: "tax_return",
+    confidence: 0.94,
+    fields: {
+      tax_year: "2024",
+      full_name: "SICHIY HO AND VOUCH EIM SOY",
+      entity_name: "L&H VENTURES LLC",
+      wages: "8919",
+    },
+    readerMap: garbled,
+  });
+  assert.notEqual(lookWrite.draft.incomeType.value, "both", "look path must not set Income to Both");
+  assert.ok(!lookWrite.draft.incomeType.value, "Income stays empty until the borrower chooses");
+  const lookCard = proposalAskCopy(lookWrite.draft.pendingProposal);
+  assert.match(lookCard, /Sichiv Ho/i);
+  assert.doesNotMatch(lookCard, /SICHIY/i);
+  assert.match(lookCard, /Schedule C under Vouch Eim Soy/i);
+  assert.match(lookCard, /L&H VENTURES LLC/i);
+  assert.match(lookCard, /60,343/);
+  assert.match(lookCard, /HO\s*&\s*SOY INC/i);
+  assert.match(lookCard, /26,351/);
+  assert.doesNotMatch(lookCard, /8,919|8919/);
 
   const blankPdf = new TextEncoder().encode("%PDF-1.4\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF\n");
   assert.equal(await readPdfJsTextLayer(blankPdf), null, "if the layer fails, say the layer failed");
@@ -647,7 +592,7 @@ async function main() {
     "application/pdf",
     blankLook,
     null,
-    name,
+    "blank.pdf",
   );
   assert.equal(
     readerMapOpensReturnCard(blankExtract.readerMap),
@@ -667,7 +612,7 @@ async function main() {
     0,
     "blank look must not hand both K-1 lines",
   );
-  const threeSkip = resolveProposal(threeWrite.draft, "decline");
+  const threeSkip = resolveProposal(lookWrite.draft, "decline");
   assert.equal(threeSkip.facts?.wages, undefined);
   assert.equal(threeSkip.facts?.entity_name, undefined);
   assert.ok(!docsInDisplayLabels(threeSkip).includes("Paystubs in"));
@@ -785,10 +730,23 @@ async function main() {
   assert.match(extractSrc, /if \(adapter\.read\)/);
   assert.match(extractSrc, /readerMapOpensReturnCard/);
   assert.match(extractSrc, /printedLooksLikePersonal1040\(walked\)/);
-  assert.match(
+  assert.match(extractSrc, /readReturnTextLayer/);
+  assert.match(extractSrc, /pdf\.js glyphs first/);
+  const classifyExportAt = extractSrc.indexOf("export async function classifyAndExtract");
+  assert.ok(classifyExportAt > 0);
+  assert.ok(
+    extractSrc.indexOf("readReturnTextLayer", classifyExportAt) > classifyExportAt,
+    "the return card layer is a pdf.js read, not a scrape then a null",
+  );
+  assert.doesNotMatch(
+    extractSrc.slice(classifyExportAt),
+    /printedLinesForExtract/,
+    "classifyAndExtract must not scrape first then null a 1040",
+  );
+  assert.doesNotMatch(
     extractSrc,
     /else if \(printedLooksLikePersonal1040\(layer\) \|\| printedLooksLikeNeverStubForm\(layer\)\) \{\s*layer = null;/,
-    "a scrape-only 1040 is not a read text layer",
+    "trying pdf.js after the scrape is not a read of the packet",
   );
   assert.match(extractSrc, /keepReaderReturnCard/);
   assert.match(extractSrc, /household employee/);
@@ -817,7 +775,25 @@ async function main() {
   assert.match(leftoverSrc, /classifyAndExtract/);
   assert.match(leftoverSrc, /printedReturnPdf\(RETURN_THREE\)/);
   assert.match(leftoverSrc, /readPdfJsTextLayer\(dropped\)/);
+  assert.match(leftoverSrc, /readerMapFromPrintedLines\(walkedLayer/);
   assert.match(leftoverSrc, /namesOnlyLook/);
+  const pdfAt = leftoverSrc.indexOf("printedReturnPdf(RETURN_THREE)");
+  const garbledWriteAt = leftoverSrc.search(/applyExtractWrite\([\s\S]{0,240}readerMap: garbled/);
+  assert.ok(
+    pdfAt > 0 && garbledWriteAt > pdfAt,
+    "do not build the three-line card from garbled before the PDF",
+  );
+  assert.doesNotMatch(
+    leftoverSrc,
+    /readerMapFromPrintedLines\(RETURN_THREE\)/,
+    "the three-line fixture is the walked PDF layer, not in-memory lines before the drop",
+  );
+  assert.match(leftoverSrc, /classifyAndExtract\(\s*blankPdf,[\s\S]{0,80}"blank\.pdf"/);
+  assert.doesNotMatch(
+    leftoverSrc,
+    /classifyAndExtract\(\s*blankPdf,[\s\S]{0,80}\bname\b/,
+    "a failed layer must not wear the real packet name",
+  );
   assert.doesNotMatch(
     leftoverSrc,
     /classifyAndExtract\(\s*dropped,[\s\S]{0,80}garbledLook/,
