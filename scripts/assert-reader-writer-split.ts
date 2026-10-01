@@ -29,7 +29,7 @@ import { proposalAskCopy, resolveProposal } from "../components/fox/completeness
 import { applyExtractWrite, emptyDraft, loadIntakeDraft, receiveDocument, startOverWorkspace } from "../components/fox/store";
 import { loudWageFromPrintedLines } from "../lib/docs/printedSample";
 import { classifyAndExtract } from "../lib/docs/extract";
-import { NO_TEXT_LAYER_NOTE, linePastReceivedStamp, receivedDropCopy } from "../lib/docs/accept";
+import { FAILED_READ_NOTE, NO_TEXT_LAYER_NOTE, linePastReceivedStamp, receivedDropCopy } from "../lib/docs/accept";
 import { docReactionAsk, nextFoxAsk, previewFacts, statusCopy, workspacePrompt } from "../components/fox/workspace";
 import { waitingOnCopy } from "../components/fox/motion";
 import { readerMapOpensReturnCard } from "../lib/docs/readerMap";
@@ -719,7 +719,8 @@ async function main() {
   };
   const thin = await classifyAndExtract(thinPacket, "application/pdf", emptyLook, null, "thin-face.pdf");
   assert.equal(thin.failed, true, "a short text layer with no lock is not a return card");
-  assert.ok((thin.warnings ?? []).includes("no-text-layer"));
+  assert.ok((thin.warnings ?? []).includes("unmapped-text"), "text that did not map is not an empty layer");
+  assert.ok(!(thin.warnings ?? []).includes("no-text-layer"));
   assert.equal(readerMapOpensReturnCard(thin.readerMap), false);
   const thinBusinesses = readerBusinessLines(thin.readerMap);
   assert.equal(thinBusinesses.filter((line) => line.kind === "schedule_c").length, 0);
@@ -727,7 +728,8 @@ async function main() {
   assert.equal(thinBusinesses.filter((line) => line.kind === "k1" && line.value === "26351").length, 0);
   const unreadFace = await classifyAndExtract(thinPacket, "application/pdf", namesOnlyLook, null, name);
   assert.equal(unreadFace.failed, true, "a personal.pdf layer without the schedule lines is not a names-only card");
-  assert.ok((unreadFace.warnings ?? []).includes("no-text-layer"));
+  assert.ok((unreadFace.warnings ?? []).includes("unmapped-text"));
+  assert.ok(!(unreadFace.warnings ?? []).includes("no-text-layer"));
   assert.equal(readerMapOpensReturnCard(unreadFace.readerMap), false);
   const unreadAt = "2026-09-30T04:06:00.000Z";
   loadIntakeDraft({
@@ -753,25 +755,26 @@ async function main() {
       fields: unreadFace.fields,
       readerMap: unreadFace.readerMap,
     },
-    NO_TEXT_LAYER_NOTE,
+    FAILED_READ_NOTE,
     true,
   );
   assert.ok(!unreadWrite.draft.pendingProposal, "layer failure must not leave a names-only Use this");
-  assert.ok(unreadWrite.quietLines.includes(NO_TEXT_LAYER_NOTE));
+  assert.ok(unreadWrite.quietLines.includes(FAILED_READ_NOTE));
+  assert.equal(
+    unreadWrite.quietLines.filter((line) => line === FAILED_READ_NOTE).length,
+    1,
+    "the failed read is one line",
+  );
+  assert.ok(!unreadWrite.quietLines.includes(NO_TEXT_LAYER_NOTE));
   assert.ok(!unreadWrite.draft.incomeType.value);
-  const unreadLine = linePastReceivedStamp({
-    lastRole: "system",
-    lastText: receivedDropCopy(name),
-    receivedName: name,
-    cardText: unreadWrite.draft.pendingProposal
-      ? proposalAskCopy(unreadWrite.draft.pendingProposal)
-      : "",
-  });
-  assert.equal(unreadLine, NO_TEXT_LAYER_NOTE, "a layer without the schedule lines cannot end on received");
+  const unreadLine = unreadWrite.quietLines.find((line) => line === FAILED_READ_NOTE) ?? "";
+  assert.equal(unreadLine, FAILED_READ_NOTE, "text without the income lines is a failed read");
+  assert.doesNotMatch(unreadLine, /no text layer/i);
   const soupPacket = printedReturnPdf(SOUP_LAYER);
   const soupExtract = await classifyAndExtract(soupPacket, "application/pdf", namesOnlyLook, null, name);
   assert.equal(soupExtract.failed, true, "a names-and-numbers soup is not a return card");
-  assert.ok((soupExtract.warnings ?? []).includes("no-text-layer"));
+  assert.ok((soupExtract.warnings ?? []).includes("unmapped-text"));
+  assert.ok(!(soupExtract.warnings ?? []).includes("no-text-layer"));
   assert.equal(readerMapOpensReturnCard(soupExtract.readerMap), false);
   assert.equal(readerBusinessLines(soupExtract.readerMap).length, 0);
   const soupAt = "2026-09-30T04:07:00.000Z";
@@ -798,18 +801,14 @@ async function main() {
       fields: soupExtract.fields,
       readerMap: soupExtract.readerMap,
     },
-    NO_TEXT_LAYER_NOTE,
+    FAILED_READ_NOTE,
     true,
   );
   assert.ok(!soupWrite.draft.pendingProposal, "a soup must not keep Use this");
-  assert.ok(soupWrite.quietLines.includes(NO_TEXT_LAYER_NOTE));
-  const soupLine = linePastReceivedStamp({
-    lastRole: "system",
-    lastText: receivedDropCopy(name),
-    receivedName: name,
-    cardText: soupWrite.draft.pendingProposal ? proposalAskCopy(soupWrite.draft.pendingProposal) : "",
-  });
-  assert.equal(soupLine, NO_TEXT_LAYER_NOTE, "a soup drop ends on the layer note");
+  assert.ok(soupWrite.quietLines.includes(FAILED_READ_NOTE));
+  assert.ok(!soupWrite.quietLines.includes(NO_TEXT_LAYER_NOTE));
+  const soupLine = soupWrite.quietLines.find((line) => line === FAILED_READ_NOTE) ?? "";
+  assert.equal(soupLine, FAILED_READ_NOTE, "a soup with text is a failed read");
   assert.doesNotMatch(
     soupWrite.draft.pendingProposal ? proposalAskCopy(soupWrite.draft.pendingProposal) : soupLine ?? "",
     /2,563,436|3,033,949|8,919|Internal Revenue|Yes No/,
@@ -841,7 +840,8 @@ async function main() {
     name,
   );
   assert.equal(headingExtract.failed, true, "form titles and a wage are not the return card");
-  assert.ok((headingExtract.warnings ?? []).includes("no-text-layer"));
+  assert.ok((headingExtract.warnings ?? []).includes("unmapped-text"));
+  assert.ok(!(headingExtract.warnings ?? []).includes("no-text-layer"));
   assert.equal(readerMapOpensReturnCard(headingExtract.readerMap), false);
   const headingAt = "2026-09-30T04:08:00.000Z";
   loadIntakeDraft({
@@ -867,19 +867,16 @@ async function main() {
       fields: headingExtract.fields,
       readerMap: headingExtract.readerMap,
     },
-    NO_TEXT_LAYER_NOTE,
+    FAILED_READ_NOTE,
     true,
   );
   assert.ok(!headingWrite.draft.pendingProposal);
-  assert.ok(headingWrite.quietLines.includes(NO_TEXT_LAYER_NOTE));
-  const headingLine = linePastReceivedStamp({
-    lastRole: "system",
-    lastText: receivedDropCopy(name),
-    receivedName: name,
-    cardText: "",
-  });
-  assert.equal(headingLine, NO_TEXT_LAYER_NOTE);
-  assert.doesNotMatch(headingLine ?? "", /8,919|L&H VENTURES|Use this|Filing Status/);
+  assert.ok(headingWrite.quietLines.includes(FAILED_READ_NOTE));
+  assert.equal(headingWrite.quietLines.filter((line) => line === FAILED_READ_NOTE).length, 1);
+  assert.ok(!headingWrite.quietLines.includes(NO_TEXT_LAYER_NOTE));
+  const headingLine = headingWrite.quietLines.find((line) => line === FAILED_READ_NOTE) ?? "";
+  assert.equal(headingLine, FAILED_READ_NOTE);
+  assert.doesNotMatch(headingLine, /no text layer|8,919|L&H VENTURES|Use this|Filing Status/);
   assert.doesNotMatch(
     unreadWrite.draft.pendingProposal ? proposalAskCopy(unreadWrite.draft.pendingProposal) : "",
     /Schedule C under Vouch Eim Soy|60,343|26,351/,
@@ -1113,6 +1110,11 @@ async function main() {
     alwaysOnSrc,
     /if \(detail\.emptyRead\) \{[\s\S]{0,500}isUnreadNote\(line\)/,
     "a failed layer speaks the unread note after received",
+  );
+  assert.match(
+    alwaysOnSrc,
+    /if \(detail\.emptyRead && isUnreadNote\(line\)\) continue;/,
+    "the unread note is the fox line once, not also a system line",
   );
   const dropSrc = readFileSync(
     join(dirname(fileURLToPath(import.meta.url)), "..", "components/fox/DocumentDrop.tsx"),

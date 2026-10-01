@@ -2238,14 +2238,20 @@ export async function classifyAndExtract(
     !transcriptLayer(layer) &&
     (!fieldsLockAReturnLine(blocked.fields) || faceMissingScheduleLines);
   if (returnWithoutCard) {
+    // The layer has text. The income lines were not mapped. That is not an empty layer.
     blocked = unreadResult(
       preferFilenameClass("tax_return", filename ?? ""),
       filename,
-      "no-text-layer",
+      "unmapped-text",
       layerChars,
     );
   }
-  if (blocked.failed && (blocked.warnings ?? []).includes("no-text-layer") && !readerMapOpensReturnCard(blocked.readerMap)) {
+  if (
+    blocked.failed &&
+    ((blocked.warnings ?? []).includes("no-text-layer") ||
+      (blocked.warnings ?? []).includes("unmapped-text")) &&
+    !readerMapOpensReturnCard(blocked.readerMap)
+  ) {
     return blocked;
   }
   if (phase === "packet") return blocked;

@@ -1411,6 +1411,8 @@ export function AlwaysOnFox({
         for (const line of detail.quietLines ?? []) {
           if (line === DECLINING_INCOME_CAUTION) continue;
           if (isDeadFileWriteLine(line)) continue;
+          // emptyRead speaks this note as the fox line. A second system copy is the same sentence twice.
+          if (detail.emptyRead && isUnreadNote(line)) continue;
           next.push({ id: newId(), role: "system", text: line });
         }
         const intakeDraft = getFoxDraft();
