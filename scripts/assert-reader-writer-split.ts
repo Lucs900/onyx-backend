@@ -63,22 +63,36 @@ const RETURN_THREE = [
   "If you did not get a Form W-2, see instructions. Household employee wages not reported on Form(s) W-2  1g  $8,919",
 ];
 
-/** Helvetica page from the leftover lines. Not a founder PDF stand-in. */
-function printedReturnPdf(lines: readonly string[]) {
-  const commands = ["BT", "/F1 12 Tf", "72 720 Td"];
-  for (const [index, line] of lines.entries()) {
-    if (index) commands.push("0 -18 Td");
-    commands.push(`(${line.replace(/[()\\]/g, "\\$&")}) Tj`);
-  }
-  commands.push("ET");
-  const stream = commands.join("\n");
+/** Helvetica pages from the leftover lines. Not a founder PDF stand-in. */
+function printedReturnPdf(linesOrPages: readonly string[] | readonly (readonly string[])[]) {
+  const pages =
+    linesOrPages.length > 0 && Array.isArray(linesOrPages[0])
+      ? (linesOrPages as readonly (readonly string[])[])
+      : [linesOrPages as readonly string[]];
+  const streams = pages.map((lines) => {
+    const commands = ["BT", "/F1 12 Tf", "72 720 Td"];
+    for (const [index, line] of lines.entries()) {
+      if (index) commands.push("0 -18 Td");
+      commands.push(`(${line.replace(/[()\\]/g, "\\$&")}) Tj`);
+    }
+    commands.push("ET");
+    return commands.join("\n");
+  });
+  const fontId = 3 + pages.length * 2;
+  const kids = pages.map((_, index) => `${3 + index * 2} 0 R`).join(" ");
   const objects = [
     "<< /Type /Catalog /Pages 2 0 R >>",
-    "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
-    "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>",
-    `<< /Length ${Buffer.byteLength(stream)} >>\nstream\n${stream}\nendstream`,
-    "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+    `<< /Type /Pages /Kids [${kids}] /Count ${pages.length} >>`,
   ];
+  streams.forEach((stream, index) => {
+    const pageId = 3 + index * 2;
+    const contentId = pageId + 1;
+    objects.push(
+      `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents ${contentId} 0 R /Resources << /Font << /F1 ${fontId} 0 R >> >> >>`,
+    );
+    objects.push(`<< /Length ${Buffer.byteLength(stream)} >>\nstream\n${stream}\nendstream`);
+  });
+  objects.push("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>");
   const chunks: Buffer[] = [Buffer.from("%PDF-1.4\n")];
   const offsets = [0];
   objects.forEach((body, index) => {
@@ -455,6 +469,64 @@ async function main() {
     2,
     `extract keeps both K-1 lines ${JSON.stringify(extractedBusinesses)}`,
   );
+  const thinFace = [
+    "Form 1040",
+    "U.S. Individual Income Tax Return",
+    "2024",
+    "Electronic filing cover sheet only",
+  ];
+  const laterPacket = printedReturnPdf([thinFace, thinFace, thinFace, RETURN_THREE]);
+  const later = await classifyAndExtract(laterPacket, "application/pdf", namesOnlyLook, null, name);
+  assert.notEqual(later.failed, true, "schedules past the first three pages are still the pdf.js card");
+  assert.equal(readerMapOpensReturnCard(later.readerMap), true);
+  const laterBusinesses = readerBusinessLines(later.readerMap);
+  assert.ok(
+    laterBusinesses.some((line) => line.kind === "schedule_c" && /Vouch Eim Soy/i.test(line.value)),
+    `later page schedule c ${JSON.stringify(laterBusinesses)}`,
+  );
+  assert.ok(
+    laterBusinesses.some((line) => line.kind === "schedule_e" && line.value === "60343" && /L&H VENTURES LLC/i.test(line.label ?? "")),
+    `later page schedule e ${JSON.stringify(laterBusinesses)}`,
+  );
+  assert.equal(
+    laterBusinesses.filter((line) => line.kind === "k1" && line.value === "26351" && /HO\s*&\s*SOY INC/i.test(line.label ?? "")).length,
+    2,
+    `later page keeps both K-1 lines ${JSON.stringify(laterBusinesses)}`,
+  );
+  const thinPacket = printedReturnPdf([thinFace, thinFace, thinFace]);
+  const thinNamed = await classifyAndExtract(thinPacket, "application/pdf", namesOnlyLook, null, "thin-face.pdf");
+  const thinNamedBusinesses = readerBusinessLines(thinNamed.readerMap);
+  assert.equal(thinNamedBusinesses.filter((line) => line.kind === "schedule_c").length, 0);
+  assert.equal(
+    thinNamedBusinesses.filter((line) => line.kind === "schedule_e" && line.value === "60343").length,
+    0,
+  );
+  assert.equal(thinNamedBusinesses.filter((line) => line.kind === "k1" && line.value === "26351").length, 0);
+  const emptyLook = {
+    async read() {
+      return {
+        extractClass: "other" as const,
+        confidence: 0.2,
+        fields: {},
+        warnings: ["failed"],
+        failed: true,
+      };
+    },
+    async classify() {
+      return { class: "other" as const, confidence: 0.2, readable: false };
+    },
+    async extract() {
+      return { fields: {}, warnings: ["failed"] };
+    },
+  };
+  const thin = await classifyAndExtract(thinPacket, "application/pdf", emptyLook, null, "thin-face.pdf");
+  assert.equal(thin.failed, true, "a short text layer with no lock is not a return card");
+  assert.ok((thin.warnings ?? []).includes("no-text-layer"));
+  assert.equal(readerMapOpensReturnCard(thin.readerMap), false);
+  const thinBusinesses = readerBusinessLines(thin.readerMap);
+  assert.equal(thinBusinesses.filter((line) => line.kind === "schedule_c").length, 0);
+  assert.equal(thinBusinesses.filter((line) => line.kind === "schedule_e" && line.value === "60343").length, 0);
+  assert.equal(thinBusinesses.filter((line) => line.kind === "k1" && line.value === "26351").length, 0);
   const three = extracted.readerMap;
   assert.ok(three?.forms.includes("1040"));
   assert.ok(three?.forms.includes("schedule_c"));

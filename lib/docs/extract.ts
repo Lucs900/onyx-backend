@@ -1033,6 +1033,16 @@ async function printedLinesForExtract(
   return readPdfJsTextLayer(bytes, filename);
 }
 
+function pdfLayerChars(lines?: readonly string[] | null) {
+  return (lines ?? []).join("").replace(/\s+/g, "").length;
+}
+
+function linesLookLikeReturn(lines?: readonly string[] | null) {
+  return Boolean(
+    lines?.length && (printedLooksLikePersonal1040(lines) || printedLooksLikeNeverStubForm(lines)),
+  );
+}
+
 /** pdf.js glyphs first. A scrape-only 1040 is not a read of the packet. */
 async function readReturnTextLayer(
   bytes: Uint8Array,
@@ -1040,9 +1050,32 @@ async function readReturnTextLayer(
   filename?: string | null,
 ): Promise<string[] | null> {
   if (!(isPdf(bytes) || mediaType === "application/pdf")) return null;
-  const walked = await readPdfJsTextLayer(bytes, filename);
-  if (walked?.length) return walked;
+  const head = await readPdfJsTextLayer(bytes, filename);
+  if (
+    head?.length &&
+    (readerMapOpensReturnCard(readerMapFromPrintedLines(head)) || printedLocksTaxReturnWithoutVision(head))
+  ) {
+    return head;
+  }
   const scrape = pdfLooksEncrypted(bytes) ? null : readPdfTextLayer(bytes);
+  const thinHead = Boolean(head?.length) && pdfLayerChars(head) < THIN_RETURN_LAYER_CHARS;
+  const deepen =
+    linesLookLikeReturn(head) ||
+    linesLookLikeReturn(scrape) ||
+    thinHead ||
+    shouldGrokTaxReturnPagesFirst(null, filename);
+  const deep = deepen ? await readPdfJsTextLayer(bytes, filename, RETURN_PACKET_PAGE_CAP) : null;
+  if (deep?.length && readerMapOpensReturnCard(readerMapFromPrintedLines(deep))) {
+    return deep;
+  }
+  if (linesLookLikeReturn(deep) || linesLookLikeReturn(head) || linesLookLikeReturn(scrape)) {
+    // Later pages did not open the card. A short prefix is not that read, and the scrape is not the card.
+    const layer = (deep?.length ? deep : head) ?? null;
+    if (layer && pdfLayerChars(layer) < THIN_RETURN_LAYER_CHARS) return layer;
+    if (head?.length) return head;
+    return layer;
+  }
+  if (head?.length) return head;
   if (
     scrape?.length &&
     !printedLooksLikePersonal1040(scrape) &&
@@ -1259,6 +1292,9 @@ async function printedLayerLooksLikeIrsTranscript(
 }
 
 const TAX_RETURN_WALK_PAGE_CAP = 24;
+/** Personal return schedules sit past the first three pages. A 291-character prefix is not the card. */
+const RETURN_PACKET_PAGE_CAP = 120;
+const THIN_RETURN_LAYER_CHARS = 360;
 const TAX_RETURN_1120S_WALK_PAGE_CAP = 40;
 const taxReturnWalkCache = new WeakMap<Uint8Array, Promise<ClassifiedTaxPage[]>>();
 
@@ -2128,7 +2164,7 @@ export async function classifyAndExtract(
     mediaType,
   );
   const layer = await readReturnTextLayer(bytes, mediaType, filename);
-  const blocked = keepReaderReturnCard(
+  let blocked = keepReaderReturnCard(
     applyReaderGate(
       dropPaystubLockedOnlyByJunkEmployer(
         rejectPaystubForEntityReturn(hunted, filename, layer),
@@ -2137,6 +2173,31 @@ export async function classifyAndExtract(
       layer,
     ),
   );
+  const layerChars = pdfLayerChars(layer);
+  const thinReturn =
+    linesLookLikeReturn(layer) &&
+    layerChars > 0 &&
+    layerChars < THIN_RETURN_LAYER_CHARS &&
+    !readerMapOpensReturnCard(readerMapFromPrintedLines(layer ?? []));
+  if (
+    thinReturn &&
+    !packetExtractIsUseful(blocked.extractClass, blocked.fields) &&
+    !readerMapOpensReturnCard(blocked.readerMap)
+  ) {
+    blocked = unreadResult(
+      preferFilenameClass("tax_return", filename ?? ""),
+      filename,
+      "no-text-layer",
+      layerChars,
+    );
+  }
+  if (blocked.failed && (blocked.warnings ?? []).includes("no-text-layer") && !readerMapOpensReturnCard(blocked.readerMap)) {
+    return blocked;
+  }
   if (phase === "packet") return blocked;
-  return mergeTaxReturnLedgerFields(blocked, bytes, mediaType, adapter, undefined, filename);
+  const merged = await mergeTaxReturnLedgerFields(blocked, bytes, mediaType, adapter, undefined, filename);
+  if (layer?.length && readerMapOpensReturnCard(readerMapFromPrintedLines(layer))) {
+    return keepReaderReturnCard(applyReaderGate(merged, layer));
+  }
+  return merged;
 }

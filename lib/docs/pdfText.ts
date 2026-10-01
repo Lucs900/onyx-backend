@@ -542,6 +542,7 @@ async function pdfJsOpenOptions(bytes: Uint8Array) {
 export async function readPdfJsTextLayer(
   bytes: Uint8Array,
   filename?: string | null,
+  maxPages = 3,
 ): Promise<string[] | null> {
   if (!isPdf(bytes)) return null;
   try {
@@ -552,7 +553,7 @@ export async function readPdfJsTextLayer(
     const doc = await pdfjs.getDocument(
       (await pdfJsOpenOptions(bytes)) as Parameters<typeof pdfjs.getDocument>[0],
     ).promise;
-    const pages = await pdfJsTextPagesFromDoc(doc, 3);
+    const pages = await pdfJsTextPagesFromDoc(doc, Math.max(1, maxPages));
     const lines = pages.flatMap((page) => page.lines);
     if (!meaningfulText(lines)) return null;
     console.info("[docs/pdf] text layer read", {
