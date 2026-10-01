@@ -132,9 +132,16 @@ function formFromBlob(blob: string): ReaderForm[] {
   return unique(forms) as ReaderForm[];
 }
 
+function isFormChromeName(line: string) {
+  const t = line.replace(/\s+/g, " ").trim();
+  if (!t) return false;
+  if (/internal revenue service|department of the treasury|united states treasury/i.test(t)) return true;
+  return /^(?:yes|no)(?:\s+(?:yes|no))*$/i.test(t);
+}
+
 function looksLikePersonName(line: string) {
   const t = line.replace(/\s+/g, " ").trim();
-  if (!t || t.length > 48) return false;
+  if (!t || t.length > 48 || isFormChromeName(t)) return false;
   if (/\$|\d{3,}|form|schedule|return|california wages|shareholder|corporation|inc\.?$|llc|basis|authorization/i.test(t)) {
     return false;
   }
@@ -145,6 +152,8 @@ function looksLikePersonName(line: string) {
 function looksLikeEntity(line: string) {
   const t = line.replace(/\s+/g, " ").trim();
   if (!t || junkEmployerName(t)) return false;
+  if (/^(?:s\s+)?corp(?:oration)?\.?$/i.test(t)) return false;
+  if (/^(?:partnership|passive|nonpassive)$/i.test(t)) return false;
   if (/form|schedule|wages|authorization|basis limitations/i.test(t)) return false;
   return /\b(?:INC\.?|LLC|L\.L\.C\.|CORP\.?|LLP)\b/i.test(t) && t.length <= 60;
 }
@@ -190,7 +199,9 @@ export function isUnofferedWageText(text?: string | null) {
 
 export function wageLineIsOffered(line: ReaderLine) {
   if (line.kind !== "wages" && line.kind !== "household_wages") return false;
-  return !isUnofferedWageText(`${line.label ?? ""} ${line.kind}`);
+  if (isUnofferedWageText(`${line.label ?? ""} ${line.kind}`)) return false;
+  const raw = String(line.label ?? "").replace(/\s+/g, " ").trim();
+  return Boolean(raw) && !/^wages$/i.test(raw);
 }
 
 function cleanWageLabel(label?: string) {
@@ -233,10 +244,10 @@ export function readerBusinessSpeech(line: ReaderLine) {
   return "";
 }
 
-/** Never-stub page with a printed entity, business line, or on-page wage. Names alone are not a card. */
+/** Never-stub page with a printed business line or an on-page wage. A name or entity alone is not a card. */
 export function readerMapOpensReturnCard(map?: ReaderMap | null): boolean {
   if (!map || !readerMapNeverOpensStub(map)) return false;
-  return Boolean(readerEntityName(map) || readerWageLine(map) || readerBusinessLines(map).length);
+  return Boolean(readerWageLine(map) || readerBusinessLines(map).length);
 }
 
 function moneyOnLine(line: string) {
@@ -244,78 +255,192 @@ function moneyOnLine(line: string) {
   return match?.[1]?.replace(/,/g, "") ?? "";
 }
 
-function businessesFromPrinted(cleaned: string[], names: string[]): ReaderLine[] {
+function businessMoneyTokens(line: string): string[] {
+  const cleaned = line.replace(/\b\d{2}-\d{7}\b/g, " ").replace(/\b1545-\d{4}\b/g, " ");
+  const out: string[] = [];
+  const re = /\$?\s*(\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d{5,}(?:\.\d+)?)/g;
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(cleaned))) {
+    const digits = (match[1] ?? "").replace(/,/g, "");
+    if (!digits || /^(?:19|20)\d{2}$/.test(digits)) continue;
+    if (/^(?:1040|1065|1120|1545|8879|7203|540)$/.test(digits)) continue;
+    out.push(digits);
+  }
+  return out;
+}
+
+function scheduleHeading(line: string): "c" | "e" | "k1" | "other" | null {
+  const t = line.trim();
+  if (!t || t.length > 96) return null;
+  if (/^\s*schedule\s+c\b/i.test(t) && !/\b(attach|see|instruction|line)\b/i.test(t)) return "c";
+  if (/^\s*schedule\s+e\b/i.test(t) || /^\s*supplemental income and loss\b/i.test(t)) return "e";
+  if (/^\s*schedule\s+k-?1\b/i.test(t)) return "k1";
+  if (/^\s*(?:schedule\s+[a-z0-9]|form\s+\d{3,4})\b/i.test(t)) return "other";
+  return null;
+}
+
+function scheduleEIncome(line: string): { amount: string; role: string } | null {
+  if (/caution|see instructions|compares amounts|if you have|wages/i.test(line)) return null;
+  const word = /\bnonpassive\b|\bpassive\b/i.exec(line);
+  if (!word) return null;
+  const after = businessMoneyTokens(line.slice(word.index + word[0].length));
+  const before = businessMoneyTokens(line.slice(0, word.index));
+  const amount = after[0] || before[before.length - 1] || "";
+  if (!amount) return null;
+  const partnership = /\bpartnership\b/i.test(line) ? "partnership" : "";
+  const role = /\bnonpassive\b/i.test(line) ? "nonpassive" : "passive";
+  return { amount, role: [partnership, role].filter(Boolean).join(" · ") };
+}
+
+function amountOnlyLine(line: string) {
+  if (!businessMoneyTokens(line).length) return false;
+  const rest = line
+    .replace(/\$/g, "")
+    .replace(/\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d{5,}(?:\.\d+)?/g, "")
+    .replace(/[(),.\s-]/g, "");
+  return rest.length === 0;
+}
+
+function k1RoleLine(line: string) {
+  return /^(?:s\s+corp(?:oration)?\.?|partnership)$/i.test(line.trim());
+}
+
+/** Heading, then the income line. A nearby dollar, a year, or an EIN is not a business. */
+function businessesFromPrinted(cleaned: string[]): ReaderLine[] {
   const out: ReaderLine[] = [];
-  let afterC = false;
-  let afterE = false;
-  let afterK1 = false;
+  let block: "c" | "e" | "k1" | null = null;
+  let budget = 0;
   let pendingE = "";
-  let pendingK1 = "";
+  let emittedE = false;
   let eRole = "";
+  let pendingK1 = "";
   let k1Role = "";
   let k1Ein = "";
-  for (const line of cleaned) {
-    if (/\bschedule\s+c\b/i.test(line)) {
-      afterC = true;
-      afterE = false;
-      pendingE = "";
-    }
-    if (/\bschedule\s+e\b/i.test(line) || /supplemental income/i.test(line)) {
-      afterE = true;
-      afterC = false;
-      afterK1 = false;
-    }
-    if (/\bschedule\s+k-?1\b/i.test(line) || /\b1120-?s\b/i.test(line)) {
-      afterK1 = true;
-      afterE = false;
-      pendingE = "";
-      afterC = false;
-    }
-    if (/\bpartnership\b/i.test(line)) eRole = eRole || "partnership";
-    if (/\bpassive\b/i.test(line)) {
-      eRole = eRole.includes("passive") ? eRole : [eRole, "passive"].filter(Boolean).join(" · ");
-    }
-    if (/\bs\s*corp/i.test(line)) k1Role = k1Role || "S corp";
-    const ein = line.match(/\b(\d{2}-?\d{7})\b/);
-    if (ein && afterK1) k1Ein = ein[1] ?? "";
+  let k1TookOrdinary = false;
+  let k1BareClosed = false;
+  let wantOrdinary = false;
+  let bare: string[] = [];
 
-    if (afterC) {
-      const who = looksLikePersonName(line)
-        ? line.replace(/\s+/g, " ").trim()
-        : names.find((name) => line.toLowerCase().includes(name.toLowerCase()));
-      if (who && !/\bschedule\s+c\b/i.test(line)) {
-        out.push({ kind: "schedule_c", value: who, label: "Schedule C" });
-        afterC = false;
+  const k1Label = () =>
+    [pendingK1, k1Role || "S corp", k1Ein ? `EIN ${k1Ein}` : ""].filter(Boolean).join(" · ");
+
+  const flushBare = () => {
+    if (!k1TookOrdinary && pendingK1) {
+      for (const amount of bare) {
+        out.push({ kind: "k1", value: amount, label: k1Label() });
       }
     }
+    bare = [];
+    wantOrdinary = false;
+  };
 
-    const entity = looksLikeEntity(line) ? entityFromLine(line) : "";
-    if (entity && afterE && !pendingE) pendingE = entity;
-    if (entity && afterK1 && !pendingK1) pendingK1 = entity;
-
-    const amount = moneyOnLine(line);
-    if (
-      amount &&
-      afterE &&
-      pendingE &&
-      (eRole || /passive|partnership|schedule\s+e/i.test(line)) &&
-      !/wages/i.test(line)
-    ) {
-      out.push({
-        kind: "schedule_e",
-        value: amount,
-        label: [pendingE, eRole].filter(Boolean).join(" · "),
-      });
-      afterE = false;
+  const start = (next: "c" | "e" | "k1" | null) => {
+    if (block === "k1") flushBare();
+    block = next;
+    budget = next === "c" ? 12 : 0;
+    if (next === "e") {
+      pendingE = "";
+      emittedE = false;
+      eRole = "";
     }
-    if (amount && afterK1 && pendingK1 && !isUnofferedWageText(line) && !/wages/i.test(line)) {
-      out.push({
-        kind: "k1",
-        value: amount,
-        label: [pendingK1, k1Role || "S corp", k1Ein ? `EIN ${k1Ein}` : ""].filter(Boolean).join(" · "),
-      });
+    if (next === "k1") {
+      pendingK1 = "";
+      k1Role = "";
+      k1Ein = "";
+      k1TookOrdinary = false;
+      k1BareClosed = false;
+      wantOrdinary = false;
+      bare = [];
+    }
+  };
+
+  for (const line of cleaned) {
+    const heading = scheduleHeading(line);
+    if (heading === "c" || heading === "e" || heading === "k1") {
+      start(heading);
+      continue;
+    }
+    if (heading === "other") {
+      start(null);
+      continue;
+    }
+
+    if (block === "c") {
+      budget -= 1;
+      if (!isFormChromeName(line) && looksLikePersonName(line) && !/\bschedule\s+c\b/i.test(line)) {
+        out.push({ kind: "schedule_c", value: line.replace(/\s+/g, " ").trim(), label: "Schedule C" });
+        block = null;
+      } else if (budget <= 0) {
+        block = null;
+      }
+      continue;
+    }
+
+    if (block === "e") {
+      if (/\bpartnership\b/i.test(line)) eRole = eRole || "partnership";
+      const entity = looksLikeEntity(line) ? entityFromLine(line) : "";
+      if (entity && entity !== pendingE) {
+        pendingE = entity;
+        emittedE = false;
+        eRole = /\bpartnership\b/i.test(line) ? "partnership" : "";
+      }
+      const income = scheduleEIncome(line);
+      if (income && pendingE && !emittedE) {
+        const role = [eRole, income.role].filter((part, index, all) => part && all.indexOf(part) === index);
+        out.push({ kind: "schedule_e", value: income.amount, label: [pendingE, ...role].join(" · ") });
+        emittedE = true;
+      }
+      continue;
+    }
+
+    if (block === "k1") {
+      const entity = looksLikeEntity(line) ? entityFromLine(line) : "";
+      if (entity && !pendingK1) pendingK1 = entity;
+      if (/\bs\s*corp/i.test(line)) k1Role = k1Role || "S corp";
+      const ein = line.match(/\b(\d{2}-\d{7})\b/);
+      if (ein) k1Ein = ein[1] ?? k1Ein;
+      if (/ordinary business income/i.test(line)) {
+        const amount = businessMoneyTokens(line).at(-1) ?? "";
+        if (amount && pendingK1) {
+          out.push({ kind: "k1", value: amount, label: k1Label() });
+          k1TookOrdinary = true;
+          bare = [];
+          wantOrdinary = false;
+        } else {
+          wantOrdinary = true;
+        }
+        k1BareClosed = true;
+        continue;
+      }
+      if (wantOrdinary) {
+        const amount = businessMoneyTokens(line).at(-1) ?? "";
+        if (amount && pendingK1) {
+          out.push({ kind: "k1", value: amount, label: k1Label() });
+          k1TookOrdinary = true;
+          bare = [];
+        }
+        wantOrdinary = false;
+        k1BareClosed = true;
+        continue;
+      }
+      if (!k1TookOrdinary && !k1BareClosed && amountOnlyLine(line)) {
+        const amount = businessMoneyTokens(line).at(-1) ?? "";
+        if (amount) bare.push(amount);
+        continue;
+      }
+      if (!k1TookOrdinary && !k1BareClosed && (entity || k1RoleLine(line) || isFormChromeName(line))) {
+        continue;
+      }
+      if (!k1TookOrdinary && !k1BareClosed && /[A-Za-z]/.test(line)) k1BareClosed = true;
     }
   }
+  if (block === "k1") flushBare();
+
+  const hasE = cleaned.some((line) => scheduleHeading(line) === "e");
+  const hasK = cleaned.some((line) => scheduleHeading(line) === "k1");
+  const gotE = out.some((line) => line.kind === "schedule_e");
+  const gotK = out.some((line) => line.kind === "k1");
+  if ((hasE && !gotE) || (hasK && !gotK)) return [];
   return out;
 }
 
@@ -326,12 +451,17 @@ export function readerMapFromPrintedLines(lines: readonly string[]): ReaderMap {
   const names = unique(cleaned.filter(looksLikePersonName));
   const entities = unique(cleaned.flatMap((line) => (looksLikeEntity(line) ? [entityFromLine(line)] : [])));
   const linesOut: ReaderLine[] = [];
-  for (const line of cleaned) {
+  for (let index = 0; index < cleaned.length; index += 1) {
+    const line = cleaned[index] ?? "";
     if (!/wages/i.test(line) || isUnofferedWageText(line)) continue;
+    const around = cleaned.slice(Math.max(0, index - 3), index + 4).join(" ");
+    if (isUnofferedWageText(around)) continue;
+    const label = wageLineLabel(line);
+    if (/^wages$/i.test(label)) continue;
     const amount = moneyOnLine(line);
-    if (amount) linesOut.push({ kind: "wages", value: amount, label: wageLineLabel(line) });
+    if (amount) linesOut.push({ kind: "wages", value: amount, label });
   }
-  linesOut.push(...businessesFromPrinted(cleaned, names));
+  linesOut.push(...businessesFromPrinted(cleaned));
   for (const name of names) linesOut.push({ kind: "name", value: name });
   for (const entity of entities) linesOut.push({ kind: "entity", value: entity });
 
@@ -400,12 +530,15 @@ export function readerMapFromLook(
       })
     : [];
   const printedLines = fromPrinted?.lines ?? [];
+  const printedPresent = Boolean(fromPrinted);
+  const printedBusiness = new Set(["schedule_c", "schedule_e", "k1", "1120s"]);
   const printedK1s = printedLines.filter((line) => line.kind === "k1");
   const parsedK1s = parsedLines.filter((line) => line.kind === "k1");
-  const k1s = printedK1s.length ? printedK1s : parsedK1s;
+  const k1s = printedPresent ? printedK1s : parsedK1s;
   const lines = [
     ...[...printedLines, ...parsedLines].filter((line, index, all) => {
       if (line.kind === "k1") return false;
+      if (printedPresent && printedBusiness.has(line.kind) && !printedLines.includes(line)) return false;
       return all.findIndex((other) => other.kind === line.kind && other.value === line.value) === index;
     }),
     ...k1s,

@@ -65,6 +65,72 @@ const RETURN_THREE = [
   "If you did not get a Form W-2, see instructions. Household employee wages not reported on Form(s) W-2  1g  $8,919",
 ];
 
+/** IRS line shapes. Amounts sit on the income line, not on the next heading. */
+const FORM_LAYER = [
+  "Form 1040",
+  "U.S. Individual Income Tax Return",
+  "2024",
+  "Sichiv Ho",
+  "Vouch Eim Soy",
+  "Schedule C (Form 1040)",
+  "Profit or Loss From Business",
+  "Department of the Treasury",
+  "Internal Revenue Service",
+  "Yes No",
+  "Name of proprietor",
+  "Vouch Eim Soy",
+  "Schedule E (Form 1040)",
+  "Supplemental Income and Loss",
+  "Part II Income or Loss From Partnerships and S Corporations",
+  "L&H VENTURES LLC",
+  "P",
+  "passive income 60,343",
+  "Schedule K-1 (Form 1120-S)",
+  "Shareholder's Share of Income",
+  "HO & SOY INC",
+  "S corporation",
+  "Employer identification number 92-3033949",
+  "1 Ordinary business income (loss) 26,351",
+  "Schedule K-1 (Form 1120-S)",
+  "HO & SOY INC",
+  "1 Ordinary business income (loss) 26,351",
+  "If you did not get a Form W-2, see instructions. Household employee wages not reported on Form(s) W-2  1g  $8,919",
+];
+
+/** Headings and nearby dollars. Not the income lines. Must not become a card. */
+const SOUP_LAYER = [
+  "Form 1040",
+  "U.S. Individual Income Tax Return",
+  "2024",
+  "Department of the Treasury",
+  "Internal Revenue Service",
+  "VOUCH EIM SOY",
+  "SICHIV HO",
+  "Yes No",
+  "Business income or (loss). Attach Schedule C",
+  "Schedule C (Form 1040)",
+  "Profit or Loss From Business",
+  "Department of the Treasury",
+  "Internal Revenue Service",
+  "Yes No",
+  "Schedule E (Form 1040)",
+  "Supplemental Income and Loss",
+  "L&H VENTURES LLC",
+  "passive",
+  "2,563,436",
+  "Schedule K-1 (Form 1120-S)",
+  "HO & SOY INC",
+  "S corporation",
+  "EIN 92-3033949",
+  "3,033,949",
+  "1,545",
+  "8,867",
+  "2,024",
+  "1,040",
+  "8,863",
+  "wages $8,919",
+];
+
 /** Helvetica pages from the leftover lines. Not a founder PDF stand-in. */
 function printedReturnPdf(linesOrPages: readonly string[] | readonly (readonly string[])[]) {
   const pages =
@@ -234,6 +300,38 @@ async function main() {
     readerBusinessLines(lookOnly).filter((line) => line.kind === "schedule_e" && line.value === "26351").length,
     0,
   );
+
+  const formMap = readerMapFromPrintedLines(FORM_LAYER);
+  const formBusinesses = readerBusinessLines(formMap);
+  assert.equal(
+    formBusinesses.filter((line) => line.kind === "schedule_c" && /Vouch Eim Soy/i.test(line.value)).length,
+    1,
+  );
+  assert.equal(
+    formBusinesses.filter((line) => line.kind === "schedule_c").length,
+    1,
+    `chrome is not a Schedule C — ${JSON.stringify(formBusinesses)}`,
+  );
+  assert.ok(
+    formBusinesses.some((line) => line.kind === "schedule_e" && line.value === "60343" && /L&H VENTURES LLC/i.test(line.label ?? "")),
+    `form layer schedule e ${JSON.stringify(formBusinesses)}`,
+  );
+  assert.equal(
+    formBusinesses.filter((line) => line.kind === "k1" && line.value === "26351" && /HO\s*&\s*SOY INC/i.test(line.label ?? "")).length,
+    2,
+    `form layer keeps both ordinary K-1 lines ${JSON.stringify(formBusinesses)}`,
+  );
+  assert.equal(readerWageLine(formMap), null);
+  assert.ok(!formMap.names.some((item) => /internal revenue|yes no/i.test(item)));
+  assert.equal(readerMapOpensReturnCard(formMap), true);
+
+  const soupMap = readerMapFromPrintedLines(SOUP_LAYER);
+  const soupBusinesses = readerBusinessLines(soupMap);
+  assert.equal(soupBusinesses.length, 0, `a heading soup is not a read — ${JSON.stringify(soupBusinesses)}`);
+  assert.equal(readerWageLine(soupMap), null, "a bare wages line is not a wage to offer");
+  assert.equal(readerMapOpensReturnCard(soupMap), false, "a soup must not keep Use this");
+  assert.ok(!soupMap.names.some((item) => /internal revenue|yes no/i.test(item)));
+  assert.doesNotMatch(JSON.stringify(soupMap), /2563436|3033949|8919|1545|8867|8863/);
 
   assert.equal(paystubExtractOpens({ employer_name: "Harbor Cafe" }), false);
   assert.equal(paystubExtractOpens({ employer_name: "Harbor Cafe", gross_period: "400" }), false);
@@ -643,6 +741,52 @@ async function main() {
       : "",
   });
   assert.equal(unreadLine, NO_TEXT_LAYER_NOTE, "a layer without the schedule lines cannot end on received");
+  const soupPacket = printedReturnPdf(SOUP_LAYER);
+  const soupExtract = await classifyAndExtract(soupPacket, "application/pdf", namesOnlyLook, null, name);
+  assert.equal(soupExtract.failed, true, "a names-and-numbers soup is not a return card");
+  assert.ok((soupExtract.warnings ?? []).includes("no-text-layer"));
+  assert.equal(readerMapOpensReturnCard(soupExtract.readerMap), false);
+  assert.equal(readerBusinessLines(soupExtract.readerMap).length, 0);
+  const soupAt = "2026-09-30T04:07:00.000Z";
+  loadIntakeDraft({
+    ...emptyDraft(),
+    workspaceFlow: true,
+    documents: [
+      {
+        slot: "other",
+        name,
+        type: "application/pdf",
+        size: soupPacket.byteLength,
+        receivedAt: soupAt,
+        status: "received",
+      },
+    ],
+  });
+  const soupWrite = applyExtractWrite(
+    soupAt,
+    name,
+    {
+      extractClass: soupExtract.extractClass,
+      confidence: soupExtract.confidence,
+      fields: soupExtract.fields,
+      readerMap: soupExtract.readerMap,
+    },
+    NO_TEXT_LAYER_NOTE,
+    true,
+  );
+  assert.ok(!soupWrite.draft.pendingProposal, "a soup must not keep Use this");
+  assert.ok(soupWrite.quietLines.includes(NO_TEXT_LAYER_NOTE));
+  const soupLine = linePastReceivedStamp({
+    lastRole: "system",
+    lastText: receivedDropCopy(name),
+    receivedName: name,
+    cardText: soupWrite.draft.pendingProposal ? proposalAskCopy(soupWrite.draft.pendingProposal) : "",
+  });
+  assert.equal(soupLine, NO_TEXT_LAYER_NOTE, "a soup drop ends on the layer note");
+  assert.doesNotMatch(
+    soupWrite.draft.pendingProposal ? proposalAskCopy(soupWrite.draft.pendingProposal) : soupLine ?? "",
+    /2,563,436|3,033,949|8,919|Internal Revenue|Yes No/,
+  );
   assert.doesNotMatch(
     unreadWrite.draft.pendingProposal ? proposalAskCopy(unreadWrite.draft.pendingProposal) : "",
     /Schedule C under Vouch Eim Soy|60,343|26,351/,
