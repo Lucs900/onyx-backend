@@ -1018,22 +1018,19 @@ function textLayerCharCountOf(bytes: Uint8Array, mediaType: string): number {
 async function printedLinesForExtract(
   bytes: Uint8Array,
   mediaType: string,
+  filename?: string | null,
 ): Promise<string[] | null> {
-  if (!(isPdf(bytes) || mediaType === "application/pdf")) return null;
-  if (!pdfLooksEncrypted(bytes)) {
-    const raw = readPdfTextLayer(bytes);
-    if (raw?.length) return raw;
-  }
-  return readPdfJsTextLayer(bytes);
+  return readReturnTextLayer(bytes, mediaType, filename);
 }
 
 /** pdf.js glyphs first. A scrape-only 1040 is not a read of the packet. */
 async function readReturnTextLayer(
   bytes: Uint8Array,
   mediaType: string,
+  filename?: string | null,
 ): Promise<string[] | null> {
   if (!(isPdf(bytes) || mediaType === "application/pdf")) return null;
-  const walked = await readPdfJsTextLayer(bytes);
+  const walked = await readPdfJsTextLayer(bytes, filename);
   if (walked?.length) return walked;
   const scrape = pdfLooksEncrypted(bytes) ? null : readPdfTextLayer(bytes);
   if (
@@ -1238,14 +1235,16 @@ const TAX_RETURN_PACKET_GROK_PAGE_CAP = 8;
 async function printedLayerLooksLikeIrsTranscript(
   bytes: Uint8Array,
   mediaType: string,
+  filename?: string | null,
 ): Promise<boolean> {
   const sync = !(isPdf(bytes) || mediaType === "application/pdf") || pdfLooksEncrypted(bytes)
     ? null
     : readPdfTextLayer(bytes);
   if (sync?.length && blobLooksLikeIrsTranscript(sync.join("\n"))) return true;
+  if (sync?.length) return false;
   // Walk packet is 223k. Tiny IRS transcripts still need pdf.js when the sync layer is empty.
   if (bytes.length > 80_000) return false;
-  const pages = await readPdfJsTextPages(bytes, 3);
+  const pages = await readPdfJsTextPages(bytes, 3, filename);
   return blobLooksLikeIrsTranscript(pages?.flatMap((page) => page.lines).join("\n") ?? "");
 }
 
@@ -1288,7 +1287,7 @@ async function classifyTaxReturnPagesUncached(
   filename?: string | null,
 ): Promise<ClassifiedTaxPage[]> {
   const cap = taxReturnWalkPageCap(filename);
-  const printed = await readPdfJsTextPages(bytes, cap);
+  const printed = await readPdfJsTextPages(bytes, cap, filename);
   const slots: Array<{ page: number; lines: string[]; text: string }> = printed?.length
     ? printed.map((page) => ({
         page: page.page,
@@ -1596,7 +1595,7 @@ async function mergeTaxReturnLedgerFields(
     shouldGrokTaxReturnPagesFirst(null, filename);
   if (!taxPacket) return result;
   try {
-    if (await printedLayerLooksLikeIrsTranscript(bytes, mediaType)) return result;
+    if (await printedLayerLooksLikeIrsTranscript(bytes, mediaType, filename)) return result;
     const pages = walked ?? (await classifyTaxReturnPages(bytes, adapter, filename));
     const printed = printedLinesFromWalked(pages);
     const ledger = await ledgerFieldsFromWalk(bytes, mediaType, adapter, pages, filename);
@@ -1642,7 +1641,7 @@ async function extractTaxReturnPacket(
   textLayerChars?: number,
 ): Promise<ClassifyExtractResult> {
   try {
-    if (await printedLayerLooksLikeIrsTranscript(bytes, mediaType)) {
+    if (await printedLayerLooksLikeIrsTranscript(bytes, mediaType, filename)) {
       return {
         extractClass: "tax_return",
         confidence: 0.94,
@@ -1777,7 +1776,7 @@ async function classifyAndExtractUnmerged(
     }
   }
   if (isPdf(bytes) || mediaType === "application/pdf") {
-    const walked = await readPdfJsTextLayer(bytes);
+    const walked = await readPdfJsTextLayer(bytes, filename);
     if (
       walked &&
       (printedLooksLikePersonal1040(walked) || printedLooksLikeNeverStubForm(walked)) &&
@@ -1803,7 +1802,7 @@ async function classifyAndExtractUnmerged(
     }
   }
   if (isPdf(bytes) || mediaType === "application/pdf") {
-    const layer = await printedLinesForExtract(bytes, mediaType);
+    const layer = await printedLinesForExtract(bytes, mediaType, filename);
     if (layer?.length) {
       if (looksLike1040FacePage(layer) && pageHasIncomeLossLines(layer)) {
         return unreadOrGrokPage(
@@ -1856,7 +1855,7 @@ async function classifyAndExtractUnmerged(
     return printedResult(printed, textLayerChars);
   }
   if (isPdf(bytes) || mediaType === "application/pdf") {
-    const layer = await printedLinesForExtract(bytes, mediaType);
+    const layer = await printedLinesForExtract(bytes, mediaType, filename);
     if (layer?.length) {
       if (looksLike1040FacePage(layer) && pageHasIncomeLossLines(layer)) {
         return unreadOrGrokPage(
@@ -2118,7 +2117,7 @@ export async function classifyAndExtract(
     bytes,
     mediaType,
   );
-  const layer = await readReturnTextLayer(bytes, mediaType);
+  const layer = await readReturnTextLayer(bytes, mediaType, filename);
   const blocked = keepReaderReturnCard(
     applyReaderGate(
       dropPaystubLockedOnlyByJunkEmployer(

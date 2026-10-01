@@ -539,7 +539,10 @@ async function pdfJsOpenOptions(bytes: Uint8Array) {
 }
 
 /** Visible glyphs via pdf.js. Empty-password Standard files (Form 1040 transcripts) need this. */
-export async function readPdfJsTextLayer(bytes: Uint8Array): Promise<string[] | null> {
+export async function readPdfJsTextLayer(
+  bytes: Uint8Array,
+  filename?: string | null,
+): Promise<string[] | null> {
   if (!isPdf(bytes)) return null;
   try {
     const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
@@ -551,10 +554,15 @@ export async function readPdfJsTextLayer(bytes: Uint8Array): Promise<string[] | 
     ).promise;
     const pages = await pdfJsTextPagesFromDoc(doc, 3);
     const lines = pages.flatMap((page) => page.lines);
-    return meaningfulText(lines) ? lines : null;
+    if (!meaningfulText(lines)) return null;
+    console.info("[docs/pdf] text layer read", {
+      filename: filename ?? "",
+      chars: lines.join("").replace(/\s+/g, "").length,
+    });
+    return lines;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    console.error("[docs/pdf] text layer failed:", message);
+    console.error("[docs/pdf] text layer failed:", message, filename ?? "");
     return null;
   }
 }
@@ -646,6 +654,7 @@ export async function pdfPageCount(bytes: Uint8Array): Promise<number> {
 export async function readPdfJsTextPages(
   bytes: Uint8Array,
   maxPages = 24,
+  filename?: string | null,
 ): Promise<PdfTextPage[] | null> {
   if (!isPdf(bytes)) return null;
   try {
@@ -657,10 +666,15 @@ export async function readPdfJsTextPages(
       (await pdfJsOpenOptions(bytes)) as Parameters<typeof pdfjs.getDocument>[0],
     ).promise;
     const pages = await pdfJsTextPagesFromDoc(doc, maxPages);
-    return pages.some((page) => meaningfulText(page.lines)) ? pages : null;
+    if (!pages.some((page) => meaningfulText(page.lines))) return null;
+    console.info("[docs/pdf] text pages read", {
+      filename: filename ?? "",
+      pages: pages.length,
+    });
+    return pages;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    console.error("[docs/pdf] text pages failed:", message);
+    console.error("[docs/pdf] text pages failed:", message, filename ?? "");
     return null;
   }
 }
