@@ -1038,8 +1038,9 @@ function pdfLayerChars(lines?: readonly string[] | null) {
 }
 
 function linesLookLikeReturn(lines?: readonly string[] | null) {
+  const page = lines ? [...lines] : null;
   return Boolean(
-    lines?.length && (printedLooksLikePersonal1040(lines) || printedLooksLikeNeverStubForm(lines)),
+    page?.length && (printedLooksLikePersonal1040(page) || printedLooksLikeNeverStubForm(page)),
   );
 }
 
